@@ -1,0 +1,41 @@
+/* ============================================================
+   REGISTROS · adaptación al tema del sistema (hecho a mano).
+   Archivo SEPARADO de registros.css (que se genera por transform) para que
+   no se pierda al regenerar. Remapea la paleta de Fichas cuando el dashboard
+   activa el modo oscuro ([data-theme="dark"] en <html>).
+   Primera pasada: vuelca superficies/textos; los acentos (teal/ámbar/verde/
+   rojo) se conservan. Literales hardcodeados sueltos se pulirán por módulo.
+   ============================================================ */
+[data-theme="dark"] .registros-app {
+  --card: #13243f;   /* tarjetas / superficies elevadas */
+  --surf: #0c1a30;   /* fondo de la app */
+  --bdr:  #24375a;
+  --bdr2: #324a72;
+  --tx:   #e8eef6;
+  --tx2:  #aebfd4;
+  --tx3:  #7a8eaa;
+  --tealp:#0d2f2c;   /* fondo teal claro → tono oscuro */
+}
+
+/* ============================================================
+   COMPACTACIÓN VERTICAL de las fichas (2026-06-12, decisión del usuario:
+   reducir el scroll vertical al llenar). Primera pasada conservadora —
+   solo reduce paddings/márgenes verticales; ajustable según tu revisión.
+   Se carga DESPUÉS de registros.css, así que estos valores ganan.
+   ============================================================ */
+/* Tarjeta y cabeceras */
+.registros-app .fc{ margin-bottom: 10px; }
+.registros-app .fc-h{ padding: 7px 16px; }
+.registros-app .fc-b{ padding: 10px 14px; }
+/* Cabecera de campos (Corrida/Técnico/Fecha…) */
+.registros-app .meta{ margin-bottom: 9px; gap: 7px; }
+.registros-app .mf input, .registros-app .mf select{ padding: 5px 9px; }
+/* Tabla de tanques: filas e inputs más bajos (12 filas → el mayor ahorro) */
+.registros-app .ft thead th{ padding: 3px 6px; }
+.registros-app .ft tbody td{ padding: 1px 2px; }
+.registros-app .ft input[type=number], .registros-app .ft input[type=text]{ padding: 2px 4px; }
+/* Pie de campos + área de guardado */
+.registros-app .ff input, .registros-app .ff textarea{ padding: 5px 9px; }
+.registros-app .ff textarea{ min-height: 40px; }
+.registros-app .ffoot{ margin-top: 8px; }
+.registros-app .sa{ margin-top: 8px; padding: 8px 12px; }

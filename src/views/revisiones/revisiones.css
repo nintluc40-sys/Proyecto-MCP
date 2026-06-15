@@ -1,0 +1,167 @@
+/* ============================================================
+   REVISIONES · estilos (Registro de Supervisión)
+   ============================================================ */
+.rv-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.rv-title { font-size: 24px; font-weight: 900; color: var(--c-brand); letter-spacing: -.5px; }
+.rv-subtitle { font-size: 12px; color: var(--c-text-muted); margin-top: 2px; }
+
+/* Filtros */
+.rv-filters { background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 10px 16px; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rv-filter-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rv-filter-tag { font-size: 10px; font-weight: 800; color: var(--c-text-soft); letter-spacing: .5px; min-width: 74px; }
+.rv-monthbar { display: inline-flex; align-items: center; gap: 4px; border: 1.5px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); padding: 2px; }
+.rv-month-nav { border: none; background: transparent; cursor: pointer; font-size: 13px; font-weight: 900; color: var(--c-accent, #1565C0); padding: 4px 9px; border-radius: var(--r-sm); }
+.rv-month-nav:hover:not(:disabled) { background: rgba(21,101,192,.12); }
+.rv-month-nav:disabled { color: var(--c-text-muted); opacity: .4; cursor: default; }
+.rv-month-lbl { font-size: 12px; font-weight: 800; color: var(--c-text-soft); min-width: 96px; text-align: center; }
+.rv-select { padding: 8px 12px; border-radius: var(--r-sm); border: 1.5px solid var(--c-border); background: var(--c-surface); font-size: 12px; font-weight: 600; color: var(--c-text); min-width: 150px; cursor: pointer; }
+.rv-phase { font-size: 14px; font-weight: 800; padding: 9px 13px; border-radius: var(--r-sm); margin: 4px 0 14px; border-left: 4px solid; }
+.rv-phase-1 { color: var(--c-text-soft); border-left-color: #90A4AE; background: linear-gradient(90deg, rgba(144,164,174,.10), transparent); }
+.rv-phase-2 { color: #1565C0; border-left-color: #1565C0; background: linear-gradient(90deg, rgba(21,101,192,.10), transparent); }
+.rv-bubble-svg { display: block; min-width: 420px; }
+/* Calidad · mosaico de tiles semáforo */
+.rv-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.rv-tile { background: var(--c-surface); border: 1px solid var(--c-border); border-left: 4px solid; border-radius: var(--r-md); padding: 12px 14px; box-shadow: var(--sh-1); }
+.rv-tile-lbl { font-size: 11px; font-weight: 800; color: var(--c-text-soft); letter-spacing: .3px; }
+.rv-tile-dom { font-size: 17px; font-weight: 900; margin: 4px 0 9px; }
+.rv-tile-bar { display: flex; height: 9px; border-radius: 5px; overflow: hidden; background: var(--c-border-soft, #eceff1); }
+.rv-tile-bar span { display: block; height: 100%; }
+.rv-tile-legs { display: flex; gap: 12px; margin-top: 7px; font-size: 10.5px; font-weight: 700; color: var(--c-text-muted); }
+.rv-tile-leg i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.rv-tile-empty { opacity: .65; }
+.rv-tile-click { cursor: pointer; transition: box-shadow .15s, transform .15s; }
+.rv-tile-click:hover { box-shadow: 0 3px 12px rgba(0,0,0,.12); transform: translateY(-1px); }
+.rv-drill-mini { flex: 1; display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--c-border-soft, #eceff1); margin: 0 10px; }
+.rv-drill-mini span { display: block; height: 100%; }
+/* Treemap (Observaciones / Acciones) */
+.rv-tm-svg { display: block; width: 100%; height: 100%; }
+.rv-tm-cell { cursor: pointer; }
+.rv-tm-cell:hover rect { fill-opacity: 1; }
+/* Tipografía uniforme en los SVG (treemap/sankey/burbujas) = misma que charts/títulos */
+.rv-tm-svg, .rv-sankey-svg, .rv-bubble-svg { font-family: "Segoe UI", system-ui, sans-serif; }
+/* Sankey Hallazgo → Acción */
+.rv-sankey-svg { display: block; min-width: 560px; }
+.rv-sk-flow { cursor: pointer; transition: fill-opacity .15s; }
+.rv-sk-flow:hover { fill-opacity: .7 !important; }
+.rv-sk-flow.is-sel { fill-opacity: .85 !important; stroke: #263238; stroke-width: 1; }
+.rv-sankey-info { margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--c-text-soft); }
+/* #8 · cobertura: columna de hoy + huecos */
+.rv-tl th.rv-tl-today, .rv-tl-cell.rv-tl-today { box-shadow: inset 0 0 0 2px #1565C0; }
+.rv-tl th.rv-tl-today { color: #1565C0; }
+.rv-tl-cell.empty { background: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(229,57,53,.10) 4px, rgba(229,57,53,.10) 6px); color: var(--c-text-muted); }
+/* #14 · drill-down por categoría */
+.rv-drill-card { max-width: 460px; }
+.rv-drill-sub { font-size: 11px; font-weight: 700; color: var(--c-text-muted); margin-bottom: 10px; }
+.rv-drill-row { position: relative; display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: var(--r-sm); font-size: 12.5px; }
+.rv-drill-row:nth-child(odd) { background: var(--c-surface-2, rgba(0,0,0,.025)); }
+.rv-drill-row .grow { flex: 1; }
+.rv-drill-bar { position: absolute; left: 0; bottom: 0; height: 2px; background: #00838F; border-radius: 2px; }
+
+/* KPIs */
+.rv-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.rv-kpi { background: var(--c-surface); border: 1px solid var(--c-border-soft); border-radius: var(--r-md); box-shadow: var(--sh-1); padding: 12px 16px; }
+.rv-kpi-label { font-size: 10px; color: var(--c-text-soft); font-weight: 700; }
+.rv-kpi-value { font-size: 22px; font-weight: 900; color: var(--c-brand); margin-top: 2px; }
+.rv-kpi-btn { text-align: left; cursor: pointer; transition: transform .15s, box-shadow .15s, border-color .15s; }
+.rv-kpi-btn:hover { transform: translateY(-2px); box-shadow: var(--sh-2); border-color: var(--c-brand); }
+.rv-kpi-btn .rv-kpi-value { color: var(--c-brand-600, var(--c-brand)); }
+
+/* Gráficos */
+.rv-chart-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px; }
+.rv-chart-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.rv-chart-wide { grid-column: 1 / -1; }
+.rv-chart-title { font-size: 12px; font-weight: 800; color: var(--c-text-soft); margin-bottom: 10px; }
+.rv-chart-sub { font-size: 10px; font-weight: 600; color: var(--c-text-muted); margin-left: 6px; }
+.rv-chart-host { position: relative; height: 260px; }
+.rv-chart-host.sm { height: 200px; }
+.rv-mt { margin-bottom: 16px; }
+
+/* Bitácora / tabla */
+.rv-section-title { font-size: 14px; font-weight: 800; color: var(--c-brand); margin: 8px 0 12px; }
+.rv-bita-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 8px 0 12px; }
+.rv-bita-toggle { padding: 6px 14px; border-radius: var(--r-pill); border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 11.5px; font-weight: 800; transition: all var(--t-fast); }
+.rv-bita-toggle:hover { border-color: var(--c-brand); color: var(--c-brand); }
+.rv-bita-hidden { display: none; }
+.rv-bita-hidden.rv-bita-show { display: table-row; }
+
+.rv-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.rv-table thead tr { background: linear-gradient(90deg, #00695C, #004D40); color: #fff; }
+.rv-table th { padding: 9px 12px; text-align: left; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.rv-table td { padding: 7px 12px; border-bottom: 1px solid var(--c-border-soft); white-space: nowrap; vertical-align: top; }
+.rv-table tbody tr:hover { background: var(--c-surface-2); }
+.rv-table .rv-comment { white-space: normal; min-width: 280px; max-width: 460px; color: var(--c-text-soft); line-height: 1.4; }
+
+/* ── Ventana / modal de Historial ── */
+.rv-modal { position: fixed; inset: 0; z-index: 300; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(15, 23, 30, .55); backdrop-filter: blur(3px); }
+.rv-modal.rv-open { display: flex; animation: fadeInUp .2s ease; }
+.rv-modal-card { background: var(--c-surface); border-radius: var(--r-lg); box-shadow: var(--sh-3); width: min(760px, 100%); max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
+.rv-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--c-border); }
+.rv-modal-title { font-size: 16px; font-weight: 900; color: var(--c-brand); }
+.rv-modal-x { width: 32px; height: 32px; border-radius: var(--r-sm); border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 14px; }
+.rv-modal-x:hover { background: var(--c-surface-2); color: var(--c-text); }
+.rv-modal-body { padding: 18px 20px; overflow: auto; }
+
+.rv-hist-filters { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+.rv-hist-field { display: flex; flex-direction: column; gap: 4px; font-size: 10px; font-weight: 800; color: var(--c-text-soft); letter-spacing: .4px; }
+.rv-select { padding: 7px 11px; border-radius: var(--r-sm); border: 1.5px solid var(--c-border); background: var(--c-surface); font-size: 12px; font-weight: 600; color: var(--c-text); min-width: 130px; cursor: pointer; }
+
+.rv-hist-count { font-size: 11px; font-weight: 800; color: var(--c-text-soft); margin-bottom: 10px; }
+.rv-hist-item { border-left: 3px solid var(--c-brand); background: var(--c-surface-2); border-radius: 0 var(--r-sm) var(--r-sm) 0; padding: 9px 12px; margin-bottom: 9px; }
+.rv-hist-date { font-size: 11px; font-weight: 800; color: var(--c-brand); }
+.rv-hist-meta { font-size: 10px; font-weight: 700; color: var(--c-text-muted); margin-top: 1px; }
+.rv-hist-text { margin: 5px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--c-text); }
+
+/* ── Comentarios por turno (matutino ☀️ / vespertino 🌙) ── */
+.rv-com-sub { margin-top: 6px; }
+.rv-com-line { margin: 3px 0; font-size: 12px; line-height: 1.4; color: var(--c-text-soft); }
+.rv-com-tag { display: inline-block; font-size: 9.5px; font-weight: 800; padding: 1px 7px; border-radius: 999px; margin-right: 6px; vertical-align: middle; letter-spacing: .01em; }
+.rv-com-am { background: #FFF3CD; color: #8A6D00; }
+.rv-com-pm { background: #E3E7FF; color: #34408A; }
+.rv-com-txt { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--c-text); white-space: pre-wrap; }
+[data-theme="dark"] .rv-com-am { background: #4a3c00; color: #ffe08a; }
+[data-theme="dark"] .rv-com-pm { background: #2a3170; color: #c4ccff; }
+
+/* ── Drill-down por módulo (RV2) ── */
+.rv-mod-link { cursor: pointer; transition: color var(--t-fast); white-space: nowrap; }
+.rv-mod-link:hover { color: var(--c-brand); text-decoration: underline; }
+.rv-det-kpis { margin-bottom: 14px; }
+.rv-det-sec { font-size: 12.5px; font-weight: 800; color: var(--c-brand); margin: 14px 0 8px; }
+.rv-det-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rv-det-chip { font-size: 11.5px; font-weight: 700; color: var(--c-text-soft); background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-radius: var(--r-pill); padding: 3px 10px; }
+.rv-det-chip b { color: var(--c-brand); margin-left: 3px; }
+.rv-det-comments { max-height: 40vh; overflow: auto; }
+
+/* ── Comparativa de periodos (Punto 5) ── */
+.rv-cmp-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.rv-cmp-pills { display: inline-flex; gap: 5px; }
+.rv-cmp-pill { padding: 4px 12px; border-radius: var(--r-pill); border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 11px; font-weight: 800; transition: all var(--t-fast); }
+.rv-cmp-pill:hover { border-color: var(--c-brand); color: var(--c-brand); }
+.rv-cmp-pill.is-active { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
+.rv-cmp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.rv-cmp-card { background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-radius: var(--r-md); padding: 11px 14px; }
+.rv-cmp-lbl { font-size: 10px; font-weight: 800; color: var(--c-text-soft); letter-spacing: .3px; }
+.rv-cmp-val { font-size: 24px; font-weight: 900; color: var(--c-brand); line-height: 1.1; margin: 2px 0 4px; }
+.rv-cmp-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.rv-cmp-delta { font-size: 11px; font-weight: 800; padding: 1px 8px; border-radius: var(--r-pill); }
+.rv-cmp-delta.good { color: #0f9d58; background: rgba(30,200,106,.14); }
+.rv-cmp-delta.bad { color: #e8303e; background: rgba(232,48,62,.13); }
+.rv-cmp-delta.flat { color: var(--c-text-muted); background: var(--c-surface); }
+.rv-cmp-prev { font-size: 10px; font-weight: 700; color: var(--c-text-muted); }
+
+/* ── Timeline de cobertura (Punto 3) ── */
+.rv-tl, .rv-mx { border-collapse: separate; border-spacing: 3px; font-size: 11px; }
+.rv-tl th, .rv-mx th { font-size: 10px; font-weight: 800; color: var(--c-text-soft); padding: 3px 5px; }
+.rv-tl-corner, .rv-mx-corner { text-align: left !important; color: var(--c-text-muted) !important; white-space: nowrap; }
+.rv-tl-row, .rv-mx-rowh { text-align: left !important; font-weight: 800; color: var(--c-text); white-space: nowrap; padding-right: 8px !important; }
+.rv-tl-cell { text-align: center; font-weight: 800; padding: 5px 8px; border-radius: 5px; min-width: 30px; }
+.rv-tl-cell.empty { color: var(--c-text-muted); background: var(--c-surface-2); font-weight: 400; }
+
+/* ── Matriz Hallazgo × Acción (Punto 6) ── */
+.rv-mx-colh { vertical-align: bottom; max-width: 70px; }
+.rv-mx-colh span { display: inline-block; line-height: 1.1; font-size: 9.5px; }
+.rv-mx-rowh { max-width: 180px; white-space: normal !important; font-size: 11px; }
+.rv-mx-cell { text-align: center; font-weight: 800; padding: 6px 9px; border-radius: 5px; min-width: 30px; }
+.rv-mx-cell.empty { background: var(--c-surface-2); }
+
+@media (max-width: 980px) { .rv-chart-grid-3 { grid-template-columns: 1fr; } }
+@media (max-width: 860px) { .rv-chart-grid { grid-template-columns: 1fr; } }

@@ -1,0 +1,88 @@
+/* ============================================================
+   ALGAS · estilos de la vista (paleta verde microalga, claro/oscuro vía tokens)
+   ============================================================ */
+.alg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.alg-title { font-size: 19px; font-weight: 800; color: var(--c-text); display: flex; align-items: center; gap: 8px; }
+.alg-title-ic { font-size: 22px; }
+.alg-sub { font-size: 12.5px; color: var(--c-text-muted); margin-top: 2px; }
+
+/* ── Barra de filtros ── */
+.alg-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+.alg-monthbar { display: inline-flex; align-items: center; gap: 6px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; padding: 4px 6px; }
+.alg-month-nav { border: none; background: transparent; color: var(--c-text); font-size: 14px; cursor: pointer; border-radius: 8px; width: 28px; height: 28px; line-height: 1; }
+.alg-month-nav:hover:not(:disabled) { background: var(--c-surface-2); }
+.alg-month-nav:disabled { opacity: .35; cursor: not-allowed; }
+.alg-month-lbl { font-weight: 700; font-size: 13px; color: var(--c-text); padding: 0 4px; }
+
+.alg-select {
+  background: var(--c-surface); color: var(--c-text);
+  border: 1px solid var(--c-border); border-radius: 10px;
+  padding: 7px 11px; font-size: 13px; cursor: pointer; max-width: 240px;
+}
+.alg-select:focus { outline: 2px solid var(--c-brand); outline-offset: 1px; }
+
+/* ── KPIs ── */
+.alg-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.alg-kpi { background: var(--c-surface); border: 1px solid var(--c-border); border-left: 4px solid var(--c-brand); border-radius: 12px; padding: 11px 14px; }
+.alg-kpi-label { font-size: 12px; color: var(--c-text-muted); font-weight: 600; }
+.alg-kpi-value { font-size: 21px; font-weight: 800; color: var(--c-text); margin-top: 3px; line-height: 1.15; }
+.alg-kpi.is-alert { border-left-color: var(--c-malo, #D64545); }
+.alg-kpi.is-alert .alg-kpi-value { color: var(--c-malo, #D64545); }
+
+/* ── Sección + tabla ── */
+.alg-section-title { font-size: 14px; font-weight: 800; color: var(--c-text); margin: 18px 0 8px; }
+.alg-table-wrap { padding: 0; overflow: auto; }
+.alg-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.alg-table th, .alg-table td { padding: 8px 10px; border-bottom: 1px solid var(--c-border-soft); white-space: nowrap; }
+.alg-table thead th { position: sticky; top: 0; background: var(--c-surface-2); color: var(--c-text-soft); font-weight: 700; text-align: left; z-index: 1; }
+.alg-table tbody tr:hover { background: var(--c-surface-2); }
+
+/* ── Subnav: pestañas por sistema (subvistas) ── */
+.alg-subnav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.alg-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--c-surface); color: var(--c-text);
+  border: 1px solid var(--c-border); border-radius: 999px;
+  padding: 7px 15px; font-size: 13px; font-weight: 700; cursor: pointer;
+  transition: var(--tr, .18s ease);
+}
+.alg-pill:hover { border-color: var(--cat, var(--c-brand)); }
+.alg-pill.is-active { background: var(--cat, var(--c-brand)); border-color: var(--cat, var(--c-brand)); color: #fff; }
+.alg-pill-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--cat, var(--c-brand)); }
+.alg-pill.is-active .alg-pill-dot { background: #fff; }
+
+/* ── Gráficos ── */
+.alg-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; }
+.alg-chart-card { padding: 12px 14px; }
+.alg-chart-title { font-size: 13px; font-weight: 800; color: var(--c-text); margin-bottom: 8px; }
+.alg-chart-title .muted { font-weight: 600; font-size: 11.5px; }
+.alg-chart-host { position: relative; height: 250px; }
+.alg-host-lg { height: 300px; }
+
+/* Fila analítica: curva (ancha) + Estadísticas del Período (estrecha). */
+.alg-an-row { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 12px; }
+@media (max-width: 760px) { .alg-an-row { grid-template-columns: 1fr; } }
+
+/* ── Estadísticas del Período ── */
+.alg-stats { display: flex; flex-direction: column; gap: 2px; }
+.alg-stat { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 4px; border-bottom: 1px solid var(--c-border-soft); }
+.alg-stat:last-child { border-bottom: none; }
+.alg-stat-lbl { font-size: 12px; color: var(--c-text-muted); }
+.alg-stat-val { font-size: 13px; font-weight: 800; color: var(--c-text); }
+
+/* ── Tabla plegable (bitácora / registros) ── */
+.alg-collap { padding: 0; margin-top: 14px; }
+.alg-collap-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--c-border-soft); }
+.alg-collap-title { font-size: 14px; font-weight: 800; color: var(--c-text); }
+.alg-toggle { border: 1px solid var(--c-border); background: var(--c-surface-2); color: var(--c-text); border-radius: 8px; padding: 5px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.alg-toggle:hover { border-color: var(--c-brand); }
+.alg-row-hidden { display: none; }
+.alg-row-hidden.alg-row-show { display: table-row; }
+
+/* ── Matriz de análisis (corrida × categoría) ── */
+.alg-matrix th, .alg-matrix td { text-align: right; }
+.alg-matrix th:first-child, .alg-matrix td:first-child { text-align: left; }
+.alg-mx-n { color: var(--c-text-muted); font-size: 11px; font-weight: 600; }
+.alg-mx-total td { border-top: 2px solid var(--c-border); background: var(--c-surface-2); }
+
+.alg-note { margin-top: 16px; font-size: 12px; color: var(--c-text-muted); background: var(--c-surface-2); border: 1px dashed var(--c-border); border-radius: 10px; padding: 12px 14px; }

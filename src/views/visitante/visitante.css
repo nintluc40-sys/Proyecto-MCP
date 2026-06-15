@@ -1,0 +1,21 @@
+/* ============================================================
+   VISITANTE — Tendencia mensual (reusa .prod-* para el slider)
+   ============================================================ */
+.vt-view { max-width: 980px; margin: 0 auto; padding: 4px 2px 24px; }
+.vt-head { margin-bottom: 14px; }
+.vt-title { font-size: 18px; font-weight: 900; color: var(--c-text); }
+.vt-sub { font-size: 12px; color: var(--c-text-muted); margin-top: 2px; }
+
+.vt-card { padding: 16px 18px; margin-bottom: 16px; }
+.vt-card-title { font-size: 14px; font-weight: 800; color: var(--c-text); margin-bottom: 10px; }
+
+.vt-metricbar { display: flex; gap: 8px; justify-content: center; margin: 12px 0 6px; }
+.vt-pill { font-size: 12.5px; font-weight: 700; padding: 6px 16px; border-radius: var(--r-pill); border: 1px solid var(--c-border-soft); background: var(--c-surface-2); color: var(--c-text-soft); cursor: pointer; transition: all var(--t-fast); }
+.vt-pill:hover { border-color: var(--c-brand); }
+.vt-pill.is-active { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
+
+.vt-chart-host { position: relative; height: 320px; margin-top: 6px; }
+.vt-note { font-size: 11px; color: var(--c-text-muted); margin-top: 8px; text-align: center; }
+
+.vt-table { width: 100%; }
+.vt-total-row td { font-size: 13px; }

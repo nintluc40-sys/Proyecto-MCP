@@ -1,0 +1,4 @@
+dist
+node_modules
+public/registros
+package-lock.json

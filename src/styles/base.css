@@ -1,0 +1,83 @@
+/* ============================================================
+   BASE — reset ligero + primitivas reutilizables
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font-family: inherit; cursor: pointer; }
+a { color: inherit; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: var(--c-text-muted); }
+
+/* ---- Tarjeta base ---- */
+.card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border-soft);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-1);
+  padding: var(--sp-4);
+}
+
+/* ---- Chip / pill ---- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--c-surface-2);
+  color: var(--c-text-soft);
+}
+
+/* ---- Botón pill seleccionable (filtros) ---- */
+.pill-btn {
+  padding: 4px 13px;
+  border-radius: var(--r-pill);
+  border: 1.5px solid var(--c-text-soft);
+  background: transparent;
+  color: var(--c-text-soft);
+  font-size: 11px;
+  font-weight: 600;
+  transition: all var(--t-fast);
+}
+.pill-btn:hover { border-color: var(--c-brand); color: var(--c-brand); }
+.pill-btn.is-active { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
+
+/* ---- Estado vacío ---- */
+.empty-state {
+  padding: 60px 20px;
+  text-align: center;
+  color: var(--c-text-muted);
+  font-size: 14px;
+  background: var(--c-surface-2);
+  border: 1px dashed var(--c-border);
+  border-radius: var(--r-md);
+}
+
+/* ---- Animaciones ---- */
+@keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+.fade-in { animation: fadeInUp var(--t-med); }
+
+/* ---- Utilidades ---- */
+.row { display: flex; align-items: center; }
+.gap-2 { gap: var(--sp-2); }
+.gap-3 { gap: var(--sp-3); }
+.wrap { flex-wrap: wrap; }
+.grow { flex: 1; }
+.muted { color: var(--c-text-muted); }
+.mono { font-family: var(--font-mono); }

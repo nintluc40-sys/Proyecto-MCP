@@ -1,0 +1,314 @@
+/* ============================================================
+   SUPERVISOR · Comparativa OM vs Tex (por módulo)
+   Compara los lotes Texcumar vs Omarsa de un módulo (respetando
+   el filtro de corrida activo) en 6 variables: Población,
+   Supervivencia, Deformidad, ICL, PL/g e Incremento de peso (mg/d).
+   Cada tanque se asigna a una marca por la moda de su lote; los
+   valores por marca son el PROMEDIO por tanque.
+   Incluye: barras por variable (OT base), tabla Δ (OT1), detalle por
+   tanque (OT2), selector + tendencia temporal por marca (OT3/OT4) y
+   veredicto compuesto (OT5).
+   ============================================================ */
+import { tankStats, tanksOf } from './stats.js';
+import { iclSeries } from './params.js';
+import { colorFor, breadcrumb, fmtPop } from './ui.js';
+import { esc } from '../../core/format.js';
+import { parseAnyDate } from '../../core/dates.js';
+import { parseNum, getField, F } from '../../core/fields.js';
+import { makeChart } from '../../core/charts.js';
+
+const DEF_KEYS = ['Deformidad', 'deformidad'];
+const PLG_KEYS = ['PLG', 'Plg', 'plg', 'PL/g', 'pl/g'];
+const PESO_KEYS = ['Peso promedio (mg)', 'Peso_promedio', 'peso_promedio', 'Peso promedio', 'Peso_prom'];
+const ESTADIO_KEYS = ['Estadío', 'Estadio', 'estadío', 'estadio', 'ESTADIO'];
+
+/** Clasifica un lote por marca: 2 letras exactas = Omarsa; resto = Texcumar. */
+export function lotBrand(lote) {
+  const s = String(lote || '').trim().toUpperCase();
+  if (!s) return null;
+  return /^[A-Z]{2}$/.test(s) ? 'OM' : 'TEX';
+}
+
+const BRANDS = {
+  TEX: { label: 'Texcumar', color: '#E65100', icon: '🟧' },
+  OM:  { label: 'Omarsa',   color: '#00695C', icon: '🟦' },
+};
+
+// Variables comparables (dir: 'up' = mayor mejor; 'down' = menor mejor).
+const VARS = [
+  { key: 'pop',  label: 'Población',          icon: '👥', dir: 'up',   fmt: (v) => fmtPop(v),                         trend: 'col', keys: F.poblacion, pos: true },
+  { key: 'sv',   label: 'Supervivencia',      icon: '📈', dir: 'up',   fmt: (v) => (v == null ? '—' : v.toFixed(1) + '%'), trend: 'col', keys: F.supervivencia },
+  { key: 'def',  label: 'Deformidad',         icon: '🧬', dir: 'down', fmt: (v) => (v == null ? '—' : v.toFixed(1) + '%'), trend: 'col', keys: DEF_KEYS },
+  { key: 'icl',  label: 'ICL',                icon: '🧪', dir: 'up',   fmt: (v) => (v == null ? '—' : String(Math.round(v))), trend: 'icl' },
+  { key: 'plg',  label: 'PL/g',               icon: '🎣', dir: 'down', fmt: (v) => (v == null ? '—' : v.toFixed(1)),   trend: 'col', keys: PLG_KEYS },
+  { key: 'incr', label: 'Incremento (mg/d)',  icon: '⚖️', dir: 'up',   fmt: (v) => (v == null ? '—' : v.toFixed(3)),   trend: 'incr' },
+];
+
+const mean = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
+const avgOf = (list, key) => mean(list.map((t) => t[key]).filter((v) => v !== null && v !== undefined));
+const byDateAsc = (a, b) => (parseAnyDate(getField(a, F.fecha)) || 0) - (parseAnyDate(getField(b, F.fecha)) || 0);
+
+/** Incremento de peso (mg/d) por fecha de un tanque (entre registros consecutivos con peso). */
+function tankIncrByDate(lRows) {
+  const sorted = [...lRows].sort(byDateAsc);
+  const map = new Map(); let prev = null;
+  sorted.forEach((r) => {
+    const f = getField(r, F.fecha), p = parseNum(r, PESO_KEYS);
+    if (p === null || !f) return;
+    if (prev) { const days = (parseAnyDate(f) - parseAnyDate(prev.f)) / 86400000; if (days > 0) map.set(f, (p - prev.p) / days); }
+    prev = { f, p };
+  });
+  return map;
+}
+
+// Estado del selector de tendencia (persistente entre re-render de la vista).
+let trendVar = 'sv';
+
+export function renderOmTex(ctx, mod) {
+  const corrida = ctx.vState.corrida || null;
+  const col = colorFor(ctx.allMods.indexOf(mod));
+  const tanks = tanksOf(ctx, mod, corrida);
+
+  const groups = { TEX: { tanks: [], lotes: new Set() }, OM: { tanks: [], lotes: new Set() } };
+  tanks.forEach((tq) => {
+    const ts = tankStats(ctx, mod, tq, corrida);
+    const c = { TEX: 0, OM: 0 };
+    ts.lRows.forEach((r) => { const b = lotBrand(getField(r, F.lote)); if (b) c[b]++; });
+    if (!c.TEX && !c.OM) return;
+    const brand = c.OM >= c.TEX ? 'OM' : 'TEX';
+    const defs = ts.lRows.map((r) => parseNum(r, DEF_KEYS)).filter((v) => v !== null);
+    const plgs = ts.lRows.map((r) => parseNum(r, PLG_KEYS)).filter((v) => v !== null);
+    const iclVals = iclSeries(ts.lRows).values.filter((v) => v !== null && v !== undefined);
+    const incrs = [...tankIncrByDate(ts.lRows).values()];
+    groups[brand].tanks.push({ tq, lRows: ts.lRows, pop: ts.pop, sv: ts.sv, def: mean(defs), icl: mean(iclVals), plg: mean(plgs), incr: mean(incrs) });
+    ts.lotes.forEach((l) => groups[brand].lotes.add(l));
+  });
+
+  const agg = {};
+  ['TEX', 'OM'].forEach((b) => {
+    agg[b] = { n: groups[b].tanks.length, lotes: [...groups[b].lotes] };
+    VARS.forEach((v) => { agg[b][v.key] = avgOf(groups[b].tanks, v.key); });
+  });
+
+  let html = breadcrumb(col.accent, [
+    { label: '← Módulos', nav: 'modules' },
+    { label: mod, nav: 'module', mod },
+    { label: 'OM vs Tex' },
+  ]);
+
+  html += `<div class="sv-banner" style="background:${col.bg}">
+    <div class="sv-card-orb"></div>
+    <div class="sv-card-tag">⚖️ COMPARATIVA OM vs TEX</div>
+    <div class="sv-banner-name">${esc(mod)}</div>
+    <div class="sv-card-sub">🔄 ${corrida ? 'Corrida: ' + esc(corrida) : 'Todas las corridas'} · Promedio por tanque</div>
+  </div>`;
+
+  if (!agg.TEX.n && !agg.OM.n) {
+    html += `<div class="empty-state">Sin lotes clasificables (Texcumar / Omarsa) para esta selección.</div>`;
+    return { html };
+  }
+
+  // Tarjetas-resumen por marca.
+  html += '<div class="omtex-cards">';
+  ['TEX', 'OM'].forEach((b) => {
+    const g = agg[b];
+    html += `<div class="omtex-card" style="border-color:${BRANDS[b].color}">
+      <div class="omtex-card-head" style="color:${BRANDS[b].color}">${BRANDS[b].icon} ${BRANDS[b].label}</div>
+      <div class="omtex-card-sub">${g.n} tanque${g.n !== 1 ? 's' : ''}</div>
+      <div class="omtex-card-lotes">${g.lotes.length ? '📦 ' + g.lotes.map(esc).join(' · ') : '— sin lotes —'}</div>
+    </div>`;
+  });
+  html += '</div>';
+
+  if (!agg.TEX.n || !agg.OM.n) {
+    const missing = !agg.TEX.n ? 'Texcumar' : 'Omarsa';
+    html += `<div class="sv-modal-note" style="margin:0 0 12px">⚠️ No hay lotes de <b>${missing}</b> en esta selección; la comparación muestra solo la marca presente.</div>`;
+  }
+
+  // OT5 · Veredicto (solo si ambas marcas presentes).
+  if (agg.TEX.n && agg.OM.n) html += verdictHTML(agg);
+
+  // OT1 · Tabla Δ.
+  html += deltaTableHTML(agg);
+
+  // Barras por variable (3 por fila, con aire respecto a la tabla Δ).
+  html += '<div class="omtex-charts">';
+  VARS.forEach((v) => {
+    html += `<div class="card">
+      <div class="sv-chart-title">${v.icon} ${esc(v.label)}</div>
+      <div class="sv-chart-host omtex-chost"><canvas id="omtex_${v.key}"></canvas></div>
+    </div>`;
+  });
+  html += '</div>';
+
+  // OT3 + OT4 · Selector de variable + tendencia temporal por marca.
+  if (!VARS.some((v) => v.key === trendVar)) trendVar = 'sv';
+  html += `<div class="sv-section-title" style="margin-top:8px">📈 Tendencia temporal por marca</div>
+    <div class="omtex-trend-pills">
+      ${VARS.map((v) => `<button class="pill-btn ${v.key === trendVar ? 'is-active' : ''}" data-omtrend="${v.key}">${v.icon} ${esc(v.label)}</button>`).join('')}
+    </div>
+    <div class="card"><div class="sv-chart-host"><canvas id="omtexTrend"></canvas></div></div>`;
+
+  // OT2 · Detalle por tanque (expandible).
+  html += `<div class="sv-section-title" style="margin-top:16px">🔍 Detalle por tanque</div>`;
+  ['TEX', 'OM'].forEach((b) => {
+    if (!groups[b].tanks.length) return;
+    const rows = groups[b].tanks.map((t) => `<tr>
+        <td><b>${esc(t.tq)}</b></td>
+        ${VARS.map((v) => `<td>${v.fmt(t[v.key])}</td>`).join('')}
+      </tr>`).join('');
+    html += `<details class="omtex-det" open>
+      <summary style="color:${BRANDS[b].color}">${BRANDS[b].icon} ${BRANDS[b].label} · ${groups[b].tanks.length} tanque(s)</summary>
+      <div class="card" style="padding:0;overflow:auto;margin-top:8px">
+        <table class="sv-table">
+          <thead><tr><th>Tanque</th>${VARS.map((v) => `<th>${v.icon} ${esc(v.label)}</th>`).join('')}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </details>`;
+  });
+
+  // Estadío representativo (moda) por día, sobre todos los tanques de ambas marcas.
+  const stageByDay = (() => {
+    const m = new Map();
+    ['TEX', 'OM'].forEach((b) => groups[b].tanks.forEach((t) => t.lRows.forEach((r) => {
+      const f = getField(r, F.fecha), st = getField(r, ESTADIO_KEYS);
+      if (!f || !st) return;
+      if (!m.has(f)) m.set(f, {});
+      const c = m.get(f); c[st] = (c[st] || 0) + 1;
+    })));
+    const out = new Map();
+    m.forEach((counts, f) => { let best = null, bc = -1; for (const k in counts) { if (counts[k] > bc) { bc = counts[k]; best = k; } } out.set(f, best); });
+    return out;
+  })();
+
+  // ---- Series diarias por marca (para la tendencia) ----
+  const brandSeries = (brandKey, v) => {
+    const tanksB = groups[brandKey].tanks;
+    const byDay = new Map(); // fecha -> [valores]
+    const push = (f, val) => { if (!f || val === null || val === undefined) return; if (!byDay.has(f)) byDay.set(f, []); byDay.get(f).push(val); };
+    if (v.trend === 'col') {
+      tanksB.forEach((t) => t.lRows.forEach((r) => { const val = parseNum(r, v.keys); if (val !== null && (!v.pos || val > 0)) push(getField(r, F.fecha), val); }));
+    } else if (v.trend === 'icl') {
+      tanksB.forEach((t) => { const s = iclSeries(t.lRows); s.days.forEach((d, i) => push(d, s.values[i])); });
+    } else if (v.trend === 'incr') {
+      tanksB.forEach((t) => tankIncrByDate(t.lRows).forEach((val, f) => push(f, val)));
+    }
+    const out = new Map();
+    byDay.forEach((vals, f) => out.set(f, mean(vals)));
+    return out;
+  };
+
+  const after = (root) => {
+    // Barras por variable con etiqueta de valor.
+    VARS.forEach((v) => {
+      const data = [agg.TEX[v.key], agg.OM[v.key]];
+      makeChart('omtex_' + v.key, {
+        type: 'bar',
+        data: {
+          labels: [BRANDS.TEX.label, BRANDS.OM.label],
+          datasets: [{ data, backgroundColor: [BRANDS.TEX.color + 'cc', BRANDS.OM.color + 'cc'], borderColor: [BRANDS.TEX.color, BRANDS.OM.color], borderWidth: 1.5, borderRadius: 6, maxBarThickness: 80 }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, layout: { padding: { top: 22 } },
+          scales: { y: { beginAtZero: true, ticks: { callback: (val) => v.fmt(val) } }, x: { grid: { display: false } } },
+          plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        },
+        plugins: [{
+          id: 'omtexLbl_' + v.key,
+          afterDatasetsDraw(chart) {
+            const cx = chart.ctx; const meta = chart.getDatasetMeta(0);
+            meta.data.forEach((el, i) => {
+              if (data[i] === null || data[i] === undefined) return;
+              cx.save(); cx.fillStyle = '#37474F'; cx.font = '800 13px "Segoe UI", system-ui, sans-serif';
+              cx.textAlign = 'center'; cx.textBaseline = 'bottom'; cx.fillText(v.fmt(data[i]), el.x, el.y - 5); cx.restore();
+            });
+          },
+        }],
+      });
+    });
+
+    // Tendencia temporal por marca (variable seleccionable).
+    const drawTrend = () => {
+      const v = VARS.find((x) => x.key === trendVar) || VARS[1];
+      const sTex = brandSeries('TEX', v), sOm = brandSeries('OM', v);
+      const days = [...new Set([...sTex.keys(), ...sOm.keys()])].sort((a, b) => (parseAnyDate(a) || 0) - (parseAnyDate(b) || 0));
+      const round = (x) => (x == null ? null : (v.key === 'pop' ? Math.round(x) : v.key === 'icl' ? Math.round(x) : +x.toFixed(3)));
+      makeChart('omtexTrend', {
+        type: 'line',
+        data: {
+          labels: days,
+          datasets: [
+            { label: BRANDS.TEX.label, data: days.map((d) => round(sTex.get(d) ?? null)), borderColor: BRANDS.TEX.color, backgroundColor: BRANDS.TEX.color + '20', tension: .3, spanGaps: true, pointRadius: 2, fill: false },
+            { label: BRANDS.OM.label, data: days.map((d) => round(sOm.get(d) ?? null)), borderColor: BRANDS.OM.color, backgroundColor: BRANDS.OM.color + '20', tension: .3, spanGaps: true, pointRadius: 2, fill: false },
+          ],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+          scales: { y: { ticks: { callback: (val) => v.fmt(val) } }, x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 8 } } },
+          plugins: { legend: { labels: { boxWidth: 12 } }, tooltip: { callbacks: { afterTitle: (it) => { const st = stageByDay.get(days[it[0].dataIndex]); return st ? 'Estadío: ' + st : ''; }, label: (c) => `${c.dataset.label}: ${v.fmt(c.parsed.y)}` } } },
+        },
+      });
+    };
+    drawTrend();
+
+    root.querySelectorAll('[data-omtrend]').forEach((b) => b.addEventListener('click', () => {
+      trendVar = b.dataset.omtrend;
+      root.querySelectorAll('[data-omtrend]').forEach((x) => x.classList.toggle('is-active', x === b));
+      drawTrend();
+    }));
+  };
+
+  return { html, after };
+}
+
+/* ---------- OT1 · tabla Δ ---------- */
+function deltaTableHTML(agg) {
+  const rows = VARS.map((v) => {
+    const t = agg.TEX[v.key], o = agg.OM[v.key];
+    let dTxt = '—', dPct = '—', cls = '';
+    if (t !== null && t !== undefined && o !== null && o !== undefined) {
+      const diff = t - o; // Texcumar − Omarsa
+      dTxt = (diff >= 0 ? '+' : '−') + v.fmt(Math.abs(diff));
+      dPct = o !== 0 ? ((diff / Math.abs(o)) * 100).toFixed(1) + '%' : '—';
+      const texBetter = v.dir === 'up' ? diff > 0 : diff < 0;
+      cls = Math.abs(diff) < 1e-9 ? '' : (texBetter ? 'omtex-tex' : 'omtex-om');
+    }
+    return `<tr>
+      <td><b>${v.icon} ${esc(v.label)}</b></td>
+      <td>${v.fmt(t)}</td>
+      <td>${v.fmt(o)}</td>
+      <td class="${cls}">${dTxt}</td>
+      <td class="${cls}">${dPct}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="sv-section-title" style="margin-top:8px">📋 Tabla comparativa (Δ = Texcumar − Omarsa)</div>
+    <div class="card" style="padding:0;overflow:auto">
+      <table class="sv-table">
+        <thead><tr><th>Variable</th><th>🟧 Texcumar</th><th>🟦 Omarsa</th><th>Δ</th><th>Δ %</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+/* ---------- OT5 · veredicto compuesto ---------- */
+function verdictHTML(agg) {
+  let texWins = 0, omWins = 0;
+  const badges = VARS.map((v) => {
+    const t = agg.TEX[v.key], o = agg.OM[v.key];
+    if (t === null || t === undefined || o === null || o === undefined || Math.abs(t - o) < 1e-9) return `<span class="omtex-badge tie">${v.icon} ${esc(v.label)}: empate</span>`;
+    const texBetter = v.dir === 'up' ? t > o : t < o;
+    if (texBetter) texWins++; else omWins++;
+    const w = texBetter ? 'TEX' : 'OM';
+    return `<span class="omtex-badge" style="border-color:${BRANDS[w].color};color:${BRANDS[w].color}">${v.icon} ${esc(v.label)}: ${BRANDS[w].label}</span>`;
+  }).join('');
+  let winner = null;
+  if (texWins > omWins) winner = 'TEX'; else if (omWins > texWins) winner = 'OM';
+  const verdict = winner
+    ? `🏆 <b style="color:${BRANDS[winner].color}">${BRANDS[winner].label}</b> rinde mejor — gana en ${Math.max(texWins, omWins)} de ${texWins + omWins} variables`
+    : `🤝 Empate técnico (${texWins} a ${omWins})`;
+  return `<div class="omtex-verdict">
+    <div class="omtex-verdict-head">${verdict}</div>
+    <div class="omtex-badges">${badges}</div>
+  </div>`;
+}

@@ -1,0 +1,321 @@
+/* ============================================================
+   GOOGLE SHEETS — motor de conexión y extracción
+   Portado y refinado del original (autoConnectSheets, _fetchAsXLSX,
+   fetchCSVRobust, parseCSV, getSheetGids, detectSheetName,
+   processAndDisplaySheetsData).
+
+   Estrategia:
+     1) XLSX completo  → export?format=xlsx  (1 sola petición, todas las hojas)
+     2) Fallback CSV   → gviz/tq?out:csv por gid (descubre gids por scraping)
+
+   Cada fila se etiqueta con _SheetOrigin (Larvicultura, Control_Tanque,
+   Maduracion, Lab_Algas, Morfologia) y se sella el Módulo desde el
+   nombre de pestaña cuando aplica.
+   ============================================================ */
+import { SHEETS_URL, FETCH_TIMEOUT_MS } from '../config.js';
+import { store, emit, EV } from './store.js';
+import { autoCalcMortalidad, getField, F } from './fields.js';
+import { parseAnyDate, clearDateCache } from './dates.js';
+
+// ---------- utilidades de red ----------
+function fetchWithTimeout(url, opts = {}, ms = FETCH_TIMEOUT_MS) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, ms);
+  opts.signal = ctrl.signal;
+  return fetch(url, opts).finally(() => clearTimeout(t));
+}
+
+export function parseSheetsIds(url) {
+  const pub = url.match(/\/d\/e\/([a-zA-Z0-9_-]+)/);
+  if (pub) return { type: 'pub', pubId: pub[1] };
+  const real = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (real) return { type: 'real', realId: real[1] };
+  return null;
+}
+
+function activeUrl() {
+  return (store.sheetsUrlOverride && store.sheetsUrlOverride.trim()) || SHEETS_URL;
+}
+
+// ---------- clasificación ----------
+function classifyOrigin(name) {
+  const n = String(name).trim();
+  if (/^Control_Tanque/i.test(n)) return 'Control_Tanque';
+  if (/registro[_\s]*supervisi/i.test(n)) return 'Registro_Supervision';
+  if (/biomol/i.test(n)) return 'Biomol';
+  if (/larvicultura|larvi/i.test(n)) return 'Larvicultura';
+  if (/maduracion|maduración/i.test(n)) return 'Maduracion';
+  if (/algas|lab_algas/i.test(n)) return 'Lab_Algas';
+  if (/morfolog/i.test(n)) return 'Morfologia';
+  return n;
+}
+
+/** Detecta el módulo embebido en el nombre de pestaña (p.ej. "Larvicultura - M01"). */
+function moduleFromTabName(name, isTanque) {
+  const dash = name.match(/[-–]\s*([A-Za-z0-9]+)\s*$/);
+  const tq = isTanque ? name.match(/Control_Tanque\s+([A-Za-z0-9]+)/i) : null;
+  const generic = name.match(/\b(M\d+|CIO|[A-Z]{2,4}\d*)\b/);
+  const m = (dash || tq || generic || [])[1] || null;
+  return m ? m.toUpperCase() : null;
+}
+
+/** Detecta nombre de hoja por título o por columnas (para el fallback CSV). */
+function detectSheetName(rows, gid, rawTitle) {
+  if (rawTitle) {
+    const origin = classifyOrigin(rawTitle);
+    if (origin !== String(rawTitle).trim()) return origin;
+  }
+  if (!rows?.length) return 'Hoja' + (gid + 1);
+  const keys = Object.keys(rows[0]).map((k) => k.toLowerCase().trim());
+  const has = (pred) => keys.some(pred);
+  if (has((k) => k === 'hora') && has((k) => k === 'tanque') &&
+      has((k) => k === 'od' || k.startsWith('ox') || k === 'temperatura' || k === 'temp')) return 'Control_Tanque';
+  if (has((k) => k.includes('cel_ml') || k.includes('tipo_cultivo') || k.includes('corrida_algas'))) return 'Lab_Algas';
+  if (has((k) => k.includes('ihhnv') || k.includes('wssv') || k.includes('ahpnd'))) return 'Biomol';
+  if (has((k) => k.includes('sala') && (k.includes('machos') || k.includes('hembras') || k.includes('nauplio')))) return 'Maduracion';
+  // Registro_Supervisión comparte columnas (Intestino, Deformidad, Módulo) con
+  // Morfologia/Larvicultura; debe detectarse ANTES por su firma propia.
+  if (has((k) => k.includes('supervisor')) &&
+      has((k) => k.includes('tipo_revis') || k.includes('condici') || k.includes('acci'))) return 'Registro_Supervision';
+  if (has((k) => k.includes('intestino') || k.includes('deformidad') || k.includes('lleno'))) return 'Morfologia';
+  if (has((k) => k.includes('corrida') || k.includes('módulo') || k.includes('modulo') || k.includes('supervivencia'))) return 'Larvicultura';
+  return rawTitle || ('Hoja' + (gid + 1));
+}
+
+// ---------- normalización de filas ----------
+function stampRows(rows, name) {
+  const origin = classifyOrigin(name);
+  const isTanque = origin === 'Control_Tanque';
+  const isLarv = origin === 'Larvicultura';
+  const modStamp = (isTanque || isLarv) ? moduleFromTabName(name, isTanque) : null;
+  rows.forEach((row) => {
+    row._SheetOrigin = origin;
+    if (modStamp) {
+      if (isLarv) {
+        row['Módulo'] = modStamp;
+      } else if (isTanque) {
+        const hasMod = F.modulo.some((k) => row[k] && String(row[k]).trim());
+        if (!hasMod) row['Módulo'] = modStamp;
+      }
+    }
+  });
+  return rows;
+}
+
+// ---------- XLSX (camino principal) ----------
+function getXLSX() {
+  const X = window.XLSX;
+  if (!X) throw new Error('SheetJS (XLSX) no disponible — revisa el <script> CDN en index.html.');
+  return X;
+}
+
+async function fetchWorkbook(ids) {
+  const realId = ids.type === 'real' ? ids.realId : null;
+  if (!realId) return null;
+  const url = `https://docs.google.com/spreadsheets/d/${realId}/export?format=xlsx&_cb=${Math.floor(Date.now() / 30000)}`;
+  const resp = await fetchWithTimeout(url, { cache: 'no-store' });
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  const buf = await resp.arrayBuffer();
+  const XLSX = getXLSX();
+  const wb = XLSX.read(new Uint8Array(buf), { type: 'array', cellDates: true });
+  return wb?.SheetNames?.length ? wb : null;
+}
+
+/** Convierte un workbook XLSX en el store de hojas { name: rows[] }. */
+function workbookToSheets(wb) {
+  const XLSX = getXLSX();
+  const sheets = {};
+  wb.SheetNames.forEach((name) => {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '', raw: false, dateNF: 'dd/mm/yyyy' });
+    if (rows?.length) sheets[name] = stampRows(rows, name);
+  });
+  return sheets;
+}
+
+// ---------- CSV (fallback) ----------
+function parseCSVLine(line) {
+  const out = []; let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { if (inQ && line[i + 1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+    else if (ch === ',' && !inQ) { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const headers = parseCSVLine(lines[0]).map((h) => h.trim());
+  const validIdx = headers.map((h, i) => (h ? i : -1)).filter((i) => i >= 0);
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const vals = parseCSVLine(lines[i]);
+    if (!vals.length) continue;
+    const row = {};
+    validIdx.forEach((k) => { row[headers[k]] = vals[k] !== undefined ? vals[k].trim() : ''; });
+    rows.push(row);
+  }
+  return rows;
+}
+
+function buildCsvUrl(ids, gid = 0) {
+  const bust = '&_cb=' + Math.floor(Date.now() / 60000);
+  if (ids.type === 'pub') {
+    const base = `https://docs.google.com/spreadsheets/d/e/${ids.pubId}/pub?output=csv`;
+    return (gid === 0 ? base : base + '&gid=' + gid) + bust;
+  }
+  return `https://docs.google.com/spreadsheets/d/${ids.realId}/gviz/tq?tqx=out:csv&gid=${gid}${bust}`;
+}
+
+async function fetchCSV(url, retries = 2) {
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const r = await fetchWithTimeout(url, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      let text = await r.text();
+      if (/^<!DOCTYPE|^<html/i.test(text.trim())) {
+        throw new Error('Documento no accesible. Compártelo como "Cualquier persona con el enlace" o publícalo (Archivo → Compartir → Publicar en la web).');
+      }
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+      return text;
+    } catch (e) {
+      lastErr = e;
+      if (attempt < retries) await new Promise((res) => setTimeout(res, 600 * 2 ** attempt));
+    }
+  }
+  throw lastErr;
+}
+
+/** Descubre los gid (>0) de las pestañas mediante scraping del HTML publicado. */
+async function discoverGids(ids) {
+  const list = [];
+  let realId = ids.type === 'real' ? ids.realId : null;
+  if (!realId && ids.type === 'pub') {
+    try {
+      const r = await fetchWithTimeout(`https://docs.google.com/spreadsheets/d/e/${ids.pubId}/pub`, { cache: 'no-store' });
+      const m = (await r.text()).match(/spreadsheets\/d\/([a-zA-Z0-9_-]{20,})/);
+      if (m) realId = m[1];
+    } catch (_) {}
+  }
+  try {
+    const htmlUrl = ids.type === 'pub'
+      ? `https://docs.google.com/spreadsheets/d/e/${ids.pubId}/pub`
+      : `https://docs.google.com/spreadsheets/d/${ids.realId}/pub`;
+    const r = await fetchWithTimeout(htmlUrl, { cache: 'no-store' });
+    if (r.ok) {
+      const html = await r.text();
+      const seen = new Set([0]);
+      [/[?&#"'=]gid=(\d{4,})/g, /"gid"\s*:\s*"(\d+)"/g, /data-gid="(\d+)"/g].forEach((re) => {
+        let m; while ((m = re.exec(html)) !== null) { const g = +m[1]; if (g > 0 && !seen.has(g)) { seen.add(g); list.push({ gid: g, title: '' }); } }
+      });
+      const titleRe = /gid=(\d+)[^>]{0,200}>([^<]{1,60})<\/(?:a|li|span)/g;
+      let m; while ((m = titleRe.exec(html)) !== null) {
+        const g = +m[1], t = m[2].trim().replace(/&amp;/g, '&');
+        const ex = list.find((x) => x.gid === g);
+        if (ex && !ex.title && t) ex.title = t;
+      }
+    }
+  } catch (_) {}
+  return list;
+}
+
+async function fetchViaCsv(ids) {
+  const sheets = {};
+  const first = parseCSV(await fetchCSV(buildCsvUrl(ids, 0)));
+  if (first.length) {
+    const name = detectSheetName(first, 0);
+    sheets[name] = stampRows(first, name);
+  }
+  for (const { gid, title } of await discoverGids(ids)) {
+    if (!gid) continue;
+    try {
+      const rows = parseCSV(await fetchCSV(buildCsvUrl(ids, gid), 1));
+      if (!rows.length) continue;
+      const name = title || detectSheetName(rows, gid);
+      if (!sheets[name]) sheets[name] = stampRows(rows, name);
+    } catch (_) {}
+  }
+  return sheets;
+}
+
+// ---------- pipeline público ----------
+/** Aplana { name: rows } → globalData y emite eventos. */
+function commit(sheets, firstLoad) {
+  const rows = [];
+  for (const name in sheets) rows.push(...sheets[name]);
+  if (!rows.length) throw new Error('Sin datos en las hojas.');
+
+  clearDateCache();
+  store.globalData = rows;
+  store.sheetNames = Object.keys(sheets);
+
+  let latest = 0;
+  rows.forEach((row) => {
+    const d = parseAnyDate(getField(row, F.fecha));
+    if (d && !isNaN(d) && d.getTime() > latest) latest = d.getTime();
+  });
+  store.latestDateMs = latest;
+
+  try { autoCalcMortalidad(rows); } catch (_) {}
+  store.connected = true;
+  emit(EV.DATA, { firstLoad });
+}
+
+/** Hash rodante barato (djb2) sobre el JSON de todas las filas. */
+function hashRows(rows) {
+  let h = 5381;
+  for (let i = 0; i < rows.length; i++) {
+    const s = JSON.stringify(rows[i]);
+    for (let j = 0; j < s.length; j++) h = ((h << 5) + h + s.charCodeAt(j)) | 0;
+  }
+  return h >>> 0;
+}
+
+/** Huella de datos para detectar cambios sin re-render innecesario.
+ *  Antes muestreaba solo 3 filas (primera/última/media) y se perdía cambios en
+ *  filas intermedias; ahora hashea TODAS las filas (fix D3). Corre 1×/refresco. */
+export function dataFingerprint(sheets) {
+  let fp = '';
+  for (const name in sheets) {
+    const rows = sheets[name];
+    if (!rows?.length) continue;
+    fp += `${name}:${rows.length}:${hashRows(rows)};`;
+  }
+  return fp;
+}
+
+/** Descarga las hojas (XLSX-first, CSV fallback) y devuelve { name: rows }. */
+export async function fetchAllSheets() {
+  const ids = parseSheetsIds(activeUrl());
+  if (!ids) throw new Error('URL de Google Sheets inválida.');
+  try {
+    const wb = await fetchWorkbook(ids);
+    if (wb) return workbookToSheets(wb);
+  } catch (_) { /* cae al fallback CSV */ }
+  return fetchViaCsv(ids);
+}
+
+/** Conexión inicial: descarga + commit + emisión de estado. */
+export async function connectSheets() {
+  emit(EV.CONN, { state: 'connecting', label: 'Descargando datos…' });
+  try {
+    const firstLoad = !store.connected;
+    const sheets = await fetchAllSheets();
+    commit(sheets, firstLoad);
+    const n = store.sheetNames.length;
+    const ts = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
+    emit(EV.CONN, { state: 'connected', label: `${n} hoja${n > 1 ? 's' : ''} · ${ts}` });
+    return true;
+  } catch (err) {
+    const msg = err?.name === 'AbortError'
+      ? `Timeout (${FETCH_TIMEOUT_MS / 1000}s) — reintentar`
+      : (err?.message || 'Error desconocido');
+    emit(EV.CONN, { state: 'error', label: msg.length > 60 ? msg.slice(0, 57) + '…' : msg });
+    return false;
+  }
+}

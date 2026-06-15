@@ -1,0 +1,242 @@
+/* ============================================================
+   BIOLOGÍA MOLECULAR — port de BIOMOL.html (D3), namespaced
+   bajo .biomol y adaptado al tema del sistema (claro/oscuro).
+   ============================================================ */
+.biomol {
+  /* Tokens claros por defecto */
+  --bm-bg: #f4f7fb; --bm-surface: #ffffff; --bm-surface2: #eef2f8; --bm-border: #dce3ec;
+  --bm-text: #1e293b; --bm-muted: #64748b; --bm-accent: #0284c7; --bm-accent-soft: #e0f2fe; --bm-grid: #e6ebf3;
+  --bm-font: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  background: var(--bm-bg); color: var(--bm-text); font-family: var(--bm-font); font-size: 13px;
+}
+[data-theme="dark"] .biomol {
+  --bm-bg: #0b0f1a; --bm-surface: #131929; --bm-surface2: #1c2540; --bm-border: #242e4a;
+  --bm-text: #e2e8f0; --bm-muted: #8892aa; --bm-accent: #38bdf8; --bm-accent-soft: #1e3a5f; --bm-grid: #1e293b;
+}
+.biomol .shell { max-width: 1440px; margin: 0 auto; }
+.biomol *::-webkit-scrollbar { height: 8px; width: 8px; }
+.biomol *::-webkit-scrollbar-thumb { background: var(--bm-surface2); border-radius: 4px; }
+
+/* Header */
+.biomol .bm-header { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; border-bottom: 1px solid var(--bm-border); padding-bottom: 16px; }
+.biomol .header-icon { width: 40px; height: 40px; background: linear-gradient(135deg, #0ea5e9, #6366f1); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+.biomol .header-title { font-size: 19px; font-weight: 800; color: var(--bm-text); }
+.biomol .header-sub { font-size: 12px; color: var(--bm-muted); margin-top: 2px; }
+.biomol .header-right { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.biomol .pill { background: var(--bm-surface2); border: 1px solid var(--bm-border); border-radius: 20px; padding: 4px 12px; font-size: 11px; color: var(--bm-muted); }
+.biomol .pill.active { background: var(--bm-accent-soft); border-color: var(--bm-accent); color: var(--bm-accent); }
+
+/* Filterbar */
+.biomol .filterbar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; padding: 12px 16px; background: var(--bm-surface); border: 1px solid var(--bm-border); border-radius: 12px; }
+.biomol .fb-group { display: flex; align-items: center; gap: 8px; }
+.biomol .fb-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--bm-muted); white-space: nowrap; }
+.biomol .fb-sep { width: 1px; height: 28px; background: var(--bm-border); }
+.biomol .fb-pills { display: flex; gap: 4px; flex-wrap: wrap; }
+.biomol .filter-btn { background: var(--bm-surface2); border: 1px solid var(--bm-border); border-radius: 6px; padding: 4px 10px; font-size: 11px; color: var(--bm-muted); cursor: pointer; transition: all .15s; font-family: var(--bm-font); }
+.biomol .filter-btn:hover { border-color: var(--bm-accent); color: var(--bm-accent); }
+.biomol .filter-btn.on { background: var(--bm-accent-soft); border-color: var(--bm-accent); color: var(--bm-accent); font-weight: 600; }
+.biomol .fb-dropdown-wrap { position: relative; }
+.biomol .fb-trigger { background: var(--bm-surface2); border: 1px solid var(--bm-border); border-radius: 8px; padding: 5px 12px; font-size: 11px; color: var(--bm-text); cursor: pointer; display: flex; align-items: center; gap: 8px; min-width: 140px; justify-content: space-between; font-family: var(--bm-font); transition: border-color .15s; }
+.biomol .fb-trigger:hover, .biomol .fb-trigger.open { border-color: var(--bm-accent); color: var(--bm-accent); }
+.biomol .fb-caret { font-size: 9px; color: var(--bm-muted); }
+.biomol .fb-panel { position: absolute; top: calc(100% + 6px); left: 0; min-width: 220px; background: var(--bm-surface); border: 1px solid var(--bm-border); border-radius: 10px; z-index: 500; box-shadow: 0 8px 32px rgba(0,0,0,.25); padding: 10px 0 6px; }
+.biomol .fb-panel.hidden { display: none; }
+.biomol .fb-search-row { padding: 0 10px 8px; }
+.biomol .fb-search { width: 100%; background: var(--bm-surface2); border: 1px solid var(--bm-border); border-radius: 6px; padding: 5px 8px; color: var(--bm-text); font-size: 11px; font-family: var(--bm-font); outline: none; }
+.biomol .fb-search:focus { border-color: var(--bm-accent); }
+.biomol .fb-actions { display: flex; gap: 4px; padding: 0 10px 6px; }
+.biomol .fb-action-btn { background: none; border: 1px solid var(--bm-border); border-radius: 5px; padding: 2px 9px; font-size: 10px; color: var(--bm-muted); cursor: pointer; font-family: var(--bm-font); }
+.biomol .fb-action-btn:hover { border-color: var(--bm-accent); color: var(--bm-accent); }
+.biomol .fb-check-list { max-height: 200px; overflow-y: auto; padding: 0 10px; }
+.biomol .fb-check-item { display: flex; align-items: center; gap: 8px; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 11px; color: var(--bm-text); }
+.biomol .fb-check-item:hover { background: var(--bm-surface2); }
+.biomol .fb-check-item input[type=checkbox] { accent-color: var(--bm-accent); width: 13px; height: 13px; cursor: pointer; flex-shrink: 0; }
+.biomol .fb-check-item.hidden-item { display: none; }
+.biomol .fb-date-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.biomol .fb-preset-group { display: flex; gap: 3px; }
+.biomol .fb-preset { background: var(--bm-surface2); border: 1px solid var(--bm-border); border-radius: 6px; padding: 4px 9px; font-size: 11px; color: var(--bm-muted); cursor: pointer; font-family: var(--bm-font); transition: all .15s; }
+.biomol .fb-preset:hover { border-color: var(--bm-accent); color: var(--bm-accent); }
+.biomol .fb-preset.on { background: var(--bm-accent-soft); border-color: var(--bm-accent); color: var(--bm-accent); font-weight: 600; }
+.biomol .fb-date-inputs { display: flex; align-items: center; gap: 5px; }
+.biomol .fb-date-input { background: var(--bm-surface2); border: 1px solid var(--bm-border); border-radius: 6px; padding: 4px 7px; color: var(--bm-text); font-size: 11px; font-family: var(--bm-font); outline: none; }
+.biomol .fb-date-input:focus { border-color: var(--bm-accent); }
+.biomol .fb-chips { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+.biomol .fb-chip { background: var(--bm-accent-soft); border: 1px solid var(--bm-accent); border-radius: 20px; padding: 3px 10px; font-size: 10px; color: var(--bm-accent); display: flex; align-items: center; gap: 5px; }
+.biomol .fb-chip-x { cursor: pointer; opacity: .7; font-size: 11px; line-height: 1; }
+.biomol .fb-chip-x:hover { opacity: 1; }
+.biomol .report-trigger-btn { background: linear-gradient(135deg, #0ea5e9, #6366f1); border: none; border-radius: 8px; padding: 6px 16px; font-size: 12px; font-weight: 700; color: #fff; cursor: pointer; font-family: var(--bm-font); letter-spacing: .04em; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(14,165,233,.25); transition: transform .15s, box-shadow .15s; }
+.biomol .report-trigger-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(14,165,233,.4); }
+.biomol .aud-btn { background: linear-gradient(135deg, #64748b, #334155); }
+.biomol .aud-btn.on { background: linear-gradient(135deg, #ef4444, #b91c1c); box-shadow: 0 4px 12px rgba(239,68,68,.35); }
+
+/* Grids + cards */
+.biomol .grid-kpi { display: grid; grid-template-columns: repeat(8, minmax(0,1fr)); gap: 10px; margin-bottom: 18px; }
+.biomol .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.biomol .grid-3-1 { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 14px; }
+.biomol .grid-full { margin-bottom: 14px; }
+@media (max-width: 1280px) { .biomol .grid-kpi { grid-template-columns: repeat(4, minmax(0,1fr)); } }
+@media (max-width: 1100px) { .biomol .grid-kpi { grid-template-columns: repeat(3, minmax(0,1fr)); } .biomol .grid-2, .biomol .grid-3-1 { grid-template-columns: 1fr; } }
+.biomol .card { background: var(--bm-surface); border: 1px solid var(--bm-border); border-radius: 12px; padding: 16px; position: relative; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+.biomol .card-header { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.biomol .card-title-text { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--bm-muted); display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.biomol .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.biomol .fs-btn { background: none; border: 1px solid var(--bm-border); border-radius: 6px; color: var(--bm-muted); cursor: pointer; padding: 3px 8px; font-size: 13px; line-height: 1; transition: all .15s; flex-shrink: 0; font-family: var(--bm-font); }
+.biomol .fs-btn:hover { border-color: var(--bm-accent); color: var(--bm-accent); background: var(--bm-accent-soft); }
+.biomol .chart-scroll { width: 100%; overflow-x: auto; overflow-y: hidden; }
+.biomol .chart-scroll > svg { display: block; }
+.biomol .chart-ph { display: grid; place-items: center; min-height: 180px; color: var(--bm-muted); font-size: 12px; font-weight: 600; border: 1px dashed var(--bm-border); border-radius: 8px; background: var(--bm-surface2); }
+
+/* KPI cards */
+.biomol .kpi { padding: 14px 16px; }
+.biomol .kpi-glow { position: absolute; top: -20px; right: -20px; width: 80px; height: 80px; border-radius: 50%; opacity: .07; pointer-events: none; }
+.biomol .kpi-label { font-size: 11px; color: var(--bm-muted); margin-top: 4px; }
+.biomol .kpi-value { font-size: 28px; font-weight: 800; line-height: 1; color: var(--bm-text); }
+.biomol .kpi-sub { font-size: 11px; margin-top: 6px; font-weight: 600; }
+.biomol .kpi-bar { height: 3px; border-radius: 2px; margin-top: 8px; background: var(--bm-border); overflow: hidden; }
+.biomol .kpi-bar-fill { height: 100%; border-radius: 2px; transition: width .4s; }
+.biomol .k-ihhnv .kpi-value { color: #ef4444; } .biomol .k-ihhnv .kpi-glow { background: #ef4444; } .biomol .k-ihhnv .kpi-bar-fill { background: #ef4444; }
+.biomol .k-wssv .kpi-value { color: #f59e0b; } .biomol .k-wssv .kpi-glow { background: #f59e0b; } .biomol .k-wssv .kpi-bar-fill { background: #f59e0b; }
+.biomol .k-bp .kpi-value { color: #a78bfa; } .biomol .k-bp .kpi-glow { background: #a78bfa; } .biomol .k-bp .kpi-bar-fill { background: #a78bfa; }
+.biomol .k-ahpnd .kpi-value { color: #38bdf8; } .biomol .k-ahpnd .kpi-glow { background: #38bdf8; } .biomol .k-ahpnd .kpi-bar-fill { background: #38bdf8; }
+.biomol .k-nhpb .kpi-value { color: #14b8a6; } .biomol .k-nhpb .kpi-glow { background: #14b8a6; } .biomol .k-nhpb .kpi-bar-fill { background: #14b8a6; }
+.biomol .k-ehp .kpi-value { color: #ec4899; } .biomol .k-ehp .kpi-glow { background: #ec4899; } .biomol .k-ehp .kpi-bar-fill { background: #ec4899; }
+.biomol .kpi-clickable { cursor: pointer; transition: transform .15s ease, border-color .15s ease; }
+.biomol .kpi-clickable:hover { border-color: var(--bm-accent); transform: translateY(-1px); }
+
+/* Tabs + legend */
+.biomol .tab-row { display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap; }
+.biomol .tab { background: var(--bm-surface2); border: 1px solid var(--bm-border); border-radius: 6px; padding: 4px 10px; font-size: 11px; color: var(--bm-muted); cursor: pointer; transition: all .15s; font-family: var(--bm-font); }
+.biomol .tab.on { background: var(--bm-accent-soft); border-color: var(--bm-accent); color: var(--bm-accent); }
+.biomol .legend { display: flex; gap: 14px; margin-top: 8px; flex-wrap: wrap; }
+.biomol .leg-item { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--bm-muted); }
+.biomol .leg-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.biomol .leg-rect { width: 14px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.biomol .suppress-bar { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 4px; align-items: center; }
+
+/* Modal (detalle de muestras) */
+.biomol .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 10000; padding: 20px; }
+.biomol .modal-overlay.open { display: flex; }
+.biomol .modal-content { background: var(--bm-surface); border: 1px solid var(--bm-border); border-radius: 12px; max-width: 980px; width: 100%; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+.biomol .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--bm-border); gap: 12px; }
+.biomol .modal-title { font-size: 14px; font-weight: 700; color: var(--bm-text); margin: 0; }
+.biomol .modal-close { background: none; border: 1px solid var(--bm-border); border-radius: 6px; color: var(--bm-muted); cursor: pointer; padding: 4px 12px; font-size: 12px; font-family: var(--bm-font); }
+.biomol .modal-close:hover { border-color: var(--bm-accent); color: var(--bm-accent); background: var(--bm-accent-soft); }
+.biomol .modal-body { padding: 14px 18px; overflow: auto; }
+.biomol .modal-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.biomol .modal-table th { position: sticky; top: 0; background: var(--bm-surface2); color: var(--bm-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--bm-border); white-space: nowrap; }
+.biomol .modal-table td { padding: 7px 10px; border-bottom: 1px solid var(--bm-border); color: var(--bm-text); }
+.biomol .modal-table tr:hover td { background: var(--bm-surface2); }
+.biomol .modal-table td.num { text-align: center; font-variant-numeric: tabular-nums; }
+.biomol .modal-table td.muted { color: var(--bm-muted); }
+.biomol .modal-table td.accent { color: var(--bm-accent); font-weight: 700; }
+.biomol .modal-table tr.total-row td { font-weight: 700; border-top: 2px solid var(--bm-border); background: var(--bm-surface2); }
+
+/* SVG texto */
+.biomol .hm-label { fill: var(--bm-muted); font-size: 10px; font-family: var(--bm-font); }
+.biomol .hm-val { fill: #fff; font-size: 9px; font-weight: 700; font-family: var(--bm-font); text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+.biomol svg text { user-select: none; }
+
+/* Tooltip */
+#bm-tooltip { position: fixed; background: var(--bm-surface); border: 1px solid var(--bm-accent); border-radius: 8px; padding: 10px 14px; font-size: 12px; pointer-events: none; opacity: 0; z-index: 99999; max-width: 240px; box-shadow: 0 8px 24px rgba(0,0,0,.25); transition: opacity .1s; color: var(--bm-text); font-family: var(--bm-font); }
+.biomol .tt-title, #bm-tooltip .tt-title { font-weight: 700; color: var(--bm-accent); margin-bottom: 4px; font-size: 11px; }
+#bm-tooltip .tt-row { display: flex; justify-content: space-between; gap: 14px; margin-top: 2px; }
+#bm-tooltip .tt-key { color: var(--bm-muted); }
+#bm-tooltip .tt-val { font-weight: 600; }
+#bm-tooltip .pos-tag { color: #ef4444; } #bm-tooltip .neg-tag { color: #22c55e; }
+
+/* Tabla de registros */
+.biomol .tbl-wrap { overflow-x: auto; max-height: 320px; overflow-y: auto; }
+.biomol table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.biomol th { position: sticky; top: 0; background: var(--bm-surface2); color: var(--bm-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--bm-border); }
+.biomol td { padding: 6px 10px; border-bottom: 1px solid var(--bm-border); color: var(--bm-text); }
+.biomol tr:hover td { background: var(--bm-surface2); }
+.biomol .badge { border-radius: 4px; padding: 2px 7px; font-size: 10px; font-weight: 700; display: inline-block; }
+.biomol .badge-pos { background: rgba(239,68,68,.15); color: #ef4444; }
+.biomol .badge-neg { background: rgba(34,197,94,.13); color: #16a34a; }
+.biomol .badge-na { background: var(--bm-surface2); color: var(--bm-muted); }
+
+/* Suppress chips */
+.biomol .sup-bar-lbl { font-size: 10px; color: var(--bm-muted); font-weight: 700; }
+.biomol .sup-chip { font-size: 10px; background: var(--bm-surface2); border: 1px solid var(--bm-border); border-radius: 12px; padding: 2px 9px; cursor: pointer; color: var(--bm-muted); }
+.biomol .sup-chip:hover { border-color: var(--bm-accent); color: var(--bm-accent); }
+.biomol .sup-chip-clear { border-style: dashed; }
+
+/* Export / reload button */
+.biomol .reload-btn { background: var(--bm-surface2); border: 1px solid var(--bm-border); border-radius: 8px; padding: 5px 12px; font-size: 11px; color: var(--bm-muted); cursor: pointer; font-family: var(--bm-font); }
+.biomol .reload-btn:hover { border-color: var(--bm-accent); color: var(--bm-accent); }
+
+/* Fullscreen */
+.biomol .card.is-fs { position: fixed !important; inset: 0; width: 100vw !important; height: 100vh !important; z-index: 9990; border-radius: 0; padding: 20px 24px; display: flex; flex-direction: column; overflow: hidden; }
+.biomol .card.is-fs > svg { flex: 1 1 0; width: 100% !important; height: 0 !important; min-height: 0; display: block; }
+.biomol .card.is-fs > .chart-scroll { flex: 1 1 0; min-height: 0; overflow: auto; width: 100%; }
+.biomol .card.is-fs .tbl-wrap { flex: 1; max-height: none; overflow-y: auto; }
+.biomol .card.is-fs .tab-row, .biomol .card.is-fs .legend, .biomol .card.is-fs .card-header, .biomol .card.is-fs .suppress-bar { flex-shrink: 0; }
+#bm-fs-exit { position: fixed; top: 14px; right: 14px; z-index: 9999; background: var(--bm-accent-soft); border: 1px solid var(--bm-accent); border-radius: 8px; padding: 7px 16px; color: var(--bm-accent); font-size: 12px; cursor: pointer; font-family: 'Inter', system-ui, sans-serif; display: none; }
+
+/* Sankey · controles */
+.biomol .sankey-controls { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.biomol .sankey-controls .tab-row { margin: 0; }
+.biomol .sankey-mode-btn { background: none; border: 1px solid var(--bm-border); border-radius: 6px; color: var(--bm-muted); cursor: pointer; padding: 3px 10px; font-size: 11px; line-height: 1.4; font-family: var(--bm-font); transition: all .15s; flex-shrink: 0; }
+.biomol .sankey-mode-btn:hover { border-color: var(--bm-accent); color: var(--bm-accent); background: var(--bm-accent-soft); }
+.biomol .sankey-mode-btn.on { background: var(--bm-accent-soft); border-color: var(--bm-accent); color: var(--bm-accent); font-weight: 600; }
+
+/* Reporte Comparativo */
+.biomol .report-modal-content { max-width: 1280px; width: 97vw; max-height: 94vh; }
+.biomol .report-body { display: flex; flex-direction: column; gap: 14px; padding-bottom: 10px; }
+.biomol .report-controls { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 10px 14px; background: var(--bm-surface2); border: 1px solid var(--bm-border); border-radius: 8px; }
+.biomol .report-control-group { display: flex; align-items: center; gap: 6px; }
+.biomol .report-ctrl-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--bm-muted); letter-spacing: .06em; }
+.biomol .report-toggle { background: var(--bm-surface); border: 1px solid var(--bm-border); border-radius: 6px; padding: 4px 11px; font-size: 11px; color: var(--bm-muted); cursor: pointer; font-family: var(--bm-font); transition: all .15s; }
+.biomol .report-toggle:hover { border-color: var(--bm-accent); color: var(--bm-accent); }
+.biomol .report-toggle.on { background: var(--bm-accent-soft); border-color: var(--bm-accent); color: var(--bm-accent); font-weight: 600; }
+.biomol .report-add-btn { margin-left: auto; background: linear-gradient(135deg, #0ea5e9, #6366f1); border: none; border-radius: 6px; padding: 5px 14px; font-size: 11px; font-weight: 600; color: #fff; cursor: pointer; font-family: var(--bm-font); }
+.biomol .report-add-btn:disabled { opacity: .4; cursor: not-allowed; filter: grayscale(.5); }
+.biomol .report-series-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.biomol .report-series-card { background: var(--bm-surface2); border: 1px solid var(--bm-border); border-radius: 8px; padding: 10px 12px; border-left: 4px solid var(--bm-accent); display: flex; flex-direction: column; gap: 7px; }
+.biomol .rs-header { display: flex; align-items: center; justify-content: space-between; }
+.biomol .rs-title { font-size: 12px; font-weight: 700; }
+.biomol .rs-remove { background: none; border: 1px solid var(--bm-border); border-radius: 4px; color: var(--bm-muted); font-size: 11px; cursor: pointer; padding: 2px 8px; font-family: var(--bm-font); }
+.biomol .rs-remove:hover { border-color: #ef4444; color: #ef4444; }
+.biomol .rs-label { font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: var(--bm-muted); font-weight: 700; display: flex; align-items: center; gap: 6px; }
+.biomol .rs-count { color: var(--bm-accent); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 10px; }
+.biomol .rs-input { background: var(--bm-surface); border: 1px solid var(--bm-border); border-radius: 5px; padding: 4px 8px; color: var(--bm-text); font-size: 11px; font-family: var(--bm-font); outline: none; width: 100%; }
+.biomol .rs-input:focus { border-color: var(--bm-accent); }
+.biomol .rs-date-row { display: flex; align-items: center; gap: 5px; }
+.biomol .rs-date-row .rs-input { flex: 1; }
+.biomol .rs-mini-row { display: flex; gap: 4px; }
+.biomol .rs-mini { background: none; border: 1px solid var(--bm-border); border-radius: 4px; color: var(--bm-muted); font-size: 10px; cursor: pointer; padding: 2px 8px; font-family: var(--bm-font); }
+.biomol .rs-mini:hover { border-color: var(--bm-accent); color: var(--bm-accent); }
+.biomol .rs-lugar-list { max-height: 96px; overflow-y: auto; background: var(--bm-surface); border: 1px solid var(--bm-border); border-radius: 5px; padding: 4px; }
+.biomol .rs-lugar-item { display: flex; align-items: center; gap: 6px; padding: 2px 5px; font-size: 11px; cursor: pointer; border-radius: 3px; color: var(--bm-text); }
+.biomol .rs-lugar-item:hover { background: var(--bm-surface2); }
+.biomol .rs-lugar-item input { accent-color: var(--bm-accent); width: 12px; height: 12px; cursor: pointer; }
+.biomol .report-chart-wrap { background: var(--bm-surface2); border: 1px solid var(--bm-border); border-radius: 8px; padding: 12px; }
+.biomol .report-chart-wrap svg { display: block; width: 100%; }
+.biomol .report-metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 8px; }
+.biomol .report-metric-card { background: var(--bm-surface2); border: 1px solid var(--bm-border); border-radius: 8px; padding: 10px 12px; border-left: 3px solid var(--bm-accent); }
+.biomol .rm-title { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+.biomol .rm-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px 12px; }
+.biomol .rm-cell { display: flex; flex-direction: column; gap: 2px; }
+.biomol .rm-label { font-size: 9px; text-transform: uppercase; color: var(--bm-muted); letter-spacing: .05em; font-weight: 600; }
+.biomol .rm-val { font-size: 14px; font-weight: 700; color: var(--bm-text); }
+.biomol .rm-val-sm { font-size: 11px; font-weight: 600; color: var(--bm-text); }
+
+/* Secciones del reporte (bracket + análisis) */
+.biomol .bracket-section { background: var(--bm-surface); border: 1px solid var(--bm-border); border-radius: 10px; padding: 14px; margin-top: 4px; }
+.biomol .bracket-section-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.biomol .bracket-section-title { font-size: 13px; font-weight: 700; color: var(--bm-text); margin: 0; }
+.biomol .bracket-controls { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.biomol .bracket-ctrl { display: flex; flex-direction: column; gap: 3px; }
+.biomol .bracket-ctrl-label { font-size: 9px; font-weight: 700; text-transform: uppercase; color: var(--bm-muted); letter-spacing: .06em; }
+.biomol .bracket-ctrl .rs-input { min-width: 110px; }
+.biomol .bracket-sync-btn { background: var(--bm-surface2); border: 1px solid var(--bm-border); border-radius: 6px; padding: 5px 12px; font-size: 10px; color: var(--bm-muted); cursor: pointer; font-family: var(--bm-font); text-transform: uppercase; font-weight: 700; letter-spacing: .04em; }
+.biomol .bracket-sync-btn:hover { border-color: var(--bm-accent); color: var(--bm-accent); background: var(--bm-accent-soft); }
+.biomol .bracket-wrap { background: var(--bm-surface2); border: 1px solid var(--bm-border); border-radius: 8px; padding: 10px; overflow: auto; }
+.biomol .bracket-wrap svg { display: block; width: 100%; height: auto; }
+.biomol .bracket-popover { position: fixed; background: var(--bm-surface); border: 1px solid var(--bm-accent); border-radius: 10px; padding: 10px 12px; z-index: 99999; box-shadow: 0 12px 36px rgba(0,0,0,.35); width: 360px; max-width: 95vw; color: var(--bm-text); font-family: var(--bm-font); }
+.biomol .bracket-pop-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; gap: 10px; }
+.biomol .bracket-pop-title { font-size: 11px; font-weight: 700; color: var(--bm-accent); flex: 1; min-width: 0; }
+.biomol .bracket-pop-close { background: none; border: 1px solid var(--bm-border); border-radius: 5px; color: var(--bm-muted); cursor: pointer; padding: 2px 8px; font-size: 11px; font-family: var(--bm-font); }
+.biomol .bracket-pop-close:hover { border-color: var(--bm-accent); color: var(--bm-accent); }
+.biomol .modal-table td.accent { color: var(--bm-accent); font-weight: 700; }
+.biomol .modal-table td.num { text-align: center; font-variant-numeric: tabular-nums; }

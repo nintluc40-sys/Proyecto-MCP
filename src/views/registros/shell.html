@@ -1,0 +1,237 @@
+<div id="rgLogin">
+  <div class="lg-title">Sistema de Fichas</div>
+  <div class="lg-sub">Registro diario de tanques</div>
+
+  <div class="lg-card">
+    <span class="lg-section">Selecciona tu módulo</span>
+    <div class="mod-grid" id="mod-grid"></div>
+
+    <span class="lg-section" style="margin-top:4px;display:block">PIN de acceso</span>
+    <div class="pin-row">
+      <input type="password" class="pin-in" id="pin" maxlength="6"
+             placeholder="• • • • • •"
+             aria-label="PIN de acceso"
+             autocomplete="off"
+             inputmode="numeric"
+             pattern="\d*"
+             oninput="chkPin()"
+             onkeydown="if(event.key==='Enter'){enter();}">
+    </div>
+    <p class="pin-note">Ingresa el PIN asignado a tu módulo para acceder</p>
+
+    <button class="btn-enter" id="btn-go" type="button" onclick="enter()" disabled aria-label="Acceder al módulo seleccionado">
+      Acceder al Módulo <span id="btn-lbl">—</span> →
+    </button>
+  </div>
+</div>
+
+<!-- ════════════════ APP ════════════════ -->
+<div id="rgApp">
+  <header class="topbar" role="banner">
+    <div class="tb-brand">🦐 Larvicultura</div>
+    <div class="tb-badge" id="tb-badge">M—</div>
+    <div class="tb-r">
+      <div class="spill-bar" role="status" aria-live="polite">
+        <span class="sdot idle" id="sdot" aria-hidden="true"></span>
+        <span id="slbl">Sin datos pendientes</span>
+      </div>
+      <button class="tbtn" type="button" onclick="syncAll()" aria-label="Sincronizar fichas con Google Sheets">🔄 Sincronizar</button>
+      <button class="tbtn" type="button" onclick="openCfg()" aria-label="Abrir configuración">⚙ Config</button>
+      <button class="tbtn" type="button" onclick="goBack()" aria-label="Volver a selección de módulo">← Cambiar módulo</button>
+    </div>
+  </header>
+
+  <!-- (Nota del módulo eliminada por decisión del usuario: nadie la usaba.) -->
+
+  <!-- Dynamic tab bar — rebuilt by buildTabs() on enter() -->
+  <nav class="ftabs" id="ftabs" role="tablist" aria-label="Fichas del módulo"></nav>
+
+  <main class="main" role="main">
+    <div class="fp on" id="fp-calidad"></div>
+    <div class="fp" id="fp-plg"></div>
+    <div class="fp" id="fp-params"></div>
+    <div class="fp" id="fp-poblacion"></div>
+    <div class="fp" id="fp-calagua"></div>
+    <div class="fp" id="fp-despacho"></div>
+    <div class="fp" id="fp-desinfeccion"></div>
+    <div class="fp" id="fp-algas"></div>
+    <div class="fp" id="fp-bitacora"></div>
+    <div class="fp" id="fp-fotos"></div>
+    <div class="fp" id="fp-historial"></div>
+    <div class="fp" id="fp-blanco"></div>
+    <div class="fp" id="fp-salas"></div>
+    <div class="fp" id="fp-tanques"></div>
+    <div class="fp" id="fp-lotes"></div>
+    <div class="fp" id="fp-biomol"></div>
+    <div class="fp" id="fp-ast"></div>
+    <div class="fp" id="fp-micnuevo"></div>
+    <div class="fp" id="fp-michist"></div>
+    <div class="fp" id="fp-micfact"></div>
+    <div class="fp" id="fp-micrep"></div>
+  </main>
+</div>
+
+<div class="ta" id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
+<div id="foto-lb" role="dialog" aria-modal="true" aria-label="Visor de medios" onclick="closeLb()">
+  <button id="foto-lb-x" type="button" aria-label="Cerrar visor" onclick="closeLb()">✕</button>
+  <img id="foto-lb-img" src="" alt="Vista ampliada" style="display:none">
+  <video id="foto-lb-vid" src="" controls playsinline style="display:none;max-width:94vw;max-height:90vh;border-radius:8px;box-shadow:0 0 80px rgba(0,0,0,.6)"></video>
+</div>
+
+
+<!-- CFG MODAL -->
+<div class="ov" id="cfg-ov" role="dialog" aria-modal="true" aria-labelledby="cfg-title" onclick="closeCfgOut(event)">
+  <div class="modal">
+    <div class="mh">
+      <div class="mtitle" id="cfg-title">⚙ Configuración · Google Sheets</div>
+      <button type="button" aria-label="Cerrar configuración" onclick="closeCfg()" style="background:rgba(255,255,255,.14);border:none;color:#fff;border-radius:6px;padding:3px 9px;cursor:pointer;font-size:13px">✕</button>
+    </div>
+    <div class="mb">
+      <div class="cf">
+        <label for="cfg-url">URL del Google Apps Script (Web App)</label>
+        <input type="url" id="cfg-url" placeholder="https://script.google.com/macros/s/...exec" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="cf">
+        <label for="cfg-token">Token compartido (opcional, recomendado)</label>
+        <input type="password" id="cfg-token" placeholder="Cadena secreta — debe coincidir con SHARED_TOKEN en el Apps Script" autocomplete="off" spellcheck="false" maxlength="120">
+        <span style="font-size:10.5px;color:var(--tx3);margin-top:3px">
+          Si configuras un valor aquí, debes poner el MISMO valor en la constante <code>SHARED_TOKEN</code> al inicio del script de abajo y redeplegar. Mientras esa constante esté vacía, el GAS sigue aceptando peticiones sin token (compatibilidad).
+        </span>
+      </div>
+      <div class="cn">
+        <strong>Google Spreadsheet vinculado:</strong><br>
+        <code style="font-family:var(--mono);font-size:9.5px;background:#e2e8f0;padding:2px 6px;border-radius:3px;word-break:break-all">https://docs.google.com/spreadsheets/d/1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs</code>
+        <br><br>
+        <strong>Cómo conectar:</strong><br>
+        1. Abre <strong>script.google.com</strong> → Nuevo proyecto<br>
+        2. Copia el script del campo de abajo y pégalo completo<br>
+        3. <strong>Desplegar → Web App</strong> · Ejecutar como: <em>Yo</em> · Acceso: <em>Cualquiera</em><br>
+        4. Autoriza los permisos → copia la URL del Web App<br>
+        5. Pégala arriba y haz clic en <strong>Probar</strong>
+        <br><br>
+        <strong>Hojas que se crearán/rellenarán automáticamente:</strong><br>
+        • <em>Datos Larvicultura - M01…M10</em> → Calidad + PLG + Población + Despacho + Calidad de Agua (1 fila por TQ)<br>
+        • <em>Control_Tanque M01…M10</em> → Parámetros OD/°C (1 fila por TQ × hora)<br>
+        • <em>Datos Larvicultura - CIO</em> → Igual que M01–M10 (módulo CIO)<br>
+        • <em>Control_Tanque CIO</em> → Parámetros OD/°C del módulo CIO<br>
+        • <em>Lab_Algas</em> → Registro diario de cultivo de algas<br>
+        • <em>Maduración Sala</em> → Salas (upsert por Fecha + Sala)<br>
+        • <em>Maduración Tanques</em> → Tanques (upsert por Fecha + Sala + Tanque)<br>
+        • <em>Maduración Lotes</em> → Lotes (upsert por Fecha + Sala + Fila)<br>
+        • <em>BIOMOL</em> → Diagnóstico molecular (append por muestra)<br>
+        • <em>Registro_Supervisión</em> → Supervisión técnica AsT (upsert por ID)<br>
+        • <em>Registro_Desinfección</em> → Desinfección M01–M10 + CIO (upsert por Fecha+Módulo+Tipo+Categoría+Elemento)<br>
+        • <em>Microbiología</em> / <em>Calidad de Agua</em> / <em>Patología en Fresco</em> → módulo Microbiología (reemplazo por sesión)
+      </div>
+      <div class="cf">
+        <label for="gas-code">Código Google Apps Script (copia todo esto)</label>
+        <textarea id="gas-code" readonly aria-label="Código Apps Script para copiar"></textarea>
+      </div>
+      <div class="cf">
+        <label for="cfg-tec">Técnico por defecto</label>
+        <input type="text" id="cfg-tec" placeholder="Nombre del técnico responsable" autocomplete="name" maxlength="80">
+      </div>
+      <div class="cf">
+        <label>Backup local (mitigación de pérdida de datos)</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:3px">
+          <button class="btn bs" type="button" onclick="exportBackup()" title="Descarga un JSON con TODOS los datos locales (fichas pendientes, historial, fotos, notas, CS, nombres TQ, config)">📥 Exportar todo</button>
+          <button class="btn bo" type="button" onclick="pickAndImportBackup()" title="Restaura un backup previamente exportado. Sobrescribe las claves coincidentes; no toca las demás">📤 Importar</button>
+        </div>
+        <span style="font-size:10.5px;color:var(--tx3);margin-top:3px;line-height:1.5">
+          Datos como <b>Cantidad Sembrada</b> y <b>nombres de tanques</b> SOLO existen localmente — exporta periódicamente para no perderlos si el navegador limpia el almacenamiento.
+        </span>
+      </div>
+    </div>
+    <div class="mf2">
+      <button class="btn bo" type="button" onclick="testConn()">🔗 Probar conexión</button>
+      <button class="btn bp" type="button" onclick="saveCfg()">💾 Guardar config</button>
+    </div>
+  </div>
+</div>
+
+<!-- EVG MODAL — Galería de evidencias (F2) -->
+<div class="ov" id="evg-ov" role="dialog" aria-modal="true" aria-labelledby="evg-title" onclick="closeEvGalleryOut(event)">
+  <div class="modal evg-modal">
+    <div class="mh">
+      <div class="mtitle" id="evg-title">🖼️ Galería de evidencias · <span id="evg-modlabel"></span></div>
+      <button type="button" aria-label="Cerrar galería" onclick="closeEvGallery()" style="background:rgba(255,255,255,.14);border:none;color:#fff;border-radius:6px;padding:3px 9px;cursor:pointer;font-size:13px">✕</button>
+    </div>
+    <div class="mb">
+      <div class="evg-filters">
+        <div class="cf"><label for="evg-fecha">Fecha</label><input type="date" id="evg-fecha" onchange="loadEvGallery()"></div>
+        <div class="cf"><label for="evg-corr">Corrida</label><input type="text" id="evg-corr" placeholder="Todas" oninput="evgApplyFilter()"></div>
+        <div class="cf"><label for="evg-tq">Tanque</label><input type="text" id="evg-tq" placeholder="Todos" inputmode="numeric" oninput="evgApplyFilter()"></div>
+        <button class="btn bp" type="button" onclick="loadEvGallery()">🔄 Cargar</button>
+      </div>
+      <div id="evg-status" style="font-size:12px;color:var(--tx2)"></div>
+      <div id="evg-grid" class="evg-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- CS MODAL — Cantidad Sembrada (población inicial por tanque) -->
+<div class="ov" id="cs-ov" role="dialog" aria-modal="true" aria-labelledby="cs-title" onclick="closeCSOut(event)">
+  <div class="modal cs-modal">
+    <div class="mh">
+      <div class="mtitle" id="cs-title">🌱 Cantidad Sembrada · <span id="cs-modlabel"></span></div>
+      <button type="button" aria-label="Cerrar" onclick="closeCS()" style="background:rgba(255,255,255,.14);border:none;color:#fff;border-radius:6px;padding:3px 9px;cursor:pointer;font-size:13px">✕</button>
+    </div>
+    <div class="mb">
+      <div class="tw" style="max-height:52vh;overflow-y:auto">
+        <table class="cs-table">
+          <thead>
+            <tr>
+              <th class="tqh">Tanque</th>
+              <th>Población Inicial <span style="font-weight:400;font-size:8px;opacity:.8">(en miles)</span></th>
+              <th>Real (×1000)</th>
+            </tr>
+          </thead>
+          <tbody id="cs-tbody"></tbody>
+        </table>
+      </div>
+      <div id="cs-recalc-panel"></div>
+    </div>
+    <div class="mf2 cs-foot">
+      <div class="cs-foot-l">
+        <span class="cs-summary" id="cs-summary">Total: <b>0</b></span>
+      </div>
+      <div class="cs-foot-r">
+        <button class="btn cs-clear" type="button" id="cs-clear-btn" onclick="clearCSData()">🗑 Borrar</button>
+        <button class="btn bo" type="button" onclick="recalcSurvivalForCorrida()" title="Recalcula la supervivencia de los días ya registrados de la corrida en curso con la Cantidad Sembrada guardada y los reenvía a Google Sheets">🔄 Recalcular superv.</button>
+        <button class="btn bp" type="button" onclick="saveCSData()">💾 Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TON MODAL — Toneladas por tanque (Despacho); base para Densidad cosechada -->
+<div class="ov" id="ton-ov" role="dialog" aria-modal="true" aria-labelledby="ton-title" onclick="closeTONOut(event)">
+  <div class="modal cs-modal">
+    <div class="mh">
+      <div class="mtitle" id="ton-title">⚖️ Toneladas · <span id="ton-modlabel"></span></div>
+      <button type="button" aria-label="Cerrar" onclick="closeTON()" style="background:rgba(255,255,255,.14);border:none;color:#fff;border-radius:6px;padding:3px 9px;cursor:pointer;font-size:13px">✕</button>
+    </div>
+    <div class="mb">
+      <div class="tw" style="max-height:52vh;overflow-y:auto">
+        <table class="cs-table">
+          <thead>
+            <tr>
+              <th class="tqh">Tanque</th>
+              <th>Tonelada</th>
+            </tr>
+          </thead>
+          <tbody id="ton-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="mf2 cs-foot">
+      <div class="cs-foot-l">
+        <span class="cs-summary" id="ton-summary">Total: <b>0</b></span>
+      </div>
+      <div class="cs-foot-r">
+        <button class="btn cs-clear" type="button" id="ton-clear-btn" onclick="clearTONData()">🗑 Borrar</button>
+        <button class="btn bp" type="button" onclick="saveTONData()">💾 Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
