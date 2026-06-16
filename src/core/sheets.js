@@ -42,6 +42,8 @@ function classifyOrigin(name) {
   const n = String(name).trim();
   if (/^Control_Tanque/i.test(n)) return 'Control_Tanque';
   if (/registro[_\s]*supervisi/i.test(n)) return 'Registro_Supervision';
+  if (/microbiolog/i.test(n)) return 'Microbiología';
+  if (/calidad\s*de\s*agua/i.test(n)) return 'Calidad de Agua';
   if (/biomol/i.test(n)) return 'Biomol';
   if (/larvicultura|larvi/i.test(n)) return 'Larvicultura';
   if (/maduracion|maduración/i.test(n)) return 'Maduracion';
@@ -72,6 +74,8 @@ function detectSheetName(rows, gid, rawTitle) {
       has((k) => k === 'od' || k.startsWith('ox') || k === 'temperatura' || k === 'temp')) return 'Control_Tanque';
   if (has((k) => k.includes('cel_ml') || k.includes('tipo_cultivo') || k.includes('corrida_algas'))) return 'Lab_Algas';
   if (has((k) => k.includes('ihhnv') || k.includes('wssv') || k.includes('ahpnd'))) return 'Biomol';
+  // Microbiología: tríos "<patógeno> UFC"/"… Nivel" + V.Luminiscentes (firma propia).
+  if (has((k) => k.includes('luminiscent')) || has((k) => k.includes('v.totales') || k.includes('v.amarillos'))) return 'Microbiología';
   if (has((k) => k.includes('sala') && (k.includes('machos') || k.includes('hembras') || k.includes('nauplio')))) return 'Maduracion';
   // Registro_Supervisión comparte columnas (Intestino, Deformidad, Módulo) con
   // Morfologia/Larvicultura; debe detectarse ANTES por su firma propia.

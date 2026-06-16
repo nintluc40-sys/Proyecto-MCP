@@ -10,6 +10,7 @@ import './views/revisiones/revisiones.css';
 import './views/biomolecular/biomolecular.css';
 import './views/visitante/visitante.css';
 import './views/algas/algas.css';
+import './views/microbiologia/microbiologia.css';
 
 import { mountShell, showLoader } from './ui/shell.js';
 import { registerView } from './ui/router.js';
@@ -22,6 +23,7 @@ import { larviculturaView } from './views/larvicultura/index.js';
 import { revisionesView } from './views/revisiones/index.js';
 import { visitanteView } from './views/visitante/index.js';
 import { algasView } from './views/algas/index.js';
+import { microbiologiaView } from './views/microbiologia/index.js';
 // Biología Molecular: carga DIFERIDA. Es la vista más pesada (D3, ~1.5k líneas) y
 // no es de uso diario; se descarga solo al abrirla, aligerando el bundle inicial.
 
@@ -42,7 +44,7 @@ async function boot() {
     </div>`;
   };
   registerView('maduracion', { label: 'Maduración', icon: '🥚', render: placeholder('Maduración') });
-  registerView('microbiologia', { label: 'Microbiología', icon: '🧫', render: placeholder('Microbiología') });
+  registerView('microbiologia', { label: 'Microbiología', icon: '🧫', render: microbiologiaView });
   registerView('algas', { label: 'Algas', icon: '🌿', render: algasView });
   registerView('biomolecular', {
     label: 'Biología Molecular', icon: '🧬',

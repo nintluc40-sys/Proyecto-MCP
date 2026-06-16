@@ -1,0 +1,144 @@
+/* ============================================================
+   MICROBIOLOGÍA — estilos (usa tokens → tema claro/oscuro auto)
+   ============================================================ */
+.mic-head { margin-bottom: var(--sp-3); }
+.mic-title { font-size: 20px; font-weight: 800; color: var(--c-text); display: flex; align-items: center; gap: 8px; }
+.mic-title-ic { font-size: 22px; }
+.mic-sub { font-size: 12.5px; color: var(--c-text-muted); margin-top: 2px; }
+
+/* ── sub-navegación ── */
+.mic-subnav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: var(--sp-4); border-bottom: 1px solid var(--c-border-soft); padding-bottom: var(--sp-3); }
+.mic-pill {
+  padding: 7px 15px; border-radius: var(--r-pill); border: 1.5px solid var(--c-border);
+  background: var(--c-surface); color: var(--c-text-soft); font-size: 13px; font-weight: 700;
+  cursor: pointer; transition: all var(--t-fast); font-family: inherit;
+}
+.mic-pill:hover { border-color: var(--c-brand-600); color: var(--c-brand); }
+.mic-pill.is-active { background: var(--c-brand); border-color: var(--c-brand); color: #fff; box-shadow: var(--sh-1); }
+
+/* ── filtros ── */
+.mic-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: var(--sp-4); }
+.mic-monthbar { display: inline-flex; align-items: center; gap: 6px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-pill); padding: 3px 6px; }
+.mic-month-nav {
+  width: 28px; height: 28px; border-radius: 50%; border: none; background: var(--c-surface-2);
+  color: var(--c-text-soft); font-size: 13px; cursor: pointer; transition: all var(--t-fast);
+}
+.mic-month-nav:hover:not(:disabled) { background: var(--c-brand); color: #fff; }
+.mic-month-nav:disabled { opacity: .35; cursor: default; }
+.mic-month-lbl { font-size: 13px; font-weight: 700; color: var(--c-text); min-width: 84px; text-align: center; }
+.mic-select {
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-sm);
+  color: var(--c-text); padding: 6px 10px; font-size: 12.5px; font-family: inherit; cursor: pointer;
+  max-width: 180px;
+}
+.mic-select:focus { outline: none; border-color: var(--c-brand-600); }
+
+/* ── KPIs ── */
+.mic-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: var(--sp-4); }
+.mic-kpi {
+  background: var(--c-surface); border: 1px solid var(--c-border-soft); border-left: 4px solid var(--c-brand);
+  border-radius: var(--r-md); padding: 10px 14px; box-shadow: var(--sh-1);
+}
+.mic-kpi.is-alert { border-left-color: var(--c-grave); }
+.mic-kpi-label { font-size: 11.5px; color: var(--c-text-muted); font-weight: 600; }
+.mic-kpi-value { font-size: 19px; font-weight: 800; color: var(--c-text); margin-top: 3px; line-height: 1.15; }
+.mic-kpi.is-alert .mic-kpi-value { color: var(--c-grave); }
+.mic-kpi-sub { font-size: 11px; color: var(--c-text-muted); margin-top: 2px; }
+
+/* ── franja de sección ── */
+.mic-band { border-top: 3px solid var(--c-brand); margin: var(--sp-5) 0 var(--sp-3); padding-top: 8px; }
+.mic-band-title { font-size: 14px; font-weight: 800; color: var(--c-text); }
+
+/* ── gráficos ── */
+.mic-charts { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+@media (max-width: 880px) { .mic-charts { grid-template-columns: 1fr; } }
+.mic-chart-card { display: flex; flex-direction: column; }
+.mic-chart-title { font-size: 13px; font-weight: 700; color: var(--c-text); margin-bottom: 8px; }
+.mic-chart-host { position: relative; flex: 1; min-height: 220px; }
+.mic-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+.mic-legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--c-text-soft); }
+.mic-legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+/* ── tabla ── */
+.mic-collap { margin-top: var(--sp-2); }
+.mic-collap-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-2); }
+.mic-collap-title { font-size: 14px; font-weight: 700; color: var(--c-text); }
+.mic-toggle {
+  border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-brand);
+  border-radius: var(--r-pill); padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+.mic-toggle:hover { border-color: var(--c-brand); }
+.mic-table-wrap { overflow: auto; border: 1px solid var(--c-border-soft); border-radius: var(--r-md); }
+.mic-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.mic-table th, .mic-table td { padding: 7px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--c-border-soft); }
+.mic-table thead th { position: sticky; top: 0; background: var(--c-surface-2); color: var(--c-text-soft); font-weight: 700; z-index: 1; }
+.mic-table tbody tr:hover { background: var(--c-surface-2); }
+.mic-row-hidden { display: none; }
+.mic-row-hidden.mic-row-show { display: table-row; }
+
+/* etiqueta de nivel (semáforo) y chips de alerta */
+.mic-nivel { display: inline-block; padding: 2px 9px; border-radius: var(--r-pill); font-size: 11px; font-weight: 700; color: #fff; background: var(--nv, var(--c-text-muted)); }
+.mic-chip { display: inline-block; padding: 2px 8px; border-radius: var(--r-pill); font-size: 10.5px; font-weight: 600; color: var(--nv); border: 1px solid var(--nv); background: color-mix(in srgb, var(--nv) 12%, transparent); margin: 1px 0; }
+.mic-lumin.is-on { color: var(--c-grave); font-weight: 700; }
+
+/* nota de alcance */
+.mic-note { margin-top: var(--sp-4); padding: 10px 14px; border-radius: var(--r-md); background: var(--c-surface-2); border: 1px dashed var(--c-border); font-size: 12.5px; color: var(--c-text-soft); }
+
+/* ============================================================
+   PLACA PETRI (Tanda 2)
+   ============================================================ */
+/* apartados Conglomerado / Placa Petri */
+.mic-apartados { display: flex; gap: 8px; margin-bottom: var(--sp-3); }
+.mic-ap { padding: 6px 14px; border-radius: var(--r-sm); border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all var(--t-fast); }
+.mic-ap:hover { border-color: var(--c-brand-600); color: var(--c-brand); }
+.mic-ap.is-active { background: var(--c-brand-700); border-color: var(--c-brand-700); color: #fff; }
+
+/* barra de pestañas + export */
+.mic-petri-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: var(--sp-3); }
+.mic-petabs { display: inline-flex; gap: 6px; }
+.mic-petab { padding: 5px 14px; border-radius: var(--r-pill); border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all var(--t-fast); }
+.mic-petab:hover { border-color: var(--c-brand-600); color: var(--c-brand); }
+.mic-petab.is-active { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
+.mic-export { display: inline-flex; gap: 6px; }
+.mic-exp { padding: 4px 10px; border-radius: var(--r-sm); border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 11.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.mic-exp:hover { border-color: var(--c-brand); color: var(--c-brand); }
+
+/* layout placa + panel lateral */
+.mic-petri-main { display: grid; grid-template-columns: 1fr 230px; gap: var(--sp-3); align-items: start; }
+@media (max-width: 760px) { .mic-petri-main { grid-template-columns: 1fr; } }
+.mic-day-nav { display: inline-flex; align-items: center; gap: 8px; margin: 6px 0 10px; }
+.mic-day-lbl { font-size: 13px; font-weight: 700; color: var(--c-text); min-width: 120px; text-align: center; }
+.mic-petri-dish { display: flex; justify-content: center; }
+.mic-petri-foot { text-align: center; font-size: 11px; color: var(--c-text-muted); margin-top: 8px; }
+
+.mic-pe-sum { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.mic-pe-st { background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); padding: 6px 8px; text-align: center; }
+.mic-pe-st-v { font-size: 17px; font-weight: 800; color: var(--c-text); line-height: 1.1; }
+.mic-pe-st-l { font-size: 9.5px; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: .03em; margin-top: 2px; }
+.mic-pe-legend { display: flex; flex-direction: column; gap: 5px; max-height: 260px; overflow: auto; }
+.mic-pe-leg { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+.mic-pe-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.mic-pe-leg-l { color: var(--c-text-soft); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mic-pe-leg-v { color: var(--c-text); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* tendencias */
+.mic-tr-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--c-border-soft); }
+.mic-tr-name { width: 150px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--c-text-soft); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mic-tr-val { width: 70px; text-align: right; font-size: 12px; font-weight: 700; color: var(--c-text); font-variant-numeric: tabular-nums; }
+.mic-tr-arr { width: 16px; font-size: 14px; text-align: center; }
+.mic-tr-total { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--c-border); }
+
+/* alertas */
+.mic-alert-list { display: flex; flex-direction: column; gap: 6px; }
+.mic-alert { border-left: 4px solid var(--ac, var(--c-grave)); background: color-mix(in srgb, var(--ac, var(--c-grave)) 8%, transparent); border-radius: var(--r-sm); padding: 7px 11px; }
+.mic-alert-h { font-size: 12px; font-weight: 800; color: var(--ac, var(--c-grave)); }
+.mic-alert-s { font-size: 11px; color: var(--c-text-soft); margin-top: 2px; }
+
+/* tooltip de colonias */
+.mic-tt { position: fixed; display: none; pointer-events: none; z-index: 9999; background: var(--c-surface); color: var(--c-text); border: 1px solid var(--c-border); border-radius: var(--r-sm); padding: 9px 12px; min-width: 170px; font-size: 11.5px; line-height: 1.7; box-shadow: var(--sh-3); }
+.mic-tt-h { font-size: 13px; font-weight: 800; margin-bottom: 4px; }
+.mic-tt-k { color: var(--c-text-muted); }
+
+/* animaciones de la placa */
+@keyframes micColony { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes micDishIn { from { opacity: 0; } to { opacity: 1; } }
