@@ -182,9 +182,18 @@ function renderDateBar() {
     { id: '30', label: '30 días' },
     { id: '7', label: '7 días' },
   ];
-  const active = store.dateFrom || store.dateTo ? 'custom' : 'all';
+  // Deriva qué preset está activo a partir del rango real (sin estado extra): así
+  // los botones "7/30 días" SÍ se resaltan al elegirlos (antes sólo "Todo" podía
+  // marcarse y los demás nunca reflejaban la selección).
+  let active = 'all';
+  if (store.dateFrom && store.dateTo) {
+    const days = Math.round((store.dateTo - store.dateFrom) / 86400000) + 1;
+    active = days === 7 ? '7' : days === 30 ? '30' : 'custom';
+  } else if (store.dateFrom || store.dateTo) {
+    active = 'custom';
+  }
   els.dateBar.innerHTML = `<span class="chip">📅 ${dateRangeLabel()}</span>` +
-    presets.map((p) => `<button class="pill-btn ${active === 'all' && p.id === 'all' ? 'is-active' : ''}" data-preset="${p.id}">${p.label}</button>`).join('');
+    presets.map((p) => `<button class="pill-btn ${active === p.id ? 'is-active' : ''}" data-preset="${p.id}">${p.label}</button>`).join('');
 
   els.dateBar.querySelectorAll('[data-preset]').forEach((b) =>
     b.addEventListener('click', () => applyPreset(b.dataset.preset)));

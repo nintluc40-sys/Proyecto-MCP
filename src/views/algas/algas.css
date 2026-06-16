@@ -1,6 +1,17 @@
 /* ============================================================
-   ALGAS · estilos de la vista (paleta verde microalga, claro/oscuro vía tokens)
+   ALGAS · estilos de la vista
+   Paleta cohesionada (tonos bajos, en sintonía con el resto de vistas).
    ============================================================ */
+:root {
+  --alg-primary: #015B76; /* teal  */
+  --alg-green:   #186447; /* verde profundo */
+  --alg-olive:   #739842; /* oliva */
+  --alg-rose:    #CA6378; /* rosa  */
+  --alg-ochre:   #A06B27; /* ocre  */
+  --alg-nude:    #DEBAB1; /* nude  */
+  /* Subvista "Resumen del día" — paleta propia (oscura/apagada). */
+  --algd-1: #77737A; --algd-2: #4B4048; --algd-3: #511936; --algd-4: #A06B27; --algd-5: #4B5039;
+}
 .alg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .alg-title { font-size: 19px; font-weight: 800; color: var(--c-text); display: flex; align-items: center; gap: 8px; }
 .alg-title-ic { font-size: 22px; }
@@ -19,15 +30,101 @@
   border: 1px solid var(--c-border); border-radius: 10px;
   padding: 7px 11px; font-size: 13px; cursor: pointer; max-width: 240px;
 }
-.alg-select:focus { outline: 2px solid var(--c-brand); outline-offset: 1px; }
+.alg-select:focus { outline: 2px solid var(--alg-primary); outline-offset: 1px; }
 
-/* ── KPIs ── */
-.alg-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
-.alg-kpi { background: var(--c-surface); border: 1px solid var(--c-border); border-left: 4px solid var(--c-brand); border-radius: 12px; padding: 11px 14px; }
-.alg-kpi-label { font-size: 12px; color: var(--c-text-muted); font-weight: 600; }
-.alg-kpi-value { font-size: 21px; font-weight: 800; color: var(--c-text); margin-top: 3px; line-height: 1.15; }
-.alg-kpi.is-alert { border-left-color: var(--c-malo, #D64545); }
-.alg-kpi.is-alert .alg-kpi-value { color: var(--c-malo, #D64545); }
+/* Botón "Resumen del día" */
+.alg-daybtn { background: var(--c-surface); color: var(--c-text); border: 1px solid var(--c-border); border-radius: 10px; padding: 7px 13px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.alg-daybtn:hover { border-color: var(--alg-primary); color: var(--alg-primary); }
+
+/* ── Modal "Resumen del día" (sobre el patrón .sv-modal del Supervisor) ── */
+.alg-day-card { width: min(880px, 100%); }
+.alg-day-nav { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 9px; border-bottom: 1px solid var(--c-border); }
+.alg-day-label { font-size: 14px; font-weight: 800; color: var(--c-text); min-width: 150px; text-align: center; }
+.alg-day-kpis { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.alg-day-kpi { background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-top: 3px solid var(--c-text-muted); border-radius: 4px; padding: 7px 13px; font-size: 12px; color: var(--c-text-soft); font-weight: 700; display: inline-flex; align-items: baseline; gap: 5px; }
+.alg-day-kpi b { color: var(--c-text); font-weight: 900; font-size: 14px; }
+.alg-day-delta { font-weight: 800; }
+.alg-up { color: var(--alg-green); }
+.alg-down { color: var(--alg-rose); }
+.alg-day-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.alg-day-block { border: 1px solid var(--c-border-soft); border-radius: 4px; padding: 10px 12px; background: var(--c-surface); }
+.alg-day-block-wide { grid-column: 1 / -1; }
+.alg-day-h { font-size: 12.5px; font-weight: 800; color: var(--c-text); margin: 0 0 8px; }
+.alg-day-fq { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.alg-day-fq-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 9px; background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-radius: 4px; }
+.alg-day-fq-lbl { font-size: 12px; color: var(--c-text-muted); font-weight: 600; }
+.alg-day-fq-val { font-size: 13px; font-weight: 800; color: var(--c-text); }
+.alg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.alg-chip { background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-radius: 4px; padding: 3px 10px; font-size: 11.5px; color: var(--c-text-soft); font-weight: 600; }
+.alg-chip b { color: var(--c-text); }
+.alg-day-obs-list { margin: 0; padding-left: 18px; font-size: 12px; color: var(--c-text-soft); line-height: 1.5; }
+@media (max-width: 640px) { .alg-day-grid, .alg-day-fq { grid-template-columns: 1fr; } }
+
+/* Paleta propia del "Resumen del día" (scoped al modal, sin afectar el resto). */
+#algDayModal .sv-modal-title, #algDayModal .alg-day-label, #algDayModal .alg-day-h { color: var(--algd-2); }
+#algDayModal .alg-day-kpi { border-top: 3px solid var(--algd-1); }
+#algDayModal .alg-day-kpi b, #algDayModal .alg-day-fq-val { color: var(--algd-2); }
+#algDayModal .alg-day-fq-item { border-top: 3px solid var(--algd-4); }
+#algDayModal .alg-day-block { border-top: 3px solid var(--algd-1); }
+#algDayModal .alg-chip b { color: var(--algd-3); }
+#algDayModal .alg-up { color: var(--algd-5); }
+#algDayModal .alg-down { color: var(--algd-3); }
+
+/* ── KPIs · cifra protagonista + franja de color superior (full-width) ── */
+.alg-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.alg-kpi {
+  background: var(--c-surface); border: 1px solid var(--c-border);
+  border-top: 4px solid var(--alg-primary); border-radius: 4px;
+  padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 4px;
+}
+/* Etiqueta en UNA sola línea (p.ej. "Protozoarios ≥ 5" no se parte). */
+.alg-kpi-label { font-size: 11px; color: var(--c-text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
+.alg-kpi-value { font-size: 26px; font-weight: 800; color: var(--c-text); line-height: 1.1; }
+.alg-kpi.is-alert { border-top-color: var(--alg-rose); }
+.alg-kpi.is-alert .alg-kpi-value { color: var(--alg-rose); }
+
+/* ── Franja divisoria de sección (acento superior, cuadrada · estilo KPI) ── */
+.alg-band {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 13px; margin: 20px 0 11px;
+  border: 1px solid var(--c-border); border-top: 4px solid var(--alg-primary);
+  border-radius: 4px; background: var(--c-surface-2);
+}
+.alg-band-title { font-size: 13.5px; font-weight: 800; color: var(--c-text); }
+
+/* ── Indicadores del mes (etiquetas clicables → modales) ── */
+.alg-mind-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.alg-mind {
+  display: flex; align-items: center; gap: 11px; text-align: left;
+  background: var(--c-surface); border: 1px solid var(--c-border);
+  border-top: 4px solid var(--alg-primary); border-radius: 4px;
+  padding: 11px 13px; cursor: pointer; transition: var(--tr, .18s ease);
+}
+.alg-mind:hover { border-color: var(--alg-primary); box-shadow: var(--sh-1, 0 2px 8px rgba(0,0,0,.06)); }
+.alg-mind-ic { font-size: 22px; flex-shrink: 0; }
+.alg-mind-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.alg-mind-lbl { font-size: 11px; font-weight: 700; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: .03em; }
+.alg-mind-val { font-size: 19px; font-weight: 800; color: var(--c-text); line-height: 1.15; }
+.alg-mind-delta { font-size: 11px; font-weight: 700; }
+.alg-mind-go { margin-left: auto; color: var(--c-text-muted); font-size: 14px; flex-shrink: 0; }
+
+/* ── Modales de mes (sobre el patrón .sv-modal) ── */
+.alg-month-card { width: min(880px, 100%); }
+.alg-month-headline { font-size: 13px; color: var(--c-text-soft); font-weight: 600; margin-bottom: 12px; }
+.alg-month-headline b { color: var(--c-text); font-weight: 900; font-size: 16px; }
+.alg-month-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.alg-month-block { border: 1px solid var(--c-border-soft); border-radius: 4px; padding: 10px 12px; background: var(--c-surface); margin-bottom: 12px; }
+.alg-month-2col .alg-month-block { margin-bottom: 0; }
+@media (max-width: 640px) { .alg-month-2col { grid-template-columns: 1fr; } }
+
+/* ── Calendario de cobertura (heatmap) ── */
+.alg-cal-wrap { overflow: auto; }
+.alg-cal { border-collapse: collapse; font-size: 11px; }
+.alg-cal th, .alg-cal td { border: 1px solid var(--c-border-soft); text-align: center; min-width: 22px; height: 22px; padding: 0; }
+.alg-cal thead th { background: var(--c-surface-2); color: var(--c-text-muted); font-weight: 700; }
+.alg-cal-rowh { position: sticky; left: 0; background: var(--c-surface-2); text-align: left !important; padding: 0 8px !important; white-space: nowrap; font-weight: 800; color: var(--c-text); }
+.alg-cal-on { background: var(--alg-primary); color: #fff; font-weight: 800; }
+.alg-cal-off { background: var(--c-surface); }
 
 /* ── Sección + tabla ── */
 .alg-section-title { font-size: 14px; font-weight: 800; color: var(--c-text); margin: 18px 0 8px; }
@@ -37,27 +134,52 @@
 .alg-table thead th { position: sticky; top: 0; background: var(--c-surface-2); color: var(--c-text-soft); font-weight: 700; text-align: left; z-index: 1; }
 .alg-table tbody tr:hover { background: var(--c-surface-2); }
 
-/* ── Subnav: pestañas por sistema (subvistas) ── */
+/* ── Subnav: pestañas por sistema (botón sólido cuadrado) ── */
 .alg-subnav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .alg-pill {
-  display: inline-flex; align-items: center; gap: 7px;
-  background: var(--c-surface); color: var(--c-text);
-  border: 1px solid var(--c-border); border-radius: 999px;
-  padding: 7px 15px; font-size: 13px; font-weight: 700; cursor: pointer;
+  display: inline-flex; align-items: center;
+  background: var(--c-surface-2); color: var(--c-text-soft);
+  border: 1px solid var(--c-border); border-radius: 5px;
+  padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
   transition: var(--tr, .18s ease);
 }
-.alg-pill:hover { border-color: var(--cat, var(--c-brand)); }
+.alg-pill:hover { border-color: var(--cat, var(--c-brand)); color: var(--c-text); }
 .alg-pill.is-active { background: var(--cat, var(--c-brand)); border-color: var(--cat, var(--c-brand)); color: #fff; }
-.alg-pill-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--cat, var(--c-brand)); }
-.alg-pill.is-active .alg-pill-dot { background: #fff; }
 
 /* ── Gráficos ── */
 .alg-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; }
-.alg-chart-card { padding: 12px 14px; }
-.alg-chart-title { font-size: 13px; font-weight: 800; color: var(--c-text); margin-bottom: 8px; }
+/* Fisicoquímicos: mini-gráficos compactos en fila (4-up). */
+.alg-charts-mini { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+/* Sanidad: Protozoarios acotado + Watchlist al lado (aprovecha el espacio). */
+.alg-sanidad-row { display: grid; grid-template-columns: minmax(0, 560px) minmax(220px, 1fr); gap: 12px; }
+@media (max-width: 820px) { .alg-sanidad-row { grid-template-columns: 1fr; } }
+.alg-watch { display: flex; flex-direction: column; }
+.alg-watch-list { display: flex; flex-direction: column; gap: 6px; overflow: auto; }
+.alg-watch-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 9px; background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-radius: 4px; }
+.alg-watch-sys { font-size: 12.5px; font-weight: 800; color: var(--c-text); }
+.alg-watch-badges { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.alg-watch-b { font-size: 11px; font-weight: 700; border-radius: 4px; padding: 2px 7px; }
+.alg-watch-b.is-proto { background: rgba(202,99,120,.14); color: #A83E55; }
+.alg-watch-b.is-desc { background: rgba(160,107,39,.16); color: #8A5A1F; }
+.alg-watch-ok { font-size: 12.5px; color: var(--alg-green); font-weight: 700; padding: 10px 4px; }
+.alg-chart-card { padding: 12px 14px; border-radius: 4px; }
+/* Tarjetas con fullscreen: acento superior con el color de la CATEGORÍA activa
+   (--alg-cat lo fija cada franja según la pestaña de sistema seleccionada). */
+.alg-fs-card { border-top: 3px solid var(--alg-cat, var(--alg-primary)); }
+.alg-chart-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.alg-chart-actions { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.alg-chart-title { font-size: 13px; font-weight: 800; color: var(--c-text); }
+.alg-chart-head .alg-chart-title { margin-bottom: 0; }
 .alg-chart-title .muted { font-weight: 600; font-size: 11.5px; }
-.alg-chart-host { position: relative; height: 250px; }
-.alg-host-lg { height: 300px; }
+/* Botón ⛶ de ampliación (idéntico al .lv-fs-btn del Supervisor). */
+.alg-fs-btn { width: 24px; height: 24px; border: 1px solid var(--c-border); background: var(--c-surface); border-radius: 5px; font-size: 12px; line-height: 1; color: var(--c-text-soft); cursor: pointer; display: grid; place-items: center; padding: 0; transition: var(--tr, .18s ease); }
+.alg-fs-btn:hover { border-color: var(--alg-primary); color: var(--alg-primary); background: var(--c-surface-2); }
+.alg-select-sm { padding: 5px 9px; font-size: 12px; border-radius: 8px; max-width: 180px; }
+.alg-chart-host { position: relative; height: 210px; }
+/* Jerarquía de alturas: hero (curva) · medio (sanidad) · mini (fisicoquímicos). */
+.alg-host-lg { height: 340px; }
+.alg-host-md { height: 240px; }
+.alg-host-sm { height: 175px; }
 
 /* Fila analítica: curva (ancha) + Estadísticas del Período (estrecha). */
 .alg-an-row { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 12px; }
@@ -75,7 +197,7 @@
 .alg-collap-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--c-border-soft); }
 .alg-collap-title { font-size: 14px; font-weight: 800; color: var(--c-text); }
 .alg-toggle { border: 1px solid var(--c-border); background: var(--c-surface-2); color: var(--c-text); border-radius: 8px; padding: 5px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
-.alg-toggle:hover { border-color: var(--c-brand); }
+.alg-toggle:hover { border-color: var(--alg-primary); }
 .alg-row-hidden { display: none; }
 .alg-row-hidden.alg-row-show { display: table-row; }
 

@@ -10,12 +10,12 @@
    Observaciones · Ciliados · Filamentosos · Técnico.
    ============================================================ */
 import { store } from '../../core/store.js';
-import { destroyAllCharts } from '../../core/charts.js';
-import { getField, parseNum } from '../../core/fields.js';
+import { destroyAllCharts, destroyChart } from '../../core/charts.js';
+import { getField, parseNum, normalizeTecnico } from '../../core/fields.js';
 import { parseAnyDate, fmtShort } from '../../core/dates.js';
 import { esc } from '../../core/format.js';
 import { monthIndexOfCorrida, monthLabelAt } from '../supervisor/prodOmarsa.js';
-import { drawGrowth, drawGrowthBar, drawVelocity, drawProto, drawDaily, drawUsoSistema, CAT_COLOR } from './charts.js';
+import { drawGrowth, drawGrowthBar, drawTasa, drawProto, drawDaily, drawUsoSistema, drawModuloBiomasa, drawCatPct, CAT_COLOR } from './charts.js';
 
 // ── Acceso tolerante a las cabeceras de Lab_Algas ──
 const AF = {
@@ -43,6 +43,14 @@ const AF = {
 const isAlgaeRow = (r) => r && r._SheetOrigin === 'Lab_Algas';
 const g = (r, key) => getField(r, AF[key]);
 const num = (r, key) => parseNum(r, AF[key]);
+
+// Filas de Lab_Algas memoizadas por identidad de store.globalData (se recalculan
+// solo cuando entran datos nuevos). Evita re-filtrar en cada uso/modal.
+let _algaeCache = { src: null, rows: [] };
+function algaeRows() {
+  if (_algaeCache.src !== store.globalData) _algaeCache = { src: store.globalData, rows: store.globalData.filter(isAlgaeRow) };
+  return _algaeCache.rows;
+}
 
 // ── Categoría de sistema de cultivo (mapeo confirmado con el laboratorio) ──
 // PBR · PM*→Premasivos · FM/FP→Fundas · C#→Carboys · M#→Masivos.
@@ -75,8 +83,24 @@ const isDescartado = (r) => /^s[ií]$/i.test(String(g(r, 'descartado')).trim());
 const dCell = (r) => { const d = parseAnyDate(g(r, 'fecha')); return d ? fmtShort(d) : esc(g(r, 'fecha') || '—'); };
 const cellTxt = (v) => (v === '' || v === null || v === undefined) ? '<span class="muted">—</span>' : esc(v);
 
-// Estado persistente entre re-render. `sub` = subvista de sistema (pestaña activa).
-const vState = { month: null, corrida: null, especie: null, sub: null };
+// Estado persistente entre re-render. `sub` = subvista de sistema (pestaña activa);
+// `sysSel` = sistema concreto dentro de la subvista (filtra stats + gráficos).
+const vState = { month: null, corrida: null, especie: null, area: null, sub: null, sysSel: null };
+
+// Cierres de dibujo por gráfico (reutilizados para el render inline y el fullscreen
+// estilo Supervisor). Se reasignan en cada algasView con los datos vigentes.
+let fsDraw = {};
+// Índice del día activo en el modal "Resumen del día" (sobre TODO el histórico).
+let daySumIdx = null;
+const FS_TITLE = {
+  growth: '📈 Curva de Crecimiento — Densidad Celular',
+  tasa: '📈 Tasa de Crecimiento · % ganado (inicial→final)',
+  proto: '🦠 Protozoarios · Ciliados · Filamentosos',
+  sal: '🧂 Salinidad',
+  ph: '⚗️ pH',
+  temp: '🌡️ Temperatura',
+  luz: '💡 Intensidad de luz',
+};
 const BITA_VISIBLE = 6; // observaciones visibles antes de desplegar
 const REG_VISIBLE = 10; // registros visibles antes de desplegar
 
@@ -109,10 +133,10 @@ function growthByLote(rows) {
   const byLote = new Map();
   rows.forEach((r) => {
     const cel = num(r, 'cel'); if (cel === null) return;
-    // Unidad de la línea: el LOTE si existe; si no (p.ej. Masivos, que no usan lote),
-    // el propio SISTEMA. Así los masivos sí dibujan su curva por día de proceso.
+    // Unidad de la línea: el LOTE solo en Fundas (FP/FM son las únicas con lote);
+    // en el resto (Masivos, Premasivos, Carboys, PBR) la unidad es el SISTEMA.
     const lote = g(r, 'lote'); const sis = g(r, 'sistema') || '?';
-    const key = lote ? `${sis}·L${lote}` : sis;
+    const key = (sysCat(sis) === 'Fundas' && lote) ? `${sis}·L${lote}` : sis;
     if (!byLote.has(key)) byLote.set(key, []);
     byLote.get(key).push({ dia: num(r, 'dia'), d: parseAnyDate(g(r, 'fecha')), cel });
   });
@@ -160,14 +184,17 @@ function periodStats(rows) {
   };
 }
 
-/** Velocidad de crecimiento (% por día) por lote, alineada al eje de días. */
-function velocityChartData(lotes, days, dayLabels) {
-  const series = lotes.map((l) => {
-    const velByDay = new Map();
-    for (let i = 1; i < l.points.length; i++) { const prev = l.points[i - 1].cel, cur = l.points[i].cel; if (prev > 0) velByDay.set(l.points[i].day, (cur - prev) / prev * 100); }
-    return { label: l.key, data: days.map((d) => (velByDay.has(d) ? velByDay.get(d) : null)) };
+/** Tasa de crecimiento por lote: % ganado del primer al último día con dato.
+ *  rate = (densidad final − inicial)/inicial ×100. Una barra por lote. */
+function tasaChartData(lotes) {
+  const out = [];
+  lotes.forEach((l) => {
+    if (l.points.length < 2) return; // necesita inicial y final
+    const first = l.points[0].cel, last = l.points[l.points.length - 1].cel;
+    if (!(first > 0)) return;
+    out.push({ label: l.key, val: (last - first) / first * 100 });
   });
-  return { dayLabels, series };
+  return { labels: out.map((o) => o.label), values: out.map((o) => o.val) };
 }
 
 /* ============================================================
@@ -182,7 +209,7 @@ export function algasView(root) {
   // Se re-renderiza por filtros/mes sin pasar por el router → limpiar overlays huérfanos.
   document.body.classList.remove('modal-open', 'dropdown-open');
 
-  const all = store.globalData.filter(isAlgaeRow);
+  const all = algaeRows();
   if (!all.length) {
     root.innerHTML = headHTML(0)
       + `<div class="empty-state">No se encontraron registros en la hoja <b>Lab_Algas</b> del Google Sheet.</div>`;
@@ -198,18 +225,29 @@ export function algasView(root) {
   const monthSet = new Set(monthCorridas);
   const inMonth = (r) => !monthSet.size || monthSet.has(g(r, 'corrida'));
 
-  // ── Filtros: Corrida + Especie (el SISTEMA es una subvista, no un filtro) ──
+  // ── Filtros: Corrida + Especie + Área (el SISTEMA es una subvista, no un filtro) ──
   const corridas = monthCorridas;
   if (vState.corrida && !corridas.includes(vState.corrida)) vState.corrida = null;
   const especies = [...new Set(all.filter(inMonth).map((r) => g(r, 'especie')).filter(Boolean))].sort();
   if (vState.especie && !especies.includes(vState.especie)) vState.especie = null;
+  const areas = [...new Set(all.filter(inMonth).map((r) => g(r, 'area')).filter(Boolean))].sort(natCmp);
+  if (vState.area && !areas.includes(vState.area)) vState.area = null;
 
-  const baseRows = all.filter((r) => inMonth(r) && (!vState.corrida || g(r, 'corrida') === vState.corrida) && (!vState.especie || g(r, 'especie') === vState.especie));
+  const baseRows = all.filter((r) => inMonth(r)
+    && (!vState.corrida || g(r, 'corrida') === vState.corrida)
+    && (!vState.especie || g(r, 'especie') === vState.especie)
+    && (!vState.area || g(r, 'area') === vState.area));
 
   // ── Subvistas por sistema (pestañas; no es un filtro) ──
   const subsPresent = SYS_CATS.filter((c) => baseRows.some((r) => sysCat(g(r, 'sistema')) === c));
-  if (!vState.sub || !subsPresent.includes(vState.sub)) vState.sub = subsPresent[0] || null;
+  if (!vState.sub || !subsPresent.includes(vState.sub)) { vState.sub = subsPresent[0] || null; vState.sysSel = null; }
   const rows = baseRows.filter((r) => sysCat(g(r, 'sistema')) === vState.sub);
+
+  // ── Sistema concreto dentro de la subvista (selector junto a Estadísticas).
+  //    Afina stats + los gráficos analíticos; los KPIs siguen a nivel de categoría.
+  const sysOptions = [...new Set(rows.map((r) => g(r, 'sistema')).filter(Boolean))].sort(natCmp);
+  if (vState.sysSel && !sysOptions.includes(vState.sysSel)) vState.sysSel = null;
+  const chartRows = vState.sysSel ? rows.filter((r) => g(r, 'sistema') === vState.sysSel) : rows;
 
   // ── HTML ──
   let h = headHTML(baseRows.length);
@@ -222,12 +260,17 @@ export function algasView(root) {
       </div>
       ${algSelect('corrida', vState.corrida, corridas, 'Todas las corridas')}
       ${algSelect('especie', vState.especie, especies, 'Todas las especies')}
+      ${algSelect('area', vState.area, areas, 'Todas las áreas')}
+      <button class="alg-daybtn" data-alg-daysum title="Resumen diario de lo registrado en el Google Sheet">📅 Resumen del día</button>
     </div>`;
 
   // Subnav: una pestaña por sistema (Masivos/Premasivos/PBR/Fundas/Carboys).
   h += `<div class="alg-subnav" role="tablist">${subsPresent.length
-    ? subsPresent.map((c) => `<button class="alg-pill ${c === vState.sub ? 'is-active' : ''}" data-alg-sub="${esc(c)}" style="--cat:${CAT_COLOR[c]}"><span class="alg-pill-dot"></span>${esc(c)}</button>`).join('')
+    ? subsPresent.map((c) => `<button class="alg-pill ${c === vState.sub ? 'is-active' : ''}" data-alg-sub="${esc(c)}" style="--cat:${CAT_COLOR[c]}">${esc(c)}</button>`).join('')
     : '<span class="muted">Sin sistemas con datos en el mes.</span>'}</div>`;
+
+  // Solo las Fundas (FP/FM) manejan Lote; en el resto el KPI/columna Lote no aplica.
+  const isFunda = vState.sub === 'Fundas';
 
   // ── KPIs de la subvista activa ──
   const densProm = avg(rows.map((r) => num(r, 'cel')).filter((v) => v !== null));
@@ -236,47 +279,94 @@ export function algasView(root) {
       ${kpi('📋', 'Registros', String(rows.length))}
       ${kpi('🔬', 'Densidad prom.', densProm === null ? '—' : fmtK(densProm) + ' cel/ml')}
       ${kpi('🦠', 'Protozoarios ≥ 5', `${protoAlert}`, protoAlert > 0)}
-      ${kpi('🧫', 'Lotes', String(new Set(rows.map((r) => g(r, 'lote')).filter(Boolean)).size))}
+      ${isFunda ? kpi('🧫', 'Lotes', String(new Set(rows.map((r) => g(r, 'lote')).filter(Boolean)).size)) : ''}
       ${kpi('⚙️', 'Sistemas', String(new Set(rows.map((r) => g(r, 'sistema')).filter(Boolean)).size))}
       ${kpi('🗑️', 'Descartados', String(rows.filter(isDescartado).length))}
     </div>`;
 
-  // ── Datos + gráficos de la subvista ──
+  // ── Datos + gráficos de la subvista (afinados por el sistema elegido) ──
   const isBarCat = vState.sub === 'Fundas' || vState.sub === 'Carboys'; // sin tendencia → barras
   const isPBR = vState.sub === 'PBR';
-  const catColor = CAT_COLOR[vState.sub] || '#2E7D32';
-  const growthLotes = growthByLote(rows);
+  const catColor = CAT_COLOR[vState.sub] || '#015B76';
+  const growthLotes = growthByLote(chartRows);
   const gd = growthChartData(growthLotes);
-  const vd = velocityChartData(growthLotes, gd.days, gd.dayLabels);
+  const tasa = tasaChartData(growthLotes);
   const barLabels = growthLotes.map((l) => l.key);
   const barValues = growthLotes.map((l) => Math.max(...l.points.map((p) => p.cel)));
-  const proto = dailyMulti(rows, ['protozoarios', 'ciliados', 'filamentosos']);
-  const sal = dailySeries(rows, 'salinidad');
-  const ph = dailySeries(rows, 'ph');
-  const luz = dailySeries(rows, 'luz');
-  const stats = periodStats(rows);
+  const proto = dailyMulti(chartRows, ['protozoarios', 'ciliados', 'filamentosos']);
+  const sal = dailySeries(chartRows, 'salinidad');
+  const ph = dailySeries(chartRows, 'ph');
+  const temp = dailySeries(chartRows, 'temp');
+  const luz = dailySeries(chartRows, 'luz');
+  const stats = periodStats(chartRows);
+
+  // Cierres de dibujo reutilizables (render inline + fullscreen estilo Supervisor).
+  fsDraw = {
+    growth: (cid) => isBarCat ? drawGrowthBar(cid, barLabels, barValues, catColor) : drawGrowth(cid, gd.dayLabels, gd.series),
+    tasa: (cid) => drawTasa(cid, tasa.labels, tasa.values),
+    proto: (cid) => drawProto(cid, proto.days, proto.series.protozoarios, proto.series.ciliados, proto.series.filamentosos),
+    sal: (cid) => drawDaily(cid, sal.days, sal.values, 'Salinidad', '#015B76'),
+    ph: (cid) => drawDaily(cid, ph.days, ph.values, 'pH', '#739842'),
+    temp: (cid) => drawDaily(cid, temp.days, temp.values, 'Temperatura', '#CA6378', ' °C'),
+    luz: (cid) => drawDaily(cid, luz.days, luz.values, 'Intensidad de luz', '#A06B27', '%'),
+  };
 
   const host = (id, has) => has ? `<canvas id="${id}"></canvas>` : '<div class="empty-state" style="padding:24px">Sin datos para esta subvista.</div>';
-  h += `<div class="alg-an-row">
-      <div class="card alg-chart-card"><div class="alg-chart-title">📈 Curva de Crecimiento — Densidad Celular ${isBarCat ? '<span class="muted">· por lote (sin tendencia → barras)</span>' : '<span class="muted">· por día · línea = lote</span>'}</div><div class="alg-chart-host alg-host-lg">${host('algGrowth', growthLotes.length > 0)}</div></div>
-      <div class="card alg-chart-card"><div class="alg-chart-title">📊 Estadísticas del Período <span class="muted">· ${esc(vState.sub || '')}</span></div><div class="alg-stats">${statsHTML(stats)}</div></div>
+
+  // El acento de los gráficos sigue el color de la categoría activa (--alg-cat).
+  const catVar = `--alg-cat:${catColor}`;
+
+  // ── Franja 1 · Desarrollo algal (curva + tasa + estadísticas) ──
+  h += algBand('🌱', 'Desarrollo algal', '#186447');
+  h += `<div class="alg-an-row" style="${catVar}">
+      <div class="card alg-chart-card alg-fs-card">${chHead('📈 Curva de Crecimiento — Densidad Celular ' + (isBarCat ? `<span class="muted">· por ${isFunda ? 'lote' : 'sistema'} (sin tendencia → barras)</span>` : '<span class="muted">· por día · línea = lote/sistema</span>'), growthLotes.length > 0 ? 'growth' : null)}<div class="alg-chart-host alg-host-lg">${host('algGrowth', growthLotes.length > 0)}</div></div>
+      <div class="card alg-chart-card">${chHead('📊 Estadísticas del Período <span class="muted">· ' + esc(vState.sub || '') + '</span>', null, algSysSelect(sysOptions, vState.sysSel))}<div class="alg-stats">${statsHTML(stats, isFunda)}</div></div>
     </div>
-    <div class="alg-charts">
-      ${!isBarCat ? `<div class="card alg-chart-card"><div class="alg-chart-title">⚡ Velocidad de Crecimiento <span class="muted">· % por día</span></div><div class="alg-chart-host">${host('algVel', growthLotes.length > 0)}</div></div>` : ''}
-      <div class="card alg-chart-card"><div class="alg-chart-title">🦠 Protozoarios · Ciliados · Filamentosos <span class="muted">· límite 5</span></div><div class="alg-chart-host">${host('algProto', proto.days.length > 0)}</div></div>
-      <div class="card alg-chart-card"><div class="alg-chart-title">🧂 Salinidad <span class="muted">· ppt</span></div><div class="alg-chart-host">${host('algSal', sal.days.length > 0)}</div></div>
-      <div class="card alg-chart-card"><div class="alg-chart-title">⚗️ pH</div><div class="alg-chart-host">${host('algPh', ph.days.length > 0)}</div></div>
-      ${isPBR ? `<div class="card alg-chart-card"><div class="alg-chart-title">💡 Intensidad de luz <span class="muted">· %</span></div><div class="alg-chart-host">${host('algLuz', luz.days.length > 0)}</div></div>` : ''}
+    ${!isBarCat ? `<div class="alg-charts" style="${catVar}"><div class="card alg-chart-card alg-fs-card">${chHead('📈 Tasa de Crecimiento <span class="muted">· % ganado (inicial→final)</span>', tasa.values.length > 0 ? 'tasa' : null)}<div class="alg-chart-host">${host('algTasa', tasa.values.length > 0)}</div></div></div>` : ''}`;
+
+  // ── Franja 2 · Parámetros fisicoquímicos (mini-gráficos compactos 4-up) ──
+  h += algBand('🧪', 'Parámetros fisicoquímicos', '#015B76');
+  h += `<div class="alg-charts alg-charts-mini" style="${catVar}">
+      <div class="card alg-chart-card alg-fs-card">${chHead('🧂 Salinidad <span class="muted">· ppt</span>', sal.days.length > 0 ? 'sal' : null)}<div class="alg-chart-host alg-host-sm">${host('algSal', sal.days.length > 0)}</div></div>
+      <div class="card alg-chart-card alg-fs-card">${chHead('⚗️ pH', ph.days.length > 0 ? 'ph' : null)}<div class="alg-chart-host alg-host-sm">${host('algPh', ph.days.length > 0)}</div></div>
+      <div class="card alg-chart-card alg-fs-card">${chHead('🌡️ Temperatura <span class="muted">· °C</span>', temp.days.length > 0 ? 'temp' : null)}<div class="alg-chart-host alg-host-sm">${host('algTemp', temp.days.length > 0)}</div></div>
+      ${isPBR ? `<div class="card alg-chart-card alg-fs-card">${chHead('💡 Intensidad de luz <span class="muted">· %</span>', luz.days.length > 0 ? 'luz' : null)}<div class="alg-chart-host alg-host-sm">${host('algLuz', luz.days.length > 0)}</div></div>` : ''}
+    </div>`;
+
+  // ── Franja 3 · Sanidad / Contaminación (gráfico medio + watchlist al lado) ──
+  // Watchlist: sistemas de la categoría con protozoarios ≥5 o descartes (acción rápida).
+  const sanMap = new Map();
+  rows.forEach((r) => {
+    const s = g(r, 'sistema'); if (!s) return;
+    if (!sanMap.has(s)) sanMap.set(s, { proto: 0, protoMax: 0, desc: 0 });
+    const o = sanMap.get(s);
+    const p = num(r, 'protozoarios'); if (p !== null) { if (p >= 5) o.proto++; if (p > o.protoMax) o.protoMax = p; }
+    if (isDescartado(r)) o.desc++;
+  });
+  const watch = [...sanMap.entries()].map(([s, o]) => ({ s, ...o }))
+    .filter((x) => x.proto > 0 || x.desc > 0)
+    .sort((a, b) => (b.proto - a.proto) || (b.protoMax - a.protoMax) || (b.desc - a.desc))
+    .slice(0, 8);
+  const watchHTML = watch.length
+    ? `<div class="alg-watch-list">${watch.map((x) => `<div class="alg-watch-item"><span class="alg-watch-sys">${esc(x.s)}</span><span class="alg-watch-badges">${x.proto ? `<span class="alg-watch-b is-proto" title="días con protozoarios ≥ 5">🦠 ${x.proto}${x.protoMax ? ` · máx ${x.protoMax.toFixed(0)}` : ''}</span>` : ''}${x.desc ? `<span class="alg-watch-b is-desc" title="descartados">🗑️ ${x.desc}</span>` : ''}</span></div>`).join('')}</div>`
+    : '<div class="alg-watch-ok">✓ Sin alertas de sanidad en el período.</div>';
+
+  h += algBand('🦠', 'Sanidad / Contaminación', '#CA6378');
+  h += `<div class="alg-sanidad-row" style="${catVar}">
+      <div class="card alg-chart-card alg-fs-card">${chHead('🦠 Protozoarios · Ciliados · Filamentosos <span class="muted">· obj &lt; 5</span>', proto.days.length > 0 ? 'proto' : null)}<div class="alg-chart-host alg-host-md">${host('algProto', proto.days.length > 0)}</div></div>
+      <div class="card alg-chart-card alg-watch">${chHead('⚠️ Watchlist de sanidad <span class="muted">· sistemas a vigilar</span>', null)}${watchHTML}</div>
     </div>`;
 
   // ── Análisis del mes (independiente del drill-down: responde preguntas del mes) ──
   const monthRows = all.filter(inMonth);
-  const sisCount = new Map();
-  monthRows.forEach((r) => { const s = g(r, 'sistema'); if (s) sisCount.set(s, (sisCount.get(s) || 0) + 1); });
-  const uso = [...sisCount.entries()].sort((a, b) => b[1] - a[1]);
+  // ¿Qué se hace más? AGRUPADO POR CATEGORÍA (Masivos, Premasivos, Carboys…),
+  // no por sistema individual, para leer el peso de cada naturaleza.
+  const catCount = new Map();
+  monthRows.forEach((r) => { const c = sysCat(g(r, 'sistema')); if (c && SYS_CATS.includes(c)) catCount.set(c, (catCount.get(c) || 0) + 1); });
+  const uso = [...catCount.entries()].sort((a, b) => b[1] - a[1]);
   const usoLabels = uso.map((e) => e[0]);
   const usoValues = uso.map((e) => e[1]);
-  const usoColors = usoLabels.map((s) => CAT_COLOR[sysCat(s)] || '#90A4AE');
+  const usoColors = usoLabels.map((c) => CAT_COLOR[c] || '#90A4AE');
 
   // Matriz Corrida × Categoría: biomasa = Σ Cel/ml (Opción 1) + nº de registros (Opción 3).
   const catsPresent = SYS_CATS.filter((c) => monthRows.some((r) => sysCat(g(r, 'sistema')) === c));
@@ -290,7 +380,9 @@ export function algasView(root) {
     if (cel !== null) { cellM[k].cel += cel; corTot[cor] = (corTot[cor] || 0) + cel; catTot[cat] = (catTot[cat] || 0) + cel; }
   });
   let grand = 0; Object.values(catTot).forEach((v) => (grand += v));
-  const mxCell = (o) => o ? `<b>${fmtK(o.cel)}</b> <span class="alg-mx-n">·${o.n}</span>` : '<span class="muted">—</span>';
+  // Cada celda: Σ cel/ml (negrita) + nº de registros ("· N reg") para no confundir
+  // las dos cifras (antes salía "2K·37" sin contexto).
+  const mxCell = (o) => o ? `<b>${fmtK(o.cel)}</b> <span class="alg-mx-n" title="registros">· ${o.n} reg</span>` : '<span class="muted">—</span>';
   const matrixTable = `<table class="alg-table alg-matrix">
       <thead><tr><th>Corrida</th>${catsPresent.map((c) => `<th>${esc(c)}</th>`).join('')}<th>Total</th></tr></thead>
       <tbody>
@@ -299,37 +391,69 @@ export function algasView(root) {
       </tbody>
     </table>`;
 
+  // Indicadores del mes (etiquetas clicables → modales): Biomasa total, Tasa de
+  // descarte, Cobertura de registro. Δ vs el mes anterior CON DATOS.
+  const ms = algMonthsList();
+  const prevMonth = (() => { const i = ms.indexOf(vState.month); return i > 0 ? ms[i - 1] : null; })();
+  const prevMonthRows = prevMonth != null ? algMonthRows(prevMonth) : [];
+  const bioNow = totalCel(monthRows), bioPrev = totalCel(prevMonthRows);
+  const bioD = bioPrev ? (bioNow - bioPrev) / bioPrev * 100 : null;
+  const descNow = monthRows.length ? monthRows.filter(isDescartado).length / monthRows.length * 100 : 0;
+  const descPrev = prevMonthRows.length ? prevMonthRows.filter(isDescartado).length / prevMonthRows.length * 100 : null;
+  const descD = (descPrev !== null) ? descNow - descPrev : null; // puntos porcentuales
+  // Días con registro DENTRO del mes calendario de referencia (mismo criterio que
+  // el calendario del modal; evita colisión de días entre meses por corridas que
+  // cruzan el cambio de mes).
+  const covRef = monthRows.map((r) => parseAnyDate(g(r, 'fecha'))).find(Boolean);
+  const covDays = covRef ? new Set(monthRows.map((r) => parseAnyDate(g(r, 'fecha'))).filter((d) => d && d.getMonth() === covRef.getMonth() && d.getFullYear() === covRef.getFullYear()).map((d) => d.getDate())).size : 0;
+  const covTotal = monthDaysOf(monthRows);
+
   h += `<div class="alg-section-title">📊 Análisis del mes <span class="muted" style="font-weight:600;font-size:12px">· ${esc(monthLabelAt(vState.month))}</span></div>
+    <div class="alg-mind-row">
+      ${mindCard('bio', '🧪', 'Biomasa total del mes', fmtK(bioNow) + ' cel/ml', deltaArrow(bioD, '%'))}
+      ${mindCard('desc', '🗑️', 'Tasa de descarte', descNow.toFixed(1) + '%', descD === null ? '' : deltaArrowPts(descD))}
+      ${mindCard('cov', '📅', 'Cobertura de registro', `${covDays}${covTotal ? '/' + covTotal : ''} días`, '')}
+    </div>
     <div class="alg-charts">
-      <div class="card alg-chart-card"><div class="alg-chart-title">⚙️ ¿Qué sistema se hace más? <span class="muted">· nº de registros</span></div><div class="alg-chart-host" style="height:${Math.max(220, usoLabels.length * 22 + 36)}px">${usoLabels.length ? '<canvas id="algUso"></canvas>' : '<div class="empty-state" style="padding:24px">Sin datos del mes.</div>'}</div></div>
-      <div class="card alg-chart-card"><div class="alg-chart-title">🧪 Biomasa por corrida × categoría <span class="muted">· Σ Cel/ml · ·n = registros</span></div><div class="alg-table-wrap" style="max-height:300px">${catsPresent.length ? matrixTable : '<div class="empty-state" style="padding:24px">Sin datos del mes.</div>'}</div></div>
+      <div class="card alg-chart-card"><div class="alg-chart-title">⚙️ ¿Qué categoría se hace más? <span class="muted">· nº de registros</span></div><div class="alg-chart-host" style="height:${Math.max(220, usoLabels.length * 34 + 40)}px">${usoLabels.length ? '<canvas id="algUso"></canvas>' : '<div class="empty-state" style="padding:24px">Sin datos del mes.</div>'}</div></div>
+      <div class="card alg-chart-card"><div class="alg-chart-title">🧪 Biomasa por corrida × categoría <span class="muted">· cada celda: Σ cel/ml · n.º de registros</span></div><div class="alg-table-wrap" style="max-height:300px">${catsPresent.length ? matrixTable : '<div class="empty-state" style="padding:24px">Sin datos del mes.</div>'}</div></div>
     </div>`;
 
   // ── Bitácora de observaciones (plegable · recientes) ──
   const obsRows = rows.filter((r) => g(r, 'obs')).sort((a, b) => (parseAnyDate(g(b, 'fecha')) || 0) - (parseAnyDate(g(a, 'fecha')) || 0));
-  const obsHead = '<tr><th>Fecha</th><th>Sistema</th><th>Lote</th><th>Día</th><th>Observación</th><th>Técnico</th></tr>';
-  const obsCells = obsRows.map((r) => `<td>${dCell(r)}</td><td><b>${cellTxt(g(r, 'sistema'))}</b></td><td>${cellTxt(g(r, 'lote'))}</td><td>${cellTxt(g(r, 'dia'))}</td><td style="white-space:normal">${cellTxt(g(r, 'obs'))}</td><td>${cellTxt(g(r, 'tecnico'))}</td>`);
+  // La columna Lote solo aplica a Fundas (FP/FM); fuera de ellas se omite.
+  const obsHead = `<tr><th>Fecha</th><th>Sistema</th>${isFunda ? '<th>Lote</th>' : ''}<th>Día</th><th>Observación</th><th>Técnico</th></tr>`;
+  const obsCells = obsRows.map((r) => `<td>${dCell(r)}</td><td><b>${cellTxt(g(r, 'sistema'))}</b></td>${isFunda ? `<td>${cellTxt(g(r, 'lote'))}</td>` : ''}<td>${cellTxt(g(r, 'dia'))}</td><td style="white-space:normal">${cellTxt(g(r, 'obs'))}</td><td>${cellTxt(g(r, 'tecnico'))}</td>`);
   h += collapsibleCard('📝', 'Bitácora de observaciones', obsHead, obsCells, BITA_VISIBLE, 'Sin observaciones para esta subvista.');
 
   // ── Registros (plegable · recientes) ──
   const sortedRows = [...rows].sort((a, b) => (parseAnyDate(g(b, 'fecha')) || 0) - (parseAnyDate(g(a, 'fecha')) || 0));
   const numCell = (v) => (v === null) ? '<span class="muted">—</span>' : esc(fmtK(v));
-  const regHead = '<tr>' + ['Fecha', 'Corrida', 'Sistema', 'Área', 'Lote', 'Día', 'Cel/ml', 'Protoz.', 'Especie', 'Sal.', 'pH', 'Técnico'].map((x) => `<th>${x}</th>`).join('') + '</tr>';
-  const regCells = sortedRows.map((r) => `<td>${dCell(r)}</td><td>${cellTxt(g(r, 'corrida'))}</td><td><b>${cellTxt(g(r, 'sistema'))}</b></td><td>${cellTxt(g(r, 'area'))}</td><td>${cellTxt(g(r, 'lote'))}</td><td>${cellTxt(g(r, 'dia'))}</td><td style="text-align:right">${numCell(num(r, 'cel'))}</td><td style="text-align:center">${cellTxt(g(r, 'protozoarios'))}</td><td>${cellTxt(g(r, 'especie'))}</td><td style="text-align:right">${cellTxt(g(r, 'salinidad'))}</td><td style="text-align:right">${cellTxt(g(r, 'ph'))}</td><td>${cellTxt(g(r, 'tecnico'))}</td>`);
+  const regCols = ['Fecha', 'Corrida', 'Sistema', 'Área', ...(isFunda ? ['Lote'] : []), 'Día', 'Cel/ml', 'Protoz.', 'Especie', 'Sal.', 'pH', 'Técnico'];
+  const regHead = '<tr>' + regCols.map((x) => `<th>${x}</th>`).join('') + '</tr>';
+  const regCells = sortedRows.map((r) => `<td>${dCell(r)}</td><td>${cellTxt(g(r, 'corrida'))}</td><td><b>${cellTxt(g(r, 'sistema'))}</b></td><td>${cellTxt(g(r, 'area'))}</td>${isFunda ? `<td>${cellTxt(g(r, 'lote'))}</td>` : ''}<td>${cellTxt(g(r, 'dia'))}</td><td style="text-align:right">${numCell(num(r, 'cel'))}</td><td style="text-align:center">${cellTxt(g(r, 'protozoarios'))}</td><td>${cellTxt(g(r, 'especie'))}</td><td style="text-align:right">${cellTxt(g(r, 'salinidad'))}</td><td style="text-align:right">${cellTxt(g(r, 'ph'))}</td><td>${cellTxt(g(r, 'tecnico'))}</td>`);
   h += collapsibleCard('📋', 'Registros · ' + (vState.sub || ''), regHead, regCells, REG_VISIBLE, 'Sin registros para esta subvista.');
+
+  // Modal de ampliación (fullscreen) — reutiliza el patrón .sv-modal del Supervisor.
+  h += algFsModalHTML();
+  // Modal "Resumen del día" (digest diario del Google Sheet).
+  h += algDayModalHTML();
+  // Modales de los indicadores del mes (Biomasa, Tasa de descarte, Cobertura).
+  h += monthModalShell('algBioModal', '🧪 Biomasa total del mes')
+    + monthModalShell('algDescModal', '🗑️ Tasa de descarte')
+    + monthModalShell('algCovModal', '📅 Cobertura de registro');
 
   root.innerHTML = h;
 
   // Dibujo aislado: el fallo de un gráfico no rompe los demás.
   const draw = (fn) => { try { fn(); } catch (e) { console.error('[algas] chart', e); } };
-  if (growthLotes.length) {
-    if (isBarCat) draw(() => drawGrowthBar('algGrowth', barLabels, barValues, catColor));
-    else { draw(() => drawGrowth('algGrowth', gd.dayLabels, gd.series)); draw(() => drawVelocity('algVel', vd.dayLabels, vd.series)); }
-  }
-  if (proto.days.length) draw(() => drawProto('algProto', proto.days, proto.series.protozoarios, proto.series.ciliados, proto.series.filamentosos));
-  if (sal.days.length) draw(() => drawDaily('algSal', sal.days, sal.values, 'Salinidad', '#00838F', ' ppt'));
-  if (ph.days.length) draw(() => drawDaily('algPh', ph.days, ph.values, 'pH', '#6A1B9A'));
-  if (isPBR && luz.days.length) draw(() => drawDaily('algLuz', luz.days, luz.values, 'Intensidad de luz', '#F9A825', '%'));
+  if (growthLotes.length) draw(() => fsDraw.growth('algGrowth'));
+  if (!isBarCat && tasa.values.length) draw(() => fsDraw.tasa('algTasa'));
+  if (proto.days.length) draw(() => fsDraw.proto('algProto'));
+  if (sal.days.length) draw(() => fsDraw.sal('algSal'));
+  if (ph.days.length) draw(() => fsDraw.ph('algPh'));
+  if (temp.days.length) draw(() => fsDraw.temp('algTemp'));
+  if (isPBR && luz.days.length) draw(() => fsDraw.luz('algLuz'));
   if (usoLabels.length) draw(() => drawUsoSistema('algUso', usoLabels, usoValues, usoColors));
 
   bind(root);
@@ -347,6 +471,341 @@ function headHTML(n) {
     </div>`;
 }
 
+/** Franja divisoria de sección (acento superior, como los KPIs principales). */
+function algBand(icon, label, color) {
+  return `<div class="alg-band" style="border-top-color:${color}"><span class="alg-band-title">${icon} ${esc(label)}</span></div>`;
+}
+
+/** Cabecera de tarjeta de gráfico: título + (opcional) botón ⛶ de ampliación y/o
+ *  un control extra a la derecha (p.ej. el selector de sistema). */
+function chHead(titleHtml, fsKey, extraHtml = '') {
+  const right = (extraHtml || '') + (fsKey ? `<button class="alg-fs-btn" data-alg-fs="${esc(fsKey)}" title="Ampliar gráfico" aria-label="Ampliar gráfico">⛶</button>` : '');
+  return `<div class="alg-chart-head"><div class="alg-chart-title">${titleHtml}</div>${right ? `<div class="alg-chart-actions">${right}</div>` : ''}</div>`;
+}
+
+/** Selector de sistema concreto dentro de la subvista (junto a Estadísticas). */
+function algSysSelect(options, value) {
+  if (!options.length) return '';
+  return `<select class="alg-select alg-select-sm" data-algfilter="sysSel" title="Filtrar por sistema">
+      <option value="">Todos los sistemas</option>
+      ${options.map((o) => `<option value="${esc(o)}" ${value === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}
+    </select>`;
+}
+
+/** HTML del modal de ampliación (un canvas grande reutilizado por todos los gráficos). */
+function algFsModalHTML() {
+  return `<div class="sv-modal" id="algFsModal" data-alg-fs-overlay>
+    <div class="sv-modal-card lv-fs-card">
+      <div class="sv-modal-head"><span class="sv-modal-title" id="algFsTitle">Gráfico</span><button class="sv-modal-x" data-alg-fs-close aria-label="Cerrar">✕</button></div>
+      <div class="sv-modal-body"><div class="lv-fs-chart"><canvas id="algFsCanvas"></canvas></div></div>
+    </div>
+  </div>`;
+}
+
+function openAlgFs(root, key) {
+  const overlay = root.querySelector('#algFsModal');
+  if (!overlay || !fsDraw[key]) return;
+  const t = root.querySelector('#algFsTitle'); if (t) t.textContent = FS_TITLE[key] || 'Gráfico';
+  overlay.classList.add('sv-open');
+  document.body.classList.add('modal-open'); // pausa el auto-refresco mientras está abierto
+  destroyChart('algFsCanvas');
+  requestAnimationFrame(() => { try { fsDraw[key]('algFsCanvas'); } catch (e) { console.error('[algas] fs', e); } });
+}
+
+function closeAlgFs(root) {
+  const overlay = root.querySelector('#algFsModal');
+  if (overlay) overlay.classList.remove('sv-open');
+  document.body.classList.remove('modal-open');
+  destroyChart('algFsCanvas');
+}
+
+/* ---- Resumen del día (modal) ---- */
+/** Días con registro en TODO el histórico de Lab_Algas (asc por fecha). */
+function algDayIndex() {
+  const byDay = new Map();
+  algaeRows().forEach((r) => {
+    const d = parseAnyDate(g(r, 'fecha'));
+    if (!d || isNaN(d)) return;
+    const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    if (!byDay.has(key)) byDay.set(key, { key, dateMs: d.getTime(), label: fmtShort(d), rows: [] });
+    byDay.get(key).rows.push(r);
+  });
+  return [...byDay.values()].sort((a, b) => a.dateMs - b.dateMs);
+}
+
+function algDayModalHTML() {
+  return `<div class="sv-modal" id="algDayModal" data-alg-day-overlay>
+    <div class="sv-modal-card alg-day-card">
+      <div class="sv-modal-head"><span class="sv-modal-title">📅 Resumen diario</span><button class="sv-modal-x" data-alg-day-close aria-label="Cerrar">✕</button></div>
+      <div class="alg-day-nav">
+        <button class="alg-month-nav" data-alg-day-nav="-1" aria-label="Día anterior">◀</button>
+        <span class="alg-day-label" id="algDayLabel">—</span>
+        <button class="alg-month-nav" data-alg-day-nav="1" aria-label="Día siguiente">▶</button>
+      </div>
+      <div class="sv-modal-body" id="algDayBody"></div>
+    </div>
+  </div>`;
+}
+
+function openDaySum(root) {
+  const overlay = root.querySelector('#algDayModal'); if (!overlay) return;
+  const days = algDayIndex();
+  if (daySumIdx === null || daySumIdx < 0 || daySumIdx >= days.length) daySumIdx = days.length - 1;
+  renderDaySum(root, days);
+  overlay.classList.add('sv-open');
+  document.body.classList.add('modal-open'); // pausa el auto-refresco mientras está abierto
+}
+
+function stepDaySum(root, dir) {
+  const days = algDayIndex();
+  const ni = (daySumIdx == null ? days.length - 1 : daySumIdx) + dir;
+  if (ni < 0 || ni >= days.length) return;
+  daySumIdx = ni;
+  renderDaySum(root, days);
+}
+
+function renderDaySum(root, days) {
+  const lbl = root.querySelector('#algDayLabel'); const body = root.querySelector('#algDayBody');
+  const prevBtn = root.querySelector('[data-alg-day-nav="-1"]'); const nextBtn = root.querySelector('[data-alg-day-nav="1"]');
+  if (lbl) lbl.textContent = days.length && daySumIdx != null ? days[daySumIdx].label : '—';
+  if (prevBtn) prevBtn.disabled = !(daySumIdx > 0);
+  if (nextBtn) nextBtn.disabled = !(daySumIdx < days.length - 1);
+  if (body) body.innerHTML = daySummaryBody(days, daySumIdx);
+}
+
+function closeDaySum(root) {
+  const overlay = root.querySelector('#algDayModal'); if (overlay) overlay.classList.remove('sv-open');
+  document.body.classList.remove('modal-open');
+}
+
+/** Cuerpo del resumen de un día: KPIs + por categoría + fisicoquímicos +
+ *  especies/técnicos + observaciones, con comparativa vs el día anterior. */
+function daySummaryBody(days, idx) {
+  if (!days.length || idx == null) return '<div class="empty-state" style="padding:30px">Sin días con registro.</div>';
+  const day = days[idx];
+  const prev = idx > 0 ? days[idx - 1] : null;
+  const R = day.rows;
+
+  const cels = R.map((r) => num(r, 'cel')).filter((v) => v !== null);
+  const densAvg = avg(cels);
+  const protoAlert = R.map((r) => num(r, 'protozoarios')).filter((v) => v !== null).filter((v) => v >= 5).length;
+  const descart = R.filter(isDescartado).length;
+  const sistemas = new Set(R.map((r) => g(r, 'sistema')).filter(Boolean)).size;
+
+  const prevAvg = prev ? avg(prev.rows.map((r) => num(r, 'cel')).filter((v) => v !== null)) : null;
+  const dDens = (densAvg !== null && prevAvg) ? (densAvg - prevAvg) / prevAvg * 100 : null;
+  const dReg = prev ? R.length - prev.rows.length : null;
+  const arrowP = (x) => x === null ? '' : x > 0 ? `<span class="alg-up">▲${Math.abs(x).toFixed(0)}%</span>` : x < 0 ? `<span class="alg-down">▼${Math.abs(x).toFixed(0)}%</span>` : '<span class="muted">=</span>';
+  const arrowN = (x) => x === null ? '' : x > 0 ? `<span class="alg-up">▲${x}</span>` : x < 0 ? `<span class="alg-down">▼${Math.abs(x)}</span>` : '<span class="muted">=</span>';
+  const pill = (label, val, extra = '') => `<span class="alg-day-kpi"><b>${esc(String(val))}</b>${esc(label)}${extra ? ` <span class="alg-day-delta">${extra}</span>` : ''}</span>`;
+
+  const kpis = `<div class="alg-day-kpis">
+    ${pill('registros', R.length, arrowN(dReg))}
+    ${pill('sistemas', sistemas)}
+    ${pill('densidad prom.', densAvg === null ? '—' : fmtK(densAvg), arrowP(dDens))}
+    ${pill('protoz. ≥5', protoAlert)}
+    ${pill('descartados', descart)}
+  </div>`;
+
+  const catRows = SYS_CATS.map((c) => {
+    const rr = R.filter((r) => sysCat(g(r, 'sistema')) === c);
+    if (!rr.length) return null;
+    return { c, n: rr.length, avg: avg(rr.map((r) => num(r, 'cel')).filter((v) => v !== null)) };
+  }).filter(Boolean);
+  const catTable = catRows.length
+    ? `<table class="alg-table"><thead><tr><th>Categoría</th><th style="text-align:right">Registros</th><th style="text-align:right">Densidad prom.</th></tr></thead><tbody>${catRows.map((x) => `<tr><td><b>${esc(x.c)}</b></td><td style="text-align:right">${x.n}</td><td style="text-align:right">${x.avg === null ? '—' : fmtK(x.avg) + ' cel/ml'}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="muted" style="padding:8px">Sin categorías.</div>';
+
+  const pAvg = (key) => { const a = R.map((r) => num(r, key)).filter((v) => v !== null); return a.length ? avg(a) : null; };
+  const fq = [['🧂 Salinidad', pAvg('salinidad'), ' ppt'], ['⚗️ pH', pAvg('ph'), ''], ['🌡️ Temperatura', pAvg('temp'), ' °C'], ['💡 Luz', pAvg('luz'), ' %']];
+  const fqHtml = `<div class="alg-day-fq">${fq.map(([lbl, v, u]) => `<div class="alg-day-fq-item"><span class="alg-day-fq-lbl">${lbl}</span><span class="alg-day-fq-val">${v === null ? '—' : v.toFixed(1) + u}</span></div>`).join('')}</div>`;
+
+  const countBy = (key, norm) => { const m = new Map(); R.forEach((r) => { const v = norm ? norm(g(r, key)) : g(r, key); if (v) m.set(v, (m.get(v) || 0) + 1); }); return [...m.entries()].sort((a, b) => b[1] - a[1]); };
+  const espChips = countBy('especie').map(([e, n]) => `<span class="alg-chip">${esc(especieLabel(e))} <b>${n}</b></span>`).join('') || '<span class="muted">—</span>';
+  // Técnicos normalizados (unifica variantes de tipeo del mismo nombre).
+  const tecChips = countBy('tecnico', normalizeTecnico).map(([t, n]) => `<span class="alg-chip">${esc(t)} <b>${n}</b></span>`).join('') || '<span class="muted">—</span>';
+
+  const obs = R.filter((r) => g(r, 'obs'));
+  const obsHtml = obs.length
+    ? `<ul class="alg-day-obs-list">${obs.map((r) => `<li><b>${esc(g(r, 'sistema') || '—')}</b>${g(r, 'lote') ? ' · L' + esc(g(r, 'lote')) : ''}: ${esc(g(r, 'obs'))}</li>`).join('')}</ul>`
+    : '<div class="muted">Sin observaciones.</div>';
+
+  return kpis + `<div class="alg-day-grid">
+    <div class="alg-day-block alg-day-block-wide"><h4 class="alg-day-h">⚙️ Por categoría</h4>${catTable}</div>
+    <div class="alg-day-block"><h4 class="alg-day-h">🧪 Fisicoquímicos</h4>${fqHtml}</div>
+    <div class="alg-day-block"><h4 class="alg-day-h">🦠 Especies</h4><div class="alg-chips">${espChips}</div></div>
+    <div class="alg-day-block alg-day-block-wide"><h4 class="alg-day-h">🧑‍🔬 Técnicos</h4><div class="alg-chips">${tecChips}</div></div>
+  </div>
+  <div class="alg-day-block" style="margin-top:12px"><h4 class="alg-day-h">📝 Observaciones del día <span class="muted">· ${obs.length}</span></h4>${obsHtml}</div>`;
+}
+
+/* ---- Indicadores del mes: helpers + modales ---- */
+/** Meses (índices) presentes en TODO el histórico de Lab_Algas (asc). */
+function algMonthsList() {
+  const cor = [...new Set(algaeRows().map((r) => g(r, 'corrida')).filter(Boolean))];
+  return [...new Set(cor.map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
+}
+/** Filas de Lab_Algas cuyo mes (por corrida) es `monthIdx`. */
+function algMonthRows(monthIdx) {
+  return algaeRows().filter((r) => { const c = g(r, 'corrida'); return c && monthIndexOfCorrida(+c) === monthIdx; });
+}
+const totalCel = (rows) => rows.reduce((s, r) => { const v = num(r, 'cel'); return s + (v || 0); }, 0);
+/** Nº de días del mes calendario al que pertenecen las filas (para la cobertura). */
+function monthDaysOf(rows) {
+  const d = rows.map((r) => parseAnyDate(g(r, 'fecha'))).find(Boolean);
+  return d ? new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate() : 0;
+}
+
+/** Flecha ▲▼ de variación porcentual (Δ%) con color. */
+function deltaArrow(pct, suffix = '%') {
+  if (pct === null || pct === undefined || isNaN(pct)) return '';
+  if (pct > 0) return `<span class="alg-up">▲ ${Math.abs(pct).toFixed(0)}${suffix} vs mes ant.</span>`;
+  if (pct < 0) return `<span class="alg-down">▼ ${Math.abs(pct).toFixed(0)}${suffix} vs mes ant.</span>`;
+  return '<span class="muted">= vs mes ant.</span>';
+}
+/** Flecha en PUNTOS porcentuales (para la tasa de descarte). Subir descarte es malo. */
+function deltaArrowPts(pts) {
+  if (pts === null || pts === undefined || isNaN(pts)) return '';
+  if (pts > 0) return `<span class="alg-down">▲ ${Math.abs(pts).toFixed(1)} pp vs mes ant.</span>`;
+  if (pts < 0) return `<span class="alg-up">▼ ${Math.abs(pts).toFixed(1)} pp vs mes ant.</span>`;
+  return '<span class="muted">= vs mes ant.</span>';
+}
+
+/** Tarjeta-indicador clicable (abre su modal). */
+function mindCard(key, icon, label, value, delta) {
+  return `<button class="alg-mind" data-alg-open="${key}" title="Ver detalle">
+      <span class="alg-mind-ic">${icon}</span>
+      <span class="alg-mind-body">
+        <span class="alg-mind-lbl">${esc(label)}</span>
+        <span class="alg-mind-val">${value}</span>
+        ${delta ? `<span class="alg-mind-delta">${delta}</span>` : ''}
+      </span>
+      <span class="alg-mind-go">⤢</span>
+    </button>`;
+}
+
+/** Cáscara de modal de mes (cabecera + cuerpo vacío que se rellena al abrir). */
+function monthModalShell(id, title) {
+  return `<div class="sv-modal" id="${id}" data-alg-moverlay>
+    <div class="sv-modal-card alg-month-card">
+      <div class="sv-modal-head"><span class="sv-modal-title">${title}</span><button class="sv-modal-x" data-alg-mclose aria-label="Cerrar">✕</button></div>
+      <div class="sv-modal-body" id="${id}Body"></div>
+    </div>
+  </div>`;
+}
+
+function closeMonthModals(root) {
+  ['algBioModal', 'algDescModal', 'algCovModal'].forEach((id) => { const m = root.querySelector('#' + id); if (m) m.classList.remove('sv-open'); });
+  document.body.classList.remove('modal-open');
+  ['algBioCanvas', 'algDescLine', 'algDescBars'].forEach(destroyChart);
+}
+
+function openMonthModal(root, key) {
+  closeMonthModals(root);
+  const id = { bio: 'algBioModal', desc: 'algDescModal', cov: 'algCovModal' }[key];
+  const overlay = id && root.querySelector('#' + id);
+  if (!overlay) return;
+  if (key === 'bio') fillBioModal(root);
+  else if (key === 'desc') fillDescModal(root);
+  else if (key === 'cov') fillCovModal(root);
+  overlay.classList.add('sv-open');
+  document.body.classList.add('modal-open'); // pausa el auto-refresco
+}
+
+/** Contexto del mes activo + mes anterior con datos. */
+function monthCtx() {
+  const ms = algMonthsList();
+  const i = ms.indexOf(vState.month);
+  const prev = i > 0 ? ms[i - 1] : null;
+  return { now: vState.month, prev, rows: algMonthRows(vState.month), prevRows: prev != null ? algMonthRows(prev) : [] };
+}
+
+/** Biomasa: tabla comparativa POR CORRIDA (mes actual y anterior) + alga→módulo. */
+function fillBioModal(root) {
+  const body = root.querySelector('#algBioModalBody'); if (!body) return;
+  const ctx = monthCtx();
+  const sumByCorrida = (rows) => { const m = new Map(); rows.forEach((r) => { const c = g(r, 'corrida'), v = num(r, 'cel'); if (c && v !== null) m.set(c, (m.get(c) || 0) + v); }); return [...m.entries()].sort((a, b) => (+a[0]) - (+b[0])); };
+  const nowBy = sumByCorrida(ctx.rows), prevBy = sumByCorrida(ctx.prevRows);
+  const nowTot = totalCel(ctx.rows), prevTot = totalCel(ctx.prevRows);
+  const d = prevTot ? (nowTot - prevTot) / prevTot * 100 : null;
+
+  const corrTable = (title, entries, tot) => `<div class="alg-month-block">
+      <h4 class="alg-day-h">${esc(title)} <span class="muted">· Total ${fmtK(tot)} cel/ml</span></h4>
+      ${entries.length ? `<table class="alg-table"><thead><tr><th>Corrida</th><th style="text-align:right">Σ cel/ml</th></tr></thead><tbody>${entries.map(([c, v]) => `<tr><td><b>C${esc(c)}</b></td><td style="text-align:right">${fmtK(v)}</td></tr>`).join('')}</tbody></table>` : '<div class="muted" style="padding:8px">Sin datos.</div>'}
+    </div>`;
+
+  // Vínculo alga → módulo: Σ cel/ml por Modulo_Larv del mes actual.
+  const modMap = new Map();
+  ctx.rows.forEach((r) => { const mod = g(r, 'modulo'), v = num(r, 'cel'); if (mod && v !== null) modMap.set(mod, (modMap.get(mod) || 0) + v); });
+  const modEntries = [...modMap.entries()].sort((a, b) => b[1] - a[1]);
+
+  body.innerHTML = `
+    <div class="alg-month-headline">Mes actual <b>${fmtK(nowTot)}</b> cel/ml ${deltaArrow(d)}</div>
+    <div class="alg-month-2col">
+      ${corrTable('Mes actual', nowBy, nowTot)}
+      ${corrTable('Mes anterior', prevBy, prevTot)}
+    </div>
+    <div class="alg-month-block">
+      <h4 class="alg-day-h">🔗 Vínculo alga → módulo <span class="muted">· qué módulo de larvicultura abastece (Σ cel/ml, mes actual)</span></h4>
+      <div class="alg-chart-host" style="height:${Math.max(180, modEntries.length * 30 + 40)}px">${modEntries.length ? '<canvas id="algBioCanvas"></canvas>' : '<div class="empty-state" style="padding:20px">Sin dato de módulo (columna Modulo_Larv vacía).</div>'}</div>
+    </div>`;
+
+  if (modEntries.length) requestAnimationFrame(() => { try { drawModuloBiomasa('algBioCanvas', modEntries.map((e) => e[0]), modEntries.map((e) => e[1])); } catch (e) { console.error('[algas] bio', e); } });
+}
+
+/** Tasa de descarte: línea por día + barras por categoría. */
+function fillDescModal(root) {
+  const body = root.querySelector('#algDescModalBody'); if (!body) return;
+  const ctx = monthCtx();
+  const R = ctx.rows;
+  // Por día
+  const byDay = new Map();
+  R.forEach((r) => { const f = g(r, 'fecha'); if (!f) return; if (!byDay.has(f)) byDay.set(f, { d: 0, t: 0 }); const o = byDay.get(f); o.t++; if (isDescartado(r)) o.d++; });
+  const days = [...byDay.keys()].sort((a, b) => (parseAnyDate(a) || 0) - (parseAnyDate(b) || 0));
+  const dayVals = days.map((k) => { const o = byDay.get(k); return o.t ? o.d / o.t * 100 : 0; });
+  // Por categoría
+  const cats = SYS_CATS.filter((c) => R.some((r) => sysCat(g(r, 'sistema')) === c));
+  const catDetail = cats.map((c) => { const rr = R.filter((r) => sysCat(g(r, 'sistema')) === c); const d = rr.filter(isDescartado).length; return { c, d, t: rr.length, pct: rr.length ? d / rr.length * 100 : 0 }; });
+
+  const totD = R.filter(isDescartado).length, totT = R.length;
+  body.innerHTML = `
+    <div class="alg-month-headline">Mes: <b>${totT ? (totD / totT * 100).toFixed(1) : '0'}%</b> descartado <span class="muted">· ${totD} de ${totT} registros</span></div>
+    <div class="alg-month-block"><h4 class="alg-day-h">📉 Tendencia diaria</h4><div class="alg-chart-host" style="height:230px">${days.length ? '<canvas id="algDescLine"></canvas>' : '<div class="empty-state" style="padding:20px">Sin datos.</div>'}</div></div>
+    <div class="alg-month-2col">
+      <div class="alg-month-block"><h4 class="alg-day-h">📊 Por categoría</h4><div class="alg-chart-host" style="height:220px">${cats.length ? '<canvas id="algDescBars"></canvas>' : '<div class="empty-state" style="padding:20px">Sin datos.</div>'}</div></div>
+      <div class="alg-month-block"><h4 class="alg-day-h">🧾 Detalle</h4><table class="alg-table"><thead><tr><th>Categoría</th><th style="text-align:right">Desc.</th><th style="text-align:right">Total</th><th style="text-align:right">%</th></tr></thead><tbody>${catDetail.map((x) => `<tr><td><b>${esc(x.c)}</b></td><td style="text-align:right">${x.d}</td><td style="text-align:right">${x.t}</td><td style="text-align:right">${x.pct.toFixed(1)}%</td></tr>`).join('')}</tbody></table></div>
+    </div>`;
+
+  requestAnimationFrame(() => {
+    try { if (days.length) drawDaily('algDescLine', days, dayVals, 'Descarte', '#CA6378', '%', true); } catch (e) { console.error('[algas] desc-line', e); }
+    try { if (cats.length) drawCatPct('algDescBars', cats, catDetail.map((x) => x.pct)); } catch (e) { console.error('[algas] desc-bars', e); }
+  });
+}
+
+/** Cobertura de registro: calendario heatmap POR CATEGORÍA × días del mes. */
+function fillCovModal(root) {
+  const body = root.querySelector('#algCovModalBody'); if (!body) return;
+  const ctx = monthCtx();
+  const R = ctx.rows;
+  const ref = R.map((r) => parseAnyDate(g(r, 'fecha'))).find(Boolean);
+  if (!ref) { body.innerHTML = '<div class="empty-state" style="padding:24px">Sin registros en el mes.</div>'; return; }
+  const y = ref.getFullYear(), mo = ref.getMonth();
+  const dim = new Date(y, mo + 1, 0).getDate();
+  const cats = SYS_CATS.filter((c) => R.some((r) => sysCat(g(r, 'sistema')) === c));
+  const cnt = {}; cats.forEach((c) => (cnt[c] = new Array(dim + 1).fill(0)));
+  R.forEach((r) => { const c = sysCat(g(r, 'sistema')); const d = parseAnyDate(g(r, 'fecha')); if (cats.includes(c) && d && d.getMonth() === mo && d.getFullYear() === y) cnt[c][d.getDate()]++; });
+
+  const headCells = Array.from({ length: dim }, (_, i) => `<th>${i + 1}</th>`).join('');
+  const rowsHtml = cats.map((c) => {
+    const cells = Array.from({ length: dim }, (_, i) => { const n = cnt[c][i + 1]; return n ? `<td class="alg-cal-on" title="${n} reg · día ${i + 1}">${n}</td>` : '<td class="alg-cal-off" title="sin registro"></td>'; }).join('');
+    const tot = cnt[c].reduce((a, b) => a + b, 0);
+    return `<tr><th class="alg-cal-rowh">${esc(c)} <span class="muted">${tot}</span></th>${cells}</tr>`;
+  }).join('');
+
+  body.innerHTML = `<div class="alg-month-headline muted">${esc(monthLabelAt(vState.month))} · ■ con registro · □ sin registro</div>
+    <div class="alg-cal-wrap"><table class="alg-cal"><thead><tr><th class="alg-cal-rowh">Categoría</th>${headCells}</tr></thead><tbody>${rowsHtml}</tbody></table></div>`;
+}
+
 function algSelect(dim, value, values, placeholder) {
   return `<select class="alg-select" data-algfilter="${dim}">
       <option value="">${esc(placeholder)}</option>
@@ -361,12 +820,13 @@ function kpi(icon, label, value, alert = false) {
     </div>`;
 }
 
-/** Panel "Estadísticas del Período" (lista de pares etiqueta/valor). */
-function statsHTML(s) {
+/** Panel "Estadísticas del Período" (lista de pares etiqueta/valor).
+ *  `isFunda` = la fila "Lotes" solo se muestra en Fundas (únicas con lote). */
+function statsHTML(s, isFunda = false) {
   const dens = (v) => (v === null ? '—' : fmtK(v) + ' cel/ml');
   const row = (lbl, val) => `<div class="alg-stat"><span class="alg-stat-lbl">${esc(lbl)}</span><span class="alg-stat-val">${val}</span></div>`;
   return row('Registros', s.n)
-    + row('Lotes', s.lotes)
+    + (isFunda ? row('Lotes', s.lotes) : '')
     + row('Sistemas', s.sistemas)
     + row('Densidad mín.', dens(s.densMin))
     + row('Densidad prom.', dens(s.densAvg))
@@ -413,9 +873,25 @@ function bind(root) {
   });
 
   root.addEventListener('click', (e) => {
-    // Pestaña de sistema (subvista)
+    // Ampliar gráfico (fullscreen estilo Supervisor)
+    const fsBtn = e.target.closest('[data-alg-fs]');
+    if (fsBtn) { openAlgFs(root, fsBtn.dataset.algFs); return; }
+    if (e.target.closest('[data-alg-fs-close]') || e.target.matches('[data-alg-fs-overlay]')) { closeAlgFs(root); return; }
+
+    // Resumen del día (modal)
+    if (e.target.closest('[data-alg-daysum]')) { openDaySum(root); return; }
+    if (e.target.closest('[data-alg-day-close]') || e.target.matches('[data-alg-day-overlay]')) { closeDaySum(root); return; }
+    const dnav = e.target.closest('[data-alg-day-nav]');
+    if (dnav && !dnav.disabled) { stepDaySum(root, Number(dnav.dataset.algDayNav)); return; }
+
+    // Indicadores del mes (Biomasa / Descarte / Cobertura)
+    const mind = e.target.closest('[data-alg-open]');
+    if (mind) { openMonthModal(root, mind.dataset.algOpen); return; }
+    if (e.target.closest('[data-alg-mclose]') || e.target.matches('[data-alg-moverlay]')) { closeMonthModals(root); return; }
+
+    // Pestaña de sistema (subvista) — reinicia el sistema concreto elegido
     const pill = e.target.closest('[data-alg-sub]');
-    if (pill) { vState.sub = pill.dataset.algSub; algasView(root); return; }
+    if (pill) { vState.sub = pill.dataset.algSub; vState.sysSel = null; algasView(root); return; }
 
     // Plegar / desplegar tablas (bitácora · registros)
     const tog = e.target.closest('[data-alg-toggle]');
@@ -431,12 +907,12 @@ function bind(root) {
     // Navegación de mes (resetea la selección dependiente)
     const nav = e.target.closest('[data-month-nav]');
     if (!nav || nav.disabled) return;
-    const allRows = store.globalData.filter(isAlgaeRow);
+    const allRows = algaeRows();
     const ms = [...new Set(allRows.map((r) => g(r, 'corrida')).filter(Boolean).map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
     const ni = ms.indexOf(vState.month) + Number(nav.dataset.monthNav);
     if (ni >= 0 && ni < ms.length) {
       vState.month = ms[ni];
-      vState.corrida = null; vState.especie = null; vState.sub = null;
+      vState.corrida = null; vState.especie = null; vState.area = null; vState.sub = null; vState.sysSel = null;
       algasView(root);
     }
   });

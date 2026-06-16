@@ -13,7 +13,7 @@ import './views/algas/algas.css';
 
 import { mountShell, showLoader } from './ui/shell.js';
 import { registerView } from './ui/router.js';
-import { connectSheets, fetchAllSheets, dataFingerprint } from './core/sheets.js';
+import { connectSheets, getLastFingerprint } from './core/sheets.js';
 import { startAutoRefresh } from './core/refresh.js';
 import { esc } from './core/format.js';
 
@@ -81,9 +81,9 @@ async function boot() {
   // cuanto una reconexión manual marque store.connected = true. Antes vivía dentro
   // de `if (ok)`, así que un fallo inicial lo deshabilitaba TODA la sesión aunque
   // el usuario reconectara con el botón.
-  let fp = '';
-  if (ok) { try { fp = dataFingerprint(await fetchAllSheets()); } catch (_) {} }
-  startAutoRefresh(fp);
+  // La huella inicial la cachea connectSheets() en commit(): así NO re-descargamos
+  // el workbook completo una 2ª vez sólo para sembrar el fingerprint.
+  startAutoRefresh(ok ? getLastFingerprint() : '');
 }
 
 boot();

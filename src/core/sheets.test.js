@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { parseSheetsIds, dataFingerprint } from './sheets.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { parseSheetsIds, dataFingerprint, isDegraded } from './sheets.js';
+import { store } from './store.js';
 
 describe('parseSheetsIds', () => {
   it('detecta una URL de hoja "real" (/spreadsheets/d/ID)', () => {
@@ -43,5 +44,34 @@ describe('dataFingerprint', () => {
     const rows = [{ x: 1 }, { x: 2 }, { x: 3 }, { x: 4 }, { x: 5 }, { x: 6 }];
     const changed = [{ x: 1 }, { x: 99 }, { x: 3 }, { x: 4 }, { x: 5 }, { x: 6 }];
     expect(dataFingerprint({ A: rows })).not.toBe(dataFingerprint({ A: changed }));
+  });
+});
+
+describe('isDegraded (guarda contra "se cargó 1 sola hoja")', () => {
+  beforeEach(() => { store.connected = false; store.sheetNames = []; });
+
+  it('es false en la primera carga (no hay set previo con qué comparar)', () => {
+    store.connected = false;
+    store.sheetNames = [];
+    expect(isDegraded({ Hoja1: [{}] })).toBe(false);
+  });
+
+  it('es true cuando llegan MENOS hojas que las ya cargadas', () => {
+    store.connected = true;
+    store.sheetNames = ['Larvicultura', 'Control_Tanque', 'Maduracion', 'Lab_Algas', 'Biomol'];
+    expect(isDegraded({ Larvicultura: [{}] })).toBe(true); // 1 < 5 → degradado
+  });
+
+  it('es false al recibir igual número o más hojas (no degrada un upgrade)', () => {
+    store.connected = true;
+    store.sheetNames = ['A', 'B'];
+    expect(isDegraded({ A: [{}], B: [{}] })).toBe(false);
+    expect(isDegraded({ A: [{}], B: [{}], C: [{}] })).toBe(false);
+  });
+
+  it('es false si la descarga vino vacía (es otro fallo, no una degradación parcial)', () => {
+    store.connected = true;
+    store.sheetNames = ['A', 'B'];
+    expect(isDegraded({})).toBe(false);
   });
 });

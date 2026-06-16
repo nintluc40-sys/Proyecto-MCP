@@ -244,8 +244,13 @@ async function fetchViaCsv(ids) {
 }
 
 // ---------- pipeline público ----------
-/** Aplana { name: rows } → globalData y emite eventos. */
+/** Aplana { name: rows } → globalData y emite eventos.
+ *  Devuelve false si se descartó por degradado (datos previos conservados). */
 function commit(sheets, firstLoad) {
+  // No pisar un set bueno con uno degradado (p.ej. reconexión manual que cae al
+  // fallback CSV y sólo trae 1 hoja). En la primera carga no hay con qué comparar.
+  if (!firstLoad && isDegraded(sheets)) return false;
+
   const rows = [];
   for (const name in sheets) rows.push(...sheets[name]);
   if (!rows.length) throw new Error('Sin datos en las hojas.');
@@ -253,6 +258,10 @@ function commit(sheets, firstLoad) {
   clearDateCache();
   store.globalData = rows;
   store.sheetNames = Object.keys(sheets);
+  // Cachea la huella del set recién comprometido para sembrar el auto-refresco SIN
+  // re-descargar el workbook completo en el arranque (antes boot() hacía una 2ª
+  // descarga íntegra sólo para calcular el fingerprint inicial).
+  _lastFingerprint = dataFingerprint(sheets);
 
   let latest = 0;
   rows.forEach((row) => {
@@ -264,7 +273,13 @@ function commit(sheets, firstLoad) {
   try { autoCalcMortalidad(rows); } catch (_) {}
   store.connected = true;
   emit(EV.DATA, { firstLoad });
+  return true;
 }
+
+// Huella del último set comprometido por commit() (la usa boot() para sembrar el
+// auto-refresco sin re-descargar). Se expone vía getLastFingerprint().
+let _lastFingerprint = '';
+export function getLastFingerprint() { return _lastFingerprint; }
 
 /** Hash rodante barato (djb2) sobre el JSON de todas las filas. */
 function hashRows(rows) {
@@ -293,11 +308,33 @@ export function dataFingerprint(sheets) {
 export async function fetchAllSheets() {
   const ids = parseSheetsIds(activeUrl());
   if (!ids) throw new Error('URL de Google Sheets inválida.');
-  try {
-    const wb = await fetchWorkbook(ids);
-    if (wb) return workbookToSheets(wb);
-  } catch (_) { /* cae al fallback CSV */ }
+  // XLSX-first CON REINTENTOS. El XLSX trae TODAS las hojas en una sola petición;
+  // el fallback CSV, en cambio, sólo garantiza la 1ª hoja (descubre el resto por
+  // scraping, que falla si el doc no está "publicado en la web"). Por eso una caída
+  // TRANSITORIA del XLSX (timeout/HTTP/red) NO debe degradar a CSV a la primera:
+  // reintentamos con backoff. Es la causa raíz del bug "se actualiza y sólo carga
+  // 1 hoja, hay que refrescar para verlas todas".
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const wb = await fetchWorkbook(ids);
+      if (wb) return workbookToSheets(wb);
+      break; // wb nulo (sin hojas) no es transitorio: pasa directo al CSV
+    } catch (_) {
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 600 * 2 ** attempt));
+    }
+  }
   return fetchViaCsv(ids);
+}
+
+/** ¿La descarga recién obtenida trae MENOS hojas que el set bueno ya cargado?
+ *  Señal de un resultado degradado (típicamente el fallback CSV que sólo logró
+ *  bajar la 1ª hoja). Evita pisar datos buenos con un parcial transitorio: el
+ *  auto-refresco recupera el set completo en el siguiente ciclo, sin que el
+ *  usuario tenga que refrescar a mano. Sólo aplica si YA estábamos conectados
+ *  (en la primera carga no hay set previo con el que comparar). */
+export function isDegraded(sheets) {
+  const incoming = Object.keys(sheets || {}).length;
+  return store.connected && incoming > 0 && incoming < store.sheetNames.length;
 }
 
 /** Conexión inicial: descarga + commit + emisión de estado. */

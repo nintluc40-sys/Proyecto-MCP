@@ -7,7 +7,7 @@
    ============================================================ */
 import { REFRESH_INTERVAL_S } from '../config.js';
 import { store, emit, EV } from './store.js';
-import { fetchAllSheets, dataFingerprint } from './sheets.js';
+import { fetchAllSheets, dataFingerprint, isDegraded } from './sheets.js';
 import { autoCalcMortalidad, getField, F } from './fields.js';
 import { parseAnyDate, clearDateCache } from './dates.js';
 
@@ -38,8 +38,16 @@ async function tick() {
   emit(EV.CONN, { state: 'refreshing', label: 'Actualizando…' });
   try {
     const sheets = await fetchAllSheets();
-    const fp = dataFingerprint(sheets);
     const ts = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
+    // Descarga degradada (menos hojas que el set bueno ya cargado): conserva los
+    // datos previos y NO actualiza la huella, para reintentar el set completo en el
+    // próximo ciclo. Sin esto, un refresco transitorio dejaba la UI en 1 sola hoja
+    // hasta que el usuario refrescaba a mano.
+    if (isDegraded(sheets)) {
+      emit(EV.CONN, { state: 'connected', label: `${store.sheetNames.length} hojas · ${ts}` });
+      return;
+    }
+    const fp = dataFingerprint(sheets);
     if (fp === lastFingerprint) {
       emit(EV.CONN, { state: 'connected', label: `${store.sheetNames.length} hojas · ${ts} · sin cambios` });
     } else {
