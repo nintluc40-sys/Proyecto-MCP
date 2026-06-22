@@ -141,7 +141,8 @@ const AST_ACTIVIDAD_OPTS  = ["Alta","Media","Baja"];
 const AST_CONDICION_OPTS  = ["Óptima","Alerta","Crítica"];
 const AST_OBS_OPTS = [
   "Larvas de estadío previo","Intestino vacío elevado","Mudas abundantes",
-  "No viables elevados","Deformidades relevantes","Baja actividad","Canibalismo"
+  "No viables elevados","Deformidades relevantes","Baja actividad","Canibalismo",
+  "Déficit de algas"
 ];
 const AST_ACCION_OPTS = [
   "Continuar","Vigilar","Ajustar manejo","Revisar alimentación",
