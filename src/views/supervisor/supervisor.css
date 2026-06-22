@@ -279,7 +279,7 @@
 .sv-micro-meta { font-size: 12.5px; color: var(--c-text-soft); margin: 4px 0 10px; }
 .sv-micro-meta b { color: var(--c-text); }
 .sv-micro-tablewrap { overflow: auto; max-height: 60vh; border: 1px solid var(--c-border-soft); border-radius: var(--r-md); }
-.sv-micro-tablewrap .sv-table th { position: sticky; top: 0; background: var(--c-surface-2); z-index: 1; }
+.sv-micro-tablewrap .sv-table th { position: sticky; top: 0; background: linear-gradient(90deg, #00695C, #004D40); color: #fff; z-index: 1; }
 .sv-micro-hmwrap { overflow: auto; max-height: 60vh; border: 1px solid var(--c-border-soft); border-radius: var(--r-md); }
 .sv-micro-hm { border-collapse: collapse; font-size: 11.5px; width: max-content; min-width: 100%; }
 .sv-micro-hm th, .sv-micro-hm td { border: 1px solid var(--c-border-soft); padding: 6px 9px; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }

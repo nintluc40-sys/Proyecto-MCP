@@ -340,6 +340,7 @@ const micFmtNum = (v) => (v === null || v === undefined || isNaN(v)) ? '—' : M
 const micTQ = (r) => microCtx(r).tq; // tanque estricto (columna TQ/N°)
 const micDayKey = (d) => d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
 const micTankLabel = (t) => t === '__none' ? 'Sin TQ' : ('TQ ' + t);
+let _svMicroColonies = []; // colonias del día visible en la placa (para el tooltip)
 
 /** Filas de Microbiología que comparten corrida + módulo (número) con este módulo. */
 function microForModule(mod, corrida) {
@@ -388,11 +389,13 @@ function microPlacaHTML(rows, state) {
   state.dayIdx = idx; // se persiste el índice resuelto para el navegador
   const day = days[idx];
   const colonies = microColonies(day.rows);
+  _svMicroColonies = colonies; // para el tooltip de colonias
   const totUfc = colonies.filter((c) => c.key === 'totales').reduce((a, c) => a + c.ufc, 0) || colonies.reduce((a, c) => a + c.ufc, 0);
   const specific = colonies.filter((c) => !MIC_AGG.has(c.key));
   const maxC = specific.length ? specific.reduce((a, b) => (a.ufc > b.ufc ? a : b)) : null;
   const dayTanks = [...new Set(day.rows.map(micTQ).filter(Boolean))].sort(micNat);
   const tankShown = state.tank ? micTankLabel(state.tank) : (dayTanks.length ? dayTanks.map((t) => 'TQ ' + t).join(', ') : '—');
+  const dayEstadios = [...new Set(day.rows.map((r) => microCtx(r).estadio).filter(Boolean))].sort(micNat);
   const agares = [...new Set(colonies.map((c) => PATHOGEN_AGAR[c.key]).filter(Boolean))].sort();
   const tankOpts = `<option value="">Todos los tanques</option>` + tanks.map((t) => `<option value="${esc(t)}" ${state.tank === t ? 'selected' : ''}>${esc(micTankLabel(t))}</option>`).join('');
   const legend = colonies.length
@@ -414,7 +417,7 @@ function microPlacaHTML(rows, state) {
       </div>
       <div class="sv-micro-side">
         <div class="mic-chart-title">Resumen del día</div>
-        <div class="sv-micro-meta"><b>🐟 ${esc(tankShown)}</b> · 📅 ${esc(day.label)}</div>
+        <div class="sv-micro-meta"><b>🐟 ${esc(tankShown)}</b> · 📅 ${esc(day.label)}${dayEstadios.length ? ' · 🦐 ' + esc(dayEstadios.join(', ')) : ''}</div>
         <div class="mic-pe-sum">
           <div class="mic-pe-st"><div class="mic-pe-st-v">${micFmtNum(totUfc)}</div><div class="mic-pe-st-l">Σ UFC C.Totales</div></div>
           <div class="mic-pe-st"><div class="mic-pe-st-v">${maxC ? micFmtNum(maxC.ufc) : '—'}</div><div class="mic-pe-st-l">UFC máx</div></div>
@@ -580,7 +583,7 @@ export function renderModule(ctx, mod) {
   // Acciones: despacho · OM vs Tex · Comparativa tanques · Historial As. Téc.
   const hasCmp = tankCmp.some((t) => t.sv !== null || t.icl !== null);
   h += `<div class="sv-actions" style="margin-bottom:18px">
-    <button class="sv-action-btn sv-action-despacho" data-nav="despacho" data-mod="${esc(mod)}">🚛 Registro de despacho</button>
+    <button class="sv-action-btn sv-action-despacho" data-nav="despacho" data-mod="${esc(mod)}">🚛 Despacho</button>
     ${hasTex ? `<button class="sv-action-btn" data-nav="omtex" data-mod="${esc(mod)}">⚖️ OM vs Tex</button>` : ''}
     ${hasCmp ? '<button class="sv-action-btn" data-modcmp-open>📊 Comparativa tanques</button>' : ''}
     <button class="sv-action-btn" data-athist-open>👨‍🔬 Historial As. Téc.${atRows.length ? ` (${atRows.length})` : ''}</button>
@@ -693,6 +696,7 @@ export function renderModule(ctx, mod) {
             <button class="sv-bm-mode-btn" data-micmode="heatmap">🗺️ Heatmap</button>
           </div>
           <div id="svMicroBody"></div>
+          <div class="mic-tt" id="svMicroTT"></div>
         </div>
       </div>
     </div>`;
@@ -966,6 +970,21 @@ export function renderModule(ctx, mod) {
       // Filtros internos de la pestaña Placa (delegados; el cuerpo se re-renderiza).
       micBody.addEventListener('change', (e) => { const s = e.target.closest('[data-micro-tank]'); if (s) { micState.tank = s.value || null; micState.dayIdx = null; renderMic(); } });
       micBody.addEventListener('click', (e) => { const nav = e.target.closest('[data-micro-day]'); if (nav && !nav.disabled) { micState.dayIdx = (micState.dayIdx == null ? 0 : micState.dayIdx) + Number(nav.dataset.microDay); renderMic(); } });
+      // Tooltip de colonias de la placa (patógeno · UFC · muestras · nivel), como en Bacteriología.
+      const micTT = micOverlay.querySelector('#svMicroTT');
+      const ttShow = (g) => {
+        const c = _svMicroColonies.find((x) => x.id === g.dataset.cid); if (!c || !micTT) return;
+        const glow = g.querySelector('.mic-colony-glow'); if (glow) glow.setAttribute('opacity', '1');
+        micTT.style.borderColor = c.color;
+        micTT.innerHTML = `<div class="mic-tt-h" style="color:${c.color}">${esc(c.label)}</div>
+          <div><span class="mic-tt-k">UFC (Σ):</span> <b>${micFmtNum(c.ufc)}</b></div>
+          <div><span class="mic-tt-k">Muestras:</span> ${c.nMuestras}</div>
+          ${c.worst ? `<div><span class="mic-tt-k">Nivel máx:</span> <b style="color:${MIC_NIVEL_COLOR[c.worst]}">${esc(c.worst)}</b></div>` : ''}`;
+        micTT.style.display = 'block';
+      };
+      micBody.addEventListener('mouseover', (e) => { const g = e.target.closest('.mic-colony'); if (g) ttShow(g); });
+      micBody.addEventListener('mousemove', (e) => { if (!micTT || micTT.style.display !== 'block') return; micTT.style.left = Math.min(e.clientX + 14, window.innerWidth - 210) + 'px'; micTT.style.top = Math.min(e.clientY - 8, window.innerHeight - 130) + 'px'; });
+      micBody.addEventListener('mouseout', (e) => { const g = e.target.closest('.mic-colony'); if (g) { if (micTT) micTT.style.display = 'none'; const glow = g.querySelector('.mic-colony-glow'); if (glow) glow.setAttribute('opacity', '0'); } });
       const open = () => { micMode = 'placa'; micState.tank = null; micState.dayIdx = null; micOverlay.querySelectorAll('[data-micmode]').forEach((x) => x.classList.toggle('is-active', x.dataset.micmode === 'placa')); micOverlay.classList.add('sv-open'); document.body.classList.add('modal-open'); requestAnimationFrame(renderMic); };
       const close = () => { micOverlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); };
       root.querySelectorAll('[data-micro-open]').forEach((b) => b.addEventListener('click', open));

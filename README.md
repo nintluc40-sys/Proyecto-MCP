@@ -1,12 +1,11 @@
-# Sistema Larvicultura · Vistas Supervisor & Larvicultura
+# Sistema MCP · Dashboards de Larvicultura, Maduración y Algas
 
-Migración modular y refinada de las dos vistas útiles de `sistema F.html`
-(monolito de ~17.800 líneas) a un proyecto **Vite + ES modules** limpio,
-con separación de responsabilidades, un sistema de diseño por tokens y la
-misma lógica analítica validada contra los datos reales del Google Sheet.
-
-> La vista de calidad larvaria se denomina **Larvicultura** (antes "Check" en
-> el original). El renombrado es consistente en ids, funciones, archivos y CSS.
+Aplicación **Vite + ES modules** que centraliza la operación de un laboratorio de
+larvicultura de camarón en varias vistas/dashboards conectados **en vivo** al
+Google Sheet de producción. Es la migración modular y refinada del monolito
+`sistema F.html` (~17.800 líneas) a una arquitectura limpia con capa de datos
+pura y testeada, sistema de diseño por tokens (tema claro/oscuro) y Chart.js
+gestionado centralmente.
 
 ## Puesta en marcha
 
@@ -15,26 +14,54 @@ npm install        # dependencias (Vite + Chart.js)
 npm run dev        # servidor de desarrollo con hot-reload  → http://localhost:5173
 npm run build      # build de producción optimizado en /dist
 npm run preview    # sirve el build de /dist
+npm test           # Vitest (tests de la capa de datos)
+npm run lint       # ESLint
 ```
 
-> SheetJS (XLSX) se carga por CDN desde `index.html` (la versión de npm está
-> deprecada). Chart.js sí es dependencia de npm.
+> SheetJS (XLSX) y D3 se cargan por CDN desde `index.html` (las versiones de npm
+> están deprecadas/desactualizadas). Chart.js sí es dependencia de npm.
+
+## Vistas
+
+- **Supervisor** (👁️): Vista Ejecutiva (tarjetas por módulo/corrida) → Resumen
+  Operativo del módulo → Visualización del Tanque → Análisis Biométrico LARVIA.
+  Incluye navegación táctil (botón "Volver" + migas), tabla "Producción Omarsa",
+  estado de despacho ("Despachado"/"Despachando" excluyendo tanques agrupados/
+  descartados) y modales: Comparativa de tanques, OM vs Tex, Desinfección,
+  Biomol y **Microbiología** (Placa de agar + Tabla + Heatmap por corrida+módulo).
+- **Larvicultura** (🦐): calidad larvaria — radar, evolución diaria, heatmap,
+  ICL, ranking, población por tanque y modales Comparar/Historia/Decisión.
+- **Revisiones** (🔍): hoja `Registro_Supervisión` — calidad, morfología
+  cuantitativa (% Atraso / Protusión / Deformidad / No viables), treemap,
+  Sankey hallazgo→acción, cobertura por supervisor y mapa de cobertura
+  módulo×día (cada día clicable abre los registros).
+- **Algas** (🌿): `Lab_Algas` por sistema (Masivos/Premasivos/PBR/Fundas/Carboys),
+  con filtro de módulo, curva de crecimiento conmutable
+  (Líneas/Normalizado/Mini-curvas/Heatmap), parámetros fisicoquímicos, sanidad,
+  Índices del mes y export Excel por rango de fechas.
+- **Visitante** (🚪): resumen mensual en lenguaje llano (supervivencia, sanidad,
+  microalgas) mediante tarjetas que abren ventanas de detalle.
+- **Biología Molecular** (🧬): heatmap/calendario/treemap/swarm/sankey/E.D.T.,
+  reporte comparativo y export Excel por rango de fechas.
+- **Microbiología** (🧫): Bacteriología con **filtros dinámicos por formato**
+  (Larvicultura/Maduración/Otros), Conglomerado (niveles por patógeno, Agua vs
+  Animal, carga total por patógeno, distribución por nivel), Placa de agar,
+  Matriz patógeno×ubicación, tendencias y export Excel. Restyle tipo SCADA.
+  Sub-vistas General/Calidad de Agua/Patología en desarrollo.
+- **Registros**: fichas de captura (estrangulamiento gradual del monolito
+  `public/registros/engine.js`) que escriben al Sheet vía Google Apps Script.
 
 ## Arquitectura
 
 ```
 src/
-  config.js                Constantes: URL del Sheet, timeouts, umbrales, orden de estadios
   main.js                  Entry: registra vistas, monta el shell, conecta y arranca refresco
-  styles/
-    tokens.css             Tokens de diseño (color, espaciado, radios, sombras) + tema oscuro
-    base.css               Reset + primitivas (card, chip, pill-btn, empty-state)
-    app.css                Shell: cabecera, pestañas, pill de conexión, loader, toast
+  styles/                  tokens.css (diseño + tema oscuro) · base.css · app.css
   core/                    ── Capa de datos (sin DOM, reutilizable y testeable) ──
-    store.js               Estado central + bus de eventos (sustituye a las globales)
+    store.js               Estado central + bus de eventos
     dates.js               parseAnyDate (serial Excel, dd/mm/yyyy, ISO) + formato es-EC
     fields.js              Acceso tolerante a cabeceras, estadio, mortalidad derivada
-    format.js              Formato numérico + semáforos (Supervisor y Check)
+    format.js              Formato numérico + semáforos
     sheets.js              Motor Google Sheets: XLSX-first + fallback CSV + clasificación
     refresh.js             Auto-refresco silencioso con fingerprint e inactividad
     charts.js              Registro central de Chart.js + destrucción gestionada
@@ -42,73 +69,58 @@ src/
     router.js              Registro y conmutación de vistas
     shell.js               Cabecera, pestañas, filtro de fecha global, toast, loader
   views/
-    supervisor/            ── Vista Supervisor (👁️) ──
-      index.js             Orquestador + navegación por delegación de eventos
-      stats.js             Contexto de datos + estadísticas (supervivencia por población)
-      executive.js         Vista Ejecutiva (tarjetas por módulo)
-      module.js            Resumen Operativo del módulo
-      tank.js              Visualización del Tanque (OD/Temp/Población)
-      larvia.js            Análisis Biométrico LARVIA (bitácora + enlace app.larvia.ai)
-      ui.js / supervisor.css
-    larvicultura/          ── Vista Larvicultura (🦐 Calidad Larvaria) ──
-      index.js             Orquestador (radar, evolución, heatmap, registros, ranking, modales)
-      stages.js            Variables por etapa (Larv / Post-L), pesos, tips y combos
-      compute.js           Series diarias, último estado, ICL, ranking
-      charts.js            Radar + evolución diaria
-      modals.js            Modales Comparar / Historia / Decisión
-      larvicultura.css
+    supervisor/            Ejecutiva · módulo · tanque · larvia · despacho · omtex · compareTanks
+    larvicultura/          Radar, evolución, heatmap, registros, ICL, ranking, modales
+    revisiones/            Calidad, morfología, treemap, Sankey, cobertura
+    algas/                 Subvistas por sistema, curva, fisicoquímicos, índices, export
+    visitante/             Resumen mensual en lenguaje llano + microalgas
+    biomolecular/          D3 (heatmap/treemap/swarm/sankey/E.D.T.) + reporte + export
+    microbiologia/         data.js (capa pura) · index.js · petri.js (placa de agar SVG)
+    registros/             Fichas nativas (lib/ + fichas/) sobre el motor engine.js
+public/registros/engine.js Monolito heredado de las fichas (se estrangula gradualmente)
 ```
 
-### Flujo de datos (Google Sheets)
+## Flujo de datos (Google Sheets)
 
 1. `connectSheets()` descarga el libro **completo** vía `export?format=xlsx`
    (1 petición, todas las hojas). Si falla, cae a **CSV por `gid`** con
-   descubrimiento por scraping del HTML publicado.
+   descubrimiento por scraping del HTML publicado, con reintento y backoff.
 2. Cada fila se etiqueta con `_SheetOrigin` (Larvicultura, Control_Tanque,
-   Maduracion, Lab_Algas, Morfologia) y se sella el `Módulo` desde el nombre
-   de pestaña (`Datos Larvicultura - M01` → `M01`).
+   Maduracion, `Lab_Algas`, `Registro_Supervision`, `Biomol`, `Microbiología`…) y
+   se sella el `Módulo` desde el nombre de pestaña.
 3. Se aplanan a `store.globalData` y se emite `EV.DATA`; las vistas se
    re-renderizan reactivamente.
-4. `startAutoRefresh()` repite cada 60 s, comparando un *fingerprint* para no
-   re-renderizar si no hubo cambios, y se pausa mientras el usuario interactúa.
+4. `startAutoRefresh()` repite cada 60 s comparando un *fingerprint* (no
+   re-renderiza si no hubo cambios) y se pausa mientras el usuario interactúa
+   (modales abiertos, dropdowns).
 
-## Decisiones y correcciones respecto al original
+## Testing y calidad
 
-- **Refactor de globals → store + eventos.** Las decenas de variables globales
-  y funciones colgadas de `window` se sustituyen por un `store` central y un
-  bus de eventos. La navegación interna usa **delegación de eventos** en lugar
-  de `onclick="window.fn(...)"` embebido en strings.
-- **Corrección (error heredado):** la Vista Supervisor del original incluía
-  cualquier fila no-tanque con Corrida+Módulo, lo que **contaminaba** el listado
-  con filas de `Registro_Supervisión` (módulos fantasma "Módulo 3/4/8"). Ahora
-  se filtra estrictamente por `_SheetOrigin === 'Larvicultura'`.
-- **Corrección (claves de columnas):** las variables Post-L de la vista
-  Larvicultura apuntaban a `Opacidad`/`Flacidez`, pero las columnas reales son
-  `% Opacidad` y `Flácidez` (con tilde). Corregido para que Post-L cargue datos.
-- **Nota de etiquetas:** en el original, el rol-clave `supervisor` se rotulaba
-  "Vista Técnica" y `visitante` se rotulaba "Supervisor". Aquí la vista migrada
-  corresponde al contenido de `visitante` (la vista de supervisión de solo
-  lectura) y se denomina simplemente **Supervisor**.
+- **Vitest** (`npm test`): tests de caracterización sobre la capa de datos
+  (`core/*`, `supervisor/stats`, `microbiologia/data`, fichas de Registros, etc.).
+- **ESLint flat v9 + Prettier** (`npm run lint`): sin warnings.
+- **Convenciones del repo:** ver `CLAUDE.md`. El flujo de trabajo es consultivo
+  (proponer → aprobar → implementar quirúrgico → validar lint/tests/build →
+  revisión visual).
 
-## Pendiente / siguientes pasos (no incluido en esta migración)
+## Decisiones y correcciones destacadas
 
-- Sub-vistas extra del Supervisor no solicitadas: Proyecciones, Despacho,
-  Inventario, Comparador.
-- Gating por PIN/rol, exportación a PDF/QR, modo histórico y carga de Excel
-  local (eran del shell global, no de estas dos vistas).
+- **Refactor de globals → store + eventos**; navegación por **delegación de
+  eventos** en vez de `onclick` embebido.
+- **Población/Supervivencia = 0 es un valor REAL** (tanque vaciado/agrupado): se
+  honra el 0 en vez de arrastrar el valor previo (Supervisor, Producción Omarsa,
+  Población por tanque). Detección de tanques "Agrupado"/"Descartado".
+- **Microbiología:** los niveles se RECALCULAN desde el UFC con los umbrales por
+  ÁREA × parámetro (`MIC_DR_BASE`, editables vía `localStorage`); columnas de
+  Vibrios leídas como `V.Amarillos/V.Verdes/V.Totales` (con compatibilidad
+  `C.*`); filtros que se adaptan a las columnas de cada formato.
+- **Revisiones / Registros:** renombrado `Hernia → Protusión` y nueva variable
+  `% No viables`, alineados con el Google Sheet y los formularios de captura.
 
-## Implementado
+## Pendiente / siguientes pasos
 
-- **Vista Supervisor:** ejecutiva → resumen módulo → tanque → análisis Larvia.
-  - Resumen Operativo incluye **Técnico** (columna del Sheet) y botón
-    **Registro de despacho**.
-  - **Despacho:** historial por tanque (Fecha, Tanque, Densidad Cosechada,
-    Biomasa, Plg manual, Cajas/Tinas, Destino, Cantidad Cosechada = última
-    población registrada, Piscina) + gráficos de Cantidad Cosechada y Biomasa
-    por tanque/destino.
-  - **Análisis LARVIA:** gráficos de PL/g, peso, longitud, uniformidad de
-    peso/longitud, CV de peso/longitud y pigmentación; bitácora **desplegable**
-    (muestra el último registro y "Ver historial completo (N)").
-- **Vista Larvicultura:** radar, evolución diaria, heatmap, registros, ICL,
-  ranking en línea y modales **Comparar / Historia / Decisión**.
-```
+- Microbiología: construir las sub-vistas **General** y **Calidad de Agua**;
+  **Patología en fresco** depende de que exista su hoja en el Sheet.
+- Validación visual en navegador de los cambios recientes.
+- Confirmar en una sincronización de prueba que el GAS escribe las columnas
+  nuevas (`% Protusión`, `Protusión`, `% No viables`) en su posición correcta.
