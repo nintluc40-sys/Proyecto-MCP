@@ -45,12 +45,21 @@ export function kpiTecnicos(tecnicos) {
   </details>`;
 }
 
-/** Migas de pan navegables. */
+/** Migas de pan navegables + botón "Volver" táctil (cómodo en móvil/tablet).
+ *  El botón "Volver" apunta al nivel anterior = última miga navegable (el padre directo). */
 export function breadcrumb(accent, items) {
+  const navAttrs = (it) => `data-nav="${it.nav}" ${it.mod ? `data-mod="${esc(it.mod)}"` : ''} ${it.tank ? `data-tank="${esc(it.tank)}"` : ''}`;
   const parts = items.map((it) => it.nav
-    ? `<button class="sv-crumb" style="color:${accent}" data-nav="${it.nav}" ${it.mod ? `data-mod="${esc(it.mod)}"` : ''} ${it.tank ? `data-tank="${esc(it.tank)}"` : ''}>${esc(it.label)}</button>`
+    ? `<button class="sv-crumb" style="color:${accent}" ${navAttrs(it)}>${esc(it.label)}</button>`
     : `<span class="sv-crumb-current">${esc(it.label)}</span>`);
-  return `<div class="sv-breadcrumb">${parts.join('<span class="sv-crumb-sep">›</span>')}</div>`;
+  const navItems = items.filter((it) => it.nav);
+  const back = navItems[navItems.length - 1];
+  // Quita una flecha inicial de la etiqueta del padre (p. ej. "← Módulos") para no duplicarla.
+  const backLabel = back ? esc(String(back.label).replace(/^[←‹<\s]+/, '')) : '';
+  const backBtn = back
+    ? `<button class="sv-back-btn" style="--sv-accent:${accent}" ${navAttrs(back)}>← Volver a ${backLabel}</button>`
+    : '';
+  return `${backBtn}<div class="sv-breadcrumb">${parts.join('<span class="sv-crumb-sep">›</span>')}</div>`;
 }
 
 /** Punto de semáforo con tooltip. */

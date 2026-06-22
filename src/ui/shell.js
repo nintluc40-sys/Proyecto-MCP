@@ -115,7 +115,11 @@ function renderEntryRoles() {
 function selectRole(key) {
   if (!ROLES[key]) return;
   store.role = key;
-  const def = MAIN_VIEWS.find((v) => roleAllows(v.id)); // primera vista permitida
+  // Vista inicial: la primera permitida que YA esté desarrollada (evita aterrizar en
+  // un placeholder 🚧, p. ej. el rol "Supervisor" caía en Maduración). Si el rol solo
+  // tiene vistas pendientes, cae a la primera permitida como respaldo.
+  const def = MAIN_VIEWS.find((v) => roleAllows(v.id) && !v.pending)
+    || MAIN_VIEWS.find((v) => roleAllows(v.id));
   renderDrawer();
   hideEntry();
   if (def) changeView(def.id);

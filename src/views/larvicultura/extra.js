@@ -13,7 +13,7 @@ import { store } from '../../core/store.js';
 import { getField, parseNum, F, isLarviculturaRow } from '../../core/fields.js';
 import { parseAnyDate, dayNum, rangeLabel } from '../../core/dates.js';
 import { makeChart } from '../../core/charts.js';
-import { dailySeries, lastState, iclOf } from './compute.js';
+import { dailySeries, lastState, iclOf, compositeScore } from './compute.js';
 import { ACCENT, NEUTRAL, SEM, CAT, catColor } from './palette.js';
 
 const ESTADIO_KEYS = ['Estadío', 'Estadio', 'estadío', 'estadio'];
@@ -36,7 +36,9 @@ export function buildPopData(byCor) {
   byCor.forEach((r) => {
     const tq = getField(r, F.tanque); if (!tq) return;
     const pob = parseNum(r, F.poblacion);
-    if (pob === null || pob <= 0) return;
+    // Un 0 registrado es un valor REAL (tanque vaciado/agrupado): se incluye para que
+    // el gráfico de "Población por tanque" refleje la caída a 0 y no se omita el dato.
+    if (pob === null || pob < 0) return;
     (map[tq] ||= []).push({ fecha: getField(r, F.fecha), poblacion: pob, _d: parseAnyDate(getField(r, F.fecha)) });
   });
   Object.values(map).forEach((arr) => arr.sort((a, b) => (a._d || 0) - (b._d || 0)));
@@ -62,11 +64,7 @@ export function buildScoreItems(byCor, tanks, vars) {
     const last = lastState(dailySeries(tRows, vars), vars);
     const icl = iclOf(last, vars);
     const surv = lastNum(tRows, F.supervivencia);
-    let score = null;
-    if (icl !== null && surv !== null) score = 0.7 * icl + 0.3 * Math.min(surv, 100);
-    else if (icl !== null) score = icl;
-    else if (surv !== null) score = surv;
-    return { tank: tq, score, icl, surv };
+    return { tank: tq, score: compositeScore(icl, surv), icl, surv };
   }).filter((x) => x.score !== null).sort((a, b) => b.score - a.score);
 }
 

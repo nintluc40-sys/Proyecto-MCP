@@ -56,9 +56,10 @@ export function buildLarviculturaData(state, vars, monthCorridas) {
    Bandas de referencia (ajustables). Por cada variable se usan los registros de
    Larvicultura si los tiene; si no, los de Tomas (hojas Control_Tanque). */
 const ENV_VARS = [
-  { key: 'tmp', label: 'Temperatura', short: 'T°', icon: '🌡️', unit: '°C', keys: F.temp, band: [30, 33], color: '#F4511E', axis: 'y' },
+  { key: 'tmp', label: 'Temperatura', short: 'T°', icon: '🌡️', unit: '°C', keys: F.temp, band: [31, 33], color: '#F4511E', axis: 'y' },
   { key: 'od', label: 'Oxígeno disuelto', short: 'OD', icon: '💧', unit: ' mg/L', keys: F.od, band: [5, 7], color: '#1E88E5', axis: 'y1' },
-  { key: 'sal', label: 'Salinidad', short: 'Sal', icon: '🧂', unit: ' ppt', keys: F.salinidad, band: [28, 36], color: '#00838F', axis: 'y' },
+  // Salinidad: informativa (no marca alerta ni cuenta para el nivel del módulo).
+  { key: 'sal', label: 'Salinidad', short: 'Sal', icon: '🧂', unit: ' ppt', keys: F.salinidad, band: [28, 36], color: '#00838F', axis: 'y', informational: true },
 ];
 
 /** Promedios y tendencia diaria de T°/OD/Salinidad del módulo (opcionalmente de una corrida). */
@@ -77,7 +78,9 @@ export function moduleEnv(modulo, corrida) {
     const series = days.map((d) => { const a = byDay.get(d); return a.reduce((x, y) => x + y, 0) / a.length; });
     const avg = series.length ? series.reduce((a, b) => a + b, 0) / series.length : null;
     const last = series.length ? series[series.length - 1] : null;
-    const status = last === null ? 'sin' : (last >= cfg.band[0] && last <= cfg.band[1]) ? 'ok' : 'out';
+    const status = cfg.informational
+      ? (last === null ? 'sin' : 'info')
+      : last === null ? 'sin' : (last >= cfg.band[0] && last <= cfg.band[1]) ? 'ok' : 'out';
     return { ...cfg, days, series, avg, last, srcName, status };
   });
   if (!vars.some((v) => v.last !== null)) return null;
@@ -110,13 +113,7 @@ export function buildTrendKpis(daily, rows, vars) {
     const a = survByDay[d.fecha];
     return a && a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
   });
-  const scoreDaily = daily.map((_, i) => {
-    const icl = iclDaily[i], sv = survDaily[i];
-    if (icl !== null && sv !== null) return 0.7 * icl + 0.3 * Math.min(sv, 100);
-    if (icl !== null) return icl;
-    if (sv !== null) return sv;
-    return null;
-  });
+  const scoreDaily = daily.map((_, i) => compositeScore(iclDaily[i], survDaily[i]));
   const lastTwo = (arr) => {
     let cur = null, prev = null;
     for (let i = arr.length - 1; i >= 0; i--) {
@@ -170,6 +167,18 @@ export function iclOf(rec, vars) {
   return (any && wsum > 0) ? 100 - sum / wsum : null;
 }
 
+/** Score compuesto = 70% ICL + 30% Supervivencia (mayor = mejor).
+ *  Si falta una de las dos, devuelve la disponible; null si faltan ambas.
+ *  Fuente única de la fórmula (reutilizada por KPIs de tendencia, lollipop y comparador de corridas). */
+export function compositeScore(icl, surv) {
+  const hasIcl = icl !== null && icl !== undefined;
+  const hasSv = surv !== null && surv !== undefined;
+  if (hasIcl && hasSv) return 0.7 * icl + 0.3 * Math.min(surv, 100);
+  if (hasIcl) return icl;
+  if (hasSv) return surv;
+  return null;
+}
+
 /** Score crudo (promedio ponderado, menor = mejor) para colorear estado. */
 export function scoreOf(rec, vars) {
   if (!rec) return null;
@@ -178,13 +187,4 @@ export function scoreOf(rec, vars) {
     if (rec[v.key] !== null && rec[v.key] !== undefined) { sum += rec[v.key] * v.peso; wsum += v.peso; any = true; }
   });
   return (any && wsum > 0) ? sum / wsum : null;
-}
-
-/** Ranking de tanques del módulo/corrida por ICL del último estado. */
-export function rankTanks(byCor, tanques, vars) {
-  return tanques.map((tq) => {
-    const tRows = byCor.filter((r) => getField(r, F.tanque) === tq);
-    const last = lastState(dailySeries(tRows, vars), vars);
-    return { tanque: tq, icl: iclOf(last, vars), last };
-  }).filter((x) => x.icl !== null).sort((a, b) => b.icl - a.icl);
 }

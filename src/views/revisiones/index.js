@@ -3,8 +3,8 @@
    Vista sobre la hoja `Registro_Supervisión`
    (_SheetOrigin === 'Registro_Supervision').
 
-   Filtros: Supervisor · Módulo · Corrida · Siembra (la corrida y la
-   siembra son lo que cambia; el módulo es un lugar fijo).
+   Filtros: Corrida · Módulo · Siembra (la corrida y la siembra son lo
+   que cambia; el módulo es un lugar fijo). Acotados por la barra de mes.
    Gráficos: Composición de hallazgos (dona) · Acciones recomendadas ·
    Distribución cualitativa por corrida (Intestino/Actividad/Condición,
    % por frecuencia) · Eficiencia de supervisores (bullet chart).
@@ -25,17 +25,21 @@ const K = {
   tipo:       ['Tipo_revisión', 'Tipo_revision', 'tipo_revisión', 'tipo_revision', 'Tipo revisión', 'Tipo de revisión'],
   deformidad: ['Deformidad_%', 'Deformidad %', 'Deformidad_porc', 'Deformidad', 'deformidad_%', 'deformidad'],
   atraso:     ['% Atraso', 'Atraso_%', 'Atraso %', '%Atraso', 'Atraso', 'atraso'],
-  // Numérica (% Hernia). NO incluir 'Hernia' a secas: ahora es una col. cualitativa aparte.
-  hernia:     ['% Hernia', 'Hernia_%', 'Hernia %', '%Hernia'],
+  // Numérica (% Protusión; antes "% Hernia", renombrada en la hoja 2026-06).
+  // NO incluir 'Protusión' a secas: ahora es una col. cualitativa aparte.
+  protusion:  ['% Protusión', '% Protusion', 'Protusión_%', 'Protusion_%', 'Protusión %', '%Protusión', '% Hernia', 'Hernia_%', 'Hernia %', '%Hernia'],
   intestino:  ['Intestino', 'intestino'],
   actividad:  ['Actividad', '% Actividad', 'actividad'],
   condicion:  ['Condición_biológica', 'Condicion_biologica', 'condición_biológica', 'condicion_biologica', 'Condición biológica', 'Condición'],
   // Columnas nuevas de la hoja (2026-06): cualitativas + % de llenado intestinal.
-  herniaCual: ['Hernia', 'hernia'],
+  // 'Protusión' (cualitativa) antes se llamaba 'Hernia' (se conserva como respaldo).
+  protusionCual: ['Protusión', 'Protusion', 'protusión', 'protusion', 'Hernia', 'hernia'],
   opacidad:   ['Opacidad', 'opacidad'],
   asimilacion:['Asimilación', 'Asimilacion', 'asimilación', 'asimilacion'],
   semillenas: ['Semillenas (%)', 'Semillenas', '% Semillenas', 'semillenas (%)', 'semillenas'],
   vacias:     ['Vacías (%)', 'Vacias (%)', 'Vacías', 'Vacias', '% Vacías', 'vacías (%)', 'vacias (%)'],
+  // Numérica (% No viables): columna nueva de la hoja (2026-06), tras Condición_biológica.
+  noviables:  ['% No viables', '% No Viables', 'No viables (%)', 'No Viables (%)', '%No viables', 'No viables', 'No Viables', 'no viables'],
   observaciones: ['Observaciones', 'observaciones', 'Observación', 'observación'],
   accion:     ['Acción', 'Accion', 'acción', 'accion', 'Acción tomada'],
   // Comentario se dividió en matutino / vespertino (antes era una sola col. "Comentario").
@@ -93,7 +97,7 @@ const SEM3 = ['#2E9E5B', '#E6A100', '#D64545'];   // bueno · medio · malo (sem
 const SEV2 = [SEM3[1], SEM3[2]];                  // leve · acentuada
 const TIER_LABEL3 = ['Bueno', 'Medio', 'Malo'];
 const TIER_LABEL2 = ['Leve', 'Acentuada'];
-const CAT3 = ['#3F51B5', '#EC407A', '#26A69A'];   // categórica (series sin orden)
+const CAT3 = ['#3F51B5', '#EC407A', '#26A69A', '#FB8C00'];   // categórica (series sin orden; 4ª = No viables)
 
 /** Clasifica un valor cualitativo en 3 niveles (0 bueno · 1 medio · 2 malo; -1 desconocido). */
 function tier3(val) {
@@ -186,17 +190,18 @@ function drawAlim(rows) {
   });
 }
 
-/** Morfología cuantitativa: % Atraso/Hernia/Deformidad en barras por día (solo días con dato). */
+/** Morfología cuantitativa: % Atraso/Protusión/Deformidad/No viables en barras por día (solo días con dato). */
 function drawMorfNum(rows) {
   if (!document.getElementById('rvMorfNum')) return;
-  const days = daysWithData(rows, [K.atraso, K.hernia, K.deformidad]); if (!days.length) return;
+  const days = daysWithData(rows, [K.atraso, K.protusion, K.deformidad, K.noviables]); if (!days.length) return;
   const ser = (keys) => days.map((d) => avg(rows.filter((r) => gFec(r) === d).map((r) => parseNum(r, keys)).filter((v) => v !== null)));
   makeChart('rvMorfNum', {
     type: 'bar',
     data: { labels: days, datasets: [
       { label: '% Atraso', data: ser(K.atraso), backgroundColor: CAT3[0] + 'cc', borderColor: CAT3[0], borderWidth: 1, borderRadius: 3 },
-      { label: '% Hernia', data: ser(K.hernia), backgroundColor: CAT3[1] + 'cc', borderColor: CAT3[1], borderWidth: 1, borderRadius: 3 },
+      { label: '% Protusión', data: ser(K.protusion), backgroundColor: CAT3[1] + 'cc', borderColor: CAT3[1], borderWidth: 1, borderRadius: 3 },
       { label: '% Deformidad', data: ser(K.deformidad), backgroundColor: CAT3[2] + 'cc', borderColor: CAT3[2], borderWidth: 1, borderRadius: 3 },
+      { label: '% No viables', data: ser(K.noviables), backgroundColor: CAT3[3] + 'cc', borderColor: CAT3[3], borderWidth: 1, borderRadius: 3 },
     ] },
     options: {
       responsive: true, maintainAspectRatio: false,
@@ -236,10 +241,20 @@ const inGlobalDate = (r) => {
   return true;
 };
 
+/** Predicado único de fila bajo los filtros activos (fecha global + mes + corrida + módulo + siembra).
+ *  Fuente compartida por el render principal y por los drill-downs (getFilteredRows). */
+const rowMatchesFilters = (r, monthSet) =>
+  inGlobalDate(r) && (!monthSet.size || monthSet.has(gCor(r))) &&
+  (!vState.corrida || gCor(r) === vState.corrida) &&
+  (!vState.mod || gMod(r) === vState.mod) &&
+  (!vState.siembra || gSiem(r) === vState.siembra);
+
 // Estado de filtros y de la ventana de historial (persistente entre re-renders).
-const vState = { month: null, supervisor: null, mod: null, corrida: null, siembra: null };
+const vState = { month: null, mod: null, corrida: null, siembra: null };
 const histSel = { mod: '', siembra: '', corrida: '' };
 const pState = { cmpDays: 7 }; // longitud de periodo para la comparativa
+// Selección activa del modal de Cobertura (celda módulo × día) + filtro de supervisor.
+const dayCellSel = { mod: null, daykey: null, label: '', sup: '' };
 const CMP_PILLS = [{ id: 7, label: '7 días' }, { id: 14, label: '14 días' }, { id: 30, label: '30 días' }];
 const BITA_VISIBLE = 5; // filas visibles antes de desplegar
 
@@ -287,11 +302,7 @@ export function revisionesView(root) {
   const siembras = [...new Set(all.filter(siemScope).map(gSiem).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   if (vState.siembra && !siembras.includes(vState.siembra)) vState.siembra = null;
 
-  const rows = all.filter((r) =>
-    inGlobalDate(r) && inMonth(r) &&
-    (!vState.corrida || gCor(r) === vState.corrida) &&
-    (!vState.mod || gMod(r) === vState.mod) &&
-    (!vState.siembra || gSiem(r) === vState.siembra));
+  const rows = all.filter((r) => rowMatchesFilters(r, monthSet));
 
   // Fase 1 = panorama general (sin módulo) · Fase 2 = detalle del módulo.
   const phase2 = !!vState.mod;
@@ -303,7 +314,8 @@ export function revisionesView(root) {
   const supsActivos = new Set(rows.map(gSup).filter(Boolean)).size;
   const deformProm = avg(rows.map((r) => parseNum(r, K.deformidad)).filter((v) => v !== null));
   const atrasoProm = avg(rows.map((r) => parseNum(r, K.atraso)).filter((v) => v !== null));
-  const herniaProm = avg(rows.map((r) => parseNum(r, K.hernia)).filter((v) => v !== null));
+  const protusionProm = avg(rows.map((r) => parseNum(r, K.protusion)).filter((v) => v !== null));
+  const noviablesProm = avg(rows.map((r) => parseNum(r, K.noviables)).filter((v) => v !== null));
   const vacProm = avg(rows.map((r) => parseNum(r, K.vacias)).filter((v) => v !== null));
   const semiProm = avg(rows.map((r) => parseNum(r, K.semillenas)).filter((v) => v !== null));
   const historialN = rows.filter(hasComment).length;
@@ -335,7 +347,8 @@ export function revisionesView(root) {
       ${kpi('🏭', 'Módulos revisados', modsRevisados)}
       ${kpi('🧬', 'Deformidad prom.', fmtPct(deformProm))}
       ${kpi('⏳', 'Atraso prom.', fmtPct(atrasoProm))}
-      ${kpi('🩹', 'Hernia prom.', fmtPct(herniaProm))}
+      ${kpi('🩹', 'Protusión prom.', fmtPct(protusionProm))}
+      ${noviablesProm !== null ? kpi('💀', 'No viables prom.', fmtPct(noviablesProm)) : ''}
       ${vacProm !== null ? kpi('🕳️', 'Vacías prom.', fmtPct(vacProm)) : ''}
       ${semiProm !== null ? kpi('🥣', 'Semillenas prom.', fmtPct(semiProm)) : ''}
       ${kpi('🔬', 'Hallazgos / revisión', findingsRate.toFixed(2))}
@@ -382,14 +395,14 @@ export function revisionesView(root) {
     <div class="card rv-mt"><div class="rv-chart-host">${hasAlim ? '<canvas id="rvAlim"></canvas>' : emptyMsg('Alimentación')}</div></div>`;
 
   // 3) Morfología: cuantitativo (% por día) + cualitativo (severidad leve/acentuada).
-  const hasMorfNum = rows.some((r) => parseNum(r, K.atraso) !== null || parseNum(r, K.hernia) !== null || parseNum(r, K.deformidad) !== null);
-  const MORF_CUAL = [['Opacidad', K.opacidad], ['Hernia', K.herniaCual]].filter(([, keys]) => rows.some((r) => g(r, keys)));
+  const hasMorfNum = rows.some((r) => parseNum(r, K.atraso) !== null || parseNum(r, K.protusion) !== null || parseNum(r, K.deformidad) !== null || parseNum(r, K.noviables) !== null);
+  const MORF_CUAL = [['Opacidad', K.opacidad], ['Protusión', K.protusionCual]].filter(([, keys]) => rows.some((r) => g(r, keys)));
   html += `<div class="rv-section-title">🔬 Morfología</div>
     <div class="rv-chart-grid">
-      <div class="card"><div class="rv-chart-title">Cuantitativo <span class="rv-chart-sub">% Atraso / Hernia / Deformidad por día</span></div>
+      <div class="card"><div class="rv-chart-title">Cuantitativo <span class="rv-chart-sub">% Atraso / Protusión / Deformidad / No viables por día</span></div>
         <div class="rv-chart-host">${hasMorfNum ? '<canvas id="rvMorfNum"></canvas>' : emptyMsg('Morfología (%)')}</div></div>
       <div class="card"><div class="rv-chart-title">Cualitativo <span class="rv-chart-sub">severidad (🟡 leve · 🔴 acentuada)</span></div>
-        <div class="rv-chart-host">${MORF_CUAL.length ? '<canvas id="rvMorfCual"></canvas>' : emptyMsg('Opacidad/Hernia')}</div></div>
+        <div class="rv-chart-host">${MORF_CUAL.length ? '<canvas id="rvMorfCual"></canvas>' : emptyMsg('Opacidad/Protusión')}</div></div>
     </div>`;
 
   // Relación Hallazgo → Acción (Sankey)
@@ -425,6 +438,7 @@ export function revisionesView(root) {
   html += histModalShell();
   html += modDetailShell();
   html += drillModalShell();
+  html += dayCellShell();
 
   root.innerHTML = html;
 
@@ -482,7 +496,7 @@ function treemapHTML(entries, total, type) {
     const n = rr.node, p = Math.round(n.value / (total || 1) * 100);
     const op = (0.42 + 0.5 * (n.value / maxV)).toFixed(2);
     const big = rr.w > 56 && rr.h > 30;
-    return `<g class="rv-tm-cell" data-drilltype="${esc(type)}" data-drillval="${esc(n.label)}">
+    return `<g class="rv-tm-cell" data-drilltype="${esc(type)}" data-drillval="${esc(n.label)}" role="button" tabindex="0" aria-label="${esc(type)} ${esc(n.label)}: ${n.value} revisiones, ${p}%. Desglose por módulo">
       <rect x="${rr.x.toFixed(1)}" y="${rr.y.toFixed(1)}" width="${Math.max(0, rr.w - 2).toFixed(1)}" height="${Math.max(0, rr.h - 2).toFixed(1)}" rx="4" fill="${RV_ACCENT}" fill-opacity="${op}"><title>${esc(n.label)}: ${n.value} revisión(es) · ${p}%</title></rect>
       ${big ? `<text x="${(rr.x + 8).toFixed(1)}" y="${(rr.y + 18).toFixed(1)}" font-size="11" font-weight="800" fill="#fff">${esc(n.label.length > 18 ? n.label.slice(0, 17) + '…' : n.label)}</text>
         <text x="${(rr.x + 8).toFixed(1)}" y="${(rr.y + 33).toFixed(1)}" font-size="11" font-weight="700" fill="#fff" opacity=".9">${p}% · ${n.value}</text>` : ''}
@@ -498,8 +512,7 @@ function getFilteredRows() {
   const months = [...new Set(allCorridas.map((c) => monthIndexOfCorrida(+c)).filter((x) => x >= 0))].sort((a, b) => a - b);
   const month = (vState.month != null && months.includes(vState.month)) ? vState.month : (months.length ? months[months.length - 1] : 0);
   const monthSet = new Set(allCorridas.filter((c) => monthIndexOfCorrida(+c) === month));
-  return all.filter((r) => inGlobalDate(r) && (!monthSet.size || monthSet.has(gCor(r))) &&
-    (!vState.corrida || gCor(r) === vState.corrida) && (!vState.mod || gMod(r) === vState.mod) && (!vState.siembra || gSiem(r) === vState.siembra));
+  return all.filter((r) => rowMatchesFilters(r, monthSet));
 }
 
 /** Sankey Hallazgo → Acción (SVG): cintas con grosor ∝ frecuencia del par. */
@@ -544,7 +557,7 @@ function sankeyHTML(rows) {
     const y1 = posR[f.a].y + offR[f.a]; offR[f.a] += w;
     const x0 = xL + nodeW, x1 = xR, xm = (x0 + x1) / 2;
     const pct = Math.round(f.c / obsSum[f.o] * 100); // % de los casos del hallazgo que llevaron a esa acción
-    ribbons += `<path class="rv-sk-flow" data-sk-obs="${esc(f.o)}" data-sk-act="${esc(f.a)}" data-sk-c="${f.c}" data-sk-pct="${pct}" d="M${x0},${y0.toFixed(1)} C${xm},${y0.toFixed(1)} ${xm},${y1.toFixed(1)} ${x1},${y1.toFixed(1)} L${x1},${(y1 + w).toFixed(1)} C${xm},${(y1 + w).toFixed(1)} ${xm},${(y0 + w).toFixed(1)} ${x0},${(y0 + w).toFixed(1)} Z" fill="${colorOf[f.o]}" fill-opacity="0.34"><title>${esc(f.o)} → ${esc(f.a)}: ${f.c} vez(ces) · ${pct}% de los casos de "${esc(f.o)}"</title></path>`;
+    ribbons += `<path class="rv-sk-flow" data-sk-obs="${esc(f.o)}" data-sk-act="${esc(f.a)}" data-sk-c="${f.c}" data-sk-pct="${pct}" role="button" tabindex="0" aria-label="${esc(f.o)} derivó en ${esc(f.a)}: ${f.c} veces, ${pct}% de los casos de ${esc(f.o)}" d="M${x0},${y0.toFixed(1)} C${xm},${y0.toFixed(1)} ${xm},${y1.toFixed(1)} ${x1},${y1.toFixed(1)} L${x1},${(y1 + w).toFixed(1)} C${xm},${(y1 + w).toFixed(1)} ${xm},${(y0 + w).toFixed(1)} ${x0},${(y0 + w).toFixed(1)} Z" fill="${colorOf[f.o]}" fill-opacity="0.34"><title>${esc(f.o)} → ${esc(f.a)}: ${f.c} vez(ces) · ${pct}% de los casos de "${esc(f.o)}"</title></path>`;
   });
   const lbl = (s) => esc(s.length > 20 ? s.slice(0, 19) + '…' : s);
   let nodes = '';
@@ -708,6 +721,9 @@ function cmpCard(m) {
 /* ============================================================
    COBERTURA · módulo × día (Punto 3)
    ============================================================ */
+// Clave de día estable (alineada con coverageData) para casar una celda con sus filas.
+const dayKeyOf = (r) => { const d = parseAnyDate(gFec(r)); return d ? String(d.getTime()) : ('x' + gFec(r)); };
+
 function coverageData(rows) {
   const dayMap = new Map();
   rows.forEach((r) => { const d = parseAnyDate(gFec(r)); const key = d ? d.getTime() : ('x' + gFec(r)); if (!dayMap.has(key)) dayMap.set(key, { label: d ? fmtShort(d) : (gFec(r) || '—'), ms: d ? d.getTime() : 0 }); });
@@ -731,7 +747,7 @@ function timelineHTML(rows) {
       const c = cell.get(m + '||' + key) || 0;
       if (!c) return `<td class="rv-tl-cell empty ${today ? 'rv-tl-today' : ''}" title="${esc(m)} · ${esc(d.label)}: sin revisión (hueco)">·</td>`;
       const op = (0.22 + 0.6 * (c / max)).toFixed(2);
-      return `<td class="rv-tl-cell ${today ? 'rv-tl-today' : ''}" style="background:rgba(0,131,143,${op});color:${c / max > 0.55 ? '#fff' : '#0a3d44'}" title="${esc(m)} · ${esc(d.label)}: ${c} revisión(es)">${c}</td>`;
+      return `<td class="rv-tl-cell rv-tl-click ${today ? 'rv-tl-today' : ''}" data-daycell="${esc(m)}" data-daykey="${esc(String(key))}" data-daylabel="${esc(d.label)}" role="button" tabindex="0" style="background:rgba(0,131,143,${op});color:${c / max > 0.55 ? '#fff' : '#0a3d44'}" title="${esc(m)} · ${esc(d.label)}: ${c} revisión(es) · clic = ver detalle">${c}</td>`;
     }).join('');
     return `<tr><th class="rv-tl-row rv-mod-link" data-moddetail="${esc(m)}" title="Ver detalle de ${esc(m)}">${esc(m)} 🔎</th>${tds}</tr>`;
   }).join('');
@@ -802,6 +818,96 @@ function modDetailShell() {
     </div>`;
 }
 
+/* ============================================================
+   VENTANA · Revisiones de un día+módulo (celda de Cobertura)
+   ============================================================ */
+function dayCellShell() {
+  return `<div class="rv-modal" id="rv-daycell-modal" data-daycell-overlay>
+      <div class="rv-modal-card">
+        <div class="rv-modal-head">
+          <span class="rv-modal-title" id="rv-daycell-title">🗓️ Revisiones del día</span>
+          <button class="rv-modal-x" data-daycell-close aria-label="Cerrar">✕</button>
+        </div>
+        <div class="rv-modal-body">
+          <div class="rv-hist-filters" id="rv-daycell-filters"></div>
+          <div id="rv-daycell-content"></div>
+        </div>
+      </div>
+    </div>`;
+}
+
+/** Revisiones de la celda activa (módulo + día), respetando los filtros de la vista
+ *  y el filtro de supervisor del propio modal. */
+function dayCellRows(applySup = true) {
+  return getFilteredRows()
+    .filter((r) => gMod(r) === dayCellSel.mod && dayKeyOf(r) === dayCellSel.daykey)
+    .filter((r) => !applySup || !dayCellSel.sup || gSup(r) === dayCellSel.sup)
+    .sort((a, b) => (gSup(a) || '').localeCompare(gSup(b) || ''));
+}
+
+/** Tarjeta de detalle completo de una revisión. */
+function revisionCardHTML(r) {
+  const pc = (keys) => { const v = parseNum(r, keys); return v === null ? '—' : fmtPct(v); };
+  const qc = (keys) => esc(g(r, keys) || '—');
+  const cellM = (label, val) => `<div class="rv-daycell-cell"><span>${label}</span><b>${val}</b></div>`;
+  return `<div class="rv-daycell-rev">
+      <div class="rv-daycell-rev-head">
+        <b>👤 ${esc(gSup(r) || 'Supervisor')}</b>
+        <span class="rv-daycell-rev-meta">${dateOf(r)}${gCor(r) ? ' · C' + esc(gCor(r)) : ''}${g(r, K.estadio) ? ' · 🦐 ' + esc(g(r, K.estadio)) : ''}${g(r, K.tipo) ? ' · ' + esc(g(r, K.tipo)) : ''}</span>
+      </div>
+      <div class="rv-daycell-grid">
+        ${cellM('Deformidad', pc(K.deformidad))}
+        ${cellM('% Atraso', pc(K.atraso))}
+        ${cellM('% Protusión', pc(K.protusion))}
+        ${cellM('% No viables', pc(K.noviables))}
+        ${cellM('Semillenas', pc(K.semillenas))}
+        ${cellM('Vacías', pc(K.vacias))}
+        ${cellM('Protusión (cual.)', qc(K.protusionCual))}
+        ${cellM('Opacidad', qc(K.opacidad))}
+        ${cellM('Asimilación', qc(K.asimilacion))}
+        ${cellM('Intestino', qc(K.intestino))}
+        ${cellM('Actividad', qc(K.actividad))}
+        ${cellM('Condición', qc(K.condicion))}
+      </div>
+      ${g(r, K.observaciones) ? `<div class="rv-daycell-note"><b>🔬 Observaciones:</b> ${esc(g(r, K.observaciones))}</div>` : ''}
+      ${g(r, K.accion) ? `<div class="rv-daycell-note"><b>🛠️ Acción:</b> ${esc(g(r, K.accion))}</div>` : ''}
+      ${hasComment(r) ? commentBlocks(r) : ''}
+    </div>`;
+}
+
+function dayCellContentHTML() {
+  const list = dayCellRows();
+  if (!list.length) return `<div class="empty-state" style="padding:24px">Sin revisiones para el supervisor seleccionado.</div>`;
+  return `<div class="rv-hist-count">${list.length} revisión(es)</div>` + list.map(revisionCardHTML).join('');
+}
+
+function dayCellFiltersHTML() {
+  const sups = [...new Set(dayCellRows(false).map(gSup).filter(Boolean))].sort();
+  if (sups.length < 2) return ''; // un solo supervisor: el filtro no aporta
+  const opt = (val, lbl) => `<option value="${esc(val)}" ${val === dayCellSel.sup ? 'selected' : ''}>${esc(lbl)}</option>`;
+  return `<label class="rv-hist-field">
+      <span>👤 Supervisor</span>
+      <select class="rv-select" data-daycell-sup>${opt('', 'Todos')}${sups.map((s) => opt(s, s)).join('')}</select>
+    </label>`;
+}
+
+function openDayCell(mod, daykey, label) {
+  dayCellSel.mod = mod; dayCellSel.daykey = daykey; dayCellSel.label = label; dayCellSel.sup = '';
+  const titleEl = document.getElementById('rv-daycell-title');
+  const filtersEl = document.getElementById('rv-daycell-filters');
+  const contentEl = document.getElementById('rv-daycell-content');
+  if (titleEl) titleEl.textContent = `🗓️ ${mod} · ${label}`;
+  if (filtersEl) filtersEl.innerHTML = dayCellFiltersHTML();
+  if (contentEl) contentEl.innerHTML = dayCellContentHTML();
+  const m = document.getElementById('rv-daycell-modal');
+  if (m) { m.classList.add('rv-open'); document.body.classList.add('modal-open'); }
+}
+
+function closeDayCell() {
+  const m = document.getElementById('rv-daycell-modal');
+  if (m) { m.classList.remove('rv-open'); document.body.classList.remove('modal-open'); }
+}
+
 /** Modal de drill-down por categoría (#14): desglose por módulo de una observación/acción. */
 function drillModalShell() {
   return `<div class="rv-modal" id="rv-drill-modal" data-drill-overlay>
@@ -819,14 +925,14 @@ function drillModalShell() {
 function moduleDetailHTML(mod) {
   const rows = store.globalData.filter((r) => isRevisionRow(r) && gMod(r) === mod &&
     inGlobalDate(r) &&
-    (!vState.supervisor || gSup(r) === vState.supervisor) &&
     (!vState.corrida || gCor(r) === vState.corrida) &&
     (!vState.siembra || gSiem(r) === vState.siembra));
   if (!rows.length) return '<div class="empty-state">Sin revisiones para este módulo con los filtros actuales.</div>';
   const sups = [...new Set(rows.map(gSup).filter(Boolean))];
   const deform = avg(rows.map((r) => parseNum(r, K.deformidad)).filter((v) => v !== null));
   const atraso = avg(rows.map((r) => parseNum(r, K.atraso)).filter((v) => v !== null));
-  const hernia = avg(rows.map((r) => parseNum(r, K.hernia)).filter((v) => v !== null));
+  const protusion = avg(rows.map((r) => parseNum(r, K.protusion)).filter((v) => v !== null));
+  const noviables = avg(rows.map((r) => parseNum(r, K.noviables)).filter((v) => v !== null));
   const findings = multiCounts(rows, K.observaciones).slice(0, 8);
   const actions = multiCounts(rows, K.accion).slice(0, 8);
   const vacias = avg(rows.map((r) => parseNum(r, K.vacias)).filter((v) => v !== null));
@@ -838,7 +944,8 @@ function moduleDetailHTML(mod) {
       ${kpi('👤', 'Supervisores', sups.length)}
       ${kpi('🧬', 'Deformidad prom.', fmtPct(deform))}
       ${kpi('⏳', 'Atraso prom.', fmtPct(atraso))}
-      ${kpi('🩹', 'Hernia prom.', fmtPct(hernia))}
+      ${kpi('🩹', 'Protusión prom.', fmtPct(protusion))}
+      ${noviables !== null ? kpi('💀', 'No viables prom.', fmtPct(noviables)) : ''}
       ${vacias !== null ? kpi('🕳️', 'Vacías prom.', fmtPct(vacias)) : ''}
       ${kpi('💬', 'Comentarios', comments.length)}
     </div>
@@ -927,6 +1034,13 @@ const empty = () => `<div class="empty-state" style="padding:24px">Sin datos.</d
 function openHist() { const m = document.getElementById('rv-hist-modal'); if (m) { m.classList.add('rv-open'); document.body.classList.add('modal-open'); } }
 function closeHist() { const m = document.getElementById('rv-hist-modal'); if (m) { m.classList.remove('rv-open'); document.body.classList.remove('modal-open'); } }
 
+/** Selecciona una cinta del Sankey (clic o teclado): muestra el % y la resalta. */
+function selectSankey(root, sk) {
+  const info = document.getElementById('rv-sankey-info');
+  if (info) info.innerHTML = `<b>${esc(sk.dataset.skObs)}</b> → <b>${esc(sk.dataset.skAct)}</b> · ${sk.dataset.skC} vez(ces) · <b>${sk.dataset.skPct}%</b> de los casos de “${esc(sk.dataset.skObs)}”`;
+  root.querySelectorAll('.rv-sk-flow').forEach((p) => p.classList.toggle('is-sel', p === sk));
+}
+
 function bind(root) {
   if (root._rvBound) return;
   root._rvBound = true;
@@ -939,12 +1053,7 @@ function bind(root) {
 
     // Sankey: seleccionar una conexión muestra el % (hallazgo → acción)
     const sk = e.target.closest('[data-sk-obs]');
-    if (sk) {
-      const info = document.getElementById('rv-sankey-info');
-      if (info) info.innerHTML = `<b>${esc(sk.dataset.skObs)}</b> → <b>${esc(sk.dataset.skAct)}</b> · ${sk.dataset.skC} vez(ces) · <b>${sk.dataset.skPct}%</b> de los casos de “${esc(sk.dataset.skObs)}”`;
-      root.querySelectorAll('.rv-sk-flow').forEach((p) => p.classList.toggle('is-sel', p === sk));
-      return;
-    }
+    if (sk) { selectSankey(root, sk); return; }
 
     // Drill-down de Calidad (tile → niveles por módulo)
     const ql = e.target.closest('[data-drillqual]');
@@ -975,6 +1084,11 @@ function bind(root) {
       if (m) { m.classList.remove('rv-open'); document.body.classList.remove('modal-open'); }
       return;
     }
+
+    // Celda de Cobertura (módulo × día) → ventana con las revisiones de ese día
+    const dc = e.target.closest('[data-daycell]');
+    if (dc) { openDayCell(dc.dataset.daycell, dc.dataset.daykey, dc.dataset.daylabel); return; }
+    if (e.target.id === 'rv-daycell-modal' || e.target.closest('[data-daycell-close]')) { closeDayCell(); return; }
 
     // Cerrar el drill-down por categoría (#14)
     if (e.target.id === 'rv-drill-modal' || e.target.closest('[data-drill-close]')) {
@@ -1008,10 +1122,33 @@ function bind(root) {
     }
   });
 
+  // Accesibilidad: tiles de Calidad, celdas del treemap y cintas del Sankey
+  // (todas role="button") responden a Enter/Espacio igual que al clic.
+  root.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    const ql = e.target.closest('[data-drillqual]');
+    const tm = e.target.closest('[data-drillval]');
+    const sk = e.target.closest('[data-sk-obs]');
+    const dc = e.target.closest('[data-daycell]');
+    if (!ql && !tm && !sk && !dc) return;
+    e.preventDefault();
+    if (ql) openDrillCalidad(ql.dataset.drillqual, CALIDAD_KEYS[ql.dataset.drillqual], getFilteredRows());
+    else if (tm) { const type = tm.dataset.drilltype; openDrill(type, tm.dataset.drillval, type === 'Acción' ? K.accion : K.observaciones, getFilteredRows()); }
+    else if (sk) selectSankey(root, sk);
+    else if (dc) openDayCell(dc.dataset.daycell, dc.dataset.daykey, dc.dataset.daylabel);
+  });
+
   // Selects → filtros de la vista (corrida/módulo) y de la ventana de historial.
   root.addEventListener('change', (e) => {
     const f = e.target.closest('[data-rvfilter]');
     if (f) { vState[f.dataset.rvfilter] = f.value || null; revisionesView(root); return; }
+    const dcs = e.target.closest('[data-daycell-sup]');
+    if (dcs) {
+      dayCellSel.sup = dcs.value;
+      const c = document.getElementById('rv-daycell-content');
+      if (c) c.innerHTML = dayCellContentHTML();
+      return;
+    }
     const s = e.target.closest('[data-hist-sel]');
     if (!s) return;
     histSel[s.dataset.histSel] = s.value;

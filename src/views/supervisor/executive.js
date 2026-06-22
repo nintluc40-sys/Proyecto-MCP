@@ -4,7 +4,7 @@
    tarjetas de módulo se muestran (las corridas de ese mes, ordenadas
    por corrida y módulo). Sin filtros de mes ni corrida.
    ============================================================ */
-import { modStats } from './stats.js';
+import { modStats, rowsOutOfDispatch } from './stats.js';
 import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, dot } from './ui.js';
 import { esc, odLevel, tmpLevel, svLevel } from '../../core/format.js';
 import { getField, F } from '../../core/fields.js';
@@ -22,14 +22,22 @@ const DISP_KEYS = [
 ];
 const hasDispatch = (r) => DISP_KEYS.some((k) => getField(r, k) !== '');
 
-/** Estado de despacho del módulo+corrida: '' · 'Despachando' · 'Despachado'. */
+/** Estado de despacho del módulo+corrida: '' · 'Despachando' · 'Despachado'.
+ *  Los tanques agrupados/descartados NO llegan al despacho, así que se excluyen del
+ *  requisito: el módulo se marca 'Despachado' cuando todos los tanques que SÍ debían
+ *  despacharse lo hicieron (y existe al menos un despacho real). Un tanque agrupado a
+ *  mitad de ciclo no dispara 'Despachado' por sí solo. */
 function dispatchStatus(ctx, mod, corrida) {
   const rows = ctx.larvCM.filter((r) => getField(r, F.modulo) === mod && getField(r, F.corrida) === corrida);
   const tanks = [...new Set(rows.map((r) => getField(r, F.tanque)).filter(Boolean))];
   if (!tanks.length) return '';
-  const done = tanks.filter((tq) => rows.some((r) => getField(r, F.tanque) === tq && hasDispatch(r)));
-  if (done.length === tanks.length) return 'Despachado';
-  if (done.length > 0) return 'Despachando';
+  const tankRows = (tq) => rows.filter((r) => getField(r, F.tanque) === tq);
+  const dispatched = (tq) => tankRows(tq).some(hasDispatch);
+  // Tanques que SÍ deben llegar al despacho (excluye agrupados/descartados).
+  const realTanks = tanks.filter((tq) => !rowsOutOfDispatch(tankRows(tq)));
+  const doneReal = realTanks.filter(dispatched);
+  if (realTanks.length && doneReal.length === realTanks.length) return 'Despachado';
+  if (tanks.some(dispatched)) return 'Despachando';
   return '';
 }
 
@@ -81,7 +89,9 @@ function freshness(lastDate) {
 }
 
 function cardHTML(ctx, mod, corrida, i) {
-  const col = colorFor(ctx.allMods.indexOf(mod) >= 0 ? ctx.allMods.indexOf(mod) : i);
+  // Color de respaldo (solo se usa si el estadío es desconocido y no hay etapa).
+  const modIdx = ctx.allMods.indexOf(mod);
+  const col = colorFor(modIdx >= 0 ? modIdx : i);
   const s = modStats(ctx, mod, corrida);
   const cat = stageCategory(s.estadio); // fondo de la tarjeta según la etapa
   const desp = dispatchStatus(ctx, mod, corrida);
@@ -102,7 +112,7 @@ function cardHTML(ctx, mod, corrida, i) {
   // #11 Frescura.
   const fr = freshness(s.lastDate);
 
-  return `<div class="sv-card" style="background:${cat ? cat.bg : col.bg}" data-nav="module" data-mod="${esc(mod)}" data-corrida="${esc(corrida)}">
+  return `<div class="sv-card" style="background:${cat ? cat.bg : col.bg}" data-nav="module" data-mod="${esc(mod)}" data-corrida="${esc(corrida)}" role="button" tabindex="0" aria-label="Abrir módulo ${esc(mod)}, corrida ${esc(corrida)}">
       <div class="sv-card-orb"></div>
       ${despBadge}
       <div class="sv-card-head">
@@ -207,6 +217,10 @@ export function renderExecutive(ctx) {
       <span class="chip">👁️ Modo Supervisor</span>
     </div>
   </div>`;
+
+  // Aclaración de UX: la Vista Ejecutiva define su periodo con el navegador de meses,
+  // no con el filtro de fecha global de la cabecera (ese sí aplica al entrar a un módulo).
+  h += `<div class="sv-exec-note muted">📅 El periodo aquí se elige con el navegador de meses ◀▶ de “Producción Omarsa”; el filtro de fecha global de la cabecera aplica al abrir un módulo.</div>`;
 
   // Panel del mes (tabla "Producción Omarsa" + leyenda + tarjetas), montado en after().
   h += `<div id="execMonth"></div>`;

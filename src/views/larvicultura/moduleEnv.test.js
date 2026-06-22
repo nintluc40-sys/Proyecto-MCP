@@ -37,6 +37,14 @@ describe('moduleEnv', () => {
     expect(env.level).toBe('rojo');
   });
 
+  it('salinidad es informativa: fuera de banda NO marca nivel rojo', () => {
+    store.globalData = [trow('M3', '2026-06-01', { Temperatura: 31, OD: 6, Salinidad: 50 })];
+    const env = moduleEnv('M3');
+    const sal = env.vars.find((v) => v.key === 'sal');
+    expect(sal.status).toBe('info');   // nunca 'out', aunque 50 esté fuera de 28–36
+    expect(env.level).toBe('verde');   // T°/OD en rango → módulo verde
+  });
+
   it('respeta el filtro de corrida', () => {
     store.globalData = [
       trow('M1', '2026-06-01', { Corrida: '580', OD: 6, Temperatura: 31, Salinidad: 30 }),

@@ -123,7 +123,11 @@
 .biomol .modal-close:hover { border-color: var(--bm-accent); color: var(--bm-accent); background: var(--bm-accent-soft); }
 .biomol .modal-body { padding: 14px 18px; overflow: auto; }
 .biomol .modal-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-.biomol .modal-table th { position: sticky; top: 0; background: var(--bm-surface2); color: var(--bm-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--bm-border); white-space: nowrap; }
+.biomol .modal-table th { position: static; background: var(--bm-surface2); color: var(--bm-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--bm-border); white-space: nowrap; }
+/* Encabezado pegajoso SOLO en tablas con su propio contenedor de scroll (.tbl-wrap).
+   En los modales con varias tablas apiladas (Reporte Comparativo), fijarlo hacía que
+   el thead se "arrastrara" sobre las filas al desplazar el cuerpo del modal. */
+.biomol .tbl-wrap .modal-table th { position: sticky; top: 0; z-index: 1; }
 .biomol .modal-table td { padding: 7px 10px; border-bottom: 1px solid var(--bm-border); color: var(--bm-text); }
 .biomol .modal-table tr:hover td { background: var(--bm-surface2); }
 .biomol .modal-table td.num { text-align: center; font-variant-numeric: tabular-nums; }

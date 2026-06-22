@@ -147,9 +147,9 @@ const AST_ACCION_OPTS = [
   "Continuar","Vigilar","Ajustar manejo","Revisar alimentación",
   "Revisar agua","Descartar"
 ];
-// Variables nuevas de AsT (selects) — columnas Hernia/Opacidad/Asimilación.
+// Variables nuevas de AsT (selects) — columnas Protusión/Opacidad/Asimilación.
 const AST_OPACIDAD_OPTS    = ["Leve","Acentuada"];
-const AST_HERNIA_OPTS      = ["Leve","Acentuada"];   // grado de hernia (≠ "% Hernia" numérico)
+const AST_HERNIA_OPTS      = ["Leve","Acentuada"];   // grado de protusión (≠ "% Protusión" numérico)
 const AST_ASIMILACION_OPTS = ["Alta","Media","Baja"];
 
 // ── Validates that m is a legal module identifier ──
@@ -6623,7 +6623,7 @@ function saveAstRecovery(){
   try{ data = collectAst(); }catch(_){ return; }
   const hasData = ["supervisor","modulo","siembra","corrida","estadio","deformidad",
     "atraso","hernia","hernia_grado","opacidad","asimilacion","semillenas","vacias",
-    "intestino","actividad","condicion","observaciones","accion","comentario","comentario_vesp"]
+    "intestino","actividad","condicion","noviables","observaciones","accion","comentario","comentario_vesp"]
     .some(k => data[k] !== "" && data[k] !== null && data[k] !== undefined);
   if(!hasData) return;
   _lsSet(AST_RECOV_KEY, JSON.stringify({ ts: Date.now(), data }));
@@ -6725,8 +6725,8 @@ function validateAst(data){
   if(!sanitizeStr(data.modulo||""))    { toast("⚠️ Selecciona un Módulo","warn",3500); return false; }
   if(!sanitizeStr(data.siembra||""))   { toast("⚠️ Selecciona la Siembra","warn",3500); return false; }
   if(!sanitizeStr(data.estadio||""))   { toast("⚠️ Selecciona el Estadío observado","warn",3500); return false; }
-  const _pctFields = [["deformidad","Deformidad"],["atraso","% Atraso"],["hernia","% Hernia"],
-                      ["semillenas","Semillenas (%)"],["vacias","Vacías (%)"]];
+  const _pctFields = [["deformidad","Deformidad"],["atraso","% Atraso"],["hernia","% Protusión"],
+                      ["noviables","% No viables"],["semillenas","Semillenas (%)"],["vacias","Vacías (%)"]];
   for(const [k,label] of _pctFields){
     const v = data[k];
     if(v !== "" && v !== null && v !== undefined){
@@ -6851,7 +6851,7 @@ function clearAstForm(){
   const data = collectAst();
   const hasData = ["supervisor","modulo","siembra","corrida","estadio","deformidad",
                    "atraso","hernia","hernia_grado","opacidad","asimilacion","semillenas","vacias",
-                   "intestino","actividad","condicion","observaciones","accion","comentario","comentario_vesp"]
+                   "intestino","actividad","condicion","noviables","observaciones","accion","comentario","comentario_vesp"]
     .some(k => data[k] !== "" && data[k] !== null && data[k] !== undefined);
   if(hasData){
     if(!confirm("¿Descartar lo que estás registrando?\nLos datos del formulario se perderán.")) return;
@@ -6870,15 +6870,17 @@ function buildAstPayload(records){
   // REEMPLAZA en lugar de duplicarse. Compatible hacia atrás — si el GAS aún
   // no se redesplegó (sigue en append-only), la columna ID simplemente viaja
   // como un dato más sin romper nada.
-  // Orden alineado al nuevo esquema del Google Sheet (22 cols + ID al final).
-  // Columnas nuevas: Hernia (grado), Opacidad, Asimilación, Semillenas (%),
+  // Orden alineado al nuevo esquema del Google Sheet (23 cols + ID al final).
+  // Columnas nuevas: Protusión (grado), Opacidad, Asimilación, Semillenas (%),
   // Vacías (%), y Comentario (vespertino). "Comentario" pasó a "Comentario
   // (matutino)" conservando el nombre interno `comentario` (compat. histórica).
+  // "% Hernia"/"Hernia" se renombraron en la hoja a "% Protusión"/"Protusión" (2026-06).
+  // "% No viables" se añadió tras "Condición_biológica" (2026-06).
   const headers = ["Fecha","Supervisor","Módulo","Siembra","Corrida",
                    "Estadío_observado","Tipo_revisión","Deformidad_%",
-                   "% Atraso","% Hernia","Hernia","Opacidad","Asimilación",
+                   "% Atraso","% Protusión","Protusión","Opacidad","Asimilación",
                    "Semillenas (%)","Vacías (%)",
-                   "Intestino","Actividad","Condición_biológica",
+                   "Intestino","Actividad","Condición_biológica","% No viables",
                    "Observaciones","Acción","Comentario (matutino)","Comentario (vespertino)","ID"];
   const numOrEmpty = (v) => { if(v===""||v==null) return ""; const n=parseFloat(v); return isFinite(n)?n:""; };
   const rows = records.map(r => {
@@ -6902,6 +6904,7 @@ function buildAstPayload(records){
       sanitizeStr(a.intestino||""),
       sanitizeStr(a.actividad||""),
       sanitizeStr(a.condicion||""),
+      numOrEmpty(a.noviables),
       sanitizeStr(a.observaciones||""),
       sanitizeStr(a.accion||""),
       sanitizeStr(a.comentario||""),
@@ -6985,8 +6988,8 @@ function downloadAstPDF(){
   const codigo = genCodigo('ast', AST_MOD, fecha);
 
   const headers = ['#','Sinc.','Fecha','Supervisor','Módulo','Siembra','Corrida',
-                   'Estadío','Tipo rev.','Def. %','Atraso %','Hernia %','Hernia','Opacidad','Asimil.','Semill. %','Vacías %',
-                   'Intestino','Actividad','Cond.',
+                   'Estadío','Tipo rev.','Def. %','Atraso %','Protusión %','Protusión','Opacidad','Asimil.','Semill. %','Vacías %',
+                   'Intestino','Actividad','Cond.','No viab. %',
                    'Observaciones','Acción','Coment. mat.','Coment. vesp.'];
   const cell    = (v) => (v!==undefined && v!=="" && v!==null) ? escapeHtml(String(v)) : '<span class="empty">—</span>';
 
@@ -7017,6 +7020,7 @@ function downloadAstPDF(){
         <td>${cell(a.intestino)}</td>
         <td>${cell(a.actividad)}</td>
         <td>${cell(a.condicion)}</td>
+        <td>${cell(a.noviables)}</td>
         <td style="text-align:left;max-width:130px;white-space:normal;word-break:break-word">${cell(a.observaciones)}</td>
         <td style="text-align:left;max-width:130px;white-space:normal;word-break:break-word">${cell(a.accion)}</td>
         <td style="text-align:left;max-width:130px;white-space:normal;word-break:break-word">${cell(a.comentario)}</td>
@@ -7161,12 +7165,14 @@ function renderAst(){
         <input type="number" name="deformidad" value="${vl(d,'deformidad')}" min="0" max="100" step="0.1" inputmode="decimal" placeholder="0 – 100"></div>
       <div class="mf"><label>% Atraso</label>
         <input type="number" name="atraso" value="${vl(d,'atraso')}" min="0" max="100" step="0.1" inputmode="decimal" placeholder="0 – 100"></div>
-      <div class="mf"><label>% Hernia</label>
+      <div class="mf"><label>% Protusión</label>
         <input type="number" name="hernia" value="${vl(d,'hernia')}" min="0" max="100" step="0.1" inputmode="decimal" placeholder="0 – 100"></div>
       <div class="mf"><label>Semillenas (%)</label>
         <input type="number" name="semillenas" value="${vl(d,'semillenas')}" min="0" max="100" step="0.1" inputmode="decimal" placeholder="0 – 100"></div>
       <div class="mf"><label>Vacías (%)</label>
         <input type="number" name="vacias" value="${vl(d,'vacias')}" min="0" max="100" step="0.1" inputmode="decimal" placeholder="0 – 100"></div>
+      <div class="mf"><label>% No viables</label>
+        <input type="number" name="noviables" value="${vl(d,'noviables')}" min="0" max="100" step="0.1" inputmode="decimal" placeholder="0 – 100"></div>
     </div>
     <div class="meta">
       <div class="mf"><label>Intestino</label>
@@ -7185,7 +7191,7 @@ function renderAst(){
         <select name="opacidad">
           <option value="">— Selecciona —</option>${optList(AST_OPACIDAD_OPTS, d.opacidad||"")}
         </select></div>
-      <div class="mf"><label>Hernia</label>
+      <div class="mf"><label>Protusión</label>
         <select name="hernia_grado">
           <option value="">— Selecciona —</option>${optList(AST_HERNIA_OPTS, d.hernia_grado||"")}
         </select></div>
@@ -7262,14 +7268,15 @@ function renderAst(){
           <span><b>Estadío:</b> ${escapeHtml(a.estadio||"—")}</span>
           <span><b>Def:</b> ${escapeHtml(String(a.deformidad==null||a.deformidad===""?"—":a.deformidad+"%"))}</span>
           <span><b>Atraso:</b> ${escapeHtml(String(a.atraso==null||a.atraso===""?"—":a.atraso+"%"))}</span>
-          <span><b>% Hernia:</b> ${escapeHtml(String(a.hernia==null||a.hernia===""?"—":a.hernia+"%"))}</span>
+          <span><b>% Protusión:</b> ${escapeHtml(String(a.hernia==null||a.hernia===""?"—":a.hernia+"%"))}</span>
           <span><b>Semillenas:</b> ${escapeHtml(String(a.semillenas==null||a.semillenas===""?"—":a.semillenas+"%"))}</span>
           <span><b>Vacías:</b> ${escapeHtml(String(a.vacias==null||a.vacias===""?"—":a.vacias+"%"))}</span>
           <span><b>Intestino:</b> ${escapeHtml(a.intestino||"—")}</span>
           <span><b>Actividad:</b> ${escapeHtml(a.actividad||"—")}</span>
           <span><b>Condición:</b> ${escapeHtml(a.condicion||"—")}</span>
+          <span><b>% No viables:</b> ${escapeHtml(String(a.noviables==null||a.noviables===""?"—":a.noviables+"%"))}</span>
           <span><b>Opacidad:</b> ${escapeHtml(a.opacidad||"—")}</span>
-          <span><b>Hernia:</b> ${escapeHtml(a.hernia_grado||"—")}</span>
+          <span><b>Protusión:</b> ${escapeHtml(a.hernia_grado||"—")}</span>
           <span><b>Asimilación:</b> ${escapeHtml(a.asimilacion||"—")}</span>
           ${a.observaciones ? `<span style="flex-basis:100%"><b>Obs:</b> ${escapeHtml(a.observaciones)}</span>` : ''}
           ${a.accion        ? `<span style="flex-basis:100%"><b>Acción:</b> ${escapeHtml(a.accion)}</span>` : ''}

@@ -14,7 +14,7 @@ export const algColor = (i) => ALG_PAL[i % ALG_PAL.length];
 // Color por categoría de sistema (compartido por la sección de análisis).
 export const CAT_COLOR = { Masivos: '#186447', Premasivos: '#739842', Fundas: '#015B76', Carboys: '#A06B27', PBR: '#CA6378', Otros: '#B7A59B' };
 
-const fmtK = (v) => {
+export const fmtK = (v) => {
   if (v === null || v === undefined || isNaN(v)) return '—';
   const a = Math.abs(v);
   if (a >= 1e6) return (v / 1e6).toFixed(2) + 'M';
@@ -38,22 +38,49 @@ const dateAxis = (days) => ({
   title: { display: !!rangeLabel(days), text: rangeLabel(days), color: AXIS_TITLE.color, font: { size: 10.5, weight: '700' } },
 });
 
-/** Densidad media por corrida (barras). */
-export function drawDensidadCorrida(canvasId, labels, values) {
-  return makeChart(canvasId, {
-    type: 'bar',
-    data: { labels: labels.map((c) => 'C' + c), datasets: [{ label: 'Densidad media', data: values, backgroundColor: labels.map((_, i) => algColor(i) + 'cc'), borderColor: labels.map((_, i) => algColor(i)), borderWidth: 1, borderRadius: 5, maxBarThickness: 64 }] },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      scales: { y: { beginAtZero: true, ticks: { callback: (v) => fmtK(v) }, title: { display: true, text: 'cel/ml' } }, x: { grid: { display: false }, title: { display: true, text: 'Corrida' } } },
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ' Densidad: ' + fmtK(c.parsed.y) + ' cel/ml' } } },
+/** Leyenda HTML en chips: cada serie es un recuadro (píldora) tintado con el color
+ *  de su línea, con el nombre dentro. Clic = oculta/muestra esa línea. Reemplaza la
+ *  leyenda nativa (display:false) y se rellena en el contenedor `legendId`. */
+function htmlChipLegend(legendId) {
+  return {
+    id: 'algChipLegend',
+    afterUpdate(chart) {
+      const box = document.getElementById(legendId);
+      if (!box) return;
+      box.innerHTML = '';
+      chart.data.datasets.forEach((ds, i) => {
+        const col = ds.borderColor || '#015B76';
+        const visible = chart.isDatasetVisible(i);
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'alg-leg-chip' + (visible ? '' : ' is-off');
+        chip.style.borderColor = col;
+        chip.style.background = col + (visible ? '22' : '11');
+        chip.style.color = '#37474f';
+        chip.textContent = ds.label;
+        chip.title = (visible ? 'Ocultar ' : 'Mostrar ') + ds.label;
+        chip.addEventListener('click', () => { chart.setDatasetVisibility(i, !chart.isDatasetVisible(i)); chart.update(); });
+        box.appendChild(chip);
+      });
     },
-  });
+  };
 }
 
-/** Curva de crecimiento (línea por lote · eje = día de proceso). */
-export function drawGrowth(canvasId, dayLabels, series) {
-  const datasets = series.map((s, i) => { const col = algColor(i); return { label: s.label, data: s.data, borderColor: col, backgroundColor: col + '22', tension: .3, pointRadius: 2, spanGaps: true, borderWidth: 2 }; });
+/** Curva de crecimiento (línea por lote · eje = día de proceso).
+ *  `legendId` (opcional) = contenedor para la leyenda en chips de color; si se omite,
+ *  usa la leyenda nativa de segmentos de línea.
+ *  `opts.norm` = normaliza cada serie a % de su propio pico (compara la FORMA del crecimiento). */
+export function drawGrowth(canvasId, dayLabels, series, legendId, opts = {}) {
+  const norm = !!opts.norm;
+  const proc = norm
+    ? series.map((s) => { const vals = s.data.filter((v) => v !== null && v !== undefined); const mx = vals.length ? Math.max(...vals) : 0; return { label: s.label, data: s.data.map((v) => (v === null || v === undefined || !mx) ? null : +(v / mx * 100).toFixed(1)) }; })
+    : series;
+  const datasets = proc.map((s, i) => { const col = algColor(i); return { label: s.label, data: s.data, borderColor: col, backgroundColor: col + '22', tension: .3, pointRadius: 2, spanGaps: true, borderWidth: 2 }; });
+  const yScale = norm
+    ? { min: 0, max: 105, ticks: { callback: (v) => v + '%', color: AXIS_TICK.color, font: AXIS_TICK.font }, title: { display: true, text: '% del pico', color: AXIS_TITLE.color, font: AXIS_TITLE.font }, grid: { color: 'rgba(120,144,156,.15)' } }
+    // Auto-escala (sin forzar 0) + margen 8% → resalta las variaciones diarias. Valores COMPLETOS.
+    : { grace: '8%', ticks: { callback: (v) => fmtFull(v), color: AXIS_TICK.color, font: AXIS_TICK.font }, title: { display: true, text: 'cel/ml', color: AXIS_TITLE.color, font: AXIS_TITLE.font }, grid: { color: 'rgba(120,144,156,.15)' } };
+  const tipLabel = norm ? (c) => ` ${c.dataset.label}: ${c.parsed.y === null ? '—' : c.parsed.y + '%'}` : (c) => ` ${c.dataset.label}: ${c.parsed.y === null ? '—' : fmtFull(c.parsed.y)}`;
   return makeChart(canvasId, {
     type: 'line',
     data: { labels: dayLabels, datasets },
@@ -61,15 +88,30 @@ export function drawGrowth(canvasId, dayLabels, series) {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       layout: { padding: { top: 4, right: 10 } },
       scales: {
-        // Auto-escala (sin forzar 0) + margen 8% → resalta las variaciones diarias.
-        // Valores cel/ml COMPLETOS (80000, 145000), no abreviados.
-        y: { grace: '8%', ticks: { callback: (v) => fmtFull(v), color: AXIS_TICK.color, font: AXIS_TICK.font }, title: { display: true, text: 'cel/ml', color: AXIS_TITLE.color, font: AXIS_TITLE.font }, grid: { color: 'rgba(120,144,156,.15)' } },
+        y: yScale,
         x: { grid: { display: false }, ticks: { color: AXIS_TICK.color, font: AXIS_TICK.font }, title: { display: true, text: 'Día de proceso', color: AXIS_TITLE.color, font: AXIS_TITLE.font } },
       },
       plugins: {
-        legend: { labels: LINE_LEGEND },
-        tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${c.parsed.y === null ? '—' : fmtFull(c.parsed.y)}` } },
+        legend: legendId ? { display: false } : { labels: LINE_LEGEND },
+        tooltip: { callbacks: { label: tipLabel } },
       },
+    },
+    plugins: legendId ? [htmlChipLegend(legendId)] : [],
+  });
+}
+
+/** Mini-curva (small-multiples): una línea compacta por lote/sistema, sin leyenda. */
+export function drawGrowthMini(canvasId, dayLabels, data, color) {
+  return makeChart(canvasId, {
+    type: 'line',
+    data: { labels: dayLabels, datasets: [{ data, borderColor: color, backgroundColor: color + '22', tension: .3, pointRadius: 1.5, spanGaps: true, borderWidth: 2, fill: true }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        y: { grace: '10%', ticks: { callback: (v) => fmtK(v), font: { size: 9 }, color: AXIS_TICK.color, maxTicksLimit: 4 }, grid: { color: 'rgba(120,144,156,.12)' } },
+        x: { ticks: { font: { size: 9 }, color: AXIS_TICK.color, maxTicksLimit: 5 }, grid: { display: false } },
+      },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ' ' + fmtFull(c.parsed.y) } } },
     },
   });
 }

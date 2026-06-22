@@ -35,7 +35,7 @@ function monthData(mIdx) {
     const cos = st.reduce((a, s) => a + (s.cosecha || 0), 0);
     const sup = sie > 0 ? Math.min(cos / sie * 100, 100) : null;
     st.forEach((s) => { if (s.plg !== null && s.plg !== undefined) plgAll.push(s.plg); });
-    return { cor, sie, cos, sup };
+    return { cor, mods, sie, cos, sup };
   });
   const sumSie = rows.reduce((a, r) => a + r.sie, 0);
   const sumCos = rows.reduce((a, r) => a + r.cos, 0);
@@ -78,7 +78,10 @@ function monthSummary(mIdx, monthSup) {
   const revRows = G.filter((r) => r._SheetOrigin === 'Registro_Supervision' && rowMonth(r) === mIdx);
   const revMods = new Set();
   revRows.forEach((r) => { const n = modNum(getField(r, F.modulo)); if (n != null) revMods.add(n); });
-  const covX = revMods.size, covY = prodMods.size || revMods.size;
+  // Cobertura = módulos EN PRODUCCIÓN que fueron revisados (intersección), para que
+  // coincida con la ventana de detalle y nunca supere el total (evita "5 de 4").
+  const covY = prodMods.size || revMods.size;
+  const covX = prodMods.size ? [...prodMods].filter((n) => revMods.has(n)).length : revMods.size;
 
   // Estado de revisiones (tasa de hallazgos por revisión).
   let revTier = 'x', revText = 'Sin datos', revCtx = 'Sin revisiones este mes';
@@ -114,13 +117,68 @@ function semChip(tier, text) {
   return `<span style="color:${c}">${dot} ${esc(text)}</span>`;
 }
 
+/* ============================================================
+   RESUMEN DE MICROALGAS — lector mínimo LOCAL de la hoja Lab_Algas,
+   acotado al MISMO mes (por Corrida_Larv). No importa la vista Algas
+   para no inflar el bundle (mismo patrón que el lector Biomol).
+   ============================================================ */
+const ALG_KEYS = {
+  corrida: ['Corrida_Larv', 'Corrida_larv', 'corrida_larv', 'Corrida', 'corrida'],
+  modulo: ['Modulo_Larv', 'Módulo_Larv', 'modulo_larv', 'Modulo', 'Módulo'],
+  sistema: ['Sistema', 'sistema'],
+  cel: ['Cel_ml', 'Cel/ml', 'cel_ml', 'Cel_mL', 'Cel/mL'],
+  protoz: ['Protozoarios', 'protozoarios'],
+  descartado: ['Descartado', 'descartado'],
+  obs: ['Observaciones', 'observaciones', 'Observación', 'observación'],
+};
+const ALG_SYS_CATS = ['Masivos', 'Premasivos', 'Fundas', 'Carboys', 'PBR', 'Otros'];
+function algSysCat(s) { const u = String(s || '').trim().toUpperCase(); if (!u) return null; if (u.startsWith('PBR')) return 'PBR'; if (u.startsWith('PM')) return 'Premasivos'; if (u === 'FM' || u === 'FP' || /^F/.test(u)) return 'Fundas'; if (/^C\d/.test(u)) return 'Carboys'; if (/^M\d/.test(u)) return 'Masivos'; return 'Otros'; }
+const algIsDesc = (r) => /^s[ií]$/i.test(String(getField(r, ALG_KEYS.descartado)).trim());
+function algMonthOf(r) { const n = parseInt(String(getField(r, ALG_KEYS.corrida)).replace(/\D/g, ''), 10); return Number.isNaN(n) ? -1 : monthIndexOfCorrida(n); }
+function algRowsOfMonth(mIdx) { return store.globalData.filter((r) => r._SheetOrigin === 'Lab_Algas' && algMonthOf(r) === mIdx); }
+
+/** Resumen de microalgas del mes (densidad, cultivos activos, descarte, protozoarios). */
+function algasSummary(mIdx) {
+  const R = algRowsOfMonth(mIdx);
+  const cels = R.map((r) => parseNum(r, ALG_KEYS.cel)).filter((v) => v !== null && v >= 0);
+  const proto = R.map((r) => parseNum(r, ALG_KEYS.protoz)).filter((v) => v !== null);
+  const protoAlert = proto.filter((v) => v >= 5).length;
+  const desc = R.filter(algIsDesc).length;
+  const cult = new Set();
+  R.forEach((r) => { const s = getField(r, ALG_KEYS.sistema); if (s) cult.add((getField(r, ALG_KEYS.corrida) || '') + '|' + s); });
+  return {
+    n: R.length,
+    densAvg: cels.length ? cels.reduce((a, b) => a + b, 0) / cels.length : null,
+    densMin: cels.length ? Math.min(...cels) : null,
+    densMax: cels.length ? Math.max(...cels) : null,
+    cultivos: cult.size,
+    desc, descPct: R.length ? desc / R.length * 100 : 0,
+    protoAlert, protoPct: proto.length ? protoAlert / proto.length * 100 : 0,
+  };
+}
+
+/** Bloque “🌿 Microalgas” (2 tarjetas clicables, estilo algas) para Visitante. */
+function algasSummaryBlock(mIdx) {
+  const s = algasSummary(mIdx);
+  if (!s.n) return ''; // sin datos de algas en el mes → no se muestra la sección
+  const sanTier = (s.descPct >= 20 || s.protoPct >= 25) ? 'r' : (s.descPct >= 10 || s.protoPct >= 10) ? 'a' : 'v';
+  return `<div class="card vt-card">
+    <div class="vt-card-title" style="color:#015B76">🌿 Microalgas · ${esc(monthLabelAt(mIdx))} <span class="muted" style="font-weight:600;font-size:12px">· laboratorio de algas</span></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      ${sumCard('🌿', 'Cultivos de microalgas', `${s.cultivos} cultivos`, `densidad prom. ${fmtK(s.densAvg)} cel/ml`, 'algasCultivos', '#015B76')}
+      ${sumCard('🦠', 'Sanidad de las algas', semChip(sanTier, `${s.descPct.toFixed(0)}% descarte`), `${s.desc} descartado(s) · protoz. altos en ${s.protoAlert} reg.`, 'algasSanidad', '#015B76')}
+    </div>
+  </div>`;
+}
+
 // Tarjeta de resumen (valueHtml = HTML controlado; label/context se escapan).
 // `key` (opcional) la vuelve clicable → abre la ventana de detalle.
-function sumCard(icon, label, valueHtml, context, key) {
+function sumCard(icon, label, valueHtml, context, key, accent) {
   const interactive = key ? ` data-sum="${key}" role="button" tabindex="0" title="Clic para ver el detalle"` : '';
   const cursor = key ? ';cursor:pointer' : '';
   const chevron = key ? ' <span style="opacity:.45">›</span>' : '';
-  return `<div class="vt-sum-card"${interactive} style="flex:1 1 160px;min-width:160px;background:#fff;border:1px solid #e3eaf2;border-radius:14px;padding:13px 15px;box-shadow:0 1px 2px rgba(0,0,0,.04)${cursor}">
+  const accentStyle = accent ? `;border-top:3px solid ${accent}` : '';
+  return `<div class="vt-sum-card"${interactive} style="flex:1 1 160px;min-width:160px;background:#fff;border:1px solid #e3eaf2;border-radius:14px;padding:13px 15px;box-shadow:0 1px 2px rgba(0,0,0,.04)${cursor}${accentStyle}">
     <div style="font-size:12px;color:#607d8b;font-weight:600">${icon} ${esc(label)}${chevron}</div>
     <div style="font-size:19px;font-weight:800;margin:5px 0;color:#263238;line-height:1.2">${valueHtml}</div>
     <div style="font-size:11px;color:#90a4ae">${esc(context)}</div>
@@ -153,6 +211,9 @@ const detailTable = (headers, body) =>
   `<table class="sv-table vt-table" style="width:100%">
     <thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
     <tbody>${body}</tbody></table>`;
+// KPI-píldora con acento de algas (teal) para el detalle de Microalgas.
+const algKpi = (label, value) => `<span style="background:rgba(1,91,118,.08);border:1px solid rgba(1,91,118,.22);border-radius:999px;padding:5px 12px;font-size:12px;color:#37474f;font-weight:700"><b style="color:#015B76;margin-right:4px">${esc(String(value))}</b>${esc(label)}</span>`;
+const algTealP = (txt) => `<p style="font-size:12px;color:#015B76;font-weight:700;margin:14px 0 6px">${esc(txt)}</p>`;
 
 /** Construye { title, html } del detalle de una tarjeta para un mes dado. */
 function sumDetail(key, mIdx, monthSup) {
@@ -191,7 +252,7 @@ function sumDetail(key, mIdx, monthSup) {
     G.filter((r) => r._SheetOrigin === 'Registro_Supervision' && rowMonth(r) === mIdx).forEach((r) => { const n = modNum(getField(r, F.modulo)); if (n != null) revSet.add(n); });
     const body = prod.map((n) => `<tr><td><b>M${String(n).padStart(2, '0')}</b></td><td>${revSet.has(n) ? '<span style="color:#2E9E5B;font-weight:700">✅ Revisado</span>' : '<span style="color:#90a4ae">⭕ Sin revisar</span>'}</td></tr>`).join('');
     return { title: '🔍 Cobertura de supervisión', html: prod.length
-      ? `<p style="font-size:12px;color:#607d8b;margin:0 0 10px">${revSet.size} de ${prod.length} módulos del mes revisados.</p>${detailTable(['Módulo', 'Estado'], body)}`
+      ? `<p style="font-size:12px;color:#607d8b;margin:0 0 10px">${prod.filter((n) => revSet.has(n)).length} de ${prod.length} módulos del mes revisados.</p>${detailTable(['Módulo', 'Estado'], body)}`
       : '<p style="color:#90a4ae">Sin módulos en producción este mes.</p>' };
   }
 
@@ -227,6 +288,49 @@ function sumDetail(key, mIdx, monthSup) {
     return { title: '🧪 Análisis realizados', html: bioRows.length
       ? `<p style="font-size:12px;color:#607d8b;margin:0 0 10px">${bioRows.length} muestra(s) analizada(s) · por lugar.</p>${detailTable(['Lugar', 'Muestras'], body)}`
       : '<p style="color:#90a4ae">Sin análisis de laboratorio este mes.</p>' };
+  }
+
+  if (key === 'algasCultivos' || key === 'algasSanidad') {
+    const R = algRowsOfMonth(mIdx);
+    if (!R.length) return { title: '🌿 Microalgas', html: '<p style="color:#90a4ae">Sin registros de microalgas este mes.</p>' };
+    const s = algasSummary(mIdx);
+    const gA = (r, k) => getField(r, ALG_KEYS[k]);
+    const nA = (r, k) => parseNum(r, ALG_KEYS[k]);
+
+    if (key === 'algasCultivos') {
+      const kpis = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+        ${algKpi('registros', s.n)}${algKpi('cultivos', s.cultivos)}${algKpi('cel/ml prom.', fmtK(s.densAvg))}${algKpi('cel/ml máx.', fmtK(s.densMax))}${algKpi('% descarte', s.descPct.toFixed(1) + '%')}</div>`;
+      const cat = ALG_SYS_CATS.map((c) => {
+        const rr = R.filter((r) => algSysCat(gA(r, 'sistema')) === c); if (!rr.length) return null;
+        const cc = rr.map((r) => nA(r, 'cel')).filter((v) => v !== null);
+        const cu = new Set(rr.map((r) => (gA(r, 'corrida') || '') + '|' + gA(r, 'sistema'))).size;
+        return { c, n: rr.length, cu, dens: cc.length ? cc.reduce((a, b) => a + b, 0) / cc.length : null };
+      }).filter(Boolean);
+      const catBody = cat.map((x) => `<tr><td><b>${esc(x.c)}</b></td><td>${x.cu}</td><td>${x.n}</td><td>${x.dens === null ? '—' : fmtK(x.dens) + ' cel/ml'}</td></tr>`).join('');
+      const modMap = new Map(); R.forEach((r) => { const m = gA(r, 'modulo'), v = nA(r, 'cel'); if (m && v !== null) modMap.set(m, (modMap.get(m) || 0) + v); });
+      const modBody = [...modMap.entries()].sort((a, b) => b[1] - a[1]).map(([m, v]) => `<tr><td><b>${esc(m)}</b></td><td>${fmtK(v)} cel/ml</td></tr>`).join('');
+      const obs = R.filter((r) => gA(r, 'obs')).slice(0, 8);
+      const obsBody = obs.map((r) => `<tr><td><b>${esc(gA(r, 'sistema') || '—')}</b></td><td>${esc(gA(r, 'obs'))}</td></tr>`).join('');
+      return { title: '🌿 Microalgas · cultivos', html:
+        `<p style="font-size:12px;color:#607d8b;margin:0 0 10px">Laboratorio de microalgas del mes (${R.length} registro(s)).</p>${kpis}`
+        + algTealP('⚙️ Por categoría') + detailTable(['Categoría', 'Cultivos', 'Registros', 'Densidad prom.'], catBody)
+        + (modBody ? algTealP('🔗 Módulos abastecidos · Σ cel/ml') + detailTable(['Módulo', 'Biomasa'], modBody) : '')
+        + (obsBody ? algTealP('📝 Observaciones') + detailTable(['Sistema', 'Observación'], obsBody) : '') };
+    }
+
+    // algasSanidad
+    const cat = ALG_SYS_CATS.map((c) => {
+      const rr = R.filter((r) => algSysCat(gA(r, 'sistema')) === c); if (!rr.length) return null;
+      const pa = rr.map((r) => nA(r, 'protoz')).filter((v) => v !== null).filter((v) => v >= 5).length;
+      const d = rr.filter(algIsDesc).length;
+      return { c, n: rr.length, pa, d, descPct: rr.length ? d / rr.length * 100 : 0 };
+    }).filter(Boolean);
+    const catBody = cat.map((x) => `<tr><td><b>${esc(x.c)}</b></td><td>${x.pa}</td><td>${x.d}</td><td>${x.descPct.toFixed(1)}%</td></tr>`).join('');
+    const kpis = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+      ${algKpi('descartados', s.desc)}${algKpi('% descarte', s.descPct.toFixed(1) + '%')}${algKpi('protoz. ≥ 5', s.protoAlert + ' reg.')}</div>`;
+    return { title: '🦠 Microalgas · sanidad', html:
+      `<p style="font-size:12px;color:#607d8b;margin:0 0 10px">Descarte y contaminación de microalgas del mes (${R.length} registro(s)).</p>${kpis}`
+      + algTealP('🦠 Por categoría') + detailTable(['Categoría', 'Protoz. ≥ 5', 'Descartados', '% Descarte'], catBody) };
   }
 
   return { title: 'Detalle', html: '<p style="color:#90a4ae">Sin detalle.</p>' };
@@ -336,7 +440,8 @@ export function visitanteView(root) {
         </div>
       </div>
 
-      ${summaryBlock(mIdx, d.monthSup, label)}`;
+      ${summaryBlock(mIdx, d.monthSup, label)}
+      ${algasSummaryBlock(mIdx)}`;
 
     // Gráfico de barras por corrida.
     const labels = d.rows.map((r) => 'C' + r.cor);
@@ -355,7 +460,11 @@ export function visitanteView(root) {
         },
         plugins: {
           legend: { display: false },
-          tooltip: { callbacks: { label: (c) => (isPop ? ' Población: ' + fmtPop(c.parsed.y) : ' Supervivencia: ' + fmtPct(c.parsed.y)) } },
+          tooltip: { callbacks: {
+            // Título: corrida + módulo(s) que la componen (p. ej. "C573 · M06, M07").
+            title: (items) => { const r = d.rows[items[0].dataIndex]; const m = r && r.mods && r.mods.length ? ' · ' + r.mods.join(', ') : ''; return 'C' + (r ? r.cor : '') + m; },
+            label: (c) => (isPop ? ' Población: ' + fmtPop(c.parsed.y) : ' Supervivencia: ' + fmtPct(c.parsed.y)),
+          } },
         },
       },
     });

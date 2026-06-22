@@ -16,9 +16,9 @@ import { esc } from '../../core/format.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { parseNum, getField, F } from '../../core/fields.js';
 import { makeChart } from '../../core/charts.js';
+import { PLG_KEYS } from './columns.js';
 
 const DEF_KEYS = ['Deformidad', 'deformidad'];
-const PLG_KEYS = ['PLG', 'Plg', 'plg', 'PL/g', 'pl/g'];
 const PESO_KEYS = ['Peso promedio (mg)', 'Peso_promedio', 'peso_promedio', 'Peso promedio', 'Peso_prom'];
 const ESTADIO_KEYS = ['Estadío', 'Estadio', 'estadío', 'estadio', 'ESTADIO'];
 

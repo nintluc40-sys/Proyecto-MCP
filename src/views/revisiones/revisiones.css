@@ -31,18 +31,22 @@
 .rv-tile-empty { opacity: .65; }
 .rv-tile-click { cursor: pointer; transition: box-shadow .15s, transform .15s; }
 .rv-tile-click:hover { box-shadow: 0 3px 12px rgba(0,0,0,.12); transform: translateY(-1px); }
+.rv-tile-click:focus-visible { outline: 2px solid var(--c-brand, #3F51B5); outline-offset: 2px; }
 .rv-drill-mini { flex: 1; display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--c-border-soft, #eceff1); margin: 0 10px; }
 .rv-drill-mini span { display: block; height: 100%; }
 /* Treemap (Observaciones / Acciones) */
 .rv-tm-svg { display: block; width: 100%; height: 100%; }
 .rv-tm-cell { cursor: pointer; }
 .rv-tm-cell:hover rect { fill-opacity: 1; }
+.rv-tm-cell:focus-visible { outline: none; }
+.rv-tm-cell:focus-visible rect { stroke: #263238; stroke-width: 2; fill-opacity: 1; }
 /* Tipografía uniforme en los SVG (treemap/sankey/burbujas) = misma que charts/títulos */
 .rv-tm-svg, .rv-sankey-svg, .rv-bubble-svg { font-family: "Segoe UI", system-ui, sans-serif; }
 /* Sankey Hallazgo → Acción */
 .rv-sankey-svg { display: block; min-width: 560px; }
 .rv-sk-flow { cursor: pointer; transition: fill-opacity .15s; }
 .rv-sk-flow:hover { fill-opacity: .7 !important; }
+.rv-sk-flow:focus-visible { outline: none; fill-opacity: .7 !important; stroke: #263238; stroke-width: 1.5; }
 .rv-sk-flow.is-sel { fill-opacity: .85 !important; stroke: #263238; stroke-width: 1; }
 .rv-sankey-info { margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--c-text-soft); }
 /* #8 · cobertura: columna de hoy + huecos */
@@ -155,6 +159,22 @@
 .rv-tl-row, .rv-mx-rowh { text-align: left !important; font-weight: 800; color: var(--c-text); white-space: nowrap; padding-right: 8px !important; }
 .rv-tl-cell { text-align: center; font-weight: 800; padding: 5px 8px; border-radius: 5px; min-width: 30px; }
 .rv-tl-cell.empty { color: var(--c-text-muted); background: var(--c-surface-2); font-weight: 400; }
+.rv-tl-cell.rv-tl-click { cursor: pointer; transition: filter .12s ease, transform .06s ease; }
+.rv-tl-cell.rv-tl-click:hover { filter: brightness(1.08); }
+.rv-tl-cell.rv-tl-click:active { transform: translateY(1px); }
+.rv-tl-cell.rv-tl-click:focus-visible { outline: 2px solid #1565C0; outline-offset: 1px; }
+
+/* ── Ventana: revisiones de un día+módulo (celda de Cobertura) ── */
+.rv-daycell-rev { border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 12px 14px; margin-bottom: 12px; background: var(--c-surface); }
+.rv-daycell-rev-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px dashed var(--c-border); }
+.rv-daycell-rev-head b { font-size: 13px; color: var(--c-text); }
+.rv-daycell-rev-meta { font-size: 11px; color: var(--c-text-muted); font-weight: 600; }
+.rv-daycell-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 7px; }
+.rv-daycell-cell { display: flex; flex-direction: column; gap: 1px; background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); padding: 5px 9px; }
+.rv-daycell-cell span { font-size: 9.5px; font-weight: 700; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: .3px; }
+.rv-daycell-cell b { font-size: 13px; font-weight: 900; color: var(--c-text); }
+.rv-daycell-note { margin-top: 9px; font-size: 12px; line-height: 1.45; color: var(--c-text-soft); }
+.rv-daycell-note b { color: var(--c-text); }
 
 /* ── Matriz Hallazgo × Acción (Punto 6) ── */
 .rv-mx-colh { vertical-align: bottom; max-width: 70px; }

@@ -54,6 +54,16 @@ export function supervisorView(root) {
   bindInteractions(root);
 }
 
+/** Aplica la navegación de un elemento [data-nav] al estado y re-renderiza. */
+function navTo(root, nav) {
+  const { nav: to, mod, tank, corrida } = nav.dataset;
+  vState.view = to;
+  if (to === 'modules') { vState.mod = null; vState.tank = null; vState.corrida = null; }
+  else if (to === 'module' || to === 'despacho' || to === 'omtex') { vState.mod = mod || vState.mod; vState.tank = null; if (corrida !== undefined && corrida !== '') vState.corrida = corrida; }
+  else { vState.mod = mod || vState.mod; vState.tank = tank || vState.tank; }
+  supervisorView(root);
+}
+
 function bindInteractions(root) {
   // El listener se delega en `root` y persiste entre re-renders internos
   // (que sólo reemplazan innerHTML). Vincular una sola vez evita apilarlos.
@@ -61,14 +71,16 @@ function bindInteractions(root) {
   root._svBound = true;
   root.addEventListener('click', (e) => {
     const nav = e.target.closest('[data-nav]');
-    if (nav) {
-      const { nav: to, mod, tank, corrida } = nav.dataset;
-      vState.view = to;
-      if (to === 'modules') { vState.mod = null; vState.tank = null; vState.corrida = null; }
-      else if (to === 'module' || to === 'despacho' || to === 'omtex') { vState.mod = mod || vState.mod; vState.tank = null; if (corrida !== undefined && corrida !== '') vState.corrida = corrida; }
-      else { vState.mod = mod || vState.mod; vState.tank = tank || vState.tank; }
-      supervisorView(root);
-      return;
-    }
+    if (nav) navTo(root, nav);
+  });
+  // Accesibilidad: las tarjetas (div[data-nav] con role="button") responden a
+  // Enter/Espacio. Los <button data-nav> ya disparan click nativo con Enter,
+  // así que se excluyen para no navegar dos veces.
+  root.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    const nav = e.target.closest('[data-nav]');
+    if (!nav || nav.tagName === 'BUTTON') return;
+    e.preventDefault();
+    navTo(root, nav);
   });
 }

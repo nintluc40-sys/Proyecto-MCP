@@ -18,6 +18,7 @@ import { getField, parseNum, F, isLarviculturaRow } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { fmtPop } from './ui.js';
 import { esc } from '../../core/format.js';
+import { PLGM_KEYS, natCmp } from './columns.js';
 
 // ▼▼ EDITAR AQUÍ al iniciar un mes nuevo: añade { label, desde: <corrida inicial> } ▼▼
 // (la corrida inicial es la de los módulos 6-7; el mes cierra con la de los módulos 9-10).
@@ -30,8 +31,6 @@ const MESES_PROD = [
   { label: 'Junio',   desde: 573 },
 ];
 
-const PLGM_KEYS = ['Plg (manual)', 'PLG (manual)', 'plg (manual)', 'Plg(manual)', 'PL/g (manual)', 'pl/g (manual)'];
-
 // Auto-extensión de meses: a partir del último mes definido en MESES_PROD, los
 // meses siguientes se generan automáticamente cada MONTH_SPAN corridas (patrón
 // observado: +6). Así un mes nuevo (p. ej. Julio = 579) NO cae dentro del anterior
@@ -41,7 +40,6 @@ const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
 
 const larvRows = () => store.globalData.filter(isLarviculturaRow);
 const distinct = (a) => [...new Set(a.filter(Boolean))];
-const natCmp = (a, b) => { const x = String(a).match(/\d+/), y = String(b).match(/\d+/); return (x && y && +x[0] !== +y[0]) ? +x[0] - +y[0] : String(a).localeCompare(String(b)); };
 const fmt1 = (v) => (v === null || v === undefined) ? '—' : v.toFixed(1);
 const pct = (v) => (v === null || v === undefined) ? '—' : v.toFixed(1) + '%';
 
@@ -96,7 +94,9 @@ export function modCorStats(mod, cor) {
     const rs = rsAll.filter((r) => getField(r, F.tanque) === tq)
       .sort((a, b) => (parseAnyDate(getField(a, F.fecha)) || 0) - (parseAnyDate(getField(b, F.fecha)) || 0));
     let first = null, last = null, plg = null;
-    rs.forEach((r) => { const p = parseNum(r, F.poblacion); if (p !== null && p > 0) { if (first === null) first = p; last = p; } });
+    // Siembra = primera población REAL (>0). Cosecha = última población registrada,
+    // honrando el 0 (tanque vaciado/agrupado): así no se arrastra el valor anterior.
+    rs.forEach((r) => { const p = parseNum(r, F.poblacion); if (p === null || p < 0) return; if (p > 0 && first === null) first = p; last = p; });
     for (let i = rs.length - 1; i >= 0; i--) { const v = parseNum(rs[i], PLGM_KEYS); if (v !== null && v > 0) { plg = v; break; } }
     if (first !== null) { firstSum += first; hasFirst = true; }
     if (last !== null) { lastSum += last; hasLast = true; }
@@ -105,7 +105,8 @@ export function modCorStats(mod, cor) {
   const siembra = hasFirst ? firstSum : null;
   const cosecha = hasLast ? lastSum : null;
   const plg = plgs.length ? plgs.reduce((a, b) => a + b, 0) / plgs.length : null;
-  const superv = (siembra && cosecha && siembra > 0) ? Math.min(cosecha / siembra * 100, 100) : null;
+  // cosecha === 0 es válido (tanque vaciado/agrupado) → superv 0, no null.
+  const superv = (siembra !== null && siembra > 0 && cosecha !== null) ? Math.min(cosecha / siembra * 100, 100) : null;
   return { siembra, cosecha, plg, superv };
 }
 

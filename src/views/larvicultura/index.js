@@ -64,7 +64,8 @@ function trendKpiCard(label, info, fmt) {
 function drawSparkline(canvas, values, color) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  const dpr = window.devicePixelRatio || 1;
+  // ≥2× como el resto de gráficos (core/charts.js) → línea y punto nítidos en 1x.
+  const dpr = Math.max(2, window.devicePixelRatio || 1);
   const w = canvas.clientWidth || 96, h = canvas.clientHeight || 30, pad = 3;
   canvas.width = w * dpr; canvas.height = h * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -246,8 +247,8 @@ function drawEnv() {
   const rowsEl = document.getElementById('lqEnvRows'); if (!rowsEl) return;
   rowsEl.innerHTML = env.vars.map((v) => {
     const stCol = v.status === 'ok' ? '#2E9E5B' : v.status === 'out' ? '#E0413E' : '#90a4ae';
-    const stTxt = v.status === 'ok' ? 'En rango' : v.status === 'out' ? 'Fuera de rango' : 'Sin datos';
-    const showRef = v.key !== 'sal'; // sin rango de referencia para Salinidad
+    const stTxt = v.status === 'ok' ? 'En rango' : v.status === 'out' ? 'Fuera de rango' : v.status === 'info' ? 'Informativo' : 'Sin datos';
+    const showRef = !v.informational; // sin rango de referencia para variables informativas (Salinidad)
     return `<div class="lq-env-row">
       <div class="lq-env-row-head">
         <span class="lq-env-row-ico">${v.icon}</span>
@@ -388,11 +389,16 @@ function refreshTank(root) {
   const last = lastState(daily, vars);
   const trend = buildTrendKpis(daily, wRows, vars);
   const cInfo = cultivoInfo(d.rows);
-  view.cInfo = cInfo; view.daily = daily; view.vars = vars;
+  // Composición y Manejo de agua siguen al tanque (Centro algal permanece a nivel módulo).
+  const wScope = state.tanque ? wRows : view.wByCor;
+  const comp = buildComposition(wScope, state.stage);
+  const mgmt = buildMgmt(wScope);
+  const semAgua = aguaSemaforo(mgmt);
+  view.cInfo = cInfo; view.daily = daily; view.vars = vars; view.comp = comp; view.mgmt = mgmt; view.semAgua = semAgua;
   const ctx = {
     cInfo, trend, daily, dailyFull, vars, stageCfg, d,
-    semDiag: diagSemaforo(last, vars), semAgua: view.semAgua,
-    comp: view.comp, algae: view.algae, mgmt: view.mgmt, env: view.env,
+    semDiag: diagSemaforo(last, vars), semAgua,
+    comp, algae: view.algae, mgmt, env: view.env,
     tankReady: !!state.corrida, corridaPrompt: view.corridaPrompt,
   };
   // Libera los charts del Detalle antes de reemplazar su DOM (evita instancias huérfanas).
@@ -477,9 +483,13 @@ export function larviculturaView(root) {
     popData = buildPopData(d.byCor); // SIEMPRE historia completa (inicial vs actual real)
     pStats = popStats(popData);
     scoreItems = buildScoreItems(wByCor, d.tanques, vars);
+    // Composición y Manejo de agua siguen al tanque elegido (wRows = filas del
+    // tanque en la ventana); sin tanque, promedio del módulo (wByCor).
+    // El Centro algal queda a nivel módulo (por estadío temprano es muy disperso por tanque).
+    const wScope = state.tanque ? wRows : wByCor;
     algae = buildAlgae(wByCor);
-    mgmt = buildMgmt(wByCor);
-    comp = buildComposition(wByCor, state.stage);
+    mgmt = buildMgmt(wScope);
+    comp = buildComposition(wScope, state.stage);
     hist = buildHistogram(wByCor, d.tanques, state.histVar);
   }
 
@@ -508,8 +518,9 @@ export function larviculturaView(root) {
 
   // Snapshot para los modales (datos vigentes de la selección activa).
   setSnapshot({ state, d, vars, daily, last, icl });
+  const cInfo = cultivoInfo(d.rows); // edad de cultivo (DOC); reutilizado en el ctx del Resumen
   // Contexto para refrescos parciales (histograma / algal / población)
-  Object.assign(view, { root, draw, vars, tankReady, corridaPrompt, wByCor, tanques: d.tanques, popData, pStats, algae, cInfo: cultivoInfo(d.rows) });
+  Object.assign(view, { root, draw, vars, tankReady, corridaPrompt, wByCor, tanques: d.tanques, popData, pStats, algae, cInfo });
 
   let h = `<div class="lq-head">
     <div>
@@ -567,7 +578,6 @@ export function larviculturaView(root) {
   const semDiag = diagSemaforo(last, vars);
   const semPop = popSemaforo(pStats);
   const semAgua = aguaSemaforo(mgmt);
-  const cInfo = cultivoInfo(d.rows);
   // Fisicoquímicos del módulo (T°/OD/Sal) — nivel de módulo, estable al cambiar de tanque.
   const env = moduleEnv(state.modulo, state.corrida);
 

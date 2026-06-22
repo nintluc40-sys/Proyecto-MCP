@@ -131,7 +131,11 @@
 .alg-table-wrap { padding: 0; overflow: auto; }
 .alg-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .alg-table th, .alg-table td { padding: 8px 10px; border-bottom: 1px solid var(--c-border-soft); white-space: nowrap; }
-.alg-table thead th { position: sticky; top: 0; background: var(--c-surface-2); color: var(--c-text-soft); font-weight: 700; text-align: left; z-index: 1; }
+.alg-table thead th { background: var(--c-surface-2); color: var(--c-text-soft); font-weight: 700; text-align: left; }
+/* Encabezado pegajoso SOLO cuando la tabla tiene su propio contenedor con scroll
+   (.alg-table-wrap). En los modales sin scroll propio, fijarlo hacía que el thead
+   se "arrastrara" sobre las filas al desplazar el cuerpo del modal. */
+.alg-table-wrap .alg-table thead th { position: sticky; top: 0; z-index: 1; }
 .alg-table tbody tr:hover { background: var(--c-surface-2); }
 
 /* ── Subnav: pestañas por sistema (botón sólido cuadrado) ── */
@@ -181,6 +185,35 @@
 .alg-host-md { height: 240px; }
 .alg-host-sm { height: 175px; }
 
+/* Leyenda de la curva en chips: cada serie = recuadro tintado con el color de su
+   línea, con el nombre dentro. Clic = oculta/muestra la línea (.is-off = oculta). */
+.alg-legend { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; padding: 10px 4px 2px; }
+.alg-legend:empty { display: none; }
+.alg-leg-chip { font-size: 11px; font-weight: 800; border: 1.5px solid currentColor; border-radius: var(--r-pill, 999px); padding: 3px 11px; cursor: pointer; line-height: 1.35; transition: opacity .12s ease, filter .12s ease; }
+.alg-leg-chip:hover { filter: brightness(.96); }
+.alg-leg-chip:active { transform: translateY(1px); }
+.alg-leg-chip.is-off { opacity: .42; text-decoration: line-through; }
+
+/* Conmutador de la curva — Small-multiples (rejilla de mini-curvas) */
+.alg-smult { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; padding: 4px 2px; }
+.alg-smult-cell { border: 1px solid var(--c-border-soft); border-radius: 8px; padding: 6px 8px 4px; background: var(--c-surface); }
+.alg-smult-title { font-size: 11px; font-weight: 800; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.alg-smult-host { position: relative; height: 110px; }
+
+/* Conmutador de la curva — Heatmap día × lote/sistema */
+.alg-gh-wrap { overflow: auto; max-height: 320px; }
+#algFsChart .alg-gh-wrap { max-height: 70vh; }
+/* Ancho completo: las columnas (días) se reparten el espacio horizontal disponible y
+   las celdas crecen, en vez de quedar apretadas en una esquina. */
+.alg-gh-table { border-collapse: collapse; font-size: 12px; width: 100%; table-layout: fixed; }
+.alg-gh-table th, .alg-gh-table td { border: 1px solid var(--c-border-soft); padding: 9px 7px; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.alg-gh-table thead th { background: var(--c-surface-2); color: var(--c-text-muted); font-weight: 700; position: sticky; top: 0; z-index: 1; }
+/* La 1ª columna (lote/sistema) toma un ancho fijo cómodo; el resto se reparte. */
+.alg-gh-rowh { position: sticky; left: 0; background: var(--c-surface-2); text-align: left !important; font-weight: 800; color: var(--c-text); width: 150px; }
+.alg-gh-table thead .alg-gh-rowh { z-index: 2; }
+.alg-gh-legend { display: flex; align-items: center; gap: 8px; font-size: 10.5px; color: var(--c-text-muted); margin-top: 6px; }
+.alg-gh-bar { flex: 1; max-width: 160px; height: 10px; border-radius: 5px; background: linear-gradient(90deg, rgba(1,91,118,.12), rgba(1,91,118,.92)); }
+
 /* Fila analítica: curva (ancha) + Estadísticas del Período (estrecha). */
 .alg-an-row { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 12px; }
 @media (max-width: 760px) { .alg-an-row { grid-template-columns: 1fr; } }
@@ -198,6 +231,20 @@
 .alg-collap-title { font-size: 14px; font-weight: 800; color: var(--c-text); }
 .alg-toggle { border: 1px solid var(--c-border); background: var(--c-surface-2); color: var(--c-text); border-radius: 8px; padding: 5px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
 .alg-toggle:hover { border-color: var(--alg-primary); }
+.alg-collap-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.alg-export-btn { color: var(--alg-primary); }
+
+/* Día clicable del calendario de Cobertura + panel de detalle */
+.alg-cal-click { cursor: pointer; }
+.alg-cal-click:hover { filter: brightness(1.12); outline: 1px solid var(--alg-primary); }
+.alg-cal-click:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+.alg-cov-detail:empty { display: none; }
+
+/* Modal de descarga Excel (rango de fechas) */
+.alg-export-card { width: min(440px, 100%); }
+.alg-export-range { display: flex; gap: 14px; flex-wrap: wrap; }
+.alg-export-fld { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 700; color: var(--c-text-soft); }
+.alg-export-fld input[type="date"] { font-size: 13px; }
 .alg-row-hidden { display: none; }
 .alg-row-hidden.alg-row-show { display: table-row; }
 

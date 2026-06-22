@@ -5,12 +5,13 @@
 
    Cantidad Cosechada = última población registrada por tanque.
    ============================================================ */
-import { getters } from './stats.js';
+import { getters, rowsAreGrouped } from './stats.js';
 import { colorFor, breadcrumb, fmtPop, kpiGlass } from './ui.js';
 import { esc } from '../../core/format.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { getField, parseNum } from '../../core/fields.js';
 import { makeChart } from '../../core/charts.js';
+import { natCmp } from './columns.js';
 
 const { gMod, gTnq, gCor, gFec, gPop } = getters;
 
@@ -26,11 +27,6 @@ const DKEY = {
 const DEST_COLORS = ['#1565C0', '#2E7D32', '#E65100', '#6A1B9A', '#00838F', '#AD1457', '#F9A825', '#546E7A'];
 const NO_DEST = 'Sin destino';
 
-const natCmp = (a, b) => {
-  const na = String(a).match(/\d+/), nb = String(b).match(/\d+/);
-  if (na && nb && +na[0] !== +nb[0]) return +na[0] - +nb[0];
-  return String(a).localeCompare(String(b));
-};
 const byDate = (arr) => [...arr].sort((a, b) => (parseAnyDate(gFec(a)) || new Date(0)) - (parseAnyDate(gFec(b)) || new Date(0)));
 const hasDispatch = (r) => [DKEY.densidad, DKEY.biomasa, DKEY.destino, DKEY.cajas].some((k) => getField(r, k) !== '');
 const cell = (r, keys) => { const v = getField(r, keys); return v === '' ? '—' : esc(v); };
@@ -43,10 +39,11 @@ export function renderDespacho(ctx, mod) {
 
   // Última población registrada (= cantidad cosechada), población inicial,
   // destino y biomasa por tanque.
-  const lastPop = {}, firstPop = {}, destino = {}, biomasa = {};
+  const lastPop = {}, firstPop = {}, destino = {}, biomasa = {}, grouped = {};
   let nDespachos = 0; const plgVals = [];
   tanks.forEach((tq) => {
     const tRows = byDate(rows.filter((r) => gTnq(r) === tq));
+    grouped[tq] = rowsAreGrouped(tRows); // tanque agrupado (palabra "Agrupado" en Observaciones)
     for (let i = tRows.length - 1; i >= 0; i--) { const p = gPop(tRows[i]); if (p !== null) { lastPop[tq] = p; break; } }
     for (let i = 0; i < tRows.length; i++) { const p = gPop(tRows[i]); if (p !== null) { firstPop[tq] = p; break; } }
     const disp = tRows.filter(hasDispatch);
@@ -89,6 +86,7 @@ export function renderDespacho(ctx, mod) {
   // ── Tabla: una fila por registro de despacho; tanques sin despacho se listan igual ──
   const headers = ['Fecha', 'Tanque', 'Densidad Cosechada', 'Biomasa', 'Plg (manual)', 'Cajas/Tinas', 'Destino', 'Cantidad Cosechada', 'Piscina'];
   let bodyRows = '';
+  const tqCell = (tq) => `<b>${esc(tq)}</b>${grouped[tq] ? ' <span class="sv-tank-grouped" title="Tanque agrupado: pob./SV en 0; su siembra inicial sigue contando">🔗 Agrupado</span>' : ''}`;
   tanks.forEach((tq) => {
     const disp = byDate(rows.filter((r) => gTnq(r) === tq && hasDispatch(r)));
     const cosechada = fmtPop(lastPop[tq] ?? null);
@@ -96,7 +94,7 @@ export function renderDespacho(ctx, mod) {
       disp.forEach((r) => {
         bodyRows += `<tr>
           <td>${cell(r, ['Fecha', 'fecha'])}</td>
-          <td><b>${esc(tq)}</b></td>
+          <td>${tqCell(tq)}</td>
           <td>${cell(r, DKEY.densidad)}</td>
           <td>${cell(r, DKEY.biomasa)}</td>
           <td>${cell(r, DKEY.plgM)}</td>
@@ -108,7 +106,7 @@ export function renderDespacho(ctx, mod) {
       });
     } else {
       bodyRows += `<tr class="sv-desp-empty">
-        <td>—</td><td><b>${esc(tq)}</b></td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
+        <td>—</td><td>${tqCell(tq)}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
         <td><b>${cosechada}</b></td><td>—</td>
       </tr>`;
     }

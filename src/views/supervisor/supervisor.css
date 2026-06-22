@@ -4,6 +4,7 @@
 .sv-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .sv-title { font-size: 24px; font-weight: 900; color: var(--c-brand); letter-spacing: -.5px; }
 .sv-subtitle { font-size: 12px; color: var(--c-text-muted); margin-top: 2px; }
+.sv-exec-note { font-size: 11px; color: var(--c-text-muted); margin: -4px 0 14px; }
 
 /* Filtros */
 .sv-filter-panel { background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 12px 16px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 9px; }
@@ -20,6 +21,7 @@
 .sv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
 .sv-card { position: relative; overflow: hidden; border-radius: 18px; padding: 20px; cursor: pointer; box-shadow: var(--sh-2); transition: transform .18s, box-shadow .18s; color: #fff; }
 .sv-card:hover { transform: translateY(-4px); box-shadow: var(--sh-3); }
+.sv-card:focus-visible { outline: 3px solid #fff; outline-offset: 2px; transform: translateY(-4px); box-shadow: var(--sh-3); }
 .sv-card-orb { position: absolute; top: -24px; right: -24px; width: 90px; height: 90px; border-radius: 50%; background: rgba(255,255,255,.08); pointer-events: none; }
 .sv-desp-badge { position: absolute; top: 12px; right: 12px; z-index: 1; font-size: 10px; font-weight: 900; letter-spacing: .4px; text-transform: uppercase; padding: 4px 9px; border-radius: var(--r-pill); color: #fff; border: 1px solid rgba(255,255,255,.5); }
 .sv-desp-badge.is-prog { background: rgba(245,124,0,.92); }
@@ -59,9 +61,18 @@
 .sv-banner-name { font-size: 22px; font-weight: 900; margin: 4px 0; }
 
 /* Migas */
+/* Botón "Volver" táctil al nivel anterior (cómodo en móvil/tablet). */
+.sv-back-btn { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 800; color: #fff; background: var(--sv-accent, var(--c-accent, #1565C0)); border: none; border-radius: var(--r-pill); padding: 9px 18px; cursor: pointer; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.14); transition: filter .12s ease, transform .06s ease; }
+.sv-back-btn:hover { filter: brightness(1.06); }
+.sv-back-btn:active { transform: translateY(1px); }
+.sv-back-btn:focus-visible { outline: 2px solid var(--sv-accent, #1565C0); outline-offset: 2px; }
+
 .sv-breadcrumb { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
-.sv-crumb { border: none; background: none; font-size: 12px; font-weight: 700; cursor: pointer; padding: 0; }
-.sv-crumb-current { font-size: 12px; color: var(--c-text-soft); font-weight: 700; }
+/* Migas como botones-píldora: área táctil amplia para móvil/tablet. */
+.sv-crumb { border: 1px solid var(--c-border-soft); background: var(--c-surface-2); font-size: 12px; font-weight: 700; cursor: pointer; padding: 7px 13px; border-radius: var(--r-pill); transition: filter .12s ease, transform .06s ease; }
+.sv-crumb:hover { filter: brightness(.97); }
+.sv-crumb:active { transform: translateY(1px); }
+.sv-crumb-current { font-size: 12px; color: var(--c-text-soft); font-weight: 700; padding: 7px 13px; border: 1px solid var(--c-border); border-radius: var(--r-pill); background: var(--c-surface); }
 .sv-crumb-sep { color: var(--c-border); }
 
 /* Tanques */
@@ -70,6 +81,7 @@
 .sv-tank-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
 .sv-tank-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 14px; cursor: pointer; transition: transform .15s, box-shadow .15s, border-color .15s; }
 .sv-tank-card:hover { transform: translateY(-2px); box-shadow: var(--sh-1); border-color: var(--c-brand-600); }
+.sv-tank-card:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: 2px; transform: translateY(-2px); box-shadow: var(--sh-1); }
 .sv-tank-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .sv-tank-name { font-size: 15px; font-weight: 800; color: var(--c-text); }
 .sv-tank-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 10px; font-size: 12px; }
@@ -177,6 +189,9 @@
 .ctt-gen { margin-top: 2px; }
 .ctt-out-title { font-size: 13px; font-weight: 800; color: var(--c-brand); margin: 16px 0 8px; }
 .ctt-cmp { display: flex; flex-wrap: wrap; gap: 8px; }
+.ctt-modebar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0 12px; }
+.ctt-mode-lbl { font-size: 10px; font-weight: 800; color: var(--c-text-soft); letter-spacing: .3px; text-transform: uppercase; }
+.ctt-mode-gap { width: 12px; }
 
 /* Tabla Producción Omarsa (Vista Ejecutiva) */
 .prod-card { margin-bottom: 16px; }
@@ -226,6 +241,17 @@
 .sv-modal-kpi.muted { color: var(--c-text-muted); }
 .sv-modal-note { font-size: 10.5px; color: var(--c-text-muted); margin-top: 8px; }
 
+/* Nota al pie de un gráfico (p. ej. aviso de extrapolación manual en Población) */
+.sv-chart-note { font-size: 10.5px; color: var(--c-text-muted); margin-top: 8px; line-height: 1.4; }
+
+/* Aviso de tanque agrupado (banner de la Visualización del Tanque) */
+.sv-grouped-note { background: rgba(123,31,162,.10); border: 1px solid rgba(123,31,162,.30); color: var(--c-text-soft); border-radius: var(--r-md); padding: 9px 14px; margin-bottom: 14px; font-size: 12px; line-height: 1.45; }
+.sv-grouped-note b { color: #7B1FA2; }
+
+/* Etiqueta "Agrupado" inline (tarjeta de tanque y tabla de despacho) */
+.sv-tank-grouped { display: inline-block; font-size: 9.5px; font-weight: 800; color: #7B1FA2; background: rgba(123,31,162,.12); border: 1px solid rgba(123,31,162,.30); border-radius: var(--r-pill); padding: 1px 7px; margin-left: 6px; vertical-align: middle; white-space: nowrap; }
+.sv-tank-card.is-grouped { border-color: rgba(123,31,162,.35); }
+
 /* Ranking mejor/peor en la Comparativa de tanques (resumen operativo) */
 .sv-modcmp-rank { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-bottom: 6px; }
 .sv-modcmp-chip { font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: var(--r-pill); border: 1px solid var(--c-border-soft); background: var(--c-surface-2); color: var(--c-text-soft); }
@@ -239,6 +265,28 @@
 .sv-bm-mode-label { font-size: 12px; font-weight: 700; color: var(--c-text-muted); }
 .sv-bm-mode-btn { font-size: 12px; font-weight: 700; padding: 5px 14px; border-radius: var(--r-pill); border: 1px solid var(--c-border-soft); background: var(--c-surface-2); color: var(--c-text-soft); cursor: pointer; }
 .sv-bm-mode-btn.is-active { background: var(--c-accent, #1565C0); border-color: var(--c-accent, #1565C0); color: #fff; }
+
+/* ── Modal Microbiología (Placa + Tabla + Heatmap) ── */
+.sv-micro-filters { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 10px 0 12px; }
+.sv-micro-daynav { display: inline-flex; align-items: center; gap: 8px; }
+.sv-micro-daylbl { font-size: 13px; font-weight: 700; color: var(--c-text); min-width: 130px; text-align: center; }
+.sv-micro-navbtn { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--c-border); background: var(--c-surface-2); color: var(--c-text-soft); font-size: 13px; cursor: pointer; }
+.sv-micro-navbtn:hover:not(:disabled) { background: var(--c-accent, #1565C0); color: #fff; border-color: var(--c-accent, #1565C0); }
+.sv-micro-navbtn:disabled { opacity: .35; cursor: default; }
+.sv-micro-main { display: grid; grid-template-columns: 1fr 250px; gap: 16px; align-items: start; }
+@media (max-width: 760px) { .sv-micro-main { grid-template-columns: 1fr; } }
+.sv-micro-dish, .sv-micro-side { background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-radius: var(--r-md); padding: 12px 14px; }
+.sv-micro-meta { font-size: 12.5px; color: var(--c-text-soft); margin: 4px 0 10px; }
+.sv-micro-meta b { color: var(--c-text); }
+.sv-micro-tablewrap { overflow: auto; max-height: 60vh; border: 1px solid var(--c-border-soft); border-radius: var(--r-md); }
+.sv-micro-tablewrap .sv-table th { position: sticky; top: 0; background: var(--c-surface-2); z-index: 1; }
+.sv-micro-hmwrap { overflow: auto; max-height: 60vh; border: 1px solid var(--c-border-soft); border-radius: var(--r-md); }
+.sv-micro-hm { border-collapse: collapse; font-size: 11.5px; width: max-content; min-width: 100%; }
+.sv-micro-hm th, .sv-micro-hm td { border: 1px solid var(--c-border-soft); padding: 6px 9px; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sv-micro-hm thead th { position: sticky; top: 0; background: var(--c-surface-2); color: var(--c-text-muted); font-weight: 700; z-index: 1; }
+.sv-micro-hm-rowh { position: sticky; left: 0; background: var(--c-surface-2); text-align: left !important; font-weight: 800; color: var(--c-text); white-space: nowrap; }
+.sv-micro-hm thead .sv-micro-hm-rowh { z-index: 2; }
+.sv-micro-hm-rowh .mic-pe-dot { display: inline-block; margin-right: 5px; vertical-align: middle; }
 .sv-bm-scroll { overflow: auto; border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); margin-top: 10px; }
 .sv-bm-table { border-collapse: collapse; width: 100%; font-size: 12px; }
 .sv-bm-table th, .sv-bm-table td { padding: 8px 10px; text-align: center; white-space: nowrap; }

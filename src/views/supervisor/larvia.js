@@ -9,12 +9,13 @@ import { esc } from '../../core/format.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { getField } from '../../core/fields.js';
 import { makeChart } from '../../core/charts.js';
+import { PLG_KEYS } from './columns.js';
 
 const { gMod, gTnq, gCor, gFec } = getters;
 
 const KEYS = {
   id: ['ID de Análisis', 'ID_Analisis', 'id_analisis', 'ID de Analisis', 'ID', 'id'],
-  plg: ['PLG', 'Plg', 'plg', 'PL/g', 'pl/g'],
+  plg: PLG_KEYS,
   peso: ['Peso promedio (mg)', 'Peso_promedio', 'peso_promedio', 'Peso promedio', 'Peso_prom'],
   longitud: ['Longitud promedio (mm)', 'Longitud_promedio', 'longitud_promedio', 'Longitud promedio', 'Long_prom'],
   uPeso: ['Uniformidad de peso', 'Uniformidad_de_peso', 'Uniformidad_peso'],
@@ -48,6 +49,20 @@ export function renderLarvia(ctx, mod, tq) {
   const rows = ctx.larvWin.filter((r) =>
     gMod(r) === mod && (!corrida || gCor(r) === corrida) && (gTnq(r) === tq || gTnq(r) === ''))
     .sort((a, b) => (parseAnyDate(gFec(a)) || new Date(0)) - (parseAnyDate(gFec(b)) || new Date(0)));
+
+  // Filas de TODO el módulo (misma corrida) → promedio del módulo para el overlay
+  // del fullscreen, igual que en la Visualización del Tanque.
+  const modRows = ctx.larvWin.filter((r) => gMod(r) === mod && (!corrida || gCor(r) === corrida));
+  // Por métrica (no derivada): Map fecha → promedio del módulo ese día.
+  const modAvgByKey = {};
+  METRICS.forEach((m) => {
+    if (m.derived) return;
+    const byDate = new Map();
+    modRows.forEach((r) => { const f = gFec(r); const v = pf(r, KEYS[m.key]); if (!f || v === null) return; if (!byDate.has(f)) byDate.set(f, []); byDate.get(f).push(v); });
+    const avgMap = new Map();
+    byDate.forEach((arr, f) => avgMap.set(f, arr.reduce((a, b) => a + b, 0) / arr.length));
+    modAvgByKey[m.key] = avgMap;
+  });
 
   const bit = rows.map((r) => {
     const o = { fecha: gFec(r), estadio: getField(r, ['Estadío', 'Estadio', 'estadío', 'estadio']), id: getField(r, KEYS.id) };
@@ -197,17 +212,24 @@ export function renderLarvia(ctx, mod, tq) {
   const drawMetric = (canvasId, m, big) => {
     const slice = metricSlice(m);
     if (!slice) return;
+    const datasets = [{ label: m.label, data: slice.map((d) => d[m.key]), borderColor: m.color, backgroundColor: m.color + '22', tension: .3, fill: true, pointRadius: big ? 3 : 2, pointHoverRadius: big ? 6 : 4, spanGaps: true, borderWidth: big ? 2.5 : 2 }];
+    // Overlay del promedio del módulo (solo en fullscreen, alineado por fecha).
+    const modMap = !m.derived ? modAvgByKey[m.key] : null;
+    const hasOverlay = big && modMap && slice.some((d) => modMap.get(d.fecha) != null);
+    if (hasOverlay) {
+      datasets.push({ label: 'Promedio módulo', data: slice.map((d) => (modMap.get(d.fecha) ?? null)), borderColor: '#90A4AE', borderDash: [5, 4], backgroundColor: 'transparent', tension: .3, pointRadius: 0, spanGaps: true, fill: false, borderWidth: 2 });
+    }
     makeChart(canvasId, {
       type: 'line',
-      data: { labels: slice.map((d) => d.fecha), datasets: [{ data: slice.map((d) => d[m.key]), borderColor: m.color, backgroundColor: m.color + '22', tension: .3, fill: true, pointRadius: big ? 3 : 2, pointHoverRadius: big ? 6 : 4, spanGaps: true, borderWidth: big ? 2.5 : 2 }] },
+      data: { labels: slice.map((d) => d.fecha), datasets },
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: { display: false },
+          legend: { display: !!hasOverlay, labels: { boxWidth: 12, font: { size: 11 } } },
           tooltip: {
             callbacks: {
               afterTitle: (it) => { const st = slice[it[0].dataIndex] && slice[it[0].dataIndex].estadio; return st ? 'Estadío: ' + st : ''; },
-              label: (c) => `${m.label}: ${c.parsed.y == null ? '—' : c.parsed.y.toFixed(m.dec)}`,
+              label: (c) => `${c.dataset.label}: ${c.parsed.y == null ? '—' : c.parsed.y.toFixed(m.dec)}`,
             },
           },
         },

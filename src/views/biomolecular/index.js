@@ -850,16 +850,48 @@ function drawTable() {
   });
   tbody.appendChild(frag);
 }
-function exportTableExcel() {
-  const data = filtered(); if (!data.length) { window.alert('Sin registros visibles para exportar.'); return; }
-  const fullD = (iso) => { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
+/** Matriz (AoA) de exportación a partir de un conjunto de filas. */
+function biomolExportAoa(data) {
+  const fullD = (iso) => { const [y, m, d] = String(iso).split('-'); return `${d}/${m}/${y}`; };
   const resOut = (v) => v === 'Positivo' ? 'Positivo' : v === 'Negativo' ? 'Negativo' : '';
   const header = ['Fecha', 'Código', 'Corrida', 'Piscina', 'Lugar', 'Tanque', 'Otros', 'Muestra', 'Estadío', 'Sexo', 'IHHNV', 'WSSV', 'BP', 'AHPND/EMS', 'NHPB', 'EHP'];
   const aoa = [header];
   data.forEach((r) => aoa.push([fullD(r.f), r.cod, r.corrida, r.piscina, r.lugar, r.tq, r.otros, r.muestra, r.estadio, r.sexo, resOut(r.IHHNV), resOut(r.WSSV), resOut(r.BP), resOut(r.AHPND), resOut(r.NHPB), resOut(r.EHP)]));
-  const XLSX = window.XLSX; const ws = XLSX.utils.aoa_to_sheet(aoa); const wb = XLSX.utils.book_new();
+  return aoa;
+}
+
+/** Filas a exportar = filtered() acotadas al rango de fechas del modal (r.f es ISO yyyy-mm-dd). */
+function exportRangeRows() {
+  const from = $('bm-export-from')?.value || '';
+  const to = $('bm-export-to')?.value || '';
+  return filtered().filter((r) => (!from || r.f >= from) && (!to || r.f <= to));
+}
+function updateBmExportInfo() {
+  const info = $('bm-export-info'); if (info) info.textContent = `Se exportarán ${exportRangeRows().length} registro(s) en el rango elegido.`;
+}
+function openExportModal() {
+  const m = $('bm-export-modal'); if (!m) return;
+  const data = filtered();
+  if (!data.length) { window.alert('Sin registros visibles para exportar.'); return; }
+  const dates = data.map((r) => r.f).filter(Boolean).sort();
+  const f = $('bm-export-from'), t = $('bm-export-to');
+  if (f) f.value = dates.length ? dates[0] : '';
+  if (t) t.value = dates.length ? dates[dates.length - 1] : '';
+  const scope = $('bm-export-scope'); if (scope) scope.textContent = `${data.length} registro(s) con los filtros activos. Elige el rango de fechas a exportar.`;
+  updateBmExportInfo();
+  m.classList.add('open'); document.body.classList.add('modal-open');
+}
+function closeExportModal() { $('bm-export-modal')?.classList.remove('open'); document.body.classList.remove('modal-open'); }
+function runExport() {
+  const XLSX = window.XLSX;
+  if (!XLSX) { window.alert('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa el <script> del CDN en index.html o tu conexión.'); return; }
+  const data = exportRangeRows();
+  if (!data.length) { window.alert('Sin registros en el rango de fechas elegido.'); return; }
+  const ws = XLSX.utils.aoa_to_sheet(biomolExportAoa(data)); const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'BIOMOL');
-  XLSX.writeFile(wb, `BIOMOL_export_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  const from = $('bm-export-from')?.value || 'inicio', to = $('bm-export-to')?.value || 'fin';
+  XLSX.writeFile(wb, `BIOMOL_${from}_a_${to}.xlsx`);
+  closeExportModal();
 }
 
 /* ============================================================
@@ -1403,6 +1435,23 @@ function shellHTML() {
       </div>
     </div>
 
+    <div class="modal-overlay" id="bm-export-modal" role="dialog" aria-modal="true">
+      <div class="modal-content" style="max-width:440px">
+        <div class="modal-header"><h2 class="modal-title">⬇ Exportar a Excel · rango de fechas</h2><button type="button" class="modal-close" id="bm-export-close">✕ Cerrar</button></div>
+        <div class="modal-body">
+          <div id="bm-export-scope" style="font-size:12px;color:var(--bm-muted);margin-bottom:12px"></div>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+            <label style="font-size:12px;color:var(--bm-muted);display:flex;flex-direction:column;gap:5px">Desde
+              <input type="date" id="bm-export-from" class="rs-input"></label>
+            <label style="font-size:12px;color:var(--bm-muted);display:flex;flex-direction:column;gap:5px">Hasta
+              <input type="date" id="bm-export-to" class="rs-input"></label>
+          </div>
+          <div id="bm-export-info" style="font-size:12px;color:var(--bm-text);margin-bottom:14px"></div>
+          <button type="button" class="report-add-btn" id="bm-export-go">⬇ Descargar Excel</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-overlay" id="report-modal" role="dialog" aria-modal="true">
       <div class="modal-content report-modal-content">
         <div class="modal-header"><h3 class="modal-title">📊 Reporte Comparativo · hasta 3 series</h3><button type="button" class="modal-close" id="report-modal-close">✕ ESC</button></div>
@@ -1470,8 +1519,13 @@ function shellHTML() {
 function initFilters(reset) {
   const lugares = [...new Set(RAW.map((d) => d.lugar))].sort();
   const fechas = [...new Set(RAW.map((d) => d.f))].sort();
+  // El modo AUD nunca sobrevive a un rebuild de RAW: su transformación (simulación)
+  // se aplica solo al pulsar el botón y NO se reaplica al reconstruir RAW. Por eso,
+  // tras cualquier (re)render el estado correcto es "off" (datos reales) — evita que
+  // el botón quede "on" mostrando datos reales tras navegar y volver.
+  audMode = false;
   if (reset) {
-    audMode = false; timeGran = 'month'; datePreset = 'all';
+    timeGran = 'month'; datePreset = 'all';
     activeLugares = new Set(lugares); activeFechas = new Set(fechas); activeDiags = new Set(DIAGS);
     originSuppressed.clear(); hmSuppressed.clear(); calSuppressed.clear();
   } else {
@@ -1525,7 +1579,11 @@ function wire(root) {
   $('rsd-modal').addEventListener('click', (e) => { if (e.target.id === 'rsd-modal') closeRS(); });
   $('rsd-date').addEventListener('change', (e) => { rsdDate = e.target.value; rsdLugar = null; renderRS(); });
   $('rsd-diag').addEventListener('change', (e) => { rsdDiag = e.target.value; renderRS(); });
-  $('export-xlsx-btn').addEventListener('click', exportTableExcel);
+  $('export-xlsx-btn').addEventListener('click', openExportModal);
+  $('bm-export-close')?.addEventListener('click', closeExportModal);
+  $('bm-export-go')?.addEventListener('click', runExport);
+  $('bm-export-modal')?.addEventListener('click', (e) => { if (e.target.id === 'bm-export-modal') closeExportModal(); });
+  ['bm-export-from', 'bm-export-to'].forEach((id) => $(id)?.addEventListener('change', updateBmExportInfo));
   // Reporte comparativo
   $('report-btn').addEventListener('click', openReport);
   $('report-modal-close').addEventListener('click', closeReport);
@@ -1557,7 +1615,7 @@ function wire(root) {
   // cuando no hay modal/fullscreen de Biomol montado.
   if (!docWired) {
     docWired = true;
-    document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; const rm = $('report-modal'), tm = $('total-modal'), sm = $('rsd-modal'); if (rm && rm.classList.contains('open')) closeReport(); else if (tm && tm.classList.contains('open')) closeTotalModal(); else if (sm && sm.classList.contains('open')) closeRS(); else if (fsCard) exitFS(); else closeDropdowns(); });
+    document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; const rm = $('report-modal'), tm = $('total-modal'), sm = $('rsd-modal'), em = $('bm-export-modal'); if (em && em.classList.contains('open')) closeExportModal(); else if (rm && rm.classList.contains('open')) closeReport(); else if (tm && tm.classList.contains('open')) closeTotalModal(); else if (sm && sm.classList.contains('open')) closeRS(); else if (fsCard) exitFS(); else closeDropdowns(); });
   }
 }
 
@@ -1565,6 +1623,13 @@ export function biomolecularView(root) {
   if (!store.globalData.length) { root.innerHTML = '<div class="empty-state">📡 Conectando… cargando datos del sistema.</div>'; return; }
   RAW = normalizeRows(store.globalData.filter((r) => r._SheetOrigin === 'Biomol'));
   if (!RAW.length) { root.innerHTML = '<div class="empty-state" style="padding:60px 20px">🧬 Sin datos en la hoja <b>Biomol</b> del Google Sheet.</div>'; return; }
+
+  // La vista depende de D3 (CDN en index.html). Si no cargó (firewall/offline), un
+  // mensaje accionable es mejor que el "Error al cargar" genérico del import diferido.
+  if (!window.d3) {
+    root.innerHTML = '<div class="empty-state" style="padding:60px 20px">🧬 No se pudo cargar la librería de gráficos <b>D3</b>.<br><small class="muted">Revisa el &lt;script&gt; del CDN en index.html o tu conexión a internet.</small></div>';
+    return;
+  }
 
   const sig = RAW.length + '|' + RAW[0].f + '|' + RAW[RAW.length - 1].f;
   const reset = sig !== lastSig;

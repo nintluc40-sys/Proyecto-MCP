@@ -109,6 +109,10 @@
 .mic-day-nav { display: inline-flex; align-items: center; gap: 8px; margin: 6px 0 10px; }
 .mic-day-lbl { font-size: 13px; font-weight: 700; color: var(--c-text); min-width: 120px; text-align: center; }
 .mic-petri-dish { display: flex; justify-content: center; }
+/* Selector de tema flotante SOBRE el lienzo de la placa (esquina sup. der.). */
+.mic-petheme-fab { position: absolute; top: 8px; right: 8px; z-index: 2; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(255,255,255,.35); background: rgba(20,30,25,.55); color: #fff; font-size: 14px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(2px); transition: background .15s, transform .15s; }
+.mic-petheme-fab:hover { background: rgba(20,30,25,.8); transform: scale(1.08); }
+.mic-petheme-fab:focus-visible { outline: 2px solid #7AE87A; outline-offset: 2px; }
 .mic-petri-foot { text-align: center; font-size: 11px; color: var(--c-text-muted); margin-top: 8px; }
 
 .mic-pe-sum { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
@@ -142,3 +146,109 @@
 /* animaciones de la placa */
 @keyframes micColony { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes micDishIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ============================================================
+   MATRIZ Patógeno × Ubicación (heatmap semaforizado)
+   ============================================================ */
+.mic-mx-card { display: flex; flex-direction: column; }
+.mic-mx-wrap { overflow: auto; max-height: 460px; border: 1px solid var(--c-border-soft); border-radius: var(--r-md); margin-bottom: 8px; }
+.mic-mx-table { border-collapse: collapse; font-size: 11.5px; width: max-content; min-width: 100%; }
+.mic-mx-table th, .mic-mx-table td { border: 1px solid var(--c-border-soft); padding: 6px 9px; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mic-mx-table thead th { background: var(--c-surface-2); color: var(--c-text-muted); font-weight: 700; position: sticky; top: 0; z-index: 1; }
+.mic-mx-rowh { position: sticky; left: 0; background: var(--c-surface-2); text-align: left !important; font-weight: 800; color: var(--c-text); white-space: nowrap; }
+.mic-mx-table thead .mic-mx-rowh { z-index: 2; }
+.mic-mx-rowh .mic-pe-dot { display: inline-block; margin-right: 5px; vertical-align: middle; }
+.mic-mx-cell { font-weight: 700; }
+.mic-mx-empty { color: var(--c-text-muted); }
+
+/* ============================================================
+   RESTYLE SCADA/ERP · solo Bacteriología (wrapper .mic-scada)
+   Paleta: #272C49 navy · #56334B plum · #8B4252 wine · #E26858 coral · #A9A8AD grey
+   Estética de "panel de instrumento": cabeceras sólidas navy, acentos coral,
+   números monoespaciados y semáforos tipo LED. Los cuerpos de tarjeta quedan
+   claros para no perder legibilidad de gráficos/tablas.
+   ============================================================ */
+.mic-scada {
+  --sc-navy: #272C49; --sc-plum: #56334B; --sc-wine: #8B4252; --sc-coral: #E26858; --sc-grey: #A9A8AD;
+  --sc-mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+  border: 1px solid #cfd2de; border-radius: 14px;
+  background: linear-gradient(180deg, rgba(39,44,73,.045), rgba(39,44,73,0) 120px), var(--c-surface);
+  padding: 14px; margin-top: 4px;
+}
+/* numeritos monoespaciados (tnum) */
+.mic-scada .mic-kpi-value, .mic-scada .mic-pe-st-v, .mic-scada .mic-tr-val,
+.mic-scada .mic-mx-table td, .mic-scada .mic-table td { font-family: var(--sc-mono); font-variant-numeric: tabular-nums; }
+
+/* filtros: borde técnico + foco coral */
+.mic-scada .mic-select:focus, .mic-scada .mic-monthbar:focus-within { border-color: var(--sc-coral); }
+.mic-scada .mic-month-nav:hover:not(:disabled) { background: var(--sc-coral); }
+
+/* KPIs: cabecera navy con borde inferior coral + valor mono */
+.mic-scada .mic-kpi { border: 1px solid #cfd2de; border-left: none; border-radius: 8px; overflow: hidden; padding: 0; background: var(--c-surface); }
+.mic-scada .mic-kpi-label { background: var(--sc-navy); color: #c8cbe2; padding: 6px 12px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; border-bottom: 2px solid var(--sc-coral); }
+.mic-scada .mic-kpi-value { padding: 9px 12px 2px; font-size: 21px; }
+.mic-scada .mic-kpi-sub { padding: 0 12px 9px; }
+.mic-scada .mic-kpi.is-alert .mic-kpi-label { border-bottom-color: #e8303e; }
+.mic-scada .mic-kpi.is-alert .mic-kpi-value { color: var(--sc-coral); }
+
+/* bandas de sección: barra navy con tick coral */
+.mic-scada .mic-band { border-top: none; background: var(--sc-navy); border-left: 4px solid var(--sc-coral); border-radius: 6px; padding: 7px 12px; margin: 18px 0 12px; }
+.mic-scada .mic-band-title { color: #eceef6; }
+
+/* apartados / pestañas: activo coral, hover wine */
+.mic-scada .mic-ap.is-active, .mic-scada .mic-petab.is-active { background: var(--sc-coral); border-color: var(--sc-coral); color: #fff; }
+.mic-scada .mic-ap:hover, .mic-scada .mic-petab:hover { border-color: var(--sc-coral); color: var(--sc-wine); }
+.mic-scada .mic-toggle, .mic-scada .mic-exp { color: var(--sc-wine); }
+.mic-scada .mic-toggle:hover, .mic-scada .mic-exp:hover { border-color: var(--sc-coral); color: var(--sc-coral); }
+
+/* tarjetas/gráficos: marco técnico + título mayúsculas */
+.mic-scada .card { border-color: #cfd2de; }
+.mic-scada .mic-chart-title { text-transform: uppercase; letter-spacing: .03em; font-size: 12px; color: var(--sc-navy); }
+
+/* tablas: cabecera navy + zebra sutil */
+.mic-scada .mic-table thead th, .mic-scada .mic-mx-table thead th { background: var(--sc-navy); color: #c8cbe2; text-transform: uppercase; letter-spacing: .04em; font-size: 10.5px; }
+.mic-scada .mic-mx-rowh { background: #eef0f6; color: var(--sc-navy); }
+.mic-scada .mic-table tbody tr:nth-child(even) { background: rgba(39,44,73,.028); }
+.mic-scada .mic-table-wrap, .mic-scada .mic-mx-wrap { border-color: #cfd2de; }
+
+/* resumen del día (panel lateral de la placa): etiquetas wine */
+.mic-scada .mic-pe-st-l { color: var(--sc-wine); }
+
+/* semáforos tipo LED (chips/etiquetas de nivel con halo del color) */
+.mic-scada .mic-nivel { box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), 0 0 7px var(--nv); }
+.mic-scada .mic-legend-dot, .mic-scada .mic-pe-dot { box-shadow: 0 0 5px rgba(0,0,0,.25); }
+
+/* ============================================================
+   KPI clicable · Agar utilizado · Modal de alertas
+   ============================================================ */
+.mic-kpi-click { cursor: pointer; }
+.mic-kpi-click:hover { box-shadow: 0 3px 12px rgba(39,44,73,.16); }
+.mic-kpi-click:focus-visible { outline: 2px solid #E26858; outline-offset: 2px; }
+
+/* "Agar utilizado" en el resumen del día de la placa */
+.mic-pe-agar { margin-top: 12px; }
+.mic-pe-agar-l { font-size: 11px; font-weight: 700; color: var(--c-text-soft); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 5px; }
+.mic-pe-agar-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.mic-agar-chip { font-size: 11px; font-weight: 700; color: #56334B; background: rgba(139,66,82,.1); border: 1px solid rgba(139,66,82,.32); border-radius: var(--r-pill); padding: 2px 9px; }
+
+/* Modal de alertas (lanzado desde el KPI "Mod./Elevado") */
+.mic-modal { position: fixed; inset: 0; z-index: 1000; display: none; align-items: flex-start; justify-content: center; padding: 40px 16px; background: rgba(20,22,40,.5); overflow: auto; }
+.mic-modal.is-open { display: flex; }
+.mic-modal-card { background: var(--c-surface); border-radius: 14px; width: min(620px, 100%); box-shadow: 0 20px 60px rgba(0,0,0,.28); overflow: hidden; }
+.mic-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; background: #272C49; color: #eceef6; }
+.mic-modal-title { font-size: 15px; font-weight: 800; }
+.mic-modal-x { border: none; background: rgba(255,255,255,.14); color: #fff; border-radius: 8px; padding: 5px 11px; font-size: 13px; cursor: pointer; }
+.mic-modal-x:hover { background: rgba(255,255,255,.24); }
+.mic-modal-body { padding: 14px 18px; max-height: 70vh; overflow: auto; }
+.mic-alert-count { font-size: 11.5px; color: var(--c-text-muted); margin-bottom: 8px; font-weight: 600; }
+
+/* rango de fechas del modal de Excel */
+.mic-exp-range { display: flex; gap: 14px; flex-wrap: wrap; }
+.mic-exp-fld { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 700; color: var(--c-text-soft); }
+.mic-exp-fld input[type="date"] { font-size: 13px; padding: 6px 9px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text); }
+
+/* tabla de Muestras: columnas de UFC por patógeno (semaforizadas) */
+.mic-pat-h { text-align: right; }
+.mic-pat-cell { text-align: right; font-variant-numeric: tabular-nums; }
+.mic-pat-cell.muted { text-align: center; }
+.mic-scada .mic-pat-cell { font-family: var(--sc-mono); }

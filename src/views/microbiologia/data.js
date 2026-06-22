@@ -49,26 +49,36 @@ export function normNivel(raw) {
 // ── catálogo de patógenos (orden de presentación) ──
 // `base` = prefijo exacto de las columnas de la hoja: `${base} (crudo)`,
 // `${base} UFC`, `${base} Nivel`. `noNivel` = solo crudo/UFC (sin semáforo).
-const P = (key, label, base, opts = {}) => ({ key, label, base, noNivel: !!opts.noNivel });
+// `base` = prefijo exacto de columna; `fkey` = clave del parámetro en las fichas de
+// Registros (para resolver los umbrales por área de MIC_DR_BASE / larv4_mic_factors).
+const P = (key, label, base, fkey, opts = {}) => ({ key, label, base, fkey, noNivel: !!opts.noNivel, altBases: opts.altBases || [] });
 export const PATHOGENS = [
-  P('amarillos', 'C. Amarillas', 'V.Amarillos'),
-  P('verdes', 'C. Verdes', 'V.Verdes'),
-  P('totales', 'C. Totales', 'V.Totales'),
-  P('algino', 'V. alginolyticus', 'V.alginolyticus'),
-  P('para', 'V. parahaemolyticus', 'V.parahaemolyticus'),
-  P('vulni', 'V. vulnificus', 'V.vulnificus'),
-  P('pseudo', 'Pseudomonas', 'Pseudomonas'),
-  P('aero', 'Aeromonas', 'Aeromonas'),
-  P('pseudoGsp', 'Pseudomonas GSP', 'Pseudomonas GSP'),
-  P('aeroGsp', 'Aeromonas GSP', 'Aeromonas GSP'),
-  P('bactTot', 'Bact. Totales', 'Bact.Totales'),
-  P('bactNar', 'Bact. Naranjas', 'Bact.Naranjas'),
-  P('hongos', 'Hongos', 'Hongos'),
-  P('entero', 'Enterobact.', 'Enterobact.', { noNivel: true }),
-  P('levaduras', 'Levaduras', 'Levaduras', { noNivel: true }),
-  P('rojas', 'Bacterias Rojas', 'Bacterias Rojas', { noNivel: true }),
+  // Amarillos/Verdes/Totales: la hoja usa las columnas "V.Amarillos/V.Verdes/V.Totales"
+  // (Vibrios). Se aceptan AMBOS nombres de columna (V.* y C.*) por compatibilidad vía
+  // `altBases`; la ETIQUETA mostrada se mantiene como "C. Amarillas/Verdes/Totales".
+  P('amarillos', 'C. Amarillas', 'V.Amarillos', 'vamar', { altBases: ['C. Amarillas'] }),
+  P('verdes', 'C. Verdes', 'V.Verdes', 'vverd', { altBases: ['C. Verdes'] }),
+  P('totales', 'C. Totales', 'V.Totales', 'vtot', { altBases: ['C. Totales'] }),
+  P('algino', 'V. alginolyticus', 'V.alginolyticus', 'valg'),
+  P('para', 'V. parahaemolyticus', 'V.parahaemolyticus', 'vpara'),
+  P('vulni', 'V. vulnificus', 'V.vulnificus', 'vvuln'),
+  P('pseudo', 'Pseudomonas', 'Pseudomonas', 'pseudo'),
+  P('aero', 'Aeromonas', 'Aeromonas', 'aero'),
+  P('pseudoGsp', 'Pseudomonas GSP', 'Pseudomonas GSP', 'pseudoGsp'),
+  P('aeroGsp', 'Aeromonas GSP', 'Aeromonas GSP', 'aeroGsp'),
+  P('bactTot', 'Bact. Totales', 'Bact.Totales', 'btot'),
+  P('bactNar', 'Bact. Naranjas', 'Bact.Naranjas', 'bnar'),
+  P('hongos', 'Hongos', 'Hongos', 'hongos'),
+  P('entero', 'Enterobact.', 'Enterobact.', 'entero', { noNivel: true }),
+  P('levaduras', 'Levaduras', 'Levaduras', 'levad', { noNivel: true }),
+  P('rojas', 'Bacterias Rojas', 'Bacterias Rojas', 'brojas', { noNivel: true }),
 ];
 export const PATHOGEN_BY_KEY = Object.fromEntries(PATHOGENS.map((p) => [p.key, p]));
+
+// Conteos AGREGADOS (no patógenos específicos): C. Totales y Bact. Totales son
+// sumas, por eso se excluyen del cálculo de "patógeno dominante" (si no, ganarían
+// siempre por ser ≥ que cualquier específico). Siguen contando como nivel/colonia.
+export const AGGREGATE_KEYS = new Set(['totales', 'bactTot']);
 
 // Color de cada patógeno (colonias de la Placa Petri + leyendas). Hues vivos que
 // funcionan en tema claro y oscuro.
@@ -80,11 +90,23 @@ export const PATHOGEN_COLOR = {
   entero: '#5C6BC0', levaduras: '#26C6DA', rojas: '#C62828',
 };
 
+// Agar de cultivo por patógeno (para mostrar el "agar utilizado" en la placa del día).
+// Enterobact. y Bacterias Rojas aún sin agar definido → no se listan.
+export const PATHOGEN_AGAR = {
+  amarillos: 'Agar TCBS', verdes: 'Agar TCBS', totales: 'Agar TCBS',
+  algino: 'CHROMagar Vibrio', para: 'CHROMagar Vibrio', vulni: 'CHROMagar Vibrio',
+  pseudo: 'Agar GSP', aero: 'Agar GSP', pseudoGsp: 'Agar GSP', aeroGsp: 'Agar GSP',
+  bactTot: 'Agar TSA', bactNar: 'Agar Marino',
+  hongos: 'Agar Dextrosa Sabouraud', levaduras: 'Agar Dextrosa Sabouraud',
+};
+
 // Variantes tolerantes de cabecera por patógeno (mayúsc/minúsc, con/sin espacio).
+// Se prueban todas las bases del patógeno (base principal + `altBases`).
 const colVariants = (base, suffix) => [`${base} ${suffix}`, `${base}${suffix}`, `${base} ${suffix}`.toLowerCase(), `${base}${suffix}`.toLowerCase()];
-const crudoCols = (p) => colVariants(p.base, '(crudo)').concat(colVariants(p.base, ' (crudo)'));
-const ufcCols = (p) => colVariants(p.base, 'UFC');
-const nivelCols = (p) => colVariants(p.base, 'Nivel');
+const basesOf = (p) => [p.base, ...(p.altBases || [])];
+const crudoCols = (p) => basesOf(p).flatMap((b) => colVariants(b, '(crudo)').concat(colVariants(b, ' (crudo)')));
+const ufcCols = (p) => basesOf(p).flatMap((b) => colVariants(b, 'UFC'));
+const nivelCols = (p) => basesOf(p).flatMap((b) => colVariants(b, 'Nivel'));
 
 // ── V.Luminiscentes (presencia / ausencia, no UFC) ──
 const LUMIN_COLS = ['V.Luminiscentes', 'V.luminiscentes', 'v.luminiscentes', 'V Luminiscentes'];
@@ -97,16 +119,155 @@ export function luminPresence(row) {
   return null;
 }
 
-// ── formatos (cada uno con su set de columnas aplicables) ──
-export const FORMATO_LABEL = { muestras: 'Muestras', reservorios: 'Reservorios', 'placa-amb': 'Placa ambiental', artemia: 'Artemia', otros: 'Otros' };
+// ── formatos (los 16 reales de las fichas de Registros) + área de umbrales ──
+// `area(tipoMuestra)` → clave de MIC_DR_BASE (réplica fiel de los rkeyFn de la ficha).
+export const MIC_FORMATS = {
+  'larv-muestra':       { label: 'Larvicultura · Muestra',        area: (t) => (t === 'Agua' ? 'larv-agua' : 'larv-animal') },
+  reservorios:          { label: 'Larvicultura · Reservorios',    area: () => 'larv-agua' },
+  'placa-amb':          { label: 'Larvicultura · Placa ambiental', area: () => 'ambiental' },
+  artemia:              { label: 'Larvicultura · Artemia',        area: () => 'artemia' },
+  'mad-principal':      { label: 'Maduración · Principal',        area: () => 'mad-reprod' },
+  'mad-ensayo':         { label: 'Maduración · Ensayo',           area: () => 'mad-reprod' },
+  'alim-vivo':          { label: 'Maduración · Alimento vivo',    area: () => 'larv-animal' },
+  ras:                  { label: 'Maduración · RAS',              area: () => 'ras-agua' },
+  'agua-mar':           { label: 'Maduración · Agua de Mar',      area: () => 'larv-agua' },
+  'mad-desinf':         { label: 'Maduración · Desinfección',     area: () => 'mad-agua' },
+  externas:             { label: 'Muestras externas',            area: () => 'larv-animal' },
+  hisopados:            { label: 'Hisopados',                    area: () => 'ambiental' },
+  'hisopados-despacho': { label: 'Hisopados (despacho)',         area: () => 'ambiental' },
+  algas:                { label: 'Algas',                        area: () => 'ambiental' },
+  'algas-mensual':      { label: 'Algas Mensual',                area: () => 'algas' },
+  'algas-r':            { label: 'Algas R',                      area: () => 'algas' },
+};
+export const FORMATO_LABEL = Object.fromEntries(Object.entries(MIC_FORMATS).map(([k, v]) => [k, v.label]));
+const _FMT_BY_FOLDED = Object.fromEntries(Object.entries(MIC_FORMATS).map(([k, v]) => [fold(v.label), k]));
+
+// ── agrupación de formatos por DEPARTAMENTO (filtro Departamento → Formato) ──
+export const DEPARTAMENTOS = ['Larvicultura', 'Maduración', 'Otros'];
+export const DEPTO_FORMATS = {
+  'Larvicultura': ['larv-muestra', 'reservorios', 'placa-amb', 'artemia'],
+  'Maduración': ['mad-principal', 'mad-ensayo', 'alim-vivo', 'ras', 'agua-mar', 'mad-desinf'],
+  'Otros': ['externas', 'hisopados', 'hisopados-despacho', 'algas', 'algas-mensual', 'algas-r'],
+};
+const _DEPTO_BY_FMT = {};
+Object.entries(DEPTO_FORMATS).forEach(([d, keys]) => keys.forEach((k) => { _DEPTO_BY_FMT[k] = d; }));
+/** Departamento (Larvicultura/Maduración/Otros) al que pertenece un formato. '' si desconocido. */
+export function deptoOfFormato(fmtKey) { return _DEPTO_BY_FMT[fmtKey] || ''; }
+
+/** Mapea el valor de la columna "Formato" de la hoja a la clave de formato ('' si vacío/desconocido). */
 export function classifyFormato(raw) {
   const k = fold(raw);
   if (!k) return '';
+  if (_FMT_BY_FOLDED[k]) return _FMT_BY_FOLDED[k];
+  // Tolerancia ante variantes (sin el separador "·", etc.). Orden = de lo específico a lo general.
   if (k.includes('reservorio')) return 'reservorios';
-  if (k.includes('ambiental') || k.includes('placa')) return 'placa-amb';
+  if (k.includes('placa') || k.includes('ambiental')) return 'placa-amb';
   if (k.includes('artemia')) return 'artemia';
-  if (k.includes('muestra')) return 'muestras';
-  return 'otros';
+  if (k.includes('alimento')) return 'alim-vivo';
+  if (k.includes('agua de mar')) return 'agua-mar';
+  if (k.includes('desinfec')) return 'mad-desinf';
+  if (k.includes('ensayo')) return 'mad-ensayo';
+  if (k.includes('ras')) return 'ras';
+  if (k.includes('principal')) return 'mad-principal';
+  if (k.includes('despacho')) return 'hisopados-despacho';
+  if (k.includes('hisopado')) return 'hisopados';
+  if (k.includes('algas mensual')) return 'algas-mensual';
+  if (k.includes('algas r')) return 'algas-r';
+  if (k.includes('alga')) return 'algas';
+  if (k.includes('externa')) return 'externas';
+  if (k.includes('muestra')) return 'larv-muestra';
+  return '';
+}
+
+/** Área de umbrales del formato (depende del tipo de muestra en Larvicultura). */
+export function areaForFormat(fmtKey, tipoMuestra) {
+  const f = MIC_FORMATS[fmtKey];
+  return f ? f.area(tipoMuestra) : 'larv-animal'; // por defecto, igual que la ficha
+}
+
+/* ── Umbrales por ÁREA × parámetro (UFC/mL) — portados de MIC_DR_BASE de las fichas.
+   l/m/e = límites inferiores de Leve/Moderado/Elevado; el factor `f` ya viene
+   aplicado en la columna UFC de la hoja, así que aquí solo se usan l/m/e. ── */
+const MIC_DR_BASE = {
+  'larv-animal': {
+    vamar: { l: 1000, m: 5000, e: 10000 }, vverd: { l: 300, m: 600, e: 1000 }, vtot: { l: 1000, m: 5000, e: 10000 },
+    valg: { l: 1000, m: 5000, e: 10000 }, vpara: { l: 300, m: 600, e: 1000 }, vvuln: { l: 300, m: 600, e: 1000 },
+    pseudo: { l: 300, m: 600, e: 1000 }, aero: { l: 1000, m: 5000, e: 10000 },
+    btot: { l: 10000, m: 100000, e: 1000000 }, bnar: { l: 1000, m: 5000, e: 10000 }, hongos: { l: 20, m: 200, e: 400 },
+  },
+  'larv-agua': {
+    vamar: { l: 1000, m: 5000, e: 10000 }, vverd: { l: 100, m: 200, e: 300 }, vtot: { l: 1000, m: 5000, e: 10000 },
+    valg: { l: 1000, m: 5000, e: 10000 }, vpara: { l: 100, m: 200, e: 300 }, vvuln: { l: 100, m: 200, e: 300 },
+    pseudo: { l: 100, m: 200, e: 300 }, aero: { l: 1000, m: 5000, e: 10000 },
+    btot: { l: 10000, m: 100000, e: 1000000 }, bnar: { l: 1000, m: 5000, e: 10000 }, hongos: { l: 2, m: 20, e: 40 },
+  },
+  'mad-reprod': {
+    vamar: { l: 1000, m: 10000, e: 100000 }, vverd: { l: 500, m: 3000, e: 5000 }, vtot: { l: 1000, m: 10000, e: 100000 },
+    valg: { l: 500, m: 3000, e: 5000 }, vpara: { l: 500, m: 3000, e: 5000 }, vvuln: { l: 500, m: 3000, e: 5000 },
+    pseudo: { l: 500, m: 3000, e: 5000 }, aero: { l: 1000, m: 10000, e: 100000 },
+    btot: { l: 10000, m: 100000, e: 1000000 }, bnar: { l: 100, m: 500, e: 1000 }, hongos: { l: 20, m: 200, e: 400 },
+  },
+  ambiental: {
+    vamar: { l: 25, m: 50, e: 500 }, vverd: { l: 10, m: 30, e: 300 }, vtot: { l: 25, m: 50, e: 500 },
+    valg: { l: 25, m: 50, e: 500 }, vpara: { l: 10, m: 30, e: 300 }, vvuln: { l: 10, m: 30, e: 300 },
+    pseudo: { l: 10, m: 30, e: 300 }, aero: { l: 25, m: 50, e: 500 },
+    pseudoGsp: { l: 10, m: 30, e: 300 }, aeroGsp: { l: 25, m: 50, e: 500 }, btot: { l: 10, m: 100, e: 500 },
+  },
+  artemia: {
+    vamar: { l: 1000, m: 10000, e: 100000 }, vverd: { l: 500, m: 3000, e: 5000 }, vtot: { l: 1000, m: 10000, e: 100000 },
+    pseudo: { l: 500, m: 3000, e: 5000 }, aero: { l: 1000, m: 10000, e: 100000 },
+    btot: { l: 10000, m: 100000, e: 1000000 }, hongos: { l: 20, m: 200, e: 400 },
+  },
+  'ras-agua': {
+    vamar: { l: 100, m: 500, e: 1000 }, vverd: { l: 50, m: 100, e: 200 }, vtot: { l: 100, m: 500, e: 1000 },
+    pseudo: { l: 50, m: 100, e: 200 }, aero: { l: 100, m: 500, e: 1000 },
+    btot: { l: 10000, m: 100000, e: 1000000 }, bnar: { l: 1000, m: 5000, e: 10000 },
+  },
+  algas: {
+    vamar: { l: 1, m: 2, e: 10 }, vverd: { l: 1, m: 2, e: 10 }, vtot: { l: 1, m: 2, e: 10 },
+    pseudo: { l: 1, m: 2, e: 10 }, aero: { l: 1, m: 2, e: 10 }, btot: { l: 10, m: 100, e: 500 },
+  },
+  'mad-agua': {
+    vamar: { l: 100, m: 500, e: 1000 }, vverd: { l: 50, m: 100, e: 200 }, vtot: { l: 100, m: 500, e: 1000 },
+    valg: { l: 100, m: 500, e: 1000 }, vpara: { l: 50, m: 100, e: 200 }, vvuln: { l: 50, m: 100, e: 200 },
+    pseudo: { l: 50, m: 100, e: 200 }, aero: { l: 100, m: 500, e: 1000 },
+    btot: { l: 10000, m: 100000, e: 1000000 }, bnar: { l: 100, m: 500, e: 1000 }, hongos: { l: 2, m: 20, e: 40 },
+  },
+};
+
+// Umbrales efectivos = base + overrides de la vista Factores (localStorage, misma SPA).
+// Memoizado: los cambios de Factores se reflejan al recargar.
+const MIC_FACTORS_KEY = 'larv4_mic_factors';
+let _thrCache = null;
+function loadMicThresholds() {
+  if (_thrCache) return _thrCache;
+  const out = JSON.parse(JSON.stringify(MIC_DR_BASE));
+  try {
+    const raw = (typeof localStorage !== 'undefined') ? localStorage.getItem(MIC_FACTORS_KEY) : null;
+    if (raw) {
+      const o = JSON.parse(raw);
+      if (o && typeof o === 'object') {
+        Object.keys(o).forEach((ak) => {
+          out[ak] = out[ak] || {};
+          Object.keys(o[ak] || {}).forEach((pk) => { out[ak][pk] = Object.assign({}, out[ak][pk] || {}, o[ak][pk] || {}); });
+        });
+      }
+    }
+  } catch (_) { /* localStorage no disponible/ilegible → solo base */ }
+  _thrCache = out;
+  return out;
+}
+
+const CODE_NIVEL = { v: 'Mínimo', y: 'Leve', o: 'Moderado', r: 'Elevado' };
+/** Clasifica UFC con umbrales {l,m,e} (réplica de micLvl de la ficha). null si sin umbral. */
+function micLvlCode(ufc, r) {
+  if (!r || !isFinite(ufc) || r.l == null) return null;
+  if (ufc < r.l) return 'v';
+  const m = (r.m == null) ? Infinity : r.m;
+  const e = (r.e == null) ? Infinity : r.e;
+  if (ufc < m) return 'y';
+  if (ufc < e) return 'o';
+  return 'r';
 }
 
 // ── contexto de columnas (acceso tolerante) ──
@@ -123,6 +284,22 @@ const CF = {
   reservorio: ['Tanque/Reservorio', 'Reservorio', 'tanque/reservorio'],
   etapa: ['Etapa', 'etapa'],
   obs: ['Observaciones', 'observaciones', 'Observación'],
+  // Contexto propio de los formatos de Maduración / Otras / Algas.
+  sexo: ['Sexo', 'sexo'],
+  componente: ['Componente', 'componente'],
+  punto: ['Punto de muestreo', 'punto de muestreo', 'Punto'],
+  origen: ['Origen/Tipo', 'Origen', 'origen/tipo', 'origen'],
+  laboratorio: ['Laboratorio (MB)', 'Laboratorio', 'laboratorio'],
+  raceways: ['Raceways', 'raceways'],
+  tanques: ['Tanques', 'tanques'],
+  lugar: ['Lugar', 'lugar'],
+  variedad: ['Variedad', 'variedad'],
+  dias: ['Días', 'Dias', 'días', 'dias'],
+  especie: ['Especie', 'especie'],
+  siembra: ['Siembra', 'siembra'],
+  muestras: ['Muestras', 'muestras'],
+  carro: ['Carro', 'carro'],
+  tina: ['Tina', 'tina'],
 };
 
 /** Tipo de muestra canónico: 'Agua' | 'Animal' | '' (otros se conservan tal cual). */
@@ -136,8 +313,26 @@ export function normTipoMuestra(raw) {
 
 /** Contexto (no-patógeno) de una fila de Microbiología. */
 export function rowContext(row) {
+  const modSala = getField(row, CF.moduloSala);
+  const isSala = /sala/i.test(modSala);
+  const modulo = isSala ? '' : intStr(modSala);
+  const sala = isSala ? modSala.trim() : '';
   const tq = intStr(getField(row, CF.tq));
   const reservorio = intStr(getField(row, CF.reservorio));
+  const sexo = getField(row, CF.sexo);
+  const componente = getField(row, CF.componente);
+  const punto = getField(row, CF.punto);
+  const origen = getField(row, CF.origen);
+  const lugar = getField(row, CF.lugar);
+  const muestras = getField(row, CF.muestras);
+  const carro = getField(row, CF.carro);
+  const tina = getField(row, CF.tina);
+  // Ubicación/“dónde-qué” legible, adaptada al contexto propio de cada formato.
+  const loc = reservorio ? ('R' + reservorio)
+    : tq ? ('T' + tq)
+    : (componente || punto || lugar || origen || muestras
+      || [carro && ('Carro ' + carro), tina && ('Tina ' + tina)].filter(Boolean).join(' / '));
+  const ubicacion = sexo ? (loc ? (loc + ' · ' + sexo) : sexo) : loc;
   return {
     fecha: parseAnyDate(getField(row, CF.fecha)),
     fechaRaw: getField(row, CF.fecha),
@@ -147,25 +342,37 @@ export function rowContext(row) {
     formato: getField(row, CF.formato),
     formatoKey: classifyFormato(getField(row, CF.formato)),
     tipoMuestra: normTipoMuestra(getField(row, CF.tipoMuestra)),
-    modulo: intStr(getField(row, CF.moduloSala)),
+    modulo, sala,
+    modSalaLabel: modulo ? ('M' + modulo) : sala, // etiqueta para la columna Módulo/Sala
     estadio: getField(row, CF.estadio),
-    tq,
-    reservorio,
-    // Ubicación legible: reservorio (R3) o tanque (T8) según el formato.
-    ubicacion: reservorio ? ('R' + reservorio) : (tq ? ('T' + tq) : ''),
+    tq, reservorio, ubicacion,
+    sexo, componente, punto, origen, lugar, muestras, carro, tina,
+    laboratorio: getField(row, CF.laboratorio),
+    raceways: getField(row, CF.raceways),
+    tanques: getField(row, CF.tanques),
+    variedad: getField(row, CF.variedad),
+    dias: getField(row, CF.dias),
+    especie: getField(row, CF.especie),
+    siembra: getField(row, CF.siembra),
     etapa: getField(row, CF.etapa),
     obs: getField(row, CF.obs),
     lumin: luminPresence(row),
   };
 }
 
-/** "Derrite" una fila ancha en N registros, uno por patógeno con dato. */
+/** "Derrite" una fila ancha en N registros, uno por patógeno con dato.
+ *  El Nivel se RECALCULA desde el UFC con los umbrales por área (mismos rangos que
+ *  la ficha); si no hay UFC, cae al Nivel escrito en la hoja como respaldo. */
 export function meltRow(row) {
   const out = [];
+  const area = areaForFormat(classifyFormato(getField(row, CF.formato)), normTipoMuestra(getField(row, CF.tipoMuestra)));
+  const aThr = loadMicThresholds()[area] || {};
   for (const p of PATHOGENS) {
     const ufc = parseNum(row, ufcCols(p));
     const crudo = parseNum(row, crudoCols(p));
-    const nivel = p.noNivel ? '' : normNivel(getField(row, nivelCols(p)));
+    let nivel = '';
+    if (ufc !== null) { const code = micLvlCode(ufc, aThr[p.fkey]); if (code) nivel = CODE_NIVEL[code]; }
+    if (!nivel && !p.noNivel) nivel = normNivel(getField(row, nivelCols(p))); // respaldo: Nivel de la hoja
     if (ufc === null && crudo === null && !nivel) continue; // patógeno no medido en este formato
     out.push({ key: p.key, label: p.label, crudo, ufc, nivel });
   }

@@ -10,12 +10,30 @@ import {
   getField, parseNum, F, isTanqueRow, isLarviculturaRow, hasValidCorrida, hasValidModulo, getLatestStage, dedupeTecnicos,
 } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
+import { PLGM_KEYS } from './columns.js';
 
 const gMod = (r) => getField(r, F.modulo);
 const gTnq = (r) => getField(r, F.tanque);
 const gCor = (r) => getField(r, F.corrida);
 const gFec = (r) => getField(r, F.fecha);
-const gPop = (r) => { const v = parseNum(r, F.poblacion); return v !== null && v > 0 ? v : null; };
+// Población: un 0 registrado es un valor REAL (tanque vacío / agrupado), no "sin
+// dato". Sólo se descarta la celda vacía/no numérica (parseNum → null) o un
+// negativo imposible. Así los bucles de "última población" honran el 0 y dejan de
+// arrastrar el valor del día anterior.
+const gPop = (r) => { const v = parseNum(r, F.poblacion); return v !== null && v >= 0 ? v : null; };
+// Detección de tanque "agrupado": el operador anota la palabra "Agrupado" en
+// Observaciones cuando un tanque se une a otro (su pob./SV quedan en 0, pero su
+// siembra inicial sigue contando en los totales del módulo).
+const OBS_KEYS = ['Observaciones', 'observaciones', 'Observación', 'observación'];
+const gObs = (r) => getField(r, OBS_KEYS);
+export const isGroupedRow = (r) => /agrupad/i.test(gObs(r));
+export const rowsAreGrouped = (rows) => rows.some(isGroupedRow);
+// Tanque "descartado": el operador anota "Descartado" en Observaciones. Igual que el
+// agrupado, no llega al despacho (su producción se pierde por malos cuidados).
+export const isDiscardedRow = (r) => /descartad/i.test(gObs(r));
+export const rowsAreDiscarded = (rows) => rows.some(isDiscardedRow);
+// Tanque que NO llegará al despacho (agrupado o descartado).
+export const rowsOutOfDispatch = (rows) => rowsAreGrouped(rows) || rowsAreDiscarded(rows);
 const gOD = (r) => parseNum(r, F.od);
 const gTmp = (r) => parseNum(r, F.temp);
 const gIL = (r) => { const v = parseNum(r, ['Intestino_Lleno', 'IntestinoLleno', 'intestino_lleno']); return v !== null && v > 0 ? v : null; };
@@ -41,6 +59,13 @@ const inGlobalDate = (r) => {
   return true;
 };
 
+// Memo de 1 entrada: buildContext recorre TODO el dataset y se invoca en cada
+// render (incluida la navegación interna módulo↔tanque, que no cambia los datos).
+// `store.globalData` se reemplaza por una nueva referencia al refrescar (ver
+// core/refresh.js), así que basta comparar por identidad + corrida + filtro de
+// fecha para invalidar de forma segura.
+let _ctxCache = null;
+
 /**
  * Construye el contexto compartido por todas las sub-vistas.
  * `larvCM`/`tanqCM` → filtrados por corrida+mes (línea base poblacional).
@@ -48,6 +73,10 @@ const inGlobalDate = (r) => {
  */
 export function buildContext(vState) {
   const data = store.globalData;
+  if (_ctxCache && _ctxCache.data === data && _ctxCache.corrida === vState.corrida
+      && _ctxCache.from === store.dateFrom && _ctxCache.to === store.dateTo) {
+    return _ctxCache.ctx;
+  }
   // Sólo filas de Larvicultura (evita contaminación de Registro_Supervisión,
   // Lab_Algas o Maduración que también tienen Corrida/Módulo).
   const larvAll = data.filter((r) => isLarviculturaRow(r) && hasValidCorrida(r) && hasValidModulo(r));
@@ -75,7 +104,9 @@ export function buildContext(vState) {
   pairs.sort((a, b) => a.corrida.localeCompare(b.corrida) || a.mod.localeCompare(b.mod));
   const allMods = [...new Set(pairs.map((p) => p.mod))].sort();
 
-  return { larvCM, tanqCM, larvWin, tanqWin, allCorridas, pairs, allMods, vState };
+  const ctx = { larvCM, tanqCM, larvWin, tanqWin, allCorridas, pairs, allMods, vState };
+  _ctxCache = { data, corrida: vState.corrida, from: store.dateFrom, to: store.dateTo, ctx };
+  return ctx;
 }
 
 const avg = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
@@ -110,9 +141,6 @@ function survival(winRows, baseRows, tanks) {
   return { sv, mort: sv !== null ? Math.max(100 - sv, 0) : null, pop: lastSum, popFirst: firstSum };
 }
 
-// Variantes de cabecera del PL/g manual (col "Plg (manual)" del Sheet).
-const PLGM_KEYS = ['Plg (manual)', 'PLG (manual)', 'plg (manual)', 'Plg(manual)', 'PL/g (manual)', 'pl/g (manual)'];
-
 /** Promedia el último valor (>0) registrado por tanque para `keys`. */
 function lastAvgByTank(winRows, tanks, keys) {
   const lasts = [];
@@ -136,7 +164,6 @@ export function modStats(ctx, mod, corrida) {
 
   const tanks = [...new Set(base.map(gTnq).filter(Boolean))];
   const { sv, mort, pop, popFirst } = survival(win, base, tanks);
-  const hasPop = pop !== null && pop > 0;
 
   // Frescura: fecha más reciente con dato (larvicultura o tanque).
   let lastDate = null;
@@ -159,8 +186,8 @@ export function modStats(ctx, mod, corrida) {
     sv, mort, pop, popFirst, lastDate, tanksData,
     plgManual: lastAvgByTank(win, tanks, PLGM_KEYS), // PL/g (manual) de cosecha (prom. del último por tanque)
     estadio: getLatestStage(win),
-    od: hasPop ? avg(tWin.map(gOD).filter((v) => v !== null)) : null,
-    tmp: hasPop ? avg(tWin.map(gTmp).filter((v) => v !== null)) : null,
+    od: avg(tWin.map(gOD).filter((v) => v !== null)),
+    tmp: avg(tWin.map(gTmp).filter((v) => v !== null)),
     il: avg(win.map(gIL).filter((v) => v !== null)),
     lip: avg(win.map(gLip).filter((v) => v !== null)),
     act: avg(win.map(gAct).filter((v) => v !== null)),
@@ -182,13 +209,14 @@ export function tankStats(ctx, mod, tq, corrida) {
   const lBase = ctx.larvCM.filter((r) => cf(r) && (gTnq(r) === tq || gTnq(r) === ''));
 
   const { sv, mort, pop, popFirst } = survival(lWin, lBase, [tq]);
-  const salRows = byDate([...tWin, ...lWin].filter((r) => gSal(r) !== null));
   return {
     sv, mort, pop, popFirst,
+    grouped: rowsAreGrouped(lWin), // tanque agrupado (palabra "Agrupado" en Observaciones)
     estadio: getLatestStage(lWin),
     od: avg(tWin.map(gOD).filter((v) => v !== null)),
     tmp: avg(tWin.map(gTmp).filter((v) => v !== null)),
-    sal: salRows.length ? gSal(salRows[salRows.length - 1]) : null,
+    // Promedio (coherente con OD/Temp del mismo banner y con la Salinidad del módulo).
+    sal: avg([...tWin, ...lWin].map(gSal).filter((v) => v !== null)),
     corridas: [...new Set(lWin.map(gCor).filter(Boolean))],
     lotes: [...new Set(lWin.map((r) => getField(r, F.lote)).filter(Boolean))],
     tRows: tWin, lRows: lWin,

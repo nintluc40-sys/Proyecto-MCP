@@ -8,7 +8,7 @@ import { getField, parseNum, F, isLarviculturaRow } from '../../core/fields.js';
 import { larviColor, larviLabel, larviZone, esc } from '../../core/format.js';
 import { parseAnyDate, fmtShort } from '../../core/dates.js';
 import { makeChart, destroyChart } from '../../core/charts.js';
-import { dailySeries, lastState, iclOf } from './compute.js';
+import { dailySeries, lastState, iclOf, compositeScore } from './compute.js';
 import { LARVI_COMBOS } from './stages.js';
 import { obsHistorial } from './extra.js';
 
@@ -176,7 +176,7 @@ function corridaSummary(corr, vars, mod) {
   const icl = iclOf(last, vars);
   const svVals = rows.map((r) => parseNum(r, F.supervivencia)).filter((x) => x !== null);
   const sv = svVals.length ? svVals.reduce((a, b) => a + b, 0) / svVals.length : null;
-  const score = (icl !== null && sv !== null) ? 0.7 * icl + 0.3 * Math.min(sv, 100) : icl;
+  const score = compositeScore(icl, sv);
   return { rows, last, icl, sv, score };
 }
 

@@ -15,7 +15,7 @@ import { getField, parseNum, normalizeTecnico } from '../../core/fields.js';
 import { parseAnyDate, fmtShort } from '../../core/dates.js';
 import { esc } from '../../core/format.js';
 import { monthIndexOfCorrida, monthLabelAt } from '../supervisor/prodOmarsa.js';
-import { drawGrowth, drawGrowthBar, drawTasa, drawProto, drawDaily, drawUsoSistema, drawModuloBiomasa, drawCatPct, CAT_COLOR } from './charts.js';
+import { drawGrowth, drawGrowthBar, drawGrowthMini, drawTasa, drawProto, drawDaily, drawUsoSistema, drawModuloBiomasa, drawCatPct, CAT_COLOR, algColor, fmtK } from './charts.js';
 
 // ── Acceso tolerante a las cabeceras de Lab_Algas ──
 const AF = {
@@ -53,8 +53,10 @@ function algaeRows() {
 }
 
 // ── Categoría de sistema de cultivo (mapeo confirmado con el laboratorio) ──
-// PBR · PM*→Premasivos · FM/FP→Fundas · C#→Carboys · M#→Masivos.
-export const SYS_CATS = ['Masivos', 'Premasivos', 'Fundas', 'Carboys', 'PBR'];
+// PBR · PM*→Premasivos · FM/FP→Fundas · C#→Carboys · M#→Masivos · resto→Otros.
+// 'Otros' garantiza que un sistema no contemplado sea visible (subvista + análisis)
+// en lugar de desaparecer silenciosamente.
+export const SYS_CATS = ['Masivos', 'Premasivos', 'Fundas', 'Carboys', 'PBR', 'Otros'];
 export function sysCat(sistema) {
   const s = String(sistema || '').trim().toUpperCase();
   if (!s) return null;
@@ -72,24 +74,28 @@ const especieLabel = (e) => { const k = String(e || '').trim().toUpperCase(); re
 
 const natCmp = (a, b) => { const x = String(a).match(/\d+/), y = String(b).match(/\d+/); return (x && y && +x[0] !== +y[0]) ? +x[0] - +y[0] : String(a).localeCompare(String(b)); };
 const avg = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
-const fmtK = (v) => {
-  if (v === null || v === undefined || isNaN(v)) return '—';
-  const a = Math.abs(v);
-  if (a >= 1e6) return (v / 1e6).toFixed(2) + 'M';
-  if (a >= 1e3) return (v / 1e3).toFixed(0) + 'K';
-  return String(Math.round(v));
-};
 const isDescartado = (r) => /^s[ií]$/i.test(String(g(r, 'descartado')).trim());
 const dCell = (r) => { const d = parseAnyDate(g(r, 'fecha')); return d ? fmtShort(d) : esc(g(r, 'fecha') || '—'); };
 const cellTxt = (v) => (v === '' || v === null || v === undefined) ? '<span class="muted">—</span>' : esc(v);
 
 // Estado persistente entre re-render. `sub` = subvista de sistema (pestaña activa);
 // `sysSel` = sistema concreto dentro de la subvista (filtra stats + gráficos).
-const vState = { month: null, corrida: null, especie: null, area: null, sub: null, sysSel: null };
+const vState = { month: null, corrida: null, modulo: null, especie: null, area: null, sub: null, sysSel: null, growthView: 'lines' };
+// Modos del gráfico de Curva de Crecimiento (conmutador junto al ⛶).
+const GROWTH_MODES = [['lines', 'Líneas'], ['norm', 'Normalizado'], ['smult', 'Mini-curvas'], ['heatmap', 'Heatmap']];
+
+// ── Índices del mes (editables) ──
+// Rangos óptimos fisicoquímicos para la "estabilidad fisicoquímica" (% en rango).
+const ALG_OPT_RANGES = { salinidad: [25, 35], ph: [7.5, 8.5], temp: [24, 28] };
+// Umbrales del índice de contaminación combinado (Protoz.+Ciliados+Filamentosos por registro):
+// < bajo = Bajo · entre bajo y alto = Medio · > alto = Alto.
+const ALG_CONTAM_LEVELS = { bajo: 6, alto: 15 };
 
 // Cierres de dibujo por gráfico (reutilizados para el render inline y el fullscreen
 // estilo Supervisor). Se reasignan en cada algasView con los datos vigentes.
 let fsDraw = {};
+// Stats (actual/prom/mín/máx) por gráfico para el strip del fullscreen.
+let fsStats = {};
 // Índice del día activo en el modal "Resumen del día" (sobre TODO el histórico).
 let daySumIdx = null;
 const FS_TITLE = {
@@ -129,7 +135,7 @@ function dailyMulti(rows, keys) {
 
 /** Lotes con sus puntos (día de proceso → Cel/ml). Día = Dia_Proceso si existe,
  *  si no se deriva de la fecha relativa al primer día del lote. Clave = sistema·Lote. */
-function growthByLote(rows) {
+export function growthByLote(rows) {
   const byLote = new Map();
   rows.forEach((r) => {
     const cel = num(r, 'cel'); if (cel === null) return;
@@ -167,7 +173,7 @@ function growthChartData(lotes) {
 }
 
 /** Estadísticas del período (de la subvista activa). */
-function periodStats(rows) {
+export function periodStats(rows) {
   const cel = rows.map((r) => num(r, 'cel')).filter((v) => v !== null);
   const proto = rows.map((r) => num(r, 'protozoarios')).filter((v) => v !== null);
   const sal = rows.map((r) => num(r, 'salinidad')).filter((v) => v !== null);
@@ -186,7 +192,7 @@ function periodStats(rows) {
 
 /** Tasa de crecimiento por lote: % ganado del primer al último día con dato.
  *  rate = (densidad final − inicial)/inicial ×100. Una barra por lote. */
-function tasaChartData(lotes) {
+export function tasaChartData(lotes) {
   const out = [];
   lotes.forEach((l) => {
     if (l.points.length < 2) return; // necesita inicial y final
@@ -225,9 +231,11 @@ export function algasView(root) {
   const monthSet = new Set(monthCorridas);
   const inMonth = (r) => !monthSet.size || monthSet.has(g(r, 'corrida'));
 
-  // ── Filtros: Corrida + Especie + Área (el SISTEMA es una subvista, no un filtro) ──
+  // ── Filtros: Corrida + Módulo + Especie + Área (el SISTEMA es una subvista, no un filtro) ──
   const corridas = monthCorridas;
   if (vState.corrida && !corridas.includes(vState.corrida)) vState.corrida = null;
+  const modulos = [...new Set(all.filter(inMonth).map((r) => g(r, 'modulo')).filter(Boolean))].sort(natCmp);
+  if (vState.modulo && !modulos.includes(vState.modulo)) vState.modulo = null;
   const especies = [...new Set(all.filter(inMonth).map((r) => g(r, 'especie')).filter(Boolean))].sort();
   if (vState.especie && !especies.includes(vState.especie)) vState.especie = null;
   const areas = [...new Set(all.filter(inMonth).map((r) => g(r, 'area')).filter(Boolean))].sort(natCmp);
@@ -235,6 +243,7 @@ export function algasView(root) {
 
   const baseRows = all.filter((r) => inMonth(r)
     && (!vState.corrida || g(r, 'corrida') === vState.corrida)
+    && (!vState.modulo || g(r, 'modulo') === vState.modulo)
     && (!vState.especie || g(r, 'especie') === vState.especie)
     && (!vState.area || g(r, 'area') === vState.area));
 
@@ -259,9 +268,11 @@ export function algasView(root) {
         <button class="alg-month-nav" data-month-nav="1" ${months.indexOf(vState.month) >= months.length - 1 ? 'disabled' : ''} aria-label="Mes siguiente">▶</button>
       </div>
       ${algSelect('corrida', vState.corrida, corridas, 'Todas las corridas')}
+      ${algSelect('modulo', vState.modulo, modulos, 'Todos los módulos')}
       ${algSelect('especie', vState.especie, especies, 'Todas las especies')}
       ${algSelect('area', vState.area, areas, 'Todas las áreas')}
       <button class="alg-daybtn" data-alg-daysum title="Resumen diario de lo registrado en el Google Sheet">📅 Resumen del día</button>
+      <button class="alg-daybtn" data-alg-indices title="Índices del mes: contaminación, estabilidad fisicoquímica y rendimiento por técnico">📊 Índices</button>
     </div>`;
 
   // Subnav: una pestaña por sistema (Masivos/Premasivos/PBR/Fundas/Carboys).
@@ -302,13 +313,43 @@ export function algasView(root) {
 
   // Cierres de dibujo reutilizables (render inline + fullscreen estilo Supervisor).
   fsDraw = {
-    growth: (cid) => isBarCat ? drawGrowthBar(cid, barLabels, barValues, catColor) : drawGrowth(cid, gd.dayLabels, gd.series),
+    growth: (hostId, legendId) => {
+      const box = document.getElementById(hostId); if (!box) return;
+      if (legendId) { const lg = document.getElementById(legendId); if (lg) lg.innerHTML = ''; }
+      // Categorías sin tendencia (Fundas/Carboys) → barras, sin conmutador.
+      if (isBarCat) { box.style.height = ''; box.innerHTML = `<canvas id="${hostId}_cv"></canvas>`; drawGrowthBar(`${hostId}_cv`, barLabels, barValues, catColor); return; }
+      const mode = vState.growthView || 'lines';
+      // Heatmap y mini-curvas son HTML/grid → la altura crece con el contenido; el
+      // canvas (líneas/normalizado) usa la altura fija de la clase del host.
+      box.style.height = (mode === 'heatmap' || mode === 'smult') ? 'auto' : '';
+      if (mode === 'heatmap') { box.innerHTML = growthHeatmapHTML(growthLotes, gd.days); return; }
+      if (mode === 'smult') { renderSmallMultiples(box, growthLotes); return; }
+      box.innerHTML = `<canvas id="${hostId}_cv"></canvas>`;
+      drawGrowth(`${hostId}_cv`, gd.dayLabels, gd.series, legendId, { norm: mode === 'norm' });
+    },
     tasa: (cid) => drawTasa(cid, tasa.labels, tasa.values),
     proto: (cid) => drawProto(cid, proto.days, proto.series.protozoarios, proto.series.ciliados, proto.series.filamentosos),
     sal: (cid) => drawDaily(cid, sal.days, sal.values, 'Salinidad', '#015B76'),
     ph: (cid) => drawDaily(cid, ph.days, ph.values, 'pH', '#739842'),
     temp: (cid) => drawDaily(cid, temp.days, temp.values, 'Temperatura', '#CA6378', ' °C'),
     luz: (cid) => drawDaily(cid, luz.days, luz.values, 'Intensidad de luz', '#A06B27', '%'),
+  };
+
+  // Stats del strip del fullscreen (mismos 4: Actual/Prom/Mín/Máx, sobre lo registrado).
+  const last = (a) => (a.length ? a[a.length - 1] : null);
+  const fK = (v) => fmtK(v);               // densidad cel/ml (abreviada)
+  const f1 = (u) => (v) => v.toFixed(1) + u;
+  const growthFlat = isBarCat ? barValues.slice() : gd.series.reduce((acc, s) => acc.concat(s.data), []);
+  const growthActual = isBarCat
+    ? last(barValues)
+    : (() => { const li = gd.days.length - 1; const v = gd.series.map((s) => s.data[li]).filter((x) => x !== null && x !== undefined); return v.length ? v.reduce((x, y) => x + y, 0) / v.length : null; })();
+  fsStats = {
+    growth: statStrip(growthFlat, growthActual, fK),
+    tasa: statStrip(tasa.values, last(tasa.values), f1('%')),
+    sal: statStrip(sal.values, last(sal.values), f1(' ppt')),
+    ph: statStrip(ph.values, last(ph.values), f1('')),
+    temp: statStrip(temp.values, last(temp.values), f1(' °C')),
+    luz: statStrip(luz.values, last(luz.values), f1('%')),
   };
 
   const host = (id, has) => has ? `<canvas id="${id}"></canvas>` : '<div class="empty-state" style="padding:24px">Sin datos para esta subvista.</div>';
@@ -319,7 +360,7 @@ export function algasView(root) {
   // ── Franja 1 · Desarrollo algal (curva + tasa + estadísticas) ──
   h += algBand('🌱', 'Desarrollo algal', '#186447');
   h += `<div class="alg-an-row" style="${catVar}">
-      <div class="card alg-chart-card alg-fs-card">${chHead('📈 Curva de Crecimiento — Densidad Celular ' + (isBarCat ? `<span class="muted">· por ${isFunda ? 'lote' : 'sistema'} (sin tendencia → barras)</span>` : '<span class="muted">· por día · línea = lote/sistema</span>'), growthLotes.length > 0 ? 'growth' : null)}<div class="alg-chart-host alg-host-lg">${host('algGrowth', growthLotes.length > 0)}</div></div>
+      <div class="card alg-chart-card alg-fs-card">${chHead('📈 Curva de Crecimiento — Densidad Celular ' + (isBarCat ? `<span class="muted">· por ${isFunda ? 'lote' : 'sistema'} (sin tendencia → barras)</span>` : '<span class="muted">· por día · línea = lote/sistema</span>'), growthLotes.length > 0 ? 'growth' : null, isBarCat ? '' : growthModeSelect())}<div class="alg-chart-host alg-host-lg" id="algGrowthHost">${growthLotes.length ? '' : '<div class="empty-state" style="padding:24px">Sin datos para esta subvista.</div>'}</div><div class="alg-legend" id="algGrowthLegend"></div></div>
       <div class="card alg-chart-card">${chHead('📊 Estadísticas del Período <span class="muted">· ' + esc(vState.sub || '') + '</span>', null, algSysSelect(sysOptions, vState.sysSel))}<div class="alg-stats">${statsHTML(stats, isFunda)}</div></div>
     </div>
     ${!isBarCat ? `<div class="alg-charts" style="${catVar}"><div class="card alg-chart-card alg-fs-card">${chHead('📈 Tasa de Crecimiento <span class="muted">· % ganado (inicial→final)</span>', tasa.values.length > 0 ? 'tasa' : null)}<div class="alg-chart-host">${host('algTasa', tasa.values.length > 0)}</div></div></div>` : ''}`;
@@ -347,8 +388,9 @@ export function algasView(root) {
     .filter((x) => x.proto > 0 || x.desc > 0)
     .sort((a, b) => (b.proto - a.proto) || (b.protoMax - a.protoMax) || (b.desc - a.desc))
     .slice(0, 8);
+  const plur = (n, sing, plu) => `${n} ${n === 1 ? sing : plu}`;
   const watchHTML = watch.length
-    ? `<div class="alg-watch-list">${watch.map((x) => `<div class="alg-watch-item"><span class="alg-watch-sys">${esc(x.s)}</span><span class="alg-watch-badges">${x.proto ? `<span class="alg-watch-b is-proto" title="días con protozoarios ≥ 5">🦠 ${x.proto}${x.protoMax ? ` · máx ${x.protoMax.toFixed(0)}` : ''}</span>` : ''}${x.desc ? `<span class="alg-watch-b is-desc" title="descartados">🗑️ ${x.desc}</span>` : ''}</span></div>`).join('')}</div>`
+    ? `<div class="alg-watch-list">${watch.map((x) => `<div class="alg-watch-item"><span class="alg-watch-sys">${esc(x.s)}</span><span class="alg-watch-badges">${x.proto ? `<span class="alg-watch-b is-proto" title="días con protozoarios ≥ 5">🦠 ${plur(x.proto, 'día', 'días')} con protozoarios ≥ 5${x.protoMax ? ` · máx ${x.protoMax.toFixed(0)}` : ''}</span>` : ''}${x.desc ? `<span class="alg-watch-b is-desc" title="cultivos descartados">🗑️ ${plur(x.desc, 'descartado', 'descartados')}</span>` : ''}</span></div>`).join('')}</div>`
     : '<div class="alg-watch-ok">✓ Sin alertas de sanidad en el período.</div>';
 
   h += algBand('🦠', 'Sanidad / Contaminación', '#CA6378');
@@ -432,7 +474,8 @@ export function algasView(root) {
   const regCols = ['Fecha', 'Corrida', 'Sistema', 'Área', ...(isFunda ? ['Lote'] : []), 'Día', 'Cel/ml', 'Protoz.', 'Especie', 'Sal.', 'pH', 'Técnico'];
   const regHead = '<tr>' + regCols.map((x) => `<th>${x}</th>`).join('') + '</tr>';
   const regCells = sortedRows.map((r) => `<td>${dCell(r)}</td><td>${cellTxt(g(r, 'corrida'))}</td><td><b>${cellTxt(g(r, 'sistema'))}</b></td><td>${cellTxt(g(r, 'area'))}</td>${isFunda ? `<td>${cellTxt(g(r, 'lote'))}</td>` : ''}<td>${cellTxt(g(r, 'dia'))}</td><td style="text-align:right">${numCell(num(r, 'cel'))}</td><td style="text-align:center">${cellTxt(g(r, 'protozoarios'))}</td><td>${cellTxt(g(r, 'especie'))}</td><td style="text-align:right">${cellTxt(g(r, 'salinidad'))}</td><td style="text-align:right">${cellTxt(g(r, 'ph'))}</td><td>${cellTxt(g(r, 'tecnico'))}</td>`);
-  h += collapsibleCard('📋', 'Registros · ' + (vState.sub || ''), regHead, regCells, REG_VISIBLE, 'Sin registros para esta subvista.');
+  const exportBtn = `<button class="alg-toggle alg-export-btn" data-alg-export title="Descargar Excel por rango de fechas">⬇️ Excel</button>`;
+  h += collapsibleCard('📋', 'Registros · ' + (vState.sub || ''), regHead, regCells, REG_VISIBLE, 'Sin registros para esta subvista.', exportBtn);
 
   // Modal de ampliación (fullscreen) — reutiliza el patrón .sv-modal del Supervisor.
   h += algFsModalHTML();
@@ -441,13 +484,16 @@ export function algasView(root) {
   // Modales de los indicadores del mes (Biomasa, Tasa de descarte, Cobertura).
   h += monthModalShell('algBioModal', '🧪 Biomasa total del mes')
     + monthModalShell('algDescModal', '🗑️ Tasa de descarte')
-    + monthModalShell('algCovModal', '📅 Cobertura de registro');
+    + monthModalShell('algCovModal', '📅 Cobertura de registro')
+    + monthModalShell('algIndicesModal', '📊 Índices del mes');
+  // Modal de descarga Excel (pide rango de fechas).
+  h += algExportModalHTML();
 
   root.innerHTML = h;
 
   // Dibujo aislado: el fallo de un gráfico no rompe los demás.
   const draw = (fn) => { try { fn(); } catch (e) { console.error('[algas] chart', e); } };
-  if (growthLotes.length) draw(() => fsDraw.growth('algGrowth'));
+  if (growthLotes.length) draw(() => fsDraw.growth('algGrowthHost', 'algGrowthLegend'));
   if (!isBarCat && tasa.values.length) draw(() => fsDraw.tasa('algTasa'));
   if (proto.days.length) draw(() => fsDraw.proto('algProto'));
   if (sal.days.length) draw(() => fsDraw.sal('algSal'));
@@ -492,31 +538,88 @@ function algSysSelect(options, value) {
     </select>`;
 }
 
+/** Conmutador del tipo de gráfico de la Curva de Crecimiento (junto al ⛶). */
+function growthModeSelect() {
+  return `<select class="alg-select alg-select-sm" data-algfilter="growthView" title="Tipo de gráfico de la curva">
+      ${GROWTH_MODES.map(([v, l]) => `<option value="${v}" ${vState.growthView === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+    </select>`;
+}
+
+/** Heatmap día × lote/sistema: filas = cultivo, columnas = día, color = densidad (cel/ml). */
+function growthHeatmapHTML(lotes, days) {
+  if (!lotes.length || !days.length) return '<div class="empty-state" style="padding:24px">Sin datos para esta subvista.</div>';
+  let mx = 0; lotes.forEach((l) => l.points.forEach((p) => { if (p.cel > mx) mx = p.cel; }));
+  const bg = (v) => { if (v === null || v === undefined) return ''; const t = mx ? v / mx : 0; return `background:rgba(1,91,118,${(0.12 + 0.8 * t).toFixed(2)});color:${t > 0.5 ? '#fff' : '#0a3d44'}`; };
+  const head = `<tr><th class="alg-gh-rowh">Lote / Sistema</th>${days.map((d) => `<th>Día ${d}</th>`).join('')}</tr>`;
+  const body = lotes.map((l) => {
+    const m = new Map(l.points.map((p) => [p.day, p.cel]));
+    const cells = days.map((d) => { const v = m.has(d) ? m.get(d) : null; return `<td style="${bg(v)}" title="${v === null ? 'sin dato' : fmtK(v) + ' cel/ml'}">${v === null ? '·' : fmtK(v)}</td>`; }).join('');
+    return `<tr><th class="alg-gh-rowh">${esc(l.key)}</th>${cells}</tr>`;
+  }).join('');
+  return `<div class="alg-gh-wrap"><table class="alg-gh-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+    <div class="alg-gh-legend"><span>menor</span><span class="alg-gh-bar"></span><span>mayor densidad</span></div>`;
+}
+
+/** Small-multiples: una mini-curva por lote/sistema en una rejilla. */
+function renderSmallMultiples(box, lotes) {
+  if (!lotes.length) { box.innerHTML = '<div class="empty-state" style="padding:24px">Sin datos para esta subvista.</div>'; return; }
+  box.innerHTML = `<div class="alg-smult">${lotes.map((l, i) => `<div class="alg-smult-cell"><div class="alg-smult-title" style="color:${algColor(i)}">${esc(l.key)}</div><div class="alg-smult-host"><canvas id="algSm_${box.id}_${i}"></canvas></div></div>`).join('')}</div>`;
+  lotes.forEach((l, i) => { try { drawGrowthMini(`algSm_${box.id}_${i}`, l.points.map((p) => 'D' + p.day), l.points.map((p) => p.cel), algColor(i)); } catch (e) { console.error('[algas] smult', e); } });
+}
+
 /** HTML del modal de ampliación (un canvas grande reutilizado por todos los gráficos). */
 function algFsModalHTML() {
   return `<div class="sv-modal" id="algFsModal" data-alg-fs-overlay>
     <div class="sv-modal-card lv-fs-card">
       <div class="sv-modal-head"><span class="sv-modal-title" id="algFsTitle">Gráfico</span><button class="sv-modal-x" data-alg-fs-close aria-label="Cerrar">✕</button></div>
-      <div class="sv-modal-body"><div class="lv-fs-chart"><canvas id="algFsCanvas"></canvas></div></div>
+      <div class="sv-modal-body"><div class="sv-modal-kpis" id="algFsMeta"></div><div class="lv-fs-chart" id="algFsChart"><canvas id="algFsCanvas"></canvas></div><div class="alg-legend" id="algFsLegend"></div></div>
     </div>
   </div>`;
+}
+
+/** Resumen Actual/Promedio/Mín/Máx para el strip del fullscreen (estilo Vista Tanque). */
+function statStrip(arr, actual, fmt) {
+  const a = arr.filter((v) => v !== null && v !== undefined && !isNaN(v));
+  if (!a.length) return null;
+  return { actual: (actual === null || actual === undefined || isNaN(actual)) ? null : actual, prom: a.reduce((x, y) => x + y, 0) / a.length, min: Math.min(...a), max: Math.max(...a), fmt };
+}
+function fsMetaHTML(s) {
+  if (!s) return '';
+  const cell = (v, lbl) => `<span class="sv-modal-kpi"><b>${v === null ? '—' : s.fmt(v)}</b>${lbl}</span>`;
+  return cell(s.actual, 'actual') + cell(s.prom, 'prom.') + cell(s.min, 'mín.') + cell(s.max, 'máx.');
 }
 
 function openAlgFs(root, key) {
   const overlay = root.querySelector('#algFsModal');
   if (!overlay || !fsDraw[key]) return;
   const t = root.querySelector('#algFsTitle'); if (t) t.textContent = FS_TITLE[key] || 'Gráfico';
+  const meta = root.querySelector('#algFsMeta'); if (meta) meta.innerHTML = fsMetaHTML(fsStats[key]); // Actual/Prom/Mín/Máx
+  const leg = root.querySelector('#algFsLegend'); if (leg) leg.innerHTML = ''; // la leyenda-chip solo la rellena la curva
+  const box = root.querySelector('#algFsChart');
+  destroyFsCharts(root);
   overlay.classList.add('sv-open');
   document.body.classList.add('modal-open'); // pausa el auto-refresco mientras está abierto
+  if (key === 'growth') {
+    // El render de crecimiento gestiona su propio contenido (canvas / mini-curvas / heatmap).
+    requestAnimationFrame(() => { try { fsDraw.growth('algFsChart', 'algFsLegend'); } catch (e) { console.error('[algas] fs', e); } });
+  } else {
+    if (box) box.innerHTML = '<canvas id="algFsCanvas"></canvas>';
+    requestAnimationFrame(() => { try { fsDraw[key]('algFsCanvas'); } catch (e) { console.error('[algas] fs', e); } });
+  }
+}
+
+/** Destruye los charts que pudo crear el fullscreen (canvas único o mini-curvas). */
+function destroyFsCharts(root) {
   destroyChart('algFsCanvas');
-  requestAnimationFrame(() => { try { fsDraw[key]('algFsCanvas'); } catch (e) { console.error('[algas] fs', e); } });
+  const box = root.querySelector('#algFsChart');
+  if (box) box.querySelectorAll('canvas[id]').forEach((c) => destroyChart(c.id));
 }
 
 function closeAlgFs(root) {
   const overlay = root.querySelector('#algFsModal');
   if (overlay) overlay.classList.remove('sv-open');
   document.body.classList.remove('modal-open');
-  destroyChart('algFsCanvas');
+  destroyFsCharts(root);
 }
 
 /* ---- Resumen del día (modal) ---- */
@@ -695,9 +798,73 @@ function monthModalShell(id, title) {
 }
 
 function closeMonthModals(root) {
-  ['algBioModal', 'algDescModal', 'algCovModal'].forEach((id) => { const m = root.querySelector('#' + id); if (m) m.classList.remove('sv-open'); });
+  ['algBioModal', 'algDescModal', 'algCovModal', 'algIndicesModal'].forEach((id) => { const m = root.querySelector('#' + id); if (m) m.classList.remove('sv-open'); });
   document.body.classList.remove('modal-open');
   ['algBioCanvas', 'algDescLine', 'algDescBars'].forEach(destroyChart);
+}
+
+/** Abre el modal de Índices del mes (contaminación · estabilidad fisicoquímica · técnico). */
+function openIndices(root) {
+  fillIndicesModal(root);
+  const m = root.querySelector('#algIndicesModal');
+  if (m) { m.classList.add('sv-open'); document.body.classList.add('modal-open'); }
+}
+
+/** Calcula y pinta los Índices sobre el mes activo. */
+function fillIndicesModal(root) {
+  const body = root.querySelector('#algIndicesModalBody'); if (!body) return;
+  const R = algMonthRows(vState.month);
+  if (!R.length) { body.innerHTML = '<div class="empty-state" style="padding:24px">Sin registros en el mes.</div>'; return; }
+
+  // 1) Índice de contaminación (Protozoarios + Ciliados + Filamentosos)
+  const comp = (key) => { const a = R.map((r) => num(r, key)).filter((v) => v !== null); return { avg: a.length ? avg(a) : null, max: a.length ? Math.max(...a) : null, n: a.length }; };
+  const comps = [['🦠 Protozoarios', comp('protozoarios')], ['🌀 Ciliados', comp('ciliados')], ['🧵 Filamentosos', comp('filamentosos')]];
+  const combVals = R.map((r) => { const p = num(r, 'protozoarios'), ci = num(r, 'ciliados'), fi = num(r, 'filamentosos'); return (p === null && ci === null && fi === null) ? null : (p || 0) + (ci || 0) + (fi || 0); }).filter((v) => v !== null);
+  const combAvg = combVals.length ? avg(combVals) : null;
+  const protoMeas = R.map((r) => num(r, 'protozoarios')).filter((v) => v !== null);
+  const protoAlertPct = protoMeas.length ? protoMeas.filter((v) => v >= 5).length / protoMeas.length * 100 : null;
+  const lvl = combAvg === null ? { t: '—', c: 'var(--c-text-muted)' } : combAvg < ALG_CONTAM_LEVELS.bajo ? { t: 'Bajo', c: '#186447' } : combAvg <= ALG_CONTAM_LEVELS.alto ? { t: 'Medio', c: '#A06B27' } : { t: 'Alto', c: '#CA6378' };
+  const f1 = (v, u = '') => v === null ? '—' : v.toFixed(1) + u;
+  const contamCard = `<div class="alg-month-block">
+      <h4 class="alg-day-h">🦠 Índice de contaminación <span class="muted">· Protozoarios + Ciliados + Filamentosos por registro</span></h4>
+      <div class="alg-day-kpis">
+        <span class="alg-day-kpi"><b style="color:${lvl.c}">${esc(lvl.t)}</b>nivel</span>
+        <span class="alg-day-kpi"><b>${f1(combAvg)}</b>índice combinado</span>
+        <span class="alg-day-kpi"><b>${f1(protoAlertPct, '%')}</b>registros protoz. ≥ 5</span>
+      </div>
+      <table class="alg-table"><thead><tr><th>Componente</th><th style="text-align:right">Promedio</th><th style="text-align:right">Máx.</th><th style="text-align:right">Registros</th></tr></thead>
+        <tbody>${comps.map(([l, c]) => `<tr><td><b>${l}</b></td><td style="text-align:right">${f1(c.avg)}</td><td style="text-align:right">${c.max === null ? '—' : c.max.toFixed(0)}</td><td style="text-align:right">${c.n}</td></tr>`).join('')}</tbody></table>
+      <div class="muted" style="font-size:11px;margin-top:8px">Niveles: &lt; ${ALG_CONTAM_LEVELS.bajo} Bajo · ${ALG_CONTAM_LEVELS.bajo}–${ALG_CONTAM_LEVELS.alto} Medio · &gt; ${ALG_CONTAM_LEVELS.alto} Alto.</div>
+    </div>`;
+
+  // 2) Estabilidad fisicoquímica (% de registros dentro de rango óptimo)
+  const stab = (key, range) => { const a = R.map((r) => num(r, key)).filter((v) => v !== null); const inR = a.filter((v) => v >= range[0] && v <= range[1]).length; return { n: a.length, in: inR, pct: a.length ? inR / a.length * 100 : null, lo: range[0], hi: range[1] }; };
+  const stabs = [['🧂 Salinidad', stab('salinidad', ALG_OPT_RANGES.salinidad), ' ppt'], ['⚗️ pH', stab('ph', ALG_OPT_RANGES.ph), ''], ['🌡️ Temperatura', stab('temp', ALG_OPT_RANGES.temp), ' °C']];
+  const stabValid = stabs.map((s) => s[1]).filter((s) => s.pct !== null);
+  const stabOverall = stabValid.length ? avg(stabValid.map((s) => s.pct)) : null;
+  const stabCard = `<div class="alg-month-block">
+      <h4 class="alg-day-h">🧪 Estabilidad fisicoquímica <span class="muted">· % de registros dentro de rango óptimo</span></h4>
+      <div class="alg-day-kpis"><span class="alg-day-kpi"><b>${f1(stabOverall, '%')}</b>estabilidad global</span></div>
+      <table class="alg-table"><thead><tr><th>Parámetro</th><th style="text-align:right">Rango óptimo</th><th style="text-align:right">En rango</th><th style="text-align:right">% estable</th></tr></thead>
+        <tbody>${stabs.map(([l, s, u]) => `<tr><td><b>${l}</b></td><td style="text-align:right">${s.lo}–${s.hi}${u}</td><td style="text-align:right">${s.in}/${s.n}</td><td style="text-align:right"><b>${f1(s.pct, '%')}</b></td></tr>`).join('')}</tbody></table>
+    </div>`;
+
+  // 3) Rendimiento por técnico
+  const tecMap = new Map();
+  R.forEach((r) => { const t = normalizeTecnico(g(r, 'tecnico')) || '—'; if (!tecMap.has(t)) tecMap.set(t, []); tecMap.get(t).push(r); });
+  const tecRows = [...tecMap.entries()].map(([t, rr]) => {
+    const dens = rr.map((r) => num(r, 'cel')).filter((v) => v !== null);
+    const desc = rr.filter(isDescartado).length;
+    const protoA = rr.map((r) => num(r, 'protozoarios')).filter((v) => v !== null).filter((v) => v >= 5).length;
+    return { t, n: rr.length, dens: dens.length ? avg(dens) : null, descPct: rr.length ? desc / rr.length * 100 : 0, protoA };
+  }).sort((a, b) => b.n - a.n);
+  const tecCard = `<div class="alg-month-block">
+      <h4 class="alg-day-h">🧑‍🔬 Rendimiento por técnico <span class="muted">· del mes</span></h4>
+      <table class="alg-table"><thead><tr><th>Técnico</th><th style="text-align:right">Registros</th><th style="text-align:right">Densidad media</th><th style="text-align:right">% descarte</th><th style="text-align:right">Protoz. ≥ 5</th></tr></thead>
+        <tbody>${tecRows.map((x) => `<tr><td><b>${esc(x.t)}</b></td><td style="text-align:right">${x.n}</td><td style="text-align:right">${x.dens === null ? '—' : fmtK(x.dens) + ' cel/ml'}</td><td style="text-align:right">${x.descPct.toFixed(1)}%</td><td style="text-align:right">${x.protoA}</td></tr>`).join('')}</tbody></table>
+    </div>`;
+
+  body.innerHTML = `<div class="alg-month-headline muted">${esc(monthLabelAt(vState.month))} · ${R.length} registro(s) del mes</div>${contamCard}${stabCard}${tecCard}`;
 }
 
 function openMonthModal(root, key) {
@@ -739,6 +906,32 @@ function fillBioModal(root) {
   ctx.rows.forEach((r) => { const mod = g(r, 'modulo'), v = num(r, 'cel'); if (mod && v !== null) modMap.set(mod, (modMap.get(mod) || 0) + v); });
   const modEntries = [...modMap.entries()].sort((a, b) => b[1] - a[1]);
 
+  // ── Cultivos por módulo: cuántos cultivos de cada categoría abastecen cada módulo.
+  //    Un "cultivo" = Sistema distinto dentro de una corrida (agrupa sus 3-4 registros).
+  const cultByMod = new Map(); // módulo → categoría → Set("corrida|sistema")
+  const cultDetail = new Map(); // módulo → categoría → Set(sistema) (para el tooltip)
+  ctx.rows.forEach((r) => {
+    const mod = g(r, 'modulo'), sis = g(r, 'sistema'), cor = g(r, 'corrida'); const cat = sysCat(sis);
+    if (!mod || !sis || !cat || !SYS_CATS.includes(cat)) return;
+    if (!cultByMod.has(mod)) { cultByMod.set(mod, new Map()); cultDetail.set(mod, new Map()); }
+    const bc = cultByMod.get(mod), bd = cultDetail.get(mod);
+    if (!bc.has(cat)) { bc.set(cat, new Set()); bd.set(cat, new Set()); }
+    bc.get(cat).add((cor || '') + '|' + sis); bd.get(cat).add(sis);
+  });
+  const cultMods = [...cultByMod.keys()].sort(natCmp);
+  const cultCats = SYS_CATS.filter((c) => cultMods.some((m) => cultByMod.get(m).has(c)));
+  const cultCell = (m, c) => {
+    const n = cultByMod.get(m).get(c)?.size || 0;
+    if (!n) return '<span class="muted">—</span>';
+    const sysList = [...cultDetail.get(m).get(c)].sort(natCmp).join(', ');
+    return `<b title="${esc(sysList)}">${n}</b>`;
+  };
+  const cultTotal = (m) => cultCats.reduce((a, c) => a + (cultByMod.get(m).get(c)?.size || 0), 0);
+  const cultTable = cultMods.length
+    ? `<table class="alg-table"><thead><tr><th>Módulo</th>${cultCats.map((c) => `<th style="text-align:right">${esc(c)}</th>`).join('')}<th style="text-align:right">Total</th></tr></thead>
+        <tbody>${cultMods.map((m) => `<tr><td><b>${esc(m)}</b></td>${cultCats.map((c) => `<td style="text-align:right">${cultCell(m, c)}</td>`).join('')}<td style="text-align:right"><b>${cultTotal(m)}</b></td></tr>`).join('')}</tbody></table>`
+    : '<div class="muted" style="padding:8px">Sin dato de módulo (columna Modulo_Larv vacía).</div>';
+
   body.innerHTML = `
     <div class="alg-month-headline">Mes actual <b>${fmtK(nowTot)}</b> cel/ml ${deltaArrow(d)}</div>
     <div class="alg-month-2col">
@@ -748,6 +941,10 @@ function fillBioModal(root) {
     <div class="alg-month-block">
       <h4 class="alg-day-h">🔗 Vínculo alga → módulo <span class="muted">· qué módulo de larvicultura abastece (Σ cel/ml, mes actual)</span></h4>
       <div class="alg-chart-host" style="height:${Math.max(180, modEntries.length * 30 + 40)}px">${modEntries.length ? '<canvas id="algBioCanvas"></canvas>' : '<div class="empty-state" style="padding:20px">Sin dato de módulo (columna Modulo_Larv vacía).</div>'}</div>
+    </div>
+    <div class="alg-month-block">
+      <h4 class="alg-day-h">🧮 Cultivos por módulo <span class="muted">· nº de cultivos (sistema × corrida) de cada categoría que abastecen cada módulo · pasa el cursor para ver los sistemas</span></h4>
+      <div class="alg-table-wrap" style="max-height:260px">${cultTable}</div>
     </div>`;
 
   if (modEntries.length) requestAnimationFrame(() => { try { drawModuloBiomasa('algBioCanvas', modEntries.map((e) => e[0]), modEntries.map((e) => e[1])); } catch (e) { console.error('[algas] bio', e); } });
@@ -797,13 +994,114 @@ function fillCovModal(root) {
 
   const headCells = Array.from({ length: dim }, (_, i) => `<th>${i + 1}</th>`).join('');
   const rowsHtml = cats.map((c) => {
-    const cells = Array.from({ length: dim }, (_, i) => { const n = cnt[c][i + 1]; return n ? `<td class="alg-cal-on" title="${n} reg · día ${i + 1}">${n}</td>` : '<td class="alg-cal-off" title="sin registro"></td>'; }).join('');
+    const cells = Array.from({ length: dim }, (_, i) => { const n = cnt[c][i + 1]; return n ? `<td class="alg-cal-on alg-cal-click" data-cov-day="${i + 1}" role="button" tabindex="0" title="${n} reg · día ${i + 1} · clic = ver registros">${n}</td>` : '<td class="alg-cal-off" title="sin registro"></td>'; }).join('');
     const tot = cnt[c].reduce((a, b) => a + b, 0);
     return `<tr><th class="alg-cal-rowh">${esc(c)} <span class="muted">${tot}</span></th>${cells}</tr>`;
   }).join('');
 
-  body.innerHTML = `<div class="alg-month-headline muted">${esc(monthLabelAt(vState.month))} · ■ con registro · □ sin registro</div>
-    <div class="alg-cal-wrap"><table class="alg-cal"><thead><tr><th class="alg-cal-rowh">Categoría</th>${headCells}</tr></thead><tbody>${rowsHtml}</tbody></table></div>`;
+  body.innerHTML = `<div class="alg-month-headline muted">${esc(monthLabelAt(vState.month))} · ■ con registro · □ sin registro · clic en un día = ver sus registros</div>
+    <div class="alg-cal-wrap"><table class="alg-cal"><thead><tr><th class="alg-cal-rowh">Categoría</th>${headCells}</tr></thead><tbody>${rowsHtml}</tbody></table></div>
+    <div id="algCovDayDetail" class="alg-cov-detail"></div>`;
+}
+
+/** Lista los registros de un día del mes activo (clic en el calendario de Cobertura). */
+function renderCovDay(root, dayNum) {
+  const box = root.querySelector('#algCovDayDetail'); if (!box) return;
+  const R = algMonthRows(vState.month);
+  const ref = R.map((r) => parseAnyDate(g(r, 'fecha'))).find(Boolean);
+  if (!ref) { box.innerHTML = ''; return; }
+  const mo = ref.getMonth(), y = ref.getFullYear();
+  const day = R.filter((r) => { const dt = parseAnyDate(g(r, 'fecha')); return dt && dt.getDate() === dayNum && dt.getMonth() === mo && dt.getFullYear() === y; })
+    .sort((a, b) => natCmp(g(a, 'sistema'), g(b, 'sistema')));
+  const cols = ['Corrida', 'Módulo', 'Sistema', 'Área', 'Lote', 'Día', 'Cel/ml', 'Protoz.', 'Especie', 'Sal.', 'pH', 'Desc.', 'Técnico'];
+  const numCell = (v) => (v === null) ? '<span class="muted">—</span>' : esc(fmtK(v));
+  const rowsH = day.map((r) => `<tr><td>${cellTxt(g(r, 'corrida'))}</td><td>${cellTxt(g(r, 'modulo'))}</td><td><b>${cellTxt(g(r, 'sistema'))}</b></td><td>${cellTxt(g(r, 'area'))}</td><td>${cellTxt(g(r, 'lote'))}</td><td>${cellTxt(g(r, 'dia'))}</td><td style="text-align:right">${numCell(num(r, 'cel'))}</td><td style="text-align:center">${cellTxt(g(r, 'protozoarios'))}</td><td>${cellTxt(g(r, 'especie'))}</td><td style="text-align:right">${cellTxt(g(r, 'salinidad'))}</td><td style="text-align:right">${cellTxt(g(r, 'ph'))}</td><td style="text-align:center">${isDescartado(r) ? '🗑️' : ''}</td><td>${cellTxt(g(r, 'tecnico'))}</td></tr>`).join('');
+  box.innerHTML = `<h4 class="alg-day-h" style="margin-top:14px">📋 Registros del día ${dayNum} <span class="muted">· ${day.length}</span></h4>
+    <div class="alg-table-wrap" style="max-height:260px"><table class="alg-table"><thead><tr>${cols.map((x) => `<th>${x}</th>`).join('')}</tr></thead><tbody>${rowsH || `<tr><td colspan="${cols.length}" class="muted" style="text-align:center;padding:14px">Sin registros ese día.</td></tr>`}</tbody></table></div>`;
+}
+
+/* ---- Descarga Excel de Registros (rango de fechas) ---- */
+// Columnas exportadas (cabecera del Sheet → clave de acceso AF).
+const ALG_EXPORT_COLS = [
+  ['Fecha', 'fecha'], ['Corrida_Larv', 'corrida'], ['Modulo_Larv', 'modulo'], ['Área_Algas', 'area'],
+  ['Sistema', 'sistema'], ['Lote', 'lote'], ['Dia_Proceso', 'dia'], ['Cel_ml', 'cel'],
+  ['Protozoarios', 'protozoarios'], ['Especie', 'especie'], ['Salinidad_ppt', 'salinidad'], ['pH', 'ph'],
+  ['Temperatura_C', 'temp'], ['Intensidad_Luz_%', 'luz'], ['Descartado', 'descartado'],
+  ['Ciliados', 'ciliados'], ['Filamentosos', 'filamentosos'], ['Observaciones', 'obs'], ['Técnico', 'tecnico'],
+];
+
+/** Filas de la categoría (subvista) activa respetando los filtros activos, SIN el mes
+ *  (el rango de fechas del modal es el filtro temporal). Base para la exportación. */
+function exportBaseRows() {
+  return algaeRows().filter((r) =>
+    sysCat(g(r, 'sistema')) === vState.sub
+    && (!vState.corrida || g(r, 'corrida') === vState.corrida)
+    && (!vState.modulo || g(r, 'modulo') === vState.modulo)
+    && (!vState.especie || g(r, 'especie') === vState.especie)
+    && (!vState.area || g(r, 'area') === vState.area));
+}
+
+const isoDate = (d) => d ? d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') : '';
+
+function algExportModalHTML() {
+  return `<div class="sv-modal" id="algExportModal" data-alg-exp-overlay>
+    <div class="sv-modal-card alg-export-card">
+      <div class="sv-modal-head"><span class="sv-modal-title">⬇️ Descargar Excel — Registros</span><button class="sv-modal-x" data-alg-exp-close aria-label="Cerrar">✕</button></div>
+      <div class="sv-modal-body">
+        <p class="muted" id="algExpScope" style="margin:0 0 12px"></p>
+        <div class="alg-export-range">
+          <label class="alg-export-fld">Desde <input type="date" id="algExpFrom" class="alg-select"></label>
+          <label class="alg-export-fld">Hasta <input type="date" id="algExpTo" class="alg-select"></label>
+        </div>
+        <div id="algExpInfo" class="muted" style="margin:10px 0"></div>
+        <button class="alg-daybtn" data-alg-exp-go>⬇️ Descargar Excel</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function openExport(root) {
+  const overlay = root.querySelector('#algExportModal'); if (!overlay) return;
+  const base = exportBaseRows();
+  const dates = base.map((r) => parseAnyDate(g(r, 'fecha'))).filter(Boolean).sort((a, b) => a - b);
+  const fromEl = root.querySelector('#algExpFrom'), toEl = root.querySelector('#algExpTo');
+  if (fromEl) fromEl.value = dates.length ? isoDate(dates[0]) : '';
+  if (toEl) toEl.value = dates.length ? isoDate(dates[dates.length - 1]) : '';
+  const scope = root.querySelector('#algExpScope');
+  if (scope) scope.innerHTML = `Categoría: <b>${esc(vState.sub || '—')}</b>${vState.corrida ? ' · Corrida ' + esc(vState.corrida) : ''}${vState.modulo ? ' · Módulo ' + esc(vState.modulo) : ''}${vState.especie ? ' · ' + esc(vState.especie) : ''}${vState.area ? ' · ' + esc(vState.area) : ''} · ${base.length} registro(s) en total`;
+  updateExportInfo(root);
+  overlay.classList.add('sv-open');
+  document.body.classList.add('modal-open');
+}
+function closeExport(root) { const o = root.querySelector('#algExportModal'); if (o) o.classList.remove('sv-open'); document.body.classList.remove('modal-open'); }
+
+/** Filas a exportar según el rango de fechas elegido (inclusive). */
+function exportRowsInRange(root) {
+  const fromEl = root.querySelector('#algExpFrom'), toEl = root.querySelector('#algExpTo');
+  const from = fromEl && fromEl.value ? new Date(fromEl.value + 'T00:00:00') : null;
+  const to = toEl && toEl.value ? new Date(toEl.value + 'T23:59:59') : null;
+  return exportBaseRows().filter((r) => { const d = parseAnyDate(g(r, 'fecha')); if (!d) return false; if (from && d < from) return false; if (to && d > to) return false; return true; })
+    .sort((a, b) => (parseAnyDate(g(a, 'fecha')) || 0) - (parseAnyDate(g(b, 'fecha')) || 0));
+}
+
+function updateExportInfo(root) {
+  const info = root.querySelector('#algExpInfo'); if (!info) return;
+  info.textContent = `Se exportarán ${exportRowsInRange(root).length} registro(s) en el rango elegido.`;
+}
+
+function runExport(root) {
+  const XLSX = window.XLSX;
+  if (!XLSX) { alert('No se pudo cargar el componente de Excel (SheetJS).'); return; }
+  const rows = exportRowsInRange(root);
+  if (!rows.length) { alert('No hay registros en el rango elegido.'); return; }
+  const header = ALG_EXPORT_COLS.map((c) => c[0]);
+  const aoa = [header, ...rows.map((r) => ALG_EXPORT_COLS.map(([, key]) => { const v = g(r, key); return (v === '' || v === null || v === undefined) ? '' : v; }))];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Algas');
+  const fromEl = root.querySelector('#algExpFrom'), toEl = root.querySelector('#algExpTo');
+  const tag = String(vState.sub || 'Algas').replace(/\s+/g, '_');
+  XLSX.writeFile(wb, `Algas_${tag}_${(fromEl && fromEl.value) || 'inicio'}_a_${(toEl && toEl.value) || 'fin'}.xlsx`);
 }
 
 function algSelect(dim, value, values, placeholder) {
@@ -840,7 +1138,7 @@ function statsHTML(s, isFunda = false) {
 
 /** Tarjeta con tabla PLEGABLE: muestra `visibleN` filas y un botón "Ver todo".
  *  `cells` = array de HTML interno de cada fila (sin <tr>). */
-function collapsibleCard(icon, title, theadHtml, cells, visibleN, emptyMsg) {
+function collapsibleCard(icon, title, theadHtml, cells, visibleN, emptyMsg, extraBtnHtml = '') {
   const total = cells.length;
   const cols = (theadHtml.match(/<th/g) || []).length || 1;
   const hiddenN = Math.max(0, total - visibleN);
@@ -850,7 +1148,7 @@ function collapsibleCard(icon, title, theadHtml, cells, visibleN, emptyMsg) {
   return `<div class="card alg-collap">
       <div class="alg-collap-head">
         <div class="alg-collap-title">${icon} ${esc(title)} <span class="muted" style="font-weight:600;font-size:12px">· ${total}</span></div>
-        ${hiddenN > 0 ? `<button class="alg-toggle" data-alg-toggle aria-expanded="false">Ver todo (${total})</button>` : ''}
+        <div class="alg-collap-actions">${extraBtnHtml}${hiddenN > 0 ? `<button class="alg-toggle" data-alg-toggle aria-expanded="false">Ver todo (${total})</button>` : ''}</div>
       </div>
       <div class="alg-table-wrap" style="max-height:340px">
         <table class="alg-table"><thead>${theadHtml}</thead><tbody>${body}</tbody></table>
@@ -866,10 +1164,28 @@ function bind(root) {
   root._algBound = true;
 
   root.addEventListener('change', (e) => {
+    // Rango de fechas del modal de exportación: recalcula el conteo, no re-renderiza.
+    if (e.target.id === 'algExpFrom' || e.target.id === 'algExpTo') { updateExportInfo(root); return; }
     const sel = e.target.closest('[data-algfilter]');
     if (!sel) return;
+    // El conmutador de la curva solo cambia su estilo → redibuja SOLO ese gráfico
+    // (antes re-renderizaba toda la vista y refrescaba los demás charts innecesariamente).
+    if (sel.dataset.algfilter === 'growthView') {
+      vState.growthView = sel.value || 'lines';
+      if (fsDraw.growth) { try { fsDraw.growth('algGrowthHost', 'algGrowthLegend'); } catch (err) { console.error('[algas] growthView', err); } }
+      return;
+    }
     vState[sel.dataset.algfilter] = sel.value || null;
     algasView(root);
+  });
+
+  // Accesibilidad: los días del calendario de Cobertura (role=button) responden a Enter/Espacio.
+  root.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    const covDay = e.target.closest('[data-cov-day]');
+    if (!covDay) return;
+    e.preventDefault();
+    renderCovDay(root, Number(covDay.dataset.covDay));
   });
 
   root.addEventListener('click', (e) => {
@@ -887,7 +1203,17 @@ function bind(root) {
     // Indicadores del mes (Biomasa / Descarte / Cobertura)
     const mind = e.target.closest('[data-alg-open]');
     if (mind) { openMonthModal(root, mind.dataset.algOpen); return; }
+    if (e.target.closest('[data-alg-indices]')) { openIndices(root); return; }
     if (e.target.closest('[data-alg-mclose]') || e.target.matches('[data-alg-moverlay]')) { closeMonthModals(root); return; }
+
+    // Cobertura: clic en un día del calendario → lista los registros de ese día
+    const covDay = e.target.closest('[data-cov-day]');
+    if (covDay) { renderCovDay(root, Number(covDay.dataset.covDay)); return; }
+
+    // Descarga Excel de Registros (pide rango de fechas)
+    if (e.target.closest('[data-alg-export]')) { openExport(root); return; }
+    if (e.target.closest('[data-alg-exp-close]') || e.target.matches('[data-alg-exp-overlay]')) { closeExport(root); return; }
+    if (e.target.closest('[data-alg-exp-go]')) { runExport(root); return; }
 
     // Pestaña de sistema (subvista) — reinicia el sistema concreto elegido
     const pill = e.target.closest('[data-alg-sub]');
@@ -912,7 +1238,7 @@ function bind(root) {
     const ni = ms.indexOf(vState.month) + Number(nav.dataset.monthNav);
     if (ni >= 0 && ni < ms.length) {
       vState.month = ms[ni];
-      vState.corrida = null; vState.especie = null; vState.area = null; vState.sub = null; vState.sysSel = null;
+      vState.corrida = null; vState.modulo = null; vState.especie = null; vState.area = null; vState.sub = null; vState.sysSel = null;
       algasView(root);
     }
   });

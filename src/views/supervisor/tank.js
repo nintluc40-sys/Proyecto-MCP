@@ -6,13 +6,12 @@ import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, breadcrumb } from './ui.js';
 import { svLevel, odLevel, tmpLevel, levelColor, levelLabel, esc } from '../../core/format.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { makeChart } from '../../core/charts.js';
-import { getField, parseNum, F } from '../../core/fields.js';
+import { getField, F } from '../../core/fields.js';
 import { buildParamSection, iclSeries, paramAlerts, morphHeatmap, linForecast } from './params.js';
 import { tankColorInfo } from './aguaColor.js';
 
 const { gFec, gOD, gTmp, gPop, gSal } = getters;
 const gHora = (r) => getField(r, F.hora);
-const gSv = (r) => parseNum(r, F.supervivencia);
 const gColor = (r) => getField(r, ['Color', 'color', 'COLOR']);
 
 // 12 tomas estándar cada 2 h, en el orden 2 AM → 12 AM (medianoche al final).
@@ -141,6 +140,12 @@ export function renderTank(ctx, mod, tq) {
   html += `<div class="sv-semrow">${semaforos.map(([l, lvl]) =>
     `<span class="sv-legend-item"><span class="sv-dot" style="background:${levelColor(lvl)}"></span>${l}: <b>${levelLabel(lvl)}</b></span>`).join('')}</div>`;
 
+  // Aviso de tanque agrupado: su población/SV quedan en 0 (sus animales se unieron a
+  // otro tanque), pero su siembra inicial sigue contando en los totales del módulo.
+  if (s.grouped) {
+    html += `<div class="sv-grouped-note">🔗 <b>Tanque agrupado</b> — se registró población y supervivencia en 0 (sus animales se agruparon con otro tanque). Su siembra inicial sigue contando en los totales del módulo.</div>`;
+  }
+
   // TQ4 · Botón de alertas del día (abre modal con parámetros fuera de rango)
   const alerts = paramAlerts(s.lRows, stageClass);
   html += `<div class="sv-actions" style="margin:0 0 14px">
@@ -148,18 +153,20 @@ export function renderTank(ctx, mod, tq) {
     <button class="sv-action-btn" data-obshist-open>📜 Historial${obsRows.length ? ` (${obsRows.length})` : ''}</button>
     <button class="sv-action-btn" data-morphmap-open>🔬 Mapa morfológico</button>
     <button class="sv-action-btn" data-forecast-open>🔮 Pronóstico SV/Pob</button>
+    <button class="sv-action-btn" data-nav="larvia" data-mod="${esc(mod)}" data-tank="${esc(tq)}">🔬 Análisis Biométrico LARVIA</button>
   </div>`;
 
-  const chartCard = (key, title, canvasId) => `<div class="card">
+  const chartCard = (key, title, canvasId, note) => `<div class="card">
       <div class="sv-chart-cardhead">
         <div class="sv-chart-title" style="margin:0">${title}</div>
         <button class="lv-fs-btn" data-svfs="${key}" title="Ampliar gráfico" aria-label="Ampliar ${esc(title)}">⛶</button>
       </div>
       <div class="sv-chart-host"><canvas id="${canvasId}"></canvas></div>
+      ${note ? `<div class="sv-chart-note">${note}</div>` : ''}
     </div>`;
   html += `<div class="sv-chart-grid">
     ${chartCard('env', '💧🌡️ Oxígeno y Temperatura', 'svTankEnv')}
-    ${chartCard('pop', '👥 Población', 'svTankPop')}
+    ${chartCard('pop', '👥 Población', 'svTankPop', 'ℹ️ La población es una <b>estimación manual</b> (extrapolación), por lo que pueden aparecer días con picos o saltos bruscos entre registros.')}
   </div>`;
   html += `<div class="sv-chart-grid">
     ${chartCard('sv', '📈 Supervivencia', 'svTankSv')}
@@ -168,10 +175,6 @@ export function renderTank(ctx, mod, tq) {
 
   // ── Diagnóstico por parámetros (debajo de OD/Temp, Población, Superv. y Salinidad) ──
   html += param.html;
-
-  html += `<div class="sv-actions">
-    <button class="sv-action-btn" data-nav="larvia" data-mod="${esc(mod)}" data-tank="${esc(tq)}">🔬 Análisis Biométrico LARVIA</button>
-  </div>`;
 
   // Fechas con tomas horarias (para el modal OD/Temperatura por hora)
   const hourlyDates = [...new Set(s.tRows.map(gFec).filter(Boolean))]
@@ -307,7 +310,15 @@ export function renderTank(ctx, mod, tq) {
     const od = dailySeries(s.tRows, gOD);
     const tmp = dailySeries(s.tRows, gTmp);
     const pop = lastByDay(s.lRows, gPop);
-    const sv = dailySeries(s.lRows, gSv);
+    // Supervivencia diaria consistente con el KPI y la definición del sistema:
+    // población del día / población inicial × 100 (en vez de la columna cruda
+    // "Supervivencia", que podía estar dispersa y dejar el gráfico vacío).
+    const sv = {
+      labels: pop.labels,
+      values: (s.popFirst && s.popFirst > 0)
+        ? pop.values.map((p) => Math.min((p / s.popFirst) * 100, 100))
+        : pop.values.map(() => null),
+    };
     const sal = dailySeries([...s.tRows, ...s.lRows], gSal);
     // Banda objetivo de Supervivencia: zona verde ≥ 60 % + línea de umbral (TQ3).
     const svBandPlugin = {
@@ -568,8 +579,9 @@ export function renderTank(ctx, mod, tq) {
       const kpisEl = root.querySelector('#svForecastKpis');
       const drawForecast = () => {
         const fdays = [...new Set(s.lRows.map(gFec).filter(Boolean))].sort((a, b) => (parseAnyDate(a) || 0) - (parseAnyDate(b) || 0));
-        const svv = fdays.map((d) => { const vs = s.lRows.filter((r) => gFec(r) === d).map(gSv).filter((v) => v !== null && v !== undefined); return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null; });
         const popv = fdays.map((d) => { const rs = s.lRows.filter((r) => gFec(r) === d); for (let i = rs.length - 1; i >= 0; i--) { const v = gPop(rs[i]); if (v !== null && v !== undefined) return v; } return null; });
+        // SV pop-based (coherente con el KPI y el gráfico de Supervivencia).
+        const svv = popv.map((p) => (p !== null && s.popFirst && s.popFirst > 0) ? Math.min((p / s.popFirst) * 100, 100) : null);
         const H = 7;
         const svF = linForecast(svv, H), popF = linForecast(popv, H);
         const futLabels = Array.from({ length: H }, (_, k) => `+${k + 1}d`);
@@ -620,8 +632,6 @@ export function renderTank(ctx, mod, tq) {
       fcOverlay.querySelector('[data-forecast-close]')?.addEventListener('click', closeFc);
       fcOverlay.addEventListener('click', (e) => { if (e.target === fcOverlay) closeFc(); });
     }
-
-    void root;
   };
 
   return { html, after };

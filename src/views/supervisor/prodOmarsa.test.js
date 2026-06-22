@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest';
-import { monthIndexOfCorrida, monthLabelAt } from './prodOmarsa.js';
+import { describe, it, expect, afterEach } from 'vitest';
+import { store } from '../../core/store.js';
+import { monthIndexOfCorrida, monthLabelAt, modCorStats } from './prodOmarsa.js';
+
+afterEach(() => { store.globalData = []; });
 
 // MESES_PROD definido: Enero(544) … Junio(573). Auto-extensión +6 desde Junio.
 describe('monthIndexOfCorrida (auto-extensión +6)', () => {
@@ -31,5 +34,19 @@ describe('monthLabelAt (etiquetas, incl. meses virtuales)', () => {
     expect(monthLabelAt(7)).toBe('Agosto');
     expect(monthLabelAt(11)).toBe('Diciembre');
     expect(monthLabelAt(12)).toBe('Enero'); // ciclo
+  });
+});
+
+describe('modCorStats: cosecha honra el 0 (tanque vaciado/agrupado)', () => {
+  it('última población = 0 → cosecha 0 y superv 0 (no el valor previo); siembra intacta', () => {
+    store.globalData = [
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ1', 'Población': '1000', Fecha: '01/06/2026' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ1', 'Población': '800', Fecha: '03/06/2026' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ1', 'Población': '0', Fecha: '05/06/2026', Observaciones: 'Agrupado' },
+    ];
+    const s = modCorStats('M01', '573');
+    expect(s.siembra).toBe(1000); // primera población real
+    expect(s.cosecha).toBe(0);    // honra el 0, no arrastra 800
+    expect(s.superv).toBe(0);     // 0/1000
   });
 });
