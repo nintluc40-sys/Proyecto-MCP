@@ -66,3 +66,44 @@ export function breadcrumb(accent, items) {
 export function dot(color, title) {
   return `<span class="sv-dot" style="background:${color}" title="${esc(title)}"></span>`;
 }
+
+/** Conecta un overlay-modal del Supervisor (clase `.sv-open` + `body.modal-open`):
+ *  triggers de apertura, botón de cierre y clic en el backdrop. Centraliza el patrón
+ *  repetido en tank/module/params/compareTanks.
+ *
+ *  @param {Element} root        contenedor donde viven los triggers de apertura
+ *  @param {Element} overlay     el `.sv-modal` a abrir/cerrar (null = no-op)
+ *  @param {object}  opts
+ *  @param {string}  opts.openSel    selector de los triggers de apertura (en `root`)
+ *  @param {string}  opts.closeSel   selector del botón de cierre (en `overlay`)
+ *  @param {Function}[opts.onOpen]   callback tras abrir; recibe el trigger pulsado
+ *  @param {Function}[opts.onClose]  callback tras cerrar (limpieza extra)
+ *  @param {boolean} [opts.keyboard] true → los triggers responden a Enter/Espacio
+ *                                   (solo para chips `role="button"`; NO para <button>,
+ *                                   que ya disparan click nativo y se duplicarían)
+ *  @returns {{open: Function, close: Function}|null} controles programáticos
+ */
+export function bindModal(root, overlay, { openSel, closeSel, onOpen, onClose, keyboard = false } = {}) {
+  if (!overlay) return null;
+  const open = (trigger) => {
+    overlay.classList.add('sv-open');
+    document.body.classList.add('modal-open');
+    if (onOpen) onOpen(trigger);
+  };
+  const close = () => {
+    overlay.classList.remove('sv-open');
+    document.body.classList.remove('modal-open');
+    if (onClose) onClose();
+  };
+  if (openSel) {
+    root.querySelectorAll(openSel).forEach((b) => {
+      b.addEventListener('click', () => open(b));
+      if (keyboard) b.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); open(b); }
+      });
+    });
+  }
+  if (closeSel) overlay.querySelector(closeSel)?.addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  return { open, close };
+}

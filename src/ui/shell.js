@@ -78,7 +78,7 @@ const MAIN_VIEWS = [
   { id: 'registros',    label: 'Registros',          icon: '📝' },
   { id: 'maduracion',   label: 'Maduración',         icon: '🥚', pending: true },
   { id: 'algas',        label: 'Algas',              icon: '🌿' },
-  { id: 'microbiologia', label: 'Microbiología',     icon: '🧫', pending: true },
+  { id: 'microbiologia', label: 'Microbiología',     icon: '🧫' },
   { id: 'biomolecular', label: 'Biología Molecular', icon: '🧬' },
   { id: 'visitante',    label: 'Visitante',          icon: '🚪' },
 ];

@@ -250,22 +250,19 @@ async function fetchViaCsv(ids) {
 // ---------- pipeline público ----------
 /** Aplana { name: rows } → globalData y emite eventos.
  *  Devuelve false si se descartó por degradado (datos previos conservados). */
-function commit(sheets, firstLoad) {
-  // No pisar un set bueno con uno degradado (p.ej. reconexión manual que cae al
-  // fallback CSV y sólo trae 1 hoja). En la primera carga no hay con qué comparar.
-  if (!firstLoad && isDegraded(sheets)) return false;
-
+/** Aplica un set de hojas { name: rows } al store: aplana las filas, limpia la caché
+ *  de fechas, fija globalData/sheetNames/latestDateMs y deriva Mortalidad. NO emite
+ *  eventos ni toca el estado de conexión/fingerprint: eso lo decide cada caller
+ *  (carga inicial vs auto-refresco). No muta el store si el set viene vacío.
+ *  Devuelve el nº de filas aplicadas (0 = nada que aplicar). */
+export function applySheets(sheets) {
   const rows = [];
   for (const name in sheets) rows.push(...sheets[name]);
-  if (!rows.length) throw new Error('Sin datos en las hojas.');
+  if (!rows.length) return 0;
 
   clearDateCache();
   store.globalData = rows;
   store.sheetNames = Object.keys(sheets);
-  // Cachea la huella del set recién comprometido para sembrar el auto-refresco SIN
-  // re-descargar el workbook completo en el arranque (antes boot() hacía una 2ª
-  // descarga íntegra sólo para calcular el fingerprint inicial).
-  _lastFingerprint = dataFingerprint(sheets);
 
   let latest = 0;
   rows.forEach((row) => {
@@ -275,6 +272,23 @@ function commit(sheets, firstLoad) {
   store.latestDateMs = latest;
 
   try { autoCalcMortalidad(rows); } catch (_) {}
+  return rows.length;
+}
+
+function commit(sheets, firstLoad) {
+  // No pisar un set bueno con uno degradado (p.ej. reconexión manual que cae al
+  // fallback CSV y sólo trae 1 hoja). En la primera carga no hay con qué comparar.
+  if (!firstLoad && isDegraded(sheets)) return false;
+
+  // applySheets no muta el store si viene vacío → un set vacío conserva los datos
+  // previos y aquí se reporta como error (la reconexión manual no pierde lo cargado).
+  if (!applySheets(sheets)) throw new Error('Sin datos en las hojas.');
+
+  // Cachea la huella del set recién comprometido para sembrar el auto-refresco SIN
+  // re-descargar el workbook completo en el arranque (antes boot() hacía una 2ª
+  // descarga íntegra sólo para calcular el fingerprint inicial).
+  _lastFingerprint = dataFingerprint(sheets);
+
   store.connected = true;
   emit(EV.DATA, { firstLoad });
   return true;

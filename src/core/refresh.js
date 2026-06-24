@@ -7,9 +7,7 @@
    ============================================================ */
 import { REFRESH_INTERVAL_S } from '../config.js';
 import { store, emit, EV } from './store.js';
-import { fetchAllSheets, dataFingerprint, isDegraded } from './sheets.js';
-import { autoCalcMortalidad, getField, F } from './fields.js';
-import { parseAnyDate, clearDateCache } from './dates.js';
+import { fetchAllSheets, dataFingerprint, isDegraded, applySheets } from './sheets.js';
 
 let timer = null;
 let lastFingerprint = '';
@@ -52,16 +50,7 @@ async function tick() {
       emit(EV.CONN, { state: 'connected', label: `${store.sheetNames.length} hojas · ${ts} · sin cambios` });
     } else {
       lastFingerprint = fp;
-      const rows = [];
-      for (const name in sheets) rows.push(...sheets[name]);
-      if (rows.length) {
-        clearDateCache();
-        store.globalData = rows;
-        store.sheetNames = Object.keys(sheets);
-        let latest = 0;
-        rows.forEach((r) => { const d = parseAnyDate(getField(r, F.fecha)); if (d && d.getTime() > latest) latest = d.getTime(); });
-        store.latestDateMs = latest;
-        try { autoCalcMortalidad(rows); } catch (_) {}
+      if (applySheets(sheets)) {
         emit(EV.DATA, { firstLoad: false });
         emit(EV.CONN, { state: 'connected', label: `${store.sheetNames.length} hojas · ${ts}` });
       }

@@ -130,10 +130,18 @@ export function buildTrendKpis(daily, rows, vars) {
  *  Ordena por fecha internamente → robusto aunque las filas no vengan ordenadas
  *  (p. ej. byCor multi-módulo o el resumen por corrida). */
 export function dailySeries(rows, vars) {
-  const fechas = [...new Set(rows.map((r) => getField(r, F.fecha)).filter(Boolean))]
-    .sort((a, b) => (parseAnyDate(a) || 0) - (parseAnyDate(b) || 0));
+  // Agrupa las filas por fecha en UNA sola pasada (antes: un rows.filter() por cada
+  // fecha → O(días×filas)). Misma salida: fechas en orden cronológico + promedios.
+  const byDate = new Map();
+  rows.forEach((r) => {
+    const f = getField(r, F.fecha);
+    if (!f) return;
+    const bucket = byDate.get(f);
+    if (bucket) bucket.push(r); else byDate.set(f, [r]);
+  });
+  const fechas = [...byDate.keys()].sort((a, b) => (parseAnyDate(a) || 0) - (parseAnyDate(b) || 0));
   return fechas.map((f) => {
-    const dRows = rows.filter((r) => getField(r, F.fecha) === f);
+    const dRows = byDate.get(f);
     const rec = { fecha: f };
     vars.forEach((v) => {
       const vals = dRows.map((r) => parseNum(r, v.keys)).filter((x) => x !== null);

@@ -2,7 +2,7 @@
    SUPERVISOR · Visualización del Tanque (KPIs + series temporales)
    ============================================================ */
 import { tankStats, getters } from './stats.js';
-import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, breadcrumb } from './ui.js';
+import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, breadcrumb, bindModal } from './ui.js';
 import { svLevel, odLevel, tmpLevel, levelColor, levelLabel, esc } from '../../core/format.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { makeChart } from '../../core/charts.js';
@@ -374,11 +374,10 @@ export function renderTank(ctx, mod, tq) {
     const fsOverlay = root.querySelector('#svChartFsModal');
     if (fsOverlay) {
       const titleEl = fsOverlay.querySelector('#svChartFsTitle');
-      const openFs = (key) => { if (!cfgs[key]) return; titleEl.textContent = cfgTitle[key]; fsOverlay.classList.add('sv-open'); document.body.classList.add('modal-open'); requestAnimationFrame(() => makeChart('svChartFsCanvas', cfgs[key]())); };
-      const closeFs = () => { fsOverlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); };
-      root.querySelectorAll('[data-svfs]').forEach((b) => b.addEventListener('click', () => openFs(b.dataset.svfs)));
-      fsOverlay.querySelector('[data-svfs-close]')?.addEventListener('click', closeFs);
-      fsOverlay.addEventListener('click', (e) => { if (e.target === fsOverlay) closeFs(); });
+      bindModal(root, fsOverlay, {
+        openSel: '[data-svfs]', closeSel: '[data-svfs-close]',
+        onOpen: (b) => { const key = b.dataset.svfs; if (!cfgs[key]) return; if (titleEl) titleEl.textContent = cfgTitle[key]; requestAnimationFrame(() => makeChart('svChartFsCanvas', cfgs[key]())); },
+      });
     }
 
     // ── Modal: ICL diario ──
@@ -439,35 +438,21 @@ export function renderTank(ctx, mod, tq) {
           plugins: [bandPlugin],
         });
       };
-      const openIcl = () => { iclOverlay.classList.add('sv-open'); document.body.classList.add('modal-open'); requestAnimationFrame(drawIcl); };
-      const closeIcl = () => { iclOverlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); };
-      root.querySelectorAll('[data-iclopen]').forEach((chip) => {
-        chip.addEventListener('click', openIcl);
-        chip.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openIcl(); } });
+      bindModal(root, iclOverlay, {
+        openSel: '[data-iclopen]', closeSel: '[data-iclclose]', keyboard: true,
+        onOpen: () => requestAnimationFrame(drawIcl),
       });
-      iclOverlay.querySelector('[data-iclclose]')?.addEventListener('click', closeIcl);
-      iclOverlay.addEventListener('click', (e) => { if (e.target === iclOverlay) closeIcl(); });
     }
 
     // ── Modal: Historial de observaciones del tanque ──
-    const obsOverlay = root.querySelector('#svObsModal');
-    if (obsOverlay) {
-      const openObs = () => { obsOverlay.classList.add('sv-open'); document.body.classList.add('modal-open'); };
-      const closeObs = () => { obsOverlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); };
-      root.querySelectorAll('[data-obshist-open]').forEach((b) => b.addEventListener('click', openObs));
-      obsOverlay.querySelector('[data-obshist-close]')?.addEventListener('click', closeObs);
-      obsOverlay.addEventListener('click', (e) => { if (e.target === obsOverlay) closeObs(); });
-    }
+    bindModal(root, root.querySelector('#svObsModal'), {
+      openSel: '[data-obshist-open]', closeSel: '[data-obshist-close]',
+    });
 
     // ── Modal: Alertas del día (TQ4) ──
-    const alertOverlay = root.querySelector('#svAlertModal');
-    if (alertOverlay) {
-      const openAl = () => { alertOverlay.classList.add('sv-open'); document.body.classList.add('modal-open'); };
-      const closeAl = () => { alertOverlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); };
-      root.querySelectorAll('[data-alerts-open]').forEach((b) => b.addEventListener('click', openAl));
-      alertOverlay.querySelector('[data-alerts-close]')?.addEventListener('click', closeAl);
-      alertOverlay.addEventListener('click', (e) => { if (e.target === alertOverlay) closeAl(); });
-    }
+    bindModal(root, root.querySelector('#svAlertModal'), {
+      openSel: '[data-alerts-open]', closeSel: '[data-alerts-close]',
+    });
 
     // ── Modal: OD / Temperatura por hora (12 tomas del día) ──
     const overlay = root.querySelector('#svTankModal');
@@ -525,17 +510,12 @@ export function renderTank(ctx, mod, tq) {
         const cfg = TANK_METRICS[metric];
         titleEl.textContent = `${cfg.icon} ${cfg.label}`;
         refEl.innerHTML = `Rango ref.: <b>${cfg.band[0]}–${cfg.band[1]}${cfg.unit}</b>`;
-        overlay.classList.add('sv-open'); document.body.classList.add('modal-open');
         drawHourly();
       };
-      const closeHourly = () => { overlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); };
-
-      root.querySelectorAll('[data-tankmetric]').forEach((chip) => {
-        chip.addEventListener('click', () => openHourly(chip.dataset.tankmetric));
-        chip.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openHourly(chip.dataset.tankmetric); } });
+      bindModal(root, overlay, {
+        openSel: '[data-tankmetric]', closeSel: '[data-tankmodal-close]', keyboard: true,
+        onOpen: (chip) => openHourly(chip.dataset.tankmetric),
       });
-      root.querySelector('[data-tankmodal-close]')?.addEventListener('click', closeHourly);
-      overlay.addEventListener('click', (e) => { if (e.target === overlay) closeHourly(); });
       if (dateSel) dateSel.addEventListener('change', () => { curDate = dateSel.value; drawHourly(); });
     }
     // ── Modal: Mapa morfológico (heatmap por día con rango de fechas) ──
@@ -564,11 +544,10 @@ export function renderTank(ctx, mod, tq) {
         });
         tableEl.innerHTML = h + '</tbody></table>';
       };
-      const openMorph = () => { morphOverlay.classList.add('sv-open'); document.body.classList.add('modal-open'); renderHeat(+fromSel.value, +toSel.value); };
-      const closeMorph = () => { morphOverlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); };
-      root.querySelectorAll('[data-morphmap-open]').forEach((b) => b.addEventListener('click', openMorph));
-      morphOverlay.querySelector('[data-morphmodal-close]')?.addEventListener('click', closeMorph);
-      morphOverlay.addEventListener('click', (e) => { if (e.target === morphOverlay) closeMorph(); });
+      bindModal(root, morphOverlay, {
+        openSel: '[data-morphmap-open]', closeSel: '[data-morphmodal-close]',
+        onOpen: () => renderHeat(+fromSel.value, +toSel.value),
+      });
       fromSel?.addEventListener('change', () => renderHeat(+fromSel.value, +toSel.value));
       toSel?.addEventListener('change', () => renderHeat(+fromSel.value, +toSel.value));
     }
@@ -626,11 +605,10 @@ export function renderTank(ctx, mod, tq) {
           ['Pob. +7d', popF ? Math.round(clampPos(popF.future[H - 1])).toLocaleString('es-EC') : '—'],
         ].map(([l, v]) => `<span class="sv-modal-kpi"><b>${esc(String(v))}</b><span>${esc(l)}</span></span>`).join('');
       };
-      const openFc = () => { fcOverlay.classList.add('sv-open'); document.body.classList.add('modal-open'); requestAnimationFrame(drawForecast); };
-      const closeFc = () => { fcOverlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); };
-      root.querySelectorAll('[data-forecast-open]').forEach((b) => b.addEventListener('click', openFc));
-      fcOverlay.querySelector('[data-forecast-close]')?.addEventListener('click', closeFc);
-      fcOverlay.addEventListener('click', (e) => { if (e.target === fcOverlay) closeFc(); });
+      bindModal(root, fcOverlay, {
+        openSel: '[data-forecast-open]', closeSel: '[data-forecast-close]',
+        onOpen: () => requestAnimationFrame(drawForecast),
+      });
     }
   };
 

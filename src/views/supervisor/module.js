@@ -4,7 +4,7 @@
 import { modStats, tankStats, tanksOf, getters } from './stats.js';
 import { moduleSvPopSeries, moduleHourlyDates, moduleHourly, moduleDayKpis, cosechaEstimate } from './moduleTrends.js';
 import { HR_LABELS } from './tank.js';
-import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, kpiTecnicos, breadcrumb } from './ui.js';
+import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, kpiTecnicos, breadcrumb, bindModal } from './ui.js';
 import { svLevel, odLevel, tmpLevel, levelColor, levelLabel, esc } from '../../core/format.js';
 import { store } from '../../core/store.js';
 import { getField, F } from '../../core/fields.js';
@@ -805,11 +805,10 @@ export function renderModule(ctx, mod) {
           plugins: { legend: { labels: { boxWidth: 12 } } },
         },
       });
-      const open = () => { cmpOverlay.classList.add('sv-open'); document.body.classList.add('modal-open'); requestAnimationFrame(drawCmp); };
-      const close = () => { cmpOverlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); };
-      root.querySelectorAll('[data-modcmp-open]').forEach((b) => b.addEventListener('click', open));
-      cmpOverlay.querySelector('[data-modcmp-close]')?.addEventListener('click', close);
-      cmpOverlay.addEventListener('click', (e) => { if (e.target === cmpOverlay) close(); });
+      bindModal(root, cmpOverlay, {
+        openSel: '[data-modcmp-open]', closeSel: '[data-modcmp-close]',
+        onOpen: () => requestAnimationFrame(drawCmp),
+      });
     }
 
     // Modal Historial As. Téc. (+ barra de filtros que re-renderiza la lista en vivo)
@@ -817,11 +816,10 @@ export function renderModule(ctx, mod) {
     if (atOverlay) {
       // Lista DIFERIDA: se construye al abrir (no en cada render del módulo).
       let atRendered = false;
-      const open = () => { atOverlay.classList.add('sv-open'); document.body.classList.add('modal-open'); if (!atRendered) { atRendered = true; renderAtList(); } };
-      const close = () => { atOverlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); };
-      root.querySelectorAll('[data-athist-open]').forEach((b) => b.addEventListener('click', open));
-      atOverlay.querySelector('[data-athist-close]')?.addEventListener('click', close);
-      atOverlay.addEventListener('click', (e) => { if (e.target === atOverlay) close(); });
+      bindModal(root, atOverlay, {
+        openSel: '[data-athist-open]', closeSel: '[data-athist-close]',
+        onOpen: () => { if (!atRendered) { atRendered = true; renderAtList(); } },
+      });
 
       const atList = atOverlay.querySelector('#svAtList');
       const supSel = atOverlay.querySelector('[data-athist-sup]');
@@ -838,14 +836,9 @@ export function renderModule(ctx, mod) {
     }
 
     // #3 · Modal de Desinfección
-    const dxOverlay = root.querySelector('#svDesinfModal');
-    if (dxOverlay) {
-      const open = () => { dxOverlay.classList.add('sv-open'); document.body.classList.add('modal-open'); };
-      const close = () => { dxOverlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); };
-      root.querySelectorAll('[data-desinf-open]').forEach((b) => b.addEventListener('click', open));
-      dxOverlay.querySelector('[data-desinf-close]')?.addEventListener('click', close);
-      dxOverlay.addEventListener('click', (e) => { if (e.target === dxOverlay) close(); });
-    }
+    bindModal(root, root.querySelector('#svDesinfModal'), {
+      openSel: '[data-desinf-open]', closeSel: '[data-desinf-close]',
+    });
 
     // #5 · Modal de gráfico por métrica (SV/Pob = tendencia · OD/Temp = perfil 12 tomas)
     const mmOverlay = root.querySelector('#svModMetricModal');
@@ -875,14 +868,11 @@ export function renderModule(ctx, mod) {
         else { controls.style.display = ''; noteEl.textContent = 'Promedio del módulo en las 12 tomas cada 2 h del día seleccionado.'; const g = curMetric === 'od' ? gOD : gTmp; const c = curMetric === 'od' ? '#1E88E5' : '#F4511E'; makeChart('svModMetricCanvas', hourlyCfg(curMetric === 'od' ? 'OD (mg/L)' : 'T° (°C)', moduleHourly(ctx, mod, corrida, g, dateSel.value), c)); }
       };
       dateSel.addEventListener('change', () => { if (curMetric === 'od' || curMetric === 'tmp') draw(); });
-      const open = (metric) => { curMetric = metric; titleEl.textContent = TITLES[metric] || 'Gráfico'; mmOverlay.classList.add('sv-open'); document.body.classList.add('modal-open'); requestAnimationFrame(draw); };
-      const close = () => { mmOverlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); };
-      root.querySelectorAll('[data-modmetric]').forEach((chip) => {
-        chip.addEventListener('click', () => open(chip.dataset.modmetric));
-        chip.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(chip.dataset.modmetric); } });
+      const open = (metric) => { curMetric = metric; titleEl.textContent = TITLES[metric] || 'Gráfico'; requestAnimationFrame(draw); };
+      bindModal(root, mmOverlay, {
+        openSel: '[data-modmetric]', closeSel: '[data-modmetric-close]', keyboard: true,
+        onOpen: (chip) => open(chip.dataset.modmetric),
       });
-      mmOverlay.querySelector('[data-modmetric-close]')?.addEventListener('click', close);
-      mmOverlay.addEventListener('click', (e) => { if (e.target === mmOverlay) close(); });
     }
 
     // #5 · Modal "Resumen del día"
@@ -915,11 +905,10 @@ export function renderModule(ctx, mod) {
           : '<div class="sv-alert-ok" style="margin-top:10px">✅ Sin alertas este día.</div>';
       };
       dateSel.addEventListener('change', render);
-      const open = () => { dayOverlay.classList.add('sv-open'); document.body.classList.add('modal-open'); render(); };
-      const close = () => { dayOverlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); };
-      root.querySelectorAll('[data-modday-open]').forEach((b) => b.addEventListener('click', open));
-      dayOverlay.querySelector('[data-modday-close]')?.addEventListener('click', close);
-      dayOverlay.addEventListener('click', (e) => { if (e.target === dayOverlay) close(); });
+      bindModal(root, dayOverlay, {
+        openSel: '[data-modday-open]', closeSel: '[data-modday-close]',
+        onOpen: () => render(),
+      });
     }
 
     // Modal Biomol (heatmap diagnóstico × tanque|estadío)
@@ -944,11 +933,11 @@ export function renderModule(ctx, mod) {
         buildBm();
       }));
       // Redibuja al abrir → el SVG de dispersión toma el ancho real del modal visible.
-      const open = () => { bmOverlay.classList.add('sv-open'); document.body.classList.add('modal-open'); requestAnimationFrame(buildBm); };
-      const close = () => { bmOverlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); bmDestroyTip(); };
-      root.querySelectorAll('[data-biomol-open]').forEach((b) => b.addEventListener('click', open));
-      bmOverlay.querySelector('[data-biomol-close]')?.addEventListener('click', close);
-      bmOverlay.addEventListener('click', (e) => { if (e.target === bmOverlay) close(); });
+      bindModal(root, bmOverlay, {
+        openSel: '[data-biomol-open]', closeSel: '[data-biomol-close]',
+        onOpen: () => requestAnimationFrame(buildBm),
+        onClose: bmDestroyTip,
+      });
     }
 
     // Modal Microbiología (Placa + Tabla + Heatmap; pestaña Placa con tanque + navegador de fecha)
@@ -985,11 +974,10 @@ export function renderModule(ctx, mod) {
       micBody.addEventListener('mouseover', (e) => { const g = e.target.closest('.mic-colony'); if (g) ttShow(g); });
       micBody.addEventListener('mousemove', (e) => { if (!micTT || micTT.style.display !== 'block') return; micTT.style.left = Math.min(e.clientX + 14, window.innerWidth - 210) + 'px'; micTT.style.top = Math.min(e.clientY - 8, window.innerHeight - 130) + 'px'; });
       micBody.addEventListener('mouseout', (e) => { const g = e.target.closest('.mic-colony'); if (g) { if (micTT) micTT.style.display = 'none'; const glow = g.querySelector('.mic-colony-glow'); if (glow) glow.setAttribute('opacity', '0'); } });
-      const open = () => { micMode = 'placa'; micState.tank = null; micState.dayIdx = null; micOverlay.querySelectorAll('[data-micmode]').forEach((x) => x.classList.toggle('is-active', x.dataset.micmode === 'placa')); micOverlay.classList.add('sv-open'); document.body.classList.add('modal-open'); requestAnimationFrame(renderMic); };
-      const close = () => { micOverlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); };
-      root.querySelectorAll('[data-micro-open]').forEach((b) => b.addEventListener('click', open));
-      micOverlay.querySelector('[data-micro-close]')?.addEventListener('click', close);
-      micOverlay.addEventListener('click', (e) => { if (e.target === micOverlay) close(); });
+      bindModal(root, micOverlay, {
+        openSel: '[data-micro-open]', closeSel: '[data-micro-close]',
+        onOpen: () => { micMode = 'placa'; micState.tank = null; micState.dayIdx = null; micOverlay.querySelectorAll('[data-micmode]').forEach((x) => x.classList.toggle('is-active', x.dataset.micmode === 'placa')); requestAnimationFrame(renderMic); },
+      });
     }
   };
 

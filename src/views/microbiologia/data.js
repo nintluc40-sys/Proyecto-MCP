@@ -236,14 +236,21 @@ const MIC_DR_BASE = {
 };
 
 // Umbrales efectivos = base + overrides de la vista Factores (localStorage, misma SPA).
-// Memoizado: los cambios de Factores se reflejan al recargar.
+// Caché invalidada por HUELLA: el string crudo de localStorage actúa de firma. Si la
+// vista Factores reescribe el override, el cambio se refleja en el siguiente cálculo
+// SIN recargar; mientras no cambie, se reutiliza la caché (el getItem por llamada es
+// barato y la reconstrucción solo ocurre cuando la firma difiere).
 const MIC_FACTORS_KEY = 'larv4_mic_factors';
 let _thrCache = null;
+let _thrRaw = null; // firma (string crudo de localStorage) del set cacheado
 function loadMicThresholds() {
-  if (_thrCache) return _thrCache;
+  let raw = null;
+  try { raw = (typeof localStorage !== 'undefined') ? localStorage.getItem(MIC_FACTORS_KEY) : null; }
+  catch (_) { raw = null; }
+  if (_thrCache && raw === _thrRaw) return _thrCache;
+
   const out = JSON.parse(JSON.stringify(MIC_DR_BASE));
   try {
-    const raw = (typeof localStorage !== 'undefined') ? localStorage.getItem(MIC_FACTORS_KEY) : null;
     if (raw) {
       const o = JSON.parse(raw);
       if (o && typeof o === 'object') {
@@ -253,8 +260,9 @@ function loadMicThresholds() {
         });
       }
     }
-  } catch (_) { /* localStorage no disponible/ilegible → solo base */ }
+  } catch (_) { /* override ilegible → solo base */ }
   _thrCache = out;
+  _thrRaw = raw;
   return out;
 }
 

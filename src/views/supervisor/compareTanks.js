@@ -13,6 +13,7 @@ import { makeChart } from '../../core/charts.js';
 import { iclSeries } from './params.js';
 import { esc } from '../../core/format.js';
 import { natCmp } from './columns.js';
+import { bindModal } from './ui.js';
 
 // src: 'larv' (Larvicultura) · 'tanque' (Control_Tanque) · 'icl' (compuesto)
 const CMP_VARS = [
@@ -142,11 +143,10 @@ export function setupCompareTanks(root) {
   const cfg = overlay.querySelector('#cttConfig');
   const out = overlay.querySelector('#cttOutput');
 
-  const open = () => { renderConfig(); out.innerHTML = ''; overlay.classList.add('sv-open'); document.body.classList.add('modal-open'); };
-  const close = () => { overlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); };
-  root.querySelectorAll('[data-ctt-open]').forEach((b) => b.addEventListener('click', open));
-  overlay.querySelector('[data-ctt-close]')?.addEventListener('click', close);
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  bindModal(root, overlay, {
+    openSel: '[data-ctt-open]', closeSel: '[data-ctt-close]',
+    onOpen: () => { renderConfig(); out.innerHTML = ''; },
+  });
 
   // `withAll` = anteponer opción "Todos" (valor '*').
   function selHTML(attr, cur, list, ph, withAll) {

@@ -4,7 +4,7 @@
    pigmentación) + bitácora desplegable. Enlace a app.larvia.ai.
    ============================================================ */
 import { getters } from './stats.js';
-import { colorFor, breadcrumb, fmt1, fmt2 } from './ui.js';
+import { colorFor, breadcrumb, fmt1, fmt2, bindModal } from './ui.js';
 import { esc } from '../../core/format.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { getField } from '../../core/fields.js';
@@ -257,13 +257,12 @@ export function renderLarvia(ctx, mod, tq) {
           + `<span class="sv-modal-kpi"><b>${f(avg)}</b>prom.</span>`
           + `<span class="sv-modal-kpi"><b>${arr.length ? f(Math.min(...arr)) : '—'}</b>mín.</span>`
           + `<span class="sv-modal-kpi"><b>${arr.length ? f(Math.max(...arr)) : '—'}</b>máx.</span>`;
-        overlay.classList.add('sv-open'); document.body.classList.add('modal-open');
         requestAnimationFrame(() => drawMetric('svBioFsCanvas', m, true));
       };
-      const closeFs = () => { overlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); };
-      root.querySelectorAll('[data-biofs]').forEach((b) => b.addEventListener('click', () => openFs(b.dataset.biofs)));
-      overlay.querySelector('[data-biofs-close]')?.addEventListener('click', closeFs);
-      overlay.addEventListener('click', (e) => { if (e.target === overlay) closeFs(); });
+      bindModal(root, overlay, {
+        openSel: '[data-biofs]', closeSel: '[data-biofs-close]',
+        onOpen: (b) => openFs(b.dataset.biofs),
+      });
     }
 
     // LV3 · selectores de comparación

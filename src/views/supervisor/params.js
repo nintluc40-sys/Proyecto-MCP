@@ -11,6 +11,7 @@ import { parseAnyDate } from '../../core/dates.js';
 import { parseNum, getField, F } from '../../core/fields.js';
 import { getters } from './stats.js';
 import { makeChart } from '../../core/charts.js';
+import { bindModal } from './ui.js';
 
 const ESTADIO_KEYS = ['Estadío', 'Estadio', 'estadío', 'estadio'];
 
@@ -383,14 +384,12 @@ export function buildParamSection(rows, stageClass, modRows, waterColor) {
         + `<span class="sv-modal-kpi"><b>${fmtVal(v.kind, mn)}</b>mín.</span>`
         + `<span class="sv-modal-kpi"><b>${fmtVal(v.kind, mx)}</b>máx.</span>`
         + `<span class="sv-modal-kpi">${refTxt}</span>${estado}`;
-      overlay.classList.add('sv-open'); document.body.classList.add('modal-open');
       requestAnimationFrame(() => drawVarChart('lvFsCanvas', days, series[key], v, stages, { big: true, modMap: modAvg[key] }));
     };
-    const closeFs = () => { overlay.classList.remove('sv-open'); document.body.classList.remove('modal-open'); };
-
-    scope.querySelectorAll('[data-lvfs]').forEach((b) => b.addEventListener('click', () => openFs(b.dataset.lvfs)));
-    overlay.querySelector('[data-lvfs-close]')?.addEventListener('click', closeFs);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeFs(); });
+    bindModal(scope, overlay, {
+      openSel: '[data-lvfs]', closeSel: '[data-lvfs-close]',
+      onOpen: (b) => openFs(b.dataset.lvfs),
+    });
   };
   return { html, draw };
 }
