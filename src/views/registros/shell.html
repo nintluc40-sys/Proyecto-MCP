@@ -235,3 +235,29 @@
     </div>
   </div>
 </div>
+
+<!-- HISTDEL MODAL — Borrar historial local por RANGO de fechas -->
+<div class="ov" id="histdel-ov" role="dialog" aria-modal="true" aria-labelledby="histdel-title" onclick="closeHistDelOut(event)">
+  <div class="modal" style="max-width:430px">
+    <div class="mh">
+      <div class="mtitle" id="histdel-title">🗑 Borrar historial por rango</div>
+      <button type="button" aria-label="Cerrar" onclick="closeHistDel()" style="background:rgba(255,255,255,.14);border:none;color:#fff;border-radius:6px;padding:3px 9px;cursor:pointer;font-size:13px">✕</button>
+    </div>
+    <div class="mb">
+      <div style="background:#fef3c7;border:1.5px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:11.5px;color:#92400e">
+        ⚠️ Elimina del historial <b>local</b> de <b id="histdel-modlabel"></b> los registros cuya <b>Fecha</b> esté dentro del rango. No afecta a lo ya enviado a Google Sheets.
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <label style="flex:1;min-width:130px;font-size:12px;color:#374151;font-weight:600">Desde
+          <input type="date" id="histdel-from" onchange="histDelUpdateInfo()" style="width:100%;margin-top:4px;padding:7px;border:1px solid #cbd5e1;border-radius:7px;font-size:13px"></label>
+        <label style="flex:1;min-width:130px;font-size:12px;color:#374151;font-weight:600">Hasta
+          <input type="date" id="histdel-to" onchange="histDelUpdateInfo()" style="width:100%;margin-top:4px;padding:7px;border:1px solid #cbd5e1;border-radius:7px;font-size:13px"></label>
+      </div>
+      <div id="histdel-info" style="margin-top:10px;font-size:11.5px;color:#6b7280"></div>
+    </div>
+    <div class="mf2" style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn bo" type="button" onclick="closeHistDel()">Cancelar</button>
+      <button class="btn bd" type="button" onclick="confirmHistDelRange()">🗑 Borrar rango</button>
+    </div>
+  </div>
+</div>

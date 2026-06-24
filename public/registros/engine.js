@@ -734,6 +734,11 @@ const pv=(o,k)=>{const v=o[k];return(v!==undefined&&v!==null&&v!=="")?v:"";}
 // numérico legítimo (p. ej. 0 % de supervivencia o población 0) NO se
 // descarta a favor de la siguiente fuente.
 const firstVal=(...vals)=>{for(const v of vals){if(v!==undefined&&v!==null&&v!=="")return v;}return"";};
+// Decimal con coma para el Google Sheet (locale es-EC): "93.53" → "93,53". Deja
+// enteros y vacíos intactos. Solo para el valor numérico de Supervivencia, que se
+// computa con toFixed (punto) y debe LLEGAR al Sheet con coma para interpretarse
+// como número. Los dashboards leen con parseNum (coma→punto), sin romper nada.
+const decCo=(v)=>(v===""||v===null||v===undefined)?"":String(v).replace(".",",");
 
 function gcfg(k,d=""){
   let raw = localStorage.getItem("lcfg_"+k) || d;
@@ -1332,7 +1337,7 @@ function buildDatosPayload(m, includeFichas, opts){
       // Col 5 "Mortalidad" (conteo absoluto) va SIEMPRE vacía a propósito:
       // pertenece al esquema del "otro sistema" y el GAS la preserva vía merge;
       // este cliente solo aporta "% Mortalidad" (mo_i, más abajo).
-      firstVal(pob["sv_"+i], desp["sv_"+i]), "", pobReal,               // 4-6 Supervivencia / Mortalidad / Población
+      decCo(firstVal(pob["sv_"+i], desp["sv_"+i])), "", pobReal,        // 4-6 Supervivencia (coma decimal es-EC) / Mortalidad / Población
       pob["lt_"+i] || plg["lt_"+i] || "",                                // 7 Lote
       desp["e_"+i] || cal["e_"+i] || pob["e_"+i] || agua["e_"+i] || "", // 8 Estadío
       pv(cal,"ll_"+i), pv(cal,"sl_"+i), pv(cal,"va_"+i),                 // 9-11 Intestino
@@ -3129,8 +3134,10 @@ function _calcDespBiomasa(fp){
 function rcDespBiomasa(){ _calcDespBiomasa(document.getElementById("fp-despacho")); }
 function rcBlancoDespBiomasa(){ _calcDespBiomasa(document.getElementById("fp-blanco")); }
 
-// Densidad cosechada por tanque = Población (×1000) ÷ Toneladas (TON), entero.
-// Solo lectura: se autocalcula desde la Población del tanque y el registro TON.
+// Densidad cosechada por tanque = Población ÷ Toneladas (TON), entero.
+// El "(×1000)" del campo Población es solo su UNIDAD (se teclea en miles); NO es un
+// multiplicador extra de la fórmula. Antes se hacía (po×1000)/ton → densidades 1000×
+// infladas. Solo lectura: se autocalcula desde la Población del tanque y el registro TON.
 // Si falta la población o la tonelada del tanque (o es 0), la celda queda vacía.
 function _calcDespDensidad(fp, ton){
   if(!fp) return;
@@ -3142,7 +3149,7 @@ function _calcDespDensidad(fp, ton){
     const po  = (poEl && poEl.value !== "") ? parseFloat(poEl.value) : NaN;
     const ton_i = parseFloat(t["ton_"+i]);
     if(isFinite(po) && isFinite(ton_i) && ton_i > 0){
-      const dc = Math.round((po * 1000) / ton_i);
+      const dc = Math.round(po / ton_i);
       dcEl.value = isFinite(dc) ? dc : "";
     } else {
       dcEl.value = "";
@@ -11974,6 +11981,59 @@ function clearAllHist(){
   toast("🗑 Historial local vaciado ("+list.length+" registro(s))","ok",3000);
 }
 
+/* ── Borrado del historial local por RANGO de fechas (modal #histdel-ov) ──
+   Reemplaza al "borrar todo": el botón abre un modal que pide Desde/Hasta y solo
+   elimina los registros cuya `fecha` (YYYY-MM-DD) caiga dentro del rango (inclusive).
+   Comparación lexicográfica válida por el formato ISO. No toca Google Sheets. */
+function _histDelRange(){
+  const from = (document.getElementById("histdel-from")||{}).value || "";
+  const to   = (document.getElementById("histdel-to")||{}).value || "";
+  return { from, to };
+}
+function _histDelCount(){
+  const { from, to } = _histDelRange();
+  if(!from || !to || from > to) return 0;
+  return loadHist(curMod).filter(h => h.fecha >= from && h.fecha <= to).length;
+}
+function histDelUpdateInfo(){
+  const el = document.getElementById("histdel-info"); if(!el) return;
+  const { from, to } = _histDelRange();
+  if(!from || !to){ el.textContent = "Elige ambas fechas para definir el rango."; return; }
+  if(from > to){ el.innerHTML = '<span style="color:#b91c1c;font-weight:600">La fecha «Desde» es posterior a «Hasta».</span>'; return; }
+  const n = _histDelCount();
+  el.innerHTML = `Se eliminarán <b>${n}</b> registro(s) con fecha entre <b>${escapeHtml(from)}</b> y <b>${escapeHtml(to)}</b>.`;
+}
+function openHistDel(){
+  if(curMod === null || curMod === undefined) return;
+  const list = loadHist(curMod);
+  if(list.length === 0){ toast("El historial ya está vacío","info",2000); return; }
+  const fechas = list.map(h => h.fecha).filter(f => isValidDate(f)).sort();
+  const minF = fechas[0] || "", maxF = fechas[fechas.length-1] || "";
+  const lbl = document.getElementById("histdel-modlabel"); if(lbl) lbl.textContent = mLabel(curMod);
+  const fromEl = document.getElementById("histdel-from"), toEl = document.getElementById("histdel-to");
+  if(fromEl){ fromEl.value = minF; fromEl.min = minF; fromEl.max = maxF; }
+  if(toEl){ toEl.value = maxF; toEl.min = minF; toEl.max = maxF; }
+  histDelUpdateInfo();
+  document.getElementById("histdel-ov").classList.add("open");
+}
+function closeHistDel(){ const o = document.getElementById("histdel-ov"); if(o) o.classList.remove("open"); }
+function closeHistDelOut(ev){ if(ev.target === document.getElementById("histdel-ov")) closeHistDel(); }
+function confirmHistDelRange(){
+  if(curMod === null || curMod === undefined) return;
+  const { from, to } = _histDelRange();
+  if(!from || !to){ toast("Elige ambas fechas","warn",2500); return; }
+  if(from > to){ toast("Rango inválido: «Desde» es posterior a «Hasta»","warn",3000); return; }
+  const list = loadHist(curMod);
+  const keep = list.filter(h => !(h.fecha >= from && h.fecha <= to));
+  const removed = list.length - keep.length;
+  if(removed === 0){ toast("No hay registros en ese rango","info",2500); return; }
+  if(!confirm("¿Borrar "+removed+" registro(s) del historial local de "+mLabel(curMod)+"\nentre "+from+" y "+to+"?\nEsta acción no se puede deshacer y no afecta a lo ya enviado a Google Sheets.")) return;
+  saveHistList(curMod, keep);
+  closeHistDel();
+  renderHistorial();
+  toast("🗑 "+removed+" registro(s) borrados del historial","ok",3000);
+}
+
 /* ── Render de la pestaña Historial ───────── */
 const HIST_ICO = { calidad:"🔬", plg:"⚖️", params:"🌡️", poblacion:"🧮", calagua:"💧", despacho:"🚚" };
 
@@ -12065,7 +12125,7 @@ function renderHistorial(){
       <div class="fc-t">📜 Historial · ${escapeHtml(mLabel(curMod))}</div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span class="ssp ssp-mt">${list.length} registro${list.length!==1?'s':''}</span>
-        <button class="btn bd" type="button" onclick="clearAllHist()" style="font-size:10.5px;padding:5px 10px" title="Eliminar todos los registros del historial local de este módulo (no afecta a Google Sheets)">🗑 Borrar todos</button>
+        <button class="btn bd" type="button" onclick="openHistDel()" style="font-size:10.5px;padding:5px 10px" title="Eliminar registros del historial local de este módulo por rango de fechas (no afecta a Google Sheets)">🗑 Borrar por rango</button>
       </div>
     </div>
     <div class="fc-b">
