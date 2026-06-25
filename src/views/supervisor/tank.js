@@ -8,7 +8,7 @@ import { parseAnyDate } from '../../core/dates.js';
 import { makeChart } from '../../core/charts.js';
 import { getField, F } from '../../core/fields.js';
 import { buildParamSection, iclSeries, paramAlerts, morphHeatmap, linForecast } from './params.js';
-import { tankColorInfo } from './aguaColor.js';
+import { tankColorInfo } from '../../core/aguaColor.js';
 
 const { gFec, gOD, gTmp, gPop, gSal } = getters;
 const gHora = (r) => getField(r, F.hora);

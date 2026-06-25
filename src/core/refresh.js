@@ -18,7 +18,7 @@ export function markInteracting(ms = 12000) { interactingUntil = Date.now() + ms
 
 function isBusy() {
   if (Date.now() < interactingUntil) return true;
-  return !!document.querySelector('.modal-open, .dropdown-open');
+  return !!document.querySelector('.modal-open');
 }
 
 function bindInteraction() {

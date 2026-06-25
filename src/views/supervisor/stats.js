@@ -7,10 +7,10 @@
    ============================================================ */
 import { store } from '../../core/store.js';
 import {
-  getField, parseNum, F, isTanqueRow, isLarviculturaRow, hasValidCorrida, hasValidModulo, getLatestStage, dedupeTecnicos,
+  getField, parseNum, F, isTanqueRow, isLarviculturaRow, hasValidCorrida, hasValidModulo, getLatestStage, dedupeTecnicos, PLGM_KEYS,
 } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
-import { PLGM_KEYS } from './columns.js';
+import { avg } from '../../core/util.js';
 
 const gMod = (r) => getField(r, F.modulo);
 const gTnq = (r) => getField(r, F.tanque);
@@ -109,7 +109,6 @@ export function buildContext(vState) {
   return ctx;
 }
 
-const avg = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
 
 /** Días transcurridos del proceso = span (primera→última fecha con registro) + 1.
  *  Refleja la edad real aunque haya días sin muestreo. */

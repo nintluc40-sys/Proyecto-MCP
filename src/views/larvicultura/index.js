@@ -20,8 +20,8 @@ import {
 import { destroyAllCharts, destroyChart, makeChart } from '../../core/charts.js';
 import { larviColor, larviBg, larviLabel, esc } from '../../core/format.js';
 import { modalsShellHTML, setSnapshot, openModal, closeModal, MODAL_IDS } from './modals.js';
-import { presentMonths, corridasOfMonth, monthLabelAt } from '../supervisor/prodOmarsa.js';
-import { tankColorInfo } from '../supervisor/aguaColor.js';
+import { presentMonths, corridasOfMonth, monthLabelAt } from '../../core/prodCalendar.js';
+import { tankColorInfo } from '../../core/aguaColor.js';
 import { diagSemaforo, popSemaforo, aguaSemaforo, cultivoInfo, semMeta } from './status.js';
 
 const state = { stage: 'larv', month: null, modulo: null, corrida: null, tanque: null, histVar: 'estres', range: '15', popMode: 'dumbbell', evoSmooth: false };

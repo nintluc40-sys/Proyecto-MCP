@@ -43,7 +43,7 @@ export function supervisorView(root) {
   // La navegación interna (módulo↔tanque↔LARVIA…) re-renderiza sin pasar por el
   // router, así que limpiamos aquí también cualquier overlay huérfano en el <body>
   // (si no, refresh.js lo leería como interacción y pausaría el auto-refresco).
-  document.body.classList.remove('modal-open', 'dropdown-open');
+  document.body.classList.remove('modal-open');
   const ctx = buildContext(vState);
   const result = dispatch(ctx);
   const { html, after } = typeof result === 'string' ? { html: result } : result;

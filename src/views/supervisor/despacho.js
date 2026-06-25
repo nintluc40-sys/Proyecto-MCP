@@ -11,7 +11,7 @@ import { esc } from '../../core/format.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { getField, parseNum } from '../../core/fields.js';
 import { makeChart } from '../../core/charts.js';
-import { natCmp } from './columns.js';
+import { natCmp } from '../../core/util.js';
 
 const { gMod, gTnq, gCor, gFec, gPop } = getters;
 

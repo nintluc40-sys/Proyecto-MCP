@@ -14,9 +14,8 @@ import { iclSeries } from './params.js';
 import { colorFor, breadcrumb, fmtPop } from './ui.js';
 import { esc } from '../../core/format.js';
 import { parseAnyDate } from '../../core/dates.js';
-import { parseNum, getField, F } from '../../core/fields.js';
+import { parseNum, getField, F, PLG_KEYS } from '../../core/fields.js';
 import { makeChart } from '../../core/charts.js';
-import { PLG_KEYS } from './columns.js';
 
 const DEF_KEYS = ['Deformidad', 'deformidad'];
 const PESO_KEYS = ['Peso promedio (mg)', 'Peso_promedio', 'peso_promedio', 'Peso promedio', 'Peso_prom'];

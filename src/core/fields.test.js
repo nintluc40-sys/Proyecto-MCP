@@ -84,4 +84,15 @@ describe('autoCalcMortalidad', () => {
     autoCalcMortalidad([row]);
     expect(row.Mortalidad).toBeUndefined();
   });
+  it('tolera coma decimal en la Supervivencia (no la trunca)', () => {
+    const row = { Supervivencia: '80,5' };
+    autoCalcMortalidad([row]);
+    expect(row.Mortalidad).toBe(19.5);
+  });
+  it('no sobrescribe una Mortalidad ya presente', () => {
+    const row = { Supervivencia: '80', Mortalidad: '25' };
+    autoCalcMortalidad([row]);
+    expect(row.Mortalidad).toBe('25');
+    expect(row._MortCalc).toBeUndefined();
+  });
 });

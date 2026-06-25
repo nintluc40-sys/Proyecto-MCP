@@ -1,19 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  formatNumber, pct, svLevel, odLevel, tmpLevel, larviZone, esc,
+  pct, svLevel, odLevel, tmpLevel, larviZone, esc,
 } from './format.js';
-
-describe('formatNumber', () => {
-  it('abrevia millones y miles', () => {
-    expect(formatNumber(1_500_000)).toBe('1.5M');
-    expect(formatNumber(1500)).toBe('1.5K');
-    expect(formatNumber(850)).toBe('850');
-  });
-  it('N/A para valores no numéricos', () => {
-    expect(formatNumber(null)).toBe('N/A');
-    expect(formatNumber(NaN)).toBe('N/A');
-  });
-});
 
 describe('pct', () => {
   it('formatea con un decimal por defecto', () => {

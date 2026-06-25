@@ -21,7 +21,7 @@ export function renderCurrentView() {
   // Limpia estados de overlay que pudieran quedar pegados al <body> si el usuario
   // navegó con un modal abierto. Si no, refresh.js (isBusy → '.modal-open') creería
   // que hay interacción activa y CONGELARÍA el auto-refresco de toda la app.
-  document.body.classList.remove('modal-open', 'dropdown-open');
+  document.body.classList.remove('modal-open');
   destroyAllCharts();
   container.innerHTML = '';
   const root = document.createElement('div');

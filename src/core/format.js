@@ -4,17 +4,14 @@
    ============================================================ */
 import { THRESHOLDS } from '../config.js';
 
-/** 1.2M / 3.4K / 850 */
-export function formatNumber(num) {
-  if (num === null || num === undefined || isNaN(num)) return 'N/A';
-  if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + 'M';
-  if (num >= 1_000) return (num / 1_000).toFixed(1) + 'K';
-  return num.toFixed(0);
-}
-
 export function pct(num, dec = 1) {
   if (num === null || num === undefined || isNaN(num)) return '—';
   return num.toFixed(dec) + '%';
+}
+
+/** Población entera con separador de miles es-EC; "—" para nulo/≤0. */
+export function fmtPop(v) {
+  return (v === null || v === undefined || v <= 0) ? '—' : Math.round(v).toLocaleString('es-EC');
 }
 
 const inRange = ([a, b], v) => v >= a && v <= b;

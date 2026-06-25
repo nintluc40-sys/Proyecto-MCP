@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { store } from '../../core/store.js';
-import { monthIndexOfCorrida, monthLabelAt, modCorStats } from './prodOmarsa.js';
+import { store } from './store.js';
+import { monthIndexOfCorrida, monthLabelAt, modCorStats } from './prodCalendar.js';
 
 afterEach(() => { store.globalData = []; });
 

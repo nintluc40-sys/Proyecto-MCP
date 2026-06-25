@@ -10,7 +10,8 @@ import { esc, odLevel, tmpLevel, svLevel } from '../../core/format.js';
 import { getField, F } from '../../core/fields.js';
 import { fmtShort } from '../../core/dates.js';
 import { compareTanksButtonHTML, compareTanksModalHTML, setupCompareTanks } from './compareTanks.js';
-import { presentMonths, corridasOfMonth, modulesOfCorrida, prodTableHTML } from './prodOmarsa.js';
+import { presentMonths, corridasOfMonth, modulesOfCorrida } from '../../core/prodCalendar.js';
+import { prodTableHTML } from './prodOmarsa.js';
 import { desinfeccionEnCurso } from './desinfeccion.js';
 
 // Columnas que evidencian un registro de despacho (igual criterio que despacho.js).

@@ -7,13 +7,13 @@ import { parseAnyDate } from '../../core/dates.js';
 import { STAGE_ORDER } from '../../config.js';
 import { getters } from './stats.js';
 import { STD_HRS, normHr } from './tank.js';
+import { avg } from '../../core/util.js';
 
 const { gMod, gTnq, gCor, gFec, gPop, gOD, gTmp } = getters;
 const gHora = (r) => getField(r, F.hora);
 
 const modLarv = (ctx, mod, cor) => ctx.larvWin.filter((r) => gMod(r) === mod && (!cor || gCor(r) === cor));
 const modTanq = (ctx, mod, cor) => ctx.tanqWin.filter((r) => gMod(r) === mod && (!cor || gCor(r) === cor));
-const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
 
 /** Tendencia por fecha de Supervivencia y Población TOTAL del módulo.
  *  SV(fecha) = Σ última pob ≤ fecha de cada tanque / Σ primera pob × 100 (misma

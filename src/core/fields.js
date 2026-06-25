@@ -45,6 +45,11 @@ export const F = {
   tecnico: ['Técnico', 'Tecnico', 'técnico', 'tecnico', 'TECNICO'],
 };
 
+// Variantes de la columna PL/g (análisis biométrico / Larvicultura).
+export const PLG_KEYS = ['PLG', 'Plg', 'plg', 'PL/g', 'pl/g'];
+// Variantes de la columna PL/g (manual) de cosecha.
+export const PLGM_KEYS = ['Plg (manual)', 'PLG (manual)', 'plg (manual)', 'Plg(manual)', 'PL/g (manual)', 'pl/g (manual)'];
+
 // ---------- normalización de nombres de Técnico ----------
 // Mapa de alias: clave = nombre sin tildes, minúsculas, espacios colapsados.
 // Unifica tipeos reales y formas corta/larga del mismo nombre.
@@ -121,14 +126,13 @@ export function getLatestStage(data) {
   return 'N/A';
 }
 
-/** Deriva Mortalidad = 100 - Supervivencia cuando falta. Mutación in-place. */
+/** Deriva Mortalidad = 100 - Supervivencia cuando falta. Mutación in-place.
+ *  Lee Supervivencia/Mortalidad con parseNum (tolerante a coma decimal y “%”),
+ *  no con parseFloat crudo, que truncaba "85,5" → 85 (regla 6 de CLAUDE.md). */
 export function autoCalcMortalidad(rows) {
   rows.forEach((row) => {
-    const hasMort = F.mortalidad.some((k) => row[k] !== undefined && row[k] !== '' && !isNaN(parseFloat(row[k])));
-    let sv = null;
-    for (const k of F.supervivencia) {
-      if (row[k] !== undefined && row[k] !== '' && !isNaN(parseFloat(row[k]))) { sv = parseFloat(row[k]); break; }
-    }
+    const hasMort = parseNum(row, F.mortalidad) !== null;
+    const sv = parseNum(row, F.supervivencia);
     if (!hasMort && sv !== null && sv >= 0 && sv <= 100) {
       row['Mortalidad'] = parseFloat((100 - sv).toFixed(4));
       row['_MortCalc'] = true;

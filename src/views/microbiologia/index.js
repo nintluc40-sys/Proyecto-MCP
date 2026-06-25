@@ -11,7 +11,8 @@ import { store } from '../../core/store.js';
 import { destroyAllCharts, makeChart } from '../../core/charts.js';
 import { esc } from '../../core/format.js';
 import { fmtShort } from '../../core/dates.js';
-import { monthIndexOfCorrida, monthLabelAt } from '../supervisor/prodOmarsa.js';
+import { natCmp } from '../../core/util.js';
+import { monthIndexOfCorrida, monthLabelAt } from '../../core/prodCalendar.js';
 import {
   isMicroRow, pathogenRecords, rowContext, meltRow, PATHOGENS, PATHOGEN_COLOR,
   NIVELES, NIVEL_COLOR, NIVEL_RANK, isAlerta, FORMATO_LABEL, AGGREGATE_KEYS,
@@ -74,7 +75,6 @@ function microRows() {
 
 const fmtNum = (v) => (v === null || v === undefined || isNaN(v)) ? '—' : Math.round(v).toLocaleString('es-EC');
 const PAT_LABEL = Object.fromEntries(PATHOGENS.map((p) => [p.key, p.label]));
-const natCmp = (a, b) => { const x = String(a).match(/\d+/), y = String(b).match(/\d+/); return (x && y && +x[0] !== +y[0]) ? +x[0] - +y[0] : String(a).localeCompare(String(b)); };
 
 /* ============================================================
    VISTA
@@ -85,7 +85,7 @@ export function microbiologiaView(root) {
     return;
   }
   destroyAllCharts();
-  document.body.classList.remove('modal-open', 'dropdown-open');
+  document.body.classList.remove('modal-open');
 
   let h = headHTML() + subnavHTML();
   // Bacteriología va dentro de un panel con estética SCADA/ERP (.mic-scada).

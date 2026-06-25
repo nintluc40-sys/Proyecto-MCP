@@ -15,7 +15,8 @@ import { destroyAllCharts, makeChart } from '../../core/charts.js';
 import { getField, parseNum, F } from '../../core/fields.js';
 import { parseAnyDate, fmtShort, dayNum, rangeLabel } from '../../core/dates.js';
 import { esc } from '../../core/format.js';
-import { monthIndexOfCorrida, monthLabelAt } from '../supervisor/prodOmarsa.js';
+import { avg, fmtPct } from '../../core/util.js';
+import { monthIndexOfCorrida, monthLabelAt } from '../../core/prodCalendar.js';
 
 // ---------- acceso tolerante a cabeceras de Registro_Supervisión ----------
 const K = {
@@ -80,8 +81,6 @@ const isRevisionRow = (r) => r && r._SheetOrigin === 'Registro_Supervision';
 const modNum = (s) => { const m = String(s).match(/\d+/); return m ? +m[0] : 9999; };
 const natCmp = (a, b) => modNum(a) - modNum(b) || String(a).localeCompare(String(b));
 const numCmp = (a, b) => (parseFloat(a) || 0) - (parseFloat(b) || 0) || String(a).localeCompare(String(b));
-const avg = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
-const fmtPct = (v) => (v === null || v === undefined || isNaN(v)) ? '—' : v.toFixed(1) + '%';
 const dateOf = (r) => { const d = parseAnyDate(gFec(r)); return d ? fmtShort(d) : esc(gFec(r) || '—'); };
 
 // Divide un campo multivalor ("Continuar, Vigilar") en eventos individuales.
@@ -270,7 +269,7 @@ export function revisionesView(root) {
   // Esta vista se re-renderiza por filtros/pills/mes sin pasar por el router, así
   // que limpiamos aquí cualquier overlay huérfano del <body> (si no, refresh.js lo
   // leería como interacción y pausaría el auto-refresco).
-  document.body.classList.remove('modal-open', 'dropdown-open');
+  document.body.classList.remove('modal-open');
 
   const all = store.globalData.filter(isRevisionRow);
   if (!all.length) {
@@ -299,7 +298,7 @@ export function revisionesView(root) {
   if (vState.mod && !mods.includes(vState.mod)) vState.mod = null;
   // Siembras acotadas a corrida + módulo.
   const siemScope = (r) => modScope(r) && (!vState.mod || gMod(r) === vState.mod);
-  const siembras = [...new Set(all.filter(siemScope).map(gSiem).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const siembras = [...new Set(all.filter(siemScope).map(gSiem).filter(Boolean))].sort(numCmp);
   if (vState.siembra && !siembras.includes(vState.siembra)) vState.siembra = null;
 
   const rows = all.filter((r) => rowMatchesFilters(r, monthSet));
@@ -969,7 +968,7 @@ function histContentHTML() {
   if (histSel.mod && !mods.includes(histSel.mod)) histSel.mod = '';
   const byMod = byCorr.filter((r) => !histSel.mod || gMod(r) === histSel.mod);
 
-  const siembras = [...new Set(byMod.map(gSiem).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const siembras = [...new Set(byMod.map(gSiem).filter(Boolean))].sort(numCmp);
   if (histSel.siembra && !siembras.includes(histSel.siembra)) histSel.siembra = '';
 
   const opt = (val, cur, ph) => `<option value="${esc(val)}" ${val === cur ? 'selected' : ''}>${esc(val || ph)}</option>`;

@@ -12,7 +12,7 @@ import { parseAnyDate } from '../../core/dates.js';
 import { makeChart } from '../../core/charts.js';
 import { iclSeries } from './params.js';
 import { esc } from '../../core/format.js';
-import { natCmp } from './columns.js';
+import { natCmp } from '../../core/util.js';
 import { bindModal } from './ui.js';
 
 // src: 'larv' (Larvicultura) · 'tanque' (Control_Tanque) · 'icl' (compuesto)

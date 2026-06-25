@@ -9,7 +9,7 @@
 import { store } from '../../core/store.js';
 import { getField, F, isLarviculturaRow } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
-import { monthIndexOfCorrida } from './prodOmarsa.js';
+import { monthIndexOfCorrida } from '../../core/prodCalendar.js';
 
 const TIPO_KEYS = ['Tipo de Registro', 'Tipo_de_Registro', 'Tipo de registro', 'tipo de registro', 'TipoRegistro'];
 

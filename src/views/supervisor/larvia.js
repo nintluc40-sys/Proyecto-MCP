@@ -7,9 +7,8 @@ import { getters } from './stats.js';
 import { colorFor, breadcrumb, fmt1, fmt2, bindModal } from './ui.js';
 import { esc } from '../../core/format.js';
 import { parseAnyDate } from '../../core/dates.js';
-import { getField } from '../../core/fields.js';
+import { getField, parseNum, PLG_KEYS } from '../../core/fields.js';
 import { makeChart } from '../../core/charts.js';
-import { PLG_KEYS } from './columns.js';
 
 const { gMod, gTnq, gCor, gFec } = getters;
 
@@ -39,7 +38,10 @@ const METRICS = [
   { key: 'incr', label: 'Incremento Diario (mg/d)', color: '#00ACC1', dec: 3, derived: true },
 ];
 
-const pf = (r, keys) => { const v = parseFloat(getField(r, keys)); return isNaN(v) ? null : v; };
+// Acceso numérico tolerante a coma decimal/“%” (regla 6 de CLAUDE.md), igual que
+// el resto de vistas. Antes usaba parseFloat crudo, que truncaba valores con coma
+// decimal del Sheet (p. ej. "0,85" → 0).
+const pf = (r, keys) => parseNum(r, keys);
 
 
 export function renderLarvia(ctx, mod, tq) {

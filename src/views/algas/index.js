@@ -14,7 +14,8 @@ import { destroyAllCharts, destroyChart } from '../../core/charts.js';
 import { getField, parseNum, normalizeTecnico } from '../../core/fields.js';
 import { parseAnyDate, fmtShort } from '../../core/dates.js';
 import { esc } from '../../core/format.js';
-import { monthIndexOfCorrida, monthLabelAt } from '../supervisor/prodOmarsa.js';
+import { avg, natCmp } from '../../core/util.js';
+import { monthIndexOfCorrida, monthLabelAt } from '../../core/prodCalendar.js';
 import { drawGrowth, drawGrowthBar, drawGrowthMini, drawTasa, drawProto, drawDaily, drawUsoSistema, drawModuloBiomasa, drawCatPct, CAT_COLOR, algColor, fmtK } from './charts.js';
 
 // ── Acceso tolerante a las cabeceras de Lab_Algas ──
@@ -72,8 +73,6 @@ export function sysCat(sistema) {
 const ESPECIE = { TW: 'Thalassiosira weissflogii', IS: 'Isochrysis', TT: 'Tetraselmis', CH: 'Chaetoceros' };
 const especieLabel = (e) => { const k = String(e || '').trim().toUpperCase(); return ESPECIE[k] ? `${e} · ${ESPECIE[k]}` : (e || '—'); };
 
-const natCmp = (a, b) => { const x = String(a).match(/\d+/), y = String(b).match(/\d+/); return (x && y && +x[0] !== +y[0]) ? +x[0] - +y[0] : String(a).localeCompare(String(b)); };
-const avg = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
 const isDescartado = (r) => /^s[ií]$/i.test(String(g(r, 'descartado')).trim());
 const dCell = (r) => { const d = parseAnyDate(g(r, 'fecha')); return d ? fmtShort(d) : esc(g(r, 'fecha') || '—'); };
 const cellTxt = (v) => (v === '' || v === null || v === undefined) ? '<span class="muted">—</span>' : esc(v);
@@ -113,7 +112,6 @@ const REG_VISIBLE = 10; // registros visibles antes de desplegar
 /* ============================================================
    Construcción de series para los gráficos
    ============================================================ */
-const GROWTH_MAX = 14; // máx. lotes (líneas) para no saturar la curva
 
 /** Serie diaria (promedio por fecha) de una variable. */
 function dailySeries(rows, key) {
@@ -161,7 +159,10 @@ export function growthByLote(rows) {
     lotes.push({ key, points });
   });
   lotes.sort((a, b) => natCmp(a.key, b.key));
-  return lotes.slice(0, GROWTH_MAX);
+  // Sin tope: se grafican TODOS los lotes/sistemas del filtro. En modo Líneas la
+  // leyenda en chips permite ocultar/mostrar series; los modos Mini-curvas y Heatmap
+  // escalan de forma natural a muchas series (antes se recortaba a 14 y se ocultaban).
+  return lotes;
 }
 
 /** Datos de la curva de crecimiento (eje día + serie por lote). */
@@ -213,7 +214,7 @@ export function algasView(root) {
   }
   destroyAllCharts();
   // Se re-renderiza por filtros/mes sin pasar por el router → limpiar overlays huérfanos.
-  document.body.classList.remove('modal-open', 'dropdown-open');
+  document.body.classList.remove('modal-open');
 
   const all = algaeRows();
   if (!all.length) {

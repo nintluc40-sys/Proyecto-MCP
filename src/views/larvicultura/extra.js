@@ -13,12 +13,12 @@ import { store } from '../../core/store.js';
 import { getField, parseNum, F, isLarviculturaRow } from '../../core/fields.js';
 import { parseAnyDate, dayNum, rangeLabel } from '../../core/dates.js';
 import { makeChart } from '../../core/charts.js';
+import { avg } from '../../core/util.js';
 import { dailySeries, lastState, iclOf, compositeScore } from './compute.js';
 import { ACCENT, NEUTRAL, SEM, CAT, catColor } from './palette.js';
 
 const ESTADIO_KEYS = ['Estadío', 'Estadio', 'estadío', 'estadio'];
 const EARLY_STAGES = ['N5', 'Z1', 'Z2', 'Z3', 'M1'];
-const avg = (arr) => { const v = arr.filter((x) => x !== null && x !== undefined); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
 const fechaSorted = (rows) => [...rows].sort((a, b) => (parseAnyDate(getField(a, F.fecha)) || 0) - (parseAnyDate(getField(b, F.fecha)) || 0));
 
 function lastNum(rows, keys) {

@@ -1,7 +1,12 @@
 /* ============================================================
    SUPERVISOR · helpers de presentación
    ============================================================ */
-import { esc } from '../../core/format.js';
+import { esc, fmtPop } from '../../core/format.js';
+
+// Re-export: fmtPop ahora vive en core/format.js (compartido con Visitante).
+// Se re-exporta aquí para que los módulos internos del Supervisor que ya lo
+// importan desde './ui.js' sigan funcionando sin cambios.
+export { fmtPop };
 
 export const MOD_COLORS = [
   { bg: 'linear-gradient(135deg,#006064,#00838f)', accent: '#006064' },
@@ -17,7 +22,6 @@ export const colorFor = (i) => MOD_COLORS[((i % MOD_COLORS.length) + MOD_COLORS.
 
 export const fmt1 = (v, u = '') => (v === null || v === undefined || isNaN(v)) ? '—' : v.toFixed(1) + u;
 export const fmt2 = (v, u = '') => (v === null || v === undefined || isNaN(v)) ? '—' : v.toFixed(2) + u;
-export const fmtPop = (v) => (v === null || v === undefined || v <= 0) ? '—' : Math.round(v).toLocaleString('es-EC');
 
 /** Mini-tarjeta KPI translúcida (sobre fondo de color).
  *  `attrs` (opcional) inyecta atributos y la marca como interactiva (clic).

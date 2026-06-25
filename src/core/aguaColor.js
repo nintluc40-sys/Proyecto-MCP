@@ -1,7 +1,8 @@
 /* ============================================================
-   SUPERVISOR · paleta de Color del agua (espejo de la ficha de Calidad de Agua).
+   COLOR DEL AGUA — paleta (espejo de la ficha de Calidad de Agua).
    Mapea el valor de la columna "Color" del Sheet a su tono (hex), clasificación
-   (normal / problema) y un mensaje breve. Mensajes ajustables.
+   (normal / problema) y un mensaje breve. Mensajes ajustables. Capa pura (sin DOM);
+   compartida por Supervisor (Tanque) y Larvicultura.
    ============================================================ */
 const HEX = {
   'Café claro': '#C9A66B', 'Café oscuro': '#5B3A1A', 'Café verdoso': '#6C6B3B',

@@ -5,16 +5,15 @@
    Población) + tabla con el total del mes (desglose completo).
    ============================================================ */
 import { makeChart, destroyChart } from '../../core/charts.js';
-import { esc } from '../../core/format.js';
+import { esc, fmtPop } from '../../core/format.js';
 import { store } from '../../core/store.js';
 import { getField, parseNum, F, isLarviculturaRow } from '../../core/fields.js';
-import { fmtPop } from '../supervisor/ui.js';
-import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt, monthIndexOfCorrida } from '../supervisor/prodOmarsa.js';
+import { fmtPct } from '../../core/util.js';
+import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt, monthIndexOfCorrida } from '../../core/prodCalendar.js';
 
 // Estado persistente entre re-render (ÍNDICE de mes + métrica del gráfico).
 const vtState = { monthIdx: null, metric: 'superv' };
 
-const fmtPct = (v) => (v === null || v === undefined) ? '—' : v.toFixed(1) + '%';
 const fmtK = (v) => {
   if (v === null || v === undefined) return '—';
   const a = Math.abs(v);
