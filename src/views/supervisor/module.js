@@ -8,7 +8,7 @@ import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, kpiTecnicos, breadcrumb, bindMo
 import { svLevel, odLevel, tmpLevel, levelColor, levelLabel, esc } from '../../core/format.js';
 import { store } from '../../core/store.js';
 import { getField, F } from '../../core/fields.js';
-import { parseAnyDate, fmtShort } from '../../core/dates.js';
+import { parseAnyDate, fmtShort, dayNum, rangeLabel } from '../../core/dates.js';
 import { desinfeccionDetalle } from './desinfeccion.js';
 import { iclSeries } from './params.js';
 import { lotBrand } from './omtex.js';
@@ -1040,7 +1040,8 @@ export function renderModule(ctx, mod) {
         if (!_svMicTrend) return;
         const open = _svMicTrend.series.find((s) => s.key === micState.trendOpen);
         if (!open) return;
-        const labels = _svMicTrend.days.map((d) => d.label);
+        const dates = _svMicTrend.days.map((d) => d.d);
+        const labels = _svMicTrend.days.map((d) => d.label); // completo → título del tooltip
         // null en los días sin muestra de ese patógeno (línea continua vía spanGaps).
         const data = open.vals.map((v, i) => (open.has[i] ? v : null));
         makeChart('svMicTrendChart', {
@@ -1050,7 +1051,9 @@ export function renderModule(ctx, mod) {
             responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
             scales: {
               y: { beginAtZero: true, ticks: { callback: (v) => micFmtNum(v) }, title: { display: true, text: 'Σ UFC', font: { size: 11, weight: '700' } } },
-              x: { grid: { display: false }, ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 } },
+              // Eje X compacto: solo el número de día; el mes/año va UNA vez en el título
+              // (ej. "enero 2026") en vez de repetir "1 ene 26, 2 ene 26, …".
+              x: { grid: { display: false }, ticks: { callback: (v, i) => dayNum(dates[i]), autoSkip: true, maxTicksLimit: 14, maxRotation: 0, minRotation: 0 }, title: { display: !!rangeLabel(dates), text: rangeLabel(dates), font: { size: 10.5, weight: '700' } } },
             },
             plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${c.parsed.y === null ? 'sin muestra' : micFmtNum(c.parsed.y) + ' UFC'}` } } },
           },
@@ -1079,8 +1082,15 @@ export function renderModule(ctx, mod) {
         const nav = e.target.closest('[data-micro-day]');
         if (nav && !nav.disabled) { micState.dayIdx = (micState.dayIdx == null ? 0 : micState.dayIdx) + Number(nav.dataset.microDay); renderMic(); return; }
         const sp = e.target.closest('[data-mtrend-open]');
-        // Acordeón: exactamente uno abierto (como libros en un estante) → clic abre ese.
-        if (sp && sp.dataset.mtrendOpen !== micState.trendOpen) { micState.trendOpen = sp.dataset.mtrendOpen; renderMic(); }
+        // Selección de patógeno: preserva el scroll horizontal de las píldoras para
+        // no volver al inicio (el re-render reconstruye la barra desde cero).
+        if (sp && sp.dataset.mtrendOpen !== micState.trendOpen) {
+          const sl = micBody.querySelector('.sv-mtrend-pills')?.scrollLeft || 0;
+          micState.trendOpen = sp.dataset.mtrendOpen;
+          renderMic();
+          const np = micBody.querySelector('.sv-mtrend-pills');
+          if (np) np.scrollLeft = sl;
+        }
       });
       // Tooltip de colonias de la placa (patógeno · UFC · muestras · nivel), como en Bacteriología.
       const micTT = micOverlay.querySelector('#svMicroTT');

@@ -305,7 +305,7 @@
 /* ---- Pestaña Tendencias · píldoras (selector) + un gráfico grande ---- */
 /* Fila de píldoras: se elige el patógeno sin scroll vertical (scroll horizontal si sobran). */
 .sv-mtrend-pills { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 8px; scrollbar-width: thin; }
-.sv-mtrend-pill { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border: 1.5px solid var(--c-border); border-radius: var(--r-pill); background: var(--c-surface); cursor: pointer; font: inherit; color: var(--c-text-soft); transition: border-color var(--t-fast), background var(--t-fast); white-space: nowrap; }
+.sv-mtrend-pill { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border: 1.5px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); cursor: pointer; font: inherit; color: var(--c-text-soft); transition: border-color var(--t-fast), background var(--t-fast); white-space: nowrap; }
 .sv-mtrend-pill:hover { background: var(--c-surface-2); }
 .sv-mtrend-pill.is-on { border-color: var(--pc); background: color-mix(in srgb, var(--pc) 12%, var(--c-surface)); color: var(--c-text); font-weight: 800; }
 .sv-mtrend-pdot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
@@ -321,7 +321,7 @@
 .sv-mtrend-stats { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
 .sv-mtrend-kpi { display: inline-flex; flex-direction: column; background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); padding: 5px 10px; font-size: 10px; font-weight: 700; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: .3px; }
 .sv-mtrend-kpi b { font-size: 16px; color: var(--c-text); text-transform: none; letter-spacing: 0; }
-.sv-mtrend-chart { height: 240px; }
+.sv-mtrend-chart { height: 190px; }
 .sv-bm-scroll { overflow: auto; border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); margin-top: 10px; }
 .sv-bm-table { border-collapse: collapse; width: 100%; font-size: 12px; }
 .sv-bm-table th, .sv-bm-table td { padding: 8px 10px; text-align: center; white-space: nowrap; }
