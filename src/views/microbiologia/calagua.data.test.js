@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isCalAguaRow, calEstado, calRangeText, calCtx, calValue, calMeasured, loadCalRanges,
-  CAL_PARAMS, CAL_PARAM_BY_KEY,
+  calEnsayoData, CAL_PARAMS, CAL_PARAM_BY_KEY,
 } from './calagua.data.js';
 
 const ph = CAL_PARAM_BY_KEY.ph;
@@ -82,6 +82,29 @@ describe('loadCalRanges', () => {
     expect(R.ph).toEqual({ min: 7.5, max: 8.5 });
     expect(R.nitrito).toEqual({ max: 0.2 });
     expect(R.potasio).toEqual({ min: 380, max: 420 });
+  });
+});
+
+describe('calEnsayoData', () => {
+  it('promedia antes/después por pareja y calcula delta y %', () => {
+    const rows = [
+      { 'S‰ antes': '30', 'S‰ después': '33', 'Calcio antes': '400', 'Calcio después': '440' },
+      { 'S‰ antes': '32', 'S‰ después': '35' }, // sin calcio
+    ];
+    const data = calEnsayoData(rows);
+    const byKey = Object.fromEntries(data.map((p) => [p.key, p]));
+    expect(byKey.sal.antes).toBe(31); // (30+32)/2
+    expect(byKey.sal.desp).toBe(34);  // (33+35)/2
+    expect(byKey.sal.delta).toBe(3);
+    expect(byKey.sal.pct).toBeCloseTo(9.677, 2); // 3/31*100
+    expect(byKey.calcio.antes).toBe(400);
+    expect(byKey.calcio.desp).toBe(440);
+    // pH/Mg/K sin datos → no aparecen.
+    expect(byKey.ph).toBeUndefined();
+    expect(byKey.magnesio).toBeUndefined();
+  });
+  it('devuelve [] si no hay datos de ensayo', () => {
+    expect(calEnsayoData([{ pH: '8.0' }])).toEqual([]);
   });
 });
 

@@ -55,6 +55,15 @@ export const CAL_PARAMS_ENSAYO = [
 ];
 export const CAL_PARAM_BY_KEY = Object.fromEntries([...CAL_PARAMS, ...CAL_PARAMS_ENSAYO].map((p) => [p.key, p]));
 
+// Parejas antes/después del Ensayo de acondicionamiento iónico (Maduración).
+export const CAL_ENSAYO_PAIRS = [
+  { key: 'sal', label: 'Salinidad', unit: '‰', a: 'sal_a', d: 'sal_d' },
+  { key: 'ph', label: 'pH', unit: '', a: 'ph_a', d: 'ph_d' },
+  { key: 'calcio', label: 'Calcio', unit: 'mg/L', a: 'calcio_a', d: 'calcio_d' },
+  { key: 'magnesio', label: 'Magnesio', unit: 'mg/L', a: 'magnesio_a', d: 'magnesio_d' },
+  { key: 'potasio', label: 'Potasio', unit: 'mg/L', a: 'potasio_a', d: 'potasio_d' },
+];
+
 // Rangos objetivo (portados de CAL_RANGE_BASE del motor). Sin rango = solo registro.
 export const CAL_RANGE_BASE = {
   ph: { min: 7.5, max: 8.5 }, alc: { min: 120, max: 150 },
@@ -139,4 +148,24 @@ export function calLocation(ctx) {
   if (ctx.muestras) parts.push(ctx.muestras);
   if (ctx.estadio) parts.push(ctx.estadio);
   return parts.join(' · ') || (ctx.tipoMuestra || '—');
+}
+
+/** Comparativa Ensayo antes/después: por pareja iónica, promedio antes/después +
+ *  delta y % de cambio sobre las filas dadas. Solo parejas con algún dato. */
+export function calEnsayoData(rows) {
+  const avg = (arr) => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
+  return CAL_ENSAYO_PAIRS.map((p) => {
+    const antes = [], desp = [];
+    (rows || []).forEach((r) => {
+      const va = calValue(r, CAL_PARAM_BY_KEY[p.a]);
+      const vd = calValue(r, CAL_PARAM_BY_KEY[p.d]);
+      if (va != null) antes.push(va);
+      if (vd != null) desp.push(vd);
+    });
+    if (!antes.length && !desp.length) return null;
+    const aAvg = avg(antes), dAvg = avg(desp);
+    const delta = (aAvg != null && dAvg != null) ? dAvg - aAvg : null;
+    const pct = (aAvg != null && dAvg != null && aAvg !== 0) ? (dAvg - aAvg) / aAvg * 100 : null;
+    return { key: p.key, label: p.label, unit: p.unit, antes: aAvg, desp: dAvg, delta, pct, n: Math.max(antes.length, desp.length) };
+  }).filter(Boolean);
 }

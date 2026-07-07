@@ -20,7 +20,7 @@ import {
   DEPARTAMENTOS, DEPTO_FORMATS, deptoOfFormato, PATHOGEN_AGAR,
 } from './data.js';
 import { petriSVG } from './petri.js';
-import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges, calRangeText, CAL_PARAMS } from './calagua.data.js';
+import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges, calRangeText, calEnsayoData, CAL_PARAMS } from './calagua.data.js';
 
 // ── sub-vistas del módulo ──
 const SUBS = [
@@ -74,6 +74,7 @@ const FILTER_DIMS = [
 const _scope = { rows: [], records: [], colonies: [], theme: 'light' };
 const _charts = { stack: null, aa: null };
 let _calTrend = null; // datos del gráfico de Tendencias de Calidad de Agua (dibujo post-render)
+let _calEnsayo = null; // datos del gráfico Ensayo antes/después (dibujo post-render)
 let _calScope = { samples: [] }; // muestras filtradas actuales (para alertas y export de Calidad de Agua)
 
 // Filas de Microbiología memoizadas por identidad de store.globalData.
@@ -109,8 +110,9 @@ export function microbiologiaView(root) {
   if (vState.sub === 'bacteriologia') {
     if (vState.apartado === 'conglomerado') drawConglomeradoCharts();
     else if (vState.apartado === 'petri' && vState.petriTab === 'tendencias') drawPetriTrendChart();
-  } else if (vState.sub === 'calidad' && vState.calApartado === 'tendencias') {
-    drawCalTrendChart();
+  } else if (vState.sub === 'calidad') {
+    if (vState.calApartado === 'tendencias') drawCalTrendChart();
+    else if (vState.calApartado === 'ensayo') drawCalEnsayoChart();
   }
   bind(root);
 }
@@ -242,17 +244,22 @@ function renderCalidadAgua() {
       ${kpi('🧪', 'Parámetro más incumplido', worst ? worst[0] : '—', !!worst, worst ? `${worst[1]} muestra(s)` : 'sin incumplimientos')}
     </div>`;
 
-  // Apartados: Perfil (tarjetas) · Matriz (muestra × parámetro) · Tendencias.
-  const ap = ['perfil', 'matriz', 'tendencias'].includes(vState.calApartado) ? vState.calApartado : 'perfil';
-  _calTrend = null; // se rellena solo si se dibuja Tendencias
+  // Apartados: Perfil · Matriz · Tendencias · Ensayo (este último solo si hay parejas
+  // antes/después en el pool, p. ej. Maduración · Ensayo).
+  const ensayo = calEnsayoData(pool);
+  _calTrend = null; _calEnsayo = null; // se rellenan solo si se dibuja su gráfico
+  const validAps = ['perfil', 'matriz', 'tendencias', ...(ensayo.length ? ['ensayo'] : [])];
+  const ap = validAps.includes(vState.calApartado) ? vState.calApartado : 'perfil';
   h += `<div class="mic-apartados">
       <button class="mic-ap ${ap === 'perfil' ? 'is-active' : ''}" data-cal-ap="perfil">🧪 Perfil</button>
       <button class="mic-ap ${ap === 'matriz' ? 'is-active' : ''}" data-cal-ap="matriz">🗂️ Matriz</button>
       <button class="mic-ap ${ap === 'tendencias' ? 'is-active' : ''}" data-cal-ap="tendencias">📈 Tendencias</button>
+      ${ensayo.length ? `<button class="mic-ap ${ap === 'ensayo' ? 'is-active' : ''}" data-cal-ap="ensayo">⚗️ Ensayo</button>` : ''}
     </div>`;
-  if (ap !== 'tendencias') h += calLegendHTML();
+  if (ap !== 'tendencias' && ap !== 'ensayo') h += calLegendHTML();
 
-  if (!samples.length) h += emptyBox('Sin muestras con parámetros medidos para el filtro actual.');
+  if (ap === 'ensayo') h += calEnsayoHTML(ensayo);
+  else if (!samples.length) h += emptyBox('Sin muestras con parámetros medidos para el filtro actual.');
   else if (ap === 'matriz') h += calMatrizHTML(samples);
   else if (ap === 'tendencias') h += calTendenciasHTML(samples, ranges);
   else h += `<div class="cal-cards">${samples.map((s) => calCardHTML(s)).join('')}</div>`;
@@ -455,6 +462,71 @@ function drawCalTrendChart() {
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${calFmt(c.parsed.y)}${t.param.unit ? ' ' + t.param.unit : ''}` } } },
     },
     plugins: [bandPlugin],
+  });
+}
+
+/** Apartado Ensayo antes/después: gráfico de dumbbell (normalizado a % del "antes")
+ *  + tabla con promedios antes/después, Δ y Δ%. */
+function calEnsayoHTML(ensayo) {
+  _calEnsayo = ensayo;
+  const cell = (v, u) => v == null ? '—' : esc(calFmt(v)) + (u ? ' ' + esc(u) : '');
+  const rowsH = ensayo.map((p) => {
+    const cls = p.pct == null ? '' : p.pct > 0 ? 'cal-en-up' : p.pct < 0 ? 'cal-en-dn' : '';
+    const dTxt = p.delta == null ? '—' : (p.delta >= 0 ? '+' : '') + calFmt(p.delta) + (p.unit ? ' ' + p.unit : '');
+    const pTxt = p.pct == null ? '—' : (p.pct >= 0 ? '+' : '') + p.pct.toFixed(1) + '%';
+    return `<tr>
+        <th class="cal-en-rowh">${esc(p.label)}${p.unit ? ` <span class="muted">(${esc(p.unit)})</span>` : ''}</th>
+        <td>${cell(p.antes)}</td><td>${cell(p.desp)}</td>
+        <td class="${cls}">${dTxt}</td><td class="${cls}">${pTxt}</td>
+        <td class="muted">${p.n}</td>
+      </tr>`;
+  }).join('');
+  return `<div class="card cal-en-card">
+      <div class="mic-chart-title">⚗️ Ensayo antes/después <span class="muted">· acondicionamiento iónico · promedio de las muestras filtradas · barra = % respecto al "antes"</span></div>
+      <div class="cal-en-chart"><canvas id="calEnsayoChart"></canvas></div>
+      <div class="cal-en-wrap"><table class="cal-en-table">
+        <thead><tr><th class="cal-en-rowh">Parámetro</th><th>Antes</th><th>Después</th><th>Δ</th><th>Δ%</th><th>n</th></tr></thead>
+        <tbody>${rowsH}</tbody></table></div>
+    </div>`;
+}
+
+/** Dibuja el dumbbell del Ensayo: por parámetro, "antes" en 100% y "después" en el %
+ *  relativo, unidos por una línea (misma escala para iones de magnitudes distintas). */
+function drawCalEnsayoChart() {
+  const pairs = (_calEnsayo || []).filter((p) => p.antes != null && p.desp != null && p.antes !== 0);
+  if (!pairs.length) return;
+  const labels = pairs.map((p) => p.label);
+  const linePlugin = {
+    id: 'calDumbbell',
+    beforeDatasetsDraw(chart) {
+      const x = chart.scales.x, y = chart.scales.y; if (!x || !y) return;
+      const ctx = chart.ctx; ctx.save();
+      ctx.strokeStyle = 'rgba(120,144,156,.55)'; ctx.lineWidth = 2;
+      pairs.forEach((p, i) => {
+        const yp = y.getPixelForValue(i);
+        ctx.beginPath(); ctx.moveTo(x.getPixelForValue(100), yp); ctx.lineTo(x.getPixelForValue(100 + p.pct), yp); ctx.stroke();
+      });
+      ctx.restore();
+    },
+  };
+  makeChart('calEnsayoChart', {
+    type: 'scatter',
+    data: { datasets: [
+      { label: 'Antes', data: pairs.map((p, i) => ({ x: 100, y: i })), backgroundColor: '#90A4AE', pointRadius: 6, pointHoverRadius: 7 },
+      { label: 'Después', data: pairs.map((p, i) => ({ x: 100 + p.pct, y: i })), backgroundColor: '#00838f', pointRadius: 6, pointHoverRadius: 7 },
+    ] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { title: { display: true, text: '% respecto al "antes" (base 100%)' }, ticks: { callback: (v) => v + '%' } },
+        y: { type: 'linear', min: -0.6, max: pairs.length - 0.4, offset: true, ticks: { stepSize: 1, callback: (v) => labels[v] || '' }, grid: { display: false } },
+      },
+      plugins: {
+        legend: { labels: { usePointStyle: true, boxWidth: 10 } },
+        tooltip: { callbacks: { label: (c) => { const p = pairs[Math.round(c.parsed.y)]; if (!p) return ''; const which = c.datasetIndex === 0 ? 'Antes' : 'Después'; const val = c.datasetIndex === 0 ? p.antes : p.desp; return ` ${which}: ${calFmt(val)}${p.unit ? ' ' + p.unit : ''}`; } } },
+      },
+    },
+    plugins: [linePlugin],
   });
 }
 

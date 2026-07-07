@@ -61,6 +61,12 @@ function synthData() {
     Departamento: 'Maduración', Formato: 'Maduración', Sala: 'Sala A', 'TQ/N°': '2',
     pH: '7.0', Calcio: '400', Magnesio: '1500', // pH fuera (<7.5)
   });
+  // Maduración · Ensayo → habilita el apartado Ensayo (parejas antes/después).
+  rows.push({
+    _SheetOrigin: 'Calidad de Agua', 'Fecha muestreo': '07/06/2026', Corrida: '573',
+    Departamento: 'Maduración', Formato: 'Maduración · Ensayo', Sala: 'Sala A', 'TQ/N°': '5',
+    'S‰ antes': '30', 'S‰ después': '33', 'Calcio antes': '380', 'Calcio después': '420',
+  });
   return rows;
 }
 
@@ -182,6 +188,13 @@ describe('Microbiología · harness de navegación integral', () => {
     const otherP = [...psel].find((p) => !p.classList.contains('is-on'));
     if (otherP) { const pk = otherP.dataset.calTrendsel; click(otherP); expect(root.querySelector('.cal-tr-pill.is-on').dataset.calTrendsel).toBe(pk); }
     click(root.querySelector('[data-cal-ap="matriz"]'));
+    // Apartado Ensayo (Maduración·Ensayo presente): dumbbell + tabla antes/después.
+    const enBtn = root.querySelector('[data-cal-ap="ensayo"]');
+    expect(enBtn).toBeTruthy();
+    click(enBtn);
+    expect(root.querySelector('#calEnsayoChart')).toBeTruthy();
+    expect(root.querySelector('.cal-en-table')).toBeTruthy();
+    click(root.querySelector('[data-cal-ap="perfil"]'));
     // Cascada: filtrar por departamento (2 deptos: Larvicultura/Maduración) no rompe.
     const dsel = root.querySelector('[data-calfilter="calDepto"]');
     expect(dsel).toBeTruthy();
