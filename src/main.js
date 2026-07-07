@@ -14,7 +14,7 @@ import './views/microbiologia/microbiologia.css';
 
 import { mountShell, showLoader } from './ui/shell.js';
 import { registerView } from './ui/router.js';
-import { connectSheets, getLastFingerprint } from './core/sheets.js';
+import { connectSheets } from './core/sheets.js';
 import { startAutoRefresh } from './core/refresh.js';
 import { esc } from './core/format.js';
 
@@ -75,7 +75,7 @@ async function boot() {
 
   // Conexión inicial
   showLoader(true);
-  const ok = await connectSheets();
+  await connectSheets();
   showLoader(false);
 
   // Auto-refresco SIEMPRE activo. Si la conexión inicial falla, el loop queda en
@@ -83,9 +83,9 @@ async function boot() {
   // cuanto una reconexión manual marque store.connected = true. Antes vivía dentro
   // de `if (ok)`, así que un fallo inicial lo deshabilitaba TODA la sesión aunque
   // el usuario reconectara con el botón.
-  // La huella inicial la cachea connectSheets() en commit(): así NO re-descargamos
-  // el workbook completo una 2ª vez sólo para sembrar el fingerprint.
-  startAutoRefresh(ok ? getLastFingerprint() : '');
+  // La huella inicial (y la de cada reconexión manual) la cachea commit() en
+  // sheets.js; el loop la lee de ahí — única fuente de verdad.
+  startAutoRefresh();
 }
 
 boot();

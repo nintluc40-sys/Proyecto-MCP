@@ -47,21 +47,54 @@ describe('growthByLote', () => {
     const rows = [row({ Sistema: 'M1', Fecha: '2026-06-01', Dia_Proceso: '1' })];
     expect(growthByLote(rows)).toHaveLength(0);
   });
+  it('separa las RESIEMBRAS del mismo sistema (reinicio de Dia_Proceso) sin promediarlas', () => {
+    // M1 se resiembra dentro de la corrida: día de proceso vuelve a 1.
+    const rows = [
+      row({ Sistema: 'M1', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '1000' }),
+      row({ Sistema: 'M1', Fecha: '2026-06-02', Dia_Proceso: '2', Cel_ml: '2000' }),
+      row({ Sistema: 'M1', Fecha: '2026-06-10', Dia_Proceso: '1', Cel_ml: '1500' }), // 2.ª siembra
+      row({ Sistema: 'M1', Fecha: '2026-06-11', Dia_Proceso: '2', Cel_ml: '3000' }),
+    ];
+    const lotes = growthByLote(rows);
+    expect(lotes.map((l) => l.key)).toEqual(['M1 · S1', 'M1 · S2']);
+    // NO se promedian entre sí: el día 1 de S1 es 1000 y el de S2 es 1500 (no 1250).
+    expect(lotes[0].points).toEqual([{ day: 1, cel: 1000 }, { day: 2, cel: 2000 }]);
+    expect(lotes[1].points).toEqual([{ day: 1, cel: 1500 }, { day: 2, cel: 3000 }]);
+  });
+  it('una sola siembra conserva la etiqueta simple (sin sufijo)', () => {
+    const rows = [
+      row({ Sistema: 'M1', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '1000' }),
+      row({ Sistema: 'M1', Fecha: '2026-06-02', Dia_Proceso: '2', Cel_ml: '2000' }),
+    ];
+    expect(growthByLote(rows).map((l) => l.key)).toEqual(['M1']);
+  });
 });
 
-describe('tasaChartData', () => {
-  it('% ganado del primer al último punto', () => {
-    const out = tasaChartData([{ key: 'M1', points: [{ day: 1, cel: 1000 }, { day: 2, cel: 2000 }] }]);
+describe('tasaChartData · μ específica (día⁻¹)', () => {
+  it('μ = ln(final/inicial)/días', () => {
+    const out = tasaChartData([{ key: 'M1', points: [{ day: 0, cel: 1000 }, { day: 2, cel: 4000 }] }]);
     expect(out.labels).toEqual(['M1']);
-    expect(out.values).toEqual([100]); // (2000-1000)/1000*100
+    // ln(4)/2 = 0.693 → redondeado a 3 decimales
+    expect(out.values).toEqual([+(Math.log(4) / 2).toFixed(3)]);
+    const m = out.meta[0];
+    expect(m.days).toBe(2);
+    expect(m.pctTotal).toBe(300);            // (4000-1000)/1000*100
+    expect(m.dbl).toBeCloseTo(Math.log2(4) / 2, 5); // 1 duplicación/día
+    expect(m.tDouble).toBeCloseTo(1, 5);     // se duplica cada día
   });
-  it('excluye lotes con <2 puntos o inicial no positivo', () => {
+  it('excluye lotes con <2 puntos, inicial/final no positivo o sin tiempo', () => {
     const out = tasaChartData([
-      { key: 'A', points: [{ day: 1, cel: 1000 }] },          // 1 punto
-      { key: 'B', points: [{ day: 1, cel: 0 }, { day: 2, cel: 500 }] }, // inicial 0
+      { key: 'A', points: [{ day: 1, cel: 1000 }] },                       // 1 punto
+      { key: 'B', points: [{ day: 1, cel: 0 }, { day: 2, cel: 500 }] },    // inicial 0
+      { key: 'C', points: [{ day: 3, cel: 1000 }, { day: 3, cel: 2000 }] }, // días iguales → sin tiempo
     ]);
     expect(out.labels).toEqual([]);
     expect(out.values).toEqual([]);
+  });
+  it('μ negativa cuando el cultivo decrece', () => {
+    const out = tasaChartData([{ key: 'D', points: [{ day: 0, cel: 4000 }, { day: 2, cel: 1000 }] }]);
+    expect(out.values[0]).toBeLessThan(0);
+    expect(out.meta[0].pctTotal).toBe(-75);
   });
 });
 

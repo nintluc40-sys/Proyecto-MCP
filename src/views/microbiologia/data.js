@@ -80,14 +80,23 @@ export const PATHOGEN_BY_KEY = Object.fromEntries(PATHOGENS.map((p) => [p.key, p
 // siempre por ser ≥ que cualquier específico). Siguen contando como nivel/colonia.
 export const AGGREGATE_KEYS = new Set(['totales', 'bactTot']);
 
-// Color de cada patógeno (colonias de la Placa Petri + leyendas). Hues vivos que
-// funcionan en tema claro y oscuro.
+// Color de cada patógeno (colonias de la Placa Petri + leyendas). Elegidos para
+// imitar el color REAL de la colonia en su agar (TCBS/CHROMagar/GSP), evitando
+// que dos patógenos que pueden coincidir en una placa se confundan:
+//   · C. Amarillas = amarillo CONCENTRADO (oro), para distinguirse de Aeromonas
+//     (amarillo claro).                     · C. Verdes = verde.
+//   · V. alginolyticus = crema · V. parahaemolyticus = malva · V. vulnificus =
+//     azul turquesa (colores reales en CHROMagar Vibrio).
+//   · Pseudomonas = rojo/rosado · Aeromonas = amarillo.
+// Los demás conservan su color salvo choque con los anteriores (totales→pizarra por
+// ser agregado y rozar el turquesa; pseudoGsp→pino y levaduras→gris para no chocar
+// con verdes/turquesa; aeroGsp→violeta para separarse de la malva).
 export const PATHOGEN_COLOR = {
-  amarillos: '#F4C430', verdes: '#43A047', totales: '#26A69A',
-  algino: '#FF6B35', para: '#E53935', vulni: '#D81B60',
-  pseudo: '#7AE87A', aero: '#DA70D6', pseudoGsp: '#66BB6A', aeroGsp: '#BA68C8',
+  amarillos: '#EFB700', verdes: '#3C9A57', totales: '#78909C',
+  algino: '#E8DCA8', para: '#BF87B3', vulni: '#1CB5C4',
+  pseudo: '#EA4C6B', aero: '#FFDB4D', pseudoGsp: '#00796B', aeroGsp: '#7E57C2',
   bactTot: '#C8A96E', bactNar: '#FB8C00', hongos: '#8D6E63',
-  entero: '#5C6BC0', levaduras: '#26C6DA', rojas: '#C62828',
+  entero: '#5C6BC0', levaduras: '#B0BEC5', rojas: '#C62828',
 };
 
 // Agar de cultivo por patógeno (para mostrar el "agar utilizado" en la placa del día).

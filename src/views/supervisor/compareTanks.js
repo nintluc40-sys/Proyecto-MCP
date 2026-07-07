@@ -5,11 +5,14 @@
      · línea: evolución diaria de A y B
      · barras: diferencia diaria A−B (azul = A mayor, rojo = B mayor)
      · análisis de variabilidad (estadísticos + comparación)
+   Modo "Módulo (masivo)": grafica TODAS las corridas de un módulo
+   alineadas por día relativo (las fechas reales de cada corrida no
+   coinciden), conmutable entre superpuesto y mini-gráficos apilados.
    ============================================================ */
 import { store } from '../../core/store.js';
 import { getField, parseNum, F, isLarviculturaRow, isTanqueRow } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
-import { makeChart } from '../../core/charts.js';
+import { makeChart, destroyChart } from '../../core/charts.js';
 import { iclSeries } from './params.js';
 import { esc } from '../../core/format.js';
 import { natCmp } from '../../core/util.js';
@@ -48,13 +51,26 @@ const CMP_VARS = [
 ];
 const VAR_GROUPS = ['Ambiente y población', 'Calidad larvaria', 'Manejo de agua', 'LARVIA biométrico'];
 
-// mode: 'tank' (Módulo·Corrida·Tanque) · 'lote' · 'corrida'.
+// mode: 'tank' (Módulo·Corrida·Tanque) · 'lote' · 'corrida' · 'modulo' (masivo:
+//       todas las corridas de un módulo; el eje es SIEMPRE día relativo).
 // axis: 'fecha' (calendario) · 'rel' (día relativo 1.º,2.º… → superpone periodos distintos).
+// massLayout: 'overlay' (un gráfico superpuesto) · 'stack' (mini-gráficos apilados).
 const ctState = {
   var: 'sv', mode: 'tank', axis: 'fecha',
   A: { mod: '', cor: '', tq: '' }, B: { mod: '', cor: '', tq: '' },
   lote: { A: '', B: '' }, corrida: { A: '', B: '' },
+  modulo: '', massLayout: 'overlay',
 };
+
+// Paleta categórica del modo masivo, validada (banda de luminosidad, croma,
+// separación para daltonismo y contraste) para tema claro y oscuro. El ORDEN es
+// el mecanismo de seguridad CVD — no reordenar ni ciclar: de la 9.ª corrida en
+// adelante se reutiliza el color con línea DISCONTINUA (codificación secundaria)
+// y la tabla de estadísticos por corrida actúa como vista-tabla de apoyo.
+const MASS_COLORS_LIGHT = ['#2a78d6', '#1baf7a', '#eda100', '#008300', '#4a3aa7', '#e34948', '#e87ba4', '#eb6834'];
+const MASS_COLORS_DARK  = ['#3987e5', '#199e70', '#c98500', '#008300', '#9085e9', '#e66767', '#d55181', '#d95926'];
+const massPalette = () =>
+  document.documentElement.getAttribute('data-theme') === 'dark' ? MASS_COLORS_DARK : MASS_COLORS_LIGHT;
 
 const larvRows = () => store.globalData.filter(isLarviculturaRow);
 const distinct = (arr) => [...new Set(arr.filter(Boolean))];
@@ -186,7 +202,26 @@ export function setupCompareTanks(root) {
       </div>`;
 
     let seriesHTML;
-    if (ctState.mode === 'lote') {
+    if (ctState.mode === 'modulo') {
+      if (ctState.modulo && !mods.includes(ctState.modulo)) ctState.modulo = '';
+      const layoutPill = (l, label) => `<button type="button" class="sv-bm-mode-btn ${ctState.massLayout === l ? 'is-active' : ''}" data-ctlayout="${l}">${label}</button>`;
+      seriesHTML = `<div class="ctt-series">
+        <div class="ctt-col">
+          <div class="ctt-col-title" style="color:var(--c-brand)">🧩 Comparación masiva</div>
+          <label class="ctt-field"><span>MÓDULO</span>
+            <select data-ctmodsel class="sv-modal-select"><option value="">Módulo</option>${mods.map((m) => `<option value="${esc(m)}" ${m === ctState.modulo ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>
+          </label>
+          <div class="ctt-mass-note">Grafica <b>todas las corridas</b> del módulo alineadas por <b>día relativo</b> (Día 1, 2, 3…): como cada corrida tiene fechas distintas, el calendario real no permite compararlas.</div>
+        </div>
+        <div class="ctt-col">
+          <div class="ctt-col-title">🗂️ Presentación</div>
+          <div class="ctt-mass-layouts">${layoutPill('overlay', '🔀 Superpuesto')}${layoutPill('stack', '📚 Apilado')}</div>
+          <div class="ctt-mass-note">${ctState.massLayout === 'overlay'
+            ? 'Un solo gráfico con una línea por corrida (clic en la leyenda para ocultar corridas).'
+            : 'Un mini-gráfico por corrida, apilados con la misma escala para comparar de un vistazo.'}</div>
+        </div>
+      </div>`;
+    } else if (ctState.mode === 'lote') {
       const lotes = allLotes();
       ['A', 'B'].forEach((s) => { if (ctState.lote[s] && !lotes.includes(ctState.lote[s])) ctState.lote[s] = ''; });
       seriesHTML = `<div class="ctt-series">${simpleCol('A', 'ctlote', ctState.lote.A, lotes, 'LOTE', '#1E88E5', '🔵')}${simpleCol('B', 'ctlote', ctState.lote.B, lotes, 'LOTE', '#E53935', '🔴')}</div>`;
@@ -202,16 +237,25 @@ export function setupCompareTanks(root) {
       <label class="ctt-field ctt-var"><span>VARIABLE</span>${varSelectHTML()}</label>
       <div class="ctt-modebar">
         <span class="ctt-mode-lbl">Comparar por</span>
-        ${modePill('tank', '🐟 Tanque')}${modePill('lote', '📦 Lote')}${modePill('corrida', '🔄 Corrida')}
+        ${modePill('tank', '🐟 Tanque')}${modePill('lote', '📦 Lote')}${modePill('corrida', '🔄 Corrida')}${modePill('modulo', '🧩 Módulo (masivo)')}
         <span class="ctt-mode-gap"></span>
         <span class="ctt-mode-lbl">Eje</span>
-        ${axisPill('fecha', '📅 Fecha')}${axisPill('rel', '📈 Día relativo')}
+        ${ctState.mode === 'modulo'
+          ? '<span class="chip" title="En la comparación masiva el eje es siempre el día relativo de cada corrida">📈 Día relativo (fijo)</span>'
+          : axisPill('fecha', '📅 Fecha') + axisPill('rel', '📈 Día relativo')}
       </div>
       ${seriesHTML}
       <button class="sv-action-btn ctt-gen" data-ct-generate>📈 Generar comparación</button>`;
     cfg.querySelectorAll('[data-ct]').forEach((el) => el.addEventListener('change', onChange));
     cfg.querySelectorAll('[data-ctlote]').forEach((el) => el.addEventListener('change', () => { ctState.lote[el.dataset.ctlote] = el.value; }));
     cfg.querySelectorAll('[data-ctcor]').forEach((el) => el.addEventListener('change', () => { ctState.corrida[el.dataset.ctcor] = el.value; }));
+    cfg.querySelector('[data-ctmodsel]')?.addEventListener('change', (e) => { ctState.modulo = e.target.value; });
+    cfg.querySelectorAll('[data-ctlayout]').forEach((b) => b.addEventListener('click', () => {
+      if (ctState.massLayout === b.dataset.ctlayout) return;
+      ctState.massLayout = b.dataset.ctlayout;
+      renderConfig(); // refresca pills activas + nota descriptiva
+      if (out.firstElementChild) generate(); // re-dibuja si ya hay una comparación
+    }));
     cfg.querySelectorAll('[data-ctmode]').forEach((b) => b.addEventListener('click', () => { ctState.mode = b.dataset.ctmode; renderConfig(); }));
     cfg.querySelectorAll('[data-ctaxis]').forEach((b) => b.addEventListener('click', () => {
       ctState.axis = b.dataset.ctaxis;
@@ -233,6 +277,11 @@ export function setupCompareTanks(root) {
 
   function generate() {
     const vdef = CMP_VARS.find((v) => v.key === ctState.var);
+    // Los canvases del resultado anterior van a ser reemplazados: destruye sus
+    // instancias de Chart ANTES de perder la referencia (evita acumular
+    // instancias huérfanas en el registro hasta el cambio de vista).
+    out.querySelectorAll('canvas').forEach((c) => destroyChart(c));
+    if (ctState.mode === 'modulo') { generateMass(vdef); return; }
     const mA = matchFor('A'), mB = matchFor('B');
     if (!mA || !mB) {
       const what = ctState.mode === 'lote' ? 'un lote para A y B'
@@ -323,5 +372,107 @@ export function setupCompareTanks(root) {
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `A−B: ${fmtV(vdef, c.parsed.y)}` } } },
       },
     });
+  }
+
+  /** Comparación MASIVA: todas las corridas del módulo elegido, alineadas por
+   *  día relativo. `massLayout` decide superpuesto (un gráfico, una línea por
+   *  corrida) o apilado (mini-gráficos con escala Y común). */
+  function generateMass(vdef) {
+    const mod = ctState.modulo;
+    if (!mod) { out.innerHTML = '<div class="empty-state">Selecciona un módulo.</div>'; return; }
+    const cors = corridasOf(mod);
+    if (!cors.length) { out.innerHTML = '<div class="empty-state">Ese módulo no tiene corridas registradas.</div>'; return; }
+
+    // Serie por corrida, ordenada por fecha y reducida a ordinales (día relativo).
+    const pal = massPalette();
+    const withData = [];
+    let skipped = 0;
+    cors.forEach((c) => {
+      const m = buildSeries(vdef, (r) => getField(r, F.modulo) === mod && getField(r, F.corrida) === c);
+      const vals = [...m.entries()]
+        .sort((a, b) => (parseAnyDate(a[0]) || 0) - (parseAnyDate(b[0]) || 0))
+        .map((e) => e[1]);
+      if (!vals.length) { skipped++; return; }
+      withData.push({ cor: c, vals, st: statsOf(vals) });
+    });
+    if (!withData.length) { out.innerHTML = '<div class="empty-state">Sin datos de la variable para las corridas de ese módulo.</div>'; return; }
+    // Color estable por corrida (misma asignación en superpuesto y apilado).
+    withData.forEach((s, i) => { s.color = pal[i % pal.length]; s.dash = i >= pal.length ? [6, 4] : null; });
+
+    const n = Math.max(...withData.map((s) => s.vals.length));
+    const labels = Array.from({ length: n }, (_, i) => 'Día ' + (i + 1));
+    const padded = (vals) => Array.from({ length: n }, (_, i) => (i < vals.length ? vals[i] : null));
+
+    // Extremos comunes (escala Y compartida del layout apilado, con 5% de aire).
+    const flat = withData.flatMap((s) => s.vals).filter((v) => v !== null && v !== undefined);
+    const lo = Math.min(...flat), hi = Math.max(...flat);
+    const pad = (hi - lo) * 0.05 || Math.abs(hi) * 0.05 || 1;
+
+    const best = withData.reduce((a, s) => (s.st && (!a || s.st.mean > a.st.mean) ? s : a), null);
+    const worst = withData.reduce((a, s) => (s.st && (!a || s.st.mean < a.st.mean) ? s : a), null);
+
+    const chipOf = (s) => `<span class="ctt-mass-chip" style="background:${s.color}"></span>`;
+    const statRows = withData.map((s) => s.st ? `<tr>
+        <td>${chipOf(s)}<b>C${esc(s.cor)}</b></td>
+        <td>${fmtV(vdef, s.st.mean)}</td><td>${fmtV(vdef, s.st.min)}</td><td>${fmtV(vdef, s.st.max)}</td>
+        <td>${s.st.std.toFixed(vdef.dec === 0 ? 0 : 2)}</td><td>${s.st.cv === null ? '—' : s.st.cv.toFixed(1) + '%'}</td><td>${s.st.n}</td>
+      </tr>` : '').join('');
+
+    const overlay = ctState.massLayout === 'overlay';
+    const chartsHTML = overlay
+      ? `<div class="sv-chart-host" style="height:340px"><canvas id="cttMassChart"></canvas></div>`
+      : withData.map((s, i) => `<div class="ctt-mass-row">
+          <div class="ctt-mass-row-title"><span style="color:${s.color}">▉</span> C${esc(s.cor)} <span class="muted">· media ${fmtV(vdef, s.st ? s.st.mean : null)} · ${s.vals.length} día(s)</span></div>
+          <div class="sv-chart-host" style="height:120px"><canvas id="cttMass_${i}"></canvas></div>
+        </div>`).join('');
+
+    out.innerHTML = `
+      <div class="sv-modal-note" style="margin:2px 0 8px">Eje por <b>día relativo</b> (1.º, 2.º… registro de cada corrida): alinea corridas con fechas distintas para ver sus tendencias juntas.${skipped ? ` <b>${skipped}</b> corrida(s) sin datos de esta variable quedaron fuera.` : ''}</div>
+      <div class="ctt-out-title">📈 ${esc(mod)} · todas las corridas · ${esc(vdef.label)} <span class="muted" style="font-weight:600;font-size:11px">· ${withData.length} corrida(s)</span></div>
+      ${chartsHTML}
+      <div class="ctt-out-title">🧮 Estadísticos por corrida</div>
+      <div class="card" style="padding:0;overflow:auto;margin-bottom:12px">
+        <table class="sv-table">
+          <thead><tr><th>Corrida</th><th>Media</th><th>Mín</th><th>Máx</th><th>Desv. est.</th><th>CV</th><th>n</th></tr></thead>
+          <tbody>${statRows}</tbody>
+        </table>
+      </div>
+      <div class="ctt-cmp">
+        <span class="sv-modal-kpi"><b>${withData.length}</b>corridas</span>
+        <span class="sv-modal-kpi"><b>${n}</b>día(s) máx</span>
+        <span class="sv-modal-kpi"><b>${best ? 'C' + esc(best.cor) : '—'}</b>media más alta</span>
+        <span class="sv-modal-kpi"><b>${worst ? 'C' + esc(worst.cor) : '—'}</b>media más baja</span>
+      </div>`;
+
+    const dsOf = (s) => ({
+      label: 'C' + s.cor, data: padded(s.vals), borderColor: s.color,
+      backgroundColor: s.color + '1a', tension: .3, spanGaps: true, pointRadius: 2,
+      fill: false, borderWidth: 2, ...(s.dash ? { borderDash: s.dash } : {}),
+    });
+    const yTicks = { callback: (v) => fmtV(vdef, v) };
+    const xTicks = { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 };
+    if (overlay) {
+      makeChart('cttMassChart', {
+        type: 'line',
+        data: { labels, datasets: withData.map(dsOf) },
+        options: {
+          responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+          scales: { y: { ticks: yTicks }, x: { ticks: xTicks } },
+          plugins: { legend: { labels: { boxWidth: 12 } }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmtV(vdef, c.parsed.y)}` } } },
+        },
+      });
+    } else {
+      withData.forEach((s, i) => makeChart('cttMass_' + i, {
+        type: 'line',
+        data: { labels, datasets: [dsOf(s)] },
+        options: {
+          responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+          // Escala Y COMÚN: sin ella cada mini-gráfico se auto-escala y las
+          // tendencias dejarían de ser comparables entre corridas.
+          scales: { y: { min: lo - pad, max: hi + pad, ticks: yTicks }, x: { ticks: xTicks } },
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `C${s.cor}: ${fmtV(vdef, c.parsed.y)}` } } },
+        },
+      }));
+    }
   }
 }

@@ -49,20 +49,20 @@ const hasVal = (v) => v === 'Positivo' || v === 'Negativo';
 const fmtD   = (iso) => iso.slice(5).split('-').reverse().join('/');
 const $ = (id) => document.getElementById(id);
 
-function parseDate(raw) {
+export function parseDate(raw) {
   if (!raw) return null;
   const m = String(raw).match(/(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
   if (m) { const y = m[3].length === 2 ? '20' + m[3] : m[3]; return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
   const d = new Date(raw);
   return isNaN(d) ? null : d.toISOString().slice(0, 10);
 }
-function normResult(s) {
+export function normResult(s) {
   const l = String(s).toLowerCase();
   if (['positivo', 'positive', 'pos', 'p', '1', 'si', 'sí'].includes(l)) return 'Positivo';
   if (['negativo', 'negative', 'neg', 'n', '0', 'no'].includes(l)) return 'Negativo';
   return '';
 }
-function normalizeRows(rows) {
+export function normalizeRows(rows) {
   const out = [];
   rows.forEach((row) => {
     const nr = {};
@@ -307,7 +307,12 @@ function renderRSDetail(data) {
 /* ============================================================
    GRÁFICOS D3 (port fiel de BIOMOL.html, adaptado al tema)
    ============================================================ */
-const d3 = window.d3;
+// `window` puede no existir al importar el módulo fuera del navegador (tests de la
+// capa de datos pura). Además, este módulo se importa de forma DIFERIDA (al abrir la
+// vista): si el CDN de D3 aún no había cargado al importar, capturar el valor UNA vez
+// dejaría `d3` en undefined para siempre. Por eso es `let` y se re-sincroniza en
+// biomolecularView() (tras el guard `!window.d3`), garantizando la instancia cargada.
+let d3 = (typeof window !== 'undefined') ? window.d3 : undefined;
 let TH = { text: '#e2e8f0', muted: '#8892aa', surface: '#131929', grid: '#1e293b' };
 function refreshTheme() {
   const cs = getComputedStyle(document.querySelector('.biomol') || document.documentElement);
@@ -338,7 +343,7 @@ function svgDims(svgId, fbW, fbH) {
 function pctColor(p) { if (p === null) return TH.grid; const t = p / 100; return `rgb(${Math.round(34 + (239 - 34) * t)},${Math.round(197 + (68 - 197) * t)},${Math.round(94 + (68 - 94) * t)})`; }
 
 // Estadío cronológico + granularidad temporal
-function estadioOrder(s) {
+export function estadioOrder(s) {
   if (!s) return 9999;
   const u = String(s).toUpperCase().trim().replace(/\s+/g, '');
   if (u === 'N5' || u === 'N-5') return 1;
@@ -1630,6 +1635,9 @@ export function biomolecularView(root) {
     root.innerHTML = '<div class="empty-state" style="padding:60px 20px">🧬 No se pudo cargar la librería de gráficos <b>D3</b>.<br><small class="muted">Revisa el &lt;script&gt; del CDN en index.html o tu conexión a internet.</small></div>';
     return;
   }
+  // Re-sincroniza D3 por si el CDN cargó DESPUÉS del import diferido de este módulo
+  // (el guard de arriba mira window.d3, pero las funciones de dibujo usan `d3`).
+  d3 = window.d3;
 
   const sig = RAW.length + '|' + RAW[0].f + '|' + RAW[RAW.length - 1].f;
   const reset = sig !== lastSig;

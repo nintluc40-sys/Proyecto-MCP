@@ -12,13 +12,13 @@ import { parseAnyDate, fmtShort } from '../../core/dates.js';
 import { desinfeccionDetalle } from './desinfeccion.js';
 import { iclSeries } from './params.js';
 import { lotBrand } from './omtex.js';
-import { makeChart } from '../../core/charts.js';
+import { makeChart, destroyChart } from '../../core/charts.js';
 import {
   isMicroRow, rowContext as microCtx, meltRow as microMelt, pathogenRecords as microRecords,
   PATHOGENS as MIC_PATHOGENS, PATHOGEN_COLOR as MIC_COLOR, NIVEL_COLOR as MIC_NIVEL_COLOR,
   NIVEL_RANK as MIC_NIVEL_RANK, AGGREGATE_KEYS as MIC_AGG, FORMATO_LABEL as MIC_FMT_LABEL, PATHOGEN_AGAR,
 } from '../microbiologia/data.js';
-import { petriSVG } from '../microbiologia/petri.js';
+import { petriSVG, sparklineSVG } from '../microbiologia/petri.js';
 
 const { gOD, gTmp } = getters;
 const SUP_KEYS = ['Supervisor', 'supervisor', 'SUPERVISOR'];
@@ -341,6 +341,7 @@ const micTQ = (r) => microCtx(r).tq; // tanque estricto (columna TQ/N°)
 const micDayKey = (d) => d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
 const micTankLabel = (t) => t === '__none' ? 'Sin TQ' : ('TQ ' + t);
 let _svMicroColonies = []; // colonias del día visible en la placa (para el tooltip)
+let _svMicTrend = null;    // { days, series } de la pestaña Tendencias (para dibujar el gráfico abierto)
 
 /** Filas de Microbiología que comparten corrida + módulo (número) con este módulo. */
 function microForModule(mod, corrida) {
@@ -477,6 +478,75 @@ function microHeatmapHTML(rows) {
   }).join('');
   return `<div class="sv-micro-hmwrap"><table class="sv-micro-hm"><thead>${head}</thead><tbody>${body}</tbody></table></div>
     <div class="mic-legend" style="margin-top:8px">${Object.keys(MIC_NIVEL_COLOR).map((n) => `<span class="mic-legend-item"><span class="mic-legend-dot" style="background:${MIC_NIVEL_COLOR[n]}"></span>${esc(n)}</span>`).join('')}</div>`;
+}
+
+/** Series por patógeno (Σ UFC por día) sobre las filas dadas. Ordenadas por el
+ *  valor más reciente (desc). Solo patógenos con algún UFC>0. */
+function microPathogenTrends(rows) {
+  const days = micDaysOf(rows);
+  const per = new Map();
+  days.forEach((day, i) => {
+    microRecords(day.rows).forEach((r) => {
+      if (!(r.ufc > 0)) return;
+      if (!per.has(r.key)) per.set(r.key, { key: r.key, label: r.label, color: MIC_COLOR[r.key] || '#90A4AE', vals: new Array(days.length).fill(0), has: new Array(days.length).fill(false) });
+      const o = per.get(r.key);
+      o.vals[i] += r.ufc; o.has[i] = true;
+    });
+  });
+  const series = [...per.values()].map((p) => {
+    const present = p.vals.filter((_, i) => p.has[i]);
+    const latest = present.length ? present[present.length - 1] : 0;
+    const prev = present.length > 1 ? present[present.length - 2] : 0;
+    return { ...p, latest, delta: latest - prev, max: present.length ? Math.max(...present) : 0, n: present.length };
+  }).sort((a, b) => b.latest - a.latest);
+  return { days, series };
+}
+
+/** Pestaña Tendencias: Σ UFC/día por patógeno, con filtro de tanque y patrón
+ *  ACORDEÓN (tipo libros en un estante): solo un patógeno abierto muestra el
+ *  gráfico grande; el resto quedan como "lomos" clicables con su mini-tendencia. */
+function microTendenciasHTML(rows, state) {
+  if (!rows.length) return `<div class="empty-state" style="padding:30px">Sin registros para esta corrida y módulo.</div>`;
+  const tanks = micTanksOf(rows);
+  if (state.trendTank && !tanks.includes(state.trendTank)) state.trendTank = null;
+  const scoped = micRowsForTank(rows, state.trendTank);
+  const { days, series } = microPathogenTrends(scoped);
+  const tankOpts = `<option value="">Todos los tanques</option>` + tanks.map((t) => `<option value="${esc(t)}" ${state.trendTank === t ? 'selected' : ''}>${esc(micTankLabel(t))}</option>`).join('');
+  const bar = `<div class="sv-micro-filters">
+      <label class="sv-modal-datelbl">🐟 Tanque <select class="sv-modal-select" data-mtrend-tank>${tankOpts}</select></label>
+    </div>`;
+
+  if (!series.length || days.length < 1) {
+    return bar + `<div class="empty-state" style="padding:30px">Sin UFC registrado para esta selección.</div>`;
+  }
+  // Patógeno abierto: el guardado si sigue presente; si no, el de mayor valor reciente.
+  if (!state.trendOpen || !series.some((s) => s.key === state.trendOpen)) state.trendOpen = series[0].key;
+  _svMicTrend = { days, series }; // para el dibujo del gráfico grande (post-render)
+
+  const arrow = (d) => d > 0 ? '<span class="sv-mtrend-up">▲</span>' : d < 0 ? '<span class="sv-mtrend-dn">▼</span>' : '<span class="muted">—</span>';
+  const dayLabels = days.map((d) => d.label);
+  const items = series.map((p) => {
+    const open = p.key === state.trendOpen;
+    const spine = `<button class="sv-mtrend-spine" data-mtrend-open="${esc(p.key)}" aria-expanded="${open}">
+        <span class="sv-mtrend-band" style="background:${p.color}"></span>
+        <span class="sv-mtrend-name">${esc(p.label)}</span>
+        <span class="sv-mtrend-spark">${p.n > 1 ? sparklineSVG(p.vals.filter((_, i) => p.has[i]), p.color, 120, 26) : ''}</span>
+        <span class="sv-mtrend-latest">${micFmtNum(p.latest)}</span>
+        <span class="sv-mtrend-arr">${arrow(p.delta)}</span>
+      </button>`;
+    const panel = open ? `<div class="sv-mtrend-panel">
+        <div class="sv-mtrend-stats">
+          <span class="sv-mtrend-kpi"><b>${micFmtNum(p.latest)}</b>Σ UFC último día</span>
+          <span class="sv-mtrend-kpi"><b>${micFmtNum(p.max)}</b>máx</span>
+          <span class="sv-mtrend-kpi"><b>${p.n}</b>día(s) con dato</span>
+        </div>
+        <div class="sv-mtrend-chart"><canvas id="svMicTrendChart"></canvas></div>
+      </div>` : '';
+    return `<div class="sv-mtrend-item ${open ? 'is-open' : ''}">${spine}${panel}</div>`;
+  }).join('');
+
+  return bar + `<div class="mic-chart-title" style="margin:4px 0 8px">📈 Tendencia por patógeno <span class="muted">· Σ UFC por día (${esc(dayLabels[0])} → ${esc(dayLabels[dayLabels.length - 1])}) · clic en un patógeno para abrir su gráfico</span></div>
+    <div class="sv-mtrend-acc">${items}</div>`;
 }
 
 export function renderModule(ctx, mod) {
@@ -694,6 +764,7 @@ export function renderModule(ctx, mod) {
             <button class="sv-bm-mode-btn is-active" data-micmode="placa">🧫 Placa</button>
             <button class="sv-bm-mode-btn" data-micmode="tabla">📋 Tabla</button>
             <button class="sv-bm-mode-btn" data-micmode="heatmap">🗺️ Heatmap</button>
+            <button class="sv-bm-mode-btn" data-micmode="tendencias">📈 Tendencias</button>
           </div>
           <div id="svMicroBody"></div>
           <div class="mic-tt" id="svMicroTT"></div>
@@ -945,10 +1016,33 @@ export function renderModule(ctx, mod) {
     if (micOverlay) {
       const micBody = micOverlay.querySelector('#svMicroBody');
       let micMode = 'placa';
-      const micState = { tank: null, dayIdx: null };
+      const micState = { tank: null, dayIdx: null, trendTank: null, trendOpen: null };
+      /** Dibuja el gráfico grande del patógeno abierto en la pestaña Tendencias. */
+      const drawMicTrend = () => {
+        if (!_svMicTrend) return;
+        const open = _svMicTrend.series.find((s) => s.key === micState.trendOpen);
+        if (!open) return;
+        const labels = _svMicTrend.days.map((d) => d.label);
+        // null en los días sin muestra de ese patógeno (línea continua vía spanGaps).
+        const data = open.vals.map((v, i) => (open.has[i] ? v : null));
+        makeChart('svMicTrendChart', {
+          type: 'line',
+          data: { labels, datasets: [{ label: open.label, data, borderColor: open.color, backgroundColor: open.color + '22', tension: .3, pointRadius: 3, pointHoverRadius: 5, spanGaps: true, borderWidth: 2, fill: true }] },
+          options: {
+            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+            scales: {
+              y: { beginAtZero: true, ticks: { callback: (v) => micFmtNum(v) }, title: { display: true, text: 'Σ UFC', font: { size: 11, weight: '700' } } },
+              x: { grid: { display: false }, ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 } },
+            },
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${c.parsed.y === null ? 'sin muestra' : micFmtNum(c.parsed.y) + ' UFC'}` } } },
+          },
+        });
+      };
       const renderMic = () => {
+        destroyChart('svMicTrendChart'); // evita instancias huérfanas al cambiar de vista/tanque/patógeno
         if (micMode === 'tabla') micBody.innerHTML = microTablaHTML(microRows);
         else if (micMode === 'heatmap') micBody.innerHTML = microHeatmapHTML(microRows);
+        else if (micMode === 'tendencias') { micBody.innerHTML = microTendenciasHTML(microRows, micState); drawMicTrend(); }
         else micBody.innerHTML = microPlacaHTML(microRows, micState);
       };
       micOverlay.querySelectorAll('[data-micmode]').forEach((b) => b.addEventListener('click', () => {
@@ -956,9 +1050,20 @@ export function renderModule(ctx, mod) {
         micOverlay.querySelectorAll('[data-micmode]').forEach((x) => x.classList.toggle('is-active', x === b));
         renderMic();
       }));
-      // Filtros internos de la pestaña Placa (delegados; el cuerpo se re-renderiza).
-      micBody.addEventListener('change', (e) => { const s = e.target.closest('[data-micro-tank]'); if (s) { micState.tank = s.value || null; micState.dayIdx = null; renderMic(); } });
-      micBody.addEventListener('click', (e) => { const nav = e.target.closest('[data-micro-day]'); if (nav && !nav.disabled) { micState.dayIdx = (micState.dayIdx == null ? 0 : micState.dayIdx) + Number(nav.dataset.microDay); renderMic(); } });
+      // Filtros internos de las pestañas (delegados; el cuerpo se re-renderiza).
+      micBody.addEventListener('change', (e) => {
+        const s = e.target.closest('[data-micro-tank]');
+        if (s) { micState.tank = s.value || null; micState.dayIdx = null; renderMic(); return; }
+        const tt = e.target.closest('[data-mtrend-tank]');
+        if (tt) { micState.trendTank = tt.value || null; renderMic(); }
+      });
+      micBody.addEventListener('click', (e) => {
+        const nav = e.target.closest('[data-micro-day]');
+        if (nav && !nav.disabled) { micState.dayIdx = (micState.dayIdx == null ? 0 : micState.dayIdx) + Number(nav.dataset.microDay); renderMic(); return; }
+        const sp = e.target.closest('[data-mtrend-open]');
+        // Acordeón: exactamente uno abierto (como libros en un estante) → clic abre ese.
+        if (sp && sp.dataset.mtrendOpen !== micState.trendOpen) { micState.trendOpen = sp.dataset.mtrendOpen; renderMic(); }
+      });
       // Tooltip de colonias de la placa (patógeno · UFC · muestras · nivel), como en Bacteriología.
       const micTT = micOverlay.querySelector('#svMicroTT');
       const ttShow = (g) => {
@@ -976,7 +1081,7 @@ export function renderModule(ctx, mod) {
       micBody.addEventListener('mouseout', (e) => { const g = e.target.closest('.mic-colony'); if (g) { if (micTT) micTT.style.display = 'none'; const glow = g.querySelector('.mic-colony-glow'); if (glow) glow.setAttribute('opacity', '0'); } });
       bindModal(root, micOverlay, {
         openSel: '[data-micro-open]', closeSel: '[data-micro-close]',
-        onOpen: () => { micMode = 'placa'; micState.tank = null; micState.dayIdx = null; micOverlay.querySelectorAll('[data-micmode]').forEach((x) => x.classList.toggle('is-active', x.dataset.micmode === 'placa')); requestAnimationFrame(renderMic); },
+        onOpen: () => { micMode = 'placa'; micState.tank = null; micState.dayIdx = null; micState.trendTank = null; micState.trendOpen = null; micOverlay.querySelectorAll('[data-micmode]').forEach((x) => x.classList.toggle('is-active', x.dataset.micmode === 'placa')); requestAnimationFrame(renderMic); },
       });
     }
   };

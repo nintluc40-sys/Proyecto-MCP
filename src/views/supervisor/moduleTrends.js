@@ -31,7 +31,24 @@ export function moduleSvPopSeries(ctx, mod, corrida) {
       .filter((x) => x.t && x.p !== null && x.p > 0)
       .sort((a, b) => a.t - b.t);
   });
-  const totalFirst = tanks.reduce((acc, tq) => acc + (perTank[tq][0] ? perTank[tq][0].p : 0), 0);
+  // Línea base = SIEMBRA de la corrida (primera pob. >0 en larvCM, sin filtro de
+  // fecha), igual que el KPI del banner (survival() usa larvCM como base). Si sólo
+  // se derivara de la ventana visible, un filtro de fecha que excluya la siembra
+  // inflaría la SV (≈100% al inicio) y contradiría el KPI. Fallback a la ventana
+  // cuando no hay larvCM (p. ej. tests que sólo pasan larvWin).
+  const baseRows = ctx.larvCM
+    ? ctx.larvCM.filter((r) => gMod(r) === mod && (!corrida || gCor(r) === corrida))
+    : rows;
+  const firstOf = (tq) => {
+    let first = null, firstT = null;
+    baseRows.forEach((r) => {
+      if (gTnq(r) !== tq) return;
+      const t = parseAnyDate(gFec(r)), p = gPop(r);
+      if (t && p !== null && p > 0 && (firstT === null || t < firstT)) { firstT = t; first = p; }
+    });
+    return first || 0;
+  };
+  const totalFirst = tanks.reduce((acc, tq) => acc + firstOf(tq), 0);
   const labels = [], sv = [], pop = [];
   dates.forEach((d) => {
     const dt = parseAnyDate(d);

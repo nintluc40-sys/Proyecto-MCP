@@ -7,14 +7,16 @@
    ============================================================ */
 import { REFRESH_INTERVAL_S } from '../config.js';
 import { store, emit, EV } from './store.js';
-import { fetchAllSheets, dataFingerprint, isDegraded, applySheets } from './sheets.js';
+import {
+  fetchAllSheets, dataFingerprint, isDegraded, applySheets,
+  getLastFingerprint, setLastFingerprint,
+} from './sheets.js';
 
 let timer = null;
-let lastFingerprint = '';
 let interactingUntil = 0;
 
 /** Marca interacción del usuario por `ms` (pausa el refresco). */
-export function markInteracting(ms = 12000) { interactingUntil = Date.now() + ms; }
+function markInteracting(ms = 12000) { interactingUntil = Date.now() + ms; }
 
 function isBusy() {
   if (Date.now() < interactingUntil) return true;
@@ -46,10 +48,10 @@ async function tick() {
       return;
     }
     const fp = dataFingerprint(sheets);
-    if (fp === lastFingerprint) {
+    if (fp === getLastFingerprint()) {
       emit(EV.CONN, { state: 'connected', label: `${store.sheetNames.length} hojas · ${ts} · sin cambios` });
     } else {
-      lastFingerprint = fp;
+      setLastFingerprint(fp);
       if (applySheets(sheets)) {
         emit(EV.DATA, { firstLoad: false });
         emit(EV.CONN, { state: 'connected', label: `${store.sheetNames.length} hojas · ${ts}` });
@@ -68,10 +70,9 @@ function schedule() {
   timer = setTimeout(tick, REFRESH_INTERVAL_S * 1000);
 }
 
-export function startAutoRefresh(initialFingerprint = '') {
-  lastFingerprint = initialFingerprint;
+/** Arranca el loop. La huella inicial vive en sheets.js (la siembra commit()
+ *  en la carga inicial), así que aquí no hay estado que sembrar. */
+export function startAutoRefresh() {
   bindInteraction();
   schedule();
 }
-
-export function stopAutoRefresh() { clearTimeout(timer); timer = null; }

@@ -17,7 +17,6 @@ import { avg } from '../../core/util.js';
 import { dailySeries, lastState, iclOf, compositeScore } from './compute.js';
 import { ACCENT, NEUTRAL, SEM, CAT, catColor } from './palette.js';
 
-const ESTADIO_KEYS = ['Estadío', 'Estadio', 'estadío', 'estadio'];
 const EARLY_STAGES = ['N5', 'Z1', 'Z2', 'Z3', 'M1'];
 const fechaSorted = (rows) => [...rows].sort((a, b) => (parseAnyDate(getField(a, F.fecha)) || 0) - (parseAnyDate(getField(b, F.fecha)) || 0));
 
@@ -73,12 +72,12 @@ export function buildScoreItems(byCor, tanks, vars) {
  *  estadío (N5, Z1, Z2, Z3, M1) alineada a `days` para la vista por estadío. */
 export function buildAlgae(byCor) {
   const CEL = ['Cel/ml', 'Cel_ml', 'cel/ml', 'Cel/Ml'];
-  const rows = byCor.filter((r) => EARLY_STAGES.includes(getField(r, ESTADIO_KEYS).toUpperCase()));
+  const rows = byCor.filter((r) => EARLY_STAGES.includes(getField(r, F.estadio).toUpperCase()));
   const byDay = {}, byStage = {};
   rows.forEach((r) => {
     const cel = parseNum(r, CEL); if (cel === null) return;
     const f = getField(r, F.fecha); if (!f) return;
-    const st = getField(r, ESTADIO_KEYS).toUpperCase();
+    const st = getField(r, F.estadio).toUpperCase();
     (byDay[f] ||= []).push(cel);
     ((byStage[st] ||= {})[f] ||= []).push(cel);
   });

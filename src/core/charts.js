@@ -29,7 +29,7 @@ export function makeChart(canvasOrId, cfg) {
   const ctx = typeof canvasOrId === 'string' ? document.getElementById(canvasOrId) : canvasOrId;
   if (!ctx) return null;
   const existing = Chart.getChart(ctx);
-  if (existing) { try { existing.destroy(); } catch (_) {} }
+  if (existing) { try { existing.destroy(); } catch (_) {} registry.delete(existing); }
   // Render a ≥2x SIEMPRE (texto de ejes/leyendas nítido, aunque la pantalla sea 1x).
   cfg.options = cfg.options || {};
   if (cfg.options.devicePixelRatio == null) cfg.options.devicePixelRatio = Math.max(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);

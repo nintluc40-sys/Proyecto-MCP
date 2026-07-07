@@ -45,5 +45,4 @@ export const EV = {
   DATA: 'data:updated',      // globalData cambió
   CONN: 'conn:status',       // estado de conexión cambió  { state, label }
   VIEW: 'view:changed',      // vista activa cambió
-  DATEFILTER: 'date:changed',
 };

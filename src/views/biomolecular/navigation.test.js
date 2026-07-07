@@ -1,0 +1,153 @@
+// @vitest-environment happy-dom
+// Test de regresión de navegación de Biología Molecular. La vista depende de D3
+// (gráficos SVG). Aquí se stubea D3 con un proxy encadenable para verificar que la
+// vista MONTA, cablea sus eventos y navega (filtros, tabs, modales, AUD, fullscreen)
+// sin lanzar ni registrar errores. No valida el dibujo (eso requiere D3 real).
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// Stub encadenable de D3: cualquier método devuelve el mismo proxy (callable), y se
+// coacciona a primitivos (0 / '') para sobrevivir a template-literales y aritmética.
+const d3stub = new Proxy(function () {}, {
+  get: (_t, prop) => {
+    if (prop === Symbol.toPrimitive) return (hint) => (hint === 'string' ? '' : 0);
+    if (prop === 'toString' || prop === Symbol.toStringTag) return () => '';
+    if (prop === 'valueOf') return () => 0;
+    if (prop === Symbol.iterator) return function* () {};
+    return d3stub;
+  },
+  apply: () => d3stub,
+});
+globalThis.window.d3 = d3stub;
+if (typeof globalThis.requestAnimationFrame !== 'function') {
+  globalThis.requestAnimationFrame = (cb) => { cb(); return 0; };
+}
+
+import { store } from '../../core/store.js';
+import { biomolecularView } from './index.js';
+
+const B = (o) => ({ _SheetOrigin: 'Biomol', ...o });
+
+function synthData() {
+  const rows = [];
+  const dates = ['02/06/2026', '05/06/2026', '08/06/2026', '10/05/2026'];
+  const lugares = ['Módulo 1', 'Módulo 2', 'Sala A'];
+  dates.forEach((f, di) => {
+    lugares.forEach((lug, li) => {
+      rows.push(B({
+        Fecha: f, 'Código': `BM-${di}${li}`, Corrida: '573', Piscina: String(50 + li),
+        Lugar: lug, Tanque: 'TQ' + (li + 1), 'Estadío': ['PL5', 'M1', 'Reproductores'][li], Sexo: li === 2 ? 'H' : '',
+        IHHNV: di % 2 ? 'Positivo' : 'Negativo', WSSV: 'Negativo', BP: 'Negativo',
+        'AHPND/EMS': li === 0 ? 'Positivo' : 'Negativo', NHPB: 'Negativo', EHP: 'Negativo',
+        Otros: li === 1 ? 'Texcumar' : '',
+      }));
+    });
+  });
+  return rows;
+}
+
+function click(el) { if (el) el.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); }
+function change(el, value) { if (el) { if (value !== undefined) el.value = value; el.dispatchEvent(new window.Event('change', { bubbles: true })); } }
+
+let errSpy, root;
+beforeEach(() => {
+  store.role = 'administrativo';
+  store.currentView = 'biomolecular';
+  store.globalData = synthData();
+  document.body.innerHTML = '';
+  errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  root = document.createElement('div');
+  document.body.appendChild(root);
+});
+afterEach(() => { store.globalData = []; errSpy.mockRestore(); });
+
+describe('Biología Molecular · harness de navegación (D3 stubeado)', () => {
+  it('monta con KPIs, filterbar y tabla sin error', () => {
+    biomolecularView(root);
+    expect(root.querySelector('.biomol')).toBeTruthy();
+    expect(document.getElementById('kv-total')).toBeTruthy();
+    expect(document.getElementById('kv-total').textContent).toBe('12'); // 4 fechas × 3 lugares
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('filtro de diagnóstico y presets de período', () => {
+    biomolecularView(root);
+    const diagBtn = root.querySelector('#diag-filter .filter-btn');
+    if (diagBtn) { click(diagBtn); click(diagBtn); }
+    root.querySelectorAll('.fb-preset').forEach((b) => click(b));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('dropdown de lugares: abrir, todos, ninguno', () => {
+    biomolecularView(root);
+    click(document.getElementById('lugar-trigger'));
+    click(document.getElementById('btn-none-lugares'));
+    click(document.getElementById('btn-all-lugares'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('modo AUD alterna y restaura', () => {
+    biomolecularView(root);
+    const aud = document.getElementById('aud-btn');
+    click(aud); // activa simulación
+    expect(aud.classList.contains('on')).toBe(true);
+    click(aud); // restaura
+    expect(aud.classList.contains('on')).toBe(false);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('modal Total (desglose Lugar × Mes) abre y cierra', () => {
+    biomolecularView(root);
+    click(document.getElementById('kpi-total'));
+    expect(document.getElementById('total-modal').classList.contains('open')).toBe(true);
+    click(document.getElementById('total-modal-close'));
+    expect(document.getElementById('total-modal').classList.contains('open')).toBe(false);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('modal RS (Registro del día): abre, cambia fecha/diagnóstico y cierra', () => {
+    biomolecularView(root);
+    click(document.getElementById('rsd-btn'));
+    expect(document.getElementById('rsd-modal').classList.contains('open')).toBe(true);
+    const dsel = document.getElementById('rsd-date');
+    if (dsel && dsel.options.length > 1) change(dsel, dsel.options[1].value);
+    change(document.getElementById('rsd-diag'), 'IHHNV');
+    click(document.getElementById('rsd-modal-close'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('modal Export: abre, ajusta rango, cierra (sin SheetJS solo alerta)', () => {
+    biomolecularView(root);
+    click(document.getElementById('export-xlsx-btn'));
+    expect(document.getElementById('bm-export-modal').classList.contains('open')).toBe(true);
+    change(document.getElementById('bm-export-from'), '2026-06-01');
+    click(document.getElementById('bm-export-close'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('modal Reporte comparativo: abre, agrega serie, cambia toggles y cierra', () => {
+    biomolecularView(root);
+    click(document.getElementById('report-btn'));
+    expect(document.getElementById('report-modal').classList.contains('open')).toBe(true);
+    click(document.getElementById('add-series-btn'));
+    root.querySelectorAll('#report-modal .report-toggle').forEach((b, i) => { if (i < 4) click(b); });
+    click(document.getElementById('report-modal-close'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('tabs de Heatmap y granularidad del Calendario, fullscreen', () => {
+    biomolecularView(root);
+    root.querySelectorAll('#hm-tabs .tab').forEach((t) => click(t));
+    root.querySelectorAll('#cal-gran-tabs .tab').forEach((t) => click(t));
+    const fs = root.querySelector('.fs-btn');
+    if (fs) { click(fs); const ex = document.getElementById('bm-fs-exit'); if (ex) click(ex); }
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('controles del Sankey (modos + reset)', () => {
+    biomolecularView(root);
+    click(document.getElementById('sankey-mode-btn'));
+    click(document.getElementById('sankey-psm-btn'));
+    click(document.getElementById('sankey-reset-btn'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+});

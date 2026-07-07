@@ -1,0 +1,15 @@
+{
+  "name": "Sistema de Monitoreo y Control Productivo Omarsa Mar Bravo",
+  "short_name": "Sistema MCP",
+  "description": "Parámetros · Registros · Producción — Larvicultura Omarsa Mar Bravo",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f4f6f8",
+  "theme_color": "#006064",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

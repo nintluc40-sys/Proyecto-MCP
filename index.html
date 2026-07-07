@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sistema MCP</title>
 
+  <!-- Identidad: favicon + icono iOS + manifest PWA (instalar como app/acceso directo).
+       Rutas RELATIVAS: funcionan en dev (raíz), en dist bajo subruta y con base './'. -->
+  <link rel="icon" type="image/png" sizes="64x64" href="./icons/favicon-64.png" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <meta name="theme-color" content="#006064" />
+
   <!-- SheetJS se carga por CDN: la versión de npm está desactualizada/deprecada.
        El módulo core/sheets.js accede a window.XLSX de forma protegida. -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>

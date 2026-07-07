@@ -99,7 +99,7 @@ let fsStats = {};
 let daySumIdx = null;
 const FS_TITLE = {
   growth: '📈 Curva de Crecimiento — Densidad Celular',
-  tasa: '📈 Tasa de Crecimiento · % ganado (inicial→final)',
+  tasa: '📈 Tasa de Crecimiento específica · μ (día⁻¹)',
   proto: '🦠 Protozoarios · Ciliados · Filamentosos',
   sal: '🧂 Salinidad',
   ph: '⚗️ pH',
@@ -131,8 +131,43 @@ function dailyMulti(rows, keys) {
   return { days, series };
 }
 
+/** Separa los puntos de un mismo sistema/lote en SIEMBRAS (ciclos de cultivo).
+ *  Un sistema (p. ej. un masivo) puede recultivarse dentro de la misma corrida: al
+ *  resembrar, el Día de proceso vuelve a empezar. Cada reinicio abre un ciclo nuevo
+ *  para NO promediar entre siembras distintas (se verían como una sola curva falsa).
+ *  Señal primaria: `Dia_Proceso` que decrece (…6,7 → 1). Respaldo sin Dia_Proceso:
+ *  un salto de fecha grande (> UMBRAL días) también abre ciclo. Devuelve [[pts],…]. */
+const RESEED_GAP_DAYS = 14;
+function splitSiembras(pts) {
+  // Orden cronológico estable; con Dia_Proceso como desempate del mismo día.
+  const sorted = [...pts].sort((a, b) => {
+    const ta = a.d ? a.d.getTime() : 0, tb = b.d ? b.d.getTime() : 0;
+    return ta - tb || ((a.dia ?? 0) - (b.dia ?? 0));
+  });
+  const cycles = [];
+  let cur = [];
+  let prevDia = null, prevMs = null;
+  sorted.forEach((p) => {
+    const dia = (p.dia === null || p.dia === undefined || isNaN(p.dia)) ? null : p.dia;
+    const ms = p.d ? p.d.getTime() : null;
+    let reseed = false;
+    if (cur.length) {
+      if (dia !== null && prevDia !== null && dia < prevDia) reseed = true; // reinicio de día de proceso
+      else if (dia === null && prevDia === null && ms !== null && prevMs !== null
+        && (ms - prevMs) / 86400000 > RESEED_GAP_DAYS) reseed = true; // sin día → salto de fecha
+    }
+    if (reseed) { cycles.push(cur); cur = []; }
+    cur.push(p);
+    if (dia !== null) prevDia = dia;
+    if (ms !== null) prevMs = ms;
+  });
+  if (cur.length) cycles.push(cur);
+  return cycles;
+}
+
 /** Lotes con sus puntos (día de proceso → Cel/ml). Día = Dia_Proceso si existe,
- *  si no se deriva de la fecha relativa al primer día del lote. Clave = sistema·Lote. */
+ *  si no se deriva de la fecha relativa al primer día del lote. Clave = sistema·Lote.
+ *  Cada resiembra del mismo sistema es una serie aparte (sufijo · S2, S3…). */
 export function growthByLote(rows) {
   const byLote = new Map();
   rows.forEach((r) => {
@@ -146,17 +181,23 @@ export function growthByLote(rows) {
   });
   const lotes = [];
   byLote.forEach((pts, key) => {
-    const times = pts.map((p) => (p.d ? p.d.getTime() : null)).filter((x) => x !== null);
-    const minMs = times.length ? Math.min(...times) : null;
-    const byDay = new Map();
-    pts.forEach((p) => {
-      let day = p.dia;
-      if (day === null || day === undefined || isNaN(day)) day = (p.d && minMs !== null) ? Math.round((p.d.getTime() - minMs) / 86400000) : 0;
-      if (!byDay.has(day)) byDay.set(day, []);
-      byDay.get(day).push(p.cel);
+    // Divide en siembras: cada ciclo se numera solo si hay ≥2 (para no cambiar la
+    // etiqueta del caso normal de una sola siembra).
+    const siembras = splitSiembras(pts);
+    siembras.forEach((cyclePts, ci) => {
+      const times = cyclePts.map((p) => (p.d ? p.d.getTime() : null)).filter((x) => x !== null);
+      const minMs = times.length ? Math.min(...times) : null;
+      const byDay = new Map();
+      cyclePts.forEach((p) => {
+        let day = p.dia;
+        if (day === null || day === undefined || isNaN(day)) day = (p.d && minMs !== null) ? Math.round((p.d.getTime() - minMs) / 86400000) : 0;
+        if (!byDay.has(day)) byDay.set(day, []);
+        byDay.get(day).push(p.cel);
+      });
+      const points = [...byDay.entries()].sort((a, b) => a[0] - b[0]).map(([day, arr]) => ({ day, cel: arr.reduce((x, y) => x + y, 0) / arr.length }));
+      const label = siembras.length > 1 ? `${key} · S${ci + 1}` : key;
+      lotes.push({ key: label, points, siembra: siembras.length > 1 ? ci + 1 : null });
     });
-    const points = [...byDay.entries()].sort((a, b) => a[0] - b[0]).map(([day, arr]) => ({ day, cel: arr.reduce((x, y) => x + y, 0) / arr.length }));
-    lotes.push({ key, points });
   });
   lotes.sort((a, b) => natCmp(a.key, b.key));
   // Sin tope: se grafican TODOS los lotes/sistemas del filtro. En modo Líneas la
@@ -191,17 +232,26 @@ export function periodStats(rows) {
   };
 }
 
-/** Tasa de crecimiento por lote: % ganado del primer al último día con dato.
- *  rate = (densidad final − inicial)/inicial ×100. Una barra por lote. */
+/** Tasa de crecimiento ESPECÍFICA por lote (μ, día⁻¹): μ = ln(Nf/N0)/días.
+ *  Es el estándar en microalgas y sí considera el tiempo transcurrido (a diferencia
+ *  del "% ganado" total, que para un cultivo largo da cifras enormes y poco útiles
+ *  como 1016%). `meta` lleva, por barra, duplicaciones/día, tiempo de duplicación y
+ *  el % total (para el tooltip). Una barra por lote/siembra. */
 export function tasaChartData(lotes) {
   const out = [];
   lotes.forEach((l) => {
     if (l.points.length < 2) return; // necesita inicial y final
-    const first = l.points[0].cel, last = l.points[l.points.length - 1].cel;
-    if (!(first > 0)) return;
-    out.push({ label: l.key, val: (last - first) / first * 100 });
+    const first = l.points[0], last = l.points[l.points.length - 1];
+    const n0 = first.cel, nf = last.cel;
+    const days = last.day - first.day;
+    if (!(n0 > 0) || !(nf > 0) || !(days > 0)) return; // sin base válida o sin tiempo → no computable
+    const mu = Math.log(nf / n0) / days;              // día⁻¹ (puede ser negativa)
+    const dbl = mu / Math.LN2;                         // duplicaciones/día
+    const tDouble = mu !== 0 ? Math.LN2 / mu : null;   // días para duplicar (null si μ=0)
+    const pctTotal = (nf - n0) / n0 * 100;             // % total (referencia)
+    out.push({ label: l.key, val: +mu.toFixed(3), mu, dbl, tDouble, pctTotal, days, n0, nf });
   });
-  return { labels: out.map((o) => o.label), values: out.map((o) => o.val) };
+  return { labels: out.map((o) => o.label), values: out.map((o) => o.val), meta: out };
 }
 
 /* ============================================================
@@ -328,7 +378,7 @@ export function algasView(root) {
       box.innerHTML = `<canvas id="${hostId}_cv"></canvas>`;
       drawGrowth(`${hostId}_cv`, gd.dayLabels, gd.series, legendId, { norm: mode === 'norm' });
     },
-    tasa: (cid) => drawTasa(cid, tasa.labels, tasa.values),
+    tasa: (cid) => drawTasa(cid, tasa.labels, tasa.values, tasa.meta),
     proto: (cid) => drawProto(cid, proto.days, proto.series.protozoarios, proto.series.ciliados, proto.series.filamentosos),
     sal: (cid) => drawDaily(cid, sal.days, sal.values, 'Salinidad', '#015B76'),
     ph: (cid) => drawDaily(cid, ph.days, ph.values, 'pH', '#739842'),
@@ -340,13 +390,14 @@ export function algasView(root) {
   const last = (a) => (a.length ? a[a.length - 1] : null);
   const fK = (v) => fmtK(v);               // densidad cel/ml (abreviada)
   const f1 = (u) => (v) => v.toFixed(1) + u;
+  const fMu = (v) => (v === null || v === undefined || isNaN(v)) ? '—' : v.toFixed(2) + ' /d';
   const growthFlat = isBarCat ? barValues.slice() : gd.series.reduce((acc, s) => acc.concat(s.data), []);
   const growthActual = isBarCat
     ? last(barValues)
     : (() => { const li = gd.days.length - 1; const v = gd.series.map((s) => s.data[li]).filter((x) => x !== null && x !== undefined); return v.length ? v.reduce((x, y) => x + y, 0) / v.length : null; })();
   fsStats = {
     growth: statStrip(growthFlat, growthActual, fK),
-    tasa: statStrip(tasa.values, last(tasa.values), f1('%')),
+    tasa: statStrip(tasa.values, last(tasa.values), fMu),
     sal: statStrip(sal.values, last(sal.values), f1(' ppt')),
     ph: statStrip(ph.values, last(ph.values), f1('')),
     temp: statStrip(temp.values, last(temp.values), f1(' °C')),
@@ -364,7 +415,7 @@ export function algasView(root) {
       <div class="card alg-chart-card alg-fs-card">${chHead('📈 Curva de Crecimiento — Densidad Celular ' + (isBarCat ? `<span class="muted">· por ${isFunda ? 'lote' : 'sistema'} (sin tendencia → barras)</span>` : '<span class="muted">· por día · línea = lote/sistema</span>'), growthLotes.length > 0 ? 'growth' : null, isBarCat ? '' : growthModeSelect())}<div class="alg-chart-host alg-host-lg" id="algGrowthHost">${growthLotes.length ? '' : '<div class="empty-state" style="padding:24px">Sin datos para esta subvista.</div>'}</div><div class="alg-legend" id="algGrowthLegend"></div></div>
       <div class="card alg-chart-card">${chHead('📊 Estadísticas del Período <span class="muted">· ' + esc(vState.sub || '') + '</span>', null, algSysSelect(sysOptions, vState.sysSel))}<div class="alg-stats">${statsHTML(stats, isFunda)}</div></div>
     </div>
-    ${!isBarCat ? `<div class="alg-charts" style="${catVar}"><div class="card alg-chart-card alg-fs-card">${chHead('📈 Tasa de Crecimiento <span class="muted">· % ganado (inicial→final)</span>', tasa.values.length > 0 ? 'tasa' : null)}<div class="alg-chart-host">${host('algTasa', tasa.values.length > 0)}</div></div></div>` : ''}`;
+    ${!isBarCat ? `<div class="alg-charts" style="${catVar}"><div class="card alg-chart-card alg-fs-card">${chHead('📈 Tasa de Crecimiento específica <span class="muted">· μ = ln(final/inicial)/días · día⁻¹</span>', tasa.values.length > 0 ? 'tasa' : null)}<div class="alg-chart-host">${host('algTasa', tasa.values.length > 0)}</div></div></div>` : ''}`;
 
   // ── Franja 2 · Parámetros fisicoquímicos (mini-gráficos compactos 4-up) ──
   h += algBand('🧪', 'Parámetros fisicoquímicos', '#015B76');

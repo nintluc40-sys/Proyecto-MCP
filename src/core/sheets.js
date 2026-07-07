@@ -294,10 +294,13 @@ function commit(sheets, firstLoad) {
   return true;
 }
 
-// Huella del último set comprometido por commit() (la usa boot() para sembrar el
-// auto-refresco sin re-descargar). Se expone vía getLastFingerprint().
+// Huella del último set comprometido (por commit() o por el auto-refresco).
+// ÚNICA fuente de verdad del fingerprint: si refresh.js llevara su propia copia,
+// una reconexión manual la dejaría desfasada y el siguiente tick re-renderizaría
+// toda la vista sin que hubiera cambios reales.
 let _lastFingerprint = '';
 export function getLastFingerprint() { return _lastFingerprint; }
+export function setLastFingerprint(fp) { _lastFingerprint = fp; }
 
 /** Hash rodante barato (djb2) sobre el JSON de todas las filas. */
 function hashRows(rows) {

@@ -131,22 +131,38 @@ export function drawGrowthBar(canvasId, labels, values, color = '#2E7D32') {
   });
 }
 
-/** Tasa de crecimiento: una barra por lote = % ganado del inicial al final
- *  (densidad final − inicial)/inicial ×100. Verde si creció, rojo si decreció.
- *  El eje ya indica %, por eso el tooltip muestra solo el número. */
-export function drawTasa(canvasId, labels, values) {
+/** Tasa de crecimiento ESPECÍFICA: una barra por lote = μ (día⁻¹) = ln(final/inicial)/días.
+ *  Verde si creció, rojo si decreció. `meta[i]` (opcional) añade al tooltip las
+ *  duplicaciones/día, el tiempo de duplicación y el % total, que son la lectura
+ *  práctica de μ para el laboratorio. */
+export function drawTasa(canvasId, labels, values, meta = null) {
   const colors = values.map((v) => (v >= 0 ? '#186447' : '#CA6378'));
   return makeChart(canvasId, {
     type: 'bar',
-    data: { labels, datasets: [{ label: 'Tasa', data: values, backgroundColor: colors.map((c) => c + 'cc'), borderColor: colors, borderWidth: 1, borderRadius: 4, maxBarThickness: 46 }] },
+    data: { labels, datasets: [{ label: 'μ', data: values, backgroundColor: colors.map((c) => c + 'cc'), borderColor: colors, borderWidth: 1, borderRadius: 4, maxBarThickness: 46 }] },
     options: {
       responsive: true, maintainAspectRatio: false,
       layout: { padding: { top: 4, right: 10 } },
       scales: {
-        y: { ticks: { callback: (v) => v + '%', color: AXIS_TICK.color, font: AXIS_TICK.font }, title: { display: true, text: '% crecimiento (inicial→final)', color: AXIS_TITLE.color, font: AXIS_TITLE.font }, grid: { color: (c) => (c.tick.value === 0 ? '#90a4ae' : 'rgba(120,144,156,.15)') } },
+        y: { ticks: { callback: (v) => v + ' /d', color: AXIS_TICK.color, font: AXIS_TICK.font }, title: { display: true, text: 'μ · tasa específica (día⁻¹)', color: AXIS_TITLE.color, font: AXIS_TITLE.font }, grid: { color: (c) => (c.tick.value === 0 ? '#90a4ae' : 'rgba(120,144,156,.15)') } },
         x: { grid: { display: false }, ticks: { color: AXIS_TICK.color, font: AXIS_TICK.font, maxRotation: 30 } },
       },
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${c.parsed.y === null ? '—' : c.parsed.y.toFixed(1)}` } } },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: {
+          title: (items) => items.length ? String(items[0].label) : '',
+          label: (c) => ` μ = ${c.parsed.y === null ? '—' : c.parsed.y.toFixed(2)} /día`,
+          afterBody: (items) => {
+            const m = meta && items.length ? meta[items[0].dataIndex] : null;
+            if (!m) return '';
+            const dbl = (m.dbl >= 0 ? '' : '−') + Math.abs(m.dbl).toFixed(2);
+            const td = (m.tDouble === null || m.tDouble === undefined) ? '—'
+              : (m.tDouble > 0 ? m.tDouble.toFixed(1) + ' d/dupl.' : 'decrece');
+            const pct = (m.pctTotal >= 0 ? '+' : '') + m.pctTotal.toFixed(0) + '%';
+            return [`${dbl} duplicaciones/día`, `t. duplicación: ${td}`, `${pct} total · ${m.days} día(s)`];
+          },
+        } },
+      },
     },
   });
 }

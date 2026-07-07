@@ -1,12 +1,14 @@
 /* ============================================================
-   SHELL — cabecera, pestañas, conexión, filtro de fecha, toast
+   SHELL — cabecera, menú lateral (drawer), conexión y filtro de fecha
    ============================================================ */
-import { store, on, emit, EV } from '../core/store.js';
+import { store, on, EV } from '../core/store.js';
 import { connectSheets } from '../core/sheets.js';
 import { changeView, setContainer, renderCurrentView } from './router.js';
 import { destroyAllCharts } from '../core/charts.js';
 import { fmtShort, parseAnyDate } from '../core/dates.js';
 import { getField, F } from '../core/fields.js';
+// Logo corporativo (pantalla de entrada). Vite lo resuelve a un asset con hash.
+import logoUrl from '../assets/logo.png';
 
 let els = {};
 
@@ -15,7 +17,7 @@ export function mountShell(appEl) {
     <div class="app">
       <button class="nav-toggle" id="navToggle" title="Menú de vistas" aria-label="Abrir menú de vistas">☰</button>
       <aside class="side-drawer" id="sideDrawer" aria-label="Vistas del sistema">
-        <div class="drawer-head"><span class="logo">🦐</span><span>Vistas del sistema</span>
+        <div class="drawer-head"><span class="logo"><img class="logo-img" src="${logoUrl}" alt="" /></span><span>Vistas del sistema</span>
           <button class="drawer-x" id="drawerClose" aria-label="Cerrar menú">✕</button>
         </div>
         <nav class="drawer-nav" id="drawerNav"></nav>
@@ -27,14 +29,14 @@ export function mountShell(appEl) {
       <div class="drawer-backdrop" id="drawerBackdrop"></div>
       <div class="entry-screen" id="entryScreen">
         <div class="entry-card">
-          <div class="entry-logo">🦐</div>
+          <div class="entry-logo"><img class="entry-logo-img" src="${logoUrl}" alt="Logo Omarsa" /></div>
           <h1 class="entry-title">Sistema de Monitoreo y Control Productivo Omarsa Mar Bravo</h1>
           <div class="entry-sub">Parámetros &nbsp;•&nbsp; Registros &nbsp;•&nbsp; Producción</div>
           <div class="entry-roles" id="entryRoles"></div>
         </div>
       </div>
       <header class="app-header">
-        <div class="app-brand"><span class="logo">🦐</span><span>Sistema MCP</span></div>
+        <div class="app-brand"><span class="logo"><img class="logo-img" src="${logoUrl}" alt="" /></span><span>Sistema MCP</span></div>
         <div class="grow"></div>
         <div id="dateBar" class="row gap-2 wrap"></div>
         <button class="conn-pill" id="connPill" title="Reconectar"><span class="dot"></span><span id="connLabel">Iniciando…</span></button>
@@ -71,7 +73,8 @@ export function mountShell(appEl) {
 }
 
 // Vistas principales del sistema (las pendientes aún no están desarrolladas).
-const MAIN_VIEWS = [
+// Exportado para el test de caracterización (shell.test.js).
+export const MAIN_VIEWS = [
   { id: 'supervisor',   label: 'Supervisor',         icon: '👁️' },
   { id: 'larvicultura', label: 'Larvicultura',       icon: '🦐' },
   { id: 'revisiones',   label: 'Revisiones',         icon: '🔍' },
@@ -84,11 +87,12 @@ const MAIN_VIEWS = [
 ];
 
 // Roles de ingreso y vistas a las que acceden ('*' = todas).
-const ROLES = {
+// Exportado para el test de caracterización (shell.test.js) que fija este contrato.
+export const ROLES = {
   administrativo: { label: 'Administrativo', icon: '🗝️', allow: '*' },
   tecnico:        { label: 'Técnico',        icon: '🔧', allow: ['supervisor', 'larvicultura', 'registros'] },
-  supervisor:     { label: 'Supervisor',     icon: '📋', allow: ['maduracion', 'algas', 'biomolecular', 'microbiologia'] },
-  chequeador:     { label: 'Chequeador',     icon: '✅', allow: [] }, // acceso a definir a futuro
+  supervisor:     { label: 'Supervisor',     icon: '📋', allow: ['supervisor', 'revisiones', 'registros', 'algas', 'microbiologia', 'biomolecular', 'maduracion'] },
+  chequeador:     { label: 'Chequeador',     icon: '✅', allow: ['larvicultura'] },
   visitante:      { label: 'Visitante',      icon: '🚪', allow: ['visitante'] },
 };
 
@@ -138,15 +142,6 @@ function setConnStatus(state, label) {
 }
 
 export function showLoader(on) { els.loader.classList.toggle('is-active', !!on); }
-
-export function toast(msg, type = 'info') {
-  document.querySelector('.toast')?.remove();
-  const t = document.createElement('div');
-  t.className = 'toast ' + type;
-  t.textContent = msg;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 3500);
-}
 
 function bindEvents(appEl) {
   appEl.querySelector('#navToggle').addEventListener('click', () => {
@@ -218,7 +213,6 @@ function applyPreset(id) {
     const from = new Date(to); from.setDate(from.getDate() - days + 1);
     store.dateFrom = from; store.dateTo = to;
   }
-  emit(EV.DATEFILTER);
   renderDateBar();
   renderCurrentView();
 }

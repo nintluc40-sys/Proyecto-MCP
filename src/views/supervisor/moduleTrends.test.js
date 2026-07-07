@@ -20,6 +20,25 @@ describe('moduleSvPopSeries', () => {
     expect(r.pop).toEqual([1500, 1200]); // Σ tanques
     expect(r.sv).toEqual([100, 80]);     // 1500/1500, 1200/1500
   });
+
+  it('línea base = siembra de la corrida (larvCM), no la 1ª pob. de la ventana filtrada', () => {
+    // La ventana (larvWin) empieza el 05/06 con 800; la siembra real (larvCM) es 1000 el 01/06.
+    // La SV debe medirse contra 1000 (coherente con el KPI del banner), no contra 800.
+    const ctx = {
+      larvWin: [
+        lv({ Tanque: 'TQ1', 'Población': '800', Fecha: '05/06/2026' }),
+        lv({ Tanque: 'TQ1', 'Población': '700', Fecha: '07/06/2026' }),
+      ],
+      larvCM: [
+        lv({ Tanque: 'TQ1', 'Población': '1000', Fecha: '01/06/2026' }),
+        lv({ Tanque: 'TQ1', 'Población': '800', Fecha: '05/06/2026' }),
+        lv({ Tanque: 'TQ1', 'Población': '700', Fecha: '07/06/2026' }),
+      ],
+      tanqWin: [],
+    };
+    const r = moduleSvPopSeries(ctx, 'M01', '580');
+    expect(r.sv).toEqual([80, 70]); // 800/1000, 700/1000 (no 100/87.5 respecto a 800)
+  });
 });
 
 describe('moduleHourly', () => {
