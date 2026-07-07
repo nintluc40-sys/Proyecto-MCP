@@ -2,7 +2,7 @@
    SUPERVISOR · Resumen Operativo del Módulo
    ============================================================ */
 import { modStats, tankStats, tanksOf, getters } from './stats.js';
-import { moduleSvPopSeries, moduleHourlyDates, moduleHourly, moduleDayKpis, cosechaEstimate } from './moduleTrends.js';
+import { moduleSvPopSeries, moduleHourlyDates, moduleHourly, moduleDayKpis, moduleDayTankReadings, cosechaEstimate } from './moduleTrends.js';
 import { HR_LABELS } from './tank.js';
 import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, kpiTecnicos, breadcrumb, bindModal } from './ui.js';
 import { svLevel, odLevel, tmpLevel, levelColor, levelLabel, esc } from '../../core/format.js';
@@ -18,7 +18,7 @@ import {
   PATHOGENS as MIC_PATHOGENS, PATHOGEN_COLOR as MIC_COLOR, NIVEL_COLOR as MIC_NIVEL_COLOR,
   NIVEL_RANK as MIC_NIVEL_RANK, AGGREGATE_KEYS as MIC_AGG, FORMATO_LABEL as MIC_FMT_LABEL, PATHOGEN_AGAR,
 } from '../microbiologia/data.js';
-import { petriSVG, sparklineSVG } from '../microbiologia/petri.js';
+import { petriSVG } from '../microbiologia/petri.js';
 
 const { gOD, gTmp } = getters;
 const SUP_KEYS = ['Supervisor', 'supervisor', 'SUPERVISOR'];
@@ -530,7 +530,6 @@ function microTendenciasHTML(rows, state) {
     const spine = `<button class="sv-mtrend-spine" data-mtrend-open="${esc(p.key)}" aria-expanded="${open}">
         <span class="sv-mtrend-band" style="background:${p.color}"></span>
         <span class="sv-mtrend-name">${esc(p.label)}</span>
-        <span class="sv-mtrend-spark">${p.n > 1 ? sparklineSVG(p.vals.filter((_, i) => p.has[i]), p.color, 120, 26) : ''}</span>
         <span class="sv-mtrend-latest">${micFmtNum(p.latest)}</span>
         <span class="sv-mtrend-arr">${arrow(p.delta)}</span>
       </button>`;
@@ -967,13 +966,29 @@ export function renderModule(ctx, mod) {
           kpiDay('🌡️', 'Temperatura', fmt1(k.tmp, '°C')),
           kpiDay('🦐', 'Estadío', k.estadio || '—'),
         ].join('');
+        // Alertas a nivel de MÓDULO (agregado del día).
         const al = [];
         if (svLevel(k.sv) === 'grave') al.push('Supervivencia crítica');
         if (isAl(odLevel(k.od))) al.push('OD fuera de rango');
         if (isAl(tmpLevel(k.tmp))) al.push('Temperatura fuera de rango');
-        alertsEl.innerHTML = al.length
-          ? `<div class="sv-card-alert" style="margin-top:10px">⚠️ ${esc(al.join(' · '))}</div>`
-          : '<div class="sv-alert-ok" style="margin-top:10px">✅ Sin alertas este día.</div>';
+        const modBlock = al.length
+          ? `<div class="sv-card-alert" style="margin-top:10px">⚠️ Módulo: ${esc(al.join(' · '))}</div>`
+          : '<div class="sv-alert-ok" style="margin-top:10px">✅ Sin alertas de módulo este día.</div>';
+        // Desglose INDIVIDUAL por tanque: OD/T° promedio del día fuera de rango.
+        const tankRows = moduleDayTankReadings(ctx, mod, corrida, dateSel.value);
+        const tankAlerts = tankRows.map((t) => {
+          const flags = [];
+          if (isAl(odLevel(t.od))) flags.push(`OD ${fmt2(t.od, ' mg/L')}`);
+          if (isAl(tmpLevel(t.tmp))) flags.push(`T° ${fmt1(t.tmp, '°C')}`);
+          return flags.length ? { tq: t.tq, flags } : null;
+        }).filter(Boolean);
+        const tankBlock = tankAlerts.length
+          ? `<div class="sv-mday-talerts">
+              <div class="sv-mday-talerts-h">🐟 Alertas por tanque · ${tankAlerts.length} de ${tankRows.length}</div>
+              ${tankAlerts.map((t) => `<div class="sv-mday-talert"><span class="sv-mday-tq">${esc(t.tq)}</span><span class="sv-mday-tflags">${t.flags.map((f) => esc(f)).join(' · ')}</span></div>`).join('')}
+            </div>`
+          : (tankRows.length ? '<div class="sv-alert-ok" style="margin-top:6px">✅ Ningún tanque fuera de rango (OD/T°) este día.</div>' : '');
+        alertsEl.innerHTML = modBlock + tankBlock;
       };
       dateSel.addEventListener('change', render);
       bindModal(root, dayOverlay, {

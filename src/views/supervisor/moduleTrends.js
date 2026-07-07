@@ -99,6 +99,25 @@ export function moduleDayKpis(ctx, mod, corrida, date, series) {
   };
 }
 
+/** OD y Temperatura PROMEDIO por tanque para un día (promedia las tomas horarias de
+ *  Control_Tanque). Base para el desglose de alertas por tanque del "Resumen del día".
+ *  Ordenado por tanque (orden natural). Solo tanques con alguna lectura ese día. */
+export function moduleDayTankReadings(ctx, mod, corrida, date) {
+  const rows = modTanq(ctx, mod, corrida).filter((r) => gFec(r) === date);
+  const byTank = new Map();
+  rows.forEach((r) => {
+    const tq = gTnq(r);
+    if (!tq) return;
+    if (!byTank.has(tq)) byTank.set(tq, { tq, od: [], tmp: [] });
+    const od = gOD(r), tmp = gTmp(r);
+    if (od !== null) byTank.get(tq).od.push(od);
+    if (tmp !== null) byTank.get(tq).tmp.push(tmp);
+  });
+  return [...byTank.values()]
+    .map((t) => ({ tq: t.tq, od: avg(t.od), tmp: avg(t.tmp) }))
+    .sort((a, b) => String(a.tq).localeCompare(String(b.tq), undefined, { numeric: true }));
+}
+
 /** Estimación de días a cosecha (estadío objetivo, por defecto PL11) según el
  *  ritmo de avance de estadío del módulo. null si no hay datos suficientes. */
 export function cosechaEstimate(ctx, mod, corrida, target = 'PL11') {

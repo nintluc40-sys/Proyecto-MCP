@@ -247,6 +247,15 @@
 .sv-modal-kpi.muted { color: var(--c-text-muted); }
 .sv-modal-note { font-size: 10.5px; color: var(--c-text-muted); margin-top: 8px; }
 
+/* Desglose de alertas por tanque del "Resumen del día" (bajo la alerta de módulo). */
+.sv-mday-talerts { margin-top: 8px; border: 1px solid var(--c-border-soft); border-radius: var(--r-md); overflow: hidden; }
+.sv-mday-talerts-h { font-size: 11px; font-weight: 800; color: var(--c-text-soft); text-transform: uppercase; letter-spacing: .3px; padding: 7px 12px; background: var(--c-surface-2); border-bottom: 1px solid var(--c-border-soft); }
+.sv-mday-talert { display: flex; align-items: center; gap: 10px; padding: 7px 12px; font-size: 12.5px; border-top: 1px solid var(--c-border-soft); }
+.sv-mday-talert:first-of-type { border-top: none; }
+.sv-mday-tq { font-weight: 800; color: var(--c-text); min-width: 72px; flex-shrink: 0; }
+.sv-mday-tq::before { content: '🐟 '; }
+.sv-mday-tflags { color: #b26a00; font-weight: 700; font-variant-numeric: tabular-nums; }
+
 /* Nota al pie de un gráfico (p. ej. aviso de extrapolación manual en Población) */
 .sv-chart-note { font-size: 10.5px; color: var(--c-text-muted); margin-top: 8px; line-height: 1.4; }
 
@@ -295,14 +304,15 @@
 .sv-micro-hm-rowh .mic-pe-dot { display: inline-block; margin-right: 5px; vertical-align: middle; }
 /* ---- Pestaña Tendencias · acordeón "libros en un estante" ---- */
 .sv-mtrend-acc { display: flex; flex-direction: column; gap: 6px; }
-.sv-mtrend-item { border: 1px solid var(--c-border-soft); border-radius: var(--r-md); overflow: hidden; background: var(--c-surface); transition: box-shadow var(--t-fast); }
+/* Sin overflow:hidden para que los lomos puedan quedar "pegajosos" (sticky). */
+.sv-mtrend-item { border: 1px solid var(--c-border-soft); border-radius: var(--r-md); background: var(--c-surface); transition: box-shadow var(--t-fast); }
 .sv-mtrend-item.is-open { box-shadow: var(--sh-2); border-color: var(--c-border); }
-.sv-mtrend-spine { width: 100%; display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: none; border: none; cursor: pointer; text-align: left; font: inherit; }
+/* El lomo se ancla arriba al hacer scroll: siempre clicable sin buscarlo. */
+.sv-mtrend-spine { position: sticky; top: 0; z-index: 2; width: 100%; display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: var(--c-surface); border: none; border-radius: var(--r-md); cursor: pointer; text-align: left; font: inherit; }
 .sv-mtrend-spine:hover { background: var(--c-surface-2); }
-.sv-mtrend-item.is-open .sv-mtrend-spine { background: var(--c-surface-2); }
+.sv-mtrend-item.is-open .sv-mtrend-spine { background: var(--c-surface-2); border-radius: var(--r-md) var(--r-md) 0 0; }
 .sv-mtrend-band { width: 6px; height: 26px; border-radius: 3px; flex-shrink: 0; }
 .sv-mtrend-name { font-weight: 800; font-size: 13px; color: var(--c-text); flex-shrink: 0; min-width: 120px; }
-.sv-mtrend-spark { flex: 1; display: flex; align-items: center; overflow: hidden; opacity: .85; }
 .sv-mtrend-latest { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 13px; color: var(--c-text-soft); margin-left: auto; }
 .sv-mtrend-arr { width: 18px; text-align: center; flex-shrink: 0; }
 .sv-mtrend-up { color: #e8303e; } .sv-mtrend-dn { color: #1ec86a; }
@@ -310,7 +320,7 @@
 .sv-mtrend-stats { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
 .sv-mtrend-kpi { display: inline-flex; flex-direction: column; background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); padding: 5px 10px; font-size: 10px; font-weight: 700; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: .3px; }
 .sv-mtrend-kpi b { font-size: 16px; color: var(--c-text); text-transform: none; letter-spacing: 0; }
-.sv-mtrend-chart { height: 280px; }
+.sv-mtrend-chart { height: 200px; }
 .sv-bm-scroll { overflow: auto; border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); margin-top: 10px; }
 .sv-bm-table { border-collapse: collapse; width: 100%; font-size: 12px; }
 .sv-bm-table th, .sv-bm-table td { padding: 8px 10px; text-align: center; white-space: nowrap; }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { moduleSvPopSeries, moduleHourly, cosechaEstimate } from './moduleTrends.js';
+import { moduleSvPopSeries, moduleHourly, moduleDayTankReadings, cosechaEstimate } from './moduleTrends.js';
 
 const lv = (extra) => ({ _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '580', ...extra });
 const ct = (extra) => ({ _SheetOrigin: 'Control_Tanque M01', 'Módulo': 'M01', Corrida: '580', ...extra });
@@ -54,6 +54,29 @@ describe('moduleHourly', () => {
     const vals = moduleHourly(ctx, 'M01', '580', gOD, '05/06/2026');
     expect(vals[0]).toBe(5.5); // (6+5)/2 en la toma 2:00
     expect(vals[1]).toBeNull(); // 4:00 sin datos
+  });
+});
+
+describe('moduleDayTankReadings', () => {
+  it('promedia OD/Temp por tanque en la fecha dada y ordena por tanque (natural)', () => {
+    const ctx = {
+      larvWin: [],
+      tanqWin: [
+        ct({ Tanque: 'TQ2', OD: '6', Temperatura: '30', Fecha: '05/06/2026' }),
+        ct({ Tanque: 'TQ1', OD: '4', Temperatura: '32', Fecha: '05/06/2026' }),
+        ct({ Tanque: 'TQ1', OD: '5', Temperatura: '31', Fecha: '05/06/2026' }),
+        ct({ Tanque: 'TQ1', OD: '3', Temperatura: '33', Fecha: '06/06/2026' }), // otro día → excluido
+      ],
+    };
+    const r = moduleDayTankReadings(ctx, 'M01', '580', '05/06/2026');
+    expect(r.map((t) => t.tq)).toEqual(['TQ1', 'TQ2']);
+    expect(r[0]).toEqual({ tq: 'TQ1', od: 4.5, tmp: 31.5 }); // (4+5)/2 · (32+31)/2
+    expect(r[1]).toEqual({ tq: 'TQ2', od: 6, tmp: 30 });
+  });
+
+  it('od/tmp = null cuando el tanque no tiene esa lectura ese día', () => {
+    const ctx = { larvWin: [], tanqWin: [ct({ Tanque: 'TQ1', Fecha: '05/06/2026' })] };
+    expect(moduleDayTankReadings(ctx, 'M01', '580', '05/06/2026')).toEqual([{ tq: 'TQ1', od: null, tmp: null }]);
   });
 });
 

@@ -30,6 +30,10 @@ const AXIS_TITLE = { color: '#455a64', font: { size: 11, weight: '700' } };
 const LINE_LEGEND = { usePointStyle: true, pointStyle: 'line', boxWidth: 24, boxHeight: 0, font: { size: 10 }, color: '#37474f' };
 // Número COMPLETO sin abreviar ni separador de miles (80000, 145000).
 const fmtFull = (v) => (v === null || v === undefined || isNaN(v)) ? '—' : String(Math.round(v));
+// Tick decimal LIMPIO: Chart.js autoescala ejes de rango estrecho (p.ej. Temperatura
+// 22.90…22.98) y arrastra ruido de coma flotante (22.9000000000002). Redondeamos a un
+// máx. de 2 decimales y descartamos ceros finales (+toFixed) para preservar la linealidad.
+const fmtTick = (v) => (typeof v === 'number' && isFinite(v)) ? +v.toFixed(2) : v;
 
 // Eje X por fecha (cruda): nº de día + mes/año como subtítulo (estilo Larvicultura).
 const dateAxis = (days) => ({
@@ -248,7 +252,7 @@ export function drawDaily(canvasId, days, values, label, color, unit = '', zero 
     data: { labels: days, datasets: [{ label, data: values, borderColor: color, backgroundColor: color + '22', tension: .3, pointRadius: 2.5, fill: true, borderWidth: 2 }] },
     options: {
       responsive: true, maintainAspectRatio: false,
-      scales: { y: { beginAtZero: zero, ticks: { callback: (v) => v + unit, color: AXIS_TICK.color, font: AXIS_TICK.font } }, x: dateAxis(days) },
+      scales: { y: { beginAtZero: zero, ticks: { callback: (v) => fmtTick(v) + unit, color: AXIS_TICK.color, font: AXIS_TICK.font } }, x: dateAxis(days) },
       // Tooltip sin la palabra de la serie (el título de la tarjeta ya la indica).
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${c.parsed.y === null ? '—' : c.parsed.y.toFixed(1) + unit}` } } },
     },
