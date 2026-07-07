@@ -74,6 +74,7 @@ const FILTER_DIMS = [
 const _scope = { rows: [], records: [], colonies: [], theme: 'light' };
 const _charts = { stack: null, aa: null };
 let _calTrend = null; // datos del gráfico de Tendencias de Calidad de Agua (dibujo post-render)
+let _calScope = { samples: [] }; // muestras filtradas actuales (para alertas y export de Calidad de Agua)
 
 // Filas de Microbiología memoizadas por identidad de store.globalData.
 let _cache = { src: null, rows: [] };
@@ -206,6 +207,7 @@ function renderCalidadAgua() {
   const samples = pool.map((r) => ({ ctx: ctxOf(r), meas: calMeasured(r, ranges) }))
     .filter((s) => s.meas.length)
     .sort((a, b) => (b.ctx.fecha || 0) - (a.ctx.fecha || 0));
+  _calScope = { samples }; // para el modal de alertas y el export
 
   // KPIs de cumplimiento.
   let inC = 0, outC = 0; const outByParam = new Map();
@@ -230,11 +232,13 @@ function renderCalidadAgua() {
       ${deptos.length ? calSelect('calDepto', vState.calDepto, deptos, 'Todos los deptos.') : ''}
       ${vState.calDepto && formatos.length ? calSelect('calFormato', vState.calFormato, formatos, 'Todos los formatos') : ''}
       ${dimFilters.map(({ dim, options }) => calDimSelect(dim, vState.calDims[dim.key], options)).join('')}
+      <div class="mic-export"><button class="mic-exp" data-cal-export title="Descargar reporte de texto de las muestras filtradas">⬇ Reporte</button><button class="mic-exp" data-cal-xlsx title="Descargar Excel de las muestras filtradas">⬇ Excel</button></div>
     </div>`;
+  const alertAttrs = outC > 0 ? 'data-cal-alerts role="button" tabindex="0" title="Ver listado de mediciones fuera de rango"' : '';
   h += `<div class="mic-kpis">
       ${kpi('💧', 'Muestras', String(samples.length))}
       ${kpi('✅', 'Muestras 100% en rango', `${pctOk}%`, pctOk < 100, `${fullOk} de ${samples.length}`)}
-      ${kpi('⚠️', 'Parámetros fuera de rango', String(outC), outC > 0, evaluated ? `${(outC / evaluated * 100).toFixed(0)}% de los evaluados` : '')}
+      ${kpi('⚠️', 'Parámetros fuera de rango', String(outC), outC > 0, evaluated ? `${(outC / evaluated * 100).toFixed(0)}% de los evaluados` : '', alertAttrs)}
       ${kpi('🧪', 'Parámetro más incumplido', worst ? worst[0] : '—', !!worst, worst ? `${worst[1]} muestra(s)` : 'sin incumplimientos')}
     </div>`;
 
@@ -252,8 +256,89 @@ function renderCalidadAgua() {
   else if (ap === 'matriz') h += calMatrizHTML(samples);
   else if (ap === 'tendencias') h += calTendenciasHTML(samples, ranges);
   else h += `<div class="cal-cards">${samples.map((s) => calCardHTML(s)).join('')}</div>`;
+  h += calAlertModalHTML();
   h += `</div>`;
   return h;
+}
+
+/* ---- Calidad de Agua · modal de alertas (mediciones fuera de rango) ---- */
+function calAlertList(samples) {
+  const out = [];
+  samples.forEach((s) => s.meas.forEach((m) => { if (m.estado === 'fuera') out.push({ ctx: s.ctx, m }); }));
+  return out.sort((a, b) => (b.ctx.fecha || 0) - (a.ctx.fecha || 0));
+}
+function calAlertBodyHTML(samples) {
+  const list = calAlertList(samples);
+  if (!list.length) return '<div class="empty-state" style="padding:36px">✓ Sin parámetros fuera de rango para el filtro actual.</div>';
+  const strip = (a) => `<div class="mic-alert" style="--ac:#e8303e">
+      <div class="mic-alert-h">${esc(a.m.label)} · ${esc(calFmt(a.m.value))}${a.m.unit ? ' ' + esc(a.m.unit) : ''} <span style="font-weight:600;color:var(--c-text-soft)">(objetivo ${esc(a.m.range || '—')})</span></div>
+      <div class="mic-alert-s">${a.ctx.fecha ? esc(fmtShort(a.ctx.fecha)) : '—'} · ${esc([a.ctx.depto, a.ctx.formato].filter(Boolean).join(' · ') || '—')} · ${esc(calLocation(a.ctx))}</div>
+    </div>`;
+  return `<div class="mic-alert-count">${list.length} medición(es) fuera de rango · ordenadas por fecha</div><div class="mic-alert-list">${list.map(strip).join('')}</div>`;
+}
+function calAlertModalHTML() {
+  return `<div class="mic-modal" id="calAlertModal" data-cal-alert-overlay>
+      <div class="mic-modal-card">
+        <div class="mic-modal-head">
+          <span class="mic-modal-title">⚠️ Parámetros fuera de rango</span>
+          <button class="mic-modal-x" data-cal-alert-close aria-label="Cerrar">✕</button>
+        </div>
+        <div class="mic-modal-body" id="calAlertBody"></div>
+      </div>
+    </div>`;
+}
+function openCalAlert(root) {
+  const body = root.querySelector('#calAlertBody');
+  if (body) body.innerHTML = calAlertBodyHTML(_calScope.samples);
+  const m = root.querySelector('#calAlertModal');
+  if (m) { m.classList.add('is-open'); document.body.classList.add('modal-open'); }
+}
+function closeCalAlert(root) {
+  const m = root.querySelector('#calAlertModal');
+  if (m) m.classList.remove('is-open');
+  document.body.classList.remove('modal-open');
+}
+
+/* ---- Calidad de Agua · export (Reporte TXT + Excel de las muestras filtradas) ---- */
+function calExportCols(samples) {
+  const present = new Set();
+  samples.forEach((s) => s.meas.forEach((m) => present.add(m.key)));
+  return CAL_PARAMS.filter((p) => present.has(p.key));
+}
+function calStamp() { const d = new Date(); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`; }
+function calExportXlsx() {
+  const XLSX = window.XLSX;
+  if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó.', 'err'); return; }
+  const samples = _calScope.samples || [];
+  if (!samples.length) { toast('Sin muestras para exportar.', 'warn'); return; }
+  const cols = calExportCols(samples);
+  const header = ['Fecha', 'Departamento', 'Formato', 'Ubicación', ...cols.map((c) => c.unit ? `${c.label} (${c.unit})` : c.label)];
+  const aoa = [header, ...samples.map((s) => {
+    const byKey = Object.fromEntries(s.meas.map((m) => [m.key, m]));
+    return [s.ctx.fecha ? fmtShort(s.ctx.fecha) : '', s.ctx.depto || '', s.ctx.formato || '', calLocation(s.ctx), ...cols.map((c) => (byKey[c.key] ? byKey[c.key].value : ''))];
+  })];
+  const ws = XLSX.utils.aoa_to_sheet(aoa); const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Calidad de Agua');
+  XLSX.writeFile(wb, `calidad_agua_${calStamp()}.xlsx`);
+}
+function calExportTxt() {
+  const samples = _calScope.samples || [];
+  if (!samples.length) { toast('Sin muestras para exportar.', 'warn'); return; }
+  const lines = ['='.repeat(52), 'REPORTE DE CALIDAD DE AGUA (fisicoquímica)', `Generado: ${new Date().toLocaleString('es-EC')}`, `Muestras: ${samples.length}`, '='.repeat(52), ''];
+  samples.forEach((s) => {
+    lines.push(`• ${s.ctx.fecha ? fmtShort(s.ctx.fecha) : '—'} · ${[s.ctx.depto, s.ctx.formato].filter(Boolean).join(' · ') || '—'} · ${calLocation(s.ctx)}`);
+    s.meas.forEach((m) => {
+      const flag = m.estado === 'fuera' ? '  ⚠ FUERA' : m.estado === 'dentro' ? '  ✓' : '';
+      lines.push(`    - ${m.label}: ${calFmt(m.value)}${m.unit ? ' ' + m.unit : ''}${m.range ? ` (objetivo ${m.range})` : ''}${flag}`);
+    });
+    lines.push('');
+  });
+  lines.push('='.repeat(52));
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `reporte_calidad_agua_${calStamp()}.txt`; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /** Apartado Matriz: filas = muestras, columnas = parámetros medidos (orden del
@@ -1255,6 +1340,11 @@ function bind(root) {
     // Tendencias de Calidad de Agua: seleccionar el parámetro a graficar.
     const cts = e.target.closest('[data-cal-trendsel]');
     if (cts) { if (vState.calTrendKey !== cts.dataset.calTrendsel) { vState.calTrendKey = cts.dataset.calTrendsel; microbiologiaView(root); } return; }
+    // Calidad de Agua: modal de alertas (mediciones fuera de rango) + export.
+    if (e.target.closest('[data-cal-alerts]')) { openCalAlert(root); return; }
+    if (e.target.closest('[data-cal-alert-close]') || e.target.matches('[data-cal-alert-overlay]')) { closeCalAlert(root); return; }
+    if (e.target.closest('[data-cal-export]')) { calExportTxt(); return; }
+    if (e.target.closest('[data-cal-xlsx]')) { calExportXlsx(); return; }
 
     const pet = e.target.closest('[data-mic-petab]');
     if (pet) { if (vState.petriTab !== pet.dataset.micPetab) { vState.petriTab = pet.dataset.micPetab; microbiologiaView(root); } return; }
@@ -1315,9 +1405,10 @@ function bind(root) {
   // Teclado: Enter/Espacio sobre el KPI abre el modal de alertas; sobre una fila del
   // heatmap de Tendencias la selecciona. Escape cierra modales.
   root.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { closeAlertModal(root); closeXlsxModal(root); return; }
+    if (e.key === 'Escape') { closeAlertModal(root); closeXlsxModal(root); closeCalAlert(root); return; }
     if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
     if (e.target.closest('[data-mic-alerts]')) { e.preventDefault(); openAlertModal(root); return; }
+    if (e.target.closest('[data-cal-alerts]')) { e.preventDefault(); openCalAlert(root); return; }
     const tsel = e.target.closest('[data-mic-trendsel]');
     if (tsel) { e.preventDefault(); if (vState.petriTrendKey !== tsel.dataset.micTrendsel) { vState.petriTrendKey = tsel.dataset.micTrendsel; microbiologiaView(root); } }
   });

@@ -158,6 +158,16 @@ describe('Microbiología · harness de navegación integral', () => {
     // pH 8.0 dentro de 7.5–8.5 · Nitrito 0.5 fuera de ≤0.2 → ambos estados presentes.
     expect(root.querySelector('.cal-chip--dentro')).toBeTruthy();
     expect(root.querySelector('.cal-chip--fuera')).toBeTruthy();
+    // Botones de export presentes; el KPI de alertas abre y cierra su modal.
+    expect(root.querySelector('[data-cal-export]')).toBeTruthy();
+    expect(root.querySelector('[data-cal-xlsx]')).toBeTruthy();
+    const alertKpi = root.querySelector('[data-cal-alerts]');
+    expect(alertKpi).toBeTruthy(); // hay Nitrito fuera de rango
+    click(alertKpi);
+    expect(root.querySelector('#calAlertModal').classList.contains('is-open')).toBe(true);
+    expect(root.querySelector('#calAlertBody').textContent.length).toBeGreaterThan(0);
+    click(root.querySelector('[data-cal-alert-close]'));
+    expect(root.querySelector('#calAlertModal').classList.contains('is-open')).toBe(false);
     // Apartado Matriz: tabla muestra × parámetro con celdas semaforizadas.
     click(root.querySelector('[data-cal-ap="matriz"]'));
     expect(root.querySelector('.cal-mx-table')).toBeTruthy();
