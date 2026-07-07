@@ -10,7 +10,7 @@
 import { store } from '../../core/store.js';
 import { destroyAllCharts, makeChart } from '../../core/charts.js';
 import { esc } from '../../core/format.js';
-import { fmtShort } from '../../core/dates.js';
+import { fmtShort, dayNum, rangeLabel } from '../../core/dates.js';
 import { natCmp } from '../../core/util.js';
 import { monthIndexOfCorrida, monthLabelAt } from '../../core/prodCalendar.js';
 import { toast } from '../../ui/toast.js';
@@ -35,7 +35,8 @@ const vState = {
   dims: {}, // filtros de contexto dinámicos (key → valor); se adaptan al formato/datos
   apartado: 'conglomerado', petriTab: 'placa', petriDay: null,
   petriTheme: 'light', // tema SOLO de la placa de agar (claro por defecto; el botón ☀️/🌙 alterna)
-  petriTrendKey: null, // patógeno seleccionado en la pestaña Tendencias (heatmap + cinética)
+  petriTrendKey: null, // patógeno seleccionado en la pestaña Tendencias (ranking + cinética)
+  petriTrendSort: 'mu', // orden del ranking: 'mu' (crecimiento) | 'ufc' | 'alertas'
 };
 
 // Dimensiones de filtro de contexto. Cada una se muestra (en cascada) SOLO si tiene
@@ -432,14 +433,15 @@ function petriTrendMatrix(rows) {
     const prvIdx = presentIdx.length > 1 ? presentIdx[presentIdx.length - 2] : -1;
     const latest = latIdx >= 0 ? p.ufc[latIdx] : 0;
     const prev = prvIdx >= 0 ? p.ufc[prvIdx] : 0;
-    return { ...p, latest, delta: latest - prev, max: ufcPts.length ? Math.max(...ufcPts.map((q) => q.y)) : 0, nUfc: ufcPts.length, kin: kinetics(ufcPts) };
+    const alertDays = p.rank.filter((r) => r >= NIVEL_RANK['Moderado']).length; // días Moderado/Elevado
+    return { ...p, latest, delta: latest - prev, max: ufcPts.length ? Math.max(...ufcPts.map((q) => q.y)) : 0, nUfc: ufcPts.length, alertDays, kin: kinetics(ufcPts) };
   }).sort((a, b) => b.latest - a.latest).slice(0, 12);
   return { days, gap, pathogens };
 }
 
-/** Pestaña Tendencias (Placa Petri): HEATMAP Patógeno × Día (color = nivel, celdas
- *  grandes táctiles) como estructura principal + DETALLE del patógeno elegido con su
- *  cinética de crecimiento (μ / t. duplicación / R²) y el gráfico de tendencia. */
+/** Pestaña Tendencias (Placa Petri): RANKING de patógenos en barras ordenables
+ *  (μ crecimiento / Σ UFC / alertas) como estructura principal + DETALLE del patógeno
+ *  elegido con su cinética (μ / t. duplicación / R²) y el gráfico de tendencia. */
 function petriTendenciasHTML(rows) {
   const t = petriTrendMatrix(rows);
   if (t.days.length < 2) return `<div class="empty-state" style="padding:36px">Se necesitan al menos 2 días con registro para ver tendencias.<br><span class="muted">Filtro actual: ${t.days.length} día(s).</span></div>`;
@@ -449,22 +451,30 @@ function petriTendenciasHTML(rows) {
   const active = t.pathogens.find((p) => p.key === vState.petriTrendKey) || t.pathogens[0];
   const arrow = (d) => d > 0 ? '<span style="color:#E53935">↑</span>' : d < 0 ? '<span style="color:#1ec86a">↓</span>' : '<span class="muted">→</span>';
 
-  // Heatmap: filas = patógenos (clic/Enter selecciona), columnas = días. Color = peor nivel.
-  const head = `<tr><th class="mic-th-corner">Patógeno \\ Día</th>${t.days.map((d) => `<th class="mic-th-dayh">${esc(d.label)}</th>`).join('')}</tr>`;
-  const body = t.pathogens.map((p) => {
+  // Ranking: filas = patógenos (clic/Enter selecciona). Ordena por la métrica elegida;
+  // barra ∝ métrica (normalizada al máximo). Distinto del heatmap de la Matriz.
+  const sort = ['mu', 'ufc', 'alertas'].includes(vState.petriTrendSort) ? vState.petriTrendSort : 'mu';
+  const metric = (p) => sort === 'ufc' ? p.latest : sort === 'alertas' ? p.alertDays : (p.kin.mu == null ? -Infinity : p.kin.mu);
+  const ranked = [...t.pathogens].sort((a, b) => metric(b) - metric(a));
+  const maxM = Math.max(1, ...ranked.map((p) => { const m = metric(p); return m === -Infinity ? 0 : Math.max(0, m); }));
+  const valOf = (p) => sort === 'ufc' ? fmtNum(p.latest)
+    : sort === 'alertas' ? `${p.alertDays} alerta${p.alertDays !== 1 ? 's' : ''}`
+    : (p.kin.mu == null ? '—' : (p.kin.mu >= 0 ? '+' : '') + p.kin.mu.toFixed(2) + '/d');
+  const sortBtn = (key, label) => `<button class="mic-tr-sortb${sort === key ? ' is-on' : ''}" data-mic-trendsort="${key}">${label}</button>`;
+  const bars = ranked.map((p) => {
     const on = p.key === vState.petriTrendKey;
-    const cells = p.ufc.map((v, i) => {
-      if (!p.has[i]) return `<td class="mic-th-empty" title="${esc(p.label)} · ${esc(t.days[i].label)}: sin dato">·</td>`;
-      const col = p.rank[i] >= 0 ? NIVEL_COLOR[p.nivel[i]] : '#B0BEC5';
-      return `<td class="mic-th-cell" style="background:${col}" title="${esc(p.label)} · ${esc(t.days[i].label)} — ${esc(p.nivel[i] || 'sin nivel')} · ${fmtNum(v)} UFC"></td>`;
-    }).join('');
-    return `<tr class="mic-th-row${on ? ' is-sel' : ''}" data-mic-trendsel="${esc(p.key)}" role="button" tabindex="0" aria-pressed="${on}">
-        <th class="mic-th-rowh"><span class="mic-pe-dot" style="background:${p.color}"></span><span class="mic-th-rowl">${esc(p.label)}</span><span class="mic-th-rowv">${fmtNum(p.latest)} ${arrow(p.delta)}</span></th>${cells}</tr>`;
+    const m = metric(p);
+    const w = (m === -Infinity || m <= 0) ? 3 : Math.max(4, (m / maxM) * 100);
+    return `<div class="mic-tr-bar-row${on ? ' is-sel' : ''}" data-mic-trendsel="${esc(p.key)}" role="button" tabindex="0" aria-pressed="${on}" title="${esc(p.label)}">
+        <span class="mic-tr-bar-name"><span class="mic-pe-dot" style="background:${p.color}"></span>${esc(p.label)}</span>
+        <span class="mic-tr-bar-track"><span class="mic-tr-bar-fill" style="width:${w.toFixed(1)}%;background:${p.color}"></span></span>
+        <span class="mic-tr-bar-val">${valOf(p)} ${arrow(p.delta)}</span>
+      </div>`;
   }).join('');
-  const heat = `<div class="card mic-th-card">
-      <div class="mic-chart-title">🔬 Mapa de calor Patógeno × Día <span class="muted">· Σ UFC por día (${esc(fmtShort(t.days[0].d))} → ${esc(fmtShort(t.days[t.days.length - 1].d))}) · color = nivel · elige una fila para su cinética</span></div>
-      <div class="mic-th-wrap"><table class="mic-th-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>
-      ${nivelLegend()}
+  const rankHtml = `<div class="card mic-tr-rank">
+      <div class="mic-chart-title">📊 Ranking de crecimiento por patógeno <span class="muted">· Σ UFC por día (${esc(fmtShort(t.days[0].d))} → ${esc(fmtShort(t.days[t.days.length - 1].d))}) · elige uno para su cinética</span></div>
+      <div class="mic-tr-sort"><span class="mic-tr-sort-l">Ordenar por:</span>${sortBtn('mu', 'μ crecim.')}${sortBtn('ufc', 'Σ UFC')}${sortBtn('alertas', 'alertas')}</div>
+      <div class="mic-tr-list">${bars}</div>
     </div>`;
 
   // Detalle: cinética de crecimiento + gráfico de tendencia del patógeno activo.
@@ -484,7 +494,7 @@ function petriTendenciasHTML(rows) {
       <div class="mic-th-chart"><canvas id="micTrendChart"></canvas></div>
       <div class="mic-th-note muted">μ = pendiente de ln(ΣUFC) vs día · curva punteada = ajuste exponencial (${active.nUfc} día(s) con UFC).</div>
     </div>`;
-  return heat + detail;
+  return rankHtml + detail;
 }
 
 /** Dibuja el gráfico de tendencia del patógeno activo (línea Σ UFC + curva de ajuste
@@ -492,7 +502,8 @@ function petriTendenciasHTML(rows) {
 function drawPetriTrendChart() {
   const t = _scope.trend; if (!t) return;
   const p = t.pathogens.find((x) => x.key === vState.petriTrendKey); if (!p) return;
-  const labels = t.days.map((d) => d.label);
+  const dates = t.days.map((d) => d.d);
+  const labels = t.days.map((d) => d.label); // completo → título del tooltip
   const data = p.ufc.map((v, i) => (p.has[i] ? v : null));
   const datasets = [{ label: 'Σ UFC', data, borderColor: p.color, backgroundColor: p.color + '22', tension: 0.3, spanGaps: true, pointRadius: 3, pointHoverRadius: 5, borderWidth: 2, fill: true }];
   if (p.kin.mu != null && p.kin.a != null) {
@@ -506,7 +517,8 @@ function drawPetriTrendChart() {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       scales: {
         y: { beginAtZero: true, ticks: { callback: (v) => fmtNum(v) }, title: { display: true, text: 'Σ UFC / día' } },
-        x: { grid: { display: false } },
+        // Eje X compacto: número de día + mes/año UNA vez en el título (ej. "enero 2026").
+        x: { grid: { display: false }, ticks: { callback: (v, i) => dayNum(dates[i]), autoSkip: true, maxTicksLimit: 14, maxRotation: 0, minRotation: 0 }, title: { display: !!rangeLabel(dates), text: rangeLabel(dates) } },
       },
       plugins: {
         legend: { labels: { usePointStyle: true, boxWidth: 14, font: { size: 10 } } },
@@ -963,9 +975,12 @@ function bind(root) {
     const pet = e.target.closest('[data-mic-petab]');
     if (pet) { if (vState.petriTab !== pet.dataset.micPetab) { vState.petriTab = pet.dataset.micPetab; microbiologiaView(root); } return; }
 
-    // Heatmap de Tendencias: seleccionar una fila (patógeno) para ver su cinética.
+    // Ranking de Tendencias: seleccionar una fila (patógeno) para ver su cinética.
     const tsel = e.target.closest('[data-mic-trendsel]');
     if (tsel) { if (vState.petriTrendKey !== tsel.dataset.micTrendsel) { vState.petriTrendKey = tsel.dataset.micTrendsel; microbiologiaView(root); } return; }
+    // Ranking de Tendencias: cambiar el criterio de orden (μ / Σ UFC / alertas).
+    const tsort = e.target.closest('[data-mic-trendsort]');
+    if (tsort) { if (vState.petriTrendSort !== tsort.dataset.micTrendsort) { vState.petriTrendSort = tsort.dataset.micTrendsort; microbiologiaView(root); } return; }
 
     const exp = e.target.closest('[data-mic-export]');
     if (exp) { doExport(); return; }

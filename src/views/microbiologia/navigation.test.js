@@ -114,16 +114,19 @@ describe('Microbiología · harness de navegación integral', () => {
     click(root.querySelector('[data-mic-petab="matriz"]'));
     expect(root.querySelector('.mic-mx-table')).toBeTruthy();
     click(root.querySelector('[data-mic-petab="tendencias"]'));
-    // Heatmap Patógeno × Día + detalle con cinética; seleccionar una fila la activa.
-    expect(root.querySelector('.mic-th-table')).toBeTruthy();
+    // Ranking de crecimiento (barras) + detalle con cinética; seleccionar una fila la activa.
+    expect(root.querySelector('.mic-tr-rank')).toBeTruthy();
     expect(root.querySelector('.mic-th-detail #micTrendChart')).toBeTruthy();
-    const trows = root.querySelectorAll('.mic-th-row[data-mic-trendsel]');
+    const trows = root.querySelectorAll('.mic-tr-bar-row[data-mic-trendsel]');
     expect(trows.length).toBeGreaterThanOrEqual(2);
-    expect(root.querySelectorAll('.mic-th-row.is-sel').length).toBe(1);
-    const other = root.querySelector('.mic-th-row:not(.is-sel)[data-mic-trendsel]');
+    expect(root.querySelectorAll('.mic-tr-bar-row.is-sel').length).toBe(1);
+    const other = root.querySelector('.mic-tr-bar-row:not(.is-sel)[data-mic-trendsel]');
     const okey = other.dataset.micTrendsel;
     click(other);
-    expect(root.querySelector('.mic-th-row.is-sel').dataset.micTrendsel).toBe(okey);
+    expect(root.querySelector('.mic-tr-bar-row.is-sel').dataset.micTrendsel).toBe(okey);
+    // Cambiar el orden del ranking (μ → Σ UFC) mantiene el ranking sin error.
+    click(root.querySelector('[data-mic-trendsort="ufc"]'));
+    expect(root.querySelector('.mic-tr-sortb.is-on').dataset.micTrendsort).toBe('ufc');
     click(root.querySelector('[data-mic-petab="placa"]'));
     // navegación de día
     const prev = root.querySelector('[data-mic-day="-1"]');
