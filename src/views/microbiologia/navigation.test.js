@@ -49,6 +49,18 @@ function synthData() {
     Formato: 'Maduración · Principal', 'Tipo de muestra': 'Animal',
     'V.Totales UFC': '2000', 'Pseudomonas UFC': '400',
   }));
+  // Calidad de Agua (fisicoquímica, hoja propia) → sub-vista Calidad de Agua.
+  rows.push({
+    _SheetOrigin: 'Calidad de Agua', 'Fecha muestreo': '05/06/2026', Corrida: '573',
+    Departamento: 'Larvicultura', Formato: 'Larvicultura', 'Tipo de muestra': 'Agua',
+    'Módulo': '1', 'Estadío': 'Z2', 'TQ/N°': '3',
+    pH: '8.0', 'S‰': '32', Nitrito: '0.5', Alcalinidad: '130', // pH dentro · Nitrito fuera
+  });
+  rows.push({
+    _SheetOrigin: 'Calidad de Agua', 'Fecha muestreo': '06/06/2026', Corrida: '573',
+    Departamento: 'Maduración', Formato: 'Maduración', Sala: 'Sala A', 'TQ/N°': '2',
+    pH: '7.0', Calcio: '400', Magnesio: '1500', // pH fuera (<7.5)
+  });
   return rows;
 }
 
@@ -133,6 +145,22 @@ describe('Microbiología · harness de navegación integral', () => {
     if (prev && !prev.disabled) click(prev);
     // tema de la placa
     click(root.querySelector('[data-mic-petheme]'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('sub-vista Calidad de Agua: KPIs + tarjetas de perfil con chips semaforizados', () => {
+    mount();
+    click(root.querySelector('[data-mic-sub="calidad"]'));
+    expect(root.querySelector('.mic-calagua')).toBeTruthy();
+    expect(root.querySelector('.mic-kpis')).toBeTruthy();
+    const cards = root.querySelectorAll('.cal-card');
+    expect(cards.length).toBeGreaterThanOrEqual(1);
+    // pH 8.0 dentro de 7.5–8.5 · Nitrito 0.5 fuera de ≤0.2 → ambos estados presentes.
+    expect(root.querySelector('.cal-chip--dentro')).toBeTruthy();
+    expect(root.querySelector('.cal-chip--fuera')).toBeTruthy();
+    // Navegación de mes propia de Calidad de Agua no rompe.
+    const cnav = root.querySelector('[data-cal-month]');
+    if (cnav && !cnav.disabled) click(cnav);
     expect(errSpy).not.toHaveBeenCalled();
   });
 

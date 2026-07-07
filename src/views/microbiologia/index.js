@@ -20,6 +20,7 @@ import {
   DEPARTAMENTOS, DEPTO_FORMATS, deptoOfFormato, PATHOGEN_AGAR,
 } from './data.js';
 import { petriSVG } from './petri.js';
+import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges } from './calagua.data.js';
 
 // ── sub-vistas del módulo ──
 const SUBS = [
@@ -37,6 +38,7 @@ const vState = {
   petriTheme: 'light', // tema SOLO de la placa de agar (claro por defecto; el botón ☀️/🌙 alterna)
   petriTrendKey: null, // patógeno seleccionado en la pestaña Tendencias (ranking + cinética)
   petriTrendSort: 'mu', // orden del ranking: 'mu' (crecimiento) | 'ufc' | 'alertas'
+  calMonth: null, // mes activo de la sub-vista Calidad de Agua (independiente de Bacteriología)
 };
 
 // Dimensiones de filtro de contexto. Cada una se muestra (en cascada) SOLO si tiene
@@ -93,6 +95,7 @@ export function microbiologiaView(root) {
   let h = headHTML() + subnavHTML();
   // Bacteriología va dentro de un panel con estética SCADA/ERP (.mic-scada).
   if (vState.sub === 'bacteriologia') h += `<div class="mic-scada">${renderBacteriologia()}</div>` + alertModalHTML() + xlsxModalHTML();
+  else if (vState.sub === 'calidad') h += renderCalidadAgua();
   else h += placeholderHTML(SUBS.find((s) => s.key === vState.sub));
   h += `<div class="mic-tt" id="micTT"></div>`; // tooltip de colonias
 
@@ -124,6 +127,96 @@ function placeholderHTML(sub) {
       <div style="font-size:40px">${sub.icon}</div>
       <h2 style="margin:10px 0 6px;color:var(--c-brand)">${esc(sub.label)}</h2>
       <p class="muted">🚧 ${esc(extra)}</p>
+    </div>`;
+}
+
+/* ============================================================
+   CALIDAD DE AGUA (fisicoquímica · rango dentro/fuera) — Tanda A+B
+   Barra de mes + KPIs de cumplimiento + tarjetas "perfil iónico" por muestra.
+   Filtros en cascada / matriz / tendencias / ensayo llegan en tandas siguientes.
+   ============================================================ */
+/** Número limpio: entero tal cual; decimal a ≤2 sin ceros finales. */
+function calFmt(v) { return v == null || isNaN(v) ? '—' : String(Number.isInteger(v) ? v : +v.toFixed(2)); }
+
+function renderCalidadAgua() {
+  const all = calAguaRows();
+  if (!all.length) return `<div class="mic-calagua">${emptyBox('No se encontraron registros en la hoja "Calidad de Agua" del Google Sheet.')}</div>`;
+  const ranges = loadCalRanges();
+
+  // Barra de mes (corrida → mes; las filas sin corrida pasan en cualquier mes).
+  const corridas = [...new Set(all.map((r) => calCtx(r).corrida).filter(Boolean))];
+  const months = [...new Set(corridas.map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
+  if (vState.calMonth == null || (months.length && !months.includes(vState.calMonth))) vState.calMonth = months.length ? months[months.length - 1] : 0;
+  const inMonth = (r) => { const c = calCtx(r).corrida; return !c || !months.length || monthIndexOfCorrida(+c) === vState.calMonth; };
+  const rows = all.filter(inMonth);
+
+  // Muestras con sus parámetros medidos + estado (más reciente primero).
+  const samples = rows.map((r) => ({ ctx: calCtx(r), meas: calMeasured(r, ranges) }))
+    .filter((s) => s.meas.length)
+    .sort((a, b) => (b.ctx.fecha || 0) - (a.ctx.fecha || 0));
+
+  // KPIs de cumplimiento.
+  let inC = 0, outC = 0; const outByParam = new Map();
+  samples.forEach((s) => s.meas.forEach((m) => {
+    if (m.estado === 'dentro') inC++;
+    else if (m.estado === 'fuera') { outC++; outByParam.set(m.label, (outByParam.get(m.label) || 0) + 1); }
+  }));
+  const fullOk = samples.filter((s) => s.meas.every((m) => m.estado !== 'fuera')).length;
+  const pctOk = samples.length ? Math.round((fullOk / samples.length) * 100) : 0;
+  const worst = [...outByParam.entries()].sort((a, b) => b[1] - a[1])[0];
+  const evaluated = inC + outC; // parámetros con rango (no "sin-rango")
+
+  const monthBar = months.length ? `<div class="mic-monthbar">
+      <button class="mic-month-nav" data-cal-month="-1" ${months.indexOf(vState.calMonth) <= 0 ? 'disabled' : ''} aria-label="Mes anterior">◀</button>
+      <span class="mic-month-lbl">📅 ${esc(monthLabelAt(vState.calMonth))}</span>
+      <button class="mic-month-nav" data-cal-month="1" ${months.indexOf(vState.calMonth) >= months.length - 1 ? 'disabled' : ''} aria-label="Mes siguiente">▶</button>
+    </div>` : '';
+
+  let h = `<div class="mic-calagua">`;
+  h += `<div class="mic-filters">${monthBar}</div>`;
+  h += `<div class="mic-kpis">
+      ${kpi('💧', 'Muestras', String(samples.length))}
+      ${kpi('✅', 'Muestras 100% en rango', `${pctOk}%`, pctOk < 100, `${fullOk} de ${samples.length}`)}
+      ${kpi('⚠️', 'Parámetros fuera de rango', String(outC), outC > 0, evaluated ? `${(outC / evaluated * 100).toFixed(0)}% de los evaluados` : '')}
+      ${kpi('🧪', 'Parámetro más incumplido', worst ? worst[0] : '—', !!worst, worst ? `${worst[1]} muestra(s)` : 'sin incumplimientos')}
+    </div>`;
+
+  // Leyenda de estados.
+  h += `<div class="cal-legend">
+      <span class="cal-legend-item"><span class="cal-dot cal-dot--dentro"></span>Dentro de rango</span>
+      <span class="cal-legend-item"><span class="cal-dot cal-dot--fuera"></span>Fuera de rango</span>
+      <span class="cal-legend-item"><span class="cal-dot cal-dot--sin-rango"></span>Sin rango definido</span>
+    </div>`;
+
+  // Tarjetas "perfil iónico": una por muestra, con sus parámetros como chips semaforizados.
+  h += `<div class="cal-cards">${samples.map((s) => calCardHTML(s)).join('')}</div>`;
+  h += `</div>`;
+  return h;
+}
+
+/** Tarjeta de una muestra: cabecera (fecha·depto·ubicación·cumplimiento) + chips por parámetro. */
+function calCardHTML(s) {
+  const { ctx, meas } = s;
+  const inR = meas.filter((m) => m.estado === 'dentro').length;
+  const withRange = meas.filter((m) => m.estado !== 'sin-rango').length;
+  const anyOut = meas.some((m) => m.estado === 'fuera');
+  const badge = withRange
+    ? `<span class="cal-badge cal-badge--${anyOut ? 'warn' : 'ok'}">${inR}/${withRange} en rango</span>`
+    : '<span class="cal-badge cal-badge--muted">solo registro</span>';
+  const chips = meas.map((m) => `<div class="cal-chip cal-chip--${m.estado}" title="${esc(m.label)}${m.range ? ' · objetivo ' + esc(m.range) : ' · sin rango'}">
+      <span class="cal-chip-l">${esc(m.label)}</span>
+      <span class="cal-chip-v">${esc(calFmt(m.value))}${m.unit ? ' ' + esc(m.unit) : ''}</span>
+      ${m.range ? `<span class="cal-chip-r">${esc(m.range)}</span>` : ''}
+    </div>`).join('');
+  const dateStr = ctx.fecha ? fmtShort(ctx.fecha) : '—';
+  const deptoFmt = [ctx.depto, ctx.formato].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' · ');
+  return `<div class="cal-card${anyOut ? ' is-out' : ''}">
+      <div class="cal-card-h">
+        <span class="cal-card-date">📅 ${esc(dateStr)}</span>
+        <span class="cal-card-loc">${esc(deptoFmt || '—')}${deptoFmt ? ' · ' : ''}${esc(calLocation(ctx))}</span>
+        ${badge}
+      </div>
+      <div class="cal-chips">${chips}</div>
     </div>`;
 }
 
@@ -1003,6 +1096,15 @@ function bind(root) {
       const days = daysOf(_scope.rows);
       const i = days.findIndex((d) => d.key === vState.petriDay) + Number(dnav.dataset.micDay);
       if (i >= 0 && i < days.length) { vState.petriDay = days[i].key; microbiologiaView(root); }
+      return;
+    }
+
+    // Barra de mes de Calidad de Agua (independiente de Bacteriología).
+    const cnav = e.target.closest('[data-cal-month]');
+    if (cnav && !cnav.disabled) {
+      const cms = [...new Set(calAguaRows().map((r) => calCtx(r).corrida).filter(Boolean).map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
+      const ci = cms.indexOf(vState.calMonth) + Number(cnav.dataset.calMonth);
+      if (ci >= 0 && ci < cms.length) { vState.calMonth = cms[ci]; microbiologiaView(root); }
       return;
     }
 
