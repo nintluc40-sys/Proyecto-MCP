@@ -192,6 +192,16 @@
 .cal-mx--fuera { background: color-mix(in srgb, var(--c-grave) 18%, transparent); color: var(--c-grave); font-weight: 800; }
 .cal-mx--sin-rango { color: var(--c-text-soft); }
 .cal-mx-empty { color: var(--c-text-muted); background: var(--c-surface-2); }
+/* Tendencias por parámetro (selector de píldoras + estadísticos + gráfico con banda) */
+.cal-tr-card { display: flex; flex-direction: column; }
+.cal-tr-pills { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 10px; }
+.cal-tr-pill { border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); border-radius: var(--r-sm); padding: 4px 10px; font-size: 11.5px; font-weight: 700; cursor: pointer; }
+.cal-tr-pill:hover { border-color: var(--c-brand); color: var(--c-brand); }
+.cal-tr-pill.is-on { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
+.cal-tr-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.cal-tr-stat { display: inline-flex; flex-direction: column; background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); padding: 5px 10px; font-size: 9.5px; font-weight: 700; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: .3px; }
+.cal-tr-stat b { font-size: 15px; color: var(--c-text); text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.cal-tr-chart { height: 260px; }
 
 /* alertas */
 .mic-alert-list { display: flex; flex-direction: column; gap: 6px; }

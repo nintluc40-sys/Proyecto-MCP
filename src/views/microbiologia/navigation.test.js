@@ -163,6 +163,15 @@ describe('Microbiología · harness de navegación integral', () => {
     expect(root.querySelector('.cal-mx-table')).toBeTruthy();
     expect(root.querySelector('.cal-mx--dentro')).toBeTruthy();
     expect(root.querySelector('.cal-mx--fuera')).toBeTruthy();
+    // Apartado Tendencias: selector de parámetro (píldoras) + gráfico con banda de rango.
+    click(root.querySelector('[data-cal-ap="tendencias"]'));
+    expect(root.querySelector('.cal-tr-card')).toBeTruthy();
+    expect(root.querySelector('#calTrendChart')).toBeTruthy();
+    const psel = root.querySelectorAll('.cal-tr-pill[data-cal-trendsel]');
+    expect(psel.length).toBeGreaterThanOrEqual(1);
+    const otherP = [...psel].find((p) => !p.classList.contains('is-on'));
+    if (otherP) { const pk = otherP.dataset.calTrendsel; click(otherP); expect(root.querySelector('.cal-tr-pill.is-on').dataset.calTrendsel).toBe(pk); }
+    click(root.querySelector('[data-cal-ap="matriz"]'));
     // Cascada: filtrar por departamento (2 deptos: Larvicultura/Maduración) no rompe.
     const dsel = root.querySelector('[data-calfilter="calDepto"]');
     expect(dsel).toBeTruthy();

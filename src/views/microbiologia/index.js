@@ -20,7 +20,7 @@ import {
   DEPARTAMENTOS, DEPTO_FORMATS, deptoOfFormato, PATHOGEN_AGAR,
 } from './data.js';
 import { petriSVG } from './petri.js';
-import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges, CAL_PARAMS } from './calagua.data.js';
+import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges, calRangeText, CAL_PARAMS } from './calagua.data.js';
 
 // ── sub-vistas del módulo ──
 const SUBS = [
@@ -40,7 +40,8 @@ const vState = {
   petriTrendSort: 'mu', // orden del ranking: 'mu' (crecimiento) | 'ufc' | 'alertas'
   calMonth: null, // mes activo de la sub-vista Calidad de Agua (independiente de Bacteriología)
   calDepto: null, calFormato: null, calDims: {}, // filtros en cascada de Calidad de Agua
-  calApartado: 'perfil', // 'perfil' (tarjetas) | 'matriz' (muestra × parámetro)
+  calApartado: 'perfil', // 'perfil' (tarjetas) | 'matriz' (muestra × parámetro) | 'tendencias'
+  calTrendKey: null, // parámetro activo en el apartado Tendencias de Calidad de Agua
 };
 
 // Dimensiones de filtro de contexto. Cada una se muestra (en cascada) SOLO si tiene
@@ -72,6 +73,7 @@ const FILTER_DIMS = [
 // Datos del render actual (para tooltips de la placa y export).
 const _scope = { rows: [], records: [], colonies: [], theme: 'light' };
 const _charts = { stack: null, aa: null };
+let _calTrend = null; // datos del gráfico de Tendencias de Calidad de Agua (dibujo post-render)
 
 // Filas de Microbiología memoizadas por identidad de store.globalData.
 let _cache = { src: null, rows: [] };
@@ -106,6 +108,8 @@ export function microbiologiaView(root) {
   if (vState.sub === 'bacteriologia') {
     if (vState.apartado === 'conglomerado') drawConglomeradoCharts();
     else if (vState.apartado === 'petri' && vState.petriTab === 'tendencias') drawPetriTrendChart();
+  } else if (vState.sub === 'calidad' && vState.calApartado === 'tendencias') {
+    drawCalTrendChart();
   }
   bind(root);
 }
@@ -234,16 +238,19 @@ function renderCalidadAgua() {
       ${kpi('🧪', 'Parámetro más incumplido', worst ? worst[0] : '—', !!worst, worst ? `${worst[1]} muestra(s)` : 'sin incumplimientos')}
     </div>`;
 
-  // Apartados: Perfil (tarjetas) · Matriz (muestra × parámetro).
-  const ap = ['perfil', 'matriz'].includes(vState.calApartado) ? vState.calApartado : 'perfil';
+  // Apartados: Perfil (tarjetas) · Matriz (muestra × parámetro) · Tendencias.
+  const ap = ['perfil', 'matriz', 'tendencias'].includes(vState.calApartado) ? vState.calApartado : 'perfil';
+  _calTrend = null; // se rellena solo si se dibuja Tendencias
   h += `<div class="mic-apartados">
       <button class="mic-ap ${ap === 'perfil' ? 'is-active' : ''}" data-cal-ap="perfil">🧪 Perfil</button>
       <button class="mic-ap ${ap === 'matriz' ? 'is-active' : ''}" data-cal-ap="matriz">🗂️ Matriz</button>
+      <button class="mic-ap ${ap === 'tendencias' ? 'is-active' : ''}" data-cal-ap="tendencias">📈 Tendencias</button>
     </div>`;
-  h += calLegendHTML();
+  if (ap !== 'tendencias') h += calLegendHTML();
 
   if (!samples.length) h += emptyBox('Sin muestras con parámetros medidos para el filtro actual.');
   else if (ap === 'matriz') h += calMatrizHTML(samples);
+  else if (ap === 'tendencias') h += calTendenciasHTML(samples, ranges);
   else h += `<div class="cal-cards">${samples.map((s) => calCardHTML(s)).join('')}</div>`;
   h += `</div>`;
   return h;
@@ -271,6 +278,99 @@ function calMatrizHTML(samples) {
       <div class="mic-chart-title">🗂️ Matriz Muestra × Parámetro <span class="muted">· color = dentro/fuera de rango · valor medido</span></div>
       <div class="cal-mx-wrap"><table class="cal-mx-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>
     </div>`;
+}
+
+/** Serie temporal de un parámetro: promedio por día (asc). */
+function calParamSeries(samples, paramKey) {
+  const byDay = new Map();
+  samples.forEach((s) => {
+    if (!s.ctx.fecha || isNaN(s.ctx.fecha)) return;
+    const m = s.meas.find((x) => x.key === paramKey);
+    if (!m) return;
+    const d = s.ctx.fecha;
+    const key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+    if (!byDay.has(key)) byDay.set(key, { d, label: fmtShort(d), vals: [] });
+    byDay.get(key).vals.push(m.value);
+  });
+  return [...byDay.values()].sort((a, b) => a.d - b.d)
+    .map((o) => ({ d: o.d, label: o.label, avg: o.vals.reduce((s, v) => s + v, 0) / o.vals.length, n: o.vals.length }));
+}
+
+/** Apartado Tendencias: selector de parámetro (píldoras) + estadísticos + gráfico
+ *  temporal con BANDA de rango objetivo sombreada. */
+function calTendenciasHTML(samples, ranges) {
+  const measuredKeys = new Set();
+  samples.forEach((s) => s.meas.forEach((m) => measuredKeys.add(m.key)));
+  const params = CAL_PARAMS.filter((p) => measuredKeys.has(p.key));
+  if (!params.length) return emptyBox('Sin parámetros medidos para el filtro actual.');
+  if (!vState.calTrendKey || !params.some((p) => p.key === vState.calTrendKey)) {
+    vState.calTrendKey = (params.find((p) => ranges[p.key]) || params[0]).key; // preferir uno con rango
+  }
+  const param = params.find((p) => p.key === vState.calTrendKey);
+  const range = ranges[param.key] || null;
+  const days = calParamSeries(samples, param.key);
+  _calTrend = { days, param, range, color: '#00838f' };
+
+  // Estadísticos sobre TODAS las mediciones del parámetro en el pool.
+  const allVals = []; let inR = 0, withR = 0;
+  samples.forEach((s) => { const m = s.meas.find((x) => x.key === param.key); if (!m) return; allVals.push(m.value); if (m.estado !== 'sin-rango') { withR++; if (m.estado === 'dentro') inR++; } });
+  const mean = allVals.length ? allVals.reduce((a, b) => a + b, 0) / allVals.length : null;
+  const mn = allVals.length ? Math.min(...allVals) : null;
+  const mx = allVals.length ? Math.max(...allVals) : null;
+  const last = days.length ? days[days.length - 1].avg : null;
+  const pctIn = withR ? Math.round((inR / withR) * 100) : null;
+  const u = param.unit ? ' ' + param.unit : '';
+
+  const pills = params.map((p) => `<button class="cal-tr-pill${p.key === param.key ? ' is-on' : ''}" data-cal-trendsel="${esc(p.key)}" aria-pressed="${p.key === param.key}">${esc(p.label)}</button>`).join('');
+  const stat = (label, v) => `<span class="cal-tr-stat"><b>${v == null ? '—' : esc(calFmt(v)) + u}</b>${label}</span>`;
+  return `<div class="card cal-tr-card">
+      <div class="mic-chart-title">📈 Tendencia de ${esc(param.label)} <span class="muted">· promedio por día${range ? ' · banda verde = rango objetivo ' + esc(calRangeText(param.key, ranges)) : ' · sin rango definido'}</span></div>
+      <div class="cal-tr-pills">${pills}</div>
+      <div class="cal-tr-stats">
+        ${stat('último', last)}${stat('promedio', mean)}${stat('mín', mn)}${stat('máx', mx)}
+        <span class="cal-tr-stat"><b>${pctIn == null ? '—' : pctIn + '%'}</b>en rango</span>
+      </div>
+      <div class="cal-tr-chart"><canvas id="calTrendChart"></canvas></div>
+    </div>`;
+}
+
+/** Dibuja el gráfico de Tendencias de Calidad de Agua (promedio por día + banda de
+ *  rango objetivo sombreada). Post-render; ver microbiologiaView. */
+function drawCalTrendChart() {
+  const t = _calTrend; if (!t || !t.days.length) return;
+  const dates = t.days.map((d) => d.d);
+  const labels = t.days.map((d) => d.label);
+  const data = t.days.map((d) => +d.avg.toFixed(2));
+  // Banda del rango objetivo: rectángulo verde entre min y max (o desde/ hasta el borde).
+  const bandPlugin = {
+    id: 'calBand',
+    beforeDatasetsDraw(chart) {
+      const r = t.range; if (!r) return;
+      const y = chart.scales.y, ca = chart.chartArea; if (!y || !ca) return;
+      const pMax = r.max != null ? y.getPixelForValue(r.max) : ca.top;
+      const pMin = r.min != null ? y.getPixelForValue(r.min) : ca.bottom;
+      const y0 = Math.max(ca.top, Math.min(pMax, pMin));
+      const y1 = Math.min(ca.bottom, Math.max(pMax, pMin));
+      if (y1 <= y0) return;
+      const ctx = chart.ctx; ctx.save();
+      ctx.fillStyle = 'rgba(46,158,91,.13)';
+      ctx.fillRect(ca.left, y0, ca.right - ca.left, y1 - y0);
+      ctx.restore();
+    },
+  };
+  makeChart('calTrendChart', {
+    type: 'line',
+    data: { labels, datasets: [{ label: t.param.label, data, borderColor: t.color, backgroundColor: t.color + '22', tension: 0.3, spanGaps: true, pointRadius: 3, pointHoverRadius: 5, borderWidth: 2, fill: false }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      scales: {
+        y: { ticks: { callback: (v) => calFmt(v) }, title: { display: !!t.param.unit, text: t.param.unit } },
+        x: { grid: { display: false }, ticks: { callback: (v, i) => dayNum(dates[i]), autoSkip: true, maxTicksLimit: 14, maxRotation: 0, minRotation: 0 }, title: { display: !!rangeLabel(dates), text: rangeLabel(dates) } },
+      },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${calFmt(c.parsed.y)}${t.param.unit ? ' ' + t.param.unit : ''}` } } },
+    },
+    plugins: [bandPlugin],
+  });
 }
 
 /** Tarjeta de una muestra: cabecera (fecha·depto·ubicación·cumplimiento) + chips por parámetro. */
@@ -1149,9 +1249,12 @@ function bind(root) {
     const ap = e.target.closest('[data-mic-ap]');
     if (ap) { if (vState.apartado !== ap.dataset.micAp) { vState.apartado = ap.dataset.micAp; microbiologiaView(root); } return; }
 
-    // Apartado de Calidad de Agua: Perfil ⇄ Matriz.
+    // Apartado de Calidad de Agua: Perfil ⇄ Matriz ⇄ Tendencias.
     const cap = e.target.closest('[data-cal-ap]');
     if (cap) { if (vState.calApartado !== cap.dataset.calAp) { vState.calApartado = cap.dataset.calAp; microbiologiaView(root); } return; }
+    // Tendencias de Calidad de Agua: seleccionar el parámetro a graficar.
+    const cts = e.target.closest('[data-cal-trendsel]');
+    if (cts) { if (vState.calTrendKey !== cts.dataset.calTrendsel) { vState.calTrendKey = cts.dataset.calTrendsel; microbiologiaView(root); } return; }
 
     const pet = e.target.closest('[data-mic-petab]');
     if (pet) { if (vState.petriTab !== pet.dataset.micPetab) { vState.petriTab = pet.dataset.micPetab; microbiologiaView(root); } return; }
