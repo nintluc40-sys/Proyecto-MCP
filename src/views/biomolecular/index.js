@@ -8,6 +8,7 @@
    ============================================================ */
 import { store } from '../../core/store.js';
 import { esc as escH } from '../../core/format.js'; // output-encoding único (antes había un escH local duplicado)
+import { toast } from '../../ui/toast.js';
 
 // ── Constantes (idénticas a BIOMOL.html) ──
 const DIAGS  = ['IHHNV', 'WSSV', 'BP', 'AHPND', 'NHPB', 'EHP'];
@@ -877,7 +878,7 @@ function updateBmExportInfo() {
 function openExportModal() {
   const m = $('bm-export-modal'); if (!m) return;
   const data = filtered();
-  if (!data.length) { window.alert('Sin registros visibles para exportar.'); return; }
+  if (!data.length) { toast('Sin registros visibles para exportar.', 'warn'); return; }
   const dates = data.map((r) => r.f).filter(Boolean).sort();
   const f = $('bm-export-from'), t = $('bm-export-to');
   if (f) f.value = dates.length ? dates[0] : '';
@@ -889,9 +890,9 @@ function openExportModal() {
 function closeExportModal() { $('bm-export-modal')?.classList.remove('open'); document.body.classList.remove('modal-open'); }
 function runExport() {
   const XLSX = window.XLSX;
-  if (!XLSX) { window.alert('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa el <script> del CDN en index.html o tu conexión.'); return; }
+  if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa el <script> del CDN en index.html o tu conexión.', 'err'); return; }
   const data = exportRangeRows();
-  if (!data.length) { window.alert('Sin registros en el rango de fechas elegido.'); return; }
+  if (!data.length) { toast('Sin registros en el rango de fechas elegido.', 'warn'); return; }
   const ws = XLSX.utils.aoa_to_sheet(biomolExportAoa(data)); const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'BIOMOL');
   const from = $('bm-export-from')?.value || 'inicio', to = $('bm-export-to')?.value || 'fin';

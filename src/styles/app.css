@@ -177,3 +177,26 @@
   .app-header { flex-wrap: wrap; gap: var(--sp-2); }
   .app-brand { font-size: 15px; }
 }
+
+/* Toasts (ui/toast.js): avisos efímeros no bloqueantes. Por encima de modales. */
+.app-toasts {
+  position: fixed; right: 16px; bottom: 16px; z-index: 300;
+  display: flex; flex-direction: column; gap: 8px;
+  max-width: min(360px, calc(100vw - 32px)); pointer-events: none;
+}
+.app-toast {
+  pointer-events: auto; cursor: pointer;
+  background: var(--c-surface); color: var(--c-text);
+  border: 1px solid var(--c-border); border-left: 3px solid var(--c-brand);
+  border-radius: var(--r-md); box-shadow: var(--sh-3);
+  padding: 11px 14px; font-size: 13px; font-weight: 600; line-height: 1.35;
+  opacity: 0; transform: translateY(8px); transition: opacity .2s ease, transform .2s ease;
+}
+.app-toast.is-in { opacity: 1; transform: translateY(0); }
+.app-toast--ok   { border-left-color: var(--c-bueno); }
+.app-toast--warn { border-left-color: var(--c-malo); }
+.app-toast--err  { border-left-color: var(--c-grave); }
+
+@media (max-width: 720px) {
+  .app-toasts { left: 16px; right: 16px; max-width: none; }
+}

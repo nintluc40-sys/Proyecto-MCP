@@ -13,6 +13,7 @@ import { esc } from '../../core/format.js';
 import { fmtShort } from '../../core/dates.js';
 import { natCmp } from '../../core/util.js';
 import { monthIndexOfCorrida, monthLabelAt } from '../../core/prodCalendar.js';
+import { toast } from '../../ui/toast.js';
 import {
   isMicroRow, pathogenRecords, rowContext, meltRow, PATHOGENS, PATHOGEN_COLOR,
   NIVELES, NIVEL_COLOR, NIVEL_RANK, isAlerta, FORMATO_LABEL, AGGREGATE_KEYS,
@@ -178,7 +179,7 @@ function renderBacteriologia() {
   const kAlerta = summaries.filter((s) => isAlerta(s.worst)).length;
   const kLumin = summaries.filter((s) => s.lumin === true).length;
   const kTotUfc = summaries.reduce((a, s) => a + (s.totalesUfc || 0), 0);
-  const dom = dominantPathogen(rows);
+  const dom = dominantPathogen(rows, _scope.records);
 
   // ── HTML: filtros + KPIs + apartados ──
   let h = `<div class="mic-filters">
@@ -211,13 +212,14 @@ function renderBacteriologia() {
 
 /* ---- Apartado A · Conglomerado (Tanda 1) ---- */
 function renderConglomerado(rows, summaries) {
-  const cong = congByNivel(rows);
+  const records = _scope.records; // pathogenRecords(rows) ya computado en el render
+  const cong = congByNivel(rows, records);
   _charts.stack = cong.labels.length ? cong : null;
-  const aa = aguaAnimalAlertas(rows);
+  const aa = aguaAnimalAlertas(rows, records);
   _charts.aa = aa.labels.length ? aa : null;
-  const ufc = ufcByPathogen(rows);
+  const ufc = ufcByPathogen(rows, records);
   _charts.ufc = ufc.labels.length ? ufc : null;
-  const dist = nivelDistribution(rows);
+  const dist = nivelDistribution(rows, records);
   _charts.dist = dist.total > 0 ? dist : null;
 
   let h = band('🧫', 'Conglomerado por patógeno', '#006064');
@@ -259,10 +261,11 @@ function renderConglomerado(rows, summaries) {
   return h;
 }
 
-/** Σ UFC por patógeno específico (excluye agregados C./Bact. Totales que dominarían). */
-function ufcByPathogen(rows) {
+/** Σ UFC por patógeno específico (excluye agregados C./Bact. Totales que dominarían).
+ *  `records` = pathogenRecords(rows) precomputado (se reutiliza en el render). */
+function ufcByPathogen(rows, records = pathogenRecords(rows)) {
   const m = new Map();
-  pathogenRecords(rows).forEach((r) => {
+  records.forEach((r) => {
     if (AGGREGATE_KEYS.has(r.key) || !(r.ufc > 0)) return;
     m.set(r.key, (m.get(r.key) || 0) + r.ufc);
   });
@@ -271,10 +274,10 @@ function ufcByPathogen(rows) {
 }
 
 /** Distribución global de registros-patógeno por nivel (semáforo). */
-function nivelDistribution(rows) {
+function nivelDistribution(rows, records = pathogenRecords(rows)) {
   const counts = { 'Mínimo': 0, 'Leve': 0, 'Moderado': 0, 'Elevado': 0 };
   let total = 0;
-  pathogenRecords(rows).forEach((r) => { if (r.nivel && counts[r.nivel] !== undefined) { counts[r.nivel]++; total++; } });
+  records.forEach((r) => { if (r.nivel && counts[r.nivel] !== undefined) { counts[r.nivel]++; total++; } });
   return { counts, total };
 }
 
@@ -470,9 +473,9 @@ function rowSummary(row) {
   return { row, ctx: c, worst, totalesUfc, alerts, lumin: c.lumin, byKey };
 }
 
-function dominantPathogen(rows) {
+function dominantPathogen(rows, records = pathogenRecords(rows)) {
   const m = new Map();
-  pathogenRecords(rows).forEach((r) => {
+  records.forEach((r) => {
     if (AGGREGATE_KEYS.has(r.key)) return; // los agregados (C./Bact. Totales) no son "dominante"
     if (!m.has(r.key)) m.set(r.key, { key: r.key, label: r.label, alertas: 0, ufc: 0 });
     const o = m.get(r.key);
@@ -483,8 +486,8 @@ function dominantPathogen(rows) {
   return arr[0] || null;
 }
 
-function congByNivel(rows) {
-  const recs = pathogenRecords(rows).filter((r) => r.nivel);
+function congByNivel(rows, records = pathogenRecords(rows)) {
+  const recs = records.filter((r) => r.nivel);
   const byKey = new Map();
   recs.forEach((r) => {
     if (!byKey.has(r.key)) byKey.set(r.key, { counts: { 'Mínimo': 0, 'Leve': 0, 'Moderado': 0, 'Elevado': 0 } });
@@ -499,9 +502,9 @@ function congByNivel(rows) {
   return { labels, data };
 }
 
-function aguaAnimalAlertas(rows) {
+function aguaAnimalAlertas(rows, records = pathogenRecords(rows)) {
   const byKey = new Map();
-  pathogenRecords(rows).filter((r) => isAlerta(r.nivel)).forEach((r) => {
+  records.filter((r) => isAlerta(r.nivel)).forEach((r) => {
     if (!byKey.has(r.key)) byKey.set(r.key, { agua: 0, animal: 0 });
     const o = byKey.get(r.key);
     if (r.tipoMuestra === 'Agua') o.agua++; else if (r.tipoMuestra === 'Animal') o.animal++;
@@ -748,7 +751,7 @@ function updateXlsxInfo(root) {
 function openXlsxModal(root) {
   const m = root.querySelector('#micXlsxModal'); if (!m) return;
   const base = micExportBaseRows();
-  if (!base.length) { window.alert('Sin registros para los filtros activos.'); return; }
+  if (!base.length) { toast('Sin registros para los filtros activos.', 'warn'); return; }
   // Rango por defecto = span de lo que se está viendo (el mes actual filtrado).
   const dates = _scope.rows.map((r) => rowContext(r).fecha).filter((d) => d && !isNaN(d)).sort((a, b) => a - b);
   const f = root.querySelector('#micExpFrom'), t = root.querySelector('#micExpTo');
@@ -765,9 +768,9 @@ function closeXlsxModal(root) {
 }
 function runXlsxExport(root) {
   const XLSX = window.XLSX;
-  if (!XLSX) { window.alert('Exportación no disponible: SheetJS (XLSX) no se cargó.'); return; }
+  if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó.', 'err'); return; }
   const rows = micExportRows(root);
-  if (!rows.length) { window.alert('Sin registros en el rango de fechas elegido.'); return; }
+  if (!rows.length) { toast('Sin registros en el rango de fechas elegido.', 'warn'); return; }
   // Columnas en orden del Sheet (orden de claves) que tengan datos en el rango.
   const cols = []; const seen = new Set();
   rows.forEach((r) => Object.keys(r).forEach((k) => { if (!k.startsWith('_') && !seen.has(k)) { seen.add(k); cols.push(k); } }));

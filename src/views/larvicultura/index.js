@@ -21,6 +21,7 @@ import { destroyAllCharts, destroyChart, makeChart } from '../../core/charts.js'
 import { larviColor, larviBg, larviLabel, esc } from '../../core/format.js';
 import { modalsShellHTML, setSnapshot, openModal, closeModal, MODAL_IDS } from './modals.js';
 import { presentMonths, corridasOfMonth, monthLabelAt } from '../../core/prodCalendar.js';
+import { registerModalEscape } from '../../ui/modalEscape.js';
 import { tankColorInfo } from '../../core/aguaColor.js';
 import { diagSemaforo, popSemaforo, aguaSemaforo, cultivoInfo, semMeta } from './status.js';
 
@@ -692,4 +693,6 @@ function bind(root) {
     if (!el) return;
     el.addEventListener('click', (e) => { if (e.target === el || e.target.closest('[data-close]')) closeModal(id); });
   });
+  // Escape cierra el modal abierto (incluye el de fisicoquímicos) vía su backdrop.
+  registerModalEscape('.lq-modal.lq-open');
 }

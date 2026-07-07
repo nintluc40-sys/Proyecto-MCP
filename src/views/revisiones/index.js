@@ -17,6 +17,7 @@ import { parseAnyDate, fmtShort, dayNum, rangeLabel } from '../../core/dates.js'
 import { esc } from '../../core/format.js';
 import { avg, fmtPct } from '../../core/util.js';
 import { monthIndexOfCorrida, monthLabelAt } from '../../core/prodCalendar.js';
+import { registerModalEscape } from '../../ui/modalEscape.js';
 
 // ---------- acceso tolerante a cabeceras de Registro_Supervisión ----------
 const K = {
@@ -1043,6 +1044,9 @@ function selectSankey(root, sk) {
 function bind(root) {
   if (root._rvBound) return;
   root._rvBound = true;
+
+  // Escape cierra el modal abierto (historial/módulo/día/desglose) vía su backdrop.
+  registerModalEscape('.rv-modal.rv-open');
 
   root.addEventListener('click', (e) => {
     // Cerrar ventana al pulsar el fondo

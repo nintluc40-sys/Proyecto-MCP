@@ -16,6 +16,8 @@ import { parseAnyDate, fmtShort } from '../../core/dates.js';
 import { esc } from '../../core/format.js';
 import { avg, natCmp } from '../../core/util.js';
 import { monthIndexOfCorrida, monthLabelAt } from '../../core/prodCalendar.js';
+import { registerModalEscape } from '../../ui/modalEscape.js';
+import { toast } from '../../ui/toast.js';
 import { drawGrowth, drawGrowthBar, drawGrowthMini, drawTasa, drawProto, drawDaily, drawUsoSistema, drawModuloBiomasa, drawCatPct, CAT_COLOR, algColor, fmtK } from './charts.js';
 
 // ── Acceso tolerante a las cabeceras de Lab_Algas ──
@@ -1143,9 +1145,9 @@ function updateExportInfo(root) {
 
 function runExport(root) {
   const XLSX = window.XLSX;
-  if (!XLSX) { alert('No se pudo cargar el componente de Excel (SheetJS).'); return; }
+  if (!XLSX) { toast('No se pudo cargar el componente de Excel (SheetJS).', 'err'); return; }
   const rows = exportRowsInRange(root);
-  if (!rows.length) { alert('No hay registros en el rango elegido.'); return; }
+  if (!rows.length) { toast('No hay registros en el rango elegido.', 'warn'); return; }
   const header = ALG_EXPORT_COLS.map((c) => c[0]);
   const aoa = [header, ...rows.map((r) => ALG_EXPORT_COLS.map(([, key]) => { const v = g(r, key); return (v === '' || v === null || v === undefined) ? '' : v; }))];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -1214,6 +1216,9 @@ function collapsibleCard(icon, title, theadHtml, cells, visibleN, emptyMsg, extr
 function bind(root) {
   if (root._algBound) return;
   root._algBound = true;
+
+  // Escape cierra el overlay abierto (fullscreen/día/mes/export) vía su backdrop.
+  registerModalEscape('.sv-modal.sv-open');
 
   root.addEventListener('change', (e) => {
     // Rango de fechas del modal de exportación: recalcula el conteo, no re-renderiza.

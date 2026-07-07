@@ -2,6 +2,7 @@
    SUPERVISOR · helpers de presentación
    ============================================================ */
 import { esc, fmtPop } from '../../core/format.js';
+import { registerModalEscape } from '../../ui/modalEscape.js';
 
 // Re-export: fmtPop ahora vive en core/format.js (compartido con Visitante).
 // Se re-exporta aquí para que los módulos internos del Supervisor que ya lo
@@ -89,6 +90,8 @@ export function dot(color, title) {
  */
 export function bindModal(root, overlay, { openSel, closeSel, onOpen, onClose, keyboard = false } = {}) {
   if (!overlay) return null;
+  // Escape cierra el overlay abierto reutilizando su backdrop (idempotente y global).
+  registerModalEscape('.sv-modal.sv-open');
   const open = (trigger) => {
     overlay.classList.add('sv-open');
     document.body.classList.add('modal-open');
