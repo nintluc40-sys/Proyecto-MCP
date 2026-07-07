@@ -147,25 +147,25 @@ describe('Supervisor · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
-  it('modal Microbiología · pestaña Tendencias (acordeón) abre patógeno y cambia con clic', () => {
+  it('modal Microbiología · pestaña Tendencias (píldoras) selecciona patógeno y cambia con clic', () => {
     const root = mount();
     click(root.querySelector('.sv-card[data-nav="module"]'));
     click(root.querySelector('[data-micro-open]'));
     click(root.querySelector('[data-micmode="tendencias"]'));
-    // Acordeón presente + filtro de tanque + al menos 2 patógenos (Totales/Amarillas).
-    expect(root.querySelector('.sv-mtrend-acc')).toBeTruthy();
+    // Fila de píldoras + filtro de tanque + al menos 2 patógenos (Totales/Amarillas).
+    expect(root.querySelector('.sv-mtrend-pills')).toBeTruthy();
     expect(root.querySelector('[data-mtrend-tank]')).toBeTruthy();
-    const spines = root.querySelectorAll('[data-mtrend-open]');
-    expect(spines.length).toBeGreaterThanOrEqual(2);
-    // Exactamente un ítem abierto, con su canvas de gráfico grande.
-    expect(root.querySelectorAll('.sv-mtrend-item.is-open').length).toBe(1);
-    expect(root.querySelector('.sv-mtrend-item.is-open #svMicTrendChart')).toBeTruthy();
-    // Clic en un lomo cerrado → ese pasa a ser el único abierto.
-    const closed = root.querySelector('.sv-mtrend-item:not(.is-open) [data-mtrend-open]');
-    const key = closed.dataset.mtrendOpen;
-    click(closed);
-    expect(root.querySelectorAll('.sv-mtrend-item.is-open').length).toBe(1);
-    expect(root.querySelector('.sv-mtrend-item.is-open [data-mtrend-open]').dataset.mtrendOpen).toBe(key);
+    const pills = root.querySelectorAll('.sv-mtrend-pill[data-mtrend-open]');
+    expect(pills.length).toBeGreaterThanOrEqual(2);
+    // Exactamente una píldora activa + un solo gráfico grande en el detalle.
+    expect(root.querySelectorAll('.sv-mtrend-pill.is-on').length).toBe(1);
+    expect(root.querySelector('.sv-mtrend-detail #svMicTrendChart')).toBeTruthy();
+    // Clic en una píldora inactiva → esa pasa a ser la única activa.
+    const off = root.querySelector('.sv-mtrend-pill:not(.is-on)[data-mtrend-open]');
+    const key = off.dataset.mtrendOpen;
+    click(off);
+    expect(root.querySelectorAll('.sv-mtrend-pill.is-on').length).toBe(1);
+    expect(root.querySelector('.sv-mtrend-pill.is-on').dataset.mtrendOpen).toBe(key);
     expect(errSpy).not.toHaveBeenCalled();
   });
 

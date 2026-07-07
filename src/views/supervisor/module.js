@@ -502,9 +502,9 @@ function microPathogenTrends(rows) {
   return { days, series };
 }
 
-/** Pestaña Tendencias: Σ UFC/día por patógeno, con filtro de tanque y patrón
- *  ACORDEÓN (tipo libros en un estante): solo un patógeno abierto muestra el
- *  gráfico grande; el resto quedan como "lomos" clicables con su mini-tendencia. */
+/** Pestaña Tendencias: Σ UFC/día por patógeno. Selector de patógeno en PÍLDORAS
+ *  (fila fija arriba, se elige sin scroll) + UN solo gráfico grande del activo con
+ *  sus KPIs. El filtro de tanque acota las series. */
 function microTendenciasHTML(rows, state) {
   if (!rows.length) return `<div class="empty-state" style="padding:30px">Sin registros para esta corrida y módulo.</div>`;
   const tanks = micTanksOf(rows);
@@ -519,33 +519,36 @@ function microTendenciasHTML(rows, state) {
   if (!series.length || days.length < 1) {
     return bar + `<div class="empty-state" style="padding:30px">Sin UFC registrado para esta selección.</div>`;
   }
-  // Patógeno abierto: el guardado si sigue presente; si no, el de mayor valor reciente.
+  // Patógeno activo: el guardado si sigue presente; si no, el de mayor valor reciente.
   if (!state.trendOpen || !series.some((s) => s.key === state.trendOpen)) state.trendOpen = series[0].key;
   _svMicTrend = { days, series }; // para el dibujo del gráfico grande (post-render)
 
   const arrow = (d) => d > 0 ? '<span class="sv-mtrend-up">▲</span>' : d < 0 ? '<span class="sv-mtrend-dn">▼</span>' : '<span class="muted">—</span>';
   const dayLabels = days.map((d) => d.label);
-  const items = series.map((p) => {
-    const open = p.key === state.trendOpen;
-    const spine = `<button class="sv-mtrend-spine" data-mtrend-open="${esc(p.key)}" aria-expanded="${open}">
-        <span class="sv-mtrend-band" style="background:${p.color}"></span>
-        <span class="sv-mtrend-name">${esc(p.label)}</span>
-        <span class="sv-mtrend-latest">${micFmtNum(p.latest)}</span>
-        <span class="sv-mtrend-arr">${arrow(p.delta)}</span>
+  const active = series.find((s) => s.key === state.trendOpen) || series[0];
+
+  // Fila de píldoras (una por patógeno): punto de color + nombre + último valor + flecha.
+  const pills = series.map((p) => {
+    const on = p.key === state.trendOpen;
+    return `<button class="sv-mtrend-pill${on ? ' is-on' : ''}" data-mtrend-open="${esc(p.key)}" aria-pressed="${on}" style="--pc:${p.color}">
+        <span class="sv-mtrend-pdot" style="background:${p.color}"></span>
+        <span class="sv-mtrend-pname">${esc(p.label)}</span>
+        <span class="sv-mtrend-pval">${micFmtNum(p.latest)}</span>
+        <span class="sv-mtrend-parr">${arrow(p.delta)}</span>
       </button>`;
-    const panel = open ? `<div class="sv-mtrend-panel">
-        <div class="sv-mtrend-stats">
-          <span class="sv-mtrend-kpi"><b>${micFmtNum(p.latest)}</b>Σ UFC último día</span>
-          <span class="sv-mtrend-kpi"><b>${micFmtNum(p.max)}</b>máx</span>
-          <span class="sv-mtrend-kpi"><b>${p.n}</b>día(s) con dato</span>
-        </div>
-        <div class="sv-mtrend-chart"><canvas id="svMicTrendChart"></canvas></div>
-      </div>` : '';
-    return `<div class="sv-mtrend-item ${open ? 'is-open' : ''}">${spine}${panel}</div>`;
   }).join('');
 
-  return bar + `<div class="mic-chart-title" style="margin:4px 0 8px">📈 Tendencia por patógeno <span class="muted">· Σ UFC por día (${esc(dayLabels[0])} → ${esc(dayLabels[dayLabels.length - 1])}) · clic en un patógeno para abrir su gráfico</span></div>
-    <div class="sv-mtrend-acc">${items}</div>`;
+  return bar + `<div class="mic-chart-title" style="margin:4px 0 8px">📈 Tendencia por patógeno <span class="muted">· Σ UFC por día (${esc(dayLabels[0])} → ${esc(dayLabels[dayLabels.length - 1])}) · elige un patógeno</span></div>
+    <div class="sv-mtrend-pills">${pills}</div>
+    <div class="sv-mtrend-detail">
+      <div class="sv-mtrend-dhead"><span class="sv-mtrend-band" style="background:${active.color}"></span><span class="sv-mtrend-dname">${esc(active.label)}</span>${arrow(active.delta)}</div>
+      <div class="sv-mtrend-stats">
+        <span class="sv-mtrend-kpi"><b>${micFmtNum(active.latest)}</b>Σ UFC último día</span>
+        <span class="sv-mtrend-kpi"><b>${micFmtNum(active.max)}</b>máx</span>
+        <span class="sv-mtrend-kpi"><b>${active.n}</b>día(s) con dato</span>
+      </div>
+      <div class="sv-mtrend-chart"><canvas id="svMicTrendChart"></canvas></div>
+    </div>`;
 }
 
 export function renderModule(ctx, mod) {

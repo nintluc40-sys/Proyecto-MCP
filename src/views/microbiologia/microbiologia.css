@@ -125,12 +125,32 @@
 .mic-pe-leg-l { color: var(--c-text-soft); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mic-pe-leg-v { color: var(--c-text); font-weight: 700; font-variant-numeric: tabular-nums; }
 
-/* tendencias */
-.mic-tr-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--c-border-soft); }
-.mic-tr-name { width: 150px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--c-text-soft); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mic-tr-val { width: 70px; text-align: right; font-size: 12px; font-weight: 700; color: var(--c-text); font-variant-numeric: tabular-nums; }
-.mic-tr-arr { width: 16px; font-size: 14px; text-align: center; }
-.mic-tr-total { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--c-border); }
+/* tendencias · heatmap Patógeno × Día + detalle con cinética */
+.mic-th-card { display: flex; flex-direction: column; margin-bottom: 12px; }
+.mic-th-wrap { overflow: auto; max-height: 420px; border: 1px solid var(--c-border-soft); border-radius: var(--r-md); margin-bottom: 8px; }
+.mic-th-table { border-collapse: separate; border-spacing: 0; font-size: 11.5px; width: max-content; min-width: 100%; }
+.mic-th-table th, .mic-th-table td { border-bottom: 1px solid var(--c-border-soft); border-right: 1px solid var(--c-border-soft); padding: 0; text-align: center; }
+.mic-th-corner, .mic-th-dayh { background: var(--c-surface-2); color: var(--c-text-muted); font-weight: 700; position: sticky; top: 0; z-index: 1; padding: 6px 8px; white-space: nowrap; }
+.mic-th-dayh { font-size: 10.5px; }
+.mic-th-corner { left: 0; z-index: 3; text-align: left; }
+.mic-th-rowh { position: sticky; left: 0; z-index: 2; background: var(--c-surface); text-align: left; font-weight: 800; color: var(--c-text); white-space: nowrap; padding: 5px 10px; min-width: 200px; }
+.mic-th-rowh .mic-pe-dot { display: inline-block; margin-right: 6px; vertical-align: middle; }
+.mic-th-rowl { vertical-align: middle; }
+.mic-th-rowv { margin-left: 8px; color: var(--c-text-soft); font-variant-numeric: tabular-nums; font-weight: 700; }
+.mic-th-cell { width: 24px; min-width: 24px; height: 26px; cursor: pointer; }
+.mic-th-empty { color: var(--c-text-muted); background: var(--c-surface-2); }
+.mic-th-row { cursor: pointer; }
+.mic-th-row:hover .mic-th-rowh { background: var(--c-surface-2); }
+.mic-th-row.is-sel .mic-th-rowh { background: color-mix(in srgb, var(--c-brand) 14%, var(--c-surface)); box-shadow: inset 3px 0 0 var(--c-brand); }
+/* detalle del patógeno activo: cabecera + KPIs de cinética + gráfico */
+.mic-th-detail { padding: 12px 14px 14px; }
+.mic-th-dhead { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.mic-th-dname { font-weight: 900; font-size: 15px; color: var(--c-text); }
+.mic-th-kpis { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.mic-th-kpi { display: inline-flex; flex-direction: column; background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); padding: 5px 10px; font-size: 9.5px; font-weight: 700; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: .3px; cursor: help; }
+.mic-th-kpi b { font-size: 15px; color: var(--c-text); text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.mic-th-chart { height: 260px; }
+.mic-th-note { font-size: 10.5px; margin-top: 8px; }
 
 /* alertas */
 .mic-alert-list { display: flex; flex-direction: column; gap: 6px; }
@@ -176,7 +196,7 @@
   padding: 14px; margin-top: 4px;
 }
 /* numeritos monoespaciados (tnum) */
-.mic-scada .mic-kpi-value, .mic-scada .mic-pe-st-v, .mic-scada .mic-tr-val,
+.mic-scada .mic-kpi-value, .mic-scada .mic-pe-st-v, .mic-scada .mic-th-kpi b,
 .mic-scada .mic-mx-table td, .mic-scada .mic-table td { font-family: var(--sc-mono); font-variant-numeric: tabular-nums; }
 
 /* filtros: borde técnico + foco coral */
@@ -206,10 +226,11 @@
 .mic-scada .mic-chart-title { text-transform: uppercase; letter-spacing: .03em; font-size: 12px; color: var(--sc-navy); }
 
 /* tablas: cabecera navy + zebra sutil */
-.mic-scada .mic-table thead th, .mic-scada .mic-mx-table thead th { background: var(--sc-navy); color: #c8cbe2; text-transform: uppercase; letter-spacing: .04em; font-size: 10.5px; }
+.mic-scada .mic-table thead th, .mic-scada .mic-mx-table thead th,
+.mic-scada .mic-th-corner, .mic-scada .mic-th-dayh { background: var(--sc-navy); color: #c8cbe2; text-transform: uppercase; letter-spacing: .04em; font-size: 10.5px; }
 .mic-scada .mic-mx-rowh { background: #eef0f6; color: var(--sc-navy); }
 .mic-scada .mic-table tbody tr:nth-child(even) { background: rgba(39,44,73,.028); }
-.mic-scada .mic-table-wrap, .mic-scada .mic-mx-wrap { border-color: #cfd2de; }
+.mic-scada .mic-table-wrap, .mic-scada .mic-mx-wrap, .mic-scada .mic-th-wrap { border-color: #cfd2de; }
 
 /* resumen del día (panel lateral de la placa): etiquetas wine */
 .mic-scada .mic-pe-st-l { color: var(--sc-wine); }
