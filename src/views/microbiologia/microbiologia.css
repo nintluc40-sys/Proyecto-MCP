@@ -212,6 +212,16 @@
 .cal-en-rowh { text-align: left !important; font-weight: 800; color: var(--c-text); }
 .cal-en-up { color: #1f7a44; font-weight: 800; }
 .cal-en-dn { color: var(--c-grave); font-weight: 800; }
+/* Editor de rangos ("Factores") */
+.cal-fact-grid { display: flex; flex-direction: column; gap: 4px; max-height: 52vh; overflow: auto; }
+.cal-fact-head, .cal-fact-row { display: grid; grid-template-columns: 1fr 88px 88px; gap: 8px; align-items: center; }
+.cal-fact-head { font-size: 10px; font-weight: 700; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: .3px; text-align: center; padding: 0 2px 4px; position: sticky; top: 0; background: var(--c-surface); }
+.cal-fact-head span:first-child { text-align: left; }
+.cal-fact-l { font-size: 12.5px; font-weight: 700; color: var(--c-text); }
+.cal-fact-in { width: 100%; padding: 5px 8px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text); font-size: 12px; font-variant-numeric: tabular-nums; }
+.cal-fact-in:focus { outline: none; border-color: var(--c-brand); }
+.cal-fact-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.cal-fact-save { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
 
 /* alertas */
 .mic-alert-list { display: flex; flex-direction: column; gap: 6px; }

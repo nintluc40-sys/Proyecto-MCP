@@ -206,6 +206,30 @@ describe('Microbiología · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('sub-vista Calidad de Agua · editor de rangos (Factores): abre, pre-rellena, guarda y restablece', () => {
+    mount();
+    click(root.querySelector('[data-mic-sub="calidad"]'));
+    const isOpen = () => root.querySelector('#calFactModal').classList.contains('is-open');
+    // Abrir + pre-relleno con el rango efectivo (base).
+    click(root.querySelector('[data-cal-factors]'));
+    expect(isOpen()).toBe(true);
+    const phMin = root.querySelector('[data-cal-rmin="ph"]');
+    expect(phMin).toBeTruthy();
+    expect(phMin.value).toBe('7.5');
+    // Cerrar con ✕ (no depende de almacenamiento).
+    click(root.querySelector('[data-cal-fact-close]'));
+    expect(isOpen()).toBe(false);
+    // Editar + guardar no lanza error (si no hay localStorage, avisa y no persiste).
+    click(root.querySelector('[data-cal-factors]'));
+    root.querySelector('[data-cal-rmin="ph"]').value = '7';
+    click(root.querySelector('[data-cal-fact-save]'));
+    // Restablecer deja el estado limpio (reabrir si el guardado cerró el modal).
+    if (!isOpen()) click(root.querySelector('[data-cal-factors]'));
+    click(root.querySelector('[data-cal-fact-reset]'));
+    expect(isOpen()).toBe(false);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('modal de alertas: abre desde el KPI y cierra', () => {
     mount();
     const kpi = root.querySelector('[data-mic-alerts]');

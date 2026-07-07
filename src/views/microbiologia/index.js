@@ -234,7 +234,7 @@ function renderCalidadAgua() {
       ${deptos.length ? calSelect('calDepto', vState.calDepto, deptos, 'Todos los deptos.') : ''}
       ${vState.calDepto && formatos.length ? calSelect('calFormato', vState.calFormato, formatos, 'Todos los formatos') : ''}
       ${dimFilters.map(({ dim, options }) => calDimSelect(dim, vState.calDims[dim.key], options)).join('')}
-      <div class="mic-export"><button class="mic-exp" data-cal-export title="Descargar reporte de texto de las muestras filtradas">⬇ Reporte</button><button class="mic-exp" data-cal-xlsx title="Descargar Excel de las muestras filtradas">⬇ Excel</button></div>
+      <div class="mic-export"><button class="mic-exp" data-cal-factors title="Editar rangos objetivo (mín/máx) por parámetro">⚙️ Rangos</button><button class="mic-exp" data-cal-export title="Descargar reporte de texto de las muestras filtradas">⬇ Reporte</button><button class="mic-exp" data-cal-xlsx title="Descargar Excel de las muestras filtradas">⬇ Excel</button></div>
     </div>`;
   const alertAttrs = outC > 0 ? 'data-cal-alerts role="button" tabindex="0" title="Ver listado de mediciones fuera de rango"' : '';
   h += `<div class="mic-kpis">
@@ -264,6 +264,7 @@ function renderCalidadAgua() {
   else if (ap === 'tendencias') h += calTendenciasHTML(samples, ranges);
   else h += `<div class="cal-cards">${samples.map((s) => calCardHTML(s)).join('')}</div>`;
   h += calAlertModalHTML();
+  h += calFactModalHTML(ranges);
   h += `</div>`;
   return h;
 }
@@ -346,6 +347,60 @@ function calExportTxt() {
   const a = document.createElement('a');
   a.href = url; a.download = `reporte_calidad_agua_${calStamp()}.txt`; document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* ---- Calidad de Agua · editor de rangos objetivo ("Factores") ---- */
+const CAL_RANGES_KEY = 'larv4_cal_ranges'; // misma clave que la capa de datos / app de captura
+function calFactModalHTML(ranges) {
+  const rows = CAL_PARAMS.map((p) => {
+    const r = ranges[p.key] || {};
+    return `<div class="cal-fact-row">
+        <span class="cal-fact-l">${esc(p.label)}${p.unit ? ` <span class="muted">(${esc(p.unit)})</span>` : ''}</span>
+        <input type="number" step="any" class="cal-fact-in" data-cal-rmin="${esc(p.key)}" placeholder="mín" aria-label="Mínimo de ${esc(p.label)}" value="${r.min != null ? esc(String(r.min)) : ''}">
+        <input type="number" step="any" class="cal-fact-in" data-cal-rmax="${esc(p.key)}" placeholder="máx" aria-label="Máximo de ${esc(p.label)}" value="${r.max != null ? esc(String(r.max)) : ''}">
+      </div>`;
+  }).join('');
+  return `<div class="mic-modal" id="calFactModal" data-cal-fact-overlay>
+      <div class="mic-modal-card">
+        <div class="mic-modal-head">
+          <span class="mic-modal-title">⚙️ Rangos objetivo · Calidad de Agua</span>
+          <button class="mic-modal-x" data-cal-fact-close aria-label="Cerrar">✕</button>
+        </div>
+        <div class="mic-modal-body">
+          <p class="muted" style="margin:0 0 12px;font-size:12px">Ajusta el rango de aceptación (mín/máx) por parámetro. Deja un campo vacío para no fijar ese límite. Se guardan en este navegador, igual que en la app de captura.</p>
+          <div class="cal-fact-grid">
+            <div class="cal-fact-head"><span></span><span>mín</span><span>máx</span></div>
+            ${rows}
+          </div>
+          <div class="cal-fact-actions">
+            <button class="mic-exp" data-cal-fact-reset>↺ Restablecer</button>
+            <button class="mic-exp cal-fact-save" data-cal-fact-save>✓ Guardar</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+function openCalFact(root) { const m = root.querySelector('#calFactModal'); if (m) { m.classList.add('is-open'); document.body.classList.add('modal-open'); } }
+function closeCalFact(root) { const m = root.querySelector('#calFactModal'); if (m) m.classList.remove('is-open'); document.body.classList.remove('modal-open'); }
+function saveCalFactors(root) {
+  let stored = {};
+  try { const raw = localStorage.getItem(CAL_RANGES_KEY); if (raw) stored = JSON.parse(raw) || {}; } catch (_) { stored = {}; }
+  CAL_PARAMS.forEach((p) => {
+    const mn = root.querySelector(`[data-cal-rmin="${p.key}"]`);
+    const mx = root.querySelector(`[data-cal-rmax="${p.key}"]`);
+    const min = mn && mn.value.trim() !== '' ? parseFloat(mn.value) : null;
+    const max = mx && mx.value.trim() !== '' ? parseFloat(mx.value) : null;
+    const o = {};
+    if (min != null && !isNaN(min)) o.min = min;
+    if (max != null && !isNaN(max)) o.max = max;
+    if (Object.keys(o).length) stored[p.key] = o; else delete stored[p.key];
+  });
+  try { localStorage.setItem(CAL_RANGES_KEY, JSON.stringify(stored)); } catch (_) { toast('No se pudieron guardar los rangos (almacenamiento no disponible).', 'err'); return; }
+  closeCalFact(root); toast('Rangos guardados.', 'ok'); microbiologiaView(root);
+}
+function resetCalFactors(root) {
+  try { localStorage.removeItem(CAL_RANGES_KEY); } catch (_) { /* sin almacenamiento */ }
+  closeCalFact(root); toast('Rangos restablecidos a los valores por defecto.', 'ok'); microbiologiaView(root);
 }
 
 /** Apartado Matriz: filas = muestras, columnas = parámetros medidos (orden del
@@ -1417,6 +1472,11 @@ function bind(root) {
     if (e.target.closest('[data-cal-alert-close]') || e.target.matches('[data-cal-alert-overlay]')) { closeCalAlert(root); return; }
     if (e.target.closest('[data-cal-export]')) { calExportTxt(); return; }
     if (e.target.closest('[data-cal-xlsx]')) { calExportXlsx(); return; }
+    // Editor de rangos objetivo ("Factores").
+    if (e.target.closest('[data-cal-factors]')) { openCalFact(root); return; }
+    if (e.target.closest('[data-cal-fact-close]') || e.target.matches('[data-cal-fact-overlay]')) { closeCalFact(root); return; }
+    if (e.target.closest('[data-cal-fact-save]')) { saveCalFactors(root); return; }
+    if (e.target.closest('[data-cal-fact-reset]')) { resetCalFactors(root); return; }
 
     const pet = e.target.closest('[data-mic-petab]');
     if (pet) { if (vState.petriTab !== pet.dataset.micPetab) { vState.petriTab = pet.dataset.micPetab; microbiologiaView(root); } return; }
@@ -1477,7 +1537,7 @@ function bind(root) {
   // Teclado: Enter/Espacio sobre el KPI abre el modal de alertas; sobre una fila del
   // heatmap de Tendencias la selecciona. Escape cierra modales.
   root.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { closeAlertModal(root); closeXlsxModal(root); closeCalAlert(root); return; }
+    if (e.key === 'Escape') { closeAlertModal(root); closeXlsxModal(root); closeCalAlert(root); closeCalFact(root); return; }
     if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
     if (e.target.closest('[data-mic-alerts]')) { e.preventDefault(); openAlertModal(root); return; }
     if (e.target.closest('[data-cal-alerts]')) { e.preventDefault(); openCalAlert(root); return; }
