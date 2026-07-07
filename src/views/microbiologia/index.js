@@ -20,7 +20,7 @@ import {
   DEPARTAMENTOS, DEPTO_FORMATS, deptoOfFormato, PATHOGEN_AGAR,
 } from './data.js';
 import { petriSVG } from './petri.js';
-import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges } from './calagua.data.js';
+import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges, CAL_PARAMS } from './calagua.data.js';
 
 // ── sub-vistas del módulo ──
 const SUBS = [
@@ -39,6 +39,8 @@ const vState = {
   petriTrendKey: null, // patógeno seleccionado en la pestaña Tendencias (ranking + cinética)
   petriTrendSort: 'mu', // orden del ranking: 'mu' (crecimiento) | 'ufc' | 'alertas'
   calMonth: null, // mes activo de la sub-vista Calidad de Agua (independiente de Bacteriología)
+  calDepto: null, calFormato: null, calDims: {}, // filtros en cascada de Calidad de Agua
+  calApartado: 'perfil', // 'perfil' (tarjetas) | 'matriz' (muestra × parámetro)
 };
 
 // Dimensiones de filtro de contexto. Cada una se muestra (en cascada) SOLO si tiene
@@ -131,27 +133,73 @@ function placeholderHTML(sub) {
 }
 
 /* ============================================================
-   CALIDAD DE AGUA (fisicoquímica · rango dentro/fuera) — Tanda A+B
-   Barra de mes + KPIs de cumplimiento + tarjetas "perfil iónico" por muestra.
-   Filtros en cascada / matriz / tendencias / ensayo llegan en tandas siguientes.
+   CALIDAD DE AGUA (fisicoquímica · rango dentro/fuera) — Tandas A–C
+   Barra de mes + filtros en CASCADA + KPIs de cumplimiento + apartados:
+   Perfil (tarjetas "perfil iónico") · Matriz (muestra × parámetro).
+   Tendencias / ensayo / alertas / export llegan en tandas siguientes.
    ============================================================ */
 /** Número limpio: entero tal cual; decimal a ≤2 sin ceros finales. */
 function calFmt(v) { return v == null || isNaN(v) ? '—' : String(Number.isInteger(v) ? v : +v.toFixed(2)); }
+
+// Dimensiones de contexto de Calidad de Agua (cascada; cada una se muestra si ≥2
+// valores distintos en el pool). Se adaptan al departamento/formato de cada muestra.
+const CAL_DIMS = [
+  { key: 'tipoMuestra', label: 'Tipo de muestra', pick: (c) => c.tipoMuestra },
+  { key: 'modulo', label: 'Módulo', pick: (c) => c.modulo, fmt: (v) => 'M' + v, cmp: (a, b) => (+a) - (+b) },
+  { key: 'sala', label: 'Sala', pick: (c) => c.sala },
+  { key: 'estadio', label: 'Estadío', pick: (c) => c.estadio },
+  { key: 'tq', label: 'TQ/N°', pick: (c) => c.tq, fmt: (v) => 'TQ ' + v, cmp: (a, b) => (+a) - (+b) },
+  { key: 'componente', label: 'Componente', pick: (c) => c.componente },
+  { key: 'muestras', label: 'Muestra', pick: (c) => c.muestras },
+  { key: 'estado', label: 'Estado', pick: (c) => c.estado },
+];
+const calSelect = (attr, value, values, placeholder, label = (v) => v) => `<select class="mic-select" data-calfilter="${attr}">
+    <option value="">${esc(placeholder)}</option>
+    ${values.map((o) => `<option value="${esc(o)}" ${value === o ? 'selected' : ''}>${esc(label(o))}</option>`).join('')}
+  </select>`;
+const calDimSelect = (dim, value, values) => `<select class="mic-select" data-caldim="${dim.key}">
+    <option value="">Todos · ${esc(dim.label)}</option>
+    ${values.map((o) => `<option value="${esc(o)}" ${value === o ? 'selected' : ''}>${esc(dim.fmt ? dim.fmt(o) : o)}</option>`).join('')}
+  </select>`;
+const calLegendHTML = () => `<div class="cal-legend">
+    <span class="cal-legend-item"><span class="cal-dot cal-dot--dentro"></span>Dentro de rango</span>
+    <span class="cal-legend-item"><span class="cal-dot cal-dot--fuera"></span>Fuera de rango</span>
+    <span class="cal-legend-item"><span class="cal-dot cal-dot--sin-rango"></span>Sin rango definido</span>
+  </div>`;
 
 function renderCalidadAgua() {
   const all = calAguaRows();
   if (!all.length) return `<div class="mic-calagua">${emptyBox('No se encontraron registros en la hoja "Calidad de Agua" del Google Sheet.')}</div>`;
   const ranges = loadCalRanges();
+  const ctxCache = new Map();
+  const ctxOf = (r) => { if (!ctxCache.has(r)) ctxCache.set(r, calCtx(r)); return ctxCache.get(r); };
 
   // Barra de mes (corrida → mes; las filas sin corrida pasan en cualquier mes).
-  const corridas = [...new Set(all.map((r) => calCtx(r).corrida).filter(Boolean))];
+  const corridas = [...new Set(all.map((r) => ctxOf(r).corrida).filter(Boolean))];
   const months = [...new Set(corridas.map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
   if (vState.calMonth == null || (months.length && !months.includes(vState.calMonth))) vState.calMonth = months.length ? months[months.length - 1] : 0;
-  const inMonth = (r) => { const c = calCtx(r).corrida; return !c || !months.length || monthIndexOfCorrida(+c) === vState.calMonth; };
-  const rows = all.filter(inMonth);
+  const inMonth = (r) => { const c = ctxOf(r).corrida; return !c || !months.length || monthIndexOfCorrida(+c) === vState.calMonth; };
+
+  // Filtros en CASCADA: departamento → formato → dimensiones de contexto dinámicas.
+  let pool = all.filter(inMonth);
+  const deptos = [...new Set(pool.map((r) => ctxOf(r).depto).filter(Boolean))].sort(natCmp);
+  if (vState.calDepto && !deptos.includes(vState.calDepto)) vState.calDepto = null;
+  if (!vState.calDepto) vState.calFormato = null;
+  if (vState.calDepto) pool = pool.filter((r) => ctxOf(r).depto === vState.calDepto);
+  const formatos = vState.calDepto ? [...new Set(pool.map((r) => ctxOf(r).formato).filter(Boolean))].sort(natCmp) : [];
+  if (vState.calFormato && !formatos.includes(vState.calFormato)) vState.calFormato = null;
+  if (vState.calFormato) pool = pool.filter((r) => ctxOf(r).formato === vState.calFormato);
+  const dimFilters = [];
+  CAL_DIMS.forEach((dim) => {
+    const vals = [...new Set(pool.map((r) => dim.pick(ctxOf(r))).filter((v) => v !== '' && v != null))].sort(dim.cmp || natCmp);
+    if (vState.calDims[dim.key] && !vals.includes(vState.calDims[dim.key])) vState.calDims[dim.key] = null;
+    if (vals.length < 2) { vState.calDims[dim.key] = null; return; }
+    dimFilters.push({ dim, options: vals });
+    if (vState.calDims[dim.key]) pool = pool.filter((r) => dim.pick(ctxOf(r)) === vState.calDims[dim.key]);
+  });
 
   // Muestras con sus parámetros medidos + estado (más reciente primero).
-  const samples = rows.map((r) => ({ ctx: calCtx(r), meas: calMeasured(r, ranges) }))
+  const samples = pool.map((r) => ({ ctx: ctxOf(r), meas: calMeasured(r, ranges) }))
     .filter((s) => s.meas.length)
     .sort((a, b) => (b.ctx.fecha || 0) - (a.ctx.fecha || 0));
 
@@ -173,7 +221,12 @@ function renderCalidadAgua() {
     </div>` : '';
 
   let h = `<div class="mic-calagua">`;
-  h += `<div class="mic-filters">${monthBar}</div>`;
+  h += `<div class="mic-filters">
+      ${monthBar}
+      ${deptos.length ? calSelect('calDepto', vState.calDepto, deptos, 'Todos los deptos.') : ''}
+      ${vState.calDepto && formatos.length ? calSelect('calFormato', vState.calFormato, formatos, 'Todos los formatos') : ''}
+      ${dimFilters.map(({ dim, options }) => calDimSelect(dim, vState.calDims[dim.key], options)).join('')}
+    </div>`;
   h += `<div class="mic-kpis">
       ${kpi('💧', 'Muestras', String(samples.length))}
       ${kpi('✅', 'Muestras 100% en rango', `${pctOk}%`, pctOk < 100, `${fullOk} de ${samples.length}`)}
@@ -181,17 +234,43 @@ function renderCalidadAgua() {
       ${kpi('🧪', 'Parámetro más incumplido', worst ? worst[0] : '—', !!worst, worst ? `${worst[1]} muestra(s)` : 'sin incumplimientos')}
     </div>`;
 
-  // Leyenda de estados.
-  h += `<div class="cal-legend">
-      <span class="cal-legend-item"><span class="cal-dot cal-dot--dentro"></span>Dentro de rango</span>
-      <span class="cal-legend-item"><span class="cal-dot cal-dot--fuera"></span>Fuera de rango</span>
-      <span class="cal-legend-item"><span class="cal-dot cal-dot--sin-rango"></span>Sin rango definido</span>
+  // Apartados: Perfil (tarjetas) · Matriz (muestra × parámetro).
+  const ap = ['perfil', 'matriz'].includes(vState.calApartado) ? vState.calApartado : 'perfil';
+  h += `<div class="mic-apartados">
+      <button class="mic-ap ${ap === 'perfil' ? 'is-active' : ''}" data-cal-ap="perfil">🧪 Perfil</button>
+      <button class="mic-ap ${ap === 'matriz' ? 'is-active' : ''}" data-cal-ap="matriz">🗂️ Matriz</button>
     </div>`;
+  h += calLegendHTML();
 
-  // Tarjetas "perfil iónico": una por muestra, con sus parámetros como chips semaforizados.
-  h += `<div class="cal-cards">${samples.map((s) => calCardHTML(s)).join('')}</div>`;
+  if (!samples.length) h += emptyBox('Sin muestras con parámetros medidos para el filtro actual.');
+  else if (ap === 'matriz') h += calMatrizHTML(samples);
+  else h += `<div class="cal-cards">${samples.map((s) => calCardHTML(s)).join('')}</div>`;
   h += `</div>`;
   return h;
+}
+
+/** Apartado Matriz: filas = muestras, columnas = parámetros medidos (orden del
+ *  catálogo); celda = valor coloreado por estado (dentro/fuera/sin-rango). */
+function calMatrizHTML(samples) {
+  const present = new Set();
+  samples.forEach((s) => s.meas.forEach((m) => present.add(m.key)));
+  const cols = CAL_PARAMS.filter((p) => present.has(p.key));
+  if (!cols.length) return emptyBox('Sin parámetros medidos para el filtro actual.');
+  const head = `<tr><th class="cal-mx-corner">Muestra \\ Parámetro</th>${cols.map((c) => `<th class="cal-mx-colh" title="${esc(c.label)}${c.unit ? ' (' + esc(c.unit) + ')' : ''}">${esc(c.label)}</th>`).join('')}</tr>`;
+  const body = samples.map((s) => {
+    const byKey = Object.fromEntries(s.meas.map((m) => [m.key, m]));
+    const cells = cols.map((c) => {
+      const m = byKey[c.key];
+      if (!m) return '<td class="cal-mx-empty" title="sin dato">·</td>';
+      return `<td class="cal-mx-cell cal-mx--${m.estado}" title="${esc(c.label)} — ${m.estado}${m.range ? ' · objetivo ' + esc(m.range) : ''}">${esc(calFmt(m.value))}</td>`;
+    }).join('');
+    const loc = [s.ctx.fecha ? fmtShort(s.ctx.fecha) : '—', calLocation(s.ctx)].join(' · ');
+    return `<tr><th class="cal-mx-rowh" title="${esc(loc)}">${esc(loc)}</th>${cells}</tr>`;
+  }).join('');
+  return `<div class="card cal-mx-card">
+      <div class="mic-chart-title">🗂️ Matriz Muestra × Parámetro <span class="muted">· color = dentro/fuera de rango · valor medido</span></div>
+      <div class="cal-mx-wrap"><table class="cal-mx-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+    </div>`;
 }
 
 /** Tarjeta de una muestra: cabecera (fecha·depto·ubicación·cumplimiento) + chips por parámetro. */
@@ -1041,6 +1120,11 @@ function bind(root) {
     // Filtro de contexto dinámico (Sala/Sexo/TQ/Punto/…)
     const dimSel = e.target.closest('[data-micdim]');
     if (dimSel) { vState.dims[dimSel.dataset.micdim] = dimSel.value || null; vState.petriDay = null; microbiologiaView(root); return; }
+    // Cascada de Calidad de Agua (departamento/formato + dimensiones de contexto).
+    const cdim = e.target.closest('[data-caldim]');
+    if (cdim) { vState.calDims[cdim.dataset.caldim] = cdim.value || null; microbiologiaView(root); return; }
+    const csel = e.target.closest('[data-calfilter]');
+    if (csel) { vState[csel.dataset.calfilter] = csel.value || null; if (csel.dataset.calfilter === 'calDepto') { vState.calFormato = null; vState.calDims = {}; } microbiologiaView(root); return; }
     const sel = e.target.closest('[data-micfilter]');
     if (!sel) return;
     vState[sel.dataset.micfilter] = sel.value || null;
@@ -1064,6 +1148,10 @@ function bind(root) {
 
     const ap = e.target.closest('[data-mic-ap]');
     if (ap) { if (vState.apartado !== ap.dataset.micAp) { vState.apartado = ap.dataset.micAp; microbiologiaView(root); } return; }
+
+    // Apartado de Calidad de Agua: Perfil ⇄ Matriz.
+    const cap = e.target.closest('[data-cal-ap]');
+    if (cap) { if (vState.calApartado !== cap.dataset.calAp) { vState.calApartado = cap.dataset.calAp; microbiologiaView(root); } return; }
 
     const pet = e.target.closest('[data-mic-petab]');
     if (pet) { if (vState.petriTab !== pet.dataset.micPetab) { vState.petriTab = pet.dataset.micPetab; microbiologiaView(root); } return; }

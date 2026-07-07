@@ -158,6 +158,16 @@ describe('Microbiología · harness de navegación integral', () => {
     // pH 8.0 dentro de 7.5–8.5 · Nitrito 0.5 fuera de ≤0.2 → ambos estados presentes.
     expect(root.querySelector('.cal-chip--dentro')).toBeTruthy();
     expect(root.querySelector('.cal-chip--fuera')).toBeTruthy();
+    // Apartado Matriz: tabla muestra × parámetro con celdas semaforizadas.
+    click(root.querySelector('[data-cal-ap="matriz"]'));
+    expect(root.querySelector('.cal-mx-table')).toBeTruthy();
+    expect(root.querySelector('.cal-mx--dentro')).toBeTruthy();
+    expect(root.querySelector('.cal-mx--fuera')).toBeTruthy();
+    // Cascada: filtrar por departamento (2 deptos: Larvicultura/Maduración) no rompe.
+    const dsel = root.querySelector('[data-calfilter="calDepto"]');
+    expect(dsel).toBeTruthy();
+    change(dsel, 'Larvicultura');
+    click(root.querySelector('[data-cal-ap="perfil"]'));
     // Navegación de mes propia de Calidad de Agua no rompe.
     const cnav = root.querySelector('[data-cal-month]');
     if (cnav && !cnav.disabled) click(cnav);
