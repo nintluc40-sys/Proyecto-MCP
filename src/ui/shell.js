@@ -7,6 +7,7 @@ import { changeView, setContainer, renderCurrentView } from './router.js';
 import { destroyAllCharts } from '../core/charts.js';
 import { fmtShort, parseAnyDate } from '../core/dates.js';
 import { getField, F } from '../core/fields.js';
+import { toast } from './toast.js';
 // Logo corporativo (pantalla de entrada). Vite lo resuelve a un asset con hash.
 import logoUrl from '../assets/logo.png';
 
@@ -67,7 +68,14 @@ export function mountShell(appEl) {
   bindEvents(appEl);
   showEntry(); // pantalla de ingreso por rol antes de usar el sistema
 
-  on(EV.CONN, ({ state, label }) => setConnStatus(state, label));
+  on(EV.CONN, ({ state, label, warn }) => {
+    setConnStatus(state, label);
+    // Carga degradada (solo 1 hoja): avisa explícitamente en lugar de dejar todas
+    // las vistas vacías en silencio. Ver `warn` en connectSheets (core/sheets.js).
+    if (warn) {
+      toast('Solo se cargó 1 hoja del documento. La descarga completa (todas las hojas) probablemente falló: reintenta con el indicador de conexión o publica el Sheet en la web (Archivo → Compartir → Publicar). Mientras tanto, la mayoría de vistas quedarán sin datos.', 'err', 9000);
+    }
+  });
   on(EV.VIEW, renderDrawer);
   on(EV.DATA, () => { renderDateBar(); renderCurrentView(); });
 }

@@ -12,7 +12,7 @@
    Maduracion, Lab_Algas, Morfologia) y se sella el Módulo desde el
    nombre de pestaña cuando aplica.
    ============================================================ */
-import { SHEETS_URL, FETCH_TIMEOUT_MS } from '../config.js';
+import { SHEETS_URL, FETCH_TIMEOUT_MS, XLSX_TIMEOUT_MS } from '../config.js';
 import { store, emit, EV } from './store.js';
 import { autoCalcMortalidad, getField, F } from './fields.js';
 import { parseAnyDate, clearDateCache } from './dates.js';
@@ -117,7 +117,9 @@ async function fetchWorkbook(ids) {
   const realId = ids.type === 'real' ? ids.realId : null;
   if (!realId) return null;
   const url = `https://docs.google.com/spreadsheets/d/${realId}/export?format=xlsx&_cb=${Math.floor(Date.now() / 30000)}`;
-  const resp = await fetchWithTimeout(url, { cache: 'no-store' });
+  // Timeout propio (más generoso): Google genera el workbook en el servidor antes
+  // de transferirlo. Un timeout corto aquí es la causa raíz del "solo carga 1 hoja".
+  const resp = await fetchWithTimeout(url, { cache: 'no-store' }, XLSX_TIMEOUT_MS);
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
   const buf = await resp.arrayBuffer();
   const XLSX = getXLSX();
@@ -367,7 +369,11 @@ export async function connectSheets() {
     commit(sheets, firstLoad);
     const n = store.sheetNames.length;
     const ts = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
-    emit(EV.CONN, { state: 'connected', label: `${n} hoja${n > 1 ? 's' : ''} · ${ts}` });
+    // Señal de carga DEGRADADA: si tras conectar solo hay 1 hoja, casi siempre es
+    // que el camino XLSX (todas las hojas) falló y se cayó al fallback CSV, que sin
+    // el documento "publicado en la web" solo recupera la 1ª pestaña → la mayoría de
+    // vistas quedan sin datos. Se marca `warn` para que la shell avise al usuario.
+    emit(EV.CONN, { state: 'connected', label: `${n} hoja${n > 1 ? 's' : ''} · ${ts}`, warn: n <= 1 });
     return true;
   } catch (err) {
     const msg = err?.name === 'AbortError'

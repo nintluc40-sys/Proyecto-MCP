@@ -9,6 +9,14 @@ export const SHEETS_URL =
 
 export const FETCH_TIMEOUT_MS = 20000;
 
+// El export XLSX de Google (camino principal: trae TODAS las hojas en una sola
+// petición) se GENERA en el servidor de Google antes de transferirse: TTFB de
+// varios segundos + workbook de varios MB. Si esta descarga cae por timeout, la
+// app degrada al fallback CSV, que solo recupera la 1ª hoja si el documento no
+// está "publicado en la web" → todas las vistas quedan sin datos. Por eso el
+// camino XLSX usa su PROPIO timeout, más generoso que una petición normal.
+export const XLSX_TIMEOUT_MS = 45000;
+
 // Intervalo de auto-refresco silencioso (segundos).
 export const REFRESH_INTERVAL_S = 60;
 
