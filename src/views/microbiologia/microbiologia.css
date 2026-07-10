@@ -153,55 +153,174 @@
 /* ============================================================
    CALIDAD DE AGUA · perfil iónico por muestra (fisicoquímica)
    ============================================================ */
+/* Escala de severidad (semáforo científico de 4 niveles). Cada clase .cal-sev--*
+   fija el color local --sev que consumen el gauge, la banda y los chips. */
+.mic-calagua { --sev-optimo: #2e9e5b; --sev-vigilancia: #d99a00; --sev-fuera: #ef6c00; --sev-critico: var(--c-grave); --sev-sin-rango: var(--c-text-muted); }
+.cal-sev--optimo { --sev: var(--sev-optimo); }
+.cal-sev--vigilancia { --sev: var(--sev-vigilancia); }
+.cal-sev--fuera { --sev: var(--sev-fuera); }
+.cal-sev--critico { --sev: var(--sev-critico); }
+.cal-sev--sin-rango { --sev: var(--sev-sin-rango); }
+
+/* Panel del Analista: síntesis técnica autogenerada + WQI global. */
+.cal-analyst { display: flex; gap: 16px; align-items: center; margin: 4px 0 14px; padding: 14px 16px; border: 1px solid var(--c-border-soft); border-radius: var(--r-md); background: linear-gradient(180deg, var(--c-surface-2), var(--c-surface)); }
+.cal-an-gauge { flex: 0 0 auto; width: 88px; height: 88px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--sev) var(--deg, 0deg), color-mix(in srgb, var(--sev) 16%, transparent) 0); }
+.cal-an-gauge-in { width: 68px; height: 68px; border-radius: 50%; background: var(--c-surface); display: grid; place-items: center; align-content: center; box-shadow: inset 0 0 0 1px var(--c-border-soft); }
+.cal-an-wqi { font-size: 24px; font-weight: 800; line-height: 1; color: var(--sev); font-variant-numeric: tabular-nums; }
+.cal-an-wqi-u { font-size: 9px; font-weight: 700; letter-spacing: .08em; color: var(--c-text-muted); }
+.cal-an-body { flex: 1; min-width: 0; }
+.cal-an-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+.cal-an-title { font-size: 13px; font-weight: 800; color: var(--c-text); }
+.cal-an-band { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; color: var(--sev); background: color-mix(in srgb, var(--sev) 14%, transparent); }
+.cal-an-text { margin: 0 0 8px; font-size: 12.5px; line-height: 1.5; color: var(--c-text-soft); }
+.cal-an-text b { color: var(--c-text); font-weight: 800; }
+.cal-an-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cal-an-chip { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--c-border-soft); background: var(--c-surface); color: var(--c-text-soft); }
+.cal-an-chip--param { border-left: 3px solid var(--sev-fuera); }
+.cal-an-chip--param b { color: var(--sev-fuera); }
+/* Nivel de riesgo de un nodo → fija el color local --sev (mapeo a la severidad). */
+.cal-risk--bajo { --sev: var(--sev-optimo); }
+.cal-risk--medio { --sev: var(--sev-vigilancia); }
+.cal-risk--alto { --sev: var(--sev-fuera); }
+.cal-risk--critico { --sev: var(--sev-critico); }
+.cal-risk--sin-datos { --sev: var(--sev-sin-rango); }
+.cal-an-chip--risk { color: #fff; border: none; background: var(--sev); }
+@media (max-width: 560px) { .cal-analyst { flex-direction: column; align-items: stretch; text-align: center; } .cal-an-gauge { justify-self: center; } }
+
 .cal-legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 4px 0 12px; font-size: 11.5px; color: var(--c-text-soft); }
 .cal-legend-item { display: inline-flex; align-items: center; gap: 6px; }
-.cal-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
-.cal-dot--dentro { background: #2e9e5b; }
-.cal-dot--fuera { background: var(--c-grave); }
-.cal-dot--sin-rango { background: var(--c-text-muted); }
-.cal-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
-.cal-card { border: 1px solid var(--c-border-soft); border-radius: var(--r-md); background: var(--c-surface); padding: 12px 14px; }
-.cal-card.is-out { border-color: color-mix(in srgb, var(--c-grave) 40%, var(--c-border)); }
-.cal-card-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-.cal-card-date { font-weight: 800; font-size: 12.5px; color: var(--c-text); }
-.cal-card-loc { font-size: 11.5px; color: var(--c-text-soft); flex: 1; min-width: 0; }
-.cal-badge { font-size: 10.5px; font-weight: 800; padding: 2px 8px; border-radius: var(--r-pill); white-space: nowrap; }
-.cal-badge--ok { background: color-mix(in srgb, #2e9e5b 16%, transparent); color: #1f7a44; }
-.cal-badge--warn { background: color-mix(in srgb, var(--c-grave) 15%, transparent); color: var(--c-grave); }
-.cal-badge--muted { background: var(--c-surface-2); color: var(--c-text-muted); }
-.cal-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.cal-chip { display: inline-flex; align-items: baseline; gap: 5px; padding: 4px 9px; border-radius: var(--r-sm); border: 1px solid var(--c-border-soft); border-left-width: 3px; background: var(--c-surface-2); }
-.cal-chip--dentro { border-left-color: #2e9e5b; }
-.cal-chip--fuera { border-left-color: var(--c-grave); background: color-mix(in srgb, var(--c-grave) 8%, var(--c-surface-2)); }
-.cal-chip--sin-rango { border-left-color: var(--c-text-muted); }
-.cal-chip-l { font-size: 10.5px; font-weight: 700; color: var(--c-text-soft); }
-.cal-chip-v { font-size: 12.5px; font-weight: 800; color: var(--c-text); font-variant-numeric: tabular-nums; }
-.cal-chip--fuera .cal-chip-v { color: var(--c-grave); }
-.cal-chip-r { font-size: 10px; color: var(--c-text-muted); }
-/* Matriz Muestra × Parámetro */
-.cal-mx-card { display: flex; flex-direction: column; }
-.cal-mx-wrap { overflow: auto; max-height: 460px; border: 1px solid var(--c-border-soft); border-radius: var(--r-md); }
-.cal-mx-table { border-collapse: collapse; font-size: 11.5px; width: max-content; min-width: 100%; }
-.cal-mx-table th, .cal-mx-table td { border: 1px solid var(--c-border-soft); padding: 5px 9px; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.cal-mx-table thead th { background: var(--c-surface-2); color: var(--c-text-muted); font-weight: 700; position: sticky; top: 0; z-index: 1; }
-.cal-mx-colh { font-size: 10.5px; }
-.cal-mx-corner { left: 0; z-index: 3; text-align: left !important; }
-.cal-mx-rowh { position: sticky; left: 0; z-index: 2; background: var(--c-surface); text-align: left !important; font-weight: 700; color: var(--c-text); }
-.cal-mx-cell { font-weight: 700; }
-.cal-mx--dentro { background: color-mix(in srgb, #2e9e5b 16%, transparent); color: #1f7a44; }
-.cal-mx--fuera { background: color-mix(in srgb, var(--c-grave) 18%, transparent); color: var(--c-grave); font-weight: 800; }
-.cal-mx--sin-rango { color: var(--c-text-soft); }
-.cal-mx-empty { color: var(--c-text-muted); background: var(--c-surface-2); }
-/* Tendencias por parámetro (selector de píldoras + estadísticos + gráfico con banda) */
-.cal-tr-card { display: flex; flex-direction: column; }
-.cal-tr-pills { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 10px; }
-.cal-tr-pill { border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); border-radius: var(--r-sm); padding: 4px 10px; font-size: 11.5px; font-weight: 700; cursor: pointer; }
-.cal-tr-pill:hover { border-color: var(--c-brand); color: var(--c-brand); }
-.cal-tr-pill.is-on { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
-.cal-tr-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-.cal-tr-stat { display: inline-flex; flex-direction: column; background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); padding: 5px 10px; font-size: 9.5px; font-weight: 700; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: .3px; }
-.cal-tr-stat b { font-size: 15px; color: var(--c-text); text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
-.cal-tr-chart { height: 260px; }
+.cal-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; background: var(--sev, var(--c-text-muted)); }
+
+/* ---- Por ubicación · mapa de riesgo Módulo × Tanque ---- */
+.cal-riskmap { border: 1px solid var(--c-border-soft); border-radius: var(--r-md); background: var(--c-surface); padding: 12px 14px; margin-bottom: 14px; }
+.cal-rm-title { font-size: 12px; font-weight: 800; color: var(--c-text-soft); margin-bottom: 10px; }
+.cal-rm-rows { display: flex; flex-direction: column; gap: 6px; }
+.cal-rm-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cal-rm-mod { flex: 0 0 130px; font-size: 11.5px; color: var(--c-text); border-left: 4px solid var(--sev); padding-left: 8px; line-height: 1.25; }
+.cal-rm-mod span { display: block; font-size: 10px; color: var(--c-text-muted); font-variant-numeric: tabular-nums; }
+.cal-rm-cells { display: flex; flex-wrap: wrap; gap: 5px; }
+.cal-rm-cell { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; min-width: 46px; padding: 5px 7px; border: none; border-radius: var(--r-sm); background: var(--sev); color: #fff; font-size: 10.5px; font-weight: 800; cursor: pointer; line-height: 1.1; transition: transform .06s, box-shadow .12s; }
+.cal-rm-cell small { font-size: 9px; font-weight: 700; opacity: .9; font-variant-numeric: tabular-nums; }
+.cal-rm-cell:hover { transform: translateY(-1px); box-shadow: 0 2px 8px color-mix(in srgb, var(--sev) 45%, transparent); }
+
+/* ---- Por ubicación · fichas técnicas jerárquicas (módulo → tanque) ---- */
+.cal-fichas-t { font-size: 12px; font-weight: 800; color: var(--c-text-soft); margin: 2px 0 8px; }
+.cal-fichas-t span { font-weight: 600; color: var(--c-text-muted); }
+/* Comparador de tanques · coordenadas paralelas */
+.cal-parallel { margin: 14px 0; border: 1px solid var(--c-border-soft); border-radius: var(--r-md); background: color-mix(in srgb, var(--c-surface-2) 55%, var(--c-surface)); padding: 12px 14px; box-shadow: inset 0 1px 3px rgba(0,0,0,.05); }
+.cal-pc-title { font-size: 12px; font-weight: 800; color: var(--c-text-soft); margin-bottom: 8px; }
+.cal-pc-title span { font-weight: 600; color: var(--c-text-muted); }
+.cal-pc-wrap { overflow-x: auto; }
+.cal-pc-svg { display: block; width: 100%; min-width: 480px; max-width: 760px; height: auto; margin: 0 auto; }
+.cal-pc-axis { stroke: color-mix(in srgb, var(--c-text-muted) 30%, transparent); stroke-width: 1; }
+.cal-pc-band { fill: color-mix(in srgb, var(--sev-optimo) 20%, transparent); }
+.cal-pc-axlbl { font-size: 9.5px; font-weight: 700; fill: var(--c-text-soft); }
+.cal-pc-axrange { font-size: 8.5px; fill: var(--c-text-muted); }
+.cal-pc-line { fill: none; stroke: var(--sev); stroke-width: 1.6; stroke-opacity: .68; transition: stroke-opacity .1s, stroke-width .1s; }
+.cal-pc-hit { fill: none; stroke: transparent; stroke-width: 11; }
+.cal-pc-dot { fill: var(--sev); stroke: var(--c-surface); stroke-width: 1; }
+.cal-pc-tank { cursor: pointer; }
+.cal-pc-tank:hover .cal-pc-line, .cal-pc-tank:focus .cal-pc-line { stroke-opacity: 1; stroke-width: 2.6; }
+.cal-pc-tank:focus { outline: none; }
+.cal-pc-tank:focus-visible .cal-pc-line { stroke-opacity: 1; stroke-width: 2.6; }
+.cal-fichas { display: flex; flex-direction: column; gap: 10px; }
+.cal-loc-mod { border: 1px solid var(--c-border-soft); border-radius: var(--r-md); overflow: hidden; }
+.cal-loc-head { width: 100%; display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: var(--c-surface-2); border: none; border-left: 4px solid var(--sev); cursor: pointer; text-align: left; }
+.cal-loc-caret { color: var(--c-text-muted); font-size: 11px; width: 12px; }
+.cal-loc-modname { font-size: 13px; font-weight: 800; color: var(--c-text); }
+.cal-loc-modrisk { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #fff; background: var(--sev); padding: 2px 8px; border-radius: 999px; }
+.cal-loc-modwqi { font-size: 11px; font-weight: 800; color: var(--c-text-soft); font-variant-numeric: tabular-nums; }
+.cal-loc-modn { margin-left: auto; font-size: 10.5px; color: var(--c-text-muted); }
+.cal-loc-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; padding: 12px; }
+.cal-ficha { text-align: left; border: 1px solid var(--c-border); border-top: 4px solid var(--sev); border-radius: var(--r-sm); background: var(--c-surface); padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; transition: box-shadow .12s, transform .06s; }
+.cal-ficha:hover { box-shadow: 0 3px 12px rgba(0,0,0,.12); transform: translateY(-1px); }
+.cal-ficha-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cal-ficha-tq { font-size: 14px; font-weight: 800; color: var(--c-text); }
+.cal-ficha-risk { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #fff; background: var(--sev); padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+.cal-ficha-wqi { display: flex; align-items: center; gap: 8px; }
+.cal-ficha-wqibar { flex: 1; height: 8px; border-radius: 999px; background: color-mix(in srgb, var(--c-text-muted) 20%, transparent); overflow: hidden; }
+.cal-ficha-wqibar span { display: block; height: 100%; border-radius: 999px; background: var(--sev); }
+.cal-ficha-wqinum { font-size: 15px; font-weight: 800; color: var(--sev); font-variant-numeric: tabular-nums; min-width: 24px; text-align: right; }
+.cal-ficha-crit { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 10.5px; }
+.cal-ficha-crit-i { color: var(--sev-fuera); font-weight: 700; }
+.cal-ficha-ok { color: var(--sev-optimo); font-weight: 700; }
+.cal-ficha-foot { font-size: 10px; color: var(--c-text-muted); }
+
+/* ---- Por ubicación · modal de ficha técnica del tanque ---- */
+.cal-tk-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.cal-tk-risk { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #fff; background: var(--sev); padding: 3px 10px; border-radius: 999px; }
+.cal-tk-wqi { font-size: 13px; font-weight: 700; color: var(--c-text-soft); }
+.cal-tk-wqi b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.cal-tk-meta { font-size: 11px; color: var(--c-text-muted); }
+.cal-tk-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.cal-tk-chip { border: 1px solid var(--c-border-soft); border-left: 3px solid var(--sev); border-radius: var(--r-sm); background: var(--c-surface-2); padding: 6px 10px; display: flex; flex-direction: column; gap: 1px; }
+.cal-tk-chip-l { font-size: 10px; font-weight: 700; color: var(--c-text-soft); }
+.cal-tk-chip-v { font-size: 13.5px; font-weight: 800; color: var(--sev); font-variant-numeric: tabular-nums; }
+.cal-tk-chip-r { font-size: 9.5px; color: var(--c-text-muted); }
+
+/* Analizador multiparamétrico: pantalla principal + banco de cartuchos */
+.cal-analyzer { display: flex; flex-direction: column; gap: 14px; }
+.cal-anz-screen { position: relative; border: 1px solid var(--c-border-soft); border-radius: var(--r-md); background: linear-gradient(155deg, color-mix(in srgb, var(--sev) 7%, var(--c-surface-2)) 0%, var(--c-surface) 55%); padding: 16px 18px 18px 22px; box-shadow: 0 1px 4px rgba(0,0,0,.05), inset 0 1px 0 color-mix(in srgb, #fff 30%, transparent); overflow: hidden; }
+.cal-anz-screen::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: linear-gradient(180deg, var(--sev), color-mix(in srgb, var(--sev) 55%, transparent)); }
+.cal-anz-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.cal-anz-name { display: block; font-size: 17px; font-weight: 800; color: var(--c-text); letter-spacing: .01em; }
+.cal-anz-sub { font-size: 11.5px; color: var(--c-text-muted); }
+.cal-anz-read { display: flex; align-items: baseline; gap: 8px; }
+.cal-anz-val { font-size: 34px; font-weight: 800; line-height: 1; color: var(--sev, var(--c-text)); font-variant-numeric: tabular-nums; }
+.cal-anz-unit { font-size: 13px; font-weight: 700; color: var(--c-text-muted); }
+.cal-anz-badge { align-self: center; font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; padding: 3px 9px; border-radius: 999px; color: var(--sev); background: color-mix(in srgb, var(--sev) 15%, transparent); }
+/* Escala tipo analizador (barra continua con zona objetivo + aguja) */
+.cal-anz-gauge { margin: 16px 0 6px; }
+.cal-anz-track { position: relative; height: 12px; border-radius: 999px; background: color-mix(in srgb, var(--c-text-muted) 22%, transparent); overflow: visible; }
+.cal-anz-zone { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--sev-optimo) 32%, transparent); border-radius: 999px; }
+.cal-anz-lim { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--sev-optimo); transform: translateX(-1px); }
+.cal-anz-needle { position: absolute; top: 50%; width: 16px; height: 16px; border-radius: 50%; background: var(--sev); border: 2px solid var(--c-surface); box-shadow: 0 1px 4px rgba(0,0,0,.35); transform: translate(-50%, -50%); }
+.cal-anz-scale { display: flex; justify-content: space-between; font-size: 10px; color: var(--c-text-muted); margin-top: 7px; font-variant-numeric: tabular-nums; }
+.cal-anz-target { font-weight: 700; color: var(--c-text-soft); }
+.cal-anz-norange { margin: 12px 0; font-size: 11.5px; color: var(--c-text-muted); font-style: italic; }
+.cal-anz-stats { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.cal-anz-stat { display: inline-flex; flex-direction: column; background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); padding: 5px 11px; font-size: 9.5px; font-weight: 700; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: .3px; }
+.cal-anz-stat b { font-size: 15px; color: var(--c-text); text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+/* Selector de modo de gráfico (Tendencia / Control / Distribución) */
+.cal-anz-modes { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--r-sm); background: var(--c-surface-2); border: 1px solid var(--c-border-soft); margin: 6px 0 2px; }
+.cal-anz-mode { border: none; background: transparent; color: var(--c-text-soft); font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: calc(var(--r-sm) - 2px); cursor: pointer; }
+.cal-anz-mode:hover { color: var(--c-text); }
+.cal-anz-mode.is-on { background: var(--c-surface); color: var(--c-brand); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.cal-anz-chart-t { font-size: 11px; font-weight: 700; color: var(--c-text-muted); margin: 4px 0 6px; }
+/* Panel de "display" que enmarca canvas/boxplot como la pantalla de un instrumento */
+.cal-anz-chart, .cal-anz-box { background: color-mix(in srgb, var(--c-surface-2) 55%, var(--c-surface)); border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); box-shadow: inset 0 1px 3px rgba(0,0,0,.05); }
+.cal-anz-chart { height: 224px; padding: 10px 12px 6px; }
+.cal-anz-box { overflow-x: auto; padding: 12px 10px; }
+.cal-bx-svg { display: block; width: 100%; max-width: 660px; height: auto; margin: 0 auto; }
+.cal-bx-grid { stroke: color-mix(in srgb, var(--c-text-muted) 16%, transparent); stroke-width: 1; stroke-dasharray: 2 3; }
+.cal-bx-band { fill: color-mix(in srgb, var(--sev-optimo) 15%, transparent); }
+.cal-bx-box { fill: var(--sev); fill-opacity: .22; stroke: var(--sev); stroke-width: 1.4; }
+.cal-bx-med { stroke: var(--sev); stroke-width: 2.4; }
+.cal-bx-whisk { stroke: var(--sev); stroke-width: 1.2; }
+.cal-bx-cap { stroke: var(--sev); stroke-width: 1.4; }
+.cal-bx-out { fill: var(--sev-critico); fill-opacity: .8; }
+.cal-bx-lbl { font-size: 9.5px; font-weight: 700; fill: var(--c-text-soft); }
+.cal-bx-val { font-size: 9px; font-weight: 800; fill: var(--sev); }
+.cal-bx-tick { font-size: 9px; fill: var(--c-text-muted); }
+.cal-anz-aff { margin-top: 12px; border-top: 1px dashed var(--c-border-soft); padding-top: 10px; }
+.cal-anz-aff-t { font-size: 11.5px; font-weight: 800; color: var(--c-text-soft); margin-bottom: 6px; }
+.cal-anz-aff-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.cal-anz-aff-chip { font-size: 11px; font-weight: 700; color: var(--c-text-soft); background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-left: 3px solid var(--sev); border-radius: var(--r-sm); padding: 3px 9px; }
+.cal-anz-aff-chip b { color: var(--sev); font-variant-numeric: tabular-nums; }
+/* Banco de cartuchos analíticos */
+.cal-cartridges { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.cal-cart { text-align: left; border: 1px solid var(--c-border); border-top: 3px solid var(--sev); border-radius: var(--r-sm); background: var(--c-surface); padding: 8px 10px 9px; cursor: pointer; display: flex; flex-direction: column; gap: 5px; transition: border-color .12s, box-shadow .12s, transform .06s; }
+.cal-cart:hover { box-shadow: 0 2px 8px rgba(0,0,0,.1); transform: translateY(-1px); }
+.cal-cart.is-on { border-color: var(--sev); box-shadow: 0 0 0 1px var(--sev), 0 2px 10px color-mix(in srgb, var(--sev) 30%, transparent); }
+.cal-cart-h { display: flex; align-items: center; gap: 6px; }
+.cal-cart-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sev); flex: 0 0 auto; }
+.cal-cart-name { font-size: 11px; font-weight: 700; color: var(--c-text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-cart-val { font-size: 16px; font-weight: 800; color: var(--c-text); font-variant-numeric: tabular-nums; }
+.cal-cart-val i { font-size: 10px; font-weight: 600; font-style: normal; color: var(--c-text-muted); margin-left: 3px; }
+.cal-cart-bar { position: relative; height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--c-text-muted) 20%, transparent); overflow: visible; }
+.cal-cart-bar--flat { background: color-mix(in srgb, var(--c-text-muted) 12%, transparent); }
+.cal-cart-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--sev); }
+.cal-cart-lim { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--c-text-soft); transform: translateX(-1px); }
 /* Ensayo antes/después (dumbbell + tabla) */
 .cal-en-card { display: flex; flex-direction: column; }
 .cal-en-chart { height: 240px; margin-bottom: 10px; }

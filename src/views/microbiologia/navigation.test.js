@@ -154,16 +154,34 @@ describe('Microbiología · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
-  it('sub-vista Calidad de Agua: KPIs + tarjetas de perfil con chips semaforizados', () => {
+  it('sub-vista Calidad de Agua: Panel del Analista + doble lente (Analizador/Por ubicación/Ensayo)', () => {
     mount();
     click(root.querySelector('[data-mic-sub="calidad"]'));
     expect(root.querySelector('.mic-calagua')).toBeTruthy();
     expect(root.querySelector('.mic-kpis')).toBeTruthy();
-    const cards = root.querySelectorAll('.cal-card');
-    expect(cards.length).toBeGreaterThanOrEqual(1);
-    // pH 8.0 dentro de 7.5–8.5 · Nitrito 0.5 fuera de ≤0.2 → ambos estados presentes.
-    expect(root.querySelector('.cal-chip--dentro')).toBeTruthy();
-    expect(root.querySelector('.cal-chip--fuera')).toBeTruthy();
+    // Panel del Analista: WQI global + diagnóstico automático (hay Nitrito fuera).
+    const analyst = root.querySelector('.cal-analyst');
+    expect(analyst).toBeTruthy();
+    expect(root.querySelector('.cal-an-wqi').textContent).toMatch(/\d/);
+    expect(analyst.querySelector('.cal-an-text').textContent.length).toBeGreaterThan(0);
+    // Landing = Analizador (por parámetro): pantalla + banco de cartuchos + gráfico con banda.
+    expect(root.querySelector('.cal-analyzer')).toBeTruthy();
+    expect(root.querySelector('.cal-anz-screen')).toBeTruthy();
+    expect(root.querySelector('.cal-anz-val').textContent.length).toBeGreaterThan(0);
+    expect(root.querySelector('#calTrendChart')).toBeTruthy();
+    const carts = root.querySelectorAll('.cal-cart[data-cal-param]');
+    expect(carts.length).toBeGreaterThanOrEqual(1);
+    const otherC = [...carts].find((p) => !p.classList.contains('is-on'));
+    if (otherC) { const pk = otherC.dataset.calParam; click(otherC); expect(root.querySelector('.cal-cart.is-on').dataset.calParam).toBe(pk); }
+    // Modos de gráfico: Control (Shewhart, mismo canvas) y Distribución (boxplot SVG).
+    click(root.querySelector('[data-cal-chartmode="control"]'));
+    expect(root.querySelector('.cal-anz-mode.is-on').dataset.calChartmode).toBe('control');
+    expect(root.querySelector('#calTrendChart')).toBeTruthy();
+    click(root.querySelector('[data-cal-chartmode="distribucion"]'));
+    expect(root.querySelector('.cal-bx-svg')).toBeTruthy();
+    expect(root.querySelector('#calTrendChart')).toBeFalsy(); // distribución no usa canvas
+    click(root.querySelector('[data-cal-chartmode="tendencia"]'));
+    expect(root.querySelector('#calTrendChart')).toBeTruthy();
     // Botones de export presentes; el KPI de alertas abre y cierra su modal.
     expect(root.querySelector('[data-cal-export]')).toBeTruthy();
     expect(root.querySelector('[data-cal-xlsx]')).toBeTruthy();
@@ -174,32 +192,36 @@ describe('Microbiología · harness de navegación integral', () => {
     expect(root.querySelector('#calAlertBody').textContent.length).toBeGreaterThan(0);
     click(root.querySelector('[data-cal-alert-close]'));
     expect(root.querySelector('#calAlertModal').classList.contains('is-open')).toBe(false);
-    // Apartado Matriz: tabla muestra × parámetro con celdas semaforizadas.
-    click(root.querySelector('[data-cal-ap="matriz"]'));
-    expect(root.querySelector('.cal-mx-table')).toBeTruthy();
-    expect(root.querySelector('.cal-mx--dentro')).toBeTruthy();
-    expect(root.querySelector('.cal-mx--fuera')).toBeTruthy();
-    // Apartado Tendencias: selector de parámetro (píldoras) + gráfico con banda de rango.
-    click(root.querySelector('[data-cal-ap="tendencias"]'));
-    expect(root.querySelector('.cal-tr-card')).toBeTruthy();
-    expect(root.querySelector('#calTrendChart')).toBeTruthy();
-    const psel = root.querySelectorAll('.cal-tr-pill[data-cal-trendsel]');
-    expect(psel.length).toBeGreaterThanOrEqual(1);
-    const otherP = [...psel].find((p) => !p.classList.contains('is-on'));
-    if (otherP) { const pk = otherP.dataset.calTrendsel; click(otherP); expect(root.querySelector('.cal-tr-pill.is-on').dataset.calTrendsel).toBe(pk); }
-    click(root.querySelector('[data-cal-ap="matriz"]'));
+    // Por ubicación: mapa de riesgo Módulo×Tanque + fichas técnicas; abrir ficha de un tanque.
+    click(root.querySelector('[data-cal-ap="ubicacion"]'));
+    expect(root.querySelector('.cal-riskmap')).toBeTruthy();
+    const cell = root.querySelector('.cal-rm-cell[data-cal-tank]');
+    expect(cell).toBeTruthy();
+    expect(root.querySelector('.cal-ficha[data-cal-tank]')).toBeTruthy();
+    // Comparador de coordenadas paralelas (2 tanques · varios ejes con rango).
+    const pc = root.querySelector('.cal-parallel');
+    expect(pc).toBeTruthy();
+    expect(pc.querySelectorAll('.cal-pc-tank[data-cal-tank]').length).toBeGreaterThanOrEqual(2);
+    click(cell);
+    expect(root.querySelector('#calTankModal').classList.contains('is-open')).toBe(true);
+    expect(root.querySelector('#calTankBody').textContent.length).toBeGreaterThan(0);
+    click(root.querySelector('[data-cal-tank-close]'));
+    expect(root.querySelector('#calTankModal').classList.contains('is-open')).toBe(false);
+    // Colapsar/expandir un módulo de las fichas no rompe.
+    const modHead = root.querySelector('[data-cal-mod]');
+    if (modHead) click(modHead);
     // Apartado Ensayo (Maduración·Ensayo presente): dumbbell + tabla antes/después.
     const enBtn = root.querySelector('[data-cal-ap="ensayo"]');
     expect(enBtn).toBeTruthy();
     click(enBtn);
     expect(root.querySelector('#calEnsayoChart')).toBeTruthy();
     expect(root.querySelector('.cal-en-table')).toBeTruthy();
-    click(root.querySelector('[data-cal-ap="perfil"]'));
+    click(root.querySelector('[data-cal-ap="analizador"]'));
     // Cascada: filtrar por departamento (2 deptos: Larvicultura/Maduración) no rompe.
     const dsel = root.querySelector('[data-calfilter="calDepto"]');
     expect(dsel).toBeTruthy();
     change(dsel, 'Larvicultura');
-    click(root.querySelector('[data-cal-ap="perfil"]'));
+    click(root.querySelector('[data-cal-ap="ubicacion"]'));
     // Navegación de mes propia de Calidad de Agua no rompe.
     const cnav = root.querySelector('[data-cal-month]');
     if (cnav && !cnav.disabled) click(cnav);

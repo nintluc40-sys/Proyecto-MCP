@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   isCalAguaRow, calEstado, calRangeText, calCtx, calValue, calMeasured, loadCalRanges,
   calEnsayoData, CAL_PARAMS, CAL_PARAM_BY_KEY,
+  calExcursion, calSeverity, calSubIndex, calWQI, calRiskLevel, calGroupTree, calDiagnosis,
+  controlStats, boxStats,
 } from './calagua.data.js';
 
 const ph = CAL_PARAM_BY_KEY.ph;
@@ -113,5 +115,123 @@ describe('CAL_PARAMS', () => {
     expect(CAL_PARAMS.length).toBe(21);
     expect(ph.alias[0]).toBe('pH');
     expect(CAL_PARAM_BY_KEY.sal.alias[0]).toBe('S‰');
+  });
+});
+
+describe('calExcursion', () => {
+  const R = { ph: { min: 7.5, max: 8.5 }, nitrito: { max: 0.2 }, alc: { min: 120 } };
+  it('rango de dos lados: 0 en el centro, 1 en el borde', () => {
+    expect(calExcursion('ph', 8.0, R)).toBeCloseTo(0, 6);   // centro
+    expect(calExcursion('ph', 8.5, R)).toBeCloseTo(1, 6);   // borde superior
+    expect(calExcursion('ph', 9.0, R)).toBeCloseTo(2, 6);   // media franja fuera
+  });
+  it('solo techo: value/max', () => {
+    expect(calExcursion('nitrito', 0.1, R)).toBeCloseTo(0.5, 6);
+    expect(calExcursion('nitrito', 0.2, R)).toBeCloseTo(1, 6);
+    expect(calExcursion('nitrito', 0.4, R)).toBeCloseTo(2, 6);
+  });
+  it('solo piso: min/value', () => {
+    expect(calExcursion('alc', 120, R)).toBeCloseTo(1, 6);
+    expect(calExcursion('alc', 240, R)).toBeCloseTo(0.5, 6); // por encima → mejor
+    expect(calExcursion('alc', 60, R)).toBeCloseTo(2, 6);    // por debajo → peor
+  });
+  it('null sin rango o valor inválido', () => {
+    expect(calExcursion('temp', 25, R)).toBe(null);
+    expect(calExcursion('ph', null, R)).toBe(null);
+  });
+});
+
+describe('calSeverity', () => {
+  const R = { ph: { min: 7.5, max: 8.5 }, nitrito: { max: 0.2 } };
+  it('4 niveles según la excursión', () => {
+    expect(calSeverity('ph', 8.0, R)).toBe('optimo');       // e≈0
+    expect(calSeverity('nitrito', 0.19, R)).toBe('vigilancia'); // e=0.95
+    expect(calSeverity('nitrito', 0.3, R)).toBe('fuera');   // e=1.5
+    expect(calSeverity('nitrito', 0.5, R)).toBe('critico'); // e=2.5
+    expect(calSeverity('temp', 25, R)).toBe('sin-rango');
+  });
+});
+
+describe('calSubIndex / calWQI', () => {
+  const R = { ph: { min: 7.5, max: 8.5 }, nitrito: { max: 0.2 } };
+  it('sub-índice 100 en zona óptima, ~60 en el límite, 0 muy fuera', () => {
+    expect(calSubIndex('ph', 8.0, R)).toBe(100);
+    expect(calSubIndex('nitrito', 0.2, R)).toBeCloseTo(60, 6); // e=1
+    expect(calSubIndex('nitrito', 0.4, R)).toBeCloseTo(0, 6);  // e=2
+  });
+  it('WQI = media de sub-índices con rango', () => {
+    const meas = [{ key: 'ph', label: 'pH', value: 8.0 }, { key: 'nitrito', label: 'Nitrito', value: 0.2 }];
+    const w = calWQI(meas, R);
+    expect(w.wqi).toBe(80); // media(100, 60)
+    expect(w.worst.key).toBe('nitrito');
+    expect(w.n).toBe(2);
+  });
+  it('WQI null si ningún parámetro tiene rango', () => {
+    expect(calWQI([{ key: 'temp', label: 'Temp', value: 25 }], R).wqi).toBe(null);
+  });
+});
+
+describe('calRiskLevel', () => {
+  it('toma la peor severidad presente', () => {
+    expect(calRiskLevel(['optimo', 'critico', 'fuera'])).toBe('critico');
+    expect(calRiskLevel(['optimo', 'fuera'])).toBe('alto');
+    expect(calRiskLevel(['optimo', 'vigilancia'])).toBe('medio');
+    expect(calRiskLevel(['optimo', 'optimo'])).toBe('bajo');
+    expect(calRiskLevel([])).toBe('sin-datos');
+  });
+});
+
+describe('controlStats', () => {
+  it('media y límites ±3σ (σ poblacional)', () => {
+    const c = controlStats([2, 4, 4, 4, 5, 5, 7, 9]); // media 5, σ=2
+    expect(c.mean).toBe(5);
+    expect(c.sd).toBeCloseTo(2, 6);
+    expect(c.ucl).toBeCloseTo(11, 6);
+    expect(c.lcl).toBeCloseTo(-1, 6);
+    expect(c.n).toBe(8);
+  });
+  it('null si no hay valores', () => { expect(controlStats([])).toBe(null); });
+});
+
+describe('boxStats', () => {
+  it('cuartiles, bigotes y atípicos', () => {
+    const b = boxStats([1, 2, 3, 4, 5, 6, 7, 8, 9, 100]); // 100 = atípico
+    expect(b.med).toBeCloseTo(5.5, 6);
+    expect(b.min).toBe(1);
+    expect(b.max).toBe(100);
+    expect(b.outliers).toContain(100);
+    expect(b.whiskHi).toBeLessThan(100); // el bigote no llega al atípico
+    expect(b.n).toBe(10);
+  });
+  it('null si no hay valores', () => { expect(boxStats([])).toBe(null); });
+});
+
+describe('calGroupTree / calDiagnosis', () => {
+  const R = { ph: { min: 7.5, max: 8.5 }, nitrito: { max: 0.2 } };
+  const mk = (modulo, tq, ph, nitrito, fecha) => ({
+    ctx: { modulo, tq, fecha: new Date(fecha) },
+    meas: calMeasured({ pH: String(ph), Nitrito: String(nitrito) }, R),
+  });
+  const samples = [
+    mk('3', '1', 8.0, 0.1, '2026-06-05'), // M3/TQ1 sano
+    mk('3', '2', 8.0, 0.5, '2026-06-06'), // M3/TQ2 nitrito crítico
+    mk('4', '1', 7.0, 0.1, '2026-06-07'), // M4/TQ1 pH fuera
+  ];
+  it('agrupa Módulo → Tanque con riesgo y WQI', () => {
+    const tree = calGroupTree(samples, R);
+    expect(tree.length).toBe(2); // Módulo 3 y Módulo 4
+    const m3 = tree.find((m) => m.label === 'Módulo 3');
+    expect(m3.tanks.length).toBe(2);
+    expect(m3.risk).toBe('critico'); // arrastra el TQ2 crítico
+    // ordenado con mayor riesgo primero dentro del módulo
+    expect(m3.tanks[0].risk).toBe('critico');
+    expect(m3.tanks[0].crit).toContain('Nitrito');
+  });
+  it('diagnóstico resume tanques en riesgo y top parámetros', () => {
+    const d = calDiagnosis(samples, R);
+    expect(d.total).toBe(3);
+    expect(typeof d.wqi).toBe('number');
+    expect(d.riskTanks.length).toBe(2); // TQ2 (crítico) + M4/TQ1 (alto)
+    expect(d.topParams.length).toBeGreaterThan(0);
   });
 });

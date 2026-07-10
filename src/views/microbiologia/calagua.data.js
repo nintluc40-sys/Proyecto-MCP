@@ -133,7 +133,7 @@ export function calMeasured(row, ranges, params = CAL_PARAMS) {
   params.forEach((p) => {
     const v = calValue(row, p);
     if (v == null) return;
-    out.push({ key: p.key, label: p.label, unit: p.unit, group: p.group, value: v, estado: calEstado(p.key, v, ranges), range: calRangeText(p.key, ranges) });
+    out.push({ key: p.key, label: p.label, unit: p.unit, group: p.group, value: v, estado: calEstado(p.key, v, ranges), severity: calSeverity(p.key, v, ranges), range: calRangeText(p.key, ranges) });
   });
   return out;
 }
@@ -168,4 +168,179 @@ export function calEnsayoData(rows) {
     const pct = (aAvg != null && dAvg != null && aAvg !== 0) ? (dAvg - aAvg) / aAvg * 100 : null;
     return { key: p.key, label: p.label, unit: p.unit, antes: aAvg, desp: dAvg, delta, pct, n: Math.max(antes.length, desp.length) };
   }).filter(Boolean);
+}
+
+/* ============================================================
+   SEVERIDAD (semáforo científico de 4 niveles) · WQI · RIESGO
+   Todo se deriva del rango objetivo YA existente (sin datos nuevos):
+   se mide la EXCURSIÓN del valor respecto al centro/límite del rango.
+   ============================================================ */
+
+// Metadatos de severidad (rank = gravedad creciente; -1 = sin rango que evaluar).
+export const CAL_SEV = {
+  optimo: { key: 'optimo', label: 'Óptimo', rank: 0 },
+  vigilancia: { key: 'vigilancia', label: 'Vigilancia', rank: 1 },
+  fuera: { key: 'fuera', label: 'Fuera', rank: 2 },
+  critico: { key: 'critico', label: 'Crítico', rank: 3 },
+  'sin-rango': { key: 'sin-rango', label: 'Sin rango', rank: -1 },
+};
+// Niveles de riesgo de un nodo (tanque/módulo) según su peor severidad.
+export const CAL_RISK = {
+  bajo: { key: 'bajo', label: 'Riesgo bajo', rank: 0 },
+  medio: { key: 'medio', label: 'Riesgo medio', rank: 1 },
+  alto: { key: 'alto', label: 'Riesgo alto', rank: 2 },
+  critico: { key: 'critico', label: 'Riesgo crítico', rank: 3 },
+  'sin-datos': { key: 'sin-datos', label: 'Sin datos', rank: -1 },
+};
+
+/** Excursión normalizada de un valor respecto a su rango objetivo:
+ *  0 = centro ideal · ~1 = justo en el límite · >1 = fuera (a mayor, peor).
+ *  null si el parámetro no tiene rango o el valor es inválido. */
+export function calExcursion(key, value, ranges) {
+  const r = (ranges || CAL_RANGE_BASE)[key];
+  if (!r || value == null || isNaN(value)) return null;
+  const { min, max } = r;
+  if (min != null && max != null) {         // rango de dos lados: distancia al centro
+    const center = (min + max) / 2;
+    const half = (max - min) / 2 || 1e-9;
+    return Math.abs(value - center) / half;
+  }
+  if (max != null) return max > 0 ? value / max : (value > 0 ? 2 : 0); // solo techo (≤max)
+  if (min != null) return value > 0 ? min / value : 2;                  // solo piso (≥min)
+  return null;
+}
+
+/** Severidad de 4 niveles derivada de la excursión:
+ *  ≤0.9 Óptimo · ≤1.0 Vigilancia (roza el borde) · ≤2.0 Fuera · >2.0 Crítico. */
+export function calSeverity(key, value, ranges) {
+  const e = calExcursion(key, value, ranges);
+  if (e == null) return 'sin-rango';
+  if (e <= 0.9) return 'optimo';
+  if (e <= 1.0) return 'vigilancia';
+  if (e <= 2.0) return 'fuera';
+  return 'critico';
+}
+
+/** Sub-índice de calidad 0–100 (continuo) desde la excursión:
+ *  100 hasta e=0.8, baja a 60 en el límite (e=1) y a 0 cuando e≥2. */
+export function calSubIndex(key, value, ranges) {
+  const e = calExcursion(key, value, ranges);
+  if (e == null) return null;
+  if (e <= 0.8) return 100;
+  if (e <= 1.0) return 100 - ((e - 0.8) / 0.2) * 40; // 100 → 60
+  if (e <= 2.0) return 60 - ((e - 1.0) / 1.0) * 60;  // 60 → 0
+  return 0;
+}
+
+/** Water Quality Index de un conjunto de mediciones (objetos con {key,value,label}).
+ *  wqi = media de los sub-índices de los parámetros con rango. */
+export function calWQI(measures, ranges) {
+  const subs = [];
+  (measures || []).forEach((m) => {
+    const q = calSubIndex(m.key, m.value, ranges);
+    if (q != null) subs.push({ key: m.key, label: m.label, qi: q, severity: calSeverity(m.key, m.value, ranges) });
+  });
+  if (!subs.length) return { wqi: null, subs: [], worst: null, n: 0 };
+  const wqi = Math.round(subs.reduce((s, x) => s + x.qi, 0) / subs.length);
+  const worst = subs.slice().sort((a, b) => a.qi - b.qi)[0];
+  return { wqi, subs, worst, n: subs.length };
+}
+
+/** Nivel de riesgo de un nodo a partir de la lista de severidades de sus mediciones. */
+export function calRiskLevel(severities) {
+  const s = severities || [];
+  if (s.includes('critico')) return 'critico';
+  if (s.includes('fuera')) return 'alto';
+  if (s.includes('vigilancia')) return 'medio';
+  if (s.includes('optimo')) return 'bajo';
+  return 'sin-datos';
+}
+
+// Etiqueta de un tanque/nodo desde su contexto (TQ preferido; respaldos por depto).
+const nodeTankLabel = (ctx) => ctx.tq ? ('TQ ' + ctx.tq) : (ctx.componente || ctx.muestras || ctx.sala || '—');
+
+/** Construye el árbol jerárquico Módulo → Tanque desde las muestras filtradas.
+ *  Cada nodo lleva: n muestras, WQI, peor sub-índice, severidades, riesgo,
+ *  parámetros críticos (fuera/crítico) y fecha de la última medición.
+ *  Ordenado con los de mayor riesgo primero (para aflorar problemas). */
+export function calGroupTree(samples, ranges) {
+  const byRisk = (a, b) => (CAL_RISK[b.risk].rank - CAL_RISK[a.risk].rank) || ((a.wqi ?? 101) - (b.wqi ?? 101)) || (b.last || 0) - (a.last || 0);
+  const nodeOf = (label, list) => {
+    const meas = list.flatMap((s) => s.meas);
+    const w = calWQI(meas, ranges);
+    const sev = meas.map((m) => m.severity);
+    const crit = [...new Set(meas.filter((m) => m.severity === 'fuera' || m.severity === 'critico').map((m) => m.label))];
+    const last = list.reduce((mx, s) => Math.max(mx, s.ctx.fecha ? +s.ctx.fecha : 0), 0) || null;
+    return { label, samples: list, n: list.length, wqi: w.wqi, worst: w.worst, sev, risk: calRiskLevel(sev), crit, last };
+  };
+  const modMap = new Map();
+  (samples || []).forEach((s) => {
+    const mod = s.ctx.modulo ? ('Módulo ' + s.ctx.modulo) : (s.ctx.depto || '—');
+    if (!modMap.has(mod)) modMap.set(mod, new Map());
+    const tqMap = modMap.get(mod);
+    const tq = nodeTankLabel(s.ctx);
+    if (!tqMap.has(tq)) tqMap.set(tq, []);
+    tqMap.get(tq).push(s);
+  });
+  const modules = [...modMap.entries()].map(([mod, tqMap]) => {
+    const tanks = [...tqMap.entries()].map(([tq, list]) => nodeOf(tq, list)).sort(byRisk);
+    const node = nodeOf(mod, [...tqMap.values()].flat());
+    return { ...node, tanks };
+  }).sort(byRisk);
+  return modules;
+}
+
+/** Estadística de control (Shewhart) de una serie de valores individuales:
+ *  media (línea central), desviación estándar poblacional y límites ±3σ. */
+export function controlStats(values) {
+  const v = (values || []).filter((x) => x != null && !isNaN(x));
+  const n = v.length;
+  if (!n) return null;
+  const mean = v.reduce((a, b) => a + b, 0) / n;
+  const sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
+  return { mean, sd, ucl: mean + 3 * sd, lcl: mean - 3 * sd, n };
+}
+
+/** Estadística de caja (boxplot) de una serie: cuartiles por interpolación lineal,
+ *  bigotes hasta 1.5·IQR y valores atípicos fuera de ese cerco. */
+export function boxStats(values) {
+  const v = (values || []).filter((x) => x != null && !isNaN(x)).slice().sort((a, b) => a - b);
+  const n = v.length;
+  if (!n) return null;
+  const q = (p) => {
+    const idx = (n - 1) * p; const lo = Math.floor(idx), hi = Math.ceil(idx);
+    return lo === hi ? v[lo] : v[lo] + (v[hi] - v[lo]) * (idx - lo);
+  };
+  const q1 = q(0.25), med = q(0.5), q3 = q(0.75);
+  const iqr = q3 - q1; const loF = q1 - 1.5 * iqr, hiF = q3 + 1.5 * iqr;
+  const inl = v.filter((x) => x >= loF && x <= hiF);
+  const outliers = v.filter((x) => x < loF || x > hiF);
+  return { n, min: v[0], q1, med, q3, max: v[n - 1], whiskLo: inl.length ? inl[0] : v[0], whiskHi: inl.length ? inl[inl.length - 1] : v[n - 1], outliers };
+}
+
+/** Diagnóstico automático para el "Panel del Analista": síntesis técnica del pool
+ *  filtrado (WQI global, conteos fuera/crítico, top parámetros, tanques en riesgo). */
+export function calDiagnosis(samples, ranges) {
+  const list = samples || [];
+  const tree = calGroupTree(list, ranges);
+  const meas = list.flatMap((s) => s.meas);
+  const outParams = meas.filter((m) => m.severity === 'fuera' || m.severity === 'critico');
+  const critCount = meas.filter((m) => m.severity === 'critico').length;
+  const byParam = new Map();
+  outParams.forEach((m) => byParam.set(m.label, (byParam.get(m.label) || 0) + 1));
+  const topParams = [...byParam.entries()].map(([label, n]) => ({ label, n })).sort((a, b) => b.n - a.n).slice(0, 3);
+  const tanks = tree.flatMap((mo) => mo.tanks.map((t) => ({ modulo: mo.label, ...t })));
+  const riskTanks = tanks.filter((t) => t.risk === 'alto' || t.risk === 'critico');
+  const w = calWQI(meas, ranges);
+  return {
+    total: list.length,
+    wqi: w.wqi,
+    evaluated: w.n,
+    outCount: outParams.length,
+    critCount,
+    topParams,
+    riskTanks,
+    tankCount: tanks.length,
+    tree,
+  };
 }
