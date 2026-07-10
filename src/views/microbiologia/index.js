@@ -44,6 +44,8 @@ const vState = {
   calTrendKey: null, // parámetro activo en el Analizador de Calidad de Agua (cartucho seleccionado)
   calChartMode: 'tendencia', // modo del gráfico del Analizador: 'tendencia' | 'control' (Shewhart) | 'distribucion' (boxplot)
   calLocOpen: {}, // módulos expandidos en "Por ubicación" (por etiqueta; undefined = default por riesgo)
+  calRiskView: 'matriz', // mapa de riesgo: 'matriz' (heatmap) | 'red' (constelaciones)
+  calCmpView: 'paralelas', // comparador de tanques: 'paralelas' | 'multiples' (small multiples)
 };
 
 // Dimensiones de filtro de contexto. Cada una se muestra (en cascada) SOLO si tiene
@@ -211,6 +213,87 @@ function calAnalystHTML(samples, ranges) {
     </div>`;
 }
 
+/* ── Micro-visualización: sparkline (SVG inline, hereda color por `currentColor`). ── */
+function calSpark(vals, w = 74, h = 22, pad = 2) {
+  const pts = vals.map((v, i) => ({ i, v })).filter((p) => p.v != null && !isNaN(p.v));
+  if (pts.length < 2) return `<svg class="cal-spark" viewBox="0 0 ${w} ${h}" aria-hidden="true"></svg>`;
+  const n = vals.length;
+  const lo = Math.min(...pts.map((p) => p.v)), hi = Math.max(...pts.map((p) => p.v)), span = hi - lo || 1;
+  const X = (i) => pad + (i / (n - 1)) * (w - 2 * pad);
+  const Y = (v) => h - pad - ((v - lo) / span) * (h - 2 * pad);
+  const line = pts.map((p, k) => `${k ? 'L' : 'M'}${X(p.i).toFixed(1)} ${Y(p.v).toFixed(1)}`).join(' ');
+  const last = pts[pts.length - 1];
+  const area = `M${X(pts[0].i).toFixed(1)} ${h - pad} ${pts.map((p) => `L${X(p.i).toFixed(1)} ${Y(p.v).toFixed(1)}`).join(' ')} L${X(last.i).toFixed(1)} ${h - pad} Z`;
+  return `<svg class="cal-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+    <path d="${area}" fill="currentColor" fill-opacity=".13"/>
+    <path d="${line}" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+    <circle cx="${X(last.i).toFixed(1)}" cy="${Y(last.v).toFixed(1)}" r="1.8" fill="currentColor"/>
+  </svg>`;
+}
+
+/** Franja de INSTRUMENTOS de Calidad de Agua: KPIs con identidad visual + micro-viz.
+ *  Cada tarjeta responde una pregunta (cuántas · cumplimiento/tendencia · severidad · dónde),
+ *  reutilizando el sistema de color --sev de la vista para cohesión con el gauge/mapa de riesgo. */
+function calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, outByParam, alertAttrs }) {
+  // Perfil de severidad (4 niveles) sobre TODAS las mediciones con rango.
+  const sevOrder = ['optimo', 'vigilancia', 'fuera', 'critico'];
+  const sevCount = { optimo: 0, vigilancia: 0, fuera: 0, critico: 0 };
+  samples.forEach((s) => s.meas.forEach((m) => { if (sevCount[m.severity] != null) sevCount[m.severity]++; }));
+  const sevTot = sevOrder.reduce((a, k) => a + sevCount[k], 0) || 1;
+  const pctOpt = Math.round(sevCount.optimo / sevTot * 100);
+
+  // Series por día: cobertura (nº muestras) + cumplimiento (% mediciones en rango).
+  const byDay = new Map();
+  samples.forEach((s) => {
+    const t = s.ctx.fecha ? +s.ctx.fecha : null; if (t == null || isNaN(t)) return;
+    const k = Math.floor(t / 86400000);
+    const b = byDay.get(k) || { n: 0, in: 0, out: 0 };
+    b.n++; s.meas.forEach((m) => { if (m.estado === 'dentro') b.in++; else if (m.estado === 'fuera') b.out++; });
+    byDay.set(k, b);
+  });
+  const days = [...byDay.keys()].sort((a, b) => a - b);
+  const tlMax = Math.max(1, ...days.map((k) => byDay.get(k).n));
+  const compSeries = days.map((k) => { const b = byDay.get(k); const ev = b.in + b.out; return ev ? Math.round(b.in / ev * 100) : null; });
+  const compVals = compSeries.filter((v) => v != null);
+  const compDelta = compVals.length >= 2 ? compVals[compVals.length - 1] - compVals[compVals.length - 2] : null;
+  const dArrow = compDelta == null ? '' : compDelta > 0 ? 'up' : compDelta < 0 ? 'dn' : '';
+
+  const compSev = pctOk >= 90 ? 'optimo' : pctOk >= 70 ? 'vigilancia' : 'critico';
+  const sevProfileSev = pctOpt >= 80 ? 'optimo' : pctOpt >= 60 ? 'vigilancia' : 'fuera';
+
+  // 01 · Timeline compacto (cobertura de muestreo por día).
+  const timeline = days.length
+    ? `<div class="cal-inst-tl" role="img" aria-label="Muestras por día de muestreo">${days.map((k) => `<span style="height:${Math.max(14, Math.round(byDay.get(k).n / tlMax * 100))}%" title="${byDay.get(k).n} muestra(s)"></span>`).join('')}</div>`
+    : '<span class="cal-inst-hint">sin fechas</span>';
+
+  // 03 · Barra segmentada de severidad + leyenda de conteos.
+  const segBar = `<div class="cal-inst-seg" role="img" aria-label="Distribución de severidad de las mediciones">${sevOrder.map((k) => sevCount[k] ? `<span class="cal-sev--${k}" style="flex:${sevCount[k]}" title="${esc(CAL_SEV[k].label)}: ${sevCount[k]}"></span>` : '').join('')}</div>`;
+  const segLegend = `<div class="cal-inst-seglg">${sevOrder.map((k) => `<span class="cal-sev--${k}" title="${esc(CAL_SEV[k].label)}"><i></i>${sevCount[k]}</span>`).join('')}</div>`;
+
+  // 04 · Top parámetros fuera de rango (mini-bullets).
+  const tops = [...outByParam.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const topMax = Math.max(1, ...tops.map((t) => t[1]));
+  const topBars = tops.length
+    ? `<div class="cal-inst-tops">${tops.map(([p, c]) => `<div class="cal-inst-top"><span class="cal-inst-top-l" title="${esc(p)}">${esc(p)}</span><span class="cal-inst-top-bar"><i style="width:${Math.round(c / topMax * 100)}%"></i></span><b>${c}</b></div>`).join('')}</div>`
+    : '<span class="cal-inst-ok">✓ Todo en rango</span>';
+
+  const inst = (ix, sev, label, valueHtml, vizHtml, footHtml, attrs = '') => `
+    <div class="cal-inst${sev ? ' cal-sev--' + sev : ''}"${attrs ? ' ' + attrs : ''}>
+      <div class="cal-inst-h"><span class="cal-inst-ix">${ix}</span>${label}</div>
+      <div class="cal-inst-main"><div class="cal-inst-v">${valueHtml}</div>${vizHtml}</div>
+      ${footHtml ? `<div class="cal-inst-foot">${footHtml}</div>` : ''}
+    </div>`;
+
+  const compFoot = `${fullOk} de ${samples.length} al 100%${compDelta != null ? ` · <b class="cal-inst-d ${dArrow}">${compDelta > 0 ? '▲' : compDelta < 0 ? '▼' : '▬'} ${Math.abs(compDelta)}pt</b>` : ''}`;
+
+  return `<div class="cal-inst-strip">
+    ${inst('01', '', '💧 Muestras', String(samples.length), timeline, `${days.length} día(s) de muestreo`)}
+    ${inst('02', compSev, '✅ Cumplimiento', `${pctOk}<small>%</small>`, calSpark(compSeries), compFoot)}
+    ${inst('03', sevProfileSev, '🧭 Perfil de severidad', `${pctOpt}<small>% óptimo</small>`, `<div class="cal-inst-segwrap">${segBar}${segLegend}</div>`, '')}
+    ${inst('04', outC > 0 ? 'fuera' : 'optimo', '⚠️ Fuera de rango', String(outC), topBars, evaluated ? `${(outC / evaluated * 100).toFixed(0)}% de evaluados` : 'sin evaluar', alertAttrs)}
+  </div>`;
+}
+
 function renderCalidadAgua() {
   const all = calAguaRows();
   if (!all.length) return `<div class="mic-calagua">${emptyBox('No se encontraron registros en la hoja "Calidad de Agua" del Google Sheet.')}</div>`;
@@ -256,7 +339,6 @@ function renderCalidadAgua() {
   }));
   const fullOk = samples.filter((s) => s.meas.every((m) => m.estado !== 'fuera')).length;
   const pctOk = samples.length ? Math.round((fullOk / samples.length) * 100) : 0;
-  const worst = [...outByParam.entries()].sort((a, b) => b[1] - a[1])[0];
   const evaluated = inC + outC; // parámetros con rango (no "sin-rango")
 
   const monthBar = months.length ? `<div class="mic-monthbar">
@@ -274,12 +356,7 @@ function renderCalidadAgua() {
       <div class="mic-export"><button class="mic-exp" data-cal-factors title="Editar rangos objetivo (mín/máx) por parámetro">⚙️ Rangos</button><button class="mic-exp" data-cal-export title="Descargar reporte de texto de las muestras filtradas">⬇ Reporte</button><button class="mic-exp" data-cal-xlsx title="Descargar Excel de las muestras filtradas">⬇ Excel</button></div>
     </div>`;
   const alertAttrs = outC > 0 ? 'data-cal-alerts role="button" tabindex="0" title="Ver listado de mediciones fuera de rango"' : '';
-  h += `<div class="mic-kpis">
-      ${kpi('💧', 'Muestras', String(samples.length))}
-      ${kpi('✅', 'Muestras 100% en rango', `${pctOk}%`, pctOk < 100, `${fullOk} de ${samples.length}`)}
-      ${kpi('⚠️', 'Parámetros fuera de rango', String(outC), outC > 0, evaluated ? `${(outC / evaluated * 100).toFixed(0)}% de los evaluados` : '', alertAttrs)}
-      ${kpi('🧪', 'Parámetro más incumplido', worst ? worst[0] : '—', !!worst, worst ? `${worst[1]} muestra(s)` : 'sin incumplimientos')}
-    </div>`;
+  h += calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, outByParam, alertAttrs });
 
   // Panel del Analista: síntesis técnica autogenerada (WQI global + diagnóstico).
   h += calAnalystHTML(samples, ranges);
@@ -457,29 +534,38 @@ function calLatestByParam(sampleList) {
   return latest;
 }
 
-/** Apartado "Por ubicación": mapa de riesgo Módulo × Tanque + fichas técnicas
- *  jerárquicas (módulos colapsables con tarjetas de tanque). Reemplaza Perfil/Matriz. */
+/** Apartado "Por ubicación": mapa de riesgo (Matriz ⇄ Red) + comparador de tanques
+ *  (Coordenadas paralelas ⇄ Small multiples) + fichas técnicas jerárquicas. */
 function calUbicacionHTML(samples, ranges) {
   const tree = calGroupTree(samples, ranges);
   _calLocTree = tree;
   if (!tree.length) return emptyBox('Sin ubicaciones con parámetros medidos para el filtro actual.');
 
-  // Mapa de riesgo: una fila por módulo, una celda por tanque, coloreada por riesgo.
-  const riskMap = `<div class="cal-riskmap">
-      <div class="cal-rm-title">🗺️ Mapa de riesgo · Módulo × Tanque</div>
-      <div class="cal-rm-rows">
-        ${tree.map((mo, mi) => `<div class="cal-rm-row">
-            <div class="cal-rm-mod cal-risk--${mo.risk}"><b>${esc(mo.label)}</b>${mo.wqi != null ? `<span>WQI ${mo.wqi}</span>` : ''}</div>
-            <div class="cal-rm-cells">
-              ${mo.tanks.map((t, ti) => `<button class="cal-rm-cell cal-risk--${t.risk}" data-cal-tank="${mi}-${ti}" title="${esc(mo.label)} · ${esc(t.label)} — ${esc(CAL_RISK[t.risk].label)}${t.wqi != null ? ' · WQI ' + t.wqi : ''}">${esc(t.label)}${t.wqi != null ? `<small>${t.wqi}</small>` : ''}</button>`).join('')}
-            </div>
-          </div>`).join('')}
-      </div>
+  // ── Mapa de riesgo · dos estilos (Matriz / Red) ──
+  const riskView = vState.calRiskView === 'red' ? 'red' : 'matriz';
+  const riskToggle = calViewToggle('cal-riskview', [['matriz', '▦ Matriz'], ['red', '🕸 Red']], riskView);
+  const riskSec = `<div class="cal-loc-sec">
+      <div class="cal-loc-sechead"><span class="cal-loc-sectitle">🗺️ Mapa de riesgo · Módulo × Tanque</span>${riskToggle}</div>
+      ${riskView === 'red' ? calRiskNetworkSVG(tree) : calRiskMatrixHTML(tree)}
     </div>`;
 
+  // ── Comparador de tanques · dos estilos (Paralelas / Small multiples) ──
+  const { axes, tanks } = calCmpData(tree, ranges);
+  let cmpSec = '';
+  if (axes.length >= 2 && tanks.length >= 2) {
+    const cmpView = vState.calCmpView === 'multiples' ? 'multiples' : 'paralelas';
+    const cmpToggle = calViewToggle('cal-cmpview', [['paralelas', '🧵 Paralelas'], ['multiples', '▤ Small multiples']], cmpView);
+    const hint = cmpView === 'multiples'
+      ? '· un panel por parámetro · cada barra es un tanque contra la banda objetivo'
+      : '· cada línea es un tanque a través de los parámetros · banda verde = zona objetivo';
+    cmpSec = `<div class="cal-loc-sec">
+        <div class="cal-loc-sechead"><span class="cal-loc-sectitle">🧪 Comparador de tanques <span class="cal-loc-secsub">${hint}</span></span>${cmpToggle}</div>
+        ${cmpView === 'multiples' ? calSmallMultiplesHTML(axes, tanks, ranges) : calParallelBody(axes, tanks, ranges)}
+      </div>`;
+  }
+
   // Fichas técnicas jerárquicas: módulo colapsable → tarjetas de tanque. Por defecto
-  // solo se expande el módulo de peor riesgo (el primero); el resto queda colapsado
-  // para no desbordar la vista cuando hay muchos puntos. El mapa de riesgo es el resumen.
+  // solo se expande el módulo de peor riesgo (el primero); el resto queda colapsado.
   const fichas = tree.map((mo, mi) => {
     const openState = vState.calLocOpen[mo.label];
     const open = openState === undefined ? (mi === 0) : openState;
@@ -496,21 +582,74 @@ function calUbicacionHTML(samples, ranges) {
       </div>`;
   }).join('');
 
-  const parallel = calParallelSVG(tree, ranges);
-  return `${riskMap}${parallel}<div class="cal-fichas-t">🗂️ Fichas técnicas por tanque <span>· toca un módulo para desplegar sus tanques · toca una ficha para el detalle</span></div><div class="cal-fichas">${fichas}</div>`;
+  return `${riskSec}${cmpSec}<div class="cal-fichas-t">🗂️ Fichas técnicas por tanque <span>· toca un módulo para desplegar sus tanques · toca una ficha para el detalle</span></div><div class="cal-fichas">${fichas}</div>`;
 }
 
-/** Comparador de tanques por COORDENADAS PARALELAS: cada tanque es una polilínea a
- *  través de los parámetros con rango (normalizados por `calScale`, misma escala 0–100
- *  con la zona objetivo como banda); línea coloreada por riesgo del tanque, vértices por
- *  severidad del valor. Clic/Enter en una línea abre la ficha del tanque. SVG puro. */
-function calParallelSVG(tree, ranges) {
+// Conmutador de estilo (dos vistas). `attr` → data-<attr>; options = [[key,label],...].
+function calViewToggle(attr, options, active) {
+  return `<div class="cal-vtoggle" role="group" aria-label="Estilo de visualización">${options.map(([k, lbl]) =>
+    `<button class="cal-vt${k === active ? ' is-on' : ''}" data-${attr}="${k}" aria-pressed="${k === active}">${lbl}</button>`).join('')}</div>`;
+}
+
+/** Mapa de riesgo · MATRIZ (heatmap Módulo×Tanque). */
+function calRiskMatrixHTML(tree) {
+  return `<div class="cal-riskmap"><div class="cal-rm-rows">
+        ${tree.map((mo, mi) => `<div class="cal-rm-row">
+            <div class="cal-rm-mod cal-risk--${mo.risk}"><b>${esc(mo.label)}</b>${mo.wqi != null ? `<span>WQI ${mo.wqi}</span>` : ''}</div>
+            <div class="cal-rm-cells">
+              ${mo.tanks.map((t, ti) => `<button class="cal-rm-cell cal-risk--${t.risk}" data-cal-tank="${mi}-${ti}" title="${esc(mo.label)} · ${esc(t.label)} — ${esc(CAL_RISK[t.risk].label)}${t.wqi != null ? ' · WQI ' + t.wqi : ''}">${esc(t.label)}${t.wqi != null ? `<small>${t.wqi}</small>` : ''}</button>`).join('')}
+            </div>
+          </div>`).join('')}
+      </div></div>`;
+}
+
+/** Mapa de riesgo · RED: una constelación por módulo (hub = módulo, nodos orbitales =
+ *  tanques, aristas = pertenencia; color = nivel de riesgo). Small-multiples de redes. */
+function calRiskNetworkSVG(tree) {
+  const cell = (mo, mi) => {
+    const moSev = RISK_TO_SEV[mo.risk] || 'sin-rango';
+    const n = mo.tanks.length;
+    const cx = 80, cy = 80, R = n > 7 ? 56 : 50, nodeR = n > 7 ? 10 : 13, hubR = 19;
+    const moShort = esc(String(mo.label).replace(/^M(?=\d)/i, ''));
+    const nodes = mo.tanks.map((t, ti) => {
+      const tSev = RISK_TO_SEV[t.risk] || 'sin-rango';
+      const a = (n <= 1 ? 0 : (ti / n) * Math.PI * 2) - Math.PI / 2;
+      const tx = +(cx + R * Math.cos(a)).toFixed(1), ty = +(cy + R * Math.sin(a)).toFixed(1);
+      const short = esc((String(t.label).match(/\d+/) || [t.label])[0]);
+      return `<g class="cal-net-tk cal-pc-tank cal-sev--${tSev}" data-cal-tank="${mi}-${ti}" tabindex="0" role="button" aria-label="Ficha de ${esc(t.label)}, riesgo ${esc(CAL_RISK[t.risk].label)}">
+          <title>${esc(t.label)} — ${esc(CAL_RISK[t.risk].label)}${t.wqi != null ? ' · WQI ' + t.wqi : ''}</title>
+          <line class="cal-net-edge" x1="${cx}" y1="${cy}" x2="${tx}" y2="${ty}"/>
+          <circle class="cal-net-node" cx="${tx}" cy="${ty}" r="${nodeR}"/>
+          <text class="cal-net-nlbl" x="${tx}" y="${ty}">${short}</text>
+        </g>`;
+    }).join('');
+    return `<figure class="cal-net-cell">
+        <svg viewBox="0 0 160 160" class="cal-net-svg" role="img" aria-label="Módulo ${esc(mo.label)}: ${n} tanque(s), riesgo ${esc(CAL_RISK[mo.risk].label)}">
+          ${nodes}
+          <g class="cal-net-hub cal-sev--${moSev}"><circle cx="${cx}" cy="${cy}" r="${hubR}"/><text x="${cx}" y="${cy}">${moShort}</text></g>
+        </svg>
+        <figcaption class="cal-net-cap"><b>${esc(mo.label)}</b><span class="cal-net-caprisk cal-sev--${moSev}">${esc(CAL_RISK[mo.risk].label)}</span>${mo.wqi != null ? `<span class="cal-net-capwqi">WQI ${mo.wqi}</span>` : ''}</figcaption>
+      </figure>`;
+  };
+  return `<div class="cal-risknet"><div class="cal-net-grid">${tree.map(cell).join('')}</div>
+      <div class="cal-net-note">Cada constelación es un módulo · nodo central = módulo · nodos orbitales = tanques · color = nivel de riesgo · toca un tanque para su ficha.</div>
+    </div>`;
+}
+
+/** Datos del comparador: ejes (parámetros con rango presentes) + tanques con su última medición. */
+function calCmpData(tree, ranges) {
   const present = new Set();
   tree.forEach((mo) => mo.tanks.forEach((t) => t.samples.forEach((s) => s.meas.forEach((m) => present.add(m.key)))));
   const axes = CAL_PARAMS.filter((p) => present.has(p.key) && ranges[p.key]);
   const tanks = [];
-  tree.forEach((mo, mi) => mo.tanks.forEach((t, ti) => tanks.push({ mi, ti, label: mo.label + ' · ' + t.label, risk: t.risk, wqi: t.wqi, latest: calLatestByParam(t.samples) })));
-  if (axes.length < 2 || tanks.length < 2) return ''; // sin comparación posible
+  tree.forEach((mo, mi) => mo.tanks.forEach((t, ti) => tanks.push({ mi, ti, label: mo.label + ' · ' + t.label, tqLabel: t.label, risk: t.risk, wqi: t.wqi, latest: calLatestByParam(t.samples) })));
+  return { axes, tanks };
+}
+
+/** Comparador · COORDENADAS PARALELAS: cada tanque es una polilínea a través de los
+ *  parámetros con rango (normalizados por `calScale`, escala 0–100 con la zona objetivo
+ *  como banda); línea coloreada por riesgo, vértices por severidad. Clic/Enter → ficha. */
+function calParallelBody(axes, tanks, ranges) {
   const W = 660, H = 300, padT = 26, padB = 48, padL = 30, padR = 30;
   const plotT = padT, plotB = H - padB, plotH = plotB - plotT;
   const axX = (i) => padL + (i / (axes.length - 1)) * (W - padL - padR);
@@ -539,10 +678,35 @@ function calParallelSVG(tree, ranges) {
     const dots = runs.flat().map((pt) => `<circle cx="${pt.x.toFixed(1)}" cy="${pt.yy.toFixed(1)}" r="2.6" class="cal-pc-dot cal-sev--${pt.sev}"/>`).join('');
     return `<g class="cal-pc-tank cal-sev--${sv}" data-cal-tank="${tk.mi}-${tk.ti}" tabindex="0" role="button" aria-label="Ficha de ${esc(tk.label)}"><title>${esc(tk.label)}${tk.wqi != null ? ' · WQI ' + tk.wqi : ''}</title>${hit}${polys}${dots}</g>`;
   }).join('');
-  return `<div class="cal-parallel">
-      <div class="cal-pc-title">🧵 Comparador de tanques · coordenadas paralelas <span>· cada línea es un tanque · banda verde = zona objetivo · toca una línea para su ficha</span></div>
-      <div class="cal-pc-wrap"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" class="cal-pc-svg" role="img" aria-label="Comparador de tanques por parámetro">${axisSVG}${lines}</svg></div>
-    </div>`;
+  return `<div class="cal-parallel"><div class="cal-pc-wrap"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" class="cal-pc-svg" role="img" aria-label="Comparador de tanques por parámetro">${axisSVG}${lines}</svg></div></div>`;
+}
+
+/** Comparador · SMALL MULTIPLES: un panel por parámetro; cada tanque es un bullet contra
+ *  la banda objetivo (reusa `calScale`). Ordenado peor→mejor. Clic → ficha del tanque. */
+function calSmallMultiplesHTML(axes, tanks, ranges) {
+  const cells = axes.map((p) => {
+    const range = ranges[p.key];
+    const rows = tanks.map((tk) => ({ tk, m: tk.latest.get(p.key) })).filter((o) => o.m)
+      .sort((a, b) => sevRank(b.m.severity) - sevRank(a.m.severity));
+    if (!rows.length) return '';
+    const scB = calScale(range, null);
+    const bLo = scB.loPct != null ? scB.loPct : 0, bHi = scB.hiPct != null ? scB.hiPct : 100;
+    const bandW = Math.max(0, bHi - bLo);
+    const rowsHtml = rows.map(({ tk, m }) => {
+      const sc = calScale(range, m.value);
+      const pos = sc.pos != null ? sc.pos : 0;
+      return `<button class="cal-sm-row cal-sev--${m.severity}" data-cal-tank="${tk.mi}-${tk.ti}" title="${esc(tk.label)} · ${esc(calFmt(m.value))}${p.unit ? ' ' + esc(p.unit) : ''} — ${esc(CAL_SEV[m.severity] ? CAL_SEV[m.severity].label : '')}">
+          <span class="cal-sm-tq">${esc(tk.tqLabel)}</span>
+          <span class="cal-sm-track"><span class="cal-sm-band" style="left:${bLo.toFixed(1)}%;width:${bandW.toFixed(1)}%"></span><span class="cal-sm-mark" style="left:${pos.toFixed(1)}%"></span></span>
+          <span class="cal-sm-val">${esc(calFmt(m.value))}</span>
+        </button>`;
+    }).join('');
+    return `<div class="cal-sm-cell">
+        <div class="cal-sm-h"><span>${esc(p.label)}</span><span>${esc(calRangeText(p.key, ranges))}${p.unit ? ' ' + esc(p.unit) : ''}</span></div>
+        <div class="cal-sm-rows">${rowsHtml}</div>
+      </div>`;
+  }).filter(Boolean).join('');
+  return `<div class="cal-smult"><div class="cal-sm-grid">${cells}</div></div>`;
 }
 
 /** Ficha técnica de un tanque (tarjeta clicable → modal de detalle). */
@@ -1820,6 +1984,11 @@ function bind(root) {
     // Analizador: cambiar el modo del gráfico (Tendencia / Control / Distribución).
     const cmode = e.target.closest('[data-cal-chartmode]');
     if (cmode) { if (vState.calChartMode !== cmode.dataset.calChartmode) { vState.calChartMode = cmode.dataset.calChartmode; microbiologiaView(root); } return; }
+    // Por ubicación: conmutar el estilo del mapa de riesgo (Matriz / Red) o del comparador.
+    const rview = e.target.closest('[data-cal-riskview]');
+    if (rview) { if (vState.calRiskView !== rview.dataset.calRiskview) { vState.calRiskView = rview.dataset.calRiskview; microbiologiaView(root); } return; }
+    const cview = e.target.closest('[data-cal-cmpview]');
+    if (cview) { if (vState.calCmpView !== cview.dataset.calCmpview) { vState.calCmpView = cview.dataset.calCmpview; microbiologiaView(root); } return; }
     // Por ubicación: colapsar/expandir un módulo de las fichas técnicas.
     const cmod = e.target.closest('[data-cal-mod]');
     if (cmod) { const k = cmod.dataset.calMod; const cur = cmod.getAttribute('aria-expanded') === 'true'; vState.calLocOpen[k] = !cur; microbiologiaView(root); return; }

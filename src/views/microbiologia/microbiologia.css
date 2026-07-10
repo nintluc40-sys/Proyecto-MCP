@@ -162,6 +162,50 @@
 .cal-sev--critico { --sev: var(--sev-critico); }
 .cal-sev--sin-rango { --sev: var(--sev-sin-rango); }
 
+/* ── Franja de INSTRUMENTOS (KPIs con identidad + micro-viz) ──
+   Geometría propia: esquina superior-derecha ABIERTA (corte diagonal), indicador
+   lateral de severidad, línea técnica corta y numeración monoespaciada. */
+.cal-inst-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 10px; margin-bottom: var(--sp-4); }
+.cal-inst {
+  position: relative; display: flex; flex-direction: column; gap: 7px;
+  background: var(--c-surface); border: 1px solid var(--c-border);
+  border-left: 3px solid var(--sev, var(--c-brand-600)); padding: 10px 13px 11px;
+  clip-path: polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 0 100%);
+}
+.cal-inst::before { content: ''; position: absolute; top: 0; left: 0; width: 32px; height: 2px; background: var(--sev, var(--c-brand-600)); }
+.cal-inst-h { display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--c-text-muted); }
+.cal-inst-ix { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; color: var(--sev, var(--c-brand-600)); opacity: .85; }
+.cal-inst-main { display: flex; align-items: center; gap: 10px; min-height: 26px; }
+.cal-inst-v { font-size: 23px; font-weight: 800; color: var(--c-text); font-variant-numeric: tabular-nums; line-height: 1; letter-spacing: -.01em; flex: 0 0 auto; }
+.cal-inst-v small { font-size: 10.5px; font-weight: 700; color: var(--c-text-muted); margin-left: 1px; }
+.cal-inst-foot { font-size: 10.5px; color: var(--c-text-muted); font-weight: 600; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.cal-inst-d { font-variant-numeric: tabular-nums; font-weight: 800; }
+.cal-inst-d.up { color: var(--sev-optimo); } .cal-inst-d.dn { color: var(--sev-critico); }
+.cal-inst-hint { font-size: 11px; color: var(--c-text-muted); font-weight: 600; }
+.cal-inst-ok { font-size: 11.5px; color: var(--sev-optimo); font-weight: 700; }
+.cal-inst[role="button"] { cursor: pointer; transition: transform .06s, filter .12s; }
+.cal-inst[role="button"]:hover { transform: translateY(-1px); filter: brightness(1.02); }
+.cal-inst[role="button"]:focus-visible { outline: 2px solid var(--sev, var(--c-brand-600)); outline-offset: 2px; }
+/* micro-viz: sparkline */
+.cal-spark { flex: 1; min-width: 54px; width: 100%; height: 24px; color: var(--sev, var(--c-brand-600)); display: block; }
+/* micro-viz: timeline compacto (barras por día) */
+.cal-inst-tl { flex: 1; display: flex; align-items: flex-end; gap: 2px; height: 26px; min-width: 54px; }
+.cal-inst-tl span { flex: 1; min-width: 2px; background: var(--sev, var(--c-brand-600)); opacity: .5; border-radius: 1px 1px 0 0; }
+/* micro-viz: barra segmentada de severidad + leyenda */
+.cal-inst-segwrap { flex: 1; display: flex; flex-direction: column; gap: 5px; min-width: 90px; }
+.cal-inst-seg { display: flex; height: 11px; border-radius: 3px; overflow: hidden; background: var(--c-surface-2); }
+.cal-inst-seg span { background: var(--sev); }
+.cal-inst-seglg { display: flex; gap: 9px; font-size: 10px; font-weight: 800; color: var(--c-text-soft); font-variant-numeric: tabular-nums; }
+.cal-inst-seglg span { display: inline-flex; align-items: center; gap: 3px; }
+.cal-inst-seglg i { width: 7px; height: 7px; border-radius: 2px; background: var(--sev); }
+/* micro-viz: top parámetros fuera de rango (mini-bullets) */
+.cal-inst-tops { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 96px; }
+.cal-inst-top { display: flex; align-items: center; gap: 6px; font-size: 10.5px; }
+.cal-inst-top-l { flex: 0 0 78px; max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-text-soft); font-weight: 700; }
+.cal-inst-top-bar { flex: 1; height: 5px; background: var(--c-surface-2); border-radius: 3px; overflow: hidden; }
+.cal-inst-top-bar i { display: block; height: 100%; background: var(--sev-fuera); border-radius: 3px; }
+.cal-inst-top b { font-variant-numeric: tabular-nums; color: var(--c-text); font-weight: 800; min-width: 12px; text-align: right; }
+
 /* Panel del Analista: síntesis técnica autogenerada + WQI global. */
 .cal-analyst { display: flex; gap: 16px; align-items: center; margin: 4px 0 14px; padding: 14px 16px; border: 1px solid var(--c-border-soft); border-radius: var(--r-md); background: linear-gradient(180deg, var(--c-surface-2), var(--c-surface)); }
 .cal-an-gauge { flex: 0 0 auto; width: 88px; height: 88px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--sev) var(--deg, 0deg), color-mix(in srgb, var(--sev) 16%, transparent) 0); }
@@ -202,6 +246,51 @@
 .cal-rm-cell { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; min-width: 46px; padding: 5px 7px; border: none; border-radius: var(--r-sm); background: var(--sev); color: #fff; font-size: 10.5px; font-weight: 800; cursor: pointer; line-height: 1.1; transition: transform .06s, box-shadow .12s; }
 .cal-rm-cell small { font-size: 9px; font-weight: 700; opacity: .9; font-variant-numeric: tabular-nums; }
 .cal-rm-cell:hover { transform: translateY(-1px); box-shadow: 0 2px 8px color-mix(in srgb, var(--sev) 45%, transparent); }
+
+/* ── Cabecera de sección + conmutador de estilo (dos vistas) ── */
+.cal-loc-sec { margin-bottom: 14px; }
+.cal-loc-sechead { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 14px 0 8px; }
+.cal-loc-sectitle { font-size: 13px; font-weight: 800; color: var(--c-text); }
+.cal-loc-secsub { font-size: 10.5px; font-weight: 600; color: var(--c-text-muted); margin-left: 4px; }
+.cal-vtoggle { display: inline-flex; gap: 4px; }
+.cal-vt { font-size: 11px; font-weight: 700; padding: 4px 11px; border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); border-radius: var(--r-pill); cursor: pointer; transition: all var(--t-fast); }
+.cal-vt:hover { border-color: var(--c-brand-600); color: var(--c-brand-600); }
+.cal-vt.is-on { background: var(--c-brand-600); border-color: var(--c-brand-600); color: #fff; }
+
+/* ── Mapa de riesgo · RED (constelaciones por módulo) ── */
+.cal-risknet { background: var(--c-surface); border: 1px solid var(--c-border-soft); border-radius: var(--r-md); padding: 10px 12px; }
+.cal-net-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(156px, 1fr)); gap: 6px; }
+.cal-net-cell { margin: 0; display: flex; flex-direction: column; align-items: center; }
+.cal-net-svg { width: 100%; height: auto; max-width: 176px; overflow: visible; }
+.cal-net-edge { stroke: var(--sev); stroke-width: 2; stroke-opacity: .38; }
+.cal-net-node { fill: var(--sev); stroke: var(--c-surface); stroke-width: 1.5; transition: stroke-width .1s; }
+.cal-net-nlbl { fill: #fff; font-size: 9px; font-weight: 800; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.cal-net-hub circle { fill: var(--sev); }
+.cal-net-hub text { fill: #fff; font-size: 10px; font-weight: 800; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.cal-net-tk { cursor: pointer; }
+.cal-net-tk:hover .cal-net-node { stroke-width: 2.5; }
+.cal-net-tk:focus-visible { outline: none; }
+.cal-net-tk:focus-visible .cal-net-node { stroke: var(--c-text); stroke-width: 2.5; }
+.cal-net-cap { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; justify-content: center; font-size: 10.5px; margin-top: 1px; text-align: center; }
+.cal-net-cap b { color: var(--c-text); font-weight: 800; }
+.cal-net-caprisk { color: var(--sev); font-weight: 800; font-size: 9px; text-transform: uppercase; letter-spacing: .03em; }
+.cal-net-capwqi { color: var(--c-text-muted); font-weight: 700; font-variant-numeric: tabular-nums; }
+.cal-net-note { font-size: 10.5px; color: var(--c-text-muted); margin-top: 8px; line-height: 1.4; }
+
+/* ── Comparador · SMALL MULTIPLES (un panel por parámetro; bullet por tanque) ── */
+.cal-sm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(244px, 1fr)); gap: 10px; }
+.cal-sm-cell { border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); padding: 9px 11px; background: var(--c-surface); }
+.cal-sm-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
+.cal-sm-h span:first-child { font-size: 11.5px; font-weight: 800; color: var(--c-text); }
+.cal-sm-h span:last-child { font-size: 10px; font-weight: 600; color: var(--c-text-muted); font-variant-numeric: tabular-nums; text-align: right; }
+.cal-sm-rows { display: flex; flex-direction: column; gap: 4px; }
+.cal-sm-row { display: grid; grid-template-columns: 46px 1fr 46px; align-items: center; gap: 8px; background: none; border: none; padding: 1px 0; cursor: pointer; text-align: left; font: inherit; }
+.cal-sm-tq { font-size: 10px; font-weight: 800; color: var(--c-text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-sm-track { position: relative; height: 12px; background: var(--c-surface-2); border-radius: 3px; }
+.cal-sm-row:hover .cal-sm-track, .cal-sm-row:focus-visible .cal-sm-track { box-shadow: inset 0 0 0 1.5px var(--sev); outline: none; }
+.cal-sm-band { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--sev-optimo) 22%, transparent); border-inline: 1px solid color-mix(in srgb, var(--sev-optimo) 50%, transparent); }
+.cal-sm-mark { position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 50%; background: var(--sev); transform: translate(-50%, -50%); box-shadow: 0 0 0 1.5px var(--c-surface); }
+.cal-sm-val { font-size: 10px; font-weight: 800; color: var(--c-text); font-variant-numeric: tabular-nums; text-align: right; }
 
 /* ---- Por ubicación · fichas técnicas jerárquicas (módulo → tanque) ---- */
 .cal-fichas-t { font-size: 12px; font-weight: 800; color: var(--c-text-soft); margin: 2px 0 8px; }

@@ -158,7 +158,9 @@ describe('Microbiología · harness de navegación integral', () => {
     mount();
     click(root.querySelector('[data-mic-sub="calidad"]'));
     expect(root.querySelector('.mic-calagua')).toBeTruthy();
-    expect(root.querySelector('.mic-kpis')).toBeTruthy();
+    // Franja de instrumentos (KPIs con identidad + micro-viz): 4 tarjetas + barra de severidad.
+    expect(root.querySelectorAll('.cal-inst-strip .cal-inst').length).toBe(4);
+    expect(root.querySelector('.cal-inst-seg')).toBeTruthy();
     // Panel del Analista: WQI global + diagnóstico automático (hay Nitrito fuera).
     const analyst = root.querySelector('.cal-analyst');
     expect(analyst).toBeTruthy();
@@ -207,6 +209,20 @@ describe('Microbiología · harness de navegación integral', () => {
     expect(root.querySelector('#calTankBody').textContent.length).toBeGreaterThan(0);
     click(root.querySelector('[data-cal-tank-close]'));
     expect(root.querySelector('#calTankModal').classList.contains('is-open')).toBe(false);
+    // Estilos alternativos: mapa de riesgo → Red (constelaciones) · comparador → Small multiples.
+    click(root.querySelector('[data-cal-riskview="red"]'));
+    expect(root.querySelector('.cal-risknet .cal-net-tk[data-cal-tank]')).toBeTruthy();
+    click(root.querySelector('[data-cal-cmpview="multiples"]'));
+    expect(root.querySelector('.cal-smult')).toBeTruthy();
+    expect(root.querySelectorAll('.cal-sm-row[data-cal-tank]').length).toBeGreaterThanOrEqual(2);
+    // Abrir ficha desde un nodo de la red (mismo data-cal-tank genérico).
+    click(root.querySelector('.cal-net-tk[data-cal-tank]'));
+    expect(root.querySelector('#calTankModal').classList.contains('is-open')).toBe(true);
+    click(root.querySelector('[data-cal-tank-close]'));
+    // Restaurar estilos por defecto (vState es de módulo: evita fugas a otros tests).
+    click(root.querySelector('[data-cal-riskview="matriz"]'));
+    click(root.querySelector('[data-cal-cmpview="paralelas"]'));
+    expect(root.querySelector('.cal-riskmap')).toBeTruthy();
     // Colapsar/expandir un módulo de las fichas no rompe.
     const modHead = root.querySelector('[data-cal-mod]');
     if (modHead) click(modHead);
