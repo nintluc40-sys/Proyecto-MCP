@@ -26,11 +26,11 @@ const gPop = (r) => { const v = parseNum(r, F.poblacion); return v !== null && v
 // siembra inicial sigue contando en los totales del módulo).
 const OBS_KEYS = ['Observaciones', 'observaciones', 'Observación', 'observación'];
 const gObs = (r) => getField(r, OBS_KEYS);
-export const isGroupedRow = (r) => /agrupad/i.test(gObs(r));
+const isGroupedRow = (r) => /agrupad/i.test(gObs(r));
 export const rowsAreGrouped = (rows) => rows.some(isGroupedRow);
 // Tanque "descartado": el operador anota "Descartado" en Observaciones. Igual que el
 // agrupado, no llega al despacho (su producción se pierde por malos cuidados).
-export const isDiscardedRow = (r) => /descartad/i.test(gObs(r));
+const isDiscardedRow = (r) => /descartad/i.test(gObs(r));
 export const rowsAreDiscarded = (rows) => rows.some(isDiscardedRow);
 // Tanque que NO llegará al despacho (agrupado o descartado).
 export const rowsOutOfDispatch = (rows) => rowsAreGrouped(rows) || rowsAreDiscarded(rows);

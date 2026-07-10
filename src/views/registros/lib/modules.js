@@ -9,7 +9,7 @@
    ============================================================ */
 
 // Índices de módulo (mismos valores que engine.js).
-export const MODS = 10; // módulos de larvicultura estándar M01..M10
+const MODS = 10; // módulos de larvicultura estándar M01..M10
 export const TQS = 12; // tanques por módulo (13–20 retirados)
 export const CIO_MOD = 0;
 export const LAB_MOD = 11; // Lab. Algas

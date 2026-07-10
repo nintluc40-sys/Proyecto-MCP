@@ -19,6 +19,14 @@ export function natCmp(a, b) {
   return (x && y && +x[0] !== +y[0]) ? +x[0] - +y[0] : String(a).localeCompare(String(b));
 }
 
+/** Orden natural con desempate por collation español-numérica (`'es', {numeric}`).
+ *  Igual que natCmp salvo el criterio de desempate alfabético. */
+export function natCmpEs(a, b) {
+  const ra = String(a).match(/\d+/), rb = String(b).match(/\d+/);
+  if (ra && rb && +ra[0] !== +rb[0]) return +ra[0] - +rb[0];
+  return String(a).localeCompare(String(b), 'es', { numeric: true });
+}
+
 /** Porcentaje con 1 decimal; "—" para no numérico. */
 export function fmtPct(v) {
   return (v === null || v === undefined || isNaN(v)) ? '—' : v.toFixed(1) + '%';

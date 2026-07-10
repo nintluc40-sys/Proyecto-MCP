@@ -9,7 +9,7 @@ import { dayNum, rangeLabel } from '../../core/dates.js';
 
 // Paleta "Algas" cohesionada (tonos bajos, en sintonía con el resto de vistas):
 // anclas teal/oliva/rosa/verde/ocre + variantes apagadas para hasta 14 líneas.
-export const ALG_PAL = ['#015B76', '#739842', '#CA6378', '#186447', '#A06B27', '#4F8DA0', '#9CB36A', '#D49AAA', '#2E7D5E', '#C39A6A', '#2A6E84', '#5E7A3C', '#A86F84', '#46705C'];
+const ALG_PAL = ['#015B76', '#739842', '#CA6378', '#186447', '#A06B27', '#4F8DA0', '#9CB36A', '#D49AAA', '#2E7D5E', '#C39A6A', '#2A6E84', '#5E7A3C', '#A86F84', '#46705C'];
 export const algColor = (i) => ALG_PAL[i % ALG_PAL.length];
 // Color por categoría de sistema (compartido por la sección de análisis).
 export const CAT_COLOR = { Masivos: '#186447', Premasivos: '#739842', Fundas: '#015B76', Carboys: '#A06B27', PBR: '#CA6378', Otros: '#B7A59B' };

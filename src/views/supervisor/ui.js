@@ -9,7 +9,7 @@ import { registerModalEscape } from '../../ui/modalEscape.js';
 // importan desde './ui.js' sigan funcionando sin cambios.
 export { fmtPop };
 
-export const MOD_COLORS = [
+const MOD_COLORS = [
   { bg: 'linear-gradient(135deg,#006064,#00838f)', accent: '#006064' },
   { bg: 'linear-gradient(135deg,#1565C0,#1976D2)', accent: '#1565C0' },
   { bg: 'linear-gradient(135deg,#6A1B9A,#8E24AA)', accent: '#6A1B9A' },

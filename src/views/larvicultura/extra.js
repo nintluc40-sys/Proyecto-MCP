@@ -13,7 +13,7 @@ import { store } from '../../core/store.js';
 import { getField, parseNum, F, isLarviculturaRow } from '../../core/fields.js';
 import { parseAnyDate, dayNum, rangeLabel } from '../../core/dates.js';
 import { makeChart } from '../../core/charts.js';
-import { avg } from '../../core/util.js';
+import { avg, natCmpEs } from '../../core/util.js';
 import { dailySeries, lastState, iclOf, compositeScore } from './compute.js';
 import { ACCENT, NEUTRAL, SEM, CAT, catColor } from './palette.js';
 
@@ -173,13 +173,12 @@ export function obsHistorial(filters) {
    GRÁFICOS
    ============================================================ */
 const fmtK = (v) => { if (v === null || v === undefined) return '—'; if (Math.abs(v) >= 1e6) return (v / 1e6).toFixed(2) + 'M'; if (Math.abs(v) >= 1e3) return (v / 1e3).toFixed(1) + 'k'; return String(Math.round(v)); };
-const natCmp = (a, b) => { const ra = String(a).match(/\d+/), rb = String(b).match(/\d+/); if (ra && rb && +ra[0] !== +rb[0]) return +ra[0] - +rb[0]; return String(a).localeCompare(String(b), 'es', { numeric: true }); };
 // Umbrales del Score (mayor = mejor): Crítico ≤ 60 · Atención 60–80 · Óptimo ≥ 80.
 const SCORE_CRIT = 60, SCORE_OPT = 80;
 
 /** Dumbbell: población inicial vs actual por tanque. */
 export function populationDumbbell(canvasId, popData) {
-  const keys = Object.keys(popData).sort(natCmp);
+  const keys = Object.keys(popData).sort(natCmpEs);
   if (!keys.length) return null;
   const iniData = [], curData = [], lossPct = [];
   keys.forEach((k) => {
@@ -326,7 +325,7 @@ export function algaeChart(canvasId, algae) {
 
 /** Tendencia de población: una línea por tanque a lo largo del tiempo. */
 export function populationTrend(canvasId, popData) {
-  const keys = Object.keys(popData).sort(natCmp);
+  const keys = Object.keys(popData).sort(natCmpEs);
   if (!keys.length) return null;
   const dateSet = new Map();
   keys.forEach((k) => popData[k].forEach((p) => { if (!dateSet.has(p.fecha)) dateSet.set(p.fecha, p._d ? p._d.getTime() : 0); }));
@@ -367,7 +366,7 @@ function linFit(values) {
 
 /** Proyección: población por tanque (histórico sólido) + tendencia lineal a `horizon` días (punteado). */
 export function populationForecast(canvasId, popData, horizon = 7) {
-  const keys = Object.keys(popData).sort(natCmp);
+  const keys = Object.keys(popData).sort(natCmpEs);
   if (!keys.length) return null;
   const dateSet = new Map();
   keys.forEach((k) => popData[k].forEach((p) => { if (!dateSet.has(p.fecha)) dateSet.set(p.fecha, p._d ? p._d.getTime() : 0); }));

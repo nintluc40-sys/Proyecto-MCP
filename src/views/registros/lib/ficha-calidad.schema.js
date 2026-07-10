@@ -77,9 +77,6 @@ export const CALIDAD_GROUPS = [
   },
 ];
 
-/** Restricciones comunes de todas las columnas numéricas. */
-export const CALIDAD_NUM_ATTRS = { type: 'number', min: 0, max: 100, step: 0.1 };
-
 /** Lista plana de códigos numéricos, en orden de columna. */
 export const CALIDAD_CODES = CALIDAD_GROUPS.flatMap((g) => g.cols.map((c) => c.code));
 

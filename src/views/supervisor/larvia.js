@@ -4,6 +4,7 @@
    pigmentación) + bitácora desplegable. Enlace a app.larvia.ai.
    ============================================================ */
 import { getters } from './stats.js';
+import { avg as mean } from '../../core/util.js';
 import { colorFor, breadcrumb, fmt1, fmt2, bindModal } from './ui.js';
 import { esc } from '../../core/format.js';
 import { parseAnyDate } from '../../core/dates.js';
@@ -253,7 +254,7 @@ export function renderLarvia(ctx, mod, tq) {
         const m = metricByKey[key]; if (!m) return;
         const arr = bit.map((d) => d[m.key]).filter((v) => v !== null && v !== undefined);
         const f = (v) => (v === null || v === undefined ? '—' : v.toFixed(m.dec));
-        const avg = arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+        const avg = mean(arr);
         titleEl.textContent = m.label;
         metaEl.innerHTML = `<span class="sv-modal-kpi"><b>${arr.length ? f(arr[arr.length - 1]) : '—'}</b>último</span>`
           + `<span class="sv-modal-kpi"><b>${f(avg)}</b>prom.</span>`

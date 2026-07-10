@@ -8,7 +8,6 @@ import { esc } from '../core/format.js';
 const views = new Map(); // id -> { label, icon, render(container) }
 
 export function registerView(id, def) { views.set(id, def); }
-export function getViews() { return [...views.entries()].map(([id, v]) => ({ id, ...v })); }
 
 let container = null;
 export function setContainer(el) { container = el; }

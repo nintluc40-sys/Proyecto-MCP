@@ -16,15 +16,6 @@ export const POBLACION_HEADER = [
   { name: 'siembra', label: 'N° Siembra', type: 'text', placeholder: '1' },
 ];
 
-/** Columnas por tanque (orden visual). sv tiene modo auto (readonly desde CS). */
-export const POBLACION_COLUMNS = [
-  { code: 'sv', label: '% Supervivencia' },
-  { code: 'po', label: 'Población', feedsTotal: true },
-  { code: 'lt', label: 'Lote', text: true },
-  { code: 'e', label: 'Estadío', text: true },
-  { code: 'sal', label: 'Salinidad' },
-];
-
 /** Construye el nombre de campo por tanque: ('po', 3) → 'po_3'. */
 export function fieldName(code, tank) {
   return `${code}_${tank}`;

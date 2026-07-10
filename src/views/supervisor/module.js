@@ -13,6 +13,7 @@ import { desinfeccionDetalle } from './desinfeccion.js';
 import { iclSeries } from './params.js';
 import { lotBrand } from './omtex.js';
 import { makeChart, destroyChart } from '../../core/charts.js';
+import { natCmp } from '../../core/util.js';
 import {
   isMicroRow, rowContext as microCtx, meltRow as microMelt, pathogenRecords as microRecords,
   PATHOGENS as MIC_PATHOGENS, PATHOGEN_COLOR as MIC_COLOR, NIVEL_COLOR as MIC_NIVEL_COLOR,
@@ -59,7 +60,6 @@ const bmNorm = (s) => {
   if (['negativo', 'negative', 'neg', 'n', '0', 'no'].includes(l)) return 'Negativo';
   return '';
 };
-const bmNat = (a, b) => { const x = String(a).match(/\d+/), y = String(b).match(/\d+/); return (x && y && +x[0] !== +y[0]) ? +x[0] - +y[0] : String(a).localeCompare(String(b)); };
 // Orden cronológico de estadíos: N < Z < M < PL (y nº dentro del grupo). Mismo criterio que la vista Biomol.
 function bmEstadioOrder(s) {
   const u = String(s).toUpperCase().trim().replace(/\s+/g, '');
@@ -139,7 +139,7 @@ function buildBiomolHeat(host, rows, mode) {
   const byEst = mode === 'estadio';
   const dimOf = (r) => (byEst ? (r.estadio || '—') : r.tq);
   const colHead = byEst ? 'Estadío' : 'Tanque';
-  const cols = bmDistinct(rows.map(dimOf)).sort(byEst ? bmEstadioCmp : bmNat);
+  const cols = bmDistinct(rows.map(dimOf)).sort(byEst ? bmEstadioCmp : natCmp);
   const tips = []; // HTML de tooltip por celda (referenciado por índice, no por atributo)
   let html = `<div class="sv-bm-scroll"><table class="sv-bm-table"><thead><tr><th class="sv-bm-corner">Diag · ${colHead}</th>`
     + cols.map((c) => `<th>${esc(c)}</th>`).join('') + '</tr></thead><tbody>';
@@ -200,7 +200,7 @@ function buildBiomolSwarm(host, rows) {
 /** Render SVG de la dispersión: eje Y = tanques, puntos jitter en X, color por resultado. */
 function drawBiomolSwarm(host, data) {
   if (!host) return;
-  const tanks = bmDistinct(data.map((r) => r.tq)).sort(bmNat);
+  const tanks = bmDistinct(data.map((r) => r.tq)).sort(natCmp);
   if (!data.length || !tanks.length) { host.innerHTML = '<div class="empty-state">Sin análisis para esta fecha.</div>'; return; }
   const W = Math.max(host.clientWidth || 0, 340), mL = 80, mR = 16, mT = 12, mB = 16, rowH = 36;
   const H = mT + tanks.length * rowH + mB, plotW = W - mL - mR;
@@ -267,7 +267,7 @@ const GEL = {
 /** Render SVG del gel: fondo UV violeta, bandas fluorescentes (lima=positivo · lavanda=negativo). */
 function drawBiomolGel(host, data, loteMap) {
   if (!host) return;
-  const tanks = bmDistinct(data.map((r) => r.tq)).sort(bmNat);
+  const tanks = bmDistinct(data.map((r) => r.tq)).sort(natCmp);
   if (!data.length || !tanks.length) { host.innerHTML = '<div class="empty-state">Sin análisis para esta fecha.</div>'; return; }
   const mL = 78, mR = 14, mT = 30, mB = 16, rowH = 40, bandH = 15;
   const laneW = Math.min(70, Math.max(40, ((host.clientWidth || 640) - mL - mR) / tanks.length));
@@ -335,7 +335,6 @@ function drawBiomolGel(host, data, loteMap) {
    acotada a las muestras que comparten corrida + módulo (por número).
    ============================================================ */
 const micDigits = (s) => (String(s).match(/\d+/g) || []).join('');
-const micNat = (a, b) => { const x = String(a).match(/\d+/), y = String(b).match(/\d+/); return (x && y && +x[0] !== +y[0]) ? +x[0] - +y[0] : String(a).localeCompare(String(b)); };
 const micFmtNum = (v) => (v === null || v === undefined || isNaN(v)) ? '—' : Math.round(v).toLocaleString('es-EC');
 const micTQ = (r) => microCtx(r).tq; // tanque estricto (columna TQ/N°)
 const micDayKey = (d) => d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
@@ -371,7 +370,7 @@ function microColonies(rows) {
   return [...byKey.values()].sort((a, b) => b.ufc - a.ufc);
 }
 
-const micTanksOf = (rows) => { const s = new Set(); let none = false; rows.forEach((r) => { const t = micTQ(r); if (t) s.add(t); else none = true; }); const arr = [...s].sort(micNat); if (none) arr.push('__none'); return arr; };
+const micTanksOf = (rows) => { const s = new Set(); let none = false; rows.forEach((r) => { const t = micTQ(r); if (t) s.add(t); else none = true; }); const arr = [...s].sort(natCmp); if (none) arr.push('__none'); return arr; };
 const micRowsForTank = (rows, tank) => !tank ? rows : (tank === '__none' ? rows.filter((r) => !micTQ(r)) : rows.filter((r) => micTQ(r) === tank));
 function micDaysOf(rows) {
   const byDay = new Map();
@@ -394,9 +393,9 @@ function microPlacaHTML(rows, state) {
   const totUfc = colonies.filter((c) => c.key === 'totales').reduce((a, c) => a + c.ufc, 0) || colonies.reduce((a, c) => a + c.ufc, 0);
   const specific = colonies.filter((c) => !MIC_AGG.has(c.key));
   const maxC = specific.length ? specific.reduce((a, b) => (a.ufc > b.ufc ? a : b)) : null;
-  const dayTanks = [...new Set(day.rows.map(micTQ).filter(Boolean))].sort(micNat);
+  const dayTanks = [...new Set(day.rows.map(micTQ).filter(Boolean))].sort(natCmp);
   const tankShown = state.tank ? micTankLabel(state.tank) : (dayTanks.length ? dayTanks.map((t) => 'TQ ' + t).join(', ') : '—');
-  const dayEstadios = [...new Set(day.rows.map((r) => microCtx(r).estadio).filter(Boolean))].sort(micNat);
+  const dayEstadios = [...new Set(day.rows.map((r) => microCtx(r).estadio).filter(Boolean))].sort(natCmp);
   const agares = [...new Set(colonies.map((c) => PATHOGEN_AGAR[c.key]).filter(Boolean))].sort();
   const tankOpts = `<option value="">Todos los tanques</option>` + tanks.map((t) => `<option value="${esc(t)}" ${state.tank === t ? 'selected' : ''}>${esc(micTankLabel(t))}</option>`).join('');
   const legend = colonies.length

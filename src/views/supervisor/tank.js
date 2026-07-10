@@ -2,6 +2,7 @@
    SUPERVISOR · Visualización del Tanque (KPIs + series temporales)
    ============================================================ */
 import { tankStats, getters } from './stats.js';
+import { avg as mean } from '../../core/util.js';
 import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, breadcrumb, bindModal } from './ui.js';
 import { svLevel, odLevel, tmpLevel, levelColor, levelLabel, esc } from '../../core/format.js';
 import { parseAnyDate } from '../../core/dates.js';
@@ -386,7 +387,7 @@ export function renderTank(ctx, mod, tq) {
       const metaEl = root.querySelector('#svIclMeta');
       const drawIcl = () => {
         const present = icl.values.filter((v) => v !== null && v !== undefined);
-        const avg = present.length ? present.reduce((a, b) => a + b, 0) / present.length : null;
+        const avg = mean(present);
         const r1 = (v) => (v === null || v === undefined ? '—' : String(Math.round(v)));
         if (metaEl) metaEl.innerHTML = `<span class="sv-modal-kpi"><b>${r1(lastIcl)}</b>actual</span>`
           + `<span class="sv-modal-kpi"><b>${r1(avg)}</b>prom.</span>`

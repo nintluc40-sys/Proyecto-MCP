@@ -8,11 +8,11 @@ import { getField, parseNum, F, isLarviculturaRow } from '../../core/fields.js';
 import { larviColor, larviLabel, larviZone, esc } from '../../core/format.js';
 import { parseAnyDate, fmtShort } from '../../core/dates.js';
 import { makeChart, destroyChart } from '../../core/charts.js';
+import { natCmpEs } from '../../core/util.js';
 import { dailySeries, lastState, iclOf, compositeScore } from './compute.js';
 import { LARVI_COMBOS } from './stages.js';
 import { obsHistorial } from './extra.js';
 
-const natCmp = (a, b) => { const ra = String(a).match(/\d+/), rb = String(b).match(/\d+/); if (ra && rb && +ra[0] !== +rb[0]) return +ra[0] - +rb[0]; return String(a).localeCompare(String(b), 'es', { numeric: true }); };
 const fechaTxt = (r) => { const d = parseAnyDate(getField(r, F.fecha)); return d ? fmtShort(d) : esc(getField(r, F.fecha) || '—'); };
 
 const TANK_COLORS = ['#1E88E5', '#E53935', '#43A047', '#FB8C00', '#8E24AA', '#00ACC1'];
@@ -187,7 +187,7 @@ function renderCorrComp(body) {
   const mod = (snap.state && snap.state.modulo) || null;
   const corridas = [...new Set(store.globalData.filter(isLarviculturaRow)
     .filter((r) => !mod || getField(r, F.modulo) === mod)
-    .map((r) => getField(r, F.corrida)).filter(Boolean))].sort(natCmp);
+    .map((r) => getField(r, F.corrida)).filter(Boolean))].sort(natCmpEs);
   if (!corridas.length) { body.innerHTML = '<div class="empty-state">Sin corridas para comparar.</div>'; return; }
   // A por defecto = la del filtro principal; B = otra corrida del mismo módulo (a escoger).
   if (!corrSel.a || !corridas.includes(corrSel.a)) corrSel.a = (snap.state && snap.state.corrida) || corridas[corridas.length - 1];
@@ -252,15 +252,15 @@ const histF = { corrida: '', modulo: '', tanque: '' };
 function renderHistoria(body) {
   const all = store.globalData.filter(isLarviculturaRow);
 
-  const corridas = [...new Set(all.map((r) => getField(r, F.corrida)).filter(Boolean))].sort(natCmp);
+  const corridas = [...new Set(all.map((r) => getField(r, F.corrida)).filter(Boolean))].sort(natCmpEs);
   if (histF.corrida && !corridas.includes(histF.corrida)) histF.corrida = '';
   const byCorr = all.filter((r) => !histF.corrida || getField(r, F.corrida) === histF.corrida);
 
-  const modulos = [...new Set(byCorr.map((r) => getField(r, F.modulo)).filter(Boolean))].sort(natCmp);
+  const modulos = [...new Set(byCorr.map((r) => getField(r, F.modulo)).filter(Boolean))].sort(natCmpEs);
   if (histF.modulo && !modulos.includes(histF.modulo)) histF.modulo = '';
   const byMod = byCorr.filter((r) => !histF.modulo || getField(r, F.modulo) === histF.modulo);
 
-  const tanques = [...new Set(byMod.map((r) => getField(r, F.tanque)).filter(Boolean))].sort(natCmp);
+  const tanques = [...new Set(byMod.map((r) => getField(r, F.tanque)).filter(Boolean))].sort(natCmpEs);
   if (histF.tanque && !tanques.includes(histF.tanque)) histF.tanque = '';
 
   const opt = (val, cur, ph) => `<option value="${esc(val)}" ${val === cur ? 'selected' : ''}>${esc(val || ph)}</option>`;

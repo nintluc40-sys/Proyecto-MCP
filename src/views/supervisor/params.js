@@ -7,6 +7,7 @@
    interpretación. Se adapta al estadío del tanque (Larv / Post-L).
    ============================================================ */
 import { esc } from '../../core/format.js';
+import { avg as mean } from '../../core/util.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { parseNum, getField, F } from '../../core/fields.js';
 import { getters } from './stats.js';
@@ -219,7 +220,7 @@ export function waterSemaforo(esp, suc, colorLevel) {
 }
 
 /** Semáforo genérico de un grupo: nivel según nº de variables fuera de rango + detalle. */
-export function groupSemaforo(vars, lastVal) {
+function groupSemaforo(vars, lastVal) {
   let inRange = 0, evaluable = 0;
   const out = [];
   vars.forEach((v) => {
@@ -377,7 +378,7 @@ export function buildParamSection(rows, stageClass, modRows, waterColor) {
       const refTxt = v.ref ? `obj ${REF_SYM[v.ref.op]} ${v.ref.val}${unitSuffix(v.kind)}` : (v.refLine ? `máx. normal ${v.refLine}${unitSuffix(v.kind)}` : 'referencial');
       const estado = ev.ok === null ? '' : ev.ok ? '<span class="lv-fs-ok">✓ En rango</span>' : '<span class="lv-fs-bad">! Fuera de rango</span>';
       const arr = (series[key] || []).filter((x) => x !== null && x !== undefined);
-      const avg = arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+      const avg = mean(arr);
       const mn = arr.length ? Math.min(...arr) : null, mx = arr.length ? Math.max(...arr) : null;
       metaEl.innerHTML = `<span class="sv-modal-kpi"><b>${fmtVal(v.kind, val)}</b>actual</span>`
         + `<span class="sv-modal-kpi"><b>${fmtVal(v.kind, avg)}</b>prom.</span>`

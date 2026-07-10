@@ -51,15 +51,8 @@ export function parseAnyDate(raw) {
   return result;
 }
 
-const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-
 export function fmtShort(d) {
   return d ? d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: '2-digit' }) : '';
-}
-
-export function monthLabel(ym) {
-  const [y, m] = ym.split('-');
-  return MESES[+m - 1].replace(/^\w/, (c) => c.toUpperCase()) + ' ' + y;
 }
 
 export function yearMonthKey(d) {

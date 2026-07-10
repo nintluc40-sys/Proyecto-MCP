@@ -4,6 +4,7 @@
    de las variables (mayor ICL = mejor).
    ============================================================ */
 import { store } from '../../core/store.js';
+import { avg as mean } from '../../core/util.js';
 import { getField, parseNum, F, isLarviculturaRow, isTanqueRow } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
 
@@ -76,7 +77,7 @@ export function moduleEnv(modulo, corrida) {
     src.forEach((r) => { const f = getField(r, F.fecha); const v = parseNum(r, cfg.keys); if (!f || v === null) return; (byDay.get(f) || byDay.set(f, []).get(f)).push(v); });
     const days = [...byDay.keys()].sort((a, b) => (parseAnyDate(a) || 0) - (parseAnyDate(b) || 0));
     const series = days.map((d) => { const a = byDay.get(d); return a.reduce((x, y) => x + y, 0) / a.length; });
-    const avg = series.length ? series.reduce((a, b) => a + b, 0) / series.length : null;
+    const avg = mean(series);
     const last = series.length ? series[series.length - 1] : null;
     const status = cfg.informational
       ? (last === null ? 'sin' : 'info')
