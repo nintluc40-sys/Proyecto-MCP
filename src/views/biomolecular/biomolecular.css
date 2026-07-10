@@ -158,6 +158,9 @@
 .biomol .badge-pos { background: rgba(239,68,68,.15); color: #ef4444; }
 .biomol .badge-neg { background: rgba(34,197,94,.13); color: #16a34a; }
 .biomol .badge-na { background: var(--bm-surface2); color: var(--bm-muted); }
+/* Tema oscuro: el verde medio del badge negativo sube a contraste (mismo verde que el
+   tooltip .neg-tag de esta vista), legible sobre el tinte oscuro. */
+[data-theme="dark"] .biomol .badge-neg { color: #22c55e; }
 
 /* Suppress chips */
 .biomol .sup-bar-lbl { font-size: 10px; color: var(--bm-muted); font-weight: 700; }

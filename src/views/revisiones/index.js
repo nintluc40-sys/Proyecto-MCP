@@ -584,10 +584,13 @@ const bulletPlugin = {
   afterDatasetsDraw(chart) {
     const cfg = chart.config.options.bullet; if (!cfg) return;
     const { ctx, scales: { x } } = chart; ctx.save();
+    // Marcador objetivo: casi-negro en claro, claro en oscuro (si no, se pierde sobre
+    // la tarjeta oscura). Mismo criterio que compareTanks.js.
+    const tgtCol = document.documentElement.getAttribute('data-theme') === 'dark' ? '#e7edf0' : '#263238';
     chart.getDatasetMeta(0).data.forEach((bar, i) => {
       const row = cfg.rows[i]; if (!row || row.target == null) return;
       const px = x.getPixelForValue(row.target);
-      ctx.strokeStyle = '#263238'; ctx.lineWidth = 3;
+      ctx.strokeStyle = tgtCol; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.moveTo(px, bar.y - BAND_H / 2 - 1); ctx.lineTo(px, bar.y + BAND_H / 2 + 1); ctx.stroke();
     });
     ctx.restore();

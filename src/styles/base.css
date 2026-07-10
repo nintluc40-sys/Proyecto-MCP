@@ -17,6 +17,11 @@ body {
 button { font-family: inherit; cursor: pointer; }
 a { color: inherit; }
 
+/* Foco de teclado visible y consistente. Sólo se activa por teclado (:focus-visible),
+   nunca con el ratón. Las vistas que definen su propio foco lo sobrescriben por ser
+   más específicas; aquí sólo se cubre el chrome y los controles sin estilo propio. */
+:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: 2px; }
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 6px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--c-text-muted); }

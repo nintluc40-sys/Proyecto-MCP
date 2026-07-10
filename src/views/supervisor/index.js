@@ -5,6 +5,7 @@
    ============================================================ */
 import { store } from '../../core/store.js';
 import { destroyAllCharts } from '../../core/charts.js';
+import { setDateBarHidden } from '../../ui/shell.js';
 import { buildContext } from './stats.js';
 import { renderExecutive } from './executive.js';
 import { renderModule } from './module.js';
@@ -46,6 +47,9 @@ export function supervisorView(root) {
   document.body.classList.remove('modal-open');
   const ctx = buildContext(vState);
   const result = dispatch(ctx);
+  // La barra de fecha global se oculta SOLO en la landing ejecutiva (vState.view queda
+  // en 'modules' tras dispatch), donde sus presets no aplican; reaparece en módulo/tanque.
+  setDateBarHidden(vState.view === 'modules');
   const { html, after } = typeof result === 'string' ? { html: result } : result;
 
   root.innerHTML = html;

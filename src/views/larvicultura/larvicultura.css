@@ -60,6 +60,11 @@
 .lq-sem-verde { background: rgba(46,160,67,.10); border-color: rgba(46,160,67,.45); color: #1b7a36; }
 .lq-sem-ambar { background: rgba(245,166,35,.12); border-color: rgba(245,166,35,.5); color: #9a6a00; }
 .lq-sem-rojo  { background: rgba(229,57,53,.10); border-color: rgba(229,57,53,.5); color: #b71c1c; }
+/* Tema oscuro: los textos oscuros de las franjas-semáforo pierden contraste sobre el
+   tinte casi-oscuro; se aclaran (el fondo/borde se mantienen). Tema claro intacto. */
+[data-theme="dark"] .lq-sem-verde { color: #6fe39a; }
+[data-theme="dark"] .lq-sem-ambar { color: #ffcc66; }
+[data-theme="dark"] .lq-sem-rojo  { color: #ff8a85; }
 .lq-doc-chip { display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; padding: 5px 11px; border: 1.5px solid var(--c-border); border-radius: 999px; background: var(--c-surface); font-size: 11.5px; font-weight: 700; color: var(--c-text-soft); }
 .lq-doc-day { color: var(--c-larvi); font-weight: 900; }
 .lq-doc-sep { opacity: .4; }
@@ -124,6 +129,7 @@
 .lq-dec-tip { font-size: 12px; color: var(--c-text-soft); margin-top: 2px; line-height: 1.45; }
 .lq-dec-combos { display: flex; flex-direction: column; gap: 8px; }
 .lq-dec-combo { font-size: 12.5px; font-weight: 600; color: #8a4b00; background: rgba(245, 185, 66, .16); border-left: 3px solid var(--c-alerta); padding: 9px 12px; border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+[data-theme="dark"] .lq-dec-combo { color: #ffcc66; }
 
 /* Grid de 2 columnas para pares de gráficos */
 .lq-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }

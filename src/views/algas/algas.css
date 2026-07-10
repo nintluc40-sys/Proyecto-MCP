@@ -69,6 +69,14 @@
 #algDayModal .alg-chip b { color: var(--algd-3); }
 #algDayModal .alg-up { color: var(--algd-5); }
 #algDayModal .alg-down { color: var(--algd-3); }
+/* Tema oscuro: se aclaran SOLO los tonos de texto de la paleta bespoke (mismo matiz),
+   para que el modal "Resumen del día" sea legible sobre la superficie oscura. Los
+   border-top (--algd-1 / --algd-4) se conservan como acento. */
+[data-theme="dark"] {
+  --algd-2: #c9bfc7; /* gris-lavanda claro (títulos/valores) */
+  --algd-3: #e79bb5; /* vino/rosa claro (chips · deltas ↓) */
+  --algd-5: #a9b98a; /* oliva claro (deltas ↑) */
+}
 
 /* ── KPIs · cifra protagonista + franja de color superior (full-width) ── */
 .alg-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 10px; margin-bottom: 16px; }
@@ -165,6 +173,9 @@
 .alg-watch-b { font-size: 11px; font-weight: 700; border-radius: 4px; padding: 2px 7px; }
 .alg-watch-b.is-proto { background: rgba(202,99,120,.14); color: #A83E55; }
 .alg-watch-b.is-desc { background: rgba(160,107,39,.16); color: #8A5A1F; }
+/* Tema oscuro: el texto oscuro de las badges pierde contraste sobre el tinte; se aclara. */
+[data-theme="dark"] .alg-watch-b.is-proto { color: #e88a9c; }
+[data-theme="dark"] .alg-watch-b.is-desc { color: #d9a15a; }
 .alg-watch-ok { font-size: 12.5px; color: var(--alg-green); font-weight: 700; padding: 10px 4px; }
 .alg-chart-card { padding: 12px 14px; border-radius: 4px; }
 /* Tarjetas con fullscreen: acento superior con el color de la CATEGORÍA activa

@@ -177,10 +177,10 @@ function sumCard(icon, label, valueHtml, context, key, accent) {
   const cursor = key ? ';cursor:pointer' : '';
   const chevron = key ? ' <span style="opacity:.45">›</span>' : '';
   const accentStyle = accent ? `;border-top:3px solid ${accent}` : '';
-  return `<div class="vt-sum-card"${interactive} style="flex:1 1 160px;min-width:160px;background:#fff;border:1px solid #e3eaf2;border-radius:14px;padding:13px 15px;box-shadow:0 1px 2px rgba(0,0,0,.04)${cursor}${accentStyle}">
-    <div style="font-size:12px;color:#607d8b;font-weight:600">${icon} ${esc(label)}${chevron}</div>
-    <div style="font-size:19px;font-weight:800;margin:5px 0;color:#263238;line-height:1.2">${valueHtml}</div>
-    <div style="font-size:11px;color:#90a4ae">${esc(context)}</div>
+  return `<div class="vt-sum-card"${interactive} style="flex:1 1 160px;min-width:160px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:14px;padding:13px 15px;box-shadow:0 1px 2px rgba(0,0,0,.04)${cursor}${accentStyle}">
+    <div style="font-size:12px;color:var(--c-text-soft);font-weight:600">${icon} ${esc(label)}${chevron}</div>
+    <div style="font-size:19px;font-weight:800;margin:5px 0;color:var(--c-text);line-height:1.2">${valueHtml}</div>
+    <div style="font-size:11px;color:var(--c-text-muted)">${esc(context)}</div>
   </div>`;
 }
 
@@ -188,7 +188,7 @@ function sumCard(icon, label, valueHtml, context, key, accent) {
 function summaryBlock(mIdx, monthSup, label) {
   const s = monthSummary(mIdx, monthSup);
   const covBar = s.covY ? Math.round(s.covX / s.covY * 100) : 0;
-  const covVal = `${s.covX} de ${s.covY}<div style="height:6px;background:#eceff1;border-radius:4px;margin-top:5px;overflow:hidden"><div style="height:100%;width:${covBar}%;background:#3F51B5"></div></div>`;
+  const covVal = `${s.covX} de ${s.covY}<div style="height:6px;background:var(--c-surface-2);border-radius:4px;margin-top:5px;overflow:hidden"><div style="height:100%;width:${covBar}%;background:#3F51B5"></div></div>`;
   return `<div class="card vt-card">
     <div class="vt-card-title">📊 Resumen del mes · ${esc(label)} <span class="muted" style="font-weight:600;font-size:12px">· panorama general</span></div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
@@ -211,7 +211,7 @@ const detailTable = (headers, body) =>
     <thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
     <tbody>${body}</tbody></table>`;
 // KPI-píldora con acento de algas (teal) para el detalle de Microalgas.
-const algKpi = (label, value) => `<span style="background:rgba(1,91,118,.08);border:1px solid rgba(1,91,118,.22);border-radius:999px;padding:5px 12px;font-size:12px;color:#37474f;font-weight:700"><b style="color:#015B76;margin-right:4px">${esc(String(value))}</b>${esc(label)}</span>`;
+const algKpi = (label, value) => `<span style="background:rgba(1,91,118,.08);border:1px solid rgba(1,91,118,.22);border-radius:999px;padding:5px 12px;font-size:12px;color:var(--c-text-soft);font-weight:700"><b style="color:#015B76;margin-right:4px">${esc(String(value))}</b>${esc(label)}</span>`;
 const algTealP = (txt) => `<p style="font-size:12px;color:#015B76;font-weight:700;margin:14px 0 6px">${esc(txt)}</p>`;
 
 /** Construye { title, html } del detalle de una tarjeta para un mes dado. */
@@ -231,16 +231,16 @@ function sumDetail(key, mIdx, monthSup) {
     ];
     const body = VARS.map(([lbl, keys, u]) => { const v = numAvg(rows, keys); return v === null ? '' : `<tr><td>${esc(lbl)}</td><td><b>${v.toFixed(1)}${u}</b></td></tr>`; }).filter(Boolean).join('');
     return { title: '🦐 Calidad de las larvas', html: body
-      ? `<p style="font-size:12px;color:#607d8b;margin:0 0 10px">Promedios del mes · todas las corridas (${rows.length} registro(s)).</p>${detailTable(['Variable', 'Promedio'], body)}`
-      : '<p style="color:#90a4ae">Sin datos de calidad para este mes.</p>' };
+      ? `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">Promedios del mes · todas las corridas (${rows.length} registro(s)).</p>${detailTable(['Variable', 'Promedio'], body)}`
+      : '<p style="color:var(--c-text-muted)">Sin datos de calidad para este mes.</p>' };
   }
 
   if (key === 'superv') {
     const d = monthData(mIdx);
     const body = d.rows.map((r) => `<tr><td><b>C${esc(r.cor)}</b></td><td>${fmtPop(r.sie || null)}</td><td>${fmtPop(r.cos || null)}</td><td><b>${fmtPct(r.sup)}</b></td></tr>`).join('');
     return { title: '📈 Supervivencia por corrida', html: d.rows.length
-      ? `<p style="font-size:12px;color:#607d8b;margin:0 0 10px">Desglose por corrida del mes (supervivencia general: <b>${fmtPct(monthSup)}</b>).</p>${detailTable(['Corrida', 'Siembra', 'Cosecha', 'Supervivencia'], body)}`
-      : '<p style="color:#90a4ae">Sin corridas este mes.</p>' };
+      ? `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">Desglose por corrida del mes (supervivencia general: <b>${fmtPct(monthSup)}</b>).</p>${detailTable(['Corrida', 'Siembra', 'Cosecha', 'Supervivencia'], body)}`
+      : '<p style="color:var(--c-text-muted)">Sin corridas este mes.</p>' };
   }
 
   if (key === 'cobertura') {
@@ -249,10 +249,10 @@ function sumDetail(key, mIdx, monthSup) {
     prod.sort((a, b) => a - b);
     const revSet = new Set();
     G.filter((r) => r._SheetOrigin === 'Registro_Supervision' && rowMonth(r) === mIdx).forEach((r) => { const n = modNum(getField(r, F.modulo)); if (n != null) revSet.add(n); });
-    const body = prod.map((n) => `<tr><td><b>M${String(n).padStart(2, '0')}</b></td><td>${revSet.has(n) ? '<span style="color:#2E9E5B;font-weight:700">✅ Revisado</span>' : '<span style="color:#90a4ae">⭕ Sin revisar</span>'}</td></tr>`).join('');
+    const body = prod.map((n) => `<tr><td><b>M${String(n).padStart(2, '0')}</b></td><td>${revSet.has(n) ? '<span style="color:#2E9E5B;font-weight:700">✅ Revisado</span>' : '<span style="color:var(--c-text-muted)">⭕ Sin revisar</span>'}</td></tr>`).join('');
     return { title: '🔍 Cobertura de supervisión', html: prod.length
-      ? `<p style="font-size:12px;color:#607d8b;margin:0 0 10px">${prod.filter((n) => revSet.has(n)).length} de ${prod.length} módulos del mes revisados.</p>${detailTable(['Módulo', 'Estado'], body)}`
-      : '<p style="color:#90a4ae">Sin módulos en producción este mes.</p>' };
+      ? `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${prod.filter((n) => revSet.has(n)).length} de ${prod.length} módulos del mes revisados.</p>${detailTable(['Módulo', 'Estado'], body)}`
+      : '<p style="color:var(--c-text-muted)">Sin módulos en producción este mes.</p>' };
   }
 
   if (key === 'revisiones') {
@@ -262,8 +262,8 @@ function sumDetail(key, mIdx, monthSup) {
     const top = [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
     const body = top.map(([o, c]) => `<tr><td>${esc(o)}</td><td><b>${c}</b></td></tr>`).join('');
     return { title: '⚠️ Estado de revisiones', html: revRows.length
-      ? `<p style="font-size:12px;color:#607d8b;margin:0 0 10px">${revRows.length} revisión(es) · observaciones más frecuentes.</p>${top.length ? detailTable(['Observación', 'Veces'], body) : '<p style="color:#90a4ae">Sin observaciones registradas.</p>'}`
-      : '<p style="color:#90a4ae">Sin revisiones este mes.</p>' };
+      ? `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${revRows.length} revisión(es) · observaciones más frecuentes.</p>${top.length ? detailTable(['Observación', 'Veces'], body) : '<p style="color:var(--c-text-muted)">Sin observaciones registradas.</p>'}`
+      : '<p style="color:var(--c-text-muted)">Sin revisiones este mes.</p>' };
   }
 
   if (key === 'sanidad' || key === 'analisis') {
@@ -278,20 +278,20 @@ function sumDetail(key, mIdx, monthSup) {
         return `<tr><td><b>${esc(DIAG_LABEL[dg])}</b></td><td>${meas}</td><td>${pos}</td><td style="color:${col};font-weight:800">${pct === null ? '—' : pct + '%'}</td></tr>`;
       }).join('');
       return { title: '🧬 Sanidad por diagnóstico', html: bioRows.length
-        ? `<p style="font-size:12px;color:#607d8b;margin:0 0 10px">${bioRows.length} muestra(s) · % de positivos por diagnóstico.</p>${detailTable(['Diagnóstico', 'Medidas', 'Positivos', '% Positivos'], body)}`
-        : '<p style="color:#90a4ae">Sin análisis de laboratorio este mes.</p>' };
+        ? `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${bioRows.length} muestra(s) · % de positivos por diagnóstico.</p>${detailTable(['Diagnóstico', 'Medidas', 'Positivos', '% Positivos'], body)}`
+        : '<p style="color:var(--c-text-muted)">Sin análisis de laboratorio este mes.</p>' };
     }
     const map = new Map();
     bioRows.forEach((r) => { const l = getField(r, ['Lugar', 'lugar']) || 'Sin lugar'; map.set(l, (map.get(l) || 0) + 1); });
     const body = [...map.entries()].sort((a, b) => b[1] - a[1]).map(([l, c]) => `<tr><td>${esc(l)}</td><td><b>${c}</b></td></tr>`).join('');
     return { title: '🧪 Análisis realizados', html: bioRows.length
-      ? `<p style="font-size:12px;color:#607d8b;margin:0 0 10px">${bioRows.length} muestra(s) analizada(s) · por lugar.</p>${detailTable(['Lugar', 'Muestras'], body)}`
-      : '<p style="color:#90a4ae">Sin análisis de laboratorio este mes.</p>' };
+      ? `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${bioRows.length} muestra(s) analizada(s) · por lugar.</p>${detailTable(['Lugar', 'Muestras'], body)}`
+      : '<p style="color:var(--c-text-muted)">Sin análisis de laboratorio este mes.</p>' };
   }
 
   if (key === 'algasCultivos' || key === 'algasSanidad') {
     const R = algRowsOfMonth(mIdx);
-    if (!R.length) return { title: '🌿 Microalgas', html: '<p style="color:#90a4ae">Sin registros de microalgas este mes.</p>' };
+    if (!R.length) return { title: '🌿 Microalgas', html: '<p style="color:var(--c-text-muted)">Sin registros de microalgas este mes.</p>' };
     const s = algasSummary(mIdx);
     const gA = (r, k) => getField(r, ALG_KEYS[k]);
     const nA = (r, k) => parseNum(r, ALG_KEYS[k]);
@@ -311,7 +311,7 @@ function sumDetail(key, mIdx, monthSup) {
       const obs = R.filter((r) => gA(r, 'obs')).slice(0, 8);
       const obsBody = obs.map((r) => `<tr><td><b>${esc(gA(r, 'sistema') || '—')}</b></td><td>${esc(gA(r, 'obs'))}</td></tr>`).join('');
       return { title: '🌿 Microalgas · cultivos', html:
-        `<p style="font-size:12px;color:#607d8b;margin:0 0 10px">Laboratorio de microalgas del mes (${R.length} registro(s)).</p>${kpis}`
+        `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">Laboratorio de microalgas del mes (${R.length} registro(s)).</p>${kpis}`
         + algTealP('⚙️ Por categoría') + detailTable(['Categoría', 'Cultivos', 'Registros', 'Densidad prom.'], catBody)
         + (modBody ? algTealP('🔗 Módulos abastecidos · Σ cel/ml') + detailTable(['Módulo', 'Biomasa'], modBody) : '')
         + (obsBody ? algTealP('📝 Observaciones') + detailTable(['Sistema', 'Observación'], obsBody) : '') };
@@ -328,20 +328,20 @@ function sumDetail(key, mIdx, monthSup) {
     const kpis = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px">
       ${algKpi('descartados', s.desc)}${algKpi('% descarte', s.descPct.toFixed(1) + '%')}${algKpi('protoz. ≥ 5', s.protoAlert + ' reg.')}</div>`;
     return { title: '🦠 Microalgas · sanidad', html:
-      `<p style="font-size:12px;color:#607d8b;margin:0 0 10px">Descarte y contaminación de microalgas del mes (${R.length} registro(s)).</p>${kpis}`
+      `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">Descarte y contaminación de microalgas del mes (${R.length} registro(s)).</p>${kpis}`
       + algTealP('🦠 Por categoría') + detailTable(['Categoría', 'Protoz. ≥ 5', 'Descartados', '% Descarte'], catBody) };
   }
 
-  return { title: 'Detalle', html: '<p style="color:#90a4ae">Sin detalle.</p>' };
+  return { title: 'Detalle', html: '<p style="color:var(--c-text-muted)">Sin detalle.</p>' };
 }
 
 /** HTML del overlay de detalle (una sola vez por montaje de la vista). */
 function sumModalHTML() {
   return `<div id="vtSumModal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(15,23,42,.45);align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto">
-    <div style="background:#fff;border-radius:16px;max-width:680px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:15px 20px;border-bottom:1px solid #eceff1">
-        <span id="vtSumTitle" style="font-size:16px;font-weight:800;color:#263238"></span>
-        <button id="vtSumClose" style="border:none;background:#f1f5f9;border-radius:8px;padding:6px 11px;cursor:pointer;font-size:13px;color:#37474f">✕ Cerrar</button>
+    <div style="background:var(--c-surface);border-radius:16px;max-width:680px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:15px 20px;border-bottom:1px solid var(--c-border-soft)">
+        <span id="vtSumTitle" style="font-size:16px;font-weight:800;color:var(--c-text)"></span>
+        <button id="vtSumClose" style="border:none;background:var(--c-surface-2);border-radius:8px;padding:6px 11px;cursor:pointer;font-size:13px;color:var(--c-text-soft)">✕ Cerrar</button>
       </div>
       <div id="vtSumBody" style="padding:16px 20px"></div>
     </div>

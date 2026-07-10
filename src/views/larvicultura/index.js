@@ -622,7 +622,7 @@ export function larviculturaView(root) {
     ${popReady ? `<div class="lq-pop-stats">
       ${stat(fmtBig(pStats.totalCurr), 'Población total', '#00838F')}
       ${stat(pStats.pctLoss, 'Pérdida acumulada', '#E0413E')}
-      ${stat(String(pStats.validTanks), 'Tanques', '#37474f')}
+      ${stat(String(pStats.validTanks), 'Tanques', 'var(--c-text-soft)')}
       ${stat(pStats.bestTank || '—', 'Mayor población', '#2E9E5B')}
     </div>` : ''}
   </div>`;

@@ -18,6 +18,7 @@
 .rv-phase { font-size: 14px; font-weight: 800; padding: 9px 13px; border-radius: var(--r-sm); margin: 4px 0 14px; border-left: 4px solid; }
 .rv-phase-1 { color: var(--c-text-soft); border-left-color: #90A4AE; background: linear-gradient(90deg, rgba(144,164,174,.10), transparent); }
 .rv-phase-2 { color: #1565C0; border-left-color: #1565C0; background: linear-gradient(90deg, rgba(21,101,192,.10), transparent); }
+[data-theme="dark"] .rv-phase-2 { color: #64b5f6; }
 .rv-bubble-svg { display: block; min-width: 420px; }
 /* Calidad · mosaico de tiles semáforo */
 .rv-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 14px; }

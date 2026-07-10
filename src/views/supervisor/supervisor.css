@@ -359,12 +359,16 @@
 .lv-grp-verde { background: rgba(46,160,67,.10); border-color: rgba(46,160,67,.45); color: #1b7a36; }
 .lv-grp-ambar { background: rgba(245,166,35,.12); border-color: rgba(245,166,35,.5); color: #9a6a00; }
 .lv-grp-rojo  { background: rgba(229,57,53,.10); border-color: rgba(229,57,53,.5); color: #b71c1c; }
+/* Tema oscuro: aclara el texto (mismo criterio que .lq-sem-* de Larvicultura). */
+[data-theme="dark"] .lv-grp-verde { color: #6fe39a; }
+[data-theme="dark"] .lv-grp-ambar { color: #ffcc66; }
+[data-theme="dark"] .lv-grp-rojo  { color: #ff8a85; }
 .sv-modal-wide { max-width: 940px; width: 94vw; }
 .sv-morph-wrap { overflow: auto; max-height: 56vh; border: 1px solid var(--c-border, rgba(0,0,0,.08)); border-radius: 8px; }
 .sv-morph-tbl { border-collapse: collapse; font-size: 11px; width: 100%; }
 .sv-morph-tbl th, .sv-morph-tbl td { padding: 5px 8px; text-align: center; white-space: nowrap; border-bottom: 1px solid rgba(0,0,0,.05); }
-.sv-morph-tbl thead th { position: sticky; top: 0; background: var(--c-bg-soft, #f5f6f8); font-weight: 800; z-index: 2; }
-.sv-morph-rowh { position: sticky; left: 0; background: var(--c-bg-soft, #f5f6f8); font-weight: 800; text-align: left !important; z-index: 1; }
+.sv-morph-tbl thead th { position: sticky; top: 0; background: var(--c-surface-2); font-weight: 800; z-index: 2; }
+.sv-morph-rowh { position: sticky; left: 0; background: var(--c-surface-2); font-weight: 800; text-align: left !important; z-index: 1; }
 .sv-morph-cell.is-ok { background: rgba(46,160,67,.16); color: #1b7a36; font-weight: 700; }
 .sv-morph-cell.is-bad { background: rgba(229,57,53,.18); color: #b71c1c; font-weight: 800; }
 .sv-morph-cell.is-neu { background: rgba(120,130,140,.10); color: var(--c-text-soft); }

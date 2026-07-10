@@ -95,6 +95,7 @@
   border-radius: var(--r-lg); border: 1.5px solid rgba(255,255,255,.28); background: rgba(255,255,255,.10);
   color: #fff; font-size: 13px; font-weight: 800; cursor: pointer; transition: all var(--t-fast); }
 .entry-role:hover { background: #fff; color: var(--c-brand); transform: translateY(-3px); box-shadow: var(--sh-3); }
+.entry-role:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .entry-role .er-ic { font-size: 28px; }
 @media (max-width: 560px) { .entry-title { font-size: 21px; } .entry-role { width: 44%; } }
 .drawer-item {
@@ -108,10 +109,9 @@
 .drawer-item.is-active { background: linear-gradient(135deg, var(--c-brand-600), var(--c-brand)); color: #fff; }
 .drawer-item .di-ic { font-size: 17px; }
 .drawer-item .di-lb { flex: 1; }
-.drawer-item.is-pending { color: var(--c-text-muted); cursor: default; }
 .di-tag {
   font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px;
-  color: var(--c-text-muted); border: 1px solid var(--c-border);
+  color: var(--c-text-soft); border: 1px solid var(--c-border);
   border-radius: var(--r-pill); padding: 2px 7px;
 }
 .drawer-backdrop {
@@ -119,6 +119,10 @@
   opacity: 0; pointer-events: none; transition: opacity .25s ease;
 }
 .drawer-backdrop.is-open { opacity: 1; pointer-events: auto; }
+
+/* Barra de fecha oculta contextualmente (Vista Ejecutiva del Supervisor). El id-scope
+   gana a `.row { display:flex }` sin necesidad de !important. */
+#dateBar.is-datebar-hidden { display: none; }
 
 /* ---- Pill de conexión ---- */
 .conn-pill {
@@ -138,6 +142,11 @@
 .conn-pill.is-error { border-color: var(--c-grave); color: #c62828; cursor: pointer; }
 .conn-pill.is-error .dot { background: var(--c-grave); }
 .conn-pill.is-refreshing .dot { animation: pulse 1s infinite; }
+/* En tema oscuro los textos de estado (verde/ámbar/rojo oscuros) pierden contraste
+   sobre la superficie oscura de la píldora: se usan los tokens brillantes del semáforo. */
+[data-theme="dark"] .conn-pill.is-connecting { color: var(--c-malo); }
+[data-theme="dark"] .conn-pill.is-connected  { color: var(--c-bueno); }
+[data-theme="dark"] .conn-pill.is-error      { color: var(--c-grave); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
 
 .icon-btn {

@@ -13,6 +13,17 @@ import logoUrl from '../assets/logo.png';
 
 let els = {};
 
+// Clave de tema en localStorage. Namespace del proyecto; NO es una clave de contrato
+// de Registros (esas persisten datos de fichas), sólo preferencia visual.
+const THEME_KEY = 'larv4_theme';
+
+// Aplica el tema (claro/oscuro) al documento y sincroniza el icono del botón.
+function applyTheme(dark) {
+  if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+  else document.documentElement.removeAttribute('data-theme');
+  if (els.dark) els.dark.textContent = dark ? '☀️' : '🌙';
+}
+
 export function mountShell(appEl) {
   appEl.innerHTML = `
     <div class="app">
@@ -42,7 +53,7 @@ export function mountShell(appEl) {
         <div id="dateBar" class="row gap-2 wrap"></div>
         <button class="conn-pill" id="connPill" title="Reconectar"><span class="dot"></span><span id="connLabel">Iniciando…</span></button>
         <button class="icon-btn" id="refreshBtn" title="Refrescar ahora">⟳</button>
-        <button class="icon-btn" id="darkBtn" title="Tema">🌙</button>
+        <button class="icon-btn" id="darkBtn" title="Cambiar tema (claro/oscuro)" aria-label="Cambiar tema claro u oscuro">🌙</button>
       </header>
       <main class="app-main"><div id="dashboardContent"></div></main>
       <div class="loader" id="loader"><div class="spinner"></div></div>
@@ -60,12 +71,16 @@ export function mountShell(appEl) {
     content: appEl.querySelector('#dashboardContent'),
     loader: appEl.querySelector('#loader'),
     dateBar: appEl.querySelector('#dateBar'),
+    dark: appEl.querySelector('#darkBtn'),
   };
 
   setContainer(els.content);
   renderEntryRoles();
   renderDrawer();
   bindEvents(appEl);
+  // Tema persistido (localStorage): se aplica ANTES del primer render para que los
+  // gráficos se instancien ya con la paleta correcta (evita un re-render al cargar).
+  try { applyTheme(localStorage.getItem(THEME_KEY) === 'dark'); } catch (_) { /* storage no disponible */ }
   showEntry(); // pantalla de ingreso por rol antes de usar el sistema
 
   on(EV.CONN, ({ state, label, warn }) => {
@@ -77,6 +92,9 @@ export function mountShell(appEl) {
     }
   });
   on(EV.VIEW, renderDrawer);
+  // Al cambiar de vista, la barra de fecha vuelve a mostrarse por defecto (EV.VIEW se
+  // emite ANTES de renderizar la nueva vista, que la re-ocultará si le corresponde).
+  on(EV.VIEW, () => setDateBarHidden(false));
   on(EV.DATA, () => { renderDateBar(); renderCurrentView(); });
 }
 
@@ -151,6 +169,14 @@ function setConnStatus(state, label) {
 
 export function showLoader(on) { els.loader.classList.toggle('is-active', !!on); }
 
+// Oculta/muestra la barra de fecha global. La usa la Vista Ejecutiva del Supervisor,
+// cuyo periodo lo define su navegador de meses (allí los presets 7/30/Todo no aplican).
+// Se restablece a visible en cada cambio de vista (EV.VIEW) para no "arrastrar" el
+// ocultamiento a otras vistas; el Supervisor lo re-aplica en cada render si procede.
+export function setDateBarHidden(hidden) {
+  if (els.dateBar) els.dateBar.classList.toggle('is-datebar-hidden', !!hidden);
+}
+
 function bindEvents(appEl) {
   appEl.querySelector('#navToggle').addEventListener('click', () => {
     els.drawer.classList.contains('is-open') ? closeDrawer() : openDrawer();
@@ -168,12 +194,16 @@ function bindEvents(appEl) {
   appEl.querySelector('#changeRole').addEventListener('click', () => { closeDrawer(); showEntry(); });
   els.pill.addEventListener('click', async () => { showLoader(true); await connectSheets(); showLoader(false); });
   appEl.querySelector('#refreshBtn').addEventListener('click', async () => { showLoader(true); await connectSheets(); showLoader(false); });
-  appEl.querySelector('#darkBtn').addEventListener('click', () => {
+  els.dark.addEventListener('click', () => {
     const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-    if (dark) document.documentElement.removeAttribute('data-theme');
-    else document.documentElement.setAttribute('data-theme', 'dark');
-    appEl.querySelector('#darkBtn').textContent = dark ? '🌙' : '☀️';
+    applyTheme(!dark);
+    try { localStorage.setItem(THEME_KEY, dark ? 'light' : 'dark'); } catch (_) { /* storage no disponible */ }
     renderCurrentView();
+  });
+  // Escape cierra el drawer cuando está abierto (no la pantalla de ingreso por rol,
+  // que es una compuerta obligatoria sin la que el sistema no puede usarse).
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && els.drawer.classList.contains('is-open')) closeDrawer();
   });
 }
 
