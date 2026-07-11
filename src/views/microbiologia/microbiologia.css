@@ -257,26 +257,6 @@
 .cal-vt:hover { border-color: var(--c-brand-600); color: var(--c-brand-600); }
 .cal-vt.is-on { background: var(--c-brand-600); border-color: var(--c-brand-600); color: #fff; }
 
-/* ── Mapa de riesgo · RED (constelaciones por módulo) ── */
-.cal-risknet { background: var(--c-surface); border: 1px solid var(--c-border-soft); border-radius: var(--r-md); padding: 10px 12px; }
-.cal-net-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(156px, 1fr)); gap: 6px; }
-.cal-net-cell { margin: 0; display: flex; flex-direction: column; align-items: center; }
-.cal-net-svg { width: 100%; height: auto; max-width: 176px; overflow: visible; }
-.cal-net-edge { stroke: var(--sev); stroke-width: 2; stroke-opacity: .38; }
-.cal-net-node { fill: var(--sev); stroke: var(--c-surface); stroke-width: 1.5; transition: stroke-width .1s; }
-.cal-net-nlbl { fill: #fff; font-size: 9px; font-weight: 800; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
-.cal-net-hub circle { fill: var(--sev); }
-.cal-net-hub text { fill: #fff; font-size: 10px; font-weight: 800; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
-.cal-net-tk { cursor: pointer; }
-.cal-net-tk:hover .cal-net-node { stroke-width: 2.5; }
-.cal-net-tk:focus-visible { outline: none; }
-.cal-net-tk:focus-visible .cal-net-node { stroke: var(--c-text); stroke-width: 2.5; }
-.cal-net-cap { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; justify-content: center; font-size: 10.5px; margin-top: 1px; text-align: center; }
-.cal-net-cap b { color: var(--c-text); font-weight: 800; }
-.cal-net-caprisk { color: var(--sev); font-weight: 800; font-size: 9px; text-transform: uppercase; letter-spacing: .03em; }
-.cal-net-capwqi { color: var(--c-text-muted); font-weight: 700; font-variant-numeric: tabular-nums; }
-.cal-net-note { font-size: 10.5px; color: var(--c-text-muted); margin-top: 8px; line-height: 1.4; }
-
 /* ── Comparador · SMALL MULTIPLES (un panel por parámetro; bullet por tanque) ── */
 .cal-sm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(244px, 1fr)); gap: 10px; }
 .cal-sm-cell { border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); padding: 9px 11px; background: var(--c-surface); }
@@ -552,3 +532,113 @@
 .mic-pat-cell { text-align: right; font-variant-numeric: tabular-nums; }
 .mic-pat-cell.muted { text-align: center; }
 .mic-scada .mic-pat-cell { font-family: var(--sc-mono); }
+
+/* ── Calidad de Agua · filtro de selección múltiple por chips (Módulo) ── */
+.cal-mchips { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.cal-mchips-lbl { font-size: 11.5px; font-weight: 700; color: var(--c-text-soft); }
+.cal-mchip { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; padding: 4px 10px; border-radius: var(--r-pill); border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); transition: border-color .12s, background .12s, color .12s; }
+.cal-mchip:hover { border-color: var(--c-brand-600); color: var(--c-brand); }
+.cal-mchip.is-on { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
+.cal-mchip:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: 2px; }
+
+/* ── Calidad de Agua · franja de clasificación del WQI ── */
+.cal-wqisc { margin-top: 12px; }
+.cal-wqisc-cap { font-size: 11px; font-weight: 700; color: var(--c-text-muted); margin-bottom: 4px; }
+.cal-wqisc-cap b { color: var(--c-text); font-variant-numeric: tabular-nums; }
+.cal-wqisc-bar { position: relative; display: flex; height: 14px; border-radius: 4px; overflow: hidden; }
+.cal-wqisc-seg { position: relative; background: var(--sev); }
+.cal-wqisc-seg i { position: absolute; left: 3px; top: 50%; transform: translateY(-50%); font-size: 8.5px; font-weight: 800; font-style: normal; color: rgba(255,255,255,.92); }
+.cal-wqisc-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--c-text); transform: translateX(-1px); border-radius: 1px; }
+.cal-wqisc-mark::before { content: ''; position: absolute; top: -4px; left: 50%; transform: translateX(-50%); border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid var(--c-text); }
+.cal-wqisc-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 9px; font-size: 10.5px; font-weight: 700; color: var(--c-text-soft); }
+.cal-wqisc-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.cal-wqisc-legend i { width: 9px; height: 9px; border-radius: 2px; background: var(--sev); }
+.cal-wqisc-legend b { color: var(--c-text); font-variant-numeric: tabular-nums; }
+
+/* ── Calidad de Agua · modales de detalle de KPI ── */
+.cal-kpi-lead { font-size: 13px; color: var(--c-text); margin: 0 0 8px; line-height: 1.5; }
+.cal-kpi-lead b, .cal-kpi-note b { color: var(--c-brand); }
+.cal-kpi-note { font-size: 12px; color: var(--c-text-soft); margin: 0 0 10px; line-height: 1.5; }
+.cal-kpi-sec { margin-top: 12px; }
+.cal-kpi-sec h4 { margin: 0 0 6px; font-size: 12px; font-weight: 800; color: var(--c-text-soft); }
+.cal-kpi-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cal-kpi-chip { font-size: 11.5px; font-weight: 700; color: var(--c-text-soft); background: var(--c-surface-2); border-radius: var(--r-pill); padding: 3px 10px; }
+.cal-kpi-chip b { color: var(--c-text); }
+.cal-kpi-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.cal-kpi-table th, .cal-kpi-table td { padding: 5px 8px; border-bottom: 1px solid var(--c-border-soft); font-variant-numeric: tabular-nums; text-align: left; }
+.cal-kpi-table th { color: var(--c-text-muted); font-weight: 700; }
+.cal-kpi-table th:not(:first-child), .cal-kpi-table td:not(:first-child) { text-align: right; }
+.cal-kpi-sevlist { display: flex; flex-direction: column; gap: 6px; }
+.cal-kpi-sevrow { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.cal-kpi-sevname { flex: 0 0 96px; font-weight: 700; color: var(--sev); }
+.cal-kpi-sevbar { flex: 1; height: 8px; background: var(--c-surface-2); border-radius: 4px; overflow: hidden; }
+.cal-kpi-sevbar i { display: block; height: 100%; background: var(--sev); border-radius: 4px; }
+.cal-kpi-sevrow b { font-variant-numeric: tabular-nums; min-width: 22px; text-align: right; color: var(--c-text); }
+.cal-kpi-sevpct { font-size: 11px; color: var(--c-text-muted); min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+.cal-kpi-legend { margin: 4px 0 0; padding-left: 16px; font-size: 11.5px; color: var(--c-text-soft); line-height: 1.6; }
+.cal-kpi-legend li b { color: var(--sev); }
+
+/* ============================================================
+   GENERAL · panorama integral
+   ============================================================ */
+/* Redeclara los tokens de severidad (el Panel del Analista se reutiliza aquí, fuera de .mic-calagua). */
+.mic-general { --sev-optimo: #2e9e5b; --sev-vigilancia: #d99a00; --sev-fuera: #ef6c00; --sev-critico: var(--c-grave); --sev-sin-rango: var(--c-text-muted); }
+.gen-hint { font-size: 12px; align-self: center; }
+
+/* tabla-semáforo por área (scorecard) */
+.gen-sc { display: flex; flex-direction: column; gap: 4px; }
+.gen-sc-head, .gen-sc-row { display: grid; grid-template-columns: 1.5fr .8fr .8fr .7fr .9fr; align-items: center; gap: 8px; }
+.gen-sc-head { padding: 4px 14px; font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--c-text-muted); }
+.gen-sc-head span:not(:first-child), .gen-sc-row > span:not(:first-child) { text-align: right; justify-self: end; }
+.gen-sc-row {
+  font: inherit; text-align: left; cursor: pointer; width: 100%;
+  background: var(--c-surface); border: 1px solid var(--c-border-soft); border-left: 4px solid var(--c-brand);
+  border-radius: var(--r-md); padding: 11px 14px; color: var(--c-text);
+  transition: border-color .15s, box-shadow .15s, transform .1s;
+}
+.gen-sc-row:hover { border-color: var(--c-brand); box-shadow: var(--sh-1); transform: translateY(-1px); }
+.gen-sc-row:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: 2px; }
+.gen-sc-area { font-size: 14px; font-weight: 800; color: var(--c-brand); }
+.gen-sc-n { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--c-text); }
+.gen-sc-alert { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--c-text); }
+.gen-sc-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--sev, var(--c-text-muted)); flex: 0 0 auto; }
+.gen-sc-wqi, .gen-sc-cump { font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--sev, var(--c-text)); }
+
+/* accesos directos al detalle */
+.gen-cta { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.gen-goto {
+  font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+  background: var(--c-surface); border: 1px solid var(--c-border); color: var(--c-brand);
+  border-radius: var(--r-pill); padding: 7px 15px; transition: border-color .15s, background .15s, color .15s;
+}
+.gen-goto:hover { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
+.gen-goto:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: 2px; }
+
+/* modal de desglose por área: barra de niveles */
+.gen-dm-seg { display: flex; height: 10px; border-radius: 4px; overflow: hidden; background: rgba(128,128,128,.14); }
+.gen-dm-seg > span { display: block; }
+.gen-dm-seglg { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 7px; font-size: 11px; font-weight: 700; color: var(--c-text-soft); font-variant-numeric: tabular-nums; }
+.gen-dm-seglg span { display: inline-flex; align-items: center; gap: 4px; }
+.gen-dm-seglg i { width: 9px; height: 9px; border-radius: 2px; }
+.gen-dm-seglg b { color: var(--c-text); }
+
+/* modal de resumen de KPI: mini-barras de muestras por día */
+.gen-daybars { display: flex; align-items: flex-end; gap: 3px; height: 90px; padding: 6px 2px 0; margin-top: 4px; }
+.gen-daybars span { flex: 1; min-width: 6px; background: var(--c-brand); opacity: .55; border-radius: 2px 2px 0 0; position: relative; display: flex; justify-content: center; align-items: flex-start; }
+.gen-daybars span i { position: absolute; top: -14px; font-size: 9.5px; font-style: normal; font-weight: 800; color: var(--c-text-soft); font-variant-numeric: tabular-nums; }
+
+/* ── Calidad de Agua · ficha técnica: perfil temporal ── */
+.cal-ft-rows { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.cal-ft-row { display: grid; grid-template-columns: 1.1fr .9fr auto 1fr; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-sm); border-left: 3px solid var(--sev, var(--c-border)); background: var(--c-surface-2); }
+.cal-ft-name { font-size: 12.5px; font-weight: 700; color: var(--c-text); }
+.cal-ft-val { font-size: 12.5px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--sev, var(--c-text)); }
+.cal-ft-arr { font-size: 10px; }
+.cal-ft-spark { color: var(--sev, var(--c-brand-600)); display: inline-flex; }
+.cal-ft-spark .cal-spark { width: 96px; height: 24px; }
+.cal-ft-obj { font-size: 11px; color: var(--c-text-muted); font-weight: 600; text-align: right; }
+.cal-ft-tablewrap { overflow-x: auto; }
+.cal-ft-table { border-collapse: collapse; font-size: 11.5px; width: 100%; }
+.cal-ft-table th, .cal-ft-table td { padding: 4px 8px; border-bottom: 1px solid var(--c-border-soft); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cal-ft-table thead th { color: var(--c-text-muted); font-weight: 700; }
+.cal-ft-table th:first-child, .cal-ft-table .cal-ft-th { text-align: left; color: var(--c-text-soft); font-weight: 700; }
+.cal-ft-table td.cal-sev--optimo, .cal-ft-table td.cal-sev--vigilancia, .cal-ft-table td.cal-sev--fuera, .cal-ft-table td.cal-sev--critico { color: var(--sev); font-weight: 700; }

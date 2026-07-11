@@ -61,6 +61,14 @@ function synthData() {
     Departamento: 'Maduración', Formato: 'Maduración', Sala: 'Sala A', 'TQ/N°': '2',
     pH: '7.0', Calcio: '400', Magnesio: '1500', // pH fuera (<7.5)
   });
+  // Segundo módulo de Larvicultura (Calidad de Agua) → habilita el filtro de Módulo por chips
+  // y un 2.º estadío ('N5 (MB)') para probar el orden biológico del filtro.
+  rows.push({
+    _SheetOrigin: 'Calidad de Agua', 'Fecha muestreo': '05/06/2026', Corrida: '573',
+    Departamento: 'Larvicultura', Formato: 'Larvicultura', 'Tipo de muestra': 'Agua',
+    'Módulo': '2', 'Estadío': 'N5 (MB)', 'TQ/N°': '1',
+    pH: '8.1', 'S‰': '31', Alcalinidad: '135', // todo dentro de rango
+  });
   // Maduración · Ensayo → habilita el apartado Ensayo (parejas antes/después).
   rows.push({
     _SheetOrigin: 'Calidad de Agua', 'Fecha muestreo': '07/06/2026', Corrida: '573',
@@ -110,6 +118,43 @@ describe('Microbiología · harness de navegación integral', () => {
       click(root.querySelector(`[data-mic-sub="${k}"]`));
       expect(root.querySelector(`[data-mic-sub="${k}"]`).classList.contains('is-active')).toBe(true);
     });
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('sub-vista General: tablero de estado (instrumentos + scorecard por área + desglose + accesos)', () => {
+    mount();
+    click(root.querySelector('[data-mic-sub="general"]'));
+    expect(root.querySelector('.mic-general')).toBeTruthy();
+    // KPIs con estilo de instrumentos (5 tarjetas .cal-inst, igual que Calidad de Agua).
+    expect(root.querySelectorAll('.mic-general .cal-inst-strip .cal-inst').length).toBe(5);
+    // Scorecard por área (≥2: Larvicultura y Maduración presentes) con WQI numérico.
+    const rows = root.querySelectorAll('.gen-sc-row[data-gen-depto]');
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    expect(root.querySelector('.gen-sc-wqi')).toBeTruthy();
+    // Barra de mes propia del panorama.
+    expect(root.querySelector('[data-gen-month]')).toBeTruthy();
+    // Tocar una fila abre el DESGLOSE (modal), NO navega.
+    const larv = [...rows].find((r) => r.dataset.genDepto === 'Larvicultura');
+    expect(larv).toBeTruthy();
+    click(larv);
+    expect(root.querySelector('#genDeptoModal').classList.contains('is-open')).toBe(true);
+    expect(root.querySelector('#genDeptoBody').textContent.length).toBeGreaterThan(0);
+    // Sigue en General (no navegó).
+    expect(root.querySelector('[data-mic-sub="general"]').classList.contains('is-active')).toBe(true);
+    click(root.querySelector('[data-gen-depto-close]'));
+    expect(root.querySelector('#genDeptoModal').classList.contains('is-open')).toBe(false);
+    // Tocar un instrumento (KPI) abre su modal de RESUMEN, NO navega.
+    const kpi = root.querySelector('.mic-general .cal-inst[data-gen-kpi="muestras"]');
+    expect(kpi).toBeTruthy();
+    click(kpi);
+    expect(root.querySelector('#genKpiModal').classList.contains('is-open')).toBe(true);
+    expect(root.querySelector('#genKpiBody').textContent.length).toBeGreaterThan(0);
+    expect(root.querySelector('[data-mic-sub="general"]').classList.contains('is-active')).toBe(true);
+    click(root.querySelector('[data-gen-kpi-close]'));
+    expect(root.querySelector('#genKpiModal').classList.contains('is-open')).toBe(false);
+    // Acceso directo al detalle: el botón sí navega a Bacteriología.
+    click(root.querySelector('[data-gen-goto="bacteriologia"]'));
+    expect(root.querySelector('[data-mic-sub="bacteriologia"]').classList.contains('is-active')).toBe(true);
     expect(errSpy).not.toHaveBeenCalled();
   });
 
@@ -194,33 +239,34 @@ describe('Microbiología · harness de navegación integral', () => {
     expect(root.querySelector('#calAlertBody').textContent.length).toBeGreaterThan(0);
     click(root.querySelector('[data-cal-alert-close]'));
     expect(root.querySelector('#calAlertModal').classList.contains('is-open')).toBe(false);
-    // Por ubicación: mapa de riesgo Módulo×Tanque + fichas técnicas; abrir ficha de un tanque.
+    // Por ubicación: mapa de riesgo Módulo×Tanque + fichas técnicas.
     click(root.querySelector('[data-cal-ap="ubicacion"]'));
     expect(root.querySelector('.cal-riskmap')).toBeTruthy();
     const cell = root.querySelector('.cal-rm-cell[data-cal-tank]');
     expect(cell).toBeTruthy();
-    expect(root.querySelector('.cal-ficha[data-cal-tank]')).toBeTruthy();
     // Comparador de coordenadas paralelas (2 tanques · varios ejes con rango).
     const pc = root.querySelector('.cal-parallel');
     expect(pc).toBeTruthy();
     expect(pc.querySelectorAll('.cal-pc-tank[data-cal-tank]').length).toBeGreaterThanOrEqual(2);
+    // Celda del mapa → modal de tanque (detalle-foto).
     click(cell);
     expect(root.querySelector('#calTankModal').classList.contains('is-open')).toBe(true);
     expect(root.querySelector('#calTankBody').textContent.length).toBeGreaterThan(0);
     click(root.querySelector('[data-cal-tank-close]'));
     expect(root.querySelector('#calTankModal').classList.contains('is-open')).toBe(false);
-    // Estilos alternativos: mapa de riesgo → Red (constelaciones) · comparador → Small multiples.
-    click(root.querySelector('[data-cal-riskview="red"]'));
-    expect(root.querySelector('.cal-risknet .cal-net-tk[data-cal-tank]')).toBeTruthy();
+    // Ficha técnica → modal DISTINTO: perfil temporal (evolución).
+    const ficha = root.querySelector('.cal-ficha[data-cal-ficha]');
+    expect(ficha).toBeTruthy();
+    click(ficha);
+    expect(root.querySelector('#calFichaModal').classList.contains('is-open')).toBe(true);
+    expect(root.querySelector('#calFichaBody .cal-ft-row')).toBeTruthy();
+    click(root.querySelector('[data-cal-ficha-close]'));
+    expect(root.querySelector('#calFichaModal').classList.contains('is-open')).toBe(false);
+    // Comparador · estilo alternativo Small multiples.
     click(root.querySelector('[data-cal-cmpview="multiples"]'));
     expect(root.querySelector('.cal-smult')).toBeTruthy();
     expect(root.querySelectorAll('.cal-sm-row[data-cal-tank]').length).toBeGreaterThanOrEqual(2);
-    // Abrir ficha desde un nodo de la red (mismo data-cal-tank genérico).
-    click(root.querySelector('.cal-net-tk[data-cal-tank]'));
-    expect(root.querySelector('#calTankModal').classList.contains('is-open')).toBe(true);
-    click(root.querySelector('[data-cal-tank-close]'));
-    // Restaurar estilos por defecto (vState es de módulo: evita fugas a otros tests).
-    click(root.querySelector('[data-cal-riskview="matriz"]'));
+    // Restaurar estilo por defecto (vState es de módulo: evita fugas a otros tests).
     click(root.querySelector('[data-cal-cmpview="paralelas"]'));
     expect(root.querySelector('.cal-riskmap')).toBeTruthy();
     // Colapsar/expandir un módulo de las fichas no rompe.
@@ -241,6 +287,34 @@ describe('Microbiología · harness de navegación integral', () => {
     // Navegación de mes propia de Calidad de Agua no rompe.
     const cnav = root.querySelector('[data-cal-month]');
     if (cnav && !cnav.disabled) click(cnav);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('Calidad de Agua · filtro Módulo por chips (multi), orden de estadío, franja WQI y modales de KPI', () => {
+    mount();
+    click(root.querySelector('[data-mic-sub="calidad"]'));
+    // Filtro de Módulo = chips (≥2 módulos: 1 y 2).
+    const chips = root.querySelectorAll('.cal-mchip[data-caldim-chip="modulo"]');
+    expect(chips.length).toBeGreaterThanOrEqual(2);
+    click(chips[0]);
+    expect(root.querySelector('.cal-mchip.is-on')).toBeTruthy();
+    click(root.querySelector('.cal-mchip.is-on')); // re-query tras re-render → desmarcar, vuelve a todos
+    // Orden de estadío: 'N5 (MB)' antes que 'Z2'.
+    const estSel = root.querySelector('[data-caldim="estadio"]');
+    expect(estSel).toBeTruthy();
+    const opts = [...estSel.options].map((o) => o.value).filter(Boolean);
+    expect(opts.indexOf('N5 (MB)')).toBeGreaterThanOrEqual(0);
+    expect(opts.indexOf('N5 (MB)')).toBeLessThan(opts.indexOf('Z2'));
+    // Franja de clasificación del WQI presente en el Panel del Analista.
+    expect(root.querySelector('.cal-wqisc')).toBeTruthy();
+    // Modales de detalle de KPI: Muestras / Cumplimiento / Perfil abren y cierran.
+    ['muestras', 'cumplimiento', 'perfil'].forEach((which) => {
+      click(root.querySelector(`[data-cal-kpi="${which}"]`));
+      expect(root.querySelector('#calKpiModal').classList.contains('is-open')).toBe(true);
+      expect(root.querySelector('#calKpiBody').textContent.length).toBeGreaterThan(0);
+      click(root.querySelector('[data-cal-kpi-close]'));
+      expect(root.querySelector('#calKpiModal').classList.contains('is-open')).toBe(false);
+    });
     expect(errSpy).not.toHaveBeenCalled();
   });
 

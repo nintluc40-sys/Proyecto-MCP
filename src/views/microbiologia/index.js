@@ -20,7 +20,7 @@ import {
   DEPARTAMENTOS, DEPTO_FORMATS, deptoOfFormato, PATHOGEN_AGAR,
 } from './data.js';
 import { petriSVG } from './petri.js';
-import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges, calRangeText, calEnsayoData, CAL_PARAMS, calDiagnosis, calGroupTree, controlStats, boxStats, calSeverity, CAL_RISK, CAL_SEV } from './calagua.data.js';
+import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges, calRangeText, calEnsayoData, CAL_PARAMS, calDiagnosis, calGroupTree, calWQI, controlStats, boxStats, calSeverity, calStageCmp, CAL_RISK, CAL_SEV } from './calagua.data.js';
 
 // ── sub-vistas del módulo ──
 const SUBS = [
@@ -32,7 +32,7 @@ const SUBS = [
 
 // Estado persistente entre re-render.
 const vState = {
-  sub: 'bacteriologia', month: null, depto: null, formato: null,
+  sub: 'general', month: null, genMonth: null, depto: null, formato: null,
   dims: {}, // filtros de contexto dinámicos (key → valor); se adaptan al formato/datos
   apartado: 'conglomerado', petriTab: 'placa', petriDay: null,
   petriTheme: 'light', // tema SOLO de la placa de agar (claro por defecto; el botón ☀️/🌙 alterna)
@@ -44,7 +44,6 @@ const vState = {
   calTrendKey: null, // parámetro activo en el Analizador de Calidad de Agua (cartucho seleccionado)
   calChartMode: 'tendencia', // modo del gráfico del Analizador: 'tendencia' | 'control' (Shewhart) | 'distribucion' (boxplot)
   calLocOpen: {}, // módulos expandidos en "Por ubicación" (por etiqueta; undefined = default por riesgo)
-  calRiskView: 'matriz', // mapa de riesgo: 'matriz' (heatmap) | 'red' (constelaciones)
   calCmpView: 'paralelas', // comparador de tanques: 'paralelas' | 'multiples' (small multiples)
 };
 
@@ -80,7 +79,10 @@ const _charts = { stack: null, aa: null };
 let _calTrend = null; // datos del gráfico de Tendencias de Calidad de Agua (dibujo post-render)
 let _calEnsayo = null; // datos del gráfico Ensayo antes/después (dibujo post-render)
 let _calScope = { samples: [] }; // muestras filtradas actuales (para alertas y export de Calidad de Agua)
+let _calKpiData = null; // agregados de los KPIs de Calidad de Agua (para sus modales de detalle)
 let _calLocTree = null; // árbol Módulo→Tanque actual (para el modal de ficha técnica en "Por ubicación")
+let _genScope = null; // alcance del panorama General (summaries + samples + ranges) para el modal de desglose por área
+let _genKpiData = null; // agregados de los 5 KPIs del panorama General (para sus modales de resumen)
 
 // Filas de Microbiología memoizadas por identidad de store.globalData.
 let _cache = { src: null, rows: [] };
@@ -107,6 +109,7 @@ export function microbiologiaView(root) {
   // Bacteriología va dentro de un panel con estética SCADA/ERP (.mic-scada).
   if (vState.sub === 'bacteriologia') h += `<div class="mic-scada">${renderBacteriologia()}</div>` + alertModalHTML() + xlsxModalHTML();
   else if (vState.sub === 'calidad') h += renderCalidadAgua();
+  else if (vState.sub === 'general') h += renderGeneral();
   else h += placeholderHTML(SUBS.find((s) => s.key === vState.sub));
   h += `<div class="mic-tt" id="micTT"></div>`; // tooltip de colonias
 
@@ -145,6 +148,334 @@ function placeholderHTML(sub) {
 }
 
 /* ============================================================
+   GENERAL · panorama integral del módulo (Bacteriología + Calidad de Agua)
+   Resumen ejecutivo MENSUAL para entrar de un vistazo: estado global, estado por
+   departamento y síntesis de Calidad de Agua, con accesos directos a cada sub-vista.
+   Reutiliza la capa de datos pura de ambas sub-vistas (sin datos nuevos).
+   ============================================================ */
+function renderGeneral() {
+  const micAll = microRows();
+  const calAll = calAguaRows();
+  if (!micAll.length && !calAll.length) {
+    return `<div class="mic-general">${emptyBox('No se encontraron registros de Microbiología ni de Calidad de Agua en el Google Sheet.')}</div>`;
+  }
+
+  const ranges = loadCalRanges();
+  const micCtxCache = new Map();
+  const mCtx = (r) => { if (!micCtxCache.has(r)) micCtxCache.set(r, rowContext(r)); return micCtxCache.get(r); };
+  const calCtxCache = new Map();
+  const cCtx = (r) => { if (!calCtxCache.has(r)) calCtxCache.set(r, calCtx(r)); return calCtxCache.get(r); };
+
+  // ── Barra de mes COMPARTIDA (corrida → mes; ambas fuentes usan el mismo calendario) ──
+  const corridas = [...micAll.map((r) => mCtx(r).corrida), ...calAll.map((r) => cCtx(r).corrida)].filter(Boolean);
+  const months = [...new Set(corridas.map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
+  if (vState.genMonth == null || (months.length && !months.includes(vState.genMonth))) vState.genMonth = months.length ? months[months.length - 1] : 0;
+  const inMonth = (ctxFn) => (r) => { const c = ctxFn(r).corrida; return !c || !months.length || monthIndexOfCorrida(+c) === vState.genMonth; };
+  const micRows = micAll.filter(inMonth(mCtx));
+  const calRows = calAll.filter(inMonth(cCtx));
+
+  // ── Bacteriología (los 3 departamentos) ──
+  const records = pathogenRecords(micRows);
+  const summaries = micRows.map(rowSummary);
+  const kAlerta = summaries.filter((s) => isAlerta(s.worst)).length;
+  const dom = dominantPathogen(micRows, records);
+  const pat = genPatByAlert(records);
+
+  // ── Calidad de Agua (hoja propia, fisicoquímica) ──
+  const samples = calRows.map((r) => ({ ctx: cCtx(r), meas: calMeasured(r, ranges) })).filter((s) => s.meas.length);
+  const diag = calDiagnosis(samples, ranges);
+
+  // Alcance para el modal de desglose por área (se recomputa por área al hacer clic).
+  _genScope = { summaries, samples, ranges };
+
+  // ── Agregados para la franja de instrumentos (mismo estilo que Calidad de Agua) ──
+  const dayKey = (f) => (f && !isNaN(f)) ? Math.floor(+f / 86400000) : null;
+  const micByDay = new Map();
+  micRows.forEach((r) => { const k = dayKey(mCtx(r).fecha); if (k != null) micByDay.set(k, (micByDay.get(k) || 0) + 1); });
+  const dayKeys = [...micByDay.keys()].sort((a, b) => a - b);
+  const alertByDay = new Map();
+  summaries.forEach((s) => { if (!isAlerta(s.worst)) return; const k = dayKey(s.ctx.fecha); if (k != null) alertByDay.set(k, (alertByDay.get(k) || 0) + 1); });
+  const waterSev = { optimo: 0, vigilancia: 0, fuera: 0, critico: 0 };
+  samples.forEach((s) => s.meas.forEach((m) => { if (waterSev[m.severity] != null) waterSev[m.severity]++; }));
+  const kpiData = {
+    micCount: micRows.length, micDays: dayKeys.map((k) => micByDay.get(k)),
+    alertCount: kAlerta, alertRatio: micRows.length ? Math.round(kAlerta / micRows.length * 100) : 0,
+    alertSeries: dayKeys.map((k) => alertByDay.get(k) || 0),
+    dom, patTop: pat.labels.slice(0, 3).map((label, i) => ({ label, n: pat.values[i] })),
+    waterSev, wqi: diag.wqi, wband: calWqiBand(diag.wqi),
+    outCount: diag.outCount, outEvaluated: diag.evaluated, outTop: diag.topParams.map((p) => ({ label: p.label, n: p.n })),
+  };
+
+  // ── Estado por área (tabla-semáforo Bacteriología + Calidad de Agua) ──
+  const areas = genAreaStats(summaries, samples, ranges);
+
+  // ── HTML ──
+  const monthBar = months.length ? `<div class="mic-monthbar">
+      <button class="mic-month-nav" data-gen-month="-1" ${months.indexOf(vState.genMonth) <= 0 ? 'disabled' : ''} aria-label="Mes anterior">◀</button>
+      <span class="mic-month-lbl">📅 ${esc(monthLabelAt(vState.genMonth))}</span>
+      <button class="mic-month-nav" data-gen-month="1" ${months.indexOf(vState.genMonth) >= months.length - 1 ? 'disabled' : ''} aria-label="Mes siguiente">▶</button>
+    </div>` : '';
+
+  let h = `<div class="mic-general">`;
+  h += `<div class="mic-filters">${monthBar}<span class="gen-hint muted">Panorama del módulo · un vistazo del mes</span></div>`;
+  _genKpiData = kpiData;
+  h += genKpiStripHTML(kpiData);
+
+  h += band('🚦', 'Estado por área', '#006064');
+  h += genScorecardHTML(areas);
+  h += `<div class="gen-cta">
+      <button class="gen-goto" data-gen-goto="bacteriologia">🧫 Ver Bacteriología en detalle →</button>
+      ${calAll.length ? '<button class="gen-goto" data-gen-goto="calidad">💧 Ver Calidad de Agua en detalle →</button>' : ''}
+    </div>`;
+  h += genDeptoModalHTML();
+  h += genKpiModalHTML();
+  h += `</div>`;
+  return h;
+}
+
+/* ---- Panorama General · modal de resumen por KPI ---- */
+const GEN_KPI_TITLE = {
+  muestras: '🧪 Muestras de microbiología',
+  alerta: '⚠️ Muestras en alerta',
+  dominante: '🦠 Patógeno dominante',
+  wqi: '💧 WQI · Calidad de Agua',
+  fuera: '⚗️ Mediciones de agua fuera de rango',
+};
+function genKpiModalHTML() {
+  return `<div class="mic-modal" id="genKpiModal" data-gen-kpi-overlay>
+      <div class="mic-modal-card">
+        <div class="mic-modal-head">
+          <span class="mic-modal-title" id="genKpiTitle">Resumen</span>
+          <button class="mic-modal-x" data-gen-kpi-close aria-label="Cerrar">✕</button>
+        </div>
+        <div class="mic-modal-body" id="genKpiBody"></div>
+      </div>
+    </div>`;
+}
+function genKpiBodyHTML(which) {
+  const k = _genKpiData, sc = _genScope;
+  if (!k || !sc) return '';
+  const chips = (m) => [...m.entries()].sort((a, b) => b[1] - a[1]).map(([kk, v]) => `<span class="cal-kpi-chip">${esc(kk)} <b>${v}</b></span>`).join('') || '—';
+  const rankBars = (arr) => {
+    if (!arr.length) return '<span class="cal-inst-ok">✓ sin datos</span>';
+    const mx = Math.max(1, ...arr.map((t) => t.n));
+    return `<div class="cal-inst-tops">${arr.map((t) => `<div class="cal-inst-top"><span class="cal-inst-top-l" title="${esc(t.label)}">${esc(t.label)}</span><span class="cal-inst-top-bar"><i style="width:${Math.round(t.n / mx * 100)}%"></i></span><b>${t.n}</b></div>`).join('')}</div>`;
+  };
+
+  if (which === 'muestras') {
+    const byDepto = new Map();
+    sc.summaries.forEach((s) => { const d = deptoOfFormato(s.ctx.formatoKey) || '—'; byDepto.set(d, (byDepto.get(d) || 0) + 1); });
+    return `<p class="cal-kpi-lead">Se registraron <b>${k.micCount}</b> muestra(s) de microbiología en <b>${k.micDays.length}</b> día(s) de muestreo del mes.</p>
+      <div class="cal-kpi-sec"><h4>Por departamento</h4><div class="cal-kpi-chips">${chips(byDepto)}</div></div>
+      <div class="cal-kpi-sec"><h4>Muestras por día</h4>${genDayBars(k.micDays)}</div>`;
+  }
+  if (which === 'alerta') {
+    const byDepto = new Map();
+    sc.summaries.forEach((s) => { if (isAlerta(s.worst)) { const d = deptoOfFormato(s.ctx.formatoKey) || '—'; byDepto.set(d, (byDepto.get(d) || 0) + 1); } });
+    return `<p class="cal-kpi-lead"><b>${k.alertCount}</b> muestra(s) en alerta ${k.micCount ? `(<b>${k.alertRatio}%</b> del total)` : ''}.</p>
+      <p class="cal-kpi-note">"En alerta" = la muestra tiene al menos un patógeno en nivel Moderado o Elevado.</p>
+      <div class="cal-kpi-sec"><h4>Patógenos que más disparan alertas</h4>${rankBars(k.patTop.filter((t) => t.n))}</div>
+      <div class="cal-kpi-sec"><h4>Alertas por departamento</h4><div class="cal-kpi-chips">${chips(byDepto)}</div></div>`;
+  }
+  if (which === 'dominante') {
+    return `<p class="cal-kpi-lead">${k.dom ? `El patógeno dominante del mes es <b>${esc(k.dom.label)}</b> con <b>${k.dom.alertas}</b> alerta(s).` : 'No hay patógenos en alerta este mes.'}</p>
+      <div class="cal-kpi-sec"><h4>Ranking de patógenos en alerta</h4>${rankBars(k.patTop.filter((t) => t.n))}</div>`;
+  }
+  if (which === 'wqi') {
+    const wsOrder = ['optimo', 'vigilancia', 'fuera', 'critico'];
+    const tot = wsOrder.reduce((a, x) => a + (k.waterSev[x] || 0), 0);
+    const rows = tot ? wsOrder.map((x) => { const c = k.waterSev[x] || 0; const pct = Math.round(c / tot * 100); return `<div class="cal-kpi-sevrow cal-sev--${x}"><span class="cal-kpi-sevname">${esc(CAL_SEV[x].label)}</span><span class="cal-kpi-sevbar"><i style="width:${pct}%"></i></span><b>${c}</b><span class="cal-kpi-sevpct">${pct}%</span></div>`; }).join('') : '<span class="muted">Sin mediciones de agua.</span>';
+    return `<p class="cal-kpi-lead">${k.wqi == null ? 'No hay datos de calidad de agua este mes.' : `Índice de calidad de agua (WQI) del mes: <b>${k.wqi}</b> · <b>${esc(k.wband.label)}</b>.`}</p>
+      <p class="cal-kpi-note">El WQI resume qué tan dentro de rango están todos los parámetros fisicoquímicos (100 = todo en rango).</p>
+      <div class="cal-kpi-sec"><h4>Severidad de las mediciones</h4><div class="cal-kpi-sevlist">${rows}</div></div>`;
+  }
+  // fuera
+  const byDepto = new Map();
+  sc.samples.forEach((s) => { const d = s.ctx.depto || '—'; s.meas.forEach((m) => { if (m.estado === 'fuera') byDepto.set(d, (byDepto.get(d) || 0) + 1); }); });
+  return `<p class="cal-kpi-lead"><b>${k.outCount}</b> medición(es) de agua fuera de rango${k.outEvaluated ? ` de <b>${k.outEvaluated}</b> evaluadas` : ''}.</p>
+    <div class="cal-kpi-sec"><h4>Parámetros más incumplidos</h4>${rankBars(k.outTop)}</div>
+    <div class="cal-kpi-sec"><h4>Fuera de rango por departamento</h4><div class="cal-kpi-chips">${chips(byDepto)}</div></div>`;
+}
+// Mini-barras de muestras por día (para el modal de "Muestras micro").
+function genDayBars(days) {
+  if (!days || !days.length) return '<span class="muted">Sin fechas registradas.</span>';
+  const mx = Math.max(1, ...days);
+  return `<div class="gen-daybars" role="img" aria-label="Muestras por día">${days.map((n) => `<span style="height:${Math.max(8, Math.round(n / mx * 100))}%" title="${n} muestra(s)"><i>${n}</i></span>`).join('')}</div>`;
+}
+function openGenKpi(root, which) {
+  const title = root.querySelector('#genKpiTitle'); if (title) title.textContent = GEN_KPI_TITLE[which] || 'Resumen';
+  const body = root.querySelector('#genKpiBody'); if (body) body.innerHTML = genKpiBodyHTML(which);
+  const m = root.querySelector('#genKpiModal');
+  if (m) { m.classList.add('is-open'); document.body.classList.add('modal-open'); }
+}
+function closeGenKpi(root) {
+  const m = root.querySelector('#genKpiModal');
+  if (m) m.classList.remove('is-open');
+  document.body.classList.remove('modal-open');
+}
+
+/** Franja de instrumentos del panorama (mismo sistema visual que Calidad de Agua:
+ *  índice + etiqueta + valor grande + micro-viz + pie). */
+function genKpiStripHTML(k) {
+  // Cada tile es clicable (Enter/Espacio/clic) → modal de resumen (data-gen-kpi).
+  const kpiClick = (which) => `data-gen-kpi="${which}" role="button" tabindex="0" title="Ver resumen"`;
+  const inst = (ix, sev, label, valueHtml, vizHtml, footHtml, attrs) => `
+    <div class="cal-inst${sev ? ' cal-sev--' + sev : ''}"${attrs ? ' ' + attrs : ''}>
+      <div class="cal-inst-h"><span class="cal-inst-ix">${ix}</span>${label}</div>
+      <div class="cal-inst-main"><div class="cal-inst-v">${valueHtml}</div>${vizHtml}</div>
+      ${footHtml ? `<div class="cal-inst-foot">${footHtml}</div>` : ''}
+    </div>`;
+  const tlMax = Math.max(1, ...k.micDays);
+  const timeline = k.micDays.length
+    ? `<div class="cal-inst-tl" role="img" aria-label="Muestras por día">${k.micDays.map((n) => `<span style="height:${Math.max(14, Math.round(n / tlMax * 100))}%" title="${n} muestra(s)"></span>`).join('')}</div>`
+    : '<span class="cal-inst-hint">sin fechas</span>';
+  const bars = (arr) => {
+    if (!arr.length) return '<span class="cal-inst-ok">✓ sin alertas</span>';
+    const mx = Math.max(1, ...arr.map((t) => t.n));
+    return `<div class="cal-inst-tops">${arr.map((t) => `<div class="cal-inst-top"><span class="cal-inst-top-l" title="${esc(t.label)}">${esc(t.label)}</span><span class="cal-inst-top-bar"><i style="width:${Math.round(t.n / mx * 100)}%"></i></span><b>${t.n}</b></div>`).join('')}</div>`;
+  };
+  const wsOrder = ['optimo', 'vigilancia', 'fuera', 'critico'];
+  const wsTot = wsOrder.reduce((a, x) => a + (k.waterSev[x] || 0), 0);
+  const wsSeg = wsTot
+    ? `<div class="cal-inst-seg" role="img" aria-label="Severidad de las mediciones de agua">${wsOrder.map((x) => k.waterSev[x] ? `<span class="cal-sev--${x}" style="flex:${k.waterSev[x]}" title="${esc(CAL_SEV[x].label)}: ${k.waterSev[x]}"></span>` : '').join('')}</div>`
+    : '<span class="cal-inst-hint">sin datos</span>';
+  const alertSev = k.alertRatio >= 15 ? 'critico' : k.alertRatio >= 5 ? 'fuera' : k.alertCount > 0 ? 'vigilancia' : 'optimo';
+
+  return `<div class="cal-inst-strip">
+    ${inst('01', '', '🧪 Muestras micro', String(k.micCount), timeline, `${k.micDays.length} día(s) de muestreo`, kpiClick('muestras'))}
+    ${inst('02', k.alertCount > 0 ? alertSev : 'optimo', '⚠️ En alerta', String(k.alertCount), calSpark(k.alertSeries), k.micCount ? `${k.alertRatio}% de muestras` : 'sin muestras', kpiClick('alerta'))}
+    ${inst('03', '', '🦠 Dominante', k.dom ? String(k.dom.alertas) : '0', bars(k.patTop.filter((t) => t.n)), k.dom ? esc(k.dom.label) : 'sin alertas', kpiClick('dominante'))}
+    ${inst('04', k.wqi == null ? '' : k.wband.sev, '💧 WQI agua', k.wqi == null ? '—' : String(k.wqi), wsSeg, k.wqi == null ? 'sin datos' : esc(k.wband.label), kpiClick('wqi'))}
+    ${inst('05', k.outCount > 0 ? 'fuera' : 'optimo', '⚗️ Agua fuera', String(k.outCount), k.outCount ? bars(k.outTop) : '<span class="cal-inst-ok">✓ todo en rango</span>', k.outEvaluated ? `de ${k.outEvaluated} evaluados` : 'sin evaluar', kpiClick('fuera'))}
+  </div>`;
+}
+
+// Mapea el departamento de una muestra de agua a las 3 áreas canónicas de Bacteriología.
+const genAreaOf = (dep) => (dep === 'Larvicultura' || dep === 'Maduración') ? dep : 'Otros';
+
+/** Estadísticos por área (une Bacteriología + Calidad de Agua): muestras, alertas,
+ *  peor nivel, WQI y cumplimiento. Solo áreas con datos en alguna de las dos fuentes. */
+function genAreaStats(summaries, samples, ranges) {
+  return DEPARTAMENTOS.map((area) => {
+    const bl = summaries.filter((s) => deptoOfFormato(s.ctx.formatoKey) === area);
+    const dist = { 'Mínimo': 0, 'Leve': 0, 'Moderado': 0, 'Elevado': 0 };
+    bl.forEach((s) => { if (s.worst && dist[s.worst] !== undefined) dist[s.worst]++; });
+    const worstSev = dist.Elevado > 0 ? 'critico' : dist.Moderado > 0 ? 'fuera' : (bl.length ? 'optimo' : 'sin-rango');
+    const ws = samples.filter((s) => genAreaOf(s.ctx.depto) === area);
+    const meas = ws.flatMap((s) => s.meas);
+    const w = calWQI(meas, ranges);
+    let inC = 0, outC = 0;
+    meas.forEach((m) => { if (m.estado === 'dentro') inC++; else if (m.estado === 'fuera') outC++; });
+    return {
+      area, n: bl.length, alertas: bl.filter((s) => isAlerta(s.worst)).length, worstSev,
+      wqi: w.wqi, cump: (inC + outC) ? Math.round(inC / (inC + outC) * 100) : null, wn: ws.length,
+    };
+  }).filter((r) => r.n > 0 || r.wn > 0);
+}
+
+/** Tabla-semáforo por área. Cada fila (botón) abre el desglose del área. */
+function genScorecardHTML(areas) {
+  if (!areas.length) return emptyBox('Sin muestras en el mes seleccionado.');
+  const rows = areas.map((a) => {
+    const wqiSev = a.wqi == null ? 'sin-rango' : calWqiBand(a.wqi).sev;
+    const cumpSev = a.cump == null ? 'sin-rango' : a.cump >= 90 ? 'optimo' : a.cump >= 70 ? 'vigilancia' : 'fuera';
+    return `<button class="gen-sc-row" data-gen-depto="${esc(a.area)}" title="Ver desglose de ${esc(a.area)}">
+        <span class="gen-sc-area">${esc(a.area)}</span>
+        <span class="gen-sc-n">${a.n || '—'}</span>
+        <span class="gen-sc-alert">${a.n ? `<span class="gen-sc-dot cal-sev--${a.worstSev}"></span>${a.alertas}` : '<span class="muted">—</span>'}</span>
+        <span class="gen-sc-wqi cal-sev--${wqiSev}">${a.wqi == null ? '—' : a.wqi}</span>
+        <span class="gen-sc-cump cal-sev--${cumpSev}">${a.cump == null ? '—' : a.cump + '%'}</span>
+      </button>`;
+  }).join('');
+  return `<div class="gen-sc">
+      <div class="gen-sc-head"><span>Área</span><span>Muestras</span><span>Alerta</span><span>WQI</span><span>Cumplim.</span></div>
+      ${rows}
+    </div>`;
+}
+
+/** Nº de muestras en alerta (Mod/Elev) por patógeno específico (excluye agregados). */
+function genPatByAlert(records) {
+  const m = new Map();
+  records.forEach((r) => {
+    if (AGGREGATE_KEYS.has(r.key) || !isAlerta(r.nivel)) return;
+    m.set(r.key, (m.get(r.key) || 0) + 1);
+  });
+  const arr = [...m.entries()].sort((a, b) => b[1] - a[1]);
+  return { keys: arr.map(([k]) => k), labels: arr.map(([k]) => PAT_LABEL[k] || k), values: arr.map(([, v]) => v) };
+}
+
+/* ---- Panorama General · modal de desglose por área ---- */
+const genCtxLabel = (ctx) => [ctx.modulo ? 'M' + ctx.modulo : '', ctx.sala, ctx.tq ? 'TQ ' + ctx.tq : '', ctx.estadio].filter(Boolean).join(' · ') || '—';
+function genDeptoModalHTML() {
+  return `<div class="mic-modal" id="genDeptoModal" data-gen-depto-overlay>
+      <div class="mic-modal-card">
+        <div class="mic-modal-head">
+          <span class="mic-modal-title" id="genDeptoTitle">Desglose</span>
+          <button class="mic-modal-x" data-gen-depto-close aria-label="Cerrar">✕</button>
+        </div>
+        <div class="mic-modal-body" id="genDeptoBody"></div>
+      </div>
+    </div>`;
+}
+function genDeptoBodyHTML(area) {
+  const sc = _genScope; if (!sc) return '';
+  const bl = sc.summaries.filter((s) => deptoOfFormato(s.ctx.formatoKey) === area);
+  const dist = { 'Mínimo': 0, 'Leve': 0, 'Moderado': 0, 'Elevado': 0 };
+  const pm = new Map(), byFmt = new Map(), byTipo = new Map();
+  bl.forEach((s) => {
+    if (s.worst && dist[s.worst] !== undefined) dist[s.worst]++;
+    s.alerts.forEach((a) => pm.set(a.label, (pm.get(a.label) || 0) + 1));
+    byFmt.set(FORMATO_LABEL[s.ctx.formatoKey] || s.ctx.formatoKey || '—', (byFmt.get(FORMATO_LABEL[s.ctx.formatoKey] || s.ctx.formatoKey || '—') || 0) + 1);
+    byTipo.set(s.ctx.tipoMuestra || '—', (byTipo.get(s.ctx.tipoMuestra || '—') || 0) + 1);
+  });
+  const distTot = NIVELES.reduce((a, n) => a + dist[n], 0);
+  const distBar = distTot
+    ? `<div class="gen-dm-seg">${NIVELES.map((n) => dist[n] ? `<span style="flex:${dist[n]};background:${NIVEL_COLOR[n]}" title="${esc(n)}: ${dist[n]}"></span>` : '').join('')}</div>
+       <div class="gen-dm-seglg">${NIVELES.map((n) => `<span><i style="background:${NIVEL_COLOR[n]}"></i>${esc(n)} <b>${dist[n]}</b></span>`).join('')}</div>`
+    : '<span class="muted">Sin niveles registrados.</span>';
+  const chips = (m) => [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span class="cal-kpi-chip">${esc(k)} <b>${v}</b></span>`).join('') || '—';
+  const topPat = [...pm.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const topPatH = topPat.length ? `<div class="cal-kpi-chips">${topPat.map(([k, v]) => `<span class="cal-kpi-chip">${esc(k)} <b>×${v}</b></span>`).join('')}</div>` : '<span class="cal-inst-ok">✓ sin alertas</span>';
+  const alerts = [];
+  bl.forEach((s) => s.alerts.forEach((a) => alerts.push({ label: a.label, nivel: a.nivel, ctx: s.ctx })));
+  alerts.sort((a, b) => (NIVEL_RANK[b.nivel] - NIVEL_RANK[a.nivel]) || ((b.ctx.fecha || 0) - (a.ctx.fecha || 0)));
+  const alertList = alerts.slice(0, 8).map((a) => `<div class="mic-alert" style="--ac:${NIVEL_COLOR[a.nivel]}">
+      <div class="mic-alert-h">${esc(a.label)} · <b style="color:${NIVEL_COLOR[a.nivel]}">${esc(a.nivel)}</b></div>
+      <div class="mic-alert-s">${a.ctx.fecha ? esc(fmtShort(a.ctx.fecha)) : '—'} · ${esc(genCtxLabel(a.ctx))}</div>
+    </div>`).join('');
+  // Calidad de Agua del área.
+  const ws = sc.samples.filter((s) => genAreaOf(s.ctx.depto) === area);
+  const meas = ws.flatMap((s) => s.meas);
+  const w = calWQI(meas, sc.ranges);
+  let inC = 0, outC = 0; const outByP = new Map();
+  meas.forEach((m) => { if (m.estado === 'dentro') inC++; else if (m.estado === 'fuera') { outC++; outByP.set(m.label, (outByP.get(m.label) || 0) + 1); } });
+  const cump = (inC + outC) ? Math.round(inC / (inC + outC) * 100) : null;
+  const waterSec = ws.length ? `<div class="cal-kpi-sec"><h4>💧 Calidad de Agua</h4>
+      <p class="cal-kpi-note">WQI <b>${w.wqi == null ? '—' : w.wqi}</b> · cumplimiento <b>${cump == null ? '—' : cump + '%'}</b> · <b>${outC}</b> medición(es) fuera de rango en <b>${ws.length}</b> muestra(s).</p>
+      ${outByP.size ? `<div class="cal-kpi-chips">${[...outByP.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => `<span class="cal-kpi-chip">${esc(k)} <b>×${v}</b></span>`).join('')}</div>` : '<span class="cal-inst-ok">✓ todo en rango</span>'}
+    </div>` : '';
+
+  return `<p class="cal-kpi-lead"><b>${bl.length}</b> muestra(s) de Bacteriología · <b>${bl.filter((s) => isAlerta(s.worst)).length}</b> en alerta.</p>
+    <div class="cal-kpi-sec"><h4>Distribución por nivel</h4>${distBar}</div>
+    <div class="cal-kpi-sec"><h4>Patógenos en alerta</h4>${topPatH}</div>
+    <div class="cal-kpi-sec"><h4>Por formato</h4><div class="cal-kpi-chips">${chips(byFmt)}</div></div>
+    <div class="cal-kpi-sec"><h4>Por tipo de muestra</h4><div class="cal-kpi-chips">${chips(byTipo)}</div></div>
+    ${alertList ? `<div class="cal-kpi-sec"><h4>Alertas recientes</h4><div class="mic-alert-list">${alertList}</div></div>` : ''}
+    ${waterSec}`;
+}
+function openGenDepto(root, area) {
+  const title = root.querySelector('#genDeptoTitle'); if (title) title.textContent = `🏭 ${area}`;
+  const body = root.querySelector('#genDeptoBody'); if (body) body.innerHTML = genDeptoBodyHTML(area);
+  const m = root.querySelector('#genDeptoModal');
+  if (m) { m.classList.add('is-open'); document.body.classList.add('modal-open'); }
+}
+function closeGenDepto(root) {
+  const m = root.querySelector('#genDeptoModal');
+  if (m) m.classList.remove('is-open');
+  document.body.classList.remove('modal-open');
+}
+
+/* ============================================================
    CALIDAD DE AGUA (fisicoquímica · rango dentro/fuera) — Tandas A–C
    Barra de mes + filtros en CASCADA + KPIs de cumplimiento + apartados:
    Perfil (tarjetas "perfil iónico") · Matriz (muestra × parámetro).
@@ -157,9 +488,9 @@ function calFmt(v) { return v == null || isNaN(v) ? '—' : String(Number.isInte
 // valores distintos en el pool). Se adaptan al departamento/formato de cada muestra.
 const CAL_DIMS = [
   { key: 'tipoMuestra', label: 'Tipo de muestra', pick: (c) => c.tipoMuestra },
-  { key: 'modulo', label: 'Módulo', pick: (c) => c.modulo, fmt: (v) => 'M' + v, cmp: (a, b) => (+a) - (+b) },
+  { key: 'modulo', label: 'Módulo', pick: (c) => c.modulo, fmt: (v) => 'M' + v, cmp: (a, b) => (+a) - (+b), multi: true },
   { key: 'sala', label: 'Sala', pick: (c) => c.sala },
-  { key: 'estadio', label: 'Estadío', pick: (c) => c.estadio },
+  { key: 'estadio', label: 'Estadío', pick: (c) => c.estadio, cmp: calStageCmp },
   { key: 'tq', label: 'TQ/N°', pick: (c) => c.tq, fmt: (v) => 'TQ ' + v, cmp: (a, b) => (+a) - (+b) },
   { key: 'componente', label: 'Componente', pick: (c) => c.componente },
   { key: 'muestras', label: 'Muestra', pick: (c) => c.muestras },
@@ -173,6 +504,11 @@ const calDimSelect = (dim, value, values) => `<select class="mic-select" data-ca
     <option value="">Todos · ${esc(dim.label)}</option>
     ${values.map((o) => `<option value="${esc(o)}" ${value === o ? 'selected' : ''}>${esc(dim.fmt ? dim.fmt(o) : o)}</option>`).join('')}
   </select>`;
+/** Filtro de selección MÚLTIPLE por chips (p. ej. Módulo): permite agrupar varios valores. */
+const calDimChips = (dim, selected, values) => `<div class="cal-mchips" role="group" aria-label="Filtro por ${esc(dim.label)}">
+    <span class="cal-mchips-lbl">${esc(dim.label)}:</span>
+    ${values.map((o) => { const on = selected.includes(o); return `<button type="button" class="cal-mchip${on ? ' is-on' : ''}" data-caldim-chip="${dim.key}" data-caldim-val="${esc(o)}" aria-pressed="${on}">${esc(dim.fmt ? dim.fmt(o) : o)}</button>`; }).join('')}
+  </div>`;
 
 /* ---- Calidad de Agua · Panel del Analista (síntesis técnica autogenerada) ---- */
 // Banda del WQI global (0–100) → severidad para color + etiqueta.
@@ -209,7 +545,26 @@ function calAnalystHTML(samples, ranges) {
         <div class="cal-an-head"><span class="cal-an-title">🔬 Panel del Analista</span><span class="cal-an-band cal-sev--${band.sev}">${esc(band.label)}</span></div>
         <p class="cal-an-text">${parts.join(' ')}</p>
         ${chips ? `<div class="cal-an-chips">${chips}</div>` : ''}
+        ${calWqiScaleHTML(d.wqi)}
       </div>
+    </div>`;
+}
+
+/** Franja de semaforización del WQI (0–100): 4 zonas con sus umbrales + marcador en el
+ *  valor actual. Hace explícita la clasificación (Crítico/Deficiente/Vigilancia/Óptimo). */
+function calWqiScaleHTML(wqi) {
+  const zones = [
+    { sev: 'critico', label: 'Crítico', lo: 0, hi: 50 },
+    { sev: 'fuera', label: 'Deficiente', lo: 50, hi: 70 },
+    { sev: 'vigilancia', label: 'Vigilancia', lo: 70, hi: 85 },
+    { sev: 'optimo', label: 'Óptimo', lo: 85, hi: 100 },
+  ];
+  const segs = zones.map((z) => `<span class="cal-wqisc-seg cal-sev--${z.sev}" style="flex:${z.hi - z.lo}"><i>${z.lo}</i></span>`).join('');
+  const mark = wqi == null ? '' : `<span class="cal-wqisc-mark" style="left:${Math.max(0, Math.min(100, wqi))}%"></span>`;
+  return `<div class="cal-wqisc">
+      <div class="cal-wqisc-cap">Clasificación del WQI ${wqi == null ? '' : `· actual <b>${wqi}</b>`}</div>
+      <div class="cal-wqisc-bar" role="img" aria-label="Escala del WQI de 0 a 100${wqi == null ? '' : `, valor actual ${wqi}`}">${segs}${mark}</div>
+      <div class="cal-wqisc-legend">${zones.map((z) => `<span class="cal-sev--${z.sev}"><i></i>${esc(z.label)} <b>${z.lo === 0 ? '&lt;' + z.hi : '≥' + z.lo}</b></span>`).join('')}</div>
     </div>`;
 }
 
@@ -286,10 +641,17 @@ function calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, outByParam, 
 
   const compFoot = `${fullOk} de ${samples.length} al 100%${compDelta != null ? ` · <b class="cal-inst-d ${dArrow}">${compDelta > 0 ? '▲' : compDelta < 0 ? '▼' : '▬'} ${Math.abs(compDelta)}pt</b>` : ''}`;
 
+  // Datos para los modales de detalle de cada KPI (se llenan al hacer clic).
+  _calKpiData = {
+    samples, sevOrder, sevCount, sevTot, pctOpt, pctOk, fullOk, outC, evaluated, outByParam,
+    dayStats: days.map((k) => ({ k, ...byDay.get(k) })),
+  };
+  const kpiClick = (which) => `data-cal-kpi="${which}" role="button" tabindex="0" title="Ver detalle"`;
+
   return `<div class="cal-inst-strip">
-    ${inst('01', '', '💧 Muestras', String(samples.length), timeline, `${days.length} día(s) de muestreo`)}
-    ${inst('02', compSev, '✅ Cumplimiento', `${pctOk}<small>%</small>`, calSpark(compSeries), compFoot)}
-    ${inst('03', sevProfileSev, '🧭 Perfil de severidad', `${pctOpt}<small>% óptimo</small>`, `<div class="cal-inst-segwrap">${segBar}${segLegend}</div>`, '')}
+    ${inst('01', '', '💧 Muestras', String(samples.length), timeline, `${days.length} día(s) de muestreo`, kpiClick('muestras'))}
+    ${inst('02', compSev, '✅ Cumplimiento', `${pctOk}<small>%</small>`, calSpark(compSeries), compFoot, kpiClick('cumplimiento'))}
+    ${inst('03', sevProfileSev, '🧭 Perfil de severidad', `${pctOpt}<small>% óptimo</small>`, `<div class="cal-inst-segwrap">${segBar}${segLegend}</div>`, '', kpiClick('perfil'))}
     ${inst('04', outC > 0 ? 'fuera' : 'optimo', '⚠️ Fuera de rango', String(outC), topBars, evaluated ? `${(outC / evaluated * 100).toFixed(0)}% de evaluados` : 'sin evaluar', alertAttrs)}
   </div>`;
 }
@@ -319,10 +681,19 @@ function renderCalidadAgua() {
   const dimFilters = [];
   CAL_DIMS.forEach((dim) => {
     const vals = [...new Set(pool.map((r) => dim.pick(ctxOf(r))).filter((v) => v !== '' && v != null))].sort(dim.cmp || natCmp);
-    if (vState.calDims[dim.key] && !vals.includes(vState.calDims[dim.key])) vState.calDims[dim.key] = null;
-    if (vals.length < 2) { vState.calDims[dim.key] = null; return; }
-    dimFilters.push({ dim, options: vals });
-    if (vState.calDims[dim.key]) pool = pool.filter((r) => dim.pick(ctxOf(r)) === vState.calDims[dim.key]);
+    if (dim.multi) {
+      // Selección MÚLTIPLE (chips): array de valores; se depura a los presentes en el pool.
+      const sel = (Array.isArray(vState.calDims[dim.key]) ? vState.calDims[dim.key] : []).filter((v) => vals.includes(v));
+      vState.calDims[dim.key] = sel.length ? sel : null;
+      if (vals.length < 2) { vState.calDims[dim.key] = null; return; }
+      dimFilters.push({ dim, options: vals });
+      if (sel.length) pool = pool.filter((r) => sel.includes(dim.pick(ctxOf(r))));
+    } else {
+      if (vState.calDims[dim.key] && !vals.includes(vState.calDims[dim.key])) vState.calDims[dim.key] = null;
+      if (vals.length < 2) { vState.calDims[dim.key] = null; return; }
+      dimFilters.push({ dim, options: vals });
+      if (vState.calDims[dim.key]) pool = pool.filter((r) => dim.pick(ctxOf(r)) === vState.calDims[dim.key]);
+    }
   });
 
   // Muestras con sus parámetros medidos + estado (más reciente primero).
@@ -352,7 +723,7 @@ function renderCalidadAgua() {
       ${monthBar}
       ${deptos.length ? calSelect('calDepto', vState.calDepto, deptos, 'Todos los deptos.') : ''}
       ${vState.calDepto && formatos.length ? calSelect('calFormato', vState.calFormato, formatos, 'Todos los formatos') : ''}
-      ${dimFilters.map(({ dim, options }) => calDimSelect(dim, vState.calDims[dim.key], options)).join('')}
+      ${dimFilters.map(({ dim, options }) => dim.multi ? calDimChips(dim, vState.calDims[dim.key] || [], options) : calDimSelect(dim, vState.calDims[dim.key], options)).join('')}
       <div class="mic-export"><button class="mic-exp" data-cal-factors title="Editar rangos objetivo (mín/máx) por parámetro">⚙️ Rangos</button><button class="mic-exp" data-cal-export title="Descargar reporte de texto de las muestras filtradas">⬇ Reporte</button><button class="mic-exp" data-cal-xlsx title="Descargar Excel de las muestras filtradas">⬇ Excel</button></div>
     </div>`;
   const alertAttrs = outC > 0 ? 'data-cal-alerts role="button" tabindex="0" title="Ver listado de mediciones fuera de rango"' : '';
@@ -379,10 +750,73 @@ function renderCalidadAgua() {
   else if (ap === 'ubicacion') h += calUbicacionHTML(samples, ranges);
   else h += calAnalizadorHTML(samples, ranges);
   h += calAlertModalHTML();
+  h += calKpiModalHTML();
   h += calTankModalHTML();
+  h += calFichaModalHTML();
   h += calFactModalHTML(ranges);
   h += `</div>`;
   return h;
+}
+
+/* ---- Calidad de Agua · modales de detalle de los KPIs (Muestras/Cumplimiento/Perfil) ---- */
+const CAL_KPI_TITLE = { muestras: '💧 Muestras', cumplimiento: '✅ Cumplimiento', perfil: '🧭 Perfil de severidad' };
+function calKpiModalHTML() {
+  return `<div class="mic-modal" id="calKpiModal" data-cal-kpi-overlay>
+      <div class="mic-modal-card">
+        <div class="mic-modal-head">
+          <span class="mic-modal-title" id="calKpiTitle">Detalle</span>
+          <button class="mic-modal-x" data-cal-kpi-close aria-label="Cerrar">✕</button>
+        </div>
+        <div class="mic-modal-body" id="calKpiBody"></div>
+      </div>
+    </div>`;
+}
+function calKpiBodyHTML(which) {
+  const d = _calKpiData; if (!d) return '';
+  const dayDate = (k) => fmtShort(new Date(k * 86400000));
+  const chips = (m) => [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span class="cal-kpi-chip">${esc(k)} <b>${v}</b></span>`).join('') || '—';
+  if (which === 'muestras') {
+    const byDepto = new Map(), byTipo = new Map();
+    d.samples.forEach((s) => {
+      byDepto.set(s.ctx.depto || '—', (byDepto.get(s.ctx.depto || '—') || 0) + 1);
+      byTipo.set(s.ctx.tipoMuestra || '—', (byTipo.get(s.ctx.tipoMuestra || '—') || 0) + 1);
+    });
+    const dayRows = d.dayStats.map((x) => { const ev = x.in + x.out; const pct = ev ? Math.round(x.in / ev * 100) : null; return `<tr><td>${esc(dayDate(x.k))}</td><td>${x.n}</td><td>${pct == null ? '—' : pct + '%'}</td></tr>`; }).join('');
+    return `<p class="cal-kpi-lead">Se registraron <b>${d.samples.length}</b> muestra(s) en <b>${d.dayStats.length}</b> día(s) de muestreo del filtro actual.</p>
+      <div class="cal-kpi-sec"><h4>Por departamento</h4><div class="cal-kpi-chips">${chips(byDepto)}</div></div>
+      <div class="cal-kpi-sec"><h4>Por tipo de muestra</h4><div class="cal-kpi-chips">${chips(byTipo)}</div></div>
+      <div class="cal-kpi-sec"><h4>Por día</h4><table class="cal-kpi-table"><thead><tr><th>Fecha</th><th>Muestras</th><th>% en rango</th></tr></thead><tbody>${dayRows || '<tr><td colspan="3">Sin fechas registradas.</td></tr>'}</tbody></table></div>`;
+  }
+  if (which === 'cumplimiento') {
+    const inC = d.evaluated - d.outC;
+    const dayRows = d.dayStats.map((x) => { const ev = x.in + x.out; const pct = ev ? Math.round(x.in / ev * 100) : null; return `<tr><td>${esc(dayDate(x.k))}</td><td>${x.in}</td><td>${x.out}</td><td>${pct == null ? '—' : pct + '%'}</td></tr>`; }).join('');
+    return `<p class="cal-kpi-lead"><b>${d.pctOk}%</b> de cumplimiento: <b>${d.fullOk}</b> de <b>${d.samples.length}</b> muestra(s) tienen TODOS sus parámetros dentro de rango.</p>
+      <p class="cal-kpi-note">"En rango" = valor dentro de [mín, máx] del parámetro. De <b>${d.evaluated}</b> medición(es) con rango objetivo, <b>${inC}</b> están dentro y <b>${d.outC}</b> fuera.</p>
+      <div class="cal-kpi-sec"><h4>Cumplimiento por día</h4><table class="cal-kpi-table"><thead><tr><th>Fecha</th><th>Dentro</th><th>Fuera</th><th>% en rango</th></tr></thead><tbody>${dayRows || '<tr><td colspan="4">Sin fechas registradas.</td></tr>'}</tbody></table></div>`;
+  }
+  // perfil de severidad
+  const meaning = {
+    optimo: 'valor holgadamente dentro de rango (excursión ≤ 0.9).',
+    vigilancia: 'dentro de rango pero rozando el borde (0.9–1.0).',
+    fuera: 'fuera de rango (excursión 1.0–2.0).',
+    critico: 'muy fuera de rango (excursión &gt; 2.0).',
+  };
+  const rows = d.sevOrder.map((k) => { const c = d.sevCount[k]; const pct = d.sevTot ? Math.round(c / d.sevTot * 100) : 0; return `<div class="cal-kpi-sevrow cal-sev--${k}"><span class="cal-kpi-sevname">${esc(CAL_SEV[k].label)}</span><span class="cal-kpi-sevbar"><i style="width:${pct}%"></i></span><b>${c}</b><span class="cal-kpi-sevpct">${pct}%</span></div>`; }).join('');
+  const notes = d.sevOrder.map((k) => `<li class="cal-sev--${k}"><b>${esc(CAL_SEV[k].label)}:</b> ${meaning[k]}</li>`).join('');
+  return `<p class="cal-kpi-lead">Distribución de <b>${d.sevTot}</b> medición(es) con rango objetivo por nivel de severidad.</p>
+    <div class="cal-kpi-sevlist">${rows}</div>
+    <div class="cal-kpi-sec"><h4>Qué significa cada nivel</h4><ul class="cal-kpi-legend">${notes}</ul></div>`;
+}
+function openCalKpi(root, which) {
+  const title = root.querySelector('#calKpiTitle'); if (title) title.textContent = CAL_KPI_TITLE[which] || 'Detalle';
+  const body = root.querySelector('#calKpiBody'); if (body) body.innerHTML = calKpiBodyHTML(which);
+  const m = root.querySelector('#calKpiModal');
+  if (m) { m.classList.add('is-open'); document.body.classList.add('modal-open'); }
+}
+function closeCalKpi(root) {
+  const m = root.querySelector('#calKpiModal');
+  if (m) m.classList.remove('is-open');
+  document.body.classList.remove('modal-open');
 }
 
 /* ---- Calidad de Agua · modal de alertas (mediciones fuera de rango) ---- */
@@ -541,12 +975,10 @@ function calUbicacionHTML(samples, ranges) {
   _calLocTree = tree;
   if (!tree.length) return emptyBox('Sin ubicaciones con parámetros medidos para el filtro actual.');
 
-  // ── Mapa de riesgo · dos estilos (Matriz / Red) ──
-  const riskView = vState.calRiskView === 'red' ? 'red' : 'matriz';
-  const riskToggle = calViewToggle('cal-riskview', [['matriz', '▦ Matriz'], ['red', '🕸 Red']], riskView);
+  // ── Mapa de riesgo · Matriz (heatmap Módulo × Tanque) ──
   const riskSec = `<div class="cal-loc-sec">
-      <div class="cal-loc-sechead"><span class="cal-loc-sectitle">🗺️ Mapa de riesgo · Módulo × Tanque</span>${riskToggle}</div>
-      ${riskView === 'red' ? calRiskNetworkSVG(tree) : calRiskMatrixHTML(tree)}
+      <div class="cal-loc-sechead"><span class="cal-loc-sectitle">🗺️ Mapa de riesgo · Módulo × Tanque</span></div>
+      ${calRiskMatrixHTML(tree)}
     </div>`;
 
   // ── Comparador de tanques · dos estilos (Paralelas / Small multiples) ──
@@ -601,39 +1033,6 @@ function calRiskMatrixHTML(tree) {
             </div>
           </div>`).join('')}
       </div></div>`;
-}
-
-/** Mapa de riesgo · RED: una constelación por módulo (hub = módulo, nodos orbitales =
- *  tanques, aristas = pertenencia; color = nivel de riesgo). Small-multiples de redes. */
-function calRiskNetworkSVG(tree) {
-  const cell = (mo, mi) => {
-    const moSev = RISK_TO_SEV[mo.risk] || 'sin-rango';
-    const n = mo.tanks.length;
-    const cx = 80, cy = 80, R = n > 7 ? 56 : 50, nodeR = n > 7 ? 10 : 13, hubR = 19;
-    const moShort = esc(String(mo.label).replace(/^M(?=\d)/i, ''));
-    const nodes = mo.tanks.map((t, ti) => {
-      const tSev = RISK_TO_SEV[t.risk] || 'sin-rango';
-      const a = (n <= 1 ? 0 : (ti / n) * Math.PI * 2) - Math.PI / 2;
-      const tx = +(cx + R * Math.cos(a)).toFixed(1), ty = +(cy + R * Math.sin(a)).toFixed(1);
-      const short = esc((String(t.label).match(/\d+/) || [t.label])[0]);
-      return `<g class="cal-net-tk cal-pc-tank cal-sev--${tSev}" data-cal-tank="${mi}-${ti}" tabindex="0" role="button" aria-label="Ficha de ${esc(t.label)}, riesgo ${esc(CAL_RISK[t.risk].label)}">
-          <title>${esc(t.label)} — ${esc(CAL_RISK[t.risk].label)}${t.wqi != null ? ' · WQI ' + t.wqi : ''}</title>
-          <line class="cal-net-edge" x1="${cx}" y1="${cy}" x2="${tx}" y2="${ty}"/>
-          <circle class="cal-net-node" cx="${tx}" cy="${ty}" r="${nodeR}"/>
-          <text class="cal-net-nlbl" x="${tx}" y="${ty}">${short}</text>
-        </g>`;
-    }).join('');
-    return `<figure class="cal-net-cell">
-        <svg viewBox="0 0 160 160" class="cal-net-svg" role="img" aria-label="Módulo ${esc(mo.label)}: ${n} tanque(s), riesgo ${esc(CAL_RISK[mo.risk].label)}">
-          ${nodes}
-          <g class="cal-net-hub cal-sev--${moSev}"><circle cx="${cx}" cy="${cy}" r="${hubR}"/><text x="${cx}" y="${cy}">${moShort}</text></g>
-        </svg>
-        <figcaption class="cal-net-cap"><b>${esc(mo.label)}</b><span class="cal-net-caprisk cal-sev--${moSev}">${esc(CAL_RISK[mo.risk].label)}</span>${mo.wqi != null ? `<span class="cal-net-capwqi">WQI ${mo.wqi}</span>` : ''}</figcaption>
-      </figure>`;
-  };
-  return `<div class="cal-risknet"><div class="cal-net-grid">${tree.map(cell).join('')}</div>
-      <div class="cal-net-note">Cada constelación es un módulo · nodo central = módulo · nodos orbitales = tanques · color = nivel de riesgo · toca un tanque para su ficha.</div>
-    </div>`;
 }
 
 /** Datos del comparador: ejes (parámetros con rango presentes) + tanques con su última medición. */
@@ -715,7 +1114,7 @@ function calFichaHTML(mi, ti, t) {
   const critTxt = t.crit.length
     ? t.crit.slice(0, 4).map((c) => `<span class="cal-ficha-crit-i">● ${esc(c)}</span>`).join('') + (t.crit.length > 4 ? ` <span class="cal-ficha-crit-i">+${t.crit.length - 4}</span>` : '')
     : '<span class="cal-ficha-ok">✓ sin incumplimientos</span>';
-  return `<button class="cal-ficha cal-sev--${sev}" data-cal-tank="${mi}-${ti}" title="Ver ficha de ${esc(t.label)}">
+  return `<button class="cal-ficha cal-sev--${sev}" data-cal-ficha="${mi}-${ti}" title="Ver perfil temporal de ${esc(t.label)}">
       <div class="cal-ficha-h"><span class="cal-ficha-tq">${esc(t.label)}</span><span class="cal-ficha-risk cal-sev--${sev}">${esc(CAL_RISK[t.risk].label)}</span></div>
       <div class="cal-ficha-wqi"><div class="cal-ficha-wqibar"><span class="cal-sev--${sev}" style="width:${t.wqi != null ? t.wqi : 0}%"></span></div><span class="cal-ficha-wqinum">${t.wqi != null ? t.wqi : '—'}</span></div>
       <div class="cal-ficha-crit">${critTxt}</div>
@@ -766,6 +1165,82 @@ function openCalTankModal(root, key) {
 }
 function closeCalTankModal(root) {
   const m = root.querySelector('#calTankModal');
+  if (m) m.classList.remove('is-open');
+  document.body.classList.remove('modal-open');
+}
+
+/* ---- Calidad de Agua · ficha técnica de tanque: PERFIL TEMPORAL (evolución) ---- */
+function calFichaModalHTML() {
+  return `<div class="mic-modal" id="calFichaModal" data-cal-ficha-overlay>
+      <div class="mic-modal-card">
+        <div class="mic-modal-head">
+          <span class="mic-modal-title" id="calFichaTitle">Perfil temporal</span>
+          <button class="mic-modal-x" data-cal-ficha-close aria-label="Cerrar">✕</button>
+        </div>
+        <div class="mic-modal-body" id="calFichaBody"></div>
+      </div>
+    </div>`;
+}
+/** Cuerpo de la ficha técnica: por parámetro, valor actual + sparkline del histórico +
+ *  objetivo; y tabla de mediciones por fecha (evolución). Distinto del detalle-foto del mapa. */
+function calFichaBodyHTML(t) {
+  const sev = RISK_TO_SEV[t.risk] || 'sin-rango';
+  const sorted = [...t.samples].sort((a, b) => (a.ctx.fecha || 0) - (b.ctx.fecha || 0));
+  // Mediciones por parámetro a lo largo del tiempo.
+  const byParam = new Map();
+  sorted.forEach((s) => s.meas.forEach((m) => {
+    if (!byParam.has(m.key)) byParam.set(m.key, { label: m.label, unit: m.unit, range: m.range, pts: [] });
+    byParam.get(m.key).pts.push({ t: s.ctx.fecha ? +s.ctx.fecha : null, value: m.value, severity: m.severity });
+  }));
+  const paramList = CAL_PARAMS.filter((p) => byParam.has(p.key));
+  const rows = paramList.map((p) => {
+    const d = byParam.get(p.key);
+    const last = d.pts[d.pts.length - 1];
+    const trend = d.pts.length >= 2 ? (last.value - d.pts[d.pts.length - 2].value) : null;
+    const arrow = trend == null ? '' : trend > 0 ? '▲' : trend < 0 ? '▼' : '▬';
+    return `<div class="cal-ft-row cal-sev--${last.severity}">
+        <span class="cal-ft-name">${esc(d.label)}</span>
+        <span class="cal-ft-val">${esc(calFmt(last.value))}${d.unit ? ' ' + esc(d.unit) : ''} <span class="cal-ft-arr">${arrow}</span></span>
+        <span class="cal-ft-spark">${calSpark(d.pts.map((x) => x.value), 96, 24)}</span>
+        <span class="cal-ft-obj">${d.range ? 'obj. ' + esc(d.range) : 'sin rango'}</span>
+      </div>`;
+  }).join('');
+  // Tabla de mediciones por fecha (dedup por día, asc).
+  const dayOf = (tt) => tt == null ? null : Math.floor(tt / 86400000);
+  const days = [...new Set(sorted.map((s) => dayOf(s.ctx.fecha ? +s.ctx.fecha : null)).filter((x) => x != null))].sort((a, b) => a - b);
+  const head = `<tr><th>Parámetro</th>${days.map((k) => `<th>${esc(fmtShort(new Date(k * 86400000)))}</th>`).join('')}</tr>`;
+  const body = paramList.map((p) => {
+    const d = byParam.get(p.key);
+    const cells = days.map((k) => {
+      const pt = d.pts.find((x) => dayOf(x.t) === k);
+      return pt ? `<td class="cal-sev--${pt.severity}">${esc(calFmt(pt.value))}</td>` : '<td class="muted">—</td>';
+    }).join('');
+    return `<tr><th class="cal-ft-th">${esc(d.label)}</th>${cells}</tr>`;
+  }).join('');
+  const table = days.length ? `<div class="cal-kpi-sec"><h4>Mediciones por fecha</h4>
+      <div class="cal-ft-tablewrap"><table class="cal-ft-table"><thead>${head}</thead><tbody>${body}</tbody></table></div></div>` : '';
+
+  return `<div class="cal-tk-top">
+      <span class="cal-tk-risk cal-sev--${sev}">${esc(CAL_RISK[t.risk].label)}</span>
+      <span class="cal-tk-wqi">WQI <b class="cal-sev--${sev}">${t.wqi != null ? t.wqi : '—'}</b></span>
+      <span class="cal-tk-meta">📅 ${t.last ? esc(fmtShort(new Date(t.last))) : 'sin fecha'} · ${t.n} muestra(s) · ${days.length} día(s)</span>
+    </div>
+    <div class="cal-ft-rows">${rows || '<span class="muted">Sin parámetros medidos.</span>'}</div>
+    ${table}`;
+}
+function openCalFicha(root, key) {
+  if (!_calLocTree) return;
+  const [mi, ti] = key.split('-').map(Number);
+  const mo = _calLocTree[mi]; const t = mo && mo.tanks[ti]; if (!t) return;
+  const title = root.querySelector('#calFichaTitle');
+  if (title) title.textContent = `${mo.label} · ${t.label} · perfil temporal`;
+  const body = root.querySelector('#calFichaBody');
+  if (body) body.innerHTML = calFichaBodyHTML(t);
+  const m = root.querySelector('#calFichaModal');
+  if (m) { m.classList.add('is-open'); document.body.classList.add('modal-open'); }
+}
+function closeCalFicha(root) {
+  const m = root.querySelector('#calFichaModal');
   if (m) m.classList.remove('is-open');
   document.body.classList.remove('modal-open');
 }
@@ -1972,8 +2447,54 @@ function bind(root) {
     const sub = e.target.closest('[data-mic-sub]');
     if (sub) { if (vState.sub !== sub.dataset.micSub) { vState.sub = sub.dataset.micSub; microbiologiaView(root); } return; }
 
+    // General: acceso directo a una sub-vista (arrastra el mes elegido en el panorama).
+    const goto = e.target.closest('[data-gen-goto]');
+    if (goto) {
+      const tgt = goto.dataset.genGoto;
+      vState.sub = tgt;
+      if (tgt === 'bacteriologia') {
+        vState.month = vState.genMonth;
+        vState.depto = null; vState.formato = null; vState.dims = {}; vState.petriDay = null;
+      } else if (tgt === 'calidad') {
+        vState.calMonth = vState.genMonth;
+      }
+      microbiologiaView(root);
+      return;
+    }
+    // General: tocar una fila de área → modal de desglose (NO navega).
+    const gdep = e.target.closest('[data-gen-depto]');
+    if (gdep) { openGenDepto(root, gdep.dataset.genDepto); return; }
+    if (e.target.closest('[data-gen-depto-close]') || e.target.matches('[data-gen-depto-overlay]')) { closeGenDepto(root); return; }
+
+    // General: tocar un instrumento (KPI) → modal de resumen (NO navega).
+    const gkpi = e.target.closest('[data-gen-kpi]');
+    if (gkpi) { openGenKpi(root, gkpi.dataset.genKpi); return; }
+    if (e.target.closest('[data-gen-kpi-close]') || e.target.matches('[data-gen-kpi-overlay]')) { closeGenKpi(root); return; }
+
+    // Barra de mes del panorama General (compartida por Bacteriología + Calidad de Agua).
+    const gnav = e.target.closest('[data-gen-month]');
+    if (gnav && !gnav.disabled) {
+      const cs = [...microRows().map((r) => rowContext(r).corrida), ...calAguaRows().map((r) => calCtx(r).corrida)].filter(Boolean);
+      const gms = [...new Set(cs.map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
+      const gi = gms.indexOf(vState.genMonth) + Number(gnav.dataset.genMonth);
+      if (gi >= 0 && gi < gms.length) { vState.genMonth = gms[gi]; microbiologiaView(root); }
+      return;
+    }
+
     const ap = e.target.closest('[data-mic-ap]');
     if (ap) { if (vState.apartado !== ap.dataset.micAp) { vState.apartado = ap.dataset.micAp; microbiologiaView(root); } return; }
+
+    // Calidad de Agua: chips de selección múltiple (Módulo) — alterna la pertenencia.
+    const mchip = e.target.closest('[data-caldim-chip]');
+    if (mchip) {
+      const k = mchip.dataset.caldimChip, val = mchip.dataset.caldimVal;
+      const cur = Array.isArray(vState.calDims[k]) ? vState.calDims[k].slice() : [];
+      const i = cur.indexOf(val);
+      if (i >= 0) cur.splice(i, 1); else cur.push(val);
+      vState.calDims[k] = cur.length ? cur : null;
+      microbiologiaView(root);
+      return;
+    }
 
     // Apartado de Calidad de Agua: Perfil ⇄ Matriz ⇄ Analizador ⇄ Ensayo.
     const cap = e.target.closest('[data-cal-ap]');
@@ -1984,21 +2505,27 @@ function bind(root) {
     // Analizador: cambiar el modo del gráfico (Tendencia / Control / Distribución).
     const cmode = e.target.closest('[data-cal-chartmode]');
     if (cmode) { if (vState.calChartMode !== cmode.dataset.calChartmode) { vState.calChartMode = cmode.dataset.calChartmode; microbiologiaView(root); } return; }
-    // Por ubicación: conmutar el estilo del mapa de riesgo (Matriz / Red) o del comparador.
-    const rview = e.target.closest('[data-cal-riskview]');
-    if (rview) { if (vState.calRiskView !== rview.dataset.calRiskview) { vState.calRiskView = rview.dataset.calRiskview; microbiologiaView(root); } return; }
+    // Por ubicación: conmutar el estilo del comparador de tanques.
     const cview = e.target.closest('[data-cal-cmpview]');
     if (cview) { if (vState.calCmpView !== cview.dataset.calCmpview) { vState.calCmpView = cview.dataset.calCmpview; microbiologiaView(root); } return; }
     // Por ubicación: colapsar/expandir un módulo de las fichas técnicas.
     const cmod = e.target.closest('[data-cal-mod]');
     if (cmod) { const k = cmod.dataset.calMod; const cur = cmod.getAttribute('aria-expanded') === 'true'; vState.calLocOpen[k] = !cur; microbiologiaView(root); return; }
-    // Por ubicación: abrir la ficha técnica de un tanque (celda del mapa o tarjeta).
+    // Por ubicación: celda del Mapa de riesgo → detalle-foto (modal de tanque).
     const ctk = e.target.closest('[data-cal-tank]');
     if (ctk) { openCalTankModal(root, ctk.dataset.calTank); return; }
     if (e.target.closest('[data-cal-tank-close]') || e.target.matches('[data-cal-tank-overlay]')) { closeCalTankModal(root); return; }
+    // Por ubicación: ficha técnica de un tanque → perfil temporal (evolución).
+    const cfi = e.target.closest('[data-cal-ficha]');
+    if (cfi) { openCalFicha(root, cfi.dataset.calFicha); return; }
+    if (e.target.closest('[data-cal-ficha-close]') || e.target.matches('[data-cal-ficha-overlay]')) { closeCalFicha(root); return; }
     // Calidad de Agua: modal de alertas (mediciones fuera de rango) + export.
     if (e.target.closest('[data-cal-alerts]')) { openCalAlert(root); return; }
     if (e.target.closest('[data-cal-alert-close]') || e.target.matches('[data-cal-alert-overlay]')) { closeCalAlert(root); return; }
+    // Calidad de Agua: modales de detalle de los KPIs (Muestras/Cumplimiento/Perfil).
+    const kpiTile = e.target.closest('[data-cal-kpi]');
+    if (kpiTile) { openCalKpi(root, kpiTile.dataset.calKpi); return; }
+    if (e.target.closest('[data-cal-kpi-close]') || e.target.matches('[data-cal-kpi-overlay]')) { closeCalKpi(root); return; }
     if (e.target.closest('[data-cal-export]')) { calExportTxt(); return; }
     if (e.target.closest('[data-cal-xlsx]')) { calExportXlsx(); return; }
     // Editor de rangos objetivo ("Factores").
@@ -2066,10 +2593,14 @@ function bind(root) {
   // Teclado: Enter/Espacio sobre el KPI abre el modal de alertas; sobre una fila del
   // heatmap de Tendencias la selecciona. Escape cierra modales.
   root.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { closeAlertModal(root); closeXlsxModal(root); closeCalAlert(root); closeCalFact(root); closeCalTankModal(root); return; }
+    if (e.key === 'Escape') { closeAlertModal(root); closeXlsxModal(root); closeCalAlert(root); closeCalKpi(root); closeCalFact(root); closeCalTankModal(root); closeCalFicha(root); closeGenDepto(root); closeGenKpi(root); return; }
     if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
     if (e.target.closest('[data-mic-alerts]')) { e.preventDefault(); openAlertModal(root); return; }
     if (e.target.closest('[data-cal-alerts]')) { e.preventDefault(); openCalAlert(root); return; }
+    const kpiTile = e.target.closest('[data-cal-kpi]');
+    if (kpiTile) { e.preventDefault(); openCalKpi(root, kpiTile.dataset.calKpi); return; }
+    const gkpiTile = e.target.closest('[data-gen-kpi]');
+    if (gkpiTile) { e.preventDefault(); openGenKpi(root, gkpiTile.dataset.genKpi); return; }
     // Comparador de tanques (coordenadas paralelas): las líneas son <g role=button> → teclado manual.
     const cpcTk = e.target.closest('.cal-pc-tank[data-cal-tank]');
     if (cpcTk) { e.preventDefault(); openCalTankModal(root, cpcTk.dataset.calTank); return; }

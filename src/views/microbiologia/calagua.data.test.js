@@ -3,7 +3,7 @@ import {
   isCalAguaRow, calEstado, calRangeText, calCtx, calValue, calMeasured, loadCalRanges,
   calEnsayoData, CAL_PARAMS, CAL_PARAM_BY_KEY,
   calExcursion, calSeverity, calSubIndex, calWQI, calRiskLevel, calGroupTree, calDiagnosis,
-  controlStats, boxStats,
+  controlStats, boxStats, calStageCmp,
 } from './calagua.data.js';
 
 const ph = CAL_PARAM_BY_KEY.ph;
@@ -154,20 +154,32 @@ describe('calSeverity', () => {
 
 describe('calSubIndex / calWQI', () => {
   const R = { ph: { min: 7.5, max: 8.5 }, nitrito: { max: 0.2 } };
-  it('sub-índice 100 en zona óptima, ~60 en el límite, 0 muy fuera', () => {
-    expect(calSubIndex('ph', 8.0, R)).toBe(100);
-    expect(calSubIndex('nitrito', 0.2, R)).toBeCloseTo(60, 6); // e=1
-    expect(calSubIndex('nitrito', 0.4, R)).toBeCloseTo(0, 6);  // e=2
+  it('sub-índice 100 en TODO el rango (incl. el borde), decae fuera hasta 0 al duplicar', () => {
+    expect(calSubIndex('ph', 8.0, R)).toBe(100);   // centro
+    expect(calSubIndex('ph', 8.5, R)).toBe(100);   // borde, aún dentro → 100
+    expect(calSubIndex('nitrito', 0.2, R)).toBe(100); // borde (e=1), dentro → 100
+    expect(calSubIndex('nitrito', 0.3, R)).toBeCloseTo(50, 6); // e=1.5 → 50
+    expect(calSubIndex('nitrito', 0.4, R)).toBeCloseTo(0, 6);  // e=2 → 0
   });
-  it('WQI = media de sub-índices con rango', () => {
-    const meas = [{ key: 'ph', label: 'pH', value: 8.0 }, { key: 'nitrito', label: 'Nitrito', value: 0.2 }];
-    const w = calWQI(meas, R);
-    expect(w.wqi).toBe(80); // media(100, 60)
+  it('WQI = media de sub-índices; punto todo en rango da 100', () => {
+    expect(calWQI([{ key: 'ph', label: 'pH', value: 8.0 }, { key: 'nitrito', label: 'Nitrito', value: 0.2 }], R).wqi).toBe(100);
+    const w = calWQI([{ key: 'ph', label: 'pH', value: 8.0 }, { key: 'nitrito', label: 'Nitrito', value: 0.3 }], R);
+    expect(w.wqi).toBe(75); // media(100, 50)
     expect(w.worst.key).toBe('nitrito');
     expect(w.n).toBe(2);
   });
   it('WQI null si ningún parámetro tiene rango', () => {
     expect(calWQI([{ key: 'temp', label: 'Temp', value: 25 }], R).wqi).toBe(null);
+  });
+});
+
+describe('calStageCmp', () => {
+  it('ordena AS → Nauplio → Zoea → Mysis → PL, por número, y "(MB)" antes que la simple', () => {
+    const input = ['Z1', 'M1', 'N5', 'PL2', 'N5 (MB)', 'AS', 'Z3', 'N6', 'PL10'];
+    expect([...input].sort(calStageCmp)).toEqual(['AS', 'N5 (MB)', 'N5', 'N6', 'Z1', 'Z3', 'M1', 'PL2', 'PL10']);
+  });
+  it('los tokens desconocidos van al final', () => {
+    expect(['Adulto', 'Z1', 'AS'].sort(calStageCmp)).toEqual(['AS', 'Z1', 'Adulto']);
   });
 });
 

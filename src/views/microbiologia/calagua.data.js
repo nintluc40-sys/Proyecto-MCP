@@ -222,13 +222,16 @@ export function calSeverity(key, value, ranges) {
 }
 
 /** Sub-índice de calidad 0–100 (continuo) desde la excursión:
- *  100 hasta e=0.8, baja a 60 en el límite (e=1) y a 0 cuando e≥2. */
+ *  DENTRO de rango (e≤1, es decir value en [mín,máx]) puntúa 100; al salirse del
+ *  rango decae linealmente de 100 (en el borde) a 0 cuando la excursión duplica el
+ *  límite (e≥2). Así el WQI queda alineado con el semáforo dentro/fuera: un punto
+ *  con todos sus parámetros en rango da WQI 100. (No afecta a `calSeverity`, que usa
+ *  su propia escala de excursión, ni al binario `calEstado`). */
 export function calSubIndex(key, value, ranges) {
   const e = calExcursion(key, value, ranges);
   if (e == null) return null;
-  if (e <= 0.8) return 100;
-  if (e <= 1.0) return 100 - ((e - 0.8) / 0.2) * 40; // 100 → 60
-  if (e <= 2.0) return 60 - ((e - 1.0) / 1.0) * 60;  // 60 → 0
+  if (e <= 1.0) return 100;                    // dentro de rango → puntaje pleno
+  if (e <= 2.0) return 100 - (e - 1.0) * 100;  // fuera: 100 (borde) → 0 (2× el límite)
   return 0;
 }
 
@@ -343,4 +346,21 @@ export function calDiagnosis(samples, ranges) {
     tankCount: tanks.length,
     tree,
   };
+}
+
+/* ── Orden biológico de estadíos para el filtro (AS → Nauplio → Zoea → Mysis → PL) ── */
+const CAL_STAGE_GROUP = { AS: 0, N: 1, Z: 2, M: 3, PL: 4 };
+/** Descompone un estadío ("N5 (MB)", "Z2", "AS", "PL10") en clave ordenable:
+ *  grupo (AS<N<Z<M<PL) → número → variante con paréntesis ANTES de la simple. */
+function calStageKey(s) {
+  const t = String(s == null ? '' : s).trim().toUpperCase();
+  const m = t.match(/^(AS|PL|N|Z|M)\s*0*(\d+)?\s*(.*)$/);
+  if (!m) return { g: 9, n: 0, q: 1, qual: t, raw: t };
+  const qual = (m[3] || '').trim();
+  return { g: CAL_STAGE_GROUP[m[1]] ?? 8, n: m[2] ? +m[2] : -1, q: qual ? 0 : 1, qual, raw: t };
+}
+/** Comparador de estadíos para ordenar el filtro de Calidad de Agua. */
+export function calStageCmp(a, b) {
+  const A = calStageKey(a), B = calStageKey(b);
+  return (A.g - B.g) || (A.n - B.n) || (A.q - B.q) || A.qual.localeCompare(B.qual) || A.raw.localeCompare(B.raw);
 }
