@@ -168,16 +168,20 @@ function splitSiembras(pts) {
 }
 
 /** Lotes con sus puntos (día de proceso → Cel/ml). Día = Dia_Proceso si existe,
- *  si no se deriva de la fecha relativa al primer día del lote. Clave = sistema·Lote.
- *  Cada resiembra del mismo sistema es una serie aparte (sufijo · S2, S3…). */
+ *  si no se deriva de la fecha relativa al primer día del lote.
+ *  Clave de serie = Área · Sistema · Especie · Lote (así el Sheet agrupa cada cultivo:
+ *  el mismo nombre de sistema en áreas/especies/lotes distintos NO se fusiona). Los
+ *  componentes ausentes se omiten (una fila con solo Sistema mantiene su nombre suelto).
+ *  Cada resiembra de esa misma unidad es una serie aparte (sufijo · S2, S3…). */
 export function growthByLote(rows) {
   const byLote = new Map();
   rows.forEach((r) => {
     const cel = num(r, 'cel'); if (cel === null) return;
-    // Unidad de la línea: el LOTE solo en Fundas (FP/FM son las únicas con lote);
-    // en el resto (Masivos, Premasivos, Carboys, PBR) la unidad es el SISTEMA.
-    const lote = g(r, 'lote'); const sis = g(r, 'sistema') || '?';
-    const key = (sysCat(sis) === 'Fundas' && lote) ? `${sis}·L${lote}` : sis;
+    const area = String(g(r, 'area') || '').trim();
+    const sis = String(g(r, 'sistema') || '').trim() || '?';
+    const esp = String(g(r, 'especie') || '').trim();
+    const lote = String(g(r, 'lote') || '').trim();
+    const key = [area, sis, esp, lote ? `L${lote}` : ''].filter(Boolean).join(' · ');
     if (!byLote.has(key)) byLote.set(key, []);
     byLote.get(key).push({ dia: num(r, 'dia'), d: parseAnyDate(g(r, 'fecha')), cel });
   });

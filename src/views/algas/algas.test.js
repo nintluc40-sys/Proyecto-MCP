@@ -35,13 +35,22 @@ describe('growthByLote', () => {
     expect(lotes[0].key).toBe('M1');
     expect(lotes[0].points).toEqual([{ day: 1, cel: 2000 }, { day: 2, cel: 4000 }]);
   });
-  it('en Fundas la unidad es sistema·Lote', () => {
+  it('el Lote separa series (p. ej. Fundas FP·A vs FP·B)', () => {
     const rows = [
       row({ Sistema: 'FP', Lote: 'A', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '500' }),
       row({ Sistema: 'FP', Lote: 'B', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '900' }),
     ];
     const keys = growthByLote(rows).map((l) => l.key).sort();
-    expect(keys).toEqual(['FP·LA', 'FP·LB']);
+    expect(keys).toEqual(['FP · LA', 'FP · LB']);
+  });
+  it('el mismo sistema en ÁREAS o ESPECIES distintas NO se fusiona (clave Área·Sistema·Especie·Lote)', () => {
+    const rows = [
+      row({ Área_Algas: 'A1', Sistema: 'M1', Especie: 'TW', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '1000' }),
+      row({ Área_Algas: 'A2', Sistema: 'M1', Especie: 'TW', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '2000' }), // otra área
+      row({ Área_Algas: 'A1', Sistema: 'M1', Especie: 'IS', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '3000' }), // otra especie
+    ];
+    const keys = growthByLote(rows).map((l) => l.key).sort();
+    expect(keys).toEqual(['A1 · M1 · IS', 'A1 · M1 · TW', 'A2 · M1 · TW']);
   });
   it('ignora filas sin Cel/ml', () => {
     const rows = [row({ Sistema: 'M1', Fecha: '2026-06-01', Dia_Proceso: '1' })];
