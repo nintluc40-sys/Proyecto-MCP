@@ -5242,8 +5242,12 @@ function renderMadReproductivo(){
     + _reproNavBtn("eventos","📋 Desoves / Mortalidades")
     + _reproNavBtn("alta","➕ Alta de individuo")
     + _reproNavBtn("transferencias","🔄 Transferencias")
+    + _reproNavBtn("consulta","📊 Consulta")
     + '</div>';
-  const body = (_reproSub==="alta") ? _reproAltaHTML() : (_reproSub==="transferencias") ? _reproTransferHTML() : _reproEventosHTML();
+  const body = (_reproSub==="alta") ? _reproAltaHTML()
+    : (_reproSub==="transferencias") ? _reproTransferHTML()
+    : (_reproSub==="consulta") ? _reproConsultaHTML()
+    : _reproEventosHTML();
   fp.innerHTML = '<div style="max-width:680px;margin:0 auto;padding:4px 2px">' + nav + body + '</div>';
   fixupLabels(fp);
 }
@@ -5331,6 +5335,64 @@ function _reproTransferHTML(){
     + '<div id="repro-t-report" style="margin-top:12px"></div>';
 }
 
+// Lectura de hojas de Maduración (Vite: desde el store del dashboard vía __rgLib). Si no
+// hay datos → []. Con esto se activan validaciones reales y los reportes de Consulta.
+function _reproReadRows(sheet){ try{ const f=window.__rgLib.reproReadSheet; return f?(f(sheet)||[]):[]; }catch(_){ return []; } }
+function _reproMatrixIndex(){ const rows=_reproReadRows("Maduración MATRIZ"); return rows.length?window.__rgLib.matrixIndexFromRows(rows):null; }
+
+function _reproConsultaHTML(){
+  const mrows=_reproReadRows("Maduración MATRIZ");
+  const brows=_reproReadRows("Maduración Bitácora");
+  if(!mrows.length && !brows.length){
+    return '<h3 style="margin:6px 0 8px;font-size:15px">📊 Consulta y reportes</h3>'
+      + '<div style="padding:14px;background:#f8fafc;border-radius:8px;font-size:12px;color:#64748b">Aún no hay datos de Maduración cargados. Crea las hojas <b>Maduración MATRIZ</b>, <b>Maduración Bitácora</b> y <b>Maduración Transferencias</b> en el Sheet; cuando el panel principal las cargue, aquí verás el resumen del plantel, la matriz de desoves y la trazabilidad por individuo.</div>';
+  }
+  const sum=window.__rgLib.matrixSummary(mrows);
+  const piv=window.__rgLib.pivotDesoves(brows);
+  const kpi=function(label,val){ return '<div style="flex:1;min-width:90px;padding:8px 10px;background:#f8fafc;border-radius:8px"><div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase">'+label+'</div><div style="font-size:20px;font-weight:800;color:#0f172a">'+val+'</div></div>'; };
+  let h='<h3 style="margin:6px 0 8px;font-size:15px">📊 Consulta y reportes</h3>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+kpi("Hembras",sum.total)+kpi("Vivas",sum.vivas)+kpi("Muertas",sum.muertas)+'</div>';
+  h+='<div style="padding:10px;background:#f8fafc;border-radius:8px;margin-bottom:12px">'
+    +'<div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px">🔎 Trazabilidad por individuo</div>'
+    +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input id="repro-trace-id" placeholder="Trovan ID" style="'+_RINP+'"><button class="btn" type="button" onclick="madReproTrace()">Buscar</button></div>'
+    +'<div id="repro-trace-out" style="margin-top:8px"></div>'
+    +'</div>';
+  h+='<div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px">🥚 Matriz de desoves ('+piv.rows.length+' hembra(s) · '+piv.dates.length+' fecha(s))</div>';
+  h+=_reproPivotTableHTML(piv);
+  return h;
+}
+function _reproPivotTableHTML(piv){
+  if(!piv.rows.length) return '<div style="font-size:12px;color:#64748b">Sin desoves registrados aún.</div>';
+  const cap=200; const rows=piv.rows.slice(0,cap);
+  const th='<th style="position:sticky;left:0;background:#f1f5f9;text-align:left;padding:4px 6px">Trovan</th><th style="padding:4px 6px">Σ</th>'+piv.dates.map(function(d){ return '<th style="padding:4px 6px;font-size:10px">'+escapeHtml(String(d).slice(5))+'</th>'; }).join('');
+  const tb=rows.map(function(r){
+    const cells=piv.dates.map(function(d){ return '<td style="text-align:center;padding:3px 6px">'+(r.byDate[d]===1?'<span style="color:#166534;font-weight:700">1</span>':'<span style="color:#cbd5e1">·</span>')+'</td>'; }).join('');
+    return '<tr><td style="position:sticky;left:0;background:#fff;font-weight:600;padding:3px 6px">'+escapeHtml(r.trovan)+'</td><td style="text-align:center;font-weight:700;padding:3px 6px">'+r.total+'</td>'+cells+'</tr>';
+  }).join('');
+  const more=piv.rows.length>cap?'<div style="font-size:11px;color:#64748b;margin-top:4px">Mostrando '+cap+' de '+piv.rows.length+' hembras.</div>':'';
+  return '<div style="overflow:auto;max-height:340px;border:1px solid #e2e8f0;border-radius:8px"><table style="border-collapse:collapse;font-size:11px;white-space:nowrap"><thead><tr>'+th+'</tr></thead><tbody>'+tb+'</tbody></table></div>'+more;
+}
+function madReproTrace(){
+  const inp=document.getElementById("repro-trace-id"), out=document.getElementById("repro-trace-out");
+  if(!inp||!out) return;
+  const id=inp.value.trim(); if(!id){ out.innerHTML=""; return; }
+  const norm=window.__rgLib.normTrovan(id);
+  const trRows=_reproReadRows("Maduración Transferencias"), bRows=_reproReadRows("Maduración Bitácora");
+  const mIdx=_reproMatrixIndex(); const rec=mIdx?mIdx.get(norm):null;
+  const trace=window.__rgLib.individualTrace(trRows, id);
+  const desoves=bRows.filter(function(r){ return window.__rgLib.normTrovan(r["Trovan ID"])===norm && String(r["Tipo"])==="Desove"; }).map(function(r){ return r["Fecha"]; });
+  let h="";
+  if(rec) h+='<div style="font-size:12px"><b>'+escapeHtml(id)+'</b> · Estado: '+escapeHtml(rec.estado||"—")+' · Ubicación actual: '+escapeHtml((rec.sala||"—")+" · "+(rec.tanque||"—"))+'</div>';
+  else if(trace.current) h+='<div style="font-size:12px"><b>'+escapeHtml(id)+'</b> · Ubicación (por transferencias): '+escapeHtml((trace.current.sala||"—")+" · "+(trace.current.tanque||"—"))+'</div>';
+  else h+='<div style="font-size:12px;color:#991b1b">Sin registro para '+escapeHtml(id)+'.</div>';
+  if(desoves.length) h+='<div style="font-size:11px;color:#475569;margin-top:4px"><b>Desoves ('+desoves.length+'):</b> '+escapeHtml(desoves.join(", "))+'</div>';
+  if(trace.movimientos.length){
+    h+='<div style="font-size:11px;color:#475569;margin-top:4px"><b>Movimientos:</b></div>';
+    h+=trace.movimientos.map(function(m){ return '<div style="font-size:11px;color:#475569">'+escapeHtml(m.trId||"")+' · '+escapeHtml(m.fecha||"")+' · '+escapeHtml((m.salaOrigen||"—")+"/"+(m.tanqueOrigen||"—"))+' → '+escapeHtml((m.salaDestino||"—")+"/"+(m.tanqueDestino||"—"))+(String(m.mezcla)==="Sí"?" (mezcla)":"")+'</div>'; }).join("");
+  }
+  out.innerHTML=h;
+}
+
 async function madReproProcess(){
   const fEl=document.getElementById("repro-fecha"), tEl=document.getElementById("repro-tipo"), cEl=document.getElementById("repro-codes");
   if(!fEl||!tEl||!cEl) return;
@@ -5338,7 +5400,7 @@ async function madReproProcess(){
   if(!isValidDate(fecha)){ toast("Fecha inválida.","err",3500); return; }
   const parsed = window.__rgLib.parseTrovanList(cEl.value);
   if(!parsed.ids.length){ toast("Pega al menos un Trovan ID.","warn",3500); return; }
-  const res = window.__rgLib.buildEventBatch({ ids: parsed.ids, fecha: fecha, tipo: tipo });
+  const res = window.__rgLib.buildEventBatch({ ids: parsed.ids, fecha: fecha, tipo: tipo, matrixIndex: _reproMatrixIndex() });
   if(res.error){ toast(res.error,"err",3500); return; }
   const url = gasUrl();
   toast("Procesando "+parsed.ids.length+" código(s)…","info",2200);
@@ -5364,7 +5426,7 @@ async function madReproAlta(){
   const form={ numero:g("repro-a-numero"), trovan:g("repro-a-trovan"), color:g("repro-a-color"),
     piscina:g("repro-a-piscina"), codigo:g("repro-a-codigo"), lote:g("repro-a-lote"),
     sala:g("repro-a-sala"), tanque:g("repro-a-tanque"), fecha:g("repro-a-fecha"), obs:g("repro-a-obs") };
-  const res = window.__rgLib.buildAltaIndividuo(form);
+  const res = window.__rgLib.buildAltaIndividuo(form, _reproMatrixIndex());
   if(!res.ok){ toast(res.error,"err",3800); return; }
   toast("Registrando individuo…","info",1800);
   const sent = await postPayload(res.payload, gasUrl());
@@ -5408,8 +5470,9 @@ async function madReproTransfer(){
   });
   if(!totalIds){ toast("Pega al menos un Trovan ID en algún destino.","warn",3800); return; }
   const composicion=(tipo==="Mezcla")?{ lotes:g("repro-t-lotes"), codigos:g("repro-t-codigos"), piscinas:g("repro-t-piscinas") }:{};
-  const trId=_reproNextTrId();
-  const res=window.__rgLib.buildTransferBatch({ fecha:fecha, tipo:tipo, origen:origen, destinos:destinos, composicion:composicion, trId:trId });
+  const _trRows=_reproReadRows("Maduración Transferencias");
+  const trId=_trRows.length?window.__rgLib.nextTrIdFromRows(_trRows):_reproNextTrId();
+  const res=window.__rgLib.buildTransferBatch({ fecha:fecha, tipo:tipo, origen:origen, destinos:destinos, composicion:composicion, matrixIndex:_reproMatrixIndex(), trId:trId });
   if(res.error){ toast(res.error,"err",3500); return; }
   if(!res.transfer){ _madReproShowTransferReport(res.report, trId, false); toast("No hay individuos válidos para transferir.","warn",4000); return; }
   toast("Procesando transferencia "+trId+"…","info",2200);

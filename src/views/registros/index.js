@@ -16,9 +16,19 @@ import './registros.css';
 import './registros.theme.css';
 import shellHtml from './shell.html?raw';
 import { esc } from '../../core/format.js';
+import { store } from '../../core/store.js';
 import * as regSecurity from './lib/security.js';
 import * as regModules from './lib/modules.js';
 import * as regReproductivo from './lib/reproductivo.data.js';
+
+// Lectura de hojas para el motor (Registro reproductivo · Tanda 5): el dashboard ya
+// carga TODAS las hojas al store con `_SheetOrigin`. Devuelve las filas (objetos con
+// cabeceras) de la hoja pedida. Si aún no existe/no se cargó → []. El monolito no tiene
+// store: allí la lectura queda en stub (estado vacío) hasta conectar una lectura GAS.
+function reproReadSheet(sheetName) {
+  try { return (store.globalData || []).filter((r) => r && r._SheetOrigin === sheetName); }
+  catch (_e) { return []; }
+}
 import { renderCalidadFicha } from './fichas/calidad.render.js';
 import { renderPlgFicha } from './fichas/plg.render.js';
 import { renderParamsFicha } from './fichas/params.render.js';
@@ -42,6 +52,7 @@ const regLib = {
   ...regSecurity,
   ...regModules,
   ...regReproductivo,
+  reproReadSheet,
   renderCalidadFicha,
   resolveCalidadData,
   renderPlgFicha,

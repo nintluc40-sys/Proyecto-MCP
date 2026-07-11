@@ -199,3 +199,65 @@ export function buildTransferBatch({ fecha, tipo, origen, destinos, composicion,
     transfer: trRows.length ? syncPayload(REPRO_TRANSFER_SHEET, REPRO_TRANSFER_HEADERS, REPRO_TRANSFER_KEYCOLS, trRows) : null,
   };
 }
+
+/* ── Tanda 5 · Consulta / reportes (operan sobre filas leídas del Sheet: objetos con
+   claves de cabecera, tal como los entrega el store del dashboard o una lectura GAS) ── */
+
+/** Índice de matriz (Trovan → registro normalizado) desde filas crudas de la hoja MATRIZ. */
+export function matrixIndexFromRows(rows) {
+  return buildMatrixIndex((rows || []).map(matrixRecordFromSheet));
+}
+
+/** Pivota la BITÁCORA a la matriz ancha de DESOVES: filas = Trovan, columnas = fechas,
+ *  celda = 1 si desovó ese día (solo Tipo='Desove'). Fechas asc, Trovan asc. */
+export function pivotDesoves(bitacoraRows) {
+  const dateSet = new Set(); const byTrovan = new Map();
+  (bitacoraRows || []).forEach((r) => {
+    if (String(r['Tipo']) !== REPRO_EVENTO.DESOVE) return;
+    const id = normTrovan(r['Trovan ID']); const f = sanitizeStr(r['Fecha']);
+    if (!id || !f) return;
+    dateSet.add(f);
+    if (!byTrovan.has(id)) byTrovan.set(id, new Set());
+    byTrovan.get(id).add(f);
+  });
+  const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  const dates = [...dateSet].sort(cmp);
+  const rows = [...byTrovan.entries()].sort((a, b) => cmp(a[0], b[0])).map(([trovan, set]) => ({
+    trovan, total: set.size,
+    byDate: dates.reduce((o, d) => { o[d] = set.has(d) ? 1 : ''; return o; }, {}),
+  }));
+  return { dates, rows };
+}
+
+/** Historial de movimientos de un Trovan desde el ledger de TRANSFERENCIAS (orden por
+ *  TR-ID) + ubicación actual (último destino registrado). */
+export function individualTrace(transferRows, trovan) {
+  const id = normTrovan(trovan);
+  const cmp = (a, b) => (String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0);
+  const movimientos = (transferRows || []).filter((r) => normTrovan(r['Trovan ID']) === id).map((r) => ({
+    trId: r['TR-ID'], fecha: r['Fecha'], tipo: r['Tipo'],
+    salaOrigen: r['Sala origen'], tanqueOrigen: r['Tanque origen'],
+    salaDestino: r['Sala destino'], tanqueDestino: r['Tanque destino'], mezcla: r['Mezcla'],
+  })).sort((a, b) => cmp(a.trId, b.trId));
+  const last = movimientos.length ? movimientos[movimientos.length - 1] : null;
+  const current = last ? { sala: last.salaDestino, tanque: last.tanqueDestino } : null;
+  return { trovan: id, movimientos, current };
+}
+
+/** Resumen de la MATRIZ: total, vivas, muertas y conteo por ubicación (Sala · Tanque). */
+export function matrixSummary(matrixRows) {
+  let total = 0, vivas = 0, muertas = 0; const byUbic = new Map();
+  (matrixRows || []).forEach((r) => {
+    const rec = matrixRecordFromSheet(r); if (!rec.trovan) return;
+    total++;
+    if (rec.estado === REPRO_ESTADO.MUERTO) muertas++; else vivas++;
+    const key = (rec.sala || '—') + ' · ' + (rec.tanque || '—');
+    byUbic.set(key, (byUbic.get(key) || 0) + 1);
+  });
+  return { total, vivas, muertas, ubicaciones: [...byUbic.entries()].map(([k, n]) => ({ ubicacion: k, n })).sort((a, b) => b.n - a.n) };
+}
+
+/** Siguiente TR-ID reconciliado con el ledger real (máx de la columna TR-ID + 1). */
+export function nextTrIdFromRows(transferRows) {
+  return nextTrId((transferRows || []).map((r) => r['TR-ID']));
+}

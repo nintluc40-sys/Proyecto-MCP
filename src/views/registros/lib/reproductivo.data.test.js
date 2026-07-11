@@ -4,6 +4,7 @@ import {
   REPRO_TRANSFER_HEADERS, REPRO_TRANSFER_KEYCOLS, REPRO_ESTADO, REPRO_EVENTO, REPRO_TRANSFER_TIPO,
   normTrovan, parseTrovanList, matrixRecordFromSheet, buildMatrixIndex,
   buildAltaIndividuo, buildEventBatch, nextTrId, buildTransferBatch,
+  matrixIndexFromRows, pivotDesoves, individualTrace, matrixSummary, nextTrIdFromRows,
 } from './reproductivo.data.js';
 
 // Índice de matriz de prueba: 3 hembras (una muerta).
@@ -153,5 +154,60 @@ describe('Sección 3 · transferencias', () => {
     expect(row[col(REPRO_TRANSFER_HEADERS, 'Mezcla')]).toBe('Sí');
     expect(row[col(REPRO_TRANSFER_HEADERS, 'Lotes presentes')]).toBe('A+B');
     expect(row[col(REPRO_TRANSFER_HEADERS, 'Códigos presentes')]).toBe('G01+G05');
+  });
+});
+
+// Filas "crudas" como las entrega el store/lectura (objetos con claves de cabecera).
+const mrow = (o) => ({ 'Trovan ID': o.t, 'Estado': o.e || 'Vivo', 'Sala actual': o.s || '', 'Tanque actual': o.tq || '' });
+const brow = (o) => ({ 'Trovan ID': o.t, 'Fecha': o.f, 'Tipo': o.tipo });
+const trow = (o) => ({ 'TR-ID': o.tr, 'Fecha': o.f, 'Tipo': o.tipo || 'Traslado', 'Trovan ID': o.t, 'Sala origen': o.so, 'Tanque origen': o.to, 'Sala destino': o.sd, 'Tanque destino': o.td, 'Mezcla': o.m || 'No' });
+
+describe('Tanda 5 · Consulta / reportes', () => {
+  it('matrixIndexFromRows indexa por Trovan desde filas de hoja', () => {
+    const m = matrixIndexFromRows([mrow({ t: '111', e: 'Vivo', s: 'S5', tq: 'T1' })]);
+    expect(m.get('111').sala).toBe('S5');
+    expect(m.get('111').estado).toBe('Vivo');
+  });
+  it('pivotDesoves arma la matriz ancha (Trovan × fecha) solo con desoves', () => {
+    const bit = [
+      brow({ t: '111', f: '2026-07-10', tipo: 'Desove' }),
+      brow({ t: '111', f: '2026-07-12', tipo: 'Desove' }),
+      brow({ t: '222', f: '2026-07-10', tipo: 'Desove' }),
+      brow({ t: '333', f: '2026-07-10', tipo: 'Mortalidad' }), // no cuenta
+    ];
+    const p = pivotDesoves(bit);
+    expect(p.dates).toEqual(['2026-07-10', '2026-07-12']);
+    const r111 = p.rows.find((x) => x.trovan === '111');
+    expect(r111.total).toBe(2);
+    expect(r111.byDate['2026-07-10']).toBe(1);
+    expect(r111.byDate['2026-07-12']).toBe(1);
+    const r222 = p.rows.find((x) => x.trovan === '222');
+    expect(r222.byDate['2026-07-12']).toBe(''); // no desovó ese día
+    expect(p.rows.some((x) => x.trovan === '333')).toBe(false); // mortalidad no entra
+  });
+  it('individualTrace reconstruye el historial y la ubicación actual', () => {
+    const tr = [
+      trow({ tr: 'TR-000001', f: '2026-07-05', t: '111', so: 'S5', to: 'T1', sd: 'S6', td: 'T2' }),
+      trow({ tr: 'TR-000002', f: '2026-07-09', t: '111', so: 'S6', to: 'T2', sd: 'S6', td: 'T3' }),
+      trow({ tr: 'TR-000001', f: '2026-07-05', t: '999', so: 'S5', to: 'T1', sd: 'S6', td: 'T2' }),
+    ];
+    const h = individualTrace(tr, '111');
+    expect(h.movimientos.length).toBe(2);
+    expect(h.current).toEqual({ sala: 'S6', tanque: 'T3' }); // último destino
+  });
+  it('matrixSummary cuenta vivas/muertas y por ubicación', () => {
+    const s = matrixSummary([
+      mrow({ t: '111', e: 'Vivo', s: 'S5', tq: 'T1' }),
+      mrow({ t: '222', e: 'Vivo', s: 'S5', tq: 'T1' }),
+      mrow({ t: '333', e: 'Muerto', s: 'S5', tq: 'T2' }),
+    ]);
+    expect(s.total).toBe(3);
+    expect(s.vivas).toBe(2);
+    expect(s.muertas).toBe(1);
+    expect(s.ubicaciones[0]).toEqual({ ubicacion: 'S5 · T1', n: 2 });
+  });
+  it('nextTrIdFromRows reconcilia con el máximo del ledger', () => {
+    expect(nextTrIdFromRows([trow({ tr: 'TR-000007' }), trow({ tr: 'TR-000123' })])).toBe('TR-000124');
+    expect(nextTrIdFromRows([])).toBe('TR-000001');
   });
 });
