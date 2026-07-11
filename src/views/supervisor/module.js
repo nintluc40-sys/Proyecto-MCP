@@ -578,8 +578,17 @@ function calAguaForModule(mod, corrida) {
     return true;
   });
 }
-/** Muestras (ctx + parámetros medidos) de un conjunto de filas de Calidad de Agua. */
-const cwSamples = (rows, ranges) => rows.map((r) => ({ ctx: calCtx(r), meas: calMeasured(r, ranges) })).filter((s) => s.meas.length);
+/** Muestras (ctx + parámetros medidos) de un conjunto de filas de Calidad de Agua.
+ *  Memoizado por identidad de (rows, ranges): dentro de una apertura del modal, el panel
+ *  de diagnóstico y las vistas (Tanques/Tabla/Matriz/Tendencias) comparten el mismo cálculo
+ *  en vez de rehacer calMeasured por fila varias veces. */
+let _cwSamplesMemo = { rows: null, ranges: null, out: null };
+const cwSamples = (rows, ranges) => {
+  if (_cwSamplesMemo.rows === rows && _cwSamplesMemo.ranges === ranges) return _cwSamplesMemo.out;
+  const out = rows.map((r) => ({ ctx: calCtx(r), meas: calMeasured(r, ranges) })).filter((s) => s.meas.length);
+  _cwSamplesMemo = { rows, ranges, out };
+  return out;
+};
 const cwEmpty = '<div class="empty-state" style="padding:30px">Sin muestras de calidad de agua para esta corrida y módulo.</div>';
 
 /** Vista 1 · Tabla: filas = muestras (fecha · TQ · estadío), columnas = parámetros. */

@@ -31,4 +31,11 @@ describe('monotoneDown (conserva huecos y posiciones)', () => {
     expect(monotoneDown([500])).toEqual([500]);
     expect(monotoneDown([])).toEqual([]);
   });
+  it('con `cap` la curva nunca arranca por encima del tope (ancla a lo sembrado)', () => {
+    // Pico temprano (1500) por encima del sembrado (1000): sin tope la isótona subiría
+    // el arranque; con cap=1000 se ancla y desciende.
+    const out = monotoneDown([1000, 1500, 800, 300], 1000);
+    expect(out[0]).toBeLessThanOrEqual(1000);
+    for (let i = 1; i < out.length; i++) expect(out[i]).toBeLessThanOrEqual(out[i - 1]);
+  });
 });

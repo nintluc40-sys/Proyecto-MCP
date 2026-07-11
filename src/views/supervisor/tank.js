@@ -95,10 +95,12 @@ export function isotonicDecreasing(vals) {
 }
 /** Envolvente monótona decreciente conservando la posición de los huecos: la Población
  *  es una estimación manual con picos; como la mortalidad no se revierte, la tendencia
- *  real solo puede descender desde lo sembrado hasta el último registro. */
-export function monotoneDown(values) {
+ *  real solo puede descender desde lo sembrado hasta el último registro.
+ *  `cap` (opcional) ancla la serie: ningún valor supera el tope ANTES de la isótona, así
+ *  la curva nunca arranca por encima de lo sembrado aunque haya un pico temprano. */
+export function monotoneDown(values, cap) {
   const idx = [], vals = [];
-  values.forEach((v, i) => { if (v !== null && v !== undefined && !isNaN(v)) { idx.push(i); vals.push(v); } });
+  values.forEach((v, i) => { if (v !== null && v !== undefined && !isNaN(v)) { idx.push(i); vals.push(cap != null ? Math.min(v, cap) : v); } });
   if (vals.length < 2) return values.slice();
   const fit = isotonicDecreasing(vals);
   const out = values.slice();
@@ -106,12 +108,15 @@ export function monotoneDown(values) {
   return out;
 }
 
-// Estado del modo "Normalizar" (envolvente monótona) de Población/Supervivencia. Se
-// reinicia a false en cada render de tanque (cada tanque empieza en vista cruda).
+// Estado del modo "Normalizar" (envolvente monótona) de Población/Supervivencia. Solo
+// se reinicia al cambiar de tanque (no en cada render): así un auto-refresco de refresh.js
+// del MISMO tanque conserva el toggle en vez de apagarlo en silencio.
 let _svNorm = false;
+let _svNormTank = null;
 
 export function renderTank(ctx, mod, tq) {
-  _svNorm = false; // cada tanque arranca en vista cruda
+  const _tkey = mod + '·' + tq;
+  if (_svNormTank !== _tkey) { _svNorm = false; _svNormTank = _tkey; } // nuevo tanque → crudo
   const corrida = ctx.vState.corrida || null;
   const col = colorFor(ctx.allMods.indexOf(mod));
   const s = tankStats(ctx, mod, tq, corrida);
@@ -395,7 +400,7 @@ export function renderTank(ctx, mod, tq) {
           plugins: { legend: { labels: { boxWidth: 12 } } } },
       }),
       pop: () => {
-        const data = _svNorm ? monotoneDown(pop.values) : pop.values;
+        const data = _svNorm ? monotoneDown(pop.values, (s.popFirst && s.popFirst > 0) ? s.popFirst : null) : pop.values;
         const fmtInt = (v) => Number(Math.round(v)).toLocaleString('es-EC');
         return {
           type: 'line',
@@ -405,7 +410,7 @@ export function renderTank(ctx, mod, tq) {
         };
       },
       sv: () => {
-        const data = _svNorm ? monotoneDown(sv.values) : sv.values;
+        const data = _svNorm ? monotoneDown(sv.values, 100) : sv.values;
         const raw1 = (v) => (v == null ? '' : (Math.round(v * 10) / 10) + '%');
         return {
           type: 'line',
