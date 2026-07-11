@@ -110,8 +110,11 @@ export function buildAltaIndividuo(form, matrixIndex) {
 
 /* ── Sección 2 · Desoves / Mortalidades ── */
 /** Procesa un lote de Trovan para un evento (desove|mortalidad) en una fecha. Añade a la
- *  BITÁCORA (con foto de ubicación) y, en mortalidad, marca Estado/Fecha muerte en la MATRIZ.
- *  Reporta no encontrados y hembras ya muertas (un desove de muerta se OMITE). */
+ *  BITÁCORA (con foto de ubicación cuando hay matriz) y, en mortalidad, marca Estado/Fecha
+ *  muerte en la MATRIZ. Reporta no encontrados y hembras ya muertas.
+ *  `matrixIndex` es OPCIONAL: si se pasa, valida (un no-encontrado se reporta y omite; un
+ *  desove de una muerta se omite); si NO se pasa, procesa todos los Trovan sin validar
+ *  (el engine aún no lee la MATRIZ — la validación llega cuando se cargue). */
 export function buildEventBatch({ ids, fecha, tipo, matrixIndex } = {}) {
   const report = { total: 0, processed: [], notFound: [], alreadyDead: [] };
   const okTipo = (tipo === REPRO_EVENTO.DESOVE || tipo === REPRO_EVENTO.MORTALIDAD);
@@ -123,12 +126,12 @@ export function buildEventBatch({ ids, fecha, tipo, matrixIndex } = {}) {
     const id = normTrovan(raw); if (!id) return;
     report.total++;
     const rec = matrixIndex ? matrixIndex.get(id) : null;
-    if (!rec) { report.notFound.push(id); return; }
-    const dead = rec.estado === REPRO_ESTADO.MUERTO;
+    if (matrixIndex && !rec) { report.notFound.push(id); return; } // solo valida si hay matriz
+    const dead = !!(rec && rec.estado === REPRO_ESTADO.MUERTO);
     if (tipo === REPRO_EVENTO.DESOVE && dead) { report.alreadyDead.push(id); return; } // muerta no desova
     bitRows.push(rowFromObj(REPRO_BITACORA_HEADERS, {
       'Trovan ID': id, 'Fecha': fx, 'Tipo': tipo,
-      'Sala': sanitizeStr(rec.sala), 'Tanque': sanitizeStr(rec.tanque),
+      'Sala': sanitizeStr(rec ? rec.sala : ''), 'Tanque': sanitizeStr(rec ? rec.tanque : ''),
     }));
     if (tipo === REPRO_EVENTO.MORTALIDAD) {
       if (dead) report.alreadyDead.push(id); // informativo; el re-registro es idempotente

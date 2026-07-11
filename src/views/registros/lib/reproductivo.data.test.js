@@ -88,6 +88,13 @@ describe('Sección 2 · desoves / mortalidades', () => {
     expect(row[col(REPRO_MATRIZ_HEADERS, 'Piscina')]).toBe('');
     expect(r.bitacora.rows.length).toBe(1);
   });
+  it('sin matriz procesa TODOS los Trovan sin validar (notFound vacío, sin foto de ubicación)', () => {
+    const r = buildEventBatch({ ids: ['9856321', '0000000'], fecha: '2026-07-12', tipo: REPRO_EVENTO.DESOVE });
+    expect(r.bitacora.rows.length).toBe(2);
+    expect(r.report.notFound).toEqual([]);
+    expect(r.report.processed).toEqual(['9856321', '0000000']);
+    expect(r.bitacora.rows[0][col(REPRO_BITACORA_HEADERS, 'Sala')]).toBe(''); // sin matriz, sin snapshot
+  });
   it('rechaza sin fecha o con tipo inválido', () => {
     expect(buildEventBatch({ ids: ['9856321'], tipo: REPRO_EVENTO.DESOVE, matrixIndex: idx() }).error).toMatch(/fecha/i);
     expect(buildEventBatch({ ids: ['9856321'], fecha: '2026-07-12', tipo: 'X', matrixIndex: idx() }).error).toMatch(/inválido/i);

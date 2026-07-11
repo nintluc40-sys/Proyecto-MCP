@@ -2064,7 +2064,7 @@ function goBack(){
 ══════════════════════════════════════════ */
 const LAB_TABS      = ["algas","bitacora","fotos"];
 const STANDARD_TABS = [...FICHAS,"desinfeccion","fotos","historial","blanco"];
-const MAD_TABS      = ["salas","tanques","lotes","fotos"];
+const MAD_TABS      = ["salas","tanques","lotes","reproductivo","fotos"];
 // Tabs del módulo Biomol — form + historial inline + fotos
 const BIO_TABS      = ["biomol","fotos"];
 // Tabs del módulo As Técnico — form de supervisión + historial inline + fotos
@@ -2085,6 +2085,7 @@ const TAB_META = {
   salas:    ["🏠","Salas"],
   tanques:  ["🛢️","Tanques"],
   lotes:    ["📦","Lotes"],
+  reproductivo: ["🦐","Reproductivo"],
   biomol:   ["🧬","Biomol"],
   ast:      ["📋","As Técnico"],
   blanco:   ["📝","Blanco"],
@@ -2144,6 +2145,7 @@ function selTab(t){
   if(t==="blanco") renderBlanco();
   if(t==="bitacora") renderBitacora();
   if(MAD_FICHAS.includes(t)) renderMad(t);
+  if(t==="reproductivo") renderMadReproductivo();
   if(t==="biomol") renderBiomol();
   if(t==="ast")    renderAst();
   if(t==="micnuevo") micDispatchNuevo();
@@ -2512,7 +2514,8 @@ const FICHA_LABELS = {
   algas:"Lab. Algas",
   salas:"Maduración · Salas",
   tanques:"Maduración · Tanques",
-  lotes:"Maduración · Lotes"
+  lotes:"Maduración · Lotes",
+  reproductivo:"Maduración · Reproductivo"
 };
 function renderFicha(fid){
   const fn = {
@@ -5216,6 +5219,82 @@ function renderMad(ficha){
   // Accesibilidad: asocia labels↔inputs después de cada render de
   // Maduración (igual que renderFicha). El flujo CRUD/sync no cambia.
   fixupLabels(document.getElementById("fp-"+ficha));
+}
+
+// ── Maduración · Registro reproductivo (desoves/mortalidades por lote de Trovan) ──
+// Ficha de ACCIÓN (no grilla): el usuario pega los Trovan, elige fecha+tipo y procesa.
+// La lógica pura vive en __rgLib.reproductivo (esquemas + buildEventBatch); aquí solo
+// UI + envío por postPayload. NOTA: aún sin lectura de la MATRIZ → sin validación de
+// existencia/estado (llega en una tanda posterior); por ahora registra lo pegado.
+const _RINP = "padding:6px 8px;font-size:13px;border:1px solid #cbd5e1;border-radius:6px";
+const _RLBL = "display:flex;flex-direction:column;gap:3px;font-size:11px;font-weight:600;color:#475569";
+function renderMadReproductivo(){
+  const fp = document.getElementById("fp-reproductivo");
+  if(!fp) return;
+  const todayStr = today();
+  fp.innerHTML =
+    '<div style="max-width:680px;margin:0 auto;padding:4px 2px">'
+    + '<h3 style="margin:6px 0 2px;font-size:15px">🦐 Registro de desoves y mortalidades</h3>'
+    + '<p style="margin:0 0 12px;font-size:12px;color:#64748b">Pega los Trovan ID (uno por línea o separados por coma), elige la fecha y el tipo, y procesa. Cada evento se registra por su código.</p>'
+    + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">'
+    +   '<label style="'+_RLBL+'">📅 Fecha<input type="date" id="repro-fecha" value="'+escapeHtml(todayStr)+'" style="'+_RINP+'"></label>'
+    +   '<label style="'+_RLBL+'">Tipo de evento<select id="repro-tipo" style="'+_RINP+'"><option value="Desove">Desove</option><option value="Mortalidad">Mortalidad</option></select></label>'
+    + '</div>'
+    + '<label style="display:block;font-size:11px;font-weight:600;color:#475569;margin-bottom:3px">Trovan ID</label>'
+    + '<textarea id="repro-codes" rows="10" placeholder="9856321&#10;9856330&#10;9856342" style="width:100%;box-sizing:border-box;padding:8px;font-size:13px;font-family:monospace;border:1px solid #cbd5e1;border-radius:6px;resize:vertical"></textarea>'
+    + '<div style="display:flex;gap:8px;align-items:center;margin-top:10px">'
+    +   '<button class="btn" type="button" style="font-weight:700" onclick="madReproProcess()">📋 Procesar registro</button>'
+    +   '<button class="btn" type="button" onclick="madReproClear()">Limpiar</button>'
+    + '</div>'
+    + '<div id="repro-report" style="margin-top:14px"></div>'
+    + '</div>';
+  fixupLabels(fp);
+}
+
+async function madReproProcess(){
+  const fEl=document.getElementById("repro-fecha"), tEl=document.getElementById("repro-tipo"), cEl=document.getElementById("repro-codes");
+  if(!fEl||!tEl||!cEl) return;
+  const fecha=fEl.value, tipo=tEl.value;
+  if(!isValidDate(fecha)){ toast("Fecha inválida.","err",3500); return; }
+  const parsed = window.__rgLib.parseTrovanList(cEl.value);
+  if(!parsed.ids.length){ toast("Pega al menos un Trovan ID.","warn",3500); return; }
+  const res = window.__rgLib.buildEventBatch({ ids: parsed.ids, fecha: fecha, tipo: tipo });
+  if(res.error){ toast(res.error,"err",3500); return; }
+  const url = gasUrl();
+  toast("Procesando "+parsed.ids.length+" código(s)…","info",2200);
+  let okAll=true;
+  if(res.bitacora){ okAll = (await postPayload(res.bitacora, url)) && okAll; }
+  if(res.matriz){ okAll = (await postPayload(res.matriz, url)) && okAll; }
+  _madReproShowReport(res.report, parsed.duplicates, tipo, okAll);
+  if(okAll){
+    toast("✅ "+res.report.processed.length+" "+(tipo==="Desove"?"desove(s)":"mortalidad(es)")+" registrado(s).","ok",4200);
+    cEl.value="";
+  } else {
+    toast("No se pudo enviar a Google Sheets. Reintenta cuando haya conexión.","err",5000);
+  }
+}
+
+function madReproClear(){
+  const c=document.getElementById("repro-codes"); if(c) c.value="";
+  const r=document.getElementById("repro-report"); if(r) r.innerHTML="";
+}
+
+function _madReproShowReport(rep, duplicates, tipo, okSent){
+  const el=document.getElementById("repro-report"); if(!el) return;
+  const chip=(txt,bg,fg)=>'<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:'+bg+';color:'+fg+'">'+escapeHtml(txt)+'</span>';
+  let h = '<div style="font-size:12px;font-weight:700;margin-bottom:6px">'+(okSent?"✅ Enviado":"⚠️ Procesado (sin enviar)")+' · '+escapeHtml(tipo)+'</div>';
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  h += chip(rep.processed.length+" registrado(s)", "#dcfce7", "#166534");
+  if(duplicates && duplicates.length) h += chip(duplicates.length+" duplicado(s) omitido(s)", "#fef9c3", "#854d0e");
+  if(rep.notFound && rep.notFound.length) h += chip(rep.notFound.length+" no encontrado(s)", "#fee2e2", "#991b1b");
+  if(rep.alreadyDead && rep.alreadyDead.length) h += chip(rep.alreadyDead.length+" ya muerta(s)", "#fef9c3", "#854d0e");
+  h += '</div>';
+  const lists=[];
+  if(duplicates && duplicates.length) lists.push(["Duplicados", duplicates]);
+  if(rep.notFound && rep.notFound.length) lists.push(["No encontrados", rep.notFound]);
+  if(rep.alreadyDead && rep.alreadyDead.length) lists.push(["Ya registradas como muertas", rep.alreadyDead]);
+  lists.forEach(function(pair){ h += '<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
+  el.innerHTML = h;
 }
 
 // ── Render Salas — GRILLA tipo Parámetros ─────────────
