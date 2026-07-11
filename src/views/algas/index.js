@@ -167,22 +167,51 @@ function splitSiembras(pts) {
   return cycles;
 }
 
+/** Etiqueta de DISPLAY compacta para las series de crecimiento. La AGRUPACIÓN ya está
+ *  hecha por la clave completa (`l.key`); esto es PURAMENTE VISUAL y NO mezcla registros:
+ *  solo omite del texto los componentes que NO distinguen ninguna serie del conjunto.
+ *  El sistema se muestra siempre (ancla, nunca etiqueta vacía). Un componente se muestra
+ *  si varía en el conjunto — y cuento el vacío como valor, de modo que si unas series
+ *  traen Área/Especie y otras no, ese componente SÍ se muestra (distingue). Por
+ *  construcción, dos series que difieran en cualquier componente muestran ese componente
+ *  → etiquetas únicas. Aun así, red de seguridad: cualquier colisión revierte a `l.key`. */
+function assignDisplayLabels(lotes) {
+  const varies = (sel) => new Set(lotes.map((l) => sel(l.comps) || '')).size > 1;
+  const showArea = varies((c) => c.area), showEsp = varies((c) => c.esp), showLote = varies((c) => c.lote);
+  lotes.forEach((l) => {
+    const c = l.comps;
+    const parts = [];
+    if (c.area && showArea) parts.push(c.area);
+    parts.push(c.sis);
+    if (c.esp && showEsp) parts.push(c.esp);
+    if (c.lote && showLote) parts.push(`L${c.lote}`);
+    l.label = parts.filter(Boolean).join(' · ') + (l.siembra ? ` · S${l.siembra}` : '');
+  });
+  const count = new Map();
+  lotes.forEach((l) => count.set(l.label, (count.get(l.label) || 0) + 1));
+  lotes.forEach((l) => { if (count.get(l.label) > 1) l.label = l.key; }); // colisión → clave única
+}
+
 /** Lotes con sus puntos (día de proceso → Cel/ml). Día = Dia_Proceso si existe,
  *  si no se deriva de la fecha relativa al primer día del lote.
- *  Clave de serie = Área · Sistema · Especie · Lote (así el Sheet agrupa cada cultivo:
- *  el mismo nombre de sistema en áreas/especies/lotes distintos NO se fusiona). Los
- *  componentes ausentes se omiten (una fila con solo Sistema mantiene su nombre suelto).
+ *  Clave de agrupación (`l.key`, identidad ÚNICA) = Área · Sistema · Especie · Lote: el
+ *  mismo nombre de sistema en áreas/especies/lotes distintos NO se fusiona. El LOTE solo
+ *  entra en la clave donde es real (Fundas: FP/FM); en el resto (Masivos/Premasivos/
+ *  Carboys/PBR) la unidad es el sistema y el Lote podría traer ruido → se ignora. La
+ *  etiqueta MOSTRADA (`l.label`) es una versión compacta, ver assignDisplayLabels.
  *  Cada resiembra de esa misma unidad es una serie aparte (sufijo · S2, S3…). */
 export function growthByLote(rows) {
   const byLote = new Map();
+  const compsByKey = new Map(); // clave → { area, sis, esp, lote }
   rows.forEach((r) => {
     const cel = num(r, 'cel'); if (cel === null) return;
     const area = String(g(r, 'area') || '').trim();
     const sis = String(g(r, 'sistema') || '').trim() || '?';
     const esp = String(g(r, 'especie') || '').trim();
-    const lote = String(g(r, 'lote') || '').trim();
+    const loteRaw = String(g(r, 'lote') || '').trim();
+    const lote = (sysCat(sis) === 'Fundas') ? loteRaw : ''; // Lote solo distingue en Fundas
     const key = [area, sis, esp, lote ? `L${lote}` : ''].filter(Boolean).join(' · ');
-    if (!byLote.has(key)) byLote.set(key, []);
+    if (!byLote.has(key)) { byLote.set(key, []); compsByKey.set(key, { area, sis, esp, lote }); }
     byLote.get(key).push({ dia: num(r, 'dia'), d: parseAnyDate(g(r, 'fecha')), cel });
   });
   const lotes = [];
@@ -201,10 +230,11 @@ export function growthByLote(rows) {
         byDay.get(day).push(p.cel);
       });
       const points = [...byDay.entries()].sort((a, b) => a[0] - b[0]).map(([day, arr]) => ({ day, cel: arr.reduce((x, y) => x + y, 0) / arr.length }));
-      const label = siembras.length > 1 ? `${key} · S${ci + 1}` : key;
-      lotes.push({ key: label, points, siembra: siembras.length > 1 ? ci + 1 : null });
+      const siembra = siembras.length > 1 ? ci + 1 : null;
+      lotes.push({ key: siembra ? `${key} · S${ci + 1}` : key, comps: compsByKey.get(key), siembra, points });
     });
   });
+  assignDisplayLabels(lotes); // etiqueta corta (solo visual; la agrupación ya está hecha)
   lotes.sort((a, b) => natCmp(a.key, b.key));
   // Sin tope: se grafican TODOS los lotes/sistemas del filtro. En modo Líneas la
   // leyenda en chips permite ocultar/mostrar series; los modos Mini-curvas y Heatmap
@@ -216,7 +246,7 @@ export function growthByLote(rows) {
 function growthChartData(lotes) {
   const dayset = new Set(); lotes.forEach((l) => l.points.forEach((p) => dayset.add(p.day)));
   const days = [...dayset].sort((a, b) => a - b);
-  const series = lotes.map((l) => { const m = new Map(l.points.map((p) => [p.day, p.cel])); return { label: l.key, data: days.map((d) => (m.has(d) ? m.get(d) : null)) }; });
+  const series = lotes.map((l) => { const m = new Map(l.points.map((p) => [p.day, p.cel])); return { label: l.label || l.key, data: days.map((d) => (m.has(d) ? m.get(d) : null)) }; });
   return { days, dayLabels: days.map((d) => 'Día ' + d), series };
 }
 
@@ -255,7 +285,7 @@ export function tasaChartData(lotes) {
     const dbl = mu / Math.LN2;                         // duplicaciones/día
     const tDouble = mu !== 0 ? Math.LN2 / mu : null;   // días para duplicar (null si μ=0)
     const pctTotal = (nf - n0) / n0 * 100;             // % total (referencia)
-    out.push({ label: l.key, val: +mu.toFixed(3), mu, dbl, tDouble, pctTotal, days, n0, nf });
+    out.push({ label: l.label || l.key, val: +mu.toFixed(3), mu, dbl, tDouble, pctTotal, days, n0, nf });
   });
   return { labels: out.map((o) => o.label), values: out.map((o) => o.val), meta: out };
 }
@@ -359,7 +389,7 @@ export function algasView(root) {
   const growthLotes = growthByLote(chartRows);
   const gd = growthChartData(growthLotes);
   const tasa = tasaChartData(growthLotes);
-  const barLabels = growthLotes.map((l) => l.key);
+  const barLabels = growthLotes.map((l) => l.label || l.key);
   const barValues = growthLotes.map((l) => Math.max(...l.points.map((p) => p.cel)));
   const proto = dailyMulti(chartRows, ['protozoarios', 'ciliados', 'filamentosos']);
   const sal = dailySeries(chartRows, 'salinidad');
@@ -612,7 +642,7 @@ function growthHeatmapHTML(lotes, days) {
   const body = lotes.map((l) => {
     const m = new Map(l.points.map((p) => [p.day, p.cel]));
     const cells = days.map((d) => { const v = m.has(d) ? m.get(d) : null; return `<td style="${bg(v)}" title="${v === null ? 'sin dato' : fmtK(v) + ' cel/ml'}">${v === null ? '·' : fmtK(v)}</td>`; }).join('');
-    return `<tr><th class="alg-gh-rowh">${esc(l.key)}</th>${cells}</tr>`;
+    return `<tr><th class="alg-gh-rowh">${esc(l.label || l.key)}</th>${cells}</tr>`;
   }).join('');
   return `<div class="alg-gh-wrap"><table class="alg-gh-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>
     <div class="alg-gh-legend"><span>menor</span><span class="alg-gh-bar"></span><span>mayor densidad</span></div>`;
@@ -621,7 +651,7 @@ function growthHeatmapHTML(lotes, days) {
 /** Small-multiples: una mini-curva por lote/sistema en una rejilla. */
 function renderSmallMultiples(box, lotes) {
   if (!lotes.length) { box.innerHTML = '<div class="empty-state" style="padding:24px">Sin datos para esta subvista.</div>'; return; }
-  box.innerHTML = `<div class="alg-smult">${lotes.map((l, i) => `<div class="alg-smult-cell"><div class="alg-smult-title" style="color:${algColor(i)}">${esc(l.key)}</div><div class="alg-smult-host"><canvas id="algSm_${box.id}_${i}"></canvas></div></div>`).join('')}</div>`;
+  box.innerHTML = `<div class="alg-smult">${lotes.map((l, i) => `<div class="alg-smult-cell"><div class="alg-smult-title" style="color:${algColor(i)}">${esc(l.label || l.key)}</div><div class="alg-smult-host"><canvas id="algSm_${box.id}_${i}"></canvas></div></div>`).join('')}</div>`;
   lotes.forEach((l, i) => { try { drawGrowthMini(`algSm_${box.id}_${i}`, l.points.map((p) => 'D' + p.day), l.points.map((p) => p.cel), algColor(i)); } catch (e) { console.error('[algas] smult', e); } });
 }
 

@@ -77,6 +77,46 @@ describe('growthByLote', () => {
     ];
     expect(growthByLote(rows).map((l) => l.key)).toEqual(['M1']);
   });
+  it('el Lote NO fragmenta los sistemas no-Fundas (Masivo con Lote ruidoso → una sola serie)', () => {
+    const rows = [
+      row({ Sistema: 'M1', Lote: 'X', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '1000' }),
+      row({ Sistema: 'M1', Lote: 'Y', Fecha: '2026-06-02', Dia_Proceso: '2', Cel_ml: '2000' }),
+    ];
+    // M1 es Masivo → el Lote se ignora en la clave: NO se parte en dos series.
+    expect(growthByLote(rows).map((l) => l.key)).toEqual(['M1']);
+  });
+});
+
+describe('growthByLote · etiqueta de display (l.label) — sin mezclar registros', () => {
+  it('omite el componente invariante en el TEXTO, pero la agrupación conserva la clave completa', () => {
+    const rows = [
+      row({ Área_Algas: 'A1', Sistema: 'M1', Especie: 'TW', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '1000' }),
+      row({ Área_Algas: 'A1', Sistema: 'M2', Especie: 'TW', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '2000' }),
+    ];
+    const lotes = growthByLote(rows);
+    // Área (A1) y Especie (TW) son constantes → no se muestran; solo se ve el sistema.
+    expect(lotes.map((l) => l.label).sort()).toEqual(['M1', 'M2']);
+    // La AGRUPACIÓN mantiene la clave completa (no se fusionan registros distintos).
+    expect(lotes.map((l) => l.key).sort()).toEqual(['A1 · M1 · TW', 'A1 · M2 · TW']);
+  });
+  it('un componente que distingue SIEMPRE se muestra → etiquetas únicas', () => {
+    const rows = [
+      row({ Área_Algas: 'A1', Sistema: 'M1', Especie: 'TW', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '1000' }),
+      row({ Área_Algas: 'A2', Sistema: 'M1', Especie: 'TW', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '2000' }),
+    ];
+    const labels = growthByLote(rows).map((l) => l.label);
+    expect(new Set(labels).size).toBe(labels.length); // sin colisiones
+    expect(labels.sort()).toEqual(['A1 · M1', 'A2 · M1']); // el área varía → se muestra
+  });
+  it('componente presente en unas series y ausente en otras SÍ distingue (no colisiona)', () => {
+    const rows = [
+      row({ Área_Algas: 'A1', Sistema: 'M1', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '1000' }),
+      row({ Sistema: 'M1', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '2000' }), // sin área
+    ];
+    const labels = growthByLote(rows).map((l) => l.label);
+    expect(new Set(labels).size).toBe(labels.length); // únicas: 'A1 · M1' vs 'M1'
+    expect(labels.sort()).toEqual(['A1 · M1', 'M1']);
+  });
 });
 
 describe('tasaChartData · μ específica (día⁻¹)', () => {
