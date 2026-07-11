@@ -5268,27 +5268,38 @@ function _reproEventosHTML(){
     + '</div>'
     + '<div id="repro-report" style="margin-top:14px"></div>';
 }
+// Columnas de la grilla de alta masiva (orden de pegado desde Excel).
+var _REPRO_ALTA_COLS = [
+  { k:"numero",  label:"Número",          w:64 },
+  { k:"trovan",  label:"Trovan ID",       w:100 },
+  { k:"color",   label:"Color anillo",    w:90 },
+  { k:"piscina", label:"Piscina",         w:64 },
+  { k:"codigo",  label:"Código genético", w:110 },
+  { k:"lote",    label:"Lote",            w:64 },
+  { k:"sala",    label:"Sala ingreso",    w:84 },
+  { k:"tanque",  label:"Tanque ingreso",  w:84 }
+];
+function _reproAltaRowHTML(ri){
+  return '<tr><td style="text-align:center;color:#94a3b8;font-size:10px;padding:0 4px">'+(ri+1)+'</td>'
+    + _REPRO_ALTA_COLS.map(function(c,ci){
+        return '<td style="padding:1px"><input class="pinp" type="text" data-r="'+ri+'" data-c="'+ci+'" onpaste="madGridPaste(event,\'reproductivo\')" style="min-width:'+c.w+'px;font-size:12px" placeholder=""></td>';
+      }).join('')
+    + '</tr>';
+}
 function _reproAltaHTML(){
   const todayStr = today();
-  const F = function(id,label){ return '<label style="'+_RLBL+'">'+label+'<input id="'+id+'" style="'+_RINP+'"></label>'; };
+  const N = 20;
+  let rows = ""; for(let i=0;i<N;i++) rows += _reproAltaRowHTML(i);
+  const th = '<th style="font-size:10px;color:#94a3b8;padding:2px 4px">#</th>'
+    + _REPRO_ALTA_COLS.map(function(c){ return '<th style="font-size:10px;padding:2px 6px;white-space:nowrap">'+escapeHtml(c.label)+'</th>'; }).join('');
   return ''
-    + '<h3 style="margin:6px 0 2px;font-size:15px">➕ Alta de individuo</h3>'
-    + '<p style="margin:0 0 12px;font-size:12px;color:#64748b">Registra una hembra nueva en la matriz. Se crea con Estado=Vivo y su ubicación actual = la de ingreso.</p>'
-    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-    +   F("repro-a-numero","Número")
-    +   F("repro-a-trovan","Trovan ID *")
-    +   F("repro-a-color","Color del anillo")
-    +   F("repro-a-piscina","Piscina")
-    +   F("repro-a-codigo","Código genético")
-    +   F("repro-a-lote","Lote")
-    +   F("repro-a-sala","Sala de ingreso")
-    +   F("repro-a-tanque","Tanque de ingreso")
-    +   '<label style="'+_RLBL+'">📅 Fecha de ingreso<input type="date" id="repro-a-fecha" value="'+escapeHtml(todayStr)+'" style="'+_RINP+'"></label>'
-    + '</div>'
-    + '<label style="display:block;font-size:11px;font-weight:600;color:#475569;margin:10px 0 3px">Observaciones</label>'
-    + '<input id="repro-a-obs" style="'+_RINP+';width:100%;box-sizing:border-box">'
-    + '<div style="display:flex;gap:8px;align-items:center;margin-top:12px">'
-    +   '<button class="btn" type="button" style="font-weight:700" onclick="madReproAlta()">➕ Registrar individuo</button>'
+    + '<h3 style="margin:6px 0 2px;font-size:15px">➕ Alta masiva de individuos</h3>'
+    + '<p style="margin:0 0 10px;font-size:12px;color:#64748b">Pega desde Excel en la grilla (copiar-pegar tipo hoja). Cada fila es una hembra nueva; se crean con Estado=Vivo y ubicación actual = la de ingreso. Todas comparten la fecha de ingreso de abajo.</p>'
+    + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px"><label style="'+_RLBL+'">📅 Fecha de ingreso<input type="date" id="repro-a-fecha" value="'+escapeHtml(todayStr)+'" style="'+_RINP+'"></label></div>'
+    + '<div style="overflow:auto;max-height:360px;border:1px solid #e2e8f0;border-radius:8px"><table id="repro-a-grid" style="border-collapse:collapse"><thead><tr>'+th+'</tr></thead><tbody id="repro-a-tbody">'+rows+'</tbody></table></div>'
+    + '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">'
+    +   '<button class="btn" type="button" style="font-weight:700" onclick="madReproAltaBatch()">➕ Registrar todos</button>'
+    +   '<button class="btn" type="button" onclick="madReproAltaAddRows()">➕ 10 filas</button>'
     +   '<button class="btn" type="button" onclick="madReproAltaClear()">Limpiar</button>'
     + '</div>'
     + '<div id="repro-a-report" style="margin-top:12px"></div>';
@@ -5421,27 +5432,50 @@ function madReproClear(){
   const r=document.getElementById("repro-report"); if(r) r.innerHTML="";
 }
 
-async function madReproAlta(){
-  const g=function(id){ const e=document.getElementById(id); return e?e.value:""; };
-  const form={ numero:g("repro-a-numero"), trovan:g("repro-a-trovan"), color:g("repro-a-color"),
-    piscina:g("repro-a-piscina"), codigo:g("repro-a-codigo"), lote:g("repro-a-lote"),
-    sala:g("repro-a-sala"), tanque:g("repro-a-tanque"), fecha:g("repro-a-fecha"), obs:g("repro-a-obs") };
-  const res = window.__rgLib.buildAltaIndividuo(form, _reproMatrixIndex());
-  if(!res.ok){ toast(res.error,"err",3800); return; }
-  toast("Registrando individuo…","info",1800);
-  const sent = await postPayload(res.payload, gasUrl());
-  const el=document.getElementById("repro-a-report");
-  if(sent){
-    toast("✅ Individuo "+res.trovan+" registrado.","ok",4000);
-    if(el) el.innerHTML='<div style="font-size:12px;color:#166534;font-weight:600">✅ '+escapeHtml(res.trovan)+' creado en la matriz (Estado=Vivo).</div>';
-    madReproAltaClear();
-  } else {
-    toast("No se pudo enviar a Google Sheets. Reintenta.","err",5000);
-    if(el) el.innerHTML='<div style="font-size:12px;color:#991b1b;font-weight:600">⚠️ Procesado localmente pero no se envió.</div>';
-  }
+function madReproAltaAddRows(){
+  const tb=document.getElementById("repro-a-tbody"); if(!tb) return;
+  const start=tb.querySelectorAll("tr").length;
+  let h=""; for(let i=0;i<10;i++) h+=_reproAltaRowHTML(start+i);
+  tb.insertAdjacentHTML("beforeend", h);
+}
+function _reproAltaCollect(fecha){
+  const tb=document.getElementById("repro-a-tbody"); if(!tb) return [];
+  const forms=[];
+  tb.querySelectorAll("tr").forEach(function(tr){
+    const get=function(ci){ const el=tr.querySelector('[data-c="'+ci+'"]'); return el?el.value:""; };
+    forms.push({ numero:get(0), trovan:get(1), color:get(2), piscina:get(3), codigo:get(4), lote:get(5), sala:get(6), tanque:get(7), fecha:fecha });
+  });
+  return forms;
+}
+async function madReproAltaBatch(){
+  const fEl=document.getElementById("repro-a-fecha"); const fecha=fEl?fEl.value:"";
+  if(!isValidDate(fecha)){ toast("Fecha de ingreso inválida.","err",3500); return; }
+  const res=window.__rgLib.buildAltaBatch(_reproAltaCollect(fecha), _reproMatrixIndex());
+  if(!res.payload){ _madReproShowAltaReport(res.report, false); toast("No hay filas válidas para registrar (¿falta el Trovan ID?).","warn",4200); return; }
+  toast("Registrando "+res.report.created.length+" individuo(s)…","info",2000);
+  const sent=await postPayload(res.payload, gasUrl());
+  _madReproShowAltaReport(res.report, sent);
+  if(sent){ toast("✅ "+res.report.created.length+" individuo(s) registrado(s).","ok",4200); }
+  else { toast("No se pudo enviar a Google Sheets. Reintenta.","err",5000); }
 }
 function madReproAltaClear(){
-  ["repro-a-numero","repro-a-trovan","repro-a-color","repro-a-piscina","repro-a-codigo","repro-a-lote","repro-a-sala","repro-a-tanque","repro-a-obs"].forEach(function(id){ const e=document.getElementById(id); if(e) e.value=""; });
+  const tb=document.getElementById("repro-a-tbody"); if(tb) tb.querySelectorAll("input").forEach(function(i){ i.value=""; });
+  const r=document.getElementById("repro-a-report"); if(r) r.innerHTML="";
+}
+function _madReproShowAltaReport(rep, okSent){
+  const el=document.getElementById("repro-a-report"); if(!el) return;
+  const chip=function(txt,bg,fg){ return '<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:'+bg+';color:'+fg+'">'+escapeHtml(txt)+'</span>'; };
+  let h='<div style="font-size:12px;font-weight:700;margin-bottom:6px">'+(okSent?"✅ Enviado":"⚠️ Sin enviar")+'</div><div style="display:flex;gap:6px;flex-wrap:wrap">';
+  h+=chip(rep.created.length+" registrado(s)", "#dcfce7", "#166534");
+  if(rep.duplicados && rep.duplicados.length) h+=chip(rep.duplicados.length+" duplicado(s) en el lote", "#fef9c3", "#854d0e");
+  if(rep.existentes && rep.existentes.length) h+=chip(rep.existentes.length+" ya existente(s)", "#fef9c3", "#854d0e");
+  if(rep.sinTrovan) h+=chip(rep.sinTrovan+" sin Trovan (omitidas)", "#fee2e2", "#991b1b");
+  h+='</div>';
+  const lists=[];
+  if(rep.duplicados && rep.duplicados.length) lists.push(["Duplicados en el lote", rep.duplicados]);
+  if(rep.existentes && rep.existentes.length) lists.push(["Ya existentes en la matriz", rep.existentes]);
+  lists.forEach(function(pair){ h+='<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
+  el.innerHTML=h;
 }
 
 // TR-ID secuencial local (TR-000NNN). Sin lectura de la hoja, se lleva un contador en
@@ -6016,7 +6050,7 @@ function madGridKey(ev){
   if(!t || (t.tagName!=="INPUT" && t.tagName!=="SELECT") || typeof t.getAttribute!=="function") return;
   const rA = t.getAttribute("data-r"), cA = t.getAttribute("data-c");
   if(rA===null || cA===null) return;
-  const panel = t.closest("#fp-salas,#fp-tanques,#fp-lotes,#fp-biomol");
+  const panel = t.closest("#fp-salas,#fp-tanques,#fp-lotes,#fp-biomol,#fp-reproductivo");
   if(!panel) return;
   const r = parseInt(rA,10), c = parseInt(cA,10);
   if(!Number.isFinite(r) || !Number.isFinite(c)) return;

@@ -108,6 +108,41 @@ export function buildAltaIndividuo(form, matrixIndex) {
   return { ok: true, trovan, payload: syncPayload(REPRO_MATRIZ_SHEET, REPRO_MATRIZ_HEADERS, REPRO_MATRIZ_KEYCOLS, [row]) };
 }
 
+/** Alta MASIVA: recibe un array de formularios (filas de la grilla, tipo Excel) y arma UN
+ *  payload de MATRIZ con todas las hembras nuevas (Estado=Vivo, ubicación=ingreso).
+ *  Omite filas vacías; reporta filas con datos pero sin Trovan (sinTrovan), Trovan repetidos
+ *  dentro del lote (duplicados) y —si hay matriz— los que ya existen (existentes). */
+export function buildAltaBatch(forms, matrixIndex) {
+  const report = { created: [], sinTrovan: 0, duplicados: [], existentes: [] };
+  const seen = new Set(); const rows = [];
+  const OTHER = ['numero', 'color', 'piscina', 'codigo', 'lote', 'sala', 'tanque'];
+  (forms || []).forEach((form) => {
+    form = form || {};
+    const trovan = normTrovan(form.trovan);
+    const hasData = trovan || OTHER.some((k) => String(form[k] == null ? '' : form[k]).trim());
+    if (!hasData) return;                          // fila totalmente vacía → se ignora
+    if (!trovan) { report.sinTrovan++; return; }   // tiene datos pero le falta el Trovan
+    if (seen.has(trovan)) { report.duplicados.push(trovan); return; }
+    if (matrixIndex && matrixIndex.has(trovan)) { report.existentes.push(trovan); return; }
+    seen.add(trovan);
+    rows.push(rowFromObj(REPRO_MATRIZ_HEADERS, {
+      'Número': sanitizeStr(form.numero),
+      'Trovan ID': trovan,
+      'Color anillo': sanitizeStr(form.color),
+      'Piscina': sanitizeStr(form.piscina),
+      'Código genético': sanitizeStr(form.codigo),
+      'Lote': sanitizeStr(form.lote),
+      'Sala actual': sanitizeStr(form.sala),
+      'Tanque actual': sanitizeStr(form.tanque),
+      'Estado': REPRO_ESTADO.VIVO,
+      'Fecha ingreso': sanitizeStr(form.fecha),
+      'Observaciones': sanitizeStr(form.obs),
+    }));
+    report.created.push(trovan);
+  });
+  return { report, payload: rows.length ? syncPayload(REPRO_MATRIZ_SHEET, REPRO_MATRIZ_HEADERS, REPRO_MATRIZ_KEYCOLS, rows) : null };
+}
+
 /* ── Sección 2 · Desoves / Mortalidades ── */
 /** Procesa un lote de Trovan para un evento (desove|mortalidad) en una fecha. Añade a la
  *  BITÁCORA (con foto de ubicación cuando hay matriz) y, en mortalidad, marca Estado/Fecha

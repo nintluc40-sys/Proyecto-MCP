@@ -3,7 +3,7 @@ import {
   REPRO_MATRIZ_HEADERS, REPRO_MATRIZ_KEYCOLS, REPRO_BITACORA_HEADERS, REPRO_BITACORA_KEYCOLS,
   REPRO_TRANSFER_HEADERS, REPRO_TRANSFER_KEYCOLS, REPRO_ESTADO, REPRO_EVENTO, REPRO_TRANSFER_TIPO,
   normTrovan, parseTrovanList, matrixRecordFromSheet, buildMatrixIndex,
-  buildAltaIndividuo, buildEventBatch, nextTrId, buildTransferBatch,
+  buildAltaIndividuo, buildAltaBatch, buildEventBatch, nextTrId, buildTransferBatch,
   matrixIndexFromRows, pivotDesoves, individualTrace, matrixSummary, nextTrIdFromRows,
 } from './reproductivo.data.js';
 
@@ -66,6 +66,35 @@ describe('Sección 1 · alta de individuo', () => {
   });
   it('rechaza si falta el Trovan', () => {
     expect(buildAltaIndividuo({ trovan: '' }, idx()).ok).toBe(false);
+  });
+});
+
+describe('Sección 1 · alta MASIVA (grilla)', () => {
+  it('arma un solo payload con todas las filas válidas y omite vacías', () => {
+    const r = buildAltaBatch([
+      { trovan: '5551111', numero: '1', sala: 'S6', tanque: 'T2' },
+      { trovan: '', numero: '', sala: '', tanque: '' },           // vacía → ignora
+      { trovan: '5552222', piscina: 'P3' },
+    ]);
+    expect(r.payload.rows.length).toBe(2);
+    expect(r.report.created).toEqual(['5551111', '5552222']);
+    expect(r.payload.rows[0][col(REPRO_MATRIZ_HEADERS, 'Estado')]).toBe(REPRO_ESTADO.VIVO);
+  });
+  it('reporta filas con datos pero sin Trovan, duplicados en el lote y existentes en la matriz', () => {
+    const r = buildAltaBatch([
+      { trovan: '', numero: '9' },              // datos sin Trovan
+      { trovan: '5553333' },
+      { trovan: '5553333' },                    // duplicado en el lote
+      { trovan: '9856321' },                    // ya existe en la matriz de prueba
+    ], idx());
+    expect(r.report.sinTrovan).toBe(1);
+    expect(r.report.duplicados).toEqual(['5553333']);
+    expect(r.report.existentes).toEqual(['9856321']);
+    expect(r.report.created).toEqual(['5553333']);
+    expect(r.payload.rows.length).toBe(1);
+  });
+  it('sin filas válidas → payload null', () => {
+    expect(buildAltaBatch([{ trovan: '', numero: '' }]).payload).toBeNull();
   });
 });
 
