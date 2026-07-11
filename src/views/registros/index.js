@@ -18,6 +18,7 @@ import shellHtml from './shell.html?raw';
 import { esc } from '../../core/format.js';
 import * as regSecurity from './lib/security.js';
 import * as regModules from './lib/modules.js';
+import * as regReproductivo from './lib/reproductivo.data.js';
 import { renderCalidadFicha } from './fichas/calidad.render.js';
 import { renderPlgFicha } from './fichas/plg.render.js';
 import { renderParamsFicha } from './fichas/params.render.js';
@@ -40,6 +41,7 @@ import { resolveDesinfeccionData } from './fichas/desinfeccion.data.js';
 const regLib = {
   ...regSecurity,
   ...regModules,
+  ...regReproductivo,
   renderCalidadFicha,
   resolveCalidadData,
   renderPlgFicha,
