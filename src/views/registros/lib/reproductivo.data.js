@@ -156,8 +156,10 @@ export function nextTrId(existingIds) {
 
 /** Procesa una transferencia por UBICACIÓN actual: por cada destino (con su lista de Trovan)
  *  reubica en la MATRIZ (Sala/Tanque actual) y escribe una fila en TRANSFERENCIAS (ledger por
- *  TR-ID×Trovan). Verifica que cada individuo esté en el origen declarado; los que no, se
- *  omiten y se reportan. En mezcla, guarda la composición del destino. */
+ *  TR-ID×Trovan). En mezcla, guarda la composición del destino.
+ *  `matrixIndex` es OPCIONAL: si se pasa, verifica que cada individuo exista (notFound) y esté
+ *  en el origen declarado (wrongLocation), omitiendo los que no; si NO se pasa, mueve todos los
+ *  Trovan de cada destino sin validar (el engine aún no lee la MATRIZ). */
 export function buildTransferBatch({ fecha, tipo, origen, destinos, composicion, matrixIndex, trId } = {}) {
   const report = { moved: [], notFound: [], wrongLocation: [] };
   if (!fecha) return { report, matriz: null, transfer: null, error: 'Falta la fecha.' };
@@ -173,8 +175,8 @@ export function buildTransferBatch({ fecha, tipo, origen, destinos, composicion,
     (dest.ids || []).forEach((raw) => {
       const id = normTrovan(raw); if (!id) return;
       const rec = matrixIndex ? matrixIndex.get(id) : null;
-      if (!rec) { report.notFound.push(id); return; }
-      if ((org.sala && String(rec.sala) !== org.sala) || (org.tanque && String(rec.tanque) !== org.tanque)) {
+      if (matrixIndex && !rec) { report.notFound.push(id); return; } // solo valida si hay matriz
+      if (matrixIndex && rec && ((org.sala && String(rec.sala) !== org.sala) || (org.tanque && String(rec.tanque) !== org.tanque))) {
         report.wrongLocation.push(id); return; // no está en el origen declarado → se omite
       }
       matRows.push(rowFromObj(REPRO_MATRIZ_HEADERS, { 'Trovan ID': id, 'Sala actual': dSala, 'Tanque actual': dTanque }));

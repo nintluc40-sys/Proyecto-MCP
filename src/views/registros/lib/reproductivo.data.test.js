@@ -129,6 +129,18 @@ describe('Sección 3 · transferencias', () => {
     expect(r.matriz).toBeNull();
     expect(r.report.wrongLocation).toEqual(['9856321']);
   });
+  it('sin matriz mueve TODOS los Trovan de cada destino sin validar', () => {
+    const r = buildTransferBatch({
+      fecha: '2026-07-12', tipo: REPRO_TRANSFER_TIPO.TRASLADO,
+      origen: { sala: 'S5', tanque: 'T1' },
+      destinos: [{ sala: 'S6', tanque: 'T2', ids: ['1111111', '2222222'] }],
+      trId: 'TR-000200',
+    });
+    expect(r.transfer.rows.length).toBe(2);
+    expect(r.report.moved).toEqual(['1111111', '2222222']);
+    expect(r.report.notFound).toEqual([]);
+    expect(r.report.wrongLocation).toEqual([]);
+  });
   it('mezcla: registra la composición del destino', () => {
     const r = buildTransferBatch({
       fecha: '2026-07-12', tipo: REPRO_TRANSFER_TIPO.MEZCLA,

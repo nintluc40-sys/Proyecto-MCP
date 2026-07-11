@@ -5241,8 +5241,9 @@ function renderMadReproductivo(){
   const nav = '<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">'
     + _reproNavBtn("eventos","📋 Desoves / Mortalidades")
     + _reproNavBtn("alta","➕ Alta de individuo")
+    + _reproNavBtn("transferencias","🔄 Transferencias")
     + '</div>';
-  const body = (_reproSub==="alta") ? _reproAltaHTML() : _reproEventosHTML();
+  const body = (_reproSub==="alta") ? _reproAltaHTML() : (_reproSub==="transferencias") ? _reproTransferHTML() : _reproEventosHTML();
   fp.innerHTML = '<div style="max-width:680px;margin:0 auto;padding:4px 2px">' + nav + body + '</div>';
   fixupLabels(fp);
 }
@@ -5287,6 +5288,47 @@ function _reproAltaHTML(){
     +   '<button class="btn" type="button" onclick="madReproAltaClear()">Limpiar</button>'
     + '</div>'
     + '<div id="repro-a-report" style="margin-top:12px"></div>';
+}
+function _reproDestBlockHTML(){
+  return '<div class="repro-dest" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:8px">'
+    + '<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">'
+    +   '<label style="'+_RLBL+'">Sala destino<input class="repro-dest-sala" style="'+_RINP+'"></label>'
+    +   '<label style="'+_RLBL+'">Tanque destino<input class="repro-dest-tanque" style="'+_RINP+'"></label>'
+    +   '<button class="btn" type="button" onclick="madReproDelDest(this)" style="font-size:11px">✕ Quitar</button>'
+    + '</div>'
+    + '<label style="display:block;font-size:11px;font-weight:600;color:#475569;margin:8px 0 3px">Trovan ID de este destino</label>'
+    + '<textarea class="repro-dest-codes" rows="4" placeholder="9856321&#10;9856330" style="width:100%;box-sizing:border-box;padding:8px;font-size:13px;font-family:monospace;border:1px solid #cbd5e1;border-radius:6px;resize:vertical"></textarea>'
+    + '</div>';
+}
+function _reproTransferHTML(){
+  const todayStr = today();
+  return ''
+    + '<h3 style="margin:6px 0 2px;font-size:15px">🔄 Registro de transferencias</h3>'
+    + '<p style="margin:0 0 12px;font-size:12px;color:#64748b">Mueve individuos por su ubicación de origen. Añade uno o varios destinos y pega en cada uno los Trovan ID que van ahí. En mezcla, indica la composición del tanque destino.</p>'
+    + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">'
+    +   '<label style="'+_RLBL+'">📅 Fecha<input type="date" id="repro-t-fecha" value="'+escapeHtml(todayStr)+'" style="'+_RINP+'"></label>'
+    +   '<label style="'+_RLBL+'">Tipo<select id="repro-t-tipo" onchange="madReproMezclaToggle()" style="'+_RINP+'"><option value="Traslado">Traslado</option><option value="Mezcla">Mezcla</option></select></label>'
+    + '</div>'
+    + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding:10px;background:#f8fafc;border-radius:8px">'
+    +   '<div style="font-size:11px;font-weight:700;color:#475569;width:100%">📍 Origen</div>'
+    +   '<label style="'+_RLBL+'">Sala origen<input id="repro-t-osala" style="'+_RINP+'"></label>'
+    +   '<label style="'+_RLBL+'">Tanque origen<input id="repro-t-otanque" style="'+_RINP+'"></label>'
+    + '</div>'
+    + '<div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px">🎯 Destinos</div>'
+    + '<div id="repro-t-dests">' + _reproDestBlockHTML() + '</div>'
+    + '<button class="btn" type="button" onclick="madReproAddDest()" style="font-size:12px">➕ Agregar destino</button>'
+    + '<div id="repro-t-comp" style="display:none;margin-top:12px;padding:10px;background:#fffbeb;border-radius:8px">'
+    +   '<div style="font-size:11px;font-weight:700;color:#854d0e;margin-bottom:6px">🧬 Composición del destino (mezcla)</div>'
+    +   '<div style="display:flex;gap:10px;flex-wrap:wrap">'
+    +     '<label style="'+_RLBL+'">Lotes presentes<input id="repro-t-lotes" placeholder="A+B" style="'+_RINP+'"></label>'
+    +     '<label style="'+_RLBL+'">Códigos genéticos<input id="repro-t-codigos" placeholder="G01+G05" style="'+_RINP+'"></label>'
+    +     '<label style="'+_RLBL+'">Piscinas presentes<input id="repro-t-piscinas" placeholder="P1+P2" style="'+_RINP+'"></label>'
+    +   '</div>'
+    + '</div>'
+    + '<div style="display:flex;gap:8px;align-items:center;margin-top:12px">'
+    +   '<button class="btn" type="button" style="font-weight:700" onclick="madReproTransfer()">🔄 Procesar transferencia</button>'
+    + '</div>'
+    + '<div id="repro-t-report" style="margin-top:12px"></div>';
 }
 
 async function madReproProcess(){
@@ -5338,6 +5380,60 @@ async function madReproAlta(){
 }
 function madReproAltaClear(){
   ["repro-a-numero","repro-a-trovan","repro-a-color","repro-a-piscina","repro-a-codigo","repro-a-lote","repro-a-sala","repro-a-tanque","repro-a-obs"].forEach(function(id){ const e=document.getElementById(id); if(e) e.value=""; });
+}
+
+// TR-ID secuencial local (TR-000NNN). Sin lectura de la hoja, se lleva un contador en
+// localStorage; en una tanda posterior se reconcilia contra el máximo real del Sheet.
+function _reproNextTrId(){ const last=localStorage.getItem("larv4_mad_trseq")||""; return window.__rgLib.nextTrId(last?[last]:[]); }
+function _reproBumpTrSeq(trId){ try{ localStorage.setItem("larv4_mad_trseq", trId); }catch(_){} }
+function madReproAddDest(){ const c=document.getElementById("repro-t-dests"); if(c) c.insertAdjacentHTML("beforeend", _reproDestBlockHTML()); }
+function madReproDelDest(btn){
+  const b=btn.closest(".repro-dest"); const c=document.getElementById("repro-t-dests");
+  if(b && c && c.querySelectorAll(".repro-dest").length>1) b.remove();
+  else toast("Debe quedar al menos un destino.","warn",2500);
+}
+function madReproMezclaToggle(){ const t=document.getElementById("repro-t-tipo"); const comp=document.getElementById("repro-t-comp"); if(comp) comp.style.display=(t && t.value==="Mezcla")?"block":"none"; }
+
+async function madReproTransfer(){
+  const g=function(id){ const e=document.getElementById(id); return e?e.value:""; };
+  const fecha=g("repro-t-fecha"), tipo=g("repro-t-tipo");
+  if(!isValidDate(fecha)){ toast("Fecha inválida.","err",3500); return; }
+  const origen={ sala:g("repro-t-osala"), tanque:g("repro-t-otanque") };
+  const destinos=[]; let totalIds=0;
+  document.querySelectorAll("#repro-t-dests .repro-dest").forEach(function(b){
+    const s=b.querySelector(".repro-dest-sala"), tq=b.querySelector(".repro-dest-tanque"), cd=b.querySelector(".repro-dest-codes");
+    const parsed=window.__rgLib.parseTrovanList(cd?cd.value:"");
+    totalIds+=parsed.ids.length;
+    destinos.push({ sala:s?s.value:"", tanque:tq?tq.value:"", ids:parsed.ids });
+  });
+  if(!totalIds){ toast("Pega al menos un Trovan ID en algún destino.","warn",3800); return; }
+  const composicion=(tipo==="Mezcla")?{ lotes:g("repro-t-lotes"), codigos:g("repro-t-codigos"), piscinas:g("repro-t-piscinas") }:{};
+  const trId=_reproNextTrId();
+  const res=window.__rgLib.buildTransferBatch({ fecha:fecha, tipo:tipo, origen:origen, destinos:destinos, composicion:composicion, trId:trId });
+  if(res.error){ toast(res.error,"err",3500); return; }
+  if(!res.transfer){ _madReproShowTransferReport(res.report, trId, false); toast("No hay individuos válidos para transferir.","warn",4000); return; }
+  toast("Procesando transferencia "+trId+"…","info",2200);
+  let okAll=true;
+  if(res.matriz){ okAll=(await postPayload(res.matriz, gasUrl())) && okAll; }
+  if(res.transfer){ okAll=(await postPayload(res.transfer, gasUrl())) && okAll; }
+  _madReproShowTransferReport(res.report, trId, okAll);
+  if(okAll){ toast("✅ "+res.report.moved.length+" individuo(s) transferido(s) — "+trId,"ok",4500); _reproBumpTrSeq(trId); }
+  else { toast("No se pudo enviar a Google Sheets. Reintenta.","err",5000); }
+}
+
+function _madReproShowTransferReport(rep, trId, okSent){
+  const el=document.getElementById("repro-t-report"); if(!el) return;
+  const chip=function(txt,bg,fg){ return '<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:'+bg+';color:'+fg+'">'+escapeHtml(txt)+'</span>'; };
+  let h='<div style="font-size:12px;font-weight:700;margin-bottom:6px">'+(okSent?"✅ Enviado":"⚠️ Sin enviar")+' · '+escapeHtml(trId)+'</div><div style="display:flex;gap:6px;flex-wrap:wrap">';
+  h+=chip(rep.moved.length+" transferido(s)", "#dcfce7", "#166534");
+  if(rep.notFound && rep.notFound.length) h+=chip(rep.notFound.length+" no encontrado(s)", "#fee2e2", "#991b1b");
+  if(rep.wrongLocation && rep.wrongLocation.length) h+=chip(rep.wrongLocation.length+" fuera del origen", "#fef9c3", "#854d0e");
+  h+='</div>';
+  const lists=[];
+  if(rep.notFound && rep.notFound.length) lists.push(["No encontrados", rep.notFound]);
+  if(rep.wrongLocation && rep.wrongLocation.length) lists.push(["Fuera del origen declarado", rep.wrongLocation]);
+  lists.forEach(function(pair){ h+='<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
+  el.innerHTML=h;
 }
 
 function _madReproShowReport(rep, duplicates, tipo, okSent){
