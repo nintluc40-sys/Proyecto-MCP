@@ -78,6 +78,19 @@ function synthData() {
     Formato: 'Larvicultura · Muestra', 'Tipo de muestra': 'Animal', 'TQ/N°': '1', 'Estadío': 'PL5',
     'V.Totales UFC': '8000', 'V.Amarillos UFC': '900', 'V.Totales Nivel': 'Moderado',
   });
+  // Calidad de Agua (hoja propia) del módulo 1 → modal Calidad de Agua (Tabla/Matriz/Tendencias).
+  // 2 tanques × 2 fechas con pH/S‰/Alcalinidad/Nitrito (Alcalinidad de TQ2 cae fuera de rango).
+  ['1', '2'].forEach((tq, ti) => {
+    ['05/06/2026', '07/06/2026'].forEach((f, di) => {
+      rows.push({
+        _SheetOrigin: 'Calidad de Agua', 'Fecha muestreo': f, Corrida: '573',
+        Departamento: 'Larvicultura', Formato: 'Larvicultura', 'Tipo de muestra': 'Agua',
+        'Módulo': '1', 'TQ/N°': tq, 'Estadío': ['PL2', 'PL5'][di],
+        pH: String((8.0 + di * 0.1).toFixed(1)), 'S‰': '32',
+        Alcalinidad: String(130 - ti * 15), Nitrito: String((0.1 + di * 0.05).toFixed(2)),
+      });
+    });
+  });
   // Registro_Desinfección (detalle del módulo)
   rows.push({
     _SheetOrigin: 'Registro_Desinfección', 'Módulo': 'M01', Corrida: '573', Fecha: '20/05/2026',
@@ -166,6 +179,45 @@ describe('Supervisor · harness de navegación integral', () => {
     click(off);
     expect(root.querySelectorAll('.sv-mtrend-pill.is-on').length).toBe(1);
     expect(root.querySelector('.sv-mtrend-pill.is-on').dataset.mtrendOpen).toBe(key);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('modal Calidad de Agua · Tabla / Matriz / Tendencias (por parámetro con banda)', () => {
+    const root = mount();
+    click(root.querySelector('.sv-card[data-nav="module"]'));
+    const open = root.querySelector('[data-cw-open]');
+    expect(open).toBeTruthy();
+    click(open);
+    expect(root.querySelector('#svCalAguaModal').classList.contains('sv-open')).toBe(true);
+    // Panel de diagnóstico + WQI (siempre visible sobre las vistas).
+    expect(root.querySelector('#svCwPanel .cw-panel')).toBeTruthy();
+    expect(root.querySelector('#svCwPanel .cw-gauge-v')).toBeTruthy();
+    // Tabla (muestra × parámetro); clic en la pestaña fuerza el render síncrono.
+    click(root.querySelector('[data-cw-mode="tabla"]'));
+    expect(root.querySelector('#svCwBody .sv-table')).toBeTruthy();
+    // Tanques: tarjetas-instrumento (una por tanque, con escala/aguja por parámetro).
+    click(root.querySelector('[data-cw-mode="fichas"]'));
+    expect(root.querySelector('#svCwBody .cw-fichas')).toBeTruthy();
+    expect(root.querySelectorAll('#svCwBody .cw-card').length).toBeGreaterThanOrEqual(1);
+    expect(root.querySelector('#svCwBody .cw-scale-needle')).toBeTruthy();
+    // Matriz (parámetro × tanque).
+    click(root.querySelector('[data-cw-mode="matriz"]'));
+    expect(root.querySelector('#svCwBody .sv-micro-hm')).toBeTruthy();
+    // Tendencias: píldoras de parámetro + gráfico + selección.
+    click(root.querySelector('[data-cw-mode="tendencias"]'));
+    expect(root.querySelector('.sv-mtrend-pills')).toBeTruthy();
+    expect(root.querySelector('[data-cw-tank]')).toBeTruthy();
+    const pills = root.querySelectorAll('.sv-mtrend-pill[data-cw-param]');
+    expect(pills.length).toBeGreaterThanOrEqual(2);
+    expect(root.querySelector('.sv-mtrend-detail #svCwTrendChart')).toBeTruthy();
+    const off = root.querySelector('.sv-mtrend-pill:not(.is-on)[data-cw-param]');
+    const key = off.dataset.cwParam;
+    click(off);
+    expect(root.querySelector('.sv-mtrend-pill.is-on').dataset.cwParam).toBe(key);
+    // Filtro de tanque no rompe.
+    const tsel = root.querySelector('[data-cw-tank]');
+    tsel.value = tsel.options[1].value;
+    tsel.dispatchEvent(new window.Event('change', { bubbles: true }));
     expect(errSpy).not.toHaveBeenCalled();
   });
 

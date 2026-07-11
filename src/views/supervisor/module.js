@@ -20,6 +20,10 @@ import {
   NIVEL_RANK as MIC_NIVEL_RANK, AGGREGATE_KEYS as MIC_AGG, FORMATO_LABEL as MIC_FMT_LABEL, PATHOGEN_AGAR,
 } from '../microbiologia/data.js';
 import { petriSVG } from '../microbiologia/petri.js';
+import {
+  isCalAguaRow, calCtx, calMeasured, loadCalRanges, CAL_PARAMS, CAL_SEV,
+  calDiagnosis, calGroupTree, CAL_RISK,
+} from '../microbiologia/calagua.data.js';
 
 const { gOD, gTmp } = getters;
 const SUP_KEYS = ['Supervisor', 'supervisor', 'SUPERVISOR'];
@@ -550,6 +554,270 @@ function microTendenciasHTML(rows, state) {
     </div>`;
 }
 
+/* ============================================================
+   CALIDAD DE AGUA · modal del módulo (Tabla + Matriz + Tendencias).
+   Reusa la capa pura de la sub-vista Calidad de Agua de Microbiología
+   (calagua.data.js), acotada a las muestras que comparten corrida + módulo.
+   Muestra los parámetros fisicoquímicos por tanque y estadío.
+   ============================================================ */
+const CW_SEV_COLOR = { optimo: '#2e9e5b', vigilancia: '#d99a00', fuera: '#ef6c00', critico: '#e8303e', 'sin-rango': '#90A4AE' };
+const cwSevColor = (sev) => CW_SEV_COLOR[sev] || CW_SEV_COLOR['sin-rango'];
+const cwFmt = (v) => (v == null || isNaN(v)) ? '—' : String(Number.isInteger(v) ? v : +v.toFixed(2));
+let _svCwTrend = null; // { days, range, label, unit } de la pestaña Tendencias (dibujo post-render)
+
+/** Filas de Calidad de Agua que comparten corrida + módulo (número) con este módulo. */
+function calAguaForModule(mod, corrida) {
+  const mn = modNum(mod);
+  if (mn === null) return [];
+  const cd = corrida ? micDigits(corrida) : '';
+  return store.globalData.filter((r) => {
+    if (!isCalAguaRow(r)) return false;
+    const c = calCtx(r);
+    if (!c.modulo || +c.modulo !== mn) return false;
+    if (cd && micDigits(c.corrida) !== cd) return false;
+    return true;
+  });
+}
+/** Muestras (ctx + parámetros medidos) de un conjunto de filas de Calidad de Agua. */
+const cwSamples = (rows, ranges) => rows.map((r) => ({ ctx: calCtx(r), meas: calMeasured(r, ranges) })).filter((s) => s.meas.length);
+const cwEmpty = '<div class="empty-state" style="padding:30px">Sin muestras de calidad de agua para esta corrida y módulo.</div>';
+
+/** Vista 1 · Tabla: filas = muestras (fecha · TQ · estadío), columnas = parámetros. */
+function cwTablaHTML(rows, ranges) {
+  const samples = cwSamples(rows, ranges).sort((a, b) => (b.ctx.fecha || 0) - (a.ctx.fecha || 0));
+  if (!samples.length) return cwEmpty;
+  const present = new Set();
+  samples.forEach((s) => s.meas.forEach((m) => present.add(m.key)));
+  const params = CAL_PARAMS.filter((p) => present.has(p.key));
+  const cell = (m) => {
+    if (!m) return '<td class="muted" style="text-align:center">—</td>';
+    const col = cwSevColor(m.severity);
+    const bg = (m.severity && m.severity !== 'optimo' && m.severity !== 'sin-rango') ? `background:${col}22;` : '';
+    const warn = m.estado === 'fuera' ? ` <span style="color:${col}">⚠</span>` : '';
+    return `<td style="${bg}text-align:right;font-variant-numeric:tabular-nums" title="${esc(m.label)}${m.range ? ' · obj. ' + esc(m.range) : ''}${m.severity ? ' · ' + esc(CAL_SEV[m.severity].label) : ''}">${esc(cwFmt(m.value))}${warn}</td>`;
+  };
+  const head = `<tr><th>Fecha</th><th>TQ</th><th>Estadío</th>${params.map((p) => `<th style="text-align:right" title="${esc(p.label)}${p.unit ? ' (' + esc(p.unit) + ')' : ''}">${esc(p.label)}</th>`).join('')}</tr>`;
+  const body = samples.map((s) => {
+    const bk = Object.fromEntries(s.meas.map((m) => [m.key, m]));
+    return `<tr>
+      <td>${s.ctx.fecha ? esc(fmtShort(s.ctx.fecha)) : '—'}</td>
+      <td>${s.ctx.tq ? 'TQ ' + esc(s.ctx.tq) : '<span class="muted">—</span>'}</td>
+      <td>${esc(s.ctx.estadio || '—')}</td>
+      ${params.map((p) => cell(bk[p.key])).join('')}
+    </tr>`;
+  }).join('');
+  return `<div class="sv-micro-tablewrap"><table class="sv-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+}
+
+/** Vista 2 · Matriz: Parámetro (filas) × Tanque (columnas, con estadío en cabecera),
+ *  celda = último valor del parámetro en ese tanque, coloreado por severidad. */
+function cwMatrizHTML(rows, ranges) {
+  const samples = cwSamples(rows, ranges);
+  if (!samples.length) return cwEmpty;
+  const tankMap = new Map(); // tanque → { estadios:Set, byParam: Map(key → {m, f}) }
+  samples.forEach((s) => {
+    const tk = s.ctx.tq || '__none';
+    if (!tankMap.has(tk)) tankMap.set(tk, { estadios: new Set(), byParam: new Map() });
+    const o = tankMap.get(tk);
+    if (s.ctx.estadio) o.estadios.add(s.ctx.estadio);
+    const f = s.ctx.fecha ? +s.ctx.fecha : 0;
+    s.meas.forEach((m) => { const prev = o.byParam.get(m.key); if (!prev || f >= prev.f) o.byParam.set(m.key, { m, f }); });
+  });
+  const tanks = [...tankMap.keys()].sort((a, b) => a === '__none' ? 1 : b === '__none' ? -1 : natCmp(a, b));
+  const present = new Set();
+  samples.forEach((s) => s.meas.forEach((m) => present.add(m.key)));
+  const params = CAL_PARAMS.filter((p) => present.has(p.key));
+  const head = `<tr><th class="sv-micro-hm-rowh">Parámetro \\ Tanque</th>${tanks.map((t) => {
+    const est = [...tankMap.get(t).estadios].sort(natCmp).join(', ');
+    return `<th>${t === '__none' ? 'Sin TQ' : 'TQ ' + esc(t)}${est ? `<br><span class="muted" style="font-weight:600;font-size:10px">🦐 ${esc(est)}</span>` : ''}</th>`;
+  }).join('')}</tr>`;
+  const body = params.map((p) => {
+    const tds = tanks.map((t) => {
+      const rec = tankMap.get(t).byParam.get(p.key);
+      if (!rec) return '<td class="muted">·</td>';
+      const m = rec.m, col = cwSevColor(m.severity);
+      const st = (m.severity && m.severity !== 'optimo' && m.severity !== 'sin-rango')
+        ? ` style="background:${col}22;color:${col};font-weight:700;text-align:right;font-variant-numeric:tabular-nums"`
+        : ' style="text-align:right;font-variant-numeric:tabular-nums"';
+      return `<td${st} title="${esc(p.label)}${m.range ? ' · obj. ' + esc(m.range) : ''}${m.severity ? ' · ' + esc(CAL_SEV[m.severity].label) : ''}">${esc(cwFmt(m.value))}</td>`;
+    }).join('');
+    return `<tr><th class="sv-micro-hm-rowh">${esc(p.label)}${p.unit ? ` <span class="muted">(${esc(p.unit)})</span>` : ''}</th>${tds}</tr>`;
+  }).join('');
+  return `<div class="sv-micro-hmwrap"><table class="sv-micro-hm"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+    <div class="mic-legend" style="margin-top:8px">${['optimo', 'vigilancia', 'fuera', 'critico'].map((k) => `<span class="mic-legend-item"><span class="mic-legend-dot" style="background:${cwSevColor(k)}"></span>${esc(CAL_SEV[k].label)}</span>`).join('')}</div>`;
+}
+
+/** Serie de un parámetro: promedio por día (asc). */
+function cwParamSeries(samples, key) {
+  const byDay = new Map();
+  samples.forEach((s) => {
+    if (!s.ctx.fecha || isNaN(s.ctx.fecha)) return;
+    const m = s.meas.find((x) => x.key === key); if (!m) return;
+    const d = s.ctx.fecha, dk = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+    if (!byDay.has(dk)) byDay.set(dk, { d, label: fmtShort(d), vals: [] });
+    byDay.get(dk).vals.push(m.value);
+  });
+  return [...byDay.values()].sort((a, b) => a.d - b.d).map((o) => ({ d: o.d, label: o.label, avg: o.vals.reduce((s, v) => s + v, 0) / o.vals.length }));
+}
+
+/** Vista 3 · Tendencias: selector de parámetro en píldoras + gráfico temporal con
+ *  banda del rango objetivo. Filtro de tanque acota las series. */
+function cwTendenciasHTML(rows, ranges, state) {
+  const samples = cwSamples(rows, ranges);
+  if (!samples.length) return cwEmpty;
+  const tanks = [...new Set(samples.map((s) => s.ctx.tq).filter(Boolean))].sort(natCmp);
+  if (state.tank && !tanks.includes(state.tank)) state.tank = null;
+  const scoped = state.tank ? samples.filter((s) => s.ctx.tq === state.tank) : samples;
+  const present = new Set();
+  scoped.forEach((s) => s.meas.forEach((m) => present.add(m.key)));
+  const params = CAL_PARAMS.filter((p) => present.has(p.key));
+  const tankOpts = `<option value="">Todos los tanques</option>` + tanks.map((t) => `<option value="${esc(t)}" ${state.tank === t ? 'selected' : ''}>TQ ${esc(t)}</option>`).join('');
+  const bar = `<div class="sv-micro-filters"><label class="sv-modal-datelbl">🐟 Tanque <select class="sv-modal-select" data-cw-tank>${tankOpts}</select></label></div>`;
+  if (!params.length) return bar + '<div class="empty-state" style="padding:30px">Sin parámetros medidos para esta selección.</div>';
+  if (!state.param || !params.some((p) => p.key === state.param)) state.param = params[0].key;
+
+  // Píldora por parámetro: color de severidad de la última medición + valor.
+  const pills = params.map((p) => {
+    const ms = scoped.filter((s) => s.ctx.fecha).sort((a, b) => (a.ctx.fecha || 0) - (b.ctx.fecha || 0))
+      .map((s) => s.meas.find((m) => m.key === p.key)).filter(Boolean);
+    const last = ms[ms.length - 1];
+    const col = cwSevColor(last ? last.severity : 'sin-rango');
+    const on = p.key === state.param;
+    return `<button class="sv-mtrend-pill${on ? ' is-on' : ''}" data-cw-param="${esc(p.key)}" aria-pressed="${on}" style="--pc:${col}">
+        <span class="sv-mtrend-pdot" style="background:${col}"></span>
+        <span class="sv-mtrend-pname">${esc(p.label)}</span>
+        <span class="sv-mtrend-pval">${last ? esc(cwFmt(last.value)) : '—'}</span>
+      </button>`;
+  }).join('');
+
+  const active = params.find((p) => p.key === state.param);
+  const series = cwParamSeries(scoped, state.param);
+  const range = ranges[state.param] || null;
+  _svCwTrend = { days: series, range, label: active.label, unit: active.unit };
+  const vals = series.map((x) => x.avg);
+  const last = vals.length ? vals[vals.length - 1] : null;
+  const stat = (v) => v == null ? '—' : cwFmt(v);
+  const inRange = series.filter((x) => !range ? false : (range.min == null || x.avg >= range.min) && (range.max == null || x.avg <= range.max)).length;
+  const dayLabels = series.map((d) => d.label);
+
+  return bar + `<div class="mic-chart-title" style="margin:4px 0 8px">📈 Tendencia por parámetro <span class="muted">· promedio por día${dayLabels.length ? ` (${esc(dayLabels[0])} → ${esc(dayLabels[dayLabels.length - 1])})` : ''} · banda verde = rango objetivo · elige un parámetro</span></div>
+    <div class="sv-mtrend-pills">${pills}</div>
+    <div class="sv-mtrend-detail">
+      <div class="sv-mtrend-dhead"><span class="sv-mtrend-band" style="background:#00838f"></span><span class="sv-mtrend-dname">${esc(active.label)}${active.unit ? ` <span class="muted">(${esc(active.unit)})</span>` : ''}</span>${range ? `<span class="muted" style="font-size:11px">obj. ${esc(active.label && ranges[state.param] ? (range.min != null && range.max != null ? range.min + '–' + range.max : range.max != null ? '≤' + range.max : '≥' + range.min) : '')}</span>` : ''}</div>
+      <div class="sv-mtrend-stats">
+        <span class="sv-mtrend-kpi"><b>${stat(last)}</b>último</span>
+        <span class="sv-mtrend-kpi"><b>${stat(vals.length ? Math.min(...vals) : null)}</b>mín</span>
+        <span class="sv-mtrend-kpi"><b>${stat(vals.length ? Math.max(...vals) : null)}</b>máx</span>
+        <span class="sv-mtrend-kpi"><b>${series.length ? Math.round(inRange / series.length * 100) : 0}%</b>días en rango</span>
+      </div>
+      <div class="sv-mtrend-chart"><canvas id="svCwTrendChart"></canvas></div>
+    </div>`;
+}
+
+/* ── Calidad de Agua (Supervisor) · Panel de diagnóstico + WQI ──
+   Síntesis del módulo, siempre visible sobre las vistas. Reutiliza la capa pura
+   calDiagnosis (WQI global, fuera/crítico, top-parámetros, tanques en riesgo). */
+const CW_RISK_TO_SEV = { bajo: 'optimo', medio: 'vigilancia', alto: 'fuera', critico: 'critico', 'sin-datos': 'sin-rango' };
+function cwWqiBand(wqi) {
+  if (wqi == null) return { sev: 'sin-rango', label: 'sin datos' };
+  if (wqi >= 85) return { sev: 'optimo', label: 'Óptimo' };
+  if (wqi >= 70) return { sev: 'vigilancia', label: 'Vigilancia' };
+  if (wqi >= 50) return { sev: 'fuera', label: 'Deficiente' };
+  return { sev: 'critico', label: 'Crítico' };
+}
+function cwDiagPanelHTML(rows, ranges) {
+  const samples = cwSamples(rows, ranges);
+  if (!samples.length) return '';
+  const d = calDiagnosis(samples, ranges);
+  const band = cwWqiBand(d.wqi);
+  const gcol = cwSevColor(band.sev);
+  const gauge = `<div class="cw-gauge" style="--g:${d.wqi == null ? 0 : d.wqi};--gc:${gcol}">
+      <div class="cw-gauge-hole"><span class="cw-gauge-v">${d.wqi == null ? '—' : d.wqi}</span><span class="cw-gauge-lbl">WQI</span></div>
+    </div>
+    <span class="cw-gauge-band" style="color:${gcol}">${esc(band.label)}</span>`;
+  const topChips = d.topParams.length
+    ? d.topParams.map((p) => `<span class="cw-chip cw-chip--warn">${esc(p.label)} <b>×${p.n}</b></span>`).join('')
+    : '<span class="cw-ok">✓ todo en rango</span>';
+  const riskChips = d.riskTanks.length
+    ? d.riskTanks.slice(0, 6).map((t) => { const c = cwSevColor(CW_RISK_TO_SEV[t.risk]); return `<span class="cw-chip" style="border-color:${c};color:${c};background:${c}14">${esc(t.modulo)} · ${esc(t.label)}</span>`; }).join('')
+    : '<span class="cw-ok">✓ sin tanques en riesgo</span>';
+  const diag = `Se evaluaron <b>${d.total}</b> muestra(s) (<b>${d.evaluated}</b> medición(es) con rango objetivo). `
+    + (d.outCount ? `<b>${d.outCount}</b> fuera de rango${d.critCount ? ` (<b>${d.critCount}</b> crítica(s))` : ''}.` : 'Todas dentro de rango.');
+  return `<div class="cw-panel">
+    <div class="cw-panel-gauge">${gauge}</div>
+    <div class="cw-panel-body">
+      <p class="cw-diag">${diag}</p>
+      <div class="cw-panel-row"><span class="cw-panel-lbl">Parámetros fuera</span><div class="cw-chips">${topChips}</div></div>
+      <div class="cw-panel-row"><span class="cw-panel-lbl">Tanques en riesgo</span><div class="cw-chips">${riskChips}</div></div>
+    </div>
+  </div>`;
+}
+
+/* ── Calidad de Agua (Supervisor) · Vista "Tanques": tarjetas-instrumento ──
+   Una ficha por tanque (peor riesgo primero) con lectura digital + escala/aguja por
+   parámetro. Reutiliza calGroupTree (Módulo→Tanque, WQI/riesgo/críticos por nodo). */
+// Último valor medido por parámetro dentro de un conjunto de muestras del tanque.
+function cwLatestByParam(samples) {
+  const byParam = new Map();
+  samples.forEach((s) => {
+    const f = s.ctx.fecha ? +s.ctx.fecha : 0;
+    s.meas.forEach((m) => { const prev = byParam.get(m.key); if (!prev || f >= prev.f) byParam.set(m.key, { m, f }); });
+  });
+  return byParam;
+}
+// Escala del instrumento: dominio alrededor del rango objetivo (+60% a cada lado) →
+// posición de la aguja y de la zona objetivo en % (0–100). null si no hay rango.
+function cwScale(range, value) {
+  if (!range || value == null || isNaN(value)) return null;
+  let lo = range.min, hi = range.max;
+  if (lo == null && hi == null) return null;
+  if (lo == null) lo = Math.min(0, hi);
+  if (hi == null) hi = (lo * 2) || 1;
+  const span = (hi - lo) || Math.abs(hi) || 1;
+  const dLo = lo - span * 0.6, dHi = hi + span * 0.6;
+  const pct = (x) => Math.max(0, Math.min(100, ((x - dLo) / (dHi - dLo)) * 100));
+  return { pos: pct(value), loPct: pct(lo), hiPct: pct(hi) };
+}
+function cwTankCardHTML(t, ranges) {
+  const latest = cwLatestByParam(t.samples);
+  const params = CAL_PARAMS.filter((p) => latest.has(p.key));
+  const riskCol = cwSevColor(CW_RISK_TO_SEV[t.risk] || 'sin-rango');
+  const riskLabel = (CAL_RISK[t.risk] || {}).label || t.risk;
+  const wqi = t.wqi == null ? '—' : t.wqi;
+  const fps = params.map((p) => {
+    const m = latest.get(p.key).m;
+    const col = cwSevColor(m.severity);
+    const sc = cwScale(ranges[p.key], m.value);
+    const scaleHTML = sc
+      ? `<span class="cw-scale"><span class="cw-scale-zone" style="left:${sc.loPct}%;width:${Math.max(0, sc.hiPct - sc.loPct)}%"></span><span class="cw-scale-needle" style="left:${sc.pos}%;background:${col}"></span></span>`
+      : '<span class="cw-scale cw-scale--na">sin rango objetivo</span>';
+    return `<div class="cw-fp">
+      <span class="cw-fp-name" title="${esc(p.label)}">${esc(p.label)}</span>
+      <span class="cw-fp-val" style="color:${col}">${esc(cwFmt(m.value))}${p.unit ? `<small>${esc(p.unit)}</small>` : ''}</span>
+      ${scaleHTML}
+    </div>`;
+  }).join('');
+  return `<div class="cw-card" style="--rc:${riskCol}">
+    <div class="cw-card-head">
+      <span class="cw-card-tq">${esc(t.label)}</span>
+      <span class="cw-card-risk" style="background:${riskCol}">${esc(riskLabel)}</span>
+    </div>
+    <div class="cw-card-sub"><span class="cw-card-mod">${esc(t.modulo)}</span><span class="cw-card-wqi">WQI <b>${wqi}</b></span><span class="cw-card-n">${t.n} muestra(s)</span></div>
+    ${t.crit.length ? `<div class="cw-card-crit">${t.crit.slice(0, 5).map((c) => `<span class="cw-chip cw-chip--warn">${esc(c)}</span>`).join('')}</div>` : ''}
+    <div class="cw-fps">${fps}</div>
+  </div>`;
+}
+/** Vista 4 · Tanques: tarjetas-instrumento (peor riesgo primero). */
+function cwFichasHTML(rows, ranges) {
+  const samples = cwSamples(rows, ranges);
+  if (!samples.length) return cwEmpty;
+  const tree = calGroupTree(samples, ranges);
+  const tanks = tree.flatMap((mo) => mo.tanks.map((t) => ({ modulo: mo.label, ...t })));
+  const cards = tanks.map((t) => cwTankCardHTML(t, ranges)).join('');
+  const legend = `<div class="mic-legend" style="margin:0 0 10px">${['optimo', 'vigilancia', 'fuera', 'critico'].map((k) => `<span class="mic-legend-item"><span class="mic-legend-dot" style="background:${cwSevColor(k)}"></span>${esc(CAL_SEV[k].label)}</span>`).join('')}</div>`;
+  return `${legend}<div class="cw-fichas">${cards}</div>`;
+}
+
 export function renderModule(ctx, mod) {
   const corrida = ctx.vState.corrida || null;
   const col = colorFor(ctx.allMods.indexOf(mod));
@@ -593,6 +861,8 @@ export function renderModule(ctx, mod) {
   const biomolRows = biomolForModule(mod, corrida);
   // Microbiología (hoja "Microbiología") de la misma corrida + módulo → modal Placa/Tabla/Heatmap.
   const microRows = microForModule(mod, corrida);
+  // Calidad de Agua (hoja "Calidad de Agua") de la misma corrida + módulo → modal Tabla/Matriz/Tendencias.
+  const calAguaRows = calAguaForModule(mod, corrida);
   // Mapa tanque → lote (desde Larvicultura) para el tooltip del E.D.T.
   const tankLote = {};
   ctx.larvWin.forEach((r) => {
@@ -660,6 +930,7 @@ export function renderModule(ctx, mod) {
     <button class="sv-action-btn" data-athist-open>👨‍🔬 Historial As. Téc.${atRows.length ? ` (${atRows.length})` : ''}</button>
     ${biomolRows.length ? `<button class="sv-action-btn" data-biomol-open>🧬 Biomol (${biomolRows.length})</button>` : ''}
     ${microRows.length ? `<button class="sv-action-btn" data-micro-open>🧫 Microbiología (${microRows.length})</button>` : ''}
+    ${calAguaRows.length ? `<button class="sv-action-btn" data-cw-open>💧 Calidad de Agua (${calAguaRows.length})</button>` : ''}
     ${desinf ? `<button class="sv-action-btn" data-desinf-open>🧴 Desinfección${desinf.cumplimiento !== null ? ` (${desinf.cumplimiento}%)` : ''}</button>` : ''}
     <button class="sv-action-btn" data-modday-open>📅 Resumen del día</button>
   </div>`;
@@ -769,6 +1040,29 @@ export function renderModule(ctx, mod) {
           </div>
           <div id="svMicroBody"></div>
           <div class="mic-tt" id="svMicroTT"></div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // Modal Calidad de Agua — Tabla / Matriz (parámetro×tanque) / Tendencias (por parámetro).
+  if (calAguaRows.length) {
+    h += `<div class="sv-modal" id="svCalAguaModal" data-cwmodal>
+      <div class="sv-modal-card lv-fs-card">
+        <div class="sv-modal-head">
+          <span class="sv-modal-title">💧 Calidad de Agua — ${esc(mod)}${corrida ? ' · C' + esc(corrida) : ''}</span>
+          <button class="sv-modal-x" data-cw-close aria-label="Cerrar">✕</button>
+        </div>
+        <div class="sv-modal-body">
+          <div id="svCwPanel"></div>
+          <div class="sv-bm-modebar">
+            <span class="sv-bm-mode-label">Vista:</span>
+            <button class="sv-bm-mode-btn is-active" data-cw-mode="tabla">📋 Tabla</button>
+            <button class="sv-bm-mode-btn" data-cw-mode="fichas">🩺 Tanques</button>
+            <button class="sv-bm-mode-btn" data-cw-mode="matriz">🗺️ Matriz</button>
+            <button class="sv-bm-mode-btn" data-cw-mode="tendencias">📈 Tendencias</button>
+          </div>
+          <div id="svCwBody"></div>
         </div>
       </div>
     </div>`;
@@ -1109,6 +1403,76 @@ export function renderModule(ctx, mod) {
       bindModal(root, micOverlay, {
         openSel: '[data-micro-open]', closeSel: '[data-micro-close]',
         onOpen: () => { micMode = 'placa'; micState.tank = null; micState.dayIdx = null; micState.trendTank = null; micState.trendOpen = null; micOverlay.querySelectorAll('[data-micmode]').forEach((x) => x.classList.toggle('is-active', x.dataset.micmode === 'placa')); requestAnimationFrame(renderMic); },
+      });
+    }
+
+    // Modal Calidad de Agua (Tabla / Matriz / Tendencias) — mismo patrón que Microbiología.
+    const cwOverlay = root.querySelector('#svCalAguaModal');
+    if (cwOverlay) {
+      const cwBody = cwOverlay.querySelector('#svCwBody');
+      const cwPanel = cwOverlay.querySelector('#svCwPanel');
+      let cwMode = 'tabla';
+      const cwState = { tank: null, param: null };
+      const cwRanges = loadCalRanges();
+      /** Dibuja el gráfico del parámetro activo (Tendencias) con la banda del rango objetivo. */
+      const drawCwTrend = () => {
+        if (!_svCwTrend || !_svCwTrend.days.length) return;
+        const t = _svCwTrend;
+        const dates = t.days.map((x) => x.d);
+        const data = t.days.map((x) => x.avg);
+        const bandPlugin = {
+          id: 'cwBand',
+          beforeDatasetsDraw(chart) {
+            const r = t.range; if (!r) return;
+            const yS = chart.scales.y; if (!yS) return;
+            const { left, right, top, bottom } = chart.chartArea; const c = chart.ctx;
+            const yTop = r.max != null ? yS.getPixelForValue(r.max) : top;
+            const yBot = r.min != null ? yS.getPixelForValue(r.min) : bottom;
+            c.save(); c.fillStyle = 'rgba(46,158,91,.14)';
+            c.fillRect(left, Math.min(yTop, yBot), right - left, Math.abs(yBot - yTop)); c.restore();
+          },
+        };
+        makeChart('svCwTrendChart', {
+          type: 'line',
+          data: { labels: t.days.map((x) => x.label), datasets: [{ label: t.label, data, borderColor: '#00838f', backgroundColor: '#00838f22', tension: .3, pointRadius: 3, pointHoverRadius: 5, spanGaps: true, borderWidth: 2, fill: false }] },
+          options: {
+            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+            scales: {
+              y: { ticks: { callback: (v) => cwFmt(v) }, title: { display: !!t.unit, text: t.unit, font: { size: 11, weight: '700' } } },
+              x: { grid: { display: false }, ticks: { callback: (v, i) => dayNum(dates[i]), autoSkip: true, maxTicksLimit: 14, maxRotation: 0, minRotation: 0 }, title: { display: !!rangeLabel(dates), text: rangeLabel(dates), font: { size: 10.5, weight: '700' } } },
+            },
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${cwFmt(c.parsed.y)}${t.unit ? ' ' + t.unit : ''}` } } },
+          },
+          plugins: [bandPlugin],
+        });
+      };
+      const renderCw = () => {
+        destroyChart('svCwTrendChart');
+        if (cwMode === 'matriz') cwBody.innerHTML = cwMatrizHTML(calAguaRows, cwRanges);
+        else if (cwMode === 'tendencias') { cwBody.innerHTML = cwTendenciasHTML(calAguaRows, cwRanges, cwState); drawCwTrend(); }
+        else if (cwMode === 'fichas') cwBody.innerHTML = cwFichasHTML(calAguaRows, cwRanges);
+        else cwBody.innerHTML = cwTablaHTML(calAguaRows, cwRanges);
+      };
+      cwOverlay.querySelectorAll('[data-cw-mode]').forEach((b) => b.addEventListener('click', () => {
+        cwMode = b.dataset.cwMode;
+        cwOverlay.querySelectorAll('[data-cw-mode]').forEach((x) => x.classList.toggle('is-active', x === b));
+        renderCw();
+      }));
+      cwBody.addEventListener('change', (e) => {
+        const s = e.target.closest('[data-cw-tank]');
+        if (s) { cwState.tank = s.value || null; renderCw(); }
+      });
+      cwBody.addEventListener('click', (e) => {
+        const sp = e.target.closest('[data-cw-param]');
+        if (sp && sp.dataset.cwParam !== cwState.param) {
+          const sl = cwBody.querySelector('.sv-mtrend-pills')?.scrollLeft || 0;
+          cwState.param = sp.dataset.cwParam; renderCw();
+          const np = cwBody.querySelector('.sv-mtrend-pills'); if (np) np.scrollLeft = sl;
+        }
+      });
+      bindModal(root, cwOverlay, {
+        openSel: '[data-cw-open]', closeSel: '[data-cw-close]',
+        onOpen: () => { cwMode = 'tabla'; cwState.tank = null; cwState.param = null; if (cwPanel) cwPanel.innerHTML = cwDiagPanelHTML(calAguaRows, cwRanges); cwOverlay.querySelectorAll('[data-cw-mode]').forEach((x) => x.classList.toggle('is-active', x.dataset.cwMode === 'tabla')); requestAnimationFrame(renderCw); },
       });
     }
   };

@@ -383,6 +383,53 @@
 .lv-vcard-actions { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .lv-fs-btn { width: 21px; height: 21px; border: 1px solid var(--c-border); background: var(--c-surface); border-radius: 5px; font-size: 11px; line-height: 1; color: var(--c-text-soft); cursor: pointer; display: grid; place-items: center; padding: 0; transition: all var(--t-fast); }
 .lv-fs-btn:hover { border-color: var(--c-brand); color: var(--c-brand); background: var(--c-surface-2); }
+/* contenedor de acciones de la cabecera del gráfico (Normalizar + ampliar) */
+.sv-chart-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+/* botón Normalizar: variante de píldora con texto (no el cuadrado del ⛶) */
+.sv-norm-btn { width: auto; height: 21px; padding: 0 9px; font-size: 10.5px; font-weight: 800; letter-spacing: .02em; gap: 4px; }
+.sv-norm-btn.is-active { border-color: var(--c-brand); background: var(--c-brand); color: #fff; }
+.sv-norm-btn.is-active:hover { color: #fff; background: var(--c-brand-600, var(--c-brand)); }
+
+/* Modal Calidad de Agua: un poco más de aire entre los selectores de vista y el
+   contenido (los cuerpos de Tabla/Tanques/Matriz/Tendencias quedaban muy pegados). */
+#svCalAguaModal .sv-bm-modebar { margin-bottom: 12px; }
+
+/* ── Calidad de Agua (modal Supervisor) · Panel de diagnóstico + WQI ── */
+.cw-panel { display: flex; gap: 16px; align-items: center; padding: 12px 14px; margin-bottom: 12px; border: 1px solid var(--c-border); border-radius: 10px; background: var(--c-surface-2); }
+.cw-panel-gauge { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 0 0 auto; }
+.cw-gauge { width: 84px; height: 84px; border-radius: 50%; background: conic-gradient(var(--gc) calc(var(--g) * 1%), rgba(128,128,128,.18) 0); display: grid; place-items: center; }
+.cw-gauge-hole { width: 60px; height: 60px; border-radius: 50%; background: var(--c-surface); display: grid; place-items: center; text-align: center; line-height: 1.05; }
+.cw-gauge-v { font-size: 22px; font-weight: 800; color: var(--c-text); font-variant-numeric: tabular-nums; }
+.cw-gauge-lbl { font-size: 9px; font-weight: 800; letter-spacing: .06em; color: var(--c-text-muted); text-transform: uppercase; }
+.cw-gauge-band { font-size: 11.5px; font-weight: 800; }
+.cw-panel-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.cw-diag { margin: 0; font-size: 12.5px; color: var(--c-text-soft); }
+.cw-panel-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.cw-panel-lbl { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--c-text-muted); flex: 0 0 112px; }
+.cw-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.cw-chip { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--c-surface); border: 1px solid var(--c-border); color: var(--c-text-soft); font-variant-numeric: tabular-nums; }
+.cw-chip--warn { border-color: #ef6c0055; color: #ef6c00; background: #ef6c0012; }
+.cw-ok { font-size: 11.5px; font-weight: 700; color: #2e9e5b; }
+@media (max-width: 560px) { .cw-panel { flex-direction: column; align-items: stretch; } .cw-panel-lbl { flex-basis: auto; } }
+
+/* ── Calidad de Agua (modal Supervisor) · Tarjetas-instrumento por tanque ── */
+.cw-fichas { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.cw-card { border: 1px solid var(--c-border); border-left: 4px solid var(--rc); border-radius: 10px; padding: 10px 12px; background: var(--c-surface); }
+.cw-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cw-card-tq { font-size: 15px; font-weight: 800; color: var(--c-text); }
+.cw-card-risk { font-size: 9.5px; font-weight: 800; color: #fff; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
+.cw-card-sub { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11px; color: var(--c-text-muted); margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
+.cw-card-wqi b { color: var(--c-text); }
+.cw-card-crit { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.cw-fps { display: flex; flex-direction: column; gap: 8px; }
+.cw-fp { display: grid; grid-template-columns: 1fr auto; grid-template-areas: 'name val' 'scale scale'; gap: 2px 8px; align-items: center; }
+.cw-fp-name { grid-area: name; font-size: 11.5px; font-weight: 600; color: var(--c-text-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cw-fp-val { grid-area: val; font-size: 13.5px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.cw-fp-val small { font-size: 9.5px; font-weight: 700; color: var(--c-text-muted); margin-left: 2px; }
+.cw-scale { grid-area: scale; position: relative; height: 7px; border-radius: 4px; background: rgba(128,128,128,.16); margin-top: 2px; }
+.cw-scale-zone { position: absolute; top: 0; height: 100%; background: rgba(46,158,91,.32); border-radius: 4px; }
+.cw-scale-needle { position: absolute; top: -2px; width: 3px; height: 11px; border-radius: 2px; transform: translateX(-50%); box-shadow: 0 0 0 1px var(--c-surface); }
+.cw-scale--na { font-size: 9px; color: var(--c-text-muted); background: transparent; height: auto; margin-top: 0; }
 .lv-vcard-badge { font-size: 11px; font-weight: 900; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; color: #fff; flex-shrink: 0; }
 .lv-vcard.lv-ok .lv-vcard-badge { background: #1ec86a; }
 .lv-vcard.lv-bad .lv-vcard-badge { background: #e8303e; }

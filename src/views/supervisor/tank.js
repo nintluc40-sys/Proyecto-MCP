@@ -76,7 +76,42 @@ function lastByDay(rows, valFn) {
   return { labels: [...map.keys()], values: [...map.values()] };
 }
 
+/** Regresión isótona NO creciente (algoritmo Pool Adjacent Violators): el mejor ajuste
+ *  por mínimos cuadrados que nunca sube. Cada bloque promedia los puntos que violarían
+ *  la monotonía; la media de los bloques es no creciente de izquierda a derecha. */
+export function isotonicDecreasing(vals) {
+  const blocks = []; // { sum, cnt } · media = sum/cnt
+  for (const v of vals) {
+    let b = { sum: v, cnt: 1 };
+    while (blocks.length && blocks[blocks.length - 1].sum / blocks[blocks.length - 1].cnt < b.sum / b.cnt) {
+      const p = blocks.pop();
+      b = { sum: p.sum + b.sum, cnt: p.cnt + b.cnt };
+    }
+    blocks.push(b);
+  }
+  const out = [];
+  blocks.forEach((b) => { const m = b.sum / b.cnt; for (let i = 0; i < b.cnt; i++) out.push(m); });
+  return out;
+}
+/** Envolvente monótona decreciente conservando la posición de los huecos: la Población
+ *  es una estimación manual con picos; como la mortalidad no se revierte, la tendencia
+ *  real solo puede descender desde lo sembrado hasta el último registro. */
+export function monotoneDown(values) {
+  const idx = [], vals = [];
+  values.forEach((v, i) => { if (v !== null && v !== undefined && !isNaN(v)) { idx.push(i); vals.push(v); } });
+  if (vals.length < 2) return values.slice();
+  const fit = isotonicDecreasing(vals);
+  const out = values.slice();
+  idx.forEach((i, k) => { out[i] = fit[k]; });
+  return out;
+}
+
+// Estado del modo "Normalizar" (envolvente monótona) de Población/Supervivencia. Se
+// reinicia a false en cada render de tanque (cada tanque empieza en vista cruda).
+let _svNorm = false;
+
 export function renderTank(ctx, mod, tq) {
+  _svNorm = false; // cada tanque arranca en vista cruda
   const corrida = ctx.vState.corrida || null;
   const col = colorFor(ctx.allMods.indexOf(mod));
   const s = tankStats(ctx, mod, tq, corrida);
@@ -157,20 +192,23 @@ export function renderTank(ctx, mod, tq) {
     <button class="sv-action-btn" data-nav="larvia" data-mod="${esc(mod)}" data-tank="${esc(tq)}">🔬 Análisis Biométrico LARVIA</button>
   </div>`;
 
-  const chartCard = (key, title, canvasId, note) => `<div class="card">
+  const chartCard = (key, title, canvasId, note, norm) => `<div class="card">
       <div class="sv-chart-cardhead">
         <div class="sv-chart-title" style="margin:0">${title}</div>
-        <button class="lv-fs-btn" data-svfs="${key}" title="Ampliar gráfico" aria-label="Ampliar ${esc(title)}">⛶</button>
+        <div class="sv-chart-actions">
+          ${norm ? `<button class="lv-fs-btn sv-norm-btn${_svNorm ? ' is-active' : ''}" data-svnorm="${key}" aria-pressed="${_svNorm}" title="Normalizar: tendencia descendente sin picos" aria-label="Normalizar ${esc(title)}">📉 Normalizar</button>` : ''}
+          <button class="lv-fs-btn" data-svfs="${key}" title="Ampliar gráfico" aria-label="Ampliar ${esc(title)}">⛶</button>
+        </div>
       </div>
       <div class="sv-chart-host"><canvas id="${canvasId}"></canvas></div>
       ${note ? `<div class="sv-chart-note">${note}</div>` : ''}
     </div>`;
   html += `<div class="sv-chart-grid">
     ${chartCard('env', '💧🌡️ Oxígeno y Temperatura', 'svTankEnv')}
-    ${chartCard('pop', '👥 Población', 'svTankPop', 'ℹ️ La población es una <b>estimación manual</b> (extrapolación), por lo que pueden aparecer días con picos o saltos bruscos entre registros.')}
+    ${chartCard('pop', '👥 Población', 'svTankPop', 'ℹ️ La población es una <b>estimación manual</b> (extrapolación), por lo que pueden aparecer días con picos o saltos bruscos entre registros. Usa <b>📉 Normalizar</b> para ver la tendencia descendente sin picos.', true)}
   </div>`;
   html += `<div class="sv-chart-grid">
-    ${chartCard('sv', '📈 Supervivencia', 'svTankSv')}
+    ${chartCard('sv', '📈 Supervivencia', 'svTankSv', '', true)}
     ${chartCard('sal', '🧂 Salinidad', 'svTankSal')}
   </div>`;
 
@@ -321,6 +359,14 @@ export function renderTank(ctx, mod, tq) {
         : pop.values.map(() => null),
     };
     const sal = dailySeries([...s.tRows, ...s.lRows], gSal);
+    // Estadío por fecha (para los tooltips de Población/Supervivencia/Salinidad): última
+    // lectura no vacía del día en las filas de larvicultura del tanque. El tooltip lo
+    // muestra debajo de la fecha (afterTitle) y antes del valor.
+    const gStage = (r) => getField(r, ['Estadío', 'Estadio', 'estadío', 'estadio']);
+    const stageByDate = new Map();
+    [...s.lRows].sort((a, b) => (parseAnyDate(gFec(a)) || 0) - (parseAnyDate(gFec(b)) || 0))
+      .forEach((r) => { const f = gFec(r); const st = gStage(r); if (f && st) stageByDate.set(f, st); });
+    const stageTip = (items) => { const st = items && items[0] ? stageByDate.get(items[0].label) : null; return st ? 'Estadío: ' + st : ''; };
     // Banda objetivo de Supervivencia: zona verde ≥ 60 % + línea de umbral (TQ3).
     const svBandPlugin = {
       id: 'svSvBand',
@@ -348,21 +394,31 @@ export function renderTank(ctx, mod, tq) {
           scales: { y: { position: 'left', title: { display: true, text: 'OD' } }, y1: { position: 'right', title: { display: true, text: 'T°' }, grid: { drawOnChartArea: false } }, x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 8 } } },
           plugins: { legend: { labels: { boxWidth: 12 } } } },
       }),
-      pop: () => ({
-        type: 'line',
-        data: { labels: pop.labels, datasets: [{ label: 'Población', data: pop.values, borderColor: '#3949AB', backgroundColor: 'rgba(57,73,171,.12)', tension: .3, fill: true, pointRadius: 2 }] },
-        options: { responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { callback: (v) => Number(v).toLocaleString('es-EC') } }, x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 8 } } }, plugins: { legend: { display: false } } },
-      }),
-      sv: () => ({
-        type: 'line',
-        data: { labels: sv.labels, datasets: [{ label: 'Supervivencia (%)', data: sv.values, borderColor: '#2E7D32', backgroundColor: 'rgba(46,125,50,.12)', tension: .3, fill: true, pointRadius: 2 }] },
-        options: { responsive: true, maintainAspectRatio: false, scales: { y: { suggestedMin: 50, suggestedMax: 100, ticks: { callback: (v) => v + '%' } }, x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 8 } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { afterLabel: (c) => (c.parsed.y != null ? (c.parsed.y >= 60 ? '✓ ≥ 60% objetivo' : '! < 60% objetivo') : '') } } } },
-        plugins: [svBandPlugin],
-      }),
+      pop: () => {
+        const data = _svNorm ? monotoneDown(pop.values) : pop.values;
+        const fmtInt = (v) => Number(Math.round(v)).toLocaleString('es-EC');
+        return {
+          type: 'line',
+          data: { labels: pop.labels, datasets: [{ label: _svNorm ? 'Población (normalizada)' : 'Población', data, borderColor: '#3949AB', backgroundColor: 'rgba(57,73,171,.12)', tension: _svNorm ? .2 : .3, fill: true, pointRadius: 2 }] },
+          options: { responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { callback: (v) => Number(v).toLocaleString('es-EC') } }, x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 8 } } },
+            plugins: { legend: { display: false }, tooltip: { callbacks: { afterTitle: stageTip, afterLabel: (c) => (_svNorm && pop.values[c.dataIndex] != null ? 'registro: ' + fmtInt(pop.values[c.dataIndex]) : '') } } } },
+        };
+      },
+      sv: () => {
+        const data = _svNorm ? monotoneDown(sv.values) : sv.values;
+        const raw1 = (v) => (v == null ? '' : (Math.round(v * 10) / 10) + '%');
+        return {
+          type: 'line',
+          data: { labels: sv.labels, datasets: [{ label: _svNorm ? 'Supervivencia normalizada (%)' : 'Supervivencia (%)', data, borderColor: '#2E7D32', backgroundColor: 'rgba(46,125,50,.12)', tension: _svNorm ? .2 : .3, fill: true, pointRadius: 2 }] },
+          options: { responsive: true, maintainAspectRatio: false, scales: { y: { suggestedMin: 50, suggestedMax: 100, ticks: { callback: (v) => v + '%' } }, x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 8 } } },
+            plugins: { legend: { display: false }, tooltip: { callbacks: { afterTitle: stageTip, afterLabel: (c) => (c.parsed.y == null ? '' : (c.parsed.y >= 60 ? '✓ ≥ 60% objetivo' : '! < 60% objetivo') + (_svNorm && sv.values[c.dataIndex] != null ? ' · registro: ' + raw1(sv.values[c.dataIndex]) : '')) } } } },
+          plugins: [svBandPlugin],
+        };
+      },
       sal: () => ({
         type: 'line',
         data: { labels: sal.labels, datasets: [{ label: 'Salinidad (ppt)', data: sal.values, borderColor: '#00838F', backgroundColor: 'rgba(0,131,143,.12)', tension: .3, fill: true, pointRadius: 2 }] },
-        options: { responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { callback: (v) => v + ' ppt' } }, x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 8 } } }, plugins: { legend: { display: false } } },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { callback: (v) => v + ' ppt' } }, x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 8 } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { afterTitle: stageTip } } } },
       }),
     };
     const cfgTitle = { env: '💧🌡️ Oxígeno y Temperatura', pop: '👥 Población', sv: '📈 Supervivencia', sal: '🧂 Salinidad' };
@@ -372,14 +428,26 @@ export function renderTank(ctx, mod, tq) {
     makeChart('svTankSal', cfgs.sal());
 
     // Fullscreen de los 4 gráficos
+    let fsKey = null;
     const fsOverlay = root.querySelector('#svChartFsModal');
     if (fsOverlay) {
       const titleEl = fsOverlay.querySelector('#svChartFsTitle');
       bindModal(root, fsOverlay, {
         openSel: '[data-svfs]', closeSel: '[data-svfs-close]',
-        onOpen: (b) => { const key = b.dataset.svfs; if (!cfgs[key]) return; if (titleEl) titleEl.textContent = cfgTitle[key]; requestAnimationFrame(() => makeChart('svChartFsCanvas', cfgs[key]())); },
+        onOpen: (b) => { const key = b.dataset.svfs; if (!cfgs[key]) return; fsKey = key; if (titleEl) titleEl.textContent = cfgTitle[key]; requestAnimationFrame(() => makeChart('svChartFsCanvas', cfgs[key]())); },
       });
     }
+
+    // Modo "Normalizar" (envolvente monótona) de Población y Supervivencia. El botón vive
+    // en ambas tarjetas y comparte estado: al alternarlo se redibujan las dos series (y el
+    // fullscreen si muestra una de ellas).
+    root.querySelectorAll('[data-svnorm]').forEach((b) => b.addEventListener('click', () => {
+      _svNorm = !_svNorm;
+      root.querySelectorAll('[data-svnorm]').forEach((x) => { x.classList.toggle('is-active', _svNorm); x.setAttribute('aria-pressed', String(_svNorm)); });
+      makeChart('svTankPop', cfgs.pop());
+      makeChart('svTankSv', cfgs.sv());
+      if (fsOverlay && fsOverlay.classList.contains('sv-open') && (fsKey === 'pop' || fsKey === 'sv')) makeChart('svChartFsCanvas', cfgs[fsKey]());
+    }));
 
     // ── Modal: ICL diario ──
     const iclOverlay = root.querySelector('#svIclModal');
