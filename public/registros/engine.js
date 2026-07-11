@@ -5228,12 +5228,27 @@ function renderMad(ficha){
 // existencia/estado (llega en una tanda posterior); por ahora registra lo pegado.
 const _RINP = "padding:6px 8px;font-size:13px;border:1px solid #cbd5e1;border-radius:6px";
 const _RLBL = "display:flex;flex-direction:column;gap:3px;font-size:11px;font-weight:600;color:#475569";
+let _reproSub = "eventos"; // sub-sección activa: eventos | alta (transferencias en T4)
+function _reproNavBtn(id, label){
+  const on = (_reproSub===id);
+  const st = on ? "background:#0369a1;color:#fff;border-color:#0369a1" : "background:#fff;color:#334155;border-color:#cbd5e1";
+  return '<button type="button" onclick="madReproSub(\''+id+'\')" style="padding:6px 12px;font-size:12px;font-weight:600;border:1px solid;border-radius:6px;cursor:pointer;'+st+'">'+label+'</button>';
+}
+function madReproSub(s){ _reproSub = s; renderMadReproductivo(); }
 function renderMadReproductivo(){
   const fp = document.getElementById("fp-reproductivo");
   if(!fp) return;
+  const nav = '<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">'
+    + _reproNavBtn("eventos","📋 Desoves / Mortalidades")
+    + _reproNavBtn("alta","➕ Alta de individuo")
+    + '</div>';
+  const body = (_reproSub==="alta") ? _reproAltaHTML() : _reproEventosHTML();
+  fp.innerHTML = '<div style="max-width:680px;margin:0 auto;padding:4px 2px">' + nav + body + '</div>';
+  fixupLabels(fp);
+}
+function _reproEventosHTML(){
   const todayStr = today();
-  fp.innerHTML =
-    '<div style="max-width:680px;margin:0 auto;padding:4px 2px">'
+  return ''
     + '<h3 style="margin:6px 0 2px;font-size:15px">🦐 Registro de desoves y mortalidades</h3>'
     + '<p style="margin:0 0 12px;font-size:12px;color:#64748b">Pega los Trovan ID (uno por línea o separados por coma), elige la fecha y el tipo, y procesa. Cada evento se registra por su código.</p>'
     + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">'
@@ -5246,9 +5261,32 @@ function renderMadReproductivo(){
     +   '<button class="btn" type="button" style="font-weight:700" onclick="madReproProcess()">📋 Procesar registro</button>'
     +   '<button class="btn" type="button" onclick="madReproClear()">Limpiar</button>'
     + '</div>'
-    + '<div id="repro-report" style="margin-top:14px"></div>'
-    + '</div>';
-  fixupLabels(fp);
+    + '<div id="repro-report" style="margin-top:14px"></div>';
+}
+function _reproAltaHTML(){
+  const todayStr = today();
+  const F = function(id,label){ return '<label style="'+_RLBL+'">'+label+'<input id="'+id+'" style="'+_RINP+'"></label>'; };
+  return ''
+    + '<h3 style="margin:6px 0 2px;font-size:15px">➕ Alta de individuo</h3>'
+    + '<p style="margin:0 0 12px;font-size:12px;color:#64748b">Registra una hembra nueva en la matriz. Se crea con Estado=Vivo y su ubicación actual = la de ingreso.</p>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+    +   F("repro-a-numero","Número")
+    +   F("repro-a-trovan","Trovan ID *")
+    +   F("repro-a-color","Color del anillo")
+    +   F("repro-a-piscina","Piscina")
+    +   F("repro-a-codigo","Código genético")
+    +   F("repro-a-lote","Lote")
+    +   F("repro-a-sala","Sala de ingreso")
+    +   F("repro-a-tanque","Tanque de ingreso")
+    +   '<label style="'+_RLBL+'">📅 Fecha de ingreso<input type="date" id="repro-a-fecha" value="'+escapeHtml(todayStr)+'" style="'+_RINP+'"></label>'
+    + '</div>'
+    + '<label style="display:block;font-size:11px;font-weight:600;color:#475569;margin:10px 0 3px">Observaciones</label>'
+    + '<input id="repro-a-obs" style="'+_RINP+';width:100%;box-sizing:border-box">'
+    + '<div style="display:flex;gap:8px;align-items:center;margin-top:12px">'
+    +   '<button class="btn" type="button" style="font-weight:700" onclick="madReproAlta()">➕ Registrar individuo</button>'
+    +   '<button class="btn" type="button" onclick="madReproAltaClear()">Limpiar</button>'
+    + '</div>'
+    + '<div id="repro-a-report" style="margin-top:12px"></div>';
 }
 
 async function madReproProcess(){
@@ -5277,6 +5315,29 @@ async function madReproProcess(){
 function madReproClear(){
   const c=document.getElementById("repro-codes"); if(c) c.value="";
   const r=document.getElementById("repro-report"); if(r) r.innerHTML="";
+}
+
+async function madReproAlta(){
+  const g=function(id){ const e=document.getElementById(id); return e?e.value:""; };
+  const form={ numero:g("repro-a-numero"), trovan:g("repro-a-trovan"), color:g("repro-a-color"),
+    piscina:g("repro-a-piscina"), codigo:g("repro-a-codigo"), lote:g("repro-a-lote"),
+    sala:g("repro-a-sala"), tanque:g("repro-a-tanque"), fecha:g("repro-a-fecha"), obs:g("repro-a-obs") };
+  const res = window.__rgLib.buildAltaIndividuo(form);
+  if(!res.ok){ toast(res.error,"err",3800); return; }
+  toast("Registrando individuo…","info",1800);
+  const sent = await postPayload(res.payload, gasUrl());
+  const el=document.getElementById("repro-a-report");
+  if(sent){
+    toast("✅ Individuo "+res.trovan+" registrado.","ok",4000);
+    if(el) el.innerHTML='<div style="font-size:12px;color:#166534;font-weight:600">✅ '+escapeHtml(res.trovan)+' creado en la matriz (Estado=Vivo).</div>';
+    madReproAltaClear();
+  } else {
+    toast("No se pudo enviar a Google Sheets. Reintenta.","err",5000);
+    if(el) el.innerHTML='<div style="font-size:12px;color:#991b1b;font-weight:600">⚠️ Procesado localmente pero no se envió.</div>';
+  }
+}
+function madReproAltaClear(){
+  ["repro-a-numero","repro-a-trovan","repro-a-color","repro-a-piscina","repro-a-codigo","repro-a-lote","repro-a-sala","repro-a-tanque","repro-a-obs"].forEach(function(id){ const e=document.getElementById(id); if(e) e.value=""; });
 }
 
 function _madReproShowReport(rep, duplicates, tipo, okSent){
