@@ -1024,6 +1024,11 @@ function saveAlgHist(list){
   try{ localStorage.setItem(algHistKey(), JSON.stringify(list||[])); }
   catch(x){ toast("No se pudo guardar el historial (espacio insuficiente).","err"); }
 }
+// Id de sesión por registro de Lab. Algas (como Microbiología). Estable a lo largo de
+// ediciones → el upsert por la columna "Sesión" ACTUALIZA la fila en vez de duplicarla
+// aunque cambien Corrida/Módulo/Sistema/Área. (Requiere que el GAS upsertAlgasRows use
+// esa columna como clave, ver Sesión en buildAlgasPayload.)
+function _algNewSid(){ return "a"+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
 function pushAlgHist(data){
   const list = loadAlgHist();
   if(list.length >= ALGHIST_MAX){
@@ -2564,6 +2569,9 @@ function addToAlgHist(){
     toast("Ingresa al menos la Fecha o las Cel/mL antes de agregar al historial.","warn",4000);
     return;
   }
+  // Id de sesión: se genera una sola vez por registro y se preserva al editar (viaja por
+  // el input oculto name="sid"). El upsert por "Sesión" evita duplicados al re-sincronizar.
+  if(!data.sid) data.sid = _algNewSid();
 
   // ── Modo edición: actualiza la entrada existente en el historial ──
   if(_algEditingId){
@@ -4458,7 +4466,8 @@ function buildAlgasPayload(m, histSnapshot){
     "Lote","Dia_Proceso","Cel_ml","Protozoarios","Especie",
     "Salinidad_ppt","pH","Temperatura_C","Intensidad_Luz_%","Descartado",
     "Observaciones","Ciliados","Filamentosos","Técnico",
-    "Células Vacías","Células Semillenas","Células Alargadas","Células Llenas"
+    "Células Vacías","Células Semillenas","Células Alargadas","Células Llenas",
+    "Volumen de Despacho","Sesión"
   ];
   // safeNum: returns the parsed number (including 0) or "" for blank/invalid
   const safeNum = (v) => { if(v===""||v===null||v===undefined) return ""; const n=parseFloat(v); return isFinite(n)?n:""; };
@@ -4489,12 +4498,17 @@ function buildAlgasPayload(m, histSnapshot){
     safeNum(a.cel_vacias),
     safeNum(a.cel_semillenas),
     safeNum(a.cel_alargadas),
-    safeNum(a.cel_llenas)
+    safeNum(a.cel_llenas),
+    safeNum(a.vol_despacho),
+    sanitizeStr(a.sid || "")
   ];
   const rows = [];
   const source = Array.isArray(histSnapshot) ? histSnapshot : loadAlgHist();
   source.forEach(h => { if(h && h.data) rows.push(dataToRow(h.data)); });
-  return { sheetName:"Lab_Algas", headers, rows };
+  // Clave de upsert = SÓLO la columna "Sesión" (id estable por registro): así editar
+  // Corrida/Módulo/Sistema/Área y re-sincronizar ACTUALIZA la fila en vez de duplicarla.
+  // (Requiere que la GAS upsertAlgasRows use la columna "Sesión" como clave.)
+  return { sheetName:"Lab_Algas", headers, rows, replaceKey:true, keyCols:[headers.indexOf("Sesión")] };
 }
 
 /* ══════════════════════════════════════════
@@ -4622,7 +4636,10 @@ function renderAlgas(){
           <option value=""${(d.descarte||"")===""?" selected":""}>— No aplica —</option>
           <option value="Si"${(d.descarte||"")==="Si"?" selected":""}>Si</option>
         </select></div>
+      <div class="mf"><label>Volumen de Despacho (L)</label>
+        <input type="number" name="vol_despacho" value="${vl(d,'vol_despacho')}" placeholder="Litros" step="0.1" min="0"></div>
     </div>
+    <input type="hidden" name="sid" value="${escapeHtml(d.sid||'')}">
     <div class="meta">
       <div class="mf"><label>Área Algas</label>
         <select name="area" onchange="algAreaChange()">
@@ -4721,7 +4738,7 @@ function algHistBlock(){
     return `<div class="alg-hist-item${isEditing?' editing':''}">
       <span class="alg-hist-num">#${i+1}</span>
       <div class="alg-hist-body">
-        <div class="alg-hist-ts">📅 ${escapeHtml(ts)} · Fecha: ${escapeHtml(a.fecha||today())}${isEditing?' · <b style="color:#7c3aed">✏️ Editando</b>':''}</div>
+        <div class="alg-hist-ts">📅 ${escapeHtml(ts)} · Fecha: ${escapeHtml(a.fecha||today())}${a.sid?' · <span style="color:#64748b;font-size:10px">🔑 '+escapeHtml(String(a.sid).slice(0,7))+'</span>':''}${isEditing?' · <b style="color:#7c3aed">✏️ Editando</b>':''}</div>
         <div class="alg-hist-fields">
           ${fld("Área",       a.area)}
           ${fld("Sistema",    a.sistema)}
@@ -4740,6 +4757,7 @@ function algHistBlock(){
           ${fld("Cél. Semillenas", a.cel_semillenas)}
           ${fld("Cél. Alargadas",  a.cel_alargadas)}
           ${fld("Cél. Llenas",     a.cel_llenas)}
+          ${fld("Vol. Desp. (L)",  a.vol_despacho)}
           ${fld("Corrida L.", a.corrida_larv)}
           ${fld("Mód. L.",    a.modulo_larv)}
           ${a.descarte === "Si" ? `<span style="background:#fee2e2;color:#991b1b;font-weight:800;padding:1px 8px;border-radius:8px"><b>Descarte:</b> Si</span>` : ""}
@@ -4886,7 +4904,7 @@ function downloadBitacoraPDF(fecha){
   // Reusa pdfVal para celdas vacías (— en gris)
   const cell = (v) => (v!==undefined && v!=="" && v!==null) ? escapeHtml(String(v)) : '<span class="empty">—</span>';
 
-  const headers = ['#','Sinc.','Corrida L.','Mód. L.','Área','Sistema','Lote','Día Proc.','Especie','Cel/mL','Proto.','Ciliados','Filam.','Sal (ppt)','pH','T (°C)','Luz (%)','Descarte','Observaciones','Técnico','Cél. Vac.','Cél. Semill.','Cél. Alarg.','Cél. Llenas'];
+  const headers = ['#','Sinc.','Corrida L.','Mód. L.','Área','Sistema','Lote','Día Proc.','Especie','Cel/mL','Proto.','Ciliados','Filam.','Sal (ppt)','pH','T (°C)','Luz (%)','Descarte','Observaciones','Técnico','Cél. Vac.','Cél. Semill.','Cél. Alarg.','Cél. Llenas','Vol. Desp. (L)'];
   const rowsHtml = list
     .slice()
     .sort((a,b)=> (a.syncedAt||0) - (b.syncedAt||0))
@@ -4918,6 +4936,7 @@ function downloadBitacoraPDF(fecha){
         <td>${cell(a.cel_semillenas)}</td>
         <td>${cell(a.cel_alargadas)}</td>
         <td>${cell(a.cel_llenas)}</td>
+        <td>${cell(a.vol_despacho)}</td>
       </tr>`;
     }).join('');
 
@@ -5058,11 +5077,11 @@ function bitEdit(id){
   closeHistMenu();
   const h = getAlgLogEntry(id);
   if(!h){ toast("Registro no encontrado o expirado","warn"); return; }
-  // Vuelca el registro a la ficha de Lab. Algas, lo elimina de la bitácora
-  // (cuando el usuario vuelva a registrar/agregar al historial y sincronizar
-  // se actualizará la fila existente en Sheets vía upsert por
-  // Fecha|Corrida_Larv|Modulo_Larv|Area_Algas|Sistema|Lote|Dia_Proceso —
-  // ver upsertAlgasRows en la GAS).
+  // Vuelca el registro a la ficha de Lab. Algas, lo elimina de la bitácora. El registro
+  // conserva su "Sesión" (sid, viaja por el input oculto), así que al re-agregarlo al
+  // historial y sincronizar se ACTUALIZA la fila existente en Sheets vía upsert por la
+  // columna "Sesión" (aunque se editen Corrida/Módulo/Sistema/Área) — ver upsertAlgasRows
+  // en la GAS (debe usar "Sesión" como clave).
   _algEditingId = null;  // limpia modo edición del historial pendiente, si lo había
   saveE(curMod, "algas", Object.assign({}, h.data), false);
   removeAlgLogById(id);
