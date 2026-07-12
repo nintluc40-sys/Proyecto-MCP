@@ -4457,7 +4457,8 @@ function buildAlgasPayload(m, histSnapshot){
     "Fecha","Corrida_Larv","Modulo_Larv","Area_Algas","Sistema",
     "Lote","Dia_Proceso","Cel_ml","Protozoarios","Especie",
     "Salinidad_ppt","pH","Temperatura_C","Intensidad_Luz_%","Descartado",
-    "Observaciones","Ciliados","Filamentosos","Técnico"
+    "Observaciones","Ciliados","Filamentosos","Técnico",
+    "Células Vacías","Células Semillenas","Células Alargadas","Células Llenas"
   ];
   // safeNum: returns the parsed number (including 0) or "" for blank/invalid
   const safeNum = (v) => { if(v===""||v===null||v===undefined) return ""; const n=parseFloat(v); return isFinite(n)?n:""; };
@@ -4484,7 +4485,11 @@ function buildAlgasPayload(m, histSnapshot){
     String(a.obs || "").replace(/^[=+\-@]+/, "").slice(0, 480),
     safeNum(a.ciliados),
     safeNum(a.filamentosos),
-    sanitizeStr(a.tec || gcfg("tec","") || "")
+    sanitizeStr(a.tec || gcfg("tec","") || ""),
+    safeNum(a.cel_vacias),
+    safeNum(a.cel_semillenas),
+    safeNum(a.cel_alargadas),
+    safeNum(a.cel_llenas)
   ];
   const rows = [];
   const source = Array.isArray(histSnapshot) ? histSnapshot : loadAlgHist();
@@ -4513,7 +4518,8 @@ const ALG_SISTEMAS = {
 const ALG_OBS_OPTS = [
   "Células llenas","Células semillenas","Células Vacías","Tanque con Filos",
   "Buena división celular","Baja división celular","Tanque con espuma verde",
-  "Tanque pasado del día de uso","Células agrupadas","Grumos","Filamentosas"
+  "Tanque pasado del día de uso","Células agrupadas","Grumos","Filamentosas",
+  "Residual de Cloro","Mala desinfección"
 ];
 
 function algAreaType(area){
@@ -4660,6 +4666,16 @@ function renderAlgas(){
       <div class="mf"><label>Intensidad Luz (%)</label>
         <input type="number" name="intensidad" value="${vl(d,'intensidad')}" placeholder="40.5" step="0.1" min="0" max="100"></div>
     </div>
+    <div class="meta">
+      <div class="mf"><label>Células Vacías</label>
+        <input type="number" name="cel_vacias" value="${vl(d,'cel_vacias')}" placeholder="Conteo" step="1" min="0"></div>
+      <div class="mf"><label>Células Semillenas</label>
+        <input type="number" name="cel_semillenas" value="${vl(d,'cel_semillenas')}" placeholder="Conteo" step="1" min="0"></div>
+      <div class="mf"><label>Células Alargadas</label>
+        <input type="number" name="cel_alargadas" value="${vl(d,'cel_alargadas')}" placeholder="Conteo" step="1" min="0"></div>
+      <div class="mf"><label>Células Llenas</label>
+        <input type="number" name="cel_llenas" value="${vl(d,'cel_llenas')}" placeholder="Conteo" step="1" min="0"></div>
+    </div>
     <div class="ffoot">
       <div class="ff" style="min-width:260px;flex-basis:100%"><label>Observaciones <span style="font-weight:500;text-transform:none;color:#64748b">— selecciona las que apliquen</span></label>
         <div style="display:flex;flex-wrap:wrap;gap:6px 8px;padding:8px;background:var(--surf);border:1.5px solid var(--bdr);border-radius:10px">
@@ -4720,6 +4736,10 @@ function algHistBlock(){
           ${fld("Proto.",     a.protozoarios)}
           ${fld("Ciliados",   a.ciliados)}
           ${fld("Filam.",     a.filamentosos)}
+          ${fld("Cél. Vacías",     a.cel_vacias)}
+          ${fld("Cél. Semillenas", a.cel_semillenas)}
+          ${fld("Cél. Alargadas",  a.cel_alargadas)}
+          ${fld("Cél. Llenas",     a.cel_llenas)}
           ${fld("Corrida L.", a.corrida_larv)}
           ${fld("Mód. L.",    a.modulo_larv)}
           ${a.descarte === "Si" ? `<span style="background:#fee2e2;color:#991b1b;font-weight:800;padding:1px 8px;border-radius:8px"><b>Descarte:</b> Si</span>` : ""}
@@ -4866,7 +4886,7 @@ function downloadBitacoraPDF(fecha){
   // Reusa pdfVal para celdas vacías (— en gris)
   const cell = (v) => (v!==undefined && v!=="" && v!==null) ? escapeHtml(String(v)) : '<span class="empty">—</span>';
 
-  const headers = ['#','Sinc.','Corrida L.','Mód. L.','Área','Sistema','Lote','Día Proc.','Especie','Cel/mL','Proto.','Ciliados','Filam.','Sal (ppt)','pH','T (°C)','Luz (%)','Descarte','Observaciones','Técnico'];
+  const headers = ['#','Sinc.','Corrida L.','Mód. L.','Área','Sistema','Lote','Día Proc.','Especie','Cel/mL','Proto.','Ciliados','Filam.','Sal (ppt)','pH','T (°C)','Luz (%)','Descarte','Observaciones','Técnico','Cél. Vac.','Cél. Semill.','Cél. Alarg.','Cél. Llenas'];
   const rowsHtml = list
     .slice()
     .sort((a,b)=> (a.syncedAt||0) - (b.syncedAt||0))
@@ -4894,6 +4914,10 @@ function downloadBitacoraPDF(fecha){
         <td>${a.descarte==='Si' ? '<b style="color:#991b1b">Si</b>' : '<span class="empty">—</span>'}</td>
         <td style="text-align:left;max-width:140px;white-space:normal;word-break:break-word">${cell(a.obs)}</td>
         <td>${cell(a.tec)}</td>
+        <td>${cell(a.cel_vacias)}</td>
+        <td>${cell(a.cel_semillenas)}</td>
+        <td>${cell(a.cel_alargadas)}</td>
+        <td>${cell(a.cel_llenas)}</td>
       </tr>`;
     }).join('');
 
