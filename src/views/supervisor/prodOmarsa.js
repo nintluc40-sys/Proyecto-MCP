@@ -8,7 +8,12 @@ import { corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt } from '..
 import { fmtPop, esc } from '../../core/format.js';
 
 const fmt1 = (v) => (v === null || v === undefined) ? '—' : v.toFixed(1);
+const fmt2 = (v) => (v === null || v === undefined) ? '—' : v.toFixed(2);
 const pctTxt = (v) => (v === null || v === undefined) ? '—' : v.toFixed(1) + '%';
+// Densidad de siembra = promedio por tanque de (cantidad sembrada / 28 / 1000).
+// siembra = suma de la 1ª población por tanque; nSie = nº de tanques sembrados.
+const densSie = (siembra, nSie) => (siembra !== null && siembra !== undefined && nSie > 0)
+  ? (siembra / nSie) / 28 / 1000 : null;
 
 /** HTML de la tabla del mes en posición `pos` (incluye navegación). */
 export function prodTableHTML(months, pos) {
@@ -16,7 +21,7 @@ export function prodTableHTML(months, pos) {
   const label = monthLabelAt(mIdx);
   const corridas = corridasOfMonth(mIdx);
 
-  let body = '', sumSie = 0, sumCos = 0; const plgs = [];
+  let body = '', sumSie = 0, sumCos = 0, sumNSie = 0; const plgs = [];
   corridas.forEach((cor) => {
     const mods = modulesOfCorrida(cor);
     const stats = mods.map((m) => ({ m, ...modCorStats(m, cor) }));
@@ -26,11 +31,13 @@ export function prodTableHTML(months, pos) {
     stats.forEach((s, j) => {
       if (s.siembra) sumSie += s.siembra;
       if (s.cosecha) sumCos += s.cosecha;
+      if (s.nSie) sumNSie += s.nSie;
       if (s.plg !== null) plgs.push(s.plg);
       body += `<tr>
         <td><b>${esc(s.m)}</b></td>
         ${j === 0 ? `<td rowspan="${mods.length}" class="prod-cor">${esc(cor)}</td>` : ''}
         <td>${fmtPop(s.siembra)}</td>
+        <td>${fmt2(densSie(s.siembra, s.nSie))}</td>
         <td>${fmt1(s.plg)}</td>
         <td>${fmtPop(s.cosecha)}</td>
         <td>${pctTxt(s.superv)}</td>
@@ -44,6 +51,7 @@ export function prodTableHTML(months, pos) {
   const totalRow = `<tr class="prod-total">
       <td colspan="2">Total ${esc(label)}</td>
       <td>${fmtPop(sumSie || null)}</td>
+      <td>${fmt2(densSie(sumSie || null, sumNSie))}</td>
       <td>${fmt1(plgAvg)}</td>
       <td>${fmtPop(sumCos || null)}</td>
       <td>${pctTxt(monthSup)}</td>
@@ -63,8 +71,8 @@ export function prodTableHTML(months, pos) {
     ${slider}
     <div style="overflow:auto;margin-top:10px">
       <table class="sv-table prod-table">
-        <thead><tr><th>Módulo</th><th>Corrida</th><th>Siembra</th><th>PL/g (manual)</th><th>Cosecha</th><th>Superv.</th><th>Total del módulo</th><th>% Superv. corrida</th></tr></thead>
-        <tbody>${body || `<tr><td colspan="8" class="muted" style="text-align:center;padding:18px">Sin datos para este mes.</td></tr>`}${totalRow}</tbody>
+        <thead><tr><th>Módulo</th><th>Corrida</th><th>Siembra</th><th>Dens. siembra</th><th>PL/g (manual)</th><th>Cosecha</th><th>Superv.</th><th>Total del módulo</th><th>% Superv. corrida</th></tr></thead>
+        <tbody>${body || `<tr><td colspan="9" class="muted" style="text-align:center;padding:18px">Sin datos para este mes.</td></tr>`}${totalRow}</tbody>
       </table>
     </div>
   </div>`;

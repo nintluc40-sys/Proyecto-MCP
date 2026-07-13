@@ -86,7 +86,7 @@ export function monthLabelAt(mIdx) {
 export function modCorStats(mod, cor) {
   const rsAll = larvRows().filter((r) => getField(r, F.modulo) === mod && getField(r, F.corrida) === cor);
   const tanks = distinct(rsAll.map((r) => getField(r, F.tanque)));
-  let firstSum = 0, lastSum = 0, hasFirst = false, hasLast = false; const plgs = [];
+  let firstSum = 0, lastSum = 0, hasFirst = false, hasLast = false, nSie = 0; const plgs = [];
   tanks.forEach((tq) => {
     const rs = rsAll.filter((r) => getField(r, F.tanque) === tq)
       .sort((a, b) => (parseAnyDate(getField(a, F.fecha)) || 0) - (parseAnyDate(getField(b, F.fecha)) || 0));
@@ -95,7 +95,7 @@ export function modCorStats(mod, cor) {
     // honrando el 0 (tanque vaciado/agrupado): así no se arrastra el valor anterior.
     rs.forEach((r) => { const p = parseNum(r, F.poblacion); if (p === null || p < 0) return; if (p > 0 && first === null) first = p; last = p; });
     for (let i = rs.length - 1; i >= 0; i--) { const v = parseNum(rs[i], PLGM_KEYS); if (v !== null && v > 0) { plg = v; break; } }
-    if (first !== null) { firstSum += first; hasFirst = true; }
+    if (first !== null) { firstSum += first; hasFirst = true; nSie++; }
     if (last !== null) { lastSum += last; hasLast = true; }
     if (plg !== null) plgs.push(plg);
   });
@@ -104,5 +104,6 @@ export function modCorStats(mod, cor) {
   const plg = plgs.length ? plgs.reduce((a, b) => a + b, 0) / plgs.length : null;
   // cosecha === 0 es válido (tanque vaciado/agrupado) → superv 0, no null.
   const superv = (siembra !== null && siembra > 0 && cosecha !== null) ? Math.min(cosecha / siembra * 100, 100) : null;
-  return { siembra, cosecha, plg, superv };
+  // nSie = nº de tanques con siembra (para la densidad de siembra promedio por tanque).
+  return { siembra, cosecha, plg, superv, nSie };
 }

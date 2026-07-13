@@ -48,5 +48,18 @@ describe('modCorStats: cosecha honra el 0 (tanque vaciado/agrupado)', () => {
     expect(s.siembra).toBe(1000); // primera población real
     expect(s.cosecha).toBe(0);    // honra el 0, no arrastra 800
     expect(s.superv).toBe(0);     // 0/1000
+    expect(s.nSie).toBe(1);       // un solo tanque con siembra
+  });
+  it('nSie cuenta solo tanques con siembra real (base de la densidad de siembra)', () => {
+    store.globalData = [
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M02', Corrida: '574', Tanque: 'TQ1', 'Población': '2800', Fecha: '01/06/2026' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M02', Corrida: '574', Tanque: 'TQ2', 'Población': '1400', Fecha: '01/06/2026' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M02', Corrida: '574', Tanque: 'TQ3', 'Población': '0', Fecha: '01/06/2026' },
+    ];
+    const s = modCorStats('M02', '574');
+    expect(s.nSie).toBe(2);        // TQ3 nunca tuvo población real (>0)
+    expect(s.siembra).toBe(4200);  // 2800 + 1400
+    // densidad de siembra = (siembra/nSie)/28/1000 = (4200/2)/28/1000
+    expect((s.siembra / s.nSie) / 28 / 1000).toBeCloseTo(0.075, 6);
   });
 });
