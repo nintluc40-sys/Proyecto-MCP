@@ -7794,7 +7794,8 @@ const MIC_FORMATS = {
       { k:"tipoMuestra", l:"Tipo de muestra", type:"sel", opts:MIC_TIPO_M,   w:92, recalc:true },
       { k:"modulo",      l:"Módulo",          type:"sel", opts:MIC_MODULOS,  w:58 },
       { k:"estadio",     l:"Estadío",         type:"sel", opts:MIC_ESTADIOS, w:84 },
-      { k:"tq",          l:"TQ/N°",           type:"sel", opts:MIC_TQS_LARV, w:56 }
+      { k:"tq",          l:"TQ/N°",           type:"sel", opts:MIC_TQS_LARV, w:56 },
+      { k:"lote",        l:"Lote",            type:"txt", w:80 }
     ],
     params:["vamar","vverd","vtot","valg","vpara","vvuln","pseudo","aero","btot","bnar","hongos","entero","vlum","levad"]
   },
@@ -7804,9 +7805,20 @@ const MIC_FORMATS = {
     ctx:[
       { k:"sala", l:"Sala",  type:"sel", opts:MIC_SALAS, w:72 },
       { k:"sexo", l:"Sexo",  type:"sel", opts:MIC_SEXO,  w:80 },
-      { k:"tq",   l:"TQ/N°", type:"txt", w:56 }
+      { k:"tq",   l:"TQ/N°", type:"txt", w:56 },
+      { k:"lote", l:"Lote",  type:"txt", w:80 }
     ],
     params:["vamar","vverd","vtot","vlum","valg","vpara","vvuln","pseudo","aero","btot","bnar","hongos","entero"]
+  },
+  "mad-agua": {
+    depto:"Maduración", label:"Maduración · Agua",
+    rkeyFn:()=> "mad-agua",
+    ctx:[
+      { k:"sala", l:"Sala",  type:"sel", opts:MIC_SALAS,    w:72 },
+      { k:"tq",   l:"TQ/N°", type:"sel", opts:MIC_TQS_LARV, w:56 },
+      { k:"lote", l:"Lote",  type:"txt", w:80 }
+    ],
+    params:["vamar","vverd","vtot","valg","vpara","vvuln","pseudo","aero","btot","bnar","hongos","entero","vlum","levad"]
   },
   "mad-ensayo": {
     depto:"Maduración", label:"Maduración · Ensayo",
@@ -7894,7 +7906,8 @@ const MIC_FORMATS = {
       { k:"modulo", l:"Módulo", type:"sel", opts:MIC_MODULOS, w:58 },
       { k:"carro",  l:"Carro",  type:"txt", w:80 },
       { k:"tina",   l:"Tina",   type:"txt", w:80 },
-      { k:"etapa",  l:"Etapa",  type:"sel", opts:["","Antes","Después"], w:96 }
+      { k:"etapa",  l:"Etapa",  type:"sel", opts:["","Antes","Después"], w:96 },
+      { k:"lote",   l:"Lote",   type:"txt", w:80 }
     ],
     params:["valg","vvuln","vpara","pseudo","aero"]
   },
@@ -7941,7 +7954,7 @@ const MIC_FORMATS = {
     params:["vamar","vverd","vtot","pseudo","aero"]
   }
 };
-const MIC_FORMAT_KEYS = ["larv-muestra","reservorios","placa-amb","artemia","mad-principal","mad-ensayo","alim-vivo","ras","agua-mar","agua-limpia-mar","mad-desinf","externas","hisopados","hisopados-despacho","algas","algas-mensual","algas-r"];
+const MIC_FORMAT_KEYS = ["larv-muestra","reservorios","placa-amb","artemia","mad-principal","mad-agua","mad-ensayo","alim-vivo","ras","agua-mar","agua-limpia-mar","mad-desinf","externas","hisopados","hisopados-despacho","algas","algas-mensual","algas-r"];
 // Formatos en los que la Corrida es obligatoria para guardar/sincronizar.
 const MIC_CORRIDA_REQ = new Set(["larv-muestra"]);
 function micFormatLabel(fmtKey){ return (MIC_FORMATS[fmtKey] && MIC_FORMATS[fmtKey].label) || fmtKey || ""; }
@@ -8012,6 +8025,16 @@ const MIC_DR_BASE = {
   "mad-despacho-animal":{
     vamar:{f:100,l:100,m:500,e:1000}, vverd:{f:100,l:50,m:100,e:200}, vtot:{f:100,l:100,m:500,e:1000},
     hongos:{f:20,l:2,m:20,e:40}
+  },
+  // Maduración · Agua — muestras de agua: patógenos ×10, Hongos ×2 (umbrales base de larv-agua;
+  // Bact.Totales/Naranjas también ×10 según la regla "10 para todos los patógenos").
+  "mad-agua":{
+    vamar:{f:10,l:1000,m:5000,e:10000}, vverd:{f:10,l:100,m:200,e:300},
+    vtot:{f:10,l:1000,m:5000,e:10000},
+    valg:{f:10,l:1000,m:5000,e:10000}, vpara:{f:10,l:100,m:200,e:300}, vvuln:{f:10,l:100,m:200,e:300},
+    pseudo:{f:10,l:100,m:200,e:300}, aero:{f:10,l:1000,m:5000,e:10000},
+    btot:{f:10,l:10000,m:100000,e:1000000}, bnar:{f:10,l:1000,m:5000,e:10000},
+    hongos:{f:2,l:2,m:20,e:40}, entero:{f:1}, levad:{f:1}
   }
 };
 const MIC_LVL_TXT = { v:"Mínimo", y:"Leve", o:"Moderado", r:"Elevado" };
@@ -8119,7 +8142,7 @@ function micSessionKey(d){
 }
 
 function loadMicDraft(){
-  const def = { meta:{ fechaMuestreo:today(), fechaResultados:"", corrida:"", responsable:"", hdrModulo:"", hdrEstadio:"" }, sections:{}, activeFmt:"larv-muestra" };
+  const def = { meta:{ fechaMuestreo:today(), fechaResultados:"", corrida:"", responsable:"", hdrModulo:"", hdrEstadio:"", hdrSala:"" }, sections:{}, activeFmt:"larv-muestra" };
   try{ const raw = localStorage.getItem(MIC_DRAFT_KEY); if(raw){ const o = JSON.parse(raw); if(o && typeof o === "object")
     return { meta: Object.assign({}, def.meta, o.meta||{}), sections: o.sections || {}, activeFmt: o.activeFmt || "larv-muestra" }; } }catch(_){}
   return def;
@@ -8139,6 +8162,7 @@ function collectMicDraft(){
   // Item 3: valores de cabecera Módulo/Estadío (rellenan todas las filas).
   const _hm=document.getElementById("mic-hdr-modulo");  if(_hm) meta.hdrModulo  = sanitizeStr(_hm.value);
   const _he=document.getElementById("mic-hdr-estadio"); if(_he) meta.hdrEstadio = sanitizeStr(_he.value);
+  const _hsa=document.getElementById("mic-hdr-sala");   if(_hsa) meta.hdrSala   = sanitizeStr(_hsa.value);
   // Conserva los formatos NO visibles (solo se renderiza el activo).
   const sections = Object.assign({}, prev.sections || {});
   MIC_FORMAT_KEYS.forEach(fmtKey=>{
@@ -8367,7 +8391,7 @@ function micSectionHtml(fmtKey, draft){
   const chips = allCols.map(co=> `<span class="mic-colchip${hid.has(co.k)?' off':''}" onclick="micToggleCol('${fmtKey}','${co.k}')" title="Clic para ocultar/mostrar esta columna en el registro">${escapeHtml(co.l)}</span>`).join("");
   const thFor = (key,l)=> `<th data-colkey="${key}"${hid.has(key)?' style="display:none"':''}>${escapeHtml(l)}</th>`;
   const ths = [...fmt.ctx.map(c=>thFor(c.k,c.l)), ...fmt.params.map(pk=>thFor(pk,MIC_PARAMS[pk].l))].join("");
-  const hdrDef = { modulo: (draft.meta && draft.meta.hdrModulo) || "", estadio: (draft.meta && draft.meta.hdrEstadio) || "" };
+  const hdrDef = { modulo: (draft.meta && draft.meta.hdrModulo) || "", estadio: (draft.meta && draft.meta.hdrEstadio) || "", sala: (draft.meta && draft.meta.hdrSala) || "" };
   let rowsHtml = "";
   for(let fila=1; fila<=nRows; fila++){ rowsHtml += micRowHtml(fmt, fmtKey, fila, drows[fila-1] || {}, hid, hdrDef); }
   const canAdd = nRows < MIC_MAX_ROWS;
@@ -8406,6 +8430,8 @@ function renderMicNuevo(){
     ? `<div class="mf"><label>Módulo (todas)</label><select id="mic-hdr-modulo" onchange="micHdrFill('modulo',this.value)" title="Aplica este Módulo a TODAS las filas; luego edita las distintas">${_optSel(MIC_MODULOS, meta.hdrModulo||"")}</select></div>` : "";
   const micHdrEst = _afMic.ctx.some(c=>c.k==="estadio")
     ? `<div class="mf"><label>Estadío (todas)</label><select id="mic-hdr-estadio" onchange="micHdrFill('estadio',this.value)" title="Aplica este Estadío a TODAS las filas; luego edita las distintas">${_optSel(MIC_ESTADIOS, meta.hdrEstadio||"")}</select></div>` : "";
+  const micHdrSala = _afMic.ctx.some(c=>c.k==="sala")
+    ? `<div class="mf"><label>Sala (todas)</label><select id="mic-hdr-sala" onchange="micHdrFill('sala',this.value)" title="Aplica esta Sala a TODAS las filas; luego edita las distintas">${_optSel(MIC_SALAS, meta.hdrSala||"")}</select></div>` : "";
   const micRec = loadMicRecovery();
   const micRecBtn = micRec
     ? `<button class="btn brec" type="button" onclick="recoverMicGrid()" title="Recuperar autoguardado de ${escapeHtml(new Date(micRec.ts).toLocaleString("es-EC",{hour:"2-digit",minute:"2-digit"}))}">↩ Recuperar (${escapeHtml(new Date(micRec.ts).toLocaleString("es-EC",{hour:"2-digit",minute:"2-digit"}))})</button>`
@@ -8420,7 +8446,7 @@ function renderMicNuevo(){
         <div class="mf"><label>N° Corrida</label><input id="mic-corr" value="${escapeHtml(meta.corrida||"")}" placeholder="Ej. 562" oninput="micDraftTouch()" onchange="micCorridaChange()"></div>
         <div class="mf"><label>Responsable</label><input id="mic-resp" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="micDraftTouch()"></div>
         <div class="mf"><label>Formato</label><select id="mic-fmt-sel" onchange="micFmtChange(this.value)" style="font-weight:600">${fmtOpts}</select></div>
-        ${micHdrMod}${micHdrEst}
+        ${micHdrMod}${micHdrEst}${micHdrSala}
       </div>
       <div style="background:#f0f9ff;border:1.5px solid #bae6fd;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#075985;display:flex;align-items:center;gap:8px">
         <span style="font-size:16px">🧫</span>
@@ -8666,6 +8692,8 @@ const MIC_SHEET_HEADERS = (function(){
   // el mismo día/corrida/formato sin que uno reemplace al otro (forma parte de la
   // clave de upsert). Filas antiguas la tienen vacía → conservan su clave compuesta.
   h.push("Sesión");
+  // Lote: columna añadida al FINAL (el GAS escribe por posición; no desalinea lo existente).
+  h.push("Lote");
   return h;
 })();
 const MIC_SID_COL = MIC_SHEET_HEADERS.indexOf("Sesión");
@@ -8705,8 +8733,10 @@ function buildMicPayload(records){
     row.push(_n(br.crudo), _n(br.ufc));
     // Hisopados (despacho) — Carro / Tina
     row.push(sanitizeStr(d.carro||""), sanitizeStr(d.tina||""));
-    // Identidad de sesión (última columna). "" en sesiones heredadas (sin sid).
+    // Identidad de sesión. "" en sesiones heredadas (sin sid).
     row.push(sanitizeStr(d.sid||""));
+    // Lote (última columna; vacío en formatos sin campo Lote).
+    row.push(sanitizeStr(d.lote||""));
     return row;
   });
   return { sheetName: MIC_SHEET, headers: MIC_SHEET_HEADERS, rows, replaceKey:true, keyCols:[0,2,4,5,MIC_SID_COL] };
@@ -9004,7 +9034,8 @@ const CAL_FORMATS = {
       { k:"tipoMuestra", l:"Tipo de muestra", type:"sel", opts:["Agua"], def:"Agua", w:92 },
       { k:"modulo",      l:"Módulo",          type:"sel", opts:MIC_MODULOS,  w:58 },
       { k:"estadio",     l:"Estadío",         type:"sel", opts:MIC_ESTADIOS, w:84 },
-      { k:"tq",          l:"TQ/N°",           type:"sel", opts:MIC_TQS_LARV, w:56 }
+      { k:"tq",          l:"TQ/N°",           type:"sel", opts:MIC_TQS_LARV, w:56 },
+      { k:"lote",        l:"Lote",            type:"txt", w:80 }
     ],
     params: CAL_PARAMS_FULL
   },
@@ -9013,7 +9044,8 @@ const CAL_FORMATS = {
     ctx:[
       { k:"sala",   l:"Sala",   type:"sel", opts:MIC_SALAS, w:72 },
       { k:"estado", l:"Estado", type:"sel", opts:["","Cuarentena","Producción"], w:110 },
-      { k:"tq",     l:"TQ/N°",  type:"txt", w:56 }
+      { k:"tq",     l:"TQ/N°",  type:"txt", w:56 },
+      { k:"lote",   l:"Lote",   type:"txt", w:80 }
     ],
     params: CAL_PARAMS_FULL
   },
@@ -9636,6 +9668,7 @@ const CAL_SHEET_HEADERS = (function(){
     "Tipo de muestra","Módulo","Estadío","TQ/N°","Sala","Estado","Componente","Muestras"];
   CAL_PARAM_ORDER.forEach(pk=> h.push(CAL_PARAMS[pk].l));
   h.push("Sesión");   // id único por análisis (clave de upsert; vacío en filas heredadas)
+  h.push("Lote");     // añadida al FINAL (el GAS escribe por posición; no desalinea lo existente)
   return h;
 })();
 const CAL_SID_COL = CAL_SHEET_HEADERS.indexOf("Sesión");
@@ -9651,7 +9684,8 @@ function buildCalPayload(records){
       sanitizeStr(d.sala||""), sanitizeStr(d.estado||""), sanitizeStr(d.componente||""), sanitizeStr(d.muestras||"")
     ];
     CAL_PARAM_ORDER.forEach(pk=>{ const v=parseFloat(d[pk]); row.push(isFinite(v)?v:""); });
-    row.push(sanitizeStr(d.sid||""));   // Sesión (última columna)
+    row.push(sanitizeStr(d.sid||""));   // Sesión
+    row.push(sanitizeStr(d.lote||""));  // Lote (última columna)
     return row;
   });
   return { sheetName:CAL_SHEET, headers:CAL_SHEET_HEADERS, rows, replaceKey:true, keyCols:[0,2,4,5,CAL_SID_COL] };
@@ -9915,6 +9949,7 @@ const PAT_SHEET_HEADERS = (function(){
   PAT_GROUPS.forEach(g => g.cols.forEach(c => h.push(g.label + " — " + c.l)));
   h.push("Peso","Observaciones");
   h.push("Sesión");   // id único por análisis (clave de upsert; vacío en filas heredadas)
+  h.push("Lote");     // añadida al FINAL (el GAS escribe por posición; no desalinea lo existente)
   return h;
 })();
 const PAT_SID_COL = PAT_SHEET_HEADERS.indexOf("Sesión");
@@ -9962,7 +9997,7 @@ function collectPatDraft(){
     tbody.querySelectorAll("tr").forEach((tr,idx)=>{
       const fila=idx+1; const d={};
       const get=(k)=>{ const el=tr.querySelector(`[name="pat_${fila}_${k}"]`); return el?el.value:""; };
-      d.muestra=sanitizeStr(get("muestra")); d.sexo=sanitizeStr(get("sexo"));
+      d.muestra=sanitizeStr(get("muestra")); d.lote=sanitizeStr(get("lote")); d.sexo=sanitizeStr(get("sexo"));
       PAT_GROUP_KEYS.forEach(k=> d[k]=sanitizeStr(get(k)));
       d.peso=sanitizeStr(get("peso")); d.obs=sanitizeStr(get("obs"));
       rows.push(d);
@@ -9996,7 +10031,7 @@ function patGradoRecalc(){
     rows.push(d);
   });
   const avg=_patAverages(rows);
-  let cells=`<td class="tqc" style="background:#5b21b6!important;color:#fff;font-weight:800">Grado</td><td></td><td></td>`;
+  let cells=`<td class="tqc" style="background:#5b21b6!important;color:#fff;font-weight:800">Grado</td><td></td><td></td><td></td>`;
   PAT_GROUP_KEYS.forEach(k=>{ cells+=`<td style="font-weight:700;color:#5b21b6;background:#f5f3ff;text-align:center">${avg[k]===""?"—":avg[k]}</td>`; });
   cells+=`<td style="font-weight:700;color:#5b21b6;background:#f5f3ff;text-align:center">${avg.peso===""?"—":avg.peso}</td><td></td>`;
   foot.innerHTML=`<tr>${cells}</tr>`;
@@ -10008,7 +10043,7 @@ function patRowHtml(fila, d){
   const num=(k)=>`<td><input class="mic-in" type="text" inputmode="decimal" name="pat_${fila}_${k}" oninput="patGradoRecalc();patDraftTouch()" onpaste="patGridPaste(event)" value="${escapeHtml(d[k]||"")}" style="min-width:54px;text-align:center"></td>`;
   const sexo=`<td><select class="mic-in" name="pat_${fila}_sexo" oninput="patDraftTouch()" onpaste="patGridPaste(event)" style="min-width:80px">`
     + ["","Macho","Hembra"].map(o=>`<option value="${o}"${(d.sexo||"")===o?" selected":""}>${o||"—"}</option>`).join("") + `</select></td>`;
-  let cells = txt("muestra",120,"Muestra") + sexo;
+  let cells = txt("muestra",120,"Muestra") + txt("lote",90,"Lote") + sexo;
   PAT_GROUP_KEYS.forEach(k=> cells += num(k));
   cells += num("peso") + txt("obs",160,"Observaciones");
   return `<tr><td class="tqc" style="font-size:10px;min-width:30px;text-align:center">${fila}</td>${cells}</tr>`;
@@ -10099,6 +10134,7 @@ function renderPatNuevo(){
           <tr>
             <th class="tqh" rowspan="2" style="min-width:30px">#</th>
             <th rowspan="2">Muestra</th>
+            <th rowspan="2">Lote</th>
             <th rowspan="2">Sexo</th>
             ${grpHead}
             <th rowspan="2">Peso</th>
@@ -10197,7 +10233,8 @@ function buildPatPayload(records){
     ];
     PAT_GROUP_KEYS.forEach(k=> row.push(_n(d[k])));
     row.push(_n(d.peso), sanitizeStr(d.obs||""));
-    row.push(sanitizeStr(d.sid||""));   // Sesión (última columna)
+    row.push(sanitizeStr(d.sid||""));   // Sesión
+    row.push(sanitizeStr(d.lote||""));  // Lote (última columna)
     return row;
   });
   return { sheetName:PAT_SHEET, headers:PAT_SHEET_HEADERS, rows, replaceKey:true, keyCols:[0,2,PAT_SID_COL] };
