@@ -1186,6 +1186,8 @@ const ALG_EXPORT_COLS = [
   ['Protozoarios', 'protozoarios'], ['Especie', 'especie'], ['Salinidad_ppt', 'salinidad'], ['pH', 'ph'],
   ['Temperatura_C', 'temp'], ['Intensidad_Luz_%', 'luz'], ['Descartado', 'descartado'],
   ['Ciliados', 'ciliados'], ['Filamentosos', 'filamentosos'], ['Observaciones', 'obs'], ['Técnico', 'tecnico'],
+  ['Células Vacías', 'cel_vacias'], ['Células Semillenas', 'cel_semillenas'], ['Células Alargadas', 'cel_alargadas'],
+  ['Células Llenas', 'cel_llenas'], ['Volumen de Despacho', 'vol_despacho'],
 ];
 
 /** Filas de la categoría (subvista) activa respetando los filtros activos, SIN el mes
