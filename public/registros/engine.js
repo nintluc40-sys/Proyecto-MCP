@@ -4533,7 +4533,9 @@ const ALG_OBS_OPTS = [
   "Células llenas","Células semillenas","Células Vacías","Tanque con Filos",
   "Buena división celular","Baja división celular","Tanque con espuma verde",
   "Tanque pasado del día de uso","Células agrupadas","Grumos","Filamentosas",
-  "Residual de Cloro","Mala desinfección"
+  "Residual de Cloro","Mala desinfección",
+  "Células Deformes","Células Reventadas","Células con Agregaciones a la Pared Celular",
+  "Tanque Despachado en la Mañana"
 ];
 
 function algAreaType(area){
@@ -7854,6 +7856,12 @@ const MIC_FORMATS = {
     ctx:[],
     params:["vamar","vverd","vtot","valg","vpara","vvuln","aero","pseudo","btot"]
   },
+  "agua-limpia-mar": {
+    depto:"Maduración", label:"Agua Limpia y Mar", fixedTipo:"Agua limpia y mar",
+    rkeyFn:()=> "agua-limpia-mar",
+    ctx:[],
+    params:["vamar","vverd","vtot","valg","vpara","vvuln","aero","pseudo","btot"]
+  },
   "externas": {
     depto:"Otras", label:"Muestras externas",
     rkeyFn:()=> "larv-animal",
@@ -7899,15 +7907,17 @@ const MIC_FORMATS = {
     params:["vamar","vverd","vtot","pseudo","aero","hongos","levad"]
   },
   "mad-desinf": {
-    depto:"Maduración", label:"Maduración · Desinfección",
-    rkeyFn:()=> "mad-agua",
+    depto:"Maduración", label:"Maduración · Despacho",
+    // El factor depende del tipo de muestra: las de agua ("Agua del huevo…") usan el set
+    // mad-despacho-agua (×10); las de organismo ("Huevo…", "Nauplio…") usan mad-despacho-animal (×100).
+    rkeyFn:(d)=> /^Agua/i.test((d && d.tipoMuestra) || "") ? "mad-despacho-agua" : "mad-despacho-animal",
     ctx:[
       { k:"origen",      l:"Origen",  type:"txt", w:100 },
       { k:"siembra",     l:"Siembra", type:"txt", w:80 },
       { k:"corrida",     l:"Corrida", type:"txt", w:70 },
-      { k:"tipoMuestra", l:"Muestra", type:"sel", opts:MIC_MADDES_MUESTRA, w:240 }
+      { k:"tipoMuestra", l:"Muestra", type:"sel", opts:MIC_MADDES_MUESTRA, w:240, recalc:true }
     ],
-    params:["vamar","vverd","vtot","vlum"]
+    params:["vamar","vverd","vtot","hongos","vlum"]
   },
   "algas-mensual": {
     depto:"Otras", label:"Algas Mensual",
@@ -7931,7 +7941,7 @@ const MIC_FORMATS = {
     params:["vamar","vverd","vtot","pseudo","aero"]
   }
 };
-const MIC_FORMAT_KEYS = ["larv-muestra","reservorios","placa-amb","artemia","mad-principal","mad-ensayo","alim-vivo","ras","agua-mar","mad-desinf","externas","hisopados","hisopados-despacho","algas","algas-mensual","algas-r"];
+const MIC_FORMAT_KEYS = ["larv-muestra","reservorios","placa-amb","artemia","mad-principal","mad-ensayo","alim-vivo","ras","agua-mar","agua-limpia-mar","mad-desinf","externas","hisopados","hisopados-despacho","algas","algas-mensual","algas-r"];
 // Formatos en los que la Corrida es obligatoria para guardar/sincronizar.
 const MIC_CORRIDA_REQ = new Set(["larv-muestra"]);
 function micFormatLabel(fmtKey){ return (MIC_FORMATS[fmtKey] && MIC_FORMATS[fmtKey].label) || fmtKey || ""; }
@@ -7985,11 +7995,23 @@ const MIC_DR_BASE = {
     vamar:{f:1,l:1,m:2,e:10}, vverd:{f:1,l:1,m:2,e:10}, vtot:{f:1,l:1,m:2,e:10},
     pseudo:{f:1,l:1,m:2,e:10}, aero:{f:1,l:1,m:2,e:10}, btot:{f:1,l:10,m:100,e:500}
   },
-  "mad-agua":{
+  // Agua Limpia y Mar: umbrales base de "mad-agua", factores propios (amar/verd/tot y
+  // vibrios ×200; Pseudomonas/Aeromonas/Bact.Totales/Naranjas ×100; Hongos ×500).
+  "agua-limpia-mar":{
+    vamar:{f:200,l:100,m:500,e:1000}, vverd:{f:200,l:50,m:100,e:200}, vtot:{f:200,l:100,m:500,e:1000},
+    valg:{f:200,l:100,m:500,e:1000}, vpara:{f:200,l:50,m:100,e:200}, vvuln:{f:200,l:50,m:100,e:200},
+    pseudo:{f:100,l:50,m:100,e:200}, aero:{f:100,l:100,m:500,e:1000},
+    btot:{f:100,l:10000,m:100000,e:1000000}, bnar:{f:100,l:100,m:500,e:1000}, hongos:{f:500,l:2,m:20,e:40}
+  },
+  // Maduración · Despacho — muestras de AGUA (×10 patógenos, ×2 hongos).
+  "mad-despacho-agua":{
     vamar:{f:10,l:100,m:500,e:1000}, vverd:{f:10,l:50,m:100,e:200}, vtot:{f:10,l:100,m:500,e:1000},
-    valg:{f:10,l:100,m:500,e:1000}, vpara:{f:10,l:50,m:100,e:200}, vvuln:{f:10,l:50,m:100,e:200},
-    pseudo:{f:10,l:50,m:100,e:200}, aero:{f:10,l:100,m:500,e:1000},
-    btot:{f:1000,l:10000,m:100000,e:1000000}, bnar:{f:1000,l:100,m:500,e:1000}, hongos:{f:20,l:2,m:20,e:40}
+    hongos:{f:2,l:2,m:20,e:40}
+  },
+  // Maduración · Despacho — muestras de ORGANISMO (×100 patógenos, ×20 hongos).
+  "mad-despacho-animal":{
+    vamar:{f:100,l:100,m:500,e:1000}, vverd:{f:100,l:50,m:100,e:200}, vtot:{f:100,l:100,m:500,e:1000},
+    hongos:{f:20,l:2,m:20,e:40}
   }
 };
 const MIC_LVL_TXT = { v:"Mínimo", y:"Leve", o:"Moderado", r:"Elevado" };
@@ -8767,7 +8789,7 @@ function micDeleteSession(k){
 function renderMicFactores(){
   const fp = document.getElementById("fp-micfact"); if(!fp) return;
   const F = loadMicFactors();
-  const areaLabel = { "larv-animal":"Larvicultura · Animal", "larv-agua":"Larvicultura · Agua", "mad-reprod":"Maduración · Reproductores", "ambiental":"Ambiental / Hisopados / Algas swab (×1)", "artemia":"Artemia (×20)", "ras-agua":"Maduración · RAS (Agua)", "algas":"Algas Mensual / R (×1)", "mad-agua":"Maduración · Agua / Desinfección" };
+  const areaLabel = { "larv-animal":"Larvicultura · Animal", "larv-agua":"Larvicultura · Agua", "mad-reprod":"Maduración · Reproductores", "ambiental":"Ambiental / Hisopados / Algas swab (×1)", "artemia":"Artemia (×20)", "ras-agua":"Maduración · RAS (Agua)", "algas":"Algas Mensual / R (×1)", "agua-limpia-mar":"Agua Limpia y Mar", "mad-despacho-agua":"Maduración · Despacho (Agua)", "mad-despacho-animal":"Maduración · Despacho (Organismo)" };
   const blocks = Object.keys(MIC_DR_BASE).map(ak=>{
     const rows = Object.keys(MIC_DR_BASE[ak]).map(pk=>{
       const r = (F[ak] && F[ak][pk]) || {};

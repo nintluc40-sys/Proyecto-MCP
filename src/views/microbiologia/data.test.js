@@ -77,6 +77,14 @@ describe('classifyFormato', () => {
     expect(classifyFormato('Hisopados (despacho)')).toBe('hisopados-despacho');
     expect(classifyFormato('Algas Mensual')).toBe('algas-mensual');
   });
+  it('formatos nuevos: Agua Limpia y Mar + Maduración Despacho (sin chocar con Hisopados despacho)', () => {
+    expect(classifyFormato('Agua Limpia y Mar')).toBe('agua-limpia-mar');
+    expect(classifyFormato('Maduración · Despacho')).toBe('mad-desinf');
+    // "Despacho" a secas (Hisopados) NO debe caer en mad-desinf.
+    expect(classifyFormato('Hisopados (despacho)')).toBe('hisopados-despacho');
+    // Datos antiguos con el nombre legado siguen mapeando a mad-desinf.
+    expect(classifyFormato('Maduración · Desinfección')).toBe('mad-desinf');
+  });
   it('"" si vacío o no reconocido', () => {
     expect(classifyFormato('')).toBe('');
     expect(classifyFormato('Algo raro')).toBe('');

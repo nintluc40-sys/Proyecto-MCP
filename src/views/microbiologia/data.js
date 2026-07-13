@@ -140,7 +140,8 @@ export const MIC_FORMATS = {
   'alim-vivo':          { label: 'Maduración · Alimento vivo',    area: () => 'larv-animal' },
   ras:                  { label: 'Maduración · RAS',              area: () => 'ras-agua' },
   'agua-mar':           { label: 'Maduración · Agua de Mar',      area: () => 'larv-agua' },
-  'mad-desinf':         { label: 'Maduración · Desinfección',     area: () => 'mad-agua' },
+  'agua-limpia-mar':    { label: 'Agua Limpia y Mar',             area: () => 'agua-limpia-mar' },
+  'mad-desinf':         { label: 'Maduración · Despacho',         area: () => 'mad-agua' },
   externas:             { label: 'Muestras externas',            area: () => 'larv-animal' },
   hisopados:            { label: 'Hisopados',                    area: () => 'ambiental' },
   'hisopados-despacho': { label: 'Hisopados (despacho)',         area: () => 'ambiental' },
@@ -155,7 +156,7 @@ const _FMT_BY_FOLDED = Object.fromEntries(Object.entries(MIC_FORMATS).map(([k, v
 export const DEPARTAMENTOS = ['Larvicultura', 'Maduración', 'Otros'];
 export const DEPTO_FORMATS = {
   'Larvicultura': ['larv-muestra', 'reservorios', 'placa-amb', 'artemia'],
-  'Maduración': ['mad-principal', 'mad-ensayo', 'alim-vivo', 'ras', 'agua-mar', 'mad-desinf'],
+  'Maduración': ['mad-principal', 'mad-ensayo', 'alim-vivo', 'ras', 'agua-mar', 'agua-limpia-mar', 'mad-desinf'],
   'Otros': ['externas', 'hisopados', 'hisopados-despacho', 'algas', 'algas-mensual', 'algas-r'],
 };
 const _DEPTO_BY_FMT = {};
@@ -173,7 +174,11 @@ export function classifyFormato(raw) {
   if (k.includes('placa') || k.includes('ambiental')) return 'placa-amb';
   if (k.includes('artemia')) return 'artemia';
   if (k.includes('alimento')) return 'alim-vivo';
+  if (k.includes('agua limpia')) return 'agua-limpia-mar';
   if (k.includes('agua de mar')) return 'agua-mar';
+  // "Maduración · Despacho" (nuevo nombre) y "Maduración · Desinfección" (legado) → mad-desinf.
+  // Debe ir ANTES de la regla genérica de "despacho" (que mapea a Hisopados despacho).
+  if (k.includes('maduracion') && k.includes('despacho')) return 'mad-desinf';
   if (k.includes('desinfec')) return 'mad-desinf';
   if (k.includes('ensayo')) return 'mad-ensayo';
   if (k.includes('ras')) return 'ras';
@@ -237,6 +242,14 @@ const MIC_DR_BASE = {
     pseudo: { l: 1, m: 2, e: 10 }, aero: { l: 1, m: 2, e: 10 }, btot: { l: 10, m: 100, e: 500 },
   },
   'mad-agua': {
+    vamar: { l: 100, m: 500, e: 1000 }, vverd: { l: 50, m: 100, e: 200 }, vtot: { l: 100, m: 500, e: 1000 },
+    valg: { l: 100, m: 500, e: 1000 }, vpara: { l: 50, m: 100, e: 200 }, vvuln: { l: 50, m: 100, e: 200 },
+    pseudo: { l: 50, m: 100, e: 200 }, aero: { l: 100, m: 500, e: 1000 },
+    btot: { l: 10000, m: 100000, e: 1000000 }, bnar: { l: 100, m: 500, e: 1000 }, hongos: { l: 2, m: 20, e: 40 },
+  },
+  // Agua Limpia y Mar: mismos umbrales UFC que mad-agua (el factor ya viene aplicado en la
+  // columna UFC de la hoja; aquí solo se usan l/m/e para clasificar).
+  'agua-limpia-mar': {
     vamar: { l: 100, m: 500, e: 1000 }, vverd: { l: 50, m: 100, e: 200 }, vtot: { l: 100, m: 500, e: 1000 },
     valg: { l: 100, m: 500, e: 1000 }, vpara: { l: 50, m: 100, e: 200 }, vvuln: { l: 50, m: 100, e: 200 },
     pseudo: { l: 50, m: 100, e: 200 }, aero: { l: 100, m: 500, e: 1000 },
