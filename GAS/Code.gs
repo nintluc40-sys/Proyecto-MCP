@@ -910,7 +910,48 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.p === "pdf") {
     return evPdfPage(e.parameter.t || "", e.parameter.m || "");
   }
+  if (e && e.parameter && e.parameter.p === "rows") {
+    return sheetRows(e.parameter.sheet || "", e.parameter.t || "");
+  }
   return ContentService.createTextOutput("FichasLarv-OK");
+}
+
+// ── Lectura de filas de una hoja (para clientes SIN store del dashboard, como
+// el monolito standalone). GET ?p=rows&sheet=<nombre>&t=<token>. Devuelve JSON
+// {ok, sheet, headers, rows} con cada fila como objeto {cabecera: valor}. Sólo
+// hojas de ALLOWED; respeta SHARED_TOKEN si está configurado (mismo gate que
+// doPost). Fechas → yyyy-MM-dd. Tope 5000 filas.
+function sheetRows(name, t) {
+  var out = { ok: false, sheet: name, headers: [], rows: [] };
+  try {
+    if (SHARED_TOKEN && String(t) !== SHARED_TOKEN) { out.error = "No autorizado"; return _evJson(out); }
+    if (ALLOWED.indexOf(name) === -1) { out.error = "Hoja no permitida"; return _evJson(out); }
+    var ss = SpreadsheetApp.openById(SS_ID);
+    var ws = ss.getSheetByName(name);
+    if (!ws) { out.ok = true; return _evJson(out); }
+    var vals = ws.getDataRange().getValues();
+    if (vals.length < 1) { out.ok = true; return _evJson(out); }
+    var headers = vals[0].map(function (h) { return String(h == null ? "" : h).trim(); });
+    var rows = [];
+    for (var i = 1; i < vals.length && rows.length < 5000; i++) {
+      var r = vals[i], obj = {}, any = false;
+      for (var c = 0; c < headers.length; c++) {
+        var key = headers[c]; if (!key) continue;
+        var cell = _rowsCell(r[c]);
+        if (cell !== "") any = true;
+        obj[key] = cell;
+      }
+      if (any) rows.push(obj);
+    }
+    out.ok = true; out.headers = headers; out.rows = rows;
+    return _evJson(out);
+  } catch (err) {
+    out.error = "Error al leer la hoja"; return _evJson(out);
+  }
+}
+function _rowsCell(v) {
+  if (v instanceof Date) { return Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd"); }
+  return v == null ? "" : v;
 }
 
 // ── Evidencias F2: lista las fotos de un módulo (opcionalmente de una fecha) ──
