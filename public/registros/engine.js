@@ -7860,7 +7860,7 @@ const MIC_FORMATS = {
     depto:"Maduración", label:"Agua Limpia y Mar", fixedTipo:"Agua limpia y mar",
     rkeyFn:()=> "agua-limpia-mar",
     ctx:[],
-    params:["vamar","vverd","vtot","valg","vpara","vvuln","aero","pseudo","btot"]
+    params:["vamar","vverd","vtot","valg","vpara","vvuln","aero","pseudo","btot","bnar","hongos"]
   },
   "externas": {
     depto:"Otras", label:"Muestras externas",
