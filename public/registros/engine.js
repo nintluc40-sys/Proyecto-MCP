@@ -10417,7 +10417,7 @@ const LIMITS = {
   // (otro sistema, vacías) + cols 37–41 (Despacho) + cols 42–47 (Cal. Agua).
   datos:   { maxRows: 30,  maxCols: 50 },
   control: { maxRows: 300, maxCols: 8  },
-  algas:   { maxRows: 500, maxCols: 20 },
+  algas:   { maxRows: 500, maxCols: 28 },
   mad:     { maxRows: 500, maxCols: 25 },
   biomol:  { maxRows: 100, maxCols: 20 },
   ast:     { maxRows: 100, maxCols: 25 },
@@ -10578,7 +10578,7 @@ function doPost(e) {
     } else if (ws.getLastRow() === 0) {
       fmtHeader(ws, (payload.headers || []).map(function(h){ return cleanCell(h); }), isCtrl);
     }
-    if (isMicro || isCal || isPat) ensureHeaders(ws, payload.headers || []);
+    if (isMicro || isCal || isPat || isAlgas) ensureHeaders(ws, payload.headers || []);
 
     // Borrado explícito de sesiones (Microbiología / Calidad de Agua / Patología
     // en Fresco): permite VACIAR de la hoja una sesión completa. Un upsert/replace
@@ -10597,7 +10597,7 @@ function doPost(e) {
 
     // Routing según hoja destino:
     //   • Maduración (3 hojas): UPSERT por clave compuesta (ver madKeyCols).
-    //   • Lab_Algas: UPSERT por (Fecha, Corrida_Larv, Modulo_Larv, Area_Algas, Sistema, Lote, Dia_Proceso).
+    //   • Lab_Algas: UPSERT por la columna "Sesión" (id estable por registro).
     //   • BIOMOL: APPEND puro — cada registro de diagnóstico es independiente.
     //   • Registro_Supervisión (AsT): UPSERT por columna ID estable — al editar
     //     y re-sincronizar un registro, su fila se REEMPLAZA (no se duplica).
@@ -11071,79 +11071,67 @@ function upsertAstRows(ws, newRows) {
   return { upserted: updated, appended: added };
 }
 
-// ── Upsert Lab_Algas ──────────────────────────────────────
-// Clave compuesta: Fecha | Corrida_Larv | Modulo_Larv | Area_Algas |
-//                  Sistema | Lote | Dia_Proceso (cols 0..6).
-//   - Si la clave coincide con una fila ya existente, se hace merge:
-//     cada columna NO clave se reemplaza por el nuevo valor (si no está vacío)
-//     o se conserva el valor anterior cuando el nuevo viene vacío.
-//   - Si no existe la clave, la fila se añade al final.
-// Esto permite que al editar un registro desde la Bitácora (o desde el
-// Historial pendiente) y volver a sincronizar, NO se duplique la fila en
-// Sheets — la información existente se actualiza en sitio.
-// IMPORTANTE: Sistema/Lote/Dia_Proceso forman parte de la clave porque varios
-// registros del MISMO día/corrida/módulo/área pero distinto sistema (FM, FP,
-// M1…, PBR…), lote o día de proceso son registros DISTINTOS. Antes la clave
-// sólo usaba cols 0..3, por lo que esos registros colapsaban en una sola fila
-// (sólo sobrevivía el último valor de cada campo) al sincronizar el historial.
+// ── Upsert Lab_Algas (por "Sesión") ───────────────────────
+// Clave = columna "Sesión" (ÚLTIMA columna del payload; id estable por registro,
+// generado en el cliente). Al editar un registro —aunque cambien Corrida/Módulo/
+// Sistema/Área/Lote/Día— y re-sincronizar, se ACTUALIZA la misma fila en vez de
+// duplicarla. Merge: las columnas de datos toman el nuevo valor (si no viene vacío);
+// la columna Sesión se preserva. Filas heredadas sin Sesión no se emparejan (se
+// conservan). Sustituye la clave compuesta anterior (Fecha|Corrida|Módulo|Área|
+// Sistema|Lote|Día), que hacía que editar cualquiera de esos campos creara fila nueva.
+// NOTA: algasRowKey / algasInKey (abajo) quedan sin uso con esta clave.
 function upsertAlgasRows(ws, newRows) {
-  var lastR = ws.getLastRow();
-  var data  = ws.getDataRange().getValues();
-  var map   = {};
+  var widest = 0;
+  for (var wi = 0; wi < newRows.length; wi++) if (newRows[wi].length > widest) widest = newRows[wi].length;
+  if (widest > ws.getMaxColumns()) ws.insertColumnsAfter(ws.getMaxColumns(), widest - ws.getMaxColumns());
+
+  var sidCol = widest - 1;                    // "Sesión" = ÚLTIMA columna del payload
+  var data   = ws.getDataRange().getValues();
+
+  // Mapa: valor de Sesión existente → fila (las filas heredadas sin Sesión no entran).
+  var map = {};
   for (var i = 1; i < data.length; i++) {
-    var k = algasRowKey(data[i]);
-    if (k) map[k] = { row: i + 1, idx: i };
+    var sv = (sidCol < data[i].length) ? String(data[i][sidCol] == null ? "" : data[i][sidCol]).trim() : "";
+    if (sv) map[sv] = { row: i + 1, idx: i };
   }
-  var keySet     = {0:1, 1:1, 2:1, 3:1, 4:1, 5:1, 6:1};
-  var toAdd      = [];
-  var updated    = 0;
-  var pendingMap = {};
+
+  var toAdd = [], pending = {}, updated = 0;
   for (var r = 0; r < newRows.length; r++) {
-    var nr    = newRows[r];
-    var k2    = algasInKey(nr);
-    var entry = map[k2];
+    var nr = newRows[r];
+    while (nr.length < widest) nr.push("");
+    var sid   = String(nr[sidCol] == null ? "" : nr[sidCol]).trim();
+    var entry = sid ? map[sid] : null;
+
     if (entry && entry.row > 0) {
-      // ── Fila existente: merge campo a campo ─────────────
-      var ex     = data[entry.idx];
-      var nc     = Math.max(ex.length, nr.length);
-      var merged = [];
+      // Misma Sesión → merge: datos toman el nuevo valor no vacío; Sesión se preserva.
+      var ex = data[entry.idx], nc = Math.max(ex.length, nr.length), merged = [];
       for (var c = 0; c < nc; c++) {
-        var e      = c < ex.length ? ex[c] : "";
-        var n      = c < nr.length ? nr[c] : "";
+        var e = c < ex.length ? ex[c] : "";
+        var n = c < nr.length ? nr[c] : "";
         var nEmpty = (n === "" || n === null || n === undefined);
-        if (keySet[c]) {
-          // Las columnas clave preservan el valor previo (son la identidad)
-          merged.push((e === "" || e === null || e === undefined) ? n : e);
-        } else {
-          // Las columnas de datos toman el nuevo valor; si viene vacío,
-          // conserva el anterior (no se borra accidentalmente).
-          merged.push(nEmpty ? e : n);
-        }
+        if (c === sidCol) merged.push((e === "" || e === null || e === undefined) ? n : e);
+        else              merged.push(nEmpty ? e : n);
       }
       ws.getRange(entry.row, 1, 1, merged.length).setValues([merged]);
       fmtData(ws, entry.row, 1, merged.length, false);
       updated++;
-    } else if (pendingMap[k2] !== undefined) {
-      // ── Clave duplicada dentro del mismo batch: fusionar ──
-      var pi = pendingMap[k2];
+    } else if (sid && pending[sid] !== undefined) {
+      // Misma Sesión repetida dentro del mismo lote → fusiona los no vacíos.
+      var pi = pending[sid];
       for (var pc = 0; pc < nr.length; pc++) {
-        if (!keySet[pc] && nr[pc] !== "" && nr[pc] !== null && nr[pc] !== undefined) {
-          toAdd[pi][pc] = nr[pc];
-        }
+        if (pc !== sidCol && nr[pc] !== "" && nr[pc] !== null && nr[pc] !== undefined) toAdd[pi][pc] = nr[pc];
       }
     } else {
-      // ── Fila nueva ────────────────────────────────────────
-      pendingMap[k2] = toAdd.length;
+      if (sid) { pending[sid] = toAdd.length; map[sid] = { row: -1, idx: -1 }; }
       toAdd.push(nr.slice());
-      map[k2] = { row: -1, idx: -1 };
     }
   }
+
   var added = 0;
   if (toAdd.length > 0) {
     var startRow = lastRow(ws) + 1;
-    var nc2 = toAdd[0].length;
-    ws.getRange(startRow, 1, toAdd.length, nc2).setValues(toAdd);
-    fmtData(ws, startRow, toAdd.length, nc2, false);
+    ws.getRange(startRow, 1, toAdd.length, widest).setValues(toAdd);
+    fmtData(ws, startRow, toAdd.length, widest, false);
     added = toAdd.length;
   }
   return { upserted: updated, appended: added };
