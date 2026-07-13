@@ -1341,7 +1341,7 @@ export function renderModule(ctx, mod) {
       });
     }
 
-    // Modal Trazabilidad (descarga de fichas del módulo en PDF) — Tanda 1: UI.
+    // Modal Trazabilidad: descarga las fichas del módulo en PDF (datos del Sheet).
     const traceOverlay = root.querySelector('#svTraceModal');
     if (traceOverlay) {
       bindModal(root, traceOverlay, {

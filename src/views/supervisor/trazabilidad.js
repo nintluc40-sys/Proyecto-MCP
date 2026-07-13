@@ -2,8 +2,9 @@
    TRAZABILIDAD · Adaptadores store→ficha + orquestación de descarga.
    Toma los datos del Google Sheet (store) de un módulo y arma las páginas de
    cada ficha en PDF (una por día). Usa el núcleo nativo fichaPdf.js.
-   Tanda 3: sólo "Población" implementada; el resto se añade en tandas siguientes
-   (registro FICHA_PAGES). Cada PDF = la hoja (tabla), sin gráficos.
+   Las 6 fichas estándar (registro FICHA_PAGES). Fuentes: "Datos Larvicultura"
+   (poblacion/calidad/plg/despacho/calagua) y "Control_Tanque" (params).
+   Cada PDF = la hoja (tabla), sin gráficos.
    ============================================================ */
 import { store } from '../../core/store.js';
 import { getField, parseNum, F, isLarviculturaRow, isTanqueRow, PLGM_KEYS } from '../../core/fields.js';
@@ -306,7 +307,10 @@ function paramsPages({ mod, corrida, from, to }) {
     if (!byDate.has(f)) byDate.set(f, []);
     byDate.get(f).push(r);
   });
-  const dates = [...byDate.keys()].sort((a, b) => (parseAnyDate(a) || 0) - (parseAnyDate(b) || 0));
+  const hasReading = (r) => getField(r, F.od) !== '' || getField(r, F.temp) !== '';
+  const dates = [...byDate.keys()]
+    .filter((f) => byDate.get(f).some(hasReading))   // sólo días con alguna lectura OD/°C (evita páginas vacías)
+    .sort((a, b) => (parseAnyDate(a) || 0) - (parseAnyDate(b) || 0));
   return dates.map((fecha) => {
     const dayRows = byDate.get(fecha);
     const tanks = distinct(dayRows.map((r) => getField(r, F.tanque))).sort(natCmp);

@@ -234,11 +234,11 @@ export function printFichaDocs(docs) {
       try {
         try { win.document.title = fileName; } catch (_) { /* noop */ }
         win.onafterprint = finish;
+        // Respaldo (antes de print, para que finish pueda limpiarlo): si onafterprint
+        // no dispara (algunos navegadores/Guardar-como-PDF), avanza tras un margen amplio.
+        watchdog = setTimeout(finish, 90000);
         win.focus();
         win.print();
-        // Respaldo: si onafterprint no dispara (algunos navegadores/Guardar-como-PDF),
-        // avanza tras un margen amplio (el diálogo ya se habrá cerrado) para no atascar la cola.
-        watchdog = setTimeout(finish, 90000);
       } catch (_) { finish(); }
     };
     try {

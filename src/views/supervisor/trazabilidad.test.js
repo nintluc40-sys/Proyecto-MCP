@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { store } from '../../core/store.js';
 import { buildFichaPages, downloadTrazabilidad } from './trazabilidad.js';
+import { buildFichaPdfDoc } from './fichaPdf.js';
 
 const row = (o) => ({ _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '573', ...o });
 
@@ -75,12 +76,14 @@ describe('trazabilidad · adaptador Parámetros (Control_Tanque → ficha)', () 
       tRow({ Tanque: '1', Fecha: '2026-06-01', Hora: '10:00', OD: '6.0', Temperatura: '30.1' }),
       tRow({ Tanque: '2', Fecha: '2026-06-01', Hora: '08:00', OD: '5.8', Temperatura: '29.8' }),
       tRow({ Tanque: '1', Fecha: '2026-06-02', Hora: '02:00', OD: '6.5', Temperatura: '28.9' }),
+      // Fila de Control_Tanque SIN lecturas (OD/Temp vacías) → NO debe generar página.
+      tRow({ Tanque: '1', Fecha: '2026-06-09', Hora: '08:00', OD: '', Temperatura: '' }),
     ];
   });
 
-  it('coloca cada toma OD/°C en su hora (normaliza) por tanque y día', () => {
+  it('coloca cada toma OD/°C en su hora (normaliza) por tanque y día; excluye días sin lecturas', () => {
     const pages = buildFichaPages('params', { mod: 'M01', corrida: '573' });
-    expect(pages.map((p) => p.d.fecha)).toEqual(['2026-06-01', '2026-06-02']);
+    expect(pages.map((p) => p.d.fecha)).toEqual(['2026-06-01', '2026-06-02']);  // 06-09 excluido
     expect(pages[0].tanks).toEqual(['1', '2']);
     expect(pages[0].d['od_0_08:00']).toBe('6.2');
     expect(pages[0].d['tc_0_08:00']).toBe('29.5');
@@ -195,5 +198,35 @@ describe('trazabilidad · adaptador Despacho (store→ficha)', () => {
     expect(html).toContain('Densidad');
     expect(html).toContain('Piscina');
     expect(html).toContain('Biomasa');
+  });
+});
+
+describe('trazabilidad · integración e2e (una fila con TODAS las fichas → 6 PDF)', () => {
+  beforeEach(() => {
+    store.globalData = [
+      // Una fila "Datos Larvicultura" con datos de las 5 fichas de esa hoja.
+      row({
+        Tanque: '1', Fecha: '2026-06-01', 'Técnico': 'Ana',
+        'Población': '2000000', Supervivencia: '85', Lote: 'L1', 'Estadío': 'Z2', Salinidad: '32',
+        'Intestino_Lleno': '80', Deformidad: '2', '% Mortalidad': '1', '% Actividad': '95', 'Estrés': '10',
+        Plg: '55', 'Plg (manual)': '52',
+        'Densidad cosechada': '120', Biomasa: '15', 'Cajas/Tinas': '4', Destino: 'P3', Piscina: 'P3',
+        'Cel/ml': '5000', Color: 'Café', '% Espuma': '2', '% Suciedad': '1', '% Recambio': '30', Observaciones: 'ok',
+      }),
+      // Control_Tanque para Parámetros (hoja distinta).
+      { _SheetOrigin: 'Control_Tanque M01', 'Módulo': 'M01', Corrida: '573', Tanque: '1', Fecha: '2026-06-01', Hora: '08:00', OD: '6.2', Temperatura: '29.5' },
+    ];
+  });
+
+  it('las 6 fichas producen ≥1 página y un documento PDF válido', () => {
+    ['poblacion', 'calidad', 'plg', 'params', 'calagua', 'despacho'].forEach((fid) => {
+      const pages = buildFichaPages(fid, { mod: 'M01', corrida: '573' });
+      expect(pages.length, `${fid} debe tener páginas`).toBeGreaterThanOrEqual(1);
+      const doc = buildFichaPdfDoc({ fid, mod: 'M01', fileName: `X_${fid}`, pages });
+      expect(doc, `${fid} doc válido`).toContain('</html>');
+      expect(doc).toContain('class="ppage"');
+      expect(doc).toContain('OMARSA · Larvicultura');
+      expect(doc).toContain('Código verificador');
+    });
   });
 });
