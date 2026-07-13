@@ -9,27 +9,29 @@
    ============================================================ */
 import { esc } from '../../core/format.js';
 
-// Metadatos por ficha estándar (título, icono, código de documento, abreviaturas
-// para el código verificador y el nombre de archivo).
+// Metadatos por ficha estándar. `label` = nombre corto para la UI (modal/toast);
+// `title` = título formal para la cabecera del PDF. También: icono, código de
+// documento y abreviaturas para el código verificador y el nombre de archivo.
+// El orden = el de presentación en la UI (registro FICHA_IDS).
 const FICHA_META = {
-  calidad:   { title: 'Registro Sanidad y Calidad de Larvas',    icon: '🔬', doc: 'OMR-LAB-M-FOR-039', abb: 'CAL', file: 'CL' },
-  plg:       { title: 'PL Gramo Externo',                        icon: '⚖️', doc: 'OMR-LAB-M-FOR-040', abb: 'PLG', file: 'PL' },
-  params:    { title: 'Parámetros en Tanques — OD y Temperatura', icon: '🌡️', doc: 'OMR-LAB-M-FOR-045', abb: 'PAR', file: 'PA' },
-  poblacion: { title: 'Población Laboratorio',                   icon: '🧮', doc: 'OMR-LAB-M-FOR-040', abb: 'POB', file: 'PB' },
-  calagua:   { title: 'Calidad de Agua',                         icon: '💧', doc: 'OMR-LAB-M-FOR-CAG', abb: 'CAG', file: 'CA' },
-  despacho:  { title: 'Despacho',                                icon: '🚚', doc: 'OMR-LAB-M-FOR-DES', abb: 'DES', file: 'DP' },
+  calidad:   { label: 'Calidad Larvaria',    title: 'Registro Sanidad y Calidad de Larvas',    icon: '🔬', doc: 'OMR-LAB-M-FOR-039', abb: 'CAL', file: 'CL' },
+  plg:       { label: 'PLG (gramo externo)', title: 'PL Gramo Externo',                        icon: '⚖️', doc: 'OMR-LAB-M-FOR-040', abb: 'PLG', file: 'PL' },
+  poblacion: { label: 'Población',           title: 'Población Laboratorio',                   icon: '🧮', doc: 'OMR-LAB-M-FOR-040', abb: 'POB', file: 'PB' },
+  params:    { label: 'Parámetros',          title: 'Parámetros en Tanques — OD y Temperatura', icon: '🌡️', doc: 'OMR-LAB-M-FOR-045', abb: 'PAR', file: 'PA' },
+  calagua:   { label: 'Calidad de Agua',     title: 'Calidad de Agua',                         icon: '💧', doc: 'OMR-LAB-M-FOR-CAG', abb: 'CAG', file: 'CA' },
+  despacho:  { label: 'Despacho',            title: 'Despacho',                                icon: '🚚', doc: 'OMR-LAB-M-FOR-DES', abb: 'DES', file: 'DP' },
 };
 const REV_LINE = {
   calidad: 'Revisión: 002 — Vigencia: 21/11/2025',
   params: 'Versión 0 — Fecha de aprobación 1-ago.-2015',
 };
 
-/** Lista de ids de ficha soportados (Calidad, PLG, Parámetros, Población, Cal. Agua, Despacho). */
+/** Ids de ficha soportados, en orden de presentación (Calidad, PLG, Población, Parámetros, Cal. Agua, Despacho). */
 export const FICHA_IDS = Object.keys(FICHA_META);
 /** ¿`fid` es una ficha estándar soportada? */
 export const isFichaId = (fid) => Object.prototype.hasOwnProperty.call(FICHA_META, fid);
-/** Etiqueta legible de la ficha (para la UI). */
-export const fichaLabel = (fid) => (FICHA_META[fid] || {}).title || fid;
+/** Etiqueta corta de la ficha para la UI (modal/toast). El título formal del PDF es FICHA_META.title. */
+export const fichaLabel = (fid) => (FICHA_META[fid] || {}).label || fid;
 
 const todayISO = () => {
   const d = new Date(); const p = (n) => String(n).padStart(2, '0');

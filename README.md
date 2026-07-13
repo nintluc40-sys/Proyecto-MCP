@@ -25,10 +25,14 @@ npm run lint       # ESLint
 
 - **Supervisor** (👁️): Vista Ejecutiva (tarjetas por módulo/corrida) → Resumen
   Operativo del módulo → Visualización del Tanque → Análisis Biométrico LARVIA.
-  Incluye navegación táctil (botón "Volver" + migas), tabla "Producción Omarsa",
+  Incluye navegación táctil (botón "Volver" + migas), tabla "Producción Omarsa"
+  (con columna **Dens. siembra** = promedio por tanque de siembra ÷ 28 ÷ 1000),
   estado de despacho ("Despachado"/"Despachando" excluyendo tanques agrupados/
   descartados) y modales: Comparativa de tanques, OM vs Tex, Desinfección,
-  Biomol y **Microbiología** (Placa de agar + Tabla + Heatmap por corrida+módulo).
+  Biomol, **Microbiología** (Placa de agar + Tabla + Heatmap por corrida+módulo)
+  y **Trazabilidad** (desde la tarjeta "Días proceso": descarga en PDF las 6
+  fichas del módulo —Calidad Larvaria, PLG, Población, Parámetros, Calidad de
+  Agua, Despacho— con la información del Google Sheet, un PDF por tipo).
 - **Larvicultura** (🦐): calidad larvaria — radar, evolución diaria, heatmap,
   ICL, ranking, población por tanque y modales Comparar/Historia/Decisión.
 - **Revisiones** (🔍): hoja `Registro_Supervisión` — calidad, morfología

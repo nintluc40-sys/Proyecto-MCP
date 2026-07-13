@@ -7,6 +7,7 @@ import { HR_LABELS } from './tank.js';
 import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, kpiTecnicos, breadcrumb, bindModal } from './ui.js';
 import { toast } from '../../ui/toast.js';
 import { downloadTrazabilidad } from './trazabilidad.js';
+import { FICHA_IDS, fichaLabel } from './fichaPdf.js';
 import { svLevel, odLevel, tmpLevel, levelColor, levelLabel, esc } from '../../core/format.js';
 import { store } from '../../core/store.js';
 import { getField, F } from '../../core/fields.js';
@@ -1160,15 +1161,8 @@ export function renderModule(ctx, mod) {
   </div>`;
 
   // Trazabilidad · descarga en PDF las fichas del módulo (datos del Sheet).
-  // Tipos = las 6 fichas estándar de Registros. Rango de fechas opcional.
-  const TRACE_FICHAS = [
-    { fid: 'calidad',   label: 'Calidad Larvaria' },
-    { fid: 'plg',       label: 'PLG (gramo externo)' },
-    { fid: 'poblacion', label: 'Población' },
-    { fid: 'params',    label: 'Parámetros' },
-    { fid: 'calagua',   label: 'Calidad de Agua' },
-    { fid: 'despacho',  label: 'Despacho' },
-  ];
+  // Tipos = las 6 fichas estándar (fuente única: FICHA_IDS/fichaLabel de fichaPdf.js).
+  const TRACE_FICHAS = FICHA_IDS.map((fid) => ({ fid, label: fichaLabel(fid) }));
   h += `<div class="sv-modal" id="svTraceModal" data-tracemodal>
     <div class="sv-modal-card">
       <div class="sv-modal-head">

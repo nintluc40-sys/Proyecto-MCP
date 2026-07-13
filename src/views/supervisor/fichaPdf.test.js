@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { buildFichaPdfDoc, isFichaId, pdfFilename, FICHA_IDS, fichaLabel } from './fichaPdf.js';
 
 describe('fichaPdf · núcleo PDF nativo (Trazabilidad)', () => {
-  it('FICHA_IDS = las 6 fichas estándar; isFichaId discrimina', () => {
-    expect(FICHA_IDS).toEqual(['calidad', 'plg', 'params', 'poblacion', 'calagua', 'despacho']);
+  it('FICHA_IDS = las 6 fichas en orden de presentación; isFichaId discrimina', () => {
+    expect(FICHA_IDS).toEqual(['calidad', 'plg', 'poblacion', 'params', 'calagua', 'despacho']);
     expect(isFichaId('poblacion')).toBe(true);
     expect(isFichaId('algas')).toBe(false);
+    // fichaLabel = etiqueta CORTA de UI (no el título formal del PDF).
+    expect(fichaLabel('calidad')).toBe('Calidad Larvaria');
     expect(fichaLabel('calagua')).toBe('Calidad de Agua');
   });
 
