@@ -3,7 +3,7 @@ import {
   REPRO_MATRIZ_HEADERS, REPRO_MATRIZ_KEYCOLS, REPRO_BITACORA_HEADERS, REPRO_BITACORA_KEYCOLS,
   REPRO_TRANSFER_HEADERS, REPRO_TRANSFER_KEYCOLS, REPRO_ESTADO, REPRO_EVENTO, REPRO_TRANSFER_TIPO,
   normTrovan, parseTrovanList, matrixRecordFromSheet, buildMatrixIndex,
-  buildAltaIndividuo, buildAltaBatch, buildEventBatch, nextTrId, buildTransferBatch,
+  buildAltaBatch, buildEventBatch, nextTrId, buildTransferBatch,
   matrixIndexFromRows, pivotDesoves, individualTrace, matrixSummary, nextTrIdFromRows,
 } from './reproductivo.data.js';
 
@@ -49,25 +49,6 @@ describe('buildMatrixIndex / matrixRecordFromSheet', () => {
   });
 });
 
-describe('Sección 1 · alta de individuo', () => {
-  it('crea la fila en MATRIZ con Estado=Vivo y ubicación de ingreso', () => {
-    const r = buildAltaIndividuo({ trovan: '9999999', numero: '10', sala: 'S6', tanque: 'T2', piscina: 'P1' }, idx());
-    expect(r.ok).toBe(true);
-    const row = r.payload.rows[0];
-    expect(row[col(REPRO_MATRIZ_HEADERS, 'Trovan ID')]).toBe('9999999');
-    expect(row[col(REPRO_MATRIZ_HEADERS, 'Estado')]).toBe(REPRO_ESTADO.VIVO);
-    expect(row[col(REPRO_MATRIZ_HEADERS, 'Sala actual')]).toBe('S6');
-    expect(r.payload.sheetName).toBe('Maduración MATRIZ');
-  });
-  it('rechaza un Trovan que ya existe', () => {
-    const r = buildAltaIndividuo({ trovan: '9856321' }, idx());
-    expect(r.ok).toBe(false);
-    expect(r.error).toMatch(/ya existe/i);
-  });
-  it('rechaza si falta el Trovan', () => {
-    expect(buildAltaIndividuo({ trovan: '' }, idx()).ok).toBe(false);
-  });
-});
 
 describe('Sección 1 · alta MASIVA (grilla)', () => {
   it('arma un solo payload con todas las filas válidas y omite vacías', () => {

@@ -84,30 +84,7 @@ export function syncPayload(sheetName, headers, keyCols, rows) {
   return { sheetName, headers, rows, keyCols };
 }
 
-/* ── Sección 1 · Alta de individuo ── */
-/** Valida que el Trovan no exista y arma el payload de creación en la MATRIZ (Estado=Vivo,
- *  ubicación actual = la de ingreso). Devuelve { ok, error?, trovan?, payload? }. */
-export function buildAltaIndividuo(form, matrixIndex) {
-  form = form || {};
-  const trovan = normTrovan(form.trovan);
-  if (!trovan) return { ok: false, error: 'Falta el Trovan ID.' };
-  if (matrixIndex && matrixIndex.has(trovan)) return { ok: false, error: `El Trovan ${trovan} ya existe en la matriz.` };
-  const row = rowFromObj(REPRO_MATRIZ_HEADERS, {
-    'Número': sanitizeStr(form.numero),
-    'Trovan ID': trovan,
-    'Color anillo': sanitizeStr(form.color),
-    'Piscina': sanitizeStr(form.piscina),
-    'Código genético': sanitizeStr(form.codigo),
-    'Lote': sanitizeStr(form.lote),
-    'Sala actual': sanitizeStr(form.sala),
-    'Tanque actual': sanitizeStr(form.tanque),
-    'Estado': REPRO_ESTADO.VIVO,
-    'Fecha ingreso': sanitizeStr(form.fecha),
-    'Observaciones': sanitizeStr(form.obs),
-  });
-  return { ok: true, trovan, payload: syncPayload(REPRO_MATRIZ_SHEET, REPRO_MATRIZ_HEADERS, REPRO_MATRIZ_KEYCOLS, [row]) };
-}
-
+/* ── Sección 1 · Alta de individuo (masiva, tipo grilla Excel) ── */
 /** Alta MASIVA: recibe un array de formularios (filas de la grilla, tipo Excel) y arma UN
  *  payload de MATRIZ con todas las hembras nuevas (Estado=Vivo, ubicación=ingreso).
  *  Omite filas vacías; reporta filas con datos pero sin Trovan (sinTrovan), Trovan repetidos
