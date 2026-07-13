@@ -5,6 +5,8 @@ import { modStats, tankStats, tanksOf, getters } from './stats.js';
 import { moduleSvPopSeries, moduleHourlyDates, moduleHourly, moduleDayKpis, moduleDayTankReadings, cosechaEstimate } from './moduleTrends.js';
 import { HR_LABELS } from './tank.js';
 import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, kpiTecnicos, breadcrumb, bindModal } from './ui.js';
+import { toast } from '../../ui/toast.js';
+import { downloadTrazabilidad } from './trazabilidad.js';
 import { svLevel, odLevel, tmpLevel, levelColor, levelLabel, esc } from '../../core/format.js';
 import { store } from '../../core/store.js';
 import { getField, F } from '../../core/fields.js';
@@ -911,7 +913,7 @@ export function renderModule(ctx, mod) {
       ${kpiGlass('⚡', '% Actividad', fmt1(s.act, '%'))}
       ${kpiGlass('🫧', '% Espuma', fmt1(s.esp, '%'))}
       ${kpiGlass('🧹', '% Suciedad', fmt1(s.suc, '%'))}
-      ${kpiGlass('📅', 'Días proceso', String(s.dias))}
+      ${kpiGlass('📅', 'Días proceso', String(s.dias), 'data-modtrace role="button" tabindex="0" title="Trazabilidad: descargar las fichas del módulo en PDF"')}
       ${kpiGlass('🎯', 'Cosecha', cosechaLabel)}
       ${kpiTecnicos(s.tecnicos)}
     </div>
@@ -1157,6 +1159,43 @@ export function renderModule(ctx, mod) {
     </div>
   </div>`;
 
+  // Trazabilidad · descarga en PDF las fichas del módulo (datos del Sheet).
+  // Tipos = las 6 fichas estándar de Registros. Rango de fechas opcional.
+  const TRACE_FICHAS = [
+    { fid: 'calidad',   label: 'Calidad Larvaria' },
+    { fid: 'plg',       label: 'PLG (gramo externo)' },
+    { fid: 'poblacion', label: 'Población' },
+    { fid: 'params',    label: 'Parámetros' },
+    { fid: 'calagua',   label: 'Calidad de Agua' },
+    { fid: 'despacho',  label: 'Despacho' },
+  ];
+  h += `<div class="sv-modal" id="svTraceModal" data-tracemodal>
+    <div class="sv-modal-card">
+      <div class="sv-modal-head">
+        <span class="sv-modal-title">🧾 Trazabilidad — ${esc(mod)}</span>
+        <button class="sv-modal-x" data-trace-close aria-label="Cerrar">✕</button>
+      </div>
+      <div class="sv-modal-body">
+        <p class="sv-modal-note" style="margin:0 0 10px">Genera en PDF las fichas de este módulo con la información del Google Sheet. Elige los tipos y (opcional) un rango de fechas.</p>
+        <div class="sv-trace-sec">
+          <div class="sv-trace-h">Fichas a incluir</div>
+          <label class="sv-trace-chk sv-trace-all"><input type="checkbox" data-trace-all checked> <b>Todas</b></label>
+          <div class="sv-trace-types">
+            ${TRACE_FICHAS.map((f) => `<label class="sv-trace-chk"><input type="checkbox" data-trace-fid="${f.fid}" checked> ${esc(f.label)}</label>`).join('')}
+          </div>
+        </div>
+        <div class="sv-trace-sec sv-trace-dates">
+          <label class="sv-modal-datelbl">📅 Desde <input type="date" class="sv-modal-select" data-trace-from></label>
+          <label class="sv-modal-datelbl">📅 Hasta <input type="date" class="sv-modal-select" data-trace-to></label>
+          <span class="muted sv-trace-hint">Vacío = todo el rango del módulo.</span>
+        </div>
+        <div class="sv-trace-actions">
+          <button class="sv-action-btn" data-trace-download>📄 Descargar PDF</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
   const after = (root) => {
     // #2 · RO1 en modal: barras agrupadas SV (eje y) + ICL (eje y1) por tanque (se dibuja al abrir).
     const cmpOverlay = root.querySelector('#svModCmpModal');
@@ -1299,6 +1338,34 @@ export function renderModule(ctx, mod) {
       bindModal(root, dayOverlay, {
         openSel: '[data-modday-open]', closeSel: '[data-modday-close]',
         onOpen: () => render(),
+      });
+    }
+
+    // Modal Trazabilidad (descarga de fichas del módulo en PDF) — Tanda 1: UI.
+    const traceOverlay = root.querySelector('#svTraceModal');
+    if (traceOverlay) {
+      bindModal(root, traceOverlay, {
+        openSel: '[data-modtrace]', closeSel: '[data-trace-close]', keyboard: true,
+      });
+      const allCb = traceOverlay.querySelector('[data-trace-all]');
+      const typeCbs = [...traceOverlay.querySelectorAll('[data-trace-fid]')];
+      if (allCb) allCb.addEventListener('change', () => { typeCbs.forEach((c) => { c.checked = allCb.checked; }); });
+      typeCbs.forEach((c) => c.addEventListener('change', () => {
+        if (allCb) allCb.checked = typeCbs.every((x) => x.checked);
+      }));
+      traceOverlay.querySelector('[data-trace-download]')?.addEventListener('click', () => {
+        const fids = typeCbs.filter((c) => c.checked).map((c) => c.dataset.traceFid);
+        if (!fids.length) { toast('Selecciona al menos un tipo de ficha', 'warn'); return; }
+        const from = traceOverlay.querySelector('[data-trace-from]')?.value || '';
+        const to = traceOverlay.querySelector('[data-trace-to]')?.value || '';
+        const res = downloadTrazabilidad({ mod, corrida, fids, from, to });
+        if (res.generated.length) {
+          const detail = res.generated.map((g) => `${g.label} (${g.pages} pág.)`).join(' · ');
+          const multi = res.generated.length > 1 ? ' — se abrirá un diálogo de impresión por tipo' : '';
+          toast(`📄 PDF: ${detail}${multi}`, 'ok', 5500);
+        }
+        if (res.empty.length) toast(`Sin datos en el rango: ${res.empty.join(', ')}`, 'warn', 5000);
+        if (res.pending.length) toast(`Aún no disponible: ${res.pending.join(', ')}`, 'info', 5000);
       });
     }
 

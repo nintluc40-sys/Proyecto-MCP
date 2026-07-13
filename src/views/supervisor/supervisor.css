@@ -247,6 +247,18 @@
 .sv-modal-kpi.muted { color: var(--c-text-muted); }
 .sv-modal-note { font-size: 10.5px; color: var(--c-text-muted); margin-top: 8px; }
 
+/* Modal Trazabilidad (descarga de fichas del módulo en PDF) */
+.sv-trace-sec { margin-bottom: 14px; }
+.sv-trace-h { font-size: 12px; font-weight: 800; color: var(--c-text); margin-bottom: 8px; }
+.sv-trace-chk { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--c-text-soft); cursor: pointer; }
+.sv-trace-chk input { cursor: pointer; }
+.sv-trace-all { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--c-border-soft); }
+.sv-trace-types { display: grid; grid-template-columns: repeat(2, minmax(140px, 1fr)); gap: 6px 16px; }
+.sv-trace-dates { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sv-trace-hint { font-size: 10.5px; }
+.sv-trace-actions { display: flex; justify-content: flex-end; }
+@media (max-width: 480px) { .sv-trace-types { grid-template-columns: 1fr; } }
+
 /* Desglose de alertas por tanque del "Resumen del día" (bajo la alerta de módulo). */
 .sv-mday-talerts { margin-top: 8px; border: 1px solid var(--c-border-soft); border-radius: var(--r-md); overflow: hidden; }
 .sv-mday-talerts-h { font-size: 11px; font-weight: 800; color: var(--c-text-soft); text-transform: uppercase; letter-spacing: .3px; padding: 7px 12px; background: var(--c-surface-2); border-bottom: 1px solid var(--c-border-soft); }

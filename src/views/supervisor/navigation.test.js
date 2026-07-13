@@ -153,10 +153,29 @@ describe('Supervisor · harness de navegación integral', () => {
   it('abre cada modal del módulo sin error', () => {
     const root = mount();
     click(root.querySelector('.sv-card[data-nav="module"]'));
-    ['[data-modcmp-open]', '[data-athist-open]', '[data-biomol-open]', '[data-micro-open]', '[data-desinf-open]', '[data-modday-open]', '[data-modmetric="sv"]']
+    ['[data-modcmp-open]', '[data-athist-open]', '[data-biomol-open]', '[data-micro-open]', '[data-desinf-open]', '[data-modday-open]', '[data-modmetric="sv"]', '[data-modtrace]']
       .forEach((sel) => { const b = root.querySelector(sel); if (b) click(b); });
     // El modal de métricas debe existir y poder abrirse
     expect(root.querySelector('#svModMetricModal')).toBeTruthy();
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('Trazabilidad · tarjeta "Días proceso" abre el modal con las 6 fichas y toggle "Todas"', () => {
+    const root = mount();
+    click(root.querySelector('.sv-card[data-nav="module"]'));
+    const card = root.querySelector('[data-modtrace]');
+    expect(card).toBeTruthy();
+    expect(card.getAttribute('role')).toBe('button');
+    click(card);
+    const modal = root.querySelector('#svTraceModal');
+    expect(modal).toBeTruthy();
+    expect(modal.classList.contains('sv-open')).toBe(true);
+    const types = [...modal.querySelectorAll('[data-trace-fid]')].map((c) => c.dataset.traceFid);
+    expect(types).toEqual(['calidad', 'plg', 'poblacion', 'params', 'calagua', 'despacho']);
+    // "Todas" desmarcado → desmarca todas.
+    const all = modal.querySelector('[data-trace-all]');
+    all.checked = false; all.dispatchEvent(new Event('change'));
+    expect([...modal.querySelectorAll('[data-trace-fid]')].every((c) => !c.checked)).toBe(true);
     expect(errSpy).not.toHaveBeenCalled();
   });
 
