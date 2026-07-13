@@ -18,7 +18,7 @@ import { avg, natCmp } from '../../core/util.js';
 import { monthIndexOfCorrida, monthLabelAt } from '../../core/prodCalendar.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import { toast } from '../../ui/toast.js';
-import { drawGrowth, drawGrowthBar, drawGrowthMini, drawTasa, drawProto, drawDaily, drawUsoSistema, drawModuloBiomasa, drawCatPct, CAT_COLOR, algColor, fmtK } from './charts.js';
+import { drawGrowth, drawGrowthBar, drawGrowthMini, drawTasa, drawProto, drawDaily, drawUsoSistema, drawModuloBiomasa, drawCatPct, drawCellQuality, drawDispatchBars, CAT_COLOR, algColor, fmtK } from './charts.js';
 
 // ── Acceso tolerante a las cabeceras de Lab_Algas ──
 const AF = {
@@ -41,6 +41,11 @@ const AF = {
   ciliados:     ['Ciliados', 'ciliados'],
   filamentosos: ['Filamentosos', 'filamentosos'],
   tecnico:      ['Técnico', 'Tecnico', 'técnico', 'tecnico'],
+  cel_vacias:     ['Células Vacías', 'Celulas Vacías', 'Células Vacias', 'Celulas Vacias', 'cel_vacias'],
+  cel_semillenas: ['Células Semillenas', 'Celulas Semillenas', 'cel_semillenas'],
+  cel_alargadas:  ['Células Alargadas', 'Celulas Alargadas', 'cel_alargadas'],
+  cel_llenas:     ['Células Llenas', 'Celulas Llenas', 'cel_llenas'],
+  vol_despacho:   ['Volumen de Despacho', 'Volumen Despacho', 'vol_despacho'],
 };
 
 const isAlgaeRow = (r) => r && r._SheetOrigin === 'Lab_Algas';
@@ -107,6 +112,8 @@ const FS_TITLE = {
   ph: '⚗️ pH',
   temp: '🌡️ Temperatura',
   luz: '💡 Intensidad de luz',
+  cellq: '🔬 Calidad celular · composición por día',
+  dispatch: '🚚 Volumen de Despacho por módulo',
 };
 const BITA_VISIBLE = 6; // observaciones visibles antes de desplegar
 const REG_VISIBLE = 10; // registros visibles antes de desplegar
@@ -268,6 +275,51 @@ export function periodStats(rows) {
   };
 }
 
+/** Composición celular (calidad) por día: suma de Vacías/Semillenas/Alargadas/Llenas por
+ *  FECHA (asc). Devuelve {days:[Date], series:{vacias,semillenas,alargadas,llenas}, pctLlenas, n}.
+ *  Solo cuenta filas con al menos uno de los 4 conteos. */
+export function cellCompositionByDay(rows) {
+  const byDay = new Map();
+  let sumLlenas = 0, sumTot = 0;
+  (rows || []).forEach((r) => {
+    const d = parseAnyDate(g(r, 'fecha')); if (!d) return;
+    const v = num(r, 'cel_vacias'), s = num(r, 'cel_semillenas'), a = num(r, 'cel_alargadas'), l = num(r, 'cel_llenas');
+    if (v === null && s === null && a === null && l === null) return;
+    const key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+    if (!byDay.has(key)) byDay.set(key, { d, vacias: 0, semillenas: 0, alargadas: 0, llenas: 0 });
+    const o = byDay.get(key);
+    o.vacias += v || 0; o.semillenas += s || 0; o.alargadas += a || 0; o.llenas += l || 0;
+    sumLlenas += l || 0; sumTot += (v || 0) + (s || 0) + (a || 0) + (l || 0);
+  });
+  const entries = [...byDay.values()].sort((x, y) => x.d - y.d);
+  return {
+    days: entries.map((e) => e.d),
+    series: {
+      vacias: entries.map((e) => e.vacias),
+      semillenas: entries.map((e) => e.semillenas),
+      alargadas: entries.map((e) => e.alargadas),
+      llenas: entries.map((e) => e.llenas),
+    },
+    pctLlenas: sumTot > 0 ? Math.round(sumLlenas / sumTot * 100) : null,
+    n: entries.length,
+  };
+}
+
+/** Litros despachados por módulo: Σ Volumen de Despacho agrupado por Modulo_Larv (orden
+ *  natural) + total del período. Solo filas con volumen numérico. */
+export function dispatchByModule(rows) {
+  const byMod = new Map();
+  let total = 0;
+  (rows || []).forEach((r) => {
+    const v = num(r, 'vol_despacho'); if (v === null) return;
+    const m = String(g(r, 'modulo') || '').trim() || '—';
+    byMod.set(m, (byMod.get(m) || 0) + v);
+    total += v;
+  });
+  const items = [...byMod.entries()].map(([modulo, litros]) => ({ modulo, litros })).sort((a, b) => natCmp(a.modulo, b.modulo));
+  return { items, total, n: items.length };
+}
+
 /** Tasa de crecimiento ESPECÍFICA por lote (μ, día⁻¹): μ = ln(Nf/N0)/días.
  *  Es el estándar en microalgas y sí considera el tiempo transcurrido (a diferencia
  *  del "% ganado" total, que para un cultivo largo da cifras enormes y poco útiles
@@ -397,6 +449,8 @@ export function algasView(root) {
   const temp = dailySeries(chartRows, 'temp');
   const luz = dailySeries(chartRows, 'luz');
   const stats = periodStats(chartRows);
+  const cellQ = cellCompositionByDay(chartRows);
+  const disp = dispatchByModule(chartRows);
 
   // Cierres de dibujo reutilizables (render inline + fullscreen estilo Supervisor).
   fsDraw = {
@@ -420,6 +474,8 @@ export function algasView(root) {
     ph: (cid) => drawDaily(cid, ph.days, ph.values, 'pH', '#739842'),
     temp: (cid) => drawDaily(cid, temp.days, temp.values, 'Temperatura', '#CA6378', ' °C'),
     luz: (cid) => drawDaily(cid, luz.days, luz.values, 'Intensidad de luz', '#A06B27', '%'),
+    cellq: (cid) => drawCellQuality(cid, cellQ.days, cellQ.series),
+    dispatch: (cid) => drawDispatchBars(cid, disp.items.map((x) => 'Mód ' + x.modulo), disp.items.map((x) => x.litros)),
   };
 
   // Stats del strip del fullscreen (mismos 4: Actual/Prom/Mín/Máx, sobre lo registrado).
@@ -453,6 +509,12 @@ export function algasView(root) {
     </div>
     ${!isBarCat ? `<div class="alg-charts" style="${catVar}"><div class="card alg-chart-card alg-fs-card">${chHead('📈 Tasa de Crecimiento específica <span class="muted">· μ = ln(final/inicial)/días · día⁻¹</span>', tasa.values.length > 0 ? 'tasa' : null)}<div class="alg-chart-host">${host('algTasa', tasa.values.length > 0)}</div></div></div>` : ''}`;
 
+  // ── Franja · Calidad celular (composición morfológica 100% por día) ──
+  h += algBand('🔬', 'Calidad celular', '#A06B27');
+  h += `<div class="alg-charts" style="${catVar}">
+      <div class="card alg-chart-card alg-fs-card">${chHead('🔬 Composición celular <span class="muted">· % por día · Vacías/Semillenas/Alargadas/Llenas</span>' + (cellQ.pctLlenas != null ? ` <span style="margin-left:8px;font-size:11px;font-weight:800;color:#186447;background:#18644722;padding:1px 8px;border-radius:999px">✅ ${cellQ.pctLlenas}% llenas</span>` : ''), cellQ.days.length > 0 ? 'cellq' : null)}<div class="alg-chart-host alg-host-md">${host('algCellQ', cellQ.days.length > 0)}</div></div>
+    </div>`;
+
   // ── Franja 2 · Parámetros fisicoquímicos (mini-gráficos compactos 4-up) ──
   h += algBand('🧪', 'Parámetros fisicoquímicos', '#015B76');
   h += `<div class="alg-charts alg-charts-mini" style="${catVar}">
@@ -485,6 +547,12 @@ export function algasView(root) {
   h += `<div class="alg-sanidad-row" style="${catVar}">
       <div class="card alg-chart-card alg-fs-card">${chHead('🦠 Protozoarios · Ciliados · Filamentosos <span class="muted">· obj &lt; 5</span>', proto.days.length > 0 ? 'proto' : null)}<div class="alg-chart-host alg-host-md">${host('algProto', proto.days.length > 0)}</div></div>
       <div class="card alg-chart-card alg-watch">${chHead('⚠️ Watchlist de sanidad <span class="muted">· sistemas a vigilar</span>', null)}${watchHTML}</div>
+    </div>`;
+
+  // ── Franja · Despacho de cultivo (litros entregados por módulo) ──
+  h += algBand('🚚', 'Despacho de cultivo', '#4F8DA0');
+  h += `<div class="alg-charts" style="${catVar}">
+      <div class="card alg-chart-card alg-fs-card">${chHead('🚚 Volumen de Despacho por módulo <span class="muted">· litros entregados</span>' + (disp.total > 0 ? ` <span style="margin-left:8px;font-size:11px;font-weight:800;color:#015B76;background:#015B7622;padding:1px 8px;border-radius:999px">💧 ${Math.round(disp.total).toLocaleString('es-EC')} L en el período</span>` : ''), disp.items.length > 0 ? 'dispatch' : null)}<div class="alg-chart-host alg-host-md">${host('algDispatch', disp.items.length > 0)}</div></div>
     </div>`;
 
   // ── Análisis del mes (independiente del drill-down: responde preguntas del mes) ──
@@ -588,6 +656,8 @@ export function algasView(root) {
   if (ph.days.length) draw(() => fsDraw.ph('algPh'));
   if (temp.days.length) draw(() => fsDraw.temp('algTemp'));
   if (isPBR && luz.days.length) draw(() => fsDraw.luz('algLuz'));
+  if (cellQ.days.length) draw(() => fsDraw.cellq('algCellQ'));
+  if (disp.items.length) draw(() => fsDraw.dispatch('algDispatch'));
   if (usoLabels.length) draw(() => drawUsoSistema('algUso', usoLabels, usoValues, usoColors));
 
   bind(root);

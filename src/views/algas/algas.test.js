@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sysCat, SYS_CATS, growthByLote, tasaChartData, periodStats } from './index.js';
+import { sysCat, SYS_CATS, growthByLote, tasaChartData, periodStats, cellCompositionByDay, dispatchByModule } from './index.js';
 
 // Fila de Lab_Algas con cabeceras canónicas (las que lee el acceso tolerante AF).
 const row = (o) => ({ ...o });
@@ -168,5 +168,38 @@ describe('periodStats', () => {
     expect(s.n).toBe(0);
     expect(s.densAvg).toBeNull();
     expect(s.from).toBeNull();
+  });
+});
+
+describe('cellCompositionByDay', () => {
+  it('suma por fecha y calcula el % global de células llenas', () => {
+    const rows = [
+      row({ Fecha: '2026-07-10', 'Células Vacías': '2', 'Células Semillenas': '1', 'Células Alargadas': '1', 'Células Llenas': '6' }),
+      row({ Fecha: '2026-07-10', 'Células Llenas': '4' }),
+      row({ Fecha: '2026-07-11', 'Células Vacías': '5', 'Células Llenas': '5' }),
+    ];
+    const c = cellCompositionByDay(rows);
+    expect(c.days.length).toBe(2);
+    expect(c.series.llenas).toEqual([10, 5]);   // 10-jul: 6+4 · 11-jul: 5
+    expect(c.series.vacias).toEqual([2, 5]);
+    expect(c.pctLlenas).toBe(63);               // 15 / 24 = 62.5% → 63
+  });
+  it('ignora filas sin ninguno de los 4 conteos', () => {
+    expect(cellCompositionByDay([row({ Fecha: '2026-07-10', Cel_ml: '1000' })]).days.length).toBe(0);
+    expect(cellCompositionByDay([]).pctLlenas).toBeNull();
+  });
+});
+
+describe('dispatchByModule', () => {
+  it('suma litros por módulo (orden natural) + total; ignora filas sin volumen', () => {
+    const rows = [
+      row({ Modulo_Larv: '2', 'Volumen de Despacho': '100' }),
+      row({ Modulo_Larv: '1', 'Volumen de Despacho': '50' }),
+      row({ Modulo_Larv: '1', 'Volumen de Despacho': '30' }),
+      row({ Modulo_Larv: '1' }), // sin volumen → no suma
+    ];
+    const d = dispatchByModule(rows);
+    expect(d.items).toEqual([{ modulo: '1', litros: 80 }, { modulo: '2', litros: 100 }]);
+    expect(d.total).toBe(180);
   });
 });

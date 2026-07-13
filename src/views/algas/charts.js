@@ -258,3 +258,52 @@ export function drawDaily(canvasId, days, values, label, color, unit = '', zero 
     },
   });
 }
+
+// Composición celular (calidad): color de "peor" a "mejor".
+const CELL_COLORS = { vacias: '#B7A59B', semillenas: '#A06B27', alargadas: '#4F8DA0', llenas: '#186447' };
+const CELL_LABELS = { vacias: 'Vacías', semillenas: 'Semillenas', alargadas: 'Alargadas', llenas: 'Llenas' };
+
+/** Calidad morfológica: barras APILADAS al 100% con la proporción de células
+ *  Vacías/Semillenas/Alargadas/Llenas por día. `series` = {vacias,semillenas,alargadas,
+ *  llenas} (conteos por día, alineados a `days`). El tooltip muestra % y el conteo crudo. */
+export function drawCellQuality(canvasId, days, series) {
+  const keys = ['vacias', 'semillenas', 'alargadas', 'llenas'];
+  const totals = days.map((_, i) => keys.reduce((s, k) => s + (series[k][i] || 0), 0));
+  const datasets = keys.map((k) => ({
+    label: CELL_LABELS[k],
+    data: days.map((_, i) => totals[i] > 0 ? +((series[k][i] || 0) / totals[i] * 100).toFixed(1) : 0),
+    _raw: series[k],
+    backgroundColor: CELL_COLORS[k] + 'e0', borderColor: CELL_COLORS[k], borderWidth: 1, maxBarThickness: 46,
+  }));
+  return makeChart(canvasId, {
+    type: 'bar',
+    data: { labels: days, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: Object.assign({ stacked: true }, dateAxis(days)),
+        y: { stacked: true, min: 0, max: 100, ticks: { callback: (v) => v + '%', color: AXIS_TICK.color, font: AXIS_TICK.font }, title: { display: true, text: '% de células', color: AXIS_TITLE.color, font: AXIS_TITLE.font }, grid: { color: 'rgba(120,144,156,.15)' } },
+      },
+      plugins: {
+        legend: { labels: { usePointStyle: true, pointStyle: 'rectRounded', boxWidth: 10, font: { size: 10 }, color: '#37474f' } },
+        tooltip: { callbacks: { label: (c) => { const raw = c.dataset._raw ? c.dataset._raw[c.dataIndex] : null; return ` ${c.dataset.label}: ${c.parsed.y}%${(raw != null && !isNaN(raw)) ? ' (' + fmtFull(raw) + ')' : ''}`; } } },
+      },
+    },
+  });
+}
+
+/** Litros despachados por módulo: barras HORIZONTALES (una por módulo). */
+export function drawDispatchBars(canvasId, labels, values, color = '#015B76') {
+  return makeChart(canvasId, {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'Litros', data: values, backgroundColor: color + 'cc', borderColor: color, borderWidth: 1, borderRadius: 4, maxBarThickness: 30 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { beginAtZero: true, ticks: { callback: (v) => fmtFull(v), color: AXIS_TICK.color, font: AXIS_TICK.font }, title: { display: true, text: 'Litros', color: AXIS_TITLE.color, font: AXIS_TITLE.font }, grid: { color: 'rgba(120,144,156,.15)' } },
+        y: { grid: { display: false }, ticks: { color: AXIS_TICK.color, font: AXIS_TICK.font } },
+      },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ' ' + fmtFull(c.parsed.x) + ' L' } } },
+    },
+  });
+}
