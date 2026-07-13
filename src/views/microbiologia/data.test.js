@@ -85,6 +85,13 @@ describe('classifyFormato', () => {
     // Datos antiguos con el nombre legado siguen mapeando a mad-desinf.
     expect(classifyFormato('Maduración · Desinfección')).toBe('mad-desinf');
   });
+  it('Maduración · Agua (Bacteriología) → mad-agua, área larv-agua, sin chocar con Agua de Mar/Limpia', () => {
+    expect(classifyFormato('Maduración · Agua')).toBe('mad-agua');
+    expect(classifyFormato('Maduracion Agua')).toBe('mad-agua');       // variante sin "·"/acento
+    expect(classifyFormato('Maduración · Agua de Mar')).toBe('agua-mar');   // NO debe caer en mad-agua
+    expect(classifyFormato('Agua Limpia y Mar')).toBe('agua-limpia-mar');   // NO debe caer en mad-agua
+    expect(areaForFormat('mad-agua', '')).toBe('larv-agua');
+  });
   it('"" si vacío o no reconocido', () => {
     expect(classifyFormato('')).toBe('');
     expect(classifyFormato('Algo raro')).toBe('');

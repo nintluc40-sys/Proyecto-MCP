@@ -136,6 +136,9 @@ export const MIC_FORMATS = {
   'placa-amb':          { label: 'Larvicultura · Placa ambiental', area: () => 'ambiental' },
   artemia:              { label: 'Larvicultura · Artemia',        area: () => 'artemia' },
   'mad-principal':      { label: 'Maduración · Principal',        area: () => 'mad-reprod' },
+  // Maduración · Agua (Bacteriología): la ficha clona los umbrales l/m/e de 'larv-agua'
+  // (solo cambia el factor ×, que aquí no se usa: el UFC ya viene multiplicado en la hoja).
+  'mad-agua':           { label: 'Maduración · Agua',             area: () => 'larv-agua' },
   'mad-ensayo':         { label: 'Maduración · Ensayo',           area: () => 'mad-reprod' },
   'alim-vivo':          { label: 'Maduración · Alimento vivo',    area: () => 'larv-animal' },
   ras:                  { label: 'Maduración · RAS',              area: () => 'ras-agua' },
@@ -156,7 +159,7 @@ const _FMT_BY_FOLDED = Object.fromEntries(Object.entries(MIC_FORMATS).map(([k, v
 export const DEPARTAMENTOS = ['Larvicultura', 'Maduración', 'Otros'];
 export const DEPTO_FORMATS = {
   'Larvicultura': ['larv-muestra', 'reservorios', 'placa-amb', 'artemia'],
-  'Maduración': ['mad-principal', 'mad-ensayo', 'alim-vivo', 'ras', 'agua-mar', 'agua-limpia-mar', 'mad-desinf'],
+  'Maduración': ['mad-principal', 'mad-agua', 'mad-ensayo', 'alim-vivo', 'ras', 'agua-mar', 'agua-limpia-mar', 'mad-desinf'],
   'Otros': ['externas', 'hisopados', 'hisopados-despacho', 'algas', 'algas-mensual', 'algas-r'],
 };
 const _DEPTO_BY_FMT = {};
@@ -176,6 +179,8 @@ export function classifyFormato(raw) {
   if (k.includes('alimento')) return 'alim-vivo';
   if (k.includes('agua limpia')) return 'agua-limpia-mar';
   if (k.includes('agua de mar')) return 'agua-mar';
+  // "Maduración · Agua" (Bacteriología). Tras agua-limpia/agua-de-mar (ambas llevan 'mar').
+  if (k.includes('maduracion') && k.includes('agua')) return 'mad-agua';
   // "Maduración · Despacho" (nuevo nombre) y "Maduración · Desinfección" (legado) → mad-desinf.
   // Debe ir ANTES de la regla genérica de "despacho" (que mapea a Hisopados despacho).
   if (k.includes('maduracion') && k.includes('despacho')) return 'mad-desinf';

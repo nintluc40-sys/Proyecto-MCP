@@ -8819,7 +8819,7 @@ function micDeleteSession(k){
 function renderMicFactores(){
   const fp = document.getElementById("fp-micfact"); if(!fp) return;
   const F = loadMicFactors();
-  const areaLabel = { "larv-animal":"Larvicultura · Animal", "larv-agua":"Larvicultura · Agua", "mad-reprod":"Maduración · Reproductores", "ambiental":"Ambiental / Hisopados / Algas swab (×1)", "artemia":"Artemia (×20)", "ras-agua":"Maduración · RAS (Agua)", "algas":"Algas Mensual / R (×1)", "agua-limpia-mar":"Agua Limpia y Mar", "mad-despacho-agua":"Maduración · Despacho (Agua)", "mad-despacho-animal":"Maduración · Despacho (Organismo)" };
+  const areaLabel = { "larv-animal":"Larvicultura · Animal", "larv-agua":"Larvicultura · Agua", "mad-reprod":"Maduración · Reproductores", "ambiental":"Ambiental / Hisopados / Algas swab (×1)", "artemia":"Artemia (×20)", "ras-agua":"Maduración · RAS (Agua)", "algas":"Algas Mensual / R (×1)", "agua-limpia-mar":"Agua Limpia y Mar", "mad-despacho-agua":"Maduración · Despacho (Agua)", "mad-despacho-animal":"Maduración · Despacho (Organismo)", "mad-agua":"Maduración · Agua" };
   const blocks = Object.keys(MIC_DR_BASE).map(ak=>{
     const rows = Object.keys(MIC_DR_BASE[ak]).map(pk=>{
       const r = (F[ak] && F[ak][pk]) || {};
@@ -10313,7 +10313,7 @@ function patEditSession(k){
   if(!rs.length){ toast("Sesión no encontrada","warn"); return; }
   const d0=rs[0].data;
   const rows=rs.slice().sort((a,b)=>(parseInt(a.data.fila)||0)-(parseInt(b.data.fila)||0)).map(r=>{
-    const d=r.data; const row={ muestra:d.muestra||"", sexo:d.sexo||"", peso:(d.peso!=null?String(d.peso):""), obs:d.obs||"" };
+    const d=r.data; const row={ muestra:d.muestra||"", lote:d.lote||"", sexo:d.sexo||"", peso:(d.peso!=null?String(d.peso):""), obs:d.obs||"" };
     PAT_GROUP_KEYS.forEach(k2=> row[k2]=(d[k2]!=null?String(d[k2]):""));
     return row;
   });
@@ -10349,16 +10349,16 @@ function _patReportTable(rows){
   const subHead=PAT_GROUPS.reduce((a,g)=> a.concat(g.cols.map(c=>`<th>${escapeHtml(c.l)}</th>`)), []).join("");
   const cell=(v)=>(v!==undefined && v!=="" && v!==null)?escapeHtml(String(v)):"—";
   const trs=rows.map((d,i)=>{
-    let cs=`<td>${cell(d.muestra)}</td><td>${cell(d.sexo)}</td>`;
+    let cs=`<td>${cell(d.muestra)}</td><td>${cell(d.lote)}</td><td>${cell(d.sexo)}</td>`;
     PAT_GROUP_KEYS.forEach(k=> cs+=`<td>${cell(d[k])}</td>`);
     cs+=`<td>${cell(d.peso)}</td><td style="text-align:left">${cell(d.obs)}</td>`;
     return `<tr><td class="tqc">${i+1}</td>${cs}</tr>`;
   }).join("");
-  let g=`<td class="tqc" style="background:#5b21b6!important;color:#fff">Grado</td><td></td><td></td>`;
+  let g=`<td class="tqc" style="background:#5b21b6!important;color:#fff">Grado</td><td></td><td></td><td></td>`;
   PAT_GROUP_KEYS.forEach(k=> g+=`<td style="font-weight:700;color:#5b21b6;background:#f5f3ff;text-align:center">${avg[k]===""?"—":avg[k]}</td>`);
   g+=`<td style="font-weight:700;color:#5b21b6;background:#f5f3ff;text-align:center">${avg.peso===""?"—":avg.peso}</td><td></td>`;
   return `<div class="tw"><table class="ft" style="font-size:10.5px"><thead>
-    <tr><th class="tqh" rowspan="2">#</th><th rowspan="2">Muestra</th><th rowspan="2">Sexo</th>${grpHead}<th rowspan="2">Peso</th><th rowspan="2">Observaciones</th></tr>
+    <tr><th class="tqh" rowspan="2">#</th><th rowspan="2">Muestra</th><th rowspan="2">Lote</th><th rowspan="2">Sexo</th>${grpHead}<th rowspan="2">Peso</th><th rowspan="2">Observaciones</th></tr>
     <tr>${subHead}</tr></thead><tbody>${trs}</tbody><tfoot><tr>${g}</tr></tfoot></table></div>`;
 }
 function renderPatReporte(){
@@ -10382,16 +10382,16 @@ function downloadPatPDF(){
   const subHead=PAT_GROUPS.reduce((a,g)=> a.concat(g.cols.map(c=>`<th>${escapeHtml(c.l)}</th>`)), []).join("");
   const pc=(v)=>(v!==undefined && v!=="" && v!==null)?escapeHtml(String(v)):'<span class="empty">—</span>';
   const trs=rows.map((d,i)=>{
-    let cs=`<td>${pc(d.muestra)}</td><td>${pc(d.sexo)}</td>`;
+    let cs=`<td>${pc(d.muestra)}</td><td>${pc(d.lote)}</td><td>${pc(d.sexo)}</td>`;
     PAT_GROUP_KEYS.forEach(k=> cs+=`<td>${pc(d[k])}</td>`);
     cs+=`<td>${pc(d.peso)}</td><td style="text-align:left">${pc(d.obs)}</td>`;
     return `<tr><td class="tqc">${i+1}</td>${cs}</tr>`;
   }).join("");
-  let gc=`<td class="tqc" style="background:#5b21b6!important">Grado</td><td></td><td></td>`;
+  let gc=`<td class="tqc" style="background:#5b21b6!important">Grado</td><td></td><td></td><td></td>`;
   PAT_GROUP_KEYS.forEach(k=> gc+=`<td>${avg[k]===""?"—":avg[k]}</td>`);
   gc+=`<td>${avg.peso===""?"—":avg.peso}</td><td></td>`;
   const table=`<table><thead>
-      <tr><th rowspan="2">#</th><th rowspan="2">Muestra</th><th rowspan="2">Sexo</th>${grpHead}<th rowspan="2">Peso</th><th rowspan="2">Observaciones</th></tr>
+      <tr><th rowspan="2">#</th><th rowspan="2">Muestra</th><th rowspan="2">Lote</th><th rowspan="2">Sexo</th>${grpHead}<th rowspan="2">Peso</th><th rowspan="2">Observaciones</th></tr>
       <tr>${subHead}</tr></thead><tbody>${trs}</tbody><tfoot><tr>${gc}</tr></tfoot></table>`;
   const fileName="PATFRESCO_"+(meta.fechaMuestreo||today()).replace(/-/g,"")+(meta.corrida?"_"+sanitizeStr(meta.corrida):"");
   const head=`<div class="ph"><div class="ph-brand"><div class="co">OMARSA · Patología en Fresco</div><div class="su">Análisis de patología en fresco</div></div>
