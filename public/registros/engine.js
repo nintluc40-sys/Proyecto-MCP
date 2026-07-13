@@ -10403,6 +10403,7 @@ const ALLOWED = [
   "Control_Tanque CIO",
   "Lab_Algas",
   "Maduración Sala","Maduración Tanques","Maduración Lotes",
+  "Maduración MATRIZ","Maduración Bitácora","Maduración Transferencias",
   "BIOMOL",
   "Registro_Supervisión",
   "Registro_Desinfección",
@@ -10418,7 +10419,7 @@ const LIMITS = {
   datos:   { maxRows: 30,  maxCols: 50 },
   control: { maxRows: 300, maxCols: 8  },
   algas:   { maxRows: 500, maxCols: 28 },
-  mad:     { maxRows: 500, maxCols: 25 },
+  mad:     { maxRows: 1000, maxCols: 25 },
   biomol:  { maxRows: 100, maxCols: 20 },
   ast:     { maxRows: 100, maxCols: 25 },
   // Desinfección: 9 cols (Fecha…Fecha Elemento) + margen. maxRows holgado:
@@ -10530,6 +10531,10 @@ function doPost(e) {
     if      (payload.sheetName === "Maduración Sala")     madKeyCols = [0,1];   // Fecha, Sala
     else if (payload.sheetName === "Maduración Tanques")  madKeyCols = [0,1,3]; // Fecha, Sala, Tanque (Lote editable, fuera de la clave)
     else if (payload.sheetName === "Maduración Lotes")    madKeyCols = [0,1,2]; // Fecha, Sala, Fila (Lote/Historial editables)
+    // Registro reproductivo (upsert por clave, MERGE preserva campos permanentes vacíos):
+    else if (payload.sheetName === "Maduración MATRIZ")         madKeyCols = [1];     // Trovan ID
+    else if (payload.sheetName === "Maduración Bitácora")       madKeyCols = [0,1,2]; // Trovan + Fecha + Tipo
+    else if (payload.sheetName === "Maduración Transferencias") madKeyCols = [0,3];   // TR-ID + Trovan
     var isMad   = madKeyCols !== null;
     var limits  = isAlgas  ? LIMITS.algas
                 : isMad    ? LIMITS.mad

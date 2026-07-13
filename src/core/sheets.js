@@ -38,7 +38,7 @@ function activeUrl() {
 }
 
 // ---------- clasificación ----------
-function classifyOrigin(name) {
+export function classifyOrigin(name) {
   const n = String(name).trim();
   if (/^Control_Tanque/i.test(n)) return 'Control_Tanque';
   if (/registro[_\s]*supervisi/i.test(n)) return 'Registro_Supervision';
@@ -46,6 +46,11 @@ function classifyOrigin(name) {
   if (/calidad\s*de\s*agua/i.test(n)) return 'Calidad de Agua';
   if (/biomol/i.test(n)) return 'Biomol';
   if (/larvicultura|larvi/i.test(n)) return 'Larvicultura';
+  // Hojas del Registro reproductivo (Maduración): _SheetOrigin específico para que la
+  // Consulta las lea por nombre exacto (el resto de Maduración cae en 'Maduracion').
+  if (/maduraci[oó]n\s+matriz/i.test(n)) return 'Maduración MATRIZ';
+  if (/maduraci[oó]n\s+bit[aá]cora/i.test(n)) return 'Maduración Bitácora';
+  if (/maduraci[oó]n\s+transferencias/i.test(n)) return 'Maduración Transferencias';
   if (/maduracion|maduración/i.test(n)) return 'Maduracion';
   if (/algas|lab_algas/i.test(n)) return 'Lab_Algas';
   if (/morfolog/i.test(n)) return 'Morfologia';

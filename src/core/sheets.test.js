@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { parseSheetsIds, dataFingerprint, isDegraded } from './sheets.js';
+import { parseSheetsIds, dataFingerprint, isDegraded, classifyOrigin } from './sheets.js';
 import { store } from './store.js';
 
 describe('parseSheetsIds', () => {
@@ -15,6 +15,19 @@ describe('parseSheetsIds', () => {
 
   it('null para una URL inválida', () => {
     expect(parseSheetsIds('https://example.com/foo')).toBeNull();
+  });
+});
+
+describe('classifyOrigin · hojas del Registro reproductivo (Maduración)', () => {
+  it('las 3 hojas nuevas tienen _SheetOrigin específico (no el genérico Maduracion)', () => {
+    expect(classifyOrigin('Maduración MATRIZ')).toBe('Maduración MATRIZ');
+    expect(classifyOrigin('Maduración Bitácora')).toBe('Maduración Bitácora');
+    expect(classifyOrigin('Maduración Transferencias')).toBe('Maduración Transferencias');
+  });
+  it('el resto de Maduración sigue cayendo en el genérico', () => {
+    expect(classifyOrigin('Maduración Sala')).toBe('Maduracion');
+    expect(classifyOrigin('Maduración Tanques')).toBe('Maduracion');
+    expect(classifyOrigin('Maduración Lotes')).toBe('Maduracion');
   });
 });
 
