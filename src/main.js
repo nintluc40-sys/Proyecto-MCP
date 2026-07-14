@@ -11,6 +11,7 @@ import './views/biomolecular/biomolecular.css';
 import './views/visitante/visitante.css';
 import './views/algas/algas.css';
 import './views/microbiologia/microbiologia.css';
+import './views/maduracion/maduracion.css';
 
 import { mountShell, showLoader } from './ui/shell.js';
 import { registerView } from './ui/router.js';
@@ -24,6 +25,7 @@ import { revisionesView } from './views/revisiones/index.js';
 import { visitanteView } from './views/visitante/index.js';
 import { algasView } from './views/algas/index.js';
 import { microbiologiaView } from './views/microbiologia/index.js';
+import { maduracionView } from './views/maduracion/index.js';
 // Biología Molecular: carga DIFERIDA. Es la vista más pesada (D3, ~1.5k líneas) y
 // no es de uso diario; se descarga solo al abrirla, aligerando el bundle inicial.
 
@@ -35,15 +37,7 @@ async function boot() {
   registerView('larvicultura', { label: 'Larvicultura', icon: '🦐', render: larviculturaView });
   registerView('revisiones', { label: 'Revisiones', icon: '🔍', render: revisionesView });
 
-  // Vistas en desarrollo (placeholder navegable)
-  const placeholder = (label) => (root) => {
-    root.innerHTML = `<div class="empty-state" style="padding:64px 20px">
-      <div style="font-size:46px">🚧</div>
-      <h2 style="margin:12px 0 6px;color:var(--c-brand)">${label}</h2>
-      <p class="muted">Esta vista está en desarrollo.</p>
-    </div>`;
-  };
-  registerView('maduracion', { label: 'Maduración', icon: '🥚', render: placeholder('Maduración') });
+  registerView('maduracion', { label: 'Maduración', icon: '🥚', render: maduracionView });
   registerView('microbiologia', { label: 'Microbiología', icon: '🧫', render: microbiologiaView });
   registerView('algas', { label: 'Algas', icon: '🌿', render: algasView });
   registerView('biomolecular', {

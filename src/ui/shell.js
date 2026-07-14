@@ -105,7 +105,7 @@ export const MAIN_VIEWS = [
   { id: 'larvicultura', label: 'Larvicultura',       icon: '🦐' },
   { id: 'revisiones',   label: 'Revisiones',         icon: '🔍' },
   { id: 'registros',    label: 'Registros',          icon: '📝' },
-  { id: 'maduracion',   label: 'Maduración',         icon: '🥚', pending: true },
+  { id: 'maduracion',   label: 'Maduración',         icon: '🥚' },
   { id: 'algas',        label: 'Algas',              icon: '🌿' },
   { id: 'microbiologia', label: 'Microbiología',     icon: '🧫' },
   { id: 'biomolecular', label: 'Biología Molecular', icon: '🧬' },

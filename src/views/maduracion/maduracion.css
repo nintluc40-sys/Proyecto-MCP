@@ -1,0 +1,111 @@
+/* ============================================================
+   MADURACIÓN · "Microchips" — estilos (theme-aware por tokens)
+   ============================================================ */
+.mc-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 14px; }
+.mc-head-t { display: flex; align-items: center; gap: 12px; }
+.mc-head-ic { font-size: 30px; line-height: 1; }
+.mc-title { margin: 0; font-size: 20px; font-weight: 800; color: var(--c-brand); letter-spacing: .2px; }
+.mc-sub { margin: 2px 0 0; font-size: 12px; color: var(--c-text-muted); }
+
+/* Barra de filtros */
+.mc-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.mc-monthbar { display: inline-flex; align-items: center; gap: 4px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; padding: 3px 6px; }
+.mc-mnav { border: none; background: transparent; color: var(--c-brand); font-size: 14px; cursor: pointer; padding: 3px 8px; border-radius: 8px; }
+.mc-mnav:hover:not(:disabled) { background: color-mix(in srgb, var(--c-brand) 12%, transparent); }
+.mc-mnav:disabled { color: var(--c-text-muted); cursor: default; opacity: .5; }
+.mc-mlbl { font-size: 13px; font-weight: 700; color: var(--c-text); min-width: 148px; text-align: center; }
+.mc-select { appearance: none; background: var(--c-surface); border: 1px solid var(--c-border); color: var(--c-text); border-radius: 10px; padding: 7px 12px; font-size: 13px; cursor: pointer; }
+.mc-select:focus-visible { outline: 2px solid var(--c-brand); outline-offset: 1px; }
+
+/* Sub-navegación (pestañas) */
+.mc-subnav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.mc-pill { border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); border-radius: 999px; padding: 7px 16px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all .15s; }
+.mc-pill:hover { border-color: var(--c-brand); color: var(--c-brand); }
+.mc-pill.is-on { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
+
+/* KPIs */
+.mc-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.mc-kpi { background: var(--c-surface); border: 1px solid var(--c-border); border-left: 4px solid var(--c-brand); border-radius: 12px; padding: 12px 14px; }
+.mc-kpi.is-desove { border-left-color: #0f7c9a; }
+.mc-kpi.is-mort { border-left-color: #e0533b; }
+.mc-kpi.is-fert { border-left-color: #2e9e5b; }
+.mc-kpi-lb { font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--c-text-muted); font-weight: 700; }
+.mc-kpi-v { font-size: 26px; font-weight: 800; color: var(--c-text); line-height: 1.1; margin: 3px 0 2px; }
+.mc-kpi-sub { font-size: 11px; color: var(--c-text-soft); }
+
+/* Rejilla de tarjetas */
+.mc-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.mc-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px; padding: 14px 16px; min-width: 0; }
+.mc-card-wide { grid-column: 1 / -1; }
+.mc-card-h { margin: 0 0 10px; font-size: 14px; font-weight: 800; color: var(--c-text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mc-h-note { font-size: 11px; font-weight: 600; color: var(--c-text-muted); }
+.mc-chart { position: relative; }
+.mc-note { margin: 8px 0 0; font-size: 11px; color: var(--c-text-muted); line-height: 1.4; }
+
+/* Leyenda */
+.mc-legend { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-top: 8px; justify-content: center; }
+.mc-lg { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--c-text-soft); }
+.mc-lg i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+.mc-lg b { color: var(--c-text); }
+
+/* Tablas */
+.mc-tablewrap { overflow-x: auto; }
+.mc-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.mc-table th { text-align: left; padding: 7px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--c-text-muted); border-bottom: 2px solid var(--c-border); font-weight: 700; white-space: nowrap; }
+.mc-table td { padding: 7px 8px; border-bottom: 1px solid var(--c-border-soft); color: var(--c-text); }
+.mc-table th.r, .mc-table td.r { text-align: right; }
+.mc-table tbody tr:hover { background: color-mix(in srgb, var(--c-brand) 5%, transparent); }
+.mc-table-sm { font-size: 12px; }
+.mc-rk { color: var(--c-text-muted); font-weight: 700; width: 28px; }
+
+/* Badge de fertilidad */
+.mc-fert { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
+.mc-fert.is-good { background: color-mix(in srgb, #2e9e5b 18%, transparent); color: #1e7d46; }
+.mc-fert.is-mid { background: color-mix(in srgb, #d99a00 20%, transparent); color: #a67500; }
+.mc-fert.is-low { background: color-mix(in srgb, #e0533b 18%, transparent); color: #c23a24; }
+
+/* Segmento (toggle) */
+.mc-seg { display: inline-flex; gap: 2px; background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: 8px; padding: 2px; margin-left: auto; }
+.mc-seg-b { border: none; background: transparent; color: var(--c-text-soft); font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 6px; cursor: pointer; }
+.mc-seg-b.is-on { background: var(--c-brand); color: #fff; }
+
+/* Buscador */
+.mc-searchbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.mc-search { flex: 1; min-width: 200px; max-width: 360px; background: var(--c-surface); border: 1px solid var(--c-border); color: var(--c-text); border-radius: 10px; padding: 8px 12px; font-size: 13px; }
+.mc-search:focus-visible { outline: 2px solid var(--c-brand); outline-offset: 1px; }
+.mc-search-go { background: var(--c-brand); border: none; color: #fff; border-radius: 10px; padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.mc-search-hint { font-size: 12px; }
+
+/* Botones de Trovan */
+.mc-trovan { border: none; background: transparent; color: var(--c-brand); font-weight: 700; font-size: 12.5px; cursor: pointer; padding: 0; font-family: inherit; }
+.mc-trovan:hover { text-decoration: underline; }
+.mc-mini { border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); border-radius: 8px; padding: 2px 8px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.mc-mini:hover { border-color: var(--c-brand); color: var(--c-brand); }
+
+/* Chips (nunca desovaron) */
+.mc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mc-chip { border: 1px solid var(--c-border); background: var(--c-surface-2); color: var(--c-text-soft); border-radius: 8px; padding: 4px 9px; font-size: 11.5px; cursor: pointer; }
+.mc-chip:hover { border-color: var(--c-brand); color: var(--c-brand); }
+
+/* Modal de hembra */
+.mc-modal-card { max-width: 860px; width: min(94vw, 860px); }
+.mc-fem-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px 14px; margin-bottom: 12px; }
+.mc-fem-f { display: flex; flex-direction: column; }
+.mc-fem-l { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--c-text-muted); font-weight: 700; }
+.mc-fem-v { font-size: 13px; font-weight: 600; color: var(--c-text); }
+.mc-fem-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.mc-fem-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.mc-fem-col { min-width: 0; }
+.mc-fem-death { margin-top: 8px; font-size: 12px; color: #c23a24; font-weight: 600; }
+
+/* Timeline (desoves / movimientos) */
+.mc-timeline { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.mc-tl-item { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 5px 8px; background: var(--c-surface-2); border-radius: 8px; font-size: 12px; }
+.mc-tl-d { font-weight: 700; color: var(--c-text); white-space: nowrap; }
+.mc-tl-loc { color: var(--c-text-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-tl-gap { font-size: 11px; color: var(--c-brand); font-weight: 700; white-space: nowrap; }
+
+@media (max-width: 820px) {
+  .mc-grid { grid-template-columns: 1fr; }
+  .mc-fem-cols { grid-template-columns: 1fr; }
+}
