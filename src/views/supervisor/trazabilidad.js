@@ -383,7 +383,68 @@ function calidadAguaPages(opts) {
   });
 }
 
-// Registro de generadores de páginas por ficha (las 6 fichas estándar).
+// ── Desinfección ─────────────────────────────────────────
+// Fuente DISTINTA: hoja tidy "Registro_Desinfección" (1 fila por elemento con
+// Tipo de Registro/Categoría/Elemento/Estado/Observaciones/Fecha Elemento). No
+// hay plantilla fija en el dashboard: la tabla se arma DATA-DRIVEN agrupando por
+// Tipo → Categoría, así refleja exactamente lo registrado en el Sheet.
+const DX_ORIGIN = 'Registro_Desinfección';   // _SheetOrigin (classifyOrigin la deja con el nombre exacto)
+
+function desinfRowsOf(mod, corrida) {
+  return store.globalData.filter((r) => r._SheetOrigin === DX_ORIGIN
+    && getField(r, F.modulo) === mod
+    && (!corrida || getField(r, F.corrida) === corrida));
+}
+
+// Tabla del día: secciones por Tipo de Registro → Categoría, filas por Elemento.
+function desinfeccionTable(rows) {
+  const byTipo = new Map();
+  rows.forEach((r) => {
+    const tipo = getField(r, ['Tipo de Registro', 'Tipo']) || '—';
+    const cat = getField(r, ['Categoría', 'Categoria']) || '—';
+    if (!byTipo.has(tipo)) byTipo.set(tipo, new Map());
+    const cats = byTipo.get(tipo);
+    if (!cats.has(cat)) cats.set(cat, []);
+    cats.get(cat).push(r);
+  });
+  const body = [];
+  for (const [tipo, cats] of byTipo) {
+    body.push(`<tr><th class="thg" colspan="4" style="text-align:left">${esc(String(tipo))}</th></tr>`);
+    for (const [cat, crows] of cats) {
+      body.push(`<tr><th class="thg2" colspan="4" style="text-align:left">${esc(String(cat))}</th></tr>`);
+      crows.forEach((r) => {
+        body.push(`<tr>
+    <td style="text-align:left">${pdfVal(getField(r, ['Elemento']))}</td>
+    <td>${pdfVal(getField(r, ['Estado']))}</td>
+    <td style="text-align:left;white-space:normal">${pdfVal(getField(r, ['Observaciones']))}</td>
+    <td>${pdfVal(getField(r, ['Fecha Elemento', 'Fecha elemento']))}</td>
+  </tr>`);
+      });
+    }
+  }
+  return `<table>
+    <thead><tr><th style="text-align:left">Elemento</th><th>Desinfección</th><th style="text-align:left">Observaciones</th><th>Fecha</th></tr></thead>
+    <tbody>${body.join('')}</tbody></table>`;
+}
+
+// Páginas de Desinfección: una por fecha con registros (la hoja ya sólo guarda
+// elementos marcados u observados → no hace falta filtro de "día con datos").
+function desinfeccionPages({ mod, corrida, from, to }) {
+  const byDate = new Map();
+  desinfRowsOf(mod, corrida).forEach((r) => {
+    const f = getField(r, F.fecha); if (!f || !inRange(f, from, to)) return;
+    if (!byDate.has(f)) byDate.set(f, []);
+    byDate.get(f).push(r);
+  });
+  const dates = [...byDate.keys()].sort((a, b) => (parseAnyDate(a) || 0) - (parseAnyDate(b) || 0));
+  return dates.map((fecha) => {
+    const dayRows = byDate.get(fecha);
+    const d = { fecha, corrida: corrida || firstField(dayRows, F.corrida), tec: firstField(dayRows, F.tecnico) };
+    return { d, tableHtml: desinfeccionTable(dayRows) };
+  });
+}
+
+// Registro de generadores de páginas por ficha.
 const FICHA_PAGES = {
   poblacion: poblacionPages,
   calidad: calidadPages,
@@ -391,7 +452,28 @@ const FICHA_PAGES = {
   despacho: despachoPages,
   params: paramsPages,
   calagua: calidadAguaPages,
+  desinfeccion: desinfeccionPages,
 };
+
+/**
+ * Rango de fechas del módulo (primer y último registro entre TODAS las fuentes:
+ * "Datos Larvicultura", "Control_Tanque" y "Registro_Desinfección"). Devuelve
+ * ISO yyyy-mm-dd (o '' si no hay registros). Se usa para prellenar Desde/Hasta.
+ */
+export function moduleDateRange(mod, corrida) {
+  let min = null, max = null;
+  const scan = (rows) => rows.forEach((r) => {
+    const t = parseAnyDate(getField(r, F.fecha));
+    if (!t) return;
+    if (min === null || t < min) min = t;
+    if (max === null || t > max) max = t;
+  });
+  scan(larvRowsOf(mod, corrida));
+  scan(tanqRowsOf(mod, corrida));
+  scan(desinfRowsOf(mod, corrida));
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { from: min ? iso(min) : '', to: max ? iso(max) : '' };
+}
 
 /** Devuelve las páginas de una ficha (o null si aún no está implementada). */
 export function buildFichaPages(fid, opts) {

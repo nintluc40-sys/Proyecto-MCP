@@ -20,13 +20,14 @@ const FICHA_META = {
   params:    { label: 'Parámetros',          title: 'Parámetros en Tanques — OD y Temperatura', icon: '🌡️', doc: 'OMR-LAB-M-FOR-045', abb: 'PAR', file: 'PA' },
   calagua:   { label: 'Calidad de Agua',     title: 'Calidad de Agua',                         icon: '💧', doc: 'OMR-LAB-M-FOR-CAG', abb: 'CAG', file: 'CA' },
   despacho:  { label: 'Despacho',            title: 'Despacho',                                icon: '🚚', doc: 'OMR-LAB-M-FOR-DES', abb: 'DES', file: 'DP' },
+  desinfeccion: { label: 'Desinfección',     title: 'Registro de Limpieza y Desinfección',     icon: '🧴', doc: 'OMR-LAB-FOR-042',   abb: 'DXF', file: 'DX' },
 };
 const REV_LINE = {
   calidad: 'Revisión: 002 — Vigencia: 21/11/2025',
   params: 'Versión 0 — Fecha de aprobación 1-ago.-2015',
 };
 
-/** Ids de ficha soportados, en orden de presentación (Calidad, PLG, Población, Parámetros, Cal. Agua, Despacho). */
+/** Ids de ficha soportados, en orden de presentación (Calidad, PLG, Población, Parámetros, Cal. Agua, Despacho, Desinfección). */
 export const FICHA_IDS = Object.keys(FICHA_META);
 /** ¿`fid` es una ficha estándar soportada? */
 export const isFichaId = (fid) => Object.prototype.hasOwnProperty.call(FICHA_META, fid);

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { store } from '../../core/store.js';
-import { buildFichaPages, downloadTrazabilidad } from './trazabilidad.js';
+import { buildFichaPages, downloadTrazabilidad, moduleDateRange } from './trazabilidad.js';
 import { buildFichaPdfDoc } from './fichaPdf.js';
 
 const row = (o) => ({ _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '573', ...o });
@@ -60,11 +60,65 @@ describe('trazabilidad · adaptador Población (store→ficha)', () => {
     expect(res2.generated).toEqual([]);
   });
 
-  it('las 6 fichas estándar están implementadas; una desconocida devuelve null', () => {
-    ['poblacion', 'calidad', 'plg', 'params', 'calagua', 'despacho'].forEach((fid) => {
+  it('las fichas soportadas están implementadas; una desconocida devuelve null', () => {
+    ['poblacion', 'calidad', 'plg', 'params', 'calagua', 'despacho', 'desinfeccion'].forEach((fid) => {
       expect(Array.isArray(buildFichaPages(fid, { mod: 'M01' }))).toBe(true);
     });
     expect(buildFichaPages('algas', { mod: 'M01' })).toBeNull();
+  });
+});
+
+describe('trazabilidad · adaptador Desinfección (Registro_Desinfección → ficha)', () => {
+  const dx = (o) => ({ _SheetOrigin: 'Registro_Desinfección', 'Módulo': 'M01', Corrida: '573', ...o });
+  beforeEach(() => {
+    store.globalData = [
+      dx({ Fecha: '2026-06-01', 'Tipo de Registro': 'Desinfección de módulo larvicultura', 'Categoría': 'Materiales', Elemento: 'Tanques', Estado: 'Sí', Observaciones: '300 ppm cloro' }),
+      dx({ Fecha: '2026-06-01', 'Tipo de Registro': 'Desinfección de módulo larvicultura', 'Categoría': 'Personal', Elemento: 'Botas', Estado: 'Sí', Observaciones: '' }),
+      dx({ Fecha: '2026-06-03', 'Tipo de Registro': 'Limpieza de materiales', 'Categoría': 'Materiales', Elemento: 'Filtros', Estado: 'No', Observaciones: '', 'Fecha Elemento': '2026-06-03' }),
+      // Otro módulo → no debe aparecer.
+      dx({ 'Módulo': 'M02', Fecha: '2026-06-01', 'Tipo de Registro': 'X', 'Categoría': 'Y', Elemento: 'Z', Estado: 'Sí' }),
+    ];
+  });
+
+  it('genera una página por día (ascendente) y agrupa por Tipo → Categoría', () => {
+    const pages = buildFichaPages('desinfeccion', { mod: 'M01', corrida: '573' });
+    expect(pages.map((p) => p.d.fecha)).toEqual(['2026-06-01', '2026-06-03']);
+    const html = pages[0].tableHtml;
+    expect(html).toContain('Desinfección de módulo larvicultura');
+    expect(html).toContain('Materiales');
+    expect(html).toContain('Personal');
+    expect(html).toContain('Tanques');
+    expect(html).toContain('300 ppm cloro');
+    // La fila de M02 no se incluye.
+    expect(html).not.toContain('>Z<');
+  });
+
+  it('respeta el rango de fechas (from/to)', () => {
+    const pages = buildFichaPages('desinfeccion', { mod: 'M01', corrida: '573', from: '2026-06-02' });
+    expect(pages.map((p) => p.d.fecha)).toEqual(['2026-06-03']);
+  });
+});
+
+describe('trazabilidad · moduleDateRange (primer↔último registro del módulo)', () => {
+  beforeEach(() => {
+    store.globalData = [
+      row({ Tanque: '1', Fecha: '2026-06-05', 'Población': '1000000' }),
+      row({ Tanque: '1', Fecha: '2026-06-01', 'Población': '1000000' }),
+      { _SheetOrigin: 'Control_Tanque M01', 'Módulo': 'M01', Corrida: '573', Tanque: '1', Fecha: '2026-06-08', Hora: '08:00', OD: '6' },
+      { _SheetOrigin: 'Registro_Desinfección', 'Módulo': 'M01', Corrida: '573', Fecha: '2026-05-28', 'Tipo de Registro': 'T', 'Categoría': 'C', Elemento: 'E', Estado: 'Sí' },
+      // Otro módulo → ignorado.
+      row({ 'Módulo': 'M02', Tanque: '1', Fecha: '2026-01-01', 'Población': '1' }),
+    ];
+  });
+
+  it('cubre todas las fuentes (Larvicultura + Control_Tanque + Desinfección) en ISO', () => {
+    const r = moduleDateRange('M01', '573');
+    expect(r.from).toBe('2026-05-28');   // Desinfección es el más antiguo
+    expect(r.to).toBe('2026-06-08');     // Control_Tanque es el más reciente
+  });
+
+  it('sin registros del módulo → rango vacío', () => {
+    expect(moduleDateRange('M09', '')).toEqual({ from: '', to: '' });
   });
 });
 

@@ -160,7 +160,7 @@ describe('Supervisor · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
-  it('Trazabilidad · tarjeta "Días proceso" abre el modal con las 6 fichas y toggle "Todas"', () => {
+  it('Trazabilidad · tarjeta "Días proceso" abre el modal con las fichas y toggle "Todas"', () => {
     const root = mount();
     click(root.querySelector('.sv-card[data-nav="module"]'));
     const card = root.querySelector('[data-modtrace]');
@@ -171,7 +171,10 @@ describe('Supervisor · harness de navegación integral', () => {
     expect(modal).toBeTruthy();
     expect(modal.classList.contains('sv-open')).toBe(true);
     const types = [...modal.querySelectorAll('[data-trace-fid]')].map((c) => c.dataset.traceFid);
-    expect(types).toEqual(['calidad', 'plg', 'poblacion', 'params', 'calagua', 'despacho']);
+    expect(types).toEqual(['calidad', 'plg', 'poblacion', 'params', 'calagua', 'despacho', 'desinfeccion']);
+    // Desde/Hasta se prellenan con el rango de fechas del módulo (ISO yyyy-mm-dd).
+    expect(modal.querySelector('[data-trace-from]').value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(modal.querySelector('[data-trace-to]').value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     // "Todas" desmarcado → desmarca todas.
     const all = modal.querySelector('[data-trace-all]');
     all.checked = false; all.dispatchEvent(new Event('change'));

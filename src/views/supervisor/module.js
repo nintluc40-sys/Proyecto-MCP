@@ -6,7 +6,7 @@ import { moduleSvPopSeries, moduleHourlyDates, moduleHourly, moduleDayKpis, modu
 import { HR_LABELS } from './tank.js';
 import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, kpiTecnicos, breadcrumb, bindModal } from './ui.js';
 import { toast } from '../../ui/toast.js';
-import { downloadTrazabilidad } from './trazabilidad.js';
+import { downloadTrazabilidad, moduleDateRange } from './trazabilidad.js';
 import { FICHA_IDS, fichaLabel } from './fichaPdf.js';
 import { svLevel, odLevel, tmpLevel, levelColor, levelLabel, esc } from '../../core/format.js';
 import { store } from '../../core/store.js';
@@ -1181,7 +1181,7 @@ export function renderModule(ctx, mod) {
         <div class="sv-trace-sec sv-trace-dates">
           <label class="sv-modal-datelbl">📅 Desde <input type="date" class="sv-modal-select" data-trace-from></label>
           <label class="sv-modal-datelbl">📅 Hasta <input type="date" class="sv-modal-select" data-trace-to></label>
-          <span class="muted sv-trace-hint">Vacío = todo el rango del módulo.</span>
+          <span class="muted sv-trace-hint">Prellenado con el primer y último registro del módulo. Bórralo para no limitar el rango.</span>
         </div>
         <div class="sv-trace-actions">
           <button class="sv-action-btn" data-trace-download>📄 Descargar PDF</button>
@@ -1341,6 +1341,12 @@ export function renderModule(ctx, mod) {
       bindModal(root, traceOverlay, {
         openSel: '[data-modtrace]', closeSel: '[data-trace-close]', keyboard: true,
       });
+      // Prellena Desde/Hasta con el rango de fechas del módulo (primer↔último registro).
+      const fromEl = traceOverlay.querySelector('[data-trace-from]');
+      const toEl = traceOverlay.querySelector('[data-trace-to]');
+      const range = moduleDateRange(mod, corrida);
+      if (fromEl && range.from) fromEl.value = range.from;
+      if (toEl && range.to) toEl.value = range.to;
       const allCb = traceOverlay.querySelector('[data-trace-all]');
       const typeCbs = [...traceOverlay.querySelectorAll('[data-trace-fid]')];
       if (allCb) allCb.addEventListener('change', () => { typeCbs.forEach((c) => { c.checked = allCb.checked; }); });
