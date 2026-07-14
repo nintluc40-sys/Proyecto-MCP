@@ -38,10 +38,19 @@ export const REPRO_EVENTO = { DESOVE: 'Desove', MORTALIDAD: 'Mortalidad' };
 export const REPRO_TRANSFER_TIPO = { TRASLADO: 'Traslado', MEZCLA: 'Mezcla' };
 
 /* ── Normalización / parseo ── */
-/** Normaliza un Trovan ID: string, sin espacios, saneado (anti-inyección de fórmula). */
+/** Normaliza un Trovan ID: string, sin espacios, saneado (anti-inyección de fórmula) y en
+ *  MAYÚSCULAS (los códigos del lector son hexadecimales; mayúsculas = forma canónica, así
+ *  un mismo tag en minúsculas no genera claves distintas ni duplica en el upsert). */
 export function normTrovan(s) {
-  return sanitizeStr(String(s == null ? '' : s)).replace(/\s+/g, '');
+  return sanitizeStr(String(s == null ? '' : s)).replace(/\s+/g, '').toUpperCase();
 }
+
+/** Formato canónico de un Trovan ID del lector: EXACTAMENTE 10 caracteres hexadecimales
+ *  (0-9 A-F) en mayúsculas. Se valida sobre el id YA normalizado. Descarta los códigos que
+ *  el lector/Excel corrompe al exportar: notación científica (8.21E+19), decimales o comas,
+ *  texto, y números que perdieron los ceros a la izquierda (quedan con < 10 dígitos). */
+export const TROVAN_RE = /^[0-9A-F]{10}$/;
+export function isValidTrovan(id) { return TROVAN_RE.test(String(id == null ? '' : id)); }
 
 /** Parsea el bloque de texto pegado por el usuario (uno por línea, o separados por
  *  coma/punto y coma/espacios). Deduplica preservando el orden y reporta duplicados. */
@@ -90,7 +99,7 @@ export function syncPayload(sheetName, headers, keyCols, rows) {
  *  Omite filas vacías; reporta filas con datos pero sin Trovan (sinTrovan), Trovan repetidos
  *  dentro del lote (duplicados) y —si hay matriz— los que ya existen (existentes). */
 export function buildAltaBatch(forms, matrixIndex) {
-  const report = { created: [], sinTrovan: 0, duplicados: [], existentes: [] };
+  const report = { created: [], sinTrovan: 0, duplicados: [], existentes: [], invalidFormat: [] };
   const seen = new Set(); const rows = [];
   const OTHER = ['numero', 'color', 'piscina', 'codigo', 'lote', 'sala', 'tanque'];
   (forms || []).forEach((form) => {
@@ -99,6 +108,7 @@ export function buildAltaBatch(forms, matrixIndex) {
     const hasData = trovan || OTHER.some((k) => String(form[k] == null ? '' : form[k]).trim());
     if (!hasData) return;                          // fila totalmente vacía → se ignora
     if (!trovan) { report.sinTrovan++; return; }   // tiene datos pero le falta el Trovan
+    if (!isValidTrovan(trovan)) { report.invalidFormat.push(trovan); return; } // formato corrupto → NO se registra, señalado
     if (seen.has(trovan)) { report.duplicados.push(trovan); return; }
     if (matrixIndex && matrixIndex.has(trovan)) { report.existentes.push(trovan); return; }
     seen.add(trovan);
@@ -128,7 +138,7 @@ export function buildAltaBatch(forms, matrixIndex) {
  *  desove de una muerta se omite); si NO se pasa, procesa todos los Trovan sin validar
  *  (el engine aún no lee la MATRIZ — la validación llega cuando se cargue). */
 export function buildEventBatch({ ids, fecha, tipo, matrixIndex } = {}) {
-  const report = { total: 0, processed: [], notFound: [], alreadyDead: [] };
+  const report = { total: 0, processed: [], notFound: [], alreadyDead: [], invalidFormat: [] };
   const okTipo = (tipo === REPRO_EVENTO.DESOVE || tipo === REPRO_EVENTO.MORTALIDAD);
   if (!fecha) return { report, bitacora: null, matriz: null, error: 'Falta la fecha.' };
   if (!okTipo) return { report, bitacora: null, matriz: null, error: 'Tipo de evento inválido.' };
@@ -137,6 +147,7 @@ export function buildEventBatch({ ids, fecha, tipo, matrixIndex } = {}) {
   (ids || []).forEach((raw) => {
     const id = normTrovan(raw); if (!id) return;
     report.total++;
+    if (!isValidTrovan(id)) { report.invalidFormat.push(id); return; } // formato corrupto → NO se registra, señalado
     const rec = matrixIndex ? matrixIndex.get(id) : null;
     if (matrixIndex && !rec) { report.notFound.push(id); return; } // solo valida si hay matriz
     const dead = !!(rec && rec.estado === REPRO_ESTADO.MUERTO);
@@ -173,7 +184,7 @@ export function nextTrId(existingIds) {
  *  en el origen declarado (wrongLocation), omitiendo los que no; si NO se pasa, mueve todos los
  *  Trovan de cada destino sin validar (el engine aún no lee la MATRIZ). */
 export function buildTransferBatch({ fecha, tipo, origen, destinos, composicion, matrixIndex, trId } = {}) {
-  const report = { moved: [], notFound: [], wrongLocation: [] };
+  const report = { moved: [], notFound: [], wrongLocation: [], invalidFormat: [] };
   if (!fecha) return { report, matriz: null, transfer: null, error: 'Falta la fecha.' };
   const fx = sanitizeStr(fecha);
   const org = { sala: sanitizeStr(origen && origen.sala), tanque: sanitizeStr(origen && origen.tanque) };
@@ -186,6 +197,7 @@ export function buildTransferBatch({ fecha, tipo, origen, destinos, composicion,
     const dSala = sanitizeStr(dest.sala), dTanque = sanitizeStr(dest.tanque);
     (dest.ids || []).forEach((raw) => {
       const id = normTrovan(raw); if (!id) return;
+      if (!isValidTrovan(id)) { report.invalidFormat.push(id); return; } // formato corrupto → NO se transfiere, señalado
       const rec = matrixIndex ? matrixIndex.get(id) : null;
       if (matrixIndex && !rec) { report.notFound.push(id); return; } // solo valida si hay matriz
       if (matrixIndex && rec && ((org.sala && String(rec.sala) !== org.sala) || (org.tanque && String(rec.tanque) !== org.tanque))) {

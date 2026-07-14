@@ -5514,11 +5514,13 @@ function _madReproShowAltaReport(rep, okSent){
   h+=chip(rep.created.length+" registrado(s)", "#dcfce7", "#166534");
   if(rep.duplicados && rep.duplicados.length) h+=chip(rep.duplicados.length+" duplicado(s) en el lote", "#fef9c3", "#854d0e");
   if(rep.existentes && rep.existentes.length) h+=chip(rep.existentes.length+" ya existente(s)", "#fef9c3", "#854d0e");
+  if(rep.invalidFormat && rep.invalidFormat.length) h+=chip(rep.invalidFormat.length+" con formato inválido (señalados)", "#ffedd5", "#9a3412");
   if(rep.sinTrovan) h+=chip(rep.sinTrovan+" sin Trovan (omitidas)", "#fee2e2", "#991b1b");
   h+='</div>';
   const lists=[];
   if(rep.duplicados && rep.duplicados.length) lists.push(["Duplicados en el lote", rep.duplicados]);
   if(rep.existentes && rep.existentes.length) lists.push(["Ya existentes en la matriz", rep.existentes]);
+  if(rep.invalidFormat && rep.invalidFormat.length) lists.push(["Formato inválido (no registrados — revisa el código en el lector)", rep.invalidFormat]);
   lists.forEach(function(pair){ h+='<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
   el.innerHTML=h;
 }
@@ -5568,10 +5570,12 @@ function _madReproShowTransferReport(rep, trId, okSent){
   const chip=function(txt,bg,fg){ return '<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:'+bg+';color:'+fg+'">'+escapeHtml(txt)+'</span>'; };
   let h='<div style="font-size:12px;font-weight:700;margin-bottom:6px">'+(okSent?"✅ Enviado":"⚠️ Sin enviar")+' · '+escapeHtml(trId)+'</div><div style="display:flex;gap:6px;flex-wrap:wrap">';
   h+=chip(rep.moved.length+" transferido(s)", "#dcfce7", "#166534");
+  if(rep.invalidFormat && rep.invalidFormat.length) h+=chip(rep.invalidFormat.length+" con formato inválido (señalados)", "#ffedd5", "#9a3412");
   if(rep.notFound && rep.notFound.length) h+=chip(rep.notFound.length+" no encontrado(s)", "#fee2e2", "#991b1b");
   if(rep.wrongLocation && rep.wrongLocation.length) h+=chip(rep.wrongLocation.length+" fuera del origen", "#fef9c3", "#854d0e");
   h+='</div>';
   const lists=[];
+  if(rep.invalidFormat && rep.invalidFormat.length) lists.push(["Formato inválido (no transferidos — revisa el código en el lector)", rep.invalidFormat]);
   if(rep.notFound && rep.notFound.length) lists.push(["No encontrados", rep.notFound]);
   if(rep.wrongLocation && rep.wrongLocation.length) lists.push(["Fuera del origen declarado", rep.wrongLocation]);
   lists.forEach(function(pair){ h+='<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
@@ -5585,11 +5589,13 @@ function _madReproShowReport(rep, duplicates, tipo, okSent){
   h += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
   h += chip(rep.processed.length+" registrado(s)", "#dcfce7", "#166534");
   if(duplicates && duplicates.length) h += chip(duplicates.length+" duplicado(s) omitido(s)", "#fef9c3", "#854d0e");
+  if(rep.invalidFormat && rep.invalidFormat.length) h += chip(rep.invalidFormat.length+" con formato inválido (señalados)", "#ffedd5", "#9a3412");
   if(rep.notFound && rep.notFound.length) h += chip(rep.notFound.length+" no encontrado(s)", "#fee2e2", "#991b1b");
   if(rep.alreadyDead && rep.alreadyDead.length) h += chip(rep.alreadyDead.length+" ya muerta(s)", "#fef9c3", "#854d0e");
   h += '</div>';
   const lists=[];
   if(duplicates && duplicates.length) lists.push(["Duplicados", duplicates]);
+  if(rep.invalidFormat && rep.invalidFormat.length) lists.push(["Formato inválido (no registrados — revisa el código en el lector)", rep.invalidFormat]);
   if(rep.notFound && rep.notFound.length) lists.push(["No encontrados", rep.notFound]);
   if(rep.alreadyDead && rep.alreadyDead.length) lists.push(["Ya registradas como muertas", rep.alreadyDead]);
   lists.forEach(function(pair){ h += '<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
