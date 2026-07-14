@@ -174,6 +174,13 @@ function doPost(e) {
     else if (payload.sheetName === "Maduración Bitácora")       madKeyCols = [0,1,2]; // Trovan + Fecha + Tipo
     else if (payload.sheetName === "Maduración Transferencias") madKeyCols = [0,3];   // TR-ID + Trovan
     var isMad   = madKeyCols !== null;
+    // Columna Trovan ID (0-indexed) por hoja: se fuerza a formato TEXTO ("@") al
+    // escribir, así Sheets NO reinterpreta el código como notación científica ni
+    // le quita ceros a la izquierda (es un identificador, no un número).
+    var madTrovanCol = payload.sheetName === "Maduración MATRIZ" ? 1
+                     : payload.sheetName === "Maduración Bitácora" ? 0
+                     : payload.sheetName === "Maduración Transferencias" ? 3
+                     : -1;
     var limits  = isAlgas  ? LIMITS.algas
                 : isMad    ? LIMITS.mad
                 : isBiomol ? LIMITS.biomol
@@ -251,7 +258,7 @@ function doPost(e) {
       //   Sala     → [0,1]   Fecha+Sala
       //   Tanques  → [0,1,3] Fecha+Sala+Tanque (Lote editable, fuera de clave)
       //   Lotes    → [0,1,2] Fecha+Sala+Fila   (Lote/Historial editables)
-      result = upsertMadRows(ws, rows, madKeyCols);
+      result = upsertMadRows(ws, rows, madKeyCols, madTrovanCol);
     }
     else if (isAlgas)  result = upsertAlgasRows(ws, rows);
     else if (isBiomol) {
@@ -814,7 +821,8 @@ function algasInKey(row) {
 //   • Maduración Lotes    → [0,1,2] (Fecha, Sala, Fila)   — Lote/Historial editables
 // Si la clave coincide con una fila existente: merge (los nuevos valores
 // no vacíos reemplazan al anterior; los vacíos preservan el dato actual).
-function upsertMadRows(ws, newRows, keyCols) {
+function upsertMadRows(ws, newRows, keyCols, trovanCol) {
+  if (trovanCol === undefined || trovanCol === null) trovanCol = -1;
   var lastR = ws.getLastRow();
   var data  = ws.getDataRange().getValues();
   var map   = {};
@@ -845,6 +853,9 @@ function upsertMadRows(ws, newRows, keyCols) {
           merged.push(nEmpty ? e : n);
         }
       }
+      // Trovan a TEXTO ("@") antes de escribir → preserva el código exacto (10 hex,
+      // ceros a la izquierda) y evita que Sheets lo vuelva número/notación científica.
+      if (trovanCol >= 0 && trovanCol < merged.length) ws.getRange(entry.row, trovanCol + 1, 1, 1).setNumberFormat("@");
       ws.getRange(entry.row, 1, 1, merged.length).setValues([merged]);
       fmtData(ws, entry.row, 1, merged.length, false);
       updated++;
@@ -865,6 +876,7 @@ function upsertMadRows(ws, newRows, keyCols) {
   if (toAdd.length > 0) {
     var startRow = lastRow(ws) + 1;
     var nc2 = toAdd[0].length;
+    if (trovanCol >= 0 && trovanCol < nc2) ws.getRange(startRow, trovanCol + 1, toAdd.length, 1).setNumberFormat("@");
     ws.getRange(startRow, 1, toAdd.length, nc2).setValues(toAdd);
     fmtData(ws, startRow, toAdd.length, nc2, false);
     added = toAdd.length;
