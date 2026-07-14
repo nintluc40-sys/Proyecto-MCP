@@ -8,6 +8,7 @@
    (mod = 'M01'…'CIO', sin globals del motor de captura).
    ============================================================ */
 import { esc } from '../../core/format.js';
+import { parseAnyDate } from '../../core/dates.js';
 
 // Metadatos por ficha estándar. `label` = nombre corto para la UI (modal/toast);
 // `title` = título formal para la cabecera del PDF. También: icono, código de
@@ -34,9 +35,15 @@ export const isFichaId = (fid) => Object.prototype.hasOwnProperty.call(FICHA_MET
 /** Etiqueta corta de la ficha para la UI (modal/toast). El título formal del PDF es FICHA_META.title. */
 export const fichaLabel = (fid) => (FICHA_META[fid] || {}).label || fid;
 
-const todayISO = () => {
-  const d = new Date(); const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+const p2 = (n) => String(n).padStart(2, '0');
+const isoOf = (d) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+const todayISO = () => isoOf(new Date());
+// Normaliza cualquier fecha soportada (ISO o dd/mm/yyyy del Sheet) a yyyy-mm-dd,
+// con fallback a hoy. La hoja de producción guarda dd/mm/yyyy → sin esto, el
+// nombre del PDF y el código verificador caerían a la fecha de hoy / con barras.
+export const toIsoDate = (fecha) => {
+  const d = parseAnyDate(fecha);
+  return d ? isoOf(d) : todayISO();
 };
 const modSubtitle = (mod) => (mod === 'CIO' ? 'Módulo CIO' : `Módulo ${mod}`);
 const modMetaLabel = (mod) => (mod === 'CIO' ? 'CIO' : 'Módulo');
@@ -53,13 +60,13 @@ function genCodigo(fid, mod, fecha) {
   const hex = Math.abs(seed).toString(16).toUpperCase().padStart(6, '0').slice(-6);
   const abb = (FICHA_META[fid] || {}).abb || 'FIC';
   const dg = (String(mod).replace(/\D/g, '') || '0').padStart(2, '0');
-  return `${abb}${dg}-${(fecha || todayISO()).replace(/-/g, '')}-${hex}`;
+  return `${abb}${dg}-${toIsoDate(fecha).replace(/-/g, '')}-${hex}`;
 }
 
 /** Nombre por defecto del archivo PDF (el navegador lo sugiere al guardar). */
 export function pdfFilename(fid, mod, fecha, corrida) {
   const code = (FICHA_META[fid] || {}).file || 'FIC';
-  const dStr = /^\d{4}-\d{2}-\d{2}$/.test(fecha || '') ? fecha : todayISO();
+  const dStr = toIsoDate(fecha);
   const cor = cleanFile(corrida);
   return `${code}_${dStr}_${mod}${cor ? '-' + cor : ''}`;
 }

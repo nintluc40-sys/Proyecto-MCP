@@ -19,6 +19,11 @@ describe('fichaPdf · núcleo PDF nativo (Trazabilidad)', () => {
     expect(pdfFilename('plg', 'M02', '2026-06-01', 'a/b:c')).toBe('PL_2026-06-01_M02-abc');
   });
 
+  it('pdfFilename normaliza fechas dd/mm/yyyy del Sheet a ISO (sin barras)', () => {
+    expect(pdfFilename('poblacion', 'M01', '01/06/2026', '573')).toBe('PB_2026-06-01_M01-573');
+    expect(pdfFilename('calidad', 'CIO', '3/6/2026', '')).toBe('CL_2026-06-03_CIO');
+  });
+
   it('buildFichaPdfDoc: documento multipágina (1 .ppage por día) con cabecera/pie/tabla', () => {
     const doc = buildFichaPdfDoc({
       fid: 'poblacion', mod: 'M01', fileName: 'PB_2026-06-01_M01-573',

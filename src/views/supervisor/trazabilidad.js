@@ -13,7 +13,7 @@ import { natCmp } from '../../core/util.js';
 import { esc } from '../../core/format.js';
 import { STD_HRS, normHr } from './tank.js';
 import { tankColorInfo } from '../../core/aguaColor.js';
-import { buildFichaPdfDoc, printFichaDocs, pdfFilename, isFichaId, fichaLabel } from './fichaPdf.js';
+import { buildFichaPdfDoc, printFichaDocs, pdfFilename, isFichaId, fichaLabel, toIsoDate } from './fichaPdf.js';
 
 // Horas de la ficha de Parámetros (etiquetas). Paralelas a STD_HRS (mismo índice):
 // STD_HRS[j] (normalizada 'H:MM:SS') ↔ PTIMES[j] (etiqueta 'HH:MM').
@@ -497,7 +497,7 @@ export function downloadTrazabilidad({ mod, corrida, fids, from, to }) {
     if (!pages.length) { empty.push(fichaLabel(fid)); return; }
     const dates = pages.map((p) => p.d.fecha);
     let fileName = pdfFilename(fid, mod, dates[0], corrida);
-    if (dates.length > 1) fileName += `_al_${dates[dates.length - 1]}`;
+    if (dates.length > 1) fileName += `_al_${toIsoDate(dates[dates.length - 1])}`;
     docs.push({ page: buildFichaPdfDoc({ fid, mod, fileName, pages, autoPrint: false }), fileName });
     generated.push({ fid, label: fichaLabel(fid), pages: pages.length });
   });
