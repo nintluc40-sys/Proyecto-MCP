@@ -5344,7 +5344,7 @@ function _reproAltaHTML(){
     + '<div style="overflow:auto;max-height:360px;border:1px solid #e2e8f0;border-radius:8px"><table id="repro-a-grid" style="border-collapse:collapse"><thead><tr>'+th+'</tr></thead><tbody id="repro-a-tbody">'+rows+'</tbody></table></div>'
     + '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">'
     +   '<button class="btn" type="button" style="font-weight:700" onclick="madReproAltaBatch()">➕ Registrar todos</button>'
-    +   '<button class="btn" type="button" onclick="madReproAltaAddRows()">➕ 10 filas</button>'
+    +   '<button class="btn" type="button" onclick="madReproAltaAddRows()">➕ 50 filas</button>'
     +   '<button class="btn" type="button" onclick="madReproAltaClear()">Limpiar</button>'
     + '</div>'
     + '<div id="repro-a-report" style="margin-top:12px"></div>';
@@ -5480,7 +5480,7 @@ function madReproClear(){
 function madReproAltaAddRows(){
   const tb=document.getElementById("repro-a-tbody"); if(!tb) return;
   const start=tb.querySelectorAll("tr").length;
-  let h=""; for(let i=0;i<10;i++) h+=_reproAltaRowHTML(start+i);
+  let h=""; for(let i=0;i<50;i++) h+=_reproAltaRowHTML(start+i);
   tb.insertAdjacentHTML("beforeend", h);
 }
 function _reproAltaCollect(fecha){
