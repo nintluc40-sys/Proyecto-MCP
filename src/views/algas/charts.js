@@ -286,7 +286,7 @@ export function drawCellQuality(canvasId, days, series) {
       },
       plugins: {
         legend: { labels: { usePointStyle: true, pointStyle: 'rectRounded', boxWidth: 10, font: { size: 10 }, color: '#37474f' } },
-        tooltip: { callbacks: { label: (c) => { const raw = c.dataset._raw ? c.dataset._raw[c.dataIndex] : null; return ` ${c.dataset.label}: ${c.parsed.y}%${(raw != null && !isNaN(raw)) ? ' (' + fmtFull(raw) + ')' : ''}`; } } },
+        tooltip: { callbacks: { title: () => '', label: (c) => { const raw = c.dataset._raw ? c.dataset._raw[c.dataIndex] : null; return ` ${c.dataset.label}: ${c.parsed.y}%${(raw != null && !isNaN(raw)) ? ' (' + fmtFull(raw) + ')' : ''}`; } } },
       },
     },
   });
