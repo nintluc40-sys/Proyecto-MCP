@@ -184,6 +184,13 @@ describe('cellCompositionByDay', () => {
     expect(c.series.vacias).toEqual([2, 5]);
     expect(c.pctLlenas).toBe(63);               // 15 / 24 = 62.5% → 63
   });
+  it('lee el nuevo header "Células en División" (rename de "Células Llenas")', () => {
+    const c = cellCompositionByDay([
+      row({ Fecha: '2026-07-10', 'Células Vacías': '2', 'Células en División': '8' }),
+    ]);
+    expect(c.series.llenas).toEqual([8]);   // el alias principal resuelve el nombre nuevo
+    expect(c.pctLlenas).toBe(80);           // 8 / 10
+  });
   it('ignora filas sin ninguno de los 4 conteos', () => {
     expect(cellCompositionByDay([row({ Fecha: '2026-07-10', Cel_ml: '1000' })]).days.length).toBe(0);
     expect(cellCompositionByDay([]).pctLlenas).toBeNull();

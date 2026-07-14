@@ -4466,7 +4466,7 @@ function buildAlgasPayload(m, histSnapshot){
     "Lote","Dia_Proceso","Cel_ml","Protozoarios","Especie",
     "Salinidad_ppt","pH","Temperatura_C","Intensidad_Luz_%","Descartado",
     "Observaciones","Ciliados","Filamentosos","Técnico",
-    "Células Vacías","Células Semillenas","Células Alargadas","Células Llenas",
+    "Células Vacías","Células Semillenas","Células Alargadas","Células en División",
     "Volumen de Despacho","Sesión"
   ];
   // safeNum: returns the parsed number (including 0) or "" for blank/invalid
@@ -4692,7 +4692,7 @@ function renderAlgas(){
         <input type="number" name="cel_semillenas" value="${vl(d,'cel_semillenas')}" placeholder="Conteo" step="1" min="0"></div>
       <div class="mf"><label>Células Alargadas</label>
         <input type="number" name="cel_alargadas" value="${vl(d,'cel_alargadas')}" placeholder="Conteo" step="1" min="0"></div>
-      <div class="mf"><label>Células Llenas</label>
+      <div class="mf"><label>Células en División</label>
         <input type="number" name="cel_llenas" value="${vl(d,'cel_llenas')}" placeholder="Conteo" step="1" min="0"></div>
     </div>
     <div class="ffoot">
@@ -4758,7 +4758,7 @@ function algHistBlock(){
           ${fld("Cél. Vacías",     a.cel_vacias)}
           ${fld("Cél. Semillenas", a.cel_semillenas)}
           ${fld("Cél. Alargadas",  a.cel_alargadas)}
-          ${fld("Cél. Llenas",     a.cel_llenas)}
+          ${fld("Cél. en División", a.cel_llenas)}
           ${fld("Vol. Desp. (L)",  a.vol_despacho)}
           ${fld("Corrida L.", a.corrida_larv)}
           ${fld("Mód. L.",    a.modulo_larv)}
@@ -4906,7 +4906,7 @@ function downloadBitacoraPDF(fecha){
   // Reusa pdfVal para celdas vacías (— en gris)
   const cell = (v) => (v!==undefined && v!=="" && v!==null) ? escapeHtml(String(v)) : '<span class="empty">—</span>';
 
-  const headers = ['#','Sinc.','Corrida L.','Mód. L.','Área','Sistema','Lote','Día Proc.','Especie','Cel/mL','Proto.','Ciliados','Filam.','Sal (ppt)','pH','T (°C)','Luz (%)','Descarte','Observaciones','Técnico','Cél. Vac.','Cél. Semill.','Cél. Alarg.','Cél. Llenas','Vol. Desp. (L)'];
+  const headers = ['#','Sinc.','Corrida L.','Mód. L.','Área','Sistema','Lote','Día Proc.','Especie','Cel/mL','Proto.','Ciliados','Filam.','Sal (ppt)','pH','T (°C)','Luz (%)','Descarte','Observaciones','Técnico','Cél. Vac.','Cél. Semill.','Cél. Alarg.','Cél. en División','Vol. Desp. (L)'];
   const rowsHtml = list
     .slice()
     .sort((a,b)=> (a.syncedAt||0) - (b.syncedAt||0))

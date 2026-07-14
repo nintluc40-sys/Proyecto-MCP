@@ -261,7 +261,7 @@ export function drawDaily(canvasId, days, values, label, color, unit = '', zero 
 
 // Composición celular (calidad): color de "peor" a "mejor".
 const CELL_COLORS = { vacias: '#B7A59B', semillenas: '#A06B27', alargadas: '#4F8DA0', llenas: '#186447' };
-const CELL_LABELS = { vacias: 'Vacías', semillenas: 'Semillenas', alargadas: 'Alargadas', llenas: 'Llenas' };
+const CELL_LABELS = { vacias: 'Vacías', semillenas: 'Semillenas', alargadas: 'Alargadas', llenas: 'En División' };
 
 /** Calidad morfológica: barras APILADAS al 100% con la proporción de células
  *  Vacías/Semillenas/Alargadas/Llenas por día. `series` = {vacias,semillenas,alargadas,

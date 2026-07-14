@@ -44,7 +44,7 @@ const AF = {
   cel_vacias:     ['Células Vacías', 'Celulas Vacías', 'Células Vacias', 'Celulas Vacias', 'cel_vacias'],
   cel_semillenas: ['Células Semillenas', 'Celulas Semillenas', 'cel_semillenas'],
   cel_alargadas:  ['Células Alargadas', 'Celulas Alargadas', 'cel_alargadas'],
-  cel_llenas:     ['Células Llenas', 'Celulas Llenas', 'cel_llenas'],
+  cel_llenas:     ['Células en División', 'Celulas en Division', 'Células Llenas', 'Celulas Llenas', 'cel_llenas'],
   vol_despacho:   ['Volumen de Despacho', 'Volumen Despacho', 'vol_despacho'],
 };
 
@@ -512,7 +512,7 @@ export function algasView(root) {
   // ── Franja · Calidad celular (composición morfológica 100% por día) ──
   h += algBand('🔬', 'Calidad celular', '#A06B27');
   h += `<div class="alg-charts" style="${catVar}">
-      <div class="card alg-chart-card alg-fs-card">${chHead('🔬 Composición celular <span class="muted">· % por día · Vacías/Semillenas/Alargadas/Llenas</span>' + (cellQ.pctLlenas != null ? ` <span style="margin-left:8px;font-size:11px;font-weight:800;color:#186447;background:#18644722;padding:1px 8px;border-radius:999px">✅ ${cellQ.pctLlenas}% llenas</span>` : ''), cellQ.days.length > 0 ? 'cellq' : null)}<div class="alg-chart-host alg-host-md">${host('algCellQ', cellQ.days.length > 0)}</div></div>
+      <div class="card alg-chart-card alg-fs-card">${chHead('🔬 Composición celular <span class="muted">· % por día · Vacías/Semillenas/Alargadas/En División</span>' + (cellQ.pctLlenas != null ? ` <span style="margin-left:8px;font-size:11px;font-weight:800;color:#186447;background:#18644722;padding:1px 8px;border-radius:999px">✅ ${cellQ.pctLlenas}% en división</span>` : ''), cellQ.days.length > 0 ? 'cellq' : null)}<div class="alg-chart-host alg-host-md">${host('algCellQ', cellQ.days.length > 0)}</div></div>
     </div>`;
 
   // ── Franja 2 · Parámetros fisicoquímicos (mini-gráficos compactos 4-up) ──
@@ -1187,7 +1187,7 @@ const ALG_EXPORT_COLS = [
   ['Temperatura_C', 'temp'], ['Intensidad_Luz_%', 'luz'], ['Descartado', 'descartado'],
   ['Ciliados', 'ciliados'], ['Filamentosos', 'filamentosos'], ['Observaciones', 'obs'], ['Técnico', 'tecnico'],
   ['Células Vacías', 'cel_vacias'], ['Células Semillenas', 'cel_semillenas'], ['Células Alargadas', 'cel_alargadas'],
-  ['Células Llenas', 'cel_llenas'], ['Volumen de Despacho', 'vol_despacho'],
+  ['Células en División', 'cel_llenas'], ['Volumen de Despacho', 'vol_despacho'],
 ];
 
 /** Filas de la categoría (subvista) activa respetando los filtros activos, SIN el mes
