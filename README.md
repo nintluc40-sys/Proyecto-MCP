@@ -30,9 +30,10 @@ npm run lint       # ESLint
   estado de despacho ("Despachado"/"Despachando" excluyendo tanques agrupados/
   descartados) y modales: Comparativa de tanques, OM vs Tex, Desinfección,
   Biomol, **Microbiología** (Placa de agar + Tabla + Heatmap por corrida+módulo)
-  y **Trazabilidad** (desde la tarjeta "Días proceso": descarga en PDF las 6
+  y **Trazabilidad** (desde la tarjeta "Días proceso": descarga en PDF las
   fichas del módulo —Calidad Larvaria, PLG, Población, Parámetros, Calidad de
-  Agua, Despacho— con la información del Google Sheet, un PDF por tipo).
+  Agua, Despacho y Desinfección— con la información del Google Sheet, un PDF por
+  tipo; el rango Desde/Hasta se prellena con el primer y último registro).
 - **Larvicultura** (🦐): calidad larvaria — radar, evolución diaria, heatmap,
   ICL, ranking, población por tanque y modales Comparar/Historia/Decisión.
 - **Revisiones** (🔍): hoja `Registro_Supervisión` — calidad, morfología
@@ -51,7 +52,18 @@ npm run lint       # ESLint
   (Larvicultura/Maduración/Otros), Conglomerado (niveles por patógeno, Agua vs
   Animal, carga total por patógeno, distribución por nivel), Placa de agar,
   Matriz patógeno×ubicación, tendencias y export Excel. Restyle tipo SCADA.
-  Sub-vistas General/Calidad de Agua/Patología en desarrollo.
+  Incluye el panorama **General** (tablero-scorecard por área) y **Calidad de
+  Agua** (analizador multiparamétrico con WQI, doble lente Por parámetro/Por
+  ubicación). Sub-vista **Patología en fresco** pendiente (a la espera de su
+  hoja en el Google Sheet).
+- **Maduración · "Microchips"** (🥚): seguimiento reproductivo por Trovan ID sobre
+  las hojas `Maduración MATRIZ`/`Bitácora`/`Transferencias`. Tres sub-vistas —
+  **Panorama** (KPIs, distribución de estados activa/inactiva/transferida/fallecida,
+  tendencias de desoves/mortalidad/fertilidad, top salas y tanques), **Salas y
+  Tanques** (producción, fertilidad y eficiencia por ubicación + mortalidad) y
+  **Hembras** (ranking por desoves, buscador de Trovan, hembras que nunca han
+  desovado, distribución del intervalo de recuperación e historial completo por
+  individuo). Filtros de período (mes o todo) + Sala + Tanque.
 - **Registros**: fichas de captura (estrangulamiento gradual del monolito
   `public/registros/engine.js`) que escriben al Sheet vía Google Apps Script.
 
@@ -123,8 +135,8 @@ public/registros/engine.js Monolito heredado de las fichas (se estrangula gradua
 
 ## Pendiente / siguientes pasos
 
-- Microbiología: construir las sub-vistas **General** y **Calidad de Agua**;
-  **Patología en fresco** depende de que exista su hoja en el Sheet.
+- Microbiología: construir la sub-vista **Patología en fresco** (depende de que
+  exista su hoja en el Sheet). General y Calidad de Agua ya están completas.
 - Validación visual en navegador de los cambios recientes.
 - Confirmar en una sincronización de prueba que el GAS escribe las columnas
   nuevas (`% Protusión`, `Protusión`, `% No viables`) en su posición correcta.
