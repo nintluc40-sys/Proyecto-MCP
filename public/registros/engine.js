@@ -8148,7 +8148,7 @@ function micSessionKey(d){
 }
 
 function loadMicDraft(){
-  const def = { meta:{ fechaMuestreo:today(), fechaResultados:"", corrida:"", responsable:"", hdrModulo:"", hdrEstadio:"", hdrSala:"" }, sections:{}, activeFmt:"larv-muestra" };
+  const def = { meta:{ fechaMuestreo:today(), fechaResultados:"", corrida:"", responsable:"", encabezado:"", hdrModulo:"", hdrEstadio:"", hdrSala:"" }, sections:{}, activeFmt:"larv-muestra" };
   try{ const raw = localStorage.getItem(MIC_DRAFT_KEY); if(raw){ const o = JSON.parse(raw); if(o && typeof o === "object")
     return { meta: Object.assign({}, def.meta, o.meta||{}), sections: o.sections || {}, activeFmt: o.activeFmt || "larv-muestra" }; } }catch(_){}
   return def;
@@ -8158,13 +8158,14 @@ function saveMicDraft(d){ _lsSet(MIC_DRAFT_KEY, JSON.stringify(d||{})); }
 // ── Recolección del borrador desde el DOM ──────────────
 function collectMicDraft(){
   const prev = loadMicDraft();
-  const meta = Object.assign({ fechaMuestreo:today(), fechaResultados:"", corrida:"", responsable:"" }, prev.meta||{});
+  const meta = Object.assign({ fechaMuestreo:today(), fechaResultados:"", corrida:"", responsable:"", encabezado:"" }, prev.meta||{});
   const fm = document.getElementById("mic-fm"), fr = document.getElementById("mic-fr"),
         co = document.getElementById("mic-corr"), re = document.getElementById("mic-resp");
   if(fm) meta.fechaMuestreo  = isValidDate(fm.value) ? fm.value : "";
   if(fr) meta.fechaResultados= isValidDate(fr.value) ? fr.value : "";
   if(co) meta.corrida        = sanitizeStr(co.value);
   if(re) meta.responsable    = sanitizeStr(re.value);
+  const _enc=document.getElementById("mic-enc"); if(_enc) meta.encabezado = sanitizeStr(_enc.value);
   // Item 3: valores de cabecera Módulo/Estadío (rellenan todas las filas).
   const _hm=document.getElementById("mic-hdr-modulo");  if(_hm) meta.hdrModulo  = sanitizeStr(_hm.value);
   const _he=document.getElementById("mic-hdr-estadio"); if(_he) meta.hdrEstadio = sanitizeStr(_he.value);
@@ -8453,6 +8454,8 @@ function renderMicNuevo(){
         <div class="mf"><label>Responsable</label><input id="mic-resp" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="micDraftTouch()"></div>
         <div class="mf"><label>Formato</label><select id="mic-fmt-sel" onchange="micFmtChange(this.value)" style="font-weight:600">${fmtOpts}</select></div>
         ${micHdrMod}${micHdrEst}${micHdrSala}
+        <div class="mf" style="flex-basis:100%"><label>Encabezado <span style="font-weight:500;text-transform:none;color:#64748b">— opcional, sale en el PDF antes de la semaforización</span></label>
+          <textarea id="mic-enc" placeholder="Encabezado del reporte (opcional)…" oninput="micDraftTouch()" style="width:100%;min-height:40px">${escapeHtml(meta.encabezado||"")}</textarea></div>
       </div>
       <div style="background:#f0f9ff;border:1.5px solid #bae6fd;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#075985;display:flex;align-items:center;gap:8px">
         <span style="font-size:16px">🧫</span>
@@ -8972,7 +8975,7 @@ function downloadMicPDF(srcDraft){
       <div style="font-size:5pt;color:#64748b;margin-top:1px">Analista</div></div></div>`;
   const page = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(fileName)}</title>
     <meta name="viewport" content="width=device-width,initial-scale=1"><style>${pdfCss('params')}${MIC_PDF_CSS}</style></head><body>
-    <div class="ppage">${head}${MIC_PDF_LEGEND}${body}<div class="spacer"></div>${foot}</div>
+    <div class="ppage">${head}${meta.encabezado?`<div class="obs-block" style="margin-bottom:8px"><div class="lbl">Encabezado</div><div class="txt">${escapeHtml(meta.encabezado)}</div></div>`:""}${MIC_PDF_LEGEND}${body}<div class="spacer"></div>${foot}</div>
     <script>try{document.title=${JSON.stringify(fileName)};}catch(_){}var _p=false;function dp(){if(_p)return;_p=true;setTimeout(function(){window.print();},350);}if(document.readyState==='complete')dp();else window.addEventListener('load',dp,{once:true});<\/script></body></html>`;
   const w = window.open("","_blank","width=1100,height=720");
   if(!w){ toast("El navegador bloqueó la ventana emergente. Permite pop-ups para este sitio.","warn",6000); return; }
@@ -9135,7 +9138,7 @@ function calSessionKey(d){
 }
 
 function loadCalDraft(){
-  const def = { meta:{ fechaMuestreo:today(), fechaResultados:"", corrida:"", responsable:"", hdrModulo:"", hdrEstadio:"" }, sections:{}, activeFmt:"larv" };
+  const def = { meta:{ fechaMuestreo:today(), fechaResultados:"", corrida:"", responsable:"", encabezado:"", hdrModulo:"", hdrEstadio:"" }, sections:{}, activeFmt:"larv" };
   try{ const raw=localStorage.getItem(CAL_DRAFT_KEY); if(raw){ const o=JSON.parse(raw); if(o && typeof o==="object")
     return { meta:Object.assign({},def.meta,o.meta||{}), sections:o.sections||{}, activeFmt:o.activeFmt||"larv" }; } }catch(_){}
   return def;
@@ -9144,13 +9147,14 @@ function saveCalDraft(d){ _lsSet(CAL_DRAFT_KEY, JSON.stringify(d||{})); }
 
 function collectCalDraft(){
   const prev = loadCalDraft();
-  const meta = Object.assign({ fechaMuestreo:today(), fechaResultados:"", corrida:"", responsable:"" }, prev.meta||{});
+  const meta = Object.assign({ fechaMuestreo:today(), fechaResultados:"", corrida:"", responsable:"", encabezado:"" }, prev.meta||{});
   const fm=document.getElementById("cal-fm"), fr=document.getElementById("cal-fr"),
         co=document.getElementById("cal-corr"), re=document.getElementById("cal-resp");
   if(fm) meta.fechaMuestreo  = isValidDate(fm.value) ? fm.value : "";
   if(fr) meta.fechaResultados= isValidDate(fr.value) ? fr.value : "";
   if(co) meta.corrida        = sanitizeStr(co.value);
   if(re) meta.responsable    = sanitizeStr(re.value);
+  const _enc=document.getElementById("cal-enc"); if(_enc) meta.encabezado = sanitizeStr(_enc.value);
   // Item 3: valores de cabecera Módulo/Estadío (rellenan todas las filas).
   const _hm=document.getElementById("cal-hdr-modulo");  if(_hm) meta.hdrModulo  = sanitizeStr(_hm.value);
   const _he=document.getElementById("cal-hdr-estadio"); if(_he) meta.hdrEstadio = sanitizeStr(_he.value);
@@ -9539,6 +9543,8 @@ function renderCalNuevo(){
         <div class="mf"><label>Responsable</label><input id="cal-resp" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="calDraftTouch()"></div>
         <div class="mf"><label>Formato</label><select id="cal-fmt-sel" onchange="calFmtChange(this.value)" style="font-weight:600">${fmtOpts}</select></div>
         ${calHdrMod}${calHdrEst}
+        <div class="mf" style="flex-basis:100%"><label>Encabezado <span style="font-weight:500;text-transform:none;color:#64748b">— opcional, sale en el PDF antes de la semaforización</span></label>
+          <textarea id="cal-enc" placeholder="Encabezado del reporte (opcional)…" oninput="calDraftTouch()" style="width:100%;min-height:40px">${escapeHtml(meta.encabezado||"")}</textarea></div>
       </div>
       <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:center;gap:8px">
         <span style="font-size:16px">💧</span>
@@ -9909,7 +9915,7 @@ function downloadCalPDF(){
       <div style="font-size:5pt;color:#64748b;margin-top:1px">Analista</div></div></div>`;
   const page=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(fileName)}</title>
     <meta name="viewport" content="width=device-width,initial-scale=1"><style>${pdfCss('params')}${MIC_PDF_CSS}</style></head><body>
-    <div class="ppage">${head}${CAL_PDF_LEGEND}${body}<div class="spacer"></div>${foot}</div>
+    <div class="ppage">${head}${meta.encabezado?`<div class="obs-block" style="margin-bottom:8px"><div class="lbl">Encabezado</div><div class="txt">${escapeHtml(meta.encabezado)}</div></div>`:""}${CAL_PDF_LEGEND}${body}<div class="spacer"></div>${foot}</div>
     <script>try{document.title=${JSON.stringify(fileName)};}catch(_){}var _p=false;function dp(){if(_p)return;_p=true;setTimeout(function(){window.print();},350);}if(document.readyState==='complete')dp();else window.addEventListener('load',dp,{once:true});<\/script></body></html>`;
   const w=window.open("","_blank","width=1100,height=720");
   if(!w){ toast("El navegador bloqueó la ventana emergente. Permite pop-ups para este sitio.","warn",6000); return; }
@@ -9983,7 +9989,7 @@ function patSessionKey(d){
   return d.sid ? comp + "|" + d.sid : comp;
 }
 function loadPatDraft(){
-  const def={ meta:{ fechaMuestreo:today(), fechaResultados:"", corrida:"", responsable:"" }, rows:[] };
+  const def={ meta:{ fechaMuestreo:today(), fechaResultados:"", corrida:"", responsable:"", encabezado:"" }, rows:[] };
   try{ const raw=localStorage.getItem(PAT_DRAFT_KEY); if(raw){ const o=JSON.parse(raw); if(o && typeof o==="object")
     return { meta:Object.assign({},def.meta,o.meta||{}), rows:Array.isArray(o.rows)?o.rows:[] }; } }catch(_){}
   return def;
@@ -9991,12 +9997,13 @@ function loadPatDraft(){
 function savePatDraft(d){ _lsSet(PAT_DRAFT_KEY, JSON.stringify(d||{})); }
 function collectPatDraft(){
   const prev=loadPatDraft();
-  const meta=Object.assign({ fechaMuestreo:today(), fechaResultados:"", corrida:"", responsable:"" }, prev.meta||{});
+  const meta=Object.assign({ fechaMuestreo:today(), fechaResultados:"", corrida:"", responsable:"", encabezado:"" }, prev.meta||{});
   const fm=document.getElementById("pat-fm"), fr=document.getElementById("pat-fr"),
         co=document.getElementById("pat-corr"), re=document.getElementById("pat-resp");
   if(fm) meta.fechaMuestreo  = isValidDate(fm.value)?fm.value:"";
   if(fr) meta.fechaResultados= isValidDate(fr.value)?fr.value:"";
   if(co) meta.corrida        = sanitizeStr(co.value);
+  const _enc=document.getElementById("pat-enc"); if(_enc) meta.encabezado = sanitizeStr(_enc.value);
   if(re) meta.responsable    = sanitizeStr(re.value);
   const tbody=document.getElementById("pat-tb"); const rows=[];
   if(tbody){
@@ -10130,6 +10137,8 @@ function renderPatNuevo(){
         <div class="mf"><label>Fecha resultados</label><input type="date" id="pat-fr" value="${escapeHtml(meta.fechaResultados||"")}" oninput="patDraftTouch()"></div>
         <div class="mf"><label>N° Corrida (opcional)</label><input id="pat-corr" value="${escapeHtml(meta.corrida||"")}" placeholder="Opcional" oninput="patDraftTouch()" onchange="patCorridaChange()"></div>
         <div class="mf"><label>Responsable</label><input id="pat-resp" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="patDraftTouch()"></div>
+        <div class="mf" style="flex-basis:100%"><label>Encabezado <span style="font-weight:500;text-transform:none;color:#64748b">— opcional, sale en el PDF</span></label>
+          <textarea id="pat-enc" placeholder="Encabezado del reporte (opcional)…" oninput="patDraftTouch()" style="width:100%;min-height:40px">${escapeHtml(meta.encabezado||"")}</textarea></div>
       </div>
       <div style="background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#5b21b6;display:flex;align-items:center;gap:8px">
         <span style="font-size:16px">🔬</span>
@@ -10413,7 +10422,7 @@ function downloadPatPDF(){
       <div style="font-size:5pt;color:#64748b;margin-top:1px">Analista</div></div></div>`;
   const page=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(fileName)}</title>
     <meta name="viewport" content="width=device-width,initial-scale=1"><style>${pdfCss('params')}tfoot td{background:#f5f3ff!important;font-weight:800;color:#5b21b6}</style></head><body>
-    <div class="ppage">${head}${table}<div class="spacer"></div>${foot}</div>
+    <div class="ppage">${head}${meta.encabezado?`<div class="obs-block" style="margin-bottom:8px"><div class="lbl">Encabezado</div><div class="txt">${escapeHtml(meta.encabezado)}</div></div>`:""}${table}<div class="spacer"></div>${foot}</div>
     <script>try{document.title=${JSON.stringify(fileName)};}catch(_){}var _p=false;function dp(){if(_p)return;_p=true;setTimeout(function(){window.print();},350);}if(document.readyState==='complete')dp();else window.addEventListener('load',dp,{once:true});<\/script></body></html>`;
   const w=window.open("","_blank","width=1100,height=720");
   if(!w){ toast("El navegador bloqueó la ventana emergente. Permite pop-ups para este sitio.","warn",6000); return; }
