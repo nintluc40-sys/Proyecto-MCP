@@ -935,6 +935,9 @@ function closeCalFact(root) { const m = root.querySelector('#calFactModal'); if 
 function saveCalFactors(root) {
   let stored = {};
   try { const raw = localStorage.getItem(CAL_RANGES_KEY); if (raw) stored = JSON.parse(raw) || {}; } catch (_) { stored = {}; }
+  // 1ª pasada: parsea + valida min≤max. Si algún rango está invertido, aborta el
+  // guardado ENTERO (no persiste nada) para no dejar un estado parcial confuso.
+  const edits = [], bad = [];
   CAL_PARAMS.forEach((p) => {
     const mn = root.querySelector(`[data-cal-rmin="${p.key}"]`);
     const mx = root.querySelector(`[data-cal-rmax="${p.key}"]`);
@@ -943,8 +946,11 @@ function saveCalFactors(root) {
     const o = {};
     if (min != null && !isNaN(min)) o.min = min;
     if (max != null && !isNaN(max)) o.max = max;
-    if (Object.keys(o).length) stored[p.key] = o; else delete stored[p.key];
+    if (o.min != null && o.max != null && o.min > o.max) { bad.push(p.label); return; }
+    edits.push({ key: p.key, o });
   });
+  if (bad.length) { toast(`Rango inválido (mín > máx): ${bad.join(', ')}. Corrígelo antes de guardar.`, 'err'); return; }
+  edits.forEach(({ key, o }) => { if (Object.keys(o).length) stored[key] = o; else delete stored[key]; });
   try { localStorage.setItem(CAL_RANGES_KEY, JSON.stringify(stored)); } catch (_) { toast('No se pudieron guardar los rangos (almacenamiento no disponible).', 'err'); return; }
   closeCalFact(root); toast('Rangos guardados.', 'ok'); microbiologiaView(root);
 }

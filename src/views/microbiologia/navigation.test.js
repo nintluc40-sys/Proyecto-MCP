@@ -342,6 +342,19 @@ describe('Microbiología · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('sub-vista Calidad de Agua · editor de rangos: un rango invertido (mín > máx) aborta el guardado', () => {
+    mount();
+    click(root.querySelector('[data-mic-sub="calidad"]'));
+    const isOpen = () => root.querySelector('#calFactModal').classList.contains('is-open');
+    click(root.querySelector('[data-cal-factors]'));
+    expect(isOpen()).toBe(true);
+    // pH base = 7.5–8.5; fuerzo mín 9 > máx 8.5 → guardado inválido.
+    root.querySelector('[data-cal-rmin="ph"]').value = '9';
+    click(root.querySelector('[data-cal-fact-save]'));
+    expect(isOpen()).toBe(true); // el modal NO se cerró: el guardado se abortó
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('modal de alertas: abre desde el KPI y cierra', () => {
     mount();
     const kpi = root.querySelector('[data-mic-alerts]');
