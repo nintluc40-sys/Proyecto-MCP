@@ -82,7 +82,10 @@ const H = {
   tanqueDestino: ['Tanque destino'],
 };
 
-const normTrovan = (s) => String(s == null ? '' : s).replace(/\s+/g, '');
+// Canónico: quita espacios y MAYÚSCULAS (espeja el write-side reproductivo.data.js;
+// los Trovan son hex y desde 2026-07-14 la captura los guarda en mayúsculas → evita
+// que un caso mixto legado rompa en silencio los cruces entre hojas por Trovan).
+const normTrovan = (s) => String(s == null ? '' : s).replace(/\s+/g, '').toUpperCase();
 const dash = (s) => (s && String(s).trim()) ? String(s).trim() : '—';
 /** Clave de ubicación Sala · Tanque (para agregados). */
 export const locKey = (sala, tanque) => `${dash(sala)} · ${dash(tanque)}`;

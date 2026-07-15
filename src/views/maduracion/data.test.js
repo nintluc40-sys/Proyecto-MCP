@@ -176,6 +176,21 @@ describe('maduracion.data · derivación de ubicación por Trovan (Bitácora sin
     expect(byDate[0].tanque).toBe('T-viejo');   // evento previo a la transferencia
     expect(byDate[1].tanque).toBe('T-nuevo');   // evento posterior
   });
+
+  it('cruza el Trovan sin importar mayúsculas/minúsculas (caso mixto legado)', () => {
+    // MATRIZ en mayúsculas (write-side actual) vs Bitácora/Transferencia en minúsculas
+    // (fila legada antes de que la captura forzara mayúsculas). Deben cruzar igual.
+    const m = buildReproModel(
+      [{ 'Trovan ID': 'ABC123DEF0', 'Sala actual': 'S1', 'Tanque actual': 'T5', Estado: 'Vivo' }],
+      [{ 'Trovan ID': 'abc123def0', Fecha: '2026-06-05', Tipo: 'Desove' }],
+      [],
+    );
+    expect(m.desoves).toHaveLength(1);
+    expect(m.desoves[0].sala).toBe('S1');       // ubicación derivada de la MATRIZ pese al caso distinto
+    expect(m.desoves[0].tanque).toBe('T5');
+    expect([...m.byTrovan.keys()]).toEqual(['ABC123DEF0']);
+    expect(femaleHistory(m, 'abc123def0').totalDesoves).toBe(1); // consulta por caso mixto también resuelve
+  });
 });
 
 describe('maduracion.data · robustez con datos como los reales', () => {
