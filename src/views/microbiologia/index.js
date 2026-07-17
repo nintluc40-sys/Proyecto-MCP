@@ -589,7 +589,7 @@ function calSpark(vals, w = 74, h = 22, pad = 2) {
 /** Franja de INSTRUMENTOS de Calidad de Agua: KPIs con identidad visual + micro-viz.
  *  Cada tarjeta responde una pregunta (cuántas · cumplimiento/tendencia · severidad · dónde),
  *  reutilizando el sistema de color --sev de la vista para cohesión con el gauge/mapa de riesgo. */
-function calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, outByParam, alertAttrs }) {
+function calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, evalCount, outByParam, alertAttrs }) {
   // Perfil de severidad (4 niveles) sobre TODAS las mediciones con rango.
   const sevOrder = ['optimo', 'vigilancia', 'fuera', 'critico'];
   const sevCount = { optimo: 0, vigilancia: 0, fuera: 0, critico: 0 };
@@ -613,7 +613,7 @@ function calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, outByParam, 
   const compDelta = compVals.length >= 2 ? compVals[compVals.length - 1] - compVals[compVals.length - 2] : null;
   const dArrow = compDelta == null ? '' : compDelta > 0 ? 'up' : compDelta < 0 ? 'dn' : '';
 
-  const compSev = pctOk >= 90 ? 'optimo' : pctOk >= 70 ? 'vigilancia' : 'critico';
+  const compSev = pctOk == null ? '' : pctOk >= 90 ? 'optimo' : pctOk >= 70 ? 'vigilancia' : 'critico';
   const sevProfileSev = pctOpt >= 80 ? 'optimo' : pctOpt >= 60 ? 'vigilancia' : 'fuera';
 
   // 01 · Timeline compacto (cobertura de muestreo por día).
@@ -639,18 +639,20 @@ function calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, outByParam, 
       ${footHtml ? `<div class="cal-inst-foot">${footHtml}</div>` : ''}
     </div>`;
 
-  const compFoot = `${fullOk} de ${samples.length} al 100%${compDelta != null ? ` · <b class="cal-inst-d ${dArrow}">${compDelta > 0 ? '▲' : compDelta < 0 ? '▼' : '▬'} ${Math.abs(compDelta)}pt</b>` : ''}`;
+  const compFoot = pctOk == null
+    ? 'sin parámetros con rango objetivo'
+    : `${fullOk} de ${evalCount} al 100%${compDelta != null ? ` · <b class="cal-inst-d ${dArrow}">${compDelta > 0 ? '▲' : compDelta < 0 ? '▼' : '▬'} ${Math.abs(compDelta)}pt</b>` : ''}`;
 
   // Datos para los modales de detalle de cada KPI (se llenan al hacer clic).
   _calKpiData = {
-    samples, sevOrder, sevCount, sevTot, pctOpt, pctOk, fullOk, outC, evaluated, outByParam,
+    samples, sevOrder, sevCount, sevTot, pctOpt, pctOk, fullOk, outC, evaluated, evalCount, outByParam,
     dayStats: days.map((k) => ({ k, ...byDay.get(k) })),
   };
   const kpiClick = (which) => `data-cal-kpi="${which}" role="button" tabindex="0" title="Ver detalle"`;
 
   return `<div class="cal-inst-strip">
     ${inst('01', '', '💧 Muestras', String(samples.length), timeline, `${days.length} día(s) de muestreo`, kpiClick('muestras'))}
-    ${inst('02', compSev, '✅ Cumplimiento', `${pctOk}<small>%</small>`, calSpark(compSeries), compFoot, kpiClick('cumplimiento'))}
+    ${inst('02', compSev, '✅ Cumplimiento', pctOk == null ? '—' : `${pctOk}<small>%</small>`, calSpark(compSeries), compFoot, kpiClick('cumplimiento'))}
     ${inst('03', sevProfileSev, '🧭 Perfil de severidad', `${pctOpt}<small>% óptimo</small>`, `<div class="cal-inst-segwrap">${segBar}${segLegend}</div>`, '', kpiClick('perfil'))}
     ${inst('04', outC > 0 ? 'fuera' : 'optimo', '⚠️ Fuera de rango', String(outC), topBars, evaluated ? `${(outC / evaluated * 100).toFixed(0)}% de evaluados` : 'sin evaluar', alertAttrs)}
   </div>`;
@@ -708,9 +710,13 @@ function renderCalidadAgua() {
     if (m.estado === 'dentro') inC++;
     else if (m.estado === 'fuera') { outC++; outByParam.set(m.label, (outByParam.get(m.label) || 0) + 1); }
   }));
-  const fullOk = samples.filter((s) => s.meas.every((m) => m.estado !== 'fuera')).length;
-  const pctOk = samples.length ? Math.round((fullOk / samples.length) * 100) : 0;
   const evaluated = inC + outC; // parámetros con rango (no "sin-rango")
+  // Cumplimiento SOLO sobre muestras con ≥1 parámetro evaluable (con rango): una muestra
+  // que únicamente mide parámetros sin rango objetivo no es "100% en rango" (no hay nada
+  // que evaluar), así que se excluye para no inflar el % a un falso 100 %.
+  const evalSamples = samples.filter((s) => s.meas.some((m) => m.estado === 'dentro' || m.estado === 'fuera'));
+  const fullOk = evalSamples.filter((s) => s.meas.every((m) => m.estado !== 'fuera')).length;
+  const pctOk = evalSamples.length ? Math.round((fullOk / evalSamples.length) * 100) : null;
 
   const monthBar = months.length ? `<div class="mic-monthbar">
       <button class="mic-month-nav" data-cal-month="-1" ${months.indexOf(vState.calMonth) <= 0 ? 'disabled' : ''} aria-label="Mes anterior">◀</button>
@@ -727,7 +733,7 @@ function renderCalidadAgua() {
       <div class="mic-export"><button class="mic-exp" data-cal-factors title="Editar rangos objetivo (mín/máx) por parámetro">⚙️ Rangos</button><button class="mic-exp" data-cal-export title="Descargar reporte de texto de las muestras filtradas">⬇ Reporte</button><button class="mic-exp" data-cal-xlsx title="Descargar Excel de las muestras filtradas">⬇ Excel</button></div>
     </div>`;
   const alertAttrs = outC > 0 ? 'data-cal-alerts role="button" tabindex="0" title="Ver listado de mediciones fuera de rango"' : '';
-  h += calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, outByParam, alertAttrs });
+  h += calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, evalCount: evalSamples.length, outByParam, alertAttrs });
 
   // Panel del Analista: síntesis técnica autogenerada (WQI global + diagnóstico).
   h += calAnalystHTML(samples, ranges);
@@ -790,7 +796,10 @@ function calKpiBodyHTML(which) {
   if (which === 'cumplimiento') {
     const inC = d.evaluated - d.outC;
     const dayRows = d.dayStats.map((x) => { const ev = x.in + x.out; const pct = ev ? Math.round(x.in / ev * 100) : null; return `<tr><td>${esc(dayDate(x.k))}</td><td>${x.in}</td><td>${x.out}</td><td>${pct == null ? '—' : pct + '%'}</td></tr>`; }).join('');
-    return `<p class="cal-kpi-lead"><b>${d.pctOk}%</b> de cumplimiento: <b>${d.fullOk}</b> de <b>${d.samples.length}</b> muestra(s) tienen TODOS sus parámetros dentro de rango.</p>
+    const lead = d.pctOk == null
+      ? 'Ninguna muestra del filtro tiene parámetros con rango objetivo, por lo que no hay cumplimiento que evaluar.'
+      : `<b>${d.pctOk}%</b> de cumplimiento: <b>${d.fullOk}</b> de <b>${d.evalCount}</b> muestra(s) con parámetros evaluables tienen TODOS sus parámetros dentro de rango.`;
+    return `<p class="cal-kpi-lead">${lead}</p>
       <p class="cal-kpi-note">"En rango" = valor dentro de [mín, máx] del parámetro. De <b>${d.evaluated}</b> medición(es) con rango objetivo, <b>${inC}</b> están dentro y <b>${d.outC}</b> fuera.</p>
       <div class="cal-kpi-sec"><h4>Cumplimiento por día</h4><table class="cal-kpi-table"><thead><tr><th>Fecha</th><th>Dentro</th><th>Fuera</th><th>% en rango</th></tr></thead><tbody>${dayRows || '<tr><td colspan="4">Sin fechas registradas.</td></tr>'}</tbody></table></div>`;
   }
