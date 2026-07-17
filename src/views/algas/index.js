@@ -44,7 +44,7 @@ const AF = {
   cel_vacias:     ['Células Vacías', 'Celulas Vacías', 'Células Vacias', 'Celulas Vacias', 'cel_vacias'],
   cel_semillenas: ['Células Semillenas', 'Celulas Semillenas', 'cel_semillenas'],
   cel_alargadas:  ['Células Alargadas', 'Celulas Alargadas', 'cel_alargadas'],
-  cel_llenas:     ['Células en División', 'Celulas en Division', 'Células Llenas', 'Celulas Llenas', 'cel_llenas'],
+  cel_llenas:     ['Células muertas', 'Celulas muertas', 'Células en División', 'Celulas en Division', 'Células Llenas', 'Celulas Llenas', 'cel_llenas'],
   vol_despacho:   ['Volumen de Despacho', 'Volumen Despacho', 'vol_despacho'],
 };
 
@@ -456,6 +456,11 @@ export function algasView(root) {
   fsDraw = {
     growth: (hostId, legendId) => {
       const box = document.getElementById(hostId); if (!box) return;
+      // Destruye los charts del modo previo ANTES de reemplazar el contenido: al alternar
+      // Líneas/Normalizado/Mini-curvas se reemplaza el innerHTML y, sin esto, las instancias
+      // Chart.js del modo anterior quedaban huérfanas en el registro (fuga hasta el próximo
+      // re-render). Para heatmap (HTML sin canvas) es no-op.
+      box.querySelectorAll('canvas[id]').forEach((c) => destroyChart(c.id));
       if (legendId) { const lg = document.getElementById(legendId); if (lg) lg.innerHTML = ''; }
       // Categorías sin tendencia (Fundas/Carboys) → barras, sin conmutador.
       if (isBarCat) { box.style.height = ''; box.innerHTML = `<canvas id="${hostId}_cv"></canvas>`; drawGrowthBar(`${hostId}_cv`, barLabels, barValues, catColor); return; }
@@ -512,7 +517,7 @@ export function algasView(root) {
   // ── Franja · Calidad celular (composición morfológica 100% por día) ──
   h += algBand('🔬', 'Calidad celular', '#A06B27');
   h += `<div class="alg-charts" style="${catVar}">
-      <div class="card alg-chart-card alg-fs-card">${chHead('🔬 Composición celular <span class="muted">· % por día · Vacías/Semillenas/Alargadas/En División</span>' + (cellQ.pctLlenas != null ? ` <span style="margin-left:8px;font-size:11px;font-weight:800;color:#186447;background:#18644722;padding:1px 8px;border-radius:999px">✅ ${cellQ.pctLlenas}% en división</span>` : ''), cellQ.days.length > 0 ? 'cellq' : null)}<div class="alg-chart-host alg-host-md">${host('algCellQ', cellQ.days.length > 0)}</div></div>
+      <div class="card alg-chart-card alg-fs-card">${chHead('🔬 Composición celular <span class="muted">· % por día · Vacías/Semillenas/Alargadas/Muertas</span>' + (cellQ.pctLlenas != null ? ` <span style="margin-left:8px;font-size:11px;font-weight:700;color:var(--c-text-muted);background:color-mix(in srgb, var(--c-text-muted) 12%, transparent);padding:1px 8px;border-radius:999px">${cellQ.pctLlenas}% muertas</span>` : ''), cellQ.days.length > 0 ? 'cellq' : null)}<div class="alg-chart-host alg-host-md">${host('algCellQ', cellQ.days.length > 0)}</div></div>
     </div>`;
 
   // ── Franja 2 · Parámetros fisicoquímicos (mini-gráficos compactos 4-up) ──
@@ -1187,7 +1192,7 @@ const ALG_EXPORT_COLS = [
   ['Temperatura_C', 'temp'], ['Intensidad_Luz_%', 'luz'], ['Descartado', 'descartado'],
   ['Ciliados', 'ciliados'], ['Filamentosos', 'filamentosos'], ['Observaciones', 'obs'], ['Técnico', 'tecnico'],
   ['Células Vacías', 'cel_vacias'], ['Células Semillenas', 'cel_semillenas'], ['Células Alargadas', 'cel_alargadas'],
-  ['Células en División', 'cel_llenas'], ['Volumen de Despacho', 'vol_despacho'],
+  ['Células muertas', 'cel_llenas'], ['Volumen de Despacho', 'vol_despacho'],
 ];
 
 /** Filas de la categoría (subvista) activa respetando los filtros activos, SIN el mes
