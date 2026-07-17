@@ -396,6 +396,14 @@ function refreshTank(root) {
   const mgmt = buildMgmt(wScope);
   const semAgua = aguaSemaforo(mgmt);
   view.cInfo = cInfo; view.daily = daily; view.vars = vars; view.comp = comp; view.mgmt = mgmt; view.semAgua = semAgua;
+  // El cambio de tanque es un refresco PARCIAL (no re-render), así que el snapshot que
+  // consume el modal "Decisión rápida" y el badge de patrones deben actualizarse aquí
+  // también; si no, la Decisión mostraría el ICL/variables del módulo o del tanque previo.
+  const icl = iclOf(last, vars);
+  setSnapshot({ state, d, vars, daily, last, icl });
+  const combos = last ? LARVI_COMBOS.filter((c) => c.keys.every((k) => last[k] != null && last[k] >= c.threshold)).length : 0;
+  const decBtn = root.querySelector('[data-open-modal="lq-modal-dec"]');
+  if (decBtn) decBtn.innerHTML = `⚡ Decisión${combos ? ` <span class="lq-action-badge">${combos}</span>` : ''}`;
   const ctx = {
     cInfo, trend, daily, dailyFull, vars, stageCfg, d,
     semDiag: diagSemaforo(last, vars), semAgua,

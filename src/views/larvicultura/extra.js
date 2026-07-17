@@ -352,10 +352,12 @@ export function populationTrend(canvasId, popData) {
   });
 }
 
-/** Ajuste lineal simple sobre una serie (ignora huecos). Devuelve {predict(x)} o null. */
-function linFit(values) {
+/** Ajuste lineal simple sobre puntos (xs, ys), ignorando huecos. `xs` va en unidades
+ *  reales (p. ej. días de calendario) para que la proyección respete los saltos entre
+ *  muestras. Devuelve {predict(x)} o null. */
+function linFit(xs, ys) {
   const pts = [];
-  values.forEach((y, x) => { if (y != null && !isNaN(y)) pts.push([x, y]); });
+  ys.forEach((y, i) => { const x = xs[i]; if (y != null && !isNaN(y) && x != null) pts.push([x, y]); });
   if (pts.length < 2) return null;
   const n = pts.length; let sx = 0, sy = 0, sxx = 0, sxy = 0;
   pts.forEach(([x, y]) => { sx += x; sy += y; sxx += x * x; sxy += x * y; });
@@ -373,6 +375,12 @@ export function populationForecast(canvasId, popData, horizon = 7) {
   const days = [...dateSet.entries()].sort((a, b) => a[1] - b[1]).map((e) => e[0]);
   const futLabels = Array.from({ length: horizon }, (_, i) => `+${i + 1}d`);
   const labels = [...days, ...futLabels];
+  // Offsets en días de calendario desde la 1ª fecha → la proyección respeta los saltos
+  // entre muestras, así "+Nd" son días reales (no nº de registros).
+  const dayMs = days.map((d) => { const dt = parseAnyDate(d); return dt ? dt.getTime() : null; });
+  const baseMs = dayMs.find((m) => m != null);
+  const xOff = dayMs.map((m) => (m == null || baseMs == null) ? null : Math.round((m - baseMs) / 86400000));
+  const lastOff = [...xOff].reverse().find((x) => x != null);
   const tqLabel = (k) => (/^\s*TQ/i.test(k) ? k : 'TQ ' + k);
   const datasets = [];
   keys.forEach((k, i) => {
@@ -380,11 +388,11 @@ export function populationForecast(canvasId, popData, horizon = 7) {
     const histVals = days.map((d) => (d in map ? map[d] : null));
     const color = catColor(i);
     datasets.push({ label: tqLabel(k), data: [...histVals, ...Array(horizon).fill(null)], borderColor: color, backgroundColor: color + '22', tension: .3, pointRadius: 2, spanGaps: true, borderWidth: 2 });
-    const fc = linFit(histVals);
-    if (fc) {
+    const fc = linFit(xOff, histVals);
+    if (fc && lastOff != null) {
       const arr = Array(labels.length).fill(null);
-      arr[days.length - 1] = Math.max(0, fc.predict(days.length - 1));
-      for (let hh = 0; hh < horizon; hh++) arr[days.length + hh] = Math.max(0, fc.predict(days.length + hh));
+      arr[days.length - 1] = Math.max(0, fc.predict(lastOff));
+      for (let hh = 0; hh < horizon; hh++) arr[days.length + hh] = Math.max(0, fc.predict(lastOff + hh + 1));
       datasets.push({ label: tqLabel(k) + ' (proy.)', data: arr, borderColor: color, borderDash: [5, 4], pointRadius: 0, spanGaps: true, borderWidth: 1.5, _proj: true });
     }
   });

@@ -89,6 +89,13 @@ function tankLast(tq, vars) {
    ============================================================ */
 function renderComparator(body) {
   const { d } = snap;
+  // Los nombres "TQ n" se repiten entre módulos/corridas: sin módulo Y corrida elegidos,
+  // la comparación mezclaría tanques homónimos. Se exige el mismo ámbito por-tanque que
+  // el resto de la vista (gate de módulo + corrida).
+  if (!snap.state || !snap.state.modulo || !snap.state.corrida) {
+    body.innerHTML = '<div class="empty-state">Elige un <b>módulo</b> y una <b>corrida</b> para comparar sus tanques.</div>';
+    return;
+  }
   const tanks = d.tanques;
   if (!tanks.length) { body.innerHTML = '<div class="empty-state">Selecciona un módulo/corrida con tanques para comparar.</div>'; return; }
 
