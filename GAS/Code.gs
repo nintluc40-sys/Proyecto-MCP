@@ -901,12 +901,14 @@ function madInKey(row, keyCols) {
   var parts = [];
   for (var i = 0; i < keyCols.length; i++) {
     var c = keyCols[i];
-    var v = row[c];
-    if (typeof v === "string" && /^d{4}-d{2}-d{2}/.test(v)) {
-      parts.push(v.slice(0, 10));
-    } else {
-      parts.push(String(v == null ? "" : v).trim());
-    }
+    var s = String(row[c] == null ? "" : row[c]).trim();
+    // Fecha ISO (yyyy-mm-dd) → normaliza a 10 chars para casar con madRowKey
+    // (que formatea las celdas Date a yyyy-MM-dd). SIN regex a propósito: dentro
+    // del template literal de GAS() los escapes de regex colapsan (mismo criterio
+    // que deleteByKeyRows / _evDate).
+    var isIso = s.length >= 10 && s.charAt(4) === "-" && s.charAt(7) === "-" &&
+                !isNaN(+s.slice(0, 4)) && !isNaN(+s.slice(5, 7)) && !isNaN(+s.slice(8, 10));
+    parts.push(isIso ? s.slice(0, 10) : s);
   }
   return parts.join("|");
 }

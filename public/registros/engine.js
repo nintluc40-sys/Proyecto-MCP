@@ -4466,7 +4466,7 @@ function buildAlgasPayload(m, histSnapshot){
     "Lote","Dia_Proceso","Cel_ml","Protozoarios","Especie",
     "Salinidad_ppt","pH","Temperatura_C","Intensidad_Luz_%","Descartado",
     "Observaciones","Ciliados","Filamentosos","Técnico",
-    "Células Vacías","Células Semillenas","Células Alargadas","Células en División",
+    "Células Vacías","Células Semillenas","Células Alargadas","Células muertas",
     "Volumen de Despacho","Sesión"
   ];
   // safeNum: returns the parsed number (including 0) or "" for blank/invalid
@@ -4692,7 +4692,7 @@ function renderAlgas(){
         <input type="number" name="cel_semillenas" value="${vl(d,'cel_semillenas')}" placeholder="Conteo" step="1" min="0"></div>
       <div class="mf"><label>Células Alargadas</label>
         <input type="number" name="cel_alargadas" value="${vl(d,'cel_alargadas')}" placeholder="Conteo" step="1" min="0"></div>
-      <div class="mf"><label>Células en División</label>
+      <div class="mf"><label>Células muertas</label>
         <input type="number" name="cel_llenas" value="${vl(d,'cel_llenas')}" placeholder="Conteo" step="1" min="0"></div>
     </div>
     <div class="ffoot">
@@ -4758,7 +4758,7 @@ function algHistBlock(){
           ${fld("Cél. Vacías",     a.cel_vacias)}
           ${fld("Cél. Semillenas", a.cel_semillenas)}
           ${fld("Cél. Alargadas",  a.cel_alargadas)}
-          ${fld("Cél. en División", a.cel_llenas)}
+          ${fld("Cél. muertas", a.cel_llenas)}
           ${fld("Vol. Desp. (L)",  a.vol_despacho)}
           ${fld("Corrida L.", a.corrida_larv)}
           ${fld("Mód. L.",    a.modulo_larv)}
@@ -4906,7 +4906,7 @@ function downloadBitacoraPDF(fecha){
   // Reusa pdfVal para celdas vacías (— en gris)
   const cell = (v) => (v!==undefined && v!=="" && v!==null) ? escapeHtml(String(v)) : '<span class="empty">—</span>';
 
-  const headers = ['#','Sinc.','Corrida L.','Mód. L.','Área','Sistema','Lote','Día Proc.','Especie','Cel/mL','Proto.','Ciliados','Filam.','Sal (ppt)','pH','T (°C)','Luz (%)','Descarte','Observaciones','Técnico','Cél. Vac.','Cél. Semill.','Cél. Alarg.','Cél. en División','Vol. Desp. (L)'];
+  const headers = ['#','Sinc.','Corrida L.','Mód. L.','Área','Sistema','Lote','Día Proc.','Especie','Cel/mL','Proto.','Ciliados','Filam.','Sal (ppt)','pH','T (°C)','Luz (%)','Descarte','Observaciones','Técnico','Cél. Vac.','Cél. Semill.','Cél. Alarg.','Cél. muertas','Vol. Desp. (L)'];
   const rowsHtml = list
     .slice()
     .sort((a,b)=> (a.syncedAt||0) - (b.syncedAt||0))
@@ -8014,13 +8014,13 @@ const MIC_DR_BASE = {
     vamar:{f:1,l:1,m:2,e:10}, vverd:{f:1,l:1,m:2,e:10}, vtot:{f:1,l:1,m:2,e:10},
     pseudo:{f:1,l:1,m:2,e:10}, aero:{f:1,l:1,m:2,e:10}, btot:{f:1,l:10,m:100,e:500}
   },
-  // Agua Limpia y Mar: umbrales base de "mad-agua", factores propios (amar/verd/tot y
-  // vibrios ×200; Pseudomonas/Aeromonas/Bact.Totales/Naranjas ×100; Hongos ×500).
+  // Agua Limpia y Mar: umbrales base de "mad-agua", factores propios (amar/verd/tot,
+  // vibrios, Pseudomonas y Aeromonas ×5; Bact.Totales/Naranjas ×10; Hongos ×500).
   "agua-limpia-mar":{
-    vamar:{f:200,l:100,m:500,e:1000}, vverd:{f:200,l:50,m:100,e:200}, vtot:{f:200,l:100,m:500,e:1000},
-    valg:{f:200,l:100,m:500,e:1000}, vpara:{f:200,l:50,m:100,e:200}, vvuln:{f:200,l:50,m:100,e:200},
-    pseudo:{f:100,l:50,m:100,e:200}, aero:{f:100,l:100,m:500,e:1000},
-    btot:{f:100,l:10000,m:100000,e:1000000}, bnar:{f:100,l:100,m:500,e:1000}, hongos:{f:500,l:2,m:20,e:40}
+    vamar:{f:5,l:100,m:500,e:1000}, vverd:{f:5,l:50,m:100,e:200}, vtot:{f:5,l:100,m:500,e:1000},
+    valg:{f:5,l:100,m:500,e:1000}, vpara:{f:5,l:50,m:100,e:200}, vvuln:{f:5,l:50,m:100,e:200},
+    pseudo:{f:5,l:50,m:100,e:200}, aero:{f:5,l:100,m:500,e:1000},
+    btot:{f:10,l:10000,m:100000,e:1000000}, bnar:{f:10,l:100,m:500,e:1000}, hongos:{f:500,l:2,m:20,e:40}
   },
   // Maduración · Despacho — muestras de AGUA (×10 patógenos, ×2 hongos).
   "mad-despacho-agua":{
@@ -11335,12 +11335,14 @@ function madInKey(row, keyCols) {
   var parts = [];
   for (var i = 0; i < keyCols.length; i++) {
     var c = keyCols[i];
-    var v = row[c];
-    if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) {
-      parts.push(v.slice(0, 10));
-    } else {
-      parts.push(String(v == null ? "" : v).trim());
-    }
+    var s = String(row[c] == null ? "" : row[c]).trim();
+    // Fecha ISO (yyyy-mm-dd) → normaliza a 10 chars para casar con madRowKey
+    // (que formatea las celdas Date a yyyy-MM-dd). SIN regex a propósito: dentro
+    // del template literal de GAS() los escapes de regex colapsan (mismo criterio
+    // que deleteByKeyRows / _evDate).
+    var isIso = s.length >= 10 && s.charAt(4) === "-" && s.charAt(7) === "-" &&
+                !isNaN(+s.slice(0, 4)) && !isNaN(+s.slice(5, 7)) && !isNaN(+s.slice(8, 10));
+    parts.push(isIso ? s.slice(0, 10) : s);
   }
   return parts.join("|");
 }
