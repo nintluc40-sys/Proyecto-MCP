@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { store } from './store.js';
-import { monthIndexOfCorrida, monthLabelAt, modCorStats } from './prodCalendar.js';
+import { monthIndexOfCorrida, monthLabelAt, modCorStats, modCorDispatched } from './prodCalendar.js';
 
 afterEach(() => { store.globalData = []; });
 
@@ -49,6 +49,45 @@ describe('modCorStats: cosecha honra el 0 (tanque vaciado/agrupado)', () => {
     expect(s.cosecha).toBe(0);    // honra el 0, no arrastra 800
     expect(s.superv).toBe(0);     // 0/1000
     expect(s.nSie).toBe(1);       // un solo tanque con siembra
+  });
+  it('despachado = true solo si hay ≥1 fila con datos de la ficha de Despacho', () => {
+    store.globalData = [
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M03', Corrida: '575', Tanque: 'TQ1', 'Población': '1000', Fecha: '01/06/2026' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M03', Corrida: '575', Tanque: 'TQ1', 'Población': '700', Fecha: '05/06/2026', 'Destino': 'Piscina 4', 'Biomasa': '12' },
+    ];
+    expect(modCorStats('M03', '575').despachado).toBe(true);
+  });
+  it('despachado = false si ninguna fila trae columnas de Despacho', () => {
+    store.globalData = [
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M04', Corrida: '576', Tanque: 'TQ1', 'Población': '1000', Fecha: '01/06/2026' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M04', Corrida: '576', Tanque: 'TQ1', 'Población': '700', Fecha: '05/06/2026' },
+    ];
+    expect(modCorStats('M04', '576').despachado).toBe(false);
+  });
+  it('despachadoFull = false con despacho PARCIAL (no todos los tanques reales)', () => {
+    store.globalData = [
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M05', Corrida: '577', Tanque: 'TQ1', 'Población': '1000', Fecha: '01/06/2026', 'Destino': 'Piscina 4' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M05', Corrida: '577', Tanque: 'TQ2', 'Población': '1000', Fecha: '01/06/2026' }, // TQ2 sin despacho
+    ];
+    const s = modCorStats('M05', '577');
+    expect(s.despachado).toBe(true);       // ≥1 fila con despacho
+    expect(s.despachadoFull).toBe(false);  // pero no TODOS los tanques reales
+    expect(modCorDispatched('M05', '577')).toBe(false);
+  });
+  it('despachadoFull = true: todos los tanques reales despachados (agrupado se excluye)', () => {
+    store.globalData = [
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M06', Corrida: '578', Tanque: 'TQ1', 'Población': '1000', Fecha: '01/06/2026', 'Destino': 'Piscina 4' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M06', Corrida: '578', Tanque: 'TQ2', 'Población': '0', Fecha: '01/06/2026', Observaciones: 'Agrupado' }, // fuera de despacho
+    ];
+    expect(modCorStats('M06', '578').despachadoFull).toBe(true);
+    expect(modCorDispatched('M06', '578')).toBe(true);
+  });
+  it('despachadoFull ignora "Piscina" sola (no implica cosecha)', () => {
+    store.globalData = [
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M07', Corrida: '579', Tanque: 'TQ1', 'Población': '1000', Fecha: '01/06/2026', 'Piscina': 'P-9' },
+    ];
+    expect(modCorStats('M07', '579').despachado).toBe(false);
+    expect(modCorStats('M07', '579').despachadoFull).toBe(false);
   });
   it('nSie cuenta solo tanques con siembra real (base de la densidad de siembra)', () => {
     store.globalData = [

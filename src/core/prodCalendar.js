@@ -40,6 +40,38 @@ const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
 const larvRows = () => store.globalData.filter(isLarviculturaRow);
 const distinct = (a) => [...new Set(a.filter(Boolean))];
 
+// Señal de "despacho" de la ficha de Despacho (hoja "Datos Larvicultura"): una fila
+// cuenta como despachada si trae dato en alguna de estas columnas de cosecha/salida.
+// Mismo conjunto que el badge "Despachado" de la Vista Ejecutiva y la vista Despacho
+// (NO incluye "Piscina": la asignación de piscina por sí sola no implica cosecha).
+const DESPACHO_COLS = [
+  ['Densidad cosechada', 'Densidad Cosechada', 'densidad cosechada'],
+  ['Biomasa', 'biomasa'],
+  ['Cajas/Tinas', 'Cajas / Tinas', 'cajas/tinas', 'Cajas-Tinas'],
+  ['Destino', 'destino'],
+];
+export const isDespachoRow = (r) => DESPACHO_COLS.some((names) => getField(r, names) !== '');
+
+// Tanque fuera de despacho: el operador anota "Agrupado"/"Descartado" en Observaciones
+// (se unió a otro tanque o se perdió) → no llega al despacho, así que no cuenta para
+// exigir la completitud del despacho de la corrida.
+const OBS_KEYS = ['Observaciones', 'observaciones', 'Observación', 'observación'];
+const isOutOfDispatchRow = (r) => /agrupad|descartad/i.test(getField(r, OBS_KEYS));
+
+/** ¿El módulo+corrida está COMPLETAMENTE despachado? = existe ≥1 tanque real (no
+ *  agrupado/descartado) y TODOS los tanques reales tienen ≥1 fila con datos de la
+ *  ficha de Despacho. Fuente ÚNICA del estado "Despachado" (badge de la Vista Ejecutiva
+ *  y "Subtotal actual" de Producción Omarsa), para que no se contradigan entre sí. */
+function fullyDispatched(rsAll) {
+  const tanks = distinct(rsAll.map((r) => getField(r, F.tanque)));
+  const tankRows = (tq) => rsAll.filter((r) => getField(r, F.tanque) === tq);
+  const realTanks = tanks.filter((tq) => !tankRows(tq).some(isOutOfDispatchRow));
+  return realTanks.length > 0 && realTanks.every((tq) => tankRows(tq).some(isDespachoRow));
+}
+export function modCorDispatched(mod, cor) {
+  return fullyDispatched(larvRows().filter((r) => getField(r, F.modulo) === mod && getField(r, F.corrida) === cor));
+}
+
 export function monthIndexOfCorrida(num) {
   if (isNaN(num)) return -1;
   let idx = -1;
@@ -104,6 +136,11 @@ export function modCorStats(mod, cor) {
   const plg = plgs.length ? plgs.reduce((a, b) => a + b, 0) / plgs.length : null;
   // cosecha === 0 es válido (tanque vaciado/agrupado) → superv 0, no null.
   const superv = (siembra !== null && siembra > 0 && cosecha !== null) ? Math.min(cosecha / siembra * 100, 100) : null;
+  // despachado = el módulo+corrida ya tiene ≥1 registro con datos de la ficha de Despacho.
+  const despachado = rsAll.some(isDespachoRow);
+  // despachadoFull = TODOS los tanques reales despachados (mismo criterio que el badge
+  // "Despachado" de las tarjetas); es el que usa el "Subtotal actual" de Prod. Omarsa.
+  const despachadoFull = fullyDispatched(rsAll);
   // nSie = nº de tanques con siembra (para la densidad de siembra promedio por tanque).
-  return { siembra, cosecha, plg, superv, nSie };
+  return { siembra, cosecha, plg, superv, nSie, despachado, despachadoFull };
 }

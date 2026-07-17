@@ -397,7 +397,10 @@ function microPlacaHTML(rows, state) {
   const day = days[idx];
   const colonies = microColonies(day.rows);
   _svMicroColonies = colonies; // para el tooltip de colonias
-  const totUfc = colonies.filter((c) => c.key === 'totales').reduce((a, c) => a + c.ufc, 0) || colonies.reduce((a, c) => a + c.ufc, 0);
+  // Σ UFC de "C. Totales" (colonia agregada). Si ese día no hay muestra de Totales se
+  // muestra "—": NO se sustituye por la suma de patógenos específicos (mentiría la etiqueta).
+  const totColonies = colonies.filter((c) => c.key === 'totales');
+  const totUfc = totColonies.length ? totColonies.reduce((a, c) => a + c.ufc, 0) : null;
   const specific = colonies.filter((c) => !MIC_AGG.has(c.key));
   const maxC = specific.length ? specific.reduce((a, b) => (a.ufc > b.ufc ? a : b)) : null;
   const dayTanks = [...new Set(day.rows.map(micTQ).filter(Boolean))].sort(natCmp);

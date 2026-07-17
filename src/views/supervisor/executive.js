@@ -4,41 +4,26 @@
    tarjetas de módulo se muestran (las corridas de ese mes, ordenadas
    por corrida y módulo). Sin filtros de mes ni corrida.
    ============================================================ */
-import { modStats, rowsOutOfDispatch } from './stats.js';
+import { modStats } from './stats.js';
 import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, dot } from './ui.js';
 import { esc, odLevel, tmpLevel, svLevel } from '../../core/format.js';
 import { getField, F } from '../../core/fields.js';
 import { fmtShort } from '../../core/dates.js';
 import { compareTanksButtonHTML, compareTanksModalHTML, setupCompareTanks } from './compareTanks.js';
-import { presentMonths, corridasOfMonth, modulesOfCorrida } from '../../core/prodCalendar.js';
+import { presentMonths, corridasOfMonth, modulesOfCorrida, isDespachoRow, modCorDispatched } from '../../core/prodCalendar.js';
 import { prodTableHTML } from './prodOmarsa.js';
 import { desinfeccionEnCurso } from './desinfeccion.js';
 
-// Columnas que evidencian un registro de despacho (igual criterio que despacho.js).
-const DISP_KEYS = [
-  ['Densidad cosechada', 'Densidad Cosechada', 'densidad cosechada'],
-  ['Biomasa', 'biomasa'],
-  ['Destino', 'destino'],
-  ['Cajas/Tinas', 'Cajas / Tinas', 'cajas/tinas', 'Cajas-Tinas'],
-];
-const hasDispatch = (r) => DISP_KEYS.some((k) => getField(r, k) !== '');
-
 /** Estado de despacho del módulo+corrida: '' · 'Despachando' · 'Despachado'.
- *  Los tanques agrupados/descartados NO llegan al despacho, así que se excluyen del
- *  requisito: el módulo se marca 'Despachado' cuando todos los tanques que SÍ debían
- *  despacharse lo hicieron (y existe al menos un despacho real). Un tanque agrupado a
- *  mitad de ciclo no dispara 'Despachado' por sí solo. */
+ *  El estado 'Despachado' usa el criterio ÚNICO del core (modCorDispatched: todos los
+ *  tanques reales —no agrupados/descartados— despachados), el MISMO que emplea el
+ *  "Subtotal actual" de Producción Omarsa, para que el badge y el subtotal no se
+ *  contradigan. 'Despachando' = hay algún despacho pero aún no está completo. */
 function dispatchStatus(ctx, mod, corrida) {
   const rows = ctx.larvCM.filter((r) => getField(r, F.modulo) === mod && getField(r, F.corrida) === corrida);
-  const tanks = [...new Set(rows.map((r) => getField(r, F.tanque)).filter(Boolean))];
-  if (!tanks.length) return '';
-  const tankRows = (tq) => rows.filter((r) => getField(r, F.tanque) === tq);
-  const dispatched = (tq) => tankRows(tq).some(hasDispatch);
-  // Tanques que SÍ deben llegar al despacho (excluye agrupados/descartados).
-  const realTanks = tanks.filter((tq) => !rowsOutOfDispatch(tankRows(tq)));
-  const doneReal = realTanks.filter(dispatched);
-  if (realTanks.length && doneReal.length === realTanks.length) return 'Despachado';
-  if (tanks.some(dispatched)) return 'Despachando';
+  if (![...new Set(rows.map((r) => getField(r, F.tanque)).filter(Boolean))].length) return '';
+  if (modCorDispatched(mod, corrida)) return 'Despachado';
+  if (rows.some(isDespachoRow)) return 'Despachando';
   return '';
 }
 
