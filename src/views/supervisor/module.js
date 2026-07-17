@@ -357,7 +357,7 @@ function microForModule(mod, corrida) {
   return store.globalData.filter((r) => {
     if (!isMicroRow(r)) return false;
     const c = microCtx(r);
-    if (!c.modulo || +c.modulo !== mn) return false;
+    if (modNum(c.modulo) !== mn) return false; // robusto ante "3" / "M03" / "Módulo 3"
     if (cd && micDigits(c.corrida) !== cd) return false;
     return true;
   });
@@ -579,7 +579,7 @@ function calAguaForModule(mod, corrida) {
   return store.globalData.filter((r) => {
     if (!isCalAguaRow(r)) return false;
     const c = calCtx(r);
-    if (!c.modulo || +c.modulo !== mn) return false;
+    if (modNum(c.modulo) !== mn) return false; // robusto ante "3" / "M03" / "Módulo 3"
     if (cd && micDigits(c.corrida) !== cd) return false;
     return true;
   });
@@ -723,7 +723,7 @@ function cwTendenciasHTML(rows, ranges, state) {
         <span class="sv-mtrend-kpi"><b>${stat(last)}</b>último</span>
         <span class="sv-mtrend-kpi"><b>${stat(vals.length ? Math.min(...vals) : null)}</b>mín</span>
         <span class="sv-mtrend-kpi"><b>${stat(vals.length ? Math.max(...vals) : null)}</b>máx</span>
-        <span class="sv-mtrend-kpi"><b>${series.length ? Math.round(inRange / series.length * 100) : 0}%</b>días en rango</span>
+        <span class="sv-mtrend-kpi"><b>${!range ? '—' : (series.length ? Math.round(inRange / series.length * 100) + '%' : '—')}</b>días en rango</span>
       </div>
       <div class="sv-mtrend-chart"><canvas id="svCwTrendChart"></canvas></div>
     </div>`;

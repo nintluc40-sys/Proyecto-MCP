@@ -389,16 +389,25 @@ export function renderTank(ctx, mod, tq) {
 
     // Builders (config fresca cada vez → válida tanto en la grilla como en fullscreen).
     const cfgs = {
-      env: () => ({
-        type: 'line',
-        data: { labels: od.labels.length ? od.labels : tmp.labels, datasets: [
-          { label: 'OD (mg/L)', data: od.values, borderColor: '#1E88E5', backgroundColor: 'rgba(30,136,229,.1)', tension: .3, yAxisID: 'y', fill: true, pointRadius: 2 },
-          { label: 'T° (°C)', data: tmp.values, borderColor: '#F4511E', backgroundColor: 'rgba(244,81,30,.08)', tension: .3, yAxisID: 'y1', pointRadius: 2 },
-        ] },
-        options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-          scales: { y: { position: 'left', title: { display: true, text: 'OD' } }, y1: { position: 'right', title: { display: true, text: 'T°' }, grid: { drawOnChartArea: false } }, x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 8 } } },
-          plugins: { legend: { labels: { boxWidth: 12 } } } },
-      }),
+      env: () => {
+        // Eje UNIFICADO por fecha: OD y Temp pueden tener días distintos (un día con
+        // OD pero sin Temp, o viceversa). Mapear por fecha —no por posición— evita que
+        // la Temperatura se pinte contra la fecha equivocada cuando las coberturas difieren.
+        const odMap = new Map(od.labels.map((l, i) => [l, od.values[i]]));
+        const tmpMap = new Map(tmp.labels.map((l, i) => [l, tmp.values[i]]));
+        const labels = [...new Set([...od.labels, ...tmp.labels])]
+          .sort((a, b) => (parseAnyDate(a) || 0) - (parseAnyDate(b) || 0));
+        return {
+          type: 'line',
+          data: { labels, datasets: [
+            { label: 'OD (mg/L)', data: labels.map((l) => (odMap.has(l) ? odMap.get(l) : null)), borderColor: '#1E88E5', backgroundColor: 'rgba(30,136,229,.1)', tension: .3, yAxisID: 'y', fill: true, pointRadius: 2, spanGaps: true },
+            { label: 'T° (°C)', data: labels.map((l) => (tmpMap.has(l) ? tmpMap.get(l) : null)), borderColor: '#F4511E', backgroundColor: 'rgba(244,81,30,.08)', tension: .3, yAxisID: 'y1', pointRadius: 2, spanGaps: true },
+          ] },
+          options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+            scales: { y: { position: 'left', title: { display: true, text: 'OD' } }, y1: { position: 'right', title: { display: true, text: 'T°' }, grid: { drawOnChartArea: false } }, x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 8 } } },
+            plugins: { legend: { labels: { boxWidth: 12 } } } },
+        };
+      },
       pop: () => {
         const data = _svNorm ? monotoneDown(pop.values, (s.popFirst && s.popFirst > 0) ? s.popFirst : null) : pop.values;
         const fmtInt = (v) => Number(Math.round(v)).toLocaleString('es-EC');
