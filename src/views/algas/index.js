@@ -148,9 +148,11 @@ function dailyMulti(rows, keys) {
  *  un salto de fecha grande (> UMBRAL días) también abre ciclo. Devuelve [[pts],…]. */
 const RESEED_GAP_DAYS = 14;
 function splitSiembras(pts) {
-  // Orden cronológico estable; con Dia_Proceso como desempate del mismo día.
+  // Orden cronológico estable; con Dia_Proceso como desempate del mismo día. Las filas
+  // SIN fecha van al final (no al epoch): si se colaran al inicio, su Dia_Proceso podía
+  // disparar un "reinicio" falso contra la 1.ª fila con fecha (resiembra fantasma).
   const sorted = [...pts].sort((a, b) => {
-    const ta = a.d ? a.d.getTime() : 0, tb = b.d ? b.d.getTime() : 0;
+    const ta = a.d ? a.d.getTime() : Infinity, tb = b.d ? b.d.getTime() : Infinity;
     return ta - tb || ((a.dia ?? 0) - (b.dia ?? 0));
   });
   const cycles = [];
@@ -161,13 +163,16 @@ function splitSiembras(pts) {
     const ms = p.d ? p.d.getTime() : null;
     let reseed = false;
     if (cur.length) {
-      if (dia !== null && prevDia !== null && dia < prevDia) reseed = true; // reinicio de día de proceso
-      else if (dia === null && prevDia === null && ms !== null && prevMs !== null
-        && (ms - prevMs) / 86400000 > RESEED_GAP_DAYS) reseed = true; // sin día → salto de fecha
+      // Reinicio de día de proceso (señal primaria). El salto de fecha es el RESPALDO
+      // cuando el punto actual no trae Dia_Proceso comparable — antes exigía además
+      // prevDia===null, que quedaba imposible tras cualquier fila con día (branch muerto).
+      if (dia !== null && prevDia !== null && dia < prevDia) reseed = true;
+      else if (dia === null && ms !== null && prevMs !== null
+        && (ms - prevMs) / 86400000 > RESEED_GAP_DAYS) reseed = true;
     }
     if (reseed) { cycles.push(cur); cur = []; }
     cur.push(p);
-    if (dia !== null) prevDia = dia;
+    prevDia = dia; // día del punto ANTERIOR (nullable): no comparar contra un día lejano ya pasado
     if (ms !== null) prevMs = ms;
   });
   if (cur.length) cycles.push(cur);
@@ -229,10 +234,23 @@ export function growthByLote(rows) {
     siembras.forEach((cyclePts, ci) => {
       const times = cyclePts.map((p) => (p.d ? p.d.getTime() : null)).filter((x) => x !== null);
       const minMs = times.length ? Math.min(...times) : null;
+      // Ancla del eje "día de proceso": un punto que trae Dia_Proceso Y fecha fija el
+      // origen para los puntos SIN Dia_Proceso. Sin esto, el día real (1-based) y el
+      // offset derivado (0-based desde el inicio del ciclo) colisionaban → dos fechas
+      // distintas se promediaban en un solo punto y la curva/μ salían falseadas.
+      let refDia = null, refMs = null;
+      for (const p of cyclePts) {
+        const dd = (p.dia === null || p.dia === undefined || isNaN(p.dia)) ? null : p.dia;
+        if (dd !== null && p.d) { refDia = dd; refMs = p.d.getTime(); break; }
+      }
       const byDay = new Map();
       cyclePts.forEach((p) => {
-        let day = p.dia;
-        if (day === null || day === undefined || isNaN(day)) day = (p.d && minMs !== null) ? Math.round((p.d.getTime() - minMs) / 86400000) : 0;
+        let day = (p.dia === null || p.dia === undefined || isNaN(p.dia)) ? null : p.dia;
+        if (day === null) {
+          if (p.d && refMs !== null) day = refDia + Math.round((p.d.getTime() - refMs) / 86400000);
+          else if (p.d && minMs !== null) day = Math.round((p.d.getTime() - minMs) / 86400000);
+          else day = 0;
+        }
         if (!byDay.has(day)) byDay.set(day, []);
         byDay.get(day).push(p.cel);
       });

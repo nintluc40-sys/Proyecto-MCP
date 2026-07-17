@@ -87,6 +87,52 @@ describe('growthByLote', () => {
   });
 });
 
+describe('growthByLote · robustez fecha/día (auditoría adversarial)', () => {
+  it('Dia_Proceso PARCIAL: ancla los días derivados al día real (no colisiona 1-based con 0-based)', () => {
+    // Solo la 1.ª fila trae Dia_Proceso (=1); el resto se deriva de la fecha.
+    const rows = [
+      row({ Sistema: 'M1', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '100' }),
+      row({ Sistema: 'M1', Fecha: '2026-06-02', Cel_ml: '200' }),
+      row({ Sistema: 'M1', Fecha: '2026-06-03', Cel_ml: '300' }),
+    ];
+    // Sin el anclaje, el día real 1 y el día derivado 1 (0-based) colisionaban y
+    // promediaban 06-01 con 06-02 → [{day:1,cel:150},{day:2,cel:300}]. Correcto = 3 puntos.
+    expect(growthByLote(rows)[0].points).toEqual([{ day: 1, cel: 100 }, { day: 2, cel: 200 }, { day: 3, cel: 300 }]);
+  });
+
+  it('Dia_Proceso PARCIAL con día real ≠ 1: preserva la cronología y el crecimiento', () => {
+    const rows = [
+      row({ Sistema: 'M1', Fecha: '2026-06-01', Dia_Proceso: '5', Cel_ml: '100' }),
+      row({ Sistema: 'M1', Fecha: '2026-06-02', Cel_ml: '200' }),
+      row({ Sistema: 'M1', Fecha: '2026-06-03', Cel_ml: '300' }),
+    ];
+    expect(growthByLote(rows)[0].points).toEqual([{ day: 5, cel: 100 }, { day: 6, cel: 200 }, { day: 7, cel: 300 }]);
+    // μ debe ser POSITIVO (100→300), no negativo por curva invertida.
+    expect(tasaChartData(growthByLote(rows)).meta[0].mu).toBeGreaterThan(0);
+  });
+
+  it('fila SIN fecha no crea una siembra fantasma (se ordena al final por su día)', () => {
+    const rows = [
+      row({ Sistema: 'M6', Fecha: '', Dia_Proceso: '3', Cel_ml: '999' }), // sin fecha, con día
+      row({ Sistema: 'M6', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '100' }),
+      row({ Sistema: 'M6', Fecha: '2026-06-02', Dia_Proceso: '2', Cel_ml: '200' }),
+    ];
+    const lotes = growthByLote(rows);
+    expect(lotes).toHaveLength(1); // NO se parte en S1/S2
+    expect(lotes[0].points).toEqual([{ day: 1, cel: 100 }, { day: 2, cel: 200 }, { day: 3, cel: 999 }]);
+  });
+
+  it('resiembra por SALTO DE FECHA aunque una fila previa trajera Dia_Proceso (respaldo no muerto)', () => {
+    const rows = [
+      row({ Sistema: 'M5', Fecha: '2026-06-01', Dia_Proceso: '1', Cel_ml: '100' }),
+      row({ Sistema: 'M5', Fecha: '2026-06-02', Cel_ml: '200' }),          // sin día
+      row({ Sistema: 'M5', Fecha: '2026-06-22', Cel_ml: '80' }),           // +20 d → resiembra
+      row({ Sistema: 'M5', Fecha: '2026-06-23', Cel_ml: '160' }),
+    ];
+    expect(growthByLote(rows).map((l) => l.key)).toEqual(['M5 · S1', 'M5 · S2']);
+  });
+});
+
 describe('growthByLote · etiqueta de display (l.label) — sin mezclar registros', () => {
   it('omite el componente invariante en el TEXTO, pero la agrupación conserva la clave completa', () => {
     const rows = [
