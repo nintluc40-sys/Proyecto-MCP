@@ -44,7 +44,7 @@ const AF = {
   cel_vacias:     ['Células Vacías', 'Celulas Vacías', 'Células Vacias', 'Celulas Vacias', 'cel_vacias'],
   cel_semillenas: ['Células Semillenas', 'Celulas Semillenas', 'cel_semillenas'],
   cel_alargadas:  ['Células Alargadas', 'Celulas Alargadas', 'cel_alargadas'],
-  cel_llenas:     ['Células muertas', 'Celulas muertas', 'Células en División', 'Celulas en Division', 'Células Llenas', 'Celulas Llenas', 'cel_llenas'],
+  cel_muertas:    ['Células muertas', 'Celulas muertas', 'Células en División', 'Celulas en Division', 'Células Llenas', 'Celulas Llenas', 'cel_llenas'],
   vol_despacho:   ['Volumen de Despacho', 'Volumen Despacho', 'vol_despacho'],
 };
 
@@ -275,21 +275,21 @@ export function periodStats(rows) {
   };
 }
 
-/** Composición celular (calidad) por día: suma de Vacías/Semillenas/Alargadas/Llenas por
- *  FECHA (asc). Devuelve {days:[Date], series:{vacias,semillenas,alargadas,llenas}, pctLlenas, n}.
+/** Composición celular (calidad) por día: suma de Vacías/Semillenas/Alargadas/Muertas por
+ *  FECHA (asc). Devuelve {days:[Date], series:{vacias,semillenas,alargadas,muertas}, pctMuertas, n}.
  *  Solo cuenta filas con al menos uno de los 4 conteos. */
 export function cellCompositionByDay(rows) {
   const byDay = new Map();
-  let sumLlenas = 0, sumTot = 0;
+  let sumMuertas = 0, sumTot = 0;
   (rows || []).forEach((r) => {
     const d = parseAnyDate(g(r, 'fecha')); if (!d) return;
-    const v = num(r, 'cel_vacias'), s = num(r, 'cel_semillenas'), a = num(r, 'cel_alargadas'), l = num(r, 'cel_llenas');
-    if (v === null && s === null && a === null && l === null) return;
+    const v = num(r, 'cel_vacias'), s = num(r, 'cel_semillenas'), a = num(r, 'cel_alargadas'), m = num(r, 'cel_muertas');
+    if (v === null && s === null && a === null && m === null) return;
     const key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
-    if (!byDay.has(key)) byDay.set(key, { d, vacias: 0, semillenas: 0, alargadas: 0, llenas: 0 });
+    if (!byDay.has(key)) byDay.set(key, { d, vacias: 0, semillenas: 0, alargadas: 0, muertas: 0 });
     const o = byDay.get(key);
-    o.vacias += v || 0; o.semillenas += s || 0; o.alargadas += a || 0; o.llenas += l || 0;
-    sumLlenas += l || 0; sumTot += (v || 0) + (s || 0) + (a || 0) + (l || 0);
+    o.vacias += v || 0; o.semillenas += s || 0; o.alargadas += a || 0; o.muertas += m || 0;
+    sumMuertas += m || 0; sumTot += (v || 0) + (s || 0) + (a || 0) + (m || 0);
   });
   const entries = [...byDay.values()].sort((x, y) => x.d - y.d);
   return {
@@ -298,9 +298,9 @@ export function cellCompositionByDay(rows) {
       vacias: entries.map((e) => e.vacias),
       semillenas: entries.map((e) => e.semillenas),
       alargadas: entries.map((e) => e.alargadas),
-      llenas: entries.map((e) => e.llenas),
+      muertas: entries.map((e) => e.muertas),
     },
-    pctLlenas: sumTot > 0 ? Math.round(sumLlenas / sumTot * 100) : null,
+    pctMuertas: sumTot > 0 ? Math.round(sumMuertas / sumTot * 100) : null,
     n: entries.length,
   };
 }
@@ -517,7 +517,7 @@ export function algasView(root) {
   // ── Franja · Calidad celular (composición morfológica 100% por día) ──
   h += algBand('🔬', 'Calidad celular', '#A06B27');
   h += `<div class="alg-charts" style="${catVar}">
-      <div class="card alg-chart-card alg-fs-card">${chHead('🔬 Composición celular <span class="muted">· % por día · Vacías/Semillenas/Alargadas/Muertas</span>' + (cellQ.pctLlenas != null ? ` <span style="margin-left:8px;font-size:11px;font-weight:700;color:var(--c-text-muted);background:color-mix(in srgb, var(--c-text-muted) 12%, transparent);padding:1px 8px;border-radius:999px">${cellQ.pctLlenas}% muertas</span>` : ''), cellQ.days.length > 0 ? 'cellq' : null)}<div class="alg-chart-host alg-host-md">${host('algCellQ', cellQ.days.length > 0)}</div></div>
+      <div class="card alg-chart-card alg-fs-card">${chHead('🔬 Composición celular <span class="muted">· % por día · Vacías/Semillenas/Alargadas/Muertas</span>' + (cellQ.pctMuertas != null ? ` <span style="margin-left:8px;font-size:11px;font-weight:700;color:#8A4B4B;background:color-mix(in srgb, #8A4B4B 14%, transparent);padding:1px 8px;border-radius:999px">${cellQ.pctMuertas}% muertas</span>` : ''), cellQ.days.length > 0 ? 'cellq' : null)}<div class="alg-chart-host alg-host-md">${host('algCellQ', cellQ.days.length > 0)}</div></div>
     </div>`;
 
   // ── Franja 2 · Parámetros fisicoquímicos (mini-gráficos compactos 4-up) ──
@@ -968,6 +968,7 @@ function closeMonthModals(root) {
 
 /** Abre el modal de Índices del mes (contaminación · estabilidad fisicoquímica · técnico). */
 function openIndices(root) {
+  closeMonthModals(root); // cierra cualquier otro modal de mes antes de abrir (evita apilarlos)
   fillIndicesModal(root);
   const m = root.querySelector('#algIndicesModal');
   if (m) { m.classList.add('sv-open'); document.body.classList.add('modal-open'); }
@@ -1192,7 +1193,7 @@ const ALG_EXPORT_COLS = [
   ['Temperatura_C', 'temp'], ['Intensidad_Luz_%', 'luz'], ['Descartado', 'descartado'],
   ['Ciliados', 'ciliados'], ['Filamentosos', 'filamentosos'], ['Observaciones', 'obs'], ['Técnico', 'tecnico'],
   ['Células Vacías', 'cel_vacias'], ['Células Semillenas', 'cel_semillenas'], ['Células Alargadas', 'cel_alargadas'],
-  ['Células muertas', 'cel_llenas'], ['Volumen de Despacho', 'vol_despacho'],
+  ['Células muertas', 'cel_muertas'], ['Volumen de Despacho', 'vol_despacho'],
 ];
 
 /** Filas de la categoría (subvista) activa respetando los filtros activos, SIN el mes

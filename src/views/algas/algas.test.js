@@ -172,7 +172,7 @@ describe('periodStats', () => {
 });
 
 describe('cellCompositionByDay', () => {
-  it('suma por fecha y calcula el % global de células llenas', () => {
+  it('suma por fecha y calcula el % global de células muertas (header legado "Células Llenas")', () => {
     const rows = [
       row({ Fecha: '2026-07-10', 'Células Vacías': '2', 'Células Semillenas': '1', 'Células Alargadas': '1', 'Células Llenas': '6' }),
       row({ Fecha: '2026-07-10', 'Células Llenas': '4' }),
@@ -180,25 +180,25 @@ describe('cellCompositionByDay', () => {
     ];
     const c = cellCompositionByDay(rows);
     expect(c.days.length).toBe(2);
-    expect(c.series.llenas).toEqual([10, 5]);   // 10-jul: 6+4 · 11-jul: 5
+    expect(c.series.muertas).toEqual([10, 5]);  // 10-jul: 6+4 · 11-jul: 5
     expect(c.series.vacias).toEqual([2, 5]);
-    expect(c.pctLlenas).toBe(63);               // 15 / 24 = 62.5% → 63
+    expect(c.pctMuertas).toBe(63);              // 15 / 24 = 62.5% → 63
   });
   it('lee el nuevo header "Células muertas" y conserva los alias legados', () => {
     const c = cellCompositionByDay([
       row({ Fecha: '2026-07-10', 'Células Vacías': '2', 'Células muertas': '8' }),
     ]);
-    expect(c.series.llenas).toEqual([8]);   // el alias principal (header nuevo) resuelve el conteo
-    expect(c.pctLlenas).toBe(80);           // 8 / 10
+    expect(c.series.muertas).toEqual([8]);  // el alias principal (header nuevo) resuelve el conteo
+    expect(c.pctMuertas).toBe(80);          // 8 / 10
     // fallback: hojas antiguas con el header previo siguen leyéndose
     const legacy = cellCompositionByDay([
       row({ Fecha: '2026-07-11', 'Células Vacías': '5', 'Células en División': '5' }),
     ]);
-    expect(legacy.series.llenas).toEqual([5]);
+    expect(legacy.series.muertas).toEqual([5]);
   });
   it('ignora filas sin ninguno de los 4 conteos', () => {
     expect(cellCompositionByDay([row({ Fecha: '2026-07-10', Cel_ml: '1000' })]).days.length).toBe(0);
-    expect(cellCompositionByDay([]).pctLlenas).toBeNull();
+    expect(cellCompositionByDay([]).pctMuertas).toBeNull();
   });
 });
 
