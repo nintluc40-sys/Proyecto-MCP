@@ -67,26 +67,18 @@ export function buildScoreItems(byCor, tanks, vars) {
   }).filter((x) => x.score !== null).sort((a, b) => b.score - a.score);
 }
 
-/** Cel/ml por día en estadios tempranos (N5..M1).
- *  `values` = promedio diario (todos los estadios); `series` = una serie por
- *  estadío (N5, Z1, Z2, Z3, M1) alineada a `days` para la vista por estadío. */
+/** Cel/ml por día en estadios tempranos (N5..M1): `days` + `values` (promedio diario). */
 export function buildAlgae(byCor) {
   const CEL = ['Cel/ml', 'Cel_ml', 'cel/ml', 'Cel/Ml'];
   const rows = byCor.filter((r) => EARLY_STAGES.includes(getField(r, F.estadio).toUpperCase()));
-  const byDay = {}, byStage = {};
+  const byDay = {};
   rows.forEach((r) => {
     const cel = parseNum(r, CEL); if (cel === null) return;
     const f = getField(r, F.fecha); if (!f) return;
-    const st = getField(r, F.estadio).toUpperCase();
     (byDay[f] ||= []).push(cel);
-    ((byStage[st] ||= {})[f] ||= []).push(cel);
   });
   const days = Object.keys(byDay).filter(Boolean).sort((a, b) => (parseAnyDate(a) || 0) - (parseAnyDate(b) || 0));
-  const series = EARLY_STAGES.filter((s) => byStage[s]).map((s) => ({
-    stage: s,
-    data: days.map((d) => (byStage[s][d] ? avg(byStage[s][d]) : null)),
-  }));
-  return { days, values: days.map((d) => avg(byDay[d])), series };
+  return { days, values: days.map((d) => avg(byDay[d])) };
 }
 
 /** Variables de manejo por día: % Espuma / % Suciedad / % Recambio. */
