@@ -123,7 +123,7 @@ export function evolutionChart(canvasId, daily, vars, smooth = false) {
         y: { min: yMin, max: yMax, ticks: { callback: (v) => v + '%' } },
         x: {
           // Eje X sólo con el día; el mes/año va como frase debajo (cambia con el rango).
-          ticks: { callback: (val, idx) => dayNum(labels[idx]), maxRotation: 0, autoSkip: false, font: { size: 11, weight: '700' } },
+          ticks: { callback: (val, idx) => dayNum(labels[idx]), maxRotation: 0, autoSkip: true, maxTicksLimit: 16, font: { size: 11, weight: '700' } },
           grid: { display: false },
           title: rangeLabel(daily) ? { display: true, text: rangeLabel(daily), color: '#78909c', font: { size: 10.5, weight: '700' }, padding: { top: 6 } } : { display: false },
         },

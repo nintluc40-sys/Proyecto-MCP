@@ -64,9 +64,14 @@ const ENV_VARS = [
 ];
 
 /** Promedios y tendencia diaria de T°/OD/Salinidad del módulo (opcionalmente de una corrida). */
-export function moduleEnv(modulo, corrida) {
+export function moduleEnv(modulo, corrida, monthCorridas) {
   if (!modulo) return null;
-  const inScope = (r) => getField(r, F.modulo) === modulo && (!corrida || getField(r, F.corrida) === corrida);
+  // Sin corrida específica se acota a las corridas del MES visible (coherente con el
+  // resto de la vista, que es mensual); si no, el KPI de Fisicoquímicos promediaría
+  // TODO el historial del módulo. Con `corrida` fija, esa manda.
+  const monthSet = (monthCorridas && monthCorridas.length) ? new Set(monthCorridas) : null;
+  const inScope = (r) => getField(r, F.modulo) === modulo
+    && (corrida ? getField(r, F.corrida) === corrida : (!monthSet || monthSet.has(getField(r, F.corrida))));
   const larv = store.globalData.filter((r) => isLarviculturaRow(r) && inScope(r));
   const tnq = store.globalData.filter((r) => isTanqueRow(r) && inScope(r));
   const vars = ENV_VARS.map((cfg) => {

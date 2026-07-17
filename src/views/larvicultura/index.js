@@ -452,6 +452,10 @@ export function larviculturaView(root) {
     return;
   }
   destroyAllCharts();
+  // Limpia 'modal-open' colgado: si el usuario activó un control de fondo (p. ej. por
+  // teclado) con un modal abierto, quedaría puesto y refresh.js (isBusy → '.modal-open')
+  // pausaría el auto-refresco indefinidamente. Misma defensa que Supervisor/Algas.
+  document.body.classList.remove('modal-open');
   const stageCfg = STAGES[state.stage];
   const vars = stageCfg.vars;
 
@@ -588,7 +592,7 @@ export function larviculturaView(root) {
   const semPop = popSemaforo(pStats);
   const semAgua = aguaSemaforo(mgmt);
   // Fisicoquímicos del módulo (T°/OD/Sal) — nivel de módulo, estable al cambiar de tanque.
-  const env = moduleEnv(state.modulo, state.corrida);
+  const env = moduleEnv(state.modulo, state.corrida, monthCorridas);
 
   // Contexto compartido para los bloques dependientes del tanque (Resumen + Detalle).
   Object.assign(view, { monthCorridas, comp, mgmt, semAgua, env, daily, vars });

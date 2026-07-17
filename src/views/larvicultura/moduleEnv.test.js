@@ -53,4 +53,22 @@ describe('moduleEnv', () => {
     const env = moduleEnv('M1', '580');
     expect(env.vars.find((v) => v.key === 'od').last).toBeCloseTo(6, 5);
   });
+
+  it('sin corrida, acota a las corridas del mes (monthCorridas)', () => {
+    store.globalData = [
+      trow('M1', '2026-06-01', { Corrida: '580', OD: 6, Temperatura: 31, Salinidad: 30 }),
+      trow('M1', '2026-05-01', { Corrida: '575', OD: 3, Temperatura: 31, Salinidad: 30 }), // fuera del mes
+    ];
+    const env = moduleEnv('M1', null, ['580']); // solo la 580 → no mezcla la 575
+    expect(env.vars.find((v) => v.key === 'od').last).toBeCloseTo(6, 5);
+  });
+
+  it('sin corrida ni monthCorridas → todo el historial (backward-compat)', () => {
+    store.globalData = [
+      trow('M1', '2026-06-01', { Corrida: '580', OD: 6, Temperatura: 31, Salinidad: 30 }),
+      trow('M1', '2026-06-02', { Corrida: '581', OD: 4, Temperatura: 31, Salinidad: 30 }),
+    ];
+    const env = moduleEnv('M1'); // 2 args como antes → promedia ambas corridas (last del 06-02 = 4)
+    expect(env.vars.find((v) => v.key === 'od').last).toBeCloseTo(4, 5);
+  });
 });
