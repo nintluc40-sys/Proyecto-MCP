@@ -361,6 +361,11 @@ function openSumModal(key, mIdx, monthSup) {
   document.getElementById('vtSumBody').innerHTML = html;
   m.style.display = 'flex';
   document.body.classList.add('modal-open'); // pausa el auto-refresco mientras está abierto
+  // Remueve un handler previo antes de re-registrar: re-abrir sin cerrar (p. ej. pulsar
+  // Enter sobre la tarjeta, que conserva el foco tras el primer clic) dejaba listeners de
+  // Escape HUÉRFANOS acumulándose en document (cada uno permanente y disparándose en
+  // cualquier Escape de la app). Con el remove previo, siempre hay a lo sumo uno activo.
+  if (vtEscHandler) document.removeEventListener('keydown', vtEscHandler);
   vtEscHandler = (e) => { if (e.key === 'Escape') closeSumModal(); };
   document.addEventListener('keydown', vtEscHandler);
 }

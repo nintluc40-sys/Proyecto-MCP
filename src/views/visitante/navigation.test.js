@@ -100,4 +100,23 @@ describe('Visitante · harness de navegación integral', () => {
     expect(document.getElementById('vtSumModal').style.display).toBe('none');
     expect(errSpy).not.toHaveBeenCalled();
   });
+
+  it('re-abrir el detalle sin cerrar (Enter sobre la tarjeta enfocada) NO filtra listeners de Escape', () => {
+    visitanteView(root);
+    const addSpy = vi.spyOn(document, 'addEventListener');
+    const remSpy = vi.spyOn(document, 'removeEventListener');
+    const card = root.querySelector('[data-sum="superv"]');
+    click(card); // abre (la tarjeta conserva el foco)
+    // La tarjeta sigue enfocada tras el clic: pulsar Enter re-dispara open() sin cerrar.
+    card.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    card.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    const kAdd = addSpy.mock.calls.filter((c) => c[0] === 'keydown').length;
+    const kRem = remSpy.mock.calls.filter((c) => c[0] === 'keydown').length;
+    // Cada add de Escape tuvo su remove → cero listeners huérfanos (sin el fix: kAdd>kRem).
+    expect(kAdd).toBe(kRem);
+    addSpy.mockRestore(); remSpy.mockRestore();
+    expect(document.getElementById('vtSumModal').style.display).toBe('none');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
 });
