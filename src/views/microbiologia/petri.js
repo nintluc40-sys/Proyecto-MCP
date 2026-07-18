@@ -88,29 +88,3 @@ export function petriSVG(colonies, size, theme = 'light') {
   ${bodies}${empty}
   </svg>`;
 }
-
-/** Mini-sparkline SVG de una serie.
- *  Si se pasan `labels` (una etiqueta de fecha por punto), cada vértice se vuelve un
- *  punto interactivo (`.mic-spark-pt`) con `data-spv` (valor) y `data-spd` (fecha) para
- *  mostrar un tooltip al pasar el cursor. */
-export function sparklineSVG(points, color, w = 130, h = 34, labels = null) {
-  if (points.length < 2) return '';
-  const mn = Math.min(...points), mx = Math.max(...points), rng = mx - mn || 1;
-  const coords = points.map((v, i) => ({
-    x: (i / (points.length - 1)) * (w - 4) + 2,
-    y: h - 4 - ((v - mn) / rng) * (h - 8),
-  }));
-  const pts = coords.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`);
-  const gid = 'sp' + color.replace(/[^a-z0-9]/gi, '');
-  const last = coords[coords.length - 1];
-  // Vértices: interactivos (con tooltip) si hay etiquetas; si no, solo el último punto.
-  const verts = labels
-    ? coords.map((c, i) => `<circle class="mic-spark-pt" cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="3.2" fill="${color}" data-spv="${points[i]}" data-spd="${(labels[i] || '').replace(/"/g, '&quot;')}" style="cursor:pointer"/>`).join('')
-    : `<circle cx="${last.x.toFixed(1)}" cy="${last.y.toFixed(1)}" r="2.6" fill="${color}"/>`;
-  return `<svg width="${w}" height="${h}" style="display:block;flex-shrink:0;overflow:visible">
-    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity=".3"/><stop offset="100%" stop-color="${color}" stop-opacity=".02"/></linearGradient></defs>
-    <path d="M ${pts[0]} L ${pts.slice(1).join(' L ')} L ${(w - 2)},${h} L 2,${h} Z" fill="url(#${gid})"/>
-    <polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-    ${verts}
-  </svg>`;
-}

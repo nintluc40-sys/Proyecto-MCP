@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ufcRadius, colonyLayout, petriSVG, sparklineSVG } from './petri.js';
+import { ufcRadius, colonyLayout, petriSVG } from './petri.js';
 
 describe('ufcRadius', () => {
   it('crece monótonamente con la UFC (escala log)', () => {
@@ -51,15 +51,5 @@ describe('petriSVG', () => {
   it('acepta ambos temas sin reventar', () => {
     expect(petriSVG([{ id: 'x', ufc: 1, color: '#f00' }], 200, 'light')).toContain('<svg');
     expect(petriSVG([{ id: 'x', ufc: 1, color: '#f00' }], 200, 'dark')).toContain('<svg');
-  });
-});
-
-describe('sparklineSVG', () => {
-  it('serie con <2 puntos → vacío', () => {
-    expect(sparklineSVG([5], '#f00')).toBe('');
-  });
-  it('serie válida → <svg> con polyline', () => {
-    const s = sparklineSVG([1, 3, 2, 5], '#0a0');
-    expect(s).toContain('<polyline');
   });
 });

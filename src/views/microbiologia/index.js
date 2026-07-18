@@ -94,6 +94,18 @@ function microRows() {
 const fmtNum = (v) => (v === null || v === undefined || isNaN(v)) ? '—' : Math.round(v).toLocaleString('es-EC');
 const PAT_LABEL = Object.fromEntries(PATHOGENS.map((p) => [p.key, p.label]));
 
+/** Índices de mes (calendario de producción) presentes en una lista de filas. */
+function monthsOfRows(rows, ctxFn) {
+  return [...new Set(rows.map((r) => ctxFn(r).corrida).filter(Boolean).map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
+}
+/** Mes más cercano disponible en `months` al índice `target` (para arrastrar el mes del
+ *  panorama General a una sub-vista cuyo set de meses puede no incluirlo). Devuelve
+ *  `target` si ya está o si el set es vacío. */
+function nearestMonth(target, months) {
+  if (!months.length || months.includes(target)) return target;
+  return months.reduce((best, m) => Math.abs(m - target) < Math.abs(best - target) ? m : best, months[0]);
+}
+
 /* ============================================================
    VISTA
    ============================================================ */
@@ -364,11 +376,9 @@ function genAreaStats(summaries, samples, ranges) {
     const ws = samples.filter((s) => genAreaOf(s.ctx.depto) === area);
     const meas = ws.flatMap((s) => s.meas);
     const w = calWQI(meas, ranges);
-    let inC = 0, outC = 0;
-    meas.forEach((m) => { if (m.estado === 'dentro') inC++; else if (m.estado === 'fuera') outC++; });
     return {
       area, n: bl.length, alertas: bl.filter((s) => isAlerta(s.worst)).length, worstSev,
-      wqi: w.wqi, cump: (inC + outC) ? Math.round(inC / (inC + outC) * 100) : null, wn: ws.length,
+      wqi: w.wqi, cump: calSampleCompliance(ws).pct, wn: ws.length,
     };
   }).filter((r) => r.n > 0 || r.wn > 0);
 }
@@ -447,9 +457,9 @@ function genDeptoBodyHTML(area) {
   const ws = sc.samples.filter((s) => genAreaOf(s.ctx.depto) === area);
   const meas = ws.flatMap((s) => s.meas);
   const w = calWQI(meas, sc.ranges);
-  let inC = 0, outC = 0; const outByP = new Map();
-  meas.forEach((m) => { if (m.estado === 'dentro') inC++; else if (m.estado === 'fuera') { outC++; outByP.set(m.label, (outByP.get(m.label) || 0) + 1); } });
-  const cump = (inC + outC) ? Math.round(inC / (inC + outC) * 100) : null;
+  let outC = 0; const outByP = new Map();
+  meas.forEach((m) => { if (m.estado === 'fuera') { outC++; outByP.set(m.label, (outByP.get(m.label) || 0) + 1); } });
+  const cump = calSampleCompliance(ws).pct;
   const waterSec = ws.length ? `<div class="cal-kpi-sec"><h4>💧 Calidad de Agua</h4>
       <p class="cal-kpi-note">WQI <b>${w.wqi == null ? '—' : w.wqi}</b> · cumplimiento <b>${cump == null ? '—' : cump + '%'}</b> · <b>${outC}</b> medición(es) fuera de rango en <b>${ws.length}</b> muestra(s).</p>
       ${outByP.size ? `<div class="cal-kpi-chips">${[...outByP.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => `<span class="cal-kpi-chip">${esc(k)} <b>×${v}</b></span>`).join('')}</div>` : '<span class="cal-inst-ok">✓ todo en rango</span>'}
@@ -483,6 +493,23 @@ function closeGenDepto(root) {
    ============================================================ */
 /** Número limpio: entero tal cual; decimal a ≤2 sin ceros finales. */
 function calFmt(v) { return v == null || isNaN(v) ? '—' : String(Number.isInteger(v) ? v : +v.toFixed(2)); }
+
+/** Fecha legible de un "bucket" de día (entero = Math.floor(fecha/86400000), calculado
+ *  desde fechas a mediodía local). Se reconstruye a MEDIODÍA UTC (no medianoche) para
+ *  no caer en el día anterior en husos negativos como Ecuador (UTC−5), donde
+ *  new Date(k·86400000) es medianoche UTC = 19:00 del día previo en hora local. */
+const dayBucketDate = (k) => new Date(k * 86400000 + 43200000);
+
+/** Cumplimiento a nivel MUESTRA: de las muestras EVALUABLES (con ≥1 parámetro con rango
+ *  objetivo), % cuyas mediciones están TODAS dentro de rango. Definición única compartida
+ *  por la KPI de Calidad de Agua, el scorecard del panorama General y su desglose por área
+ *  (evita que "sin-rango" infle el % y que las dos vistas midan cosas distintas). */
+function calSampleCompliance(sampleList) {
+  const evalS = (sampleList || []).filter((s) => s.meas.some((m) => m.estado === 'dentro' || m.estado === 'fuera'));
+  if (!evalS.length) return { pct: null, fullOk: 0, evalCount: 0 };
+  const fullOk = evalS.filter((s) => s.meas.every((m) => m.estado !== 'fuera')).length;
+  return { pct: Math.round((fullOk / evalS.length) * 100), fullOk, evalCount: evalS.length };
+}
 
 // Dimensiones de contexto de Calidad de Agua (cascada; cada una se muestra si ≥2
 // valores distintos en el pool). Se adaptan al departamento/formato de cada muestra.
@@ -589,7 +616,7 @@ function calSpark(vals, w = 74, h = 22, pad = 2) {
 /** Franja de INSTRUMENTOS de Calidad de Agua: KPIs con identidad visual + micro-viz.
  *  Cada tarjeta responde una pregunta (cuántas · cumplimiento/tendencia · severidad · dónde),
  *  reutilizando el sistema de color --sev de la vista para cohesión con el gauge/mapa de riesgo. */
-function calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, outByParam, alertAttrs }) {
+function calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, evalCount, outByParam, alertAttrs }) {
   // Perfil de severidad (4 niveles) sobre TODAS las mediciones con rango.
   const sevOrder = ['optimo', 'vigilancia', 'fuera', 'critico'];
   const sevCount = { optimo: 0, vigilancia: 0, fuera: 0, critico: 0 };
@@ -613,7 +640,7 @@ function calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, outByParam, 
   const compDelta = compVals.length >= 2 ? compVals[compVals.length - 1] - compVals[compVals.length - 2] : null;
   const dArrow = compDelta == null ? '' : compDelta > 0 ? 'up' : compDelta < 0 ? 'dn' : '';
 
-  const compSev = pctOk >= 90 ? 'optimo' : pctOk >= 70 ? 'vigilancia' : 'critico';
+  const compSev = pctOk == null ? '' : pctOk >= 90 ? 'optimo' : pctOk >= 70 ? 'vigilancia' : 'critico';
   const sevProfileSev = pctOpt >= 80 ? 'optimo' : pctOpt >= 60 ? 'vigilancia' : 'fuera';
 
   // 01 · Timeline compacto (cobertura de muestreo por día).
@@ -639,18 +666,20 @@ function calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, outByParam, 
       ${footHtml ? `<div class="cal-inst-foot">${footHtml}</div>` : ''}
     </div>`;
 
-  const compFoot = `${fullOk} de ${samples.length} al 100%${compDelta != null ? ` · <b class="cal-inst-d ${dArrow}">${compDelta > 0 ? '▲' : compDelta < 0 ? '▼' : '▬'} ${Math.abs(compDelta)}pt</b>` : ''}`;
+  const compFoot = pctOk == null
+    ? 'sin parámetros con rango objetivo'
+    : `${fullOk} de ${evalCount} al 100%${compDelta != null ? ` · <b class="cal-inst-d ${dArrow}">${compDelta > 0 ? '▲' : compDelta < 0 ? '▼' : '▬'} ${Math.abs(compDelta)}pt</b>` : ''}`;
 
   // Datos para los modales de detalle de cada KPI (se llenan al hacer clic).
   _calKpiData = {
-    samples, sevOrder, sevCount, sevTot, pctOpt, pctOk, fullOk, outC, evaluated, outByParam,
+    samples, sevOrder, sevCount, sevTot, pctOpt, pctOk, fullOk, outC, evaluated, evalCount, outByParam,
     dayStats: days.map((k) => ({ k, ...byDay.get(k) })),
   };
   const kpiClick = (which) => `data-cal-kpi="${which}" role="button" tabindex="0" title="Ver detalle"`;
 
   return `<div class="cal-inst-strip">
     ${inst('01', '', '💧 Muestras', String(samples.length), timeline, `${days.length} día(s) de muestreo`, kpiClick('muestras'))}
-    ${inst('02', compSev, '✅ Cumplimiento', `${pctOk}<small>%</small>`, calSpark(compSeries), compFoot, kpiClick('cumplimiento'))}
+    ${inst('02', compSev, '✅ Cumplimiento', pctOk == null ? '—' : `${pctOk}<small>%</small>`, calSpark(compSeries), compFoot, kpiClick('cumplimiento'))}
     ${inst('03', sevProfileSev, '🧭 Perfil de severidad', `${pctOpt}<small>% óptimo</small>`, `<div class="cal-inst-segwrap">${segBar}${segLegend}</div>`, '', kpiClick('perfil'))}
     ${inst('04', outC > 0 ? 'fuera' : 'optimo', '⚠️ Fuera de rango', String(outC), topBars, evaluated ? `${(outC / evaluated * 100).toFixed(0)}% de evaluados` : 'sin evaluar', alertAttrs)}
   </div>`;
@@ -708,9 +737,10 @@ function renderCalidadAgua() {
     if (m.estado === 'dentro') inC++;
     else if (m.estado === 'fuera') { outC++; outByParam.set(m.label, (outByParam.get(m.label) || 0) + 1); }
   }));
-  const fullOk = samples.filter((s) => s.meas.every((m) => m.estado !== 'fuera')).length;
-  const pctOk = samples.length ? Math.round((fullOk / samples.length) * 100) : 0;
   const evaluated = inC + outC; // parámetros con rango (no "sin-rango")
+  // Cumplimiento a nivel muestra (excluye muestras sin ningún parámetro evaluable para no
+  // inflar el % a un falso 100 %). Definición única compartida con el panorama General.
+  const { pct: pctOk, fullOk, evalCount } = calSampleCompliance(samples);
 
   const monthBar = months.length ? `<div class="mic-monthbar">
       <button class="mic-month-nav" data-cal-month="-1" ${months.indexOf(vState.calMonth) <= 0 ? 'disabled' : ''} aria-label="Mes anterior">◀</button>
@@ -727,7 +757,7 @@ function renderCalidadAgua() {
       <div class="mic-export"><button class="mic-exp" data-cal-factors title="Editar rangos objetivo (mín/máx) por parámetro">⚙️ Rangos</button><button class="mic-exp" data-cal-export title="Descargar reporte de texto de las muestras filtradas">⬇ Reporte</button><button class="mic-exp" data-cal-xlsx title="Descargar Excel de las muestras filtradas">⬇ Excel</button></div>
     </div>`;
   const alertAttrs = outC > 0 ? 'data-cal-alerts role="button" tabindex="0" title="Ver listado de mediciones fuera de rango"' : '';
-  h += calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, outByParam, alertAttrs });
+  h += calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, evalCount, outByParam, alertAttrs });
 
   // Panel del Analista: síntesis técnica autogenerada (WQI global + diagnóstico).
   h += calAnalystHTML(samples, ranges);
@@ -738,6 +768,11 @@ function renderCalidadAgua() {
   _calTrend = null; _calEnsayo = null; _calLocTree = null; // se rellenan solo al dibujar/render su apartado
   const validAps = ['analizador', 'ubicacion', ...(ensayo.length ? ['ensayo'] : [])];
   const ap = validAps.includes(vState.calApartado) ? vState.calApartado : 'analizador';
+  // Fija el estado al apartado REALMENTE renderizado: si el apartado guardado dejó de
+  // ser válido (p. ej. Ensayo desaparece al cambiar el filtro), el dispatch de dibujo
+  // post-render (microbiologiaView) debe coincidir con lo pintado, o el gráfico del
+  // Analizador quedaría sin dibujar (canvas en blanco).
+  vState.calApartado = ap;
   h += `<div class="mic-apartados">
       <button class="mic-ap ${ap === 'analizador' ? 'is-active' : ''}" data-cal-ap="analizador">🔬 Por parámetro</button>
       <button class="mic-ap ${ap === 'ubicacion' ? 'is-active' : ''}" data-cal-ap="ubicacion">📍 Por ubicación</button>
@@ -773,7 +808,7 @@ function calKpiModalHTML() {
 }
 function calKpiBodyHTML(which) {
   const d = _calKpiData; if (!d) return '';
-  const dayDate = (k) => fmtShort(new Date(k * 86400000));
+  const dayDate = (k) => fmtShort(dayBucketDate(k));
   const chips = (m) => [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span class="cal-kpi-chip">${esc(k)} <b>${v}</b></span>`).join('') || '—';
   if (which === 'muestras') {
     const byDepto = new Map(), byTipo = new Map();
@@ -790,7 +825,10 @@ function calKpiBodyHTML(which) {
   if (which === 'cumplimiento') {
     const inC = d.evaluated - d.outC;
     const dayRows = d.dayStats.map((x) => { const ev = x.in + x.out; const pct = ev ? Math.round(x.in / ev * 100) : null; return `<tr><td>${esc(dayDate(x.k))}</td><td>${x.in}</td><td>${x.out}</td><td>${pct == null ? '—' : pct + '%'}</td></tr>`; }).join('');
-    return `<p class="cal-kpi-lead"><b>${d.pctOk}%</b> de cumplimiento: <b>${d.fullOk}</b> de <b>${d.samples.length}</b> muestra(s) tienen TODOS sus parámetros dentro de rango.</p>
+    const lead = d.pctOk == null
+      ? 'Ninguna muestra del filtro tiene parámetros con rango objetivo, por lo que no hay cumplimiento que evaluar.'
+      : `<b>${d.pctOk}%</b> de cumplimiento: <b>${d.fullOk}</b> de <b>${d.evalCount}</b> muestra(s) con parámetros evaluables tienen TODOS sus parámetros dentro de rango.`;
+    return `<p class="cal-kpi-lead">${lead}</p>
       <p class="cal-kpi-note">"En rango" = valor dentro de [mín, máx] del parámetro. De <b>${d.evaluated}</b> medición(es) con rango objetivo, <b>${inC}</b> están dentro y <b>${d.outC}</b> fuera.</p>
       <div class="cal-kpi-sec"><h4>Cumplimiento por día</h4><table class="cal-kpi-table"><thead><tr><th>Fecha</th><th>Dentro</th><th>Fuera</th><th>% en rango</th></tr></thead><tbody>${dayRows || '<tr><td colspan="4">Sin fechas registradas.</td></tr>'}</tbody></table></div>`;
   }
@@ -1214,7 +1252,7 @@ function calFichaBodyHTML(t) {
   // Tabla de mediciones por fecha (dedup por día, asc).
   const dayOf = (tt) => tt == null ? null : Math.floor(tt / 86400000);
   const days = [...new Set(sorted.map((s) => dayOf(s.ctx.fecha ? +s.ctx.fecha : null)).filter((x) => x != null))].sort((a, b) => a - b);
-  const head = `<tr><th>Parámetro</th>${days.map((k) => `<th>${esc(fmtShort(new Date(k * 86400000)))}</th>`).join('')}</tr>`;
+  const head = `<tr><th>Parámetro</th>${days.map((k) => `<th>${esc(fmtShort(dayBucketDate(k)))}</th>`).join('')}</tr>`;
   const body = paramList.map((p) => {
     const d = byParam.get(p.key);
     const cells = days.map((k) => {
@@ -1824,7 +1862,11 @@ function petriPlacaHTML(days, dayIdx, day) {
   const colonies = day ? coloniesForDay(day.rows) : [];
   _scope.colonies = colonies;
   const size = 340;
-  const totUfc = colonies.filter((c) => c.key === 'totales').reduce((a, c) => a + c.ufc, 0) || colonies.reduce((a, c) => a + c.ufc, 0);
+  // Σ UFC de C.Totales (V.Totales) del día. Si ese día NO se midió C.Totales, se muestra
+  // "—": NO se sustituye por la suma de todos los patógenos (sería un número distinto
+  // bajo una etiqueta que dice "C.Totales").
+  const totColony = colonies.find((c) => c.key === 'totales');
+  const totUfc = totColony ? totColony.ufc : null;
   // "UFC máx" y "Dominante" sobre patógenos ESPECÍFICOS (los agregados ganarían siempre).
   const specific = colonies.filter((c) => !AGGREGATE_KEYS.has(c.key));
   const maxC = specific.length ? specific.reduce((a, b) => (a.ufc > b.ufc ? a : b)) : null;
@@ -2458,11 +2500,14 @@ function bind(root) {
     if (goto) {
       const tgt = goto.dataset.genGoto;
       vState.sub = tgt;
+      // Arrastra el mes del panorama a la sub-vista, mapeado al mes disponible MÁS CERCANO
+      // en la fuente destino (el panorama comparte meses de micro+agua; la sub-vista solo
+      // tiene los suyos → sin esto caería silenciosamente al último mes de la fuente).
       if (tgt === 'bacteriologia') {
-        vState.month = vState.genMonth;
+        vState.month = nearestMonth(vState.genMonth, monthsOfRows(microRows(), rowContext));
         vState.depto = null; vState.formato = null; vState.dims = {}; vState.petriDay = null;
       } else if (tgt === 'calidad') {
-        vState.calMonth = vState.genMonth;
+        vState.calMonth = nearestMonth(vState.genMonth, monthsOfRows(calAguaRows(), calCtx));
       }
       microbiologiaView(root);
       return;

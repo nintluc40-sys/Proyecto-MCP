@@ -387,4 +387,19 @@ describe('Microbiología · harness de navegación integral', () => {
     if (prev && !prev.disabled) click(prev);
     expect(errSpy).not.toHaveBeenCalled();
   });
+
+  it('Calidad de Agua: el Cumplimiento NO se infla con muestras sin parámetros evaluables', () => {
+    // Muestras que solo miden parámetros SIN rango objetivo (Temperatura/Salinidad):
+    // no hay nada que evaluar → el cumplimiento debe ser "—", no un falso 100%.
+    store.globalData = [
+      { _SheetOrigin: 'Calidad de Agua', 'Fecha muestreo': '05/06/2026', Corrida: '573', Departamento: 'Larvicultura', Formato: 'Larvicultura', 'Módulo': '1', 'TQ/N°': '1', 'Temperatura': '30', 'S‰': '32' },
+      { _SheetOrigin: 'Calidad de Agua', 'Fecha muestreo': '06/06/2026', Corrida: '573', Departamento: 'Larvicultura', Formato: 'Larvicultura', 'Módulo': '1', 'TQ/N°': '2', 'Temperatura': '31', 'S‰': '33' },
+    ];
+    microbiologiaView(root);
+    click(root.querySelector('[data-mic-sub="calidad"]'));
+    const insts = [...root.querySelectorAll('.cal-inst-strip .cal-inst')];
+    const cumpl = insts.find((el) => /Cumplimiento/.test(el.textContent));
+    expect(cumpl.querySelector('.cal-inst-v').textContent).toBe('—');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
 });
