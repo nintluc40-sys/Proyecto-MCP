@@ -239,8 +239,15 @@ export function kpis(model, f) {
   const pop = model.females.filter((r) => (!f.sala || String(r.sala) === f.sala) && (!f.tanque || String(r.tanque) === f.tanque));
   const vivas = pop.filter((r) => r.estado !== ESTADO_MUERTO).length;
   const muertas = pop.length - vivas;
-  const everSpawned = new Set(model.desoves.filter((e) => (!f.sala || String(e.sala) === f.sala) && (!f.tanque || String(e.tanque) === f.tanque)).map((e) => e.trovan));
-  const fertilidadGlobal = vivas ? (everSpawned.size / vivas) * 100 : 0;
+  // Fertilidad = % de hembras VIVAS (en la ubicación) que ALGUNA VEZ han desovado.
+  // Antes el numerador contaba TODAS las hembras que desovaron en la ubicación (por
+  // snapshot de evento, incl. muertas/transferidas fuera): al mezclarse con el
+  // denominador "vivas actuales" podía SUPERAR el 100 % y no coincidía con su etiqueta
+  // ("% de vivas que han desovado") ni con `neverSpawned` (su complemento). Ahora el
+  // numerador son las vivas de la ubicación que constan como desovadoras → acotado 0–100.
+  const everSpawnedAnywhere = new Set(model.desoves.map((e) => e.trovan));
+  const vivasQueDesovaron = pop.filter((r) => r.estado !== ESTADO_MUERTO && everSpawnedAnywhere.has(r.trovan)).length;
+  const fertilidadGlobal = vivas ? (vivasQueDesovaron / vivas) * 100 : 0;
   return {
     totalHembras: pop.length, vivas, muertas,
     desoves: des.length, mortalidad: mor.length,

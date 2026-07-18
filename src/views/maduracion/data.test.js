@@ -58,6 +58,28 @@ describe('maduracion.data · KPIs', () => {
     expect(k.desoves).toBe(5);
     expect(k.mortalidad).toBe(0);        // la mortalidad fue en S2
   });
+
+  it('la fertilidad global NUNCA supera 100 % (numerador = vivas que han desovado, no eventos históricos)', () => {
+    // T1: 3 hembras desovaron ahí; 2 murieron. Vivas en T1 = 1 (y esa desovó).
+    const m2 = buildReproModel(
+      [
+        { 'Trovan ID': 'B1', 'Sala actual': 'S1', 'Tanque actual': 'T1', Estado: 'Vivo', 'Fecha ingreso': '2026-05-01' },
+        { 'Trovan ID': 'B2', 'Sala actual': 'S1', 'Tanque actual': 'T1', Estado: 'Muerto', 'Fecha ingreso': '2026-05-01', 'Fecha muerte': '2026-06-30' },
+        { 'Trovan ID': 'B3', 'Sala actual': 'S1', 'Tanque actual': 'T1', Estado: 'Muerto', 'Fecha ingreso': '2026-05-01', 'Fecha muerte': '2026-06-30' },
+      ],
+      [
+        { 'Trovan ID': 'B1', Fecha: '2026-06-01', Tipo: 'Desove' },
+        { 'Trovan ID': 'B2', Fecha: '2026-06-02', Tipo: 'Desove' },
+        { 'Trovan ID': 'B3', Fecha: '2026-06-03', Tipo: 'Desove' },
+      ],
+      [],
+    );
+    const k = kpis(m2, makeFilter({ tanque: 'T1' }));
+    expect(k.vivas).toBe(1);
+    expect(k.fertilidadGlobal).toBe(100); // 1 viva, desovó → 100 % (con el bug daba 300 %)
+    // Coincide con el complemento de neverSpawned (0 vivas sin desovar en T1).
+    expect(neverSpawned(m2, makeFilter({ tanque: 'T1' })).length).toBe(0);
+  });
 });
 
 describe('maduracion.data · producción por ubicación', () => {
