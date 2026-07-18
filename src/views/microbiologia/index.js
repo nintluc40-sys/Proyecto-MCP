@@ -94,6 +94,18 @@ function microRows() {
 const fmtNum = (v) => (v === null || v === undefined || isNaN(v)) ? '—' : Math.round(v).toLocaleString('es-EC');
 const PAT_LABEL = Object.fromEntries(PATHOGENS.map((p) => [p.key, p.label]));
 
+/** Índices de mes (calendario de producción) presentes en una lista de filas. */
+function monthsOfRows(rows, ctxFn) {
+  return [...new Set(rows.map((r) => ctxFn(r).corrida).filter(Boolean).map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
+}
+/** Mes más cercano disponible en `months` al índice `target` (para arrastrar el mes del
+ *  panorama General a una sub-vista cuyo set de meses puede no incluirlo). Devuelve
+ *  `target` si ya está o si el set es vacío. */
+function nearestMonth(target, months) {
+  if (!months.length || months.includes(target)) return target;
+  return months.reduce((best, m) => Math.abs(m - target) < Math.abs(best - target) ? m : best, months[0]);
+}
+
 /* ============================================================
    VISTA
    ============================================================ */
@@ -364,11 +376,9 @@ function genAreaStats(summaries, samples, ranges) {
     const ws = samples.filter((s) => genAreaOf(s.ctx.depto) === area);
     const meas = ws.flatMap((s) => s.meas);
     const w = calWQI(meas, ranges);
-    let inC = 0, outC = 0;
-    meas.forEach((m) => { if (m.estado === 'dentro') inC++; else if (m.estado === 'fuera') outC++; });
     return {
       area, n: bl.length, alertas: bl.filter((s) => isAlerta(s.worst)).length, worstSev,
-      wqi: w.wqi, cump: (inC + outC) ? Math.round(inC / (inC + outC) * 100) : null, wn: ws.length,
+      wqi: w.wqi, cump: calSampleCompliance(ws).pct, wn: ws.length,
     };
   }).filter((r) => r.n > 0 || r.wn > 0);
 }
@@ -447,9 +457,9 @@ function genDeptoBodyHTML(area) {
   const ws = sc.samples.filter((s) => genAreaOf(s.ctx.depto) === area);
   const meas = ws.flatMap((s) => s.meas);
   const w = calWQI(meas, sc.ranges);
-  let inC = 0, outC = 0; const outByP = new Map();
-  meas.forEach((m) => { if (m.estado === 'dentro') inC++; else if (m.estado === 'fuera') { outC++; outByP.set(m.label, (outByP.get(m.label) || 0) + 1); } });
-  const cump = (inC + outC) ? Math.round(inC / (inC + outC) * 100) : null;
+  let outC = 0; const outByP = new Map();
+  meas.forEach((m) => { if (m.estado === 'fuera') { outC++; outByP.set(m.label, (outByP.get(m.label) || 0) + 1); } });
+  const cump = calSampleCompliance(ws).pct;
   const waterSec = ws.length ? `<div class="cal-kpi-sec"><h4>💧 Calidad de Agua</h4>
       <p class="cal-kpi-note">WQI <b>${w.wqi == null ? '—' : w.wqi}</b> · cumplimiento <b>${cump == null ? '—' : cump + '%'}</b> · <b>${outC}</b> medición(es) fuera de rango en <b>${ws.length}</b> muestra(s).</p>
       ${outByP.size ? `<div class="cal-kpi-chips">${[...outByP.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => `<span class="cal-kpi-chip">${esc(k)} <b>×${v}</b></span>`).join('')}</div>` : '<span class="cal-inst-ok">✓ todo en rango</span>'}
@@ -489,6 +499,17 @@ function calFmt(v) { return v == null || isNaN(v) ? '—' : String(Number.isInte
  *  no caer en el día anterior en husos negativos como Ecuador (UTC−5), donde
  *  new Date(k·86400000) es medianoche UTC = 19:00 del día previo en hora local. */
 const dayBucketDate = (k) => new Date(k * 86400000 + 43200000);
+
+/** Cumplimiento a nivel MUESTRA: de las muestras EVALUABLES (con ≥1 parámetro con rango
+ *  objetivo), % cuyas mediciones están TODAS dentro de rango. Definición única compartida
+ *  por la KPI de Calidad de Agua, el scorecard del panorama General y su desglose por área
+ *  (evita que "sin-rango" infle el % y que las dos vistas midan cosas distintas). */
+function calSampleCompliance(sampleList) {
+  const evalS = (sampleList || []).filter((s) => s.meas.some((m) => m.estado === 'dentro' || m.estado === 'fuera'));
+  if (!evalS.length) return { pct: null, fullOk: 0, evalCount: 0 };
+  const fullOk = evalS.filter((s) => s.meas.every((m) => m.estado !== 'fuera')).length;
+  return { pct: Math.round((fullOk / evalS.length) * 100), fullOk, evalCount: evalS.length };
+}
 
 // Dimensiones de contexto de Calidad de Agua (cascada; cada una se muestra si ≥2
 // valores distintos en el pool). Se adaptan al departamento/formato de cada muestra.
@@ -717,12 +738,9 @@ function renderCalidadAgua() {
     else if (m.estado === 'fuera') { outC++; outByParam.set(m.label, (outByParam.get(m.label) || 0) + 1); }
   }));
   const evaluated = inC + outC; // parámetros con rango (no "sin-rango")
-  // Cumplimiento SOLO sobre muestras con ≥1 parámetro evaluable (con rango): una muestra
-  // que únicamente mide parámetros sin rango objetivo no es "100% en rango" (no hay nada
-  // que evaluar), así que se excluye para no inflar el % a un falso 100 %.
-  const evalSamples = samples.filter((s) => s.meas.some((m) => m.estado === 'dentro' || m.estado === 'fuera'));
-  const fullOk = evalSamples.filter((s) => s.meas.every((m) => m.estado !== 'fuera')).length;
-  const pctOk = evalSamples.length ? Math.round((fullOk / evalSamples.length) * 100) : null;
+  // Cumplimiento a nivel muestra (excluye muestras sin ningún parámetro evaluable para no
+  // inflar el % a un falso 100 %). Definición única compartida con el panorama General.
+  const { pct: pctOk, fullOk, evalCount } = calSampleCompliance(samples);
 
   const monthBar = months.length ? `<div class="mic-monthbar">
       <button class="mic-month-nav" data-cal-month="-1" ${months.indexOf(vState.calMonth) <= 0 ? 'disabled' : ''} aria-label="Mes anterior">◀</button>
@@ -739,7 +757,7 @@ function renderCalidadAgua() {
       <div class="mic-export"><button class="mic-exp" data-cal-factors title="Editar rangos objetivo (mín/máx) por parámetro">⚙️ Rangos</button><button class="mic-exp" data-cal-export title="Descargar reporte de texto de las muestras filtradas">⬇ Reporte</button><button class="mic-exp" data-cal-xlsx title="Descargar Excel de las muestras filtradas">⬇ Excel</button></div>
     </div>`;
   const alertAttrs = outC > 0 ? 'data-cal-alerts role="button" tabindex="0" title="Ver listado de mediciones fuera de rango"' : '';
-  h += calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, evalCount: evalSamples.length, outByParam, alertAttrs });
+  h += calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, evalCount, outByParam, alertAttrs });
 
   // Panel del Analista: síntesis técnica autogenerada (WQI global + diagnóstico).
   h += calAnalystHTML(samples, ranges);
@@ -2482,11 +2500,14 @@ function bind(root) {
     if (goto) {
       const tgt = goto.dataset.genGoto;
       vState.sub = tgt;
+      // Arrastra el mes del panorama a la sub-vista, mapeado al mes disponible MÁS CERCANO
+      // en la fuente destino (el panorama comparte meses de micro+agua; la sub-vista solo
+      // tiene los suyos → sin esto caería silenciosamente al último mes de la fuente).
       if (tgt === 'bacteriologia') {
-        vState.month = vState.genMonth;
+        vState.month = nearestMonth(vState.genMonth, monthsOfRows(microRows(), rowContext));
         vState.depto = null; vState.formato = null; vState.dims = {}; vState.petriDay = null;
       } else if (tgt === 'calidad') {
-        vState.calMonth = vState.genMonth;
+        vState.calMonth = nearestMonth(vState.genMonth, monthsOfRows(calAguaRows(), calCtx));
       }
       microbiologiaView(root);
       return;
