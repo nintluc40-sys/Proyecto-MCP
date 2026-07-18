@@ -259,15 +259,17 @@ export function drawDaily(canvasId, days, values, label, color, unit = '', zero 
   });
 }
 
-// Composición celular (calidad): color de "peor" a "mejor".
-const CELL_COLORS = { vacias: '#B7A59B', semillenas: '#A06B27', alargadas: '#4F8DA0', llenas: '#186447' };
-const CELL_LABELS = { vacias: 'Vacías', semillenas: 'Semillenas', alargadas: 'Alargadas', llenas: 'En División' };
+// Composición celular: Vacías/Semillenas/Alargadas en tonos neutros; "Muertas" en tono
+// negativo (rojo-ladrillo). Antes el header era "En División" (verde óptimo #186447);
+// al renombrarse la columna a "Muertas" ese verde-mejor pasó a ser engañoso.
+const CELL_COLORS = { vacias: '#B7A59B', semillenas: '#A06B27', alargadas: '#4F8DA0', muertas: '#8A4B4B' };
+const CELL_LABELS = { vacias: 'Vacías', semillenas: 'Semillenas', alargadas: 'Alargadas', muertas: 'Muertas' };
 
 /** Calidad morfológica: barras APILADAS al 100% con la proporción de células
- *  Vacías/Semillenas/Alargadas/Llenas por día. `series` = {vacias,semillenas,alargadas,
- *  llenas} (conteos por día, alineados a `days`). El tooltip muestra % y el conteo crudo. */
+ *  Vacías/Semillenas/Alargadas/Muertas por día. `series` = {vacias,semillenas,alargadas,
+ *  muertas} (conteos por día, alineados a `days`). El tooltip muestra % y el conteo crudo. */
 export function drawCellQuality(canvasId, days, series) {
-  const keys = ['vacias', 'semillenas', 'alargadas', 'llenas'];
+  const keys = ['vacias', 'semillenas', 'alargadas', 'muertas'];
   const totals = days.map((_, i) => keys.reduce((s, k) => s + (series[k][i] || 0), 0));
   const datasets = keys.map((k) => ({
     label: CELL_LABELS[k],

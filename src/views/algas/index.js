@@ -44,7 +44,7 @@ const AF = {
   cel_vacias:     ['Células Vacías', 'Celulas Vacías', 'Células Vacias', 'Celulas Vacias', 'cel_vacias'],
   cel_semillenas: ['Células Semillenas', 'Celulas Semillenas', 'cel_semillenas'],
   cel_alargadas:  ['Células Alargadas', 'Celulas Alargadas', 'cel_alargadas'],
-  cel_llenas:     ['Células en División', 'Celulas en Division', 'Células Llenas', 'Celulas Llenas', 'cel_llenas'],
+  cel_muertas:    ['Células muertas', 'Celulas muertas', 'Células en División', 'Celulas en Division', 'Células Llenas', 'Celulas Llenas', 'cel_llenas'],
   vol_despacho:   ['Volumen de Despacho', 'Volumen Despacho', 'vol_despacho'],
 };
 
@@ -148,9 +148,11 @@ function dailyMulti(rows, keys) {
  *  un salto de fecha grande (> UMBRAL días) también abre ciclo. Devuelve [[pts],…]. */
 const RESEED_GAP_DAYS = 14;
 function splitSiembras(pts) {
-  // Orden cronológico estable; con Dia_Proceso como desempate del mismo día.
+  // Orden cronológico estable; con Dia_Proceso como desempate del mismo día. Las filas
+  // SIN fecha van al final (no al epoch): si se colaran al inicio, su Dia_Proceso podía
+  // disparar un "reinicio" falso contra la 1.ª fila con fecha (resiembra fantasma).
   const sorted = [...pts].sort((a, b) => {
-    const ta = a.d ? a.d.getTime() : 0, tb = b.d ? b.d.getTime() : 0;
+    const ta = a.d ? a.d.getTime() : Infinity, tb = b.d ? b.d.getTime() : Infinity;
     return ta - tb || ((a.dia ?? 0) - (b.dia ?? 0));
   });
   const cycles = [];
@@ -161,13 +163,16 @@ function splitSiembras(pts) {
     const ms = p.d ? p.d.getTime() : null;
     let reseed = false;
     if (cur.length) {
-      if (dia !== null && prevDia !== null && dia < prevDia) reseed = true; // reinicio de día de proceso
-      else if (dia === null && prevDia === null && ms !== null && prevMs !== null
-        && (ms - prevMs) / 86400000 > RESEED_GAP_DAYS) reseed = true; // sin día → salto de fecha
+      // Reinicio de día de proceso (señal primaria). El salto de fecha es el RESPALDO
+      // cuando el punto actual no trae Dia_Proceso comparable — antes exigía además
+      // prevDia===null, que quedaba imposible tras cualquier fila con día (branch muerto).
+      if (dia !== null && prevDia !== null && dia < prevDia) reseed = true;
+      else if (dia === null && ms !== null && prevMs !== null
+        && (ms - prevMs) / 86400000 > RESEED_GAP_DAYS) reseed = true;
     }
     if (reseed) { cycles.push(cur); cur = []; }
     cur.push(p);
-    if (dia !== null) prevDia = dia;
+    prevDia = dia; // día del punto ANTERIOR (nullable): no comparar contra un día lejano ya pasado
     if (ms !== null) prevMs = ms;
   });
   if (cur.length) cycles.push(cur);
@@ -229,10 +234,23 @@ export function growthByLote(rows) {
     siembras.forEach((cyclePts, ci) => {
       const times = cyclePts.map((p) => (p.d ? p.d.getTime() : null)).filter((x) => x !== null);
       const minMs = times.length ? Math.min(...times) : null;
+      // Ancla del eje "día de proceso": un punto que trae Dia_Proceso Y fecha fija el
+      // origen para los puntos SIN Dia_Proceso. Sin esto, el día real (1-based) y el
+      // offset derivado (0-based desde el inicio del ciclo) colisionaban → dos fechas
+      // distintas se promediaban en un solo punto y la curva/μ salían falseadas.
+      let refDia = null, refMs = null;
+      for (const p of cyclePts) {
+        const dd = (p.dia === null || p.dia === undefined || isNaN(p.dia)) ? null : p.dia;
+        if (dd !== null && p.d) { refDia = dd; refMs = p.d.getTime(); break; }
+      }
       const byDay = new Map();
       cyclePts.forEach((p) => {
-        let day = p.dia;
-        if (day === null || day === undefined || isNaN(day)) day = (p.d && minMs !== null) ? Math.round((p.d.getTime() - minMs) / 86400000) : 0;
+        let day = (p.dia === null || p.dia === undefined || isNaN(p.dia)) ? null : p.dia;
+        if (day === null) {
+          if (p.d && refMs !== null) day = refDia + Math.round((p.d.getTime() - refMs) / 86400000);
+          else if (p.d && minMs !== null) day = Math.round((p.d.getTime() - minMs) / 86400000);
+          else day = 0;
+        }
         if (!byDay.has(day)) byDay.set(day, []);
         byDay.get(day).push(p.cel);
       });
@@ -275,21 +293,21 @@ export function periodStats(rows) {
   };
 }
 
-/** Composición celular (calidad) por día: suma de Vacías/Semillenas/Alargadas/Llenas por
- *  FECHA (asc). Devuelve {days:[Date], series:{vacias,semillenas,alargadas,llenas}, pctLlenas, n}.
+/** Composición celular (calidad) por día: suma de Vacías/Semillenas/Alargadas/Muertas por
+ *  FECHA (asc). Devuelve {days:[Date], series:{vacias,semillenas,alargadas,muertas}, pctMuertas, n}.
  *  Solo cuenta filas con al menos uno de los 4 conteos. */
 export function cellCompositionByDay(rows) {
   const byDay = new Map();
-  let sumLlenas = 0, sumTot = 0;
+  let sumMuertas = 0, sumTot = 0;
   (rows || []).forEach((r) => {
     const d = parseAnyDate(g(r, 'fecha')); if (!d) return;
-    const v = num(r, 'cel_vacias'), s = num(r, 'cel_semillenas'), a = num(r, 'cel_alargadas'), l = num(r, 'cel_llenas');
-    if (v === null && s === null && a === null && l === null) return;
+    const v = num(r, 'cel_vacias'), s = num(r, 'cel_semillenas'), a = num(r, 'cel_alargadas'), m = num(r, 'cel_muertas');
+    if (v === null && s === null && a === null && m === null) return;
     const key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
-    if (!byDay.has(key)) byDay.set(key, { d, vacias: 0, semillenas: 0, alargadas: 0, llenas: 0 });
+    if (!byDay.has(key)) byDay.set(key, { d, vacias: 0, semillenas: 0, alargadas: 0, muertas: 0 });
     const o = byDay.get(key);
-    o.vacias += v || 0; o.semillenas += s || 0; o.alargadas += a || 0; o.llenas += l || 0;
-    sumLlenas += l || 0; sumTot += (v || 0) + (s || 0) + (a || 0) + (l || 0);
+    o.vacias += v || 0; o.semillenas += s || 0; o.alargadas += a || 0; o.muertas += m || 0;
+    sumMuertas += m || 0; sumTot += (v || 0) + (s || 0) + (a || 0) + (m || 0);
   });
   const entries = [...byDay.values()].sort((x, y) => x.d - y.d);
   return {
@@ -298,9 +316,9 @@ export function cellCompositionByDay(rows) {
       vacias: entries.map((e) => e.vacias),
       semillenas: entries.map((e) => e.semillenas),
       alargadas: entries.map((e) => e.alargadas),
-      llenas: entries.map((e) => e.llenas),
+      muertas: entries.map((e) => e.muertas),
     },
-    pctLlenas: sumTot > 0 ? Math.round(sumLlenas / sumTot * 100) : null,
+    pctMuertas: sumTot > 0 ? Math.round(sumMuertas / sumTot * 100) : null,
     n: entries.length,
   };
 }
@@ -456,6 +474,11 @@ export function algasView(root) {
   fsDraw = {
     growth: (hostId, legendId) => {
       const box = document.getElementById(hostId); if (!box) return;
+      // Destruye los charts del modo previo ANTES de reemplazar el contenido: al alternar
+      // Líneas/Normalizado/Mini-curvas se reemplaza el innerHTML y, sin esto, las instancias
+      // Chart.js del modo anterior quedaban huérfanas en el registro (fuga hasta el próximo
+      // re-render). Para heatmap (HTML sin canvas) es no-op.
+      box.querySelectorAll('canvas[id]').forEach((c) => destroyChart(c.id));
       if (legendId) { const lg = document.getElementById(legendId); if (lg) lg.innerHTML = ''; }
       // Categorías sin tendencia (Fundas/Carboys) → barras, sin conmutador.
       if (isBarCat) { box.style.height = ''; box.innerHTML = `<canvas id="${hostId}_cv"></canvas>`; drawGrowthBar(`${hostId}_cv`, barLabels, barValues, catColor); return; }
@@ -512,7 +535,7 @@ export function algasView(root) {
   // ── Franja · Calidad celular (composición morfológica 100% por día) ──
   h += algBand('🔬', 'Calidad celular', '#A06B27');
   h += `<div class="alg-charts" style="${catVar}">
-      <div class="card alg-chart-card alg-fs-card">${chHead('🔬 Composición celular <span class="muted">· % por día · Vacías/Semillenas/Alargadas/En División</span>' + (cellQ.pctLlenas != null ? ` <span style="margin-left:8px;font-size:11px;font-weight:800;color:#186447;background:#18644722;padding:1px 8px;border-radius:999px">✅ ${cellQ.pctLlenas}% en división</span>` : ''), cellQ.days.length > 0 ? 'cellq' : null)}<div class="alg-chart-host alg-host-md">${host('algCellQ', cellQ.days.length > 0)}</div></div>
+      <div class="card alg-chart-card alg-fs-card">${chHead('🔬 Composición celular <span class="muted">· % por día · Vacías/Semillenas/Alargadas/Muertas</span>' + (cellQ.pctMuertas != null ? ` <span style="margin-left:8px;font-size:11px;font-weight:700;color:#8A4B4B;background:color-mix(in srgb, #8A4B4B 14%, transparent);padding:1px 8px;border-radius:999px">${cellQ.pctMuertas}% muertas</span>` : ''), cellQ.days.length > 0 ? 'cellq' : null)}<div class="alg-chart-host alg-host-md">${host('algCellQ', cellQ.days.length > 0)}</div></div>
     </div>`;
 
   // ── Franja 2 · Parámetros fisicoquímicos (mini-gráficos compactos 4-up) ──
@@ -963,6 +986,7 @@ function closeMonthModals(root) {
 
 /** Abre el modal de Índices del mes (contaminación · estabilidad fisicoquímica · técnico). */
 function openIndices(root) {
+  closeMonthModals(root); // cierra cualquier otro modal de mes antes de abrir (evita apilarlos)
   fillIndicesModal(root);
   const m = root.querySelector('#algIndicesModal');
   if (m) { m.classList.add('sv-open'); document.body.classList.add('modal-open'); }
@@ -1187,7 +1211,7 @@ const ALG_EXPORT_COLS = [
   ['Temperatura_C', 'temp'], ['Intensidad_Luz_%', 'luz'], ['Descartado', 'descartado'],
   ['Ciliados', 'ciliados'], ['Filamentosos', 'filamentosos'], ['Observaciones', 'obs'], ['Técnico', 'tecnico'],
   ['Células Vacías', 'cel_vacias'], ['Células Semillenas', 'cel_semillenas'], ['Células Alargadas', 'cel_alargadas'],
-  ['Células en División', 'cel_llenas'], ['Volumen de Despacho', 'vol_despacho'],
+  ['Células muertas', 'cel_muertas'], ['Volumen de Despacho', 'vol_despacho'],
 ];
 
 /** Filas de la categoría (subvista) activa respetando los filtros activos, SIN el mes
