@@ -9,6 +9,7 @@
 import { store } from '../../core/store.js';
 import { esc as escH } from '../../core/format.js'; // output-encoding único (antes había un escH local duplicado)
 import { toast } from '../../ui/toast.js';
+import { setDateBarHidden } from '../../ui/shell.js'; // esta vista usa su PROPIA filterbar
 
 // ── Constantes (idénticas a BIOMOL.html) ──
 const DIAGS  = ['IHHNV', 'WSSV', 'BP', 'AHPND', 'NHPB', 'EHP'];
@@ -47,7 +48,9 @@ let docWired = false;
 // ── Helpers de datos (idénticos a BIOMOL.html) ──
 const isPos  = (v) => v === 'Positivo';
 const hasVal = (v) => v === 'Positivo' || v === 'Negativo';
-const fmtD   = (iso) => iso.slice(5).split('-').reverse().join('/');
+// Fecha corta con AÑO (2 díg.) para no ser ambigua ni colisionar entre años (p. ej. el
+// heatmap "Por Fecha" a granularidad Día fusionaba dos años con el mismo DD/MM).
+const fmtD   = (iso) => { const p = String(iso).split('-'); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0].slice(2)}` : String(iso); };
 const $ = (id) => document.getElementById(id);
 
 export function parseDate(raw) {
@@ -1539,6 +1542,9 @@ function initFilters(reset) {
     timeGran = 'month'; datePreset = 'all';
     activeLugares = new Set(lugares); activeFechas = new Set(fechas); activeDiags = new Set(DIAGS);
     originSuppressed.clear(); hmSuppressed.clear(); calSuppressed.clear();
+    // Los datos cambiaron: descarta el estado del Reporte/Árbol (sus lugares/fechas
+    // guardados podrían no existir ya). Se re-derivan del dataset nuevo al reabrirlos.
+    reportSeries = []; bracketFrom = ''; bracketTo = '';
   } else {
     activeLugares = new Set([...activeLugares].filter((l) => lugares.includes(l)));
     if (!activeLugares.size) lugares.forEach((l) => activeLugares.add(l));
@@ -1644,6 +1650,10 @@ export function biomolecularView(root) {
   // Re-sincroniza D3 por si el CDN cargó DESPUÉS del import diferido de este módulo
   // (el guard de arriba mira window.d3, pero las funciones de dibujo usan `d3`).
   d3 = window.d3;
+
+  // Esta vista filtra por fecha con su PROPIA filterbar → oculta la barra de fecha
+  // global del shell (inerte aquí). El shell la vuelve a mostrar al cambiar de vista.
+  setDateBarHidden(true);
 
   const sig = RAW.length + '|' + RAW[0].f + '|' + RAW[RAW.length - 1].f;
   const reset = sig !== lastSig;
