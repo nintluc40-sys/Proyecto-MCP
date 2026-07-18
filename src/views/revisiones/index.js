@@ -518,11 +518,15 @@ function getFilteredRows() {
 /** Sankey Hallazgo → Acción (SVG): cintas con grosor ∝ frecuencia del par. */
 const SANKEY_PAL = ['#3F51B5', '#7E57C2', '#EC407A', '#FF7043', '#26A69A', '#42A5F5', '#8D6E63'];
 function sankeyHTML(rows) {
-  const m = new Map(), obsTot = new Map(), actTot = new Map();
+  // obsFullTot = total de atribuciones (hallazgo→acción) de CADA hallazgo sobre TODAS
+  // las acciones (no solo las del top-7 que se dibujan). Es el denominador honesto del
+  // "% de los casos de <hallazgo>": con obsSum (solo top-7) el % se inflaba cuando un
+  // hallazgo derivaba a más de 7 acciones distintas.
+  const m = new Map(), obsTot = new Map(), actTot = new Map(), obsFullTot = new Map();
   rows.forEach((r) => {
     const obs = splitMulti(g(r, K.observaciones)), acts = splitMulti(g(r, K.accion));
     if (!obs.length || !acts.length) return;
-    obs.forEach((o) => { obsTot.set(o, (obsTot.get(o) || 0) + 1); acts.forEach((a) => { m.set(o + '||' + a, (m.get(o + '||' + a) || 0) + 1); actTot.set(a, (actTot.get(a) || 0) + 1); }); });
+    obs.forEach((o) => { obsTot.set(o, (obsTot.get(o) || 0) + 1); acts.forEach((a) => { m.set(o + '||' + a, (m.get(o + '||' + a) || 0) + 1); actTot.set(a, (actTot.get(a) || 0) + 1); obsFullTot.set(o, (obsFullTot.get(o) || 0) + 1); }); });
   });
   const obsList = [...obsTot.entries()].sort((a, b) => b[1] - a[1]).slice(0, 7).map((e) => e[0]);
   const actList = [...actTot.entries()].sort((a, b) => b[1] - a[1]).slice(0, 7).map((e) => e[0]);
@@ -556,7 +560,7 @@ function sankeyHTML(rows) {
     const y0 = posL[f.o].y + offL[f.o]; offL[f.o] += w;
     const y1 = posR[f.a].y + offR[f.a]; offR[f.a] += w;
     const x0 = xL + nodeW, x1 = xR, xm = (x0 + x1) / 2;
-    const pct = Math.round(f.c / obsSum[f.o] * 100); // % de los casos del hallazgo que llevaron a esa acción
+    const pct = Math.round(f.c / (obsFullTot.get(f.o) || f.c) * 100); // % de los casos del hallazgo (sobre TODAS sus acciones) que llevaron a esta
     ribbons += `<path class="rv-sk-flow" data-sk-obs="${esc(f.o)}" data-sk-act="${esc(f.a)}" data-sk-c="${f.c}" data-sk-pct="${pct}" role="button" tabindex="0" aria-label="${esc(f.o)} derivó en ${esc(f.a)}: ${f.c} veces, ${pct}% de los casos de ${esc(f.o)}" d="M${x0},${y0.toFixed(1)} C${xm},${y0.toFixed(1)} ${xm},${y1.toFixed(1)} ${x1},${y1.toFixed(1)} L${x1},${(y1 + w).toFixed(1)} C${xm},${(y1 + w).toFixed(1)} ${xm},${(y0 + w).toFixed(1)} ${x0},${(y0 + w).toFixed(1)} Z" fill="${colorOf[f.o]}" fill-opacity="0.34"><title>${esc(f.o)} → ${esc(f.a)}: ${f.c} vez(ces) · ${pct}% de los casos de "${esc(f.o)}"</title></path>`;
   });
   const lbl = (s) => esc(s.length > 20 ? s.slice(0, 19) + '…' : s);
@@ -689,15 +693,21 @@ function periodCompare(rows, days) {
   const vacias = (rs) => avg(rs.map((r) => parseNum(r, K.vacias)).filter((v) => v !== null));
   const intT = (v) => String(v);
   const pctT = (v) => (v === null ? '—' : v.toFixed(1) + '%');
+  // Si la ventana previa NO tiene NINGUNA revisión (p.ej. arranca antes del 1.er
+  // dato), no hay base de comparación: los conteos deben quedar "sin previo" (null),
+  // no 0 — un 0 real es indistinguible de "no había periodo" y el delta salía como
+  // un "▲ +N" engañoso.
+  const hasPrev = prev.length > 0;
+  const pv = (fn) => hasPrev ? fn(prev) : null;
   const metrics = [
-    { label: 'Revisiones', cur: cur.length, prev: prev.length, goodUp: true, fmt: intT },
-    { label: 'Hallazgos', cur: findings(cur), prev: findings(prev), goodUp: false, fmt: intT },
-    { label: 'Acciones', cur: actions(cur), prev: actions(prev), goodUp: false, fmt: intT },
-    { label: 'Deformidad prom.', cur: deform(cur), prev: deform(prev), goodUp: false, fmt: pctT },
+    { label: 'Revisiones', cur: cur.length, prev: hasPrev ? prev.length : null, goodUp: true, fmt: intT },
+    { label: 'Hallazgos', cur: findings(cur), prev: hasPrev ? findings(prev) : null, goodUp: false, fmt: intT },
+    { label: 'Acciones', cur: actions(cur), prev: hasPrev ? actions(prev) : null, goodUp: false, fmt: intT },
+    { label: 'Deformidad prom.', cur: deform(cur), prev: pv(deform), goodUp: false, fmt: pctT },
   ];
   // Vacías sólo si la columna nueva tiene datos en la ventana comparada.
-  if (vacias(cur) !== null || vacias(prev) !== null) {
-    metrics.push({ label: 'Vacías prom.', cur: vacias(cur), prev: vacias(prev), goodUp: false, fmt: pctT });
+  if (vacias(cur) !== null || pv(vacias) !== null) {
+    metrics.push({ label: 'Vacías prom.', cur: vacias(cur), prev: pv(vacias), goodUp: false, fmt: pctT });
   }
   return { label: `últimos ${days} d vs. ${days} d previos`, metrics };
 }
@@ -926,7 +936,14 @@ function drillModalShell() {
 
 /** Detalle de un módulo (respeta los filtros activos salvo el de módulo). */
 function moduleDetailHTML(mod) {
-  const rows = store.globalData.filter((r) => isRevisionRow(r) && gMod(r) === mod &&
+  // Acotado al MISMO mes que la vista: el timeline desde donde se abre está por mes,
+  // así que sumar revisiones de otros meses inflaría las cifras del detalle.
+  const allRev = store.globalData.filter(isRevisionRow);
+  const months = [...new Set(allRev.map(gCor).filter(Boolean).map((c) => monthIndexOfCorrida(+c)).filter((x) => x >= 0))].sort((a, b) => a - b);
+  const month = (vState.month != null && months.includes(vState.month)) ? vState.month : (months.length ? months[months.length - 1] : 0);
+  const monthSet = new Set(allRev.map(gCor).filter(Boolean).filter((c) => monthIndexOfCorrida(+c) === month));
+  const rows = allRev.filter((r) => gMod(r) === mod &&
+    (!monthSet.size || monthSet.has(gCor(r))) &&
     inGlobalDate(r) &&
     (!vState.corrida || gCor(r) === vState.corrida) &&
     (!vState.siembra || gSiem(r) === vState.siembra));

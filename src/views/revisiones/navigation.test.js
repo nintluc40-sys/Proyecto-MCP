@@ -143,6 +143,38 @@ describe('Revisiones · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('el detalle de módulo (🔎) se acota al MES activo (no suma otros meses)', () => {
+    mount();
+    // Mes por defecto = junio (corrida 573). Módulo 1 tiene 4 revisiones en junio
+    // (di 2..5, mi=0) y 2 en mayo (di 0..1) → el detalle debe contar 4, no 6.
+    const modLink = [...root.querySelectorAll('[data-moddetail]')].find((el) => el.dataset.moddetail === 'Módulo 1');
+    click(modLink);
+    const first = root.querySelector('#rv-mod-content .rv-kpi-value');
+    expect(first && first.textContent).toBe('4');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('comparativa: periodo previo VACÍO se muestra como "sin previo", no como 0', () => {
+    mount(); // mes por defecto = junio (corrida 573); junio empieza el 02 → el periodo
+    // previo de 7 días cae en mayo/junio-01, fuera de las corridas de junio → vacío.
+    click(root.querySelector('[data-cmp-days="7"]'));
+    const firstCard = root.querySelector('.rv-cmp-card');
+    const prev = firstCard && firstCard.querySelector('.rv-cmp-prev').textContent;
+    expect(prev).toBe('prev: —'); // no "prev: 0" (que daría un ▲ +N engañoso)
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('Sankey %: denominador = TODAS las acciones del hallazgo, no solo el top-7', () => {
+    // Un hallazgo "H" que deriva a 9 acciones distintas → cada una es 1/9≈11%.
+    const rows = [];
+    for (let i = 1; i <= 9; i++) rows.push(R({ Corrida: '573', 'Módulo': 'Módulo 1', Supervisor: 'Ana', Fecha: `0${i}/06/2026`, Observaciones: 'H', 'Acción': 'Acc' + i }));
+    store.globalData = rows;
+    revisionesView(root);
+    const sk = root.querySelector('[data-sk-obs]');
+    expect(sk && sk.dataset.skPct).toBe('11'); // con top-7 saldría 14 (1/7)
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('bitácora desplegable + navegación de mes', () => {
     mount();
     const tog = root.querySelector('[data-bita-toggle]');
