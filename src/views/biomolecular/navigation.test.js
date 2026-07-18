@@ -124,6 +124,20 @@ describe('Biología Molecular · harness de navegación (D3 stubeado)', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('modo AUD bloquea la exportación (no genera Excel con datos simulados)', () => {
+    biomolecularView(root);
+    click(document.getElementById('aud-btn')); // activa simulación
+    expect(document.getElementById('aud-btn').classList.contains('on')).toBe(true);
+    click(document.getElementById('export-xlsx-btn'));
+    // El modal de export NO debe abrirse mientras AUD está activo.
+    expect(document.getElementById('bm-export-modal').classList.contains('open')).toBe(false);
+    click(document.getElementById('aud-btn')); // desactiva → export vuelve a estar disponible
+    click(document.getElementById('export-xlsx-btn'));
+    expect(document.getElementById('bm-export-modal').classList.contains('open')).toBe(true);
+    click(document.getElementById('bm-export-close'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('modal Reporte comparativo: abre, agrega serie, cambia toggles y cierra', () => {
     biomolecularView(root);
     click(document.getElementById('report-btn'));

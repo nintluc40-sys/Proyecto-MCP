@@ -877,6 +877,10 @@ function updateBmExportInfo() {
 }
 function openExportModal() {
   const m = $('bm-export-modal'); if (!m) return;
+  // El modo AUD reemplaza los resultados por una SIMULACIÓN aleatoria (muta RAW en
+  // memoria). Exportar en ese estado generaría un Excel "BIOMOL" con positivos ficticios
+  // indistinguibles de datos reales de laboratorio → se bloquea con aviso.
+  if (audMode) { toast('El modo AUD (simulación) está activo: desactívalo antes de exportar para no generar un Excel con resultados ficticios.', 'warn'); return; }
   const data = filtered();
   if (!data.length) { toast('Sin registros visibles para exportar.', 'warn'); return; }
   const dates = data.map((r) => r.f).filter(Boolean).sort();
@@ -889,6 +893,7 @@ function openExportModal() {
 }
 function closeExportModal() { $('bm-export-modal')?.classList.remove('open'); document.body.classList.remove('modal-open'); }
 function runExport() {
+  if (audMode) { toast('Exportación bloqueada: el modo AUD (simulación) está activo.', 'warn'); return; }
   const XLSX = window.XLSX;
   if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa el <script> del CDN en index.html o tu conexión.', 'err'); return; }
   const data = exportRangeRows();
@@ -1645,6 +1650,10 @@ export function biomolecularView(root) {
   lastSig = sig;
 
   bracketWired = false; // el DOM del modal se recrea en cada render
+  // El DOM anterior (incluida la tarjeta en pantalla completa) se desecha al re-render:
+  // limpia la referencia colgante para que el manejador global de Escape no intente
+  // "salir de fullscreen" sobre un nodo ya desmontado.
+  fsCard = null;
   root.innerHTML = shellHTML();
   initFilters(reset);
   wire(root);
