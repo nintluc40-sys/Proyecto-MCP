@@ -484,6 +484,12 @@ function closeGenDepto(root) {
 /** Número limpio: entero tal cual; decimal a ≤2 sin ceros finales. */
 function calFmt(v) { return v == null || isNaN(v) ? '—' : String(Number.isInteger(v) ? v : +v.toFixed(2)); }
 
+/** Fecha legible de un "bucket" de día (entero = Math.floor(fecha/86400000), calculado
+ *  desde fechas a mediodía local). Se reconstruye a MEDIODÍA UTC (no medianoche) para
+ *  no caer en el día anterior en husos negativos como Ecuador (UTC−5), donde
+ *  new Date(k·86400000) es medianoche UTC = 19:00 del día previo en hora local. */
+const dayBucketDate = (k) => new Date(k * 86400000 + 43200000);
+
 // Dimensiones de contexto de Calidad de Agua (cascada; cada una se muestra si ≥2
 // valores distintos en el pool). Se adaptan al departamento/formato de cada muestra.
 const CAL_DIMS = [
@@ -744,6 +750,11 @@ function renderCalidadAgua() {
   _calTrend = null; _calEnsayo = null; _calLocTree = null; // se rellenan solo al dibujar/render su apartado
   const validAps = ['analizador', 'ubicacion', ...(ensayo.length ? ['ensayo'] : [])];
   const ap = validAps.includes(vState.calApartado) ? vState.calApartado : 'analizador';
+  // Fija el estado al apartado REALMENTE renderizado: si el apartado guardado dejó de
+  // ser válido (p. ej. Ensayo desaparece al cambiar el filtro), el dispatch de dibujo
+  // post-render (microbiologiaView) debe coincidir con lo pintado, o el gráfico del
+  // Analizador quedaría sin dibujar (canvas en blanco).
+  vState.calApartado = ap;
   h += `<div class="mic-apartados">
       <button class="mic-ap ${ap === 'analizador' ? 'is-active' : ''}" data-cal-ap="analizador">🔬 Por parámetro</button>
       <button class="mic-ap ${ap === 'ubicacion' ? 'is-active' : ''}" data-cal-ap="ubicacion">📍 Por ubicación</button>
@@ -779,7 +790,7 @@ function calKpiModalHTML() {
 }
 function calKpiBodyHTML(which) {
   const d = _calKpiData; if (!d) return '';
-  const dayDate = (k) => fmtShort(new Date(k * 86400000));
+  const dayDate = (k) => fmtShort(dayBucketDate(k));
   const chips = (m) => [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span class="cal-kpi-chip">${esc(k)} <b>${v}</b></span>`).join('') || '—';
   if (which === 'muestras') {
     const byDepto = new Map(), byTipo = new Map();
@@ -1223,7 +1234,7 @@ function calFichaBodyHTML(t) {
   // Tabla de mediciones por fecha (dedup por día, asc).
   const dayOf = (tt) => tt == null ? null : Math.floor(tt / 86400000);
   const days = [...new Set(sorted.map((s) => dayOf(s.ctx.fecha ? +s.ctx.fecha : null)).filter((x) => x != null))].sort((a, b) => a - b);
-  const head = `<tr><th>Parámetro</th>${days.map((k) => `<th>${esc(fmtShort(new Date(k * 86400000)))}</th>`).join('')}</tr>`;
+  const head = `<tr><th>Parámetro</th>${days.map((k) => `<th>${esc(fmtShort(dayBucketDate(k)))}</th>`).join('')}</tr>`;
   const body = paramList.map((p) => {
     const d = byParam.get(p.key);
     const cells = days.map((k) => {
@@ -1833,7 +1844,11 @@ function petriPlacaHTML(days, dayIdx, day) {
   const colonies = day ? coloniesForDay(day.rows) : [];
   _scope.colonies = colonies;
   const size = 340;
-  const totUfc = colonies.filter((c) => c.key === 'totales').reduce((a, c) => a + c.ufc, 0) || colonies.reduce((a, c) => a + c.ufc, 0);
+  // Σ UFC de C.Totales (V.Totales) del día. Si ese día NO se midió C.Totales, se muestra
+  // "—": NO se sustituye por la suma de todos los patógenos (sería un número distinto
+  // bajo una etiqueta que dice "C.Totales").
+  const totColony = colonies.find((c) => c.key === 'totales');
+  const totUfc = totColony ? totColony.ufc : null;
   // "UFC máx" y "Dominante" sobre patógenos ESPECÍFICOS (los agregados ganarían siempre).
   const specific = colonies.filter((c) => !AGGREGATE_KEYS.has(c.key));
   const maxC = specific.length ? specific.reduce((a, b) => (a.ufc > b.ufc ? a : b)) : null;
