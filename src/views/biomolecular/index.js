@@ -249,7 +249,12 @@ function openRS() {
   const dsel = $('rsd-date');
   if (dsel) dsel.innerHTML = dates.slice().reverse().map((d) => `<option value="${d}"${d === rsdDate ? ' selected' : ''}>${fmtD(d)}</option>`).join('');
   const gsel = $('rsd-diag');
-  if (gsel && !gsel.options.length) gsel.innerHTML = '<option value="ALL">Todos</option>' + DIAGS.map((d) => `<option value="${d}">${DLABEL[d]}</option>`).join('');
+  if (gsel) {
+    if (!gsel.options.length) gsel.innerHTML = '<option value="ALL">Todos</option>' + DIAGS.map((d) => `<option value="${d}">${DLABEL[d]}</option>`).join('');
+    // Sincroniza el valor mostrado con rsdDiag: el DOM se reconstruye en cada render, así
+    // que sin esto el dropdown mostraría "Todos" mientras el filtro sigue en otro valor.
+    gsel.value = rsdDiag;
+  }
   $('rsd-modal').classList.add('open'); document.body.classList.add('modal-open');
   requestAnimationFrame(renderRS);
 }
@@ -1557,8 +1562,14 @@ function initFilters(reset) {
   $('fb-date-inputs').style.display = datePreset === 'custom' ? 'flex' : 'none';
   if (fechas.length) {
     const df = $('date-from'), dt = $('date-to');
-    df.min = fechas[0]; df.max = fechas[fechas.length - 1]; if (!df.value) df.value = fechas[0];
-    dt.min = fechas[0]; dt.max = fechas[fechas.length - 1]; if (!dt.value) dt.value = fechas[fechas.length - 1];
+    // Con preset "custom", el DOM se reconstruye vacío en cada render: restaura los
+    // inputs al rango REAL activo (min/max de activeFechas), no al rango completo, o el
+    // display (inputs + chip) mentiría respecto a lo filtrado. Otros presets → rango pleno.
+    const act = datePreset === 'custom' ? [...activeFechas].sort() : [];
+    const lo = act.length ? act[0] : fechas[0];
+    const hi = act.length ? act[act.length - 1] : fechas[fechas.length - 1];
+    df.min = fechas[0]; df.max = fechas[fechas.length - 1]; df.value = lo;
+    dt.min = fechas[0]; dt.max = fechas[fechas.length - 1]; dt.value = hi;
   }
   if (reset || !swarmDate || !fechas.includes(swarmDate)) swarmDate = fechas[fechas.length - 1] || null;
   document.querySelectorAll('#cal-gran-tabs .tab').forEach((b) => b.classList.toggle('on', b.dataset.gran === timeGran));
@@ -1637,6 +1648,11 @@ function wire(root) {
 }
 
 export function biomolecularView(root) {
+  // Carga DIFERIDA: si el usuario navegó a otra vista mientras el chunk cargaba, este
+  // `root` ya fue desmontado por el router. Abortar aquí evita que el render obsoleto
+  // toque estado COMPARTIDO del shell (p. ej. setDateBarHidden) o el DOM de la vista
+  // actual (los $() por id encontrarían/no encontrarían nodos ajenos).
+  if (!root.isConnected) return;
   if (!store.globalData.length) { root.innerHTML = '<div class="empty-state">📡 Conectando… cargando datos del sistema.</div>'; return; }
   RAW = normalizeRows(store.globalData.filter((r) => r._SheetOrigin === 'Biomol'));
   if (!RAW.length) { root.innerHTML = '<div class="empty-state" style="padding:60px 20px">🧬 Sin datos en la hoja <b>Biomol</b> del Google Sheet.</div>'; return; }
