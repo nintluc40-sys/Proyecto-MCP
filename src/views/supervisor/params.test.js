@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { waterSemaforo, linForecast } from './params.js';
+import { waterSemaforo, linForecast, iclSeries } from './params.js';
 
 describe('waterSemaforo', () => {
   it('todo en rango → verde', () => {
@@ -22,6 +22,27 @@ describe('waterSemaforo', () => {
 
   it('un valor muy alto (≥15) → rojo', () => {
     expect(waterSemaforo(16, 3, 'ok').level).toBe('rojo');
+  });
+});
+
+describe('iclSeries · término SV (híbrido: rellena huecos con SV por población)', () => {
+  const row = (fecha, pob, extra) => ({
+    _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ1',
+    Fecha: fecha, 'Población': String(pob), 'Intestino_Lleno': '90', ...extra,
+  });
+  it('día CON columna cruda usa el valor crudo (no lo pisa la SV por población)', () => {
+    // pob 1000 (base) → SV por población sería 100; pero hay SV cruda 80 → ICL = 80 + IL 90.
+    const { values } = iclSeries([row('01/06/2026', 1000, { 'Supervivencia': '80' })]);
+    expect(values[0]).toBeCloseTo(170, 6);
+  });
+  it('día SIN columna cruda se rellena con SV por población (no se descarta el término)', () => {
+    const rows = [
+      row('01/06/2026', 1000, { 'Supervivencia': '80' }), // base de población = 1000
+      row('05/06/2026', 500),                              // sin Supervivencia → 500/1000×100 = 50
+    ];
+    const { values } = iclSeries(rows);
+    expect(values[0]).toBeCloseTo(170, 6); // 80 (cruda) + 90 (IL)
+    expect(values[1]).toBeCloseTo(140, 6); // 50 (población) + 90 (IL) — antes habría sido 90
   });
 });
 

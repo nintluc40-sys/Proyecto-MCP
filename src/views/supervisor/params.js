@@ -16,7 +16,7 @@ import { bindModal } from './ui.js';
 
 const ESTADIO_KEYS = ['Estadío', 'Estadio', 'estadío', 'estadio'];
 
-const { gFec } = getters;
+const { gFec, gTnq, gPop } = getters;
 
 // kind: pct=%, num=conteo, cel=cél/ml, idx=índice 0–10
 const LV_VARS = [
@@ -100,12 +100,39 @@ const ICL_NEG = [
   { key: 'nvi', label: 'No Viables' }, { key: 'op', label: 'Opacidad' }, { key: 'fl', label: 'Flácidez' }, { key: 'ca', label: 'Canibalismo' }, { key: 'pa', label: 'Parásitos' },
 ];
 
+/** SV por población por día (Σ última pob. >0 ≤ día por tanque / Σ primera pob. × 100,
+ *  cap 100), coherente con survival()/moduleSvPopSeries del resto de la vista. Se usa
+ *  SOLO para RELLENAR los días en que falta la columna cruda "Supervivencia" (que está
+ *  dispersa); los días con SV cruda no se tocan, para no desviar la calibración del ICL. */
+function svPopByDay(rows, days) {
+  const tanks = [...new Set(rows.map(gTnq).filter(Boolean))];
+  const pool = tanks.length ? tanks : [null];
+  const seqByTank = new Map();
+  let totalFirst = 0;
+  pool.forEach((tq) => {
+    const seq = rows.filter((r) => tq === null || gTnq(r) === tq)
+      .map((r) => ({ t: parseAnyDate(gFec(r)), p: gPop(r) }))
+      .filter((x) => x.t && x.p !== null && x.p > 0)
+      .sort((a, b) => a.t - b.t);
+    seqByTank.set(tq, seq);
+    if (seq.length) totalFirst += seq[0].p;
+  });
+  return days.map((d) => {
+    const dt = parseAnyDate(d);
+    if (!dt || totalFirst <= 0) return null;
+    let total = 0, any = false;
+    pool.forEach((tq) => { const seq = seqByTank.get(tq); for (let i = seq.length - 1; i >= 0; i--) { if (seq[i].t <= dt) { total += seq[i].p; any = true; break; } } });
+    return any ? Math.min((total / totalFirst) * 100, 100) : null;
+  });
+}
+
 /** Serie diaria del ICL + desglose de variables negativas por día. */
 export function iclSeries(rows) {
   const { days, stages, series } = lvDaily(rows);
   const byDay = new Map();
   rows.forEach((r) => { const f = gFec(r); if (!f) return; if (!byDay.has(f)) byDay.set(f, []); byDay.get(f).push(r); });
-  const svDaily = days.map((d) => { const vals = byDay.get(d).map((r) => parseNum(r, F.supervivencia)).filter((x) => x !== null); return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null; });
+  const svPop = svPopByDay(rows, days); // relleno para huecos de la columna cruda
+  const svDaily = days.map((d, i) => { const vals = byDay.get(d).map((r) => parseNum(r, F.supervivencia)).filter((x) => x !== null); return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : svPop[i]; });
   const getVal = (key, i) => (key === 'sv' ? svDaily[i] : (series[key] ? series[key][i] : null));
   const values = days.map((_, i) => {
     let pos = 0, neg = 0, any = false;

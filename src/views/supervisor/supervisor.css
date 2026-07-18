@@ -211,6 +211,9 @@
 .prod-table th:first-child, .prod-table td:first-child { text-align: left; }
 .prod-cor, .prod-tot { background: var(--c-surface-2); vertical-align: middle; font-weight: 800; }
 .prod-total td { font-weight: 900; background: var(--c-surface-2); border-top: 2px solid var(--c-border); }
+/* "Subtotal actual" (despachados): línea divisoria que baja entre grupos de corrida. */
+.prod-subtotal td { font-weight: 800; background: color-mix(in srgb, var(--c-accent, var(--c-border)) 10%, transparent); border-top: 1px dashed var(--c-border); border-bottom: 1px dashed var(--c-border); font-style: italic; }
+.prod-subtotal td .muted { font-style: normal; font-weight: 600; font-size: 11px; }
 
 /* Bitácora desplegable */
 .sv-bita-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 8px 0 12px; }
