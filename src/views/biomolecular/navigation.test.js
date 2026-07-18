@@ -124,6 +124,50 @@ describe('Biología Molecular · harness de navegación (D3 stubeado)', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('modo AUD bloquea la exportación (no genera Excel con datos simulados)', () => {
+    biomolecularView(root);
+    click(document.getElementById('aud-btn')); // activa simulación
+    expect(document.getElementById('aud-btn').classList.contains('on')).toBe(true);
+    click(document.getElementById('export-xlsx-btn'));
+    // El modal de export NO debe abrirse mientras AUD está activo.
+    expect(document.getElementById('bm-export-modal').classList.contains('open')).toBe(false);
+    click(document.getElementById('aud-btn')); // desactiva → export vuelve a estar disponible
+    click(document.getElementById('export-xlsx-btn'));
+    expect(document.getElementById('bm-export-modal').classList.contains('open')).toBe(true);
+    click(document.getElementById('bm-export-close'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('render sobre un root DESMONTADO se aborta sin tocar el DOM/estado (carrera del import diferido)', () => {
+    const detached = document.createElement('div'); // NO se agrega al documento
+    expect(() => biomolecularView(detached)).not.toThrow();
+    expect(detached.querySelector('.biomol')).toBeFalsy();
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('el diagnóstico del modal RS sobrevive a un re-render (dropdown ⇄ filtro sincronizados)', () => {
+    biomolecularView(root);
+    click(document.getElementById('rsd-btn'));
+    change(document.getElementById('rsd-diag'), 'WSSV');
+    click(document.getElementById('rsd-modal-close'));
+    biomolecularView(root); // re-render (mismo dataset) reconstruye el DOM del select
+    click(document.getElementById('rsd-btn'));
+    expect(document.getElementById('rsd-diag').value).toBe('WSSV'); // no vuelve a "Todos"
+    click(document.getElementById('rsd-modal-close'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('un rango de fecha Custom sobrevive a un re-render (inputs no se resetean al rango pleno)', () => {
+    biomolecularView(root);
+    document.getElementById('date-from').value = '2026-06-02';
+    document.getElementById('date-to').value = '2026-06-08';
+    click(document.getElementById('apply-date-range')); // datePreset='custom', activeFechas acotado
+    biomolecularView(root); // re-render con el MISMO dataset
+    expect(document.getElementById('date-from').value).toBe('2026-06-02'); // no cae a 2026-05-10 (min pleno)
+    expect(document.getElementById('date-to').value).toBe('2026-06-08');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('modal Reporte comparativo: abre, agrega serie, cambia toggles y cierra', () => {
     biomolecularView(root);
     click(document.getElementById('report-btn'));

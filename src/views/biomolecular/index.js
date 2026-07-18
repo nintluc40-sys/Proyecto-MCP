@@ -9,6 +9,7 @@
 import { store } from '../../core/store.js';
 import { esc as escH } from '../../core/format.js'; // output-encoding único (antes había un escH local duplicado)
 import { toast } from '../../ui/toast.js';
+import { setDateBarHidden } from '../../ui/shell.js'; // esta vista usa su PROPIA filterbar
 
 // ── Constantes (idénticas a BIOMOL.html) ──
 const DIAGS  = ['IHHNV', 'WSSV', 'BP', 'AHPND', 'NHPB', 'EHP'];
@@ -47,7 +48,9 @@ let docWired = false;
 // ── Helpers de datos (idénticos a BIOMOL.html) ──
 const isPos  = (v) => v === 'Positivo';
 const hasVal = (v) => v === 'Positivo' || v === 'Negativo';
-const fmtD   = (iso) => iso.slice(5).split('-').reverse().join('/');
+// Fecha corta con AÑO (2 díg.) para no ser ambigua ni colisionar entre años (p. ej. el
+// heatmap "Por Fecha" a granularidad Día fusionaba dos años con el mismo DD/MM).
+const fmtD   = (iso) => { const p = String(iso).split('-'); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0].slice(2)}` : String(iso); };
 const $ = (id) => document.getElementById(id);
 
 export function parseDate(raw) {
@@ -246,7 +249,12 @@ function openRS() {
   const dsel = $('rsd-date');
   if (dsel) dsel.innerHTML = dates.slice().reverse().map((d) => `<option value="${d}"${d === rsdDate ? ' selected' : ''}>${fmtD(d)}</option>`).join('');
   const gsel = $('rsd-diag');
-  if (gsel && !gsel.options.length) gsel.innerHTML = '<option value="ALL">Todos</option>' + DIAGS.map((d) => `<option value="${d}">${DLABEL[d]}</option>`).join('');
+  if (gsel) {
+    if (!gsel.options.length) gsel.innerHTML = '<option value="ALL">Todos</option>' + DIAGS.map((d) => `<option value="${d}">${DLABEL[d]}</option>`).join('');
+    // Sincroniza el valor mostrado con rsdDiag: el DOM se reconstruye en cada render, así
+    // que sin esto el dropdown mostraría "Todos" mientras el filtro sigue en otro valor.
+    gsel.value = rsdDiag;
+  }
   $('rsd-modal').classList.add('open'); document.body.classList.add('modal-open');
   requestAnimationFrame(renderRS);
 }
@@ -877,6 +885,10 @@ function updateBmExportInfo() {
 }
 function openExportModal() {
   const m = $('bm-export-modal'); if (!m) return;
+  // El modo AUD reemplaza los resultados por una SIMULACIÓN aleatoria (muta RAW en
+  // memoria). Exportar en ese estado generaría un Excel "BIOMOL" con positivos ficticios
+  // indistinguibles de datos reales de laboratorio → se bloquea con aviso.
+  if (audMode) { toast('El modo AUD (simulación) está activo: desactívalo antes de exportar para no generar un Excel con resultados ficticios.', 'warn'); return; }
   const data = filtered();
   if (!data.length) { toast('Sin registros visibles para exportar.', 'warn'); return; }
   const dates = data.map((r) => r.f).filter(Boolean).sort();
@@ -889,6 +901,7 @@ function openExportModal() {
 }
 function closeExportModal() { $('bm-export-modal')?.classList.remove('open'); document.body.classList.remove('modal-open'); }
 function runExport() {
+  if (audMode) { toast('Exportación bloqueada: el modo AUD (simulación) está activo.', 'warn'); return; }
   const XLSX = window.XLSX;
   if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa el <script> del CDN en index.html o tu conexión.', 'err'); return; }
   const data = exportRangeRows();
@@ -1534,6 +1547,9 @@ function initFilters(reset) {
     timeGran = 'month'; datePreset = 'all';
     activeLugares = new Set(lugares); activeFechas = new Set(fechas); activeDiags = new Set(DIAGS);
     originSuppressed.clear(); hmSuppressed.clear(); calSuppressed.clear();
+    // Los datos cambiaron: descarta el estado del Reporte/Árbol (sus lugares/fechas
+    // guardados podrían no existir ya). Se re-derivan del dataset nuevo al reabrirlos.
+    reportSeries = []; bracketFrom = ''; bracketTo = '';
   } else {
     activeLugares = new Set([...activeLugares].filter((l) => lugares.includes(l)));
     if (!activeLugares.size) lugares.forEach((l) => activeLugares.add(l));
@@ -1546,8 +1562,14 @@ function initFilters(reset) {
   $('fb-date-inputs').style.display = datePreset === 'custom' ? 'flex' : 'none';
   if (fechas.length) {
     const df = $('date-from'), dt = $('date-to');
-    df.min = fechas[0]; df.max = fechas[fechas.length - 1]; if (!df.value) df.value = fechas[0];
-    dt.min = fechas[0]; dt.max = fechas[fechas.length - 1]; if (!dt.value) dt.value = fechas[fechas.length - 1];
+    // Con preset "custom", el DOM se reconstruye vacío en cada render: restaura los
+    // inputs al rango REAL activo (min/max de activeFechas), no al rango completo, o el
+    // display (inputs + chip) mentiría respecto a lo filtrado. Otros presets → rango pleno.
+    const act = datePreset === 'custom' ? [...activeFechas].sort() : [];
+    const lo = act.length ? act[0] : fechas[0];
+    const hi = act.length ? act[act.length - 1] : fechas[fechas.length - 1];
+    df.min = fechas[0]; df.max = fechas[fechas.length - 1]; df.value = lo;
+    dt.min = fechas[0]; dt.max = fechas[fechas.length - 1]; dt.value = hi;
   }
   if (reset || !swarmDate || !fechas.includes(swarmDate)) swarmDate = fechas[fechas.length - 1] || null;
   document.querySelectorAll('#cal-gran-tabs .tab').forEach((b) => b.classList.toggle('on', b.dataset.gran === timeGran));
@@ -1626,6 +1648,11 @@ function wire(root) {
 }
 
 export function biomolecularView(root) {
+  // Carga DIFERIDA: si el usuario navegó a otra vista mientras el chunk cargaba, este
+  // `root` ya fue desmontado por el router. Abortar aquí evita que el render obsoleto
+  // toque estado COMPARTIDO del shell (p. ej. setDateBarHidden) o el DOM de la vista
+  // actual (los $() por id encontrarían/no encontrarían nodos ajenos).
+  if (!root.isConnected) return;
   if (!store.globalData.length) { root.innerHTML = '<div class="empty-state">📡 Conectando… cargando datos del sistema.</div>'; return; }
   RAW = normalizeRows(store.globalData.filter((r) => r._SheetOrigin === 'Biomol'));
   if (!RAW.length) { root.innerHTML = '<div class="empty-state" style="padding:60px 20px">🧬 Sin datos en la hoja <b>Biomol</b> del Google Sheet.</div>'; return; }
@@ -1640,11 +1667,19 @@ export function biomolecularView(root) {
   // (el guard de arriba mira window.d3, pero las funciones de dibujo usan `d3`).
   d3 = window.d3;
 
+  // Esta vista filtra por fecha con su PROPIA filterbar → oculta la barra de fecha
+  // global del shell (inerte aquí). El shell la vuelve a mostrar al cambiar de vista.
+  setDateBarHidden(true);
+
   const sig = RAW.length + '|' + RAW[0].f + '|' + RAW[RAW.length - 1].f;
   const reset = sig !== lastSig;
   lastSig = sig;
 
   bracketWired = false; // el DOM del modal se recrea en cada render
+  // El DOM anterior (incluida la tarjeta en pantalla completa) se desecha al re-render:
+  // limpia la referencia colgante para que el manejador global de Escape no intente
+  // "salir de fullscreen" sobre un nodo ya desmontado.
+  fsCard = null;
   root.innerHTML = shellHTML();
   initFilters(reset);
   wire(root);
