@@ -65,6 +65,16 @@ describe('isValidDate', () => {
     expect(isValidDate('15/03/2024')).toBe(false);
     expect(isValidDate('')).toBe(false);
   });
+  it('rechaza días imposibles del calendario (no solo el formato)', () => {
+    expect(isValidDate('2026-02-30')).toBe(false); // febrero no tiene 30
+    expect(isValidDate('2026-04-31')).toBe(false); // abril tiene 30
+    expect(isValidDate('2026-06-31')).toBe(false);
+    expect(isValidDate('2026-02-29')).toBe(false); // 2026 NO es bisiesto
+  });
+  it('acepta 29-feb en año bisiesto', () => {
+    expect(isValidDate('2024-02-29')).toBe(true);
+    expect(isValidDate('2000-02-29')).toBe(true);
+  });
 });
 
 describe('isValidGasUrl', () => {

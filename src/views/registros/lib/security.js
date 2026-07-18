@@ -42,9 +42,17 @@ export function sanitizeNum(v, min = -1e9, max = 1e9) {
   return Math.min(max, Math.max(min, n));
 }
 
-/** Valida formato de fecha YYYY-MM-DD (con rangos de mes/día válidos). */
+/** Valida formato de fecha YYYY-MM-DD Y que sea un día REAL del calendario. El regex
+ *  por sí solo aceptaba días imposibles (2026-02-30, 2026-04-31, 29-feb en año NO
+ *  bisiesto), que se colaban a las hojas por los flujos de pegado/importación (Excel),
+ *  donde la fecha no pasa por un <input type="date">. El round-trip por Date los rechaza
+ *  sin afectar a ninguna fecha válida (compara solo Y/M/D, sin dependencia de huso). */
 export function isValidDate(s) {
-  return /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s);
+  if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s)) return false;
+  const p = String(s).split('-');
+  const y = +p[0], m = +p[1], d = +p[2];
+  const dt = new Date(y, m - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
 }
 
 /** Valida la URL del GAS: HTTPS y host EXACTAMENTE script.google.com

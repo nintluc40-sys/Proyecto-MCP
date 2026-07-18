@@ -120,7 +120,14 @@ export function registrosView(root) {
       await loadScript(base + 'registros/qrcode.js');
       await loadScript(base + 'registros/engine.js'); // auto-bootea (buildGrid) contra el shell ya inyectado
     })().catch((e) => {
-      host.innerHTML = `<div class="empty-state" style="padding:48px">No se pudo cargar Registros.<br><small class="mono">${esc(e.message)}</small></div>`;
+      if (host) host.innerHTML = `<div class="empty-state" style="padding:48px">No se pudo cargar Registros.<br><small class="mono">${esc(e.message)}</small><br><small class="muted" style="opacity:.7">Vuelve a entrar a la vista para reintentar.</small></div>`;
+      // Falla de carga (offline / deploy a medias): descarta el host, la promesa y los
+      // <script> que NO llegaron a cargar. Sin esto la vista quedaría rota hasta recargar
+      // la página (el guard `if (host) return` no reintenta), y un reintento ingenuo se
+      // colgaría porque loadScript reencontraría el <script> fallido (listeners que nunca
+      // disparan). Al eliminarlos, la próxima entrada reconstruye el host y recarga limpio.
+      document.querySelectorAll('script[data-rg]').forEach((s) => { if (s.dataset.loaded !== '1') s.remove(); });
+      host = null; scriptsLoading = null;
     });
   }
 }
