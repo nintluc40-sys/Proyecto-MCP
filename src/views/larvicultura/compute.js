@@ -64,9 +64,14 @@ const ENV_VARS = [
 ];
 
 /** Promedios y tendencia diaria de T°/OD/Salinidad del módulo (opcionalmente de una corrida). */
-export function moduleEnv(modulo, corrida) {
+export function moduleEnv(modulo, corrida, monthCorridas) {
   if (!modulo) return null;
-  const inScope = (r) => getField(r, F.modulo) === modulo && (!corrida || getField(r, F.corrida) === corrida);
+  // Sin corrida específica se acota a las corridas del MES visible (coherente con el
+  // resto de la vista, que es mensual); si no, el KPI de Fisicoquímicos promediaría
+  // TODO el historial del módulo. Con `corrida` fija, esa manda.
+  const monthSet = (monthCorridas && monthCorridas.length) ? new Set(monthCorridas) : null;
+  const inScope = (r) => getField(r, F.modulo) === modulo
+    && (corrida ? getField(r, F.corrida) === corrida : (!monthSet || monthSet.has(getField(r, F.corrida))));
   const larv = store.globalData.filter((r) => isLarviculturaRow(r) && inScope(r));
   const tnq = store.globalData.filter((r) => isTanqueRow(r) && inScope(r));
   const vars = ENV_VARS.map((cfg) => {
@@ -90,14 +95,16 @@ export function moduleEnv(modulo, corrida) {
 }
 
 /** Filtra filas a los últimos `days` días relativos a la fecha MÁS reciente
- *  presente en el conjunto. days=null/0 → sin recorte (devuelve las mismas filas). */
+ *  presente en el conjunto. days=null/0 → sin recorte (devuelve las mismas filas).
+ *  Con ventana activa, las filas SIN fecha parseable se excluyen (no pertenecen a
+ *  ningún "últimos N días"); si NINGUNA fila tiene fecha, se devuelven todas. */
 export function windowRows(rows, days) {
   if (!days || !rows.length) return rows;
   let maxMs = 0;
   rows.forEach((r) => { const dt = parseAnyDate(getField(r, F.fecha)); if (dt) maxMs = Math.max(maxMs, dt.getTime()); });
   if (!maxMs) return rows;
   const cutoff = maxMs - (days - 1) * 86400000;
-  return rows.filter((r) => { const dt = parseAnyDate(getField(r, F.fecha)); return !dt || dt.getTime() >= cutoff; });
+  return rows.filter((r) => { const dt = parseAnyDate(getField(r, F.fecha)); return dt != null && dt.getTime() >= cutoff; });
 }
 
 /** KPIs de tendencia: último valor + valor previo de ICL, Supervivencia y Score

@@ -396,6 +396,14 @@ function refreshTank(root) {
   const mgmt = buildMgmt(wScope);
   const semAgua = aguaSemaforo(mgmt);
   view.cInfo = cInfo; view.daily = daily; view.vars = vars; view.comp = comp; view.mgmt = mgmt; view.semAgua = semAgua;
+  // El cambio de tanque es un refresco PARCIAL (no re-render), así que el snapshot que
+  // consume el modal "Decisión rápida" y el badge de patrones deben actualizarse aquí
+  // también; si no, la Decisión mostraría el ICL/variables del módulo o del tanque previo.
+  const icl = iclOf(last, vars);
+  setSnapshot({ state, d, vars, daily, last, icl });
+  const combos = last ? LARVI_COMBOS.filter((c) => c.keys.every((k) => last[k] != null && last[k] >= c.threshold)).length : 0;
+  const decBtn = root.querySelector('[data-open-modal="lq-modal-dec"]');
+  if (decBtn) decBtn.innerHTML = `⚡ Decisión${combos ? ` <span class="lq-action-badge">${combos}</span>` : ''}`;
   const ctx = {
     cInfo, trend, daily, dailyFull, vars, stageCfg, d,
     semDiag: diagSemaforo(last, vars), semAgua,
@@ -444,6 +452,10 @@ export function larviculturaView(root) {
     return;
   }
   destroyAllCharts();
+  // Limpia 'modal-open' colgado: si el usuario activó un control de fondo (p. ej. por
+  // teclado) con un modal abierto, quedaría puesto y refresh.js (isBusy → '.modal-open')
+  // pausaría el auto-refresco indefinidamente. Misma defensa que Supervisor/Algas.
+  document.body.classList.remove('modal-open');
   const stageCfg = STAGES[state.stage];
   const vars = stageCfg.vars;
 
@@ -580,7 +592,7 @@ export function larviculturaView(root) {
   const semPop = popSemaforo(pStats);
   const semAgua = aguaSemaforo(mgmt);
   // Fisicoquímicos del módulo (T°/OD/Sal) — nivel de módulo, estable al cambiar de tanque.
-  const env = moduleEnv(state.modulo, state.corrida);
+  const env = moduleEnv(state.modulo, state.corrida, monthCorridas);
 
   // Contexto compartido para los bloques dependientes del tanque (Resumen + Detalle).
   Object.assign(view, { monthCorridas, comp, mgmt, semAgua, env, daily, vars });
