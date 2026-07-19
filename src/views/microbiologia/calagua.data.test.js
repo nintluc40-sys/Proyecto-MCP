@@ -174,9 +174,9 @@ describe('calSubIndex / calWQI', () => {
 });
 
 describe('calStageCmp', () => {
-  it('ordena AS → Nauplio → Zoea → Mysis → PL, por número, y "(MB)" antes que la simple', () => {
+  it('ordena AS → Nauplio → Zoea → Mysis → PL, por número, y la simple antes que "(MB)"', () => {
     const input = ['Z1', 'M1', 'N5', 'PL2', 'N5 (MB)', 'AS', 'Z3', 'N6', 'PL10'];
-    expect([...input].sort(calStageCmp)).toEqual(['AS', 'N5 (MB)', 'N5', 'N6', 'Z1', 'Z3', 'M1', 'PL2', 'PL10']);
+    expect([...input].sort(calStageCmp)).toEqual(['AS', 'N5', 'N5 (MB)', 'N6', 'Z1', 'Z3', 'M1', 'PL2', 'PL10']);
   });
   it('los tokens desconocidos van al final', () => {
     expect(['Adulto', 'Z1', 'AS'].sort(calStageCmp)).toEqual(['AS', 'Z1', 'Adulto']);
@@ -184,12 +184,23 @@ describe('calStageCmp', () => {
 });
 
 describe('calRiskLevel', () => {
-  it('toma la peor severidad presente', () => {
+  it('SIN WQI toma la peor severidad presente (compat.)', () => {
     expect(calRiskLevel(['optimo', 'critico', 'fuera'])).toBe('critico');
     expect(calRiskLevel(['optimo', 'fuera'])).toBe('alto');
     expect(calRiskLevel(['optimo', 'vigilancia'])).toBe('medio');
     expect(calRiskLevel(['optimo', 'optimo'])).toBe('bajo');
     expect(calRiskLevel([])).toBe('sin-datos');
+    expect(calRiskLevel(['sin-rango', 'sin-rango'])).toBe('sin-datos');
+  });
+  it('CON WQI es proporcional: 1 parámetro fuera entre varios no dispara riesgo alto', () => {
+    // 5 óptimos + 1 fuera → WQI alto → riesgo bajo (antes la peor severidad daba "alto").
+    expect(calRiskLevel(['optimo', 'optimo', 'optimo', 'optimo', 'optimo', 'fuera'], 90)).toBe('bajo');
+    // Muchos parámetros fuera → WQI bajo → alto.
+    expect(calRiskLevel(['fuera', 'fuera', 'fuera', 'fuera', 'optimo', 'optimo'], 60)).toBe('alto');
+    // Piso: un crítico puntual con WQI alto no se diluye a "bajo" (queda al menos "medio").
+    expect(calRiskLevel(['optimo', 'optimo', 'optimo', 'optimo', 'optimo', 'critico'], 88)).toBe('medio');
+    // Dos o más críticos → al menos "alto" aunque el WQI ronde "medio".
+    expect(calRiskLevel(['optimo', 'optimo', 'optimo', 'optimo', 'critico', 'critico'], 72)).toBe('alto');
   });
 });
 
@@ -234,16 +245,18 @@ describe('calGroupTree / calDiagnosis', () => {
     expect(tree.length).toBe(2); // Módulo 3 y Módulo 4
     const m3 = tree.find((m) => m.label === 'Módulo 3');
     expect(m3.tanks.length).toBe(2);
-    expect(m3.risk).toBe('critico'); // arrastra el TQ2 crítico
-    // ordenado con mayor riesgo primero dentro del módulo
-    expect(m3.tanks[0].risk).toBe('critico');
+    // Riesgo PROPORCIONAL al WQI: el módulo (4 mediciones, 1 crítica → WQI 75) es "medio",
+    // no "crítico" (la peor medición aislada ya no arrastra a todo el nodo).
+    expect(m3.risk).toBe('medio');
+    // TQ2 (2 parámetros, 1 crítico → WQI 50) queda en "alto"; ordenado primero (mayor riesgo).
+    expect(m3.tanks[0].risk).toBe('alto');
     expect(m3.tanks[0].crit).toContain('Nitrito');
   });
   it('diagnóstico resume tanques en riesgo y top parámetros', () => {
     const d = calDiagnosis(samples, R);
     expect(d.total).toBe(3);
     expect(typeof d.wqi).toBe('number');
-    expect(d.riskTanks.length).toBe(2); // TQ2 (crítico) + M4/TQ1 (alto)
+    expect(d.riskTanks.length).toBe(2); // TQ2 (alto) + M4/TQ1 (alto)
     expect(d.topParams.length).toBeGreaterThan(0);
   });
 });
