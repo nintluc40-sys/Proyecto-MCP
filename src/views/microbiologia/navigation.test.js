@@ -109,6 +109,11 @@ describe('Microbiología · harness de navegación integral', () => {
     expect(root.querySelector('.mic-kpis')).toBeTruthy();
     expect(root.querySelector('.mic-apartados')).toBeTruthy();
     expect(root.querySelector('.mic-table')).toBeTruthy();
+    // El KPI de carga suma TODOS los patógenos (excepto el agregado C. Totales), ya no solo
+    // C. Totales → etiqueta "Σ UFC total" (no "Σ UFC C. Totales").
+    const kpisTxt = root.querySelector('.mic-kpis').textContent;
+    expect(kpisTxt).toContain('Σ UFC total');
+    expect(kpisTxt).not.toContain('C. Totales');
     expect(errSpy).not.toHaveBeenCalled();
   });
 
@@ -164,9 +169,33 @@ describe('Microbiología · harness de navegación integral', () => {
     expect(depto).toBeTruthy();
     change(depto, 'Larvicultura');
     const fmt = root.querySelector('[data-micfilter="formato"]');
-    if (fmt) change(fmt, 'larv-muestra');
+    // El formato ahora se filtra por su NOMBRE real del sheet (data-driven), no por clave.
+    if (fmt && fmt.options.length > 1) change(fmt, fmt.options[1].value);
     const tqDim = root.querySelector('[data-micdim="tq"]');
     if (tqDim) change(tqDim, tqDim.options[1].value);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('filtro Departamento usa la columna REAL del sheet (incluye Algas) y estadío en orden biológico', () => {
+    store.globalData = [
+      // Larvicultura con estadíos 'N5' y 'N5 (MB)' → prueba el orden (la simple ANTES de la MB).
+      M({ 'Fecha muestreo': '05/06/2026', Corrida: '573', Departamento: 'Larvicultura', Formato: 'Larvicultura · Muestra', 'Módulo/Sala': '1', 'TQ/N°': '1', 'Estadío': 'N5 (MB)', 'V.Totales UFC': '1000' }),
+      M({ 'Fecha muestreo': '06/06/2026', Corrida: '573', Departamento: 'Larvicultura', Formato: 'Larvicultura · Muestra', 'Módulo/Sala': '1', 'TQ/N°': '1', 'Estadío': 'N5', 'V.Totales UFC': '1200' }),
+      // Algas: departamento que NO se deriva del formato → debe aparecer por la columna real.
+      M({ 'Fecha muestreo': '05/06/2026', Corrida: '573', Departamento: 'Algas', Formato: 'Algas Mensual', 'V.Totales UFC': '50' }),
+    ];
+    microbiologiaView(root);
+    click(root.querySelector('[data-mic-sub="bacteriologia"]'));
+    const depto = root.querySelector('[data-micfilter="depto"]');
+    const deptoOpts = [...depto.options].map((o) => o.value).filter(Boolean);
+    expect(deptoOpts).toContain('Algas');       // de la columna real, no derivado del formato
+    expect(deptoOpts).toContain('Larvicultura');
+    // Elegir Larvicultura → el estadío ofrece 'N5' y 'N5 (MB)' con la simple ANTES de la (MB).
+    change(depto, 'Larvicultura');
+    const est = root.querySelector('[data-micdim="estadio"]');
+    const estOpts = [...est.options].map((o) => o.value).filter(Boolean);
+    expect(estOpts.indexOf('N5')).toBeGreaterThanOrEqual(0);
+    expect(estOpts.indexOf('N5')).toBeLessThan(estOpts.indexOf('N5 (MB)'));
     expect(errSpy).not.toHaveBeenCalled();
   });
 

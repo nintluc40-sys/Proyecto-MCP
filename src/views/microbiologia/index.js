@@ -17,7 +17,7 @@ import { toast } from '../../ui/toast.js';
 import {
   isMicroRow, pathogenRecords, rowContext, meltRow, PATHOGENS, PATHOGEN_COLOR,
   NIVELES, NIVEL_COLOR, NIVEL_RANK, isAlerta, FORMATO_LABEL, AGGREGATE_KEYS,
-  DEPARTAMENTOS, DEPTO_FORMATS, deptoOfFormato, PATHOGEN_AGAR,
+  DEPARTAMENTOS, deptoOfFormato, PATHOGEN_AGAR,
 } from './data.js';
 import { petriSVG } from './petri.js';
 import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges, calRangeText, calEnsayoData, CAL_PARAMS, calDiagnosis, calGroupTree, calWQI, controlStats, boxStats, calSeverity, calStageCmp, CAL_RISK, CAL_SEV } from './calagua.data.js';
@@ -58,7 +58,7 @@ const FILTER_DIMS = [
   { key: 'tq', label: 'TQ/N°', pick: (c) => c.tq, fmt: (v) => 'TQ ' + v, cmp: numCmp },
   { key: 'reservorio', label: 'Reservorio', pick: (c) => c.reservorio, fmt: (v) => 'R' + v, cmp: numCmp },
   { key: 'sexo', label: 'Sexo', pick: (c) => c.sexo },
-  { key: 'estadio', label: 'Estadío', pick: (c) => c.estadio },
+  { key: 'estadio', label: 'Estadío', pick: (c) => c.estadio, cmp: calStageCmp },
   { key: 'tipo', label: 'Tipo', pick: (c) => c.tipoMuestra },
   { key: 'muestras', label: 'Muestra', pick: (c) => c.muestras },
   { key: 'punto', label: 'Punto de muestreo', pick: (c) => c.punto },
@@ -72,6 +72,15 @@ const FILTER_DIMS = [
   { key: 'tina', label: 'Tina', pick: (c) => c.tina },
   { key: 'siembra', label: 'Siembra', pick: (c) => c.siembra },
 ];
+
+// Departamento de una fila: columna REAL "Departamento" del sheet (Larvicultura/Algas/
+// Maduración/…), con respaldo al departamento derivado del formato si la celda viene vacía.
+// (Antes el filtro derivaba el departamento SOLO del formato → Algas caía en "Otros" y los
+// formatos sin clasificar se perdían.) Compartido por el render y el export.
+const deptoOf = (ctx) => (ctx.departamento || '').trim() || deptoOfFormato(ctx.formatoKey) || 'Otros';
+// Orden preferido de departamentos en el filtro (el resto, alfabético al final).
+const DEPTO_ORDER = ['Larvicultura', 'Maduración', 'Algas'];
+const deptoRank = (d) => { const i = DEPTO_ORDER.indexOf(d); return i < 0 ? DEPTO_ORDER.length : i; };
 
 // Datos del render actual (para tooltips de la placa y export).
 const _scope = { rows: [], records: [], colonies: [], theme: 'light' };
@@ -1666,17 +1675,19 @@ function renderBacteriologia() {
   const ctxOf = (r) => { if (!_ctxCache.has(r)) _ctxCache.set(r, rowContext(r)); return _ctxCache.get(r); };
   let pool = monthRows;
 
-  // Departamento DERIVADO del formato (no de la columna cruda) → 3 grupos exactos.
-  const presentDeptos = new Set(pool.map((r) => deptoOfFormato(ctxOf(r).formatoKey)).filter(Boolean));
-  const optDepto = DEPARTAMENTOS.filter((d) => presentDeptos.has(d));
+  // Departamento: columna REAL del sheet (con respaldo al derivado del formato). Solo los
+  // departamentos con datos en el pool, en orden preferido (Larvicultura/Maduración/Algas/…).
+  const optDepto = [...new Set(pool.map((r) => deptoOf(ctxOf(r))).filter(Boolean))]
+    .sort((a, b) => (deptoRank(a) - deptoRank(b)) || a.localeCompare(b));
   if (vState.depto && !optDepto.includes(vState.depto)) vState.depto = null;
   if (!vState.depto) vState.formato = null; // sin departamento → sin sub-filtro de formato
-  if (vState.depto) pool = pool.filter((r) => deptoOfFormato(ctxOf(r).formatoKey) === vState.depto);
+  if (vState.depto) pool = pool.filter((r) => deptoOf(ctxOf(r)) === vState.depto);
 
-  // Formato (sub-filtro del departamento; solo los que tengan datos en el pool actual).
-  const optFormato = vState.depto ? DEPTO_FORMATS[vState.depto].filter((k) => pool.some((r) => ctxOf(r).formatoKey === k)) : [];
+  // Formato: sub-filtro DATA-DRIVEN por el nombre REAL del sheet (los que tengan datos en el
+  // pool actual), no una lista fija por departamento → aparecen también formatos no mapeados.
+  const optFormato = vState.depto ? [...new Set(pool.map((r) => ctxOf(r).formato).filter(Boolean))].sort(natCmp) : [];
   if (vState.formato && !optFormato.includes(vState.formato)) vState.formato = null;
-  if (vState.formato) pool = pool.filter((r) => ctxOf(r).formatoKey === vState.formato);
+  if (vState.formato) pool = pool.filter((r) => ctxOf(r).formato === vState.formato);
 
   // Dimensiones de contexto DINÁMICAS (en cascada): cada una se muestra solo si tiene
   // ≥2 valores distintos en el pool actual → la barra se adapta al formato elegido.
@@ -1698,7 +1709,10 @@ function renderBacteriologia() {
   const summaries = rows.map(rowSummary);
   const kAlerta = summaries.filter((s) => isAlerta(s.worst)).length;
   const kLumin = summaries.filter((s) => s.lumin === true).length;
-  const kTotUfc = summaries.reduce((a, s) => a + (s.totalesUfc || 0), 0);
+  // Carga total = Σ UFC de TODOS los patógenos EXCEPTO C. Totales (agregado = C. Amarillas
+  // + C. Verdes; sumarlo duplicaría) y V. Luminiscentes (presencia/ausencia, no está en
+  // PATHOGENS). Bact. Totales SÍ suma (medición independiente en TSA).
+  const kTotUfc = _scope.records.reduce((a, r) => a + ((r.key !== 'totales' && r.ufc > 0) ? r.ufc : 0), 0);
   const dom = dominantPathogen(rows, _scope.records);
 
   // ── HTML: filtros + KPIs + apartados ──
@@ -1709,7 +1723,7 @@ function renderBacteriologia() {
         <button class="mic-month-nav" data-mic-month="1" ${months.indexOf(vState.month) >= months.length - 1 ? 'disabled' : ''} aria-label="Mes siguiente">▶</button>
       </div>
       ${optDepto.length ? micSelect('depto', vState.depto, optDepto, 'Todos los deptos.') : ''}
-      ${vState.depto && optFormato.length ? micSelect('formato', vState.formato, optFormato, 'Todos los formatos', (v) => FORMATO_LABEL[v] || v) : ''}
+      ${vState.depto && optFormato.length ? micSelect('formato', vState.formato, optFormato, 'Todos los formatos') : ''}
       ${dimFilters.map(({ dim, options }) => micDimSelect(dim, vState.dims[dim.key], options)).join('')}
     </div>`;
 
@@ -1718,7 +1732,7 @@ function renderBacteriologia() {
       ${kpi('⚠️', 'Mod./Elevado', `${kAlerta}`, kAlerta > 0, rows.length ? (kAlerta / rows.length * 100).toFixed(0) + '% de muestras' : '', 'data-mic-alerts role="button" tabindex="0" title="Ver listado de alertas (por fecha)"')}
       ${kpi('✨', 'V. Luminiscentes', kLumin > 0 ? `${kLumin}` : '0', kLumin > 0, kLumin > 0 ? 'con presencia' : 'sin presencia')}
       ${kpi('🦠', 'Patógeno dominante', dom ? dom.label : '—', false, dom ? `${dom.alertas} alerta(s)` : '')}
-      ${kpi('🧫', 'Σ UFC C. Totales', fmtNum(kTotUfc))}
+      ${kpi('🧫', 'Σ UFC total', fmtNum(kTotUfc))}
     </div>`;
 
   h += `<div class="mic-apartados">
@@ -1862,11 +1876,11 @@ function petriPlacaHTML(days, dayIdx, day) {
   const colonies = day ? coloniesForDay(day.rows) : [];
   _scope.colonies = colonies;
   const size = 340;
-  // Σ UFC de C.Totales (V.Totales) del día. Si ese día NO se midió C.Totales, se muestra
-  // "—": NO se sustituye por la suma de todos los patógenos (sería un número distinto
-  // bajo una etiqueta que dice "C.Totales").
-  const totColony = colonies.find((c) => c.key === 'totales');
-  const totUfc = totColony ? totColony.ufc : null;
+  // Carga total del día = Σ UFC de TODOS los patógenos con UFC EXCEPTO C. Totales (agregado
+  // de C. Amarillas + C. Verdes → sumarlo duplicaría). V. Luminiscentes no entra (presencia/
+  // ausencia). "—" si no hubo ningún patógeno con UFC ese día.
+  const nonTotColonies = colonies.filter((c) => c.key !== 'totales');
+  const totUfc = nonTotColonies.length ? nonTotColonies.reduce((a, c) => a + c.ufc, 0) : null;
   // "UFC máx" y "Dominante" sobre patógenos ESPECÍFICOS (los agregados ganarían siempre).
   const specific = colonies.filter((c) => !AGGREGATE_KEYS.has(c.key));
   const maxC = specific.length ? specific.reduce((a, b) => (a.ufc > b.ufc ? a : b)) : null;
@@ -1898,7 +1912,7 @@ function petriPlacaHTML(days, dayIdx, day) {
       <div class="card mic-petri-side">
         <div class="mic-chart-title">Resumen del día</div>
         <div class="mic-pe-sum">
-          <div class="mic-pe-st"><div class="mic-pe-st-v">${fmtNum(totUfc)}</div><div class="mic-pe-st-l">Σ UFC C.Totales</div></div>
+          <div class="mic-pe-st"><div class="mic-pe-st-v">${fmtNum(totUfc)}</div><div class="mic-pe-st-l">Σ UFC total</div></div>
           <div class="mic-pe-st"><div class="mic-pe-st-v">${maxC ? fmtNum(maxC.ufc) : '—'}</div><div class="mic-pe-st-l">UFC máx</div></div>
           <div class="mic-pe-st"><div class="mic-pe-st-v">${colonies.length}</div><div class="mic-pe-st-l">Patógenos</div></div>
           <div class="mic-pe-st"><div class="mic-pe-st-v" style="font-size:13px">${maxC ? esc(maxC.label) : '—'}</div><div class="mic-pe-st-l">Dominante</div></div>
@@ -2099,12 +2113,11 @@ function closeAlertModal(root) {
 function rowSummary(row) {
   const c = rowContext(row);
   const melt = meltRow(row);
-  let worst = '', worstRank = -1, totalesUfc = null;
+  let worst = '', worstRank = -1;
   const alerts = [];
   const byKey = {}; // patógeno → { ufc, nivel, crudo } de esta muestra (para las columnas)
   melt.forEach((m) => {
     byKey[m.key] = m;
-    if (m.key === 'totales') totalesUfc = m.ufc;
     if (m.nivel) {
       const rk = NIVEL_RANK[m.nivel];
       if (rk > worstRank) { worstRank = rk; worst = m.nivel; }
@@ -2112,7 +2125,7 @@ function rowSummary(row) {
     }
   });
   alerts.sort((a, b) => NIVEL_RANK[b.nivel] - NIVEL_RANK[a.nivel]);
-  return { row, ctx: c, worst, totalesUfc, alerts, lumin: c.lumin, byKey };
+  return { row, ctx: c, worst, alerts, lumin: c.lumin, byKey };
 }
 
 function dominantPathogen(rows, records = pathogenRecords(rows)) {
@@ -2334,8 +2347,8 @@ const isoDate = (d) => d ? d.getFullYear() + '-' + String(d.getMonth() + 1).padS
 function micExportBaseRows() {
   return microRows().filter((r) => {
     const c = rowContext(r);
-    if (vState.depto && deptoOfFormato(c.formatoKey) !== vState.depto) return false;
-    if (vState.formato && c.formatoKey !== vState.formato) return false;
+    if (vState.depto && deptoOf(c) !== vState.depto) return false;
+    if (vState.formato && c.formato !== vState.formato) return false;
     return FILTER_DIMS.every((dim) => !vState.dims[dim.key] || dim.pick(c) === vState.dims[dim.key]);
   });
 }

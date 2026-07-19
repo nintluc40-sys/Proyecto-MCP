@@ -156,11 +156,12 @@ export const FORMATO_LABEL = Object.fromEntries(Object.entries(MIC_FORMATS).map(
 const _FMT_BY_FOLDED = Object.fromEntries(Object.entries(MIC_FORMATS).map(([k, v]) => [fold(v.label), k]));
 
 // ── agrupación de formatos por DEPARTAMENTO (filtro Departamento → Formato) ──
-export const DEPARTAMENTOS = ['Larvicultura', 'Maduración', 'Otros'];
+export const DEPARTAMENTOS = ['Larvicultura', 'Maduración', 'Algas', 'Otros'];
 export const DEPTO_FORMATS = {
   'Larvicultura': ['larv-muestra', 'reservorios', 'placa-amb', 'artemia'],
   'Maduración': ['mad-principal', 'mad-agua', 'mad-ensayo', 'alim-vivo', 'ras', 'agua-mar', 'agua-limpia-mar', 'mad-desinf'],
-  'Otros': ['externas', 'hisopados', 'hisopados-despacho', 'algas', 'algas-mensual', 'algas-r'],
+  'Algas': ['algas', 'algas-mensual', 'algas-r'],
+  'Otros': ['externas', 'hisopados', 'hisopados-despacho'],
 };
 const _DEPTO_BY_FMT = {};
 Object.entries(DEPTO_FORMATS).forEach(([d, keys]) => keys.forEach((k) => { _DEPTO_BY_FMT[k] = d; }));
