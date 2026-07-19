@@ -186,43 +186,50 @@ function buildBiomolHeat(host, rows, mode) {
   });
 }
 
-/** Dispersión por tanque (swarm): un punto por análisis molecular, agrupado por tanque,
- *  con desplegable de fecha. Color = peor caso entre los 6 diagnósticos. */
+/** Línea de tiempo por tanque: un punto por análisis molecular ubicado en su FECHA real
+ *  (eje X = tiempo, eje Y = tanque). Color = peor caso entre los 6 diagnósticos. El tiempo
+ *  es el eje, así que no hay desplegable de fecha (aprovecha el espacio horizontal). */
 function buildBiomolSwarm(host, rows) {
   if (!host) return;
-  const dates = [...new Set(rows.map((r) => r.fecha).filter(Boolean))]
-    .sort((a, b) => (parseAnyDate(b) || 0) - (parseAnyDate(a) || 0));
-  let sel = ''; // '' = todas las fechas
-  const opts = `<option value="">Todas las fechas (${rows.length})</option>`
-    + dates.map((d) => `<option value="${esc(d)}">${esc(d)} (${rows.filter((r) => r.fecha === d).length})</option>`).join('');
-  host.innerHTML = `<div class="sv-bm-swarm-ctrl"><label>📅 Fecha
-      <select class="sv-modal-select sv-bm-swarm-date">${opts}</select></label></div>
-    <div class="sv-bm-swarm-host" id="svBmSwarmHost"></div>`;
-  const swHost = host.querySelector('#svBmSwarmHost');
-  const draw = () => drawBiomolSwarm(swHost, sel ? rows.filter((r) => r.fecha === sel) : rows);
-  host.querySelector('.sv-bm-swarm-date').addEventListener('change', (e) => { sel = e.target.value; draw(); });
-  draw();
+  host.innerHTML = `<div class="sv-bm-swarm-host" id="svBmSwarmHost"></div>`;
+  drawBiomolSwarm(host.querySelector('#svBmSwarmHost'), rows);
 }
 
-/** Render SVG de la dispersión: eje Y = tanques, puntos jitter en X, color por resultado. */
+/** Render SVG de la línea de tiempo: eje Y = tanques, eje X = fecha, un punto por análisis. */
 function drawBiomolSwarm(host, data) {
   if (!host) return;
   const tanks = bmDistinct(data.map((r) => r.tq)).sort(natCmp);
-  if (!data.length || !tanks.length) { host.innerHTML = '<div class="empty-state">Sin análisis para esta fecha.</div>'; return; }
-  const W = Math.max(host.clientWidth || 0, 340), mL = 80, mR = 16, mT = 12, mB = 16, rowH = 36;
+  const dated = data.map((r) => ({ r, d: parseAnyDate(r.fecha) })).filter((o) => o.d && !isNaN(o.d));
+  if (!dated.length || !tanks.length) { host.innerHTML = '<div class="empty-state">Sin análisis con fecha para este módulo.</div>'; return; }
+  // Altura de fila ADAPTATIVA: con muchos tanques se compactan los carriles (y el punto)
+  // para no ocupar tanto alto; el contenedor tiene scroll (max-height en CSS) si aun así
+  // se pasa. Pocos tanques conservan el tamaño holgado.
+  const rowH = tanks.length > 12 ? 18 : tanks.length > 8 ? 24 : 34;
+  const dotR = rowH >= 30 ? 5.5 : rowH >= 22 ? 4.5 : 3.6;
+  const stack = rowH >= 30 ? 6.5 : rowH >= 22 ? 4.5 : 3; // separación al apilar mismo día
+  const labFs = rowH >= 30 ? 11 : rowH >= 22 ? 10 : 9;    // etiqueta de tanque
+  const W = Math.max(host.clientWidth || 0, 340), mL = 80, mR = 18, mT = 14, mB = 34;
   const H = mT + tanks.length * rowH + mB, plotW = W - mL - mR;
+  let minT = Infinity, maxT = -Infinity;
+  dated.forEach((o) => { const t = o.d.getTime(); if (t < minT) minT = t; if (t > maxT) maxT = t; });
+  const span = maxT - minT;
+  // Sin span (todas las muestras el mismo día) → columna centrada.
+  const xOf = (t) => span > 0 ? mL + ((t - minT) / span) * plotW : mL + plotW / 2;
   const byTank = new Map(); tanks.forEach((t) => byTank.set(t, []));
-  data.forEach((r) => { if (byTank.has(r.tq)) byTank.get(r.tq).push(r); });
-  const maxCount = Math.max(...tanks.map((t) => byTank.get(t).length), 1);
-  const step = Math.min(15, plotW / (maxCount + 1));
+  dated.forEach((o) => { if (byTank.has(o.r.tq)) byTank.get(o.r.tq).push(o); });
   const tips = []; let grid = '', circles = '';
   tanks.forEach((t, ti) => {
     const cy = mT + ti * rowH + rowH / 2;
     grid += `<line x1="${mL}" x2="${W - mR}" y1="${cy}" y2="${cy}" stroke="rgba(120,144,156,.28)" stroke-dasharray="3,3"/>`
-      + `<text x="${mL - 7}" y="${cy}" text-anchor="end" dominant-baseline="middle" font-size="11" fill="var(--c-text-muted,#607D8B)">${esc(t)}</text>`;
-    byTank.get(t).forEach((r, i) => {
-      const cx = Math.min(mL + step * (i + 1), W - mR - 4);
-      const cyJit = cy + (((i * 37) % 11) - 5) * 1.3;
+      + `<text x="${mL - 7}" y="${cy}" text-anchor="end" dominant-baseline="middle" font-size="${labFs}" fill="var(--c-text-muted,#607D8B)">${esc(t)}</text>`;
+    // Varios análisis el MISMO día en un tanque → se apilan verticalmente para no solaparse.
+    const seenDay = new Map();
+    byTank.get(t).sort((a, b) => a.d - b.d).forEach((o) => {
+      const dk = micDayKey(o.d);
+      const i = seenDay.get(dk) || 0; seenDay.set(dk, i + 1);
+      const cx = xOf(o.d.getTime());
+      const cyJit = cy + (i === 0 ? 0 : (i % 2 ? 1 : -1) * Math.ceil(i / 2) * stack);
+      const r = o.r;
       const anyMeas = BM_DIAGS.some((d) => bmHasVal(r[d])), anyPos = BM_DIAGS.some((d) => bmIsPos(r[d]));
       const fill = !anyMeas ? '#94a3b8' : anyPos ? '#ef4444' : '#22c55e';
       const stroke = !anyMeas ? '#64748b' : anyPos ? '#b91c1c' : '#15803d';
@@ -232,10 +239,18 @@ function drawBiomolSwarm(host, data) {
         + `<div class="sv-bm-tip-row"><span>Fecha</span><b>${esc(r.fecha || '—')}</b></div>`
         + `<div class="sv-bm-tip-row"><span>Código</span><b>${esc(r.cod || '—')}</b></div>`
         + `<div class="sv-bm-tip-row"><span>Corrida</span><b>${esc(r.corrida || '—')}</b></div>${diagRows}`);
-      circles += `<circle cx="${cx.toFixed(1)}" cy="${cyJit.toFixed(1)}" r="5.5" fill="${fill}" stroke="${stroke}" stroke-width="1.4" data-idx="${idx}" style="cursor:pointer"/>`;
+      circles += `<circle cx="${cx.toFixed(1)}" cy="${cyJit.toFixed(1)}" r="${dotR}" fill="${fill}" stroke="${stroke}" stroke-width="1.4" data-idx="${idx}" style="cursor:pointer"/>`;
     });
   });
-  host.innerHTML = `<svg class="sv-bm-swarm-svg" viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMidYMid meet">${grid}${circles}</svg>`;
+  // Eje X temporal: marcas de fecha (inicio · medio · fin) con guía vertical tenue.
+  let xaxis = '';
+  const ticks = span > 0 ? [minT, minT + span / 2, maxT] : [minT];
+  ticks.forEach((t) => {
+    const x = xOf(t);
+    xaxis += `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${mT}" y2="${H - mB + 4}" stroke="rgba(120,144,156,.16)"/>`
+      + `<text x="${x.toFixed(1)}" y="${H - mB + 18}" text-anchor="middle" font-size="10.5" fill="var(--c-text-muted,#607D8B)">${esc(fmtShort(new Date(t)))}</text>`;
+  });
+  host.innerHTML = `<svg class="sv-bm-swarm-svg" viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMidYMid meet">${xaxis}${grid}${circles}</svg>`;
   host.querySelectorAll('circle[data-idx]').forEach((c) => {
     const tip = tips[+c.getAttribute('data-idx')];
     c.addEventListener('mouseenter', (e) => bmShowTip(tip, e));
@@ -346,6 +361,17 @@ const micFmtNum = (v) => (v === null || v === undefined || isNaN(v)) ? '—' : M
 const micTQ = (r) => microCtx(r).tq; // tanque estricto (columna TQ/N°)
 const micDayKey = (d) => d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
 const micTankLabel = (t) => t === '__none' ? 'Sin TQ' : ('TQ ' + t);
+// V. Luminiscentes = presencia/ausencia (no UFC). Color violeta propio para distinguirlo
+// del semáforo de niveles. Chip para la placa (resumen del día) y celda para la tabla/heatmap.
+const MIC_LUMIN_COLOR = '#8E24AA';
+const micLuminChip = (v) => v === true
+  ? `<div class="mic-pe-lumin is-on" title="Presencia de V. Luminiscentes"><span class="mic-pe-dot" style="background:${MIC_LUMIN_COLOR}"></span>✨ V. Luminiscentes · <b>Presencia</b></div>`
+  : v === false
+  ? `<div class="mic-pe-lumin"><span class="mic-pe-dot" style="background:#B0BEC5"></span>✨ V. Luminiscentes · Ausencia</div>`
+  : '';
+const micLuminCell = (v) => v === true
+  ? `<span class="mic-lumin is-on" title="Presencia de V. Luminiscentes">✨ Pres.</span>`
+  : v === false ? '<span class="muted">Aus.</span>' : '<span class="muted">—</span>';
 let _svMicroColonies = []; // colonias del día visible en la placa (para el tooltip)
 let _svMicTrend = null;    // { days, series } de la pestaña Tendencias (para dibujar el gráfico abierto)
 
@@ -397,10 +423,15 @@ function microPlacaHTML(rows, state) {
   const day = days[idx];
   const colonies = microColonies(day.rows);
   _svMicroColonies = colonies; // para el tooltip de colonias
-  // Σ UFC de "C. Totales" (colonia agregada). Si ese día no hay muestra de Totales se
-  // muestra "—": NO se sustituye por la suma de patógenos específicos (mentiría la etiqueta).
-  const totColonies = colonies.filter((c) => c.key === 'totales');
-  const totUfc = totColonies.length ? totColonies.reduce((a, c) => a + c.ufc, 0) : null;
+  // Carga total del día = Σ UFC de TODOS los patógenos con UFC EXCEPTO C. Totales (agregado
+  // de C. Amarillas + C. Verdes → sumarlo duplicaría). V. Luminiscentes no entra (presencia/
+  // ausencia). "—" si ese día no hubo ningún patógeno con UFC.
+  const nonTotColonies = colonies.filter((c) => c.key !== 'totales');
+  const totUfc = nonTotColonies.length ? nonTotColonies.reduce((a, c) => a + c.ufc, 0) : null;
+  // V. Luminiscentes del día (presencia/ausencia, no UFC): presencia si alguna muestra la
+  // reporta presente; ausencia si al menos una la reporta ausente y ninguna presente.
+  const dayLumin = day.rows.some((r) => microCtx(r).lumin === true) ? true
+    : day.rows.some((r) => microCtx(r).lumin === false) ? false : null;
   const specific = colonies.filter((c) => !MIC_AGG.has(c.key));
   const maxC = specific.length ? specific.reduce((a, b) => (a.ufc > b.ufc ? a : b)) : null;
   const dayTanks = [...new Set(day.rows.map(micTQ).filter(Boolean))].sort(natCmp);
@@ -429,11 +460,12 @@ function microPlacaHTML(rows, state) {
         <div class="mic-chart-title">Resumen del día</div>
         <div class="sv-micro-meta"><b>🐟 ${esc(tankShown)}</b> · 📅 ${esc(day.label)}${dayEstadios.length ? ' · 🦐 ' + esc(dayEstadios.join(', ')) : ''}</div>
         <div class="mic-pe-sum">
-          <div class="mic-pe-st"><div class="mic-pe-st-v">${micFmtNum(totUfc)}</div><div class="mic-pe-st-l">Σ UFC C.Totales</div></div>
+          <div class="mic-pe-st"><div class="mic-pe-st-v">${micFmtNum(totUfc)}</div><div class="mic-pe-st-l">Σ UFC total</div></div>
           <div class="mic-pe-st"><div class="mic-pe-st-v">${maxC ? micFmtNum(maxC.ufc) : '—'}</div><div class="mic-pe-st-l">UFC máx</div></div>
           <div class="mic-pe-st"><div class="mic-pe-st-v">${colonies.length}</div><div class="mic-pe-st-l">Patógenos</div></div>
           <div class="mic-pe-st"><div class="mic-pe-st-v" style="font-size:13px">${maxC ? esc(maxC.label) : '—'}</div><div class="mic-pe-st-l">Dominante</div></div>
         </div>
+        ${micLuminChip(dayLumin)}
         <div class="mic-pe-agar"><div class="mic-pe-agar-l">🧪 Agar utilizado</div><div class="mic-pe-agar-chips">${agares.length ? agares.map((a) => `<span class="mic-agar-chip">${esc(a)}</span>`).join('') : '<span class="muted" style="font-size:12px">—</span>'}</div></div>
         <div class="mic-chart-title" style="margin-top:12px">Patógenos</div>
         ${legend}
@@ -455,7 +487,7 @@ function microTablaHTML(rows) {
     const val = m.ufc !== null ? micFmtNum(m.ufc) : (m.crudo !== null ? esc(String(m.crudo)) : '·');
     return `<td${tint} title="${m.nivel ? esc(m.nivel) + ' · ' : ''}${m.ufc !== null ? micFmtNum(m.ufc) + ' UFC' : ''}">${val}</td>`;
   };
-  const head = `<tr><th>Fecha</th><th>TQ</th><th>Tipo</th><th>Formato</th>${pats.map((p) => `<th style="text-align:right">${esc(p.label)}</th>`).join('')}<th>Nivel máx</th></tr>`;
+  const head = `<tr><th>Fecha</th><th>TQ</th><th>Tipo</th><th>Formato</th>${pats.map((p) => `<th style="text-align:right">${esc(p.label)}</th>`).join('')}<th>V. Lumin.</th><th>Nivel máx</th></tr>`;
   const body = melts.map((s) => {
     const c = s.ctx;
     let worst = '', wr = -1;
@@ -466,6 +498,7 @@ function microTablaHTML(rows) {
       <td>${esc(c.tipoMuestra || '—')}</td>
       <td>${esc(MIC_FMT_LABEL[c.formatoKey] || c.formato || '—')}</td>
       ${pats.map((p) => patCell(s.byKey[p.key])).join('')}
+      <td>${micLuminCell(c.lumin)}</td>
       <td>${worst ? `<span class="mic-nivel" style="--nv:${MIC_NIVEL_COLOR[worst]}">${esc(worst)}</span>` : '<span class="muted">—</span>'}</td>
     </tr>`;
   }).join('');
@@ -480,13 +513,24 @@ function microHeatmapHTML(rows) {
   const pats = MIC_PATHOGENS.filter((p) => presentKeys.has(p.key));
   const cell = new Map();
   rows.forEach((r) => { const c = microCtx(r); if (!c.fecha || isNaN(c.fecha)) return; const dk = micDayKey(c.fecha); microMelt(r).forEach((m) => { const k = m.key + '|' + dk; if (!cell.has(k)) cell.set(k, { ufc: 0, worstRank: -1, worst: '' }); const o = cell.get(k); if (m.ufc) o.ufc += m.ufc; const rk = MIC_NIVEL_RANK[m.nivel] ?? -1; if (rk > o.worstRank) { o.worstRank = rk; o.worst = m.nivel; } }); });
+  // V. Luminiscentes por día (presencia/ausencia, no UFC): presencia si alguna muestra del
+  // día la reporta presente; ausencia si al menos una la reporta ausente y ninguna presente.
+  const luminByDay = new Map();
+  let hasLumin = false;
+  rows.forEach((r) => { const c = microCtx(r); if (!c.fecha || isNaN(c.fecha) || c.lumin == null) return; hasLumin = true; const dk = micDayKey(c.fecha); if (c.lumin === true) luminByDay.set(dk, true); else if (luminByDay.get(dk) !== true) luminByDay.set(dk, false); });
   const head = `<tr><th class="sv-micro-hm-rowh">Patógeno \\ Día</th>${days.map((d) => `<th>${esc(d.label)}</th>`).join('')}</tr>`;
-  const body = pats.map((p) => {
+  let body = pats.map((p) => {
     const tds = days.map((d) => { const o = cell.get(p.key + '|' + d.key); if (!o || (o.ufc === 0 && !o.worst)) return '<td class="muted">·</td>'; const col = o.worst ? MIC_NIVEL_COLOR[o.worst] : ''; const st = col ? ` style="background:${col};color:#fff"` : ''; return `<td${st} title="${esc(p.label)} · ${esc(o.worst || 'sin nivel')} · ${micFmtNum(o.ufc)} UFC">${micFmtNum(o.ufc)}</td>`; }).join('');
     return `<tr><th class="sv-micro-hm-rowh"><span class="mic-pe-dot" style="background:${MIC_COLOR[p.key] || '#90A4AE'}"></span>${esc(p.label)}</th>${tds}</tr>`;
   }).join('');
+  // Fila propia para V. Luminiscentes: presencia (violeta) / ausencia / sin dato (no UFC).
+  if (hasLumin) {
+    const tds = days.map((d) => { const v = luminByDay.get(d.key); if (v === true) return '<td class="is-pres" title="Presencia de V. Luminiscentes">✨ Pres.</td>'; if (v === false) return '<td class="muted" title="Ausencia de V. Luminiscentes">Aus.</td>'; return '<td class="muted">·</td>'; }).join('');
+    body += `<tr class="sv-micro-hm-lumin"><th class="sv-micro-hm-rowh"><span class="mic-pe-dot" style="background:${MIC_LUMIN_COLOR}"></span>V. Luminiscentes</th>${tds}</tr>`;
+  }
+  const luminLeg = hasLumin ? `<span class="mic-legend-item"><span class="mic-legend-dot" style="background:${MIC_LUMIN_COLOR}"></span>V. Luminiscentes (presencia)</span>` : '';
   return `<div class="sv-micro-hmwrap"><table class="sv-micro-hm"><thead>${head}</thead><tbody>${body}</tbody></table></div>
-    <div class="mic-legend" style="margin-top:8px">${Object.keys(MIC_NIVEL_COLOR).map((n) => `<span class="mic-legend-item"><span class="mic-legend-dot" style="background:${MIC_NIVEL_COLOR[n]}"></span>${esc(n)}</span>`).join('')}</div>`;
+    <div class="mic-legend" style="margin-top:8px">${Object.keys(MIC_NIVEL_COLOR).map((n) => `<span class="mic-legend-item"><span class="mic-legend-dot" style="background:${MIC_NIVEL_COLOR[n]}"></span>${esc(n)}</span>`).join('')}${luminLeg}</div>`;
 }
 
 /** Series por patógeno (Σ UFC por día) sobre las filas dadas. Ordenadas por el
@@ -662,17 +706,22 @@ function cwMatrizHTML(rows, ranges) {
     <div class="mic-legend" style="margin-top:8px">${['optimo', 'vigilancia', 'fuera', 'critico'].map((k) => `<span class="mic-legend-item"><span class="mic-legend-dot" style="background:${cwSevColor(k)}"></span>${esc(CAL_SEV[k].label)}</span>`).join('')}</div>`;
 }
 
-/** Serie de un parámetro: promedio por día (asc). */
+/** Serie de un parámetro: promedio por día (asc), con los estadíos muestreados ese día. */
 function cwParamSeries(samples, key) {
   const byDay = new Map();
   samples.forEach((s) => {
     if (!s.ctx.fecha || isNaN(s.ctx.fecha)) return;
     const m = s.meas.find((x) => x.key === key); if (!m) return;
     const d = s.ctx.fecha, dk = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
-    if (!byDay.has(dk)) byDay.set(dk, { d, label: fmtShort(d), vals: [] });
-    byDay.get(dk).vals.push(m.value);
+    if (!byDay.has(dk)) byDay.set(dk, { d, label: fmtShort(d), vals: [], estadios: new Set() });
+    const o = byDay.get(dk);
+    o.vals.push(m.value);
+    if (s.ctx.estadio) o.estadios.add(s.ctx.estadio);
   });
-  return [...byDay.values()].sort((a, b) => a.d - b.d).map((o) => ({ d: o.d, label: o.label, avg: o.vals.reduce((s, v) => s + v, 0) / o.vals.length }));
+  return [...byDay.values()].sort((a, b) => a.d - b.d).map((o) => ({
+    d: o.d, label: o.label, avg: o.vals.reduce((s, v) => s + v, 0) / o.vals.length,
+    estadio: [...o.estadios].sort(natCmp).join(', '),
+  }));
 }
 
 /** Vista 3 · Tendencias: selector de parámetro en píldoras + gráfico temporal con
@@ -947,6 +996,7 @@ export function renderModule(ctx, mod) {
     ${microRows.length ? `<button class="sv-action-btn" data-micro-open>🧫 Microbiología (${microRows.length})</button>` : ''}
     ${calAguaRows.length ? `<button class="sv-action-btn" data-cw-open>💧 Calidad de Agua (${calAguaRows.length})</button>` : ''}
     ${desinf ? `<button class="sv-action-btn" data-desinf-open>🧴 Desinfección${desinf.cumplimiento !== null ? ` (${desinf.cumplimiento}%)` : ''}</button>` : ''}
+    <button class="sv-action-btn" data-mareas-open>🌊 Mareas</button>
     <button class="sv-action-btn" data-modday-open>📅 Resumen del día</button>
   </div>`;
 
@@ -1027,7 +1077,7 @@ export function renderModule(ctx, mod) {
             <span class="sv-bm-mode-label">Vista:</span>
             <button class="sv-bm-mode-btn is-active" data-bmmode="tank">Heatmap · Tanque</button>
             <button class="sv-bm-mode-btn" data-bmmode="estadio">Heatmap · Estadío</button>
-            <button class="sv-bm-mode-btn" data-bmmode="swarm">Dispersión por tanque</button>
+            <button class="sv-bm-mode-btn" data-bmmode="swarm">Línea de tiempo</button>
             <button class="sv-bm-mode-btn" data-bmmode="gel">E.D.T.</button>
           </div>
           <div class="sv-modal-note" id="svBmNote"></div>
@@ -1130,6 +1180,23 @@ export function renderModule(ctx, mod) {
       </div>
     </div>`;
   }
+
+  // Modal de Mareas (contenido pendiente de definir). Se muestra siempre, junto a
+  // Calidad de Agua y Desinfección; el cuerpo es un placeholder por ahora.
+  h += `<div class="sv-modal" id="svMareasModal" data-mareasmodal>
+    <div class="sv-modal-card">
+      <div class="sv-modal-head">
+        <span class="sv-modal-title">🌊 Mareas — ${esc(mod)}${corrida ? ' · C' + esc(corrida) : ''}</span>
+        <button class="sv-modal-x" data-mareas-close aria-label="Cerrar">✕</button>
+      </div>
+      <div class="sv-modal-body">
+        <div class="empty-state" style="padding:48px 20px">
+          <div style="font-size:40px">🌊</div>
+          <p class="muted">Módulo de Mareas en construcción.</p>
+        </div>
+      </div>
+    </div>
+  </div>`;
 
   // #5 · Modal de gráfico por métrica (SV/Población = tendencia · OD/Temp = perfil 12 tomas)
   h += `<div class="sv-modal" id="svModMetricModal" data-modmetricmodal>
@@ -1249,6 +1316,11 @@ export function renderModule(ctx, mod) {
     // #3 · Modal de Desinfección
     bindModal(root, root.querySelector('#svDesinfModal'), {
       openSel: '[data-desinf-open]', closeSel: '[data-desinf-close]',
+    });
+
+    // Modal de Mareas (placeholder; contenido pendiente).
+    bindModal(root, root.querySelector('#svMareasModal'), {
+      openSel: '[data-mareas-open]', closeSel: '[data-mareas-close]',
     });
 
     // #5 · Modal de gráfico por métrica (SV/Pob = tendencia · OD/Temp = perfil 12 tomas)
@@ -1378,7 +1450,7 @@ export function renderModule(ctx, mod) {
       const bmHost = bmOverlay.querySelector('#svBmBody');
       const bmNote = bmOverlay.querySelector('#svBmNote');
       const heatNote = `% de muestras positivas por ${corrida ? 'corrida <b>' + esc(corrida) + '</b> · ' : ''}diagnóstico (verde = 0% · rojo = 100%). Excluye estadío Reproductores. Las muestras compartidas entre módulos pareados (p. ej. "Módulo 1-2") aparecen en ambos módulos.`;
-      const swarmNote = `Cada punto = un análisis molecular${corrida ? ' de la corrida <b>' + esc(corrida) + '</b>' : ''} en este módulo. 🔴 algún diagnóstico positivo · 🟢 todos negativos · ⚪ sin medición. Filtra por fecha con el desplegable.`;
+      const swarmNote = `Línea de tiempo por tanque${corrida ? ' · corrida <b>' + esc(corrida) + '</b>' : ''}: cada punto = un análisis molecular ubicado en su fecha real (eje horizontal). 🔴 algún diagnóstico positivo · 🟢 todos negativos · ⚪ sin medición.`;
       const gelNote = `<b>Electroforesis Digital Temporal</b> · gel UV simulado: carriles = tanques, filas = diagnósticos. Banda <span style="color:#7CB500;font-weight:800">verde lima = positivo</span> · <span style="color:#8E5BD9;font-weight:800">lavanda = negativo</span> · línea tenue = sin medición. Filtra por fecha.`;
       let bmMode = 'tank';
       const buildBm = () => {
@@ -1414,6 +1486,8 @@ export function renderModule(ctx, mod) {
         if (!open) return;
         const dates = _svMicTrend.days.map((d) => d.d);
         const labels = _svMicTrend.days.map((d) => d.label); // completo → título del tooltip
+        // Estadío(s) muestreados cada día (para el tooltip).
+        const estadios = _svMicTrend.days.map((d) => [...new Set(d.rows.map((r) => microCtx(r).estadio).filter(Boolean))].sort(natCmp).join(', '));
         // null en los días sin muestra de ese patógeno (línea continua vía spanGaps).
         const data = open.vals.map((v, i) => (open.has[i] ? v : null));
         makeChart('svMicTrendChart', {
@@ -1427,7 +1501,10 @@ export function renderModule(ctx, mod) {
               // (ej. "enero 2026") en vez de repetir "1 ene 26, 2 ene 26, …".
               x: { grid: { display: false }, ticks: { callback: (v, i) => dayNum(dates[i]), autoSkip: true, maxTicksLimit: 14, maxRotation: 0, minRotation: 0 }, title: { display: !!rangeLabel(dates), text: rangeLabel(dates), font: { size: 10.5, weight: '700' } } },
             },
-            plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${c.parsed.y === null ? 'sin muestra' : micFmtNum(c.parsed.y) + ' UFC'}` } } },
+            plugins: { legend: { display: false }, tooltip: { callbacks: {
+              label: (c) => ` ${c.parsed.y === null ? 'sin muestra' : micFmtNum(c.parsed.y) + ' UFC'}`,
+              afterLabel: (c) => { const e = estadios[c.dataIndex]; return e ? 'Estadío: ' + e : ''; },
+            } } },
           },
         });
       };
@@ -1520,7 +1597,10 @@ export function renderModule(ctx, mod) {
               y: { ticks: { callback: (v) => cwFmt(v) }, title: { display: !!t.unit, text: t.unit, font: { size: 11, weight: '700' } } },
               x: { grid: { display: false }, ticks: { callback: (v, i) => dayNum(dates[i]), autoSkip: true, maxTicksLimit: 14, maxRotation: 0, minRotation: 0 }, title: { display: !!rangeLabel(dates), text: rangeLabel(dates), font: { size: 10.5, weight: '700' } } },
             },
-            plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${cwFmt(c.parsed.y)}${t.unit ? ' ' + t.unit : ''}` } } },
+            plugins: { legend: { display: false }, tooltip: { callbacks: {
+              label: (c) => ` ${cwFmt(c.parsed.y)}${t.unit ? ' ' + t.unit : ''}`,
+              afterLabel: (c) => { const e = t.days[c.dataIndex] && t.days[c.dataIndex].estadio; return e ? 'Estadío: ' + e : ''; },
+            } } },
           },
           plugins: [bandPlugin],
         });

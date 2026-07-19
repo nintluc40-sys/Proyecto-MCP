@@ -71,12 +71,12 @@ function synthData() {
   rows.push({
     _SheetOrigin: 'Microbiología', 'Fecha muestreo': '05/06/2026', Corrida: '573', 'Módulo/Sala': '1',
     Formato: 'Larvicultura · Muestra', 'Tipo de muestra': 'Animal', 'TQ/N°': '1', 'Estadío': 'PL2',
-    'V.Totales UFC': '5000', 'V.Amarillos UFC': '1200', 'V.Totales Nivel': 'Leve',
+    'V.Totales UFC': '5000', 'V.Amarillos UFC': '1200', 'V.Totales Nivel': 'Leve', 'V.Luminiscentes': 'Presente',
   });
   rows.push({
     _SheetOrigin: 'Microbiología', 'Fecha muestreo': '07/06/2026', Corrida: '573', 'Módulo/Sala': '1',
     Formato: 'Larvicultura · Muestra', 'Tipo de muestra': 'Animal', 'TQ/N°': '1', 'Estadío': 'PL5',
-    'V.Totales UFC': '8000', 'V.Amarillos UFC': '900', 'V.Totales Nivel': 'Moderado',
+    'V.Totales UFC': '8000', 'V.Amarillos UFC': '900', 'V.Totales Nivel': 'Moderado', 'V.Luminiscentes': 'Ausente',
   });
   // Calidad de Agua (hoja propia) del módulo 1 → modal Calidad de Agua (Tabla/Matriz/Tendencias).
   // 2 tanques × 2 fechas con pH/S‰/Alcalinidad/Nitrito (Alcalinidad de TQ2 cae fuera de rango).
@@ -179,6 +179,42 @@ describe('Supervisor · harness de navegación integral', () => {
     const all = modal.querySelector('[data-trace-all]');
     all.checked = false; all.dispatchEvent(new Event('change'));
     expect([...modal.querySelectorAll('[data-trace-fid]')].every((c) => !c.checked)).toBe(true);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('modal Mareas · el botón abre el modal placeholder y cierra', () => {
+    const root = mount();
+    click(root.querySelector('.sv-card[data-nav="module"]'));
+    const btn = root.querySelector('[data-mareas-open]');
+    expect(btn).toBeTruthy();
+    click(btn);
+    const modal = root.querySelector('#svMareasModal');
+    expect(modal).toBeTruthy();
+    expect(modal.classList.contains('sv-open')).toBe(true);
+    click(modal.querySelector('[data-mareas-close]'));
+    expect(modal.classList.contains('sv-open')).toBe(false);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('modal Microbiología · V. Luminiscentes representado en placa, tabla y heatmap', () => {
+    const root = mount();
+    click(root.querySelector('.sv-card[data-nav="module"]'));
+    click(root.querySelector('[data-micro-open]'));
+    // Tabla: columna propia "V. Lumin." con estado presencia/ausencia.
+    click(root.querySelector('[data-micmode="tabla"]'));
+    const tablaTxt = root.querySelector('.sv-micro-tablewrap').textContent;
+    expect(tablaTxt).toContain('V. Lumin.');
+    expect(tablaTxt).toContain('Pres.');
+    // Heatmap: fila propia "V. Luminiscentes".
+    click(root.querySelector('[data-micmode="heatmap"]'));
+    expect(root.querySelector('.sv-micro-hm-lumin')).toBeTruthy();
+    expect(root.querySelector('.sv-micro-hm').textContent).toContain('V. Luminiscentes');
+    // Placa: chip de V. Luminiscentes en el resumen del día (clic explícito → render
+    // síncrono; el render inicial del modal usa requestAnimationFrame).
+    click(root.querySelector('[data-micmode="placa"]'));
+    const lumChip = root.querySelector('.mic-pe-lumin');
+    expect(lumChip).toBeTruthy();
+    expect(lumChip.textContent).toContain('V. Luminiscentes');
     expect(errSpy).not.toHaveBeenCalled();
   });
 
