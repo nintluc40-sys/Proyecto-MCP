@@ -363,6 +363,76 @@
 .sv-bm-swarm-ctrl label { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--c-text-muted); }
 .sv-bm-swarm-host { width: 100%; max-height: 56vh; overflow: auto; border: 1px solid var(--c-border-soft); border-radius: var(--r-sm); padding: 4px 0; }
 .sv-bm-swarm-svg { display: block; }
+
+/* ===== Modal de Mareas (referencia de sitio · Anconcito · INOCAR) ===== */
+.sv-marea-selbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 10px 0 12px; }
+.sv-marea-months { display: flex; gap: 6px; flex-wrap: wrap; }
+.sv-marea-mbtn { padding: 4px 12px; border-radius: 14px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.sv-marea-mbtn.is-on { background: color-mix(in srgb, var(--c-brand) 14%, transparent); border-color: var(--c-brand); color: var(--c-brand); }
+.sv-marea-daynav { display: flex; align-items: center; gap: 6px; }
+.sv-marea-grid { display: grid; grid-template-columns: 190px 1fr 210px; grid-template-areas: "moon wave side" "viva viva side" "table table table"; gap: 14px; }
+.sv-marea-moonp { grid-area: moon; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.sv-marea-wavep { grid-area: wave; }
+.sv-marea-side { grid-area: side; display: flex; flex-direction: column; gap: 10px; }
+.sv-marea-vivap { grid-area: viva; }
+.sv-marea-tablep { grid-area: table; }
+@media (max-width: 900px) { .sv-marea-grid { grid-template-columns: 1fr 1fr; grid-template-areas: "moon side" "wave wave" "viva viva" "table table"; } }
+@media (max-width: 620px) { .sv-marea-grid { grid-template-columns: 1fr; grid-template-areas: "moon" "wave" "side" "viva" "table"; } }
+.sv-marea-panel { background: var(--c-surface); border: 1px solid var(--c-border-soft, var(--c-border)); border-radius: var(--r-md); padding: 12px 14px; }
+.sv-marea-ptitle { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--c-text-muted); margin-bottom: 8px; }
+.sv-marea-moon { margin: 4px 0; }
+.sv-marea-moon-name { font-size: 13.5px; font-weight: 700; color: var(--c-text); margin-top: 4px; }
+.sv-marea-moon-sub { font-size: 11.5px; color: var(--c-text-muted); margin-top: 2px; }
+.sv-marea-wave { display: block; }
+.sv-marea-kpi { background: var(--c-surface); border: 1px solid var(--c-border-soft, var(--c-border)); border-radius: var(--r-md); padding: 9px 12px; }
+.sv-marea-kpi-l { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--c-text-muted); margin-bottom: 2px; }
+.sv-marea-kpi-v { font-size: 22px; font-weight: 800; color: var(--c-text); font-variant-numeric: tabular-nums; }
+.sv-marea-kpi-u { font-size: 11px; color: var(--c-text-muted); margin-left: 3px; font-weight: 600; }
+.sv-marea-tipowrap { background: var(--c-surface); border: 1px solid var(--c-border-soft, var(--c-border)); border-radius: var(--r-md); padding: 9px 12px; }
+.sv-marea-tipo { display: inline-flex; flex-direction: column; margin-top: 4px; font-size: 14px; font-weight: 800; }
+.sv-marea-tipo-sub { font-size: 10.5px; font-weight: 600; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: .5px; }
+.sv-marea-tipo--viva { color: var(--c-brand); }
+.sv-marea-tipo--muerta { color: var(--c-text-muted); }
+.sv-marea-vbar-lbl { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; }
+.sv-marea-viva-t { color: var(--c-brand); font-weight: 700; }
+.sv-marea-vbar-track { height: 8px; background: color-mix(in srgb, var(--c-text-muted) 22%, transparent); border-radius: 4px; overflow: hidden; }
+.sv-marea-vbar-fill { height: 100%; background: var(--c-brand); border-radius: 4px; }
+.sv-marea-table { width: 100%; }
+.sv-marea-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 10px; font-size: 10.5px; font-weight: 700; }
+.sv-marea-nodata { padding: 20px; text-align: center; color: var(--c-text-muted); font-size: 13px; }
+.sv-marea-inocar { margin-top: 12px; font-size: 10.5px; color: var(--c-text-muted); text-align: right; font-style: italic; }
+.sv-marea-charts { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+@media (max-width: 780px) { .sv-marea-charts { grid-template-columns: 1fr; } }
+.sv-marea-charthost { height: 300px; position: relative; }
+.sv-marea-charthost--donut { height: 240px; }
+/* Ampliación (fullscreen) del perfil de marea diario. */
+.sv-marea-ptitle--row { display: flex; align-items: center; gap: 8px; }
+.sv-marea-fsbtn { margin-left: auto; padding: 1px 8px; border-radius: var(--r-sm); border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 14px; line-height: 1.3; cursor: pointer; }
+.sv-marea-fsbtn:hover { border-color: var(--c-brand); color: var(--c-brand); }
+.sv-marea-fs { position: fixed; inset: 0; z-index: 400; display: none; align-items: center; justify-content: center; padding: 3vh 3vw; background: rgba(15,23,30,.66); backdrop-filter: blur(3px); }
+.sv-marea-fs.is-open { display: flex; }
+.sv-marea-fs-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 16px 18px; width: min(96vw, 1400px); box-shadow: 0 20px 60px rgba(0, 0, 0, .4); }
+.sv-marea-fs-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.sv-marea-fs-title { font-size: 15px; font-weight: 800; color: var(--c-text); }
+.sv-marea-fs-wave { width: 100%; }
+.sv-marea-fs-wave .sv-marea-wave { width: 100%; height: auto; }
+.sv-marea-fs-chart { width: 100%; height: 72vh; position: relative; }
+/* Correlación marea ↔ laboratorio (Microbiología / Calidad de Agua). */
+.sv-marea-corr-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.sv-marea-corr-mods { display: flex; gap: 6px; }
+.sv-marea-corr-hint { font-size: 11.5px; margin-bottom: 10px; }
+.sv-marea-corr-wrap { overflow: auto; border: 1px solid var(--c-border-soft, var(--c-border)); border-radius: var(--r-md); }
+.sv-marea-corr { border-collapse: collapse; width: 100%; font-size: 12px; }
+.sv-marea-corr th, .sv-marea-corr td { border: 1px solid var(--c-border-soft, var(--c-border)); padding: 7px 10px; text-align: center; font-variant-numeric: tabular-nums; }
+.sv-marea-corr thead th { background: var(--c-surface-2); color: var(--c-text-muted); font-weight: 700; }
+.sv-marea-corr-rowh { text-align: left !important; background: var(--c-surface-2); font-weight: 700; color: var(--c-text); white-space: nowrap; position: sticky; left: 0; }
+.sv-marea-corr-cell { cursor: pointer; font-weight: 700; color: var(--c-text); }
+.sv-marea-corr-cell.is-na { cursor: default; color: var(--c-text-muted); font-weight: 400; }
+.sv-marea-corr-cell.is-sel { outline: 2px solid var(--c-brand); outline-offset: -2px; }
+.sv-marea-corr-sig { font-weight: 900; margin-left: 1px; vertical-align: super; font-size: .82em; }
+.sv-marea-corr-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--c-text-muted); margin: 8px 0; flex-wrap: wrap; }
+.sv-marea-corr-lg { display: inline-block; width: 22px; height: 10px; border-radius: 2px; }
+.sv-marea-corr-scatter { margin-top: 10px; }
 /* E.D.T. · gel digital (fondo oscuro, bandas fluorescentes) */
 .sv-bm-gel-host { width: 100%; overflow: auto; border-radius: var(--r-sm); background: #1B0A33; box-shadow: inset 0 0 0 1px rgba(215,123,255,.18), 0 4px 18px rgba(0,0,0,.3); }
 .sv-bm-gel-svg { display: block; }

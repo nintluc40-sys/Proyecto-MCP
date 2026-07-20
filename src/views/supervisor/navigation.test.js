@@ -96,6 +96,17 @@ function synthData() {
     _SheetOrigin: 'Registro_Desinfección', 'Módulo': 'M01', Corrida: '573', Fecha: '20/05/2026',
     'Tipo de Registro': 'Desinfección de módulo larvicultura', 'Categoría': 'Paredes', Elemento: 'Muro', Estado: 'Sí', Observaciones: '',
   });
+  // Marea (hoja propia, referencia de sitio) → modal Mareas. 2 días para navegar.
+  rows.push({
+    _SheetOrigin: 'Marea', Fecha: '05/06/2026', 'Fase Lunar': 'Luna llena', '%Iluminación': '100', 'Tipo de Marea': 'Viva',
+    'Pleamar 1': '04:55', 'Altura P1 (m)': '2.02', 'Bajamar 1': '10:55', 'Altura B1 (m)': '0.71',
+    'Pleamar 2': '16:46', 'Altura P2 (m)': '1.92', 'Bajamar 2': '23:03', 'Altura B2 (m)': '0.40', 'Amplitud (m)': '1.62',
+  });
+  rows.push({
+    _SheetOrigin: 'Marea', Fecha: '06/06/2026', 'Fase Lunar': 'Gibosa menguante', '%Iluminación': '98', 'Tipo de Marea': 'Muerta',
+    'Pleamar 1': '05:29', 'Altura P1 (m)': '2.03', 'Bajamar 1': '11:30', 'Altura B1 (m)': '0.70',
+    'Pleamar 2': '17:22', 'Altura P2 (m)': '1.93', 'Bajamar 2': '23:39', 'Altura B2 (m)': '0.40', 'Amplitud (m)': '1.63',
+  });
   return rows;
 }
 
@@ -182,15 +193,44 @@ describe('Supervisor · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
-  it('modal Mareas · el botón abre el modal placeholder y cierra', () => {
+  it('modal Mareas · abre (Día: ola/KPIs/tabla), cambia a Mes, navega día y cierra', () => {
     const root = mount();
     click(root.querySelector('.sv-card[data-nav="module"]'));
     const btn = root.querySelector('[data-mareas-open]');
     expect(btn).toBeTruthy();
     click(btn);
     const modal = root.querySelector('#svMareasModal');
-    expect(modal).toBeTruthy();
     expect(modal.classList.contains('sv-open')).toBe(true);
+    // Vista Día (render síncrono en onOpen): curva de ola + tabla de lecturas + selector.
+    click(modal.querySelector('[data-mareamode="dia"]'));
+    expect(root.querySelector('.sv-marea-grid')).toBeTruthy();
+    expect(root.querySelector('.sv-marea-wave')).toBeTruthy();
+    expect(root.querySelector('.sv-marea-table')).toBeTruthy();
+    // Ampliación (fullscreen) del perfil de marea: abre y cierra.
+    click(root.querySelector('[data-marea-wave-fs]'));
+    expect(root.querySelector('#mareaWaveFs').classList.contains('is-open')).toBe(true);
+    click(root.querySelector('[data-marea-wave-fsclose]'));
+    expect(root.querySelector('#mareaWaveFs').classList.contains('is-open')).toBe(false);
+    // Cambiar a Mes → hosts de tendencia + donut.
+    click(modal.querySelector('[data-mareamode="mes"]'));
+    expect(root.querySelector('#mareaTrendChart')).toBeTruthy();
+    expect(root.querySelector('#mareaDonutChart')).toBeTruthy();
+    // Fullscreen de un gráfico del Mes: abre y cierra.
+    click(root.querySelector('[data-marea-chart-fs="trend"]'));
+    expect(root.querySelector('#mareaChartFs').classList.contains('is-open')).toBe(true);
+    click(root.querySelector('[data-marea-chart-fsclose]'));
+    expect(root.querySelector('#mareaChartFs').classList.contains('is-open')).toBe(false);
+    // Correlación → barra de fuente (Micro/Calidad) y matriz; alternar fuente no rompe.
+    click(modal.querySelector('[data-mareamode="corr"]'));
+    expect(root.querySelector('[data-corr-kind="micro"]')).toBeTruthy();
+    expect(root.querySelector('[data-corr-mod]')).toBeNull(); // ya no hay filtro por módulo
+    click(root.querySelector('[data-corr-kind="calagua"]'));
+    expect(root.querySelector('[data-corr-kind="calagua"]').classList.contains('is-on')).toBe(true);
+    // Volver a Día y navegar al día siguiente con ▶.
+    click(modal.querySelector('[data-mareamode="dia"]'));
+    const next = root.querySelector('.sv-marea-daynav [data-marea-day]:not([disabled])');
+    if (next) click(next);
+    // Cerrar.
     click(modal.querySelector('[data-mareas-close]'));
     expect(modal.classList.contains('sv-open')).toBe(false);
     expect(errSpy).not.toHaveBeenCalled();
