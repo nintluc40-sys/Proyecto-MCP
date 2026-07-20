@@ -38,6 +38,9 @@ function synthData() {
   ['M1', 'PBR1'].forEach((sis, i) => {
     rows.push({ _SheetOrigin: 'Lab_Algas', Corrida_Larv: '573', Modulo_Larv: 'M01', Sistema: sis, Fecha: '04/06/2026', Cel_ml: String(20000 + i * 5000), Protozoarios: i ? '6' : '2', Descartado: i ? 'Sí' : 'No', Observaciones: i ? 'revisar' : '' });
   });
+  // Microbiología + Calidad de Agua (junio, agrupadas por FECHA-calendario) → bloque de laboratorio.
+  rows.push({ _SheetOrigin: 'Microbiología', 'Fecha muestreo': '05/06/2026', Formato: 'Larvicultura · Muestra', 'Tipo de muestra': 'Animal', 'Módulo/Sala': '1', 'V.Amarillos UFC': '12000' }); // Elevado → alerta
+  rows.push({ _SheetOrigin: 'Calidad de Agua', 'Fecha muestreo': '05/06/2026', Formato: 'Larvicultura', Departamento: 'Larvicultura', 'Módulo': '1', pH: '8.0', Nitrito: '0.5' }); // pH dentro · Nitrito fuera
   return rows;
 }
 
@@ -62,6 +65,7 @@ describe('Visitante · harness de navegación integral', () => {
     expect(root.querySelector('.vt-metricbar')).toBeTruthy();
     expect(root.textContent).toContain('Resumen del mes');
     expect(root.textContent).toContain('Microalgas');
+    expect(root.textContent).toContain('Laboratorio de agua y sanidad'); // bloque micro + calidad de agua
     expect(errSpy).not.toHaveBeenCalled();
   });
 
@@ -76,9 +80,9 @@ describe('Visitante · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
-  it('abre y cierra el detalle de cada una de las 8 tarjetas del resumen', () => {
+  it('abre y cierra el detalle de cada tarjeta del resumen (incl. laboratorio micro/agua)', () => {
     visitanteView(root);
-    const keys = ['calidad', 'superv', 'cobertura', 'revisiones', 'sanidad', 'analisis', 'algasCultivos', 'algasSanidad'];
+    const keys = ['calidad', 'superv', 'cobertura', 'revisiones', 'sanidad', 'analisis', 'labMicro', 'labAgua', 'algasCultivos', 'algasSanidad'];
     keys.forEach((k) => {
       const card = root.querySelector(`[data-sum="${k}"]`);
       expect(card, k).toBeTruthy();

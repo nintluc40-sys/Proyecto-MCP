@@ -249,14 +249,27 @@ export function calWQI(measures, ranges) {
   return { wqi, subs, worst, n: subs.length };
 }
 
-/** Nivel de riesgo de un nodo a partir de la lista de severidades de sus mediciones. */
-export function calRiskLevel(severities) {
-  const s = severities || [];
-  if (s.includes('critico')) return 'critico';
-  if (s.includes('fuera')) return 'alto';
-  if (s.includes('vigilancia')) return 'medio';
-  if (s.includes('optimo')) return 'bajo';
-  return 'sin-datos';
+/** Nivel de riesgo de un nodo. PROPORCIONAL: cuando se pasa el `wqi` (media de los
+ *  sub-índices), el riesgo se deriva de sus bandas — igual que el medidor del panel —
+ *  para que UN parámetro fuera entre 4–6 no dispare "riesgo alto/crítico" (el promedio
+ *  ya lo pondera). Como el WQI puede DILUIR un parámetro grave puntual, se añade un piso
+ *  por conteo de críticos. Sin `wqi` (uso directo/pruebas) conserva el criterio antiguo
+ *  por peor severidad. */
+export function calRiskLevel(severities, wqi) {
+  const s = (severities || []).filter((x) => x !== 'sin-rango');
+  if (!s.length) return 'sin-datos';
+  const nCrit = s.filter((x) => x === 'critico').length;
+  const nOut = s.filter((x) => x === 'critico' || x === 'fuera').length;
+  if (wqi == null) {
+    // Sin WQI: peor severidad (comportamiento histórico, preservado para las pruebas).
+    return nCrit ? 'critico' : nOut ? 'alto' : s.includes('vigilancia') ? 'medio' : 'bajo';
+  }
+  const rank = { bajo: 0, medio: 1, alto: 2, critico: 3 };
+  let base = wqi >= 85 ? 'bajo' : wqi >= 70 ? 'medio' : wqi >= 50 ? 'alto' : 'critico';
+  // Piso: no diluir parámetros críticos puntuales bajo el promedio.
+  if (nCrit >= 1 && rank[base] < rank.medio) base = 'medio';
+  if (nCrit >= 2 && rank[base] < rank.alto) base = 'alto';
+  return base;
 }
 
 // Etiqueta de un tanque/nodo desde su contexto (TQ preferido; respaldos por depto).
@@ -274,7 +287,7 @@ export function calGroupTree(samples, ranges) {
     const sev = meas.map((m) => m.severity);
     const crit = [...new Set(meas.filter((m) => m.severity === 'fuera' || m.severity === 'critico').map((m) => m.label))];
     const last = list.reduce((mx, s) => Math.max(mx, s.ctx.fecha ? +s.ctx.fecha : 0), 0) || null;
-    return { label, samples: list, n: list.length, wqi: w.wqi, worst: w.worst, sev, risk: calRiskLevel(sev), crit, last };
+    return { label, samples: list, n: list.length, wqi: w.wqi, worst: w.worst, sev, risk: calRiskLevel(sev, w.wqi), crit, last };
   };
   const modMap = new Map();
   (samples || []).forEach((s) => {
@@ -351,13 +364,14 @@ export function calDiagnosis(samples, ranges) {
 /* ── Orden biológico de estadíos para el filtro (AS → Nauplio → Zoea → Mysis → PL) ── */
 const CAL_STAGE_GROUP = { AS: 0, N: 1, Z: 2, M: 3, PL: 4 };
 /** Descompone un estadío ("N5 (MB)", "Z2", "AS", "PL10") en clave ordenable:
- *  grupo (AS<N<Z<M<PL) → número → variante con paréntesis ANTES de la simple. */
+ *  grupo (AS<N<Z<M<PL) → número → la variante SIMPLE antes que la de paréntesis
+ *  (p. ej. "N5" antes de "N5 (MB)"). */
 function calStageKey(s) {
   const t = String(s == null ? '' : s).trim().toUpperCase();
   const m = t.match(/^(AS|PL|N|Z|M)\s*0*(\d+)?\s*(.*)$/);
   if (!m) return { g: 9, n: 0, q: 1, qual: t, raw: t };
   const qual = (m[3] || '').trim();
-  return { g: CAL_STAGE_GROUP[m[1]] ?? 8, n: m[2] ? +m[2] : -1, q: qual ? 0 : 1, qual, raw: t };
+  return { g: CAL_STAGE_GROUP[m[1]] ?? 8, n: m[2] ? +m[2] : -1, q: qual ? 1 : 0, qual, raw: t };
 }
 /** Comparador de estadíos para ordenar el filtro de Calidad de Agua. */
 export function calStageCmp(a, b) {

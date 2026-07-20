@@ -44,6 +44,7 @@ export function classifyOrigin(name) {
   if (/registro[_\s]*supervisi/i.test(n)) return 'Registro_Supervision';
   if (/microbiolog/i.test(n)) return 'Microbiología';
   if (/calidad\s*de\s*agua/i.test(n)) return 'Calidad de Agua';
+  if (/^marea/i.test(n)) return 'Marea';
   if (/biomol/i.test(n)) return 'Biomol';
   if (/larvicultura|larvi/i.test(n)) return 'Larvicultura';
   // Hojas del Registro reproductivo (Maduración): _SheetOrigin específico para que la
@@ -202,55 +203,89 @@ async function fetchCSV(url, retries = 2) {
   throw lastErr;
 }
 
-/** Descubre los gid (>0) de las pestañas mediante scraping del HTML publicado. */
+/** Extrae las pestañas (gid + nombre) del HTML de una hoja de Google. Fuente principal:
+ *  el bloque `items.push({name:"Hoja", pageUrl:"...gid=NNN"})` de /htmlview (nombre y gid
+ *  autoritativos, disponible con permiso de lectura por enlace SIN publicar el documento).
+ *  Respaldo: cualquier gid suelto del HTML. Puro y testeable. */
+export function extractSheetTabs(html) {
+  const found = new Map(); // gid -> title
+  const nameRe = /items\.push\(\{name:\s*"([^"]+)"[\s\S]{1,200}?gid=(\d+)/g;
+  let m;
+  while ((m = nameRe.exec(html)) !== null) { const g = +m[2]; if (!found.has(g)) found.set(g, m[1]); }
+  // Respaldo sin nombre: gids sueltos (≥4 dígitos para evitar falsos positivos).
+  [/[?&#"'=]gid=(\d{4,})/g, /"gid"\s*:\s*"(\d+)"/g, /data-gid="(\d+)"/g].forEach((re) => {
+    let mm; while ((mm = re.exec(html)) !== null) { const g = +mm[1]; if (g > 0 && !found.has(g)) found.set(g, ''); }
+  });
+  return [...found.entries()].map(([gid, title]) => ({ gid, title }));
+}
+
+// Caché persistente de las pestañas descubiertas (por documento). Permite recuperar todas
+// las hojas aunque la enumeración falle puntualmente (p. ej. un 5xx transitorio de Google).
+const GID_CACHE_KEY = 'larv4_sheet_tabs';
+function cacheTabs(docId, list) {
+  try { const all = JSON.parse(localStorage.getItem(GID_CACHE_KEY) || '{}'); all[docId] = list; localStorage.setItem(GID_CACHE_KEY, JSON.stringify(all)); } catch (_) {}
+}
+function cachedTabs(docId) {
+  try { const all = JSON.parse(localStorage.getItem(GID_CACHE_KEY) || '{}'); return Array.isArray(all[docId]) ? all[docId] : []; } catch (_) { return []; }
+}
+
+// Ejecuta `fn` sobre `items` con concurrencia acotada (acelera el fallback CSV de N hojas
+// sin saturar/limitar la API de Google). Conserva el orden en el array de resultados.
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let i = 0;
+  const worker = async () => { while (i < items.length) { const idx = i++; out[idx] = await fn(items[idx]); } };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
+/** Descubre las pestañas (gid + nombre) de un documento accesible por enlace, SIN depender
+ *  de que esté "publicado en la web": raspa /htmlview (funciona con lectura por enlace),
+ *  con /pub como respaldo, y cachea el resultado. Si la enumeración falla, usa la caché. */
 async function discoverGids(ids) {
-  const list = [];
   let realId = ids.type === 'real' ? ids.realId : null;
   if (!realId && ids.type === 'pub') {
     try {
       const r = await fetchWithTimeout(`https://docs.google.com/spreadsheets/d/e/${ids.pubId}/pub`, { cache: 'no-store' });
-      const m = (await r.text()).match(/spreadsheets\/d\/([a-zA-Z0-9_-]{20,})/);
-      if (m) realId = m[1];
+      const mm = (await r.text()).match(/spreadsheets\/d\/([a-zA-Z0-9_-]{20,})/);
+      if (mm) realId = mm[1];
     } catch (_) {}
   }
-  try {
-    const htmlUrl = ids.type === 'pub'
+  const docId = realId || ids.pubId || '';
+  const merge = new Map();
+  const scrape = async (url) => {
+    try {
+      const r = await fetchWithTimeout(url, { cache: 'no-store' });
+      if (!r.ok) return;
+      extractSheetTabs(await r.text()).forEach((t) => { if (!merge.has(t.gid) || (!merge.get(t.gid) && t.title)) merge.set(t.gid, t.title); });
+    } catch (_) {}
+  };
+  if (realId) await scrape(`https://docs.google.com/spreadsheets/d/${realId}/htmlview`);
+  if (!merge.size) {
+    const pubUrl = ids.type === 'pub'
       ? `https://docs.google.com/spreadsheets/d/e/${ids.pubId}/pub`
-      : `https://docs.google.com/spreadsheets/d/${ids.realId}/pub`;
-    const r = await fetchWithTimeout(htmlUrl, { cache: 'no-store' });
-    if (r.ok) {
-      const html = await r.text();
-      const seen = new Set([0]);
-      [/[?&#"'=]gid=(\d{4,})/g, /"gid"\s*:\s*"(\d+)"/g, /data-gid="(\d+)"/g].forEach((re) => {
-        let m; while ((m = re.exec(html)) !== null) { const g = +m[1]; if (g > 0 && !seen.has(g)) { seen.add(g); list.push({ gid: g, title: '' }); } }
-      });
-      const titleRe = /gid=(\d+)[^>]{0,200}>([^<]{1,60})<\/(?:a|li|span)/g;
-      let m; while ((m = titleRe.exec(html)) !== null) {
-        const g = +m[1], t = m[2].trim().replace(/&amp;/g, '&');
-        const ex = list.find((x) => x.gid === g);
-        if (ex && !ex.title && t) ex.title = t;
-      }
-    }
-  } catch (_) {}
-  return list;
+      : (realId ? `https://docs.google.com/spreadsheets/d/${realId}/pub` : null);
+    if (pubUrl) await scrape(pubUrl);
+  }
+  const list = [...merge.entries()].map(([gid, title]) => ({ gid, title }));
+  if (list.length) { if (docId) cacheTabs(docId, list); return list; }
+  return docId ? cachedTabs(docId) : [];
 }
 
 async function fetchViaCsv(ids) {
   const sheets = {};
-  const first = parseCSV(await fetchCSV(buildCsvUrl(ids, 0)));
-  if (first.length) {
-    const name = detectSheetName(first, 0);
-    sheets[name] = stampRows(first, name);
-  }
-  for (const { gid, title } of await discoverGids(ids)) {
-    if (!gid) continue;
+  const discovered = await discoverGids(ids);
+  // Con pestañas descubiertas (o cacheadas) se bajan TODAS por gid; sin ninguna, último
+  // recurso: la 1ª hoja (gid 0) para no dejar el sistema completamente vacío.
+  const targets = discovered.length ? discovered : [{ gid: 0, title: '' }];
+  const results = await mapLimit(targets, 6, async ({ gid, title }) => {
     try {
       const rows = parseCSV(await fetchCSV(buildCsvUrl(ids, gid), 1));
-      if (!rows.length) continue;
-      const name = title || detectSheetName(rows, gid);
-      if (!sheets[name]) sheets[name] = stampRows(rows, name);
-    } catch (_) {}
-  }
+      if (!rows.length) return null;
+      return { name: title || detectSheetName(rows, gid), rows };
+    } catch (_) { return null; }
+  });
+  results.forEach((res) => { if (res && !sheets[res.name]) sheets[res.name] = stampRows(res.rows, res.name); });
   return sheets;
 }
 
@@ -273,6 +308,9 @@ export function applySheets(sheets) {
 
   let latest = 0;
   rows.forEach((row) => {
+    // La hoja "Marea" trae PREDICCIONES futuras (INOCAR): no deben estirar el rango de
+    // fecha global (presets 7/30 días, "última fecha") del resto de vistas operativas.
+    if (row._SheetOrigin === 'Marea') return;
     const d = parseAnyDate(getField(row, F.fecha));
     if (d && !isNaN(d) && d.getTime() > latest) latest = d.getTime();
   });
@@ -336,18 +374,19 @@ export function dataFingerprint(sheets) {
 export async function fetchAllSheets() {
   const ids = parseSheetsIds(activeUrl());
   if (!ids) throw new Error('URL de Google Sheets inválida.');
-  // XLSX-first CON REINTENTOS. El XLSX trae TODAS las hojas en una sola petición;
-  // el fallback CSV, en cambio, sólo garantiza la 1ª hoja (descubre el resto por
-  // scraping, que falla si el doc no está "publicado en la web"). Por eso una caída
-  // TRANSITORIA del XLSX (timeout/HTTP/red) NO debe degradar a CSV a la primera:
-  // reintentamos con backoff. Es la causa raíz del bug "se actualiza y sólo carga
-  // 1 hoja, hay que refrescar para verlas todas".
+  // XLSX-first CON REINTENTOS. El XLSX trae TODAS las hojas en una sola petición; una caída
+  // TRANSITORIA (timeout/red/5xx) NO debe degradar a la primera, así que reintentamos con
+  // backoff. El fallback CSV es ROBUSTO: enumera TODAS las hojas por /htmlview (no requiere
+  // publicar el documento) y las baja por gviz hoja a hoja.
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const wb = await fetchWorkbook(ids);
       if (wb) return workbookToSheets(wb);
       break; // wb nulo (sin hojas) no es transitorio: pasa directo al CSV
-    } catch (_) {
+    } catch (e) {
+      // 401/403: el endpoint de exportación exige autenticación (documento compartido sólo
+      // por enlace, no público para /export). Reintentar es inútil → pasa YA al fallback CSV.
+      if (/\b(401|403)\b/.test(String((e && e.message) || ''))) break;
       if (attempt < 2) await new Promise((r) => setTimeout(r, 600 * 2 ** attempt));
     }
   }

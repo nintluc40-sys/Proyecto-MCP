@@ -10,6 +10,11 @@ import { store } from '../../core/store.js';
 import { getField, parseNum, F, isLarviculturaRow } from '../../core/fields.js';
 import { fmtPct } from '../../core/util.js';
 import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt, monthIndexOfCorrida } from '../../core/prodCalendar.js';
+import { parseAnyDate } from '../../core/dates.js';
+// Capas de datos PURAS de laboratorio (ya en el bundle base vía la vista Microbiología →
+// no inflan el bundle de Visitante; solo se reutiliza su lógica de umbrales/rangos).
+import { meltRow as micMelt, isAlerta as micIsAlerta } from '../microbiologia/data.js';
+import { calMeasured, calWQI, loadCalRanges } from '../microbiologia/calagua.data.js';
 
 // Estado persistente entre re-render (ÍNDICE de mes + métrica del gráfico).
 const vtState = { monthIdx: null, metric: 'superv' };
@@ -166,6 +171,66 @@ function algasSummaryBlock(mIdx) {
     <div style="display:flex;gap:12px;flex-wrap:wrap">
       ${sumCard('🌿', 'Cultivos de microalgas', `${s.cultivos} cultivos`, `densidad prom. ${fmtK(s.densAvg)} cel/ml`, 'algasCultivos', '#015B76')}
       ${sumCard('🦠', 'Sanidad de las algas', semChip(sanTier, `${s.descPct.toFixed(0)}% descarte`), `${s.desc} descartado(s) · protoz. altos en ${s.protoAlert} reg.`, 'algasSanidad', '#015B76')}
+    </div>
+  </div>`;
+}
+
+/* ============================================================
+   RESUMEN DE LABORATORIO (Microbiología + Calidad de Agua) para Visitante.
+   Estas hojas se registran por FECHA de muestreo (no por corrida), así que se
+   agrupan por MES-CALENDARIO. El mes-calendario del panel se ancla al periodo
+   real de las corridas del mes (fechas de Larvicultura), para coincidir con el
+   resto de la vista. Reutiliza la lógica pura de umbrales/rangos de laboratorio.
+   ============================================================ */
+const LAB_DATE_KEYS = ['Fecha muestreo', 'Fecha de muestreo', 'Fecha resultados', 'Fecha', 'fecha'];
+const labDate = (r) => parseAnyDate(getField(r, LAB_DATE_KEYS));
+/** Mes-calendario (año, mes 0-11) del mes de Visitante = el más común entre las fechas de
+ *  Larvicultura de sus corridas. null si no hay con qué anclar. */
+function labCalMonth(mIdx) {
+  const cors = new Set(corridasOfMonth(mIdx));
+  const counts = new Map();
+  store.globalData.forEach((r) => {
+    if (!isLarviculturaRow(r) || !cors.has(getField(r, F.corrida))) return;
+    const d = parseAnyDate(getField(r, F.fecha));
+    if (!d || isNaN(d)) return;
+    const k = d.getFullYear() + '-' + d.getMonth();
+    counts.set(k, (counts.get(k) || 0) + 1);
+  });
+  let best = null, bestN = 0;
+  counts.forEach((n, k) => { if (n > bestN) { bestN = n; best = k; } });
+  if (!best) return null;
+  const [y, m] = best.split('-').map(Number);
+  return { year: y, month: m };
+}
+const inCalMonth = (r, cm) => { if (!cm) return false; const d = labDate(r); return !!d && !isNaN(d) && d.getFullYear() === cm.year && d.getMonth() === cm.month; };
+
+/** Resumen de laboratorio del mes (micro: % de muestras en alerta · agua: WQI y % en rango). */
+function labSummary(mIdx) {
+  const cm = labCalMonth(mIdx);
+  const micRows = store.globalData.filter((r) => r._SheetOrigin === 'Microbiología' && inCalMonth(r, cm));
+  const micAlert = micRows.filter((r) => micMelt(r).some((m) => micIsAlerta(m.nivel))).length;
+  const micPct = micRows.length ? Math.round(micAlert / micRows.length * 100) : null;
+  const micTier = !micRows.length ? 'x' : micAlert === 0 ? 'v' : micPct <= 20 ? 'a' : 'r';
+  const calRows = store.globalData.filter((r) => r._SheetOrigin === 'Calidad de Agua' && inCalMonth(r, cm));
+  const ranges = loadCalRanges();
+  const measures = calRows.flatMap((r) => calMeasured(r, ranges));
+  const evaluable = measures.filter((m) => m.estado === 'dentro' || m.estado === 'fuera');
+  const calPct = evaluable.length ? Math.round(evaluable.filter((m) => m.estado === 'dentro').length / evaluable.length * 100) : null;
+  const wqi = calWQI(measures, ranges).wqi;
+  const calTier = calPct == null ? 'x' : calPct >= 90 ? 'v' : calPct >= 70 ? 'a' : 'r';
+  return { cm, micRows, micAlert, micPct, micTier, calRows, measures, calPct, wqi, calTier };
+}
+
+/** Bloque "🧫 Laboratorio de agua y sanidad" (2 tarjetas clicables) para Visitante. */
+function labSummaryBlock(mIdx) {
+  const s = labSummary(mIdx);
+  if (!s.micRows.length && !s.calRows.length) return ''; // sin datos de laboratorio este mes
+  const AC = '#00838f';
+  return `<div class="card vt-card">
+    <div class="vt-card-title" style="color:${AC}">🧫 Laboratorio de agua y sanidad · ${esc(monthLabelAt(mIdx))} <span class="muted" style="font-weight:600;font-size:12px">· microbiología y calidad de agua</span></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      ${sumCard('🧫', 'Microbiología', s.micRows.length ? semChip(s.micTier, `${s.micPct}% en alerta`) : semChip('x', 'Sin muestras'), s.micRows.length ? `${s.micRows.length} muestra(s) · ${s.micAlert} en nivel alto` : 'Sin análisis microbiológicos', 'labMicro', AC)}
+      ${sumCard('💧', 'Calidad del agua', s.calRows.length ? semChip(s.calTier, `${s.calPct}% en rango`) : semChip('x', 'Sin muestras'), s.calRows.length ? `${s.calRows.length} muestra(s) · WQI ${s.wqi == null ? '—' : s.wqi}` : 'Sin análisis de agua', 'labAgua', AC)}
     </div>
   </div>`;
 }
@@ -332,6 +397,36 @@ function sumDetail(key, mIdx, monthSup) {
       + algTealP('🦠 Por categoría') + detailTable(['Categoría', 'Protoz. ≥ 5', 'Descartados', '% Descarte'], catBody) };
   }
 
+  if (key === 'labMicro' || key === 'labAgua') {
+    const s = labSummary(mIdx);
+    if (key === 'labMicro') {
+      if (!s.micRows.length) return { title: '🧫 Microbiología', html: '<p style="color:var(--c-text-muted)">Sin análisis microbiológicos este mes.</p>' };
+      const byPat = new Map();
+      s.micRows.forEach((r) => micMelt(r).forEach((m) => {
+        if (!m.nivel) return;
+        const o = byPat.get(m.label) || { alert: 0, total: 0 }; o.total++; if (micIsAlerta(m.nivel)) o.alert++; byPat.set(m.label, o);
+      }));
+      const body = [...byPat.entries()].filter(([, o]) => o.alert > 0).sort((a, b) => b[1].alert - a[1].alert)
+        .map(([lbl, o]) => `<tr><td>${esc(lbl)}</td><td><b>${o.alert}</b></td><td>${o.total}</td></tr>`).join('');
+      return { title: '🧫 Microbiología del mes', html:
+        `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${s.micRows.length} muestra(s) · <b>${s.micAlert}</b> con algún patógeno en nivel Moderado/Elevado (${s.micPct}%).</p>`
+        + (body ? detailTable(['Patógeno', 'En alerta', 'Muestras'], body) : '<p style="color:#2E9E5B;font-weight:700">🟢 Sin patógenos en nivel alto este mes.</p>') };
+    }
+    if (!s.calRows.length) return { title: '💧 Calidad del agua', html: '<p style="color:var(--c-text-muted)">Sin análisis de agua este mes.</p>' };
+    const byParam = new Map();
+    s.measures.forEach((m) => {
+      if (m.estado !== 'dentro' && m.estado !== 'fuera') return;
+      const o = byParam.get(m.label) || { inRange: 0, out: 0, unit: m.unit }; if (m.estado === 'dentro') o.inRange++; else o.out++; byParam.set(m.label, o);
+    });
+    const body = [...byParam.entries()].sort((a, b) => b[1].out - a[1].out).map(([lbl, o]) => {
+      const tot = o.inRange + o.out; const pct = Math.round(o.inRange / tot * 100); const col = pct >= 90 ? '#2E9E5B' : pct >= 70 ? '#E6A100' : '#D64545';
+      return `<tr><td>${esc(lbl)}${o.unit ? ` <span style="color:var(--c-text-muted)">(${esc(o.unit)})</span>` : ''}</td><td>${o.inRange}</td><td>${o.out}</td><td style="color:${col};font-weight:800">${pct}%</td></tr>`;
+    }).join('');
+    return { title: '💧 Calidad del agua del mes', html:
+      `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${s.calRows.length} muestra(s) · índice de calidad del agua (WQI): <b>${s.wqi == null ? '—' : s.wqi}</b> · <b>${s.calPct}%</b> de parámetros en rango.</p>`
+      + (body ? detailTable(['Parámetro', 'En rango', 'Fuera', '% en rango'], body) : '<p style="color:var(--c-text-muted)">Sin parámetros con rango objetivo.</p>') };
+  }
+
   return { title: 'Detalle', html: '<p style="color:var(--c-text-muted)">Sin detalle.</p>' };
 }
 
@@ -445,6 +540,7 @@ export function visitanteView(root) {
       </div>
 
       ${summaryBlock(mIdx, d.monthSup, label)}
+      ${labSummaryBlock(mIdx)}
       ${algasSummaryBlock(mIdx)}`;
 
     // Gráfico de barras por corrida.

@@ -42,6 +42,20 @@ describe('prodTableHTML · fila "Subtotal actual" (despachados)', () => {
     expect(html).not.toContain('Subtotal actual');
   });
 
+  it('NO aparece si el subtotal IGUALA numéricamente al Total aunque queden corridas pendientes (sin siembra/cosecha)', () => {
+    // 579 (M06) despachada con datos · 580 (M08) pendiente PERO sin población (no aporta
+    // siembra ni cosecha) → subtotal == total → la franja sería redundante y desaparece.
+    store.globalData = [
+      row('M06', '579', 'TQ1', 1000, '01/07/2026'),
+      row('M06', '579', 'TQ1', 700, '10/07/2026', true),
+      row('M08', '580', 'TQ1', 0, '01/07/2026'),
+      row('M08', '580', 'TQ1', 0, '10/07/2026'),
+    ];
+    const months = presentMonths();
+    const html = prodTableHTML(months, months.length - 1);
+    expect(html).not.toContain('Subtotal actual');
+  });
+
   it('aparece aunque la corrida despachada NO sea el prefijo inicial (suma solo las despachadas)', () => {
     // 579 (M06) PENDIENTE · 580 (M08) DESPACHADA → el subtotal debe aparecer igual,
     // ubicado tras M08 (la última despachada), no ausente por no ser prefijo contiguo.

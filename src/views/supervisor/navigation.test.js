@@ -71,12 +71,12 @@ function synthData() {
   rows.push({
     _SheetOrigin: 'Microbiología', 'Fecha muestreo': '05/06/2026', Corrida: '573', 'Módulo/Sala': '1',
     Formato: 'Larvicultura · Muestra', 'Tipo de muestra': 'Animal', 'TQ/N°': '1', 'Estadío': 'PL2',
-    'V.Totales UFC': '5000', 'V.Amarillos UFC': '1200', 'V.Totales Nivel': 'Leve',
+    'V.Totales UFC': '5000', 'V.Amarillos UFC': '1200', 'V.Totales Nivel': 'Leve', 'V.Luminiscentes': 'Presente',
   });
   rows.push({
     _SheetOrigin: 'Microbiología', 'Fecha muestreo': '07/06/2026', Corrida: '573', 'Módulo/Sala': '1',
     Formato: 'Larvicultura · Muestra', 'Tipo de muestra': 'Animal', 'TQ/N°': '1', 'Estadío': 'PL5',
-    'V.Totales UFC': '8000', 'V.Amarillos UFC': '900', 'V.Totales Nivel': 'Moderado',
+    'V.Totales UFC': '8000', 'V.Amarillos UFC': '900', 'V.Totales Nivel': 'Moderado', 'V.Luminiscentes': 'Ausente',
   });
   // Calidad de Agua (hoja propia) del módulo 1 → modal Calidad de Agua (Tabla/Matriz/Tendencias).
   // 2 tanques × 2 fechas con pH/S‰/Alcalinidad/Nitrito (Alcalinidad de TQ2 cae fuera de rango).
@@ -95,6 +95,17 @@ function synthData() {
   rows.push({
     _SheetOrigin: 'Registro_Desinfección', 'Módulo': 'M01', Corrida: '573', Fecha: '20/05/2026',
     'Tipo de Registro': 'Desinfección de módulo larvicultura', 'Categoría': 'Paredes', Elemento: 'Muro', Estado: 'Sí', Observaciones: '',
+  });
+  // Marea (hoja propia, referencia de sitio) → modal Mareas. 2 días para navegar.
+  rows.push({
+    _SheetOrigin: 'Marea', Fecha: '05/06/2026', 'Fase Lunar': 'Luna llena', '%Iluminación': '100', 'Tipo de Marea': 'Viva',
+    'Pleamar 1': '04:55', 'Altura P1 (m)': '2.02', 'Bajamar 1': '10:55', 'Altura B1 (m)': '0.71',
+    'Pleamar 2': '16:46', 'Altura P2 (m)': '1.92', 'Bajamar 2': '23:03', 'Altura B2 (m)': '0.40', 'Amplitud (m)': '1.62',
+  });
+  rows.push({
+    _SheetOrigin: 'Marea', Fecha: '06/06/2026', 'Fase Lunar': 'Gibosa menguante', '%Iluminación': '98', 'Tipo de Marea': 'Muerta',
+    'Pleamar 1': '05:29', 'Altura P1 (m)': '2.03', 'Bajamar 1': '11:30', 'Altura B1 (m)': '0.70',
+    'Pleamar 2': '17:22', 'Altura P2 (m)': '1.93', 'Bajamar 2': '23:39', 'Altura B2 (m)': '0.40', 'Amplitud (m)': '1.63',
   });
   return rows;
 }
@@ -179,6 +190,71 @@ describe('Supervisor · harness de navegación integral', () => {
     const all = modal.querySelector('[data-trace-all]');
     all.checked = false; all.dispatchEvent(new Event('change'));
     expect([...modal.querySelectorAll('[data-trace-fid]')].every((c) => !c.checked)).toBe(true);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('modal Mareas · abre (Día: ola/KPIs/tabla), cambia a Mes, navega día y cierra', () => {
+    const root = mount();
+    click(root.querySelector('.sv-card[data-nav="module"]'));
+    const btn = root.querySelector('[data-mareas-open]');
+    expect(btn).toBeTruthy();
+    click(btn);
+    const modal = root.querySelector('#svMareasModal');
+    expect(modal.classList.contains('sv-open')).toBe(true);
+    // Vista Día (render síncrono en onOpen): curva de ola + tabla de lecturas + selector.
+    click(modal.querySelector('[data-mareamode="dia"]'));
+    expect(root.querySelector('.sv-marea-grid')).toBeTruthy();
+    expect(root.querySelector('.sv-marea-wave')).toBeTruthy();
+    expect(root.querySelector('.sv-marea-table')).toBeTruthy();
+    // Ampliación (fullscreen) del perfil de marea: abre y cierra.
+    click(root.querySelector('[data-marea-wave-fs]'));
+    expect(root.querySelector('#mareaWaveFs').classList.contains('is-open')).toBe(true);
+    click(root.querySelector('[data-marea-wave-fsclose]'));
+    expect(root.querySelector('#mareaWaveFs').classList.contains('is-open')).toBe(false);
+    // Cambiar a Mes → hosts de tendencia + donut.
+    click(modal.querySelector('[data-mareamode="mes"]'));
+    expect(root.querySelector('#mareaTrendChart')).toBeTruthy();
+    expect(root.querySelector('#mareaDonutChart')).toBeTruthy();
+    // Fullscreen de un gráfico del Mes: abre y cierra.
+    click(root.querySelector('[data-marea-chart-fs="trend"]'));
+    expect(root.querySelector('#mareaChartFs').classList.contains('is-open')).toBe(true);
+    click(root.querySelector('[data-marea-chart-fsclose]'));
+    expect(root.querySelector('#mareaChartFs').classList.contains('is-open')).toBe(false);
+    // Correlación → barra de fuente (Micro/Calidad) y matriz; alternar fuente no rompe.
+    click(modal.querySelector('[data-mareamode="corr"]'));
+    expect(root.querySelector('[data-corr-kind="micro"]')).toBeTruthy();
+    expect(root.querySelector('[data-corr-mod]')).toBeNull(); // ya no hay filtro por módulo
+    click(root.querySelector('[data-corr-kind="calagua"]'));
+    expect(root.querySelector('[data-corr-kind="calagua"]').classList.contains('is-on')).toBe(true);
+    // Volver a Día y navegar al día siguiente con ▶.
+    click(modal.querySelector('[data-mareamode="dia"]'));
+    const next = root.querySelector('.sv-marea-daynav [data-marea-day]:not([disabled])');
+    if (next) click(next);
+    // Cerrar.
+    click(modal.querySelector('[data-mareas-close]'));
+    expect(modal.classList.contains('sv-open')).toBe(false);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('modal Microbiología · V. Luminiscentes representado en placa, tabla y heatmap', () => {
+    const root = mount();
+    click(root.querySelector('.sv-card[data-nav="module"]'));
+    click(root.querySelector('[data-micro-open]'));
+    // Tabla: columna propia "V. Lumin." con estado presencia/ausencia.
+    click(root.querySelector('[data-micmode="tabla"]'));
+    const tablaTxt = root.querySelector('.sv-micro-tablewrap').textContent;
+    expect(tablaTxt).toContain('V. Lumin.');
+    expect(tablaTxt).toContain('Pres.');
+    // Heatmap: fila propia "V. Luminiscentes".
+    click(root.querySelector('[data-micmode="heatmap"]'));
+    expect(root.querySelector('.sv-micro-hm-lumin')).toBeTruthy();
+    expect(root.querySelector('.sv-micro-hm').textContent).toContain('V. Luminiscentes');
+    // Placa: chip de V. Luminiscentes en el resumen del día (clic explícito → render
+    // síncrono; el render inicial del modal usa requestAnimationFrame).
+    click(root.querySelector('[data-micmode="placa"]'));
+    const lumChip = root.querySelector('.mic-pe-lumin');
+    expect(lumChip).toBeTruthy();
+    expect(lumChip.textContent).toContain('V. Luminiscentes');
     expect(errSpy).not.toHaveBeenCalled();
   });
 

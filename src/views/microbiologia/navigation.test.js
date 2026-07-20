@@ -109,6 +109,11 @@ describe('Microbiología · harness de navegación integral', () => {
     expect(root.querySelector('.mic-kpis')).toBeTruthy();
     expect(root.querySelector('.mic-apartados')).toBeTruthy();
     expect(root.querySelector('.mic-table')).toBeTruthy();
+    // El KPI de carga suma TODOS los patógenos (excepto el agregado C. Totales), ya no solo
+    // C. Totales → etiqueta "Σ UFC total" (no "Σ UFC C. Totales").
+    const kpisTxt = root.querySelector('.mic-kpis').textContent;
+    expect(kpisTxt).toContain('Σ UFC total');
+    expect(kpisTxt).not.toContain('C. Totales');
     expect(errSpy).not.toHaveBeenCalled();
   });
 
@@ -164,9 +169,33 @@ describe('Microbiología · harness de navegación integral', () => {
     expect(depto).toBeTruthy();
     change(depto, 'Larvicultura');
     const fmt = root.querySelector('[data-micfilter="formato"]');
-    if (fmt) change(fmt, 'larv-muestra');
+    // El formato ahora se filtra por su NOMBRE real del sheet (data-driven), no por clave.
+    if (fmt && fmt.options.length > 1) change(fmt, fmt.options[1].value);
     const tqDim = root.querySelector('[data-micdim="tq"]');
     if (tqDim) change(tqDim, tqDim.options[1].value);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('filtro Departamento usa la columna REAL del sheet (incluye Algas) y estadío en orden biológico', () => {
+    store.globalData = [
+      // Larvicultura con estadíos 'N5' y 'N5 (MB)' → prueba el orden (la simple ANTES de la MB).
+      M({ 'Fecha muestreo': '05/06/2026', Corrida: '573', Departamento: 'Larvicultura', Formato: 'Larvicultura · Muestra', 'Módulo/Sala': '1', 'TQ/N°': '1', 'Estadío': 'N5 (MB)', 'V.Totales UFC': '1000' }),
+      M({ 'Fecha muestreo': '06/06/2026', Corrida: '573', Departamento: 'Larvicultura', Formato: 'Larvicultura · Muestra', 'Módulo/Sala': '1', 'TQ/N°': '1', 'Estadío': 'N5', 'V.Totales UFC': '1200' }),
+      // Algas: departamento que NO se deriva del formato → debe aparecer por la columna real.
+      M({ 'Fecha muestreo': '05/06/2026', Corrida: '573', Departamento: 'Algas', Formato: 'Algas Mensual', 'V.Totales UFC': '50' }),
+    ];
+    microbiologiaView(root);
+    click(root.querySelector('[data-mic-sub="bacteriologia"]'));
+    const depto = root.querySelector('[data-micfilter="depto"]');
+    const deptoOpts = [...depto.options].map((o) => o.value).filter(Boolean);
+    expect(deptoOpts).toContain('Algas');       // de la columna real, no derivado del formato
+    expect(deptoOpts).toContain('Larvicultura');
+    // Elegir Larvicultura → el estadío ofrece 'N5' y 'N5 (MB)' con la simple ANTES de la (MB).
+    change(depto, 'Larvicultura');
+    const est = root.querySelector('[data-micdim="estadio"]');
+    const estOpts = [...est.options].map((o) => o.value).filter(Boolean);
+    expect(estOpts.indexOf('N5')).toBeGreaterThanOrEqual(0);
+    expect(estOpts.indexOf('N5')).toBeLessThan(estOpts.indexOf('N5 (MB)'));
     expect(errSpy).not.toHaveBeenCalled();
   });
 
@@ -353,6 +382,70 @@ describe('Microbiología · harness de navegación integral', () => {
     click(root.querySelector('[data-cal-fact-save]'));
     expect(isOpen()).toBe(true); // el modal NO se cerró: el guardado se abortó
     expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('Bacteriología · editor de rangos de niveles ("Rangos"): abre, pre-rellena, cambia de área, guarda y restablece', () => {
+    mount();
+    const isOpen = () => root.querySelector('#micFactModal').classList.contains('is-open');
+    click(root.querySelector('[data-mic-factors]'));
+    expect(isOpen()).toBe(true);
+    const areaSel = root.querySelector('[data-mic-fact-area]');
+    expect(areaSel).toBeTruthy();
+    // Fijo el área (el estado es singleton entre tests) → pre-relleno con el umbral base.
+    change(areaSel, 'larv-animal');
+    expect(root.querySelector('[data-mic-rl="vamar"]').value).toBe('1000'); // Leve base
+    expect(root.querySelector('[data-mic-rm="vamar"]').value).toBe('5000'); // Moderado base
+    // Cambiar de área RE-PINTA la tabla sin cerrar el modal (umbrales propios del área).
+    change(areaSel, 'larv-agua');
+    expect(isOpen()).toBe(true);
+    expect(root.querySelector('[data-mic-rl="vverd"]').value).toBe('100'); // vverd en larv-agua
+    // Editar + guardar no lanza error (si no hay localStorage, avisa y no persiste).
+    root.querySelector('[data-mic-rl="vverd"]').value = '150';
+    click(root.querySelector('[data-mic-fact-save]'));
+    if (!isOpen()) click(root.querySelector('[data-mic-factors]'));
+    click(root.querySelector('[data-mic-fact-reset]'));
+    expect(isOpen()).toBe(false);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('Bacteriología · editor de rangos: umbral fuera de orden (Leve > Moderado) aborta el guardado', () => {
+    mount();
+    const isOpen = () => root.querySelector('#micFactModal').classList.contains('is-open');
+    click(root.querySelector('[data-mic-factors]'));
+    change(root.querySelector('[data-mic-fact-area]'), 'larv-animal');
+    // vamar base l=1000 · m=5000; fuerzo Leve=9000 > Moderado=5000 → inválido.
+    root.querySelector('[data-mic-rl="vamar"]').value = '9000';
+    click(root.querySelector('[data-mic-fact-save]'));
+    expect(isOpen()).toBe(true); // el modal NO se cerró: el guardado se abortó
+    click(root.querySelector('[data-mic-fact-close]'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('Bacteriología · editor de rangos: al guardar l/m/e NO descarta el Factor (×) fijado en la app de captura', () => {
+    // La app de captura (engine.js) y el dashboard comparten larv4_mic_factors. La captura
+    // permite ajustar `f`; este editor solo toca l/m/e y no debe perder ese `f` al reescribir.
+    // happy-dom expone Storage en `window` pero no como global suelto: se puentea para que el
+    // código de producción (localStorage bare) y el test compartan el mismo almacén.
+    const KEY = 'larv4_mic_factors';
+    const ls = window.localStorage || globalThis.localStorage;
+    if (!ls) return; // sin Storage en el entorno → el editor no persiste (nada que comprobar)
+    const hadGlobal = 'localStorage' in globalThis;
+    if (!hadGlobal) globalThis.localStorage = ls;
+    ls.setItem(KEY, JSON.stringify({ 'larv-animal': { vamar: { f: 7 } } }));
+    try {
+      mount();
+      click(root.querySelector('[data-mic-factors]'));
+      change(root.querySelector('[data-mic-fact-area]'), 'larv-animal');
+      root.querySelector('[data-mic-rl="vamar"]').value = '1200'; // Leve válido (< Moderado base)
+      click(root.querySelector('[data-mic-fact-save]'));
+      const saved = JSON.parse(ls.getItem(KEY) || '{}');
+      expect(saved['larv-animal'].vamar.f).toBe(7);   // Factor preservado
+      expect(saved['larv-animal'].vamar.l).toBe(1200); // umbral editado aplicado
+      expect(errSpy).not.toHaveBeenCalled();
+    } finally {
+      ls.removeItem(KEY);
+      if (!hadGlobal) delete globalThis.localStorage;
+    }
   });
 
   it('modal de alertas: abre desde el KPI y cierra', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { parseSheetsIds, dataFingerprint, isDegraded, classifyOrigin } from './sheets.js';
+import { parseSheetsIds, dataFingerprint, isDegraded, classifyOrigin, extractSheetTabs } from './sheets.js';
 import { store } from './store.js';
 
 describe('parseSheetsIds', () => {
@@ -28,6 +28,33 @@ describe('classifyOrigin · hojas del Registro reproductivo (Maduración)', () =
     expect(classifyOrigin('Maduración Sala')).toBe('Maduracion');
     expect(classifyOrigin('Maduración Tanques')).toBe('Maduracion');
     expect(classifyOrigin('Maduración Lotes')).toBe('Maduracion');
+  });
+  it('la hoja de Mareas se normaliza a "Marea" (incl. variantes) sin afectar a Maduración', () => {
+    expect(classifyOrigin('Marea')).toBe('Marea');
+    expect(classifyOrigin('Mareas Anconcito 2026')).toBe('Marea');
+    expect(classifyOrigin('Maduración MATRIZ')).toBe('Maduración MATRIZ'); // no lo captura /^marea/
+  });
+});
+
+describe('extractSheetTabs · enumeración de hojas desde /htmlview (sin publicar el doc)', () => {
+  it('extrae nombre + gid de cada items.push({name,...gid}) y respalda gids sueltos', () => {
+    const html = [
+      'var items=[];',
+      'items.push({name: "Registro_Supervisión", pageUrl: "https://docs.google.com/spreadsheets/d/ABC/htmlview/sheet?headers=true&gid=1776346486"});',
+      'items.push({name: "Calidad de Agua", pageUrl: "https://docs.google.com/spreadsheets/d/ABC/htmlview/sheet?headers=true&gid=1347897293"});',
+      'items.push({name: "Marea", pageUrl: "https://docs.google.com/spreadsheets/d/ABC/htmlview/sheet?headers=true&gid=50929569"});',
+      '<td data-gid="222333">celda</td>', // gid suelto (sin nombre) → respaldo
+    ].join('\n');
+    const tabs = extractSheetTabs(html);
+    const byGid = Object.fromEntries(tabs.map((t) => [t.gid, t.title]));
+    expect(byGid[1776346486]).toBe('Registro_Supervisión');
+    expect(byGid[1347897293]).toBe('Calidad de Agua');
+    expect(byGid[50929569]).toBe('Marea');
+    expect(byGid[222333]).toBe('');   // gid suelto sin nombre
+    expect(tabs.length).toBe(4);      // sin duplicar los gid ya nombrados
+  });
+  it('devuelve [] si el HTML no contiene pestañas', () => {
+    expect(extractSheetTabs('<html><body>sin pestañas</body></html>')).toEqual([]);
   });
 });
 

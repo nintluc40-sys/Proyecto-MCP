@@ -31,15 +31,22 @@ export function prodTableHTML(months, pos) {
     // Corrida despachada = TODOS sus módulos COMPLETAMENTE despachados (mismo criterio
     // que el badge "Despachado" de las tarjetas: todos los tanques reales con despacho).
     const despachada = stats.length > 0 && stats.every((s) => s.despachadoFull);
-    return { cor, mods, stats, corCos, corSup, despachada };
+    return { cor, mods, stats, corCos, corSie, corSup, despachada };
   });
 
   // Corridas despachadas (en CUALQUIER posición, no solo el prefijo inicial): el
   // "Subtotal actual" suma TODAS las despachadas y se inserta tras la ÚLTIMA de ellas.
-  // Desaparece cuando TODAS lo están (coincidiría con el Total) o cuando ninguna lo está.
   const dispatchedIdx = corData.reduce((acc, c, i) => { if (c.despachada) acc.push(i); return acc; }, []);
   const lastDispatched = dispatchedIdx.length ? dispatchedIdx[dispatchedIdx.length - 1] : -1;
-  const showSubtotal = dispatchedIdx.length > 0 && dispatchedIdx.length < corData.length;
+  // El subtotal desaparece cuando IGUALARÍA al Total: no solo si TODAS están despachadas,
+  // sino también si las corridas pendientes no aportan siembra/cosecha (subtotal == total
+  // numéricamente) → la franja sería redundante. Se compara siembra y cosecha acumuladas.
+  const grandCos = corData.reduce((a, c) => a + c.corCos, 0);
+  const grandSie = corData.reduce((a, c) => a + c.corSie, 0);
+  const subCosTot = dispatchedIdx.reduce((a, i) => a + corData[i].corCos, 0);
+  const subSieTot = dispatchedIdx.reduce((a, i) => a + corData[i].corSie, 0);
+  const subEqualsTotal = subCosTot === grandCos && subSieTot === grandSie;
+  const showSubtotal = dispatchedIdx.length > 0 && !subEqualsTotal;
 
   let body = '', sumSie = 0, sumCos = 0, sumNSie = 0; const plgs = [];
   let subSie = 0, subCos = 0, subNSie = 0; const subPlgs = [];  // acumuladores del subtotal
