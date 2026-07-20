@@ -384,6 +384,70 @@ describe('Microbiología · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('Bacteriología · editor de rangos de niveles ("Rangos"): abre, pre-rellena, cambia de área, guarda y restablece', () => {
+    mount();
+    const isOpen = () => root.querySelector('#micFactModal').classList.contains('is-open');
+    click(root.querySelector('[data-mic-factors]'));
+    expect(isOpen()).toBe(true);
+    const areaSel = root.querySelector('[data-mic-fact-area]');
+    expect(areaSel).toBeTruthy();
+    // Fijo el área (el estado es singleton entre tests) → pre-relleno con el umbral base.
+    change(areaSel, 'larv-animal');
+    expect(root.querySelector('[data-mic-rl="vamar"]').value).toBe('1000'); // Leve base
+    expect(root.querySelector('[data-mic-rm="vamar"]').value).toBe('5000'); // Moderado base
+    // Cambiar de área RE-PINTA la tabla sin cerrar el modal (umbrales propios del área).
+    change(areaSel, 'larv-agua');
+    expect(isOpen()).toBe(true);
+    expect(root.querySelector('[data-mic-rl="vverd"]').value).toBe('100'); // vverd en larv-agua
+    // Editar + guardar no lanza error (si no hay localStorage, avisa y no persiste).
+    root.querySelector('[data-mic-rl="vverd"]').value = '150';
+    click(root.querySelector('[data-mic-fact-save]'));
+    if (!isOpen()) click(root.querySelector('[data-mic-factors]'));
+    click(root.querySelector('[data-mic-fact-reset]'));
+    expect(isOpen()).toBe(false);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('Bacteriología · editor de rangos: umbral fuera de orden (Leve > Moderado) aborta el guardado', () => {
+    mount();
+    const isOpen = () => root.querySelector('#micFactModal').classList.contains('is-open');
+    click(root.querySelector('[data-mic-factors]'));
+    change(root.querySelector('[data-mic-fact-area]'), 'larv-animal');
+    // vamar base l=1000 · m=5000; fuerzo Leve=9000 > Moderado=5000 → inválido.
+    root.querySelector('[data-mic-rl="vamar"]').value = '9000';
+    click(root.querySelector('[data-mic-fact-save]'));
+    expect(isOpen()).toBe(true); // el modal NO se cerró: el guardado se abortó
+    click(root.querySelector('[data-mic-fact-close]'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('Bacteriología · editor de rangos: al guardar l/m/e NO descarta el Factor (×) fijado en la app de captura', () => {
+    // La app de captura (engine.js) y el dashboard comparten larv4_mic_factors. La captura
+    // permite ajustar `f`; este editor solo toca l/m/e y no debe perder ese `f` al reescribir.
+    // happy-dom expone Storage en `window` pero no como global suelto: se puentea para que el
+    // código de producción (localStorage bare) y el test compartan el mismo almacén.
+    const KEY = 'larv4_mic_factors';
+    const ls = window.localStorage || globalThis.localStorage;
+    if (!ls) return; // sin Storage en el entorno → el editor no persiste (nada que comprobar)
+    const hadGlobal = 'localStorage' in globalThis;
+    if (!hadGlobal) globalThis.localStorage = ls;
+    ls.setItem(KEY, JSON.stringify({ 'larv-animal': { vamar: { f: 7 } } }));
+    try {
+      mount();
+      click(root.querySelector('[data-mic-factors]'));
+      change(root.querySelector('[data-mic-fact-area]'), 'larv-animal');
+      root.querySelector('[data-mic-rl="vamar"]').value = '1200'; // Leve válido (< Moderado base)
+      click(root.querySelector('[data-mic-fact-save]'));
+      const saved = JSON.parse(ls.getItem(KEY) || '{}');
+      expect(saved['larv-animal'].vamar.f).toBe(7);   // Factor preservado
+      expect(saved['larv-animal'].vamar.l).toBe(1200); // umbral editado aplicado
+      expect(errSpy).not.toHaveBeenCalled();
+    } finally {
+      ls.removeItem(KEY);
+      if (!hadGlobal) delete globalThis.localStorage;
+    }
+  });
+
   it('modal de alertas: abre desde el KPI y cierra', () => {
     mount();
     const kpi = root.querySelector('[data-mic-alerts]');

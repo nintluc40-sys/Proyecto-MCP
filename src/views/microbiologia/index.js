@@ -18,6 +18,7 @@ import {
   isMicroRow, pathogenRecords, rowContext, meltRow, PATHOGENS, PATHOGEN_COLOR,
   NIVELES, NIVEL_COLOR, NIVEL_RANK, isAlerta, FORMATO_LABEL, AGGREGATE_KEYS,
   DEPARTAMENTOS, deptoOfFormato, PATHOGEN_AGAR,
+  loadMicThresholds, MIC_FACTORS_KEY, MIC_AREAS,
 } from './data.js';
 import { petriSVG } from './petri.js';
 import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges, calRangeText, calEnsayoData, CAL_PARAMS, calDiagnosis, calGroupTree, calWQI, controlStats, boxStats, calSeverity, calStageCmp, CAL_RISK, CAL_SEV } from './calagua.data.js';
@@ -1006,6 +1007,91 @@ function resetCalFactors(root) {
   closeCalFact(root); toast('Rangos restablecidos a los valores por defecto.', 'ok'); microbiologiaView(root);
 }
 
+/* ---- Bacteriología · editor de umbrales de nivel ("Rangos") ---- */
+// Umbrales de UFC por ÁREA × parámetro × {Leve, Moderado, Elevado}. Override en
+// localStorage `larv4_mic_factors` (MISMA clave que la capa de datos / app de captura):
+// al guardar, loadMicThresholds lo fusiona sobre la base y re-render aplica el cambio.
+let _micFactArea = null; // área elegida en el editor (persiste entre re-render de la tabla)
+
+function micFactTableHTML(area, thr = loadMicThresholds()) {
+  const a = thr[area] || {};
+  const params = PATHOGENS.filter((p) => p.fkey && a[p.fkey]);
+  const inp = (p, suf, ph, v) => `<input type="number" step="any" min="0" class="cal-fact-in" data-mic-r${suf}="${esc(p.fkey)}" placeholder="${ph}" aria-label="${ph} de ${esc(p.label)}" value="${v != null ? esc(String(v)) : ''}">`;
+  const rows = params.map((p) => {
+    const r = a[p.fkey] || {};
+    return `<div class="cal-fact-row cal-fact-row--3">
+        <span class="cal-fact-l">${esc(p.label)}</span>
+        ${inp(p, 'l', 'Leve', r.l)}${inp(p, 'm', 'Moderado', r.m)}${inp(p, 'e', 'Elevado', r.e)}
+      </div>`;
+  }).join('');
+  return `<div class="cal-fact-grid cal-fact-grid--3">
+      <div class="cal-fact-head cal-fact-head--3"><span>Patógeno</span><span>Leve ≥</span><span>Moderado ≥</span><span>Elevado ≥</span></div>
+      ${rows || '<div class="muted" style="padding:12px;font-size:12px">Esta área no tiene umbrales definidos.</div>'}
+    </div>`;
+}
+function micFactModalHTML() {
+  const area = MIC_AREAS.some((a) => a.key === _micFactArea) ? _micFactArea : MIC_AREAS[0].key;
+  _micFactArea = area;
+  const areaOpts = MIC_AREAS.map((a) => `<option value="${esc(a.key)}" ${a.key === area ? 'selected' : ''}>${esc(a.label)}</option>`).join('');
+  return `<div class="mic-modal" id="micFactModal" data-mic-fact-overlay>
+      <div class="mic-modal-card">
+        <div class="mic-modal-head">
+          <span class="mic-modal-title">⚙️ Rangos de niveles · Bacteriología</span>
+          <button class="mic-modal-x" data-mic-fact-close aria-label="Cerrar">✕</button>
+        </div>
+        <div class="mic-modal-body">
+          <p class="muted" style="margin:0 0 12px;font-size:12px">Umbral de UFC a partir del cual una muestra pasa a <b>Leve</b> · <b>Moderado</b> · <b>Elevado</b>, por área de análisis (deben ir en orden ascendente). Deja un campo vacío para conservar el valor por defecto. Se guardan en este navegador, igual que en la app de captura.</p>
+          <label class="mic-fact-arealbl">Área <select class="mic-select" data-mic-fact-area>${areaOpts}</select></label>
+          <div id="micFactTable">${micFactTableHTML(area)}</div>
+          <div class="cal-fact-actions">
+            <button class="mic-exp" data-mic-fact-reset>↺ Restablecer</button>
+            <button class="mic-exp cal-fact-save" data-mic-fact-save>✓ Guardar</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+function openMicFact(root) { const m = root.querySelector('#micFactModal'); if (m) { m.classList.add('is-open'); document.body.classList.add('modal-open'); } }
+function closeMicFact(root) { const m = root.querySelector('#micFactModal'); if (m) m.classList.remove('is-open'); document.body.classList.remove('modal-open'); }
+function saveMicFactors(root) {
+  const area = MIC_AREAS.some((a) => a.key === _micFactArea) ? _micFactArea : MIC_AREAS[0].key;
+  const base = loadMicThresholds()[area] || {};
+  let stored = {};
+  try { const raw = localStorage.getItem(MIC_FACTORS_KEY); if (raw) stored = JSON.parse(raw) || {}; } catch (_) { stored = {}; }
+  const num = (el) => (el && el.value.trim() !== '') ? parseFloat(el.value) : null;
+  const edits = [], bad = [];
+  PATHOGENS.filter((p) => p.fkey && base[p.fkey]).forEach((p) => {
+    const l = num(root.querySelector(`[data-mic-rl="${p.fkey}"]`));
+    const m = num(root.querySelector(`[data-mic-rm="${p.fkey}"]`));
+    const e = num(root.querySelector(`[data-mic-re="${p.fkey}"]`));
+    const o = {};
+    if (l != null && !isNaN(l)) o.l = l;
+    if (m != null && !isNaN(m)) o.m = m;
+    if (e != null && !isNaN(e)) o.e = e;
+    // Orden ascendente sobre los valores EFECTIVOS (los omitidos caen a la base).
+    const eff = [o.l ?? base[p.fkey].l, o.m ?? base[p.fkey].m, o.e ?? base[p.fkey].e];
+    for (let i = 1; i < eff.length; i++) { if (eff[i] != null && eff[i - 1] != null && eff[i] < eff[i - 1]) { bad.push(p.label); break; } }
+    edits.push({ fkey: p.fkey, o });
+  });
+  if (bad.length) { toast(`Umbrales fuera de orden (Leve ≤ Moderado ≤ Elevado): ${bad.join(', ')}. Corrígelo antes de guardar.`, 'err'); return; }
+  stored[area] = stored[area] || {};
+  edits.forEach(({ fkey, o }) => {
+    // Preserva el Factor (×) que el usuario haya ajustado en la app de captura (misma
+    // clave larv4_mic_factors): este editor solo toca l/m/e, así que NO debe descartar
+    // un `f` no-default al reescribir el override del parámetro (evita pérdida silenciosa).
+    const prevF = stored[area][fkey] && stored[area][fkey].f;
+    const merged = (prevF != null) ? { f: prevF, ...o } : { ...o };
+    if (Object.keys(merged).length) stored[area][fkey] = merged; else delete stored[area][fkey];
+  });
+  if (!Object.keys(stored[area]).length) delete stored[area];
+  try { localStorage.setItem(MIC_FACTORS_KEY, JSON.stringify(stored)); } catch (_) { toast('No se pudieron guardar los rangos (almacenamiento no disponible).', 'err'); return; }
+  closeMicFact(root); toast('Rangos guardados.', 'ok'); microbiologiaView(root);
+}
+function resetMicFactors(root) {
+  try { localStorage.removeItem(MIC_FACTORS_KEY); } catch (_) { /* sin almacenamiento */ }
+  closeMicFact(root); toast('Rangos restablecidos a los valores por defecto.', 'ok'); microbiologiaView(root);
+}
+
 // Severidad → clave de color equivalente para el nivel de riesgo de un nodo.
 const RISK_TO_SEV = { bajo: 'optimo', medio: 'vigilancia', alto: 'fuera', critico: 'critico', 'sin-datos': 'sin-rango' };
 // Leyenda de severidad (4 niveles) para el modo "Por ubicación".
@@ -1738,9 +1824,11 @@ function renderBacteriologia() {
   h += `<div class="mic-apartados">
       <button class="mic-ap ${vState.apartado === 'conglomerado' ? 'is-active' : ''}" data-mic-ap="conglomerado">📊 Conglomerado</button>
       <button class="mic-ap ${vState.apartado === 'petri' ? 'is-active' : ''}" data-mic-ap="petri">🧫 Placa Petri</button>
+      <button class="mic-exp" data-mic-factors title="Editar los umbrales de UFC (Leve/Moderado/Elevado) por área" style="margin-left:auto">⚙️ Rangos</button>
     </div>`;
 
   h += vState.apartado === 'petri' ? renderPetri(rows) : renderConglomerado(rows, summaries);
+  h += micFactModalHTML();
   return h;
 }
 
@@ -2479,6 +2567,10 @@ function bind(root) {
   root.addEventListener('change', (e) => {
     // Rango de fechas del modal de Excel: recalcula el conteo, no re-renderiza.
     if (e.target.id === 'micExpFrom' || e.target.id === 'micExpTo') { updateXlsxInfo(root); return; }
+    // Editor de rangos de Bacteriología: cambiar de área re-pinta SOLO la tabla del modal
+    // (no re-renderiza la vista, para no cerrar el modal ni perder el resto de la UI).
+    const fArea = e.target.closest('[data-mic-fact-area]');
+    if (fArea) { _micFactArea = fArea.value; const t = root.querySelector('#micFactTable'); if (t) t.innerHTML = micFactTableHTML(_micFactArea); return; }
     // Filtro de contexto dinámico (Sala/Sexo/TQ/Punto/…)
     const dimSel = e.target.closest('[data-micdim]');
     if (dimSel) { vState.dims[dimSel.dataset.micdim] = dimSel.value || null; vState.petriDay = null; microbiologiaView(root); return; }
@@ -2597,6 +2689,11 @@ function bind(root) {
     if (e.target.closest('[data-cal-fact-close]') || e.target.matches('[data-cal-fact-overlay]')) { closeCalFact(root); return; }
     if (e.target.closest('[data-cal-fact-save]')) { saveCalFactors(root); return; }
     if (e.target.closest('[data-cal-fact-reset]')) { resetCalFactors(root); return; }
+    // Editor de rangos de Bacteriología ("Rangos de niveles").
+    if (e.target.closest('[data-mic-factors]')) { openMicFact(root); return; }
+    if (e.target.closest('[data-mic-fact-close]') || e.target.matches('[data-mic-fact-overlay]')) { closeMicFact(root); return; }
+    if (e.target.closest('[data-mic-fact-save]')) { saveMicFactors(root); return; }
+    if (e.target.closest('[data-mic-fact-reset]')) { resetMicFactors(root); return; }
 
     const pet = e.target.closest('[data-mic-petab]');
     if (pet) { if (vState.petriTab !== pet.dataset.micPetab) { vState.petriTab = pet.dataset.micPetab; microbiologiaView(root); } return; }
@@ -2657,7 +2754,7 @@ function bind(root) {
   // Teclado: Enter/Espacio sobre el KPI abre el modal de alertas; sobre una fila del
   // heatmap de Tendencias la selecciona. Escape cierra modales.
   root.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { closeAlertModal(root); closeXlsxModal(root); closeCalAlert(root); closeCalKpi(root); closeCalFact(root); closeCalTankModal(root); closeCalFicha(root); closeGenDepto(root); closeGenKpi(root); return; }
+    if (e.key === 'Escape') { closeAlertModal(root); closeXlsxModal(root); closeCalAlert(root); closeCalKpi(root); closeCalFact(root); closeMicFact(root); closeCalTankModal(root); closeCalFicha(root); closeGenDepto(root); closeGenKpi(root); return; }
     if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
     if (e.target.closest('[data-mic-alerts]')) { e.preventDefault(); openAlertModal(root); return; }
     if (e.target.closest('[data-cal-alerts]')) { e.preventDefault(); openCalAlert(root); return; }

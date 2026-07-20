@@ -268,10 +268,22 @@ const MIC_DR_BASE = {
 // vista Factores reescribe el override, el cambio se refleja en el siguiente cálculo
 // SIN recargar; mientras no cambie, se reutiliza la caché (el getItem por llamada es
 // barato y la reconstrucción solo ocurre cuando la firma difiere).
-const MIC_FACTORS_KEY = 'larv4_mic_factors';
+export const MIC_FACTORS_KEY = 'larv4_mic_factors';
+// Áreas de umbrales (clave de MIC_DR_BASE → etiqueta legible) para el editor de rangos.
+export const MIC_AREAS = [
+  { key: 'larv-animal', label: 'Larvicultura · Animal' },
+  { key: 'larv-agua', label: 'Larvicultura · Agua' },
+  { key: 'artemia', label: 'Artemia' },
+  { key: 'ambiental', label: 'Ambiental (placas/hisopados)' },
+  { key: 'mad-reprod', label: 'Maduración · Reproductores' },
+  { key: 'mad-agua', label: 'Maduración · Agua' },
+  { key: 'agua-limpia-mar', label: 'Agua Limpia y Mar' },
+  { key: 'ras-agua', label: 'RAS · Agua' },
+  { key: 'algas', label: 'Algas' },
+];
 let _thrCache = null;
 let _thrRaw = null; // firma (string crudo de localStorage) del set cacheado
-function loadMicThresholds() {
+export function loadMicThresholds() {
   let raw = null;
   try { raw = (typeof localStorage !== 'undefined') ? localStorage.getItem(MIC_FACTORS_KEY) : null; }
   catch (_) { raw = null; }
