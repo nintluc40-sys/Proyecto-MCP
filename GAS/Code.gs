@@ -47,7 +47,8 @@ const ALLOWED = [
   "Registro_Desinfección",
   "Microbiología",
   "Calidad de Agua",
-  "Patología en Fresco"
+  "Patología en Fresco",
+  "Marea"
 ];
 
 const LIMITS = {
@@ -68,7 +69,10 @@ const LIMITS = {
   // Calidad de Agua: hoja ancha (14 contexto + 31 parámetros = 45 cols) + margen.
   cal:     { maxRows: 300, maxCols: 80 },
   // Patología en Fresco: 6 contexto + 15 columnas internas + Peso + Obs = 23 cols.
-  pat:     { maxRows: 300, maxCols: 40 }
+  pat:     { maxRows: 300, maxCols: 40 },
+  // Marea: 16 cols (predicción INOCAR, 1 fila/día). maxRows holgado por encima del
+  // tope del cliente (grilla hasta 400 filas): permite sincronizar meses de una vez.
+  marea:   { maxRows: 420, maxCols: 20 }
 };
 
 // Rate limit state: persistido en CacheService (60s TTL) para que sobreviva
@@ -164,6 +168,7 @@ function doPost(e) {
     var isMicro  = payload.sheetName === "Microbiología";
     var isCal    = payload.sheetName === "Calidad de Agua";
     var isPat    = payload.sheetName === "Patología en Fresco";
+    var isMarea  = payload.sheetName === "Marea";
     // Routing Maduración: clave compuesta por columnas (0-indexed)
     var madKeyCols = null;
     if      (payload.sheetName === "Maduración Sala")     madKeyCols = [0,1];   // Fecha, Sala
@@ -189,6 +194,7 @@ function doPost(e) {
                 : isMicro  ? LIMITS.micro
                 : isCal    ? LIMITS.cal
                 : isPat    ? LIMITS.pat
+                : isMarea  ? LIMITS.marea
                 : (isCtrl  ? LIMITS.control : LIMITS.datos);
 
     if (payload.rows.length > limits.maxRows) {
@@ -228,7 +234,7 @@ function doPost(e) {
     } else if (ws.getLastRow() === 0) {
       fmtHeader(ws, (payload.headers || []).map(function(h){ return cleanCell(h); }), isCtrl);
     }
-    if (isMicro || isCal || isPat || isAlgas) ensureHeaders(ws, payload.headers || []);
+    if (isMicro || isCal || isPat || isAlgas || isMarea) ensureHeaders(ws, payload.headers || []);
 
     // Borrado explícito de sesiones (Microbiología / Calidad de Agua / Patología
     // en Fresco): permite VACIAR de la hoja una sesión completa. Un upsert/replace
@@ -289,6 +295,12 @@ function doPost(e) {
     else if (isPat) {
       // Patología en Fresco (hoja ancha): reemplazo por sesión. Clave del cliente
       // = Fecha + Corrida + Sesión -> editar/reenviar no duplica.
+      if (payload.replaceKey && Array.isArray(payload.keyCols)) result = replaceByKeyRows(ws, rows, payload.keyCols);
+      else result = appendRows(ws, rows);
+    }
+    else if (isMarea) {
+      // Marea (predicción INOCAR): upsert por Fecha (clave del cliente = [0]). Una fila
+      // por día → re-sincronizar o editar una fecha actualiza esa fila, sin duplicar.
       if (payload.replaceKey && Array.isArray(payload.keyCols)) result = replaceByKeyRows(ws, rows, payload.keyCols);
       else result = appendRows(ws, rows);
     }
