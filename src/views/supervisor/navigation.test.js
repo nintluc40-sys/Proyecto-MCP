@@ -211,10 +211,16 @@ describe('Supervisor · harness de navegación integral', () => {
     expect(root.querySelector('#mareaWaveFs').classList.contains('is-open')).toBe(true);
     click(root.querySelector('[data-marea-wave-fsclose]'));
     expect(root.querySelector('#mareaWaveFs').classList.contains('is-open')).toBe(false);
-    // Cambiar a Mes → hosts de tendencia + donut.
+    // Cambiar a Mes → resumen del mes (6 estadísticos + régimen) y hosts de gráficos.
     click(modal.querySelector('[data-mareamode="mes"]'));
+    expect(root.querySelectorAll('.sv-marea-stat').length).toBe(6);
+    expect(root.querySelector('.sv-marea-vbar')).toBeTruthy(); // el régimen Viva/Muerta vive aquí
     expect(root.querySelector('#mareaTrendChart')).toBeTruthy();
     expect(root.querySelector('#mareaDonutChart')).toBeTruthy();
+    // Los estadísticos muestran valores, no NaN ni -Infinity.
+    [...root.querySelectorAll('.sv-marea-stat-v')].forEach((el) => {
+      expect(el.textContent).not.toMatch(/NaN|Infinity/);
+    });
     // Fullscreen de un gráfico del Mes: abre y cierra.
     click(root.querySelector('[data-marea-chart-fs="trend"]'));
     expect(root.querySelector('#mareaChartFs').classList.contains('is-open')).toBe(true);
@@ -233,6 +239,38 @@ describe('Supervisor · harness de navegación integral', () => {
     // Cerrar.
     click(modal.querySelector('[data-mareas-close]'));
     expect(modal.classList.contains('sv-open')).toBe(false);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('modal Mareas · la matriz de correlación se activa con el teclado (role=button)', () => {
+    // La correlación exige ≥5 días emparejados: se amplía el fixture con 6 días de
+    // marea + 6 muestras de microbiología para que aparezca al menos una celda con r.
+    for (let i = 1; i <= 6; i++) {
+      const dd = String(10 + i).padStart(2, '0');
+      store.globalData.push({
+        _SheetOrigin: 'Marea', Fecha: `${dd}/06/2026`, 'Fase Lunar': 'Luna llena', '%Iluminación': '80', 'Tipo de Marea': 'Viva',
+        'Pleamar 1': '05:00', 'Altura P1 (m)': String(2 + i * 0.1), 'Bajamar 1': '11:00', 'Altura B1 (m)': String(0.7 - i * 0.05),
+        'Amplitud (m)': String(1.3 + i * 0.15),
+      });
+      store.globalData.push({
+        _SheetOrigin: 'Microbiología', 'Fecha muestreo': `${dd}/06/2026`, Corrida: '573', 'Módulo/Sala': '1',
+        Formato: 'Larvicultura · Muestra', 'Tipo de muestra': 'Animal', 'TQ/N°': '1', 'Estadío': 'PL2',
+        'V.Totales UFC': String(1000 * i), 'V.Totales Nivel': 'Leve',
+      });
+    }
+    const root = mount();
+    click(root.querySelector('.sv-card[data-nav="module"]'));
+    click(root.querySelector('[data-mareas-open]'));
+    const modal = root.querySelector('#svMareasModal');
+    click(modal.querySelector('[data-mareamode="corr"]'));
+    const cell = root.querySelector('[data-corr-cell]');
+    expect(cell).toBeTruthy(); // hay al menos una celda con coeficiente
+    expect(cell.getAttribute('role')).toBe('button');
+    // Enter debe seleccionarla igual que el ratón (antes solo respondía al clic).
+    cell.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    expect(root.querySelector('[data-corr-cell].is-sel')).toBeTruthy();
+    expect(root.querySelector('#mareaCorrChart')).toBeTruthy(); // se dibuja la dispersión
+    click(modal.querySelector('[data-mareas-close]'));
     expect(errSpy).not.toHaveBeenCalled();
   });
 

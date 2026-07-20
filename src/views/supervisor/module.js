@@ -1357,6 +1357,16 @@ export function renderModule(ctx, mod) {
         const ds = e.target.closest('[data-marea-daysel]');
         if (ds) { mareaState.key = ds.value; renderMareaBody(); }
       });
+      // Las celdas de la matriz de correlación son role="button" tabindex="0": sin esto
+      // se anuncian como pulsables pero no responden a Enter/Espacio (solo al ratón).
+      mareaBody.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const cc = e.target.closest('[data-corr-cell]');
+        if (!cc) return;
+        e.preventDefault();
+        mareaState.corrCell = cc.dataset.corrCell;
+        renderMareaBody();
+      });
       bindModal(root, mareaOverlay, {
         openSel: '[data-mareas-open]', closeSel: '[data-mareas-close]',
         onOpen: () => {
