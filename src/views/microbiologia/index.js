@@ -78,7 +78,10 @@ const FILTER_DIMS = [
 // Maduración/…), con respaldo al departamento derivado del formato si la celda viene vacía.
 // (Antes el filtro derivaba el departamento SOLO del formato → Algas caía en "Otros" y los
 // formatos sin clasificar se perdían.) Compartido por el render y el export.
-const deptoOf = (ctx) => (ctx.departamento || '').trim() || deptoOfFormato(ctx.formatoKey) || 'Otros';
+// La app de captura escribe "Otras" en esa columna, pero aquí el grupo se llama "Otros":
+// sin normalizar aparecerían DOS grupos distintos para lo mismo en el filtro.
+const deptoNorm = (d) => (d === 'Otras' ? 'Otros' : d);
+const deptoOf = (ctx) => deptoNorm((ctx.departamento || '').trim()) || deptoOfFormato(ctx.formatoKey) || 'Otros';
 // Orden preferido de departamentos en el filtro (el resto, alfabético al final).
 const DEPTO_ORDER = ['Larvicultura', 'Maduración', 'Algas'];
 const deptoRank = (d) => { const i = DEPTO_ORDER.indexOf(d); return i < 0 ? DEPTO_ORDER.length : i; };

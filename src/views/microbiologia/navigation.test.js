@@ -199,6 +199,21 @@ describe('Microbiología · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('"Otras" (como lo escribe la app de captura) se normaliza a "Otros": un solo grupo', () => {
+    store.globalData = [
+      // La app de captura escribe depto:"Otras"; el dashboard llama al grupo "Otros".
+      M({ 'Fecha muestreo': '05/06/2026', Corrida: '573', Departamento: 'Otras', Formato: 'Hisopados', 'V.Totales UFC': '30' }),
+      M({ 'Fecha muestreo': '06/06/2026', Corrida: '573', Departamento: 'Otros', Formato: 'Muestras externas', 'V.Totales UFC': '40' }),
+    ];
+    microbiologiaView(root);
+    click(root.querySelector('[data-mic-sub="bacteriologia"]'));
+    const deptoOpts = [...root.querySelector('[data-micfilter="depto"]').options].map((o) => o.value).filter(Boolean);
+    expect(deptoOpts).toContain('Otros');
+    expect(deptoOpts).not.toContain('Otras'); // sin normalizar saldrían los DOS grupos
+    expect(deptoOpts.filter((d) => d === 'Otros').length).toBe(1);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('apartado Placa Petri: pestañas Placa/Matriz/Tendencias + navegación de día + tema', () => {
     mount();
     click(root.querySelector('[data-mic-ap="petri"]'));

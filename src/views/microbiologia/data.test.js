@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isMicroRow, normNivel, classifyFormato, normTipoMuestra, luminPresence,
   intStr, meltRow, rowContext, pathogenRecords, PATHOGENS, NIVEL_RANK, isAlerta,
-  AGGREGATE_KEYS, areaForFormat,
+  AGGREGATE_KEYS, areaForFormat, deptoOfFormato, FORMATO_LABEL,
 } from './data.js';
 
 // Fila representativa (cabeceras reales de la hoja "Microbiología").
@@ -77,6 +77,26 @@ describe('classifyFormato', () => {
     expect(classifyFormato('Hisopados (despacho)')).toBe('hisopados-despacho');
     expect(classifyFormato('Algas Mensual')).toBe('algas-mensual');
   });
+  it('departamento Algas: nombres nuevos y LEGADO, sin chocar con los Hisopados de planta', () => {
+    // Nombres nuevos (los que escribe la app de captura a partir de ahora).
+    expect(classifyFormato('Algas Hisopado')).toBe('algas');
+    expect(classifyFormato('Algas Mensual')).toBe('algas-mensual');
+    expect(classifyFormato('Algas Fundas y Masivos')).toBe('algas-r');
+    // Nombres ANTIGUOS ya escritos en el Sheet: el histórico no se puede perder.
+    expect(classifyFormato('Algas')).toBe('algas');
+    expect(classifyFormato('Algas R')).toBe('algas-r');
+    // "Algas Hisopado" NO debe caer en los hisopados de planta.
+    expect(classifyFormato('Hisopados')).toBe('hisopados');
+    expect(classifyFormato('Hisopados (despacho)')).toBe('hisopados-despacho');
+  });
+  it('los 3 formatos de Algas comparten el área "algas" y viven en el departamento Algas', () => {
+    ['algas', 'algas-mensual', 'algas-r'].forEach((k) => {
+      expect(areaForFormat(k)).toBe('algas');
+      expect(deptoOfFormato(k)).toBe('Algas');
+    });
+    expect(FORMATO_LABEL.algas).toBe('Algas Hisopado');
+    expect(FORMATO_LABEL['algas-r']).toBe('Algas Fundas y Masivos');
+  });
   it('formatos nuevos: Agua Limpia y Mar + Maduración Despacho (sin chocar con Hisopados despacho)', () => {
     expect(classifyFormato('Agua Limpia y Mar')).toBe('agua-limpia-mar');
     expect(classifyFormato('Maduración · Despacho')).toBe('mad-desinf');
@@ -104,8 +124,11 @@ describe('areaForFormat', () => {
     expect(areaForFormat('larv-muestra', 'Animal')).toBe('larv-animal');
     expect(areaForFormat('mad-principal', '')).toBe('mad-reprod');
     expect(areaForFormat('ras', '')).toBe('ras-agua');
-    expect(areaForFormat('algas', '')).toBe('ambiental');     // formato "Algas" (swab) → ambiental
+    // Los 3 formatos del departamento Algas comparten área (antes el swab iba a 'ambiental').
+    expect(areaForFormat('algas', '')).toBe('algas');
     expect(areaForFormat('algas-mensual', '')).toBe('algas');
+    expect(areaForFormat('algas-r', '')).toBe('algas');
+    expect(areaForFormat('hisopados', '')).toBe('ambiental');  // los de planta siguen en ambiental
     expect(areaForFormat('', '')).toBe('larv-animal');        // desconocido → defecto
   });
 });

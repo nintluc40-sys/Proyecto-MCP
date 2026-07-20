@@ -148,9 +148,9 @@ export const MIC_FORMATS = {
   externas:             { label: 'Muestras externas',            area: () => 'larv-animal' },
   hisopados:            { label: 'Hisopados',                    area: () => 'ambiental' },
   'hisopados-despacho': { label: 'Hisopados (despacho)',         area: () => 'ambiental' },
-  algas:                { label: 'Algas',                        area: () => 'ambiental' },
+  algas:                { label: 'Algas Hisopado',               area: () => 'algas' },
   'algas-mensual':      { label: 'Algas Mensual',                area: () => 'algas' },
-  'algas-r':            { label: 'Algas R',                      area: () => 'algas' },
+  'algas-r':            { label: 'Algas Fundas y Masivos',       area: () => 'algas' },
 };
 export const FORMATO_LABEL = Object.fromEntries(Object.entries(MIC_FORMATS).map(([k, v]) => [k, v.label]));
 const _FMT_BY_FOLDED = Object.fromEntries(Object.entries(MIC_FORMATS).map(([k, v]) => [fold(v.label), k]));
@@ -190,10 +190,16 @@ export function classifyFormato(raw) {
   if (k.includes('ras')) return 'ras';
   if (k.includes('principal')) return 'mad-principal';
   if (k.includes('despacho')) return 'hisopados-despacho';
+  // Los formatos del departamento Algas van ANTES de la regla genérica de "hisopado":
+  // si no, "Algas Hisopado" caería en 'hisopados' (los de planta). Se conservan además
+  // los nombres ANTIGUOS ("Algas", "Algas R") porque siguen escritos en el histórico
+  // del Sheet: renombrar los formatos no debe perder los registros ya sincronizados.
+  if (k.includes('alga')) {
+    if (k.includes('mensual')) return 'algas-mensual';
+    if (k.includes('funda') || k.includes('masivo') || /\balgas r\b/.test(k)) return 'algas-r';
+    return 'algas'; // "Algas Hisopado" (nuevo) y "Algas" (legado)
+  }
   if (k.includes('hisopado')) return 'hisopados';
-  if (k.includes('algas mensual')) return 'algas-mensual';
-  if (k.includes('algas r')) return 'algas-r';
-  if (k.includes('alga')) return 'algas';
   if (k.includes('externa')) return 'externas';
   if (k.includes('muestra')) return 'larv-muestra';
   return '';
@@ -243,9 +249,13 @@ const MIC_DR_BASE = {
     pseudo: { l: 50, m: 100, e: 200 }, aero: { l: 100, m: 500, e: 1000 },
     btot: { l: 10000, m: 100000, e: 1000000 }, bnar: { l: 1000, m: 5000, e: 10000 },
   },
+  // Departamento Algas (Hisopado · Mensual · Fundas y Masivos). Umbrales ESCALADOS por
+  // el factor de dilución que aplica la app de captura (colonias ×5, Pseudomonas /
+  // Aeromonas / Bacterias totales ×20): así el UFC que llega ya multiplicado conserva
+  // el mismo nivel Leve/Moderado/Elevado que antes del cambio de factores.
   algas: {
-    vamar: { l: 1, m: 2, e: 10 }, vverd: { l: 1, m: 2, e: 10 }, vtot: { l: 1, m: 2, e: 10 },
-    pseudo: { l: 1, m: 2, e: 10 }, aero: { l: 1, m: 2, e: 10 }, btot: { l: 10, m: 100, e: 500 },
+    vamar: { l: 5, m: 10, e: 50 }, vverd: { l: 5, m: 10, e: 50 }, vtot: { l: 5, m: 10, e: 50 },
+    pseudo: { l: 20, m: 40, e: 200 }, aero: { l: 20, m: 40, e: 200 }, btot: { l: 200, m: 2000, e: 10000 },
   },
   'mad-agua': {
     vamar: { l: 100, m: 500, e: 1000 }, vverd: { l: 50, m: 100, e: 200 }, vtot: { l: 100, m: 500, e: 1000 },
@@ -279,11 +289,33 @@ export const MIC_AREAS = [
   { key: 'mad-agua', label: 'Maduración · Agua' },
   { key: 'agua-limpia-mar', label: 'Agua Limpia y Mar' },
   { key: 'ras-agua', label: 'RAS · Agua' },
-  { key: 'algas', label: 'Algas' },
+  { key: 'algas', label: 'Algas (Hisopado · Mensual · Fundas y Masivos)' },
 ];
 let _thrCache = null;
 let _thrRaw = null; // firma (string crudo de localStorage) del set cacheado
+
+// Migración de una sola vez del área "algas" (espeja la de la app de captura, que
+// comparte esta clave). El editor de rangos persiste una copia COMPLETA de la base, así
+// que quien haya guardado alguna vez tendría congelados los umbrales antiguos (sin
+// escalar) y no vería los nuevos. Se borra SOLO esa área; el resto de ajustes se conserva.
+const MIC_FACTORS_VER_KEY = 'larv4_mic_factors_ver';
+const MIC_FACTORS_VER = '2026-07-20-algas';
+let _micFactMigrated = false;
+function micMigrateFactors() {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    if (localStorage.getItem(MIC_FACTORS_VER_KEY) === MIC_FACTORS_VER) return;
+    const raw = localStorage.getItem(MIC_FACTORS_KEY);
+    if (raw) {
+      const o = JSON.parse(raw);
+      if (o && typeof o === 'object' && o.algas) { delete o.algas; localStorage.setItem(MIC_FACTORS_KEY, JSON.stringify(o)); }
+    }
+    localStorage.setItem(MIC_FACTORS_VER_KEY, MIC_FACTORS_VER);
+  } catch (_) { /* sin localStorage o ilegible → se usan las bases */ }
+}
+
 export function loadMicThresholds() {
+  if (!_micFactMigrated) { _micFactMigrated = true; micMigrateFactors(); }
   let raw = null;
   try { raw = (typeof localStorage !== 'undefined') ? localStorage.getItem(MIC_FACTORS_KEY) : null; }
   catch (_) { raw = null; }

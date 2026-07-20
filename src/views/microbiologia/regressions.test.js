@@ -64,3 +64,35 @@ describe('Microbiología · regresiones adversariales', () => {
     expect(body.textContent).toContain(expected);
   });
 });
+
+// Cambio 2026-07-20: el departamento Algas estrena factores (colonias ×5, Pseudomonas/
+// Aeromonas/B.totales ×20) y umbrales escalados. Como el editor de rangos persiste una
+// copia COMPLETA de la base, sin migración los valores viejos quedarían congelados.
+describe('migración de factores · área Algas', () => {
+  it('descarta los overrides antiguos de "algas" y conserva los ajustes de otras áreas', async () => {
+    // El entorno de test no trae localStorage: se instala un doble en memoria.
+    const mem = new Map();
+    globalThis.localStorage = {
+      getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+      setItem: (k, v) => { mem.set(k, String(v)); },
+      removeItem: (k) => { mem.delete(k); },
+      clear: () => mem.clear(),
+    };
+    localStorage.setItem('larv4_mic_factors', JSON.stringify({
+      algas: { vamar: { f: 1, l: 1, m: 2, e: 10 }, pseudo: { f: 1, l: 1, m: 2, e: 10 } },
+      'larv-animal': { vamar: { l: 999 } }, // ajuste deliberado del usuario en otra área
+    }));
+    vi.resetModules();
+    const mod = await import('./data.js');
+    const thr = mod.loadMicThresholds();
+    // Algas vuelve a los NUEVOS valores base (umbrales escalados por el factor).
+    expect(thr.algas.vamar.l).toBe(5);
+    expect(thr.algas.pseudo.l).toBe(20);
+    expect(thr.algas.btot.e).toBe(10000);
+    // Lo que el usuario ajustó en otra área NO se toca.
+    expect(thr['larv-animal'].vamar.l).toBe(999);
+    // El override obsoleto desaparece del almacenamiento y queda marcada la versión.
+    expect(JSON.parse(localStorage.getItem('larv4_mic_factors')).algas).toBeUndefined();
+    expect(localStorage.getItem('larv4_mic_factors_ver')).toBe('2026-07-20-algas');
+  });
+});
