@@ -182,10 +182,16 @@ function doPost(e) {
     // Columna Trovan ID (0-indexed) por hoja: se fuerza a formato TEXTO ("@") al
     // escribir, así Sheets NO reinterpreta el código como notación científica ni
     // le quita ceros a la izquierda (es un identificador, no un número).
+    // Los Trovan del lector son 10 hexadecimales CON ceros a la izquierda (0008218CCC):
+    // en formato numérico un código todo-dígitos perdería los ceros y rompería la clave
+    // de upsert, así que esta columna NO puede ir en "Automático".
     var madTrovanCol = payload.sheetName === "Maduración MATRIZ" ? 1
                      : payload.sheetName === "Maduración Bitácora" ? 0
                      : payload.sheetName === "Maduración Transferencias" ? 3
                      : -1;
+    // Columna "Número" (nº de registro) de la MATRIZ: formato NUMÉRICO AUTOMÁTICO
+    // ("General"), para que llegue como número y no como texto.
+    var madNumCol = payload.sheetName === "Maduración MATRIZ" ? 0 : -1;
     var limits  = isAlgas  ? LIMITS.algas
                 : isMad    ? LIMITS.mad
                 : isBiomol ? LIMITS.biomol
@@ -264,7 +270,7 @@ function doPost(e) {
       //   Sala     → [0,1]   Fecha+Sala
       //   Tanques  → [0,1,3] Fecha+Sala+Tanque (Lote editable, fuera de clave)
       //   Lotes    → [0,1,2] Fecha+Sala+Fila   (Lote/Historial editables)
-      result = upsertMadRows(ws, rows, madKeyCols, madTrovanCol);
+      result = upsertMadRows(ws, rows, madKeyCols, madTrovanCol, madNumCol);
     }
     else if (isAlgas)  result = upsertAlgasRows(ws, rows);
     else if (isBiomol) {
@@ -833,8 +839,9 @@ function algasInKey(row) {
 //   • Maduración Lotes    → [0,1,2] (Fecha, Sala, Fila)   — Lote/Historial editables
 // Si la clave coincide con una fila existente: merge (los nuevos valores
 // no vacíos reemplazan al anterior; los vacíos preservan el dato actual).
-function upsertMadRows(ws, newRows, keyCols, trovanCol) {
+function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol) {
   if (trovanCol === undefined || trovanCol === null) trovanCol = -1;
+  if (numCol === undefined || numCol === null) numCol = -1;
   var lastR = ws.getLastRow();
   var data  = ws.getDataRange().getValues();
   var map   = {};
@@ -868,6 +875,8 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol) {
       // Trovan a TEXTO ("@") antes de escribir → preserva el código exacto (10 hex,
       // ceros a la izquierda) y evita que Sheets lo vuelva número/notación científica.
       if (trovanCol >= 0 && trovanCol < merged.length) ws.getRange(entry.row, trovanCol + 1, 1, 1).setNumberFormat("@");
+      // "Número" a NUMÉRICO AUTOMÁTICO ("General") → llega como número, no como texto.
+      if (numCol >= 0 && numCol < merged.length) ws.getRange(entry.row, numCol + 1, 1, 1).setNumberFormat("General");
       ws.getRange(entry.row, 1, 1, merged.length).setValues([merged]);
       fmtData(ws, entry.row, 1, merged.length, false);
       updated++;
@@ -889,6 +898,7 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol) {
     var startRow = lastRow(ws) + 1;
     var nc2 = toAdd[0].length;
     if (trovanCol >= 0 && trovanCol < nc2) ws.getRange(startRow, trovanCol + 1, toAdd.length, 1).setNumberFormat("@");
+    if (numCol >= 0 && numCol < nc2) ws.getRange(startRow, numCol + 1, toAdd.length, 1).setNumberFormat("General");
     ws.getRange(startRow, 1, toAdd.length, nc2).setValues(toAdd);
     fmtData(ws, startRow, toAdd.length, nc2, false);
     added = toAdd.length;

@@ -30,7 +30,10 @@ let activeDiags   = new Set(DIAGS);
 let activeLugares = new Set();
 let activeFechas  = new Set();
 let datePreset    = 'all';
+// Modo AUD (entrenamiento): persiste entre re-render. La semilla fija la simulación
+// para que un mismo registro conserve su resultado al refrescar los datos.
 let audMode       = false;
+let audSeed       = 0;
 let timeGran      = 'month'; // Calendario por defecto en "Por Mes" (la data diaria desborda el eje)
 // Estado de gráficos (usado a partir de la Etapa 2)
 let hmMode = 'lugar', swarmDate = null, swarmDiag = 'ALL', treemapDiag = 'ALL', sankeyDiag = 'IHHNV', trendDiag = 'ALL';
@@ -215,19 +218,60 @@ function showTotalBreakdown() {
 }
 const closeTotalModal = () => { $('total-modal')?.classList.remove('open'); document.body.classList.remove('modal-open'); };
 
-// ── Modo AUD (auditoría) ──
+/* ── Modo AUD (entrenamiento) ──
+   Sustituye los resultados reales por una SIMULACIÓN que los usuarios usan para
+   practicar el registro de datos. La simulación es DETERMINISTA (derivada de la
+   semilla + una clave estable de la fila) para que reaplicarla tras un refresco
+   dé exactamente lo mismo: si dependiera de Math.random(), las cifras saltarían
+   en cada re-render y el material de entrenamiento sería inservible.
+   `normalizeRows` construye objetos nuevos, así que esta mutación vive solo en
+   RAW y nunca alcanza a `store.globalData`. */
+function audHash(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+/** Sorteo reproducible en [0,1) a partir de la semilla y la clave de la fila. */
+function audRand(seed, key) {
+  let t = (audHash(key) + Math.imul(seed >>> 0, 2654435761)) >>> 0;
+  t = Math.imul(t ^ (t >>> 15), 1 | t);
+  t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+/** Clave de un registro. Varias muestras comparten fecha/lugar/tanque/código, así que
+ *  se desempata con el nº de repetición: sin eso, las filas duplicadas recibirían el
+ *  MISMO resultado simulado y aparecerían grumos de positivos que no existen. */
+function audKey(r, i, seen) {
+  const base = [r.f, r.lugar, r.tq, r.cod].filter((v) => v != null && v !== '').join('|') || 'idx:' + i;
+  const n = seen.get(base) || 0;
+  seen.set(base, n + 1);
+  return n ? base + '#' + n : base;
+}
+/** Aplica la simulación de entrenamiento sobre `rows` (muta, guardando `_audOrig`).
+ *  Determinista: mismas filas + misma semilla → mismo resultado, así que reaplicarla
+ *  tras un refresco reproduce exactamente la misma simulación. Añadir filas al final
+ *  no altera las anteriores; reordenar solo permuta resultados entre filas de clave
+ *  repetida (las de clave única quedan intactas). */
+export function audSimulate(rows, seed) {
+  rows.forEach((r) => { if (!r._audOrig) { r._audOrig = {}; DIAGS.forEach((d) => { r._audOrig[d] = r[d]; }); } });
+  DIAGS.filter((d) => d !== 'IHHNV').forEach((d) => { rows.forEach((r) => { if (hasVal(r._audOrig[d])) r[d] = 'Negativo'; }); });
+  // Tasa objetivo de positivos IHHNV entre 5 % y 10 %, también derivada de la semilla.
+  const target = 5 + audRand(seed, 'target') * 5;
+  const seen = new Map();
+  rows.forEach((r, i) => { const k = audKey(r, i, seen); if (hasVal(r._audOrig.IHHNV)) r.IHHNV = (audRand(seed, k) * 100 < target) ? 'Positivo' : 'Negativo'; });
+  return rows;
+}
+/** Deshace la simulación devolviendo cada resultado a su valor real. */
+export function audRestore(rows) {
+  rows.forEach((r) => { if (r._audOrig) { DIAGS.forEach((d) => { r[d] = r._audOrig[d]; }); delete r._audOrig; } });
+  return rows;
+}
 function updateAudBtn() { const btn = $('aud-btn'); if (!btn) return; btn.classList.toggle('on', audMode); btn.setAttribute('aria-pressed', audMode ? 'true' : 'false'); }
 function toggleAud() {
   if (!RAW.length) return;
   audMode = !audMode;
-  if (audMode) {
-    RAW.forEach((r) => { if (!r._audOrig) { r._audOrig = {}; DIAGS.forEach((d) => { r._audOrig[d] = r[d]; }); } });
-    DIAGS.filter((d) => d !== 'IHHNV').forEach((d) => { RAW.forEach((r) => { if (hasVal(r._audOrig[d])) r[d] = 'Negativo'; }); });
-    const target = 5 + Math.random() * 5;
-    RAW.forEach((r) => { if (hasVal(r._audOrig.IHHNV)) r.IHHNV = (Math.random() * 100 < target) ? 'Positivo' : 'Negativo'; });
-  } else {
-    RAW.forEach((r) => { if (r._audOrig) { DIAGS.forEach((d) => { r[d] = r._audOrig[d]; }); delete r._audOrig; } });
-  }
+  if (audMode) { audSeed = (Date.now() ^ Math.imul(RAW.length, 2654435761)) >>> 0; audSimulate(RAW, audSeed); }
+  else audRestore(RAW);
   updateAudBtn(); render();
 }
 
@@ -885,10 +929,9 @@ function updateBmExportInfo() {
 }
 function openExportModal() {
   const m = $('bm-export-modal'); if (!m) return;
-  // El modo AUD reemplaza los resultados por una SIMULACIÓN aleatoria (muta RAW en
-  // memoria). Exportar en ese estado generaría un Excel "BIOMOL" con positivos ficticios
-  // indistinguibles de datos reales de laboratorio → se bloquea con aviso.
-  if (audMode) { toast('El modo AUD (simulación) está activo: desactívalo antes de exportar para no generar un Excel con resultados ficticios.', 'warn'); return; }
+  // En modo AUD la exportación SÍ está permitida (es material de entrenamiento), pero el
+  // modal avisa y el archivo se autoidentifica como simulación — ver runExport.
+  const warn = $('bm-export-aud'); if (warn) warn.style.display = audMode ? '' : 'none';
   const data = filtered();
   if (!data.length) { toast('Sin registros visibles para exportar.', 'warn'); return; }
   const dates = data.map((r) => r.f).filter(Boolean).sort();
@@ -901,7 +944,6 @@ function openExportModal() {
 }
 function closeExportModal() { $('bm-export-modal')?.classList.remove('open'); document.body.classList.remove('modal-open'); }
 function runExport() {
-  if (audMode) { toast('Exportación bloqueada: el modo AUD (simulación) está activo.', 'warn'); return; }
   const XLSX = window.XLSX;
   if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa el <script> del CDN en index.html o tu conexión.', 'err'); return; }
   const data = exportRangeRows();
@@ -909,7 +951,26 @@ function runExport() {
   const ws = XLSX.utils.aoa_to_sheet(biomolExportAoa(data)); const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'BIOMOL');
   const from = $('bm-export-from')?.value || 'inicio', to = $('bm-export-to')?.value || 'fin';
-  XLSX.writeFile(wb, `BIOMOL_${from}_a_${to}.xlsx`);
+  // En modo AUD la hoja BIOMOL mantiene su estructura exacta (sirve de plantilla de
+  // entrenamiento), pero el libro se autoidentifica: nombre de archivo + hoja AVISO. Así
+  // un Excel simulado nunca se confunde con resultados reales de laboratorio.
+  if (audMode) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ['AVISO — DATOS SIMULADOS'],
+      [''],
+      ['Este archivo se generó con el modo AUD (entrenamiento) activo.'],
+      ['Los resultados de diagnóstico son una SIMULACIÓN generada por el sistema.'],
+      ['NO son resultados de laboratorio y no deben usarse para decisiones sanitarias.'],
+      [''],
+      ['Generado', new Date().toLocaleString('es-EC')],
+      ['Rango exportado', `${from} a ${to}`],
+      ['Registros', data.length],
+    ]), 'AVISO');
+    XLSX.writeFile(wb, `BIOMOL_SIMULACION_ENTRENAMIENTO_${from}_a_${to}.xlsx`);
+    toast('Excel de ENTRENAMIENTO descargado: los resultados son simulados, no datos de laboratorio.', 'warn', 7000);
+  } else {
+    XLSX.writeFile(wb, `BIOMOL_${from}_a_${to}.xlsx`);
+  }
   closeExportModal();
 }
 
@@ -1458,6 +1519,7 @@ function shellHTML() {
       <div class="modal-content" style="max-width:440px">
         <div class="modal-header"><h2 class="modal-title">⬇ Exportar a Excel · rango de fechas</h2><button type="button" class="modal-close" id="bm-export-close">✕ Cerrar</button></div>
         <div class="modal-body">
+          <div id="bm-export-aud" class="bm-export-aud" style="display:none">⚠ <b>Modo AUD activo (entrenamiento).</b> Los resultados de este archivo son una <b>simulación</b>, no datos de laboratorio. El Excel se descargará marcado como tal.</div>
           <div id="bm-export-scope" style="font-size:12px;color:var(--bm-muted);margin-bottom:12px"></div>
           <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
             <label style="font-size:12px;color:var(--bm-muted);display:flex;flex-direction:column;gap:5px">Desde
@@ -1538,11 +1600,9 @@ function shellHTML() {
 function initFilters(reset) {
   const lugares = [...new Set(RAW.map((d) => d.lugar))].sort();
   const fechas = [...new Set(RAW.map((d) => d.f))].sort();
-  // El modo AUD nunca sobrevive a un rebuild de RAW: su transformación (simulación)
-  // se aplica solo al pulsar el botón y NO se reaplica al reconstruir RAW. Por eso,
-  // tras cualquier (re)render el estado correcto es "off" (datos reales) — evita que
-  // el botón quede "on" mostrando datos reales tras navegar y volver.
-  audMode = false;
+  // El modo AUD SÍ sobrevive al rebuild de RAW: la vista reaplica la simulación con la
+  // misma semilla justo después de reconstruirla, así que el botón "on" siempre refleja
+  // datos simulados. Solo se apaga al pulsarlo por segunda vez (o al recargar la página).
   if (reset) {
     timeGran = 'month'; datePreset = 'all';
     activeLugares = new Set(lugares); activeFechas = new Set(fechas); activeDiags = new Set(DIAGS);
@@ -1656,6 +1716,9 @@ export function biomolecularView(root) {
   if (!store.globalData.length) { root.innerHTML = '<div class="empty-state">📡 Conectando… cargando datos del sistema.</div>'; return; }
   RAW = normalizeRows(store.globalData.filter((r) => r._SheetOrigin === 'Biomol'));
   if (!RAW.length) { root.innerHTML = '<div class="empty-state" style="padding:60px 20px">🧬 Sin datos en la hoja <b>Biomol</b> del Google Sheet.</div>'; return; }
+  // RAW se reconstruye en cada entrada a la vista: si el entrenamiento sigue activo hay
+  // que reaplicar la simulación sobre las filas nuevas (misma semilla = mismos resultados).
+  if (audMode) audSimulate(RAW, audSeed);
 
   // La vista depende de D3 (CDN en index.html). Si no cargó (firewall/offline), un
   // mensaje accionable es mejor que el "Error al cargar" genérico del import diferido.
@@ -1683,5 +1746,6 @@ export function biomolecularView(root) {
   root.innerHTML = shellHTML();
   initFilters(reset);
   wire(root);
+  updateAudBtn(); // el botón se recrea con el shell: refleja el modo AUD que siga activo
   render();
 }

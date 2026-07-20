@@ -370,14 +370,23 @@
 .sv-marea-mbtn { padding: 4px 12px; border-radius: 14px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .sv-marea-mbtn.is-on { background: color-mix(in srgb, var(--c-brand) 14%, transparent); border-color: var(--c-brand); color: var(--c-brand); }
 .sv-marea-daynav { display: flex; align-items: center; gap: 6px; }
-.sv-marea-grid { display: grid; grid-template-columns: 190px 1fr 210px; grid-template-areas: "moon wave side" "viva viva side" "table table table"; gap: 14px; }
-.sv-marea-moonp { grid-area: moon; display: flex; flex-direction: column; align-items: center; text-align: center; }
-.sv-marea-wavep { grid-area: wave; }
-.sv-marea-side { grid-area: side; display: flex; flex-direction: column; gap: 10px; }
-.sv-marea-vivap { grid-area: viva; }
+/* Vista "Día": luna + ola arriba (alturas parejas) y los KPIs como FRANJA horizontal.
+   Antes los KPIs eran una columna estrecha de 4 cajas apiladas que estiraba la fila y
+   dejaba un hueco muerto bajo la luna y bajo la ola. */
+.sv-marea-grid { display: grid; grid-template-columns: 200px 1fr; grid-template-areas: "moon wave" "side side" "table table"; gap: 14px; align-items: stretch; }
+.sv-marea-moonp { grid-area: moon; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.sv-marea-wavep { grid-area: wave; display: flex; flex-direction: column; }
+.sv-marea-wavep #mareaWaveHost { flex: 1; display: flex; align-items: center; }
+.sv-marea-side { grid-area: side; display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; align-items: stretch; }
 .sv-marea-tablep { grid-area: table; }
-@media (max-width: 900px) { .sv-marea-grid { grid-template-columns: 1fr 1fr; grid-template-areas: "moon side" "wave wave" "viva viva" "table table"; } }
-@media (max-width: 620px) { .sv-marea-grid { grid-template-columns: 1fr; grid-template-areas: "moon" "wave" "side" "viva" "table"; } }
+@media (max-width: 620px) { .sv-marea-grid { grid-template-columns: 1fr; grid-template-areas: "moon" "wave" "side" "table"; } }
+/* Resumen del mes (vista "Mes"): 6 estadísticos + barra de régimen Viva/Muerta */
+.sv-marea-statsp { margin-bottom: 14px; }
+.sv-marea-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.sv-marea-stat { background: color-mix(in srgb, var(--c-text-muted) 6%, transparent); border: 1px solid var(--c-border-soft, var(--c-border)); border-radius: var(--r-md); padding: 9px 11px; }
+.sv-marea-stat-l { font-size: 9.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--c-text-muted); margin-bottom: 3px; }
+.sv-marea-stat-v { font-size: 18px; font-weight: 800; color: var(--c-text); font-variant-numeric: tabular-nums; }
+.sv-marea-stat-s { font-size: 10px; color: var(--c-text-muted); margin-top: 1px; }
 .sv-marea-panel { background: var(--c-surface); border: 1px solid var(--c-border-soft, var(--c-border)); border-radius: var(--r-md); padding: 12px 14px; }
 .sv-marea-ptitle { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--c-text-muted); margin-bottom: 8px; }
 .sv-marea-moon { margin: 4px 0; }

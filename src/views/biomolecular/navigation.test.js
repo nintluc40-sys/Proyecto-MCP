@@ -124,17 +124,34 @@ describe('Biología Molecular · harness de navegación (D3 stubeado)', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
-  it('modo AUD bloquea la exportación (no genera Excel con datos simulados)', () => {
+  it('modo AUD permite exportar y avisa de que los datos son simulados', () => {
     biomolecularView(root);
-    click(document.getElementById('aud-btn')); // activa simulación
+    click(document.getElementById('aud-btn')); // activa simulación (entrenamiento)
     expect(document.getElementById('aud-btn').classList.contains('on')).toBe(true);
     click(document.getElementById('export-xlsx-btn'));
-    // El modal de export NO debe abrirse mientras AUD está activo.
-    expect(document.getElementById('bm-export-modal').classList.contains('open')).toBe(false);
-    click(document.getElementById('aud-btn')); // desactiva → export vuelve a estar disponible
-    click(document.getElementById('export-xlsx-btn'));
+    // El export SÍ está disponible: es material de entrenamiento.
     expect(document.getElementById('bm-export-modal').classList.contains('open')).toBe(true);
+    // ...pero el modal avisa de que el archivo será una simulación.
+    expect(document.getElementById('bm-export-aud').style.display).not.toBe('none');
     click(document.getElementById('bm-export-close'));
+    // Sin AUD el aviso desaparece.
+    click(document.getElementById('aud-btn'));
+    click(document.getElementById('export-xlsx-btn'));
+    expect(document.getElementById('bm-export-aud').style.display).toBe('none');
+    click(document.getElementById('bm-export-close'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('el modo AUD sobrevive al re-render y solo se apaga al pulsarlo de nuevo', () => {
+    biomolecularView(root);
+    click(document.getElementById('aud-btn'));
+    const simulado = [...document.querySelectorAll('#table-body tr')].map((tr) => tr.innerHTML);
+    biomolecularView(root); // re-render completo (reconstruye RAW desde el store)
+    expect(document.getElementById('aud-btn').classList.contains('on')).toBe(true);
+    // La simulación es determinista: el re-render reproduce exactamente los mismos resultados.
+    expect([...document.querySelectorAll('#table-body tr')].map((tr) => tr.innerHTML)).toEqual(simulado);
+    click(document.getElementById('aud-btn')); // segunda pulsación → datos reales
+    expect(document.getElementById('aud-btn').classList.contains('on')).toBe(false);
     expect(errSpy).not.toHaveBeenCalled();
   });
 

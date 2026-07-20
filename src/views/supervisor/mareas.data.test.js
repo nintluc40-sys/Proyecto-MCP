@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { store } from '../../core/store.js';
-import { isMareaRow, mareaDays, pearson, corrSignificant } from './mareas.js';
+import { isMareaRow, mareaDays, pearson, corrSignificant, monthStats } from './mareas.js';
 
 afterEach(() => { store.globalData = []; });
 
@@ -59,6 +59,52 @@ describe('mareas · capa de datos (hoja "Marea")', () => {
     const days = mareaDays();
     expect(days.length).toBe(2);
     expect(days[0].d.getTime()).toBeLessThan(days[1].d.getTime());
+  });
+});
+
+describe('mareas · estadísticos del mes', () => {
+  const day = (fecha, amp, pmax, bmin, tipo) => M({
+    Fecha: fecha, 'Tipo de Marea': tipo, 'Amplitud (m)': String(amp),
+    'Pleamar 1': '05:00', 'Altura P1 (m)': String(pmax),
+    'Bajamar 1': '11:00', 'Altura B1 (m)': String(bmin),
+  });
+
+  it('calcula promedio, máx/mín con su día, extremos absolutos y régimen', () => {
+    store.globalData = [
+      day('01/06/2026', 1.20, 2.00, 0.80, 'Muerta'),
+      day('02/06/2026', 1.80, 2.40, 0.60, 'Viva'),
+      day('03/06/2026', 1.50, 2.10, 0.55, 'Viva'),
+    ];
+    const s = monthStats(mareaDays());
+    expect(s.dias).toBe(3);
+    expect(s.ampProm).toBeCloseTo(1.5, 5);
+    expect(s.ampMax).toBeCloseTo(1.8, 5);
+    expect(s.ampMaxDia).toBe(2);   // el día 2 tiene la amplitud mayor
+    expect(s.ampMin).toBeCloseTo(1.2, 5);
+    expect(s.ampMinDia).toBe(1);
+    expect(s.pleamarMax).toBeCloseTo(2.40, 5);
+    expect(s.bajamarMin).toBeCloseTo(0.55, 5);
+    expect(s.viva).toBe(2);
+    expect(s.muerta).toBe(1);
+  });
+
+  it('sin datos devuelve null, no NaN ni -Infinity', () => {
+    // Math.max(...[]) daría -Infinity: el mes vacío debe rendirse como "—".
+    const s = monthStats([]);
+    expect(s.dias).toBe(0);
+    [s.ampProm, s.ampMax, s.ampMin, s.pleamarMax, s.bajamarMin].forEach((v) => expect(v).toBe(null));
+    expect(s.ampMaxDia).toBe(null);
+  });
+
+  it('tolera días sin amplitud registrada', () => {
+    store.globalData = [
+      day('01/06/2026', 1.20, 2.00, 0.80, 'Viva'),
+      M({ Fecha: '02/06/2026', 'Tipo de Marea': 'Viva' }), // sin lecturas → sin amp/pmax/bmin
+    ];
+    const s = monthStats(mareaDays());
+    expect(s.dias).toBe(2);
+    expect(s.ampProm).toBeCloseTo(1.20, 5); // promedia solo los días con dato
+    expect(s.ampMaxDia).toBe(1);
   });
 });
 

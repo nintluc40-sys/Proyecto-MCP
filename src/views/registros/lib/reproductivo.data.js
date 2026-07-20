@@ -132,29 +132,39 @@ export function buildAltaBatch(forms, matrixIndex) {
 
 /* ── Sección 2 · Desoves / Mortalidades ── */
 /** Procesa un lote de Trovan para un evento (desove|mortalidad) en una fecha. Añade a la
- *  BITÁCORA (con foto de ubicación cuando hay matriz) y, en mortalidad, marca Estado/Fecha
- *  muerte en la MATRIZ. Reporta no encontrados y hembras ya muertas.
- *  `matrixIndex` es OPCIONAL: si se pasa, valida (un no-encontrado se reporta y omite; un
- *  desove de una muerta se omite); si NO se pasa, procesa todos los Trovan sin validar
- *  (el engine aún no lee la MATRIZ — la validación llega cuando se cargue). */
+ *  BITÁCORA (con la ubicación tomada de la MATRIZ) y, en mortalidad, marca Estado/Fecha
+ *  muerte en la MATRIZ.
+ *
+ *  `matrixIndex` es OBLIGATORIO: el usuario solo teclea Trovan ID, así que la Sala y el
+ *  Tanque de la Bitácora SALEN de la MATRIZ. Sin ella no se puede completar la fila, de
+ *  modo que se rechaza el lote entero en vez de escribir eventos con ubicación en blanco.
+ *  Se omite y reporta cada código que: tenga formato corrupto (`invalidFormat`), no exista
+ *  en la MATRIZ (`notFound`), exista pero sin Sala o Tanque (`sinUbicacion`), o sea un
+ *  desove de una hembra ya muerta (`alreadyDead`). */
 export function buildEventBatch({ ids, fecha, tipo, matrixIndex } = {}) {
-  const report = { total: 0, processed: [], notFound: [], alreadyDead: [], invalidFormat: [] };
+  const report = { total: 0, processed: [], notFound: [], alreadyDead: [], invalidFormat: [], sinUbicacion: [] };
   const okTipo = (tipo === REPRO_EVENTO.DESOVE || tipo === REPRO_EVENTO.MORTALIDAD);
   if (!fecha) return { report, bitacora: null, matriz: null, error: 'Falta la fecha.' };
   if (!okTipo) return { report, bitacora: null, matriz: null, error: 'Tipo de evento inválido.' };
+  if (!matrixIndex || typeof matrixIndex.get !== 'function') {
+    return { report, bitacora: null, matriz: null, error: 'No se pudo leer la hoja "Maduración MATRIZ": sin ella no se puede completar la Sala y el Tanque de la Bitácora. Carga los datos y reintenta.' };
+  }
   const fx = sanitizeStr(fecha);
   const bitRows = []; const matRows = [];
   (ids || []).forEach((raw) => {
     const id = normTrovan(raw); if (!id) return;
     report.total++;
     if (!isValidTrovan(id)) { report.invalidFormat.push(id); return; } // formato corrupto → NO se registra, señalado
-    const rec = matrixIndex ? matrixIndex.get(id) : null;
-    if (matrixIndex && !rec) { report.notFound.push(id); return; } // solo valida si hay matriz
-    const dead = !!(rec && rec.estado === REPRO_ESTADO.MUERTO);
+    const rec = matrixIndex.get(id);
+    if (!rec) { report.notFound.push(id); return; }
+    // La Bitácora exige Sala y Tanque, y su única fuente es la MATRIZ: si el individuo no
+    // los tiene allí, registrar el evento dejaría la fila incompleta → se rechaza.
+    const sala = sanitizeStr(rec.sala), tanque = sanitizeStr(rec.tanque);
+    if (!sala || !tanque) { report.sinUbicacion.push(id); return; }
+    const dead = rec.estado === REPRO_ESTADO.MUERTO;
     if (tipo === REPRO_EVENTO.DESOVE && dead) { report.alreadyDead.push(id); return; } // muerta no desova
     bitRows.push(rowFromObj(REPRO_BITACORA_HEADERS, {
-      'Trovan ID': id, 'Fecha': fx, 'Tipo': tipo,
-      'Sala': sanitizeStr(rec ? rec.sala : ''), 'Tanque': sanitizeStr(rec ? rec.tanque : ''),
+      'Trovan ID': id, 'Fecha': fx, 'Tipo': tipo, 'Sala': sala, 'Tanque': tanque,
     }));
     if (tipo === REPRO_EVENTO.MORTALIDAD) {
       if (dead) report.alreadyDead.push(id); // informativo; el re-registro es idempotente

@@ -168,6 +168,43 @@ function mareaWaveSVG(day, nowMin) {
     </svg>`;
 }
 
+// ---------- estadísticos del mes ----------
+/** Resumen del mes: amplitud media/máx/mín (con el día en que ocurren), pleamar máxima
+ *  y bajamar mínima absolutas, y nº de días. Devuelve `null` en los campos sin dato en
+ *  vez de NaN/-Infinity (`Math.max(...[])` sobre un mes sin alturas daría -Infinity). */
+export function monthStats(monthDays) {
+  const days = monthDays || [];
+  const pick = (f) => days.map(f).filter((v) => v != null && !isNaN(v));
+  const amps = pick((d) => d.amp), pmaxes = pick((d) => d.pmax), bmins = pick((d) => d.bmin);
+  const dayOf = (val) => { const hit = days.find((d) => d.amp != null && Math.abs(d.amp - val) < 1e-9); return hit ? hit.d.getDate() : null; };
+  const ampMax = amps.length ? Math.max(...amps) : null;
+  const ampMin = amps.length ? Math.min(...amps) : null;
+  return {
+    dias: days.length,
+    ampProm: amps.length ? amps.reduce((a, b) => a + b, 0) / amps.length : null,
+    ampMax, ampMaxDia: ampMax == null ? null : dayOf(ampMax),
+    ampMin, ampMinDia: ampMin == null ? null : dayOf(ampMin),
+    pleamarMax: pmaxes.length ? Math.max(...pmaxes) : null,
+    bajamarMin: bmins.length ? Math.min(...bmins) : null,
+    viva: days.filter((d) => d.tipo === 'Viva').length,
+    muerta: days.filter((d) => d.tipo === 'Muerta').length,
+  };
+}
+function monthStatsHTML(monthDays) {
+  const s = monthStats(monthDays);
+  const m = (v) => v == null ? '—' : v.toFixed(2) + ' m';
+  const chip = (label, val, sub, col) => `<div class="sv-marea-stat"><div class="sv-marea-stat-l">${esc(label)}</div><div class="sv-marea-stat-v"${col ? ` style="color:${col}"` : ''}>${esc(val)}</div>${sub ? `<div class="sv-marea-stat-s">${esc(sub)}</div>` : ''}</div>`;
+  const conAmp = (monthDays || []).filter((d) => d.amp != null).length;
+  return `<div class="sv-marea-stats">
+      ${chip('Amplitud promedio', m(s.ampProm), 'del mes', AMP)}
+      ${chip('Amplitud máxima', m(s.ampMax), s.ampMaxDia ? `día ${s.ampMaxDia}` : '—', PLE)}
+      ${chip('Amplitud mínima', m(s.ampMin), s.ampMinDia ? `día ${s.ampMinDia}` : '—', BAJ)}
+      ${chip('Pleamar máx. absoluta', m(s.pleamarMax), 'del mes', PLE)}
+      ${chip('Bajamar mín. absoluta', m(s.bajamarMin), 'del mes', BAJ)}
+      ${chip('Días registrados', String(s.dias), conAmp < s.dias ? `${conAmp} con amplitud` : '', '')}
+    </div>`;
+}
+
 // ---------- barra Viva/Muerta del mes ----------
 function vivaBar(monthDays) {
   const total = monthDays.filter((d) => d.tipo).length;
@@ -181,7 +218,9 @@ function vivaBar(monthDays) {
 }
 
 // ---------- vista "Día" ----------
-function diaHTML(day, monthDays, nowMin) {
+// El régimen Viva/Muerta del MES vive en la vista "Mes" (junto al resto de datos
+// mensuales); aquí el día ya se describe con su propia insignia de tipo de marea.
+function diaHTML(day, nowMin) {
   const fmt = (v) => v == null ? '—' : v.toFixed(2);
   const kpi = (l, v, u, col) => `<div class="sv-marea-kpi"><div class="sv-marea-kpi-l">${esc(l)}</div><div class="sv-marea-kpi-v"${col ? ` style="color:${col}"` : ''}>${v}${u ? `<span class="sv-marea-kpi-u">${u}</span>` : ''}</div></div>`;
   const tipoBadge = day.tipo
@@ -209,10 +248,6 @@ function diaHTML(day, monthDays, nowMin) {
         ${kpi('Bajamar mín.', fmt(day.bmin), 'm', BAJ)}
         <div class="sv-marea-tipowrap"><div class="sv-marea-kpi-l">Tipo de marea (día)</div>${tipoBadge}</div>
       </div>
-      <div class="sv-marea-panel sv-marea-vivap">
-        <div class="sv-marea-ptitle">Régimen del mes · Viva / Muerta</div>
-        ${vivaBar(monthDays)}
-      </div>
       <div class="sv-marea-panel sv-marea-tablep">
         <div class="sv-marea-ptitle">Lecturas del día</div>
         ${table}
@@ -228,9 +263,14 @@ function diaHTML(day, monthDays, nowMin) {
 
 // ---------- vista "Mes" (tendencia + donut, Chart.js) ----------
 let _mes = null; // { monthDays } del mes visible (para redibujar los gráficos ampliados)
-function mesHTML() {
+function mesHTML(monthDays, monthLabel) {
   const fsBtn = (which, label) => `<button class="sv-marea-fsbtn" data-marea-chart-fs="${which}" title="Ampliar ${label}" aria-label="Ampliar ${label}">⛶</button>`;
-  return `<div class="sv-marea-charts">
+  return `<div class="sv-marea-panel sv-marea-statsp">
+      <div class="sv-marea-ptitle">Resumen del mes${monthLabel ? ` <span class="muted">· ${esc(monthLabel)}</span>` : ''}</div>
+      ${monthStatsHTML(monthDays)}
+      ${vivaBar(monthDays)}
+    </div>
+    <div class="sv-marea-charts">
       <div class="sv-marea-panel">
         <div class="sv-marea-ptitle sv-marea-ptitle--row">Tendencia mensual — alturas de marea <span class="muted">· clic en la leyenda para alternar series</span>${fsBtn('trend', 'la tendencia')}</div>
         <div class="sv-marea-charthost"><canvas id="mareaTrendChart"></canvas></div>
@@ -310,7 +350,13 @@ function selBar(months, curMkey, monthDays, curKey, mode) {
 // ---------- ticker de tiempo real (solo el día = hoy, vista Día) ----------
 let _ticker = null;
 export function stopMareaTicker() { if (_ticker) { clearInterval(_ticker); _ticker = null; } }
-export function cleanupMareas() { stopMareaTicker(); destroyChart('mareaTrendChart'); destroyChart('mareaDonutChart'); destroyChart('mareaCorrChart'); destroyChart('mareaFsCanvas'); }
+export function cleanupMareas() {
+  stopMareaTicker();
+  ['mareaTrendChart', 'mareaDonutChart', 'mareaCorrChart', 'mareaFsCanvas'].forEach(destroyChart);
+  // Referencias al DOM/datos del render anterior: se sueltan para no dibujar un gráfico
+  // ampliado con el mes que ya no está en pantalla. `renderMareas` las repuebla.
+  _mes = null; _corr = null;
+}
 function startTicker(host, state) {
   stopMareaTicker();
   _ticker = setInterval(() => {
@@ -370,8 +416,19 @@ function corrDaily(kind, monthKey) {
   });
   return { byParamDay, labels };
 }
-/** Matriz parámetro × variable-de-marea con el coeficiente de Pearson y los pares diarios. */
-function corrMatrix(kind, monthKey, tideByDay) {
+/** Matriz parámetro × variable-de-marea con el coeficiente de Pearson y los pares diarios.
+ *  Memoizada por (identidad del store · tipo · mes): `corrDaily` recorre TODO el store
+ *  (decenas de miles de filas) y la matriz se repintaba entera con solo elegir una celda
+ *  para ver su dispersión. */
+let _corrCache = null;
+function corrMatrix(kind, monthKey) {
+  if (_corrCache && _corrCache.data === store.globalData && _corrCache.kind === kind && _corrCache.monthKey === monthKey) return _corrCache.out;
+  const out = corrMatrixCompute(kind, monthKey);
+  _corrCache = { data: store.globalData, kind, monthKey, out };
+  return out;
+}
+function corrMatrixCompute(kind, monthKey) {
+  const tideByDay = tideByDayOf(monthKey);
   const daily = corrDaily(kind, monthKey);
   const params = [...daily.byParamDay.keys()].map((k) => ({ key: k, label: daily.labels.get(k) }));
   const cell = new Map();
@@ -405,7 +462,7 @@ export function corrSignificant(r, n) {
 }
 function corrHTML(monthKey, state) {
   const kind = state.corrKind === 'calagua' ? 'calagua' : 'micro';
-  const { params, cell } = corrMatrix(kind, monthKey, tideByDayOf(monthKey)); // todos los módulos
+  const { params, cell } = corrMatrix(kind, monthKey); // todos los módulos
   _corr = { params, cell };
   const kindBtn = (k, lbl) => `<button class="sv-marea-mbtn${kind === k ? ' is-on' : ''}" data-corr-kind="${k}">${lbl}</button>`;
   const bar = `<div class="sv-marea-corr-bar"><div class="sv-marea-months">${kindBtn('micro', '🧫 Microbiología')}${kindBtn('calagua', '💧 Calidad de Agua')}</div></div>`;
@@ -487,9 +544,10 @@ export function renderMareas(host, state) {
 
   const nowMin = (state.mode === 'dia' && isTodayD(curDay.d)) ? (new Date().getHours() * 60 + new Date().getMinutes()) : null;
   let content;
+  const curMonthLabel = (months.find((m) => m.key === curMkey) || {}).label || '';
   if (state.mode === 'corr') content = corrHTML(curMkey, state);
-  else if (state.mode === 'mes') content = mesHTML();
-  else content = diaHTML(curDay, monthDays, nowMin);
+  else if (state.mode === 'mes') content = mesHTML(monthDays, curMonthLabel);
+  else content = diaHTML(curDay, nowMin);
   host.innerHTML = selBar(months, curMkey, monthDays, curKey, state.mode) + content + note;
 
   if (state.mode === 'corr') drawCorrScatter(state);

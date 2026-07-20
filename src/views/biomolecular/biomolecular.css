@@ -68,6 +68,8 @@
 .biomol .report-trigger-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(14,165,233,.4); }
 .biomol .aud-btn { background: linear-gradient(135deg, #64748b, #334155); }
 .biomol .aud-btn.on { background: linear-gradient(135deg, #ef4444, #b91c1c); box-shadow: 0 4px 12px rgba(239,68,68,.35); }
+/* Aviso de simulación en el modal de exportación (modo AUD / entrenamiento) */
+.biomol .bm-export-aud { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.45); border-radius: 8px; padding: 9px 11px; margin-bottom: 12px; font-size: 11.5px; line-height: 1.5; color: #ef4444; }
 
 /* Grids + cards */
 .biomol .grid-kpi { display: grid; grid-template-columns: repeat(8, minmax(0,1fr)); gap: 10px; margin-bottom: 18px; }

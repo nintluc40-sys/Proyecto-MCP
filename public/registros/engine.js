@@ -5461,9 +5461,16 @@ async function madReproProcess(){
   const parsed = window.__rgLib.parseTrovanList(cEl.value);
   if(!parsed.ids.length){ toast("Pega al menos un Trovan ID.","warn",3500); return; }
   const res = window.__rgLib.buildEventBatch({ ids: parsed.ids, fecha: fecha, tipo: tipo, matrixIndex: _reproMatrixIndex() });
-  if(res.error){ toast(res.error,"err",3500); return; }
+  if(res.error){ toast(res.error,"err",7000); return; }
+  // Ningún código superó la validación: se muestra el informe con el motivo y NO se
+  // limpia el cuadro de texto (antes decía "✅ 0 registrado(s)" y borraba lo pegado).
+  if(!res.bitacora && !res.matriz){
+    _madReproShowReport(res.report, parsed.duplicates, tipo, false);
+    toast("Ningún Trovan superó la validación: no se registró nada. Revisa el detalle.","warn",6000);
+    return;
+  }
   const url = gasUrl();
-  toast("Procesando "+parsed.ids.length+" código(s)…","info",2200);
+  toast("Procesando "+res.report.processed.length+" código(s) válido(s)…","info",2200);
   let okAll=true;
   if(res.bitacora){ okAll = (await postPayload(res.bitacora, url)) && okAll; }
   if(res.matriz){ okAll = (await postPayload(res.matriz, url)) && okAll; }
@@ -5594,13 +5601,15 @@ function _madReproShowReport(rep, duplicates, tipo, okSent){
   h += chip(rep.processed.length+" registrado(s)", "#dcfce7", "#166534");
   if(duplicates && duplicates.length) h += chip(duplicates.length+" duplicado(s) omitido(s)", "#fef9c3", "#854d0e");
   if(rep.invalidFormat && rep.invalidFormat.length) h += chip(rep.invalidFormat.length+" con formato inválido (señalados)", "#ffedd5", "#9a3412");
-  if(rep.notFound && rep.notFound.length) h += chip(rep.notFound.length+" no encontrado(s)", "#fee2e2", "#991b1b");
+  if(rep.notFound && rep.notFound.length) h += chip(rep.notFound.length+" no está(n) en la MATRIZ", "#fee2e2", "#991b1b");
+  if(rep.sinUbicacion && rep.sinUbicacion.length) h += chip(rep.sinUbicacion.length+" sin Sala/Tanque en la MATRIZ", "#fee2e2", "#991b1b");
   if(rep.alreadyDead && rep.alreadyDead.length) h += chip(rep.alreadyDead.length+" ya muerta(s)", "#fef9c3", "#854d0e");
   h += '</div>';
   const lists=[];
   if(duplicates && duplicates.length) lists.push(["Duplicados", duplicates]);
   if(rep.invalidFormat && rep.invalidFormat.length) lists.push(["Formato inválido (no registrados — revisa el código en el lector)", rep.invalidFormat]);
-  if(rep.notFound && rep.notFound.length) lists.push(["No encontrados", rep.notFound]);
+  if(rep.notFound && rep.notFound.length) lists.push(["No encontrados en Maduración MATRIZ (no registrados)", rep.notFound]);
+  if(rep.sinUbicacion && rep.sinUbicacion.length) lists.push(["Sin Sala/Tanque en Maduración MATRIZ (no registrados — completa su ubicación)", rep.sinUbicacion]);
   if(rep.alreadyDead && rep.alreadyDead.length) lists.push(["Ya registradas como muertas", rep.alreadyDead]);
   lists.forEach(function(pair){ h += '<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
   el.innerHTML = h;
@@ -8078,8 +8087,10 @@ const MIC_FORMATS = {
     params:["valg","vvuln","vpara","pseudo","aero"]
   },
   "algas": {
-    depto:"Otras", label:"Algas",
-    rkeyFn:()=> "ambiental",
+    depto:"Algas", label:"Algas Hisopado",
+    // Comparte el juego de factores/umbrales "algas" con Mensual y Fundas y Masivos
+    // (antes usaba el de "ambiental", junto a los hisopados de planta).
+    rkeyFn:()=> "algas",
     ctx:[
       { k:"punto", l:"Punto de muestreo", type:"sel", opts:["","PBR 1 Tubo A","PBR 2 Tubo B","Pared","Mesa cerámica","Vidrio","Aire acondicionado","Tubos de la línea de aire"], w:165 }
     ],
@@ -8099,7 +8110,7 @@ const MIC_FORMATS = {
     params:["vamar","vverd","vtot","hongos","vlum"]
   },
   "algas-mensual": {
-    depto:"Otras", label:"Algas Mensual",
+    depto:"Algas", label:"Algas Mensual",
     rkeyFn:()=> "algas",
     ctx:[
       { k:"lugar",       l:"Lugar",    type:"sel", opts:MIC_ALGM_LUGAR,   w:92 },
@@ -8110,7 +8121,7 @@ const MIC_FORMATS = {
     params:["vamar","vverd","vtot","btot"]
   },
   "algas-r": {
-    depto:"Otras", label:"Algas R",
+    depto:"Algas", label:"Algas Fundas y Masivos",
     rkeyFn:()=> "algas",
     ctx:[
       { k:"tipoMuestra", l:"Muestras", type:"txtlist", opts:MIC_ALGR_MUESTRA, w:130 },
@@ -8120,7 +8131,9 @@ const MIC_FORMATS = {
     params:["vamar","vverd","vtot","pseudo","aero"]
   }
 };
-const MIC_FORMAT_KEYS = ["larv-muestra","reservorios","placa-amb","artemia","mad-principal","mad-agua","mad-ensayo","alim-vivo","ras","agua-mar","agua-limpia-mar","mad-desinf","externas","hisopados","hisopados-despacho","algas","algas-mensual","algas-r"];
+// El orden define el de los optgroup del selector (Larvicultura → Maduración → Algas →
+// Otras) y el de las secciones de la ficha.
+const MIC_FORMAT_KEYS = ["larv-muestra","reservorios","placa-amb","artemia","mad-principal","mad-agua","mad-ensayo","alim-vivo","ras","agua-mar","agua-limpia-mar","mad-desinf","algas","algas-mensual","algas-r","externas","hisopados","hisopados-despacho"];
 // Formatos en los que la Corrida es obligatoria para guardar/sincronizar.
 const MIC_CORRIDA_REQ = new Set(["larv-muestra"]);
 function micFormatLabel(fmtKey){ return (MIC_FORMATS[fmtKey] && MIC_FORMATS[fmtKey].label) || fmtKey || ""; }
@@ -8170,9 +8183,15 @@ const MIC_DR_BASE = {
     btot:{f:1000,l:10000,m:100000,e:1000000}, bnar:{f:1000,l:1000,m:5000,e:10000},
     brojas:{f:1000}
   },
+  // Área compartida por los 3 formatos del departamento Algas (Hisopado, Mensual,
+  // Fundas y Masivos). Factores de dilución: colonias ×5, Pseudomonas/Aeromonas y
+  // Bacterias totales ×20. Los umbrales se ESCALARON por el mismo factor respecto a
+  // los anteriores (que asumían ×1), de modo que un mismo conteo de placa conserva su
+  // nivel Leve/Moderado/Elevado y solo cambia el UFC mostrado.
   "algas":{
-    vamar:{f:1,l:1,m:2,e:10}, vverd:{f:1,l:1,m:2,e:10}, vtot:{f:1,l:1,m:2,e:10},
-    pseudo:{f:1,l:1,m:2,e:10}, aero:{f:1,l:1,m:2,e:10}, btot:{f:1,l:10,m:100,e:500}
+    vamar:{f:5,l:5,m:10,e:50}, vverd:{f:5,l:5,m:10,e:50}, vtot:{f:5,l:5,m:10,e:50},
+    pseudo:{f:20,l:20,m:40,e:200}, aero:{f:20,l:20,m:40,e:200},
+    btot:{f:20,l:200,m:2000,e:10000}, hongos:{f:1}, levad:{f:1}
   },
   // Agua Limpia y Mar: umbrales base de "mad-agua", factores propios (amar/verd/tot,
   // vibrios, Pseudomonas y Aeromonas ×5; Bact.Totales/Naranjas ×10; Hongos ×10).
@@ -8233,7 +8252,27 @@ function micLvl(ufc, r){
   if(ufc < e) return "o";
   return "r";
 }
+// Migración de una sola vez del área "algas". El editor de factores persiste una copia
+// COMPLETA de MIC_DR_BASE (micFactorSet guarda loadMicFactors() entero), así que quien
+// haya guardado alguna vez tiene congelados los valores antiguos (×1) y NO vería los
+// nuevos por defecto. Se borra SOLO esa área de los overrides guardados —el resto de
+// ajustes del usuario se conserva— y se marca con una versión para no repetirlo.
+const MIC_FACTORS_VER_KEY = "larv4_mic_factors_ver";
+const MIC_FACTORS_VER     = "2026-07-20-algas";
+let _micFactMigrated = false;
+function micMigrateFactors(){
+  try{
+    if(localStorage.getItem(MIC_FACTORS_VER_KEY) === MIC_FACTORS_VER) return;
+    const raw = localStorage.getItem(MIC_FACTORS_KEY);
+    if(raw){
+      const o = JSON.parse(raw);
+      if(o && typeof o === "object" && o.algas){ delete o.algas; localStorage.setItem(MIC_FACTORS_KEY, JSON.stringify(o)); }
+    }
+    localStorage.setItem(MIC_FACTORS_VER_KEY, MIC_FACTORS_VER);
+  }catch(_){}
+}
 function loadMicFactors(){
+  if(!_micFactMigrated){ _micFactMigrated = true; micMigrateFactors(); }
   const out = JSON.parse(JSON.stringify(MIC_DR_BASE));
   try{
     const raw = localStorage.getItem(MIC_FACTORS_KEY);
@@ -8246,7 +8285,23 @@ function loadMicFactors(){
   return out;
 }
 function saveMicFactors(F){ try{ localStorage.setItem(MIC_FACTORS_KEY, JSON.stringify(F||{})); }catch(_){ toast("No se pudo guardar factores","err"); } }
-function micFactorOf(rkey, pk){ const F = loadMicFactors(); return (F[rkey] && F[rkey][pk]) ? F[rkey][pk] : { f:1 }; }
+// Set de factores CACHEADO por la huella del override en localStorage (mismo patrón que
+// loadMicThresholds del dashboard). micFactorOf es ruta caliente —se llama una vez por
+// parámetro y por fila al recomputar una ficha—, y loadMicFactors clona MIC_DR_BASE
+// entero (JSON.parse+stringify) más un JSON.parse del override en CADA llamada. El
+// objeto devuelto es de SOLO LECTURA: quien lo mute (micFactorSet) debe seguir usando
+// loadMicFactors, que entrega una copia fresca; al guardar cambia la huella y la caché
+// se invalida sola.
+let _micFCache = null, _micFRaw = null;
+function micFactorsCached(){
+  let raw = null;
+  try{ raw = localStorage.getItem(MIC_FACTORS_KEY); }catch(_){ raw = null; }
+  if(_micFCache && raw === _micFRaw) return _micFCache;
+  _micFCache = loadMicFactors();
+  _micFRaw = raw;
+  return _micFCache;
+}
+function micFactorOf(rkey, pk){ const F = micFactorsCached(); return (F[rkey] && F[rkey][pk]) ? F[rkey][pk] : { f:1 }; }
 
 // Calcula crudo/ufc/lvl por parámetro de un registro (usa los factores actuales).
 function micComputeRecord(rec){
@@ -9008,7 +9063,7 @@ function micDeleteSession(k){
 function renderMicFactores(){
   const fp = document.getElementById("fp-micfact"); if(!fp) return;
   const F = loadMicFactors();
-  const areaLabel = { "larv-animal":"Larvicultura · Animal", "larv-agua":"Larvicultura · Agua", "mad-reprod":"Maduración · Reproductores", "ambiental":"Ambiental / Hisopados / Algas swab (×1)", "artemia":"Artemia (×20)", "ras-agua":"Maduración · RAS (Agua)", "algas":"Algas Mensual / R (×1)", "agua-limpia-mar":"Agua Limpia y Mar", "mad-despacho-agua":"Maduración · Despacho (Agua)", "mad-despacho-animal":"Maduración · Despacho (Organismo)", "mad-agua":"Maduración · Agua" };
+  const areaLabel = { "larv-animal":"Larvicultura · Animal", "larv-agua":"Larvicultura · Agua", "mad-reprod":"Maduración · Reproductores", "ambiental":"Ambiental / Hisopados (×1)", "artemia":"Artemia (×20)", "ras-agua":"Maduración · RAS (Agua)", "algas":"Algas · Hisopado / Mensual / Fundas y Masivos", "agua-limpia-mar":"Agua Limpia y Mar", "mad-despacho-agua":"Maduración · Despacho (Agua)", "mad-despacho-animal":"Maduración · Despacho (Organismo)", "mad-agua":"Maduración · Agua" };
   const blocks = Object.keys(MIC_DR_BASE).map(ak=>{
     const rows = Object.keys(MIC_DR_BASE[ak]).map(pk=>{
       const r = (F[ak] && F[ak][pk]) || {};
@@ -10792,10 +10847,16 @@ function doPost(e) {
     var isMad   = madKeyCols !== null;
     // Columna Trovan ID (0-indexed) por hoja: se fuerza a TEXTO ("@") al escribir,
     // así Sheets NO reinterpreta el código (notación científica / ceros perdidos).
+    // Los Trovan del lector son 10 hexadecimales CON ceros a la izquierda (0008218CCC):
+    // en formato numérico un código todo-dígitos perdería los ceros y rompería la clave
+    // de upsert, así que esta columna NO puede ir en "Automático".
     var madTrovanCol = payload.sheetName === "Maduración MATRIZ" ? 1
                      : payload.sheetName === "Maduración Bitácora" ? 0
                      : payload.sheetName === "Maduración Transferencias" ? 3
                      : -1;
+    // Columna "Número" (nº de registro) de la MATRIZ: formato NUMÉRICO AUTOMÁTICO
+    // ("General"), para que llegue como número y no como texto.
+    var madNumCol = payload.sheetName === "Maduración MATRIZ" ? 0 : -1;
     var limits  = isAlgas  ? LIMITS.algas
                 : isMad    ? LIMITS.mad
                 : isBiomol ? LIMITS.biomol
@@ -10873,7 +10934,7 @@ function doPost(e) {
       //   Sala     → [0,1]   Fecha+Sala
       //   Tanques  → [0,1,3] Fecha+Sala+Tanque (Lote editable, fuera de clave)
       //   Lotes    → [0,1,2] Fecha+Sala+Fila   (Lote/Historial editables)
-      result = upsertMadRows(ws, rows, madKeyCols, madTrovanCol);
+      result = upsertMadRows(ws, rows, madKeyCols, madTrovanCol, madNumCol);
     }
     else if (isAlgas)  result = upsertAlgasRows(ws, rows);
     else if (isBiomol) {
@@ -11436,8 +11497,9 @@ function algasInKey(row) {
 //   • Maduración Lotes    → [0,1,2] (Fecha, Sala, Fila)   — Lote/Historial editables
 // Si la clave coincide con una fila existente: merge (los nuevos valores
 // no vacíos reemplazan al anterior; los vacíos preservan el dato actual).
-function upsertMadRows(ws, newRows, keyCols, trovanCol) {
+function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol) {
   if (trovanCol === undefined || trovanCol === null) trovanCol = -1;
+  if (numCol === undefined || numCol === null) numCol = -1;
   var lastR = ws.getLastRow();
   var data  = ws.getDataRange().getValues();
   var map   = {};
@@ -11470,6 +11532,8 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol) {
       }
       // Trovan a TEXTO ("@") antes de escribir → preserva el código exacto (10 hex).
       if (trovanCol >= 0 && trovanCol < merged.length) ws.getRange(entry.row, trovanCol + 1, 1, 1).setNumberFormat("@");
+      // "Número" a NUMÉRICO AUTOMÁTICO ("General") → llega como número, no como texto.
+      if (numCol >= 0 && numCol < merged.length) ws.getRange(entry.row, numCol + 1, 1, 1).setNumberFormat("General");
       ws.getRange(entry.row, 1, 1, merged.length).setValues([merged]);
       fmtData(ws, entry.row, 1, merged.length, false);
       updated++;
@@ -11491,6 +11555,7 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol) {
     var startRow = lastRow(ws) + 1;
     var nc2 = toAdd[0].length;
     if (trovanCol >= 0 && trovanCol < nc2) ws.getRange(startRow, trovanCol + 1, toAdd.length, 1).setNumberFormat("@");
+    if (numCol >= 0 && numCol < nc2) ws.getRange(startRow, numCol + 1, toAdd.length, 1).setNumberFormat("General");
     ws.getRange(startRow, 1, toAdd.length, nc2).setValues(toAdd);
     fmtData(ws, startRow, toAdd.length, nc2, false);
     added = toAdd.length;
