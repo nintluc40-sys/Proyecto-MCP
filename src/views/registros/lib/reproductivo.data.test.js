@@ -125,15 +125,31 @@ describe('Sección 2 · desoves / mortalidades', () => {
     expect(row[col(REPRO_MATRIZ_HEADERS, 'Piscina')]).toBe('');
     expect(r.bitacora.rows.length).toBe(1);
   });
-  it('sin matriz procesa TODOS los Trovan sin validar existencia (notFound vacío, sin foto de ubicación)', () => {
+  it('SIN matriz rechaza el lote entero: la Sala/Tanque de la bitácora solo salen de la MATRIZ', () => {
     const r = buildEventBatch({ ids: ['0008218CCC', '000821BB30'], fecha: '2026-07-12', tipo: REPRO_EVENTO.DESOVE });
-    expect(r.bitacora.rows.length).toBe(2);
-    expect(r.report.notFound).toEqual([]);
-    expect(r.report.processed).toEqual(['0008218CCC', '000821BB30']);
-    expect(r.bitacora.rows[0][col(REPRO_BITACORA_HEADERS, 'Sala')]).toBe(''); // sin matriz, sin snapshot
+    expect(r.error).toMatch(/MATRIZ/);
+    expect(r.bitacora).toBeNull();
+    expect(r.matriz).toBeNull();
   });
-  it('señala (invalidFormat) y NO registra los Trovan con formato corrupto, incluso sin matriz', () => {
-    const r = buildEventBatch({ ids: ['0008218CCC', '8.21E+19', '821B425'], fecha: '2026-07-12', tipo: REPRO_EVENTO.DESOVE });
+  it('rechaza el individuo que está en la MATRIZ pero sin Sala o Tanque (fila incompleta)', () => {
+    const parcial = buildMatrixIndex([
+      { trovan: '0008218CCC', estado: 'Vivo', sala: 'S5', tanque: 'T1' },
+      { trovan: '000821B425', estado: 'Vivo', sala: 'S5', tanque: '' },   // sin tanque
+      { trovan: '000821BC99', estado: 'Vivo', sala: '', tanque: 'T3' },   // sin sala
+    ]);
+    const r = buildEventBatch({ ids: ['0008218CCC', '000821B425', '000821BC99'], fecha: '2026-07-12', tipo: REPRO_EVENTO.DESOVE, matrixIndex: parcial });
+    expect(r.bitacora.rows.length).toBe(1);
+    expect(r.report.processed).toEqual(['0008218CCC']);
+    expect(r.report.sinUbicacion).toEqual(['000821B425', '000821BC99']);
+  });
+  it('la bitácora toma Sala y Tanque de la MATRIZ, no de lo que teclea el usuario', () => {
+    const r = buildEventBatch({ ids: ['0008218CCC'], fecha: '2026-07-12', tipo: REPRO_EVENTO.DESOVE, matrixIndex: idx() });
+    const row = r.bitacora.rows[0];
+    expect(row[col(REPRO_BITACORA_HEADERS, 'Sala')]).toBe('S5');
+    expect(row[col(REPRO_BITACORA_HEADERS, 'Tanque')]).toBe('T1');
+  });
+  it('señala (invalidFormat) y NO registra los Trovan con formato corrupto', () => {
+    const r = buildEventBatch({ ids: ['0008218CCC', '8.21E+19', '821B425'], fecha: '2026-07-12', tipo: REPRO_EVENTO.DESOVE, matrixIndex: idx() });
     expect(r.bitacora.rows.length).toBe(1);      // solo el válido
     expect(r.report.processed).toEqual(['0008218CCC']);
     expect(r.report.invalidFormat).toEqual(['8.21E+19', '821B425']);
