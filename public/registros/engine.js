@@ -2072,8 +2072,8 @@ const STANDARD_TABS = [...FICHAS,"desinfeccion","fotos","historial","blanco"];
 const MAD_TABS      = ["salas","tanques","lotes","reproductivo","fotos"];
 // Tabs del módulo Biomol — form + historial inline + fotos
 const BIO_TABS      = ["biomol","fotos"];
-// Tabs del módulo As Técnico — form de supervisión + historial inline + fotos
-const AST_TABS      = ["ast","fotos"];
+// Tabs del módulo As Técnico — form de supervisión + registro de mareas + fotos
+const AST_TABS      = ["ast","marea","fotos"];
 // Rendered as [id, icon, label]
 const TAB_META = {
   calidad:  ["🔬","Calidad Larvaria"],
@@ -2093,6 +2093,7 @@ const TAB_META = {
   reproductivo: ["🦐","Reproductivo"],
   biomol:   ["🧬","Biomol"],
   ast:      ["📋","As Técnico"],
+  marea:    ["🌊","Mareas"],
   blanco:   ["📝","Blanco"],
   micnuevo: ["🧫","Nuevo análisis"],
   michist:  ["📜","Historial"],
@@ -2139,6 +2140,8 @@ function selTab(t){
   // Al salir de una grilla de Maduración, persiste lo tecleado/pegado de la grilla
   // activa antes de cambiar de pestaña (anti-pérdida; curTab aún es la pestaña vieja).
   if(isMadMod(curMod) && MAD_FICHAS.includes(curTab)){ try{ _madCommitActive(); }catch(_){} }
+  // Grilla de Mareas: vuelca lo tecleado/pegado antes de cambiar de pestaña.
+  if(curTab === "marea"){ try{ clearTimeout(_mareaDirtyTm); saveMareaDraftObj({ rows:_collectMareaGrid() }); }catch(_){} }
   curTab = t;
   closeHistMenu();
   document.querySelectorAll(".ftab").forEach(b=>b.classList.toggle("on",b.dataset.f===t));
@@ -2153,6 +2156,7 @@ function selTab(t){
   if(t==="reproductivo") renderMadReproductivo();
   if(t==="biomol") renderBiomol();
   if(t==="ast")    renderAst();
+  if(t==="marea")  renderMarea();
   if(t==="micnuevo") micDispatchNuevo();
   if(t==="michist")  micDispatchHist();
   if(t==="micfact")  micDispatchFact();
@@ -6101,7 +6105,7 @@ function madGridKey(ev){
   if(!t || (t.tagName!=="INPUT" && t.tagName!=="SELECT") || typeof t.getAttribute!=="function") return;
   const rA = t.getAttribute("data-r"), cA = t.getAttribute("data-c");
   if(rA===null || cA===null) return;
-  const panel = t.closest("#fp-salas,#fp-tanques,#fp-lotes,#fp-biomol,#fp-reproductivo");
+  const panel = t.closest("#fp-salas,#fp-tanques,#fp-lotes,#fp-biomol,#fp-reproductivo,#fp-marea");
   if(!panel) return;
   const r = parseInt(rA,10), c = parseInt(cA,10);
   if(!Number.isFinite(r) || !Number.isFinite(c)) return;
@@ -6751,6 +6755,161 @@ async function syncBioGrid(){
 
 // El botón "Sincronizar" del topbar (syncAll → isBioMod) sincroniza el día activo.
 async function syncAllPendingBio(){ await syncBioGrid(); }
+
+/* ══════════════════════════════════════════════════════════════════
+   MAREAS · grilla de registro (módulo As Técnico) → hoja "Marea".
+   Formulario simple de pegado: cada fila es un día con su predicción de marea
+   (INOCAR). Navegación/selección/paste como Biomol (#fp-marea está en _GSEL_PANELS
+   y en el scope de madGridKey; el pegado de bloque usa madGridPaste). Sync = upsert
+   por Fecha (una fila por día; re-sincronizar/editar no duplica).
+   ══════════════════════════════════════════════════════════════════ */
+const MAREA_SHEET = "Marea";
+const MAREA_GRID_COLS = [
+  { k:"fecha",  label:"Fecha" },        { k:"dia",    label:"Día" },
+  { k:"mes",    label:"Mes" },          { k:"diaSem", label:"Día Semana" },
+  { k:"fase",   label:"Fase Lunar" },   { k:"illum",  label:"%Iluminación" },
+  { k:"tipo",   label:"Tipo de Marea" },{ k:"p1",     label:"Pleamar 1" },
+  { k:"ap1",    label:"Altura P1 (m)" },{ k:"b1",     label:"Bajamar 1" },
+  { k:"ab1",    label:"Altura B1 (m)" },{ k:"p2",     label:"Pleamar 2" },
+  { k:"ap2",    label:"Altura P2 (m)" },{ k:"b2",     label:"Bajamar 2" },
+  { k:"ab2",    label:"Altura B2 (m)" },{ k:"amp",    label:"Amplitud (m)" }
+];
+const MAREA_GRID_HEADERS      = MAREA_GRID_COLS.map(c => c.label);
+const MAREA_GRID_DEFAULT_ROWS = 30;
+const MAREA_GRID_ROW_STEP     = 30;
+const MAREA_GRID_MAX_ROWS     = 400;
+const MAREA_DRAFT_KEY         = "larv4_marea_draft";  // borrador local (sin TTL, no es recovery)
+let _mareaExtra   = 0;      // filas extra agregadas con el botón (+30)
+let _mareaDirtyTm = null;   // debounce de autoguardado
+
+function loadMareaDraft(){
+  try{ const j = localStorage.getItem(MAREA_DRAFT_KEY); const d = j ? JSON.parse(j) : null; return (d && Array.isArray(d.rows)) ? d : { rows:[] }; }
+  catch(_){ return { rows:[] }; }
+}
+function saveMareaDraftObj(d){ try{ return _lsSet(MAREA_DRAFT_KEY, JSON.stringify(d)); }catch(_){ return false; } }
+function _mareaShownRows(){
+  const saved = loadMareaDraft().rows.length;
+  return Math.min(MAREA_GRID_MAX_ROWS, Math.max(MAREA_GRID_DEFAULT_ROWS + _mareaExtra, saved));
+}
+function _collectMareaGrid(){
+  const fp = document.getElementById("fp-marea"); if(!fp) return [];
+  const n = _mareaShownRows(); const out = [];
+  for(let fila=1; fila<=n; fila++){
+    const g = (k)=>{ const el = fp.querySelector(`[name="mg_${fila}_${k}"]`); return el ? el.value : ""; };
+    const row = {}; let hasData = false;
+    MAREA_GRID_COLS.forEach(c=>{ const v = sanitizeStr(g(c.k)); row[c.k] = v; if(v !== "") hasData = true; });
+    if(hasData) out.push(row);
+  }
+  return out;
+}
+function mareaDirty(){
+  clearTimeout(_mareaDirtyTm);
+  _mareaDirtyTm = setTimeout(()=>{ try{ saveMareaDraftObj({ rows:_collectMareaGrid() }); }catch(_){} }, 500);
+}
+function saveMareaDraft(opts){
+  opts = opts || {};
+  const rows = _collectMareaGrid();
+  const ok = saveMareaDraftObj({ rows });
+  if(!opts.noRender) renderMarea();
+  return ok ? rows.length : -1;
+}
+function saveMareaLocal(){
+  const n = saveMareaDraft();
+  if(n >= 0) toast("💾 "+n+" fila(s) de mareas guardada(s) localmente","ok",2500);
+  else toast("Almacenamiento lleno: no se pudo guardar","err",3500);
+}
+function mareaGridAddRows(){
+  const cur = _mareaShownRows();
+  if(cur >= MAREA_GRID_MAX_ROWS){ toast("Máximo "+MAREA_GRID_MAX_ROWS+" filas","info",2500); return; }
+  saveMareaDraftObj({ rows:_collectMareaGrid() });   // preserva lo tecleado/pegado
+  _mareaExtra += MAREA_GRID_ROW_STEP;
+  renderMarea();
+}
+// Normaliza la Fecha pegada a ISO yyyy-MM-dd para la clave de upsert. El GAS fuerza la
+// columna A a formato fecha (Sheets la coerciona a Date), y madRowKey compara las celdas
+// como yyyy-MM-dd; enviar ISO (misma convención que Micro/Cal/Patología) hace que la clave
+// case y el upsert por Fecha NO duplique al re-sincronizar. Si el formato no se reconoce,
+// se envía el texto tal cual (mejor esfuerzo). Convención es-EC: día primero.
+function mareaFechaIso(raw){
+  const s = sanitizeStr(raw || "").trim();
+  if(!s) return "";
+  const p2 = (n)=> String(n).padStart(2,"0");
+  let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);           // ya ISO (yyyy-mm-dd)
+  if(m){ const mm=+m[2], dd=+m[3]; if(mm>=1&&mm<=12&&dd>=1&&dd<=31) return m[1]+"-"+p2(mm)+"-"+p2(dd); }
+  m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);            // dd/mm/yyyy (día primero)
+  if(m){ let y=m[3]; if(y.length===2) y="20"+y; const dd=+m[1], mm=+m[2]; if(dd>=1&&dd<=31&&mm>=1&&mm<=12) return y+"-"+p2(mm)+"-"+p2(dd); }
+  return s;
+}
+// Payload → hoja Marea. Sólo filas con Fecha (clave de upsert). El GAS reemplaza por Fecha.
+function buildMareaPayload(rows){
+  const headers = MAREA_GRID_HEADERS.slice();
+  const out = rows
+    .filter(a => sanitizeStr(a.fecha||"") !== "")
+    .map(a => MAREA_GRID_COLS.map(c => c.k === "fecha" ? mareaFechaIso(a.fecha) : sanitizeStr(a[c.k]||"")));
+  return { sheetName: MAREA_SHEET, headers, rows: out, replaceKey: true, keyCols:[0] };
+}
+async function syncMareaGrid(){
+  if(saveMareaDraft({ noRender:true }) === -1){ toast("Almacenamiento lleno: no se envió","err",3500); return; }
+  const url = gasUrl();
+  if(!url){ toast("Configura la URL de Google Apps Script","warn"); openCfg(); return; }
+  if(!isValidGasUrl(url)){ toast("URL inválida","err"); return; }
+  if(!syncRateOk()) return;
+  const payload = buildMareaPayload(_collectMareaGrid());
+  if(!payload.rows.length){ toast("No hay filas con Fecha para enviar","warn",3000); return; }
+  setSyncUI("pend","Enviando "+payload.rows.length+" fila(s) de mareas…");
+  const sent = await postPayload(payload, url);
+  if(sent){
+    setSyncUI("ok", payload.rows.length+" fila(s) de mareas sincronizada(s) ✔");
+    toast("✅ "+payload.rows.length+" fila(s) enviadas a la hoja Marea","ok",4500);
+    setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
+  } else {
+    setSyncUI("err","Error al sincronizar Mareas");
+    toast("No fue posible sincronizar con Google Sheets","err",4500);
+  }
+}
+function renderMarea(){
+  const fp = document.getElementById("fp-marea"); if(!fp) return;
+  const drows = loadMareaDraft().rows || [];
+  const nRows = _mareaShownRows();
+  const wide = { fecha:112, diaSem:104, fase:130, tipo:120, p1:78, b1:78, p2:78, b2:78 };
+  const ths = MAREA_GRID_COLS.map(c => `<th>${escapeHtml(c.label)}</th>`).join("");
+  let rowsHtml = "";
+  for(let fila=1; fila<=nRows; fila++){
+    const d = drows[fila-1] || {};
+    const cells = MAREA_GRID_COLS.map((c, ci) => {
+      const w = wide[c.k] || 62;
+      return `<td><input class="pinp" type="text" name="mg_${fila}_${c.k}" data-r="${fila-1}" data-c="${ci}" onpaste="madGridPaste(event,'marea')" oninput="mareaDirty()" value="${escapeHtml(d[c.k]||"")}" maxlength="200" style="min-width:${w}px"></td>`;
+    }).join("");
+    rowsHtml += `<tr><td class="tqc" style="font-size:10px;min-width:34px;text-align:center">${fila}</td>${cells}</tr>`;
+  }
+  const canAdd = nRows < MAREA_GRID_MAX_ROWS;
+  fp.innerHTML = `<div class="fc">
+    <div class="fc-h">
+      <div class="fc-t">🌊 Mareas · Registro de predicción (INOCAR)</div>
+      <span class="ssp ssp-mt">${nRows} fila(s)</span>
+    </div>
+    <div class="fc-b">
+      <div style="background:#ecfeff;border:1.5px solid #a5f3fc;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#155e75;display:flex;align-items:center;gap:8px">
+        <span style="font-size:16px">🌊</span>
+        <span>Pega tu tabla de mareas (copiar/pegar desde Excel). <b>Cada fila es un día</b>. Desplázate entre celdas con ↑↓←→ y pega bloques entre columnas/filas. Al sincronizar, cada <b>Fecha</b> se actualiza en la hoja <b>Marea</b> (sin duplicados).</span>
+      </div>
+      <div class="tw"><table class="ft" style="font-size:10.5px">
+        <thead><tr><th class="tqh" style="min-width:34px">#</th>${ths}</tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table></div>
+      <div style="margin-top:8px">
+        <button class="btn bo" type="button" onclick="mareaGridAddRows()" ${canAdd?"":"disabled"} title="Agregar ${MAREA_GRID_ROW_STEP} filas más (máximo ${MAREA_GRID_MAX_ROWS})">➕ Agregar ${MAREA_GRID_ROW_STEP} filas</button>
+      </div>
+      <div class="sa" style="margin-top:12px">
+        <div class="sa-info"><span>💾 Guarda para conservar las filas localmente · máx ${MAREA_GRID_MAX_ROWS} filas</span></div>
+        <div class="sa-btns">
+          <button class="btn bs" type="button" onclick="saveMareaLocal()">💾 Guardar local</button>
+          <button class="btn bp" type="button" onclick="syncMareaGrid()">☁️ Guardar y sincronizar</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
 
 // Agrega BIO_GRID_ROW_STEP filas más (hasta el máximo), sin perder lo tecleado.
 function bioGridAddRows(){
@@ -7812,7 +7971,8 @@ const MIC_FORMATS = {
       { k:"sala", l:"Sala",  type:"sel", opts:MIC_SALAS, w:72 },
       { k:"sexo", l:"Sexo",  type:"sel", opts:MIC_SEXO,  w:80 },
       { k:"tq",   l:"TQ/N°", type:"txt", w:56 },
-      { k:"lote", l:"Lote",  type:"txt", w:80 }
+      { k:"lote", l:"Lote",  type:"txt", w:80 },
+      { k:"tipoMuestra", l:"Muestra", type:"sel", opts:["","Hepatopáncreas","Intestino"], w:120 }
     ],
     params:["vamar","vverd","vtot","vlum","valg","vpara","vvuln","pseudo","aero","btot","bnar","hongos","entero"]
   },
@@ -7931,7 +8091,7 @@ const MIC_FORMATS = {
     // mad-despacho-agua (×10); las de organismo ("Huevo…", "Nauplio…") usan mad-despacho-animal (×100).
     rkeyFn:(d)=> /^Agua/i.test((d && d.tipoMuestra) || "") ? "mad-despacho-agua" : "mad-despacho-animal",
     ctx:[
-      { k:"origen",      l:"Origen",  type:"txt", w:100 },
+      { k:"origen",      l:"Origen",  type:"txt", w:100, fillDown:true },
       { k:"siembra",     l:"Siembra", type:"txt", w:80 },
       { k:"corrida",     l:"Corrida", type:"txt", w:70 },
       { k:"tipoMuestra", l:"Muestra", type:"sel", opts:MIC_MADDES_MUESTRA, w:240, recalc:true }
@@ -7953,7 +8113,7 @@ const MIC_FORMATS = {
     depto:"Otras", label:"Algas R",
     rkeyFn:()=> "algas",
     ctx:[
-      { k:"tipoMuestra", l:"Muestras", type:"sel", opts:MIC_ALGR_MUESTRA, w:130 },
+      { k:"tipoMuestra", l:"Muestras", type:"txtlist", opts:MIC_ALGR_MUESTRA, w:130 },
       { k:"especie",     l:"Especie",  type:"sel", opts:MIC_ALGR_ESPECIE, w:72 },
       { k:"modulo",      l:"Módulo",   type:"txt", w:64 }
     ],
@@ -8015,12 +8175,12 @@ const MIC_DR_BASE = {
     pseudo:{f:1,l:1,m:2,e:10}, aero:{f:1,l:1,m:2,e:10}, btot:{f:1,l:10,m:100,e:500}
   },
   // Agua Limpia y Mar: umbrales base de "mad-agua", factores propios (amar/verd/tot,
-  // vibrios, Pseudomonas y Aeromonas ×5; Bact.Totales/Naranjas ×10; Hongos ×500).
+  // vibrios, Pseudomonas y Aeromonas ×5; Bact.Totales/Naranjas ×10; Hongos ×10).
   "agua-limpia-mar":{
     vamar:{f:5,l:100,m:500,e:1000}, vverd:{f:5,l:50,m:100,e:200}, vtot:{f:5,l:100,m:500,e:1000},
     valg:{f:5,l:100,m:500,e:1000}, vpara:{f:5,l:50,m:100,e:200}, vvuln:{f:5,l:50,m:100,e:200},
     pseudo:{f:5,l:50,m:100,e:200}, aero:{f:5,l:100,m:500,e:1000},
-    btot:{f:10,l:10000,m:100000,e:1000000}, bnar:{f:10,l:100,m:500,e:1000}, hongos:{f:500,l:2,m:20,e:40}
+    btot:{f:10,l:10000,m:100000,e:1000000}, bnar:{f:10,l:100,m:500,e:1000}, hongos:{f:10,l:2,m:20,e:40}
   },
   // Maduración · Despacho — muestras de AGUA (×10 patógenos, ×2 hongos).
   "mad-despacho-agua":{
@@ -8192,6 +8352,19 @@ function collectMicDraft(){
   return { meta, sections, activeFmt };
 }
 function micDraftTouch(){ clearTimeout(_micDraftTm); _micDraftTm = setTimeout(()=>{ try{ saveMicDraft(collectMicDraft()); }catch(_){} }, 500); }
+// Fill-down de una columna (p. ej. "Origen" en Maduración · Despacho): al CONFIRMAR una celda,
+// rellena hacia abajo las celdas VACÍAS o las que aún tenían el valor previo de ESTA celda
+// (auto-rellenadas), sin tocar las editadas manualmente. onfocus recuerda el valor previo.
+function micFillDownFocus(el){ el.dataset.fdPrev = el.value; }
+function micFillDown(el){
+  const fmt = el.getAttribute("data-fmt"), c = el.getAttribute("data-c"), r = parseInt(el.getAttribute("data-r"),10);
+  const v = el.value, prev = el.dataset.fdPrev || "";
+  document.querySelectorAll(`.mic-in[data-fmt="${fmt}"][data-c="${c}"]`).forEach(inp=>{
+    if(parseInt(inp.getAttribute("data-r"),10) > r && (inp.value === "" || inp.value === prev)) inp.value = v;
+  });
+  el.dataset.fdPrev = v;
+  micDraftTouch();
+}
 function micRowHasData(fmt, d){ return fmt.params.some(pk=> pk !== "vtot" && d[pk] != null && String(d[pk]).trim() !== ""); }
 
 // OBSOLETO desde el modelo de "id de sesión": la identidad de una sesión ya NO
@@ -8369,8 +8542,13 @@ function micRowHtml(fmt, fmtKey, fila, d, hid, hdrDef){
         cells += `<td ${tdAttr}><select class="mic-in" name="${base}" data-fmt="${fmtKey}" ${pos} onpaste="micGridPaste(event,'${fmtKey}')" ${recalc} style="min-width:${c.w||60}px">`
           + c.opts.map(o=>`<option value="${escapeHtml(o)}"${val===o?" selected":""}>${escapeHtml(o)||"—"}</option>`).join("")
           + `</select></td>`;
+      } else if(c.type === "txtlist"){
+        // Editable con sugerencias (datalist): se elige una opción o se escribe libremente.
+        cells += `<td ${tdAttr}><input class="mic-in" type="text" name="${base}" data-fmt="${fmtKey}" ${pos} list="mic-dl-${fmtKey}-${c.k}" onpaste="micGridPaste(event,'${fmtKey}')" oninput="micDraftTouch()" value="${escapeHtml(val)}" style="min-width:${c.w||90}px"></td>`;
       } else {
-        cells += `<td ${tdAttr}><input class="mic-in" type="text" name="${base}" data-fmt="${fmtKey}" ${pos} onpaste="micGridPaste(event,'${fmtKey}')" oninput="micDraftTouch()" value="${escapeHtml(val)}" style="min-width:${c.w||56}px"></td>`;
+        // fillDown: al confirmar (onchange) rellena hacia abajo las celdas vacías / auto-rellenadas.
+        const fd = c.fillDown ? ` onfocus="micFillDownFocus(this)" onchange="micFillDown(this)"` : "";
+        cells += `<td ${tdAttr}><input class="mic-in" type="text" name="${base}" data-fmt="${fmtKey}" ${pos} onpaste="micGridPaste(event,'${fmtKey}')" oninput="micDraftTouch()"${fd} value="${escapeHtml(val)}" style="min-width:${c.w||56}px"></td>`;
       }
     } else {
       const pk = col.pk; const p = MIC_PARAMS[pk]; const base = `mic_${fmtKey}_${fila}_${pk}`; const val = d[pk] || "";
@@ -8396,6 +8574,8 @@ function micSectionHtml(fmtKey, draft){
   const hid = loadMicHidden(fmtKey);
   const allCols = [...fmt.ctx.map(c=>({k:c.k,l:c.l})), ...fmt.params.map(pk=>({k:pk,l:MIC_PARAMS[pk].l}))];
   const chips = allCols.map(co=> `<span class="mic-colchip${hid.has(co.k)?' off':''}" onclick="micToggleCol('${fmtKey}','${co.k}')" title="Clic para ocultar/mostrar esta columna en el registro">${escapeHtml(co.l)}</span>`).join("");
+  const datalists = fmt.ctx.filter(c=>c.type==="txtlist").map(c=>
+    `<datalist id="mic-dl-${fmtKey}-${c.k}">`+ (c.opts||[]).map(o=>`<option value="${escapeHtml(o)}">`).join("") +`</datalist>`).join("");
   const thFor = (key,l)=> `<th data-colkey="${key}"${hid.has(key)?' style="display:none"':''}>${escapeHtml(l)}</th>`;
   const ths = [...fmt.ctx.map(c=>thFor(c.k,c.l)), ...fmt.params.map(pk=>thFor(pk,MIC_PARAMS[pk].l))].join("");
   const hdrDef = { modulo: (draft.meta && draft.meta.hdrModulo) || "", estadio: (draft.meta && draft.meta.hdrEstadio) || "", sala: (draft.meta && draft.meta.hdrSala) || "" };
@@ -8411,7 +8591,7 @@ function micSectionHtml(fmtKey, draft){
     </div>
     <div class="fc-b" id="mic-body-${fmtKey}">
       <div style="font-size:9.5px;color:var(--tx3);margin-bottom:3px">🧩 Columnas (clic para ocultar/mostrar; reversible):</div>
-      <div style="margin-bottom:8px">${chips}</div>
+      <div style="margin-bottom:8px">${chips}</div>${datalists}
       <div class="tw"><table class="ft" style="font-size:10.5px"><thead><tr><th class="tqh" style="min-width:30px">#</th>${ths}</tr></thead><tbody id="mic-tb-${fmtKey}">${rowsHtml}</tbody></table></div>
       <div class="ff" style="margin-top:8px"><label>Observaciones — ${escapeHtml(fmt.label)}</label>
         <textarea id="mic-obs-${fmtKey}" placeholder="Observaciones (opcional)…" oninput="micDraftTouch()" style="width:100%;min-height:44px">${escapeHtml(sec.obs||"")}</textarea></div>
@@ -9060,7 +9240,7 @@ const CAL_FORMATS = {
   },
   "mad-agua": {
     depto:"Maduración", label:"Maduración · Agua",
-    ctx:[ { k:"tipoMuestra", l:"Muestra", type:"sel", opts:["","Agua Camaronera","Agua Enjuague"], w:150 } ],
+    ctx:[ { k:"tipoMuestra", l:"Muestra", type:"sel", opts:["","Agua Camaronera","Agua Recepción Camaronera","Agua Enjuague"], w:170 } ],
     params:["alc","ph","sal"]
   },
   "mad-ras": {
@@ -9284,7 +9464,7 @@ if(typeof document!=="undefined" && !window.__calKeyNav){
    Las fichas estándar (Calidad/Población/etc.) NO están incluidas (no tienen
    panel en la allowlist), así que conservan su comportamiento.
 ══════════════════════════════════════════════════════════════════════════ */
-const _GSEL_PANELS = "#fp-salas,#fp-tanques,#fp-lotes,#fp-biomol,#fp-micnuevo";
+const _GSEL_PANELS = "#fp-salas,#fp-tanques,#fp-lotes,#fp-biomol,#fp-micnuevo,#fp-marea";
 let _gsel = null;                 // { tbody, ar, ac, fr, fc }
 let _gselMouseDown = false, _gselDragged = false;
 
