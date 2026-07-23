@@ -14,7 +14,7 @@ vi.mock('../../core/charts.js', () => ({
 }));
 
 import { store } from '../../core/store.js';
-import { compareTanksButtonHTML, compareTanksModalHTML, setupCompareTanks } from './compareTanks.js';
+import { compareTanksButtonHTML, compareTanksModalHTML, setupCompareTanks, compareVerdict } from './compareTanks.js';
 
 const L = (o) => ({ _SheetOrigin: 'Larvicultura', ...o });
 
@@ -143,5 +143,63 @@ describe('Comparar Tanques · modo Módulo (masivo)', () => {
     // Línea + diferencia, como siempre.
     expect(chartCalls.map((c) => c.id)).toEqual(['cttLine', 'cttDiff']);
     expect(chartCalls[0].cfg.data.datasets.length).toBe(2);
+  });
+});
+
+describe('compareVerdict · veredicto con dirección de mejora', () => {
+  const st = (mean) => ({ mean, n: 10 });
+  // pairs [A,B] por día; el nº de días en que cada uno es "mejor" depende de la dirección.
+
+  it('variable "mayor mejor" (Supervivencia): gana quien tiene MEDIA más alta', () => {
+    const vdef = { dec: 1, dir: 'up' };
+    const pairs = [[90, 80], [88, 85], [92, 70]];   // A mejor los 3 días
+    const v = compareVerdict(vdef, st(90), st(78), pairs);
+    expect(v.kind).toBe('verdict');
+    expect(v.winner).toBe('A');
+    expect(v.aBetter).toBe(3);
+    expect(v.bBetter).toBe(0);
+    expect(v.winBetterDays).toBe(3);
+    expect(v.tie).toBe(false);
+  });
+
+  it('variable "menor mejor" (Deformidad): gana quien tiene MEDIA más BAJA', () => {
+    const vdef = { dec: 1, dir: 'down' };
+    // A tiene valores más ALTOS de deformidad → PEOR. B gana.
+    const pairs = [[8, 3], [7, 2], [9, 4]];
+    const v = compareVerdict(vdef, st(8), st(3), pairs);
+    expect(v.winner).toBe('B');       // menos deformidad = mejor
+    expect(v.bBetter).toBe(3);        // B mejor los 3 días
+    expect(v.winBetterDays).toBe(3);
+  });
+
+  it('empate técnico si las medias coinciden a los decimales de la variable', () => {
+    const vdef = { dec: 1, dir: 'up' };
+    const v = compareVerdict(vdef, st(85.02), st(85.04), [[85, 85], [86, 84]]);
+    expect(v.tie).toBe(true);
+    expect(v.winner).toBeNull();
+  });
+
+  it('variable SIN dirección (rango óptimo) → veredicto neutro, sin ganador', () => {
+    const vdef = { dec: 2 };   // p. ej. OD, sin dir
+    const v = compareVerdict(vdef, st(5.5), st(6.0), [[5.5, 6.0]]);
+    expect(v.kind).toBe('neutral');
+    expect(v.winner).toBeUndefined();
+    expect(v.dMean).toBeCloseTo(-0.5, 6);
+  });
+
+  it('sin pares comparables → nodata', () => {
+    expect(compareVerdict({ dec: 1, dir: 'up' }, st(90), st(80), []).kind).toBe('nodata');
+    expect(compareVerdict({ dec: 1, dir: 'up' }, null, st(80), [[1, 2]]).kind).toBe('nodata');
+  });
+
+  it('el ganador por MEDIA puede no ganar todos los días (consistencia parcial)', () => {
+    const vdef = { dec: 1, dir: 'up' };
+    // A gana en media pero B fue mejor un día.
+    const pairs = [[95, 80], [70, 85], [92, 78]];   // A mejor días 1 y 3; B mejor día 2
+    const v = compareVerdict(vdef, st(85.7), st(81), pairs);
+    expect(v.winner).toBe('A');
+    expect(v.aBetter).toBe(2);
+    expect(v.bBetter).toBe(1);
+    expect(v.winBetterDays).toBe(2);   // el ganador (A) fue mejor en 2 de 3 días
   });
 });

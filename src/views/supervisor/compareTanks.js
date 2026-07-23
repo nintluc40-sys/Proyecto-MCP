@@ -19,35 +19,37 @@ import { natCmp } from '../../core/util.js';
 import { bindModal } from './ui.js';
 
 // src: 'larv' (Larvicultura) · 'tanque' (Control_Tanque) · 'icl' (compuesto)
+// dir: 'up' (mayor = mejor) · 'down' (menor = mejor) · ausente = sin dirección de mejora
+//      (variables con rango óptimo o de manejo: el veredicto NO corona ganador, solo compara).
 const CMP_VARS = [
   // Ambiente y población
-  { key: 'sv',  label: '% Supervivencia', group: 'Ambiente y población', src: 'larv',   keys: F.supervivencia, unit: '%', dec: 1 },
+  { key: 'sv',  label: '% Supervivencia', group: 'Ambiente y población', src: 'larv',   keys: F.supervivencia, unit: '%', dec: 1, dir: 'up' },
   { key: 'od',  label: 'OD (mg/L)',       group: 'Ambiente y población', src: 'tanque', keys: F.od, unit: ' mg/L', dec: 2 },
   { key: 'tmp', label: 'Temperatura (°C)', group: 'Ambiente y población', src: 'tanque', keys: F.temp, unit: ' °C', dec: 1 },
   { key: 'sal', label: 'Salinidad (ppt)', group: 'Ambiente y población', src: 'larv',   keys: F.salinidad, unit: ' ppt', dec: 1 },
-  { key: 'pop', label: 'Población',       group: 'Ambiente y población', src: 'larv',   keys: F.poblacion, unit: '', dec: 0 },
+  { key: 'pop', label: 'Población',       group: 'Ambiente y población', src: 'larv',   keys: F.poblacion, unit: '', dec: 0, dir: 'up' },
   // Calidad larvaria
-  { key: 'il',  label: 'Intestino Lleno (%)', group: 'Calidad larvaria', src: 'larv', keys: ['Intestino_Lleno', 'IntestinoLleno', 'intestino_lleno'], unit: '%', dec: 1 },
-  { key: 'lip', label: 'Lípidos (%)',     group: 'Calidad larvaria', src: 'larv',   keys: ['Lípidos', 'Lipidos', 'lipidos'], unit: '%', dec: 1 },
-  { key: 'def', label: 'Deformidad (%)',  group: 'Calidad larvaria', src: 'larv',   keys: ['Deformidad', 'deformidad'], unit: '%', dec: 1 },
-  { key: 'est', label: 'Estrés',          group: 'Calidad larvaria', src: 'larv',   keys: ['Estrés', 'Estres', 'estrés', 'estres'], unit: '', dec: 1 },
-  { key: 'act', label: '% Actividad',     group: 'Calidad larvaria', src: 'larv',   keys: ['% Actividad', 'Actividad', '%Actividad'], unit: '%', dec: 1 },
-  { key: 'plg', label: 'PL/g',            group: 'Calidad larvaria', src: 'larv',   keys: ['PLG', 'Plg', 'plg', 'PL/g', 'pl/g'], unit: '', dec: 1 },
-  { key: 'icl', label: 'ICL',             group: 'Calidad larvaria', src: 'icl',    unit: '', dec: 0 },
+  { key: 'il',  label: 'Intestino Lleno (%)', group: 'Calidad larvaria', src: 'larv', keys: ['Intestino_Lleno', 'IntestinoLleno', 'intestino_lleno'], unit: '%', dec: 1, dir: 'up' },
+  { key: 'lip', label: 'Lípidos (%)',     group: 'Calidad larvaria', src: 'larv',   keys: ['Lípidos', 'Lipidos', 'lipidos'], unit: '%', dec: 1, dir: 'up' },
+  { key: 'def', label: 'Deformidad (%)',  group: 'Calidad larvaria', src: 'larv',   keys: ['Deformidad', 'deformidad'], unit: '%', dec: 1, dir: 'down' },
+  { key: 'est', label: 'Estrés',          group: 'Calidad larvaria', src: 'larv',   keys: ['Estrés', 'Estres', 'estrés', 'estres'], unit: '', dec: 1, dir: 'down' },
+  { key: 'act', label: '% Actividad',     group: 'Calidad larvaria', src: 'larv',   keys: ['% Actividad', 'Actividad', '%Actividad'], unit: '%', dec: 1, dir: 'up' },
+  { key: 'plg', label: 'PL/g',            group: 'Calidad larvaria', src: 'larv',   keys: ['PLG', 'Plg', 'plg', 'PL/g', 'pl/g'], unit: '', dec: 1, dir: 'down' },
+  { key: 'icl', label: 'ICL',             group: 'Calidad larvaria', src: 'icl',    unit: '', dec: 0, dir: 'up' },
   // Manejo de agua
-  { key: 'esp', label: '% Espuma',        group: 'Manejo de agua', src: 'larv', keys: ['% Espuma', 'Espuma', 'espuma'], unit: '%', dec: 1 },
-  { key: 'suc', label: '% Suciedad',      group: 'Manejo de agua', src: 'larv', keys: ['% Suciedad', 'Suciedad', 'suciedad'], unit: '%', dec: 1 },
+  { key: 'esp', label: '% Espuma',        group: 'Manejo de agua', src: 'larv', keys: ['% Espuma', 'Espuma', 'espuma'], unit: '%', dec: 1, dir: 'down' },
+  { key: 'suc', label: '% Suciedad',      group: 'Manejo de agua', src: 'larv', keys: ['% Suciedad', 'Suciedad', 'suciedad'], unit: '%', dec: 1, dir: 'down' },
   { key: 'rec', label: '% Recambio',      group: 'Manejo de agua', src: 'larv', keys: ['% Recambio', 'Recambio', 'recambio'], unit: '%', dec: 1 },
   { key: 'tra', label: '% Transparencia', group: 'Manejo de agua', src: 'larv', keys: ['% Transparencia', 'Transparencia', 'transparencia'], unit: '%', dec: 1 },
-  { key: 'cel', label: 'Cel/ml (algas)',  group: 'Manejo de agua', src: 'larv', keys: ['Cel/ml', 'Cel_ml', 'cel/ml', 'Cel/Ml'], unit: '', dec: 0 },
+  { key: 'cel', label: 'Cel/ml (algas)',  group: 'Manejo de agua', src: 'larv', keys: ['Cel/ml', 'Cel_ml', 'cel/ml', 'Cel/Ml'], unit: '', dec: 0, dir: 'up' },
   // LARVIA biométrico
-  { key: 'peso',   label: 'Peso prom. (mg)',     group: 'LARVIA biométrico', src: 'larv', keys: ['Peso promedio (mg)', 'Peso_promedio', 'peso_promedio', 'Peso promedio'], unit: ' mg', dec: 2 },
-  { key: 'long',   label: 'Longitud prom. (mm)', group: 'LARVIA biométrico', src: 'larv', keys: ['Longitud promedio (mm)', 'Longitud_promedio', 'longitud_promedio', 'Longitud promedio'], unit: ' mm', dec: 2 },
-  { key: 'upeso',  label: 'Uniformidad de peso', group: 'LARVIA biométrico', src: 'larv', keys: ['Uniformidad de peso', 'Uniformidad_de_peso', 'Uniformidad_peso'], unit: '', dec: 1 },
-  { key: 'ulong',  label: 'Uniformidad de longitud', group: 'LARVIA biométrico', src: 'larv', keys: ['Uniformidad de longitud', 'Uniformidad_de_longitud', 'Uniformidad_longitud'], unit: '', dec: 1 },
-  { key: 'cvpeso', label: 'CV de peso',          group: 'LARVIA biométrico', src: 'larv', keys: ['CV de peso', 'CV_de_peso', 'CV_peso'], unit: '', dec: 1 },
-  { key: 'cvlong', label: 'CV de longitud',      group: 'LARVIA biométrico', src: 'larv', keys: ['CV de longitud', 'CV_de_longitud', 'CV_longitud'], unit: '', dec: 1 },
-  { key: 'pigm',   label: 'Pigmentación',        group: 'LARVIA biométrico', src: 'larv', keys: ['Pigmentación', 'Pigmentacion', 'pigmentacion'], unit: '', dec: 1 },
+  { key: 'peso',   label: 'Peso prom. (mg)',     group: 'LARVIA biométrico', src: 'larv', keys: ['Peso promedio (mg)', 'Peso_promedio', 'peso_promedio', 'Peso promedio'], unit: ' mg', dec: 2, dir: 'up' },
+  { key: 'long',   label: 'Longitud prom. (mm)', group: 'LARVIA biométrico', src: 'larv', keys: ['Longitud promedio (mm)', 'Longitud_promedio', 'longitud_promedio', 'Longitud promedio'], unit: ' mm', dec: 2, dir: 'up' },
+  { key: 'upeso',  label: 'Uniformidad de peso', group: 'LARVIA biométrico', src: 'larv', keys: ['Uniformidad de peso', 'Uniformidad_de_peso', 'Uniformidad_peso'], unit: '', dec: 1, dir: 'up' },
+  { key: 'ulong',  label: 'Uniformidad de longitud', group: 'LARVIA biométrico', src: 'larv', keys: ['Uniformidad de longitud', 'Uniformidad_de_longitud', 'Uniformidad_longitud'], unit: '', dec: 1, dir: 'up' },
+  { key: 'cvpeso', label: 'CV de peso',          group: 'LARVIA biométrico', src: 'larv', keys: ['CV de peso', 'CV_de_peso', 'CV_peso'], unit: '', dec: 1, dir: 'down' },
+  { key: 'cvlong', label: 'CV de longitud',      group: 'LARVIA biométrico', src: 'larv', keys: ['CV de longitud', 'CV_de_longitud', 'CV_longitud'], unit: '', dec: 1, dir: 'down' },
+  { key: 'pigm',   label: 'Pigmentación',        group: 'LARVIA biométrico', src: 'larv', keys: ['Pigmentación', 'Pigmentacion', 'pigmentacion'], unit: '', dec: 1, dir: 'up' },
 ];
 const VAR_GROUPS = ['Ambiente y población', 'Calidad larvaria', 'Manejo de agua', 'LARVIA biométrico'];
 
@@ -133,6 +135,30 @@ function pearson(pairs) {
   let num = 0, da = 0, db = 0;
   pairs.forEach(([a, b]) => { const u = a - ma, v = b - mb; num += u * v; da += u * u; db += v * v; });
   return (da > 0 && db > 0) ? num / Math.sqrt(da * db) : null;
+}
+
+/**
+ * Veredicto de la comparación A vs B para una variable, CONSIDERANDO su dirección de
+ * mejora (`vdef.dir`): en Supervivencia mayor es mejor, en Deformidad/Estrés menor es
+ * mejor. Sin esto, "A > B" engaña en las variables donde más es peor. PURA, exportada.
+ * @returns {{kind:'nodata'}|{kind:'neutral',...}|{kind:'verdict',winner,tie,...}}
+ */
+export function compareVerdict(vdef, sa, sb, pairs) {
+  if (!sa || !sb || !pairs || !pairs.length) return { kind: 'nodata' };
+  const dMean = sa.mean - sb.mean;           // A − B
+  const meanGap = Math.abs(dMean);
+  const round = (v) => (vdef.dec === 0 ? Math.round(v) : +v.toFixed(vdef.dec));
+  // Variables sin dirección de mejora (rango óptimo / manejo): no se corona ganador.
+  if (!vdef.dir) return { kind: 'neutral', dMean, meanA: sa.mean, meanB: sb.mean };
+  const isDown = vdef.dir === 'down';
+  const better = (x, y) => (isDown ? x < y : x > y);
+  let aBetter = 0, bBetter = 0, ties = 0;
+  pairs.forEach(([a, b]) => { if (a === b) { ties++; return; } if (better(a, b)) aBetter++; else bBetter++; });
+  // Empate técnico si las medias redondeadas a los decimales de la variable coinciden.
+  const tie = round(sa.mean) === round(sb.mean);
+  const winner = tie ? null : (better(sa.mean, sb.mean) ? 'A' : 'B');
+  const winBetterDays = winner === 'A' ? aBetter : winner === 'B' ? bBetter : 0;
+  return { kind: 'verdict', winner, tie, dir: vdef.dir, dMean, meanGap, aBetter, bBetter, ties, comparables: pairs.length, winBetterDays };
 }
 
 /** HTML del botón que abre el modal. */
@@ -330,8 +356,26 @@ export function setupCompareTanks(root) {
         <td>${st.std.toFixed(vdef.dec === 0 ? 0 : 2)}</td><td>${st.cv === null ? '—' : st.cv.toFixed(1) + '%'}</td><td>${st.n}</td>
       </tr>` : '';
 
+    // Veredicto: conclusión de qué serie rinde mejor SEGÚN la dirección de la variable.
+    const COL_A = '#1E88E5', COL_B = '#E53935';
+    const verd = compareVerdict(vdef, sa, sb, pairs);
+    let verdictBanner = '';
+    if (verd.kind === 'verdict') {
+      const dirNote = verd.dir === 'down' ? ' <span class="muted" style="font-weight:600">(menos es mejor)</span>' : '';
+      if (verd.tie) {
+        verdictBanner = `<div class="ctt-verdict ctt-verdict-tie">🤝 <b>Empate técnico</b> en ${esc(vdef.label)}${dirNote} — medias equivalentes (${fmtV(vdef, sa.mean)} vs ${fmtV(vdef, sb.mean)}).</div>`;
+      } else {
+        const wLab = verd.winner === 'A' ? labA : labB, wCol = verd.winner === 'A' ? COL_A : COL_B;
+        const wMean = verd.winner === 'A' ? sa.mean : sb.mean, lMean = verd.winner === 'A' ? sb.mean : sa.mean;
+        verdictBanner = `<div class="ctt-verdict" style="border-left-color:${wCol}">🏆 <b style="color:${wCol}">${esc(wLab)}</b> rinde mejor en ${esc(vdef.label)}${dirNote} — media ${fmtV(vdef, wMean)} vs ${fmtV(vdef, lMean)} (Δ ${fmtV(vdef, verd.meanGap)}) · mejor en <b>${verd.winBetterDays}</b> de ${verd.comparables} ${unit} comparables.</div>`;
+      }
+    } else if (verd.kind === 'neutral') {
+      verdictBanner = `<div class="ctt-verdict ctt-verdict-neutral">⚖️ <b>${esc(vdef.label)}</b> no tiene un valor «mejor» definido (rango óptimo o de manejo): se comparan sin coronar ganador — <span style="color:${COL_A}">${esc(labA)}</span> ${fmtV(vdef, sa.mean)} · <span style="color:${COL_B}">${esc(labB)}</span> ${fmtV(vdef, sb.mean)} (Δ A−B ${fmtV(vdef, verd.dMean)}).</div>`;
+    }
+
     out.innerHTML = `
       <div class="sv-modal-note" style="margin:2px 0 8px">${axisNote}</div>
+      ${verdictBanner}
       <div class="ctt-out-title">📈 ${evoTitle} · ${esc(vdef.label)} <span class="muted" style="font-weight:600;font-size:11px">· 🔵 ${esc(labA)} vs 🔴 ${esc(labB)}</span></div>
       <div class="sv-chart-host" style="height:300px"><canvas id="cttLine"></canvas></div>
       <div class="ctt-out-title">📊 Diferencia (A − B) <span class="muted" style="font-weight:600;font-size:11px">azul = A mayor · rojo = B mayor</span></div>

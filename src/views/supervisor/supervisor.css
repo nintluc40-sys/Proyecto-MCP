@@ -195,6 +195,10 @@
 .ctt-gen { margin-top: 2px; }
 .ctt-out-title { font-size: 13px; font-weight: 800; color: var(--c-brand); margin: 16px 0 8px; }
 .ctt-cmp { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Banner de veredicto de la comparación A vs B (conclusión con dirección). */
+.ctt-verdict { border: 1px solid var(--c-border-soft); border-left: 4px solid var(--c-brand); background: var(--c-surface-2); border-radius: 8px; padding: 10px 13px; margin: 4px 0 10px; font-size: 13px; line-height: 1.5; color: var(--c-text); }
+.ctt-verdict-tie { border-left-color: #90a4ae; }
+.ctt-verdict-neutral { border-left-color: #90a4ae; font-size: 12px; color: var(--c-text-soft); }
 .ctt-modebar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0 12px; }
 .ctt-mode-lbl { font-size: 10px; font-weight: 800; color: var(--c-text-soft); letter-spacing: .3px; text-transform: uppercase; }
 .ctt-mode-gap { width: 12px; }
