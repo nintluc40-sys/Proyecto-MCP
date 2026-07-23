@@ -1327,7 +1327,7 @@ export function renderModule(ctx, mod) {
     if (mareaOverlay) {
       const mareaBody = mareaOverlay.querySelector('#svMareaBody');
       // Modal de SITIO (Anconcito): la Correlación usa siempre todos los módulos.
-      const mareaState = { mode: 'dia', key: null, month: null, corrKind: 'micro', corrCell: null };
+      const mareaState = { mode: 'dia', key: null, month: null, corrKind: 'micro', corrPeriod: 'month', corrCell: null };
       const renderMareaBody = () => renderMareas(mareaBody, mareaState);
       // Barra de modo (Día/Mes) estática en el markup del modal (como Biomol/Micro).
       mareaOverlay.querySelectorAll('[data-mareamode]').forEach((b) => b.addEventListener('click', () => {
@@ -1350,6 +1350,9 @@ export function renderModule(ctx, mod) {
         // Correlación: fuente (Micro/Calidad) + selección de celda → scatter.
         const ck = e.target.closest('[data-corr-kind]');
         if (ck) { mareaState.corrKind = ck.dataset.corrKind; mareaState.corrCell = null; renderMareaBody(); return; }
+        // Periodo del cribado: este mes ⇄ todo el periodo (la celda elegida deja de ser válida).
+        const cp = e.target.closest('[data-corr-period]');
+        if (cp) { mareaState.corrPeriod = cp.dataset.corrPeriod; mareaState.corrCell = null; renderMareaBody(); return; }
         const cc = e.target.closest('[data-corr-cell]');
         if (cc) { mareaState.corrCell = cc.dataset.corrCell; renderMareaBody(); return; }
       });
@@ -1371,7 +1374,7 @@ export function renderModule(ctx, mod) {
         openSel: '[data-mareas-open]', closeSel: '[data-mareas-close]',
         onOpen: () => {
           mareaState.mode = 'dia'; mareaState.key = null; mareaState.month = null;
-          mareaState.corrKind = 'micro'; mareaState.corrCell = null;
+          mareaState.corrKind = 'micro'; mareaState.corrPeriod = 'month'; mareaState.corrCell = null;
           mareaOverlay.querySelectorAll('[data-mareamode]').forEach((x) => x.classList.toggle('is-active', x.dataset.mareamode === 'dia'));
           renderMareaBody();
         },

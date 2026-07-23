@@ -274,6 +274,71 @@ describe('Supervisor · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('modal Mareas · Correlación: "Todo el periodo" amplía de verdad los días emparejados', () => {
+    // Dos meses con datos: junio y julio. "Este mes" debe emparejar solo los de un mes;
+    // "Todo el periodo", los de ambos. Si el memo de la matriz ignorase el periodo,
+    // el segundo N saldría igual que el primero.
+    const addDay = (mes, dd, i) => {
+      store.globalData.push({
+        _SheetOrigin: 'Marea', Fecha: `${dd}/${mes}/2026`, 'Fase Lunar': 'Luna llena', '%Iluminación': '80', 'Tipo de Marea': 'Viva',
+        'Pleamar 1': '05:00', 'Altura P1 (m)': String(2 + i * 0.1), 'Bajamar 1': '11:00', 'Altura B1 (m)': String(0.7 - i * 0.05),
+        'Amplitud (m)': String(1.3 + i * 0.15),
+      });
+      store.globalData.push({
+        _SheetOrigin: 'Microbiología', 'Fecha muestreo': `${dd}/${mes}/2026`, Corrida: '573', 'Módulo/Sala': '1',
+        Formato: 'Larvicultura · Muestra', 'Tipo de muestra': 'Animal', 'TQ/N°': '1', 'Estadío': 'PL2',
+        'V.Totales UFC': String(1000 * i), 'V.Totales Nivel': 'Leve',
+      });
+    };
+    for (let i = 1; i <= 6; i++) addDay('06', String(10 + i).padStart(2, '0'), i);
+    for (let i = 1; i <= 6; i++) addDay('07', String(10 + i).padStart(2, '0'), i + 6);
+
+    const root = mount();
+    click(root.querySelector('.sv-card[data-nav="module"]'));
+    click(root.querySelector('[data-mareas-open]'));
+    const modal = root.querySelector('#svMareasModal');
+    click(modal.querySelector('[data-mareamode="corr"]'));
+    // N máximo anunciado en los títulos de las celdas de la matriz.
+    const maxN = () => Math.max(...[...root.querySelectorAll('.sv-marea-corr-cell')]
+      .map((td) => { const m = /N=(\d+)/.exec(td.getAttribute('title') || ''); return m ? +m[1] : 0; }));
+
+    const nMes = maxN();
+    expect(nMes).toBe(6);                      // los 6 días del mes mostrado
+    click(root.querySelector('[data-corr-period="all"]'));
+    // Junio + julio (≥12; el fixture base aporta algún día suelto más). Si el memo
+    // ignorase el periodo, aquí seguiría saliendo 6.
+    expect(maxN()).toBeGreaterThanOrEqual(12);
+    expect(maxN()).toBeGreaterThan(nMes);
+    click(root.querySelector('[data-corr-period="month"]'));
+    expect(maxN()).toBe(nMes);                 // y vuelve al mes sin arrastrar la matriz ampliada
+    click(modal.querySelector('[data-mareas-close]'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('modal Mareas · Correlación: toggle de periodo y pills de mes inertes en "todo el periodo"', () => {
+    const root = mount();
+    click(root.querySelector('.sv-card[data-nav="module"]'));
+    click(root.querySelector('[data-mareas-open]'));
+    const modal = root.querySelector('#svMareasModal');
+    click(modal.querySelector('[data-mareamode="corr"]'));
+    // Arranca en "Este mes" y los pills de mes siguen operativos.
+    expect(root.querySelector('[data-corr-period="month"]').classList.contains('is-on')).toBe(true);
+    expect(root.querySelector('[data-marea-month]').disabled).toBe(false);
+    // Ya no se anuncia significancia estadística en ninguna parte de la vista.
+    expect(root.querySelector('.sv-marea-corr-hint').textContent).not.toContain('p<0.05');
+    // "Todo el periodo": el selector de mes deja de aplicar → deshabilitado y atenuado.
+    click(root.querySelector('[data-corr-period="all"]'));
+    expect(root.querySelector('[data-corr-period="all"]').classList.contains('is-on')).toBe(true);
+    const pill = root.querySelector('[data-marea-month]');
+    expect(pill.disabled).toBe(true);
+    expect(pill.classList.contains('is-inert')).toBe(true);
+    // Y al volver a "Este mes" recuperan la interacción.
+    click(root.querySelector('[data-corr-period="month"]'));
+    expect(root.querySelector('[data-marea-month]').disabled).toBe(false);
+    click(modal.querySelector('[data-mareas-close]'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('modal Microbiología · V. Luminiscentes representado en placa, tabla y heatmap', () => {
     const root = mount();
     click(root.querySelector('.sv-card[data-nav="module"]'));
