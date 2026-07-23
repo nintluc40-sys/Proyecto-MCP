@@ -444,11 +444,13 @@ export function mortalityBreakdown(model, f) {
 }
 
 /* ── Tendencias temporales (granularidad adaptativa) ── */
-/** ¿Está viva la hembra durante [start,end]? (ingreso ≤ end y sin muerte previa a start). */
+/** ¿Está viva la hembra durante [start,end]? (ingreso ≤ end y sin muerte previa a start).
+ *  Una hembra marcada como muerta SIN fecha de muerte cuenta como presente en todos los
+ *  buckets: no hay con qué acotarla. (Había una rama explícita para ese caso que devolvía
+ *  `true`, exactamente igual que este `return` por defecto: se evaluaba y se descartaba.) */
 function aliveDuring(rec, start, end) {
   if (rec._ingreso && rec._ingreso > end) return false;        // aún no ingresaba
   if (rec._muerte && rec._muerte < start) return false;        // ya había muerto
-  if (!rec._muerte && rec.estado === ESTADO_MUERTO) return true; // muerta sin fecha → cuenta como presente
   return true;
 }
 /**

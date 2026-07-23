@@ -18,6 +18,20 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
 
 1. **`core/` no toca el DOM.** Lógica de datos/cálculo va en `core/` como funciones puras y
    testeables. El DOM vive en `ui/` y `views/`.
+
+   **Excepciones vigentes** (adaptadores de infraestructura del navegador, no lógica de
+   vista). Están documentadas porque la regla lisa y llana llevaba tiempo sin cumplirse, y
+   una norma que todos saben que se incumple deja de guiar:
+   - `core/charts.js` — envuelve Chart.js, que necesita el `<canvas>`: `getElementById`,
+     `querySelectorAll('canvas')`, `devicePixelRatio`.
+   - `core/refresh.js` — detecta interacción del usuario para pausar el auto-refresco:
+     escucha eventos en `document` y consulta `.modal-open`.
+   - `core/sheets.js` — usa `window.XLSX` (SheetJS por CDN) y `localStorage` (caché de gids).
+
+   **Criterio para lo nuevo:** un módulo de `core/` solo puede tocar el navegador si es de
+   esa misma naturaleza —un adaptador de una capacidad del entorno— y debe degradar sin
+   romper cuando no hay DOM (los tests corren en Node sin él). Todo lo que sea leer, calcular
+   o transformar datos sigue siendo puro y testeable sin navegador.
 2. **Sin estado global colgado de `window`.** El estado compartido va en `core/store.js`; la
    comunicación entre módulos usa el bus de eventos (`on`/`emit`/`EV`).
 3. **Navegación por delegación de eventos.** Nada de `onclick="fn()"` inline en strings de HTML.

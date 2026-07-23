@@ -31,3 +31,12 @@ export function natCmpEs(a, b) {
 export function fmtPct(v) {
   return (v === null || v === undefined || isNaN(v)) ? '—' : v.toFixed(1) + '%';
 }
+
+/** Claves que NUNCA deben usarse como nombre al fusionar datos externos en un objeto.
+ *  `JSON.parse` crea "__proto__" como propiedad PROPIA (no invoca el setter), pero la
+ *  ASIGNACIÓN posterior `destino[k] = …` SÍ lo invoca y cambia el prototipo del destino.
+ *  Sin este guard, un override de localStorage podía inyectar entradas que nadie configuró
+ *  —y, cuando la fusión tiene dos niveles, escribir directamente en `Object.prototype`,
+ *  afectando a toda la app. Úsalo en cualquier merge de datos que vengan de fuera. */
+export const UNSAFE_KEYS = ['__proto__', 'constructor', 'prototype'];
+export const isUnsafeKey = (k) => UNSAFE_KEYS.includes(k);

@@ -11,6 +11,7 @@
    ============================================================ */
 import { getField, parseNum } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
+import { isUnsafeKey } from '../../core/util.js';
 
 // ── utilidades locales ──
 const isDiacritic = (c) => { const x = c.charCodeAt(0); return x >= 0x300 && x <= 0x36f; };
@@ -326,9 +327,17 @@ export function loadMicThresholds() {
     if (raw) {
       const o = JSON.parse(raw);
       if (o && typeof o === 'object') {
+        // Guard de claves peligrosas (isUnsafeKey en core/util.js). Aquí la fusión
+        // tiene DOS niveles y era peor: con área "__proto__", `out[ak]` devolvía
+        // Object.prototype y el bucle interno ESCRIBÍA DENTRO → contaminaba el prototipo
+        // GLOBAL, afectando a cualquier objeto de la app, no solo a los umbrales.
         Object.keys(o).forEach((ak) => {
+          if (isUnsafeKey(ak)) return;
           out[ak] = out[ak] || {};
-          Object.keys(o[ak] || {}).forEach((pk) => { out[ak][pk] = Object.assign({}, out[ak][pk] || {}, o[ak][pk] || {}); });
+          Object.keys(o[ak] || {}).forEach((pk) => {
+            if (isUnsafeKey(pk)) return;
+            out[ak][pk] = Object.assign({}, out[ak][pk] || {}, o[ak][pk] || {});
+          });
         });
       }
     }
