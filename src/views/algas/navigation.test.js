@@ -143,7 +143,12 @@ describe('Algas · harness de navegación integral', () => {
     click(root.querySelector('[data-alg-open="cov"]'));
     expect(root.querySelector('#algCovModal').classList.contains('sv-open')).toBe(true);
     const covDay = root.querySelector('[data-cov-day]');
-    if (covDay) { click(covDay); expect(root.querySelector('#algCovDayDetail').textContent).toContain('Registros del día'); }
+    // El día del calendario lleva la FECHA COMPLETA (no el nº de día): el detalle la muestra.
+    if (covDay) {
+      expect(covDay.dataset.covDay).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      click(covDay);
+      expect(root.querySelector('#algCovDayDetail').textContent).toContain(covDay.dataset.covDay);
+    }
     click(root.querySelector('[data-alg-indices]'));
     expect(root.querySelector('#algIndicesModal').classList.contains('sv-open')).toBe(true);
     expect(root.querySelector('#algIndicesModalBody').textContent).toContain('contaminación');

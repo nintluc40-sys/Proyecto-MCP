@@ -162,7 +162,10 @@ const ALG_KEYS = {
   obs: ['Observaciones', 'observaciones', 'Observación', 'observación'],
 };
 const ALG_SYS_CATS = ['Masivos', 'Premasivos', 'Fundas', 'Carboys', 'PBR', 'Otros'];
-function algSysCat(s) { const u = String(s || '').trim().toUpperCase(); if (!u) return null; if (u.startsWith('PBR')) return 'PBR'; if (u.startsWith('PM')) return 'Premasivos'; if (u === 'FM' || u === 'FP' || /^F/.test(u)) return 'Fundas'; if (/^C\d/.test(u)) return 'Carboys'; if (/^M\d/.test(u)) return 'Masivos'; return 'Otros'; }
+// ⚠ COPIA LITERAL de `sysCat` en views/algas/index.js (no se importa para no arrastrar la
+// vista Algas al bundle base de Visitante). Si tocas una, TOCA LA OTRA; hay un test que
+// compara ambas sobre el mismo conjunto de entradas.
+function algSysCat(s) { const u = String(s || '').trim().toUpperCase(); if (!u) return null; if (u.startsWith('PBR')) return 'PBR'; if (u.startsWith('PM')) return 'Premasivos'; if (/^F[MP]?\d*$/.test(u)) return 'Fundas'; if (/^C\d/.test(u)) return 'Carboys'; if (/^M\d/.test(u)) return 'Masivos'; return 'Otros'; }
 const algIsDesc = (r) => /^s[ií]$/i.test(String(getField(r, ALG_KEYS.descartado)).trim());
 function algMonthOf(r) { const n = parseInt(String(getField(r, ALG_KEYS.corrida)).replace(/\D/g, ''), 10); return Number.isNaN(n) ? -1 : monthIndexOfCorrida(n); }
 function algRowsOfMonth(mIdx) { return store.globalData.filter((r) => r._SheetOrigin === 'Lab_Algas' && algMonthOf(r) === mIdx); }

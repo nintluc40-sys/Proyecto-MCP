@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sysCat, SYS_CATS, growthByLote, tasaChartData, periodStats, cellCompositionByDay, dispatchByModule } from './index.js';
+import { sysCat, SYS_CATS, growthByLote, tasaChartData, periodStats, cellCompositionByDay, dispatchByModule, covSpan, dailySeries } from './index.js';
 
 // Fila de Lab_Algas con cabeceras canónicas (las que lee el acceso tolerante AF).
 const row = (o) => ({ ...o });
@@ -20,6 +20,32 @@ describe('sysCat', () => {
   it('vacío → null', () => {
     expect(sysCat('')).toBeNull();
     expect(sysCat(null)).toBeNull();
+  });
+  it('Fundas acotada: F/FM/FP con dígitos, pero NO FILTRO ni FUCUS', () => {
+    ['F', 'FM', 'FP', 'FM1', 'FP2', 'F3'].forEach((s) => expect(sysCat(s), s).toBe('Fundas'));
+    // Antes /^F/ metía en Fundas cualquier sistema que empezara por F.
+    expect(sysCat('FILTRO')).toBe('Otros');
+    expect(sysCat('FUCUS')).toBe('Otros');
+  });
+  it('MASIVO (sin dígito) sigue cayendo en Otros — regla vigente, documentada', () => {
+    expect(sysCat('MASIVO')).toBe('Otros');
+    expect(sysCat('M1')).toBe('Masivos');
+  });
+});
+
+describe('sysCat · sincronización con la copia de Visitante', () => {
+  it('algas.sysCat y visitante.algSysCat clasifican IGUAL', async () => {
+    // visitante/index.js no exporta algSysCat (es privada): se extrae del fuente y se
+    // evalúa, para que el test falle si alguien toca una copia y no la otra.
+    const fs = await import('node:fs');
+    const url = new URL('../visitante/index.js', import.meta.url);
+    const src = fs.readFileSync(url, 'utf8');
+    const m = src.match(/function algSysCat\(s\)\s*\{[\s\S]*?\n\}/);
+    expect(m, 'no se encontró algSysCat en visitante/index.js').toBeTruthy();
+    const algSysCat = new Function(`${m[0]}; return algSysCat;`)();
+    const casos = ['PBR1', 'PBR', 'PM2', 'PM', 'F', 'FM', 'FP', 'FM1', 'FP2', 'F3',
+      'FILTRO', 'FUCUS', 'C1', 'C12', 'CARBOY', 'M1', 'M10', 'MASIVO', 'XYZ', '', null];
+    casos.forEach((c) => expect(algSysCat(c), `caso ${JSON.stringify(c)}`).toBe(sysCat(c)));
   });
 });
 
@@ -259,5 +285,93 @@ describe('dispatchByModule', () => {
     const d = dispatchByModule(rows);
     expect(d.items).toEqual([{ modulo: '1', litros: 80 }, { modulo: '2', litros: 100 }]);
     expect(d.total).toBe(180);
+  });
+});
+
+describe('covSpan · eje de cobertura del mes de PRODUCCIÓN', () => {
+  // Un mes de producción que cruza junio→julio: 11 días de junio + 19 de julio.
+  const cruzaMeses = () => {
+    const rows = [];
+    for (let d = 20; d <= 30; d++) rows.push(row({ Fecha: `2026-06-${String(d).padStart(2, '0')}` }));
+    for (let d = 1; d <= 19; d++) rows.push(row({ Fecha: `2026-07-${String(d).padStart(2, '0')}` }));
+    return rows;
+  };
+
+  it('deriva el eje de TODAS las fechas, no del mes de la primera fila', () => {
+    const cov = covSpan(cruzaMeses());
+    expect(cov.withData.size).toBe(30);          // los 30 días con registro, no 11 ni 19
+    expect(cov.days[0]).toBe('2026-06-20');
+    expect(cov.days[cov.days.length - 1]).toBe('2026-07-19');
+    expect(cov.sparse).toBe(false);
+  });
+
+  it('el resultado NO depende del orden de las filas del Sheet', () => {
+    // Con el anclaje anterior daba 11 o 19 según qué fila viniera primero.
+    const asc = covSpan(cruzaMeses());
+    const desc = covSpan([...cruzaMeses()].reverse());
+    const barajado = covSpan([...cruzaMeses()].sort(() => Math.random() - 0.5));
+    expect(desc.withData.size).toBe(asc.withData.size);
+    expect(barajado.withData.size).toBe(asc.withData.size);
+    expect(desc.days).toEqual(asc.days);
+    expect(barajado.days).toEqual(asc.days);
+  });
+
+  it('distingue el 3 de julio del 3 de junio (clave completa, no nº de día)', () => {
+    const cov = covSpan([row({ Fecha: '2026-06-03' }), row({ Fecha: '2026-07-03' })]);
+    expect(cov.withData.has('2026-06-03')).toBe(true);
+    expect(cov.withData.has('2026-07-03')).toBe(true);
+    expect(cov.withData.size).toBe(2);
+  });
+
+  it('rango absurdo (fecha mal capturada) → modo sparse, sin generar miles de celdas', () => {
+    const cov = covSpan([row({ Fecha: '2026-06-01' }), row({ Fecha: '2026-06-02' }), row({ Fecha: '2126-06-01' })]);
+    expect(cov.sparse).toBe(true);
+    expect(cov.days).toEqual(['2026-06-01', '2026-06-02', '2126-06-01']); // solo días CON dato
+    expect(cov.span).toBeGreaterThan(120);
+  });
+
+  it('sin fechas → eje vacío, sin reventar', () => {
+    const cov = covSpan([row({ Sistema: 'M1' })]);
+    expect(cov.days).toEqual([]);
+    expect(cov.withData.size).toBe(0);
+  });
+});
+
+describe('dailySeries · agrupa por fecha PARSEADA, no por el texto crudo', () => {
+  it('dos formatos del mismo día se promedian en UN punto', () => {
+    // Ambas formas llegan del Sheet según cómo se haya capturado la celda.
+    const s = dailySeries([
+      row({ Fecha: '2026-06-05', Salinidad_ppt: '30' }),
+      row({ Fecha: '05/06/2026', Salinidad_ppt: '34' }),
+    ], 'salinidad');
+    expect(s.days).toEqual(['2026-06-05']);   // antes: 2 claves → 2 puntos
+    expect(s.values).toEqual([32]);           // promedio, no dos picos
+  });
+
+  it('usa la MISMA clave de día que cellCompositionByDay (coherencia del módulo)', () => {
+    const rows = [row({ Fecha: '05/06/2026', Salinidad_ppt: '30', 'Células muertas': '2', 'Células Vacías': '1' })];
+    const s = dailySeries(rows, 'salinidad');
+    const c = cellCompositionByDay(rows);
+    expect(s.days[0]).toBe('2026-06-05');
+    expect(c.days[0].getDate()).toBe(5);
+    expect(c.days[0].getMonth()).toBe(5);     // junio
+  });
+
+  it('ordena los días cronológicamente aunque crucen meses', () => {
+    const s = dailySeries([
+      row({ Fecha: '2026-07-02', Salinidad_ppt: '31' }),
+      row({ Fecha: '2026-06-28', Salinidad_ppt: '29' }),
+    ], 'salinidad');
+    expect(s.days).toEqual(['2026-06-28', '2026-07-02']);
+  });
+});
+
+describe('periodStats · arrays sin cota', () => {
+  it('no lanza RangeError con 200.000 filas (Math.min(...arr) sí lo hacía)', () => {
+    const rows = new Array(200000).fill(0).map((_, i) => row({ Cel_ml: String(1000 + (i % 50)), Fecha: '2026-06-01' }));
+    const s = periodStats(rows);
+    expect(s.densMin).toBe(1000);
+    expect(s.densMax).toBe(1049);
+    expect(s.n).toBe(200000);
   });
 });
