@@ -23,16 +23,42 @@ const TANK_METRICS = {
   tmp: { icon: '🌡️', label: 'Temperatura por hora', unit: ' °C', color: '#F4511E', get: gTmp, band: [31, 33] },
 };
 
-// Umbrales del ICL por estadío (mayor = mejor). Calibrados con datos reales
-// (3.360 días-tanque, 2026-06-05): el ICL de Post-Larva NO corre más alto que el
-// de Larva (mediana 270.5 vs 275; Δ≈−4.5). El aporte de Lípidos (~+95) se cancela
-// porque en Post-L cae la presencia de Intestino Lleno (99%→53%) y se activan
-// Opacidad/Flácidez/Necrosis/Canibalismo/Parásitos. Por eso Post-L ≈ Larva.
-// Split resultante Post-L con 260/170: Óptimo 59% · Atención 31% · Crítico 10%.
-// Ajustables aquí si cambian los datos/bibliografía.
-const ICL_BANDS = {
-  larv:  { opt: 260, att: 180 },
-  postl: { opt: 260, att: 170 },
+// Umbrales del ICL por estadío (mayor = mejor).
+//
+// RECALIBRADOS el 2026-07-23 sobre 6.942 días-tanque (M01–M10, 391 series
+// módulo×corrida×tanque). Antes: larv 260/180 · postl 260/170.
+//
+// POR QUÉ: al pasar el Estrés a su escala real (`scale: 10` en params.js — era la
+// única variable 0–10 sumada en crudo junto a quince porcentajes 0–100), el ICL bajó
+// en 9× el estrés de cada día. Los umbrales seguían calibrados con la fórmula
+// anterior, así que la clasificación se desplazó sin que cambiara ni un dato:
+// 1.031 de 6.942 días-tanque (14,9 %) quedaban en la banda equivocada y los "Óptimo"
+// de Post-Larva caían del 66,4 % al 52,4 %.
+//
+// CRITERIO: conservar el REPARTO de la calibración original, que es como se
+// eligieron los valores la primera vez. Se mide qué proporción dejaba cada umbral
+// por debajo con la fórmula vieja y se toma el umbral que deja esa misma proporción
+// con la nueva. Restaura Post-L a 66,7 / 28,0 / 5,4 (era 66,4 / 28,2 / 5,4).
+//
+// ⚠ Esto NO deshace el cambio: el reparto TOTAL se conserva pero cambia QUIÉN está
+// en cada banda — 700 días-tanque (10,1 %) se reclasifican respecto al original, y
+// los que se mueven tienen un estrés medio de 2,3/10 frente a 1,8/10 de los que no.
+// Es justo el efecto que se buscaba.
+//
+// MUESTRA: la banda se aplica POR TANQUE, según su estadío más reciente
+// (`getLatestStage`, ver stageClass más abajo), así que la serie ENTERA de un tanque
+// que hoy está en PL se juzga con `postl`, incluidos sus días larvales. Por eso
+// `postl` tiene n=6.923 y está bien determinada, mientras que los tanques que siguen
+// en estadío larval son raros en un corte (n=19): `larv` NO se pudo medir así.
+// Se derivó de los 2.700 días en estadío larval, y se contrastó aplicando a 260/180
+// el desplazamiento medido en Post-Larva (−17 / −12) → 243/168. Ambas rutas dan
+// att=168; el opt difiere en 5 puntos y se usa el medido.
+//
+// Reproducible: cargar `iclSeries` real bajo happy-dom y recalcular con un export de
+// la hoja "Datos Larvicultura". Ajustables aquí si cambian los datos/bibliografía.
+export const ICL_BANDS = {
+  larv:  { opt: 238, att: 168 },
+  postl: { opt: 243, att: 158 },
 };
 
 /** Normaliza la hora ("2:00 AM" / "14:00" / "2:00:00" / "800" / "0800") a "H:MM:SS" 24h.

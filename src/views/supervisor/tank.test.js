@@ -1,5 +1,49 @@
 import { describe, it, expect } from 'vitest';
-import { isotonicDecreasing, monotoneDown, normHr, STD_HRS } from './tank.js';
+import { isotonicDecreasing, monotoneDown, normHr, STD_HRS, ICL_BANDS } from './tank.js';
+import { iclSeries } from './params.js';
+
+describe('ICL_BANDS · umbrales recalibrados (2026-07-23)', () => {
+  it('congela los valores calibrados sobre 6.942 dias-tanque', () => {
+    // Si alguien los mueve, que sea a propósito y releyendo el porqué en tank.js.
+    // Criterio: conservar el reparto de la calibración original tras escalar el
+    // Estrés (params.js `scale: 10`). Antes: larv 260/180 · postl 260/170.
+    expect(ICL_BANDS.larv).toEqual({ opt: 238, att: 168 });
+    expect(ICL_BANDS.postl).toEqual({ opt: 243, att: 158 });
+  });
+
+  it('en ambos estadios el umbral de Optimo queda por encima del de Critico', () => {
+    Object.values(ICL_BANDS).forEach((b) => expect(b.opt).toBeGreaterThan(b.att));
+  });
+
+  it('un estres alto DEGRADA de banda, que es el efecto que se buscaba', () => {
+    // Positivos = 90 + 90 + 70 + 50 = 300. Con Estrés 8/10:
+    //   fórmula vieja: 300 − 8  = 292  → Óptimo con el umbral viejo (260).
+    //   fórmula nueva: 300 − 80 = 220  → NO llega al nuevo Óptimo (243) → Atención.
+    // Recalibrar conserva el reparto global, pero este tanque cambia de banda: la
+    // reclasificación la manda el estrés, no un desplazamiento uniforme.
+    const rows = [{
+      _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ1',
+      Fecha: '01/06/2026', 'Supervivencia': '90', '% Actividad': '90',
+      'Intestino_Lleno': '70', 'Lípidos': '50', 'Estrés': '8',
+    }];
+    const icl = iclSeries(rows).values[0];
+    expect(icl).toBeCloseTo(220, 6);
+    const b = ICL_BANDS.postl;
+    expect(icl).toBeLessThan(b.opt);            // ya no es Óptimo
+    expect(icl).toBeGreaterThanOrEqual(b.att);  // pero tampoco Crítico
+    expect(icl + 9 * 8).toBeGreaterThanOrEqual(260);   // con la fórmula vieja sí lo era
+  });
+
+  it('sin estres, un tanque bueno sigue siendo Optimo con los umbrales nuevos', () => {
+    // Guardián de que la recalibración no volvió los umbrales inalcanzables.
+    const rows = [{
+      _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ1',
+      Fecha: '01/06/2026', 'Supervivencia': '90', '% Actividad': '90',
+      'Intestino_Lleno': '70', 'Lípidos': '50',
+    }];
+    expect(iclSeries(rows).values[0]).toBeGreaterThanOrEqual(ICL_BANDS.postl.opt);
+  });
+});
 
 describe('normHr (hora de la hoja → "H:MM:SS" 24h)', () => {
   it('formatos con dos puntos, con y sin segundos, y AM/PM', () => {
