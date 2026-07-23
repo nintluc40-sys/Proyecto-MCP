@@ -31,6 +31,26 @@ function inRange(f, from, to) {
   return true;
 }
 
+// ── Caché de filas por fuente ────────────────────────────
+// Las 3 fuentes (larvicultura / control de tanque / desinfección) se re-filtraban en
+// CADA generador de ficha: descargar las 7 fichas disparaba 7 escaneos completos del
+// store, más 3 de moduleDateRange al abrir el modal. Se memorizan por
+// (fuente · módulo · corrida) y se invalidan por IDENTIDAD de store.globalData:
+// sheets.js lo REEMPLAZA por un array nuevo en cada refresco (core/sheets.js), así
+// que basta comparar la referencia. La clave va por JSON.stringify para que no pueda
+// colisionar sea cual sea el texto de módulo/corrida.
+// OJO: el array devuelto se COMPARTE entre llamantes → tratarlo como INMUTABLE (hoy
+// todos los consumidores solo lo recorren; no ordenar ni mutar in situ).
+let _rowsCache = { src: null, map: new Map() };
+function cachedRows(kind, mod, corrida, pred) {
+  const src = store.globalData;
+  if (_rowsCache.src !== src) _rowsCache = { src, map: new Map() };
+  const key = JSON.stringify([kind, mod, corrida || '']);
+  let rows = _rowsCache.map.get(key);
+  if (!rows) { rows = src.filter(pred); _rowsCache.map.set(key, rows); }
+  return rows;
+}
+
 // ── Población ────────────────────────────────────────────
 // Réplica nativa de pdfTablePoblacion (engine.js), iterando los tanques presentes.
 // `tanks` = nombres de tanque; `d` = { po_i, sv_i, lt_i, e_i, sal_i, sobrev, mort_d, cta }.
@@ -68,7 +88,7 @@ function poblacionTable(d, tanks) {
 
 // Filas de Larvicultura del módulo (+corrida opcional), dentro del rango.
 function larvRowsOf(mod, corrida) {
-  return store.globalData.filter((r) => isLarviculturaRow(r)
+  return cachedRows('larv', mod, corrida, (r) => isLarviculturaRow(r)
     && getField(r, F.modulo) === mod
     && (!corrida || getField(r, F.corrida) === corrida));
 }
@@ -275,7 +295,7 @@ function despachoPages(opts) {
 // ── Parámetros (OD / Temperatura por hora) ───────────────
 // Fuente DISTINTA: hoja "Control_Tanque MXX" (1 fila por tanque×hora), no larvicultura.
 function tanqRowsOf(mod, corrida) {
-  return store.globalData.filter((r) => isTanqueRow(r)
+  return cachedRows('tanq', mod, corrida, (r) => isTanqueRow(r)
     && getField(r, F.modulo) === mod
     && (!corrida || getField(r, F.corrida) === corrida));
 }
@@ -391,7 +411,7 @@ function calidadAguaPages(opts) {
 const DX_ORIGIN = 'Registro_Desinfección';   // _SheetOrigin (classifyOrigin la deja con el nombre exacto)
 
 function desinfRowsOf(mod, corrida) {
-  return store.globalData.filter((r) => r._SheetOrigin === DX_ORIGIN
+  return cachedRows('desinf', mod, corrida, (r) => r._SheetOrigin === DX_ORIGIN
     && getField(r, F.modulo) === mod
     && (!corrida || getField(r, F.corrida) === corrida));
 }
