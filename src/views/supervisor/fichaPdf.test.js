@@ -1,5 +1,6 @@
+// @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest';
-import { buildFichaPdfDoc, isFichaId, pdfFilename, FICHA_IDS, fichaLabel } from './fichaPdf.js';
+import { buildFichaPdfDoc, isFichaId, pdfFilename, FICHA_IDS, fichaLabel, printFichaDocs } from './fichaPdf.js';
 
 describe('fichaPdf · núcleo PDF nativo (Trazabilidad)', () => {
   it('FICHA_IDS = las fichas en orden de presentación; isFichaId discrimina', () => {
@@ -58,6 +59,64 @@ describe('fichaPdf · núcleo PDF nativo (Trazabilidad)', () => {
     const opts = { fid: 'poblacion', mod: 'M01', fileName: 'PB', pages: [{ d: { fecha: '2026-06-01' }, tableHtml: '<table></table>' }] };
     expect(buildFichaPdfDoc({ ...opts })).toContain('window.print()');            // por defecto sí
     expect(buildFichaPdfDoc({ ...opts, autoPrint: false })).not.toContain('window.print()');
+  });
+
+  it('el código verificador es DETERMINISTA: el mismo documento da el mismo código', () => {
+    // Antes salía de Date.now()+contador de sesión: cada exportación daba un código
+    // distinto para el MISMO documento, así que no verificaba nada.
+    const opts = () => ({
+      fid: 'poblacion', mod: 'M01', fileName: 'PB',
+      pages: [{ d: { fecha: '2026-06-01', tec: 'Ana' }, tableHtml: '<table><tr><td>1000</td></tr></table>' }],
+    });
+    const code = (doc) => (doc.match(/POB01-20260601-[0-9A-F]{6}/) || [])[0];
+    const a = code(buildFichaPdfDoc(opts()));
+    const b = code(buildFichaPdfDoc(opts()));
+    expect(a).toBeTruthy();
+    expect(b).toBe(a);
+  });
+
+  it('el código CAMBIA si cambia el contenido, la fecha o el módulo', () => {
+    const base = { fid: 'poblacion', mod: 'M01', fileName: 'PB', pages: [{ d: { fecha: '2026-06-01' }, tableHtml: '<table><tr><td>1000</td></tr></table>' }] };
+    const codeOf = (o) => (buildFichaPdfDoc(o).match(/POB\d\d-\d{8}-[0-9A-F]{6}/) || [])[0];
+    const ref = codeOf(base);
+    // Un dato distinto en la tabla → otro código.
+    expect(codeOf({ ...base, pages: [{ d: { fecha: '2026-06-01' }, tableHtml: '<table><tr><td>9999</td></tr></table>' }] })).not.toBe(ref);
+    // Otra fecha → otro código.
+    expect(codeOf({ ...base, pages: [{ d: { fecha: '2026-06-02' }, tableHtml: '<table><tr><td>1000</td></tr></table>' }] })).not.toBe(ref);
+    // Otro módulo → otro código.
+    expect(codeOf({ ...base, mod: 'M02' })).not.toBe(ref);
+    // Y las observaciones también entran en la huella.
+    expect(codeOf({ ...base, pages: [{ d: { fecha: '2026-06-01' }, tableHtml: '<table><tr><td>1000</td></tr></table>', obs: 'nota' }] })).not.toBe(ref);
+  });
+
+  it('cada página de un documento multipágina tiene su propio código', () => {
+    const doc = buildFichaPdfDoc({
+      fid: 'poblacion', mod: 'M01', fileName: 'PB',
+      pages: [
+        { d: { fecha: '2026-06-01' }, tableHtml: '<table><tr><td>A</td></tr></table>' },
+        { d: { fecha: '2026-06-02' }, tableHtml: '<table><tr><td>B</td></tr></table>' },
+      ],
+    });
+    const codes = doc.match(/POB01-\d{8}-[0-9A-F]{6}/g) || [];
+    expect(codes.length).toBe(2);
+    expect(codes[0]).not.toBe(codes[1]);
+  });
+
+  it('printFichaDocs avisa del progreso del PRIMER documento y no rompe si el aviso falla', () => {
+    // La secuencia abre un "Guardar como PDF" por documento; sin onProgress el usuario no
+    // sabe por cuál va. Los siguientes se encadenan por onafterprint (no simulable aquí),
+    // así que se comprueba el primer aviso y que un callback que lanza no tumba la impresión.
+    const avisos = [];
+    expect(printFichaDocs([
+      { page: '<html></html>', fileName: 'A' },
+      { page: '<html></html>', fileName: 'B' },
+    ], (n, total, fileName) => avisos.push([n, total, fileName]))).toBe(true);
+    expect(avisos[0]).toEqual([1, 2, 'A']);
+
+    expect(printFichaDocs([{ page: '<html></html>', fileName: 'X' }], () => { throw new Error('boom'); })).toBe(true);
+    // Sin callback sigue funcionando igual.
+    expect(printFichaDocs([{ page: '<html></html>', fileName: 'Y' }])).toBe(true);
+    expect(printFichaDocs([])).toBe(false);
   });
 
   it('params añade Estadío/Hora registro en la cabecera', () => {

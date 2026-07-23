@@ -1492,7 +1492,12 @@ export function renderModule(ctx, mod) {
         if (!fids.length) { toast('Selecciona al menos un tipo de ficha', 'warn'); return; }
         const from = traceOverlay.querySelector('[data-trace-from]')?.value || '';
         const to = traceOverlay.querySelector('[data-trace-to]')?.value || '';
-        const res = downloadTrazabilidad({ mod, corrida, fids, from, to });
+        // Un aviso por documento: la secuencia abre un "Guardar como PDF" por tipo de
+        // ficha y, sin esto, el usuario no sabe por cuál va (solo se avisa si hay ≥2).
+        const onProgress = (n, total, fileName) => {
+          if (total > 1) toast(`🖨️ Documento ${n} de ${total} · ${fileName}`, 'info', 4000);
+        };
+        const res = downloadTrazabilidad({ mod, corrida, fids, from, to, onProgress });
         if (res.generated.length) {
           const detail = res.generated.map((g) => `${g.label} (${g.pages} pág.)`).join(' · ');
           const multi = res.generated.length > 1 ? ' — se abrirá un diálogo de impresión por tipo' : '';

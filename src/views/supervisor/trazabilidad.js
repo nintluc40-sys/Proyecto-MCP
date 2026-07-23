@@ -505,9 +505,11 @@ export function buildFichaPages(fid, opts) {
  * Genera y descarga los PDF de las fichas seleccionadas de un módulo.
  * Un PDF por tipo (multipágina, 1 pág/día). Los documentos se imprimen en
  * SECUENCIA vía iframe oculto (sin pop-ups; un "Guardar como PDF" por tipo).
+ * @param {(n:number,total:number,fileName:string)=>void} [onProgress]  progreso de la
+ *   secuencia de impresión (un aviso por documento).
  * @returns {{generated:Array<{fid,label,pages}>, empty:string[], pending:string[]}}
  */
-export function downloadTrazabilidad({ mod, corrida, fids, from, to }) {
+export function downloadTrazabilidad({ mod, corrida, fids, from, to, onProgress }) {
   const generated = [], empty = [], pending = [], docs = [];
   fids.forEach((fid) => {
     if (!isFichaId(fid)) return;
@@ -521,6 +523,6 @@ export function downloadTrazabilidad({ mod, corrida, fids, from, to }) {
     docs.push({ page: buildFichaPdfDoc({ fid, mod, fileName, pages, autoPrint: false }), fileName });
     generated.push({ fid, label: fichaLabel(fid), pages: pages.length });
   });
-  if (docs.length) printFichaDocs(docs);
+  if (docs.length) printFichaDocs(docs, onProgress);
   return { generated, empty, pending };
 }
