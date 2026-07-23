@@ -444,7 +444,7 @@ function microPlacaHTML(rows, state) {
     ? `<div class="mic-pe-legend">${colonies.map((c) => `<div class="mic-pe-leg"><span class="mic-pe-dot" style="background:${c.color}"></span><span class="mic-pe-leg-l">${esc(c.label)}</span><span class="mic-pe-leg-v">${micFmtNum(c.ufc)}</span></div>`).join('')}</div>`
     : '<div class="muted" style="font-size:12px">Sin colonias con UFC este día.</div>';
   return `<div class="sv-micro-filters">
-      <label class="sv-modal-datelbl">🐟 Tanque <select class="sv-modal-select" data-micro-tank>${tankOpts}</select></label>
+      <label class="sv-modal-datelbl">Tanque <select class="sv-modal-select" data-micro-tank>${tankOpts}</select></label>
       <div class="sv-micro-daynav">
         <button class="sv-micro-navbtn" data-micro-day="-1" ${idx <= 0 ? 'disabled' : ''} aria-label="Día anterior">◀</button>
         <span class="sv-micro-daylbl">📅 ${esc(day.label)} <span class="muted">(${idx + 1}/${days.length})</span></span>
@@ -459,7 +459,7 @@ function microPlacaHTML(rows, state) {
       </div>
       <div class="sv-micro-side">
         <div class="mic-chart-title">Resumen del día</div>
-        <div class="sv-micro-meta"><b>🐟 ${esc(tankShown)}</b> · 📅 ${esc(day.label)}${dayEstadios.length ? ' · 🦐 ' + esc(dayEstadios.join(', ')) : ''}</div>
+        <div class="sv-micro-meta"><b>${esc(tankShown)}</b> · 📅 ${esc(day.label)}${dayEstadios.length ? ' · 🦐 ' + esc(dayEstadios.join(', ')) : ''}</div>
         <div class="mic-pe-sum">
           <div class="mic-pe-st"><div class="mic-pe-st-v">${micFmtNum(totUfc)}</div><div class="mic-pe-st-l">Σ UFC total</div></div>
           <div class="mic-pe-st"><div class="mic-pe-st-v">${maxC ? micFmtNum(maxC.ufc) : '—'}</div><div class="mic-pe-st-l">UFC máx</div></div>
@@ -488,7 +488,8 @@ function microTablaHTML(rows) {
     const val = m.ufc !== null ? micFmtNum(m.ufc) : (m.crudo !== null ? esc(String(m.crudo)) : '·');
     return `<td${tint} title="${m.nivel ? esc(m.nivel) + ' · ' : ''}${m.ufc !== null ? micFmtNum(m.ufc) + ' UFC' : ''}">${val}</td>`;
   };
-  const head = `<tr><th>Fecha</th><th>TQ</th><th>Tipo</th><th>Formato</th>${pats.map((p) => `<th style="text-align:right">${esc(p.label)}</th>`).join('')}<th>V. Lumin.</th><th>Nivel máx</th></tr>`;
+  // Estadío junto a Formato (entre éste y los agentes): ayuda a identificar la muestra.
+  const head = `<tr><th>Fecha</th><th>TQ</th><th>Tipo</th><th>Formato</th><th>Estadío</th>${pats.map((p) => `<th style="text-align:right">${esc(p.label)}</th>`).join('')}<th>V. Lumin.</th><th>Nivel máx</th></tr>`;
   const body = melts.map((s) => {
     const c = s.ctx;
     let worst = '', wr = -1;
@@ -498,12 +499,18 @@ function microTablaHTML(rows) {
       <td>${c.tq ? 'TQ ' + esc(c.tq) : '<span class="muted">—</span>'}</td>
       <td>${esc(c.tipoMuestra || '—')}</td>
       <td>${esc(MIC_FMT_LABEL[c.formatoKey] || c.formato || '—')}</td>
+      <td>${c.estadio ? esc(c.estadio) : '<span class="muted">—</span>'}</td>
       ${pats.map((p) => patCell(s.byKey[p.key])).join('')}
       <td>${micLuminCell(c.lumin)}</td>
       <td>${worst ? `<span class="mic-nivel" style="--nv:${MIC_NIVEL_COLOR[worst]}">${esc(worst)}</span>` : '<span class="muted">—</span>'}</td>
     </tr>`;
   }).join('');
-  return `<div class="sv-micro-tablewrap"><table class="sv-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+  // Leyenda de semaforización (niveles), igual que la pestaña Heatmap; las celdas de agente
+  // se tiñen por nivel y sin leyenda no se sabía qué significa cada color.
+  const hasLumin = melts.some((s) => s.ctx.lumin != null);
+  const luminLeg = hasLumin ? `<span class="mic-legend-item"><span class="mic-legend-dot" style="background:${MIC_LUMIN_COLOR}"></span>V. Luminiscentes (presencia)</span>` : '';
+  const legend = `<div class="mic-legend" style="margin-top:8px">${Object.keys(MIC_NIVEL_COLOR).map((n) => `<span class="mic-legend-item"><span class="mic-legend-dot" style="background:${MIC_NIVEL_COLOR[n]}"></span>${esc(n)}</span>`).join('')}${luminLeg}</div>`;
+  return `<div class="sv-micro-tablewrap"><table class="sv-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>${legend}`;
 }
 
 /** Pestaña Heatmap: Patógeno × Día (color = nivel · valor = Σ UFC). */
@@ -567,7 +574,7 @@ function microTendenciasHTML(rows, state) {
   const { days, series } = microPathogenTrends(scoped);
   const tankOpts = `<option value="">Todos los tanques</option>` + tanks.map((t) => `<option value="${esc(t)}" ${state.trendTank === t ? 'selected' : ''}>${esc(micTankLabel(t))}</option>`).join('');
   const bar = `<div class="sv-micro-filters">
-      <label class="sv-modal-datelbl">🐟 Tanque <select class="sv-modal-select" data-mtrend-tank>${tankOpts}</select></label>
+      <label class="sv-modal-datelbl">Tanque <select class="sv-modal-select" data-mtrend-tank>${tankOpts}</select></label>
     </div>`;
 
   if (!series.length || days.length < 1) {
@@ -737,7 +744,7 @@ function cwTendenciasHTML(rows, ranges, state) {
   scoped.forEach((s) => s.meas.forEach((m) => present.add(m.key)));
   const params = CAL_PARAMS.filter((p) => present.has(p.key));
   const tankOpts = `<option value="">Todos los tanques</option>` + tanks.map((t) => `<option value="${esc(t)}" ${state.tank === t ? 'selected' : ''}>TQ ${esc(t)}</option>`).join('');
-  const bar = `<div class="sv-micro-filters"><label class="sv-modal-datelbl">🐟 Tanque <select class="sv-modal-select" data-cw-tank>${tankOpts}</select></label></div>`;
+  const bar = `<div class="sv-micro-filters"><label class="sv-modal-datelbl">Tanque <select class="sv-modal-select" data-cw-tank>${tankOpts}</select></label></div>`;
   if (!params.length) return bar + '<div class="empty-state" style="padding:30px">Sin parámetros medidos para esta selección.</div>';
   if (!state.param || !params.some((p) => p.key === state.param)) state.param = params[0].key;
 
@@ -1002,7 +1009,7 @@ export function renderModule(ctx, mod) {
   </div>`;
 
   // Lista de tanques del módulo
-  h += `<div class="sv-section-title" style="margin-top:16px">🐟 Tanques (${tanks.length})</div>`;
+  h += `<div class="sv-section-title" style="margin-top:16px">Tanques (${tanks.length})</div>`;
   if (tanks.length) {
     h += '<div class="sv-tank-grid">';
     tanks.forEach((tq) => {
@@ -1456,7 +1463,7 @@ export function renderModule(ctx, mod) {
         }).filter(Boolean);
         const tankBlock = tankAlerts.length
           ? `<div class="sv-mday-talerts">
-              <div class="sv-mday-talerts-h">🐟 Alertas por tanque · ${tankAlerts.length} de ${tankRows.length}</div>
+              <div class="sv-mday-talerts-h">Alertas por tanque · ${tankAlerts.length} de ${tankRows.length}</div>
               ${tankAlerts.map((t) => `<div class="sv-mday-talert"><span class="sv-mday-tq">${esc(t.tq)}</span><span class="sv-mday-tflags">${t.flags.map((f) => esc(f)).join(' · ')}</span></div>`).join('')}
             </div>`
           : (tankRows.length ? '<div class="sv-alert-ok" style="margin-top:6px">✅ Ningún tanque fuera de rango (OD/T°) este día.</div>' : '');

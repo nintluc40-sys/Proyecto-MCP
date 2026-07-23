@@ -1967,6 +1967,20 @@ function petriMatrizHTML(rows) {
     </div>`;
 }
 
+/**
+ * Colonia "dominante" del día (mayor UFC), para los KPI "UFC máx" y "Dominante".
+ * Prioriza los patógenos ESPECÍFICOS: los agregados (C. Totales, Bact. Totales) son sumas
+ * y ganarían siempre. Pero si el día SOLO trae agregados, excluirlos dejaba ambos KPI en
+ * "—" pese a haber un patógeno con dato; en ese caso se usa lo que haya, para mostrar el
+ * único hallado en vez de un guion. null si no hubo ninguna colonia. PURA, exportada.
+ */
+export function dominantColony(colonies) {
+  const list = colonies || [];
+  const specific = list.filter((c) => !AGGREGATE_KEYS.has(c.key));
+  const pool = specific.length ? specific : list;
+  return pool.length ? pool.reduce((a, b) => (a.ufc > b.ufc ? a : b)) : null;
+}
+
 function petriPlacaHTML(days, dayIdx, day) {
   const colonies = day ? coloniesForDay(day.rows) : [];
   _scope.colonies = colonies;
@@ -1976,9 +1990,7 @@ function petriPlacaHTML(days, dayIdx, day) {
   // ausencia). "—" si no hubo ningún patógeno con UFC ese día.
   const nonTotColonies = colonies.filter((c) => c.key !== 'totales');
   const totUfc = nonTotColonies.length ? nonTotColonies.reduce((a, c) => a + c.ufc, 0) : null;
-  // "UFC máx" y "Dominante" sobre patógenos ESPECÍFICOS (los agregados ganarían siempre).
-  const specific = colonies.filter((c) => !AGGREGATE_KEYS.has(c.key));
-  const maxC = specific.length ? specific.reduce((a, b) => (a.ufc > b.ufc ? a : b)) : null;
+  const maxC = dominantColony(colonies);
   const nav = `<div class="mic-day-nav">
       <button class="mic-month-nav" data-mic-day="-1" ${dayIdx <= 0 ? 'disabled' : ''} aria-label="Día anterior">◀</button>
       <span class="mic-day-lbl">${day ? esc(day.label) : '—'}</span>
