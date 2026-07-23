@@ -35,7 +35,11 @@ const ICL_BANDS = {
   postl: { opt: 260, att: 170 },
 };
 
-/** Normaliza la hora ("2:00 AM" / "14:00" / "2:00:00") a "H:MM:SS" 24h. */
+/** Normaliza la hora ("2:00 AM" / "14:00" / "2:00:00" / "800" / "0800") a "H:MM:SS" 24h.
+ *  Devuelve null si no se reconoce; los llamantes comparan contra STD_HRS, así que un null
+ *  hace que la lectura se DESCARTE (no se dibuja en el perfil horario ni sale en el PDF de
+ *  Parámetros). Por eso los formatos compactos sin dos puntos tienen su propia rama: la hoja
+ *  los trae cuando la hora se teclea, y antes se perdían en silencio. */
 export function normHr(h) {
   const s = String(h || '').trim();
   if (!s) return null;
@@ -50,6 +54,10 @@ export function normHr(h) {
   if (/^\d{1,2}:\d{2}:\d{2}$/.test(s)) { const p = s.split(':'); return parseInt(p[0], 10) + ':' + p[1] + ':' + p[2]; }
   const m2 = s.match(/^(\d{1,2}):(\d{2})$/);
   if (m2) return parseInt(m2[1], 10) + ':' + m2[2] + ':00';
+  // Compacto sin dos puntos: HMM o HHMM ("800" = 8:00, "0800" = 8:00, "1000" = 10:00).
+  // Devolvía null y la lectura se descartaba. Horas ≥ 24 o minutos ≥ 60 siguen siendo null.
+  const m3 = s.match(/^(\d{1,2})(\d{2})$/);
+  if (m3) { const hr = parseInt(m3[1], 10); if (hr < 24 && +m3[2] < 60) return hr + ':' + m3[2] + ':00'; }
   return null;
 }
 
