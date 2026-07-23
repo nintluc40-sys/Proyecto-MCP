@@ -21,6 +21,10 @@ import {
   loadMicThresholds, MIC_FACTORS_KEY, MIC_AREAS,
 } from './data.js';
 import { petriSVG } from './petri.js';
+import { buildPetriPdfDoc, dayKeyOf } from './petriPdf.js';
+// Motor de impresión compartido (iframe oculto, sin pop-ups). Vive en supervisor/ por
+// ser donde nació, pero es genérico: recibe HTML y lo imprime.
+import { printFichaDocs } from '../supervisor/fichaPdf.js';
 import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges, calRangeText, calEnsayoData, CAL_PARAMS, calDiagnosis, calGroupTree, calWQI, controlStats, boxStats, calSeverity, calStageCmp, CAL_RISK, CAL_SEV } from './calagua.data.js';
 
 // ── sub-vistas del módulo ──
@@ -132,7 +136,7 @@ export function microbiologiaView(root) {
 
   let h = headHTML() + subnavHTML();
   // Bacteriología va dentro de un panel con estética SCADA/ERP (.mic-scada).
-  if (vState.sub === 'bacteriologia') h += `<div class="mic-scada">${renderBacteriologia()}</div>` + alertModalHTML() + xlsxModalHTML();
+  if (vState.sub === 'bacteriologia') h += `<div class="mic-scada">${renderBacteriologia()}</div>` + alertModalHTML() + xlsxModalHTML() + pdfModalHTML();
   else if (vState.sub === 'calidad') h += renderCalidadAgua();
   else if (vState.sub === 'general') h += renderGeneral();
   else h += placeholderHTML(SUBS.find((s) => s.key === vState.sub));
@@ -1917,7 +1921,7 @@ function renderPetri(rows) {
   const tabBtn = (key, label) => `<button class="mic-petab ${vState.petriTab === key ? 'is-active' : ''}" data-mic-petab="${key}">${label}</button>`;
   let h = `<div class="mic-petri-bar">
       <div class="mic-petabs">${tabBtn('placa', 'Placa')}${tabBtn('matriz', 'Matriz')}${tabBtn('tendencias', 'Tendencias')}</div>
-      <div class="mic-export"><button class="mic-exp" data-mic-export="txt">⬇ Reporte</button><button class="mic-exp" data-mic-xlsx title="Exportar Excel por rango de fechas (columnas con datos)">⬇ Excel</button></div>
+      <div class="mic-export"><button class="mic-exp" data-mic-export="txt">⬇ Reporte</button><button class="mic-exp" data-mic-xlsx title="Exportar Excel por rango de fechas (columnas con datos)">⬇ Excel</button><button class="mic-exp" data-mic-pdf title="Exportar PDF por rango de fechas (una hoja por fecha de muestreo)">⬇ PDF</button></div>
     </div>`;
 
   if (vState.petriTab === 'matriz') h += petriMatrizHTML(rows);
@@ -2508,6 +2512,78 @@ function runXlsxExport(root) {
   closeXlsxModal(root);
 }
 
+/* ---- export PDF (mismo alcance que el Excel: filtros de la vista + rango de fechas) ----
+   Una hoja por FECHA de muestreo, con los registros del día agrupados por formato.
+   Reutiliza micExportBaseRows/micExportRows para que el alcance sea EXACTAMENTE el
+   mismo que el del Excel; lo único propio es el id de los campos del rango. */
+function micPdfRows(root) {
+  const from = root.querySelector('#micPdfFrom')?.value || '';
+  const to = root.querySelector('#micPdfTo')?.value || '';
+  const fromD = from ? new Date(from + 'T00:00:00') : null;
+  const toD = to ? new Date(to + 'T23:59:59') : null;
+  return micExportBaseRows().filter((r) => { const d = rowContext(r).fecha; if (!d || isNaN(d)) return false; if (fromD && d < fromD) return false; if (toD && d > toD) return false; return true; })
+    .sort((a, b) => (rowContext(a).fecha || 0) - (rowContext(b).fecha || 0));
+}
+function pdfModalHTML() {
+  return `<div class="mic-modal" id="micPdfModal" data-mic-pdf-overlay>
+      <div class="mic-modal-card">
+        <div class="mic-modal-head">
+          <span class="mic-modal-title">⬇ Exportar a PDF · rango de fechas</span>
+          <button class="mic-modal-x" data-mic-pdf-close aria-label="Cerrar">✕</button>
+        </div>
+        <div class="mic-modal-body">
+          <p class="muted" id="micPdfScope" style="margin:0 0 12px;font-size:12px"></p>
+          <div class="mic-exp-range">
+            <label class="mic-exp-fld">Desde <input type="date" id="micPdfFrom"></label>
+            <label class="mic-exp-fld">Hasta <input type="date" id="micPdfTo"></label>
+          </div>
+          <div id="micPdfInfo" class="muted" style="margin:10px 0;font-size:12px"></div>
+          <button class="mic-exp" data-mic-pdf-go style="font-size:13px;padding:7px 14px">⬇ Descargar PDF</button>
+        </div>
+      </div>
+    </div>`;
+}
+function updatePdfInfo(root) {
+  const info = root.querySelector('#micPdfInfo'); if (!info) return;
+  const rows = micPdfRows(root);
+  // Se cuentan las HOJAS reales (fechas de muestreo), que es lo que el usuario verá.
+  const dias = new Set(rows.map((r) => { const d = rowContext(r).fecha; return d && !isNaN(d) ? dayKeyOf(d) : null; }).filter(Boolean)).size;
+  info.textContent = `Se exportarán ${rows.length} registro(s) en ${dias} hoja(s), una por fecha de muestreo.`;
+}
+function openPdfModal(root) {
+  const m = root.querySelector('#micPdfModal'); if (!m) return;
+  const base = micExportBaseRows();
+  if (!base.length) { toast('Sin registros para los filtros activos.', 'warn'); return; }
+  const dates = _scope.rows.map((r) => rowContext(r).fecha).filter((d) => d && !isNaN(d)).sort((a, b) => a - b);
+  const f = root.querySelector('#micPdfFrom'), t = root.querySelector('#micPdfTo');
+  if (f) f.value = dates.length ? isoDate(dates[0]) : '';
+  if (t) t.value = dates.length ? isoDate(dates[dates.length - 1]) : '';
+  const scope = root.querySelector('#micPdfScope');
+  if (scope) scope.textContent = `Respeta los filtros activos · ${base.length} registro(s) disponibles. Elige el rango de fechas a exportar.`;
+  updatePdfInfo(root);
+  m.classList.add('is-open'); document.body.classList.add('modal-open');
+}
+function closePdfModal(root) {
+  const m = root.querySelector('#micPdfModal'); if (m) m.classList.remove('is-open');
+  document.body.classList.remove('modal-open');
+}
+function runPdfExport(root) {
+  const rows = micPdfRows(root);
+  if (!rows.length) { toast('Sin registros en el rango de fechas elegido.', 'warn'); return; }
+  const from = root.querySelector('#micPdfFrom')?.value || '';
+  const to = root.querySelector('#micPdfTo')?.value || '';
+  const doc = buildPetriPdfDoc(rows, { from, to });
+  // Puede haber filas cuyo formato no deje ninguna columna con dato: entonces no hay
+  // hoja que imprimir y hay que decirlo en vez de abrir un documento en blanco.
+  if (!doc.pages) { toast('Los registros del rango no tienen columnas con datos para el PDF.', 'warn'); return; }
+  closePdfModal(root);
+  // Se imprime por iframe oculto (printFichaDocs), no con window.open: el navegador
+  // bloquea las ventanas emergentes y el usuario se quedaba sin PDF y sin aviso.
+  const ok = printFichaDocs([{ page: doc.page, fileName: doc.fileName }]);
+  if (!ok) { toast('No se pudo preparar el documento para imprimir.', 'err'); return; }
+  toast(`📄 PDF: ${doc.fileName} · ${doc.pages} hoja(s)`, 'ok', 5000);
+}
+
 /* ============================================================
    HTML helpers
    ============================================================ */
@@ -2570,6 +2646,8 @@ function bind(root) {
   root.addEventListener('change', (e) => {
     // Rango de fechas del modal de Excel: recalcula el conteo, no re-renderiza.
     if (e.target.id === 'micExpFrom' || e.target.id === 'micExpTo') { updateXlsxInfo(root); return; }
+    // Rango de fechas del modal de PDF: recalcula registros y HOJAS, no re-renderiza.
+    if (e.target.id === 'micPdfFrom' || e.target.id === 'micPdfTo') { updatePdfInfo(root); return; }
     // Editor de rangos de Bacteriología: cambiar de área re-pinta SOLO la tabla del modal
     // (no re-renderiza la vista, para no cerrar el modal ni perder el resto de la UI).
     const fArea = e.target.closest('[data-mic-fact-area]');
@@ -2599,6 +2677,10 @@ function bind(root) {
     if (e.target.closest('[data-mic-xlsx-go]')) { runXlsxExport(root); return; }
     if (e.target.closest('[data-mic-xlsx-close]') || e.target.matches('[data-mic-xlsx-overlay]')) { closeXlsxModal(root); return; }
     if (e.target.closest('[data-mic-xlsx]')) { openXlsxModal(root); return; }
+    // PDF: mismo patrón que el Excel (abrir modal → elegir rango → exportar).
+    if (e.target.closest('[data-mic-pdf-go]')) { runPdfExport(root); return; }
+    if (e.target.closest('[data-mic-pdf-close]') || e.target.matches('[data-mic-pdf-overlay]')) { closePdfModal(root); return; }
+    if (e.target.closest('[data-mic-pdf]')) { openPdfModal(root); return; }
 
     const sub = e.target.closest('[data-mic-sub]');
     if (sub) { if (vState.sub !== sub.dataset.micSub) { vState.sub = sub.dataset.micSub; microbiologiaView(root); } return; }
