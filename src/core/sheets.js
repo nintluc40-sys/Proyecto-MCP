@@ -290,8 +290,6 @@ async function fetchViaCsv(ids) {
 }
 
 // ---------- pipeline público ----------
-/** Aplana { name: rows } → globalData y emite eventos.
- *  Devuelve false si se descartó por degradado (datos previos conservados). */
 /** Aplica un set de hojas { name: rows } al store: aplana las filas, limpia la caché
  *  de fechas, fija globalData/sheetNames/latestDateMs y deriva Mortalidad. NO emite
  *  eventos ni toca el estado de conexión/fingerprint: eso lo decide cada caller

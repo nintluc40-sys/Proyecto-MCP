@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { store } from './store.js';
-import { monthIndexOfCorrida, monthLabelAt, modCorStats, modCorDispatched } from './prodCalendar.js';
+import { monthIndexOfCorrida, monthLabelAt, modCorStats, modCorDispatched, modulesOfCorrida, corridasOfMonth } from './prodCalendar.js';
 
 afterEach(() => { store.globalData = []; });
 
@@ -100,5 +100,68 @@ describe('modCorStats: cosecha honra el 0 (tanque vaciado/agrupado)', () => {
     expect(s.siembra).toBe(4200);  // 2800 + 1400
     // densidad de siembra = (siembra/nSie)/28/1000 = (4200/2)/28/1000
     expect((s.siembra / s.nSie) / 28 / 1000).toBeCloseTo(0.075, 6);
+  });
+});
+
+/* ── GUARDIÁN de la invariante del array de filas (F1) ─────────────────────────
+   Hoy `larvRows()` re-filtra `store.globalData` en cada llamada, de modo que cada
+   consumidor trabaja sobre su PROPIA copia y los `.sort()` internos son inocuos.
+   Si algún día se memoiza (para dejar de escanear el store una vez por llamada),
+   ese array pasará a estar COMPARTIDO entre los 6 consumidores de este módulo
+   —Supervisor, Larvicultura, Revisiones, Algas, Microbiología y Visitante— y
+   bastará con perder un `.filter()` intermedio para que un `.sort()` reordene el
+   array de todos, con resultados que dependerían del orden de las llamadas.
+   Estos dos tests congelan la invariante ANTES de que eso ocurra. No prueban una
+   implementación: prueban que el resultado no depende de cuántas veces ni en qué
+   orden se llame, y que el store no se reordena por el camino. */
+describe('prodCalendar · guardián: agregados estables e independientes del orden de llamada', () => {
+  // A propósito DESORDENADO: fechas y tanques entremezclados, dos módulo+corrida.
+  const L = (o) => ({ _SheetOrigin: 'Larvicultura', ...o });
+  const desordenado = () => [
+    L({ 'Módulo': 'M02', Corrida: '574', Tanque: 'TQ3', 'Población': '500', Fecha: '10/06/2026' }),
+    L({ 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ2', 'Población': '700', Fecha: '05/06/2026', Destino: 'Piscina 1', Biomasa: '9' }),
+    L({ 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ1', 'Población': '1000', Fecha: '01/06/2026' }),
+    L({ 'Módulo': 'M02', Corrida: '574', Tanque: 'TQ1', 'Población': '900', Fecha: '02/06/2026' }),
+    L({ 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ2', 'Población': '1200', Fecha: '01/06/2026' }),
+    L({ 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ1', 'Población': '800', Fecha: '05/06/2026', Destino: 'Piscina 2', Biomasa: '11' }),
+    L({ 'Módulo': 'M02', Corrida: '574', Tanque: 'TQ3', 'Población': '600', Fecha: '02/06/2026' }),
+  ];
+  const huella = () => store.globalData.map((r) => `${r['Módulo']}/${r.Corrida}/${r.Tanque}/${r.Fecha}`).join('|');
+
+  it('llamadas repetidas e intercaladas devuelven exactamente lo mismo', () => {
+    store.globalData = desordenado();
+    const a1 = modCorStats('M01', '573');
+    const b1 = modCorStats('M02', '574');
+    const d1 = modCorDispatched('M01', '573');
+    const m1 = modulesOfCorrida('573');
+    // Mismas consultas, intercaladas y en otro orden.
+    const b2 = modCorStats('M02', '574');
+    const d2 = modCorDispatched('M01', '573');
+    const a2 = modCorStats('M01', '573');
+    const m2 = modulesOfCorrida('573');
+    const a3 = modCorStats('M01', '573');
+
+    expect(a2).toEqual(a1);
+    expect(a3).toEqual(a1);
+    expect(b2).toEqual(b1);
+    expect(d2).toBe(d1);
+    expect(m2).toEqual(m1);
+    // Y los valores son los correctos, no solo "estables entre sí".
+    expect(a1.siembra).toBe(2200);   // TQ1 1000 + TQ2 1200 (primera población real)
+    expect(a1.cosecha).toBe(1500);   // TQ1 800 + TQ2 700 (última registrada)
+    expect(a1.despachadoFull).toBe(true);
+    expect(b1.despachado).toBe(false);
+  });
+
+  it('no reordena store.globalData (nada ordena el array del store in situ)', () => {
+    store.globalData = desordenado();
+    const antes = huella();
+    modCorStats('M01', '573');
+    modCorDispatched('M01', '573');
+    modulesOfCorrida('573');
+    corridasOfMonth(monthIndexOfCorrida(573));
+    modCorStats('M02', '574');
+    modCorStats('M01', '573');
+    expect(huella()).toBe(antes);
   });
 });
