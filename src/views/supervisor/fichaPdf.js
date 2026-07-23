@@ -49,8 +49,10 @@ const modSubtitle = (mod) => (mod === 'CIO' ? 'Módulo CIO' : `Módulo ${mod}`);
 const modMetaLabel = (mod) => (mod === 'CIO' ? 'CIO' : 'Módulo');
 const cleanFile = (s) => String(s || '').replace(/[\\/:*?"<>|]/g, '').trim();
 
-/** Hash FNV-1a de 32 bits. No es criptográfico: solo una huella corta y estable. */
-function fnv1a(str) {
+/** Hash FNV-1a de 32 bits. No es criptográfico: solo una huella corta y estable.
+ *  Exportado para que otros PDF del sistema (p. ej. el de Placa Petri en la vista de
+ *  Microbiología) deriven su código verificador con el MISMO algoritmo determinista. */
+export function fnv1a(str) {
   let h = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i);
@@ -88,7 +90,10 @@ export function pdfFilename(fid, mod, fecha, corrida) {
 
 // CSS del PDF (A4 apaisado, unidades mm para mapear 1:1 al papel). Idéntico al del
 // motor SALVO el bloque de gráficos (aquí no hay páginas de gráficos).
-function pdfCss(fid) {
+/** Hoja de estilo de impresión compartida por los PDF del sistema (A4 apaisado).
+ *  `fid` solo ajusta dos detalles de ancho de columna; el resto es común, por eso lo
+ *  reutiliza también el PDF de Placa Petri (con 'params', igual que el de Registros). */
+export function pdfCss(fid) {
   const isP = fid === 'params';
   const isC = fid === 'calidad';
   return `

@@ -487,6 +487,37 @@ describe('Microbiología · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('Placa Petri ofrece el PDF junto a Reporte y Excel', () => {
+    mount();
+    click(root.querySelector('[data-mic-ap="petri"]'));
+    const bar = root.querySelector('.mic-petri-bar .mic-export');
+    expect(bar).toBeTruthy();
+    // Los tres export conviven en la MISMA barra (es donde el usuario los busca).
+    expect(bar.querySelector('[data-mic-export="txt"]')).toBeTruthy();
+    expect(bar.querySelector('[data-mic-xlsx]')).toBeTruthy();
+    expect(bar.querySelector('[data-mic-pdf]')).toBeTruthy();
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('modal PDF: abre con el rango prellenado, cuenta hojas y cierra', () => {
+    mount();
+    click(root.querySelector('[data-mic-ap="petri"]'));
+    click(root.querySelector('[data-mic-pdf]'));
+    expect(root.querySelector('#micPdfModal').classList.contains('is-open')).toBe(true);
+    // El rango arranca cubriendo lo que se está viendo, no vacío.
+    const from = root.querySelector('#micPdfFrom'), to = root.querySelector('#micPdfTo');
+    expect(from.value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(to.value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // El contador habla de HOJAS, que es la unidad que verá en el PDF.
+    expect(root.querySelector('#micPdfInfo').textContent).toMatch(/hoja\(s\)/);
+    // Cambiar el rango recalcula sin re-renderizar (el modal sigue abierto).
+    change(from, '2026-06-01');
+    expect(root.querySelector('#micPdfModal').classList.contains('is-open')).toBe(true);
+    click(root.querySelector('[data-mic-pdf-close]'));
+    expect(root.querySelector('#micPdfModal').classList.contains('is-open')).toBe(false);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('navegación de mes y toggle de tabla', () => {
     mount();
     const tog = root.querySelector('[data-mic-toggle]');
