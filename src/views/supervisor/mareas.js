@@ -37,6 +37,11 @@ function parseTimeToMin(v) {
   if (m) { const h = +m[1], mi = +m[2]; if (h < 24 && mi < 60) return h * 60 + mi; }
   m = s.match(/^(\d{2})(\d{2})$/);
   if (m) { const h = +m[1], mi = +m[2]; if (h < 24 && mi < 60) return h * 60 + mi; }
+  // Tres dígitos = HMM sin cero a la izquierda ("800" = 08:00, "130" = 01:30). Sin esta
+  // rama caían al último recurso "el número son minutos" y se colocaban en una hora
+  // inventada, en silencio: "800" → 13:20, "130" → 02:10, "945" → 15:45.
+  m = s.match(/^(\d)(\d{2})$/);
+  if (m) { const h = +m[1], mi = +m[2]; if (mi < 60) return h * 60 + mi; }
   const n = Number(s.replace(',', '.'));
   if (!isNaN(n)) {
     if (n > 0 && n < 1) return Math.round(n * 1440);   // fracción de día (Excel)

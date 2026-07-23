@@ -13,6 +13,37 @@ describe('mareas · capa de datos (hoja "Marea")', () => {
     expect(isMareaRow(null)).toBe(false);
   });
 
+  describe('formatos de hora de la hoja (se teclean a mano)', () => {
+    const horaDe = (h) => {
+      store.globalData = [M({ Fecha: '01/06/2026', 'Pleamar 1': h, 'Altura P1 (m)': '2.0' })];
+      const ev = (mareaDays()[0] || { events: [] }).events.find((e) => e.type === 'P');
+      return ev ? ev.label : null;
+    };
+
+    it('TRES dígitos = HMM sin cero a la izquierda', () => {
+      // Sin rama propia caían al último recurso "el número son minutos", en silencio:
+      // "800" → 13:20, "130" → 02:10, "945" → 15:45.
+      expect(horaDe('800')).toBe('08:00');
+      expect(horaDe('130')).toBe('01:30');
+      expect(horaDe('945')).toBe('09:45');
+      expect(horaDe('05')).toBe('05:00');   // 2 dígitos siguen siendo horas decimales
+    });
+
+    it('los formatos que ya funcionaban no cambian', () => {
+      expect(horaDe('08:00')).toBe('08:00');
+      expect(horaDe('0800')).toBe('08:00');
+      expect(horaDe('1230')).toBe('12:30');
+      expect(horaDe('23:03')).toBe('23:03');
+      expect(horaDe('0.5')).toBe('12:00');    // fracción de día (Excel)
+      expect(horaDe('8')).toBe('08:00');      // horas decimales
+    });
+
+    it('tres dígitos con minutos imposibles caen al respaldo, no inventan una hora', () => {
+      // "999" → mi=99 no es válido: se interpreta como minutos (999 = 16:39), no como 9:99.
+      expect(horaDe('999')).toBe('16:39');
+    });
+  });
+
   it('parsea eventos P/B, calcula pmax/bmin/amp, ordena por hora y lee fase/iluminación/tipo', () => {
     store.globalData = [M({
       Fecha: '05/06/2026', 'Fase Lunar': 'Luna llena', '%Iluminación': '100', 'Tipo de Marea': 'Viva',
