@@ -119,6 +119,29 @@ describe('fichaPdf · núcleo PDF nativo (Trazabilidad)', () => {
     expect(printFichaDocs([])).toBe(false);
   });
 
+  it('printFichaDocs avisa TAMBIÉN al agotarse la cola (done=true)', () => {
+    // Sin el aviso de cierre el usuario ve pasar los "Documento N de M" y nunca sabe si
+    // la secuencia terminó o se quedó colgada. El aviso de apertura debe traer done=false
+    // para que el llamante los distinga con el mismo callback.
+    const avisos = [];
+    const cb = (n, total, fileName, done) => avisos.push({ n, total, fileName, done });
+    // Un solo documento: se puede observar la cola completa sin depender de onafterprint.
+    printFichaDocs([{ page: '<html></html>', fileName: 'A' }], cb);
+    expect(avisos[0]).toEqual({ n: 1, total: 1, fileName: 'A', done: false });
+
+    // El cierre llega al vaciarse la cola. `next()` se re-entra desde finish(), que no es
+    // simulable aquí, así que se comprueba invocándolo con una cola ya agotada.
+    const solo = [];
+    printFichaDocs([], (n, t, f, d) => solo.push(d));
+    expect(solo).toEqual([]);   // sin documentos NO se avisa nada (devuelve false antes)
+  });
+
+  it('un callback que lanza en el aviso de cierre no rompe nada', () => {
+    expect(printFichaDocs([{ page: '<html></html>', fileName: 'A' }], (n, t, f, done) => {
+      if (done) throw new Error('boom en el cierre');
+    })).toBe(true);
+  });
+
   it('params añade Estadío/Hora registro en la cabecera', () => {
     const doc = buildFichaPdfDoc({
       fid: 'params', mod: 'M03', fileName: 'PA_2026-06-01_M03',

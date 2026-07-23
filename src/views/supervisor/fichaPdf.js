@@ -241,20 +241,27 @@ export function buildFichaPdfDoc({ fid, mod, fileName, pages = [], autoPrint = t
  * documento = un "Guardar como PDF". Evita el bloqueo de ventanas emergentes al
  * descargar varios tipos de ficha de una sola vez.
  * @param {Array<{page:string, fileName:string}>} docs
- * @param {(n:number, total:number, fileName:string)=>void} [onProgress]  se invoca al abrir
- *   CADA documento (n = 1-based). Sin esto la secuencia es muda: el usuario ve varios
- *   diálogos de "Guardar como PDF" seguidos sin saber por cuál va.
+ * @param {(n:number, total:number, fileName:string, done:boolean)=>void} [onProgress]
+ *   se invoca al abrir CADA documento (n = 1-based, `done` false) y UNA VEZ MÁS al
+ *   agotarse la cola (`done` true, n = total, sin fileName). Sin esto la secuencia es
+ *   muda: el usuario ve varios diálogos de "Guardar como PDF" seguidos sin saber por
+ *   cuál va, y —sin el aviso final— tampoco cuándo ha terminado.
  * @returns {boolean} false si no hay documentos o no hay DOM.
  */
 export function printFichaDocs(docs, onProgress) {
   if (!Array.isArray(docs) || !docs.length) return false;
   if (typeof document === 'undefined' || !document.body) return false;
   let idx = 0;
+  // El aviso nunca debe tumbar la impresión: un callback que lance no puede dejar la
+  // cola a medias ni impedir que se limpie el iframe.
+  const notify = (n, fileName, done) => {
+    if (typeof onProgress !== 'function') return;
+    try { onProgress(n, docs.length, fileName, done); } catch (_) { /* noop */ }
+  };
   const next = () => {
-    if (idx >= docs.length) return;
+    if (idx >= docs.length) { notify(docs.length, '', true); return; }
     const { page, fileName } = docs[idx++];
-    // El aviso de progreso nunca debe tumbar la impresión.
-    if (typeof onProgress === 'function') { try { onProgress(idx, docs.length, fileName); } catch (_) { /* noop */ } }
+    notify(idx, fileName, false);
     const iframe = document.createElement('iframe');
     iframe.setAttribute('aria-hidden', 'true');
     iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0';

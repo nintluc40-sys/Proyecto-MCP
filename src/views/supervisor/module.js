@@ -1494,8 +1494,12 @@ export function renderModule(ctx, mod) {
         const to = traceOverlay.querySelector('[data-trace-to]')?.value || '';
         // Un aviso por documento: la secuencia abre un "Guardar como PDF" por tipo de
         // ficha y, sin esto, el usuario no sabe por cuál va (solo se avisa si hay ≥2).
-        const onProgress = (n, total, fileName) => {
-          if (total > 1) toast(`🖨️ Documento ${n} de ${total} · ${fileName}`, 'info', 4000);
+        const onProgress = (n, total, fileName, done) => {
+          if (total <= 1) return;
+          // Al agotarse la cola se avisa del cierre: si no, el usuario ve pasar los
+          // "Documento N de M" y nunca sabe si la secuencia terminó o se colgó.
+          if (done) { toast('✅ Impresión de fichas completada', 'ok', 3500); return; }
+          toast(`🖨️ Documento ${n} de ${total} · ${fileName}`, 'info', 4000);
         };
         const res = downloadTrazabilidad({ mod, corrida, fids, from, to, onProgress });
         if (res.generated.length) {
