@@ -128,6 +128,21 @@
 .alg-month-block { border: 1px solid var(--c-border-soft); border-radius: 4px; padding: 10px 12px; background: var(--c-surface); margin-bottom: 12px; }
 .alg-month-2col .alg-month-block { margin-bottom: 0; }
 @media (max-width: 640px) { .alg-month-2col { grid-template-columns: 1fr; } }
+/* Matriz Sistema × Patógeno del Control sanitario. */
+.alg-sanit-matwrap { overflow-x: auto; }
+.alg-sanit-mat { min-width: max-content; }
+.alg-sanit-mat th.alg-sanit-mh { text-align: left; white-space: nowrap; position: sticky; left: 0; background: var(--c-surface); }
+.alg-sanit-mat th.alg-sanit-pcol { font-size: 11px; font-weight: 700; white-space: nowrap; padding: 4px 6px; text-align: center; }
+.alg-sanit-cell { text-align: center; font-size: 11px; font-weight: 800; padding: 3px 6px; }
+.alg-sanit-cell.alg-sanit-na { color: var(--c-text-muted); font-weight: 400; }
+/* Celda que se VOLTEA al hacer clic: cara frontal = nivel (color), trasera = valor UFC.
+   El fondo/color de la celda se toman de --niv (color del nivel). */
+.alg-sanit-flip { cursor: pointer; perspective: 320px; background: color-mix(in srgb, var(--niv) 13%, transparent); color: var(--niv); }
+.alg-sanit-flip:focus-visible { outline: 2px solid var(--niv); outline-offset: -2px; }
+.alg-flip { position: relative; display: inline-block; min-width: 30px; transition: transform .35s; transform-style: preserve-3d; }
+.alg-sanit-flip.is-flipped .alg-flip { transform: rotateY(180deg); }
+.alg-flip-f, .alg-flip-b { display: block; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.alg-flip-b { position: absolute; inset: 0; transform: rotateY(180deg); color: var(--c-text); font-variant-numeric: tabular-nums; }
 
 /* ── Calendario de cobertura (heatmap) ── */
 .alg-cal-wrap { overflow: auto; }

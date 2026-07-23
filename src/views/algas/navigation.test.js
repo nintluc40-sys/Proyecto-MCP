@@ -155,6 +155,65 @@ describe('Algas · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('Control sanitario sin datos de micro: abre y muestra el vacío, sin error', () => {
+    mount();
+    const btn = root.querySelector('[data-alg-sanit]');
+    expect(btn).toBeTruthy();
+    click(btn);
+    expect(root.querySelector('#algSanitModal').classList.contains('sv-open')).toBe(true);
+    // synthData no trae micro ni cloro de algas → estado vacío explicativo, no un crash.
+    expect(root.querySelector('#algSanitModalBody').textContent).toContain('Sin control sanitario de algas');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('Control sanitario con micro y cloro: pinta semáforo, sistemas, tendencia y cloro', () => {
+    // Las muestras de algas NO traen corrida (dato real): se vinculan al mes por FECHA
+    // dentro de la ventana del mes activo. synthData tiene junio 2026 (corrida 573), así
+    // que las fechas de junio caen dentro. El sistema es texto en "Tipo de muestra"
+    // (micro) y en "Muestras" (calidad de agua). Área 'algas': V.Totales UFC ≥ 50 = Elevado.
+    const mrow = (sistema, ufc, fecha) => ({
+      _SheetOrigin: 'Microbiología', Formato: 'Algas Fundas y Masivos', 'Fecha muestreo': fecha,
+      'Tipo de muestra': sistema, 'V.Totales UFC': String(ufc), Responsable: 'Ana',
+    });
+    const crow = (muestra, libre, fecha) => ({
+      _SheetOrigin: 'Calidad de Agua', Departamento: 'Algas', Formato: 'Algas',
+      'Fecha muestreo': fecha, Muestras: muestra, 'Cloro libre (mg/L)': String(libre),
+    });
+    store.globalData = synthData().concat([
+      mrow('Masivo 1', 100, '02/06/2026'),           // Masivos · Elevado → alerta
+      mrow('Masivo 1', 2, '02/06/2026'),             // Masivos · Mínimo
+      mrow('Fundas producción 2', 20, '05/06/2026'), // Fundas · Moderado → alerta
+      crow('Masivo 6 Mod 1', '0,02', '03/06/2026'),  // cloro detectable
+      crow('Funda matriz', '0', '04/06/2026'),
+    ]);
+    mount();
+    click(root.querySelector('[data-alg-sanit]'));
+    const body = root.querySelector('#algSanitModalBody');
+    expect(body.textContent).toContain('Semáforo sanitario');
+    expect(body.textContent).toContain('Patógenos por sistema');
+    expect(body.textContent).toContain('Masivos');
+    expect(body.textContent).toContain('Fundas');
+    // Matriz Sistema × Patógeno (heatmap): existe la tabla y una celda con dato.
+    expect(body.querySelector('.alg-sanit-mat')).toBeTruthy();
+    const flip = body.querySelector('[data-sanit-flip]');
+    expect(flip).toBeTruthy();
+    // La celda tiene las dos caras: nivel (frente) y valor (dorso).
+    expect(flip.querySelector('.alg-flip-f')).toBeTruthy();
+    expect(flip.querySelector('.alg-flip-b')).toBeTruthy();
+    // Al hacer clic se voltea; otro clic la devuelve.
+    expect(flip.classList.contains('is-flipped')).toBe(false);
+    click(flip);
+    expect(flip.classList.contains('is-flipped')).toBe(true);
+    click(flip);
+    expect(flip.classList.contains('is-flipped')).toBe(false);
+    // Barras por patógeno (reemplazo de la tendencia): canvas presente.
+    expect(body.querySelector('#algSanitBars')).toBeTruthy();
+    // Sección de calidad de agua (cloro).
+    expect(body.textContent).toContain('Cloro');
+    expect(body.textContent).toContain('cloro libre presente');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('export Excel: abre modal, ajusta rango y cierra', () => {
     mount();
     const expBtn = root.querySelector('[data-alg-export]');
