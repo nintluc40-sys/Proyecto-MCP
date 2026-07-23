@@ -330,8 +330,12 @@ function drawMareaDonut(monthDays, canvasId = 'mareaDonutChart') {
 }
 
 // ---------- barra selectora (meses + navegador de día) ----------
-function selBar(months, curMkey, monthDays, curKey, mode) {
-  const monthPills = months.map((m) => `<button class="sv-marea-mbtn${m.key === curMkey ? ' is-on' : ''}" data-marea-month="${esc(m.key)}">${esc(m.label)}</button>`).join('');
+// `monthInert` = el selector de mes no gobierna nada en pantalla (Correlación sobre
+// "todo el periodo"): los pills se deshabilitan para no sugerir un filtro que no aplica.
+// `disabled` (y no aria-hidden + pointer-events) los saca del foco de forma nativa y
+// hace que un lector de pantalla los anuncie como deshabilitados.
+function selBar(months, curMkey, monthDays, curKey, mode, monthInert) {
+  const monthPills = months.map((m) => `<button class="sv-marea-mbtn${m.key === curMkey ? ' is-on' : ''}${monthInert ? ' is-inert' : ''}" data-marea-month="${esc(m.key)}"${monthInert ? ' disabled' : ''}>${esc(m.label)}</button>`).join('');
   let dayNav = '';
   if (mode === 'dia') {
     const idx = monthDays.findIndex((d) => d.key === curKey);
@@ -378,6 +382,15 @@ const TIDE_VARS = [
   { key: 'tipo', label: 'Viva/Muerta' },
 ];
 const CORR_MIN_N = 5; // mínimo de días emparejados para mostrar un r
+// Cribado exploratorio — NO es una prueba de significancia. Se marca 🔎 "candidato a
+// revisar" solo si Pearson y Spearman coinciden en fuerza Y signo con suficientes días.
+// El umbral 0.6 está MEDIDO (Monte Carlo, 20.000 ensayos sobre ruido puro, matriz de
+// 64 celdas): con 0.5 el marcador salta más por azar (6,4 celdas a n=10) que el
+// asterisco p<0.05 al que sustituye (~3,2 siempre); con 0.6 baja a 2,8 a n=10 y a 0,1
+// a n=20, conservando ~60-67 % de detección de una relación real fuerte (ρ=0.7).
+// Son dos constantes: aflojar/apretar aquí si en pantalla resulta severo o laxo.
+const CORR_FLAG_R = 0.6;
+const CORR_FLAG_N = 10;
 let _corr = null;      // { params, cell } de la vista Correlación (para el scatter post-render)
 
 export function pearson(pairs) {
@@ -388,14 +401,41 @@ export function pearson(pairs) {
   if (dx <= 0 || dy <= 0) return null;
   return (n * sxy - sx * sy) / Math.sqrt(dx * dy);
 }
-/** Variables de marea por día del mes (tipo Viva=1 / Muerta=0). */
+/** Rangos 1..n con rango PROMEDIO en los empates (base de Spearman). */
+function ranks(vals) {
+  const n = vals.length;
+  const idx = vals.map((v, i) => [v, i]).sort((a, b) => a[0] - b[0]);
+  const out = new Array(n);
+  let i = 0;
+  while (i < n) {
+    let j = i;
+    while (j + 1 < n && idx[j + 1][0] === idx[i][0]) j++;   // bloque de empatados
+    const avg = (i + j) / 2 + 1;
+    for (let k = i; k <= j; k++) out[idx[k][1]] = avg;
+    i = j + 1;
+  }
+  return out;
+}
+/** ρ de Spearman = Pearson sobre los rangos. Robusto a outliers y a relaciones
+ *  monótonas no lineales. Devuelve null en los mismos casos que `pearson`
+ *  (menos de 2 pares o alguna serie sin varianza: sin varianza → todos los rangos
+ *  iguales → tampoco hay varianza en rangos). */
+export function spearman(pairs) {
+  if (pairs.length < 2) return null;
+  const rx = ranks(pairs.map((p) => p[0])), ry = ranks(pairs.map((p) => p[1]));
+  return pearson(rx.map((v, i) => [v, ry[i]]));
+}
+/** Variables de marea por día (tipo Viva=1 / Muerta=0). `monthKey` null = todo el periodo. */
 function tideByDayOf(monthKey) {
   const t = new Map();
-  mareaDays().filter((d) => d.mkey === monthKey).forEach((d) => t.set(d.key, { amp: d.amp, pmax: d.pmax, bmin: d.bmin, tipo: d.tipo === 'Viva' ? 1 : d.tipo === 'Muerta' ? 0 : null }));
+  mareaDays().filter((d) => !monthKey || d.mkey === monthKey).forEach((d) => t.set(d.key, { amp: d.amp, pmax: d.pmax, bmin: d.bmin, tipo: d.tipo === 'Viva' ? 1 : d.tipo === 'Muerta' ? 0 : null }));
   return t;
 }
 /** Serie diaria por parámetro (micro: UFC>0 por patógeno · agua: valor por parámetro)
- *  del mes-calendario `monthKey` (todos los módulos). */
+ *  del mes-calendario `monthKey` (todos los módulos). `monthKey` null = todo el periodo.
+ *  La clave diaria `dk` es 'AAAA-MM-DD', idéntica a `dayKey()` y única globalmente, así
+ *  que ampliar a todo el periodo solo agranda el conjunto de días: el emparejamiento
+ *  con la marea no cambia de lógica. */
 function corrDaily(kind, monthKey) {
   const byParamDay = new Map(), labels = new Map();
   const ranges = kind === 'calagua' ? loadCalRanges() : null;
@@ -403,7 +443,8 @@ function corrDaily(kind, monthKey) {
     const isMic = kind === 'micro';
     if (isMic ? !isMicroRow(r) : !isCalAguaRow(r)) return;
     const c = isMic ? micCtx(r) : calCtx(r);
-    if (!c.fecha || isNaN(c.fecha) || yearMonthKey(c.fecha) !== monthKey) return;
+    if (!c.fecha || isNaN(c.fecha)) return;
+    if (monthKey && yearMonthKey(c.fecha) !== monthKey) return;
     const dk = c.fecha.getFullYear() + '-' + String(c.fecha.getMonth() + 1).padStart(2, '0') + '-' + String(c.fecha.getDate()).padStart(2, '0');
     const items = isMic
       ? micMelt(r).filter((m) => m.ufc > 0).map((m) => ({ key: m.key, label: m.label, value: m.ufc }))
@@ -416,10 +457,11 @@ function corrDaily(kind, monthKey) {
   });
   return { byParamDay, labels };
 }
-/** Matriz parámetro × variable-de-marea con el coeficiente de Pearson y los pares diarios.
+/** Matriz parámetro × variable-de-marea con Pearson, Spearman y los pares diarios.
  *  Memoizada por (identidad del store · tipo · mes): `corrDaily` recorre TODO el store
  *  (decenas de miles de filas) y la matriz se repintaba entera con solo elegir una celda
- *  para ver su dispersión. */
+ *  para ver su dispersión. `monthKey === null` (todo el periodo) es una clave más, así
+ *  que el memo distingue "este mes" de "todo el periodo" sin mezclarlos. */
 let _corrCache = null;
 function corrMatrix(kind, monthKey) {
   if (_corrCache && _corrCache.data === store.globalData && _corrCache.kind === kind && _corrCache.monthKey === monthKey) return _corrCache.out;
@@ -437,7 +479,8 @@ function corrMatrixCompute(kind, monthKey) {
     TIDE_VARS.forEach((tv) => {
       const pairs = [];
       dm.forEach((vals, dk) => { const t = tideByDay.get(dk); if (!t) return; const tvv = t[tv.key]; if (tvv == null) return; pairs.push([vals.reduce((a, b) => a + b, 0) / vals.length, tvv]); });
-      cell.set(p.key + '|' + tv.key, { r: pairs.length >= CORR_MIN_N ? pearson(pairs) : null, n: pairs.length, pairs });
+      const ok = pairs.length >= CORR_MIN_N;
+      cell.set(p.key + '|' + tv.key, { r: ok ? pearson(pairs) : null, rho: ok ? spearman(pairs) : null, n: pairs.length, pairs });
     });
   });
   return { params, cell };
@@ -448,44 +491,52 @@ function corrColor(r) {
   const base = r >= 0 ? '43,123,214' : '224,65,62'; // azul (+) / rojo (−)
   return `rgba(${base},${(0.1 + a * 0.62).toFixed(2)})`;
 }
-// Valores críticos de t (dos colas, p<0.05) por grados de libertad, para marcar la
-// correlación como estadísticamente significativa (asterisco). df>30 → ~1.96.
-const T_CRIT_05 = { 1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228, 11: 2.201, 12: 2.179, 13: 2.160, 14: 2.145, 15: 2.131, 16: 2.120, 17: 2.110, 18: 2.101, 19: 2.093, 20: 2.086, 21: 2.080, 22: 2.074, 23: 2.069, 24: 2.064, 25: 2.060, 26: 2.056, 27: 2.052, 28: 2.048, 29: 2.045, 30: 2.042 };
-/** ¿La correlación r (con N pares) es significativa a p<0.05 (t de Student, dos colas)? */
-export function corrSignificant(r, n) {
-  if (r == null || n < 3) return false;
-  const df = n - 2;
-  const rr = Math.min(0.9999999, Math.abs(r));
-  if (rr >= 1) return true;
-  const t = rr * Math.sqrt(df / (1 - rr * rr));
-  return t >= (T_CRIT_05[df] || 1.96);
+/**
+ * ¿La celda es CANDIDATA A REVISAR (🔎)? Cribado, no prueba de hipótesis: aquí se
+ * lanzan decenas de correlaciones a la vez (parámetros × variables de marea), donde
+ * un test de significancia por celda produce ~5 % de marcas por puro azar.
+ * Se exige que Pearson y Spearman coincidan en fuerza y SIGNO: si un solo outlier
+ * infla el Pearson, el Spearman no lo acompaña y la celda no se marca.
+ */
+export function corrCandidate(r, rho, n) {
+  if (r == null || rho == null || n < CORR_FLAG_N) return false;
+  if (Math.abs(r) < CORR_FLAG_R || Math.abs(rho) < CORR_FLAG_R) return false;
+  return Math.sign(r) === Math.sign(rho);   // |·| ≥ 0.6 > 0 ⇒ el signo nunca es 0
 }
 function corrHTML(monthKey, state) {
   const kind = state.corrKind === 'calagua' ? 'calagua' : 'micro';
-  const { params, cell } = corrMatrix(kind, monthKey); // todos los módulos
+  const allPeriod = state.corrPeriod === 'all';
+  const { params, cell } = corrMatrix(kind, allPeriod ? null : monthKey); // todos los módulos
   _corr = { params, cell };
   const kindBtn = (k, lbl) => `<button class="sv-marea-mbtn${kind === k ? ' is-on' : ''}" data-corr-kind="${k}">${lbl}</button>`;
-  const bar = `<div class="sv-marea-corr-bar"><div class="sv-marea-months">${kindBtn('micro', '🧫 Microbiología')}${kindBtn('calagua', '💧 Calidad de Agua')}</div></div>`;
-  const hint = `<div class="sv-marea-corr-hint muted">Correlación exploratoria entre los parámetros de laboratorio y la marea del día (todos los módulos, emparejados por fecha dentro del mes). Con pocos días de muestreo es referencial; se necesitan ≥ ${CORR_MIN_N} días con dato. <b>*</b> = significativa (p&lt;0.05).</div>`;
-  if (!params.length) return bar + hint + `<div class="sv-marea-nodata">Sin parámetros de ${kind === 'micro' ? 'microbiología' : 'calidad de agua'} con datos este mes.</div>`;
+  const perBtn = (p, lbl) => `<button class="sv-marea-mbtn${(p === 'all') === allPeriod ? ' is-on' : ''}" data-corr-period="${p}">${lbl}</button>`;
+  const bar = `<div class="sv-marea-corr-bar">
+      <div class="sv-marea-months">${kindBtn('micro', '🧫 Microbiología')}${kindBtn('calagua', '💧 Calidad de Agua')}</div>
+      <div class="sv-marea-months">${perBtn('month', '📅 Este mes')}${perBtn('all', '🗓️ Todo el periodo')}</div>
+    </div>`;
+  const ambito = allPeriod ? 'de todo el periodo con datos' : 'dentro del mes';
+  const hint = `<div class="sv-marea-corr-hint muted">Cribado exploratorio entre los parámetros de laboratorio y la marea del día (todos los módulos, emparejados por fecha ${ambito}). Se necesitan ≥ ${CORR_MIN_N} días con dato. <b>🔎</b> = <b>candidato a revisar</b>: Pearson y Spearman coinciden en fuerza (|r| y |ρ| ≥ ${CORR_FLAG_R}) y signo, con ≥ ${CORR_FLAG_N} días. <b>No es una prueba de significancia</b> — confírmalo siempre en la dispersión.</div>`;
+  if (!params.length) return bar + hint + `<div class="sv-marea-nodata">Sin parámetros de ${kind === 'micro' ? 'microbiología' : 'calidad de agua'} con datos ${allPeriod ? 'en el periodo' : 'este mes'}.</div>`;
   const head = `<tr><th class="sv-marea-corr-rowh">Parámetro \\ Marea</th>${TIDE_VARS.map((tv) => `<th>${esc(tv.label)}</th>`).join('')}</tr>`;
   const body = params.map((p) => {
     const tds = TIDE_VARS.map((tv) => {
       const k = p.key + '|' + tv.key, c = cell.get(k);
       if (!c || c.r == null) return `<td class="sv-marea-corr-cell is-na" title="N=${c ? c.n : 0} (mín ${CORR_MIN_N})">${c && c.n ? 'n' + c.n : '·'}</td>`;
-      const sig = corrSignificant(c.r, c.n);
-      return `<td class="sv-marea-corr-cell${state.corrCell === k ? ' is-sel' : ''}" data-corr-cell="${esc(k)}" tabindex="0" role="button" style="background:${corrColor(c.r)}" title="r=${c.r.toFixed(2)} · N=${c.n}${sig ? ' · significativa (p<0.05)' : ''} · clic para ver la dispersión">${c.r.toFixed(2)}${sig ? '<span class="sv-marea-corr-sig">*</span>' : ''}</td>`;
+      const flag = corrCandidate(c.r, c.rho, c.n);
+      const rhoTxt = c.rho == null ? '—' : c.rho.toFixed(2);
+      return `<td class="sv-marea-corr-cell${state.corrCell === k ? ' is-sel' : ''}" data-corr-cell="${esc(k)}" tabindex="0" role="button" style="background:${corrColor(c.r)}" title="r=${c.r.toFixed(2)} · ρ=${rhoTxt} · N=${c.n}${flag ? ' · candidato a revisar' : ''} · clic para ver la dispersión">${c.r.toFixed(2)}${flag ? '<span class="sv-marea-corr-sig">🔎</span>' : ''}</td>`;
     }).join('');
     return `<tr><th class="sv-marea-corr-rowh">${esc(p.label)}</th>${tds}</tr>`;
   }).join('');
-  const legend = `<div class="sv-marea-corr-legend"><span>r de Pearson:</span><span class="sv-marea-corr-lg" style="background:rgba(224,65,62,.66)"></span>−1<span class="sv-marea-corr-lg" style="background:rgba(150,150,150,.18)"></span>0<span class="sv-marea-corr-lg" style="background:rgba(43,123,214,.66)"></span>+1<span class="muted"> · "n#" = menos de ${CORR_MIN_N} días · <b>*</b> = significativa (p&lt;0.05)</span></div>`;
+  const legend = `<div class="sv-marea-corr-legend"><span>r de Pearson:</span><span class="sv-marea-corr-lg" style="background:rgba(224,65,62,.66)"></span>−1<span class="sv-marea-corr-lg" style="background:rgba(150,150,150,.18)"></span>0<span class="sv-marea-corr-lg" style="background:rgba(43,123,214,.66)"></span>+1<span class="muted"> · "n#" = menos de ${CORR_MIN_N} días · <b>🔎</b> = candidato a revisar (no es significancia)</span></div>`;
   let scatter = '';
   const selKey = state.corrCell && cell.has(state.corrCell) && cell.get(state.corrCell).r != null ? state.corrCell : null;
   if (selKey) {
     const [pk, tk] = selKey.split('|');
     const p = params.find((x) => x.key === pk), tv = TIDE_VARS.find((x) => x.key === tk), c = cell.get(selKey);
+    const rhoTxt = c.rho == null ? '—' : c.rho.toFixed(2);
     scatter = `<div class="sv-marea-panel sv-marea-corr-scatter">
-        <div class="sv-marea-ptitle">Dispersión · ${esc(p ? p.label : pk)} vs ${esc(tv ? tv.label : tk)} <span class="muted">· r=${c.r.toFixed(2)} · R²=${(c.r * c.r).toFixed(2)} · N=${c.n}</span></div>
+        <div class="sv-marea-ptitle">Dispersión · ${esc(p ? p.label : pk)} vs ${esc(tv ? tv.label : tk)} <span class="muted">· r=${c.r.toFixed(2)} · ρ=${rhoTxt} · R²=${(c.r * c.r).toFixed(2)} · N=${c.n}</span></div>
         <div class="sv-marea-charthost sv-marea-charthost--donut"><canvas id="mareaCorrChart"></canvas></div>
       </div>`;
   } else {
@@ -548,7 +599,8 @@ export function renderMareas(host, state) {
   if (state.mode === 'corr') content = corrHTML(curMkey, state);
   else if (state.mode === 'mes') content = mesHTML(monthDays, curMonthLabel);
   else content = diaHTML(curDay, nowMin);
-  host.innerHTML = selBar(months, curMkey, monthDays, curKey, state.mode) + content + note;
+  const monthInert = state.mode === 'corr' && state.corrPeriod === 'all';
+  host.innerHTML = selBar(months, curMkey, monthDays, curKey, state.mode, monthInert) + content + note;
 
   if (state.mode === 'corr') drawCorrScatter(state);
   else if (state.mode === 'mes') { _mes = { monthDays }; drawMareaTrend(monthDays); drawMareaDonut(monthDays); }

@@ -369,6 +369,8 @@
 .sv-marea-months { display: flex; gap: 6px; flex-wrap: wrap; }
 .sv-marea-mbtn { padding: 4px 12px; border-radius: 14px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .sv-marea-mbtn.is-on { background: color-mix(in srgb, var(--c-brand) 14%, transparent); border-color: var(--c-brand); color: var(--c-brand); }
+/* Selector de mes sin efecto (Correlación · todo el periodo): atenuado y deshabilitado. */
+.sv-marea-mbtn.is-inert { opacity: .38; cursor: default; }
 .sv-marea-daynav { display: flex; align-items: center; gap: 6px; }
 /* Vista "Día": luna + ola arriba (alturas parejas) y los KPIs como FRANJA horizontal.
    Antes los KPIs eran una columna estrecha de 4 cajas apiladas que estiraba la fila y
@@ -438,7 +440,9 @@
 .sv-marea-corr-cell { cursor: pointer; font-weight: 700; color: var(--c-text); }
 .sv-marea-corr-cell.is-na { cursor: default; color: var(--c-text-muted); font-weight: 400; }
 .sv-marea-corr-cell.is-sel { outline: 2px solid var(--c-brand); outline-offset: -2px; }
-.sv-marea-corr-sig { font-weight: 900; margin-left: 1px; vertical-align: super; font-size: .82em; }
+/* 🔎 "candidato a revisar" — marcador en línea y discreto (antes era un asterisco en
+   superíndice negrita, que se leía como nota de significancia estadística). */
+.sv-marea-corr-sig { margin-left: 3px; font-size: .78em; }
 .sv-marea-corr-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--c-text-muted); margin: 8px 0; flex-wrap: wrap; }
 .sv-marea-corr-lg { display: inline-block; width: 22px; height: 10px; border-radius: 2px; }
 .sv-marea-corr-scatter { margin-top: 10px; }

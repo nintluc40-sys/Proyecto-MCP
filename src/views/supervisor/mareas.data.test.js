@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { store } from '../../core/store.js';
-import { isMareaRow, mareaDays, pearson, corrSignificant, monthStats } from './mareas.js';
+import { isMareaRow, mareaDays, pearson, spearman, corrCandidate, monthStats } from './mareas.js';
 
 afterEach(() => { store.globalData = []; });
 
@@ -118,11 +118,58 @@ describe('mareas · correlación (Pearson)', () => {
     expect(pearson([[1, 5], [2, 5]])).toBe(null); // varianza cero en y
     expect(pearson([[1, 2]])).toBe(null);         // < 2 pares
   });
-  it('corrSignificant: significativa solo si supera el t crítico (p<0.05, dos colas)', () => {
-    expect(corrSignificant(0.9, 10)).toBe(true);   // r fuerte, N alto → significativa
-    expect(corrSignificant(0.3, 5)).toBe(false);   // r débil, N bajo → no significativa
-    expect(corrSignificant(1, 5)).toBe(true);      // r perfecto
-    expect(corrSignificant(null, 10)).toBe(false); // sin r
-    expect(corrSignificant(0.99, 2)).toBe(false);  // N<3 (sin grados de libertad)
+});
+
+describe('mareas · Spearman (ρ sobre rangos)', () => {
+  it('ρ = 1 en relación monótona NO lineal, donde Pearson se queda corto', () => {
+    const mono = Array.from({ length: 12 }, (_, i) => [i - 6, Math.pow(i - 6, 3)]);
+    expect(spearman(mono)).toBeCloseTo(1, 6);
+    expect(pearson(mono)).toBeLessThan(0.95);   // Pearson penaliza la curvatura
+  });
+  it('ρ = -1 en relación monótona decreciente', () => {
+    expect(spearman([[1, 90], [2, 40], [3, 12], [4, 3]])).toBeCloseTo(-1, 6);
+  });
+  it('empates: usa el rango PROMEDIO (no el orden de aparición)', () => {
+    // x: 1,1,2,3 → rangos 1.5,1.5,3,4 ; y: 5,5,6,7 → idénticos ⇒ ρ = 1.
+    expect(spearman([[1, 5], [1, 5], [2, 6], [3, 7]])).toBeCloseTo(1, 6);
+    // Empates que NO se corresponden entre sí ⇒ ρ deja de ser perfecto.
+    expect(spearman([[1, 5], [1, 6], [2, 5], [3, 7]])).toBeLessThan(1);
+  });
+  it('un outlier único infla Pearson pero NO Spearman', () => {
+    const base = Array.from({ length: 11 }, (_, i) => [i % 3, (i * 7) % 5]);
+    const withOutlier = [...base, [100, 100]];
+    expect(pearson(withOutlier)).toBeGreaterThan(0.99);
+    expect(Math.abs(spearman(withOutlier))).toBeLessThan(0.6);
+  });
+  it('null en los MISMOS casos que pearson (invariante r==null ⟺ ρ==null)', () => {
+    expect(spearman([[1, 2]])).toBe(null);                    // < 2 pares
+    expect(spearman([[1, 5], [2, 5], [3, 5]])).toBe(null);    // y constante → sin varianza
+    expect(spearman([[7, 1], [7, 2], [7, 3]])).toBe(null);    // x constante
+    // Sin varianza en crudo ⇒ todos los rangos iguales ⇒ tampoco hay varianza en rangos.
+    [[[1, 2]], [[1, 5], [2, 5], [3, 5]], [[7, 1], [7, 2], [7, 3]]].forEach((p) => {
+      expect(pearson(p) === null).toBe(spearman(p) === null);
+    });
+  });
+});
+
+describe('mareas · corrCandidate (cribado 🔎, NO prueba de significancia)', () => {
+  it('marca solo con |r| y |ρ| ≥ 0.6, mismo signo y N ≥ 10', () => {
+    expect(corrCandidate(0.8, 0.7, 12)).toBe(true);
+    expect(corrCandidate(-0.8, -0.7, 12)).toBe(true);   // negativa consistente
+  });
+  it('no marca si Pearson y Spearman discrepan en signo', () => {
+    expect(corrCandidate(0.8, -0.7, 20)).toBe(false);
+  });
+  it('no marca si alguno de los dos se queda bajo el umbral', () => {
+    expect(corrCandidate(0.95, 0.3, 20)).toBe(false);   // caso del outlier único
+    expect(corrCandidate(0.5, 0.9, 20)).toBe(false);
+  });
+  it('no marca con pocos días ni con coeficientes ausentes', () => {
+    expect(corrCandidate(0.9, 0.9, 9)).toBe(false);     // N por debajo del mínimo
+    expect(corrCandidate(null, 0.9, 20)).toBe(false);
+    expect(corrCandidate(0.9, null, 20)).toBe(false);
+  });
+  it('NaN no marca (no se cuela por comparación con NaN)', () => {
+    expect(corrCandidate(NaN, 0.9, 20)).toBe(false);
   });
 });

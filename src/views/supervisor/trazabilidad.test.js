@@ -284,3 +284,58 @@ describe('trazabilidad · integración e2e (una fila con TODAS las fichas → 6 
     });
   });
 });
+
+describe('trazabilidad · caché de filas por fuente', () => {
+  const FIDS = ['poblacion', 'calidad', 'plg', 'despacho', 'params', 'calagua', 'desinfeccion'];
+  const OPTS = { mod: 'M01', corrida: '573' };
+  // Una fila por fuente, con señal suficiente para que cada ficha genere página.
+  const threeSources = () => [
+    row({ Tanque: '1', Fecha: '2026-06-01', 'Técnico': 'Ana', 'Población': '2000000', 'Estadío': 'Z2',
+      'Intestino_Lleno': '80', Plg: '55', Biomasa: '15', 'Cel/ml': '5000' }),
+    { _SheetOrigin: 'Control_Tanque M01', 'Módulo': 'M01', Corrida: '573', Tanque: '1', Fecha: '2026-06-01', Hora: '08:00', OD: '6.2', Temperatura: '29.5' },
+    { _SheetOrigin: 'Registro_Desinfección', 'Módulo': 'M01', Corrida: '573', Fecha: '2026-06-01', 'Tipo de Registro': 'Áreas', 'Categoría': 'Piso', Elemento: 'E1', Estado: 'OK' },
+  ];
+
+  // CORRECTITUD: la caché se invalida por identidad de store.globalData, que sheets.js
+  // reemplaza por un array NUEVO en cada refresco. Sin esto se servirían PDF con datos viejos.
+  it('un refresco de datos invalida la caché: las fichas reflejan lo nuevo', () => {
+    store.globalData = [row({ Tanque: '1', Fecha: '2026-06-01', 'Población': '2000000' })];
+    expect(buildFichaPages('poblacion', OPTS).map((p) => p.d.fecha)).toEqual(['2026-06-01']);
+    expect(moduleDateRange('M01', '573')).toEqual({ from: '2026-06-01', to: '2026-06-01' });
+
+    store.globalData = [
+      row({ Tanque: '1', Fecha: '2026-06-01', 'Población': '2000000' }),
+      row({ Tanque: '1', Fecha: '2026-06-05', 'Población': '1800000' }),
+    ];
+    expect(buildFichaPages('poblacion', OPTS).map((p) => p.d.fecha)).toEqual(['2026-06-01', '2026-06-05']);
+    expect(moduleDateRange('M01', '573')).toEqual({ from: '2026-06-01', to: '2026-06-05' });
+  });
+
+  // RENDIMIENTO (guardián): descargar las 7 fichas recorría el store 7 veces, +3 de
+  // moduleDateRange. Ahora es 1 escaneo por fuente y las fichas reutilizan el resultado.
+  it('las 7 fichas + moduleDateRange escanean el store 3 veces (1 por fuente), no 10', () => {
+    const rows = threeSources();
+    let scans = 0;
+    const realFilter = Array.prototype.filter;
+    rows.filter = function (...args) { scans++; return realFilter.apply(this, args); };
+    store.globalData = rows;
+
+    moduleDateRange('M01', '573');
+    FIDS.forEach((fid) => buildFichaPages(fid, OPTS));
+    expect(scans).toBe(3);
+
+    store.globalData = [];
+  });
+
+  // Cada (fuente · módulo · corrida) tiene su propia entrada: no se sirven filas de otro módulo.
+  it('la clave de caché distingue módulo y corrida', () => {
+    store.globalData = [
+      row({ Tanque: '1', Fecha: '2026-06-01', 'Población': '2000000' }),
+      row({ 'Módulo': 'M02', Tanque: '1', Fecha: '2026-06-09', 'Población': '900000' }),
+      row({ Corrida: '574', Tanque: '1', Fecha: '2026-07-02', 'Población': '700000' }),
+    ];
+    expect(buildFichaPages('poblacion', OPTS).map((p) => p.d.fecha)).toEqual(['2026-06-01']);
+    expect(buildFichaPages('poblacion', { mod: 'M02', corrida: '573' }).map((p) => p.d.fecha)).toEqual(['2026-06-09']);
+    expect(buildFichaPages('poblacion', { mod: 'M01', corrida: '574' }).map((p) => p.d.fecha)).toEqual(['2026-07-02']);
+  });
+});
