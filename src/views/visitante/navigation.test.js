@@ -162,6 +162,21 @@ describe('Visitante · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('el detalle de laboratorio incluye un gráfico (no solo tablas)', () => {
+    visitanteView(root);
+    // Microbiología: barras por patógeno (hay una muestra en alerta en el fixture).
+    click(root.querySelector('[data-sum="labMicro"]'));
+    expect(document.getElementById('vtLabMicroChart'), 'canvas de micro').toBeTruthy();
+    expect(document.getElementById('vtSumBody').querySelector('table'), 'tabla de micro').toBeTruthy();
+    click(document.getElementById('vtSumClose'));
+    // Calidad de agua: medidor (gauge) del WQI.
+    click(root.querySelector('[data-sum="labAgua"]'));
+    expect(document.getElementById('vtLabAguaGauge'), 'canvas del gauge').toBeTruthy();
+    expect(document.getElementById('vtSumBody').textContent).toContain('/100');
+    click(document.getElementById('vtSumClose'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('cierra el detalle con la tecla Escape', () => {
     visitanteView(root);
     click(root.querySelector('[data-sum="superv"]'));
