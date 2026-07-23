@@ -240,6 +240,17 @@ describe('maduracion.data · calidad del dato de origen', () => {
     expect(conTypo.futureEvents[0].trovan).toBe('Y2');
   });
 
+  it('el mes de un evento futuro NO se ofrece en el stepper de período', () => {
+    const m = buildReproModel(matriz2, [
+      { 'Trovan ID': 'Y1', Fecha: hace(10), Tipo: 'Desove' },
+      { 'Trovan ID': 'Y2', Fecha: '2062-06-01', Tipo: 'Mortalidad' },
+    ], []);
+    expect(m.months).not.toContain('2062-06');
+    expect(m.months.length).toBeGreaterThan(0);   // los meses reales siguen ahí
+    // El evento no se oculta: sigue contando en "Todo el histórico".
+    expect(m.mortalidades.length).toBe(1);
+  });
+
   it('sin fechas futuras, futureEvents queda vacío', () => {
     const m = buildReproModel(matriz2, [{ 'Trovan ID': 'Y1', Fecha: hace(3), Tipo: 'Desove' }], []);
     expect(m.futureEvents).toEqual([]);

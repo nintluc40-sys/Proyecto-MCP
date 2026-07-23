@@ -216,9 +216,16 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
     .sort((a, b) => a.date - b.date);
   const dataMaxDate = rawMax ? new Date(Math.min(rawMax.getTime(), hoyFin.getTime())) : null;
 
-  // Meses presentes (de los eventos de bitácora), ascendente.
+  // Meses presentes (de los eventos de bitácora), ascendente. Se EXCLUYEN los meses de
+  // eventos futuros: si no, el stepper de período ofrecía un mes lejano (p. ej. "junio
+  // 2062" por un año mal tecleado) que al seleccionarlo pintaba un panel con cifras de
+  // aspecto normal. El evento sigue contando en "Todo el histórico" —no se oculta dato—
+  // y el banner de `futureEvents` dice que hay que corregirlo en el Sheet.
   const monthSet = new Set();
-  desoves.concat(mortalidades).forEach((e) => { const k = yearMonthKey(e.date); if (k) monthSet.add(k); });
+  desoves.concat(mortalidades).forEach((e) => {
+    if (e.date > hoyFin) return;
+    const k = yearMonthKey(e.date); if (k) monthSet.add(k);
+  });
   const months = [...monthSet].sort();
 
   return { females, byTrovan, desoves, mortalidades, movimientos, desovesByTrovan, movByTrovan, dataMaxDate, months, duplicateTrovans, futureEvents };
