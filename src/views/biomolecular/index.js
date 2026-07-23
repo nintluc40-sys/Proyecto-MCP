@@ -382,7 +382,17 @@ function hideTip() { const t = tipEl(); if (t) t.style.opacity = '0'; }
 // Fullscreen
 let fsCard = null;
 function toggleFS(id) { if (fsCard) exitFS(); fsCard = $(id); fsCard.classList.add('is-fs'); document.body.classList.add('modal-open'); const ex = $('bm-fs-exit'); if (ex) ex.style.display = 'block'; requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(renderCharts))); }
-function exitFS() { if (fsCard) { fsCard.classList.remove('is-fs'); fsCard = null; } document.body.classList.remove('modal-open'); const ex = $('bm-fs-exit'); if (ex) ex.style.display = 'none'; requestAnimationFrame(() => requestAnimationFrame(renderCharts)); }
+// El manejador de Escape vive en `document` bajo el guard `docWired`, así que sobrevive a
+// la navegación; `fsCard`, en cambio, solo se limpia al RE-RENDERIZAR esta vista (ver
+// biomolecularView). Si se abandona Biomol con una tarjeta en pantalla completa, la
+// referencia queda colgando y cualquier Escape posterior ejecutaba esto sobre un DOM ya
+// desmontado: apagaba el `body.modal-open` de la vista ACTUAL —la clase con la que
+// refresh.js pausa el auto-refresco, así que la app se re-renderizaba por debajo de un
+// modal ajeno todavía visible— y llamaba a renderCharts() sin nodos donde dibujar.
+// Mismo criterio que el huérfano de Visitante (closeSumModal): actuar solo si la tarjeta
+// sigue en el documento; si no, limpiar la referencia y salir, con lo que el huérfano se
+// auto-neutraliza en la primera pulsación.
+function exitFS() { if (fsCard && !fsCard.isConnected) { fsCard = null; return; } if (fsCard) { fsCard.classList.remove('is-fs'); fsCard = null; } document.body.classList.remove('modal-open'); const ex = $('bm-fs-exit'); if (ex) ex.style.display = 'none'; requestAnimationFrame(() => requestAnimationFrame(renderCharts)); }
 
 function svgDims(svgId, fbW, fbH) {
   const el = $(svgId); if (!el) return { W: fbW, H: fbH };

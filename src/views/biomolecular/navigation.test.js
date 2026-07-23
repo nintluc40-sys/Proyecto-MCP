@@ -211,4 +211,43 @@ describe('Biología Molecular · harness de navegación (D3 stubeado)', () => {
     click(document.getElementById('sankey-reset-btn'));
     expect(errSpy).not.toHaveBeenCalled();
   });
+
+  it('el Escape huérfano de pantalla completa NO apaga el modal-open de otra vista', () => {
+    biomolecularView(root);
+    const fs = root.querySelector('.fs-btn');
+    expect(fs).toBeTruthy();
+    click(fs);                                                    // entra en pantalla completa
+    expect(document.body.classList.contains('modal-open')).toBe(true);
+
+    // Se ABANDONA la vista sin salir de pantalla completa: el router desmonta el root y
+    // limpia modal-open, pero `fsCard` solo se limpia al RE-renderizar Biomol, así que
+    // queda apuntando a un nodo desmontado.
+    root.remove();
+    document.body.classList.remove('modal-open');
+
+    // Otra vista abre SU propio modal y el usuario pulsa Escape.
+    document.body.classList.add('modal-open');
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+    // El huérfano no debe apagar el modal-open ajeno: refresh.js lo usa para pausar el
+    // auto-refresco, y apagarlo re-renderiza la app bajo un modal todavía visible.
+    expect(document.body.classList.contains('modal-open')).toBe(true);
+    // Y se auto-neutraliza: una segunda pulsación tampoco hace nada.
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(document.body.classList.contains('modal-open')).toBe(true);
+    // Tampoco se intenta dibujar sobre el DOM desmontado.
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('en pantalla completa, Escape SIGUE saliendo mientras la tarjeta está montada', () => {
+    biomolecularView(root);
+    const fs = root.querySelector('.fs-btn');
+    click(fs);
+    const card = root.querySelector('.is-fs');
+    expect(card).toBeTruthy();
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(root.querySelector('.is-fs')).toBeFalsy();
+    expect(document.body.classList.contains('modal-open')).toBe(false);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
 });
