@@ -28,15 +28,24 @@ const PROBLEM_MSG = {
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 const KEYS = Object.keys(HEX);
 
+// Lectura de propiedad PROPIA. `obj[key]` resuelve por la cadena de prototipos, y aquí la
+// clave puede ser texto libre del Sheet (ver `key` más abajo: si el color no está en la
+// paleta, se conserva el valor crudo). Con un valor como "constructor", "toString" o
+// "__proto__", `HEX[key]` devolvía una FUNCIÓN —truthy— así que el `|| '#cfd8dc'` nunca
+// llegaba a actuar: ese valor terminaba interpolado como color en el `style` del cuadrito
+// del PDF de Calidad de Agua ("background:function Object() { [native code] }") y como
+// mensaje del semáforo. No era XSS: lo que devuelve el prototipo no lleva comillas ni <>.
+const own = (obj, key) => (Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : undefined);
+
 /** Info del color del agua de un valor crudo del Sheet. null si vacío. */
 export function tankColorInfo(raw) {
   if (!raw || !String(raw).trim()) return null;
   const key = KEYS.find((k) => norm(k) === norm(raw)) || String(raw).trim();
-  const isNormal = NORMAL.has(key);
+  const isNormal = NORMAL.has(key);   // Set: `has` no consulta prototipos, `level` era correcto
   return {
     name: key,
-    hex: HEX[key] || '#cfd8dc',
-    message: isNormal ? 'Coloración normal' : (PROBLEM_MSG[key] || 'Revisar coloración'),
+    hex: own(HEX, key) || '#cfd8dc',
+    message: isNormal ? 'Coloración normal' : (own(PROBLEM_MSG, key) || 'Revisar coloración'),
     level: isNormal ? 'ok' : 'warn',
   };
 }
