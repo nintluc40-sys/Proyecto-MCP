@@ -85,7 +85,9 @@ function lvDaily(rows) {
       return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
     });
   });
-  return { days, stages, series };
+  // `byDay` se devuelve para que iclSeries no lo reconstruya: es el MISMO agrupado y
+  // tenerlo definido en dos sitios invita a que uno de los dos derive con el tiempo.
+  return { days, stages, series, byDay };
 }
 
 /* ---- ICL (Índice de Calidad Larvaria) ----
@@ -132,9 +134,7 @@ function svPopByDay(rows, days) {
 
 /** Serie diaria del ICL + desglose de variables negativas por día. */
 export function iclSeries(rows) {
-  const { days, stages, series } = lvDaily(rows);
-  const byDay = new Map();
-  rows.forEach((r) => { const f = gFec(r); if (!f) return; if (!byDay.has(f)) byDay.set(f, []); byDay.get(f).push(r); });
+  const { days, stages, series, byDay } = lvDaily(rows);
   const svPop = svPopByDay(rows, days); // relleno para huecos de la columna cruda
   const svDaily = days.map((d, i) => { const vals = byDay.get(d).map((r) => parseNum(r, F.supervivencia)).filter((x) => x !== null); return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : svPop[i]; });
   const getVal = (key, i) => (key === 'sv' ? svDaily[i] : (series[key] ? series[key][i] : null));

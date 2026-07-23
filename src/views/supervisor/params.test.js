@@ -46,6 +46,37 @@ describe('iclSeries · término SV (híbrido: rellena huecos con SV por poblaci�
   });
 });
 
+describe('iclSeries · reutiliza el agrupado por día de lvDaily', () => {
+  const row = (extra) => ({
+    _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ1',
+    'Supervivencia': '80', ...extra,
+  });
+
+  it('la supervivencia diaria sale del MISMO agrupado, sin reconstruirlo', () => {
+    // Dos lecturas el mismo día + una en otro: el agrupado debe promediar por día, que es
+    // justo lo que hace lvDaily. Antes iclSeries recorría `rows` una segunda vez para
+    // rehacer un Map idéntico; tener el agrupado definido dos veces invita a que uno de
+    // los dos derive.
+    const { days, values } = iclSeries([
+      row({ Fecha: '01/06/2026', 'Supervivencia': '80' }),
+      row({ Fecha: '01/06/2026', 'Supervivencia': '90' }),
+      row({ Fecha: '02/06/2026', 'Supervivencia': '70' }),
+    ]);
+    expect(days).toEqual(['01/06/2026', '02/06/2026']);
+    expect(values[0]).toBeCloseTo(85, 6);   // promedio del día, no la última lectura
+    expect(values[1]).toBeCloseTo(70, 6);
+  });
+
+  it('una fila sin fecha no entra en el agrupado ni desplaza los días', () => {
+    const { days, values } = iclSeries([
+      row({ Fecha: '', 'Supervivencia': '10' }),
+      row({ Fecha: '01/06/2026', 'Supervivencia': '80' }),
+    ]);
+    expect(days).toEqual(['01/06/2026']);
+    expect(values[0]).toBeCloseTo(80, 6);
+  });
+});
+
 describe('iclSeries · el Estrés se escala a 0–100 antes de restar', () => {
   const row = (extra) => ({
     _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ1',
