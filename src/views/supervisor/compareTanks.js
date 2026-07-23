@@ -263,7 +263,7 @@ export function setupCompareTanks(root) {
       <label class="ctt-field ctt-var"><span>VARIABLE</span>${varSelectHTML()}</label>
       <div class="ctt-modebar">
         <span class="ctt-mode-lbl">Comparar por</span>
-        ${modePill('tank', '🐟 Tanque')}${modePill('lote', '📦 Lote')}${modePill('corrida', '🔄 Corrida')}${modePill('modulo', '🧩 Módulo (masivo)')}
+        ${modePill('tank', 'Tanque')}${modePill('lote', '📦 Lote')}${modePill('corrida', '🔄 Corrida')}${modePill('modulo', '🧩 Módulo (masivo)')}
         <span class="ctt-mode-gap"></span>
         <span class="ctt-mode-lbl">Eje</span>
         ${ctState.mode === 'modulo'

@@ -13,7 +13,7 @@ vi.mock('../../core/charts.js', () => ({
 }));
 
 import { store } from '../../core/store.js';
-import { microbiologiaView } from './index.js';
+import { microbiologiaView, dominantColony } from './index.js';
 
 if (typeof globalThis.requestAnimationFrame !== 'function') {
   globalThis.requestAnimationFrame = (cb) => { cb(); return 0; };
@@ -540,5 +540,31 @@ describe('Microbiología · harness de navegación integral', () => {
     const cumpl = insts.find((el) => /Cumplimiento/.test(el.textContent));
     expect(cumpl.querySelector('.cal-inst-v').textContent).toBe('—');
     expect(errSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('dominantColony · UFC máx / Dominante del resumen del día', () => {
+  it('prioriza el patógeno ESPECÍFICO cuando lo hay (los agregados ganarían siempre)', () => {
+    // C. Totales (agregado) tiene más UFC pero NO debe coronar; gana Pseudomonas.
+    const d = dominantColony([{ key: 'totales', label: 'C. Totales', ufc: 9999 }, { key: 'pseudo', label: 'Pseudomonas', ufc: 300 }]);
+    expect(d.label).toBe('Pseudomonas');
+  });
+
+  it('si el día SOLO trae un agregado, lo muestra en vez de "—" (fix del guion)', () => {
+    // Antes: sin específicos, maxC quedaba null → UFC máx y Dominante salían "—".
+    const d = dominantColony([{ key: 'totales', label: 'C. Totales', ufc: 5000 }]);
+    expect(d).not.toBeNull();
+    expect(d.label).toBe('C. Totales');
+    expect(d.ufc).toBe(5000);
+  });
+
+  it('un único patógeno específico se muestra tal cual', () => {
+    const d = dominantColony([{ key: 'pseudo', label: 'Pseudomonas', ufc: 120 }]);
+    expect(d.label).toBe('Pseudomonas');
+  });
+
+  it('sin colonias → null', () => {
+    expect(dominantColony([])).toBeNull();
+    expect(dominantColony(null)).toBeNull();
   });
 });

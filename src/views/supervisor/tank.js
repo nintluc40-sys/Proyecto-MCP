@@ -190,7 +190,7 @@ export function renderTank(ctx, mod, tq) {
 
   html += `<div class="sv-banner" style="background:${col.bg}">
     <div class="sv-card-orb"></div>
-    <div class="sv-card-tag">🐟 VISUALIZACIÓN DEL TANQUE</div>
+    <div class="sv-card-tag">VISUALIZACIÓN DEL TANQUE</div>
     <div class="sv-banner-name">${esc(mod)} — ${esc(tq)}</div>
     <div class="sv-card-sub">🦐 ${esc(s.estadio || '—')}${s.lotes.length ? ' · 📦 ' + esc(s.lotes.join(', ')) : ''}</div>
     <div class="sv-kpi-grid sv-kpi-wide">

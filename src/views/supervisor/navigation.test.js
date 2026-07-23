@@ -345,9 +345,18 @@ describe('Supervisor · harness de navegación integral', () => {
     click(root.querySelector('[data-micro-open]'));
     // Tabla: columna propia "V. Lumin." con estado presencia/ausencia.
     click(root.querySelector('[data-micmode="tabla"]'));
-    const tablaTxt = root.querySelector('.sv-micro-tablewrap').textContent;
+    const tabla = root.querySelector('.sv-micro-tablewrap');
+    const tablaTxt = tabla.textContent;
     expect(tablaTxt).toContain('V. Lumin.');
     expect(tablaTxt).toContain('Pres.');
+    // Columna Estadío junto a Formato (para identificar la muestra) con su valor real.
+    const ths = [...tabla.querySelectorAll('thead th')].map((t) => t.textContent);
+    expect(ths).toContain('Estadío');
+    expect(ths.indexOf('Estadío')).toBe(ths.indexOf('Formato') + 1);   // justo a su lado
+    expect(tablaTxt).toContain('PL2');                                  // estadío del fixture
+    // Leyenda de semaforización (niveles), como las otras subvistas.
+    expect(root.querySelector('.mic-legend')).toBeTruthy();
+    expect(root.querySelector('.mic-legend').textContent).toContain('Moderado');
     // Heatmap: fila propia "V. Luminiscentes".
     click(root.querySelector('[data-micmode="heatmap"]'));
     expect(root.querySelector('.sv-micro-hm-lumin')).toBeTruthy();
