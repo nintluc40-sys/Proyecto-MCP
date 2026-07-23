@@ -285,6 +285,51 @@ describe('trazabilidad · integración e2e (una fila con TODAS las fichas → 6 
   });
 });
 
+describe('trazabilidad · duplicados tanque+hora en la ficha de Parámetros', () => {
+  const CT = (o) => ({ _SheetOrigin: 'Control_Tanque M01', 'Módulo': 'M01', Corrida: '573', ...o });
+
+  it('gana la PRIMERA lectura, igual que el resto de fichas (antes ganaba la última)', () => {
+    store.globalData = [
+      CT({ Tanque: '1', Fecha: '2026-06-01', Hora: '08:00', OD: '6.2', Temperatura: '29.5' }),
+      CT({ Tanque: '1', Fecha: '2026-06-01', Hora: '08:00', OD: '9.9', Temperatura: '99.9' }), // duplicado
+    ];
+    const pages = buildFichaPages('params', { mod: 'M01', corrida: '573' });
+    expect(pages.length).toBe(1);
+    expect(pages[0].d.od_0_0800).toBeUndefined();       // la clave lleva el rótulo 'HH:MM'
+    expect(pages[0].d['od_0_08:00']).toBe('6.2');
+    expect(pages[0].d['tc_0_08:00']).toBe('29.5');
+  });
+
+  it('un segundo registro con la celda vacía no borra la lectura buena', () => {
+    store.globalData = [
+      CT({ Tanque: '1', Fecha: '2026-06-01', Hora: '08:00', OD: '6.2', Temperatura: '' }),
+      CT({ Tanque: '1', Fecha: '2026-06-01', Hora: '08:00', OD: '', Temperatura: '29.5' }),
+    ];
+    const pages = buildFichaPages('params', { mod: 'M01', corrida: '573' });
+    // Cada celda se completa con la primera lectura NO vacía de esa hora.
+    expect(pages[0].d['od_0_08:00']).toBe('6.2');
+    expect(pages[0].d['tc_0_08:00']).toBe('29.5');
+  });
+
+  it('horas distintas del mismo tanque no se pisan entre sí', () => {
+    store.globalData = [
+      CT({ Tanque: '1', Fecha: '2026-06-01', Hora: '08:00', OD: '6.2' }),
+      CT({ Tanque: '1', Fecha: '2026-06-01', Hora: '10:00', OD: '7.1' }),
+    ];
+    const pages = buildFichaPages('params', { mod: 'M01', corrida: '573' });
+    expect(pages[0].d['od_0_08:00']).toBe('6.2');
+    expect(pages[0].d['od_0_10:00']).toBe('7.1');
+  });
+
+  it('las fichas de Larvicultura ya resolvían el empate con la PRIMERA fila', () => {
+    store.globalData = [
+      row({ Tanque: '1', Fecha: '2026-06-01', 'Población': '2000000' }),
+      row({ Tanque: '1', Fecha: '2026-06-01', 'Población': '9000000' }),   // duplicado
+    ];
+    expect(buildFichaPages('poblacion', { mod: 'M01', corrida: '573' })[0].d.po_0).toBe(2000);
+  });
+});
+
 describe('trazabilidad · caché de filas por fuente', () => {
   const FIDS = ['poblacion', 'calidad', 'plg', 'despacho', 'params', 'calagua', 'desinfeccion'];
   const OPTS = { mod: 'M01', corrida: '573' };

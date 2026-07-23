@@ -9,6 +9,7 @@
 import { store } from '../../core/store.js';
 import { getField, parseNum } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
+import { isUnsafeKey } from '../../core/util.js';
 
 export const isCalAguaRow = (r) => !!r && /calidad\s*de\s*agua/i.test(String(r._SheetOrigin || ''));
 
@@ -79,7 +80,18 @@ export function loadCalRanges() {
   if (_rangeCache.raw === raw) return _rangeCache.val;
   const out = JSON.parse(JSON.stringify(CAL_RANGE_BASE));
   try {
-    if (raw) { const o = JSON.parse(raw); if (o && typeof o === 'object') Object.keys(o).forEach((k) => { out[k] = Object.assign({}, out[k] || {}, o[k] || {}); }); }
+    if (raw) {
+      const o = JSON.parse(raw);
+      if (o && typeof o === 'object') {
+        // Guard de claves peligrosas: un override con {"__proto__":{"turbidez":{…}}} hacía
+        // que `out.turbidez` devolviera un rango que nadie configuró, y calEstado marcaba
+        // "fuera" un parámetro que debía salir "sin-rango". Ver isUnsafeKey en core/util.
+        Object.keys(o).forEach((k) => {
+          if (isUnsafeKey(k)) return;
+          out[k] = Object.assign({}, out[k] || {}, o[k] || {});
+        });
+      }
+    }
   } catch (_) { /* override corrupto → base */ }
   _rangeCache = { raw, val: out };
   return out;

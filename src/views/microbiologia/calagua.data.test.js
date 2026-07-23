@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   isCalAguaRow, calEstado, calRangeText, calCtx, calValue, calMeasured, loadCalRanges,
   calEnsayoData, CAL_PARAMS, CAL_PARAM_BY_KEY,
@@ -84,6 +84,48 @@ describe('loadCalRanges', () => {
     expect(R.ph).toEqual({ min: 7.5, max: 8.5 });
     expect(R.nitrito).toEqual({ max: 0.2 });
     expect(R.potasio).toEqual({ min: 380, max: 420 });
+  });
+
+  describe('overrides de localStorage', () => {
+    const KEY = 'larv4_cal_ranges';
+    let store0;
+    beforeEach(() => {
+      store0 = {};
+      globalThis.localStorage = {
+        getItem: (k) => (k in store0 ? store0[k] : null),
+        setItem: (k, v) => { store0[k] = String(v); },
+        removeItem: (k) => { delete store0[k]; },
+      };
+    });
+    afterEach(() => { delete globalThis.localStorage; });
+
+    it('aplica un override legítimo', () => {
+      store0[KEY] = JSON.stringify({ ph: { min: 7 } });
+      const R = loadCalRanges();
+      expect(R.ph.min).toBe(7);
+      expect(R.ph.max).toBe(8.5);   // se fusiona con la base, no la reemplaza
+    });
+
+    it('un override con "__proto__" NO inyecta rangos fantasma', () => {
+      // JSON.parse crea __proto__ como propiedad PROPIA; la asignación cambiaba el
+      // prototipo del objeto de rangos y `R.turbidez` devolvía un rango que nadie
+      // configuró → calEstado marcaba "fuera" algo que debía salir "sin-rango".
+      store0[KEY] = '{"__proto__": {"turbidez": {"min": 0, "max": 1}}}';
+      const R = loadCalRanges();
+      expect(R.turbidez).toBeUndefined();
+      expect(calEstado('turbidez', 50, R)).toBe('sin-rango');
+      expect(Object.prototype.hasOwnProperty.call(R, 'turbidez')).toBe(false);
+      expect(({}).turbidez).toBeUndefined();   // ni contamina el prototipo global
+      expect(R.ph).toEqual({ min: 7.5, max: 8.5 });   // la base sigue intacta
+    });
+
+    it('ignora "constructor" y "prototype" pero conserva el resto del override', () => {
+      store0[KEY] = JSON.stringify({ constructor: { min: 1 }, prototype: { max: 2 }, nitrito: { max: 0.5 } });
+      const R = loadCalRanges();
+      expect(R.nitrito.max).toBe(0.5);
+      expect(typeof R.constructor).toBe('function');   // sigue siendo el nativo, no un rango
+      expect(Object.prototype.hasOwnProperty.call(R, 'prototype')).toBe(false);
+    });
   });
 });
 

@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   isMicroRow, normNivel, classifyFormato, normTipoMuestra, luminPresence,
   intStr, meltRow, rowContext, pathogenRecords, PATHOGENS, NIVEL_RANK, isAlerta,
   AGGREGATE_KEYS, areaForFormat, deptoOfFormato, FORMATO_LABEL,
+  loadMicThresholds, MIC_FACTORS_KEY,
 } from './data.js';
 
 // Fila representativa (cabeceras reales de la hoja "Microbiología").
@@ -249,5 +250,50 @@ describe('Vibrios Amarillos/Verdes/Totales: acepta V.* (hoja actual) y C.* (comp
     const cRow = { _SheetOrigin: 'Microbiología', 'Formato': 'Larvicultura · Muestra', 'Tipo de muestra': 'Agua', 'C. Totales (crudo)': '600', 'C. Totales UFC': '6000' };
     const t = meltRow(cRow).find((x) => x.key === 'totales');
     expect(t.ufc).toBe(6000);
+  });
+});
+
+describe('loadMicThresholds · guard de claves peligrosas', () => {
+  let store0;
+  beforeEach(() => {
+    store0 = {};
+    globalThis.localStorage = {
+      getItem: (k) => (k in store0 ? store0[k] : null),
+      setItem: (k, v) => { store0[k] = String(v); },
+      removeItem: (k) => { delete store0[k]; },
+    };
+  });
+  afterEach(() => {
+    delete globalThis.localStorage;
+    // Red de seguridad: si el guard fallara, no contaminar el resto de la suite.
+    delete Object.prototype.contaminado;
+  });
+
+  it('un área "__proto__" NO escribe en Object.prototype (contaminación GLOBAL)', () => {
+    // La fusión tiene DOS niveles: out['__proto__'] devolvía Object.prototype y el bucle
+    // interno escribía DENTRO, así que cualquier objeto de la app heredaba la clave.
+    store0[MIC_FACTORS_KEY] = '{"__proto__": {"contaminado": {"leve": 999}}}';
+    loadMicThresholds();
+    expect(({}).contaminado).toBeUndefined();
+    expect('contaminado' in {}).toBe(false);
+  });
+
+  it('un parámetro "__proto__" dentro de un área real no crea umbrales fantasma', () => {
+    // Este caso no contamina el prototipo GLOBAL (solo el del sub-objeto del área), pero sí
+    // hacía que `thr.larvicultura.contaminado` devolviera un umbral que nadie configuró.
+    store0[MIC_FACTORS_KEY] = '{"larvicultura": {"__proto__": {"contaminado": {"leve": 1}}}}';
+    const thr = loadMicThresholds();
+    expect(thr.larvicultura).toBeTruthy();
+    expect(thr.larvicultura.contaminado).toBeUndefined();
+    expect(({}).contaminado).toBeUndefined();
+  });
+
+  it('los overrides legítimos siguen aplicándose', () => {
+    const base = loadMicThresholds();
+    const area = Object.keys(base)[0];
+    const param = Object.keys(base[area])[0];
+    store0[MIC_FACTORS_KEY] = JSON.stringify({ [area]: { [param]: { leve: 12345 } } });
+    const thr = loadMicThresholds();
+    expect(thr[area][param].leve).toBe(12345);
   });
 });

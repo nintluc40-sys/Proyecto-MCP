@@ -341,8 +341,11 @@ function paramsPages({ mod, corrida, from, to }) {
         if (j < 0) return;
         const t = PTIMES[j];
         const od = getField(r, F.od), tc = getField(r, F.temp);
-        if (od !== '') d['od_' + i + '_' + t] = od;
-        if (tc !== '') d['tc_' + i + '_' + t] = tc;
+        // Duplicados tanque+hora: gana la PRIMERA lectura, no la última. El resto de fichas
+        // resuelven el empate con `trows.find(...)` (primero gana) y esta era la única que
+        // sobrescribía, así que la misma hoja daba criterios distintos según la ficha.
+        if (od !== '' && d['od_' + i + '_' + t] === undefined) d['od_' + i + '_' + t] = od;
+        if (tc !== '' && d['tc_' + i + '_' + t] === undefined) d['tc_' + i + '_' + t] = tc;
       });
     });
     return { d, tanks, tableHtml: paramsTable(d, tanks) };
