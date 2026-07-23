@@ -50,6 +50,25 @@ describe('Microchips · navegación integral', () => {
     expect(root.querySelectorAll('.mc-kpi').length).toBeGreaterThanOrEqual(6);
     expect(root.querySelector('#mcTrend')).toBeTruthy();
     expect(root.querySelector('#mcStateDonut')).toBeTruthy();
+    // Datos limpios → ningún banner de aviso.
+    expect(root.querySelector('.mc-warn')).toBeNull();
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('avisa en pantalla de fechas futuras y de Trovan duplicados (antes: silencio)', () => {
+    store.globalData = synthData().concat([
+      B({ 'Trovan ID': 'A1', Fecha: '2062-06-01', Tipo: 'Desove' }),                    // año mal tecleado
+      M({ 'Trovan ID': 'A2', 'Sala actual': 'S9', 'Tanque actual': 'T9', Estado: 'Vivo' }), // Trovan repetido
+    ]);
+    maduracionView(root);
+    const warns = [...root.querySelectorAll('.mc-warn')].map((w) => w.textContent);
+    expect(warns.length).toBe(2);
+    expect(warns.join(' ')).toContain('fecha futura');
+    expect(warns.join(' ')).toContain('repetido');
+    expect(warns.join(' ')).toContain('A2');           // nombra el Trovan duplicado
+    // El aviso persiste al cambiar de sub-vista (va sobre el contenido, no dentro).
+    click(root.querySelector('[data-mc-sub="hembras"]'));
+    expect(root.querySelectorAll('.mc-warn').length).toBe(2);
     expect(errSpy).not.toHaveBeenCalled();
   });
 

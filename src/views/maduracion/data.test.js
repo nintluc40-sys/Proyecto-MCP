@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildReproModel, makeFilter, kpis, locationStats, femaleRanking, femaleHistory,
   neverSpawned, recoveryDistribution, stateDistribution, mortalityBreakdown, trends,
-  salasOf, tanquesOf, intervalsOf, monthLabel, locKey,
+  salasOf, tanquesOf, intervalsOf, monthLabel, locKey, classifyFemale,
 } from './data.js';
 
 // ── Fixtures ──────────────────────────────────────────────
@@ -145,13 +145,24 @@ describe('maduracion.data · distribución de estados', () => {
   it('clasifica fallecida/transferida/activa/inactiva', () => {
     const sd = stateDistribution(model, all);
     expect(sd.fallecida).toBe(1);                          // A4
-    // A3 fue transferida el 18/06 (dentro de la ventana desde 20/06) → transferida.
-    expect(sd.transferida).toBe(1);
-    // A1, A2 desovaron en junio (dentro de ventana) → activas.
-    expect(sd.activa).toBe(2);
+    // A1, A2 y A3 desovaron en junio (dentro de ventana) → activas. A3 ADEMÁS fue
+    // transferida el 18/06, pero producir pesa más que reubicar: 'activa' tiene
+    // precedencia (antes salía 'transferida' y su desove desaparecía del recuento).
+    expect(sd.activa).toBe(3);
+    // Nadie queda como 'transferida': la única reubicada de la ventana también desovó.
+    expect(sd.transferida).toBe(0);
     // A5 viva, sin desove, sin transferencia → inactiva.
     expect(sd.inactiva).toBe(1);
     expect(sd.activa + sd.inactiva + sd.transferida + sd.fallecida).toBe(5);
+  });
+
+  it("'transferida' sigue existiendo para la reubicada que NO desovó en la ventana", () => {
+    const m = buildReproModel(
+      [{ 'Trovan ID': 'T9', 'Sala actual': 'S1', 'Tanque actual': 'T2', Estado: 'Vivo', 'Fecha ingreso': '2026-05-01' }],
+      [{ 'Trovan ID': 'T9', Fecha: '2026-06-20', Tipo: 'Mortalidad' }],   // ancla la referencia sin ser desove
+      [{ 'TR-ID': 'TR-1', Fecha: '2026-06-18', Tipo: 'Traslado', 'Trovan ID': 'T9', 'Sala origen': 'S1', 'Tanque origen': 'T1', 'Sala destino': 'S1', 'Tanque destino': 'T2' }],
+    );
+    expect(classifyFemale(m.byTrovan.get('T9'), m, m.dataMaxDate)).toBe('transferida');
   });
 });
 
@@ -167,6 +178,86 @@ describe('maduracion.data · mortalidad y tendencias', () => {
     expect(tr.labels.length).toBe(tr.desoves.length);
     expect(tr.desoves.reduce((a, b) => a + b, 0)).toBe(5);
     expect(tr.mortalidad.reduce((a, b) => a + b, 0)).toBe(1);
+  });
+
+  it('la fertilidad de tendencias NUNCA supera 100 % aunque las desovadoras se hayan trasladado', () => {
+    // 3 hembras desovan en T1 en junio y DESPUÉS se van a T9; en T1 solo queda X4.
+    // Numerador por snapshot del evento (3) ÷ denominador por ubicación actual (1) = 300 %.
+    const F = (t, tq) => ({ 'Trovan ID': t, 'Sala actual': 'S1', 'Tanque actual': tq, Estado: 'Vivo', 'Fecha ingreso': '2026-01-01' });
+    const m = buildReproModel(
+      [F('X1', 'T9'), F('X2', 'T9'), F('X3', 'T9'), F('X4', 'T1')],
+      [
+        { 'Trovan ID': 'X1', Fecha: '2026-06-05', Tipo: 'Desove' },
+        { 'Trovan ID': 'X2', Fecha: '2026-06-06', Tipo: 'Desove' },
+        { 'Trovan ID': 'X3', Fecha: '2026-06-07', Tipo: 'Desove' },
+      ],
+      ['X1', 'X2', 'X3'].map((t, i) => ({ 'TR-ID': 'TR' + i, Fecha: '2026-06-20', Tipo: 'Traslado', 'Trovan ID': t, 'Sala origen': 'S1', 'Tanque origen': 'T1', 'Sala destino': 'S1', 'Tanque destino': 'T9' })),
+    );
+    const tr = trends(m, makeFilter({ sala: 'S1', tanque: 'T1' }), 'month');
+    tr.fertilidad.forEach((v) => expect(v).toBeLessThanOrEqual(100));
+    // Las barras SÍ cuentan los 3 desoves donde ocurrieron (asimetría documentada en la
+    // nota al pie del gráfico): ninguna de las que siguen en T1 desovó → 0 %.
+    expect(tr.desoves.reduce((a, b) => a + b, 0)).toBe(3);
+    expect(tr.fertilidad).toEqual([0]);
+  });
+
+  it('sin traslados, la fertilidad de tendencias NO cambia respecto al cálculo directo', () => {
+    // Caso normal: cada desovadora sigue donde desovó → el acotado no debe alterar nada.
+    const F = (t) => ({ 'Trovan ID': t, 'Sala actual': 'S1', 'Tanque actual': 'T1', Estado: 'Vivo', 'Fecha ingreso': '2026-01-01' });
+    const m = buildReproModel(
+      [F('N1'), F('N2'), F('N3'), F('N4')],
+      [
+        { 'Trovan ID': 'N1', Fecha: '2026-06-05', Tipo: 'Desove' },
+        { 'Trovan ID': 'N2', Fecha: '2026-06-06', Tipo: 'Desove' },
+      ],
+      [],
+    );
+    const tr = trends(m, makeFilter({ sala: 'S1', tanque: 'T1' }), 'month');
+    expect(tr.fertilidad).toEqual([50]);   // 2 desovadoras de 4 vivas
+  });
+});
+
+describe('maduracion.data · calidad del dato de origen', () => {
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const hace = (n) => iso(new Date(Date.now() - n * 86400000));
+  const matriz2 = [
+    { 'Trovan ID': 'Y1', 'Sala actual': 'S1', 'Tanque actual': 'T1', Estado: 'Vivo', 'Fecha ingreso': '2026-01-01' },
+    { 'Trovan ID': 'Y2', 'Sala actual': 'S1', 'Tanque actual': 'T1', Estado: 'Vivo', 'Fecha ingreso': '2026-01-01' },
+  ];
+
+  it('una fecha futura (año mal tecleado) NO arrastra la ventana de actividad', () => {
+    const sano = buildReproModel(matriz2, [{ 'Trovan ID': 'Y1', Fecha: hace(10), Tipo: 'Desove' }], []);
+    expect(stateDistribution(sano, {}).activa).toBe(1);
+    // El MISMO dato + una fila con el año tecleado como 2062: antes dataMaxDate se iba a
+    // 2062, la ventana de 45 días con él, y Y1 (que desovó hace 10 días) salía inactiva.
+    const conTypo = buildReproModel(matriz2, [
+      { 'Trovan ID': 'Y1', Fecha: hace(10), Tipo: 'Desove' },
+      { 'Trovan ID': 'Y2', Fecha: '2062-06-01', Tipo: 'Mortalidad' },
+    ], []);
+    expect(stateDistribution(conTypo, {}).activa).toBe(1);
+    expect(conTypo.dataMaxDate.getFullYear()).toBeLessThan(2062);
+    expect(conTypo.futureEvents.length).toBe(1);
+    expect(conTypo.futureEvents[0].trovan).toBe('Y2');
+  });
+
+  it('sin fechas futuras, futureEvents queda vacío', () => {
+    const m = buildReproModel(matriz2, [{ 'Trovan ID': 'Y1', Fecha: hace(3), Tipo: 'Desove' }], []);
+    expect(m.futureEvents).toEqual([]);
+  });
+
+  it('reporta los Trovan repetidos en MATRIZ (antes se descartaban en silencio)', () => {
+    const m = buildReproModel([
+      { 'Trovan ID': 'Z1', 'Sala actual': 'S1', 'Tanque actual': 'T1', Estado: 'Vivo' },
+      { 'Trovan ID': 'Z1', 'Sala actual': 'S2', 'Tanque actual': 'T5', Estado: 'Vivo' },
+      { 'Trovan ID': 'Z2', 'Sala actual': 'S1', 'Tanque actual': 'T1', Estado: 'Vivo' },
+    ], [], []);
+    expect(m.females.length).toBe(2);              // se conserva la PRIMERA de cada Trovan
+    expect(m.byTrovan.get('Z1').tanque).toBe('T1');
+    expect(m.duplicateTrovans).toEqual(['Z1']);
+  });
+
+  it('sin repetidos, duplicateTrovans queda vacío', () => {
+    expect(model.duplicateTrovans).toEqual([]);
   });
 });
 

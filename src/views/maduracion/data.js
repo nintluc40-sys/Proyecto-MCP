@@ -128,11 +128,15 @@ function resolveEventLocation(trovan, date, byTrovan, movByTrovan) {
 /**
  * Construye el modelo del Registro Reproductivo a partir de las filas crudas.
  * @returns {{females:Array, byTrovan:Map, desoves:Array, mortalidades:Array,
- *   movimientos:Array, desovesByTrovan:Map, movByTrovan:Map, dataMaxDate:?Date, months:string[]}}
+ *   movimientos:Array, desovesByTrovan:Map, movByTrovan:Map, dataMaxDate:?Date, months:string[],
+ *   duplicateTrovans:string[], futureEvents:Array}}
+ *   `dataMaxDate` va acotada a hoy; `futureEvents` son los eventos con fecha posterior
+ *   (típicamente un año mal tecleado) y `duplicateTrovans` los repetidos en MATRIZ.
  */
 export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
   const females = [];
   const byTrovan = new Map();
+  const dupSet = new Set();
   (matrizRows || []).forEach((o) => {
     const trovan = normTrovan(gv(o, H.trovan));
     if (!trovan) return;
@@ -147,8 +151,13 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
       _ingreso: parseAnyDate(gv(o, H.fIngreso)),
       _muerte: parseAnyDate(gv(o, H.fMuerte)),
     };
+    // Un Trovan repetido en MATRIZ conserva la PRIMERA fila. Antes el resto se
+    // descartaba en silencio (la hembra podía aparecer con sala/tanque equivocados y
+    // nadie se enteraba); ahora se reporta para avisar en pantalla.
     if (!byTrovan.has(trovan)) { byTrovan.set(trovan, rec); females.push(rec); }
+    else dupSet.add(trovan);
   });
+  const duplicateTrovans = [...dupSet];
 
   // Movimientos (transferencias) — se parsean ANTES de la bitácora para poder
   // derivar la ubicación de cada evento por Trovan.
@@ -191,19 +200,28 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
   const desovesByTrovan = new Map();
   desoves.forEach((d) => { if (!desovesByTrovan.has(d.trovan)) desovesByTrovan.set(d.trovan, []); desovesByTrovan.get(d.trovan).push(d); });
 
-  // Fecha máxima de los datos (referencia de "ahora" para ventanas de actividad).
-  let dataMaxDate = null;
-  const consider = (d) => { if (d && (!dataMaxDate || d > dataMaxDate)) dataMaxDate = d; };
+  // Fecha máxima de los datos, ACOTADA A HOY: es la referencia de "ahora" para las
+  // ventanas de actividad, y una sola fecha futura (typo de año en la Bitácora) se
+  // convertía en esa referencia y arrastraba la ventana entera con ella → hembras que SÍ
+  // habían desovado salían "inactivas", sin ningún aviso. Los eventos futuros se listan
+  // aparte para avisarlo en pantalla en vez de corromper el cálculo en silencio.
+  const hoyFin = new Date(); hoyFin.setHours(23, 59, 59, 999);
+  let rawMax = null;
+  const consider = (d) => { if (d && (!rawMax || d > rawMax)) rawMax = d; };
   desoves.forEach((e) => consider(e.date));
   mortalidades.forEach((e) => consider(e.date));
   movimientos.forEach((e) => consider(e.date));
+  const futureEvents = desoves.concat(mortalidades, movimientos)
+    .filter((e) => e.date && e.date > hoyFin)
+    .sort((a, b) => a.date - b.date);
+  const dataMaxDate = rawMax ? new Date(Math.min(rawMax.getTime(), hoyFin.getTime())) : null;
 
   // Meses presentes (de los eventos de bitácora), ascendente.
   const monthSet = new Set();
   desoves.concat(mortalidades).forEach((e) => { const k = yearMonthKey(e.date); if (k) monthSet.add(k); });
   const months = [...monthSet].sort();
 
-  return { females, byTrovan, desoves, mortalidades, movimientos, desovesByTrovan, movByTrovan, dataMaxDate, months };
+  return { females, byTrovan, desoves, mortalidades, movimientos, desovesByTrovan, movByTrovan, dataMaxDate, months, duplicateTrovans, futureEvents };
 }
 
 /* ── Filtros ── */
@@ -379,15 +397,19 @@ export function classifyFemale(rec, model, ref) {
   if (!rec) return 'inactiva';
   if (rec.estado === ESTADO_MUERTO) return 'fallecida';
   const winStart = ref ? new Date(ref.getTime() - ACTIVITY_WINDOW_DAYS * DAY_MS) : null;
+  // Activa: desove dentro de la ventana. Se comprueba ANTES que "transferida" porque
+  // PRODUCIR pesa más que ser reubicada: una hembra que desovó hace días y además fue
+  // movida sigue siendo productiva, y antes se contabilizaba como "transferida" (su
+  // desove desaparecía del recuento de activas). 'transferida' queda para las reubicadas
+  // que NO han desovado en la ventana.
+  const des = model.desovesByTrovan.get(rec.trovan);
+  if (winStart && des && des.some((e) => e.date >= winStart)) return 'activa';
   // Transferida reciente: último movimiento dentro de la ventana.
   const mov = model.movByTrovan.get(rec.trovan);
   if (winStart && mov && mov.length) {
     const last = mov[mov.length - 1];
     if (last.date && last.date >= winStart) return 'transferida';
   }
-  // Activa: desove dentro de la ventana.
-  const des = model.desovesByTrovan.get(rec.trovan);
-  if (winStart && des && des.some((e) => e.date >= winStart)) return 'activa';
   return 'inactiva';
 }
 /** Distribución de estados de la población (filtrable por ubicación actual). */
@@ -405,12 +427,13 @@ export function stateDistribution(model, f = {}) {
 /* ── Mortalidad por sala y por tanque (eventos de bitácora, snapshot) ── */
 export function mortalityBreakdown(model, f) {
   const bySala = new Map(), byTanque = new Map();
-  mortsIn(model, f).forEach((e) => {
+  const morts = mortsIn(model, f);   // una sola pasada (antes se filtraba dos veces)
+  morts.forEach((e) => {
     bySala.set(dash(e.sala), (bySala.get(dash(e.sala)) || 0) + 1);
     byTanque.set(locKey(e.sala, e.tanque), (byTanque.get(locKey(e.sala, e.tanque)) || 0) + 1);
   });
   const toArr = (m) => [...m.entries()].map(([k, n]) => ({ key: k, n })).sort((a, b) => b.n - a.n);
-  return { total: mortsIn(model, f).length, porSala: toArr(bySala), porTanque: toArr(byTanque) };
+  return { total: morts.length, porSala: toArr(bySala), porTanque: toArr(byTanque) };
 }
 
 /* ── Tendencias temporales (granularidad adaptativa) ── */
@@ -453,14 +476,32 @@ export function trends(model, f, granularity = 'month') {
   }
   // Población filtrada por ubicación actual (para "vivas durante el bucket").
   const pop = model.females.filter((r) => (!f.sala || String(r.sala) === f.sala) && (!f.tanque || String(r.tanque) === f.tanque));
+  // Reparto de eventos por CLAVE de bucket en UNA sola pasada. Antes se recorrían los
+  // eventos TRES veces por bucket (desoves, mortalidades y otra vez desoves para contar
+  // desovadoras distintas): con 30.000 eventos y 72 buckets son ~6,5 M de comparaciones
+  // de fecha por repintado (medido: 1.511 ms por llamada).
+  const keyOf = granularity === 'day' ? dayKey : yearMonthKey;
+  const slots = new Map();
+  buckets.forEach((b) => slots.set(b.key, { d: 0, m: 0, spawners: new Set() }));
+  des.forEach((e) => { const s = slots.get(keyOf(e.date)); if (s) { s.d++; s.spawners.add(e.trovan); } });
+  mor.forEach((e) => { const s = slots.get(keyOf(e.date)); if (s) s.m++; });
+
   const desoves = [], mortalidad = [], fertilidad = [];
   buckets.forEach((b) => {
-    const dCount = des.filter((e) => e.date >= b.start && e.date <= b.stop).length;
-    const mCount = mor.filter((e) => e.date >= b.start && e.date <= b.stop).length;
-    const spawners = new Set(des.filter((e) => e.date >= b.start && e.date <= b.stop).map((e) => e.trovan)).size;
-    const alive = pop.filter((r) => aliveDuring(r, b.start, b.stop)).length;
-    desoves.push(dCount); mortalidad.push(mCount);
-    fertilidad.push(alive ? +((spawners / alive) * 100).toFixed(1) : 0);
+    const s = slots.get(b.key);
+    // Vivas de la ubicación ACTUAL presentes durante el bucket (denominador).
+    const aliveSet = new Set();
+    pop.forEach((r) => { if (aliveDuring(r, b.start, b.stop)) aliveSet.add(r.trovan); });
+    // Numerador acotado a la INTERSECCIÓN desovadoras ∩ vivas de la ubicación: las
+    // desovadoras salen del snapshot del evento (dónde desovaron) mientras que el
+    // denominador es la ubicación ACTUAL, así que sin intersección una hembra que desovó
+    // aquí y luego se trasladó contaba arriba pero no abajo → fertilidad > 100 %
+    // (medido: 300 %). Sin traslados el resultado NO cambia: la desovadora está en `pop`
+    // y viva durante el bucket en el que desovó.
+    let spawners = 0;
+    s.spawners.forEach((t) => { if (aliveSet.has(t)) spawners++; });
+    desoves.push(s.d); mortalidad.push(s.m);
+    fertilidad.push(aliveSet.size ? +((spawners / aliveSet.size) * 100).toFixed(1) : 0);
   });
   return { buckets, labels: buckets.map((b) => b.label), desoves, mortalidad, fertilidad };
 }
