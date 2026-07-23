@@ -244,6 +244,22 @@ export function drawCatPct(canvasId, labels, values) {
   });
 }
 
+/** Barras HORIZONTALES por patógeno (Control sanitario): % de análisis en alerta.
+ *  `colors` = color por barra (el del peor nivel del patógeno), para cuadrar con la
+ *  matriz Sistema × Patógeno. A diferencia de una tendencia diaria, siempre tiene datos
+ *  si hubo análisis: es el gráfico adecuado para análisis esporádicos. */
+export function drawSanitBars(canvasId, labels, values, colors) {
+  return makeChart(canvasId, {
+    type: 'bar',
+    data: { labels, datasets: [{ label: '% en alerta', data: values, backgroundColor: colors.map((c) => c + 'cc'), borderColor: colors, borderWidth: 1, borderRadius: 4, maxBarThickness: 26 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      scales: { x: { beginAtZero: true, max: 100, ticks: { callback: (v) => v + '%', color: AXIS_TICK.color, font: AXIS_TICK.font }, title: { display: true, text: '% de análisis en alerta', color: AXIS_TITLE.color, font: AXIS_TITLE.font } }, y: { grid: { display: false }, ticks: { color: AXIS_TICK.color, font: AXIS_TICK.font } } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ' ' + c.parsed.x.toFixed(1) + '% en alerta' } } },
+    },
+  });
+}
+
 /** Serie diaria genérica (Salinidad / pH / Luz / Temperatura / Descarte).
  *  `zero` = forzar base en 0 (p.ej. % de descarte, para no exagerar variaciones). */
 export function drawDaily(canvasId, days, values, label, color, unit = '', zero = false) {

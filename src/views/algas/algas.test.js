@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sysCat, SYS_CATS, growthByLote, tasaChartData, periodStats, cellCompositionByDay, dispatchByModule, covSpan, dailySeries } from './index.js';
+import { sysCat, SYS_CATS, growthByLote, tasaChartData, periodStats, cellCompositionByDay, dispatchByModule, covSpan, dailySeries, isMicAlgaeRow, micAlgSystem, algSysFromText, algSanitData, algCloroData } from './index.js';
 
 // Fila de Lab_Algas con cabeceras canónicas (las que lee el acceso tolerante AF).
 const row = (o) => ({ ...o });
@@ -373,5 +373,199 @@ describe('periodStats · arrays sin cota', () => {
     expect(s.densMin).toBe(1000);
     expect(s.densMax).toBe(1049);
     expect(s.n).toBe(200000);
+  });
+});
+
+// ── Control sanitario (microbiología de los cultivos de algas) ──
+describe('Control sanitario · isMicAlgaeRow', () => {
+  const mrow = (o) => ({ _SheetOrigin: 'Microbiología', Formato: 'Algas Hisopado', 'Fecha muestreo': '05/06/2026', Corrida: '573', ...o });
+  it('reconoce solo las filas de Microbiología del departamento Algas', () => {
+    expect(isMicAlgaeRow(mrow({}))).toBe(true);
+    expect(isMicAlgaeRow(mrow({ Formato: 'Algas Mensual' }))).toBe(true);
+    expect(isMicAlgaeRow(mrow({ Formato: 'Algas Fundas y Masivos' }))).toBe(true);
+    // Microbiología pero de otro departamento → fuera.
+    expect(isMicAlgaeRow(mrow({ Formato: 'Larvicultura · Muestra' }))).toBe(false);
+    // Otra hoja → fuera.
+    expect(isMicAlgaeRow({ _SheetOrigin: 'Lab_Algas', Sistema: 'M1' })).toBe(false);
+  });
+});
+
+describe('Control sanitario · algSysFromText (sistema por palabra clave)', () => {
+  it('reconoce los nombres reales de las hojas (texto descriptivo, no código)', () => {
+    // Valores verificados en LARC - Microbiología / Calidad de Agua.
+    expect(algSysFromText('Masivo 1')).toBe('Masivos');
+    expect(algSysFromText('Masivo 6 Mod 1')).toBe('Masivos');
+    expect(algSysFromText('Fundas producción 2')).toBe('Fundas');
+    expect(algSysFromText('Funda matriz')).toBe('Fundas');
+    expect(algSysFromText('Carboys 3')).toBe('Carboys');
+    expect(algSysFromText('PBR #2 4 dias')).toBe('PBR');
+    expect(algSysFromText('Premasivo 3 Mod 1')).toBe('Premasivos');
+  });
+  it('Premasivo NO se confunde con Masivo (lo contiene como subcadena)', () => {
+    expect(algSysFromText('Premasivo 5')).toBe('Premasivos');
+    expect(algSysFromText('premasivos mod 2')).toBe('Premasivos');
+  });
+  it('texto sin sistema reconocible → null', () => {
+    expect(algSysFromText('Reservorio A')).toBeNull();
+    expect(algSysFromText('')).toBeNull();
+    expect(algSysFromText(null)).toBeNull();
+  });
+});
+
+describe('Control sanitario · micAlgSystem (columna correcta por formato)', () => {
+  it('deriva el sistema de "Tipo de muestra" (Fundas y Masivos)', () => {
+    expect(micAlgSystem({ tipoMuestra: 'Masivo 1' })).toBe('Masivos');
+    expect(micAlgSystem({ tipoMuestra: 'PBR #2 4 dias' })).toBe('PBR');
+  });
+  it('cae a "Muestras"/"Punto"/"Lugar" cuando Tipo de muestra no clasifica', () => {
+    expect(micAlgSystem({ muestras: 'Funda matriz' })).toBe('Fundas');
+    expect(micAlgSystem({ punto: 'Carboys 3' })).toBe('Carboys');
+    // 'Tipo de muestra' tiene prioridad sobre 'Muestras'.
+    expect(micAlgSystem({ tipoMuestra: 'Masivo 2', muestras: 'Funda matriz' })).toBe('Masivos');
+  });
+  it('si ningún candidato encaja, conserva el texto más informativo en vez de perder la muestra', () => {
+    expect(micAlgSystem({ tipoMuestra: 'Estanque norte' })).toBe('Estanque norte');
+    expect(micAlgSystem({ ubicacion: 'X' })).toBe('X');
+    expect(micAlgSystem({})).toBe('—');
+  });
+});
+
+describe('Control sanitario · algSanitData', () => {
+  // Área 'algas': vtot l=5, m=10, e=50 → 2 Mínimo · 20 Moderado · 100 Elevado.
+  // El sistema se registra como texto en "Tipo de muestra" (dato real de la hoja).
+  const mrow = (sistema, ufcTot, extra) => ({
+    _SheetOrigin: 'Microbiología', Formato: 'Algas Fundas y Masivos', 'Fecha muestreo': '05/06/2026',
+    Corrida: '573', 'Tipo de muestra': sistema, 'V.Totales UFC': String(ufcTot), ...extra,
+  });
+
+  it('semáforo, alerta y patógeno dominante sobre análisis con nivel medido', () => {
+    const d = algSanitData([
+      mrow('Masivo 1', 100),   // Masivos · Elevado → alerta
+      mrow('Masivo 1', 2),     // Masivos · Mínimo → sin alerta
+      mrow('Fundas 2', 20),    // Fundas · Moderado → alerta
+    ]);
+    expect(d.n).toBe(3);
+    expect(d.analizados).toBe(3);
+    expect(d.enAlerta).toBe(2);
+    expect(d.alertPct).toBeCloseTo(66.7, 1);
+    expect(d.dominante[0]).toBe('C. Totales');   // el patógeno en alerta
+    expect(d.sistemasAfectados).toBe(2);         // Masivos y Fundas
+  });
+
+  it('agrupa por sistema con % de alerta y peor nivel, ordenado por severidad', () => {
+    const d = algSanitData([mrow('Masivo 1', 100), mrow('Masivo 1', 2), mrow('Fundas 2', 20)]);
+    const mas = d.bySystem.find((s) => s.sistema === 'Masivos');
+    const fun = d.bySystem.find((s) => s.sistema === 'Fundas');
+    expect(mas).toMatchObject({ n: 2, alerta: 1, peor: 'Elevado' });
+    expect(mas.alertPct).toBeCloseTo(50, 6);
+    expect(fun).toMatchObject({ n: 1, alerta: 1, peor: 'Moderado', alertPct: 100 });
+    // Fundas (100% alerta) va antes que Masivos (50%).
+    expect(d.bySystem[0].sistema).toBe('Fundas');
+  });
+
+  it('desglosa por patógeno con % en alerta, ordenado por severidad', () => {
+    // Área algas · Amarillas y Totales: l=5, m=10, e=50 (2 → Mínimo · 100 → Elevado).
+    const d = algSanitData([
+      mrow('Masivo 1', 100, { 'V.Amarillos UFC': '2' }),   // Totales Elevado · Amarillas Mínimo
+      mrow('Masivo 1', 2, { 'V.Amarillos UFC': '100' }),   // Totales Mínimo · Amarillas Elevado
+    ]);
+    const tot = d.pathogens.find((p) => p.key === 'totales');
+    const amar = d.pathogens.find((p) => p.key === 'amarillos');
+    expect(tot).toMatchObject({ n: 2, alerta: 1, peor: 'Elevado' });
+    expect(tot.alertPct).toBeCloseTo(50, 6);
+    expect(amar).toMatchObject({ n: 2, alerta: 1, peor: 'Elevado' });
+    expect(amar.alertPct).toBeCloseTo(50, 6);
+  });
+
+  it('construye la matriz Sistema × Patógeno con el PEOR nivel de cada celda', () => {
+    const d = algSanitData([
+      mrow('Masivo 1', 20),    // Masivos · Totales Moderado
+      mrow('Masivo 1', 100),   // Masivos · Totales Elevado → la celda debe quedar en el peor
+      mrow('Fundas 2', 2),     // Fundas · Totales Mínimo
+    ]);
+    expect(d.matrix.sistemas).toContain('Masivos');
+    expect(d.matrix.sistemas).toContain('Fundas');
+    expect(d.matrix.patogenos.some((p) => p.key === 'totales')).toBe(true);
+    // Masivos × Totales: dos análisis (Moderado y Elevado) → celda = Elevado (el peor).
+    expect(d.matrix.cell.get('Masivos|totales').nivel).toBe('Elevado');
+    expect(d.matrix.cell.get('Fundas|totales').nivel).toBe('Mínimo');
+    // Un par sistema×patógeno sin medición no está en el mapa.
+    expect(d.matrix.cell.get('Fundas|aero')).toBeUndefined();
+  });
+
+  it('cada celda de la matriz lleva el PROMEDIO de UFC de sus mediciones (para el tooltip)', () => {
+    const d = algSanitData([
+      mrow('Masivo 1', 20),    // Totales UFC 20
+      mrow('Masivo 1', 100),   // Totales UFC 100
+    ]);
+    const c = d.matrix.cell.get('Masivos|totales');
+    expect(c.ufcN).toBe(2);
+    expect(c.ufcAvg).toBeCloseTo(60, 6);   // (20 + 100) / 2
+  });
+
+  it('sin análisis, el modelo queda vacío sin reventar', () => {
+    const d = algSanitData([]);
+    expect(d.n).toBe(0);
+    expect(d.alertPct).toBeNull();
+    expect(d.dominante).toBeNull();
+    expect(d.bySystem).toEqual([]);
+    expect(d.pathogens).toEqual([]);
+    expect(d.matrix.sistemas).toEqual([]);
+    expect(d.matrix.cell.size).toBe(0);
+  });
+
+  it('un análisis sin ningún patógeno medido no cuenta como "en alerta"', () => {
+    // Solo un patógeno sin UFC → sin nivel: entra en n pero no en analizados/alerta.
+    const d = algSanitData([{ _SheetOrigin: 'Microbiología', Formato: 'Algas Hisopado', 'Fecha muestreo': '05/06/2026', Corrida: '573', Variedad: 'M1' }]);
+    expect(d.n).toBe(1);
+    expect(d.analizados).toBe(0);
+    expect(d.alertPct).toBeNull();
+  });
+});
+
+describe('Control sanitario · algCloroData (calidad de agua · cloro)', () => {
+  // Formato "Algas" de Calidad de Agua: el sistema en "Muestras", cloro en mg/L (coma
+  // decimal). Valores y cabeceras verificados en LARC - Calidad de Agua.
+  const crow = (muestra, libre, extra) => ({
+    _SheetOrigin: 'Calidad de Agua', Departamento: 'Algas', Formato: 'Algas',
+    'Fecha muestreo': '20/07/2026', Muestras: muestra, 'Cloro libre (mg/L)': String(libre), ...extra,
+  });
+
+  it('reporta % con cloro libre detectable y promedios por parámetro', () => {
+    const cl = algCloroData([
+      crow('Masivo 6 Mod 1', '0,01', { 'Cloro total (mg/L)': '0,05' }),
+      crow('Premasivo 3 Mod 1', '0'),
+      crow('Funda matriz', '0,03'),
+    ]);
+    expect(cl.n).toBe(3);
+    // 2 de 3 con cloro libre > 0 → 66.7%.
+    expect(cl.detectPct).toBeCloseTo(66.7, 1);
+    const libre = cl.params.find((p) => p.key === 'libre');
+    expect(libre.n).toBe(3);
+    expect(libre.avg).toBeCloseTo((0.01 + 0 + 0.03) / 3, 4);   // coma decimal parseada
+    expect(libre.max).toBeCloseTo(0.03, 6);
+    expect(libre.detPct).toBeCloseTo(66.7, 1);
+  });
+
+  it('agrupa el cloro por sistema (mismo criterio de sistema que la microbiología)', () => {
+    const cl = algCloroData([
+      crow('Masivo 6 Mod 1', '0,02'),
+      crow('Masivo 7 Mod 1', '0'),
+      crow('Funda matriz', '0,04'),
+    ]);
+    const mas = cl.bySystem.find((s) => s.sistema === 'Masivos');
+    const fun = cl.bySystem.find((s) => s.sistema === 'Fundas');
+    expect(mas).toMatchObject({ n: 2 });
+    expect(mas.libreAvg).toBeCloseTo(0.01, 6);   // (0.02 + 0) / 2
+    expect(mas.detPct).toBeCloseTo(50, 6);
+    expect(fun).toMatchObject({ n: 1, detPct: 100 });
+  });
+
+  it('sin muestras de cloro, el modelo queda vacío sin reventar', () => {
+    const cl = algCloroData([]);
+    expect(cl.n).toBe(0);
+    expect(cl.detectPct).toBeNull();
+    expect(cl.bySystem).toEqual([]);
+    expect(cl.params.every((p) => p.n === 0 && p.avg === null)).toBe(true);
   });
 });

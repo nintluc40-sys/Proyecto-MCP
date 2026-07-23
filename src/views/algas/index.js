@@ -18,7 +18,12 @@ import { avg, natCmp } from '../../core/util.js';
 import { monthIndexOfCorrida, monthLabelAt } from '../../core/prodCalendar.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import { toast } from '../../ui/toast.js';
-import { drawGrowth, drawGrowthBar, drawGrowthMini, drawTasa, drawProto, drawDaily, drawUsoSistema, drawModuloBiomasa, drawCatPct, drawCellQuality, drawDispatchBars, CAT_COLOR, algColor, fmtK } from './charts.js';
+import { drawGrowth, drawGrowthBar, drawGrowthMini, drawTasa, drawProto, drawDaily, drawUsoSistema, drawModuloBiomasa, drawCatPct, drawCellQuality, drawDispatchBars, drawSanitBars, CAT_COLOR, algColor, fmtK } from './charts.js';
+// Capa de datos de Microbiología (PURA: solo depende de core/, no arrastra su vista al
+// bundle). Se usa para el Control sanitario: los análisis microbiológicos de los cultivos
+// de algas (formatos del departamento Algas: Hisopado / Mensual / Fundas y Masivos).
+import { isMicroRow, rowContext as micCtx, meltRow as micMelt, deptoOfFormato, isAlerta, NIVEL_COLOR, NIVEL_RANK } from '../microbiologia/data.js';
+import { isCalAguaRow, calCtx } from '../microbiologia/calagua.data.js';
 
 // ── Acceso tolerante a las cabeceras de Lab_Algas ──
 const AF = {
@@ -83,6 +88,156 @@ export function sysCat(sistema) {
   if (/^C\d/.test(s)) return 'Carboys';
   if (/^M\d/.test(s)) return 'Masivos';
   return 'Otros';
+}
+
+/* ============================================================
+   Control sanitario · microbiología de los cultivos de algas
+   ============================================================ */
+
+/** Filas de Microbiología que pertenecen al departamento Algas (Hisopado/Mensual/Fundas). */
+export function isMicAlgaeRow(r) {
+  return isMicroRow(r) && deptoOfFormato(micCtx(r).formatoKey) === 'Algas';
+}
+
+/**
+ * Sistema de cultivo desde el TEXTO descriptivo con que se registra la muestra en
+ * Microbiología / Calidad de Agua. A diferencia de Lab_Algas —donde el sistema es un
+ * código corto (M1/FP/C3)—, aquí llega como nombre: "Masivo 1", "Fundas producción 2",
+ * "Premasivo 3 Mod 1", "PBR #2 4 días", "Carboys 3" (verificado en las hojas reales).
+ * Por eso se reconoce por PALABRA CLAVE, no con `sysCat`. Premasivos ANTES que Masivos:
+ * "premasivo" contiene "masivo" como subcadena. null si nada encaja.
+ */
+export function algSysFromText(txt) {
+  const s = String(txt || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (!s.trim()) return null;
+  if (/premasiv|pre-?masiv|\bpm\d/.test(s)) return 'Premasivos';
+  if (/masiv/.test(s)) return 'Masivos';
+  if (/\bpbr/.test(s)) return 'PBR';
+  if (/carboy/.test(s)) return 'Carboys';
+  if (/funda/.test(s)) return 'Fundas';
+  return null;
+}
+
+/**
+ * Sistema de cultivo de un análisis micro. El sistema vive en distintas columnas según
+ * el formato (verificado en las hojas): "Tipo de muestra" en Fundas y Masivos, "Muestras"
+ * en Calidad de Agua, "Punto de muestreo"/"Lugar" en Hisopado/Mensual. Se prueban en orden
+ * de informatividad y gana la primera que dé una categoría por palabra clave. Si ninguna
+ * encaja, se conserva el texto más informativo tal cual —no se fuerza a "Otros"— para no
+ * perder la muestra ni mezclar sistemas distintos bajo una etiqueta genérica.
+ * ⚠ El modal hace visible cuánto cae sin categoría: es el mecanismo para detectar que el
+ * sistema llega en una columna aún no contemplada.
+ */
+export function micAlgSystem(ctx) {
+  const cands = [ctx.tipoMuestra, ctx.muestras, ctx.punto, ctx.lugar, ctx.componente, ctx.variedad];
+  for (const c of cands) { const cat = algSysFromText(c); if (cat) return cat; }
+  return cands.find((c) => c && String(c).trim()) || ctx.ubicacion || '—';
+}
+
+// Nivel del análisis = el PEOR de sus patógenos medidos (rank más alto). '' si no midió.
+function worstNivel(row) {
+  let best = '', rank = -1;
+  micMelt(row).forEach((p) => { const r = NIVEL_RANK[p.nivel]; if (r !== undefined && r > rank) { rank = r; best = p.nivel; } });
+  return best;
+}
+
+/**
+ * Modelo del Control sanitario a partir de las filas de micro-algas del mes.
+ * PURA (sin DOM), exportada para test.
+ * @returns {{n, analizados, enAlerta, alertPct, dominante, sistemasAfectados,
+ *   bySystem:Array, pathogens:Array, matrix:{sistemas,patogenos,cell:Map}}}
+ */
+export function algSanitData(rows) {
+  const list = rows || [];
+  // El sistema se calcula UNA vez por análisis y se conserva (lo usan bySystem y la matriz).
+  const analizados = list.map((r) => { const ctx = micCtx(r); return { ctx, sistema: micAlgSystem(ctx), nivel: worstNivel(r), melt: micMelt(r) }; });
+  const conNivel = analizados.filter((a) => a.nivel !== '');
+  const enAlerta = conNivel.filter((a) => isAlerta(a.nivel));
+  const alertPct = conNivel.length ? enAlerta.length / conNivel.length * 100 : null;
+
+  // Patógeno dominante = el que más veces aparece EN ALERTA (Moderado/Elevado).
+  const patAlert = new Map();
+  enAlerta.forEach((a) => a.melt.forEach((p) => { if (isAlerta(p.nivel)) patAlert.set(p.label, (patAlert.get(p.label) || 0) + 1); }));
+  const dominante = [...patAlert.entries()].sort((a, b) => b[1] - a[1])[0] || null;
+
+  // Por sistema: nº de análisis, % en alerta, peor nivel.
+  const bySysMap = new Map();
+  analizados.forEach((a) => {
+    if (!bySysMap.has(a.sistema)) bySysMap.set(a.sistema, { sistema: a.sistema, n: 0, conNivel: 0, alerta: 0, peorRank: -1, peor: '' });
+    const o = bySysMap.get(a.sistema); o.n++;
+    if (a.nivel !== '') { o.conNivel++; if (isAlerta(a.nivel)) o.alerta++; const rk = NIVEL_RANK[a.nivel]; if (rk > o.peorRank) { o.peorRank = rk; o.peor = a.nivel; } }
+  });
+  const bySystem = [...bySysMap.values()]
+    .map((o) => ({ ...o, alertPct: o.conNivel ? o.alerta / o.conNivel * 100 : null }))
+    .sort((a, b) => (b.alertPct ?? -1) - (a.alertPct ?? -1) || b.n - a.n);
+  const sistemasAfectados = bySystem.filter((s) => s.alerta > 0).length;
+
+  // Por patógeno (para las barras) + matriz Sistema × Patógeno (peor nivel de cada celda).
+  // Solo cuentan las mediciones CON nivel: un patógeno sin UFC no engorda ni la matriz ni
+  // el ranking (si no, "medido sin dato" se leería como "presente y sano").
+  const patMap = new Map(); const cell = new Map();
+  conNivel.forEach((a) => a.melt.forEach((p) => {
+    if (!p.nivel) return;
+    if (!patMap.has(p.key)) patMap.set(p.key, { key: p.key, label: p.label, n: 0, alerta: 0, peorRank: -1, peor: '' });
+    const pm = patMap.get(p.key); pm.n++; const rk = NIVEL_RANK[p.nivel];
+    if (isAlerta(p.nivel)) pm.alerta++; if (rk > pm.peorRank) { pm.peorRank = rk; pm.peor = p.nivel; }
+    // Celda de la matriz: peor nivel + promedio de las mediciones UFC de ese patógeno en
+    // ese sistema (para el tooltip). Acumula sum/n; el promedio se calcula al cerrar.
+    const ck = a.sistema + '|' + p.key;
+    let cur = cell.get(ck);
+    if (!cur) { cur = { rank: -1, nivel: '', ufcSum: 0, ufcN: 0 }; cell.set(ck, cur); }
+    if (rk > cur.rank) { cur.rank = rk; cur.nivel = p.nivel; }
+    if (p.ufc !== null && p.ufc !== undefined && !isNaN(p.ufc)) { cur.ufcSum += p.ufc; cur.ufcN++; }
+  }));
+  // Cierra cada celda con el promedio UFC (null si no hubo UFC, solo Nivel de la hoja).
+  cell.forEach((c) => { c.ufcAvg = c.ufcN ? c.ufcSum / c.ufcN : null; });
+  const pathogens = [...patMap.values()]
+    .map((p) => ({ key: p.key, label: p.label, n: p.n, alerta: p.alerta, peor: p.peor, alertPct: p.n ? p.alerta / p.n * 100 : null }))
+    .sort((a, b) => (b.alertPct ?? -1) - (a.alertPct ?? -1) || b.n - a.n);
+  const matrix = { sistemas: bySystem.map((s) => s.sistema), patogenos: pathogens.map((p) => ({ key: p.key, label: p.label })), cell };
+
+  return { n: list.length, analizados: conNivel.length, enAlerta: enAlerta.length, alertPct, dominante, sistemasAfectados, bySystem, pathogens, matrix };
+}
+
+// Columnas de cloro en el formato "Algas" de Calidad de Agua (mg/L). `parseNum` ya
+// convierte la coma decimal ("0,01" → 0.01), así que se pasan las cabeceras tal cual.
+const CLORO_PARAMS = [
+  { key: 'libre', label: 'Cloro libre', cols: ['Cloro libre (mg/L)', 'Cloro libre', 'Cloro_libre'] },
+  { key: 'total', label: 'Cloro total', cols: ['Cloro total (mg/L)', 'Cloro total', 'Cloro_total'] },
+  { key: 'combinado', label: 'Cloro combinado', cols: ['Cloro combinado (mg/L)', 'Cloro combinado', 'Cloro_combinado'] },
+];
+
+/**
+ * Modelo de cloro (Calidad de Agua de los cultivos de algas) del mes. PURA, exportada.
+ * El cloro residual es tóxico para el cultivo, así que la señal sanitaria es la
+ * PRESENCIA (valor > 0), no un rango óptimo. No se inventan umbrales de alerta: se
+ * reporta el % de muestras con cloro libre detectable, el promedio/máx por parámetro y
+ * el detalle por sistema.
+ * @returns {{n, params:Array, detectPct:?number, bySystem:Array}}
+ */
+export function algCloroData(rows) {
+  const list = rows || [];
+  const params = CLORO_PARAMS.map((p) => {
+    const vals = list.map((r) => parseNum(r, p.cols)).filter((v) => v !== null);
+    const det = vals.filter((v) => v > 0).length;
+    return { key: p.key, label: p.label, n: vals.length, avg: vals.length ? avg(vals) : null, max: vals.length ? maxOf(vals) : null, detPct: vals.length ? det / vals.length * 100 : null };
+  });
+  // Señal principal: % de muestras con cloro LIBRE detectable (> 0).
+  const libre = list.map((r) => parseNum(r, CLORO_PARAMS[0].cols)).filter((v) => v !== null);
+  const detectPct = libre.length ? libre.filter((v) => v > 0).length / libre.length * 100 : null;
+  // Por sistema (mismo criterio de sistema que la microbiología: micAlgSystem sobre calCtx).
+  const bySys = new Map();
+  list.forEach((r) => {
+    const s = micAlgSystem(calCtx(r));
+    const lv = parseNum(r, CLORO_PARAMS[0].cols);
+    if (!bySys.has(s)) bySys.set(s, { sistema: s, n: 0, vals: [], det: 0 });
+    const o = bySys.get(s); o.n++;
+    if (lv !== null) { o.vals.push(lv); if (lv > 0) o.det++; }
+  });
+  const bySystem = [...bySys.values()]
+    .map((o) => ({ sistema: o.sistema, n: o.n, libreAvg: o.vals.length ? avg(o.vals) : null, detPct: o.vals.length ? o.det / o.vals.length * 100 : null }))
+    .sort((a, b) => (b.detPct ?? -1) - (a.detPct ?? -1) || b.n - a.n);
+  return { n: list.length, params, detectPct, bySystem };
 }
 
 // Nombre completo de especie (abreviaturas del laboratorio).
@@ -494,6 +649,7 @@ export function algasView(root) {
       ${algSelect('area', vState.area, areas, 'Todas las áreas')}
       <button class="alg-daybtn" data-alg-daysum title="Resumen diario de lo registrado en el Google Sheet">📅 Resumen del día</button>
       <button class="alg-daybtn" data-alg-indices title="Índices del mes: contaminación, estabilidad fisicoquímica y rendimiento por técnico">📊 Índices</button>
+      <button class="alg-daybtn" data-alg-sanit title="Control sanitario: microbiología de los cultivos de algas (patógenos, alertas y tendencia del mes)">🧫 Control sanitario</button>
     </div>`;
 
   // Subnav: una pestaña por sistema (Masivos/Premasivos/PBR/Fundas/Carboys).
@@ -735,7 +891,8 @@ export function algasView(root) {
   h += monthModalShell('algBioModal', '🧪 Biomasa total del mes')
     + monthModalShell('algDescModal', '🗑️ Tasa de descarte')
     + monthModalShell('algCovModal', '📅 Cobertura de registro')
-    + monthModalShell('algIndicesModal', '📊 Índices del mes');
+    + monthModalShell('algIndicesModal', '📊 Índices del mes')
+    + monthModalShell('algSanitModal', '🧫 Control sanitario');
   // Modal de descarga Excel (pide rango de fechas).
   h += algExportModalHTML();
 
@@ -1004,6 +1161,31 @@ function algMonthsList() {
 function algMonthRows(monthIdx) {
   return algaeRows().filter((r) => { const c = g(r, 'corrida'); return c && monthIndexOfCorrida(+c) === monthIdx; });
 }
+// Rango de fechas [lo, hi] del mes de producción `monthIdx`, expandido a los límites de
+// los meses-calendario que toca. ⚠ Las muestras de Microbiología y Calidad de Agua de
+// algas NO traen corrida (verificado en las hojas reales), solo fecha, así que NO se
+// pueden mapear por corrida como el resto de la vista. Se vinculan por fecha: se toma el
+// rango de las filas de Lab_Algas del mes (covSpan, mismo criterio que la cobertura) y se
+// expande al mes-calendario porque estos análisis son mensuales/esporádicos y no coinciden
+// con los días de registro diario del cultivo — anclarlos al rango exacto los perdería.
+function algMonthDateWindow(monthIdx) {
+  const cov = covSpan(algMonthRows(monthIdx));
+  if (!cov.from) return null;
+  return {
+    lo: new Date(cov.from.getFullYear(), cov.from.getMonth(), 1, 0, 0, 0),
+    hi: new Date(cov.to.getFullYear(), cov.to.getMonth() + 1, 0, 23, 59, 59, 999),
+  };
+}
+/** Filas de Microbiología de algas dentro de la ventana de fechas del mes `monthIdx`. */
+function micAlgRowsOfMonth(monthIdx) {
+  const w = algMonthDateWindow(monthIdx); if (!w) return [];
+  return store.globalData.filter((r) => { if (!isMicAlgaeRow(r)) return false; const d = micCtx(r).fecha; return d && !isNaN(d) && d >= w.lo && d <= w.hi; });
+}
+/** Filas de Calidad de Agua de algas (formato "Algas", cloro) dentro de la ventana del mes. */
+function calAlgRowsOfMonth(monthIdx) {
+  const w = algMonthDateWindow(monthIdx); if (!w) return [];
+  return store.globalData.filter((r) => { if (!isCalAguaRow(r) || !/algas/i.test(calCtx(r).depto || '')) return false; const d = calCtx(r).fecha; return d && !isNaN(d) && d >= w.lo && d <= w.hi; });
+}
 const totalCel = (rows) => rows.reduce((s, r) => { const v = num(r, 'cel'); return s + (v || 0); }, 0);
 // (monthDaysOf eliminada: anclaba al mes-calendario de la primera fila; su papel lo
 //  cumple ahora covSpan, que deriva el eje de TODAS las fechas.)
@@ -1047,9 +1229,9 @@ function monthModalShell(id, title) {
 }
 
 function closeMonthModals(root) {
-  ['algBioModal', 'algDescModal', 'algCovModal', 'algIndicesModal'].forEach((id) => { const m = root.querySelector('#' + id); if (m) m.classList.remove('sv-open'); });
+  ['algBioModal', 'algDescModal', 'algCovModal', 'algIndicesModal', 'algSanitModal'].forEach((id) => { const m = root.querySelector('#' + id); if (m) m.classList.remove('sv-open'); });
   document.body.classList.remove('modal-open');
-  ['algBioCanvas', 'algDescLine', 'algDescBars'].forEach(destroyChart);
+  ['algBioCanvas', 'algDescLine', 'algDescBars', 'algSanitBars'].forEach(destroyChart);
 }
 
 /** Abre el modal de Índices del mes (contaminación · estabilidad fisicoquímica · técnico). */
@@ -1115,6 +1297,119 @@ function fillIndicesModal(root) {
     </div>`;
 
   body.innerHTML = `<div class="alg-month-headline muted">${esc(monthLabelAt(vState.month))} · ${R.length} registro(s) del mes</div>${contamCard}${stabCard}${tecCard}`;
+}
+
+/** Abre el Control sanitario del mes (microbiología de los cultivos de algas). */
+function openSanit(root) {
+  closeMonthModals(root);
+  fillSanitModal(root);
+  const m = root.querySelector('#algSanitModal');
+  if (m) { m.classList.add('sv-open'); document.body.classList.add('modal-open'); }
+}
+
+/** Calcula y pinta el Control sanitario sobre el mes activo (microbiología + cloro). */
+function fillSanitModal(root) {
+  const body = root.querySelector('#algSanitModalBody'); if (!body) return;
+  const d = algSanitData(micAlgRowsOfMonth(vState.month));
+  const cl = algCloroData(calAlgRowsOfMonth(vState.month));
+  const headline = `<div class="alg-month-headline muted">${esc(monthLabelAt(vState.month))} · ${d.n} análisis de microbiología · ${cl.n} muestra(s) de cloro (calidad de agua)</div>`;
+  if (!d.n && !cl.n) {
+    body.innerHTML = headline + '<div class="empty-state" style="padding:24px">Sin control sanitario de algas en el mes.<br><span class="muted" style="font-size:12px">Microbiología: formatos Algas Hisopado / Mensual / Fundas y Masivos. Calidad de Agua: formato Algas (cloro).</span></div>';
+    return;
+  }
+  const f1 = (v, u = '') => (v === null || v === undefined) ? '—' : v.toFixed(1) + u;
+  const f2 = (v, u = '') => (v === null || v === undefined) ? '—' : v.toFixed(2) + u;
+  let html = headline;
+
+  // ── Microbiología ──
+  if (d.n) {
+    const alertColor = d.alertPct === null ? 'var(--c-text-muted)' : d.alertPct >= 40 ? NIVEL_COLOR['Elevado'] : d.alertPct >= 15 ? NIVEL_COLOR['Moderado'] : NIVEL_COLOR['Mínimo'];
+    html += `<div class="alg-month-block">
+        <h4 class="alg-day-h">🚦 Semáforo sanitario <span class="muted">· microbiología · sobre ${d.analizados} análisis con nivel medido</span></h4>
+        <div class="alg-day-kpis">
+          <span class="alg-day-kpi"><b style="color:${alertColor}">${f1(d.alertPct, '%')}</b>análisis en alerta</span>
+          <span class="alg-day-kpi"><b>${d.dominante ? esc(d.dominante[0]) : '—'}</b>patógeno dominante</span>
+          <span class="alg-day-kpi"><b>${d.sistemasAfectados}</b>sistema(s) afectado(s)</span>
+          <span class="alg-day-kpi"><b>${d.enAlerta}</b>de ${d.analizados} en Moderado/Elevado</span>
+        </div>
+        <div class="muted" style="font-size:11px;margin-top:8px">«Alerta» = nivel Moderado o Elevado del peor patógeno de cada análisis. Cortes del %: &lt; 15 bajo · 15–40 medio · &gt; 40 alto.</div>
+      </div>`;
+    // Matriz Sistema × Patógeno: cada celda = peor nivel de ese patógeno en ese sistema.
+    // Una columna "n" con el nº de análisis del sistema da el contexto que tenía la tabla
+    // anterior sin ocultar los patógenos concretos.
+    const M = d.matrix;
+    const nOf = (sis) => (d.bySystem.find((s) => s.sistema === sis) || {}).n || 0;
+    const matHead = `<tr><th class="alg-sanit-mh">Sistema</th><th style="text-align:right">n</th>${M.patogenos.map((p) => `<th class="alg-sanit-pcol" title="${esc(p.label)}">${esc(p.label)}</th>`).join('')}</tr>`;
+    const matBody = M.sistemas.map((sis) => {
+      const cells = M.patogenos.map((p) => {
+        const c = M.cell.get(sis + '|' + p.key);
+        if (!c) return '<td class="alg-sanit-cell alg-sanit-na">·</td>';
+        // La celda SE VOLTEA al hacer clic: cara frontal = nivel; cara trasera = valor
+        // (promedio de UFC de ese patógeno en ese sistema). Accesible por teclado.
+        const val = c.ufcAvg === null ? 's/UFC' : fmtK(c.ufcAvg);
+        const aria = `${esc(sis)} · ${esc(p.label)}: ${esc(c.nivel)}${c.ufcAvg === null ? '' : ` · promedio ${esc(fmtK(c.ufcAvg))} UFC (${c.ufcN})`} · clic para ver el valor`;
+        return `<td class="alg-sanit-cell alg-sanit-flip" data-sanit-flip role="button" tabindex="0" aria-label="${aria}" title="clic para ver el valor" style="--niv:${NIVEL_COLOR[c.nivel]}">
+          <span class="alg-flip"><span class="alg-flip-f">${esc(c.nivel.slice(0, 3))}</span><span class="alg-flip-b" title="${esc(sis)} · ${esc(p.label)} · ${c.ufcAvg === null ? 'sin UFC' : `${esc(fmtK(c.ufcAvg))} UFC · ${c.ufcN} med.`}">${esc(val)}</span></span></td>`;
+      }).join('');
+      return `<tr><th class="alg-sanit-mh">${esc(sis)}</th><td style="text-align:right">${nOf(sis)}</td>${cells}</tr>`;
+    }).join('');
+    const matriz = M.patogenos.length
+      ? `<div class="alg-sanit-matwrap"><table class="alg-table alg-sanit-mat"><thead>${matHead}</thead><tbody>${matBody}</tbody></table></div>`
+      : '<div class="empty-state" style="padding:16px">Ningún patógeno con nivel medido este mes.</div>';
+    html += `<div class="alg-month-block">
+        <h4 class="alg-day-h">🧫 Patógenos por sistema <span class="muted">· peor nivel de cada patógeno en cada sistema</span></h4>
+        ${matriz}
+        <div class="muted" style="font-size:11px;margin-top:6px">Color por nivel: <b style="color:${NIVEL_COLOR['Mínimo']}">Mín</b> · <b style="color:${NIVEL_COLOR['Leve']}">Lev</b> · <b style="color:${NIVEL_COLOR['Moderado']}">Mod</b> · <b style="color:${NIVEL_COLOR['Elevado']}">Ele</b> · «·» = sin medición.</div>
+      </div>`;
+    // Barras por patógeno (reemplaza la tendencia diaria, inútil con análisis esporádicos).
+    html += `<div class="alg-month-block">
+        <h4 class="alg-day-h">📊 Patógenos más problemáticos <span class="muted">· % de análisis del mes con ese patógeno en alerta</span></h4>
+        <div class="alg-chart-host" style="height:${Math.max(180, d.pathogens.length * 30 + 50)}px">${d.pathogens.length ? '<canvas id="algSanitBars"></canvas>' : '<div class="empty-state" style="padding:20px">Ningún patógeno con nivel medido este mes.</div>'}</div>
+      </div>`;
+  }
+
+  // ── Calidad de agua · Cloro ──
+  if (cl.n) {
+    const detColor = cl.detectPct === null ? 'var(--c-text-muted)' : cl.detectPct > 0 ? NIVEL_COLOR['Elevado'] : NIVEL_COLOR['Mínimo'];
+    html += `<div class="alg-month-block">
+        <h4 class="alg-day-h">💧 Calidad de agua · Cloro <span class="muted">· el cloro residual es tóxico para el cultivo, así que lo ideal es 0</span></h4>
+        <div class="alg-day-kpis">
+          <span class="alg-day-kpi" title="Porcentaje de muestras en las que se midió algo de cloro libre (valor mayor que 0 mg/L). Idealmente 0%: cualquier cloro residual daña las algas."><b style="color:${detColor}">${f1(cl.detectPct, '%')}</b>muestras con cloro libre presente (&gt;0)</span>
+          <span class="alg-day-kpi"><b>${cl.n}</b>muestra(s) de agua</span>
+        </div>
+        <table class="alg-table"><thead><tr><th>Parámetro</th><th style="text-align:right">Muestras</th><th style="text-align:right">Promedio (mg/L)</th><th style="text-align:right">Máx (mg/L)</th><th style="text-align:right" title="% de muestras con valor > 0 (cloro presente)">% con presencia</th></tr></thead>
+          <tbody>${cl.params.map((p) => `<tr><td><b>${esc(p.label)}</b></td><td style="text-align:right">${p.n}</td><td style="text-align:right">${f2(p.avg)}</td><td style="text-align:right">${f2(p.max)}</td><td style="text-align:right">${f1(p.detPct, '%')}</td></tr>`).join('')}</tbody></table>
+        <div class="alg-day-h" style="margin-top:12px;font-size:13px">Por sistema <span class="muted">· cloro libre</span></div>
+        <table class="alg-table"><thead><tr><th>Sistema</th><th style="text-align:right">Muestras</th><th style="text-align:right">Cloro libre medio</th><th style="text-align:right" title="% de muestras del sistema con cloro > 0">% con presencia</th></tr></thead>
+          <tbody>${cl.bySystem.map((s) => `<tr><td><b>${esc(s.sistema)}</b></td><td style="text-align:right">${s.n}</td><td style="text-align:right">${f2(s.libreAvg)}</td><td style="text-align:right">${f1(s.detPct, '%')}</td></tr>`).join('')}</tbody></table>
+      </div>`;
+  }
+
+  body.innerHTML = html;
+  requestAnimationFrame(() => {
+    try {
+      if (d.pathogens && d.pathogens.length) {
+        const labels = d.pathogens.map((p) => p.label);
+        const vals = d.pathogens.map((p) => p.alertPct ?? 0);
+        const colors = vals.map(sanitBarColor);
+        drawSanitBars('algSanitBars', labels, vals, colors);
+      }
+    } catch (e) { console.error('[algas] sanit-bars', e); }
+  });
+}
+
+// Rampa secuencial ORDINAL de UN solo tono (teal de la marca) para las barras de
+// patógenos: es una magnitud (% en alerta), así que a más %, más oscuro. Un único hue
+// evita el semáforo verde/rojo (problemático en daltonismo) y se distingue de la matriz,
+// que usa los colores de NIVEL por ser una lectura de estado. Los 4 pasos están validados
+// (validate_palette.js --ordinal --mode light): monótonos, bien espaciados y el más claro
+// supera 2:1 sobre el fondo.
+function sanitBarColor(pct) {
+  const p = pct ?? 0;
+  if (p >= 67) return '#014b5f';   // teal muy oscuro
+  if (p >= 34) return '#146d82';   // teal oscuro
+  if (p >= 12) return '#2b8ba0';   // teal medio
+  return '#5ab0c2';                // teal claro (bajo / 0 %)
 }
 
 function openMonthModal(root, key) {
@@ -1451,6 +1746,8 @@ function bind(root) {
   // Accesibilidad: los días del calendario de Cobertura (role=button) responden a Enter/Espacio.
   root.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    const flip = e.target.closest('[data-sanit-flip]');
+    if (flip) { e.preventDefault(); flip.classList.toggle('is-flipped'); return; }
     const covDay = e.target.closest('[data-cov-day]');
     if (!covDay) return;
     e.preventDefault();
@@ -1458,6 +1755,10 @@ function bind(root) {
   });
 
   root.addEventListener('click', (e) => {
+    // Celda de la matriz sanitaria: voltear nivel ⇄ valor (no cierra ni re-renderiza).
+    const flip = e.target.closest('[data-sanit-flip]');
+    if (flip) { flip.classList.toggle('is-flipped'); return; }
+
     // Ampliar gráfico (fullscreen estilo Supervisor)
     const fsBtn = e.target.closest('[data-alg-fs]');
     if (fsBtn) { openAlgFs(root, fsBtn.dataset.algFs); return; }
@@ -1473,6 +1774,7 @@ function bind(root) {
     const mind = e.target.closest('[data-alg-open]');
     if (mind) { openMonthModal(root, mind.dataset.algOpen); return; }
     if (e.target.closest('[data-alg-indices]')) { openIndices(root); return; }
+    if (e.target.closest('[data-alg-sanit]')) { openSanit(root); return; }
     if (e.target.closest('[data-alg-mclose]') || e.target.matches('[data-alg-moverlay]')) { closeMonthModals(root); return; }
 
     // Cobertura: clic en un día del calendario → lista los registros de ese día
