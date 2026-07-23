@@ -61,16 +61,25 @@ function algaeRows() {
 }
 
 // ── Categoría de sistema de cultivo (mapeo confirmado con el laboratorio) ──
-// PBR · PM*→Premasivos · FM/FP→Fundas · C#→Carboys · M#→Masivos · resto→Otros.
+// PBR · PM*→Premasivos · F/FM/FP(+dígitos)→Fundas · C#→Carboys · M#→Masivos · resto→Otros.
 // 'Otros' garantiza que un sistema no contemplado sea visible (subvista + análisis)
 // en lugar de desaparecer silenciosamente.
+//
+// ⚠ SINCRONIZAR con `algSysCat` en views/visitante/index.js — es una copia literal de esta
+// función (Visitante no importa esta vista para no arrastrarla a su bundle). Si tocas una,
+// TOCA LA OTRA; hay un test que compara ambas sobre el mismo conjunto de entradas.
+//
+// ⚠ 'MASIVO' (sin dígito) cae en 'Otros' porque /^M\d/ exige número. Es la regla vigente
+// por decisión del laboratorio; se deja tal cual a propósito.
 export const SYS_CATS = ['Masivos', 'Premasivos', 'Fundas', 'Carboys', 'PBR', 'Otros'];
 export function sysCat(sistema) {
   const s = String(sistema || '').trim().toUpperCase();
   if (!s) return null;
   if (s.startsWith('PBR')) return 'PBR';
   if (s.startsWith('PM')) return 'Premasivos';
-  if (s === 'FM' || s === 'FP' || /^F/.test(s)) return 'Fundas';
+  // Fundas ACOTADA: F, FM, FP con dígitos opcionales (F, FM1, FP2, F3). Antes bastaba
+  // /^F/, que metía en Fundas cualquier sistema con F — FILTRO y FUCUS incluidos.
+  if (/^F[MP]?\d*$/.test(s)) return 'Fundas';
   if (/^C\d/.test(s)) return 'Carboys';
   if (/^M\d/.test(s)) return 'Masivos';
   return 'Otros';
@@ -122,19 +131,44 @@ const REG_VISIBLE = 10; // registros visibles antes de desplegar
    Construcción de series para los gráficos
    ============================================================ */
 
-/** Serie diaria (promedio por fecha) de una variable. */
-function dailySeries(rows, key) {
+// Mín/máx por REDUCCIÓN. `Math.min(...arr)` pasa el array como argumentos y revienta con
+// RangeError ("Maximum call stack size exceeded") a partir de ~130.000 elementos (medido);
+// como estos arrays llevan una entrada por FILA del período, no tienen cota, y el router
+// sustituye la vista Algas entera por "Error al renderizar". No usar spread aquí.
+const minOf = (a) => a.reduce((m, v) => (v < m ? v : m), a[0]);
+const maxOf = (a) => a.reduce((m, v) => (v > m ? v : m), a[0]);
+
+// Clave de día canónica 'AAAA-MM-DD' a partir de una fecha ya parseada. Es la MISMA que
+// usa cellCompositionByDay y la cobertura, para que todo el módulo agrupe igual.
+const covKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** Serie diaria (promedio por fecha) de una variable. Agrupa por fecha PARSEADA: antes
+ *  agrupaba por el TEXTO crudo, así que dos escrituras del mismo día ('2026-06-05' y
+ *  '05/06/2026', ambas posibles según cómo llegue del Sheet) abrían dos puntos en el
+ *  gráfico en vez de promediarse en uno. */
+export function dailySeries(rows, key) {
   const byDay = new Map();
-  rows.forEach((r) => { const f = g(r, 'fecha'); const v = num(r, key); if (!f || v === null) return; if (!byDay.has(f)) byDay.set(f, []); byDay.get(f).push(v); });
-  const days = [...byDay.keys()].sort((a, b) => (parseAnyDate(a) || 0) - (parseAnyDate(b) || 0));
+  rows.forEach((r) => {
+    const d = parseAnyDate(g(r, 'fecha')); const v = num(r, key);
+    if (!d || v === null) return;
+    const k = covKey(d);
+    if (!byDay.has(k)) byDay.set(k, []);
+    byDay.get(k).push(v);
+  });
+  const days = [...byDay.keys()].sort();
   return { days, values: days.map((d) => { const a = byDay.get(d); return a.reduce((x, y) => x + y, 0) / a.length; }) };
 }
 
-/** Varias variables en el MISMO eje de días (promedio por fecha; null si falta). */
+/** Varias variables en el MISMO eje de días (promedio por fecha; null si falta).
+ *  Misma clave canónica que `dailySeries` (ver su nota). */
 function dailyMulti(rows, keys) {
   const dayset = new Set(); const per = {}; keys.forEach((k) => (per[k] = new Map()));
-  rows.forEach((r) => { const f = g(r, 'fecha'); if (!f) return; keys.forEach((k) => { const v = num(r, k); if (v !== null) { dayset.add(f); if (!per[k].has(f)) per[k].set(f, []); per[k].get(f).push(v); } }); });
-  const days = [...dayset].sort((a, b) => (parseAnyDate(a) || 0) - (parseAnyDate(b) || 0));
+  rows.forEach((r) => {
+    const d = parseAnyDate(g(r, 'fecha')); if (!d) return;
+    const f = covKey(d);
+    keys.forEach((k) => { const v = num(r, k); if (v !== null) { dayset.add(f); if (!per[k].has(f)) per[k].set(f, []); per[k].get(f).push(v); } });
+  });
+  const days = [...dayset].sort();
   const series = {};
   keys.forEach((k) => { series[k] = days.map((d) => { const a = per[k].get(d); return a ? a.reduce((x, y) => x + y, 0) / a.length : null; }); });
   return { days, series };
@@ -233,7 +267,7 @@ export function growthByLote(rows) {
     const siembras = splitSiembras(pts);
     siembras.forEach((cyclePts, ci) => {
       const times = cyclePts.map((p) => (p.d ? p.d.getTime() : null)).filter((x) => x !== null);
-      const minMs = times.length ? Math.min(...times) : null;
+      const minMs = times.length ? minOf(times) : null;
       // Ancla del eje "día de proceso": un punto que trae Dia_Proceso Y fecha fija el
       // origen para los puntos SIN Dia_Proceso. Sin esto, el día real (1-based) y el
       // offset derivado (0-based desde el inicio del ciclo) colisionaban → dos fechas
@@ -275,6 +309,36 @@ function growthChartData(lotes) {
   return { days, dayLabels: days.map((d) => 'Día ' + d), series };
 }
 
+// Rango (días) más allá del cual el eje de cobertura deja de ser un calendario continuo:
+// señal de una fecha mal capturada (año/siglo equivocado) que estiraría el eje a miles de
+// celdas. Por encima se pasa a modo `sparse` (solo días con dato) y se avisa en pantalla.
+const COV_MAX_SPAN = 120;
+
+/**
+ * Eje de días de la cobertura, derivado de TODAS las fechas del conjunto (min..max).
+ * El "mes" de esta vista es de PRODUCCIÓN (por corrida) y cruza meses de calendario, así
+ * que anclarlo al mes de la primera fila con fecha descartaba en silencio el resto: medido,
+ * el 63 % de las filas, y el resultado CAMBIABA con el orden de las filas del Sheet (11 vs
+ * 19 días). Además el detalle por número de día confundía el 3 de julio con el 3 de junio.
+ * @returns {{days:string[], withData:Set<string>, sparse:boolean, from:?Date, to:?Date, span:number}}
+ *   `days` = claves 'AAAA-MM-DD' del eje; `withData` = las que tienen registro.
+ */
+export function covSpan(rows) {
+  const ds = (rows || []).map((r) => parseAnyDate(g(r, 'fecha'))).filter(Boolean);
+  if (!ds.length) return { days: [], withData: new Set(), sparse: false, from: null, to: null, span: 0 };
+  const withData = new Set(ds.map(covKey));
+  const min = new Date(minOf(ds.map((d) => d.getTime())));
+  const max = new Date(maxOf(ds.map((d) => d.getTime())));
+  const d0 = new Date(min.getFullYear(), min.getMonth(), min.getDate());
+  const d1 = new Date(max.getFullYear(), max.getMonth(), max.getDate());
+  const span = Math.round((d1 - d0) / 86400000) + 1;
+  if (span > COV_MAX_SPAN) return { days: [...withData].sort(), withData, sparse: true, from: min, to: max, span };
+  const days = [];
+  const cur = new Date(d0);
+  while (days.length < span) { days.push(covKey(cur)); cur.setDate(cur.getDate() + 1); }
+  return { days, withData, sparse: false, from: min, to: max, span };
+}
+
 /** Estadísticas del período (de la subvista activa). */
 export function periodStats(rows) {
   const cel = rows.map((r) => num(r, 'cel')).filter((v) => v !== null);
@@ -286,10 +350,10 @@ export function periodStats(rows) {
     n: rows.length,
     lotes: new Set(rows.map((r) => g(r, 'lote')).filter(Boolean)).size,
     sistemas: new Set(rows.map((r) => g(r, 'sistema')).filter(Boolean)).size,
-    densMin: cel.length ? Math.min(...cel) : null, densAvg: avg(cel), densMax: cel.length ? Math.max(...cel) : null,
+    densMin: cel.length ? minOf(cel) : null, densAvg: avg(cel), densMax: cel.length ? maxOf(cel) : null,
     protoAvg: avg(proto), protoAlert: proto.filter((v) => v >= 5).length,
     salAvg: avg(sal), phAvg: avg(ph),
-    from: t.length ? new Date(Math.min(...t)) : null, to: t.length ? new Date(Math.max(...t)) : null,
+    from: t.length ? new Date(minOf(t)) : null, to: t.length ? new Date(maxOf(t)) : null,
   };
 }
 
@@ -433,8 +497,10 @@ export function algasView(root) {
     </div>`;
 
   // Subnav: una pestaña por sistema (Masivos/Premasivos/PBR/Fundas/Carboys).
+  // role="tab" + aria-selected en cada botón: el contenedor ya era role="tablist", pero sin
+  // el rol y el estado en los hijos un lector de pantalla no anuncia cuál está activa.
   h += `<div class="alg-subnav" role="tablist">${subsPresent.length
-    ? subsPresent.map((c) => `<button class="alg-pill ${c === vState.sub ? 'is-active' : ''}" data-alg-sub="${esc(c)}" style="--cat:${CAT_COLOR[c]}">${esc(c)}</button>`).join('')
+    ? subsPresent.map((c) => `<button class="alg-pill ${c === vState.sub ? 'is-active' : ''}" data-alg-sub="${esc(c)}" role="tab" aria-selected="${c === vState.sub}" style="--cat:${CAT_COLOR[c]}">${esc(c)}</button>`).join('')
     : '<span class="muted">Sin sistemas con datos en el mes.</span>'}</div>`;
 
   // Solo las Fundas (FP/FM) manejan Lote; en el resto el KPI/columna Lote no aplica.
@@ -460,7 +526,7 @@ export function algasView(root) {
   const gd = growthChartData(growthLotes);
   const tasa = tasaChartData(growthLotes);
   const barLabels = growthLotes.map((l) => l.label || l.key);
-  const barValues = growthLotes.map((l) => Math.max(...l.points.map((p) => p.cel)));
+  const barValues = growthLotes.map((l) => maxOf(l.points.map((p) => p.cel)));
   const proto = dailyMulti(chartRows, ['protozoarios', 'ciliados', 'filamentosos']);
   const sal = dailySeries(chartRows, 'salinidad');
   const ph = dailySeries(chartRows, 'ph');
@@ -622,12 +688,11 @@ export function algasView(root) {
   const descNow = monthRows.length ? monthRows.filter(isDescartado).length / monthRows.length * 100 : 0;
   const descPrev = prevMonthRows.length ? prevMonthRows.filter(isDescartado).length / prevMonthRows.length * 100 : null;
   const descD = (descPrev !== null) ? descNow - descPrev : null; // puntos porcentuales
-  // Días con registro DENTRO del mes calendario de referencia (mismo criterio que
-  // el calendario del modal; evita colisión de días entre meses por corridas que
-  // cruzan el cambio de mes).
-  const covRef = monthRows.map((r) => parseAnyDate(g(r, 'fecha'))).find(Boolean);
-  const covDays = covRef ? new Set(monthRows.map((r) => parseAnyDate(g(r, 'fecha'))).filter((d) => d && d.getMonth() === covRef.getMonth() && d.getFullYear() === covRef.getFullYear()).map((d) => d.getDate())).size : 0;
-  const covTotal = monthDaysOf(monthRows);
+  // Cobertura sobre el eje real del mes de PRODUCCIÓN (todas las fechas, no el mes
+  // calendario de la primera fila). Mismo criterio que el calendario del modal.
+  const cov = covSpan(monthRows);
+  const covDays = cov.withData.size;
+  const covTotal = cov.days.length;
 
   h += `<div class="alg-section-title">📊 Análisis del mes <span class="muted" style="font-weight:600;font-size:12px">· ${esc(monthLabelAt(vState.month))}</span></div>
     <div class="alg-mind-row">
@@ -762,7 +827,7 @@ function algFsModalHTML() {
 function statStrip(arr, actual, fmt) {
   const a = arr.filter((v) => v !== null && v !== undefined && !isNaN(v));
   if (!a.length) return null;
-  return { actual: (actual === null || actual === undefined || isNaN(actual)) ? null : actual, prom: a.reduce((x, y) => x + y, 0) / a.length, min: Math.min(...a), max: Math.max(...a), fmt };
+  return { actual: (actual === null || actual === undefined || isNaN(actual)) ? null : actual, prom: a.reduce((x, y) => x + y, 0) / a.length, min: minOf(a), max: maxOf(a), fmt };
 }
 function fsMetaHTML(s) {
   if (!s) return '';
@@ -934,11 +999,8 @@ function algMonthRows(monthIdx) {
   return algaeRows().filter((r) => { const c = g(r, 'corrida'); return c && monthIndexOfCorrida(+c) === monthIdx; });
 }
 const totalCel = (rows) => rows.reduce((s, r) => { const v = num(r, 'cel'); return s + (v || 0); }, 0);
-/** Nº de días del mes calendario al que pertenecen las filas (para la cobertura). */
-function monthDaysOf(rows) {
-  const d = rows.map((r) => parseAnyDate(g(r, 'fecha'))).find(Boolean);
-  return d ? new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate() : 0;
-}
+// (monthDaysOf eliminada: anclaba al mes-calendario de la primera fila; su papel lo
+//  cumple ahora covSpan, que deriva el eje de TODAS las fechas.)
 
 /** Flecha ▲▼ de variación porcentual (Δ%) con color. */
 function deltaArrow(pct, suffix = '%') {
@@ -999,7 +1061,7 @@ function fillIndicesModal(root) {
   if (!R.length) { body.innerHTML = '<div class="empty-state" style="padding:24px">Sin registros en el mes.</div>'; return; }
 
   // 1) Índice de contaminación (Protozoarios + Ciliados + Filamentosos)
-  const comp = (key) => { const a = R.map((r) => num(r, key)).filter((v) => v !== null); return { avg: a.length ? avg(a) : null, max: a.length ? Math.max(...a) : null, n: a.length }; };
+  const comp = (key) => { const a = R.map((r) => num(r, key)).filter((v) => v !== null); return { avg: a.length ? avg(a) : null, max: a.length ? maxOf(a) : null, n: a.length }; };
   const comps = [['🦠 Protozoarios', comp('protozoarios')], ['🌀 Ciliados', comp('ciliados')], ['🧵 Filamentosos', comp('filamentosos')]];
   const combVals = R.map((r) => { const p = num(r, 'protozoarios'), ci = num(r, 'ciliados'), fi = num(r, 'filamentosos'); return (p === null && ci === null && fi === null) ? null : (p || 0) + (ci || 0) + (fi || 0); }).filter((v) => v !== null);
   const combAvg = combVals.length ? avg(combVals) : null;
@@ -1166,39 +1228,53 @@ function fillCovModal(root) {
   const body = root.querySelector('#algCovModalBody'); if (!body) return;
   const ctx = monthCtx();
   const R = ctx.rows;
-  const ref = R.map((r) => parseAnyDate(g(r, 'fecha'))).find(Boolean);
-  if (!ref) { body.innerHTML = '<div class="empty-state" style="padding:24px">Sin registros en el mes.</div>'; return; }
-  const y = ref.getFullYear(), mo = ref.getMonth();
-  const dim = new Date(y, mo + 1, 0).getDate();
+  const cov = covSpan(R);
+  if (!cov.days.length) { body.innerHTML = '<div class="empty-state" style="padding:24px">Sin registros en el mes.</div>'; return; }
   const cats = SYS_CATS.filter((c) => R.some((r) => sysCat(g(r, 'sistema')) === c));
-  const cnt = {}; cats.forEach((c) => (cnt[c] = new Array(dim + 1).fill(0)));
-  R.forEach((r) => { const c = sysCat(g(r, 'sistema')); const d = parseAnyDate(g(r, 'fecha')); if (cats.includes(c) && d && d.getMonth() === mo && d.getFullYear() === y) cnt[c][d.getDate()]++; });
-
-  const headCells = Array.from({ length: dim }, (_, i) => `<th>${i + 1}</th>`).join('');
+  const cnt = {}; cats.forEach((c) => (cnt[c] = new Map()));
+  R.forEach((r) => {
+    const c = sysCat(g(r, 'sistema')); const d = parseAnyDate(g(r, 'fecha'));
+    if (!cats.includes(c) || !d) return;
+    const k = covKey(d);
+    cnt[c].set(k, (cnt[c].get(k) || 0) + 1);
+  });
+  // Etiqueta de columna: nº de día; el mes va en el title (el eje puede cruzar meses).
+  const dayLabel = (k) => String(Number(k.slice(8, 10)));
+  const headCells = cov.days.map((k) => `<th title="${esc(k)}">${dayLabel(k)}</th>`).join('');
   const rowsHtml = cats.map((c) => {
-    const cells = Array.from({ length: dim }, (_, i) => { const n = cnt[c][i + 1]; return n ? `<td class="alg-cal-on alg-cal-click" data-cov-day="${i + 1}" role="button" tabindex="0" title="${n} reg · día ${i + 1} · clic = ver registros">${n}</td>` : '<td class="alg-cal-off" title="sin registro"></td>'; }).join('');
-    const tot = cnt[c].reduce((a, b) => a + b, 0);
+    const cells = cov.days.map((k) => {
+      const n = cnt[c].get(k) || 0;
+      // data-cov-day lleva la FECHA COMPLETA: con solo el nº de día, el detalle del "3"
+      // mezclaba el 3 de julio con el 3 de junio cuando el mes de producción cruza meses.
+      return n
+        ? `<td class="alg-cal-on alg-cal-click" data-cov-day="${esc(k)}" role="button" tabindex="0" title="${n} reg · ${esc(k)} · clic = ver registros">${n}</td>`
+        : '<td class="alg-cal-off" title="sin registro"></td>';
+    }).join('');
+    let tot = 0; cnt[c].forEach((n) => { tot += n; });
     return `<tr><th class="alg-cal-rowh">${esc(c)} <span class="muted">${tot}</span></th>${cells}</tr>`;
   }).join('');
 
-  body.innerHTML = `<div class="alg-month-headline muted">${esc(monthLabelAt(vState.month))} · ■ con registro · □ sin registro · clic en un día = ver sus registros</div>
+  const sparseNote = cov.sparse
+    ? `<div class="alg-cov-sparse">⚠️ El rango de fechas abarca ${cov.span} días (más de ${COV_MAX_SPAN}), lo que suele indicar
+        una fecha mal capturada en el Sheet. Se muestran solo los días CON registro, no el calendario continuo.</div>`
+    : '';
+  body.innerHTML = `<div class="alg-month-headline muted">${esc(monthLabelAt(vState.month))} · ${cov.withData.size} de ${cov.days.length} días con registro · ■ con registro · □ sin registro · clic en un día = ver sus registros</div>
+    ${sparseNote}
     <div class="alg-cal-wrap"><table class="alg-cal"><thead><tr><th class="alg-cal-rowh">Categoría</th>${headCells}</tr></thead><tbody>${rowsHtml}</tbody></table></div>
     <div id="algCovDayDetail" class="alg-cov-detail"></div>`;
 }
 
-/** Lista los registros de un día del mes activo (clic en el calendario de Cobertura). */
-function renderCovDay(root, dayNum) {
+/** Lista los registros de un día del mes activo (clic en el calendario de Cobertura).
+ *  `dayK` es la clave completa 'AAAA-MM-DD', no el número de día. */
+function renderCovDay(root, dayK) {
   const box = root.querySelector('#algCovDayDetail'); if (!box) return;
   const R = algMonthRows(vState.month);
-  const ref = R.map((r) => parseAnyDate(g(r, 'fecha'))).find(Boolean);
-  if (!ref) { box.innerHTML = ''; return; }
-  const mo = ref.getMonth(), y = ref.getFullYear();
-  const day = R.filter((r) => { const dt = parseAnyDate(g(r, 'fecha')); return dt && dt.getDate() === dayNum && dt.getMonth() === mo && dt.getFullYear() === y; })
+  const day = R.filter((r) => { const dt = parseAnyDate(g(r, 'fecha')); return dt && covKey(dt) === dayK; })
     .sort((a, b) => natCmp(g(a, 'sistema'), g(b, 'sistema')));
   const cols = ['Corrida', 'Módulo', 'Sistema', 'Área', 'Lote', 'Día', 'Cel/ml', 'Protoz.', 'Especie', 'Sal.', 'pH', 'Desc.', 'Técnico'];
   const numCell = (v) => (v === null) ? '<span class="muted">—</span>' : esc(fmtK(v));
   const rowsH = day.map((r) => `<tr><td>${cellTxt(g(r, 'corrida'))}</td><td>${cellTxt(g(r, 'modulo'))}</td><td><b>${cellTxt(g(r, 'sistema'))}</b></td><td>${cellTxt(g(r, 'area'))}</td><td>${cellTxt(g(r, 'lote'))}</td><td>${cellTxt(g(r, 'dia'))}</td><td style="text-align:right">${numCell(num(r, 'cel'))}</td><td style="text-align:center">${cellTxt(g(r, 'protozoarios'))}</td><td>${cellTxt(g(r, 'especie'))}</td><td style="text-align:right">${cellTxt(g(r, 'salinidad'))}</td><td style="text-align:right">${cellTxt(g(r, 'ph'))}</td><td style="text-align:center">${isDescartado(r) ? '🗑️' : ''}</td><td>${cellTxt(g(r, 'tecnico'))}</td></tr>`).join('');
-  box.innerHTML = `<h4 class="alg-day-h" style="margin-top:14px">📋 Registros del día ${dayNum} <span class="muted">· ${day.length}</span></h4>
+  box.innerHTML = `<h4 class="alg-day-h" style="margin-top:14px">📋 Registros del ${esc(dayK)} <span class="muted">· ${day.length}</span></h4>
     <div class="alg-table-wrap" style="max-height:260px"><table class="alg-table"><thead><tr>${cols.map((x) => `<th>${x}</th>`).join('')}</tr></thead><tbody>${rowsH || `<tr><td colspan="${cols.length}" class="muted" style="text-align:center;padding:14px">Sin registros ese día.</td></tr>`}</tbody></table></div>`;
 }
 
@@ -1372,7 +1448,7 @@ function bind(root) {
     const covDay = e.target.closest('[data-cov-day]');
     if (!covDay) return;
     e.preventDefault();
-    renderCovDay(root, Number(covDay.dataset.covDay));
+    renderCovDay(root, covDay.dataset.covDay);
   });
 
   root.addEventListener('click', (e) => {
@@ -1395,7 +1471,7 @@ function bind(root) {
 
     // Cobertura: clic en un día del calendario → lista los registros de ese día
     const covDay = e.target.closest('[data-cov-day]');
-    if (covDay) { renderCovDay(root, Number(covDay.dataset.covDay)); return; }
+    if (covDay) { renderCovDay(root, covDay.dataset.covDay); return; }
 
     // Descarga Excel de Registros (pide rango de fechas)
     if (e.target.closest('[data-alg-export]')) { openExport(root); return; }
