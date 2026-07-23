@@ -107,6 +107,8 @@ export function maduracionView(root) {
 
   h += `<div class="mc-subnav">${SUBS.map((s) => `<button class="mc-pill ${vState.sub === s.key ? 'is-on' : ''}" data-mc-sub="${s.key}">${s.icon} ${esc(s.label)}</button>`).join('')}</div>`;
 
+  h += dataWarnings(model);
+
   if (vState.sub === 'panorama') h += renderPanorama(model, f);
   else if (vState.sub === 'operativo') h += renderOperativo(model, f);
   else h += renderHembras(model, f);
@@ -130,6 +132,27 @@ export function maduracionView(root) {
   else drawHembras(model, f);
 
   bind(root);
+}
+
+/** Avisos de calidad del dato de origen. Antes ambos casos se tragaban en silencio y
+ *  el usuario veía cifras raras sin saber por qué. */
+function dataWarnings(model) {
+  const w = [];
+  const fut = model.futureEvents || [];
+  if (fut.length) {
+    const max = fut[fut.length - 1];
+    w.push(`<div class="mc-warn">⚠️ <b>${n0(fut.length)} evento(s) con fecha futura</b> en la Bitácora/Transferencias
+      (la más lejana: ${esc(String(max.fecha || ''))}${max.trovan ? ' · Trovan ' + esc(max.trovan) : ''}).
+      Suele ser un año mal tecleado. La ventana de actividad se calcula desde <b>hoy</b> para que no falseen
+      las hembras activas, pero conviene corregirlos en el Sheet.</div>`);
+  }
+  const dup = model.duplicateTrovans || [];
+  if (dup.length) {
+    w.push(`<div class="mc-warn">⚠️ <b>${n0(dup.length)} Trovan ID repetido(s)</b> en la hoja MATRIZ
+      (${dup.slice(0, 8).map((t) => esc(t)).join(', ')}${dup.length > 8 ? `, +${n0(dup.length - 8)} más` : ''}).
+      Se conserva la <b>primera</b> fila de cada uno; el resto no se cuenta.</div>`);
+  }
+  return w.join('');
 }
 
 function headHTML() {
@@ -184,6 +207,9 @@ function renderPanorama(model, f) {
   const trendCard = `<div class="mc-card mc-card-wide">
     <h4 class="mc-card-h">Tendencias — desoves, mortalidad y fertilidad <span class="mc-h-note">${gran === 'day' ? 'por día' : 'por mes'}</span></h4>
     <div class="mc-chart" style="height:260px"><canvas id="mcTrend"></canvas></div>
+    <p class="mc-note">Las barras cuentan los <b>desoves donde ocurrieron</b> (la ubicación del día del evento).
+      La línea de <b>fertilidad</b> se calcula sobre las hembras que <b>siguen</b> en la ubicación y estaban vivas
+      en el período, así que una hembra que desovó aquí y luego se trasladó suma en las barras pero no en la línea.</p>
   </div>`;
 
   const topCard = (title, arr, level) => `<div class="mc-card">
