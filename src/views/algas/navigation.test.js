@@ -175,4 +175,41 @@ describe('Algas · harness de navegación integral', () => {
     if (prev && !prev.disabled) click(prev);
     expect(errSpy).not.toHaveBeenCalled();
   });
+
+  // `vState.month` es singleton de módulo y otros tests navegan hacia atrás: situarse
+  // siempre en el mes MÁS RECIENTE para no depender del orden de ejecución.
+  const gotoLastMonth = () => {
+    for (let i = 0; i < 24; i++) {
+      const next = root.querySelector('[data-month-nav="1"]');
+      if (!next || next.disabled) break;
+      click(next);
+    }
+  };
+  const covCard = () => root.querySelector('[data-alg-open="cov"]');
+
+  it('cobertura normal: la tarjeta muestra la fracción días-con-dato / días del eje', () => {
+    mount();
+    gotoLastMonth();
+    expect(covCard().querySelector('.alg-mind-val').textContent.trim()).toMatch(/^\d+\/\d+ días$/);
+    expect(covCard().querySelector('.alg-mind-warn')).toBeFalsy();
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('con una fecha mal capturada la tarjeta NO anuncia cobertura perfecta', () => {
+    // Un año mal tecleado dentro de la MISMA corrida estira el eje por encima de
+    // COV_MAX_SPAN (120 días) → covSpan entra en modo `sparse` y su eje pasa a ser SOLO
+    // los días CON dato. La fracción quedaba entonces en "N/N días", es decir 100 % de
+    // cobertura justo cuando el dato es más sospechoso (antes de covSpan mostraba una
+    // fracción parcial contra los días del mes calendario, que al menos no mentía a favor).
+    store.globalData = synthData().concat([A({
+      Fecha: '02/06/2062', Corrida_Larv: '573', Modulo_Larv: 'M01', Sistema: 'M1',
+      Dia_Proceso: '1', Cel_ml: '1000', Protozoarios: '1', 'Técnico': 'Ana',
+    })]);
+    mount();
+    gotoLastMonth();
+    const val = covCard().querySelector('.alg-mind-val').textContent.trim();
+    expect(val).not.toMatch(/^(\d+)\/\1 días$/);   // nada de "4/4 días"
+    expect(covCard().querySelector('.alg-mind-warn')).toBeTruthy();
+    expect(errSpy).not.toHaveBeenCalled();
+  });
 });
