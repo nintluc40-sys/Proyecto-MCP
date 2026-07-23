@@ -17,5 +17,13 @@
 .vt-chart-host { position: relative; height: 320px; margin-top: 6px; }
 .vt-note { font-size: 11px; color: var(--c-text-muted); margin-top: 8px; text-align: center; }
 
+/* Gráficos del bloque de laboratorio (dentro del modal de detalle). */
+.vt-lab-chart { position: relative; height: 220px; margin: 4px 0 14px; }
+.vt-gauge { margin: 4px 0 14px; text-align: center; }
+.vt-gauge-host { position: relative; height: 150px; margin: 0 auto; max-width: 300px; }
+.vt-gauge-read { margin-top: -6px; font-size: 14px; color: var(--c-text-soft); }
+.vt-gauge-num { font-size: 30px; font-weight: 900; color: var(--c-text); }
+.vt-gauge-den { font-size: 14px; color: var(--c-text-muted); }
+
 .vt-table { width: 100%; }
 .vt-total-row td { font-size: 13px; }

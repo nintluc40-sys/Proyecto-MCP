@@ -322,7 +322,65 @@ const detailTable = (headers, body) =>
 const algKpi = (label, value) => `<span style="background:rgba(1,91,118,.08);border:1px solid rgba(1,91,118,.22);border-radius:999px;padding:5px 12px;font-size:12px;color:var(--c-text-soft);font-weight:700"><b style="color:#015B76;margin-right:4px">${esc(String(value))}</b>${esc(label)}</span>`;
 const algTealP = (txt) => `<p style="font-size:12px;color:#015B76;font-weight:700;margin:14px 0 6px">${esc(txt)}</p>`;
 
-/** Construye { title, html } del detalle de una tarjeta para un mes dado. */
+// ── Gráficos del bloque de laboratorio (público general) ──
+
+/** Banda del WQI (0–100): color + etiqueta. Coherente con calWqiBand de Microbiología
+ *  (≥85 / ≥70 / ≥50 / resto); se define aquí para no importar la vista Micro entera. */
+function wqiBand(wqi) {
+  if (wqi == null) return { color: 'var(--c-text-muted)', label: 'Sin datos' };
+  if (wqi >= 85) return { color: '#2E9E5B', label: 'Óptimo' };
+  if (wqi >= 70) return { color: '#E6A100', label: 'Vigilancia' };
+  if (wqi >= 50) return { color: '#E67635', label: 'Deficiente' };
+  return { color: '#D64545', label: 'Crítico' };
+}
+
+/** Barras horizontales por patógeno: nº de muestras del mes en nivel alto. */
+function drawLabMicroBars(alertRows) {
+  const labels = alertRows.map(([lbl]) => lbl);
+  const values = alertRows.map(([, o]) => o.alert);
+  makeChart('vtLabMicroChart', {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'En alerta', data: values, backgroundColor: '#D64545cc', borderColor: '#D64545', borderWidth: 1, borderRadius: 4, maxBarThickness: 22 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      scales: { x: { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: 'muestras en nivel Moderado/Elevado' }, grid: { display: false } }, y: { grid: { display: false } } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${c.parsed.x} muestra(s) en alerta` } } },
+    },
+  });
+}
+
+/** Medidor (gauge) semicircular del WQI (0–100): 4 zonas de color + aguja en el valor. */
+function drawWqiGauge(wqi) {
+  // Anchos de zona proporcionales a sus rangos: Crítico 0–50, Deficiente 50–70,
+  // Vigilancia 70–85, Óptimo 85–100.
+  const zones = [50, 20, 15, 15];
+  const colors = ['#D64545', '#E67635', '#E6A100', '#2E9E5B'];
+  const needle = {
+    id: 'wqiNeedle',
+    afterDatasetsDraw(chart) {
+      const meta = chart.getDatasetMeta(0); const arc = meta.data && meta.data[0];
+      if (!arc) return;
+      const cx = arc.x, cy = arc.y, r = (arc.outerRadius + arc.innerRadius) / 2;
+      // Punto en el semicírculo superior: f=0 (WQI 0) a la izquierda, f=1 (WQI 100) a la
+      // derecha, f=0.5 arriba. x = cx − cos(fπ)·r ; y = cy − sin(fπ)·r.
+      const f = Math.max(0, Math.min(1, wqi / 100)); const a = f * Math.PI;
+      const x2 = cx - Math.cos(a) * r, y2 = cy - Math.sin(a) * r;
+      const ctx = chart.ctx; ctx.save();
+      ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.fillStyle = '#0f172a'; ctx.beginPath(); ctx.arc(cx, cy, 4.5, 0, 2 * Math.PI); ctx.fill();
+      ctx.restore();
+    },
+  };
+  makeChart('vtLabAguaGauge', {
+    type: 'doughnut',
+    data: { datasets: [{ data: zones, backgroundColor: colors, borderWidth: 0, circumference: 180, rotation: 270 }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '60%', events: [], plugins: { legend: { display: false }, tooltip: { enabled: false } } },
+    plugins: [needle],
+  });
+}
+
+/** Construye { title, html, draw? } del detalle de una tarjeta para un mes dado. */
 function sumDetail(key, mIdx, monthSup) {
   const G = store.globalData;
   const numAvg = (rows, keys) => avgOf(rows.map((r) => parseNum(r, keys)).filter((v) => v !== null));
@@ -449,11 +507,19 @@ function sumDetail(key, mIdx, monthSup) {
         if (!m.nivel) return;
         const o = byPat.get(m.label) || { alert: 0, total: 0 }; o.total++; if (micIsAlerta(m.nivel)) o.alert++; byPat.set(m.label, o);
       }));
-      const body = [...byPat.entries()].filter(([, o]) => o.alert > 0).sort((a, b) => b[1].alert - a[1].alert)
-        .map(([lbl, o]) => `<tr><td>${esc(lbl)}</td><td><b>${o.alert}</b></td><td>${o.total}</td></tr>`).join('');
-      return { title: '🧫 Microbiología del mes', html:
-        `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${s.micRows.length} muestra(s) · <b>${s.micAlert}</b> con algún patógeno en nivel Moderado/Elevado (${s.micPct}%).</p>`
-        + (body ? detailTable(['Patógeno', 'En alerta', 'Muestras'], body) : '<p style="color:#2E9E5B;font-weight:700">🟢 Sin patógenos en nivel alto este mes.</p>') };
+      const alertRows = [...byPat.entries()].filter(([, o]) => o.alert > 0).sort((a, b) => b[1].alert - a[1].alert);
+      const body = alertRows.map(([lbl, o]) => `<tr><td>${esc(lbl)}</td><td><b>${o.alert}</b></td><td>${o.total}</td></tr>`).join('');
+      // Gráfico: barras por patógeno con nº de muestras en alerta (corrobora la tabla).
+      const chart = alertRows.length
+        ? '<div class="vt-lab-chart"><canvas id="vtLabMicroChart"></canvas></div>'
+        : '';
+      return {
+        title: '🧫 Microbiología del mes',
+        html: `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${s.micRows.length} muestra(s) · <b>${s.micAlert}</b> con algún patógeno en nivel Moderado/Elevado (${s.micPct}%).</p>`
+          + chart
+          + (body ? detailTable(['Patógeno', 'En alerta', 'Muestras'], body) : '<p style="color:#2E9E5B;font-weight:700">🟢 Sin patógenos en nivel alto este mes.</p>'),
+        draw: alertRows.length ? () => drawLabMicroBars(alertRows) : null,
+      };
     }
     if (!s.calRows.length) return { title: '💧 Calidad del agua', html: '<p style="color:var(--c-text-muted)">Sin análisis de agua este mes.</p>' };
     const byParam = new Map();
@@ -465,9 +531,19 @@ function sumDetail(key, mIdx, monthSup) {
       const tot = o.inRange + o.out; const pct = Math.round(o.inRange / tot * 100); const col = pct >= 90 ? '#2E9E5B' : pct >= 70 ? '#E6A100' : '#D64545';
       return `<tr><td>${esc(lbl)}${o.unit ? ` <span style="color:var(--c-text-muted)">(${esc(o.unit)})</span>` : ''}</td><td>${o.inRange}</td><td>${o.out}</td><td style="color:${col};font-weight:800">${pct}%</td></tr>`;
     }).join('');
-    return { title: '💧 Calidad del agua del mes', html:
-      `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${s.calRows.length} muestra(s) · índice de calidad del agua (WQI): <b>${s.wqi == null ? '—' : s.wqi}</b> · <b>${s.calPct}%</b> de parámetros en rango.</p>`
-      + (body ? detailTable(['Parámetro', 'En rango', 'Fuera', '% en rango'], body) : '<p style="color:var(--c-text-muted)">Sin parámetros con rango objetivo.</p>') };
+    const band = wqiBand(s.wqi);
+    // Gráfico: medidor (gauge) del WQI 0–100 con zonas de color y aguja.
+    const gauge = s.wqi == null ? '' : `<div class="vt-gauge">
+        <div class="vt-gauge-host"><canvas id="vtLabAguaGauge"></canvas></div>
+        <div class="vt-gauge-read"><span class="vt-gauge-num">${s.wqi}</span><span class="vt-gauge-den">/100</span> · <b style="color:${band.color}">${esc(band.label)}</b></div>
+      </div>`;
+    return {
+      title: '💧 Calidad del agua del mes',
+      html: `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${s.calRows.length} muestra(s) · índice de calidad del agua (WQI): <b>${s.wqi == null ? '—' : s.wqi}</b> · <b>${s.calPct}%</b> de parámetros en rango.</p>`
+        + gauge
+        + (body ? detailTable(['Parámetro', 'En rango', 'Fuera', '% en rango'], body) : '<p style="color:var(--c-text-muted)">Sin parámetros con rango objetivo.</p>'),
+      draw: s.wqi == null ? null : () => drawWqiGauge(s.wqi),
+    };
   }
 
   return { title: 'Detalle', html: '<p style="color:var(--c-text-muted)">Sin detalle.</p>' };
@@ -499,15 +575,21 @@ function closeSumModal() {
   const estabaAbierto = !!m && m.isConnected && m.style.display !== 'none';
   if (m) m.style.display = 'none';
   if (estabaAbierto) document.body.classList.remove('modal-open');
+  // Libera los gráficos del detalle (micro/agua) al cerrar: no dejar charts huérfanos.
+  destroyChart('vtLabMicroChart'); destroyChart('vtLabAguaGauge');
   if (vtEscHandler) { document.removeEventListener('keydown', vtEscHandler); vtEscHandler = null; }
 }
 function openSumModal(key, mIdx, monthSup) {
   const m = document.getElementById('vtSumModal'); if (!m) return;
-  const { title, html } = sumDetail(key, mIdx, monthSup);
+  // Libera un gráfico previo del detalle antes de reemplazar su canvas (evita huérfanos).
+  destroyChart('vtLabMicroChart'); destroyChart('vtLabAguaGauge');
+  const { title, html, draw } = sumDetail(key, mIdx, monthSup);
   document.getElementById('vtSumTitle').textContent = title;
   document.getElementById('vtSumBody').innerHTML = html;
   m.style.display = 'flex';
   document.body.classList.add('modal-open'); // pausa el auto-refresco mientras está abierto
+  // El gráfico se dibuja tras insertar el HTML (necesita el canvas ya en el DOM).
+  if (typeof draw === 'function') requestAnimationFrame(() => { try { draw(); } catch (e) { console.error('[visitante] lab-chart', e); } });
   // Remueve un handler previo antes de re-registrar: re-abrir sin cerrar (p. ej. pulsar
   // Enter sobre la tarjeta, que conserva el foco tras el primer clic) dejaba listeners de
   // Escape HUÉRFANOS acumulándose en document (cada uno permanente y disparándose en
