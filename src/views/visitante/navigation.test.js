@@ -80,6 +80,72 @@ describe('Visitante · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('repintar NO vuelve a escanear el store, y un refresco de datos SÍ invalida el memo', () => {
+    // Cuenta recorridos completos sobre el array del store (los 4 resúmenes lo barren).
+    let scans = 0;
+    const instrumentar = (rows) => {
+      ['filter', 'forEach', 'map', 'some', 'reduce', 'flatMap'].forEach((m) => {
+        const real = Array.prototype[m];
+        rows[m] = function (...a) { scans++; return real.apply(this, a); };
+      });
+      return rows;
+    };
+    store.globalData = instrumentar(synthData());
+    visitanteView(root);
+    const sieAntes = root.textContent;
+    scans = 0;
+    click(root.querySelector('[data-vtmetric="pop"]'));
+    click(root.querySelector('[data-vtmetric="superv"]'));
+    // Los datos no han cambiado: los resúmenes salen del memo (antes: 13 escaneos/clic).
+    expect(scans).toBe(0);
+    expect(root.textContent).toBe(sieAntes);
+
+    // Refresco: sheets.js REEMPLAZA store.globalData por un array nuevo → recalcular.
+    const nuevas = synthData();
+    nuevas.forEach((r) => { if (r._SheetOrigin === 'Larvicultura' && r.Fecha === '10/06/2026') r['Población'] = '10'; });
+    store.globalData = instrumentar(nuevas);
+    scans = 0;
+    visitanteView(root);
+    expect(scans).toBeGreaterThan(0);            // se recalculó
+    expect(root.textContent).not.toBe(sieAntes); // y con los datos nuevos
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('la clave del memo distingue el mes (no sirve el caché de otro mes)', () => {
+    visitanteView(root);
+    const mesA = root.querySelector('.vt-total-row').textContent;
+    const prev = root.querySelector('[data-vtprev]');
+    expect(prev && !prev.disabled).toBe(true);   // el fixture tiene 2 meses
+    click(prev);
+    const mesB = root.querySelector('.vt-total-row').textContent;
+    expect(mesB).not.toBe(mesA);
+    click(root.querySelector('[data-vtnext]'));
+    expect(root.querySelector('.vt-total-row').textContent).toBe(mesA); // y vuelve al de A
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('el Escape huérfano NO apaga el modal-open de otra vista', () => {
+    visitanteView(root);
+    click(root.querySelector('[data-sum="superv"]'));
+    expect(document.body.classList.contains('modal-open')).toBe(true);
+    // Navegar fuera con el detalle abierto (el router reemplaza el contenedor). El
+    // listener de Escape vive en `document` y sobrevive; el overlay no atrapa el foco,
+    // así que se puede tabular a las pestañas de detrás y cambiar de vista.
+    root.innerHTML = '';
+    document.body.classList.remove('modal-open');   // lo limpia el router
+    // Otra vista abre SU modal.
+    document.body.classList.add('modal-open');
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    // El huérfano no debe apagar el modal-open ajeno: refresh.js lo usa para pausar el
+    // auto-refresco, y apagarlo re-renderiza bajo un modal todavía visible.
+    expect(document.body.classList.contains('modal-open')).toBe(true);
+    // Y se auto-neutraliza: una segunda pulsación tampoco hace nada.
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(document.body.classList.contains('modal-open')).toBe(true);
+    document.body.classList.remove('modal-open');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('abre y cierra el detalle de cada tarjeta del resumen (incl. laboratorio micro/agua)', () => {
     visitanteView(root);
     const keys = ['calidad', 'superv', 'cobertura', 'revisiones', 'sanidad', 'analisis', 'labMicro', 'labAgua', 'algasCultivos', 'algasSanidad'];
