@@ -46,6 +46,36 @@ describe('iclSeries · término SV (híbrido: rellena huecos con SV por poblaci�
   });
 });
 
+describe('iclSeries · el Estrés se escala a 0–100 antes de restar', () => {
+  const row = (extra) => ({
+    _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ1',
+    Fecha: '01/06/2026', 'Supervivencia': '80', ...extra,
+  });
+
+  it('un Estrés de 8/10 resta 80, no 8', () => {
+    // Estrés es la única variable `kind: idx` (0–10); el resto son porcentajes 0–100.
+    // Sumándolo en crudo, un estrés catastrófico pesaba lo mismo que un 8 % de deformidad.
+    const sinEstres = iclSeries([row({})]).values[0];
+    const conEstres = iclSeries([row({ 'Estrés': '8' })]).values[0];
+    expect(sinEstres - conEstres).toBeCloseTo(80, 6);
+  });
+
+  it('el desglose muestra la CONTRIBUCIÓN escalada y la etiqueta lo advierte', () => {
+    const { negByDay } = iclSeries([row({ 'Estrés': '8', 'Deformidad': '30' })]);
+    const est = negByDay[0].find((x) => /Estrés/.test(x.label));
+    expect(est.val).toBeCloseTo(80, 6);
+    expect(est.label).toContain('×10');
+    // Y por tanto ordena bien: 80 de estrés resta más que 30 de deformidad.
+    expect(negByDay[0][0].label).toContain('Estrés');
+  });
+
+  it('las variables porcentuales siguen restando en crudo', () => {
+    const base = iclSeries([row({})]).values[0];
+    const conDef = iclSeries([row({ 'Deformidad': '12' })]).values[0];
+    expect(base - conDef).toBeCloseTo(12, 6);
+  });
+});
+
 describe('linForecast', () => {
   it('tendencia lineal perfecta se proyecta exacta', () => {
     const r = linForecast([0, 2, 4, 6, 8], 3);

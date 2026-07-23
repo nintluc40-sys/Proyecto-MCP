@@ -37,7 +37,31 @@ const MESES_PROD = [
 const MONTH_SPAN = 6;
 const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
-const larvRows = () => store.globalData.filter(isLarviculturaRow);
+// ── Memos por identidad de store.globalData ───────────────────────────────
+// Este módulo lo comparten 6 vistas (Supervisor, Larvicultura, Revisiones, Algas,
+// Microbiología y Visitante) y `larvRows()` re-filtraba el store ENTERO en cada llamada:
+// la Vista Ejecutiva invoca modCorStats + modCorDispatched una vez por tarjeta
+// (módulo × corrida), así que un render completo hacía decenas de escaneos.
+// `core/sheets.js` reemplaza `store.globalData` por un array NUEVO en cada refresco, así
+// que basta comparar la referencia para invalidar.
+//
+// ⚠ El array de `larvRows()` pasa a estar COMPARTIDO entre todos los consumidores:
+// tratarlo como INMUTABLE. Hoy todos copian antes de ordenar (`modCorStats` hace
+// `.filter().sort()`, `modulesOfCorrida` hace `distinct(...).sort()`); si alguien pierde
+// ese `.filter()` intermedio, un `.sort()` reordenaría el array de las 6 vistas a la vez.
+// El test-guardián de prodCalendar.test.js congela esa invariante.
+let _memo = { src: null, larv: null, stats: new Map(), disp: new Map() };
+function memoRoot() {
+  if (_memo.src !== store.globalData) {
+    _memo = { src: store.globalData, larv: null, stats: new Map(), disp: new Map() };
+  }
+  return _memo;
+}
+const larvRows = () => {
+  const m = memoRoot();
+  if (m.larv === null) m.larv = store.globalData.filter(isLarviculturaRow);
+  return m.larv;
+};
 const distinct = (a) => [...new Set(a.filter(Boolean))];
 
 // Señal de "despacho" de la ficha de Despacho (hoja "Datos Larvicultura"): una fila
@@ -68,8 +92,18 @@ function fullyDispatched(rsAll) {
   const realTanks = tanks.filter((tq) => !tankRows(tq).some(isOutOfDispatchRow));
   return realTanks.length > 0 && realTanks.every((tq) => tankRows(tq).some(isDespachoRow));
 }
+// Clave de memo por módulo+corrida. Con JSON.stringify no puede colisionar (concatenar
+// sin separador confundiría ('M1','23') con ('M12','3')).
+const memoKey = (mod, cor) => JSON.stringify([mod, cor]);
+/** Filas de Larvicultura de un módulo+corrida. Devuelve un array NUEVO en cada llamada:
+ *  es la copia que los consumidores pueden ordenar sin tocar el array memoizado. */
+const rowsOfModCor = (mod, cor) => larvRows().filter((r) => getField(r, F.modulo) === mod && getField(r, F.corrida) === cor);
+
 export function modCorDispatched(mod, cor) {
-  return fullyDispatched(larvRows().filter((r) => getField(r, F.modulo) === mod && getField(r, F.corrida) === cor));
+  const m = memoRoot();
+  const k = memoKey(mod, cor);
+  if (!m.disp.has(k)) m.disp.set(k, fullyDispatched(rowsOfModCor(mod, cor)));
+  return m.disp.get(k);
 }
 
 export function monthIndexOfCorrida(num) {
@@ -114,9 +148,17 @@ export function monthLabelAt(mIdx) {
   return MONTH_NAMES[(lastNameIdx + (mIdx - lastIdx)) % 12];
 }
 
-/** Agrega por tanque la siembra/cosecha/PL-g/supervivencia de un módulo+corrida. */
+/** Agrega por tanque la siembra/cosecha/PL-g/supervivencia de un módulo+corrida.
+ *  Memoizado: la Vista Ejecutiva lo llama una vez por tarjeta y varias vistas repiten la
+ *  misma consulta dentro del mismo render. El objeto devuelto se COMPARTE: no mutarlo. */
 export function modCorStats(mod, cor) {
-  const rsAll = larvRows().filter((r) => getField(r, F.modulo) === mod && getField(r, F.corrida) === cor);
+  const m = memoRoot();
+  const k = memoKey(mod, cor);
+  if (!m.stats.has(k)) m.stats.set(k, modCorStatsCompute(mod, cor));
+  return m.stats.get(k);
+}
+function modCorStatsCompute(mod, cor) {
+  const rsAll = rowsOfModCor(mod, cor);
   const tanks = distinct(rsAll.map((r) => getField(r, F.tanque)));
   let firstSum = 0, lastSum = 0, hasFirst = false, hasLast = false, nSie = 0; const plgs = [];
   tanks.forEach((tq) => {

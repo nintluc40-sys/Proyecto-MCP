@@ -153,6 +153,50 @@ describe('prodCalendar · guardián: agregados estables e independientes del ord
     expect(b1.despachado).toBe(false);
   });
 
+  it('no re-escanea el store en llamadas repetidas (memo por identidad)', () => {
+    const rows = desordenado();
+    let scans = 0;
+    const realFilter = Array.prototype.filter;
+    rows.filter = function (...args) { scans++; return realFilter.apply(this, args); };
+    store.globalData = rows;
+
+    // Un "render ejecutivo": varias tarjetas, cada una con sus dos consultas.
+    modCorStats('M01', '573'); modCorDispatched('M01', '573');
+    modCorStats('M02', '574'); modCorDispatched('M02', '574');
+    modulesOfCorrida('573'); corridasOfMonth(monthIndexOfCorrida(573));
+    modCorStats('M01', '573');   // repetida
+    // Antes cada llamada re-filtraba el store entero (7 escaneos); ahora basta uno.
+    expect(scans).toBe(1);
+
+    // Un refresco (array NUEVO) sí invalida y vuelve a escanear.
+    const nuevas = desordenado();
+    nuevas.filter = function (...args) { scans++; return realFilter.apply(this, args); };
+    store.globalData = nuevas;
+    scans = 0;
+    modCorStats('M01', '573');
+    expect(scans).toBe(1);
+  });
+
+  it('tras un refresco, los agregados reflejan los datos NUEVOS (no el memo viejo)', () => {
+    store.globalData = desordenado();
+    expect(modCorStats('M01', '573').cosecha).toBe(1500);
+    // Mismo módulo+corrida, población distinta → el memo debe invalidarse.
+    store.globalData = [
+      L({ 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ1', 'Población': '400', Fecha: '01/06/2026' }),
+      L({ 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ1', 'Población': '300', Fecha: '05/06/2026' }),
+    ];
+    expect(modCorStats('M01', '573').cosecha).toBe(300);
+  });
+
+  it('la clave del memo no confunde ("M1","23") con ("M12","3")', () => {
+    store.globalData = [
+      L({ 'Módulo': 'M1', Corrida: '23', Tanque: 'TQ1', 'Población': '100', Fecha: '01/06/2026' }),
+      L({ 'Módulo': 'M12', Corrida: '3', Tanque: 'TQ1', 'Población': '900', Fecha: '01/06/2026' }),
+    ];
+    expect(modCorStats('M1', '23').siembra).toBe(100);
+    expect(modCorStats('M12', '3').siembra).toBe(900);
+  });
+
   it('no reordena store.globalData (nada ordena el array del store in situ)', () => {
     store.globalData = desordenado();
     const antes = huella();

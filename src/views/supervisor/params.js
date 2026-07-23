@@ -94,9 +94,13 @@ function lvDaily(rows) {
           + Hongos + No Viables + Opacidad + Flácidez + Canibalismo + Parásitos)
    Variable ausente un día = 0 (no contribuye). */
 const ICL_POS = [{ key: 'sv', label: 'Supervivencia' }, { key: 'act', label: '% Actividad' }, { key: 'il', label: 'Intestino Lleno' }, { key: 'lip', label: 'Lípidos' }];
+// `scale` lleva la variable a la MISMA escala que el resto antes de sumarla. Estrés es la
+// única `kind: 'idx'` (0–10, alerta en ≥5); las otras quince son porcentajes 0–100, así que
+// sumándolo en crudo un estrés catastrófico de 10/10 pesaba lo mismo que un 10 % de
+// deformidad: contaba 10 veces menos de lo que le corresponde.
 const ICL_NEG = [
   { key: 'iv', label: 'Intestino Vacío' }, { key: 'is', label: 'Intestino Semilleno' }, { key: 'def', label: 'Deformidad' },
-  { key: 'est', label: 'Estrés' }, { key: 'ret', label: 'Retraso' }, { key: 'ne', label: 'Necrosis' }, { key: 'hng', label: 'Hongos' },
+  { key: 'est', label: 'Estrés (×10)', scale: 10 }, { key: 'ret', label: 'Retraso' }, { key: 'ne', label: 'Necrosis' }, { key: 'hng', label: 'Hongos' },
   { key: 'nvi', label: 'No Viables' }, { key: 'op', label: 'Opacidad' }, { key: 'fl', label: 'Flácidez' }, { key: 'ca', label: 'Canibalismo' }, { key: 'pa', label: 'Parásitos' },
 ];
 
@@ -137,11 +141,14 @@ export function iclSeries(rows) {
   const values = days.map((_, i) => {
     let pos = 0, neg = 0, any = false;
     ICL_POS.forEach((p) => { const v = getVal(p.key, i); if (v !== null && v !== undefined) { pos += v; any = true; } });
-    ICL_NEG.forEach((p) => { const v = getVal(p.key, i); if (v !== null && v !== undefined) { neg += v; any = true; } });
+    ICL_NEG.forEach((p) => { const v = getVal(p.key, i); if (v !== null && v !== undefined) { neg += v * (p.scale || 1); any = true; } });
     return any ? pos - neg : null;
   });
+  // El desglose muestra la CONTRIBUCIÓN al ICL (ya escalada), no el valor crudo de la hoja:
+  // si no, el ranking de "variables que más restan" saldría mal ordenado. Por eso la
+  // etiqueta de Estrés lleva el "×10" — la hoja dice 8 y aquí resta 80.
   const negByDay = days.map((_, i) => ICL_NEG
-    .map((p) => ({ label: p.label, val: getVal(p.key, i) }))
+    .map((p) => { const v = getVal(p.key, i); return { label: p.label, val: (v === null || v === undefined) ? v : v * (p.scale || 1) }; })
     .filter((x) => x.val !== null && x.val !== undefined && x.val > 0)
     .sort((a, b) => b.val - a.val));
   return { days, stages, values, negByDay };
