@@ -1,5 +1,42 @@
 import { describe, it, expect } from 'vitest';
-import { isotonicDecreasing, monotoneDown } from './tank.js';
+import { isotonicDecreasing, monotoneDown, normHr, STD_HRS } from './tank.js';
+
+describe('normHr (hora de la hoja → "H:MM:SS" 24h)', () => {
+  it('formatos con dos puntos, con y sin segundos, y AM/PM', () => {
+    expect(normHr('8:00:00')).toBe('8:00:00');
+    expect(normHr('08:00')).toBe('8:00:00');
+    expect(normHr('10:00')).toBe('10:00:00');
+    expect(normHr('2:00 PM')).toBe('14:00:00');
+    expect(normHr('12:00 AM')).toBe('0:00:00');
+  });
+
+  it('formato COMPACTO sin dos puntos (HMM / HHMM): antes se descartaba', () => {
+    // Devolvía null y el llamante hace STD_HRS.indexOf(null) = -1, así que la lectura
+    // desaparecía del perfil horario y del PDF de Parámetros, sin aviso.
+    expect(normHr('800')).toBe('8:00:00');
+    expect(normHr('0800')).toBe('8:00:00');
+    expect(normHr('1000')).toBe('10:00:00');
+    expect(normHr('0000')).toBe('0:00:00');
+    expect(normHr('130')).toBe('1:30:00');
+  });
+
+  it('las horas compactas estándar caen en su franja de STD_HRS', () => {
+    ['800', '0800'].forEach((h) => expect(STD_HRS.indexOf(normHr(h)), h).toBe(3));   // 8:00
+    expect(STD_HRS.indexOf(normHr('1000'))).toBe(4);                                  // 10:00
+    expect(STD_HRS.indexOf(normHr('0000'))).toBe(11);                                 // medianoche
+    // Una hora no estándar se normaliza pero NO tiene franja: se descarta con razón.
+    expect(STD_HRS.indexOf(normHr('130'))).toBe(-1);
+  });
+
+  it('valores imposibles o ambiguos siguen siendo null (no se inventa una hora)', () => {
+    expect(normHr('2400')).toBeNull();   // hora ≥ 24
+    expect(normHr('999')).toBeNull();    // minutos ≥ 60
+    expect(normHr('8')).toBeNull();      // un solo dígito es ambiguo: no se adivina
+    expect(normHr('abc')).toBeNull();
+    expect(normHr('')).toBeNull();
+    expect(normHr(null)).toBeNull();
+  });
+});
 
 describe('isotonicDecreasing (envolvente monótona no creciente)', () => {
   it('una serie ya descendente queda intacta', () => {
