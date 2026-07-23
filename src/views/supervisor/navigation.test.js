@@ -449,6 +449,72 @@ describe('Supervisor · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('OM vs Tex · la tarjeta NOMBRA los tanques de cada marca', () => {
+    const root = mount();
+    click(root.querySelector('.sv-card[data-nav="module"]'));
+    click(root.querySelector('[data-nav="omtex"]'));
+    const chips = [...root.querySelectorAll('.omtex-card-tqs .omtex-tq')];
+    // Sin los nombres la tarjeta solo decía "N tanques" y no se sabía cuál caía en cada marca.
+    expect(chips.length).toBeGreaterThan(0);
+    expect(chips.every((c) => c.textContent.trim().length > 0)).toBe(true);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('OM vs Tex · Δ de variables porcentuales en p.p. y cabeceras desambiguadas', () => {
+    const root = mount();
+    click(root.querySelector('.sv-card[data-nav="module"]'));
+    click(root.querySelector('[data-nav="omtex"]'));
+    const head = root.querySelector('.sv-table thead').textContent;
+    expect(head).toContain('Δ absoluto');
+    expect(head).toContain('Δ % relativo');
+    // La fila de Supervivencia (ya es %) rotula su Δ absoluto en puntos porcentuales.
+    const fila = [...root.querySelectorAll('.sv-table tbody tr')].find((tr) => /Supervivencia/.test(tr.textContent));
+    expect(fila).toBeTruthy();
+    expect(fila.children[3].textContent).toMatch(/p\.p\.|^—$/);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('OM vs Tex · el veredicto declara sobre cuántas variables COMPARABLES decide', () => {
+    const root = mount();
+    click(root.querySelector('.sv-card[data-nav="module"]'));
+    click(root.querySelector('[data-nav="omtex"]'));
+    const v = root.querySelector('.omtex-verdict');
+    expect(v).toBeTruthy();
+    const txt = v.textContent.replace(/\s+/g, ' ');
+    const badges = [...v.querySelectorAll('.omtex-badge')];
+    const empates = badges.filter((b) => b.classList.contains('tie')).length;
+    const sinDato = badges.filter((b) => b.classList.contains('nodata')).length;
+    const ganadas = badges.length - empates - sinDato;
+
+    if (/rinde mejor/.test(txt)) {
+      // El denominador cuenta los EMPATES (antes decía "gana en 3 de 3" habiendo 3 empates,
+      // que se leía como pleno) y excluye las variables sin dato.
+      const m = /gana en (\d+) de (\d+) variables? comparables?/.exec(txt);
+      expect(m, txt).toBeTruthy();
+      expect(Number(m[2])).toBe(ganadas + empates);
+      expect(Number(m[2])).toBe(badges.length - sinDato);
+    }
+    // Guarda estructural: un badge "sin dato" nunca se presenta como empate.
+    badges.filter((b) => b.classList.contains('nodata')).forEach((b) => {
+      expect(b.textContent).toContain('sin dato');
+      expect(b.textContent).not.toContain('empate');
+    });
+    expect(badges.filter((b) => b.classList.contains('tie')).every((b) => /empate/.test(b.textContent))).toBe(true);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('OM vs Tex · cambiar la variable de tendencia no rompe y reusa las series', () => {
+    const root = mount();
+    click(root.querySelector('.sv-card[data-nav="module"]'));
+    click(root.querySelector('[data-nav="omtex"]'));
+    const pills = [...root.querySelectorAll('[data-omtrend]')];
+    expect(pills.length).toBeGreaterThan(1);
+    // Ida y vuelta sobre la misma variable: la 2ª vez sale del memo.
+    click(pills[1]); click(pills[0]); click(pills[1]);
+    expect(pills[1].classList.contains('is-active')).toBe(true);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('modal Comparar Tanques (ejecutiva) se abre y genera comparación', () => {
     const root = mount();
     const openBtn = root.querySelector('[data-ctt-open]');

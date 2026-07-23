@@ -49,18 +49,33 @@ const modSubtitle = (mod) => (mod === 'CIO' ? 'Módulo CIO' : `Módulo ${mod}`);
 const modMetaLabel = (mod) => (mod === 'CIO' ? 'CIO' : 'Módulo');
 const cleanFile = (s) => String(s || '').replace(/[\\/:*?"<>|]/g, '').trim();
 
-// Código verificador (secuencia + tiempo + hash del módulo/ficha). No es
-// criptográfico: solo un identificador legible por PDF, igual patrón que el motor.
-let _codeSeq = 0;
-function genCodigo(fid, mod, fecha) {
-  _codeSeq = (_codeSeq + 1) & 0xffff;
-  let modNum = 0;
-  for (const ch of String(mod)) modNum = (modNum * 31 + ch.charCodeAt(0)) & 0xffffff;
-  const seed = (Date.now() & 0xffffff) ^ (modNum * 7919) ^ ((fid.charCodeAt(0) || 0) * 1031) ^ (_codeSeq * 31);
-  const hex = Math.abs(seed).toString(16).toUpperCase().padStart(6, '0').slice(-6);
+/** Hash FNV-1a de 32 bits. No es criptográfico: solo una huella corta y estable. */
+function fnv1a(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    // h *= 16777619 con desplazamientos (evita perder bits en coma flotante).
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return h >>> 0;
+}
+
+// Código verificador = huella DETERMINISTA del contenido de la página.
+// Antes se derivaba de `Date.now()` y de un contador de sesión, así que el MISMO documento
+// salía con un código distinto en cada exportación: no verificaba nada. Ahora el mismo
+// contenido produce siempre el mismo código y un cambio en cualquier dato lo cambia, que es
+// lo que permite cotejar dos copias impresas.
+// El sello de generación ("Generado el …") queda FUERA del hash a propósito: cambia en cada
+// impresión y va aparte en el pie.
+// OJO: `public/registros/engine.js` mantiene su propio generador por sesión (el comentario
+// previo decía "igual patrón que el motor"); desde este cambio YA NO coinciden. El del
+// dashboard es reproducible, el del motor no.
+function genCodigo(fid, mod, fecha, payload) {
+  const iso = toIsoDate(fecha);
+  const hex = fnv1a(`${fid}|${mod}|${iso}|${payload || ''}`).toString(16).toUpperCase().padStart(8, '0').slice(-6);
   const abb = (FICHA_META[fid] || {}).abb || 'FIC';
   const dg = (String(mod).replace(/\D/g, '') || '0').padStart(2, '0');
-  return `${abb}${dg}-${toIsoDate(fecha).replace(/-/g, '')}-${hex}`;
+  return `${abb}${dg}-${iso.replace(/-/g, '')}-${hex}`;
 }
 
 /** Nombre por defecto del archivo PDF (el navegador lo sugiere al guardar). */
@@ -190,8 +205,9 @@ export function buildFichaPdfDoc({ fid, mod, fileName, pages = [], autoPrint = t
   const tsStr = new Date().toLocaleString('es-EC', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
   const body = pages.map((pg) => {
     const d = pg.d || {};
-    const codigo = genCodigo(fid, mod, d.fecha);
     const obsTxt = pg.obs != null ? pg.obs : d.obs;
+    // El código se calcula sobre el contenido REAL de la página (tabla + observaciones).
+    const codigo = genCodigo(fid, mod, d.fecha, `${pg.tableHtml || ''}|${obsTxt || ''}`);
     const obsHtml = obsTxt ? `<div class="obs-block"><div class="lbl">Observaciones del turno</div><div class="txt">${esc(String(obsTxt))}</div></div>` : '';
     return `<div class="ppage">${pdfHeader(fid, mod, d)}${pg.tableHtml || ''}${obsHtml}<div class="spacer"></div>${pdfFooter(codigo, tsStr, d.tec, fid)}</div>`;
   }).join('');
@@ -220,15 +236,20 @@ export function buildFichaPdfDoc({ fid, mod, fileName, pages = [], autoPrint = t
  * documento = un "Guardar como PDF". Evita el bloqueo de ventanas emergentes al
  * descargar varios tipos de ficha de una sola vez.
  * @param {Array<{page:string, fileName:string}>} docs
+ * @param {(n:number, total:number, fileName:string)=>void} [onProgress]  se invoca al abrir
+ *   CADA documento (n = 1-based). Sin esto la secuencia es muda: el usuario ve varios
+ *   diálogos de "Guardar como PDF" seguidos sin saber por cuál va.
  * @returns {boolean} false si no hay documentos o no hay DOM.
  */
-export function printFichaDocs(docs) {
+export function printFichaDocs(docs, onProgress) {
   if (!Array.isArray(docs) || !docs.length) return false;
   if (typeof document === 'undefined' || !document.body) return false;
   let idx = 0;
   const next = () => {
     if (idx >= docs.length) return;
     const { page, fileName } = docs[idx++];
+    // El aviso de progreso nunca debe tumbar la impresión.
+    if (typeof onProgress === 'function') { try { onProgress(idx, docs.length, fileName); } catch (_) { /* noop */ } }
     const iframe = document.createElement('iframe');
     iframe.setAttribute('aria-hidden', 'true');
     iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0';

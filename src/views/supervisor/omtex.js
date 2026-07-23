@@ -15,6 +15,7 @@ import { colorFor, breadcrumb, fmtPop } from './ui.js';
 import { esc } from '../../core/format.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { parseNum, getField, F, PLG_KEYS } from '../../core/fields.js';
+import { natCmp } from '../../core/util.js';
 import { makeChart } from '../../core/charts.js';
 
 const DEF_KEYS = ['Deformidad', 'deformidad'];
@@ -34,10 +35,13 @@ const BRANDS = {
 };
 
 // Variables comparables (dir: 'up' = mayor mejor; 'down' = menor mejor).
+// `pct: true` = la variable YA es un porcentaje, así que su Δ absoluto son PUNTOS
+// PORCENTUALES (p.p.), no un porcentaje: mezclarlo con el Δ relativo en la misma tabla
+// ponía dos números con el mismo símbolo '%' y significados distintos uno al lado del otro.
 const VARS = [
   { key: 'pop',  label: 'Población',          icon: '👥', dir: 'up',   fmt: (v) => fmtPop(v),                         trend: 'col', keys: F.poblacion, pos: true },
-  { key: 'sv',   label: 'Supervivencia',      icon: '📈', dir: 'up',   fmt: (v) => (v == null ? '—' : v.toFixed(1) + '%'), trend: 'col', keys: F.supervivencia },
-  { key: 'def',  label: 'Deformidad',         icon: '🧬', dir: 'down', fmt: (v) => (v == null ? '—' : v.toFixed(1) + '%'), trend: 'col', keys: DEF_KEYS },
+  { key: 'sv',   label: 'Supervivencia',      icon: '📈', dir: 'up',   fmt: (v) => (v == null ? '—' : v.toFixed(1) + '%'), trend: 'col', keys: F.supervivencia, pct: true },
+  { key: 'def',  label: 'Deformidad',         icon: '🧬', dir: 'down', fmt: (v) => (v == null ? '—' : v.toFixed(1) + '%'), trend: 'col', keys: DEF_KEYS, pct: true },
   { key: 'icl',  label: 'ICL',                icon: '🧪', dir: 'up',   fmt: (v) => (v == null ? '—' : String(Math.round(v))), trend: 'icl' },
   { key: 'plg',  label: 'PL/g',               icon: '🎣', dir: 'down', fmt: (v) => (v == null ? '—' : v.toFixed(1)),   trend: 'col', keys: PLG_KEYS },
   { key: 'incr', label: 'Incremento (mg/d)',  icon: '⚖️', dir: 'up',   fmt: (v) => (v == null ? '—' : v.toFixed(3)),   trend: 'incr' },
@@ -85,7 +89,10 @@ export function renderOmTex(ctx, mod) {
 
   const agg = {};
   ['TEX', 'OM'].forEach((b) => {
-    agg[b] = { n: groups[b].tanks.length, lotes: [...groups[b].lotes] };
+    // `tqs` = nombres de los tanques asignados a la marca: sin ellos la tarjeta solo dice
+    // "3 tanques" y no hay forma de saber CUÁL cayó en cada marca, que es justo lo que se
+    // audita aquí (la asignación es por la moda del lote de cada tanque).
+    agg[b] = { n: groups[b].tanks.length, lotes: [...groups[b].lotes], tqs: groups[b].tanks.map((t) => t.tq).sort(natCmp) };
     VARS.forEach((v) => { agg[b][v.key] = avgOf(groups[b].tanks, v.key); });
   });
 
@@ -114,6 +121,7 @@ export function renderOmTex(ctx, mod) {
     html += `<div class="omtex-card" style="border-color:${BRANDS[b].color}">
       <div class="omtex-card-head" style="color:${BRANDS[b].color}">${BRANDS[b].icon} ${BRANDS[b].label}</div>
       <div class="omtex-card-sub">${g.n} tanque${g.n !== 1 ? 's' : ''}</div>
+      <div class="omtex-card-tqs">${g.tqs.length ? g.tqs.map((t) => `<span class="omtex-tq">${esc(t)}</span>`).join('') : '<span class="muted">— sin tanques —</span>'}</div>
       <div class="omtex-card-lotes">${g.lotes.length ? '📦 ' + g.lotes.map(esc).join(' · ') : '— sin lotes —'}</div>
     </div>`;
   });
@@ -182,7 +190,19 @@ export function renderOmTex(ctx, mod) {
   })();
 
   // ---- Series diarias por marca (para la tendencia) ----
+  // Memoizadas por (marca · variable): `drawTrend` las recalcula para AMBAS marcas en cada
+  // clic de las 6 pastillas de variable, y cada cálculo recorre todos los tanques × todas
+  // sus filas. Los datos no cambian mientras la vista está montada, así que basta con
+  // guardar lo ya calculado; el memo vive en el render y muere con él.
+  const _seriesMemo = new Map();
   const brandSeries = (brandKey, v) => {
+    const memoKey = brandKey + '|' + v.key;
+    if (_seriesMemo.has(memoKey)) return _seriesMemo.get(memoKey);
+    const out = brandSeriesCompute(brandKey, v);
+    _seriesMemo.set(memoKey, out);
+    return out;
+  };
+  const brandSeriesCompute = (brandKey, v) => {
     const tanksB = groups[brandKey].tanks;
     const byDay = new Map(); // fecha -> [valores]
     const push = (f, val) => { if (!f || val === null || val === undefined) return; if (!byDay.has(f)) byDay.set(f, []); byDay.get(f).push(val); };
@@ -268,7 +288,9 @@ function deltaTableHTML(agg) {
     let dTxt = '—', dPct = '—', cls = '';
     if (t !== null && t !== undefined && o !== null && o !== undefined) {
       const diff = t - o; // Texcumar − Omarsa
-      dTxt = (diff >= 0 ? '+' : '−') + v.fmt(Math.abs(diff));
+      const sign = diff >= 0 ? '+' : '−';
+      // Variables que ya son % → el Δ absoluto se rotula en PUNTOS PORCENTUALES.
+      dTxt = v.pct ? `${sign}${Math.abs(diff).toFixed(1)} p.p.` : sign + v.fmt(Math.abs(diff));
       dPct = o !== 0 ? ((diff / Math.abs(o)) * 100).toFixed(1) + '%' : '—';
       const texBetter = v.dir === 'up' ? diff > 0 : diff < 0;
       cls = Math.abs(diff) < 1e-9 ? '' : (texBetter ? 'omtex-tex' : 'omtex-om');
@@ -284,7 +306,9 @@ function deltaTableHTML(agg) {
   return `<div class="sv-section-title" style="margin-top:8px">📋 Tabla comparativa (Δ = Texcumar − Omarsa)</div>
     <div class="card" style="padding:0;overflow:auto">
       <table class="sv-table">
-        <thead><tr><th>Variable</th><th>🟧 Texcumar</th><th>🟦 Omarsa</th><th>Δ</th><th>Δ %</th></tr></thead>
+        <thead><tr><th>Variable</th><th>🟧 Texcumar</th><th>🟦 Omarsa</th>
+          <th title="Diferencia absoluta. En las variables que ya son porcentaje va en puntos porcentuales (p.p.)">Δ absoluto</th>
+          <th title="La misma diferencia expresada como % del valor de Omarsa">Δ % relativo</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
@@ -292,22 +316,34 @@ function deltaTableHTML(agg) {
 
 /* ---------- OT5 · veredicto compuesto ---------- */
 function verdictHTML(agg) {
-  let texWins = 0, omWins = 0;
+  let texWins = 0, omWins = 0, ties = 0, noData = 0;
   const badges = VARS.map((v) => {
     const t = agg.TEX[v.key], o = agg.OM[v.key];
-    if (t === null || t === undefined || o === null || o === undefined || Math.abs(t - o) < 1e-9) return `<span class="omtex-badge tie">${v.icon} ${esc(v.label)}: empate</span>`;
+    // SIN DATO ≠ EMPATE: antes una variable sin medir en alguna marca se mostraba como
+    // "empate", que sugiere que se comparó y salió igualada. Ahora se distingue y se dice
+    // sobre cuántas variables COMPARABLES se decide el veredicto.
+    if (t === null || t === undefined || o === null || o === undefined) {
+      noData++;
+      return `<span class="omtex-badge nodata">${v.icon} ${esc(v.label)}: sin dato</span>`;
+    }
+    if (Math.abs(t - o) < 1e-9) { ties++; return `<span class="omtex-badge tie">${v.icon} ${esc(v.label)}: empate</span>`; }
     const texBetter = v.dir === 'up' ? t > o : t < o;
     if (texBetter) texWins++; else omWins++;
     const w = texBetter ? 'TEX' : 'OM';
     return `<span class="omtex-badge" style="border-color:${BRANDS[w].color};color:${BRANDS[w].color}">${v.icon} ${esc(v.label)}: ${BRANDS[w].label}</span>`;
   }).join('');
+  const comparables = texWins + omWins + ties;
   let winner = null;
   if (texWins > omWins) winner = 'TEX'; else if (omWins > texWins) winner = 'OM';
   const verdict = winner
-    ? `🏆 <b style="color:${BRANDS[winner].color}">${BRANDS[winner].label}</b> rinde mejor — gana en ${Math.max(texWins, omWins)} de ${texWins + omWins} variables`
-    : `🤝 Empate técnico (${texWins} a ${omWins})`;
+    ? `🏆 <b style="color:${BRANDS[winner].color}">${BRANDS[winner].label}</b> rinde mejor — gana en ${Math.max(texWins, omWins)} de ${comparables} variable${comparables === 1 ? '' : 's'} comparable${comparables === 1 ? '' : 's'}`
+    : (comparables ? `🤝 Empate técnico (${texWins} a ${omWins})` : '🚫 Ninguna variable es comparable en esta selección');
+  const nota = noData
+    ? `<div class="omtex-verdict-note">${noData} variable${noData === 1 ? '' : 's'} sin dato en alguna de las dos marcas — no cuenta${noData === 1 ? '' : 'n'} para el veredicto.</div>`
+    : '';
   return `<div class="omtex-verdict">
     <div class="omtex-verdict-head">${verdict}</div>
+    ${nota}
     <div class="omtex-badges">${badges}</div>
   </div>`;
 }
