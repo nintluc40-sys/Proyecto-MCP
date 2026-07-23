@@ -22,12 +22,52 @@ const DEF_KEYS = ['Deformidad', 'deformidad'];
 const PESO_KEYS = ['Peso promedio (mg)', 'Peso_promedio', 'peso_promedio', 'Peso promedio', 'Peso_prom'];
 const ESTADIO_KEYS = ['Estadío', 'Estadio', 'estadío', 'estadio', 'ESTADIO'];
 
-/** Clasifica un lote por marca: 2 letras exactas = Omarsa; resto = Texcumar. */
+// Firmas de lote, DICTADAS POR EL LABORATORIO (no inferidas de los datos):
+//   Omarsa   → dos letras (AB, BB, BA), combinables con '+' ("AB+BI").
+//   Texcumar → mezcla de letras y números ("L1", "D2"), llevan guion ("J-D2", "D-2"),
+//              o son de UN SOLO carácter ("J", "2").
+// ⚠ '+' es el ÚNICO separador de combinación. En una versión anterior se admitieron
+// también '/', ',', '&', ';' y el espacio: estaban INVENTADOS, no salían de los datos, y
+// admitir de más arriesga leer como Omarsa un lote que no lo es. No volver a ampliarlos
+// sin que el laboratorio lo confirme.
+// ⚠ El guion NO es separador: es la SEÑAL de Texcumar. Partir "J-D2" destrozaría el código.
+const LOT_SEP = /\s*\+\s*/;
+const OM_PART = /^[A-Z]{2}$/;
+const isTexPart = (p) => /[0-9-]/.test(p) || p.length === 1;
+
+/**
+ * Clasifica un lote por marca. Ambas marcas se identifican en POSITIVO y lo que no
+ * encaja limpio en ninguna devuelve null, para que aflore en el aviso de "sin marca
+ * clara" en vez de engordar una marca en silencio.
+ *
+ * Antes era `2 letras exactas = Omarsa; TODO LO DEMÁS = Texcumar`, un cajón de sastre con
+ * dos consecuencias: los lotes COMBINADOS de Omarsa ("BG+BD") se contaban como Texcumar,
+ * y cualquier valor irreconocible o mal tecleado engordaba Texcumar sin que nadie se
+ * enterara. Esta comparativa corona un 🏆 y se usa para decidir proveedor, así que
+ * clasificar mal un lote tiene consecuencia de negocio.
+ *
+ *  - Todas las partes de 2 letras           → 'OM'  ("AB", "BB", "BG+BD")
+ *  - Todas con dígito/guion o de 1 carácter → 'TEX' ("L1", "J-D2", "D-2", "J", "2")
+ *  - Cualquier otra cosa                    → null  (ambiguo: "AB+L1", "MIX", "ABC")
+ *  - Vacío                                  → null
+ *
+ * Si aparecen tanques en el aviso de "sin marca clara" que el laboratorio reconozca como
+ * obviamente de una marca, hay que AMPLIAR la firma de esa marca: el aviso es justamente
+ * el mecanismo para detectarlo.
+ */
 export function lotBrand(lote) {
   const s = String(lote || '').trim().toUpperCase();
   if (!s) return null;
-  return /^[A-Z]{2}$/.test(s) ? 'OM' : 'TEX';
+  const parts = s.split(LOT_SEP).filter(Boolean);
+  if (!parts.length) return null;
+  if (parts.every((p) => OM_PART.test(p))) return 'OM';
+  if (parts.every(isTexPart)) return 'TEX';
+  return null;   // no encaja limpio en ninguna marca → no se adivina
 }
+
+// Cuota de tanques sin marca clara a partir de la cual el veredicto se ABSTIENE: con esa
+// proporción apartada, la muestra no sostiene coronar a un ganador.
+const VERDICT_MAX_UNCLASSIFIED = 0.30;
 
 const BRANDS = {
   TEX: { label: 'Texcumar', color: '#E65100', icon: '🟧' },
@@ -73,12 +113,28 @@ export function renderOmTex(ctx, mod) {
   const tanks = tanksOf(ctx, mod, corrida);
 
   const groups = { TEX: { tanks: [], lotes: new Set() }, OM: { tanks: [], lotes: new Set() } };
+  // Tanques cuyos lotes NO permiten decidir una marca. Antes el desempate era
+  // `c.OM >= c.TEX`, que mandaba SIEMPRE a Omarsa —en silencio— los tanques con lotes
+  // empatados y sesgaba un veredicto que se usa para decidir proveedor. Ahora se apartan
+  // y se declaran en pantalla con sus nombres.
+  const unclassified = [];
   tanks.forEach((tq) => {
     const ts = tankStats(ctx, mod, tq, corrida);
     const c = { TEX: 0, OM: 0 };
-    ts.lRows.forEach((r) => { const b = lotBrand(getField(r, F.lote)); if (b) c[b]++; });
-    if (!c.TEX && !c.OM) return;
-    const brand = c.OM >= c.TEX ? 'OM' : 'TEX';
+    let anyLote = false;
+    ts.lRows.forEach((r) => {
+      const raw = getField(r, F.lote);
+      if (String(raw || '').trim()) anyLote = true;
+      const b = lotBrand(raw);
+      if (b) c[b]++;
+    });
+    // Tanque SIN ningún lote anotado: no es un caso dudoso, simplemente no hay materia
+    // que comparar → fuera, sin ruido.
+    if (!c.TEX && !c.OM && !anyLote) return;
+    // Tiene lotes pero ninguno resultó clasificable, o hay empate exacto entre marcas
+    // → se declara en vez de adivinar.
+    if ((!c.TEX && !c.OM) || c.TEX === c.OM) { unclassified.push(tq); return; }
+    const brand = c.OM > c.TEX ? 'OM' : 'TEX';
     const defs = ts.lRows.map((r) => parseNum(r, DEF_KEYS)).filter((v) => v !== null);
     const plgs = ts.lRows.map((r) => parseNum(r, PLG_KEYS)).filter((v) => v !== null);
     const iclVals = iclSeries(ts.lRows).values.filter((v) => v !== null && v !== undefined);
@@ -133,7 +189,18 @@ export function renderOmTex(ctx, mod) {
   }
 
   // OT5 · Veredicto (solo si ambas marcas presentes).
-  if (agg.TEX.n && agg.OM.n) html += verdictHTML(agg);
+  // Tanques apartados: se declaran SIEMPRE. Quedan fuera de los promedios, así que hay
+  // que saber sobre cuántos NO se está midiendo.
+  const totalTanks = agg.TEX.n + agg.OM.n + unclassified.length;
+  const uncShare = totalTanks ? unclassified.length / totalTanks : 0;
+  if (unclassified.length) {
+    html += `<div class="sv-modal-note" style="margin:0 0 12px">⚠️ <b>${unclassified.length} tanque(s) sin marca clara</b>
+      (lotes de ambas marcas en igual proporción, o lotes que no se pueden atribuir):
+      ${unclassified.map(esc).join(' · ')}.
+      Quedan <b>excluidos</b> de promedios, tabla y veredicto.</div>`;
+  }
+
+  if (agg.TEX.n && agg.OM.n) html += verdictHTML(agg, uncShare);
 
   // OT1 · Tabla Δ.
   html += deltaTableHTML(agg);
@@ -315,7 +382,7 @@ function deltaTableHTML(agg) {
 }
 
 /* ---------- OT5 · veredicto compuesto ---------- */
-function verdictHTML(agg) {
+function verdictHTML(agg, uncShare = 0) {
   let texWins = 0, omWins = 0, ties = 0, noData = 0;
   const badges = VARS.map((v) => {
     const t = agg.TEX[v.key], o = agg.OM[v.key];
@@ -335,9 +402,14 @@ function verdictHTML(agg) {
   const comparables = texWins + omWins + ties;
   let winner = null;
   if (texWins > omWins) winner = 'TEX'; else if (omWins > texWins) winner = 'OM';
-  const verdict = winner
-    ? `🏆 <b style="color:${BRANDS[winner].color}">${BRANDS[winner].label}</b> rinde mejor — gana en ${Math.max(texWins, omWins)} de ${comparables} variable${comparables === 1 ? '' : 's'} comparable${comparables === 1 ? '' : 's'}`
-    : (comparables ? `🤝 Empate técnico (${texWins} a ${omWins})` : '🚫 Ninguna variable es comparable en esta selección');
+  // Con demasiados tanques sin marca clara, el veredicto se apoyaría en una muestra que
+  // no lo sostiene: mejor no coronar a nadie que coronar sobre la mitad de los datos.
+  const abstain = uncShare > VERDICT_MAX_UNCLASSIFIED;
+  const verdict = abstain
+    ? `⚖️ <b>Sin veredicto</b> — ${Math.round(uncShare * 100)} % de los tanques quedó sin marca clara; la comparación no es concluyente`
+    : winner
+      ? `🏆 <b style="color:${BRANDS[winner].color}">${BRANDS[winner].label}</b> rinde mejor — gana en ${Math.max(texWins, omWins)} de ${comparables} variable${comparables === 1 ? '' : 's'} comparable${comparables === 1 ? '' : 's'}`
+      : (comparables ? `🤝 Empate técnico (${texWins} a ${omWins})` : '🚫 Ninguna variable es comparable en esta selección');
   const nota = noData
     ? `<div class="omtex-verdict-note">${noData} variable${noData === 1 ? '' : 's'} sin dato en alguna de las dos marcas — no cuenta${noData === 1 ? '' : 'n'} para el veredicto.</div>`
     : '';
