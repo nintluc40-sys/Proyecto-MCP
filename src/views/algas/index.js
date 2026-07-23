@@ -693,12 +693,18 @@ export function algasView(root) {
   const cov = covSpan(monthRows);
   const covDays = cov.withData.size;
   const covTotal = cov.days.length;
+  // En modo `sparse` el eje son SOLO los días CON dato, así que covDays === covTotal y la
+  // fracción se leería como cobertura PERFECTA justo cuando hay una fecha mal capturada.
+  // Se omite el denominador (no hay calendario continuo contra el que medir) y se marca la
+  // anomalía; el detalle —cuántos días abarca y por qué— está en el modal de Cobertura.
+  const covValue = cov.sparse ? `${covDays} días` : `${covDays}${covTotal ? '/' + covTotal : ''} días`;
+  const covDelta = cov.sparse ? '<span class="alg-mind-warn">⚠️ rango anómalo</span>' : '';
 
   h += `<div class="alg-section-title">📊 Análisis del mes <span class="muted" style="font-weight:600;font-size:12px">· ${esc(monthLabelAt(vState.month))}</span></div>
     <div class="alg-mind-row">
       ${mindCard('bio', '🧪', 'Biomasa total del mes', fmtK(bioNow) + ' cel/ml', deltaArrow(bioD, '%'))}
       ${mindCard('desc', '🗑️', 'Tasa de descarte', descNow.toFixed(1) + '%', descD === null ? '' : deltaArrowPts(descD))}
-      ${mindCard('cov', '📅', 'Cobertura de registro', `${covDays}${covTotal ? '/' + covTotal : ''} días`, '')}
+      ${mindCard('cov', '📅', 'Cobertura de registro', covValue, covDelta)}
     </div>
     <div class="alg-charts">
       <div class="card alg-chart-card"><div class="alg-chart-title">⚙️ ¿Qué categoría se hace más? <span class="muted">· nº de registros</span></div><div class="alg-chart-host" style="height:${Math.max(220, usoLabels.length * 34 + 40)}px">${usoLabels.length ? '<canvas id="algUso"></canvas>' : '<div class="empty-state" style="padding:24px">Sin datos del mes.</div>'}</div></div>

@@ -114,6 +114,10 @@
 .alg-mind-lbl { font-size: 11px; font-weight: 700; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: .03em; }
 .alg-mind-val { font-size: 19px; font-weight: 800; color: var(--c-text); line-height: 1.15; }
 .alg-mind-delta { font-size: 11px; font-weight: 700; }
+/* Aviso en la tarjeta de Cobertura cuando el eje entra en modo `sparse` (fecha mal
+   capturada): ocupa la ranura del delta, que en esa tarjeta no se usa. Mismo ámbar que
+   .alg-cov-sparse, el aviso ampliado del modal. */
+.alg-mind-warn { font-size: 11px; font-weight: 700; color: #B37A00; }
 .alg-mind-go { margin-left: auto; color: var(--c-text-muted); font-size: 14px; flex-shrink: 0; }
 
 /* ── Modales de mes (sobre el patrón .sv-modal) ── */
