@@ -99,7 +99,16 @@ const TIER_LABEL3 = ['Bueno', 'Medio', 'Malo'];
 const TIER_LABEL2 = ['Leve', 'Acentuada'];
 const CAT3 = ['#3F51B5', '#EC407A', '#26A69A', '#FB8C00'];   // categórica (series sin orden; 4ª = No viables)
 
-/** Clasifica un valor cualitativo en 3 niveles (0 bueno · 1 medio · 2 malo; -1 desconocido). */
+/** Clasifica un valor cualitativo en 3 niveles (0 bueno · 1 medio · 2 malo; -1 desconocido).
+ *
+ *  ⚠ TRAMPA CONOCIDA Y ACEPTADA: se clasifica por SUBCADENA, sin límite de palabra, así que
+ *  una negación cae en el nivel opuesto al que le corresponde — "Anormal" contiene "normal"
+ *  y "Inactivo" contiene "activ", y ambos se clasifican como BUENO (verificado). Hoy es
+ *  inalcanzable porque las columnas cualitativas del Sheet usan vocabulario GRADUADO
+ *  (Alta/Media/Baja, Óptima/Regular/Crítica), nunca negaciones.
+ *  Si alguna vez admiten texto libre o pares del tipo Activo/Inactivo, esto vuelve: habrá
+ *  que endurecerlo con límites de palabra y comprobar los términos negativos ANTES que los
+ *  positivos. Mismo aviso vale para `tier2`. */
 function tier3(val) {
   const k = fold(val);
   if (/(alta|alto|buen|optim|excel|normal|sano|activ)/.test(k)) return 0;
@@ -762,7 +771,10 @@ function timelineHTML(rows) {
       const op = (0.22 + 0.6 * (c / max)).toFixed(2);
       return `<td class="rv-tl-cell rv-tl-click ${today ? 'rv-tl-today' : ''}" data-daycell="${esc(m)}" data-daykey="${esc(String(key))}" data-daylabel="${esc(d.label)}" role="button" tabindex="0" style="background:rgba(0,131,143,${op});color:${c / max > 0.55 ? '#fff' : '#0a3d44'}" title="${esc(m)} · ${esc(d.label)}: ${c} revisión(es) · clic = ver detalle">${c}</td>`;
     }).join('');
-    return `<tr><th class="rv-tl-row rv-mod-link" data-moddetail="${esc(m)}" title="Ver detalle de ${esc(m)}">${esc(m)} 🔎</th>${tds}</tr>`;
+    // role/tabindex + aria-label: la cabecera abre el detalle del módulo igual que las
+    // celdas de al lado, así que debe ser alcanzable por teclado (ver openModDetail).
+    // El 🔎 va aria-hidden para que el nombre accesible no arrastre el nombre del emoji.
+    return `<tr><th class="rv-tl-row rv-mod-link" data-moddetail="${esc(m)}" role="button" tabindex="0" aria-label="Ver detalle de ${esc(m)}" title="Ver detalle de ${esc(m)}">${esc(m)} <span aria-hidden="true">🔎</span></th>${tds}</tr>`;
   }).join('');
   return `<table class="rv-tl"><thead>${head}</thead><tbody>${body}</tbody></table>`;
 }
@@ -919,6 +931,17 @@ function openDayCell(mod, daykey, label) {
 function closeDayCell() {
   const m = document.getElementById('rv-daycell-modal');
   if (m) { m.classList.remove('rv-open'); document.body.classList.remove('modal-open'); }
+}
+
+/** Abre el drill-down por módulo (RV2). Única vía de apertura: la usan por igual el
+ *  clic y el teclado (Enter/Espacio), así que ambas rutas no pueden divergir. */
+function openModDetail(mod) {
+  const titleEl = document.getElementById('rv-mod-title');
+  const contentEl = document.getElementById('rv-mod-content');
+  if (titleEl) titleEl.textContent = `🏭 Detalle · ${mod}`;
+  if (contentEl) contentEl.innerHTML = moduleDetailHTML(mod);
+  const m = document.getElementById('rv-mod-modal');
+  if (m) { m.classList.add('rv-open'); document.body.classList.add('modal-open'); }
 }
 
 /** Modal de drill-down por categoría (#14): desglose por módulo de una observación/acción. */
@@ -1092,16 +1115,7 @@ function bind(root) {
 
     // Drill-down por módulo (RV2)
     const md = e.target.closest('[data-moddetail]');
-    if (md) {
-      const mod = md.dataset.moddetail;
-      const titleEl = document.getElementById('rv-mod-title');
-      const contentEl = document.getElementById('rv-mod-content');
-      if (titleEl) titleEl.textContent = `🏭 Detalle · ${mod}`;
-      if (contentEl) contentEl.innerHTML = moduleDetailHTML(mod);
-      const m = document.getElementById('rv-mod-modal');
-      if (m) { m.classList.add('rv-open'); document.body.classList.add('modal-open'); }
-      return;
-    }
+    if (md) { openModDetail(md.dataset.moddetail); return; }
     if (e.target.id === 'rv-mod-modal' || e.target.closest('[data-mod-close]')) {
       const m = document.getElementById('rv-mod-modal');
       if (m) { m.classList.remove('rv-open'); document.body.classList.remove('modal-open'); }
@@ -1145,20 +1159,23 @@ function bind(root) {
     }
   });
 
-  // Accesibilidad: tiles de Calidad, celdas del treemap y cintas del Sankey
-  // (todas role="button") responden a Enter/Espacio igual que al clic.
+  // Accesibilidad: tiles de Calidad, celdas del treemap, cintas del Sankey, celdas de
+  // cobertura y cabecera de módulo (todas role="button") responden a Enter/Espacio
+  // igual que al clic.
   root.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
     const ql = e.target.closest('[data-drillqual]');
     const tm = e.target.closest('[data-drillval]');
     const sk = e.target.closest('[data-sk-obs]');
     const dc = e.target.closest('[data-daycell]');
-    if (!ql && !tm && !sk && !dc) return;
+    const md = e.target.closest('[data-moddetail]');
+    if (!ql && !tm && !sk && !dc && !md) return;
     e.preventDefault();
     if (ql) openDrillCalidad(ql.dataset.drillqual, CALIDAD_KEYS[ql.dataset.drillqual], getFilteredRows());
     else if (tm) { const type = tm.dataset.drilltype; openDrill(type, tm.dataset.drillval, type === 'Acción' ? K.accion : K.observaciones, getFilteredRows()); }
     else if (sk) selectSankey(root, sk);
     else if (dc) openDayCell(dc.dataset.daycell, dc.dataset.daykey, dc.dataset.daylabel);
+    else if (md) openModDetail(md.dataset.moddetail);
   });
 
   // Selects → filtros de la vista (corrida/módulo) y de la ventana de historial.

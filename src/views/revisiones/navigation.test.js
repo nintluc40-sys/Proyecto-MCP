@@ -49,6 +49,7 @@ function synthData() {
 
 function click(el) { if (el) el.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); }
 function change(el, value) { if (el) { el.value = value; el.dispatchEvent(new window.Event('change', { bubbles: true })); } }
+function press(el, key) { if (el) el.dispatchEvent(new window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })); }
 
 // vState es singleton de módulo (persiste entre tests como en una sesión real):
 // renderiza y normaliza a Fase 1 limpiando los filtros de la barra.
@@ -140,6 +141,41 @@ describe('Revisiones · harness de navegación integral', () => {
     const supSel = root.querySelector('[data-daycell-sup]');
     if (supSel) change(supSel, supSel.options[supSel.options.length - 1].value);
     click(root.querySelector('[data-daycell-close]'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('el detalle de módulo (🔎) es alcanzable por teclado, no solo con el ratón', () => {
+    mount();
+    const link = root.querySelector('[data-moddetail]');
+    // Se anuncia como pulsable y entra en el orden de tabulación.
+    expect(link.getAttribute('role')).toBe('button');
+    expect(link.getAttribute('tabindex')).toBe('0');
+    expect(link.getAttribute('aria-label')).toContain('Ver detalle de');
+    // El emoji no debe formar parte del nombre accesible.
+    expect(link.querySelector('[aria-hidden="true"]').textContent).toBe('🔎');
+
+    press(link, 'Enter');
+    expect(root.querySelector('#rv-mod-modal').classList.contains('rv-open')).toBe(true);
+    click(root.querySelector('[data-mod-close]'));
+    expect(root.querySelector('#rv-mod-modal').classList.contains('rv-open')).toBe(false);
+
+    press(link, ' ');   // Espacio abre igual que Enter
+    expect(root.querySelector('#rv-mod-modal').classList.contains('rv-open')).toBe(true);
+    click(root.querySelector('[data-mod-close]'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('teclado y ratón abren EXACTAMENTE el mismo detalle (una sola vía: openModDetail)', () => {
+    mount();
+    const link = [...root.querySelectorAll('[data-moddetail]')].find((el) => el.dataset.moddetail === 'Módulo 1');
+    press(link, 'Enter');
+    const porTeclado = root.querySelector('#rv-mod-content').innerHTML;
+    const tituloTeclado = root.querySelector('#rv-mod-title').textContent;
+    click(root.querySelector('[data-mod-close]'));
+    click(link);
+    expect(root.querySelector('#rv-mod-content').innerHTML).toBe(porTeclado);
+    expect(root.querySelector('#rv-mod-title').textContent).toBe(tituloTeclado);
+    click(root.querySelector('[data-mod-close]'));
     expect(errSpy).not.toHaveBeenCalled();
   });
 

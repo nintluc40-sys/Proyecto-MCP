@@ -129,6 +129,9 @@
 /* ── Drill-down por módulo (RV2) ── */
 .rv-mod-link { cursor: pointer; transition: color var(--t-fast); white-space: nowrap; }
 .rv-mod-link:hover { color: var(--c-brand); text-decoration: underline; }
+/* Abre el detalle del módulo también por teclado: sin anillo de foco el usuario que
+   tabula no sabría dónde está (misma pauta que .rv-tl-cell.rv-tl-click). */
+.rv-mod-link:focus-visible { outline: 2px solid var(--c-brand, #3F51B5); outline-offset: -2px; }
 .rv-det-kpis { margin-bottom: 14px; }
 .rv-det-sec { font-size: 12.5px; font-weight: 800; color: var(--c-brand); margin: 14px 0 8px; }
 .rv-det-chips { display: flex; flex-wrap: wrap; gap: 6px; }
