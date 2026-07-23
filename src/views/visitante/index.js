@@ -28,8 +28,31 @@ const fmtK = (v) => {
 };
 const PALETTE = ['#1E88E5', '#E53935', '#43A047', '#FB8C00', '#8E24AA', '#00ACC1', '#6D4C41', '#3949AB', '#00897B', '#C0CA33', '#F4511E', '#5E35B1'];
 
+// ── Memo de los resúmenes del mes ─────────────────────────────
+// Los 4 resúmenes recorren el store entero (monthData, además, una vez por módulo de
+// cada corrida vía modCorStats), y se recalculaban en CADA repintado: el toggle
+// Supervivencia⇄Población disparaba 13 escaneos completos por clic (medido), sin que
+// los datos hubieran cambiado. Se memorizan por clave e invalidan por IDENTIDAD de
+// store.globalData (core/sheets.js lo reemplaza por un array nuevo en cada refresco).
+// La clave incluye TODOS los argumentos: `monthSup` hoy siempre se deriva de
+// monthData(mIdx), pero descartarlo de la clave haría que una llamada con otro valor
+// recibiera en silencio el resultado anterior.
+// OJO: los objetos/arrays devueltos se COMPARTEN entre llamantes → tratarlos como
+// inmutables (hoy solo se leen y se recorren; los .sort() de la vista operan sobre
+// arrays recién construidos).
+let _vtMemo = { src: null, map: new Map() };
+function memo(key, compute) {
+  const src = store.globalData;
+  if (_vtMemo.src !== src) _vtMemo = { src, map: new Map() };
+  if (!_vtMemo.map.has(key)) _vtMemo.map.set(key, compute());
+  return _vtMemo.map.get(key);
+}
+
 /** Estadísticas por corrida del mes + totales del mes. */
 function monthData(mIdx) {
+  return memo(JSON.stringify(['monthData', mIdx]), () => monthDataCompute(mIdx));
+}
+function monthDataCompute(mIdx) {
   const corridas = corridasOfMonth(mIdx);
   const plgAll = [];
   const rows = corridas.map((cor) => {
@@ -66,6 +89,9 @@ const bioIsMeas = (raw) => bioIsPos(raw) || ['negativo', 'negative', 'neg', 'n',
 
 /** Indicadores de alto nivel del mes (semáforos + conteos). */
 function monthSummary(mIdx, monthSup) {
+  return memo(JSON.stringify(['monthSummary', mIdx, monthSup]), () => monthSummaryCompute(mIdx, monthSup));
+}
+function monthSummaryCompute(mIdx, monthSup) {
   const G = store.globalData;
 
   // Calidad de larvas (proxy: supervivencia promedio del mes).
@@ -143,6 +169,9 @@ function algRowsOfMonth(mIdx) { return store.globalData.filter((r) => r._SheetOr
 
 /** Resumen de microalgas del mes (densidad, cultivos activos, descarte, protozoarios). */
 function algasSummary(mIdx) {
+  return memo(JSON.stringify(['algasSummary', mIdx]), () => algasSummaryCompute(mIdx));
+}
+function algasSummaryCompute(mIdx) {
   const R = algRowsOfMonth(mIdx);
   const cels = R.map((r) => parseNum(r, ALG_KEYS.cel)).filter((v) => v !== null && v >= 0);
   const proto = R.map((r) => parseNum(r, ALG_KEYS.protoz)).filter((v) => v !== null);
@@ -185,7 +214,15 @@ function algasSummaryBlock(mIdx) {
 const LAB_DATE_KEYS = ['Fecha muestreo', 'Fecha de muestreo', 'Fecha resultados', 'Fecha', 'fecha'];
 const labDate = (r) => parseAnyDate(getField(r, LAB_DATE_KEYS));
 /** Mes-calendario (año, mes 0-11) del mes de Visitante = el más común entre las fechas de
- *  Larvicultura de sus corridas. null si no hay con qué anclar. */
+ *  Larvicultura de sus corridas. null si no hay con qué anclar.
+ *
+ *  ⚠ LIMITACIÓN CONOCIDA Y ACEPTADA (V2): se elige UN solo mes-calendario, el de la moda.
+ *  Un mes de PRODUCCIÓN (definido por corridas) cruza a menudo dos meses de calendario, y
+ *  las muestras de laboratorio del mes minoritario quedan FUERA del conteo — el panel
+ *  sub-cuenta en silencio. Aceptado a propósito: la alternativa (abarcar el rango completo
+ *  de fechas de las corridas) mezclaría meses contiguos en un panel dirigido a público
+ *  general. Si algún día importa la cifra exacta, hay que derivar el rango de TODAS las
+ *  fechas de las corridas en vez de la moda. */
 function labCalMonth(mIdx) {
   const cors = new Set(corridasOfMonth(mIdx));
   const counts = new Map();
@@ -206,6 +243,9 @@ const inCalMonth = (r, cm) => { if (!cm) return false; const d = labDate(r); ret
 
 /** Resumen de laboratorio del mes (micro: % de muestras en alerta · agua: WQI y % en rango). */
 function labSummary(mIdx) {
+  return memo(JSON.stringify(['labSummary', mIdx]), () => labSummaryCompute(mIdx));
+}
+function labSummaryCompute(mIdx) {
   const cm = labCalMonth(mIdx);
   const micRows = store.globalData.filter((r) => r._SheetOrigin === 'Microbiología' && inCalMonth(r, cm));
   const micAlert = micRows.filter((r) => micMelt(r).some((m) => micIsAlerta(m.nivel))).length;
@@ -445,8 +485,17 @@ function sumModalHTML() {
 
 let vtEscHandler = null;
 function closeSumModal() {
-  const m = document.getElementById('vtSumModal'); if (m) m.style.display = 'none';
-  document.body.classList.remove('modal-open');
+  const m = document.getElementById('vtSumModal');
+  // Solo se toca `body.modal-open` si era ESTE modal el que estaba abierto. El handler
+  // de Escape vive en `document` y sobrevive a la navegación (el overlay no atrapa el
+  // foco: se puede tabular a las pestañas por detrás y cambiar de vista con el detalle
+  // abierto). Sin esta guarda, cualquier Escape en OTRA vista apagaba el `modal-open`
+  // de esa vista — y esa clase es la que refresh.js usa para pausar el auto-refresco,
+  // así que la app se re-renderizaba por debajo de un modal ajeno todavía visible.
+  // Como la última línea retira el listener, el huérfano además se auto-neutraliza.
+  const estabaAbierto = !!m && m.isConnected && m.style.display !== 'none';
+  if (m) m.style.display = 'none';
+  if (estabaAbierto) document.body.classList.remove('modal-open');
   if (vtEscHandler) { document.removeEventListener('keydown', vtEscHandler); vtEscHandler = null; }
 }
 function openSumModal(key, mIdx, monthSup) {
