@@ -5,14 +5,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../core/charts.js', () => ({
-  makeChart: () => null,
+  makeChart: vi.fn(),
   destroyChart: () => {},
   destroyAllCharts: () => {},
   Chart: class {},
 }));
 
 import { store } from '../../core/store.js';
+import { makeChart } from '../../core/charts.js';
 import { maduracionView } from './index.js';
+
+// Última config pasada a makeChart para un canvas dado (para inspeccionar datasets).
+const chartCfg = (id) => { const c = [...makeChart.mock.calls].reverse().find((x) => x[0] === id); return c ? c[1] : null; };
 
 const M = (o) => ({ _SheetOrigin: 'Maduración MATRIZ', ...o });
 const B = (o) => ({ _SheetOrigin: 'Maduración Bitácora', ...o });
@@ -40,6 +44,7 @@ describe('Microchips · navegación integral', () => {
     store.globalData = synthData();
     root = document.createElement('div');
     document.body.appendChild(root);
+    makeChart.mockClear();
     errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
   afterEach(() => { root.remove(); errSpy.mockRestore(); });
@@ -52,6 +57,37 @@ describe('Microchips · navegación integral', () => {
     expect(root.querySelector('#mcStateDonut')).toBeTruthy();
     // Datos limpios → ningún banner de aviso.
     expect(root.querySelector('.mc-warn')).toBeNull();
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('Tendencias · toggle Mes/Día y métrica (refresco parcial, sin redibujar el donut)', () => {
+    maduracionView(root);
+    // Por defecto (Todo el histórico) → granularidad Mes activa y las 3 series.
+    const granMes = root.querySelector('[data-mc-trendgran="mes"]');
+    const granDia = root.querySelector('[data-mc-trendgran="dia"]');
+    expect(granMes).toBeTruthy();
+    expect(granDia).toBeTruthy();
+    expect(granMes.classList.contains('is-on')).toBe(true);
+    expect(chartCfg('mcTrend').data.datasets.map((d) => d.label)).toEqual(['Desoves', 'Mortalidad', 'Fertilidad %']);
+
+    // Clic en Día → granularidad diaria (mes más reciente). SOLO se redibuja #mcTrend:
+    // el donut de Distribución de hembras NO se vuelve a dibujar.
+    makeChart.mockClear();
+    click(granDia);
+    const ids = makeChart.mock.calls.map((c) => c[0]);
+    expect(ids).toContain('mcTrend');
+    expect(ids).not.toContain('mcStateDonut');
+    expect(root.querySelector('[data-mc-trendgran="dia"]').classList.contains('is-on')).toBe(true);
+    expect(root.querySelector('.mc-h-note').textContent).toContain('por día');
+
+    // Aislar una métrica deja UNA sola serie; tampoco toca el donut.
+    makeChart.mockClear();
+    click(root.querySelector('[data-mc-trendmetric="mortalidad"]'));
+    expect(makeChart.mock.calls.map((c) => c[0])).not.toContain('mcStateDonut');
+    const ds = chartCfg('mcTrend').data.datasets;
+    expect(ds.length).toBe(1);
+    expect(ds[0].label).toBe('Mortalidad');
+    expect(root.querySelector('[data-mc-trendmetric="mortalidad"]').classList.contains('is-on')).toBe(true);
     expect(errSpy).not.toHaveBeenCalled();
   });
 

@@ -27,7 +27,7 @@ const SUBS = [
   { key: 'hembras', label: 'Hembras', icon: '🦐' },
 ];
 
-const vState = { sub: 'panorama', month: null, sala: null, tanque: null, locLevel: 'tanque', femSearch: '', femSel: null };
+const vState = { sub: 'panorama', month: null, sala: null, tanque: null, locLevel: 'tanque', femSearch: '', femSel: null, trendGran: null, trendMetric: 'todas' };
 
 // Modelo memoizado por identidad de store.globalData.
 let _cache = { src: null, model: null };
@@ -179,10 +179,48 @@ function kpiTile(label, value, sub, tone = '') {
   return `<div class="mc-kpi ${tone}"><div class="mc-kpi-lb">${esc(label)}</div><div class="mc-kpi-v">${value}</div><div class="mc-kpi-sub">${sub || ''}</div></div>`;
 }
 
+/** Parámetros del gráfico de Tendencias, independientes del stepper global:
+ *  granularidad (Mes/Día, con auto por defecto), mes enfocado en modo diario
+ *  (el elegido o, en "Todo el histórico", el más reciente con datos), filtro
+ *  propio y métrica aislada. Compartido por render (cabecera) y draw (chart). */
+function trendCtx(model) {
+  const latestMonth = model.months.length ? model.months[model.months.length - 1] : null;
+  const effGran = vState.trendGran ?? (vState.month ? 'dia' : 'mes');
+  const trendMonth = effGran === 'dia' ? (vState.month || latestMonth) : null;
+  const ftrend = makeFilter({ sala: vState.sala, tanque: vState.tanque, month: trendMonth });
+  return { effGran, trendMonth, ftrend, gran: effGran === 'dia' ? 'day' : 'month', metric: vState.trendMetric || 'todas' };
+}
+
+/** HTML de la tarjeta de Tendencias (cabecera + controles + canvas). Extraído para
+ *  poder refrescar SOLO esta tarjeta sin re-renderizar el resto del Panorama (que
+ *  redibujaría innecesariamente el donut de Distribución de hembras). */
+function trendCardHTML(model) {
+  const tc = trendCtx(model);
+  const METRICS = [['todas', 'Todas'], ['desoves', 'Desoves'], ['mortalidad', 'Mortalidad'], ['fertilidad', 'Fertilidad']];
+  const granSeg = `<div class="mc-seg mc-seg-sm">
+    <button class="mc-seg-b ${tc.effGran === 'mes' ? 'is-on' : ''}" data-mc-trendgran="mes">📆 Mes</button>
+    <button class="mc-seg-b ${tc.effGran === 'dia' ? 'is-on' : ''}" data-mc-trendgran="dia">📅 Día</button>
+  </div>`;
+  const metricSeg = `<div class="mc-seg mc-seg-sm">
+    ${METRICS.map(([id, lbl]) => `<button class="mc-seg-b ${tc.metric === id ? 'is-on' : ''}" data-mc-trendmetric="${id}">${lbl}</button>`).join('')}
+  </div>`;
+  const trendNote = tc.effGran === 'dia' ? `por día${tc.trendMonth ? ' · ' + esc(monthLabel(tc.trendMonth)) : ''}` : 'por mes';
+  return `<div class="mc-card mc-card-wide">
+    <h4 class="mc-card-h">Tendencias — desoves, mortalidad y fertilidad <span class="mc-h-note">${trendNote}</span></h4>
+    <div class="mc-trend-controls">
+      <span class="mc-ctl-lbl">Granularidad</span>${granSeg}
+      <span class="mc-ctl-lbl">Métrica</span>${metricSeg}
+    </div>
+    <div class="mc-chart" style="height:260px"><canvas id="mcTrend"></canvas></div>
+    <p class="mc-note">Las barras cuentan los <b>desoves donde ocurrieron</b> (la ubicación del día del evento).
+      La línea de <b>fertilidad</b> se calcula sobre las hembras que <b>siguen</b> en la ubicación y estaban vivas
+      en el período, así que una hembra que desovó aquí y luego se trasladó suma en las barras pero no en la línea.</p>
+  </div>`;
+}
+
 function renderPanorama(model, f) {
   const k = kpis(model, f);
   const sd = stateDistribution(model, f);
-  const gran = vState.month ? 'day' : 'month';
   const topT = locationStats(model, f, 'tanque').slice(0, 6);
   const topS = locationStats(model, f, 'sala').slice(0, 6);
 
@@ -204,13 +242,7 @@ function renderPanorama(model, f) {
     <p class="mc-note">Ventana de actividad = ${ACTIVITY_WINDOW_DAYS} días. Transferida = reubicada recientemente.</p>
   </div>`;
 
-  const trendCard = `<div class="mc-card mc-card-wide">
-    <h4 class="mc-card-h">Tendencias — desoves, mortalidad y fertilidad <span class="mc-h-note">${gran === 'day' ? 'por día' : 'por mes'}</span></h4>
-    <div class="mc-chart" style="height:260px"><canvas id="mcTrend"></canvas></div>
-    <p class="mc-note">Las barras cuentan los <b>desoves donde ocurrieron</b> (la ubicación del día del evento).
-      La línea de <b>fertilidad</b> se calcula sobre las hembras que <b>siguen</b> en la ubicación y estaban vivas
-      en el período, así que una hembra que desovó aquí y luego se trasladó suma en las barras pero no en la línea.</p>
-  </div>`;
+  const trendCard = trendCardHTML(model);
 
   const topCard = (title, arr, level) => `<div class="mc-card">
     <h4 class="mc-card-h">${esc(title)}</h4>
@@ -242,26 +274,51 @@ function drawPanorama(model, f) {
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${c.label}: ${c.parsed}` } } },
     },
   });
-  const tr = trends(model, f, vState.month ? 'day' : 'month');
+  drawTrend(model);
+}
+
+/** Dibuja SOLO el gráfico de Tendencias (#mcTrend) según trendCtx. Separado para el
+ *  refresco parcial de los controles Mes/Día/Métrica. */
+function drawTrend(model) {
+  const tc = trendCtx(model);
+  const tr = trends(model, tc.ftrend, tc.gran);
+  const m = tc.metric;
+  const showDes = m === 'todas' || m === 'desoves';
+  const showMor = m === 'todas' || m === 'mortalidad';
+  const showFer = m === 'todas' || m === 'fertilidad';
+  const datasets = [];
+  if (showDes) datasets.push({ type: 'bar', label: 'Desoves', data: tr.desoves, backgroundColor: C.desove + 'cc', borderColor: C.desove, borderWidth: 1, yAxisID: 'y', order: 3, maxBarThickness: 34 });
+  if (showMor) datasets.push({ type: 'line', label: 'Mortalidad', data: tr.mortalidad, borderColor: C.mort, backgroundColor: C.mort, tension: .3, pointRadius: 2, borderWidth: 2, yAxisID: 'y', order: 1 });
+  if (showFer) datasets.push({ type: 'line', label: 'Fertilidad %', data: tr.fertilidad, borderColor: C.fert, backgroundColor: C.fert + '22', tension: .3, pointRadius: 2, borderWidth: 2, yAxisID: 'y1', order: 0, fill: false });
   makeChart('mcTrend', {
-    data: {
-      labels: tr.labels,
-      datasets: [
-        { type: 'bar', label: 'Desoves', data: tr.desoves, backgroundColor: C.desove + 'cc', borderColor: C.desove, borderWidth: 1, yAxisID: 'y', order: 3, maxBarThickness: 34 },
-        { type: 'line', label: 'Mortalidad', data: tr.mortalidad, borderColor: C.mort, backgroundColor: C.mort, tension: .3, pointRadius: 2, borderWidth: 2, yAxisID: 'y', order: 1 },
-        { type: 'line', label: 'Fertilidad %', data: tr.fertilidad, borderColor: C.fert, backgroundColor: C.fert + '22', tension: .3, pointRadius: 2, borderWidth: 2, yAxisID: 'y1', order: 0, fill: false },
-      ],
-    },
+    data: { labels: tr.labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       scales: {
         x: { ticks: { ...AXIS, maxRotation: 0, autoSkip: true }, grid: { display: false } },
-        y: { beginAtZero: true, position: 'left', ticks: { ...AXIS, precision: 0 }, grid: { color: GRID }, title: { display: true, text: 'eventos', color: AXIS.color, font: { size: 10 } } },
-        y1: { beginAtZero: true, max: 100, position: 'right', ticks: { ...AXIS, callback: (v) => v + '%' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'fertilidad', color: AXIS.color, font: { size: 10 } } },
+        // El eje "eventos" solo aparece si hay una serie de eventos (Desoves/Mortalidad);
+        // el de fertilidad solo con la línea de Fertilidad — así aislar una métrica no
+        // deja un eje huérfano sin datos.
+        y: { display: showDes || showMor, beginAtZero: true, position: 'left', ticks: { ...AXIS, precision: 0 }, grid: { color: GRID }, title: { display: true, text: 'eventos', color: AXIS.color, font: { size: 10 } } },
+        y1: { display: showFer, beginAtZero: true, max: 100, position: 'right', ticks: { ...AXIS, callback: (v) => v + '%' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'fertilidad', color: AXIS.color, font: { size: 10 } } },
       },
       plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 10 }, color: AXIS.color } } },
     },
   });
+}
+
+/** Refresco PARCIAL de la tarjeta de Tendencias (controles Mes/Día/Métrica): reemplaza
+ *  solo esa tarjeta y redibuja únicamente #mcTrend, sin re-renderizar el Panorama ni
+ *  redibujar el donut de Distribución de hembras (que antes parpadeaba en cada clic). */
+function refreshTrend(root) {
+  if (!_model) return;
+  const card = root.querySelector('#mcTrend')?.closest('.mc-card');
+  if (!card) return;
+  destroyChart('mcTrend');                 // destruye el chart viejo (canvas aún en el DOM)
+  const tmp = document.createElement('div');
+  tmp.innerHTML = trendCardHTML(_model);
+  card.replaceWith(tmp.firstElementChild); // canvas nuevo (mismo id)
+  drawTrend(_model);
 }
 
 /* ============================================================
@@ -534,13 +591,20 @@ function bind(root) {
     const pill = e.target.closest('[data-mc-sub]');
     if (pill) { vState.sub = pill.dataset.mcSub; maduracionView(root); return; }
 
-    // Stepper de período
+    // Stepper de período (al cambiar de mes, el toggle de granularidad vuelve a "auto")
     const mnav = e.target.closest('[data-mc-monthnav]');
     if (mnav && !mnav.disabled) {
       const idx = periodIdx() + Number(mnav.dataset.mcMonthnav);
-      if (idx >= 0 && idx < _periods.length) { vState.month = _periods[idx]; maduracionView(root); }
+      if (idx >= 0 && idx < _periods.length) { vState.month = _periods[idx]; vState.trendGran = null; maduracionView(root); }
       return;
     }
+
+    // Tendencias · granularidad (Mes/Día) y métrica aislada — REFRESCO PARCIAL: solo la
+    // tarjeta de Tendencias, sin redibujar el donut de Distribución de hembras.
+    const tg = e.target.closest('[data-mc-trendgran]');
+    if (tg) { vState.trendGran = tg.dataset.mcTrendgran; refreshTrend(root); return; }
+    const tm = e.target.closest('[data-mc-trendmetric]');
+    if (tm) { vState.trendMetric = tm.dataset.mcTrendmetric; refreshTrend(root); return; }
 
     // Toggle Sala/Tanque (operativo)
     const lvl = e.target.closest('[data-mc-level]');
