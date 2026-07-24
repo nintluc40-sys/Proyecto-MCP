@@ -54,19 +54,20 @@ export function aguaSemaforo(mgmt) {
 }
 
 /* ---- Edad de cultivo (DOC) + estadío esperado ----
-   CRONOGRAMA estándar L. vannamei (DOC acumulado al alcanzar cada estadío).
+   CRONOGRAMA real del laboratorio: UN estadío por día desde N5 = día 1
+   (N5·Z1·Z2·Z3·M1·M2·M3 = días 1–7; PL1 = día 8, PLk = día 7+k).
    Ajustable a los tiempos reales del laboratorio en la validación. */
 const STAGE_RANK = { N: 0, Z1: 1, Z2: 2, Z3: 3, M1: 4, M2: 5, M3: 6 };
 const CRONO = [
-  { upto: 2, stage: 'N' }, { upto: 3, stage: 'Z1' }, { upto: 4, stage: 'Z2' },
-  { upto: 5, stage: 'Z3' }, { upto: 6, stage: 'M1' }, { upto: 7, stage: 'M2' }, { upto: 8, stage: 'M3' },
+  { upto: 1, stage: 'N5' }, { upto: 2, stage: 'Z1' }, { upto: 3, stage: 'Z2' },
+  { upto: 4, stage: 'Z3' }, { upto: 5, stage: 'M1' }, { upto: 6, stage: 'M2' }, { upto: 7, stage: 'M3' },
 ];
 
 /** Estadío esperado para un DOC dado (PL crece 1/día a partir del día 8). */
 export function expectedStage(doc) {
   if (doc == null || isNaN(doc)) return null;
   for (const c of CRONO) if (doc <= c.upto) return c.stage;
-  return 'PL' + Math.max(1, doc - 8);
+  return 'PL' + Math.max(1, doc - 7);
 }
 
 /** Rango ordinal de un estadío (para comparar adelanto/atraso). */
