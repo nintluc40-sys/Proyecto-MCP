@@ -43,11 +43,13 @@ describe('aguaSemaforo', () => {
 });
 
 describe('expectedStage / stageRank', () => {
-  it('estadío esperado por DOC', () => {
-    expect(expectedStage(1)).toBe('N');
-    expect(expectedStage(4)).toBe('Z2');
-    expect(expectedStage(8)).toBe('M3');
-    expect(expectedStage(12)).toBe('PL4');
+  it('estadío esperado por DOC (cronograma 1 estadío/día desde N5=día1)', () => {
+    expect(expectedStage(1)).toBe('N5');  // día 1 = N5
+    expect(expectedStage(2)).toBe('Z1');
+    expect(expectedStage(4)).toBe('Z3');
+    expect(expectedStage(7)).toBe('M3');
+    expect(expectedStage(8)).toBe('PL1');  // día 8 = PL1
+    expect(expectedStage(12)).toBe('PL5'); // día 12 = PL5
   });
   it('rank ordena correctamente', () => {
     expect(stageRank('Z2')).toBeLessThan(stageRank('M1'));
@@ -58,13 +60,28 @@ describe('expectedStage / stageRank', () => {
 
 describe('cultivoInfo', () => {
   const row = (fecha, estadio) => ({ Fecha: fecha, Estadío: estadio });
-  it('calcula DOC inclusivo y compara con esperado', () => {
+  const day = (n) => { const d = new Date(2026, 5, 1); d.setDate(d.getDate() + n - 1); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`; };
+
+  it('un cultivo EN HORARIO (1 estadío/día desde N5) sale "en tiempo" cada día', () => {
+    // Reproduce el bug reportado: con el cronograma viejo esto daba "adelantado".
+    const secuencia = [[1, 'N5'], [2, 'Z1'], [3, 'Z2'], [4, 'Z3'], [5, 'M1'], [6, 'M2'], [7, 'M3'], [8, 'PL1'], [9, 'PL2'], [13, 'PL6']];
+    secuencia.forEach(([n, st]) => {
+      const rows = secuencia.filter(([m]) => m <= n).map(([m, s]) => row(day(m), s));
+      const c = cultivoInfo(rows);
+      expect(c.doc).toBe(n);
+      expect(c.stage).toBe(st);
+      expect(c.esperado).toBe(st);       // esperado == registrado
+      expect(c.status).toBe('en_tiempo');
+    });
+  });
+
+  it('un cultivo LENTO (2 estadíos en 5 días) sale "atrasado"', () => {
     const rows = [row('2026-06-01', 'Z1'), row('2026-06-05', 'Z3')];
     const c = cultivoInfo(rows);
     expect(c.doc).toBe(5);          // 1→5 inclusivo
     expect(c.stage).toBe('Z3');
-    expect(c.esperado).toBe('Z3');  // DOC 5 → Z3
-    expect(c.status).toBe('en_tiempo');
+    expect(c.esperado).toBe('M1');  // DOC 5 → M1 (va por detrás)
+    expect(c.status).toBe('atrasado');
   });
   it('sin fechas → null', () => {
     expect(cultivoInfo([{ Estadío: 'Z1' }])).toBeNull();
