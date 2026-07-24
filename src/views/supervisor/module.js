@@ -1441,18 +1441,61 @@ export function renderModule(ctx, mod) {
       const daySeries = moduleSvPopSeries(ctx, mod, corrida); // se calcula UNA vez y se reutiliza
       const dDates = daySeries.labels;
       dateSel.innerHTML = dDates.length ? dDates.map((f, i) => `<option value="${esc(f)}"${i === dDates.length - 1 ? ' selected' : ''}>${esc(f)}</option>`).join('') : '<option>—</option>';
-      const kpiDay = (icon, label, val) => `<div class="sv-modal-kpi">${icon} <span class="muted">${label}</span> <b>${esc(val)}</b></div>`;
+      const kpiDay = (icon, label, val, delta = '') => `<div class="sv-modal-kpi">${icon} <span class="muted">${label}</span> <b>${esc(val)}</b>${delta}</div>`;
       const isAl = (lvl) => lvl === 'malo' || lvl === 'grave';
+      // Días a cosecha: proyección de MÓDULO (ritmo de avance de estadío sobre todo el
+      // histórico). No depende de la fecha elegida → se calcula una sola vez.
+      const cosecha = cosechaEstimate(ctx, mod, corrida);
+      const cosechaTxt = !cosecha ? '—' : cosecha.reached ? '✅ alcanzada' : `~${cosecha.days} d`;
+      const fmtCompact = (v) => v >= 1e6 ? +(v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? Math.round(v / 1e3) + 'k' : String(Math.round(v));
+      // Δ vs el día previo del selector. `signed` colorea por signo (SV/Población, donde
+      // subir es bueno); si no, neutro (OD/T°: una subida no es "buena" por sí misma).
+      const deltaSpan = (cur, prev, fmtMag, signed) => {
+        if (cur == null || prev == null || isNaN(cur) || isNaN(prev)) return '';
+        const d = cur - prev;
+        const cls = signed ? (d > 0 ? 'up' : d < 0 ? 'down' : 'flat') : 'neutral';
+        const arrow = d > 0 ? '▲' : d < 0 ? '▼' : '▬';
+        const sign = d > 0 ? '+' : d < 0 ? '−' : '±';
+        return ` <span class="sv-mday-delta is-${cls}" title="vs. día anterior">${arrow} ${sign}${esc(fmtMag(Math.abs(d)))}</span>`;
+      };
+      // Conteo de análisis registrados ese día (por día-calendario) para este módulo.
+      const eventosOfDay = (dateStr) => {
+        const dt = parseAnyDate(dateStr);
+        if (!dt || isNaN(dt)) return null;
+        const key = micDayKey(dt);
+        const sameDay = (d) => d && !isNaN(d) && micDayKey(d) === key;
+        return {
+          micro: microRows.filter((r) => sameDay(microCtx(r).fecha)).length,
+          cagua: calAguaRows.filter((r) => sameDay(calCtx(r).fecha)).length,
+          biomol: biomolRows.filter((r) => sameDay(parseAnyDate(r.fecha))).length,
+          desinf: store.globalData.filter((r) => /desinfecci/i.test(String(r._SheetOrigin || ''))
+            && sameModule(getField(r, F.modulo), mod) && (!corrida || getField(r, F.corrida) === corrida)
+            && sameDay(parseAnyDate(getField(r, F.fecha)))).length,
+        };
+      };
       const render = () => {
         const k = moduleDayKpis(ctx, mod, corrida, dateSel.value, daySeries);
+        const curIdx = daySeries.labels.indexOf(dateSel.value);
+        const kPrev = curIdx > 0 ? moduleDayKpis(ctx, mod, corrida, daySeries.labels[curIdx - 1], daySeries) : null;
+        const bajas = (daySeries.base && k.pop != null) ? Math.max(0, daySeries.base - k.pop) : null;
         kpisEl.innerHTML = [
-          kpiDay('📈', 'Supervivencia', fmt1(k.sv, '%')),
+          kpiDay('📈', 'Supervivencia', fmt1(k.sv, '%'), deltaSpan(k.sv, kPrev && kPrev.sv, (v) => v.toFixed(1) + ' p.p.', true)),
           kpiDay('📉', 'Mortalidad', fmt1(k.mort, '%')),
-          kpiDay('👥', 'Población', fmtPop(k.pop)),
-          kpiDay('💧', 'OD', fmt2(k.od, ' mg/L')),
-          kpiDay('🌡️', 'Temperatura', fmt1(k.tmp, '°C')),
+          kpiDay('👥', 'Población', fmtPop(k.pop), deltaSpan(k.pop, kPrev && kPrev.pop, (v) => fmtCompact(v) + ' ind.', true)),
+          kpiDay('💧', 'OD', fmt2(k.od, ' mg/L'), deltaSpan(k.od, kPrev && kPrev.od, (v) => v.toFixed(2), false)),
+          kpiDay('🌡️', 'Temperatura', fmt1(k.tmp, '°C'), deltaSpan(k.tmp, kPrev && kPrev.tmp, (v) => v.toFixed(1) + '°', false)),
           kpiDay('🦐', 'Estadío', k.estadio || '—'),
+          kpiDay('🎯', 'Días a cosecha', cosechaTxt),
+          kpiDay('💀', 'Bajas acum.', bajas == null ? '—' : Math.round(bajas).toLocaleString('es-EC')),
         ].join('');
+        // Eventos del día: chips con el nº de análisis de cada fuente ese día.
+        const ev = eventosOfDay(dateSel.value);
+        const evBlock = ev
+          ? `<div class="sv-mday-events"><span class="sv-mday-events-h">📋 Eventos del día</span>${[
+            ['🔬 Microbiología', ev.micro], ['💧 Calidad de agua', ev.cagua],
+            ['🧪 Biomol', ev.biomol], ['🧼 Desinfección', ev.desinf],
+          ].map(([lbl, n]) => `<span class="sv-mday-ev${n ? '' : ' is-zero'}">${esc(lbl)} <b>${n}</b></span>`).join('')}</div>`
+          : '';
         // Alertas a nivel de MÓDULO (agregado del día).
         const al = [];
         if (svLevel(k.sv) === 'grave') al.push('Supervivencia crítica');
@@ -1475,7 +1518,7 @@ export function renderModule(ctx, mod) {
               ${tankAlerts.map((t) => `<div class="sv-mday-talert"><span class="sv-mday-tq">${esc(t.tq)}</span><span class="sv-mday-tflags">${t.flags.map((f) => esc(f)).join(' · ')}</span></div>`).join('')}
             </div>`
           : (tankRows.length ? '<div class="sv-alert-ok" style="margin-top:6px">✅ Ningún tanque fuera de rango (OD/T°) este día.</div>' : '');
-        alertsEl.innerHTML = modBlock + tankBlock;
+        alertsEl.innerHTML = evBlock + modBlock + tankBlock;
       };
       dateSel.addEventListener('change', render);
       bindModal(root, dayOverlay, {
