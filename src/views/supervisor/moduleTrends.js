@@ -61,7 +61,9 @@ export function moduleSvPopSeries(ctx, mod, corrida) {
     pop.push(any ? total : null);
     sv.push(any && totalFirst > 0 ? Math.min((total / totalFirst) * 100, 100) : null);
   });
-  return { labels, sv, pop };
+  // `base` = siembra total del módulo (Σ primera pob. por tanque); permite derivar las
+  // bajas acumuladas (base − pob. del día) en el "Resumen del día" sin recalcular.
+  return { labels, sv, pop, base: totalFirst };
 }
 
 /** Fechas con tomas horarias (Control_Tanque) del módulo. */

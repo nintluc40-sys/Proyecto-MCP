@@ -281,6 +281,19 @@
 .sv-mday-tq { font-weight: 800; color: var(--c-text); min-width: 72px; flex-shrink: 0; }
 .sv-mday-tflags { color: #b26a00; font-weight: 700; font-variant-numeric: tabular-nums; }
 
+/* Δ vs. día anterior en los KPIs del "Resumen del día". */
+.sv-mday-delta { font-size: 10.5px; font-weight: 800; font-variant-numeric: tabular-nums; margin-left: 6px; white-space: nowrap; }
+.sv-mday-delta.is-up { color: #2e9e5b; }
+.sv-mday-delta.is-down { color: #e8303e; }
+.sv-mday-delta.is-flat, .sv-mday-delta.is-neutral { color: var(--c-text-muted); }
+
+/* Chips de "Eventos del día" (nº de análisis por fuente ese día). */
+.sv-mday-events { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.sv-mday-events-h { font-size: 11px; font-weight: 800; color: var(--c-text-soft); text-transform: uppercase; letter-spacing: .3px; }
+.sv-mday-ev { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--c-text); background: var(--c-surface-2); border: 1px solid var(--c-border-soft); border-radius: var(--r-pill); padding: 3px 10px; }
+.sv-mday-ev b { font-variant-numeric: tabular-nums; }
+.sv-mday-ev.is-zero { color: var(--c-text-muted); opacity: .6; }
+
 /* Nota al pie de un gráfico (p. ej. aviso de extrapolación manual en Población) */
 .sv-chart-note { font-size: 10.5px; color: var(--c-text-muted); margin-top: 8px; line-height: 1.4; }
 

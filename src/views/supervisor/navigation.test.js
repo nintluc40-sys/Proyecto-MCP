@@ -171,6 +171,31 @@ describe('Supervisor · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('modal Resumen del día · KPIs ampliados (cosecha/bajas), deltas y eventos del día', () => {
+    const root = mount();
+    click(root.querySelector('.sv-card[data-nav="module"]'));
+    click(root.querySelector('[data-modday-open]'));
+    const modal = root.querySelector('#svModDayModal');
+    expect(modal.classList.contains('sv-open')).toBe(true);
+    // KPIs nuevos: Días a cosecha (proyección de módulo) + Bajas acumuladas.
+    const kpis = modal.querySelector('#svModDayKpis');
+    expect(kpis.textContent).toContain('Días a cosecha');
+    expect(kpis.textContent).toContain('Bajas acum.');
+    // Fijamos la fecha explícitamente (happy-dom no honra el atributo `selected` del
+    // <option> vía innerHTML; en navegador real el modal arranca en la última fecha).
+    const dateSel = modal.querySelector('#svModDayDate');
+    dateSel.value = '07/06/2026';
+    dateSel.dispatchEvent(new window.Event('change', { bubbles: true }));
+    // Deltas vs. día anterior (05→07/06): al menos un Δ visible.
+    expect(modal.querySelectorAll('.sv-mday-delta').length).toBeGreaterThanOrEqual(1);
+    // Eventos del día (07/06): 4 chips; micro=1, calidad de agua=2.
+    const evEls = [...modal.querySelectorAll('.sv-mday-ev')];
+    expect(evEls.length).toBe(4);
+    expect(evEls[0].querySelector('b').textContent).toBe('1'); // 🔬 Microbiología
+    expect(evEls[1].querySelector('b').textContent).toBe('2'); // 💧 Calidad de agua
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('Trazabilidad · tarjeta "Días proceso" abre el modal con las fichas y toggle "Todas"', () => {
     const root = mount();
     click(root.querySelector('.sv-card[data-nav="module"]'));
