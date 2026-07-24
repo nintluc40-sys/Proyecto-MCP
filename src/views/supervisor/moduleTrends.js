@@ -141,3 +141,65 @@ export function cosechaEstimate(ctx, mod, corrida, target = 'PL11') {
   if (dIdx <= 0 || dDays <= 0) return null;
   return { days: Math.max(1, Math.round((tgt - curIdx) / (dIdx / dDays))), reached: false };
 }
+
+const fmtDMY = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+
+/** Proyección por DECAIMIENTO EXPONENCIAL de una serie temporal (regresión log-lineal:
+ *  ln(y) = a + b·t, ajustada por mínimos cuadrados sobre los días desde el primer punto).
+ *  Extrapola `horizonDays` días a partir del último punto observado. Adecuado para
+ *  supervivencia/población, que decaen con tasa ~constante y nunca deben ser negativas.
+ *  Devuelve las etiquetas futuras (DD/MM/AAAA), los valores proyectados (clamp a
+ *  [opts.min, opts.max]), el R² del ajuste (en espacio log), la tasa relativa diaria, el
+ *  valor al final del horizonte y el punto de conexión (índice + valor del último dato
+ *  real, para enganchar la línea punteada). null si <2 puntos positivos o horizonte <1. */
+export function projectMetric(labels, values, horizonDays, opts = {}) {
+  const pts = [];
+  let t0 = null, lastDate = null;
+  labels.forEach((lb, i) => {
+    const v = values[i];
+    const d = parseAnyDate(lb);
+    if (v == null || isNaN(v) || v <= 0 || !d || isNaN(d)) return; // ln exige y>0
+    const t = d.getTime();
+    if (t0 === null) t0 = t;
+    pts.push({ idx: i, x: (t - t0) / 86400000, y: v, ly: Math.log(v) });
+    lastDate = d;
+  });
+  if (pts.length < 2 || horizonDays < 1) return null;
+  const n = pts.length;
+  const sx = pts.reduce((a, p) => a + p.x, 0);
+  const sy = pts.reduce((a, p) => a + p.ly, 0);
+  const sxx = pts.reduce((a, p) => a + p.x * p.x, 0);
+  const sxy = pts.reduce((a, p) => a + p.x * p.ly, 0);
+  const denom = n * sxx - sx * sx;
+  if (denom === 0) return null;
+  const b = (n * sxy - sx * sy) / denom; // pendiente en log = tasa de decaimiento
+  const a = (sy - b * sx) / n;
+  const mly = sy / n;
+  const ssTot = pts.reduce((acc, p) => acc + (p.ly - mly) ** 2, 0);
+  const ssRes = pts.reduce((acc, p) => acc + (p.ly - (a + b * p.x)) ** 2, 0);
+  const r2 = ssTot === 0 ? 1 : Math.max(0, 1 - ssRes / ssTot);
+  const clamp = (v) => {
+    let out = v;
+    if (opts.min != null) out = Math.max(opts.min, out);
+    if (opts.max != null) out = Math.min(opts.max, out);
+    return out;
+  };
+  const last = pts[pts.length - 1];
+  // Supervivencia y población NUNCA crecen (no hay natalidad en el cultivo): la tasa de
+  // decaimiento se fuerza ≤ 0, así un repunte por ruido en el histórico no proyecta
+  // crecimiento. Se ancla en el último dato real → la proyección arranca en él y desciende
+  // (o se mantiene estable si la tendencia observada no decrece). `a` (intercepto) deja de
+  // usarse para proyectar; sigue en el R², que mide el ajuste de la tendencia log-lineal.
+  const rate = Math.min(b, 0);
+  const futureLabels = [], projected = [];
+  for (let day = 1; day <= horizonDays; day++) {
+    futureLabels.push(fmtDMY(new Date(lastDate.getTime() + day * 86400000)));
+    projected.push(clamp(last.y * Math.exp(rate * day)));
+  }
+  return {
+    futureLabels, projected, r2,
+    dailyRate: Math.exp(rate) - 1, // ≤ 0 (0 = tendencia estable, sin decrecimiento)
+    endValue: projected[projected.length - 1],
+    connectIndex: last.idx, connectValue: last.y,
+  };
+}

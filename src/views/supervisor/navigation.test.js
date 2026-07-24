@@ -171,6 +171,29 @@ describe('Supervisor · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('modal de métrica · botón de proyección en Supervivencia/Población, no en OD/Temp', async () => {
+    const root = mount();
+    click(root.querySelector('.sv-card[data-nav="module"]'));
+    const modal = root.querySelector('#svModMetricModal');
+    const projBtn = modal.querySelector('#svModMetricProj');
+    // Supervivencia: el botón de proyección es visible (draw() corre en rAF → esperamos).
+    click(root.querySelector('[data-modmetric="sv"]'));
+    await vi.waitFor(() => expect(projBtn.style.display).not.toBe('none'));
+    expect(projBtn.getAttribute('aria-pressed')).toBe('false');
+    // Al activarlo se calcula la proyección exponencial (nota bajo el gráfico; draw síncrono).
+    click(projBtn);
+    expect(projBtn.getAttribute('aria-pressed')).toBe('true');
+    expect(modal.querySelector('#svModMetricNote').textContent).toContain('Proyección exponencial');
+    // Población: mismo botón disponible; el toggle se resetea al reabrir.
+    click(root.querySelector('[data-modmetric="pop"]'));
+    expect(projBtn.getAttribute('aria-pressed')).toBe('false'); // reset síncrono en open()
+    await vi.waitFor(() => expect(projBtn.style.display).not.toBe('none'));
+    // OD (perfil horario): el botón de proyección se oculta.
+    click(root.querySelector('[data-modmetric="od"]'));
+    await vi.waitFor(() => expect(projBtn.style.display).toBe('none'));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('modal Resumen del día · KPIs ampliados (cosecha/bajas), deltas y eventos del día', () => {
     const root = mount();
     click(root.querySelector('.sv-card[data-nav="module"]'));
