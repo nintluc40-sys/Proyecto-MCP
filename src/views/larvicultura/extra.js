@@ -128,7 +128,12 @@ export function buildComposition(byCor, stage) {
 }
 
 /** Histograma de calidad: variables no representadas en otros gráficos. */
-export const HIST_VARS = [{ id: 'estres', label: 'Estrés' }, { id: 'actividad', label: '% Actividad' }];
+export const HIST_VARS = [
+  { id: 'estres', label: 'Estrés' },
+  { id: 'actividad', label: '% Actividad' },
+  { id: 'deformidad', label: 'Deformidad' },
+  { id: 'suciedad', label: '% Suciedad' },
+];
 const HIST_CFG = {
   estres: {
     keys: ['Estrés', 'Estres', 'estrés', 'estres'], dir: 'low',
@@ -137,6 +142,15 @@ const HIST_CFG = {
   actividad: {
     keys: ['% Actividad', 'Actividad', '%Actividad'], dir: 'high',
     bins: [{ t: 90, label: 'Óptimo (≥90)', color: SEM.optimo }, { t: 75, label: 'Bueno (75–90)', color: SEM.bueno }, { t: 50, label: 'Regular (50–75)', color: SEM.atencion }, { t: -Infinity, label: 'Bajo (<50)', color: SEM.critico }],
+  },
+  // Umbrales confirmados por el usuario (2026-07-23). Menor = mejor.
+  deformidad: {
+    keys: ['Deformidad', 'deformidad', '% Deformidad', '%Deformidad'], dir: 'low',
+    bins: [{ t: 2, label: 'Óptimo (0–2)', color: SEM.optimo }, { t: 5, label: 'Atención (3–5)', color: SEM.atencion }, { t: 10, label: 'Alerta (6–10)', color: SEM.alerta }, { t: Infinity, label: 'Crítico (>10)', color: SEM.critico }],
+  },
+  suciedad: {
+    keys: ['% Suciedad', 'Suciedad', '%Suciedad'], dir: 'low',
+    bins: [{ t: 5, label: 'Óptimo (0–5)', color: SEM.optimo }, { t: 15, label: 'Atención (6–15)', color: SEM.atencion }, { t: 30, label: 'Alerta (16–30)', color: SEM.alerta }, { t: Infinity, label: 'Crítico (>30)', color: SEM.critico }],
   },
 };
 export function buildHistogram(byCor, tanks, varId) {

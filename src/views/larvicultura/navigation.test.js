@@ -106,8 +106,12 @@ describe('Larvicultura · harness de navegación integral', () => {
     expect(root.textContent).toContain('Post-Larva');
     click(root.querySelector('[data-stage="larv"]'));
     ['7', '30', 'all', '15'].forEach((r) => click(root.querySelector(`[data-range="${r}"]`)));
-    click(root.querySelector('[data-histvar="actividad"]'));
-    click(root.querySelector('[data-histvar="estres"]'));
+    // Pills del histograma, incluidas las variables nuevas (Deformidad, % Suciedad).
+    ['actividad', 'estres', 'deformidad', 'suciedad'].forEach((v) => {
+      const pill = root.querySelector(`[data-histvar="${v}"]`);
+      expect(pill).toBeTruthy();
+      click(pill);
+    });
     expect(errSpy).not.toHaveBeenCalled();
   });
 
