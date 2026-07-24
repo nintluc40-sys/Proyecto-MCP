@@ -656,6 +656,13 @@ function cwTablaHTML(rows, ranges) {
   const present = new Set();
   samples.forEach((s) => s.meas.forEach((m) => present.add(m.key)));
   const params = CAL_PARAMS.filter((p) => present.has(p.key));
+  // Día de muestreo más reciente (por día-calendario, robusto a la hora del registro):
+  // sus filas se resaltan para identificar de un vistazo la lectura fresca del módulo.
+  const cwDayKey = (d) => (d && !isNaN(d)) ? d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate() : null;
+  const latestFecha = samples.reduce((mx, s) => {
+    const f = s.ctx.fecha; if (!f || isNaN(f)) return mx; return (mx == null || f > mx) ? f : mx;
+  }, null);
+  const latestDayKey = cwDayKey(latestFecha);
   const cell = (m) => {
     if (!m) return '<td class="muted" style="text-align:center">—</td>';
     const col = cwSevColor(m.severity);
@@ -666,8 +673,9 @@ function cwTablaHTML(rows, ranges) {
   const head = `<tr><th>Fecha</th><th>TQ</th><th>Estadío</th>${params.map((p) => `<th style="text-align:right" title="${esc(p.label)}${p.unit ? ' (' + esc(p.unit) + ')' : ''}">${esc(p.label)}</th>`).join('')}</tr>`;
   const body = samples.map((s) => {
     const bk = Object.fromEntries(s.meas.map((m) => [m.key, m]));
-    return `<tr>
-      <td>${s.ctx.fecha ? esc(fmtShort(s.ctx.fecha)) : '—'}</td>
+    const recent = latestDayKey != null && cwDayKey(s.ctx.fecha) === latestDayKey;
+    return `<tr${recent ? ' class="cw-row-recent"' : ''}>
+      <td>${s.ctx.fecha ? esc(fmtShort(s.ctx.fecha)) : '—'}${recent ? ' <span class="cw-recent-tag">🕒 reciente</span>' : ''}</td>
       <td>${s.ctx.tq ? 'TQ ' + esc(s.ctx.tq) : '<span class="muted">—</span>'}</td>
       <td>${esc(s.ctx.estadio || '—')}</td>
       ${params.map((p) => cell(bk[p.key])).join('')}
