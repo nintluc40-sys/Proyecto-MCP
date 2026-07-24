@@ -2,7 +2,7 @@
    SUPERVISOR · Resumen Operativo del Módulo
    ============================================================ */
 import { modStats, tankStats, tanksOf, getters } from './stats.js';
-import { moduleSvPopSeries, moduleHourlyDates, moduleHourly, moduleDayKpis, moduleDayTankReadings, cosechaEstimate } from './moduleTrends.js';
+import { moduleSvPopSeries, moduleHourlyDates, moduleHourly, moduleDayKpis, moduleDayTankReadings, cosechaEstimate, projectMetric } from './moduleTrends.js';
 import { HR_LABELS } from './tank.js';
 import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, kpiTecnicos, breadcrumb, bindModal } from './ui.js';
 import { toast } from '../../ui/toast.js';
@@ -1228,6 +1228,7 @@ export function renderModule(ctx, mod) {
         <div class="sv-modal-controls" id="svModMetricControls" style="display:none">
           <label class="sv-modal-datelbl">📅 Fecha <select id="svModMetricDate" class="sv-modal-select"></select></label>
         </div>
+        <button class="sv-mmetric-proj" id="svModMetricProj" data-modmetric-proj aria-pressed="false" style="display:none">🔮 Ver proyección</button>
         <div class="lv-fs-chart"><canvas id="svModMetricCanvas"></canvas></div>
         <div class="sv-modal-note" id="svModMetricNote"></div>
       </div>
@@ -1407,25 +1408,79 @@ export function renderModule(ctx, mod) {
       const series = moduleSvPopSeries(ctx, mod, corrida);
       const hDates = moduleHourlyDates(ctx, mod, corrida);
       dateSel.innerHTML = hDates.length ? hDates.map((f, i) => `<option value="${esc(f)}"${i === hDates.length - 1 ? ' selected' : ''}>${esc(f)}</option>`).join('') : '<option>—</option>';
+      const projBtn = mmOverlay.querySelector('#svModMetricProj');
       let curMetric = 'sv';
+      let showProj = false;
+      // Horizonte de proyección: hasta la cosecha estimada (PL11); fallback 7 días.
+      const cProj = cosechaEstimate(ctx, mod, corrida);
+      const projHorizon = (cProj && !cProj.reached && cProj.days > 0) ? cProj.days : 7;
+      const cosechaReached = !!(cProj && cProj.reached);
       const TITLES = { sv: '📈 Tendencia de supervivencia', pop: '👥 Tendencia de población', od: '💧 OD por hora (módulo)', tmp: '🌡️ Temperatura por hora (módulo)' };
       const trendCfg = (label, data, color, pct) => ({
         type: 'line',
         data: { labels: series.labels, datasets: [{ label, data, borderColor: color, backgroundColor: color + '22', tension: .3, fill: true, pointRadius: 3, spanGaps: true, borderWidth: 2.4 }] },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false }, ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 } }, y: pct ? { min: 0, suggestedMax: 100, ticks: { callback: (v) => v + '%' } } : { beginAtZero: true } } },
       });
+      // Tendencia histórica + tramo punteado de proyección exponencial (2.º dataset que
+      // arranca en el último dato real —connectIndex/Value— y continúa con los futuros).
+      const projCfg = (label, data, color, pct, proj) => ({
+        type: 'line',
+        data: {
+          labels: [...series.labels, ...proj.futureLabels],
+          datasets: [
+            { label, data: [...data, ...proj.futureLabels.map(() => null)], borderColor: color, backgroundColor: color + '22', tension: .3, fill: true, pointRadius: 3, spanGaps: true, borderWidth: 2.4 },
+            { label: 'Proyección', data: series.labels.map((_, i) => (i === proj.connectIndex ? proj.connectValue : null)).concat(proj.projected), borderColor: color, borderDash: [6, 4], backgroundColor: 'transparent', tension: .3, fill: false, pointRadius: 2, spanGaps: true, borderWidth: 2 },
+          ],
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } }, scales: { x: { grid: { display: false }, ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 14 } }, y: pct ? { min: 0, suggestedMax: 100, ticks: { callback: (v) => v + '%' } } : { beginAtZero: true } } },
+      });
       const hourlyCfg = (label, data, color) => ({
         type: 'line',
         data: { labels: HR_LABELS, datasets: [{ label, data, borderColor: color, backgroundColor: color + '1a', tension: .3, fill: true, pointRadius: 3, spanGaps: true, borderWidth: 2.4 }] },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: false } } },
       });
+      // Tendencia (SV/Población) con proyección opcional bajo demanda.
+      const drawTrend = (pct) => {
+        controls.style.display = 'none';
+        projBtn.style.display = '';
+        const vals = pct ? series.sv : series.pop;
+        const color = pct ? '#2E7D32' : '#1565C0';
+        const label = pct ? 'Supervivencia (%)' : 'Población total';
+        const baseNote = pct
+          ? 'Supervivencia del módulo por fecha (Σ última pob. / Σ pob. inicial × 100).'
+          : 'Población total del módulo (Σ de todos los tanques) por fecha.';
+        const proj = showProj ? projectMetric(series.labels, vals, projHorizon, pct ? { min: 0, max: 100 } : { min: 0 }) : null;
+        if (proj) {
+          makeChart('svModMetricCanvas', projCfg(label, vals, color, pct, proj));
+          const endTxt = pct ? fmt1(proj.endValue, '%') : fmtPop(proj.endValue);
+          const horizonLbl = proj.futureLabels[proj.futureLabels.length - 1];
+          const weak = proj.r2 < 0.5 ? ' — ⚠ ajuste débil, tómalo con cautela' : '';
+          // La tasa se fuerza ≤ 0 (nunca crece); si la tendencia observada no decrece, sale plana.
+          const flat = proj.dailyRate >= 0 ? ' Tendencia observada no decreciente → se proyecta estable, sin crecimiento.' : '';
+          noteEl.innerHTML = `${esc(baseNote)}<br><b>🔮 Proyección exponencial</b> a ${esc(horizonLbl)}${cosechaReached ? '' : ' (≈ cosecha PL11)'}: <b>${esc(endTxt)}</b>. Ajuste R²=${proj.r2.toFixed(2)}${weak}.${flat}`;
+        } else {
+          makeChart('svModMetricCanvas', trendCfg(label, vals, color, pct));
+          noteEl.textContent = showProj ? `${baseNote} (Datos insuficientes para proyectar.)` : baseNote;
+        }
+      };
       const draw = () => {
-        if (curMetric === 'sv') { controls.style.display = 'none'; noteEl.textContent = 'Supervivencia del módulo por fecha (Σ última pob. / Σ pob. inicial × 100).'; makeChart('svModMetricCanvas', trendCfg('Supervivencia (%)', series.sv, '#2E7D32', true)); }
-        else if (curMetric === 'pop') { controls.style.display = 'none'; noteEl.textContent = 'Población total del módulo (Σ de todos los tanques) por fecha.'; makeChart('svModMetricCanvas', trendCfg('Población total', series.pop, '#1565C0', false)); }
-        else { controls.style.display = ''; noteEl.textContent = 'Promedio del módulo en las 12 tomas cada 2 h del día seleccionado.'; const g = curMetric === 'od' ? gOD : gTmp; const c = curMetric === 'od' ? '#1E88E5' : '#F4511E'; makeChart('svModMetricCanvas', hourlyCfg(curMetric === 'od' ? 'OD (mg/L)' : 'T° (°C)', moduleHourly(ctx, mod, corrida, g, dateSel.value), c)); }
+        if (curMetric === 'sv') drawTrend(true);
+        else if (curMetric === 'pop') drawTrend(false);
+        else { projBtn.style.display = 'none'; controls.style.display = ''; noteEl.textContent = 'Promedio del módulo en las 12 tomas cada 2 h del día seleccionado.'; const g = curMetric === 'od' ? gOD : gTmp; const c = curMetric === 'od' ? '#1E88E5' : '#F4511E'; makeChart('svModMetricCanvas', hourlyCfg(curMetric === 'od' ? 'OD (mg/L)' : 'T° (°C)', moduleHourly(ctx, mod, corrida, g, dateSel.value), c)); }
       };
       dateSel.addEventListener('change', () => { if (curMetric === 'od' || curMetric === 'tmp') draw(); });
-      const open = (metric) => { curMetric = metric; titleEl.textContent = TITLES[metric] || 'Gráfico'; requestAnimationFrame(draw); };
+      projBtn.addEventListener('click', () => {
+        showProj = !showProj;
+        projBtn.textContent = showProj ? '🔮 Ocultar proyección' : '🔮 Ver proyección';
+        projBtn.setAttribute('aria-pressed', String(showProj));
+        draw();
+      });
+      const open = (metric) => {
+        curMetric = metric; showProj = false;
+        projBtn.textContent = '🔮 Ver proyección'; projBtn.setAttribute('aria-pressed', 'false');
+        titleEl.textContent = TITLES[metric] || 'Gráfico';
+        requestAnimationFrame(draw);
+      };
       bindModal(root, mmOverlay, {
         openSel: '[data-modmetric]', closeSel: '[data-modmetric-close]', keyboard: true,
         onOpen: (chip) => open(chip.dataset.modmetric),
