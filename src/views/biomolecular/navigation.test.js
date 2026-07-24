@@ -117,6 +117,23 @@ describe('Biología Molecular · harness de navegación (D3 stubeado)', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('tooltip · no se queda pegado: mousemove fuera de forma y redibujado lo ocultan', () => {
+    biomolecularView(root);
+    const tip = document.getElementById('bm-tooltip');
+    expect(tip).toBeTruthy();
+    // 1) Tooltip visible + mousemove cuyo target NO es una forma SVG (es HTML) → se oculta.
+    //    Con el código anterior seguía en opacity:1 (pegado al cursor).
+    tip.style.opacity = '1';
+    root.dispatchEvent(new window.MouseEvent('mousemove', { bubbles: true, clientX: 120, clientY: 120 }));
+    expect(tip.style.opacity).toBe('0');
+    // 2) Un redibujado (cambio de filtro → render → renderCharts) limpia un tooltip colgado.
+    tip.style.opacity = '1';
+    const diagBtn = root.querySelector('#diag-filter .filter-btn');
+    if (diagBtn) click(diagBtn);
+    expect(tip.style.opacity).toBe('0');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('modo AUD alterna y restaura', () => {
     biomolecularView(root);
     const aud = document.getElementById('aud-btn');
