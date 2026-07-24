@@ -405,6 +405,16 @@ describe('Supervisor · harness de navegación integral', () => {
     // Tabla (muestra × parámetro); clic en la pestaña fuerza el render síncrono.
     click(root.querySelector('[data-cw-mode="tabla"]'));
     expect(root.querySelector('#svCwBody .sv-table')).toBeTruthy();
+    // Resalte del día más reciente: la fecha máxima (07/06) tiene 2 tanques → 2 filas
+    // marcadas con .cw-row-recent + distintivo; las de 05/06 quedan sin marcar.
+    const cwBodyRows = root.querySelectorAll('#svCwBody .sv-table tbody tr');
+    expect(cwBodyRows.length).toBe(4);
+    const recentRows = root.querySelectorAll('#svCwBody .sv-table tbody tr.cw-row-recent');
+    expect(recentRows.length).toBe(2);
+    expect(root.querySelectorAll('#svCwBody .cw-recent-tag').length).toBe(2);
+    // El resalte va en las filas de arriba (orden descendente) y no en las antiguas.
+    expect(cwBodyRows[0].classList.contains('cw-row-recent')).toBe(true);
+    expect(cwBodyRows[3].classList.contains('cw-row-recent')).toBe(false);
     // Tanques: tarjetas-instrumento (una por tanque, con escala/aguja por parámetro).
     click(root.querySelector('[data-cw-mode="fichas"]'));
     expect(root.querySelector('#svCwBody .cw-fichas')).toBeTruthy();
