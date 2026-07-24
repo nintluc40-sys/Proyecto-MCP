@@ -7929,6 +7929,15 @@ const MIC_TQS_LARV = ["", "1","2","3","4","5","6","7","8","9","10","11","12"];
 const MIC_SEXO     = ["","Machos","Hembras"];
 const MIC_TIPO_M   = ["","Animal","Agua"];
 const MIC_PA_OPTS  = ["","Presencia","Ausencia"];
+// Analistas sugeridos para el campo Responsable de Bacteriología / Calidad de Agua /
+// Patología. El input admite TEXTO LIBRE (datalist): la lista es solo sugerencia con
+// valor por defecto. El Analista es OBLIGATORIO antes de sincronizar (ver los sync*).
+const MIC_ANALISTAS = ["Macías","Ramírez","Espinoza","Cayra"];
+function _analistaDL(id){ return `<datalist id="${id}">`+MIC_ANALISTAS.map(a=>`<option value="${escapeHtml(a)}">`).join("")+`</datalist>`; }
+// ¿Alguna muestra pendiente va sin Analista (Responsable)? Bloquea la sincronización
+// (Mic/Cal/Pat) hasta que TODAS lo tengan; se comprueba el dato del registro, no el
+// campo del DOM, para ser robusto aunque se sincronice desde otra pestaña o "Enviar todos".
+function _pendingLacksAnalista(records){ return (records||[]).some(r=> !sanitizeStr((r && r.data && r.data.responsable)||"")); }
 // Catálogos de los formatos nuevos (Algas Mensual/R, Maduración desinfección)
 const MIC_ALGM_LUGAR   = ["","Cepario 1","Cepario 2","Cepario 3","Sala 1","Sala 2","Sala 3"];
 const MIC_ALGM_MUESTRA = ["","Nutriente 1","Nutriente 2","Nutriente 3","Nutriente 4","Tubo","Fiola 150 ml","Fiola 1 L","Fiola 2 L","Funda Matriz","Funda Producción"];
@@ -8710,7 +8719,7 @@ function renderMicNuevo(){
         <div class="mf"><label>Fecha muestreo</label><input type="date" id="mic-fm" value="${escapeHtml(meta.fechaMuestreo||today())}" oninput="micDraftTouch()"></div>
         <div class="mf"><label>Fecha resultados</label><input type="date" id="mic-fr" value="${escapeHtml(meta.fechaResultados||"")}" oninput="micDraftTouch()"></div>
         <div class="mf"><label>N° Corrida</label><input id="mic-corr" value="${escapeHtml(meta.corrida||"")}" placeholder="Ej. 562" oninput="micDraftTouch()" onchange="micCorridaChange()"></div>
-        <div class="mf"><label>Responsable</label><input id="mic-resp" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="micDraftTouch()"></div>
+        <div class="mf"><label>Responsable <span style="color:#dc2626" title="Analista obligatorio antes de sincronizar">*</span></label><input id="mic-resp" list="mic-analistas" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="micDraftTouch()">${_analistaDL("mic-analistas")}</div>
         <div class="mf"><label>Formato</label><select id="mic-fmt-sel" onchange="micFmtChange(this.value)" style="font-weight:600">${fmtOpts}</select></div>
         ${micHdrMod}${micHdrEst}${micHdrSala}
         <div class="mf" style="flex-basis:100%"><label>Encabezado <span style="font-weight:500;text-transform:none;color:#64748b">— opcional, sale en el PDF antes de la semaforización</span></label>
@@ -8915,6 +8924,7 @@ async function syncMic(){
   if(pendKeys.size === 0){ toast("No hay muestras pendientes","info",2500); return; }
   // Envía TODAS las filas de cada sesión con pendientes (la hoja reemplaza la sesión completa).
   const toSend = list.filter(r=> r.data && pendKeys.has(micSessionKey(r.data)));
+  if(_pendingLacksAnalista(toSend)){ setSyncUI("idle","Sin analista"); toast("⚠️ El Analista responsable es obligatorio: complétalo en el análisis antes de sincronizar","warn",4800); const _el=document.getElementById("mic-resp"); if(_el){ try{ _el.focus(); }catch(_){} } return; }
   const payload = buildMicPayload(toSend);
   if(!payload.rows.length){ toast("No hay filas para enviar","warn",3000); return; }
   setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s)…");
@@ -9811,7 +9821,7 @@ function renderCalNuevo(){
         <div class="mf"><label>Fecha muestreo</label><input type="date" id="cal-fm" value="${escapeHtml(meta.fechaMuestreo||today())}" oninput="calDraftTouch()"></div>
         <div class="mf"><label>Fecha resultados</label><input type="date" id="cal-fr" value="${escapeHtml(meta.fechaResultados||"")}" oninput="calDraftTouch()"></div>
         <div class="mf"><label>N° Corrida (opcional)</label><input id="cal-corr" value="${escapeHtml(meta.corrida||"")}" placeholder="Opcional" oninput="calDraftTouch()" onchange="calCorridaChange()"></div>
-        <div class="mf"><label>Responsable</label><input id="cal-resp" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="calDraftTouch()"></div>
+        <div class="mf"><label>Responsable <span style="color:#dc2626" title="Analista obligatorio antes de sincronizar">*</span></label><input id="cal-resp" list="cal-analistas" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="calDraftTouch()">${_analistaDL("cal-analistas")}</div>
         <div class="mf"><label>Formato</label><select id="cal-fmt-sel" onchange="calFmtChange(this.value)" style="font-weight:600">${fmtOpts}</select></div>
         ${calHdrMod}${calHdrEst}
         <div class="mf" style="flex-basis:100%"><label>Encabezado <span style="font-weight:500;text-transform:none;color:#64748b">— opcional, sale en el PDF antes de la semaforización</span></label>
@@ -9924,6 +9934,7 @@ async function syncCal(){
   list.forEach(r=>{ if(!r.synced && r.data) pendKeys.add(calSessionKey(r.data)); });
   if(pendKeys.size===0){ toast("No hay muestras pendientes","info",2500); return; }
   const toSend=list.filter(r=> r.data && pendKeys.has(calSessionKey(r.data)));
+  if(_pendingLacksAnalista(toSend)){ setSyncUI("idle","Sin analista"); toast("⚠️ El Analista responsable es obligatorio: complétalo en el análisis antes de sincronizar","warn",4800); const _el=document.getElementById("cal-resp"); if(_el){ try{ _el.focus(); }catch(_){} } return; }
   const payload=buildCalPayload(toSend);
   if(!payload.rows.length){ toast("No hay filas para enviar","warn",3000); return; }
   setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s)…");
@@ -10407,7 +10418,7 @@ function renderPatNuevo(){
         <div class="mf"><label>Fecha muestreo</label><input type="date" id="pat-fm" value="${escapeHtml(meta.fechaMuestreo||today())}" oninput="patDraftTouch()"></div>
         <div class="mf"><label>Fecha resultados</label><input type="date" id="pat-fr" value="${escapeHtml(meta.fechaResultados||"")}" oninput="patDraftTouch()"></div>
         <div class="mf"><label>N° Corrida (opcional)</label><input id="pat-corr" value="${escapeHtml(meta.corrida||"")}" placeholder="Opcional" oninput="patDraftTouch()" onchange="patCorridaChange()"></div>
-        <div class="mf"><label>Responsable</label><input id="pat-resp" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="patDraftTouch()"></div>
+        <div class="mf"><label>Responsable <span style="color:#dc2626" title="Analista obligatorio antes de sincronizar">*</span></label><input id="pat-resp" list="pat-analistas" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="patDraftTouch()">${_analistaDL("pat-analistas")}</div>
         <div class="mf" style="flex-basis:100%"><label>Encabezado <span style="font-weight:500;text-transform:none;color:#64748b">— opcional, sale en el PDF</span></label>
           <textarea id="pat-enc" placeholder="Encabezado del reporte (opcional)…" oninput="patDraftTouch()" style="width:100%;min-height:40px">${escapeHtml(meta.encabezado||"")}</textarea></div>
       </div>
@@ -10537,6 +10548,7 @@ async function syncPat(){
   list.forEach(r=>{ if(!r.synced && r.data) pendKeys.add(patSessionKey(r.data)); });
   if(pendKeys.size===0){ toast("No hay muestras pendientes","info",2500); return; }
   const toSend=list.filter(r=> r.data && pendKeys.has(patSessionKey(r.data)));
+  if(_pendingLacksAnalista(toSend)){ setSyncUI("idle","Sin analista"); toast("⚠️ El Analista responsable es obligatorio: complétalo en el análisis antes de sincronizar","warn",4800); const _el=document.getElementById("pat-resp"); if(_el){ try{ _el.focus(); }catch(_){} } return; }
   const payload=buildPatPayload(toSend);
   if(!payload.rows.length){ toast("No hay filas para enviar","warn",3000); return; }
   setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s)…");
