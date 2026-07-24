@@ -64,8 +64,10 @@ const LIMITS = {
   // Desinfección: 9 cols (Fecha…Fecha Elemento) + margen. maxRows holgado:
   // los 4 tipos suman ~50 elementos posibles por módulo/día.
   desinf:  { maxRows: 200, maxCols: 12 },
-  // Microbiología: hoja ancha (~50 cols Fase 1) + margen para fases futuras.
-  micro:   { maxRows: 300, maxCols: 80 },
+  // Microbiología: hoja ancha (76 cols base + EM: pH + Conteo BA/Lev. crudo·UFC = 81)
+  // + margen para fases futuras. OJO: las filas se recortan a maxCols en doPost, así
+  // que este tope DEBE cubrir todas las columnas o se truncaría la última.
+  micro:   { maxRows: 300, maxCols: 90 },
   // Calidad de Agua: hoja ancha (14 contexto + 31 parámetros = 45 cols) + margen.
   cal:     { maxRows: 300, maxCols: 80 },
   // Patología en Fresco: 6 contexto + 15 columnas internas + Peso + Obs = 23 cols.

@@ -7956,7 +7956,12 @@ const MIC_PARAMS = {
   brojas: { l:"Bact.Rojas", noRange:true },
   entero: { l:"Enterobact.", noRange:true },
   levad:  { l:"Levaduras",   noRange:true },
-  vlum:   { l:"V.Luminiscentes", pa:true }
+  vlum:   { l:"V.Luminiscentes", pa:true },
+  // EM (Larvicultura): conteos de dilución alta. Se registran como UFC (conteo ×
+  // factor) SIN umbrales de nivel → par crudo+UFC en la hoja, igual que Enterobact./
+  // Levaduras. Área de factores propia "larv-em" (BA ×2 000 000, Lev. ×1 600 000).
+  cba:    { l:"Conteo BA",   noRange:true },
+  clev:   { l:"Conteo Lev.", noRange:true }
 };
 
 // Formatos de Fase 1
@@ -8024,6 +8029,19 @@ const MIC_FORMATS = {
       { k:"etapa",  l:"Etapa",  type:"sel", opts:["","Antes de desinfección","Después de desinfección"], w:150 }
     ],
     params:["vamar","vverd","vtot","btot","levad","hongos"]
+  },
+  "larv-em": {
+    // EM (Larvicultura): pH + conteo de BA y Levaduras con factor de dilución alto.
+    // Corrida/Módulo reutilizan columnas existentes de la hoja; pH y los conteos
+    // son columnas nuevas al final (ver MIC_SHEET_HEADERS / buildMicPayload).
+    depto:"Larvicultura", label:"Larvicultura · EM",
+    rkeyFn:()=> "larv-em",
+    ctx:[
+      { k:"corrida", l:"Corrida", type:"txt", w:70 },
+      { k:"modulo",  l:"Módulo",  type:"sel", opts:MIC_MODULOS, w:58 },
+      { k:"ph",      l:"pH",       type:"txt", w:56 }
+    ],
+    params:["cba","clev"]
   },
   "alim-vivo": {
     depto:"Maduración", label:"Maduración · Alimento vivo",
@@ -8133,7 +8151,7 @@ const MIC_FORMATS = {
 };
 // El orden define el de los optgroup del selector (Larvicultura → Maduración → Algas →
 // Otras) y el de las secciones de la ficha.
-const MIC_FORMAT_KEYS = ["larv-muestra","reservorios","placa-amb","artemia","mad-principal","mad-agua","mad-ensayo","alim-vivo","ras","agua-mar","agua-limpia-mar","mad-desinf","algas","algas-mensual","algas-r","externas","hisopados","hisopados-despacho"];
+const MIC_FORMAT_KEYS = ["larv-muestra","reservorios","placa-amb","artemia","larv-em","mad-principal","mad-agua","mad-ensayo","alim-vivo","ras","agua-mar","agua-limpia-mar","mad-desinf","algas","algas-mensual","algas-r","externas","hisopados","hisopados-despacho"];
 // Formatos en los que la Corrida es obligatoria para guardar/sincronizar.
 const MIC_CORRIDA_REQ = new Set(["larv-muestra"]);
 function micFormatLabel(fmtKey){ return (MIC_FORMATS[fmtKey] && MIC_FORMATS[fmtKey].label) || fmtKey || ""; }
@@ -8220,6 +8238,12 @@ const MIC_DR_BASE = {
     pseudo:{f:10,l:100,m:200,e:300}, aero:{f:10,l:1000,m:5000,e:10000},
     btot:{f:10,l:10000,m:100000,e:1000000}, bnar:{f:10,l:1000,m:5000,e:10000},
     hongos:{f:2,l:2,m:20,e:40}, entero:{f:1}, levad:{f:1}
+  },
+  // Larvicultura · EM — conteos de dilución alta. Factores fijados por el usuario:
+  // Conteo BA ×2 000 000, Conteo Lev. ×1 600 000. Sin umbrales (l/m/e) → se registra
+  // el UFC = conteo × factor sin clasificación de nivel (como Enterobact./Levaduras).
+  "larv-em":{
+    cba:{f:2000000}, clev:{f:1600000}
   }
 };
 const MIC_LVL_TXT = { v:"Mínimo", y:"Leve", o:"Moderado", r:"Elevado" };
@@ -8938,6 +8962,12 @@ const MIC_SHEET_HEADERS = (function(){
   h.push("Sesión");
   // Lote: columna añadida al FINAL (el GAS escribe por posición; no desalinea lo existente).
   h.push("Lote");
+  // EM (Larvicultura) — pH + conteos al FINAL (columnas nuevas). El GAS las agrega a la
+  // hoja existente vía ensureHeaders sin desalinear lo previo. pH se guarda tal cual (sin
+  // factor); BA/Lev. como par crudo + UFC (UFC = conteo × factor del área "larv-em").
+  h.push("pH");
+  h.push("Conteo BA (crudo)","Conteo BA UFC");
+  h.push("Conteo Lev. (crudo)","Conteo Lev. UFC");
   return h;
 })();
 const MIC_SID_COL = MIC_SHEET_HEADERS.indexOf("Sesión");
@@ -8979,8 +9009,14 @@ function buildMicPayload(records){
     row.push(sanitizeStr(d.carro||""), sanitizeStr(d.tina||""));
     // Identidad de sesión. "" en sesiones heredadas (sin sid).
     row.push(sanitizeStr(d.sid||""));
-    // Lote (última columna; vacío en formatos sin campo Lote).
+    // Lote (vacío en formatos sin campo Lote).
     row.push(sanitizeStr(d.lote||""));
+    // EM — pH (tal cual, sin factor) + conteos BA/Lev. (crudo + UFC = conteo × factor).
+    // Vacíos en formatos que no son "larv-em".
+    row.push(sanitizeStr(d.ph||""));
+    const cba = comp.cba||{}, clev = comp.clev||{};
+    row.push(_n(cba.crudo), _n(cba.ufc));
+    row.push(_n(clev.crudo), _n(clev.ufc));
     return row;
   });
   return { sheetName: MIC_SHEET, headers: MIC_SHEET_HEADERS, rows, replaceKey:true, keyCols:[0,2,4,5,MIC_SID_COL] };
@@ -9063,7 +9099,7 @@ function micDeleteSession(k){
 function renderMicFactores(){
   const fp = document.getElementById("fp-micfact"); if(!fp) return;
   const F = loadMicFactors();
-  const areaLabel = { "larv-animal":"Larvicultura · Animal", "larv-agua":"Larvicultura · Agua", "mad-reprod":"Maduración · Reproductores", "ambiental":"Ambiental / Hisopados (×1)", "artemia":"Artemia (×20)", "ras-agua":"Maduración · RAS (Agua)", "algas":"Algas · Hisopado / Mensual / Fundas y Masivos", "agua-limpia-mar":"Agua Limpia y Mar", "mad-despacho-agua":"Maduración · Despacho (Agua)", "mad-despacho-animal":"Maduración · Despacho (Organismo)", "mad-agua":"Maduración · Agua" };
+  const areaLabel = { "larv-animal":"Larvicultura · Animal", "larv-agua":"Larvicultura · Agua", "mad-reprod":"Maduración · Reproductores", "ambiental":"Ambiental / Hisopados (×1)", "artemia":"Artemia (×20)", "ras-agua":"Maduración · RAS (Agua)", "algas":"Algas · Hisopado / Mensual / Fundas y Masivos", "agua-limpia-mar":"Agua Limpia y Mar", "mad-despacho-agua":"Maduración · Despacho (Agua)", "mad-despacho-animal":"Maduración · Despacho (Organismo)", "mad-agua":"Maduración · Agua", "larv-em":"Larvicultura · EM" };
   const blocks = Object.keys(MIC_DR_BASE).map(ak=>{
     const rows = Object.keys(MIC_DR_BASE[ak]).map(pk=>{
       const r = (F[ak] && F[ak][pk]) || {};
