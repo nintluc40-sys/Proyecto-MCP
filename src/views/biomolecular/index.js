@@ -1372,7 +1372,7 @@ function drawContamination() {
 
 function drawReportSections() { drawLineComp(); drawCoinfection(); drawEstadioPos(); drawContamination(); }
 
-function renderCharts() { refreshTheme(); drawHeatmap(); drawCalendar(); drawTreemap(); drawSwarm(); drawSankey(); drawTrend(); drawDonut(); }
+function renderCharts() { hideTip(); refreshTheme(); drawHeatmap(); drawCalendar(); drawTreemap(); drawSwarm(); drawSankey(); drawTrend(); drawDonut(); }
 
 // ── HTML del shell ──
 function shellHTML() {
@@ -1773,7 +1773,14 @@ function wire(root) {
   // solos al navegar (antes vivían en `document` de por vida y el de mousemove corría
   // en CADA movimiento del ratón en toda la app).
   root.addEventListener('click', (e) => { if (!e.target.closest('.biomol .fb-dropdown-wrap')) closeDropdowns(); });
-  root.addEventListener('mousemove', (e) => { const t = $('bm-tooltip'); if (t && t.style.opacity === '1') moveTip(e); });
+  // Sigue al cursor SOLO mientras esté sobre una forma SVG de un gráfico (ownerSVGElement
+  // no nulo). Si el puntero sale a un hueco/fondo/HTML, oculta el tooltip: así no se queda
+  // "pegado" cuando el mouseleave de la forma no llegó a dispararse (p. ej. porque el
+  // gráfico se redibujó durante el hover). Red de seguridad sobre los mouseleave por forma.
+  root.addEventListener('mousemove', (e) => {
+    const t = $('bm-tooltip'); if (!t || t.style.opacity !== '1') return;
+    if (e.target && e.target.ownerSVGElement) moveTip(e); else hideTip();
+  });
   // Escape es global por naturaleza: se registra UNA sola vez (guard) y es no-op
   // cuando no hay modal/fullscreen de Biomol montado.
   if (!docWired) {
