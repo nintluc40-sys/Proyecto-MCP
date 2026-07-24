@@ -28,7 +28,13 @@ const COL_ALIASES = {
 let RAW = [];
 let activeDiags   = new Set(DIAGS);
 let activeLugares = new Set();
+let activeLotes   = new Set();
 let activeFechas  = new Set();
+// Lote = Código de la muestra. Línea EXTERNA = el código contiene "texcumar" (regla del
+// laboratorio, la misma que agrupa el heatmap); interna = el resto. Definición ÚNICA
+// compartida por el filtro global de Lote y por el heatmap (para que no diverjan).
+const isExtCode = (c) => /texcumar/i.test(c || '');
+const loteOf = (d) => d.cod || 'Sin lote';
 let datePreset    = 'all';
 // Modo AUD (entrenamiento): persiste entre re-render. La semilla fija la simulación
 // para que un mismo registro conserve su resultado al refrescar los datos.
@@ -88,7 +94,7 @@ export function normalizeRows(rows) {
   });
   return out;
 }
-const filtered = () => RAW.filter((d) => activeLugares.has(d.lugar) && activeFechas.has(d.f));
+const filtered = () => RAW.filter((d) => activeLugares.has(d.lugar) && activeLotes.has(loteOf(d)) && activeFechas.has(d.f));
 function togClass(set, val, btn) { if (set.has(val)) { set.delete(val); btn.classList.remove('on'); } else { set.add(val); btn.classList.add('on'); } }
 
 // ── KPIs (idéntico a BIOMOL.html updateKPI) ──
@@ -128,6 +134,32 @@ function updateLugarSummary() {
   if (sel === 0) el.textContent = 'Ninguno'; else if (sel === total) el.textContent = `Todos (${total})`;
   else if (sel === 1) el.textContent = [...activeLugares][0]; else el.textContent = `${sel} de ${total} lugares`;
 }
+
+// ── Filterbar: lote (Código) · con accesos rápidos Línea interna/externa ──
+function buildLoteList(lotes) {
+  const list = $('lote-check-list'); list.innerHTML = '';
+  lotes.forEach((l) => {
+    const label = document.createElement('label'); label.className = 'fb-check-item'; label.dataset.lote = l;
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = activeLotes.has(l); cb.dataset.lote = l;
+    cb.addEventListener('change', () => { if (cb.checked) activeLotes.add(l); else activeLotes.delete(l); updateLoteSummary(); updateChips(); render(); });
+    label.appendChild(cb); label.appendChild(document.createTextNode(l)); list.appendChild(label);
+  });
+}
+const filterLoteList = (q) => document.querySelectorAll('#lote-check-list .fb-check-item').forEach((item) => item.classList.toggle('hidden-item', !item.dataset.lote.toLowerCase().includes(q.toLowerCase())));
+function selectAllLotes() { activeLotes.clear(); document.querySelectorAll('#lote-check-list input[type=checkbox]').forEach((cb) => { cb.checked = true; activeLotes.add(cb.dataset.lote); }); updateLoteSummary(); updateChips(); render(); }
+function selectNoneLotes() { activeLotes.clear(); document.querySelectorAll('#lote-check-list input[type=checkbox]').forEach((cb) => { cb.checked = false; }); updateLoteSummary(); updateChips(); render(); }
+// Selecciona en bloque los lotes de una línea (externa = código con "texcumar").
+function selectLinea(ext) {
+  const lotes = [...new Set(RAW.map(loteOf))];
+  activeLotes.clear(); lotes.filter((c) => isExtCode(c) === ext).forEach((c) => activeLotes.add(c));
+  rebuildLoteCheckboxes(); updateLoteSummary(); updateChips(); render();
+}
+function updateLoteSummary() {
+  const total = [...new Set(RAW.map(loteOf))].length, sel = activeLotes.size, el = $('lote-summary');
+  if (sel === 0) el.textContent = 'Ninguno'; else if (sel === total) el.textContent = `Todos (${total})`;
+  else if (sel === 1) el.textContent = [...activeLotes][0]; else el.textContent = `${sel} de ${total} lotes`;
+}
+const rebuildLoteCheckboxes = () => document.querySelectorAll('#lote-check-list input[type=checkbox]').forEach((cb) => { cb.checked = activeLotes.has(cb.dataset.lote); });
 function toggleDropdown(which) {
   const panel = $(which + '-panel'), trigger = $(which + '-trigger'), wasOpen = !panel.classList.contains('hidden');
   closeDropdowns();
@@ -181,6 +213,12 @@ function updateChips() {
     if (activeLugares.size === 0) addChip(container, 'Sin lugares', () => selectAllLugares());
     else if (activeLugares.size <= 3) [...activeLugares].sort().forEach((l) => addChip(container, l, () => { activeLugares.delete(l); rebuildLugarCheckboxes(); updateLugarSummary(); updateChips(); render(); }));
     else addChip(container, `${activeLugares.size} lugares`, () => selectAllLugares());
+  }
+  const totalLote = [...new Set(RAW.map(loteOf))].length;
+  if (activeLotes.size < totalLote) {
+    if (activeLotes.size === 0) addChip(container, 'Sin lotes', () => selectAllLotes());
+    else if (activeLotes.size <= 3) [...activeLotes].sort().forEach((l) => addChip(container, 'Lote: ' + l, () => { activeLotes.delete(l); rebuildLoteCheckboxes(); updateLoteSummary(); updateChips(); render(); }));
+    else addChip(container, `${activeLotes.size} lotes`, () => selectAllLotes());
   }
   if (activeFechas.size < allFechas.length) {
     const label = datePreset === 'custom' ? `${$('date-from').value || '?'} → ${$('date-to').value || '?'}` : `Últimos ${datePreset}d`;
@@ -472,7 +510,6 @@ function drawHeatmap() {
   const isFS = cardEl && cardEl.classList.contains('is-fs');
   const W_avail = Math.max((wrapper && wrapper.clientWidth) || 520, 320);
   const DA = DIAGS.filter((d) => activeDiags.has(d));
-  const isExtCode = (c) => /texcumar/i.test(c || '');
   const hmGL = granKeyLabel(resolveGran(new Set(data.map((r) => r.f)).size));
   let cols = [];
   if (hmMode === 'lugar') cols = [...new Set(data.map((r) => r.lugar).filter((l) => l && l !== 'Sin lugar'))].sort();
@@ -1379,6 +1416,23 @@ function shellHTML() {
       </div>
       <div class="fb-sep"></div>
       <div class="fb-group">
+        <span class="fb-label">Lote</span>
+        <div class="fb-dropdown-wrap" id="lote-dropdown-wrap">
+          <button type="button" class="fb-trigger" id="lote-trigger" aria-haspopup="listbox" aria-expanded="false"><span id="lote-summary">Todos</span><span class="fb-caret">▾</span></button>
+          <div class="fb-panel hidden" id="lote-panel" role="listbox">
+            <div class="fb-search-row"><input class="fb-search" id="lote-search" type="search" placeholder="Buscar lote…" autocomplete="off"></div>
+            <div class="fb-actions">
+              <button type="button" class="fb-action-btn" id="btn-all-lotes">Todos</button>
+              <button type="button" class="fb-action-btn" id="btn-none-lotes">Ninguno</button>
+              <button type="button" class="fb-action-btn" id="btn-linea-int">Interna</button>
+              <button type="button" class="fb-action-btn" id="btn-linea-ext">Externa</button>
+            </div>
+            <div class="fb-check-list" id="lote-check-list"></div>
+          </div>
+        </div>
+      </div>
+      <div class="fb-sep"></div>
+      <div class="fb-group">
         <span class="fb-label">Período</span>
         <div class="fb-date-row">
           <div class="fb-preset-group">
@@ -1609,13 +1663,14 @@ function shellHTML() {
 // ── Inicialización de filtros (respeta selección previa salvo reset) ──
 function initFilters(reset) {
   const lugares = [...new Set(RAW.map((d) => d.lugar))].sort();
+  const lotes = [...new Set(RAW.map(loteOf))].sort();
   const fechas = [...new Set(RAW.map((d) => d.f))].sort();
   // El modo AUD SÍ sobrevive al rebuild de RAW: la vista reaplica la simulación con la
   // misma semilla justo después de reconstruirla, así que el botón "on" siempre refleja
   // datos simulados. Solo se apaga al pulsarlo por segunda vez (o al recargar la página).
   if (reset) {
     timeGran = 'month'; datePreset = 'all';
-    activeLugares = new Set(lugares); activeFechas = new Set(fechas); activeDiags = new Set(DIAGS);
+    activeLugares = new Set(lugares); activeLotes = new Set(lotes); activeFechas = new Set(fechas); activeDiags = new Set(DIAGS);
     originSuppressed.clear(); hmSuppressed.clear(); calSuppressed.clear();
     // Los datos cambiaron: descarta el estado del Reporte/Árbol (sus lugares/fechas
     // guardados podrían no existir ya). Se re-derivan del dataset nuevo al reabrirlos.
@@ -1623,11 +1678,15 @@ function initFilters(reset) {
   } else {
     activeLugares = new Set([...activeLugares].filter((l) => lugares.includes(l)));
     if (!activeLugares.size) lugares.forEach((l) => activeLugares.add(l));
+    activeLotes = new Set([...activeLotes].filter((l) => lotes.includes(l)));
+    if (!activeLotes.size) lotes.forEach((l) => activeLotes.add(l));
     activeFechas = new Set([...activeFechas].filter((f) => fechas.includes(f)));
     if (!activeFechas.size) fechas.forEach((f) => activeFechas.add(f));
   }
   buildLugarList(lugares);
   updateLugarSummary();
+  buildLoteList(lotes);
+  updateLoteSummary();
   document.querySelectorAll('.biomol .fb-preset').forEach((b) => b.classList.toggle('on', b.dataset.preset === datePreset));
   $('fb-date-inputs').style.display = datePreset === 'custom' ? 'flex' : 'none';
   if (fechas.length) {
@@ -1664,6 +1723,12 @@ function wire(root) {
   $('lugar-search').addEventListener('input', (e) => filterLugarList(e.target.value));
   $('btn-all-lugares').addEventListener('click', selectAllLugares);
   $('btn-none-lugares').addEventListener('click', selectNoneLugares);
+  $('lote-trigger').addEventListener('click', () => toggleDropdown('lote'));
+  $('lote-search').addEventListener('input', (e) => filterLoteList(e.target.value));
+  $('btn-all-lotes').addEventListener('click', selectAllLotes);
+  $('btn-none-lotes').addEventListener('click', selectNoneLotes);
+  $('btn-linea-int').addEventListener('click', () => selectLinea(false));
+  $('btn-linea-ext').addEventListener('click', () => selectLinea(true));
   root.querySelectorAll('.fb-preset').forEach((b) => b.addEventListener('click', () => applyPreset(b.dataset.preset, b)));
   $('apply-date-range').addEventListener('click', applyDateRange);
   $('kpi-total').addEventListener('click', showTotalBreakdown);

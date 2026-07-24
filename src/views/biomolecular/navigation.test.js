@@ -85,6 +85,38 @@ describe('Biología Molecular · harness de navegación (D3 stubeado)', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('filtro de Lote (Código) + accesos Línea interna/externa reencuadran las KPIs', () => {
+    // Añade un lote de línea EXTERNA (Código con "Texcumar", 2 muestras) sobre los 12
+    // lotes internos del fixture, para distinguir las dos líneas.
+    store.globalData = synthData().concat([
+      B({ Fecha: '02/06/2026', 'Código': 'Texcumar-01', Corrida: '573', Lugar: 'Módulo 1', Tanque: 'TQ9', 'Estadío': 'PL5', IHHNV: 'Positivo' }),
+      B({ Fecha: '05/06/2026', 'Código': 'Texcumar-01', Corrida: '573', Lugar: 'Módulo 1', Tanque: 'TQ9', 'Estadío': 'PL5', IHHNV: 'Negativo' }),
+    ]);
+    biomolecularView(root);
+    const total = () => Number(document.getElementById('kv-total').textContent);
+    expect(total()).toBe(14); // 12 internos + 2 externos
+
+    // Un check por Código (13 distintos: 12 BM-* + Texcumar-01).
+    click(document.getElementById('lote-trigger'));
+    expect(document.querySelectorAll('#lote-check-list input[type=checkbox]').length).toBe(13);
+
+    // Línea EXTERNA → solo el lote Texcumar (2 muestras) + chip visible.
+    click(document.getElementById('btn-linea-ext'));
+    expect(total()).toBe(2);
+    expect(document.getElementById('filter-chips').textContent).toContain('Texcumar-01');
+
+    // Línea INTERNA → los otros 12.
+    click(document.getElementById('btn-linea-int'));
+    expect(total()).toBe(12);
+
+    // Ninguno → 0; Todos → 14.
+    click(document.getElementById('btn-none-lotes'));
+    expect(total()).toBe(0);
+    click(document.getElementById('btn-all-lotes'));
+    expect(total()).toBe(14);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('modo AUD alterna y restaura', () => {
     biomolecularView(root);
     const aud = document.getElementById('aud-btn');
