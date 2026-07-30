@@ -11020,7 +11020,8 @@ const ALLOWED = [
   "Registro_Desinfección",
   "Microbiología",
   "Calidad de Agua",
-  "Patología en Fresco"
+  "Patología en Fresco",
+  "Marea"
 ];
 
 const LIMITS = {
@@ -11036,12 +11037,17 @@ const LIMITS = {
   // Desinfección: 9 cols (Fecha…Fecha Elemento) + margen. maxRows holgado:
   // los 4 tipos suman ~50 elementos posibles por módulo/día.
   desinf:  { maxRows: 200, maxCols: 12 },
-  // Microbiología: hoja ancha (~50 cols Fase 1) + margen para fases futuras.
-  micro:   { maxRows: 300, maxCols: 80 },
+  // Microbiología: hoja ancha (76 cols base + EM: pH + Conteo BA/Lev. crudo·UFC = 81)
+  // + margen para fases futuras. OJO: las filas se recortan a maxCols en doPost, así
+  // que este tope DEBE cubrir todas las columnas o se truncaría la última.
+  micro:   { maxRows: 300, maxCols: 90 },
   // Calidad de Agua: hoja ancha (14 contexto + 31 parámetros = 45 cols) + margen.
   cal:     { maxRows: 300, maxCols: 80 },
   // Patología en Fresco: 6 contexto + 15 columnas internas + Peso + Obs = 23 cols.
-  pat:     { maxRows: 300, maxCols: 40 }
+  pat:     { maxRows: 300, maxCols: 40 },
+  // Marea: 16 cols (predicción INOCAR, 1 fila/día). maxRows holgado por encima del
+  // tope del cliente (grilla hasta 400 filas): permite sincronizar meses de una vez.
+  marea:   { maxRows: 420, maxCols: 20 }
 };
 
 // Rate limit state: persistido en CacheService (60s TTL) para que sobreviva
@@ -11137,6 +11143,7 @@ function doPost(e) {
     var isMicro  = payload.sheetName === "Microbiología";
     var isCal    = payload.sheetName === "Calidad de Agua";
     var isPat    = payload.sheetName === "Patología en Fresco";
+    var isMarea  = payload.sheetName === "Marea";
     // Routing Maduración: clave compuesta por columnas (0-indexed)
     var madKeyCols = null;
     if      (payload.sheetName === "Maduración Sala")     madKeyCols = [0,1];   // Fecha, Sala
@@ -11147,8 +11154,9 @@ function doPost(e) {
     else if (payload.sheetName === "Maduración Bitácora")       madKeyCols = [0,1,2]; // Trovan + Fecha + Tipo
     else if (payload.sheetName === "Maduración Transferencias") madKeyCols = [0,3];   // TR-ID + Trovan
     var isMad   = madKeyCols !== null;
-    // Columna Trovan ID (0-indexed) por hoja: se fuerza a TEXTO ("@") al escribir,
-    // así Sheets NO reinterpreta el código (notación científica / ceros perdidos).
+    // Columna Trovan ID (0-indexed) por hoja: se fuerza a formato TEXTO ("@") al
+    // escribir, así Sheets NO reinterpreta el código como notación científica ni
+    // le quita ceros a la izquierda (es un identificador, no un número).
     // Los Trovan del lector son 10 hexadecimales CON ceros a la izquierda (0008218CCC):
     // en formato numérico un código todo-dígitos perdería los ceros y rompería la clave
     // de upsert, así que esta columna NO puede ir en "Automático".
@@ -11167,6 +11175,7 @@ function doPost(e) {
                 : isMicro  ? LIMITS.micro
                 : isCal    ? LIMITS.cal
                 : isPat    ? LIMITS.pat
+                : isMarea  ? LIMITS.marea
                 : (isCtrl  ? LIMITS.control : LIMITS.datos);
 
     if (payload.rows.length > limits.maxRows) {
@@ -11176,11 +11185,14 @@ function doPost(e) {
     // ── LOCK: serializa el read-modify-write (open + upsert/append/delete)
     // entre invocaciones CONCURRENTES. Sin esto, dos dispositivos sincronizando
     // la MISMA hoja a la vez podían leer el mismo estado y pisarse (merge sobre
-    // datos obsoletos) o duplicar filas en hojas append. waitLock espera hasta
-    // 15s; si no obtiene el lock devuelve un error transitorio → el cliente
-    // reintenta (idempotente vía reqId, así que nunca duplica).
+    // datos obsoletos) o duplicar filas en hojas append. F1: waitLock espera
+    // hasta 25s (< el timeout de 30s del cliente, F2a) para dar holgura y NO
+    // rechazar por "Servidor ocupado" bajo ráfagas; con F4b el lock se sostiene
+    // poco tiempo (escritura O(sesión)), así que la espera real casi nunca llega
+    // a agotarse. Si aun así no obtiene el lock, devuelve un error transitorio →
+    // el cliente reintenta/encola (idempotente vía reqId, así que nunca duplica).
     var _lock = LockService.getScriptLock();
-    try { _lock.waitLock(15000); }
+    try { _lock.waitLock(25000); }
     catch (eLock) { return respond({ status: "error", message: "Servidor ocupado, reintenta" }); }
     try {
 
@@ -11206,7 +11218,7 @@ function doPost(e) {
     } else if (ws.getLastRow() === 0) {
       fmtHeader(ws, (payload.headers || []).map(function(h){ return cleanCell(h); }), isCtrl);
     }
-    if (isMicro || isCal || isPat || isAlgas) ensureHeaders(ws, payload.headers || []);
+    if (isMicro || isCal || isPat || isAlgas || isMarea) ensureHeaders(ws, payload.headers || []);
 
     // Borrado explícito de sesiones (Microbiología / Calidad de Agua / Patología
     // en Fresco): permite VACIAR de la hoja una sesión completa. Un upsert/replace
@@ -11267,6 +11279,12 @@ function doPost(e) {
     else if (isPat) {
       // Patología en Fresco (hoja ancha): reemplazo por sesión. Clave del cliente
       // = Fecha + Corrida + Sesión -> editar/reenviar no duplica.
+      if (payload.replaceKey && Array.isArray(payload.keyCols)) result = replaceByKeyRows(ws, rows, payload.keyCols);
+      else result = appendRows(ws, rows);
+    }
+    else if (isMarea) {
+      // Marea (predicción INOCAR): upsert por Fecha (clave del cliente = [0]). Una fila
+      // por día → re-sincronizar o editar una fecha actualiza esa fila, sin duplicar.
       if (payload.replaceKey && Array.isArray(payload.keyCols)) result = replaceByKeyRows(ws, rows, payload.keyCols);
       else result = appendRows(ws, rows);
     }
@@ -11566,38 +11584,56 @@ function appendRows(ws, newRows) {
   return { upserted: 0, appended: newRows.length };
 }
 
-// ── Reescritura en bloque (sin N llamadas ws.deleteRow) ──────────────────
-// Conserva el header + las filas que pasan keepPred(row) y añade addRows, en
-// UNA sola escritura. Sustituye el patrón "deleteRow en bucle" (1 llamada API
-// por fila → lento en hojas grandes) por: leer todo → filtrar en memoria →
-// limpiar el área de datos → volcar el resultado de una pasada. Normaliza el
-// ancho (rectangular) para setValues. Devuelve { removed, added }.
-// El orden resultante = filas conservadas (orden original) + addRows al final,
-// idéntico al del antiguo "borrar coincidentes y luego anexar".
-function _rebuildSheet(ws, keepPred, addRows) {
-  addRows = addRows || [];
+// ── F4b · Reemplazo O(sesión) sin reescribir la hoja entera ──────────────
+// Sustituye el patrón "leer todo -> reescribir todo" (coste O(hoja), lock largo)
+// por: (1) localizar las filas viejas que coinciden (matchPred), (2) APPEND de
+// las nuevas al final, (3) flush, (4) borrar las viejas por bloques contiguos
+// (descendente, para no desplazar los índices aún por borrar).
+// CLAVE de correccion: "oldIdx" se calcula ANTES del append y con índices
+// PRE-append (el append no desplaza filas existentes), así que:
+//  · nunca borra lo recién agregado;
+//  · es AUTO-SANABLE: si algo falla entre el append y el borrado, un reintento
+//    recalcula oldIdx = TODAS las filas de la sesión (viejas + las que quedaron)
+//    y reconverge a solo las nuevas. En fallo NUNCA se pierde dato (a lo sumo
+//    quedan duplicados hasta el siguiente sync).
+// Acorta drásticamente el tiempo bajo lock frente a reescribir toda la hoja.
+function _replaceMatched(ws, newRows, matchPred) {
   var data = ws.getDataRange().getValues();
-  var kept = [], removed = 0;
+  var oldIdx = [];
   for (var i = 1; i < data.length; i++) {
-    if (keepPred(data[i])) kept.push(data[i]); else removed++;
+    if (matchPred(data[i])) oldIdx.push(i + 1);   // 1-indexed
   }
-  var body = kept.concat(addRows);
-  var width = (data.length > 0) ? data[0].length : 0;
-  for (var b = 0; b < body.length; b++) if (body[b].length > width) width = body[b].length;
-  if (width > ws.getMaxColumns()) ws.insertColumnsAfter(ws.getMaxColumns(), width - ws.getMaxColumns());
-  var norm = body.map(function(r) {
-    if (r.length === width) return r;
-    var c = r.slice();
-    while (c.length < width) c.push("");
-    return c.slice(0, width);
-  });
-  var lastDataRow = ws.getLastRow();
-  if (lastDataRow > 1) ws.getRange(2, 1, lastDataRow - 1, ws.getMaxColumns()).clearContent();
-  if (norm.length > 0) {
-    ws.getRange(2, 1, norm.length, width).setValues(norm);
-    fmtData(ws, 2, norm.length, width, false);
+  var added = 0;
+  if (newRows && newRows.length) {
+    var widest = 0;
+    for (var w = 0; w < newRows.length; w++) if (newRows[w].length > widest) widest = newRows[w].length;
+    if (widest > ws.getMaxColumns()) ws.insertColumnsAfter(ws.getMaxColumns(), widest - ws.getMaxColumns());
+    var norm = newRows.map(function(r){
+      if (r.length === widest) return r;
+      var c = r.slice(); while (c.length < widest) c.push(""); return c.slice(0, widest);
+    });
+    var startRow = lastRow(ws) + 1;
+    ws.getRange(startRow, 1, norm.length, widest).setValues(norm);
+    fmtData(ws, startRow, norm.length, widest, false);
+    added = norm.length;
   }
-  return { removed: removed, added: addRows.length };
+  SpreadsheetApp.flush();   // el APPEND queda comprometido ANTES de cualquier borrado
+  var removed = 0;
+  if (oldIdx.length) {
+    oldIdx.sort(function(a, b){ return a - b; });
+    var runs = [], s = oldIdx[0], p = oldIdx[0];
+    for (var k = 1; k < oldIdx.length; k++) {
+      if (oldIdx[k] === p + 1) { p = oldIdx[k]; }
+      else { runs.push([s, p]); s = oldIdx[k]; p = oldIdx[k]; }
+    }
+    runs.push([s, p]);
+    for (var rr = runs.length - 1; rr >= 0; rr--) {   // de mayor a menor
+      var cnt = runs[rr][1] - runs[rr][0] + 1;
+      ws.deleteRows(runs[rr][0], cnt);
+      removed += cnt;
+    }
+  }
+  return { removed: removed, added: added };
 }
 
 // ── Reemplazo por fecha (BIOMOL grilla del día) ──────────
@@ -11610,7 +11646,7 @@ function replaceByDateRows(ws, newRows, dateCol, dateStr) {
   var col = dateCol || 0;
   var key = String(dateStr || "").slice(0, 10);
   if (!key) return appendRows(ws, newRows);
-  var res = _rebuildSheet(ws, function(row){ return dStr(row[col]) !== key; }, newRows);
+  var res = _replaceMatched(ws, newRows, function(row){ return dStr(row[col]) === key; });
   return { upserted: res.removed, appended: res.added };
 }
 
@@ -11620,7 +11656,7 @@ function replaceByDateRows(ws, newRows, dateCol, dateStr) {
 function replaceByKeyRows(ws, newRows, keyCols) {
   var present = {};
   for (var r = 0; r < newRows.length; r++) present[madInKey(newRows[r], keyCols)] = 1;
-  var res = _rebuildSheet(ws, function(row){ return !present[madRowKey(row, keyCols)]; }, newRows);
+  var res = _replaceMatched(ws, newRows, function(row){ return present[madRowKey(row, keyCols)] === 1; });
   return { upserted: res.removed, appended: res.added };
 }
 
@@ -11641,7 +11677,7 @@ function deleteByKeyRows(ws, keyCols, deleteKeys) {
     for (var j = 0; j < dk.length; j++) parts.push(String(dk[j] == null ? "" : dk[j]).trim());
     present[parts.join("|")] = 1;
   }
-  var res = _rebuildSheet(ws, function(row){ return !present[madRowKey(row, keyCols)]; }, []);
+  var res = _replaceMatched(ws, [], function(row){ return present[madRowKey(row, keyCols)] === 1; });
   return res.removed;
 }
 
@@ -11832,7 +11868,8 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol) {
           merged.push(nEmpty ? e : n);
         }
       }
-      // Trovan a TEXTO ("@") antes de escribir → preserva el código exacto (10 hex).
+      // Trovan a TEXTO ("@") antes de escribir → preserva el código exacto (10 hex,
+      // ceros a la izquierda) y evita que Sheets lo vuelva número/notación científica.
       if (trovanCol >= 0 && trovanCol < merged.length) ws.getRange(entry.row, trovanCol + 1, 1, 1).setNumberFormat("@");
       // "Número" a NUMÉRICO AUTOMÁTICO ("General") → llega como número, no como texto.
       if (numCol >= 0 && numCol < merged.length) ws.getRange(entry.row, numCol + 1, 1, 1).setNumberFormat("General");
@@ -11908,7 +11945,26 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.p === "rows") {
     return sheetRows(e.parameter.sheet || "", e.parameter.t || "");
   }
+  if (e && e.parameter && e.parameter.p === "verify") {
+    return verifyReq(e.parameter.reqId || "", e.parameter.t || "");
+  }
   return ContentService.createTextOutput("FichasLarv-OK");
+}
+
+// F2 · Verificación por lectura: ¿el GAS ya procesó este reqId? Reutiliza la
+// caché de idempotencia (idem_<reqId>, TTL 600s) que doPost fija SOLO tras una
+// escritura exitosa. Permite al cliente CONFIRMAR que un envío ambiguo (timeout)
+// SÍ llegó, sin re-enviar. Respeta SHARED_TOKEN (mismo gate que sheetRows).
+function verifyReq(reqId, t) {
+  try {
+    if (SHARED_TOKEN && String(t) !== SHARED_TOKEN) return respond({ status: "error", message: "No autorizado" });
+    var rid = String(reqId || "").slice(0, 120);
+    if (!rid) return respond({ status: "ok", processed: false });
+    var hit = CacheService.getScriptCache().get("idem_" + rid);
+    return respond({ status: "ok", processed: !!hit });
+  } catch (err) {
+    return respond({ status: "error", message: "verify_error" });
+  }
 }
 
 // ── Lectura de filas de una hoja (para clientes SIN store del dashboard, como
