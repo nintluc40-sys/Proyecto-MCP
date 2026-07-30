@@ -7944,7 +7944,27 @@ const MIC_ALGM_MUESTRA = ["","Nutriente 1","Nutriente 2","Nutriente 3","Nutrient
 const MIC_DIAS         = ["","1","2","3","4","5"];
 const MIC_ALGR_MUESTRA = ["","Fundas producción","Fundas Matriz","Masivo","Premasivo","PBR","Carboys 1","Carboys 2","Carboys 3","Carboys 4","Reservorio"];
 const MIC_ALGR_ESPECIE = ["","Tw","TT"];
-const MIC_MADDES_MUESTRA = ["","Agua del huevo antes de desinfección","Agua del huevo después de desinfección","Huevo antes desinfección","Huevo después de desinfección","Agua del nauplio 2 antes de desinfección","Agua del nauplio 2 después de desinfección","Nauplio 2 antes de desinfección","Nauplio 2 después de desinfección","Agua del nauplio 5 antes de desinfección","Agua del nauplio 5 después de desinfección","Nauplio 5 antes desinfección","Nauplio 5 después de desinfección"];
+// Maduración · Despacho: las 12 muestras SIEMPRE se registran → filas FIJAS (no desplegable).
+// v = valor guardado en la hoja (string ORIGINAL: no altera sync ni rkeyFn Agua→×10 / organismo→×100);
+// l = etiqueta visible (grupo · fase). Orden fijo dictado por el laboratorio.
+const MIC_MADDES_MUESTRA_FIXED = [
+  { v:"Agua del huevo antes de desinfección",       l:"Agua del huevo · Antes de desinfección" },
+  { v:"Agua del huevo después de desinfección",     l:"Agua del huevo · Después de desinfección" },
+  { v:"Huevo antes desinfección",                   l:"Huevo · Antes de desinfección" },
+  { v:"Huevo después de desinfección",              l:"Huevo · Después de desinfección" },
+  { v:"Agua del nauplio 2 antes de desinfección",   l:"Agua del nauplio 2 · Antes de desinfección" },
+  { v:"Agua del nauplio 2 después de desinfección", l:"Agua del nauplio 2 · Después de desinfección" },
+  { v:"Nauplio 2 antes de desinfección",            l:"Nauplio 2 · Antes de desinfección" },
+  { v:"Nauplio 2 después de desinfección",          l:"Nauplio 2 · Después de desinfección" },
+  { v:"Agua del nauplio 5 antes de desinfección",   l:"Agua del nauplio 5 · Antes de desinfección" },
+  { v:"Agua del nauplio 5 después de desinfección", l:"Agua del nauplio 5 · Después de desinfección" },
+  { v:"Nauplio 5 antes desinfección",               l:"Nauplio 5 · Antes de desinfección" },
+  { v:"Nauplio 5 después de desinfección",          l:"Nauplio 5 · Después de desinfección" }
+];
+// Maduración · Hisopado (basado en Hisopados). Lugar = zona; Punto de muestreo es un
+// txtlist (opciones + escritura libre) con los puntos de Hisopados + las paredes de reservorio.
+const MIC_MADHIS_LUGAR = ["","Desove","Sala","Despacho"];
+const MIC_MADHIS_PUNTO = ["","Fondo","Brida","Línea de agua salada","Tubos","Línea de aire","Pared de reservorio 1","Pared de reservorio 2"];
 
 // Catálogo de parámetros: l=etiqueta, noRange=sin nivel, pa=presencia/ausencia,
 // auto=suma de otros.
@@ -7987,6 +8007,21 @@ const MIC_FORMATS = {
     ],
     params:["vamar","vverd","vtot","valg","vpara","vvuln","pseudo","aero","btot","bnar","hongos","entero","vlum","levad"]
   },
+  "larv-despacho": {
+    // Despacho: funciona igual que Larvicultura · Muestra (muestra de agua o animal),
+    // pero SOLO con los 6 conteos de colonias/vibrios y factores propios (áreas
+    // larvdes-animal / larvdes-agua). Umbrales de nivel iguales a Larvicultura · Muestra.
+    depto:"Larvicultura", label:"Larvicultura · Despacho",
+    rkeyFn:(d)=> (d && d.tipoMuestra === "Agua") ? "larvdes-agua" : "larvdes-animal",
+    ctx:[
+      { k:"tipoMuestra", l:"Tipo de muestra", type:"sel", opts:MIC_TIPO_M,   w:92, recalc:true },
+      { k:"modulo",      l:"Módulo",          type:"sel", opts:MIC_MODULOS,  w:58 },
+      { k:"estadio",     l:"Estadío",         type:"sel", opts:MIC_ESTADIOS, w:84 },
+      { k:"tq",          l:"TQ/N°",           type:"sel", opts:MIC_TQS_LARV, w:56 },
+      { k:"lote",        l:"Lote",            type:"txt", w:80 }
+    ],
+    params:["vamar","vverd","vtot","valg","vpara","vvuln"]
+  },
   "mad-principal": {
     depto:"Maduración", label:"Maduración · Principal",
     rkeyFn:()=> "mad-reprod",
@@ -7995,7 +8030,7 @@ const MIC_FORMATS = {
       { k:"sexo", l:"Sexo",  type:"sel", opts:MIC_SEXO,  w:80 },
       { k:"tq",   l:"TQ/N°", type:"txt", w:56 },
       { k:"lote", l:"Lote",  type:"txt", w:80 },
-      { k:"tipoMuestra", l:"Muestra", type:"sel", opts:["","Hepatopáncreas","Intestino"], w:120 }
+      { k:"tipoMuestra", l:"Muestra", type:"sel", opts:["","Hepatopáncreas","Intestino","Hemolinfa"], w:120 }
     ],
     params:["vamar","vverd","vtot","vlum","valg","vpara","vvuln","pseudo","aero","btot","bnar","hongos","entero"]
   },
@@ -8046,7 +8081,6 @@ const MIC_FORMATS = {
     depto:"Larvicultura", label:"Larvicultura · EM",
     rkeyFn:()=> "larv-em",
     ctx:[
-      { k:"corrida", l:"Corrida", type:"txt", w:70 },
       { k:"modulo",  l:"Módulo",  type:"sel", opts:MIC_MODULOS, w:58 },
       { k:"ph",      l:"pH",       type:"txt", w:56 }
     ],
@@ -8128,13 +8162,28 @@ const MIC_FORMATS = {
     // El factor depende del tipo de muestra: las de agua ("Agua del huevo…") usan el set
     // mad-despacho-agua (×10); las de organismo ("Huevo…", "Nauplio…") usan mad-despacho-animal (×100).
     rkeyFn:(d)=> /^Agua/i.test((d && d.tipoMuestra) || "") ? "mad-despacho-agua" : "mad-despacho-animal",
+    // Muestra FIJA: las 12 se registran siempre → filas fijas (sin ➕ Fila), Muestra no editable.
+    fixedRows: MIC_MADDES_MUESTRA_FIXED,
     ctx:[
       { k:"origen",      l:"Origen",  type:"txt", w:100, fillDown:true },
-      { k:"siembra",     l:"Siembra", type:"txt", w:80 },
-      { k:"corrida",     l:"Corrida", type:"txt", w:70 },
-      { k:"tipoMuestra", l:"Muestra", type:"sel", opts:MIC_MADDES_MUESTRA, w:240, recalc:true }
+      { k:"siembra",     l:"Siembra", type:"txt", w:80, fillDown:true },
+      { k:"corrida",     l:"Corrida", type:"txt", w:70, fillDown:true },
+      { k:"tipoMuestra", l:"Muestra", type:"fixed", w:240 }
     ],
     params:["vamar","vverd","vtot","hongos","vlum"]
+  },
+  "mad-hisopado": {
+    // Basado en Hisopados: Lugar (zona), Tanque y Punto de muestreo (txtlist: opciones +
+    // escritura libre). Factores propios en el área "mad-hisopado" (umbrales de Ambiental
+    // escalados por el factor). C.Totales se autosuma. Columnas mapean a las ya existentes.
+    depto:"Maduración", label:"Maduración · Hisopado",
+    rkeyFn:()=> "mad-hisopado",
+    ctx:[
+      { k:"lugar", l:"Lugar",  type:"sel", opts:MIC_MADHIS_LUGAR, w:90 },
+      { k:"tq",    l:"Tanque", type:"txt", w:80 },
+      { k:"punto", l:"Punto de muestreo", type:"txtlist", opts:MIC_MADHIS_PUNTO, w:160 }
+    ],
+    params:["vamar","vverd","vtot","pseudo","hongos","btot","bnar"]
   },
   "algas-mensual": {
     depto:"Algas", label:"Algas Mensual",
@@ -8160,7 +8209,7 @@ const MIC_FORMATS = {
 };
 // El orden define el de los optgroup del selector (Larvicultura → Maduración → Algas →
 // Otras) y el de las secciones de la ficha.
-const MIC_FORMAT_KEYS = ["larv-muestra","reservorios","placa-amb","artemia","larv-em","mad-principal","mad-agua","mad-ensayo","alim-vivo","ras","agua-mar","agua-limpia-mar","mad-desinf","algas","algas-mensual","algas-r","externas","hisopados","hisopados-despacho"];
+const MIC_FORMAT_KEYS = ["larv-muestra","larv-despacho","reservorios","placa-amb","artemia","larv-em","mad-principal","mad-agua","mad-ensayo","alim-vivo","ras","agua-mar","agua-limpia-mar","mad-desinf","mad-hisopado","algas","algas-mensual","algas-r","externas","hisopados","hisopados-despacho"];
 // Formatos en los que la Corrida es obligatoria para guardar/sincronizar.
 const MIC_CORRIDA_REQ = new Set(["larv-muestra"]);
 function micFormatLabel(fmtKey){ return (MIC_FORMATS[fmtKey] && MIC_FORMATS[fmtKey].label) || fmtKey || ""; }
@@ -8184,6 +8233,19 @@ const MIC_DR_BASE = {
     btot:{f:1000,l:10000,m:100000,e:1000000}, bnar:{f:1000,l:1000,m:5000,e:10000},
     hongos:{f:20,l:2,m:20,e:40}, entero:{f:1}, levad:{f:1}
   },
+  // Larvicultura · Despacho — mismos umbrales que Larvicultura · Muestra; solo cambian
+  // los factores de los 6 conteos. Animal: los 6 conteos ×200 (incl. V.vulnificus).
+  "larvdes-animal":{
+    vamar:{f:200,l:1000,m:5000,e:10000}, vverd:{f:200,l:300,m:600,e:1000},
+    vtot:{f:200,l:1000,m:5000,e:10000},
+    valg:{f:200,l:1000,m:5000,e:10000}, vpara:{f:200,l:300,m:600,e:1000}, vvuln:{f:200,l:300,m:600,e:1000}
+  },
+  // Agua: los 6 conteos ×20 (umbrales de Larvicultura · Agua).
+  "larvdes-agua":{
+    vamar:{f:20,l:1000,m:5000,e:10000}, vverd:{f:20,l:100,m:200,e:300},
+    vtot:{f:20,l:1000,m:5000,e:10000},
+    valg:{f:20,l:1000,m:5000,e:10000}, vpara:{f:20,l:100,m:200,e:300}, vvuln:{f:20,l:100,m:200,e:300}
+  },
   "mad-reprod":{
     vamar:{f:200,l:1000,m:10000,e:100000}, vverd:{f:200,l:500,m:3000,e:5000},
     vtot:{f:200,l:1000,m:10000,e:100000},
@@ -8198,6 +8260,15 @@ const MIC_DR_BASE = {
     pseudo:{f:1,l:10,m:30,e:300}, aero:{f:1,l:25,m:50,e:500},
     pseudoGsp:{f:1,l:10,m:30,e:300}, aeroGsp:{f:1,l:25,m:50,e:500},
     btot:{f:1,l:10,m:100,e:500}, hongos:{f:1}, levad:{f:1}
+  },
+  // Maduración · Hisopado — factores propios; umbrales = los de "ambiental" ESCALADOS por
+  // el factor (así un mismo conteo conserva su nivel Leve/Mod/Elevado). hongos y bnar sin
+  // umbrales (ambiental no los define) → registran UFC sin color.
+  "mad-hisopado":{
+    vamar:{f:10,l:250,m:500,e:5000}, vverd:{f:10,l:100,m:300,e:3000},
+    vtot:{f:10,l:250,m:500,e:5000},
+    pseudo:{f:10,l:100,m:300,e:3000}, hongos:{f:2},
+    btot:{f:10,l:100,m:1000,e:5000}, bnar:{f:10}
   },
   "artemia":{
     vamar:{f:20,l:1000,m:10000,e:100000}, vverd:{f:20,l:500,m:3000,e:5000}, vtot:{f:20,l:1000,m:10000,e:100000},
@@ -8467,7 +8538,7 @@ function patCorridaChange(){ _sessionCorridaWarn(_patRaw, document.getElementByI
 // ── Cálculo en vivo ────────────────────────────────────
 function micRowRkey(tr, fmtKey){
   const fmt = MIC_FORMATS[fmtKey]; if(!fmt) return "larv-animal";
-  const tm = tr.querySelector('select[name$="_tipoMuestra"]');
+  const tm = tr.querySelector('[name$="_tipoMuestra"]');
   return fmt.rkeyFn({ tipoMuestra: tm ? tm.value : "" });
 }
 function _micApply(inp, rkey){
@@ -8630,6 +8701,11 @@ function micRowHtml(fmt, fmtKey, fila, d, hid, hdrDef){
         cells += `<td ${tdAttr}><select class="mic-in" name="${base}" data-fmt="${fmtKey}" ${pos} onpaste="micGridPaste(event,'${fmtKey}')" ${recalc} style="min-width:${c.w||60}px">`
           + c.opts.map(o=>`<option value="${escapeHtml(o)}"${val===o?" selected":""}>${escapeHtml(o)||"—"}</option>`).join("")
           + `</select></td>`;
+      } else if(c.type === "fixed"){
+        // Fila FIJA (Mad. Despacho): valor por fila desde fmt.fixedRows. Hidden = valor real (colecta +
+        // rkey por nombre); span = etiqueta visible. Sin clase mic-in → fuera de pegado/navegación.
+        const fx = (fmt.fixedRows && fmt.fixedRows[fila-1]) || { v:"", l:"" };
+        cells += `<td ${tdAttr}><input type="hidden" name="${base}" data-fmt="${fmtKey}" value="${escapeHtml(fx.v)}"><span title="${escapeHtml(fx.v)}" style="display:inline-block;font-size:10px;font-weight:600;color:#334155;line-height:1.25">${escapeHtml(fx.l)}</span></td>`;
       } else if(c.type === "txtlist"){
         // Editable con sugerencias (datalist): se elige una opción o se escribe libremente.
         cells += `<td ${tdAttr}><input class="mic-in" type="text" name="${base}" data-fmt="${fmtKey}" ${pos} list="mic-dl-${fmtKey}-${c.k}" onpaste="micGridPaste(event,'${fmtKey}')" oninput="micDraftTouch()" value="${escapeHtml(val)}" style="min-width:${c.w||90}px"></td>`;
@@ -8658,7 +8734,9 @@ function micSectionHtml(fmtKey, draft){
   const sec = (draft.sections && draft.sections[fmtKey]) || { rows:[], obs:"" };
   const drows = sec.rows || [];
   const extra = _micExtra[fmtKey] || 0;
-  const nRows = Math.min(MIC_MAX_ROWS, Math.max(MIC_DEFAULT_ROWS + extra, drows.length));
+  // Formatos de filas FIJAS (p.ej. Mad. Despacho): nº de filas = fmt.fixedRows.length, sin ➕ Fila.
+  const isFixed = Array.isArray(fmt.fixedRows);
+  const nRows = isFixed ? fmt.fixedRows.length : Math.min(MIC_MAX_ROWS, Math.max(MIC_DEFAULT_ROWS + extra, drows.length));
   const hid = loadMicHidden(fmtKey);
   const allCols = [...fmt.ctx.map(c=>({k:c.k,l:c.l})), ...fmt.params.map(pk=>({k:pk,l:MIC_PARAMS[pk].l}))];
   const chips = allCols.map(co=> `<span class="mic-colchip${hid.has(co.k)?' off':''}" onclick="micToggleCol('${fmtKey}','${co.k}')" title="Clic para ocultar/mostrar esta columna en el registro">${escapeHtml(co.l)}</span>`).join("");
@@ -8669,12 +8747,12 @@ function micSectionHtml(fmtKey, draft){
   const hdrDef = { modulo: (draft.meta && draft.meta.hdrModulo) || "", estadio: (draft.meta && draft.meta.hdrEstadio) || "", sala: (draft.meta && draft.meta.hdrSala) || "" };
   let rowsHtml = "";
   for(let fila=1; fila<=nRows; fila++){ rowsHtml += micRowHtml(fmt, fmtKey, fila, drows[fila-1] || {}, hid, hdrDef); }
-  const canAdd = nRows < MIC_MAX_ROWS;
+  const canAdd = !isFixed && nRows < MIC_MAX_ROWS;
   return `<div class="fc" style="margin-bottom:10px">
     <div class="fc-h" style="background:linear-gradient(135deg,#0e7490,#0891b2)">
       <div class="fc-t">${escapeHtml(fmt.label)}</div>
       <div class="sa-btns">
-        <button class="btn bo" type="button" onclick="micAddRow('${fmtKey}')" ${canAdd?"":"disabled"} style="font-size:11px;padding:4px 10px">➕ Fila</button>
+        ${isFixed ? "" : `<button class="btn bo" type="button" onclick="micAddRow('${fmtKey}')" ${canAdd?"":"disabled"} style="font-size:11px;padding:4px 10px">➕ Fila</button>`}
       </div>
     </div>
     <div class="fc-b" id="mic-body-${fmtKey}">
@@ -9109,7 +9187,7 @@ function micDeleteSession(k){
 function renderMicFactores(){
   const fp = document.getElementById("fp-micfact"); if(!fp) return;
   const F = loadMicFactors();
-  const areaLabel = { "larv-animal":"Larvicultura · Animal", "larv-agua":"Larvicultura · Agua", "mad-reprod":"Maduración · Reproductores", "ambiental":"Ambiental / Hisopados (×1)", "artemia":"Artemia (×20)", "ras-agua":"Maduración · RAS (Agua)", "algas":"Algas · Hisopado / Mensual / Fundas y Masivos", "agua-limpia-mar":"Agua Limpia y Mar", "mad-despacho-agua":"Maduración · Despacho (Agua)", "mad-despacho-animal":"Maduración · Despacho (Organismo)", "mad-agua":"Maduración · Agua", "larv-em":"Larvicultura · EM" };
+  const areaLabel = { "larv-animal":"Larvicultura · Animal", "larv-agua":"Larvicultura · Agua", "mad-reprod":"Maduración · Reproductores", "ambiental":"Ambiental / Hisopados (×1)", "artemia":"Artemia (×20)", "ras-agua":"Maduración · RAS (Agua)", "algas":"Algas · Hisopado / Mensual / Fundas y Masivos", "agua-limpia-mar":"Agua Limpia y Mar", "mad-despacho-agua":"Maduración · Despacho (Agua)", "mad-despacho-animal":"Maduración · Despacho (Organismo)", "mad-agua":"Maduración · Agua", "larv-em":"Larvicultura · EM", "larvdes-animal":"Larvicultura · Despacho (Animal)", "larvdes-agua":"Larvicultura · Despacho (Agua)", "mad-hisopado":"Maduración · Hisopado" };
   const blocks = Object.keys(MIC_DR_BASE).map(ak=>{
     const rows = Object.keys(MIC_DR_BASE[ak]).map(pk=>{
       const r = (F[ak] && F[ak][pk]) || {};
