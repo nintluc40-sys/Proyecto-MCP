@@ -1189,6 +1189,23 @@ function setSyncUI(st, lbl){
   document.getElementById("sdot").className = "sdot " + st;
   document.getElementById("slbl").textContent = lbl;
 }
+// F5: refleja en la UI el resultado de un envío que NO devolvió "ok", distinguiendo
+// estados que antes se confundían con "Error":
+//   queued   → el dato está guardado y se sincronizará/verificará solo (no es error);
+//   inflight → ya hay un envío en curso (postPayload ya avisó, no pisar con error);
+//   resto    → error real. `outcome` viene de postPayload (opts.outcome).
+function _syncNotOkUI(outcome, errLabel, indId){
+  if(outcome === "queued"){
+    setSyncUI("pend","En verificación… (en cola)");
+    const ind = indId && document.getElementById(indId);
+    if(ind) ind.textContent = "📤 En cola · se verificará al reconectar · "+new Date().toLocaleString("es-EC");
+  } else if(outcome === "inflight"){
+    /* postPayload ya mostró "sincronización en curso" — no sobrescribir con error */
+  } else {
+    setSyncUI("err", errLabel);
+    toast("No fue posible sincronizar con Google Sheets","err",4500);
+  }
+}
 /* ══════════════════════════════════════════
    GOOGLE SHEET PAYLOAD BUILDERS
    Maps 4 fichas → 2 sheet tabs (LARC.xlsx structure)
@@ -1432,11 +1449,22 @@ const _syncInFlight = new Set();
 const _lastSyncFingerprint = new Map();
 const _SYNC_DUP_WINDOW_MS = 30000;
 function _stringHash(s){
-  let h = 0;
+  // F6: huella ANCHA (~64 bits) para el reqId de idempotencia. El hash de 32
+  // bits anterior podía colisionar: dos payloads DISTINTOS con el mismo
+  // sheetName + nº de filas y hash coincidente dentro de la ventana de dedup
+  // (600 s) hacían que el GAS respondiera "ok" (dedup) SIN escribir → pérdida
+  // silenciosa. Se combinan dos carriles FNV-1a independientes (offset/prime
+  // distintos) → la colisión pasa a ser ~2^-64 (astronómicamente improbable).
+  // Determinista y estable entre el envío original y su reintento desde la cola
+  // (misma entrada → mismo reqId), condición necesaria para la idempotencia.
+  let h1 = 0x811c9dc5 | 0;   // FNV-1a offset basis
+  let h2 = 0xcbf29ce4 | 0;   // segundo carril, semilla distinta
   for(let i=0;i<s.length;i++){
-    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    const c = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193);   // FNV prime
+    h2 = Math.imul(h2 ^ c, 0x85ebca6b);   // multiplicador distinto (mezcla independiente)
   }
-  return (h >>> 0).toString(36);
+  return (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36);
 }
 function _payloadFingerprint(p, salt){
   try{
@@ -1472,9 +1500,20 @@ const _sleep = (ms) => new Promise(res => setTimeout(res, ms));
 //   "rejected" → el GAS respondió status:"error" (payload inválido / hoja no
 //                permitida / no autorizado). NO se reintenta: reintentar no
 //                cambiaría el resultado.
+// F8: errores TRANSITORIOS de backpressure del servidor. El GAS los devuelve
+// como status:"error" pero NO son rechazos permanentes: el lock ocupado
+// ("Servidor ocupado, reintenta") y el rate-limit ("Demasiadas solicitudes")
+// desaparecen al reintentar, y el reintento es idempotente (reqId). Se
+// distinguen de los rechazos PERMANENTES (hoja no permitida, no autorizado,
+// formato inválido, límite de filas…) que sí deben rendirse sin reintentar.
+const _BUSY_RE = /ocupad|reintenta|demasiadas solicitudes|too many|rate limit|try again/i;
 async function _postOnce(bodyPayload, finalUrl){
   const ctrl  = new AbortController();
-  const timer = setTimeout(()=>ctrl.abort(), 15000); // 15s timeout
+  // F2a: el timeout del cliente debe superar la peor espera del servidor
+  // (waitLock hasta 15 s + reescritura de la hoja + red). Con 15 s el cliente
+  // abortaba justo cuando el GAS aún estaba escribiendo → "error de conexión"
+  // aunque el dato SÍ se guardaba. 30 s deja margen sobre la espera del lock.
+  const timer = setTimeout(()=>ctrl.abort(), 30000); // 30s timeout (> waitLock 15s)
   try{
     // Content-Type text/plain: deliberado — evita el preflight CORS que GAS
     // no soporta. El GAS parsea el cuerpo con JSON.parse(e.postData.contents).
@@ -1495,13 +1534,44 @@ async function _postOnce(bodyPayload, finalUrl){
       // gracias al `reqId` que valida el GAS, así que no duplica.
       return "retry";
     }
-    return (j && j.status === "ok") ? "ok" : "rejected";
+    if(j && j.status === "ok") return "ok";
+    // F8: backpressure transitorio (lock ocupado / rate-limit) → reintentar/encolar,
+    // no rendirse. Se honra también una bandera `retriable` por si un GAS futuro
+    // la envía explícitamente. El resto de errores son permanentes → "rejected".
+    if(j && (j.retriable === true || (j.status === "error" && _BUSY_RE.test(String(j.message || ""))))) return "retry";
+    return "rejected";
   }catch(x){
     clearTimeout(timer);
     if(x.name==="AbortError") console.error("[Sync] Request timed out");
     else console.error("[Sync] Network error:", x && x.message);
     return "retry";
   }
+}
+
+// F2 · Verificación por LECTURA (GET ?p=verify&reqId=…). Pregunta al GAS si ese
+// reqId ya se procesó (caché de idempotencia). Sirve para confirmar que un envío
+// ambiguo (timeout) SÍ llegó, sin re-enviar. GET sin cabeceras custom → petición
+// "simple" (sin preflight CORS), igual que el endpoint ?p=rows ya en uso.
+// Devuelve true SOLO si el GAS confirma processed:true; ante cualquier duda, false.
+async function _verifyReqId(reqId){
+  try{
+    if(!reqId) return false;
+    const url = gasUrl();
+    if(!url || !isValidGasUrl(url)) return false;
+    const sid = getSessionId();
+    const tok = gcfg("gas-token", "");
+    let u = url + (url.indexOf("?") === -1 ? "?" : "&") +
+            "p=verify&reqId=" + encodeURIComponent(reqId) + "&z=" + encodeURIComponent(sid);
+    if(tok) u += "&t=" + encodeURIComponent(tok);
+    const ctrl = new AbortController();
+    const timer = setTimeout(()=>ctrl.abort(), 12000);
+    let r;
+    try{ r = await fetch(u, { method:"GET", signal: ctrl.signal }); }
+    finally{ clearTimeout(timer); }
+    if(!r.ok) return false;
+    const j = JSON.parse(await r.text());
+    return !!(j && j.status === "ok" && j.processed === true);
+  }catch(_){ return false; }
 }
 
 /* ══════════════════════════════════════════
@@ -1534,19 +1604,85 @@ function _saveSyncQueue(q){
 }
 function syncQueueLen(){ return _loadSyncQueue().length; }
 
-function _enqueueSync(payload, reqId, url){
+// F3: `mark` (opcional) = { kind, keys[] } liga el envío a los registros locales
+// que representa (por clave de sesión), para que al entregarse desde la cola se
+// marquen "sincronizados" y dejen de reenviarse. Sin mark, la cola se comporta
+// como antes (solo garantiza la entrega).
+function _enqueueSync(payload, reqId, url, mark){
   if(!payload || !Array.isArray(payload.rows) || payload.rows.length === 0) return;
   let q = _loadSyncQueue();
   // Evita acumular el mismo envío (misma huella) más de una vez.
   if(reqId && q.some(it => it && it.reqId === reqId)) return;
-  q.push({ payload, reqId: reqId || "", url: url || "", ts: Date.now() });
+  // F3: si el envío trae marca, descarta de la cola cualquier ítem PREVIO de las
+  // mismas sesiones — su contenido quedó obsoleto (el usuario reeditó y reenvió).
+  // Así el flush nunca reescribe datos viejos sobre los nuevos ni marca
+  // "sincronizado" contra una versión superada.
+  if(mark && mark.kind && Array.isArray(mark.keys) && mark.keys.length){
+    const supKeys = new Set(mark.keys);
+    q = q.filter(it => !(it && it.mark && it.mark.kind === mark.kind &&
+      Array.isArray(it.mark.keys) && it.mark.keys.some(k => supKeys.has(k))));
+  }
+  q.push({ payload, reqId: reqId || "", url: url || "", ts: Date.now(), mark: (mark && mark.kind) ? mark : null });
   if(q.length > SYNCQ_MAX) q = q.slice(q.length - SYNCQ_MAX); // conserva los más recientes
   _saveSyncQueue(q);
 }
 
+// F3: elimina de la cola los envíos previos de las mismas sesiones. Se llama
+// tras un envío directo exitoso ("ok"): lo que se acaba de escribir supera a
+// cualquier reintento pendiente de esa sesión (evita que el flush reescriba
+// datos ya superados).
+function _purgeQueueMark(mark){
+  if(!mark || !mark.kind || !Array.isArray(mark.keys) || !mark.keys.length) return;
+  try{
+    const supKeys = new Set(mark.keys);
+    const q  = _loadSyncQueue();
+    const q2 = q.filter(it => !(it && it.mark && it.mark.kind === mark.kind &&
+      Array.isArray(it.mark.keys) && it.mark.keys.some(k => supKeys.has(k))));
+    if(q2.length !== q.length) _saveSyncQueue(q2);
+  }catch(_){}
+}
+
+// F3: reconcilia el estado local tras una ENTREGA confirmada desde la cola.
+// La marca identifica, por clave de sesión, qué registros locales corresponden
+// al envío → se marcan synced para que no sigan "pendientes" ni se reenvíen.
+// Solo se invoca con status "ok" (dato realmente en Sheets), nunca con
+// "rejected" (rechazo permanente: el dato NO se escribió).
+function _reconcileMark(mark){
+  if(!mark || !mark.kind || !Array.isArray(mark.keys) || !mark.keys.length) return false;
+  try{
+    const keys = new Set(mark.keys.map(String));
+    const now  = Date.now();
+    // Cada vista define: raw() lee su lista local, save(l) la persiste y keyOf(r)
+    // da la clave del registro (sesión derivada de r.data, fecha, o id según la
+    // vista). Así el reconcile es uniforme para micro/cal/pat/biomol/AsT/maduración.
+    let raw, save, keyOf;
+    if     (mark.kind === "mic" && typeof _micRaw === "function"){ raw=_micRaw; save=_micSave; keyOf=(r)=> r.data ? micSessionKey(r.data) : ""; }
+    else if(mark.kind === "cal" && typeof _calRaw === "function"){ raw=_calRaw; save=_calSave; keyOf=(r)=> r.data ? calSessionKey(r.data) : ""; }
+    else if(mark.kind === "pat" && typeof _patRaw === "function"){ raw=_patRaw; save=_patSave; keyOf=(r)=> r.data ? patSessionKey(r.data) : ""; }
+    else if(mark.kind === "bio" && typeof _bioRaw === "function"){ raw=_bioRaw; save=_bioSave; keyOf=(r)=> r.data ? r.data.fecha : ""; }
+    else if(mark.kind === "ast" && typeof _astRaw === "function"){ raw=_astRaw; save=_astSave; keyOf=(r)=> r.id; }
+    else if(mark.kind.indexOf("mad:") === 0 && typeof loadMad === "function" && typeof saveMadList === "function"){
+      const _mk = mark.kind.slice(4);   // salas | tanques | lotes
+      raw=()=>loadMad(_mk); save=(l)=>saveMadList(_mk, l); keyOf=(r)=> r.id;
+    }
+    else return false;
+    const l = raw();
+    let ch = false;
+    l.forEach(r=>{
+      if(!r || r.synced) return;
+      let k; try{ k = keyOf(r); }catch(_){ return; }
+      if(k != null && keys.has(String(k))){ r.synced = true; r.syncedAt = now; ch = true; }
+    });
+    if(ch){ save(l); }
+    return ch;
+  }catch(_){ return false; }
+}
+
 // Reintenta enviar todo lo encolado. Idempotente y reentrante-seguro
-// (guard _flushingQueue). No marca fichas como sincronizadas (eso lo hace el
-// flujo normal); su único objetivo es garantizar que el dato llegue a Sheets.
+// (guard _flushingQueue). F3: al ENTREGAR ("ok") reconcilia el estado local vía
+// la marca del ítem (los registros dejan de figurar pendientes y no se
+// reenvían). Un "rejected" (rechazo permanente) NO marca synced: el dato no se
+// escribió, se avisa y se retira de la cola para no bloquearla.
 async function flushSyncQueue(){
   if(_flushingQueue) return;
   if(typeof navigator !== "undefined" && navigator.onLine === false) return;
@@ -1557,7 +1693,7 @@ async function flushSyncQueue(){
     const now = Date.now();
     q = q.filter(it => it && (now - (it.ts || 0)) < SYNCQ_TTL); // purga vencidos
     const remaining = [];
-    let sent = 0;
+    let sent = 0, rejected = 0, reconciled = false;
     for(const it of q){
       const url = it.url || gasUrl();
       if(!url || !isValidGasUrl(url)){ remaining.push(it); continue; }
@@ -1568,29 +1704,53 @@ async function flushSyncQueue(){
       if(_gasTok)  extra.token = _gasTok;
       if(it.reqId) extra.reqId = it.reqId;
       const body = Object.keys(extra).length ? Object.assign({}, it.payload, extra) : it.payload;
-      const res = await _postOnce(body, finalUrl);
-      if(res === "ok" || res === "rejected"){
-        // "ok": entregado. "rejected": el GAS lo rechaza permanentemente
-        // (reintentar es inútil) → se descarta para no bloquear la cola.
+      // F2: verificar por LECTURA antes de reenviar. Si el GAS ya procesó este
+      // reqId (envío ambiguo que SÍ llegó), se reconcilia sin re-POST — evita el
+      // round-trip y no vuelve a tomar el lock.
+      if(it.reqId && await _verifyReqId(it.reqId)){
         sent++;
+        if(_reconcileMark(it.mark)) reconciled = true;
+        continue;
+      }
+      const res = await _postOnce(body, finalUrl);
+      if(res === "ok"){
+        sent++;
+        if(_reconcileMark(it.mark)) reconciled = true;   // F3: entregado → marca los registros locales
+      } else if(res === "rejected"){
+        // El GAS lo rechaza permanentemente (reintentar es inútil) → se descarta
+        // para no bloquear la cola. NO se marca synced: el dato no se escribió.
+        rejected++;
       } else {
         remaining.push(it); // sigue siendo transitorio: se conserva
       }
     }
     _saveSyncQueue(remaining);
-    if(sent > 0){
-      toast("✅ "+sent+" envío(s) pendiente(s) de la cola completados", "ok", 4000);
-      try{ updateDots(); updateSyncUI(); }catch(_){}
+    if(sent > 0 || rejected > 0){
+      if(sent > 0)     toast("✅ "+sent+" envío(s) pendiente(s) de la cola completados", "ok", 4000);
+      if(rejected > 0) toast("⚠️ "+rejected+" envío(s) en cola rechazados por el servidor — revisa los datos", "err", 5000);
+      try{ updateDots(); updateSyncUI(); if(reconciled && typeof buildGrid === "function") buildGrid(); }catch(_){}
     }
   } finally {
     _flushingQueue = false;
   }
 }
 
+// F2a/F5: postPayload comunica el RESULTADO real del envío en `opts.outcome`
+// (mutando el objeto opts que pasó el llamador → sin globals ni carreras entre
+// envíos concurrentes a hojas distintas):
+//   "ok"       → confirmado en Sheets.
+//   "queued"   → no confirmado pero guardado en cola; se sincroniza y verifica
+//                solo (NO es un error — el llamador debe mostrar "En verificación").
+//   "rejected" → rechazo permanente del servidor (error real).
+//   "inflight" → ya había un envío en curso para esa hoja (postPayload ya avisó).
+// El valor de retorno booleano se mantiene (true solo en "ok") por compatibilidad
+// con los ~20 llamadores existentes.
 async function postPayload(payload, url, opts){
+  const _setOut = (v)=>{ if(opts) opts.outcome = v; };
   const flightKey = (payload && payload.sheetName) ? payload.sheetName : "_default";
   if(_syncInFlight.has(flightKey)){
     toast("⏳ Sincronización en curso para " + flightKey + " — espera a que termine","warn",3500);
+    _setOut("inflight");
     return false;
   }
   // ── Dedupe: ¿este mismo payload ya fue confirmado hace < 30s? ──────
@@ -1601,6 +1761,7 @@ async function postPayload(payload, url, opts){
     const last = _lastSyncFingerprint.get(flightKey);
     if(last && last.hash === _fp && (Date.now() - last.ts) < _SYNC_DUP_WINDOW_MS){
       toast("ℹ️ Payload idéntico al envío exitoso de hace "+Math.round((Date.now()-last.ts)/1000)+"s — operación omitida (datos ya en Sheets)","info",5000);
+      _setOut("ok");
       return true; // los datos YA están sincronizados; tratar como éxito
     }
   }
@@ -1643,18 +1804,31 @@ async function postPayload(payload, url, opts){
       // Registra la huella SÓLO en éxito confirmado — activa el dedupe de
       // 30s para envíos idénticos inmediatos (doble clic, etc.).
       if(_fp) _lastSyncFingerprint.set(flightKey, { hash: _fp, ts: Date.now() });
+      // F3: este éxito directo supera cualquier reintento pendiente en la cola
+      // de las mismas sesiones → se purgan para que el flush no reescriba datos
+      // ya superados.
+      _purgeQueueMark(opts && opts.mark);
+      _setOut("ok");
       return true;
     }
     if(res === "rejected"){
       // El GAS rechazó el payload (inválido / hoja no permitida / no
       // autorizado). Reintentar no ayudaría; no se encola.
+      _setOut("rejected");
       return false;
     }
 
     // res === "retry" tras agotar intentos → fallo transitorio (sin conexión,
-    // timeout o respuesta ambigua). Se encola para reintento automático.
-    _enqueueSync(payload, _fp, url);
-    toast("📶 Sin conexión estable — guardado en cola; se reintentará al reconectar","warn",5500);
+    // timeout o respuesta ambigua). Se encola para reintento automático; el dato
+    // se entregará y verificará solo (F3), así que NO es un error para el usuario.
+    _enqueueSync(payload, _fp, url, opts && opts.mark);
+    _setOut("queued");
+    toast("📶 Conexión inestable — guardado en cola; se sincronizará y verificará automáticamente","warn",5500);
+    // F2: intento de auto-resolución. A los 8s (margen para que un envío lento
+    // termine en el servidor) se vacía la cola: _verifyReqId confirmará por
+    // lectura si el dato SÍ llegó y reconciliará "En verificación" → sincronizado,
+    // sin acción del usuario. flushSyncQueue es reentrante-seguro y no-op si vacía.
+    setTimeout(()=>{ try{ flushSyncQueue(); }catch(_){} }, 8000);
     return false;
   } finally {
     // Libera el guard SIEMPRE — éxito, error, timeout o encolado. Sin esto,
@@ -5774,7 +5948,8 @@ async function syncMadSalasGrid(){
   if(pending.length === 0){ toast("Sin pendientes","info"); return; }
   setSyncUI("pend","Enviando "+pending.length+" sala(s)…");
   const payload = buildMadPayload("salas", pending);
-  const sent = await postPayload(payload, url);
+  const opts = { mark:{ kind:"mad:salas", keys: pending.map(p=>p.id) } };   // F3
+  const sent = await postPayload(payload, url, opts);
   if(sent){
     const list2 = loadMad("salas");
     pending.forEach(p => { const idx = list2.findIndex(x => x.id === p.id); if(idx >= 0){ list2[idx].synced = true; list2[idx].syncedAt = Date.now(); } });
@@ -5783,8 +5958,7 @@ async function syncMadSalasGrid(){
     toast("✅ Salas enviadas a Google Sheets","ok");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
-    setSyncUI("err","Error al sincronizar Salas");
-    toast("Error al sincronizar","err",4500);
+    _syncNotOkUI(opts.outcome, "Error al sincronizar Salas", null);
   }
   renderMadSalas();
   updateDots(); updateSyncUI();
@@ -6214,7 +6388,8 @@ async function syncMadTanquesGrid(){
   if(pending.length === 0){ toast("Sin pendientes","info"); return; }
   setSyncUI("pend","Enviando "+pending.length+" tanque(s)…");
   const payload = buildMadPayload("tanques", pending);
-  const sent = await postPayload(payload, url);
+  const opts = { mark:{ kind:"mad:tanques", keys: pending.map(p=>p.id) } };   // F3
+  const sent = await postPayload(payload, url, opts);
   if(sent){
     const list2 = loadMad("tanques");
     pending.forEach(p => { const idx = list2.findIndex(x => x.id===p.id); if(idx>=0){ list2[idx].synced = true; list2[idx].syncedAt = Date.now(); } });
@@ -6223,8 +6398,7 @@ async function syncMadTanquesGrid(){
     toast("✅ Tanques enviados a Google Sheets","ok");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
-    setSyncUI("err","Error al sincronizar Tanques");
-    toast("Error al sincronizar","err",4500);
+    _syncNotOkUI(opts.outcome, "Error al sincronizar Tanques", null);
   }
   renderMadTanques();
   updateDots(); updateSyncUI();
@@ -6295,7 +6469,8 @@ async function syncMadLotesGrid(){
   if(pending.length === 0){ toast("Sin pendientes","info"); return; }
   setSyncUI("pend","Enviando "+pending.length+" lote(s)…");
   const payload = buildMadPayload("lotes", pending);
-  const sent = await postPayload(payload, url);
+  const opts = { mark:{ kind:"mad:lotes", keys: pending.map(p=>p.id) } };   // F3
+  const sent = await postPayload(payload, url, opts);
   if(sent){
     const list2 = loadMad("lotes");
     pending.forEach(p => { const idx = list2.findIndex(x => x.id===p.id); if(idx>=0){ list2[idx].synced = true; list2[idx].syncedAt = Date.now(); } });
@@ -6304,8 +6479,7 @@ async function syncMadLotesGrid(){
     toast("✅ Lotes enviados a Google Sheets","ok");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
-    setSyncUI("err","Error al sincronizar Lotes");
-    toast("Error al sincronizar","err",4500);
+    _syncNotOkUI(opts.outcome, "Error al sincronizar Lotes", null);
   }
   renderMadLotes();
   updateDots(); updateSyncUI();
@@ -6747,7 +6921,8 @@ async function syncBioGrid(){
   const payload = buildBioPayload(fecha, dayRows);
   if(!payload.rows.length){ toast("No hay filas válidas para enviar","warn",3000); return; }
   setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s) del "+fecha+"…");
-  const sent = await postPayload(payload, url);
+  const opts = { mark:{ kind:"bio", keys:[fecha] } };   // F3: reconciliación al entregar desde cola
+  const sent = await postPayload(payload, url, opts);
   if(sent){
     const list2 = _bioRaw();
     list2.forEach(r => { if(r.data && r.data.fecha === fecha){ r.synced = true; r.syncedAt = Date.now(); } });
@@ -6756,8 +6931,7 @@ async function syncBioGrid(){
     toast("✅ "+payload.rows.length+" muestra(s) del "+fecha+" enviadas a BIOMOL (día reemplazado)","ok",4500);
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
-    setSyncUI("err","Error al sincronizar Biomol");
-    toast("No fue posible sincronizar con Google Sheets","err",4500);
+    _syncNotOkUI(opts.outcome, "Error al sincronizar Biomol", null);
   }
   renderBiomol(); updateDots(); updateSyncUI(); buildGrid();
 }
@@ -7517,7 +7691,8 @@ async function syncAllPendingAst(){
   setSyncUI("pend","Enviando "+pending.length+" registro(s)…");
   toast("Enviando "+pending.length+" registro(s) a Registro_Supervisión…","info",2200);
   const payload = buildAstPayload(pending);
-  const sent = await postPayload(payload, url, {dedupeSalt: pending.map(p=>p.id).join(",")});
+  const opts = { dedupeSalt: pending.map(p=>p.id).join(","), mark:{ kind:"ast", keys: pending.map(p=>p.id) } };   // F3
+  const sent = await postPayload(payload, url, opts);
   if(sent){
     const list2 = _astRaw();
     pending.forEach(p => {
@@ -7531,8 +7706,7 @@ async function syncAllPendingAst(){
     if(curTab === "ast") renderAst();
     updateDots(); updateSyncUI(); buildGrid();
   } else {
-    setSyncUI("err","No fue posible sincronizar");
-    toast("No fue posible sincronizar con Google Sheets","err",4500);
+    _syncNotOkUI(opts.outcome, "No fue posible sincronizar", null);
   }
 }
 
@@ -9006,7 +9180,10 @@ async function syncMic(){
   const payload = buildMicPayload(toSend);
   if(!payload.rows.length){ toast("No hay filas para enviar","warn",3000); return; }
   setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s)…");
-  const sent = await postPayload(payload, url);
+  // F3: marca de reconciliación → si el envío se encola por timeout, al entregarse
+  // la cola marcará synced estas sesiones (sin reenvío manual ni "pendiente" eterno).
+  const opts = { mark:{ kind:"mic", keys:Array.from(pendKeys) } };
+  const sent = await postPayload(payload, url, opts);
   if(sent){
     const l2 = _micRaw();
     l2.forEach(r=>{ if(r.data && pendKeys.has(micSessionKey(r.data))){ r.synced = true; r.syncedAt = Date.now(); } });
@@ -9017,8 +9194,7 @@ async function syncMic(){
     if(ind) ind.textContent = "✅ Sincronizado · "+new Date().toLocaleString("es-EC");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
-    setSyncUI("err","Error al sincronizar Microbiología");
-    toast("No fue posible sincronizar con Google Sheets","err",4500);
+    _syncNotOkUI(opts.outcome, "Error al sincronizar Microbiología", "mic-saved-ind");
   }
   updateDots(); updateSyncUI(); buildGrid();
   if(curTab === "michist" && micTypeGet() === "bact") renderMicHist();
@@ -10016,7 +10192,8 @@ async function syncCal(){
   const payload=buildCalPayload(toSend);
   if(!payload.rows.length){ toast("No hay filas para enviar","warn",3000); return; }
   setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s)…");
-  const sent=await postPayload(payload, url);
+  const opts = { mark:{ kind:"cal", keys:Array.from(pendKeys) } };   // F3: reconciliación al entregar desde cola
+  const sent=await postPayload(payload, url, opts);
   if(sent){
     const l2=_calRaw();
     l2.forEach(r=>{ if(r.data && pendKeys.has(calSessionKey(r.data))){ r.synced=true; r.syncedAt=Date.now(); } });
@@ -10027,8 +10204,7 @@ async function syncCal(){
     if(ind) ind.textContent = "✅ Sincronizado · "+new Date().toLocaleString("es-EC");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
-    setSyncUI("err","Error al sincronizar Calidad de Agua");
-    toast("No fue posible sincronizar con Google Sheets","err",4500);
+    _syncNotOkUI(opts.outcome, "Error al sincronizar Calidad de Agua", "cal-saved-ind");
   }
   updateDots(); updateSyncUI(); buildGrid();
   if(curTab==="michist" && micTypeGet()==="cal") renderCalHist();
@@ -10630,7 +10806,8 @@ async function syncPat(){
   const payload=buildPatPayload(toSend);
   if(!payload.rows.length){ toast("No hay filas para enviar","warn",3000); return; }
   setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s)…");
-  const sent=await postPayload(payload, url);
+  const opts = { mark:{ kind:"pat", keys:Array.from(pendKeys) } };   // F3: reconciliación al entregar desde cola
+  const sent=await postPayload(payload, url, opts);
   if(sent){
     const l2=_patRaw();
     l2.forEach(r=>{ if(r.data && pendKeys.has(patSessionKey(r.data))){ r.synced=true; r.syncedAt=Date.now(); } });
@@ -10640,8 +10817,7 @@ async function syncPat(){
     const ind=document.getElementById("pat-saved-ind"); if(ind) ind.textContent="✅ Sincronizado · "+new Date().toLocaleString("es-EC");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
-    setSyncUI("err","Error al sincronizar Patología en Fresco");
-    toast("No fue posible sincronizar con Google Sheets","err",4500);
+    _syncNotOkUI(opts.outcome, "Error al sincronizar Patología en Fresco", "pat-saved-ind");
   }
   updateDots(); updateSyncUI(); buildGrid();
   if(curTab==="michist" && micTypeGet()==="pat") renderPatHist();
