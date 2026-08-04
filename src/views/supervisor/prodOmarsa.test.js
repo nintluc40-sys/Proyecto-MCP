@@ -95,3 +95,23 @@ describe('prodTableHTML · fila "Subtotal actual" (despachados)', () => {
     expect(html).not.toContain('Subtotal actual');
   });
 });
+
+describe('prodTableHTML · engranaje ⚙ de toneladas por tanque', () => {
+  it('renderiza el engranaje y el modal con una sección por módulo con siembra', () => {
+    store.globalData = [
+      row('M06', '579', 'TQ1', 1000, '01/07/2026'),
+      row('M06', '579', 'TQ2', 1200, '01/07/2026'),
+      row('M08', '580', 'TQ1', 2000, '01/07/2026'),
+    ];
+    const months = presentMonths();
+    const html = prodTableHTML(months, months.length - 1);
+    expect(html).toContain('data-prodgear');   // botón ⚙ en la cabecera
+    expect(html).toContain('data-ptmodal');     // modal presente
+    expect(html).toContain('Toneladas por tanque'); // título del modal
+    // Un input por tanque real con siembra (data-tank), con las claves cor/mod.
+    expect(html).toContain('data-cor="579"');
+    expect(html).toContain('data-mod="M06"');
+    expect(html).toContain('data-tank="TQ1"');
+    expect(html).toContain('data-tank="TQ2"');
+  });
+});

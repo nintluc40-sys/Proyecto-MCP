@@ -11,7 +11,7 @@ import { getField, F } from '../../core/fields.js';
 import { fmtShort } from '../../core/dates.js';
 import { compareTanksButtonHTML, compareTanksModalHTML, setupCompareTanks } from './compareTanks.js';
 import { presentMonths, corridasOfMonth, modulesOfCorrida, isDespachoRow, modCorDispatched } from '../../core/prodCalendar.js';
-import { prodTableHTML } from './prodOmarsa.js';
+import { prodTableHTML, setupProdTon } from './prodOmarsa.js';
 import { desinfeccionEnCurso } from './desinfeccion.js';
 
 /** Estado de despacho del módulo+corrida: '' · 'Despachando' · 'Despachado'.
@@ -188,6 +188,7 @@ function mountMonthPanel(root, ctx) {
     wrap.querySelector('[data-prodprev]')?.addEventListener('click', () => { if (pos > 0) { pos--; render(); } });
     wrap.querySelector('[data-prodnext]')?.addEventListener('click', () => { if (pos < months.length - 1) { pos++; render(); } });
     wrap.querySelector('[data-prodslider]')?.addEventListener('input', (e) => { pos = +e.target.value; render(); });
+    setupProdTon(wrap, months, pos, render); // engranaje ⚙: config de toneladas por tanque del mes
   };
   render();
 }

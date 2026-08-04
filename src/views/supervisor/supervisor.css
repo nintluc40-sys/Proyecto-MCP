@@ -211,7 +211,7 @@
 
 /* Tabla Producción Omarsa (Vista Ejecutiva) */
 .prod-card { margin-bottom: 16px; }
-.prod-nav { display: flex; align-items: center; gap: 12px; justify-content: center; }
+.prod-nav { position: relative; display: flex; align-items: center; gap: 12px; justify-content: center; }
 .prod-nav-btn { width: 32px; height: 32px; border-radius: var(--r-sm); border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-brand); font-size: 14px; font-weight: 900; cursor: pointer; transition: all var(--t-fast); }
 .prod-nav-btn:hover:not(:disabled) { background: var(--c-brand); color: #fff; }
 .prod-nav-btn:disabled { opacity: .35; cursor: default; }
@@ -225,6 +225,42 @@
    tabla) para diferenciarla del Total y señalar lo ya cosechado/despachado. */
 .prod-subtotal td { font-weight: 800; background: color-mix(in srgb, var(--c-bueno) 15%, transparent); border-top: 1px dashed color-mix(in srgb, var(--c-bueno) 45%, var(--c-border)); border-bottom: 1px dashed color-mix(in srgb, var(--c-bueno) 45%, var(--c-border)); font-style: italic; }
 .prod-subtotal td .muted { font-style: normal; font-weight: 600; font-size: 11px; }
+
+/* ⚙ Engranaje: configurar toneladas por tanque del mes (Dens. siembra) */
+.prod-gear { position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; border-radius: var(--r-sm); border: 1.5px solid var(--c-brand); background: color-mix(in srgb, var(--c-brand) 10%, transparent); color: var(--c-brand-600); font-size: 16px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all var(--t-fast); }
+.prod-gear:hover { background: var(--c-brand); color: #fff; }
+.prod-gear:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: 2px; }
+
+/* Panel de toneladas por tanque (dentro de .sv-modal) */
+.pt-sec { border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 14px; margin-bottom: 14px; background: var(--c-surface-2); }
+.pt-sec:last-child { margin-bottom: 0; }
+.pt-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.pt-name { font-size: 13px; font-weight: 900; color: var(--c-text); }
+.pt-cor-chip { font-size: 10.5px; font-weight: 700; color: var(--c-text-soft); background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-pill); padding: 2px 9px; margin-left: 8px; }
+.pt-quick { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pt-live { font-size: 11px; font-weight: 700; color: var(--c-text-soft); }
+.pt-live b { color: var(--c-brand-600); font-weight: 900; font-variant-numeric: tabular-nums; }
+.pt-allval { width: 58px; padding: 5px 8px; border-radius: var(--r-sm); border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-text); font-size: 12px; font-weight: 700; text-align: right; }
+.pt-qbtn { font-size: 11px; font-weight: 800; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-brand-600); border-radius: var(--r-sm); padding: 5px 10px; cursor: pointer; transition: all var(--t-fast); }
+.pt-qbtn:hover { border-color: var(--c-brand); }
+.pt-qbtn.reset { color: var(--c-text-muted); }
+.pt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 9px; }
+.pt-tank { display: block; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-sm); padding: 7px 9px; }
+.pt-tk { display: block; font-size: 10px; font-weight: 800; color: var(--c-text-muted); letter-spacing: .03em; margin-bottom: 4px; text-transform: uppercase; }
+.pt-inp { display: flex; align-items: center; gap: 4px; }
+.pt-inp input { width: 100%; min-width: 0; border: none; background: transparent; color: var(--c-text); font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; font-family: var(--font-mono); padding: 0; }
+.pt-inp input:focus { outline: none; }
+.pt-inp i { font-size: 11px; font-weight: 700; color: var(--c-text-muted); font-style: normal; }
+.pt-tank.edited { border-color: var(--c-brand-600); background: color-mix(in srgb, var(--c-brand-600) 10%, transparent); box-shadow: inset 0 0 0 1px var(--c-brand-600); }
+.pt-tank.edited .pt-tk { color: var(--c-brand-600); }
+.pt-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 20px; border-top: 1px solid var(--c-border); background: var(--c-surface-2); }
+.pt-foot-hint { font-size: 11.5px; color: var(--c-text-muted); }
+.pt-foot-btns { display: inline-flex; gap: 8px; }
+.pt-btn { font-size: 12.5px; font-weight: 800; border-radius: var(--r-sm); padding: 9px 16px; cursor: pointer; border: 1px solid var(--c-border); transition: all var(--t-fast); }
+.pt-btn.ghost { background: var(--c-surface); color: var(--c-text-soft); }
+.pt-btn.ghost:hover { color: var(--c-text); }
+.pt-btn.primary { background: var(--c-brand); color: #fff; border-color: var(--c-brand); }
+.pt-btn.primary:hover { background: var(--c-brand-700); }
 
 /* Bitácora desplegable */
 .sv-bita-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 8px 0 12px; }
