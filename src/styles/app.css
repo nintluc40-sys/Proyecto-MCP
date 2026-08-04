@@ -181,6 +181,18 @@
   border-radius: 50%;
   animation: spin .8s linear infinite;
 }
+.loader-box { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 0 24px; }
+.loader-msg {
+  margin: 0; max-width: 30ch;
+  text-align: center; text-wrap: balance;
+  font-size: 14px; font-weight: 600; color: var(--c-text-soft);
+  animation: loaderMsgFade .5s ease;
+}
+@keyframes loaderMsgFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .loader .spinner { animation-duration: 1.6s; }
+  .loader-msg { animation: none; }
+}
 
 @media (max-width: 720px) {
   .app-header { flex-wrap: wrap; gap: var(--sp-2); }

@@ -56,7 +56,12 @@ export function mountShell(appEl) {
         <button class="icon-btn" id="darkBtn" title="Cambiar tema (claro/oscuro)" aria-label="Cambiar tema claro u oscuro">🌙</button>
       </header>
       <main class="app-main"><div id="dashboardContent"></div></main>
-      <div class="loader" id="loader"><div class="spinner"></div></div>
+      <div class="loader" id="loader">
+        <div class="loader-box">
+          <div class="spinner"></div>
+          <p class="loader-msg" id="loaderMsg">Preparando el sistema…</p>
+        </div>
+      </div>
     </div>`;
 
   els = {
@@ -70,6 +75,7 @@ export function mountShell(appEl) {
     label: appEl.querySelector('#connLabel'),
     content: appEl.querySelector('#dashboardContent'),
     loader: appEl.querySelector('#loader'),
+    loaderMsg: appEl.querySelector('#loaderMsg'),
     dateBar: appEl.querySelector('#dateBar'),
     dark: appEl.querySelector('#darkBtn'),
   };
@@ -167,7 +173,31 @@ function setConnStatus(state, label) {
   els.label.textContent = label;
 }
 
-export function showLoader(on) { els.loader.classList.toggle('is-active', !!on); }
+// Frases rotativas del loader: la carga inicial (descarga de Sheets) puede tardar,
+// así que se muestran mensajes tranquilizadores que van cambiando para que la espera
+// se sienta activa y el usuario no se impaciente.
+const LOADER_MSGS = [
+  'Preparando el sistema para que tu experiencia sea especializada…',
+  'Sincronizando los datos de producción…',
+  'Ordenando módulos, corridas y tanques…',
+  'Afinando los indicadores del tablero…',
+  'Casi listo — gracias por tu paciencia…',
+];
+let _loaderTimer = null;
+
+export function showLoader(on) {
+  els.loader.classList.toggle('is-active', !!on);
+  clearInterval(_loaderTimer);
+  _loaderTimer = null;
+  if (!on || !els.loaderMsg) return;
+  // Arranca en la primera frase y va rotando mientras el loader siga visible.
+  let i = 0;
+  els.loaderMsg.textContent = LOADER_MSGS[0];
+  _loaderTimer = setInterval(() => {
+    i = (i + 1) % LOADER_MSGS.length;
+    els.loaderMsg.textContent = LOADER_MSGS[i];
+  }, 2600);
+}
 
 // Oculta/muestra la barra de fecha global. La usa la Vista Ejecutiva del Supervisor,
 // cuyo periodo lo define su navegador de meses (allí los presets 7/30/Todo no aplican).
