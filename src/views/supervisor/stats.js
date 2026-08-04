@@ -7,7 +7,7 @@
    ============================================================ */
 import { store } from '../../core/store.js';
 import {
-  getField, parseNum, F, isTanqueRow, isLarviculturaRow, hasValidCorrida, hasValidModulo, getLatestStage, dedupeTecnicos, PLGM_KEYS,
+  getField, parseNum, F, isTanqueRow, isLarviculturaRow, hasValidCorrida, hasValidModulo, getLatestStage, dedupeTecnicos, PLG_KEYS, PLGM_KEYS,
 } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { avg } from '../../core/util.js';
@@ -184,6 +184,7 @@ export function modStats(ctx, mod, corrida) {
   return {
     sv, mort, pop, popFirst, lastDate, tanksData,
     plgManual: lastAvgByTank(win, tanks, PLGM_KEYS), // PL/g (manual) de cosecha (prom. del último por tanque)
+    plgLarvia: lastAvgByTank(win, tanks, PLG_KEYS),  // PL/g (LARVIA): Σ del PL/g registrado por tanque ÷ nº de tanques con registro
     estadio: getLatestStage(win),
     od: avg(tWin.map(gOD).filter((v) => v !== null)),
     tmp: avg(tWin.map(gTmp).filter((v) => v !== null)),

@@ -980,7 +980,7 @@ export function renderModule(ctx, mod) {
       ${kpiGlass('🍽️', 'Nutrición IL', fmt1(s.il, '%'))}
       ${kpiGlass('✨', 'Calidad Líp.', fmt1(s.lip, '%'))}
       ${kpiGlass('⚡', '% Actividad', fmt1(s.act, '%'))}
-      ${kpiGlass('🫧', '% Espuma', fmt1(s.esp, '%'))}
+      ${kpiGlass('🔬', 'PL/g (Larvia)', fmt1(s.plgLarvia))}
       ${kpiGlass('🧹', '% Suciedad', fmt1(s.suc, '%'))}
       ${kpiGlass('📅', 'Días proceso', String(s.dias), 'data-modtrace role="button" tabindex="0" title="Trazabilidad: descargar las fichas del módulo en PDF"')}
       ${kpiGlass('🎯', 'Cosecha', cosechaLabel)}

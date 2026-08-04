@@ -55,6 +55,20 @@ describe('modStats: frescura (lastDate) y datos por tanque (tanksData)', () => {
     expect(s.esp).toBe(15); // (10+20)/2
     expect(s.suc).toBe(2);  // (0+4)/2 — el 0 cuenta
   });
+
+  it('PL/g (Larvia): Σ del último PL/g por tanque ÷ nº de tanques CON registro', () => {
+    store.globalData = [
+      // TQ1: dos registros → cuenta el ÚLTIMO por fecha (18)
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '580', Tanque: 'TQ1', 'PL/g': '12', Fecha: '01/06/2026' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '580', Tanque: 'TQ1', 'PL/g': '18', Fecha: '05/06/2026' },
+      // TQ2: un registro (22)
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '580', Tanque: 'TQ2', 'PL/g': '22', Fecha: '03/06/2026' },
+      // TQ3: presente en el módulo pero SIN PL/g → no entra en el promedio
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '580', Tanque: 'TQ3', 'Población': '500', Fecha: '03/06/2026' },
+    ];
+    const s = modStats(buildContext({}), 'M01', '580');
+    expect(s.plgLarvia).toBe(20); // (18 + 22) / 2 ; TQ3 excluido del denominador
+  });
 });
 
 describe('Población 0 (tanque agrupado/vaciado): el 0 es real, no se arrastra el valor anterior', () => {
