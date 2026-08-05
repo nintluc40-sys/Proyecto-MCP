@@ -5,6 +5,7 @@ import { modStats, tankStats, tanksOf, getters } from './stats.js';
 import { moduleSvPopSeries, moduleHourlyDates, moduleHourly, moduleDayKpis, moduleDayTankReadings, cosechaEstimate, projectMetric } from './moduleTrends.js';
 import { HR_LABELS } from './tank.js';
 import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, kpiTecnicos, breadcrumb, bindModal } from './ui.js';
+import { computeSiembras } from './siembras.js';
 import { toast } from '../../ui/toast.js';
 import { downloadTrazabilidad, moduleDateRange } from './trazabilidad.js';
 import { FICHA_IDS, fichaLabel } from './fichaPdf.js';
@@ -898,6 +899,92 @@ function cwFichasHTML(rows, ranges) {
   return `${legend}<div class="cw-fichas">${cards}</div>`;
 }
 
+/* ---- Modal "Siembras y Cosecha" (se abre desde el KPI Técnico) ------------
+   Estilo NATIVO: clase .sv-table + semáforo del sistema (svLevel/levelColor) +
+   fmtPop. Datos: computeSiembras (views/supervisor/siembras.js). Solo lectura. */
+function svSiePct(v) {
+  if (v === null || v === undefined || isNaN(v)) return '<span class="muted">—</span>';
+  return `<span class="sv-sie-sv" style="color:${levelColor(svLevel(v))}">${fmt1(v, '%')}</span>`;
+}
+function svSieBand(sie) {
+  const tks = sie.tanks;
+  const range = tks.length > 1 ? `${tks[0].tq}–${tks[tks.length - 1].tq}` : (tks[0] ? tks[0].tq : '');
+  const fecha = sie.dateMs ? fmtShort(new Date(sie.dateMs)) : '—';
+  const lote = sie.lotes.length ? ' · Lote ' + esc(sie.lotes.join(', ')) : '';
+  return `<tr class="sv-sie-band"><td colspan="7">${sie.idx}ª siembra <span class="sv-sie-bmeta">· N5 ${esc(fecha)}${lote}</span><span class="sv-sie-bcount">${esc(range)} · ${tks.length} tanque${tks.length !== 1 ? 's' : ''}</span></td></tr>`;
+}
+function svSieTankRow(t) {
+  const trans = t.enProceso
+    ? '<span class="muted">—</span> <span class="sv-sie-proc">en proceso</span>'
+    : fmtPop(t.transferido);
+  const plg = (t.plg !== null && t.plg !== undefined) ? fmt1(t.plg) : '<span class="muted">—</span>';
+  return `<tr>
+    <td class="sv-sie-tk">${esc(t.tq)}</td>
+    <td class="muted">${esc(t.lote || '—')}</td>
+    <td class="sv-sie-num">${fmtPop(t.siembra)}</td>
+    <td class="sv-sie-b sv-sie-num">${trans}</td>
+    <td>${esc(t.estadio || '—')}</td>
+    <td class="sv-sie-num">${t.enProceso ? '<span class="muted">—</span>' : plg}</td>
+    <td class="sv-sie-num">${t.enProceso ? '<span class="muted">—</span>' : svSiePct(t.superv)}</td>
+  </tr>`;
+}
+function svSieRollupRow(st, label, cls, mermaPct) {
+  return `<tr class="${cls}">
+    <td colspan="2" class="sv-sie-stlbl">${esc(label)}</td>
+    <td class="sv-sie-num">${fmtPop(st.sembrado)}</td>
+    <td class="sv-sie-b sv-sie-num">${fmtPop(st.transferido)}</td>
+    <td colspan="2" class="sv-sie-cosecha">🎯 A cosechar −${mermaPct}%: <b>${fmtPop(st.aCosechar)}</b></td>
+    <td class="sv-sie-num">${svSiePct(st.superv)}</td>
+  </tr>`;
+}
+function svSiembrasModalHTML(data, mod, corrida, tecnicos) {
+  const mermaPct = Math.round(data.merma * 100);
+  const tecLbl = (tecnicos && tecnicos.length) ? esc(tecnicos.join(' · ')) : '—';
+  const tecs = tecnicos && tecnicos.length > 1;
+  const body = data.nSiembras
+    ? `<div class="sv-modal-kpis">
+        <span class="sv-modal-kpi"><b>${tecLbl}</b>técnico${tecs ? 's' : ''}</span>
+        <span class="sv-modal-kpi"><b>${esc(mod)}</b>módulo</span>
+        ${corrida ? `<span class="sv-modal-kpi"><b>C${esc(corrida)}</b>corrida</span>` : ''}
+        <span class="sv-modal-kpi"><b>${data.nSiembras}</b>siembra${data.nSiembras !== 1 ? 's' : ''}</span>
+        <span class="sv-modal-kpi"><b>${data.nTanks}</b>tanque${data.nTanks !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="sv-sie-wrap">
+        <table class="sv-table sv-sie-table">
+          <thead>
+            <tr class="sv-sie-grouphead">
+              <th colspan="3">🌱 Siembra</th>
+              <th colspan="4" class="sv-sie-b">🎯 Transferencia · Cosecha</th>
+            </tr>
+            <tr>
+              <th>Tanque</th><th>Lote</th><th class="sv-sie-num">Sembrado</th>
+              <th class="sv-sie-b sv-sie-num">Transferido</th><th>Estadío</th><th class="sv-sie-num">PL/g</th><th class="sv-sie-num">Superv.</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.siembras.map((sie) => svSieBand(sie)
+              + sie.tanks.map(svSieTankRow).join('')
+              + svSieRollupRow(sie.subtotal, `Subtotal ${sie.idx}ª siembra`, 'sv-sie-subtotal', mermaPct)).join('')}
+          </tbody>
+          <tfoot>
+            ${svSieRollupRow(data.total, `Total módulo ${mod}`, 'sv-sie-total', mermaPct)}
+          </tfoot>
+        </table>
+      </div>
+      <div class="sv-modal-note">🌱 Sembrado = población del primer registro <b>N5</b> · Transferido = penúltima población (antes de la cosecha) · A cosechar = Σ Transferido − ${mermaPct}% · Superv. = Transferido ÷ Sembrado. La supervivencia de los subtotales solo cuenta los tanques con Transferido registrado (los «en proceso» aún no).</div>`
+    : `<div class="empty-state" style="padding:30px">Sin siembras registradas para ${esc(mod)}${corrida ? ' · C' + esc(corrida) : ''}.</div>`;
+
+  return `<div class="sv-modal" id="svSiembrasModal" data-siembrasmodal>
+    <div class="sv-modal-card lv-fs-card">
+      <div class="sv-modal-head">
+        <span class="sv-modal-title">🌱 Siembras y Cosecha — ${esc(mod)}${corrida ? ' · C' + esc(corrida) : ''}</span>
+        <button class="sv-modal-x" data-siembras-close aria-label="Cerrar">✕</button>
+      </div>
+      <div class="sv-modal-body">${body}</div>
+    </div>
+  </div>`;
+}
+
 export function renderModule(ctx, mod) {
   const corrida = ctx.vState.corrida || null;
   const col = colorFor(ctx.allMods.indexOf(mod));
@@ -957,6 +1044,11 @@ export function renderModule(ctx, mod) {
   // Proyección de cosecha (días estimados hasta PL11) según el ritmo de estadío.
   const cos = cosechaEstimate(ctx, mod, corrida, 'PL11');
   const cosechaLabel = cos ? (cos.reached ? 'En cosecha' : '≈ ' + cos.days + ' días') : '—';
+
+  // Cuadro de Siembras y Cosecha (modal del KPI Técnico). Se agrupa por fecha de N5.
+  // Usa la línea base poblacional (larvCM: corrida+mes, SIN la ventana de fecha global)
+  // para no truncar el transferido/cosecha más recientes del módulo.
+  const siembrasData = computeSiembras(ctx.larvCM.filter((r) => getField(r, F.modulo) === mod));
 
   let h = breadcrumb(col.accent, [
     { label: '← Módulos', nav: 'modules' },
@@ -1280,7 +1372,15 @@ export function renderModule(ctx, mod) {
     </div>
   </div>`;
 
+  // Modal "Siembras y Cosecha" — se abre desde el KPI Técnico (data-siembras-open).
+  h += svSiembrasModalHTML(siembrasData, mod, corrida, s.tecnicos);
+
   const after = (root) => {
+    // Modal Siembras y Cosecha (KPI Técnico). Chip con role="button" → keyboard:true.
+    bindModal(root, root.querySelector('#svSiembrasModal'), {
+      openSel: '[data-siembras-open]', closeSel: '[data-siembras-close]', keyboard: true,
+    });
+
     // #2 · RO1 en modal: barras agrupadas SV (eje y) + ICL (eje y1) por tanque (se dibuja al abrir).
     const cmpOverlay = root.querySelector('#svModCmpModal');
     if (cmpOverlay) {

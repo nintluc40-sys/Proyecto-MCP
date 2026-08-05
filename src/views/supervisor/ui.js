@@ -34,20 +34,13 @@ export function kpiGlass(icon, label, value, attrs = '', alert = false) {
   </div>`;
 }
 
-/** KPI de Técnico con desplegable nativo cuando hay más de uno. */
+/** KPI de Técnico: clic → abre el cuadro de Siembras y Cosecha del módulo.
+ *  Muestra el primer técnico (+N si hay más); la lista completa va en el modal. */
 export function kpiTecnicos(tecnicos) {
   const list = (tecnicos || []).filter(Boolean);
-  if (!list.length) return kpiGlass('👤', 'Técnico', '—');
-  if (list.length === 1) return kpiGlass('👤', 'Técnico', list[0]);
-  return `<details class="sv-kpi-glass sv-tec">
-    <summary class="sv-tec-summary">
-      <div class="sv-kpi-label">👤 Técnico <span class="sv-tec-caret">▾</span></div>
-      <div class="sv-kpi-value">${esc(list[0])} <span class="sv-tec-more">+${list.length - 1}</span></div>
-    </summary>
-    <div class="sv-tec-list">
-      ${list.slice(1).map((t) => `<div class="sv-tec-item">${esc(t)}</div>`).join('')}
-    </div>
-  </details>`;
+  const value = list.length ? (list[0] + (list.length > 1 ? ` +${list.length - 1}` : '')) : '—';
+  return kpiGlass('👤', 'Técnico', value,
+    'data-siembras-open role="button" tabindex="0" title="Ver el cuadro de siembras y cosecha del módulo"');
 }
 
 /** Migas de pan navegables + botón "Volver" táctil (cómodo en móvil/tablet).
