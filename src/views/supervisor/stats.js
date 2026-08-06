@@ -229,7 +229,12 @@ function modStatsCompute(ctx, mod, corrida) {
     corridas: [...new Set(win.map(gCor).filter(Boolean))].length,
     lotes: [...new Set(win.map((r) => getField(r, F.lote)).filter(Boolean))],
     dias: dateSpanDays(win), // días transcurridos (span 1ª→última fecha + 1)
-    tecnicos: dedupeTecnicos(win.map((r) => getField(r, F.tecnico))),
+    // Técnicos responsables: se leen de la columna «Técnico» sobre `base` —la corrida
+    // completa— y NO sobre la ventana visible. Ser el responsable de un módulo es un hecho
+    // de la corrida, no del rango de días que se esté mirando: con `win` la Vista Ejecutiva
+    // (que ignora el filtro global) y el KPI del Resumen Operativo (que lo respeta) podían
+    // listar técnicos distintos para el mismo módulo con un preset de 7/30 días activo.
+    tecnicos: dedupeTecnicos(base.map((r) => getField(r, F.tecnico))),
   };
 }
 
@@ -243,7 +248,14 @@ export function tankStats(ctx, mod, tq, corrida) {
   const { sv, mort, pop, popFirst } = survival(lWin, lBase, [tq]);
   return {
     sv, mort, pop, popFirst,
-    grouped: rowsAreGrouped(lWin), // tanque agrupado (palabra "Agrupado" en Observaciones)
+    // Agrupado / descartado: se evalúan sobre `lBase` (la corrida completa) y NO sobre la
+    // ventana visible, igual que el `outOfDispatch` de modStats. Con `lWin` la marca
+    // dependía del filtro de fecha: si el operador anotó "Agrupado" el día 3 y el supervisor
+    // miraba los últimos 7 días, el chip desaparecía de la tarjeta y del banner mientras la
+    // Vista Ejecutiva SÍ seguía excluyendo el tanque del recuento de alertas — dos lecturas
+    // distintas del mismo hecho en la misma pantalla.
+    grouped: rowsAreGrouped(lBase),
+    discarded: rowsAreDiscarded(lBase),
     estadio: getLatestStage(lWin),
     od: avg(tWin.map(gOD).filter((v) => v !== null)),
     tmp: avg(tWin.map(gTmp).filter((v) => v !== null)),

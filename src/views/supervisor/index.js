@@ -8,7 +8,7 @@ import { destroyAllCharts } from '../../core/charts.js';
 import { setDateBarHidden } from '../../ui/shell.js';
 import { buildContext } from './stats.js';
 import { renderExecutive } from './executive.js';
-import { renderModule } from './module.js';
+import { renderModule, cleanupModule } from './module.js';
 import { renderTank } from './tank.js';
 import { renderLarvia } from './larvia.js';
 import { renderDespacho } from './despacho.js';
@@ -45,6 +45,7 @@ export function supervisorView(root) {
   // router, así que limpiamos aquí también cualquier overlay huérfano en el <body>
   // (si no, refresh.js lo leería como interacción y pausaría el auto-refresco).
   document.body.classList.remove('modal-open');
+  cleanupModule(); // suelta el tooltip que el heatmap Biomol cuelga de <body>
   const ctx = buildContext(vState);
   const result = dispatch(ctx);
   // La barra de fecha global se oculta SOLO en la landing ejecutiva (vState.view queda

@@ -34,13 +34,20 @@ export function kpiGlass(icon, label, value, attrs = '', alert = false) {
   </div>`;
 }
 
-/** KPI de Técnico: clic → abre el cuadro de Siembras y Cosecha del módulo.
- *  Muestra el primer técnico (+N si hay más); la lista completa va en el modal. */
+/** KPI de Técnico: muestra el primer responsable (+N si hay más) y despliega la lista
+ *  completa al pulsarlo. Con un solo técnico no hay nada que desplegar y queda inerte.
+ *  Los nombres salen de la columna «Técnico» de la hoja (`dedupeTecnicos` los unifica). */
 export function kpiTecnicos(tecnicos) {
   const list = (tecnicos || []).filter(Boolean);
-  const value = list.length ? (list[0] + (list.length > 1 ? ` +${list.length - 1}` : '')) : '—';
-  return kpiGlass('👤', 'Técnico', value,
-    'data-siembras-open role="button" tabindex="0" title="Ver el cuadro de siembras y cosecha del módulo"');
+  if (!list.length) return kpiGlass('👤', 'Técnico', '—');
+  const value = list[0] + (list.length > 1 ? ` +${list.length - 1}` : '');
+  if (list.length === 1) return kpiGlass('👤', 'Técnico', value);
+  return `<div class="sv-kpi-glass sv-kpi-click sv-tec-kpi" data-tec-toggle role="button" tabindex="0"
+    aria-expanded="false" title="Ver los ${list.length} técnicos del módulo">
+    <div class="sv-kpi-label">👤 Técnico</div>
+    <div class="sv-kpi-value">${esc(value)} <span class="sv-tec-caret" aria-hidden="true">▾</span></div>
+    <div class="sv-tec-list" hidden>${list.map((t) => `<span class="sv-tec-item">${esc(t)}</span>`).join('')}</div>
+  </div>`;
 }
 
 /** Migas de pan navegables + botón "Volver" táctil (cómodo en móvil/tablet).

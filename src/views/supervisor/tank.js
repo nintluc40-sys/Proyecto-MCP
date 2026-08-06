@@ -219,6 +219,8 @@ export function renderTank(ctx, mod, tq) {
   // otro tanque), pero su siembra inicial sigue contando en los totales del módulo.
   if (s.grouped) {
     html += `<div class="sv-grouped-note">🔗 <b>Tanque agrupado</b> — se registró población y supervivencia en 0 (sus animales se agruparon con otro tanque). Su siembra inicial sigue contando en los totales del módulo.</div>`;
+  } else if (s.discarded) {
+    html += `<div class="sv-discarded-note">🗑️ <b>Tanque descartado</b> — se registró población y supervivencia en 0 porque la producción se perdió, no por un problema sanitario en curso. Queda fuera del recuento de alertas y del despacho; su siembra inicial sigue contando en los totales del módulo.</div>`;
   }
 
   // TQ4 · Botón de alertas del día (abre modal con parámetros fuera de rango)
@@ -294,7 +296,10 @@ export function renderTank(ctx, mod, tq) {
   </div>`;
 
   // Modal Historial de observaciones del tanque
-  const obsListHTML = obsRows.length
+  // Se construye al ABRIR el modal, no en el render: es una lista completa (una tarjeta
+  // por observación de toda la corrida) que la mayoría de visitas al tanque nunca llega
+  // a mirar. El botón ya muestra el recuento sin necesidad del marcado.
+  const obsListHTML = () => obsRows.length
     ? `<div class="sv-hist-count">${obsRows.length} observación(es)</div>` + obsRows.map((r) => `
         <div class="sv-hist-item">
           <span class="sv-hist-date">${esc(gFec(r) || '—')}</span>
@@ -308,7 +313,7 @@ export function renderTank(ctx, mod, tq) {
         <span class="sv-modal-title">📜 Historial de observaciones — ${esc(mod)} · ${esc(tq)}</span>
         <button class="sv-modal-x" data-obshist-close aria-label="Cerrar">✕</button>
       </div>
-      <div class="sv-modal-body"><div class="sv-hist-list">${obsListHTML}</div></div>
+      <div class="sv-modal-body"><div class="sv-hist-list" data-obshist-body></div></div>
     </div>
   </div>`;
 
@@ -569,6 +574,12 @@ export function renderTank(ctx, mod, tq) {
     // ── Modal: Historial de observaciones del tanque ──
     bindModal(root, root.querySelector('#svObsModal'), {
       openSel: '[data-obshist-open]', closeSel: '[data-obshist-close]',
+      // Relleno diferido y una sola vez: `bindModal` ejecuta `onOpen` ANTES de colocar el
+      // foco, así que los enlaces de la lista ya existen cuando se calcula la trampa de Tab.
+      onOpen: () => {
+        const body = root.querySelector('[data-obshist-body]');
+        if (body && !body.dataset.filled) { body.innerHTML = obsListHTML(); body.dataset.filled = '1'; }
+      },
     });
 
     // ── Modal: Alertas del día (TQ4) ──

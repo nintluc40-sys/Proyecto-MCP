@@ -10,12 +10,19 @@
        por la fecha del primer registro con población (no se pierde).
      · Sembrado = población del primer registro N5 (fallback: primera
        población real registrada del tanque).
-     · Cosecha    = ÚLTIMA población registrada del tanque.
-       Transferido = PENÚLTIMA (la de justo antes de la cosecha).
-       Con <2 poblaciones el tanque está "en proceso" (sin transferido).
+     · Transferido = ÚLTIMA población registrada que NO sea la del DESPACHO
+       (`isDespachoRow`, el criterio único de core/prodCalendar.js) ni la de la
+       propia siembra. Antes se tomaba la PENÚLTIMA población, que solo acierta
+       cuando la fila de despacho ya existe y es la última: mientras el módulo no
+       ha despachado retrocedía un registro de más y, como entre PL6 y PL11 no se
+       vuelve a registrar población, podía mostrar una lectura de semanas antes.
+       Sin ninguna lectura posterior a la siembra el tanque está "en proceso".
      · PL/g y Estadío del Bloque B salen de la MISMA línea del transferido
        (PL/g biométrico LARVIA).
-     · Superv.   = Transferido ÷ Sembrado × 100 (tope 100).
+     · Superv.   = Transferido ÷ Sembrado × 100 (tope 100). Es la supervivencia
+       REAL hasta la transferencia: NO la mueve la merma.
+     · Superv. proy. = Superv. × (1 − merma): la que se espera al cosechar. Es la
+       que sí responde al selector de merma, junto al Proyectado y al A cosechar.
      · Proyectado (por tanque) = Transferido × (1 − merma): la población que se
        espera cosechar de ese tanque. Suma exactamente al "A cosechar" del subtotal.
      · A cosechar = Σ Transferido − merma (10% por defecto, seleccionable 6–15%).
@@ -28,6 +35,10 @@
    ============================================================ */
 import { getField, parseNum, F, PLG_KEYS } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
+// Criterio ÚNICO de "fila de despacho" del sistema: el mismo que usan el badge
+// «Despachado» de la Vista Ejecutiva, la vista Despacho y el subtotal de Producción
+// Omarsa. Tener aquí una copia propia solo garantizaría que algún día divergieran.
+import { isDespachoRow } from '../../core/prodCalendar.js';
 
 const MERMA_DEFAULT = 0.10; // merma de cosecha (10%): "a cosechar" = Σ transferido × (1 − merma)
 
@@ -56,8 +67,12 @@ function tankInfo(rows) {
     : (popRows.length ? gPop(popRows[0]) : null);
   const sieDateMs = sieRow ? gDateMs(sieRow) : (popRows.length ? gDateMs(popRows[0]) : null);
 
-  // Cosecha = última población; Transferido = penúltima.
-  const transRow = popRows.length >= 2 ? popRows[popRows.length - 2] : null;
+  // Transferido = ÚLTIMA lectura de población que no sea la del despacho ni la de la
+  // siembra. Excluir la siembra evita que un tanque recién sembrado (su único registro
+  // es el N5) muestre un transferido igual al sembrado y una supervivencia del 100 %.
+  const baseRow = (sieRow && gPop(sieRow) !== null) ? sieRow : (popRows[0] || null);
+  const transCandidates = popRows.filter((r) => r !== baseRow && !isDespachoRow(r));
+  const transRow = transCandidates.length ? transCandidates[transCandidates.length - 1] : null;
   const transferido = transRow ? gPop(transRow) : null;
   const plg = transRow ? parseNum(transRow, PLG_KEYS) : null;
   const estadio = transRow ? getField(transRow, F.estadio)
@@ -67,6 +82,13 @@ function tankInfo(rows) {
   const lote = getField(sieRow || sorted[0] || {}, F.lote);
 
   return { siembra, sieDateMs, transferido, plg, estadio, superv, lote, enProceso: transRow === null };
+}
+
+/** Supervivencia proyectada: la real descontada la merma. Se deriva de `superv` en vez de
+ *  recalcularla desde el proyectado para que herede su tope del 100 % y para que las dos
+ *  columnas no puedan desalinearse (proy = real × (1 − merma) exactamente). */
+function supervProyOf(superv, merma) {
+  return superv === null ? null : superv * (1 - merma);
 }
 
 /** Subtotal de un conjunto de fichas de tanque (por siembra o por módulo). */
@@ -87,6 +109,7 @@ function rollup(tankList, merma) {
     sembrado: hasSembrado ? sembrado : null,
     transferido: hasTransferido ? transferido : null,
     aCosechar, superv,
+    supervProy: supervProyOf(superv, merma),
   };
 }
 
@@ -115,7 +138,11 @@ export function computeSiembras(rows, opts = {}) {
   const tanks = [];
   byTank.forEach((rs, tq) => {
     const info = tankInfo(rs);
-    tanks.push({ tq, ...info, proyectado: info.transferido !== null ? info.transferido * (1 - merma) : null });
+    tanks.push({
+      tq, ...info,
+      proyectado: info.transferido !== null ? info.transferido * (1 - merma) : null,
+      supervProy: supervProyOf(info.superv, merma),
+    });
   });
 
   // Agrupar por fecha de siembra (día del N5).

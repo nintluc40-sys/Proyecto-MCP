@@ -19,11 +19,33 @@ import { desinfeccionEnCurso } from './desinfeccion.js';
  *  tanques reales —no agrupados/descartados— despachados), el MISMO que emplea el
  *  "Subtotal actual" de Producción Omarsa, para que el badge y el subtotal no se
  *  contradigan. 'Despachando' = hay algún despacho pero aún no está completo. */
+// Índice módulo+corrida → { tanques, ¿alguna fila con datos de despacho? }, construido de
+// UNA pasada y memoizado por identidad del ctx. Antes `dispatchStatus` filtraba `larvCM`
+// entero una vez por tarjeta: con 12 tarjetas eran 12 barridos del dataset por render para
+// responder a una pregunta que se contesta en uno solo.
+const _dispIdxMemo = new WeakMap();
+function dispatchIndex(ctx) {
+  let idx = _dispIdxMemo.get(ctx);
+  if (idx) return idx;
+  idx = new Map();
+  ctx.larvCM.forEach((r) => {
+    // JSON.stringify y no concatenación: ('M1','23') y ('M12','3') colisionarían.
+    const k = JSON.stringify([getField(r, F.modulo), getField(r, F.corrida)]);
+    let e = idx.get(k);
+    if (!e) { e = { tanks: new Set(), desp: false }; idx.set(k, e); }
+    const tq = getField(r, F.tanque);
+    if (tq) e.tanks.add(tq);
+    if (!e.desp && isDespachoRow(r)) e.desp = true;
+  });
+  _dispIdxMemo.set(ctx, idx);
+  return idx;
+}
+
 function dispatchStatus(ctx, mod, corrida) {
-  const rows = ctx.larvCM.filter((r) => getField(r, F.modulo) === mod && getField(r, F.corrida) === corrida);
-  if (![...new Set(rows.map((r) => getField(r, F.tanque)).filter(Boolean))].length) return '';
+  const e = dispatchIndex(ctx).get(JSON.stringify([mod, corrida]));
+  if (!e || !e.tanks.size) return '';
   if (modCorDispatched(mod, corrida)) return 'Despachado';
-  if (rows.some(isDespachoRow)) return 'Despachando';
+  if (e.desp) return 'Despachando';
   return '';
 }
 
@@ -110,7 +132,7 @@ function cardHTML(ctx, mod, corrida, i) {
         <div>
           <div class="sv-card-tag" title="Estadío del tanque MÁS AVANZADO del módulo (getLatestStage toma el rango máximo del último día con dato); el color de la tarjeta sigue a este estadío. Los tanques rezagados pueden ir por detrás.">🦐 ${esc(s.estadio || '—')} · ${s.dias} día${s.dias !== 1 ? 's' : ''}</div>
           <div class="sv-card-name">${esc(mod)}</div>
-          <div class="sv-card-sub"${tec.full ? ` title="Técnicos responsables: ${esc(tec.full)}"` : ''}>🔄 Corrida: ${esc(corrida)}${tec.short ? ` · 👤 ${esc(tec.short)}` : ''}</div>
+          <div class="sv-card-sub"${tec.full ? ` title="Técnicos responsables: ${esc(tec.full)}"` : ''}>🔄 Corrida: ${esc(corrida)}${tec.short ? ` · <b>Téc.:</b> ${esc(tec.short)}` : ''}</div>
           ${s.lotes.length ? `<div class="sv-card-sub">📦 ${esc(s.lotes.join(' · '))}</div>` : ''}
           ${desp === 'Despachado'
             ? `<div class="sv-card-sub">${dot('#90A4AE', 'Proceso finalizado')} ✓ Finalizado</div>`
@@ -157,6 +179,21 @@ function desinfCardHTML(d) {
 let selMonthIdx = null; // ÍNDICE de mes seleccionado (valor real, persistente entre refrescos)
 
 /** Monta tabla + leyenda + tarjetas del mes y gestiona la navegación de meses. */
+// Contexto con la ventana de fecha neutralizada, memoizado por IDENTIDAD del ctx.
+// El memo de `modStats` (stats.js) se indexa por esa identidad, así que derivar un objeto
+// NUEVO en cada montaje estrenaba bucket y recalculaba las 12 tarjetas enteras cada vez
+// que se volvía de un módulo a la landing — medido, 195 ms con 16.272 filas (40 ms con
+// 3.600). `buildContext` ya devuelve el mismo ctx mientras no cambien datos, corrida ni
+// filtro de fecha, de modo que la clave es segura y el WeakMap se recolecta solo.
+// Exportado solo para el test de regresión de la identidad (execPerf.test.js): su
+// consumidor real es `mountMonthPanel`, aquí mismo.
+const _fullCtxMemo = new WeakMap();
+export function fullCtx(ctx) {
+  let f = _fullCtxMemo.get(ctx);
+  if (!f) { f = { ...ctx, larvWin: ctx.larvCM, tanqWin: ctx.tanqCM }; _fullCtxMemo.set(ctx, f); }
+  return f;
+}
+
 function mountMonthPanel(root, ctx) {
   const wrap = root.querySelector('#execMonth');
   if (!wrap) return;
@@ -173,7 +210,7 @@ function mountMonthPanel(root, ctx) {
 
   // La Vista Ejecutiva ignora el filtro de fecha global (su navegador de meses es su control
   // temporal) → tarjetas y tabla "Producción Omarsa" comparten el mismo universo de datos.
-  const ctxFull = { ...ctx, larvWin: ctx.larvCM, tanqWin: ctx.tanqCM };
+  const ctxFull = fullCtx(ctx);
 
   const render = () => {
     const mIdx = months[pos];

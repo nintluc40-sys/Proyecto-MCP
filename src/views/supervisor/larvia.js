@@ -53,19 +53,23 @@ export function renderLarvia(ctx, mod, tq) {
     gMod(r) === mod && (!corrida || gCor(r) === corrida) && (gTnq(r) === tq || gTnq(r) === ''))
     .sort((a, b) => (parseAnyDate(gFec(a)) || new Date(0)) - (parseAnyDate(gFec(b)) || new Date(0)));
 
-  // Filas de TODO el módulo (misma corrida) → promedio del módulo para el overlay
-  // del fullscreen, igual que en la Visualización del Tanque.
-  const modRows = ctx.larvWin.filter((r) => gMod(r) === mod && (!corrida || gCor(r) === corrida));
-  // Por métrica (no derivada): Map fecha → promedio del módulo ese día.
-  const modAvgByKey = {};
-  METRICS.forEach((m) => {
-    if (m.derived) return;
+  // Promedio del módulo (misma corrida) por métrica y fecha, para el overlay del gráfico
+  // ampliado — igual que en la Visualización del Tanque. Se calcula PEREZOSAMENTE y por
+  // métrica: su único consumidor es el fullscreen, así que el render normal (los 8 gráficos
+  // de la grilla, que es lo que el usuario ve siempre) pagaba 8 barridos de las filas del
+  // módulo entero para nada. Cacheado para no rehacerlo al reabrir el mismo modal.
+  let _modRows = null;
+  const modRowsOf = () => (_modRows ||= ctx.larvWin.filter((r) => gMod(r) === mod && (!corrida || gCor(r) === corrida)));
+  const _modAvg = {};
+  const modAvgFor = (key) => {
+    if (key in _modAvg) return _modAvg[key];
     const byDate = new Map();
-    modRows.forEach((r) => { const f = gFec(r); const v = pf(r, KEYS[m.key]); if (!f || v === null) return; if (!byDate.has(f)) byDate.set(f, []); byDate.get(f).push(v); });
+    modRowsOf().forEach((r) => { const f = gFec(r); const v = pf(r, KEYS[key]); if (!f || v === null) return; if (!byDate.has(f)) byDate.set(f, []); byDate.get(f).push(v); });
     const avgMap = new Map();
     byDate.forEach((arr, f) => avgMap.set(f, arr.reduce((a, b) => a + b, 0) / arr.length));
-    modAvgByKey[m.key] = avgMap;
-  });
+    _modAvg[key] = avgMap;
+    return avgMap;
+  };
 
   const bit = rows.map((r) => {
     const o = { fecha: gFec(r), estadio: getField(r, ['Estadío', 'Estadio', 'estadío', 'estadio']), id: getField(r, KEYS.id) };
@@ -217,7 +221,9 @@ export function renderLarvia(ctx, mod, tq) {
     if (!slice) return;
     const datasets = [{ label: m.label, data: slice.map((d) => d[m.key]), borderColor: m.color, backgroundColor: m.color + '22', tension: .3, fill: true, pointRadius: big ? 3 : 2, pointHoverRadius: big ? 6 : 4, spanGaps: true, borderWidth: big ? 2.5 : 2 }];
     // Overlay del promedio del módulo (solo en fullscreen, alineado por fecha).
-    const modMap = !m.derived ? modAvgByKey[m.key] : null;
+    // Solo el gráfico ampliado dibuja el overlay: pedirlo fuera de ahí calculaba el
+    // promedio del módulo para descartarlo acto seguido (`hasOverlay` exige `big`).
+    const modMap = (big && !m.derived) ? modAvgFor(m.key) : null;
     const hasOverlay = big && modMap && slice.some((d) => modMap.get(d.fecha) != null);
     if (hasOverlay) {
       datasets.push({ label: 'Promedio módulo', data: slice.map((d) => (modMap.get(d.fecha) ?? null)), borderColor: '#90A4AE', borderDash: [5, 4], backgroundColor: 'transparent', tension: .3, pointRadius: 0, spanGaps: true, fill: false, borderWidth: 2 });

@@ -324,6 +324,24 @@ th.sv-sie-proy { white-space: nowrap; }
 .sv-tank-grouped { display: inline-block; font-size: 9.5px; font-weight: 800; color: #7B1FA2; background: rgba(123,31,162,.12); border: 1px solid rgba(123,31,162,.30); border-radius: var(--r-pill); padding: 1px 7px; margin-left: 6px; vertical-align: middle; white-space: nowrap; }
 .sv-tank-card.is-grouped { border-color: rgba(123,31,162,.35); }
 
+/* KPI de Técnico desplegable (Resumen Operativo). Vive sobre el banner de color del
+   módulo, así que reutiliza el vidrio translúcido de .sv-kpi-glass en vez de tonos
+   propios: solo añade la lista y el indicador de despliegue. */
+.sv-tec-caret { font-size: 10px; opacity: .75; margin-left: 2px; }
+.sv-tec-kpi[aria-expanded="true"] .sv-tec-caret { transform: rotate(180deg); display: inline-block; }
+.sv-tec-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.sv-tec-list[hidden] { display: none; }
+.sv-tec-item { font-size: 10.5px; font-weight: 600; line-height: 1.3; padding: 2px 8px; border-radius: var(--r-pill); background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.28); white-space: nowrap; }
+
+/* Tanque descartado: mismo patrón que "agrupado" pero en el gris azulado del sistema
+   (#546E7A, el mismo de los ejes de Chart.js y del 8.º acento de módulo). No es una
+   alerta —la producción ya se perdió, no hay nada que atender—, así que no compite
+   con los tonos del semáforo. */
+.sv-discarded-note { background: rgba(84,110,122,.10); border: 1px solid rgba(84,110,122,.30); color: var(--c-text-soft); border-radius: var(--r-md); padding: 9px 14px; margin-bottom: 14px; font-size: 12px; line-height: 1.45; }
+.sv-discarded-note b { color: #546E7A; }
+.sv-tank-discarded { display: inline-block; font-size: 9.5px; font-weight: 800; color: #546E7A; background: rgba(84,110,122,.12); border: 1px solid rgba(84,110,122,.30); border-radius: var(--r-pill); padding: 1px 7px; margin-left: 6px; vertical-align: middle; white-space: nowrap; }
+.sv-tank-card.is-discarded { border-color: rgba(84,110,122,.35); }
+
 /* Ranking mejor/peor en la Comparativa de tanques (resumen operativo) */
 .sv-modcmp-rank { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-bottom: 6px; }
 .sv-modcmp-chip { font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: var(--r-pill); border: 1px solid var(--c-border-soft); background: var(--c-surface-2); color: var(--c-text-soft); }

@@ -6,28 +6,33 @@ const row = (fecha, tanque, estadio, pob, extra = {}) => ({
   Fecha: fecha, Tanque: tanque, 'Estadío': estadio, 'Población': pob, ...extra,
 });
 
+// Marca de "fila de despacho": las columnas que `isDespachoRow` (core/prodCalendar.js)
+// reconoce como ficha de despacho. La cosecha real SIEMPRE llega con esta ficha, y es lo
+// que separa el Transferido (última lectura previa) de la salida del tanque.
+const DESP = { 'Densidad cosechada': '25', Biomasa: '120', Destino: 'Piscina 3', 'Cajas/Tinas': '10' };
+
 // Escenario base: 2 siembras en un módulo.
-//  1ª (N5 el 02/06): T1, T2 — ambos con transferido (≥3 poblaciones).
-//  2ª (N5 el 05/06): T3 en proceso (1 sola población), T4 con transferido.
+//  1ª (N5 el 02/06): T1, T2 — ambos despachados.
+//  2ª (N5 el 05/06): T3 en proceso (solo siembra), T4 despachado.
 function baseRows() {
   return [
     // T1
     row('02/06/2026', 'TQ1', 'N5', 1200000),
     row('06/06/2026', 'TQ1', 'PL2', 1150000),
-    row('10/06/2026', 'TQ1', 'PL6', 1050000, { PLG: 62 }), // transferido
-    row('14/06/2026', 'TQ1', 'PL8', 1000000),              // cosecha
+    row('10/06/2026', 'TQ1', 'PL6', 1050000, { PLG: 62 }),  // transferido
+    row('14/06/2026', 'TQ1', 'PL8', 1000000, DESP),         // cosecha (ficha de despacho)
     // T2
     row('02/06/2026', 'TQ2', 'N5', 1000000),
     row('06/06/2026', 'TQ2', 'PL2', 950000),
-    row('10/06/2026', 'TQ2', 'PL6', 900000, { PLG: 60 }),  // transferido
-    row('14/06/2026', 'TQ2', 'PL8', 850000),               // cosecha
+    row('10/06/2026', 'TQ2', 'PL6', 900000, { PLG: 60 }),   // transferido
+    row('14/06/2026', 'TQ2', 'PL8', 850000, DESP),          // cosecha (ficha de despacho)
     // T3 — en proceso (solo siembra)
     row('05/06/2026', 'TQ3', 'N5', 1100000),
     // T4
     row('05/06/2026', 'TQ4', 'N5', 1200000),
     row('09/06/2026', 'TQ4', 'PL2', 1120000),
-    row('12/06/2026', 'TQ4', 'PL6', 1080000, { PLG: 54 }), // transferido
-    row('15/06/2026', 'TQ4', 'PL8', 1000000),              // cosecha
+    row('12/06/2026', 'TQ4', 'PL6', 1080000, { PLG: 54 }),  // transferido
+    row('15/06/2026', 'TQ4', 'PL8', 1000000, DESP),         // cosecha (ficha de despacho)
   ];
 }
 
@@ -58,7 +63,7 @@ describe('computeSiembras · agrupación por fecha de N5', () => {
 });
 
 describe('computeSiembras · derivación por tanque', () => {
-  it('Sembrado = 1er N5 · Transferido = penúltima · PL/g y estadío de la línea del transferido', () => {
+  it('Sembrado = 1er N5 · Transferido = última lectura previa al despacho · PL/g y estadío de esa línea', () => {
     const d = computeSiembras(baseRows());
     const t1 = d.siembras[0].tanks[0];
     expect(t1.siembra).toBe(1200000);
@@ -87,7 +92,55 @@ describe('computeSiembras · derivación por tanque', () => {
     const d = computeSiembras(rows);
     expect(d.nSiembras).toBe(1);
     expect(d.siembras[0].tanks[0].siembra).toBe(800000);
-    expect(d.siembras[0].tanks[0].transferido).toBe(760000);
+    // Sin ficha de despacho, el transferido es la lectura MÁS RECIENTE (730.000),
+    // no la anterior: el tanque todavía no ha salido.
+    expect(d.siembras[0].tanks[0].transferido).toBe(730000);
+  });
+});
+
+describe('computeSiembras · Transferido antes vs. después del despacho', () => {
+  // Módulo a punto de despachar: última lectura en PL6 y ningún registro hasta PL11.
+  const sinDespachar = () => [
+    row('02/06/2026', 'TQ1', 'N5', 1000000),
+    row('06/06/2026', 'TQ1', 'PL2', 950000),
+    row('10/06/2026', 'TQ1', 'PL6', 900000, { PLG: 58 }),
+  ];
+
+  it('sin despacho toma la ÚLTIMA lectura, no la anterior', () => {
+    const t = computeSiembras(sinDespachar()).siembras[0].tanks[0];
+    expect(t.transferido).toBe(900000); // antes tomaba 950.000 (la penúltima)
+    expect(t.estadio).toBe('PL6');      // y con ella el estadío equivocado (PL2)
+    expect(t.plg).toBe(58);
+    expect(t.superv).toBeCloseTo(90, 5);
+    expect(t.enProceso).toBe(false);
+  });
+
+  it('al llegar la ficha de despacho el Transferido NO se mueve', () => {
+    const antes = computeSiembras(sinDespachar()).siembras[0].tanks[0];
+    const despues = computeSiembras([
+      ...sinDespachar(),
+      row('20/06/2026', 'TQ1', 'PL11', 820000, DESP), // se despacha
+    ]).siembras[0].tanks[0];
+
+    expect(despues.transferido).toBe(antes.transferido);
+    expect(despues.estadio).toBe(antes.estadio);
+    expect(despues.superv).toBeCloseTo(antes.superv, 6);
+  });
+
+  it('un tanque recién sembrado sigue "en proceso" (no transfiere su propia siembra)', () => {
+    const t = computeSiembras([row('02/06/2026', 'TQ1', 'N5', 1000000)]).siembras[0].tanks[0];
+    expect(t.enProceso).toBe(true);
+    expect(t.transferido).toBeNull();
+    expect(t.superv).toBeNull();
+  });
+
+  it('la fila de despacho nunca es el Transferido, aunque sea la única lectura posterior', () => {
+    const t = computeSiembras([
+      row('02/06/2026', 'TQ1', 'N5', 1000000),
+      row('20/06/2026', 'TQ1', 'PL11', 820000, DESP),
+    ]).siembras[0].tanks[0];
+    expect(t.enProceso).toBe(true); // no hay lectura previa al despacho que reportar
+    expect(t.transferido).toBeNull();
   });
 });
 

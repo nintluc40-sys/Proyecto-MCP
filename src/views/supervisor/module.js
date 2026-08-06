@@ -175,6 +175,11 @@ function bmHideTip() { if (bmTipEl) bmTipEl.style.opacity = '0'; }
 // Elimina por completo el tooltip del DOM (al cerrar el modal): evita que el
 // elemento quede huérfano en <body> al cambiar de vista. Se recrea solo al volver a usarlo.
 function bmDestroyTip() { if (bmTipEl) { bmTipEl.remove(); bmTipEl = null; } }
+/** Suelta lo que esta sub-vista cuelga FUERA del contenedor de la vista. Lo llama el
+ *  orquestador en cada render: `renderModule` ya barre el tooltip al entrar, pero si se
+ *  abandona el módulo hacia la landing o hacia otro tanque nadie lo hacía, y el nodo
+ *  sobrevivía en <body> hasta la siguiente visita a un módulo. */
+export function cleanupModule() { bmDestroyTip(); }
 
 const bmJoin = (arr) => { const a = bmDistinct(arr); return a.length ? (a.length > 4 ? a.slice(0, 4).join(', ') + ` +${a.length - 4}` : a.join(', ')) : '—'; };
 
@@ -956,7 +961,7 @@ function svSieBand(sie) {
   const range = tks.length > 1 ? `${tks[0].tq}–${tks[tks.length - 1].tq}` : (tks[0] ? tks[0].tq : '');
   const fecha = sie.dateMs ? fmtShort(new Date(sie.dateMs)) : '—';
   const lote = sie.lotes.length ? ' · Lote ' + esc(sie.lotes.join(', ')) : '';
-  return `<tr class="sv-sie-band"><td colspan="7">${sie.idx}ª siembra <span class="sv-sie-bmeta">· N5 ${esc(fecha)}${lote}</span><span class="sv-sie-bcount">${esc(range)} · ${tks.length} tanque${tks.length !== 1 ? 's' : ''}</span></td></tr>`;
+  return `<tr class="sv-sie-band"><td colspan="8">${sie.idx}ª siembra <span class="sv-sie-bmeta">· N5 ${esc(fecha)}${lote}</span><span class="sv-sie-bcount">${esc(range)} · ${tks.length} tanque${tks.length !== 1 ? 's' : ''}</span></td></tr>`;
 }
 function svSieTankRow(t) {
   const trans = t.enProceso
@@ -967,20 +972,24 @@ function svSieTankRow(t) {
     <td class="muted">${esc(t.lote || '—')}</td>
     <td class="sv-sie-num">${fmtPop(t.siembra)}</td>
     <td class="sv-sie-b sv-sie-num">${trans}</td>
+    <td class="sv-sie-num">${t.enProceso ? '<span class="muted">—</span>' : svSiePct(t.superv)}</td>
     <td>${esc(t.estadio || '—')}</td>
     <td class="sv-sie-num sv-sie-proy">${t.enProceso ? '<span class="muted">—</span>' : fmtPop(t.proyectado)}</td>
-    <td class="sv-sie-num">${t.enProceso ? '<span class="muted">—</span>' : svSiePct(t.superv)}</td>
+    <td class="sv-sie-num sv-sie-proy">${t.enProceso ? '<span class="muted">—</span>' : svSiePct(t.supervProy)}</td>
   </tr>`;
 }
 function svSieRollupRow(st, label, cls) {
-  // "A cosechar" cae en la MISMA columna que el Proyectado por tanque: la columna suma.
+  // Cada cantidad va seguida de la supervivencia que produce: Transferido→Superv. y
+  // Proyectado→Superv. proy. "A cosechar" cae en la MISMA columna que el Proyectado
+  // por tanque, así que esa columna suma de arriba abajo.
   return `<tr class="${cls}">
     <td colspan="2" class="sv-sie-stlbl">${esc(label)}</td>
     <td class="sv-sie-num">${fmtPop(st.sembrado)}</td>
     <td class="sv-sie-b sv-sie-num">${fmtPop(st.transferido)}</td>
+    <td class="sv-sie-num">${svSiePct(st.superv)}</td>
     <td class="sv-sie-cosecha">🎯 A cosechar</td>
     <td class="sv-sie-num sv-sie-proy"><b>${fmtPop(st.aCosechar)}</b></td>
-    <td class="sv-sie-num">${svSiePct(st.superv)}</td>
+    <td class="sv-sie-num sv-sie-proy">${svSiePct(st.supervProy)}</td>
   </tr>`;
 }
 /** Merma seleccionable: 6 % … 15 %. El 10 % es el estándar y el valor por defecto. */
@@ -1016,13 +1025,15 @@ function svSiembrasContentHTML(data, mod, corrida) {
           <thead>
             <tr class="sv-sie-grouphead">
               <th colspan="3">🌱 Siembra</th>
-              <th colspan="4" class="sv-sie-b">🎯 Transferencia · Cosecha</th>
+              <th colspan="5" class="sv-sie-b">🎯 Transferencia · Cosecha</th>
             </tr>
             <tr>
               <th>Tanque</th><th>Lote</th><th class="sv-sie-num">Sembrado</th>
-              <th class="sv-sie-b sv-sie-num">Transferido</th><th>Estadío</th>
+              <th class="sv-sie-b sv-sie-num" title="Última población registrada antes del despacho">Transferido</th>
+              <th class="sv-sie-num" title="Supervivencia REAL: Transferido ÷ Sembrado. No la afecta la merma.">Superv.</th>
+              <th title="Estadío de la misma línea del Transferido">Estadío</th>
               <th class="sv-sie-num sv-sie-proy" title="Población proyectada: Transferido menos la merma seleccionada">Proyectado −${mermaPct}%</th>
-              <th class="sv-sie-num">Superv.</th>
+              <th class="sv-sie-num sv-sie-proy" title="Supervivencia proyectada a cosecha: la real menos la merma seleccionada">Superv. proy. −${mermaPct}%</th>
             </tr>
           </thead>
           <tbody>
@@ -1035,7 +1046,7 @@ function svSiembrasContentHTML(data, mod, corrida) {
           </tfoot>
         </table>
       </div>
-      <div class="sv-modal-note">🌱 Sembrado = población del primer registro <b>N5</b> · Transferido = penúltima población (antes de la cosecha) · <b>Proyectado</b> = Transferido − ${mermaPct}% (suma al «A cosechar») · Superv. = Transferido ÷ Sembrado. La supervivencia de los subtotales solo cuenta los tanques con Transferido registrado (los «en proceso» aún no).</div>`
+      <div class="sv-modal-note">🌱 Sembrado = población del primer registro <b>N5</b> · <b>Transferido</b> = última población registrada <b>antes del despacho</b> (si el módulo aún no despacha, la más reciente) y el Estadío es el de esa misma línea · <b>Superv.</b> = Transferido ÷ Sembrado, la supervivencia real (no la mueve la merma) · <b>Proyectado</b> = Transferido − ${mermaPct}% (suma al «A cosechar») · <b>Superv. proy.</b> = la real menos ese ${mermaPct}%, lo que se espera al cosechar. La supervivencia de los subtotales solo cuenta los tanques con Transferido registrado (los «en proceso» aún no).</div>`
     : `<div class="empty-state" style="padding:30px">Sin siembras registradas para ${esc(mod)}${corrida ? ' · C' + esc(corrida) : ''}.</div>`;
   return body;
 }
@@ -1142,7 +1153,7 @@ export function renderModule(ctx, mod) {
       ${kpiGlass('📉', 'Mortalidad', fmt1(s.mort, '%'))}
       ${kpiGlass('👥', 'Pob. actual', fmtPop(s.pop), 'data-modmetric="pop" role="button" tabindex="0" title="Ver tendencia de población total del módulo"')}
       ${kpiGlass('👥', 'Pob. inicial', fmtPop(s.popFirst))}
-      ${kpiGlass('🦐', 'Estadío', s.estadio || '—')}
+      ${kpiGlass('🦐', 'Estadío', s.estadio || '—', 'data-siembras-open role="button" tabindex="0" title="Ver el cuadro de siembras y cosecha del módulo"')}
       ${kpiGlass('💧', 'OD Promedio', fmt2(s.od, ' mg/L'), 'data-modmetric="od" role="button" tabindex="0" title="Ver OD por hora (promedio del módulo)"')}
       ${kpiGlass('🌡️', 'Temperatura', fmt1(s.tmp, '°C'), 'data-modmetric="tmp" role="button" tabindex="0" title="Ver Temperatura por hora (promedio del módulo)"')}
       ${kpiGlass('🧂', 'Salinidad', fmt1(s.sal, ' ppt'))}
@@ -1191,9 +1202,18 @@ export function renderModule(ctx, mod) {
     h += '<div class="sv-tank-grid">';
     tanks.forEach((tq) => {
       const ts = tsByTank.get(tq);
-      h += `<div class="sv-tank-card${ts.grouped ? ' is-grouped' : ''}" data-nav="tank" data-mod="${esc(mod)}" data-tank="${esc(tq)}" role="button" tabindex="0" aria-label="Abrir tanque ${esc(tq)} del módulo ${esc(mod)}${ts.grouped ? ' (agrupado)' : ''}">
+      // Tanque fuera de despacho. Agrupado y descartado tienen la misma consecuencia
+      // numérica (pob./SV en 0, excluido del recuento de alertas) pero NO la misma causa,
+      // así que se rotulan por separado: el supervisor necesita distinguir "se unió a otro
+      // tanque" de "se perdió". Agrupado manda si constan ambas anotaciones.
+      const out = ts.grouped
+        ? { cls: ' is-grouped', aria: ' (agrupado)', chip: ' <span class="sv-tank-grouped" title="Tanque agrupado: pob./SV en 0; su siembra inicial sigue contando">🔗 Agrupado</span>' }
+        : ts.discarded
+          ? { cls: ' is-discarded', aria: ' (descartado)', chip: ' <span class="sv-tank-discarded" title="Tanque descartado: no llega al despacho; su siembra inicial sigue contando">🗑️ Descartado</span>' }
+          : { cls: '', aria: '', chip: '' };
+      h += `<div class="sv-tank-card${out.cls}" data-nav="tank" data-mod="${esc(mod)}" data-tank="${esc(tq)}" role="button" tabindex="0" aria-label="Abrir tanque ${esc(tq)} del módulo ${esc(mod)}${out.aria}">
         <div class="sv-tank-head">
-          <span class="sv-tank-name">${esc(tq)}${ts.grouped ? ' <span class="sv-tank-grouped" title="Tanque agrupado: pob./SV en 0; su siembra inicial sigue contando">🔗 Agrupado</span>' : ''}</span>
+          <span class="sv-tank-name">${esc(tq)}${out.chip}</span>
           <span class="sv-dot" style="background:${levelColor(svLevel(ts.sv))}" title="${levelLabel(svLevel(ts.sv))}"></span>
         </div>
         <div class="sv-tank-metrics">
@@ -1449,11 +1469,26 @@ export function renderModule(ctx, mod) {
     </div>
   </div>`;
 
-  // Modal "Siembras y Cosecha" — se abre desde el KPI Técnico (data-siembras-open).
+  // Modal "Siembras y Cosecha" — se abre desde el KPI Estadío (data-siembras-open).
   h += svSiembrasModalHTML(siembrasData, mod, corrida, s.tecnicos);
 
   const after = (root) => {
-    // Modal Siembras y Cosecha (KPI Técnico). Chip con role="button" → keyboard:true.
+    // KPI Técnico: despliega la lista completa de responsables dentro de la propia
+    // tarjeta. Es su única función; el cuadro de Siembras vive ahora en el KPI Estadío.
+    const tecKpi = root.querySelector('[data-tec-toggle]');
+    if (tecKpi) {
+      const toggleTec = () => {
+        const open = tecKpi.getAttribute('aria-expanded') === 'true';
+        tecKpi.setAttribute('aria-expanded', String(!open));
+        tecKpi.querySelector('.sv-tec-list').hidden = open;
+      };
+      tecKpi.addEventListener('click', toggleTec);
+      tecKpi.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggleTec(); }
+      });
+    }
+
+    // Modal Siembras y Cosecha (KPI Estadío). Chip con role="button" → keyboard:true.
     const sieOverlay = root.querySelector('#svSiembrasModal');
     if (sieOverlay) {
       const sieHost = sieOverlay.querySelector('#svSieContent');

@@ -10,6 +10,7 @@ vi.mock('../../core/charts.js', () => ({
 
 import { store } from '../../core/store.js';
 import { buildContext, modStats } from './stats.js';
+import { fullCtx } from './executive.js';
 import { supervisorView } from './index.js';
 
 if (typeof globalThis.requestAnimationFrame !== 'function') {
@@ -82,6 +83,38 @@ describe('E-01 · modStats memoizado por identidad del ctx', () => {
   });
 });
 
+// ⚠ ORDEN: E-02 (más abajo) debe ejecutarse ANTES que E-04. `selMonthIdx` es estado de
+// módulo de executive.js y recuerda el mes entre montajes de la vista, así que un render
+// previo con otro conjunto de datos deja el deslizador ya posicionado y su rótulo no
+// cambiaría. E-03 no renderiza, así que es inocuo en cualquier posición.
+describe('E-03 · el ctx derivado de la Ejecutiva conserva su identidad', () => {
+  it('el mismo ctx devuelve SIEMPRE el mismo derivado (el memo sobrevive a re-entrar)', () => {
+    store.globalData = synth();
+    const ctx = buildContext({ corrida: null });
+    expect(fullCtx(ctx)).toBe(fullCtx(ctx));
+    // Y por tanto modStats sigue acertando el memo entre montajes de la vista.
+    expect(modStats(fullCtx(ctx), 'M01')).toBe(modStats(fullCtx(ctx), 'M01'));
+  });
+
+  it('neutraliza la ventana de fecha sin tocar el ctx original', () => {
+    store.globalData = synth();
+    const ctx = buildContext({ corrida: null });
+    const f = fullCtx(ctx);
+    expect(f.larvWin).toBe(ctx.larvCM); // la Ejecutiva manda con su navegador de meses
+    expect(f.tanqWin).toBe(ctx.tanqCM);
+    expect(ctx.larvWin).not.toBe(ctx.larvCM); // el ctx base queda intacto
+  });
+
+  it('un ctx NUEVO produce un derivado NUEVO (no sirve datos obsoletos)', () => {
+    store.globalData = synth();
+    const a = fullCtx(buildContext({ corrida: null }));
+    store.globalData = synth({ corridas: 6, tanques: 4, dias: 10 });
+    const b = fullCtx(buildContext({ corrida: null }));
+    expect(b).not.toBe(a);
+    expect(modStats(b, 'M01').dias).not.toBe(modStats(a, 'M01').dias);
+  });
+});
+
 describe('E-02 · el deslizador de meses sobrevive al arrastre', () => {
   it('`input` actualiza el rótulo del mes sin destruir el deslizador', () => {
     // Corridas repartidas en varios meses ⇒ el deslizador se renderiza.
@@ -123,5 +156,45 @@ describe('E-02 · el deslizador de meses sobrevive al arrastre', () => {
     const nuevo = root.querySelector('[data-prodslider]');
     expect(nuevo).toBeTruthy();
     expect(nuevo.getAttribute('value')).toBe('0');
+  });
+});
+
+describe('E-04 · el badge de despacho no cambia al indexarse de una pasada', () => {
+  const D = { 'Densidad cosechada': '25', Biomasa: '120', Destino: 'Piscina 3', 'Cajas/Tinas': '10' };
+
+  // `vState` (index.js) recuerda dónde quedó la navegación: se vuelve a la landing.
+  const mount = () => {
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    supervisorView(root);
+    const back = root.querySelector('[data-nav="modules"]');
+    if (back) back.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    return root;
+  };
+  const badgeOf = (root) => {
+    const b = root.querySelector('.sv-card[data-nav="module"] .sv-desp-badge');
+    return b ? b.textContent : '';
+  };
+
+  it('sin ninguna fila de despacho no hay badge', () => {
+    store.globalData = synth({ corridas: 1, tanques: 2, dias: 5 });
+    expect(badgeOf(mount())).toBe('');
+  });
+
+  it('con despacho parcial (1 de 2 tanques) dice "Despachando"', () => {
+    store.globalData = [
+      ...synth({ corridas: 1, tanques: 2, dias: 5 }),
+      L({ 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ1', Fecha: '10/06/2026', 'Estadío': 'PL11', ...D }),
+    ];
+    expect(badgeOf(mount())).toBe('Despachando');
+  });
+
+  it('con TODOS los tanques despachados dice "Despachado"', () => {
+    store.globalData = [
+      ...synth({ corridas: 1, tanques: 2, dias: 5 }),
+      L({ 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ1', Fecha: '10/06/2026', 'Estadío': 'PL11', ...D }),
+      L({ 'Módulo': 'M01', Corrida: '573', Tanque: 'TQ2', Fecha: '10/06/2026', 'Estadío': 'PL11', ...D }),
+    ];
+    expect(badgeOf(mount())).toBe('Despachado');
   });
 });
