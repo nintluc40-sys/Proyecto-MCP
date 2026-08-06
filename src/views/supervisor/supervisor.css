@@ -6,11 +6,6 @@
 .sv-subtitle { font-size: 12px; color: var(--c-text-muted); margin-top: 2px; }
 .sv-exec-note { font-size: 11px; color: var(--c-text-muted); margin: -4px 0 14px; }
 
-/* Filtros */
-.sv-filter-panel { background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 12px 16px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 9px; }
-.sv-filter-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.sv-filter-tag { font-size: 10px; font-weight: 800; color: var(--c-text-soft); letter-spacing: .5px; min-width: 60px; }
-
 /* Leyenda */
 .sv-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 10px 18px; margin-bottom: 16px; }
 .sv-legend-title { font-size: 11px; font-weight: 800; }
@@ -22,6 +17,10 @@
 .sv-card { position: relative; overflow: hidden; border-radius: 18px; padding: 20px; cursor: pointer; box-shadow: var(--sh-2); transition: transform .18s, box-shadow .18s; color: #fff; }
 .sv-card:hover { transform: translateY(-4px); box-shadow: var(--sh-3); }
 .sv-card:focus-visible { outline: 3px solid #fff; outline-offset: 2px; transform: translateY(-4px); box-shadow: var(--sh-3); }
+/* Tarjeta informativa que NO navega (desinfección/pre-siembra): sin cursor de mano ni
+   levantamiento, para no prometer un clic que no existe. */
+.sv-card-static { cursor: default; }
+.sv-card-static:hover { transform: none; box-shadow: var(--sh-2); }
 .sv-card-orb { position: absolute; top: -24px; right: -24px; width: 90px; height: 90px; border-radius: 50%; background: rgba(255,255,255,.08); pointer-events: none; }
 .sv-desp-badge { position: absolute; top: 12px; right: 12px; z-index: 1; font-size: 10px; font-weight: 900; letter-spacing: .4px; text-transform: uppercase; padding: 4px 9px; border-radius: var(--r-pill); color: #fff; border: 1px solid rgba(255,255,255,.5); }
 .sv-desp-badge.is-prog { background: rgba(245,124,0,.92); }
@@ -30,7 +29,6 @@
 .sv-card-tag { font-size: 10px; font-weight: 700; color: rgba(255,255,255,.65); letter-spacing: 1px; }
 .sv-card-name { font-size: 20px; font-weight: 900; letter-spacing: -.3px; }
 .sv-card-sub { font-size: 9.5px; color: rgba(255,255,255,.65); margin-top: 2px; }
-.sv-dots { display: flex; flex-direction: column; gap: 4px; align-items: center; }
 
 .sv-kpi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; position: relative; }
 .sv-kpi-wide { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); margin-top: 14px; }
@@ -66,7 +64,6 @@
 
 /* Tanques */
 .sv-section-title { font-size: 14px; font-weight: 800; color: var(--c-brand); margin: 8px 0 12px; }
-.sv-chart-sub { font-size: 11px; font-weight: 600; color: var(--c-text-muted); }
 .sv-tank-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
 .sv-tank-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 14px; cursor: pointer; transition: transform .15s, box-shadow .15s, border-color .15s; }
 .sv-tank-card:hover { transform: translateY(-2px); box-shadow: var(--sh-1); border-color: var(--c-brand-600); }
@@ -82,7 +79,6 @@
 
 /* Charts */
 .sv-chart-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; margin-bottom: 16px; }
-.sv-chart-grid-3 { grid-template-columns: repeat(3, 1fr); }
 .sv-chart-title { font-size: 12px; font-weight: 800; color: var(--c-text-soft); margin-bottom: 10px; }
 .sv-chart-host { position: relative; height: 280px; }
 .sv-chart-host.sm { height: 200px; }
@@ -200,7 +196,7 @@
 
 /* Tabla Producción Omarsa (Vista Ejecutiva) */
 .prod-card { margin-bottom: 16px; }
-.prod-nav { position: relative; display: flex; align-items: center; gap: 12px; justify-content: center; }
+.prod-nav { display: flex; align-items: center; gap: 12px; justify-content: center; }
 .prod-nav-btn { width: 32px; height: 32px; border-radius: var(--r-sm); border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-brand); font-size: 14px; font-weight: 900; cursor: pointer; transition: all var(--t-fast); }
 .prod-nav-btn:hover:not(:disabled) { background: var(--c-brand); color: #fff; }
 .prod-nav-btn:disabled { opacity: .35; cursor: default; }
@@ -215,41 +211,6 @@
 .prod-subtotal td { font-weight: 800; background: color-mix(in srgb, var(--c-bueno) 15%, transparent); border-top: 1px dashed color-mix(in srgb, var(--c-bueno) 45%, var(--c-border)); border-bottom: 1px dashed color-mix(in srgb, var(--c-bueno) 45%, var(--c-border)); font-style: italic; }
 .prod-subtotal td .muted { font-style: normal; font-weight: 600; font-size: 11px; }
 
-/* ⚙ Engranaje: configurar toneladas por tanque del mes (Dens. siembra) */
-.prod-gear { position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; border-radius: var(--r-sm); border: 1.5px solid var(--c-brand); background: color-mix(in srgb, var(--c-brand) 10%, transparent); color: var(--c-brand-600); font-size: 16px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all var(--t-fast); }
-.prod-gear:hover { background: var(--c-brand); color: #fff; }
-.prod-gear:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: 2px; }
-
-/* Panel de toneladas por tanque (dentro de .sv-modal) */
-.pt-sec { border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 14px; margin-bottom: 14px; background: var(--c-surface-2); }
-.pt-sec:last-child { margin-bottom: 0; }
-.pt-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
-.pt-name { font-size: 13px; font-weight: 900; color: var(--c-text); }
-.pt-cor-chip { font-size: 10.5px; font-weight: 700; color: var(--c-text-soft); background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-pill); padding: 2px 9px; margin-left: 8px; }
-.pt-quick { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.pt-live { font-size: 11px; font-weight: 700; color: var(--c-text-soft); }
-.pt-live b { color: var(--c-brand-600); font-weight: 900; font-variant-numeric: tabular-nums; }
-.pt-allval { width: 58px; padding: 5px 8px; border-radius: var(--r-sm); border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-text); font-size: 12px; font-weight: 700; text-align: right; }
-.pt-qbtn { font-size: 11px; font-weight: 800; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-brand-600); border-radius: var(--r-sm); padding: 5px 10px; cursor: pointer; transition: all var(--t-fast); }
-.pt-qbtn:hover { border-color: var(--c-brand); }
-.pt-qbtn.reset { color: var(--c-text-muted); }
-.pt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 9px; }
-.pt-tank { display: block; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-sm); padding: 7px 9px; }
-.pt-tk { display: block; font-size: 10px; font-weight: 800; color: var(--c-text-muted); letter-spacing: .03em; margin-bottom: 4px; text-transform: uppercase; }
-.pt-inp { display: flex; align-items: center; gap: 4px; }
-.pt-inp input { width: 100%; min-width: 0; border: none; background: transparent; color: var(--c-text); font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; font-family: var(--font-mono); padding: 0; }
-.pt-inp input:focus { outline: none; }
-.pt-inp i { font-size: 11px; font-weight: 700; color: var(--c-text-muted); font-style: normal; }
-.pt-tank.edited { border-color: var(--c-brand-600); background: color-mix(in srgb, var(--c-brand-600) 10%, transparent); box-shadow: inset 0 0 0 1px var(--c-brand-600); }
-.pt-tank.edited .pt-tk { color: var(--c-brand-600); }
-.pt-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 20px; border-top: 1px solid var(--c-border); background: var(--c-surface-2); }
-.pt-foot-hint { font-size: 11.5px; color: var(--c-text-muted); }
-.pt-foot-btns { display: inline-flex; gap: 8px; }
-.pt-btn { font-size: 12.5px; font-weight: 800; border-radius: var(--r-sm); padding: 9px 16px; cursor: pointer; border: 1px solid var(--c-border); transition: all var(--t-fast); }
-.pt-btn.ghost { background: var(--c-surface); color: var(--c-text-soft); }
-.pt-btn.ghost:hover { color: var(--c-text); }
-.pt-btn.primary { background: var(--c-brand); color: #fff; border-color: var(--c-brand); }
-.pt-btn.primary:hover { background: var(--c-brand-700); }
 
 /* Bitácora desplegable */
 .sv-bita-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 8px 0 12px; }
@@ -301,8 +262,15 @@
 .sv-sie-proc { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--c-malo); background: color-mix(in srgb, var(--c-malo) 15%, transparent); border-radius: var(--r-pill); padding: 1px 7px; }
 .sv-sie-subtotal td { background: var(--c-surface-2); border-top: 1px solid var(--c-border); font-weight: 800; color: var(--c-text); }
 .sv-sie-stlbl { text-transform: uppercase; letter-spacing: .03em; font-size: 10.5px; color: var(--c-text-soft); }
-.sv-sie-cosecha { color: var(--c-supervisor); font-weight: 700; font-size: 11.5px; }
+.sv-sie-cosecha { color: var(--c-supervisor); font-weight: 700; font-size: 11.5px; white-space: nowrap; }
 .sv-sie-cosecha b { font-variant-numeric: tabular-nums; }
+/* Columna "Proyectado": el valor por tanque y el "A cosechar" del subtotal comparten
+   columna, así que comparten también el realce (la columna suma de arriba abajo). */
+.sv-sie-proy { color: var(--c-supervisor); font-variant-numeric: tabular-nums; }
+th.sv-sie-proy { white-space: nowrap; }
+/* Selector de merma en la cabecera del modal: mismo chip que los KPIs de contexto. */
+.sv-sie-merma { display: inline-flex; align-items: center; gap: 6px; }
+.sv-sie-merma .sv-modal-select { padding: 2px 6px; font-size: 11.5px; font-weight: 800; }
 .sv-sie-total td { background: color-mix(in srgb, var(--c-supervisor) 12%, var(--c-surface)); border-top: 2px solid var(--c-supervisor); font-weight: 900; color: var(--c-text); }
 .sv-sie-total .sv-sie-stlbl { color: var(--c-supervisor); font-size: 12px; }
 
@@ -503,7 +471,6 @@
 .sv-marea-fs-chart { width: 100%; height: 72vh; position: relative; }
 /* Correlación marea ↔ laboratorio (Microbiología / Calidad de Agua). */
 .sv-marea-corr-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
-.sv-marea-corr-mods { display: flex; gap: 6px; }
 .sv-marea-corr-hint { font-size: 11.5px; margin-bottom: 10px; }
 .sv-marea-corr-wrap { overflow: auto; border: 1px solid var(--c-border-soft, var(--c-border)); border-radius: var(--r-md); }
 .sv-marea-corr { border-collapse: collapse; width: 100%; font-size: 12px; }
@@ -632,6 +599,6 @@
 @media (max-width: 1100px) { .lv-vgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 820px) { .lv-vgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 860px) {
-  .sv-chart-grid, .sv-chart-grid-3 { grid-template-columns: 1fr; }
+  .sv-chart-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 520px) { .lv-vgrid { grid-template-columns: 1fr; } }

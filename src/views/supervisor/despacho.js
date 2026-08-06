@@ -12,6 +12,7 @@ import { parseAnyDate } from '../../core/dates.js';
 import { getField, parseNum } from '../../core/fields.js';
 import { makeChart } from '../../core/charts.js';
 import { natCmp } from '../../core/util.js';
+import { isDespachoRow } from '../../core/prodCalendar.js';
 
 const { gMod, gTnq, gCor, gFec, gPop } = getters;
 
@@ -28,7 +29,12 @@ const DEST_COLORS = ['#1565C0', '#2E7D32', '#E65100', '#6A1B9A', '#00838F', '#AD
 const NO_DEST = 'Sin destino';
 
 const byDate = (arr) => [...arr].sort((a, b) => (parseAnyDate(gFec(a)) || new Date(0)) - (parseAnyDate(gFec(b)) || new Date(0)));
-const hasDispatch = (r) => [DKEY.densidad, DKEY.biomasa, DKEY.destino, DKEY.cajas].some((k) => getField(r, k) !== '');
+// `hasDispatch` reimplementaba el MISMO criterio que `isDespachoRow` del núcleo, con las
+// mismas cuatro columnas y los mismos alias (comprobado uno a uno). El propio comentario
+// de core/prodCalendar.js declara que ese conjunto debe coincidir con esta vista, así que
+// tener dos copias solo garantizaba que algún día divergieran y el badge "Despachado" de
+// la Vista Ejecutiva dejara de cuadrar con el historial de despacho.
+const hasDispatch = isDespachoRow;
 const cell = (r, keys) => { const v = getField(r, keys); return v === '' ? '—' : esc(v); };
 
 export function renderDespacho(ctx, mod) {
@@ -39,7 +45,13 @@ export function renderDespacho(ctx, mod) {
 
   // Última población registrada (= cantidad cosechada), población inicial,
   // destino y biomasa por tanque.
-  const lastPop = {}, firstPop = {}, destino = {}, biomasa = {}, grouped = {};
+  // Mapas SIN prototipo: se indexan por nombre de tanque, que sale de la hoja. Con un
+  // objeto literal, un tanque llamado "constructor" o "toString" resolvería al miembro
+  // HEREDADO de Object.prototype —una función, truthy— y `lastPop[tq] || 0` acabaría
+  // concatenando texto en lugar de sumar. `Object.create(null)` no tiene cadena que
+  // consultar, así que la clave ausente es siempre `undefined`.
+  const lastPop = Object.create(null), firstPop = Object.create(null);
+  const destino = Object.create(null), biomasa = Object.create(null), grouped = Object.create(null);
   let nDespachos = 0; const plgVals = [];
   tanks.forEach((tq) => {
     const tRows = byDate(rows.filter((r) => gTnq(r) === tq));

@@ -6,7 +6,7 @@ import { avg as mean } from '../../core/util.js';
 import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, breadcrumb, bindModal } from './ui.js';
 import { svLevel, odLevel, tmpLevel, levelColor, levelLabel, esc } from '../../core/format.js';
 import { parseAnyDate } from '../../core/dates.js';
-import { makeChart } from '../../core/charts.js';
+import { makeChart, destroyChart } from '../../core/charts.js';
 import { getField, F } from '../../core/fields.js';
 import { buildParamSection, iclSeries, paramAlerts, morphHeatmap, linForecast } from './params.js';
 import { tankColorInfo } from '../../core/aguaColor.js';
@@ -483,6 +483,10 @@ export function renderTank(ctx, mod, tq) {
       bindModal(root, fsOverlay, {
         openSel: '[data-svfs]', closeSel: '[data-svfs-close]',
         onOpen: (b) => { const key = b.dataset.svfs; if (!cfgs[key]) return; fsKey = key; if (titleEl) titleEl.textContent = cfgTitle[key]; requestAnimationFrame(() => makeChart('svChartFsCanvas', cfgs[key]())); },
+        // Los modales de esta vista redibujan SIEMPRE al abrir, así que destruir aquí no
+        // deja el canvas vacío y evita que la instancia siga viva en el registro de
+        // Chart.js hasta el siguiente destroyAllCharts del router.
+        onClose: () => destroyChart('svChartFsCanvas'),
       });
     }
 
@@ -558,6 +562,7 @@ export function renderTank(ctx, mod, tq) {
       bindModal(root, iclOverlay, {
         openSel: '[data-iclopen]', closeSel: '[data-iclclose]', keyboard: true,
         onOpen: () => requestAnimationFrame(drawIcl),
+        onClose: () => destroyChart('svIclCanvas'),
       });
     }
 
@@ -632,6 +637,7 @@ export function renderTank(ctx, mod, tq) {
       bindModal(root, overlay, {
         openSel: '[data-tankmetric]', closeSel: '[data-tankmodal-close]', keyboard: true,
         onOpen: (chip) => openHourly(chip.dataset.tankmetric),
+        onClose: () => destroyChart('svTankHourly'),
       });
       if (dateSel) dateSel.addEventListener('change', () => { curDate = dateSel.value; drawHourly(); });
     }
@@ -725,6 +731,7 @@ export function renderTank(ctx, mod, tq) {
       bindModal(root, fcOverlay, {
         openSel: '[data-forecast-open]', closeSel: '[data-forecast-close]',
         onOpen: () => requestAnimationFrame(drawForecast),
+        onClose: () => destroyChart('svForecastChart'),
       });
     }
   };

@@ -358,7 +358,9 @@ function selBar(months, curMkey, monthDays, curKey, mode, monthInert) {
 
 // ---------- ticker de tiempo real (solo el día = hoy, vista Día) ----------
 let _ticker = null;
-export function stopMareaTicker() { if (_ticker) { clearInterval(_ticker); _ticker = null; } }
+// Sin `export`: sus únicos llamantes están en este módulo (cleanupMareas y el propio
+// ticker, que se auto-detiene si el host se desconecta o el modal se cierra).
+function stopMareaTicker() { if (_ticker) { clearInterval(_ticker); _ticker = null; } }
 export function cleanupMareas() {
   stopMareaTicker();
   ['mareaTrendChart', 'mareaDonutChart', 'mareaCorrChart', 'mareaFsCanvas'].forEach(destroyChart);

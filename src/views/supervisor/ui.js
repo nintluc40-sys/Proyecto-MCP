@@ -60,6 +60,27 @@ export function breadcrumb(accent, items) {
   return `${backBtn}<div class="sv-breadcrumb">${parts.join('<span class="sv-crumb-sep">›</span>')}</div>`;
 }
 
+/** Abrevia el nombre de un técnico: "Juan Murillo" → "J. Murillo".
+ *  Solo se inicializa el PRIMER token y el resto se conserva íntegro: en español no se
+ *  puede saber por posición si "Juan Carlos Murillo" tiene dos nombres de pila o un
+ *  nombre y dos apellidos, y recortar a ciegas inventaría un apellido que no es. */
+export function abbrevTecnico(name) {
+  const t = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!t.length) return '';
+  if (t.length === 1) return t[0];
+  return `${t[0].charAt(0).toUpperCase()}. ${t.slice(1).join(' ')}`;
+}
+
+/** Lista abreviada de técnicos para la tarjeta: hasta `max` nombres y "+N" para el resto.
+ *  Devuelve { short, full } — `full` va en el title para no perder la lista completa. */
+export function tecnicosShort(tecnicos, max = 2) {
+  const list = (tecnicos || []).filter(Boolean);
+  if (!list.length) return { short: '', full: '' };
+  const shown = list.slice(0, max).map(abbrevTecnico).join(' · ');
+  const rest = list.length - max;
+  return { short: rest > 0 ? `${shown} +${rest}` : shown, full: list.join(' · ') };
+}
+
 /** Punto de semáforo con tooltip. */
 export function dot(color, title) {
   return `<span class="sv-dot" style="background:${color}" title="${esc(title)}"></span>`;
@@ -81,20 +102,65 @@ export function dot(color, title) {
  *                                   que ya disparan click nativo y se duplicarían)
  *  @returns {{open: Function, close: Function}|null} controles programáticos
  */
+const FOCUSABLE_SEL = [
+  'a[href]', 'button:not([disabled])', 'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])', 'textarea:not([disabled])', '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
+/** Elementos enfocables VISIBLES del diálogo (los de ramas ocultas no deben recibir Tab). */
+function focusablesIn(el) {
+  return [...el.querySelectorAll(FOCUSABLE_SEL)]
+    .filter((n) => !n.closest('[hidden]') && n.getAttribute('aria-hidden') !== 'true');
+}
+
 export function bindModal(root, overlay, { openSel, closeSel, onOpen, onClose, keyboard = false } = {}) {
   if (!overlay) return null;
   // Escape cierra el overlay abierto reutilizando su backdrop (idempotente y global).
   registerModalEscape('.sv-modal.sv-open');
+
+  // Semántica y foco del diálogo. Antes el overlay no se anunciaba como diálogo, el foco
+  // se quedaba en la página de detrás (un lector de pantalla seguía leyendo el fondo) y
+  // Tab paseaba por los controles ocultos tras el velo, desde donde Enter navegaba de
+  // verdad — dejando la vista cambiada con el modal todavía montado.
+  const card = overlay.querySelector('.sv-modal-card') || overlay;
+  card.setAttribute('role', 'dialog');
+  card.setAttribute('aria-modal', 'true');
+  if (!card.hasAttribute('tabindex')) card.setAttribute('tabindex', '-1');
+  const title = overlay.querySelector('.sv-modal-title');
+  if (title) {
+    if (!title.id) title.id = 'svModalTitle-' + Math.random().toString(36).slice(2, 9);
+    card.setAttribute('aria-labelledby', title.id);
+  }
+
+  let lastFocused = null; // a dónde devolver el foco al cerrar
+
   const open = (trigger) => {
+    lastFocused = trigger || document.activeElement;
     overlay.classList.add('sv-open');
     document.body.classList.add('modal-open');
-    if (onOpen) onOpen(trigger);
+    if (onOpen) onOpen(trigger); // puede reconstruir el cuerpo: el foco se pone DESPUÉS
+    const f = focusablesIn(card);
+    (f[0] || card).focus?.();
   };
   const close = () => {
     overlay.classList.remove('sv-open');
     document.body.classList.remove('modal-open');
     if (onClose) onClose();
+    // Devuelve el foco al control que abrió el modal (si sigue en el documento).
+    if (lastFocused && lastFocused.isConnected) lastFocused.focus?.();
+    lastFocused = null;
   };
+
+  // Trampa de Tab: el recorrido queda circular DENTRO del diálogo.
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    const f = focusablesIn(card);
+    if (!f.length) { e.preventDefault(); card.focus?.(); return; }
+    const first = f[0], last = f[f.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && (active === first || active === card)) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+  });
   if (openSel) {
     root.querySelectorAll(openSel).forEach((b) => {
       b.addEventListener('click', () => open(b));

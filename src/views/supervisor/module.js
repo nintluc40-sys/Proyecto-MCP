@@ -17,7 +17,9 @@ import { desinfeccionDetalle } from './desinfeccion.js';
 import { iclSeries } from './params.js';
 import { lotBrand } from './omtex.js';
 import { makeChart, destroyChart } from '../../core/charts.js';
-import { natCmp } from '../../core/util.js';
+// `avg` sustituye a un `mean` local que no filtraba null/NaN: su único llamante ya pasaba
+// el array filtrado, así que el resultado es el mismo y además queda a salvo de un NaN.
+import { natCmp, avg } from '../../core/util.js';
 import {
   isMicroRow, rowContext as microCtx, meltRow as microMelt, pathogenRecords as microRecords,
   PATHOGENS as MIC_PATHOGENS, PATHOGEN_COLOR as MIC_COLOR, NIVEL_COLOR as MIC_NIVEL_COLOR,
@@ -48,7 +50,23 @@ const sameModule = (a, b) => {
   if (na !== null && nb !== null) return na === nb;
   return String(a).replace(/[^a-z]/gi, '').toUpperCase() === String(b).replace(/[^a-z]/gi, '').toUpperCase();
 };
-const mean = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
+// Memo por IDENTIDAD de store.globalData para los conjuntos de datos por módulo+corrida.
+// `renderModule` hacía cinco recorridos COMPLETOS del store por render (Biomol, Micro,
+// Calidad de Agua, comentarios de supervisión y desinfección), sin caché: medido, 269 ms
+// y 10 accesos al store con 16.200 filas. `core/sheets.js` sustituye `store.globalData`
+// por un array NUEVO en cada refresco, así que comparar la referencia invalida sin riesgo
+// (misma estrategia que core/prodCalendar.js y que el memo de stats.js).
+//
+// ⚠ Los arrays devueltos se COMPARTEN entre llamadas: tratarlos como INMUTABLES. Quien
+// necesite ordenarlos debe copiar antes (`[...arr].sort(...)`).
+let _dataMemo = { src: null, map: new Map() };
+function memoByData(key, compute) {
+  if (_dataMemo.src !== store.globalData) _dataMemo = { src: store.globalData, map: new Map() };
+  if (!_dataMemo.map.has(key)) _dataMemo.map.set(key, compute());
+  return _dataMemo.map.get(key);
+}
+// JSON.stringify y no concatenación: ('M1','23') y ('M12','3') colisionarían.
+const memoKey = (tag, mod, corrida) => JSON.stringify([tag, mod, corrida || null]);
 
 /* ---- Heatmap Biomol del módulo (lee la hoja "Biomol" del store) ---- */
 const BM_DIAGS = ['IHHNV', 'WSSV', 'BP', 'AHPND', 'NHPB', 'EHP'];
@@ -107,14 +125,34 @@ const bmIsReproductor = (estadio) => /reproductor/i.test(String(estadio));
 
 /** Filas Biomol normalizadas del módulo `mod`, filtradas por `corrida` (si se indica)
  *  y EXCLUYENDO las muestras en estadío Reproductores. */
-function biomolForModule(mod, corrida) {
+// Alias de columna resuelto con propiedad PROPIA: `BM_ALIASES[k]` con una columna llamada
+// "constructor" o "toString" devolvía el miembro HEREDADO de Object.prototype —truthy— y
+// se usaba como nombre de campo, generando basura en la fila normalizada.
+const bmAlias = (k) => (Object.prototype.hasOwnProperty.call(BM_ALIASES, k) ? BM_ALIASES[k] : undefined);
+/** Valor de UNA columna aliaseada, sin construir la fila normalizada entera.
+ *  Gana la ÚLTIMA columna que casa, igual que la construcción por asignaciones sucesivas
+ *  de la fila normalizada: si la hoja trae dos columnas que normalizan al mismo alias
+ *  (p. ej. "Lugar" y "lugar "), tomar la primera cambiaría la fila seleccionada. */
+function bmRawField(row, target) {
+  let out = '';
+  for (const k of Object.keys(row)) {
+    if (bmAlias(k.trim().toLowerCase()) === target) out = String(row[k] == null ? '' : row[k]).trim();
+  }
+  return out;
+}
+
+const biomolForModule = (mod, corrida) => memoByData(memoKey('bm', mod, corrida), () => biomolForModuleCompute(mod, corrida));
+function biomolForModuleCompute(mod, corrida) {
   const out = [];
   store.globalData.forEach((row) => {
     if (row._SheetOrigin !== 'Biomol') return;
-    const nr = {};
-    Object.keys(row).forEach((k) => { const al = BM_ALIASES[k.trim().toLowerCase()]; if (al) nr[al] = String(row[k] == null ? '' : row[k]).trim(); });
-    const lugar = nr['Lugar'] || '';
+    // Se descarta por Lugar ANTES de normalizar: antes se construía la fila completa
+    // (recorrido de claves + String() por campo) para TODAS las filas Biomol del store y
+    // se tiraba la mayoría acto seguido. El módulo abierto suele quedarse con una minoría.
+    const lugar = bmRawField(row, 'Lugar');
     if (!bmLugarMatches(lugar, mod)) return;
+    const nr = {};
+    Object.keys(row).forEach((k) => { const al = bmAlias(k.trim().toLowerCase()); if (al) nr[al] = String(row[k] == null ? '' : row[k]).trim(); });
     const estadio = nr['Estadío'] || '';
     if (bmIsReproductor(estadio)) return;                       // sin Reproductores
     const cor = nr['Corrida'] || '';
@@ -378,7 +416,8 @@ let _svMicroColonies = []; // colonias del día visible en la placa (para el too
 let _svMicTrend = null;    // { days, series } de la pestaña Tendencias (para dibujar el gráfico abierto)
 
 /** Filas de Microbiología que comparten corrida + módulo (número) con este módulo. */
-function microForModule(mod, corrida) {
+const microForModule = (mod, corrida) => memoByData(memoKey('mic', mod, corrida), () => microForModuleCompute(mod, corrida));
+function microForModuleCompute(mod, corrida) {
   const mn = modNum(mod);
   if (mn === null) return [];
   const cd = corrida ? micDigits(corrida) : '';
@@ -625,7 +664,8 @@ const cwFmt = (v) => (v == null || isNaN(v)) ? '—' : String(Number.isInteger(v
 let _svCwTrend = null; // { days, range, label, unit } de la pestaña Tendencias (dibujo post-render)
 
 /** Filas de Calidad de Agua que comparten corrida + módulo (número) con este módulo. */
-function calAguaForModule(mod, corrida) {
+const calAguaForModule = (mod, corrida) => memoByData(memoKey('cw', mod, corrida), () => calAguaForModuleCompute(mod, corrida));
+function calAguaForModuleCompute(mod, corrida) {
   const mn = modNum(mod);
   if (mn === null) return [];
   const cd = corrida ? micDigits(corrida) : '';
@@ -652,7 +692,12 @@ const cwEmpty = '<div class="empty-state" style="padding:30px">Sin muestras de c
 
 /** Vista 1 · Tabla: filas = muestras (fecha · TQ · estadío), columnas = parámetros. */
 function cwTablaHTML(rows, ranges) {
-  const samples = cwSamples(rows, ranges).sort((a, b) => (b.ctx.fecha || 0) - (a.ctx.fecha || 0));
+  // COPIA antes de ordenar: `cwSamples` devuelve un array MEMOIZADO que comparten las
+  // otras cuatro vistas del modal (Matriz, Tendencias, Diagnóstico y Fichas). Ordenarlo
+  // in-place reordenaba el array de todas ellas, y Matriz/Diagnóstico resuelven el «último
+  // valor por parámetro» con `f >= prev.f`: ante dos medidas de la MISMA fecha gana la
+  // última del array, así que abrir Tabla cambiaba lo que mostraban las demás pestañas.
+  const samples = [...cwSamples(rows, ranges)].sort((a, b) => (b.ctx.fecha || 0) - (a.ctx.fecha || 0));
   if (!samples.length) return cwEmpty;
   const present = new Set();
   samples.forEach((s) => s.meas.forEach((m) => present.add(m.key)));
@@ -917,39 +962,56 @@ function svSieTankRow(t) {
   const trans = t.enProceso
     ? '<span class="muted">—</span> <span class="sv-sie-proc">en proceso</span>'
     : fmtPop(t.transferido);
-  const plg = (t.plg !== null && t.plg !== undefined) ? fmt1(t.plg) : '<span class="muted">—</span>';
   return `<tr>
     <td class="sv-sie-tk">${esc(t.tq)}</td>
     <td class="muted">${esc(t.lote || '—')}</td>
     <td class="sv-sie-num">${fmtPop(t.siembra)}</td>
     <td class="sv-sie-b sv-sie-num">${trans}</td>
     <td>${esc(t.estadio || '—')}</td>
-    <td class="sv-sie-num">${t.enProceso ? '<span class="muted">—</span>' : plg}</td>
+    <td class="sv-sie-num sv-sie-proy">${t.enProceso ? '<span class="muted">—</span>' : fmtPop(t.proyectado)}</td>
     <td class="sv-sie-num">${t.enProceso ? '<span class="muted">—</span>' : svSiePct(t.superv)}</td>
   </tr>`;
 }
-function svSieRollupRow(st, label, cls, mermaPct) {
+function svSieRollupRow(st, label, cls) {
+  // "A cosechar" cae en la MISMA columna que el Proyectado por tanque: la columna suma.
   return `<tr class="${cls}">
     <td colspan="2" class="sv-sie-stlbl">${esc(label)}</td>
     <td class="sv-sie-num">${fmtPop(st.sembrado)}</td>
     <td class="sv-sie-b sv-sie-num">${fmtPop(st.transferido)}</td>
-    <td colspan="2" class="sv-sie-cosecha">🎯 A cosechar −${mermaPct}%: <b>${fmtPop(st.aCosechar)}</b></td>
+    <td class="sv-sie-cosecha">🎯 A cosechar</td>
+    <td class="sv-sie-num sv-sie-proy"><b>${fmtPop(st.aCosechar)}</b></td>
     <td class="sv-sie-num">${svSiePct(st.superv)}</td>
   </tr>`;
 }
-function svSiembrasModalHTML(data, mod, corrida, tecnicos) {
+/** Merma seleccionable: 6 % … 15 %. El 10 % es el estándar y el valor por defecto. */
+const SIE_MERMAS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+
+/** Cabecera del modal: KPIs de contexto + selector de merma (no se re-renderiza al
+ *  cambiar el %, para que el <select> no pierda el foco a mitad de interacción). */
+function svSiembrasHeadHTML(data, mod, corrida, tecnicos) {
   const mermaPct = Math.round(data.merma * 100);
   const tecLbl = (tecnicos && tecnicos.length) ? esc(tecnicos.join(' · ')) : '—';
   const tecs = tecnicos && tecnicos.length > 1;
+  return `<div class="sv-modal-kpis">
+      <span class="sv-modal-kpi"><b>${tecLbl}</b>técnico${tecs ? 's' : ''}</span>
+      <span class="sv-modal-kpi"><b>${esc(mod)}</b>módulo</span>
+      ${corrida ? `<span class="sv-modal-kpi"><b>C${esc(corrida)}</b>corrida</span>` : ''}
+      <span class="sv-modal-kpi"><b>${data.nSiembras}</b>siembra${data.nSiembras !== 1 ? 's' : ''}</span>
+      <span class="sv-modal-kpi"><b>${data.nTanks}</b>tanque${data.nTanks !== 1 ? 's' : ''}</span>
+      <label class="sv-modal-kpi sv-sie-merma" title="Porcentaje de mortalidad que se descuenta del Transferido para proyectar la cosecha">
+        📉 Merma
+        <select class="sv-modal-select" data-sie-merma aria-label="Porcentaje de merma descontado">
+          ${SIE_MERMAS.map((p) => `<option value="${p}"${p === mermaPct ? ' selected' : ''}>−${p}%</option>`).join('')}
+        </select>
+      </label>
+    </div>`;
+}
+
+/** Cuerpo recalculable: tabla + nota. Se vuelve a pintar al cambiar la merma. */
+function svSiembrasContentHTML(data, mod, corrida) {
+  const mermaPct = Math.round(data.merma * 100);
   const body = data.nSiembras
-    ? `<div class="sv-modal-kpis">
-        <span class="sv-modal-kpi"><b>${tecLbl}</b>técnico${tecs ? 's' : ''}</span>
-        <span class="sv-modal-kpi"><b>${esc(mod)}</b>módulo</span>
-        ${corrida ? `<span class="sv-modal-kpi"><b>C${esc(corrida)}</b>corrida</span>` : ''}
-        <span class="sv-modal-kpi"><b>${data.nSiembras}</b>siembra${data.nSiembras !== 1 ? 's' : ''}</span>
-        <span class="sv-modal-kpi"><b>${data.nTanks}</b>tanque${data.nTanks !== 1 ? 's' : ''}</span>
-      </div>
-      <div class="sv-sie-wrap">
+    ? `<div class="sv-sie-wrap">
         <table class="sv-table sv-sie-table">
           <thead>
             <tr class="sv-sie-grouphead">
@@ -958,34 +1020,48 @@ function svSiembrasModalHTML(data, mod, corrida, tecnicos) {
             </tr>
             <tr>
               <th>Tanque</th><th>Lote</th><th class="sv-sie-num">Sembrado</th>
-              <th class="sv-sie-b sv-sie-num">Transferido</th><th>Estadío</th><th class="sv-sie-num">PL/g</th><th class="sv-sie-num">Superv.</th>
+              <th class="sv-sie-b sv-sie-num">Transferido</th><th>Estadío</th>
+              <th class="sv-sie-num sv-sie-proy" title="Población proyectada: Transferido menos la merma seleccionada">Proyectado −${mermaPct}%</th>
+              <th class="sv-sie-num">Superv.</th>
             </tr>
           </thead>
           <tbody>
             ${data.siembras.map((sie) => svSieBand(sie)
               + sie.tanks.map(svSieTankRow).join('')
-              + svSieRollupRow(sie.subtotal, `Subtotal ${sie.idx}ª siembra`, 'sv-sie-subtotal', mermaPct)).join('')}
+              + svSieRollupRow(sie.subtotal, `Subtotal ${sie.idx}ª siembra`, 'sv-sie-subtotal')).join('')}
           </tbody>
           <tfoot>
-            ${svSieRollupRow(data.total, `Total módulo ${mod}`, 'sv-sie-total', mermaPct)}
+            ${svSieRollupRow(data.total, `Total módulo ${mod}`, 'sv-sie-total')}
           </tfoot>
         </table>
       </div>
-      <div class="sv-modal-note">🌱 Sembrado = población del primer registro <b>N5</b> · Transferido = penúltima población (antes de la cosecha) · A cosechar = Σ Transferido − ${mermaPct}% · Superv. = Transferido ÷ Sembrado. La supervivencia de los subtotales solo cuenta los tanques con Transferido registrado (los «en proceso» aún no).</div>`
+      <div class="sv-modal-note">🌱 Sembrado = población del primer registro <b>N5</b> · Transferido = penúltima población (antes de la cosecha) · <b>Proyectado</b> = Transferido − ${mermaPct}% (suma al «A cosechar») · Superv. = Transferido ÷ Sembrado. La supervivencia de los subtotales solo cuenta los tanques con Transferido registrado (los «en proceso» aún no).</div>`
     : `<div class="empty-state" style="padding:30px">Sin siembras registradas para ${esc(mod)}${corrida ? ' · C' + esc(corrida) : ''}.</div>`;
+  return body;
+}
 
+function svSiembrasModalHTML(data, mod, corrida, tecnicos) {
   return `<div class="sv-modal" id="svSiembrasModal" data-siembrasmodal>
     <div class="sv-modal-card lv-fs-card">
       <div class="sv-modal-head">
         <span class="sv-modal-title">🌱 Siembras y Cosecha — ${esc(mod)}${corrida ? ' · C' + esc(corrida) : ''}</span>
         <button class="sv-modal-x" data-siembras-close aria-label="Cerrar">✕</button>
       </div>
-      <div class="sv-modal-body">${body}</div>
+      <div class="sv-modal-body">
+        ${data.nSiembras ? svSiembrasHeadHTML(data, mod, corrida, tecnicos) : ''}
+        <div id="svSieContent"></div>
+      </div>
     </div>
   </div>`;
 }
 
 export function renderModule(ctx, mod) {
+  // El tooltip del heatmap Biomol vive colgado de <body>, FUERA del contenedor de la vista:
+  // si se sale del módulo con el modal abierto (p. ej. tabulando por detrás del overlay,
+  // que no atrapa el foco), su `onClose` no llega a ejecutarse y el nodo queda huérfano —
+  // y visible, con contenido obsoleto, porque su `mouseleave` murió con la celda. Barrerlo
+  // al entrar garantiza que nunca sobreviva a un cambio de módulo.
+  bmDestroyTip();
   const corrida = ctx.vState.corrida || null;
   const col = colorFor(ctx.allMods.indexOf(mod));
   const s = modStats(ctx, mod, corrida);
@@ -1000,7 +1076,7 @@ export function renderModule(ctx, mod) {
   const tankCmp = tanks.map((tq) => {
     const ts = tsByTank.get(tq);
     const iclVals = iclSeries(ts.lRows).values.filter((v) => v !== null && v !== undefined);
-    return { tq, sv: ts.sv, icl: mean(iclVals) };
+    return { tq, sv: ts.sv, icl: avg(iclVals) };
   });
 
   // RO1 · ranking mejor/peor tanque combinando AMBAS variables (Supervivencia + ICL).
@@ -1018,10 +1094,10 @@ export function renderModule(ctx, mod) {
 
   // #2 · comentarios de supervisión del módulo (col. Comentario de Registro_Supervisión).
   // #1 · deben cumplir la MISMA corrida (si hay una elegida) y el módulo.
-  const atRows = store.globalData
+  const atRows = memoByData(memoKey('at', mod, corrida), () => store.globalData
     .filter((r) => isRevisionRow(r) && sameModule(getField(r, F.modulo), mod)
       && (!corrida || getField(r, F.corrida) === corrida) && hasCom(r))
-    .sort((a, b) => (parseAnyDate(getField(b, F.fecha)) || 0) - (parseAnyDate(getField(a, F.fecha)) || 0));
+    .sort((a, b) => (parseAnyDate(getField(b, F.fecha)) || 0) - (parseAnyDate(getField(a, F.fecha)) || 0)));
 
   // Biomol · análisis moleculares de la corrida+módulo (incluye muestras compartidas de módulos
   // pareados; excluye estadío Reproductores). Sin corrida elegida → todas las corridas del módulo.
@@ -1048,7 +1124,8 @@ export function renderModule(ctx, mod) {
   // Cuadro de Siembras y Cosecha (modal del KPI Técnico). Se agrupa por fecha de N5.
   // Usa la línea base poblacional (larvCM: corrida+mes, SIN la ventana de fecha global)
   // para no truncar el transferido/cosecha más recientes del módulo.
-  const siembrasData = computeSiembras(ctx.larvCM.filter((r) => getField(r, F.modulo) === mod));
+  const siembrasRows = ctx.larvCM.filter((r) => getField(r, F.modulo) === mod);
+  const siembrasData = computeSiembras(siembrasRows);
 
   let h = breadcrumb(col.accent, [
     { label: '← Módulos', nav: 'modules' },
@@ -1377,9 +1454,31 @@ export function renderModule(ctx, mod) {
 
   const after = (root) => {
     // Modal Siembras y Cosecha (KPI Técnico). Chip con role="button" → keyboard:true.
-    bindModal(root, root.querySelector('#svSiembrasModal'), {
-      openSel: '[data-siembras-open]', closeSel: '[data-siembras-close]', keyboard: true,
-    });
+    const sieOverlay = root.querySelector('#svSiembrasModal');
+    if (sieOverlay) {
+      const sieHost = sieOverlay.querySelector('#svSieContent');
+      // Pinta el cuadro con la merma indicada (null = la de `siembrasData`, 10 % por defecto).
+      const renderSie = (pct) => {
+        if (!sieHost) return;
+        const d = pct == null ? siembrasData : computeSiembras(siembrasRows, { merma: pct / 100 });
+        sieHost.innerHTML = svSiembrasContentHTML(d, mod, corrida);
+      };
+      // Contenido DIFERIDO al abrir (mismo patrón que el Historial de As. Téc.): era la
+      // única tabla de modal que se construía entera en cada render del módulo, se abriera
+      // o no. Los demás cuerpos ya se generaban al abrir o al cambiar de pestaña.
+      let sieRendered = false;
+      bindModal(root, sieOverlay, {
+        openSel: '[data-siembras-open]', closeSel: '[data-siembras-close]', keyboard: true,
+        onOpen: () => { if (!sieRendered) { sieRendered = true; renderSie(null); } },
+      });
+      // Selector de merma (6–15%): recalcula con `computeSiembras` —la misma función pura—
+      // y repinta SOLO el contenido, dejando intacta la cabecera para que el <select>
+      // conserve el foco.
+      sieOverlay.querySelector('[data-sie-merma]')?.addEventListener('change', (e) => {
+        const pct = +e.target.value;
+        if (isFinite(pct)) renderSie(pct);
+      });
+    }
 
     // #2 · RO1 en modal: barras agrupadas SV (eje y) + ICL (eje y1) por tanque (se dibuja al abrir).
     const cmpOverlay = root.querySelector('#svModCmpModal');
@@ -1406,6 +1505,10 @@ export function renderModule(ctx, mod) {
       bindModal(root, cmpOverlay, {
         openSel: '[data-modcmp-open]', closeSel: '[data-modcmp-close]',
         onOpen: () => requestAnimationFrame(drawCmp),
+        // Se destruye al cerrar (se redibuja en cada apertura): sin esto la instancia
+        // sobrevivía en el registro de Chart.js hasta el siguiente destroyAllCharts del
+        // router. Mismo criterio que Microbiología y Calidad de Agua.
+        onClose: () => destroyChart('svModCmp'),
       });
     }
 
@@ -1512,9 +1615,11 @@ export function renderModule(ctx, mod) {
       let curMetric = 'sv';
       let showProj = false;
       // Horizonte de proyección: hasta la cosecha estimada (PL11); fallback 7 días.
-      const cProj = cosechaEstimate(ctx, mod, corrida);
-      const projHorizon = (cProj && !cProj.reached && cProj.days > 0) ? cProj.days : 7;
-      const cosechaReached = !!(cProj && cProj.reached);
+      // Se reutiliza `cos`, ya calculado arriba para el KPI "Cosecha": era la MISMA
+      // llamada —`cosechaEstimate(ctx, mod, corrida)` usa target='PL11' por defecto
+      // (moduleTrends.js:125), igual que el explícito de arriba— y se recomputaba entera.
+      const projHorizon = (cos && !cos.reached && cos.days > 0) ? cos.days : 7;
+      const cosechaReached = !!(cos && cos.reached);
       const TITLES = { sv: '📈 Tendencia de supervivencia', pop: '👥 Tendencia de población', od: '💧 OD por hora (módulo)', tmp: '🌡️ Temperatura por hora (módulo)' };
       const trendCfg = (label, data, color, pct) => ({
         type: 'line',
@@ -1584,6 +1689,8 @@ export function renderModule(ctx, mod) {
       bindModal(root, mmOverlay, {
         openSel: '[data-modmetric]', closeSel: '[data-modmetric-close]', keyboard: true,
         onOpen: (chip) => open(chip.dataset.modmetric),
+        // `open()` redibuja siempre al abrir, así que destruir aquí no deja el canvas vacío.
+        onClose: () => destroyChart('svModMetricCanvas'),
       });
     }
 

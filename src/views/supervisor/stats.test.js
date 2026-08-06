@@ -113,4 +113,52 @@ describe('Población 0 (tanque agrupado/vaciado): el 0 es real, no se arrastra e
     expect(rowsOutOfDispatch(agrupado)).toBe(true);   // agrupado → no llega al despacho
     expect(rowsOutOfDispatch(normal)).toBe(false);
   });
+
+  it('tanksData marca outOfDispatch en el tanque agrupado (para no contarlo como alerta)', () => {
+    store.globalData = [
+      // TQ1 sano
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '580', Tanque: 'TQ1', 'Población': '1000', Fecha: '01/06/2026' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '580', Tanque: 'TQ1', 'Población': '900', Fecha: '10/06/2026' },
+      // TQ2 agrupado: SV cae a 0 por decisión operativa, no por un problema sanitario
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '580', Tanque: 'TQ2', 'Población': '1000', Fecha: '01/06/2026' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '580', Tanque: 'TQ2', 'Población': '0', Fecha: '10/06/2026', Observaciones: 'Agrupado con TQ1' },
+    ];
+    const s = modStats(buildContext({}), 'M01', '580');
+    const byTank = Object.fromEntries(s.tanksData.map((t) => [t.tq, t]));
+    expect(byTank.TQ1.outOfDispatch).toBe(false);
+    expect(byTank.TQ2.sv).toBe(0);              // el 0 sigue siendo real
+    expect(byTank.TQ2.outOfDispatch).toBe(true); // …pero está marcado como fuera de despacho
+  });
+});
+
+describe('buildContext · allMods es identidad ESTABLE de color, no lista filtrada', () => {
+  it('no cambia al aplicar un filtro de fecha que deja fuera a un módulo', () => {
+    // `colorFor(allMods.indexOf(mod))` pinta el acento del módulo en 6 sub-vistas: si la
+    // lista se acorta al filtrar, todos los índices posteriores se desplazan y el módulo
+    // cambia de color sin que nada haya cambiado en él.
+    store.globalData = [
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M06', Corrida: '573', Tanque: 'TQ1', 'Población': '1000', Fecha: '05/05/2026' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M07', Corrida: '573', Tanque: 'TQ1', 'Población': '1000', Fecha: '05/06/2026' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M08', Corrida: '573', Tanque: 'TQ1', 'Población': '1000', Fecha: '06/06/2026' },
+    ];
+    store.dateFrom = null; store.dateTo = null;
+    const sinFiltro = buildContext({}).allMods;
+
+    store.dateFrom = new Date(2026, 5, 1); // solo junio: M06 queda fuera de la ventana
+    const conFiltro = buildContext({}).allMods;
+
+    expect(sinFiltro).toEqual(['M06', 'M07', 'M08']);
+    expect(conFiltro).toEqual(sinFiltro);              // la identidad de color no se mueve
+    expect(conFiltro.indexOf('M07')).toBe(sinFiltro.indexOf('M07'));
+  });
+
+  it('tampoco cambia al filtrar por corrida', () => {
+    store.globalData = [
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M06', Corrida: '573', Tanque: 'TQ1', 'Población': '1000', Fecha: '05/06/2026' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M07', Corrida: '574', Tanque: 'TQ1', 'Población': '1000', Fecha: '05/06/2026' },
+    ];
+    store.dateFrom = null; store.dateTo = null;
+    expect(buildContext({}).allMods).toEqual(['M06', 'M07']);
+    expect(buildContext({ corrida: '574' }).allMods).toEqual(['M06', 'M07']);
+  });
 });

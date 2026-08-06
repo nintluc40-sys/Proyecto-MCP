@@ -216,9 +216,15 @@ export function buildFichaPdfDoc({ fid, mod, fileName, pages = [], autoPrint = t
     const obsHtml = obsTxt ? `<div class="obs-block"><div class="lbl">Observaciones del turno</div><div class="txt">${esc(String(obsTxt))}</div></div>` : '';
     return `<div class="ppage">${pdfHeader(fid, mod, d)}${pg.tableHtml || ''}${obsHtml}<div class="spacer"></div>${pdfFooter(codigo, tsStr, d.tec, fid)}</div>`;
   }).join('');
+  // `JSON.stringify` escapa comillas pero NO `</script>`: el analizador de HTML cierra el
+  // elemento en cuanto ve esa secuencia, aunque esté dentro de una cadena JS. `fileName`
+  // incorpora el nombre de MÓDULO tal cual viene de la hoja (pdfFilename solo sanea la
+  // corrida), así que un módulo con `</script>` inyectaría marcado en el documento que se
+  // imprime. Escapar `<` como < lo cierra sin cambiar el texto del título.
+  const scriptSafe = (s) => JSON.stringify(s).replace(/</g, '\\u003C');
   const printScript = autoPrint ? `
   <script>
-    try { document.title = ${JSON.stringify(fileName)}; } catch(_){}
+    try { document.title = ${scriptSafe(fileName)}; } catch(_){}
     var _printed=false;
     function doPrint(){if(_printed)return;_printed=true;setTimeout(function(){window.print();},350);}
     if(document.readyState==='complete')doPrint();

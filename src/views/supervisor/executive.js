@@ -5,13 +5,13 @@
    por corrida y módulo). Sin filtros de mes ni corrida.
    ============================================================ */
 import { modStats } from './stats.js';
-import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, dot } from './ui.js';
+import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, dot, tecnicosShort } from './ui.js';
 import { esc, odLevel, tmpLevel, svLevel } from '../../core/format.js';
 import { getField, F } from '../../core/fields.js';
 import { fmtShort } from '../../core/dates.js';
 import { compareTanksButtonHTML, compareTanksModalHTML, setupCompareTanks } from './compareTanks.js';
-import { presentMonths, corridasOfMonth, modulesOfCorrida, isDespachoRow, modCorDispatched } from '../../core/prodCalendar.js';
-import { prodTableHTML, setupProdTon } from './prodOmarsa.js';
+import { presentMonths, corridasOfMonth, modulesOfCorrida, isDespachoRow, modCorDispatched, monthLabelAt } from '../../core/prodCalendar.js';
+import { prodTableHTML } from './prodOmarsa.js';
 import { desinfeccionEnCurso } from './desinfeccion.js';
 
 /** Estado de despacho del módulo+corrida: '' · 'Despachando' · 'Despachado'.
@@ -91,21 +91,26 @@ function cardHTML(ctx, mod, corrida, i) {
   const tmpA = !finalizado && isAlert(tmpLevel(s.tmp));
   const svA = !finalizado && svAlert(s.sv);
   const alertParams = [svA && 'Superv.', odA && 'OD', tmpA && 'Temp'].filter(Boolean);
-  // #8 Tanques en alerta.
-  const tanksData = s.tanksData || [];
+  // #8 Tanques en alerta. Los agrupados/descartados quedan fuera del recuento —numerador
+  // Y denominador—: su SV cae a 0 porque se unieron a otro tanque o se perdieron, no por
+  // un problema sanitario, así que disparaban una alerta falsa y además inflaban el total.
+  const tanksData = (s.tanksData || []).filter((t) => !t.outOfDispatch);
   const tanksAlert = finalizado ? 0
     : tanksData.filter((t) => isAlert(odLevel(t.od)) || isAlert(tmpLevel(t.tmp)) || svAlert(t.sv)).length;
   // #11 Frescura.
   const fr = freshness(s.lastDate);
+  // Responsables del módulo, abreviados ("Juan Murillo" → "J. Murillo"): la tarjeta no
+  // tiene ancho para nombres completos y la lista íntegra queda en el title.
+  const tec = tecnicosShort(s.tecnicos);
 
   return `<div class="sv-card" style="background:${cat ? cat.bg : col.bg}" data-nav="module" data-mod="${esc(mod)}" data-corrida="${esc(corrida)}" role="button" tabindex="0" aria-label="Abrir módulo ${esc(mod)}, corrida ${esc(corrida)}">
       <div class="sv-card-orb"></div>
       ${despBadge}
       <div class="sv-card-head">
         <div>
-          <div class="sv-card-tag">🦐 ${esc(s.estadio || '—')} · ${s.dias} día${s.dias !== 1 ? 's' : ''}</div>
+          <div class="sv-card-tag" title="Estadío del tanque MÁS AVANZADO del módulo (getLatestStage toma el rango máximo del último día con dato); el color de la tarjeta sigue a este estadío. Los tanques rezagados pueden ir por detrás.">🦐 ${esc(s.estadio || '—')} · ${s.dias} día${s.dias !== 1 ? 's' : ''}</div>
           <div class="sv-card-name">${esc(mod)}</div>
-          <div class="sv-card-sub">🔄 Corrida: ${esc(corrida)}</div>
+          <div class="sv-card-sub"${tec.full ? ` title="Técnicos responsables: ${esc(tec.full)}"` : ''}>🔄 Corrida: ${esc(corrida)}${tec.short ? ` · 👤 ${esc(tec.short)}` : ''}</div>
           ${s.lotes.length ? `<div class="sv-card-sub">📦 ${esc(s.lotes.join(' · '))}</div>` : ''}
           ${desp === 'Despachado'
             ? `<div class="sv-card-sub">${dot('#90A4AE', 'Proceso finalizado')} ✓ Finalizado</div>`
@@ -130,7 +135,10 @@ function cardHTML(ctx, mod, corrida, i) {
 /** Tarjeta gris para un módulo/corrida en fase de desinfección (pre-siembra). */
 function desinfCardHTML(d) {
   const cat = CAT.desinfeccion;
-  return `<div class="sv-card" style="background:${cat.bg}">
+  // `sv-card-static`: esta tarjeta NO navega (no tiene [data-nav]). Sin el modificador
+  // heredaba de .sv-card el cursor de mano y el levantamiento al pasar el ratón, así que
+  // prometía un clic que no existe. Solo cambia la señal visual; el marcado sigue igual.
+  return `<div class="sv-card sv-card-static" style="background:${cat.bg}">
       <div class="sv-card-orb"></div>
       <div class="sv-card-head">
         <div>
@@ -187,8 +195,20 @@ function mountMonthPanel(root, ctx) {
     wrap.innerHTML = html;
     wrap.querySelector('[data-prodprev]')?.addEventListener('click', () => { if (pos > 0) { pos--; render(); } });
     wrap.querySelector('[data-prodnext]')?.addEventListener('click', () => { if (pos < months.length - 1) { pos++; render(); } });
-    wrap.querySelector('[data-prodslider]')?.addEventListener('input', (e) => { pos = +e.target.value; render(); });
-    setupProdTon(wrap, months, pos, render); // engranaje ⚙: config de toneladas por tanque del mes
+    // El deslizador NO puede re-renderizar en `input`: render() reemplaza wrap.innerHTML,
+    // así que el propio nodo que se está arrastrando se arranca del DOM en el primer
+    // movimiento y el arrastre se corta (cada agarre avanzaba un solo paso). `input` se
+    // queda con el rótulo del mes —realimentación inmediata y barata— y el re-render se
+    // hace en `change`, que en un <input type="range"> dispara al soltar.
+    const slider = wrap.querySelector('[data-prodslider]');
+    if (slider) {
+      const lbl = wrap.querySelector('[data-prodmonthlbl]');
+      slider.addEventListener('input', (e) => {
+        const m = months[+e.target.value];
+        if (lbl && m !== undefined) lbl.textContent = monthLabelAt(m);
+      });
+      slider.addEventListener('change', (e) => { pos = +e.target.value; render(); });
+    }
   };
   render();
 }

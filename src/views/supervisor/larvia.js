@@ -9,7 +9,7 @@ import { colorFor, breadcrumb, fmt1, fmt2, bindModal } from './ui.js';
 import { esc } from '../../core/format.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { getField, parseNum, PLG_KEYS } from '../../core/fields.js';
-import { makeChart } from '../../core/charts.js';
+import { makeChart, destroyChart } from '../../core/charts.js';
 
 const { gMod, gTnq, gCor, gFec } = getters;
 
@@ -265,6 +265,10 @@ export function renderLarvia(ctx, mod, tq) {
       bindModal(root, overlay, {
         openSel: '[data-biofs]', closeSel: '[data-biofs-close]',
         onOpen: (b) => openFs(b.dataset.biofs),
+        // `openFs` redibuja siempre al abrir (y con OTRA métrica cada vez), así que
+        // destruir al cerrar no deja el canvas vacío y evita que la instancia siga viva
+        // en el registro de Chart.js. Mismo criterio que Módulo y Tanque.
+        onClose: () => destroyChart('svBioFsCanvas'),
       });
     }
 

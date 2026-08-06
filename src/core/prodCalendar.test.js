@@ -29,11 +29,30 @@ describe('monthLabelAt (etiquetas, incl. meses virtuales)', () => {
     expect(monthLabelAt(0)).toBe('Enero');
     expect(monthLabelAt(5)).toBe('Junio');
   });
-  it('meses virtuales continúan la secuencia y reinician a Enero', () => {
+  it('meses virtuales continúan la secuencia dentro del primer ciclo', () => {
     expect(monthLabelAt(6)).toBe('Julio');
     expect(monthLabelAt(7)).toBe('Agosto');
     expect(monthLabelAt(11)).toBe('Diciembre');
-    expect(monthLabelAt(12)).toBe('Enero'); // ciclo
+  });
+
+  // Al dar la vuelta al calendario los nombres se repiten. Antes `monthLabelAt(12)`
+  // devolvía 'Enero' a secas, indistinguible del mes 0 en el navegador ◀▶ de las
+  // 7 vistas que usan esta etiqueta; ahora se desambigua.
+  it('al reiniciar el ciclo añade el AÑO real tomado de las fechas de sus corridas', () => {
+    // Mes 12 = 12 meses × 6 corridas desde 544 → corrida 616.
+    expect(monthIndexOfCorrida(616)).toBe(12);
+    store.globalData = [
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M06', Corrida: '616', Tanque: 'TQ1', Fecha: '15/01/2027' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M06', Corrida: '616', Tanque: 'TQ1', Fecha: '17/01/2027' },
+    ];
+    expect(monthLabelAt(12)).toBe('Enero 2027');
+    expect(monthLabelAt(0)).toBe('Enero'); // el mes base no cambia
+  });
+
+  it('sin fechas utilizables cae al número de ciclo, pero NO repite la etiqueta', () => {
+    store.globalData = [];
+    expect(monthLabelAt(12)).toBe('Enero (ciclo 2)');
+    expect(monthLabelAt(12)).not.toBe(monthLabelAt(0));
   });
 });
 
@@ -89,6 +108,27 @@ describe('modCorStats: cosecha honra el 0 (tanque vaciado/agrupado)', () => {
     expect(modCorStats('M07', '579').despachado).toBe(false);
     expect(modCorStats('M07', '579').despachadoFull).toBe(false);
   });
+  it('siembraFecha = fecha PROMEDIO de la primera población real de cada tanque', () => {
+    store.globalData = [
+      // TQ1 siembra el 02/07, TQ2 el 06/07 → promedio 04/07/2026
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M06', Corrida: '579', Tanque: 'TQ1', 'Población': '0', Fecha: '01/07/2026' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M06', Corrida: '579', Tanque: 'TQ1', 'Población': '4000', Fecha: '02/07/2026' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M06', Corrida: '579', Tanque: 'TQ2', 'Población': '4200', Fecha: '06/07/2026' },
+    ];
+    const f = modCorStats('M06', '579').siembraFecha;
+    expect(f).toBeInstanceOf(Date);
+    expect(f.getDate()).toBe(4);
+    expect(f.getMonth()).toBe(6); // julio
+    expect(f.getFullYear()).toBe(2026);
+  });
+
+  it('siembraFecha es null si ningún tanque llegó a tener población real', () => {
+    store.globalData = [
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M06', Corrida: '579', Tanque: 'TQ1', 'Población': '0', Fecha: '01/07/2026' },
+    ];
+    expect(modCorStats('M06', '579').siembraFecha).toBeNull();
+  });
+
   it('nSie cuenta solo tanques con siembra real (base de la densidad de siembra)', () => {
     store.globalData = [
       { _SheetOrigin: 'Larvicultura', 'Módulo': 'M02', Corrida: '574', Tanque: 'TQ1', 'Población': '2800', Fecha: '01/06/2026' },

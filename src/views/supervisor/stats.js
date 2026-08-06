@@ -92,19 +92,21 @@ export function buildContext(vState) {
   const larvWin = larvCM.filter(inGlobalDate);
   const tanqWin = tanqCM.filter(inGlobalDate);
 
-  // Pares corrida|módulo presentes
-  const pairs = [];
-  const seen = new Set();
-  larvWin.forEach((r) => {
-    const cor = gCor(r), mod = gMod(r);
-    if (!cor || !mod) return;
-    const k = cor + '|' + mod;
-    if (!seen.has(k)) { seen.add(k); pairs.push({ corrida: cor, mod }); }
-  });
-  pairs.sort((a, b) => a.corrida.localeCompare(b.corrida) || a.mod.localeCompare(b.mod));
-  const allMods = [...new Set(pairs.map((p) => p.mod))].sort();
+  // `allMods` es la fuente del COLOR de acento de cada módulo en SEIS sub-vistas
+  // (`colorFor(ctx.allMods.indexOf(mod))` en executive/module/tank/larvia/despacho/omtex).
+  // Por eso se deriva de `larvAll` —el universo completo— y NO de `larvWin`: cuando un
+  // módulo salía de la ventana, la lista se acortaba y TODOS los índices posteriores se
+  // desplazaban, de modo que un mismo módulo cambiaba de color al mover el filtro de
+  // fecha o la corrida. Con el universo completo el color es una identidad estable.
+  // (`larvAll` ya viene filtrado por hasValidCorrida/hasValidModulo.)
+  //
+  // El contexto exponía además `pairs` (lista de {corrida, módulo} de la ventana, con su
+  // Set y su sort). Nadie la consumía —la Vista Ejecutiva arma la suya desde el calendario
+  // de producción— y al dejar de derivar `allMods` de ella quedó sin ningún lector, así
+  // que se retiró: era una pasada completa sobre `larvWin` en cada reconstrucción.
+  const allMods = [...new Set(larvAll.map(gMod).filter(Boolean))].sort();
 
-  const ctx = { larvCM, tanqCM, larvWin, tanqWin, allCorridas, pairs, allMods, vState };
+  const ctx = { larvCM, tanqCM, larvWin, tanqWin, allCorridas, allMods, vState };
   _ctxCache = { data, corrida: vState.corrida, from: store.dateFrom, to: store.dateTo, ctx };
   return ctx;
 }
@@ -154,8 +156,29 @@ function lastAvgByTank(winRows, tanks, keys) {
   return lasts.length ? avg(lasts) : null;
 }
 
-/** Estadísticas de un módulo (opcionalmente restringidas a una corrida). */
+// Memo de modStats por IDENTIDAD del ctx. `buildContext` devuelve el mismo objeto
+// mientras no cambien datos/corrida/fechas, y uno NUEVO cuando cambian, así que la
+// identidad del ctx es una clave de invalidación segura (misma estrategia que el
+// memo de core/prodCalendar.js). Motivo: la Vista Ejecutiva llama a modStats una vez
+// por tarjeta y repetía el cálculo íntegro en cada navegación de mes — medido, 114 ms
+// por pasada con 12 módulos y 16.200 filas, idénticos a los de la pasada anterior.
+// WeakMap: al invalidarse el ctx, su bucket se recolecta solo.
+//
+// ⚠ El objeto devuelto se COMPARTE entre llamadas: tratarlo como INMUTABLE. Hoy ningún
+// consumidor lo muta (executive.js copia con .filter antes de tocar tanksData).
+const _modStatsMemo = new WeakMap();
+
+/** Estadísticas de un módulo (opcionalmente restringidas a una corrida). Memoizado. */
 export function modStats(ctx, mod, corrida) {
+  let byKey = _modStatsMemo.get(ctx);
+  if (!byKey) { byKey = new Map(); _modStatsMemo.set(ctx, byKey); }
+  // JSON.stringify y no concatenación: ('M1','23') y ('M12','3') colisionarían.
+  const k = JSON.stringify([mod, corrida || null]);
+  if (!byKey.has(k)) byKey.set(k, modStatsCompute(ctx, mod, corrida));
+  return byKey.get(k);
+}
+
+function modStatsCompute(ctx, mod, corrida) {
   const cf = (r) => gMod(r) === mod && (!corrida || gCor(r) === corrida);
   const win = ctx.larvWin.filter(cf);
   const base = ctx.larvCM.filter(cf);
@@ -169,15 +192,24 @@ export function modStats(ctx, mod, corrida) {
   [...win, ...tWin].forEach((r) => { const d = parseAnyDate(gFec(r)); if (d && !isNaN(d) && (lastDate === null || d > lastDate)) lastDate = d; });
 
   // Resumen por tanque (OD/Temp/SV) para detectar tanques en alerta.
+  // Las filas SIN tanque asignado (gTnq === '') NO entran aquí: `survival` vuelve a
+  // filtrar por `gTnq(r) === tq` cuando recibe una lista de tanques, así que incluirlas
+  // era inerte (se descartaban acto seguido) y sugería lo contrario al lector. Si algún
+  // día deben contar, hay que cambiarlo DENTRO de survival — no ensanchando aquí.
   const tanksData = tanks.map((tq) => {
     const tR = tWin.filter((r) => gTnq(r) === tq);
-    const lW = win.filter((r) => gTnq(r) === tq || gTnq(r) === '');
-    const lB = base.filter((r) => gTnq(r) === tq || gTnq(r) === '');
+    const lW = win.filter((r) => gTnq(r) === tq);
+    const lB = base.filter((r) => gTnq(r) === tq);
     return {
       tq,
       od: avg(tR.map(gOD).filter((v) => v !== null)),
       tmp: avg(tR.map(gTmp).filter((v) => v !== null)),
       sv: survival(lW, lB, [tq]).sv,
+      // Tanque agrupado o descartado: su población cae a 0 por decisión OPERATIVA (se unió
+      // a otro tanque o se perdió), no por un problema sanitario. Quien pinte alertas debe
+      // excluirlo o marcará una alarma falsa. Se evalúa sobre `lB` (la corrida completa)
+      // para que la marca no dependa de la ventana temporal visible.
+      outOfDispatch: rowsOutOfDispatch(lB),
     };
   });
 

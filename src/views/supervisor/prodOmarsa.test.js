@@ -96,22 +96,63 @@ describe('prodTableHTML · fila "Subtotal actual" (despachados)', () => {
   });
 });
 
-describe('prodTableHTML · engranaje ⚙ de toneladas por tanque', () => {
-  it('renderiza el engranaje y el modal con una sección por módulo con siembra', () => {
+// El panel configurable de toneladas por mes se retiró (decisión del usuario, 2026-08-05):
+// la densidad se estima con 28 t fijas y el tonelaje pasará a registrarse como dato de la
+// operación. Este bloque vigila que no reaparezca ningún resto de aquel panel.
+describe('prodTableHTML · sin configuración de toneladas', () => {
+  const datos = () => [
+    row('M06', '579', 'TQ1', 1000, '01/07/2026'),
+    row('M06', '579', 'TQ2', 1200, '01/07/2026'),
+    row('M08', '580', 'TQ1', 2000, '01/07/2026'),
+  ];
+
+  it('no renderiza el engranaje ⚙ ni el modal de toneladas', () => {
+    store.globalData = datos();
+    const months = presentMonths();
+    const html = prodTableHTML(months, months.length - 1);
+    expect(html).not.toContain('data-prodgear');
+    expect(html).not.toContain('data-ptmodal');
+    expect(html).not.toContain('Toneladas por tanque');
+    expect(html).not.toContain('data-pt-sec');
+  });
+
+  it('la densidad se estima con 28 t fijas por tanque', () => {
+    store.globalData = [row('M06', '579', 'TQ1', 1000, '01/07/2026')];
+    const months = presentMonths();
+    const html = prodTableHTML(months, months.length - 1);
+    // 1 tanque con siembra 1000 ⇒ 1000 / 1 / 28 / 1000 = 0,04 (2 decimales)
+    expect(html).toContain('>0.04<');
+  });
+});
+
+describe('prodTableHTML · columna Fecha (siembra promedio del módulo)', () => {
+  it('añade la cabecera Fecha y la tabla pasa a 10 columnas', () => {
+    store.globalData = [row('M06', '579', 'TQ1', 1000, '01/07/2026')];
+    const months = presentMonths();
+    const html = prodTableHTML(months, months.length - 1);
+    expect(html).toContain('<th>Fecha</th>');
+    // `<th` sin cerrar: algunas cabeceras llevan title= y no casarían con `<th>`.
+    const ths = (html.match(/<th[\s>]/g) || []).length;
+    expect(ths).toBe(10);
+  });
+
+  it('muestra la fecha promedio de siembra de los tanques del módulo', () => {
+    // TQ1 siembra el 02/07 y TQ2 el 06/07 → promedio 04/07.
     store.globalData = [
-      row('M06', '579', 'TQ1', 1000, '01/07/2026'),
-      row('M06', '579', 'TQ2', 1200, '01/07/2026'),
-      row('M08', '580', 'TQ1', 2000, '01/07/2026'),
+      row('M06', '579', 'TQ1', 4000, '02/07/2026'),
+      row('M06', '579', 'TQ2', 4200, '06/07/2026'),
     ];
     const months = presentMonths();
     const html = prodTableHTML(months, months.length - 1);
-    expect(html).toContain('data-prodgear');   // botón ⚙ en la cabecera
-    expect(html).toContain('data-ptmodal');     // modal presente
-    expect(html).toContain('Toneladas por tanque'); // título del modal
-    // Un input por tanque real con siembra (data-tank), con las claves cor/mod.
-    expect(html).toContain('data-cor="579"');
-    expect(html).toContain('data-mod="M06"');
-    expect(html).toContain('data-tank="TQ1"');
-    expect(html).toContain('data-tank="TQ2"');
+    // fmtShort → "04 jul 26" (es-EC, día 2 dígitos + mes abreviado + año 2 dígitos).
+    expect(html).toMatch(/>04\s+\S*jul\S*\s+26</i);
+  });
+
+  it('la fila "sin datos" abarca las 10 columnas', () => {
+    store.globalData = [row('M06', '579', 'TQ1', 1000, '01/07/2026')];
+    const months = presentMonths();
+    store.globalData = [];
+    const html = prodTableHTML(months, months.length - 1);
+    expect(html).toContain('colspan="10"');
   });
 });

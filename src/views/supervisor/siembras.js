@@ -16,7 +16,10 @@
      · PL/g y Estadío del Bloque B salen de la MISMA línea del transferido
        (PL/g biométrico LARVIA).
      · Superv.   = Transferido ÷ Sembrado × 100 (tope 100).
-     · A cosechar = Σ Transferido − merma (10% por defecto). El denominador
+     · Proyectado (por tanque) = Transferido × (1 − merma): la población que se
+       espera cosechar de ese tanque. Suma exactamente al "A cosechar" del subtotal.
+     · A cosechar = Σ Transferido − merma (10% por defecto, seleccionable 6–15%).
+       El denominador
        de la supervivencia del subtotal usa SOLO los tanques que ya tienen
        transferido (los "en proceso" suman al Sembrado, no a la superv.).
 
@@ -106,9 +109,14 @@ export function computeSiembras(rows, opts = {}) {
     byTank.get(tq).push(r);
   });
 
-  // Ficha por tanque.
+  // Ficha por tanque + población PROYECTADA desde el transferido: lo que se espera
+  // cosechar de ese tanque al descontar la merma elegida. Vive aquí (capa pura) para
+  // que el subtotal "A cosechar" y la columna por tanque salgan de la MISMA regla.
   const tanks = [];
-  byTank.forEach((rs, tq) => { tanks.push({ tq, ...tankInfo(rs) }); });
+  byTank.forEach((rs, tq) => {
+    const info = tankInfo(rs);
+    tanks.push({ tq, ...info, proyectado: info.transferido !== null ? info.transferido * (1 - merma) : null });
+  });
 
   // Agrupar por fecha de siembra (día del N5).
   const groups = new Map(); // dayKey -> { dateMs, tanks: [] }

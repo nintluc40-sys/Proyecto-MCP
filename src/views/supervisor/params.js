@@ -70,6 +70,11 @@ function evalRef(v, val) {
 }
 
 /** Serie diaria (promedio por fecha) de cada variable + estadío por día. */
+// PURA y sin memo a propósito: un render de tanque la invoca cinco veces sobre los mismos
+// datos (iclSeries, paramAlerts, morphHeatmap y buildParamSection, más una sobre las filas
+// del módulo), pero `rows` son las filas de UN tanque —del orden de 45— y la medición dio
+// 38 ms sin caché frente a 40 ms con ella: la redundancia no cuesta nada observable.
+// Si algún día se llamara con el dataset completo, reconsiderar entonces.
 function lvDaily(rows) {
   const byDay = new Map();
   rows.forEach((r) => { const f = gFec(r); if (!f) return; if (!byDay.has(f)) byDay.set(f, []); byDay.get(f).push(r); });

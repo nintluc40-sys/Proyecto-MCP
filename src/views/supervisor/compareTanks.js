@@ -340,8 +340,14 @@ export function setupCompareTanks(root) {
     const sa = statsOf(va), sb = statsOf(vb);
     const pairs = labels.map((_, i) => [va[i], vb[i]]).filter((p) => p[0] !== null && p[1] !== null);
     const avgDiff = pairs.length ? pairs.reduce((s, p) => s + (p[0] - p[1]), 0) / pairs.length : null;
+    // OJO: estos dos contadores son comparaciones CRUDAS (quién tiene el número mayor),
+    // no "quién va mejor". En las variables donde menos es mejor (Deformidad, Estrés,
+    // CV…) tener el valor mayor es el resultado PEOR, así que las etiquetas lo declaran
+    // explícitamente; si no, se leen al revés que el veredicto de compareVerdict().
     const aWins = pairs.filter((p) => p[0] > p[1]).length;
     const bWins = pairs.filter((p) => p[1] > p[0]).length;
+    const qual = (side) => (!vdef.dir ? ''
+      : ` <span class="muted" style="font-weight:600">(${side} ${vdef.dir === 'down' ? 'peor' : 'mejor'})</span>`);
     const r = pearson(pairs);
 
     const labA = sideLabel('A'), labB = sideLabel('B');
@@ -389,8 +395,8 @@ export function setupCompareTanks(root) {
       </div>
       <div class="ctt-cmp">
         <span class="sv-modal-kpi"><b>${avgDiff === null ? '—' : (avgDiff >= 0 ? '+' : '') + avgDiff.toFixed(vdef.dec === 0 ? 0 : 2)}</b>Δ medio A−B</span>
-        <span class="sv-modal-kpi"><b>${aWins}</b>A&gt;B</span>
-        <span class="sv-modal-kpi"><b>${bWins}</b>B&gt;A</span>
+        <span class="sv-modal-kpi" title="Días en que A registró el valor MAYOR (comparación cruda, no veredicto)"><b>${aWins}</b>A&gt;B${qual('A')}</span>
+        <span class="sv-modal-kpi" title="Días en que B registró el valor MAYOR (comparación cruda, no veredicto)"><b>${bWins}</b>B&gt;A${qual('B')}</span>
         <span class="sv-modal-kpi"><b>${r === null ? '—' : r.toFixed(2)}</b>correlación</span>
         <span class="sv-modal-kpi"><b>${pairs.length}</b>${unit} comparables</span>
       </div>`;
@@ -462,8 +468,10 @@ export function setupCompareTanks(root) {
         <td>${s.st.std.toFixed(vdef.dec === 0 ? 0 : 2)}</td><td>${s.st.cv === null ? '—' : s.st.cv.toFixed(1) + '%'}</td><td>${s.st.n}</td>
       </tr>` : '').join('');
 
-    const overlay = ctState.massLayout === 'overlay';
-    const chartsHTML = overlay
+    // `isOverlay`, no `overlay`: este ámbito ya tiene un `overlay` (el elemento .sv-modal
+    // de setupCompareTanks) y sombrearlo dejaba una trampa para el próximo que edite aquí.
+    const isOverlay = ctState.massLayout === 'overlay';
+    const chartsHTML = isOverlay
       ? `<div class="sv-chart-host" style="height:340px"><canvas id="cttMassChart"></canvas></div>`
       : withData.map((s, i) => `<div class="ctt-mass-row">
           <div class="ctt-mass-row-title"><span style="color:${s.color}">▉</span> C${esc(s.cor)} <span class="muted">· media ${fmtV(vdef, s.st ? s.st.mean : null)} · ${s.vals.length} día(s)</span></div>
@@ -495,7 +503,7 @@ export function setupCompareTanks(root) {
     });
     const yTicks = { callback: (v) => fmtV(vdef, v) };
     const xTicks = { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 };
-    if (overlay) {
+    if (isOverlay) {
       makeChart('cttMassChart', {
         type: 'line',
         data: { labels, datasets: withData.map(dsOf) },

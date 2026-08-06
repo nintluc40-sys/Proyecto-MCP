@@ -50,10 +50,10 @@ const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
 // `.filter().sort()`, `modulesOfCorrida` hace `distinct(...).sort()`); si alguien pierde
 // ese `.filter()` intermedio, un `.sort()` reordenaría el array de las 6 vistas a la vez.
 // El test-guardián de prodCalendar.test.js congela esa invariante.
-let _memo = { src: null, larv: null, stats: new Map(), disp: new Map() };
+let _memo = { src: null, larv: null, stats: new Map(), disp: new Map(), years: new Map() };
 function memoRoot() {
   if (_memo.src !== store.globalData) {
-    _memo = { src: store.globalData, larv: null, stats: new Map(), disp: new Map() };
+    _memo = { src: store.globalData, larv: null, stats: new Map(), disp: new Map(), years: new Map() };
   }
   return _memo;
 }
@@ -138,14 +138,48 @@ export function modulesOfCorrida(cor) {
   return distinct(larvRows().filter((r) => getField(r, F.corrida) === cor).map((r) => getField(r, F.modulo))).sort(natCmp);
 }
 
-/** Etiqueta del mes. Para meses virtuales (auto-extensión) continúa la secuencia
- *  de nombres desde el último mes definido (Junio → Julio → … → Diciembre → Enero). */
-export function monthLabelAt(mIdx) {
+/** Año calendario dominante de un mes interno, leído de las FECHAS de sus corridas.
+ *  null si no se puede determinar. Memoizado por identidad de store.globalData. */
+function yearOfMonth(mIdx) {
+  const m = memoRoot();
+  if (m.years.has(mIdx)) return m.years.get(mIdx);
+  const counts = new Map();
+  larvRows().forEach((r) => {
+    const n = +getField(r, F.corrida);
+    if (isNaN(n) || monthIndexOfCorrida(n) !== mIdx) return;
+    const d = parseAnyDate(getField(r, F.fecha));
+    if (!d || isNaN(d)) return;
+    const y = d.getFullYear();
+    counts.set(y, (counts.get(y) || 0) + 1);
+  });
+  let best = null, bestN = 0;
+  counts.forEach((n, y) => { if (n > bestN) { bestN = n; best = y; } });
+  m.years.set(mIdx, best);
+  return best;
+}
+
+/** Nombre del mes sin desambiguar (secuencia Enero…Diciembre, cíclica). */
+function monthNameAt(mIdx) {
   if (MESES_PROD[mIdx]) return MESES_PROD[mIdx].label;
   const lastIdx = MESES_PROD.length - 1;
   const lastNameIdx = MONTH_NAMES.indexOf(MESES_PROD[lastIdx].label);
   if (lastNameIdx < 0 || mIdx < 0) return `Mes ${mIdx + 1}`;
   return MONTH_NAMES[(lastNameIdx + (mIdx - lastIdx)) % 12];
+}
+
+/** Etiqueta del mes. Para meses virtuales (auto-extensión) continúa la secuencia
+ *  de nombres desde el último mes definido (Junio → Julio → … → Diciembre → Enero).
+ *
+ *  A partir del 13.º mes interno (mIdx ≥ 12) los NOMBRES SE REPITEN: sin más contexto,
+ *  dos "Enero" de años distintos quedaban indistinguibles en el navegador ◀▶ de las
+ *  7 vistas que usan esta etiqueta. Desde ahí se añade el año real tomado de las fechas
+ *  de las corridas del mes; si no hay fechas utilizables se cae al número de ciclo, que
+ *  al menos los distingue. Los meses 0–11 conservan su etiqueta exacta de siempre. */
+export function monthLabelAt(mIdx) {
+  const name = monthNameAt(mIdx);
+  if (mIdx < 12) return name;
+  const y = yearOfMonth(mIdx);
+  return y === null ? `${name} (ciclo ${Math.floor(mIdx / 12) + 1})` : `${name} ${y}`;
 }
 
 /** Agrega por tanque la siembra/cosecha/PL-g/supervivencia de un módulo+corrida.
@@ -161,16 +195,23 @@ function modCorStatsCompute(mod, cor) {
   const rsAll = rowsOfModCor(mod, cor);
   const tanks = distinct(rsAll.map((r) => getField(r, F.tanque)));
   let firstSum = 0, lastSum = 0, hasFirst = false, hasLast = false, nSie = 0; const plgs = [];
-  const sieByTank = {}; // tanque → primera población real (>0); base de la densidad de siembra por tanque
+  const sieTimes = []; // fecha (ms) de la siembra de cada tanque → fecha promedio del módulo
   tanks.forEach((tq) => {
     const rs = rsAll.filter((r) => getField(r, F.tanque) === tq)
       .sort((a, b) => (parseAnyDate(getField(a, F.fecha)) || 0) - (parseAnyDate(getField(b, F.fecha)) || 0));
-    let first = null, last = null, plg = null;
+    let first = null, last = null, plg = null, firstDate = null;
     // Siembra = primera población REAL (>0). Cosecha = última población registrada,
     // honrando el 0 (tanque vaciado/agrupado): así no se arrastra el valor anterior.
-    rs.forEach((r) => { const p = parseNum(r, F.poblacion); if (p === null || p < 0) return; if (p > 0 && first === null) first = p; last = p; });
+    rs.forEach((r) => {
+      const p = parseNum(r, F.poblacion); if (p === null || p < 0) return;
+      if (p > 0 && first === null) { first = p; firstDate = parseAnyDate(getField(r, F.fecha)); }
+      last = p;
+    });
     for (let i = rs.length - 1; i >= 0; i--) { const v = parseNum(rs[i], PLGM_KEYS); if (v !== null && v > 0) { plg = v; break; } }
-    if (first !== null) { firstSum += first; hasFirst = true; nSie++; sieByTank[tq] = first; }
+    if (first !== null) {
+      firstSum += first; hasFirst = true; nSie++;
+      if (firstDate && !isNaN(firstDate)) sieTimes.push(firstDate.getTime());
+    }
     if (last !== null) { lastSum += last; hasLast = true; }
     if (plg !== null) plgs.push(plg);
   });
@@ -184,7 +225,12 @@ function modCorStatsCompute(mod, cor) {
   // despachadoFull = TODOS los tanques reales despachados (mismo criterio que el badge
   // "Despachado" de las tarjetas); es el que usa el "Subtotal actual" de Prod. Omarsa.
   const despachadoFull = fullyDispatched(rsAll);
-  // nSie = nº de tanques con siembra (para la densidad de siembra promedio por tanque).
-  // sieByTank = siembra por tanque (para la densidad ponderada por toneladas configurables).
-  return { siembra, cosecha, plg, superv, nSie, sieByTank, despachado, despachadoFull };
+  // siembraFecha = fecha PROMEDIO de siembra del módulo: se toma la fecha de la primera
+  // población real de cada tanque y se promedian. Los tanques de un módulo no siempre se
+  // siembran el mismo día, así que una sola fecha no representaría al conjunto.
+  const siembraFecha = sieTimes.length
+    ? new Date(Math.round(sieTimes.reduce((a, b) => a + b, 0) / sieTimes.length))
+    : null;
+  // nSie = nº de tanques con siembra (denominador de la densidad de siembra por tanque).
+  return { siembra, cosecha, plg, superv, nSie, siembraFecha, despachado, despachadoFull };
 }
