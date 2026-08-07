@@ -72,7 +72,8 @@ function algaeRows() {
 //
 // ⚠ SINCRONIZAR con `algSysCat` en views/visitante/index.js — es una copia literal de esta
 // función (Visitante no importa esta vista para no arrastrarla a su bundle). Si tocas una,
-// TOCA LA OTRA; hay un test que compara ambas sobre el mismo conjunto de entradas.
+// TOCA LA OTRA: `views/visitante/algSysCat.sync.test.js` contrasta las dos sobre el mismo
+// conjunto de entradas y falla si divergen.
 //
 // ⚠ 'MASIVO' (sin dígito) cae en 'Otros' porque /^M\d/ exige número. Es la regla vigente
 // por decisión del laboratorio; se deja tal cual a propósito.

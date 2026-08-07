@@ -13,8 +13,21 @@ import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLab
 import { parseAnyDate } from '../../core/dates.js';
 // Capas de datos PURAS de laboratorio (ya en el bundle base vía la vista Microbiología →
 // no inflan el bundle de Visitante; solo se reutiliza su lógica de umbrales/rangos).
-import { meltRow as micMelt, isAlerta as micIsAlerta } from '../microbiologia/data.js';
-import { calMeasured, calWQI, loadCalRanges } from '../microbiologia/calagua.data.js';
+// `isMicroRow` / `isCalAguaRow` son el criterio ÚNICO del sistema para reconocer esas
+// hojas. Aquí se comparaba `_SheetOrigin` contra la cadena EXACTA, más estricto que el
+// resto de la app. Los módulos ya se importaban, así que reutilizarlos no cuesta bundle.
+//
+// ⚠ PRECISIÓN (auditoría de verificación): la comparación exacta NO estaba rompiendo nada,
+// al contrario de lo que decía antes este comentario. `classifyOrigin` (core/sheets.js:41)
+// NORMALIZA el nombre de pestaña antes de sellar la fila y es el único productor de
+// `_SheetOrigin` —`store.globalData` solo se asigna en sheets.js:304, siempre desde
+// `stampRows`—, así que una pestaña escrita «Microbiologia» ya llegaba aquí como
+// 'Microbiología'. Con los datos reales ambos criterios son EQUIVALENTES.
+// Lo que sí se gana: si algún día cambia la cadena canónica de `classifyOrigin`, este panel
+// no puede desincronizarse en silencio de la vista Microbiología (que seguiría mostrando sus
+// datos mientras aquí `labSummaryBlock` devuelve ''). Es blindaje a futuro, no un fallo vivo.
+import { meltRow as micMelt, isAlerta as micIsAlerta, isMicroRow } from '../microbiologia/data.js';
+import { calMeasured, calWQI, loadCalRanges, isCalAguaRow } from '../microbiologia/calagua.data.js';
 
 // Estado persistente entre re-render (ÍNDICE de mes + métrica del gráfico).
 const vtState = { monthIdx: null, metric: 'superv' };
@@ -105,13 +118,24 @@ function monthSummaryCompute(mIdx, monthSup) {
   // Cobertura de supervisión: módulos revisados / módulos en producción del mes.
   const prodMods = new Set();
   corridasOfMonth(mIdx).forEach((cor) => modulesOfCorrida(cor).forEach((m) => { const n = modNum(m); if (n != null) prodMods.add(n); }));
+  // `_SheetOrigin` se compara contra la cadena EXACTA a propósito en las tres hojas que este
+  // fichero lee sin capa de datos propia: 'Registro_Supervision', 'Biomol' y 'Lab_Algas' son
+  // la salida CANÓNICA de `classifyOrigin` (core/sheets.js:44, 48, 56) y es la misma
+  // comparación que hacen sus vistas dueñas (revisiones/index.js:80,
+  // biomolecular/index.js:1799, algas/index.js:56). Micro y calidad de agua van por predicado
+  // porque su capa de datos ya exporta uno; estas tres no tienen equivalente exportado.
   const revRows = G.filter((r) => r._SheetOrigin === 'Registro_Supervision' && rowMonth(r) === mIdx);
   const revMods = new Set();
   revRows.forEach((r) => { const n = modNum(getField(r, F.modulo)); if (n != null) revMods.add(n); });
   // Cobertura = módulos EN PRODUCCIÓN que fueron revisados (intersección), para que
   // coincida con la ventana de detalle y nunca supere el total (evita "5 de 4").
-  const covY = prodMods.size || revMods.size;
-  const covX = prodMods.size ? [...prodMods].filter((n) => revMods.has(n)).length : revMods.size;
+  // ⚠ SIN respaldo a `revMods`: el fallback `prodMods.size || revMods.size` hacía
+  // covX === covY —"2 de 2" y barra al 100 %— cuando NINGÚN módulo en producción tenía
+  // dígitos en el nombre (`modNum` devuelve null: el caso de "CIO"), justo mientras el
+  // detalle de esa misma tarjeta decía "Sin módulos en producción este mes". covY === 0 es
+  // la señal de "no hay con qué medir" y `summaryBlock` la declara en vez de inventarla.
+  const covY = prodMods.size;
+  const covX = [...prodMods].filter((n) => revMods.has(n)).length;
 
   // Estado de revisiones (tasa de hallazgos por revisión).
   let revTier = 'x', revText = 'Sin datos', revCtx = 'Sin revisiones este mes';
@@ -161,11 +185,14 @@ const ALG_KEYS = {
   descartado: ['Descartado', 'descartado'],
   obs: ['Observaciones', 'observaciones', 'Observación', 'observación'],
 };
-const ALG_SYS_CATS = ['Masivos', 'Premasivos', 'Fundas', 'Carboys', 'PBR', 'Otros'];
-// ⚠ COPIA LITERAL de `sysCat` en views/algas/index.js (no se importa para no arrastrar la
-// vista Algas al bundle base de Visitante). Si tocas una, TOCA LA OTRA; hay un test que
-// compara ambas sobre el mismo conjunto de entradas.
-function algSysCat(s) { const u = String(s || '').trim().toUpperCase(); if (!u) return null; if (u.startsWith('PBR')) return 'PBR'; if (u.startsWith('PM')) return 'Premasivos'; if (/^F[MP]?\d*$/.test(u)) return 'Fundas'; if (/^C\d/.test(u)) return 'Carboys'; if (/^M\d/.test(u)) return 'Masivos'; return 'Otros'; }
+// ⚠ COPIA LITERAL de `SYS_CATS`/`sysCat` en views/algas/index.js (no se importan para no
+// arrastrar la vista Algas al bundle base de Visitante). Si tocas una, TOCA LA OTRA.
+// EXPORTADAS solo para que `algSysCat.sync.test.js` pueda contrastarlas con el original
+// sobre el mismo conjunto de entradas: antes ambos ficheros afirmaban tener ese test y no
+// existía —ni podía existir, porque esto era privado—, así que la salvaguarda que decían
+// tener era ficticia y las copias podían divergir sin que nada saltara.
+export const ALG_SYS_CATS = ['Masivos', 'Premasivos', 'Fundas', 'Carboys', 'PBR', 'Otros'];
+export function algSysCat(s) { const u = String(s || '').trim().toUpperCase(); if (!u) return null; if (u.startsWith('PBR')) return 'PBR'; if (u.startsWith('PM')) return 'Premasivos'; if (/^F[MP]?\d*$/.test(u)) return 'Fundas'; if (/^C\d/.test(u)) return 'Carboys'; if (/^M\d/.test(u)) return 'Masivos'; return 'Otros'; }
 const algIsDesc = (r) => /^s[ií]$/i.test(String(getField(r, ALG_KEYS.descartado)).trim());
 function algMonthOf(r) { const n = parseInt(String(getField(r, ALG_KEYS.corrida)).replace(/\D/g, ''), 10); return Number.isNaN(n) ? -1 : monthIndexOfCorrida(n); }
 function algRowsOfMonth(mIdx) { return store.globalData.filter((r) => r._SheetOrigin === 'Lab_Algas' && algMonthOf(r) === mIdx); }
@@ -250,11 +277,11 @@ function labSummary(mIdx) {
 }
 function labSummaryCompute(mIdx) {
   const cm = labCalMonth(mIdx);
-  const micRows = store.globalData.filter((r) => r._SheetOrigin === 'Microbiología' && inCalMonth(r, cm));
+  const micRows = store.globalData.filter((r) => isMicroRow(r) && inCalMonth(r, cm));
   const micAlert = micRows.filter((r) => micMelt(r).some((m) => micIsAlerta(m.nivel))).length;
   const micPct = micRows.length ? Math.round(micAlert / micRows.length * 100) : null;
   const micTier = !micRows.length ? 'x' : micAlert === 0 ? 'v' : micPct <= 20 ? 'a' : 'r';
-  const calRows = store.globalData.filter((r) => r._SheetOrigin === 'Calidad de Agua' && inCalMonth(r, cm));
+  const calRows = store.globalData.filter((r) => isCalAguaRow(r) && inCalMonth(r, cm));
   const ranges = loadCalRanges();
   const measures = calRows.flatMap((r) => calMeasured(r, ranges));
   const evaluable = measures.filter((m) => m.estado === 'dentro' || m.estado === 'fuera');
@@ -282,10 +309,14 @@ function labSummaryBlock(mIdx) {
 // `key` (opcional) la vuelve clicable → abre la ventana de detalle.
 function sumCard(icon, label, valueHtml, context, key, accent) {
   const interactive = key ? ` data-sum="${key}" role="button" tabindex="0" title="Clic para ver el detalle"` : '';
-  const cursor = key ? ';cursor:pointer' : '';
   const chevron = key ? ' <span style="opacity:.45">›</span>' : '';
-  const accentStyle = accent ? `;border-top:3px solid ${accent}` : '';
-  return `<div class="vt-sum-card"${interactive} style="flex:1 1 160px;min-width:160px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:14px;padding:13px 15px;box-shadow:0 1px 2px rgba(0,0,0,.04)${cursor}${accentStyle}">
+  // Lo estático vive en `.vt-sum-card` (la clase estaba en el marcado SIN ninguna regla CSS
+  // en todo el repo: era un gancho muerto y la caja se dibujaba entera con `style=""`).
+  // Queda inline solo el acento, que varía por bloque; el `border-top` inline sigue ganando
+  // al `border` de la clase igual que antes ganaba al `border` inline que lo precedía.
+  // El puntero pasa a `.vt-sum-card[data-sum]`: `data-sum` está exactamente cuando hay `key`.
+  const accentStyle = accent ? ` style="border-top:3px solid ${accent}"` : '';
+  return `<div class="vt-sum-card"${interactive}${accentStyle}>
     <div style="font-size:12px;color:var(--c-text-soft);font-weight:600">${icon} ${esc(label)}${chevron}</div>
     <div style="font-size:19px;font-weight:800;margin:5px 0;color:var(--c-text);line-height:1.2">${valueHtml}</div>
     <div style="font-size:11px;color:var(--c-text-muted)">${esc(context)}</div>
@@ -296,13 +327,17 @@ function sumCard(icon, label, valueHtml, context, key, accent) {
 function summaryBlock(mIdx, monthSup, label) {
   const s = monthSummary(mIdx, monthSup);
   const covBar = s.covY ? Math.round(s.covX / s.covY * 100) : 0;
-  const covVal = `${s.covX} de ${s.covY}<div style="height:6px;background:var(--c-surface-2);border-radius:4px;margin-top:5px;overflow:hidden"><div style="height:100%;width:${covBar}%;background:#3F51B5"></div></div>`;
+  // Sin módulos en producción no hay cobertura que medir: se declara, no se inventa un 100 %
+  // (así la tarjeta dice lo mismo que el detalle que ella misma abre).
+  const covVal = s.covY
+    ? `${s.covX} de ${s.covY}<div style="height:6px;background:var(--c-surface-2);border-radius:4px;margin-top:5px;overflow:hidden"><div style="height:100%;width:${covBar}%;background:#3F51B5"></div></div>`
+    : semChip('x', 'Sin módulos en producción');
   return `<div class="card vt-card">
     <div class="vt-card-title">📊 Resumen del mes · ${esc(label)} <span class="muted" style="font-weight:600;font-size:12px">· panorama general</span></div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
       ${sumCard('🦐', 'Calidad de las larvas', semChip(s.calTier, s.calText), 'Según la supervivencia promedio', 'calidad')}
       ${sumCard('📈', 'Supervivencia promedio', fmtPct(monthSup), 'Cosecha ÷ siembra del mes', 'superv')}
-      ${sumCard('🔍', 'Cobertura de supervisión', covVal, 'módulos revisados', 'cobertura')}
+      ${sumCard('🔍', 'Cobertura de supervisión', covVal, s.covY ? 'módulos revisados' : 'no hay cobertura que medir', 'cobertura')}
       ${sumCard('⚠️', 'Estado de revisiones', semChip(s.revTier, s.revText), s.revCtx, 'revisiones')}
       ${sumCard('🧬', 'Sanidad (laboratorio)', semChip(s.bioTier, s.bioText), s.bioCtx, 'sanidad')}
       ${sumCard('🧪', 'Análisis realizados', String(s.bioSamples), 'muestras de laboratorio', 'analisis')}
@@ -552,7 +587,7 @@ function sumDetail(key, mIdx, monthSup) {
 /** HTML del overlay de detalle (una sola vez por montaje de la vista). */
 function sumModalHTML() {
   return `<div id="vtSumModal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(15,23,42,.45);align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto">
-    <div style="background:var(--c-surface);border-radius:16px;max-width:680px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+    <div id="vtSumCard" role="dialog" aria-modal="true" aria-labelledby="vtSumTitle" tabindex="-1" style="background:var(--c-surface);border-radius:16px;max-width:680px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:15px 20px;border-bottom:1px solid var(--c-border-soft)">
         <span id="vtSumTitle" style="font-size:16px;font-weight:800;color:var(--c-text)"></span>
         <button id="vtSumClose" style="border:none;background:var(--c-surface-2);border-radius:8px;padding:6px 11px;cursor:pointer;font-size:13px;color:var(--c-text-soft)">✕ Cerrar</button>
@@ -563,6 +598,25 @@ function sumModalHTML() {
 }
 
 let vtEscHandler = null;
+let vtLastFocus = null; // a dónde devolver el foco al cerrar el detalle
+
+// Elementos enfocables VISIBLES del diálogo (los de ramas ocultas no deben recibir Tab).
+const VT_FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+const vtFocusables = (el) => [...el.querySelectorAll(VT_FOCUSABLE)].filter((n) => !n.closest('[hidden]'));
+
+/** Tab circular DENTRO del diálogo. Sin esto se tabulaba a las pestañas de navegación por
+ *  detrás del velo y desde ahí se podía cambiar de vista con el detalle todavía montado. */
+function vtTrapTab(e) {
+  if (e.key !== 'Tab') return;
+  const card = document.getElementById('vtSumCard');
+  if (!card) return;
+  const f = vtFocusables(card);
+  if (!f.length) { e.preventDefault(); card.focus?.(); return; }
+  const first = f[0], last = f[f.length - 1], active = document.activeElement;
+  if (e.shiftKey && (active === first || active === card)) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+}
+
 function closeSumModal() {
   const m = document.getElementById('vtSumModal');
   // Solo se toca `body.modal-open` si era ESTE modal el que estaba abierto. El handler
@@ -578,9 +632,15 @@ function closeSumModal() {
   // Libera los gráficos del detalle (micro/agua) al cerrar: no dejar charts huérfanos.
   destroyChart('vtLabMicroChart'); destroyChart('vtLabAguaGauge');
   if (vtEscHandler) { document.removeEventListener('keydown', vtEscHandler); vtEscHandler = null; }
+  if (m) m.removeEventListener('keydown', vtTrapTab);
+  // Devuelve el foco a la tarjeta que abrió el detalle (si sigue en el documento): sin
+  // esto el foco quedaba en un nodo ya oculto y el teclado volvía al principio de la página.
+  if (estabaAbierto && vtLastFocus && vtLastFocus.isConnected) vtLastFocus.focus?.();
+  vtLastFocus = null;
 }
-function openSumModal(key, mIdx, monthSup) {
+function openSumModal(key, mIdx, monthSup, trigger) {
   const m = document.getElementById('vtSumModal'); if (!m) return;
+  vtLastFocus = trigger || document.activeElement;
   // Libera un gráfico previo del detalle antes de reemplazar su canvas (evita huérfanos).
   destroyChart('vtLabMicroChart'); destroyChart('vtLabAguaGauge');
   const { title, html, draw } = sumDetail(key, mIdx, monthSup);
@@ -597,6 +657,12 @@ function openSumModal(key, mIdx, monthSup) {
   if (vtEscHandler) document.removeEventListener('keydown', vtEscHandler);
   vtEscHandler = (e) => { if (e.key === 'Escape') closeSumModal(); };
   document.addEventListener('keydown', vtEscHandler);
+  // Trampa de Tab + foco DENTRO del diálogo. `removeEventListener` previo por si se
+  // reabre sin cerrar (Enter sobre la tarjeta, que conserva el foco tras el primer clic).
+  m.removeEventListener('keydown', vtTrapTab);
+  m.addEventListener('keydown', vtTrapTab);
+  const card = document.getElementById('vtSumCard');
+  if (card) (vtFocusables(card)[0] || card).focus?.();
 }
 
 export function visitanteView(root) {
@@ -642,7 +708,7 @@ export function visitanteView(root) {
       <div class="card vt-card">
         <div class="prod-nav">
           <button class="prod-nav-btn" data-vtprev ${pos <= 0 ? 'disabled' : ''} aria-label="Mes anterior">◀</button>
-          <div class="prod-title">📅 <b>${esc(label)}</b> <span class="muted">(${d.nCorridas} corrida${d.nCorridas === 1 ? '' : 's'})</span></div>
+          <div class="prod-title">📅 <b data-vtmonthlbl>${esc(label)}</b> <span class="muted" data-vtcorrlbl>(${d.nCorridas} corrida${d.nCorridas === 1 ? '' : 's'})</span></div>
           <button class="prod-nav-btn" data-vtnext ${pos >= months.length - 1 ? 'disabled' : ''} aria-label="Mes siguiente">▶</button>
         </div>
         ${slider}
@@ -709,11 +775,29 @@ export function visitanteView(root) {
   function wire() {
     wrap.querySelector('[data-vtprev]')?.addEventListener('click', () => { if (pos > 0) { pos--; paint(); } });
     wrap.querySelector('[data-vtnext]')?.addEventListener('click', () => { if (pos < months.length - 1) { pos++; paint(); } });
-    wrap.querySelector('[data-vtslider]')?.addEventListener('input', (e) => { pos = +e.target.value; paint(); });
+    // El deslizador NO puede re-renderizar en `input`: `paint()` reemplaza wrap.innerHTML,
+    // así que el propio nodo que se está arrastrando se arranca del DOM en el primer
+    // movimiento y el arrastre se corta — cada agarre avanzaba un solo paso. `input` se
+    // queda con el rótulo del mes (realimentación inmediata y barata) y el re-render se
+    // hace en `change`, que en un <input type="range"> dispara al soltar. Mismo patrón que
+    // el navegador de meses de la Vista Ejecutiva. El recuento de corridas se blanquea
+    // durante el arrastre en vez de quedarse con el del mes anterior, que sería mentira.
+    const slider = wrap.querySelector('[data-vtslider]');
+    if (slider) {
+      const monthLbl = wrap.querySelector('[data-vtmonthlbl]');
+      const corrLbl = wrap.querySelector('[data-vtcorrlbl]');
+      slider.addEventListener('input', (e) => {
+        const m = months[+e.target.value];
+        if (m === undefined) return;
+        if (monthLbl) monthLbl.textContent = monthLabelAt(m);
+        if (corrLbl) corrLbl.textContent = '';
+      });
+      slider.addEventListener('change', (e) => { pos = +e.target.value; paint(); });
+    }
     wrap.querySelectorAll('[data-vtmetric]').forEach((b) => b.addEventListener('click', () => { vtState.metric = b.dataset.vtmetric; paint(); }));
     // Tarjetas del resumen → ventana de detalle (clic o Enter/Espacio).
     wrap.querySelectorAll('[data-sum]').forEach((c) => {
-      const open = () => openSumModal(c.dataset.sum, months[pos], monthData(months[pos]).monthSup);
+      const open = () => openSumModal(c.dataset.sum, months[pos], monthData(months[pos]).monthSup, c);
       c.addEventListener('click', open);
       c.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
     });

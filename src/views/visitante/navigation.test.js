@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 // Test de regresión de navegación de la vista Visitante: renderiza con datos
 // sintéticos (Larvicultura + Registro_Supervisión + Biomol + Lab_Algas del mismo mes)
-// y ejercita navegación de mes, toggle de métrica y las 8 tarjetas de detalle.
+// y ejercita navegación de mes, toggle de métrica y las 10 tarjetas de detalle
+// (6 del resumen del mes + 2 de laboratorio + 2 de microalgas).
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../core/charts.js', () => ({
