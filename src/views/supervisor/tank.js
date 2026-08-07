@@ -10,10 +10,18 @@ import { makeChart, destroyChart } from '../../core/charts.js';
 import { getField, F } from '../../core/fields.js';
 import { buildParamSection, iclSeries, paramAlerts, morphHeatmap, linForecast } from './params.js';
 import { tankColorInfo } from '../../core/aguaColor.js';
+import { THRESHOLDS } from '../../config.js';
 
 const { gFec, gOD, gTmp, gPop, gSal } = getters;
 const gHora = (r) => getField(r, F.hora);
 const gColor = (r) => getField(r, ['Color', 'color', 'COLOR']);
+const gStage = (r) => getField(r, ['Estadío', 'Estadio', 'estadío', 'estadio']);
+
+// Objetivo de supervivencia del gráfico: el MISMO corte del semáforo del sistema
+// (THRESHOLDS.sv.bueno). Estaba cableado a 60 mientras el semáforo corta en 70, así que un
+// tanque al 65 % recibía «✓ objetivo» en el tooltip del gráfico y, tres líneas más arriba,
+// el punto amarillo «Regular» del semáforo: dos veredictos opuestos en la misma pantalla.
+const SV_TARGET = THRESHOLDS.sv.bueno;
 
 // 12 tomas estándar cada 2 h, en el orden 2 AM → 12 AM (medianoche al final).
 export const STD_HRS = ['2:00:00', '4:00:00', '6:00:00', '8:00:00', '10:00:00', '12:00:00', '14:00:00', '16:00:00', '18:00:00', '20:00:00', '22:00:00', '0:00:00'];
@@ -299,11 +307,15 @@ export function renderTank(ctx, mod, tq) {
   // Se construye al ABRIR el modal, no en el render: es una lista completa (una tarjeta
   // por observación de toda la corrida) que la mayoría de visitas al tanque nunca llega
   // a mirar. El botón ya muestra el recuento sin necesidad del marcado.
+  // El estadío de cada tarjeta es el de SU PROPIA fila, no el del tanque hoy: antes se
+  // anteponía `s.estadio` (el más reciente del tanque) y toda la bitácora salía rotulada
+  // con el estadío actual, de modo que una observación de mayo tomada en Z3 aparecía como
+  // «PL8». Si la fila no trae estadío, no se inventa: se deja en blanco.
   const obsListHTML = () => obsRows.length
     ? `<div class="sv-hist-count">${obsRows.length} observación(es)</div>` + obsRows.map((r) => `
         <div class="sv-hist-item">
           <span class="sv-hist-date">${esc(gFec(r) || '—')}</span>
-          <div class="sv-hist-meta">${esc(s.estadio || getField(r, ['Estadío', 'Estadio', 'estadío', 'estadio']) || '')}${getField(r, F.corrida) ? ' · C' + esc(getField(r, F.corrida)) : ''}</div>
+          <div class="sv-hist-meta">${esc(gStage(r) || '')}${getField(r, F.corrida) ? ' · C' + esc(getField(r, F.corrida)) : ''}</div>
           <p class="sv-hist-text">${esc(getField(r, OBS_KEYS))}</p>
         </div>`).join('')
     : '<div class="empty-state">Sin observaciones registradas para este tanque.</div>';
@@ -406,17 +418,16 @@ export function renderTank(ctx, mod, tq) {
     // Estadío por fecha (para los tooltips de Población/Supervivencia/Salinidad): última
     // lectura no vacía del día en las filas de larvicultura del tanque. El tooltip lo
     // muestra debajo de la fecha (afterTitle) y antes del valor.
-    const gStage = (r) => getField(r, ['Estadío', 'Estadio', 'estadío', 'estadio']);
     const stageByDate = new Map();
     [...s.lRows].sort((a, b) => (parseAnyDate(gFec(a)) || 0) - (parseAnyDate(gFec(b)) || 0))
       .forEach((r) => { const f = gFec(r); const st = gStage(r); if (f && st) stageByDate.set(f, st); });
     const stageTip = (items) => { const st = items && items[0] ? stageByDate.get(items[0].label) : null; return st ? 'Estadío: ' + st : ''; };
-    // Banda objetivo de Supervivencia: zona verde ≥ 60 % + línea de umbral (TQ3).
+    // Banda objetivo de Supervivencia: zona verde ≥ SV_TARGET + línea de umbral (TQ3).
     const svBandPlugin = {
       id: 'svSvBand',
       beforeDatasetsDraw(chart) {
         const y = chart.scales.y, ca = chart.chartArea; if (!y || !ca) return;
-        const py = y.getPixelForValue(60); if (isNaN(py)) return;
+        const py = y.getPixelForValue(SV_TARGET); if (isNaN(py)) return;
         const cx = chart.ctx; cx.save();
         cx.fillStyle = 'rgba(46,125,50,.10)';
         cx.fillRect(ca.left, ca.top, ca.right - ca.left, Math.max(0, py - ca.top));
@@ -464,7 +475,7 @@ export function renderTank(ctx, mod, tq) {
           type: 'line',
           data: { labels: sv.labels, datasets: [{ label: _svNorm ? 'Supervivencia normalizada (%)' : 'Supervivencia (%)', data, borderColor: '#2E7D32', backgroundColor: 'rgba(46,125,50,.12)', tension: _svNorm ? .2 : .3, fill: true, pointRadius: 2 }] },
           options: { responsive: true, maintainAspectRatio: false, scales: { y: { suggestedMin: 50, suggestedMax: 100, ticks: { callback: (v) => v + '%' } }, x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 8 } } },
-            plugins: { legend: { display: false }, tooltip: { callbacks: { afterTitle: stageTip, afterLabel: (c) => (c.parsed.y == null ? '' : (c.parsed.y >= 60 ? '✓ ≥ 60% objetivo' : '! < 60% objetivo') + (_svNorm && sv.values[c.dataIndex] != null ? ' · registro: ' + raw1(sv.values[c.dataIndex]) : '')) } } } },
+            plugins: { legend: { display: false }, tooltip: { callbacks: { afterTitle: stageTip, afterLabel: (c) => (c.parsed.y == null ? '' : (c.parsed.y >= SV_TARGET ? `✓ ≥ ${SV_TARGET}% objetivo` : `! < ${SV_TARGET}% objetivo`) + (_svNorm && sv.values[c.dataIndex] != null ? ' · registro: ' + raw1(sv.values[c.dataIndex]) : '')) } } } },
           plugins: [svBandPlugin],
         };
       },
@@ -696,7 +707,20 @@ export function renderTank(ctx, mod, tq) {
         // SV pop-based (coherente con el KPI y el gráfico de Supervivencia).
         const svv = popv.map((p) => (p !== null && s.popFirst && s.popFirst > 0) ? Math.min((p / s.popFirst) * 100, 100) : null);
         const H = 7;
-        const svF = linForecast(svv, H), popF = linForecast(popv, H);
+        const lastSv = [...svv].reverse().find((v) => v != null);
+        // La SUPERVIVENCIA no puede crecer: no hay natalidad en el cultivo. Es la misma
+        // regla física que aplica la proyección del módulo (`rate = Math.min(b, 0)` en
+        // moduleTrends.js), y aquí faltaba: con el ruido del registro manual la recta podía
+        // salir con pendiente positiva y el pronóstico prometía una recuperación imposible,
+        // rotulada además «↗ subiendo». Si el ajuste sube se proyecta PLANO desde el último
+        // dato real —no desde el valor ajustado—, que es lo más que cabe afirmar.
+        // La POBLACIÓN sí conserva su recta: es una estimación manual y la propia vista
+        // advierte de sus picos, así que un repunte ahí es plausible como dato, no imposible.
+        const svFit = linForecast(svv, H);
+        const svF = (svFit && svFit.slope > 0 && lastSv != null)
+          ? { slope: 0, intercept: lastSv, future: Array(H).fill(lastSv), predict: () => lastSv }
+          : svFit;
+        const popF = linForecast(popv, H);
         const futLabels = Array.from({ length: H }, (_, k) => `+${k + 1}d`);
         const labels = [...fdays, ...futLabels];
         const histLen = fdays.length;
@@ -728,7 +752,6 @@ export function renderTank(ctx, mod, tq) {
             plugins: { legend: { labels: { boxWidth: 12 } } },
           },
         });
-        const lastSv = [...svv].reverse().find((v) => v != null);
         const lastPop = [...popv].reverse().find((v) => v != null);
         const trend = (slope) => slope == null ? '—' : slope > 0.05 ? '↗ subiendo' : slope < -0.05 ? '↘ bajando' : '→ estable';
         kpisEl.innerHTML = [

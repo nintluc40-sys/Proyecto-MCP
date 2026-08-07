@@ -50,10 +50,10 @@ const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
 // `.filter().sort()`, `modulesOfCorrida` hace `distinct(...).sort()`); si alguien pierde
 // ese `.filter()` intermedio, un `.sort()` reordenaría el array de las 6 vistas a la vez.
 // El test-guardián de prodCalendar.test.js congela esa invariante.
-let _memo = { src: null, larv: null, stats: new Map(), disp: new Map(), years: new Map() };
+let _memo = { src: null, larv: null, stats: new Map(), disp: new Map(), years: new Map(), mods: new Map() };
 function memoRoot() {
   if (_memo.src !== store.globalData) {
-    _memo = { src: store.globalData, larv: null, stats: new Map(), disp: new Map(), years: new Map() };
+    _memo = { src: store.globalData, larv: null, stats: new Map(), disp: new Map(), years: new Map(), mods: new Map() };
   }
   return _memo;
 }
@@ -133,9 +133,21 @@ export function corridasOfMonth(mIdx) {
   return [...set].sort((a, b) => (+a) - (+b));
 }
 
-/** Módulos (con datos) de una corrida, en orden natural. */
+/** Módulos (con datos) de una corrida, en orden natural. Memoizado por identidad de
+ *  `store.globalData`: cada llamada barría el universo de Larvicultura entero (1,7 ms
+ *  medidos con 14.800 filas) y la invocan la Vista Ejecutiva —una vez por corrida del
+ *  mes, en cada render—, Producción Omarsa, Visitante y el Resumen Operativo.
+ *
+ *  Devuelve una COPIA en cada llamada: lo caro es el barrido del store, no el `slice` de
+ *  una lista de 2-4 módulos. Así el contrato no cambia al memoizar —cada consumidor sigue
+ *  recibiendo su propio array— y un `.sort()` in situ de cualquiera de las 4 vistas no
+ *  puede reordenarle la lista a las otras tres. */
 export function modulesOfCorrida(cor) {
-  return distinct(larvRows().filter((r) => getField(r, F.corrida) === cor).map((r) => getField(r, F.modulo))).sort(natCmp);
+  const m = memoRoot();
+  if (!m.mods.has(cor)) {
+    m.mods.set(cor, distinct(larvRows().filter((r) => getField(r, F.corrida) === cor).map((r) => getField(r, F.modulo))).sort(natCmp));
+  }
+  return m.mods.get(cor).slice();
 }
 
 /** Año calendario dominante de un mes interno, leído de las FECHAS de sus corridas.

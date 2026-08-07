@@ -2,16 +2,20 @@
    SUPERVISOR · Resumen Operativo del Módulo
    ============================================================ */
 import { modStats, tankStats, tanksOf, getters } from './stats.js';
-import { moduleSvPopSeries, moduleHourlyDates, moduleHourly, moduleDayKpis, moduleDayTankReadings, cosechaEstimate, projectMetric } from './moduleTrends.js';
+import { moduleSvPopSeries, modulePlgSeries, moduleHourlyDates, moduleHourly, moduleDayKpis, moduleDayTankReadings, cosechaEstimate, projectMetric } from './moduleTrends.js';
 import { HR_LABELS } from './tank.js';
 import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, kpiTecnicos, breadcrumb, bindModal } from './ui.js';
-import { computeSiembras } from './siembras.js';
+import { computeSiembras, computeCorridaSiembras } from './siembras.js';
 import { toast } from '../../ui/toast.js';
 import { downloadTrazabilidad, moduleDateRange } from './trazabilidad.js';
 import { FICHA_IDS, fichaLabel } from './fichaPdf.js';
 import { svLevel, odLevel, tmpLevel, levelColor, levelLabel, esc } from '../../core/format.js';
 import { store } from '../../core/store.js';
 import { getField, F } from '../../core/fields.js';
+// Qué módulos forman una corrida: criterio ÚNICO del sistema, el mismo con el que la
+// Vista Ejecutiva arma sus tarjetas. Derivarlo aquí por separado garantizaría que algún
+// día el «Total de la corrida» sumara un juego de módulos distinto al que se ve arriba.
+import { modulesOfCorrida } from '../../core/prodCalendar.js';
 import { parseAnyDate, fmtShort, dayNum, rangeLabel } from '../../core/dates.js';
 import { desinfeccionDetalle } from './desinfeccion.js';
 import { iclSeries } from './params.js';
@@ -997,10 +1001,18 @@ const SIE_MERMAS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 /** Cabecera del modal: KPIs de contexto + selector de merma (no se re-renderiza al
  *  cambiar el %, para que el <select> no pierda el foco a mitad de interacción). */
-function svSiembrasHeadHTML(data, mod, corrida, tecnicos) {
+function svSiembrasHeadHTML(data, mod, corrida, tecnicos, corrMods) {
   const mermaPct = Math.round(data.merma * 100);
   const tecLbl = (tecnicos && tecnicos.length) ? esc(tecnicos.join(' · ')) : '—';
   const tecs = tecnicos && tecnicos.length > 1;
+  // El botón solo existe si hay OTRO módulo con el que sumar: con un único módulo la
+  // fila de corrida repetiría cifra por cifra el total de arriba y haría dudar de si
+  // están bien. Los módulos van en el título para saber qué se está sumando sin abrirlo.
+  const others = (corrMods || []).filter((m) => m !== mod);
+  const corrBtn = others.length
+    ? `<button type="button" class="sv-sie-corrbtn" data-sie-corrida aria-pressed="false"
+        title="Añade una fila con el total de la corrida C${esc(corrida)}: este módulo sumado a ${others.length === 1 ? 'el módulo ' : 'los módulos '}${esc(others.join(', '))}">🔗 Total de la corrida</button>`
+    : '';
   return `<div class="sv-modal-kpis">
       <span class="sv-modal-kpi"><b>${tecLbl}</b>técnico${tecs ? 's' : ''}</span>
       <span class="sv-modal-kpi"><b>${esc(mod)}</b>módulo</span>
@@ -1013,11 +1025,30 @@ function svSiembrasHeadHTML(data, mod, corrida, tecnicos) {
           ${SIE_MERMAS.map((p) => `<option value="${p}"${p === mermaPct ? ' selected' : ''}>−${p}%</option>`).join('')}
         </select>
       </label>
+      ${corrBtn}
     </div>`;
 }
 
-/** Cuerpo recalculable: tabla + nota. Se vuelve a pintar al cambiar la merma. */
-function svSiembrasContentHTML(data, mod, corrida) {
+/** Bloque «Total de la corrida»: una línea tenue por módulo + la fila agregada.
+ *  Se pinta con el MISMO `svSieRollupRow` que los subtotales y el total de módulo, así
+ *  las columnas cuadran de arriba abajo y ninguna cifra se deriva por otro camino. */
+function svSieCorridaRowsHTML(corr, corrida, mod) {
+  if (!corr) return '';
+  const breakdown = corr.modules.map((m) => svSieRollupRow(
+    m.total,
+    `· Módulo ${m.mod}${m.mod === mod ? ' (este)' : ''}`,
+    'sv-sie-cormod',
+  )).join('');
+  return breakdown + svSieRollupRow(
+    corr.total,
+    `Total de la corrida${corrida ? ' C' + corrida : ''}`,
+    'sv-sie-cortotal',
+  );
+}
+
+/** Cuerpo recalculable: tabla + nota. Se vuelve a pintar al cambiar la merma.
+ *  `corr` (opcional) = resultado de `computeCorridaSiembras`; null → sin fila de corrida. */
+function svSiembrasContentHTML(data, mod, corrida, corr) {
   const mermaPct = Math.round(data.merma * 100);
   const body = data.nSiembras
     ? `<div class="sv-sie-wrap">
@@ -1043,15 +1074,16 @@ function svSiembrasContentHTML(data, mod, corrida) {
           </tbody>
           <tfoot>
             ${svSieRollupRow(data.total, `Total módulo ${mod}`, 'sv-sie-total')}
+            ${svSieCorridaRowsHTML(corr, corrida, mod)}
           </tfoot>
         </table>
       </div>
-      <div class="sv-modal-note">🌱 Sembrado = población del primer registro <b>N5</b> · <b>Transferido</b> = última población registrada <b>antes del despacho</b> (si el módulo aún no despacha, la más reciente) y el Estadío es el de esa misma línea · <b>Superv.</b> = Transferido ÷ Sembrado, la supervivencia real (no la mueve la merma) · <b>Proyectado</b> = Transferido − ${mermaPct}% (suma al «A cosechar») · <b>Superv. proy.</b> = la real menos ese ${mermaPct}%, lo que se espera al cosechar. La supervivencia de los subtotales solo cuenta los tanques con Transferido registrado (los «en proceso» aún no).</div>`
+      <div class="sv-modal-note">🌱 Sembrado = población del primer registro <b>N5</b> · <b>Transferido</b> = última población registrada <b>antes del despacho</b> (si el módulo aún no despacha, la más reciente) y el Estadío es el de esa misma línea · <b>Superv.</b> = Transferido ÷ Sembrado, la supervivencia real (no la mueve la merma) · <b>Proyectado</b> = Transferido − ${mermaPct}% (suma al «A cosechar») · <b>Superv. proy.</b> = la real menos ese ${mermaPct}%, lo que se espera al cosechar. La supervivencia de los subtotales solo cuenta los tanques con Transferido registrado (los «en proceso» aún no).${corr ? ` <b>🔗 Total de la corrida</b> = los ${corr.modules.length} módulos de la corrida sumados (${corr.nTanks} tanques); su supervivencia se recalcula sobre el sembrado agregado, no es el promedio de las de cada módulo.` : ''}</div>`
     : `<div class="empty-state" style="padding:30px">Sin siembras registradas para ${esc(mod)}${corrida ? ' · C' + esc(corrida) : ''}.</div>`;
   return body;
 }
 
-function svSiembrasModalHTML(data, mod, corrida, tecnicos) {
+function svSiembrasModalHTML(data, mod, corrida, tecnicos, corrMods) {
   return `<div class="sv-modal" id="svSiembrasModal" data-siembrasmodal>
     <div class="sv-modal-card lv-fs-card">
       <div class="sv-modal-head">
@@ -1059,7 +1091,7 @@ function svSiembrasModalHTML(data, mod, corrida, tecnicos) {
         <button class="sv-modal-x" data-siembras-close aria-label="Cerrar">✕</button>
       </div>
       <div class="sv-modal-body">
-        ${data.nSiembras ? svSiembrasHeadHTML(data, mod, corrida, tecnicos) : ''}
+        ${data.nSiembras ? svSiembrasHeadHTML(data, mod, corrida, tecnicos, corrMods) : ''}
         <div id="svSieContent"></div>
       </div>
     </div>
@@ -1137,6 +1169,10 @@ export function renderModule(ctx, mod) {
   // para no truncar el transferido/cosecha más recientes del módulo.
   const siembrasRows = ctx.larvCM.filter((r) => getField(r, F.modulo) === mod);
   const siembrasData = computeSiembras(siembrasRows);
+  // Módulos que comparten esta corrida (el actual incluido) para la fila «Total de la
+  // corrida». Sin corrida elegida no hay conjunto que sumar: `ctx.larvCM` traería TODAS
+  // las corridas del módulo y el total agregado no significaría nada.
+  const corrMods = corrida ? modulesOfCorrida(corrida) : [];
 
   let h = breadcrumb(col.accent, [
     { label: '← Módulos', nav: 'modules' },
@@ -1160,7 +1196,7 @@ export function renderModule(ctx, mod) {
       ${kpiGlass('🍽️', 'Nutrición IL', fmt1(s.il, '%'))}
       ${kpiGlass('✨', 'Calidad Líp.', fmt1(s.lip, '%'))}
       ${kpiGlass('⚡', '% Actividad', fmt1(s.act, '%'))}
-      ${kpiGlass('🔬', 'PL/g (Larvia)', fmt1(s.plgLarvia))}
+      ${kpiGlass('🔬', 'PL/g (Larvia)', fmt1(s.plgLarvia), 'data-modmetric="plg" role="button" tabindex="0" title="Ver tendencia de PL/g (Larvia) del módulo"')}
       ${kpiGlass('🧹', '% Suciedad', fmt1(s.suc, '%'))}
       ${kpiGlass('📅', 'Días proceso', String(s.dias), 'data-modtrace role="button" tabindex="0" title="Trazabilidad: descargar las fichas del módulo en PDF"')}
       ${kpiGlass('🎯', 'Cosecha', cosechaLabel)}
@@ -1470,7 +1506,7 @@ export function renderModule(ctx, mod) {
   </div>`;
 
   // Modal "Siembras y Cosecha" — se abre desde el KPI Estadío (data-siembras-open).
-  h += svSiembrasModalHTML(siembrasData, mod, corrida, s.tecnicos);
+  h += svSiembrasModalHTML(siembrasData, mod, corrida, s.tecnicos, corrMods);
 
   const after = (root) => {
     // KPI Técnico: despliega la lista completa de responsables dentro de la propia
@@ -1492,11 +1528,28 @@ export function renderModule(ctx, mod) {
     const sieOverlay = root.querySelector('#svSiembrasModal');
     if (sieOverlay) {
       const sieHost = sieOverlay.querySelector('#svSieContent');
-      // Pinta el cuadro con la merma indicada (null = la de `siembrasData`, 10 % por defecto).
-      const renderSie = (pct) => {
+      // Estado del cuadro: merma elegida (6–15 %) y si se muestra el total de la corrida.
+      // Vive fuera del HTML porque la CABECERA no se repinta —para que el <select> no
+      // pierda el foco— y por tanto no puede almacenarlo.
+      const siePctBase = Math.round(siembrasData.merma * 100);
+      let siePct = siePctBase;
+      let sieCorr = false;
+      // Filas por módulo de la corrida. `ctx.larvCM` ya viene filtrado por corrida, así que
+      // para el módulo actual esto devuelve exactamente `siembrasRows`: el total agregado
+      // contiene la MISMA cifra que la fila «Total módulo» de arriba. Se vuelve a filtrar
+      // por corrida de forma explícita para que la garantía no dependa de esa precondición.
+      const corrByModule = () => corrMods.map((m) => ({
+        mod: m,
+        rows: ctx.larvCM.filter((r) => getField(r, F.modulo) === m && getField(r, F.corrida) === corrida),
+      }));
+      // Repinta SOLO el contenido con el estado actual. La merma por defecto reutiliza
+      // `siembrasData`, ya calculado para el encabezado del modal.
+      const renderSie = () => {
         if (!sieHost) return;
-        const d = pct == null ? siembrasData : computeSiembras(siembrasRows, { merma: pct / 100 });
-        sieHost.innerHTML = svSiembrasContentHTML(d, mod, corrida);
+        const merma = siePct / 100;
+        const d = siePct === siePctBase ? siembrasData : computeSiembras(siembrasRows, { merma });
+        const corr = sieCorr ? computeCorridaSiembras(corrByModule(), { merma }) : null;
+        sieHost.innerHTML = svSiembrasContentHTML(d, mod, corrida, corr);
       };
       // Contenido DIFERIDO al abrir (mismo patrón que el Historial de As. Téc.): era la
       // única tabla de modal que se construía entera en cada render del módulo, se abriera
@@ -1504,14 +1557,29 @@ export function renderModule(ctx, mod) {
       let sieRendered = false;
       bindModal(root, sieOverlay, {
         openSel: '[data-siembras-open]', closeSel: '[data-siembras-close]', keyboard: true,
-        onOpen: () => { if (!sieRendered) { sieRendered = true; renderSie(null); } },
+        onOpen: () => { if (!sieRendered) { sieRendered = true; renderSie(); } },
       });
       // Selector de merma (6–15%): recalcula con `computeSiembras` —la misma función pura—
       // y repinta SOLO el contenido, dejando intacta la cabecera para que el <select>
-      // conserve el foco.
+      // conserve el foco. La fila de corrida, si está visible, se recalcula con la MISMA
+      // merma, de modo que su «A cosechar» sigue siendo la suma de los módulos.
       sieOverlay.querySelector('[data-sie-merma]')?.addEventListener('change', (e) => {
         const pct = +e.target.value;
-        if (isFinite(pct)) renderSie(pct);
+        if (!isFinite(pct)) return;
+        siePct = pct;
+        renderSie();
+      });
+      // «Total de la corrida»: alterna la fila agregada de los módulos que comparten la
+      // corrida. El cálculo es DIFERIDO —solo al pulsarlo— porque exige derivar las fichas
+      // de tanque de los demás módulos, que la vista del módulo no necesita para nada más.
+      const corrBtn = sieOverlay.querySelector('[data-sie-corrida]');
+      corrBtn?.addEventListener('click', () => {
+        sieCorr = !sieCorr;
+        // El realce del botón cuelga de [aria-pressed] en el CSS: un solo mecanismo para
+        // el estado visual y el que anuncia el lector de pantalla, que no pueden divergir.
+        corrBtn.setAttribute('aria-pressed', String(sieCorr));
+        corrBtn.textContent = sieCorr ? '🔗 Ocultar total de la corrida' : '🔗 Total de la corrida';
+        renderSie();
       });
     }
 
@@ -1655,11 +1723,15 @@ export function renderModule(ctx, mod) {
       // (moduleTrends.js:125), igual que el explícito de arriba— y se recomputaba entera.
       const projHorizon = (cos && !cos.reached && cos.days > 0) ? cos.days : 7;
       const cosechaReached = !!(cos && cos.reached);
-      const TITLES = { sv: '📈 Tendencia de supervivencia', pop: '👥 Tendencia de población', od: '💧 OD por hora (módulo)', tmp: '🌡️ Temperatura por hora (módulo)' };
-      const trendCfg = (label, data, color, pct) => ({
+      const TITLES = { sv: '📈 Tendencia de supervivencia', pop: '👥 Tendencia de población', plg: '🔬 Tendencia de PL/g (Larvia)', od: '💧 OD por hora (módulo)', tmp: '🌡️ Temperatura por hora (módulo)' };
+      // `opts.labels` permite una serie con SUS PROPIAS fechas (el PL/g solo tiene puntos
+      // los días con biometría, no en todas las fechas de `series`). `opts.zero:false`
+      // deja que el eje arranque donde convenga: forzar el 0 en un rango de 50-70 PL/g
+      // aplanaría la tendencia contra el techo del gráfico.
+      const trendCfg = (label, data, color, pct, opts = {}) => ({
         type: 'line',
-        data: { labels: series.labels, datasets: [{ label, data, borderColor: color, backgroundColor: color + '22', tension: .3, fill: true, pointRadius: 3, spanGaps: true, borderWidth: 2.4 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false }, ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 } }, y: pct ? { min: 0, suggestedMax: 100, ticks: { callback: (v) => v + '%' } } : { beginAtZero: true } } },
+        data: { labels: opts.labels || series.labels, datasets: [{ label, data, borderColor: color, backgroundColor: color + '22', tension: .3, fill: true, pointRadius: 3, spanGaps: true, borderWidth: 2.4 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false }, ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 } }, y: pct ? { min: 0, suggestedMax: 100, ticks: { callback: (v) => v + '%' } } : { beginAtZero: opts.zero !== false } } },
       });
       // Tendencia histórica + tramo punteado de proyección exponencial (2.º dataset que
       // arranca en el último dato real —connectIndex/Value— y continúa con los futuros).
@@ -1703,9 +1775,26 @@ export function renderModule(ctx, mod) {
           noteEl.textContent = showProj ? `${baseNote} (Datos insuficientes para proyectar.)` : baseNote;
         }
       };
+      // Tendencia de PL/g (LARVIA). Sin proyección —a diferencia de SV/Población— y sin
+      // selector de fecha: es una biometría puntual, con un punto por día muestreado.
+      // La serie se calcula la PRIMERA vez que se abre este KPI y se reutiliza después.
+      let plgSeries = null;
+      const drawPlg = () => {
+        controls.style.display = 'none';
+        projBtn.style.display = 'none';
+        if (!plgSeries) plgSeries = modulePlgSeries(ctx, mod, corrida);
+        if (!plgSeries.labels.length) {
+          destroyChart('svModMetricCanvas');
+          noteEl.textContent = 'Sin registros de PL/g (Larvia) en el módulo para el periodo seleccionado.';
+          return;
+        }
+        makeChart('svModMetricCanvas', trendCfg('PL/g (Larvia)', plgSeries.plg, '#00695C', false, { labels: plgSeries.labels, zero: false }));
+        noteEl.innerHTML = `PL/g biométrico (LARVIA) del módulo: cada punto es el promedio <b>entre tanques</b> de las lecturas de ese día. Solo aparecen las <b>${plgSeries.labels.length}</b> fecha${plgSeries.labels.length !== 1 ? 's' : ''} con biometría — el PL/g se mide, no se arrastra. El KPI del banner promedia la <b>última</b> lectura de cada tanque, que pueden ser de días distintos.`;
+      };
       const draw = () => {
         if (curMetric === 'sv') drawTrend(true);
         else if (curMetric === 'pop') drawTrend(false);
+        else if (curMetric === 'plg') drawPlg();
         else { projBtn.style.display = 'none'; controls.style.display = ''; noteEl.textContent = 'Promedio del módulo en las 12 tomas cada 2 h del día seleccionado.'; const g = curMetric === 'od' ? gOD : gTmp; const c = curMetric === 'od' ? '#1E88E5' : '#F4511E'; makeChart('svModMetricCanvas', hourlyCfg(curMetric === 'od' ? 'OD (mg/L)' : 'T° (°C)', moduleHourly(ctx, mod, corrida, g, dateSel.value), c)); }
       };
       dateSel.addEventListener('change', () => { if (curMetric === 'od' || curMetric === 'tmp') draw(); });

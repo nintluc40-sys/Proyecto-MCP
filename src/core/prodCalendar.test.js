@@ -237,6 +237,48 @@ describe('prodCalendar · guardián: agregados estables e independientes del ord
     expect(modCorStats('M12', '3').siembra).toBe(900);
   });
 
+  /* `modulesOfCorrida` pasó a estar memoizada, así que su resultado queda cacheado entre
+     la Vista Ejecutiva, el Resumen Operativo, Producción Omarsa y Visitante. Hoy todos lo
+     consumen con map/forEach/every/join, pero basta que uno lo ordene in situ para
+     reordenárselo a los demás. Estos dos tests congelan esa invariante.
+
+     ⚠ El fixture `desordenado()` NO sirve aquí: su corrida 573 tiene un solo módulo, y
+     ordenar una lista de un elemento no la cambia — el test pasaría con la caché
+     compartida y sin copia, sin probar nada. Hace falta una corrida MULTI-MÓDULO. */
+  const multiMod = () => [
+    L({ 'Módulo': 'M07', Corrida: '573', Tanque: 'TQ1', 'Población': '900', Fecha: '01/06/2026' }),
+    L({ 'Módulo': 'M06', Corrida: '573', Tanque: 'TQ1', 'Población': '800', Fecha: '01/06/2026' }),
+    L({ 'Módulo': 'M02', Corrida: '574', Tanque: 'TQ1', 'Población': '700', Fecha: '01/06/2026' }),
+  ];
+
+  it('modulesOfCorrida: mismo resultado y sin re-escaneo en llamadas repetidas', () => {
+    const rows = multiMod();
+    let scans = 0;
+    const realFilter = Array.prototype.filter;
+    rows.filter = function (...args) { scans++; return realFilter.apply(this, args); };
+    store.globalData = rows;
+
+    const m1 = modulesOfCorrida('573');
+    const m2 = modulesOfCorrida('573');
+    expect(m1).toEqual(['M06', 'M07']); // orden natural, no el de aparición
+    expect(m2).toEqual(m1);
+    expect(scans).toBe(1); // el 2.º no vuelve a barrer el store
+
+    // Corridas distintas no se pisan la entrada del memo.
+    expect(modulesOfCorrida('574')).toEqual(['M02']);
+    expect(modulesOfCorrida('573')).toEqual(['M06', 'M07']);
+  });
+
+  it('modulesOfCorrida: un consumidor que ordene su array no altera al siguiente', () => {
+    store.globalData = multiMod();
+    const antes = [...modulesOfCorrida('573')];
+    expect(antes).toHaveLength(2); // si fuera 1, este test no probaría nada
+    // El consumidor descuidado ordena in situ lo que recibió (aquí, al revés).
+    modulesOfCorrida('573').reverse();
+    // Si esto falla, uno puede corromperle la lista de módulos a las otras 3 vistas.
+    expect(modulesOfCorrida('573')).toEqual(antes);
+  });
+
   it('no reordena store.globalData (nada ordena el array del store in situ)', () => {
     store.globalData = desordenado();
     const antes = huella();

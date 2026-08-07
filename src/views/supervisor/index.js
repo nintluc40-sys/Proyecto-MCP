@@ -48,9 +48,12 @@ export function supervisorView(root) {
   cleanupModule(); // suelta el tooltip que el heatmap Biomol cuelga de <body>
   const ctx = buildContext(vState);
   const result = dispatch(ctx);
-  // La barra de fecha global se oculta SOLO en la landing ejecutiva (vState.view queda
-  // en 'modules' tras dispatch), donde sus presets no aplican; reaparece en módulo/tanque.
-  setDateBarHidden(vState.view === 'modules');
+  // La barra de fecha global se oculta donde sus presets NO aplican: la landing ejecutiva
+  // (vState.view queda en 'modules' tras dispatch), que define su periodo con el navegador
+  // de meses, y la vista Despacho, que lee `ctx.larvCM` —la corrida completa— porque un
+  // registro de despacho es un hecho de la corrida y recortarlo por fecha lo escondería.
+  // Ahí la barra se veía pero no filtraba nada: prometía un recorte inexistente.
+  setDateBarHidden(vState.view === 'modules' || vState.view === 'despacho');
   const { html, after } = typeof result === 'string' ? { html: result } : result;
 
   root.innerHTML = html;

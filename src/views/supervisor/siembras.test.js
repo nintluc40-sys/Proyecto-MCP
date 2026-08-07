@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeSiembras } from './siembras.js';
+import { computeSiembras, computeCorridaSiembras } from './siembras.js';
 
 // Fila mínima de Larvicultura (las claves coinciden con core/fields.js).
 const row = (fecha, tanque, estadio, pob, extra = {}) => ({
@@ -176,6 +176,87 @@ describe('computeSiembras · subtotales y total', () => {
     const d = computeSiembras(baseRows(), { merma: 0 });
     expect(d.total.aCosechar).toBe(d.total.transferido);
     expect(d.siembras[0].subtotal.aCosechar).toBe(d.siembras[0].subtotal.transferido);
+  });
+});
+
+describe('computeCorridaSiembras · total de la corrida (varios módulos)', () => {
+  // 2º módulo de la misma corrida. Los tanques se llaman IGUAL que los del primero
+  // (TQ1/TQ2): es lo normal, cada módulo numera sus tanques desde 1.
+  const modBRows = () => [
+    row('02/06/2026', 'TQ1', 'N5', 2000000),
+    row('10/06/2026', 'TQ1', 'PL6', 1600000, { PLG: 61 }),
+    row('14/06/2026', 'TQ1', 'PL8', 1500000, DESP),
+    row('02/06/2026', 'TQ2', 'N5', 1000000),
+    row('10/06/2026', 'TQ2', 'PL6', 800000, { PLG: 59 }),
+    row('14/06/2026', 'TQ2', 'PL8', 750000, DESP),
+  ];
+  const byModule = () => [
+    { mod: '6', rows: baseRows() },
+    { mod: '7', rows: modBRows() },
+  ];
+
+  it('el desglose por módulo reproduce EXACTAMENTE el total de cada módulo por separado', () => {
+    const c = computeCorridaSiembras(byModule());
+    expect(c.modules.map((m) => m.mod)).toEqual(['6', '7']);
+    expect(c.modules[0].total).toEqual(computeSiembras(baseRows()).total);
+    expect(c.modules[1].total).toEqual(computeSiembras(modBRows()).total);
+  });
+
+  it('suma sembrado y transferido de todos los módulos', () => {
+    const c = computeCorridaSiembras(byModule());
+    expect(c.total.sembrado).toBe(4500000 + 3000000);
+    expect(c.total.transferido).toBe(3030000 + 2400000);
+    expect(c.nTanks).toBe(6); // 4 del módulo 6 + 2 del 7
+  });
+
+  it('NO funde los tanques homónimos de módulos distintos', () => {
+    // Si se pasaran las filas juntas a computeSiembras, el TQ1 del módulo 6 y el del 7
+    // se indexarían bajo la misma clave y el conteo/las cifras saldrían mal.
+    const c = computeCorridaSiembras(byModule());
+    const juntas = computeSiembras([...baseRows(), ...modBRows()]);
+    expect(c.nTanks).toBe(6);
+    expect(juntas.nTanks).toBe(4);                          // colisión: 6 tanques → 4
+    expect(c.total.sembrado).not.toBe(juntas.total.sembrado); // y con ella, cifras falsas
+  });
+
+  it('la supervivencia se RECALCULA sobre la base agregada, no promedia las de los módulos', () => {
+    const c = computeCorridaSiembras(byModule());
+    // Denominador = sembrado de los tanques CON transferido: módulo 6 → 3,4M (TQ3 está en
+    // proceso y no cuenta), módulo 7 → 3,0M. Numerador = 3,03M + 2,4M.
+    expect(c.total.superv).toBeCloseTo((5430000 / 6400000) * 100, 6);
+    // El promedio simple de las dos supervivencias daría otra cifra: no es lo que se muestra.
+    const media = (computeSiembras(baseRows()).total.superv + computeSiembras(modBRows()).total.superv) / 2;
+    expect(c.total.superv).not.toBeCloseTo(media, 3);
+  });
+
+  it('una sola merma gobierna módulos y total: el desglose siempre suma al agregado', () => {
+    const c = computeCorridaSiembras(byModule(), { merma: 0.07 });
+    expect(c.merma).toBe(0.07);
+    expect(c.total.aCosechar).toBeCloseTo(5430000 * 0.93, 5);
+    const sumaModulos = c.modules.reduce((a, m) => a + m.total.aCosechar, 0);
+    expect(sumaModulos).toBeCloseTo(c.total.aCosechar, 5);
+    // Y la superv. proyectada es la real menos esa misma merma.
+    expect(c.total.supervProy).toBeCloseTo(c.total.superv * 0.93, 6);
+  });
+
+  it('con un único módulo el total de corrida iguala al del módulo', () => {
+    const c = computeCorridaSiembras([{ mod: '6', rows: baseRows() }]);
+    expect(c.total).toEqual(computeSiembras(baseRows()).total);
+  });
+
+  it('sin módulos → estructura vacía, sin reventar', () => {
+    const c = computeCorridaSiembras([]);
+    expect(c.modules).toEqual([]);
+    expect(c.nTanks).toBe(0);
+    expect(c.total.sembrado).toBeNull();
+    expect(c.total.superv).toBeNull();
+  });
+
+  it('un módulo sin datos no contamina el total de los demás', () => {
+    const c = computeCorridaSiembras([{ mod: '6', rows: baseRows() }, { mod: '7', rows: [] }]);
+    expect(c.total.sembrado).toBe(4500000);
+    expect(c.total.superv).toBeCloseTo(computeSiembras(baseRows()).total.superv, 6);
+    expect(c.modules[1].nTanks).toBe(0);
   });
 });
 

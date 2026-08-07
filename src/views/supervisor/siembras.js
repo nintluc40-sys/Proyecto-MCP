@@ -180,3 +180,42 @@ export function computeSiembras(rows, opts = {}) {
     merma,
   };
 }
+
+/**
+ * Total agregado de VARIOS módulos de la misma corrida (fila «Total de la corrida»).
+ *
+ * ⚠ No se puede pasar las filas de todos los módulos juntas a `computeSiembras`: esa
+ * función indexa los tanques por NOMBRE (`byTank`), así que el «TQ1» del módulo 6 y el
+ * «TQ1» del 7 se fundirían en un solo tanque y tanto el sembrado como el transferido
+ * saldrían mal. Por eso se calcula cada módulo por separado y se agregan sus FICHAS DE
+ * TANQUE ya derivadas.
+ *
+ * La suma se hace con el MISMO `rollup` que produce el total de cada módulo, de modo que
+ * la fila de corrida no puede desalinearse con las de arriba. En particular la
+ * supervivencia se RECALCULA sobre la base agregada (Σ transferido ÷ Σ sembrado de los
+ * tanques que ya transfirieron): NO es el promedio de las supervivencias de los módulos,
+ * que solo coincidiría si ambos sembraran exactamente lo mismo.
+ *
+ * Una única `merma` gobierna todo el resultado —módulos y total—, así que el desglose
+ * siempre suma al total mostrado.
+ *
+ * @param {{mod:string, rows:object[]}[]} byModule  filas de Larvicultura de cada módulo
+ *        de la corrida (incluido el módulo que se está viendo)
+ * @param {object} [opts] { merma }
+ * @returns {{modules:object[], total:object, nTanks:number, merma:number}}
+ */
+export function computeCorridaSiembras(byModule, opts = {}) {
+  const merma = (opts.merma != null && isFinite(opts.merma)) ? opts.merma : MERMA_DEFAULT;
+  const perMod = (byModule || []).map(({ mod, rows }) => ({
+    mod,
+    data: computeSiembras(rows, { merma }),
+  }));
+  // Fichas de tanque de todos los módulos, ya derivadas y sin colisión de nombres.
+  const tanks = perMod.flatMap((p) => p.data.siembras.flatMap((s) => s.tanks));
+  return {
+    modules: perMod.map((p) => ({ mod: p.mod, total: p.data.total, nTanks: p.data.nTanks })),
+    total: rollup(tanks, merma),
+    nTanks: tanks.length,
+    merma,
+  };
+}

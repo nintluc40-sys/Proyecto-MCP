@@ -273,6 +273,21 @@ th.sv-sie-proy { white-space: nowrap; }
 .sv-sie-merma .sv-modal-select { padding: 2px 6px; font-size: 11.5px; font-weight: 800; }
 .sv-sie-total td { background: color-mix(in srgb, var(--c-supervisor) 12%, var(--c-surface)); border-top: 2px solid var(--c-supervisor); font-weight: 900; color: var(--c-text); }
 .sv-sie-total .sv-sie-stlbl { color: var(--c-supervisor); font-size: 12px; }
+/* Botón «Total de la corrida»: mismo patrón de toggle que el «Ver proyección» de los
+   KPIs con gráfico, en formato chip para convivir con el selector de merma. */
+.sv-sie-corrbtn { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; font-size: 11.5px; font-weight: 800; color: var(--c-brand-700); background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: var(--r-pill); cursor: pointer; transition: background .15s, border-color .15s; }
+.sv-sie-corrbtn:hover { background: var(--c-surface-3, var(--c-surface-2)); border-color: var(--c-brand-600); }
+.sv-sie-corrbtn[aria-pressed="true"] { color: #fff; background: var(--c-brand-600); border-color: var(--c-brand-600); }
+.sv-sie-corrbtn:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: 2px; }
+/* Total de la corrida: desglose tenue por módulo + fila agregada. Va en el color de MARCA
+   para no confundirse de un vistazo con el total de MÓDULO, que usa el acento del
+   Supervisor: son dos totales de alcance distinto apilados uno sobre otro. */
+.sv-sie-cormod td { background: var(--c-surface-2); border-top: 1px dashed var(--c-border); font-weight: 700; font-size: 11.5px; color: var(--c-text-soft); }
+.sv-sie-cormod .sv-sie-stlbl { text-transform: none; letter-spacing: 0; color: var(--c-text-soft); }
+.sv-sie-cormod .sv-sie-cosecha, .sv-sie-cormod .sv-sie-proy { color: var(--c-text-soft); }
+.sv-sie-cortotal td { background: color-mix(in srgb, var(--c-brand) 14%, var(--c-surface)); border-top: 2px solid var(--c-brand-600); font-weight: 900; color: var(--c-text); }
+.sv-sie-cortotal .sv-sie-stlbl { color: var(--c-brand-700); font-size: 12px; }
+.sv-sie-cortotal .sv-sie-cosecha, .sv-sie-cortotal .sv-sie-proy { color: var(--c-brand-700); }
 
 /* Modal Trazabilidad (descarga de fichas del módulo en PDF) */
 .sv-trace-sec { margin-bottom: 14px; }

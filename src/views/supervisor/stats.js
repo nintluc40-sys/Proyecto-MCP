@@ -130,8 +130,19 @@ function survival(winRows, baseRows, tanks) {
       const base = byDate(baseRows.filter((r) => gTnq(r) === tq));
       let last = null; for (let i = win.length - 1; i >= 0; i--) { const v = gPop(win[i]); if (v !== null) { last = v; break; } }
       let first = null; for (let i = 0; i < base.length; i++) { const v = gPop(base[i]); if (v !== null) { first = v; break; } }
-      if (last !== null) lastSum = (lastSum || 0) + last;
-      if (first !== null) firstSum = (firstSum || 0) + first;
+      // La siembra de un tanque solo entra en el DENOMINADOR si ese tanque aporta también
+      // al NUMERADOR. Antes se sumaba siempre, así que un tanque cuyas filas quedaban fuera
+      // de la ventana de fecha (dejó de registrarse, se descartó pronto…) aportaba su
+      // siembra y ninguna población: con un preset de 7/30 días la supervivencia del módulo
+      // se desplomaba —medido, 90 % → 45 % con dos tanques— contradiciendo al gráfico que
+      // abre ese mismo KPI (moduleSvPopSeries deriva sus tanques de la ventana, así que lo
+      // excluye de ambos lados) y a la rejilla, donde el tanque ni siquiera se muestra.
+      // Sin filtro de fecha ventana y base coinciden, `last` existe siempre que exista
+      // `first`, y el resultado es idéntico al anterior.
+      if (last !== null) {
+        lastSum = (lastSum || 0) + last;
+        if (first !== null) firstSum = (firstSum || 0) + first;
+      }
     });
   } else if (baseRows.length) {
     const win = byDate(winRows), base = byDate(baseRows);

@@ -80,7 +80,12 @@ const BRANDS = {
 // ponía dos números con el mismo símbolo '%' y significados distintos uno al lado del otro.
 const VARS = [
   { key: 'pop',  label: 'Población',          icon: '👥', dir: 'up',   fmt: (v) => fmtPop(v),                         trend: 'col', keys: F.poblacion, pos: true },
-  { key: 'sv',   label: 'Supervivencia',      icon: '📈', dir: 'up',   fmt: (v) => (v == null ? '—' : v.toFixed(1) + '%'), trend: 'col', keys: F.supervivencia, pct: true },
+  // `trend: 'sv'` y no la columna cruda «Supervivencia» de la hoja: la tabla y las tarjetas
+  // de esta misma pantalla usan `tankStats.sv`, que se DERIVA de la población, así que con
+  // la columna cruda el gráfico de tendencia contradecía a la tabla que tiene encima. La
+  // hoja trae esa columna dispersa (la vista Tanque dejó de usarla por lo mismo) y aquí se
+  // corona un 🏆 que decide proveedor.
+  { key: 'sv',   label: 'Supervivencia',      icon: '📈', dir: 'up',   fmt: (v) => (v == null ? '—' : v.toFixed(1) + '%'), trend: 'sv', pct: true },
   { key: 'def',  label: 'Deformidad',         icon: '🧬', dir: 'down', fmt: (v) => (v == null ? '—' : v.toFixed(1) + '%'), trend: 'col', keys: DEF_KEYS, pct: true },
   { key: 'icl',  label: 'ICL',                icon: '🧪', dir: 'up',   fmt: (v) => (v == null ? '—' : String(Math.round(v))), trend: 'icl' },
   { key: 'plg',  label: 'PL/g',               icon: '🎣', dir: 'down', fmt: (v) => (v == null ? '—' : v.toFixed(1)),   trend: 'col', keys: PLG_KEYS },
@@ -139,7 +144,9 @@ export function renderOmTex(ctx, mod) {
     const plgs = ts.lRows.map((r) => parseNum(r, PLG_KEYS)).filter((v) => v !== null);
     const iclVals = iclSeries(ts.lRows).values.filter((v) => v !== null && v !== undefined);
     const incrs = [...tankIncrByDate(ts.lRows).values()];
-    groups[brand].tanks.push({ tq, lRows: ts.lRows, pop: ts.pop, sv: ts.sv, def: mean(defs), icl: mean(iclVals), plg: mean(plgs), incr: mean(incrs) });
+    // `popFirst` viaja con el tanque para poder derivar su supervivencia POR FECHA en la
+    // tendencia (pob. del día ÷ pob. inicial), con la misma regla que `tankStats.sv`.
+    groups[brand].tanks.push({ tq, lRows: ts.lRows, pop: ts.pop, popFirst: ts.popFirst, sv: ts.sv, def: mean(defs), icl: mean(iclVals), plg: mean(plgs), incr: mean(incrs) });
     ts.lotes.forEach((l) => groups[brand].lotes.add(l));
   });
 
@@ -275,6 +282,19 @@ export function renderOmTex(ctx, mod) {
     const push = (f, val) => { if (!f || val === null || val === undefined) return; if (!byDay.has(f)) byDay.set(f, []); byDay.get(f).push(val); };
     if (v.trend === 'col') {
       tanksB.forEach((t) => t.lRows.forEach((r) => { const val = parseNum(r, v.keys); if (val !== null && (!v.pos || val > 0)) push(getField(r, F.fecha), val); }));
+    } else if (v.trend === 'sv') {
+      // Supervivencia por fecha DERIVADA de la población: última población del día ÷
+      // población inicial del tanque × 100 (tope 100), la misma regla que el KPI y el
+      // gráfico de la vista Tanque. Cada tanque aporta un punto por día con población.
+      tanksB.forEach((t) => {
+        if (!t.popFirst || t.popFirst <= 0) return;
+        const lastByDay = new Map();
+        [...t.lRows].sort(byDateAsc).forEach((r) => {
+          const f = getField(r, F.fecha), p = parseNum(r, F.poblacion);
+          if (f && p !== null && p > 0) lastByDay.set(f, p);
+        });
+        lastByDay.forEach((p, f) => push(f, Math.min((p / t.popFirst) * 100, 100)));
+      });
     } else if (v.trend === 'icl') {
       tanksB.forEach((t) => { const s = iclSeries(t.lRows); s.days.forEach((d, i) => push(d, s.values[i])); });
     } else if (v.trend === 'incr') {

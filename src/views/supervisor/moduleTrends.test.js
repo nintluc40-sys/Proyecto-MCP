@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { moduleSvPopSeries, moduleHourly, moduleDayTankReadings, cosechaEstimate, projectMetric } from './moduleTrends.js';
+import { moduleSvPopSeries, modulePlgSeries, moduleHourly, moduleDayTankReadings, cosechaEstimate, projectMetric } from './moduleTrends.js';
 
 const lv = (extra) => ({ _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '580', ...extra });
 const ct = (extra) => ({ _SheetOrigin: 'Control_Tanque M01', 'Módulo': 'M01', Corrida: '580', ...extra });
@@ -38,6 +38,83 @@ describe('moduleSvPopSeries', () => {
     };
     const r = moduleSvPopSeries(ctx, 'M01', '580');
     expect(r.sv).toEqual([80, 70]); // 800/1000, 700/1000 (no 100/87.5 respecto a 800)
+  });
+});
+
+describe('modulePlgSeries', () => {
+  it('un punto por FECHA con biometría, promediando entre tanques y en orden ascendente', () => {
+    const ctx = {
+      larvWin: [
+        lv({ Tanque: 'TQ2', 'Población': '900', Fecha: '10/06/2026', PLG: '60' }),
+        lv({ Tanque: 'TQ1', 'Población': '1000', Fecha: '10/06/2026', PLG: '62' }),
+        lv({ Tanque: 'TQ1', 'Población': '950', Fecha: '14/06/2026', PLG: '54' }),
+      ],
+      tanqWin: [],
+    };
+    const r = modulePlgSeries(ctx, 'M01', '580');
+    expect(r.labels).toEqual(['10/06/2026', '14/06/2026']);
+    expect(r.plg[0]).toBeCloseTo(61, 6); // (62 + 60) / 2
+    expect(r.plg[1]).toBeCloseTo(54, 6); // ese día solo midió TQ1
+  });
+
+  it('las fechas SIN biometría no generan punto (el PL/g se mide, no se arrastra)', () => {
+    const ctx = {
+      larvWin: [
+        lv({ Tanque: 'TQ1', 'Población': '1000', Fecha: '02/06/2026' }),            // siembra, sin PL/g
+        lv({ Tanque: 'TQ1', 'Población': '980', Fecha: '06/06/2026', PLG: '70' }),
+        lv({ Tanque: 'TQ1', 'Población': '950', Fecha: '10/06/2026' }),             // sin PL/g
+      ],
+      tanqWin: [],
+    };
+    const r = modulePlgSeries(ctx, 'M01', '580');
+    expect(r.labels).toEqual(['06/06/2026']);
+    expect(r.plg).toEqual([70]);
+  });
+
+  it('cada tanque pesa igual aunque ese día traiga dos lecturas', () => {
+    // TQ1 mide dos veces (60 y 80 → 70); TQ2 una (50). El promedio del módulo es
+    // (70 + 50) / 2 = 60, NO la media de las tres lecturas sueltas (63,33).
+    const ctx = {
+      larvWin: [
+        lv({ Tanque: 'TQ1', Fecha: '10/06/2026', PLG: '60' }),
+        lv({ Tanque: 'TQ1', Fecha: '10/06/2026', PLG: '80' }),
+        lv({ Tanque: 'TQ2', Fecha: '10/06/2026', PLG: '50' }),
+      ],
+      tanqWin: [],
+    };
+    expect(modulePlgSeries(ctx, 'M01', '580').plg[0]).toBeCloseTo(60, 6);
+  });
+
+  it('descarta ceros y vacíos (son "sin biometría", no un PL/g de 0)', () => {
+    const ctx = {
+      larvWin: [
+        lv({ Tanque: 'TQ1', Fecha: '10/06/2026', PLG: '0' }),
+        lv({ Tanque: 'TQ2', Fecha: '10/06/2026', PLG: '' }),
+        lv({ Tanque: 'TQ3', Fecha: '10/06/2026', PLG: '58' }),
+      ],
+      tanqWin: [],
+    };
+    const r = modulePlgSeries(ctx, 'M01', '580');
+    expect(r.plg).toEqual([58]); // el 0 no arrastra la media a 19,33
+  });
+
+  it('solo mira el módulo+corrida pedidos', () => {
+    const ctx = {
+      larvWin: [
+        lv({ Tanque: 'TQ1', Fecha: '10/06/2026', PLG: '60' }),
+        lv({ Tanque: 'TQ1', Fecha: '10/06/2026', PLG: '10', 'Módulo': 'M02' }),
+        lv({ Tanque: 'TQ1', Fecha: '10/06/2026', PLG: '10', Corrida: '581' }),
+      ],
+      tanqWin: [],
+    };
+    expect(modulePlgSeries(ctx, 'M01', '580').plg).toEqual([60]);
+  });
+
+  it('sin ninguna biometría devuelve una serie vacía (no NaN)', () => {
+    const ctx = { larvWin: [lv({ Tanque: 'TQ1', Fecha: '10/06/2026', 'Población': '900' })], tanqWin: [] };
+    const r = modulePlgSeries(ctx, 'M01', '580');
+    expect(r.labels).toEqual([]);
+    expect(r.plg).toEqual([]);
   });
 });
 

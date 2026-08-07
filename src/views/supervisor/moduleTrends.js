@@ -2,7 +2,7 @@
    SUPERVISOR · series y estimaciones a nivel MÓDULO (para los KPIs con gráfico
    y el "Resumen del día" del Resumen Operativo). Funciones puras sobre `ctx`.
    ============================================================ */
-import { getField, F, getLatestStage } from '../../core/fields.js';
+import { getField, parseNum, F, getLatestStage, PLG_KEYS } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { STAGE_ORDER } from '../../config.js';
 import { getters } from './stats.js';
@@ -64,6 +64,42 @@ export function moduleSvPopSeries(ctx, mod, corrida) {
   // `base` = siembra total del módulo (Σ primera pob. por tanque); permite derivar las
   // bajas acumuladas (base − pob. del día) en el "Resumen del día" sin recalcular.
   return { labels, sv, pop, base: totalFirst };
+}
+
+/** Tendencia de PL/g (LARVIA) del módulo: por fecha, el promedio ENTRE TANQUES del PL/g
+ *  biométrico registrado ESE día.
+ *
+ *  Solo aparecen las fechas en las que hubo biometría. A diferencia de la supervivencia
+ *  y la población —que son un stock y admiten arrastrar la última lectura conocida— el
+ *  PL/g es una MEDICIÓN puntual: prolongarlo hasta la fecha siguiente afirmaría un tamaño
+ *  de larva que nadie midió. Con `spanGaps` el gráfico une los puntos reales sin inventar
+ *  días intermedios.
+ *
+ *  Cada TANQUE pesa igual en el promedio del día aunque ese día traiga dos lecturas (se
+ *  promedian primero las suyas), para que un tanque muestreado dos veces no arrastre la
+ *  media del módulo. Se descartan los ceros y vacíos: son «sin biometría», no un PL/g de 0
+ *  (mismo criterio que el KPI del banner, `lastAvgByTank` en stats.js).
+ *
+ *  @returns {{labels:string[], plg:number[]}}
+ */
+export function modulePlgSeries(ctx, mod, corrida) {
+  const byDate = new Map(); // fecha -> Map(tanque -> valores de ese día)
+  modLarv(ctx, mod, corrida).forEach((r) => {
+    const f = gFec(r);
+    if (!f || !parseAnyDate(f)) return;
+    const v = parseNum(r, PLG_KEYS);
+    if (v === null || v <= 0) return;
+    if (!byDate.has(f)) byDate.set(f, new Map());
+    const perTank = byDate.get(f);
+    const tq = gTnq(r) || '—';
+    if (!perTank.has(tq)) perTank.set(tq, []);
+    perTank.get(tq).push(v);
+  });
+  const labels = [...byDate.keys()].sort((a, b) => parseAnyDate(a) - parseAnyDate(b));
+  return {
+    labels,
+    plg: labels.map((f) => avg([...byDate.get(f).values()].map((vals) => avg(vals)))),
+  };
 }
 
 /** Fechas con tomas horarias (Control_Tanque) del módulo. */
