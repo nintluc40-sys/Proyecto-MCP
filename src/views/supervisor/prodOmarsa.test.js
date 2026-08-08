@@ -126,14 +126,14 @@ describe('prodTableHTML · sin configuración de toneladas', () => {
 });
 
 describe('prodTableHTML · columna Fecha (siembra promedio del módulo)', () => {
-  it('añade la cabecera Fecha y la tabla pasa a 10 columnas', () => {
+  it('añade la cabecera Fecha y la tabla pasa a 11 columnas', () => {
     store.globalData = [row('M06', '579', 'TQ1', 1000, '01/07/2026')];
     const months = presentMonths();
     const html = prodTableHTML(months, months.length - 1);
     expect(html).toContain('<th>Fecha</th>');
     // `<th` sin cerrar: algunas cabeceras llevan title= y no casarían con `<th>`.
     const ths = (html.match(/<th[\s>]/g) || []).length;
-    expect(ths).toBe(10);
+    expect(ths).toBe(11); // 10 + la columna «PL/g» (Larvia) añadida el 2026-08-08
   });
 
   it('muestra la fecha promedio de siembra de los tanques del módulo', () => {
@@ -148,11 +148,73 @@ describe('prodTableHTML · columna Fecha (siembra promedio del módulo)', () => 
     expect(html).toMatch(/>04\s+\S*jul\S*\s+26</i);
   });
 
-  it('la fila "sin datos" abarca las 10 columnas', () => {
+  it('la fila "sin datos" abarca las 11 columnas', () => {
     store.globalData = [row('M06', '579', 'TQ1', 1000, '01/07/2026')];
     const months = presentMonths();
     store.globalData = [];
     const html = prodTableHTML(months, months.length - 1);
-    expect(html).toContain('colspan="10"');
+    expect(html).toContain('colspan="11"');
+  });
+});
+
+// ── Columna «PL/g» (Larvia) ────────────────────────────────────────────────
+// Lee la columna «Plg» del Sheet (biometría LARVIA, diaria) y la resume con la MISMA
+// regla que PL/g (manual): última lectura >0 de cada tanque, promediada entre tanques.
+describe('prodTableHTML · columna PL/g (Larvia)', () => {
+  // `plg` = columna Plg (Larvia) · `plgm` = columna Plg (manual). Valores DISTINTOS a
+  // propósito: si el código leyera la columna equivocada, la prueba lo delataría.
+  const rowP = (mod, cor, tq, pob, fecha, plg, plgm) => ({
+    _SheetOrigin: 'Larvicultura', 'Módulo': mod, Corrida: cor, Tanque: tq,
+    'Población': String(pob), Fecha: fecha,
+    ...(plg == null ? {} : { Plg: String(plg) }),
+    ...(plgm == null ? {} : { 'Plg (manual)': String(plgm) }),
+  });
+
+  it('toma la ÚLTIMA lectura de cada tanque y promedia entre tanques', () => {
+    store.globalData = [
+      // TQ1: 210 → 168 (última) · TQ2: 205 → 172 (última) ⇒ (168+172)/2 = 170.0
+      rowP('M06', '579', 'TQ1', 1000, '01/07/2026', 210, 90),
+      rowP('M06', '579', 'TQ1', 900, '10/07/2026', 168, 95),
+      rowP('M06', '579', 'TQ2', 1000, '01/07/2026', 205, 90),
+      rowP('M06', '579', 'TQ2', 900, '10/07/2026', 172, 95),
+    ];
+    const months = presentMonths();
+    const html = prodTableHTML(months, months.length - 1);
+    expect(html).toContain('>170.0<');
+    // Promediar TODAS las lecturas diarias daría 188.8 y el promedio por día 188.8/…:
+    // ninguna de las dos debe aparecer.
+    expect(html).not.toContain('>188.8<');
+  });
+
+  it('no se confunde con la columna PL/g (manual)', () => {
+    store.globalData = [
+      rowP('M06', '579', 'TQ1', 1000, '01/07/2026', 210, 90),
+      rowP('M06', '579', 'TQ1', 900, '10/07/2026', 168, 95),
+    ];
+    const months = presentMonths();
+    const html = prodTableHTML(months, months.length - 1);
+    // Larvia = 168.0 · manual = 95.0, cada uno en su columna.
+    expect(html).toContain('>168.0<');
+    expect(html).toContain('>95.0<');
+    const iL = html.indexOf('>168.0<'), iM = html.indexOf('>95.0<');
+    expect(iL).toBeLessThan(iM); // PL/g (Larvia) va ANTES de PL/g (manual)
+  });
+
+  it('la columna nueva va justo después de «Dens. siembra»', () => {
+    store.globalData = [rowP('M06', '579', 'TQ1', 1000, '01/07/2026', 168, 95)];
+    const months = presentMonths();
+    const html = prodTableHTML(months, months.length - 1);
+    const head = html.slice(html.indexOf('<thead'), html.indexOf('</thead>'));
+    const orden = [...head.matchAll(/<th[^>]*>(.*?)<\/th>/g)].map((m) => m[1].replace(/<[^>]*>/g, '').trim());
+    expect(orden.indexOf('PL/g')).toBe(orden.indexOf('Dens. siembra') + 1);
+    expect(orden.indexOf('PL/g (manual)')).toBe(orden.indexOf('PL/g') + 1);
+  });
+
+  it('sin lecturas de Plg la celda queda en «—», no en 0', () => {
+    store.globalData = [rowP('M06', '579', 'TQ1', 1000, '01/07/2026', null, 95)];
+    const months = presentMonths();
+    const html = prodTableHTML(months, months.length - 1);
+    expect(html).not.toContain('>0.0<');
+    expect(html).toContain('>95.0<'); // el manual sí se muestra
   });
 });

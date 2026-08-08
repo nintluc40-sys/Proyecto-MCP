@@ -10,12 +10,13 @@
      · Siembra  = Σ primera población REAL (>0) de cada tanque
      · Cosecha  = Σ última población registrada de cada tanque (honra el 0)
      · PL/g (manual) = promedio del último PL/g manual de cada tanque
+     · PL/g (Larvia) = ídem con la columna «Plg» (biometría LARVIA, registrada a diario)
      · Supervivencia = Σ última pob. / Σ primera pob. × 100
 
    Mes interno definido por su corrida inicial (editar MESES_PROD).
    ============================================================ */
 import { store } from './store.js';
-import { getField, parseNum, F, isLarviculturaRow, PLGM_KEYS } from './fields.js';
+import { getField, parseNum, F, isLarviculturaRow, PLGM_KEYS, PLG_KEYS } from './fields.js';
 import { parseAnyDate } from './dates.js';
 import { natCmp } from './util.js';
 
@@ -206,12 +207,14 @@ export function modCorStats(mod, cor) {
 function modCorStatsCompute(mod, cor) {
   const rsAll = rowsOfModCor(mod, cor);
   const tanks = distinct(rsAll.map((r) => getField(r, F.tanque)));
-  let firstSum = 0, lastSum = 0, hasFirst = false, hasLast = false, nSie = 0; const plgs = [];
+  let firstSum = 0, lastSum = 0, hasFirst = false, hasLast = false, nSie = 0;
+  const plgs = [];      // PL/g (manual), columna «Plg (manual)»
+  const plgLarvias = []; // PL/g (Larvia), columna «Plg»
   const sieTimes = []; // fecha (ms) de la siembra de cada tanque → fecha promedio del módulo
   tanks.forEach((tq) => {
     const rs = rsAll.filter((r) => getField(r, F.tanque) === tq)
       .sort((a, b) => (parseAnyDate(getField(a, F.fecha)) || 0) - (parseAnyDate(getField(b, F.fecha)) || 0));
-    let first = null, last = null, plg = null, firstDate = null;
+    let first = null, last = null, plg = null, plgL = null, firstDate = null;
     // Siembra = primera población REAL (>0). Cosecha = última población registrada,
     // honrando el 0 (tanque vaciado/agrupado): así no se arrastra el valor anterior.
     rs.forEach((r) => {
@@ -220,16 +223,25 @@ function modCorStatsCompute(mod, cor) {
       last = p;
     });
     for (let i = rs.length - 1; i >= 0; i--) { const v = parseNum(rs[i], PLGM_KEYS); if (v !== null && v > 0) { plg = v; break; } }
+    // PL/g (Larvia): MISMA regla que el manual —la ÚLTIMA lectura >0 del tanque— pero sobre
+    // la columna «Plg», que se registra a diario. Se toma la última y no el promedio de los
+    // días porque el PL/g DESCIENDE conforme crece la larva: promediar el ciclo entero daría
+    // una talla que no corresponde a ningún momento real y no cuadraría con el KPI
+    // «PL/g (Larvia)» del Resumen Operativo, que ya resume por el último de cada tanque
+    // (`lastAvgByTank` en views/supervisor/stats.js).
+    for (let i = rs.length - 1; i >= 0; i--) { const v = parseNum(rs[i], PLG_KEYS); if (v !== null && v > 0) { plgL = v; break; } }
     if (first !== null) {
       firstSum += first; hasFirst = true; nSie++;
       if (firstDate && !isNaN(firstDate)) sieTimes.push(firstDate.getTime());
     }
     if (last !== null) { lastSum += last; hasLast = true; }
     if (plg !== null) plgs.push(plg);
+    if (plgL !== null) plgLarvias.push(plgL);
   });
   const siembra = hasFirst ? firstSum : null;
   const cosecha = hasLast ? lastSum : null;
   const plg = plgs.length ? plgs.reduce((a, b) => a + b, 0) / plgs.length : null;
+  const plgLarvia = plgLarvias.length ? plgLarvias.reduce((a, b) => a + b, 0) / plgLarvias.length : null;
   // cosecha === 0 es válido (tanque vaciado/agrupado) → superv 0, no null.
   const superv = (siembra !== null && siembra > 0 && cosecha !== null) ? Math.min(cosecha / siembra * 100, 100) : null;
   // despachado = el módulo+corrida ya tiene ≥1 registro con datos de la ficha de Despacho.
@@ -244,5 +256,5 @@ function modCorStatsCompute(mod, cor) {
     ? new Date(Math.round(sieTimes.reduce((a, b) => a + b, 0) / sieTimes.length))
     : null;
   // nSie = nº de tanques con siembra (denominador de la densidad de siembra por tanque).
-  return { siembra, cosecha, plg, superv, nSie, siembraFecha, despachado, despachadoFull };
+  return { siembra, cosecha, plg, plgLarvia, superv, nSie, siembraFecha, despachado, despachadoFull };
 }

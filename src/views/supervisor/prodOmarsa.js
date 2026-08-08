@@ -42,6 +42,12 @@ export function plgAggregate(vals) {
 }
 
 const PLG_TITLE = 'Promedio de los PL/g de los módulos. El PL/g de cada módulo es, a su vez, el promedio de lo registrado en sus tanques.';
+// PL/g (Larvia) = columna «Plg» del Sheet (biometría LARVIA, registrada a diario), resumida
+// con la MISMA regla que el PL/g (manual): la última lectura >0 de cada tanque, promediada
+// entre tanques. La última y no el promedio del ciclo porque el PL/g DESCIENDE conforme
+// crece la larva. Es la misma definición que el KPI «PL/g (Larvia)» del Resumen Operativo,
+// así que la tabla y el módulo no pueden dar cifras distintas para lo mismo.
+const PLGL_TITLE = 'PL/g biométrico (LARVIA), columna «Plg». Promedio entre los módulos; el de cada módulo es el promedio de la última lectura de cada uno de sus tanques.';
 const DENS_TITLE = `Siembra media por tanque ÷ ${TON_TANQUE} t ÷ 1000 = nauplios/L. El volumen por tanque se estima fijo en ${TON_TANQUE} t.`;
 const FECHA_TITLE = 'Fecha promedio de siembra del módulo: promedio de la fecha en que cada tanque registró su primera población.';
 // "Población Actual" (antes rotulada "Cosecha"): el valor es la ÚLTIMA población
@@ -52,7 +58,7 @@ const POB_TITLE = 'Suma de la última población registrada en cada tanque del m
 // el bloque entero, junto al «% Superv. corrida», que sale del mismo agregado).
 const TOTCOR_TITLE = 'Suma de la Población Actual de TODOS los módulos de esta corrida.';
 
-const N_COLS = 10; // Módulo · Corrida · Fecha · Siembra · Dens. · PL/g · Cosecha · Superv. · Total mód. · % Superv. corrida
+const N_COLS = 11; // Módulo · Corrida · Fecha · Siembra · Dens. · PL/g · PL/g (manual) · Cosecha · Superv. · Total mód. · % Superv. corrida
 
 /** HTML de la tabla del mes en posición `pos` (incluye navegación de meses). */
 export function prodTableHTML(months, pos) {
@@ -87,8 +93,8 @@ export function prodTableHTML(months, pos) {
   const subEqualsTotal = subCosTot === grandCos && subSieTot === grandSie;
   const showSubtotal = dispatchedIdx.length > 0 && !subEqualsTotal;
 
-  let body = '', sumSie = 0, sumCos = 0, sumN = 0; const plgs = [];
-  let subSie = 0, subCos = 0, subN = 0; const subPlgs = [];   // acumuladores del subtotal
+  let body = '', sumSie = 0, sumCos = 0, sumN = 0; const plgs = [], plgLs = [];
+  let subSie = 0, subCos = 0, subN = 0; const subPlgs = [], subPlgLs = [];   // acumuladores del subtotal
   corData.forEach((c, ci) => {
     const { cor, mods, stats, corCos, corSup } = c;
     stats.forEach((s, j) => {
@@ -96,11 +102,13 @@ export function prodTableHTML(months, pos) {
       if (s.cosecha) sumCos += s.cosecha;
       sumN += s.nSie;
       if (s.plg !== null) plgs.push(s.plg);
+      if (s.plgLarvia !== null) plgLs.push(s.plgLarvia);
       if (c.despachada) {
         if (s.siembra) subSie += s.siembra;
         if (s.cosecha) subCos += s.cosecha;
         subN += s.nSie;
         if (s.plg !== null) subPlgs.push(s.plg);
+        if (s.plgLarvia !== null) subPlgLs.push(s.plgLarvia);
       }
       body += `<tr>
         <td><b>${esc(s.m)}</b></td>
@@ -108,6 +116,7 @@ export function prodTableHTML(months, pos) {
         <td title="${FECHA_TITLE}">${s.siembraFecha ? esc(fmtShort(s.siembraFecha)) : '—'}</td>
         <td>${fmtPop(s.siembra)}</td>
         <td title="${DENS_TITLE}">${fmt2(densSiembra(s.siembra, s.nSie))}</td>
+        <td title="${PLGL_TITLE}">${fmt1(s.plgLarvia)}</td>
         <td title="${PLG_TITLE}">${fmt1(s.plg)}</td>
         <td>${fmtPop(s.cosecha)}</td>
         <td>${pctTxt(s.superv)}</td>
@@ -124,6 +133,7 @@ export function prodTableHTML(months, pos) {
         <td>—</td>
         <td>${fmtPop(subSie || null)}</td>
         <td title="${DENS_TITLE}">${fmt2(densSiembra(subSie, subN))}</td>
+        <td title="${PLGL_TITLE}">${fmt1(plgAggregate(subPlgLs))}</td>
         <td title="${PLG_TITLE}">${fmt1(plgAggregate(subPlgs))}</td>
         <td>${fmtPop(subCos || null)}</td>
         <td>${pctTxt(subSup)}</td>
@@ -137,6 +147,7 @@ export function prodTableHTML(months, pos) {
       <td>—</td>
       <td>${fmtPop(sumSie || null)}</td>
       <td title="${DENS_TITLE}">${fmt2(densSiembra(sumSie, sumN))}</td>
+      <td title="${PLGL_TITLE}">${fmt1(plgAggregate(plgLs))}</td>
       <td title="${PLG_TITLE}">${fmt1(plgAggregate(plgs))}</td>
       <td>${fmtPop(sumCos || null)}</td>
       <td>${pctTxt(monthSup)}</td>
@@ -156,7 +167,7 @@ export function prodTableHTML(months, pos) {
     ${slider}
     <div style="overflow:auto;margin-top:10px">
       <table class="sv-table prod-table">
-        <thead><tr><th>Módulo</th><th>Corrida</th><th>Fecha</th><th>Siembra</th><th>Dens. siembra</th><th>PL/g (manual)</th><th title="${POB_TITLE}">Población Actual</th><th>Superv.</th><th title="${TOTCOR_TITLE}">Total de la corrida</th><th>% Superv. corrida</th></tr></thead>
+        <thead><tr><th>Módulo</th><th>Corrida</th><th>Fecha</th><th>Siembra</th><th>Dens. siembra</th><th title="${PLGL_TITLE}">PL/g</th><th>PL/g (manual)</th><th title="${POB_TITLE}">Población Actual</th><th>Superv.</th><th title="${TOTCOR_TITLE}">Total de la corrida</th><th>% Superv. corrida</th></tr></thead>
         <tbody>${body || `<tr><td colspan="${N_COLS}" class="muted" style="text-align:center;padding:18px">Sin datos para este mes.</td></tr>`}${totalRow}</tbody>
       </table>
     </div>
