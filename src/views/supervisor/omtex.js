@@ -125,9 +125,21 @@ export function renderOmTex(ctx, mod) {
   const unclassified = [];
   tanks.forEach((tq) => {
     const ts = tankStats(ctx, mod, tq, corrida);
+    // Filas DE ESTE TANQUE. `tankStats.lRows` incluye además las filas de Larvicultura sin
+    // tanque (registros a nivel de MÓDULO), y aquí eso falsea la comparación de tres formas:
+    //   · la marca del tanque se decide por la MODA de sus lotes, así que un lote anotado a
+    //     nivel de módulo sumaba +1 a esa marca en TODOS los tanques y podía voltear los
+    //     empates —justo el caso que esta vista aparta como «sin marca clara»—;
+    //   · los promedios de Deformidad/PL-g/ICL/Incremento de ambas marcas incorporaban las
+    //     MISMAS filas de módulo, acercándolas artificialmente entre sí y diluyendo la
+    //     diferencia que esta pantalla existe para medir;
+    //   · en la tendencia diaria esa fila única se promediaba una vez POR TANQUE, pesando
+    //     tantas veces como tanques tenga el módulo.
+    // El veredicto de esta vista se usa para decidir proveedor, así que se acota al tanque.
+    const ownRows = ts.lRows.filter((r) => getField(r, F.tanque) === tq);
     const c = { TEX: 0, OM: 0 };
     let anyLote = false;
-    ts.lRows.forEach((r) => {
+    ownRows.forEach((r) => {
       const raw = getField(r, F.lote);
       if (String(raw || '').trim()) anyLote = true;
       const b = lotBrand(raw);
@@ -140,13 +152,13 @@ export function renderOmTex(ctx, mod) {
     // → se declara en vez de adivinar.
     if ((!c.TEX && !c.OM) || c.TEX === c.OM) { unclassified.push(tq); return; }
     const brand = c.OM > c.TEX ? 'OM' : 'TEX';
-    const defs = ts.lRows.map((r) => parseNum(r, DEF_KEYS)).filter((v) => v !== null);
-    const plgs = ts.lRows.map((r) => parseNum(r, PLG_KEYS)).filter((v) => v !== null);
-    const iclVals = iclSeries(ts.lRows).values.filter((v) => v !== null && v !== undefined);
-    const incrs = [...tankIncrByDate(ts.lRows).values()];
+    const defs = ownRows.map((r) => parseNum(r, DEF_KEYS)).filter((v) => v !== null);
+    const plgs = ownRows.map((r) => parseNum(r, PLG_KEYS)).filter((v) => v !== null);
+    const iclVals = iclSeries(ownRows).values.filter((v) => v !== null && v !== undefined);
+    const incrs = [...tankIncrByDate(ownRows).values()];
     // `popFirst` viaja con el tanque para poder derivar su supervivencia POR FECHA en la
     // tendencia (pob. del día ÷ pob. inicial), con la misma regla que `tankStats.sv`.
-    groups[brand].tanks.push({ tq, lRows: ts.lRows, pop: ts.pop, popFirst: ts.popFirst, sv: ts.sv, def: mean(defs), icl: mean(iclVals), plg: mean(plgs), incr: mean(incrs) });
+    groups[brand].tanks.push({ tq, lRows: ownRows, pop: ts.pop, popFirst: ts.popFirst, sv: ts.sv, def: mean(defs), icl: mean(iclVals), plg: mean(plgs), incr: mean(incrs) });
     ts.lotes.forEach((l) => groups[brand].lotes.add(l));
   });
 

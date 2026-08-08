@@ -1116,9 +1116,15 @@ export function renderModule(ctx, mod) {
   const tsByTank = new Map(tanks.map((tq) => [tq, tankStats(ctx, mod, tq, corrida)]));
 
   // RO1 · métricas por tanque para la mini-comparativa (SV + ICL promedio).
+  // El ICL se calcula sobre las filas DE CADA TANQUE. `tankStats.lRows` incluye además las
+  // filas de Larvicultura sin tanque (registros a nivel de MÓDULO): al ser las MISMAS para
+  // todos, acercaban entre sí los ICL de los tanques y corrían el ranking mejor/peor hacia el
+  // promedio del módulo — es decir, contaminaban justo la diferencia que esta comparativa
+  // existe para mostrar. Mismo criterio que la vista Tanque y que OM vs Tex.
   const tankCmp = tanks.map((tq) => {
     const ts = tsByTank.get(tq);
-    const iclVals = iclSeries(ts.lRows).values.filter((v) => v !== null && v !== undefined);
+    const own = ts.lRows.filter((r) => getField(r, F.tanque) === tq);
+    const iclVals = iclSeries(own).values.filter((v) => v !== null && v !== undefined);
     return { tq, sv: ts.sv, icl: avg(iclVals) };
   });
 
@@ -1150,7 +1156,11 @@ export function renderModule(ctx, mod) {
   // Calidad de Agua (hoja "Calidad de Agua") de la misma corrida + módulo → modal Tabla/Matriz/Tendencias.
   const calAguaRows = calAguaForModule(mod, corrida);
   // Mapa tanque → lote (desde Larvicultura) para el tooltip del E.D.T.
-  const tankLote = {};
+  // SIN prototipo: se indexa por nombre de tanque, que sale de la hoja. Con un objeto literal
+  // un tanque llamado "constructor" o "toString" resolvería al miembro HEREDADO de
+  // Object.prototype —truthy— y el tooltip imprimiría el código de esa función como si fuera
+  // el lote. Mismo criterio que despacho.js y que `bmAlias` en este mismo fichero.
+  const tankLote = Object.create(null);
   ctx.larvWin.forEach((r) => {
     if (getField(r, F.modulo) !== mod || (corrida && getField(r, F.corrida) !== corrida)) return;
     const tq = getField(r, F.tanque), lote = getField(r, F.lote);

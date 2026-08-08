@@ -163,6 +163,20 @@ export function renderTank(ctx, mod, tq) {
   const col = colorFor(ctx.allMods.indexOf(mod));
   const s = tankStats(ctx, mod, tq, corrida);
 
+  // Filas que pertenecen A ESTE TANQUE. `tankStats` incluye a propósito en `lRows` las filas
+  // de Larvicultura SIN tanque asignado (registros a nivel de MÓDULO), porque sus variables
+  // de calidad —% Actividad, Estrés, Espuma…— son del módulo entero y sirven de referencia
+  // para el tanque. Pero hay dos magnitudes que NO admiten esa lectura:
+  //   · POBLACIÓN — `survival()` sí filtra por tanque, así que el KPI «Pob. actual» excluía
+  //     esas filas mientras el gráfico de Población las incluía: el último punto de la curva
+  //     podía ser una población de módulo y contradecir al KPI de arriba en la misma pantalla.
+  //   · OBSERVACIONES — una anotación sin tanque se listaba como historial de CADA tanque del
+  //     módulo, así que el mismo texto aparecía repetido en todos y el recuento del botón
+  //     atribuía a un tanque observaciones que no eran suyas.
+  // Ambas son hechos POR TANQUE y se acotan aquí. El diagnóstico por parámetros, el ICL y el
+  // color de agua siguen leyendo `s.lRows` a propósito (ahí el dato de módulo sí representa).
+  const ownRows = s.lRows.filter((r) => getField(r, F.tanque) === tq);
+
   // Color del agua del tanque (último valor con dato).
   const colorInfo = (() => {
     const rs = [...s.lRows].sort((a, b) => (parseAnyDate(gFec(a)) || 0) - (parseAnyDate(gFec(b)) || 0));
@@ -186,7 +200,7 @@ export function renderTank(ctx, mod, tq) {
   // Observaciones registradas para este tanque (col. "Observaciones" de Larvicultura),
   // más recientes primero. Respeta el filtro de corrida vigente (s.lRows ya viene filtrado).
   const OBS_KEYS = ['Observaciones', 'observaciones', 'Observación', 'observación'];
-  const obsRows = [...s.lRows]
+  const obsRows = [...ownRows]
     .filter((r) => getField(r, OBS_KEYS))
     .sort((a, b) => (parseAnyDate(gFec(b)) || 0) - (parseAnyDate(gFec(a)) || 0));
 
@@ -404,7 +418,7 @@ export function renderTank(ctx, mod, tq) {
     try { param.draw(root); } catch (e) { console.error('[tank] param', e); }
     const od = dailySeries(s.tRows, gOD);
     const tmp = dailySeries(s.tRows, gTmp);
-    const pop = lastByDay(s.lRows, gPop);
+    const pop = lastByDay(ownRows, gPop);
     // Supervivencia diaria consistente con el KPI y la definición del sistema:
     // población del día / población inicial × 100 (en vez de la columna cruda
     // "Supervivencia", que podía estar dispersa y dejar el gráfico vacío).
@@ -702,8 +716,11 @@ export function renderTank(ctx, mod, tq) {
     if (fcOverlay) {
       const kpisEl = root.querySelector('#svForecastKpis');
       const drawForecast = () => {
-        const fdays = [...new Set(s.lRows.map(gFec).filter(Boolean))].sort((a, b) => (parseAnyDate(a) || 0) - (parseAnyDate(b) || 0));
-        const popv = fdays.map((d) => { const rs = s.lRows.filter((r) => gFec(r) === d); for (let i = rs.length - 1; i >= 0; i--) { const v = gPop(rs[i]); if (v !== null && v !== undefined) return v; } return null; });
+        // Mismas filas que el gráfico de Población del tanque (`ownRows`): el pronóstico
+        // extrapola la población DE ESTE TANQUE, así que no puede partir de un histórico que
+        // incluya poblaciones registradas a nivel de módulo.
+        const fdays = [...new Set(ownRows.map(gFec).filter(Boolean))].sort((a, b) => (parseAnyDate(a) || 0) - (parseAnyDate(b) || 0));
+        const popv = fdays.map((d) => { const rs = ownRows.filter((r) => gFec(r) === d); for (let i = rs.length - 1; i >= 0; i--) { const v = gPop(rs[i]); if (v !== null && v !== undefined) return v; } return null; });
         // SV pop-based (coherente con el KPI y el gráfico de Supervivencia).
         const svv = popv.map((p) => (p !== null && s.popFirst && s.popFirst > 0) ? Math.min((p / s.popFirst) * 100, 100) : null);
         const H = 7;

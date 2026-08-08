@@ -422,8 +422,14 @@ function sumDetail(key, mIdx, monthSup) {
 
   if (key === 'calidad') {
     const rows = G.filter((r) => isLarviculturaRow(r) && rowMonth(r) === mIdx);
+    // ⚠ «Supervivencia anotada» NO es la misma cifra que la tarjeta «Supervivencia promedio»
+    // del panel: aquélla es cosecha ÷ siembra del mes (`monthSup`, derivada de las
+    // poblaciones) y ésta es el promedio de la COLUMNA Supervivencia que el operador escribe
+    // a diario. Pueden diferir mucho —comprobado— y ambas salían rotuladas «Supervivencia» en
+    // la misma pantalla, así que el detalle parecía desmentir a la tarjeta que lo abre. El
+    // rótulo dice ahora de dónde viene cada una; los números no cambian.
     const VARS = [
-      ['Supervivencia', F.supervivencia, '%'],
+      ['Supervivencia anotada (columna del registro diario)', F.supervivencia, '%'],
       ['Deformidad', ['Deformidad', 'deformidad'], '%'],
       ['Intestino lleno', ['Intestino_Lleno', 'IntestinoLleno', 'intestino_lleno'], '%'],
       ['Intestino vacío', ['Intestino_Vacio', 'Intestino_Vacío', 'intestino_vacio'], '%'],
@@ -432,7 +438,7 @@ function sumDetail(key, mIdx, monthSup) {
     ];
     const body = VARS.map(([lbl, keys, u]) => { const v = numAvg(rows, keys); return v === null ? '' : `<tr><td>${esc(lbl)}</td><td><b>${v.toFixed(1)}${u}</b></td></tr>`; }).filter(Boolean).join('');
     return { title: '🦐 Calidad de las larvas', html: body
-      ? `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">Promedios del mes · todas las corridas (${rows.length} registro(s)).</p>${detailTable(['Variable', 'Promedio'], body)}`
+      ? `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">Promedios del mes · todas las corridas (${rows.length} registro(s)). La <b>supervivencia anotada</b> es el promedio de lo que se escribe cada día en la planilla; la tarjeta «Supervivencia promedio» del panel se calcula aparte, como cosecha ÷ siembra del mes, por lo que ambas cifras no tienen por qué coincidir.</p>${detailTable(['Variable', 'Promedio'], body)}`
       : '<p style="color:var(--c-text-muted)">Sin datos de calidad para este mes.</p>' };
   }
 

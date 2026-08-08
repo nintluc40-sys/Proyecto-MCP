@@ -239,7 +239,13 @@ function modStatsCompute(ctx, mod, corrida) {
     sal: avg([...win, ...tWin].map(gSal).filter((v) => v !== null)),
     corridas: [...new Set(win.map(gCor).filter(Boolean))].length,
     lotes: [...new Set(win.map((r) => getField(r, F.lote)).filter(Boolean))],
-    dias: dateSpanDays(win), // días transcurridos (span 1ª→última fecha + 1)
+    // Días transcurridos del proceso: se mide sobre `base` —la corrida completa— y NO sobre
+    // la ventana visible. Es la EDAD del cultivo, un hecho de la corrida, no una estadística
+    // del rango que se esté mirando. Con `win` el mismo módulo declaraba dos edades a la vez:
+    // la tarjeta de la Vista Ejecutiva (que neutraliza el filtro con `fullCtx`) decía «7 días»
+    // y el KPI «Días proceso» de su propio Resumen Operativo decía «3» con un preset de fecha
+    // activo — medido. Sin filtro, `win` y `base` coinciden y el valor no cambia.
+    dias: dateSpanDays(base), // días transcurridos (span 1ª→última fecha + 1)
     // Técnicos responsables: se leen de la columna «Técnico» sobre `base` —la corrida
     // completa— y NO sobre la ventana visible. Ser el responsable de un módulo es un hecho
     // de la corrida, no del rango de días que se esté mirando: con `win` la Vista Ejecutiva
