@@ -57,7 +57,13 @@ export function renderDespacho(ctx, mod) {
     const tRows = byDate(rows.filter((r) => gTnq(r) === tq));
     grouped[tq] = rowsAreGrouped(tRows); // tanque agrupado (palabra "Agrupado" en Observaciones)
     for (let i = tRows.length - 1; i >= 0; i--) { const p = gPop(tRows[i]); if (p !== null) { lastPop[tq] = p; break; } }
-    for (let i = 0; i < tRows.length; i++) { const p = gPop(tRows[i]); if (p !== null) { firstPop[tq] = p; break; } }
+    // Población inicial = primera lectura REAL (>0), el MISMO criterio que
+    // `modCorStatsCompute` (core/prodCalendar.js) y el cuadro de Siembras. Un 0 en la
+    // primera lectura no es «se sembraron cero larvas», es que aún no se había contado:
+    // aceptándolo, el tanque aportaba numerador pero no denominador y el «Rendimiento
+    // cosecha» salía inflado —medido, 100 % (tope de un 150 %) donde correspondía 78,9 %—.
+    // `lastPop` NO cambia: ahí un 0 sí es real (tanque vaciado o agrupado).
+    for (let i = 0; i < tRows.length; i++) { const p = gPop(tRows[i]); if (p !== null && p > 0) { firstPop[tq] = p; break; } }
     const disp = tRows.filter(hasDispatch);
     nDespachos += disp.length;
     disp.forEach((r) => { const pl = parseNum(r, DKEY.plgM); if (pl !== null && pl > 0) plgVals.push(pl); });
