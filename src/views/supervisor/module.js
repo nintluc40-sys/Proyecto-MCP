@@ -473,10 +473,14 @@ function microPlacaHTML(rows, state) {
   const day = days[idx];
   const colonies = microColonies(day.rows);
   _svMicroColonies = colonies; // para el tooltip de colonias
-  // Carga total del día = Σ UFC de TODOS los patógenos con UFC EXCEPTO C. Totales (agregado
-  // de C. Amarillas + C. Verdes → sumarlo duplicaría). V. Luminiscentes no entra (presencia/
-  // ausencia). "—" si ese día no hubo ningún patógeno con UFC.
-  const nonTotColonies = colonies.filter((c) => c.key !== 'totales');
+  // Carga total del día = Σ UFC de los patógenos ESPECÍFICOS con UFC. Se excluyen los
+  // conteos AGREGADOS (`MIC_AGG` = C. Totales y Bact. Totales), que son sumas y volverían a
+  // contar lo ya contado. Antes se excluía a mano solo «C. Totales», así que «Bact. Totales»
+  // —la mayor de las dos— entraba en el sumatorio: medido, 10.150 donde correspondía 150.
+  // Se usa la MISMA constante que el KPI «Dominante» de más abajo, para que los dos no
+  // puedan volver a discrepar sobre qué es un agregado. V. Luminiscentes no entra
+  // (presencia/ausencia). "—" si ese día no hubo ningún patógeno específico con UFC.
+  const nonTotColonies = colonies.filter((c) => !MIC_AGG.has(c.key));
   const totUfc = nonTotColonies.length ? nonTotColonies.reduce((a, c) => a + c.ufc, 0) : null;
   // V. Luminiscentes del día (presencia/ausencia, no UFC): presencia si alguna muestra la
   // reporta presente; ausencia si al menos una la reporta ausente y ninguna presente.
