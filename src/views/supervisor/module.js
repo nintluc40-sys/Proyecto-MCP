@@ -1419,7 +1419,7 @@ export function renderModule(ctx, mod) {
           <button class="sv-modal-x" data-desinf-close aria-label="Cerrar">✕</button>
         </div>
         <div class="sv-modal-body">
-          <div class="sv-desinf-summary">Cumplimiento: <b>${desinf.cumplimiento !== null ? desinf.cumplimiento + '%' : '—'}</b> · ✅ ${desinf.si} Sí · ❌ ${desinf.no} No${desinf.fecha ? ' · 📅 ' + esc(fmtShort(desinf.fecha)) : ''}</div>
+          <div class="sv-desinf-summary">Cumplimiento: <b>${desinf.cumplimiento !== null ? desinf.cumplimiento + '%' : '—'}</b> · ✅ ${desinf.si} Sí · ❌ ${desinf.no} No${desinf.fecha ? ' · 📅 Inicio: ' + esc(fmtShort(desinf.fecha)) : ''}</div>
           ${desinf.tipos.map((t) => `
             <div class="sv-section-title" style="margin-top:14px">${esc(t.tipo)}</div>
             ${t.cats.map((c) => `

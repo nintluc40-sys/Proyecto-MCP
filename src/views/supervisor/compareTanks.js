@@ -216,7 +216,19 @@ export function setupCompareTanks(root) {
 
   function renderConfig() {
     const mods = modules();
-    ['A', 'B'].forEach((s) => { if (ctState[s].mod && !mods.includes(ctState[s].mod)) ctState[s] = { mod: '', cor: '', tq: '' }; });
+    // Auto-saneo de la selección contra los datos ACTUALES. Antes solo se validaba el
+    // MÓDULO, mientras que los modos Lote, Corrida y Módulo masivo sí revalidan su propia
+    // dimensión (más abajo). Con esa asimetría, si un refresco se llevaba por delante la
+    // corrida o el tanque elegidos, el desplegable caía al marcador de posición —vacío en
+    // pantalla— mientras `ctState` conservaba el valor viejo, así que «Generar» comparaba
+    // algo que el formulario ya no mostraba. `'*'` («Todos») no se valida: no nombra una
+    // corrida ni un tanque concreto, así que sobrevive a cualquier cambio de datos.
+    ['A', 'B'].forEach((k) => {
+      const st = ctState[k];
+      if (st.mod && !mods.includes(st.mod)) { ctState[k] = { mod: '', cor: '', tq: '' }; return; }
+      if (st.cor && st.cor !== '*' && !corridasOf(st.mod).includes(st.cor)) { st.cor = ''; st.tq = ''; }
+      if (st.tq && st.tq !== '*' && st.cor && st.cor !== '*' && !tanksOf(st.mod, st.cor).includes(st.tq)) st.tq = '';
+    });
     const A = ctState.A, B = ctState.B;
     // Tanques: si corrida = "Todos" o sin corrida, solo se ofrece "Todos".
     const tankList = (st) => (st.mod && st.cor && st.cor !== '*') ? tanksOf(st.mod, st.cor) : [];

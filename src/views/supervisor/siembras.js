@@ -59,19 +59,33 @@ const dayKey = (ms) => {
 function tankInfo(rows) {
   const sorted = rows.slice().sort((a, b) => (gDateMs(a) ?? 0) - (gDateMs(b) ?? 0));
   // Registro de siembra: primer N5 (con población si la hay); si no hay N5, primer registro.
-  const sieRow = sorted.find((r) => isN5(r) && gPop(r) !== null)
+  // Siembra = primera población REAL (>0): EL MISMO criterio que `modCorStatsCompute`
+  // (core/prodCalendar.js). Un 0 en la primera lectura no es «se sembraron cero larvas»,
+  // es que todavía no se había contado. Con el `!== null` de antes, un tanque cuyo N5
+  // traía 0 y subía a 900.000 daba «Sembrado 0» y supervivencia «—» aquí mientras
+  // Producción Omarsa decía 900.000 y 77,8 % — medido, dos cifras del mismo hecho.
+  // El transferido NO usa esta regla: ahí un 0 sí es real (la población cayó a cero).
+  const isSie = (r) => { const v = gPop(r); return v !== null && v > 0; };
+  const sieRow = sorted.find((r) => isN5(r) && isSie(r))
     || sorted.find((r) => isN5(r))
     || null;
-  const popRows = sorted.filter((r) => gPop(r) !== null);
-  const siembra = (sieRow && gPop(sieRow) !== null) ? gPop(sieRow)
-    : (popRows.length ? gPop(popRows[0]) : null);
-  const sieDateMs = sieRow ? gDateMs(sieRow) : (popRows.length ? gDateMs(popRows[0]) : null);
+  const popRows = sorted.filter((r) => gPop(r) !== null); // honra el 0 (tanque colapsado)
 
   // Transferido = ÚLTIMA lectura de población que no sea la del despacho ni la de la
   // siembra. Excluir la siembra evita que un tanque recién sembrado (su único registro
   // es el N5) muestre un transferido igual al sembrado y una supervivencia del 100 %.
-  const baseRow = (sieRow && gPop(sieRow) !== null) ? sieRow : (popRows[0] || null);
-  const transCandidates = popRows.filter((r) => r !== baseRow && !isDespachoRow(r));
+  // `baseRow` es la fila que APORTA el valor sembrado: el N5 si trae población real y,
+  // si no, la primera lectura >0 del tanque. La AGRUPACIÓN por fecha sigue anclada al
+  // N5 (`sieDateMs`), que es la regla de negocio del cuadro y no cambia.
+  const baseRow = (sieRow && isSie(sieRow)) ? sieRow : (sorted.find(isSie) || null);
+  const siembra = baseRow ? gPop(baseRow) : null;
+  const sieDateMs = sieRow ? gDateMs(sieRow) : (baseRow ? gDateMs(baseRow) : null);
+  // Solo lecturas POSTERIORES a la siembra. No basta con excluir `baseRow`: cuando la
+  // siembra no es la primera lectura del tanque (N5 anotado con 0 y el conteo real más
+  // tarde), las lecturas ANTERIORES seguían siendo candidatas y el «transferido» acababa
+  // siendo ese 0 previo — una supervivencia del 0 % en un tanque sano.
+  const baseIdx = baseRow ? popRows.indexOf(baseRow) : -1;
+  const transCandidates = popRows.slice(baseIdx + 1).filter((r) => !isDespachoRow(r));
   const transRow = transCandidates.length ? transCandidates[transCandidates.length - 1] : null;
   const transferido = transRow ? gPop(transRow) : null;
   const plg = transRow ? parseNum(transRow, PLG_KEYS) : null;
@@ -138,6 +152,12 @@ export function computeSiembras(rows, opts = {}) {
   const tanks = [];
   byTank.forEach((rs, tq) => {
     const info = tankInfo(rs);
+    // Solo entran los tanques CON siembra (población inicial real). Un tanque sin ninguna
+    // lectura >0 —p. ej. el que solo tiene una fila de despacho— salía en el cuadro con
+    // «Sembrado —» ocupando una fila que no aporta nada, y su transferido llegaba al
+    // numerador del subtotal sin aportar denominador: con un tanque así la supervivencia
+    // del subtotal daba 130 % y solo el tope la disimulaba en un 100 % (medido).
+    if (info.siembra === null) return;
     tanks.push({
       tq, ...info,
       proyectado: info.transferido !== null ? info.transferido * (1 - merma) : null,

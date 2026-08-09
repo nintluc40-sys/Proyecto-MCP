@@ -206,8 +206,11 @@ describe('prodTableHTML · columna PL/g (Larvia)', () => {
     const html = prodTableHTML(months, months.length - 1);
     const head = html.slice(html.indexOf('<thead'), html.indexOf('</thead>'));
     const orden = [...head.matchAll(/<th[^>]*>(.*?)<\/th>/g)].map((m) => m[1].replace(/<[^>]*>/g, '').trim());
-    expect(orden.indexOf('PL/g')).toBe(orden.indexOf('Dens. siembra') + 1);
-    expect(orden.indexOf('PL/g (manual)')).toBe(orden.indexOf('PL/g') + 1);
+    // El rótulo dice «(Larvia)» explícitamente: junto a «PL/g (manual)», un «PL/g» a secas
+    // obligaba a pasar el ratón por encima para saber cuál era cuál, y es el MISMO indicador
+    // que el KPI «PL/g (Larvia)» del Resumen Operativo (module.js).
+    expect(orden.indexOf('PL/g (Larvia)')).toBe(orden.indexOf('Dens. siembra') + 1);
+    expect(orden.indexOf('PL/g (manual)')).toBe(orden.indexOf('PL/g (Larvia)') + 1);
   });
 
   it('sin lecturas de Plg la celda queda en «—», no en 0', () => {

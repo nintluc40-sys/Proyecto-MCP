@@ -167,7 +167,7 @@ export function prodTableHTML(months, pos) {
     ${slider}
     <div style="overflow:auto;margin-top:10px">
       <table class="sv-table prod-table">
-        <thead><tr><th>Módulo</th><th>Corrida</th><th>Fecha</th><th>Siembra</th><th>Dens. siembra</th><th title="${PLGL_TITLE}">PL/g</th><th>PL/g (manual)</th><th title="${POB_TITLE}">Población Actual</th><th>Superv.</th><th title="${TOTCOR_TITLE}">Total de la corrida</th><th>% Superv. corrida</th></tr></thead>
+        <thead><tr><th>Módulo</th><th>Corrida</th><th>Fecha</th><th>Siembra</th><th>Dens. siembra</th><th title="${PLGL_TITLE}">PL/g (Larvia)</th><th>PL/g (manual)</th><th title="${POB_TITLE}">Población Actual</th><th>Superv.</th><th title="${TOTCOR_TITLE}">Total de la corrida</th><th>% Superv. corrida</th></tr></thead>
         <tbody>${body || `<tr><td colspan="${N_COLS}" class="muted" style="text-align:center;padding:18px">Sin datos para este mes.</td></tr>`}${totalRow}</tbody>
       </table>
     </div>
