@@ -196,13 +196,17 @@ function buildBiomolHeat(host, rows, mode) {
   const dimOf = (r) => (byEst ? (r.estadio || '—') : r.tq);
   const colHead = byEst ? 'Estadío' : 'Tanque';
   const cols = bmDistinct(rows.map(dimOf)).sort(byEst ? bmEstadioCmp : natCmp);
+  // Filas por columna, UNA sola vez: `cRows` no depende del diagnóstico, pero se calculaba
+  // dentro del bucle de BM_DIAGS, así que el dataset se recorría 6 veces por columna
+  // (6 diagnósticos × nº de tanques barridos completos) para obtener siempre lo mismo.
+  const rowsByCol = new Map(cols.map((c) => [c, rows.filter((r) => dimOf(r) === c)]));
   const tips = []; // HTML de tooltip por celda (referenciado por índice, no por atributo)
   let html = `<div class="sv-bm-scroll"><table class="sv-bm-table"><thead><tr><th class="sv-bm-corner">Diag · ${colHead}</th>`
     + cols.map((c) => `<th>${esc(c)}</th>`).join('') + '</tr></thead><tbody>';
   BM_DIAGS.forEach((diag) => {
     html += `<tr><th class="sv-bm-rowh">${esc(BM_DLABEL[diag])}</th>`;
     cols.forEach((col) => {
-      const cRows = rows.filter((r) => dimOf(r) === col);
+      const cRows = rowsByCol.get(col);
       const measured = cRows.filter((r) => bmHasVal(r[diag]));
       const pos = measured.filter((r) => bmIsPos(r[diag])).length;
       const pct = measured.length ? Math.round(pos / measured.length * 100) : null;
