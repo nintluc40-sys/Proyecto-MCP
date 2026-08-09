@@ -71,7 +71,10 @@ export const CAL_RANGE_BASE = {
   nitrito: { max: 0.2 }, tan: { max: 2 }, amtox: { max: 0.1 },
   calcio: { min: 300, max: 560 }, magnesio: { min: 1200, max: 1800 }, potasio: { min: 380, max: 420 },
 };
-const CAL_RANGES_KEY = 'larv4_cal_ranges'; // misma clave que la app de captura → respeta ajustes del técnico
+// Misma clave que la app de captura → respeta ajustes del técnico. EXPORTADA para que
+// quien memorice resultados derivados de estos rangos pueda invalidar su caché con la
+// misma firma, sin volver a escribir la cadena a mano (hoy: la vista Visitante).
+export const CAL_RANGES_KEY = 'larv4_cal_ranges';
 let _rangeCache = { raw: undefined, val: null };
 /** Rangos efectivos = base fusionada con overrides de localStorage (cache por huella). */
 export function loadCalRanges() {

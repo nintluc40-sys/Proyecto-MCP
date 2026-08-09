@@ -26,8 +26,8 @@ import { parseAnyDate } from '../../core/dates.js';
 // Lo que sí se gana: si algún día cambia la cadena canónica de `classifyOrigin`, este panel
 // no puede desincronizarse en silencio de la vista Microbiología (que seguiría mostrando sus
 // datos mientras aquí `labSummaryBlock` devuelve ''). Es blindaje a futuro, no un fallo vivo.
-import { meltRow as micMelt, isAlerta as micIsAlerta, isMicroRow } from '../microbiologia/data.js';
-import { calMeasured, calWQI, loadCalRanges, isCalAguaRow } from '../microbiologia/calagua.data.js';
+import { meltRow as micMelt, isAlerta as micIsAlerta, isMicroRow, MIC_FACTORS_KEY } from '../microbiologia/data.js';
+import { calMeasured, calWQI, loadCalRanges, isCalAguaRow, CAL_RANGES_KEY } from '../microbiologia/calagua.data.js';
 
 // Estado persistente entre re-render (ÍNDICE de mes + métrica del gráfico).
 const vtState = { monthIdx: null, metric: 'superv' };
@@ -53,10 +53,33 @@ const PALETTE = ['#1E88E5', '#E53935', '#43A047', '#FB8C00', '#8E24AA', '#00ACC1
 // OJO: los objetos/arrays devueltos se COMPARTEN entre llamantes → tratarlos como
 // inmutables (hoy solo se leen y se recorren; los .sort() de la vista operan sobre
 // arrays recién construidos).
-let _vtMemo = { src: null, map: new Map() };
+//
+// ⚠ La identidad del store NO es la única entrada de estos resúmenes: `labSummary`
+// depende además de los umbrales de laboratorio, que el técnico edita en Microbiología
+// («⚙️ Rangos» y «Factores») y viven en localStorage. Sus capas de datos se recalculan
+// solas en cuanto cambia la firma —está declarado en microbiologia/data.js— pero este
+// memo las dejaba congeladas hasta el siguiente refresco de datos: al volver a Visitante
+// se seguía viendo el WQI y los niveles de alerta calculados con los umbrales ANTERIORES.
+// Por eso la firma de configuración entra también en la invalidación.
+const CFG_SIGN_KEYS = [CAL_RANGES_KEY, MIC_FACTORS_KEY];
+// Separador que NO puede aparecer dentro del JSON guardado, para que dos configuraciones
+// distintas no produzcan la misma firma concatenada. Se construye con `fromCharCode` y
+// NUNCA como carácter literal en el fuente: un NUL crudo vuelve el archivo BINARIO para
+// git —se pierden los diffs— y rompe la invariante de «0 bytes de control» del repo.
+const CFG_SEP = String.fromCharCode(0);
+function labCfgSig() {
+  // Separador NUL (como escape, nunca literal: un NUL crudo vuelve BINARIO el fuente para
+  // git y rompe los diffs). No puede aparecer dentro del JSON guardado, así que dos
+  // configuraciones distintas no pueden producir la misma firma concatenada.
+  try { return CFG_SIGN_KEYS.map((k) => localStorage.getItem(k) || '').join(CFG_SEP); }
+  catch (_) { return ''; } // sin almacenamiento → nada que invalidar
+}
+
+let _vtMemo = { src: null, cfg: null, map: new Map() };
 function memo(key, compute) {
   const src = store.globalData;
-  if (_vtMemo.src !== src) _vtMemo = { src, map: new Map() };
+  const cfg = labCfgSig();
+  if (_vtMemo.src !== src || _vtMemo.cfg !== cfg) _vtMemo = { src, cfg, map: new Map() };
   if (!_vtMemo.map.has(key)) _vtMemo.map.set(key, compute());
   return _vtMemo.map.get(key);
 }
@@ -91,6 +114,25 @@ function monthDataCompute(mIdx) {
 const modNum = (s) => { const m = String(s).match(/\d+/); return m ? +m[0] : null; };
 // Mes (bucket por corrida) de una fila cualquiera con columna Corrida.
 const rowMonth = (r) => { const n = parseInt(String(getField(r, F.corrida)).replace(/\D/g, ''), 10); return Number.isNaN(n) ? -1 : monthIndexOfCorrida(n); };
+
+// ── Observaciones de Registro_Supervisión: qué cuenta como HALLAZGO ──────────
+// Antes contaba cualquier texto no vacío, así que escribir «Sin novedad» puntuaba PEOR que
+// dejar la casilla en blanco: medido, 3 revisiones vacías daban 🟢 «Sin novedades» y las
+// mismas 3 con «Sin novedad» daban 🟡 «Con observaciones». Eso premia a quien no documenta.
+// ▼▼ AMPLIAR AQUÍ si el laboratorio usa otras fórmulas para decir «nada que reportar» ▼▼
+// Se comparan sin tildes, sin mayúsculas y sin puntuación final.
+const OBS_SIN_HALLAZGO = new Set([
+  'sin novedad', 'sin novedades', 'sin observaciones', 'sin observacion',
+  'ninguna', 'ninguno', 'nada', 'ok', 'n/a', 'na',
+]);
+const OBS_KEYS = ['Observaciones', 'observaciones', 'Observación', 'observación'];
+const obsFold = (s) => String(s || '')
+  .normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .toLowerCase().replace(/[.!\s]+$/g, '').replace(/\s+/g, ' ').trim();
+/** Hallazgos de una fila de revisión: los textos que NO son un «nada que reportar». */
+const obsFindings = (r) => String(getField(r, OBS_KEYS))
+  .split(/[,;]+/).map((x) => x.trim()).filter(Boolean)
+  .filter((t) => !OBS_SIN_HALLAZGO.has(obsFold(t)));
 
 // Lectura mínima de Biomol (NO se importa la vista lazy para no inflar el bundle base).
 const BIO_KEYS = {
@@ -140,8 +182,7 @@ function monthSummaryCompute(mIdx, monthSup) {
   // Estado de revisiones (tasa de hallazgos por revisión).
   let revTier = 'x', revText = 'Sin datos', revCtx = 'Sin revisiones este mes';
   if (revRows.length) {
-    const findings = revRows.reduce((s, r) =>
-      s + String(getField(r, ['Observaciones', 'observaciones', 'Observación', 'observación'])).split(/[,;]+/).map((x) => x.trim()).filter(Boolean).length, 0);
+    const findings = revRows.reduce((s, r) => s + obsFindings(r).length, 0);
     const rate = findings / revRows.length;
     if (rate <= 0.5) { revTier = 'v'; revText = 'Sin novedades'; }
     else if (rate <= 1.5) { revTier = 'a'; revText = 'Con observaciones'; }
@@ -281,6 +322,10 @@ function labSummaryCompute(mIdx) {
   const micAlert = micRows.filter((r) => micMelt(r).some((m) => micIsAlerta(m.nivel))).length;
   const micPct = micRows.length ? Math.round(micAlert / micRows.length * 100) : null;
   const micTier = !micRows.length ? 'x' : micAlert === 0 ? 'v' : micPct <= 20 ? 'a' : 'r';
+  // Con muchas muestras y muy pocas alertas el redondeo daba 0 → el chip salía ÁMBAR
+  // diciendo «0% en alerta», contradiciéndose con su propio color y con el conteo de al
+  // lado. Solo el TEXTO cambia: `micPct` (y por tanto el semáforo) se conserva intacto.
+  const micPctTxt = micPct === null ? '—' : (micAlert > 0 && micPct === 0 ? '<1%' : micPct + '%');
   const calRows = store.globalData.filter((r) => isCalAguaRow(r) && inCalMonth(r, cm));
   const ranges = loadCalRanges();
   const measures = calRows.flatMap((r) => calMeasured(r, ranges));
@@ -288,7 +333,7 @@ function labSummaryCompute(mIdx) {
   const calPct = evaluable.length ? Math.round(evaluable.filter((m) => m.estado === 'dentro').length / evaluable.length * 100) : null;
   const wqi = calWQI(measures, ranges).wqi;
   const calTier = calPct == null ? 'x' : calPct >= 90 ? 'v' : calPct >= 70 ? 'a' : 'r';
-  return { cm, micRows, micAlert, micPct, micTier, calRows, measures, calPct, wqi, calTier };
+  return { cm, micRows, micAlert, micPct, micPctTxt, micTier, calRows, measures, calPct, wqi, calTier };
 }
 
 /** Bloque "🧫 Laboratorio de agua y sanidad" (2 tarjetas clicables) para Visitante. */
@@ -299,7 +344,7 @@ function labSummaryBlock(mIdx) {
   return `<div class="card vt-card">
     <div class="vt-card-title" style="color:${AC}">🧫 Laboratorio de agua y sanidad · ${esc(monthLabelAt(mIdx))} <span class="muted" style="font-weight:600;font-size:12px">· microbiología y calidad de agua</span></div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
-      ${sumCard('🧫', 'Microbiología', s.micRows.length ? semChip(s.micTier, `${s.micPct}% en alerta`) : semChip('x', 'Sin muestras'), s.micRows.length ? `${s.micRows.length} muestra(s) · ${s.micAlert} en nivel alto` : 'Sin análisis microbiológicos', 'labMicro', AC)}
+      ${sumCard('🧫', 'Microbiología', s.micRows.length ? semChip(s.micTier, `${s.micPctTxt} en alerta`) : semChip('x', 'Sin muestras'), s.micRows.length ? `${s.micRows.length} muestra(s) · ${s.micAlert} en nivel alto` : 'Sin análisis microbiológicos', 'labMicro', AC)}
       ${sumCard('💧', 'Calidad del agua', s.calRows.length ? semChip(s.calTier, `${s.calPct}% en rango`) : semChip('x', 'Sin muestras'), s.calRows.length ? `${s.calRows.length} muestra(s) · WQI ${s.wqi == null ? '—' : s.wqi}` : 'Sin análisis de agua', 'labAgua', AC)}
     </div>
   </div>`;
@@ -340,7 +385,7 @@ function summaryBlock(mIdx, monthSup, label) {
       ${sumCard('🔍', 'Cobertura de supervisión', covVal, s.covY ? 'módulos revisados' : 'no hay cobertura que medir', 'cobertura')}
       ${sumCard('⚠️', 'Estado de revisiones', semChip(s.revTier, s.revText), s.revCtx, 'revisiones')}
       ${sumCard('🧬', 'Sanidad (laboratorio)', semChip(s.bioTier, s.bioText), s.bioCtx, 'sanidad')}
-      ${sumCard('🧪', 'Análisis realizados', String(s.bioSamples), 'muestras de laboratorio', 'analisis')}
+      ${sumCard('🧪', 'Análisis genéticos', String(s.bioSamples), 'muestras con prueba de patógenos', 'analisis')}
     </div>
   </div>`;
 }
@@ -465,7 +510,7 @@ function sumDetail(key, mIdx, monthSup) {
   if (key === 'revisiones') {
     const revRows = G.filter((r) => r._SheetOrigin === 'Registro_Supervision' && rowMonth(r) === mIdx);
     const map = new Map();
-    revRows.forEach((r) => String(getField(r, ['Observaciones', 'observaciones', 'Observación', 'observación'])).split(/[,;]+/).map((x) => x.trim()).filter(Boolean).forEach((o) => map.set(o, (map.get(o) || 0) + 1)));
+    revRows.forEach((r) => obsFindings(r).forEach((o) => map.set(o, (map.get(o) || 0) + 1)));
     const top = [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
     const body = top.map(([o, c]) => `<tr><td>${esc(o)}</td><td><b>${c}</b></td></tr>`).join('');
     return { title: '⚠️ Estado de revisiones', html: revRows.length
@@ -491,7 +536,7 @@ function sumDetail(key, mIdx, monthSup) {
     const map = new Map();
     bioRows.forEach((r) => { const l = getField(r, ['Lugar', 'lugar']) || 'Sin lugar'; map.set(l, (map.get(l) || 0) + 1); });
     const body = [...map.entries()].sort((a, b) => b[1] - a[1]).map(([l, c]) => `<tr><td>${esc(l)}</td><td><b>${c}</b></td></tr>`).join('');
-    return { title: '🧪 Análisis realizados', html: bioRows.length
+    return { title: '🧪 Análisis genéticos', html: bioRows.length
       ? `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${bioRows.length} muestra(s) analizada(s) · por lugar.</p>${detailTable(['Lugar', 'Muestras'], body)}`
       : '<p style="color:var(--c-text-muted)">Sin análisis de laboratorio este mes.</p>' };
   }
@@ -556,7 +601,7 @@ function sumDetail(key, mIdx, monthSup) {
         : '';
       return {
         title: '🧫 Microbiología del mes',
-        html: `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${s.micRows.length} muestra(s) · <b>${s.micAlert}</b> con algún patógeno en nivel Moderado/Elevado (${s.micPct}%).</p>`
+        html: `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${s.micRows.length} muestra(s) · <b>${s.micAlert}</b> con algún patógeno en nivel Moderado/Elevado (${s.micPctTxt}).</p>`
           + chart
           + (body ? detailTable(['Patógeno', 'En alerta', 'Muestras'], body) : '<p style="color:#2E9E5B;font-weight:700">🟢 Sin patógenos en nivel alto este mes.</p>'),
         draw: alertRows.length ? () => drawLabMicroBars(alertRows) : null,
