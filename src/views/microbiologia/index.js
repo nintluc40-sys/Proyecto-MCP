@@ -1104,9 +1104,26 @@ function saveMicFactors(root) {
   try { localStorage.setItem(MIC_FACTORS_KEY, JSON.stringify(stored)); } catch (_) { toast('No se pudieron guardar los rangos (almacenamiento no disponible).', 'err'); return; }
   closeMicFact(root); toast('Rangos guardados.', 'ok'); microbiologiaView(root);
 }
+// Restablece SOLO el área abierta en el editor, y solo sus umbrales l/m/e. Antes hacía
+// `removeItem` de la clave entera: restablecer un área sin overrides borraba los del
+// resto de áreas y, sobre todo, los Factores (×) que escribe la APP DE CAPTURA bajo la
+// misma clave — la pérdida silenciosa que `saveMicFactors` evita a propósito al guardar.
 function resetMicFactors(root) {
-  try { localStorage.removeItem(MIC_FACTORS_KEY); } catch (_) { /* sin almacenamiento */ }
-  closeMicFact(root); toast('Rangos restablecidos a los valores por defecto.', 'ok'); microbiologiaView(root);
+  const area = MIC_AREAS.some((a) => a.key === _micFactArea) ? _micFactArea : MIC_AREAS[0].key;
+  const areaLabel = (MIC_AREAS.find((a) => a.key === area) || {}).label || area;
+  let stored = {};
+  try { const raw = localStorage.getItem(MIC_FACTORS_KEY); if (raw) stored = JSON.parse(raw) || {}; } catch (_) { stored = {}; }
+  const a = stored[area] || {};
+  Object.keys(a).forEach((fkey) => {
+    const f = a[fkey] && a[fkey].f;
+    if (f != null) a[fkey] = { f }; else delete a[fkey]; // conserva el Factor (×), descarta l/m/e
+  });
+  if (Object.keys(a).length) stored[area] = a; else delete stored[area];
+  try {
+    if (Object.keys(stored).length) localStorage.setItem(MIC_FACTORS_KEY, JSON.stringify(stored));
+    else localStorage.removeItem(MIC_FACTORS_KEY);
+  } catch (_) { /* sin almacenamiento */ }
+  closeMicFact(root); toast(`Rangos de «${areaLabel}» restablecidos a los valores por defecto.`, 'ok'); microbiologiaView(root);
 }
 
 // Severidad → clave de color equivalente para el nivel de riesgo de un nodo.
