@@ -222,7 +222,13 @@ export function renderTank(ctx, mod, tq) {
       ${kpiGlass('🧂', 'Salinidad', fmt1(s.sal, ' ppt'))}
       ${kpiGlass('👥', 'Pob. actual', fmtPop(s.pop))}
       ${kpiGlass('👥', 'Pob. inicial', fmtPop(s.popFirst))}
-      ${kpiGlass('🧪', 'ICL', fmtIcl(lastIcl), 'data-iclopen role="button" tabindex="0" title="Ver ICL diario (índice compuesto)"')}
+      ${/* El tooltip declara la ESCALA a propósito: la vista Larvicultura muestra otro
+            índice, su «ICL-Q», que también se llama Índice de Calidad Larvaria pero se
+            calcula distinto (100 − promedio ponderado, 0–100) y para el mismo tanque y día
+            da otra cifra —medido: 94,85 allí frente a 262 aquí—. Sin la aclaración, los dos
+            números parecen comparables. La fórmula completa y las bandas están en el modal
+            que abre este KPI. */''}
+      ${kpiGlass('🧪', 'ICL', fmtIcl(lastIcl), 'data-iclopen role="button" tabindex="0" title="Ver ICL diario. Índice COMPUESTO del Supervisor: suma de variables favorables menos desfavorables, en escala propia (óptimo ≥ 238 en larva, ≥ 243 en post-larva). NO es el ICL-Q 0–100 de la vista Larvicultura, que se calcula de otra forma."')}
       ${colorInfo ? `<div class="sv-kpi-glass sv-color-kpi" title="${esc(colorInfo.message)}">
         <div class="sv-kpi-label">🎨 Color de agua</div>
         <div class="sv-kpi-value"><span class="sv-color-swatch" style="background:${colorInfo.hex}"></span>${esc(colorInfo.name)}</div>
