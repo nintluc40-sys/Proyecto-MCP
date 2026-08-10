@@ -10,6 +10,7 @@ import { store } from '../../core/store.js';
 import { getField, parseNum } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { isUnsafeKey } from '../../core/util.js';
+import { intStr, normTipoMuestra } from './data.js';
 
 export const isCalAguaRow = (r) => !!r && /calidad\s*de\s*agua/i.test(String(r._SheetOrigin || ''));
 
@@ -126,10 +127,14 @@ export function calCtx(row) {
     corrida: getField(row, ['Corrida']),
     depto: getField(row, ['Departamento']),
     formato: getField(row, ['Formato']),
-    tipoMuestra: getField(row, ['Tipo de muestra']),
-    modulo: getField(row, ['Módulo', 'Modulo']),
+    // Las MISMAS normalizaciones que `rowContext` (data.js). Sin ellas, la celda "1.0"
+    // que a veces devuelve el Sheet creaba un tanque DISTINTO de "1" (dos nodos en el
+    // árbol Módulo→Tanque, cada uno con su WQI), y «Agua»/«agua»/«AGUA» eran tres
+    // opciones del filtro aquí y una sola en Bacteriología.
+    tipoMuestra: normTipoMuestra(getField(row, ['Tipo de muestra'])),
+    modulo: intStr(getField(row, ['Módulo', 'Modulo'])),
     estadio: getField(row, ['Estadío', 'Estadio']),
-    tq: getField(row, ['TQ/N°', 'TQ/N', 'TQ']),
+    tq: intStr(getField(row, ['TQ/N°', 'TQ/N', 'TQ'])),
     sala: getField(row, ['Sala']),
     estado: getField(row, ['Estado']),
     componente: getField(row, ['Componente']),

@@ -25,6 +25,36 @@ export function intStr(v) {
   return (Number.isFinite(n) && Number.isInteger(n)) ? String(n) : s;
 }
 
+/* ── Agrupación de valores TECLEADOS para los filtros ──────────────────────────────
+   Las columnas de contexto (Departamento, Formato, Muestra, Componente, Punto, Etapa,
+   Siembra…) las escribe una persona, así que la MISMA realidad llega con grafías
+   distintas. `getField` ya recorta los extremos, pero no plegaba mayúsculas, tildes ni
+   espacios internos: medido, 5 filas del mismo departamento ofrecían 4 opciones y elegir
+   «Larvicultura» dejaba ver 2 de las 5 muestras — pérdida silenciosa.
+   `filterKey` es la clave de agrupación (solo diferencias TIPOGRÁFICAS) y `groupValues`
+   elige como etiqueta la grafía MÁS FRECUENTE. Una errata de verdad («Larvicutura») es
+   otra palabra: no se pliega, y debe seguir viéndose aparte. */
+export const filterKey = (s) => fold(s).replace(/\s+/g, ' ').replace(/\.+$/, '').trim();
+
+/** `values` = valores CRUDOS fila a fila (con repeticiones: la frecuencia decide la
+ *  etiqueta). Devuelve [{ key, value, variants }] con `value` = grafía a mostrar. */
+export function groupValues(values) {
+  const byKey = new Map();
+  (values || []).forEach((v) => {
+    const k = filterKey(v);
+    if (!k) return;
+    if (!byKey.has(k)) byKey.set(k, new Map());
+    const counts = byKey.get(k);
+    counts.set(v, (counts.get(v) || 0) + 1);
+  });
+  return [...byKey.entries()].map(([key, counts]) => {
+    let value = null, best = -1;
+    // Empate → la primera grafía vista (orden de la hoja), por estabilidad del desplegable.
+    counts.forEach((n, v) => { if (n > best) { best = n; value = v; } });
+    return { key, value, variants: [...counts.keys()] };
+  });
+}
+
 // ── identificación de la hoja ──
 export const isMicroRow = (r) => !!r && /microbiolog/i.test(stripAccents(r._SheetOrigin || ''));
 

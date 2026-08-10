@@ -18,7 +18,7 @@ import {
   isMicroRow, pathogenRecords, rowContext, meltRow, PATHOGENS, PATHOGEN_COLOR,
   NIVELES, NIVEL_COLOR, NIVEL_RANK, isAlerta, FORMATO_LABEL, AGGREGATE_KEYS,
   DEPARTAMENTOS, deptoOfFormato, classifyFormato, PATHOGEN_AGAR,
-  loadMicThresholds, MIC_FACTORS_KEY, MIC_AREAS,
+  loadMicThresholds, MIC_FACTORS_KEY, MIC_AREAS, filterKey, groupValues,
 } from './data.js';
 import { petriSVG } from './petri.js';
 import { buildPetriPdfDoc, dayKeyOf } from './petriPdf.js';
@@ -89,6 +89,18 @@ const deptoOf = (ctx) => deptoNorm((ctx.departamento || '').trim()) || deptoOfFo
 // Orden preferido de departamentos en el filtro (el resto, alfabético al final).
 const DEPTO_ORDER = ['Larvicultura', 'Maduración', 'Algas'];
 const deptoRank = (d) => { const i = DEPTO_ORDER.indexOf(d); return i < 0 ? DEPTO_ORDER.length : i; };
+
+// ── Selección de filtro tolerante a la grafía (ver `filterKey`/`groupValues` en data.js) ──
+// Una fila entra si su valor es la MISMA cosa escrita distinto que lo elegido.
+const sameVal = (a, b) => filterKey(a) === filterKey(b);
+/** Reconcilia la selección guardada contra los grupos disponibles: la suelta si su valor
+ *  ya no está en el pool y la RE-ETIQUETA si el grupo pasó a mostrarse con otra grafía
+ *  (si no, el `selected` del desplegable no casaría y la selección se vería vacía). */
+function reconcile(sel, groups) {
+  if (!sel) return null;
+  const g = groups.find((x) => x.key === filterKey(sel));
+  return g ? g.value : null;
+}
 
 // Datos del render actual (para tooltips de la placa y export).
 const _scope = { rows: [], records: [], colonies: [], theme: 'light' };
@@ -727,28 +739,33 @@ function renderCalidadAgua() {
 
   // Filtros en CASCADA: departamento → formato → dimensiones de contexto dinámicas.
   let pool = all.filter(inMonth);
-  const deptos = [...new Set(pool.map((r) => ctxOf(r).depto).filter(Boolean))].sort(natCmp);
-  if (vState.calDepto && !deptos.includes(vState.calDepto)) vState.calDepto = null;
+  const gDeptos = groupValues(pool.map((r) => ctxOf(r).depto));
+  const deptos = gDeptos.map((g) => g.value).sort(natCmp);
+  vState.calDepto = reconcile(vState.calDepto, gDeptos);
   if (!vState.calDepto) vState.calFormato = null;
-  if (vState.calDepto) pool = pool.filter((r) => ctxOf(r).depto === vState.calDepto);
-  const formatos = vState.calDepto ? [...new Set(pool.map((r) => ctxOf(r).formato).filter(Boolean))].sort(natCmp) : [];
-  if (vState.calFormato && !formatos.includes(vState.calFormato)) vState.calFormato = null;
-  if (vState.calFormato) pool = pool.filter((r) => ctxOf(r).formato === vState.calFormato);
+  if (vState.calDepto) pool = pool.filter((r) => sameVal(ctxOf(r).depto, vState.calDepto));
+  const gFormatos = vState.calDepto ? groupValues(pool.map((r) => ctxOf(r).formato)) : [];
+  const formatos = gFormatos.map((g) => g.value).sort(natCmp);
+  vState.calFormato = reconcile(vState.calFormato, gFormatos);
+  if (vState.calFormato) pool = pool.filter((r) => sameVal(ctxOf(r).formato, vState.calFormato));
   const dimFilters = [];
   CAL_DIMS.forEach((dim) => {
-    const vals = [...new Set(pool.map((r) => dim.pick(ctxOf(r))).filter((v) => v !== '' && v != null))].sort(dim.cmp || natCmp);
+    const groups = groupValues(pool.map((r) => dim.pick(ctxOf(r))));
+    const vals = groups.map((g) => g.value).sort(dim.cmp || natCmp);
     if (dim.multi) {
-      // Selección MÚLTIPLE (chips): array de valores; se depura a los presentes en el pool.
-      const sel = (Array.isArray(vState.calDims[dim.key]) ? vState.calDims[dim.key] : []).filter((v) => vals.includes(v));
+      // Selección MÚLTIPLE (chips): array de valores; se depura a los presentes en el pool
+      // y se re-etiqueta cada uno a la grafía que hoy muestra su grupo.
+      const sel = (Array.isArray(vState.calDims[dim.key]) ? vState.calDims[dim.key] : [])
+        .map((v) => reconcile(v, groups)).filter(Boolean);
       vState.calDims[dim.key] = sel.length ? sel : null;
       if (vals.length < 2) { vState.calDims[dim.key] = null; return; }
       dimFilters.push({ dim, options: vals });
-      if (sel.length) pool = pool.filter((r) => sel.includes(dim.pick(ctxOf(r))));
+      if (sel.length) pool = pool.filter((r) => sel.some((v) => sameVal(dim.pick(ctxOf(r)), v)));
     } else {
-      if (vState.calDims[dim.key] && !vals.includes(vState.calDims[dim.key])) vState.calDims[dim.key] = null;
+      vState.calDims[dim.key] = reconcile(vState.calDims[dim.key], groups);
       if (vals.length < 2) { vState.calDims[dim.key] = null; return; }
       dimFilters.push({ dim, options: vals });
-      if (vState.calDims[dim.key]) pool = pool.filter((r) => dim.pick(ctxOf(r)) === vState.calDims[dim.key]);
+      if (vState.calDims[dim.key]) pool = pool.filter((r) => sameVal(dim.pick(ctxOf(r)), vState.calDims[dim.key]));
     }
   });
 
@@ -1797,27 +1814,30 @@ function renderBacteriologia() {
 
   // Departamento: columna REAL del sheet (con respaldo al derivado del formato). Solo los
   // departamentos con datos en el pool, en orden preferido (Larvicultura/Maduración/Algas/…).
-  const optDepto = [...new Set(pool.map((r) => deptoOf(ctxOf(r))).filter(Boolean))]
+  const gDepto = groupValues(pool.map((r) => deptoOf(ctxOf(r))));
+  const optDepto = gDepto.map((g) => g.value)
     .sort((a, b) => (deptoRank(a) - deptoRank(b)) || a.localeCompare(b));
-  if (vState.depto && !optDepto.includes(vState.depto)) vState.depto = null;
+  vState.depto = reconcile(vState.depto, gDepto);
   if (!vState.depto) vState.formato = null; // sin departamento → sin sub-filtro de formato
-  if (vState.depto) pool = pool.filter((r) => deptoOf(ctxOf(r)) === vState.depto);
+  if (vState.depto) pool = pool.filter((r) => sameVal(deptoOf(ctxOf(r)), vState.depto));
 
   // Formato: sub-filtro DATA-DRIVEN por el nombre REAL del sheet (los que tengan datos en el
   // pool actual), no una lista fija por departamento → aparecen también formatos no mapeados.
-  const optFormato = vState.depto ? [...new Set(pool.map((r) => ctxOf(r).formato).filter(Boolean))].sort(natCmp) : [];
-  if (vState.formato && !optFormato.includes(vState.formato)) vState.formato = null;
-  if (vState.formato) pool = pool.filter((r) => ctxOf(r).formato === vState.formato);
+  const gFormato = vState.depto ? groupValues(pool.map((r) => ctxOf(r).formato)) : [];
+  const optFormato = gFormato.map((g) => g.value).sort(natCmp);
+  vState.formato = reconcile(vState.formato, gFormato);
+  if (vState.formato) pool = pool.filter((r) => sameVal(ctxOf(r).formato, vState.formato));
 
   // Dimensiones de contexto DINÁMICAS (en cascada): cada una se muestra solo si tiene
   // ≥2 valores distintos en el pool actual → la barra se adapta al formato elegido.
   const dimFilters = [];
   FILTER_DIMS.forEach((dim) => {
-    const vals = [...new Set(pool.map((r) => dim.pick(ctxOf(r))).filter((v) => v !== '' && v != null))].sort(dim.cmp || natCmp);
-    if (vState.dims[dim.key] && !vals.includes(vState.dims[dim.key])) vState.dims[dim.key] = null;
+    const groups = groupValues(pool.map((r) => dim.pick(ctxOf(r))));
+    const vals = groups.map((g) => g.value).sort(dim.cmp || natCmp);
+    vState.dims[dim.key] = reconcile(vState.dims[dim.key], groups);
     if (vals.length < 2) { vState.dims[dim.key] = null; return; } // nada que elegir → no se muestra
     dimFilters.push({ dim, options: vals });
-    if (vState.dims[dim.key]) pool = pool.filter((r) => dim.pick(ctxOf(r)) === vState.dims[dim.key]);
+    if (vState.dims[dim.key]) pool = pool.filter((r) => sameVal(dim.pick(ctxOf(r)), vState.dims[dim.key]));
   });
 
   const rows = pool;
@@ -2481,9 +2501,11 @@ const isoDate = (d) => d ? d.getFullYear() + '-' + String(d.getMonth() + 1).padS
 function micExportBaseRows() {
   return microRows().filter((r) => {
     const c = rowContext(r);
-    if (vState.depto && deptoOf(c) !== vState.depto) return false;
-    if (vState.formato && c.formato !== vState.formato) return false;
-    return FILTER_DIMS.every((dim) => !vState.dims[dim.key] || dim.pick(c) === vState.dims[dim.key]);
+    // Mismas comparaciones tolerantes a la grafía que el render: si no, el Excel/PDF
+    // exportaría un subconjunto distinto del que el usuario está viendo en pantalla.
+    if (vState.depto && !sameVal(deptoOf(c), vState.depto)) return false;
+    if (vState.formato && !sameVal(c.formato, vState.formato)) return false;
+    return FILTER_DIMS.every((dim) => !vState.dims[dim.key] || sameVal(dim.pick(c), vState.dims[dim.key]));
   });
 }
 function micExportRows(root) {
