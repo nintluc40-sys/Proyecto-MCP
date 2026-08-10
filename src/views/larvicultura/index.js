@@ -620,7 +620,13 @@ export function larviculturaView(root) {
       <div id="lqHistWrap">${histInnerHTML(hist, tankReady, corridaPrompt)}</div>
     </div>
   </div>
-  ${semFranja('Población', semPop)}
+  ${/* La franja de Población EXIGE corrida, igual que el gráfico, las pastillas y los KPIs
+        de este mismo bloque. `buildPopData` indexa por NOMBRE de tanque, así que sin corrida
+        el «TQ1» de dos corridas del módulo se funde en una sola serie: medido, dos corridas
+        que perdieron 20 % y 25 % daban una franja VERDE de «10,0 % · 1 tanque(s)», que no
+        es ninguna de las dos. El aviso de debajo ya explica por qué hace falta la corrida;
+        mostrar aquí un semáforo calculado así lo contradecía en el mismo bloque. */''}
+  ${tankReady ? semFranja('Población', semPop) : ''}
   <div class="card lq-mb">
     <div class="lq-card-head-row">
       <div class="lq-card-title" style="margin:0">POBLACIÓN POR TANQUE</div>
