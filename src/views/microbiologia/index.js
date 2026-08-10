@@ -1908,7 +1908,7 @@ function renderConglomerado(rows, summaries) {
         ${_charts.stack ? nivelLegend() : ''}
       </div>
       <div class="card mic-chart-card">
-        <div class="mic-chart-title">💧🦐 Agua vs Animal <span class="muted">· muestras en Moderado/Elevado por patógeno</span></div>
+        <div class="mic-chart-title">💧🦐 Agua vs Animal <span class="muted">· muestras en Moderado/Elevado por patógeno · solo las de tipo Agua o Animal</span></div>
         <div class="mic-chart-host" style="height:${Math.max(240, (_charts.aa ? _charts.aa.labels.length : 1) * 30 + 70)}px">
           ${_charts.aa ? '<canvas id="micAA"></canvas>' : emptyBox('Sin alertas Moderado/Elevado en el filtro actual.')}
         </div>
@@ -2314,9 +2314,14 @@ function congByNivel(rows, records = pathogenRecords(rows)) {
 function aguaAnimalAlertas(rows, records = pathogenRecords(rows)) {
   const byKey = new Map();
   records.filter((r) => isAlerta(r.nivel)).forEach((r) => {
+    // Solo entra lo CLASIFICABLE. Formatos como Hisopados o Algas no tienen columna
+    // «Tipo de muestra»: si se creaba igual la entrada, el patógeno salía en el gráfico
+    // con las dos barras a 0 — leyéndose como «sin alertas» cuando la tabla lo marcaba
+    // Elevado. Medido: Pseudomonas con agua=0 animal=0 y «Elevado» en la misma pantalla.
+    if (r.tipoMuestra !== 'Agua' && r.tipoMuestra !== 'Animal') return;
     if (!byKey.has(r.key)) byKey.set(r.key, { agua: 0, animal: 0 });
     const o = byKey.get(r.key);
-    if (r.tipoMuestra === 'Agua') o.agua++; else if (r.tipoMuestra === 'Animal') o.animal++;
+    if (r.tipoMuestra === 'Agua') o.agua++; else o.animal++;
   });
   const labels = [], agua = [], animal = [];
   PATHOGENS.forEach((p) => {
@@ -2535,8 +2540,17 @@ function xlsxModalHTML() {
       </div>
     </div>`;
 }
+/** Nº de filas del alcance actual que NINGÚN rango puede exportar: las que no tienen una
+ *  fecha legible. El export se organiza POR FECHA (el PDF hace una hoja por día), así que
+ *  quedan fuera aunque el rango esté en blanco — pero la tabla de la vista SÍ las muestra
+ *  (con su texto crudo), así que el descarte tiene que decirse en vez de ser silencioso. */
+function micSinFecha() {
+  return micExportBaseRows().filter((r) => { const d = rowContext(r).fecha; return !d || isNaN(d); }).length;
+}
+const micExpNota = (n) => (n ? ` · ⚠ ${n} fila(s) sin fecha legible quedan fuera` : '');
 function updateXlsxInfo(root) {
-  const info = root.querySelector('#micExpInfo'); if (info) info.textContent = `Se exportarán ${micExportRows(root).length} registro(s) · solo columnas con datos.`;
+  const info = root.querySelector('#micExpInfo');
+  if (info) info.textContent = `Se exportarán ${micExportRows(root).length} registro(s) · solo columnas con datos.${micExpNota(micSinFecha())}`;
 }
 function openXlsxModal(root) {
   const m = root.querySelector('#micXlsxModal'); if (!m) return;
@@ -2609,7 +2623,7 @@ function updatePdfInfo(root) {
   const rows = micPdfRows(root);
   // Se cuentan las HOJAS reales (fechas de muestreo), que es lo que el usuario verá.
   const dias = new Set(rows.map((r) => { const d = rowContext(r).fecha; return d && !isNaN(d) ? dayKeyOf(d) : null; }).filter(Boolean)).size;
-  info.textContent = `Se exportarán ${rows.length} registro(s) en ${dias} hoja(s), una por fecha de muestreo.`;
+  info.textContent = `Se exportarán ${rows.length} registro(s) en ${dias} hoja(s), una por fecha de muestreo.${micExpNota(micSinFecha())}`;
 }
 function openPdfModal(root) {
   const m = root.querySelector('#micPdfModal'); if (!m) return;
