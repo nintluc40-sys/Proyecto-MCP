@@ -48,7 +48,18 @@ export function popStats(popData) {
   let totalCurr = 0, totalInit = 0, validTanks = 0, bestTank = null, bestVal = -1;
   Object.keys(popData).forEach((k) => {
     const arr = popData[k]; if (!arr.length) return;
-    const cur = arr[arr.length - 1].poblacion, ini = arr[0].poblacion;
+    // La población INICIAL es la primera lectura REAL (>0), el mismo criterio que
+    // `modCorStatsCompute` (core/prodCalendar.js) y el resto del sistema. `buildPopData`
+    // conserva los 0 a propósito —el gráfico debe mostrar la caída de un tanque vaciado—,
+    // pero un 0 en la PRIMERA lectura no es «se sembraron cero larvas»: es que aún no se
+    // había contado. Tomándolo como base, ese tanque aportaba su población actual al
+    // numerador y 0 al inicial, y la pérdida salía NEGATIVA: medido, «−50,0 %» —el panel
+    // afirmando que la población creció— donde correspondía «21,1 %».
+    // La ÚLTIMA lectura no usa esta regla: ahí el 0 sí es real (tanque vaciado o agrupado)
+    // y debe seguir contando como pérdida del 100 %.
+    const first = arr.find((p) => p.poblacion > 0);
+    if (!first) return; // sin ninguna lectura real: no hay base con la que comparar
+    const cur = arr[arr.length - 1].poblacion, ini = first.poblacion;
     totalCurr += cur; totalInit += ini; validTanks++;
     if (cur > bestVal) { bestVal = cur; bestTank = k; }
   });
