@@ -197,10 +197,17 @@ const SCORE_CRIT = 60, SCORE_OPT = 80;
 export function populationDumbbell(canvasId, popData) {
   const keys = Object.keys(popData).sort(natCmpEs);
   if (!keys.length) return null;
-  const iniData = [], curData = [], lossPct = [];
+  const iniData = [], curData = [], lossPct = [], iniRow = [];
   keys.forEach((k) => {
     const arr = popData[k];
-    const ini = arr[0].poblacion, cur = arr[arr.length - 1].poblacion;
+    // Población inicial = primera lectura REAL (>0), igual que en `popStats`. Un 0 al
+    // principio es «aún sin contar», no una siembra de cero: con `arr[0]` el tanque
+    // arrancaba en 0, la línea del dumbbell se pintaba VERDE (crecimiento) y no salía la
+    // etiqueta de pérdida, porque `ini > 0` era falso. La última lectura sí honra el 0.
+    // `|| arr[0]` cubre el tanque cuyas lecturas son todas 0: se dibuja, pero sin pérdida.
+    const first = arr.find((p) => p.poblacion > 0) || arr[0];
+    const ini = first.poblacion, cur = arr[arr.length - 1].poblacion;
+    iniRow.push(first); // la fila que aporta el inicial → su fecha va en el tooltip
     iniData.push(ini); curData.push(cur);
     lossPct.push(ini > 0 ? (ini - cur) / ini * 100 : null);
   });
@@ -254,7 +261,10 @@ export function populationDumbbell(canvasId, popData) {
             title: (it) => { const k = (it[0].raw && it[0].raw.x) ? it[0].raw.x : keys[it[0].dataIndex]; return /^\s*TQ/i.test(k) ? k : 'Tanque ' + k; },
             label: (it) => {
               const arr = popData[keys[it.dataIndex]] || [];
-              if (it.datasetIndex === 0) return ` Inicial (${arr.length ? arr[0].fecha : ''}): ${fmtK(iniData[it.dataIndex])}`;
+              // La fecha del inicial sale de la fila que APORTA ese valor (`iniRow`), no de
+              // `arr[0]`: si el tanque abrió con un 0 no contado, la fecha mostrada tiene
+              // que ser la del primer conteo real, la misma de la que sale la cifra.
+              if (it.datasetIndex === 0) return ` Inicial (${iniRow[it.dataIndex] ? iniRow[it.dataIndex].fecha : ''}): ${fmtK(iniData[it.dataIndex])}`;
               return ` Actual (${arr.length ? arr[arr.length - 1].fecha : ''}): ${fmtK(curData[it.dataIndex])}`;
             },
             afterBody: (it) => {

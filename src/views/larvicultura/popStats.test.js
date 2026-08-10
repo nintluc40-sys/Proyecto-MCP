@@ -8,8 +8,16 @@
 // Cuarta aparición de la misma regla en el sistema (las otras: core/prodCalendar.js,
 // siembras.js, despacho.js y survival() de supervisor/stats.js). La ÚLTIMA lectura NO la
 // usa: ahí el 0 sí es real y debe seguir contando como pérdida del 100 %.
-import { describe, it, expect } from 'vitest';
-import { buildPopData, popStats } from './extra.js';
+import { describe, it, expect, vi } from 'vitest';
+
+// El dumbbell dibuja con Chart.js: se captura la config para inspeccionar sus series.
+const charts = [];
+vi.mock('../../core/charts.js', () => ({
+  makeChart: (id, cfg) => { charts.push({ id, cfg }); return null; },
+  destroyChart: () => {}, destroyAllCharts: () => {}, Chart: class {},
+}));
+
+const { buildPopData, popStats, populationDumbbell } = await import('./extra.js');
 
 const L = (tq, fecha, pob) => ({
   _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '573',
@@ -46,6 +54,18 @@ describe('popStats · la población inicial es la primera lectura REAL (>0)', ()
     expect(s.totalInit).toBe(2000000);
     expect(s.pctLoss).toBe('25.0%');
     expect(s.validTanks).toBe(2);
+  });
+
+  it('el dumbbell usa la MISMA base: no pinta el tanque como si hubiera crecido', () => {
+    charts.length = 0;
+    const pd = buildPopData([
+      L('TQ1', '01/06/2026', 0), L('TQ1', '05/06/2026', 900000), L('TQ1', '20/06/2026', 700000),
+    ]);
+    populationDumbbell('lqPop', pd);
+    const cfg = charts.find((c) => c.id === 'lqPop').cfg;
+    // dataset 0 = inicial · dataset 1 = actual. El inicial debe ser 900 k, no 0.
+    const ini = cfg.data.datasets[0].data[0];
+    expect(typeof ini === 'object' ? ini.y : ini).toBe(900000);
   });
 
   it('un tanque con TODAS sus lecturas en 0 no aporta base de comparación', () => {
