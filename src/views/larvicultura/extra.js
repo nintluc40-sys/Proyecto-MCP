@@ -10,7 +10,7 @@
    Aislado de charts.js para una integración quirúrgica.
    ============================================================ */
 import { store } from '../../core/store.js';
-import { getField, parseNum, F, isLarviculturaRow } from '../../core/fields.js';
+import { getField, parseNum, F, isLarviculturaRow, OBS_KEYS } from '../../core/fields.js';
 import { parseAnyDate, dayNum, rangeLabel } from '../../core/dates.js';
 import { makeChart } from '../../core/charts.js';
 import { avg, natCmpEs } from '../../core/util.js';
@@ -179,7 +179,11 @@ export function buildHistogram(byCor, tanks, varId) {
 /** Filas de Larvicultura con Observaciones, para el Historial (modal). */
 export function obsHistorial(filters) {
   return store.globalData.filter(isLarviculturaRow)
-    .filter((r) => getField(r, ['Observaciones', 'observaciones', 'Observación']) &&
+    // `OBS_KEYS` (core/fields.js) es la lista CANÓNICA de variantes de la cabecera. Aquí
+    // había una copia de solo 3 que se perdía «observación» (minúscula con tilde): esas
+    // filas no salían en el Historial. Se comprueba la PRESENCIA del texto, no `obsFindings`
+    // — este modal es la bitácora de lo que se escribió, no un recuento de hallazgos.
+    .filter((r) => getField(r, OBS_KEYS) &&
       (!filters.corrida || getField(r, F.corrida) === filters.corrida) &&
       (!filters.modulo || getField(r, F.modulo) === filters.modulo) &&
       (!filters.tanque || getField(r, F.tanque) === filters.tanque))

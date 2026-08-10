@@ -4,7 +4,7 @@
    _lqRenderDecision del original.
    ============================================================ */
 import { store } from '../../core/store.js';
-import { getField, parseNum, F, isLarviculturaRow } from '../../core/fields.js';
+import { getField, parseNum, F, isLarviculturaRow, OBS_KEYS } from '../../core/fields.js';
 import { larviColor, larviLabel, larviZone, esc } from '../../core/format.js';
 import { parseAnyDate, fmtShort } from '../../core/dates.js';
 import { makeChart, destroyChart } from '../../core/charts.js';
@@ -257,7 +257,12 @@ function renderCorrComp(body) {
 const histF = { corrida: '', modulo: '', tanque: '' };
 
 function renderHistoria(body) {
-  const all = store.globalData.filter(isLarviculturaRow);
+  // Los dominios de la cascada salen de las filas CON observación, que son las únicas que
+  // esta ventana lista (`obsHistorial`). Derivándolos de todas, el desplegable ofrecía
+  // corridas, módulos y tanques sin una sola observación, y elegirlos devolvía «Sin
+  // observaciones para la combinación elegida» —medido—. Mismo criterio que el Historial de
+  // Revisiones y que el modal de Asistencia Técnica del Supervisor.
+  const all = store.globalData.filter((r) => isLarviculturaRow(r) && getField(r, OBS_KEYS));
 
   const corridas = [...new Set(all.map((r) => getField(r, F.corrida)).filter(Boolean))].sort(natCmpEs);
   if (histF.corrida && !corridas.includes(histF.corrida)) histF.corrida = '';
