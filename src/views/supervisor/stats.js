@@ -129,7 +129,15 @@ function survival(winRows, baseRows, tanks) {
       const win = byDate(winRows.filter((r) => gTnq(r) === tq));
       const base = byDate(baseRows.filter((r) => gTnq(r) === tq));
       let last = null; for (let i = win.length - 1; i >= 0; i--) { const v = gPop(win[i]); if (v !== null) { last = v; break; } }
-      let first = null; for (let i = 0; i < base.length; i++) { const v = gPop(base[i]); if (v !== null) { first = v; break; } }
+      // La SIEMBRA es la primera población REAL (>0), el MISMO criterio que
+      // `modCorStatsCompute` (core/prodCalendar.js), que ya lo declaraba así. Un 0 en la
+      // primera lectura no es «se sembraron cero larvas»: es que aún no se había contado.
+      // Aceptándolo, el tanque aportaba su `last` al numerador y 0 al denominador, así que
+      // la supervivencia del MÓDULO salía inflada (medido: 100 %, tope de un 150 %, donde
+      // correspondía 78,9 %) y discrepaba de la columna «Superv.» de Producción Omarsa para
+      // el mismo módulo+corrida. La del propio tanque salía «—» pese a tener datos.
+      // El `last` NO usa esta regla: ahí un 0 sí es real (tanque vaciado o agrupado).
+      let first = null; for (let i = 0; i < base.length; i++) { const v = gPop(base[i]); if (v !== null && v > 0) { first = v; break; } }
       // La siembra de un tanque solo entra en el DENOMINADOR si ese tanque aporta también
       // al NUMERADOR. Antes se sumaba siempre, así que un tanque cuyas filas quedaban fuera
       // de la ventana de fecha (dejó de registrarse, se descartó pronto…) aportaba su
@@ -147,7 +155,7 @@ function survival(winRows, baseRows, tanks) {
   } else if (baseRows.length) {
     const win = byDate(winRows), base = byDate(baseRows);
     for (let i = win.length - 1; i >= 0; i--) { const v = gPop(win[i]); if (v !== null) { lastSum = v; break; } }
-    for (let i = 0; i < base.length; i++) { const v = gPop(base[i]); if (v !== null) { firstSum = v; break; } }
+    for (let i = 0; i < base.length; i++) { const v = gPop(base[i]); if (v !== null && v > 0) { firstSum = v; break; } } // primera población REAL (>0), como arriba
   }
   const sv = (lastSum !== null && firstSum !== null && firstSum > 0) ? Math.min((lastSum / firstSum) * 100, 100) : null;
   return { sv, mort: sv !== null ? Math.max(100 - sv, 0) : null, pop: lastSum, popFirst: firstSum };
