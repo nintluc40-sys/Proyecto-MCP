@@ -49,8 +49,19 @@ export function renderLarvia(ctx, mod, tq) {
   const corrida = ctx.vState.corrida || null;
   const col = colorFor(ctx.allMods.indexOf(mod));
 
+  // SOLO filas de ESTE tanque. Un análisis LARVIA es siempre de un tanque concreto
+  // (confirmado por el laboratorio), así que las filas de Larvicultura sin tanque —los
+  // registros a nivel de MÓDULO— no tienen biometría que aportar aquí. El filtro anterior
+  // las admitía (`gTnq(r) === ''`) y eso tenía dos efectos: metía en el eje de los 8
+  // gráficos fechas en las que este tanque no tiene medición (`metricSlice` recorta los
+  // nulos de los extremos, pero no los intermedios) y, si alguna vez llegara un análisis
+  // sin tanque, lo pintaría como propio en TODOS los tanques del módulo a la vez —medido:
+  // un PL/g de módulo aparecía en la serie del tanque y en su bitácora—.
+  // Mismo criterio que OM vs Tex (omtex.js) y que la Población y las Observaciones de la
+  // vista Tanque. El promedio del módulo del gráfico ampliado sigue leyendo el módulo
+  // entero vía `modRowsOf`, que es justo lo que debe promediar.
   const rows = ctx.larvWin.filter((r) =>
-    gMod(r) === mod && (!corrida || gCor(r) === corrida) && (gTnq(r) === tq || gTnq(r) === ''))
+    gMod(r) === mod && (!corrida || gCor(r) === corrida) && gTnq(r) === tq)
     .sort((a, b) => (parseAnyDate(gFec(a)) || new Date(0)) - (parseAnyDate(gFec(b)) || new Date(0)));
 
   // Promedio del módulo (misma corrida) por métrica y fecha, para el overlay del gráfico
