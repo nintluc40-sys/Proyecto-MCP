@@ -7,7 +7,7 @@
 import { makeChart, destroyChart } from '../../core/charts.js';
 import { esc, fmtPop } from '../../core/format.js';
 import { store } from '../../core/store.js';
-import { getField, parseNum, F, isLarviculturaRow } from '../../core/fields.js';
+import { getField, parseNum, F, isLarviculturaRow, obsFindings } from '../../core/fields.js';
 import { fmtPct } from '../../core/util.js';
 import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt, monthIndexOfCorrida } from '../../core/prodCalendar.js';
 import { parseAnyDate } from '../../core/dates.js';
@@ -115,24 +115,9 @@ const modNum = (s) => { const m = String(s).match(/\d+/); return m ? +m[0] : nul
 // Mes (bucket por corrida) de una fila cualquiera con columna Corrida.
 const rowMonth = (r) => { const n = parseInt(String(getField(r, F.corrida)).replace(/\D/g, ''), 10); return Number.isNaN(n) ? -1 : monthIndexOfCorrida(n); };
 
-// ── Observaciones de Registro_Supervisión: qué cuenta como HALLAZGO ──────────
-// Antes contaba cualquier texto no vacío, así que escribir «Sin novedad» puntuaba PEOR que
-// dejar la casilla en blanco: medido, 3 revisiones vacías daban 🟢 «Sin novedades» y las
-// mismas 3 con «Sin novedad» daban 🟡 «Con observaciones». Eso premia a quien no documenta.
-// ▼▼ AMPLIAR AQUÍ si el laboratorio usa otras fórmulas para decir «nada que reportar» ▼▼
-// Se comparan sin tildes, sin mayúsculas y sin puntuación final.
-const OBS_SIN_HALLAZGO = new Set([
-  'sin novedad', 'sin novedades', 'sin observaciones', 'sin observacion',
-  'ninguna', 'ninguno', 'nada', 'ok', 'n/a', 'na',
-]);
-const OBS_KEYS = ['Observaciones', 'observaciones', 'Observación', 'observación'];
-const obsFold = (s) => String(s || '')
-  .normalize('NFD').replace(/[̀-ͯ]/g, '')
-  .toLowerCase().replace(/[.!\s]+$/g, '').replace(/\s+/g, ' ').trim();
-/** Hallazgos de una fila de revisión: los textos que NO son un «nada que reportar». */
-const obsFindings = (r) => String(getField(r, OBS_KEYS))
-  .split(/[,;]+/).map((x) => x.trim()).filter(Boolean)
-  .filter((t) => !OBS_SIN_HALLAZGO.has(obsFold(t)));
+// `obsFindings` (qué texto de Observaciones cuenta como HALLAZGO) vive en core/fields.js:
+// la lee también la vista Revisiones, que es la dueña de esa hoja. Tenerlo por copia era
+// garantizar que algún día las dos pantallas contaran hallazgos distintos.
 
 // Lectura mínima de Biomol (NO se importa la vista lazy para no inflar el bundle base).
 const BIO_KEYS = {

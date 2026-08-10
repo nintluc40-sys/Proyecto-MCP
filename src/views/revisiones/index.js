@@ -12,7 +12,7 @@
    ============================================================ */
 import { store } from '../../core/store.js';
 import { destroyAllCharts, makeChart } from '../../core/charts.js';
-import { getField, parseNum, F } from '../../core/fields.js';
+import { getField, parseNum, F, obsFindings } from '../../core/fields.js';
 import { parseAnyDate, fmtShort, dayNum, rangeLabel } from '../../core/dates.js';
 import { esc } from '../../core/format.js';
 import { avg, fmtPct } from '../../core/util.js';
@@ -86,6 +86,14 @@ const dateOf = (r) => { const d = parseAnyDate(gFec(r)); return d ? fmtShort(d) 
 
 // Divide un campo multivalor ("Continuar, Vigilar") en eventos individuales.
 const splitMulti = (v) => String(v || '').split(/[,;]+/).map((s) => s.trim()).filter(Boolean);
+// HALLAZGOS de una revisión = `obsFindings` (core/fields.js), NO `splitMulti(Observaciones)`:
+// descarta los textos con los que el laboratorio dice «nada que reportar» («Sin novedad»,
+// «Ninguna», «OK»…). Contándolos, «Sin novedad» era una celda más del treemap de hallazgos,
+// tenía su cinta en el Sankey e inflaba «Hallazgos / revisión», la tasa diaria y la
+// comparativa de periodos. La lista vive en core porque la comparte la vista Visitante.
+// Se usa `obsFindings` SIN alias: `sankeyHTML` ya tiene un `obsList` local —su top-7 de
+// hallazgos— y un alias con ese nombre lo sombrearía dentro de esa función.
+const obsCounts = (rows) => multiCounts(rows, K.observaciones, obsFindings);
 
 // Pliega acentos/mayúsculas sin usar marcas combinantes literales en el código.
 const fold = (s) => String(s).normalize('NFD').split('').filter((c) => { const x = c.charCodeAt(0); return x < 0x300 || x > 0x36f; }).join('').toLowerCase().trim();
@@ -328,7 +336,7 @@ export function revisionesView(root) {
   const vacProm = avg(rows.map((r) => parseNum(r, K.vacias)).filter((v) => v !== null));
   const semiProm = avg(rows.map((r) => parseNum(r, K.semillenas)).filter((v) => v !== null));
   const historialN = rows.filter(hasComment).length;
-  const totalFindings = rows.reduce((s, r) => s + splitMulti(g(r, K.observaciones)).length, 0);
+  const totalFindings = rows.reduce((s, r) => s + obsFindings(r).length, 0);
   const findingsRate = rows.length ? totalFindings / rows.length : 0;
 
   // ── HTML ──
@@ -376,7 +384,7 @@ export function revisionesView(root) {
   html += periodSection(rows);
 
   // Observaciones + Acciones (treemap · área = frecuencia · clic = desglose por módulo).
-  const obsEntries = multiCounts(rows, K.observaciones);
+  const obsEntries = obsCounts(rows);
   const accEntries = multiCounts(rows, K.accion);
   html += `<div class="rv-chart-grid">
       <div class="card">
@@ -463,9 +471,12 @@ export function revisionesView(root) {
 /* ============================================================
    GRÁFICOS
    ============================================================ */
-function multiCounts(rows, keys) {
+/** Frecuencia de cada valor multivalor. `pick` (opcional) sustituye el troceo por defecto:
+ *  los HALLAZGOS lo usan para descartar los «nada que reportar» (ver `obsCounts`). */
+function multiCounts(rows, keys, pick) {
   const map = new Map();
-  rows.forEach((r) => splitMulti(g(r, keys)).forEach((ev) => map.set(ev, (map.get(ev) || 0) + 1)));
+  const items = pick || ((r) => splitMulti(g(r, keys)));
+  rows.forEach((r) => items(r).forEach((ev) => map.set(ev, (map.get(ev) || 0) + 1)));
   return [...map.entries()].sort((a, b) => b[1] - a[1]);
 }
 
@@ -533,7 +544,7 @@ function sankeyHTML(rows) {
   // hallazgo derivaba a más de 7 acciones distintas.
   const m = new Map(), obsTot = new Map(), actTot = new Map(), obsFullTot = new Map();
   rows.forEach((r) => {
-    const obs = splitMulti(g(r, K.observaciones)), acts = splitMulti(g(r, K.accion));
+    const obs = obsFindings(r), acts = splitMulti(g(r, K.accion));
     if (!obs.length || !acts.length) return;
     obs.forEach((o) => { obsTot.set(o, (obsTot.get(o) || 0) + 1); acts.forEach((a) => { m.set(o + '||' + a, (m.get(o + '||' + a) || 0) + 1); actTot.set(a, (actTot.get(a) || 0) + 1); obsFullTot.set(o, (obsFullTot.get(o) || 0) + 1); }); });
   });
@@ -639,7 +650,7 @@ function drawBullet(rows, supRows) {
 function drawRateLine(rows) {
   if (!document.getElementById('rvRate')) return;
   const days = dailyAxis(rows); if (!days.length) return;
-  const rate = days.map((d) => { const dr = rows.filter((r) => gFec(r) === d); const f = dr.reduce((s, r) => s + splitMulti(g(r, K.observaciones)).length, 0); return dr.length ? +(f / dr.length).toFixed(2) : 0; });
+  const rate = days.map((d) => { const dr = rows.filter((r) => gFec(r) === d); const f = dr.reduce((s, r) => s + obsFindings(r).length, 0); return dr.length ? +(f / dr.length).toFixed(2) : 0; });
   makeChart('rvRate', {
     type: 'line',
     data: { labels: days, datasets: [{ label: 'Hallazgos/revisión', data: rate, borderColor: RV_ACCENT, backgroundColor: RV_ACCENT + '22', tension: .3, pointRadius: 3, fill: true, borderWidth: 2 }] },
@@ -696,7 +707,7 @@ function periodCompare(rows, days) {
   const inR = (r, a, b) => { const d = parseAnyDate(gFec(r)); return d && d.getTime() >= a && d.getTime() <= b; };
   const cur = rows.filter((r) => inR(r, curStart, maxMs));
   const prev = rows.filter((r) => inR(r, prevStart, prevEnd));
-  const findings = (rs) => rs.reduce((s, r) => s + splitMulti(g(r, K.observaciones)).length, 0);
+  const findings = (rs) => rs.reduce((s, r) => s + obsFindings(r).length, 0);
   const actions = (rs) => rs.reduce((s, r) => s + splitMulti(g(r, K.accion)).length, 0);
   const deform = (rs) => avg(rs.map((r) => parseNum(r, K.deformidad)).filter((v) => v !== null));
   const vacias = (rs) => avg(rs.map((r) => parseNum(r, K.vacias)).filter((v) => v !== null));
@@ -976,7 +987,7 @@ function moduleDetailHTML(mod) {
   const atraso = avg(rows.map((r) => parseNum(r, K.atraso)).filter((v) => v !== null));
   const protusion = avg(rows.map((r) => parseNum(r, K.protusion)).filter((v) => v !== null));
   const noviables = avg(rows.map((r) => parseNum(r, K.noviables)).filter((v) => v !== null));
-  const findings = multiCounts(rows, K.observaciones).slice(0, 8);
+  const findings = obsCounts(rows).slice(0, 8);
   const actions = multiCounts(rows, K.accion).slice(0, 8);
   const vacias = avg(rows.map((r) => parseNum(r, K.vacias)).filter((v) => v !== null));
   const comments = rows.filter(hasComment).sort((a, b) => (parseAnyDate(gFec(b)) || 0) - (parseAnyDate(gFec(a)) || 0));

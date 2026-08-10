@@ -88,6 +88,33 @@ export function dedupeTecnicos(rawList) {
   return [...seen.values()];
 }
 
+// ---------- Observaciones de Registro_Supervisión ----------
+// Columna de texto libre, multivalor (separadores «,» y «;»). Vive aquí y no en una vista
+// porque la leen DOS: Revisiones (treemap de hallazgos, Sankey, «Hallazgos / revisión»,
+// tasa diaria y comparativa de periodos) y Visitante (tarjeta «Estado de revisiones»).
+//
+// Textos con los que el laboratorio dice «nada que reportar». NO cuentan como hallazgo:
+// contándolos, escribir «Sin novedad» puntúa PEOR que dejar la casilla vacía —medido en
+// Visitante: 3 revisiones en blanco daban «Sin novedades» y las mismas con «Sin novedad»
+// daban «Con observaciones»—, y en Revisiones salían como una celda más del treemap de
+// hallazgos, con su cinta en el Sankey. Premia justo a quien no documenta.
+// ▼▼ AMPLIAR AQUÍ si el laboratorio usa otras fórmulas para decir «nada que reportar» ▼▼
+export const OBS_KEYS = ['Observaciones', 'observaciones', 'Observación', 'observación'];
+const OBS_SIN_HALLAZGO = new Set([
+  'sin novedad', 'sin novedades', 'sin observaciones', 'sin observacion',
+  'ninguna', 'ninguno', 'nada', 'ok', 'n/a', 'na',
+]);
+// Sin tildes, sin mayúsculas, sin puntuación final ni espacios sobrantes.
+const obsFold = (s) => fuzzyKey(s).replace(/[.!]+$/, '').trim();
+
+/** Hallazgos de una fila de revisión: los textos de Observaciones que NO son un
+ *  «nada que reportar». Devuelve [] si la casilla está vacía. */
+export function obsFindings(row) {
+  return String(getField(row, OBS_KEYS))
+    .split(/[,;]+/).map((x) => x.trim()).filter(Boolean)
+    .filter((t) => !OBS_SIN_HALLAZGO.has(obsFold(t)));
+}
+
 export const isTanqueRow = (r) => r && /^Control_Tanque/i.test(String(r._SheetOrigin || ''));
 export const isLarviculturaRow = (r) => r && r._SheetOrigin === 'Larvicultura';
 export const hasValidCorrida = (r) => getField(r, F.corrida) !== '';
