@@ -9,7 +9,7 @@
    UFC = crudo × factor (ya calculado en la hoja por la app de captura).
    Nivel ya viene calculado: Mínimo · Leve · Moderado · Elevado.
    ============================================================ */
-import { getField, parseNum } from '../../core/fields.js';
+import { getField, parseNum, OBS_KEYS } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { isUnsafeKey } from '../../core/util.js';
 
@@ -372,7 +372,9 @@ const CF = {
   tq: ['TQ/N°', 'TQ/N', 'TQ/Nº', 'TQ', 'tq/n°'],
   reservorio: ['Tanque/Reservorio', 'Reservorio', 'tanque/reservorio'],
   etapa: ['Etapa', 'etapa'],
-  obs: ['Observaciones', 'observaciones', 'Observación'],
+  // Definición ÚNICA en core/fields.js: esta copia privada perdía «observación»
+  // (minúscula con tilde) y esa observación desaparecía del PDF de placas.
+  obs: OBS_KEYS,
   // Contexto propio de los formatos de Maduración / Otras / Algas.
   sexo: ['Sexo', 'sexo'],
   componente: ['Componente', 'componente'],

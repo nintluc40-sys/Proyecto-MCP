@@ -17,7 +17,7 @@ import { toast } from '../../ui/toast.js';
 import {
   isMicroRow, pathogenRecords, rowContext, meltRow, PATHOGENS, PATHOGEN_COLOR,
   NIVELES, NIVEL_COLOR, NIVEL_RANK, isAlerta, FORMATO_LABEL, AGGREGATE_KEYS,
-  DEPARTAMENTOS, deptoOfFormato, PATHOGEN_AGAR,
+  DEPARTAMENTOS, deptoOfFormato, classifyFormato, PATHOGEN_AGAR,
   loadMicThresholds, MIC_FACTORS_KEY, MIC_AREAS,
 } from './data.js';
 import { petriSVG } from './petri.js';
@@ -380,7 +380,17 @@ function genKpiStripHTML(k) {
 }
 
 // Mapea el departamento de una muestra de agua a las 3 áreas canónicas de Bacteriología.
-const genAreaOf = (dep) => (dep === 'Larvicultura' || dep === 'Maduración') ? dep : 'Otros';
+/** Área del scorecard para una muestra de Calidad de Agua. Debe hablar el MISMO
+ *  vocabulario que el lado de Bacteriología (que agrupa por `deptoOfFormato`): manda la
+ *  columna Departamento de la hoja y, si falta o no es del vocabulario, se deriva del
+ *  Formato. Antes solo reconocía Larvicultura/Maduración y mandaba todo lo demás a
+ *  'Otros': el agua de Algas se sumaba a la fila «Otros» —que puede no tener ni una
+ *  muestra bacteriológica— mientras la fila «Algas» mostraba WQI y cumplimiento «—». */
+const genAreaOf = (ctx) => {
+  const d = deptoNorm(String((ctx && (ctx.depto ?? ctx.departamento)) || '').trim());
+  if (DEPARTAMENTOS.includes(d)) return d;
+  return deptoOfFormato(classifyFormato((ctx && ctx.formato) || '')) || 'Otros';
+};
 
 /** Estadísticos por área (une Bacteriología + Calidad de Agua): muestras, alertas,
  *  peor nivel, WQI y cumplimiento. Solo áreas con datos en alguna de las dos fuentes. */
@@ -390,7 +400,7 @@ function genAreaStats(summaries, samples, ranges) {
     const dist = { 'Mínimo': 0, 'Leve': 0, 'Moderado': 0, 'Elevado': 0 };
     bl.forEach((s) => { if (s.worst && dist[s.worst] !== undefined) dist[s.worst]++; });
     const worstSev = dist.Elevado > 0 ? 'critico' : dist.Moderado > 0 ? 'fuera' : (bl.length ? 'optimo' : 'sin-rango');
-    const ws = samples.filter((s) => genAreaOf(s.ctx.depto) === area);
+    const ws = samples.filter((s) => genAreaOf(s.ctx) === area);
     const meas = ws.flatMap((s) => s.meas);
     const w = calWQI(meas, ranges);
     return {
@@ -471,7 +481,7 @@ function genDeptoBodyHTML(area) {
       <div class="mic-alert-s">${a.ctx.fecha ? esc(fmtShort(a.ctx.fecha)) : '—'} · ${esc(genCtxLabel(a.ctx))}</div>
     </div>`).join('');
   // Calidad de Agua del área.
-  const ws = sc.samples.filter((s) => genAreaOf(s.ctx.depto) === area);
+  const ws = sc.samples.filter((s) => genAreaOf(s.ctx) === area);
   const meas = ws.flatMap((s) => s.meas);
   const w = calWQI(meas, sc.ranges);
   let outC = 0; const outByP = new Map();
