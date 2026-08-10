@@ -389,7 +389,7 @@ function refreshTank(root) {
   const daily = dailySeries(wRows, vars);
   const last = lastState(daily, vars);
   const trend = buildTrendKpis(daily, wRows, vars);
-  const cInfo = cultivoInfo(d.rows);
+  const cInfo = state.corrida ? cultivoInfo(d.rows) : null; // DOC solo con corrida (ver render)
   // Composición y Manejo de agua siguen al tanque (Centro algal permanece a nivel módulo).
   const wScope = state.tanque ? wRows : view.wByCor;
   const comp = buildComposition(wScope, state.stage);
@@ -531,7 +531,12 @@ export function larviculturaView(root) {
 
   // Snapshot para los modales (datos vigentes de la selección activa).
   setSnapshot({ state, d, vars, daily, last, icl });
-  const cInfo = cultivoInfo(d.rows); // edad de cultivo (DOC); reutilizado en el ctx del Resumen
+  // La edad de cultivo (DOC) EXIGE una corrida: `cultivoInfo` mide el span de fechas de
+  // `d.rows`, y sin corrida ese conjunto abarca todas las corridas del módulo en el mes.
+  // Medido con dos corridas de 20 y 6 días: el chip declaraba «Día 30 · esperado PL23 ·
+  // ⏪ Atrasado», una edad que no pertenece a ninguna de las dos y un veredicto dictado
+  // sobre ella. Sin corrida no se muestra: `docChip(null)` y `harvestNote(null)` → ''.
+  const cInfo = state.corrida ? cultivoInfo(d.rows) : null;
   // Contexto para refrescos parciales (histograma / algal / población)
   Object.assign(view, { root, draw, vars, tankReady, corridaPrompt, wByCor, tanques: d.tanques, popData, pStats, algae, cInfo });
 
