@@ -155,7 +155,13 @@ function calidadTilesHTML(rows, vars) {
     const total = counts[0] + counts[1] + counts[2];
     if (!total) return `<div class="rv-tile rv-tile-empty"><div class="rv-tile-lbl">${esc(label)}</div><div class="muted" style="font-size:11px">sin datos</div></div>`;
     const pct = counts.map((c) => Math.round(c / total * 100));
-    const dom = counts.indexOf(Math.max(...counts));
+    // `lastIndexOf` y no `indexOf`: los niveles van ordenados 0=Bueno → 2=Malo, así que ante
+    // un EMPATE gana el PEOR de los empatados. Con `indexOf` ganaba el índice 0, de modo que
+    // 2 «Alta» y 2 «Baja» anunciaban «🟢 Bueno · 50%» con borde verde, ocultando que la mitad
+    // estaba en Malo (medido). Un panel de supervisión no puede afirmar que las cosas están
+    // mejor de lo que sostiene una lectura empatada. Mismo criterio que OM vs Tex y Comparar
+    // Tanques, que se niegan a adjudicar empates en silencio. El % mostrado no cambia.
+    const dom = counts.lastIndexOf(Math.max(...counts));
     const seg = counts.map((c, t) => (c ? `<span style="width:${(c / total * 100).toFixed(1)}%;background:${SEM3[t]}" title="${TIER_LABEL3[t]}: ${c} (${pct[t]}%)"></span>` : '')).join('');
     const legend = counts.map((c, t) => `<span class="rv-tile-leg"><i style="background:${SEM3[t]}"></i>${pct[t]}%</span>`).join('');
     return `<div class="rv-tile rv-tile-click" data-drillqual="${esc(label)}" role="button" tabindex="0" title="Clic = desglose por módulo" style="border-left-color:${SEM3[dom]}">
@@ -175,7 +181,7 @@ function openDrillCalidad(label, keys, rows) {
   const entries = [...byMod.entries()].map(([m, c]) => ({ m, c, total: c[0] + c[1] + c[2] })).sort((a, b) => b.total - a.total);
   const body = entries.length ? entries.map(({ m, c, total }) => {
     const pct = c.map((x) => Math.round(x / total * 100));
-    const dom = c.indexOf(Math.max(...c));
+    const dom = c.lastIndexOf(Math.max(...c)); // empate → el PEOR nivel, como en el mosaico
     const seg = c.map((x, t) => (x ? `<span style="width:${(x / total * 100).toFixed(1)}%;background:${SEM3[t]}" title="${TIER_LABEL3[t]}: ${x}"></span>` : '')).join('');
     return `<div class="rv-drill-row"><b>${esc(m)}</b><span class="rv-drill-mini">${seg}</span><span style="color:${SEM3[dom]};font-weight:900;min-width:62px;text-align:right">${TILE_ICON[dom]} ${pct[dom]}%</span></div>`;
   }).join('') : '<div class="empty-state">Sin desglose por módulo.</div>';
