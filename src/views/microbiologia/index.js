@@ -2133,7 +2133,9 @@ function petriTrendMatrix(rows) {
     const latest = latIdx >= 0 ? p.ufc[latIdx] : 0;
     const prev = prvIdx >= 0 ? p.ufc[prvIdx] : 0;
     const alertDays = p.rank.filter((r) => r >= NIVEL_RANK['Moderado']).length; // días Moderado/Elevado
-    return { ...p, latest, delta: latest - prev, max: ufcPts.length ? Math.max(...ufcPts.map((q) => q.y)) : 0, nUfc: ufcPts.length, alertDays, kin: kinetics(ufcPts) };
+    // `latIdx` viaja con el patógeno: `latest` es su ÚLTIMA MEDICIÓN, que no tiene por qué
+    // caer en el último día del rango, y el KPI necesita poder decir de qué día es.
+    return { ...p, latest, latIdx, delta: latest - prev, max: ufcPts.length ? Math.max(...ufcPts.map((q) => q.y)) : 0, nUfc: ufcPts.length, alertDays, kin: kinetics(ufcPts) };
   }).sort((a, b) => b.latest - a.latest).slice(0, 12);
   return { days, gap, pathogens };
 }
@@ -2187,7 +2189,7 @@ function petriTendenciasHTML(rows) {
         <span class="mic-th-kpi" title="Tasa específica de crecimiento μ (pendiente de la regresión log-lineal de ΣUFC)"><b>${muTxt}</b>μ crecimiento</span>
         <span class="mic-th-kpi" title="Tiempo de duplicación = ln2/μ (solo si μ>0)"><b>${dobTxt}</b>t. duplicación</span>
         <span class="mic-th-kpi" title="Bondad de ajuste del modelo exponencial (0–1)"><b>${r2Txt}</b>R²</span>
-        <span class="mic-th-kpi"><b>${fmtNum(active.latest)}</b>Σ UFC último día</span>
+        <span class="mic-th-kpi" title="Σ UFC del último día en que se midió ESTE patógeno, que no tiene por qué ser el último del rango${active.latIdx >= 0 ? ' · ' + esc(fmtShort(t.days[active.latIdx].d)) : ''}"><b>${fmtNum(active.latest)}</b>Σ UFC última medición${active.latIdx >= 0 && active.latIdx !== t.days.length - 1 ? ` <i class="mic-th-stale">(${esc(fmtShort(t.days[active.latIdx].d))})</i>` : ''}</span>
         <span class="mic-th-kpi"><b>${fmtNum(active.max)}</b>máx</span>
       </div>
       <div class="mic-th-chart"><canvas id="micTrendChart"></canvas></div>
@@ -2206,7 +2208,13 @@ function drawPetriTrendChart() {
   const data = p.ufc.map((v, i) => (p.has[i] ? v : null));
   const datasets = [{ label: 'Σ UFC', data, borderColor: p.color, backgroundColor: p.color + '22', tension: 0.3, spanGaps: true, pointRadius: 3, pointHoverRadius: 5, borderWidth: 2, fill: true }];
   if (p.kin.mu != null && p.kin.a != null) {
-    const fit = t.gap.map((g) => Math.exp(p.kin.a + p.kin.mu * g));
+    // El ajuste se dibuja SOLO sobre el tramo con datos. Extrapolarlo al resto del rango
+    // lo disparaba: medido, una serie cuyo máximo real era 100.000 UFC producía una curva
+    // que llegaba a 1e89, con lo que el eje Y se escalaba a esa magnitud y la serie real
+    // quedaba aplastada contra el cero. Además, fuera del soporte el modelo no dice nada.
+    const conUfc = t.gap.map((_, i) => ((p.has[i] && p.ufc[i] > 0) ? i : -1)).filter((i) => i >= 0);
+    const iMin = conUfc[0], iMax = conUfc[conUfc.length - 1];
+    const fit = t.gap.map((g, i) => ((i >= iMin && i <= iMax) ? Math.exp(p.kin.a + p.kin.mu * g) : null));
     datasets.push({ label: 'Ajuste exponencial', data: fit, borderColor: p.color, borderDash: [5, 4], pointRadius: 0, borderWidth: 1.5, tension: 0, fill: false });
   }
   makeChart('micTrendChart', {
