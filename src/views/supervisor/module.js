@@ -33,7 +33,7 @@ import { petriSVG } from '../microbiologia/petri.js';
 import { renderMareas, cleanupMareas, openChartFs, closeChartFs } from './mareas.js';
 import {
   isCalAguaRow, calCtx, calMeasured, loadCalRanges, CAL_PARAMS, CAL_SEV,
-  calDiagnosis, calGroupTree, CAL_RISK,
+  calDiagnosis, calGroupTree, CAL_RISK, calRangeText,
 } from '../microbiologia/calagua.data.js';
 
 const { gOD, gTmp } = getters;
@@ -846,7 +846,7 @@ function cwTendenciasHTML(rows, ranges, state) {
   return bar + `<div class="mic-chart-title" style="margin:4px 0 8px">📈 Tendencia por parámetro <span class="muted">· promedio por día${dayLabels.length ? ` (${esc(dayLabels[0])} → ${esc(dayLabels[dayLabels.length - 1])})` : ''} · banda verde = rango objetivo · elige un parámetro</span></div>
     <div class="sv-mtrend-pills">${pills}</div>
     <div class="sv-mtrend-detail">
-      <div class="sv-mtrend-dhead"><span class="sv-mtrend-band" style="background:#00838f"></span><span class="sv-mtrend-dname">${esc(active.label)}${active.unit ? ` <span class="muted">(${esc(active.unit)})</span>` : ''}</span>${range ? `<span class="muted" style="font-size:11px">obj. ${esc(active.label && ranges[state.param] ? (range.min != null && range.max != null ? range.min + '–' + range.max : range.max != null ? '≤' + range.max : '≥' + range.min) : '')}</span>` : ''}</div>
+      <div class="sv-mtrend-dhead"><span class="sv-mtrend-band" style="background:#00838f"></span><span class="sv-mtrend-dname">${esc(active.label)}${active.unit ? ` <span class="muted">(${esc(active.unit)})</span>` : ''}</span>${range ? `<span class="muted" style="font-size:11px">obj. ${esc(calRangeText(state.param, ranges))}</span>` : ''}</div>
       <div class="sv-mtrend-stats">
         <span class="sv-mtrend-kpi"><b>${stat(last)}</b>último</span>
         <span class="sv-mtrend-kpi"><b>${stat(vals.length ? Math.min(...vals) : null)}</b>mín</span>
