@@ -1019,7 +1019,13 @@ function moduleDetailHTML(mod) {
 
 /** Filtros en cascada (Corrida → Módulo → Siembra) + lista de comentarios. */
 function histContentHTML() {
-  const allRev = store.globalData.filter(isRevisionRow);
+  // Los dominios de la cascada salen de las revisiones CON comentario, que son las únicas
+  // que esta ventana lista (`histRows` filtra por `hasComment`). Derivándolos de todas, el
+  // desplegable ofrecía corridas, módulos y siembras sin un solo comentario: el usuario
+  // elegía una opción legítima y recibía «Sin comentarios para la combinación elegida»
+  // —medido—. Mismo criterio que el modal «Historial de Asistencia Técnica» del Supervisor,
+  // que arma sus listas sobre `atRows`, ya filtradas por comentario.
+  const allRev = store.globalData.filter((r) => isRevisionRow(r) && hasComment(r));
 
   const corridas = [...new Set(allRev.map(gCor).filter(Boolean))].sort(numCmp);
   if (histSel.corrida && !corridas.includes(histSel.corrida)) histSel.corrida = '';
