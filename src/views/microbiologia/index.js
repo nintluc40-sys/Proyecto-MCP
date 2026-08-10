@@ -1402,8 +1402,18 @@ function calFichaBodyHTML(t) {
   const body = paramList.map((p) => {
     const d = byParam.get(p.key);
     const cells = days.map((k) => {
-      const pt = d.pts.find((x) => dayOf(x.t) === k);
-      return pt ? `<td class="cal-sev--${pt.severity}">${esc(calFmt(pt.value))}</td>` : '<td class="muted">—</td>';
+      // Un tanque puede tener VARIAS lecturas el mismo día (p. ej. un re-test tras un
+      // valor fuera de rango). `find` devolvía la PRIMERA y ocultaba el resto: medido,
+      // con pH 9,6 y re-test 8,0 el mismo día la tabla mostraba 9,6 «crítico» mientras
+      // la cabecera y el sparkline ya reflejaban el re-test. Se muestra la ÚLTIMA, que es
+      // lo que significa «medición» en el resto de la vista, y se declaran las demás.
+      const delDia = d.pts.filter((x) => dayOf(x.t) === k);
+      if (!delDia.length) return '<td class="muted">—</td>';
+      const pt = delDia[delDia.length - 1];
+      const extra = delDia.length > 1
+        ? ` title="${delDia.length} lecturas ese día: ${esc(delDia.map((x) => calFmt(x.value)).join(' → '))}"`
+        : '';
+      return `<td class="cal-sev--${pt.severity}"${extra}>${esc(calFmt(pt.value))}${delDia.length > 1 ? '<sup class="cal-ft-multi">×' + delDia.length + '</sup>' : ''}</td>`;
     }).join('');
     return `<tr><th class="cal-ft-th">${esc(d.label)}</th>${cells}</tr>`;
   }).join('');
