@@ -175,18 +175,26 @@ export function calLocation(ctx) {
 export function calEnsayoData(rows) {
   const avg = (arr) => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
   return CAL_ENSAYO_PAIRS.map((p) => {
+    // EMPAREJADO por fila: un ensayo aporta solo si tiene «antes» Y «después». Antes se
+    // promediaban por separado, así que una fila con el «después» PENDIENTE entraba en el
+    // promedio de «antes» y el panel atribuía al acondicionamiento una diferencia que solo
+    // venía de comparar conjuntos distintos. Medido: 3 ensayos sin efecto (400→400) daban
+    // Δ%=0,0; al añadir UNA fila con antes=600 y después vacío pasaban a Δ%=−11,1. Con los
+    // datos completos (las dos columnas en la misma fila, que es el formato del Ensayo) el
+    // resultado es IDÉNTICO al anterior.
     const antes = [], desp = [];
+    let sueltos = 0;
     (rows || []).forEach((r) => {
       const va = calValue(r, CAL_PARAM_BY_KEY[p.a]);
       const vd = calValue(r, CAL_PARAM_BY_KEY[p.d]);
-      if (va != null) antes.push(va);
-      if (vd != null) desp.push(vd);
+      if (va != null && vd != null) { antes.push(va); desp.push(vd); }
+      else if (va != null || vd != null) sueltos++;
     });
-    if (!antes.length && !desp.length) return null;
+    if (!antes.length && !sueltos) return null;
     const aAvg = avg(antes), dAvg = avg(desp);
     const delta = (aAvg != null && dAvg != null) ? dAvg - aAvg : null;
     const pct = (aAvg != null && dAvg != null && aAvg !== 0) ? (dAvg - aAvg) / aAvg * 100 : null;
-    return { key: p.key, label: p.label, unit: p.unit, antes: aAvg, desp: dAvg, delta, pct, n: Math.max(antes.length, desp.length) };
+    return { key: p.key, label: p.label, unit: p.unit, antes: aAvg, desp: dAvg, delta, pct, n: antes.length, sueltos };
   }).filter(Boolean);
 }
 

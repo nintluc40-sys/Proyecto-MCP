@@ -398,6 +398,8 @@
 .cal-en-table th, .cal-en-table td { border-bottom: 1px solid var(--c-border-soft); padding: 6px 10px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .cal-en-table thead th { background: var(--c-surface-2); color: var(--c-text-muted); font-weight: 700; text-align: right; }
 .cal-en-rowh { text-align: left !important; font-weight: 800; color: var(--c-text); }
+/* Filas del Ensayo con solo «antes» o solo «después»: no entran en la comparación. */
+.cal-en-loose { color: var(--c-warn, #e8730c); font-weight: 700; }
 .cal-en-up { color: #1f7a44; font-weight: 800; }
 .cal-en-dn { color: var(--c-grave); font-weight: 800; }
 /* Editor de rangos ("Factores") */

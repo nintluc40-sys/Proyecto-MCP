@@ -1532,8 +1532,8 @@ function calAnalizadorHTML(samples, ranges) {
   const u = param.unit ? ' ' + param.unit : '';
 
   // Última medición + severidad de CADA parámetro (samples viene ordenado desc por fecha).
-  const latest = new Map();
-  samples.forEach((s) => s.meas.forEach((m) => { if (!latest.has(m.key)) latest.set(m.key, m); }));
+  // Definición ÚNICA: era una copia literal de `calLatestByParam`, que vive arriba.
+  const latest = calLatestByParam(samples);
 
   // Mediciones del parámetro activo: valores del pool, individuales (asc por fecha,
   // para la carta de control) y agrupadas por tanque (para el boxplot de distribución).
@@ -1738,14 +1738,14 @@ function calEnsayoHTML(ensayo) {
         <th class="cal-en-rowh">${esc(p.label)}${p.unit ? ` <span class="muted">(${esc(p.unit)})</span>` : ''}</th>
         <td>${cell(p.antes)}</td><td>${cell(p.desp)}</td>
         <td class="${cls}">${dTxt}</td><td class="${cls}">${pTxt}</td>
-        <td class="muted">${p.n}</td>
+        <td class="muted" title="Ensayos con «antes» Y «después»${p.sueltos ? ` · ${p.sueltos} fila(s) con solo uno de los dos, sin comparar` : ''}">${p.n}${p.sueltos ? ` <span class="cal-en-loose">+${p.sueltos}?</span>` : ''}</td>
       </tr>`;
   }).join('');
   return `<div class="card cal-en-card">
       <div class="mic-chart-title">⚗️ Ensayo antes/después <span class="muted">· acondicionamiento iónico · promedio de las muestras filtradas · barra = % respecto al "antes"</span></div>
       <div class="cal-en-chart"><canvas id="calEnsayoChart"></canvas></div>
       <div class="cal-en-wrap"><table class="cal-en-table">
-        <thead><tr><th class="cal-en-rowh">Parámetro</th><th>Antes</th><th>Después</th><th>Δ</th><th>Δ%</th><th>n</th></tr></thead>
+        <thead><tr><th class="cal-en-rowh">Parámetro</th><th>Antes</th><th>Después</th><th>Δ</th><th>Δ%</th><th title="Ensayos con «antes» Y «después». «+n?» = filas con solo uno de los dos, que no se comparan">n</th></tr></thead>
         <tbody>${rowsH}</tbody></table></div>
     </div>`;
 }
