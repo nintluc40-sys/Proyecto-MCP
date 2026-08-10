@@ -65,7 +65,19 @@ const $ = (id) => document.getElementById(id);
 export function parseDate(raw) {
   if (!raw) return null;
   const m = String(raw).match(/(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
-  if (m) { const y = m[3].length === 2 ? '20' + m[3] : m[3]; return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
+  if (m) {
+    const y = m[3].length === 2 ? '20' + m[3] : m[3];
+    // Rango de mes y día: sin esta guarda, un «15/13/2026» producía el ISO imposible
+    // «2026-13-15». `normalizeRows` solo filtraba el AÑO, así que la fila sobrevivía; al
+    // ordenar las fechas como CADENA quedaba DESPUÉS de diciembre y pasaba a ser el
+    // «último día con datos» que ancla los presets. Entonces `new Date('2026-13-15T…')`
+    // daba Invalid Date y `toISOString()` lanzaba RangeError: una sola fila corrupta
+    // rompía TODOS los botones de rango de fecha (medido). Se descarta como ya se
+    // descartaban los años imposibles.
+    const dd = +m[1], mm = +m[2];
+    if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+    return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  }
   const d = new Date(raw);
   return isNaN(d) ? null : d.toISOString().slice(0, 10);
 }
