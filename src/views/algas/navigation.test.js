@@ -272,3 +272,80 @@ describe('Algas · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 });
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Δ del mes: la biomasa es una SUMA, así que comparar un mes EN CURSO contra uno
+   completo medía días transcurridos, no producción. Y el mes comparado es el
+   anterior CON DATOS, que tras una parada no es el mes calendario previo.
+   ───────────────────────────────────────────────────────────────────────────── */
+describe('Algas · la Δ del mes compara lo comparable y dice contra qué', () => {
+  // Corridas → mes de producción: 555 = Marzo, 567 = Mayo, 573 = Junio.
+  const fila = (corrida, fecha, cel, extra = {}) => A({
+    Fecha: fecha, Corrida_Larv: String(corrida), Modulo_Larv: 'M01', 'Área_Algas': 'A1',
+    Sistema: 'M1', Dia_Proceso: '1', Cel_ml: String(cel), Descartado: 'No', 'Técnico': 'Ana', ...extra,
+  });
+  const dias = (corrida, mes, n, cel, extra = () => ({})) => Array.from({ length: n }, (_, i) =>
+    fila(corrida, `${String(i + 1).padStart(2, '0')}/${mes}/2026`, cel, { Sistema: 'M' + (i + 1), ...extra(i) }));
+  const bioDelta = () => root.querySelector('[data-alg-open="bio"] .alg-mind-delta').textContent.replace(/\s+/g, ' ').trim();
+
+  it('un mes a medias con la MISMA producción diaria no anuncia un desplome', () => {
+    // 20 días × 1000 cel/ml en mayo contra 3 días × 1000 en junio: la productividad diaria
+    // es idéntica. Con la resta de totales daba «▼ 85 %» (medido) solo por los días.
+    store.globalData = [...dias(567, '05', 20, 1000), ...dias(573, '06', 3, 1000)];
+    algasView(root);
+    expect(bioDelta()).toContain('=');
+    expect(bioDelta()).not.toContain('▼');
+  });
+
+  it('pero SIGUE detectando un cambio real de producción diaria', () => {
+    // Mayo 20 días × 1000 (1.000/día) contra junio 3 días × 2000 (2.000/día) → +100 %.
+    // Este fixture es el que discrimina: por totales daría ▼70 %, y una Δ desactivada
+    // no daría flecha ninguna. Solo el promedio diario da ▲100 %.
+    store.globalData = [...dias(567, '05', 20, 1000), ...dias(573, '06', 3, 2000)];
+    algasView(root);
+    expect(bioDelta()).toContain('▲');
+    expect(bioDelta()).toContain('100%');
+  });
+
+  it('nombra el mes comparado, y NO es el mismo con y sin meses de por medio', () => {
+    store.globalData = [fila(567, '10/05/2026', 1000), fila(573, '10/06/2026', 500)];
+    algasView(root);
+    expect(bioDelta()).toContain('vs Mayo');
+
+    // Mismo junio, pero el mes anterior CON DATOS es marzo: dos meses de parada en medio.
+    store.globalData = [fila(555, '10/03/2026', 1000), fila(573, '10/06/2026', 500)];
+    document.body.innerHTML = ''; root = document.createElement('div'); document.body.appendChild(root);
+    algasView(root);
+    expect(bioDelta()).toContain('vs Marzo');
+    expect(bioDelta()).not.toContain('vs Mayo');
+  });
+
+  it('el promedio es por día CON REGISTRO, no por día del calendario', () => {
+    // Mayo registra 4 días seguidos (1.000/día). Junio registra los días 1, 10 y 20: son 3
+    // días con dato repartidos sobre un eje de 20. Dividir por el EJE daría 3.000/20 = 150
+    // (un falso ▼85 %); dividir por los días CON REGISTRO da 3.000/3 = 1.000, o sea igual.
+    // Sin días salteados las dos definiciones coinciden y el test no probaría nada.
+    store.globalData = [
+      ...dias(567, '05', 4, 1000),
+      fila(573, '01/06/2026', 1000, { Sistema: 'X1' }),
+      fila(573, '10/06/2026', 1000, { Sistema: 'X2' }),
+      fila(573, '20/06/2026', 1000, { Sistema: 'X3' }),
+    ];
+    algasView(root);
+    expect(bioDelta()).toContain('=');
+    expect(bioDelta()).not.toContain('▼');
+  });
+
+  it('la tasa de descarte NO se toca: por ser tasa ya era comparable', () => {
+    // 5/20 en mayo y 1/4 en junio → 25 % en ambos, con muy distinto nº de días.
+    store.globalData = [
+      ...dias(567, '05', 20, 1000, (i) => ({ Descartado: i < 5 ? 'Sí' : 'No' })),
+      ...dias(573, '06', 4, 1000, (i) => ({ Descartado: i < 1 ? 'Sí' : 'No' })),
+    ];
+    algasView(root);
+    const desc = root.querySelector('[data-alg-open="desc"]').textContent.replace(/\s+/g, ' ');
+    expect(desc).toContain('25.0%');
+    expect(desc).toContain('= vs Mayo');
+    expect(desc).not.toContain('por día');   // la Δ en puntos porcentuales no lleva ese matiz
+  });
+});

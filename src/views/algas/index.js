@@ -841,7 +841,8 @@ export function algasView(root) {
   const prevMonth = (() => { const i = ms.indexOf(vState.month); return i > 0 ? ms[i - 1] : null; })();
   const prevMonthRows = prevMonth != null ? algMonthRows(prevMonth) : [];
   const bioNow = totalCel(monthRows), bioPrev = totalCel(prevMonthRows);
-  const bioD = bioPrev ? (bioNow - bioPrev) / bioPrev * 100 : null;
+  const bioD = perDayDelta(bioNow, monthRows, bioPrev, prevMonthRows);
+  const prevRef = prevMonthRef(prevMonth);
   const descNow = monthRows.length ? monthRows.filter(isDescartado).length / monthRows.length * 100 : 0;
   const descPrev = prevMonthRows.length ? prevMonthRows.filter(isDescartado).length / prevMonthRows.length * 100 : null;
   const descD = (descPrev !== null) ? descNow - descPrev : null; // puntos porcentuales
@@ -859,8 +860,8 @@ export function algasView(root) {
 
   h += `<div class="alg-section-title">📊 Análisis del mes <span class="muted" style="font-weight:600;font-size:12px">· ${esc(monthLabelAt(vState.month))}</span></div>
     <div class="alg-mind-row">
-      ${mindCard('bio', '🧪', 'Biomasa total del mes', fmtK(bioNow) + ' cel/ml', deltaArrow(bioD, '%'))}
-      ${mindCard('desc', '🗑️', 'Tasa de descarte', descNow.toFixed(1) + '%', descD === null ? '' : deltaArrowPts(descD))}
+      ${mindCard('bio', '🧪', 'Biomasa total del mes', fmtK(bioNow) + ' cel/ml', deltaArrow(bioD, '%', prevRef + ' · por día'))}
+      ${mindCard('desc', '🗑️', 'Tasa de descarte', descNow.toFixed(1) + '%', descD === null ? '' : deltaArrowPts(descD, prevRef))}
       ${mindCard('cov', '📅', 'Cobertura de registro', covValue, covDelta)}
     </div>
     <div class="alg-charts">
@@ -1191,19 +1192,39 @@ const totalCel = (rows) => rows.reduce((s, r) => { const v = num(r, 'cel'); retu
 // (monthDaysOf eliminada: anclaba al mes-calendario de la primera fila; su papel lo
 //  cumple ahora covSpan, que deriva el eje de TODAS las fechas.)
 
-/** Flecha ▲▼ de variación porcentual (Δ%) con color. */
-function deltaArrow(pct, suffix = '%') {
+/* El mes comparado es el anterior CON DATOS, que tras una parada puede no ser el mes
+   calendario previo: con datos en marzo y junio, la etiqueta «vs mes ant.» salía idéntica
+   a la de una comparación mayo→junio (medido). Se NOMBRA el mes contra el que se compara,
+   así que el rótulo nunca puede mentir sobre el hueco. */
+const prevMonthRef = (prevIdx) => (prevIdx == null ? 'mes ant.' : monthLabelAt(prevIdx));
+
+/** Flecha ▲▼ de variación porcentual (Δ%) con color. `ref` nombra el mes comparado. */
+function deltaArrow(pct, suffix = '%', ref = 'mes ant.') {
   if (pct === null || pct === undefined || isNaN(pct)) return '';
-  if (pct > 0) return `<span class="alg-up">▲ ${Math.abs(pct).toFixed(0)}${suffix} vs mes ant.</span>`;
-  if (pct < 0) return `<span class="alg-down">▼ ${Math.abs(pct).toFixed(0)}${suffix} vs mes ant.</span>`;
-  return '<span class="muted">= vs mes ant.</span>';
+  if (pct > 0) return `<span class="alg-up">▲ ${Math.abs(pct).toFixed(0)}${suffix} vs ${esc(ref)}</span>`;
+  if (pct < 0) return `<span class="alg-down">▼ ${Math.abs(pct).toFixed(0)}${suffix} vs ${esc(ref)}</span>`;
+  return `<span class="muted">= vs ${esc(ref)}</span>`;
 }
 /** Flecha en PUNTOS porcentuales (para la tasa de descarte). Subir descarte es malo. */
-function deltaArrowPts(pts) {
+function deltaArrowPts(pts, ref = 'mes ant.') {
   if (pts === null || pts === undefined || isNaN(pts)) return '';
-  if (pts > 0) return `<span class="alg-down">▲ ${Math.abs(pts).toFixed(1)} pp vs mes ant.</span>`;
-  if (pts < 0) return `<span class="alg-up">▼ ${Math.abs(pts).toFixed(1)} pp vs mes ant.</span>`;
-  return '<span class="muted">= vs mes ant.</span>';
+  if (pts > 0) return `<span class="alg-down">▲ ${Math.abs(pts).toFixed(1)} pp vs ${esc(ref)}</span>`;
+  if (pts < 0) return `<span class="alg-up">▼ ${Math.abs(pts).toFixed(1)} pp vs ${esc(ref)}</span>`;
+  return `<span class="muted">= vs ${esc(ref)}</span>`;
+}
+
+/* La biomasa del mes es una SUMA, así que un mes EN CURSO se comparaba contra uno completo
+   y la flecha medía días transcurridos, no producción: con una productividad diaria idéntica
+   (1000 cel/ml por día en ambos meses) la tarjeta anunciaba «▼ 85 %» solo porque llevaba 3
+   días de 20 (medido). Y la vista ABRE en el último mes con datos, o sea justo en el mes a
+   medias. La Δ se calcula sobre el PROMEDIO DIARIO —Σ cel/ml ÷ días con registro—, que sí es
+   comparable; el valor grande de la tarjeta sigue siendo el total. La tasa de descarte no
+   necesita esto: al ser una tasa ya era inmune al nº de días (verificado). */
+function perDayDelta(nowTotal, nowRows, prevTotal, prevRows) {
+  const dNow = covSpan(nowRows).withData.size, dPrev = covSpan(prevRows).withData.size;
+  if (!dNow || !dPrev) return null;
+  const pNow = nowTotal / dNow, pPrev = prevTotal / dPrev;
+  return pPrev ? (pNow - pPrev) / pPrev * 100 : null;
 }
 
 /** Tarjeta-indicador clicable (abre su modal). */
@@ -1440,7 +1461,9 @@ function fillBioModal(root) {
   const sumByCorrida = (rows) => { const m = new Map(); rows.forEach((r) => { const c = g(r, 'corrida'), v = num(r, 'cel'); if (c && v !== null) m.set(c, (m.get(c) || 0) + v); }); return [...m.entries()].sort((a, b) => (+a[0]) - (+b[0])); };
   const nowBy = sumByCorrida(ctx.rows), prevBy = sumByCorrida(ctx.prevRows);
   const nowTot = totalCel(ctx.rows), prevTot = totalCel(ctx.prevRows);
-  const d = prevTot ? (nowTot - prevTot) / prevTot * 100 : null;
+  // Misma Δ que la tarjeta que abre este modal: sobre el promedio diario y nombrando el mes
+  // comparado. Con la resta de totales, el modal contradecía a su propia tarjeta.
+  const d = perDayDelta(nowTot, ctx.rows, prevTot, ctx.prevRows);
 
   const corrTable = (title, entries, tot) => `<div class="alg-month-block">
       <h4 class="alg-day-h">${esc(title)} <span class="muted">· Total ${fmtK(tot)} cel/ml</span></h4>
@@ -1479,7 +1502,7 @@ function fillBioModal(root) {
     : '<div class="muted" style="padding:8px">Sin dato de módulo (columna Modulo_Larv vacía).</div>';
 
   body.innerHTML = `
-    <div class="alg-month-headline">Mes actual <b>${fmtK(nowTot)}</b> cel/ml ${deltaArrow(d)}</div>
+    <div class="alg-month-headline">Mes actual <b>${fmtK(nowTot)}</b> cel/ml ${deltaArrow(d, '%', prevMonthRef(ctx.prev) + ' · por día')}</div>
     <div class="alg-month-2col">
       ${corrTable('Mes actual', nowBy, nowTot)}
       ${corrTable('Mes anterior', prevBy, prevTot)}
