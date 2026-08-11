@@ -137,9 +137,19 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
   const females = [];
   const byTrovan = new Map();
   const dupSet = new Set();
+  // Fechas que el Sheet trae escritas pero que el calendario no admite (día 32, 31 de
+  // febrero, mes 13…). `parseAnyDate` las descarta, pero descartarlas EN SILENCIO es el
+  // mismo fallo que aceptarlas mal: se recogen para avisarlo en pantalla, junto a los
+  // eventos futuros y los Trovan repetidos que ya se avisaban.
+  const invalidDates = [];
+  const noteBadDate = (hoja, trovan, raw) => { if (raw) invalidDates.push({ hoja, trovan, fecha: String(raw) }); };
   (matrizRows || []).forEach((o) => {
     const trovan = normTrovan(gv(o, H.trovan));
     if (!trovan) return;
+    const rawIngreso = gv(o, H.fIngreso), rawMuerte = gv(o, H.fMuerte);
+    const dIngreso = parseAnyDate(rawIngreso), dMuerte = parseAnyDate(rawMuerte);
+    if (rawIngreso && !dIngreso) noteBadDate('MATRIZ', trovan, rawIngreso);
+    if (rawMuerte && !dMuerte) noteBadDate('MATRIZ', trovan, rawMuerte);
     const rec = {
       trovan,
       numero: gv(o, H.numero), color: gv(o, H.color), piscina: gv(o, H.piscina),
@@ -148,8 +158,8 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
       estado: gv(o, H.estado) || ESTADO_VIVO,
       fechaMuerte: gv(o, H.fMuerte), fechaIngreso: gv(o, H.fIngreso),
       obs: gv(o, H.obs),
-      _ingreso: parseAnyDate(gv(o, H.fIngreso)),
-      _muerte: parseAnyDate(gv(o, H.fMuerte)),
+      _ingreso: dIngreso,
+      _muerte: dMuerte,
     };
     // Un Trovan repetido en MATRIZ conserva la PRIMERA fila. Antes el resto se
     // descartaba en silencio (la hembra podía aparecer con sala/tanque equivocados y
@@ -164,8 +174,10 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
   const movimientos = [];
   (transferRows || []).forEach((o) => {
     const trovan = normTrovan(gv(o, H.trovan));
-    const date = parseAnyDate(gv(o, H.fecha));
+    const rawFecha = gv(o, H.fecha);
+    const date = parseAnyDate(rawFecha);
     if (!trovan) return;
+    if (rawFecha && !date) noteBadDate('Transferencias', trovan, rawFecha);
     movimientos.push({
       trId: gv(o, H.trId), trovan, fecha: gv(o, H.fecha), date, tipo: gv(o, H.tipo),
       salaOrigen: gv(o, H.salaOrigen), tanqueOrigen: gv(o, H.tanqueOrigen),
@@ -182,7 +194,8 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
     const tipo = gv(o, H.tipo);
     const raw = gv(o, H.fecha);
     const date = parseAnyDate(raw);
-    if (!trovan || !date) return;
+    if (!trovan) return;
+    if (!date) { noteBadDate('Bitácora', trovan, raw); return; }
     // Ubicación del evento: usa el snapshot de la fila SÓLO si viene (compatibilidad);
     // si no, la deriva por Trovan (MATRIZ + transferencias). La Bitácora real solo
     // trae Trovan/Fecha/Tipo, así que el caso normal es la derivación.
@@ -228,7 +241,7 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
   });
   const months = [...monthSet].sort();
 
-  return { females, byTrovan, desoves, mortalidades, movimientos, desovesByTrovan, movByTrovan, dataMaxDate, months, duplicateTrovans, futureEvents };
+  return { females, byTrovan, desoves, mortalidades, movimientos, desovesByTrovan, movByTrovan, dataMaxDate, months, duplicateTrovans, futureEvents, invalidDates };
 }
 
 /* ── Filtros ── */
@@ -298,7 +311,12 @@ export function locationStats(model, f, level = 'tanque') {
     if (f.sala && String(r.sala) !== f.sala) return;
     if (f.tanque && String(r.tanque) !== f.tanque) return;
     const k = level === 'sala' ? dash(r.sala) : level === 'loc' ? locKey(r.sala, r.tanque) : dash(r.tanque);
-    if (level !== 'sala' && k === '—') return; // sin tanque asignado no crea fila fantasma
+    // Sin tanque asignado NO se crea una fila fantasma... pero si la fila «—» ya existe
+    // —la creó un evento cuya ubicación no se pudo resolver— hay que sumarle también estas
+    // hembras. Dejarlas fuera hacía que su denominador contase solo a las que desovaron allí,
+    // así que la fila salía SIEMPRE al 100 % de fertilidad (medido) y aparecía como el mejor
+    // tanque del ranking. El guard sigue evitando crear la fila cuando no existe.
+    if (level !== 'sala' && k === '—' && !map.has(k)) return;
     ensure(k, r).hembras.add(r.trovan);
   });
   return [...map.values()].map((g) => {

@@ -8,6 +8,20 @@ const _cache = new Map();
 
 export function clearDateCache() { _cache.clear(); }
 
+/** Construye una fecha local al mediodía COMPROBANDO que el calendario la admita.
+ *  `new Date(y, m-1, d)` DESBORDA los valores fuera de rango en vez de fallar: '32/01/2026'
+ *  se convierte en el 1 de febrero, '31/02/2026' en el 3 de marzo, '00/01/2026' en el 31 de
+ *  diciembre ANTERIOR y '15/13/2026' en enero del año siguiente. Como el resultado es un
+ *  Date perfectamente válido, `isNaN` nunca lo detectaba y una fecha mal tecleada entraba
+ *  como buena: en Maduración un desove con día 32 se contabilizaba en FEBRERO y el aviso de
+ *  "fechas futuras" no saltaba, porque la fecha desbordada no queda en el futuro (medido).
+ *  Se compara lo construido con lo pedido; si no coincide, la fecha es imposible → null. */
+function strictYMD(y, m, d) {
+  const dt = new Date(y, m - 1, d, 12, 0, 0);
+  if (isNaN(dt.getTime())) return null;
+  return (dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d) ? dt : null;
+}
+
 export function parseAnyDate(raw) {
   if (!raw) return null;
   const s = String(raw).trim();
@@ -30,13 +44,11 @@ export function parseAnyDate(raw) {
     } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
       // 2) dd/mm/yyyy
       const p = s.split('/');
-      const d = new Date(+p[2], +p[1] - 1, +p[0], 12, 0, 0);
-      result = isNaN(d.getTime()) ? null : d;
+      result = strictYMD(+p[2], +p[1], +p[0]);
     } else if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
       // 3) ISO yyyy-mm-dd
       const p = s.substring(0, 10).split('-');
-      const d = new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0);
-      result = isNaN(d.getTime()) ? null : d;
+      result = strictYMD(+p[0], +p[1], +p[2]);
     } else {
       // 4) Fallback nativo
       const d = new Date(s);

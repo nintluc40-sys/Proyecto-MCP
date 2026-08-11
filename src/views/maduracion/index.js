@@ -146,6 +146,17 @@ function dataWarnings(model) {
       Suele ser un año mal tecleado. La ventana de actividad se calcula desde <b>hoy</b> para que no falseen
       las hembras activas, pero conviene corregirlos en el Sheet.</div>`);
   }
+  // Una fecha que el calendario no admite (día 32, 31 de febrero, mes 13…) se descarta al
+  // parsear. Antes ni se descartaba —`new Date` la desbordaba al mes siguiente y entraba como
+  // buena—, y el aviso de fechas futuras no la cazaba porque no quedaba en el futuro.
+  const bad = model.invalidDates || [];
+  if (bad.length) {
+    const muestra = bad.slice(0, 4).map((b) => `${esc(b.hoja)} · ${esc(b.fecha)}${b.trovan ? ' (Trovan ' + esc(b.trovan) + ')' : ''}`).join('; ');
+    w.push(`<div class="mc-warn">⚠️ <b>${n0(bad.length)} fecha(s) imposible(s)</b> en las hojas de origen
+      (${muestra}${bad.length > 4 ? `; +${n0(bad.length - 4)} más` : ''}).
+      No existen en el calendario, así que <b>esas filas no se cuentan</b> en ningún indicador.
+      Corrígelas en el Sheet para recuperarlas.</div>`);
+  }
   const dup = model.duplicateTrovans || [];
   if (dup.length) {
     w.push(`<div class="mc-warn">⚠️ <b>${n0(dup.length)} Trovan ID repetido(s)</b> en la hoja MATRIZ

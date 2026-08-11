@@ -370,3 +370,83 @@ describe('maduracion.data · utilidades de dominio', () => {
     expect(locKey('', '')).toBe('— · —');
   });
 });
+
+describe('maduracion.data · fechas imposibles en las hojas de origen', () => {
+  // El día 32 no existe: `new Date` lo desbordaba al 1 de FEBRERO, así que el desove se
+  // contabilizaba en el mes siguiente y el aviso de "fechas futuras" no lo cazaba, porque
+  // una fecha desbordada no queda en el futuro.
+  const mtz = [
+    { 'Trovan ID': 'B1', 'Sala actual': 'S1', 'Tanque actual': 'T1', Estado: 'Vivo', 'Fecha ingreso': '01/01/2026' },
+    { 'Trovan ID': 'B2', 'Sala actual': 'S1', 'Tanque actual': 'T1', Estado: 'Vivo', 'Fecha ingreso': '01/01/2026' },
+  ];
+  const bit = [
+    { 'Trovan ID': 'B1', Fecha: '20/01/2026', Tipo: 'Desove' },
+    { 'Trovan ID': 'B1', Fecha: '32/01/2026', Tipo: 'Desove' },   // imposible
+    { 'Trovan ID': 'B2', Fecha: '10/02/2026', Tipo: 'Desove' },
+  ];
+
+  it('el desove con día imposible NO se cuenta en el mes siguiente', () => {
+    const m = buildReproModel(mtz, bit, []);
+    expect(m.desoves.map((d) => d.date.getMonth())).toEqual([0, 1]);   // enero y febrero
+    const t = trends(m, makeFilter({}), 'month');
+    // Antes: [1, 2] — el desove de "32 de enero" engordaba febrero.
+    expect(t.desoves).toEqual([1, 1]);
+  });
+
+  it('la fila descartada se REPORTA en vez de desaparecer en silencio', () => {
+    const m = buildReproModel(mtz, bit, []);
+    expect(m.invalidDates).toHaveLength(1);
+    expect(m.invalidDates[0]).toMatchObject({ hoja: 'Bitácora', trovan: 'B1', fecha: '32/01/2026' });
+    // Y sigue sin ser un "evento futuro": son dos avisos distintos y no deben confundirse.
+    expect(m.futureEvents).toHaveLength(0);
+  });
+
+  it('recoge también las fechas imposibles de MATRIZ y de Transferencias', () => {
+    const m = buildReproModel(
+      [{ 'Trovan ID': 'C1', 'Sala actual': 'S1', Estado: 'Vivo', 'Fecha ingreso': '31/02/2026' }],
+      [],
+      [{ 'TR-ID': 'TR-1', 'Trovan ID': 'C1', Fecha: '15/13/2026', 'Sala destino': 'S2' }],
+    );
+    expect(m.invalidDates.map((b) => b.hoja).sort()).toEqual(['MATRIZ', 'Transferencias']);
+  });
+
+  it('sin fechas imposibles, invalidDates queda vacío', () => {
+    expect(buildReproModel(mtz, [bit[0], bit[2]], []).invalidDates).toEqual([]);
+  });
+});
+
+describe('maduracion.data · la fila «—» de eventos sin ubicación resoluble', () => {
+  // XXX9 aparece en Bitácora pero NO en la MATRIZ, así que su desove no tiene ubicación y
+  // cae en la fila «—». El guard que evita crear filas fantasma dejaba fuera del denominador
+  // a las hembras vivas sin tanque, así que esa fila salía SIEMPRE al 100 % de fertilidad.
+  const mtz = [
+    { 'Trovan ID': 'D1', 'Sala actual': 'S1', 'Tanque actual': 'T1', Estado: 'Vivo' },
+    { 'Trovan ID': 'D2', 'Sala actual': 'S1', 'Tanque actual': '', Estado: 'Vivo' },
+    { 'Trovan ID': 'D3', 'Sala actual': 'S1', 'Tanque actual': '', Estado: 'Vivo' },
+  ];
+  const bit = [
+    { 'Trovan ID': 'D1', Fecha: '10/01/2026', Tipo: 'Desove' },
+    { 'Trovan ID': 'XXX9', Fecha: '11/01/2026', Tipo: 'Desove' },
+  ];
+
+  it('cuenta también a las hembras vivas sin ubicar en su denominador', () => {
+    const fila = locationStats(buildReproModel(mtz, bit, []), makeFilter({}), 'tanque').find((r) => r.key === '—');
+    expect(fila).toBeTruthy();
+    expect(fila.spawners).toBe(1);
+    expect(fila.hembras).toBe(3);          // la desovadora + las 2 vivas sin tanque
+    expect(fila.fertilidad).toBeCloseTo(100 / 3, 6);   // antes: 100 %
+  });
+
+  it('un tanque real no cambia: la corrección no se derrama sobre el resto', () => {
+    const fila = locationStats(buildReproModel(mtz, bit, []), makeFilter({}), 'tanque').find((r) => r.key === 'T1');
+    expect(fila.hembras).toBe(1);
+    expect(fila.fertilidad).toBe(100);
+  });
+
+  it('sin eventos sin ubicación NO se inventa la fila «—»', () => {
+    // Las mismas hembras sin tanque, pero ya sin el evento huérfano: el guard debe seguir
+    // evitando la fila fantasma, que era su propósito original.
+    const stats = locationStats(buildReproModel(mtz, [bit[0]], []), makeFilter({}), 'tanque');
+    expect(stats.map((r) => r.key)).toEqual(['T1']);
+  });
+});

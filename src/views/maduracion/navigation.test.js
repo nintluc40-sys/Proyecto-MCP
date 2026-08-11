@@ -108,6 +108,21 @@ describe('Microchips · navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('avisa también de las fechas que el calendario no admite (día 32, 31 de febrero…)', () => {
+    // Es un aviso DISTINTO del de fecha futura: una fecha desbordada no queda en el futuro,
+    // así que el banner que ya existía no la cazaba y la fila se perdía en silencio.
+    store.globalData = synthData().concat([
+      B({ 'Trovan ID': 'A1', Fecha: '32/01/2026', Tipo: 'Desove' }),
+    ]);
+    maduracionView(root);
+    const warns = [...root.querySelectorAll('.mc-warn')].map((w) => w.textContent);
+    expect(warns.length).toBe(1);
+    expect(warns[0]).toContain('imposible');
+    expect(warns[0]).toContain('32/01/2026');   // nombra la fecha para poder corregirla
+    expect(warns[0]).not.toContain('fecha futura');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('cambia a Salas y Tanques y alterna el nivel', () => {
     maduracionView(root);
     click([...root.querySelectorAll('[data-mc-sub]')].find((b) => b.dataset.mcSub === 'operativo'));

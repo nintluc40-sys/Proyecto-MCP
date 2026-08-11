@@ -46,6 +46,43 @@ describe('parseAnyDate', () => {
   });
 });
 
+describe('parseAnyDate · fechas que el calendario NO admite', () => {
+  // `new Date(y, m-1, d)` desborda en vez de fallar, así que `isNaN` nunca las detectaba y
+  // entraban como buenas: '32/01/2026' se contabilizaba como 1 de FEBRERO.
+  it('descarta el día desbordado en vez de correrlo al mes siguiente', () => {
+    expect(parseAnyDate('32/01/2026')).toBeNull();   // daba 2026-02-01
+    expect(parseAnyDate('00/01/2026')).toBeNull();   // daba 2025-12-31
+  });
+
+  it('descarta el mes imposible en vez de saltar de año', () => {
+    expect(parseAnyDate('15/13/2026')).toBeNull();   // daba 2027-01-15
+    expect(parseAnyDate('45/45/2026')).toBeNull();   // daba 2029-10-15
+  });
+
+  it('la rama ISO se valida igual que la rama dd/mm/yyyy', () => {
+    expect(parseAnyDate('2026-13-15')).toBeNull();
+    expect(parseAnyDate('2026-02-31')).toBeNull();
+  });
+
+  it('valida contra el calendario REAL, no contra un rango fijo 1–31', () => {
+    // Estas 4 son la prueba de fuego: un chequeo perezoso `d>=1 && d<=31 && m>=1 && m<=12`
+    // aceptaría el 29 de febrero de un año NO bisiesto y el 31 de abril, que no existen.
+    expect(parseAnyDate('29/02/2024')).not.toBeNull();  // 2024 es bisiesto → sí existe
+    expect(parseAnyDate('29/02/2026')).toBeNull();      // 2026 no lo es → no existe
+    expect(parseAnyDate('30/04/2026')).not.toBeNull();  // abril tiene 30
+    expect(parseAnyDate('31/04/2026')).toBeNull();      // abril NO tiene 31
+  });
+
+  it('no se pasa de corrección: las fechas válidas siguen entrando igual', () => {
+    const d = parseAnyDate('31/12/2026');
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(11);
+    expect(d.getDate()).toBe(31);
+    expect(parseAnyDate('2026-07-26').getDate()).toBe(26);
+    expect(parseAnyDate('45000')).toBeInstanceOf(Date);   // el serial de Excel no se toca
+  });
+});
+
 describe('formato de fechas', () => {
   it('fmtShort vacío para null', () => {
     expect(fmtShort(null)).toBe('');
