@@ -35,6 +35,13 @@ let activeFechas  = new Set();
 // compartida por el filtro global de Lote y por el heatmap (para que no diverjan).
 const isExtCode = (c) => /texcumar/i.test(c || '');
 const loteOf = (d) => d.cod || 'Sin lote';
+// El filtro global de diagnóstico define el UNIVERSO de la vista; la pestaña propia de cada
+// gráfico (swarm, treemap, Sankey) elige DENTRO de él. Si el diagnóstico de la pestaña se
+// deselecciona arriba, se cae al primer diagnóstico activo en vez de seguir dibujando uno
+// que el resto de la vista ya soltó. Definición ÚNICA: el swarm llevaba esta regla EN LÍNEA
+// y ni el treemap ni los tres modos del Sankey la aplicaban, así que deseleccionar IHHNV
+// vaciaba el donut y los KPIs mientras el Sankey seguía rotulando "IHHNV Positivo" (medido).
+const effDiag = (d) => (activeDiags.has(d) ? d : (DIAGS.find((x) => activeDiags.has(x)) || DIAGS[0]));
 let datePreset    = 'all';
 // Modo AUD (entrenamiento): persiste entre re-render. La semilla fija la simulación
 // para que un mismo registro conserve su resultado al refrescar los datos.
@@ -107,6 +114,12 @@ export function normalizeRows(rows) {
   return out;
 }
 const filtered = () => RAW.filter((d) => activeLugares.has(d.lugar) && activeLotes.has(loteOf(d)) && activeFechas.has(d.f));
+// El "Registro Detallado" y su Excel salían en el orden de la HOJA, así que las fechas se
+// veían saltadas (medido: 20/06 · 02/06 · 11/06 · 05/06). Se ordenan por fecha DESCENDENTE
+// —lo último analizado primero—: `r.f` es ISO yyyy-mm-dd, así que comparar cadenas ya es
+// cronológico. Copia con `slice()` para no ordenar in situ el array de nadie, y el orden de
+// la hoja se conserva DENTRO de un mismo día porque Array.sort es estable.
+const byDateDesc = (rows) => rows.slice().sort((a, b) => String(b.f).localeCompare(String(a.f)));
 function togClass(set, val, btn) { if (set.has(val)) { set.delete(val); btn.classList.remove('on'); } else { set.add(val); btn.classList.add('on'); } }
 
 // ── KPIs (idéntico a BIOMOL.html updateKPI) ──
@@ -645,7 +658,7 @@ function drawSwarm() {
   svg.attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
   if (!data.length || !swarmDate) { svg.append('text').attr('x', W / 2).attr('y', H / 2).attr('fill', TH.muted).attr('text-anchor', 'middle').text('Sin datos para esta fecha'); return; }
   const isAll = swarmDiag === 'ALL';
-  const diagsUsed = isAll ? DIAGS.filter((d) => activeDiags.has(d)) : [activeDiags.has(swarmDiag) ? swarmDiag : (DIAGS.find((d) => activeDiags.has(d)) || DIAGS[0])];
+  const diagsUsed = isAll ? DIAGS.filter((d) => activeDiags.has(d)) : [effDiag(swarmDiag)];
   const diag = diagsUsed[0];
   const lugares = [...new Set(data.map((r) => r.lugar))].sort();
   const mL = 86, mT = 10, mB = 20;
@@ -683,8 +696,9 @@ function drawTreemap() {
   svg.attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
   if (!data.length) return;
   const isAll = treemapDiag === 'ALL';
-  const diagsUsed = isAll ? DIAGS.filter((d) => activeDiags.has(d)) : [treemapDiag];
-  const diagColor = isAll ? TH.muted : DCOLOR[treemapDiag], diagLabel = isAll ? 'Todos' : DLABEL[treemapDiag];
+  const tmDiag = isAll ? treemapDiag : effDiag(treemapDiag);
+  const diagsUsed = isAll ? DIAGS.filter((d) => activeDiags.has(d)) : [tmDiag];
+  const diagColor = isAll ? TH.muted : DCOLOR[tmDiag], diagLabel = isAll ? 'Todos' : DLABEL[tmDiag];
   const h = {};
   data.forEach((r) => { (h[r.lugar] ||= {}); const t = r.tq || '—'; (h[r.lugar][t] ||= { n: 0, posSum: 0, measuredSum: 0 }); h[r.lugar][t].n++; diagsUsed.forEach((d) => { if (hasVal(r[d])) { h[r.lugar][t].measuredSum++; if (isPos(r[d])) h[r.lugar][t].posSum++; } }); });
   const rootD = { name: 'r', children: Object.entries(h).map(([lugar, tanks]) => ({ name: lugar, children: Object.entries(tanks).filter(([, v]) => v.measuredSum > 0).map(([tq, v]) => ({ name: tq, lugar, value: v.n, pct: Math.round(v.posSum / v.measuredSum * 100), pos: v.posSum, measured: v.measuredSum })) })).filter((p) => p.children.length > 0) };
@@ -803,7 +817,7 @@ function drawSankey() {
   if (!$('sankey') || !data.length) return;
   const el = $('sankey');
   const W = Math.max(500, el.getBoundingClientRect().width || (el.parentElement && el.parentElement.clientWidth) || 900);
-  const diag = sankeyDiag, lugares = [...new Set(data.map((r) => r.lugar))].sort(), total = data.length || 1, flows = {};
+  const diag = effDiag(sankeyDiag), lugares = [...new Set(data.map((r) => r.lugar))].sort(), total = data.length || 1, flows = {};
   data.forEach((r) => { if (!hasVal(r[diag])) return; const k = `${r.lugar}|${diag}|${r[diag]}`; flows[k] = (flows[k] || 0) + 1; });
   const NODE_MIN = 20, GAP = 6, LABEL_TOP = 18;
   const lugarN = {}; data.forEach((r) => { lugarN[r.lugar] = (lugarN[r.lugar] || 0) + 1; });
@@ -858,12 +872,17 @@ const _isSala = (l) => /^\s*sala/i.test(l || ''); const _isModulo = (l) => /^\s*
 function drawSankeyOrigen() {
   const data = filtered(); const svg = d3.select('#sankey'); svg.selectAll('*').remove();
   if (!$('sankey') || !data.length) return;
-  const el = $('sankey'), W = Math.max(740, el.getBoundingClientRect().width || (el.parentElement && el.parentElement.clientWidth) || 900), diag = sankeyDiag;
+  const el = $('sankey'), W = Math.max(740, el.getBoundingClientRect().width || (el.parentElement && el.parentElement.clientWidth) || 900), diag = effDiag(sankeyDiag);
   const sup = (type, id) => originSuppressed.has(`${type}|${id}`);
   const baseValid = data.filter((r) => hasVal(r[diag]) && r.cod);
   const validSala = baseValid.filter((r) => _isSala(r.lugar) && !sup('sala', r.lugar) && !sup('lote', r.cod));
   const validMod = baseValid.filter((r) => _isModulo(r.lugar) && !sup('mod', r.lugar) && !sup('lote', r.cod));
-  if (!validSala.length && !validMod.length) { svg.attr('viewBox', `0 0 ${W} 220`); svg.append('text').attr('x', W / 2).attr('y', 110).attr('fill', TH.muted).attr('text-anchor', 'middle').text(originSuppressed.size ? 'Todos los elementos ocultos · pulsa Restaurar' : 'Sin datos de trazabilidad para el diagnóstico'); return; }
+  // Las supresiones están SEPARADAS por modo (`psm:` como prefijo), así que el mensaje debe
+  // mirar solo las de ESTE modo, igual que hacen el botón Restaurar y el vacío de PSM. Con
+  // `originSuppressed.size` (global), haber ocultado una Piscina en PSM hacía que Origen
+  // culpara al usuario —"Todos los elementos ocultos · pulsa Restaurar"— de un vacío que era
+  // falta de datos, y encima mandaba a pulsar un botón que en Origen estaba oculto (medido).
+  if (!validSala.length && !validMod.length) { svg.attr('viewBox', `0 0 ${W} 220`); svg.append('text').attr('x', W / 2).attr('y', 110).attr('fill', TH.muted).attr('text-anchor', 'middle').text(suppressedForMode().length ? 'Todos los elementos ocultos · pulsa Restaurar' : 'Sin datos de trazabilidad para el diagnóstico'); return; }
   const salaCount = {}, salaResCount = {}, resSalaCount = { Positivo: 0, Negativo: 0 }, resSalaLoteCount = {}, codSalaCount = {};
   validSala.forEach((r) => { salaCount[r.lugar] = (salaCount[r.lugar] || 0) + 1; salaResCount[`${r.lugar}|${r[diag]}`] = (salaResCount[`${r.lugar}|${r[diag]}`] || 0) + 1; resSalaCount[r[diag]] = (resSalaCount[r[diag]] || 0) + 1; resSalaLoteCount[`${r[diag]}|${r.cod}`] = (resSalaLoteCount[`${r[diag]}|${r.cod}`] || 0) + 1; codSalaCount[r.cod] = (codSalaCount[r.cod] || 0) + 1; });
   const modCount = {}, codModCount = {}, modResCount = {}, resModCount = { Positivo: 0, Negativo: 0 }, codModTotal = {};
@@ -905,7 +924,7 @@ function drawSankeyOrigen() {
 function drawSankeyPSM() {
   const data = filtered(); const svg = d3.select('#sankey'); svg.selectAll('*').remove();
   if (!$('sankey') || !data.length) return;
-  const el = $('sankey'), W = Math.max(940, el.getBoundingClientRect().width || (el.parentElement && el.parentElement.clientWidth) || 1000), diag = sankeyDiag;
+  const el = $('sankey'), W = Math.max(940, el.getBoundingClientRect().width || (el.parentElement && el.parentElement.clientWidth) || 1000), diag = effDiag(sankeyDiag);
   const sup = (type, id) => originSuppressed.has(`psm:${type}|${id}`);
   const piscOf = (r) => r.piscina || 'Sin piscina', precOf = (r) => r.precria || 'Sin precría';
   let salaRecs = data.filter((r) => _isSala(r.lugar) && hasVal(r[diag])), modRecs = data.filter((r) => _isModulo(r.lugar) && hasVal(r[diag]));
@@ -920,14 +939,31 @@ function drawSankeyPSM() {
   Object.entries(codMod).forEach(([k, v]) => { const c = k.split('|')[0]; codTotMod[c] = (codTotMod[c] || 0) + v; });
   Object.entries(salaCodeRes).forEach(([k, sc]) => { const [c, R] = k.split('|'); const tot = codTotMod[c]; if (!tot) return; Object.entries(codMod).forEach(([k2, mc]) => { const [c2, m] = k2.split('|'); if (c2 !== c) return; resSalaMod[`${R}|${m}`] = (resSalaMod[`${R}|${m}`] || 0) + sc * (mc / tot); }); });
   const piscinas = Object.keys(piscCount).sort(), salas = Object.keys(salaCount).sort(), resSala = ['Positivo', 'Negativo'].filter((r) => resSalaCount[r] > 0), modulos = Object.keys(modCount).sort(), resMod = ['Positivo', 'Negativo'].filter((r) => resModCount[r] > 0), precrias = Object.keys(precCount).sort();
+  // El nodo de resultado de Sala se dimensiona con TODAS sus muestras, pero solo emite cinta
+  // por los lotes que además aparecen en algún módulo: lo que no continúa (lote que no llegó
+  // a módulo, o muestra sin código) se evaporaba sin dejar rastro — medido: un nodo de 4
+  // muestras emitiendo 1,0 de cinta, un 75 % desaparecido. Se materializa ese resto como
+  // flujo GRIS hacia un nodo terminal, para que la altura del nodo vuelva a cuadrar con lo
+  // que sale de él. Es un nodo DERIVADO: no entra en `modCount` ni en `totalMod`, así que
+  // los porcentajes de la columna Módulo siguen contando solo módulos reales, y no se puede
+  // ocultar con click porque no representa un elemento del que el usuario pueda prescindir.
+  const NOCONT = '· Sin módulo';
+  const noCont = {};
+  resSala.forEach((R) => {
+    const emitido = modulos.reduce((s, m) => s + (resSalaMod[`${R}|${m}`] || 0), 0);
+    const resto = resSalaCount[R] - emitido;
+    if (resto > 0.01) noCont[R] = resto;
+  });
+  const totalNoCont = Object.values(noCont).reduce((s, v) => s + v, 0);
+  const modItems = totalNoCont > 0.01 ? [...modulos, NOCONT] : modulos;
   const sum = (arr, f) => arr.reduce((s, k) => s + f(k), 0);
   const totalPisc = sum(piscinas, (k) => piscCount[k]), totalSala = sum(salas, (k) => salaCount[k]), totalRS = sum(resSala, (k) => resSalaCount[k]), totalMod = sum(modulos, (k) => modCount[k]), totalRM = sum(resMod, (k) => resModCount[k]), totalPrec = sum(precrias, (k) => precCount[k]);
-  const maxCol = Math.max(totalPisc, totalSala, totalRS, totalMod, totalRM, totalPrec, 1);
+  const maxCol = Math.max(totalPisc, totalSala, totalRS, totalMod + totalNoCont, totalRM, totalPrec, 1);
   const NODE_MIN = 14, GAP = 4, HEADER_Y = 8, LABEL_TOP = 34;
-  const maxItems = Math.max(piscinas.length, salas.length, resSala.length, modulos.length, resMod.length, precrias.length, 1);
+  const maxItems = Math.max(piscinas.length, salas.length, resSala.length, modItems.length, resMod.length, precrias.length, 1);
   const availH = Math.max(140, 420 - (maxItems - 1) * GAP), SCALE = availH / maxCol, hh = (c) => Math.max(NODE_MIN, c * SCALE);
   const positionCol = (items, getCount) => { let y = LABEL_TOP; const pos = {}; items.forEach((id) => { const ht = hh(getCount(id)); pos[id] = { y, h: ht }; y += ht + GAP; }); return { pos, bottom: y }; };
-  const piscPos = positionCol(piscinas, (p) => piscCount[p]), salaPos = positionCol(salas, (s) => salaCount[s]), rsPos = positionCol(resSala, (r) => resSalaCount[r]), modPos = positionCol(modulos, (m) => modCount[m]), rmPos = positionCol(resMod, (r) => resModCount[r]), precPos = positionCol(precrias, (p) => precCount[p]);
+  const piscPos = positionCol(piscinas, (p) => piscCount[p]), salaPos = positionCol(salas, (s) => salaCount[s]), rsPos = positionCol(resSala, (r) => resSalaCount[r]), modPos = positionCol(modItems, (m) => (m === NOCONT ? totalNoCont : modCount[m])), rmPos = positionCol(resMod, (r) => resModCount[r]), precPos = positionCol(precrias, (p) => precCount[p]);
   const VH = Math.max(piscPos.bottom, salaPos.bottom, rsPos.bottom, modPos.bottom, rmPos.bottom, precPos.bottom, 240) + 18;
   const piscMaxLen = piscinas.length ? Math.max(...piscinas.map((p) => p.length)) : 8, mL = Math.min(120, Math.max(60, piscMaxLen * 6.4));
   const precMaxLen = precrias.length ? Math.max(...precrias.map((p) => p.length)) : 8, mR = Math.min(160, Math.max(70, precMaxLen * 6.4 + 20));
@@ -939,6 +975,7 @@ function drawSankeyPSM() {
   Object.entries(piscSala).forEach(([k, cnt]) => { const [p, s] = k.split('|'); if (!piscPos.pos[p] || !salaPos.pos[s]) return; drawLink(c0 + nW, piscPos.pos[p].y + piscPos.pos[p].h / 2, c1, salaPos.pos[s].y + salaPos.pos[s].h / 2, linkW(cnt), 'rgba(14,165,233,.35)'); });
   Object.entries(salaRes).forEach(([k, cnt]) => { const [s, R] = k.split('|'); if (!salaPos.pos[s] || !rsPos.pos[R]) return; drawLink(c1 + nW, salaPos.pos[s].y + salaPos.pos[s].h / 2, c2, rsPos.pos[R].y + rsPos.pos[R].h / 2, linkW(cnt), resColor(R, true)); });
   Object.entries(resSalaMod).forEach(([k, cnt]) => { const [R, m] = k.split('|'); if (!rsPos.pos[R] || !modPos.pos[m]) return; drawLink(c2 + nW, rsPos.pos[R].y + rsPos.pos[R].h / 2, c3, modPos.pos[m].y + modPos.pos[m].h / 2, linkW(cnt), 'rgba(167,139,250,.42)'); });
+  Object.entries(noCont).forEach(([R, cnt]) => { if (!rsPos.pos[R] || !modPos.pos[NOCONT]) return; drawLink(c2 + nW, rsPos.pos[R].y + rsPos.pos[R].h / 2, c3, modPos.pos[NOCONT].y + modPos.pos[NOCONT].h / 2, linkW(cnt), 'rgba(100,116,139,.32)'); });
   Object.entries(modRes).forEach(([k, cnt]) => { const [m, R] = k.split('|'); if (!modPos.pos[m] || !rmPos.pos[R]) return; drawLink(c3 + nW, modPos.pos[m].y + modPos.pos[m].h / 2, c4, rmPos.pos[R].y + rmPos.pos[R].h / 2, linkW(cnt), resColor(R, true)); });
   Object.entries(resPrec).forEach(([k, cnt]) => { const [R, pr] = k.split('|'); if (!rmPos.pos[R] || !precPos.pos[pr]) return; drawLink(c4 + nW, rmPos.pos[R].y + rmPos.pos[R].h / 2, c5, precPos.pos[pr].y + precPos.pos[pr].h / 2, linkW(cnt), resColor(R, false)); });
   const nodeTip = (sel, title, rows) => sel.on('mouseenter', (e) => showTip(`<div class="tt-title">${escH(title)}</div>` + rows.map(([k, v, cls]) => `<div class="tt-row"><span class="tt-key">${k}</span><span class="tt-val ${cls || ''}">${v}</span></div>`).join(''), e)).on('mouseleave', hideTip);
@@ -949,6 +986,7 @@ function drawSankeyPSM() {
   salas.forEach((s) => { const pos = salaPos.pos[s]; const rect = g.append('rect').attr('x', c1).attr('y', pos.y).attr('width', nW).attr('height', pos.h).attr('rx', 3).attr('fill', '#38bdf8').attr('cursor', 'pointer'); nodeTip(rect, `Sala · ${s}`, [['Muestras', salaCount[s]], ['% del total Sala', totalSala ? Math.round(salaCount[s] / totalSala * 100) + '%' : '—'], ['Acción', 'Click para ocultar']]); rect.on('click', clickHide('sala', s)); if (pos.h >= 11) { const lbl = g.append('text').attr('x', c1 + nW + 4).attr('y', pos.y + pos.h / 2).attr('dominant-baseline', 'middle').attr('fill', '#38bdf8').attr('font-size', 9).attr('cursor', 'pointer').text(trunc(s, 14)); lbl.on('click', clickHide('sala', s)); } });
   resSala.forEach((R) => { const pos = rsPos.pos[R], isP = R === 'Positivo', fill = isP ? '#ef4444' : '#22c55e'; const rect = g.append('rect').attr('x', c2).attr('y', pos.y).attr('width', nW).attr('height', pos.h).attr('rx', 3).attr('fill', fill); const pct = totalRS ? Math.round(resSalaCount[R] / totalRS * 100) : 0; nodeTip(rect, `Sala · ${DLABEL[diag]} ${R}`, [['Muestras', resSalaCount[R]], ['% del total Sala', pct + '%', isP ? 'pos-tag' : 'neg-tag']]); if (pos.h >= 14) { const lx = c2 + nW + 4; g.append('text').attr('x', lx).attr('y', pos.y + pos.h / 2).attr('dominant-baseline', 'middle').attr('fill', fill).attr('font-size', 9).attr('font-weight', '600').attr('pointer-events', 'none').text(R); drawPctBadge(lx, R, fill, isP, pos, pct); } });
   modulos.forEach((m) => { const pos = modPos.pos[m]; const rect = g.append('rect').attr('x', c3).attr('y', pos.y).attr('width', nW).attr('height', pos.h).attr('rx', 3).attr('fill', '#22d3ee').attr('cursor', 'pointer'); nodeTip(rect, `Módulo · ${m}`, [['Muestras', modCount[m]], ['% del total Módulo', totalMod ? Math.round(modCount[m] / totalMod * 100) + '%' : '—'], ['Acción', 'Click para ocultar']]); rect.on('click', clickHide('mod', m)); if (pos.h >= 11) { const lbl = g.append('text').attr('x', c3 + nW + 4).attr('y', pos.y + pos.h / 2).attr('dominant-baseline', 'middle').attr('fill', '#22d3ee').attr('font-size', 9).attr('cursor', 'pointer').text(trunc(m, 14)); lbl.on('click', clickHide('mod', m)); } });
+  if (modPos.pos[NOCONT]) { const pos = modPos.pos[NOCONT], n1 = Math.round(totalNoCont * 10) / 10; const rect = g.append('rect').attr('x', c3).attr('y', pos.y).attr('width', nW).attr('height', pos.h).attr('rx', 3).attr('fill', '#64748b').attr('opacity', 0.7); nodeTip(rect, 'Sin módulo', [['Muestras de Sala', n1], ['Motivo', 'su lote no llegó a ningún módulo'], ['% del análisis de Sala', totalRS ? Math.round(totalNoCont / totalRS * 100) + '%' : '—']]); if (pos.h >= 11) g.append('text').attr('x', c3 + nW + 4).attr('y', pos.y + pos.h / 2).attr('dominant-baseline', 'middle').attr('fill', '#64748b').attr('font-size', 9).attr('pointer-events', 'none').text('Sin módulo'); }
   resMod.forEach((R) => { const pos = rmPos.pos[R], isP = R === 'Positivo', fill = isP ? '#ef4444' : '#22c55e'; const rect = g.append('rect').attr('x', c4).attr('y', pos.y).attr('width', nW).attr('height', pos.h).attr('rx', 3).attr('fill', fill); const pct = totalRM ? Math.round(resModCount[R] / totalRM * 100) : 0; nodeTip(rect, `Módulo · ${DLABEL[diag]} ${R}`, [['Muestras', resModCount[R]], ['% del total Módulo', pct + '%', isP ? 'pos-tag' : 'neg-tag']]); if (pos.h >= 14) { const lx = c4 + nW + 4; g.append('text').attr('x', lx).attr('y', pos.y + pos.h / 2).attr('dominant-baseline', 'middle').attr('fill', fill).attr('font-size', 9).attr('font-weight', '600').attr('pointer-events', 'none').text(R); drawPctBadge(lx, R, fill, isP, pos, pct); } });
   precrias.forEach((p) => { const pos = precPos.pos[p]; const rect = g.append('rect').attr('x', c5).attr('y', pos.y).attr('width', nW).attr('height', pos.h).attr('rx', 3).attr('fill', '#a78bfa').attr('cursor', 'pointer'); nodeTip(rect, `Precría · ${p}`, [['Muestras (Módulo)', precCount[p]], ['% del total Precría', totalPrec ? Math.round(precCount[p] / totalPrec * 100) + '%' : '—'], ['Acción', 'Click para ocultar']]); rect.on('click', clickHide('prec', p)); if (pos.h >= 11) { const lbl = g.append('text').attr('x', c5 + nW + 4).attr('y', pos.y + pos.h / 2).attr('dominant-baseline', 'middle').attr('fill', '#a78bfa').attr('font-size', 9).attr('cursor', 'pointer').text(trunc(p, 14)); lbl.on('click', clickHide('prec', p)); } });
   [{ x: c0, l: 'Piscina' }, { x: c1, l: 'Sala' }, { x: c2, l: 'Análisis' }, { x: c3, l: 'Módulo' }, { x: c4, l: 'Análisis' }, { x: c5, l: 'Precría' }].forEach(({ x, l }) => g.append('text').attr('x', x + nW / 2).attr('y', HEADER_Y).attr('text-anchor', 'middle').attr('fill', TH.muted).attr('font-size', 9).attr('font-weight', '700').text(l));
@@ -957,7 +995,7 @@ function drawSankeyPSM() {
 // ── TABLA + export ──
 function drawTable() {
   const tbody = $('table-body'); if (!tbody) return; tbody.innerHTML = '';
-  const data = filtered();
+  const data = byDateDesc(filtered());
   const badge = (v) => !hasVal(v) ? '<span class="badge badge-na">—</span>' : isPos(v) ? '<span class="badge badge-pos">✕ POS</span>' : '<span class="badge badge-neg">✓ NEG</span>';
   const frag = document.createDocumentFragment();
   data.forEach((r) => {
@@ -981,7 +1019,7 @@ function biomolExportAoa(data) {
 function exportRangeRows() {
   const from = $('bm-export-from')?.value || '';
   const to = $('bm-export-to')?.value || '';
-  return filtered().filter((r) => (!from || r.f >= from) && (!to || r.f <= to));
+  return byDateDesc(filtered().filter((r) => (!from || r.f >= from) && (!to || r.f <= to)));
 }
 function updateBmExportInfo() {
   const info = $('bm-export-info'); if (info) info.textContent = `Se exportarán ${exportRangeRows().length} registro(s) en el rango elegido.`;
@@ -1699,6 +1737,12 @@ function initFilters(reset) {
   updateLugarSummary();
   buildLoteList(lotes);
   updateLoteSummary();
+  // Las píldoras de diagnóstico se re-crean SIEMPRE encendidas en `shellHTML()`, pero un
+  // refresco silencioso (misma firma de datos) conserva `activeDiags`: sin esta línea la
+  // barra decía que los 6 diagnósticos estaban activos mientras los gráficos seguían sin el
+  // deseleccionado, y pulsar la píldora "encendida" para apagarla en realidad la ENCENDÍA
+  // sin cambio visible (medido). Se sincroniza igual que los presets de fecha de abajo.
+  document.querySelectorAll('.biomol #diag-filter .filter-btn').forEach((b) => b.classList.toggle('on', activeDiags.has(b.dataset.diag)));
   document.querySelectorAll('.biomol .fb-preset').forEach((b) => b.classList.toggle('on', b.dataset.preset === datePreset));
   $('fb-date-inputs').style.display = datePreset === 'custom' ? 'flex' : 'none';
   if (fechas.length) {
