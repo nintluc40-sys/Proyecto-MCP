@@ -12,6 +12,7 @@
    marca solo sus columnas sin borrar los campos permanentes de la matriz.
    ============================================================ */
 import { sanitizeStr } from './security.js';
+import { normTrovan } from '../../../core/trovan.js';
 
 /* ── Esquema de las 3 hojas (cabecera EXACTA + claves de upsert) ── */
 export const REPRO_MATRIZ_SHEET = 'Maduración MATRIZ';
@@ -38,12 +39,10 @@ export const REPRO_EVENTO = { DESOVE: 'Desove', MORTALIDAD: 'Mortalidad' };
 export const REPRO_TRANSFER_TIPO = { TRASLADO: 'Traslado', MEZCLA: 'Mezcla' };
 
 /* ── Normalización / parseo ── */
-/** Normaliza un Trovan ID: string, sin espacios, saneado (anti-inyección de fórmula) y en
- *  MAYÚSCULAS (los códigos del lector son hexadecimales; mayúsculas = forma canónica, así
- *  un mismo tag en minúsculas no genera claves distintas ni duplica en el upsert). */
-export function normTrovan(s) {
-  return sanitizeStr(String(s == null ? '' : s)).replace(/\s+/g, '').toUpperCase();
-}
+/** Normaliza un Trovan ID. Definición ÚNICA en `core/trovan.js`: la comparte la LECTURA
+ *  (Maduración), y si las dos difieren el mismo tag produce dos claves y el cruce entre
+ *  hojas se rompe en silencio. Se re-exporta para no cambiar la ruta de sus consumidores. */
+export { normTrovan };
 
 /** Formato canónico de un Trovan ID del lector: EXACTAMENTE 10 caracteres hexadecimales
  *  (0-9 A-F) en mayúsculas. Se valida sobre el id YA normalizado. Descarta los códigos que

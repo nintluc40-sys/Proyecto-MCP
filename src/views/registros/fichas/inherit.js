@@ -11,6 +11,14 @@ export const LOTE_FICHAS = ['poblacion', 'plg'];
 
 const fn = (o, name) => (o && typeof o[name] === 'function' ? o[name].bind(o) : null);
 
+/* MISMA definición de «presente» que `_inheritShared`/`_inheritPerTank` en engine.js
+   (`v !== undefined && v !== null && v !== "" && String(v).trim() !== ""`). Con un falsy
+   simple, un valor de SOLO ESPACIOS —truthy en JS— bloqueaba la herencia: la ficha se abría
+   con Corrida y Estadío visualmente en blanco habiendo un valor disponible para heredar
+   (medido), y el técnico tenía que re-teclearlo o lo guardaba vacío. La capa modular
+   contradecía así al motor que dice espejar. */
+const present = (v) => v !== undefined && v !== null && String(v).trim() !== '';
+
 /**
  * @param {object}  o
  * @param {object}  o.saved      datos guardados
@@ -38,18 +46,18 @@ export function resolveInheritance({
   const getCorr = fn(engine, 'getCorr');
   const gcfg = fn(engine, 'gcfg');
 
-  if (!eff.corrida) {
+  if (!present(eff.corrida)) {
     eff.corrida = (inhShared && inhShared(mod, 'corrida', ficha)) || (getCorr && getCorr(mod)) || '';
   }
   // tec=false para fichas sin técnico (p.ej. desinfeccion).
-  if (tec && !eff.tec) {
+  if (tec && !present(eff.tec)) {
     eff.tec = (inhShared && inhShared(mod, 'tec', ficha)) || (gcfg && gcfg('tec', '')) || '';
   }
   for (const pt of perTank) {
     const stdFn = pt.std ? fn(engine, pt.std) : null;
     for (let i = 0; i < tankCount; i++) {
       const k = `${pt.code}_${i}`;
-      if (eff[k]) continue;
+      if (present(eff[k])) continue;
       let v = (inhTank && inhTank(mod, pt.code, i, ficha, pt.scope)) || '';
       if (!v && stdFn) v = stdFn(mod, i) || '';
       if (v) eff[k] = String(v);

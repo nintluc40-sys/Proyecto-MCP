@@ -24,15 +24,11 @@ export function escapeHtml(s) {
 }
 
 /** Input sanitization: recorta a 200 chars y elimina los caracteres de
- *  inyección de fórmula iniciales (= + - @) que llegarían a Google Sheets. */
-export function sanitizeStr(s) {
-  if (s === null || s === undefined) return '';
-  let str = String(s).trim().slice(0, 200);
-  while (str.length > 0 && '=+-@'.indexOf(str.charAt(0)) !== -1) {
-    str = str.slice(1);
-  }
-  return str;
-}
+ *  inyección de fórmula iniciales (= + - @) que llegarían a Google Sheets.
+ *  ⚠ Vive en `core/trovan.js` porque la normalización del Trovan ID se apoya en ella y ESA
+ *  sí la comparten Registros (escritura) y Maduración (lectura). Se re-exporta aquí para
+ *  que engine.js y el resto de fichas la sigan pidiendo por su ruta de siempre. */
+export { sanitizeStr } from '../../../core/trovan.js';
 
 /** Sanitización numérica: parsea, acota al rango y rechaza NaN/Infinity
  *  devolviendo "" (cadena vacía) cuando el valor no es finito. */

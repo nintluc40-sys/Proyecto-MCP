@@ -28,6 +28,7 @@
      durante el bucket (ingreso ≤ fin del bucket y sin muerte previa), ×100.
    ============================================================ */
 import { parseAnyDate, yearMonthKey } from '../../core/dates.js';
+import { normTrovan } from '../../core/trovan.js';
 
 export const MAD_MATRIZ_ORIGIN = 'Maduración MATRIZ';
 export const MAD_BITACORA_ORIGIN = 'Maduración Bitácora';
@@ -82,10 +83,10 @@ const H = {
   tanqueDestino: ['Tanque destino'],
 };
 
-// Canónico: quita espacios y MAYÚSCULAS (espeja el write-side reproductivo.data.js;
-// los Trovan son hex y desde 2026-07-14 la captura los guarda en mayúsculas → evita
-// que un caso mixto legado rompa en silencio los cruces entre hojas por Trovan).
-const normTrovan = (s) => String(s == null ? '' : s).replace(/\s+/g, '').toUpperCase();
+// La normalización del Trovan es ahora DEFINICIÓN ÚNICA en `core/trovan.js`, compartida con
+// la escritura (`registros/lib/reproductivo.data.js`). Esta copia «espejo» NO saneaba, así
+// que un Trovan con `=`/`+`/`-`/`@` inicial —o de más de 200 caracteres— producía una clave
+// distinta en cada lado y el cruce entre hojas se rompía en silencio (medido).
 const dash = (s) => (s && String(s).trim()) ? String(s).trim() : '—';
 /** Clave de ubicación Sala · Tanque (para agregados). */
 export const locKey = (sala, tanque) => `${dash(sala)} · ${dash(tanque)}`;
