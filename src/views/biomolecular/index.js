@@ -670,10 +670,19 @@ function drawSwarm() {
     g.append('text').attr('x', mL - 5).attr('y', cy).attr('text-anchor', 'end').attr('dominant-baseline', 'middle').attr('fill', TH.muted).attr('font-size', 9).text(l.length > 12 ? l.slice(0, 11) + '…' : l);
   });
   const xBy = {};
-  data.forEach((r) => {
+  // El desplazamiento vertical NO es decorativo: cuando los puntos desbordan el ancho, la X
+  // se topa en `W - 12` y se apilan (medido: 24 de 40 en la misma columna), así que es lo
+  // único que los separa. Pero con `Math.random()` se recalculaba en CADA repintado —y
+  // `drawSwarm` corre desde `render()`, o sea en cada filtro y en cada refresco silencioso—,
+  // así que los puntos se movían solos hasta 24 px, un 40 % de la altura de su fila, mientras
+  // el usuario los miraba. Se teclea con la clave de la fila usando el MISMO sorteo
+  // reproducible del modo AUD, que existe exactamente por este motivo (ver `audRand`): cada
+  // punto conserva su sitio entre repintados y sigue separado de sus vecinos apilados.
+  const jitterSeen = new Map();
+  data.forEach((r, i) => {
     if (!xBy[r.lugar]) xBy[r.lugar] = 0;
     const cx = mL + 10 + xBy[r.lugar] * 12; xBy[r.lugar]++;
-    const cy = yS(r.lugar) + yS.bandwidth() / 2 + (Math.random() - 0.5) * yS.bandwidth() * 0.4;
+    const cy = yS(r.lugar) + yS.bandwidth() / 2 + (audRand(0, audKey(r, i, jitterSeen)) - 0.5) * yS.bandwidth() * 0.4;
     let fill, stroke, tipDiags;
     if (isAll) {
       const anyPos = diagsUsed.some((d) => isPos(r[d])), anyMeas = diagsUsed.some((d) => hasVal(r[d]));
