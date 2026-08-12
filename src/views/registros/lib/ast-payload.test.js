@@ -3,17 +3,25 @@
    Cubre `buildAstPayload` del monolito `public/registros/engine.js` y su acuerdo con
    el GAS (`GAS/Code.gs`), extrayendo el código REAL de ambos fuentes.
 
-   Contexto (2026-08): se añaden Flacidez, Necrosis y Disparidad. Van DESPUÉS de la
-   columna "ID", no antes: el payload se escribe por POSICIÓN desde la columna 1, así
-   que colocarlas en medio obligaría a reordenar a mano la hoja de producción y a
-   desplazar el histórico. Como consecuencia el ID deja de ser la última columna, y el
-   upsert del GAS pasa a localizarlo por su cabecera.
+   Contexto (2026-08-15): Flacidez, Necrosis y Disparidad van ANTES del "ID", que es la
+   ÚLTIMA columna. El payload se escribe por POSICIÓN desde la columna 1, así que el array
+   `headers` ES el orden físico de la hoja; se migró "Registro_Supervisión" moviendo la
+   columna del ID al final, detrás de Disparidad.
 
-   Dos trampas que estas pruebas vigilan:
+   Por qué ese orden y no el inverso: con el ID al final, las DOS rutas de `upsertAstRows`
+   —la búsqueda por cabecera "ID" y el respaldo `widest - 1`— apuntan a la MISMA columna,
+   así que el upsert empareja aunque la cabecera falte. En el diseño anterior (ID en la
+   posición 24, delante de las 3 nuevas) eso no se cumplía: se midió que la hoja real de
+   producción tenía la cabecera del ID en BLANCO, con lo que el respaldo caía en
+   "Disparidad" y cada sincronización habría duplicado la fila.
+
+   Tres trampas que estas pruebas vigilan:
    · `LIMITS.ast.maxCols` no es sólo una validación: el GAS RECORTA las filas a ese
      ancho en silencio. Con el 25 anterior, un payload de 27 perdía el ID y cada
      sincronización habría DUPLICADO la fila en vez de actualizarla.
    · `ensureHeaders` debe aplicarse al AsT o las 3 columnas nunca se crearían.
+   · `ensureHeaders` sólo AÑADE columnas al final; NO repara una cabecera vacía en medio.
+     Por eso hay un caso con la cabecera del ID en blanco sobre una hoja ya ancha.
    ============================================================ */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -70,27 +78,28 @@ describe('registros · AsT · payload de Registro_Supervisión', () => {
     expect(headers.slice(0, 23)).toEqual(COLUMNAS_HISTORICAS);
   });
 
-  it('Flacidez/Necrosis/Disparidad van al final, DESPUÉS de ID', () => {
+  it('Flacidez/Necrosis/Disparidad van ANTES del ID, que cierra la fila', () => {
     const { headers } = buildPayload(registro());
-    expect(headers.slice(23)).toEqual(['ID', 'Flacidez', 'Necrosis', 'Disparidad']);
+    expect(headers.slice(23)).toEqual(['Flacidez', 'Necrosis', 'Disparidad', 'ID']);
     expect(headers).toHaveLength(27);
+    expect(headers[headers.length - 1]).toBe('ID');   // invariante que sostiene el upsert
   });
 
   it('cada fila lleva 27 celdas y los valores nuevos en su sitio', () => {
     const { rows } = buildPayload(registro());
     expect(rows[0]).toHaveLength(27);
-    expect(rows[0][23]).toBe('AST-001');   // ID
-    expect(rows[0].slice(24)).toEqual([7, 8, 9]);
+    expect(rows[0][26]).toBe('AST-001');   // ID, última columna
+    expect(rows[0].slice(23, 26)).toEqual([7, 8, 9]);
   });
 
   it('un campo vacío viaja como celda vacía, no como 0', () => {
     const { rows } = buildPayload(registro({ flacidez: '', necrosis: null, disparidad: undefined }));
-    expect(rows[0].slice(24)).toEqual(['', '', '']);
+    expect(rows[0].slice(23, 26)).toEqual(['', '', '']);
   });
 
   it('un valor no numérico se descarta en vez de ensuciar la hoja', () => {
     const { rows } = buildPayload(registro({ flacidez: 'abc' }));
-    expect(rows[0][24]).toBe('');
+    expect(rows[0][23]).toBe('');
   });
 });
 
@@ -185,17 +194,11 @@ describe('registros · AsT · acuerdo con el GAS', () => {
     expect(evaluar({})).toBe(false);
   });
 
-  it('el upsert localiza el ID por su CABECERA, no asumiendo la última columna', () => {
-    // Regresión directa: con `idCol = widest - 1` el ID caería en "Disparidad" y cada
-    // sincronización añadiría una fila nueva en lugar de actualizar la existente.
-    const upsert = bloque(gas, 'function upsertAstRows(ws, newRows) {', '\n}');
-    const { headers, rows } = buildPayload(registro());
-
-    const grid = [headers.slice(0, 24)];                        // hoja heredada: hasta ID
-    const previa = new Array(24).fill(''); previa[0] = '2026-08-01'; previa[23] = 'AST-001';
-    grid.push(previa);
-    let maxCols = 24;
-    const ws = {
+  // Hoja simulada mínima de Apps Script. Compartida por los tres casos de upsert para no
+  // repetir el mock; `grid` se muta EN SITIO, así el test lo inspecciona después.
+  function hojaSimulada(grid) {
+    let maxCols = grid[0].length;
+    return {
       getMaxColumns: () => maxCols,
       insertColumnsAfter: (_a, n) => { maxCols += n; },
       getLastColumn: () => grid[0].length,
@@ -214,46 +217,58 @@ describe('registros · AsT · acuerdo con el GAS', () => {
         },
       }),
     };
+  }
+
+  // Corre el upsertAstRows REAL de GAS/Code.gs contra la hoja simulada.
+  function correrUpsert(grid, rows) {
+    const upsert = bloque(gas, 'function upsertAstRows(ws, newRows) {', '\n}');
     const ctx = { String, Number, Object, Array, Math, fmtData: () => {}, lastRow: (w) => w.getLastRow() };
     ctx.globalThis = ctx;
     createContext(ctx);
     new Script(upsert + '\n;globalThis.__up = upsertAstRows;').runInContext(ctx);
+    return ctx.__up(hojaSimulada(grid), rows.map((r) => r.slice()));
+  }
 
-    const res = ctx.__up(ws, rows.map((r) => r.slice()));
+  // Fila ya presente en la hoja, con el ID en la ÚLTIMA columna (índice 26).
+  function filaPrevia() {
+    const previa = new Array(27).fill('');
+    previa[0] = '2026-08-01';
+    previa[26] = 'AST-001';
+    return previa;
+  }
+
+  it('el upsert localiza el ID por su CABECERA y actualiza la fila en vez de duplicarla', () => {
+    const { headers, rows } = buildPayload(registro());
+    const grid = [headers.slice(), filaPrevia()];       // hoja ya migrada: 27 cols con "ID"
+
+    const res = correrUpsert(grid, rows);
     expect(res).toEqual({ upserted: 1, appended: 0 });  // ACTUALIZA la fila, no la duplica
-    expect(grid).toHaveLength(2);                        // cabecera + 1 fila, sin duplicado
-    expect(grid[1][23]).toBe('AST-001');                 // el ID sigue emparejando
-    expect(grid[1].slice(24, 27)).toEqual([7, 8, 9]);    // y los valores nuevos aterrizan
+    expect(grid).toHaveLength(2);                       // cabecera + 1 fila, sin duplicado
+    expect(grid[1][26]).toBe('AST-001');                // el ID sigue emparejando
+    expect(grid[1].slice(23, 26)).toEqual([7, 8, 9]);   // y los valores nuevos aterrizan
   });
 
-  it('una hoja heredada SIN cabecera "ID" no rompe: cae al comportamiento anterior', () => {
-    const upsert = bloque(gas, 'function upsertAstRows(ws, newRows) {', '\n}');
+  it('con la cabecera "ID" en BLANCO sobre una hoja ya ancha, el respaldo sigue acertando', () => {
+    // El caso REAL medido contra producción, y el que el orden anterior rompía: la hoja
+    // ya tiene el ancho completo (27), así que ensureHeaders sale sin escribir nada
+    // (lastCol >= headers.length) y la cabecera del ID NO se repara nunca. La búsqueda
+    // por cabecera falla y todo queda en manos del respaldo `widest - 1`. Con el ID al
+    // final ese respaldo acierta; con el ID en la posición 24 caía en "Disparidad" y
+    // cada sincronización añadía una fila nueva en lugar de actualizar la existente.
+    const { headers, rows } = buildPayload(registro());
+    const sinCabeceraId = headers.slice(0, 26).concat(['']);
+    const grid = [sinCabeceraId, filaPrevia()];
+
+    const res = correrUpsert(grid, rows);
+    expect(res).toEqual({ upserted: 1, appended: 0 });
+    expect(grid).toHaveLength(2);
+    expect(grid[1][26]).toBe('AST-001');
+    expect(grid[1].slice(23, 26)).toEqual([7, 8, 9]);
+  });
+
+  it('una hoja heredada más estrecha y sin "ID" no rompe', () => {
     const { headers, rows } = buildPayload(registro());
     const grid = [headers.slice(0, 23).concat(['Sesión'])];
-    let maxCols = 24;
-    const ws = {
-      getMaxColumns: () => maxCols,
-      insertColumnsAfter: (_a, n) => { maxCols += n; },
-      getLastColumn: () => grid[0].length,
-      getLastRow: () => grid.length,
-      getDataRange: () => ({ getValues: () => grid.map((r) => r.slice()) }),
-      getRange: (row, col, nR, nC) => ({
-        getValues: () => Array.from({ length: nR || 1 }, (_, i) => Array.from(
-          { length: nC || 1 }, (_2, c) => ((grid[row - 1 + i] || [])[col - 1 + c] ?? ''),
-        )),
-        setValues: (vals) => {
-          vals.forEach((v, i) => {
-            const ri = row - 1 + i;
-            while (grid.length <= ri) grid.push([]);
-            v.forEach((cell, c) => { grid[ri][col - 1 + c] = cell; });
-          });
-        },
-      }),
-    };
-    const ctx = { String, Number, Object, Array, Math, fmtData: () => {}, lastRow: (w) => w.getLastRow() };
-    ctx.globalThis = ctx;
-    createContext(ctx);
-    new Script(upsert + '\n;globalThis.__up = upsertAstRows;').runInContext(ctx);
-    expect(() => ctx.__up(ws, rows.map((r) => r.slice()))).not.toThrow();
+    expect(() => correrUpsert(grid, rows)).not.toThrow();
   });
 });

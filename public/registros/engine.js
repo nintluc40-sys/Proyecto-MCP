@@ -1432,9 +1432,9 @@ function buildControlPayload(m){
 // In-flight guard: previene POSTs concurrentes a la MISMA hoja. Si el
 // usuario pulsa "Sincronizar" varias veces o dos flujos apuntan al mismo
 // sheetName en paralelo, sólo el primero llega al GAS. Crítico para
-// hojas append-only (Maduración Tanques/Lotes, BIOMOL, Registro_Supervisión)
-// donde un doble-envío crearía filas duplicadas; las hojas upsert son
-// idempotentes y la protección no las penaliza.
+// hojas append-only (Maduración Tanques/Lotes, BIOMOL) donde un doble-envío
+// crearía filas duplicadas; las hojas upsert —Registro_Supervisión entre ellas
+// desde 2026-08— son idempotentes y la protección no las penaliza.
 const _syncInFlight = new Set();
 
 // ── Fingerprint de payload — idempotencia tras envío exitoso ────────────
@@ -7939,7 +7939,8 @@ function renderBiomol(){
    ──────────────────────────────────────────
    • Almacenamiento: clave única AST_REC_KEY → JSON array de hasta AST_MAX
      registros con TTL AST_TTL (48 h), purga vía pruneAst().
-   • Hoja destino (append-only): Registro_Supervisión.
+   • Hoja destino: Registro_Supervisión. NO es append-only: el GAS hace UPSERT
+     por la columna "ID", que es la ÚLTIMA de la hoja (ver buildAstPayload).
    • Tipo_revisión se DERIVA automáticamente de Estadío_observado.
    • Observaciones y Acción son multiselección (chips/checkboxes), se
      persisten como string CSV.
@@ -8209,24 +8210,28 @@ function buildAstPayload(records){
   // REEMPLAZA en lugar de duplicarse. Compatible hacia atrás — si el GAS aún
   // no se redesplegó (sigue en append-only), la columna ID simplemente viaja
   // como un dato más sin romper nada.
-  // Orden alineado al nuevo esquema del Google Sheet (23 cols + ID al final).
+  // Orden alineado al esquema del Google Sheet: 23 cols históricas + Flacidez/Necrosis/
+  // Disparidad + ID al final.
   // Columnas nuevas: Protusión (grado), Opacidad, Asimilación, Semillenas (%),
   // Vacías (%), y Comentario (vespertino). "Comentario" pasó a "Comentario
   // (matutino)" conservando el nombre interno `comentario` (compat. histórica).
   // "% Hernia"/"Hernia" se renombraron en la hoja a "% Protusión"/"Protusión" (2026-06).
   // "% No viables" se añadió tras "Condición_biológica" (2026-06).
-  // ⚠ Flacidez/Necrosis/Disparidad (2026-08) van DESPUÉS de "ID", no antes. El payload
-  // se escribe por POSICIÓN desde la columna 1, así que meterlas en medio obligaría a
-  // reordenar a mano la hoja de producción y a desplazar datos históricos. Puestas al
-  // final, el GAS las añade solo (ensureHeaders) y ninguna columna existente se mueve.
-  // El upsert ya NO asume que el ID es la última columna: lo localiza por su cabecera.
+  // ⚠ ORDEN (2026-08-15): Flacidez/Necrosis/Disparidad van ANTES del "ID", que vuelve a
+  // ser la ÚLTIMA columna. El payload se escribe por POSICIÓN desde la columna 1, así que
+  // este array ES el orden físico de la hoja. Se migró "Registro_Supervisión" moviendo la
+  // columna del ID (que tenía la cabecera en BLANCO, y por eso el upsert no la encontraba)
+  // al final, detrás de Disparidad.
+  // Con el ID al final las DOS rutas de upsertAstRows coinciden: la búsqueda por cabecera
+  // "ID" y el respaldo "widest - 1" apuntan a la misma columna, así que el upsert sigue
+  // emparejando aunque la cabecera se pierda o la hoja sea heredada.
   const headers = ["Fecha","Supervisor","Módulo","Siembra","Corrida",
                    "Estadío_observado","Tipo_revisión","Deformidad_%",
                    "% Atraso","% Protusión","Protusión","Opacidad","Asimilación",
                    "Semillenas (%)","Vacías (%)",
                    "Intestino","Actividad","Condición_biológica","% No viables",
-                   "Observaciones","Acción","Comentario (matutino)","Comentario (vespertino)","ID",
-                   "Flacidez","Necrosis","Disparidad"];
+                   "Observaciones","Acción","Comentario (matutino)","Comentario (vespertino)",
+                   "Flacidez","Necrosis","Disparidad","ID"];
   const numOrEmpty = (v) => { if(v===""||v==null) return ""; const n=parseFloat(v); return isFinite(n)?n:""; };
   const rows = records.map(r => {
     const a = r.data || {};
@@ -8254,10 +8259,10 @@ function buildAstPayload(records){
       sanitizeStr(a.accion||""),
       sanitizeStr(a.comentario||""),
       sanitizeStr(a.comentario_vesp||""),
-      String(r.id||""),
       numOrEmpty(a.flacidez),
       numOrEmpty(a.necrosis),
-      numOrEmpty(a.disparidad)
+      numOrEmpty(a.disparidad),
+      String(r.id||"")
     ];
   });
   return { sheetName: AST_SHEET, headers, rows };
