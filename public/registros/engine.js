@@ -8106,7 +8106,7 @@ const MIC_PA_OPTS  = ["","Presencia","Ausencia"];
 // Analistas sugeridos para el campo Responsable de Bacteriología / Calidad de Agua /
 // Patología. El input admite TEXTO LIBRE (datalist): la lista es solo sugerencia con
 // valor por defecto. El Analista es OBLIGATORIO antes de sincronizar (ver los sync*).
-const MIC_ANALISTAS = ["Macías","Ramírez","Espinoza","Cayra"];
+const MIC_ANALISTAS = ["Macías","Ramírez","Espinoza","Cayra","Chumbo"];
 function _analistaDL(id){ return `<datalist id="${id}">`+MIC_ANALISTAS.map(a=>`<option value="${escapeHtml(a)}">`).join("")+`</datalist>`; }
 // ¿Alguna muestra pendiente va sin Analista (Responsable)? Bloquea la sincronización
 // (Mic/Cal/Pat) hasta que TODAS lo tengan; se comprueba el dato del registro, no el
@@ -8269,7 +8269,10 @@ const MIC_FORMATS = {
   "ras": {
     depto:"Maduración", label:"Maduración · RAS",
     rkeyFn:()=> "ras-agua",
-    ctx:[ { k:"componente", l:"Componente", type:"sel", opts:["","Colector","Salida"], w:96 } ],
+    // Componentes agrupados por punto de muestreo. La misma lista que el formato
+    // "mad-ras" de Calidad de Agua: es el mismo sitio físico, y si las dos listas
+    // divergen el mismo punto se escribe distinto según por dónde se capture.
+    ctx:[ { k:"componente", l:"Componente", type:"sel", opts:["","Colector","Colector entrada","Colector salida","Salida","Salida UV"], w:130 } ],
     params:["vamar","vverd","vtot","aero","pseudo","btot","brojas"]
   },
   "agua-limpia-mar": {
@@ -9571,6 +9574,13 @@ const CAL_PARAMS = {
 const CAL_PARAM_ORDER = ["sal","ph","alc","temp","nitrito","tan","amtox","nitrato","amonio","ntot","calcio","magnesio","potasio","dureza","hierro","fosforo","cobre","manganeso","sal_a","sal_d","ph_a","ph_d","calcio_a","calcio_d","magnesio_a","magnesio_d","potasio_a","potasio_d","cl_libre","cl_total","cl_comb"];
 const CAL_PARAMS_FULL = ["sal","ph","alc","temp","nitrito","tan","amtox","nitrato","amonio","ntot","calcio","magnesio","potasio","dureza","hierro","fosforo","cobre","manganeso"];
 const CAL_ALGAS_MUESTRA = ["Funda producción","Funda matriz","Reservorio PBR"];
+// Sugerencias de la columna "Muestra" de Maduración · Agua de mar (admite escribir otra).
+const CAL_MAR_MUESTRA = ["Agua de mar"];
+// Juego de parámetros común a los formatos de agua de Maduración. Es el de
+// "Maduración · Agua" más Temperatura, que RAS y Agua de mar sí registran.
+const CAL_PARAMS_MAD_AGUA = ["alc","ph","sal","temp","calcio","magnesio","potasio","amtox",
+  "nitrato","nitrito","tan","amonio","ntot","dureza","hierro","fosforo","cobre","manganeso",
+  "cl_libre","cl_total","cl_comb"];
 const CAL_PDF_LEGEND = '<div class="miclegend"><b>Rangos:</b><span><span class="micbox" style="background:#bbf7d0;border-color:#4ade80"></span>Dentro</span><span><span class="micbox" style="background:#fecaca;border-color:#f87171"></span>Fuera de rango</span><span><span class="micbox" style="background:#fff;border-color:#cbd5e1"></span>Sin rango</span><span style="color:#64748b">· bajo cada columna: rango objetivo y unidad</span></div>';
 
 const CAL_FORMATS = {
@@ -9604,10 +9614,21 @@ const CAL_FORMATS = {
     ],
     params:["alc","ph","sal","calcio","magnesio","potasio","amtox","nitrato","nitrito","tan","amonio","ntot","dureza","hierro","fosforo","cobre","manganeso","cl_libre","cl_total","cl_comb"]
   },
+  // Los tres formatos de agua de Maduración (Agua, RAS y Agua de mar) comparten el
+  // MISMO juego de parámetros: son el mismo análisis físico-químico sobre distintos
+  // puntos, y tenerlos alineados evita que una medición exista en un formato y no en
+  // otro. RAS y Agua de mar añaden Temperatura, que Agua no lleva.
   "mad-ras": {
     depto:"Maduración", label:"Maduración · RAS",
-    ctx:[ { k:"componente", l:"Componente", type:"sel", opts:["","Colector","Salida"], w:96 } ],
-    params:["alc","sal","ph","temp","nitrito","nitrato","ntot","tan","amtox"]
+    // Misma lista de componentes que el formato "ras" de Bacteriología (ver allí).
+    ctx:[ { k:"componente", l:"Componente", type:"sel", opts:["","Colector","Colector entrada","Colector salida","Salida","Salida UV"], w:130 } ],
+    params:CAL_PARAMS_MAD_AGUA
+  },
+  "mad-mar": {
+    depto:"Maduración", label:"Maduración · Agua de mar",
+    // "Muestra" admite escritura libre y sugiere las captaciones conocidas.
+    ctx:[ { k:"tipoMuestra", l:"Muestra", type:"txtlist", opts:CAL_MAR_MUESTRA, w:170 } ],
+    params:CAL_PARAMS_MAD_AGUA
   },
   "mad-ensayo": {
     depto:"Maduración", label:"Maduración · Ensayo",
@@ -9623,7 +9644,7 @@ const CAL_FORMATS = {
     params:["cl_libre","cl_total","cl_comb"]
   }
 };
-const CAL_FORMAT_KEYS = ["larv","mad","mad-agua","mad-ras","mad-ensayo","algas"];
+const CAL_FORMAT_KEYS = ["larv","mad","mad-agua","mad-ras","mad-mar","mad-ensayo","algas"];
 function calFormatLabel(k){ return (CAL_FORMATS[k] && CAL_FORMATS[k].label) || k || ""; }
 
 // Rangos por parámetro (globales). Editables; sin rango = solo registro (sin color).
@@ -9641,7 +9662,55 @@ function loadCalRanges(){
   return out;
 }
 function saveCalRanges(R){ try{ localStorage.setItem(CAL_RANGES_KEY, JSON.stringify(R||{})); }catch(_){ toast("No se pudo guardar rangos","err"); } }
-function calRangeOf(pk){ const R = loadCalRanges(); return R[pk] || {}; }
+
+// ── Rangos PROPIOS de un formato ───────────────────────
+// CAL_RANGE_BASE es global por parámetro: tocar Alcalinidad allí se la cambia a
+// TODOS los formatos. Agua de mar necesita bandas propias (aplicarle las de
+// cultivo pintaría en rojo medidas que en el mar son normales), así que aquí un
+// formato puede declarar las suyas — igual que Bacteriología, que ya guarda sus
+// umbrales por área en MIC_DR_BASE.
+// Un parámetro se resuelve así, por orden:
+//   · declarado con objeto  → manda ESE rango (banda propia del formato)
+//   · declarado como null   → SIN rango en este formato, aunque tenga uno general
+//   · no declarado          → hereda el general
+// El null explícito es lo que permite que Potasio no se coloree en agua de mar pese
+// a tener el suyo (380–420), sin tener que copiar aquí el resto de los generales —
+// copiarlos los condenaría a divergir en cuanto se editara uno.
+// Se persiste en su PROPIA clave: `larv4_cal_ranges` es contrato compartido con el
+// dashboard (calagua.data.js lee esa misma clave) y su forma no debe cambiar.
+const CAL_FMT_RANGE_BASE = {
+  "mad-mar": {
+    alc:{min:100,max:120},          // Bajo <100 · Medio 100–120 · Alto >120
+    calcio:{min:300,max:560},       // Bajo <300 · Medio 300–560 · Alto >560
+    magnesio:{min:1200,max:1500},   // Bajo <1200 · Medio 1200–1500 · Alto >1500
+    ph:null, temp:null, sal:null,   // sin color en agua de mar
+    potasio:null, fosforo:null      // sin banda definida todavía
+    // El resto (Nitrito, TAN, Am.Tóxico, cloros…) hereda los rangos generales.
+  }
+};
+const CAL_FMTRANGES_KEY = "larv4_cal_ranges_fmt";
+function _calUnsafeKey(k){ return k==="__proto__" || k==="constructor" || k==="prototype"; }
+function loadCalFmtRanges(){
+  const out = JSON.parse(JSON.stringify(CAL_FMT_RANGE_BASE));
+  try{ const raw = localStorage.getItem(CAL_FMTRANGES_KEY);
+    if(raw){ const o = JSON.parse(raw); if(o && typeof o==="object")
+      Object.keys(o).forEach(fk=>{ if(_calUnsafeKey(fk)) return;
+        out[fk] = out[fk] || {};
+        Object.keys(o[fk]||{}).forEach(pk=>{ if(_calUnsafeKey(pk)) return;
+          out[fk][pk] = Object.assign({}, out[fk][pk]||{}, o[fk][pk]||{}); }); }); }
+  }catch(_){}
+  return out;
+}
+function saveCalFmtRanges(R){ try{ localStorage.setItem(CAL_FMTRANGES_KEY, JSON.stringify(R||{})); }catch(_){ toast("No se pudo guardar rangos","err"); } }
+/** Rango efectivo de un parámetro: lo que el formato declare y, si no declara nada
+ *  para él, el general. `null` declarado = sin rango (ver CAL_FMT_RANGE_BASE). */
+function calRangeOf(pk, fmtKey){
+  if(fmtKey){
+    const F = loadCalFmtRanges()[fmtKey];
+    if(F && Object.prototype.hasOwnProperty.call(F, pk)) return F[pk] || {};
+  }
+  const R = loadCalRanges(); return R[pk] || {};
+}
 // null (sin rango/sin valor) · "in" (dentro) · "out" (fuera)
 function calClassify(val, r){
   if(!r || !isFinite(val)) return null;
@@ -9726,7 +9795,9 @@ function calRowHasData(fmt, d){ return fmt.params.some(pk=> d[pk]!=null && Strin
 function _calApplyCls(inp){
   const raw = parseFloat(inp.value);
   if(inp.value.trim()==="" || !isFinite(raw)){ inp.className = "mic-in"; return; }
-  const cls = calClassify(raw, calRangeOf(inp.dataset.param));
+  // data-fmt ya viaja en cada celda (ver el render de la rejilla): con él, un
+  // formato con bandas propias se colorea con las suyas y no con las globales.
+  const cls = calClassify(raw, calRangeOf(inp.dataset.param, inp.dataset.fmt));
   inp.className = "mic-in" + (cls==="in" ? " mic-v" : cls==="out" ? " mic-r" : "");
 }
 function calCalcCell(inp){ _calApplyCls(inp); calDraftTouch(); }
@@ -10328,16 +10399,51 @@ function renderCalRangos(){
     return `<div class="fc" style="margin-bottom:12px"><div class="fc-h"><div class="fc-t">${escapeHtml(g.t)}</div></div>
       <div class="fc-b"><div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th style="text-align:left">Parámetro</th><th>Mínimo</th><th>Máximo</th></tr></thead><tbody>${rows}</tbody></table></div></div></div>`;
   }).join("");
+  // Bloques de los formatos que declaran rangos propios. Cada fila dice de dónde
+  // sale su rango: propio del formato, heredado del general, o sin rango.
+  const FR = loadCalFmtRanges();
+  const fmtBlocks = Object.keys(CAL_FMT_RANGE_BASE).map(fk=>{
+    const fmt = CAL_FORMATS[fk]; if(!fmt) return "";
+    const R2 = FR[fk] || {};
+    const declarado = (pk)=> Object.prototype.hasOwnProperty.call(R2, pk);
+    // Un parámetro que HEREDA se muestra vacío pero con el valor general en gris:
+    // sin eso, la casilla vacía haría creer que no colorea cuando sí lo hace.
+    const inp2=(pk,field,w)=>{
+      const propio = declarado(pk) ? (R2[pk]||{}) : null;
+      const her = propio ? null : (R[pk]||{});
+      const ph = her && her[field]!=null ? String(her[field]) : "—";
+      const v = propio && propio[field]!=null ? propio[field] : "";
+      return `<input type="number" class="pinp" value="${v}" onchange="calFmtRangeSet('${fk}','${pk}','${field}',this.value)" step="any" placeholder="${escapeHtml(ph)}" style="width:${w}px">`;
+    };
+    const rows=fmt.params.map(pk=>{
+      const est = declarado(pk) ? (R2[pk] ? "propio" : "sin rango") : "hereda";
+      return `<tr><td style="text-align:left;font-weight:600">${escapeHtml(CAL_PARAMS[pk]?CAL_PARAMS[pk].l:pk)}</td><td>${inp2(pk,"min",90)}</td><td>${inp2(pk,"max",90)}</td><td style="font-size:10px;color:var(--tx3)">${est}</td></tr>`;
+    }).join("");
+    return `<div class="fc" style="margin-bottom:12px"><div class="fc-h"><div class="fc-t">${escapeHtml(fmt.label)} · rangos propios</div></div>
+      <div class="fc-b"><div style="font-size:10.5px;color:var(--tx3);margin-bottom:8px"><b>Mínimo</b> es donde empieza la banda buena y <b>Máximo</b> donde termina; por debajo y por encima se marca fuera de rango. Un número <b>gris</b> significa que ese parámetro <b>hereda</b> el rango general de arriba: escribe encima para darle uno propio en este formato. La columna de la derecha dice cuál manda.</div><div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th style="text-align:left">Parámetro</th><th>Mínimo</th><th>Máximo</th><th>Origen</th></tr></thead><tbody>${rows}</tbody></table></div></div></div>`;
+  }).join("");
   fp.innerHTML=`${micTypeBar()}<div class="fc"><div class="fc-h"><div class="fc-t">📐 Rangos (Calidad de Agua)</div>
       <div class="sa-btns">
         <button class="btn bo" type="button" onclick="calRangosReset()">↺ Restaurar</button>
         <button class="btn bp" type="button" onclick="calRangosGuardar()">💾 Guardar rangos</button>
       </div></div>
-    <div class="fc-b"><div style="font-size:10.5px;color:var(--tx3);margin-bottom:8px">El valor medido se clasifica <b>verde</b> (dentro) o <b>rojo</b> (fuera). Si dejas <b>Mínimo y Máximo</b> vacíos, ese parámetro no se colorea (solo registro). Se guarda automáticamente al editar; el botón <b>Guardar rangos</b> confirma el guardado.</div>${blocks}</div></div>`;
+    <div class="fc-b"><div style="font-size:10.5px;color:var(--tx3);margin-bottom:8px">El valor medido se clasifica <b>verde</b> (dentro) o <b>rojo</b> (fuera). Si dejas <b>Mínimo y Máximo</b> vacíos, ese parámetro no se colorea (solo registro). Se guarda automáticamente al editar; el botón <b>Guardar rangos</b> confirma el guardado.</div>${blocks}${fmtBlocks}</div></div>`;
+}
+function calFmtRangeSet(fk, pk, field, val){
+  const R=loadCalFmtRanges(); R[fk]=R[fk]||{};
+  // Si el parámetro HEREDABA, el override arranca desde el rango general: así
+  // editar solo el Máximo no borra en silencio el Mínimo que venía heredado.
+  // Si estaba declarado como null (sin rango), arranca vacío a propósito.
+  if(!Object.prototype.hasOwnProperty.call(R[fk], pk)) R[fk][pk] = Object.assign({}, loadCalRanges()[pk]||{});
+  else if(R[fk][pk] == null) R[fk][pk] = {};
+  const n=parseFloat(val);
+  if(val===""||!isFinite(n)) delete R[fk][pk][field]; else R[fk][pk][field]=n;
+  saveCalFmtRanges(R);
+  toast("Rango actualizado","ok",1400);
 }
 // Confirmación explícita (ya se persiste al editar vía calRangeSet).
 function calRangosGuardar(){
-  try{ saveCalRanges(loadCalRanges()); }catch(_){}
+  try{ saveCalRanges(loadCalRanges()); saveCalFmtRanges(loadCalFmtRanges()); }catch(_){}
   toast("✅ Rangos (Calidad de Agua) guardados","ok",2500);
 }
 function calRangeSet(pk, field, val){
@@ -10349,7 +10455,10 @@ function calRangeSet(pk, field, val){
 }
 function calRangosReset(){
   if(!confirm("¿Restaurar los rangos predeterminados? Se perderán tus ajustes.")) return;
+  // Ambas claves: los generales y los propios de cada formato. Si solo se limpiara
+  // la primera, «Restaurar» dejaría los ajustes del formato vivos y silenciosos.
   try{ localStorage.removeItem(CAL_RANGES_KEY); }catch(_){}
+  try{ localStorage.removeItem(CAL_FMTRANGES_KEY); }catch(_){}
   renderCalRangos(); toast("Rangos restaurados","ok",2500);
 }
 
@@ -10370,7 +10479,7 @@ function _calReportBody(draft){
       const tds=[...fmt.ctx.map(c=>`<td>${escapeHtml(d[c.k]||"—")}</td>`), ...fmt.params.map(pk=>{
         const v=parseFloat(d[pk]);
         if(!isFinite(v)) return `<td>—</td>`;
-        const cls=calClassify(v, calRangeOf(pk));
+        const cls=calClassify(v, calRangeOf(pk, fmtKey));
         const c=cls==="in"?"mic-v":cls==="out"?"mic-r":"";
         return `<td class="${c}">${escapeHtml(String(d[pk]))}</td>`;
       })];
@@ -10399,8 +10508,8 @@ function _calHeadLabel(pk){
   if(l.indexOf("(") !== -1) return l;          // ya trae unidad (cloros)
   const u = calUnit(pk); return u ? l+" ("+u+")" : l;
 }
-function _calCritText(pk){
-  const r = calRangeOf(pk); const hasMin = r.min!=null, hasMax = r.max!=null;
+function _calCritText(pk, fmtKey){
+  const r = calRangeOf(pk, fmtKey); const hasMin = r.min!=null, hasMax = r.max!=null;
   if(hasMin && hasMax) return r.min+"–"+r.max;
   if(hasMax) return "≤"+r.max;
   if(hasMin) return "≥"+r.min;
@@ -10427,13 +10536,13 @@ function downloadCalPDF(){
     const vis=_calPdfCols(fmt, fmtKey, rows);
     if(!vis.length) return;
     const headH=vis.map(co=>`<th>${escapeHtml(co.label)}</th>`).join("");
-    const critH=vis.map(co=> co.kind==="param" ? `<th class="pcrit">${escapeHtml(_calCritText(co.key))}</th>` : `<th class="pcrit"></th>`).join("");
+    const critH=vis.map(co=> co.kind==="param" ? `<th class="pcrit">${escapeHtml(_calCritText(co.key, fmtKey))}</th>` : `<th class="pcrit"></th>`).join("");
     const trs=rows.map((d,i)=>{
       const tds=vis.map(co=>{
         if(co.kind==="ctx") return `<td>${escapeHtml(d[co.key]||"—")}</td>`;
         const pk=co.key; const v=parseFloat(d[pk]);
         if(!isFinite(v)) return `<td>—</td>`;
-        const cls=calClassify(v, calRangeOf(pk));
+        const cls=calClassify(v, calRangeOf(pk, fmtKey));
         const _cls=cls==="in"?' class="mic-v"':cls==="out"?' class="mic-r"':'';
         return `<td${_cls}>${escapeHtml(String(d[pk]))}</td>`;
       }).join("");
