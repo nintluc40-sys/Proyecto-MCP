@@ -5461,6 +5461,11 @@ function madReproSub(s){ _reproSub = s; renderMadReproductivo(); }
 function renderMadReproductivo(){
   const fp = document.getElementById("fp-reproductivo");
   if(!fp) return;
+  // Prefetch: sólo la MATRIZ, que es barata y es lo único que valida el registro (y
+  // no pide nada si el store del dashboard ya la trae). La Consulta —la única que
+  // necesita Bitácora y Transferencias— pide la carga completa.
+  if(_reproSub==="consulta") _reproLoadSheets();
+  else if(_reproSheetsState==="idle") _reproEnsureMatrix();
   const nav = '<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">'
     + _reproNavBtn("eventos","📋 Desoves / Mortalidades")
     + _reproNavBtn("alta","➕ Alta de individuo")
@@ -5479,6 +5484,7 @@ function _reproEventosHTML(){
   return ''
     + '<h3 style="margin:6px 0 2px;font-size:15px">🦐 Registro de desoves y mortalidades</h3>'
     + '<p style="margin:0 0 12px;font-size:12px;color:#64748b">Pega los Trovan ID (uno por línea o separados por coma), elige la fecha y el tipo, y procesa. Cada evento se registra por su código.</p>'
+    + '<div id="repro-matrix-banner">' + _reproMatrixBannerHTML() + '</div>'
     + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">'
     +   '<label style="'+_RLBL+'">📅 Fecha<input type="date" id="repro-fecha" value="'+escapeHtml(todayStr)+'" style="'+_RINP+'"></label>'
     +   '<label style="'+_RLBL+'">Tipo de evento<select id="repro-tipo" style="'+_RINP+'"><option value="Desove">Desove</option><option value="Mortalidad">Mortalidad</option></select></label>'
@@ -5518,6 +5524,7 @@ function _reproAltaHTML(){
   return ''
     + '<h3 style="margin:6px 0 2px;font-size:15px">➕ Alta masiva de individuos</h3>'
     + '<p style="margin:0 0 10px;font-size:12px;color:#64748b">Pega desde Excel en la grilla (copiar-pegar tipo hoja). Cada fila es una hembra nueva; se crean con Estado=Vivo y ubicación actual = la de ingreso. Todas comparten la fecha de ingreso de abajo.</p>'
+    + '<div id="repro-matrix-banner">' + _reproMatrixBannerHTML() + '</div>'
     + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px"><label style="'+_RLBL+'">📅 Fecha de ingreso<input type="date" id="repro-a-fecha" value="'+escapeHtml(todayStr)+'" style="'+_RINP+'"></label></div>'
     + '<div style="overflow:auto;max-height:360px;border:1px solid #e2e8f0;border-radius:8px"><table id="repro-a-grid" style="border-collapse:collapse"><thead><tr>'+th+'</tr></thead><tbody id="repro-a-tbody">'+rows+'</tbody></table></div>'
     + '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">'
@@ -5543,6 +5550,7 @@ function _reproTransferHTML(){
   return ''
     + '<h3 style="margin:6px 0 2px;font-size:15px">🔄 Registro de transferencias</h3>'
     + '<p style="margin:0 0 12px;font-size:12px;color:#64748b">Mueve individuos por su ubicación de origen. Añade uno o varios destinos y pega en cada uno los Trovan ID que van ahí. En mezcla, indica la composición del tanque destino.</p>'
+    + '<div id="repro-matrix-banner">' + _reproMatrixBannerHTML() + '</div>'
     + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">'
     +   '<label style="'+_RLBL+'">📅 Fecha<input type="date" id="repro-t-fecha" value="'+escapeHtml(todayStr)+'" style="'+_RINP+'"></label>'
     +   '<label style="'+_RLBL+'">Tipo<select id="repro-t-tipo" onchange="madReproMezclaToggle()" style="'+_RINP+'"><option value="Traslado">Traslado</option><option value="Mezcla">Mezcla</option></select></label>'
@@ -5569,22 +5577,257 @@ function _reproTransferHTML(){
     + '<div id="repro-t-report" style="margin-top:12px"></div>';
 }
 
-// Lectura de hojas de Maduración (Vite: desde el store del dashboard vía __rgLib). Si no
-// hay datos → []. Con esto se activan validaciones reales y los reportes de Consulta.
-function _reproReadRows(sheet){ try{ const f=window.__rgLib.reproReadSheet; return f?(f(sheet)||[]):[]; }catch(_){ return []; } }
-function _reproMatrixIndex(){ const rows=_reproReadRows("Maduración MATRIZ"); return rows.length?window.__rgLib.matrixIndexFromRows(rows):null; }
+/* ── Lectura de las hojas del reproductivo · robusta ──────────────────────────
+   Fuente PRIMARIA: el store del dashboard (vía __rgLib.reproReadSheet), que ya trae
+   todas las hojas y es instantáneo. Pero si el usuario entra a Registros antes de que
+   el tablero termine de cargar —o esa carga falla— el store viene vacío y el registro
+   moría con "No se pudo leer la hoja Maduración MATRIZ". Por eso hay RESPALDO: la
+   misma lectura por GET ?p=rows que usa el monolito standalone, con caché local.
+
+   MEDIDO contra el despliegue real (2026-08-12): el endpoint responde entre 2 s y 52 s
+   para la MISMA hoja y, de forma intermitente, devuelve una página HTML de error
+   (HTTP 404) en vez de JSON. De ahí: una petición por hoja y SECUENCIAL (el GAS
+   serializa las peticiones de un mismo despliegue), timeout 30 s con 2 intentos —como
+   ya hacía la ESCRITURA—, detección del HTML ANTES de JSON.parse, tolerancia a fallos
+   parciales y caché local de la MATRIZ como último recurso.                        */
+const _REPRO_SHEETS = { matriz:"Maduración MATRIZ", bitacora:"Maduración Bitácora", transfer:"Maduración Transferencias" };
+// Columnas que el cliente usa REALMENTE de la MATRIZ: el índice (buildEventBatch /
+// buildAltaBatch / buildTransferBatch), el resumen y la trazabilidad sólo leen estas
+// cuatro. Pedir sólo éstas baja la respuesta de 392 KB a 65 KB, que es lo que dispara
+// los timeouts. ⚠ Si un consumidor nuevo necesita otra columna (Lote, Piscina…) hay
+// que añadirla AQUÍ o le llegará vacía.
+const _REPRO_MATRIZ_COLS = ["Trovan ID","Sala actual","Tanque actual","Estado"];
+const _REPRO_FETCH_MS  = 30000;                 // por intento
+const _REPRO_ATTEMPTS  = 2;
+const _REPRO_CACHE_KEY = "larv4_mad_matriz";
+const _REPRO_CACHE_TTL = 15*24*60*60*1000;      // 15 días: más vieja no se usa
+
+var _reproSheets      = null;    // respaldo GAS: { "<hoja>": [filas] }, puede ser PARCIAL
+var _reproSheetsState = "idle";  // idle | loading | ready | error
+var _reproSheetsErr   = "";      // motivo legible del último fallo
+var _reproMatrixSrc   = "";      // "store" | "red" | "cache" | "" — procedencia en uso
+var _reproMatrixTs    = 0;       // fecha (ms) de la copia en uso si vino de caché
+var _reproLoadPromise = null;    // carga COMPLETA (Consulta) en curso
+var _reproMatrixPromise = null;  // carga de SÓLO la matriz en curso
+
+function _reproStoreRows(sheet){ try{ const f=window.__rgLib.reproReadSheet; return f?(f(sheet)||[]):[]; }catch(_){ return []; } }
+function _reproReadRows(sheet){
+  const s=_reproStoreRows(sheet);              // el dashboard ya trae las hojas al store
+  if(s.length) return s;
+  return (_reproSheets && _reproSheets[sheet]) || [];   // respaldo: lectura GAS + caché
+}
+function _reproMatrixIndex(){
+  const rows=_reproReadRows(_REPRO_SHEETS.matriz);
+  return rows.length ? window.__rgLib.matrixIndexFromRows(rows) : null;
+}
+/* Procedencia REAL de la MATRIZ en uso, DERIVADA en el momento. Si el store del
+   dashboard ya la trae, es la que se usa (gana en _reproReadRows) por mucho que una
+   lectura anterior hubiera caído a la copia local. Guardarla sólo en la variable hacía
+   que el aviso —y el toast de "copia local"— MINTIERAN en cuanto el tablero terminaba
+   de cargar después de un fallo de red. */
+function _reproMatrixOrigen(){
+  return _reproStoreRows(_REPRO_SHEETS.matriz).length ? "store" : _reproMatrixSrc;
+}
+function _reproPutRows(name, rows){ if(!_reproSheets) _reproSheets={}; _reproSheets[name]=rows||[]; }
+
+/* Caché local de la MATRIZ (proyección mínima ≈ 65 KB para 1508 individuos). */
+function _reproCacheSave(rows){
+  try{
+    const slim=(rows||[]).map(function(o){
+      return { "Trovan ID":o["Trovan ID"], "Sala actual":o["Sala actual"],
+               "Tanque actual":o["Tanque actual"], "Estado":o["Estado"] };
+    });
+    if(!slim.length) return;
+    safeSetItem(_REPRO_CACHE_KEY, JSON.stringify({ts:Date.now(), rows:slim}), {silent:true});
+  }catch(_){}
+}
+function _reproCacheLoad(){
+  try{
+    const o=JSON.parse(localStorage.getItem(_REPRO_CACHE_KEY)||"null");
+    if(!o || !Array.isArray(o.rows) || !o.rows.length) return null;
+    if(!(o.ts>0) || (Date.now()-o.ts)>_REPRO_CACHE_TTL) return null;
+    return o;
+  }catch(_){ return null; }
+}
+function _reproFmtTs(ts){
+  try{
+    const d=new Date(ts), p=function(n){ return String(n).padStart(2,"0"); };
+    return p(d.getDate())+"/"+p(d.getMonth()+1)+" "+p(d.getHours())+":"+p(d.getMinutes());
+  }catch(_){ return "?"; }
+}
+
+async function _reproFetchSheet(name, cols){
+  const base = gasUrl();
+  if(!isValidGasUrl(base)) throw new Error("La URL del script no es válida (⚙ Config)");
+  const tok = gcfg("gas-token","");
+  let u = base + (base.indexOf("?")===-1?"?":"&") + "p=rows&sheet=" + encodeURIComponent(name);
+  if(tok) u += "&t=" + encodeURIComponent(tok);
+  // Un despliegue anterior al 2026-08-12 IGNORA "cols" y devuelve la hoja entera:
+  // sigue siendo correcto, sólo más lento. No hace falta re-desplegar para esto.
+  if(cols && cols.length) u += "&cols=" + encodeURIComponent(cols.join(","));
+  let lastErr = null;
+  for(let attempt=1; attempt<=_REPRO_ATTEMPTS; attempt++){
+    const ctrl = new AbortController();
+    const timer = setTimeout(function(){ ctrl.abort(); }, _REPRO_FETCH_MS);
+    let failed = null;
+    try{
+      const r = await fetch(u, {signal:ctrl.signal, cache:"no-store"});
+      const txt = await r.text();
+      if(!r.ok) throw new Error("Google respondió HTTP "+r.status);
+      if(!/^\s*\{/.test(txt)) throw new Error("Google devolvió una página de error, no datos");
+      let j=null;
+      try{ j=JSON.parse(txt); }catch(_){ throw new Error("Respuesta ilegible del servidor"); }
+      if(!j || !j.ok) throw new Error((j&&j.error) || "Respuesta inválida");
+      return j.rows || [];
+    }catch(x){
+      failed = (x && x.name==="AbortError")
+        ? new Error("Google no respondió en "+Math.round(_REPRO_FETCH_MS/1000)+" s")
+        : x;
+    }finally{ clearTimeout(timer); }
+    lastErr = failed;
+    if(attempt < _REPRO_ATTEMPTS) await _sleep(1500*attempt);
+  }
+  throw lastErr || new Error("Error de lectura");
+}
+
+/* SÓLO la MATRIZ: es lo único que necesitan el registro de eventos, el alta y las
+   transferencias. No-op inmediato si el store del dashboard ya la tiene. */
+function _reproEnsureMatrix(force){
+  if(!force && _reproStoreRows(_REPRO_SHEETS.matriz).length) return Promise.resolve();
+  if(_reproMatrixPromise) return _reproMatrixPromise;
+  // Si la carga COMPLETA ya va en vuelo, esperarla: también trae la MATRIZ. Sin esto,
+  // entrar a Consulta y pasar a Eventos disparaba una segunda lectura de la misma hoja.
+  if(_reproLoadPromise) return _reproLoadPromise;
+  if(!force && _reproSheets && (_reproSheets[_REPRO_SHEETS.matriz]||[]).length) return Promise.resolve();
+  const done=function(){ _reproMatrixPromise=null; };
+  _reproMatrixPromise = _reproEnsureMatrixRun().then(done, done);
+  return _reproMatrixPromise;
+}
+async function _reproEnsureMatrixRun(){
+  _reproSheetsState="loading"; _reproSheetsErr=""; _reproRenderIfConsulta();
+  try{
+    const rows = await _reproFetchSheet(_REPRO_SHEETS.matriz, _REPRO_MATRIZ_COLS);
+    _reproPutRows(_REPRO_SHEETS.matriz, rows);
+    _reproMatrixSrc="red"; _reproMatrixTs=Date.now();
+    _reproSheetsState="ready"; _reproSheetsErr="";
+    _reproCacheSave(rows);
+  }catch(x){
+    _reproSheetsErr=(x&&x.message)||"Error de lectura";
+    const c=_reproCacheLoad();
+    if(c){ _reproPutRows(_REPRO_SHEETS.matriz, c.rows); _reproMatrixSrc="cache"; _reproMatrixTs=c.ts; _reproSheetsState="ready"; }
+    else  { _reproMatrixSrc=""; _reproSheetsState="error"; }
+  }
+  _reproRenderIfConsulta();
+}
+
+/* Carga puntual de UNA hoja suelta. La usa la transferencia, que necesita el ledger
+   de Transferencias para reconciliar el TR-ID contra el máximo real. Tolerante: si
+   falla, el llamador sigue con lo que haya. */
+async function _reproEnsureSheet(name, cols){
+  if(_reproStoreRows(name).length) return;
+  if(_reproSheets && _reproSheets[name]) return;
+  try{ _reproPutRows(name, await _reproFetchSheet(name, cols||null)); }
+  catch(_){ /* degradación decidida por el llamador */ }
+}
+
+/* Carga COMPLETA (sólo la Consulta la necesita): secuencial y tolerante a fallos
+   parciales — con la MATRIZ basta para trabajar. */
+function _reproLoadSheets(force){
+  if(_reproLoadPromise) return _reproLoadPromise;
+  // Sólo se da por buena la carga anterior si NO hubo fallos. Una hoja caída se guarda
+  // como [] —que es truthy—, así que sin esta condición volver a entrar a Consulta
+  // servía lo incompleto para siempre y no reintentaba nunca.
+  if(!force && !_reproSheetsErr && _reproSheets && _reproSheets[_REPRO_SHEETS.bitacora]) return Promise.resolve();
+  const done=function(){ _reproLoadPromise=null; };
+  _reproLoadPromise = _reproLoadSheetsRun().then(done, done);
+  return _reproLoadPromise;
+}
+async function _reproLoadSheetsRun(){
+  _reproSheetsState="loading"; _reproSheetsErr=""; _reproRenderIfConsulta();
+  const targets=[
+    { name:_REPRO_SHEETS.matriz,   cols:_REPRO_MATRIZ_COLS },
+    { name:_REPRO_SHEETS.bitacora, cols:null },
+    { name:_REPRO_SHEETS.transfer, cols:null }
+  ];
+  const fails=[];
+  for(let i=0;i<targets.length;i++){
+    const t=targets[i];
+    if(_reproStoreRows(t.name).length) continue;   // ya está en el store: no se pide
+    try{
+      const rows=await _reproFetchSheet(t.name, t.cols);
+      _reproPutRows(t.name, rows);
+      if(t.name===_REPRO_SHEETS.matriz){ _reproMatrixSrc="red"; _reproMatrixTs=Date.now(); _reproCacheSave(rows); }
+    }catch(x){
+      fails.push(String(t.name).replace("Maduración ","")+" ("+((x&&x.message)||"error")+")");
+      if(t.name===_REPRO_SHEETS.matriz){
+        const c=_reproCacheLoad();
+        if(c){ _reproPutRows(t.name, c.rows); _reproMatrixSrc="cache"; _reproMatrixTs=c.ts; }
+      }
+      if(!_reproSheets || !_reproSheets[t.name]) _reproPutRows(t.name, []);
+    }
+  }
+  _reproSheetsErr=fails.join(" · ");
+  _reproSheetsState = _reproReadRows(_REPRO_SHEETS.matriz).length ? "ready" : "error";
+  _reproRenderIfConsulta();
+}
+
+/* Aviso del estado de la MATRIZ. Vive en su propio contenedor para poder refrescarse
+   SIN repintar la sección. */
+function _reproMatrixBannerHTML(){
+  const box=function(bg,bd,fg,html){ return '<div style="margin:0 0 10px;padding:8px 10px;background:'+bg+';border:1px solid '+bd+';border-radius:8px;font-size:11px;color:'+fg+'">'+html+'</div>'; };
+  const btn=' <button class="btn" type="button" onclick="_reproRefreshMatrix()" style="font-size:10px;padding:2px 8px;margin-left:4px">🔄 Reintentar lectura</button>';
+  if(_reproSheetsState==="loading") return box("#f8fafc","#e2e8f0","#475569","⏳ Leyendo «Maduración MATRIZ»…");
+  if(_reproMatrixOrigen()==="cache"){
+    return box("#fffbeb","#fde68a","#854d0e","⚠ MATRIZ leída de la <b>copia local del "+escapeHtml(_reproFmtTs(_reproMatrixTs))+"</b> (Google no respondió: "+escapeHtml(_reproSheetsErr||"sin detalle")+").<br>La Sala/Tanque podrían estar desactualizados."+btn);
+  }
+  if(_reproSheetsState==="error"){
+    return box("#fef2f2","#fecaca","#b91c1c","❌ No se pudo leer «Maduración MATRIZ»: "+escapeHtml(_reproSheetsErr||"error")+".<br><b>No es tu configuración ni el token</b>: es el servidor de Google, que a veces tarda o falla. Reintenta."+btn);
+  }
+  const n=_reproReadRows(_REPRO_SHEETS.matriz).length;
+  if(n) return box("#f0fdf4","#bbf7d0","#166534","✅ MATRIZ al día · "+n+" individuo(s)."+btn);
+  return "";
+}
+function _reproPaintMatrixBanner(){
+  const el=document.getElementById("repro-matrix-banner");
+  if(el) el.innerHTML=_reproMatrixBannerHTML();
+}
+function _reproRefreshMatrix(){ _reproEnsureMatrix(true).then(_reproPaintMatrixBanner); }
+function _reproRenderIfConsulta(){
+  const fp = document.getElementById("fp-reproductivo");
+  if(!fp) return;
+  // ⚠ Sólo se repinta ENTERA la Consulta, que no tiene nada sin guardar. En Eventos,
+  // Alta y Transferencias hay códigos PEGADOS por el usuario: allí se actualiza sólo
+  // el aviso, o se perdería lo tecleado (misma trampa que renderBiomol()).
+  if(_reproSub==="consulta") renderMadReproductivo();
+  else _reproPaintMatrixBanner();
+}
 
 function _reproConsultaHTML(){
+  const head = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0 8px">'
+    + '<h3 style="margin:0;font-size:15px">📊 Consulta y reportes</h3>'
+    + '<button class="btn" type="button" onclick="_reproLoadSheets(true)" style="font-size:11px;padding:4px 10px">🔄 Actualizar</button>'
+    + '</div>';
+  if(_reproSheetsState==="loading"){
+    return head + '<div style="padding:14px;background:#f8fafc;border-radius:8px;font-size:12px;color:#64748b">⏳ Cargando datos del Sheet…</div>';
+  }
   const mrows=_reproReadRows("Maduración MATRIZ");
   const brows=_reproReadRows("Maduración Bitácora");
+  if(_reproSheetsState==="error" && !mrows.length && !brows.length){
+    return head + '<div style="padding:14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#b91c1c">No se pudo leer el Sheet: '+escapeHtml(_reproSheetsErr||"error desconocido")+'.<br><b>No es tu configuración ni el token</b>: el servidor de Google tarda o falla de forma intermitente. Pulsa «Actualizar» para reintentar.</div>';
+  }
   if(!mrows.length && !brows.length){
-    return '<h3 style="margin:6px 0 8px;font-size:15px">📊 Consulta y reportes</h3>'
+    return head
       + '<div style="padding:14px;background:#f8fafc;border-radius:8px;font-size:12px;color:#64748b">Aún no hay datos de Maduración cargados. Crea las hojas <b>Maduración MATRIZ</b>, <b>Maduración Bitácora</b> y <b>Maduración Transferencias</b> en el Sheet; cuando el panel principal las cargue, aquí verás el resumen del plantel, la matriz de desoves y la trazabilidad por individuo.</div>';
   }
+  // Fallo PARCIAL: la MATRIZ se leyó (o salió de la copia local) pero alguna de las
+  // otras hojas no. Antes esto tumbaba la sección entera; ahora se muestra lo que hay.
+  const parcial = _reproSheetsErr
+    ? '<div style="padding:8px 10px;margin-bottom:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:11px;color:#854d0e">⚠ Datos incompletos — '+escapeHtml(_reproSheetsErr)+'. Lo mostrado puede quedarse corto; pulsa «Actualizar».</div>'
+    : '';
   const sum=window.__rgLib.matrixSummary(mrows);
   const piv=window.__rgLib.pivotDesoves(brows);
   const kpi=function(label,val){ return '<div style="flex:1;min-width:90px;padding:8px 10px;background:#f8fafc;border-radius:8px"><div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase">'+label+'</div><div style="font-size:20px;font-weight:800;color:#0f172a">'+val+'</div></div>'; };
-  let h='<h3 style="margin:6px 0 8px;font-size:15px">📊 Consulta y reportes</h3>';
+  let h=head+parcial;
   h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+kpi("Hembras",sum.total)+kpi("Vivas",sum.vivas)+kpi("Muertas",sum.muertas)+'</div>';
   h+='<div style="padding:10px;background:#f8fafc;border-radius:8px;margin-bottom:12px">'
     +'<div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px">🔎 Trazabilidad por individuo</div>'
@@ -5634,7 +5877,25 @@ async function madReproProcess(){
   if(!isValidDate(fecha)){ toast("Fecha inválida.","err",3500); return; }
   const parsed = window.__rgLib.parseTrovanList(cEl.value);
   if(!parsed.ids.length){ toast("Pega al menos un Trovan ID.","warn",3500); return; }
-  const res = window.__rgLib.buildEventBatch({ ids: parsed.ids, fecha: fecha, tipo: tipo, matrixIndex: _reproMatrixIndex() });
+  // La Sala/Tanque de la Bitácora salen de la MATRIZ: hay que tenerla ANTES de armar
+  // el lote. Con el store del dashboard cargado esto es instantáneo; si no, cae al
+  // respaldo por GAS (y a la copia local si Google no responde).
+  if(!_reproMatrixIndex()){
+    toast("Leyendo «Maduración MATRIZ»…","info",2500);
+    await _reproEnsureMatrix();
+    _reproPaintMatrixBanner();
+  }
+  const mIdx = _reproMatrixIndex();
+  if(!mIdx){
+    toast("No se pudo leer «Maduración MATRIZ»: "+(_reproSheetsErr||"error")+". No es tu configuración ni el token — vuelve a intentarlo con 🔄.","err",8000);
+    return;
+  }
+  // Respaldo en uso: se avisa SIEMPRE, porque una hembra movida después de esa copia
+  // se registraría con su ubicación antigua.
+  if(_reproMatrixOrigen()==="cache"){
+    toast("⚠ Usando la copia local de la MATRIZ del "+_reproFmtTs(_reproMatrixTs)+" (Google no respondió). Comprueba que la Sala/Tanque sean los actuales.","warn",7000);
+  }
+  const res = window.__rgLib.buildEventBatch({ ids: parsed.ids, fecha: fecha, tipo: tipo, matrixIndex: mIdx });
   if(res.error){ toast(res.error,"err",7000); return; }
   // Ningún código superó la validación: se muestra el informe con el motivo y NO se
   // limpia el cuadro de texto (antes decía "✅ 0 registrado(s)" y borraba lo pegado).
@@ -5680,6 +5941,10 @@ function _reproAltaCollect(fecha){
 async function madReproAltaBatch(){
   const fEl=document.getElementById("repro-a-fecha"); const fecha=fEl?fEl.value:"";
   if(!isValidDate(fecha)){ toast("Fecha de ingreso inválida.","err",3500); return; }
+  // Mejor esfuerzo: la MATRIZ aquí sólo sirve para avisar de altas YA existentes, así
+  // que si no se puede leer NO se bloquea el alta (buildAltaBatch acepta índice nulo).
+  if(!_reproMatrixIndex()) await _reproEnsureMatrix();
+  _reproPaintMatrixBanner();
   const res=window.__rgLib.buildAltaBatch(_reproAltaCollect(fecha), _reproMatrixIndex());
   if(!res.payload){ _madReproShowAltaReport(res.report, false); toast("No hay filas válidas para registrar (¿falta el Trovan ID?).","warn",4200); return; }
   toast("Registrando "+res.report.created.length+" individuo(s)…","info",2000);
@@ -5736,7 +6001,13 @@ async function madReproTransfer(){
   });
   if(!totalIds){ toast("Pega al menos un Trovan ID en algún destino.","warn",3800); return; }
   const composicion=(tipo==="Mezcla")?{ lotes:g("repro-t-lotes"), codigos:g("repro-t-codigos"), piscinas:g("repro-t-piscinas") }:{};
-  const _trRows=_reproReadRows("Maduración Transferencias");
+  // La MATRIZ valida origen/existencia (mejor esfuerzo: si no se lee, se mueve sin
+  // validar, que es lo que buildTransferBatch hace con índice nulo). El ledger de
+  // Transferencias sí hace falta para que el TR-ID salga del máximo REAL.
+  if(!_reproMatrixIndex()) await _reproEnsureMatrix();
+  await _reproEnsureSheet(_REPRO_SHEETS.transfer);
+  _reproPaintMatrixBanner();
+  const _trRows=_reproReadRows(_REPRO_SHEETS.transfer);
   const trId=_trRows.length?window.__rgLib.nextTrIdFromRows(_trRows):_reproNextTrId();
   const res=window.__rgLib.buildTransferBatch({ fecha:fecha, tipo:tipo, origen:origen, destinos:destinos, composicion:composicion, matrixIndex:_reproMatrixIndex(), trId:trId });
   if(res.error){ toast(res.error,"err",3500); return; }
@@ -7688,7 +7959,8 @@ function saveAstRecovery(){
   try{ data = collectAst(); }catch(_){ return; }
   const hasData = ["supervisor","modulo","siembra","corrida","estadio","deformidad",
     "atraso","hernia","hernia_grado","opacidad","asimilacion","semillenas","vacias",
-    "intestino","actividad","condicion","noviables","observaciones","accion","comentario","comentario_vesp"]
+    "intestino","actividad","condicion","noviables","flacidez","necrosis","disparidad",
+                   "observaciones","accion","comentario","comentario_vesp"]
     .some(k => data[k] !== "" && data[k] !== null && data[k] !== undefined);
   if(!hasData) return;
   _lsSet(AST_RECOV_KEY, JSON.stringify({ ts: Date.now(), data }));
@@ -7791,7 +8063,8 @@ function validateAst(data){
   if(!sanitizeStr(data.siembra||""))   { toast("⚠️ Selecciona la Siembra","warn",3500); return false; }
   if(!sanitizeStr(data.estadio||""))   { toast("⚠️ Selecciona el Estadío observado","warn",3500); return false; }
   const _pctFields = [["deformidad","Deformidad"],["atraso","% Atraso"],["hernia","% Protusión"],
-                      ["noviables","% No viables"],["semillenas","Semillenas (%)"],["vacias","Vacías (%)"]];
+                      ["noviables","% No viables"],["semillenas","Semillenas (%)"],["vacias","Vacías (%)"],
+                      ["flacidez","Flacidez"],["necrosis","Necrosis"],["disparidad","Disparidad"]];
   for(const [k,label] of _pctFields){
     const v = data[k];
     if(v !== "" && v !== null && v !== undefined){
@@ -7916,7 +8189,8 @@ function clearAstForm(){
   const data = collectAst();
   const hasData = ["supervisor","modulo","siembra","corrida","estadio","deformidad",
                    "atraso","hernia","hernia_grado","opacidad","asimilacion","semillenas","vacias",
-                   "intestino","actividad","condicion","noviables","observaciones","accion","comentario","comentario_vesp"]
+                   "intestino","actividad","condicion","noviables","flacidez","necrosis","disparidad",
+                   "observaciones","accion","comentario","comentario_vesp"]
     .some(k => data[k] !== "" && data[k] !== null && data[k] !== undefined);
   if(hasData){
     if(!confirm("¿Descartar lo que estás registrando?\nLos datos del formulario se perderán.")) return;
@@ -7941,12 +8215,18 @@ function buildAstPayload(records){
   // (matutino)" conservando el nombre interno `comentario` (compat. histórica).
   // "% Hernia"/"Hernia" se renombraron en la hoja a "% Protusión"/"Protusión" (2026-06).
   // "% No viables" se añadió tras "Condición_biológica" (2026-06).
+  // ⚠ Flacidez/Necrosis/Disparidad (2026-08) van DESPUÉS de "ID", no antes. El payload
+  // se escribe por POSICIÓN desde la columna 1, así que meterlas en medio obligaría a
+  // reordenar a mano la hoja de producción y a desplazar datos históricos. Puestas al
+  // final, el GAS las añade solo (ensureHeaders) y ninguna columna existente se mueve.
+  // El upsert ya NO asume que el ID es la última columna: lo localiza por su cabecera.
   const headers = ["Fecha","Supervisor","Módulo","Siembra","Corrida",
                    "Estadío_observado","Tipo_revisión","Deformidad_%",
                    "% Atraso","% Protusión","Protusión","Opacidad","Asimilación",
                    "Semillenas (%)","Vacías (%)",
                    "Intestino","Actividad","Condición_biológica","% No viables",
-                   "Observaciones","Acción","Comentario (matutino)","Comentario (vespertino)","ID"];
+                   "Observaciones","Acción","Comentario (matutino)","Comentario (vespertino)","ID",
+                   "Flacidez","Necrosis","Disparidad"];
   const numOrEmpty = (v) => { if(v===""||v==null) return ""; const n=parseFloat(v); return isFinite(n)?n:""; };
   const rows = records.map(r => {
     const a = r.data || {};
@@ -7974,7 +8254,10 @@ function buildAstPayload(records){
       sanitizeStr(a.accion||""),
       sanitizeStr(a.comentario||""),
       sanitizeStr(a.comentario_vesp||""),
-      String(r.id||"")
+      String(r.id||""),
+      numOrEmpty(a.flacidez),
+      numOrEmpty(a.necrosis),
+      numOrEmpty(a.disparidad)
     ];
   });
   return { sheetName: AST_SHEET, headers, rows };
@@ -8054,7 +8337,7 @@ function downloadAstPDF(){
 
   const headers = ['#','Sinc.','Fecha','Supervisor','Módulo','Siembra','Corrida',
                    'Estadío','Tipo rev.','Def. %','Atraso %','Protusión %','Protusión','Opacidad','Asimil.','Semill. %','Vacías %',
-                   'Intestino','Actividad','Cond.','No viab. %',
+                   'Intestino','Actividad','Cond.','No viab. %','Flacidez %','Necrosis %','Disparidad %',
                    'Observaciones','Acción','Coment. mat.','Coment. vesp.'];
   const cell    = (v) => (v!==undefined && v!=="" && v!==null) ? escapeHtml(String(v)) : '<span class="empty">—</span>';
 
@@ -8086,6 +8369,9 @@ function downloadAstPDF(){
         <td>${cell(a.actividad)}</td>
         <td>${cell(a.condicion)}</td>
         <td>${cell(a.noviables)}</td>
+        <td>${cell(a.flacidez)}</td>
+        <td>${cell(a.necrosis)}</td>
+        <td>${cell(a.disparidad)}</td>
         <td style="text-align:left;max-width:130px;white-space:normal;word-break:break-word">${cell(a.observaciones)}</td>
         <td style="text-align:left;max-width:130px;white-space:normal;word-break:break-word">${cell(a.accion)}</td>
         <td style="text-align:left;max-width:130px;white-space:normal;word-break:break-word">${cell(a.comentario)}</td>
@@ -8238,6 +8524,12 @@ function renderAst(){
         <input type="number" name="vacias" value="${vl(d,'vacias')}" min="0" max="100" step="0.1" inputmode="decimal" placeholder="0 – 100"></div>
       <div class="mf"><label>% No viables</label>
         <input type="number" name="noviables" value="${vl(d,'noviables')}" min="0" max="100" step="0.1" inputmode="decimal" placeholder="0 – 100"></div>
+      <div class="mf"><label>Flacidez (%)</label>
+        <input type="number" name="flacidez" value="${vl(d,'flacidez')}" min="0" max="100" step="0.1" inputmode="decimal" placeholder="0 – 100"></div>
+      <div class="mf"><label>Necrosis (%)</label>
+        <input type="number" name="necrosis" value="${vl(d,'necrosis')}" min="0" max="100" step="0.1" inputmode="decimal" placeholder="0 – 100"></div>
+      <div class="mf"><label>Disparidad (%)</label>
+        <input type="number" name="disparidad" value="${vl(d,'disparidad')}" min="0" max="100" step="0.1" inputmode="decimal" placeholder="0 – 100"></div>
     </div>
     <div class="meta">
       <div class="mf"><label>Intestino</label>
@@ -8340,6 +8632,9 @@ function renderAst(){
           <span><b>Actividad:</b> ${escapeHtml(a.actividad||"—")}</span>
           <span><b>Condición:</b> ${escapeHtml(a.condicion||"—")}</span>
           <span><b>% No viables:</b> ${escapeHtml(String(a.noviables==null||a.noviables===""?"—":a.noviables+"%"))}</span>
+          <span><b>Flacidez:</b> ${escapeHtml(String(a.flacidez==null||a.flacidez===""?"—":a.flacidez+"%"))}</span>
+          <span><b>Necrosis:</b> ${escapeHtml(String(a.necrosis==null||a.necrosis===""?"—":a.necrosis+"%"))}</span>
+          <span><b>Disparidad:</b> ${escapeHtml(String(a.disparidad==null||a.disparidad===""?"—":a.disparidad+"%"))}</span>
           <span><b>Opacidad:</b> ${escapeHtml(a.opacidad||"—")}</span>
           <span><b>Protusión:</b> ${escapeHtml(a.hernia_grado||"—")}</span>
           <span><b>Asimilación:</b> ${escapeHtml(a.asimilacion||"—")}</span>
@@ -8437,7 +8732,7 @@ const MIC_PA_OPTS  = ["","Presencia","Ausencia"];
 // Analistas sugeridos para el campo Responsable de Bacteriología / Calidad de Agua /
 // Patología. El input admite TEXTO LIBRE (datalist): la lista es solo sugerencia con
 // valor por defecto. El Analista es OBLIGATORIO antes de sincronizar (ver los sync*).
-const MIC_ANALISTAS = ["Macías","Ramírez","Espinoza","Cayra","Chumbo"];
+const MIC_ANALISTAS = ["Macías","Ramírez","Espinoza","Cayra","Chumo"];
 function _analistaDL(id){ return `<datalist id="${id}">`+MIC_ANALISTAS.map(a=>`<option value="${escapeHtml(a)}">`).join("")+`</datalist>`; }
 // ¿Alguna muestra pendiente va sin Analista (Responsable)? Bloquea la sincronización
 // (Mic/Cal/Pat) hasta que TODAS lo tengan; se comprueba el dato del registro, no el
@@ -11479,7 +11774,10 @@ const LIMITS = {
   algas:   { maxRows: 500, maxCols: 28 },
   mad:     { maxRows: 1000, maxCols: 25 },
   biomol:  { maxRows: 100, maxCols: 20 },
-  ast:     { maxRows: 100, maxCols: 25 },
+  // ast: 27 columnas desde 2026-08 (23 de datos + ID + Flacidez/Necrosis/Disparidad).
+  // ⚠ maxCols NO es sólo una validación: las filas se RECORTAN a este ancho más abajo.
+  // Con el 25 anterior, un payload de 27 perdía en silencio las 2 últimas columnas.
+  ast:     { maxRows: 100, maxCols: 32 },
   // Desinfección: 9 cols (Fecha…Fecha Elemento) + margen. maxRows holgado:
   // los 4 tipos suman ~50 elementos posibles por módulo/día.
   desinf:  { maxRows: 200, maxCols: 12 },
@@ -11664,7 +11962,10 @@ function doPost(e) {
     } else if (ws.getLastRow() === 0) {
       fmtHeader(ws, (payload.headers || []).map(function(h){ return cleanCell(h); }), isCtrl);
     }
-    if (isMicro || isCal || isPat || isAlgas || isMarea) ensureHeaders(ws, payload.headers || []);
+    // isAst se suma en 2026-08: así las columnas nuevas del AsT (Flacidez, Necrosis,
+    // Disparidad) se crean SOLAS al final de la hoja en la primera sincronización, sin
+    // que nadie tenga que tocar a mano la hoja de producción.
+    if (isMicro || isCal || isPat || isAlgas || isMarea || isAst) ensureHeaders(ws, payload.headers || []);
 
     // Borrado explícito de sesiones (Microbiología / Calidad de Agua / Patología
     // en Fresco): permite VACIAR de la hoja una sesión completa. Un upsert/replace
@@ -12139,10 +12440,20 @@ function upsertAstRows(ws, newRows) {
   for (var wi = 0; wi < newRows.length; wi++) {
     if (newRows[wi].length > widest) widest = newRows[wi].length;
   }
+  // La cabecera se lee ANTES de ensanchar, para localizar el ID sobre la hoja real.
+  var hdr = ws.getLastColumn() > 0 ? ws.getRange(1, 1, 1, ws.getLastColumn()).getValues()[0] : [];
   if (widest > ws.getMaxColumns()) {
     ws.insertColumnsAfter(ws.getMaxColumns(), widest - ws.getMaxColumns());
   }
-  var idCol = widest - 1;               // ID = última columna del payload
+  // El ID ya NO es forzosamente la última columna: desde 2026-08 el payload lleva
+  // Flacidez/Necrosis/Disparidad DESPUÉS del ID, para no desplazar ninguna columna
+  // histórica de la hoja. Se localiza por cabecera; si la hoja es heredada y no la
+  // tiene, se conserva el comportamiento anterior (última columna del payload).
+  var idCol = -1;
+  for (var h = 0; h < hdr.length; h++) {
+    if (String(hdr[h] == null ? "" : hdr[h]).trim() === "ID") { idCol = h; break; }
+  }
+  if (idCol < 0 || idCol >= widest) idCol = widest - 1;
   var data  = ws.getDataRange().getValues();
 
   // Mapa ID → número de fila del sheet (1-indexed) de filas ya existentes.
@@ -12389,7 +12700,7 @@ function doGet(e) {
     return evPdfPage(e.parameter.t || "", e.parameter.m || "");
   }
   if (e && e.parameter && e.parameter.p === "rows") {
-    return sheetRows(e.parameter.sheet || "", e.parameter.t || "");
+    return sheetRows(e.parameter.sheet || "", e.parameter.t || "", e.parameter.cols || "");
   }
   if (e && e.parameter && e.parameter.p === "verify") {
     return verifyReq(e.parameter.reqId || "", e.parameter.t || "");
@@ -12418,7 +12729,14 @@ function verifyReq(reqId, t) {
 // {ok, sheet, headers, rows} con cada fila como objeto {cabecera: valor}. Sólo
 // hojas de ALLOWED; respeta SHARED_TOKEN si está configurado (mismo gate que
 // doPost). Fechas → yyyy-MM-dd. Tope 5000 filas.
-function sheetRows(name, t) {
+//
+// El parámetro "cols" (opcional, ?cols=A,B,C) PROYECTA: devuelve sólo esas columnas.
+// Medido el 2026-08-12 contra el despliegue real: "Maduración MATRIZ" son 1508 filas
+// por 12 columnas = 392 KB, de las que el cliente sólo usa 4 (65 KB). El tamaño de la
+// respuesta es lo que dispara los timeouts del lector, así que recortarla ataca la
+// causa. Sin el parámetro se devuelven TODAS las columnas: compatible con los
+// clientes viejos y con cualquier despliegue anterior a este cambio.
+function sheetRows(name, t, cols) {
   var out = { ok: false, sheet: name, headers: [], rows: [] };
   try {
     if (SHARED_TOKEN && String(t) !== SHARED_TOKEN) { out.error = "No autorizado"; return _evJson(out); }
@@ -12429,18 +12747,35 @@ function sheetRows(name, t) {
     var vals = ws.getDataRange().getValues();
     if (vals.length < 1) { out.ok = true; return _evJson(out); }
     var headers = vals[0].map(function (h) { return String(h == null ? "" : h).trim(); });
+    // Columnas pedidas (si las hay). Se ignoran los nombres que no existan en la
+    // hoja; si no queda ninguno válido se devuelven todas, para que un "cols" mal
+    // escrito degrade a la lectura completa en vez de a una respuesta vacía.
+    var want = null;
+    if (cols) {
+      want = {};
+      String(cols).split(",").forEach(function (c) { var k = c.trim(); if (k) want[k] = true; });
+    }
+    var keep = [];
+    for (var c0 = 0; c0 < headers.length; c0++) {
+      if (!headers[c0]) continue;
+      if (!want || want[headers[c0]]) keep.push(c0);
+    }
+    if (!keep.length) { for (var c1 = 0; c1 < headers.length; c1++) { if (headers[c1]) keep.push(c1); } }
+    var outHeaders = keep.map(function (ci) { return headers[ci]; });
     var rows = [];
     for (var i = 1; i < vals.length && rows.length < 5000; i++) {
       var r = vals[i], obj = {}, any = false;
-      for (var c = 0; c < headers.length; c++) {
-        var key = headers[c]; if (!key) continue;
-        var cell = _rowsCell(r[c]);
+      for (var k = 0; k < keep.length; k++) {
+        var key = outHeaders[k];
+        var cell = _rowsCell(r[keep[k]]);
         if (cell !== "") any = true;
         obj[key] = cell;
       }
+      // "Fila vacía" se juzga sobre las columnas DEVUELTAS: con proyección, una fila
+      // sin ninguno de esos campos no aporta nada al cliente que los pidió.
       if (any) rows.push(obj);
     }
-    out.ok = true; out.headers = headers; out.rows = rows;
+    out.ok = true; out.headers = outHeaders; out.rows = rows;
     return _evJson(out);
   } catch (err) {
     out.error = "Error al leer la hoja"; return _evJson(out);

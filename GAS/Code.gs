@@ -60,7 +60,10 @@ const LIMITS = {
   algas:   { maxRows: 500, maxCols: 28 },
   mad:     { maxRows: 1000, maxCols: 25 },
   biomol:  { maxRows: 100, maxCols: 20 },
-  ast:     { maxRows: 100, maxCols: 25 },
+  // ast: 27 columnas desde 2026-08 (23 de datos + ID + Flacidez/Necrosis/Disparidad).
+  // ⚠ maxCols NO es sólo una validación: las filas se RECORTAN a este ancho más abajo.
+  // Con el 25 anterior, un payload de 27 perdía en silencio las 2 últimas columnas.
+  ast:     { maxRows: 100, maxCols: 32 },
   // Desinfección: 9 cols (Fecha…Fecha Elemento) + margen. maxRows holgado:
   // los 4 tipos suman ~50 elementos posibles por módulo/día.
   desinf:  { maxRows: 200, maxCols: 12 },
@@ -245,7 +248,10 @@ function doPost(e) {
     } else if (ws.getLastRow() === 0) {
       fmtHeader(ws, (payload.headers || []).map(function(h){ return cleanCell(h); }), isCtrl);
     }
-    if (isMicro || isCal || isPat || isAlgas || isMarea) ensureHeaders(ws, payload.headers || []);
+    // isAst se suma en 2026-08: así las columnas nuevas del AsT (Flacidez, Necrosis,
+    // Disparidad) se crean SOLAS al final de la hoja en la primera sincronización, sin
+    // que nadie tenga que tocar a mano la hoja de producción.
+    if (isMicro || isCal || isPat || isAlgas || isMarea || isAst) ensureHeaders(ws, payload.headers || []);
 
     // Borrado explícito de sesiones (Microbiología / Calidad de Agua / Patología
     // en Fresco): permite VACIAR de la hoja una sesión completa. Un upsert/replace
@@ -720,10 +726,20 @@ function upsertAstRows(ws, newRows) {
   for (var wi = 0; wi < newRows.length; wi++) {
     if (newRows[wi].length > widest) widest = newRows[wi].length;
   }
+  // La cabecera se lee ANTES de ensanchar, para localizar el ID sobre la hoja real.
+  var hdr = ws.getLastColumn() > 0 ? ws.getRange(1, 1, 1, ws.getLastColumn()).getValues()[0] : [];
   if (widest > ws.getMaxColumns()) {
     ws.insertColumnsAfter(ws.getMaxColumns(), widest - ws.getMaxColumns());
   }
-  var idCol = widest - 1;               // ID = última columna del payload
+  // El ID ya NO es forzosamente la última columna: desde 2026-08 el payload lleva
+  // Flacidez/Necrosis/Disparidad DESPUÉS del ID, para no desplazar ninguna columna
+  // histórica de la hoja. Se localiza por cabecera; si la hoja es heredada y no la
+  // tiene, se conserva el comportamiento anterior (última columna del payload).
+  var idCol = -1;
+  for (var h = 0; h < hdr.length; h++) {
+    if (String(hdr[h] == null ? "" : hdr[h]).trim() === "ID") { idCol = h; break; }
+  }
+  if (idCol < 0 || idCol >= widest) idCol = widest - 1;
   var data  = ws.getDataRange().getValues();
 
   // Mapa ID → número de fila del sheet (1-indexed) de filas ya existentes.
@@ -970,7 +986,7 @@ function doGet(e) {
     return evPdfPage(e.parameter.t || "", e.parameter.m || "");
   }
   if (e && e.parameter && e.parameter.p === "rows") {
-    return sheetRows(e.parameter.sheet || "", e.parameter.t || "");
+    return sheetRows(e.parameter.sheet || "", e.parameter.t || "", e.parameter.cols || "");
   }
   if (e && e.parameter && e.parameter.p === "verify") {
     return verifyReq(e.parameter.reqId || "", e.parameter.t || "");
@@ -999,7 +1015,14 @@ function verifyReq(reqId, t) {
 // {ok, sheet, headers, rows} con cada fila como objeto {cabecera: valor}. Sólo
 // hojas de ALLOWED; respeta SHARED_TOKEN si está configurado (mismo gate que
 // doPost). Fechas → yyyy-MM-dd. Tope 5000 filas.
-function sheetRows(name, t) {
+//
+// El parámetro "cols" (opcional, ?cols=A,B,C) PROYECTA: devuelve sólo esas columnas.
+// Medido el 2026-08-12 contra el despliegue real: "Maduración MATRIZ" son 1508 filas
+// por 12 columnas = 392 KB, de las que el cliente sólo usa 4 (65 KB). El tamaño de la
+// respuesta es lo que dispara los timeouts del lector, así que recortarla ataca la
+// causa. Sin el parámetro se devuelven TODAS las columnas: compatible con los
+// clientes viejos y con cualquier despliegue anterior a este cambio.
+function sheetRows(name, t, cols) {
   var out = { ok: false, sheet: name, headers: [], rows: [] };
   try {
     if (SHARED_TOKEN && String(t) !== SHARED_TOKEN) { out.error = "No autorizado"; return _evJson(out); }
@@ -1010,18 +1033,35 @@ function sheetRows(name, t) {
     var vals = ws.getDataRange().getValues();
     if (vals.length < 1) { out.ok = true; return _evJson(out); }
     var headers = vals[0].map(function (h) { return String(h == null ? "" : h).trim(); });
+    // Columnas pedidas (si las hay). Se ignoran los nombres que no existan en la
+    // hoja; si no queda ninguno válido se devuelven todas, para que un "cols" mal
+    // escrito degrade a la lectura completa en vez de a una respuesta vacía.
+    var want = null;
+    if (cols) {
+      want = {};
+      String(cols).split(",").forEach(function (c) { var k = c.trim(); if (k) want[k] = true; });
+    }
+    var keep = [];
+    for (var c0 = 0; c0 < headers.length; c0++) {
+      if (!headers[c0]) continue;
+      if (!want || want[headers[c0]]) keep.push(c0);
+    }
+    if (!keep.length) { for (var c1 = 0; c1 < headers.length; c1++) { if (headers[c1]) keep.push(c1); } }
+    var outHeaders = keep.map(function (ci) { return headers[ci]; });
     var rows = [];
     for (var i = 1; i < vals.length && rows.length < 5000; i++) {
       var r = vals[i], obj = {}, any = false;
-      for (var c = 0; c < headers.length; c++) {
-        var key = headers[c]; if (!key) continue;
-        var cell = _rowsCell(r[c]);
+      for (var k = 0; k < keep.length; k++) {
+        var key = outHeaders[k];
+        var cell = _rowsCell(r[keep[k]]);
         if (cell !== "") any = true;
         obj[key] = cell;
       }
+      // "Fila vacía" se juzga sobre las columnas DEVUELTAS: con proyección, una fila
+      // sin ninguno de esos campos no aporta nada al cliente que los pidió.
       if (any) rows.push(obj);
     }
-    out.ok = true; out.headers = headers; out.rows = rows;
+    out.ok = true; out.headers = outHeaders; out.rows = rows;
     return _evJson(out);
   } catch (err) {
     out.error = "Error al leer la hoja"; return _evJson(out);
