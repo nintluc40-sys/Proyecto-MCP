@@ -9,7 +9,7 @@ import { computeSiembras, computeCorridaSiembras } from './siembras.js';
 import { toast } from '../../ui/toast.js';
 import { downloadTrazabilidad, moduleDateRange } from './trazabilidad.js';
 import { FICHA_IDS, fichaLabel } from './fichaPdf.js';
-import { svLevel, odLevel, tmpLevel, levelColor, levelLabel, esc } from '../../core/format.js';
+import { svLevel, odLevel, tmpLevel, levelColor, levelLabel, esc, wqiBand } from '../../core/format.js';
 import { store } from '../../core/store.js';
 import { getField, F } from '../../core/fields.js';
 // Qué módulos forman una corrida: criterio ÚNICO del sistema, el mismo con el que la
@@ -861,18 +861,14 @@ function cwTendenciasHTML(rows, ranges, state) {
    Síntesis del módulo, siempre visible sobre las vistas. Reutiliza la capa pura
    calDiagnosis (WQI global, fuera/crítico, top-parámetros, tanques en riesgo). */
 const CW_RISK_TO_SEV = { bajo: 'optimo', medio: 'vigilancia', alto: 'fuera', critico: 'critico', 'sin-datos': 'sin-rango' };
-function cwWqiBand(wqi) {
-  if (wqi == null) return { sev: 'sin-rango', label: 'sin datos' };
-  if (wqi >= 85) return { sev: 'optimo', label: 'Óptimo' };
-  if (wqi >= 70) return { sev: 'vigilancia', label: 'Vigilancia' };
-  if (wqi >= 50) return { sev: 'fuera', label: 'Deficiente' };
-  return { sev: 'critico', label: 'Crítico' };
-}
+// La banda del WQI vive en core/format.js (wqiBand), compartida con Microbiología
+// y Visitante. Al unificarla, el caso sin dato pasó de «sin datos» a «Sin datos»,
+// que es la forma que ya usaban las otras vistas y el LEVEL_LABEL de core.
 function cwDiagPanelHTML(rows, ranges) {
   const samples = cwSamples(rows, ranges);
   if (!samples.length) return '';
   const d = calDiagnosis(samples, ranges);
-  const band = cwWqiBand(d.wqi);
+  const band = wqiBand(d.wqi);
   const gcol = cwSevColor(band.sev);
   const gauge = `<div class="cw-gauge" style="--g:${d.wqi == null ? 0 : d.wqi};--gc:${gcol}">
       <div class="cw-gauge-hole"><span class="cw-gauge-v">${d.wqi == null ? '—' : d.wqi}</span><span class="cw-gauge-lbl">WQI</span></div>

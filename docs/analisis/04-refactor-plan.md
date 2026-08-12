@@ -1,3 +1,15 @@
+> # ⚠ DOCUMENTO OBSOLETO — no usar como estado actual (revisado 2026-08-11)
+>
+> Se conserva por trazabilidad: de aquí salió la red de seguridad que hoy existe.
+> **Dos afirmaciones de abajo son FALSAS a día de hoy:**
+> - «13.149 líneas» de `engine.js` → hoy son **13.972**.
+> - «todo el proyecto carece de tests» → hoy hay **1080 tests en 99 archivos**.
+>
+> **La Fase A está COMPLETA** (ESLint+Prettier, `CLAUDE.md`, Vitest y los tests de
+> `core/dates`, `core/format`, `core/fields` y `core/sheets`: los cuatro existen).
+> **Para `engine.js` manda el plan medido del artifact**, no la Fase C de aquí:
+> `claude.ai/code/artifact/6f887dc8-e2ff-4ae8-b2c4-6795922cd0d6`
+
 # Plan de refactor — Domesticar el monolito `engine.js` + red de seguridad
 
 > Skill `request-refactor-plan`. Plantilla completa, con el plan en **commits diminutos**

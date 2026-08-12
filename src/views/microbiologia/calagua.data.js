@@ -10,6 +10,7 @@ import { store } from '../../core/store.js';
 import { getField, parseNum } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { isUnsafeKey } from '../../core/util.js';
+import { THRESHOLDS } from '../../config.js';
 import { intStr, normTipoMuestra } from './data.js';
 
 export const isCalAguaRow = (r) => !!r && /calidad\s*de\s*agua/i.test(String(r._SheetOrigin || ''));
@@ -293,7 +294,11 @@ export function calRiskLevel(severities, wqi) {
     return nCrit ? 'critico' : nOut ? 'alto' : s.includes('vigilancia') ? 'medio' : 'bajo';
   }
   const rank = { bajo: 0, medio: 1, alto: 2, critico: 3 };
-  let base = wqi >= 85 ? 'bajo' : wqi >= 70 ? 'medio' : wqi >= 50 ? 'alto' : 'critico';
+  // Mismos cortes que wqiBand (core/format.js) pero con el vocabulario de RIESGO,
+  // que es otro: aquí no hay etiqueta ni color, y debajo se aplican las reglas de
+  // piso por críticos. Solo se comparten los números.
+  const t = THRESHOLDS.wqi;
+  let base = wqi >= t.optimo ? 'bajo' : wqi >= t.vigilancia ? 'medio' : wqi >= t.deficiente ? 'alto' : 'critico';
   // Piso: no diluir parámetros críticos puntuales bajo el promedio.
   if (nCrit >= 1 && rank[base] < rank.medio) base = 'medio';
   if (nCrit >= 2 && rank[base] < rank.alto) base = 'alto';

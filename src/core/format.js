@@ -86,6 +86,35 @@ export const larviBg = (v) => {
 };
 export const larviLabel = (v) => LARVI_LABEL[larviZone(v)];
 
+/* ---- Banda del WQI · calidad de agua (escala 0–100, MAYOR = mejor) ----
+   Definición única compartida por Microbiología, Supervisor y Visitante: antes
+   vivía copiada en las tres vistas y los umbrales estaban además disueltos en
+   los anchos de arco del medidor de Visitante, donde ningún grep los hallaba.
+   `sev` son tokens de CSS; quien necesite hex (un <canvas> no resuelve var())
+   mapea desde `sev` en su propia capa de presentación. */
+export function wqiBand(wqi) {
+  if (wqi == null) return { sev: 'sin-rango', label: 'Sin datos' };
+  const t = THRESHOLDS.wqi;
+  if (wqi >= t.optimo) return { sev: 'optimo', label: 'Óptimo' };
+  if (wqi >= t.vigilancia) return { sev: 'vigilancia', label: 'Vigilancia' };
+  if (wqi >= t.deficiente) return { sev: 'fuera', label: 'Deficiente' };
+  return { sev: 'critico', label: 'Crítico' };
+}
+
+/** Tramos contiguos de las bandas del WQI, ascendentes de 0 a 100.
+ *  Existe para que un medidor pueda pintar sus zonas SIN volver a escribir los
+ *  umbrales: derivarlos aquí es lo que impide que las zonas de color y la
+ *  etiqueta de la aguja se desincronicen al mover un corte. */
+export function wqiSpans() {
+  const t = THRESHOLDS.wqi;
+  return [
+    { sev: 'critico', from: 0, to: t.deficiente },
+    { sev: 'fuera', from: t.deficiente, to: t.vigilancia },
+    { sev: 'vigilancia', from: t.vigilancia, to: t.optimo },
+    { sev: 'optimo', from: t.optimo, to: 100 },
+  ];
+}
+
 /** Escapa texto para inserción segura en HTML. */
 export function esc(s) {
   return String(s == null ? '' : s)

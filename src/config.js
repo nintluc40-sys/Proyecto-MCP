@@ -28,6 +28,12 @@ export const THRESHOLDS = {
   od:  { optimo: [5, 7], bueno: [[4, 5], [7, 8]], malo: [[3, 4], [8, 9]] },
   // Temperatura (°C): rango óptimo central 31–33
   tmp: { optimo: [31, 33], bueno: [[29, 31], [33, 35]], malo: [[27, 29], [35, 37]] },
+  // WQI · índice de calidad de agua (0–100, mayor = mejor). Cotas INFERIORES de
+  // cada banda: >=85 Óptimo, >=70 Vigilancia, >=50 Deficiente, resto Crítico.
+  // Fuente única: la consumen wqiBand (core/format.js), calRiskLevel
+  // (microbiologia/calagua.data.js) y el medidor de Visitante, que deriva de
+  // aquí los anchos de sus zonas en vez de llevarlos escritos a mano.
+  wqi: { optimo: 85, vigilancia: 70, deficiente: 50 },
 };
 
 // Orden biológico de estadios (N → Z → M → PL) para resolver el estadio más avanzado.

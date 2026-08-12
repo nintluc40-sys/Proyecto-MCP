@@ -9,7 +9,7 @@
    ============================================================ */
 import { store } from '../../core/store.js';
 import { destroyAllCharts, makeChart } from '../../core/charts.js';
-import { esc } from '../../core/format.js';
+import { esc, wqiBand } from '../../core/format.js';
 import { fmtShort, dayNum, rangeLabel } from '../../core/dates.js';
 import { natCmp } from '../../core/util.js';
 import { monthIndexOfCorrida, monthLabelAt } from '../../core/prodCalendar.js';
@@ -243,7 +243,7 @@ function renderGeneral() {
     alertCount: kAlerta, alertRatio: micRows.length ? Math.round(kAlerta / micRows.length * 100) : 0,
     alertSeries: dayKeys.map((k) => alertByDay.get(k) || 0),
     dom, patTop: pat.labels.slice(0, 3).map((label, i) => ({ label, n: pat.values[i] })),
-    waterSev, wqi: diag.wqi, wband: calWqiBand(diag.wqi),
+    waterSev, wqi: diag.wqi, wband: wqiBand(diag.wqi),
     outCount: diag.outCount, outEvaluated: diag.evaluated, outTop: diag.topParams.map((p) => ({ label: p.label, n: p.n })),
   };
 
@@ -426,7 +426,7 @@ function genAreaStats(summaries, samples, ranges) {
 function genScorecardHTML(areas) {
   if (!areas.length) return emptyBox('Sin muestras en el mes seleccionado.');
   const rows = areas.map((a) => {
-    const wqiSev = a.wqi == null ? 'sin-rango' : calWqiBand(a.wqi).sev;
+    const wqiSev = a.wqi == null ? 'sin-rango' : wqiBand(a.wqi).sev;
     const cumpSev = a.cump == null ? 'sin-rango' : a.cump >= 90 ? 'optimo' : a.cump >= 70 ? 'vigilancia' : 'fuera';
     return `<button class="gen-sc-row" data-gen-depto="${esc(a.area)}" title="Ver desglose de ${esc(a.area)}">
         <span class="gen-sc-area">${esc(a.area)}</span>
@@ -577,17 +577,11 @@ const calDimChips = (dim, selected, values) => `<div class="cal-mchips" role="gr
   </div>`;
 
 /* ---- Calidad de Agua · Panel del Analista (síntesis técnica autogenerada) ---- */
-// Banda del WQI global (0–100) → severidad para color + etiqueta.
-function calWqiBand(wqi) {
-  if (wqi == null) return { sev: 'sin-rango', label: 'Sin datos' };
-  if (wqi >= 85) return { sev: 'optimo', label: 'Óptimo' };
-  if (wqi >= 70) return { sev: 'vigilancia', label: 'Vigilancia' };
-  if (wqi >= 50) return { sev: 'fuera', label: 'Deficiente' };
-  return { sev: 'critico', label: 'Crítico' };
-}
+// La banda del WQI vive en core/format.js (wqiBand), compartida con Supervisor
+// y Visitante; aquí ya no se redefine para que los umbrales no puedan divergir.
 function calAnalystHTML(samples, ranges) {
   const d = calDiagnosis(samples, ranges);
-  const band = calWqiBand(d.wqi);
+  const band = wqiBand(d.wqi);
   const wqiTxt = d.wqi == null ? '—' : String(d.wqi);
   const deg = d.wqi == null ? 0 : Math.round(d.wqi * 3.6); // 0–100 → 0–360°
   // Diagnóstico en lenguaje técnico. Solo se interpolan NÚMEROS dentro de <b> (seguro);

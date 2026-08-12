@@ -5,7 +5,7 @@
    Población) + tabla con el total del mes (desglose completo).
    ============================================================ */
 import { makeChart, destroyChart } from '../../core/charts.js';
-import { esc, fmtPop } from '../../core/format.js';
+import { esc, fmtPop, wqiBand, wqiSpans } from '../../core/format.js';
 import { store } from '../../core/store.js';
 import { getField, parseNum, F, isLarviculturaRow, obsFindings } from '../../core/fields.js';
 import { fmtPct } from '../../core/util.js';
@@ -389,14 +389,18 @@ const algTealP = (txt) => `<p style="font-size:12px;color:#015B76;font-weight:70
 
 // ── Gráficos del bloque de laboratorio (público general) ──
 
-/** Banda del WQI (0–100): color + etiqueta. Coherente con calWqiBand de Microbiología
- *  (≥85 / ≥70 / ≥50 / resto); se define aquí para no importar la vista Micro entera. */
-function wqiBand(wqi) {
-  if (wqi == null) return { color: 'var(--c-text-muted)', label: 'Sin datos' };
-  if (wqi >= 85) return { color: '#2E9E5B', label: 'Óptimo' };
-  if (wqi >= 70) return { color: '#E6A100', label: 'Vigilancia' };
-  if (wqi >= 50) return { color: '#E67635', label: 'Deficiente' };
-  return { color: '#D64545', label: 'Crítico' };
+/* Hex por severidad del WQI. Esta vista NO puede usar los tokens CSS que devuelve
+   core: el medidor es un <canvas> de Chart.js y ahí `var(--…)` no se resuelve. Así
+   que toma de core el umbral y la etiqueta, y solo el color es propio. */
+const WQI_HEX = {
+  optimo: '#2E9E5B', vigilancia: '#E6A100', fuera: '#E67635',
+  critico: '#D64545', 'sin-rango': 'var(--c-text-muted)',
+};
+
+/** Banda del WQI (0–100) en la paleta de esta vista: color hex + etiqueta. */
+function wqiVisual(wqi) {
+  const b = wqiBand(wqi);
+  return { color: WQI_HEX[b.sev], label: b.label };
 }
 
 /** Barras horizontales por patógeno: nº de muestras del mes en nivel alto. */
@@ -416,10 +420,13 @@ function drawLabMicroBars(alertRows) {
 
 /** Medidor (gauge) semicircular del WQI (0–100): 4 zonas de color + aguja en el valor. */
 function drawWqiGauge(wqi) {
-  // Anchos de zona proporcionales a sus rangos: Crítico 0–50, Deficiente 50–70,
-  // Vigilancia 70–85, Óptimo 85–100.
-  const zones = [50, 20, 15, 15];
-  const colors = ['#D64545', '#E67635', '#E6A100', '#2E9E5B'];
+  // Anchos de zona DERIVADOS de los umbrales, no escritos a mano: antes eran un
+  // [50, 20, 15, 15] literal donde el 85 quedaba disuelto en un 15 y ningún grep
+  // lo encontraba, así que mover el umbral descuadraba las zonas contra la aguja
+  // en silencio. Ahora salen de la misma fuente que la etiqueta.
+  const spans = wqiSpans();
+  const zones = spans.map((z) => z.to - z.from);
+  const colors = spans.map((z) => WQI_HEX[z.sev]);
   const needle = {
     id: 'wqiNeedle',
     afterDatasetsDraw(chart) {
@@ -602,7 +609,7 @@ function sumDetail(key, mIdx, monthSup) {
       const tot = o.inRange + o.out; const pct = Math.round(o.inRange / tot * 100); const col = pct >= 90 ? '#2E9E5B' : pct >= 70 ? '#E6A100' : '#D64545';
       return `<tr><td>${esc(lbl)}${o.unit ? ` <span style="color:var(--c-text-muted)">(${esc(o.unit)})</span>` : ''}</td><td>${o.inRange}</td><td>${o.out}</td><td style="color:${col};font-weight:800">${pct}%</td></tr>`;
     }).join('');
-    const band = wqiBand(s.wqi);
+    const band = wqiVisual(s.wqi);
     // Gráfico: medidor (gauge) del WQI 0–100 con zonas de color y aguja.
     const gauge = s.wqi == null ? '' : `<div class="vt-gauge">
         <div class="vt-gauge-host"><canvas id="vtLabAguaGauge"></canvas></div>
