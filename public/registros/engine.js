@@ -6769,6 +6769,7 @@ function pruneBio(){
   const raw = _bioRaw();
   const list = raw.filter(r => r && r.ts && (now - r.ts) < BIO_TTL);
   if(list.length !== raw.length) _bioSave(list);
+  try{ _bioPruneRpt(); }catch(_){}   // datos del reporte PDF + foto del gel
   return list;
 }
 function loadBio(){
@@ -7245,6 +7246,334 @@ function clearAllBio(){
   toast("🗑 Historial Biomol vaciado","ok",3000);
 }
 
+/* ══════════════════════════════════════════
+   BIOMOL · REPORTE PDF
+   ──────────────────────────────────────────
+   Datos que SOLO viven para el PDF: no entran en el payload de la hoja BIOMOL
+   ni en `_bioRaw()`. Se guardan por día en su propia clave, así borrar el día
+   o vaciar el historial no arrastra el reporte y viceversa.
+   La foto del gel va en clave APARTE (una por día): son cientos de KB y no
+   deben viajar dentro del JSON del reporte cada vez que se teclea una letra.
+══════════════════════════════════════════ */
+const BIO_RPT_KEY     = "larv4_biomol_rpt";       // { "<fecha>": {...} }
+const BIO_RPT_DEF_KEY = "larv4_biomol_rpt_def";   // últimos textos usados (plantilla)
+const BIO_GEL_PRE     = "larv4_biomol_gel_";      // + fecha → dataURL del gel
+const BIO_GEL_MAXPX   = 1400;                     // el gel debe leerse en papel
+const BIO_GEL_Q       = 0.8;
+
+// Tipos de muestra que puede cubrir un análisis. NO salen de la grilla ni se
+// registran: son un texto del reporte y se eligen los que apliquen.
+const BIO_MUESTRA_OPTS = [
+  "Pleópodos",
+  "Hepatopáncreas de reproductores",
+  "Cuarentena",
+  "Maduración-Nauplios 5 – Siembra Laboratorio Externo",
+  "Maduración-Nauplios 5 – Siembra interna",
+  "PostLarva",
+  "Microalgas-Departamento de Algas",
+  "Maduración-Alimentos"
+];
+
+// Nombre completo de cada patógeno, para redactar la descripción del análisis.
+const BIO_PATOGENOS = [
+  { k:"ihhnv", n:"Virus de la necrosis infecciosa hipodérmica y hematopoyética (IHHNV)" },
+  { k:"wssv",  n:"Virus del síndrome de la mancha blanca (WSSV)" },
+  { k:"ahpnd", n:"Enfermedad de necrosis hepatopancreática aguda/Síndrome de mortalidad temprana (AHPND/EMS)" },
+  { k:"ehp",   n:"Infección de microsporidiosis hepatopancreática causada por Enterocytozoon hepatopenaei (EHP)" },
+  { k:"bp",    n:"Baculovirus penaei (BP)" },
+  { k:"nhpb",  n:"Necrosis hepatopancreática bacteriana (NHPB)" }
+];
+
+// Firmantes fijos del reporte (no es un espacio para firmar a mano).
+const BIO_PDF_FIRMANTES   = "Blga. Katherine Mujica – Blga. Diana Párraga";
+const BIO_PDF_FIRMA_CARGO = "Analistas de Biología Molecular";
+// Los tres controles del ensayo salen siempre con el mismo veredicto.
+const BIO_CONTROLES = ["Control Positivo","Control Negativo","Control de Extracción"];
+const BIO_CONTROL_VAL = "Excelente";
+
+/** ¿El resultado de un patógeno es POSITIVO? Tolerante a la grafía tecleada
+ *  (mayúsculas, acentos, "POSITIVO", "positivo", "+", "Pos."). Todo lo demás
+ *  —incluido vacío— NO cuenta como positivo. */
+function _bioEsPositivo(v){
+  const s = String(v == null ? "" : v).trim().toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if(!s) return false;
+  return s === "+" || s.indexOf("pos") === 0;
+}
+
+const BIO_METODO_DEF =
+  "1) Extracción y amplificación de ADN mediante el Kit Comercial IQ REAL, el límite de detección es de 10 copias/μl extracción de ADN.\n" +
+  "2) Extracción de ADN tradicional mediante soluciones lisis y etanoles, amplificación por PCR Nested punto final con primers específicos, el límite de detección es de 10 copias/μl extracción de ADN.";
+
+function _bioRptAll(){
+  try{ const o = JSON.parse(localStorage.getItem(BIO_RPT_KEY) || "{}"); return (o && typeof o==="object") ? o : {}; }
+  catch(x){ _silent("_bioRptAll", x); return {}; }
+}
+function loadBioRptDef(){
+  try{ const o = JSON.parse(localStorage.getItem(BIO_RPT_DEF_KEY) || "{}"); return (o && typeof o==="object") ? o : {}; }
+  catch(_){ return {}; }
+}
+/** Datos del reporte de un día. Los textos de plantilla (procedencia/método)
+ *  arrancan de lo último que se usó; el resto es propio del día. */
+function loadBioRpt(fecha){
+  const def = loadBioRptDef();
+  const d = _bioRptAll()[fecha] || {};
+  return {
+    recepcion:   d.recepcion   != null ? d.recepcion   : "",
+    procedencia: d.procedencia != null ? d.procedencia : (def.procedencia || ""),
+    metodo:      d.metodo      != null ? d.metodo      : (def.metodo != null ? def.metodo : BIO_METODO_DEF),
+    muestras:    Array.isArray(d.muestras) ? d.muestras : [],
+    desc:        d.desc        != null ? d.desc        : ""
+  };
+}
+function saveBioRpt(fecha, obj){
+  const all = _bioRptAll();
+  all[fecha] = obj;
+  _lsSet(BIO_RPT_KEY, JSON.stringify(all));
+  // Los textos de plantilla se recuerdan para el próximo reporte.
+  _lsSet(BIO_RPT_DEF_KEY, JSON.stringify({ procedencia: obj.procedencia || "", metodo: obj.metodo != null ? obj.metodo : BIO_METODO_DEF }));
+}
+function bioRptDelDia(fecha){
+  const all = _bioRptAll();
+  if(all[fecha]){ delete all[fecha]; _lsSet(BIO_RPT_KEY, JSON.stringify(all)); }
+  bioGelClear(fecha, true);
+}
+// Reportes y fotos de gel caducan como las muestras (BIO_TTL, 48 h). Sin esto la
+// foto del gel —cientos de KB y una por día— crecería sin techo en localStorage.
+// El barrido de huérfanas (foto sin reporte) se hace UNA vez por sesión: recorrer
+// todo localStorage en cada render es justo lo que el caché de fotos evita.
+let _bioGelSwept = false;
+function _bioPruneRpt(){
+  const cutoff = new Date(Date.now() - BIO_TTL).toISOString().slice(0,10);
+  const all = _bioRptAll();
+  const vencidas = Object.keys(all).filter(f => f < cutoff);
+  if(vencidas.length){
+    vencidas.forEach(f => { delete all[f]; try{ localStorage.removeItem(bioGelKey(f)); }catch(_){} });
+    _lsSet(BIO_RPT_KEY, JSON.stringify(all));
+  }
+  if(_bioGelSwept) return;
+  _bioGelSwept = true;
+  const del = [];
+  for(let i=0; i<localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(k && k.startsWith(BIO_GEL_PRE) && k.slice(BIO_GEL_PRE.length) < cutoff) del.push(k);
+  }
+  del.forEach(k => { try{ localStorage.removeItem(k); }catch(_){} });
+}
+
+// ── Foto del gel (una por día) ─────────────────────────
+function bioGelKey(fecha){ return BIO_GEL_PRE + fecha; }
+function bioGelGet(fecha){ try{ return localStorage.getItem(bioGelKey(fecha)) || ""; }catch(_){ return ""; } }
+function bioGelClear(fecha, silent){
+  try{ localStorage.removeItem(bioGelKey(fecha)); }catch(_){}
+  if(!silent){ renderBioReport(); toast("Foto del gel eliminada","ok",2000); }
+}
+/** Comprime en canvas antes de guardar: un JPEG de cámara son varios MB y
+ *  localStorage no los aguanta. Mismo enfoque que la galería del módulo. */
+function bioGelPick(input){
+  const f = input && input.files && input.files[0];
+  if(!f) return;
+  const fecha = bioGridFecha();
+  const im = new Image(), u = URL.createObjectURL(f);
+  im.onload = function(){
+    try{ URL.revokeObjectURL(u); }catch(_){}
+    let w = im.width, h = im.height;
+    const mx = BIO_GEL_MAXPX;
+    if(w >= h && w > mx){ h = Math.round(h * mx / w); w = mx; }
+    else if(h > w && h > mx){ w = Math.round(w * mx / h); h = mx; }
+    const cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    cv.getContext("2d").drawImage(im, 0, 0, w, h);
+    const durl = cv.toDataURL("image/jpeg", BIO_GEL_Q);
+    if(!_lsSet(bioGelKey(fecha), durl)){
+      toast("No se pudo guardar la foto (almacenamiento lleno). Libera espacio e inténtalo de nuevo.","err",6000); return;
+    }
+    renderBioReport();
+    toast("📷 Foto del gel lista para el PDF","ok",2500);
+  };
+  im.onerror = function(){ try{ URL.revokeObjectURL(u); }catch(_){}; toast("No se pudo leer la imagen","err",4000); };
+  im.src = u;
+}
+
+// ── Handlers del bloque de reporte ─────────────────────
+function bioRptSet(field, val){
+  const fecha = bioGridFecha();
+  const r = loadBioRpt(fecha);
+  r[field] = sanitizeStr(val);
+  saveBioRpt(fecha, r);
+}
+/** Repinta SOLO el bloque del reporte. Nunca renderBiomol() desde aquí: eso
+ *  reconstruye la grilla desde lo GUARDADO y se lleva por delante lo tecleado o
+ *  pegado que aún no se ha guardado. La descripción se calcula leyendo la grilla
+ *  del DOM (_collectBioGrid), así refleja lo que hay en pantalla sin persistirlo. */
+function renderBioReport(){
+  const box = document.getElementById("bio-rpt-box");
+  if(!box) return;
+  const fecha = bioGridFecha();
+  box.outerHTML = _bioReportBlock(fecha, _collectBioGrid(fecha));
+}
+function bioMuestraToggle(idx){
+  const fecha = bioGridFecha();
+  const v = BIO_MUESTRA_OPTS[idx];
+  if(v == null) return;
+  const r = loadBioRpt(fecha);
+  const i = r.muestras.indexOf(v);
+  if(i === -1) r.muestras.push(v); else r.muestras.splice(i, 1);
+  saveBioRpt(fecha, r);
+  renderBioReport();
+}
+/** Descripción propuesta a partir de los patógenos CON resultado ese día.
+ *  La técnica (PCR/qPCR) no se puede deducir de la grilla: se propone PCR y el
+ *  analista la corrige si corrió qPCR. Por eso el campo es editable. */
+function bioDescAuto(rows){
+  const presentes = BIO_PATOGENOS.filter(p => (rows||[]).some(r => String((r && r[p.k]) || "").trim() !== ""));
+  if(!presentes.length) return "";
+  return "Detección de " + presentes.map(p => p.n).join(", ")
+    + ", mediante reacción en cadena de la polimerasa (PCR).";
+}
+function bioDescReset(){
+  const fecha = bioGridFecha();
+  const r = loadBioRpt(fecha);
+  r.desc = bioDescAuto(_collectBioGrid(fecha));
+  saveBioRpt(fecha, r);
+  renderBioReport();
+  toast("Descripción regenerada desde los resultados del día","ok",2600);
+}
+
+// ── Bloque de reporte en pantalla ──────────────────────
+function _bioReportBlock(fecha, rows){
+  const r = loadBioRpt(fecha);
+  const gel = bioGelGet(fecha);
+  const descVal = r.desc || bioDescAuto(rows);
+  const chips = BIO_MUESTRA_OPTS.map((o, i) =>
+    `<span class="mic-colchip${r.muestras.indexOf(o) === -1 ? ' off' : ''}" onclick="bioMuestraToggle(${i})" title="Clic para incluir o quitar esta muestra del PDF">${escapeHtml(o)}</span>`).join("");
+  const gelBox = gel
+    ? `<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
+         <img src="${gel}" alt="Gel de agarosa" style="max-width:220px;max-height:150px;border:1px solid var(--bdr);border-radius:6px">
+         <button class="btn bd" type="button" onclick="bioGelClear('${escapeHtml(fecha)}')">🗑 Quitar foto</button>
+       </div>`
+    : `<input type="file" accept="image/*" onchange="bioGelPick(this)" style="font-size:11px">`;
+  return `<div class="fc" id="bio-rpt-box" style="margin-top:12px;background:#faf5ff;border-color:#e9d5ff">
+    <div class="fc-h"><div class="fc-t">📄 Datos del reporte PDF</div>
+      <span class="ssp">solo para el PDF · no se envía a la hoja</span></div>
+    <div class="fc-b">
+      <div class="meta" style="margin-bottom:8px">
+        <div class="mf"><label>Fecha de recepción</label>
+          <input type="date" value="${escapeHtml(r.recepcion)}" onchange="bioRptSet('recepcion',this.value)"></div>
+        <div class="mf"><label>Fecha de entrega de resultados</label>
+          <input type="date" value="${escapeHtml(fecha)}" disabled title="Es el día de la grilla: la fecha en que se ingresan los datos"></div>
+      </div>
+      <label style="font-size:11px;font-weight:600;color:var(--tx2)">Muestras <span style="font-weight:400;color:var(--tx3)">— elige las que cubre este análisis</span></label>
+      <div style="margin:5px 0 10px">${chips}</div>
+      <div class="mf" style="margin-bottom:8px"><label>Procedencia de la muestra</label>
+        <textarea placeholder="Escríbela una vez y se recordará para los próximos reportes…" oninput="bioRptSet('procedencia',this.value)" style="width:100%;min-height:38px">${escapeHtml(r.procedencia)}</textarea></div>
+      <div class="mf" style="margin-bottom:8px"><label>Método utilizado</label>
+        <textarea oninput="bioRptSet('metodo',this.value)" style="width:100%;min-height:70px">${escapeHtml(r.metodo)}</textarea></div>
+      <div class="mf" style="margin-bottom:8px"><label>Descripción del análisis
+        <button class="btn bo" type="button" onclick="bioDescReset()" style="margin-left:6px;padding:1px 7px;font-size:10px" title="Rehacerla a partir de los patógenos con resultado en la grilla">↻ Regenerar</button></label>
+        <textarea oninput="bioRptSet('desc',this.value)" style="width:100%;min-height:52px">${escapeHtml(descVal)}</textarea>
+        <div style="font-size:10px;color:var(--tx3);margin-top:3px">Se propone desde los patógenos con resultado del día y dice <b>PCR</b>. Si corriste <b>qPCR</b>, corrígelo aquí.</div></div>
+      <div class="mf"><label>Foto del gel de agarosa</label>${gelBox}
+        <div style="font-size:10px;color:var(--tx3);margin-top:3px">Se guarda solo en este dispositivo para armar el PDF. No viaja a Google Sheets.</div></div>
+    </div></div>`;
+}
+
+// ── PDF del reporte ────────────────────────────────────
+const BIO_PDF_CSS = `
+@page{size:A4 portrait;margin:12mm 14mm}
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{margin:0;font-family:"Segoe UI",Arial,sans-serif;color:#0f172a;font-size:9pt;line-height:1.45}
+.bp-date{text-align:left;font-weight:700;font-size:10pt;margin-bottom:10px}
+.bp-title{text-align:center;font-weight:800;font-size:13pt;letter-spacing:.3px;margin:0 0 8px}
+.bp-desc{text-align:center;font-size:8.5pt;line-height:1.5;margin:0 auto 12px;max-width:92%}
+.bp-meta{margin:10px 0 12px}
+.bp-row{margin-bottom:5px}
+.bp-row b{display:inline-block;min-width:auto}
+.bp-pre{white-space:pre-wrap;margin:2px 0 0}
+table{width:100%;border-collapse:collapse;margin-top:6px;font-size:7.5pt}
+th,td{border:1px solid #94a3b8;padding:3px 4px;text-align:center}
+th{background:#e2e8f0;font-weight:700}
+td.l{text-align:left}
+.bp-gel{margin-top:14px;page-break-inside:avoid}
+.bp-gel h3{font-size:10pt;margin:0 0 6px;text-align:center}
+.bp-gel img{display:block;margin:0 auto;max-width:100%;max-height:105mm;border:1px solid #94a3b8}
+.bp-foot{margin-top:16px;display:flex;justify-content:space-between;align-items:flex-end;font-size:7pt;color:#475569}
+tr.bp-sum td{background:#f1f5f9;font-weight:700}
+tr.bp-sum td.k{text-align:left}
+.bp-sign{text-align:center;min-width:150px;padding-top:3px;font-weight:700;color:#0f172a}
+`;
+function downloadBioPDF(){
+  const fecha = bioGridFecha();
+  const recs  = _collectBioGrid(fecha);
+  const rows  = recs.map(x => x.data || x);
+  if(!rows.length){ toast("No hay filas con datos en la grilla de "+fecha,"warn",4000); return; }
+  const r = loadBioRpt(fecha);
+  const gel = bioGelGet(fecha);
+  const fFmt = (f)=> isValidDate(f) ? f : "—";
+  const tsStr = new Date().toLocaleString("es-EC",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
+  const codigo = genCodigo("biomol", BIO_MOD, fecha);
+  const fileName = "Reporte_Molecular_"+fecha;
+
+  // Columnas: solo las que tienen algún dato, para no imprimir columnas vacías.
+  const cols = BIO_GRID_COLS.filter(c => c.k !== "fecha" && rows.some(d => String(d[c.k]||"").trim() !== ""));
+  const ths = cols.map(c=>`<th>${escapeHtml(c.label)}</th>`).join("");
+  const trs = rows.map((d,i)=>`<tr><td>${i+1}</td>${cols.map(c=>{
+    const v = String(d[c.k]||"").trim();
+    return `<td${c.k==="codigo"||c.k==="lugar"||c.k==="otros"?' class="l"':""}>${escapeHtml(v||"—")}</td>`;
+  }).join("")}</tr>`).join("");
+
+  // ── Filas de resumen bajo los resultados ──
+  // Los patógenos son las 6 ÚLTIMAS columnas de BIO_GRID_COLS, así que en `cols`
+  // (que conserva el orden) quedan al final: la etiqueta ocupa las de delante.
+  const patKeys = BIO_PATOGENOS.map(p => p.k);
+  const colsPat = cols.filter(c => patKeys.indexOf(c.k) !== -1);
+  const nPre    = cols.length - colsPat.length;
+  const sumRow = (lbl, fn) => `<tr class="bp-sum"><td class="k" colspan="${1 + nPre}">${escapeHtml(lbl)}</td>`
+    + colsPat.map(c => `<td>${escapeHtml(fn(c))}</td>`).join("") + `</tr>`;
+  // % de positivos POR PATÓGENO. El denominador son las muestras analizadas para
+  // ESE patógeno (celdas con dato), no todas las filas: una fila que no se ensayó
+  // para WSSV no debe diluir su porcentaje. Entero, redondeado.
+  const pctPat = (c) => {
+    const vals = rows.map(d => String(d[c.k]||"").trim()).filter(v => v !== "");
+    if(!vals.length) return "—";
+    return Math.round(vals.filter(_bioEsPositivo).length / vals.length * 100) + "%";
+  };
+  const resumen = colsPat.length
+    ? sumRow("Porcentajes (%)", pctPat) + BIO_CONTROLES.map(n => sumRow(n, () => BIO_CONTROL_VAL)).join("")
+    : "";
+
+  const desc = r.desc || bioDescAuto(rows);
+  const bloque = (lbl, txt)=> txt ? `<div class="bp-row"><b>${escapeHtml(lbl)}:</b><div class="bp-pre">${escapeHtml(txt)}</div></div>` : "";
+  const muestrasTxt = (r.muestras||[]).join(", ");
+
+  const page = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(fileName)}</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1"><style>${BIO_PDF_CSS}</style></head><body>
+    <div class="bp-date">Mar Bravo, ${escapeHtml(fecha)}</div>
+    <h1 class="bp-title">Reporte de Análisis Molecular</h1>
+    ${desc?`<div class="bp-desc">${escapeHtml(desc)}</div>`:""}
+    <div class="bp-meta">
+      <div class="bp-row"><b>Fecha de recepción:</b> ${escapeHtml(fFmt(r.recepcion))}</div>
+      <div class="bp-row"><b>Fecha de entrega de resultados:</b> ${escapeHtml(fecha)}</div>
+      ${bloque("Muestras", muestrasTxt)}
+      ${bloque("Procedencia de la muestra", r.procedencia)}
+      ${bloque("Método utilizado", r.metodo)}
+    </div>
+    <table><thead><tr><th>#</th>${ths}</tr></thead><tbody>${trs}${resumen}</tbody></table>
+    ${gel?`<div class="bp-gel"><h3>Foto del gel de agarosa</h3><img src="${gel}" alt="Gel de agarosa"></div>`:""}
+    <div class="bp-foot">
+      <div><div style="text-transform:uppercase;letter-spacing:.4px">Código verificador</div>
+        <div style="font-weight:700;color:#0f172a">${escapeHtml(codigo)}</div>
+        <div style="margin-top:2px">Generado el ${escapeHtml(tsStr)}</div></div>
+      <div class="bp-sign">${escapeHtml(BIO_PDF_FIRMANTES)}<div style="font-weight:400;font-size:6.5pt;color:#475569;margin-top:1px">${escapeHtml(BIO_PDF_FIRMA_CARGO)}</div></div>
+    </div>
+    <script>try{document.title=${JSON.stringify(fileName)};}catch(_){}var _p=false;function dp(){if(_p)return;_p=true;setTimeout(function(){window.print();},350);}if(document.readyState==='complete')dp();else window.addEventListener('load',dp,{once:true});<\/script></body></html>`;
+
+  const w = window.open("","_blank","width=900,height=1000");
+  if(!w){ toast("El navegador bloqueó la ventana emergente. Permite pop-ups para este sitio.","warn",6000); return; }
+  w.document.write(page); w.document.close(); try{ w.document.title = fileName; }catch(_){}
+  toast("📄 PDF: "+fileName,"ok",5000);
+}
+
 // ── Render de la grilla Biomol ──────────────────────────
 function renderBiomol(){
   const fp = document.getElementById("fp-biomol");
@@ -7317,6 +7646,7 @@ function renderBiomol(){
         <div class="sa-btns">
           <button class="btn bd" type="button" onclick="clearBioGrid()" title="Borrar muestras locales de este día">🗑 Borrar día</button>
           ${bioRecBtn}
+          <button class="btn bs" type="button" onclick="downloadBioPDF()" title="Genera el Reporte de Análisis Molecular con las filas de este día">📄 PDF</button>
           <button class="btn bs" type="button" onclick="saveBioGridLocal()">💾 Guardar local</button>
           <button class="btn bp" type="button" onclick="syncBioGrid()">☁️ Guardar y sincronizar</button>
         </div>
@@ -7324,6 +7654,7 @@ function renderBiomol(){
       <div style="margin-top:10px;font-size:10.5px;color:var(--tx3);line-height:1.6">
         ℹ️ La grilla es del día seleccionado. Al sincronizar se reemplazan en la hoja <code>BIOMOL</code> todas las filas de esa fecha por las de la grilla (editar y reenviar no duplica). Empieza con ${BIO_GRID_DEFAULT_ROWS} filas; agrega de ${BIO_GRID_ROW_STEP} en ${BIO_GRID_ROW_STEP} hasta ${BIO_GRID_MAX_ROWS}. Las filas vacías no se envían.
       </div>
+      ${_bioReportBlock(fecha, Object.keys(byFila).map(k => byFila[k].data))}
       ${_bioHistBlock(fecha, list)}
     </div>
   </div>`;
