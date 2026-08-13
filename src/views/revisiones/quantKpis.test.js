@@ -186,9 +186,12 @@ describe('revisiones · tendencia al pulsar un KPI', () => {
     expect(c.cfg.type).toBe('line');
     expect(c.cfg.data.datasets[0].label).toBe('% Flacidez');
     expect(c.cfg.data.datasets[0].data).toEqual([25, 25]);
-    // Eje Y en porcentaje y fijo a 0–100 (como la tendencia de PL/g).
+    // Eje Y: base en 0 (el área va rellena) y techo AJUSTADO a los datos, no 100.
+    // Con la serie en 25 % el techo sale 35: si se quedara en 100, la línea viviría en
+    // el cuarto inferior del gráfico y la tendencia sería ilegible.
     expect(c.cfg.options.scales.y.min).toBe(0);
-    expect(c.cfg.options.scales.y.suggestedMax).toBe(100);
+    expect(c.cfg.options.scales.y.max).toBe(35);
+    expect(c.cfg.options.scales.y.max).toBeLessThan(100);
     expect(errSpy).not.toHaveBeenCalled();
   });
 
@@ -208,6 +211,19 @@ describe('revisiones · tendencia al pulsar un KPI', () => {
     change(root.querySelector('[data-rvfilter="mod"]'), 'Módulo 1');
     click(root.querySelector('[data-rvtrend="flacidez"]'));
     expect(chart('rvTrendCanvas').cfg.data.datasets[0].data).toEqual([10, 10]);
+  });
+
+  it('el eje se re-ajusta al filtrar: la misma variable, otra escala', () => {
+    // Al acotar a M1 la serie baja de 25 % a 10 %, y el eje debe seguirla. Con un techo
+    // fijo esto no cambiaría y el gráfico del módulo con valores bajos quedaría plano.
+    mount();
+    click(root.querySelector('[data-rvtrend="flacidez"]'));
+    const conTodo = chart('rvTrendCanvas').cfg.options.scales.y.max;
+    change(root.querySelector('[data-rvfilter="mod"]'), 'Módulo 1');
+    click(root.querySelector('[data-rvtrend="flacidez"]'));
+    const soloM1 = chart('rvTrendCanvas').cfg.options.scales.y.max;
+    expect(soloM1).toBeLessThan(conTodo);
+    expect(soloM1).toBe(14);   // serie en 10 % → 10 × 1,25 = 12,5 → paso 2 → 14
   });
 
   it('cada KPI abre SU variable, no siempre la misma', () => {

@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   QUANT, QUANT_KEYS, KPI_ORDER, CHART_SERIES, chartKeys,
-  hasQuant, hasChartData, quantAvg, quantDaySeries,
+  hasQuant, hasChartData, quantAvg, quantDaySeries, pctAxisMax,
 } from './metrics.js';
 
 const R = (o) => ({ _SheetOrigin: 'Registro_Supervision', ...o });
@@ -107,5 +107,47 @@ describe('revisiones · serie diaria', () => {
   it('sólo mira las filas que se le pasan (así hereda los filtros de la vista)', () => {
     const soloUno = rows.filter((r) => r.Fecha === '05/06/2026').slice(0, 1);
     expect(quantDaySeries(soloUno, 'flacidez', ['05/06/2026'])).toEqual([10]);
+  });
+});
+
+describe('revisiones · techo del eje Y (pctAxisMax)', () => {
+  it('con valores BAJOS el eje se ajusta en vez de quedarse en 100', () => {
+    // El motivo del cambio: con el 0–100 fijo, una serie de 2–3 % era una raya pegada
+    // al suelo y el 97 % del alto del gráfico sobraba.
+    expect(pctAxisMax([2, 2.3, 1.8])).toBe(3);
+    expect(pctAxisMax([6, 5.2, 4.9])).toBe(8);
+    expect(pctAxisMax([0.3, 0.4])).toBe(1);
+  });
+
+  it('deja holgura sobre el pico: el máximo nunca toca el borde', () => {
+    [[2, 2.3], [6], [12, 9], [45]].forEach((serie) => {
+      const techo = pctAxisMax(serie);
+      expect(techo).toBeGreaterThan(Math.max(...serie));
+    });
+  });
+
+  it('redondea a pasos legibles según la magnitud', () => {
+    expect(pctAxisMax([12])).toBe(16);     // paso 2
+    expect(pctAxisMax([30])).toBe(40);     // paso 5
+    expect(pctAxisMax([70])).toBe(90);     // paso 10
+  });
+
+  it('no deja aire por encima del 100 % cuando el dato cabe debajo', () => {
+    expect(pctAxisMax([95])).toBe(100);
+    expect(pctAxisMax([100])).toBe(100);
+  });
+
+  it('pero si el dato PASA de 100 (hoja sucia) lo muestra en vez de recortarlo', () => {
+    expect(pctAxisMax([130])).toBeGreaterThanOrEqual(130);
+  });
+
+  it('una serie vacía, toda nula o toda en 0 devuelve un eje 0–5 usable', () => {
+    expect(pctAxisMax([])).toBe(5);
+    expect(pctAxisMax([null, null])).toBe(5);
+    expect(pctAxisMax([0, 0])).toBe(5);
+  });
+
+  it('ignora los huecos (null) al calcular el máximo', () => {
+    expect(pctAxisMax([null, 2, null, 3])).toBe(pctAxisMax([2, 3]));
   });
 });

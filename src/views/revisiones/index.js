@@ -20,7 +20,7 @@ import { monthIndexOfCorrida, monthLabelAt } from '../../core/prodCalendar.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import {
   QUANT, QUANT_KEYS, KPI_ORDER, CHART_SERIES, chartKeys,
-  hasChartData, quantAvg, quantDaySeries,
+  hasChartData, quantAvg, quantDaySeries, pctAxisMax,
 } from './metrics.js';
 
 // ---------- acceso tolerante a cabeceras de Registro_Supervisión ----------
@@ -1025,12 +1025,14 @@ function openTrend(id) {
   if (m) { m.classList.add('rv-open'); document.body.classList.add('modal-open'); }
   if (!days.length) { destroyChart('rvTrendCanvas'); return; }
 
+  // La serie se calcula UNA vez: la dibuja el dataset y de ella sale el techo del eje.
+  const serie = quantDaySeries(rows, id, days);
   makeChart('rvTrendCanvas', {
     type: 'line',
     data: {
       labels: days,
       datasets: [{
-        label: v.serie, data: quantDaySeries(rows, id, days),
+        label: v.serie, data: serie,
         borderColor: v.color, backgroundColor: v.color + '22',
         tension: .3, fill: true, pointRadius: 3, spanGaps: true, borderWidth: 2.4,
       }],
@@ -1041,9 +1043,13 @@ function openTrend(id) {
         legend: { display: false },
         tooltip: { callbacks: { title: (it) => dayLabel(days[it[0].dataIndex]), label: (c) => ` ${v.serie}: ${c.parsed.y == null ? '—' : c.parsed.y.toFixed(1) + '%'}` } },
       },
-      // Y fijo en 0–100: son porcentajes, y dejar que el eje se autoescale a un rango de
-      // 2–4 % dibujaría dientes de sierra alarmantes donde la variación es irrelevante.
-      scales: { y: { min: 0, suggestedMax: 100, ticks: { callback: (val) => val + '%' } }, x: dayXAxis(days) },
+      // El techo del eje sale de los DATOS (pctAxisMax): estas variables se mueven casi
+      // siempre entre 0 y 10 %, y el 0–100 fijo que había antes dejaba el 90 % del alto
+      // vacío y la tendencia plana. La base se queda en 0 porque el área va rellena.
+      scales: {
+        y: { min: 0, max: pctAxisMax(serie), ticks: { callback: (val) => val + '%' } },
+        x: dayXAxis(days),
+      },
     },
   });
 }

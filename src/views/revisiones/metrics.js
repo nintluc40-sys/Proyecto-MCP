@@ -87,3 +87,29 @@ export const quantDaySeries = (rows, id, days) => days.map((d) => avg(
   rows.filter((r) => getField(r, F.fecha) === d)
     .map((r) => parseNum(r, QUANT[id].keys)).filter((v) => v !== null),
 ));
+
+/**
+ * Techo del eje Y para una serie de porcentajes: el máximo real más holgura,
+ * redondeado a un paso legible.
+ *
+ * Un 0–100 fijo era el planteamiento anterior y aplanaba estas variables hasta
+ * volverlas una raya: en la práctica casi todas se mueven entre 0 y 10 %, así que el
+ * 90 % del alto del gráfico quedaba vacío y la tendencia era ilegible.
+ *
+ * El 0 SÍ se conserva como base (lo pone quien dibuja): el gráfico es de área
+ * rellena, y arrancar el eje en el mínimo de la serie exageraría cualquier
+ * oscilación —una variación de 2,0 a 2,3 % llenaría el gráfico como si fuera un
+ * derrumbe—. Ajustar sólo el techo da la resolución sin falsear la magnitud.
+ */
+export function pctAxisMax(values) {
+  const nums = (values || []).filter((v) => v !== null && v !== undefined && isFinite(v));
+  const max = nums.length ? Math.max(...nums) : 0;
+  if (!(max > 0)) return 5;                       // serie toda en 0 (o vacía): eje 0–5
+  const holgado = max * 1.25;                     // ~20 % de aire sobre el pico
+  // Paso "bonito" para que las marcas del eje caigan en números redondos.
+  const paso = holgado <= 5 ? 1 : holgado <= 20 ? 2 : holgado <= 50 ? 5 : 10;
+  const techo = Math.ceil(holgado / paso) * paso;
+  // Un porcentaje no pasa de 100, así que no se deja aire por encima… salvo que el
+  // dato mismo lo supere (hoja sucia): ahí conviene VERLO, no recortarlo.
+  return max <= 100 ? Math.min(100, techo) : techo;
+}
