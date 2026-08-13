@@ -50,6 +50,25 @@ export const PLG_KEYS = ['PLG', 'Plg', 'plg', 'PL/g', 'pl/g'];
 // Variantes de la columna PL/g (manual) de cosecha.
 export const PLGM_KEYS = ['Plg (manual)', 'PLG (manual)', 'plg (manual)', 'Plg(manual)', 'PL/g (manual)', 'pl/g (manual)'];
 
+// Columnas de la ficha de Despacho (hoja "Datos Larvicultura"). Fuente ÚNICA: las lee
+// tanto la tabla en pantalla (views/supervisor/despacho.js) como el Excel que se descarga
+// desde el KPI "Nº despachos" (views/supervisor/despachoExport.js). Compartirlas es lo que
+// garantiza que el archivo diga EXACTAMENTE lo mismo que la vista; con una copia por
+// módulo, el día que alguien añada un alias en una sola las dos empezarían a divergir en
+// silencio (el mismo problema que ya obligó a unificar `hasDispatch` con `isDespachoRow`).
+//
+// ⚠ `plgM` es a propósito más estrecho que PLGM_KEYS (le faltan 'PL/g (manual)' y
+// 'pl/g (manual)'): se conserva tal cual estaba en la vista para no alterar lo que ya
+// muestra. Ampliarlo es un cambio de comportamiento y debe decidirse aparte.
+export const DESPACHO_KEYS = {
+  densidad: ['Densidad cosechada', 'Densidad Cosechada', 'densidad cosechada'],
+  biomasa: ['Biomasa', 'biomasa'],
+  plgM: ['Plg (manual)', 'PLG (manual)', 'plg (manual)', 'Plg(manual)'],
+  cajas: ['Cajas/Tinas', 'Cajas / Tinas', 'cajas/tinas', 'Cajas-Tinas'],
+  destino: ['Destino', 'destino'],
+  piscina: ['Piscina', 'piscina'],
+};
+
 // ---------- normalización de nombres de Técnico ----------
 // Mapa de alias: clave = nombre sin tildes, minúsculas, espacios colapsados.
 // Unifica tipeos reales y formas corta/larga del mismo nombre.

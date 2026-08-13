@@ -106,7 +106,12 @@ export function buildContext(vState) {
   // que se retiró: era una pasada completa sobre `larvWin` en cada reconstrucción.
   const allMods = [...new Set(larvAll.map(gMod).filter(Boolean))].sort();
 
-  const ctx = { larvCM, tanqCM, larvWin, tanqWin, allCorridas, allMods, vState };
+  // `larvAll` se expone (no sólo `larvCM`) porque el Excel de despacho exporta un MES de
+  // producción entero, y un mes agrupa VARIAS corridas: `larvCM` ya viene recortado a la
+  // corrida activa, así que con él el archivo saldría incompleto. Es el universo que aquí
+  // ya se calculaba para `allCorridas`/`allMods`, sin coste añadido.
+  // ⚠ Array COMPARTIDO entre consumidores: tratarlo como inmutable (copiar antes de ordenar).
+  const ctx = { larvAll, larvCM, tanqCM, larvWin, tanqWin, allCorridas, allMods, vState };
   _ctxCache = { data, corrida: vState.corrida, from: store.dateFrom, to: store.dateTo, ctx };
   return ctx;
 }

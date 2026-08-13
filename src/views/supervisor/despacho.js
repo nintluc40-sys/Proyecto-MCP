@@ -6,24 +6,22 @@
    Cantidad Cosechada = última población registrada por tanque.
    ============================================================ */
 import { getters, rowsAreGrouped } from './stats.js';
-import { colorFor, breadcrumb, fmtPop, kpiGlass } from './ui.js';
+import { colorFor, breadcrumb, fmtPop, kpiGlass, bindModal } from './ui.js';
 import { esc } from '../../core/format.js';
 import { parseAnyDate } from '../../core/dates.js';
-import { getField, parseNum } from '../../core/fields.js';
+import { getField, parseNum, DESPACHO_KEYS } from '../../core/fields.js';
 import { makeChart } from '../../core/charts.js';
 import { natCmp } from '../../core/util.js';
 import { isDespachoRow } from '../../core/prodCalendar.js';
+import { toast } from '../../ui/toast.js';
+import { despachoExportModalHTML, bindDespachoExport, monthOfCorrida } from './despachoExport.js';
 
 const { gMod, gTnq, gCor, gFec, gPop } = getters;
 
-const DKEY = {
-  densidad: ['Densidad cosechada', 'Densidad Cosechada', 'densidad cosechada'],
-  biomasa: ['Biomasa', 'biomasa'],
-  plgM: ['Plg (manual)', 'PLG (manual)', 'plg (manual)', 'Plg(manual)'],
-  cajas: ['Cajas/Tinas', 'Cajas / Tinas', 'cajas/tinas', 'Cajas-Tinas'],
-  destino: ['Destino', 'destino'],
-  piscina: ['Piscina', 'piscina'],
-};
+// Los alias de columna viven en core/fields.js porque los comparte el Excel que se
+// descarga desde el KPI "Nº despachos": una copia por módulo garantizaría que algún día
+// la tabla y el archivo lean columnas distintas.
+const DKEY = DESPACHO_KEYS;
 
 const DEST_COLORS = ['#1565C0', '#2E7D32', '#E65100', '#6A1B9A', '#00838F', '#AD1457', '#F9A825', '#546E7A'];
 const NO_DEST = 'Sin destino';
@@ -96,7 +94,7 @@ export function renderDespacho(ctx, mod) {
       ${kpiGlass('📦', 'Cantidad cosechada', fmtPop(cosechadaTotal || null))}
       ${kpiGlass('⚖️', 'Biomasa total', fmtNum(biomasaTotal || null, 1))}
       ${kpiGlass('🎣', 'PL/g promedio', fmtNum(plgProm, 1))}
-      ${kpiGlass('🚛', 'Nº despachos', String(nDespachos))}
+      ${kpiGlass('🚛', 'Nº despachos', String(nDespachos), 'data-despx-open role="button" tabindex="0" title="Descargar en Excel el registro de despacho del mes"')}
       ${kpiGlass('🎯', 'Rendimiento cosecha', rendimiento === null ? '—' : fmtNum(rendimiento, 1) + '%')}
     </div>
   </div>`;
@@ -144,7 +142,17 @@ export function renderDespacho(ctx, mod) {
     <div class="card"><div class="sv-chart-title">⚖️ Biomasa por tanque/destino</div><div class="sv-chart-host"><canvas id="svDespBio"></canvas></div></div>
   </div>`;
 
-  const after = () => {
+  // Modal de descarga (se abre desde el KPI "Nº despachos"). El mes preseleccionado es el
+  // de la corrida activa; sin corrida elegida, el más reciente que haya en los datos.
+  const expRows = ctx.larvAll || ctx.larvCM;
+  const mesesDisp = [...new Set(expRows.map((r) => monthOfCorrida(gCor(r))).filter((i) => i >= 0))].sort((a, b) => a - b);
+  const mesActivo = corrida !== null && monthOfCorrida(corrida) >= 0
+    ? monthOfCorrida(corrida)
+    : (mesesDisp.length ? mesesDisp[mesesDisp.length - 1] : -1);
+  html += despachoExportModalHTML(expRows, { mIdx: mesActivo });
+
+  const after = (root) => {
+    if (root) bindDespachoExport(root, expRows, { mIdx: mesActivo, mod, bindModal, toast });
     // Destinos presentes (+ "Sin destino" para tanques sin despacho)
     const destinos = [...new Set(tanks.map((tq) => destino[tq] || NO_DEST))];
     const colorOf = (d) => d === NO_DEST ? '#b0bec5' : DEST_COLORS[destinos.filter((x) => x !== NO_DEST).indexOf(d) % DEST_COLORS.length];
