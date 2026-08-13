@@ -152,7 +152,7 @@ export function renderDespacho(ctx, mod) {
   html += despachoExportModalHTML(expRows, { mIdx: mesActivo });
 
   const after = (root) => {
-    if (root) bindDespachoExport(root, expRows, { mIdx: mesActivo, mod, bindModal, toast });
+    if (root) bindDespachoExport(root, expRows, { mod, bindModal, toast });
     // Destinos presentes (+ "Sin destino" para tanques sin despacho)
     const destinos = [...new Set(tanks.map((tq) => destino[tq] || NO_DEST))];
     const colorOf = (d) => d === NO_DEST ? '#b0bec5' : DEST_COLORS[destinos.filter((x) => x !== NO_DEST).indexOf(d) % DEST_COLORS.length];

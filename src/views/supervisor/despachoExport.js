@@ -187,11 +187,14 @@ function fillModules(overlay, rows, mIdx, preferido) {
 
 /**
  * Conecta el modal: apertura desde el KPI, selects en cascada y descarga.
+ * No recibe `mIdx`: el mes preseleccionado ya viaja en el <select> que montó
+ * `despachoExportModalHTML`, y `onOpen` lo lee de ahí — así no hay dos fuentes
+ * del mes activo que puedan discrepar.
  * @param {Element}  root     contenedor de la vista (donde vive el KPI)
  * @param {Array}    rows     universo de filas (`ctx.larvAll`)
- * @param {object}   opts     { mIdx, mod, bindModal, toast }
+ * @param {object}   opts     { mod, bindModal, toast }
  */
-export function bindDespachoExport(root, rows, { mIdx, mod, bindModal, toast }) {
+export function bindDespachoExport(root, rows, { mod, bindModal, toast }) {
   const overlay = root.querySelector('#svDespExportModal');
   if (!overlay) return null;
 
@@ -236,8 +239,11 @@ export function bindDespachoExport(root, rows, { mIdx, mod, bindModal, toast }) 
     ctrl?.close();
   });
 
-  // Estado inicial coherente aunque el usuario no toque nada.
-  fillModules(overlay, rows, mIdx, mod);
-  refresh();
+  // ⚠ NO se calcula nada al montar, a propósito. `refresh()` construye la matriz completa
+  // para saber cuántas filas anunciar, y medido sobre un universo realista (14.400 filas,
+  // un mes de 6 corridas × 10 módulos × 24 tanques) eso cuesta ~59 ms. Hacerlo aquí se lo
+  // sumaba a CADA render de la vista Despacho —incluidos los del auto-refresco— para
+  // rellenar un modal que está OCULTO. `onOpen` lo hace al abrir, que además es el momento
+  // correcto: así el recuento refleja los datos del refresco más reciente.
   return ctrl;
 }

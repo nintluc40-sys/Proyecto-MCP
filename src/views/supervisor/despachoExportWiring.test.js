@@ -38,7 +38,7 @@ function montar(rows, { mIdx = 5, mod = null } = {}) {
     mIdx, mod, bindModal, toast: (msg, kind) => toasts.push({ msg, kind }),
   });
   const q = (sel) => root.querySelector(sel);
-  return {
+  const t = {
     root, ctrl, toasts, q,
     overlay: q('#svDespExportModal'),
     kpi: q('[data-despx-open]'),
@@ -47,6 +47,10 @@ function montar(rows, { mIdx = 5, mod = null } = {}) {
     info: q('[data-despx-info]'),
     btn: q('[data-despx-download]'),
   };
+  // El cuerpo del modal se rellena al ABRIR, no al montar (montarlo costaba ~59 ms por
+  // render para un diálogo oculto). Los casos que inspeccionan su contenido abren primero.
+  t.abrir = () => { t.kpi.click(); return t; };
+  return t;
 }
 
 describe('supervisor · despacho · cableado del modal', () => {
@@ -60,15 +64,28 @@ describe('supervisor · despacho · cableado del modal', () => {
     expect(document.body.classList.contains('modal-open')).toBe(true);
   });
 
-  it('el selector de mes ofrece sólo los meses con datos, con el activo preseleccionado', () => {
+  it('al MONTAR no calcula nada: el cuerpo se rellena al abrir', () => {
+    // Guardián de rendimiento. `refresh()` construye la matriz ENTERA para anunciar el
+    // recuento: medido, ~59 ms sobre un universo realista de 14.400 filas. Hacerlo al
+    // montar se lo sumaba a cada render de la vista (incluidos los del auto-refresco)
+    // para un diálogo OCULTO. Si alguien vuelve a llamarlo aquí, este test lo caza.
     const t = montar(ROWS, { mIdx: 5 });
+    expect(t.mod.options).toHaveLength(0);        // el selector de módulos, aún vacío
+    expect(t.info.textContent).toBe('');          // y sin recuento
+    t.abrir();
+    expect(t.mod.options.length).toBeGreaterThan(0);
+    expect(t.info.textContent).toContain('fila(s)');
+  });
+
+  it('el selector de mes ofrece sólo los meses con datos, con el activo preseleccionado', () => {
+    const t = montar(ROWS, { mIdx: 5 }).abrir();
     expect([...t.mes.options].map((o) => o.value)).toEqual(['5', '6']);
     expect(t.mes.value).toBe('5');
     expect([...t.mes.options].map((o) => o.textContent)).toEqual(['Junio', 'Julio']);
   });
 
   it('los módulos son los del mes elegido, y cambiar de mes los recalcula', () => {
-    const t = montar(ROWS, { mIdx: 5 });
+    const t = montar(ROWS, { mIdx: 5 }).abrir();
     expect([...t.mod.options].map((o) => o.value)).toEqual(['', 'M01', 'M02']);
     expect(t.mod.options[0].textContent).toContain('Todos los módulos (2)');
 
@@ -83,7 +100,7 @@ describe('supervisor · despacho · cableado del modal', () => {
     // sus opciones deja `value` en '' por sí solo, así que la aserción pasaba igual sin la
     // guarda de fillModules. Lo que la guarda cambia es `selectedIndex`: sin ella queda
     // en -1 y el desplegable se PINTA VACÍO, aunque `value` mienta diciendo ''.
-    const t = montar(ROWS, { mIdx: 5 });
+    const t = montar(ROWS, { mIdx: 5 }).abrir();
     t.mod.value = 'M01';
     t.mod.dispatchEvent(new Event('change'));
     t.mes.value = '6';                       // M01 no está en el mes 6
@@ -94,7 +111,7 @@ describe('supervisor · despacho · cableado del modal', () => {
   });
 
   it('el recuento en pantalla sigue al filtro', () => {
-    const t = montar(ROWS, { mIdx: 5 });
+    const t = montar(ROWS, { mIdx: 5 }).abrir();
     expect(t.info.textContent).toContain('2 fila(s)');
     expect(t.info.textContent).toContain('todos los módulos');
     t.mod.value = 'M01';
@@ -104,13 +121,13 @@ describe('supervisor · despacho · cableado del modal', () => {
   });
 
   it('sin registros el botón queda inhabilitado y lo dice', () => {
-    const t = montar([], { mIdx: 5 });
+    const t = montar([], { mIdx: 5 }).abrir();
     expect(t.btn.disabled).toBe(true);
     expect(t.info.textContent).toContain('Sin registros');
   });
 
   it('descarga: llama a SheetJS con la matriz y el nombre esperados', () => {
-    const t = montar(ROWS, { mIdx: 5 });
+    const t = montar(ROWS, { mIdx: 5 }).abrir();
     const writeFile = vi.fn();
     const appended = [];
     window.XLSX = {
@@ -137,7 +154,7 @@ describe('supervisor · despacho · cableado del modal', () => {
   });
 
   it('«Todos los módulos» exporta el mes entero y lo marca en el nombre', () => {
-    const t = montar(ROWS, { mIdx: 5 });
+    const t = montar(ROWS, { mIdx: 5 }).abrir();
     const writeFile = vi.fn();
     window.XLSX = {
       utils: { book_new: () => ({}), aoa_to_sheet: (aoa) => ({ aoa }), book_append_sheet: () => {} },
@@ -148,7 +165,7 @@ describe('supervisor · despacho · cableado del modal', () => {
   });
 
   it('sin SheetJS avisa en vez de romperse', () => {
-    const t = montar(ROWS, { mIdx: 5 });
+    const t = montar(ROWS, { mIdx: 5 }).abrir();
     expect(() => t.btn.click()).not.toThrow();
     expect(t.toasts.some((x) => x.kind === 'err' && /SheetJS/.test(x.msg))).toBe(true);
   });
