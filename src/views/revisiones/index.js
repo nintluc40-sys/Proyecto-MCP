@@ -11,13 +11,17 @@
    Bitácora desplegable + ventana de Historial de comentarios.
    ============================================================ */
 import { store } from '../../core/store.js';
-import { destroyAllCharts, makeChart } from '../../core/charts.js';
+import { destroyAllCharts, destroyChart, makeChart } from '../../core/charts.js';
 import { getField, parseNum, F, obsFindings } from '../../core/fields.js';
 import { parseAnyDate, fmtShort, dayNum, rangeLabel } from '../../core/dates.js';
 import { esc } from '../../core/format.js';
 import { avg, fmtPct } from '../../core/util.js';
 import { monthIndexOfCorrida, monthLabelAt } from '../../core/prodCalendar.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
+import {
+  QUANT, QUANT_KEYS, KPI_ORDER, CHART_SERIES, chartKeys,
+  hasChartData, quantAvg, quantDaySeries,
+} from './metrics.js';
 
 // ---------- acceso tolerante a cabeceras de Registro_Supervisión ----------
 const K = {
@@ -25,11 +29,14 @@ const K = {
   siembra:    ['Siembra', 'siembra'],
   estadio:    ['Estadío_observado', 'Estadio_observado', 'estadío_observado', 'estadio_observado', 'Estadío observado', 'Estadío', 'Estadio'],
   tipo:       ['Tipo_revisión', 'Tipo_revision', 'tipo_revisión', 'tipo_revision', 'Tipo revisión', 'Tipo de revisión'],
-  deformidad: ['Deformidad_%', 'Deformidad %', 'Deformidad_porc', 'Deformidad', 'deformidad_%', 'deformidad'],
-  atraso:     ['% Atraso', 'Atraso_%', 'Atraso %', '%Atraso', 'Atraso', 'atraso'],
+  // ⚠ Las CUANTITATIVAS porcentuales viven en ./metrics.js, que es el registro único
+  // que recorren los KPIs, los 3 gráficos por día, la tendencia, la ficha de detalle y
+  // la comparativa. Aquí sólo se re-exponen para no tocar los ~25 usos de `K.x`.
+  deformidad: QUANT_KEYS.deformidad,
+  atraso:     QUANT_KEYS.atraso,
   // Numérica (% Protusión; antes "% Hernia", renombrada en la hoja 2026-06).
   // NO incluir 'Protusión' a secas: ahora es una col. cualitativa aparte.
-  protusion:  ['% Protusión', '% Protusion', 'Protusión_%', 'Protusion_%', 'Protusión %', '%Protusión', '% Hernia', 'Hernia_%', 'Hernia %', '%Hernia'],
+  protusion:  QUANT_KEYS.protusion,
   intestino:  ['Intestino', 'intestino'],
   actividad:  ['Actividad', '% Actividad', 'actividad'],
   condicion:  ['Condición_biológica', 'Condicion_biologica', 'condición_biológica', 'condicion_biologica', 'Condición biológica', 'Condición'],
@@ -38,10 +45,14 @@ const K = {
   protusionCual: ['Protusión', 'Protusion', 'protusión', 'protusion', 'Hernia', 'hernia'],
   opacidad:   ['Opacidad', 'opacidad'],
   asimilacion:['Asimilación', 'Asimilacion', 'asimilación', 'asimilacion'],
-  semillenas: ['Semillenas (%)', 'Semillenas', '% Semillenas', 'semillenas (%)', 'semillenas'],
-  vacias:     ['Vacías (%)', 'Vacias (%)', 'Vacías', 'Vacias', '% Vacías', 'vacías (%)', 'vacias (%)'],
+  semillenas: QUANT_KEYS.semillenas,
+  vacias:     QUANT_KEYS.vacias,
   // Numérica (% No viables): columna nueva de la hoja (2026-06), tras Condición_biológica.
-  noviables:  ['% No viables', '% No Viables', 'No viables (%)', 'No Viables (%)', '%No viables', 'No viables', 'No Viables', 'no viables'],
+  noviables:  QUANT_KEYS.noviables,
+  // 2026-08, columnas nuevas del AsT (cuantitativas porcentuales).
+  flacidez:   QUANT_KEYS.flacidez,
+  necrosis:   QUANT_KEYS.necrosis,
+  disparidad: QUANT_KEYS.disparidad,
   observaciones: ['Observaciones', 'observaciones', 'Observación', 'observación'],
   accion:     ['Acción', 'Accion', 'acción', 'accion', 'Acción tomada'],
   // Comentario se dividió en matutino / vespertino (antes era una sola col. "Comentario").
@@ -194,38 +205,20 @@ function openDrillCalidad(label, keys, rows) {
   if (ov) { ov.classList.add('rv-open'); document.body.classList.add('modal-open'); }
 }
 
-/** Alimentación: Semillenas/Vacías (%) en barras agrupadas por día (solo días con dato). */
-function drawAlim(rows) {
-  if (!document.getElementById('rvAlim')) return;
-  const days = daysWithData(rows, [K.semillenas, K.vacias]); if (!days.length) return;
-  const ser = (keys) => days.map((d) => avg(rows.filter((r) => gFec(r) === d).map((r) => parseNum(r, keys)).filter((v) => v !== null)));
-  makeChart('rvAlim', {
+/** Barras agrupadas por día de un grupo de variables cuantitativas (solo días con dato).
+ *  Sustituye a las copias que había para Alimentación y Morfología, y de paso da gratis
+ *  el grupo Condición: el grupo y su ORDEN salen de CHART_SERIES, y ese orden decide el
+ *  color de CAT3, así que los dos gráficos previos salen idénticos a como estaban. */
+function drawQuantBars(canvasId, chart, rows) {
+  if (!document.getElementById(canvasId)) return;
+  const days = daysWithData(rows, chartKeys(chart)); if (!days.length) return;
+  makeChart(canvasId, {
     type: 'bar',
-    data: { labels: days, datasets: [
-      { label: 'Semillenas %', data: ser(K.semillenas), backgroundColor: CAT3[0] + 'cc', borderColor: CAT3[0], borderWidth: 1, borderRadius: 3 },
-      { label: 'Vacías %', data: ser(K.vacias), backgroundColor: CAT3[1] + 'cc', borderColor: CAT3[1], borderWidth: 1, borderRadius: 3 },
-    ] },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      scales: { y: { beginAtZero: true, ticks: { callback: (v) => v + '%' } }, x: dayXAxis(days) },
-      plugins: { legend: { position: 'bottom', labels: { boxWidth: 11, font: { size: 11 } } }, tooltip: { callbacks: { title: (it) => dayLabel(days[it[0].dataIndex]), label: (c) => ` ${c.dataset.label}: ${c.parsed.y == null ? '—' : c.parsed.y.toFixed(1) + '%'}` } } },
-    },
-  });
-}
-
-/** Morfología cuantitativa: % Atraso/Protusión/Deformidad/No viables en barras por día (solo días con dato). */
-function drawMorfNum(rows) {
-  if (!document.getElementById('rvMorfNum')) return;
-  const days = daysWithData(rows, [K.atraso, K.protusion, K.deformidad, K.noviables]); if (!days.length) return;
-  const ser = (keys) => days.map((d) => avg(rows.filter((r) => gFec(r) === d).map((r) => parseNum(r, keys)).filter((v) => v !== null)));
-  makeChart('rvMorfNum', {
-    type: 'bar',
-    data: { labels: days, datasets: [
-      { label: '% Atraso', data: ser(K.atraso), backgroundColor: CAT3[0] + 'cc', borderColor: CAT3[0], borderWidth: 1, borderRadius: 3 },
-      { label: '% Protusión', data: ser(K.protusion), backgroundColor: CAT3[1] + 'cc', borderColor: CAT3[1], borderWidth: 1, borderRadius: 3 },
-      { label: '% Deformidad', data: ser(K.deformidad), backgroundColor: CAT3[2] + 'cc', borderColor: CAT3[2], borderWidth: 1, borderRadius: 3 },
-      { label: '% No viables', data: ser(K.noviables), backgroundColor: CAT3[3] + 'cc', borderColor: CAT3[3], borderWidth: 1, borderRadius: 3 },
-    ] },
+    data: { labels: days, datasets: CHART_SERIES[chart].map((id, i) => ({
+      label: QUANT[id].serie,
+      data: quantDaySeries(rows, id, days),
+      backgroundColor: CAT3[i] + 'cc', borderColor: CAT3[i], borderWidth: 1, borderRadius: 3,
+    })) },
     options: {
       responsive: true, maintainAspectRatio: false,
       scales: { y: { beginAtZero: true, ticks: { callback: (v) => v + '%' } }, x: dayXAxis(days) },
@@ -335,12 +328,11 @@ export function revisionesView(root) {
   // KPIs
   const modsRevisados = new Set(rows.map(gMod).filter(Boolean)).size;
   const supsActivos = new Set(rows.map(gSup).filter(Boolean)).size;
-  const deformProm = avg(rows.map((r) => parseNum(r, K.deformidad)).filter((v) => v !== null));
-  const atrasoProm = avg(rows.map((r) => parseNum(r, K.atraso)).filter((v) => v !== null));
-  const protusionProm = avg(rows.map((r) => parseNum(r, K.protusion)).filter((v) => v !== null));
-  const noviablesProm = avg(rows.map((r) => parseNum(r, K.noviables)).filter((v) => v !== null));
-  const vacProm = avg(rows.map((r) => parseNum(r, K.vacias)).filter((v) => v !== null));
-  const semiProm = avg(rows.map((r) => parseNum(r, K.semillenas)).filter((v) => v !== null));
+  // Promedios de las 9 cuantitativas sobre `rows` — que ya viene filtrado por mes,
+  // corrida, módulo y siembra (rowMatchesFilters), así que los KPIs son sensibles a
+  // los filtros por construcción. Los gráficos y la tendencia reciben el MISMO `rows`.
+  const proms = {};
+  KPI_ORDER.forEach((id) => { proms[id] = quantAvg(rows, id); });
   const historialN = rows.filter(hasComment).length;
   const totalFindings = rows.reduce((s, r) => s + obsFindings(r).length, 0);
   const findingsRate = rows.length ? totalFindings / rows.length : 0;
@@ -368,12 +360,15 @@ export function revisionesView(root) {
       ${kpi('📋', 'Revisiones', rows.length)}
       ${kpi('👤', 'Supervisores', supsActivos)}
       ${kpi('🏭', 'Módulos revisados', modsRevisados)}
-      ${kpi('🧬', 'Deformidad prom.', fmtPct(deformProm))}
-      ${kpi('⏳', 'Atraso prom.', fmtPct(atrasoProm))}
-      ${kpi('🩹', 'Protusión prom.', fmtPct(protusionProm))}
-      ${noviablesProm !== null ? kpi('💀', 'No viables prom.', fmtPct(noviablesProm)) : ''}
-      ${vacProm !== null ? kpi('🕳️', 'Vacías prom.', fmtPct(vacProm)) : ''}
-      ${semiProm !== null ? kpi('🥣', 'Semillenas prom.', fmtPct(semiProm)) : ''}
+      ${KPI_ORDER.map((id) => {
+    const v = QUANT[id];
+    // `optional` = se oculta si ninguna fila trae dato (patrón que ya seguían
+    // No viables/Vacías/Semillenas, y que aplica a las 3 nuevas del AsT hasta
+    // que sincronicen). Las 3 primeras se muestran siempre, como antes.
+    if (v.optional && proms[id] === null) return '';
+    return kpi(v.icon, v.kpi, fmtPct(proms[id]),
+      `data-rvtrend="${id}" title="Ver tendencia diaria de ${esc(v.corta)} con los filtros activos"`);
+  }).join('')}
       ${kpi('🔬', 'Hallazgos / revisión', findingsRate.toFixed(2))}
       <button class="rv-kpi rv-kpi-btn" data-hist-open title="Comentarios registrados — abrir historial">
         <div class="rv-kpi-label">🗂️ Historial</div>
@@ -413,20 +408,25 @@ export function revisionesView(root) {
     ${CALIDAD_VARS.length ? calidadTilesHTML(rows, CALIDAD_VARS) : `<div class="card rv-mt">${emptyMsg('Calidad')}</div>`}`;
 
   // 2) Alimentación: Semillenas/Vacías (%) por día.
-  const hasAlim = rows.some((r) => parseNum(r, K.semillenas) !== null || parseNum(r, K.vacias) !== null);
   html += `<div class="rv-section-title">🍤 Alimentación <span class="rv-chart-sub">Semillenas y Vacías (%) por día</span></div>
-    <div class="card rv-mt"><div class="rv-chart-host">${hasAlim ? '<canvas id="rvAlim"></canvas>' : emptyMsg('Alimentación')}</div></div>`;
+    <div class="card rv-mt"><div class="rv-chart-host">${hasChartData(rows, 'alim') ? '<canvas id="rvAlim"></canvas>' : emptyMsg('Alimentación')}</div></div>`;
 
   // 3) Morfología: cuantitativo (% por día) + cualitativo (severidad leve/acentuada).
-  const hasMorfNum = rows.some((r) => parseNum(r, K.atraso) !== null || parseNum(r, K.protusion) !== null || parseNum(r, K.deformidad) !== null || parseNum(r, K.noviables) !== null);
   const MORF_CUAL = [['Opacidad', K.opacidad], ['Protusión', K.protusionCual]].filter(([, keys]) => rows.some((r) => g(r, keys)));
   html += `<div class="rv-section-title">🔬 Morfología</div>
     <div class="rv-chart-grid">
       <div class="card"><div class="rv-chart-title">Cuantitativo <span class="rv-chart-sub">% Atraso / Protusión / Deformidad / No viables por día</span></div>
-        <div class="rv-chart-host">${hasMorfNum ? '<canvas id="rvMorfNum"></canvas>' : emptyMsg('Morfología (%)')}</div></div>
+        <div class="rv-chart-host">${hasChartData(rows, 'morf') ? '<canvas id="rvMorfNum"></canvas>' : emptyMsg('Morfología (%)')}</div></div>
       <div class="card"><div class="rv-chart-title">Cualitativo <span class="rv-chart-sub">severidad (🟡 leve · 🔴 acentuada)</span></div>
         <div class="rv-chart-host">${MORF_CUAL.length ? '<canvas id="rvMorfCual"></canvas>' : emptyMsg('Opacidad/Protusión')}</div></div>
     </div>`;
+
+  // 4) Condición: Flacidez / Necrosis / Disparidad (%) por día — columnas del AsT
+  // (2026-08). Van en su propio gráfico y no sumadas a «Cuantitativo» porque ése ya
+  // lleva 4 series y la paleta CAT3 tiene exactamente 4 colores: con 7 barras por día
+  // se aprietan y los colores empezarían a repetirse.
+  html += `<div class="rv-section-title">🫠 Condición <span class="rv-chart-sub">${CHART_SERIES.cond.map((id) => QUANT[id].corta).join(' / ')} (%) por día</span></div>
+    <div class="card rv-mt"><div class="rv-chart-host">${hasChartData(rows, 'cond') ? '<canvas id="rvCond"></canvas>' : emptyMsg('Condición (Flacidez/Necrosis/Disparidad)')}</div></div>`;
 
   // Relación Hallazgo → Acción (Sankey)
   html += `<div class="rv-section-title">🔀 Hallazgo → Acción <span class="rv-chart-sub">qué acción se toma ante cada hallazgo · grosor = frecuencia</span></div>
@@ -462,12 +462,14 @@ export function revisionesView(root) {
   html += modDetailShell();
   html += drillModalShell();
   html += dayCellShell();
+  html += trendModalShell();
 
   root.innerHTML = html;
 
   // ── Render de gráficos ──
-  drawAlim(rows);
-  drawMorfNum(rows);
+  drawQuantBars('rvAlim', 'alim', rows);
+  drawQuantBars('rvMorfNum', 'morf', rows);
+  drawQuantBars('rvCond', 'cond', rows);
   drawMorfCual(rows, MORF_CUAL);
   if (!phase2) { drawBullet(rows, supRows); drawRateLine(rows); }
 
@@ -715,8 +717,6 @@ function periodCompare(rows, days) {
   const prev = rows.filter((r) => inR(r, prevStart, prevEnd));
   const findings = (rs) => rs.reduce((s, r) => s + obsFindings(r).length, 0);
   const actions = (rs) => rs.reduce((s, r) => s + splitMulti(g(r, K.accion)).length, 0);
-  const deform = (rs) => avg(rs.map((r) => parseNum(r, K.deformidad)).filter((v) => v !== null));
-  const vacias = (rs) => avg(rs.map((r) => parseNum(r, K.vacias)).filter((v) => v !== null));
   const intT = (v) => String(v);
   const pctT = (v) => (v === null ? '—' : v.toFixed(1) + '%');
   // Si la ventana previa NO tiene NINGUNA revisión (p.ej. arranca antes del 1.er
@@ -729,12 +729,17 @@ function periodCompare(rows, days) {
     { label: 'Revisiones', cur: cur.length, prev: hasPrev ? prev.length : null, goodUp: true, fmt: intT },
     { label: 'Hallazgos', cur: findings(cur), prev: hasPrev ? findings(prev) : null, goodUp: false, fmt: intT },
     { label: 'Acciones', cur: actions(cur), prev: hasPrev ? actions(prev) : null, goodUp: false, fmt: intT },
-    { label: 'Deformidad prom.', cur: deform(cur), prev: pv(deform), goodUp: false, fmt: pctT },
   ];
-  // Vacías sólo si la columna nueva tiene datos en la ventana comparada.
-  if (vacias(cur) !== null || pv(vacias) !== null) {
-    metrics.push({ label: 'Vacías prom.', cur: vacias(cur), prev: pv(vacias), goodUp: false, fmt: pctT });
-  }
+  // Las cuantitativas recorren el registro, en el mismo orden que los KPIs. Deformidad
+  // se muestra siempre (era el comportamiento previo); las demás sólo si la columna trae
+  // datos en alguna de las dos ventanas comparadas — si no, un «—» vs «—» no informa.
+  KPI_ORDER.forEach((id) => {
+    const v = QUANT[id];
+    const fn = (rs) => quantAvg(rs, id);
+    const curV = fn(cur), prevV = pv(fn);
+    if (v.optional && curV === null && prevV === null) return;
+    metrics.push({ label: v.kpi, cur: curV, prev: prevV, goodUp: false, fmt: pctT });
+  });
   return { label: `últimos ${days} d vs. ${days} d previos`, metrics };
 }
 
@@ -898,12 +903,7 @@ function revisionCardHTML(r) {
         <span class="rv-daycell-rev-meta">${dateOf(r)}${gCor(r) ? ' · C' + esc(gCor(r)) : ''}${g(r, K.estadio) ? ' · 🦐 ' + esc(g(r, K.estadio)) : ''}${g(r, K.tipo) ? ' · ' + esc(g(r, K.tipo)) : ''}</span>
       </div>
       <div class="rv-daycell-grid">
-        ${cellM('Deformidad', pc(K.deformidad))}
-        ${cellM('% Atraso', pc(K.atraso))}
-        ${cellM('% Protusión', pc(K.protusion))}
-        ${cellM('% No viables', pc(K.noviables))}
-        ${cellM('Semillenas', pc(K.semillenas))}
-        ${cellM('Vacías', pc(K.vacias))}
+        ${KPI_ORDER.map((id) => cellM(QUANT[id].corta, pc(QUANT[id].keys))).join('')}
         ${cellM('Protusión (cual.)', qc(K.protusionCual))}
         ${cellM('Opacidad', qc(K.opacidad))}
         ${cellM('Asimilación', qc(K.asimilacion))}
@@ -972,6 +972,80 @@ function drillModalShell() {
         <div class="rv-modal-body" id="rv-drill-content"></div>
       </div>
     </div>`;
+}
+
+/* ── Tendencia diaria de una variable cuantitativa (se abre desde su KPI) ──
+   Mismo lenguaje visual que «Tendencia de PL/g (Larvia)» del Resumen Operativo:
+   línea rellena, tensión .3, sin leyenda y con el eje Y en porcentaje. */
+function trendModalShell() {
+  return `<div class="rv-modal" id="rv-trend-modal">
+      <div class="rv-modal-card">
+        <div class="rv-modal-head">
+          <span class="rv-modal-title" id="rv-trend-title">📈 Tendencia</span>
+          <button class="rv-modal-x" data-trend-close aria-label="Cerrar">✕</button>
+        </div>
+        <div class="rv-modal-body">
+          <div class="rv-drill-sub" id="rv-trend-sub"></div>
+          <div class="rv-chart-host" style="height:300px"><canvas id="rvTrendCanvas"></canvas></div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function closeTrend() {
+  const m = document.getElementById('rv-trend-modal');
+  if (m) { m.classList.remove('rv-open'); document.body.classList.remove('modal-open'); }
+}
+
+/** Abre la tendencia de `id`. Lee `getFilteredRows()`, el MISMO predicado que alimenta
+ *  los KPIs y los gráficos, así que el gráfico respeta corrida, módulo, siembra y mes. */
+function openTrend(id) {
+  const v = QUANT[id];
+  if (!v) return;
+  const rows = getFilteredRows();
+  const days = daysWithData(rows, [v.keys]);
+  const titleEl = document.getElementById('rv-trend-title');
+  const subEl = document.getElementById('rv-trend-sub');
+  if (titleEl) titleEl.innerHTML = `📈 Tendencia de <b>${esc(v.corta)}</b>`;
+  const filtros = [
+    vState.corrida ? 'corrida ' + vState.corrida : null,
+    vState.mod || null,
+    vState.siembra ? 'siembra ' + vState.siembra : null,
+  ].filter(Boolean).join(' · ');
+  const prom = quantAvg(rows, id);
+  if (subEl) {
+    subEl.textContent = days.length
+      ? `Promedio por día · ${monthLabelAt(vState.month)}${filtros ? ' · ' + filtros : ''} · ${days.length} día(s) con dato · promedio ${fmtPct(prom)}`
+      : `Sin registros de ${v.corta} con los filtros activos.`;
+  }
+
+  // ⚠ El overlay se abre ANTES de crear el gráfico: `.rv-modal` está en display:none y
+  // Chart.js mediría el canvas a 0×0, dejando el gráfico invisible hasta un resize.
+  const m = document.getElementById('rv-trend-modal');
+  if (m) { m.classList.add('rv-open'); document.body.classList.add('modal-open'); }
+  if (!days.length) { destroyChart('rvTrendCanvas'); return; }
+
+  makeChart('rvTrendCanvas', {
+    type: 'line',
+    data: {
+      labels: days,
+      datasets: [{
+        label: v.serie, data: quantDaySeries(rows, id, days),
+        borderColor: v.color, backgroundColor: v.color + '22',
+        tension: .3, fill: true, pointRadius: 3, spanGaps: true, borderWidth: 2.4,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { title: (it) => dayLabel(days[it[0].dataIndex]), label: (c) => ` ${v.serie}: ${c.parsed.y == null ? '—' : c.parsed.y.toFixed(1) + '%'}` } },
+      },
+      // Y fijo en 0–100: son porcentajes, y dejar que el eje se autoescale a un rango de
+      // 2–4 % dibujaría dientes de sierra alarmantes donde la variación es irrelevante.
+      scales: { y: { min: 0, suggestedMax: 100, ticks: { callback: (val) => val + '%' } }, x: dayXAxis(days) },
+    },
+  });
 }
 
 /** Detalle de un módulo (respeta los filtros activos salvo el de módulo). */
@@ -1077,11 +1151,14 @@ function histListHTML() {
 /* ============================================================
    HELPERS de presentación
    ============================================================ */
-function kpi(icon, label, value) {
-  return `<div class="rv-kpi">
-    <div class="rv-kpi-label">${icon} ${esc(label)}</div>
-    <div class="rv-kpi-value">${esc(String(value))}</div>
-  </div>`;
+/** KPI de cabecera. Con `attrs` se vuelve interactivo y sale como <button>, el mismo
+ *  patrón (y las mismas clases) que el KPI «Historial» que ya existía. */
+function kpi(icon, label, value, attrs = '') {
+  const body = `<div class="rv-kpi-label">${icon} ${esc(label)}</div>
+    <div class="rv-kpi-value">${esc(String(value))}</div>`;
+  return attrs
+    ? `<button class="rv-kpi rv-kpi-btn" ${attrs}>${body}</button>`
+    : `<div class="rv-kpi">${body}</div>`;
 }
 
 function rvSelect(dim, value, values, placeholder) {
@@ -1119,6 +1196,11 @@ function bind(root) {
     if (e.target.id === 'rv-hist-modal') { closeHist(); return; }
     if (e.target.closest('[data-hist-close]')) { closeHist(); return; }
     if (e.target.closest('[data-hist-open]')) { openHist(); return; }
+
+    // Tendencia diaria de una variable cuantitativa (KPI → gráfico).
+    if (e.target.id === 'rv-trend-modal' || e.target.closest('[data-trend-close]')) { closeTrend(); return; }
+    const tr = e.target.closest('[data-rvtrend]');
+    if (tr) { openTrend(tr.dataset.rvtrend); return; }
 
     // Sankey: seleccionar una conexión muestra el % (hallazgo → acción)
     const sk = e.target.closest('[data-sk-obs]');
