@@ -15,7 +15,7 @@ import { destroyAllCharts, destroyChart, makeChart } from '../../core/charts.js'
 import { getField, parseNum, F, obsFindings } from '../../core/fields.js';
 import { parseAnyDate, fmtShort, dayNum, rangeLabel } from '../../core/dates.js';
 import { esc } from '../../core/format.js';
-import { avg, fmtPct } from '../../core/util.js';
+import { fmtPct } from '../../core/util.js';
 import { monthIndexOfCorrida, monthLabelAt } from '../../core/prodCalendar.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import {
@@ -1069,24 +1069,23 @@ function moduleDetailHTML(mod) {
     (!vState.siembra || gSiem(r) === vState.siembra));
   if (!rows.length) return '<div class="empty-state">Sin revisiones para este módulo con los filtros actuales.</div>';
   const sups = [...new Set(rows.map(gSup).filter(Boolean))];
-  const deform = avg(rows.map((r) => parseNum(r, K.deformidad)).filter((v) => v !== null));
-  const atraso = avg(rows.map((r) => parseNum(r, K.atraso)).filter((v) => v !== null));
-  const protusion = avg(rows.map((r) => parseNum(r, K.protusion)).filter((v) => v !== null));
-  const noviables = avg(rows.map((r) => parseNum(r, K.noviables)).filter((v) => v !== null));
   const findings = obsCounts(rows).slice(0, 8);
   const actions = multiCounts(rows, K.accion).slice(0, 8);
-  const vacias = avg(rows.map((r) => parseNum(r, K.vacias)).filter((v) => v !== null));
   const comments = rows.filter(hasComment).sort((a, b) => (parseAnyDate(gFec(b)) || 0) - (parseAnyDate(gFec(a)) || 0));
   const chips = (arr) => arr.length ? arr.map(([k, c]) => `<span class="rv-det-chip">${esc(k)} <b>${c}</b></span>`).join('') : '<span class="muted">—</span>';
   return `
     <div class="rv-kpis rv-det-kpis">
       ${kpi('📋', 'Revisiones', rows.length)}
       ${kpi('👤', 'Supervisores', sups.length)}
-      ${kpi('🧬', 'Deformidad prom.', fmtPct(deform))}
-      ${kpi('⏳', 'Atraso prom.', fmtPct(atraso))}
-      ${kpi('🩹', 'Protusión prom.', fmtPct(protusion))}
-      ${noviables !== null ? kpi('💀', 'No viables prom.', fmtPct(noviables)) : ''}
-      ${vacias !== null ? kpi('🕳️', 'Vacías prom.', fmtPct(vacias)) : ''}
+      ${/* Mismo registro que los KPIs de cabecera. Antes esta lista estaba escrita a mano
+            aquí también: le faltaba «Semillenas» desde que se añadió, y se habría quedado
+            sin las 3 nuevas. NO son clicables a propósito — este bloque vive DENTRO del
+            modal de detalle de módulo, y abrir la tendencia encima daría modal sobre modal. */
+    KPI_ORDER.map((id) => {
+      const v = QUANT[id];
+      const prom = quantAvg(rows, id);
+      return (v.optional && prom === null) ? '' : kpi(v.icon, v.kpi, fmtPct(prom));
+    }).join('')}
       ${kpi('💬', 'Comentarios', comments.length)}
     </div>
     <div class="rv-det-sec">🔬 Hallazgos frecuentes</div><div class="rv-det-chips">${chips(findings)}</div>
