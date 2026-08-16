@@ -11,6 +11,7 @@ import { store } from '../../core/store.js';
 import { makeChart, destroyChart } from '../../core/charts.js';
 import { esc } from '../../core/format.js';
 import { parseAnyDate, fmtShort, yearMonthKey } from '../../core/dates.js';
+import { pearson } from '../../core/util.js';
 // Capas de datos PURAS de laboratorio (ya en el bundle base vía la vista Microbiología) para
 // la vista de Correlación marea↔laboratorio.
 import { meltRow as micMelt, rowContext as micCtx, isMicroRow } from '../microbiologia/data.js';
@@ -415,14 +416,12 @@ const CORR_FLAG_R = 0.6;
 const CORR_FLAG_N = 10;
 let _corr = null;      // { params, cell } de la vista Correlación (para el scatter post-render)
 
-export function pearson(pairs) {
-  const n = pairs.length; if (n < 2) return null;
-  let sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
-  pairs.forEach(([x, y]) => { sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y; });
-  const dx = n * sxx - sx * sx, dy = n * syy - sy * sy;
-  if (dx <= 0 || dy <= 0) return null;
-  return (n * sxy - sx * sy) / Math.sqrt(dx * dy);
-}
+// Pearson vive ahora en core/util.js: lo compartían este módulo y compareTanks.js con dos
+// fórmulas equivalentes pero distintas. Se re-exporta para no cambiar la superficie de este
+// archivo (`spearman` y `corrMatrix` lo usan aquí abajo, y el test lo importa de aquí).
+// ⚠ Import + export por separado a propósito: `export { pearson } from …` re-exportaría
+// SIN crear el binding local, y `spearman` dejaría de verlo.
+export { pearson };
 /** Rangos 1..n con rango PROMEDIO en los empates (base de Spearman). */
 function ranks(vals) {
   const n = vals.length;

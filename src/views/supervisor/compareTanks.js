@@ -15,7 +15,7 @@ import { parseAnyDate } from '../../core/dates.js';
 import { makeChart, destroyChart } from '../../core/charts.js';
 import { iclSeries } from './params.js';
 import { esc } from '../../core/format.js';
-import { natCmp } from '../../core/util.js';
+import { natCmp, pearson } from '../../core/util.js';
 import { bindModal } from './ui.js';
 
 // src: 'larv' (Larvicultura) · 'tanque' (Control_Tanque) · 'icl' (compuesto)
@@ -129,13 +129,6 @@ function statsOf(vals) {
   return { n: a.length, mean, min: Math.min(...a), max: Math.max(...a), std, cv: mean !== 0 ? std / Math.abs(mean) * 100 : null };
 }
 
-function pearson(pairs) {
-  const n = pairs.length; if (n < 2) return null;
-  const ma = pairs.reduce((s, p) => s + p[0], 0) / n, mb = pairs.reduce((s, p) => s + p[1], 0) / n;
-  let num = 0, da = 0, db = 0;
-  pairs.forEach(([a, b]) => { const u = a - ma, v = b - mb; num += u * v; da += u * u; db += v * v; });
-  return (da > 0 && db > 0) ? num / Math.sqrt(da * db) : null;
-}
 
 /**
  * Veredicto de la comparación A vs B para una variable, CONSIDERANDO su dirección de
@@ -185,9 +178,20 @@ export function setupCompareTanks(root) {
   const cfg = overlay.querySelector('#cttConfig');
   const out = overlay.querySelector('#cttOutput');
 
+  /** Suelta el resultado anterior. Destruye las instancias de Chart ANTES de perder la
+   *  referencia a sus canvas: si se vacía el contenedor primero, los objetos quedan en el
+   *  registro apuntando a nodos ya desconectados —con sus listeners de resize— hasta el
+   *  siguiente cambio de vista. Se usa en las TRES rutas que descartan ese resultado
+   *  (generar de nuevo, abrir y cerrar); antes sólo lo hacía `generate`. */
+  const clearOutput = () => {
+    out.querySelectorAll('canvas').forEach((c) => destroyChart(c));
+    out.innerHTML = '';
+  };
+
   bindModal(root, overlay, {
     openSel: '[data-ctt-open]', closeSel: '[data-ctt-close]',
-    onOpen: () => { renderConfig(); out.innerHTML = ''; },
+    onOpen: () => { renderConfig(); clearOutput(); },
+    onClose: clearOutput,
   });
 
   // `withAll` = anteponer opción "Todos" (valor '*').
@@ -315,10 +319,7 @@ export function setupCompareTanks(root) {
 
   function generate() {
     const vdef = CMP_VARS.find((v) => v.key === ctState.var);
-    // Los canvases del resultado anterior van a ser reemplazados: destruye sus
-    // instancias de Chart ANTES de perder la referencia (evita acumular
-    // instancias huérfanas en el registro hasta el cambio de vista).
-    out.querySelectorAll('canvas').forEach((c) => destroyChart(c));
+    clearOutput(); // destruye los charts del resultado anterior (ver clearOutput)
     if (ctState.mode === 'modulo') { generateMass(vdef); return; }
     const mA = matchFor('A'), mB = matchFor('B');
     if (!mA || !mB) {

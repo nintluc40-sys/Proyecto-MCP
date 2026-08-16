@@ -32,6 +32,30 @@ export function fmtPct(v) {
   return (v === null || v === undefined || isNaN(v)) ? '—' : v.toFixed(1) + '%';
 }
 
+/** Coeficiente de correlación de Pearson sobre pares [x, y]. DEFINICIÓN ÚNICA.
+ *
+ *  Vivían dos copias equivalentes —`views/supervisor/mareas.js` (correlación marea ↔
+ *  laboratorio) y `views/supervisor/compareTanks.js` (comparativa A vs B)—, escritas con
+ *  fórmulas distintas: una por sumas de cuadrados y otra por desviaciones respecto a la
+ *  media. Daban el mismo número, así que no había defecto, pero es el patrón que en este
+ *  proyecto ya salió caro dos veces (las dos `normTrovan` que sí divergían y las cuatro
+ *  copias de la banda del WQI). Se conserva la forma por DESVIACIONES, numéricamente más
+ *  estable: restar la media antes de acumular evita la cancelación catastrófica que sufre
+ *  `n·Σxy − Σx·Σy` cuando los valores son grandes y su varianza pequeña.
+ *
+ *  Devuelve null con menos de 2 pares o si alguna de las series no tiene varianza
+ *  (una recta horizontal no correlaciona con nada: el denominador sería 0).
+ */
+export function pearson(pairs) {
+  const n = pairs.length;
+  if (n < 2) return null;
+  const ma = pairs.reduce((s, p) => s + p[0], 0) / n;
+  const mb = pairs.reduce((s, p) => s + p[1], 0) / n;
+  let num = 0, da = 0, db = 0;
+  pairs.forEach(([a, b]) => { const u = a - ma, v = b - mb; num += u * v; da += u * u; db += v * v; });
+  return (da > 0 && db > 0) ? num / Math.sqrt(da * db) : null;
+}
+
 /** Claves que NUNCA deben usarse como nombre al fusionar datos externos en un objeto.
  *  `JSON.parse` crea "__proto__" como propiedad PROPIA (no invoca el setter), pero la
  *  ASIGNACIÓN posterior `destino[k] = …` SÍ lo invoca y cambia el prototipo del destino.
