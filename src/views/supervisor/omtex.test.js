@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { store } from '../../core/store.js';
 import { buildContext } from './stats.js';
-import { renderOmTex, lotBrand } from './omtex.js';
+import { renderOmTex, lotBrand, omtexTie } from './omtex.js';
 
 const row = (o) => ({ _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '573', ...o });
 
@@ -175,5 +175,36 @@ describe('omtex · tabla Δ (puntos porcentuales vs % relativo)', () => {
     expect(html).toContain('+3.0 p.p.');
     // El Δ relativo de la columna contigua sigue siendo un % de verdad.
     expect(html).toContain('150.0%');
+  });
+});
+
+/* ============================================================
+   Empate al nivel de detalle que se MUESTRA. El corte era |t−o| < 1e-9 mientras la tabla
+   redondea a un decimal: con Supervivencia 70,04 % vs 70,01 % las dos columnas decían
+   «70,0 %», el Δ decía «+0,0 p.p.» y el veredicto coronaba igualmente a una marca,
+   sumándole un voto al 🏆 que decide proveedor.
+   ============================================================ */
+describe('omtexTie · empate por el valor mostrado', () => {
+  const sv = { key: 'sv', dir: 'up', fmt: (v) => (v == null ? '—' : v.toFixed(1) + '%') };
+  const plg = { key: 'plg', dir: 'down', fmt: (v) => (v == null ? '—' : v.toFixed(1)) };
+  const pop = { key: 'pop', dir: 'up', fmt: (v) => (v == null ? '—' : String(Math.round(v))) };
+
+  it('empata cuando ambas columnas muestran lo mismo', () => {
+    expect(omtexTie(sv, 70.04, 70.01)).toBe(true);   // ambas «70.0%»
+    expect(omtexTie(plg, 12.31, 12.34)).toBe(true);  // ambas «12.3»
+    expect(omtexTie(pop, 1000000.4, 1000000.1)).toBe(true);
+  });
+
+  it('NO empata cuando el valor mostrado difiere', () => {
+    expect(omtexTie(sv, 70.04, 70.06)).toBe(false);  // «70.0%» vs «70.1%»
+    expect(omtexTie(sv, 70, 71)).toBe(false);
+    expect(omtexTie(plg, 12.3, 12.4)).toBe(false);
+  });
+
+  it('valores idénticos empatan y los ausentes NO empatan (sin dato ≠ empate)', () => {
+    expect(omtexTie(sv, 70, 70)).toBe(true);
+    expect(omtexTie(sv, null, 70)).toBe(false);
+    expect(omtexTie(sv, 70, undefined)).toBe(false);
+    expect(omtexTie(sv, null, null)).toBe(false);
   });
 });

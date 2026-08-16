@@ -92,6 +92,24 @@ const VARS = [
   { key: 'incr', label: 'Incremento (mg/d)',  icon: '⚖️', dir: 'up',   fmt: (v) => (v == null ? '—' : v.toFixed(3)),   trend: 'incr' },
 ];
 
+/** ¿Las dos marcas quedan EMPATADAS en esta variable, al nivel de detalle que se muestra?
+ *
+ *  Se compara el valor FORMATEADO, no el crudo. Antes el corte era `|t − o| < 1e-9`, es
+ *  decir igualdad prácticamente exacta, mientras la tabla redondea a un decimal: con
+ *  Supervivencia 70,04 % vs 70,01 % las dos columnas decían «70,0 %», el Δ decía
+ *  «+0,0 p.p.» y aun así el veredicto coronaba a una marca y le sumaba un voto al 🏆.
+ *  Tres celdas afirmando que son iguales y un ganador al lado.
+ *
+ *  Es el mismo criterio que ya usa la otra comparativa del sistema —«empate técnico si
+ *  las medias redondeadas a los decimales de la variable coinciden», compareTanks.js— de
+ *  modo que las dos dejan de responder distinto a la misma pregunta.
+ */
+export function omtexTie(vdef, a, b) {
+  if (a === null || a === undefined || b === null || b === undefined) return false;
+  if (Math.abs(a - b) < 1e-9) return true;      // idénticos de verdad
+  return vdef.fmt(a) === vdef.fmt(b);           // o indistinguibles en pantalla
+}
+
 const mean = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
 const avgOf = (list, key) => mean(list.map((t) => t[key]).filter((v) => v !== null && v !== undefined));
 const byDateAsc = (a, b) => (parseAnyDate(getField(a, F.fecha)) || 0) - (parseAnyDate(getField(b, F.fecha)) || 0);
@@ -392,7 +410,9 @@ function deltaTableHTML(agg) {
       dTxt = v.pct ? `${sign}${Math.abs(diff).toFixed(1)} p.p.` : sign + v.fmt(Math.abs(diff));
       dPct = o !== 0 ? ((diff / Math.abs(o)) * 100).toFixed(1) + '%' : '—';
       const texBetter = v.dir === 'up' ? diff > 0 : diff < 0;
-      cls = Math.abs(diff) < 1e-9 ? '' : (texBetter ? 'omtex-tex' : 'omtex-om');
+      // Mismo criterio de empate que el veredicto: si ambas columnas muestran el mismo
+      // valor, la fila no se colorea a favor de nadie (ver omtexTie).
+      cls = omtexTie(v, t, o) ? '' : (texBetter ? 'omtex-tex' : 'omtex-om');
     }
     return `<tr>
       <td><b>${v.icon} ${esc(v.label)}</b></td>
@@ -425,7 +445,7 @@ function verdictHTML(agg, uncShare = 0) {
       noData++;
       return `<span class="omtex-badge nodata">${v.icon} ${esc(v.label)}: sin dato</span>`;
     }
-    if (Math.abs(t - o) < 1e-9) { ties++; return `<span class="omtex-badge tie">${v.icon} ${esc(v.label)}: empate</span>`; }
+    if (omtexTie(v, t, o)) { ties++; return `<span class="omtex-badge tie">${v.icon} ${esc(v.label)}: empate</span>`; }
     const texBetter = v.dir === 'up' ? t > o : t < o;
     if (texBetter) texWins++; else omWins++;
     const w = texBetter ? 'TEX' : 'OM';
@@ -445,9 +465,20 @@ function verdictHTML(agg, uncShare = 0) {
   const nota = noData
     ? `<div class="omtex-verdict-note">${noData} variable${noData === 1 ? '' : 's'} sin dato en alguna de las dos marcas — no cuenta${noData === 1 ? '' : 'n'} para el veredicto.</div>`
     : '';
+  // Qué ES este veredicto, dicho en la pantalla. Es un RECUENTO de variables ganadas, con
+  // el mismo peso cada una y sin mirar la magnitud de las diferencias; además, dos pares
+  // de las seis miden hechos relacionados (Supervivencia se DERIVA de Población, y PL/g e
+  // Incremento son ambas de crecimiento), así que un mismo hecho puede aportar dos votos.
+  // No se cambia el cálculo —ponderar exigiría unos pesos que hoy nadie ha medido— pero sí
+  // se declara, con el mismo criterio de honestidad que mareas.js aplica al advertir que
+  // su cribado de correlaciones NO es una prueba de significancia.
+  const metodo = (!abstain && comparables)
+    ? `<div class="omtex-verdict-note">Recuento de variables ganadas: todas pesan igual y no se mide la magnitud de la diferencia. Población y Supervivencia van ligadas entre sí, como PL/g e Incremento, así que un mismo hecho puede contar dos veces. Úsalo como orientación, no como prueba estadística.</div>`
+    : '';
   return `<div class="omtex-verdict">
     <div class="omtex-verdict-head">${verdict}</div>
     ${nota}
+    ${metodo}
     <div class="omtex-badges">${badges}</div>
   </div>`;
 }
