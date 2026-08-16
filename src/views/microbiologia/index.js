@@ -2796,6 +2796,12 @@ function bind(root) {
         vState.depto = null; vState.formato = null; vState.dims = {}; vState.petriDay = null;
       } else if (tgt === 'calidad') {
         vState.calMonth = nearestMonth(vState.genMonth, monthsOfRows(calAguaRows(), calCtx));
+        // Y se limpian sus filtros en cascada, igual que hace la rama de arriba con los de
+        // Bacteriología. Faltaban: al saltar desde el panorama a OTRO mes, un `calDepto`
+        // elegido antes seguía aplicándose y podía dejar el panel vacío sin que nada en
+        // pantalla lo explicara — el filtro que lo vacía no es el que el usuario acaba de
+        // tocar. Entrar a Calidad por su pestaña sigue conservándolos, como hasta ahora.
+        vState.calDepto = null; vState.calFormato = null; vState.calDims = {};
       }
       microbiologiaView(root);
       return;
