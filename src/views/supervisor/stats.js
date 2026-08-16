@@ -10,7 +10,7 @@ import {
   getField, parseNum, F, isTanqueRow, isLarviculturaRow, hasValidCorrida, hasValidModulo, getLatestStage, dedupeTecnicos, PLG_KEYS, PLGM_KEYS,
 } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
-import { avg } from '../../core/util.js';
+import { avg, natCmp } from '../../core/util.js';
 
 const gMod = (r) => getField(r, F.modulo);
 const gTnq = (r) => getField(r, F.tanque);
@@ -53,6 +53,11 @@ const inGlobalDate = (r) => {
   const { dateFrom, dateTo } = store;
   if (!dateFrom && !dateTo) return true;
   const d = parseAnyDate(gFec(r));
+  // Sin fecha utilizable la fila SE CONSERVA, en cualquier ventana. Es deliberado:
+  // descartarla la haría desaparecer de todos los recuentos en silencio, que es peor
+  // que mostrarla de más. La contrapartida —y conviene tenerla presente al leer un
+  // conteo— es que una fila con la fecha mal tecleada aparece en TODAS las ventanas
+  // a la vez, incluidos los presets de 7 y 30 días.
   if (!d || isNaN(d)) return true;
   if (dateFrom && d < dateFrom) return false;
   if (dateTo && d > dateTo) return false;
@@ -82,8 +87,11 @@ export function buildContext(vState) {
   const larvAll = data.filter((r) => isLarviculturaRow(r) && hasValidCorrida(r) && hasValidModulo(r));
   const tanqAll = data.filter((r) => isTanqueRow(r));
 
-  const allCorridas = [...new Set(larvAll.map(gCor).filter(Boolean))].sort();
-  if (vState.corrida && !allCorridas.includes(vState.corrida)) vState.corrida = null;
+  // Set local: sólo sirve para descartar una corrida seleccionada que ya no exista en
+  // los datos. NO se expone en el ctx —nadie la leía, igual que le pasó a `pairs`— y por
+  // eso tampoco necesita orden: `has` es insensible a él.
+  const corridasPresentes = new Set(larvAll.map(gCor).filter(Boolean));
+  if (vState.corrida && !corridasPresentes.has(vState.corrida)) vState.corrida = null;
 
   const cmFilter = (r) => (!vState.corrida || gCor(r) === vState.corrida);
 
@@ -104,14 +112,22 @@ export function buildContext(vState) {
   // Set y su sort). Nadie la consumía —la Vista Ejecutiva arma la suya desde el calendario
   // de producción— y al dejar de derivar `allMods` de ella quedó sin ningún lector, así
   // que se retiró: era una pasada completa sobre `larvWin` en cada reconstrucción.
-  const allMods = [...new Set(larvAll.map(gMod).filter(Boolean))].sort();
+  //
+  // El orden se fija con `natCmp` y no con el `.sort()` por defecto: como el color sale
+  // del ÍNDICE, el criterio de orden es parte de esa identidad. El orden lexicográfico
+  // sólo acierta mientras todos los módulos lleven el mismo nº de dígitos (hoy CIO,
+  // M01…M10); en cuanto apareciera un "M9" sin cero se colaría entre "M10" y "M2" y
+  // desplazaría el color de todos los posteriores. `natCmp` compara por el número
+  // embebido y es el mismo comparador que ya usa compareTanks para las corridas.
+  // Con los módulos actuales produce EXACTAMENTE el mismo orden: ningún color cambia.
+  const allMods = [...new Set(larvAll.map(gMod).filter(Boolean))].sort(natCmp);
 
   // `larvAll` se expone (no sólo `larvCM`) porque el Excel de despacho exporta un MES de
   // producción entero, y un mes agrupa VARIAS corridas: `larvCM` ya viene recortado a la
   // corrida activa, así que con él el archivo saldría incompleto. Es el universo que aquí
-  // ya se calculaba para `allCorridas`/`allMods`, sin coste añadido.
+  // ya se calculaba para `allMods`, sin coste añadido.
   // ⚠ Array COMPARTIDO entre consumidores: tratarlo como inmutable (copiar antes de ordenar).
-  const ctx = { larvAll, larvCM, tanqCM, larvWin, tanqWin, allCorridas, allMods, vState };
+  const ctx = { larvAll, larvCM, tanqCM, larvWin, tanqWin, allMods, vState };
   _ctxCache = { data, corrida: vState.corrida, from: store.dateFrom, to: store.dateTo, ctx };
   return ctx;
 }

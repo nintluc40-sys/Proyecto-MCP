@@ -162,3 +162,53 @@ describe('buildContext · allMods es identidad ESTABLE de color, no lista filtra
     expect(buildContext({ corrida: '574' }).allMods).toEqual(['M06', 'M07']);
   });
 });
+
+/* ============================================================
+   allMods · el ÍNDICE de este array fija el COLOR de acento del módulo en 6 sub-vistas
+   (colorFor(ctx.allMods.indexOf(mod))), así que su ORDEN es parte de la identidad
+   visual: si se desplaza, los módulos cambian de color sin que cambie ningún dato.
+   ============================================================ */
+describe('allMods · orden estable para el color de módulo', () => {
+  it('conserva el orden actual de producción (CIO, M01…M10)', () => {
+    const mods = ['M10', 'M02', 'CIO', 'M01', 'M09'];
+    store.globalData = mods.map((m) => (
+      { _SheetOrigin: 'Larvicultura', 'Módulo': m, Corrida: '585', Tanque: 'TQ1', 'Población': '1000', Fecha: '05/06/2026' }
+    ));
+    // Con los nombres reales (ceros a la izquierda) el orden es el natural y no cambia
+    // respecto al que producía el .sort() por defecto: ningún color se mueve hoy.
+    expect(buildContext({}).allMods).toEqual(['CIO', 'M01', 'M02', 'M09', 'M10']);
+  });
+
+  it('un módulo SIN cero a la izquierda no se cuela entre M10 y M02', () => {
+    // Éste es el caso que el .sort() lexicográfico ordenaba mal ('M1','M10','M2'),
+    // desplazando el color de todos los módulos posteriores.
+    store.globalData = ['M10', 'M2', 'M1'].map((m) => (
+      { _SheetOrigin: 'Larvicultura', 'Módulo': m, Corrida: '585', Tanque: 'TQ1', 'Población': '1000', Fecha: '05/06/2026' }
+    ));
+    expect(buildContext({}).allMods).toEqual(['M1', 'M2', 'M10']);
+  });
+});
+
+describe('el contexto no expone allCorridas (no tenía consumidores)', () => {
+  it('buildContext sigue descartando una corrida ausente de los datos', () => {
+    store.globalData = [
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '585', Tanque: 'TQ1', 'Población': '1000', Fecha: '05/06/2026' },
+    ];
+    const vState = { corrida: '999' };          // corrida que ya no existe
+    const ctx = buildContext(vState);
+    expect(vState.corrida).toBeNull();           // se descarta, que es lo que importaba
+    expect(ctx.allCorridas).toBeUndefined();     // y deja de viajar en el contexto
+    expect(ctx.larvCM.length).toBe(1);           // sin corrida fijada, no recorta nada
+  });
+
+  it('una corrida SÍ presente se conserva y recorta larvCM', () => {
+    store.globalData = [
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '585', Tanque: 'TQ1', 'Población': '1000', Fecha: '05/06/2026' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '586', Tanque: 'TQ1', 'Población': '900', Fecha: '06/06/2026' },
+    ];
+    const vState = { corrida: '586' };
+    const ctx = buildContext(vState);
+    expect(vState.corrida).toBe('586');
+    expect(ctx.larvCM.length).toBe(1);
+  });
+});
