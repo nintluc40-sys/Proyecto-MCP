@@ -60,6 +60,46 @@ describe('«Larvicultura · Despacho» · clasificación', () => {
   });
 });
 
+/* ============================================================
+   Los otros formatos que la ficha ya define y el port no recibía. Se comprobó etiqueta a
+   etiqueta contra `MIC_FORMATS` de public/registros/engine.js: de sus 20 nombres, 3 no
+   llegaban bien al tablero. Los tres caían en una regla genérica que se les parecía.
+   ============================================================ */
+describe('formatos de la ficha que caían en una regla genérica', () => {
+  it('«Maduración · Hisopado» no es un hisopado de planta', () => {
+    // Caía en 'hisopados' → departamento «Otros» y umbrales `ambiental`, cuando la ficha le
+    // da área propia con umbrales ~10× más altos (C. Amarillas Leve ≥250 vs ≥25).
+    expect(classifyFormato('Maduración · Hisopado')).toBe('mad-hisopado');
+    expect(classifyFormato('maduracion hisopado')).toBe('mad-hisopado');
+    expect(deptoOfFormato('mad-hisopado')).toBe('Maduración');
+    expect(areaForFormat('mad-hisopado', '')).toBe('mad-hisopado');
+    // Y los hisopados de planta siguen donde estaban.
+    expect(classifyFormato('Hisopados')).toBe('hisopados');
+    expect(classifyFormato('Algas Hisopado')).toBe('algas');
+  });
+
+  it('«Agua de mar y Reservorios» (nombre nuevo) no es un reservorio de Larvicultura', () => {
+    // La ficha renombró «Agua Limpia y Mar»; con el nombre nuevo, la regla de "reservorio"
+    // se disparaba antes y lo mandaba a Larvicultura con umbrales 10× más laxos.
+    expect(classifyFormato('Agua de mar y Reservorios')).toBe('agua-limpia-mar');
+    expect(deptoOfFormato('agua-limpia-mar')).toBe('Maduración');
+    // El nombre viejo y los reservorios de verdad siguen resolviéndose igual.
+    expect(classifyFormato('Agua Limpia y Mar')).toBe('agua-limpia-mar');
+    expect(classifyFormato('Larvicultura · Reservorios')).toBe('reservorios');
+    expect(deptoOfFormato('reservorios')).toBe('Larvicultura');
+  });
+
+  it('«Larvicultura · EM» queda catalogado, y sin semaforizar conteos que no mide', () => {
+    expect(classifyFormato('Larvicultura · EM')).toBe('larv-em');
+    expect(deptoOfFormato('larv-em')).toBe('Larvicultura');
+    // Sus parámetros (`cba`/`clev`) no están en PATHOGENS y su área no define umbrales: si
+    // alguna vez llegara un conteo de vibrios en este formato, NO debe recibir nivel de un
+    // área vecina. Antes caía en el defecto 'larv-animal' y sí lo recibía.
+    const row = R({ Formato: 'Larvicultura · EM', 'V.Totales UFC': '900000' });
+    expect(nivelDe(row, 'totales')).toBe('');
+  });
+});
+
 describe('«Larvicultura · Despacho» · el Nivel concuerda con el laboratorio', () => {
   // Los DOS casos reales medidos en la hoja. Con los umbrales ambientales el tablero
   // contradecía a la app de captura; con los de Larvicultura coinciden.

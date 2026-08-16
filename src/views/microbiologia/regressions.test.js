@@ -93,6 +93,64 @@ describe('migración de factores · área Algas', () => {
     expect(thr['larv-animal'].vamar.l).toBe(999);
     // El override obsoleto desaparece del almacenamiento y queda marcada la versión.
     expect(JSON.parse(localStorage.getItem('larv4_mic_factors')).algas).toBeUndefined();
-    expect(localStorage.getItem('larv4_mic_factors_ver')).toBe('2026-07-20-algas');
+    // El sello pasó de ser UNA cadena a la LISTA de migraciones aplicadas, para que añadir
+    // una nueva no vuelva a disparar ésta sobre ajustes que el usuario ya haya rehecho.
+    expect(JSON.parse(localStorage.getItem('larv4_mic_factors_ver'))).toContain('2026-07-20-algas');
+  });
+});
+
+describe('migración de factores · el área «mad-agua» pasó a llamarse «mad-despacho»', () => {
+  // El área que se llamaba 'mad-agua' gobernaba en realidad «Maduración · Despacho» (medido:
+  // 452 filas, frente a 24 de Maduración · Agua, que iban por 'larv-agua'). Al separarlas, un
+  // override guardado con el nombre viejo se ajustó pensando en Despacho: tiene que MOVERSE
+  // con él, no quedarse aplicándose a otro formato.
+  const instalarLS = () => {
+    const mem = new Map();
+    globalThis.localStorage = {
+      getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+      setItem: (k, v) => { mem.set(k, String(v)); },
+      removeItem: (k) => { mem.delete(k); },
+      clear: () => mem.clear(),
+    };
+    return mem;
+  };
+
+  it('mueve el override viejo a «mad-despacho», que es a quien afectaba', async () => {
+    instalarLS();
+    localStorage.setItem('larv4_mic_factors', JSON.stringify({
+      'mad-agua': { vamar: { l: 7 } },
+      'larv-animal': { vamar: { l: 999 } },
+    }));
+    vi.resetModules();
+    const thr = (await import('./data.js')).loadMicThresholds();
+    expect(thr['mad-despacho'].vamar.l).toBe(7);       // sigue rigiendo las muestras de Despacho
+    expect(thr['mad-agua'].vamar.l).toBe(1000);        // Maduración · Agua queda en su base
+    expect(thr['larv-animal'].vamar.l).toBe(999);      // lo ajustado en otra área no se toca
+    const guardado = JSON.parse(localStorage.getItem('larv4_mic_factors'));
+    expect(guardado['mad-agua']).toBeUndefined();
+    expect(guardado['mad-despacho']).toEqual({ vamar: { l: 7 } });
+  });
+
+  it('no vuelve a correr si ya se aplicó (un ajuste NUEVO de Maduración · Agua se respeta)', async () => {
+    instalarLS();
+    localStorage.setItem('larv4_mic_factors_ver', JSON.stringify(['2026-07-20-algas', '2026-08-16-mad-despacho']));
+    localStorage.setItem('larv4_mic_factors', JSON.stringify({ 'mad-agua': { vamar: { l: 42 } } }));
+    vi.resetModules();
+    const thr = (await import('./data.js')).loadMicThresholds();
+    expect(thr['mad-agua'].vamar.l).toBe(42);          // se queda donde el usuario lo puso
+    expect(thr['mad-despacho'].vamar.l).toBe(100);     // base, sin contaminar
+  });
+
+  it('el sello ANTIGUO (una sola cadena) no impide aplicar la migración nueva', async () => {
+    instalarLS();
+    localStorage.setItem('larv4_mic_factors_ver', '2026-07-20-algas'); // formato viejo, sin JSON
+    localStorage.setItem('larv4_mic_factors', JSON.stringify({
+      'mad-agua': { vamar: { l: 7 } },
+      algas: { vamar: { l: 1 } }, // ya migrada: NO debe volver a borrarse por sorpresa
+    }));
+    vi.resetModules();
+    const thr = (await import('./data.js')).loadMicThresholds();
+    expect(thr['mad-despacho'].vamar.l).toBe(7);   // la nueva SÍ corre
+    expect(thr.algas.vamar.l).toBe(1);             // la vieja NO se repite
   });
 });

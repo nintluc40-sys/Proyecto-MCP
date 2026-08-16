@@ -159,8 +159,14 @@ export function luminPresence(row) {
   return null;
 }
 
-// ── formatos (los 16 reales de las fichas de Registros) + área de umbrales ──
-// `area(tipoMuestra)` → clave de MIC_DR_BASE (réplica fiel de los rkeyFn de la ficha).
+// ── formatos de las fichas de Registros + área de umbrales ──
+// `area(tipoMuestra)` → clave de MIC_DR_BASE (réplica fiel de los `rkeyFn` de la ficha).
+// ⚠ Este bloque es un PORT de `MIC_FORMATS` de public/registros/engine.js: cuando la ficha
+// añada o renombre un formato, hay que traerlo aquí o sus muestras caen en la regla genérica
+// que más se le parezca (así «Larvicultura · Despacho» acabó con umbrales ambientales).
+// ⚠⚠ Pero NO se porta a ciegas: el área `algas` de abajo lleva los umbrales YA ESCALADOS por
+// los factores de dilución vigentes, y ahí el motor es el que está desactualizado (medido:
+// la hoja trae Bact. Totales de Algas Mensual con factor ×20 y el motor declara ×10).
 export const MIC_FORMATS = {
   'larv-muestra':       { label: 'Larvicultura · Muestra',        area: (t) => (t === 'Agua' ? 'larv-agua' : 'larv-animal') },
   // Larvicultura · Despacho: muestra de agua o animal, igual que «Larvicultura · Muestra»,
@@ -170,16 +176,24 @@ export const MIC_FORMATS = {
   reservorios:          { label: 'Larvicultura · Reservorios',    area: () => 'larv-agua' },
   'placa-amb':          { label: 'Larvicultura · Placa ambiental', area: () => 'ambiental' },
   artemia:              { label: 'Larvicultura · Artemia',        area: () => 'artemia' },
+  // Larvicultura · EM: pH + conteo de BA y Levaduras. Sus parámetros (`cba`/`clev`) no están
+  // en el catálogo PATHOGENS, así que no aporta ningún conteo a la vista; se da de alta para
+  // que la fila lleve su etiqueta y su departamento en vez de quedar sin clasificar.
+  'larv-em':            { label: 'Larvicultura · EM',             area: () => 'larv-em' },
   'mad-principal':      { label: 'Maduración · Principal',        area: () => 'mad-reprod' },
-  // Maduración · Agua (Bacteriología): la ficha clona los umbrales l/m/e de 'larv-agua'
-  // (solo cambia el factor ×, que aquí no se usa: el UFC ya viene multiplicado en la hoja).
-  'mad-agua':           { label: 'Maduración · Agua',             area: () => 'larv-agua' },
+  // Maduración · Agua tiene ÁREA PROPIA en la ficha, hoy con los mismos umbrales que
+  // 'larv-agua'. Apuntarla directamente a 'larv-agua' hacía que el editor ⚙️ Rangos no
+  // pudiera ajustarla sin arrastrar de paso a todo Larvicultura · Muestra.
+  'mad-agua':           { label: 'Maduración · Agua',             area: () => 'mad-agua' },
   'mad-ensayo':         { label: 'Maduración · Ensayo',           area: () => 'mad-reprod' },
   'alim-vivo':          { label: 'Maduración · Alimento vivo',    area: () => 'larv-animal' },
   ras:                  { label: 'Maduración · RAS',              area: () => 'ras-agua' },
+  'mad-hisopado':       { label: 'Maduración · Hisopado',         area: () => 'mad-hisopado' },
   'agua-mar':           { label: 'Maduración · Agua de Mar',      area: () => 'larv-agua' },
   'agua-limpia-mar':    { label: 'Agua Limpia y Mar',             area: () => 'agua-limpia-mar' },
-  'mad-desinf':         { label: 'Maduración · Despacho',         area: () => 'mad-agua' },
+  // La ficha resuelve el Despacho de Maduración por su propia área (mad-despacho-agua /
+  // -animal, hoy idénticas entre sí), NO por la de «Maduración · Agua».
+  'mad-desinf':         { label: 'Maduración · Despacho',         area: () => 'mad-despacho' },
   externas:             { label: 'Muestras externas',            area: () => 'larv-animal' },
   hisopados:            { label: 'Hisopados',                    area: () => 'ambiental' },
   'hisopados-despacho': { label: 'Hisopados (despacho)',         area: () => 'ambiental' },
@@ -193,8 +207,8 @@ const _FMT_BY_FOLDED = Object.fromEntries(Object.entries(MIC_FORMATS).map(([k, v
 // ── agrupación de formatos por DEPARTAMENTO (filtro Departamento → Formato) ──
 export const DEPARTAMENTOS = ['Larvicultura', 'Maduración', 'Algas', 'Otros'];
 export const DEPTO_FORMATS = {
-  'Larvicultura': ['larv-muestra', 'larv-despacho', 'reservorios', 'placa-amb', 'artemia'],
-  'Maduración': ['mad-principal', 'mad-agua', 'mad-ensayo', 'alim-vivo', 'ras', 'agua-mar', 'agua-limpia-mar', 'mad-desinf'],
+  'Larvicultura': ['larv-muestra', 'larv-despacho', 'larv-em', 'reservorios', 'placa-amb', 'artemia'],
+  'Maduración': ['mad-principal', 'mad-agua', 'mad-ensayo', 'alim-vivo', 'ras', 'mad-hisopado', 'agua-mar', 'agua-limpia-mar', 'mad-desinf'],
   'Algas': ['algas', 'algas-mensual', 'algas-r'],
   'Otros': ['externas', 'hisopados', 'hisopados-despacho'],
 };
@@ -209,6 +223,10 @@ export function classifyFormato(raw) {
   if (!k) return '';
   if (_FMT_BY_FOLDED[k]) return _FMT_BY_FOLDED[k];
   // Tolerancia ante variantes (sin el separador "·", etc.). Orden = de lo específico a lo general.
+  // «Agua de mar y Reservorios» es el nombre NUEVO de «Agua Limpia y Mar» en la ficha. Va
+  // antes de la regla de "reservorio", que si no se lo lleva a Larvicultura · Reservorios
+  // —otro departamento y umbrales 10× más laxos (larv-agua vs agua-limpia-mar)—.
+  if (k.includes('agua de mar') && k.includes('reservorio')) return 'agua-limpia-mar';
   if (k.includes('reservorio')) return 'reservorios';
   if (k.includes('placa') || k.includes('ambiental')) return 'placa-amb';
   if (k.includes('artemia')) return 'artemia';
@@ -228,6 +246,10 @@ export function classifyFormato(raw) {
   // escalando (C. Verdes 40 UFC: hoja «Mínimo» → tablero «Moderado»). Con las áreas
   // larvdes-* la coincidencia es 441/441. En los otros 12 formatos ya era 100 %.
   if (k.includes('larvicultura') && k.includes('despacho')) return 'larv-despacho';
+  // «Maduración · Hisopado» ANTES de la regla genérica de "hisopado": sin ella acababa en
+  // 'hisopados' (departamento «Otros», umbrales `ambiental`), cuando la ficha le da área
+  // propia con umbrales 10× más altos — el mismo defecto que arriba, con otro nombre.
+  if (k.includes('maduracion') && k.includes('hisopado')) return 'mad-hisopado';
   if (k.includes('desinfec')) return 'mad-desinf';
   if (k.includes('ensayo')) return 'mad-ensayo';
   if (k.includes('ras')) return 'ras';
@@ -313,11 +335,33 @@ const MIC_DR_BASE = {
     vamar: { l: 5, m: 10, e: 50 }, vverd: { l: 5, m: 10, e: 50 }, vtot: { l: 5, m: 10, e: 50 },
     pseudo: { l: 20, m: 40, e: 200 }, aero: { l: 20, m: 40, e: 200 }, btot: { l: 200, m: 2000, e: 10000 },
   },
-  'mad-agua': {
+  // Maduración · DESPACHO. Se llamaba 'mad-agua', y ese nombre era una trampa: el editor
+  // ⚙️ Rangos lo ofrecía como «Maduración · Agua» cuando en realidad gobierna las muestras
+  // de Despacho (medido: 452 filas frente a 24 de Maduración · Agua, que iban por
+  // 'larv-agua'). Quien bajara un umbral en «Maduración · Agua» no tocaba ni una muestra de
+  // Maduración · Agua y retocaba las 452 de Despacho. En la ficha son `mad-despacho-agua` y
+  // `mad-despacho-animal`, hoy idénticas entre sí, por eso aquí basta una.
+  'mad-despacho': {
     vamar: { l: 100, m: 500, e: 1000 }, vverd: { l: 50, m: 100, e: 200 }, vtot: { l: 100, m: 500, e: 1000 },
     valg: { l: 100, m: 500, e: 1000 }, vpara: { l: 50, m: 100, e: 200 }, vvuln: { l: 50, m: 100, e: 200 },
     pseudo: { l: 50, m: 100, e: 200 }, aero: { l: 100, m: 500, e: 1000 },
     btot: { l: 10000, m: 100000, e: 1000000 }, bnar: { l: 100, m: 500, e: 1000 }, hongos: { l: 2, m: 20, e: 40 },
+  },
+  // Maduración · AGUA. La ficha le da área propia; hoy sus umbrales coinciden con los de
+  // 'larv-agua' (solo cambia el factor ×, que aquí no se usa). Existe para que el editor de
+  // rangos pueda ajustarla sin arrastrar de paso a Larvicultura · Muestra.
+  'mad-agua': {
+    vamar: { l: 1000, m: 5000, e: 10000 }, vverd: { l: 100, m: 200, e: 300 }, vtot: { l: 1000, m: 5000, e: 10000 },
+    valg: { l: 1000, m: 5000, e: 10000 }, vpara: { l: 100, m: 200, e: 300 }, vvuln: { l: 100, m: 200, e: 300 },
+    pseudo: { l: 100, m: 200, e: 300 }, aero: { l: 1000, m: 5000, e: 10000 },
+    btot: { l: 10000, m: 100000, e: 1000000 }, bnar: { l: 1000, m: 5000, e: 10000 }, hongos: { l: 2, m: 20, e: 40 },
+  },
+  // Maduración · Hisopado (hisopado de superficie de Maduración). Umbrales propios de la
+  // ficha, ~10× por encima de los de `ambiental`. Hongos y Bact. Naranjas no se clasifican
+  // en este formato (la ficha les da factor pero no umbral), así que no aparecen.
+  'mad-hisopado': {
+    vamar: { l: 250, m: 500, e: 5000 }, vverd: { l: 100, m: 300, e: 3000 }, vtot: { l: 250, m: 500, e: 5000 },
+    pseudo: { l: 100, m: 300, e: 3000 }, btot: { l: 100, m: 1000, e: 5000 },
   },
   // Agua Limpia y Mar: mismos umbrales UFC que mad-agua (el factor ya viene aplicado en la
   // columna UFC de la hoja; aquí solo se usan l/m/e para clasificar).
@@ -345,6 +389,8 @@ export const MIC_AREAS = [
   { key: 'ambiental', label: 'Ambiental (placas/hisopados)' },
   { key: 'mad-reprod', label: 'Maduración · Reproductores' },
   { key: 'mad-agua', label: 'Maduración · Agua' },
+  { key: 'mad-despacho', label: 'Maduración · Despacho' },
+  { key: 'mad-hisopado', label: 'Maduración · Hisopado' },
   { key: 'agua-limpia-mar', label: 'Agua Limpia y Mar' },
   { key: 'ras-agua', label: 'RAS · Agua' },
   { key: 'algas', label: 'Algas (Hisopado · Mensual · Fundas y Masivos)' },
@@ -352,23 +398,57 @@ export const MIC_AREAS = [
 let _thrCache = null;
 let _thrRaw = null; // firma (string crudo de localStorage) del set cacheado
 
-// Migración de una sola vez del área "algas" (espeja la de la app de captura, que
-// comparte esta clave). El editor de rangos persiste una copia COMPLETA de la base, así
-// que quien haya guardado alguna vez tendría congelados los umbrales antiguos (sin
-// escalar) y no vería los nuevos. Se borra SOLO esa área; el resto de ajustes se conserva.
+/* ── Migraciones de los overrides guardados (localStorage `larv4_mic_factors`) ──
+   La clave la COMPARTE la app de captura y el editor de rangos persiste una copia por
+   área, así que renombrar o rescalar un área deja overrides apuntando a donde no deben.
+   Cada migración se aplica UNA sola vez y se anota su `id`: así añadir una nueva no
+   vuelve a disparar las anteriores (antes era un único sello de versión; bumpearlo
+   habría re-ejecutado el borrado de "algas" sobre ajustes ya rehechos). */
 const MIC_FACTORS_VER_KEY = 'larv4_mic_factors_ver';
-const MIC_FACTORS_VER = '2026-07-20-algas';
+const MIC_MIGRATIONS = [
+  {
+    // El editor persiste una copia COMPLETA de la base, así que quien hubiera guardado
+    // alguna vez tendría congelados los umbrales de "algas" SIN escalar por el factor de
+    // dilución y no vería los nuevos. Se borra solo esa área; el resto se conserva.
+    id: '2026-07-20-algas',
+    run: (o) => { if (o.algas) { delete o.algas; return true; } return false; },
+  },
+  {
+    // El área que se llamaba 'mad-agua' gobernaba en realidad «Maduración · Despacho» y
+    // pasa a llamarse 'mad-despacho'; 'mad-agua' es ahora la de «Maduración · Agua». Un
+    // override guardado con el nombre viejo se ajustó pensando en Despacho: se MUEVE, para
+    // que siga afectando a las mismas muestras y no se traslade a otro formato.
+    id: '2026-08-16-mad-despacho',
+    run: (o) => {
+      if (!o['mad-agua'] || o['mad-despacho']) return false;
+      o['mad-despacho'] = o['mad-agua']; delete o['mad-agua']; return true;
+    },
+  },
+];
+/** Migraciones ya aplicadas. Tolera el sello ANTIGUO (una sola cadena) de la versión previa. */
+function micAppliedMigrations() {
+  let v = null;
+  try { v = localStorage.getItem(MIC_FACTORS_VER_KEY); } catch (_) { return []; }
+  if (!v) return [];
+  try { const a = JSON.parse(v); return Array.isArray(a) ? a : [String(v)]; } catch (_) { return [String(v)]; }
+}
 let _micFactMigrated = false;
 function micMigrateFactors() {
   try {
     if (typeof localStorage === 'undefined') return;
-    if (localStorage.getItem(MIC_FACTORS_VER_KEY) === MIC_FACTORS_VER) return;
+    const hechas = micAppliedMigrations();
+    const pendientes = MIC_MIGRATIONS.filter((m) => !hechas.includes(m.id));
+    if (!pendientes.length) return;
     const raw = localStorage.getItem(MIC_FACTORS_KEY);
     if (raw) {
       const o = JSON.parse(raw);
-      if (o && typeof o === 'object' && o.algas) { delete o.algas; localStorage.setItem(MIC_FACTORS_KEY, JSON.stringify(o)); }
+      if (o && typeof o === 'object') {
+        let tocado = false;
+        pendientes.forEach((m) => { if (m.run(o)) tocado = true; });
+        if (tocado) localStorage.setItem(MIC_FACTORS_KEY, JSON.stringify(o));
+      }
     }
-    localStorage.setItem(MIC_FACTORS_VER_KEY, MIC_FACTORS_VER);
+    localStorage.setItem(MIC_FACTORS_VER_KEY, JSON.stringify(MIC_MIGRATIONS.map((m) => m.id)));
   } catch (_) { /* sin localStorage o ilegible → se usan las bases */ }
 }
 

@@ -106,12 +106,16 @@ describe('classifyFormato', () => {
     // Datos antiguos con el nombre legado siguen mapeando a mad-desinf.
     expect(classifyFormato('Maduración · Desinfección')).toBe('mad-desinf');
   });
-  it('Maduración · Agua (Bacteriología) → mad-agua, área larv-agua, sin chocar con Agua de Mar/Limpia', () => {
+  it('Maduración · Agua (Bacteriología) → mad-agua, con ÁREA PROPIA, sin chocar con Agua de Mar/Limpia', () => {
     expect(classifyFormato('Maduración · Agua')).toBe('mad-agua');
     expect(classifyFormato('Maduracion Agua')).toBe('mad-agua');       // variante sin "·"/acento
     expect(classifyFormato('Maduración · Agua de Mar')).toBe('agua-mar');   // NO debe caer en mad-agua
     expect(classifyFormato('Agua Limpia y Mar')).toBe('agua-limpia-mar');   // NO debe caer en mad-agua
-    expect(areaForFormat('mad-agua', '')).toBe('larv-agua');
+    // Antes apuntaba a 'larv-agua' (mismos números, otra área). Ya no: el editor ⚙️ Rangos
+    // no podía ajustar Maduración · Agua sin arrastrar a Larvicultura · Muestra, y el área
+    // que sí se llamaba 'mad-agua' gobernaba en realidad Maduración · DESPACHO.
+    expect(areaForFormat('mad-agua', '')).toBe('mad-agua');
+    expect(areaForFormat('mad-desinf', '')).toBe('mad-despacho');
   });
   it('"" si vacío o no reconocido', () => {
     expect(classifyFormato('')).toBe('');
@@ -130,6 +134,8 @@ describe('areaForFormat', () => {
     expect(areaForFormat('algas-mensual', '')).toBe('algas');
     expect(areaForFormat('algas-r', '')).toBe('algas');
     expect(areaForFormat('hisopados', '')).toBe('ambiental');  // los de planta siguen en ambiental
+    // El hisopado de Maduración tiene área PROPIA: sus umbrales son ~10× los de 'ambiental'.
+    expect(areaForFormat('mad-hisopado', '')).toBe('mad-hisopado');
     expect(areaForFormat('', '')).toBe('larv-animal');        // desconocido → defecto
   });
 });

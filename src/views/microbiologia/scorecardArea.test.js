@@ -110,8 +110,10 @@ const kpiVal = (which) => {
 const sumaMuestras = (sc) => Object.values(sc).reduce((a, r) => a + (r.n === '—' ? 0 : +r.n), 0);
 
 describe('General · scorecard: Bacteriología se ubica por Departamento, no por Formato', () => {
-  // Formato REAL de la hoja que no está catalogado (`classifyFormato` devuelve '').
-  const HUERFANA = M({ 'Fecha muestreo': '05/06/2026', Corrida: '573', Departamento: 'Larvicultura', Formato: 'Larvicultura · EM', 'Módulo/Sala': '2', 'TQ/N°': '4', 'V.Totales UFC': '900000' });
+  // Un formato que el tablero NO tiene catalogado (`classifyFormato` devuelve ''), que es
+  // como llega cualquier formato nuevo de la ficha antes de portarlo. La columna
+  // Departamento sí viene escrita, y es la que debe mandar.
+  const HUERFANA = M({ 'Fecha muestreo': '05/06/2026', Corrida: '573', Departamento: 'Larvicultura', Formato: 'Larvicultura · Bandejas', 'Módulo/Sala': '2', 'TQ/N°': '4', 'V.Totales UFC': '900000' });
 
   it('una muestra de formato no catalogado NO desaparece del scorecard', () => {
     const sc = scorecard([BACT_LARV, HUERFANA]);
