@@ -137,7 +137,7 @@ function renderDrawer() {
   const items = MAIN_VIEWS.filter((v) => roleAllows(v.id));
   els.drawerNav.innerHTML = items.length
     ? items.map((v) => `<button class="drawer-item ${v.id === store.currentView ? 'is-active' : ''}" data-view="${v.id}">
-        <span class="di-ic">${v.icon}</span><span class="di-lb">${v.label}</span>${v.pending ? '<span class="di-tag">en desarrollo</span>' : ''}
+        <span class="di-ic">${v.icon}</span><span class="di-lb">${v.label}</span>
       </button>`).join('')
     : '<div class="empty-state" style="padding:24px">Elige un rol para comenzar.</div>';
   if (els.drawerRole) els.drawerRole.textContent = store.role ? `Rol: ${ROLES[store.role].label}` : '';
@@ -151,11 +151,12 @@ function renderEntryRoles() {
 function selectRole(key) {
   if (!ROLES[key]) return;
   store.role = key;
-  // Vista inicial: la primera permitida que YA esté desarrollada (evita aterrizar en
-  // un placeholder 🚧, p. ej. el rol "Supervisor" caía en Maduración). Si el rol solo
-  // tiene vistas pendientes, cae a la primera permitida como respaldo.
-  const def = MAIN_VIEWS.find((v) => roleAllows(v.id) && !v.pending)
-    || MAIN_VIEWS.find((v) => roleAllows(v.id));
+  // Vista inicial: la primera permitida al rol, en el orden de MAIN_VIEWS.
+  // Todas las vistas listadas están desarrolladas y registradas en main.js, así que no
+  // hay que esquivar placeholders. (Existía aquí un respaldo para vistas marcadas como
+  // pendientes; ninguna entrada de MAIN_VIEWS lo declaraba nunca, así que era código
+  // inalcanzable. Si algún día se añade una vista a medias, el respaldo vuelve aquí.)
+  const def = MAIN_VIEWS.find((v) => roleAllows(v.id));
   renderDrawer();
   hideEntry();
   if (def) changeView(def.id);

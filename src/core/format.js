@@ -9,17 +9,27 @@ export function pct(num, dec = 1) {
   return num.toFixed(dec) + '%';
 }
 
-/** Población entera con separador de miles es-EC; "—" para nulo/≤0. */
+/** Población entera con separador de miles es-EC; "—" para nulo/NaN/≤0.
+ *  `isNaN` es imprescindible: `NaN <= 0` es false, así que sin esa guarda un NaN
+ *  se colaba hasta `Math.round(NaN).toLocaleString()` y se pintaba el texto "NaN". */
 export function fmtPop(v) {
-  return (v === null || v === undefined || v <= 0) ? '—' : Math.round(v).toLocaleString('es-EC');
+  return (v === null || v === undefined || isNaN(v) || v <= 0) ? '—' : Math.round(v).toLocaleString('es-EC');
 }
 
 const inRange = ([a, b], v) => v >= a && v <= b;
 const inAny = (ranges, v) => ranges.some((r) => inRange(r, v));
 
+/* Sin dato = null, undefined o NaN. Los tres semáforos de abajo y `wqiBand` deciden
+   por comparaciones (`>=`, `inRange`), y TODAS son false frente a NaN: sin esta guarda
+   un valor no numérico caía al peor nivel ('grave' / 'critico') y pintaba una alarma
+   roja donde no hay medición. `larviZone` ya lo hacía así; esto cierra la clase entera.
+   Hoy no llega NaN (parseNum devuelve null, avg lo filtra y survival protege la
+   división), así que ningún valor mostrado cambia: es una red para lo que venga. */
+const noData = (v) => v === null || v === undefined || isNaN(v);
+
 /* ---- Semáforo Supervivencia (mayor = mejor) ---- */
 export function svLevel(v) {
-  if (v === null || v === undefined) return 'sin';
+  if (noData(v)) return 'sin';
   const t = THRESHOLDS.sv;
   if (v >= t.excelente) return 'excelente';
   if (v >= t.bueno) return 'bueno';
@@ -29,7 +39,7 @@ export function svLevel(v) {
 
 /* ---- Semáforo Oxígeno disuelto ---- */
 export function odLevel(v) {
-  if (v === null || v === undefined) return 'sin';
+  if (noData(v)) return 'sin';
   const t = THRESHOLDS.od;
   if (inRange(t.optimo, v)) return 'excelente';
   if (inAny(t.bueno, v)) return 'bueno';
@@ -39,7 +49,7 @@ export function odLevel(v) {
 
 /* ---- Semáforo Temperatura ---- */
 export function tmpLevel(v) {
-  if (v === null || v === undefined) return 'sin';
+  if (noData(v)) return 'sin';
   const t = THRESHOLDS.tmp;
   if (inRange(t.optimo, v)) return 'excelente';
   if (inAny(t.bueno, v)) return 'bueno';
@@ -93,7 +103,7 @@ export const larviLabel = (v) => LARVI_LABEL[larviZone(v)];
    `sev` son tokens de CSS; quien necesite hex (un <canvas> no resuelve var())
    mapea desde `sev` en su propia capa de presentación. */
 export function wqiBand(wqi) {
-  if (wqi == null) return { sev: 'sin-rango', label: 'Sin datos' };
+  if (noData(wqi)) return { sev: 'sin-rango', label: 'Sin datos' };
   const t = THRESHOLDS.wqi;
   if (wqi >= t.optimo) return { sev: 'optimo', label: 'Óptimo' };
   if (wqi >= t.vigilancia) return { sev: 'vigilancia', label: 'Vigilancia' };

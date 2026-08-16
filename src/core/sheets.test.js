@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { parseSheetsIds, dataFingerprint, isDegraded, classifyOrigin, extractSheetTabs } from './sheets.js';
+import { parseSheetsIds, dataFingerprint, isDegraded, classifyOrigin, extractSheetTabs, parseCSV } from './sheets.js';
 import { store } from './store.js';
 
 describe('parseSheetsIds', () => {
@@ -113,5 +113,75 @@ describe('isDegraded (guarda contra "se cargó 1 sola hoja")', () => {
     store.connected = true;
     store.sheetNames = ['A', 'B'];
     expect(isDegraded({})).toBe(false);
+  });
+});
+
+/* ============================================================
+   parseCSV — el fallback CSV frente a celdas con saltos de línea.
+   «Observaciones» del AsT es texto libre tecleado a mano: un Enter dentro de la celda
+   produce un CSV válido por RFC 4180 que el parseo por líneas rompía en silencio.
+   ============================================================ */
+describe('parseCSV', () => {
+  it('respeta un salto de línea DENTRO de un campo entrecomillado', () => {
+    const csv = [
+      'Fecha,Supervisor,Observaciones,ID',
+      '2026-08-15,Supervisor 2,"Intestino vacío elevado',
+      'y mudas abundantes",abc123',
+      '2026-08-15,Supervisor 3,Sin novedad,def456',
+    ].join('\n');
+    const rows = parseCSV(csv);
+    // Dos filas de datos, NO tres: la celda multilínea no parte el bloque.
+    expect(rows.length).toBe(2);
+    // El campo conserva su salto y, sobre todo, la fila NO pierde su ID: una fila sin
+    // ID es justo la que el upsert del AsT no puede emparejar.
+    expect(rows[0].Observaciones).toBe('Intestino vacío elevado\ny mudas abundantes');
+    expect(rows[0].ID).toBe('abc123');
+    expect(rows[1].ID).toBe('def456');
+  });
+
+  it('una comilla escapada ("") queda como comilla literal', () => {
+    const rows = parseCSV('A,B\n1,"dijo ""hola"" ayer"');
+    expect(rows[0].B).toBe('dijo "hola" ayer');
+  });
+
+  it('CRLF, línea final sin salto y líneas en blanco intermedias', () => {
+    const rows = parseCSV('A,B\r\n1,2\r\n\r\n3,4');
+    expect(rows).toEqual([{ A: '1', B: '2' }, { A: '3', B: '4' }]);
+  });
+
+  it('sólo cabecera (con o sin salto final) → sin filas', () => {
+    expect(parseCSV('A,B')).toEqual([]);
+    expect(parseCSV('A,B\n')).toEqual([]);
+  });
+
+  it('ignora las columnas sin cabecera y recorta los valores', () => {
+    const rows = parseCSV('A,,B\n 1 ,basura, 2 ');
+    expect(rows).toEqual([{ A: '1', B: '2' }]);
+  });
+
+  it('una fila de comas sueltas SIGUE produciendo campos vacíos (no se descarta)', () => {
+    // Comportamiento heredado: `!linea.trim()` sólo descartaba líneas sin comas.
+    expect(parseCSV('A,B\n,')).toEqual([{ A: '', B: '' }]);
+  });
+});
+
+/* Huella de datos: el hash dejó de serializar a JSON, así que hay que fijar que sigue
+   distinguiendo lo que el JSON distinguía gratis con sus comillas. */
+describe('dataFingerprint · sensibilidad del hash', () => {
+  it('mismo contenido → misma huella', () => {
+    expect(dataFingerprint({ H: [{ a: 'bc' }] })).toBe(dataFingerprint({ H: [{ a: 'bc' }] }));
+  });
+  it('clave/valor desplazados NO colisionan ({a:"bc"} ≠ {ab:"c"})', () => {
+    expect(dataFingerprint({ H: [{ a: 'bc' }] })).not.toBe(dataFingerprint({ H: [{ ab: 'c' }] }));
+  });
+  it('detecta un valor cambiado, un campo de más y una fila de más', () => {
+    const base = dataFingerprint({ H: [{ a: '1' }] });
+    expect(dataFingerprint({ H: [{ a: '2' }] })).not.toBe(base);
+    expect(dataFingerprint({ H: [{ a: '1', b: '' }] })).not.toBe(base);
+    expect(dataFingerprint({ H: [{ a: '1' }, { a: '1' }] })).not.toBe(base);
+  });
+  it('detecta un cambio en una fila INTERMEDIA (no sólo en los extremos)', () => {
+    const mk = (mid) => ({ H: [{ a: '1' }, { a: mid }, { a: '3' }] });
+    expect(dataFingerprint(mk('X'))).not.toBe(dataFingerprint(mk('2')));
   });
 });

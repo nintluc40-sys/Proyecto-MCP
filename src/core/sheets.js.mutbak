@@ -16,7 +16,6 @@ import { SHEETS_URL, FETCH_TIMEOUT_MS, XLSX_TIMEOUT_MS } from '../config.js';
 import { store, emit, EV } from './store.js';
 import { autoCalcMortalidad, getField, F } from './fields.js';
 import { parseAnyDate, clearDateCache } from './dates.js';
-import { isUnsafeKey } from './util.js';
 
 // ---------- utilidades de red ----------
 function fetchWithTimeout(url, opts = {}, ms = FETCH_TIMEOUT_MS) {
@@ -249,11 +248,6 @@ export function extractSheetTabs(html) {
 // las hojas aunque la enumeración falle puntualmente (p. ej. un 5xx transitorio de Google).
 const GID_CACHE_KEY = 'larv4_sheet_tabs';
 function cacheTabs(docId, list) {
-  // `docId` sale de la URL del Sheet, que el usuario puede sobrescribir, y el patrón
-  // [a-zA-Z0-9_-]+ admite literalmente "__proto__". Asignarlo sobre un objeto de
-  // JSON.parse invoca el setter y le cambia el prototipo. Es el guard que util.js ya
-  // define para este caso exacto; aquí faltaba.
-  if (isUnsafeKey(docId)) return;
   try { const all = JSON.parse(localStorage.getItem(GID_CACHE_KEY) || '{}'); all[docId] = list; localStorage.setItem(GID_CACHE_KEY, JSON.stringify(all)); } catch (_) {}
 }
 function cachedTabs(docId) {

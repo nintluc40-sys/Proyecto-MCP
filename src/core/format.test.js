@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  pct, svLevel, odLevel, tmpLevel, larviZone, esc,
+  pct, svLevel, odLevel, tmpLevel, larviZone, esc, wqiBand, fmtPop,
 } from './format.js';
 
 describe('pct', () => {
@@ -53,5 +53,56 @@ describe('esc', () => {
   it('cadena vacía para null/undefined', () => {
     expect(esc(null)).toBe('');
     expect(esc(undefined)).toBe('');
+  });
+});
+
+/* ============================================================
+   Guardas de "sin dato": los semáforos deciden por comparaciones, y TODAS son false
+   frente a NaN, así que sin guarda un valor no numérico caía al PEOR nivel y pintaba
+   una alarma roja donde no hay medición. Hoy no llega NaN (parseNum devuelve null,
+   avg lo filtra, survival protege la división); estos tests cierran la clase.
+   ============================================================ */
+describe('NaN se trata como "sin dato", no como el peor nivel', () => {
+  it('los cuatro semáforos', () => {
+    expect(svLevel(NaN)).toBe('sin');
+    expect(odLevel(NaN)).toBe('sin');
+    expect(tmpLevel(NaN)).toBe('sin');
+    expect(wqiBand(NaN).sev).toBe('sin-rango');
+  });
+
+  it('undefined y null siguen dando "sin dato" (sin regresión)', () => {
+    for (const v of [null, undefined]) {
+      expect(svLevel(v)).toBe('sin');
+      expect(odLevel(v)).toBe('sin');
+      expect(tmpLevel(v)).toBe('sin');
+    }
+    expect(wqiBand(null).sev).toBe('sin-rango');
+    expect(wqiBand(undefined).sev).toBe('sin-rango');
+  });
+
+  it('los valores numéricos reales NO cambian de nivel', () => {
+    expect(svLevel(95)).toBe('excelente');
+    expect(svLevel(0)).toBe('grave');       // 0 es una medición real, no "sin dato"
+    expect(odLevel(6)).toBe('excelente');
+    expect(odLevel(0)).toBe('grave');
+    expect(tmpLevel(32)).toBe('excelente');
+    expect(wqiBand(90).sev).toBe('optimo');
+    expect(wqiBand(10).sev).toBe('critico');
+  });
+});
+
+describe('fmtPop', () => {
+  it('NaN da "—" y no el texto "NaN"', () => {
+    expect(fmtPop(NaN)).toBe('—');
+  });
+  it('nulo y ≤0 dan "—" (sin regresión)', () => {
+    expect(fmtPop(null)).toBe('—');
+    expect(fmtPop(undefined)).toBe('—');
+    expect(fmtPop(0)).toBe('—');
+    expect(fmtPop(-5)).toBe('—');
+  });
+  it('un número real se formatea con separador de miles', () => {
+    expect(fmtPop(1234567)).toBe((1234567).toLocaleString('es-EC'));
+    expect(fmtPop(1499.6)).toBe((1500).toLocaleString('es-EC')); // redondea
   });
 });
