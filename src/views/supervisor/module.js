@@ -1,5 +1,26 @@
 /* ============================================================
    SUPERVISOR · Resumen Operativo del Módulo
+
+   ⚠ MAPA DEL ARCHIVO — son ~2.170 líneas y CINCO bloques sin relación entre sí.
+   Léelo por bloques; casi nunca hay que tocar más de uno a la vez. Los tres modales
+   de abajo no aportan datos propios: reutilizan la capa PURA de otras vistas
+   (microbiologia/data.js, microbiologia/petri.js, microbiologia/calagua.data.js), así
+   que su lógica de negocio no vive aquí — aquí sólo vive su presentación.
+
+     · ~40-190    helpers de comentarios (matutino/vespertino), memo por datos, y
+                  BIOMOLECULAR: alias de columnas, filtrado por módulo y tooltip.
+     · ~192-406   gráficos Biomol en D3: heatmap, swarm y gel.
+     · ~407-671   MICROBIOLOGÍA del módulo: placa de agar, tabla, heatmap y tendencias.
+     · ~672-962   CALIDAD DE AGUA del módulo (`cw*`): tabla, matriz, tendencias,
+                  panel de diagnóstico y fichas por tanque.
+     · ~963-1104  SIEMBRAS (`svSie*`): filas por tanque, rollups y modal.
+     · ~1105-fin  `renderModule`, la función principal. Es larga (~1.060 líneas) porque
+                  arma el banner de KPIs, la rejilla de tanques y CADA UNO de los
+                  modales anteriores, más sus gráficos y su cableado de eventos.
+
+   Dividirlo en módulos propios es deuda reconocida y pendiente de decidir; se documenta
+   aquí para que el archivo sea navegable mientras tanto. No añadas un sexto bloque:
+   si llega otro modal, extráelo a su propio archivo.
    ============================================================ */
 import { modStats, tankStats, tanksOf, getters } from './stats.js';
 import { moduleSvPopSeries, modulePlgSeries, moduleHourlyDates, moduleHourly, moduleDayKpis, moduleDayTankReadings, cosechaEstimate, projectMetric } from './moduleTrends.js';
@@ -46,6 +67,21 @@ const getComM = (r) => getField(r, COM_M_KEYS) || getField(r, COM_LEGACY);
 const getComV = (r) => getField(r, COM_V_KEYS);
 const hasCom = (r) => !!(getComM(r) || getComV(r));
 const SIE_KEYS = ['Siembra', 'siembra', 'SIEMBRA'];
+// La columna «Siembra» del Registro_Supervisión no guarda un número, sino el ordinal
+// ESCRITO: medido sobre las 716 filas de producción, sus únicos valores son "Primera",
+// "Segunda" y "Tercera". Esta tabla existe para poder ORDENARLOS cronológicamente; sin
+// ella el orden es el alfabético, que hoy acierta de casualidad y dejaría una "Cuarta"
+// en primera posición. Devuelve Infinity para lo desconocido, que así cae al final en
+// vez de desaparecer. Se admite también un dígito suelto por si la hoja cambia de forma.
+const SIE_ORDINALES = ['primera', 'segunda', 'tercera', 'cuarta', 'quinta', 'sexta', 'séptima', 'octava', 'novena', 'décima'];
+export function sieOrder(raw) {
+  const s = String(raw == null ? '' : raw).trim().toLowerCase();
+  if (!s) return Infinity;
+  const n = parseInt(s, 10);
+  if (!isNaN(n)) return n;
+  const i = SIE_ORDINALES.indexOf(s.normalize('NFC'));
+  return i >= 0 ? i + 1 : Infinity;
+}
 const isRevisionRow = (r) => r && r._SheetOrigin === 'Registro_Supervision';
 const modNum = (s) => { const m = String(s).match(/\d+/); return m ? +m[0] : null; };
 /** Empareja "M03" (Supervisor) con "Módulo 3" (Registro_Supervisión) por número; CIO por letras. */
@@ -1299,12 +1335,19 @@ export function renderModule(ctx, mod) {
     return true;
   });
   const supList = [...new Set(atRows.map((r) => getField(r, SUP_KEYS) || 'Supervisor'))].sort();
-  const sieList = [...new Set(atRows.map((r) => getField(r, SIE_KEYS)).filter(Boolean))].sort();
+  // La columna «Siembra» trae ORDINALES ESCRITOS, no números: medido sobre las 716 filas
+  // de producción, sus únicos valores son "Primera", "Segunda" y "Tercera". Por eso se
+  // ordena por el ordinal que representan y no alfabéticamente: hoy ambos criterios dan
+  // el mismo resultado por casualidad, pero una "Cuarta" se colocaría la PRIMERA de la
+  // lista. Lo no reconocido va al final, en orden alfabético, para que un valor nuevo
+  // siga apareciendo en vez de desaparecer.
+  const sieList = [...new Set(atRows.map((r) => getField(r, SIE_KEYS)).filter(Boolean))]
+    .sort((a, b) => (sieOrder(a) - sieOrder(b)) || String(a).localeCompare(String(b), 'es'));
   const opt = (v, lbl) => `<option value="${esc(v)}">${esc(lbl)}</option>`;
   const atFiltersHTML = `<div class="sv-hist-filters">
       <label>👤 Supervisor <select class="sv-modal-select" data-athist-sup>${opt('__all', 'Todos')}${supList.map((s) => opt(s, s)).join('')}</select></label>
       <label>💬 Comentario <select class="sv-modal-select" data-athist-com>${opt('__all', 'Todos')}${opt('am', '☀️ Matutino')}${opt('pm', '🌙 Vespertino')}</select></label>
-      <label>🌱 Siembra <select class="sv-modal-select" data-athist-sie>${opt('__all', 'Todas')}${sieList.map((s) => opt(s, s + 'ª')).join('')}</select></label>
+      <label>🌱 Siembra <select class="sv-modal-select" data-athist-sie>${opt('__all', 'Todas')}${sieList.map((s) => opt(s, s)).join('')}</select></label>
     </div>`;
   h += `<div class="sv-modal" id="svAtModal" data-atmodal>
     <div class="sv-modal-card">
