@@ -112,3 +112,40 @@ describe('R-09 · el cuadro de Siembras se construye al abrir', () => {
     expect(root.querySelector('[data-sie-merma]')).toBe(sel);
   });
 });
+
+/* ============================================================
+   Los tres modales hermanos (Biomol · Microbiología · Calidad de Agua) deben volver a
+   su pestaña por defecto al ABRIR. Biomol era el único que conservaba la última vista:
+   dejarlo en «E.D.T.» y reabrirlo abría en E.D.T., mientras Micro y CalAgua sí volvían.
+   ============================================================ */
+describe('los modales vuelven a su pestaña por defecto al reabrir', () => {
+  const B = (o) => ({ _SheetOrigin: 'Biomol', ...o });
+
+  beforeEach(() => {
+    // Dos análisis moleculares del módulo M01 / corrida 573, en estadío NO reproductor.
+    store.globalData = [
+      ...synth(),
+      B({ Fecha: '05/06/2026', Lugar: 'Módulo 1', Corrida: '573', Tanque: 'TQ1', 'Estadío': 'PL5', IHHNV: 'Negativo', WSSV: 'Negativo' }),
+      B({ Fecha: '10/06/2026', Lugar: 'Módulo 1', Corrida: '573', Tanque: 'TQ2', 'Estadío': 'PL5', IHHNV: 'Positivo', WSSV: 'Negativo' }),
+    ];
+  });
+
+  it('Biomol reabre en «Heatmap · Tanque» aunque se dejara en «E.D.T.»', () => {
+    const root = abrirModulo();
+    const abrir = root.querySelector('[data-biomol-open]');
+    expect(abrir).toBeTruthy(); // el botón sólo existe si hay filas Biomol
+
+    click(abrir);
+    const activo = () => root.querySelector('[data-bmmode].is-active')?.dataset.bmmode;
+    expect(activo()).toBe('tank');
+
+    // El supervisor se pasa al E.D.T. y cierra el modal.
+    click(root.querySelector('[data-bmmode="gel"]'));
+    expect(activo()).toBe('gel');
+    click(root.querySelector('[data-biomol-close]'));
+
+    // Al reabrir NO debe seguir en el E.D.T.
+    click(abrir);
+    expect(activo()).toBe('tank');
+  });
+});

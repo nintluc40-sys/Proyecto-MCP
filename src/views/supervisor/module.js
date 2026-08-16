@@ -461,6 +461,14 @@ const micLuminChip = (v) => v === true
 const micLuminCell = (v) => v === true
   ? `<span class="mic-lumin is-on" title="Presencia de V. Luminiscentes">✨ Pres.</span>`
   : v === false ? '<span class="muted">Aus.</span>' : '<span class="muted">—</span>';
+// ⚠ CANAL LATERAL render → dibujo. Estas dos (y `_svCwTrend`, más abajo) las ESCRIBE una
+// función que genera HTML y las LEE después el cableado de eventos, porque un <canvas> o
+// un tooltip sólo se pueden pintar cuando el marcado ya está en el DOM. El orden es lo que
+// las hace seguras y no es casual: `renderMic()` asigna `micBody.innerHTML` —lo que ejecuta
+// la función que escribe la global— ANTES de llamar al dibujo que la lee. Si algún día se
+// invierte ese orden, el gráfico se dibujaría con los datos de la pestaña anterior.
+//   _svMicroColonies · la escribe microPlacaHTML       · la lee el tooltip de colonias (ttShow)
+//   _svMicTrend      · la escribe microTendenciasHTML  · la lee drawMicTrend
 let _svMicroColonies = []; // colonias del día visible en la placa (para el tooltip)
 let _svMicTrend = null;    // { days, series } de la pestaña Tendencias (para dibujar el gráfico abierto)
 
@@ -714,6 +722,9 @@ function microTendenciasHTML(rows, state) {
 const CW_SEV_COLOR = { optimo: '#2e9e5b', vigilancia: '#d99a00', fuera: '#ef6c00', critico: '#e8303e', 'sin-rango': '#90A4AE' };
 const cwSevColor = (sev) => CW_SEV_COLOR[sev] || CW_SEV_COLOR['sin-rango'];
 const cwFmt = (v) => (v == null || isNaN(v)) ? '—' : String(Number.isInteger(v) ? v : +v.toFixed(2));
+// Mismo canal lateral render → dibujo que _svMicTrend (ver la nota junto a su declaración):
+// la escribe cwTendenciasHTML y la lee drawCwTrend, que corre después de que renderCw()
+// haya volcado ese HTML al DOM.
 let _svCwTrend = null; // { days, range, label, unit } de la pestaña Tendencias (dibujo post-render)
 
 /** Filas de Calidad de Agua que comparten corrida + módulo (número) con este módulo. */
@@ -2035,9 +2046,17 @@ export function renderModule(ctx, mod) {
         buildBm();
       }));
       // Redibuja al abrir → el SVG de dispersión toma el ancho real del modal visible.
+      // Y vuelve SIEMPRE a la pestaña por defecto, igual que hacen los modales de
+      // Microbiología y Calidad de Agua: era el único de los tres que conservaba la
+      // última vista, así que dejarlo en «E.D.T.» y reabrirlo abría en E.D.T. mientras
+      // que sus hermanos volvían a Placa y a Tabla.
       bindModal(root, bmOverlay, {
         openSel: '[data-biomol-open]', closeSel: '[data-biomol-close]',
-        onOpen: () => requestAnimationFrame(buildBm),
+        onOpen: () => {
+          bmMode = 'tank';
+          bmOverlay.querySelectorAll('[data-bmmode]').forEach((x) => x.classList.toggle('is-active', x.dataset.bmmode === 'tank'));
+          requestAnimationFrame(buildBm);
+        },
         onClose: bmDestroyTip,
       });
     }
@@ -2125,9 +2144,17 @@ export function renderModule(ctx, mod) {
       micBody.addEventListener('mouseover', (e) => { const g = e.target.closest('.mic-colony'); if (g) ttShow(g); });
       micBody.addEventListener('mousemove', (e) => { if (!micTT || micTT.style.display !== 'block') return; micTT.style.left = Math.min(e.clientX + 14, window.innerWidth - 210) + 'px'; micTT.style.top = Math.min(e.clientY - 8, window.innerHeight - 130) + 'px'; });
       micBody.addEventListener('mouseout', (e) => { const g = e.target.closest('.mic-colony'); if (g) { if (micTT) micTT.style.display = 'none'; const glow = g.querySelector('.mic-colony-glow'); if (glow) glow.setAttribute('opacity', '0'); } });
+      // El tooltip vive FUERA de `micBody`, así que re-renderizar el cuerpo no lo borra:
+      // si el modal se cierra con el cursor sobre una colonia (Escape o clic en el velo),
+      // su `mouseout` puede no llegar a dispararse y quedaría en display:block con los
+      // datos de esa colonia, listo para reaparecer en la siguiente apertura. Ocultarlo
+      // en ambos extremos quita esa dependencia del navegador. Biomol ya hacía lo propio
+      // con su tooltip vía bmDestroyTip.
+      const micHideTT = () => { if (micTT) micTT.style.display = 'none'; };
       bindModal(root, micOverlay, {
         openSel: '[data-micro-open]', closeSel: '[data-micro-close]',
-        onOpen: () => { micMode = 'placa'; micState.tank = null; micState.dayIdx = null; micState.trendTank = null; micState.trendOpen = null; micOverlay.querySelectorAll('[data-micmode]').forEach((x) => x.classList.toggle('is-active', x.dataset.micmode === 'placa')); requestAnimationFrame(renderMic); },
+        onOpen: () => { micMode = 'placa'; micState.tank = null; micState.dayIdx = null; micState.trendTank = null; micState.trendOpen = null; micHideTT(); micOverlay.querySelectorAll('[data-micmode]').forEach((x) => x.classList.toggle('is-active', x.dataset.micmode === 'placa')); requestAnimationFrame(renderMic); },
+        onClose: micHideTT,
       });
     }
 
