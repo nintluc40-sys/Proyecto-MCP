@@ -9,6 +9,17 @@
    ============================================================ */
 import { store } from '../../core/store.js';
 import { destroyAllCharts, makeChart } from '../../core/charts.js';
+import { makeAccessibleDialog } from '../../ui/modal.js';
+
+// Semántica de diálogo + foco atrapado para los modales de esta vista. Se abrían y
+// cerraban a mano, así que ninguno llevaba role="dialog" ni aria-modal y Tab paseaba
+// por los controles del fondo, desde donde Enter navegaba de verdad dejando la vista
+// cambiada con el modal aún montado.  (src/ui/modal.js) es la
+// misma pieza que usan los 11 modales del Supervisor; aquí se aplica SIN tocar cuándo
+// se abre o se cierra cada uno. Es idempotente: no duplica listeners al reabrir.
+const micDlgOpen = (m) => { m.classList.add('is-open'); document.body.classList.add('modal-open'); makeAccessibleDialog(m)?.focusFirst(); };
+const micDlgClose = (m) => { m.classList.remove('is-open'); makeAccessibleDialog(m)?.restoreFocus(); };
+
 import { esc, wqiBand } from '../../core/format.js';
 import { fmtShort, dayNum, rangeLabel } from '../../core/dates.js';
 import { natCmp } from '../../core/util.js';
@@ -347,11 +358,11 @@ function openGenKpi(root, which) {
   const title = root.querySelector('#genKpiTitle'); if (title) title.textContent = GEN_KPI_TITLE[which] || 'Resumen';
   const body = root.querySelector('#genKpiBody'); if (body) body.innerHTML = genKpiBodyHTML(which);
   const m = root.querySelector('#genKpiModal');
-  if (m) { m.classList.add('is-open'); document.body.classList.add('modal-open'); }
+  if (m) { micDlgOpen(m); }
 }
 function closeGenKpi(root) {
   const m = root.querySelector('#genKpiModal');
-  if (m) m.classList.remove('is-open');
+  if (m) micDlgClose(m);
   document.body.classList.remove('modal-open');
 }
 
@@ -516,11 +527,11 @@ function openGenDepto(root, area) {
   const title = root.querySelector('#genDeptoTitle'); if (title) title.textContent = `🏭 ${area}`;
   const body = root.querySelector('#genDeptoBody'); if (body) body.innerHTML = genDeptoBodyHTML(area);
   const m = root.querySelector('#genDeptoModal');
-  if (m) { m.classList.add('is-open'); document.body.classList.add('modal-open'); }
+  if (m) { micDlgOpen(m); }
 }
 function closeGenDepto(root) {
   const m = root.querySelector('#genDeptoModal');
-  if (m) m.classList.remove('is-open');
+  if (m) micDlgClose(m);
   document.body.classList.remove('modal-open');
 }
 
@@ -887,11 +898,11 @@ function openCalKpi(root, which) {
   const title = root.querySelector('#calKpiTitle'); if (title) title.textContent = CAL_KPI_TITLE[which] || 'Detalle';
   const body = root.querySelector('#calKpiBody'); if (body) body.innerHTML = calKpiBodyHTML(which);
   const m = root.querySelector('#calKpiModal');
-  if (m) { m.classList.add('is-open'); document.body.classList.add('modal-open'); }
+  if (m) { micDlgOpen(m); }
 }
 function closeCalKpi(root) {
   const m = root.querySelector('#calKpiModal');
-  if (m) m.classList.remove('is-open');
+  if (m) micDlgClose(m);
   document.body.classList.remove('modal-open');
 }
 
@@ -925,11 +936,11 @@ function openCalAlert(root) {
   const body = root.querySelector('#calAlertBody');
   if (body) body.innerHTML = calAlertBodyHTML(_calScope.samples);
   const m = root.querySelector('#calAlertModal');
-  if (m) { m.classList.add('is-open'); document.body.classList.add('modal-open'); }
+  if (m) { micDlgOpen(m); }
 }
 function closeCalAlert(root) {
   const m = root.querySelector('#calAlertModal');
-  if (m) m.classList.remove('is-open');
+  if (m) micDlgClose(m);
   document.body.classList.remove('modal-open');
 }
 
@@ -1006,8 +1017,8 @@ function calFactModalHTML(ranges) {
       </div>
     </div>`;
 }
-function openCalFact(root) { const m = root.querySelector('#calFactModal'); if (m) { m.classList.add('is-open'); document.body.classList.add('modal-open'); } }
-function closeCalFact(root) { const m = root.querySelector('#calFactModal'); if (m) m.classList.remove('is-open'); document.body.classList.remove('modal-open'); }
+function openCalFact(root) { const m = root.querySelector('#calFactModal'); if (m) { micDlgOpen(m); } }
+function closeCalFact(root) { const m = root.querySelector('#calFactModal'); if (m) micDlgClose(m); document.body.classList.remove('modal-open'); }
 function saveCalFactors(root) {
   let stored = {};
   try { const raw = localStorage.getItem(CAL_RANGES_KEY); if (raw) stored = JSON.parse(raw) || {}; } catch (_) { stored = {}; }
@@ -1079,8 +1090,8 @@ function micFactModalHTML() {
       </div>
     </div>`;
 }
-function openMicFact(root) { const m = root.querySelector('#micFactModal'); if (m) { m.classList.add('is-open'); document.body.classList.add('modal-open'); } }
-function closeMicFact(root) { const m = root.querySelector('#micFactModal'); if (m) m.classList.remove('is-open'); document.body.classList.remove('modal-open'); }
+function openMicFact(root) { const m = root.querySelector('#micFactModal'); if (m) { micDlgOpen(m); } }
+function closeMicFact(root) { const m = root.querySelector('#micFactModal'); if (m) micDlgClose(m); document.body.classList.remove('modal-open'); }
 function saveMicFactors(root) {
   const area = MIC_AREAS.some((a) => a.key === _micFactArea) ? _micFactArea : MIC_AREAS[0].key;
   const base = loadMicThresholds()[area] || {};
@@ -1345,11 +1356,11 @@ function openCalTankModal(root, key) {
   const body = root.querySelector('#calTankBody');
   if (body) body.innerHTML = calTankBodyHTML(t);
   const m = root.querySelector('#calTankModal');
-  if (m) { m.classList.add('is-open'); document.body.classList.add('modal-open'); }
+  if (m) { micDlgOpen(m); }
 }
 function closeCalTankModal(root) {
   const m = root.querySelector('#calTankModal');
-  if (m) m.classList.remove('is-open');
+  if (m) micDlgClose(m);
   document.body.classList.remove('modal-open');
 }
 
@@ -1431,11 +1442,11 @@ function openCalFicha(root, key) {
   const body = root.querySelector('#calFichaBody');
   if (body) body.innerHTML = calFichaBodyHTML(t);
   const m = root.querySelector('#calFichaModal');
-  if (m) { m.classList.add('is-open'); document.body.classList.add('modal-open'); }
+  if (m) { micDlgOpen(m); }
 }
 function closeCalFicha(root) {
   const m = root.querySelector('#calFichaModal');
-  if (m) m.classList.remove('is-open');
+  if (m) micDlgClose(m);
   document.body.classList.remove('modal-open');
 }
 
@@ -2265,11 +2276,11 @@ function openAlertModal(root) {
   const body = root.querySelector('#micAlertBody');
   if (body) body.innerHTML = alertModalBodyHTML(_scope.rows);
   const m = root.querySelector('#micAlertModal');
-  if (m) { m.classList.add('is-open'); document.body.classList.add('modal-open'); }
+  if (m) { micDlgOpen(m); }
 }
 function closeAlertModal(root) {
   const m = root.querySelector('#micAlertModal');
-  if (m) m.classList.remove('is-open');
+  if (m) micDlgClose(m);
   document.body.classList.remove('modal-open');
 }
 
@@ -2576,10 +2587,10 @@ function openXlsxModal(root) {
   const scope = root.querySelector('#micExpScope');
   if (scope) scope.textContent = `Respeta los filtros activos · ${base.length} registro(s) disponibles. Elige el rango de fechas a exportar.`;
   updateXlsxInfo(root);
-  m.classList.add('is-open'); document.body.classList.add('modal-open');
+  micDlgOpen(m);
 }
 function closeXlsxModal(root) {
-  const m = root.querySelector('#micXlsxModal'); if (m) m.classList.remove('is-open');
+  const m = root.querySelector('#micXlsxModal'); if (m) micDlgClose(m);
   document.body.classList.remove('modal-open');
 }
 function runXlsxExport(root) {
@@ -2648,10 +2659,10 @@ function openPdfModal(root) {
   const scope = root.querySelector('#micPdfScope');
   if (scope) scope.textContent = `Respeta los filtros activos · ${base.length} registro(s) disponibles. Elige el rango de fechas a exportar.`;
   updatePdfInfo(root);
-  m.classList.add('is-open'); document.body.classList.add('modal-open');
+  micDlgOpen(m);
 }
 function closePdfModal(root) {
-  const m = root.querySelector('#micPdfModal'); if (m) m.classList.remove('is-open');
+  const m = root.querySelector('#micPdfModal'); if (m) micDlgClose(m);
   document.body.classList.remove('modal-open');
 }
 function runPdfExport(root) {

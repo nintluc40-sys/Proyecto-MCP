@@ -2,7 +2,6 @@
    SUPERVISOR · helpers de presentación
    ============================================================ */
 import { esc, fmtPop } from '../../core/format.js';
-import { registerModalEscape } from '../../ui/modalEscape.js';
 
 // Re-export: fmtPop ahora vive en core/format.js (compartido con Visitante).
 // Se re-exporta aquí para que los módulos internos del Supervisor que ya lo
@@ -93,90 +92,7 @@ export function dot(color, title) {
   return `<span class="sv-dot" style="background:${color}" title="${esc(title)}"></span>`;
 }
 
-/** Conecta un overlay-modal del Supervisor (clase `.sv-open` + `body.modal-open`):
- *  triggers de apertura, botón de cierre y clic en el backdrop. Centraliza el patrón
- *  repetido en tank/module/params/compareTanks.
- *
- *  @param {Element} root        contenedor donde viven los triggers de apertura
- *  @param {Element} overlay     el `.sv-modal` a abrir/cerrar (null = no-op)
- *  @param {object}  opts
- *  @param {string}  opts.openSel    selector de los triggers de apertura (en `root`)
- *  @param {string}  opts.closeSel   selector del botón de cierre (en `overlay`)
- *  @param {Function}[opts.onOpen]   callback tras abrir; recibe el trigger pulsado
- *  @param {Function}[opts.onClose]  callback tras cerrar (limpieza extra)
- *  @param {boolean} [opts.keyboard] true → los triggers responden a Enter/Espacio
- *                                   (solo para chips `role="button"`; NO para <button>,
- *                                   que ya disparan click nativo y se duplicarían)
- *  @returns {{open: Function, close: Function}|null} controles programáticos
- */
-const FOCUSABLE_SEL = [
-  'a[href]', 'button:not([disabled])', 'input:not([disabled]):not([type="hidden"])',
-  'select:not([disabled])', 'textarea:not([disabled])', '[tabindex]:not([tabindex="-1"])',
-].join(',');
-
-/** Elementos enfocables VISIBLES del diálogo (los de ramas ocultas no deben recibir Tab). */
-function focusablesIn(el) {
-  return [...el.querySelectorAll(FOCUSABLE_SEL)]
-    .filter((n) => !n.closest('[hidden]') && n.getAttribute('aria-hidden') !== 'true');
-}
-
-export function bindModal(root, overlay, { openSel, closeSel, onOpen, onClose, keyboard = false } = {}) {
-  if (!overlay) return null;
-  // Escape cierra el overlay abierto reutilizando su backdrop (idempotente y global).
-  registerModalEscape('.sv-modal.sv-open');
-
-  // Semántica y foco del diálogo. Antes el overlay no se anunciaba como diálogo, el foco
-  // se quedaba en la página de detrás (un lector de pantalla seguía leyendo el fondo) y
-  // Tab paseaba por los controles ocultos tras el velo, desde donde Enter navegaba de
-  // verdad — dejando la vista cambiada con el modal todavía montado.
-  const card = overlay.querySelector('.sv-modal-card') || overlay;
-  card.setAttribute('role', 'dialog');
-  card.setAttribute('aria-modal', 'true');
-  if (!card.hasAttribute('tabindex')) card.setAttribute('tabindex', '-1');
-  const title = overlay.querySelector('.sv-modal-title');
-  if (title) {
-    if (!title.id) title.id = 'svModalTitle-' + Math.random().toString(36).slice(2, 9);
-    card.setAttribute('aria-labelledby', title.id);
-  }
-
-  let lastFocused = null; // a dónde devolver el foco al cerrar
-
-  const open = (trigger) => {
-    lastFocused = trigger || document.activeElement;
-    overlay.classList.add('sv-open');
-    document.body.classList.add('modal-open');
-    if (onOpen) onOpen(trigger); // puede reconstruir el cuerpo: el foco se pone DESPUÉS
-    const f = focusablesIn(card);
-    (f[0] || card).focus?.();
-  };
-  const close = () => {
-    overlay.classList.remove('sv-open');
-    document.body.classList.remove('modal-open');
-    if (onClose) onClose();
-    // Devuelve el foco al control que abrió el modal (si sigue en el documento).
-    if (lastFocused && lastFocused.isConnected) lastFocused.focus?.();
-    lastFocused = null;
-  };
-
-  // Trampa de Tab: el recorrido queda circular DENTRO del diálogo.
-  overlay.addEventListener('keydown', (e) => {
-    if (e.key !== 'Tab') return;
-    const f = focusablesIn(card);
-    if (!f.length) { e.preventDefault(); card.focus?.(); return; }
-    const first = f[0], last = f[f.length - 1];
-    const active = document.activeElement;
-    if (e.shiftKey && (active === first || active === card)) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
-  });
-  if (openSel) {
-    root.querySelectorAll(openSel).forEach((b) => {
-      b.addEventListener('click', () => open(b));
-      if (keyboard) b.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); open(b); }
-      });
-    });
-  }
-  if (closeSel) overlay.querySelector(closeSel)?.addEventListener('click', close);
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-  return { open, close };
-}
+// bindModal vive ahora en src/ui/modal.js: sólo Supervisor tenía diálogos con semántica
+// y foco atrapado, mientras los 10 modales de Microbiología no llevaban ni role="dialog".
+// Se re-exporta para no tocar los 11 puntos del Supervisor que ya lo importan de aquí.
+export { bindModal } from '../../ui/modal.js';
