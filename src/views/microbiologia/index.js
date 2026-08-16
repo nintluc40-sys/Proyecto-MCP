@@ -2949,7 +2949,11 @@ function bind(root) {
   // Teclado: Enter/Espacio sobre el KPI abre el modal de alertas; sobre una fila del
   // heatmap de Tendencias la selecciona. Escape cierra modales.
   root.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { closeAlertModal(root); closeXlsxModal(root); closeCalAlert(root); closeCalKpi(root); closeCalFact(root); closeMicFact(root); closeCalTankModal(root); closeCalFicha(root); closeGenDepto(root); closeGenKpi(root); return; }
+    // Los ONCE modales de la vista. `closePdfModal` faltaba: Escape cerraba los otros diez
+    // y dejaba el de PDF abierto CON el foco atrapado (makeAccessibleDialog no cablea
+    // Escape a propósito, lo hace cada vista), mientras esos mismos cierres quitaban
+    // `body.modal-open` y devolvían el scroll al fondo. Ver el test-guardián de los 11.
+    if (e.key === 'Escape') { closeAlertModal(root); closeXlsxModal(root); closePdfModal(root); closeCalAlert(root); closeCalKpi(root); closeCalFact(root); closeMicFact(root); closeCalTankModal(root); closeCalFicha(root); closeGenDepto(root); closeGenKpi(root); return; }
     if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
     if (e.target.closest('[data-mic-alerts]')) { e.preventDefault(); openAlertModal(root); return; }
     if (e.target.closest('[data-cal-alerts]')) { e.preventDefault(); openCalAlert(root); return; }
