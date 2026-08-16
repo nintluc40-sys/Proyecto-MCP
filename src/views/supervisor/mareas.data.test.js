@@ -204,3 +204,42 @@ describe('mareas · corrCandidate (cribado 🔎, NO prueba de significancia)', (
     expect(corrCandidate(NaN, 0.9, 20)).toBe(false);
   });
 });
+
+/* ============================================================
+   Extremos de amplitud con EMPATE. Ocurre de verdad: medido sobre la hoja cargada,
+   en septiembre-2026 la amplitud máxima (2,15 m) se da los días 12 y 29, y la tarjeta
+   mostraba sólo el 12, sugiriendo un día único.
+   ============================================================ */
+describe('monthStats · días que alcanzan el extremo de amplitud', () => {
+  const day = (dia, amp) => ({ d: new Date(2026, 8, dia), amp, pmax: null, bmin: null, tipo: '' });
+
+  it('devuelve TODOS los días empatados en el máximo', () => {
+    const s = monthStats([day(12, 2.15), day(20, 1.80), day(29, 2.15)]);
+    expect(s.ampMax).toBe(2.15);
+    expect(s.ampMaxDias).toEqual([12, 29]);
+  });
+
+  it('y todos los empatados en el mínimo', () => {
+    const s = monthStats([day(3, 1.10), day(15, 1.90), day(27, 1.10)]);
+    expect(s.ampMin).toBe(1.10);
+    expect(s.ampMinDias).toEqual([3, 27]);
+  });
+
+  it('sin empate devuelve un solo día en la lista', () => {
+    const s = monthStats([day(5, 1.20), day(9, 2.40)]);
+    expect(s.ampMaxDias).toEqual([9]);
+    expect(s.ampMinDias).toEqual([5]);
+  });
+
+  it('conserva `ampMaxDia`/`ampMinDia` como el PRIMER día (contrato anterior)', () => {
+    const s = monthStats([day(12, 2.15), day(29, 2.15)]);
+    expect(s.ampMaxDia).toBe(12);
+  });
+
+  it('sin días o sin amplitudes no revienta', () => {
+    const s = monthStats([]);
+    expect(s.ampMax).toBeNull();
+    expect(s.ampMaxDias).toEqual([]);
+    expect(s.dias).toBe(0);
+  });
+});

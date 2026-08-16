@@ -181,14 +181,19 @@ export function monthStats(monthDays) {
   const days = monthDays || [];
   const pick = (f) => days.map(f).filter((v) => v != null && !isNaN(v));
   const amps = pick((d) => d.amp), pmaxes = pick((d) => d.pmax), bmins = pick((d) => d.bmin);
-  const dayOf = (val) => { const hit = days.find((d) => d.amp != null && Math.abs(d.amp - val) < 1e-9); return hit ? hit.d.getDate() : null; };
+  // Días que alcanzan ese extremo. Se devuelven TODOS porque el empate ocurre de verdad:
+  // medido sobre la hoja cargada, en septiembre-2026 la amplitud máxima (2,15 m) se da los
+  // días 12 y 29. Mostrando sólo el primero, la tarjeta sugería un día único donde hay dos.
+  const daysOf = (val) => days.filter((d) => d.amp != null && Math.abs(d.amp - val) < 1e-9).map((d) => d.d.getDate());
   const ampMax = amps.length ? Math.max(...amps) : null;
   const ampMin = amps.length ? Math.min(...amps) : null;
   return {
     dias: days.length,
     ampProm: amps.length ? amps.reduce((a, b) => a + b, 0) / amps.length : null,
-    ampMax, ampMaxDia: ampMax == null ? null : dayOf(ampMax),
-    ampMin, ampMinDia: ampMin == null ? null : dayOf(ampMin),
+    // `*Dia` conserva el PRIMER día (contrato de siempre, por si algún consumidor espera
+    // un número); `*Dias` trae la lista completa para que la etiqueta pueda declarar el empate.
+    ampMax, ampMaxDia: ampMax == null ? null : (daysOf(ampMax)[0] ?? null), ampMaxDias: ampMax == null ? [] : daysOf(ampMax),
+    ampMin, ampMinDia: ampMin == null ? null : (daysOf(ampMin)[0] ?? null), ampMinDias: ampMin == null ? [] : daysOf(ampMin),
     pleamarMax: pmaxes.length ? Math.max(...pmaxes) : null,
     bajamarMin: bmins.length ? Math.min(...bmins) : null,
     viva: days.filter((d) => d.tipo === 'Viva').length,
@@ -200,10 +205,20 @@ function monthStatsHTML(monthDays) {
   const m = (v) => v == null ? '—' : v.toFixed(2) + ' m';
   const chip = (label, val, sub, col) => `<div class="sv-marea-stat"><div class="sv-marea-stat-l">${esc(label)}</div><div class="sv-marea-stat-v"${col ? ` style="color:${col}"` : ''}>${esc(val)}</div>${sub ? `<div class="sv-marea-stat-s">${esc(sub)}</div>` : ''}</div>`;
   const conAmp = (monthDays || []).filter((d) => d.amp != null).length;
+  // Varios días pueden alcanzar el mismo extremo (medido: sept-2026, máx 2,15 m los días
+  // 12 y 29). Se nombran todos —«días 12 y 29»— en vez de enseñar sólo el primero, que
+  // hacía parecer único un valor que se repite. Con más de tres se resume para no romper
+  // la tarjeta.
+  const diasLbl = (list) => {
+    if (!list || !list.length) return '—';
+    if (list.length === 1) return `día ${list[0]}`;
+    if (list.length <= 3) return `días ${list.slice(0, -1).join(', ')} y ${list[list.length - 1]}`;
+    return `día ${list[0]} y ${list.length - 1} más`;
+  };
   return `<div class="sv-marea-stats">
       ${chip('Amplitud promedio', m(s.ampProm), 'del mes', AMP)}
-      ${chip('Amplitud máxima', m(s.ampMax), s.ampMaxDia ? `día ${s.ampMaxDia}` : '—', PLE)}
-      ${chip('Amplitud mínima', m(s.ampMin), s.ampMinDia ? `día ${s.ampMinDia}` : '—', BAJ)}
+      ${chip('Amplitud máxima', m(s.ampMax), diasLbl(s.ampMaxDias), PLE)}
+      ${chip('Amplitud mínima', m(s.ampMin), diasLbl(s.ampMinDias), BAJ)}
       ${chip('Pleamar máx. absoluta', m(s.pleamarMax), 'del mes', PLE)}
       ${chip('Bajamar mín. absoluta', m(s.bajamarMin), 'del mes', BAJ)}
       ${chip('Días registrados', String(s.dias), conAmp < s.dias ? `${conAmp} con amplitud` : '', '')}
