@@ -27,10 +27,22 @@ const LV_VARS = [
   { key: 'lip', group: 'nutri', label: 'Lípidos',             keys: ['Lípidos', 'Lipidos', 'lipidos'], ref: { op: '>', val: 95 }, color: '#43A047', stage: 'both', kind: 'pct', hint: 'Reservas lipídicas bajas; reforzar enriquecimiento de la dieta.' },
   { key: 'cel', group: 'nutri', label: 'Cel/ml (algas)',      keys: ['Cel/ml', 'Cel_ml', 'cel/ml', 'Cel/Ml'], ref: { op: '>=', val: 25000 }, color: '#00897B', stage: 'both', kind: 'cel', hint: 'Densidad algal baja; reforzar dosificación/cultivo de microalgas.' },
   // Morfológicos
-  { key: 'def', group: 'morfo', label: 'Deformidad',  keys: ['Deformidad', 'deformidad'], ref: { op: '<', val: 5 },  color: '#8E24AA', stage: 'larv', kind: 'pct', hint: 'Revisar incubación, T° y calidad de reproductores.' },
-  { key: 'ret', group: 'morfo', label: 'Retraso',     keys: ['Retraso', 'retraso'], ref: { op: '<', val: 50 }, color: '#F07830', stage: 'larv', kind: 'pct', hint: 'Verificar T°, salinidad y oxigenación.' },
-  { key: 'hng', group: 'morfo', label: 'Hongos',      keys: ['Hongos', 'hongos'], ref: { op: '<', val: 3 }, color: '#38c4f0', stage: 'larv', kind: 'pct', hint: 'Aumentar recambio e higiene; tratamiento antimicótico.' },
-  { key: 'nvi', group: 'morfo', label: 'No Viables',  keys: ['No_Viables', '% No_viables', '%No_viables', '% No_Viables', 'no_viables', 'No viables'], ref: { op: '<', val: 10 }, color: '#e8303e', stage: 'larv', kind: 'pct', hint: 'Calidad genética/nutricional de reproductores.' },
+  //
+  // ⚠ Estas cuatro estaban declaradas como `stage: 'larv'`, pero el laboratorio SÍ las
+  // registra en post-larva. Medido el 2026-08-15 sobre 550 filas reales en estadío PL
+  // (M01, M03, M06 y M08): No Viables trae dato en 365 (66 %), Retraso en 50, Hongos en 25
+  // y Deformidad en 3. Con la etiqueta anterior, el ICL las RESTABA —`iclSeries` no filtra
+  // por estadío, y no debe hacerlo: las bandas ICL_BANDS se calibraron así— mientras que
+  // los tres sitios que sí miran `stage` las apartaban: no salían en las alertas, ni en el
+  // heatmap morfológico, ni en el panel de parámetros. Es decir, bajaban el ICL de dos de
+  // cada tres tanques en PL sin que nada en pantalla lo explicara.
+  // Marcarlas 'both' NO cambia ningún ICL: sólo deja de ocultar lo que ya se está midiendo.
+  // Y es inocuo donde no se mide, porque los tres consumidores exigen dato (`hasData`,
+  // `lastVal !== null`) antes de mostrar nada.
+  { key: 'def', group: 'morfo', label: 'Deformidad',  keys: ['Deformidad', 'deformidad'], ref: { op: '<', val: 5 },  color: '#8E24AA', stage: 'both', kind: 'pct', hint: 'Revisar incubación, T° y calidad de reproductores.' },
+  { key: 'ret', group: 'morfo', label: 'Retraso',     keys: ['Retraso', 'retraso'], ref: { op: '<', val: 50 }, color: '#F07830', stage: 'both', kind: 'pct', hint: 'Verificar T°, salinidad y oxigenación.' },
+  { key: 'hng', group: 'morfo', label: 'Hongos',      keys: ['Hongos', 'hongos'], ref: { op: '<', val: 3 }, color: '#38c4f0', stage: 'both', kind: 'pct', hint: 'Aumentar recambio e higiene; tratamiento antimicótico.' },
+  { key: 'nvi', group: 'morfo', label: 'No Viables',  keys: ['No_Viables', '% No_viables', '%No_viables', '% No_Viables', 'no_viables', 'No viables'], ref: { op: '<', val: 10 }, color: '#e8303e', stage: 'both', kind: 'pct', hint: 'Calidad genética/nutricional de reproductores.' },
   { key: 'op',  group: 'morfo', label: 'Opacidad',    keys: ['% Opacidad', 'Opacidad', 'opacidad', '%Opacidad'], ref: { op: '<', val: 10 }, color: '#f5b942', stage: 'postl', kind: 'pct', hint: 'Etiología bacteriana/ambiental; muestreo histológico.' },
   { key: 'fl',  group: 'morfo', label: 'Flácidez',    keys: ['Flácidez', 'Flacidez', 'flácidez', 'flacidez'], ref: { op: '<', val: 3 }, color: '#a78bfa', stage: 'postl', kind: 'pct', hint: 'Calidad nutricional y vibrios; reducir densidad.' },
   { key: 'ne',  group: 'morfo', label: 'Necrosis',    keys: ['Necrosis', 'necrosis'], ref: { op: '<', val: 3 }, color: '#e53935', stage: 'postl', kind: 'pct', hint: 'Posible infección bacteriana; aislar afectados.' },
