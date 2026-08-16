@@ -6,7 +6,7 @@ import { getField, parseNum, F, getLatestStage, PLG_KEYS } from '../../core/fiel
 import { parseAnyDate } from '../../core/dates.js';
 import { STAGE_ORDER } from '../../config.js';
 import { getters } from './stats.js';
-import { STD_HRS, normHr } from './tank.js';
+import { STD_HRS, normHr } from './horas.js';
 import { avg } from '../../core/util.js';
 
 const { gMod, gTnq, gCor, gFec, gPop, gOD, gTmp } = getters;

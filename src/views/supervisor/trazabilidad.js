@@ -11,7 +11,7 @@ import { getField, parseNum, F, isLarviculturaRow, isTanqueRow, PLGM_KEYS } from
 import { parseAnyDate } from '../../core/dates.js';
 import { natCmp } from '../../core/util.js';
 import { esc } from '../../core/format.js';
-import { STD_HRS, normHr } from './tank.js';
+import { STD_HRS, normHr } from './horas.js';
 import { tankColorInfo } from '../../core/aguaColor.js';
 import { buildFichaPdfDoc, printFichaDocs, pdfFilename, isFichaId, fichaLabel, toIsoDate } from './fichaPdf.js';
 

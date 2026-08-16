@@ -11,6 +11,9 @@ import { getField, F } from '../../core/fields.js';
 import { buildParamSection, iclSeries, paramAlerts, morphHeatmap, linForecast } from './params.js';
 import { tankColorInfo } from '../../core/aguaColor.js';
 import { THRESHOLDS } from '../../config.js';
+// Rejilla horaria de Control_Tanque. Vivía aquí y la importaban module/moduleTrends/
+// trazabilidad, de modo que esta sub-vista hacía de librería de las otras tres.
+import { STD_HRS, HR_LABELS, normHr } from './horas.js';
 
 const { gFec, gOD, gTmp, gPop, gSal } = getters;
 const gHora = (r) => getField(r, F.hora);
@@ -23,9 +26,6 @@ const gStage = (r) => getField(r, ['Estadío', 'Estadio', 'estadío', 'estadio']
 // el punto amarillo «Regular» del semáforo: dos veredictos opuestos en la misma pantalla.
 const SV_TARGET = THRESHOLDS.sv.bueno;
 
-// 12 tomas estándar cada 2 h, en el orden 2 AM → 12 AM (medianoche al final).
-export const STD_HRS = ['2:00:00', '4:00:00', '6:00:00', '8:00:00', '10:00:00', '12:00:00', '14:00:00', '16:00:00', '18:00:00', '20:00:00', '22:00:00', '0:00:00'];
-export const HR_LABELS = ['2 AM', '4 AM', '6 AM', '8 AM', '10 AM', '12 PM', '2 PM', '4 PM', '6 PM', '8 PM', '10 PM', '12 AM'];
 const TANK_METRICS = {
   od:  { icon: '💧', label: 'OD por hora', unit: ' mg/L', color: '#1E88E5', get: gOD, band: [5, 7] },
   tmp: { icon: '🌡️', label: 'Temperatura por hora', unit: ' °C', color: '#F4511E', get: gTmp, band: [31, 33] },
@@ -68,32 +68,6 @@ export const ICL_BANDS = {
   larv:  { opt: 238, att: 168 },
   postl: { opt: 243, att: 158 },
 };
-
-/** Normaliza la hora ("2:00 AM" / "14:00" / "2:00:00" / "800" / "0800") a "H:MM:SS" 24h.
- *  Devuelve null si no se reconoce; los llamantes comparan contra STD_HRS, así que un null
- *  hace que la lectura se DESCARTE (no se dibuja en el perfil horario ni sale en el PDF de
- *  Parámetros). Por eso los formatos compactos sin dos puntos tienen su propia rama: la hoja
- *  los trae cuando la hora se teclea, y antes se perdían en silencio. */
-export function normHr(h) {
-  const s = String(h || '').trim();
-  if (!s) return null;
-  const ampm = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
-  if (ampm) {
-    let hr = parseInt(ampm[1], 10); const mn = ampm[2], sc = ampm[3] || '00';
-    const pm = ampm[4].toUpperCase() === 'PM';
-    if (pm && hr !== 12) hr += 12;
-    if (!pm && hr === 12) hr = 0;
-    return hr + ':' + mn + ':' + sc;
-  }
-  if (/^\d{1,2}:\d{2}:\d{2}$/.test(s)) { const p = s.split(':'); return parseInt(p[0], 10) + ':' + p[1] + ':' + p[2]; }
-  const m2 = s.match(/^(\d{1,2}):(\d{2})$/);
-  if (m2) return parseInt(m2[1], 10) + ':' + m2[2] + ':00';
-  // Compacto sin dos puntos: HMM o HHMM ("800" = 8:00, "0800" = 8:00, "1000" = 10:00).
-  // Devolvía null y la lectura se descartaba. Horas ≥ 24 o minutos ≥ 60 siguen siendo null.
-  const m3 = s.match(/^(\d{1,2})(\d{2})$/);
-  if (m3) { const hr = parseInt(m3[1], 10); if (hr < 24 && +m3[2] < 60) return hr + ':' + m3[2] + ':00'; }
-  return null;
-}
 
 function dailySeries(rows, valFn) {
   const map = new Map();
@@ -143,9 +117,12 @@ export function isotonicDecreasing(vals) {
 export function monotoneDown(values, cap) {
   const idx = [], vals = [];
   values.forEach((v, i) => { if (v !== null && v !== undefined && !isNaN(v)) { idx.push(i); vals.push(cap != null ? Math.min(v, cap) : v); } });
-  if (vals.length < 2) return values.slice();
-  const fit = isotonicDecreasing(vals);
   const out = values.slice();
+  // Con menos de dos puntos no hay monotonía que imponer, pero el TOPE sí sigue valiendo:
+  // antes se devolvían los valores crudos y un tanque con una sola lectura podía dibujarse
+  // por encima de lo sembrado, que es justo lo que `cap` existe para impedir.
+  if (vals.length < 2) { idx.forEach((i, k) => { out[i] = vals[k]; }); return out; }
+  const fit = isotonicDecreasing(vals);
   idx.forEach((i, k) => { out[i] = fit[k]; });
   return out;
 }
@@ -265,7 +242,11 @@ export function renderTank(ctx, mod, tq) {
       <div class="sv-chart-cardhead">
         <div class="sv-chart-title" style="margin:0">${title}</div>
         <div class="sv-chart-actions">
-          ${norm ? `<button class="lv-fs-btn sv-norm-btn${_svNorm ? ' is-active' : ''}" data-svnorm="${key}" aria-pressed="${_svNorm}" title="Normalizar: tendencia descendente sin picos" aria-label="Normalizar ${esc(title)}">📉 Normalizar</button>` : ''}
+          ${/* `data-svnorm` va SIN valor a propósito: el toggle es ÚNICO para Población y
+                Supervivencia (comparten `_svNorm`) y el manejador enciende los dos botones a
+                la vez. Llevaba la clave del gráfico, que nadie leía: prometía una
+                granularidad por gráfico que no existe. */''}
+          ${norm ? `<button class="lv-fs-btn sv-norm-btn${_svNorm ? ' is-active' : ''}" data-svnorm aria-pressed="${_svNorm}" title="Normalizar: tendencia descendente sin picos (afecta a Población y Supervivencia)" aria-label="Normalizar ${esc(title)}">📉 Normalizar</button>` : ''}
           <button class="lv-fs-btn" data-svfs="${key}" title="Ampliar gráfico" aria-label="Ampliar ${esc(title)}">⛶</button>
         </div>
       </div>
@@ -731,19 +712,27 @@ export function renderTank(ctx, mod, tq) {
         const svv = popv.map((p) => (p !== null && s.popFirst && s.popFirst > 0) ? Math.min((p / s.popFirst) * 100, 100) : null);
         const H = 7;
         const lastSv = [...svv].reverse().find((v) => v != null);
-        // La SUPERVIVENCIA no puede crecer: no hay natalidad en el cultivo. Es la misma
-        // regla física que aplica la proyección del módulo (`rate = Math.min(b, 0)` en
-        // moduleTrends.js), y aquí faltaba: con el ruido del registro manual la recta podía
-        // salir con pendiente positiva y el pronóstico prometía una recuperación imposible,
-        // rotulada además «↗ subiendo». Si el ajuste sube se proyecta PLANO desde el último
-        // dato real —no desde el valor ajustado—, que es lo más que cabe afirmar.
-        // La POBLACIÓN sí conserva su recta: es una estimación manual y la propia vista
-        // advierte de sus picos, así que un repunte ahí es plausible como dato, no imposible.
-        const svFit = linForecast(svv, H);
-        const svF = (svFit && svFit.slope > 0 && lastSv != null)
-          ? { slope: 0, intercept: lastSv, future: Array(H).fill(lastSv), predict: () => lastSv }
-          : svFit;
-        const popF = linForecast(popv, H);
+        // Ni la SUPERVIVENCIA ni la POBLACIÓN pueden crecer: no hay natalidad en el cultivo.
+        // Es la misma regla física que aplica la proyección del módulo (`rate = Math.min(b, 0)`
+        // en moduleTrends.js): con el ruido del registro manual la recta puede salir con
+        // pendiente positiva y el pronóstico prometería una recuperación imposible, rotulada
+        // además «↗ subiendo». Si el ajuste sube se proyecta PLANO desde el último dato real
+        // —no desde el valor ajustado—, que es lo más que cabe afirmar.
+        //
+        // ⚠ La regla tiene que aplicarse a las DOS, y no sólo a SV, porque aquí `svv` se
+        // DERIVA de `popv` (ver arriba: p / popFirst × 100). Son la misma magnitud escalada,
+        // así que sus pendientes comparten signo SIEMPRE: aplanando sólo una, el modal
+        // enseñaba dos cifras incompatibles de lo mismo. Medido sobre el módulo M01 real,
+        // 5 de sus 12 series tanque+corrida tienen pendiente de población positiva; en un
+        // caso de ejemplo el KPI «SV +7d» decía 90 % mientras «Pob. +7d» implicaba 100 %.
+        // Un repunte en el HISTÓRICO sigue siendo plausible (la población es una estimación
+        // manual y la vista lo advierte); lo que no cabe es proyectarlo hacia adelante.
+        const flatIfRising = (fit, lastReal) => (fit && fit.slope > 0 && lastReal != null)
+          ? { slope: 0, intercept: lastReal, future: Array(H).fill(lastReal), predict: () => lastReal }
+          : fit;
+        const lastPopReal = [...popv].reverse().find((v) => v != null);
+        const svF = flatIfRising(linForecast(svv, H), lastSv);
+        const popF = flatIfRising(linForecast(popv, H), lastPopReal);
         const futLabels = Array.from({ length: H }, (_, k) => `+${k + 1}d`);
         const labels = [...fdays, ...futLabels];
         const histLen = fdays.length;

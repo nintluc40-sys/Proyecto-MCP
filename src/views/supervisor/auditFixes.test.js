@@ -101,12 +101,45 @@ describe('T-02 · el pronóstico no proyecta supervivencia creciente', () => {
     expect(kpis).toContain('estable');
   });
 
-  it('la POBLACIÓN conserva su recta (es estimación manual, un repunte es plausible)', () => {
+  // ▼ Este caso fijaba lo CONTRARIO («la POBLACIÓN conserva su recta, un repunte es
+  // plausible») y se cambió el 2026-08-15 con evidencia medida. El razonamiento anterior
+  // vale para el HISTÓRICO —la población es una estimación manual y la vista lo advierte—,
+  // pero no para la PROYECCIÓN, por dos motivos:
+  //
+  //   1. Con ESTE MISMO fixture la recta proyectaba 1.005.000 animales habiéndose sembrado
+  //      1.000.000: población que nunca existió. La SV implícita salía 100,5 % y sólo el
+  //      clamp la disimulaba cortándola a 100 %.
+  //   2. Aquí `svv` se DERIVA de `popv` (tank.js: p / popFirst × 100), así que ambas son la
+  //      misma magnitud escalada y sus pendientes comparten signo. Aplanar sólo SV dejaba
+  //      dos cifras incompatibles de lo mismo en el mismo modal. Medido sobre el módulo M01
+  //      real: 5 de sus 12 series tanque+corrida tienen pendiente de población positiva.
+  //
+  // La regla física («no hay natalidad en el cultivo») se aplica ahora a las DOS curvas.
+  it('la POBLACIÓN tampoco se proyecta creciente: no hay natalidad en el cultivo', () => {
     const cfg = forecast();
     const pobProy = cfg.data.datasets.find((d) => d.label === 'Pob. proyección').data.filter((v) => v != null);
     expect(pobProy.length).toBeGreaterThan(1);
-    // No se le impone monotonía: con estos datos la recta sube.
-    expect(pobProy[pobProy.length - 1]).toBeGreaterThan(pobProy[0]);
+    // Ningún punto por encima del anterior (mismo criterio que la proyección de SV).
+    pobProy.forEach((v, i) => { if (i) expect(v).toBeLessThanOrEqual(pobProy[i - 1] + 1e-9); });
+  });
+
+  it('la proyección de Población se ancla en el último dato REAL y no supera la siembra', () => {
+    const cfg = forecast();
+    const hist = cfg.data.datasets.find((d) => d.label === 'Pob. histórica').data.filter((v) => v != null);
+    const pobProy = cfg.data.datasets.find((d) => d.label === 'Pob. proyección').data.filter((v) => v != null);
+    expect(pobProy[pobProy.length - 1]).toBeCloseTo(hist[hist.length - 1], 6);
+    const siembra = hist[0]; // primera población real del fixture = lo sembrado
+    pobProy.forEach((v) => expect(v).toBeLessThanOrEqual(siembra + 1e-9));
+  });
+
+  it('SV y Población dejan de contradecirse: ambas planas con los mismos datos', () => {
+    const cfg = forecast();
+    const svProy = cfg.data.datasets.find((d) => d.label === 'SV proyección').data.filter((v) => v != null);
+    const pobProy = cfg.data.datasets.find((d) => d.label === 'Pob. proyección').data.filter((v) => v != null);
+    // SV = pob / popFirst × 100 ⇒ si una queda plana, la otra también debe quedarlo.
+    const svPlana = svProy.every((v) => Math.abs(v - svProy[0]) < 1e-9);
+    const pobPlana = pobProy.every((v) => Math.abs(v - pobProy[0]) < 1e-9);
+    expect(svPlana).toBe(pobPlana);
   });
 });
 

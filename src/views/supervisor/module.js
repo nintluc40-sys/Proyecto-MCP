@@ -24,7 +24,7 @@
    ============================================================ */
 import { modStats, tankStats, tanksOf, getters } from './stats.js';
 import { moduleSvPopSeries, modulePlgSeries, moduleHourlyDates, moduleHourly, moduleDayKpis, moduleDayTankReadings, cosechaEstimate, projectMetric } from './moduleTrends.js';
-import { HR_LABELS } from './tank.js';
+import { HR_LABELS } from './horas.js';
 import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, kpiTecnicos, breadcrumb, bindModal } from './ui.js';
 import { computeSiembras, computeCorridaSiembras } from './siembras.js';
 import { toast } from '../../ui/toast.js';

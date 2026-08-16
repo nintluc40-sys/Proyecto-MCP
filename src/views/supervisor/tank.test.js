@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { isotonicDecreasing, monotoneDown, normHr, STD_HRS, ICL_BANDS } from './tank.js';
+import { isotonicDecreasing, monotoneDown, ICL_BANDS } from './tank.js';
+// La rejilla horaria salió de tank.js a su propio módulo: la comparten module,
+// moduleTrends y trazabilidad, y una sub-vista no debería ser librería de las otras.
+import { normHr, STD_HRS } from './horas.js';
 import { iclSeries } from './params.js';
 
 describe('ICL_BANDS · umbrales recalibrados (2026-07-23)', () => {
