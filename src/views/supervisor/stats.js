@@ -58,6 +58,10 @@ const inGlobalDate = (r) => {
   // que mostrarla de más. La contrapartida —y conviene tenerla presente al leer un
   // conteo— es que una fila con la fecha mal tecleada aparece en TODAS las ventanas
   // a la vez, incluidos los presets de 7 y 30 días.
+  // ⚠ El PDF hace lo CONTRARIO: `inRange` (views/supervisor/trazabilidad.js) descarta lo
+  // no fechable, porque un documento que se archiva no debería llevar registros sin fecha
+  // atribuible. Ante una fecha mal tecleada, papel y pantalla difieren. Medido el
+  // 2026-08-15 sobre 3.152 filas reales: cero casos, así que hoy no diverge nada.
   if (!d || isNaN(d)) return true;
   if (dateFrom && d < dateFrom) return false;
   if (dateTo && d > dateTo) return false;

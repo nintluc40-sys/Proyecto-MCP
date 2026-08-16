@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { store } from '../../core/store.js';
-import { buildFichaPages, downloadTrazabilidad, moduleDateRange } from './trazabilidad.js';
+import { buildFichaPages, downloadTrazabilidad, moduleDateRange, PTIMES } from './trazabilidad.js';
+import { STD_HRS, normHr } from './horas.js';
 import { buildFichaPdfDoc } from './fichaPdf.js';
 
 const row = (o) => ({ _SheetOrigin: 'Larvicultura', 'Módulo': 'M01', Corrida: '573', ...o });
@@ -382,5 +383,38 @@ describe('trazabilidad · caché de filas por fuente', () => {
     expect(buildFichaPages('poblacion', OPTS).map((p) => p.d.fecha)).toEqual(['2026-06-01']);
     expect(buildFichaPages('poblacion', { mod: 'M02', corrida: '573' }).map((p) => p.d.fecha)).toEqual(['2026-06-09']);
     expect(buildFichaPages('poblacion', { mod: 'M01', corrida: '574' }).map((p) => p.d.fecha)).toEqual(['2026-07-02']);
+  });
+});
+
+/* ============================================================
+   GUARDIÁN · PTIMES ↔ STD_HRS. Son arrays PARALELOS en archivos distintos
+   (PTIMES aquí, STD_HRS en horas.js) y la ficha de Parámetros depende de que el índice
+   de uno valga para el otro: `paramsPages` localiza la toma con
+   STD_HRS.indexOf(normHr(hora)) y nombra la columna con PTIMES[j].
+   Si se desalinean, PTIMES[j] sale undefined, la clave queda 'od_0_undefined' y la
+   lectura DESAPARECE del PDF sin ningún error. Este test es la red que lo impide.
+   ============================================================ */
+describe('PTIMES ↔ STD_HRS · invariante de la ficha de Parámetros', () => {
+  it('tienen la MISMA longitud (12 tomas)', () => {
+    expect(PTIMES.length).toBe(STD_HRS.length);
+    expect(PTIMES.length).toBe(12);
+  });
+
+  it('cada índice apunta a la misma hora en ambas listas', () => {
+    STD_HRS.forEach((std, j) => {
+      const [h, m] = std.split(':');                       // '2:00:00' → h='2', m='00'
+      const esperado = String(h).padStart(2, '0') + ':' + m; // → '02:00'
+      expect(PTIMES[j], `índice ${j} (STD_HRS='${std}')`).toBe(esperado);
+    });
+  });
+
+  it('normHr de cada etiqueta vuelve a su propio índice (ida y vuelta)', () => {
+    PTIMES.forEach((label, j) => {
+      expect(STD_HRS.indexOf(normHr(label)), `etiqueta ${label}`).toBe(j);
+    });
+  });
+
+  it('no hay etiquetas repetidas (dos columnas no pueden compartir clave)', () => {
+    expect(new Set(PTIMES).size).toBe(PTIMES.length);
   });
 });

@@ -17,13 +17,29 @@ import { buildFichaPdfDoc, printFichaDocs, pdfFilename, isFichaId, fichaLabel, t
 
 // Horas de la ficha de Parámetros (etiquetas). Paralelas a STD_HRS (mismo índice):
 // STD_HRS[j] (normalizada 'H:MM:SS') ↔ PTIMES[j] (etiqueta 'HH:MM').
-const PTIMES = ['02:00', '04:00', '06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00', '00:00'];
+//
+// ⚠ La correspondencia por ÍNDICE es lo que sostiene la ficha: `paramsPages` localiza la
+// toma con `STD_HRS.indexOf(normHr(hora))` y usa ese índice para nombrar la columna con
+// `PTIMES[j]`. Si las dos listas se desalinean, `PTIMES[j]` sale `undefined`, la clave
+// queda como 'od_0_undefined' y la lectura DESAPARECE del PDF sin error ninguno. Como
+// viven en archivos distintos (STD_HRS está en horas.js), un test-guardián fija la
+// invariante: ver trazabilidad.test.js. Exportado sólo para ese test.
+export const PTIMES = ['02:00', '04:00', '06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00', '00:00'];
 
 const distinct = (a) => [...new Set(a.filter(Boolean))];
 const pdfVal = (v) => (v !== undefined && v !== '' && v !== null) ? esc(String(v)) : '<span class="empty">—</span>';
 const firstField = (rows, field) => { for (const r of rows) { const v = getField(r, field); if (v !== '' && v != null) return v; } return ''; };
 
 // ¿La fecha `f` cae en el rango [from, to] (ISO, ambos opcionales)?
+// ⚠ Una fila cuya fecha NO se puede parsear queda FUERA de la ficha, y queda fuera aunque
+// no haya rango elegido (la guarda es lo primero que se evalúa). Es lo contrario de lo que
+// hace la pantalla: `inGlobalDate` (views/supervisor/stats.js) CONSERVA esas filas en
+// cualquier ventana, para no hacerlas desaparecer de los recuentos en silencio.
+// La divergencia es deliberada —un documento que se imprime y archiva no debería incluir
+// registros sin fecha atribuible— pero conviene conocerla: ante una fecha mal tecleada, el
+// papel y la pantalla dirían cosas distintas. Medido el 2026-08-15 sobre 3.152 filas reales
+// (M01 y M08 de Larvicultura + Control_Tanque M01): CERO fechas no parseables, así que hoy
+// no hay ni un caso en que ambos criterios difieran.
 function inRange(f, from, to) {
   const t = parseAnyDate(f); if (!t) return false;
   if (from) { const a = parseAnyDate(from); if (a && t < a) return false; }
