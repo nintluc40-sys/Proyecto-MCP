@@ -316,14 +316,14 @@ function genKpiBodyHTML(which) {
 
   if (which === 'muestras') {
     const byDepto = new Map();
-    sc.summaries.forEach((s) => { const d = deptoOfFormato(s.ctx.formatoKey) || '—'; byDepto.set(d, (byDepto.get(d) || 0) + 1); });
+    sc.summaries.forEach((s) => { const d = genAreaOf(s.ctx); byDepto.set(d, (byDepto.get(d) || 0) + 1); });
     return `<p class="cal-kpi-lead">Se registraron <b>${k.micCount}</b> muestra(s) de microbiología en <b>${k.micDays.length}</b> día(s) de muestreo del mes.</p>
       <div class="cal-kpi-sec"><h4>Por departamento</h4><div class="cal-kpi-chips">${chips(byDepto)}</div></div>
       <div class="cal-kpi-sec"><h4>Muestras por día</h4>${genDayBars(k.micDays)}</div>`;
   }
   if (which === 'alerta') {
     const byDepto = new Map();
-    sc.summaries.forEach((s) => { if (isAlerta(s.worst)) { const d = deptoOfFormato(s.ctx.formatoKey) || '—'; byDepto.set(d, (byDepto.get(d) || 0) + 1); } });
+    sc.summaries.forEach((s) => { if (isAlerta(s.worst)) { const d = genAreaOf(s.ctx); byDepto.set(d, (byDepto.get(d) || 0) + 1); } });
     return `<p class="cal-kpi-lead"><b>${k.alertCount}</b> muestra(s) en alerta ${k.micCount ? `(<b>${k.alertRatio}%</b> del total)` : ''}.</p>
       <p class="cal-kpi-note">"En alerta" = la muestra tiene al menos un patógeno en nivel Moderado o Elevado.</p>
       <div class="cal-kpi-sec"><h4>Patógenos que más disparan alertas</h4>${rankBars(k.patTop.filter((t) => t.n))}</div>
@@ -402,13 +402,19 @@ function genKpiStripHTML(k) {
   </div>`;
 }
 
-// Mapea el departamento de una muestra de agua a las 3 áreas canónicas de Bacteriología.
-/** Área del scorecard para una muestra de Calidad de Agua. Debe hablar el MISMO
- *  vocabulario que el lado de Bacteriología (que agrupa por `deptoOfFormato`): manda la
- *  columna Departamento de la hoja y, si falta o no es del vocabulario, se deriva del
- *  Formato. Antes solo reconocía Larvicultura/Maduración y mandaba todo lo demás a
- *  'Otros': el agua de Algas se sumaba a la fila «Otros» —que puede no tener ni una
- *  muestra bacteriológica— mientras la fila «Algas» mostraba WQI y cumplimiento «—». */
+/** Área del panorama General para UNA muestra, sea de Bacteriología o de Calidad de Agua:
+ *  manda la columna Departamento de la hoja y, si falta o no es del vocabulario canónico,
+ *  se deriva del Formato; 'Otros' como último recurso. Definición ÚNICA de las dos mitades
+ *  de la tabla «Estado por área» y de sus modales.
+ *
+ *  Antes cada mitad de la MISMA fila usaba una regla: el agua ya pasaba por aquí, pero
+ *  Bacteriología agrupaba por `deptoOfFormato(ctx.formatoKey)` a secas — el formato, no el
+ *  departamento— mientras el filtro de la sub-vista y el export usan la columna real
+ *  (`deptoOf`). Medido sobre la hoja de producción: 84 muestras de Larvicultura se
+ *  reportaban en la fila «Otros» (Julio 32, con 32 alertas; Agosto 53, con 50) y 2 filas
+ *  cuyo formato no está catalogado NO aparecían en ninguna fila del scorecard, pese a
+ *  contarlas el KPI de arriba — el conteo del panorama no cuadraba con su propia tabla.
+ *  Con la fila sin `Departamento` el resultado no cambia: sigue derivándose del Formato. */
 const genAreaOf = (ctx) => {
   const d = deptoNorm(String((ctx && (ctx.depto ?? ctx.departamento)) || '').trim());
   if (DEPARTAMENTOS.includes(d)) return d;
@@ -419,7 +425,7 @@ const genAreaOf = (ctx) => {
  *  peor nivel, WQI y cumplimiento. Solo áreas con datos en alguna de las dos fuentes. */
 function genAreaStats(summaries, samples, ranges) {
   return DEPARTAMENTOS.map((area) => {
-    const bl = summaries.filter((s) => deptoOfFormato(s.ctx.formatoKey) === area);
+    const bl = summaries.filter((s) => genAreaOf(s.ctx) === area);
     const dist = { 'Mínimo': 0, 'Leve': 0, 'Moderado': 0, 'Elevado': 0 };
     bl.forEach((s) => { if (s.worst && dist[s.worst] !== undefined) dist[s.worst]++; });
     const worstSev = dist.Elevado > 0 ? 'critico' : dist.Moderado > 0 ? 'fuera' : (bl.length ? 'optimo' : 'sin-rango');
@@ -479,7 +485,7 @@ function genDeptoModalHTML() {
 }
 function genDeptoBodyHTML(area) {
   const sc = _genScope; if (!sc) return '';
-  const bl = sc.summaries.filter((s) => deptoOfFormato(s.ctx.formatoKey) === area);
+  const bl = sc.summaries.filter((s) => genAreaOf(s.ctx) === area);
   const dist = { 'Mínimo': 0, 'Leve': 0, 'Moderado': 0, 'Elevado': 0 };
   const pm = new Map(), byFmt = new Map(), byTipo = new Map();
   bl.forEach((s) => {

@@ -46,7 +46,7 @@ function scorecard(rows) {
   const out = {};
   root.querySelectorAll('.gen-sc-row').forEach((r) => {
     const g = (s) => (r.querySelector(s)?.textContent || '').trim();
-    out[g('.gen-sc-area')] = { n: g('.gen-sc-n'), wqi: g('.gen-sc-wqi'), cump: g('.gen-sc-cump') };
+    out[g('.gen-sc-area')] = { n: g('.gen-sc-n'), alert: g('.gen-sc-alert'), wqi: g('.gen-sc-wqi'), cump: g('.gen-sc-cump') };
   });
   return out;
 }
@@ -92,5 +92,61 @@ describe('General · scorecard: un área, UNA regla de agrupación', () => {
     ]);
     expect(sc.Larvicultura.wqi).toBe('100');
     expect(Object.keys(sc)).not.toContain('Otros');
+  });
+});
+
+/* ============================================================
+   La OTRA mitad de la misma fila. Arriba se unificó el lado de Calidad de Agua; el de
+   Bacteriología se quedó agrupando por `deptoOfFormato(ctx.formatoKey)` —el FORMATO— mientras
+   el filtro de la sub-vista y el export usan `deptoOf` —la columna Departamento de la hoja—.
+   Medido sobre las 3.146 filas reales: 84 muestras de Larvicultura se reportaban en la fila
+   «Otros» (Julio 32, con 32 alertas; Agosto 53, con 50) y 2 filas con un formato no catalogado
+   no salían en NINGUNA fila, pese a contarlas el KPI de arriba.
+   ============================================================ */
+const kpiVal = (which) => {
+  const t = root.querySelector(`[data-gen-kpi="${which}"]`);
+  return t ? (t.querySelector('.cal-inst-v')?.textContent || '').trim() : null;
+};
+const sumaMuestras = (sc) => Object.values(sc).reduce((a, r) => a + (r.n === '—' ? 0 : +r.n), 0);
+
+describe('General · scorecard: Bacteriología se ubica por Departamento, no por Formato', () => {
+  // Formato REAL de la hoja que no está catalogado (`classifyFormato` devuelve '').
+  const HUERFANA = M({ 'Fecha muestreo': '05/06/2026', Corrida: '573', Departamento: 'Larvicultura', Formato: 'Larvicultura · EM', 'Módulo/Sala': '2', 'TQ/N°': '4', 'V.Totales UFC': '900000' });
+
+  it('una muestra de formato no catalogado NO desaparece del scorecard', () => {
+    const sc = scorecard([BACT_LARV, HUERFANA]);
+    expect(sc.Larvicultura.n).toBe('2');
+  });
+
+  it('el scorecard cuadra con el KPI de arriba', () => {
+    const sc = scorecard([BACT_LARV, HUERFANA]);
+    expect(String(sumaMuestras(sc))).toBe(kpiVal('muestras'));
+  });
+
+  it('la alerta de esa muestra no se pierde en el camino', () => {
+    const sc = scorecard([BACT_LARV, HUERFANA]);
+    expect(sc.Larvicultura.alert).toContain('1'); // la fila declara su alerta
+    expect(kpiVal('alerta')).toBe('1');
+  });
+
+  it('manda la columna Departamento, no el departamento del formato', () => {
+    // Formato «Hisopados» → departamento derivado «Otros»; la hoja dice Larvicultura.
+    const sc = scorecard([M({ 'Fecha muestreo': '05/06/2026', Corrida: '573', Departamento: 'Larvicultura', Formato: 'Hisopados', 'V.Totales UFC': '900000' })]);
+    expect(sc.Larvicultura).toBeDefined();
+    expect(Object.keys(sc)).not.toContain('Otros');
+  });
+
+  it('el desglose del área incluye esa muestra', () => {
+    scorecard([BACT_LARV, HUERFANA]);
+    root.querySelector('[data-gen-depto="Larvicultura"]').click();
+    expect(root.querySelector('#genDeptoBody').textContent).toContain('2 muestra(s) de Bacteriología');
+  });
+
+  it('los chips del modal del KPI hablan el mismo vocabulario', () => {
+    scorecard([BACT_LARV, HUERFANA]);
+    root.querySelector('[data-gen-kpi="muestras"]').click();
+    const chips = root.querySelector('#genKpiBody').textContent;
+    expect(chips).toContain('Larvicultura');
+    expect(chips).not.toContain('—'); // ya no hay bolsa sin departamento
   });
 });
