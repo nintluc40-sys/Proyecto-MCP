@@ -163,6 +163,10 @@ export function luminPresence(row) {
 // `area(tipoMuestra)` → clave de MIC_DR_BASE (réplica fiel de los rkeyFn de la ficha).
 export const MIC_FORMATS = {
   'larv-muestra':       { label: 'Larvicultura · Muestra',        area: (t) => (t === 'Agua' ? 'larv-agua' : 'larv-animal') },
+  // Larvicultura · Despacho: muestra de agua o animal, igual que «Larvicultura · Muestra»,
+  // pero con áreas propias (larvdes-*) porque en la ficha cambian los FACTORES de dilución.
+  // Los umbrales l/m/e son los mismos; aquí el factor ya viene aplicado en la columna UFC.
+  'larv-despacho':      { label: 'Larvicultura · Despacho',       area: (t) => (t === 'Agua' ? 'larvdes-agua' : 'larvdes-animal') },
   reservorios:          { label: 'Larvicultura · Reservorios',    area: () => 'larv-agua' },
   'placa-amb':          { label: 'Larvicultura · Placa ambiental', area: () => 'ambiental' },
   artemia:              { label: 'Larvicultura · Artemia',        area: () => 'artemia' },
@@ -189,7 +193,7 @@ const _FMT_BY_FOLDED = Object.fromEntries(Object.entries(MIC_FORMATS).map(([k, v
 // ── agrupación de formatos por DEPARTAMENTO (filtro Departamento → Formato) ──
 export const DEPARTAMENTOS = ['Larvicultura', 'Maduración', 'Algas', 'Otros'];
 export const DEPTO_FORMATS = {
-  'Larvicultura': ['larv-muestra', 'reservorios', 'placa-amb', 'artemia'],
+  'Larvicultura': ['larv-muestra', 'larv-despacho', 'reservorios', 'placa-amb', 'artemia'],
   'Maduración': ['mad-principal', 'mad-agua', 'mad-ensayo', 'alim-vivo', 'ras', 'agua-mar', 'agua-limpia-mar', 'mad-desinf'],
   'Algas': ['algas', 'algas-mensual', 'algas-r'],
   'Otros': ['externas', 'hisopados', 'hisopados-despacho'],
@@ -216,6 +220,14 @@ export function classifyFormato(raw) {
   // "Maduración · Despacho" (nuevo nombre) y "Maduración · Desinfección" (legado) → mad-desinf.
   // Debe ir ANTES de la regla genérica de "despacho" (que mapea a Hisopados despacho).
   if (k.includes('maduracion') && k.includes('despacho')) return 'mad-desinf';
+  // "Larvicultura · Despacho" — el gemelo de la línea de arriba, y por el mismo motivo:
+  // sin esta regla caía en la genérica de "despacho" → 'hisopados-despacho' → umbrales
+  // AMBIENTALES (los de un hisopado de superficie) sobre muestras de agua/animal.
+  // Medido sobre las 84 filas reales: el Nivel recalculado contradecía en un 65 % (285 de
+  // 441 registros) al que escribió la app de captura en la propia hoja, y siempre
+  // escalando (C. Verdes 40 UFC: hoja «Mínimo» → tablero «Moderado»). Con las áreas
+  // larvdes-* la coincidencia es 441/441. En los otros 12 formatos ya era 100 %.
+  if (k.includes('larvicultura') && k.includes('despacho')) return 'larv-despacho';
   if (k.includes('desinfec')) return 'mad-desinf';
   if (k.includes('ensayo')) return 'mad-ensayo';
   if (k.includes('ras')) return 'ras';
@@ -257,6 +269,19 @@ const MIC_DR_BASE = {
     valg: { l: 1000, m: 5000, e: 10000 }, vpara: { l: 100, m: 200, e: 300 }, vvuln: { l: 100, m: 200, e: 300 },
     pseudo: { l: 100, m: 200, e: 300 }, aero: { l: 1000, m: 5000, e: 10000 },
     btot: { l: 10000, m: 100000, e: 1000000 }, bnar: { l: 1000, m: 5000, e: 10000 }, hongos: { l: 2, m: 20, e: 40 },
+  },
+  // Larvicultura · Despacho — MISMOS umbrales que Larvicultura · Animal/Agua; en la ficha
+  // solo cambian los factores de dilución (Animal ×200, Agua ×20), que aquí no se usan
+  // porque el UFC llega ya multiplicado. Se portan como áreas propias, igual que en la
+  // ficha, y con SOLO los 6 conteos que ese formato registra: así un patógeno que este
+  // formato no mide no recibe nivel por la puerta de atrás.
+  'larvdes-animal': {
+    vamar: { l: 1000, m: 5000, e: 10000 }, vverd: { l: 300, m: 600, e: 1000 }, vtot: { l: 1000, m: 5000, e: 10000 },
+    valg: { l: 1000, m: 5000, e: 10000 }, vpara: { l: 300, m: 600, e: 1000 }, vvuln: { l: 300, m: 600, e: 1000 },
+  },
+  'larvdes-agua': {
+    vamar: { l: 1000, m: 5000, e: 10000 }, vverd: { l: 100, m: 200, e: 300 }, vtot: { l: 1000, m: 5000, e: 10000 },
+    valg: { l: 1000, m: 5000, e: 10000 }, vpara: { l: 100, m: 200, e: 300 }, vvuln: { l: 100, m: 200, e: 300 },
   },
   'mad-reprod': {
     vamar: { l: 1000, m: 10000, e: 100000 }, vverd: { l: 500, m: 3000, e: 5000 }, vtot: { l: 1000, m: 10000, e: 100000 },
@@ -314,6 +339,8 @@ export const MIC_FACTORS_KEY = 'larv4_mic_factors';
 export const MIC_AREAS = [
   { key: 'larv-animal', label: 'Larvicultura · Animal' },
   { key: 'larv-agua', label: 'Larvicultura · Agua' },
+  { key: 'larvdes-animal', label: 'Larvicultura · Despacho · Animal' },
+  { key: 'larvdes-agua', label: 'Larvicultura · Despacho · Agua' },
   { key: 'artemia', label: 'Artemia' },
   { key: 'ambiental', label: 'Ambiental (placas/hisopados)' },
   { key: 'mad-reprod', label: 'Maduración · Reproductores' },
