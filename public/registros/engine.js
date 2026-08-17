@@ -8817,7 +8817,7 @@ const MIC_FORMATS = {
       { k:"tq",          l:"TQ/N°",           type:"sel", opts:MIC_TQS_LARV, w:56 },
       { k:"lote",        l:"Lote",            type:"txt", w:80 }
     ],
-    params:["vamar","vverd","vtot","valg","vpara","vvuln","pseudo","aero","btot","bnar","hongos","entero","vlum","levad"]
+    params:["vamar","vverd","vtot","valg","vvuln","vpara","pseudo","aero","btot","bnar","hongos","entero","vlum","levad"]
   },
   "larv-despacho": {
     // Despacho: funciona igual que Larvicultura · Muestra (muestra de agua o animal),
@@ -8832,7 +8832,7 @@ const MIC_FORMATS = {
       { k:"tq",          l:"TQ/N°",           type:"sel", opts:MIC_TQS_LARV, w:56 },
       { k:"lote",        l:"Lote",            type:"txt", w:80 }
     ],
-    params:["vamar","vverd","vtot","valg","vpara","vvuln"]
+    params:["vamar","vverd","vtot","valg","vvuln","vpara"]
   },
   "mad-principal": {
     depto:"Maduración", label:"Maduración · Principal",
@@ -8844,7 +8844,7 @@ const MIC_FORMATS = {
       { k:"lote", l:"Lote",  type:"txt", w:80 },
       { k:"tipoMuestra", l:"Muestra", type:"sel", opts:["","Hepatopáncreas","Intestino","Hemolinfa"], w:120 }
     ],
-    params:["vamar","vverd","vtot","vlum","valg","vpara","vvuln","pseudo","aero","btot","bnar","hongos","entero"]
+    params:["vamar","vverd","vtot","vlum","valg","vvuln","vpara","pseudo","aero","btot","bnar","hongos","entero"]
   },
   "mad-agua": {
     depto:"Maduración", label:"Maduración · Agua",
@@ -8854,13 +8854,13 @@ const MIC_FORMATS = {
       { k:"tq",   l:"TQ/N°", type:"txt", w:56 },
       { k:"lote", l:"Lote",  type:"txt", w:80 }
     ],
-    params:["vamar","vverd","vtot","valg","vpara","vvuln","pseudo","aero","btot","bnar","hongos","entero","vlum","levad"]
+    params:["vamar","vverd","vtot","valg","vvuln","vpara","pseudo","aero","btot","bnar","hongos","entero","vlum","levad"]
   },
   "mad-ensayo": {
     depto:"Maduración", label:"Maduración · Ensayo",
     rkeyFn:()=> "mad-reprod",
     ctx:[ { k:"muestras", l:"Muestras", type:"txt", w:180 } ],
-    params:["vamar","vverd","vtot","valg","vpara","vvuln","pseudo","aero","btot","bnar","hongos","entero","vlum","levad"]
+    params:["vamar","vverd","vtot","valg","vvuln","vpara","pseudo","aero","btot","bnar","hongos","entero","vlum","levad"]
   },
   "reservorios": {
     depto:"Larvicultura", label:"Larvicultura · Reservorios",
@@ -8869,13 +8869,13 @@ const MIC_FORMATS = {
       { k:"modulo",     l:"Módulo",     type:"sel", opts:MIC_MODULOS, w:58 },
       { k:"tanqueResv", l:"Reservorio", type:"txt", w:84 }
     ],
-    params:["vamar","vverd","vtot","valg","vpara","vvuln","pseudo","aero","btot","bnar","hongos","entero","vlum","levad"]
+    params:["vamar","vverd","vtot","valg","vvuln","vpara","pseudo","aero","btot","bnar","hongos","entero","vlum","levad"]
   },
   "placa-amb": {
     depto:"Larvicultura", label:"Larvicultura · Placa ambiental",
     rkeyFn:()=> "ambiental",
     ctx:[ { k:"modulo", l:"Módulo", type:"sel", opts:MIC_MODULOS, w:58 } ],
-    params:["vamar","vverd","valg","vpara","vvuln","pseudoGsp","aeroGsp","btot","hongos","levad"]
+    params:["vamar","vverd","valg","vvuln","vpara","pseudoGsp","aeroGsp","btot","hongos","levad"]
   },
   "artemia": {
     depto:"Larvicultura", label:"Larvicultura · Artemia",
@@ -8917,7 +8917,7 @@ const MIC_FORMATS = {
     depto:"Maduración", label:"Agua de mar y Reservorios", fixedTipo:"Agua limpia y mar",
     rkeyFn:()=> "agua-limpia-mar",
     ctx:[],
-    params:["vamar","vverd","vtot","valg","vpara","vvuln","aero","pseudo","btot","bnar","hongos"]
+    params:["vamar","vverd","vtot","valg","vvuln","vpara","aero","pseudo","btot","bnar","hongos"]
   },
   "externas": {
     depto:"Otras", label:"Muestras externas",
@@ -10210,14 +10210,14 @@ const CAL_PARAMS = {
 };
 // Orden estable de columnas de parámetros en la hoja ancha.
 const CAL_PARAM_ORDER = ["sal","ph","alc","temp","nitrito","tan","amtox","nitrato","amonio","ntot","calcio","magnesio","potasio","dureza","hierro","fosforo","cobre","manganeso","sal_a","sal_d","ph_a","ph_d","calcio_a","calcio_d","magnesio_a","magnesio_d","potasio_a","potasio_d","cl_libre","cl_total","cl_comb"];
-const CAL_PARAMS_FULL = ["sal","ph","alc","temp","nitrito","tan","amtox","nitrato","amonio","ntot","calcio","magnesio","potasio","dureza","hierro","fosforo","cobre","manganeso"];
+const CAL_PARAMS_FULL = ["sal","ph","alc","temp","nitrato","nitrito","tan","amtox","amonio","ntot","calcio","magnesio","potasio","dureza","hierro","fosforo","cobre","manganeso"];
 const CAL_ALGAS_MUESTRA = ["Funda producción","Funda matriz","Reservorio PBR"];
 // Sugerencias de la columna "Muestra" de Maduración · Agua de mar (admite escribir otra).
 const CAL_MAR_MUESTRA = ["Agua de mar"];
 // Juego de parámetros común a los formatos de agua de Maduración. Es el de
 // "Maduración · Agua" más Temperatura, que RAS y Agua de mar sí registran.
-const CAL_PARAMS_MAD_AGUA = ["alc","ph","sal","temp","calcio","magnesio","potasio","amtox",
-  "nitrato","nitrito","tan","amonio","ntot","dureza","hierro","fosforo","cobre","manganeso",
+const CAL_PARAMS_MAD_AGUA = ["alc","ph","sal","temp","calcio","magnesio","potasio","nitrato",
+  "nitrito","tan","amtox","amonio","ntot","dureza","hierro","fosforo","cobre","manganeso",
   "cl_libre","cl_total","cl_comb"];
 const CAL_PDF_LEGEND = '<div class="miclegend"><b>Rangos:</b><span><span class="micbox" style="background:#bbf7d0;border-color:#4ade80"></span>Dentro</span><span><span class="micbox" style="background:#fecaca;border-color:#f87171"></span>Fuera de rango</span><span><span class="micbox" style="background:#fff;border-color:#cbd5e1"></span>Sin rango</span><span style="color:#64748b">· bajo cada columna: rango objetivo y unidad</span></div>';
 
@@ -10250,7 +10250,7 @@ const CAL_FORMATS = {
       { k:"tq",   l:"Tanque", type:"txt", w:90 },
       { k:"tipoMuestra", l:"Muestra", type:"sel", opts:["","Agua Camaronera","Agua Recepción Camaronera","Agua Enjuague"], w:170 }
     ],
-    params:["alc","ph","sal","calcio","magnesio","potasio","amtox","nitrato","nitrito","tan","amonio","ntot","dureza","hierro","fosforo","cobre","manganeso","cl_libre","cl_total","cl_comb"]
+    params:["alc","ph","sal","calcio","magnesio","potasio","nitrato","nitrito","tan","amtox","amonio","ntot","dureza","hierro","fosforo","cobre","manganeso","cl_libre","cl_total","cl_comb"]
   },
   // Los tres formatos de agua de Maduración (Agua, RAS y Agua de mar) comparten el
   // MISMO juego de parámetros: son el mismo análisis físico-químico sobre distintos
