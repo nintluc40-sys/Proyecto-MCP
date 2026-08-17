@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // Regresiones de la auditoría adversarial 2026-07-17 de la vista Microbiología.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 const makeChartSpy = vi.fn(() => null);
 vi.mock('../../core/charts.js', () => ({
@@ -99,11 +100,18 @@ describe('migración de factores · área Algas', () => {
   });
 });
 
-describe('migración de factores · el área «mad-agua» pasó a llamarse «mad-despacho»', () => {
-  // El área que se llamaba 'mad-agua' gobernaba en realidad «Maduración · Despacho» (medido:
-  // 452 filas, frente a 24 de Maduración · Agua, que iban por 'larv-agua'). Al separarlas, un
-  // override guardado con el nombre viejo se ajustó pensando en Despacho: tiene que MOVERSE
-  // con él, no quedarse aplicándose a otro formato.
+describe('factores · el override de «mad-agua» NO se mueve (almacén compartido)', () => {
+  /* Hasta 2026-08-17 existió una migración que MOVÍA el override de 'mad-agua' a
+     'mad-despacho': en ESTA vista, el área que se llamaba 'mad-agua' gobernaba en realidad
+     Despacho (medido: 452 filas frente a 24 de Maduración · Agua, que iban por 'larv-agua').
+
+     Se RETIRÓ, y estas pruebas fijan lo contrario de lo que fijaban antes. El motivo está
+     medido: `larv4_mic_factors` lo COMPARTE la app de captura (public/registros/engine.js),
+     que vive en el mismo origen y donde 'mad-agua' siempre ha sido «Maduración · Agua» de
+     verdad —tiene un formato que resuelve a ella, y sus áreas de Despacho son otras dos—.
+     El renombrado era NUESTRO, así que moverlo reasignaba a Despacho (464 filas) unos
+     factores fijados para Agua (24) y los borraba para la app de captura, que no conoce
+     'mad-despacho'. Hoy las dos apps coinciden en el significado de 'mad-agua'. */
   const instalarLS = () => {
     const mem = new Map();
     globalThis.localStorage = {
@@ -115,7 +123,7 @@ describe('migración de factores · el área «mad-agua» pasó a llamarse «mad
     return mem;
   };
 
-  it('mueve el override viejo a «mad-despacho», que es a quien afectaba', async () => {
+  it('el override de «mad-agua» se queda en «mad-agua», y Despacho no lo hereda', async () => {
     instalarLS();
     localStorage.setItem('larv4_mic_factors', JSON.stringify({
       'mad-agua': { vamar: { l: 7 } },
@@ -123,25 +131,17 @@ describe('migración de factores · el área «mad-agua» pasó a llamarse «mad
     }));
     vi.resetModules();
     const thr = (await import('./data.js')).loadMicThresholds();
-    expect(thr['mad-despacho'].vamar.l).toBe(7);       // sigue rigiendo las muestras de Despacho
-    expect(thr['mad-agua'].vamar.l).toBe(1000);        // Maduración · Agua queda en su base
-    expect(thr['larv-animal'].vamar.l).toBe(999);      // lo ajustado en otra área no se toca
+    expect(thr['mad-agua'].vamar.l).toBe(7);           // donde el técnico lo puso
+    expect(thr['mad-despacho'].vamar.l).toBe(100);     // base: NO hereda lo de Agua
+    expect(thr['larv-animal'].vamar.l).toBe(999);      // otras áreas, intactas
+    // Y sobre todo: sigue en el almacén con su nombre, para la app de captura.
     const guardado = JSON.parse(localStorage.getItem('larv4_mic_factors'));
-    expect(guardado['mad-agua']).toBeUndefined();
-    expect(guardado['mad-despacho']).toEqual({ vamar: { l: 7 } });
+    expect(guardado['mad-agua']).toEqual({ vamar: { l: 7 } });
+    expect(guardado['mad-despacho']).toBeUndefined();
   });
 
-  it('no vuelve a correr si ya se aplicó (un ajuste NUEVO de Maduración · Agua se respeta)', async () => {
-    instalarLS();
-    localStorage.setItem('larv4_mic_factors_ver', JSON.stringify(['2026-07-20-algas', '2026-08-16-mad-despacho']));
-    localStorage.setItem('larv4_mic_factors', JSON.stringify({ 'mad-agua': { vamar: { l: 42 } } }));
-    vi.resetModules();
-    const thr = (await import('./data.js')).loadMicThresholds();
-    expect(thr['mad-agua'].vamar.l).toBe(42);          // se queda donde el usuario lo puso
-    expect(thr['mad-despacho'].vamar.l).toBe(100);     // base, sin contaminar
-  });
-
-  it('el sello ANTIGUO (una sola cadena) no impide aplicar la migración nueva', async () => {
+  it('tampoco lo mueve con el sello ANTIGUO (una sola cadena)', async () => {
+    // Antes, el sello viejo era justo el caso que disparaba la migración retirada.
     instalarLS();
     localStorage.setItem('larv4_mic_factors_ver', '2026-07-20-algas'); // formato viejo, sin JSON
     localStorage.setItem('larv4_mic_factors', JSON.stringify({
@@ -150,7 +150,27 @@ describe('migración de factores · el área «mad-agua» pasó a llamarse «mad
     }));
     vi.resetModules();
     const thr = (await import('./data.js')).loadMicThresholds();
-    expect(thr['mad-despacho'].vamar.l).toBe(7);   // la nueva SÍ corre
-    expect(thr.algas.vamar.l).toBe(1);             // la vieja NO se repite
+    expect(thr['mad-agua'].vamar.l).toBe(7);
+    expect(thr['mad-despacho'].vamar.l).toBe(100);
+    expect(thr.algas.vamar.l).toBe(1);             // la de algas NO se repite
+  });
+
+  it('el id retirado sigue RESERVADO: nadie lo declara como migración viva', async () => {
+    // Hay sellos en circulación que lo dan por aplicado; reutilizarlo saltaría migraciones.
+    vi.resetModules();
+    const mod = await import('./data.js');
+    // Ruta desde la raíz del proyecto: en este entorno `import.meta.url` no es file:.
+    const src = readFileSync('src/views/microbiologia/data.js', 'utf8');
+    // Aparece solo en el comentario que explica la retirada, nunca como `id:`.
+    expect(src).not.toMatch(/id:\s*'2026-08-16-mad-despacho'/);
+    expect(typeof mod.loadMicThresholds).toBe('function');
+  });
+
+  it('control: «mad-agua» y «mad-despacho» son áreas DISTINTAS con bases distintas', async () => {
+    // Si compartieran base, las pruebas de arriba no distinguirían nada.
+    instalarLS();
+    vi.resetModules();
+    const thr = (await import('./data.js')).loadMicThresholds();
+    expect(thr['mad-agua'].vamar.l).not.toBe(thr['mad-despacho'].vamar.l);
   });
 });

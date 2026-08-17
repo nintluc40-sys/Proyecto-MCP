@@ -416,17 +416,22 @@ const MIC_MIGRATIONS = [
     id: '2026-07-20-algas',
     run: (o) => { if (o.algas) { delete o.algas; return true; } return false; },
   },
-  {
-    // El área que se llamaba 'mad-agua' gobernaba en realidad «Maduración · Despacho» y
-    // pasa a llamarse 'mad-despacho'; 'mad-agua' es ahora la de «Maduración · Agua». Un
-    // override guardado con el nombre viejo se ajustó pensando en Despacho: se MUEVE, para
-    // que siga afectando a las mismas muestras y no se traslade a otro formato.
-    id: '2026-08-16-mad-despacho',
-    run: (o) => {
-      if (!o['mad-agua'] || o['mad-despacho']) return false;
-      o['mad-despacho'] = o['mad-agua']; delete o['mad-agua']; return true;
-    },
-  },
+  /* ⛔ RETIRADA (2026-08-17) — NO volver a añadirla. Existió una migración
+     `2026-08-16-mad-despacho` que MOVÍA el override de 'mad-agua' a 'mad-despacho', porque
+     en ESTA vista el área que se llamaba 'mad-agua' gobernaba en realidad Despacho.
+
+     El problema: `larv4_mic_factors` NO es nuestro. Lo comparte la app de captura
+     (public/registros/engine.js), que vive en el mismo origen y donde 'mad-agua' SIEMPRE
+     ha sido «Maduración · Agua» de verdad —tiene un formato que resuelve a ella y sus
+     áreas de Despacho son otras dos, 'mad-despacho-agua' y 'mad-despacho-animal'—.
+     Aplicar aquí un renombrado NUESTRO sobre un almacén COMPARTIDO reasignaba a Despacho
+     (464 filas) unos factores que el técnico había fijado para Agua (24 filas), y de paso
+     los hacía desaparecer para la app de captura, que no conoce 'mad-despacho'.
+
+     Decisión del usuario: retirarla. Hoy las dos apps coinciden en que 'mad-agua' es
+     «Maduración · Agua», así que un override guardado con ese nombre ya no es ambiguo y se
+     queda donde está. El id queda RESERVADO: no reutilizarlo, porque hay sellos en
+     circulación que lo declaran aplicado. */
 ];
 /** Migraciones ya aplicadas. Tolera el sello ANTIGUO (una sola cadena) de la versión previa. */
 function micAppliedMigrations() {
