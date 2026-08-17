@@ -4,7 +4,8 @@
 
    data: cabecera (fecha, corrida, siembra) + por tanque i:
      e_i (estadio), cm_i (Cel/ml), tr_i (Color), ep_i (%Espuma),
-     sc_i (%Suciedad), rc_i (%Recambio), ob_i (Observación) + pie tec.
+     sc_i (%Suciedad), rc_i (%Recambio), ob_i (Observación), tn_i (Toneladas)
+     + pie tec.
    La columna Color reutiliza el widget del motor (aguaColorSelectHtml).
    ============================================================ */
 
@@ -24,6 +25,10 @@ export const CALAGUA_COLUMNS = [
   { code: 'sc', label: '% Suciedad', kind: 'number', min: 0, max: 100, step: 0.1, placeholder: '%' },
   { code: 'rc', label: '% Recambio', kind: 'number', min: 0, max: 100, step: 0.1, placeholder: '%' },
   { code: 'ob', label: 'Observaciones', kind: 'text', placeholder: 'Observación del tanque' },
+  // 2026-08. Va la ÚLTIMA, igual que en la hoja (col 48, tras Observaciones), para que
+  // el orden visual de la ficha y el del Sheet no se contradigan. Entero ≥ 0 y sin
+  // máximo: son toneladas, no un porcentaje.
+  { code: 'tn', label: 'Toneladas', kind: 'number', min: 0, step: 1, placeholder: 't' },
 ];
 
 /** Construye el nombre de campo por tanque: ('cm', 3) → 'cm_3'. */

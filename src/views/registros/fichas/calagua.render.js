@@ -42,7 +42,11 @@ function cell(col, i, data, colorSelect) {
     return `<td>${colorSelect(i, estRaw, curVal)}</td>`;
   }
   if (col.kind === 'number') {
-    const range = col.min !== undefined ? ` min="${col.min}" max="${col.max}"` : '';
+    // `min` y `max` se emiten por SEPARADO: atados, una columna con mínimo pero sin
+    // máximo —«Toneladas», que no es un porcentaje— salía como max="undefined" y el
+    // navegador la marcaba inválida en cuanto se escribía un número.
+    const range = (col.min !== undefined ? ` min="${col.min}"` : '')
+      + (col.max !== undefined ? ` max="${col.max}"` : '');
     return `<td><input type="number" name="${name}" value="${vl(data, name)}"${range} step="${col.step}" placeholder="${escapeHtml(col.placeholder)}"></td>`;
   }
   // text

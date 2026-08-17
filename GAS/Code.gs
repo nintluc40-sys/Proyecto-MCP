@@ -52,7 +52,7 @@ const ALLOWED = [
 ];
 
 const LIMITS = {
-  // maxCols: 50 contempla las 48 cols actuales del schema + 2 de margen.
+  // maxCols: 50 contempla las 49 cols actuales del schema + 1 de margen.
   // Schema actual: cols 0–28 (Calidad/PLG/Población/Técnico) + cols 29–36
   // (otro sistema, vacías) + cols 37–41 (Despacho) + cols 42–47 (Cal. Agua).
   datos:   { maxRows: 30,  maxCols: 50 },
@@ -251,7 +251,13 @@ function doPost(e) {
     // isAst se suma en 2026-08: así las columnas nuevas del AsT (Flacidez, Necrosis,
     // Disparidad) se crean SOLAS al final de la hoja en la primera sincronización, sin
     // que nadie tenga que tocar a mano la hoja de producción.
-    if (isMicro || isCal || isPat || isAlgas || isMarea || isAst) ensureHeaders(ws, payload.headers || []);
+    // Se llama SIEMPRE, no solo para las hojas de laboratorio. ensureHeaders es inocuo
+    // cuando la hoja ya es igual de ancha que el payload (sale por getLastColumn), y con
+    // la lista blanca anterior las hojas "Datos Larvicultura" quedaban fuera: upsertRows
+    // sí ensancha la hoja para que quepa la fila, así que al añadir una columna al final
+    // (p.ej. Toneladas, 2026-08) el DATO entraba en la columna nueva y su CABECERA se
+    // quedaba en blanco. Llamarlo siempre lo cubre y evita repetir el caso a futuro.
+    ensureHeaders(ws, payload.headers || []);
 
     // Borrado explícito de sesiones (Microbiología / Calidad de Agua / Patología
     // en Fresco): permite VACIAR de la hoja una sesión completa. Un upsert/replace

@@ -1230,6 +1230,7 @@ function _syncNotOkUI(outcome, errLabel, indId){
   [29..36] = 8 cols otro sistema (ID Análisis→Pigmentación, vacías desde este cliente)
   [37]Densidad cosechada [38]Biomasa [39]Cajas/Tinas [40]Destino [41]Piscina
   [42]Cel/ml [43]Color [44]% Espuma [45]% Suciedad [46]% Recambio [47]Observaciones
+  [48]Toneladas
 */
 function buildDatosPayload(m, includeFichas, opts){
   // includeFichas: opcional. Si se pasa un array (ej. ["calidad"]), sólo se
@@ -1298,7 +1299,8 @@ function buildDatosPayload(m, includeFichas, opts){
     return isFinite(n) ? Math.round(n * CELML_FACTOR * 100) / 100 : "";
   };
 
-  // ── SCHEMA 48 cols — alineado al Google Sheet tras eliminación de 21 cols ──
+  // ── SCHEMA 49 cols — alineado al Google Sheet tras eliminación de 21 cols ──
+  // 2026-08: +1 col "Toneladas" (Calidad de Agua), al FINAL tras Observaciones.
   // Eliminadas: Talla (1), TotAnim→Surv_pct (16 del otro sistema),
   //             Cant. Cosechada 1/2/3/total (4 de Despacho).
   // Las 8 cols restantes del otro sistema (ID Análisis→Pigmentación) se
@@ -1317,7 +1319,9 @@ function buildDatosPayload(m, includeFichas, opts){
     // cols 38–42 (Despacho — sin Cant. Cosechada 1/2/3/total)
     "Densidad cosechada","Biomasa","Cajas/Tinas","Destino","Piscina",
     // cols 43–48 (Calidad de Agua) — "% Transparencia" renombrada a "Color"
-    "Cel/ml","Color","% Espuma","% Suciedad","% Recambio","Observaciones"
+    "Cel/ml","Color","% Espuma","% Suciedad","% Recambio","Observaciones",
+    // col 49 (Calidad de Agua) — añadida 2026-08
+    "Toneladas"
   ];
 
   // 8 cols vacías para el bloque del otro sistema (ID Análisis → Pigmentación).
@@ -1337,7 +1341,7 @@ function buildDatosPayload(m, includeFichas, opts){
       desp["dc_"+i], desp["bm_"+i],
       desp["cj_"+i], desp["de_"+i], desp["ps_"+i],
       agua["e_"+i], agua["cm_"+i], agua["tr_"+i], agua["ep_"+i],
-      agua["sc_"+i], agua["rc_"+i], agua["ob_"+i]
+      agua["sc_"+i], agua["rc_"+i], agua["ob_"+i], agua["tn_"+i]
     ];
     // Un Lote arrastrado por la memoria de 30 d (congelado) NO debe, por sí
     // solo, crear una fila en la hoja: un tanque inactivo hoy quedaría con
@@ -1376,7 +1380,8 @@ function buildDatosPayload(m, includeFichas, opts){
       sanitizeStr(desp["ps_"+i] || ""),                                  // 41 Piscina
       celMlOut(agua["cm_"+i]), pv(agua,"tr_"+i), pv(agua,"ep_"+i),       // 42-44 Cel/ml (×2500) / % Transp / % Espuma
       pv(agua,"sc_"+i), pv(agua,"rc_"+i),                                // 45-46 % Suciedad / % Recambio
-      sanitizeStr(agua["ob_"+i] || "")                                   // 47 Observaciones
+      sanitizeStr(agua["ob_"+i] || ""),                                  // 47 Observaciones
+      pv(agua,"tn_"+i)                                                   // 48 Toneladas
     ];
   });
 
@@ -3197,7 +3202,7 @@ function aguaSyncRowColor(estEl){
 }
 
 /* ── FICHA: CALIDAD DE AGUA ────────────────
-   Columnas que se envían a la hoja "Datos Larvicultura - M0X" (48 cols):
+   Columnas que se envían a la hoja "Datos Larvicultura - M0X" (49 cols):
    col 8  → Estadío (compartida, 0-indexed)
    col 42 → Cel/ml          (cm_i)
    col 43 → Color           (tr_i — antes "% Transparencia")
@@ -3205,6 +3210,7 @@ function aguaSyncRowColor(estEl){
    col 45 → % Suciedad      (sc_i)
    col 46 → % Recambio      (rc_i)
    col 47 → Observaciones   (ob_i)
+   col 48 → Toneladas       (tn_i)
 ────────────────────────────────────────── */
 function renderCalidadAgua(){
   const fp = document.getElementById("fp-calagua");
@@ -3231,7 +3237,7 @@ function renderCalidadAgua(){
 }
 
 /* ── FICHA 5: DESPACHO ─────────────────────
-   Columnas que se envían a la hoja "Datos Larvicultura - M0X" (48 cols):
+   Columnas que se envían a la hoja "Datos Larvicultura - M0X" (49 cols):
    col 8  → Estadío (compartida — desp tiene prioridad si está lleno)
    col 37 → Densidad cosechada       (dc_i)
    col 38 → Biomasa                  (bm_i)
@@ -4311,7 +4317,7 @@ function pdfTableDespacho(d, mod, tqN){
 }
 
 function pdfTableCalidadAgua(d, mod, tqN){
-  const KEYS = ['e','cm','tr','ep','sc','rc','ob'];
+  const KEYS = ['e','cm','tr','ep','sc','rc','ob','tn'];
   // Celda de Color: nombre + cuadrito con el tono de referencia.
   const colorCell = (v)=>{
     if(v===undefined||v===null||v==="") return '<span class="empty">—</span>';
@@ -4331,13 +4337,14 @@ function pdfTableCalidadAgua(d, mod, tqN){
     <td>${pdfVal(d['sc_'+i])}</td>
     <td>${pdfVal(d['rc_'+i])}</td>
     <td>${pdfVal(d['ob_'+i])}</td>
+    <td>${pdfVal(d['tn_'+i])}</td>
   </tr>`;
   }).join('');
   return `<table>
     <thead><tr>
       <th>TQ</th><th>Estadío</th><th>Cel/ml</th>
       <th>Color</th><th>% Espuma</th><th>% Suciedad</th><th>% Recambio</th>
-      <th>Observaciones</th>
+      <th>Observaciones</th><th>Toneladas</th>
     </tr></thead>
     <tbody>${rows}</tbody></table>`;
 }
@@ -11771,7 +11778,7 @@ const ALLOWED = [
 ];
 
 const LIMITS = {
-  // maxCols: 50 contempla las 48 cols actuales del schema + 2 de margen.
+  // maxCols: 50 contempla las 49 cols actuales del schema + 1 de margen.
   // Schema actual: cols 0–28 (Calidad/PLG/Población/Técnico) + cols 29–36
   // (otro sistema, vacías) + cols 37–41 (Despacho) + cols 42–47 (Cal. Agua).
   datos:   { maxRows: 30,  maxCols: 50 },
@@ -11970,7 +11977,13 @@ function doPost(e) {
     // isAst se suma en 2026-08: así las columnas nuevas del AsT (Flacidez, Necrosis,
     // Disparidad) se crean SOLAS al final de la hoja en la primera sincronización, sin
     // que nadie tenga que tocar a mano la hoja de producción.
-    if (isMicro || isCal || isPat || isAlgas || isMarea || isAst) ensureHeaders(ws, payload.headers || []);
+    // Se llama SIEMPRE, no solo para las hojas de laboratorio. ensureHeaders es inocuo
+    // cuando la hoja ya es igual de ancha que el payload (sale por getLastColumn), y con
+    // la lista blanca anterior las hojas "Datos Larvicultura" quedaban fuera: upsertRows
+    // sí ensancha la hoja para que quepa la fila, así que al añadir una columna al final
+    // (p.ej. Toneladas, 2026-08) el DATO entraba en la columna nueva y su CABECERA se
+    // quedaba en blanco. Llamarlo siempre lo cubre y evita repetir el caso a futuro.
+    ensureHeaders(ws, payload.headers || []);
 
     // Borrado explícito de sesiones (Microbiología / Calidad de Agua / Patología
     // en Fresco): permite VACIAR de la hoja una sesión completa. Un upsert/replace
@@ -14320,6 +14333,7 @@ function _renderBlancoCalidadAgua(fp, d, _tqn, tec, _corrida, fecha, lbl){
     <td><input type="number" name="sc_${i}" value="${vl(d,"sc_"+i)}" min="0" max="100" step="0.1" placeholder="%"></td>
     <td><input type="number" name="rc_${i}" value="${vl(d,"rc_"+i)}" min="0" max="100" step="0.1" placeholder="%"></td>
     <td><input type="text" name="ob_${i}" value="${vl(d,"ob_"+i)}" placeholder="Observación del tanque" style="min-width:140px"></td>
+    <td><input type="number" name="tn_${i}" value="${vl(d,"tn_"+i)}" min="0" step="1" placeholder="t"></td>
   </tr>`;});
 
   fp.innerHTML=`<div class="fc">
@@ -14346,6 +14360,7 @@ function _renderBlancoCalidadAgua(fp, d, _tqn, tec, _corrida, fecha, lbl){
             <th>% Suciedad</th>
             <th>% Recambio</th>
             <th>Observaciones</th>
+            <th>Toneladas</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>

@@ -180,18 +180,24 @@ describe('registros · AsT · acuerdo con el GAS', () => {
     expect(headers.length).toBeLessThanOrEqual(maxCols);
   });
 
-  it('doPost aplica ensureHeaders al AsT (o las columnas nuevas no se crearían)', () => {
-    const cond = /if \((isMicro[^)]*)\) ensureHeaders/.exec(gas)[1];
-    const evaluar = (flags) => {
-      const ctx = {
-        isMicro: false, isCal: false, isPat: false, isAlgas: false, isMarea: false, isAst: false, ...flags,
-      };
-      ctx.globalThis = ctx;
-      createContext(ctx);
-      return new Script('(' + cond + ')').runInContext(ctx);
-    };
-    expect(evaluar({ isAst: true })).toBe(true);
-    expect(evaluar({})).toBe(false);
+  // 2026-08. Este caso comprobaba que la LISTA BLANCA `if (isMicro || … || isAst)`
+  // incluyera al AsT y excluyera al resto. La segunda mitad fijaba el diseño anterior y
+  // era justo el defecto: esa lista dejaba fuera las hojas "Datos Larvicultura", y
+  // `upsertRows` SÍ ensancha la hoja para que quepa la fila — así que al añadir una
+  // columna al final ("Toneladas") el dato entraba y su cabecera quedaba en blanco.
+  // Ahora la llamada es INCONDICIONAL, que garantiza lo mismo para el AsT y además para
+  // todas las demás hojas. La garantía no se debilita: se amplía.
+  it('doPost aplica ensureHeaders SIEMPRE, no sólo a una lista blanca de hojas', () => {
+    expect(gas).toMatch(/^\s*ensureHeaders\(ws, payload\.headers \|\| \[\]\);\s*$/m);
+    expect(gas).not.toMatch(/if \([^)]*\)\s*ensureHeaders/);
+  });
+
+  it('la plantilla GAS embebida en engine.js dice lo MISMO que GAS/Code.gs', () => {
+    // Las dos copias deben ir sincronizadas; si una se queda atrás, el técnico pega en
+    // script.google.com una versión que no es la del repo.
+    const eng = leer(ENGINE);
+    expect(eng).toMatch(/^\s*ensureHeaders\(ws, payload\.headers \|\| \[\]\);\s*$/m);
+    expect(eng).not.toMatch(/if \([^)]*\)\s*ensureHeaders/);
   });
 
   // Hoja simulada mínima de Apps Script. Compartida por los tres casos de upsert para no
