@@ -9179,17 +9179,59 @@ function micLvl(ufc, r){
 // nuevos por defecto. Se borra SOLO esa área de los overrides guardados —el resto de
 // ajustes del usuario se conserva— y se marca con una versión para no repetirlo.
 const MIC_FACTORS_VER_KEY = "larv4_mic_factors_ver";
-const MIC_FACTORS_VER     = "2026-07-20-algas";
+/* Migraciones de los overrides guardados en \`larv4_mic_factors\`.
+
+   ⚠ ESA CLAVE LA COMPARTEN DOS APLICACIONES: esta app de captura y el TABLERO de
+   Microbiología, que viven en el MISMO origen. El tablero sella con la LISTA de ids ya
+   aplicados; aquí se sellaba con una CADENA suelta y se comparaba con \`===\`, así que
+   ninguna reconocía el sello de la otra: cada visita re-ejecutaba sus migraciones y
+   reescribía el sello en su formato, en un ping-pong indefinido.
+
+   El daño no era cosmético. La migración de abajo hace \`delete o.algas\`, de modo que los
+   factores que el técnico hubiera ajustado para el área "algas" se BORRABAN cada vez que
+   volvía aquí desde el tablero (medido ejecutando las dos implementaciones contra un
+   localStorage compartido). Y el factor no es una preferencia: \`micFactorOf\` alimenta
+   \`ufc = crudo × f\`, y ese UFC es justo lo que \`buildMicPayload\` escribe en la hoja.
+
+   Ahora: se lee la lista TOLERANDO el sello antiguo, solo se actúa si queda algo
+   pendiente, y al sellar se conserva la UNIÓN con los ids que ya hubiera — si sellara
+   solo con los propios, el tablero volvería a ejecutar los suyos y el ping-pong seguiría.
+   Mismo criterio que \`micAppliedMigrations\` del tablero (microbiologia/data.js). */
+const MIC_MIGRATIONS = [
+  {
+    // Los factores de "algas" se reescalaron: quien hubiera guardado alguna vez tiene
+    // congelados los valores antiguos (×1) y no vería los nuevos por defecto. Se borra
+    // SOLO esa área; el resto de ajustes del usuario se conserva.
+    id: "2026-07-20-algas",
+    run: (o)=>{ if(o.algas){ delete o.algas; return true; } return false; }
+  }
+];
 let _micFactMigrated = false;
+/** Ids ya aplicados. Tolera el sello ANTIGUO (una sola cadena) de la versión previa. */
+function micAppliedMigrations(){
+  let v = null;
+  try{ v = localStorage.getItem(MIC_FACTORS_VER_KEY); }catch(_){ return []; }
+  if(!v) return [];
+  try{ const a = JSON.parse(v); return Array.isArray(a) ? a : [String(v)]; }
+  catch(_){ return [String(v)]; }
+}
 function micMigrateFactors(){
   try{
-    if(localStorage.getItem(MIC_FACTORS_VER_KEY) === MIC_FACTORS_VER) return;
+    const hechas = micAppliedMigrations();
+    const pend = MIC_MIGRATIONS.filter(m=> hechas.indexOf(m.id) === -1);
+    if(!pend.length) return;            // nada que hacer: NO se reescribe el sello
     const raw = localStorage.getItem(MIC_FACTORS_KEY);
     if(raw){
       const o = JSON.parse(raw);
-      if(o && typeof o === "object" && o.algas){ delete o.algas; localStorage.setItem(MIC_FACTORS_KEY, JSON.stringify(o)); }
+      if(o && typeof o === "object"){
+        let tocado = false;
+        pend.forEach(m=>{ if(m.run(o)) tocado = true; });
+        if(tocado) localStorage.setItem(MIC_FACTORS_KEY, JSON.stringify(o));
+      }
     }
-    localStorage.setItem(MIC_FACTORS_VER_KEY, MIC_FACTORS_VER);
+    const union = hechas.slice();
+    MIC_MIGRATIONS.forEach(m=>{ if(union.indexOf(m.id) === -1) union.push(m.id); });
+    localStorage.setItem(MIC_FACTORS_VER_KEY, JSON.stringify(union));
   }catch(_){}
 }
 function loadMicFactors(){
