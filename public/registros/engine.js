@@ -7096,10 +7096,15 @@ const BIO_GRID_COLS = [
 ];
 const BIO_GRID_HEADERS      = BIO_GRID_COLS.map(c => c.label);
 const BIO_GRID_DEFAULT_ROWS = 20;
-const BIO_GRID_ROW_STEP     = 10;
-const BIO_GRID_MAX_ROWS     = 50;
+// 2026-08-17 (petición del usuario): más grilla disponible para registrar. El paso pasa de
+// 10 a 20 filas y el tope de 50 a 100. El tope cabe EXACTO en el límite del GAS
+// (LIMITS.biomol.maxRows = 100, ya así en el despliegue vivo), porque las filas vacías no se
+// envían: una grilla llena manda 100 y `100 > 100` es falso. No queda margen: subir de 100
+// exigiría tocar el GAS Y re-desplegarlo.
+const BIO_GRID_ROW_STEP     = 20;
+const BIO_GRID_MAX_ROWS     = 100;
 const BIO_WIDE_KEYS         = { codigo:1, lugar:1, otros:1, tanque:1 };  // celdas más anchas
-let _bioGridExtra = {};   // { "YYYY-MM-DD": filas extra agregadas (0..30) }
+let _bioGridExtra = {};   // { "YYYY-MM-DD": filas extra agregadas (0..80) }
 let _bioRenderedFecha = null;   // día con el que se renderizó la grilla en pantalla (para commit al cambiar de día)
 let _bioGridDirty = false;      // hay datos tecleados/pegados en la grilla aún SIN guardar (protege ante cambio de día / cierre)
 function _bioDirty(){ _bioGridDirty = true; }
