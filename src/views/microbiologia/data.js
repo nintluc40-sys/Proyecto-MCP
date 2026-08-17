@@ -90,9 +90,12 @@ export const PATHOGENS = [
   P('amarillos', 'C. Amarillas', 'V.Amarillos', 'vamar', { altBases: ['C. Amarillas'] }),
   P('verdes', 'C. Verdes', 'V.Verdes', 'vverd', { altBases: ['C. Verdes'] }),
   P('totales', 'C. Totales', 'V.Totales', 'vtot', { altBases: ['C. Totales'] }),
+  // Orden fijo de los vibrios (2026-08), el MISMO que en los formatos de captura:
+  // alginolyticus · vulnificus · parahaemolyticus. Cosmético: esta vista solo LEE, y las
+  // columnas de la hoja se localizan por `base`/`altBases`, nunca por posición.
   P('algino', 'V. alginolyticus', 'V.alginolyticus', 'valg'),
-  P('para', 'V. parahaemolyticus', 'V.parahaemolyticus', 'vpara'),
   P('vulni', 'V. vulnificus', 'V.vulnificus', 'vvuln'),
+  P('para', 'V. parahaemolyticus', 'V.parahaemolyticus', 'vpara'),
   P('pseudo', 'Pseudomonas', 'Pseudomonas', 'pseudo'),
   P('aero', 'Aeromonas', 'Aeromonas', 'aero'),
   P('pseudoGsp', 'Pseudomonas GSP', 'Pseudomonas GSP', 'pseudoGsp'),

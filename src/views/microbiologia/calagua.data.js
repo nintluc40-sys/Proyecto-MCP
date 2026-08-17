@@ -30,10 +30,14 @@ export const CAL_PARAMS = [
   P('sal', 'S‰', 'Salinidad', '‰', 'base', ['Salinidad', 'Sal', 'S%o']),
   P('alc', 'Alcalinidad', 'Alcalinidad', 'mg/L', 'base'),
   P('temp', 'Temperatura', 'Temperatura', '°C', 'base', ['Temp']),
+  // Orden fijo de los nitrogenados (2026-08), el MISMO que en los formatos de captura:
+  // Nitrato · Nitrito · TAN · Am.Tóxico · Amonio. Es cosmético — esta vista solo LEE, no
+  // escribe en ninguna hoja — pero así el técnico ve el mismo orden al capturar y al
+  // consultar. Los datos se leen por cabecera (`col`/`alias`), nunca por posición.
+  P('nitrato', 'Nitrato', 'Nitrato', 'mg/L', 'nitrogenados'),
   P('nitrito', 'Nitrito', 'Nitrito', 'mg/L', 'nitrogenados'),
   P('tan', 'TAN', 'TAN', 'mg/L', 'nitrogenados'),
   P('amtox', 'Am.Tóxico', 'Amonio tóxico', 'mg/L', 'nitrogenados', ['Am.Toxico', 'Amonio tóxico', 'Amonio Toxico']),
-  P('nitrato', 'Nitrato', 'Nitrato', 'mg/L', 'nitrogenados'),
   P('amonio', 'Amonio', 'Amonio', 'mg/L', 'nitrogenados'),
   P('ntot', 'Nitrógeno total', 'Nitrógeno total', 'mg/L', 'nitrogenados', ['Nitrogeno total']),
   P('calcio', 'Calcio', 'Calcio', 'mg/L', 'iones'),

@@ -19,6 +19,8 @@
    ============================================================ */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { CAL_PARAMS } from '../../microbiologia/calagua.data.js';
+import { PATHOGENS } from '../../microbiologia/data.js';
 
 const ENGINE = new URL('../../../../public/registros/engine.js', import.meta.url);
 const engine = readFileSync(ENGINE, 'utf8').split('\r\n').join('\n');
@@ -99,5 +101,28 @@ describe('registros · el orden del GOOGLE SHEET no se toca', () => {
     // Si algún día coincidieran, los dos candados de arriba dejarían de distinguir nada.
     expect(relativo(arrayPorNombre('CAL_PARAM_ORDER'), NITRO)).not.toEqual(NITRO);
     expect(relativo(arrayPorNombre('MIC_LEVEL_PARAMS'), VIBRIOS)).not.toEqual(VIBRIOS);
+  });
+});
+
+describe('el TABLERO de Microbiología usa el mismo orden que la captura', () => {
+  // El técnico ve estas columnas en dos sitios: la ficha donde captura (monolito) y el
+  // tablero donde consulta. Con órdenes distintos, la misma tabla se lee de dos formas.
+  // El tablero solo LEE: localiza las columnas por cabecera (`col`/`alias` en CAL_PARAMS,
+  // `base`/`altBases` en PATHOGENS), nunca por posición, así que reordenar es inocuo.
+  it('los nitrogenados de CAL_PARAMS van en el orden pactado', () => {
+    const claves = CAL_PARAMS.map((p) => p.key);
+    expect(claves.filter((k) => NITRO.includes(k))).toEqual(NITRO);
+  });
+
+  it('los vibrios de PATHOGENS van en el orden pactado', () => {
+    // PATHOGENS usa claves propias; se traduce por su `fkey`, que es la del monolito.
+    const porFkey = PATHOGENS.filter((p) => VIBRIOS.includes(p.fkey)).map((p) => p.fkey);
+    expect(porFkey).toEqual(VIBRIOS);
+  });
+
+  it('control: el tablero declara los tres vibrios y los cinco nitrogenados', () => {
+    // Sin esto, un filtro que no encontrara nada dejaría pasar la prueba con [] === [].
+    expect(PATHOGENS.filter((p) => VIBRIOS.includes(p.fkey))).toHaveLength(3);
+    expect(CAL_PARAMS.filter((p) => NITRO.includes(p.key))).toHaveLength(5);
   });
 });
