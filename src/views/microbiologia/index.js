@@ -2053,10 +2053,16 @@ function petriPlacaHTML(days, dayIdx, day) {
   const colonies = day ? coloniesForDay(day.rows) : [];
   _scope.colonies = colonies;
   const size = 340;
-  // Carga total del día = Σ UFC de TODOS los patógenos con UFC EXCEPTO C. Totales (agregado
-  // de C. Amarillas + C. Verdes → sumarlo duplicaría). V. Luminiscentes no entra (presencia/
-  // ausencia). "—" si no hubo ningún patógeno con UFC ese día.
-  const nonTotColonies = colonies.filter((c) => c.key !== 'totales');
+  // Carga total del día = Σ UFC de los patógenos ESPECÍFICOS con UFC. Se excluyen los DOS
+  // conteos AGREGADOS que declara la capa de datos (`AGGREGATE_KEYS` = C. Totales y Bact.
+  // Totales), porque son sumas y volverían a contar lo ya contado. Antes se excluía a mano
+  // solo «C. Totales», así que «Bact. Totales» —la mayor de las dos— entraba en el sumatorio:
+  // medido sobre la hoja, 56 de 64 días mal y ×5,14 de inflación global (el 20/06/2026
+  // mostraba 1.061.010 donde correspondía 10). Se usa la MISMA constante que el KPI
+  // «Dominante» de la línea de abajo, para que los dos no puedan volver a discrepar sobre qué
+  // es un agregado. V. Luminiscentes no entra (presencia/ausencia). "—" si no hubo ningún
+  // patógeno específico con UFC ese día.
+  const nonTotColonies = colonies.filter((c) => !AGGREGATE_KEYS.has(c.key));
   const totUfc = nonTotColonies.length ? nonTotColonies.reduce((a, c) => a + c.ufc, 0) : null;
   const maxC = dominantColony(colonies);
   const nav = `<div class="mic-day-nav">

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { buildPetriPdfDoc, groupForPdf, toSci, thresholdBands, dayKeyOf } from './petriPdf.js';
 
 // Filas con las cabeceras reales de la hoja "Microbiología" (mismo patrón que data.test.js).
@@ -53,6 +53,46 @@ describe('petriPdf · thresholdBands (umbrales por área)', () => {
   it('parámetro o área sin umbrales no inventa criterio', () => {
     expect(thresholdBands('larv-agua', 'noExiste')).toBeNull();
     expect(thresholdBands('areaInexistente', 'vtot')).toBeNull();
+  });
+
+  // La guarda era asimétrica: comprobaba `null` en `l` pero solo `undefined` en `m`/`e`.
+  // El clasificador hermano (`micLvlCode`, data.js) usa `== null` para los tres y trata un
+  // corte ausente como Infinity. Con la guarda vieja un umbral parcial dejaba la columna
+  // sin línea de criterios aunque sus celdas SÍ se colorean, o imprimía "—" como corte.
+  describe('declara exactamente las bandas que el clasificador puede alcanzar', () => {
+    // Los overrides viven en localStorage, que este entorno no expone como global.
+    const s0 = {};
+    beforeEach(() => {
+      globalThis.localStorage = {
+        getItem: (k) => (k in s0 ? s0[k] : null),
+        setItem: (k, v) => { s0[k] = String(v); },
+        removeItem: (k) => { delete s0[k]; },
+      };
+    });
+    afterEach(() => { Object.keys(s0).forEach((k) => delete s0[k]); delete globalThis.localStorage; });
+    const bandsOf = (t) => {
+      localStorage.setItem('larv4_mic_factors', JSON.stringify({ 'larv-agua': { vverd: t } }));
+      return thresholdBands('larv-agua', 'vverd');
+    };
+
+    it('sin corte de Moderado se queda en Mín/Leve: sin `m`, micLvlCode nunca sale de Leve', () => {
+      const b = bandsOf({ l: 100, m: null, e: 300 });
+      expect(b.map((x) => x.n)).toEqual(['Mín', 'Leve']);
+      // Y sobre todo: ya no imprime "—" como si fuera un valor de corte.
+      expect(b.map((x) => x.txt).join(' ')).not.toContain('—');
+    });
+
+    it('con `m` pero sin `e` llega hasta Moderado, no hasta Elevado', () => {
+      expect(bandsOf({ l: 100, m: 200, e: null }).map((x) => x.n)).toEqual(['Mín', 'Leve', 'Mod']);
+    });
+
+    it('`l` a null sigue anulando el criterio entero (no hay nada que clasificar)', () => {
+      expect(bandsOf({ l: null, m: 200, e: 300 })).toBeNull();
+    });
+
+    it('no se pasa de corrección: con los tres cortes siguen saliendo las CUATRO bandas', () => {
+      expect(bandsOf({ l: 100, m: 200, e: 300 }).map((x) => x.n)).toEqual(['Mín', 'Leve', 'Mod', 'Elev']);
+    });
   });
 });
 
@@ -199,6 +239,58 @@ describe('petriPdf · documento', () => {
   it('sin filas imprimibles devuelve 0 hojas en vez de un documento en blanco', () => {
     expect(docOf([]).pages).toBe(0);
     expect(docOf([row({ 'Fecha muestreo': '' })]).pages).toBe(0);
+  });
+
+  // La hoja es de RESULTADOS: un formato sin ningún parámetro medido salía como un título
+  // seguido de una rejilla de puro contexto y nada debajo (medido: 2 grupos de 219 en la
+  // hoja real, ambos «Larvicultura · EM»).
+  it('un formato sin ningún parámetro medido no imprime tabla ni hoja', () => {
+    const doc = docOf([row({ 'Fecha muestreo': '01/06/2026', Formato: 'Larvicultura · EM', 'Módulo/Sala': '9.0' })]);
+    expect(doc.pages).toBe(0);
+    expect(doc.page).not.toContain('Larvicultura · EM');
+  });
+
+  it('no se pasa de corrección: con resultados PERO sin contexto la tabla sí se imprime', () => {
+    // Exigir además columnas de contexto habría perdido estas filas, que son imprimibles.
+    const doc = docOf([{
+      _SheetOrigin: 'Microbiología', Formato: 'Larvicultura · Muestra',
+      'Fecha muestreo': '01/06/2026', 'C. Verdes UFC': '150',
+    }]);
+    expect(doc.pages).toBe(1);
+    expect(doc.page).toContain('1.5E+02');
+    expect(doc.page).not.toContain('Mód./Sala');   // ninguna columna de contexto
+  });
+
+  it('el día sin nada imprimible no deja una hoja huérfana entre dos que sí lo están', () => {
+    const doc = docOf([
+      row({ 'Fecha muestreo': '01/06/2026', ...ufc }),
+      row({ 'Fecha muestreo': '02/06/2026', Formato: 'Larvicultura · EM' }),
+      row({ 'Fecha muestreo': '03/06/2026', ...ufc }),
+    ]);
+    expect(doc.days).toEqual(['2026-06-01', '2026-06-03']);
+    expect(doc.page.match(/class="ppage"/g).length).toBe(2);
+  });
+
+  // El cajón 'otros' NO es una clave de MIC_FORMATS: se titulaba con la clave cruda, y su
+  // área sale del valor por DEFECTO de areaForFormat, no de una clasificación real.
+  describe('formato no identificado', () => {
+    const raro = { _SheetOrigin: 'Microbiología', Formato: 'Formato inventado que nadie conoce', 'Fecha muestreo': '01/06/2026', 'C. Verdes UFC': '150' };
+
+    it('lleva etiqueta legible, no la clave interna', () => {
+      const doc = docOf([raro]);
+      expect(doc.page).toContain('Formato no identificado');
+      expect(doc.page).not.toMatch(/<div class="ftitle">otros/);
+    });
+
+    it('declara SIEMPRE el área con la que se semaforizó, aunque sea la única tabla', () => {
+      // Sin esto no habría forma de saber con qué criterios se pintaron esas celdas.
+      expect(docOf([raro]).page).toContain('Formato no identificado · Larvicultura · Animal');
+    });
+
+    it('no se pasa de corrección: un formato conocido y único sigue sin sufijo de área', () => {
+      expect(docOf([row({ 'Fecha muestreo': '01/06/2026', ...ufc })]).page)
+        .toContain('Larvicultura · Muestra<');
+    });
   });
 
   it('el nombre del archivo refleja el rango elegido y no lleva caracteres ilegales', () => {

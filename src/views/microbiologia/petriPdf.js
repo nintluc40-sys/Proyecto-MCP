@@ -52,21 +52,34 @@ export function toSci(v) {
 }
 
 /**
- * Las cuatro bandas de un parámetro en un área, con su valor de corte y su color.
+ * Las bandas de un parámetro en un área, con su valor de corte y su color.
  * `l`/`m`/`e` son los límites INFERIORES de Leve/Moderado/Elevado, así que la banda
  * Mínimo es "por debajo de l" y Elevado "de e en adelante".
+ *
+ * Se declaran EXACTAMENTE las bandas que el clasificador puede alcanzar. `micLvlCode`
+ * (core de `data.js`) trata un corte ausente como Infinity: sin `m` nunca sale de Leve, y
+ * sin `e` nunca llega a Elevado. Antes esta guarda era asimétrica —exigía `m` y `e`
+ * definidos, pero solo comprobaba `null` en `l`—, así que un override parcial podía dejar
+ * la columna SIN línea de criterios aunque sus celdas SÍ se colorean, o imprimir "—" como
+ * si fuera un corte. Ahora `== null` uniforme, igual que el clasificador.
+ *
  * @returns {?Array<{n:string, txt:string, color:string}>} null si el área/parámetro no
- *   tiene umbrales definidos (entonces no se inventa ningún criterio).
+ *   tiene umbral (entonces no se inventa ningún criterio, y tampoco se colorea).
  */
 export function thresholdBands(area, fkey) {
   const t = (loadMicThresholds()[area] || {})[fkey];
-  if (!t || t.l === undefined || t.l === null || t.m === undefined || t.e === undefined) return null;
-  return [
+  if (!t || t.l == null) return null;
+  const bands = [
     { n: 'Mín', txt: '<' + toSci(t.l), color: NIVEL_COLOR['Mínimo'] },
     { n: 'Leve', txt: toSci(t.l), color: NIVEL_COLOR['Leve'] },
-    { n: 'Mod', txt: toSci(t.m), color: NIVEL_COLOR['Moderado'] },
-    { n: 'Elev', txt: '≥' + toSci(t.e), color: NIVEL_COLOR['Elevado'] },
   ];
+  if (t.m != null) {
+    bands.push({ n: 'Mod', txt: toSci(t.m), color: NIVEL_COLOR['Moderado'] });
+    // Elevado solo es alcanzable si ANTES existe el corte de Moderado: con `m` ausente
+    // `micLvlCode` se queda en Leve y `e` no llega a evaluarse nunca.
+    if (t.e != null) bands.push({ n: 'Elev', txt: '≥' + toSci(t.e), color: NIVEL_COLOR['Elevado'] });
+  }
+  return bands;
 }
 
 /**
@@ -102,6 +115,14 @@ const CTX_COLS = [
 
 const has = (v) => v !== null && v !== undefined && String(v).trim() !== '';
 
+// Cajón de las filas cuyo «Formato» no reconoce `classifyFormato`. NO es una clave de
+// MIC_FORMATS, así que sin etiqueta propia el PDF titulaba la tabla con la clave cruda
+// ("otros"). Y su área sale del valor por DEFECTO de `areaForFormat`, no de una
+// clasificación real: por eso estas tablas declaran siempre el área en el título, para que
+// se vea con qué criterios se semaforizaron. Hoy: 0 filas en la hoja.
+const OTROS_KEY = 'otros';
+const OTROS_LABEL = 'Formato no identificado';
+
 /**
  * Agrupa filas por día y, dentro de cada día, por formato Y ÁREA.
  *
@@ -120,7 +141,7 @@ export function groupForPdf(rows) {
     const k = dayKeyOf(c.fecha);
     if (!byDay.has(k)) byDay.set(k, { key: k, fmts: new Map() });
     const day = byDay.get(k);
-    const fk = c.formatoKey || 'otros';
+    const fk = c.formatoKey || OTROS_KEY;
     const area = areaForFormat(fk, c.tipoMuestra);
     const gk = fk + '|' + area;
     if (!day.fmts.has(gk)) day.fmts.set(gk, { fmtKey: fk, area, items: [] });
@@ -142,7 +163,12 @@ function formatTable(fmtKey, area, items, titleSuffix) {
     const e = m.get(p.key);
     return e && (has(e.ufc) || has(e.crudo));
   }));
-  if (!patCols.length && !ctxCols.length) return '';
+  // Sin NINGÚN parámetro medido no hay tabla que imprimir: la hoja es de resultados, y una
+  // rejilla de puro contexto sale como un título con una fila de metadatos y nada debajo
+  // (medido: 2 grupos de 219, ambos «Larvicultura · EM»). Se condiciona SOLO a `patCols`:
+  // exigir además contexto perdería las tablas que sí traen resultados pero llegan sin
+  // Módulo/Corrida/Estadío/Tipo/Ubicación, que son perfectamente imprimibles.
+  if (!patCols.length) return '';
 
   const headH = ctxCols.map((c) => `<th>${esc(c.label)}</th>`).join('')
     + patCols.map((p) => `<th>${esc(p.label)}</th>`).join('');
@@ -166,7 +192,7 @@ function formatTable(fmtKey, area, items, titleSuffix) {
     return `<tr><td class="tqc">${i + 1}</td>${tds}</tr>`;
   }).join('');
 
-  const label = (FORMATO_LABEL[fmtKey] || (MIC_FORMATS[fmtKey] || {}).label || fmtKey) + (titleSuffix || '');
+  const label = (fmtKey === OTROS_KEY ? OTROS_LABEL : (FORMATO_LABEL[fmtKey] || (MIC_FORMATS[fmtKey] || {}).label || fmtKey)) + (titleSuffix || '');
   return `<div class="ftitle">${esc(label)}</div>`
     + `<table><thead><tr><th>#</th>${headH}</tr><tr class="critline"><th></th>${critH}</tr></thead><tbody>${trs}</tbody></table>`;
 }
@@ -233,10 +259,13 @@ export function buildPetriPdfDoc(rows, opts = {}) {
     let inner = '';
     const grupos = [...day.fmts.values()];
     // Un mismo formato puede aparecer con varias áreas ese día (Agua vs Animal): solo
-    // entonces se añade el área al título, para no ensuciar el caso normal.
+    // entonces se añade el área al título, para no ensuciar el caso normal. El cajón de
+    // formatos no identificados la declara SIEMPRE: su área es un valor por defecto, no una
+    // clasificación, y sin verla no se sabría con qué criterios se pintó la tabla.
     const vecesPorFmt = grupos.reduce((m, g) => m.set(g.fmtKey, (m.get(g.fmtKey) || 0) + 1), new Map());
     grupos.forEach((g) => {
-      const suffix = vecesPorFmt.get(g.fmtKey) > 1 ? ' · ' + (AREA_LABEL[g.area] || g.area) : '';
+      const conArea = g.fmtKey === OTROS_KEY || vecesPorFmt.get(g.fmtKey) > 1;
+      const suffix = conArea ? ' · ' + (AREA_LABEL[g.area] || g.area) : '';
       const t = formatTable(g.fmtKey, g.area, g.items, suffix);
       if (!t) return;
       inner += t;
