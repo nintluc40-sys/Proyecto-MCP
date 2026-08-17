@@ -318,7 +318,15 @@ function labSummaryCompute(mIdx) {
   const calPct = evaluable.length ? Math.round(evaluable.filter((m) => m.estado === 'dentro').length / evaluable.length * 100) : null;
   const wqi = calWQI(measures, ranges).wqi;
   const calTier = calPct == null ? 'x' : calPct >= 90 ? 'v' : calPct >= 70 ? 'a' : 'r';
-  return { cm, micRows, micAlert, micPct, micPctTxt, micTier, calRows, measures, calPct, wqi, calTier };
+  // Texto del porcentaje, con la MISMA guarda de `null` que `micPctTxt` en la tarjeta de al
+  // lado y que el WQI en esta misma línea. Hay muestras de agua cuyos parámetros no tienen
+  // rango objetivo (medido: 32 % de las mediciones salen `sin-rango`, y 90 filas no traen
+  // NINGUNA evaluable), así que `calPct` puede ser null con `calRows` no vacío: la tarjeta y
+  // el detalle imprimían entonces el literal «null% en rango». La rama ya estaba reconocida
+  // más abajo —el detalle dice «Sin parámetros con rango objetivo»—, solo faltaba aquí.
+  // `calPct` (y con él el semáforo `calTier`) NO cambia: esto es únicamente el rótulo.
+  const calPctTxt = calPct === null ? '—' : calPct + '%';
+  return { cm, micRows, micAlert, micPct, micPctTxt, micTier, calRows, measures, calPct, calPctTxt, wqi, calTier };
 }
 
 /** Bloque "🧫 Laboratorio de agua y sanidad" (2 tarjetas clicables) para Visitante. */
@@ -330,7 +338,7 @@ function labSummaryBlock(mIdx) {
     <div class="vt-card-title" style="color:${AC}">🧫 Laboratorio de agua y sanidad · ${esc(monthLabelAt(mIdx))} <span class="muted" style="font-weight:600;font-size:12px">· microbiología y calidad de agua</span></div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
       ${sumCard('🧫', 'Microbiología', s.micRows.length ? semChip(s.micTier, `${s.micPctTxt} en alerta`) : semChip('x', 'Sin muestras'), s.micRows.length ? `${s.micRows.length} muestra(s) · ${s.micAlert} en nivel alto` : 'Sin análisis microbiológicos', 'labMicro', AC)}
-      ${sumCard('💧', 'Calidad del agua', s.calRows.length ? semChip(s.calTier, `${s.calPct}% en rango`) : semChip('x', 'Sin muestras'), s.calRows.length ? `${s.calRows.length} muestra(s) · WQI ${s.wqi == null ? '—' : s.wqi}` : 'Sin análisis de agua', 'labAgua', AC)}
+      ${sumCard('💧', 'Calidad del agua', s.calRows.length ? semChip(s.calTier, `${s.calPctTxt} en rango`) : semChip('x', 'Sin muestras'), s.calRows.length ? `${s.calRows.length} muestra(s) · WQI ${s.wqi == null ? '—' : s.wqi}` : 'Sin análisis de agua', 'labAgua', AC)}
     </div>
   </div>`;
 }
@@ -617,7 +625,7 @@ function sumDetail(key, mIdx, monthSup) {
       </div>`;
     return {
       title: '💧 Calidad del agua del mes',
-      html: `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${s.calRows.length} muestra(s) · índice de calidad del agua (WQI): <b>${s.wqi == null ? '—' : s.wqi}</b> · <b>${s.calPct}%</b> de parámetros en rango.</p>`
+      html: `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${s.calRows.length} muestra(s) · índice de calidad del agua (WQI): <b>${s.wqi == null ? '—' : s.wqi}</b> · <b>${s.calPctTxt}</b> de parámetros en rango.</p>`
         + gauge
         + (body ? detailTable(['Parámetro', 'En rango', 'Fuera', '% en rango'], body) : '<p style="color:var(--c-text-muted)">Sin parámetros con rango objetivo.</p>'),
       draw: s.wqi == null ? null : () => drawWqiGauge(s.wqi),

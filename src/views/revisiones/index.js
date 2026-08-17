@@ -1104,7 +1104,9 @@ function histContentHTML() {
   // elegía una opción legítima y recibía «Sin comentarios para la combinación elegida»
   // —medido—. Mismo criterio que el modal «Historial de Asistencia Técnica» del Supervisor,
   // que arma sus listas sobre `atRows`, ya filtradas por comentario.
-  const allRev = store.globalData.filter((r) => isRevisionRow(r) && hasComment(r));
+  // Y del MISMO conjunto acotado del que sale la lista (`getFilteredRows`), por la misma
+  // razón: ofrecer un mes que la ventana ya no lista devolvería el vacío otra vez.
+  const allRev = getFilteredRows().filter(hasComment);
 
   const corridas = [...new Set(allRev.map(gCor).filter(Boolean))].sort(numCmp);
   if (histSel.corrida && !corridas.includes(histSel.corrida)) histSel.corrida = '';
@@ -1134,7 +1136,16 @@ function histContentHTML() {
 }
 
 function histRows() {
-  return store.globalData.filter(isRevisionRow)
+  // Parte de `getFilteredRows()`, NO del store entero: es el mismo conjunto que cuenta el
+  // KPI «🗂️ Historial» que abre esta ventana, y el mismo predicado que usan los otros
+  // cuatro drill-downs de la vista (treemap, Calidad, celda de Cobertura y tendencia).
+  // Antes el KPI contaba con los filtros puestos y la ventana listaba la hoja COMPLETA:
+  // medido sobre la hoja real, en el mes por defecto el KPI decía 1 y la ventana abría 719
+  // (y 188/250/278 frente a 719 en junio/julio/agosto). Los selectores de abajo siguen
+  // afinando DENTRO de ese alcance. Es lo que ya hacía el modal hermano «Historial de
+  // Asistencia Técnica» del Supervisor, que arma `atRows` una vez y de ahí saca tanto el
+  // número del botón como la lista, de modo que no pueden discrepar.
+  return getFilteredRows()
     .filter((r) => hasComment(r) &&
       (!histSel.mod || gMod(r) === histSel.mod) &&
       (!histSel.siembra || gSiem(r) === histSel.siembra) &&
