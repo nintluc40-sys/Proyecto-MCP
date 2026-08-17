@@ -1845,6 +1845,18 @@ async function postPayload(payload, url, opts){
 async function syncAll(){
   // Atajo: Microbiología delega en syncMic / syncCal (reemplazo por sesión a sus hojas).
   if(isMicMod(curMod)){
+    // Guarda PRIMERO el análisis que está EN PANTALLA. Sin esto, lo capturado y aún no
+    // guardado no figuraba como pendiente, así que su sync ni siquiera se ejecutaba: el
+    // trabajo en curso no se enviaba y no se avisaba de nada (medido el 2026-08-17).
+    // Solo se guarda el panel MONTADO en el DOM: guardar uno no montado recolectaría del
+    // borrador almacenado y podría resucitar como pendiente una sesión ya sincronizada.
+    if(curTab === "micnuevo"){
+      const _t = micTypeGet();
+      const _nOn = (_t === "cal" && document.getElementById("cal-resp")) ? saveCalLocal()
+                 : (_t === "pat" && document.getElementById("pat-resp")) ? savePatLocal()
+                 : (document.getElementById("mic-resp") ? saveMicLocal() : 0);
+      if(_nOn < 0) return;            // validación (-1) o almacenamiento lleno (-2): ya avisó
+    }
     const micP = _micRaw().some(r=>!r.synced);
     const calP = (typeof _calRaw==="function") && _calRaw().some(r=>!r.synced);
     const patP = (typeof _patRaw==="function") && _patRaw().some(r=>!r.synced);
@@ -8750,6 +8762,36 @@ function _analistaDL(id){ return `<datalist id="${id}">`+MIC_ANALISTAS.map(a=>`<
 // (Mic/Cal/Pat) hasta que TODAS lo tengan; se comprueba el dato del registro, no el
 // campo del DOM, para ser robusto aunque se sincronice desde otra pestaña o "Enviar todos".
 function _pendingLacksAnalista(records){ return (records||[]).some(r=> !sanitizeStr((r && r.data && r.data.responsable)||"")); }
+// RESCATE: completa el Analista en las muestras PENDIENTES que quedaron sin él, con el del
+// análisis que se está sincronizando. Decisión del usuario (2026-08-17): en la práctica es
+// siempre el MISMO analista quien manda una tanda repartida en varios formatos.
+// Acotado por construcción: desde que save{Mic,Cal,Pat}Local exigen el Analista para GUARDAR,
+// no pueden nacer registros nuevos sin él, así que esto solo alcanza a lo que ya estaba
+// atascado de antes. Muta los registros de `list`; los de `toSend` son las MISMAS referencias
+// (sale de un .filter sobre `list`), por eso basta llamarlo una vez. Devuelve cuántas completó.
+function _fillPendingAnalista(list, analista){
+  const an = sanitizeStr(analista||""); if(!an) return 0;
+  let n = 0;
+  (list||[]).forEach(r=>{ if(r && !r.synced && r.data && !sanitizeStr(r.data.responsable||"")){ r.data.responsable = an; n++; } });
+  return n;
+}
+// Sesiones pendientes que SIGUEN sin Analista, descritas para el usuario. Sin esto el aviso
+// era "falta el analista" a secas y señalaba el campo del panel activo, que ya estaba relleno.
+function _sesionesSinAnalista(records, etiquetaFmt){
+  const vistas = new Set();
+  (records||[]).forEach(r=>{
+    const d = r && r.data; if(!d || sanitizeStr(d.responsable||"")) return;
+    const partes = [d.fechaMuestreo||"—", "corrida "+(d.corrida||"—")];
+    if(d.formato) partes.push(etiquetaFmt ? etiquetaFmt(d.formato) : d.formato);
+    vistas.add(partes.join(" · "));
+  });
+  return Array.from(vistas);
+}
+function _avisoSinAnalista(records, etiquetaFmt){
+  const s = _sesionesSinAnalista(records, etiquetaFmt);
+  return "⚠️ Falta el Analista en "+s.length+" sesión(es) pendiente(s): "+s.slice(0,3).join("  ·  ")+
+         (s.length>3 ? " y "+(s.length-3)+" más" : "")+". Escríbelo en «Responsable» y vuelve a sincronizar.";
+}
 // Catálogos de los formatos nuevos (Algas Mensual/R, Maduración desinfección)
 const MIC_ALGM_LUGAR   = ["","Cepario 1","Cepario 2","Cepario 3","Sala 1","Sala 2","Sala 3","Sala 4"];
 const MIC_ALGM_MUESTRA = ["","Nutriente 1","Nutriente 2","Nutriente 3","Nutriente 4","Tubo","Fiola 150 ml","Fiola 1 L","Fiola 2 L","Funda Matriz","Funda Producción"];
@@ -9789,6 +9831,14 @@ function saveMicLocal(){
     return (sec.rows||[]).some(d=> micRowHasData(MIC_FORMATS[fmtKey], d));
   })();
   if(needsCorrida && !draft.meta.corrida){ toast("⚠️ Ingresa el N° de corrida (requerido en Larvicultura · Muestra)","warn",3800); return -1; }
+  // El Analista es obligatorio para CREAR el registro, no solo para sincronizar. Si se podía
+  // guardar sin él, el registro nacía con SU PROPIA clave de sesión (fecha|corrida|depto|
+  // formato|sid) y bastaba cambiar de formato o corregir la corrida para que el formulario
+  // ya no lo alcanzara: quedaba pendiente sin analista y bloqueaba la sincronización ENTERA,
+  // sin forma de arreglarlo desde la interfaz (medido el 2026-08-17). Exigirlo aquí cierra
+  // la fuente; el rescate de lo ya atascado lo hace _fillPendingAnalista en el sync.
+  const _hayFilasMic = (()=>{ const f = MIC_FORMATS[draft.activeFmt]; if(!f) return false; const s = draft.sections[draft.activeFmt]; return !!s && (s.rows||[]).some(d=> micRowHasData(f, d)); })();
+  if(_hayFilasMic && !sanitizeStr(draft.meta.responsable||"")){ toast("⚠️ Bacteriología: escribe el Analista responsable antes de guardar","warn",4200); const _elR=document.getElementById("mic-resp"); if(_elR){ try{ _elR.focus(); }catch(_){} } return -1; }
   // Identidad de sesión: cada "Nuevo análisis" tiene un sid estable. Así dos
   // análisis del mismo día/corrida/formato NO se pisan: cada uno es su propia
   // sesión (historial y hoja). Re-guardar el MISMO borrador (mismo sid) o editar
@@ -9861,7 +9911,12 @@ async function syncMic(){
   if(pendKeys.size === 0){ toast("No hay muestras pendientes","info",2500); return; }
   // Envía TODAS las filas de cada sesión con pendientes (la hoja reemplaza la sesión completa).
   const toSend = list.filter(r=> r.data && pendKeys.has(micSessionKey(r.data)));
-  if(_pendingLacksAnalista(toSend)){ setSyncUI("idle","Sin analista"); toast("⚠️ El Analista responsable es obligatorio: complétalo en el análisis antes de sincronizar","warn",4800); const _el=document.getElementById("mic-resp"); if(_el){ try{ _el.focus(); }catch(_){} } return; }
+  // Rescate del atasco: completa el Analista en lo pendiente que no lo tuviera (misma tanda,
+  // mismo analista). Muta `list`, y `toSend` comparte referencias, así que basta una pasada.
+  const _anMic = sanitizeStr((loadMicDraft().meta||{}).responsable||"");
+  const _fillMic = _fillPendingAnalista(list, _anMic);
+  if(_fillMic){ _micSave(list); toast("ℹ️ Se completó el Analista («"+_anMic+"») en "+_fillMic+" muestra(s) pendiente(s) que se habían guardado sin él","info",4600); }
+  if(_pendingLacksAnalista(toSend)){ setSyncUI("idle","Sin analista"); toast(_avisoSinAnalista(toSend, k=> (MIC_FORMATS[k] && MIC_FORMATS[k].label) || k),"warn",6500); const _el=document.getElementById("mic-resp"); if(_el){ try{ _el.focus(); }catch(_){} } return; }
   const payload = buildMicPayload(toSend);
   if(!payload.rows.length){ toast("No hay filas para enviar","warn",3000); return; }
   setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s)…");
@@ -10880,6 +10935,10 @@ function saveCalLocal(){
   const draft=collectCalDraft(); saveCalDraft(draft);
   if(!isValidDate(draft.meta.fechaMuestreo)){ toast("⚠️ Ingresa una Fecha de muestreo válida","warn",3500); return -1; }
   // Identidad de sesión: cada "Nuevo análisis" tiene un sid estable (ver Bacteriología).
+  // Analista obligatorio para CREAR el registro (mismo motivo que en Bacteriología: si no,
+  // el registro queda con una clave de sesión que el formulario ya no puede alcanzar).
+  const _hayFilasCal = (()=>{ const f = CAL_FORMATS[draft.activeFmt]; if(!f) return false; const s = draft.sections[draft.activeFmt]; return !!s && (s.rows||[]).some(d=> calRowHasData(f, d)); })();
+  if(_hayFilasCal && !sanitizeStr(draft.meta.responsable||"")){ toast("⚠️ Calidad de Agua: escribe el Analista responsable antes de guardar","warn",4200); const _elR=document.getElementById("cal-resp"); if(_elR){ try{ _elR.focus(); }catch(_){} } return -1; }
   if(draft.meta.sid === undefined){ draft.meta.sid = _calNewSid(); }
   saveCalDraft(draft);
   const sid = draft.meta.sid;
@@ -10945,7 +11004,11 @@ async function syncCal(){
   list.forEach(r=>{ if(!r.synced && r.data) pendKeys.add(calSessionKey(r.data)); });
   if(pendKeys.size===0){ toast("No hay muestras pendientes","info",2500); return; }
   const toSend=list.filter(r=> r.data && pendKeys.has(calSessionKey(r.data)));
-  if(_pendingLacksAnalista(toSend)){ setSyncUI("idle","Sin analista"); toast("⚠️ El Analista responsable es obligatorio: complétalo en el análisis antes de sincronizar","warn",4800); const _el=document.getElementById("cal-resp"); if(_el){ try{ _el.focus(); }catch(_){} } return; }
+  // Rescate del atasco (ver Bacteriología): completa el Analista en lo pendiente sin él.
+  const _anCal = sanitizeStr((loadCalDraft().meta||{}).responsable||"");
+  const _fillCal = _fillPendingAnalista(list, _anCal);
+  if(_fillCal){ _calSave(list); toast("ℹ️ Se completó el Analista («"+_anCal+"») en "+_fillCal+" muestra(s) pendiente(s) que se habían guardado sin él","info",4600); }
+  if(_pendingLacksAnalista(toSend)){ setSyncUI("idle","Sin analista"); toast(_avisoSinAnalista(toSend, k=> (CAL_FORMATS[k] && CAL_FORMATS[k].label) || k),"warn",6500); const _el=document.getElementById("cal-resp"); if(_el){ try{ _el.focus(); }catch(_){} } return; }
   const payload=buildCalPayload(toSend);
   if(!payload.rows.length){ toast("No hay filas para enviar","warn",3000); return; }
   setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s)…");
@@ -11536,6 +11599,9 @@ function savePatLocal(){
   const draft=collectPatDraft(); savePatDraft(draft);
   if(!isValidDate(draft.meta.fechaMuestreo)){ toast("⚠️ Ingresa una Fecha de muestreo válida","warn",3500); return -1; }
   // Identidad de sesión: cada "Nuevo análisis" tiene un sid estable (ver Bacteriología).
+  // Analista obligatorio para CREAR el registro (mismo motivo que en Bacteriología).
+  const _hayFilasPat = (draft.rows||[]).some(patRowHasData);
+  if(_hayFilasPat && !sanitizeStr(draft.meta.responsable||"")){ toast("⚠️ Patología: escribe el Analista responsable antes de guardar","warn",4200); const _elR=document.getElementById("pat-resp"); if(_elR){ try{ _elR.focus(); }catch(_){} } return -1; }
   if(draft.meta.sid === undefined){ draft.meta.sid = _patNewSid(); }
   savePatDraft(draft);
   const sid = draft.meta.sid;
@@ -11597,7 +11663,11 @@ async function syncPat(){
   list.forEach(r=>{ if(!r.synced && r.data) pendKeys.add(patSessionKey(r.data)); });
   if(pendKeys.size===0){ toast("No hay muestras pendientes","info",2500); return; }
   const toSend=list.filter(r=> r.data && pendKeys.has(patSessionKey(r.data)));
-  if(_pendingLacksAnalista(toSend)){ setSyncUI("idle","Sin analista"); toast("⚠️ El Analista responsable es obligatorio: complétalo en el análisis antes de sincronizar","warn",4800); const _el=document.getElementById("pat-resp"); if(_el){ try{ _el.focus(); }catch(_){} } return; }
+  // Rescate del atasco (ver Bacteriología): completa el Analista en lo pendiente sin él.
+  const _anPat = sanitizeStr((loadPatDraft().meta||{}).responsable||"");
+  const _fillPat = _fillPendingAnalista(list, _anPat);
+  if(_fillPat){ _patSave(list); toast("ℹ️ Se completó el Analista («"+_anPat+"») en "+_fillPat+" muestra(s) pendiente(s) que se habían guardado sin él","info",4600); }
+  if(_pendingLacksAnalista(toSend)){ setSyncUI("idle","Sin analista"); toast(_avisoSinAnalista(toSend, null),"warn",6500); const _el=document.getElementById("pat-resp"); if(_el){ try{ _el.focus(); }catch(_){} } return; }
   const payload=buildPatPayload(toSend);
   if(!payload.rows.length){ toast("No hay filas para enviar","warn",3000); return; }
   setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s)…");
