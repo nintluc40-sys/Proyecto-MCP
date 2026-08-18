@@ -35,7 +35,7 @@ const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 // El motor es un script clásico de ~14.900 líneas: se arranca ENTERO sobre el shell real.
 // `new Function` no deja nada en globalThis, de ahí el epílogo que exporta lo necesario.
 const EXPORTAR = ['saveMicLocal', 'savePatLocal', '_micRaw', '_patRaw',
-  'micTypeSet', 'renderMicNuevo', 'renderPatNuevo'];
+  'micTypeSet', 'renderMicNuevo', 'renderPatNuevo', 'renderCalNuevo'];
 const H = {};
 const toasts = [];
 
@@ -126,5 +126,34 @@ describe('Patología · el Analista es obligatorio para GUARDAR', () => {
     nuevoPat();
     campo('pat-fm', '2026-08-17'); campo('pat-corr', '585');
     expect(H.savePatLocal()).toBe(0);
+  });
+});
+
+/* El asterisco rojo junto a «Responsable» lleva un `title` que le explica la regla al
+   analista. Nació en 83e5f3c diciendo «obligatorio antes de sincronizar», y cuando a382251
+   adelantó la exigencia al GUARDADO ese texto se quedó atrás: prometía una regla más laxa
+   que la que el código aplica, así que el analista se topaba con el bloqueo antes de lo que
+   el aviso le hacía esperar. Esta prueba no demuestra el comportamiento —de eso se encargan
+   los bloques de arriba—, sino que el texto no vuelva a divergir de él. */
+describe('el aviso del campo dice la regla que de verdad se aplica', () => {
+  const rotulo = (render, panelId) => {
+    localStorage.clear();
+    render();
+    const el = document.getElementById(panelId);
+    const sp = el.closest('.mf').querySelector('span[title]');
+    return sp.getAttribute('title');
+  };
+
+  it('los tres paneles anuncian que el Analista hace falta para GUARDAR', () => {
+    const casos = [
+      ['Bacteriología', () => { H.micTypeSet('bact'); H.renderMicNuevo(); }, 'mic-resp'],
+      ['Calidad de Agua', () => { H.micTypeSet('cal'); H.renderCalNuevo(); }, 'cal-resp'],
+      ['Patología', () => { H.micTypeSet('pat'); H.renderPatNuevo(); }, 'pat-resp'],
+    ];
+    for (const [nombre, render, id] of casos) {
+      const t = rotulo(render, id);
+      expect(t, nombre).toMatch(/guardar/i);
+      expect(t, nombre).not.toMatch(/antes de sincronizar/i);
+    }
   });
 });

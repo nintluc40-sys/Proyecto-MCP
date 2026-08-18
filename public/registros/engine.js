@@ -9703,7 +9703,7 @@ function renderMicNuevo(){
         <div class="mf"><label>Fecha muestreo</label><input type="date" id="mic-fm" value="${escapeHtml(meta.fechaMuestreo||today())}" oninput="micDraftTouch()"></div>
         <div class="mf"><label>Fecha resultados</label><input type="date" id="mic-fr" value="${escapeHtml(meta.fechaResultados||"")}" oninput="micDraftTouch()"></div>
         <div class="mf"><label>N° Corrida</label><input id="mic-corr" value="${escapeHtml(meta.corrida||"")}" placeholder="Ej. 562" oninput="micDraftTouch()" onchange="micCorridaChange()"></div>
-        <div class="mf"><label>Responsable <span style="color:#dc2626" title="Analista obligatorio antes de sincronizar">*</span></label><input id="mic-resp" list="mic-analistas" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="micDraftTouch()">${_analistaDL("mic-analistas")}</div>
+        <div class="mf"><label>Responsable <span style="color:#dc2626" title="Analista obligatorio para guardar y sincronizar">*</span></label><input id="mic-resp" list="mic-analistas" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="micDraftTouch()">${_analistaDL("mic-analistas")}</div>
         <div class="mf"><label>Formato</label><select id="mic-fmt-sel" onchange="micFmtChange(this.value)" style="font-weight:600">${fmtOpts}</select></div>
         ${micHdrMod}${micHdrEst}${micHdrSala}
         <div class="mf" style="flex-basis:100%"><label>Encabezado <span style="font-weight:500;text-transform:none;color:#64748b">— opcional, sale en el PDF antes de la semaforización</span></label>
@@ -10892,7 +10892,7 @@ function renderCalNuevo(){
         <div class="mf"><label>Fecha muestreo</label><input type="date" id="cal-fm" value="${escapeHtml(meta.fechaMuestreo||today())}" oninput="calDraftTouch()"></div>
         <div class="mf"><label>Fecha resultados</label><input type="date" id="cal-fr" value="${escapeHtml(meta.fechaResultados||"")}" oninput="calDraftTouch()"></div>
         <div class="mf"><label>N° Corrida (opcional)</label><input id="cal-corr" value="${escapeHtml(meta.corrida||"")}" placeholder="Opcional" oninput="calDraftTouch()" onchange="calCorridaChange()"></div>
-        <div class="mf"><label>Responsable <span style="color:#dc2626" title="Analista obligatorio antes de sincronizar">*</span></label><input id="cal-resp" list="cal-analistas" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="calDraftTouch()">${_analistaDL("cal-analistas")}</div>
+        <div class="mf"><label>Responsable <span style="color:#dc2626" title="Analista obligatorio para guardar y sincronizar">*</span></label><input id="cal-resp" list="cal-analistas" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="calDraftTouch()">${_analistaDL("cal-analistas")}</div>
         <div class="mf"><label>Formato</label><select id="cal-fmt-sel" onchange="calFmtChange(this.value)" style="font-weight:600">${fmtOpts}</select></div>
         ${calHdrMod}${calHdrEst}
         <div class="mf" style="flex-basis:100%"><label>Encabezado <span style="font-weight:500;text-transform:none;color:#64748b">— opcional, sale en el PDF antes de la semaforización</span></label>
@@ -11535,7 +11535,7 @@ function renderPatNuevo(){
         <div class="mf"><label>Fecha muestreo</label><input type="date" id="pat-fm" value="${escapeHtml(meta.fechaMuestreo||today())}" oninput="patDraftTouch()"></div>
         <div class="mf"><label>Fecha resultados</label><input type="date" id="pat-fr" value="${escapeHtml(meta.fechaResultados||"")}" oninput="patDraftTouch()"></div>
         <div class="mf"><label>N° Corrida (opcional)</label><input id="pat-corr" value="${escapeHtml(meta.corrida||"")}" placeholder="Opcional" oninput="patDraftTouch()" onchange="patCorridaChange()"></div>
-        <div class="mf"><label>Responsable <span style="color:#dc2626" title="Analista obligatorio antes de sincronizar">*</span></label><input id="pat-resp" list="pat-analistas" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="patDraftTouch()">${_analistaDL("pat-analistas")}</div>
+        <div class="mf"><label>Responsable <span style="color:#dc2626" title="Analista obligatorio para guardar y sincronizar">*</span></label><input id="pat-resp" list="pat-analistas" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="patDraftTouch()">${_analistaDL("pat-analistas")}</div>
         <div class="mf" style="flex-basis:100%"><label>Encabezado <span style="font-weight:500;text-transform:none;color:#64748b">— opcional, sale en el PDF</span></label>
           <textarea id="pat-enc" placeholder="Encabezado del reporte (opcional)…" oninput="patDraftTouch()" style="width:100%;min-height:40px">${escapeHtml(meta.encabezado||"")}</textarea></div>
       </div>
