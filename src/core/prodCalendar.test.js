@@ -129,7 +129,7 @@ describe('modCorStats: cosecha honra el 0 (tanque vaciado/agrupado)', () => {
     expect(modCorStats('M06', '579').siembraFecha).toBeNull();
   });
 
-  it('nSie cuenta solo tanques con siembra real (base de la densidad de siembra)', () => {
+  it('nSie cuenta solo tanques con siembra real, y el tonelaje los acompaña', () => {
     store.globalData = [
       { _SheetOrigin: 'Larvicultura', 'Módulo': 'M02', Corrida: '574', Tanque: 'TQ1', 'Población': '2800', Fecha: '01/06/2026' },
       { _SheetOrigin: 'Larvicultura', 'Módulo': 'M02', Corrida: '574', Tanque: 'TQ2', 'Población': '1400', Fecha: '01/06/2026' },
@@ -138,8 +138,26 @@ describe('modCorStats: cosecha honra el 0 (tanque vaciado/agrupado)', () => {
     const s = modCorStats('M02', '574');
     expect(s.nSie).toBe(2);        // TQ3 nunca tuvo población real (>0)
     expect(s.siembra).toBe(4200);  // 2800 + 1400
-    // densidad de siembra = (siembra/nSie)/28/1000 = (4200/2)/28/1000
-    expect((s.siembra / s.nSie) / 28 / 1000).toBeCloseTo(0.075, 6);
+    // Desde 2026-08-18 el denominador de la densidad ya NO es nSie sino el volumen real de
+    // los tanques (columna «Toneladas»); nSie sigue siendo el nº de tanques sembrados y es
+    // lo que hay que repartir entre `tonSum` y `tonSin`. Sin tonelaje en la hoja, todos los
+    // tanques sembrados caen del lado "sin dato" — que es lo que devuelve la densidad al
+    // volumen fijo de antes. La fórmula en sí la prueban `volumenSiembra` y `densSiembra`.
+    expect(s.tonSum).toBe(0);
+    expect(s.tonSin).toBe(s.nSie);
+  });
+
+  it('el tonelaje registrado se acumula, y solo el de los tanques SEMBRADOS', () => {
+    store.globalData = [
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M02', Corrida: '575', Tanque: 'TQ1', 'Población': '2800', Fecha: '01/06/2026', Toneladas: '30' },
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M02', Corrida: '575', Tanque: 'TQ2', 'Población': '1400', Fecha: '01/06/2026' },
+      // TQ3 trae tonelaje pero NUNCA se sembró: no debe aportar volumen a nada.
+      { _SheetOrigin: 'Larvicultura', 'Módulo': 'M02', Corrida: '575', Tanque: 'TQ3', 'Población': '0', Fecha: '01/06/2026', Toneladas: '99' },
+    ];
+    const s = modCorStats('M02', '575');
+    expect(s.nSie).toBe(2);
+    expect(s.tonSum).toBe(30);     // solo TQ1; las 99 t de TQ3 quedan fuera
+    expect(s.tonSin).toBe(1);      // TQ2, sembrado y sin medir
   });
 });
 

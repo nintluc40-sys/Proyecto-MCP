@@ -469,7 +469,8 @@ function escapeHtml(s){ return window.__rgLib.escapeHtml(s); }
 
 // ── Input sanitization: strip formula-injection chars and limit length ──
 // Prevents =IMPORTRANGE(), +cmd|, etc. from reaching Google Sheets
-// Also limits to 200 chars to prevent payload bloat
+// Also limits length to prevent payload bloat: 200 chars by default, and a wider cap for
+// the fields that are PARAGRAPHS (the report texts). See sanitizeStr in core/trovan.js.
 function sanitizeStr(s, max){ return window.__rgLib.sanitizeStr(s, max); }
 
 // ── Numeric sanitization: parse, validate range, reject NaN/Infinity ──
