@@ -204,10 +204,18 @@ export function modCorStats(mod, cor) {
   if (!m.stats.has(k)) m.stats.set(k, modCorStatsCompute(mod, cor));
   return m.stats.get(k);
 }
+/** Tonelaje utilizable: un valor que no sea un número positivo cuenta como "sin medir". */
+const tonOk = (v) => (v !== null && v > 0 ? v : null);
+
 function modCorStatsCompute(mod, cor) {
   const rsAll = rowsOfModCor(mod, cor);
   const tanks = distinct(rsAll.map((r) => getField(r, F.tanque)));
   let firstSum = 0, lastSum = 0, hasFirst = false, hasLast = false, nSie = 0;
+  // Tonelaje (m³) de los tanques SEMBRADOS, para la densidad de siembra. Se acumula lo
+  // registrado (`tonSum`) y se cuentan aparte los tanques sin dato (`tonSin`), en lugar de
+  // rellenarlos aquí con un valor de respaldo: cuánto vale un tanque sin medir es una
+  // decisión de presentación y vive en la vista, no en esta capa.
+  let tonSum = 0, tonSin = 0;
   const plgs = [];      // PL/g (manual), columna «Plg (manual)»
   const plgLarvias = []; // PL/g (Larvia), columna «Plg»
   const sieTimes = []; // fecha (ms) de la siembra de cada tanque → fecha promedio del módulo
@@ -215,11 +223,22 @@ function modCorStatsCompute(mod, cor) {
     const rs = rsAll.filter((r) => getField(r, F.tanque) === tq)
       .sort((a, b) => (parseAnyDate(getField(a, F.fecha)) || 0) - (parseAnyDate(getField(b, F.fecha)) || 0));
     let first = null, last = null, plg = null, plgL = null, firstDate = null;
+    // Tonelaje del tanque: el registrado EL DÍA EN QUE SE SEMBRÓ (`tonSie`), que es el
+    // volumen que corresponde a una densidad DE SIEMBRA. Si ese día concreto vino vacío se
+    // usa el primer tonelaje que el tanque tenga (`tonAny`): recurrir al valor de respaldo
+    // teniendo una medición real del mismo tanque sería peor estimación que aprovecharla.
+    let tonSie = null, tonAny = null;
     // Siembra = primera población REAL (>0). Cosecha = última población registrada,
     // honrando el 0 (tanque vaciado/agrupado): así no se arrastra el valor anterior.
     rs.forEach((r) => {
+      // Un tonelaje de 0 (o negativo) no es una medición, es una celda a medio llenar: se
+      // trata como ausencia. Filtrarlo AQUÍ y solo aquí deja un único sitio del que depende
+      // el comportamiento —si se repartiera en varios guardas, ninguno sería comprobable
+      // por separado y la protección se pudriría sin que nadie lo notara.
+      const t = tonOk(parseNum(r, F.toneladas));
+      if (tonAny === null) tonAny = t;                          // `rs` va ordenado por fecha
       const p = parseNum(r, F.poblacion); if (p === null || p < 0) return;
-      if (p > 0 && first === null) { first = p; firstDate = parseAnyDate(getField(r, F.fecha)); }
+      if (p > 0 && first === null) { first = p; firstDate = parseAnyDate(getField(r, F.fecha)); tonSie = t; }
       last = p;
     });
     for (let i = rs.length - 1; i >= 0; i--) { const v = parseNum(rs[i], PLGM_KEYS); if (v !== null && v > 0) { plg = v; break; } }
@@ -233,6 +252,10 @@ function modCorStatsCompute(mod, cor) {
     if (first !== null) {
       firstSum += first; hasFirst = true; nSie++;
       if (firstDate && !isNaN(firstDate)) sieTimes.push(firstDate.getTime());
+      // Solo cuentan los tanques SEMBRADOS: son los que aportan al volumen de la densidad.
+      // `tonSie`/`tonAny` ya vienen normalizados por `tonOk`, así que aquí basta con null.
+      const ton = tonSie !== null ? tonSie : tonAny;
+      if (ton !== null) tonSum += ton; else tonSin++;
     }
     if (last !== null) { lastSum += last; hasLast = true; }
     if (plg !== null) plgs.push(plg);
@@ -255,6 +278,8 @@ function modCorStatsCompute(mod, cor) {
   const siembraFecha = sieTimes.length
     ? new Date(Math.round(sieTimes.reduce((a, b) => a + b, 0) / sieTimes.length))
     : null;
-  // nSie = nº de tanques con siembra (denominador de la densidad de siembra por tanque).
-  return { siembra, cosecha, plg, plgLarvia, superv, nSie, siembraFecha, despachado, despachadoFull };
+  // nSie = nº de tanques con siembra. tonSum = m³ registrados de esos tanques; tonSin = los
+  // que no traían tonelaje. Se cumple siempre `tonSin ≤ nSie`, y con la columna vacía
+  // `tonSin === nSie`, que es lo que devuelve la densidad al volumen fijo de antes.
+  return { siembra, cosecha, plg, plgLarvia, superv, nSie, tonSum, tonSin, siembraFecha, despachado, despachadoFull };
 }

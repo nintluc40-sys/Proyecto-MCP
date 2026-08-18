@@ -43,6 +43,11 @@ export const F = {
   temp: ['Temperatura', 'temperatura', 'Temp', 'temp'],
   salinidad: ['Salinidad', 'salinidad', 'Salinidad_ppt', 'Sal_ppt', 'sal_ppt'],
   tecnico: ['Técnico', 'Tecnico', 'técnico', 'tecnico', 'TECNICO'],
+  // Toneladas (m³) de agua del tanque. Es la ÚLTIMA columna de "Datos Larvicultura" desde
+  // 2026-08: la escribe la ficha de Calidad de Agua (`tn_i`) y la consume la Densidad de
+  // siembra de la Vista Ejecutiva. Mientras la hoja no la traiga, la densidad se sigue
+  // estimando con el volumen fijo por tanque, así que su ausencia no rompe nada.
+  toneladas: ['Toneladas', 'toneladas', 'TONELADAS'],
 };
 
 // Variantes de la columna PL/g (análisis biométrico / Larvicultura).

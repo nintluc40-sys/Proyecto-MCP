@@ -13,6 +13,13 @@ const row = (mod, cor, tq, pob, fecha, desp = false) => ({
   ...(desp ? { 'Destino': 'Piscina 4', 'Biomasa': '10' } : {}),
 });
 
+// Fila con la columna «Toneladas» (la última de "Datos Larvicultura", la escribe la ficha
+// de Calidad de Agua). `ton` a null deja la celda vacía, que es como están hoy las hojas.
+const rowTon = (mod, cor, tq, pob, fecha, ton) => ({
+  ...row(mod, cor, tq, pob, fecha),
+  ...(ton === null || ton === undefined ? {} : { Toneladas: String(ton) }),
+});
+
 describe('prodTableHTML · fila "Subtotal actual" (despachados)', () => {
   it('aparece entre la corrida despachada y la pendiente, sin igualar al Total', () => {
     // Corrida 579 (M06) despachada · Corrida 580 (M08) pendiente. Ambas = mes Julio.
@@ -96,9 +103,9 @@ describe('prodTableHTML · fila "Subtotal actual" (despachados)', () => {
   });
 });
 
-// El panel configurable de toneladas por mes se retiró (decisión del usuario, 2026-08-05):
-// la densidad se estima con 28 t fijas y el tonelaje pasará a registrarse como dato de la
-// operación. Este bloque vigila que no reaparezca ningún resto de aquel panel.
+// El panel configurable de toneladas por mes se retiró (decisión del usuario, 2026-08-05)
+// y el tonelaje pasó a registrarse como un dato más de la operación (columna «Toneladas»).
+// Este bloque vigila que no reaparezca ningún resto de aquel panel.
 describe('prodTableHTML · sin configuración de toneladas', () => {
   const datos = () => [
     row('M06', '579', 'TQ1', 1000, '01/07/2026'),
@@ -116,12 +123,74 @@ describe('prodTableHTML · sin configuración de toneladas', () => {
     expect(html).not.toContain('data-pt-sec');
   });
 
-  it('la densidad se estima con 28 t fijas por tanque', () => {
+  it('sin tonelaje registrado, la densidad usa el respaldo de 28 t', () => {
     store.globalData = [row('M06', '579', 'TQ1', 1000, '01/07/2026')];
     const months = presentMonths();
     const html = prodTableHTML(months, months.length - 1);
-    // 1 tanque con siembra 1000 ⇒ 1000 / 1 / 28 / 1000 = 0,04 (2 decimales)
+    // 1 tanque con siembra 1000 y sin dato ⇒ 1000 / (1 × 28) / 1000 = 0,04
     expect(html).toContain('>0.04<');
+  });
+});
+
+/* Densidad de siembra alimentada por la columna «Toneladas» (2026-08-18).
+   Mientras la operación no la llene, TODOS los tanques caen al respaldo de 28 t y la tabla
+   muestra exactamente lo que mostraba antes — eso lo vigila el caso de arriba. Aquí se
+   comprueba lo otro: que en cuanto haya tonelaje, la estimación lo use.
+
+   Los números están elegidos para que el resultado CON dato y SIN dato no coincidan al
+   redondear a 2 decimales. Si coincidieran, la prueba pasaría sin distinguir nada. */
+describe('prodTableHTML · la Dens. siembra se alimenta de «Toneladas»', () => {
+  // La densidad es la única celda con el title de la densidad, así que se lee por él.
+  const dens = (html) => {
+    const m = html.match(/<td title="Σ siembra[^"]*">([^<]*)</);
+    return m ? m[1] : null;
+  };
+
+  it('usa el tonelaje registrado el día de la siembra', () => {
+    store.globalData = [rowTon('M06', '579', 'TQ1', 1000, '01/07/2026', 20)];
+    const months = presentMonths();
+    // 1000 / (20 × 1000) = 0,05 — con el respaldo de 28 t habría dado 0,04
+    expect(dens(prodTableHTML(months, months.length - 1))).toBe('0.05');
+  });
+
+  it('el respaldo se aplica TANQUE A TANQUE, no al módulo entero', () => {
+    store.globalData = [
+      rowTon('M06', '579', 'TQ1', 1000, '01/07/2026', 10),
+      rowTon('M06', '579', 'TQ2', 1000, '01/07/2026', null),
+    ];
+    const months = presentMonths();
+    // 2000 / ((10 + 28) × 1000) = 0,0526 → 0,05. Con 28 t para los dos: 0,04; y
+    // descartando el módulo por venir incompleto, también 0,04.
+    expect(dens(prodTableHTML(months, months.length - 1))).toBe('0.05');
+  });
+
+  it('si el día de la siembra vino vacío, aprovecha otra medición del MISMO tanque', () => {
+    store.globalData = [
+      rowTon('M06', '579', 'TQ1', 1000, '01/07/2026', null),   // siembra, sin tonelaje
+      rowTon('M06', '579', 'TQ1', 900, '05/07/2026', 15),      // medido días después
+    ];
+    const months = presentMonths();
+    // 1000 / (15 × 1000) = 0,0667 → 0,07. Caer al respaldo daría 0,04: peor estimación
+    // teniendo una medición real de ese mismo tanque.
+    expect(dens(prodTableHTML(months, months.length - 1))).toBe('0.07');
+  });
+
+  it('manda el día de la siembra, no cualquier medición del tanque', () => {
+    store.globalData = [
+      rowTon('M06', '579', 'TQ1', 0, '01/07/2026', 40),        // tanque aún vacío
+      rowTon('M06', '579', 'TQ1', 1000, '02/07/2026', 20),     // SIEMBRA (1ª población >0)
+      rowTon('M06', '579', 'TQ1', 900, '05/07/2026', 40),      // se rellenó después
+    ];
+    const months = presentMonths();
+    // Cuenta el tonelaje del día que se sembró: 1000 / (20 × 1000) = 0,05.
+    // Con el primero del tanque, o con el último, saldría 1000 / (40 × 1000) = 0,03.
+    expect(dens(prodTableHTML(months, months.length - 1))).toBe('0.05');
+  });
+
+  it('un tonelaje de 0 cae al respaldo en vez de romper la división', () => {
+    store.globalData = [rowTon('M06', '579', 'TQ1', 1000, '01/07/2026', 0)];
+    const months = presentMonths();
+    expect(dens(prodTableHTML(months, months.length - 1))).toBe('0.04');
   });
 });
 

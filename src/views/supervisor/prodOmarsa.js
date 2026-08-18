@@ -4,11 +4,17 @@
    La lógica pura del calendario (corrida→mes, agregados por módulo+corrida)
    vive en core/prodCalendar.js, compartida por todas las vistas.
 
-   Dens. siembra: se estima con un volumen FIJO de 28 t (m³) por tanque.
-     Dens. siembra = (Σ siembra / nº de tanques sembrados) / 28 / 1000  → nauplios/L
-   El panel configurable de toneladas por mes se retiró (decisión del usuario,
-   2026-08-05): resultaba demasiado limitado y el tonelaje pasará a registrarse
-   como un dato más de la operación, no como un ajuste local de visualización.
+   Dens. siembra = Σ siembra / (volumen de los tanques sembrados × 1000) → nauplios/L
+
+   El volumen sale de la columna «Toneladas» de "Datos Larvicultura", que escribe la ficha
+   de Calidad de Agua. Cada tanque aporta el tonelaje registrado EL DÍA QUE SE SEMBRÓ; el
+   que no tenga dato aporta el volumen de respaldo de 28 t. Con la columna entera vacía la
+   cuenta se reduce a (Σ siembra / nº tanques) / 28 / 1000, que es exactamente la de antes:
+   por eso la estimación no se mueve hasta que la operación empiece a registrar el tonelaje.
+
+   Cierra una decisión de 2026-08-05: el panel configurable de toneladas por mes se retiró
+   por limitado, y se acordó que el tonelaje pasaría a registrarse como un dato más de la
+   operación, no como un ajuste local de visualización. Esto es ese dato llegando.
    ============================================================ */
 import { corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt } from '../../core/prodCalendar.js';
 import { fmtPop, esc } from '../../core/format.js';
@@ -18,13 +24,25 @@ const fmt1 = (v) => (v === null || v === undefined) ? '—' : v.toFixed(1);
 const fmt2 = (v) => (v === null || v === undefined) ? '—' : v.toFixed(2);
 const pctTxt = (v) => (v === null || v === undefined) ? '—' : v.toFixed(1) + '%';
 
-/** Toneladas (m³) de agua por tanque usadas para estimar la densidad de siembra. */
+/** Toneladas (m³) de respaldo para un tanque del que no se registró el tonelaje. */
 const TON_TANQUE = 28;
 
-/** Densidad de siembra en nauplios/L: siembra media por tanque ÷ 28 t ÷ 1000 L. */
-export function densSiembra(sumSiembra, nTanques) {
-  if (!(nTanques > 0) || sumSiembra === null || sumSiembra === undefined) return null;
-  return sumSiembra / nTanques / TON_TANQUE / 1000;
+/**
+ * Volumen total (m³) de los tanques sembrados: lo REGISTRADO más 28 t por cada tanque que
+ * no traía dato. Que el respaldo se aplique tanque a tanque —y no al módulo entero— es lo
+ * que permite que un módulo medido a medias mejore su estimación en vez de descartarla.
+ * @param {number} tonSum m³ registrados (0 si ninguno)
+ * @param {number} tonSin nº de tanques sembrados SIN tonelaje registrado
+ */
+export function volumenSiembra(tonSum, tonSin) {
+  const v = (tonSum || 0) + (tonSin || 0) * TON_TANQUE;
+  return v > 0 ? v : null;
+}
+
+/** Densidad de siembra en nauplios/L: Σ siembra ÷ volumen total (m³) ÷ 1000 L. */
+export function densSiembra(sumSiembra, tonTotal) {
+  if (!(tonTotal > 0) || sumSiembra === null || sumSiembra === undefined) return null;
+  return sumSiembra / tonTotal / 1000;
 }
 
 /**
@@ -48,7 +66,7 @@ const PLG_TITLE = 'Promedio de los PL/g de los módulos. El PL/g de cada módulo
 // crece la larva. Es la misma definición que el KPI «PL/g (Larvia)» del Resumen Operativo,
 // así que la tabla y el módulo no pueden dar cifras distintas para lo mismo.
 const PLGL_TITLE = 'PL/g biométrico (LARVIA), columna «Plg». Promedio entre los módulos; el de cada módulo es el promedio de la última lectura de cada uno de sus tanques.';
-const DENS_TITLE = `Siembra media por tanque ÷ ${TON_TANQUE} t ÷ 1000 = nauplios/L. El volumen por tanque se estima fijo en ${TON_TANQUE} t.`;
+const DENS_TITLE = `Σ siembra ÷ volumen de los tanques sembrados ÷ 1000 = nauplios/L. Cada tanque aporta las toneladas registradas el día en que se sembró; el que no tenga dato aporta ${TON_TANQUE} t.`;
 const FECHA_TITLE = 'Fecha promedio de siembra del módulo: promedio de la fecha en que cada tanque registró su primera población.';
 // "Población Actual" (antes rotulada "Cosecha"): el valor es la ÚLTIMA población
 // registrada de cada tanque, sumada. Solo coincide con la cosecha cuando el módulo ya
@@ -93,20 +111,22 @@ export function prodTableHTML(months, pos) {
   const subEqualsTotal = subCosTot === grandCos && subSieTot === grandSie;
   const showSubtotal = dispatchedIdx.length > 0 && !subEqualsTotal;
 
-  let body = '', sumSie = 0, sumCos = 0, sumN = 0; const plgs = [], plgLs = [];
-  let subSie = 0, subCos = 0, subN = 0; const subPlgs = [], subPlgLs = [];   // acumuladores del subtotal
+  // El volumen se acumula en sus dos mitades (m³ registrados + tanques sin dato) y solo se
+  // resuelve al pintar: sumar densidades ya calculadas daría un promedio de promedios.
+  let body = '', sumSie = 0, sumCos = 0, sumTon = 0, sumSin = 0; const plgs = [], plgLs = [];
+  let subSie = 0, subCos = 0, subTon = 0, subSin = 0; const subPlgs = [], subPlgLs = [];   // acumuladores del subtotal
   corData.forEach((c, ci) => {
     const { cor, mods, stats, corCos, corSup } = c;
     stats.forEach((s, j) => {
       if (s.siembra) sumSie += s.siembra;
       if (s.cosecha) sumCos += s.cosecha;
-      sumN += s.nSie;
+      sumTon += s.tonSum || 0; sumSin += s.tonSin || 0;
       if (s.plg !== null) plgs.push(s.plg);
       if (s.plgLarvia !== null) plgLs.push(s.plgLarvia);
       if (c.despachada) {
         if (s.siembra) subSie += s.siembra;
         if (s.cosecha) subCos += s.cosecha;
-        subN += s.nSie;
+        subTon += s.tonSum || 0; subSin += s.tonSin || 0;
         if (s.plg !== null) subPlgs.push(s.plg);
         if (s.plgLarvia !== null) subPlgLs.push(s.plgLarvia);
       }
@@ -115,7 +135,7 @@ export function prodTableHTML(months, pos) {
         ${j === 0 ? `<td rowspan="${mods.length}" class="prod-cor">${esc(cor)}</td>` : ''}
         <td title="${FECHA_TITLE}">${s.siembraFecha ? esc(fmtShort(s.siembraFecha)) : '—'}</td>
         <td>${fmtPop(s.siembra)}</td>
-        <td title="${DENS_TITLE}">${fmt2(densSiembra(s.siembra, s.nSie))}</td>
+        <td title="${DENS_TITLE}">${fmt2(densSiembra(s.siembra, volumenSiembra(s.tonSum, s.tonSin)))}</td>
         <td title="${PLGL_TITLE}">${fmt1(s.plgLarvia)}</td>
         <td title="${PLG_TITLE}">${fmt1(s.plg)}</td>
         <td>${fmtPop(s.cosecha)}</td>
@@ -132,7 +152,7 @@ export function prodTableHTML(months, pos) {
         <td colspan="2">Subtotal actual <span class="muted">(despachados)</span></td>
         <td>—</td>
         <td>${fmtPop(subSie || null)}</td>
-        <td title="${DENS_TITLE}">${fmt2(densSiembra(subSie, subN))}</td>
+        <td title="${DENS_TITLE}">${fmt2(densSiembra(subSie, volumenSiembra(subTon, subSin)))}</td>
         <td title="${PLGL_TITLE}">${fmt1(plgAggregate(subPlgLs))}</td>
         <td title="${PLG_TITLE}">${fmt1(plgAggregate(subPlgs))}</td>
         <td>${fmtPop(subCos || null)}</td>
@@ -146,7 +166,7 @@ export function prodTableHTML(months, pos) {
       <td colspan="2">Total ${esc(label)}</td>
       <td>—</td>
       <td>${fmtPop(sumSie || null)}</td>
-      <td title="${DENS_TITLE}">${fmt2(densSiembra(sumSie, sumN))}</td>
+      <td title="${DENS_TITLE}">${fmt2(densSiembra(sumSie, volumenSiembra(sumTon, sumSin)))}</td>
       <td title="${PLGL_TITLE}">${fmt1(plgAggregate(plgLs))}</td>
       <td title="${PLG_TITLE}">${fmt1(plgAggregate(plgs))}</td>
       <td>${fmtPop(sumCos || null)}</td>

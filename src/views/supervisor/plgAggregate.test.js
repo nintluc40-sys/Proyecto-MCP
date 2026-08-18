@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { plgAggregate, densSiembra } from './prodOmarsa.js';
+import { plgAggregate, densSiembra, volumenSiembra } from './prodOmarsa.js';
 import { abbrevTecnico, tecnicosShort } from './ui.js';
 
 // Convención del laboratorio (confirmada por el usuario): el PL/g de un módulo es el
@@ -25,15 +25,46 @@ describe('plgAggregate · promedio simple de los PL/g de los módulos', () => {
   });
 });
 
-describe('densSiembra · volumen fijo de 28 t por tanque', () => {
-  it('(Σsiembra / nº tanques) / 28 / 1000 = nauplios/L', () => {
-    // 8.600.000 en 2 tanques ⇒ (8.600.000/2)/28/1000 = 153,5714…
-    expect(densSiembra(8600000, 2)).toBeCloseTo(153.5714, 3);
+/* La densidad de siembra dejó de estimarse con 28 t FIJAS por tanque: ahora divide por el
+   volumen real de los tanques, que sale de la columna «Toneladas» de "Datos Larvicultura".
+   Las 28 t siguen existiendo, pero como respaldo TANQUE A TANQUE, no como constante.
+
+   El caso que de verdad importa es el mixto: un módulo medido a medias tiene que aprovechar
+   lo que sí se midió, en vez de descartarlo y volver entero al valor por defecto. */
+describe('volumenSiembra · lo registrado + 28 t por cada tanque sin dato', () => {
+  it('sin ningún tonelaje registrado equivale al volumen fijo de siempre', () => {
+    expect(volumenSiembra(0, 2)).toBe(56);            // 2 tanques × 28 t
   });
 
-  it('sin tanques sembrados o sin siembra → null', () => {
+  it('con todos los tanques medidos usa SOLO lo registrado', () => {
+    expect(volumenSiembra(65, 0)).toBe(65);
+  });
+
+  it('mezcla medidos y sin medir dentro del mismo módulo', () => {
+    expect(volumenSiembra(30, 1)).toBe(58);           // 30 t medidas + 1 tanque × 28 t
+  });
+
+  it('sin tanques sembrados → null (no hay volumen por el que dividir)', () => {
+    expect(volumenSiembra(0, 0)).toBeNull();
+    expect(volumenSiembra(null, null)).toBeNull();
+  });
+});
+
+describe('densSiembra · Σ siembra ÷ volumen ÷ 1000', () => {
+  it('con la columna vacía da lo MISMO que la fórmula anterior de 28 t fijas', () => {
+    // 8.600.000 en 2 tanques sin tonelaje ⇒ 8.600.000/(2×28)/1000 = 153,5714…
+    expect(densSiembra(8600000, volumenSiembra(0, 2))).toBeCloseTo(153.5714, 3);
+  });
+
+  it('el tonelaje registrado cambia la densidad', () => {
+    // Los mismos nauplios en un tanque de 30 t y otro sin medir ⇒ 8.600.000/(58×1000)
+    expect(densSiembra(8600000, volumenSiembra(30, 1))).toBeCloseTo(148.2759, 3);
+  });
+
+  it('sin volumen o sin siembra → null', () => {
+    expect(densSiembra(8600000, null)).toBeNull();
     expect(densSiembra(8600000, 0)).toBeNull();
-    expect(densSiembra(null, 2)).toBeNull();
+    expect(densSiembra(null, 56)).toBeNull();
   });
 });
 
