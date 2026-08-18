@@ -30,6 +30,30 @@ describe('core · normTrovan', () => {
     expect(sanitizeStr('=SUMA(A1)')).toBe('SUMA(A1)');
     expect(sanitizeStr(null)).toBe('');
   });
+
+  /* El tope de longitud pasó a ser un parámetro (2026-08-18) porque hay campos que son
+     PÁRRAFOS y no etiquetas: el «Método utilizado» del informe de Biomol son 330 caracteres
+     con los dos métodos del laboratorio, y se guardaba cortado a media palabra. Lo que NO
+     podía cambiar es el resto: por defecto sigue recortando a 200, y el saneado de inyección
+     de fórmula no depende de la longitud. */
+  it('por defecto sigue recortando a 200 — ningún llamador cambia de comportamiento', () => {
+    expect(sanitizeStr('x'.repeat(250))).toHaveLength(200);
+  });
+
+  it('con un tope mayor conserva el texto largo entero', () => {
+    const parrafo = 'y'.repeat(330);
+    expect(sanitizeStr(parrafo, 2000)).toBe(parrafo);
+  });
+
+  it('ampliar el tope NO relaja el saneado de inyección de fórmula', () => {
+    expect(sanitizeStr('=SUMA(A1)', 2000)).toBe('SUMA(A1)');
+    expect(sanitizeStr('@arroba', 2000)).toBe('arroba');
+  });
+
+  it('un tope inválido (0 o negativo) cae al de siempre', () => {
+    expect(sanitizeStr('z'.repeat(250), 0)).toHaveLength(200);
+    expect(sanitizeStr('z'.repeat(250), -5)).toHaveLength(200);
+  });
 });
 
 describe('core · la LECTURA de Maduración cruza con la misma clave', () => {

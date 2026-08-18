@@ -470,7 +470,7 @@ function escapeHtml(s){ return window.__rgLib.escapeHtml(s); }
 // ── Input sanitization: strip formula-injection chars and limit length ──
 // Prevents =IMPORTRANGE(), +cmd|, etc. from reaching Google Sheets
 // Also limits to 200 chars to prevent payload bloat
-function sanitizeStr(s){ return window.__rgLib.sanitizeStr(s); }
+function sanitizeStr(s, max){ return window.__rgLib.sanitizeStr(s, max); }
 
 // ── Numeric sanitization: parse, validate range, reject NaN/Infinity ──
 function sanitizeNum(v, min=-1e9, max=1e9){ return window.__rgLib.sanitizeNum(v, min, max); }
@@ -7596,9 +7596,18 @@ function _bioEsPositivo(v){
   return s === "+" || s.indexOf("pos") === 0;
 }
 
-const BIO_METODO_DEF =
-  "1) Extracción y amplificación de ADN mediante el Kit Comercial IQ REAL, el límite de detección es de 10 copias/μl extracción de ADN.\n" +
-  "2) Extracción de ADN tradicional mediante soluciones lisis y etanoles, amplificación por PCR Nested punto final con primers específicos, el límite de detección es de 10 copias/μl extracción de ADN.";
+// Los DOS métodos del laboratorio, como catálogo elegible. Antes eran un solo texto con los
+// dos pegados: quien había usado uno tenía que borrar el otro a mano. Ahora se eligen en un
+// desplegable —el mismo espíritu que el Analista de Microbiología— y el campo sigue siendo
+// texto libre, así que después se edita o se escribe otra cosa. Por defecto se siguen
+// mostrando los DOS, como hasta ahora (decisión del usuario, 2026-08-18).
+const BIO_METODOS = [
+  { et: "1) Kit Comercial IQ REAL",
+    tx: "1) Extracción y amplificación de ADN mediante el Kit Comercial IQ REAL, el límite de detección es de 10 copias/μl extracción de ADN." },
+  { et: "2) PCR Nested punto final",
+    tx: "2) Extracción de ADN tradicional mediante soluciones lisis y etanoles, amplificación por PCR Nested punto final con primers específicos, el límite de detección es de 10 copias/μl extracción de ADN." }
+];
+const BIO_METODO_DEF = BIO_METODOS.map(function(m){ return m.tx; }).join("\n");
 
 function _bioRptAll(){
   try{ const o = JSON.parse(localStorage.getItem(BIO_RPT_KEY) || "{}"); return (o && typeof o==="object") ? o : {}; }
@@ -7694,8 +7703,24 @@ function bioGelPick(input){
 function bioRptSet(field, val){
   const fecha = bioGridFecha();
   const r = loadBioRpt(fecha);
-  r[field] = sanitizeStr(val);
+  // Tope amplio a propósito: procedencia, método y descripción son PÁRRAFOS del informe, no
+  // etiquetas. Con el tope general de 200 el Método se guardaba CORTADO —los dos métodos del
+  // laboratorio suman 330 caracteres— y el PDF salía con la frase partida a media palabra
+  // ("…soluciones lisis y etanol"). Medido en el motor el 2026-08-18.
+  r[field] = sanitizeStr(val, 2000);
   saveBioRpt(fecha, r);
+}
+/** Pone en el campo Método el texto elegido en el desplegable, o los dos si se elige «Los
+ *  dos». REEMPLAZA lo que hubiera: el campo sigue siendo libre, así que después se edita a
+ *  mano. El desplegable vuelve a "Elegir método…" para poder volver a elegir sin recargar. */
+function bioMetodoPick(sel){
+  if(!sel || !sel.value) return;
+  const tx = (sel.value === "*") ? BIO_METODO_DEF : ((BIO_METODOS[Number(sel.value)] || {}).tx || "");
+  sel.value = "";
+  if(!tx) return;
+  const ta = document.getElementById("bio-rpt-metodo");
+  if(ta) ta.value = tx;
+  bioRptSet("metodo", tx);
 }
 /** Repinta SOLO el bloque del reporte. Nunca renderBiomol() desde aquí: eso
  *  reconstruye la grilla desde lo GUARDADO y se lleva por delante lo tecleado o
@@ -7762,8 +7787,13 @@ function _bioReportBlock(fecha, rows){
       <div style="margin:5px 0 10px">${chips}</div>
       <div class="mf" style="margin-bottom:8px"><label>Procedencia de la muestra</label>
         <textarea placeholder="Escríbela una vez y se recordará para los próximos reportes…" oninput="bioRptSet('procedencia',this.value)" style="width:100%;min-height:38px">${escapeHtml(r.procedencia)}</textarea></div>
-      <div class="mf" style="margin-bottom:8px"><label>Método utilizado</label>
-        <textarea oninput="bioRptSet('metodo',this.value)" style="width:100%;min-height:70px">${escapeHtml(r.metodo)}</textarea></div>
+      <div class="mf" style="margin-bottom:8px"><label>Método utilizado
+        <select onchange="bioMetodoPick(this)" style="margin-left:6px;padding:1px 5px;font-size:10px" title="Pone el método elegido en el campo. Después puedes editarlo o escribir otro.">
+          <option value="">Elegir método…</option>
+          ${BIO_METODOS.map(function(m,i){ return '<option value="'+i+'">'+escapeHtml(m.et)+'</option>'; }).join("")}
+          <option value="*">Los dos</option>
+        </select></label>
+        <textarea id="bio-rpt-metodo" oninput="bioRptSet('metodo',this.value)" style="width:100%;min-height:70px">${escapeHtml(r.metodo)}</textarea></div>
       <div class="mf" style="margin-bottom:8px"><label>Descripción del análisis
         <button class="btn bo" type="button" onclick="bioDescReset()" style="margin-left:6px;padding:1px 7px;font-size:10px" title="Rehacerla a partir de los patógenos con resultado en la grilla">↻ Regenerar</button></label>
         <textarea oninput="bioRptSet('desc',this.value)" style="width:100%;min-height:52px">${escapeHtml(descVal)}</textarea>
