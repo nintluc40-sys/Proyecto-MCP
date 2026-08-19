@@ -22,6 +22,13 @@ const COL_ALIASES = {
   ihhnv: 'IHHNV', cc: 'IHHNV', wssv: 'WSSV', dd: 'WSSV', bp: 'BP', ee: 'BP',
   'ahpnd/ems': 'AHPND', ahpnd: 'AHPND', ems: 'AHPND', pp: 'AHPND',
   nhpb: 'NHPB', nhp: 'NHPB', 'nhp-b': 'NHPB', nn: 'NHPB', ehp: 'EHP',
+  // Cuantitativas de qPCR (hoja BIOMOL, 2026-08-18). La ficha de captura escribe la
+  // cabecera con μ (U+03BC), pero quien la teclee a mano en la hoja puede poner el
+  // signo micro µ (U+00B5) o escribirla sin griega: las tres formas se aceptan, que
+  // es la regla de acceso tolerante a columnas del proyecto.
+  'ciclo de amplificación': 'Ciclo de amplificación', 'ciclo de amplificacion': 'Ciclo de amplificación',
+  ct: 'Ciclo de amplificación',
+  'copias/μl': 'Copias/μl', 'copias/µl': 'Copias/μl', 'copias/ul': 'Copias/μl',
 };
 
 // ── Estado (persiste entre re-render; se reinicia al cambiar los datos) ──
@@ -109,6 +116,10 @@ export function normalizeRows(rows) {
       precria: nr['Precría'] || '', muestra: nr['Muestra'] || '', estadio: nr['Estadío'] || '', sexo: nr['Sexo'] || '',
       IHHNV: normResult(nr['IHHNV'] || ''), WSSV: normResult(nr['WSSV'] || ''), BP: normResult(nr['BP'] || ''),
       AHPND: normResult(nr['AHPND'] || nr['AHPND/EMS'] || ''), NHPB: normResult(nr['NHPB'] || ''), EHP: normResult(nr['EHP'] || ''),
+      // Cuantitativas de qPCR: se leen TAL CUAL (no pasan por normResult, que sólo
+      // entiende Positivo/Negativo). Hoy no alimentan gráficos ni KPIs; existen para
+      // que el Excel de esta vista siga siendo un espejo fiel de la hoja.
+      ciclo: nr['Ciclo de amplificación'] || '', copias: nr['Copias/μl'] || '',
     });
   });
   return out;
@@ -1014,13 +1025,17 @@ function drawTable() {
   });
   tbody.appendChild(frag);
 }
-/** Matriz (AoA) de exportación a partir de un conjunto de filas. */
-function biomolExportAoa(data) {
+/** Matriz (AoA) de exportación a partir de un conjunto de filas.
+ *  Exportada para poder verificar en pruebas que cada valor cae bajo SU cabecera:
+ *  un desfase aquí produce un Excel plausible pero con las columnas corridas. */
+export function biomolExportAoa(data) {
   const fullD = (iso) => { const [y, m, d] = String(iso).split('-'); return `${d}/${m}/${y}`; };
   const resOut = (v) => v === 'Positivo' ? 'Positivo' : v === 'Negativo' ? 'Negativo' : '';
-  const header = ['Fecha', 'Código', 'Corrida', 'Piscina', 'Lugar', 'Tanque', 'Otros', 'Muestra', 'Estadío', 'Sexo', 'IHHNV', 'WSSV', 'BP', 'AHPND/EMS', 'NHPB', 'EHP'];
+  // El orden replica el de la hoja BIOMOL (ver BIO_GRID_COLS del monolito de captura):
+  // este Excel sirve de plantilla, así que las columnas nuevas van al final, como allí.
+  const header = ['Fecha', 'Código', 'Corrida', 'Piscina', 'Lugar', 'Tanque', 'Otros', 'Muestra', 'Estadío', 'Sexo', 'IHHNV', 'WSSV', 'BP', 'AHPND/EMS', 'NHPB', 'EHP', 'Ciclo de amplificación', 'Copias/μl'];
   const aoa = [header];
-  data.forEach((r) => aoa.push([fullD(r.f), r.cod, r.corrida, r.piscina, r.lugar, r.tq, r.otros, r.muestra, r.estadio, r.sexo, resOut(r.IHHNV), resOut(r.WSSV), resOut(r.BP), resOut(r.AHPND), resOut(r.NHPB), resOut(r.EHP)]));
+  data.forEach((r) => aoa.push([fullD(r.f), r.cod, r.corrida, r.piscina, r.lugar, r.tq, r.otros, r.muestra, r.estadio, r.sexo, resOut(r.IHHNV), resOut(r.WSSV), resOut(r.BP), resOut(r.AHPND), resOut(r.NHPB), resOut(r.EHP), r.ciclo || '', r.copias || '']));
   return aoa;
 }
 

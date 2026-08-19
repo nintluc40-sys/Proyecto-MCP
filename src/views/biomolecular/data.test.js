@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDate, normResult, normalizeRows, estadioOrder, audSimulate, audRestore } from './index.js';
+import { parseDate, normResult, normalizeRows, estadioOrder, audSimulate, audRestore, biomolExportAoa } from './index.js';
 
 describe('parseDate', () => {
   it('dd/mm/yyyy → ISO yyyy-mm-dd', () => {
@@ -122,5 +122,54 @@ describe('audSimulate (modo AUD · entrenamiento)', () => {
     const rows = mkRows();
     const antes = diagsOf(rows.map((r) => ({ ...r })));
     expect(diagsOf(audRestore(audSimulate(rows, 42)))).toEqual(antes);
+  });
+});
+
+/* ── Cuantitativas de qPCR (2026-08-18) ───────────────────────────────────────
+   La hoja BIOMOL gana «Ciclo de amplificación» y «Copias/μl». Esta vista no las
+   grafica, pero SÍ debe leerlas y exportarlas: su Excel se usa como plantilla de
+   la hoja, y una plantilla a la que le faltan columnas deja de servir.
+   Lo que se vigila es el emparejamiento cabecera↔valor del Excel, que es donde
+   un desfase produce un archivo plausible con los datos corridos de columna.  */
+describe('biomolecular · columnas cuantitativas de qPCR', () => {
+  it('normalizeRows las lee tal cual, sin pasarlas por normResult', () => {
+    const [r] = normalizeRows([{
+      Fecha: '05/06/2026', WSSV: 'Positivo',
+      'Ciclo de amplificación': '22.4', 'Copias/μl': '1500',
+    }]);
+    expect(r.ciclo).toBe('22.4');
+    expect(r.copias).toBe('1500');
+    expect(r.WSSV).toBe('Positivo');   // control: el resto se sigue normalizando
+  });
+
+  it('tolera el signo micro y la grafía sin griega en la cabecera', () => {
+    const [conMicro] = normalizeRows([{ Fecha: '05/06/2026', 'Copias/µl': '900' }]);
+    const [sinGriega] = normalizeRows([{ Fecha: '05/06/2026', 'copias/ul': '800' }]);
+    const [sinTilde] = normalizeRows([{ Fecha: '05/06/2026', 'Ciclo de amplificacion': '30' }]);
+    expect(conMicro.copias).toBe('900');
+    expect(sinGriega.copias).toBe('800');
+    expect(sinTilde.ciclo).toBe('30');
+  });
+
+  it('ausentes quedan en cadena vacía, no en undefined', () => {
+    const [r] = normalizeRows([{ Fecha: '05/06/2026', WSSV: 'Negativo' }]);
+    expect(r.ciclo).toBe('');
+    expect(r.copias).toBe('');
+  });
+
+  it('el Excel las incluye al final y cada valor bajo SU cabecera', () => {
+    const filas = normalizeRows([{
+      Fecha: '05/06/2026', 'Código': 'L-77', Lugar: 'Lab 1', IHHNV: 'Negativo',
+      'Ciclo de amplificación': '28.1', 'Copias/μl': '42',
+    }]);
+    const [cab, fila] = biomolExportAoa(filas);
+    expect(cab.slice(-2)).toEqual(['Ciclo de amplificación', 'Copias/μl']);
+    expect(fila).toHaveLength(cab.length);           // control: no sobra ni falta celda
+    const celda = (n) => fila[cab.indexOf(n)];
+    expect(celda('Código')).toBe('L-77');
+    expect(celda('IHHNV')).toBe('Negativo');
+    expect(celda('Ciclo de amplificación')).toBe('28.1');
+    expect(celda('Copias/μl')).toBe('42');
+    expect(celda('EHP')).toBe('');                   // no arrastra el valor vecino
   });
 });

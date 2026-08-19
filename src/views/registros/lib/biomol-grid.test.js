@@ -105,6 +105,11 @@ describe('Biomol · la grilla crece de 20 en 20 hasta 100', () => {
     expect(rellenadas).toBe(H.BIO_GRID_MAX_ROWS);          // control: se llenaron TODAS
     const payload = H.buildBioPayload(H.bioGridFecha(), H._collectBioGrid());
     expect(payload.rows.length).toBe(H.BIO_GRID_MAX_ROWS); // control: se recogieron TODAS
+    // …y llevan lo tecleado. Contar filas no bastaba: si el payload se arma con la
+    // forma de registro equivocada salen 100 filas VACÍAS y esto seguía en verde.
+    const iCod = payload.headers.indexOf('Código');
+    expect(payload.rows[0][iCod]).toBe('M1');
+    expect(payload.rows[H.BIO_GRID_MAX_ROWS - 1][iCod]).toBe('M' + H.BIO_GRID_MAX_ROWS);
     // Lo que importa: el GAS no lo rechazaría (su guarda es `rows.length > maxRows`).
     expect(payload.rows.length).toBeLessThanOrEqual(tope.maxRows);
     expect(payload.headers.length).toBeLessThanOrEqual(tope.maxCols);

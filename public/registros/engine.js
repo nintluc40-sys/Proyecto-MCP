@@ -7072,11 +7072,19 @@ function removeBioById(id){
 }
 
 // ── Biomol: GRILLA para pegar (reemplaza el formulario uno-por-uno) ─────
-// La grilla es de UN día (selector de fecha arriba). Las columnas son los 16
+// La grilla es de UN día (selector de fecha arriba). Las columnas son los 18
 // encabezados EXACTOS de la hoja "BIOMOL". Todas las celdas son texto libre
 // para copiar/pegar la tabla del PDF (estilo Excel). Al sincronizar se
 // REEMPLAZAN en la hoja todas las filas de esa fecha (sin duplicados). No hay
 // campo Técnico. Editar = editar celdas y volver a sincronizar.
+//
+// 2026-08-18: se añaden "Ciclo de amplificación" y "Copias/μl", los dos datos
+// CUANTITATIVOS que deja una corrida de qPCR (normalmente WSSV o IHHNV). Van al
+// FINAL y no en medio del bloque de patógenos porque `ensureHeaders` del GAS
+// sólo sabe AÑADIR columnas al final: puestas ahí, la hoja de producción se
+// migra sola en la primera sincronización, sin tocarla a mano. Caben sin
+// re-desplegar el GAS — LIMITS.biomol.maxCols vale 20 y ahora se usan 18.
+// Son además la señal que dispara la redacción en qPCR (ver bioDescAuto).
 const BIO_GRID_COLS = [
   { k:"fecha",   label:"Fecha"     },   // gobernada por el selector de día
   { k:"codigo",  label:"Código"    },
@@ -7093,9 +7101,92 @@ const BIO_GRID_COLS = [
   { k:"bp",      label:"BP"        },
   { k:"ahpnd",   label:"AHPND/EMS" },
   { k:"nhpb",    label:"NHPB"      },
-  { k:"ehp",     label:"EHP"       }
+  { k:"ehp",     label:"EHP"       },
+  { k:"ciclo",   label:"Ciclo de amplificación" },
+  { k:"copias",  label:"Copias/μl" },
+  // Columna de METADATO: viaja a la hoja pero no es una celda de la grilla ni sale en
+  // el PDF. Identifica a qué análisis del día pertenece la fila y es la clave con la
+  // que el GAS reemplaza SÓLO las filas de ese análisis (ver buildBioPayload).
+  { k:"sesion",  label:"Sesión", meta:true }
 ];
+// Las dos columnas cuantitativas de qPCR. Se listan aparte porque varias piezas
+// necesitan preguntar "¿esta fila se corrió por qPCR?" sin volver a nombrarlas.
+const BIO_QPCR_KEYS = ["ciclo", "copias"];
+/** ¿La fila trae medición de qPCR? Basta con UNO de los dos campos: un Ct sin
+ *  cuantificar copias sigue siendo una corrida en tiempo real. */
+function _bioEsQpcr(row){
+  return BIO_QPCR_KEYS.some(k => String((row && row[k]) || "").trim() !== "");
+}
 const BIO_GRID_HEADERS      = BIO_GRID_COLS.map(c => c.label);
+// Las columnas que SÍ son celdas tecleables (todo menos los metadatos).
+const BIO_GRID_CELDAS       = BIO_GRID_COLS.filter(c => !c.meta);
+
+/* ── Análisis (sesiones) del día ─────────────────────────────────────────
+   Un mismo día lleva VARIOS análisis independientes —reproductores por la mañana,
+   larvas por la tarde—, cada uno con su grilla, su reporte y su PDF. Antes la
+   grilla era una por día: el segundo análisis pisaba al primero en la hoja,
+   porque el envío decía "reemplaza TODAS las filas de esta fecha". Desde
+   2026-08-18 cada análisis reemplaza SÓLO sus propias filas, igual que ya hacían
+   Microbiología, Calidad de Agua y Patología.
+
+   El sid es estable y sólo se genera al crear el análisis. La ETIQUETA que viaja a
+   la hoja ("Reproductores · b3k2j9x1") se congela en la primera sincronización: si
+   se dejara cambiar con el nombre, renombrar un análisis ya enviado dejaría sus
+   filas viejas huérfanas en la hoja —el GAS empareja por el valor de esa celda— y
+   la siguiente sincronización las duplicaría en vez de reemplazarlas. */
+const BIO_SES_KEY = "larv4_biomol_ses";   // { "<sid>": {fecha, nombre, etiqueta, legacy, creado} }
+let _bioSid = null;                       // análisis en pantalla
+
+function _bioNewSid(){ return "b" + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function _bioSesAll(){
+  try{ const o = JSON.parse(localStorage.getItem(BIO_SES_KEY) || "{}"); return (o && typeof o==="object") ? o : {}; }
+  catch(x){ _silent("_bioSesAll", x); return {}; }
+}
+function _bioSesSave(map){ return _lsSet(BIO_SES_KEY, JSON.stringify(map || {})); }
+function bioSes(sid){ return _bioSesAll()[sid] || null; }
+
+/** Análisis de una fecha, en orden de creación. */
+function bioSesDelDia(fecha, all){
+  const map = all || _bioSesAll();
+  return Object.keys(map)
+    .filter(s => map[s] && map[s].fecha === fecha)
+    .map(s => Object.assign({ sid:s }, map[s]))
+    .sort((a,b) => (a.creado||0) - (b.creado||0));
+}
+/** Nombre visible: el que escribió el analista o "Análisis N" por su orden en el día. */
+function bioSesNombre(sid, fecha){
+  const s = bioSes(sid);
+  if(s && String(s.nombre||"").trim()) return String(s.nombre).trim();
+  const lista = bioSesDelDia((s && s.fecha) || fecha || bioGridFecha());
+  const i = lista.findIndex(x => x.sid === sid);
+  return "Análisis " + (i === -1 ? 1 : i + 1);
+}
+/** Valor que viaja a la columna "Sesión" de la hoja. Se congela al sincronizar. */
+function bioSesEtiqueta(sid){
+  const s = bioSes(sid);
+  if(!s) return "";
+  if(s.etiqueta) return s.etiqueta;                     // ya congelada
+  const n = String(s.nombre||"").trim();
+  return n ? (n + " · " + sid) : sid;
+}
+/** Crea un análisis para la fecha dada y lo deja activo. */
+function bioSesCrear(fecha, nombre){
+  const sid = _bioNewSid();
+  const all = _bioSesAll();
+  all[sid] = { fecha, nombre: String(nombre||"").trim(), etiqueta:null, legacy:false, creado: Date.now() };
+  _bioSesSave(all);
+  _bioSid = sid;
+  return sid;
+}
+/** Análisis activo de la fecha en pantalla; si no hay ninguno, crea el primero. */
+function bioSidActivo(fecha){
+  const f = fecha || bioGridFecha();
+  const s = bioSes(_bioSid);
+  if(s && s.fecha === f) return _bioSid;
+  const lista = bioSesDelDia(f);
+  if(lista.length){ _bioSid = lista[0].sid; return _bioSid; }
+  return bioSesCrear(f, "");
+}
 const BIO_GRID_DEFAULT_ROWS = 20;
 // 2026-08-17 (petición del usuario): más grilla disponible para registrar. El paso pasa de
 // 10 a 20 filas y el tope de 50 a 100. El tope cabe EXACTO en el límite del GAS
@@ -7117,30 +7208,33 @@ function bioGridFecha(){
 }
 
 // Nº de filas a mostrar: máx(20+extra, mayor Fila guardada para esa fecha).
-function _bioShownRows(fecha, preList){
+function _bioShownRows(fecha, preList, sid){
+  const s = sid || bioSidActivo(fecha);
   let maxFila = 0;
   (preList || loadBio()).forEach(r => {
-    if(r && r.data && r.data.fecha === fecha){
+    if(r && r.data && r.data.fecha === fecha && r.data.sid === s){
       const f = parseInt(r.data.fila, 10);
       if(Number.isFinite(f) && f > maxFila) maxFila = f;
     }
   });
-  const extra = _bioGridExtra[fecha] || 0;
+  const extra = _bioGridExtra[s] || 0;
   return Math.min(BIO_GRID_MAX_ROWS, Math.max(BIO_GRID_DEFAULT_ROWS + extra, maxFila));
 }
 
-// Recolecta las filas con datos (la Fecha la fija el selector, no la celda).
-function _collectBioGrid(fechaOverride){
+// Recolecta las filas con datos del ANÁLISIS en pantalla (la Fecha la fija el
+// selector, no la celda; la Sesión es metadato y tampoco es una celda).
+function _collectBioGrid(fechaOverride, sidOverride){
   const fp = document.getElementById("fp-biomol");
   if(!fp) return [];
   const fecha = isValidDate(fechaOverride) ? fechaOverride : bioGridFecha();
-  const n = _bioShownRows(fecha);
+  const sid = sidOverride || bioSidActivo(fecha);
+  const n = _bioShownRows(fecha, null, sid);
   const result = [];
   for(let fila=1; fila<=n; fila++){
     const g = (k) => { const el = fp.querySelector(`[name="bg_${fila}_${k}"]`); return el ? el.value : ""; };
-    const data = { fecha, fila };
+    const data = { fecha, fila, sid };
     let hasData = false;
-    BIO_GRID_COLS.forEach(c => {
+    BIO_GRID_CELDAS.forEach(c => {
       if(c.k === "fecha") return;            // la fecha la gobierna el selector
       const v = sanitizeStr(g(c.k));
       data[c.k] = v;
@@ -7151,21 +7245,61 @@ function _collectBioGrid(fechaOverride){
   return result;
 }
 
-// Persiste localmente las muestras del día (merge por Fila; conserva id estable).
-// Las filas vacías del día se descartan; las de otras fechas quedan intactas.
+/* Migración de lo guardado antes de que existieran los análisis: cada fecha con
+   filas sueltas pasa a ser UN análisis, marcado `legacy`. Las filas de esa fecha ya
+   están en la hoja SIN columna Sesión, así que ese primer análisis no puede
+   sincronizarse por clave —no emparejaría nada y duplicaría—: se marca para que su
+   primer envío vaya por fecha, como antes, y a partir de ahí ya por sesión.
+   Arrastra también el reporte del PDF y la foto del gel, que iban por fecha. */
+function _bioMigrarSesiones(){
+  const list = _bioRaw();
+  const huerfanas = list.filter(r => r && r.data && r.data.fecha && !r.data.sid);
+  if(!huerfanas.length) return false;
+  const all = _bioSesAll();
+  const sidDe = {};
+  huerfanas.forEach(r => {
+    const f = r.data.fecha;
+    if(!sidDe[f]){
+      sidDe[f] = _bioNewSid();
+      all[sidDe[f]] = { fecha:f, nombre:"", etiqueta:null, legacy:true, creado: Date.now() };
+    }
+    r.data.sid = sidDe[f];
+  });
+  _bioSesSave(all);
+  _bioSave(list);
+  // El reporte y el gel colgaban de la fecha; pasan a colgar del análisis.
+  try{
+    const rpt = _bioRptAll();
+    let tocado = false;
+    Object.keys(sidDe).forEach(f => {
+      if(rpt[f]){ rpt[sidDe[f]] = rpt[f]; delete rpt[f]; tocado = true; }
+      const gel = localStorage.getItem(BIO_GEL_PRE + f);
+      if(gel){ _lsSet(BIO_GEL_PRE + sidDe[f], gel); localStorage.removeItem(BIO_GEL_PRE + f); }
+    });
+    if(tocado) _lsSet(BIO_RPT_KEY, JSON.stringify(rpt));
+  }catch(x){ _silent("_bioMigrarSesiones/rpt", x); }
+  return true;
+}
+
+// Persiste localmente las muestras del ANÁLISIS activo (merge por Fila; conserva id
+// estable). Sus filas vacías se descartan; las de los DEMÁS análisis —del mismo día o
+// de otro— quedan intactas: ese aislamiento es justo lo que faltaba cuando la grilla
+// era una por fecha y el segundo análisis del día borraba al primero.
 function saveBioGrid(opts){
   opts = opts || {};
   const silent = !!opts.silent;
-  // fecha: por defecto el día activo del selector; con opts.fecha se persiste el
-  // día que estaba EN PANTALLA antes de cambiar de día (commit anti-pérdida),
-  // tomando los valores actuales de la grilla (que aún no se ha re-renderizado).
+  // fecha/sid: por defecto los de la grilla en pantalla; con opts se persiste el
+  // análisis que estaba EN PANTALLA antes de cambiar (commit anti-pérdida), tomando
+  // los valores actuales de la grilla (que aún no se ha re-renderizado).
   const fecha = isValidDate(opts.fecha) ? opts.fecha : bioGridFecha();
-  const rows  = _collectBioGrid(fecha);
+  const sid   = opts.sid || bioSidActivo(fecha);
+  const rows  = _collectBioGrid(fecha, sid);
   if(rows.length === 0){ if(!silent) toast("No hay datos para guardar","warn"); return 0; }
   const list  = _bioRaw();
+  const mio   = (r) => r && r.data && r.data.fecha === fecha && r.data.sid === sid;
   const prevByFila = {};
-  list.forEach(r => { if(r && r.data && r.data.fecha === fecha && r.data.fila != null) prevByFila[String(r.data.fila)] = r; });
-  const others = list.filter(r => !(r && r.data && r.data.fecha === fecha));
+  list.forEach(r => { if(mio(r) && r.data.fila != null) prevByFila[String(r.data.fila)] = r; });
+  const others = list.filter(r => !mio(r));
   const nowTs  = Date.now();
   const updated = rows.map(data => {
     const prev = prevByFila[String(data.fila)];
@@ -7187,45 +7321,95 @@ function saveBioGridLocal(){
   if(n > 0) toast("💾 "+n+" muestra(s) guardada(s) localmente","ok",2500);
 }
 
-// Payload BIOMOL — 16 columnas + marca de "reemplazo por fecha" para el GAS.
-function buildBioPayload(fecha, records){
+// Payload BIOMOL — una celda por columna de BIO_GRID_COLS (hoy 18) + marca de
+// "reemplazo por fecha" para el GAS. Se recorre el esquema en vez de enumerar las
+// celdas a mano: así añadir una columna arriba no puede dejar el envío desalineado
+// con la cabecera, que es exactamente el fallo que la enumeración literal invitaba.
+/* `porFecha` fuerza el modo antiguo —reemplazar TODAS las filas de la fecha— y sólo
+   se usa para migrar un día que ya estaba en la hoja sin columna Sesión. En el resto
+   de los casos el envío reemplaza únicamente las filas de SU análisis (clave = la
+   columna "Sesión"), que es lo que permite ir subiendo análisis uno a uno sin que el
+   último borre a los anteriores. Mismo mecanismo que Lab_Algas y Microbiología. */
+function buildBioPayload(fecha, records, porFecha){
   const headers = BIO_GRID_HEADERS.slice();
   const rows = records.map(r => {
-    const a = r.data || {};
-    return [
-      isValidDate(a.fecha||"") ? a.fecha : (isValidDate(fecha) ? fecha : ""),
-      sanitizeStr(a.codigo||""), sanitizeStr(a.corrida||""), sanitizeStr(a.piscina||""),
-      sanitizeStr(a.lugar||""),  sanitizeStr(a.tanque||""),  sanitizeStr(a.otros||""),
-      sanitizeStr(a.muestra||""),sanitizeStr(a.estadio||""), sanitizeStr(a.sexo||""),
-      sanitizeStr(a.ihhnv||""),  sanitizeStr(a.wssv||""),    sanitizeStr(a.bp||""),
-      sanitizeStr(a.ahpnd||""),  sanitizeStr(a.nhpb||""),    sanitizeStr(a.ehp||"")
-    ];
+    // Acepta tanto el registro guardado ({id, ts, data:{…}}, que es lo que manda
+    // syncBioGrid) como la fila desnuda de _collectBioGrid — el mismo criterio que
+    // ya usaba downloadBioPDF. Sin el segundo caso, pasarle la forma equivocada no
+    // fallaba: mandaba a la hoja tantas filas VACÍAS como muestras hubiera.
+    const a = (r && r.data) || r || {};
+    return BIO_GRID_COLS.map(c => {
+      if(c.k === "fecha") return isValidDate(a.fecha||"") ? a.fecha : (isValidDate(fecha) ? fecha : "");
+      if(c.k === "sesion") return sanitizeStr(bioSesEtiqueta(a.sid || ""));
+      return sanitizeStr(a[c.k]||"");
+    });
   });
-  return { sheetName: BIO_SHEET, headers, rows,
-           replaceDate: (isValidDate(fecha) ? fecha : ""), dateCol: 0 };
+  const base = { sheetName: BIO_SHEET, headers, rows };
+  if(porFecha) return Object.assign(base, { replaceDate: (isValidDate(fecha) ? fecha : ""), dateCol: 0 });
+  return Object.assign(base, { replaceKey: true, keyCols: [BIO_GRID_HEADERS.indexOf("Sesión")] });
 }
 
-// Sincroniza el día: reemplaza en la hoja BIOMOL todas las filas de esa fecha.
-async function syncBioGrid(){
+/* Sincroniza el ANÁLISIS en pantalla: reemplaza en la hoja sólo SUS filas, sin tocar
+   los demás análisis del mismo día. Subir reproductores y después larvas ya no hace
+   que el segundo borre al primero.
+
+   Excepción de UNA vez por día heredado: si el análisis viene de antes de que
+   existieran los análisis (`legacy`), sus filas ya están en la hoja SIN columna
+   Sesión y no hay con qué emparejarlas. Ese primer envío va por FECHA —el
+   comportamiento antiguo, que para ese día era el correcto porque sólo había un
+   análisis— y arrastra a todos los análisis de esa fecha para no dejar fuera
+   ninguno. A partir de ahí, cada uno va por su cuenta. */
+async function syncBioGrid(sopts){
   if(saveBioGrid() === -1) return;     // almacenamiento lleno (ya avisó): no enviar datos no persistidos
   const url = gasUrl();
   if(!url){ toast("Configura la URL de Google Apps Script","warn"); openCfg(); return; }
   if(!isValidGasUrl(url)){ toast("URL inválida","err"); return; }
   if(!syncRateOk()) return;
-  const fecha   = bioGridFecha();
-  const dayRows = loadBio().filter(r => r.data && r.data.fecha === fecha);
-  if(dayRows.length === 0){ toast("No hay muestras para "+fecha,"info",2500); return; }
-  const payload = buildBioPayload(fecha, dayRows);
+  const fecha = bioGridFecha();
+  const sid   = bioSidActivo(fecha);
+  const todas = loadBio();
+
+  // ¿Queda algún análisis de esta fecha sin migrar? Entonces se migra la fecha entera.
+  const delDia    = bioSesDelDia(fecha);
+  const migrarDia = delDia.some(s => s.legacy);
+  const envio     = migrarDia
+    ? todas.filter(r => r.data && r.data.fecha === fecha)
+    : todas.filter(r => r.data && r.data.fecha === fecha && r.data.sid === sid);
+  if(envio.length === 0){ toast("No hay muestras para enviar","info",2500); return; }
+
+  // La etiqueta que viaja a la hoja se CONGELA aquí: a partir de este envío es la
+  // clave de esas filas, así que renombrar el análisis ya no puede moverla.
+  const ses = _bioSesAll();
+  const sidsEnviados = migrarDia ? delDia.map(s => s.sid) : [sid];
+  sidsEnviados.forEach(s => { if(ses[s] && !ses[s].etiqueta) ses[s].etiqueta = bioSesEtiqueta(s); });
+  _bioSesSave(ses);
+
+  const payload = buildBioPayload(fecha, envio, migrarDia);
   if(!payload.rows.length){ toast("No hay filas válidas para enviar","warn",3000); return; }
-  setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s) del "+fecha+"…");
+  const quien = migrarDia ? ("el día "+fecha) : ("«"+bioSesNombre(sid, fecha)+"»");
+  setSyncUI("pend","Enviando "+payload.rows.length+" muestra(s) de "+quien+"…");
   const opts = { mark:{ kind:"bio", keys:[fecha] } };   // F3: reconciliación al entregar desde cola
   const sent = await postPayload(payload, url, opts);
   if(sent){
+    const enviados = new Set(sidsEnviados);
     const list2 = _bioRaw();
-    list2.forEach(r => { if(r.data && r.data.fecha === fecha){ r.synced = true; r.syncedAt = Date.now(); } });
+    list2.forEach(r => { if(r.data && r.data.fecha === fecha && enviados.has(r.data.sid)){ r.synced = true; r.syncedAt = Date.now(); } });
     _bioSave(list2);
+    // Migrados: desde ahora cada análisis de esta fecha va por su propia clave.
+    const ses2 = _bioSesAll();
+    sidsEnviados.forEach(s => { if(ses2[s]) ses2[s].legacy = false; });
+    _bioSesSave(ses2);
+    /* Cada TANDA ENVIADA cierra su análisis: la grilla se abre en blanco para la
+       siguiente. Es el modelo de Microbiología —una sesión por tanda— y devuelve el
+       flujo original (pegar, sincronizar, pegar, sincronizar) sin pedir nombres ni
+       obligar a pulsar nada. Para corregir una tanda ya enviada se vuelve a ella
+       desde el historial con 👁 y se reenvía: su sesión es la misma, así que
+       reemplaza sus filas en vez de duplicarlas. */
+    // `rotar:false` lo usa el botón global, que recorre varios análisis seguidos: allí
+    // abrir una grilla nueva por cada uno dejaría el selector lleno de análisis vacíos.
+    if(!sopts || sopts.rotar !== false) bioSesCrear(fecha, "");
     setSyncUI("ok", payload.rows.length+" muestra(s) sincronizada(s) ✔");
-    toast("✅ "+payload.rows.length+" muestra(s) del "+fecha+" enviadas a BIOMOL (día reemplazado)","ok",4500);
+    toast("✅ "+payload.rows.length+" muestra(s) de "+quien+" enviadas · grilla en blanco para la siguiente tanda","ok",5000);
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
     _syncNotOkUI(opts.outcome, "Error al sincronizar Biomol", null);
@@ -7234,7 +7418,34 @@ async function syncBioGrid(){
 }
 
 // El botón "Sincronizar" del topbar (syncAll → isBioMod) sincroniza el día activo.
-async function syncAllPendingBio(){ await syncBioGrid(); }
+/* El botón «Sincronizar» del topbar cubre TODOS los análisis pendientes del día, no sólo
+   el que está en pantalla. Hace falta desde que un día lleva varios análisis: el punto de
+   pendientes se enciende mirando TODOS los registros, así que si el botón enviara sólo el
+   activo, un análisis aparcado dejaría el punto naranja encendido sin forma de apagarlo
+   desde aquí. Antes de los análisis un solo envío cubría la fecha entera y esa promesa
+   estaba implícita; ahora hay que cumplirla explícitamente. */
+async function syncAllPendingBio(){
+  const fecha  = bioGridFecha();
+  const activo = bioSidActivo(fecha);
+  const tienePend = (sid) => _bioRaw().some(r => r && r.data && r.data.sid === sid && !r.synced);
+  const otros = bioSesDelDia(fecha).filter(s => s.sid !== activo && tienePend(s.sid));
+  if(otros.length){
+    // Lo tecleado en la grilla de pantalla se persiste UNA vez, antes de irse a los demás.
+    try{ saveBioGrid({ fecha, sid:activo, silent:true, noRender:true }); }catch(_){}
+    for(const s of otros){
+      _bioSid = s.sid; renderBiomol();
+      await syncBioGrid({ rotar:false });   // sin abrir grillas nuevas por el camino
+    }
+    /* Se vuelve al de pantalla SIN volver a guardar. `saveBioGrid` crea siempre los
+       registros con synced:false —guardar significa "hay datos nuevos"—, así que pasar
+       por él aquí re-marcaría como PENDIENTE justo lo que se acaba de sincronizar, y el
+       punto naranja no se apagaría nunca. */
+    _bioSid = activo; renderBiomol();
+  }
+  // El de pantalla va el último y SÍ rota: es lo que el analista espera al terminar.
+  if(_collectBioGrid().length || tienePend(activo)) await syncBioGrid();
+  else if(!otros.length) toast("No hay muestras para enviar","info",2500);
+}
 
 /* ══════════════════════════════════════════════════════════════════
    MAREAS · grilla de registro (módulo As Técnico) → hoja "Marea".
@@ -7394,25 +7605,93 @@ function renderMarea(){
 // Agrega BIO_GRID_ROW_STEP filas más (hasta el máximo), sin perder lo tecleado.
 function bioGridAddRows(){
   const fecha = bioGridFecha();
-  const cur = _bioShownRows(fecha);
+  const sid = bioSidActivo(fecha);
+  const cur = _bioShownRows(fecha, null, sid);
   if(cur >= BIO_GRID_MAX_ROWS){ toast("Máximo "+BIO_GRID_MAX_ROWS+" filas","info",2500); return; }
   const typed = _collectBioGrid();
-  _bioGridExtra[fecha] = Math.min(BIO_GRID_MAX_ROWS - BIO_GRID_DEFAULT_ROWS,
-                                  (cur - BIO_GRID_DEFAULT_ROWS) + BIO_GRID_ROW_STEP);
+  // Las filas extra son del ANÁLISIS, no del día: dos análisis del mismo día pueden
+  // tener grillas de distinto tamaño.
+  _bioGridExtra[sid] = Math.min(BIO_GRID_MAX_ROWS - BIO_GRID_DEFAULT_ROWS,
+                                (cur - BIO_GRID_DEFAULT_ROWS) + BIO_GRID_ROW_STEP);
   if(typed.length){ saveBioGrid(); } else { renderBiomol(); }
 }
 
-// Borra las muestras LOCALES del día (no toca lo ya enviado a Google Sheets).
-function clearBioGrid(){
-  const fecha = bioGridFecha();
-  const list  = _bioRaw();
-  const matching = list.filter(r => r && r.data && r.data.fecha === fecha);
-  if(matching.length === 0){ toast("No hay muestras locales para "+fecha,"info",2500); return; }
-  if(!confirm("¿Borrar las "+matching.length+" muestra(s) locales de "+fecha+"?\nNo elimina lo ya enviado a Google Sheets.")) return;
-  _bioSave(list.filter(r => !(r && r.data && r.data.fecha === fecha)));
-  _bioGridExtra[fecha] = 0;
+// Borra las muestras LOCALES del ANÁLISIS activo (no toca lo ya enviado a la hoja).
+function clearBioGrid(){ bioBorrarSes(bioSidActivo()); }
+
+/* Borra un análisis entero: sus filas locales, su reporte y su foto de gel. Lo ya
+   enviado a Google Sheets NO se toca —el usuario cuenta con ello para limpiar el
+   equipo sin perder lo subido—, y por eso el envío de OTRO análisis tampoco puede
+   arrastrarlo: cada uno reemplaza sólo sus propias filas. */
+function bioBorrarSes(sid){
+  const ses = bioSes(sid);
+  if(!ses){ toast("Ese análisis ya no existe","info",2500); return; }
+  const nombre = bioSesNombre(sid);
+  const list = _bioRaw();
+  const mias = list.filter(r => r && r.data && r.data.sid === sid);
+  if(!confirm("¿Borrar «"+nombre+"» ("+mias.length+" muestra(s)) del "+ses.fecha+"?\nSe borra también su reporte y su foto del gel.\nNo elimina lo ya enviado a Google Sheets.")) return;
+  _bioSave(list.filter(r => !(r && r.data && r.data.sid === sid)));
+  const all = _bioSesAll(); delete all[sid]; _bioSesSave(all);
+  try{ bioRptDelSes(sid); }catch(_){}
+  delete _bioGridExtra[sid];
+  if(_bioSid === sid) _bioSid = null;
   renderBiomol(); updateDots(); updateSyncUI(); buildGrid();
-  toast("🗑 Muestras locales de "+fecha+" borradas","ok",3000);
+  toast("🗑 Análisis «"+nombre+"» borrado localmente","ok",3000);
+}
+
+/* Crea otro análisis para el día en pantalla. Es la pieza que faltaba: hasta ahora
+   la grilla era una por fecha, así que el segundo análisis del día se tecleaba
+   encima del primero y al sincronizar lo reemplazaba en la hoja. */
+/** ¿El análisis está recién abierto — sin filas, sin nombre y sin enviar? */
+function _bioSesEnBlanco(sid){
+  const s = bioSes(sid);
+  return !!s && !String(s.nombre||"").trim() && !s.etiqueta
+    && !_bioRaw().some(r => r && r.data && r.data.sid === sid);
+}
+
+/* Abre otra grilla en blanco para el mismo día. NO pide nombre: el análisis se numera
+   solo y, si el analista quiere ponerle uno, tiene el botón ✏️ al lado —opcional—.
+   En el flujo normal ni siquiera hace falta pulsarlo: sincronizar ya deja la grilla
+   lista para la tanda siguiente. Sirve para dejar aparcado un análisis a medias y
+   empezar otro sin haber enviado el primero. */
+function bioNuevoAnalisis(){
+  const fecha = bioGridFecha();
+  try{ saveBioGrid({ fecha:_bioRenderedFecha, sid:_bioSid, silent:true, noRender:true }); }catch(_){}
+  if(_bioSesEnBlanco(bioSidActivo(fecha))){
+    toast("Esta grilla ya está en blanco: pega aquí la tanda siguiente","info",3000);
+    return;
+  }
+  bioSesCrear(fecha, "");
+  renderBiomol(); updateDots(); updateSyncUI(); buildGrid();
+  toast("🧬 Grilla en blanco para otro análisis del "+fecha,"ok",3000);
+}
+
+// Cambia el análisis en pantalla (selector de arriba), guardando antes el actual.
+function bioSesChange(sel){
+  const sid = sel && sel.value;
+  if(!sid || sid === _bioSid) return;
+  try{ saveBioGrid({ fecha:_bioRenderedFecha, sid:_bioSid, silent:true, noRender:true }); }catch(_){}
+  _bioSid = sid;
+  renderBiomol();
+}
+
+// Renombra el análisis activo. Una vez sincronizado el nombre queda fijo: la hoja
+// empareja sus filas por la etiqueta de la columna "Sesión", así que cambiarla
+// dejaría las filas viejas sin pareja y la próxima sincronización las duplicaría.
+function bioSesRenombrar(){
+  const sid = bioSidActivo();
+  const ses = bioSes(sid);
+  if(!ses) return;
+  if(ses.etiqueta){
+    toast("«"+bioSesNombre(sid)+"» ya se sincronizó: su nombre queda fijo para no duplicar sus filas en la hoja.","info",6000);
+    return;
+  }
+  const nuevo = prompt("Nombre del análisis (opcional; si lo dejas vacío se numera solo):", ses.nombre || "");
+  if(nuevo === null) return;
+  const all = _bioSesAll();
+  all[sid].nombre = String(nuevo).trim();
+  _bioSesSave(all);
+  renderBiomol();
 }
 
 /* ── BIOMOL · Recuperación (autoguardado de lo NO guardado) ──────────────
@@ -7424,7 +7703,7 @@ function saveBioRecovery(){
   let rows = [];
   try{ rows = _collectBioGrid(); }catch(_){ return; }
   if(!rows.length) return;                       // nada que respaldar
-  _lsSet(BIO_RECOV_KEY, JSON.stringify({ fecha: bioGridFecha(), ts: Date.now(), rows }));
+  _lsSet(BIO_RECOV_KEY, JSON.stringify({ fecha: bioGridFecha(), sid: bioSidActivo(), ts: Date.now(), rows }));
 }
 function loadBioRecovery(){
   try{
@@ -7440,18 +7719,23 @@ function recoverBioGrid(){
   const rec = loadBioRecovery();
   if(!rec){ toast("No hay datos de recuperación disponibles","warn"); return; }
   const ts = new Date(rec.ts).toLocaleString("es-EC");
-  if(!confirm("¿Recuperar las "+rec.rows.length+" fila(s) autoguardadas el "+ts+" (fecha "+rec.fecha+")?\nSe combinarán con la grilla de esa fecha.")) return;
+  // El respaldo es de UN análisis: si ya no existe (se borró), se restaura en el
+  // activo del día en vez de resucitar un análisis fantasma.
+  const sid = (rec.sid && bioSes(rec.sid)) ? rec.sid : bioSidActivo(rec.fecha);
+  if(!confirm("¿Recuperar las "+rec.rows.length+" fila(s) autoguardadas el "+ts+" («"+bioSesNombre(sid, rec.fecha)+"», "+rec.fecha+")?\nSe combinarán con la grilla de ese análisis.")) return;
   const list = _bioRaw();
+  const mio = (r) => r && r.data && r.data.fecha === rec.fecha && r.data.sid === sid;
   const prevByFila = {};
-  list.forEach(r => { if(r && r.data && r.data.fecha === rec.fecha && r.data.fila != null) prevByFila[String(r.data.fila)] = r; });
-  const others = list.filter(r => !(r && r.data && r.data.fecha === rec.fecha));
+  list.forEach(r => { if(mio(r) && r.data.fila != null) prevByFila[String(r.data.fila)] = r; });
+  const others = list.filter(r => !mio(r));
   const nowTs = Date.now();
   const restored = rec.rows.map(data => {
     const prev = prevByFila[String(data.fila)];
-    return { id: prev ? prev.id : (Date.now().toString(36)+Math.random().toString(36).slice(2,6)), ts: nowTs, synced:false, syncedAt:null, data };
+    return { id: prev ? prev.id : (Date.now().toString(36)+Math.random().toString(36).slice(2,6)), ts: nowTs, synced:false, syncedAt:null, data: Object.assign({}, data, { sid }) };
   });
   _bioSave(others.concat(restored));
   try{ localStorage.removeItem(BIO_RECOV_KEY); }catch(_){}
+  _bioSid = sid;
   const el = document.getElementById("bio-grid-fecha");
   if(el) el.value = rec.fecha;
   renderBiomol(); updateDots(); updateSyncUI(); buildGrid();
@@ -7461,22 +7745,28 @@ function recoverBioGrid(){
 // ── BIOMOL · Historial 48 h (por día) ───────────────────────────────────
 // Texto de "último guardado" del día activo (deriva de los registros → es
 // persistente: sobrevive a re-render y recarga).
-function _bioSavedText(fecha, preList){
-  const recs = (preList || loadBio()).filter(r => r.data && r.data.fecha === fecha);
+function _bioSavedText(fecha, preList, sid){
+  const s = sid || bioSidActivo(fecha);
+  const recs = (preList || loadBio()).filter(r => r.data && r.data.fecha === fecha && r.data.sid === s);
   if(!recs.length) return "○ Sin guardar localmente";
   const maxTs = Math.max.apply(null, recs.map(r => r.ts || 0));
   const allSynced = recs.every(r => r.synced);
   return (allSynced ? "✅ Sincronizado · " : "⏳ Guardado local · ") + new Date(maxTs).toLocaleString("es-EC");
 }
-// Bloque visual del historial (lista de días con muestras guardadas, 48 h).
-function _bioHistBlock(curFecha, preList){
+// Bloque visual del historial: un renglón por ANÁLISIS, agrupados por día. Antes era
+// un renglón por día, que es justo lo que escondía que un día podía llevar más de un
+// análisis (y que el segundo estaba pisando al primero).
+function _bioHistBlock(curFecha, preList, curSid){
   const list = preList || loadBio();
-  const byFecha = {};
-  list.forEach(r => { if(r && r.data && r.data.fecha){ (byFecha[r.data.fecha] = byFecha[r.data.fecha] || []).push(r); } });
-  const fechas = Object.keys(byFecha).sort((a,b)=> b.localeCompare(a));
+  const porSid = {};
+  list.forEach(r => { if(r && r.data && r.data.sid){ (porSid[r.data.sid] = porSid[r.data.sid] || []).push(r); } });
+  const ses = _bioSesAll();
+  const fechas = Array.from(new Set(Object.keys(porSid).map(sid => (ses[sid] && ses[sid].fecha) || "")))
+    .filter(Boolean).sort((a,b)=> b.localeCompare(a));
+  const nAnalisis = Object.keys(porSid).length;
   const head = `<div class="alg-hist-h" style="border-bottom-color:#fbcfe8">
-      <div class="alg-hist-h-l" style="color:#9d174d">🧬 Historial de muestras (48 h)
-        <span class="alg-hist-cnt" style="background:#db2777">${fechas.length} día(s)</span></div>
+      <div class="alg-hist-h-l" style="color:#9d174d">🧬 Historial de análisis (48 h)
+        <span class="alg-hist-cnt" style="background:#db2777">${nAnalisis} análisis · ${fechas.length} día(s)</span></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         ${fechas.length ? `<button class="btn bd" type="button" onclick="clearAllBio()" style="font-size:10.5px;padding:5px 10px">🗑 Borrar todo</button>` : ""}
       </div></div>`;
@@ -7485,59 +7775,59 @@ function _bioHistBlock(curFecha, preList){
       <div class="alg-hist-empty" style="border-color:#fbcfe8;color:#9d174d">Aún no hay muestras guardadas. Guarda la grilla para verlas aquí (se conservan 48 h).</div></div>`;
   }
   const items = fechas.map(f=>{
-    const rs = byFecha[f]; const pend = rs.some(r=>!r.synced);
-    const ts = new Date(Math.max.apply(null, rs.map(r=>r.ts||0))).toLocaleString("es-EC",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
-    const isCur = (f===curFecha);
-    const safeF = escapeHtml(f);
-    return `<div class="alg-hist-item${isCur?' editing':''}">
-      <span class="alg-hist-num" style="background:#db2777">${rs.length}</span>
-      <div class="alg-hist-body">
-        <div class="alg-hist-ts" style="color:#9d174d">📅 ${safeF} · guardado ${escapeHtml(ts)}${isCur?' · <b>en pantalla</b>':''}</div>
-        <div class="alg-hist-fields" style="color:#831843">
-          <span><b>Muestras:</b> ${rs.length}</span>
-          ${pend ? '<span class="ssp ssp-pend">⏳ Pendiente</span>' : '<span class="ssp ssp-ok">✅ Sincronizado</span>'}
+    const delDia = bioSesDelDia(f, ses).filter(x => porSid[x.sid]);
+    return delDia.map(x=>{
+      const rs = porSid[x.sid];
+      const pend = rs.some(r=>!r.synced);
+      const ts = new Date(Math.max.apply(null, rs.map(r=>r.ts||0))).toLocaleString("es-EC",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+      const isCur = (x.sid===curSid);
+      const safeSid = escapeHtml(x.sid);
+      return `<div class="alg-hist-item${isCur?' editing':''}">
+        <span class="alg-hist-num" style="background:#db2777">${rs.length}</span>
+        <div class="alg-hist-body">
+          <div class="alg-hist-ts" style="color:#9d174d">🧬 <b>${escapeHtml(bioSesNombre(x.sid, f))}</b> · 📅 ${escapeHtml(f)} · guardado ${escapeHtml(ts)}${isCur?' · <b>en pantalla</b>':''}</div>
+          <div class="alg-hist-fields" style="color:#831843">
+            <span><b>Muestras:</b> ${rs.length}</span>
+            ${pend ? '<span class="ssp ssp-pend">⏳ Pendiente</span>' : '<span class="ssp ssp-ok">✅ Sincronizado</span>'}
+          </div>
         </div>
-      </div>
-      <div class="alg-hist-actions">
-        <button class="alg-hist-edit" onclick="bioVerDia('${safeF}')" title="Cargar este día en la grilla">👁</button>
-        <button class="alg-hist-del" onclick="bioBorrarDia('${safeF}')" title="Borrar muestras locales de este día (no afecta a Google Sheets)">🗑</button>
-      </div>
-    </div>`;
+        <div class="alg-hist-actions">
+          <button class="alg-hist-edit" onclick="bioVerSes('${safeSid}')" title="Cargar este análisis en la grilla">👁</button>
+          <button class="alg-hist-del" onclick="bioBorrarSes('${safeSid}')" title="Borrar este análisis (no afecta a Google Sheets)">🗑</button>
+        </div>
+      </div>`;
+    }).join("");
   }).join("");
   return `<div class="alg-hist" style="background:#fdf2f8;border-color:#fbcfe8">${head}
     <div class="alg-hist-list">${items}</div>
-    <div style="margin-top:8px;font-size:10.5px;color:#9d174d;line-height:1.6">ℹ️ Las muestras se conservan localmente <b>48 h</b>. <b>👁</b> carga ese día en la grilla; <b>🗑</b> borra solo lo local (no afecta a Google Sheets).</div></div>`;
+    <div style="margin-top:8px;font-size:10.5px;color:#9d174d;line-height:1.6">ℹ️ Cada análisis se conserva localmente <b>48 h</b>. <b>👁</b> lo carga en la grilla; <b>🗑</b> borra solo lo local (no afecta a Google Sheets). Sincronizar un análisis <b>no toca</b> las filas de los demás.</div></div>`;
 }
-function bioVerDia(fecha){
-  // Persiste lo no guardado del día EN PANTALLA antes de cargar otro día.
-  try{ saveBioGrid({ fecha:_bioRenderedFecha, silent:true, noRender:true }); }catch(_){}
+function bioVerSes(sid){
+  const ses = bioSes(sid);
+  if(!ses){ toast("Ese análisis ya no existe","info",2500); return; }
+  // Persiste lo no guardado de lo que está EN PANTALLA antes de cargar otro análisis.
+  try{ saveBioGrid({ fecha:_bioRenderedFecha, sid:_bioSid, silent:true, noRender:true }); }catch(_){}
   const el = document.getElementById("bio-grid-fecha");
-  if(el) el.value = fecha;
+  if(el) el.value = ses.fecha;
+  _bioSid = sid;
   renderBiomol();
 }
 // Cambio de día desde el selector de fecha: mismo commit anti-pérdida antes de
 // re-renderizar el día nuevo (antes el onchange llamaba a renderBiomol() directo
 // y descartaba lo tecleado/pegado sin guardar).
 function bioFechaChange(){
-  try{ saveBioGrid({ fecha:_bioRenderedFecha, silent:true, noRender:true }); }catch(_){}
+  try{ saveBioGrid({ fecha:_bioRenderedFecha, sid:_bioSid, silent:true, noRender:true }); }catch(_){}
+  _bioSid = null;                 // al cambiar de día se entra por su primer análisis
   renderBiomol();
-}
-function bioBorrarDia(fecha){
-  const list = _bioRaw();
-  const matching = list.filter(r => r && r.data && r.data.fecha === fecha);
-  if(matching.length === 0){ toast("No hay muestras locales para "+fecha,"info",2500); return; }
-  if(!confirm("¿Borrar las "+matching.length+" muestra(s) locales de "+fecha+"?\nNo elimina lo ya enviado a Google Sheets.")) return;
-  _bioSave(list.filter(r => !(r && r.data && r.data.fecha === fecha)));
-  _bioGridExtra[fecha] = 0;
-  renderBiomol(); updateDots(); updateSyncUI(); buildGrid();
-  toast("🗑 Muestras locales de "+fecha+" borradas","ok",3000);
 }
 function clearAllBio(){
   const list = _bioRaw();
   if(list.length === 0){ toast("El historial ya está vacío","info",2000); return; }
   if(!confirm("¿Borrar TODAS las "+list.length+" muestra(s) locales del historial Biomol (48 h)?\nNo afecta a lo ya enviado a Google Sheets.")) return;
   _bioSave([]);
+  _bioSesSave({});
   _bioGridExtra = {};
+  _bioSid = null;
   renderBiomol(); updateDots(); updateSyncUI(); buildGrid();
   toast("🗑 Historial Biomol vaciado","ok",3000);
 }
@@ -7546,14 +7836,16 @@ function clearAllBio(){
    BIOMOL · REPORTE PDF
    ──────────────────────────────────────────
    Datos que SOLO viven para el PDF: no entran en el payload de la hoja BIOMOL
-   ni en `_bioRaw()`. Se guardan por día en su propia clave, así borrar el día
-   o vaciar el historial no arrastra el reporte y viceversa.
-   La foto del gel va en clave APARTE (una por día): son cientos de KB y no
+   ni en `_bioRaw()`. Se guardan por ANÁLISIS en su propia clave, así borrar un
+   análisis no arrastra el reporte y viceversa. Van por análisis y no por día
+   porque cada análisis del día produce su PROPIO informe: si compartieran
+   descripción, procedencia y foto del gel, uno de los dos informes mentiría.
+   La foto del gel va en clave APARTE (una por análisis): son cientos de KB y no
    deben viajar dentro del JSON del reporte cada vez que se teclea una letra.
 ══════════════════════════════════════════ */
-const BIO_RPT_KEY     = "larv4_biomol_rpt";       // { "<fecha>": {...} }
+const BIO_RPT_KEY     = "larv4_biomol_rpt";       // { "<sid>": {...} }
 const BIO_RPT_DEF_KEY = "larv4_biomol_rpt_def";   // últimos textos usados (plantilla)
-const BIO_GEL_PRE     = "larv4_biomol_gel_";      // + fecha → dataURL del gel
+const BIO_GEL_PRE     = "larv4_biomol_gel_";      // + sid → dataURL del gel
 const BIO_GEL_MAXPX   = 1400;                     // el gel debe leerse en papel
 const BIO_GEL_Q       = 0.8;
 
@@ -7571,25 +7863,63 @@ const BIO_MUESTRA_OPTS = [
 ];
 
 // Nombre completo de cada patógeno, para redactar la descripción del análisis.
+// `a` es el artículo contraído que le corresponde cuando el patógeno va SOLO en
+// la frase ("Detección del Virus…", "Detección de la Enfermedad…"). Con varios
+// se usa "Detección de X, Y, Z", que es como se venía redactando.
 const BIO_PATOGENOS = [
-  { k:"ihhnv", n:"Virus de la necrosis infecciosa hipodérmica y hematopoyética (IHHNV)" },
-  { k:"wssv",  n:"Virus del síndrome de la mancha blanca (WSSV)" },
-  { k:"ahpnd", n:"Enfermedad de necrosis hepatopancreática aguda/Síndrome de mortalidad temprana (AHPND/EMS)" },
-  { k:"ehp",   n:"Infección de microsporidiosis hepatopancreática causada por Enterocytozoon hepatopenaei (EHP)" },
-  { k:"bp",    n:"Baculovirus penaei (BP)" },
-  { k:"nhpb",  n:"Necrosis hepatopancreática bacteriana (NHPB)" }
+  { k:"ihhnv", a:"del",   n:"Virus de la necrosis infecciosa hipodérmica y hematopoyética (IHHNV)" },
+  { k:"wssv",  a:"del",   n:"Virus del síndrome de la mancha blanca (WSSV)" },
+  { k:"ahpnd", a:"de la", n:"Enfermedad de necrosis hepatopancreática aguda/Síndrome de mortalidad temprana (AHPND/EMS)" },
+  { k:"ehp",   a:"de la", n:"Infección de microsporidiosis hepatopancreática causada por Enterocytozoon hepatopenaei (EHP)" },
+  { k:"bp",    a:"del",   n:"Baculovirus penaei (BP)" },
+  { k:"nhpb",  a:"de la", n:"Necrosis hepatopancreática bacteriana (NHPB)" }
 ];
 
 // Firmantes fijos del reporte (no es un espacio para firmar a mano).
 const BIO_PDF_FIRMANTES   = "Blga. Katherine Mujica – Blga. Diana Párraga";
 const BIO_PDF_FIRMA_CARGO = "Analistas de Biología Molecular";
-// Los tres controles del ensayo salen siempre con el mismo veredicto.
-const BIO_CONTROLES = ["Control Positivo","Control Negativo","Control de Extracción"];
+/* Nivel de carga a partir de Copias/μl, por el EXPONENTE de la potencia de diez
+   (criterio del laboratorio, 2026-08-18):
+     exponente +01 o menor  → Bajo      (…, 1.00E+01 … 9.99E+01)
+     exponente +02 o +03    → Medio     (1.00E+02 … 9.99E+03)
+     exponente +04 o mayor  → Alto      (1.00E+04, 1.00E+05, 1.00E+06 …)
+   Acepta la notación con la que escribe el laboratorio ("1.00E+05") y también un
+   número llano ("1500" → exponente 3), porque la celda es texto libre y ambas formas
+   aparecen. Lo que no sea un número —"N/A" de los controles, o vacío— no se clasifica:
+   inventar un nivel ahí sería afirmar una carga que nadie midió. */
+const BIO_NIVELES = [
+  { max: 1,        n: "Bajo"  },
+  { max: 3,        n: "Medio" },
+  { max: Infinity, n: "Alto"  }
+];
+function bioNivelCopias(v){
+  const s = String(v == null ? "" : v).trim().replace(",", ".");
+  if(!s) return "";
+  const num = Number(s);
+  if(!isFinite(num) || num <= 0) return "";       // "N/A", texto suelto, 0 o negativo
+  const exp = Math.floor(Math.log10(num));
+  const hit = BIO_NIVELES.find(x => exp <= x.max);
+  return hit ? hit.n : "";
+}
+
+// Los tres controles del ensayo salen siempre con el mismo veredicto en las columnas de
+// patógenos. Bajo las cuantitativas de qPCR llevan además su valor propio: el Control
+// Positivo es una carga CONOCIDA (22 ciclos, 1.00E+05 copias/μl) y los otros dos no se
+// cuantifican. Se escriben tal como los redacta el laboratorio —"1.00E+05", no 100000—
+// porque el informe se lee en papel y así es como lo esperan.
 const BIO_CONTROL_VAL = "Excelente";
+const BIO_CONTROLES = [
+  { n:"Control Positivo",      ciclo:"22",  copias:"1.00E+05" },
+  { n:"Control Negativo",      ciclo:"N/A", copias:"N/A" },
+  { n:"Control de Extracción", ciclo:"N/A", copias:"N/A" }
+];
 
 /** ¿El resultado de un patógeno es POSITIVO? Tolerante a la grafía tecleada
  *  (mayúsculas, acentos, "POSITIVO", "positivo", "+", "Pos."). Todo lo demás
  *  —incluido vacío— NO cuenta como positivo. */
+const _BIO_PAT_KEYS = BIO_PATOGENOS.map(p => p.k);
+function esPatK(k){ return _BIO_PAT_KEYS.indexOf(k) !== -1; }
+
 function _bioEsPositivo(v){
   const s = String(v == null ? "" : v).trim().toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -7618,11 +7948,12 @@ function loadBioRptDef(){
   try{ const o = JSON.parse(localStorage.getItem(BIO_RPT_DEF_KEY) || "{}"); return (o && typeof o==="object") ? o : {}; }
   catch(_){ return {}; }
 }
-/** Datos del reporte de un día. Los textos de plantilla (procedencia/método)
- *  arrancan de lo último que se usó; el resto es propio del día. */
-function loadBioRpt(fecha){
+/** Datos del reporte de un ANÁLISIS. Los textos de plantilla (procedencia/método)
+ *  arrancan de lo último que se usó —así el segundo análisis del día no obliga a
+ *  reescribirlos—; el resto es propio del análisis. */
+function loadBioRpt(sid){
   const def = loadBioRptDef();
-  const d = _bioRptAll()[fecha] || {};
+  const d = _bioRptAll()[sid] || {};
   return {
     recepcion:   d.recepcion   != null ? d.recepcion   : "",
     procedencia: d.procedencia != null ? d.procedencia : (def.procedencia || ""),
@@ -7631,46 +7962,72 @@ function loadBioRpt(fecha){
     desc:        d.desc        != null ? d.desc        : ""
   };
 }
-function saveBioRpt(fecha, obj){
+function saveBioRpt(sid, obj){
   const all = _bioRptAll();
-  all[fecha] = obj;
+  all[sid] = obj;
   _lsSet(BIO_RPT_KEY, JSON.stringify(all));
   // Los textos de plantilla se recuerdan para el próximo reporte.
   _lsSet(BIO_RPT_DEF_KEY, JSON.stringify({ procedencia: obj.procedencia || "", metodo: obj.metodo != null ? obj.metodo : BIO_METODO_DEF }));
 }
-function bioRptDelDia(fecha){
+function bioRptDelSes(sid){
   const all = _bioRptAll();
-  if(all[fecha]){ delete all[fecha]; _lsSet(BIO_RPT_KEY, JSON.stringify(all)); }
-  bioGelClear(fecha, true);
+  if(all[sid]){ delete all[sid]; _lsSet(BIO_RPT_KEY, JSON.stringify(all)); }
+  bioGelClear(sid, true);
 }
-// Reportes y fotos de gel caducan como las muestras (BIO_TTL, 48 h). Sin esto la
-// foto del gel —cientos de KB y una por día— crecería sin techo en localStorage.
-// El barrido de huérfanas (foto sin reporte) se hace UNA vez por sesión: recorrer
+// Reportes y fotos de gel caducan con su análisis (BIO_TTL, 48 h). Sin esto la foto
+// del gel —cientos de KB y una por análisis— crecería sin techo en localStorage.
+// Ahora la caducidad se decide por la FECHA DEL ANÁLISIS al que pertenece el informe,
+// no por su clave: desde que están indexados por sid, comparar la clave con una fecha
+// no caducaba nada (un sid nunca es menor que "2026-08-16") y todo se acumulaba.
+// El barrido de huérfanas (foto sin análisis) se hace UNA vez por sesión: recorrer
 // todo localStorage en cada render es justo lo que el caché de fotos evita.
 let _bioGelSwept = false;
 function _bioPruneRpt(){
-  const cutoff = new Date(Date.now() - BIO_TTL).toISOString().slice(0,10);
+  const ses   = _bioSesAll();
+  const ahora = Date.now();
+  // Qué análisis tienen todavía filas vivas (las filas caducan solas por su ts).
+  const vivos = {};
+  _bioRaw().forEach(r => { if(r && r.data && r.data.sid) vivos[r.data.sid] = 1; });
+
+  /* Un análisis caduca por su EDAD —cuándo se creó—, no por la fecha que registra.
+     Fechar hacia atrás es legítimo (hoy se captura el análisis de anteayer) y medirlo
+     por la fecha registrada borraba el análisis recién creado antes de que llegase a
+     tener una sola fila, dejando la grilla en un bucle de crear y perder sesiones.
+     El que está en pantalla no se toca nunca. */
+  const caduco = (sid) => {
+    const s = ses[sid];
+    if(!s) return true;                              // huérfano: su análisis ya no existe
+    if(sid === _bioSid || vivos[sid]) return false;  // en pantalla o con filas vivas
+    return (ahora - (s.creado || 0)) > BIO_TTL;
+  };
+
   const all = _bioRptAll();
-  const vencidas = Object.keys(all).filter(f => f < cutoff);
+  const vencidas = Object.keys(all).filter(caduco);
   if(vencidas.length){
-    vencidas.forEach(f => { delete all[f]; try{ localStorage.removeItem(bioGelKey(f)); }catch(_){} });
+    vencidas.forEach(k => { delete all[k]; try{ localStorage.removeItem(bioGelKey(k)); }catch(_){} });
     _lsSet(BIO_RPT_KEY, JSON.stringify(all));
+  }
+  // Análisis sin filas vivas y ya vencidos: se sueltan para no crecer sin techo.
+  const sesVencidas = Object.keys(ses).filter(caduco);
+  if(sesVencidas.length){
+    sesVencidas.forEach(sid => { delete ses[sid]; });
+    _bioSesSave(ses);
   }
   if(_bioGelSwept) return;
   _bioGelSwept = true;
   const del = [];
   for(let i=0; i<localStorage.length; i++){
     const k = localStorage.key(i);
-    if(k && k.startsWith(BIO_GEL_PRE) && k.slice(BIO_GEL_PRE.length) < cutoff) del.push(k);
+    if(k && k.startsWith(BIO_GEL_PRE) && caduco(k.slice(BIO_GEL_PRE.length))) del.push(k);
   }
   del.forEach(k => { try{ localStorage.removeItem(k); }catch(_){} });
 }
 
-// ── Foto del gel (una por día) ─────────────────────────
-function bioGelKey(fecha){ return BIO_GEL_PRE + fecha; }
-function bioGelGet(fecha){ try{ return localStorage.getItem(bioGelKey(fecha)) || ""; }catch(_){ return ""; } }
-function bioGelClear(fecha, silent){
-  try{ localStorage.removeItem(bioGelKey(fecha)); }catch(_){}
+// ── Foto del gel (una por ANÁLISIS) ────────────────────
+function bioGelKey(sid){ return BIO_GEL_PRE + sid; }
+function bioGelGet(sid){ try{ return localStorage.getItem(bioGelKey(sid)) || ""; }catch(_){ return ""; } }
+function bioGelClear(sid, silent){
+  try{ localStorage.removeItem(bioGelKey(sid)); }catch(_){}
   if(!silent){ renderBioReport(); toast("Foto del gel eliminada","ok",2000); }
 }
 /** Comprime en canvas antes de guardar: un JPEG de cámara son varios MB y
@@ -7678,7 +8035,7 @@ function bioGelClear(fecha, silent){
 function bioGelPick(input){
   const f = input && input.files && input.files[0];
   if(!f) return;
-  const fecha = bioGridFecha();
+  const sid = bioSidActivo();
   const im = new Image(), u = URL.createObjectURL(f);
   im.onload = function(){
     try{ URL.revokeObjectURL(u); }catch(_){}
@@ -7690,7 +8047,7 @@ function bioGelPick(input){
     cv.width = w; cv.height = h;
     cv.getContext("2d").drawImage(im, 0, 0, w, h);
     const durl = cv.toDataURL("image/jpeg", BIO_GEL_Q);
-    if(!_lsSet(bioGelKey(fecha), durl)){
+    if(!_lsSet(bioGelKey(sid), durl)){
       toast("No se pudo guardar la foto (almacenamiento lleno). Libera espacio e inténtalo de nuevo.","err",6000); return;
     }
     renderBioReport();
@@ -7702,14 +8059,14 @@ function bioGelPick(input){
 
 // ── Handlers del bloque de reporte ─────────────────────
 function bioRptSet(field, val){
-  const fecha = bioGridFecha();
-  const r = loadBioRpt(fecha);
+  const sid = bioSidActivo();
+  const r = loadBioRpt(sid);
   // Tope amplio a propósito: procedencia, método y descripción son PÁRRAFOS del informe, no
   // etiquetas. Con el tope general de 200 el Método se guardaba CORTADO —los dos métodos del
   // laboratorio suman 330 caracteres— y el PDF salía con la frase partida a media palabra
   // ("…soluciones lisis y etanol"). Medido en el motor el 2026-08-18.
   r[field] = sanitizeStr(val, 2000);
-  saveBioRpt(fecha, r);
+  saveBioRpt(sid, r);
 }
 /** Pone en el campo Método el texto elegido en el desplegable, o los dos si se elige «Los
  *  dos». REEMPLAZA lo que hubiera: el campo sigue siendo libre, así que después se edita a
@@ -7731,47 +8088,73 @@ function renderBioReport(){
   const box = document.getElementById("bio-rpt-box");
   if(!box) return;
   const fecha = bioGridFecha();
-  box.outerHTML = _bioReportBlock(fecha, _collectBioGrid(fecha));
+  box.outerHTML = _bioReportBlock(fecha, _collectBioGrid(), bioSidActivo(fecha));
 }
 function bioMuestraToggle(idx){
-  const fecha = bioGridFecha();
+  const sid = bioSidActivo();
   const v = BIO_MUESTRA_OPTS[idx];
   if(v == null) return;
-  const r = loadBioRpt(fecha);
+  const r = loadBioRpt(sid);
   const i = r.muestras.indexOf(v);
   if(i === -1) r.muestras.push(v); else r.muestras.splice(i, 1);
-  saveBioRpt(fecha, r);
+  saveBioRpt(sid, r);
   renderBioReport();
 }
+const BIO_TEC_QPCR = "reacción en cadena de la polimerasa cuantitativa en tiempo real (qPCR)";
+const BIO_TEC_PCR  = "reacción en cadena de la polimerasa (PCR)";
+
+/** Una frase: "Detección de <patógenos>, mediante <técnica>."
+ *  Con un solo patógeno se contrae el artículo ("Detección del Virus…"), que es
+ *  como se redacta el informe; con varios se enumera, como se venía haciendo. */
+function _bioDescFrase(pats, tecnica){
+  if(!pats.length) return "";
+  const sujeto = pats.length === 1
+    ? pats[0].a + " " + pats[0].n
+    : "de " + pats.map(p => p.n).join(", ");
+  return "Detección " + sujeto + ", mediante " + tecnica + ".";
+}
+
 /** Descripción propuesta a partir de los patógenos CON resultado ese día.
- *  La técnica (PCR/qPCR) no se puede deducir de la grilla: se propone PCR y el
- *  analista la corrige si corrió qPCR. Por eso el campo es editable. */
+ *
+ *  La técnica SÍ se deduce de la grilla desde 2026-08-18: una fila con Ciclo de
+ *  amplificación o Copias/μl es una corrida de qPCR (típicamente WSSV o IHHNV);
+ *  sin esos datos, PCR convencional. Un mismo día puede llevar las dos técnicas,
+ *  así que se redactan DOS frases y cada patógeno cae en la suya: afirmar qPCR
+ *  para todo el día pondría en el informe una técnica que no se corrió.
+ *  Un patógeno ensayado por ambas vías aparece en la frase de qPCR, que es la
+ *  que describe la medición cuantitativa que se está reportando.
+ *  El campo sigue siendo editable: esto es una propuesta, no un candado. */
 function bioDescAuto(rows){
-  const presentes = BIO_PATOGENOS.filter(p => (rows||[]).some(r => String((r && r[p.k]) || "").trim() !== ""));
-  if(!presentes.length) return "";
-  return "Detección de " + presentes.map(p => p.n).join(", ")
-    + ", mediante reacción en cadena de la polimerasa (PCR).";
+  const list  = rows || [];
+  const qRows = list.filter(_bioEsQpcr);
+  const pRows = list.filter(r => !_bioEsQpcr(r));
+  const conDato = (rs, p) => rs.some(r => String((r && r[p.k]) || "").trim() !== "");
+
+  const enQ = BIO_PATOGENOS.filter(p => conDato(qRows, p));
+  const enP = BIO_PATOGENOS.filter(p => conDato(pRows, p) && enQ.indexOf(p) === -1);
+  return [_bioDescFrase(enQ, BIO_TEC_QPCR), _bioDescFrase(enP, BIO_TEC_PCR)]
+    .filter(Boolean).join(" ");
 }
 function bioDescReset(){
-  const fecha = bioGridFecha();
-  const r = loadBioRpt(fecha);
-  r.desc = bioDescAuto(_collectBioGrid(fecha));
-  saveBioRpt(fecha, r);
+  const sid = bioSidActivo();
+  const r = loadBioRpt(sid);
+  r.desc = bioDescAuto(_collectBioGrid());
+  saveBioRpt(sid, r);
   renderBioReport();
   toast("Descripción regenerada desde los resultados del día","ok",2600);
 }
 
 // ── Bloque de reporte en pantalla ──────────────────────
-function _bioReportBlock(fecha, rows){
-  const r = loadBioRpt(fecha);
-  const gel = bioGelGet(fecha);
+function _bioReportBlock(fecha, rows, sid){
+  const r = loadBioRpt(sid);
+  const gel = bioGelGet(sid);
   const descVal = r.desc || bioDescAuto(rows);
   const chips = BIO_MUESTRA_OPTS.map((o, i) =>
     `<span class="mic-colchip${r.muestras.indexOf(o) === -1 ? ' off' : ''}" onclick="bioMuestraToggle(${i})" title="Clic para incluir o quitar esta muestra del PDF">${escapeHtml(o)}</span>`).join("");
   const gelBox = gel
     ? `<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
          <img src="${gel}" alt="Gel de agarosa" style="max-width:220px;max-height:150px;border:1px solid var(--bdr);border-radius:6px">
-         <button class="btn bd" type="button" onclick="bioGelClear('${escapeHtml(fecha)}')">🗑 Quitar foto</button>
+         <button class="btn bd" type="button" onclick="bioGelClear('${escapeHtml(sid)}')">🗑 Quitar foto</button>
        </div>`
     : `<input type="file" accept="image/*" onchange="bioGelPick(this)" style="font-size:11px">`;
   return `<div class="fc" id="bio-rpt-box" style="margin-top:12px;background:#faf5ff;border-color:#e9d5ff">
@@ -7798,7 +8181,7 @@ function _bioReportBlock(fecha, rows){
       <div class="mf" style="margin-bottom:8px"><label>Descripción del análisis
         <button class="btn bo" type="button" onclick="bioDescReset()" style="margin-left:6px;padding:1px 7px;font-size:10px" title="Rehacerla a partir de los patógenos con resultado en la grilla">↻ Regenerar</button></label>
         <textarea oninput="bioRptSet('desc',this.value)" style="width:100%;min-height:52px">${escapeHtml(descVal)}</textarea>
-        <div style="font-size:10px;color:var(--tx3);margin-top:3px">Se propone desde los patógenos con resultado del día y dice <b>PCR</b>. Si corriste <b>qPCR</b>, corrígelo aquí.</div></div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:3px">Se propone desde los patógenos con resultado del día. Las filas con <b>Ciclo de amplificación</b> o <b>Copias/μl</b> se redactan como <b>qPCR</b>; el resto, como <b>PCR</b>. Puedes editarla.</div></div>
       <div class="mf"><label>Foto del gel de agarosa</label>${gelBox}
         <div style="font-size:10px;color:var(--tx3);margin-top:3px">Se guarda solo en este dispositivo para armar el PDF. No viaja a Google Sheets.</div></div>
     </div></div>`;
@@ -7824,8 +8207,15 @@ td.l{text-align:left}
 .bp-gel h3{font-size:10pt;margin:0 0 6px;text-align:center}
 .bp-gel img{display:block;margin:0 auto;max-width:100%;max-height:105mm;border:1px solid #94a3b8}
 .bp-foot{margin-top:16px;display:flex;justify-content:space-between;align-items:flex-end;font-size:7pt;color:#475569}
+/* Positivos en rojo: en un informe de 30 filas y 6 patógenos, encontrarlos leyendo
+   celda a celda es justo lo que se le pide al ojo que no haga. El color se imprime
+   (print-color-adjust:exact, arriba) y el texto sigue diciendo "Positivo", así que en
+   blanco y negro no se pierde nada. */
+td.bp-pos{background:#fee2e2;color:#991b1b;font-weight:700}
+td.bp-alto{color:#991b1b;font-weight:700}
 tr.bp-sum td{background:#f1f5f9;font-weight:700}
 tr.bp-sum td.k{text-align:left}
+tr.bp-sum td.bp-pos{background:#fecaca}
 .bp-sign{text-align:center;min-width:150px;padding-top:3px;font-weight:700;color:#0f172a}
 `;
 function downloadBioPDF(){
@@ -7833,29 +8223,57 @@ function downloadBioPDF(){
   const recs  = _collectBioGrid(fecha);
   const rows  = recs.map(x => x.data || x);
   if(!rows.length){ toast("No hay filas con datos en la grilla de "+fecha,"warn",4000); return; }
-  const r = loadBioRpt(fecha);
-  const gel = bioGelGet(fecha);
+  const sid = bioSidActivo(fecha);
+  const r = loadBioRpt(sid);
+  const gel = bioGelGet(sid);
   const fFmt = (f)=> isValidDate(f) ? f : "—";
   const tsStr = new Date().toLocaleString("es-EC",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
   const codigo = genCodigo("biomol", BIO_MOD, fecha);
-  const fileName = "Reporte_Molecular_"+fecha;
+  // Con varios análisis por día el nombre tiene que distinguirlos, o el segundo PDF
+  // sobrescribe al primero en la carpeta de descargas.
+  const _slug = String(bioSesNombre(sid, fecha)).replace(/[^0-9A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+/g, "_").replace(/^_|_$/g, "");
+  const fileName = "Reporte_Molecular_"+fecha+(_slug ? "_"+_slug : "");
 
   // Columnas: solo las que tienen algún dato, para no imprimir columnas vacías.
-  const cols = BIO_GRID_COLS.filter(c => c.k !== "fecha" && rows.some(d => String(d[c.k]||"").trim() !== ""));
+  // Se omiten la Fecha (va en la cabecera del informe) y los metadatos como la
+  // Sesión, que identifica el análisis para la hoja pero no es un resultado.
+  const base = BIO_GRID_COLS.filter(c => c.k !== "fecha" && !c.meta && rows.some(d => String(d[c.k]||"").trim() !== ""));
+  // «Nivel» es una columna DERIVADA: existe sólo en el informe —no en la grilla ni en
+  // la hoja— y se calcula de Copias/μl, así que aparece únicamente si esa columna se
+  // imprime. Va pegada a ella para que el número y su lectura se vean juntos.
+  const cols = [];
+  base.forEach(c => {
+    cols.push(c);
+    if(c.k === "copias") cols.push({ k:"__nivel", label:"Nivel", derivada:true });
+  });
+  const valorDe = (d, c) => c.derivada ? bioNivelCopias(d.copias) : String(d[c.k]||"").trim();
+  const claseDe = (c, v) => {
+    if(c.k==="codigo"||c.k==="lugar"||c.k==="otros") return ' class="l"';
+    if(esPatK(c.k) && _bioEsPositivo(v)) return ' class="bp-pos"';
+    if(c.derivada && v === "Alto") return ' class="bp-alto"';
+    return "";
+  };
   const ths = cols.map(c=>`<th>${escapeHtml(c.label)}</th>`).join("");
   const trs = rows.map((d,i)=>`<tr><td>${i+1}</td>${cols.map(c=>{
-    const v = String(d[c.k]||"").trim();
-    return `<td${c.k==="codigo"||c.k==="lugar"||c.k==="otros"?' class="l"':""}>${escapeHtml(v||"—")}</td>`;
+    const v = valorDe(d, c);
+    return `<td${claseDe(c, v)}>${escapeHtml(v||"—")}</td>`;
   }).join("")}</tr>`).join("");
 
   // ── Filas de resumen bajo los resultados ──
-  // Los patógenos son las 6 ÚLTIMAS columnas de BIO_GRID_COLS, así que en `cols`
-  // (que conserva el orden) quedan al final: la etiqueta ocupa las de delante.
-  const patKeys = BIO_PATOGENOS.map(p => p.k);
-  const colsPat = cols.filter(c => patKeys.indexOf(c.k) !== -1);
-  const nPre    = cols.length - colsPat.length;
-  const sumRow = (lbl, fn) => `<tr class="bp-sum"><td class="k" colspan="${1 + nPre}">${escapeHtml(lbl)}</td>`
-    + colsPat.map(c => `<td>${escapeHtml(fn(c))}</td>`).join("") + `</tr>`;
+  // La etiqueta ocupa las columnas ANTERIORES al bloque de patógenos y después va
+  // una celda por cada columna restante, rellena sólo si es de patógeno. Antes se
+  // daba por hecho que los patógenos eran las últimas columnas de la tabla; desde
+  // que Ciclo de amplificación y Copias/μl van detrás, esa cuenta dejaba la fila
+  // de resumen dos celdas corta y descuadraba el pie del PDF.
+  const esPat   = (c) => esPatK(c.k);
+  const colsPat = cols.filter(esPat);
+  const iPrimerPat = cols.findIndex(esPat);
+  const nPre    = iPrimerPat === -1 ? cols.length : iPrimerPat;
+  const colsTras = iPrimerPat === -1 ? [] : cols.slice(iPrimerPat);
+  // `fnPat` rellena las columnas de patógeno; `fnOtra` (opcional) las de detrás —hoy
+  // Ciclo de amplificación y Copias/μl, que en las filas de control llevan valor propio.
+  const sumRow = (lbl, fnPat, fnOtra) => `<tr class="bp-sum"><td class="k" colspan="${1 + nPre}">${escapeHtml(lbl)}</td>`
+    + colsTras.map(c => `<td>${escapeHtml(esPat(c) ? fnPat(c) : (fnOtra ? fnOtra(c) : ""))}</td>`).join("") + `</tr>`;
   // % de positivos POR PATÓGENO. El denominador son las muestras analizadas para
   // ESE patógeno (celdas con dato), no todas las filas: una fila que no se ensayó
   // para WSSV no debe diluir su porcentaje. Entero, redondeado.
@@ -7864,8 +8282,14 @@ function downloadBioPDF(){
     if(!vals.length) return "—";
     return Math.round(vals.filter(_bioEsPositivo).length / vals.length * 100) + "%";
   };
+  // Los porcentajes no se cuantifican: sus celdas de Ciclo/Copias quedan en blanco.
+  // Cada control, en cambio, lleva su propio valor bajo esas dos columnas.
+  // El Nivel del control se DERIVA de sus copias, igual que en las filas de datos: así
+  // el Control Positivo no puede acabar diciendo una carga y un nivel que no cuadren.
+  const otraDeControl = (ct) => (c) => c.derivada ? bioNivelCopias(ct.copias) : (ct[c.k] || "");
   const resumen = colsPat.length
-    ? sumRow("Porcentajes (%)", pctPat) + BIO_CONTROLES.map(n => sumRow(n, () => BIO_CONTROL_VAL)).join("")
+    ? sumRow("Porcentajes (%)", pctPat)
+      + BIO_CONTROLES.map(ct => sumRow(ct.n, () => BIO_CONTROL_VAL, otraDeControl(ct))).join("")
     : "";
 
   const desc = r.desc || bioDescAuto(rows);
@@ -7906,20 +8330,29 @@ function renderBiomol(){
   if(!fp) return;
   const fecha = bioGridFecha();
   _bioRenderedFecha = fecha;               // día actualmente en pantalla (commit al cambiar de día)
+  _bioMigrarSesiones();                    // lo guardado antes de existir los análisis
+  const sid = bioSidActivo(fecha);
   const list  = loadBio();                 // se parsea UNA vez y se reutiliza abajo
+  const mio = (r) => r && r.data && r.data.fecha === fecha && r.data.sid === sid;
   const byFila = {};
-  list.forEach(r => { if(r && r.data && r.data.fecha === fecha && r.data.fila != null) byFila[String(r.data.fila)] = r; });
-  const pending = list.filter(r => r.data && r.data.fecha === fecha && !r.synced).length;
-  const nRows = _bioShownRows(fecha, list);
+  list.forEach(r => { if(mio(r) && r.data.fila != null) byFila[String(r.data.fila)] = r; });
+  const pending = list.filter(r => mio(r) && !r.synced).length;
+  const nRows = _bioShownRows(fecha, list, sid);
 
-  const ths = BIO_GRID_COLS.map(c => `<th>${escapeHtml(c.label)}</th>`).join("");
+  // Análisis del día y cuántas filas guardadas tiene cada uno (para el selector).
+  const sesDelDia = bioSesDelDia(fecha);
+  const porSid = {};
+  list.forEach(r => { if(r && r.data && r.data.sid) porSid[r.data.sid] = (porSid[r.data.sid] || 0) + 1; });
+
+  // La Sesión viaja a la hoja pero no se teclea: no se pinta como columna.
+  const ths = BIO_GRID_CELDAS.map(c => `<th>${escapeHtml(c.label)}</th>`).join("");
 
   let rowsHtml = "";
   for(let fila=1; fila<=nRows; fila++){
     const r  = byFila[String(fila)];
     const d  = r ? r.data : {};
     const st = r ? (r.synced ? "✅" : "⏳") : "○";
-    const cells = BIO_GRID_COLS.map((c, ci) => {
+    const cells = BIO_GRID_CELDAS.map((c, ci) => {
       if(c.k === "fecha"){
         return `<td><input class="pinp" type="text" name="bg_${fila}_fecha" data-r="${fila-1}" data-c="0" onpaste="madGridPaste(event,'biomol')" oninput="_bioDirty()" value="${escapeHtml(fecha)}" title="La fecha de todas las filas la define el selector de día (este valor se normaliza al guardar)" style="min-width:88px;background:#f0fdf4;color:#065f46;font-weight:600"></td>`;
       }
@@ -7942,16 +8375,24 @@ function renderBiomol(){
   fp.innerHTML = `<div class="fc">
     <div class="fc-h">
       <div class="fc-t">🧬 Biomol · Diagnóstico Molecular</div>
-      <span class="ssp ssp-mt">${escapeHtml(fecha)} · ${pending ? pending+" pendiente(s)" : "sin pendientes"}</span>
+      <span class="ssp ssp-mt">${escapeHtml(bioSesNombre(sid, fecha))} · ${escapeHtml(fecha)} · ${pending ? pending+" pendiente(s)" : "sin pendientes"}</span>
     </div>
     <div class="fc-b">
       <div class="meta" style="margin-bottom:8px">
         <div class="mf"><label>Fecha (día)</label>
           <input type="date" id="bio-grid-fecha" value="${escapeHtml(fecha)}" onchange="bioFechaChange()"></div>
+        <div class="mf"><label>Análisis del día
+          <button class="btn bo" type="button" onclick="bioSesRenombrar()" style="margin-left:6px;padding:1px 7px;font-size:10px" title="Ponerle nombre a este análisis. Es OPCIONAL: si no se lo pones, se numera solo.">✏️ Nombre (opcional)</button></label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <select onchange="bioSesChange(this)" style="flex:1;min-width:150px" title="Cada análisis del día es independiente: tiene su propia grilla, su propio reporte y su propio PDF. Al sincronizar se abre uno nuevo solo.">
+              ${sesDelDia.map(x => `<option value="${escapeHtml(x.sid)}"${x.sid===sid?" selected":""}>${escapeHtml(bioSesNombre(x.sid, fecha))} (${(porSid[x.sid]||0)} filas)</option>`).join("")}
+            </select>
+            <button class="btn bo" type="button" onclick="bioNuevoAnalisis()" title="Dejar esta grilla aparcada y empezar otra sin enviarla. En el flujo normal no hace falta: sincronizar ya abre una nueva.">➕ En blanco</button>
+          </div></div>
       </div>
       <div style="background:#fdf2f8;border:1.5px solid #fbcfe8;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#9d174d;display:flex;align-items:center;gap:8px">
         <span style="font-size:16px">🧬</span>
-        <span>Pega tu tabla del PDF (copiar/pegar desde Excel). La columna <b>Fecha</b> la define el día de arriba. Al sincronizar se <b>reemplazan</b> en la hoja todas las filas de esa fecha (sin duplicados). Guarda antes de cambiar de día.</span>
+        <span>Pega tu tabla del PDF (copiar/pegar desde Excel). La columna <b>Fecha</b> la define el día de arriba. <b>Cada tanda que sincronizas queda como un análisis aparte</b> y la grilla se abre en blanco para la siguiente: puedes subir reproductores y luego larvas el mismo día sin que uno borre al otro. Para corregir una tanda ya enviada, vuelve a ella con <b>👁</b> en el historial.</span>
       </div>
       <div class="tw"><table class="ft" style="font-size:10.5px">
         <thead><tr>
@@ -7966,11 +8407,11 @@ function renderBiomol(){
       </div>
       <div class="sa" style="margin-top:12px">
         <div class="sa-info">
-          <span>💾 Guarda para persistir las muestras del ${escapeHtml(fecha)} · máx ${BIO_GRID_MAX_ROWS} filas</span>
-          <span id="bio-saved-ind" style="font-weight:600">${_bioSavedText(fecha, list)}</span>
+          <span>💾 Guarda para persistir «${escapeHtml(bioSesNombre(sid, fecha))}» del ${escapeHtml(fecha)} · máx ${BIO_GRID_MAX_ROWS} filas</span>
+          <span id="bio-saved-ind" style="font-weight:600">${_bioSavedText(fecha, list, sid)}</span>
         </div>
         <div class="sa-btns">
-          <button class="btn bd" type="button" onclick="clearBioGrid()" title="Borrar muestras locales de este día">🗑 Borrar día</button>
+          <button class="btn bd" type="button" onclick="clearBioGrid()" title="Borrar este análisis del equipo (no afecta a Google Sheets)">🗑 Borrar análisis</button>
           ${bioRecBtn}
           <button class="btn bs" type="button" onclick="downloadBioPDF()" title="Genera el Reporte de Análisis Molecular con las filas de este día">📄 PDF</button>
           <button class="btn bs" type="button" onclick="saveBioGridLocal()">💾 Guardar local</button>
@@ -7978,10 +8419,10 @@ function renderBiomol(){
         </div>
       </div>
       <div style="margin-top:10px;font-size:10.5px;color:var(--tx3);line-height:1.6">
-        ℹ️ La grilla es del día seleccionado. Al sincronizar se reemplazan en la hoja <code>BIOMOL</code> todas las filas de esa fecha por las de la grilla (editar y reenviar no duplica). Empieza con ${BIO_GRID_DEFAULT_ROWS} filas; agrega de ${BIO_GRID_ROW_STEP} en ${BIO_GRID_ROW_STEP} hasta ${BIO_GRID_MAX_ROWS}. Las filas vacías no se envían.
+        ℹ️ La grilla es de <b>un análisis</b> del día seleccionado. Al sincronizar se reemplazan en la hoja <code>BIOMOL</code> sólo las filas de ese análisis (editar y reenviar no duplica, y no borra los demás análisis del día) y se abre una grilla nueva. El nombre del análisis es opcional. Empieza con ${BIO_GRID_DEFAULT_ROWS} filas; agrega de ${BIO_GRID_ROW_STEP} en ${BIO_GRID_ROW_STEP} hasta ${BIO_GRID_MAX_ROWS}. Las filas vacías no se envían.
       </div>
-      ${_bioReportBlock(fecha, Object.keys(byFila).map(k => byFila[k].data))}
-      ${_bioHistBlock(fecha, list)}
+      ${_bioReportBlock(fecha, Object.keys(byFila).map(k => byFila[k].data), sid)}
+      ${_bioHistBlock(fecha, list, sid)}
     </div>
   </div>`;
   fixupLabels(fp);
@@ -12165,10 +12606,16 @@ function doPost(e) {
     }
     else if (isAlgas)  result = upsertAlgasRows(ws, rows);
     else if (isBiomol) {
-      // BIOMOL: la grilla del día pide reemplazo por fecha (borra+reescribe esa
-      // fecha → sin duplicados). Sin esa marca → append puro (compatibilidad).
-      if (payload.replaceDate) result = replaceByDateRows(ws, rows, (payload.dateCol || 0), payload.replaceDate);
-      else                     result = appendRows(ws, rows);
+      // BIOMOL: reemplazo por SESIÓN (columna "Sesión"), igual que Lab_Algas y
+      // Microbiología. Un mismo día lleva varios análisis independientes —repro-
+      // ductores por la mañana, larvas por la tarde— y cada uno se sube por
+      // separado: reemplazar por FECHA hacía que el último borrase a los anteriores.
+      // Se conserva la rama por fecha, que el cliente todavía usa una vez por día
+      // heredado para migrar sus filas (las escritas antes de existir la columna
+      // Sesión no tienen con qué emparejarse). Sin ninguna marca → append puro.
+      if (payload.replaceKey && Array.isArray(payload.keyCols)) result = replaceByKeyRows(ws, rows, payload.keyCols);
+      else if (payload.replaceDate) result = replaceByDateRows(ws, rows, (payload.dateCol || 0), payload.replaceDate);
+      else                          result = appendRows(ws, rows);
     }
     else if (isAst)    result = upsertAstRows(ws, rows);
     // Registro_Desinfección: upsert por clave compuesta Fecha+Módulo+Tipo de
@@ -13223,6 +13670,150 @@ function evPortalPage(t, m) {
   return HtmlService.createHtmlOutput(h)
     .setTitle("Evidencias Larvicultura")
     .addMetaTag("viewport", "width=device-width,initial-scale=1");
+}
+
+// ── Mantenimiento · saneamiento del As Técnico (Registro_Supervisión) ─────
+// NO se expone por doGet/doPost: se ejecuta A MANO desde el editor de Apps
+// Script. Es deliberado — doPost ya escribe sin autenticación (SHARED_TOKEN
+// vacío), y una utilidad que reescribe IDs y borra filas no debe además
+// alcanzarse desde la URL pública.
+//
+// Repara el daño del despliegue anterior, que recortaba cada fila del AsT a 25
+// columnas y perdía el ID por el camino. Hace DOS cosas y nada más:
+//
+//   1. Rellena la columna "ID" de las filas que la tienen vacía. Sin ID la fila
+//      es inalcanzable para upsertAstRows: re-sincronizar ese registro no la
+//      actualiza, la DUPLICA.
+//   2. Borra las filas exactamente duplicadas — mismo ID y mismo contenido en
+//      todas las columnas. Sólo esas: si dos filas comparten ID pero difieren
+//      en algo, se dejan quietas y se informan, porque elegir cuál sobra no es
+//      decisión de un script.
+//
+// No toca ninguna otra columna, no reordena filas y no cambia formatos. Ninguna
+// vista del tablero lee la columna ID, así que la visualización no se entera.
+// Es IDEMPOTENTE — la segunda ejecución no encuentra nada que hacer.
+//
+// Uso desde el editor de Apps Script:
+//   sanearAstIds()      → SIMULACRO: informa en el registro y NO escribe nada.
+//   sanearAstIds(true)  → aplica los cambios.
+function sanearAstIds(aplicar) {
+  var APLICAR = (aplicar === true);
+  var NOMBRE  = "Registro_Supervisión";
+  var ss = SpreadsheetApp.openById(SS_ID);
+  var ws = ss.getSheetByName(NOMBRE);
+  if (!ws) { Logger.log("ABORTADO: no existe la hoja " + NOMBRE); return null; }
+
+  // El mismo lock que usa doPost: si alguien está sincronizando, se espera.
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(25000); }
+  catch (eLock) { Logger.log("ABORTADO: la hoja está ocupada, reintenta en un momento."); return null; }
+
+  try {
+    var data = ws.getDataRange().getValues();
+    if (data.length < 2) { Logger.log("La hoja no tiene filas de datos."); return null; }
+
+    var hdr = data[0], idCol = -1;
+    for (var h = 0; h < hdr.length; h++) {
+      if (String(hdr[h] == null ? "" : hdr[h]).trim() === "ID") { idCol = h; break; }
+    }
+    if (idCol < 0) { Logger.log("ABORTADO: la hoja no tiene columna ID."); return null; }
+
+    // ── Inventario: qué IDs están en uso, qué filas no tienen ninguno ──
+    var usados = {}, porId = {}, vacias = [];
+    for (var i = 1; i < data.length; i++) {
+      var id = String(data[i][idCol] == null ? "" : data[i][idCol]).trim();
+      if (!id) { vacias.push(i); continue; }
+      usados[id] = true;
+      if (!porId[id]) porId[id] = [];
+      porId[id].push(i);
+    }
+
+    // ── Duplicados: exactos a borrar, ambiguos sólo a informar ──
+    var aBorrar = [], dudosos = [];
+    for (var did in porId) {
+      var filas = porId[did];
+      if (filas.length < 2) continue;
+      var base = data[filas[0]];          // la primera se conserva siempre
+      for (var k = 1; k < filas.length; k++) {
+        if (_astFilasIguales(base, data[filas[k]])) aBorrar.push(filas[k]);
+        else dudosos.push(did + " (filas " + (filas[0] + 1) + " y " + (filas[k] + 1) + ")");
+      }
+    }
+
+    // ── IDs nuevos para las filas huérfanas ──
+    var nuevos = [];
+    for (var v = 0; v < vacias.length; v++) {
+      var nid = _astNuevoId(usados);
+      usados[nid] = true;
+      nuevos.push({ fila: vacias[v] + 1, id: nid });   // fila de HOJA (1-indexed)
+    }
+
+    // ── Informe ──
+    Logger.log((APLICAR ? "APLICANDO" : "SIMULACRO (no se escribe nada)") + " · hoja " + NOMBRE);
+    Logger.log("Filas de datos: " + (data.length - 1) + " · columna ID: " + (idCol + 1));
+    Logger.log("Filas sin ID: " + nuevos.length);
+    for (var n = 0; n < nuevos.length; n++) Logger.log("   fila " + nuevos[n].fila + " -> " + nuevos[n].id);
+    Logger.log("Filas duplicadas exactas a borrar: " + aBorrar.length);
+    for (var b = 0; b < aBorrar.length; b++) Logger.log("   fila " + (aBorrar[b] + 1) + " (ID " + _astCelda(data[aBorrar[b]][idCol]) + ")");
+    if (dudosos.length) {
+      Logger.log("ATENCIÓN · mismo ID con contenido distinto (NO se tocan, revísalas a mano): " + dudosos.length);
+      for (var d = 0; d < dudosos.length; d++) Logger.log("   " + dudosos[d]);
+    }
+    if (!APLICAR) {
+      Logger.log("Nada escrito. Ejecuta sanearAstIds(true) para aplicarlo.");
+      return { simulacro: true, sinId: nuevos.length, duplicadas: aBorrar.length, dudosas: dudosos.length };
+    }
+
+    // ── Aplicar: PRIMERO los IDs (los números de fila aún son válidos) y
+    // DESPUÉS los borrados de abajo arriba, que así no desplazan lo ya escrito.
+    for (var w = 0; w < nuevos.length; w++) {
+      ws.getRange(nuevos[w].fila, idCol + 1).setValue(nuevos[w].id);
+    }
+    aBorrar.sort(function(a, b) { return b - a; });
+    for (var x = 0; x < aBorrar.length; x++) ws.deleteRow(aBorrar[x] + 1);
+    SpreadsheetApp.flush();
+
+    Logger.log("LISTO · " + nuevos.length + " ID escritos · " + aBorrar.length + " fila(s) duplicada(s) borrada(s).");
+    return { simulacro: false, sinId: nuevos.length, duplicadas: aBorrar.length, dudosas: dudosos.length };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ¿Dos filas de la hoja son la MISMA fila? Compara celda a celda, tolerando que
+// una traiga menos columnas que la otra (las que falten cuentan como vacías).
+function _astFilasIguales(a, b) {
+  var n = Math.max(a.length, b.length);
+  for (var i = 0; i < n; i++) {
+    if (_astCelda(i < a.length ? a[i] : "") !== _astCelda(i < b.length ? b[i] : "")) return false;
+  }
+  return true;
+}
+// Normaliza una celda a texto comparable. Date -> yyyy-MM-dd, que es como las
+// devuelve getValues() y como las escribe el cliente.
+function _astCelda(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  return String(v == null ? "" : v).trim();
+}
+
+// ID con el MISMO formato que genera la app (base36 del reloj + 4 al azar), para
+// que una fila saneada no se distinga de una nacida en el cliente. Se exige al
+// menos una letra: un ID de puros dígitos lo guardaría la hoja como NÚMERO y
+// dejaría de casar con el texto que envía el cliente en el upsert.
+function _astNuevoId(usados) {
+  for (var intento = 0; intento < 200; intento++) {
+    var suf = "";
+    while (suf.length < 4) suf += Math.random().toString(36).slice(2);
+    var id = Date.now().toString(36) + suf.slice(0, 4);
+    if (_astTieneLetra(id) && !usados[id]) return id;
+  }
+  var n = 0;                                  // salida de emergencia, sigue siendo único
+  while (usados["ast" + n]) n++;
+  return "ast" + n;
+}
+function _astTieneLetra(s) {
+  for (var i = 0; i < s.length; i++) { var c = s.charAt(i); if (c >= "a" && c <= "z") return true; }
+  return false;
 }
 
 // ── Respuesta JSON ────────────────────────────────────────
@@ -14690,7 +15281,12 @@ const STORAGE_NAMESPACES = {
   cs:       { prefix: CS_PRE,                           desc: "Cantidad Sembrada por módulo (sin TTL — sólo local)" },
   ton:      { prefix: TON_PRE,                          desc: "Toneladas por tanque (Despacho — sin TTL — sólo local)" },
   mad:      { prefix: MAD_PRE,                          desc: "Maduración (Salas/Tanques/Lotes — sin TTL)" },
-  biomol:   { key:    BIO_REC_KEY, ttl: BIO_TTL,        desc: "Biomol (48 h)" },
+  biomol:   { key:    BIO_REC_KEY, ttl: BIO_TTL,        desc: "Biomol · muestras (48 h)" },
+  // Los análisis del día van APARTE de sus filas. Sin esta entrada el backup se
+  // llevaba las muestras pero no a qué análisis pertenece cada una: al restaurar,
+  // sus sid apuntarían a análisis inexistentes, el historial saldría vacío y el
+  // purgado daría sus reportes por huérfanos.
+  bioses:   { key:    BIO_SES_KEY, ttl: BIO_TTL,        desc: "Biomol · análisis del día (48 h)" },
   ast:      { key:    AST_REC_KEY, ttl: AST_TTL,        desc: "AsT (48h, máx 40)" },
   hist:     { prefix: HIST_PRE,    ttl: HIST_TTL,       desc: "Historial general (60d, máx 200)" },
   note:     { prefix: NPRE,                             desc: "Notas por módulo (sin TTL)" },

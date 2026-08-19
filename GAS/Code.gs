@@ -291,10 +291,16 @@ function doPost(e) {
     }
     else if (isAlgas)  result = upsertAlgasRows(ws, rows);
     else if (isBiomol) {
-      // BIOMOL: la grilla del día pide reemplazo por fecha (borra+reescribe esa
-      // fecha → sin duplicados). Sin esa marca → append puro (compatibilidad).
-      if (payload.replaceDate) result = replaceByDateRows(ws, rows, (payload.dateCol || 0), payload.replaceDate);
-      else                     result = appendRows(ws, rows);
+      // BIOMOL: reemplazo por SESIÓN (columna "Sesión"), igual que Lab_Algas y
+      // Microbiología. Un mismo día lleva varios análisis independientes —repro-
+      // ductores por la mañana, larvas por la tarde— y cada uno se sube por
+      // separado: reemplazar por FECHA hacía que el último borrase a los anteriores.
+      // Se conserva la rama por fecha, que el cliente todavía usa una vez por día
+      // heredado para migrar sus filas (las escritas antes de existir la columna
+      // Sesión no tienen con qué emparejarse). Sin ninguna marca → append puro.
+      if (payload.replaceKey && Array.isArray(payload.keyCols)) result = replaceByKeyRows(ws, rows, payload.keyCols);
+      else if (payload.replaceDate) result = replaceByDateRows(ws, rows, (payload.dateCol || 0), payload.replaceDate);
+      else                          result = appendRows(ws, rows);
     }
     else if (isAst)    result = upsertAstRows(ws, rows);
     // Registro_Desinfección: upsert por clave compuesta Fecha+Módulo+Tipo de
@@ -1349,6 +1355,150 @@ function evPortalPage(t, m) {
   return HtmlService.createHtmlOutput(h)
     .setTitle("Evidencias Larvicultura")
     .addMetaTag("viewport", "width=device-width,initial-scale=1");
+}
+
+// ── Mantenimiento · saneamiento del As Técnico (Registro_Supervisión) ─────
+// NO se expone por doGet/doPost: se ejecuta A MANO desde el editor de Apps
+// Script. Es deliberado — doPost ya escribe sin autenticación (SHARED_TOKEN
+// vacío), y una utilidad que reescribe IDs y borra filas no debe además
+// alcanzarse desde la URL pública.
+//
+// Repara el daño del despliegue anterior, que recortaba cada fila del AsT a 25
+// columnas y perdía el ID por el camino. Hace DOS cosas y nada más:
+//
+//   1. Rellena la columna "ID" de las filas que la tienen vacía. Sin ID la fila
+//      es inalcanzable para upsertAstRows: re-sincronizar ese registro no la
+//      actualiza, la DUPLICA.
+//   2. Borra las filas exactamente duplicadas — mismo ID y mismo contenido en
+//      todas las columnas. Sólo esas: si dos filas comparten ID pero difieren
+//      en algo, se dejan quietas y se informan, porque elegir cuál sobra no es
+//      decisión de un script.
+//
+// No toca ninguna otra columna, no reordena filas y no cambia formatos. Ninguna
+// vista del tablero lee la columna ID, así que la visualización no se entera.
+// Es IDEMPOTENTE — la segunda ejecución no encuentra nada que hacer.
+//
+// Uso desde el editor de Apps Script:
+//   sanearAstIds()      → SIMULACRO: informa en el registro y NO escribe nada.
+//   sanearAstIds(true)  → aplica los cambios.
+function sanearAstIds(aplicar) {
+  var APLICAR = (aplicar === true);
+  var NOMBRE  = "Registro_Supervisión";
+  var ss = SpreadsheetApp.openById(SS_ID);
+  var ws = ss.getSheetByName(NOMBRE);
+  if (!ws) { Logger.log("ABORTADO: no existe la hoja " + NOMBRE); return null; }
+
+  // El mismo lock que usa doPost: si alguien está sincronizando, se espera.
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(25000); }
+  catch (eLock) { Logger.log("ABORTADO: la hoja está ocupada, reintenta en un momento."); return null; }
+
+  try {
+    var data = ws.getDataRange().getValues();
+    if (data.length < 2) { Logger.log("La hoja no tiene filas de datos."); return null; }
+
+    var hdr = data[0], idCol = -1;
+    for (var h = 0; h < hdr.length; h++) {
+      if (String(hdr[h] == null ? "" : hdr[h]).trim() === "ID") { idCol = h; break; }
+    }
+    if (idCol < 0) { Logger.log("ABORTADO: la hoja no tiene columna ID."); return null; }
+
+    // ── Inventario: qué IDs están en uso, qué filas no tienen ninguno ──
+    var usados = {}, porId = {}, vacias = [];
+    for (var i = 1; i < data.length; i++) {
+      var id = String(data[i][idCol] == null ? "" : data[i][idCol]).trim();
+      if (!id) { vacias.push(i); continue; }
+      usados[id] = true;
+      if (!porId[id]) porId[id] = [];
+      porId[id].push(i);
+    }
+
+    // ── Duplicados: exactos a borrar, ambiguos sólo a informar ──
+    var aBorrar = [], dudosos = [];
+    for (var did in porId) {
+      var filas = porId[did];
+      if (filas.length < 2) continue;
+      var base = data[filas[0]];          // la primera se conserva siempre
+      for (var k = 1; k < filas.length; k++) {
+        if (_astFilasIguales(base, data[filas[k]])) aBorrar.push(filas[k]);
+        else dudosos.push(did + " (filas " + (filas[0] + 1) + " y " + (filas[k] + 1) + ")");
+      }
+    }
+
+    // ── IDs nuevos para las filas huérfanas ──
+    var nuevos = [];
+    for (var v = 0; v < vacias.length; v++) {
+      var nid = _astNuevoId(usados);
+      usados[nid] = true;
+      nuevos.push({ fila: vacias[v] + 1, id: nid });   // fila de HOJA (1-indexed)
+    }
+
+    // ── Informe ──
+    Logger.log((APLICAR ? "APLICANDO" : "SIMULACRO (no se escribe nada)") + " · hoja " + NOMBRE);
+    Logger.log("Filas de datos: " + (data.length - 1) + " · columna ID: " + (idCol + 1));
+    Logger.log("Filas sin ID: " + nuevos.length);
+    for (var n = 0; n < nuevos.length; n++) Logger.log("   fila " + nuevos[n].fila + " -> " + nuevos[n].id);
+    Logger.log("Filas duplicadas exactas a borrar: " + aBorrar.length);
+    for (var b = 0; b < aBorrar.length; b++) Logger.log("   fila " + (aBorrar[b] + 1) + " (ID " + _astCelda(data[aBorrar[b]][idCol]) + ")");
+    if (dudosos.length) {
+      Logger.log("ATENCIÓN · mismo ID con contenido distinto (NO se tocan, revísalas a mano): " + dudosos.length);
+      for (var d = 0; d < dudosos.length; d++) Logger.log("   " + dudosos[d]);
+    }
+    if (!APLICAR) {
+      Logger.log("Nada escrito. Ejecuta sanearAstIds(true) para aplicarlo.");
+      return { simulacro: true, sinId: nuevos.length, duplicadas: aBorrar.length, dudosas: dudosos.length };
+    }
+
+    // ── Aplicar: PRIMERO los IDs (los números de fila aún son válidos) y
+    // DESPUÉS los borrados de abajo arriba, que así no desplazan lo ya escrito.
+    for (var w = 0; w < nuevos.length; w++) {
+      ws.getRange(nuevos[w].fila, idCol + 1).setValue(nuevos[w].id);
+    }
+    aBorrar.sort(function(a, b) { return b - a; });
+    for (var x = 0; x < aBorrar.length; x++) ws.deleteRow(aBorrar[x] + 1);
+    SpreadsheetApp.flush();
+
+    Logger.log("LISTO · " + nuevos.length + " ID escritos · " + aBorrar.length + " fila(s) duplicada(s) borrada(s).");
+    return { simulacro: false, sinId: nuevos.length, duplicadas: aBorrar.length, dudosas: dudosos.length };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ¿Dos filas de la hoja son la MISMA fila? Compara celda a celda, tolerando que
+// una traiga menos columnas que la otra (las que falten cuentan como vacías).
+function _astFilasIguales(a, b) {
+  var n = Math.max(a.length, b.length);
+  for (var i = 0; i < n; i++) {
+    if (_astCelda(i < a.length ? a[i] : "") !== _astCelda(i < b.length ? b[i] : "")) return false;
+  }
+  return true;
+}
+// Normaliza una celda a texto comparable. Date -> yyyy-MM-dd, que es como las
+// devuelve getValues() y como las escribe el cliente.
+function _astCelda(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  return String(v == null ? "" : v).trim();
+}
+
+// ID con el MISMO formato que genera la app (base36 del reloj + 4 al azar), para
+// que una fila saneada no se distinga de una nacida en el cliente. Se exige al
+// menos una letra: un ID de puros dígitos lo guardaría la hoja como NÚMERO y
+// dejaría de casar con el texto que envía el cliente en el upsert.
+function _astNuevoId(usados) {
+  for (var intento = 0; intento < 200; intento++) {
+    var suf = "";
+    while (suf.length < 4) suf += Math.random().toString(36).slice(2);
+    var id = Date.now().toString(36) + suf.slice(0, 4);
+    if (_astTieneLetra(id) && !usados[id]) return id;
+  }
+  var n = 0;                                  // salida de emergencia, sigue siendo único
+  while (usados["ast" + n]) n++;
+  return "ast" + n;
+}
+function _astTieneLetra(s) {
+  for (var i = 0; i < s.length; i++) { var c = s.charAt(i); if (c >= "a" && c <= "z") return true; }
+  return false;
 }
 
 // ── Respuesta JSON ────────────────────────────────────────
