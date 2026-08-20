@@ -58,6 +58,7 @@ let timeGran      = 'month'; // Calendario por defecto en "Por Mes" (la data dia
 // Estado de gráficos (usado a partir de la Etapa 2)
 let hmMode = 'lugar', swarmDate = null, swarmDiag = 'ALL', treemapDiag = 'ALL', sankeyDiag = 'IHHNV', trendDiag = 'ALL';
 let sankeyMode = 'normal';
+let cargaModo = 'tiempo'; // pestaña activa de la tarjeta de carga viral (ver CARGA_MODOS)
 const originSuppressed = new Set();
 // Reporte comparativo
 const REPORT_COLORS = ['#38bdf8', '#a78bfa', '#f59e0b'];
@@ -131,6 +132,137 @@ const filtered = () => RAW.filter((d) => activeLugares.has(d.lugar) && activeLot
 // cronológico. Copia con `slice()` para no ordenar in situ el array de nadie, y el orden de
 // la hoja se conserva DENTRO de un mismo día porque Array.sort es estable.
 const byDateDesc = (rows) => rows.slice().sort((a, b) => String(b.f).localeCompare(String(a.f)));
+// ── qPCR: las dos columnas CUANTITATIVAS de la hoja ───────────────────────────
+// Se muestran TAL CUAL las escribe el laboratorio ("3.40E+04", no 34000): así es como las
+// imprime el informe en PDF, y la tabla de esta vista es el espejo en pantalla de la hoja.
+// Aquí NO se convierten a número ni se clasifican por nivel de carga; eso llegaría con los
+// gráficos de carga, y mientras no exista no puede divergir del informe.
+/** ¿La muestra trae medición de qPCR? Basta con UNO de los dos valores: un Ct sin
+ *  cuantificar copias sigue siendo una corrida en tiempo real. Misma regla que
+ *  `_bioEsQpcr` de la ficha de captura, que es quien escribe estas dos columnas. */
+const hasQpcr = (r) => String(r.ciclo || '').trim() !== '' || String(r.copias || '').trim() !== '';
+/** Diagnóstico al que pertenece la cuantificación. En la hoja, Ciclo y Copias son de la
+ *  FILA: ninguna columna dice a cuál de los seis patógenos se refieren. Se deduce cuando la
+ *  fila informa UNO solo; con varios informados no se atribuye a ninguno, porque elegir uno
+ *  sería inventarlo (en la práctica se corren junto a WSSV, pero eso es un uso del
+ *  laboratorio, no un dato). Devuelve null cuando no es deducible. */
+function qpcrDiag(r) {
+  const medidos = DIAGS.filter((d) => hasVal(r[d]));
+  return medidos.length === 1 ? medidos[0] : null;
+}
+/** Bloque de tooltip con la cuantificación. Cadena VACÍA si la muestra no la trae, para que
+ *  las corridas por PCR convencional —la inmensa mayoría— se vean exactamente igual que
+ *  antes en vez de ganar un apartado con dos guiones. */
+function qpcrTip(r) {
+  if (!hasQpcr(r)) return '';
+  const diag = qpcrDiag(r);
+  const fila = (k, v) => (String(v || '').trim() ? `<div class="tt-row"><span class="tt-key">${k}</span><span class="tt-val">${escH(v)}</span></div>` : '');
+  return `<div class="tt-qpcr"><div class="tt-qpcr-h">Cuantificación qPCR${diag ? ' · ' + escH(DLABEL[diag]) : ''}</div>${fila('Ciclo (Ct)', r.ciclo)}${fila('Copias/μl', r.copias)}</div>`;
+}
+/** Celda de tabla para un valor de qPCR: el guion largo del resto de la vista cuando la
+ *  muestra no se cuantificó, que es distinto de "salió cero". */
+const qpcrCell = (v) => `<td class="q-num">${String(v || '').trim() ? escH(v) : '—'}</td>`;
+
+// ── Carga viral: la cuantificación como MAGNITUD ──────────────────────────────
+// Umbrales del nivel de carga. Son los MISMOS que `BIO_NIVELES` de
+// `public/registros/engine.js`, que es quien los imprime en el PDF del informe: con cortes
+// distintos, el mismo lote saldría "Medio" en papel y "Alto" en pantalla. Los dos monolitos
+// no se pueden importar entre sí, así que la regla está escrita dos veces y la vigila una
+// prueba que LEE los umbrales del engine.js real en vez de repetirlos a mano: mover un lado
+// sin el otro se pone rojo. `max` es el EXPONENTE máximo, así que Bajo llega hasta 10¹,
+// Medio hasta 10³ y Alto empieza en 10⁴.
+const NIVELES = [
+  { max: 1, n: 'Bajo', color: '#22c55e' },
+  { max: 3, n: 'Medio', color: '#f59e0b' },
+  { max: Infinity, n: 'Alto', color: '#ef4444' },
+];
+const nivelColor = (n) => (NIVELES.find((x) => x.n === n) || {}).color || '#8892aa';
+/** Un valor de laboratorio como número, o null si no lo es. Se acepta la notación científica
+ *  ("1.00E+05", que es como la escribe el laboratorio porque así sale en el informe impreso),
+ *  el número llano y la coma decimal. Lo que no es un número positivo —el "N/A" de los
+ *  controles, el vacío, un 0— NO se convierte: mismo criterio que `bioNivelCopias` de la
+ *  ficha de captura, que tampoco lo clasifica. */
+function parseLab(v) {
+  const s = String(v == null ? '' : v).trim().replace(',', '.');
+  if (!s) return null;
+  const num = Number(s);
+  return isFinite(num) && num > 0 ? num : null;
+}
+export const parseCopias = parseLab;
+/** Ciclo de amplificación como número. Mismo criterio: "N/A", "Undet" o ">40" no son un Ct. */
+export const parseCt = parseLab;
+/** Nivel de carga (Bajo/Medio/Alto), derivado del EXPONENTE. Cadena vacía si no cuantifica. */
+export function nivelCopias(v) {
+  const num = parseCopias(v);
+  if (num === null) return '';
+  const exp = Math.floor(Math.log10(num));
+  return (NIVELES.find((x) => exp <= x.max) || {}).n || '';
+}
+/** Mediana clásica de una lista de números. */
+function mediana(nums) {
+  if (!nums.length) return null;
+  const s = nums.slice().sort((a, b) => a - b);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+/** Mediana de una magnitud que se mide en ÓRDENES: se promedia en el espacio logarítmico.
+ *  Con un número impar de datos coincide con la mediana normal; con uno par, la media de los
+ *  dos centrales se hace en logaritmos (media geométrica). Promediarlos en lineal daría el
+ *  centro equivocado: entre 10² y 10⁶ la media aritmética es 5×10⁵ —pegada al mayor—,
+ *  mientras que el centro real de esa horquilla es 10⁴, que es lo que ve quien mira el eje. */
+function medianaLog(nums) {
+  if (!nums.length) return null;
+  return Math.pow(10, mediana(nums.map((n) => Math.log10(n))));
+}
+const SUPER = { '-': '⁻', 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹' };
+const supText = (n) => String(n).split('').map((c) => SUPER[c] || c).join('');
+/** Notación científica legible: 34000 → "3,4 × 10⁴". Solo se usa para valores CALCULADOS
+ *  (medianas, rótulos del eje); los que escribió el laboratorio se enseñan tal cual. */
+export function fmtSci(n) {
+  if (n === null || !isFinite(n) || n <= 0) return '—';
+  let exp = Math.floor(Math.log10(n));
+  let mant = n / Math.pow(10, exp);
+  if (Number(mant.toFixed(1)) >= 10) { mant /= 10; exp += 1; } // 9,99×10³ no debe salir "10,0 × 10³"
+  return `${mant.toFixed(1).replace('.', ',')} × 10${supText(exp)}`;
+}
+const fmtCt = (n) => (n === null ? '—' : n.toFixed(1).replace('.', ','));
+/** ¿La muestra pertenece al universo que deja ver el filtro global de diagnóstico? Basta con
+ *  que UNO de sus diagnósticos medidos siga activo. Una muestra sin ningún diagnóstico medido
+ *  no la puede excluir un filtro DE diagnósticos, así que se queda. Este gráfico es de filas,
+ *  no de patógenos, y sin esta regla ignoraría la barra de filtros —que es exactamente el
+ *  defecto que ya tuvieron el Sankey y el treemap—. */
+const enFiltroDiag = (r) => {
+  const medidos = DIAGS.filter((d) => hasVal(r[d]));
+  return !medidos.length || medidos.some((d) => activeDiags.has(d));
+};
+/** Puntos del gráfico de carga: una muestra CUANTIFICADA por punto, en orden cronológico.
+ *  Exportada para poder medir la selección y la clasificación sin D3 de por medio. */
+export function cargaPuntos(rows) {
+  return rows
+    .map((r) => {
+      const copias = parseCopias(r.copias);
+      return copias === null ? null
+        : { r, f: r.f, copias, log: Math.log10(copias), nivel: nivelCopias(r.copias), ct: parseCt(r.ciclo), diag: qpcrDiag(r) };
+    })
+    .filter(Boolean)
+    .sort((a, b) => String(a.f).localeCompare(String(b.f)));
+}
+/** Resumen de la franja de la tarjeta. Los dos denominadores van por separado a propósito:
+ *  una corrida puede dejar Ct sin cuantificar copias, así que "12 muestras" no significaría
+ *  lo mismo para las dos medianas. */
+export function qpcrResumen(rows) {
+  const copias = rows.map((r) => parseCopias(r.copias)).filter((n) => n !== null);
+  const cts = rows.map((r) => parseCt(r.ciclo)).filter((n) => n !== null);
+  // `nQpcr` cuenta las muestras CORRIDAS por qPCR, que no es lo mismo que las cuantificadas:
+  // una corrida que no amplifica deja "N/A" en las dos columnas. Sin esta distinción, un día
+  // en que se corrió qPCR y salió todo negativo se anunciaría como "no se corrió qPCR".
+  return {
+    nQpcr: rows.filter((r) => hasQpcr(r)).length,
+    nCopias: copias.length, nCt: cts.length,
+    medCopias: medianaLog(copias), medCt: mediana(cts),
+  };
+}
+
 function togClass(set, val, btn) { if (set.has(val)) { set.delete(val); btn.classList.remove('on'); } else { set.add(val); btn.classList.add('on'); } }
 
 // ── KPIs (idéntico a BIOMOL.html updateKPI) ──
@@ -321,14 +453,32 @@ function audKey(r, i, seen) {
   seen.set(base, n + 1);
   return n ? base + '#' + n : base;
 }
+/** Campos que la simulación toca y, por tanto, debe guardar para poder deshacerse. Los seis
+ *  diagnósticos más el par cuantitativo: una lista ÚNICA, para que `audSimulate` no pueda
+ *  alterar algo que `audRestore` luego no sepa devolver. */
+const AUD_CAMPOS = [...DIAGS, 'ciclo', 'copias'];
+/** Lo que escribe el laboratorio cuando una corrida de qPCR no amplifica. Es la misma grafía
+ *  que `BIO_CONTROLES` del informe pone bajo Ciclo y Copias en los controles negativos, así
+ *  que el material de entrenamiento se lee igual que un informe de verdad. */
+const AUD_NO_AMPLIFICA = 'N/A';
 /** Aplica la simulación de entrenamiento sobre `rows` (muta, guardando `_audOrig`).
  *  Determinista: mismas filas + misma semilla → mismo resultado, así que reaplicarla
  *  tras un refresco reproduce exactamente la misma simulación. Añadir filas al final
  *  no altera las anteriores; reordenar solo permuta resultados entre filas de clave
  *  repetida (las de clave única quedan intactas). */
 export function audSimulate(rows, seed) {
-  rows.forEach((r) => { if (!r._audOrig) { r._audOrig = {}; DIAGS.forEach((d) => { r._audOrig[d] = r[d]; }); } });
+  rows.forEach((r) => { if (!r._audOrig) { r._audOrig = {}; AUD_CAMPOS.forEach((k) => { r._audOrig[k] = r[k]; }); } });
   DIAGS.filter((d) => d !== 'IHHNV').forEach((d) => { rows.forEach((r) => { if (hasVal(r._audOrig[d])) r[d] = 'Negativo'; }); });
+  // La cuantificación NO se puede dejar con su valor REAL: el resultado de al lado pasa a ser
+  // Negativo, y una muestra "Negativa" mostrando 3,4×10⁴ copias/μl se contradice —además de
+  // enseñar el dato verdadero justo en el modo que existe para no enseñarlo—. Como en la
+  // simulación TODO sale negativo, lo que corresponde es lo que escribe el laboratorio cuando
+  // no hay amplificación: "N/A" en las dos columnas, la misma grafía que llevan los controles
+  // negativos del informe. Así el entrenamiento enseña el aspecto REAL de una corrida que no
+  // amplifica, en vez de dos celdas vacías.
+  // Solo se marcan las muestras que de verdad se corrieron por qPCR: poner N/A en todas
+  // inventaría corridas que nunca existieron. `audRestore` devuelve los valores intactos.
+  rows.forEach((r) => { if (hasQpcr(r._audOrig)) { r.ciclo = AUD_NO_AMPLIFICA; r.copias = AUD_NO_AMPLIFICA; } });
   // Tasa objetivo de positivos IHHNV entre 5 % y 10 %, también derivada de la semilla.
   const target = 5 + audRand(seed, 'target') * 5;
   const seen = new Map();
@@ -337,7 +487,7 @@ export function audSimulate(rows, seed) {
 }
 /** Deshace la simulación devolviendo cada resultado a su valor real. */
 export function audRestore(rows) {
-  rows.forEach((r) => { if (r._audOrig) { DIAGS.forEach((d) => { r[d] = r._audOrig[d]; }); delete r._audOrig; } });
+  rows.forEach((r) => { if (r._audOrig) { AUD_CAMPOS.forEach((k) => { r[k] = r._audOrig[k]; }); delete r._audOrig; } });
   return rows;
 }
 function updateAudBtn() { const btn = $('aud-btn'); if (!btn) return; btn.classList.toggle('on', audMode); btn.setAttribute('aria-pressed', audMode ? 'true' : 'false'); }
@@ -422,10 +572,10 @@ function renderRSDetail(data) {
   const cont = $('rsd-detail'); if (!cont) return;
   const rows = rsdLugar ? data.filter((r) => r.lugar === rsdLugar) : data;
   const badge = (v) => !hasVal(v) ? '<span class="badge badge-na">—</span>' : isPos(v) ? '<span class="badge badge-pos">✕ POS</span>' : '<span class="badge badge-neg">✓ NEG</span>';
-  const head = `<thead><tr><th>Lugar</th><th>Código</th><th>Corrida</th><th>Piscina</th><th>Tanque</th><th>Estadío</th><th>Sexo</th>${DIAGS.map((d) => `<th>${DLABEL[d]}</th>`).join('')}</tr></thead>`;
+  const head = `<thead><tr><th>Lugar</th><th>Código</th><th>Corrida</th><th>Piscina</th><th>Tanque</th><th>Estadío</th><th>Sexo</th>${DIAGS.map((d) => `<th>${DLABEL[d]}</th>`).join('')}<th class="q-num" title="Ciclo de amplificación">Ct</th><th class="q-num">Copias/μl</th></tr></thead>`;
   const body = rows.length
-    ? rows.map((r) => `<tr><td>${escH(r.lugar)}</td><td>${r.cod ? escH(r.cod) : '—'}</td><td>${escH(r.corrida || '—')}</td><td>${escH(r.piscina || '—')}</td><td>${escH(r.tq || '—')}</td><td>${escH(r.estadio || '—')}</td><td>${escH(r.sexo || '—')}</td>${DIAGS.map((d) => `<td>${badge(r[d])}</td>`).join('')}</tr>`).join('')
-    : `<tr><td colspan="${7 + DIAGS.length}" style="text-align:center;color:var(--bm-muted);padding:18px">Sin muestras${rsdLugar ? ' en ' + escH(rsdLugar) : ''}.</td></tr>`;
+    ? rows.map((r) => `<tr><td>${escH(r.lugar)}</td><td>${r.cod ? escH(r.cod) : '—'}</td><td>${escH(r.corrida || '—')}</td><td>${escH(r.piscina || '—')}</td><td>${escH(r.tq || '—')}</td><td>${escH(r.estadio || '—')}</td><td>${escH(r.sexo || '—')}</td>${DIAGS.map((d) => `<td>${badge(r[d])}</td>`).join('')}${qpcrCell(r.ciclo)}${qpcrCell(r.copias)}</tr>`).join('')
+    : `<tr><td colspan="${9 + DIAGS.length}" style="text-align:center;color:var(--bm-muted);padding:18px">Sin muestras${rsdLugar ? ' en ' + escH(rsdLugar) : ''}.</td></tr>`;
   const filterLine = `<div style="margin:10px 0 6px;font-size:12px;color:var(--bm-muted)">${rows.length} muestra(s)${rsdLugar ? ` · filtrado por <b style="color:var(--bm-text)">${escH(rsdLugar)}</b> · <span id="rsd-clear" style="cursor:pointer;text-decoration:underline">quitar filtro</span>` : ' · clic en un lugar del mapa para filtrar'}</div>`;
   cont.innerHTML = filterLine + `<div class="tbl-wrap"><table class="modal-table">${head}<tbody>${body}</tbody></table></div>`;
   const clr = $('rsd-clear'); if (clr) clr.addEventListener('click', () => { rsdLugar = null; renderRS(); });
@@ -704,7 +854,7 @@ function drawSwarm() {
       tipDiags = `<div class="tt-row"><span class="tt-key">${DLABEL[diag]}</span><span class="tt-val ${isPos(r[diag]) ? 'pos-tag' : 'neg-tag'}">${r[diag] || '—'}</span></div>`;
     }
     g.append('circle').attr('cx', Math.min(cx, W - 12)).attr('cy', cy).attr('r', 5).attr('fill', fill).attr('stroke', stroke).attr('stroke-width', 1.5).attr('cursor', 'pointer')
-      .on('mouseenter', (e) => showTip(`<div class="tt-title">${escH(r.lugar)} · ${escH(r.tq)}</div><div class="tt-row"><span class="tt-key">Corrida</span><span class="tt-val">${escH(r.corrida || '—')}</span></div><div class="tt-row"><span class="tt-key">Código</span><span class="tt-val">${escH(r.cod || '—')}</span></div><div class="tt-row"><span class="tt-key">Estadío</span><span class="tt-val">${escH(r.estadio || r.sexo || '—')}</span></div>${tipDiags}`, e)).on('mouseleave', hideTip);
+      .on('mouseenter', (e) => showTip(`<div class="tt-title">${escH(r.lugar)} · ${escH(r.tq)}</div><div class="tt-row"><span class="tt-key">Corrida</span><span class="tt-val">${escH(r.corrida || '—')}</span></div><div class="tt-row"><span class="tt-key">Código</span><span class="tt-val">${escH(r.cod || '—')}</span></div><div class="tt-row"><span class="tt-key">Estadío</span><span class="tt-val">${escH(r.estadio || r.sexo || '—')}</span></div>${tipDiags}${qpcrTip(r)}`, e)).on('mouseleave', hideTip);
   });
   svg.append('text').attr('x', W - 4).attr('y', H - 4).attr('text-anchor', 'end').attr('fill', isAll ? TH.muted : DCOLOR[diag]).attr('font-size', 10).attr('font-weight', '700').text(isAll ? 'Todos (peor caso)' : '● ' + DLABEL[diag]);
 }
@@ -767,6 +917,262 @@ function drawTrend() {
     });
   });
   if (legendEl) series.forEach((s) => { const item = document.createElement('div'); item.className = 'leg-item'; const dot = document.createElement('div'); dot.className = 'leg-dot'; dot.style.background = DCOLOR[s.diag]; item.appendChild(dot); item.appendChild(document.createTextNode(DLABEL[s.diag])); legendEl.appendChild(item); });
+}
+
+// ── CARGA VIRAL (qPCR) ──
+// Tres preguntas sobre el mismo dato, en una sola tarjeta:
+//   · "En el tiempo" → ¿la carga sube o baja? El resto de la vista sabe decir CUÁNTAS
+//     muestras dan positivo; esto dice CUÁNTO. El eje Y va en logaritmos: sin él, tres
+//     órdenes de magnitud se aplastan contra el suelo y el gráfico no distingue 50 copias
+//     de 50.000.
+//   · "Ct vs Copias" → ¿el ensayo es coherente consigo mismo? En una qPCR bien calibrada las
+//     dos magnitudes caen sobre una recta descendente (del orden de 3,3 ciclos por década).
+//     Un punto lejos de la recta señala una dilución mal hecha, una curva estándar vieja o
+//     un dato mal tecleado. ⚠ La recta es una TENDENCIA de las muestras, no una curva
+//     estándar de diluciones conocidas: por eso se rotula "ciclos por década" y NO se
+//     presenta como la eficiencia del ensayo, que solo se puede medir con los patrones.
+//   · "Por nivel" → de los positivos del rango, ¿cuántos pesan de verdad?
+// Las bandas, los colores y los cortes salen de NIVELES, que es lo mismo que imprime el PDF.
+const CARGA_MODOS = [
+  { k: 'tiempo', label: 'En el tiempo' },
+  { k: 'ct', label: 'Ct vs Copias' },
+  { k: 'nivel', label: 'Por nivel' },
+];
+function buildCargaTabs() {
+  const c = $('carga-tabs'); if (!c) return;
+  c.innerHTML = '';
+  CARGA_MODOS.forEach((m) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.dataset.modo = m.k;
+    b.className = 'tab' + (cargaModo === m.k ? ' on' : '');
+    b.textContent = m.label;
+    b.addEventListener('click', () => { cargaModo = m.k; buildCargaTabs(); drawCarga(); });
+    c.appendChild(b);
+  });
+}
+/** Ajuste por mínimos cuadrados de log10(copias) sobre Ct. `ciclosDecada` es la lectura útil
+ *  para el laboratorio: cuántos ciclos separan un factor de diez. Devuelve null si no hay
+ *  puntos suficientes, si todos comparten el mismo Ct o si la nube NO baja —una pendiente
+ *  plana o ascendente no es una curva que se pueda leer, y dibujarla igual sugeriría una
+ *  relación que los datos no tienen. */
+export function ajusteCt(pts) {
+  const con = pts.filter((p) => p.ct !== null);
+  if (con.length < 3) return null;
+  const n = con.length;
+  const mx = con.reduce((s, p) => s + p.ct, 0) / n;
+  const my = con.reduce((s, p) => s + p.log, 0) / n;
+  const sxy = con.reduce((s, p) => s + (p.ct - mx) * (p.log - my), 0);
+  const sxx = con.reduce((s, p) => s + (p.ct - mx) * (p.ct - mx), 0);
+  if (!sxx) return null;
+  const b = sxy / sxx;
+  if (!isFinite(b) || b >= 0) return null;
+  return { n, b, a: my - b * mx, ciclosDecada: -1 / b };
+}
+
+/** Franja de resumen. Es la opción "KPI de carga" del catálogo, servida DENTRO de la tarjeta:
+ *  la fila de indicadores es una rejilla de 8 columnas exactas y dos tarjetas más dejaban
+ *  huérfanos, mientras que aquí el resumen queda pegado al gráfico que resume. */
+function renderCargaSum(rows, pts) {
+  const sum = $('carga-sum'); if (!sum) return;
+  const res = qpcrResumen(rows);
+  const dato = (k, v, u) => `<div class="cs"><span class="cs-k">${k}</span><span class="cs-v">${v}</span>${u ? `<span class="cs-u">${u}</span>` : ''}</div>`;
+  if (!res.nCopias && !res.nCt) {
+    // Distingue "no se corrió qPCR" de "se corrió y no amplificó": una corrida que no
+    // amplifica deja "N/A" en las dos columnas, y anunciarla como "no se corrió" sería falso.
+    sum.innerHTML = `<div class="cs cs-vacio">${res.nQpcr
+      ? `Ninguna de las ${res.nQpcr} muestras corridas por qPCR amplificó`
+      : 'Ninguna muestra del rango se corrió por qPCR'}</div>`;
+    return;
+  }
+  let html = dato('Carga mediana', fmtSci(res.medCopias), 'copias/μl')
+    + dato('Ct mediano', fmtCt(res.medCt))
+    + dato('Muestras cuantificadas', String(res.nCopias));
+  if (cargaModo === 'ct') {
+    const fit = ajusteCt(pts);
+    html += dato('Ciclos por década', fit ? fmtCt(fit.ciclosDecada) : '—');
+  }
+  sum.innerHTML = html;
+}
+
+/** Rejilla y rótulos del eje de copias, compartidos por los dos modos que lo usan: si cada
+ *  uno dibujara el suyo, podrían acabar con décadas distintas para la misma magnitud. */
+function ejeCopias(svg, W, yS, lo, hi, mL, mR) {
+  for (let e = lo; e <= hi; e++) {
+    svg.append('line').attr('x1', mL).attr('x2', W - mR).attr('y1', yS(e)).attr('y2', yS(e))
+      .attr('stroke', TH.grid).attr('stroke-dasharray', '2,3').attr('stroke-width', 1);
+    svg.append('text').attr('x', mL - 6).attr('y', yS(e) + 3).attr('text-anchor', 'end')
+      .attr('fill', TH.muted).attr('font-size', 9).text('10' + supText(e));
+  }
+}
+/** Eje de copias ESTABLE de 10⁰ a 10⁵, ampliado solo si los datos lo desbordan. Si la escala
+ *  se ajustara a cada filtro, dos vistas del mismo lote no serían comparables y las bandas de
+ *  nivel cambiarían de sitio bajo los pies del que mira. */
+const rangoCopias = (pts) => ({
+  lo: Math.min(0, Math.floor(Math.min(...pts.map((p) => p.log)))),
+  hi: Math.max(5, Math.ceil(Math.max(...pts.map((p) => p.log)))),
+});
+/** Tooltip de una muestra cuantificada. Las copias se enseñan TAL CUAL las escribió el
+ *  laboratorio ("3.40E+04"), no reformateadas: la vista es el espejo de la hoja. */
+function tipCarga(p) {
+  return `<div class="tt-title">${escH(p.r.lugar)} · ${escH(p.r.tq)}</div>`
+    + `<div class="tt-row"><span class="tt-key">Fecha</span><span class="tt-val">${escH(fmtD(p.f))}</span></div>`
+    + `<div class="tt-row"><span class="tt-key">Código</span><span class="tt-val">${escH(p.r.cod || '—')}</span></div>`
+    + `<div class="tt-qpcr"><div class="tt-qpcr-h">Cuantificación qPCR${p.diag ? ' · ' + escH(DLABEL[p.diag]) : ''}</div>`
+    + `<div class="tt-row"><span class="tt-key">Ciclo (Ct)</span><span class="tt-val">${escH(p.r.ciclo || '—')}</span></div>`
+    + `<div class="tt-row"><span class="tt-key">Copias/μl</span><span class="tt-val">${escH(p.r.copias)}</span></div>`
+    + `<div class="tt-row"><span class="tt-key">Nivel</span><span class="tt-val" style="color:${nivelColor(p.nivel)}">${p.nivel}</span></div></div>`;
+}
+
+function drawCarga() {
+  const svg = d3.select('#carga'); svg.selectAll('*').remove();
+  if (!$('carga')) return;
+  const { W, H } = svgDims('carga', 900, 260);
+  svg.attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
+
+  const rows = filtered().filter(enFiltroDiag);
+  const pts = cargaPuntos(rows);
+  renderCargaSum(rows, pts);
+  const vacio = (t) => svg.append('text').attr('x', W / 2).attr('y', H / 2).attr('fill', TH.muted).attr('text-anchor', 'middle').text(t);
+
+  // "Por nivel" reparte POSITIVOS, que existen aunque no haya ni una cuantificación: por eso
+  // no pasa por la guarda de puntos, que sí aplica a los otros dos modos.
+  if (cargaModo === 'nivel') { drawCargaNivel(svg, W, H, rows, vacio); return; }
+  if (!pts.length) { vacio('Sin cuantificaciones de qPCR en el rango'); return; }
+  if (cargaModo === 'ct') drawCargaCt(svg, W, H, pts, vacio);
+  else drawCargaTiempo(svg, W, H, pts);
+}
+
+function drawCargaTiempo(svg, W, H, pts) {
+  const fechas = [...new Set(pts.map((p) => p.f))].sort();
+  const mL = 46, mR = 18, mT = 12, mB = 30;
+  // Reparto por FECHA DE ANÁLISIS, no proporcional al tiempo transcurrido: es el mismo idioma
+  // que ya usa la Tendencia de Positividad, y con cuantificaciones tan dispersas un eje
+  // temporal real amontonaría todos los puntos en un rincón. Las fechas van rotuladas.
+  const xS = fechas.length === 1
+    ? () => (mL + W - mR) / 2
+    : d3.scalePoint().domain(fechas).range([mL + 12, W - mR - 12]).padding(0.5);
+  const { lo, hi } = rangoCopias(pts);
+  const yS = d3.scaleLinear().domain([lo, hi]).range([H - mB, mT]);
+
+  // Bandas de nivel: el corte entre dos cae en el exponente siguiente al `max` del inferior
+  // (Bajo llega hasta 10¹ ⇒ su banda termina en 10²).
+  let desde = lo;
+  NIVELES.forEach((nv) => {
+    const hasta = nv.max === Infinity ? hi : Math.min(hi, nv.max + 1);
+    if (hasta <= desde) return;
+    svg.append('rect').attr('x', mL).attr('y', yS(hasta)).attr('width', Math.max(0, W - mL - mR))
+      .attr('height', Math.abs(yS(desde) - yS(hasta))).attr('fill', nv.color).attr('opacity', 0.07);
+    svg.append('text').attr('x', W - mR - 4).attr('y', yS(desde) - 5).attr('text-anchor', 'end')
+      .attr('fill', nv.color).attr('font-size', 9).attr('font-weight', '700').attr('opacity', 0.8).text(nv.n);
+    desde = hasta;
+  });
+
+  ejeCopias(svg, W, yS, lo, hi, mL, mR);
+  const step = Math.max(1, Math.ceil(fechas.length / 8));
+  fechas.forEach((f, i) => {
+    if (i % step === 0 || i === fechas.length - 1) {
+      svg.append('text').attr('x', xS(f)).attr('y', H - 10).attr('text-anchor', 'middle')
+        .attr('fill', TH.muted).attr('font-size', 9).text(fmtD(f));
+    }
+  });
+
+  // Dos muestras del mismo día con la misma carga caerían EXACTAMENTE en el mismo píxel y se
+  // leerían como una sola. Se separan con el mismo sorteo reproducible del modo AUD —el que
+  // ya usa el swarm por este motivo—: teclear el desplazamiento con la clave de la fila
+  // mantiene cada punto en su sitio entre repintados, cosa que `Math.random()` no hacía.
+  const jitterSeen = new Map();
+  pts.forEach((p, i) => {
+    const dx = (audRand(0, audKey(p.r, i, jitterSeen)) - 0.5) * 12;
+    svg.append('circle').attr('cx', xS(p.f) + dx).attr('cy', yS(p.log)).attr('r', 4.5)
+      .attr('fill', nivelColor(p.nivel)).attr('stroke', TH.surface).attr('stroke-width', 1.5).attr('cursor', 'pointer')
+      .on('mouseenter', (e) => showTip(tipCarga(p), e)).on('mouseleave', hideTip);
+  });
+}
+
+function drawCargaCt(svg, W, H, pts, vacio) {
+  const con = pts.filter((p) => p.ct !== null);
+  if (!con.length) { vacio('Ninguna muestra cuantificada trae Ciclo de amplificación'); return; }
+  const mL = 46, mR = 18, mT = 12, mB = 34;
+  const cts = con.map((p) => p.ct);
+  const x0 = Math.floor(Math.min(...cts)) - 1, x1 = Math.ceil(Math.max(...cts)) + 1;
+  const { lo, hi } = rangoCopias(con);
+  const xS = d3.scaleLinear().domain([x0, x1]).range([mL, W - mR]);
+  const yS = d3.scaleLinear().domain([lo, hi]).range([H - mB, mT]);
+
+  ejeCopias(svg, W, yS, lo, hi, mL, mR);
+  const step = Math.max(1, Math.ceil((x1 - x0) / 8));
+  for (let v = x0; v <= x1; v += step) {
+    svg.append('text').attr('x', xS(v)).attr('y', H - 12).attr('text-anchor', 'middle')
+      .attr('fill', TH.muted).attr('font-size', 9).text(String(v));
+  }
+  svg.append('text').attr('x', W - mR).attr('y', H - 1).attr('text-anchor', 'end')
+    .attr('fill', TH.muted).attr('font-size', 9).text('Ciclo de amplificación (Ct) →');
+
+  // Recta de tendencia, recortada al rectángulo visible: prolongarla fuera del eje sugeriría
+  // cargas que la escala no está mostrando.
+  const fit = ajusteCt(pts);
+  if (fit) {
+    const xEn = (yv) => (yv - fit.a) / fit.b;
+    const xa = Math.max(x0, Math.min(xEn(hi), xEn(lo)));
+    const xb = Math.min(x1, Math.max(xEn(hi), xEn(lo)));
+    if (xb > xa) {
+      svg.append('line').attr('x1', xS(xa)).attr('y1', yS(fit.a + fit.b * xa))
+        .attr('x2', xS(xb)).attr('y2', yS(fit.a + fit.b * xb))
+        .attr('stroke', TH.muted).attr('stroke-width', 2).attr('stroke-dasharray', '5,4').attr('opacity', 0.75);
+    }
+  }
+  con.forEach((p) => {
+    svg.append('circle').attr('cx', xS(p.ct)).attr('cy', yS(p.log)).attr('r', 4.5)
+      .attr('fill', nivelColor(p.nivel)).attr('stroke', TH.surface).attr('stroke-width', 1.5).attr('cursor', 'pointer')
+      .on('mouseenter', (e) => showTip(tipCarga(p), e)).on('mouseleave', hideTip);
+  });
+}
+
+function drawCargaNivel(svg, W, H, rows, vacio) {
+  // El reparto es de los positivos que el usuario ESTÁ MIRANDO: positivo en al menos un
+  // diagnóstico activo. Contar también los de un diagnóstico apagado haría que la barra
+  // contradijera a los KPIs y al donut que tiene al lado.
+  const pos = rows.filter((r) => DIAGS.some((d) => activeDiags.has(d) && isPos(r[d])));
+  if (!pos.length) { vacio('Sin positivos en el rango'); return; }
+  // El cuarto grupo NO es decorativo: hoy la mayoría de los positivos se corren por PCR
+  // convencional, así que sin él la barra daría a entender que todos los positivos están
+  // cuantificados y los porcentajes se leerían sobre una base falsa.
+  const grupos = NIVELES.map((nv) => ({ n: nv.n, color: nv.color }))
+    .concat([{ n: 'Sin cuantificar', color: TH.muted }])
+    .map((g) => ({ ...g, c: pos.filter((r) => (nivelCopias(r.copias) || 'Sin cuantificar') === g.n).length }));
+
+  const total = pos.length;
+  const mL = 24, mR = 24, barH = 42;
+  const w = W - mL - mR, barY = Math.max(34, H / 2 - 52);
+  svg.append('text').attr('x', mL).attr('y', barY - 12).attr('fill', TH.muted).attr('font-size', 10)
+    .text(`${total} positivo(s) en el rango, por nivel de carga`);
+  let x = mL;
+  grupos.forEach((g) => {
+    const seg = w * g.c / total;
+    if (seg <= 0) return;
+    svg.append('rect').attr('x', x).attr('y', barY).attr('width', seg).attr('height', barH).attr('rx', 4)
+      .attr('fill', g.color).attr('cursor', 'pointer')
+      .on('mouseenter', (e) => showTip(
+        `<div class="tt-title">${escH(g.n)}</div>`
+        + `<div class="tt-row"><span class="tt-key">Positivos</span><span class="tt-val">${g.c}</span></div>`
+        + `<div class="tt-row"><span class="tt-key">% de los positivos</span><span class="tt-val">${Math.round(g.c / total * 100)}%</span></div>`, e))
+      .on('mouseleave', hideTip);
+    if (seg > 26) {
+      svg.append('text').attr('x', x + seg / 2).attr('y', barY + barH / 2 + 5).attr('text-anchor', 'middle')
+        .attr('fill', '#ffffff').attr('font-size', 13).attr('font-weight', '800').text(g.c);
+    }
+    x += seg;
+  });
+  // La leyenda va en columnas de ancho FIJO, no bajo cada tramo: con un tramo de dos píxeles
+  // las etiquetas se montarían unas sobre otras justo cuando más falta hace leerlas.
+  const legY = barY + barH + 26, colW = w / grupos.length;
+  grupos.forEach((g, i) => {
+    const cxs = mL + colW * i + colW / 2;
+    svg.append('text').attr('x', cxs).attr('y', legY).attr('text-anchor', 'middle')
+      .attr('fill', g.color).attr('font-size', 11).attr('font-weight', '700').text(g.n);
+    svg.append('text').attr('x', cxs).attr('y', legY + 15).attr('text-anchor', 'middle')
+      .attr('fill', TH.muted).attr('font-size', 10).text(`${g.c} · ${Math.round(g.c / total * 100)} %`);
+  });
 }
 
 // ── DONUT ──
@@ -1020,7 +1426,7 @@ function drawTable() {
   const frag = document.createDocumentFragment();
   data.forEach((r) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${escH(fmtD(r.f))}</td><td>${r.cod ? escH(r.cod) : '—'}</td><td>${escH(r.lugar)}</td><td>${escH(r.tq)}</td><td>${r.estadio ? escH(r.estadio) : '—'}</td><td>${r.sexo ? escH(r.sexo) : '—'}</td><td>${badge(r.IHHNV)}</td><td>${badge(r.WSSV)}</td><td>${badge(r.BP)}</td><td>${badge(r.AHPND)}</td><td>${badge(r.NHPB)}</td><td>${badge(r.EHP)}</td>`;
+    tr.innerHTML = `<td>${escH(fmtD(r.f))}</td><td>${r.cod ? escH(r.cod) : '—'}</td><td>${escH(r.lugar)}</td><td>${escH(r.tq)}</td><td>${r.estadio ? escH(r.estadio) : '—'}</td><td>${r.sexo ? escH(r.sexo) : '—'}</td><td>${badge(r.IHHNV)}</td><td>${badge(r.WSSV)}</td><td>${badge(r.BP)}</td><td>${badge(r.AHPND)}</td><td>${badge(r.NHPB)}</td><td>${badge(r.EHP)}</td>${qpcrCell(r.ciclo)}${qpcrCell(r.copias)}`;
     frag.appendChild(tr);
   });
   tbody.appendChild(frag);
@@ -1446,7 +1852,7 @@ function drawContamination() {
 
 function drawReportSections() { drawLineComp(); drawCoinfection(); drawEstadioPos(); drawContamination(); }
 
-function renderCharts() { hideTip(); refreshTheme(); drawHeatmap(); drawCalendar(); drawTreemap(); drawSwarm(); drawSankey(); drawTrend(); drawDonut(); }
+function renderCharts() { hideTip(); refreshTheme(); drawHeatmap(); drawCalendar(); drawTreemap(); drawSwarm(); drawSankey(); drawTrend(); drawDonut(); drawCarga(); }
 
 // ── HTML del shell ──
 function shellHTML() {
@@ -1616,12 +2022,20 @@ function shellHTML() {
       </div>
     </div>
     <div class="grid-full">
+      <div class="card" id="c-carga">
+        <div class="card-header"><div class="card-title-text"><span class="dot" style="background:#0ea5e9"></span>Carga Viral · Cuantificación por qPCR</div><button type="button" class="fs-btn" data-target="c-carga" title="Pantalla completa">⛶</button></div>
+        <div class="tab-row" id="carga-tabs"></div>
+        <div class="carga-sum" id="carga-sum" aria-live="polite"></div>
+        <svg id="carga" width="100%" height="260"></svg>
+      </div>
+    </div>
+    <div class="grid-full">
       <div class="card" id="c-table">
         <div class="card-header"><div class="card-title-text"><span class="dot" style="background:#64748b"></span>Registro Detallado</div>
           <button type="button" class="reload-btn" id="export-xlsx-btn" style="margin-right:6px" title="Exportar a Excel">⬇ Excel</button>
           <button type="button" class="fs-btn" data-target="c-table" title="Pantalla completa">⛶</button>
         </div>
-        <div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Código</th><th>Lugar</th><th>Tanque</th><th>Estadío</th><th>Sexo</th><th>IHHNV</th><th>WSSV</th><th>BP</th><th>AHPND/EMS</th><th>NHPB</th><th>EHP</th></tr></thead><tbody id="table-body"></tbody></table></div>
+        <div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Código</th><th>Lugar</th><th>Tanque</th><th>Estadío</th><th>Sexo</th><th>IHHNV</th><th>WSSV</th><th>BP</th><th>AHPND/EMS</th><th>NHPB</th><th>EHP</th><th class="q-num" title="Ciclo de amplificación">Ct</th><th class="q-num">Copias/μl</th></tr></thead><tbody id="table-body"></tbody></table></div>
       </div>
     </div>
 
@@ -1787,6 +2201,7 @@ function initFilters(reset) {
   buildDiagTabs('treemap-diag-tabs', () => treemapDiag, (v) => { treemapDiag = v; }, drawTreemap, true);
   buildDiagTabs('trend-diag-tabs', () => trendDiag, (v) => { trendDiag = v; }, drawTrend, true);
   buildDiagTabs('sankey-diag-tabs', () => sankeyDiag, (v) => { sankeyDiag = v; }, drawSankey, false);
+  buildCargaTabs();
   // Sincroniza los controles del Sankey con el estado actual
   const oBtn = $('sankey-mode-btn'), pBtn = $('sankey-psm-btn'), sTitle = $('sankey-title');
   if (oBtn) oBtn.classList.toggle('on', sankeyMode === 'origen');

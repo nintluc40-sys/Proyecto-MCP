@@ -149,6 +149,20 @@
 #bm-tooltip .tt-key { color: var(--bm-muted); }
 #bm-tooltip .tt-val { font-weight: 600; }
 #bm-tooltip .pos-tag { color: #ef4444; } #bm-tooltip .neg-tag { color: #22c55e; }
+/* Cuantificación de qPCR: va separada del bloque de diagnósticos porque no es un resultado
+   más, sino la MAGNITUD de uno de ellos. Solo se pinta en las muestras que la traen. */
+#bm-tooltip .tt-qpcr { border-top: 1px dashed var(--bm-border); margin-top: 7px; padding-top: 5px; }
+#bm-tooltip .tt-qpcr-h { font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--bm-accent); }
+
+/* Carga viral · franja de resumen de la tarjeta. Va DENTRO de la tarjeta y no en la fila de
+   indicadores porque esa fila es una rejilla de 8 columnas exactas: dos tarjetas más dejaban
+   huérfanos. Además el resumen queda pegado al gráfico que resume, que es donde sirve. */
+.biomol .carga-sum { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 24px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--bm-border); }
+.biomol .carga-sum .cs { display: flex; align-items: baseline; gap: 6px; }
+.biomol .carga-sum .cs-k { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--bm-muted); }
+.biomol .carga-sum .cs-v { font-size: 17px; font-weight: 800; color: var(--bm-text); font-variant-numeric: tabular-nums; }
+.biomol .carga-sum .cs-u { font-size: 10px; color: var(--bm-muted); }
+.biomol .carga-sum .cs-vacio { font-size: 12px; color: var(--bm-muted); }
 
 /* Tabla de registros */
 .biomol .tbl-wrap { overflow-x: auto; max-height: 320px; overflow-y: auto; }
@@ -156,6 +170,16 @@
 .biomol th { position: sticky; top: 0; background: var(--bm-surface2); color: var(--bm-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--bm-border); }
 .biomol td { padding: 6px 10px; border-bottom: 1px solid var(--bm-border); color: var(--bm-text); }
 .biomol tr:hover td { background: var(--bm-surface2); }
+/* Ct y Copias/μl: son los dos únicos valores numéricos de estas tablas. Alineados a la
+   derecha y con cifras de ancho fijo, la magnitud se compara de un vistazo entre filas
+   (que es justo para lo que sirve la notación científica del laboratorio).
+   ⚠ `text-transform: none` NO es un capricho tipográfico: las cabeceras de esta vista van
+   en versalitas, y "Copias/μl" en mayúsculas queda "COPIAS/ΜL" —la mu mayúscula (Μ) es
+   indistinguible de una eme—, así que MICROlitros se leería como MILIlitros, un factor
+   1000 en un dato de laboratorio. La unidad se escribe como la escribe el laboratorio. */
+.biomol th.q-num, .biomol td.q-num,
+.biomol .modal-table th.q-num, .biomol .modal-table td.q-num { text-align: right; font-variant-numeric: tabular-nums; }
+.biomol th.q-num, .biomol .modal-table th.q-num { text-transform: none; letter-spacing: 0; }
 .biomol .badge { border-radius: 4px; padding: 2px 7px; font-size: 10px; font-weight: 700; display: inline-block; }
 .biomol .badge-pos { background: rgba(239,68,68,.15); color: #ef4444; }
 .biomol .badge-neg { background: rgba(34,197,94,.13); color: #16a34a; }
@@ -179,7 +203,7 @@
 .biomol .card.is-fs > svg { flex: 1 1 0; width: 100% !important; height: 0 !important; min-height: 0; display: block; }
 .biomol .card.is-fs > .chart-scroll { flex: 1 1 0; min-height: 0; overflow: auto; width: 100%; }
 .biomol .card.is-fs .tbl-wrap { flex: 1; max-height: none; overflow-y: auto; }
-.biomol .card.is-fs .tab-row, .biomol .card.is-fs .legend, .biomol .card.is-fs .card-header, .biomol .card.is-fs .suppress-bar { flex-shrink: 0; }
+.biomol .card.is-fs .tab-row, .biomol .card.is-fs .legend, .biomol .card.is-fs .card-header, .biomol .card.is-fs .suppress-bar, .biomol .card.is-fs .carga-sum { flex-shrink: 0; }
 #bm-fs-exit { position: fixed; top: 14px; right: 14px; z-index: 9999; background: var(--bm-accent-soft); border: 1px solid var(--bm-accent); border-radius: 8px; padding: 7px 16px; color: var(--bm-accent); font-size: 12px; cursor: pointer; font-family: 'Inter', system-ui, sans-serif; display: none; }
 
 /* Sankey · controles */
