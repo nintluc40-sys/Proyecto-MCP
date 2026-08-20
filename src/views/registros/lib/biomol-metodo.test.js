@@ -17,7 +17,17 @@
    330: en cuanto el analista tocaba el campo, el texto se guardaba CORTADO a media palabra
    («…soluciones lisis y etanoles» quedaba en «…soluciones lisis y etanol») y así salía
    impreso en el PDF. El método 2 por sí solo son 197: se salvaba por tres caracteres. Por
-   eso el caso de «Los dos» compara el texto COMPLETO y no solo su comienzo.
+   eso el caso de «Todos» compara el texto COMPLETO y no solo su comienzo.
+
+   Ampliación (2026-08-19): el catálogo pasó a CUATRO —reacción dúplex y Kit DHELIX— y la
+   opción combinada pasó a llamarse «Todos», porque «Los dos» ya mentía.
+   🔑 Al hacerlo hubo que SEPARAR lo que era una sola constante: `BIO_METODO_TODOS` es el
+   catálogo entero que inserta esa opción, y `BIO_METODO_DEF` —lo que propone un reporte
+   NUEVO— sigue siendo solo los dos métodos históricos, los marcados `def`. Estaban
+   acoplados: añadir métodos al array habría hecho, sin tocar nada más, que todo informe
+   nuevo arrancara con los cuatro, dos de ellos sin aplicar, y que el analista tuviera que
+   borrarlos a mano —justo el problema que este desplegable vino a resolver—. Los dos
+   últimos casos son los que vigilan esa separación.
    ============================================================ */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -26,7 +36,7 @@ import { join } from 'node:path';
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderBiomol', 'bioRptSet', 'bioMetodoPick', 'loadBioRpt', 'bioGridFecha',
-  'BIO_METODOS', 'BIO_METODO_DEF'];
+  'BIO_METODOS', 'BIO_METODO_DEF', 'BIO_METODO_TODOS'];
 const H = {};
 
 beforeAll(async () => {
@@ -65,21 +75,40 @@ const guardado = () => H.loadBioRpt(H.bioGridFecha()).metodo;
 const elegir = (v) => { const s = selector(); s.value = v; H.bioMetodoPick(s); };
 
 describe('Biomol · el catálogo de métodos', () => {
-  it('son los DOS textos del laboratorio, y el valor por defecto sigue siendo ambos', () => {
-    expect(H.BIO_METODOS).toHaveLength(2);
+  it('son los CUATRO textos del laboratorio, numerados y con la unidad intacta', () => {
+    expect(H.BIO_METODOS).toHaveLength(4);
     expect(H.BIO_METODOS[0].tx).toMatch(/Kit Comercial IQ REAL/);
     expect(H.BIO_METODOS[1].tx).toMatch(/PCR Nested punto final/);
-    // El arranque no cambió: el campo sigue proponiendo los dos, como pidió el usuario.
-    expect(H.BIO_METODO_DEF).toBe(H.BIO_METODOS[0].tx + '\n' + H.BIO_METODOS[1].tx);
+    expect(H.BIO_METODOS[2].tx).toMatch(/reacción dúplex/);
+    expect(H.BIO_METODOS[3].tx).toMatch(/Kit Comercial DHELIX/);
+    // El número va INCRUSTADO en el texto: es lo que se imprime en el PDF.
+    H.BIO_METODOS.forEach((m, i) => {
+      expect(m.tx.startsWith(`${i + 1}) `)).toBe(true);
+      expect(m.et.startsWith(`${i + 1}) `)).toBe(true);
+      // MICROlitros, no MILIlitros: la mu tiene que ser la griega, no una eme.
+      expect(m.tx).toContain('copias/μl');
+    });
   });
 
-  it('el desplegable ofrece los dos métodos y la opción de poner ambos', () => {
+  it('«Todos» es el catálogo entero, pero el DEFECTO son solo los dos históricos', () => {
+    expect(H.BIO_METODO_TODOS).toBe(H.BIO_METODOS.map((m) => m.tx).join('\n'));
+    expect(H.BIO_METODO_DEF).toBe(H.BIO_METODOS[0].tx + '\n' + H.BIO_METODOS[1].tx);
+    // Estaban acoplados. Si alguien los vuelve a unir, esto es lo que lo caza.
+    expect(H.BIO_METODO_DEF).not.toBe(H.BIO_METODO_TODOS);
+    expect(H.BIO_METODO_DEF).not.toMatch(/DHELIX|dúplex/);
+    // Y la marca `def` es lo que decide, no la posición: reordenar el array no lo cambia.
+    expect(H.BIO_METODOS.filter((m) => m.def).map((m) => m.tx).join('\n')).toBe(H.BIO_METODO_DEF);
+  });
+
+  it('el desplegable ofrece los cuatro métodos y la opción de ponerlos todos', () => {
     localStorage.clear();
     H.renderBiomol();
     const opts = Array.from(selector().options).map((o) => o.value);
-    expect(opts).toEqual(['', '0', '1', '*']);
+    expect(opts).toEqual(['', '0', '1', '2', '3', '*']);
     expect(selector().options[1].textContent).toMatch(/Kit Comercial IQ REAL/);
-    expect(selector().options[3].textContent).toMatch(/dos/i);
+    expect(selector().options[4].textContent).toMatch(/DHELIX/);
+    // Ya no puede decir «Los dos»: con cuatro en la lista, esa etiqueta mentía.
+    expect(selector().options[5].textContent).toMatch(/^Todos$/);
   });
 });
 
@@ -102,16 +131,42 @@ describe('Biomol · elegir un método lo pone en el campo y lo guarda', () => {
     expect(guardado()).toMatch(/extracción de ADN\.$/);
   });
 
-  it('«Los dos» guarda los 330 caracteres SIN cortar la frase', () => {
+  it('los métodos nuevos 3 y 4 se eligen y se guardan enteros', () => {
+    localStorage.clear();
+    H.renderBiomol();
+    elegir('2');
+    expect(guardado()).toBe(H.BIO_METODOS[2].tx);
+    expect(guardado()).toMatch(/reacción dúplex/);
+    elegir('3');
+    expect(guardado()).toBe(H.BIO_METODOS[3].tx);
+    expect(guardado().endsWith('extracción de ADN.')).toBe(true);
+  });
+
+  it('«Todos» guarda los cuatro SIN cortar la frase', () => {
     localStorage.clear();
     H.renderBiomol();
     elegir('*');
     // Antes de la corrección aquí se guardaban 200 caracteres y la frase moría en
     // "…soluciones lisis y etanol". Comparar el texto entero es lo que lo detecta.
-    expect(guardado()).toBe(H.BIO_METODO_DEF);
-    expect(guardado().length).toBeGreaterThan(200);
+    // Con cuatro métodos son ~590 caracteres: siguen cabiendo en el tope de 2000.
+    expect(guardado()).toBe(H.BIO_METODO_TODOS);
+    expect(guardado().length).toBeGreaterThan(500);
+    expect(guardado().length).toBeLessThan(2000);
     expect(guardado()).toMatch(/primers específicos/);
+    expect(guardado()).toMatch(/DHELIX/);
+    expect(guardado().split('\n')).toHaveLength(4);
     expect(guardado().endsWith('extracción de ADN.')).toBe(true);
+  });
+
+  it('un reporte NUEVO arranca con los dos históricos, NO con los cuatro', () => {
+    localStorage.clear();
+    H.renderBiomol();
+    // Lo que ve el analista al abrir el informe y lo que queda guardado, ambos.
+    expect(campo().value).toBe(H.BIO_METODO_DEF);
+    expect(guardado()).toBe(H.BIO_METODO_DEF);
+    expect(guardado().split('\n')).toHaveLength(2);
+    // Si el defecto se re-acopla al catálogo, aquí aparecerían dos métodos sin aplicar.
+    expect(guardado()).not.toMatch(/DHELIX|dúplex/);
   });
 
   it('el campo sigue siendo libre: lo escrito a mano se guarda tal cual', () => {

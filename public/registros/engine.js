@@ -7927,18 +7927,28 @@ function _bioEsPositivo(v){
   return s === "+" || s.indexOf("pos") === 0;
 }
 
-// Los DOS métodos del laboratorio, como catálogo elegible. Antes eran un solo texto con los
-// dos pegados: quien había usado uno tenía que borrar el otro a mano. Ahora se eligen en un
-// desplegable —el mismo espíritu que el Analista de Microbiología— y el campo sigue siendo
-// texto libre, así que después se edita o se escribe otra cosa. Por defecto se siguen
-// mostrando los DOS, como hasta ahora (decisión del usuario, 2026-08-18).
+// Los métodos del laboratorio, como catálogo elegible. Antes eran un solo texto con los
+// dos pegados: quien había usado uno tenía que borrar el otro a mano. Ahora se eligen en
+// un desplegable —el mismo espíritu que el Analista de Microbiología— y el campo sigue
+// siendo texto libre, así que después se edita o se escribe otra cosa.
+// ⚠ «Todos» inserta el catálogo ENTERO, pero el DEFECTO de un reporte nuevo son solo los
+// marcados `def` —los dos históricos—: arrancar con los cuatro obligaría al analista a
+// borrar dos en cada informe. Por eso la marca va en el objeto y no es un `slice(0,2)`,
+// que se rompería en silencio al reordenar el catálogo (decisión del usuario, 2026-08-19).
 const BIO_METODOS = [
-  { et: "1) Kit Comercial IQ REAL",
+  { et: "1) Kit Comercial IQ REAL", def: true,
     tx: "1) Extracción y amplificación de ADN mediante el Kit Comercial IQ REAL, el límite de detección es de 10 copias/μl extracción de ADN." },
-  { et: "2) PCR Nested punto final",
-    tx: "2) Extracción de ADN tradicional mediante soluciones lisis y etanoles, amplificación por PCR Nested punto final con primers específicos, el límite de detección es de 10 copias/μl extracción de ADN." }
+  { et: "2) PCR Nested punto final", def: true,
+    tx: "2) Extracción de ADN tradicional mediante soluciones lisis y etanoles, amplificación por PCR Nested punto final con primers específicos, el límite de detección es de 10 copias/μl extracción de ADN." },
+  { et: "3) Reacción dúplex",
+    tx: "3) Extracción y amplificación de ADN mediante reacción dúplex, el límite de detección es de 10 copias/μl extracción de ADN." },
+  { et: "4) Kit Comercial DHELIX",
+    tx: "4) Extracción y amplificación de ADN mediante el Kit Comercial DHELIX, el límite de detección es de 10 copias/μl extracción de ADN." }
 ];
-const BIO_METODO_DEF = BIO_METODOS.map(function(m){ return m.tx; }).join("\n");
+// El catálogo entero, para la opción «Todos» del desplegable.
+const BIO_METODO_TODOS = BIO_METODOS.map(function(m){ return m.tx; }).join("\n");
+// Lo que propone un reporte NUEVO: solo los marcados por defecto, no el catálogo entero.
+const BIO_METODO_DEF = BIO_METODOS.filter(function(m){ return m.def; }).map(function(m){ return m.tx; }).join("\n");
 
 function _bioRptAll(){
   try{ const o = JSON.parse(localStorage.getItem(BIO_RPT_KEY) || "{}"); return (o && typeof o==="object") ? o : {}; }
@@ -8068,12 +8078,13 @@ function bioRptSet(field, val){
   r[field] = sanitizeStr(val, 2000);
   saveBioRpt(sid, r);
 }
-/** Pone en el campo Método el texto elegido en el desplegable, o los dos si se elige «Los
- *  dos». REEMPLAZA lo que hubiera: el campo sigue siendo libre, así que después se edita a
- *  mano. El desplegable vuelve a "Elegir método…" para poder volver a elegir sin recargar. */
+/** Pone en el campo Método el texto elegido en el desplegable, o el catálogo entero si se
+ *  elige «Todos». REEMPLAZA lo que hubiera: el campo sigue siendo libre, así que después
+ *  se edita a mano. El desplegable vuelve a "Elegir método…" para poder volver a elegir
+ *  sin recargar. */
 function bioMetodoPick(sel){
   if(!sel || !sel.value) return;
-  const tx = (sel.value === "*") ? BIO_METODO_DEF : ((BIO_METODOS[Number(sel.value)] || {}).tx || "");
+  const tx = (sel.value === "*") ? BIO_METODO_TODOS : ((BIO_METODOS[Number(sel.value)] || {}).tx || "");
   sel.value = "";
   if(!tx) return;
   const ta = document.getElementById("bio-rpt-metodo");
@@ -8175,7 +8186,7 @@ function _bioReportBlock(fecha, rows, sid){
         <select onchange="bioMetodoPick(this)" style="margin-left:6px;padding:1px 5px;font-size:10px" title="Pone el método elegido en el campo. Después puedes editarlo o escribir otro.">
           <option value="">Elegir método…</option>
           ${BIO_METODOS.map(function(m,i){ return '<option value="'+i+'">'+escapeHtml(m.et)+'</option>'; }).join("")}
-          <option value="*">Los dos</option>
+          <option value="*">Todos</option>
         </select></label>
         <textarea id="bio-rpt-metodo" oninput="bioRptSet('metodo',this.value)" style="width:100%;min-height:70px">${escapeHtml(r.metodo)}</textarea></div>
       <div class="mf" style="margin-bottom:8px"><label>Descripción del análisis
