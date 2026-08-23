@@ -23,6 +23,7 @@
     "vitest": "^2.0.5"
   },
   "dependencies": {
-    "chart.js": "^4.4.3"
+    "chart.js": "^4.4.3",
+    "leaflet": "^1.9.4"
   }
 }

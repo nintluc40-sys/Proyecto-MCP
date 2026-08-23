@@ -1,0 +1,351 @@
+/* ============================================================
+   SUPERVISOR · Traslado — agregación de `Registro_Traslado`
+
+   Módulo PURO: sin DOM, sin red, sin estado. Toma las filas planas de la hoja y
+   devuelve el viaje reconstruido por CAMIÓN, que es como lo mira el supervisor.
+
+   ── El grano y por qué importa ──────────────────────────────
+   La hoja es formato largo: una fila por (viaje, camión, revisión, tina). Un viaje
+   de 2 camiones × 4 paradas × 8 tinas son 64 filas que dicen lo mismo del viaje 64
+   veces. Aquí se deshace ese denormalizado: los valores de VIAJE se toman una vez,
+   los de PARADA una vez por revisión, y sólo las mediciones se promedian.
+
+   ── La costura que hacía falta comprobar ────────────────────
+   🔑 El «Módulo» de esta hoja usa la grafía CORTA —M01…M10, CIO— y es EXACTAMENTE
+   la que traen las hojas «Datos Larvicultura» que alimentan al supervisor (medido
+   en producción: M07). Si la ficha hubiera escrito «Módulo 7», como hace
+   Registro_Supervisión, esta vista habría salido vacía para siempre y sin un solo
+   error. Es la misma trampa de las dos grafías del analista.
+
+   ⚠ La Corrida llega como NÚMERO desde la hoja y como TEXTO desde el estado de la
+   vista. Se comparan siempre normalizadas a texto.
+   ============================================================ */
+
+/** Cabeceras exactas de `Registro_Traslado` (ver ficha-traslado.schema.js). */
+export const TK = {
+  fecha: 'Fecha',
+  viaje: 'Viaje',
+  corrida: 'Corrida',
+  modulo: 'Módulo',
+  camaronera: 'Camaronera',
+  placa: 'Placa',
+  salinidad: 'Salinidad',
+  horaSalida: 'Hora salida',
+  horaLlegada: 'Hora llegada',
+  revision: 'Revisión',
+  hora: 'Hora',
+  lugar: 'Lugar',
+  lat: 'Latitud',
+  lon: 'Longitud',
+  precision: 'Precisión (m)',
+  ubicacion: 'Ubicación',
+  tina: 'Tina',
+  o2: 'Oxígeno (mg/L)',
+  temp: 'Temperatura (°C)',
+  act: 'Actividad',
+  alim: 'Alimentación',
+  obs: 'Observaciones',
+  insumos: 'Insumos',
+  check: 'Check materiales',
+  controlador: 'Controlador despacho',
+  chequeador: 'Chequeador entrega',
+  recepcion: 'Responsable recepción',
+  id: 'ID',
+};
+
+/** Catálogos, duplicados a propósito: este módulo no puede importar de la app de
+ *  captura (`public/registros/engine.js` es un monolito de script clásico).
+ *  `traslado.data.test.js` comprueba que sigan coincidiendo con el esquema. */
+export const ACTIVIDAD_ORDEN = ['Alta', 'Normal', 'Media', 'Baja'];
+export const INSUMOS_POSIBLES = ['Artemia', 'Flake', 'Prokura', 'Vitamina C'];
+export const CHECK_POSIBLES = ['Oxigenómetro', 'Linterna', 'Bandeja', 'Esfero'];
+
+const txt = (r, k) => String((r && r[k] != null ? r[k] : '')).trim();
+const num = (r, k) => {
+  const v = r ? r[k] : null;
+  if (v === '' || v === null || v === undefined) return null;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+};
+const prom = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
+
+/** ¿La fila viene de `Registro_Traslado`? El origen lo estampa `applySheets`. */
+export function isTrasladoRow(r) {
+  if (!r) return false;
+  const o = String(r._SheetOrigin || '').trim();
+  if (/traslado/i.test(o)) return true;
+  // Respaldo por forma: una hoja renombrada seguiría teniendo estas cuatro columnas
+  // juntas, que no coinciden con ninguna otra del sistema.
+  return r[TK.placa] !== undefined && r[TK.tina] !== undefined
+    && r[TK.revision] !== undefined && r[TK.viaje] !== undefined;
+}
+
+/** Filas de traslado de un (módulo, corrida). `corrida` null = todas. */
+export function filasDe(data, mod, corrida) {
+  const m = String(mod == null ? '' : mod).trim();
+  const c = corrida == null || corrida === '' ? null : String(corrida).trim();
+  return (data || []).filter((r) => {
+    if (!isTrasladoRow(r)) return false;
+    if (m && txt(r, TK.modulo) !== m) return false;
+    if (c !== null && txt(r, TK.corrida) !== c) return false;
+    return true;
+  });
+}
+
+/** Las placas presentes, en orden de aparición estable (alfabético). */
+export function placasDe(filas) {
+  return [...new Set((filas || []).map((r) => txt(r, TK.placa)).filter(Boolean))].sort();
+}
+
+/** Lista CSV de la hoja → array limpio. */
+function lista(v) {
+  return String(v == null ? '' : v).split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+/** Cumplimiento de un checklist: cuáles se marcaron de los posibles. */
+function cumplimiento(marcados, posibles) {
+  const set = new Set(marcados);
+  const falta = posibles.filter((p) => !set.has(p));
+  return {
+    marcados: posibles.filter((p) => set.has(p)),
+    faltan: falta,
+    n: posibles.length - falta.length,
+    total: posibles.length,
+    completo: falta.length === 0,
+  };
+}
+
+/* ── Una parada de un camión ────────────────────────────────
+   Las columnas de PARADA (hora, lugar, coordenadas, observaciones) se repiten en
+   las 8 filas de sus tinas: se toma la primera no vacía, no se promedian. */
+function paradaDe(filasParada) {
+  const base = filasParada[0] || {};
+  const primero = (k) => {
+    for (const r of filasParada) { const v = txt(r, k); if (v !== '') return v; }
+    return '';
+  };
+  const primeroNum = (k) => {
+    for (const r of filasParada) { const v = num(r, k); if (v !== null) return v; }
+    return null;
+  };
+  const tinas = {};
+  filasParada.forEach((r) => {
+    const t = num(r, TK.tina);
+    if (t === null) return;
+    tinas[t] = { tina: t, o2: num(r, TK.o2), temp: num(r, TK.temp), act: txt(r, TK.act), alim: txt(r, TK.alim) };
+  });
+  const vals = (campo) => Object.values(tinas).map((x) => x[campo]).filter((v) => v !== null);
+  return {
+    revision: num(base, TK.revision),
+    hora: primero(TK.hora),
+    lugar: primero(TK.lugar),
+    lat: primeroNum(TK.lat),
+    lon: primeroNum(TK.lon),
+    precision: primeroNum(TK.precision),
+    ubicacion: primero(TK.ubicacion),
+    obs: primero(TK.obs),
+    tinas,
+    o2: prom(vals('o2')),
+    temp: prom(vals('temp')),
+    // Alimentación de la parada: la que aparece; suele ser la misma en todas.
+    alim: [...new Set(Object.values(tinas).map((x) => x.alim).filter(Boolean))],
+  };
+}
+
+/** Frecuencia de Actividad y su categoría dominante. */
+export function actividadDe(registros) {
+  const conteo = {};
+  ACTIVIDAD_ORDEN.forEach((a) => { conteo[a] = 0; });
+  let otras = 0;
+  registros.forEach((a) => {
+    const v = String(a || '').trim();
+    if (!v) return;
+    if (Object.prototype.hasOwnProperty.call(conteo, v)) conteo[v] += 1;
+    else otras += 1;
+  });
+  const total = ACTIVIDAD_ORDEN.reduce((s, a) => s + conteo[a], 0) + otras;
+  // La moda se resuelve por el ORDEN DE LA ESCALA, no por el alfabético ni por el
+  // de inserción: con empate entre «Alta» y «Baja», decir «Alta» es informativo y
+  // decir «Baja» sería alarmista. Un empate real se señala aparte.
+  let moda = null; let max = 0; let empate = false;
+  ACTIVIDAD_ORDEN.forEach((a) => {
+    if (conteo[a] > max) { max = conteo[a]; moda = a; empate = false; }
+    else if (conteo[a] === max && max > 0 && a !== moda) empate = true;
+  });
+  return { conteo, moda: total ? moda : null, max, empate, total };
+}
+
+/* ── El viaje de UN camión ──────────────────────────────────── */
+function camionDe(filasPlaca) {
+  const base = filasPlaca[0] || {};
+  const porRev = new Map();
+  filasPlaca.forEach((r) => {
+    const rev = num(r, TK.revision);
+    if (rev === null) return;
+    if (!porRev.has(rev)) porRev.set(rev, []);
+    porRev.get(rev).push(r);
+  });
+  const paradas = [...porRev.keys()].sort((a, b) => a - b).map((rev) => paradaDe(porRev.get(rev)));
+
+  // Promedios POR TINA a lo largo de todo el viaje (lo que pidió el usuario:
+  // «promedio por tina y carro»).
+  const porTina = (campo) => {
+    const acc = {};
+    paradas.forEach((p) => {
+      Object.values(p.tinas).forEach((t) => {
+        if (t[campo] === null) return;
+        (acc[t.tina] = acc[t.tina] || []).push(t[campo]);
+      });
+    });
+    const out = {};
+    Object.keys(acc).sort((a, b) => a - b).forEach((t) => { out[t] = prom(acc[t]); });
+    return out;
+  };
+  const todos = (campo) => paradas.flatMap((p) => Object.values(p.tinas).map((t) => t[campo])).filter((v) => v !== null);
+
+  const acts = paradas.flatMap((p) => Object.values(p.tinas).map((t) => t.act));
+  const observaciones = paradas
+    .filter((p) => p.obs !== '')
+    .map((p) => ({ revision: p.revision, hora: p.hora, lugar: p.lugar, texto: p.obs }));
+
+  return {
+    placa: txt(base, TK.placa),
+    viaje: txt(base, TK.viaje),
+    fecha: txt(base, TK.fecha),
+    camaronera: txt(base, TK.camaronera),
+    corrida: txt(base, TK.corrida),
+    modulo: txt(base, TK.modulo),
+    horaSalida: txt(base, TK.horaSalida),
+    horaLlegada: txt(base, TK.horaLlegada),
+    salinidad: num(base, TK.salinidad),
+    controlador: txt(base, TK.controlador),
+    chequeador: txt(base, TK.chequeador),
+    recepcion: txt(base, TK.recepcion),
+    insumos: cumplimiento(lista(base[TK.insumos]), INSUMOS_POSIBLES),
+    check: cumplimiento(lista(base[TK.check]), CHECK_POSIBLES),
+    paradas,
+    nParadas: paradas.length,
+    tinas: [...new Set(paradas.flatMap((p) => Object.keys(p.tinas).map(Number)))].sort((a, b) => a - b),
+    o2: { promedio: prom(todos('o2')), porTina: porTina('o2') },
+    temp: { promedio: prom(todos('temp')), porTina: porTina('temp') },
+    actividad: actividadDe(acts),
+    observaciones,
+    nObservaciones: observaciones.length,
+    // Puntos con coordenadas, para el mapa. Una parada sin GPS NO se inventa.
+    puntos: paradas.filter((p) => p.lat !== null && p.lon !== null),
+  };
+}
+
+/** Reconstruye el traslado de un (módulo, corrida), agrupado por camión. */
+export function trasladoDe(data, mod, corrida) {
+  const filas = filasDe(data, mod, corrida);
+  const placas = placasDe(filas);
+  const camiones = placas.map((pl) => camionDe(filas.filter((r) => txt(r, TK.placa) === pl)));
+  const todasAct = camiones.flatMap((c) => c.paradas.flatMap((p) => Object.values(p.tinas).map((t) => t.act)));
+  const todoO2 = camiones.flatMap((c) => c.paradas.flatMap((p) => Object.values(p.tinas).map((t) => t.o2))).filter((v) => v !== null);
+  const todoTemp = camiones.flatMap((c) => c.paradas.flatMap((p) => Object.values(p.tinas).map((t) => t.temp))).filter((v) => v !== null);
+  return {
+    modulo: String(mod || ''),
+    corrida: corrida == null || corrida === '' ? null : String(corrida),
+    hayDatos: filas.length > 0,
+    nFilas: filas.length,
+    placas,
+    camiones,
+    // Totales del conjunto, para los KPIs de cabecera.
+    o2: prom(todoO2),
+    temp: prom(todoTemp),
+    actividad: actividadDe(todasAct),
+    nObservaciones: camiones.reduce((a, c) => a + c.nObservaciones, 0),
+    // El check es del VIAJE, no del camión: se resume como «cuántos camiones lo
+    // llevan completo», que es la pregunta que se hace el supervisor.
+    insumosCompletos: camiones.filter((c) => c.insumos.completo).length,
+    checkCompletos: camiones.filter((c) => c.check.completo).length,
+  };
+}
+
+/* ══════════════════════════════════════════════════════════
+   ANALÍTICA DE LAS VISTAS POR PARÁMETRO
+   Δ entre paradas, resumen por tina y escala de color relativa.
+   ══════════════════════════════════════════════════════════ */
+
+/** Δ de la media de cada parada respecto a la ANTERIOR. La primera no tiene Δ:
+ *  se devuelve `null`, no 0 — un 0 diría «no cambió», y no es lo mismo. */
+export function deltasDe(paradas, campo) {
+  return (paradas || []).map((p, i) => {
+    const media = campo === 'temp' ? p.temp : p.o2;
+    const prev = i === 0 ? null : (campo === 'temp' ? paradas[i - 1].temp : paradas[i - 1].o2);
+    return {
+      revision: p.revision,
+      hora: p.hora,
+      lugar: p.lugar,
+      media,
+      delta: (media === null || prev === null) ? null : media - prev,
+    };
+  });
+}
+
+/** Resumen POR TINA a lo largo del viaje: media, mínimo, máximo y RECORRIDO.
+ *  El recorrido (máx − mín) es lo que delata una tina inestable aunque su media
+ *  parezca normal — el caso de la tina que se desploma en una sola parada. */
+export function resumenPorTina(camion, campo) {
+  const out = {};
+  (camion.tinas || []).forEach((t) => {
+    const vals = (camion.paradas || [])
+      .map((p) => (p.tinas[t] || {})[campo])
+      .filter((v) => v !== null && v !== undefined);
+    if (!vals.length) { out[t] = { tina: t, media: null, min: null, max: null, recorrido: null }; return; }
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    out[t] = { tina: t, media: prom(vals), min, max, recorrido: max - min };
+  });
+  return out;
+}
+
+/** Todos los valores de un campo en un camión, para fijar la escala. */
+export function valoresDe(camion, campo) {
+  return (camion.paradas || [])
+    .flatMap((p) => Object.values(p.tinas).map((x) => x[campo]))
+    .filter((v) => v !== null && v !== undefined);
+}
+
+/** Escala RELATIVA al propio viaje: mínimo, máximo y mediana observados.
+ *  ⚠ No hay cortes absolutos porque la «tabla referencial de parámetros de
+ *  despacho» del procedimiento NO está disponible, y fijarlos a ojo sería peor
+ *  que no ponerlos: pintaría de rojo lo que quizá es normal. Decisión del
+ *  usuario, 2026-08-23. */
+export function escalaDe(valores) {
+  if (!valores || !valores.length) return null;
+  const ord = [...valores].sort((a, b) => a - b);
+  const n = ord.length;
+  const mediana = n % 2 ? ord[(n - 1) / 2] : (ord[n / 2 - 1] + ord[n / 2]) / 2;
+  return { min: ord[0], max: ord[n - 1], mediana, n };
+}
+
+/** Nivel 0-3 de un valor dentro de su escala. 0 = lo que hay que mirar.
+ *
+ *  🔑 La DIRECCIÓN cambia según el parámetro, y no es un detalle:
+ *   · `mas-mejor` (oxígeno): más alto es mejor, así que lo BAJO se marca.
+ *   · `centro` (temperatura): no hay un «más es mejor». Lo que llama la atención
+ *     es alejarse de lo habitual del viaje, en cualquiera de los dos sentidos.
+ *     Tratar la temperatura como «más es mejor» pintaría de verde la tina más
+ *     caliente del camión, que es justo la que hay que mirar. */
+export function nivelDe(valor, escala, direccion) {
+  if (valor === null || valor === undefined || !escala) return null;
+  const rango = escala.max - escala.min;
+  if (rango === 0) return 3;                     // todo igual: nada que destacar
+  if (direccion === 'centro') {
+    // Distancia a la mediana, normalizada por la mayor distancia posible.
+    const lejosMax = Math.max(escala.max - escala.mediana, escala.mediana - escala.min) || 1;
+    const t = Math.abs(valor - escala.mediana) / lejosMax;
+    return t >= 0.75 ? 0 : t >= 0.5 ? 1 : t >= 0.25 ? 2 : 3;
+  }
+  const t = (valor - escala.min) / rango;
+  return t >= 0.75 ? 3 : t >= 0.5 ? 2 : t >= 0.25 ? 1 : 0;
+}
+
+/** La tina con mayor recorrido: la más inestable del camión. */
+export function tinaMasInestable(resumen) {
+  const arr = Object.values(resumen || {}).filter((x) => x.recorrido !== null);
+  if (!arr.length) return null;
+  return arr.reduce((a, b) => (b.recorrido > a.recorrido ? b : a));
+}

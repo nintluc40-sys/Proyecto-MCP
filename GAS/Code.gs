@@ -45,6 +45,7 @@ const ALLOWED = [
   "BIOMOL",
   "Registro_Supervisión",
   "Registro_Desinfección",
+  "Registro_Traslado",
   "Microbiología",
   "Calidad de Agua",
   "Patología en Fresco",
@@ -77,7 +78,15 @@ const LIMITS = {
   pat:     { maxRows: 300, maxCols: 40 },
   // Marea: 16 cols (predicción INOCAR, 1 fila/día). maxRows holgado por encima del
   // tope del cliente (grilla hasta 400 filas): permite sincronizar meses de una vez.
-  marea:   { maxRows: 420, maxCols: 20 }
+  marea:   { maxRows: 420, maxCols: 20 },
+  // Traslado: 29 columnas, una fila por (viaje, camión, revisión, tina).
+  // Un viaje normal son 2 camiones x 4 revisiones x 8 tinas = 64 filas, pero el
+  // formulario admite añadir camiones y paradas, y el cliente puede enviar VARIOS
+  // viajes pendientes en un solo lote. 600 cubre ~9 viajes normales de golpe.
+  // ⚠ maxCols NO es sólo validación: las filas se RECORTAN a este ancho más abajo.
+  // Con menos de 29 se perderían en silencio las últimas columnas — es el mismo
+  // fallo que costó las 2 últimas del AsT cuando maxCols estaba en 25.
+  tras:    { maxRows: 600, maxCols: 40 }
 };
 
 // Rate limit state: persistido en CacheService (60s TTL) para que sobreviva
@@ -170,6 +179,7 @@ function doPost(e) {
     var isBiomol = payload.sheetName === "BIOMOL";
     var isAst    = payload.sheetName === "Registro_Supervisión";
     var isDesinf = payload.sheetName === "Registro_Desinfección";
+    var isTras   = payload.sheetName === "Registro_Traslado";
     var isMicro  = payload.sheetName === "Microbiología";
     var isCal    = payload.sheetName === "Calidad de Agua";
     var isPat    = payload.sheetName === "Patología en Fresco";
@@ -201,6 +211,7 @@ function doPost(e) {
                 : isMad    ? LIMITS.mad
                 : isBiomol ? LIMITS.biomol
                 : isAst    ? LIMITS.ast
+                : isTras   ? LIMITS.tras
                 : isDesinf ? LIMITS.desinf
                 : isMicro  ? LIMITS.micro
                 : isCal    ? LIMITS.cal
@@ -303,6 +314,12 @@ function doPost(e) {
       else                          result = appendRows(ws, rows);
     }
     else if (isAst)    result = upsertAstRows(ws, rows);
+    // Registro_Traslado: MISMO upsert por columna "ID" que el AsT. No hace falta
+    // función propia — upsertAstRows localiza el ID por CABECERA y en Traslado el
+    // ID es además la última columna, que es su respaldo. La llave del cliente es
+    // determinista (viaje-c<camión>-r<revisión>-t<tina>), así que el camión puede
+    // sincronizar en cada parada sin duplicar una sola fila.
+    else if (isTras)   result = upsertAstRows(ws, rows);
     // Registro_Desinfección: upsert por clave compuesta Fecha+Módulo+Tipo de
     // Registro+Categoría+Elemento → re-sincronizar no duplica; editar Estado /
     // Observaciones / Fecha Elemento actualiza la misma fila.

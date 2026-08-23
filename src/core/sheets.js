@@ -43,6 +43,10 @@ export function classifyOrigin(name) {
   const n = String(name).trim();
   if (/^Control_Tanque/i.test(n)) return 'Control_Tanque';
   if (/registro[_\s]*supervisi/i.test(n)) return 'Registro_Supervision';
+  // ⚠ Va ANTES que la regla de «larvicultura|larvi»: la hoja del traslado no lleva
+  // esa palabra hoy, pero dejarla detrás sería confiar en que nunca la lleve. Su
+  // origen alimenta la sub-vista de Traslado del Supervisor.
+  if (/registro[_\s]*traslado/i.test(n)) return 'Registro_Traslado';
   if (/microbiolog/i.test(n)) return 'Microbiología';
   if (/calidad\s*de\s*agua/i.test(n)) return 'Calidad de Agua';
   if (/^marea/i.test(n)) return 'Marea';

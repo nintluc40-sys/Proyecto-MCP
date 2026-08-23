@@ -131,7 +131,10 @@ export function buildContext(vState) {
   // corrida activa, así que con él el archivo saldría incompleto. Es el universo que aquí
   // ya se calculaba para `allMods`, sin coste añadido.
   // ⚠ Array COMPARTIDO entre consumidores: tratarlo como inmutable (copiar antes de ordenar).
-  const ctx = { larvAll, larvCM, tanqCM, larvWin, tanqWin, allMods, vState };
+  // `data` es el universo CRUDO, sin el filtro de Larvicultura. Lo consume la
+  // sub-vista de Traslado: sus filas vienen de `Registro_Traslado` y por eso NO
+  // están en `larvAll`, que descarta a propósito todo lo que no sea Larvicultura.
+  const ctx = { data, larvAll, larvCM, tanqCM, larvWin, tanqWin, allMods, vState };
   _ctxCache = { data, corrida: vState.corrida, from: store.dateFrom, to: store.dateTo, ctx };
   return ctx;
 }

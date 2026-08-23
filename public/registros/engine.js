@@ -1667,6 +1667,7 @@ function _reconcileMark(mark){
     else if(mark.kind === "pat" && typeof _patRaw === "function"){ raw=_patRaw; save=_patSave; keyOf=(r)=> r.data ? patSessionKey(r.data) : ""; }
     else if(mark.kind === "bio" && typeof _bioRaw === "function"){ raw=_bioRaw; save=_bioSave; keyOf=(r)=> r.data ? r.data.fecha : ""; }
     else if(mark.kind === "ast" && typeof _astRaw === "function"){ raw=_astRaw; save=_astSave; keyOf=(r)=> r.id; }
+    else if(mark.kind === "tras" && typeof _trasRaw === "function"){ raw=_trasRaw; save=_trasSave; keyOf=(r)=> r.id; }
     else if(mark.kind.indexOf("mad:") === 0 && typeof loadMad === "function" && typeof saveMadList === "function"){
       const _mk = mark.kind.slice(4);   // salas | tanques | lotes
       raw=()=>loadMad(_mk); save=(l)=>saveMadList(_mk, l); keyOf=(r)=> r.id;
@@ -1872,9 +1873,20 @@ async function syncAll(){
     await syncAllPendingBio();
     return;
   }
-  // Atajo: As Técnico delega en syncAllPendingAst (un solo batch a Registro_Supervisión).
+  // Atajo: As Técnico. El módulo tiene DOS fichas que sincronizan a hojas distintas
+  // —Supervisión y Traslado—, así que se envía lo pendiente de cada una. Antes esto
+  // sólo llamaba a syncAllPendingAst: pulsar «sincronizar» estando en la pestaña de
+  // Traslado no enviaba el traslado y tampoco decía nada (T3, 2026-08-23).
   if(isAstMod(curMod)){
-    await syncAllPendingAst();
+    const astP  = (typeof loadAst  === "function") && loadAst().some(r => !r.synced);
+    const trasP = (typeof loadTras === "function") && loadTras().some(r => !r.synced);
+    if(!astP && !trasP){
+      setSyncUI("idle","Todo sincronizado");
+      toast("No hay registros pendientes","info",2500);
+      return;
+    }
+    if(astP)  await syncAllPendingAst();
+    if(trasP) await syncAllPendingTras();
     return;
   }
   if(!syncRateOk()) return;
@@ -2102,10 +2114,14 @@ function buildGrid(){
     <div class="mc-lbl">Especial</div>
     <span class="mc-dot"></span>
   </div>`;
-  // As Técnico tile — pinta dot pend/sync según historial local
+  // As Técnico tile — pinta dot pend/sync según historial local.
+  // Cuenta las DOS fichas del módulo (Supervisión y Traslado): si sólo mirara la
+  // primera, un traslado pendiente no encendería el punto y nadie sabría que falta
+  // por enviar hasta entrar en la pestaña.
   const astList = (typeof loadAst === "function") ? loadAst() : [];
-  const astPend = astList.some(r => !r.synced);
-  const astSync = astList.some(r => r.synced);
+  const trasLst = (typeof loadTras === "function") ? loadTras() : [];
+  const astPend = astList.some(r => !r.synced) || trasLst.some(r => !r.synced);
+  const astSync = astList.some(r => r.synced)  || trasLst.some(r => r.synced);
   const astCls  = astPend?"pend":astSync?"sync":"";
   h += `<div class="mc mc-ast ${astCls}" id="mc13" onclick="pickMod(13)">
     <div class="mc-num">AsT</div>
@@ -2232,6 +2248,7 @@ function goBack(){
   // (recuperación de lo no guardado).
   try{ if(isBioMod(curMod)) saveBioRecovery(); }catch(_){}
   try{ if(isAstMod(curMod)) saveAstRecovery(); }catch(_){}
+  try{ if(isAstMod(curMod)) saveTrasRecovery(); }catch(_){}
   try{ if(isMadMod(curMod)) saveMadRecovery(); }catch(_){}
   if(_recTimer){ clearInterval(_recTimer); _recTimer = null; }
   _algEditingId = null;  // limpia modo edición Lab. Algas al salir del módulo
@@ -2239,6 +2256,7 @@ function goBack(){
   _madEditing = { ficha:null, id:null }; // limpia modo edición Maduración
   if(typeof _bioEditing !== "undefined") _bioEditing = null; // limpia edición Biomol
   if(typeof _astEditing !== "undefined") _astEditing = null; // limpia edición As Técnico
+  if(typeof _trasEditing !== "undefined") _trasEditing = null; // limpia edición Traslado
   // Purga oportunista de fotos/videos vencidos en TODOS los módulos.
   // Sin esto, los medios capturados en M01 seguirían ocupando localStorage
   // hasta el siguiente arranque, aun cuando el usuario haya cambiado de
@@ -2265,7 +2283,7 @@ const MAD_TABS      = ["salas","tanques","lotes","reproductivo","fotos"];
 // Tabs del módulo Biomol — form + historial inline + fotos
 const BIO_TABS      = ["biomol","fotos"];
 // Tabs del módulo As Técnico — form de supervisión + registro de mareas + fotos
-const AST_TABS      = ["ast","marea","fotos"];
+const AST_TABS      = ["ast","traslado","marea","fotos"];
 // Rendered as [id, icon, label]
 const TAB_META = {
   calidad:  ["🔬","Calidad Larvaria"],
@@ -2285,6 +2303,7 @@ const TAB_META = {
   reproductivo: ["🦐","Reproductivo"],
   biomol:   ["🧬","Biomol"],
   ast:      ["📋","As Técnico"],
+  traslado: ["🚚","Traslado"],
   marea:    ["🌊","Mareas"],
   blanco:   ["📝","Blanco"],
   micnuevo: ["🧫","Nuevo análisis"],
@@ -2348,6 +2367,7 @@ function selTab(t){
   if(t==="reproductivo") renderMadReproductivo();
   if(t==="biomol") renderBiomol();
   if(t==="ast")    renderAst();
+  if(t==="traslado") renderTraslado();
   if(t==="marea")  renderMarea();
   if(t==="micnuevo") micDispatchNuevo();
   if(t==="michist")  micDispatchHist();
@@ -2378,6 +2398,12 @@ function updateDots(){
   }
   // As Técnico: igual que Biomol
   if(isAstMod(curMod)){
+    const elT = document.getElementById("dot-traslado");
+    if(elT){
+      const lt = (typeof loadTras === "function") ? loadTras() : [];
+      const st = lt.some(r => !r.synced) ? "pending" : (lt.length > 0 ? "synced" : "empty");
+      elT.className = "fdot " + (st==="synced"?"ok":st==="pending"?"pend":"mt");
+    }
     const el = document.getElementById("dot-ast");
     if(!el) return;
     const list = loadAst();
@@ -9210,6 +9236,1302 @@ function renderAst(){
 
 
 /* ══════════════════════════════════════════
+   TRASLADO (Tras) — Hoja de Control de Alimentación y Parámetros
+   ──────────────────────────────────────────
+   Registra el VIAJE de entrega de larvas: del laboratorio a la camaronera, con
+   revisiones de parámetros en ruta. Vive en el módulo As Técnico, junto a la
+   supervisión y las mareas.
+
+   ⚠ NO confundir con la ficha "despacho" (pestaña 🚚 Despacho de los módulos de
+   larvicultura), que registra la COSECHA en origen. Aquélla es el envío; ésta es
+   el viaje. Por eso la pestaña se llama "traslado".
+
+   • UN VIAJE, VARIOS CAMIONES: un chequeador va a cargo de dos o más camiones que
+     salen juntos al mismo destino y sólo se distinguen por la PLACA. Por eso el
+     grano de la hoja es (viaje, camión, revisión, tina): 2 camiones × 4 revisiones
+     × 8 tinas = 64 filas de 27 columnas. Formato largo, como Microbiología.
+   • Llave: ID = <viajeId>-c<camión>-r<revisión>-t<tina>, DETERMINISTA y en la
+     ÚLTIMA columna. El GAS hace UPSERT por ella, así que el camión puede
+     sincronizar en cada parada sin duplicar una sola fila. Sin la parte -c<n> los
+     dos camiones del viaje escribirían sobre la misma fila.
+   • La CAPTURA es de una (placa, revisión) a la vez —selector arriba, un solo
+     bloque a la vista—, pero el DATO es siempre el viaje entero: lo visible se
+     vuelca al modelo antes de cambiar de bloque. Ver `_trasModel`.
+   • Hora y ubicación se sellan solas cuando el navegador lo permite; si no hay
+     contexto seguro o el GPS falla, se teclean a mano y la ficha lo dice. NUNCA
+     bloquean el formulario.
+   • El espejo probado de esta lógica vive en
+     src/views/registros/lib/ficha-traslado.schema.js; `ficha-traslado.paridad.test.js`
+     extrae ESTE código y exige que los dos produzcan el mismo payload.
+══════════════════════════════════════════ */
+const TRAS_REC_KEY   = "larv4_tras_records";
+const TRAS_RECOV_KEY = RPRE + "trasform";   // recuperación del formulario en curso (TTL 1h = RTTL)
+const TRAS_MAX       = 40;
+const TRAS_TTL       = 48 * 60 * 60 * 1000;
+const TRAS_SHEET     = "Registro_Traslado";
+const TRAS_TINAS     = 8;
+// Mínimo del protocolo según el trayecto. El formulario ABRE con 4, que son las
+// casillas del formato en papel, y admite añadir las que el trayecto pida.
+const TRAS_REV_MIN   = 3;
+const TRAS_REV_INI   = 4;
+// El protocolo fija revisiones «cada hora y media a dos horas».
+const TRAS_CADENCIA_MAX = 120;
+// Actividad: CUATRO niveles desde 2026-08-23 por decisión del usuario. Histórico:
+// «Alta»/«Normal» en papel → tres el 08-20 (que dejó «Normal» fuera) → los cuatro
+// de ahora. Se escribe «Alta», no «Alto», porque la hoja ya trae «Alta» de la etapa
+// en papel: dos grafías del mismo valor es el problema que costó caro con el analista.
+// El orden es el de la ESCALA, de más a menos, no el alfabético.
+const TRAS_ACTIVIDAD_OPTS = ["Alta","Normal","Media","Baja"];
+const TRAS_ALIM_OPTS      = ["Artemia","Flake","Prokura","Vitamina C"];
+const TRAS_LUGAR_OPTS     = ["Laboratorio","Peaje","Gabarra","Camaronera"];
+const TRAS_CHECK_ITEMS    = ["Oxigenómetro","Linterna","Bandeja","Esfero"];
+// Módulo de origen del traslado (usuario, 2026-08-23). Grafía CORTA: la misma de
+// `mLabel` y de los nombres de hoja («Datos Larvicultura - M01»).
+// ⚠ NO confundir con AST_MODULO_OPTS ("Módulo 1"…), que es la grafía LARGA que la
+// ficha de Supervisión escribe en Registro_Supervisión. Conviven a propósito
+// porque son hojas distintas; si algún día se cruzan, hay que normalizar.
+// La paridad con MODULO_OPTS del módulo ES la vigila ficha-traslado.paridad.test.js.
+const TRAS_MODULO_OPTS    = ["M01","M02","M03","M04","M05","M06","M07","M08","M09","M10","CIO"];
+// La camaronera despliega el MISMO listado que el "Destino" de la ficha de Despacho
+// de larvicultura: se reutiliza DESTINO_OPTS.
+
+// ⚠ ESTE ARRAY ES EL ORDEN FÍSICO DE LA HOJA: el GAS escribe por POSICIÓN desde la
+// columna 1. El "ID" debe seguir siendo el ÚLTIMO — el upsert lo busca por cabecera
+// y, si se pierde, cae al respaldo «última columna»; con el ID en medio las dos
+// rutas apuntarían a columnas distintas y cada envío duplicaría la fila.
+// Retirados el 2026-08-20 por el usuario: Laboratorio (siempre Omarsa), Guía,
+// Camión (lo sustituye la Placa) y Alimentos (queda sólo Insumos).
+// Retirado el 2026-08-23 por el usuario: Tanque. La hoja pasa de 28 a 27 columnas.
+// ⚠ Salió GRATIS porque Registro_Traslado todavía NO existe en producción (el GAS
+// responde «Hoja no permitida»). En cuanto T3 la cree, quitar una columna deja de
+// ser una edición y pasa a ser una migración de la hoja real.
+// Añadidas el 2026-08-23 por el usuario: Corrida y Módulo, la trazabilidad del lote.
+const TRAS_HEADERS = ["Fecha","Viaje","Corrida","Módulo","Camaronera","Placa","Salinidad",
+  "Hora salida","Hora llegada","Revisión","Hora","Lugar","Latitud","Longitud",
+  "Precisión (m)","Ubicación","Tina","Oxígeno (mg/L)","Temperatura (°C)","Actividad",
+  "Alimentación","Observaciones","Insumos","Check materiales","Controlador despacho",
+  "Chequeador entrega","Responsable recepción","Hora registro","ID"];
+
+let _trasEditing  = null;
+let _trasFormDirty = false;
+let _trasRecovered = null;
+function _trasMarkDirty(){ _trasFormDirty = true; }
+
+/* ── Celdas ─────────────────────────────────────────────────
+   ⚠⚠ `sanitizeStr` elimina los caracteres `= + - @` INICIALES para impedir la
+   inyección de fórmulas en Google Sheets. La LONGITUD de Ecuador es NEGATIVA
+   (≈ -80.98): pasarla por ahí la convertiría en +80.98, al otro lado del planeta
+   y sin error visible. Por eso los números tienen su propia vía y NO pasan nunca
+   por el saneado de texto. */
+function trasTxt(v, max){ return sanitizeStr(v == null ? "" : v, max || 200); }
+function trasNum(v){
+  if(v === "" || v === null || v === undefined) return "";
+  const n = parseFloat(v);
+  return isFinite(n) ? n : "";
+}
+function trasLista(v){
+  const arr = Array.isArray(v) ? v : String(v == null ? "" : v).split(",");
+  const out = [];
+  arr.forEach(x => { const s = trasTxt(x); if(s !== "" && out.indexOf(s) === -1) out.push(s); });
+  return out.join(", ");
+}
+
+/* ── Identidad ──────────────────────────────────────────── */
+function trasNuevoViajeId(){
+  return "tv" + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+}
+// Llave DETERMINISTA por (viaje, camión, revisión, tina). Sin la parte -c<n> los
+// dos camiones del mismo viaje escribirían sobre la misma fila y el segundo
+// borraría al primero en cada sincronización.
+function trasFilaId(viajeId, camion, revision, tina){
+  return String(viajeId || "") + "-c" + Number(camion) + "-r" + Number(revision) + "-t" + Number(tina);
+}
+
+/* ── Tiempo ─────────────────────────────────────────────── */
+function trasMinutosDeHora(hhmm){
+  const m = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(String(hhmm == null ? "" : hhmm));
+  if(!m) return null;
+  const h = Number(m[1]), min = Number(m[2]);
+  if(h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+// Los traslados son NOCTURNOS y cruzan la medianoche (el formato va de 20:30 a
+// 06:00). Sin envolver en 24 h, 23:40 → 02:50 daría -1250 en vez de 190.
+function trasMinutosEntre(a, b){
+  const ma = trasMinutosDeHora(a), mb = trasMinutosDeHora(b);
+  if(ma === null || mb === null) return null;
+  const d = mb - ma;
+  return d < 0 ? d + 24*60 : d;
+}
+function trasHoraAhora(){
+  const d = new Date();
+  return String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+}
+
+/* ── Camiones y tinas ───────────────────────────────────────
+   Un chequeador va a cargo de VARIOS camiones a la vez (normalmente dos), que
+   salen juntos al mismo destino y sólo se distinguen por la PLACA. En cada parada
+   mide las tinas de todos. Las tinas van físicamente DENTRO de un camión, así que
+   apagar una en el primero no puede apagarla en el segundo. */
+function trasCamiones(data){
+  const arr = (data && Array.isArray(data.camiones)) ? data.camiones : [];
+  return arr.length ? arr : [{ placa:(data && data.placa) || "", tinasOff:[] }];
+}
+/* La misma lista, pero SIN inventarse un camión cuando no hay ninguno.
+   `trasCamiones` finge uno para que un registro viejo (con `placa` suelta y sin
+   array) siga produciendo filas; eso es correcto para el payload, pero la interfaz
+   necesita distinguir «un camión en blanco» de «todavía no hay ninguno» — desde el
+   rediseño del alta, cero camiones es un estado legítimo y visible. */
+function trasCamionesUI(data){
+  const d = data || {};
+  if(Array.isArray(d.camiones)) return d.camiones;
+  return trasTxt(d.placa) !== "" ? [{ placa:d.placa, tinasOff:[] }] : [];
+}
+function trasTinasEnUso(camion){
+  const off = (camion && Array.isArray(camion.tinasOff)) ? camion.tinasOff.map(Number) : [];
+  const out = [];
+  for(let t = 1; t <= TRAS_TINAS; t++) if(off.indexOf(t) === -1) out.push(t);
+  return out;
+}
+
+/* ── Persistencia local ─────────────────────────────────── */
+function _trasRaw(){
+  try{
+    const raw = localStorage.getItem(TRAS_REC_KEY);
+    if(!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  }catch(x){ _silent("_trasRaw", x); return []; }
+}
+function _trasSave(list){
+  const ok = _lsSet(TRAS_REC_KEY, JSON.stringify(list || []));
+  if(!ok && !_reclaiming) toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado).","err",7000);
+  return ok;
+}
+function pruneTras(){
+  const now = Date.now();
+  const raw = _trasRaw();
+  const list = raw.filter(r => r && r.ts && (now - r.ts) < TRAS_TTL);
+  if(list.length !== raw.length) _trasSave(list);
+  return list;
+}
+function loadTras(){ return pruneTras(); }
+
+/* ── Recuperación del formulario en curso (espejo de AsT) ── */
+function saveTrasRecovery(){
+  if(!isAstMod(curMod) || _trasEditing) return;
+  let data;
+  try{ data = collectTraslado(); }catch(_){ return; }
+  if(!trasTieneDatos(data)) return;
+  _lsSet(TRAS_RECOV_KEY, JSON.stringify({ ts: Date.now(), data }));
+}
+function trasTieneDatos(data){
+  if(!data) return false;
+  if(["camaronera","corrida","modulo","salinidad","horaSalida","horaLlegada",
+      "controlador","chequeador","recepcion"].some(k => trasTxt(data[k]) !== "")) return true;
+  if(trasCamiones(data).some(c => trasTxt(c && c.placa) !== "")) return true;
+  const revs = Array.isArray(data.revisiones) ? data.revisiones : [];
+  return revs.some(r => {
+    if(!r) return false;
+    if(trasTxt(r.lugar) !== "" || trasTxt(r.obs) !== "") return true;
+    return (Array.isArray(r.camiones) ? r.camiones : []).some(c => {
+      const tinas = (c || {}).tinas || {};
+      return Object.keys(tinas).some(k => {
+        const m = tinas[k] || {};
+        return trasTxt(m.o2) !== "" || trasTxt(m.temp) !== "" || trasTxt(m.act) !== "" || trasTxt(m.alim) !== "";
+      });
+    });
+  });
+}
+function loadTrasRecovery(){
+  try{
+    const raw = localStorage.getItem(TRAS_RECOV_KEY);
+    if(!raw) return null;
+    const e = JSON.parse(raw);
+    if(!e || !e.data || !e.ts) return null;
+    if(Date.now() - e.ts > RTTL){ localStorage.removeItem(TRAS_RECOV_KEY); return null; }
+    return e;
+  }catch(_){ return null; }
+}
+function recoverTrasForm(){
+  const rec = loadTrasRecovery();
+  if(!rec){ toast("No hay datos de recuperación disponibles","warn"); return; }
+  const ts = new Date(rec.ts).toLocaleString("es-EC");
+  if(!confirm("¿Recuperar el traslado autoguardado el "+ts+"?\nSe reemplazará lo que haya ahora en el formulario.")) return;
+  _trasEditing = null;
+  _trasRecovered = rec.data;
+  renderTraslado();
+  _trasRecovered = null;
+  _trasFormDirty = false;
+  try{ localStorage.removeItem(TRAS_RECOV_KEY); }catch(_){}
+  toast("✅ Traslado recuperado del autoguardado","ok",4000);
+}
+
+/* ── Ubicación ──────────────────────────────────────────────
+   Se pregunta por la CAPACIDAD del navegador, nunca por el destino ni por la ruta:
+   así el MISMO código vale para el repo, para index (8).html y para Rosario, y el
+   día que esos dos se publiquen en HTTPS empiezan a sellar posición sin tocar nada.
+   Sobre file:// no hay contexto seguro y la geolocalización no existe. */
+function trasGeoDisponible(){
+  try{
+    if(typeof navigator === "undefined" || !navigator.geolocation) return false;
+    if(typeof window !== "undefined" && window.isSecureContext === false) return false;
+    return true;
+  }catch(_){ return false; }
+}
+function trasSellarUbicacion(idx){
+  const fp = document.getElementById("fp-traslado"); if(!fp) return;
+  const box = fp.querySelector('.tras-rev[data-rev="'+idx+'"]'); if(!box) return;
+  const set = (k, v) => { const el = box.querySelector('[data-k="'+k+'"]:not([data-cam])'); if(el) el.value = v; };
+  const estado = box.querySelector('[data-geo-estado]');
+  // La hora se sella SIEMPRE, haya GPS o no: es del reloj del equipo.
+  set("hora", trasHoraAhora());
+  set("horaRegistro", new Date().toISOString().slice(0,19));
+  _trasMarkDirty();
+  if(!trasGeoDisponible()){
+    if(estado) estado.textContent = "Hora sellada. Sin ubicación: este navegador no la permite aquí.";
+    set("ubicacion", "sin señal");
+    toast("Hora sellada. La ubicación no está disponible en esta versión.","warn",4500);
+    return;
+  }
+  if(estado) estado.textContent = "Buscando ubicación…";
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const c = pos.coords || {};
+      // ⚠ NADA de sanitizeStr aquí: la longitud es negativa y quedaría invertida.
+      set("lat", c.latitude);
+      set("lon", c.longitude);
+      set("precision", Math.round(c.accuracy || 0));
+      set("ubicacion", Number(c.latitude).toFixed(6) + ", " + Number(c.longitude).toFixed(6));
+      if(estado) estado.textContent = "Ubicación sellada (±" + Math.round(c.accuracy || 0) + " m).";
+      _trasMarkDirty();
+    },
+    (err) => {
+      // Sin señal en carretera es lo NORMAL: se registra y se sigue. Jamás bloquea.
+      set("ubicacion", "sin señal");
+      if(estado) estado.textContent = "Hora sellada. Sin ubicación (" + trasTxt(err && err.message ? err.message : "no disponible") + ").";
+      toast("Hora sellada. No se pudo obtener la ubicación; el Lugar se registra a mano.","warn",4500);
+    },
+    { enableHighAccuracy:true, timeout:12000, maximumAge:60000 }
+  );
+}
+
+/* ── Payload ────────────────────────────────────────────── */
+function buildTrasPayload(records, opts){
+  const o = opts || {};
+  const rows = [];
+  (records || []).forEach(reg => {
+    const viajeId = String((reg && reg.id) || "");
+    const d = (reg && reg.data) || {};
+    const revs = Array.isArray(d.revisiones) ? d.revisiones : [];
+    const camiones = trasCamiones(d);
+    const viaje = {
+      fecha: trasTxt(d.fecha),
+      viaje: viajeId,
+      corrida: trasNum(d.corrida),
+      modulo: trasTxt(d.modulo),
+      camaronera: trasTxt(d.camaronera),
+      salinidad: trasNum(d.salinidad),
+      horaSalida: trasTxt(d.horaSalida),
+      horaLlegada: trasTxt(d.horaLlegada),
+      insumos: trasLista(d.insumos),
+      check: trasLista(d.check),
+      controlador: trasTxt(d.controlador),
+      chequeador: trasTxt(d.chequeador),
+      recepcion: trasTxt(d.recepcion)
+    };
+    revs.forEach((rev, i) => {
+      const r = rev || {};
+      const nRev = i + 1;
+      const porCamion = Array.isArray(r.camiones) ? r.camiones : [];
+      camiones.forEach((cam, ci) => {
+        const nCam = ci + 1;
+        const enUso = trasTinasEnUso(cam);
+        const tinas = o.incluirApagadas ? trasTinasEnUso({tinasOff:[]}) : enUso;
+        const medidas = (porCamion[ci] || {}).tinas || {};
+        tinas.forEach(t => {
+          const apagada = enUso.indexOf(t) === -1;
+          const m = (!apagada && medidas[t]) || {};
+          rows.push([
+            viaje.fecha, viaje.viaje, viaje.corrida, viaje.modulo,
+            viaje.camaronera, trasTxt(cam && cam.placa),
+            viaje.salinidad, viaje.horaSalida, viaje.horaLlegada,
+            nRev, trasTxt(r.hora), trasTxt(r.lugar),
+            trasNum(r.lat), trasNum(r.lon), trasNum(r.precision), trasTxt(r.ubicacion),
+            t, trasNum(m.o2), trasNum(m.temp), trasTxt(m.act), trasTxt(m.alim),
+            trasTxt(r.obs, 500),
+            viaje.insumos, viaje.check,
+            viaje.controlador, viaje.chequeador, viaje.recepcion,
+            trasTxt(r.horaRegistro),
+            trasFilaId(viajeId, nCam, nRev, t)
+          ]);
+        });
+      });
+    });
+  });
+  return { sheetName: TRAS_SHEET, headers: TRAS_HEADERS.slice(), rows: rows };
+}
+
+/* ── Validación ─────────────────────────────────────────── */
+function validarTraslado(data){
+  const d = data || {};
+  const errs = [];
+  if(!isValidDate(d.fecha || "")) errs.push("Falta la fecha de entrega");
+  const cam = trasTxt(d.camaronera);
+  if(cam === "") errs.push("Falta la camaronera de destino");
+  else if(DESTINO_OPTS.indexOf(cam) === -1) errs.push("«"+cam+"» no está en el catálogo de camaroneras");
+  // Desde el rediseño del alta (2026-08-23) un viaje puede quedarse sin ningún
+  // camión. Decirlo así es más útil que el «Camión 1: falta la placa» que saldría
+  // del camión fantasma que `trasCamiones` inventa.
+  if(trasCamionesUI(d).length === 0) errs.push("Añade al menos un camión al viaje");
+  // La placa es lo ÚNICO que distingue a un camión de otro dentro del viaje: sin
+  // ella las filas de los dos serían indistinguibles en la hoja.
+  const placas = [];
+  trasCamionesUI(d).forEach((c, i) => {
+    const p = trasTxt(c && c.placa);
+    if(p === "") errs.push("Camión "+(i+1)+": falta la placa");
+    else if(placas.indexOf(p.toUpperCase()) !== -1) errs.push("La placa «"+p+"» está repetida en dos camiones");
+    else placas.push(p.toUpperCase());
+    if(trasTinasEnUso(c).length === 0) errs.push("Camión "+(i+1)+": no hay ninguna tina en uso");
+  });
+  const revs = Array.isArray(d.revisiones) ? d.revisiones : [];
+  if(revs.length < TRAS_REV_MIN) errs.push("El protocolo exige al menos "+TRAS_REV_MIN+" revisiones; hay "+revs.length);
+  revs.forEach((rev, i) => {
+    const r = rev || {};
+    if(trasMinutosDeHora(r.hora) === null) errs.push("Revisión "+(i+1)+": falta la hora");
+    if(trasTxt(r.lugar) === "") errs.push("Revisión "+(i+1)+": falta el lugar");
+  });
+  return errs;
+}
+
+/* ── Lecturas del viaje ─────────────────────────────────── */
+function trasFueraCadencia(data){
+  const revs = (data && Array.isArray(data.revisiones)) ? data.revisiones : [];
+  const out = [];
+  for(let i = 1; i < revs.length; i++){
+    const mins = trasMinutosEntre((revs[i-1]||{}).hora, (revs[i]||{}).hora);
+    if(mins !== null && mins > TRAS_CADENCIA_MAX) out.push({ revision:i+1, minutos:mins });
+  }
+  return out;
+}
+// Se avisa por CAÍDA respecto a la parada anterior y no por umbral: la «tabla
+// referencial de parámetros de despacho» del procedimiento no está disponible y no
+// se inventan cortes. El aviso NOMBRA la placa: con dos camiones a la vez, uno que
+// no diga en cuál ocurre no sirve de nada.
+function trasCaidas(data, minDelta){
+  const md = Number(minDelta) || 0;
+  const revs = (data && Array.isArray(data.revisiones)) ? data.revisiones : [];
+  const camiones = trasCamiones(data);
+  const out = [];
+  for(let i = 1; i < revs.length; i++){
+    const prevCam = Array.isArray((revs[i-1]||{}).camiones) ? revs[i-1].camiones : [];
+    const curCam  = Array.isArray((revs[i]||{}).camiones)   ? revs[i].camiones   : [];
+    camiones.forEach((cam, ci) => {
+      const prev = (prevCam[ci] || {}).tinas || {};
+      const cur  = (curCam[ci]  || {}).tinas || {};
+      trasTinasEnUso(cam).forEach(t => {
+        ["o2","temp"].forEach(campo => {
+          const a = trasNum((prev[t]||{})[campo]);
+          const b = trasNum((cur[t]||{})[campo]);
+          if(a === "" || b === "") return;
+          if(a - b > md) out.push({ revision:i+1, camion:ci+1, placa:trasTxt(cam && cam.placa), tina:t, campo:campo, de:a, a:b });
+        });
+      });
+    });
+  }
+  return out;
+}
+
+/* ── Interfaz ───────────────────────────────────────────── */
+let _trasRevCount = TRAS_REV_INI;
+let _trasCamCount = 1;
+
+/* ⚠⚠ EL MODELO, Y POR QUÉ EXISTE ─────────────────────────────
+   Desde 2026-08-23 la captura enseña UNA (camión, revisión) a la vez: el
+   chequeador elige placa y número de parada y sólo se pinta ese bloque. Eso
+   significa que **el DOM ya NO contiene el viaje entero**.
+
+   Si `collectTraslado()` siguiera limitándose a leer la pantalla, cambiar de
+   camión borraría en silencio lo tecleado en el anterior — el modo más caro de
+   perder datos, porque no da ningún síntoma hasta que la hoja llega vacía.
+
+   `_trasModel` guarda el viaje COMPLETO y `trasCommitActivo()` vuelca en él lo
+   visible ANTES de repintar. Es la misma cautela que `_madCommitActive()` en las
+   grillas de Maduración, y por la misma razón.
+
+   Cabecera, pie, camiones y chips SÍ están siempre en pantalla, así que se leen
+   frescos del DOM en cada recogida; sólo `revisiones` necesita el modelo. */
+let _trasModel     = null;
+let _trasCamActivo = 0;   // índice del camión visible
+let _trasRevActiva = 0;   // índice (0-based) de la revisión visible
+
+/** Copia honda y barata del modelo: son datos planos (sin fechas ni funciones). */
+function _trasClonar(o){
+  try{ return JSON.parse(JSON.stringify(o || {})); }catch(_){ return {}; }
+}
+
+/** Revisión `i` del modelo, creándola vacía si no existe. */
+function _trasRevDe(model, i){
+  if(!Array.isArray(model.revisiones)) model.revisiones = [];
+  if(!model.revisiones[i]) model.revisiones[i] = { camiones: [] };
+  if(!Array.isArray(model.revisiones[i].camiones)) model.revisiones[i].camiones = [];
+  return model.revisiones[i];
+}
+
+function trasOpts(arr, cur){
+  return arr.map(s => '<option value="'+escapeHtml(s)+'"'+(cur===s?" selected":"")+'>'+escapeHtml(s)+'</option>').join("");
+}
+
+/* Estado de una revisión PARA UN CAMIÓN, que es lo que pinta la ficha del selector:
+     llena   → tiene hora, lugar y O2+temperatura en todas sus tinas en uso
+     parcial → algo hay, pero falta
+     vacia   → nada
+   Se calcula sobre el MODELO, no sobre el DOM: las revisiones que no están en
+   pantalla también tienen que poder decir cómo van. */
+function trasRevEstado(model, i, ci){
+  const r = (Array.isArray(model.revisiones) ? model.revisiones[i] : null) || {};
+  const cam = trasCamionesUI(model)[ci] || {};
+  const tinas = ((Array.isArray(r.camiones) ? r.camiones[ci] : null) || {}).tinas || {};
+  const enUso = trasTinasEnUso(cam);
+  let con = 0, algo = 0;
+  enUso.forEach(t => {
+    const m = tinas[t] || {};
+    const o2 = trasTxt(m.o2) !== "", tp = trasTxt(m.temp) !== "";
+    if(o2 && tp) con++;
+    if(o2 || tp || trasTxt(m.act) !== "" || trasTxt(m.alim) !== "") algo++;
+  });
+  const cab = trasMinutosDeHora(r.hora) !== null && trasTxt(r.lugar) !== "";
+  if(cab && enUso.length > 0 && con === enUso.length) return "llena";
+  if(algo > 0 || cab || trasTxt(r.obs) !== "") return "parcial";
+  return "vacia";
+}
+
+/* Chips de una sola línea (2026-08-23). La casilla nativa desaparece —`opacity:0`
+   sobre `position:absolute`, NO `display:none`, para que el chip siga siendo
+   alcanzable con el tabulador y con el lector de pantalla— y el estado se ve por
+   el relleno del propio chip. Así los dos grupos bajan de 4 renglones a 2 sin
+   esconder nada tras un clic. */
+function trasChips(arr, group, set){
+  return arr.map(s => {
+    const on = set.has(s);
+    return '<label class="tras-chip" style="position:relative;display:inline-flex;align-items:center;font-size:11px;line-height:1;cursor:pointer;padding:5px 10px;border-radius:12px;'
+      + (on ? 'background:var(--teal);color:#fff;border:1.5px solid var(--teal);font-weight:600' : 'background:#fff;color:var(--tx2);border:1.5px solid var(--bdr)')
+      + '">'
+      + '<input type="checkbox" data-group="'+group+'" value="'+escapeHtml(s)+'"'+(on?" checked":"")
+      + ' onchange="trasRefrescar()" style="position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer">'
+      + (on ? '✓ ' : '') + escapeHtml(s) + '</label>';
+  }).join("");
+}
+
+/* Fila compacta rótulo + chips, con el conteo a la derecha. */
+function trasChipRow(label, arr, group, set){
+  return '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 6px">'
+    + '<span style="font-size:11px;font-weight:600;color:var(--tx2);min-width:70px">'+escapeHtml(label)+'</span>'
+    + trasChips(arr, group, set)
+    + '<span style="font-size:10px;color:var(--tx3);margin-left:auto">'+set.size+'/'+arr.length+'</span>'
+  + '</div>';
+}
+
+/* ── Selector de (camión, revisión) ─────────────────────────
+   La placa va en desplegable —es texto libre y puede haber varias— y las
+   revisiones en fichas, que además dicen de un vistazo cuáles están llenas.
+   Decisión visual del usuario, 2026-08-23. */
+function trasSelectorHtml(model, camiones){
+  const opts = camiones.map((c, ci) => {
+    const p = trasTxt(c && c.placa) || ("Camión " + (ci+1) + " (sin placa)");
+    return '<option value="'+ci+'"'+(ci===_trasCamActivo?" selected":"")+'>'+escapeHtml(p)+'</option>';
+  }).join("");
+
+  const camAct = camiones[_trasCamActivo] || {};
+  const enUso  = trasTinasEnUso(camAct).length;
+
+  let fichas = "";
+  for(let i = 0; i < _trasRevCount; i++){
+    const est = trasRevEstado(model, i, _trasCamActivo);
+    const act = (i === _trasRevActiva);
+    const punto = est === "llena" ? "●" : (est === "parcial" ? "◑" : "○");
+    const col = est === "llena" ? "#065f46" : (est === "parcial" ? "#92400e" : "var(--tx3)");
+    fichas += '<button type="button" class="tras-fichaRev" data-rev-tab="'+i+'" onclick="trasIrRevision('+i+')"'
+      + ' title="Revisión '+(i+1)+' · '+est+'"'
+      + ' style="display:inline-flex;flex-direction:column;align-items:center;gap:2px;min-width:52px;padding:6px 10px;cursor:pointer;'
+      + 'border-radius:10px 10px 0 0;font-size:12px;'
+      + (act
+          ? 'background:var(--surf);border:1.5px solid var(--bdr);border-bottom:2px solid var(--surf);font-weight:700;color:var(--teal);margin-bottom:-2px'
+          : 'background:transparent;border:1.5px solid transparent;border-bottom:2px solid var(--bdr);color:var(--tx2)')
+      + '">'
+      + '<span>'+(i+1)+'</span>'
+      + '<span style="font-size:10px;color:'+(act?"var(--teal)":col)+'">'+punto+'</span>'
+    + '</button>';
+  }
+
+  return '<div class="tras-selector" style="margin:14px 0 0">'
+    + '<div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;margin-bottom:8px">'
+      + '<div class="mf" style="min-width:200px;margin:0"><label>Camión</label>'
+        + '<select id="tras-cam-sel" onchange="trasCamChange()">'+opts+'</select></div>'
+      + '<span style="font-size:11px;color:var(--tx3);padding-bottom:8px">'
+        + enUso+' de '+TRAS_TINAS+' tinas en uso</span>'
+    + '</div>'
+    + '<div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:4px">'
+      + '<span style="font-size:11px;font-weight:600;color:var(--tx2);padding:0 6px 8px 0">Revisión</span>'
+      + fichas
+      + '<button class="btn" type="button" onclick="trasAgregarRevision()" title="Añadir una revisión más al trayecto" style="margin:0 0 4px 8px;padding:4px 10px;font-size:12px">➕</button>'
+    + '</div>'
+  + '</div>';
+}
+
+/* ── Alta de camiones (rediseño del usuario, 2026-08-23) ─────
+   Antes el botón «Añadir camión» creaba una tarjeta VACÍA que había que rellenar
+   después; el usuario lo encontró confuso, con razón: el botón prometía un camión
+   y lo que daba era un formulario. Ahora el orden es el natural — se teclea la
+   placa, se marcan las tinas que lleva y ENTONCES se pulsa el botón, que está
+   justo al lado de la placa.
+
+   🔑 Las casillas pasan a ser POSITIVAS: «tinas que viajan», todas marcadas de
+   inicio. Antes eran «tinas que NO viajan», y una casilla en negativo se lee mal
+   con prisa. El ALMACENAMIENTO no cambia — sigue siendo `tinasOff`, que se calcula
+   de las que quedan sin marcar. Por eso el atributo es `data-tina-on`: si se
+   hubiera reutilizado `data-tina-off` con el sentido invertido, cualquier lectura
+   vieja del DOM habría entendido justo lo contrario. */
+let _trasAltaPlaca = "";
+let _trasAltaOff   = [];
+
+function trasTinaToggles(attrCam, valCam, offSet){
+  let out = "";
+  for(let t = 1; t <= TRAS_TINAS; t++){
+    const on = !offSet.has(t);
+    out += '<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;padding:4px 9px;border-radius:12px;'
+      + (on ? 'background:var(--teal);color:#fff;border:1.5px solid var(--teal);font-weight:600'
+            : 'background:#f1f5f9;color:#94a3b8;border:1.5px solid var(--bdr);text-decoration:line-through')
+      + '">'
+      + '<input type="checkbox" '+attrCam+'="'+valCam+'" data-tina-on="'+t+'"'+(on?" checked":"")
+      + ' onchange="trasRefrescar()" style="position:absolute;opacity:0;width:0;height:0">'
+      + 'T'+t+'</label>';
+  }
+  return out;
+}
+
+/* ── Temperatura: se teclea una vez y baja a todas las tinas ──
+   Petición del usuario (2026-08-23). Es la misma agua dentro del mismo camión: el
+   chequeador mide una vez y no tiene por qué teclear ocho veces en carretera.
+
+   ⚠⚠ LA REGLA NO ES «rellenar las vacías», y la diferencia importa:
+
+   Si sólo se rellenaran las vacías, este camino dejaría datos FALSOS en la hoja:
+     teclea 26 en T1  → las ocho quedan a 26
+     se da cuenta de que era 25 y corrige T1 → T2…T8 se quedarían en 26.
+   Siete tinas con una temperatura que nadie midió, y sin un solo síntoma.
+
+   Por eso se propaga a las tinas que están vacías **o que aún conservan el valor
+   auto-rellenado anterior** — es decir, las que el usuario no ha tocado a mano. Una
+   tina editada a propósito NUNCA se pisa, que es lo que pidió («pero igual permita
+   editar de ser necesario»).
+
+   `_trasTempAuto` recuerda, por (revisión, camión), cuál fue el último valor que se
+   propagó. Es estado de PANTALLA, no del viaje: no entra en el payload y se limpia
+   al abrir un formulario nuevo. */
+let _trasTempAuto = {};
+
+function trasTempAuto(i, ci, t){
+  const fp = document.getElementById("fp-traslado"); if(!fp) return;
+  const grid = fp.querySelector('.tras-cam-grid[data-rev="'+i+'"][data-cam="'+ci+'"]');
+  if(!grid) return;
+  const src = grid.querySelector('[data-tina="'+t+'"][data-k="temp"]');
+  if(!src) return;
+  const val = String(src.value == null ? "" : src.value).trim();
+  // Vaciar una tina no vacía las demás: borrar es siempre una acción deliberada
+  // sobre ESA celda, nunca una orden para el resto.
+  if(val === "") return;
+
+  const clave = i + "|" + ci;
+  const previo = _trasTempAuto[clave];
+  let tocadas = 0;
+  grid.querySelectorAll('[data-k="temp"][data-tina]').forEach(el => {
+    if(el === src) return;
+    if(el.disabled) return;                     // tina que no viaja en este camión
+    const actual = String(el.value == null ? "" : el.value).trim();
+    const intacta = actual === "" || (previo !== undefined && actual === previo);
+    if(!intacta) return;                        // la editó el usuario: no se toca
+    if(actual === val) return;                  // ya está, no cuenta como cambio
+    el.value = val;
+    tocadas++;
+  });
+  _trasTempAuto[clave] = val;
+  if(tocadas){
+    _trasMarkDirty();
+    toast("Temperatura "+val+" °C aplicada a "+tocadas+" tina"+(tocadas!==1?"s":"")+" más","info",2200);
+  }
+}
+
+/** Formulario de ALTA: placa + tinas + el botón, en la misma fila. */
+function trasAltaHtml(){
+  const off = new Set(_trasAltaOff.map(Number));
+  return '<div class="tras-alta" style="border:1.5px dashed var(--bdr);border-radius:10px;padding:10px 12px;margin-bottom:10px;background:#fff">'
+    + '<div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px">'
+      + '<div class="mf" style="min-width:190px;margin:0"><label>Placa del camión</label>'
+        + '<input id="tras-alta-placa" value="'+escapeHtml(_trasAltaPlaca)+'" maxlength="20" placeholder="Ej. GSA-1147"'
+        + ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();trasAgregarCamion();}"></div>'
+      + '<button class="btn primary" type="button" onclick="trasAgregarCamion()">➕ Añadir camión</button>'
+    + '</div>'
+    + '<div style="margin-top:8px"><span style="font-size:11px;color:var(--tx3)">Tinas que lleva este camión:</span>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px">'+trasTinaToggles("data-alta","1",off)+'</div></div>'
+  + '</div>';
+}
+
+// Tarjeta de un camión YA añadido al viaje: sigue siendo editable (una placa mal
+// tecleada se corrige, no se borra el camión entero) pero es visualmente compacta.
+function trasCamionHtml(ci, cam){
+  const c = cam || {};
+  const off = new Set((Array.isArray(c.tinasOff)?c.tinasOff:[]).map(Number));
+  const enUso = TRAS_TINAS - off.size;
+  return '<div class="tras-camion" data-cam="'+ci+'" style="border:1.5px solid var(--bdr);border-radius:10px;padding:9px 12px;margin-bottom:6px;background:#fff">'
+    + '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px">'
+      + '<span style="font-size:11px;font-weight:700;color:var(--teal);min-width:62px">Camión '+(ci+1)+'</span>'
+      + '<input data-k="placa" value="'+escapeHtml(c.placa||"")+'" maxlength="20" placeholder="Sin placa"'
+        + ' onchange="trasRefrescar()" style="min-width:150px;font-weight:600">'
+      + '<span style="font-size:11px;color:var(--tx3)">'+enUso+'/'+TRAS_TINAS+' tinas</span>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:4px">'+trasTinaToggles("data-cam-off",ci,off)+'</div>'
+      + '<button class="btn" type="button" onclick="trasQuitarCamion('+ci+')" title="Quitar este camión del viaje" style="margin-left:auto">✕</button>'
+    + '</div>'
+  + '</div>';
+}
+
+// Grilla de un camión dentro de UNA revisión.
+function trasGridHtml(i, ci, cam, medidas){
+  const off = new Set(((cam||{}).tinasOff||[]).map(Number));
+  const m = (medidas || {}).tinas || {};
+  const filas = [
+    ["o2",   "Oxígeno (mg/L)", "number"],
+    ["temp", "Temperatura (°C)", "number"],
+    ["act",  "Actividad", "select"],
+    ["alim", "Alimentación", "select"]
+  ].map(function(f){
+    const code = f[0], lbl = f[1], kind = f[2];
+    let cells = "";
+    for(let t = 1; t <= TRAS_TINAS; t++){
+      const v = (m[t] || {})[code];
+      const apagada = off.has(t);
+      const dis = apagada ? " disabled" : "";
+      const bg  = apagada ? "background:#f1f5f9;color:#94a3b8" : "";
+      if(kind === "select"){
+        const arr = code === "act" ? TRAS_ACTIVIDAD_OPTS : TRAS_ALIM_OPTS;
+        cells += '<td style="padding:2px"><select data-rev="'+i+'" data-cam="'+ci+'" data-tina="'+t+'" data-k="'+code+'"'+dis
+          + ' style="width:100%;font-size:11px;padding:4px 2px;'+bg+'"><option value=""></option>'
+          + trasOpts(arr, v||"") + '</select></td>';
+      } else {
+        // La TEMPERATURA se propaga a las demás tinas del mismo camión (usuario,
+        // 2026-08-23): es la misma agua, se mide una vez. El oxígeno NO, que es la
+        // medición que de verdad varía entre tinas y la que motiva el viaje.
+        const auto = code === "temp" ? ' onchange="trasTempAuto('+i+','+ci+','+t+')"' : '';
+        cells += '<td style="padding:2px"><input type="number" step="0.01" inputmode="decimal" data-rev="'+i+'" data-cam="'+ci+'" data-tina="'+t+'" data-k="'+code+'"'+dis+auto
+          + ' value="'+escapeHtml(v==null?"":String(v))+'"'
+          + ' style="width:100%;font-size:11px;padding:4px 2px;text-align:center;'+bg+'"></td>';
+      }
+    }
+    return '<tr><th style="text-align:left;font-size:11px;font-weight:600;padding:2px 8px 2px 0;white-space:nowrap">'+lbl+'</th>'+cells+'</tr>';
+  }).join("");
+
+  let cabTinas = "";
+  for(let t = 1; t <= TRAS_TINAS; t++){
+    cabTinas += '<th style="font-size:11px;font-weight:600;padding:2px;'+(off.has(t)?"color:#94a3b8;text-decoration:line-through":"")+'">Tina '+t+'</th>';
+  }
+  const placa = trasTxt((cam||{}).placa) || "sin placa";
+  return '<div class="tras-cam-grid" data-rev="'+i+'" data-cam="'+ci+'" style="margin-top:10px">'
+    + '<div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--teal);margin-bottom:4px">Camión '+(ci+1)+' · '+escapeHtml(placa)+'</div>'
+    + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:620px">'
+    + '<thead><tr><th></th>'+cabTinas+'</tr></thead><tbody>'+filas+'</tbody></table></div>'
+  + '</div>';
+}
+
+function trasRevisionHtml(i, rev, camiones){
+  const r = rev || {};
+  const num = i + 1;
+  const porCamion = Array.isArray(r.camiones) ? r.camiones : [];
+  const gapTxt = (i > 0)
+    ? (function(){
+        const mins = trasMinutosEntre((_trasRevPrevHora(i)||""), r.hora||"");
+        if(mins === null) return "";
+        const h = Math.floor(mins/60), m = mins%60;
+        const fuera = mins > TRAS_CADENCIA_MAX;
+        return '<span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px;'
+          + (fuera ? "background:#fef3c7;color:#92400e" : "background:#f0fdf4;color:#065f46")
+          + '">+'+h+' h '+String(m).padStart(2,"0")+' min'+(fuera?" · fuera de cadencia":"")+'</span>';
+      })()
+    : "";
+
+  // Sólo la grilla del camión SELECCIONADO. Las de los demás siguen vivas en
+  // `_trasModel`; lo que no se pinta no se pierde, se commitea.
+  const ci = Math.min(_trasCamActivo, Math.max(0, camiones.length - 1));
+  const grids = trasGridHtml(i, ci, camiones[ci], porCamion[ci]);
+  const placaAct = trasTxt((camiones[ci] || {}).placa) || ("camión " + (ci+1));
+
+  return '<div class="tras-rev" data-rev="'+i+'" style="border:1.5px solid var(--bdr);border-radius:0 10px 10px 10px;padding:12px;margin-bottom:12px;background:var(--surf)">'
+    + '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px">'
+      + '<strong style="font-size:13px">Revisión '+num+'</strong>'
+      + '<span style="font-size:11px;font-weight:700;color:var(--teal);letter-spacing:.03em">'+escapeHtml(placaAct)+'</span>'
+      + gapTxt
+      + '<button class="btn" type="button" onclick="trasSellarUbicacion('+i+')" title="Sella la hora del equipo y, si el navegador lo permite, la ubicación">🕒 Sellar hora y ubicación</button>'
+      // Borrar lo tecleado en ESTA revisión sin perder el resto del viaje: es lo que
+      // hace falta cuando se sella una hora equivocada o se teclea en la fila que no era.
+      + '<button class="btn" type="button" onclick="trasLimpiarRevision('+i+')" title="Vacía todo lo registrado en esta revisión">🧹 Limpiar</button>'
+      // Guardar el viaje ENTERO, no sólo esta parada. Está aquí, pegado a Limpiar,
+      // porque es donde el chequeador acaba de trabajar (usuario, 2026-08-23).
+      + '<button class="btn primary" type="button" onclick="saveTraslado()" title="Guarda el viaje completo en este dispositivo">💾 '
+        + (_trasEditing?"Actualizar traslado":"Guardar traslado")+'</button>'
+      + (num > TRAS_REV_MIN ? '<button class="btn" type="button" onclick="trasQuitarRevision('+i+')" style="margin-left:auto">✕ Quitar</button>' : '')
+    + '</div>'
+    + '<div class="meta">'
+      + '<div class="mf"><label>Hora *</label><input data-rev="'+i+'" data-k="hora" value="'+escapeHtml(r.hora||"")+'" placeholder="HH:MM" maxlength="5"></div>'
+      + '<div class="mf"><label>Lugar *</label><select data-rev="'+i+'" data-k="lugar"><option value="">— Selecciona —</option>'+trasOpts(TRAS_LUGAR_OPTS, r.lugar||"")+'</select></div>'
+      + '<div class="mf"><label>Ubicación</label><input data-rev="'+i+'" data-k="ubicacion" value="'+escapeHtml(r.ubicacion||"")+'" readonly style="background:#f8fafc"></div>'
+    + '</div>'
+    + '<div data-geo-estado style="font-size:11px;color:var(--tx3);margin:-4px 0 8px">'+(trasGeoDisponible()?"":"Esta versión no puede tomar la ubicación: se registra el Lugar a mano.")+'</div>'
+    + '<input type="hidden" data-rev="'+i+'" data-k="lat" value="'+escapeHtml(r.lat==null?"":String(r.lat))+'">'
+    + '<input type="hidden" data-rev="'+i+'" data-k="lon" value="'+escapeHtml(r.lon==null?"":String(r.lon))+'">'
+    + '<input type="hidden" data-rev="'+i+'" data-k="precision" value="'+escapeHtml(r.precision==null?"":String(r.precision))+'">'
+    + '<input type="hidden" data-rev="'+i+'" data-k="horaRegistro" value="'+escapeHtml(r.horaRegistro||"")+'">'
+    + grids
+    + '<div class="mf" style="margin-top:10px"><label>Observaciones de esta parada</label>'
+      + '<textarea data-rev="'+i+'" data-k="obs" rows="2" maxlength="500" style="width:100%">'+escapeHtml(r.obs||"")+'</textarea></div>'
+  + '</div>';
+}
+
+// Hora de la revisión ANTERIOR, para el aviso de cadencia.
+// ⚠ Antes se leía del DOM. Desde que sólo se pinta una revisión, la anterior YA NO
+// está en pantalla y esa consulta devolvía siempre "" — el aviso de cadencia habría
+// desaparecido sin dar error. Se pregunta al modelo, que además está recién
+// commiteado en cada repintado, así que sigue actualizándose mientras se teclea.
+function _trasRevPrevHora(i){
+  const revs = (_trasModel && Array.isArray(_trasModel.revisiones)) ? _trasModel.revisiones : [];
+  return (revs[i-1] || {}).hora || "";
+}
+
+function renderTraslado(){
+  const fp = document.getElementById("fp-traslado");
+  if(!fp) return;
+  const list = loadTras();
+  const rec = _trasEditing ? list.find(r => r.id === _trasEditing) : null;
+  const d = rec ? rec.data : (_trasRecovered || {});
+  // Formulario FRESCO (ni edición ni repintado): el selector vuelve al principio.
+  // Sin esto, guardar un viaje y empezar otro lo abriría en la última parada que se
+  // estuviera mirando, que es justo donde el chequeador NO quiere empezar.
+  if(!_trasEditing && !_trasRecovered){
+    _trasCamActivo = 0; _trasRevActiva = 0;
+    _trasAltaPlaca = ""; _trasAltaOff = [];   // el alta a medio teclear no se hereda
+    // …ni la memoria de la temperatura propagada: si el viaje anterior iba a 26 °C,
+    // el nuevo NO puede considerar «intactas» las tinas que marquen 26.
+    _trasTempAuto = {};
+  }
+  // El modelo se re-siembra en CADA render: es la única fuente de las revisiones
+  // que no están en pantalla. Se clona para que teclear no mute el registro guardado.
+  _trasModel = _trasClonar(d);
+  const revs = Array.isArray(_trasModel.revisiones) ? _trasModel.revisiones : [];
+  // Un formulario NUEVO (sin revisiones) abre con las 4 casillas del papel; uno que
+  // YA tiene revisiones muestra exactamente las suyas, o quitar una no serviría de nada.
+  _trasRevCount = revs.length > 0 ? revs.length : TRAS_REV_INI;
+  // ⚠ `trasCamionesUI`, NO `trasCamiones`: la interfaz tiene que poder enseñar CERO
+  // camiones. `trasCamiones` inventaría uno en blanco y volveríamos a la tarjeta
+  // vacía que el usuario pidió quitar.
+  const camiones = trasCamionesUI(_trasModel);
+  _trasCamCount = camiones.length;
+  // El selector puede quedar apuntando fuera de rango tras quitar un camión o una
+  // revisión. Se acota AQUÍ, antes de pintar nada: un índice suelto pintaría una
+  // grilla vacía y el commit escribiría en una posición que no existe.
+  if(_trasCamActivo > camiones.length - 1) _trasCamActivo = Math.max(0, camiones.length - 1);
+  if(_trasCamActivo < 0) _trasCamActivo = 0;
+  if(_trasRevActiva > _trasRevCount - 1) _trasRevActiva = Math.max(0, _trasRevCount - 1);
+  if(_trasRevActiva < 0) _trasRevActiva = 0;
+
+  const trasRec = (!_trasEditing) ? loadTrasRecovery() : null;
+  const recBtn = trasRec
+    ? '<button class="btn brec" type="button" onclick="recoverTrasForm()">↩ Recuperar ('
+      + escapeHtml(new Date(trasRec.ts).toLocaleString("es-EC",{hour:"2-digit",minute:"2-digit"})) + ')</button>'
+    : "";
+
+  const insSet = new Set(Array.isArray(d.insumos)?d.insumos:trasLista(d.insumos).split(", ").filter(Boolean));
+  const chkSet = new Set(Array.isArray(d.check)?d.check:trasLista(d.check).split(", ").filter(Boolean));
+
+  const camionesHtml = camiones.map((c, ci) => trasCamionHtml(ci, c)).join("");
+  // Sin camiones no hay nada que medir: en vez de un selector vacío y una grilla
+  // fantasma, se dice qué falta. El botón de guardar vive dentro del bloque de
+  // revisión, así que aquí tampoco haría nada.
+  const hayCamiones = camiones.length > 0;
+  const rutaHtml = hayCamiones
+    ? ('<h4 style="margin:16px 0 0;font-size:13px">Revisiones en ruta <span style="font-weight:500;color:var(--tx3);text-transform:none">(mínimo '+TRAS_REV_MIN+' según el trayecto)</span></h4>'
+       + trasSelectorHtml(_trasModel, camiones)
+       // UNA sola revisión en pantalla: la activa. Las demás viven en `_trasModel`.
+       + trasRevisionHtml(_trasRevActiva, revs[_trasRevActiva], camiones))
+    : '<div class="empty" style="margin:16px 0;padding:18px;border:1.5px dashed var(--bdr);border-radius:10px;text-align:center;font-size:12px;color:var(--tx3)">'
+      + '🚚 Añade el primer camión para empezar a registrar las revisiones en ruta.</div>';
+
+  const formHtml = '<div class="mad-form">'
+    + '<div class="meta">'
+      + '<div class="mf"><label>Fecha de entrega *</label><input type="date" data-k="fecha" value="'+escapeHtml(d.fecha||today())+'"></div>'
+      + '<div class="mf"><label>Corrida</label><input type="number" step="1" inputmode="numeric" data-k="corrida" placeholder="Ej. 555" value="'+escapeHtml(d.corrida==null?"":String(d.corrida))+'"></div>'
+      + '<div class="mf"><label>Módulo</label><select data-k="modulo"><option value="">— Selecciona —</option>'+trasOpts(TRAS_MODULO_OPTS, d.modulo||"")+'</select></div>'
+      + '<div class="mf"><label>Camaronera *</label><select data-k="camaronera"><option value="">— Selecciona —</option>'+trasOpts(DESTINO_OPTS, d.camaronera||"")+'</select></div>'
+      + '<div class="mf"><label>Hora de salida</label><input data-k="horaSalida" value="'+escapeHtml(d.horaSalida||"")+'" placeholder="HH:MM" maxlength="5"></div>'
+      + '<div class="mf"><label>Hora de llegada</label><input data-k="horaLlegada" value="'+escapeHtml(d.horaLlegada||"")+'" placeholder="HH:MM" maxlength="5"></div>'
+      + '<div class="mf"><label>Salinidad</label><input type="number" step="0.1" inputmode="decimal" data-k="salinidad" value="'+escapeHtml(d.salinidad==null?"":String(d.salinidad))+'"></div>'
+    + '</div>'
+    + '<div class="tras-camiones">'
+      + '<h4 style="margin:14px 0 8px;font-size:13px">Camiones del viaje <span style="font-weight:500;color:var(--tx3);text-transform:none">(escribe la placa, marca sus tinas y añádelo)</span></h4>'
+      + trasAltaHtml()
+      + (hayCamiones
+          ? '<div style="font-size:11px;font-weight:600;color:var(--tx2);margin:10px 0 5px">En este viaje ('+camiones.length+')</div>' + camionesHtml
+          : '')
+    + '</div>'
+    + '<h4 style="margin:16px 0 8px;font-size:13px">Insumos y materiales a bordo <span style="font-weight:500;color:var(--tx3);text-transform:none">(marca lo que sube al camión)</span></h4>'
+    + trasChipRow("Insumos", TRAS_ALIM_OPTS, "insumos", insSet)
+    + trasChipRow("Check", TRAS_CHECK_ITEMS, "check", chkSet)
+    + rutaHtml
+    + '<div class="meta" style="margin-top:14px">'
+      + '<div class="mf"><label>Controlador encargado del despacho</label><input data-k="controlador" value="'+escapeHtml(d.controlador||"")+'" maxlength="80"></div>'
+      + '<div class="mf"><label>Chequeador responsable de la entrega</label><input data-k="chequeador" value="'+escapeHtml(d.chequeador||"")+'" maxlength="80"></div>'
+      + '<div class="mf"><label>Responsable de la recepción</label><input data-k="recepcion" value="'+escapeHtml(d.recepcion||"")+'" maxlength="80"></div>'
+    + '</div>'
+    // 💾 Guardar se mudó junto a 🧹 Limpiar, dentro del bloque de la revisión
+    // (usuario, 2026-08-23): en carretera se termina una parada y se guarda ahí
+    // mismo, sin bajar al pie de la ficha. Aquí quedan sólo las acciones de
+    // contexto, y la fila entera desaparece cuando no hay ninguna.
+    + ((_trasEditing || recBtn)
+        ? '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px">'
+          + (_trasEditing ? '<button class="btn" type="button" onclick="trasCancelarEdicion()">Cancelar edición</button>' : "")
+          + recBtn
+          + '</div>'
+        : '')
+  + '</div>';
+
+  fp.innerHTML = formHtml + trasListaHtml(list);
+
+  if(!fp.dataset.dirtyBound){
+    fp.dataset.dirtyBound = "1";
+    fp.addEventListener("input",  _trasMarkDirty);
+    fp.addEventListener("change", _trasMarkDirty);
+    // El aviso de cadencia se recalcula al cambiar cualquier hora de revisión.
+    fp.addEventListener("change", function(e){
+      if(e.target && e.target.dataset && e.target.dataset.k === "hora" && e.target.dataset.cam === undefined) trasRefrescar();
+    });
+  }
+  _trasFormDirty = false;
+}
+
+// Re-render conservando lo tecleado (para refrescar avisos, placas y tinas apagadas).
+function trasRefrescar(){
+  let data;
+  try{ data = collectTraslado(); }catch(_){ return; }
+  const prevEdit = _trasEditing;
+  _trasEditing = null;
+  _trasRecovered = data;
+  renderTraslado();
+  _trasRecovered = null;
+  _trasEditing = prevEdit;
+}
+
+function trasListaHtml(list){
+  if(!list.length) return '<div class="empty" style="margin-top:18px;font-size:12px;color:var(--tx3)">Todavía no hay traslados guardados en este dispositivo.</div>';
+  const filas = list.map(r => {
+    const d = r.data || {};
+    const cams = trasCamiones(d);
+    const nRev = (Array.isArray(d.revisiones)?d.revisiones:[]).length;
+    const nFilas = nRev * cams.reduce((a,c) => a + trasTinasEnUso(c).length, 0);
+    const fuera = trasFueraCadencia(d).length;
+    return '<tr>'
+      + '<td>'+escapeHtml(d.fecha||"—")+'</td>'
+      + '<td>'+escapeHtml(d.camaronera||"—")+'</td>'
+      + '<td>'+escapeHtml(cams.map(c => trasTxt(c.placa)||"—").join(" · "))+'</td>'
+      + '<td style="text-align:center">'+nRev+'</td>'
+      + '<td style="text-align:center">'+nFilas+'</td>'
+      + '<td style="text-align:center">'+(fuera?'<span style="color:#92400e;font-weight:700">'+fuera+'</span>':"—")+'</td>'
+      + '<td style="text-align:center">'+(r.synced?'<span style="color:#065f46">✔</span>':'<span style="color:#92400e">pendiente</span>')+'</td>'
+      + '<td><button class="btn" type="button" onclick="trasEditar(\''+escapeHtml(r.id)+'\')" title="Editar">✎</button> '
+        // Enviar SÓLO este viaje: en carretera se termina una parada y se manda ese
+        // viaje, sin arrastrar los demás. Reenviar es inocuo (upsert por ID).
+        + '<button class="btn" type="button" onclick="syncOneTrasFromList(\''+escapeHtml(r.id)+'\')" title="'
+        + (r.synced?'Volver a enviar este viaje (no duplica: el upsert es por ID)':'Enviar este viaje a la hoja')+'">☁️</button> '
+        + '<button class="btn" type="button" onclick="trasBorrar(\''+escapeHtml(r.id)+'\')" title="Borrar del dispositivo">🗑</button></td>'
+    + '</tr>';
+  }).join("");
+  const pend = list.filter(r => !r.synced).length;
+  const cab = pend > 0
+    ? '<div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:8px 0 4px">'
+      + '<span style="font-size:11px;color:var(--tx2)">'+pend+' traslado'+(pend!==1?'s':'')+' pendiente'+(pend!==1?'s':'')+' de sincronizar</span>'
+      + '<button class="btn bp" type="button" onclick="syncAllPendingTras()" style="font-size:11px;padding:6px 14px"'
+      + ' title="Envía todos los pendientes en una sola llamada">☁️ Enviar todos</button>'
+    + '</div>'
+    : '';
+  return '<h4 style="margin:20px 0 8px;font-size:13px">Traslados guardados</h4>' + cab
+    + '<div style="overflow-x:auto"><table class="tbl" style="width:100%;border-collapse:collapse;font-size:12px;min-width:660px">'
+    + '<thead><tr><th>Fecha</th><th>Camaronera</th><th>Placas</th><th>Revs.</th><th>Filas</th><th>Fuera cadencia</th><th>Estado</th><th></th></tr></thead>'
+    + '<tbody>'+filas+'</tbody></table></div>';
+}
+
+/* Vuelca en `_trasModel` lo que hay AHORA en pantalla y lo devuelve.
+   Cabecera, pie, chips y camiones están SIEMPRE visibles: se leen frescos y
+   sustituyen a lo que hubiera. De las revisiones sólo está en el DOM la activa,
+   así que únicamente ésa se sobrescribe; las demás se quedan como están.
+
+   ⚠ Los índices de camión NO se compactan nunca (nada de `filter(Boolean)`): el
+   hueco de un camión sin grilla en pantalla es lo NORMAL desde que se pinta uno
+   solo, y compactar correría las mediciones del camión 2 a la casilla del 1. */
+function trasCommitActivo(){
+  const fp = document.getElementById("fp-traslado");
+  if(!_trasModel) _trasModel = {};
+  const d = _trasModel;
+  if(!fp) return d;
+
+  // ⚠ Si el formulario NO está montado —el usuario está en otra pestaña del módulo
+  // AsT y `goBack()` dispara saveTrasRecovery— no hay nada que volcar. Sin esta
+  // guarda se "commitearían" las AUSENCIAS del DOM vacío: los insumos y el check se
+  // vaciaban en silencio y el autoguardado se escribía ya mutilado. Lo encontró la
+  // auditoría del 2026-08-23; las placas ya estaban protegidas y estos dos no.
+  if(!fp.querySelector('.mad-form')) return d;
+
+  // Cabecera y pie: data-k directamente bajo .meta de la ficha (los camiones y las
+  // revisiones viven en sus propios contenedores y no entran por aquí).
+  fp.querySelectorAll('.mad-form > .meta [data-k]').forEach(el => {
+    const k = el.dataset.k;
+    if(!k) return;
+    if(el.type === "date") d[k] = isValidDate(el.value) ? el.value : "";
+    else if(el.type === "number") d[k] = el.value === "" ? "" : el.value;
+    else d[k] = sanitizeStr(el.value);
+  });
+  d.insumos = Array.from(fp.querySelectorAll('[data-group="insumos"]:checked')).map(x => x.value);
+  d.check   = Array.from(fp.querySelectorAll('[data-group="check"]:checked')).map(x => x.value);
+
+  // Las tarjetas de camión SÍ se pintan todas, así que aquí no hay huecos y el
+  // `filter` es inofensivo (al revés que en las grillas, donde compactar mataría).
+  // ⚠ Sin guarda de longitud: quitar el último camión TIENE que poder dejar la
+  // lista vacía. De que el panel esté montado ya se encarga la guarda de arriba.
+  const camiones = [];
+  fp.querySelectorAll('.tras-camion').forEach(box => {
+    const ci = Number(box.dataset.cam);
+    const placaEl = box.querySelector('[data-k="placa"]');
+    camiones[ci] = {
+      placa: placaEl ? sanitizeStr(placaEl.value) : "",
+      // Casillas POSITIVAS: `tinasOff` son las que quedan SIN marcar.
+      tinasOff: Array.from(box.querySelectorAll('[data-tina-on]'))
+        .filter(x => !x.checked).map(x => Number(x.dataset.tinaOn))
+    };
+  });
+  d.camiones = camiones.filter(Boolean);
+  const nCam = d.camiones.length;
+
+  // Estado del formulario de alta: vive fuera del modelo del viaje (no es un dato
+  // del traslado) pero tiene que sobrevivir a los repintados, o teclear una placa
+  // y marcar una tina la borraría.
+  const altaPlaca = fp.querySelector('#tras-alta-placa');
+  if(altaPlaca) _trasAltaPlaca = sanitizeStr(altaPlaca.value);
+  const altaTinas = fp.querySelectorAll('[data-alta][data-tina-on]');
+  if(altaTinas.length){
+    _trasAltaOff = Array.from(altaTinas).filter(x => !x.checked).map(x => Number(x.dataset.tinaOn));
+  }
+
+  // El viaje declara `_trasRevCount` paradas aunque sólo se vea una. Las que aún no
+  // se han abierto tienen que EXISTIR igual: si no, el mínimo del protocolo y la
+  // validación por revisión medirían un viaje más corto del que realmente es.
+  const revs = Array.isArray(d.revisiones) ? d.revisiones : [];
+  for(let i = 0; i < _trasRevCount; i++){
+    if(!revs[i]) revs[i] = { camiones: [] };
+    if(!Array.isArray(revs[i].camiones)) revs[i].camiones = [];
+    for(let c = 0; c < nCam; c++) if(!revs[i].camiones[c]) revs[i].camiones[c] = { tinas:{} };
+  }
+  revs.length = _trasRevCount;   // quitar una revisión no puede dejar cola detrás
+  d.revisiones = revs;
+
+  // ── La revisión VISIBLE, que es la única que el DOM puede contradecir ──
+  const box = fp.querySelector('.tras-rev[data-rev="'+_trasRevActiva+'"]');
+  if(!box) return d;
+  const r = revs[_trasRevActiva];
+  box.querySelectorAll('[data-k]').forEach(el => {
+    if(el.dataset.cam !== undefined) return;   // lo de las grillas se recoge aparte
+    const k = el.dataset.k;
+    // ⚠ lat/lon/precision NO pasan por sanitizeStr: borraría el signo menos de
+    // la longitud (Ecuador es negativo) y colocaría el camión en el otro hemisferio.
+    if(k === "lat" || k === "lon" || k === "precision") r[k] = el.value === "" ? "" : el.value;
+    else r[k] = sanitizeStr(el.value, k === "obs" ? 500 : 200);
+  });
+  box.querySelectorAll('.tras-cam-grid').forEach(grid => {
+    const ci = Number(grid.dataset.cam);
+    const tinas = {};
+    grid.querySelectorAll('[data-tina]').forEach(el => {
+      const t = Number(el.dataset.tina);
+      const k = el.dataset.k;
+      if(!tinas[t]) tinas[t] = {};
+      tinas[t][k] = (k === "o2" || k === "temp") ? el.value : sanitizeStr(el.value);
+    });
+    r.camiones[ci] = { tinas: tinas };   // por ÍNDICE: nunca push, nunca filter
+  });
+  return d;
+}
+
+/* El viaje entero, listo para validar, guardar o construir el payload. Se devuelve
+   CLONADO porque quien lo pide suele mutarlo (añadir camión, quitar revisión) antes
+   de repintar, y esas mutaciones no deben tocar el modelo vivo por referencia. */
+function collectTraslado(){
+  return _trasClonar(trasCommitActivo());
+}
+
+// Vuelve a pintar con `data`, conservando el modo edición.
+function _trasRepintar(data){
+  const prevEdit = _trasEditing;
+  _trasEditing = null;
+  _trasRecovered = data;
+  renderTraslado();
+  _trasRecovered = null;
+  _trasEditing = prevEdit;
+}
+
+/* ── Selector: cambiar de camión o de parada ────────────────
+   Los dos hacen lo MISMO en el mismo orden: commitear lo visible ANTES de mover
+   el índice. Invertirlo —mover primero y repintar después— publicaría el bloque
+   nuevo sobre un modelo que todavía no sabe lo que se acababa de teclear, y lo
+   tecleado se perdería sin un solo síntoma. */
+function trasCamChange(){
+  const el = document.getElementById("tras-cam-sel");
+  const data = collectTraslado();
+  _trasCamActivo = el ? Number(el.value) : 0;
+  _trasRepintar(data);
+}
+
+function trasIrRevision(n){
+  const data = collectTraslado();
+  _trasRevActiva = Number(n);
+  _trasRepintar(data);
+}
+
+/* Da de alta el camión que hay tecleado en el formulario de arriba.
+   Ya NO crea una tarjeta vacía: exige placa, la valida contra las que ya están y
+   sólo entonces lo añade al viaje. Rediseño pedido por el usuario el 2026-08-23. */
+function trasAgregarCamion(){
+  const data = collectTraslado();          // commitea y, de paso, recoge el alta
+  const placa = trasTxt(_trasAltaPlaca);
+  if(placa === ""){
+    toast("Escribe la placa antes de añadir el camión","warn",3500);
+    const el = document.getElementById("tras-alta-placa");
+    if(el) el.focus();
+    return;
+  }
+  const yaEstan = trasCamionesUI(data).map(c => trasTxt(c && c.placa).toUpperCase());
+  if(yaEstan.indexOf(placa.toUpperCase()) !== -1){
+    toast("La placa «"+placa+"» ya está en este viaje","warn",4000);
+    return;
+  }
+  const off = _trasAltaOff.map(Number);
+  if(off.length >= TRAS_TINAS){
+    toast("Marca al menos una tina para este camión","warn",3500);
+    return;
+  }
+  data.camiones = trasCamionesUI(data).concat([{ placa:placa, tinasOff:off }]);
+  // Cada revisión gana la grilla del camión nuevo, vacía.
+  (data.revisiones || []).forEach(r => { r.camiones = (r.camiones || []).concat([{ tinas:{} }]); });
+  // El formulario de alta se vacía para el siguiente; las tinas vuelven a estar todas.
+  _trasAltaPlaca = "";
+  _trasAltaOff = [];
+  _trasCamActivo = data.camiones.length - 1;   // se pasa a medir el recién añadido
+  _trasRepintar(data);
+  toast("✅ Camión «"+placa+"» añadido al viaje","ok",2500);
+}
+
+function trasQuitarCamion(ci){
+  const data = collectTraslado();
+  const cams = trasCamionesUI(data);
+  if(cams.length === 0) return;
+  // Ya NO se exige que sobreviva uno: con el alta explícita, quedarse a cero y
+  // volver a empezar es un camino legítimo (una placa mal apuntada, por ejemplo).
+  const placa = trasTxt(cams[ci] && cams[ci].placa) || ("camión "+(ci+1));
+  if(!confirm("¿Quitar «"+placa+"» del viaje?\nSe borrarán sus mediciones en todas las revisiones.")) return;
+  cams.splice(ci, 1);
+  data.camiones = cams;
+  (data.revisiones || []).forEach(r => { if(Array.isArray(r.camiones)) r.camiones.splice(ci, 1); });
+  _trasRepintar(data);
+  toast("Camión retirado del viaje","ok",2500);
+}
+
+function trasAgregarRevision(){
+  const data = collectTraslado();
+  const nCam = trasCamionesUI(data).length;
+  const vacia = { camiones: [] };
+  for(let c = 0; c < nCam; c++) vacia.camiones.push({ tinas:{} });
+  data.revisiones = (data.revisiones || []).concat([vacia]);
+  _trasRevCount = data.revisiones.length;
+  _trasRevActiva = _trasRevCount - 1;   // se salta a la parada recién creada
+  _trasRepintar(data);
+}
+
+function trasQuitarRevision(i){
+  const data = collectTraslado();
+  const revs = data.revisiones || [];
+  if(revs.length <= TRAS_REV_MIN){
+    toast("El protocolo exige al menos "+TRAS_REV_MIN+" revisiones","warn",3500);
+    return;
+  }
+  revs.splice(i, 1);
+  data.revisiones = revs;
+  _trasRevCount = revs.length;
+  _trasRepintar(data);
+}
+
+// Vacía TODO lo registrado en una revisión sin tocar el resto del viaje: es lo que
+// hace falta cuando se sella una hora o una ubicación equivocada, o se teclea en la
+// fila que no era. La revisión sigue existiendo (el protocolo exige un mínimo).
+function trasLimpiarRevision(i){
+  if(!confirm("¿Vaciar la revisión "+(i+1)+"?\nSe borran su hora, su lugar, su ubicación y las mediciones de todos los camiones. El resto del viaje no se toca.")) return;
+  const data = collectTraslado();
+  const revs = data.revisiones || [];
+  const nCam = trasCamionesUI(data).length;
+  const vacia = { hora:"", lugar:"", lat:"", lon:"", precision:"", ubicacion:"", horaRegistro:"", obs:"", camiones:[] };
+  for(let c = 0; c < nCam; c++) vacia.camiones.push({ tinas:{} });
+  revs[i] = vacia;
+  data.revisiones = revs;
+  _trasRepintar(data);
+  toast("Revisión "+(i+1)+" vaciada","ok",2500);
+}
+
+function saveTraslado(){
+  const data = collectTraslado();
+  const errs = validarTraslado(data);
+  if(errs.length){
+    toast("⚠ "+errs[0]+(errs.length>1?" (y "+(errs.length-1)+" más)":""), "warn", 5000);
+    return;
+  }
+  const list = _trasRaw();
+  const insertarNuevo = () => {
+    list.unshift({ id: trasNuevoViajeId(), ts: Date.now(), synced:false, syncedAt:null, data:data });
+    if(list.length > TRAS_MAX) list.length = TRAS_MAX;
+  };
+  let reinsertado = false;
+  if(_trasEditing){
+    const idx = list.findIndex(r => r.id === _trasEditing);
+    if(idx >= 0){
+      list[idx].data = data;
+      list[idx].ts = Date.now();
+      list[idx].synced = false;   // reeditar exige volver a sincronizar
+      list[idx].syncedAt = null;
+    } else {
+      // ⚠⚠ El registro que se estaba editando YA NO EXISTE: caducó por TTL (48 h, y
+      // los traslados son NOCTURNOS), lo borró otra pestaña, o lo barrió la
+      // recuperación de espacio. Antes esta rama no hacía NADA y aun así se
+      // anunciaba «✅ Traslado guardado»: el viaje entero se perdía en silencio,
+      // que es la peor forma de perderlo. Se reinserta como nuevo —el dato del
+      // usuario manda— y se le dice lo que ha pasado.
+      insertarNuevo();
+      reinsertado = true;
+    }
+  } else {
+    insertarNuevo();
+  }
+  if(!_trasSave(list)) return;
+  try{ localStorage.removeItem(TRAS_RECOV_KEY); }catch(_){}
+  _trasEditing = null;
+  _trasFormDirty = false;
+  const avisos = trasFueraCadencia(data).length;
+  const caidas = trasCaidas(data, 0.5).length;
+  let msg = reinsertado
+    ? "✅ Traslado guardado COMO NUEVO — el que estabas editando ya no estaba en este dispositivo"
+    : "✅ Traslado guardado";
+  if(avisos) msg += " · "+avisos+" revisión(es) fuera de cadencia";
+  if(caidas) msg += " · "+caidas+" caída(s) de parámetro";
+  toast(msg, (reinsertado||avisos||caidas) ? "warn" : "ok", reinsertado ? 7000 : 5000);
+  renderTraslado();
+  updateDots();
+}
+
+/* ── Sincronización (T3, 2026-08-23) ─────────────────────────
+   Mismo patrón que el AsT: un solo POST con todas las filas pendientes, y sólo
+   se marca `synced` si el envío se ENTREGÓ. La hoja `Registro_Traslado` la crea
+   el propio GAS en el primer envío (`ss.insertSheet` + `ensureHeaders`).
+
+   🔑 El upsert del GAS es por la columna "ID", y la llave del cliente es
+   DETERMINISTA —viaje-c<camión>-r<revisión>-t<tina>—, así que **sincronizar en
+   cada parada es seguro**: la parada 2 reescribe sus propias filas y añade las
+   nuevas, sin duplicar ni una. Es justo lo que hace falta en carretera, donde se
+   sincroniza tarde, mal y varias veces.
+
+   ⚠ Si el GAS no está re-desplegado con `Registro_Traslado` en su ALLOWED, la
+   respuesta es «Hoja no permitida» y NADA se marca como sincronizado. */
+async function syncAllPendingTras(){
+  const url = gasUrl();
+  if(!url){ toast("Configura la URL de Google Apps Script primero","warn"); openCfg(); return; }
+  if(!isValidGasUrl(url)){ toast("URL de script inválida","err"); return; }
+  if(!syncRateOk()) return;
+
+  const pending = loadTras().filter(r => !r.synced);
+  if(pending.length === 0){
+    setSyncUI("idle","Todo sincronizado");
+    toast("No hay traslados pendientes","info",2500);
+    return;
+  }
+  const nFilas = pending.reduce((a, r) => a + buildTrasPayload([r]).rows.length, 0);
+  setSyncUI("pend","Enviando "+pending.length+" traslado(s)…");
+  toast("Enviando "+pending.length+" traslado(s) ("+nFilas+" filas) a "+TRAS_SHEET+"…","info",2500);
+  const payload = buildTrasPayload(pending);
+  const opts = { dedupeSalt: pending.map(p=>p.id).join(","), mark:{ kind:"tras", keys: pending.map(p=>p.id) } };
+  const sent = await postPayload(payload, url, opts);
+  if(sent){
+    const list2 = _trasRaw();
+    pending.forEach(p => {
+      const idx = list2.findIndex(x => x.id === p.id);
+      if(idx >= 0){ list2[idx].synced = true; list2[idx].syncedAt = Date.now(); }
+    });
+    _trasSave(list2);
+    setSyncUI("ok", pending.length+" traslado(s) enviado(s) ✔");
+    toast(pending.length+" traslado(s) sincronizados","ok",3000);
+    setTimeout(()=>{ setSyncUI("idle","Todo sincronizado"); }, 3000);
+    if(curTab === "traslado") renderTraslado();
+    updateDots(); updateSyncUI();
+  } else {
+    _syncNotOkUI(opts.outcome, "No fue posible sincronizar el traslado", null);
+  }
+}
+
+// Un solo viaje, desde su fila en la lista. Es lo que se usa en carretera: se
+// termina una parada y se manda ESE viaje, sin arrastrar los demás.
+async function syncOneTrasFromList(id){
+  const url = gasUrl();
+  if(!url){ toast("Configura la URL de Google Apps Script primero","warn"); openCfg(); return; }
+  if(!isValidGasUrl(url)){ toast("URL de script inválida","err"); return; }
+  if(!syncRateOk()) return;
+
+  const r = _trasRaw().find(x => x.id === id);
+  if(!r){ toast("No se encontró el traslado","warn"); return; }
+
+  setSyncUI("pend","Sincronizando…");
+  const payload = buildTrasPayload([r]);
+  const opts = { dedupeSalt: id, mark:{ kind:"tras", keys:[id] } };
+  const sent = await postPayload(payload, url, opts);
+  if(sent){
+    const list2 = _trasRaw();
+    const idx = list2.findIndex(x => x.id === id);
+    if(idx >= 0){ list2[idx].synced = true; list2[idx].syncedAt = Date.now(); }
+    _trasSave(list2);
+    setSyncUI("ok","Sincronizado ✔");
+    setTimeout(()=>{ setSyncUI("idle","Todo sincronizado"); }, 3000);
+    if(curTab === "traslado") renderTraslado();
+    updateDots(); updateSyncUI();
+  } else {
+    _syncNotOkUI(opts.outcome, "No fue posible sincronizar el traslado", null);
+  }
+}
+
+function trasEditar(id){
+  const r = _trasRaw().find(x => x.id === id);
+  if(!r){ toast("No se encontró el traslado","warn"); return; }
+  _trasEditing = id;
+  renderTraslado();
+}
+function trasCancelarEdicion(){ _trasEditing = null; renderTraslado(); }
+function trasBorrar(id){
+  if(!confirm("¿Borrar este traslado del dispositivo?")) return;
+  const list = _trasRaw().filter(x => x.id !== id);
+  _trasSave(list);
+  if(_trasEditing === id) _trasEditing = null;
+  renderTraslado();
+  updateDots();
+}
+
+
+
+/* ══════════════════════════════════════════
    MICROBIOLOGÍA (Mic) — FASE 1
    ──────────────────────────────────────────
    Bacteriología: Larvicultura·Muestra (Animal/Agua) y Maduración·Principal.
@@ -12371,6 +13693,7 @@ const ALLOWED = [
   "BIOMOL",
   "Registro_Supervisión",
   "Registro_Desinfección",
+  "Registro_Traslado",
   "Microbiología",
   "Calidad de Agua",
   "Patología en Fresco",
@@ -12403,7 +13726,15 @@ const LIMITS = {
   pat:     { maxRows: 300, maxCols: 40 },
   // Marea: 16 cols (predicción INOCAR, 1 fila/día). maxRows holgado por encima del
   // tope del cliente (grilla hasta 400 filas): permite sincronizar meses de una vez.
-  marea:   { maxRows: 420, maxCols: 20 }
+  marea:   { maxRows: 420, maxCols: 20 },
+  // Traslado: 29 columnas, una fila por (viaje, camión, revisión, tina).
+  // Un viaje normal son 2 camiones x 4 revisiones x 8 tinas = 64 filas, pero el
+  // formulario admite añadir camiones y paradas, y el cliente puede enviar VARIOS
+  // viajes pendientes en un solo lote. 600 cubre ~9 viajes normales de golpe.
+  // ⚠ maxCols NO es sólo validación: las filas se RECORTAN a este ancho más abajo.
+  // Con menos de 29 se perderían en silencio las últimas columnas — es el mismo
+  // fallo que costó las 2 últimas del AsT cuando maxCols estaba en 25.
+  tras:    { maxRows: 600, maxCols: 40 }
 };
 
 // Rate limit state: persistido en CacheService (60s TTL) para que sobreviva
@@ -12496,6 +13827,7 @@ function doPost(e) {
     var isBiomol = payload.sheetName === "BIOMOL";
     var isAst    = payload.sheetName === "Registro_Supervisión";
     var isDesinf = payload.sheetName === "Registro_Desinfección";
+    var isTras   = payload.sheetName === "Registro_Traslado";
     var isMicro  = payload.sheetName === "Microbiología";
     var isCal    = payload.sheetName === "Calidad de Agua";
     var isPat    = payload.sheetName === "Patología en Fresco";
@@ -12527,6 +13859,7 @@ function doPost(e) {
                 : isMad    ? LIMITS.mad
                 : isBiomol ? LIMITS.biomol
                 : isAst    ? LIMITS.ast
+                : isTras   ? LIMITS.tras
                 : isDesinf ? LIMITS.desinf
                 : isMicro  ? LIMITS.micro
                 : isCal    ? LIMITS.cal
@@ -12629,6 +13962,12 @@ function doPost(e) {
       else                          result = appendRows(ws, rows);
     }
     else if (isAst)    result = upsertAstRows(ws, rows);
+    // Registro_Traslado: MISMO upsert por columna "ID" que el AsT. No hace falta
+    // función propia — upsertAstRows localiza el ID por CABECERA y en Traslado el
+    // ID es además la última columna, que es su respaldo. La llave del cliente es
+    // determinista (viaje-c<camión>-r<revisión>-t<tina>), así que el camión puede
+    // sincronizar en cada parada sin duplicar una sola fila.
+    else if (isTras)   result = upsertAstRows(ws, rows);
     // Registro_Desinfección: upsert por clave compuesta Fecha+Módulo+Tipo de
     // Registro+Categoría+Elemento → re-sincronizar no duplica; editar Estado /
     // Observaciones / Fecha Elemento actualiza la misma fila.

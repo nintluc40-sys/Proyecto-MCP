@@ -635,3 +635,143 @@ th.sv-sie-proy { white-space: nowrap; }
   .sv-chart-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 520px) { .lv-vgrid { grid-template-columns: 1fr; } }
+
+/* ══════════════════════════════════════════════════════════
+   TRASLADO EN RUTA (sub-vista de Despacho)
+   ══════════════════════════════════════════════════════════ */
+.sv-tras-filtros{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:14px 0 10px}
+.sv-tras-filtros-l{font-size:12px;font-weight:600;color:var(--sv-tx2,#475569)}
+.sv-tras-chip{font-size:12px;font-weight:600;padding:6px 14px;border-radius:16px;cursor:pointer;
+  background:#fff;color:#64748b;border:1.5px solid #e2e8f0;transition:all .12s}
+.sv-tras-chip.is-on{background:#0f766e;color:#fff;border-color:#0f766e}
+.sv-tras-chip:hover{filter:brightness(.96)}
+.sv-tras-todos{background:#f1f5f9;color:#334155;border-style:dashed}
+
+.sv-tras-cards{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(420px,1fr))}
+.sv-tras-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;
+  box-shadow:0 1px 3px rgba(15,23,42,.06)}
+.sv-tras-card-h{padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0}
+.sv-tras-placa{font-size:15px;font-weight:800;letter-spacing:.02em}
+.sv-tras-meta{font-size:11px;color:#64748b;margin-top:2px}
+.sv-tras-card-b{padding:14px 16px}
+
+.sv-tras-mini{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:12px}
+.sv-tras-mini>div{background:#f8fafc;border-radius:10px;padding:8px 10px;font-size:11px;color:#64748b}
+.sv-tras-mini span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+.sv-tras-mini b{font-size:17px;color:#0f172a;font-weight:800}
+
+.sv-tras-checks{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.sv-tras-check{border-radius:10px;padding:8px 10px;border:1px solid #e2e8f0}
+.sv-tras-check.is-ok{background:#f0fdf4;border-color:#bbf7d0}
+.sv-tras-check.is-falta{background:#fffbeb;border-color:#fde68a}
+.sv-tras-check-h{font-size:11px;font-weight:600;color:#334155;margin-bottom:5px}
+.sv-tras-check-falta{font-size:10px;color:#92400e;margin-top:4px}
+.sv-tras-bar{height:5px;background:#e2e8f0;border-radius:3px;overflow:hidden}
+.sv-tras-bar-fill{height:100%;border-radius:3px;transition:width .2s}
+
+.sv-tras-ruta{display:flex;flex-wrap:wrap;align-items:stretch;gap:6px;margin-bottom:10px}
+.sv-tras-parada{display:flex;align-items:center;gap:7px;background:#f8fafc;border:1px solid #e2e8f0;
+  border-radius:9px;padding:6px 9px;flex:1 1 130px;min-width:0}
+.sv-tras-parada-n{width:22px;height:22px;border-radius:50%;background:#0f766e;color:#fff;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+.sv-tras-parada-d{font-size:10px;color:#64748b;min-width:0}
+.sv-tras-parada-d b{display:block;font-size:11px;color:#0f172a}
+.sv-tras-parada-d span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sv-tras-flecha{align-self:center;color:#94a3b8;font-size:13px}
+.sv-tras-firmas{font-size:10px;color:#64748b;border-top:1px dashed #e2e8f0;padding-top:8px}
+
+.sv-tras-blk{margin-bottom:18px}
+.sv-tras-blk-h{font-size:13px;font-weight:700;margin-bottom:6px;display:flex;gap:10px;align-items:baseline}
+.sv-tras-blk-h span{font-size:11px;font-weight:500;color:#64748b}
+.sv-tras-tbl th,.sv-tras-tbl td{font-size:11px;padding:4px 7px;text-align:center;white-space:nowrap}
+.sv-tras-tbl .sv-tras-media{font-weight:700;background:#f8fafc}
+.sv-tras-obs{background:#f8fafc;border-left:3px solid #0f766e;border-radius:0 8px 8px 0;padding:7px 11px;margin-bottom:7px}
+.sv-tras-obs-h{font-size:10px;color:#64748b;font-weight:600}
+.sv-tras-obs-t{font-size:12px;color:#0f172a;margin-top:2px}
+.sv-tras-vacio{font-size:12px;color:#64748b;padding:14px;text-align:center}
+
+.sv-tras-empty{text-align:center;padding:44px 20px;background:#fff;border:1px dashed #cbd5e1;border-radius:14px;margin-top:16px}
+.sv-tras-empty-i{font-size:38px}
+.sv-tras-empty-t{font-size:14px;font-weight:600;color:#334155;margin-top:8px}
+.sv-tras-empty-s{font-size:12px;color:#64748b;margin-top:6px}
+.sv-tras-empty-s code{background:#f1f5f9;padding:1px 5px;border-radius:4px}
+
+@media (max-width:640px){
+  .sv-tras-cards{grid-template-columns:1fr}
+  .sv-tras-checks{grid-template-columns:1fr}
+}
+
+/* ── Mapa del recorrido ─────────────────────────────────── */
+.sv-tmap-blk{background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;margin:14px 0}
+.sv-tmap-h{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;
+  padding:11px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0}
+.sv-tmap-t{font-size:13px;font-weight:700}
+.sv-tmap-leyenda{display:flex;flex-wrap:wrap;gap:12px}
+.sv-tmap-leg{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#475569}
+.sv-tmap-leg i{width:11px;height:11px;border-radius:50%;display:inline-block}
+/* ⚠⚠ `position:relative; z-index:0` NO es decorativo: crea un CONTEXTO DE APILADO
+   que encierra los paneles de Leaflet. Leaflet los coloca en z-index 400-700 y el
+   modal del proyecto vive en 300, así que sin esto el MAPA se dibuja ENCIMA del
+   modal: se veía el mapa a través del desglose. Encerrados, el 400 es relativo a
+   este contenedor y el modal vuelve a estar por delante. */
+.sv-tmap{height:420px;width:100%;background:#eef2f7;position:relative;z-index:0}
+.sv-tmap-cargando,.sv-tmap-vacio{display:flex;align-items:center;justify-content:center;height:100%;
+  font-size:12px;color:#64748b;text-align:center;padding:20px}
+.sv-tmap-pie{font-size:11px;color:#64748b;padding:8px 16px;border-top:1px solid #e2e8f0;background:#f8fafc}
+
+/* Marcador propio: HTML nuestro, sin ninguna imagen que pueda faltar. */
+.sv-tmap-marker-wrap{background:none;border:none}
+.sv-tmap-marker{width:26px;height:26px;border-radius:50%;color:#fff;font-size:12px;font-weight:800;
+  display:flex;align-items:center;justify-content:center;border:2.5px solid #fff;
+  box-shadow:0 1px 5px rgba(15,23,42,.4);cursor:pointer;transition:transform .12s}
+.sv-tmap-marker:hover{transform:scale(1.35)}
+
+.sv-tmap-pop{min-width:190px;font-family:inherit}
+.sv-tmap-pop-h{font-size:13px;font-weight:800;color:#0f172a}
+.sv-tmap-pop-s{font-size:11px;color:#64748b;margin-bottom:7px;padding-bottom:5px;border-bottom:1px solid #e2e8f0}
+.sv-tmap-f{display:flex;justify-content:space-between;gap:12px;font-size:11px;padding:2px 0}
+.sv-tmap-f span{color:#64748b}
+.sv-tmap-f b{color:#0f172a;text-align:right}
+.sv-tmap-pop-geo{font-size:10px;color:#94a3b8;margin-top:6px;padding-top:5px;border-top:1px dashed #e2e8f0}
+
+@media (max-width:640px){ .sv-tmap{height:320px} }
+
+/* ── Mapa de calor de los desgloses por parámetro ────────── */
+.sv-hm-tbl tfoot th{font-size:10px;text-transform:uppercase;letter-spacing:.03em;background:#f1f5f9;
+  color:#475569;padding:5px 7px;text-align:right;white-space:nowrap}
+.sv-hm-tbl tfoot td{font-size:11px;font-weight:700;background:#f1f5f9;color:#334155;text-align:center;padding:5px 4px}
+.sv-hm-tbl tbody tr:hover td{filter:brightness(.97)}
+.sv-hm-lugar{text-align:left!important;color:#64748b}
+
+/* Cuatro niveles, escala RELATIVA al viaje. El 0 es «lo que hay que mirar». */
+.sv-hm{font-variant-numeric:tabular-nums;font-weight:600}
+.sv-hm-3{background:#dcfce7;color:#14532d}
+.sv-hm-2{background:#fef9c3;color:#713f12}
+.sv-hm-1{background:#fed7aa;color:#7c2d12}
+.sv-hm-0{background:#fecaca;color:#7f1d1d;font-weight:800}
+.sv-hm-na{background:#f8fafc;color:#cbd5e1}
+.sv-hm-ojo{background:#fee2e2!important;color:#7f1d1d!important;font-weight:800}
+/* Celdas del pie (media y recorrido por tina): mismo aire que el resto del pie,
+   pero con su propia clase para poder distinguirlas del cuerpo. */
+.sv-hm-pie{font-variant-numeric:tabular-nums;font-weight:700;color:#334155}
+
+.sv-hm-d{white-space:nowrap;font-variant-numeric:tabular-nums}
+.sv-d-baja{color:#b91c1c;font-weight:800}
+.sv-d-sube{color:#15803d;font-weight:700}
+.sv-d-igual,.sv-d-na{color:#94a3b8}
+
+.sv-hm-leyenda{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:7px;font-size:10px;color:#64748b}
+.sv-hm-leyenda .sv-hm{padding:2px 8px;border-radius:4px;font-size:10px}
+.sv-hm-leyenda i{font-style:normal;color:#94a3b8}
+
+/* ── El modal del Traslado se ajusta a SU contenido ────────
+   Antes usaba `.sv-modal-wide`, que fija `width:94vw`: con 6-8 tinas la tabla no
+   llegaba ni de lejos a ese ancho y quedaba una franja blanca enorme a la derecha.
+   Con `width:auto` la tarjeta la marca la tabla, y el tope evita que se desborde
+   en un viaje con muchas tinas. `.sv-modal` ya la centra. */
+#sv-tras-modal .sv-tras-mcard{ width:auto; max-width:min(96vw,1180px); min-width:min(460px,92vw); }
+#sv-tras-modal .sv-modal-body{ overflow:auto; }
+/* La tabla NO se estira: su ancho lo fijan sus columnas. Sin esto, `.sv-table`
+   (width:100%) volvería a rellenar la tarjeta y el hueco reaparecería dentro. */
+#sv-tras-modal .sv-tras-tbl{ width:auto; min-width:0; }
+#sv-tras-modal .sv-sie-wrap{ display:inline-block; max-width:100%; }

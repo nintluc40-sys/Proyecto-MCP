@@ -95,7 +95,7 @@ export function renderDespacho(ctx, mod) {
       ${kpiGlass('⚖️', 'Biomasa total', fmtNum(biomasaTotal || null, 1))}
       ${kpiGlass('🎣', 'PL/g promedio', fmtNum(plgProm, 1))}
       ${kpiGlass('🚛', 'Nº despachos', String(nDespachos), 'data-despx-open role="button" tabindex="0" title="Descargar en Excel el registro de despacho del mes"')}
-      ${kpiGlass('🎯', 'Rendimiento cosecha', rendimiento === null ? '—' : fmtNum(rendimiento, 1) + '%')}
+      ${kpiGlass('🎯', 'Rendimiento cosecha', rendimiento === null ? '—' : fmtNum(rendimiento, 1) + '%', `data-nav="traslado" data-mod="${esc(mod)}" role="button" tabindex="0" title="Ver el traslado en ruta de esta corrida"`)}
     </div>
   </div>`;
 
