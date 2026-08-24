@@ -273,3 +273,10 @@
 .biomol .bracket-pop-close:hover { border-color: var(--bm-accent); color: var(--bm-accent); }
 .biomol .modal-table td.accent { color: var(--bm-accent); font-weight: 700; }
 .biomol .modal-table td.num { text-align: center; font-variant-numeric: tabular-nums; }
+
+/* Cabecera de cada patógeno dentro del bloque de cuantificación del tooltip.
+   Con varios patógenos medidos hacen falta separadores: si no, los Ct se leen
+   como una lista suelta sin saber de cuál es cada uno. */
+.tt-qpcr-p{font-size:10px;font-weight:800;color:#0f766e;margin-top:5px;
+  text-transform:uppercase;letter-spacing:.04em}
+.tt-qpcr-p:first-child{margin-top:0}

@@ -382,3 +382,81 @@ describe('Carga viral · la tarjeta montada', () => {
     expect(rotulos).toContain('Sin cuantificaciones de qPCR en el rango');
   });
 });
+
+describe('Biomol · la carga se cuenta POR PATÓGENO', () => {
+  // Desde 2026-08-23 la hoja trae Ct y copias de cada patógeno por separado. Una
+  // muestra corrida para WSSV e IHHNV deja DOS cargas distintas: quedarse con una
+  // escondería la otra y promediarlas inventaría una que nadie midió.
+  const conPat = (qpcr, extra) => ({
+    f: '2026-08-18', lugar: 'Sala 1', cod: 'L-1',
+    IHHNV: '', WSSV: '', BP: '', AHPND: '', NHPB: '', EHP: '',
+    ciclo: '', copias: '', qpcr, ...extra,
+  });
+  const vacio = { ciclo: '', copias: '' };
+
+  it('🔴 una muestra con DOS patógenos cuantificados da DOS puntos', () => {
+    const pts = cargaPuntos([conPat({
+      WSSV: { ciclo: '18.1', copias: '9.10E+05' },
+      IHHNV: { ciclo: '22.4', copias: '3.40E+04' },
+      AHPND: vacio,
+    })]);
+    expect(pts, 'se perdió una de las dos cargas').toHaveLength(2);
+    expect(pts.map((p) => p.diag).sort()).toEqual(['IHHNV', 'WSSV']);
+  });
+
+  it('🔴 cada punto lleva SU carga y SU Ct, sin cruzarse', () => {
+    const [a, b] = cargaPuntos([conPat({
+      WSSV: { ciclo: '18.1', copias: '9.10E+05' },
+      IHHNV: { ciclo: '22.4', copias: '3.40E+04' },
+      AHPND: vacio,
+    })]);
+    const wssv = a.diag === 'WSSV' ? a : b;
+    const ihhnv = a.diag === 'IHHNV' ? a : b;
+    expect(wssv.copias).toBeCloseTo(9.1e5, 0);
+    expect(wssv.ct).toBeCloseTo(18.1, 5);
+    expect(ihhnv.copias).toBeCloseTo(3.4e4, 0);
+    expect(ihhnv.ct).toBeCloseTo(22.4, 5);
+  });
+
+  it('🔴 el patógeno ya NO se adivina: lo dice la columna', () => {
+    // Antes se deducía sólo cuando la fila informaba UN patógeno; con dos medidos
+    // no se atribuía a ninguno. Ahora el dato lo trae la propia columna.
+    const [p] = cargaPuntos([conPat(
+      { WSSV: { ciclo: '18.1', copias: '9.10E+05' }, IHHNV: vacio, AHPND: vacio },
+      { WSSV: 'Positivo', IHHNV: 'Negativo' },   // dos patógenos INFORMADOS
+    )]);
+    expect(p.diag, 'volvió a adivinar en vez de leer la columna').toBe('WSSV');
+  });
+
+  it('una fila vieja, con la pareja genérica, sigue funcionando', () => {
+    // Respaldo: si algún día apareciera una fila escrita antes del cambio.
+    const pts = cargaPuntos([{
+      f: '2026-08-18', lugar: 'Sala 1', cod: 'L-9',
+      IHHNV: '', WSSV: 'Positivo', BP: '', AHPND: '', NHPB: '', EHP: '',
+      ciclo: '20.0', copias: '1.00E+05',
+    }]);
+    expect(pts).toHaveLength(1);
+    expect(pts[0].diag).toBe('WSSV');       // aquí sí se deduce, y puede
+    expect(pts[0].copias).toBeCloseTo(1e5, 0);
+  });
+
+  it('🔴 la mediana incluye las DOS cuantificaciones de la misma muestra', () => {
+    const r = qpcrResumen([conPat({
+      WSSV: { ciclo: '18.0', copias: '1.00E+02' },
+      IHHNV: { ciclo: '22.0', copias: '1.00E+06' },
+      AHPND: vacio,
+    })]);
+    expect(r.nCopias, 'la segunda cuantificación quedó fuera').toBe(2);
+    expect(r.nCt).toBe(2);
+  });
+
+  it('un patógeno sin cuantificar no aporta punto', () => {
+    const pts = cargaPuntos([conPat({
+      WSSV: { ciclo: '18.1', copias: '9.10E+05' },
+      IHHNV: { ciclo: '', copias: '' },
+      AHPND: { ciclo: 'N/A', copias: 'N/A' },
+    })]);
+    expect(pts).toHaveLength(1);
+    expect(pts[0].diag).toBe('WSSV');
+  });
+});

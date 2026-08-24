@@ -14,6 +14,8 @@ import { setDateBarHidden } from '../../ui/shell.js'; // esta vista usa su PROPI
 // ── Constantes (idénticas a BIOMOL.html) ──
 const DIAGS  = ['IHHNV', 'WSSV', 'BP', 'AHPND', 'NHPB', 'EHP'];
 const DLABEL = { IHHNV: 'IHHNV', WSSV: 'WSSV', BP: 'BP', AHPND: 'AHPND/EMS', NHPB: 'NHPB', EHP: 'EHP' };
+/** Los tres patógenos que se corren por qPCR y por tanto traen Ct y copias propias. */
+const QPCR_DIAGS = ['WSSV', 'IHHNV', 'AHPND'];
 const DCOLOR = { IHHNV: '#ef4444', WSSV: '#f59e0b', BP: '#a78bfa', AHPND: '#38bdf8', NHPB: '#14b8a6', EHP: '#ec4899' };
 const COL_ALIASES = {
   fecha: 'Fecha', 'código': 'Código', codigo: 'Código', corrida: 'Corrida', piscina: 'Piscina',
@@ -28,6 +30,11 @@ const COL_ALIASES = {
   // es la regla de acceso tolerante a columnas del proyecto.
   'ciclo de amplificación': 'Ciclo de amplificación', 'ciclo de amplificacion': 'Ciclo de amplificación',
   ct: 'Ciclo de amplificación',
+  // qPCR POR PATÓGENO (2026-08-23). La pareja genérica de arriba quedó obsoleta:
+  // una muestra puede correrse para varios patógenos y cada uno deja su propio Ct.
+  'ciclo de amplificación wssv': 'Ciclo de amplificación WSSV', 'copias/μl wssv': 'Copias/μl WSSV',
+  'ciclo de amplificación ihhnv': 'Ciclo de amplificación IHHNV', 'copias/μl ihhnv': 'Copias/μl IHHNV',
+  'ciclo de amplificación ahpnd/ems': 'Ciclo de amplificación AHPND/EMS', 'copias/μl ahpnd/ems': 'Copias/μl AHPND/EMS',
   'copias/μl': 'Copias/μl', 'copias/µl': 'Copias/μl', 'copias/ul': 'Copias/μl',
 };
 
@@ -120,7 +127,15 @@ export function normalizeRows(rows) {
       // Cuantitativas de qPCR: se leen TAL CUAL (no pasan por normResult, que sólo
       // entiende Positivo/Negativo). Hoy no alimentan gráficos ni KPIs; existen para
       // que el Excel de esta vista siga siendo un espejo fiel de la hoja.
-      ciclo: nr['Ciclo de amplificación'] || '', copias: nr['Copias/μl'] || '',
+      // Cuantificación POR PATÓGENO. `ciclo`/`copias` se conservan como el primer
+      // valor disponible para que la tabla, el Excel y el tooltip de siempre sigan
+      // funcionando; `qpcr` trae el detalle completo, que es lo que ahora existe.
+      qpcr: QPCR_DIAGS.reduce((acc, d) => {
+        acc[d] = { ciclo: nr['Ciclo de amplificación ' + DLABEL[d]] || '', copias: nr['Copias/μl ' + DLABEL[d]] || '' };
+        return acc;
+      }, {}),
+      ciclo: nr['Ciclo de amplificación'] || QPCR_DIAGS.map((d) => nr['Ciclo de amplificación ' + DLABEL[d]]).find((v) => String(v || '').trim()) || '',
+      copias: nr['Copias/μl'] || QPCR_DIAGS.map((d) => nr['Copias/μl ' + DLABEL[d]]).find((v) => String(v || '').trim()) || '',
     });
   });
   return out;
@@ -155,9 +170,21 @@ function qpcrDiag(r) {
  *  antes en vez de ganar un apartado con dos guiones. */
 function qpcrTip(r) {
   if (!hasQpcr(r)) return '';
-  const diag = qpcrDiag(r);
   const fila = (k, v) => (String(v || '').trim() ? `<div class="tt-row"><span class="tt-key">${k}</span><span class="tt-val">${escH(v)}</span></div>` : '');
-  return `<div class="tt-qpcr"><div class="tt-qpcr-h">Cuantificación qPCR${diag ? ' · ' + escH(DLABEL[diag]) : ''}</div>${fila('Ciclo (Ct)', r.ciclo)}${fila('Copias/μl', r.copias)}</div>`;
+  // Desde 2026-08-23 cada patógeno trae SU cuantificación, así que se listan todos
+  // los que la tengan. Antes había que ADIVINAR de cuál era el único Ct de la fila
+  // (`qpcrDiag`), heurística que existía precisamente porque el dato era ambiguo:
+  // con dos patógenos medidos no decía nada, y el segundo ni siquiera cabía.
+  const porPat = QPCR_DIAGS
+    .filter((d) => r.qpcr && r.qpcr[d]
+      && (String(r.qpcr[d].ciclo || '').trim() || String(r.qpcr[d].copias || '').trim()))
+    .map((d) => `<div class="tt-qpcr-p">${escH(DLABEL[d])}</div>`
+      + fila('Ciclo (Ct)', r.qpcr[d].ciclo) + fila('Copias/μl', r.qpcr[d].copias))
+    .join('');
+  // Respaldo para una fila vieja, escrita cuando sólo existía la pareja genérica.
+  const diag = porPat ? null : qpcrDiag(r);
+  const cuerpo = porPat || (fila('Ciclo (Ct)', r.ciclo) + fila('Copias/μl', r.copias));
+  return `<div class="tt-qpcr"><div class="tt-qpcr-h">Cuantificación qPCR${diag ? ' · ' + escH(DLABEL[diag]) : ''}</div>${cuerpo}</div>`;
 }
 /** Celda de tabla para un valor de qPCR: el guion largo del resto de la vista cuando la
  *  muestra no se cuantificó, que es distinto de "salió cero". */
@@ -238,21 +265,48 @@ const enFiltroDiag = (r) => {
 /** Puntos del gráfico de carga: una muestra CUANTIFICADA por punto, en orden cronológico.
  *  Exportada para poder medir la selección y la clasificación sin D3 de por medio. */
 export function cargaPuntos(rows) {
-  return rows
-    .map((r) => {
-      const copias = parseCopias(r.copias);
-      return copias === null ? null
-        : { r, f: r.f, copias, log: Math.log10(copias), nivel: nivelCopias(r.copias), ct: parseCt(r.ciclo), diag: qpcrDiag(r) };
-    })
-    .filter(Boolean)
-    .sort((a, b) => String(a.f).localeCompare(String(b.f)));
+  const pts = [];
+  const punto = (r, copiasTxt, ctTxt, diag) => {
+    const copias = parseCopias(copiasTxt);
+    if (copias === null) return;
+    pts.push({ r, f: r.f, copias, log: Math.log10(copias), nivel: nivelCopias(copiasTxt), ct: parseCt(ctTxt), diag });
+  };
+  rows.forEach((r) => {
+    // 🔑 UN PUNTO POR PATÓGENO CUANTIFICADO, no por muestra. Desde 2026-08-23 una
+    // misma muestra puede traer la carga de WSSV y la de IHHNV: quedarse con una
+    // escondería la otra, y promediarlas sería inventarse una carga que nadie midió.
+    // Y el `diag` ya no se ADIVINA — la columna dice de cuál es.
+    const conPat = QPCR_DIAGS.filter((d) => r.qpcr && r.qpcr[d]
+      && parseCopias(r.qpcr[d].copias) !== null);
+    if (conPat.length) {
+      conPat.forEach((d) => punto(r, r.qpcr[d].copias, r.qpcr[d].ciclo, d));
+      return;
+    }
+    // Respaldo: fila vieja con la pareja genérica, cuyo patógeno hay que deducir.
+    punto(r, r.copias, r.ciclo, qpcrDiag(r));
+  });
+  return pts.sort((a, b) => String(a.f).localeCompare(String(b.f)));
 }
 /** Resumen de la franja de la tarjeta. Los dos denominadores van por separado a propósito:
  *  una corrida puede dejar Ct sin cuantificar copias, así que "12 muestras" no significaría
  *  lo mismo para las dos medianas. */
 export function qpcrResumen(rows) {
-  const copias = rows.map((r) => parseCopias(r.copias)).filter((n) => n !== null);
-  const cts = rows.map((r) => parseCt(r.ciclo)).filter((n) => n !== null);
+  // Las medianas se calculan sobre TODAS las cuantificaciones, no una por muestra:
+  // con la cuantificación por patógeno una misma muestra puede aportar dos, y
+  // quedarse con la primera dejaría la otra fuera de la mediana sin decirlo.
+  const txtCopias = [];
+  const txtCts = [];
+  rows.forEach((r) => {
+    const conPat = QPCR_DIAGS.filter((d) => r.qpcr && r.qpcr[d]
+      && (String(r.qpcr[d].copias || '').trim() || String(r.qpcr[d].ciclo || '').trim()));
+    if (conPat.length) {
+      conPat.forEach((d) => { txtCopias.push(r.qpcr[d].copias); txtCts.push(r.qpcr[d].ciclo); });
+    } else {
+      txtCopias.push(r.copias); txtCts.push(r.ciclo);   // fila vieja
+    }
+  });
+  const copias = txtCopias.map(parseCopias).filter((n) => n !== null);
+  const cts = txtCts.map(parseCt).filter((n) => n !== null);
   // `nQpcr` cuenta las muestras CORRIDAS por qPCR, que no es lo mismo que las cuantificadas:
   // una corrida que no amplifica deja "N/A" en las dos columnas. Sin esta distinción, un día
   // en que se corrió qPCR y salió todo negativo se anunciaría como "no se corrió qPCR".

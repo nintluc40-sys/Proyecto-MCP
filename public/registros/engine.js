@@ -7108,8 +7108,12 @@ function removeBioById(id){
 // CUANTITATIVOS que deja una corrida de qPCR (normalmente WSSV o IHHNV). Van al
 // FINAL y no en medio del bloque de patógenos porque `ensureHeaders` del GAS
 // sólo sabe AÑADIR columnas al final: puestas ahí, la hoja de producción se
-// migra sola en la primera sincronización, sin tocarla a mano. Caben sin
-// re-desplegar el GAS — LIMITS.biomol.maxCols vale 20 y ahora se usan 18.
+// migra sola en la primera sincronización, sin tocarla a mano.
+//
+// ⚠ 2026-08-23: esas dos quedaron OBSOLETAS (ver la nota junto a ellas) y la hoja
+// pasó a 25 columnas con el Ct y las copias POR PATÓGENO. `LIMITS.biomol.maxCols`
+// tuvo que subir de 20 a 32, así que ese cambio SÍ exige RE-DESPLEGAR el GAS: con
+// el 20 anterior las seis columnas nuevas se habrían recortado en silencio.
 // Son además la señal que dispara la redacción en qPCR (ver bioDescAuto).
 const BIO_GRID_COLS = [
   { k:"fecha",   label:"Fecha"     },   // gobernada por el selector de día
@@ -7128,16 +7132,108 @@ const BIO_GRID_COLS = [
   { k:"ahpnd",   label:"AHPND/EMS" },
   { k:"nhpb",    label:"NHPB"      },
   { k:"ehp",     label:"EHP"       },
-  { k:"ciclo",   label:"Ciclo de amplificación" },
-  { k:"copias",  label:"Copias/μl" },
+  /* ⚠⚠ AQUÍ ESTABAN «Ciclo de amplificación» y «Copias/μl», la pareja genérica.
+     RETIRADAS el 2026-08-23: cada patógeno tiene ya las suyas y mantener dos sitios
+     donde vive el mismo dato es exactamente la costura que este proyecto paga caro.
+     Tenían 0 filas con dato en producción, así que no se perdió nada.
+
+     ⚠ Quitarlas del payload EXIGE borrarlas TAMBIÉN a mano de la hoja, y ANTES de la
+     primera sincronización con este código: el payload se escribe por POSICIÓN, así
+     que mientras sigan físicamente en la hoja, «Sesión» caería sobre la columna del
+     Ciclo y todo lo demás quedaría corrido una posición. */
   // Columna de METADATO: viaja a la hoja pero no es una celda de la grilla ni sale en
   // el PDF. Identifica a qué análisis del día pertenece la fila y es la clave con la
   // que el GAS reemplaza SÓLO las filas de ese análisis (ver buildBioPayload).
-  { k:"sesion",  label:"Sesión", meta:true }
+  { k:"sesion",  label:"Sesión", meta:true },
+  /* ── qPCR POR PATÓGENO (2026-08-23) ────────────────────────────────────
+     Una muestra puede correrse por qPCR para VARIOS patógenos a la vez, y cada
+     uno deja su propio Ct y sus propias copias. Con una sola pareja de columnas
+     el segundo análisis no tenía dónde ir. Medido en producción: ya hay 6 filas
+     con más de un patógeno positivo, así que el problema no es hipotético.
+
+     ⚠⚠ VAN DESPUÉS DE «Sesión», Y NO ES UN DESCUIDO. El payload se escribe por
+     POSICIÓN desde la columna 1 y `ensureHeaders` del GAS sólo AÑADE al final:
+     puestas aquí, la hoja de producción se migra sola en la primera
+     sincronización. Meterlas en medio desplazaría todo lo que hay a su derecha.
+     `keyCols` sigue apuntando bien porque se calcula con
+     `BIO_GRID_HEADERS.indexOf("Sesión")`, no con un número fijo.
+
+     `label` es la cabecera de la HOJA (explícita) y `corto`, la de la grilla. */
+  { k:"ciclo_wssv",   label:"Ciclo de amplificación WSSV",      corto:"Ct WSSV",      pat:"wssv"  },
+  { k:"copias_wssv",  label:"Copias/μl WSSV",                   corto:"Copias WSSV",  pat:"wssv"  },
+  { k:"ciclo_ihhnv",  label:"Ciclo de amplificación IHHNV",     corto:"Ct IHHNV",     pat:"ihhnv" },
+  { k:"copias_ihhnv", label:"Copias/μl IHHNV",                  corto:"Copias IHHNV", pat:"ihhnv" },
+  { k:"ciclo_ahpnd",  label:"Ciclo de amplificación AHPND/EMS", corto:"Ct AHPND",     pat:"ahpnd" },
+  { k:"copias_ahpnd", label:"Copias/μl AHPND/EMS",              corto:"Copias AHPND", pat:"ahpnd" }
 ];
-// Las dos columnas cuantitativas de qPCR. Se listan aparte porque varias piezas
+
+/** Los tres patógenos que se corren por qPCR y por tanto tienen Ct y copias. */
+const BIO_QPCR_PATS = ["wssv", "ihhnv", "ahpnd"];
+
+/* Filas recogidas del DOM para repintar SIN pasar por el guardado local.
+   Hace falta porque la grilla se pinta desde lo guardado: sin esto, teclear
+   «Positivo» no sacaba las columnas de ese patógeno hasta pulsar Guardar, que es
+   justo al revés de como se trabaja (primero se marca el resultado, y sólo
+   entonces se tiene el Ct que anotar). Lo consume el siguiente render y se limpia,
+   igual que `_trasRecovered` en la ficha de Traslado. */
+let _bioPintarCon = null;
+
+/** Patógenos cuyas columnas de qPCR deben verse, dado un mapa fila→datos. */
+function _bioPatVisibles(datosPorFila){
+  const out = {};
+  BIO_QPCR_PATS.forEach(p => {
+    out[p] = Object.values(datosPorFila || {}).some(d => _bioPositivoEstricto((d||{})[p])
+      || String((d||{})["ciclo_" + p] || "").trim() !== ""
+      || String((d||{})["copias_" + p] || "").trim() !== "");
+  });
+  return out;
+}
+
+/* Se dispara al cambiar una celda de resultado. Repinta SÓLO si eso cambia qué
+   columnas se ven: repintar en cada tecla robaría el foco a media palabra. */
+function bioPatCambio(){
+  const fp = document.getElementById("fp-biomol"); if(!fp) return;
+  const filas = {};
+  _collectBioGrid().forEach(d => { if(d && d.fila != null) filas[String(d.fila)] = d; });
+  const quiere = _bioPatVisibles(filas);
+  const hay = {};
+  BIO_QPCR_PATS.forEach(p => { hay[p] = !!fp.querySelector('[name$="_ciclo_' + p + '"]'); });
+  if(BIO_QPCR_PATS.every(p => quiere[p] === hay[p])) return;
+  _bioPintarCon = filas;
+  renderBiomol();
+}
+
+/* ¿Este valor de una celda de patógeno significa POSITIVO?
+   ⚠ Insensible a mayúsculas A PROPÓSITO: en producción conviven «Positivo» y
+   «positivo» (medido el 2026-08-23). Comparar texto exacto habría dejado sin
+   columnas de qPCR justo a las filas escritas en minúscula, y sin ningún error. */
+/* ⚠⚠ HAY DOS FUNCIONES DE «¿ES POSITIVO?» EN ESTE ARCHIVO, Y NO ES UN DESCUIDO.
+
+     · `_bioEsPositivo` (más abajo) es la HISTÓRICA: acepta «+» y cualquier cosa que
+       empiece por «pos», sin tildes. La usa el PDF para RESALTAR un resultado. Ahí
+       ser permisivo es lo correcto: pintar de rojo un «Pos» no rompe nada.
+     · `_bioPositivoEstricto` (ésta) decide si SE ABREN las columnas de qPCR de un
+       patógeno. Ahí ser permisivo sí importa, porque abre campos que luego viajan a
+       la hoja: sólo «positivo».
+
+   El nombre es largo a propósito. Dos funciones casi homónimas con reglas distintas
+   es la costura que este proyecto paga caro, así que la diferencia tiene que verse
+   en el punto de uso, no sólo aquí. */
+function _bioPositivoEstricto(v){
+  // La regla del laboratorio es escribir «Positivo». Se acepta ESA palabra y sólo
+  // esa, en cualquier caja: en producción conviven «Positivo» y «positivo» (medido
+  // el 2026-08-23) y comparar texto exacto habría dejado sin columnas de qPCR a las
+  // filas en minúscula, sin dar ningún error.
+  // ⚠ NO se admiten «P», «+», «Sí» ni abreviaturas: inventar sinónimos que el
+  // laboratorio no usa sólo abre la puerta a que cada quien escriba lo suyo, que es
+  // el problema de las dos grafías otra vez.
+  return String(v == null ? "" : v).trim().toLowerCase() === "positivo";
+}
+// Las columnas cuantitativas de qPCR. Se listan aparte porque varias piezas
 // necesitan preguntar "¿esta fila se corrió por qPCR?" sin volver a nombrarlas.
-const BIO_QPCR_KEYS = ["ciclo", "copias"];
+// Desde 2026-08-23 incluye las de cada patógeno; las dos genéricas siguen aquí
+// para que un registro viejo se siga reconociendo como qPCR.
+const BIO_QPCR_KEYS = BIO_QPCR_PATS.flatMap(p => ["ciclo_" + p, "copias_" + p]);
 /** ¿La fila trae medición de qPCR? Basta con UNO de los dos campos: un Ct sin
  *  cuantificar copias sigue siendo una corrida en tiempo real. */
 function _bioEsQpcr(row){
@@ -8281,9 +8377,14 @@ function downloadBioPDF(){
   const cols = [];
   base.forEach(c => {
     cols.push(c);
-    if(c.k === "copias") cols.push({ k:"__nivel", label:"Nivel", derivada:true });
+    // Desde 2026-08-23 hay una columna de copias POR PATÓGENO, así que también hay
+    // un «Nivel» por cada una — y cada uno tiene que saber DE CUÁL deriva (`de`),
+    // o los tres leerían las mismas copias y dirían la misma carga.
+    if(c.k.indexOf("copias_") === 0){
+      cols.push({ k:"__nivel_" + c.pat, label:"Nivel", derivada:true, de:c.k });
+    }
   });
-  const valorDe = (d, c) => c.derivada ? bioNivelCopias(d.copias) : String(d[c.k]||"").trim();
+  const valorDe = (d, c) => c.derivada ? bioNivelCopias(d[c.de]) : String(d[c.k]||"").trim();
   const claseDe = (c, v) => {
     if(c.k==="codigo"||c.k==="lugar"||c.k==="otros") return ' class="l"';
     if(esPatK(c.k) && _bioEsPositivo(v)) return ' class="bp-pos"';
@@ -8323,7 +8424,14 @@ function downloadBioPDF(){
   // Cada control, en cambio, lleva su propio valor bajo esas dos columnas.
   // El Nivel del control se DERIVA de sus copias, igual que en las filas de datos: así
   // el Control Positivo no puede acabar diciendo una carga y un nivel que no cuadren.
-  const otraDeControl = (ct) => (c) => c.derivada ? bioNivelCopias(ct.copias) : (ct[c.k] || "");
+  // Un control es UNO por corrida, no uno por patógeno: su mismo Ct y sus mismas
+  // copias se imprimen bajo la columna de cada patógeno que se esté informando.
+  const otraDeControl = (ct) => (c) => {
+    if(c.derivada) return bioNivelCopias(ct.copias);
+    if(c.k.indexOf("ciclo_") === 0) return ct.ciclo || "";
+    if(c.k.indexOf("copias_") === 0) return ct.copias || "";
+    return ct[c.k] || "";
+  };
   const resumen = colsPat.length
     ? sumRow("Porcentajes (%)", pctPat)
       + BIO_CONTROLES.map(ct => sumRow(ct.n, () => BIO_CONTROL_VAL, otraDeControl(ct))).join("")
@@ -8382,19 +8490,57 @@ function renderBiomol(){
   list.forEach(r => { if(r && r.data && r.data.sid) porSid[r.data.sid] = (porSid[r.data.sid] || 0) + 1; });
 
   // La Sesión viaja a la hoja pero no se teclea: no se pinta como columna.
-  const ths = BIO_GRID_CELDAS.map(c => `<th>${escapeHtml(c.label)}</th>`).join("");
+  /* ── Qué columnas de qPCR se enseñan ────────────────────────────────
+     Petición del usuario (2026-08-23): que las columnas de Ct y copias de un
+     patógeno **sólo aparezcan cuando haya positivos**, para no dejar seis campos
+     más pidiendo que los rellenen.
+
+     La grilla es una TABLA, así que la unidad que se puede esconder es la COLUMNA,
+     no la celda suelta: si hay al menos una muestra positiva a WSSV, aparecen sus
+     dos columnas; si no, ni se pintan. Dentro de una columna visible, las filas que
+     NO son positivas a ese patógeno quedan bloqueadas y en gris — así se ve dónde
+     toca escribir sin que la tabla se descuadre.
+
+     ⚠ Una columna con dato SIEMPRE se enseña, aunque su patógeno ya no figure como
+     positivo: esconder una celda con contenido lo haría desaparecer de la vista
+     mientras sigue viajando a la hoja. */
+  // Datos con los que pintar: los GUARDADOS, salvo que venga una recogida en curso
+  // desde `bioPatCambio` (se acaba de teclear un resultado y hay que sacar sus
+  // columnas sin obligar a guardar antes). Se consume una vez y se limpia.
+  const enCurso = _bioPintarCon; _bioPintarCon = null;
+  const datosDe = (fila) => {
+    if(enCurso && enCurso[String(fila)]) return enCurso[String(fila)];
+    const r = byFila[String(fila)];
+    return (r && r.data) || {};
+  };
+  const todas = {};
+  for(let i = 1; i <= nRows; i++) todas[String(i)] = datosDe(i);
+  const patVisible = _bioPatVisibles(todas);
+  const celdas = BIO_GRID_CELDAS.filter(c => !c.pat || patVisible[c.pat]);
+
+  const ths = celdas.map(c => `<th${c.pat ? ' class="bio-qc"' : ''}>${escapeHtml(c.corto || c.label)}</th>`).join("");
 
   let rowsHtml = "";
   for(let fila=1; fila<=nRows; fila++){
     const r  = byFila[String(fila)];
-    const d  = r ? r.data : {};
+    const d  = datosDe(fila);
     const st = r ? (r.synced ? "✅" : "⏳") : "○";
-    const cells = BIO_GRID_CELDAS.map((c, ci) => {
+    const cells = celdas.map((c, ci) => {
       if(c.k === "fecha"){
         return `<td><input class="pinp" type="text" name="bg_${fila}_fecha" data-r="${fila-1}" data-c="0" onpaste="madGridPaste(event,'biomol')" oninput="_bioDirty()" value="${escapeHtml(fecha)}" title="La fecha de todas las filas la define el selector de día (este valor se normaliza al guardar)" style="min-width:88px;background:#f0fdf4;color:#065f46;font-weight:600"></td>`;
       }
       const w = BIO_WIDE_KEYS[c.k] ? 120 : 70;
-      return `<td><input class="pinp" type="text" name="bg_${fila}_${c.k}" data-r="${fila-1}" data-c="${ci}" onpaste="madGridPaste(event,'biomol')" oninput="_bioDirty()" value="${escapeHtml(d[c.k]||"")}" maxlength="200" style="min-width:${w}px"></td>`;
+      // Celda de qPCR en una fila que no es positiva a ese patógeno: se bloquea en
+      // vez de esconderse, para no descuadrar la tabla. Si ya trae dato (una fila
+      // vieja, o el resultado cambió después) se deja editable: bloquear encima de
+      // un dato escrito lo volvería inalcanzable sin borrarlo.
+      if(c.pat && !_bioPositivoEstricto(d[c.pat]) && String(d[c.k] || "").trim() === ""){
+        return `<td class="bio-qc"><input class="pinp" type="text" name="bg_${fila}_${c.k}" data-r="${fila-1}" data-c="${ci}" disabled value="" title="Sólo se registra cuando la muestra es positiva a ${escapeHtml(c.pat.toUpperCase())}" style="min-width:${w}px;background:#f1f5f9;color:#cbd5e1"></td>`;
+      }
+      // Una celda de RESULTADO de un patógeno con qPCR avisa al soltar el foco: es
+      // lo que hace aparecer sus columnas de Ct y copias sin tener que guardar.
+      const av = BIO_QPCR_PATS.indexOf(c.k) !== -1 ? ' onchange="bioPatCambio()"' : '';
+      return `<td${c.pat ? ' class="bio-qc"' : ''}><input class="pinp" type="text" name="bg_${fila}_${c.k}" data-r="${fila-1}" data-c="${ci}"${av} onpaste="madGridPaste(event,'biomol')" oninput="_bioDirty()" value="${escapeHtml(d[c.k]||"")}" maxlength="200" style="min-width:${w}px"></td>`;
     }).join("");
     rowsHtml += `<tr>
       <td class="tqc" style="font-size:10px;min-width:34px;text-align:center">${fila}</td>
@@ -13708,7 +13854,11 @@ const LIMITS = {
   control: { maxRows: 300, maxCols: 8  },
   algas:   { maxRows: 500, maxCols: 28 },
   mad:     { maxRows: 1000, maxCols: 25 },
-  biomol:  { maxRows: 100, maxCols: 20 },
+  // Biomol: 25 columnas desde 2026-08-23 (las 19 anteriores + Ct y Copias/μl de
+  // WSSV, IHHNV y AHPND/EMS). maxCols sube de 20 a 32 con holgura.
+  // ⚠⚠ maxCols RECORTA en silencio, no valida: con el 20 anterior las SEIS columnas
+  // nuevas habrían llegado vacías a la hoja sin un solo error. Exige RE-DESPLEGAR.
+  biomol:  { maxRows: 100, maxCols: 32 },
   // ast: 27 columnas desde 2026-08 (23 de datos + ID + Flacidez/Necrosis/Disparidad).
   // ⚠ maxCols NO es sólo una validación: las filas se RECORTAN a este ancho más abajo.
   // Con el 25 anterior, un payload de 27 perdía en silencio las 2 últimas columnas.

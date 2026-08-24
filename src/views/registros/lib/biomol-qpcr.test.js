@@ -44,7 +44,8 @@ function topeGas() {
 
 const EXPORTAR = ['renderBiomol', '_collectBioGrid', 'buildBioPayload', 'bioGridFecha', 'madGridPaste',
   'bioDescAuto', '_bioEsQpcr', 'downloadBioPDF', 'saveBioGrid',
-  'BIO_GRID_COLS', 'BIO_GRID_HEADERS', 'BIO_GRID_CELDAS', 'BIO_PATOGENOS', 'BIO_QPCR_KEYS', 'bioNivelCopias'];
+  'BIO_GRID_COLS', 'BIO_GRID_HEADERS', 'BIO_GRID_CELDAS', 'BIO_PATOGENOS', 'BIO_QPCR_KEYS', 'bioNivelCopias',
+  '_bioPositivoEstricto', 'BIO_QPCR_PATS', 'bioPatCambio'];
 const H = {};
 const avisos = [];
 
@@ -96,20 +97,41 @@ function rellenar(fila, datos) {
 }
 
 describe('Biomol · las columnas Ciclo de amplificación y Copias/μl', () => {
-  it('están en el esquema, al final y con el nombre exacto de la hoja', () => {
+  it('🔴 las columnas genéricas YA NO existen: cada patógeno tiene las suyas', () => {
     const labels = H.BIO_GRID_HEADERS;
-    expect(labels).toContain('Ciclo de amplificación');
-    expect(labels).toContain('Copias/μl');
-    // Al FINAL y en ese orden: `ensureHeaders` del GAS sólo sabe añadir columnas al
-    // final, así que ponerlas en medio dejaría la hoja de producción sin migrar.
-    // Detrás sólo va «Sesión», que es metadato y también nació al final.
-    expect(labels.slice(-3)).toEqual(['Ciclo de amplificación', 'Copias/μl', 'Sesión']);
-    // Son las dos últimas columnas TECLEABLES (Sesión no se escribe a mano).
-    expect(H.BIO_GRID_CELDAS.map((c) => c.label).slice(-2))
-      .toEqual(['Ciclo de amplificación', 'Copias/μl']);
-    // Y detrás del bloque de patógenos, que es lo que la fila de resumen del PDF
-    // ya no puede dar por sentado.
-    expect(labels.indexOf('Ciclo de amplificación')).toBeGreaterThan(labels.indexOf('EHP'));
+    // Retiradas el 2026-08-23 por el usuario. Tener el mismo dato en dos sitios es
+    // la costura que este proyecto paga caro; y no había nada que migrar (0 filas).
+    expect(labels, 'la pareja genérica sigue en el esquema').not.toContain('Ciclo de amplificación');
+    expect(labels).not.toContain('Copias/μl');
+    // ⚠ Desde 2026-08-23 estas dos son LEGADO: la cuantificación pasó a ser POR
+    // PATÓGENO. NO se borran del payload aunque estén vacías en producción, porque
+    // se escribe por POSICIÓN y `ensureHeaders` del GAS sólo sabe AÑADIR columnas:
+    // quitarlas correría todo lo que hay a su derecha y los datos nuevos entrarían
+    // bajo cabeceras equivocadas. Su sitio es intocable, y esto lo vigila.
+    // ⚠ Quitarlas EXIGE borrarlas también a mano de la hoja: el payload se escribe
+    // por POSICIÓN, así que mientras sigan ahí «Sesión» caería sobre la del Ciclo.
+    expect(labels[16]).toBe('Sesión');
+    // Y la cuantificación va detrás del bloque de patógenos.
+    expect(labels.indexOf('Ciclo de amplificación WSSV')).toBeGreaterThan(labels.indexOf('EHP'));
+  });
+
+  it('🔴 la cuantificación POR PATÓGENO va DESPUÉS de «Sesión»', () => {
+    // No es un descuido de orden: `ensureHeaders` sólo añade al final, así que es
+    // la única posición en la que la hoja de producción se migra sola. Meterlas
+    // junto a las genéricas habría desplazado «Sesión» y roto el upsert.
+    const labels = H.BIO_GRID_HEADERS;
+    expect(labels.slice(17)).toEqual([
+      'Ciclo de amplificación WSSV', 'Copias/μl WSSV',
+      'Ciclo de amplificación IHHNV', 'Copias/μl IHHNV',
+      'Ciclo de amplificación AHPND/EMS', 'Copias/μl AHPND/EMS',
+    ]);
+    expect(labels).toHaveLength(23);
+  });
+
+  it('🔴 «Sesión» conserva su índice: de él depende el upsert del GAS', () => {
+    // `keyCols` se calcula con `indexOf("Sesión")`. Si las columnas nuevas se
+    // hubieran colado antes, el GAS reemplazaría filas por la columna equivocada.
+    expect(H.BIO_GRID_HEADERS.indexOf('Sesión')).toBe(16);
   });
 
   it('se pintan como celdas editables en la grilla', () => {
@@ -117,10 +139,9 @@ describe('Biomol · las columnas Ciclo de amplificación y Copias/μl', () => {
     H.renderBiomol();
     const fp = document.getElementById('fp-biomol');
     const cabeceras = [...fp.querySelectorAll('thead th')].map((t) => t.textContent.trim());
-    expect(cabeceras).toContain('Ciclo de amplificación');
-    expect(cabeceras).toContain('Copias/μl');
-    expect(fp.querySelector('[name="bg_1_ciclo"]')).toBeTruthy();
-    expect(fp.querySelector('[name="bg_1_copias"]')).toBeTruthy();
+    // Sin ningún positivo no hay columnas de qPCR que pintar: ésa es la regla.
+    expect(cabeceras).not.toContain('Ct WSSV');
+    expect(fp.querySelector('[name="bg_1_ciclo_wssv"]')).toBeNull();
     // La cabecera de la tabla y las celdas de una fila miden lo mismo: si el render
     // pintase una columna de menos, la tabla saldría dentada y nadie lo vería.
     const celdas = fp.querySelectorAll('tbody tr:first-child td').length;
@@ -130,7 +151,9 @@ describe('Biomol · las columnas Ciclo de amplificación y Copias/μl', () => {
   it('cada valor viaja bajo SU cabecera, no una columna corrida', () => {
     localStorage.clear();
     H.renderBiomol();
-    rellenar(1, { codigo: 'L-001', wssv: 'Positivo', ciclo: '22.4', copias: '1500' });
+    rellenar(1, { codigo: 'L-001', wssv: 'Positivo' });
+    H.bioPatCambio();                       // saca las columnas de WSSV, sin guardar
+    rellenar(1, { ciclo_wssv: '22.4', copias_wssv: '1500' });
     // La forma que manda syncBioGrid es el REGISTRO GUARDADO ({…, data:{…}}), no la
     // fila desnuda: se prueba esa, que es la que corre en producción.
     const guardados = H._collectBioGrid().map((d) => ({ id: 'x', ts: 1, data: d }));
@@ -143,8 +166,8 @@ describe('Biomol · las columnas Ciclo de amplificación y Copias/μl', () => {
     const celda = (nombre) => payload.rows[0][payload.headers.indexOf(nombre)];
     expect(celda('Código')).toBe('L-001');
     expect(celda('WSSV')).toBe('Positivo');
-    expect(celda('Ciclo de amplificación')).toBe('22.4');
-    expect(celda('Copias/μl')).toBe('1500');
+    expect(celda('Ciclo de amplificación WSSV')).toBe('22.4');
+    expect(celda('Copias/μl WSSV')).toBe('1500');
     // Y las que no se tocaron siguen vacías (no arrastradas desde la vecina).
     expect(celda('EHP')).toBe('');
     expect(celda('IHHNV')).toBe('');
@@ -153,7 +176,7 @@ describe('Biomol · las columnas Ciclo de amplificación y Copias/μl', () => {
   it('el payload sale igual con la fila desnuda que con el registro guardado', () => {
     localStorage.clear();
     H.renderBiomol();
-    rellenar(1, { codigo: 'L-003', ihhnv: 'Negativo', ciclo: '28.1', copias: '42' });
+    rellenar(1, { codigo: 'L-003', ihhnv: 'Negativo' });
     const desnudas = H._collectBioGrid();
     const conSobre = desnudas.map((d) => ({ id: 'x', ts: 1, data: d }));
     const f = H.bioGridFecha();
@@ -176,22 +199,23 @@ describe('Biomol · las columnas Ciclo de amplificación y Copias/μl', () => {
     localStorage.clear();
     H.renderBiomol();
     const fp = document.getElementById('fp-biomol');
-    // Tabla de 2 filas × 17 columnas (el esquema entero salvo Fecha, que la gobierna el
-    // selector): las dos últimas deben caer en Ciclo y Copias. El orden es
-    // Código·Corrida·Piscina·Lugar·Tanque·Otros·Muestra·Estadío·Sexo·IHHNV·WSSV·BP·
-    // AHPND·NHPB·EHP·Ciclo·Copias — los cuatro huecos son BP, AHPND, NHPB y EHP.
+    // Tabla de 2 filas × 15 columnas: el esquema visible entero salvo Fecha (la
+    // gobierna el selector). Orden: Código·Corrida·Piscina·Lugar·Tanque·Otros·
+    // Muestra·Estadío·Sexo·IHHNV·WSSV·BP·AHPND·NHPB·EHP.
+    // ⚠ Desde el 2026-08-23 las columnas de qPCR ya NO están aquí: no se pintan
+    // hasta que hay un positivo, así que un pegado desde Excel no puede contar con
+    // ellas. Lo que se sigue vigilando es que las 15 caigan cada una en su sitio.
     const fila = (n) => ['L-' + n, 'C1', 'P1', 'Sala 2', 'TQ1', '-', String(n), 'Adulto',
-      'Hembra', 'Negativo', 'Positivo', '', '', '', '', '2' + n + '.5', '1000' + n].join('\t');
+      'Hembra', 'Negativo', 'Positivo', '', '', '', ''].join('\t');
     pegar(fp.querySelector('[name="bg_1_codigo"]'), fila(1) + '\n' + fila(2));
 
     const recogidas = H._collectBioGrid();
     expect(recogidas).toHaveLength(2);              // control: el pegado SÍ entró
     expect(recogidas[0].codigo).toBe('L-1');
     expect(recogidas[0].sexo).toBe('Hembra');       // control: no hay desfase a mitad
-    expect(recogidas[0].ciclo).toBe('21.5');
-    expect(recogidas[0].copias).toBe('10001');
-    expect(recogidas[1].ciclo).toBe('22.5');
-    expect(recogidas[1].copias).toBe('10002');
+    expect(recogidas[0].ihhnv).toBe('Negativo');
+    expect(recogidas[0].wssv).toBe('Positivo');     // la última columna pegada
+    expect(recogidas[1].wssv).toBe('Positivo');
     // La Fecha no se pisa: la manda el selector del día, no la tabla pegada.
     expect(recogidas[0].fecha).toBe(H.bioGridFecha());
   });
@@ -211,16 +235,23 @@ describe('Biomol · las columnas Ciclo de amplificación y Copias/μl', () => {
     expect(r.sexo).toBe('Macho');
     expect(r.ihhnv).toBe('Negativo');
     expect(r.ehp).toBe('Negativo');                  // control: la última SÍ llegó a EHP
-    // Las columnas nuevas quedan vacías, no arrastran el último valor pegado.
-    expect(r.ciclo).toBe('');
-    expect(r.copias).toBe('');
+    // Sin ningún positivo, las columnas de qPCR ni se pintan: no hay dónde
+    // arrastrar el último valor pegado, que era el riesgo que vigilaba esta prueba.
+    // El recolector siempre devuelve la forma completa: una columna que no está
+    // pintada llega VACÍA, no ausente. Lo que se vigila es que no traiga el último
+    // valor pegado, que era el riesgo real.
+    expect(r.ciclo_wssv, 'arrastró un valor de la columna vecina').toBe('');
+    expect(r.ciclo_ihhnv).toBe('');
+    expect(r.copias_wssv).toBe('');
   });
 
   it('el envío cabe en el límite de columnas que aplica el GAS', () => {
     const tope = topeGas();
     localStorage.clear();
     H.renderBiomol();
-    rellenar(1, { codigo: 'L-002', ciclo: '30', copias: '10' });
+    rellenar(1, { codigo: 'L-002', wssv: 'Positivo' });
+    H.bioPatCambio();
+    rellenar(1, { ciclo_wssv: '30', copias_wssv: '10' });
     const payload = H.buildBioPayload(H.bioGridFecha(), H._collectBioGrid());
     // doPost hace row.slice(0, maxCols) SIN avisar: pasarse no da error, borra datos.
     expect(payload.headers.length).toBeLessThanOrEqual(tope.maxCols);
@@ -230,8 +261,8 @@ describe('Biomol · las columnas Ciclo de amplificación y Copias/μl', () => {
 
 describe('Biomol · la Descripción del análisis elige PCR o qPCR', () => {
   const soloPcr = [{ wssv: 'Positivo' }];
-  const conCiclo = [{ wssv: 'Positivo', ciclo: '22.4' }];
-  const conCopias = [{ wssv: 'Positivo', copias: '1500' }];
+  const conCiclo = [{ wssv: 'Positivo', ciclo_wssv: '22.4' }];
+  const conCopias = [{ wssv: 'Positivo', copias_wssv: '1500' }];
 
   it('sin ningún dato cuantitativo mantiene la redacción en PCR', () => {
     const t = H.bioDescAuto(soloPcr);
@@ -252,7 +283,7 @@ describe('Biomol · la Descripción del análisis elige PCR o qPCR', () => {
   });
 
   it('IHHNV, el otro patógeno habitual de qPCR, también contrae el artículo', () => {
-    expect(H.bioDescAuto([{ ihhnv: 'Negativo', ciclo: '28' }])).toBe(
+    expect(H.bioDescAuto([{ ihhnv: 'Negativo', ciclo_ihhnv: '28' }])).toBe(
       'Detección del Virus de la necrosis infecciosa hipodérmica y hematopoyética (IHHNV), '
       + 'mediante reacción en cadena de la polimerasa cuantitativa en tiempo real (qPCR).',
     );
@@ -260,7 +291,7 @@ describe('Biomol · la Descripción del análisis elige PCR o qPCR', () => {
 
   it('un día con las DOS técnicas las separa en dos frases', () => {
     const t = H.bioDescAuto([
-      { wssv: 'Positivo', ciclo: '22.4', copias: '1500' },   // qPCR
+      { wssv: 'Positivo', ciclo_wssv: '22.4', copias_wssv: '1500' },   // qPCR
       { ihhnv: 'Negativo' },                                  // PCR convencional
       { ehp: 'Negativo' },                                    // PCR convencional
     ]);
@@ -277,7 +308,7 @@ describe('Biomol · la Descripción del análisis elige PCR o qPCR', () => {
 
   it('un patógeno corrido por las dos vías se nombra UNA vez, en la frase de qPCR', () => {
     const t = H.bioDescAuto([
-      { wssv: 'Positivo', ciclo: '22.4' },
+      { wssv: 'Positivo', ciclo_wssv: '22.4' },
       { wssv: 'Negativo' },
     ]);
     expect(t.match(/WSSV/g)).toHaveLength(1);
@@ -286,7 +317,7 @@ describe('Biomol · la Descripción del análisis elige PCR o qPCR', () => {
   });
 
   it('con varios patógenos enumera sin artículo, como se venía redactando', () => {
-    const t = H.bioDescAuto([{ wssv: 'Positivo', ihhnv: 'Negativo', ciclo: '25' }]);
+    const t = H.bioDescAuto([{ wssv: 'Positivo', ihhnv: 'Negativo', ciclo_wssv: '25' }]);
     expect(t.startsWith('Detección de Virus')).toBe(true);
     expect(t).toContain('(WSSV)');
     expect(t).toContain('(IHHNV)');
@@ -294,12 +325,12 @@ describe('Biomol · la Descripción del análisis elige PCR o qPCR', () => {
 
   it('sin resultados no inventa descripción', () => {
     expect(H.bioDescAuto([])).toBe('');
-    expect(H.bioDescAuto([{ ciclo: '22', copias: '10' }])).toBe('');   // datos sin patógeno
+    expect(H.bioDescAuto([{ ciclo_wssv: '22', copias_wssv: '10' }])).toBe('');   // datos sin patógeno
   });
 
   it('_bioEsQpcr ignora celdas en blanco', () => {
-    expect(H._bioEsQpcr({ ciclo: '  ', copias: '' })).toBe(false);
-    expect(H._bioEsQpcr({ ciclo: '0' })).toBe(true);
+    expect(H._bioEsQpcr({ ciclo_wssv: '  ', copias_wssv: '' })).toBe(false);
+    expect(H._bioEsQpcr({ ciclo_wssv: '0' })).toBe(true);
     expect(H._bioEsQpcr({})).toBe(false);
   });
 });
@@ -308,8 +339,10 @@ describe('Biomol · el PDF sigue cuadrando con las columnas nuevas', () => {
   it('la fila de resumen mide lo mismo que la cabecera de la tabla', () => {
     localStorage.clear();
     H.renderBiomol();
-    rellenar(1, { codigo: 'L-010', wssv: 'Positivo', ihhnv: 'Negativo', ciclo: '22.4', copias: '1500' });
-    rellenar(2, { codigo: 'L-011', wssv: 'Negativo', ihhnv: 'Negativo', ciclo: '31.0', copias: '20' });
+    rellenar(1, { codigo: 'L-010', wssv: 'Positivo', ihhnv: 'Negativo' });
+    rellenar(2, { codigo: 'L-011', wssv: 'Negativo', ihhnv: 'Negativo' });
+    H.bioPatCambio();                       // saca las columnas de WSSV
+    rellenar(1, { ciclo_wssv: '22.4', copias_wssv: '1500' });
 
     // Sonda de render: se intercepta la ventana emergente y se lee el HTML del informe.
     let html = '';
@@ -334,7 +367,7 @@ describe('Biomol · el PDF sigue cuadrando con las columnas nuevas', () => {
     });
 
     // Y las columnas nuevas salen impresas con su valor.
-    expect(html).toContain('Ciclo de amplificación');
+    expect(html).toContain('Ciclo de amplificación WSSV');
     expect(html).toContain('Copias/μl');
     expect(html).toContain('22.4');
     expect(html).toContain('1500');
@@ -343,7 +376,9 @@ describe('Biomol · el PDF sigue cuadrando con las columnas nuevas', () => {
   it('los controles llevan sus valores bajo Ciclo y Copias', () => {
     localStorage.clear();
     H.renderBiomol();
-    rellenar(1, { codigo: 'L-030', wssv: 'Positivo', ciclo: '22.4', copias: '1500' });
+    rellenar(1, { codigo: 'L-030', wssv: 'Positivo' });
+    H.bioPatCambio();
+    rellenar(1, { ciclo_wssv: '22.4', copias_wssv: '1500' });
 
     let html = '';
     const abrirOriginal = window.open;
@@ -352,8 +387,8 @@ describe('Biomol · el PDF sigue cuadrando con las columnas nuevas', () => {
 
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const cab = [...doc.querySelectorAll('thead th')].map((t) => t.textContent.trim());
-    const iCiclo = cab.indexOf('Ciclo de amplificación');
-    const iCopias = cab.indexOf('Copias/μl');
+    const iCiclo = cab.indexOf('Ciclo de amplificación WSSV');
+    const iCopias = cab.indexOf('Copias/μl WSSV');
     expect(iCiclo).toBeGreaterThan(-1);            // control: las columnas SÍ se imprimen
 
     // Cada fila de resumen se lee por POSICIÓN de columna, contando el colspan de la
@@ -412,8 +447,11 @@ describe('Biomol · el PDF sigue cuadrando con las columnas nuevas', () => {
   it('el PDF añade la columna Nivel pegada a Copias/μl y marca los positivos', () => {
     localStorage.clear();
     H.renderBiomol();
-    rellenar(1, { codigo: 'L-040', wssv: 'Positivo', ihhnv: 'Negativo', ciclo: '22.4', copias: '1.00E+05' });
-    rellenar(2, { codigo: 'L-041', wssv: 'Negativo', ihhnv: 'Negativo', ciclo: '31.0', copias: '2.00E+01' });
+    rellenar(1, { codigo: 'L-040', wssv: 'Positivo', ihhnv: 'Negativo' });
+    rellenar(2, { codigo: 'L-041', wssv: 'Negativo', ihhnv: 'Negativo' });
+    H.bioPatCambio();
+    rellenar(1, { ciclo_wssv: '22.4', copias_wssv: '1.00E+05' });
+    rellenar(2, { ciclo_wssv: '31.0', copias_wssv: '2.00E+01' });
 
     let html = '';
     const abrirOriginal = window.open;
@@ -423,7 +461,7 @@ describe('Biomol · el PDF sigue cuadrando con las columnas nuevas', () => {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const cab = [...doc.querySelectorAll('thead th')].map((t) => t.textContent.trim());
     // Pegada a Copias/μl, no al final de la tabla.
-    expect(cab[cab.indexOf('Copias/μl') + 1]).toBe('Nivel');
+    expect(cab[cab.indexOf('Copias/μl WSSV') + 1]).toBe('Nivel');
 
     // La cabecera ya incluye la columna «#», así que el índice del <th> coincide
     // con el del <td> de la misma columna: no hay desplazamiento que compensar.
@@ -450,7 +488,9 @@ describe('Biomol · el PDF sigue cuadrando con las columnas nuevas', () => {
   it('el Control Positivo deriva su Nivel de sus propias copias', () => {
     localStorage.clear();
     H.renderBiomol();
-    rellenar(1, { codigo: 'L-050', wssv: 'Positivo', ciclo: '22.4', copias: '1.00E+05' });
+    rellenar(1, { codigo: 'L-050', wssv: 'Positivo' });
+    H.bioPatCambio();
+    rellenar(1, { ciclo_wssv: '22.4', copias_wssv: '1.00E+05' });
 
     let html = '';
     const abrirOriginal = window.open;
@@ -492,7 +532,7 @@ describe('Biomol · el PDF sigue cuadrando con las columnas nuevas', () => {
 
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const anchoCabecera = doc.querySelectorAll('thead tr th').length;
-    expect(html).not.toContain('Ciclo de amplificación');
+    expect(html).not.toContain('Ciclo de amplificación WSSV');
     // «Nivel» se deriva de Copias/μl: sin esa columna no tiene nada que clasificar y
     // tampoco debe imprimirse. Sin esto, colgarla del final en vez de de Copias pasaría
     // desapercibido, porque Copias es hoy la última columna imprimible.
@@ -502,5 +542,139 @@ describe('Biomol · el PDF sigue cuadrando con las columnas nuevas', () => {
         .reduce((n, td) => n + (Number(td.getAttribute('colspan')) || 1), 0);
       expect(`fila ${i}: ${ancho}`).toBe(`fila ${i}: ${anchoCabecera}`);
     });
+  });
+});
+
+describe('Biomol · la cuantificación es POR PATÓGENO', () => {
+  const cabeceras = () => [...document.getElementById('fp-biomol')
+    .querySelectorAll('thead th')].map((t) => t.textContent.trim());
+  const celda = (fila, k) => document.getElementById('fp-biomol')
+    .querySelector(`[name="bg_${fila}_${k}"]`);
+
+  it('🔴 sólo «Positivo», pero en cualquier caja', () => {
+    // ⚠ En producción conviven «Positivo» y «positivo» (medido el 2026-08-23), así
+    // que comparar texto exacto habría dejado sin columnas de qPCR a las filas en
+    // minúscula, sin dar ningún error.
+    ['Positivo', 'positivo', 'POSITIVO', '  Positivo  '].forEach((v) => {
+      expect(H._bioPositivoEstricto(v), `«${v}» debería contar como positivo`).toBe(true);
+    });
+    // Y NADA MÁS: la regla del laboratorio es escribir «Positivo». Admitir «P», «+»
+    // o «Sí» sólo abriría la puerta a que cada quien escriba lo suyo — el mismo
+    // problema de las dos grafías, por la puerta de atrás.
+    ['Pos', 'P', '+', 'Sí', 'si', 'Negativo', 'negativo', 'N', '', '   ', null, undefined]
+      .forEach((v) => {
+        expect(H._bioPositivoEstricto(v), `«${v}» NO debe contar como positivo`).toBe(false);
+      });
+  });
+
+  it('🔴 sin ningún positivo, las columnas de qPCR ni se pintan', () => {
+    // Es lo que pidió el usuario: no dejar seis campos más pidiendo que los llenen.
+    localStorage.clear();
+    H.renderBiomol();
+    const th = cabeceras();
+    expect(th).not.toContain('Ct WSSV');
+    expect(th).not.toContain('Ct IHHNV');
+    expect(th).not.toContain('Ct AHPND');
+  });
+
+  it('🔴 marcar WSSV positivo saca SUS dos columnas, y sólo las suyas', () => {
+    localStorage.clear();
+    H.renderBiomol();
+    celda(1, 'wssv').value = 'Positivo';
+    H.saveBioGrid();
+    H.renderBiomol();
+    const th = cabeceras();
+    expect(th).toContain('Ct WSSV');
+    expect(th).toContain('Copias WSSV');
+    expect(th, 'salieron columnas de un patógeno sin positivos').not.toContain('Ct IHHNV');
+    expect(th).not.toContain('Ct AHPND');
+  });
+
+  it('🔴 DOS patógenos positivos en la MISMA muestra: cada uno con su pareja', () => {
+    // El caso que motivó el cambio: antes el segundo no tenía dónde ir.
+    localStorage.clear();
+    H.renderBiomol();
+    celda(1, 'ihhnv').value = 'Positivo';
+    celda(1, 'wssv').value = 'positivo';        // en minúscula, a propósito
+    H.saveBioGrid();
+    H.renderBiomol();
+    celda(1, 'ciclo_ihhnv').value = '22.4';
+    celda(1, 'ciclo_wssv').value = '18.1';
+    celda(1, 'copias_ihhnv').value = '3.40E+04';
+    celda(1, 'copias_wssv').value = '9.10E+05';
+    H.saveBioGrid();
+    const { rows, headers } = H.buildBioPayload(H.bioGridFecha(), H._collectBioGrid());
+    const v = (h) => rows[0][headers.indexOf(h)];
+    expect(v('Ciclo de amplificación IHHNV')).toBe('22.4');
+    expect(v('Ciclo de amplificación WSSV')).toBe('18.1');
+    expect(v('Copias/μl IHHNV')).toBe('3.40E+04');
+    expect(v('Copias/μl WSSV')).toBe('9.10E+05');
+    // Y no se pisan entre sí ni caen en la pareja genérica.
+    expect(v('Ciclo de amplificación AHPND/EMS')).toBe('');
+    expect(v('Copias/μl AHPND/EMS')).toBe('');
+  });
+
+  it('🔴 en una fila NO positiva la celda queda bloqueada', () => {
+    // La columna existe porque otra fila sí es positiva, pero aquí no se teclea.
+    localStorage.clear();
+    H.renderBiomol();
+    celda(1, 'wssv').value = 'Positivo';
+    H.saveBioGrid();
+    H.renderBiomol();
+    expect(celda(1, 'ciclo_wssv').disabled, 'la fila positiva no debe bloquearse').toBe(false);
+    expect(celda(2, 'ciclo_wssv').disabled, 'una fila sin positivo debe bloquearse').toBe(true);
+  });
+
+  it('🔴 una columna CON DATO se sigue viendo aunque el resultado cambie', () => {
+    // Esconderla dejaría el dato invisible mientras sigue viajando a la hoja.
+    localStorage.clear();
+    H.renderBiomol();
+    celda(1, 'wssv').value = 'Positivo';
+    H.saveBioGrid();
+    H.renderBiomol();
+    celda(1, 'ciclo_wssv').value = '18.1';
+    H.saveBioGrid();
+    H.renderBiomol();
+    celda(1, 'wssv').value = 'Negativo';         // el analista rectifica
+    H.saveBioGrid();
+    H.renderBiomol();
+    expect(cabeceras(), 'se escondió una columna con dato dentro').toContain('Ct WSSV');
+    expect(celda(1, 'ciclo_wssv').value).toBe('18.1');
+  });
+
+  it('una fila con Ct por patógeno cuenta como qPCR', () => {
+    expect(H._bioEsQpcr({ ciclo_wssv: '18.1' })).toBe(true);
+    expect(H._bioEsQpcr({ copias_ahpnd: '1E+03' })).toBe(true);
+    expect(H._bioEsQpcr({ ciclo: '20' }), 'la clave genérica ya no existe').toBe(false);
+    expect(H._bioEsQpcr({ wssv: 'Positivo' })).toBe(false); // un resultado no es qPCR
+  });
+
+  it('los tres patógenos con qPCR son WSSV, IHHNV y AHPND/EMS', () => {
+    expect(H.BIO_QPCR_PATS).toEqual(['wssv', 'ihhnv', 'ahpnd']);
+    H.BIO_QPCR_PATS.forEach((p) => {
+      expect(H.BIO_PATOGENOS.some((x) => x.k === p), `«${p}» no está en el catálogo`).toBe(true);
+    });
+  });
+});
+
+describe('Biomol · las DOS reglas de «positivo» conviven a propósito', () => {
+  it('🔴 la del PDF es permisiva y la de qPCR es estricta, y se sabe cuál es cuál', () => {
+    // `_bioEsPositivo` (histórica) RESALTA un resultado en el informe: ahí ser
+    // permisivo no rompe nada. `_bioPositivoEstricto` ABRE campos que viajan a la
+    // hoja: ahí sí importa. Dos funciones casi homónimas con reglas distintas es la
+    // costura que este proyecto paga caro, así que la diferencia se deja escrita.
+    const src = readFileSync(ENGINE, 'utf8');
+    expect(src, 'el nombre volvió a ser confundible').toContain('_bioPositivoEstricto');
+    expect(src).toContain('function _bioEsPositivo(');
+    // Y la que decide las columnas es la ESTRICTA, no la del PDF.
+    expect(src).toContain('_bioPositivoEstricto((d||{})[p])');
+  });
+
+  it('🔴 «Pos» resalta en el PDF pero NO abre columnas de qPCR', () => {
+    // El caso que delata la diferencia. Si algún día se unifican, esta prueba dirá
+    // en qué dirección se hizo — que es lo que hay que decidir a conciencia.
+    expect(H._bioPositivoEstricto('Pos')).toBe(false);
+    expect(H._bioPositivoEstricto('Positivo')).toBe(true);
+    expect(H._bioPositivoEstricto('positivo')).toBe(true);
   });
 });
