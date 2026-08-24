@@ -60,8 +60,9 @@ const LIMITS = {
   control: { maxRows: 300, maxCols: 8  },
   algas:   { maxRows: 500, maxCols: 28 },
   mad:     { maxRows: 1000, maxCols: 25 },
-  // Biomol: 25 columnas desde 2026-08-23 (las 19 anteriores + Ct y Copias/μl de
-  // WSSV, IHHNV y AHPND/EMS). maxCols sube de 20 a 32 con holgura.
+  // Biomol: 23 columnas desde 2026-08-23 (las 19 anteriores MENOS la pareja
+  // genérica, que se retiró, MÁS el Ct y las copias de WSSV, IHHNV y AHPND/EMS).
+  // maxCols sube de 20 a 32 con holgura.
   // ⚠⚠ maxCols RECORTA en silencio, no valida: con el 20 anterior las SEIS columnas
   // nuevas habrían llegado vacías a la hoja sin un solo error. Exige RE-DESPLEGAR.
   biomol:  { maxRows: 100, maxCols: 32 },

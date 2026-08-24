@@ -614,6 +614,54 @@ describe('Biomol · la cuantificación es POR PATÓGENO', () => {
     expect(v('Copias/μl AHPND/EMS')).toBe('');
   });
 
+  it('🔴 las columnas salen al TECLEAR el resultado, sin pasar por «Guardar»', () => {
+    // Es la petición literal del usuario (2026-08-23): antes sólo aparecían tras el
+    // guardado local, que es al revés de como se trabaja —primero se marca el resultado
+    // y sólo entonces se tiene el Ct que anotar—.
+    //
+    // ⚠⚠ ESTA PRUEBA DISPARA UN EVENTO `change` DE VERDAD, y no es un capricho. Todas
+    // las demás de este bloque llaman a `saveBioGrid()` o a `bioPatCambio()` a mano:
+    // prueban la FUNCIÓN, no el CABLEADO. Medido por mutación el 2026-08-23, borrar el
+    // `onchange` del render dejaba la suite entera en verde mientras la función quedaba
+    // huérfana y la vista volvía a "sólo al guardar", que es el defecto original.
+    //
+    // ⚠⚠ happy-dom NO EJECUTA los manejadores inline puestos por `innerHTML` (sondeado
+    // el 2026-08-23: el atributo está, pero `dispatchEvent` no lo corre). Así que se
+    // hace lo que haría el navegador: LEER el atributo y ejecutar ESE código. Es la
+    // diferencia entre probar el cableado y probar la función — llamar a
+    // `bioPatCambio()` a mano dejaría pasar el borrado del `onchange`.
+    localStorage.clear();
+    H.renderBiomol();
+    expect(cabeceras()).not.toContain('Ct IHHNV');
+
+    const c = celda(1, 'ihhnv');
+    expect(c.getAttribute('onchange'), 'la celda de resultado perdió su cableado').toBe('bioPatCambio()');
+    c.value = 'Positivo';
+    // Se ejecuta el código DEL ATRIBUTO, no una llamada escrita aquí.
+    new Function('bioPatCambio', c.getAttribute('onchange'))(H.bioPatCambio);
+
+    const th = cabeceras();
+    expect(th, 'las columnas no salieron: siguen esperando al guardado').toContain('Ct IHHNV');
+    expect(th).toContain('Copias IHHNV');
+    expect(th, 'salieron columnas de un patógeno sin positivos').not.toContain('Ct WSSV');
+    // Y lo tecleado sigue en su sitio tras el repintado: sacar las columnas no puede
+    // costar el dato que las sacó.
+    expect(celda(1, 'ihhnv').value).toBe('Positivo');
+  });
+
+  it('🔴 sólo las tres celdas con qPCR llevan el cableado, no las seis', () => {
+    // BP, NHPB y EHP no se corren por qPCR: darles el aviso repintaría la grilla —y
+    // robaría el foco— cada vez que se teclea un resultado que nunca abre columnas.
+    localStorage.clear();
+    H.renderBiomol();
+    const con = ['ihhnv', 'wssv', 'ahpnd'];
+    const sin = ['bp', 'nhpb', 'ehp'];
+    con.forEach((k) => expect(celda(1, k).getAttribute('onchange'), `${k} debería avisar`).toBe('bioPatCambio()'));
+    sin.forEach((k) => expect(celda(1, k).getAttribute('onchange'), `${k} NO debería avisar`).toBe(null));
+    // Control: los tres cableados son exactamente los de BIO_QPCR_PATS, no una lista aparte.
+    expect(con.slice().sort()).toEqual(H.BIO_QPCR_PATS.slice().sort());
+  });
+
   it('🔴 en una fila NO positiva la celda queda bloqueada', () => {
     // La columna existe porque otra fila sí es positiva, pero aquí no se teclea.
     localStorage.clear();

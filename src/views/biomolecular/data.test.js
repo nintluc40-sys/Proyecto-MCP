@@ -157,19 +157,85 @@ describe('biomolecular · columnas cuantitativas de qPCR', () => {
     expect(r.copias).toBe('');
   });
 
-  it('el Excel las incluye al final y cada valor bajo SU cabecera', () => {
+  it('el Excel lleva una pareja POR PATÓGENO y cada valor bajo SU cabecera', () => {
     const filas = normalizeRows([{
-      Fecha: '05/06/2026', 'Código': 'L-77', Lugar: 'Lab 1', IHHNV: 'Negativo',
-      'Ciclo de amplificación': '28.1', 'Copias/μl': '42',
+      Fecha: '05/06/2026', 'Código': 'L-77', Lugar: 'Lab 1', IHHNV: 'Negativo', WSSV: 'Positivo',
+      'Ciclo de amplificación WSSV': '28.1', 'Copias/μl WSSV': '42',
+      'Ciclo de amplificación IHHNV': '31.7', 'Copias/μl IHHNV': '8',
     }]);
     const [cab, fila] = biomolExportAoa(filas);
-    expect(cab.slice(-2)).toEqual(['Ciclo de amplificación', 'Copias/μl']);
+    expect(cab.slice(-6)).toEqual([
+      'Ciclo de amplificación WSSV', 'Copias/μl WSSV',
+      'Ciclo de amplificación IHHNV', 'Copias/μl IHHNV',
+      'Ciclo de amplificación AHPND/EMS', 'Copias/μl AHPND/EMS',
+    ]);
+    expect(cab).not.toContain('Ciclo de amplificación');   // la genérica ya no existe
+    expect(cab).not.toContain('Copias/μl');
     expect(fila).toHaveLength(cab.length);           // control: no sobra ni falta celda
     const celda = (n) => fila[cab.indexOf(n)];
     expect(celda('Código')).toBe('L-77');
     expect(celda('IHHNV')).toBe('Negativo');
-    expect(celda('Ciclo de amplificación')).toBe('28.1');
-    expect(celda('Copias/μl')).toBe('42');
+    expect(celda('Ciclo de amplificación WSSV')).toBe('28.1');
+    expect(celda('Copias/μl WSSV')).toBe('42');
+    expect(celda('Ciclo de amplificación IHHNV')).toBe('31.7');
+    expect(celda('Copias/μl IHHNV')).toBe('8');
+    expect(celda('Ciclo de amplificación AHPND/EMS')).toBe('');  // no se corrió: vacío
+    expect(celda('Copias/μl AHPND/EMS')).toBe('');
     expect(celda('EHP')).toBe('');                   // no arrastra el valor vecino
+  });
+
+  it('tolera el signo micro y la falta de tilde también en las cabeceras por patógeno', () => {
+    // La pareja genérica aceptaba tres grafías; las seis nuevas tienen que aceptar las
+    // mismas. Una cabecera que no casa NO da error: la columna desaparece en silencio.
+    const [r] = normalizeRows([{
+      Fecha: '05/06/2026', 'copias/µl wssv': '900', 'Ciclo de amplificacion ihhnv': '30',
+    }]);
+    expect(r.qpcr.WSSV.copias).toBe('900');
+    expect(r.qpcr.IHHNV.ciclo).toBe('30');
+  });
+
+  it('una fila ANTIGUA (pareja sin patógeno) se exporta bajo el único patógeno que informa', () => {
+    // Antes de 2026-08-23 Ciclo y Copias eran una pareja sola y la hoja no decía de cuál
+    // de los patógenos era. Si la fila informa UNO solo, es deducible sin inventar nada.
+    const [uno] = normalizeRows([{
+      Fecha: '05/06/2026', 'Código': 'V-1', WSSV: 'Positivo',
+      'Ciclo de amplificación': '24.8', 'Copias/μl': '3.40E+04',
+    }]);
+    const [cab, fila] = biomolExportAoa([uno]);
+    const celda = (n) => fila[cab.indexOf(n)];
+    expect(celda('Ciclo de amplificación WSSV')).toBe('24.8');
+    expect(celda('Copias/μl WSSV')).toBe('3.40E+04');
+    expect(celda('Ciclo de amplificación IHHNV')).toBe('');
+  });
+
+  it('una fila ANTIGUA con VARIOS patógenos informados no se atribuye a ninguno', () => {
+    // Es justo el caso que motivó las columnas por patógeno: con IHHNV y WSSV medidos, el
+    // Ct suelto puede ser de cualquiera de los dos. Colocarlo en uno sería inventar el dato.
+    const [ambiguo] = normalizeRows([{
+      Fecha: '05/06/2026', 'Código': 'V-2', WSSV: 'Positivo', IHHNV: 'Negativo',
+      'Ciclo de amplificación': '24.8', 'Copias/μl': '3.40E+04',
+    }]);
+    const [cab, fila] = biomolExportAoa([ambiguo]);
+    const celda = (n) => fila[cab.indexOf(n)];
+    expect(celda('Ciclo de amplificación WSSV')).toBe('');
+    expect(celda('Ciclo de amplificación IHHNV')).toBe('');
+  });
+});
+
+describe('biomolecular · el espejo genérico de la cuantificación', () => {
+  it('🔴 `ciclo` y `copias` se respaldan con el primer valor POR PATÓGENO', () => {
+    /* La hoja ya no tiene la pareja genérica, así que `ciclo`/`copias` sólo pueden salir de
+       las columnas por patógeno. No es cosmético: de ese espejo dependen `hasQpcr` —y con
+       él el recuento de «muestras corridas por qPCR» de la franja— y el respaldo de las
+       filas antiguas. Sin él, TODA fila nueva se leería como si no se hubiera corrido qPCR
+       aunque la hoja traiga su Ct y sus copias, y sin ningún error a la vista. */
+    const [r] = normalizeRows([{
+      Fecha: '05/06/2026', 'Código': 'F-1', WSSV: 'Positivo',
+      'Ciclo de amplificación WSSV': '28.1', 'Copias/μl WSSV': '42',
+    }]);
+    expect(r.ciclo).toBe('28.1');
+    expect(r.copias).toBe('42');
+    // …y el detalle por patógeno sigue intacto: el espejo no lo sustituye.
+    expect(r.qpcr.WSSV).toEqual({ ciclo: '28.1', copias: '42' });
   });
 });

@@ -305,7 +305,43 @@ describe('Carga viral · la tarjeta montada', () => {
     montar(fixture());
     expect(resumen('Carga mediana')).toBe('5,0 × 10²');
     expect(resumen('Ct mediano')).toBe('29,0');
-    expect(resumen('Muestras cuantificadas')).toBe('3');
+    expect(resumen('Cuantificaciones')).toBe('3');
+    // Y el denominador de muestras deja FUERA a las que no cuantificaron: la L-4 no se
+    // corrió por qPCR y la L-5 salió 'N/A'. Son 5 filas y sólo 3 cuentan.
+    const csu = [...document.querySelectorAll('#carga-sum .cs')]
+      .find((c) => txt(c.querySelector('.cs-k')) === 'Cuantificaciones');
+    expect(txt(csu.querySelector('.cs-u'))).toBe('en 3 muestras');
+  });
+
+  it('🔴 la franja distingue CUANTIFICACIONES de MUESTRAS', () => {
+    // Una sola muestra corrida para WSSV y para IHHNV deja DOS cuantificaciones. La franja
+    // rotulaba ese número como «Muestras cuantificadas», así que anunciaba dos muestras
+    // donde el analista tiene una en la mano. Las medianas SÍ son de las cuantificaciones
+    // (quedarse con una escondería la otra), de modo que el número está bien: lo que
+    // estaba mal era el rótulo, y el conteo de muestras se enseña al lado para no perderlo.
+    montar([
+      B({ Fecha: '02/07/2026', 'Código': 'D-1', Lugar: 'Módulo 8', Tanque: 'T1', ...SIN_MEDIR,
+        WSSV: 'Positivo', IHHNV: 'Positivo',
+        'Ciclo de amplificación WSSV': '18.0', 'Copias/μl WSSV': '1.00E+06',
+        'Ciclo de amplificación IHHNV': '30.0', 'Copias/μl IHHNV': '1.00E+02' }),
+    ]);
+    expect(puntos().length, 'una muestra con dos patógenos debe dar dos puntos').toBe(2);
+    expect(resumen('Cuantificaciones')).toBe('2');
+    // El denominador de muestras va como unidad, pegado al número.
+    const cs = [...document.querySelectorAll('#carga-sum .cs')]
+      .find((c) => txt(c.querySelector('.cs-k')) === 'Cuantificaciones');
+    expect(txt(cs.querySelector('.cs-u')), 'la franja sigue contando muestras de más').toBe('en 1 muestra');
+    // Control: con dos muestras de una cuantificación cada una, los dos números coinciden.
+    montar([
+      B({ Fecha: '02/07/2026', 'Código': 'D-2', Lugar: 'Módulo 8', Tanque: 'T1', ...SIN_MEDIR,
+        WSSV: 'Positivo', 'Ciclo de amplificación WSSV': '18.0', 'Copias/μl WSSV': '1.00E+06' }),
+      B({ Fecha: '03/07/2026', 'Código': 'D-3', Lugar: 'Módulo 8', Tanque: 'T2', ...SIN_MEDIR,
+        IHHNV: 'Positivo', 'Ciclo de amplificación IHHNV': '30.0', 'Copias/μl IHHNV': '1.00E+02' }),
+    ]);
+    expect(resumen('Cuantificaciones')).toBe('2');
+    const cs2 = [...document.querySelectorAll('#carga-sum .cs')]
+      .find((c) => txt(c.querySelector('.cs-k')) === 'Cuantificaciones');
+    expect(txt(cs2.querySelector('.cs-u'))).toBe('en 2 muestras');
   });
 
   it('el tooltip enseña las copias TAL CUAL las escribió el laboratorio', () => {
@@ -343,8 +379,60 @@ describe('Carga viral · la tarjeta montada', () => {
     quitarDiag(root, 'WSSV');
     const p = puntos();
     expect(p.length).toBe(1);          // U-1 se va (solo medía WSSV), U-2 se queda por IHHNV
-    expect(resumen('Muestras cuantificadas')).toBe('1');
+    expect(resumen('Cuantificaciones')).toBe('1');
     expect(resumen('Carga mediana')).toBe('9,0 × 10²');
+  });
+
+  it('en entrenamiento apaga la cuantificación DE CADA PATÓGENO, y al salir la devuelve intacta', () => {
+    // Desde 2026-08-23 cada patógeno trae su propia pareja Ct/Copias. Dos peligros:
+    //  · que el entrenamiento apague solo la genérica y el dato REAL de WSSV siga a la vista;
+    //  · que el respaldo se guarde por REFERENCIA —`qpcr` es un objeto—, con lo que apagarlo
+    //    mutaría también el respaldo y al salir se "restauraría" un N/A: el dato verdadero
+    //    quedaría destruido para siempre, y sin ningún error.
+    // Esta prueba mata las dos: exige el N/A dentro y el valor exacto al volver.
+    montar([
+      B({ Fecha: '02/07/2026', 'Código': 'P-1', Lugar: 'Módulo 8', Tanque: 'T1', ...SIN_MEDIR,
+        WSSV: 'Positivo', IHHNV: 'Positivo',
+        'Ciclo de amplificación WSSV': '24.8', 'Copias/μl WSSV': '3.40E+04',
+        'Ciclo de amplificación IHHNV': '31.0', 'Copias/μl IHHNV': '750' }),
+    ]);
+    const celdas = () => [...document.querySelectorAll('#c-table tbody td.q-num')].map(txt);
+    expect(celdas().join(' | ')).toContain('WSSV 3.40E+04');
+    expect(celdas().join(' | ')).toContain('IHHNV 750');
+
+    click(document.getElementById('aud-btn'));
+    const dentro = celdas().join(' | ');
+    expect(dentro).not.toContain('3.40E+04');   // ni rastro del valor real, de NINGUNO
+    expect(dentro).not.toContain('750');
+    expect(dentro).not.toContain('24.8');
+    expect(dentro).toContain('WSSV N/A');       // los dos apagados, no solo la genérica
+    expect(dentro).toContain('IHHNV N/A');
+
+    click(document.getElementById('aud-btn'));
+    const fuera = celdas().join(' | ');
+    expect(fuera).toContain('WSSV 3.40E+04');   // el dato vuelve EXACTO
+    expect(fuera).toContain('IHHNV 750');
+    expect(fuera).toContain('WSSV 24.8');
+    expect(fuera).toContain('IHHNV 31.0');
+    expect(fuera).not.toContain('N/A');
+  });
+
+  it('en entrenamiento NO inventa corridas de qPCR que no se hicieron', () => {
+    // La muestra solo se corrió por WSSV. Poner "N/A" también bajo IHHNV y AHPND diría que
+    // se corrieron y no amplificaron: dos ensayos que nunca existieron. El modo existe para
+    // no enseñar el dato real, no para fabricar datos nuevos.
+    montar([
+      B({ Fecha: '02/07/2026', 'Código': 'P-2', Lugar: 'Módulo 8', Tanque: 'T1', ...SIN_MEDIR,
+        WSSV: 'Positivo',
+        'Ciclo de amplificación WSSV': '24.8', 'Copias/μl WSSV': '3.40E+04' }),
+    ]);
+    click(document.getElementById('aud-btn'));
+    const dentro = [...document.querySelectorAll('#c-table tbody td.q-num')].map(txt).join(' | ');
+    expect(dentro).toContain('WSSV N/A');
+    expect(dentro).not.toContain('IHHNV N/A');
+    expect(dentro).not.toContain('AHPND/EMS N/A');
+    // El modo AUD es estado de MÓDULO y sobrevive al test: se apaga o el siguiente monta ciego.
+    click(document.getElementById('aud-btn'));
   });
 
   it('en entrenamiento la cuantificación sale como "N/A", no con su valor real', () => {
@@ -448,6 +536,8 @@ describe('Biomol · la carga se cuenta POR PATÓGENO', () => {
     })]);
     expect(r.nCopias, 'la segunda cuantificación quedó fuera').toBe(2);
     expect(r.nCt).toBe(2);
+    // …pero siguen siendo UNA muestra: son magnitudes distintas desde 2026-08-23.
+    expect(r.nMuestrasCopias, 'dos cuantificaciones se contaron como dos muestras').toBe(1);
   });
 
   it('un patógeno sin cuantificar no aporta punto', () => {
@@ -458,5 +548,97 @@ describe('Biomol · la carga se cuenta POR PATÓGENO', () => {
     })]);
     expect(pts).toHaveLength(1);
     expect(pts[0].diag).toBe('WSSV');
+  });
+});
+
+describe('Biomol · el filtro de diagnóstico alcanza a la CUANTIFICACIÓN', () => {
+  /* Auditoría del 2026-08-24. Hasta entonces el filtro se aplicaba sólo a la FILA
+     (`enFiltroDiag`): una muestra positiva a WSSV y a IHHNV seguía aportando la carga de
+     WSSV con WSSV apagado. Medido antes de corregir: 2 puntos en vez de 1, mediana
+     «2,8 × 10³» —que no es ninguna de las dos medidas— y la barra de nivel en ALTO
+     (la carga de WSSV) mientras el usuario miraba IHHNV, que es BAJO.
+
+     ⚠ Todas las pruebas de filtro anteriores usaban la pareja GENÉRICA, que ya no existe
+     en la hoja: cubrían un camino que en producción no puede ocurrir. Por eso el defecto
+     pasó. Estas usan las columnas POR PATÓGENO, que es lo que llega hoy. */
+
+  // Una sola muestra: WSSV con carga ALTA (10⁶) e IHHNV con carga BAJA (8). Los dos
+  // valores están en extremos opuestos de la escala a propósito: si se cuela el del
+  // patógeno apagado, el color de la barra y la mediana lo delatan sin ambigüedad.
+  const DOBLE = () => [
+    B({ Fecha: '02/07/2026', 'Código': 'D-1', Lugar: 'Módulo 8', Tanque: 'T1', 'Estadío': 'PL10',
+      ...SIN_MEDIR, WSSV: 'Positivo', IHHNV: 'Positivo',
+      'Ciclo de amplificación WSSV': '18.0', 'Copias/μl WSSV': '1.00E+06',
+      'Ciclo de amplificación IHHNV': '34.0', 'Copias/μl IHHNV': '8' }),
+  ];
+
+  it('🔴 apagar un patógeno retira SU cuantificación, no sólo la fila', () => {
+    montar(DOBLE());
+    expect(puntos()).toHaveLength(2);            // control: con los dos activos hay dos
+    quitarDiag(root, 'WSSV');
+    const p = puntos();
+    expect(p, 'sigue pintándose la carga del patógeno apagado').toHaveLength(1);
+    expect(p[0].attrs.fill).toBe('#22c55e');     // el Bajo de IHHNV, no el Alto de WSSV
+    expect(resumen('Carga mediana')).toBe('8,0 × 10⁰');   // la de IHHNV, no la mezcla
+    expect(resumen('Cuantificaciones')).toBe('1');
+  });
+
+  it('🔴 la barra de nivel usa la carga del patógeno EN FOCO', () => {
+    montar(DOBLE());
+    quitarDiag(root, 'WSSV');
+    modoCarga(root, 'nivel');
+    const colores = barras().map((b) => b.attrs.fill);
+    expect(colores, 'la barra pintó el nivel del patógeno apagado').not.toContain('#ef4444');
+    expect(colores).toContain('#22c55e');        // Bajo: la carga de IHHNV
+  });
+
+  it('🔴 la pareja genérica NO es una puerta de atrás para el patógeno apagado', () => {
+    /* La trampa: `r.copias` es un ESPEJO del primer valor por patógeno. Una fila cuya ÚNICA
+       cuantificación es la del patógeno apagado no puede caer al respaldo de la fila vieja,
+       o ese mismo dato volvería a entrar disfrazado. La fila SIGUE en el conjunto —mide
+       IHHNV, que está activo—, así que no basta con que desaparezca: tiene que quedarse
+       sin carga que enseñar. */
+    montar([
+      B({ Fecha: '02/07/2026', 'Código': 'P-1', Lugar: 'Módulo 8', Tanque: 'T1',
+        ...SIN_MEDIR, WSSV: 'Positivo', IHHNV: 'Positivo',
+        'Ciclo de amplificación WSSV': '18.0', 'Copias/μl WSSV': '1.00E+06' }),
+    ]);
+    expect(puntos()).toHaveLength(1);            // control: con WSSV activo sí hay carga
+    quitarDiag(root, 'WSSV');
+    expect(puntos(), 'la carga del patógeno apagado volvió por el respaldo genérico').toHaveLength(0);
+    expect(rotulos()).toContain('Sin cuantificaciones de qPCR en el rango');
+    expect(document.getElementById('carga-sum').innerHTML)
+      .toContain('Ninguna muestra del rango se corrió por qPCR');
+
+    modoCarga(root, 'nivel');
+    const colores = barras().map((b) => b.attrs.fill);
+    expect(colores, 'la fila se clasificó con la carga del patógeno apagado')
+      .not.toContain('#ef4444');
+  });
+
+  it('🔴 con los DOS activos, el nivel de la fila es el MÁS ALTO de sus cargas', () => {
+    /* Hay que elegir un nivel por fila para la barra, y quedarse con el más bajo escondería
+       justo la carga que importa. Las dos cargas están en extremos opuestos (Alto y Bajo),
+       así que invertir el criterio cambia el color: es lo único que distingue la regla
+       correcta de la contraria. */
+    montar(DOBLE());
+    modoCarga(root, 'nivel');
+    const colores = barras().map((b) => b.attrs.fill);
+    expect(colores, 'la fila se clasificó por su carga MÁS BAJA').toContain('#ef4444');
+    expect(colores).not.toContain('#22c55e');
+  });
+
+  it('🔴 el tooltip de un punto lleva SU Ct, no el de la fila', () => {
+    /* Un punto es (muestra, patógeno) y la fila trae además el Ct del OTRO patógeno.
+       Leerlo de la fila enseñaría 18.0 —el de WSSV— bajo el punto de IHHNV, sin que nada
+       lo delatara: los dos son números plausibles. Por eso los Ct del fixture son
+       distintos y se comprueba también que el ajeno NO aparece. */
+    montar(DOBLE());
+    const bajo = puntos().find((p) => p.attrs.fill === '#22c55e');   // el de IHHNV
+    bajo.events.mouseenter({ clientX: 10, clientY: 10 });
+    const html = document.getElementById('bm-tooltip').innerHTML;
+    expect(html).toContain('Cuantificación qPCR · IHHNV');
+    expect(html, 'el punto no enseñó su propio Ct').toContain('34.0');
+    expect(html, 'se coló el Ct del otro patógeno').not.toContain('18.0');
   });
 });

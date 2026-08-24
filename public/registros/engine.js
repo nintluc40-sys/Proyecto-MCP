@@ -7111,7 +7111,8 @@ function removeBioById(id){
 // migra sola en la primera sincronización, sin tocarla a mano.
 //
 // ⚠ 2026-08-23: esas dos quedaron OBSOLETAS (ver la nota junto a ellas) y la hoja
-// pasó a 25 columnas con el Ct y las copias POR PATÓGENO. `LIMITS.biomol.maxCols`
+// pasó a 23 columnas con el Ct y las copias POR PATÓGENO (19 − 2 genéricas + 6).
+// `LIMITS.biomol.maxCols`
 // tuvo que subir de 20 a 32, así que ese cambio SÍ exige RE-DESPLEGAR el GAS: con
 // el 20 anterior las seis columnas nuevas se habrían recortado en silencio.
 // Son además la señal que dispara la redacción en qPCR (ver bioDescAuto).
@@ -7137,10 +7138,19 @@ const BIO_GRID_COLS = [
      donde vive el mismo dato es exactamente la costura que este proyecto paga caro.
      Tenían 0 filas con dato en producción, así que no se perdió nada.
 
-     ⚠ Quitarlas del payload EXIGE borrarlas TAMBIÉN a mano de la hoja, y ANTES de la
+     ⚠ Quitarlas del payload EXIGÍA borrarlas TAMBIÉN a mano de la hoja, y ANTES de la
      primera sincronización con este código: el payload se escribe por POSICIÓN, así
-     que mientras sigan físicamente en la hoja, «Sesión» caería sobre la columna del
-     Ciclo y todo lo demás quedaría corrido una posición. */
+     que mientras siguieran físicamente en la hoja, «Sesión» caía sobre la columna del
+     Ciclo y la cuantificación de WSSV quedaba corrida DOS posiciones. Sin ningún error:
+     el GAS no valida la cabecera, sólo AÑADE al final lo que falte.
+
+     ✅ HECHO: el usuario las borró de la hoja el 2026-08-23. La hoja quedó en 17 columnas
+     (las 16 + «Sesión»), así que `ensureHeaders` añade las seis nuevas justo detrás y
+     cada valor cae ya bajo SU cabecera. Simulado antes de darlo por bueno.
+
+     🔴 SIGUE PENDIENTE re-desplegar el GAS: con el `maxCols: 20` anterior, un envío de
+     23 columnas se RECORTA y las tres últimas (Copias IHHNV, Ct y Copias de AHPND/EMS)
+     llegan VACÍAS a la hoja sin dar ningún aviso. */
   // Columna de METADATO: viaja a la hoja pero no es una celda de la grilla ni sale en
   // el PDF. Identifica a qué análisis del día pertenece la fila y es la clave con la
   // que el GAS reemplaza SÓLO las filas de ese análisis (ver buildBioPayload).
@@ -7231,8 +7241,9 @@ function _bioPositivoEstricto(v){
 }
 // Las columnas cuantitativas de qPCR. Se listan aparte porque varias piezas
 // necesitan preguntar "¿esta fila se corrió por qPCR?" sin volver a nombrarlas.
-// Desde 2026-08-23 incluye las de cada patógeno; las dos genéricas siguen aquí
-// para que un registro viejo se siga reconociendo como qPCR.
+// Desde 2026-08-23 son las de cada patógeno y NADA MÁS: la pareja genérica se
+// retiró del esquema, así que `_collectBioGrid` ya no puede producir esas claves.
+// (Un registro viejo tampoco las trae: la grilla se lee siempre del DOM.)
 const BIO_QPCR_KEYS = BIO_QPCR_PATS.flatMap(p => ["ciclo_" + p, "copias_" + p]);
 /** ¿La fila trae medición de qPCR? Basta con UNO de los dos campos: un Ct sin
  *  cuantificar copias sigue siendo una corrida en tiempo real. */
@@ -7443,7 +7454,7 @@ function saveBioGridLocal(){
   if(n > 0) toast("💾 "+n+" muestra(s) guardada(s) localmente","ok",2500);
 }
 
-// Payload BIOMOL — una celda por columna de BIO_GRID_COLS (hoy 18) + marca de
+// Payload BIOMOL — una celda por columna de BIO_GRID_COLS (hoy 23) + marca de
 // "reemplazo por fecha" para el GAS. Se recorre el esquema en vez de enumerar las
 // celdas a mano: así añadir una columna arriba no puede dejar el envío desalineado
 // con la cabecera, que es exactamente el fallo que la enumeración literal invitaba.
@@ -13854,8 +13865,9 @@ const LIMITS = {
   control: { maxRows: 300, maxCols: 8  },
   algas:   { maxRows: 500, maxCols: 28 },
   mad:     { maxRows: 1000, maxCols: 25 },
-  // Biomol: 25 columnas desde 2026-08-23 (las 19 anteriores + Ct y Copias/μl de
-  // WSSV, IHHNV y AHPND/EMS). maxCols sube de 20 a 32 con holgura.
+  // Biomol: 23 columnas desde 2026-08-23 (las 19 anteriores MENOS la pareja
+  // genérica, que se retiró, MÁS el Ct y las copias de WSSV, IHHNV y AHPND/EMS).
+  // maxCols sube de 20 a 32 con holgura.
   // ⚠⚠ maxCols RECORTA en silencio, no valida: con el 20 anterior las SEIS columnas
   // nuevas habrían llegado vacías a la hoja sin un solo error. Exige RE-DESPLEGAR.
   biomol:  { maxRows: 100, maxCols: 32 },
