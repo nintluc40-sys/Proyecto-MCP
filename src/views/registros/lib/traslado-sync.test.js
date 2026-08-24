@@ -28,7 +28,13 @@ const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderTraslado', 'collectTraslado', 'saveTraslado', '_trasRaw', '_trasSave',
   'buildTrasPayload', 'trasAgregarCamion', 'trasIrRevision', 'trasCamChange', 'trasEditar',
   'trasCancelarEdicion', 'loadTras', 'syncAllPendingTras', 'syncOneTrasFromList', 'syncAll',
-  'buildGrid', '_reconcileMark', 'TRAS_HEADERS'];
+  'buildGrid', '_reconcileMark', 'TRAS_HEADERS',
+  // Auditoría 2026-08-24: el reparto en lotes y el motivo que manda el GAS.
+  // `postPayload` se captura AQUÍ, que es antes de que `setPost` lo sustituya por el
+  // simulador: `H.postPayload` guarda la función REAL y se puede probar con fetch falso.
+  'postPayload', '_syncNotOkUI', 'TRAS_MAX_FILAS', '_trasLotes',
+  // T4a: el vaciado de la cola cuando el servidor rechaza.
+  '_enqueueSync', '_loadSyncQueue', 'flushSyncQueue'];
 const H = {};
 const toasts = [];
 const enviados = [];
@@ -326,5 +332,169 @@ describe('Traslado · el aviso en el tablero y la cola sin conexión', () => {
     const id = H._trasRaw()[0].id;
     H._reconcileMark({ kind: 'ast', keys: [id] });
     expect(H._trasRaw()[0].synced).toBe(false);
+  });
+});
+
+describe('Traslado · lotes y el motivo del rechazo (auditoría 2026-08-24)', () => {
+  /** Clona un viaje REAL —el que produce el formulario— tantas veces como haga falta. */
+  function sembrar(n) {
+    viajeGuardable();
+    H.saveTraslado();
+    const base = H._trasRaw()[0];
+    expect(base, "el fixture no guardó nada").toBeTruthy();
+    const lista = [];
+    for (let i = 0; i < n; i += 1) {
+      lista.push({ ...JSON.parse(JSON.stringify(base)), id: "tvLOTE" + i, synced: false, ts: Date.now() });
+    }
+    H._trasSave(lista);
+    return lista;
+  }
+  const restaurarPost = () => H.setPost(async (payload) => { enviados.push(payload); return H.__envioOk; });
+
+  it('🔴 muchos pendientes salen en VARIOS envíos, y ninguno pasa del techo', async () => {
+    const lista = sembrar(25);
+    const filasPorViaje = H.buildTrasPayload([lista[0]]).rows.length;
+    expect(filasPorViaje * lista.length,
+      "el fixture no llega al techo: pasaría igual sin trocear").toBeGreaterThan(H.TRAS_MAX_FILAS);
+
+    enviados.length = 0;
+    await H.syncAllPendingTras();
+    expect(enviados.length, "siguió mandándolo todo en un solo POST").toBeGreaterThan(1);
+    enviados.forEach((p, i) => {
+      expect(p.rows.length, `el envío ${i + 1} pasa del techo`).toBeLessThanOrEqual(H.TRAS_MAX_FILAS);
+    });
+    // Y no se pierde ni se repite ninguna fila por el camino.
+    const totalFilas = enviados.reduce((a, p) => a + p.rows.length, 0);
+    expect(totalFilas).toBe(filasPorViaje * lista.length);
+    expect(H.loadTras().filter((r) => !r.synced)).toHaveLength(0);
+  });
+
+  it('🔴 si un lote falla, los ANTERIORES quedan sincronizados y el resto pendiente', async () => {
+    /* Era el motivo de marcar `synced` al final: un fallo en el último envío devolvía a
+       pendiente TODO, y el reintento reescribía en la hoja lo que ya estaba. */
+    const lista = sembrar(25);
+    let n = 0;
+    H.setPost(async (payload) => { enviados.push(payload); n += 1; return n === 1; });
+    try {
+      enviados.length = 0;
+      await H.syncAllPendingTras();
+      expect(enviados.length, "no paró en el primer fallo").toBe(2);
+      const sincronizados = H.loadTras().filter((r) => r.synced).length;
+      const pendientes = H.loadTras().filter((r) => !r.synced).length;
+      expect(sincronizados, "se perdió el lote que SÍ entró").toBeGreaterThan(0);
+      expect(pendientes, "se dio por bueno el lote que falló").toBeGreaterThan(0);
+      expect(sincronizados + pendientes).toBe(lista.length);
+      /* El aviso tiene que decir cuántos SÍ entraron. Que el conteo fuera sólo al
+         indicador y el aviso dijera «no fue posible sincronizar» era engañoso: el usuario
+         creería que no se guardó nada y lo reenviaría todo. */
+      expect(ultimoAviso()).toContain("de " + lista.length);
+      expect(ultimoAviso()).toContain("sincronizados");
+      expect(ultimoAviso()).toContain("pendiente");
+    } finally { restaurarPost(); }
+  });
+
+  it('🔴 `postPayload` recoge el motivo que manda el GAS', async () => {
+    /* La mitad de abajo de la cadena, con el `postPayload` REAL y la red falsa. Hasta el
+       2026-08-24 el `message` se parseaba y se tiraba. */
+    const fetchOrig = globalThis.fetch;
+    globalThis.fetch = async () => ({
+      ok: true,
+      text: async () => JSON.stringify({ status: 'error', message: 'Hoja no permitida' }),
+    });
+    try {
+      const opts = {};
+      const ok = await H.postPayload(
+        { sheetName: 'Registro_Traslado', headers: ['a'], rows: [['x']] },
+        'https://script.google.com/macros/s/PRUEBA/exec', opts);
+      expect(ok).toBe(false);
+      expect(opts.outcome).toBe('rejected');
+      expect(opts.gasMessage, 'el motivo se volvió a tirar').toBe('Hoja no permitida');
+    } finally { globalThis.fetch = fetchOrig; }
+  });
+
+  it('🔴 el aviso dice QUÉ pasó y qué hacer, no sólo que falló', () => {
+    /* La mitad de arriba. «Hoja no permitida» significa SIEMPRE lo mismo —el GAS
+       desplegado es más antiguo que la app— y decirlo aquí ahorra buscar el fallo en el
+       cliente, que es donde no está. */
+    toasts.length = 0;
+    H._syncNotOkUI('rejected', 'x', null, 'Hoja no permitida');
+    expect(ultimoAviso()).toContain('Hoja no permitida');
+    expect(ultimoAviso().toLowerCase()).toContain('vuelve a desplegarlo');
+
+    toasts.length = 0;
+    H._syncNotOkUI('rejected', 'x', null, 'Límite de filas excedido');
+    expect(ultimoAviso()).toContain('Límite de filas excedido');
+    expect(ultimoAviso().toLowerCase()).toContain('menos registros');
+  });
+
+  it('sin motivo, el aviso es el de siempre: no inventa una explicación', () => {
+    toasts.length = 0;
+    H._syncNotOkUI('rejected', 'x', null, '');
+    expect(ultimoAviso()).toBe('No fue posible sincronizar con Google Sheets');
+  });
+});
+
+describe('Traslado · la cola sin conexión frente a un rechazo del GAS (T4a)', () => {
+  /* Medido el 2026-08-24: un traslado capturado SIN SEÑAL se encolaba; al recuperar
+     señal el GAS respondía «Hoja no permitida» —lo que responde HOY, sin re-desplegar—,
+     el envío se DESCARTABA de la cola y el aviso decía «revisa los datos», acusando al
+     dato cuando el problema era el despliegue. El dato local nunca se perdió, pero se
+     acababa el reintento automático sin que nada lo dijera. */
+
+  /** Deja un traslado local pendiente y su envío en la cola, como al perder señal. */
+  function encolarTraslado() {
+    H._trasSave([{ id: 'tvOFF1', ts: Date.now(), synced: false, data: { fecha: '2026-08-24' } }]);
+    H._enqueueSync(
+      { sheetName: 'Registro_Traslado', headers: ['a'], rows: [['x']] },
+      'req-off-1', 'https://script.google.com/macros/s/PRUEBA/exec',
+      { kind: 'tras', keys: ['tvOFF1'] },
+    );
+    expect(H._loadSyncQueue(), "el fixture no encoló nada").toHaveLength(1);
+  }
+  /** Corre el vaciado con una respuesta fija del servidor. */
+  async function vaciarCon(respuesta) {
+    const orig = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, text: async () => JSON.stringify(respuesta) });
+    try { await H.flushSyncQueue(); } finally { globalThis.fetch = orig; }
+  }
+
+  it('🔴 un rechazo por DESPLIEGUE conserva el envío y dice el motivo real', async () => {
+    encolarTraslado();
+    toasts.length = 0;
+    await vaciarCon({ status: 'error', message: 'Hoja no permitida' });
+
+    expect(H._loadSyncQueue(), "se descartó: ya no habría reintento automático").toHaveLength(1);
+    expect(H._trasRaw()[0].synced, "se dio por escrito un dato que no llegó").toBe(false);
+    const aviso = toasts.join(" | ");
+    expect(aviso).toContain("Hoja no permitida");
+    expect(aviso.toLowerCase()).toContain("vuelve a desplegarlo");
+    expect(aviso, "sigue acusando a los datos, que están bien").not.toContain("revisa los datos");
+  });
+
+  it('🔴 un rechazo por los DATOS sí se descarta, para no atascar la cola', async () => {
+    /* La otra mitad de la regla. Sin este caso, «conservar siempre» dejaría un envío
+       imposible dando vueltas y tapando a los que sí pueden entregarse. */
+    encolarTraslado();
+    toasts.length = 0;
+    await vaciarCon({ status: 'error', message: 'Error en datos' });
+
+    expect(H._loadSyncQueue(), "un envío irrecuperable se quedó atascando la cola").toHaveLength(0);
+    expect(H._trasRaw()[0].synced).toBe(false);
+    expect(toasts.join(" | ")).toContain("revisa los datos");
+  });
+
+  it('🔴 al re-desplegar el GAS, el envío en espera se entrega SOLO', async () => {
+    /* Es el sentido de conservarlo: el usuario arregla el despliegue y no tiene que
+       acordarse de reenviar nada. Sin esta prueba, «conservar» podría estar guardando un
+       envío que nunca se vuelve a intentar, y el verde no lo distinguiría. */
+    encolarTraslado();
+    await vaciarCon({ status: 'error', message: 'Hoja no permitida' });
+    expect(H._loadSyncQueue()).toHaveLength(1);          // control: sigue en espera
+
+    toasts.length = 0;
+    await vaciarCon({ status: 'ok' });                    // el GAS ya re-desplegado
+    expect(H._loadSyncQueue(), "el envío se quedó en la cola tras entregarse").toHaveLength(0);
+    expect(H._trasRaw()[0].synced, "se entregó pero el registro sigue pendiente").toBe(true);
+    expect(toasts.join(" | ")).toContain("completados");
   });
 });

@@ -1195,7 +1195,36 @@ function setSyncUI(st, lbl){
 //   queued   → el dato está guardado y se sincronizará/verificará solo (no es error);
 //   inflight → ya hay un envío en curso (postPayload ya avisó, no pisar con error);
 //   resto    → error real. `outcome` viene de postPayload (opts.outcome).
-function _syncNotOkUI(outcome, errLabel, indId){
+/* Texto legible del motivo que manda el GAS, con la acción concreta cuando la hay.
+   Vive aparte porque lo usan DOS avisos distintos —el fallo total y el éxito parcial—
+   y dos copias de la misma regla es exactamente la costura que este proyecto paga caro.
+   Con `indexOf` en minúsculas y NO con expresiones regulares: partes de este archivo se
+   copian dentro del template literal de GAS() y ahí los escapes colapsan. */
+/* ¿El rechazo del GAS es del ENTORNO y no de los datos?
+   Son dos cosas muy distintas que hasta el 2026-08-24 se trataban igual:
+     · DATOS mal (formato, límite de filas) → reintentar es inútil, se descarta.
+     · ENTORNO: el GAS desplegado es más antiguo que esta app («Hoja no permitida») o
+       falta el token («No autorizado»). El registro está PERFECTO; lo que falla se
+       arregla fuera y sin tocarlo, así que el envío se CONSERVA en la cola y se
+       entrega solo en cuanto se arregle.
+   Medido el 2026-08-24: con el GAS sin re-desplegar, un traslado capturado sin señal
+   se encolaba, al recuperar señal se DESCARTABA de la cola y el aviso decía «revisa
+   los datos» — acusando al dato cuando el problema era el despliegue. */
+function _esRechazoDeEntorno(msg){
+  const m = String(msg || "").toLowerCase();
+  return m.indexOf("hoja no permitida") !== -1 || m.indexOf("no autorizado") !== -1;
+}
+function _gasMotivo(gasMsg){
+  const m = String(gasMsg || "").trim();
+  if(!m) return "";
+  const ml = m.toLowerCase();
+  let pista = "";
+  if(ml.indexOf("hoja no permitida") !== -1)        pista = " · el GAS desplegado es anterior a esta app: vuelve a desplegarlo desde Apps Script";
+  else if(ml.indexOf("límite de filas") !== -1)     pista = " · envía menos registros de una vez";
+  else if(ml.indexOf("no autorizado") !== -1)       pista = " · revisa el token compartido en la configuración";
+  return " — " + m + pista;
+}
+function _syncNotOkUI(outcome, errLabel, indId, gasMsg){
   if(outcome === "queued"){
     setSyncUI("pend","En verificación… (en cola)");
     const ind = indId && document.getElementById(indId);
@@ -1204,7 +1233,12 @@ function _syncNotOkUI(outcome, errLabel, indId){
     /* postPayload ya mostró "sincronización en curso" — no sobrescribir con error */
   } else {
     setSyncUI("err", errLabel);
-    toast("No fue posible sincronizar con Google Sheets","err",4500);
+    /* El GAS manda el motivo en `message` y hasta el 2026-08-24 el cliente lo tiraba:
+       «Hoja no permitida» (el GAS desplegado es más antiguo que esta app) y «Límite de
+       filas excedido» se veían EXACTAMENTE IGUAL, y desde el camión no había por dónde
+       empezar. Ahora se enseña, con la acción concreta detrás cuando la hay. */
+    const _mot = _gasMotivo(gasMsg);
+    toast("No fue posible sincronizar con Google Sheets"+_mot,"err",_mot ? 7000 : 4500);
   }
 }
 /* ══════════════════════════════════════════
@@ -1513,7 +1547,7 @@ const _sleep = (ms) => new Promise(res => setTimeout(res, ms));
 // distinguen de los rechazos PERMANENTES (hoja no permitida, no autorizado,
 // formato inválido, límite de filas…) que sí deben rendirse sin reintentar.
 const _BUSY_RE = /ocupad|reintenta|demasiadas solicitudes|too many|rate limit|try again/i;
-async function _postOnce(bodyPayload, finalUrl){
+async function _postOnce(bodyPayload, finalUrl, info){
   const ctrl  = new AbortController();
   // F2a: el timeout del cliente debe superar la peor espera del servidor
   // (waitLock hasta 15 s + reescritura de la hoja + red). Con 15 s el cliente
@@ -1540,6 +1574,9 @@ async function _postOnce(bodyPayload, finalUrl){
       // gracias al `reqId` que valida el GAS, así que no duplica.
       return "retry";
     }
+    // El motivo que manda el GAS («Hoja no permitida», «Límite de filas excedido»…) se
+    // recoge SIEMPRE, no sólo al rechazar: quien llama decide si lo enseña.
+    if(info) info.message = String((j && j.message) || "");
     if(j && j.status === "ok") return "ok";
     // F8: backpressure transitorio (lock ocupado / rate-limit) → reintentar/encolar,
     // no rendirse. Se honra también una bandera `retriable` por si un GAS futuro
@@ -1701,6 +1738,9 @@ async function flushSyncQueue(){
     q = q.filter(it => it && (now - (it.ts || 0)) < SYNCQ_TTL); // purga vencidos
     const remaining = [];
     let sent = 0, rejected = 0, reconciled = false;
+    // Los rechazos de ENTORNO se cuentan aparte: no son un error del usuario y su
+    // envío sigue vivo en la cola. Se guarda un motivo de cada clase para el aviso.
+    let enEspera = 0, msgEntorno = "", msgDatos = "";
     for(const it of q){
       const url = it.url || gasUrl();
       if(!url || !isValidGasUrl(url)){ remaining.push(it); continue; }
@@ -1719,22 +1759,34 @@ async function flushSyncQueue(){
         if(_reconcileMark(it.mark)) reconciled = true;
         continue;
       }
-      const res = await _postOnce(body, finalUrl);
+      // El motivo se recoge también aquí: sin él, un rechazo por despliegue y uno por
+      // datos son indistinguibles, y son la noche y el día para quien está en carretera.
+      const _info = {};
+      const res = await _postOnce(body, finalUrl, _info);
       if(res === "ok"){
         sent++;
         if(_reconcileMark(it.mark)) reconciled = true;   // F3: entregado → marca los registros locales
+      } else if(res === "rejected" && _esRechazoDeEntorno(_info.message)){
+        // El dato está bien; lo que falta se arregla FUERA (re-desplegar el GAS, poner
+        // el token). Se conserva para que el vaciado automático lo entregue solo. La
+        // cola no se atasca: tiene TTL de 24 h y tope de SYNCQ_MAX.
+        remaining.push(it);
+        enEspera++; msgEntorno = _info.message || msgEntorno;
       } else if(res === "rejected"){
-        // El GAS lo rechaza permanentemente (reintentar es inútil) → se descarta
-        // para no bloquear la cola. NO se marca synced: el dato no se escribió.
-        rejected++;
+        // Rechazo por los DATOS: reintentar es inútil y dejarlo bloquearía la cola.
+        // NO se marca synced: el dato no se escribió y sigue pendiente en local.
+        rejected++; msgDatos = _info.message || msgDatos;
       } else {
         remaining.push(it); // sigue siendo transitorio: se conserva
       }
     }
     _saveSyncQueue(remaining);
-    if(sent > 0 || rejected > 0){
+    if(sent > 0 || rejected > 0 || enEspera > 0){
       if(sent > 0)     toast("✅ "+sent+" envío(s) pendiente(s) de la cola completados", "ok", 4000);
-      if(rejected > 0) toast("⚠️ "+rejected+" envío(s) en cola rechazados por el servidor — revisa los datos", "err", 5000);
+      // El de ENTORNO no dice «revisa los datos»: los datos están bien y siguen en cola.
+      if(enEspera > 0) toast("⏳ "+enEspera+" envío(s) esperando en la cola"+_gasMotivo(msgEntorno)
+        +" — se entregarán solos en cuanto se arregle", "warn", 8000);
+      if(rejected > 0) toast("⚠️ "+rejected+" envío(s) en cola rechazados"+_gasMotivo(msgDatos)+" — revisa los datos", "err", 6000);
       try{ updateDots(); updateSyncUI(); if(reconciled && typeof buildGrid === "function") buildGrid(); }catch(_){}
     }
   } finally {
@@ -1801,8 +1853,9 @@ async function postPayload(payload, url, opts){
     // Los reintentos son seguros por la idempotencia vía reqId (ver arriba).
     const MAX_ATTEMPTS = 2;
     let res = "retry";
+    const _gasInfo = {};
     for(let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++){
-      res = await _postOnce(bodyPayload, finalUrl);
+      res = await _postOnce(bodyPayload, finalUrl, _gasInfo);
       if(res === "ok" || res === "rejected") break;
       if(attempt < MAX_ATTEMPTS) await _sleep(1200 * attempt);
     }
@@ -1821,6 +1874,9 @@ async function postPayload(payload, url, opts){
     if(res === "rejected"){
       // El GAS rechazó el payload (inválido / hoja no permitida / no
       // autorizado). Reintentar no ayudaría; no se encola.
+      // El MOTIVO se propaga a quien llamó: hasta el 2026-08-24 se descartaba y todos
+      // los rechazos se veían igual desde la carretera (ver `_syncNotOkUI`).
+      if(opts) opts.gasMessage = _gasInfo.message || "";
       _setOut("rejected");
       return false;
     }
@@ -6275,7 +6331,7 @@ async function syncMadSalasGrid(){
     toast("✅ Salas enviadas a Google Sheets","ok");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
-    _syncNotOkUI(opts.outcome, "Error al sincronizar Salas", null);
+    _syncNotOkUI(opts.outcome, "Error al sincronizar Salas", null, opts.gasMessage);
   }
   renderMadSalas();
   updateDots(); updateSyncUI();
@@ -6715,7 +6771,7 @@ async function syncMadTanquesGrid(){
     toast("✅ Tanques enviados a Google Sheets","ok");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
-    _syncNotOkUI(opts.outcome, "Error al sincronizar Tanques", null);
+    _syncNotOkUI(opts.outcome, "Error al sincronizar Tanques", null, opts.gasMessage);
   }
   renderMadTanques();
   updateDots(); updateSyncUI();
@@ -6796,7 +6852,7 @@ async function syncMadLotesGrid(){
     toast("✅ Lotes enviados a Google Sheets","ok");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
-    _syncNotOkUI(opts.outcome, "Error al sincronizar Lotes", null);
+    _syncNotOkUI(opts.outcome, "Error al sincronizar Lotes", null, opts.gasMessage);
   }
   renderMadLotes();
   updateDots(); updateSyncUI();
@@ -7545,7 +7601,7 @@ async function syncBioGrid(sopts){
     toast("✅ "+payload.rows.length+" muestra(s) de "+quien+" enviadas · grilla en blanco para la siguiente tanda","ok",5000);
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
-    _syncNotOkUI(opts.outcome, "Error al sincronizar Biomol", null);
+    _syncNotOkUI(opts.outcome, "Error al sincronizar Biomol", null, opts.gasMessage);
   }
   renderBiomol(); updateDots(); updateSyncUI(); buildGrid();
 }
@@ -9015,7 +9071,7 @@ async function syncAllPendingAst(){
     if(curTab === "ast") renderAst();
     updateDots(); updateSyncUI(); buildGrid();
   } else {
-    _syncNotOkUI(opts.outcome, "No fue posible sincronizar", null);
+    _syncNotOkUI(opts.outcome, "No fue posible sincronizar", null, opts.gasMessage);
   }
 }
 
@@ -9426,7 +9482,33 @@ const TRAS_RECOV_KEY = RPRE + "trasform";   // recuperación del formulario en c
 const TRAS_MAX       = 40;
 const TRAS_TTL       = 48 * 60 * 60 * 1000;
 const TRAS_SHEET     = "Registro_Traslado";
+/* Techo de filas por ENVÍO. Es `LIMITS.tras.maxRows` del GAS, y no es holgura: si un
+   POST lo supera, el GAS responde «Límite de filas excedido» y NO escribe NADA —ni
+   siquiera las filas que sí cabían—. Un viaje normal son ~56 filas, así que el techo
+   se alcanza cerca de los 11 pendientes: pasa si el GAS lleva tiempo sin re-desplegar
+   y los viajes se han ido acumulando, que es justo cuando más duele.
+   Lo vigila una prueba que lee el valor del GAS/Code.gs REAL, para que mover uno de
+   los dos lados se ponga rojo ahí y no en carretera. Ver `_trasLotes`. */
+const TRAS_MAX_FILAS = 600;
 const TRAS_TINAS     = 8;
+
+/* Reparte los viajes pendientes en lotes que quepan en un solo POST.
+   ⚠ Un viaje NUNCA se parte entre dos lotes. Sus filas son un todo: si el segundo
+   POST fallara quedaría MEDIO viaje en la hoja, que es peor que ninguno, y en la
+   vista del Supervisor un camión aparecería a mitad de ruta sin que nada lo dijera.
+   Un viaje que por sí solo pase del techo va en su propio lote —el GAS lo rechazará
+   y el aviso dirá por qué— en vez de arrastrar a los demás con él. */
+function _trasLotes(pendientes, tope){
+  const lotes = [];
+  let actual = [], filas = 0;
+  (pendientes || []).forEach(r => {
+    const n = buildTrasPayload([r]).rows.length;
+    if(actual.length && (filas + n) > tope){ lotes.push(actual); actual = []; filas = 0; }
+    actual.push(r); filas += n;
+  });
+  if(actual.length) lotes.push(actual);
+  return lotes;
+}
 // Mínimo del protocolo según el trayecto. El formulario ABRE con 4, que son las
 // casillas del formato en papel, y admite añadir las que el trayecto pida.
 const TRAS_REV_MIN   = 3;
@@ -10619,26 +10701,47 @@ async function syncAllPendingTras(){
     return;
   }
   const nFilas = pending.reduce((a, r) => a + buildTrasPayload([r]).rows.length, 0);
+  const lotes  = _trasLotes(pending, TRAS_MAX_FILAS);
   setSyncUI("pend","Enviando "+pending.length+" traslado(s)…");
-  toast("Enviando "+pending.length+" traslado(s) ("+nFilas+" filas) a "+TRAS_SHEET+"…","info",2500);
-  const payload = buildTrasPayload(pending);
-  const opts = { dedupeSalt: pending.map(p=>p.id).join(","), mark:{ kind:"tras", keys: pending.map(p=>p.id) } };
-  const sent = await postPayload(payload, url, opts);
-  if(sent){
+  toast("Enviando "+pending.length+" traslado(s) ("+nFilas+" filas"+(lotes.length > 1 ? ", en "+lotes.length+" lotes" : "")+") a "+TRAS_SHEET+"…","info",2500);
+
+  /* Se manda LOTE A LOTE y se marca `synced` DESPUÉS DE CADA UNO, no al final: si el
+     tercer envío se cae, los dos primeros ya están en la hoja y no deben volver a
+     salir. Al primer fallo se para —insistir con los siguientes sólo repetiría el
+     mismo error— y lo que quede sigue pendiente, listo para el próximo intento. */
+  let enviados = 0, fallo = null;
+  for(let i = 0; i < lotes.length; i++){
+    const lote = lotes[i];
+    if(lotes.length > 1) setSyncUI("pend","Enviando lote "+(i+1)+" de "+lotes.length+"…");
+    const opts = { dedupeSalt: lote.map(p=>p.id).join(","), mark:{ kind:"tras", keys: lote.map(p=>p.id) } };
+    const sent = await postPayload(buildTrasPayload(lote), url, opts);
+    if(!sent){ fallo = opts; break; }
     const list2 = _trasRaw();
-    pending.forEach(p => {
+    lote.forEach(p => {
       const idx = list2.findIndex(x => x.id === p.id);
       if(idx >= 0){ list2[idx].synced = true; list2[idx].syncedAt = Date.now(); }
     });
     _trasSave(list2);
-    setSyncUI("ok", pending.length+" traslado(s) enviado(s) ✔");
-    toast(pending.length+" traslado(s) sincronizados","ok",3000);
-    setTimeout(()=>{ setSyncUI("idle","Todo sincronizado"); }, 3000);
-    if(curTab === "traslado") renderTraslado();
-    updateDots(); updateSyncUI();
-  } else {
-    _syncNotOkUI(opts.outcome, "No fue posible sincronizar el traslado", null);
+    enviados += lote.length;
   }
+
+  if(!fallo){
+    setSyncUI("ok", enviados+" traslado(s) enviado(s) ✔");
+    toast(enviados+" traslado(s) sincronizados"+(lotes.length > 1 ? " en "+lotes.length+" lotes" : ""),"ok",3000);
+    setTimeout(()=>{ setSyncUI("idle","Todo sincronizado"); }, 3000);
+  } else if(enviados > 0){
+    /* Éxito PARCIAL. Lo PRIMERO que hay que decir es cuántos SÍ entraron: con el aviso
+       genérico de fallo el usuario cree que no se guardó nada y lo reenvía todo. El
+       motivo de la parada va en el mismo aviso, detrás. No se delega en `_syncNotOkUI`
+       porque su mensaje —«no fue posible sincronizar»— sería falso aquí. */
+    setSyncUI("err", enviados+" de "+pending.length+" enviados");
+    toast("⚠️ "+enviados+" de "+pending.length+" traslado(s) sincronizados; el resto sigue pendiente"
+      +_gasMotivo(fallo.gasMessage),"warn",7000);
+  } else {
+    _syncNotOkUI(fallo.outcome, "No fue posible sincronizar el traslado", null, fallo.gasMessage);
+  }
+  if(curTab === "traslado") renderTraslado();
+  updateDots(); updateSyncUI();
 }
 
 // Un solo viaje, desde su fila en la lista. Es lo que se usa en carretera: se
@@ -10666,7 +10769,7 @@ async function syncOneTrasFromList(id){
     if(curTab === "traslado") renderTraslado();
     updateDots(); updateSyncUI();
   } else {
-    _syncNotOkUI(opts.outcome, "No fue posible sincronizar el traslado", null);
+    _syncNotOkUI(opts.outcome, "No fue posible sincronizar el traslado", null, opts.gasMessage);
   }
 }
 
@@ -11912,7 +12015,7 @@ async function syncMic(){
     if(ind) ind.textContent = "✅ Sincronizado · "+new Date().toLocaleString("es-EC");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
-    _syncNotOkUI(opts.outcome, "Error al sincronizar Microbiología", "mic-saved-ind");
+    _syncNotOkUI(opts.outcome, "Error al sincronizar Microbiología", "mic-saved-ind", opts.gasMessage);
   }
   updateDots(); updateSyncUI(); buildGrid();
   if(curTab === "michist" && micTypeGet() === "bact") renderMicHist();
@@ -13005,7 +13108,7 @@ async function syncCal(){
     if(ind) ind.textContent = "✅ Sincronizado · "+new Date().toLocaleString("es-EC");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
-    _syncNotOkUI(opts.outcome, "Error al sincronizar Calidad de Agua", "cal-saved-ind");
+    _syncNotOkUI(opts.outcome, "Error al sincronizar Calidad de Agua", "cal-saved-ind", opts.gasMessage);
   }
   updateDots(); updateSyncUI(); buildGrid();
   if(curTab==="michist" && micTypeGet()==="cal") renderCalHist();
@@ -13663,7 +13766,7 @@ async function syncPat(){
     const ind=document.getElementById("pat-saved-ind"); if(ind) ind.textContent="✅ Sincronizado · "+new Date().toLocaleString("es-EC");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
-    _syncNotOkUI(opts.outcome, "Error al sincronizar Patología en Fresco", "pat-saved-ind");
+    _syncNotOkUI(opts.outcome, "Error al sincronizar Patología en Fresco", "pat-saved-ind", opts.gasMessage);
   }
   updateDots(); updateSyncUI(); buildGrid();
   if(curTab==="michist" && micTypeGet()==="pat") renderPatHist();

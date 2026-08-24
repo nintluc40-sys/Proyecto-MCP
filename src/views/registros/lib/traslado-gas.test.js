@@ -65,7 +65,7 @@ function motorCliente() {
   };
   ctx.globalThis = ctx;
   createContext(ctx);
-  new Script(code + '\n;globalThis.__api = { buildTrasPayload, TRAS_SHEET, TRAS_HEADERS };')
+  new Script(code + '\n;globalThis.__api = { buildTrasPayload, TRAS_SHEET, TRAS_HEADERS, TRAS_MAX_FILAS, _trasLotes };')
     .runInContext(ctx);
   return ctx.__api;
 }
@@ -285,5 +285,64 @@ describe('Traslado · el GAS embebido en la app dice lo mismo', () => {
     const cuerpo = eng.slice(i, j);
     const sueltos = cuerpo.split('').filter((c, k) => c === '`' && cuerpo[k - 1] !== '\\');
     expect(sueltos, 'hay backticks SIN escapar dentro de la plantilla GAS').toHaveLength(0);
+  });
+});
+
+describe('Traslado · el envío se reparte en lotes que el GAS acepte', () => {
+  /* Auditoría del 2026-08-24. `syncAllPendingTras` mandaba TODOS los pendientes en un
+     solo POST. Un viaje son ~32-56 filas, así que a partir de una decena de pendientes
+     el GAS respondía «Límite de filas excedido» y NO escribía NADA. Y es justo el caso
+     que se da de verdad: mientras el GAS no se re-despliega, todo queda pendiente. */
+
+  it('🔴 el techo del cliente es el maxRows REAL del GAS', () => {
+    /* Los dos números viven en archivos distintos y nadie los une en tiempo de
+       ejecución. Se leen de las dos fuentes REALES: subir el del GAS sin subir el del
+       cliente deja lotes que el servidor rechaza, y bajarlo sin tocar el cliente los
+       parte de más. Escribir «600» aquí a mano no probaría nada de eso. */
+    const cli = motorCliente();
+    const gas = motorGas();
+    expect(cli.TRAS_MAX_FILAS).toBe(gas.LIMITS.tras.maxRows);
+  });
+
+  it('🔴 ningún lote pasa del techo, ni con muchos viajes pendientes', () => {
+    const cli = motorCliente();
+    const pendientes = [];
+    for (let i = 0; i < 25; i += 1) pendientes.push(viaje('tv' + i));
+    const filasDe = (v) => cli.buildTrasPayload([v]).rows.length;
+    const total = pendientes.reduce((a, v) => a + filasDe(v), 0);
+    expect(total, "el fixture no llega al techo: no probaría nada").toBeGreaterThan(cli.TRAS_MAX_FILAS);
+
+    const lotes = cli._trasLotes(pendientes, cli.TRAS_MAX_FILAS);
+    expect(lotes.length).toBeGreaterThan(1);
+    lotes.forEach((lote, i) => {
+      const n = lote.reduce((a, v) => a + filasDe(v), 0);
+      expect(n, `el lote ${i + 1} pasa del techo y el GAS lo rechazaría entero`)
+        .toBeLessThanOrEqual(cli.TRAS_MAX_FILAS);
+    });
+  });
+
+  it('🔴 un viaje NUNCA se parte entre dos lotes', () => {
+    /* Media hoja de un viaje es peor que ninguna: en la vista del Supervisor el camión
+       aparecería a mitad de ruta sin que nada lo dijera. */
+    const cli = motorCliente();
+    const pendientes = [];
+    for (let i = 0; i < 25; i += 1) pendientes.push(viaje('tv' + i));
+    const lotes = cli._trasLotes(pendientes, cli.TRAS_MAX_FILAS);
+    const ids = lotes.flat().map((v) => v.id);
+    expect(ids.length, "se perdió o se duplicó algún viaje").toBe(pendientes.length);
+    expect(new Set(ids).size).toBe(pendientes.length);
+    expect(ids.slice().sort()).toEqual(pendientes.map((v) => v.id).sort());
+  });
+
+  it('un viaje que por sí solo pasa del techo va SOLO, sin arrastrar a los demás', () => {
+    /* No cabe de ninguna manera, así que el GAS lo rechazará —y ahora el aviso dice por
+       qué—. Lo que no puede pasar es que se lleve por delante a los que sí cabían. */
+    const cli = motorCliente();
+    const pendientes = [viaje('tvA'), viaje('tvB'), viaje('tvC')];
+    const filasDe = (v) => cli.buildTrasPayload([v]).rows.length;
+    const tope = filasDe(pendientes[0]) - 1;          // ni uno solo cabe
+    const lotes = cli._trasLotes(pendientes, tope);
+    expect(lotes).toHaveLength(3);
+    lotes.forEach((l) => expect(l).toHaveLength(1));
   });
 });
