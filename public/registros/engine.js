@@ -10920,7 +10920,12 @@ const MIC_FORMATS = {
     // "mad-ras" de Calidad de Agua: es el mismo sitio físico, y si las dos listas
     // divergen el mismo punto se escribe distinto según por dónde se capture.
     ctx:[ { k:"componente", l:"Componente", type:"sel", opts:["","Colector","Colector entrada","Colector salida","Salida","Salida UV"], w:130 } ],
-    params:["vamar","vverd","vtot","aero","pseudo","btot","brojas"]
+    // 2026-08-24 (petición del usuario): los tres vibrios entran DESPUÉS de C. Totales.
+    // No tocan la hoja: `MIC_SHEET_HEADERS` se construye de MIC_LEVEL_PARAMS —que ya los
+    // lleva—, así que sus columnas YA existen; esto sólo las hace capturables desde RAS.
+    // ⚠ Añadir un parámetro a un formato OBLIGA a darle factor en su área (`ras-agua`):
+    // sin él `micFactorOf` devuelve {f:1} y el UFC saldría dividido entre 10, en silencio.
+    params:["vamar","vverd","vtot","valg","vvuln","vpara","aero","pseudo","btot","brojas"]
   },
   "agua-limpia-mar": {
     depto:"Maduración", label:"Agua de mar y Reservorios", fixedTipo:"Agua limpia y mar",
@@ -11095,6 +11100,12 @@ const MIC_DR_BASE = {
   },
   "ras-agua":{
     vamar:{f:5,l:100,m:500,e:1000}, vverd:{f:5,l:50,m:100,e:200}, vtot:{f:5,l:100,m:500,e:1000},
+    // Los tres vibrios usan el factor de «Maduración · Agua» (×10), no el ×5 de las
+    // colonias de esta misma área — decisión del usuario, 2026-08-24. Que un área mezcle
+    // factores no es nuevo aquí: Pseudomonas y Aeromonas ya van ×10 con las colonias ×5.
+    // Los umbrales se toman del MISMO sitio que el factor: van en UFC (ya multiplicado),
+    // así que mezclarlos con los de otra área daría niveles que no cuadran con la escala.
+    valg:{f:10,l:1000,m:5000,e:10000}, vvuln:{f:10,l:100,m:200,e:300}, vpara:{f:10,l:100,m:200,e:300},
     pseudo:{f:10,l:50,m:100,e:200}, aero:{f:10,l:100,m:500,e:1000},
     btot:{f:1000,l:10000,m:100000,e:1000000}, bnar:{f:1000,l:1000,m:5000,e:10000},
     brojas:{f:1000}
@@ -12312,7 +12323,10 @@ const CAL_FORMATS = {
     ctx:[
       { k:"sala", l:"Sala",   type:"sel", opts:MIC_SALAS, w:72 },
       { k:"tq",   l:"Tanque", type:"txt", w:90 },
-      { k:"tipoMuestra", l:"Muestra", type:"sel", opts:["","Agua Camaronera","Agua Recepción Camaronera","Agua Enjuague"], w:170 }
+      // ⚠ La grafía es parte del DATO: viaja a la hoja y por ella se agrupa y se filtra.
+      // Se sigue la caja de las tres anteriores («Agua Camaronera», no «agua camaronera»):
+      // dos grafías del mismo valor es el defecto que ya costó caro con el Analista.
+      { k:"tipoMuestra", l:"Muestra", type:"sel", opts:["","Agua Camaronera","Agua Recepción Camaronera","Agua Enjuague","Agua de Desove"], w:170 }
     ],
     params:["alc","ph","sal","calcio","magnesio","potasio","nitrato","nitrito","tan","amtox","amonio","ntot","dureza","hierro","fosforo","cobre","manganeso","cl_libre","cl_total","cl_comb"]
   },

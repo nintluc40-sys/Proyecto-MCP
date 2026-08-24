@@ -327,6 +327,11 @@ const MIC_DR_BASE = {
   },
   'ras-agua': {
     vamar: { l: 100, m: 500, e: 1000 }, vverd: { l: 50, m: 100, e: 200 }, vtot: { l: 100, m: 500, e: 1000 },
+    // Los tres vibrios entran en el formato RAS el 2026-08-24. Aquí sólo van l/m/e: el
+    // factor ya viene aplicado en la columna UFC de la hoja. Son los MISMOS números que
+    // en la ficha de captura (área `ras-agua`), o el mismo lote saldría «Leve» en la
+    // captura y «Moderado» en el tablero.
+    valg: { l: 1000, m: 5000, e: 10000 }, vvuln: { l: 100, m: 200, e: 300 }, vpara: { l: 100, m: 200, e: 300 },
     pseudo: { l: 50, m: 100, e: 200 }, aero: { l: 100, m: 500, e: 1000 },
     btot: { l: 10000, m: 100000, e: 1000000 }, bnar: { l: 1000, m: 5000, e: 10000 },
   },
