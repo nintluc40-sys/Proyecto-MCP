@@ -8,7 +8,7 @@
    ============================================================ */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { buildTrasladoPayload } from '../registros/lib/ficha-traslado.schema.js';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderTraslado, resetTrasladoFiltro } from './traslado.js';
 
@@ -279,15 +279,61 @@ describe('Traslado · el modal usa las clases REALES del proyecto', () => {
       el.querySelectorAll('*').forEach((x) => x.classList.forEach((c) => clases.add(c)));
     };
     recoger(root);
-    ['o2', 'temp', 'act', 'obs'].forEach((k) => {
+    // ⚠ Los desgloses se enumeran DESDE EL DOM, no a mano. La lista escrita a mano
+    //   decía [o2, temp, act, obs] y se quedó atrás en cuanto se añadió el KPI de
+    //   tiempo: su contenido no lo miraba nadie, que es justo el agujero por el que
+    //   ya se colaron tres clases inventadas en esta vista.
+    const desgloses = [...root.querySelectorAll('[data-tras-modal]')]
+      .map((el) => el.dataset.trasModal);
+    expect(desgloses, 'la vista dejó de tener KPIs con desglose').toContain('tiempo');
+    desgloses.forEach((k) => {
       root.querySelector(`[data-tras-modal="${k}"]`).click();
-      recoger(root.querySelector('#sv-tras-modal-b'));
+      const cuerpo = root.querySelector('#sv-tras-modal-b');
+      expect(cuerpo.textContent.trim(), `el desglose «${k}» se abrió vacío`).not.toBe('');
+      recoger(cuerpo);
     });
     expect(clases.size).toBeGreaterThan(20);
     clases.forEach((c) => {
       if (c.startsWith('leaflet')) return;          // vive en el CSS de Leaflet
       expect(CSS.includes('.' + c), `la clase «${c}» no tiene CSS: saldría sin estilo`).toBe(true);
     });
+  });
+
+  it('🔴 toda variable CSS usada existe en tokens.css', () => {
+    // Una variable inventada NO da error: cae al valor de respaldo y el estilo se
+    // queda congelado en claro, así que el tema oscuro deja de aplicarle. Es la
+    // misma trampa que las clases inventadas, y ya pasó con `--c-soft` y `--bdr`
+    // (las reales son `--c-surface-2` y `--c-border-soft`).
+    const TOKENS = readFileSync(join(process.cwd(), 'src/styles/tokens.css'), 'utf8');
+    // Una variable puede venir de DOS sitios legítimos: del tema, o puesta en línea
+    // por el propio JS de la vista (style="--pc:${color}", que es como se pintan las
+    // píldoras y los medidores). Cualquier otro nombre está inventado.
+    const dirJs = join(process.cwd(), 'src/views/supervisor');
+    const JS = readdirSync(dirJs)
+      .filter((f) => f.endsWith('.js') && !f.includes('.test.'))
+      .map((f) => readFileSync(join(dirJs, f), 'utf8')).join('');
+    const usadas = [...new Set((CSS.match(/var\(--[a-z0-9-]+/g) || []).map((v) => v.slice(4)))];
+    expect(usadas.length, 'no se leyó ninguna variable: el guardián no probaría nada')
+      .toBeGreaterThan(10);
+    usadas.forEach((v) => {
+      const viva = TOKENS.includes(v + ':') || JS.includes(v + ':');
+      expect(viva, `la variable «${v}» no está en tokens.css ni la pone el JS: su`
+        + ' respaldo escrito a mano se congela y el tema oscuro deja de aplicarle')
+        .toBe(true);
+    });
+  });
+
+  it('🔴 el contenido del modal LLENA la tarjeta, no se queda a la izquierda', () => {
+    // La revisión visual del 2026-08-26 encontró media tarjeta en blanco: la tabla
+    // se quedaba a su ancho natural. happy-dom no calcula diseño, así que aquí se
+    // fija la DECISIÓN de CSS que lo evita; el hueco sólo se ve en pantalla.
+    const regla = (sel) => (CSS.split(sel)[1] || '').split('}')[0];
+    expect(regla('#sv-tras-modal .sv-tras-tbl'), 'la tabla dejó de llenar el ancho')
+      .toContain('min-width:100%');
+    expect(regla('#sv-tras-modal .sv-sie-wrap'), 'la envoltura volvió a encogerse')
+      .toContain('display:block');
+    expect(regla('#sv-tras-modal .sv-tras-mcard'), 'la tarjeta volvió a un ancho según contenido')
+      .toContain('width:min(');
   });
 
   it('🔴 la tarjeta del modal tiene fondo propio, no transparente', () => {
@@ -382,5 +428,44 @@ describe('Traslado · el desglose enriquecido de O₂ y temperatura', () => {
   it('el rango del viaje se muestra en la cabecera del bloque', () => {
     const root = montar(ctxCon(aFilas(buildTrasladoPayload(viaje(1)))));
     expect(abrirTabla(root, 'o2').textContent).toContain('rango del viaje');
+  });
+});
+
+describe('Traslado · el KPI de tiempo en la cabecera', () => {
+  it('enseña el tiempo en ruta y, debajo, el puerta a puerta', () => {
+    const root = montar(ctxCon(aFilas(buildTrasladoPayload(viaje(1)))));
+    const el = root.querySelector('[data-tras-modal="tiempo"]');
+    expect(el, 'no hay KPI de tiempo').toBeTruthy();
+    // El fixture va de 20:30 a 01:00 en cuatro paradas.
+    expect(el.querySelector('.sv-kpi-value').textContent.trim()).toBe('4 h 30 min');
+    expect(el.querySelector('.sv-kpi-sub').textContent).toContain('puerta a puerta');
+  });
+
+  it('🔴 el KPI habla de lo que el filtro deja ver', () => {
+    // ⚠ Un fixture con los dos camiones parando a la MISMA hora no prueba nada: el
+    //   número sale igual mirando a los visibles o a todos. Aquí el segundo camión
+    //   se quedó sin registrar las dos últimas paradas —pasa cuando se avería el
+    //   oxigenómetro a mitad de ruta—, así que su tiempo SÍ es distinto.
+    const filas = aFilas(buildTrasladoPayload(viaje(2)))
+      .filter((f) => !(f.Placa === 'PBX-0392' && Number(f['Revisión']) > 2));
+    const root = montar(ctxCon(filas));
+    expect(root.querySelector('[data-tras-modal="tiempo"] .sv-kpi-value').textContent.trim())
+      .toBe('4 h 30 min');
+    root.querySelector('[data-tras-placa="PBX-0392"]').click();
+    expect(root.querySelector('[data-tras-modal="tiempo"] .sv-kpi-value').textContent.trim(),
+      'el KPI siguió hablando del camión escondido').toBe('1 h 30 min');
+  });
+
+  it('el desglose enumera los tramos y marca el que se pasa de cadencia', () => {
+    const root = montar(ctxCon(aFilas(buildTrasladoPayload(viaje(1)))));
+    root.querySelector('[data-tras-modal="tiempo"]').click();
+    const cuerpo = root.querySelector('#sv-tras-modal-b');
+    const txt = cuerpo.textContent.replace(/\s+/g, ' ');
+    expect(txt).toContain('En ruta');
+    expect(txt).toContain('Puerta a puerta');
+    // Cuatro paradas: la primera sin tramo, tres con tiempo.
+    expect(cuerpo.querySelectorAll('tbody tr').length).toBeGreaterThanOrEqual(4);
+    // 23:30 → 01:00 son 90 min: dentro. 20:30→22:00 son 90. Ninguno se pasa de 120.
+    expect(cuerpo.querySelectorAll('.sv-t-excede').length).toBe(0);
   });
 });

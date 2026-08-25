@@ -13,6 +13,7 @@ import {
   trasladoDe, filasDe, placasDe, actividadDe, isTrasladoRow,
   TK, ACTIVIDAD_ORDEN, INSUMOS_POSIBLES, CHECK_POSIBLES,
   deltasDe, resumenPorTina, valoresDe, escalaDe, nivelDe, tinaMasInestable,
+  tiempoDe, fmtMinutos, paradasDelViaje,
 } from './traslado.data.js';
 
 /* ── De payload a filas de hoja, como las leería el tablero ── */
@@ -334,5 +335,159 @@ describe('Traslado · analítica de las vistas por parámetro', () => {
     expect(nivelDe(7, null, 'mas-mejor')).toBeNull();
     expect(nivelDe(null, { min: 1, max: 2, mediana: 1.5 }, 'mas-mejor')).toBeNull();
     expect(tinaMasInestable({})).toBeNull();
+  });
+});
+
+describe('Traslado · las filas apagadas no son una parada', () => {
+  /* Cuando se retira un camión o una parada de un viaje YA sincronizado, la app de
+     captura vuelve a mandar esas llaves con TODO en blanco menos el ID, para
+     apagarlas en la hoja. El tablero no puede pintarlas como una parada: sería
+     inventar que el camión paró en algún sitio y no midió nada. */
+  it('una fila sin nada más que el ID no crea una parada', () => {
+    const v = viaje({ nCam: 1 });
+    const filas = aFilas(buildTrasladoPayload(v));
+    const conParadas = trasladoDe(filas, 'M07', '555');
+    const nAntes = conParadas.camiones[0].nParadas;
+    expect(nAntes, 'el fixture no tiene paradas: no probaría nada').toBeGreaterThan(1);
+
+    // Se apaga la ÚLTIMA parada, como haría el apagado real: mismas columnas, todas
+    // vacías salvo el identificador y las que identifican la fila en la hoja.
+    const ultima = String(conParadas.camiones[0].paradas[nAntes - 1].revision);
+    const apagadas = filas.map((f) => {
+      if (String(f[TK.revision]) !== ultima) return f;
+      const o = { _SheetOrigin: 'Registro_Traslado' };
+      TRASLADO_HEADERS.forEach((h) => { o[h] = ''; });
+      // El módulo y la placa se conservan a propósito: es el caso PEOR, el que
+      // llegaría a la vista. Si se filtrara sólo por módulo vacío, esto pasaría.
+      // ⚠ La CORRIDA también se conserva. La primera versión la dejaba en blanco y
+      // entonces `filasDe` descartaba la fila por estar fuera de alcance: la regla
+      // que se quería probar no llegaba a ejecutarse y la prueba pasaba en verde
+      // aunque se quitara. Lo cazó la mutación M11.
+      o[TK.modulo] = f[TK.modulo]; o[TK.placa] = f[TK.placa]; o[TK.corrida] = f[TK.corrida];
+      o[TK.revision] = f[TK.revision]; o[TK.tina] = f[TK.tina];
+      o[TK.id] = f[TK.id];
+      return o;
+    });
+
+    const t = trasladoDe(apagadas, 'M07', '555');
+    expect(t.camiones[0].nParadas, 'la parada apagada se sigue pintando').toBe(nAntes - 1);
+  });
+
+  it('una parada registrada pero AÚN sin medir sí se pinta', () => {
+    // La regla no puede pasarse de lista: una parada con hora y lugar donde todavía
+    // no se ha medido nada ES una parada, y esconderla ocultaría trabajo hecho.
+    const v = viaje({ nCam: 1 });
+    const filas = aFilas(buildTrasladoPayload(v));
+    const rev1 = filas.filter((f) => String(f[TK.revision]) === '1');
+    rev1.forEach((f) => { f[TK.o2] = ''; f[TK.temp] = ''; f[TK.act] = ''; f[TK.alim] = ''; });
+    const t = trasladoDe(filas, 'M07', '555');
+    expect(t.camiones[0].paradas.some((p) => String(p.revision) === '1')).toBe(true);
+  });
+});
+
+describe('Traslado · el tiempo del viaje', () => {
+  /* Un camión no es más que sus paradas: aquí se construyen a mano para poder fijar
+     horas concretas, que es lo único que mide este cálculo. */
+  const camion = (horas, extra) => Object.assign({
+    horaSalida: '20:30',
+    horaLlegada: '06:00',
+    paradas: horas.map((h, i) => ({ revision: i + 1, hora: h, lugar: 'Parada ' + (i + 1) })),
+  }, extra || {});
+
+  it('🔑 el viaje cruza la MEDIANOCHE y el tiempo no sale negativo', () => {
+    // El formato real va de 20:30 a 06:00. Una resta a secas daría -1250 minutos.
+    const t = tiempoDe([camion(['23:40', '02:50'])]);
+    expect(t.enRuta).toBe(190);
+    expect(t.puertaAPuerta).toBe(570);          // 20:30 → 06:00 = 9 h 30
+    expect(fmtMinutos(t.enRuta)).toBe('3 h 10 min');
+  });
+
+  it('en ruta es de la PRIMERA parada a la ÚLTIMA, no la suma de tramos', () => {
+    const t = tiempoDe([camion(['20:45', '22:00', '01:00'])]);
+    expect(t.enRuta).toBe(255);                 // 20:45 → 01:00
+    expect(t.tramos.map((x) => x.minutos)).toEqual([null, 75, 180]);
+  });
+
+  it('🔴 con UNA sola parada el tiempo en ruta es null, no 0', () => {
+    // Un 0 diría «no tardó nada», que es una afirmación. Lo que pasa es que no se
+    // puede saber: no hay dos horas que restar.
+    const t = tiempoDe([camion(['20:45'])]);
+    expect(t.enRuta).toBeNull();
+    expect(fmtMinutos(t.enRuta)).toBe('—');
+  });
+
+  it('🔴 sin horas legibles de salida/llegada, puerta a puerta se calla', () => {
+    // Son campos que se teclean libres. Inventar un número con «s/n» dentro sería
+    // peor que no dar ninguno.
+    const t = tiempoDe([camion(['20:45', '22:00'], { horaLlegada: 's/n' })]);
+    expect(t.puertaAPuerta).toBeNull();
+    expect(t.posterior).toBeNull();
+    expect(t.enRuta).not.toBeNull();            // lo que SÍ se sabe se sigue diciendo
+  });
+
+  it('los tiempos muertos son los que explican la diferencia', () => {
+    const t = tiempoDe([camion(['21:00', '01:00'])]);
+    expect(t.previo).toBe(30);                  // 20:30 → 21:00
+    expect(t.posterior).toBe(300);              // 01:00 → 06:00
+    expect(t.previo + t.enRuta + t.posterior).toBe(t.puertaAPuerta);
+  });
+
+  it('señala los tramos que pasan de la cadencia del protocolo', () => {
+    const t = tiempoDe([camion(['20:45', '22:00', '01:00'])]);
+    expect(t.fueraDeCadencia).toBe(1);          // el de 3 h
+    expect(t.tramos[2].excede).toBe(true);
+    expect(t.tramos[1].excede).toBe(false);     // 75 min está dentro
+  });
+
+  it('🔑 los camiones PARAN JUNTOS: la parada no se cuenta dos veces', () => {
+    const a = camion(['20:45', '22:00']);
+    const b = camion(['20:45', '22:00']);
+    expect(paradasDelViaje([a, b]).length, 'la parada compartida se duplicó').toBe(2);
+    expect(tiempoDe([a, b]).enRuta).toBe(tiempoDe([a]).enRuta);
+  });
+
+  it('las paradas se ordenan por REVISIÓN, no por hora', () => {
+    // Una hora mal tecleada no puede reordenar el viaje.
+    const c = camion(['22:00', '20:45']);
+    expect(paradasDelViaje([c]).map((p) => p.revision)).toEqual([1, 2]);
+  });
+
+  it('una parada sin hora no rompe el cálculo: se ignora', () => {
+    const t = tiempoDe([camion(['20:45', '', '01:00'])]);
+    expect(t.paradas.length).toBe(2);
+    expect(t.enRuta).toBe(255);
+  });
+
+  it('🔴 una hora ilegible se descarta, no se enseña como si fuera una hora', () => {
+    // Si «s/n» se colara, el desglose diría «s/n → 06:00» como si fuera un tramo.
+    const t = tiempoDe([camion(['20:45', '22:00'], { horaSalida: 's/n' })]);
+    expect(t.salida).toBe('');
+    expect(t.llegada).toBe('06:00');
+    expect(t.previo).toBeNull();
+  });
+
+  it('🔑 un tramo que IGUALA la cadencia está dentro; uno que la pasa, no', () => {
+    // El protocolo pide no PASAR del tope. Igualarlo cumple.
+    const justo = tiempoDe([camion(['20:00', '22:00'])]);        // 120 min exactos
+    expect(justo.tramos[1].minutos).toBe(120);
+    expect(justo.fueraDeCadencia, 'un tramo de 120 min se marcó como excedido').toBe(0);
+    const pasa = tiempoDe([camion(['20:00', '22:01'])]);          // 121
+    expect(pasa.fueraDeCadencia).toBe(1);
+  });
+
+  it('🔑 si dos camiones discrepan, manda la primera hora LEGIBLE', () => {
+    // Los camiones paran juntos: la hora es de la parada. Cuando a uno le falta,
+    // la del otro es la buena — quedarse con la vacía perdería el tramo entero.
+    const a = camion(['20:45', '22:00']);
+    const b = camion(['20:45', '']);
+    expect(paradasDelViaje([a, b])[1].hora, 'ganó la hora vacía').toBe('22:00');
+    expect(tiempoDe([a, b]).enRuta).toBe(75);
+  });
+
+  it('fmtMinutos dice horas y minutos como se leen', () => {
+    expect(fmtMinutos(45)).toBe('45 min');
+    expect(fmtMinutos(60)).toBe('1 h');
+    expect(fmtMinutos(150)).toBe('2 h 30 min');
+    expect(fmtMinutos(null)).toBe('—');
   });
 });

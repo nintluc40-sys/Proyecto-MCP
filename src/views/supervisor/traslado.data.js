@@ -21,6 +21,16 @@
    vista. Se comparan siempre normalizadas a texto.
    ============================================================ */
 
+/* ⚠ La regla de la medianoche NO se reimplementa aquí. Los traslados son nocturnos
+   y cruzan las 00:00 (el formato va de 20:30 a 06:00): una resta a secas daría
+   -1250 minutos donde hay 190. Esa regla ya vive en el esquema de la ficha, que la
+   prueba de paridad mantiene igual a la del monolito de captura — dos definiciones
+   de lo mismo es exactamente la costura donde este proyecto ha encontrado todos sus
+   defectos. */
+import { minutosDeHora, minutosEntre, CADENCIA_MAX_MIN } from '../registros/lib/ficha-traslado.schema.js';
+
+export { CADENCIA_MAX_MIN };
+
 /** Cabeceras exactas de `Registro_Traslado` (ver ficha-traslado.schema.js). */
 export const TK = {
   fecha: 'Fecha',
@@ -152,6 +162,99 @@ function paradaDe(filasParada) {
   };
 }
 
+/* ── El tiempo del traslado ─────────────────────────────────
+   Dos lecturas distintas, y las dos hacen falta:
+
+     · EN RUTA — de la primera parada registrada a la última. Sale de datos
+       VALIDADOS: la captura exige hora en toda parada que se registra, así que
+       este número nunca miente.
+     · PUERTA A PUERTA — de «Hora de salida» a «Hora de llegada». Es el total real
+       del viaje, pero son campos que se teclean libres; hasta el 2026-08-26 no se
+       validaban de ninguna forma. Por eso se calcula sólo cuando las dos son
+       legibles, y si no, se calla en vez de inventar un número.
+
+   🔑 Los camiones del mismo viaje PARAN JUNTOS: hora y lugar son de la parada, no
+   del camión. Por eso el tiempo se calcula UNA vez sobre las paradas del conjunto
+   visible y no por camión; promediarlo entre camiones daría el mismo número con
+   más pasos y se rompería en cuanto una parada le faltara a uno de ellos. */
+
+/** Minutos → «4 h 30 min». Sin horas, «45 min». `null` → «—». */
+export function fmtMinutos(min) {
+  if (min === null || min === undefined || Number.isNaN(min)) return '—';
+  const m = Math.max(0, Math.round(min));
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  if (!h) return r + ' min';
+  return r ? h + ' h ' + r + ' min' : h + ' h';
+}
+
+/** Las paradas del conjunto visible, sin repetir: los camiones comparten parada.
+ *  Se ordenan por número de revisión, no por hora: una hora tecleada mal no puede
+ *  reordenar el viaje. */
+export function paradasDelViaje(camiones) {
+  const porRev = new Map();
+  (camiones || []).forEach((c) => {
+    (c.paradas || []).forEach((p) => {
+      const rev = p.revision;
+      if (rev === null || rev === undefined) return;
+      const ya = porRev.get(rev);
+      // Si dos camiones difieren, manda la primera hora legible: es la de la parada.
+      if (!ya || (ya.hora === '' && p.hora !== '')) porRev.set(rev, p);
+    });
+  });
+  return [...porRev.keys()].sort((a, b) => a - b).map((r) => porRev.get(r));
+}
+
+/** El tiempo del traslado del conjunto visible.
+ *  Devuelve siempre la misma forma; los huecos son `null`, nunca 0 —un 0 diría
+ *  «no tardó nada», que es una afirmación, y aquí lo que pasa es que no se sabe. */
+export function tiempoDe(camiones) {
+  const paradas = paradasDelViaje(camiones).filter((p) => minutosDeHora(p.hora) !== null);
+  const base = (camiones || [])[0] || {};
+  const salida = minutosDeHora(base.horaSalida) === null ? '' : base.horaSalida;
+  const llegada = minutosDeHora(base.horaLlegada) === null ? '' : base.horaLlegada;
+
+  // Tramo a tramo entre paradas consecutivas. El primero no tiene anterior.
+  const tramos = paradas.map((p, i) => {
+    const prev = i === 0 ? null : paradas[i - 1];
+    const min = prev ? minutosEntre(prev.hora, p.hora) : null;
+    return {
+      revision: p.revision,
+      hora: p.hora,
+      lugar: p.lugar,
+      desde: prev ? prev.lugar : '',
+      minutos: min,
+      // El protocolo pide no pasar de CADENCIA_MAX_MIN entre revisiones. Se señala,
+      // no se corrige: el dato es el que es.
+      excede: min !== null && min > CADENCIA_MAX_MIN,
+    };
+  });
+
+  const primera = paradas.length ? paradas[0] : null;
+  const ultima = paradas.length ? paradas[paradas.length - 1] : null;
+  return {
+    paradas,
+    tramos,
+    salida,
+    llegada,
+    primera,
+    ultima,
+    // Con UNA sola parada no hay recorrido que medir: null, no 0.
+    enRuta: paradas.length > 1 ? minutosEntre(primera.hora, ultima.hora) : null,
+    // `salida` y `llegada` YA son "" cuando no eran legibles, y `minutosEntre`
+    // devuelve null en cuanto una de las dos no lo es: una guarda extra aquí no
+    // cambiaría ningún resultado. La comprobación de verdad está arriba, al
+    // normalizarlas — es lo que hace que el desglose diga «sin horas» en vez de
+    // enseñar «s/n → 06:00» como si fuera un tramo.
+    puertaAPuerta: minutosEntre(salida, llegada),
+    // Tiempos muertos: lo que va de la salida a la primera parada y de la última a
+    // la llegada. Es donde se esconde el tiempo que no aparece en ninguna revisión.
+    previo: salida && primera ? minutosEntre(salida, primera.hora) : null,
+    posterior: llegada && ultima ? minutosEntre(ultima.hora, llegada) : null,
+    fueraDeCadencia: tramos.filter((t) => t.excede).length,
+  };
+}
+
 /** Frecuencia de Actividad y su categoría dominante. */
 export function actividadDe(registros) {
   const conteo = {};
@@ -185,7 +288,16 @@ function camionDe(filasPlaca) {
     if (!porRev.has(rev)) porRev.set(rev, []);
     porRev.get(rev).push(r);
   });
-  const paradas = [...porRev.keys()].sort((a, b) => a - b).map((rev) => paradaDe(porRev.get(rev)));
+  const paradas = [...porRev.keys()].sort((a, b) => a - b)
+    .map((rev) => paradaDe(porRev.get(rev)))
+    // Una fila SIN NADA no es una parada. Pasa cuando se retira un camión o una
+    // parada de un viaje ya sincronizado: la app de captura vuelve a mandar esas
+    // llaves con todo en blanco para APAGARLAS en la hoja, y aquí no deben pintarse
+    // como si el camión hubiera parado en ningún sitio. El criterio es el mismo que
+    // usa la captura para decidir si una parada se escribe (`trasRevConDatos`): que
+    // tenga hora, lugar, ubicación, observaciones o alguna medición.
+    .filter((p) => p.hora !== '' || p.lugar !== '' || p.ubicacion !== '' || p.obs !== ''
+      || Object.values(p.tinas).some((t) => t.o2 !== null || t.temp !== null || t.act !== '' || t.alim !== ''));
 
   // Promedios POR TINA a lo largo de todo el viaje (lo que pidió el usuario:
   // «promedio por tina y carro»).

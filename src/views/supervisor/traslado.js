@@ -23,6 +23,7 @@ import { esc } from '../../core/format.js';
 import {
   trasladoDe, ACTIVIDAD_ORDEN,
   deltasDe, resumenPorTina, valoresDe, escalaDe, nivelDe, tinaMasInestable,
+  tiempoDe, fmtMinutos, CADENCIA_MAX_MIN,
 } from './traslado.data.js';
 import { montarMapa, paradasSinGps, COLORES_CAMION } from './trasladoMapa.js';
 
@@ -169,6 +170,58 @@ function tablaActividad(camiones) {
   }).join('') || '<div class="sv-tras-vacio">Sin actividad registrada.</div>';
 }
 
+/* ── Desglose del tiempo ─────────────────────────────────────
+   Una sola tabla para el viaje, no una por camión: los camiones del mismo viaje
+   PARAN JUNTOS, así que repetirla por placa sería enseñar el mismo dato N veces.
+
+   Lleva los dos tiempos muertos —de la salida a la primera parada y de la última a
+   la llegada— porque es justo donde se esconde el tiempo que no aparece en ninguna
+   revisión, y la pregunta del supervisor («¿por qué tardó 9 h si en ruta fueron 4?»)
+   no se contesta sin ellos. */
+function tablaTiempo(camiones) {
+  const t = tiempoDe(camiones);
+  if (!t.paradas.length) return '<div class="sv-tras-vacio">Ninguna parada tiene hora registrada.</div>';
+
+  const hito = (etiqueta, detalle, min) => `<tr>
+    <td><b>${esc(etiqueta)}</b></td>
+    <td class="sv-hm-lugar">${esc(detalle)}</td>
+    <td class="sv-tras-media">${esc(fmtMinutos(min))}</td>
+  </tr>`;
+
+  const filas = [];
+  // El tiempo muerto de antes sólo se puede contar si hay hora de salida legible.
+  if (t.previo !== null) filas.push(hito('Salida', t.salida + ' → parada ' + t.primera.revision, t.previo));
+  t.tramos.forEach((x) => {
+    const detalle = x.minutos === null
+      ? esc(x.hora) + ' · ' + esc(x.lugar || '—')
+      : esc(x.desde || '—') + ' → ' + esc(x.lugar || '—') + ' · ' + esc(x.hora);
+    filas.push(`<tr${x.excede ? ' class="sv-t-excede"' : ''}>
+      <td><b>Parada ${x.revision}</b></td>
+      <td class="sv-hm-lugar">${detalle}</td>
+      <td class="sv-tras-media">${x.minutos === null ? '—' : esc(fmtMinutos(x.minutos))}${x.excede ? ' ⚠' : ''}</td>
+    </tr>`);
+  });
+  if (t.posterior !== null) filas.push(hito('Llegada', 'parada ' + t.ultima.revision + ' → ' + t.llegada, t.posterior));
+
+  return `<div class="sv-tras-blk">
+    <div class="sv-t-resumen">
+      <div><span>En ruta</span><b>${esc(fmtMinutos(t.enRuta))}</b>
+        <i>${t.paradas.length} parada(s) con hora</i></div>
+      <div><span>Puerta a puerta</span><b>${esc(fmtMinutos(t.puertaAPuerta))}</b>
+        <i>${t.salida && t.llegada ? esc(t.salida) + ' → ' + esc(t.llegada) : 'sin horas de salida y llegada'}</i></div>
+      <div><span>Fuera de cadencia</span><b>${t.fueraDeCadencia}</b>
+        <i>tramos de más de ${CADENCIA_MAX_MIN} min</i></div>
+    </div>
+    <div class="sv-sie-wrap"><table class="sv-table sv-tras-tbl">
+      <thead><tr><th>Hito</th><th>Tramo</th><th>Tiempo</th></tr></thead>
+      <tbody>${filas.join('')}</tbody>
+    </table></div>
+    <div class="sv-hm-leyenda"><i>El tiempo de cada parada es el transcurrido desde la
+      anterior. Los traslados cruzan la medianoche: 23:40 → 02:50 son 3 h 10 min, no un
+      número negativo.</i></div>
+  </div>`;
+}
+
 function tablaObs(camiones) {
   const conObs = camiones.filter((c) => c.nObservaciones > 0);
   if (!conObs.length) return '<div class="sv-tras-vacio">Ninguna parada dejó observaciones.</div>';
@@ -195,6 +248,9 @@ export function renderTraslado(ctx, mod) {
   if (_placaSola && !t.camiones.some((c) => c.placa === _placaSola)) _placaSola = null;
   const visibles = _placaSola ? t.camiones.filter((c) => c.placa === _placaSola) : t.camiones;
   const vista = visibles.length ? trasladoVisible(t, visibles) : trasladoVisible(t, []);
+  // Sobre el MISMO conjunto visible que los demás KPIs: si el filtro esconde un
+  // camión, el tiempo tiene que hablar de lo que se está viendo.
+  const tiempo = tiempoDe(visibles);
 
   let html = breadcrumb(col.accent, [
     { label: '← Módulos', nav: 'modules' },
@@ -214,6 +270,10 @@ export function renderTraslado(ctx, mod) {
       ${kpiGlass('🌡️', 'Temp. promedio (°C)', n2(vista.temp), 'data-tras-modal="temp" role="button" tabindex="0" title="Ver el desglose por parada y tina"')}
       ${kpiGlass('🦐', 'Actividad dominante', etiquetaActividad(vista.actividad), 'data-tras-modal="act" role="button" tabindex="0" title="Ver la frecuencia por parada"')}
       ${kpiGlass('📝', 'Observaciones', String(vista.nObservaciones), 'data-tras-modal="obs" role="button" tabindex="0" title="Ver las observaciones por camión y parada"')}
+      ${kpiGlass('⏱️', 'Tiempo en ruta', fmtMinutos(tiempo.enRuta),
+        'data-tras-modal="tiempo" role="button" tabindex="0" title="Ver el tiempo de cada tramo entre paradas"',
+        tiempo.fueraDeCadencia > 0,
+        tiempo.puertaAPuerta === null ? '' : 'puerta a puerta ' + fmtMinutos(tiempo.puertaAPuerta))}
     </div>
   </div>`;
 
@@ -360,6 +420,7 @@ export function renderTraslado(ctx, mod) {
         temp: '🌡️ Temperatura por parada y tina (°C)',
         act: '🦐 Actividad por parada',
         obs: '📝 Observaciones por camión y parada',
+        tiempo: '⏱️ Tiempo del traslado, tramo a tramo',
       };
       bindModal(root, overlay, {
         openSel: '[data-tras-modal]',
@@ -369,8 +430,9 @@ export function renderTraslado(ctx, mod) {
           const k = trigger && trigger.dataset ? trigger.dataset.trasModal : 'o2';
           titulo.textContent = TITULOS[k] || 'Desglose';
           cuerpo.innerHTML = k === 'obs' ? tablaObs(visibles)
-            : k === 'act' ? tablaActividad(visibles)
-              : tablaPorParada(visibles, k === 'temp' ? 'temp' : 'o2', k === 'temp' ? '°C' : 'mg/L');
+            : k === 'tiempo' ? tablaTiempo(visibles)
+              : k === 'act' ? tablaActividad(visibles)
+                : tablaPorParada(visibles, k === 'temp' ? 'temp' : 'o2', k === 'temp' ? '°C' : 'mg/L');
         },
       });
     },

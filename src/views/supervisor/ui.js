@@ -25,11 +25,15 @@ export const fmt2 = (v, u = '') => (v === null || v === undefined || isNaN(v)) ?
 
 /** Mini-tarjeta KPI translúcida (sobre fondo de color).
  *  `attrs` (opcional) inyecta atributos y la marca como interactiva (clic).
- *  `alert` (opcional) tinta el KPI cuando el valor está fuera de rango. */
-export function kpiGlass(icon, label, value, attrs = '', alert = false) {
+ *  `alert` (opcional) tinta el KPI cuando el valor está fuera de rango.
+ *  `sub` (opcional) añade una segunda línea, para el KPI que da dos lecturas de
+ *  lo mismo (el tiempo del traslado: en ruta y puerta a puerta). Va al final y
+ *  con valor por defecto, así que ninguna de las llamadas anteriores cambia. */
+export function kpiGlass(icon, label, value, attrs = '', alert = false, sub = '') {
   return `<div class="sv-kpi-glass${attrs ? ' sv-kpi-click' : ''}${alert ? ' sv-kpi-alert' : ''}" ${attrs}>
     <div class="sv-kpi-label">${icon} ${esc(label)}</div>
     <div class="sv-kpi-value">${esc(value)}</div>
+    ${sub ? `<div class="sv-kpi-sub">${esc(sub)}</div>` : ''}
   </div>`;
 }
 
