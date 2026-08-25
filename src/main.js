@@ -13,6 +13,7 @@ import './views/algas/algas.css';
 import './views/microbiologia/microbiologia.css';
 import './views/maduracion/maduracion.css';
 
+
 import { mountShell, showLoader } from './ui/shell.js';
 import { registerView } from './ui/router.js';
 import { connectSheets } from './core/sheets.js';
@@ -82,4 +83,31 @@ async function boot() {
   startAutoRefresh();
 }
 
+/* ── Service worker (T4b, 2026-08-25) ────────────────────────
+   Da a la app arranque SIN CONEXIÓN, que es su caso real: los chequeadores trabajan
+   de noche y en carretera. La cola de sincronización ya guardaba lo que no se podía
+   enviar, pero si la app no cargaba no había nada que encolar.
+
+   ⚠ SÓLO en producción. En desarrollo, un service worker cacheando delante del
+   servidor de Vite hace que los cambios «no se vean» y se persigan fantasmas.
+
+   ⚠ Se registra DESPUÉS de arrancar y sin `await`: su instalación descarga varios
+   megas (engine.js, xlsx, d3) y bloquear el arranque con eso dejaría la primera
+   visita mirando una pantalla vacía. Si falla, la app funciona igual — se pierde el
+   modo sin conexión, no la app. Por eso el fallo se traga en silencio: no hay nada
+   que el usuario pueda hacer al respecto.
+
+   La estrategia por tipo de archivo, y por qué NO es cache-first para todo, está
+   explicada en `public/sw.js`. */
+function registrarSW() {
+  if (!import.meta.env.PROD) return;
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  window.addEventListener('load', () => {
+    // Ruta RELATIVA al documento: en GitHub Pages la app vive bajo /Proyecto-MCP/, y
+    // una ruta absoluta ('/sw.js') apuntaría a la raíz del dominio y daría 404.
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
+
 boot();
+registrarSW();

@@ -1,0 +1,13 @@
+# ⚠⚠ Los archivos de `public/vendor/` se sirven con SRI (`integrity` en index.html).
+# Sus bytes NO pueden cambiar: si cambian, el hash deja de casar y el navegador se
+# NIEGA a ejecutar el script — SheetJS o D3 no cargan y la vista se cae sin decir
+# por qué.
+#
+# Este repo se clona en Windows con `core.autocrlf=true`, que en un checkout nuevo
+# convertiría los LF de estos minificados a CRLF. `d3.min.js` tiene 2 saltos de línea
+# y `xlsx.full.min.js` 24: bastarían para romper los dos hashes. En Linux (que es
+# donde compila CI) no pasaría, así que el fallo sólo aparecería en local — el peor
+# sitio para perseguirlo.
+#
+# `-text` le dice a git que no toque los finales de línea de estos archivos jamás.
+public/vendor/** -text

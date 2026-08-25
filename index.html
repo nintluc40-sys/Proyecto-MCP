@@ -12,15 +12,26 @@
   <link rel="manifest" href="./manifest.webmanifest" />
   <meta name="theme-color" content="#006064" />
 
-  <!-- SheetJS se carga por CDN: la versión de npm está desactualizada/deprecada.
-       El módulo core/sheets.js accede a window.XLSX de forma protegida. -->
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"
-          integrity="sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT"
-          crossorigin="anonymous"></script>
-  <!-- D3 v7 por CDN: lo usa la vista Biología Molecular (gráficos SVG portados de BIOMOL). -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"
-          integrity="sha384-su5kReKyYlIFrI62mbQRKXHzFobMa7BHp1cK6julLPbnYcCW9NIZKJiTODjLPeDh"
-          crossorigin="anonymous"></script>
+  <!-- ⚠ SheetJS y D3 se sirven desde ESTE origen (`public/vendor/`), no desde un CDN.
+       Se bajaron el 2026-08-25 para que el service worker pueda cachearlos: la
+       respuesta de otro origen es OPACA —no se puede leer ni saber si fue un error—
+       y cachearla a ciegas es justo como se acaba sirviendo una versión rota para
+       siempre. Además deja la app utilizable sin conexión, que es su caso real.
+
+       Los `integrity` son los MISMOS que traían las etiquetas del CDN, y se comprobó
+       que los archivos descargados los cumplen: siguen siendo un control de
+       manipulación válido, ahora sobre nuestro propio origen. ⚠ Si algún día se sube
+       de versión hay que RECALCULARLOS, o el navegador no ejecutará el script y la
+       vista se caerá sin decir por qué:
+         node -e "const{createHash}=require('crypto');console.log('sha384-'+createHash('sha384').update(require('fs').readFileSync(process.argv[1])).digest('base64'))" public/vendor/d3.min.js
+
+       `crossorigin` ya no hace falta, al ser del mismo origen. SheetJS no se toma de
+       npm porque esa versión está desactualizada/deprecada; `core/sheets.js` accede a
+       `window.XLSX` de forma protegida. D3 v7 lo usa Biología Molecular. -->
+  <script src="/vendor/xlsx.full.min.js"
+          integrity="sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT"></script>
+  <script src="/vendor/d3.min.js"
+          integrity="sha384-su5kReKyYlIFrI62mbQRKXHzFobMa7BHp1cK6julLPbnYcCW9NIZKJiTODjLPeDh"></script>
   <!-- Fuentes de la vista Registros (migración de Fichas): IBM Plex + Syne. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
