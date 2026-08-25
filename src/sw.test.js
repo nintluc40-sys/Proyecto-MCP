@@ -345,3 +345,49 @@ describe('Service worker · instalar y activar', () => {
     expect(sinComentarios).not.toMatch(/skipWaiting\s*\(/);
   });
 });
+
+describe('Service worker · el shell arranca sin conexión a la PRIMERA', () => {
+  /* El defecto que esto vigila: en la primera visita el navegador ya había pedido el
+     bundle antes de que el service worker tomara el control, así que no quedaba en
+     caché. Instalar la app y pasar a modo avión daba una pantalla en blanco. */
+  const HTML = '<!doctype html><html><head>'
+    + '<link rel="stylesheet" href="./assets/index-BcMdhwcH.css">'
+    + '<link rel="modulepreload" href="./assets/vendor-chart-awQ2Ix6y.js">'
+    + '</head><body><script type="module" src="./assets/index-Bqe2E3Zz.js"></scr' + 'ipt></body></html>';
+
+  const redConShell = () => async (url) => (
+    url.indexOf('index.html') !== -1 || url.endsWith('/') ? ok(HTML) : ok('x'));
+
+  async function instalar() {
+    sw = montarSW({ red: redConShell() });
+    let esperar;
+    sw.manejadores.install({ waitUntil: (p) => { esperar = p; } });
+    await esperar;
+    return [...sw.cachesFalso.almacenes.values()][0];
+  }
+
+  it('🔴 los assets del shell quedan guardados en la instalación', async () => {
+    const guardado = await instalar();
+    const claves = [...guardado.keys()];
+    ['index-Bqe2E3Zz.js', 'index-BcMdhwcH.css', 'vendor-chart-awQ2Ix6y.js'].forEach((a) => {
+      expect(claves.some((k) => k.indexOf(a) !== -1),
+        'sin ' + a + ' en caché la app no abre sin conexión').toBe(true);
+    });
+  });
+
+  it('🔑 y entonces se sirven SIN red, como cualquier otro asset con hash', async () => {
+    await instalar();
+    // Se corta la red y se pide el bundle: tiene que salir de la copia guardada.
+    const r = await pedir(sw, BASE + 'assets/index-Bqe2E3Zz.js');
+    expect(r.interceptado).toBe(true);
+    expect(r.res).toBeTruthy();
+  });
+
+  it('un shell sin assets no rompe la instalación', async () => {
+    // Un index.html inesperado no puede dejar al usuario sin service worker.
+    sw = montarSW({ red: () => async () => ok('<html></html>') });
+    let esperar;
+    sw.manejadores.install({ waitUntil: (p) => { esperar = p; } });
+    await expect(esperar).resolves.not.toThrow();
+  });
+});

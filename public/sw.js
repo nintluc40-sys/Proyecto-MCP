@@ -71,6 +71,30 @@ const PRECACHE = [
    tarda medio minuto deja la app en blanco teniendo la copia al lado. */
 const TIMEOUT_RED = 4000;
 
+/* Los `assets/` de Vite llevan HASH en el nombre, así que no se pueden escribir a
+   mano en PRECACHE: cambian en cada despliegue. Se leen del `index.html` que se acaba
+   de guardar, que es la única lista que no puede quedarse vieja.
+
+   ⚠⚠ Sin esto la app NO arranca sin conexión hasta la SEGUNDA carga. En la primera el
+   navegador ya había pedido el bundle ANTES de que este service worker tomara el
+   control, así que esa petición no pasó por aquí y no quedó guardada: `index.html`
+   sale de la caché pero su `<script>` falla y queda una pantalla en blanco. Y ocurre
+   justo después de instalar, que es cuando más se parece a que la app está rota. */
+async function assetsDelShell(cache) {
+  const res = await cache.match('./index.html');
+  if (!res) return [];
+  const html = await res.text();
+  const urls = new Set();
+  // Vale cualquier atributo que apunte a un recurso: `src` del script y `href` del
+  // CSS y del `modulepreload`, que también hace falta para arrancar sin red.
+  const re = /(?:src|href)\s*=\s*["']([^"']+)["']/g;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    if (m[1].indexOf('assets/') !== -1) urls.add(m[1]);
+  }
+  return [...urls];
+}
+
 self.addEventListener('install', (e) => {
   e.waitUntil((async () => {
     const cache = await caches.open(CACHE);
@@ -78,10 +102,19 @@ self.addEventListener('install', (e) => {
        que se renombró, un despliegue a medias— aborta la instalación entera y deja
        al usuario sin service worker ninguno. Aquí se guarda lo que se pueda y lo que
        falte lo recogerá el `fetch` la primera vez que haga falta. */
-    await Promise.allSettled(PRECACHE.map(async (url) => {
+    const guardar = async (url) => {
       const res = await fetch(new Request(url, { cache: 'reload' }));
       if (res && res.ok) await cache.put(url, res);
-    }));
+    };
+    await Promise.allSettled(PRECACHE.map(guardar));
+    /* Y los `assets/` que referencia el shell que se acaba de guardar. Va DESPUÉS y
+       en su propia tanda porque necesita el `index.html` ya en caché para poder
+       leerlo. Si algo falla —el shell no se guardó, el HTML no trae assets— se
+       devuelve una lista vacía y la instalación sigue: quedarse sin service worker
+       es peor que quedarse sin precache. */
+    try {
+      await Promise.allSettled((await assetsDelShell(cache)).map(guardar));
+    } catch (_) { /* la instalación no se aborta por esto */ }
   })());
 });
 
