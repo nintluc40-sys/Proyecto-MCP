@@ -16,7 +16,7 @@ import {
 } from './trasladoMapa.js';
 
 const parada = (rev, lat, lon, extra) => ({
-  revision: rev, hora: '22:00', lugar: 'Peaje', lat, lon,
+  revision: rev, hora: '22:00', lugar: 'Peaje 1', lat, lon,
   obs: (extra && extra.obs) || '',
   o2: (extra && extra.o2) !== undefined ? extra.o2 : 7.4,
   temp: (extra && extra.temp) !== undefined ? extra.temp : 26,

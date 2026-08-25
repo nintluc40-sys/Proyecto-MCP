@@ -96,8 +96,8 @@ function viajePrueba() {
       ],
       revisiones: [
         rev('20:30', 'Laboratorio', -2.2135, -80.9791, 12, '-2.213500, -80.979100', 'Tracto digestivo vacío', 7),
-        rev('23:40', 'Peaje', -2.3, -80.1, 45, '-2.300000, -80.100000', '', 6.8),
-        rev('02:50', 'Gabarra', '', '', '', 'sin señal', 'Sin cobertura en la gabarra', 6.5),
+        rev('23:40', 'Peaje 1', -2.3, -80.1, 45, '-2.300000, -80.100000', '', 6.8),
+        rev('02:50', 'Gabarra 1', '', '', '', 'sin señal', 'Sin cobertura en la gabarra', 6.5),
         rev('06:00', 'Camaronera', -2.75, -79.9, 8, '-2.750000, -79.900000', '', 6.2),
       ],
     },

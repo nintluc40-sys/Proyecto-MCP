@@ -26,8 +26,8 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 
 const EXPORTAR = ['renderTraslado', 'collectTraslado', 'saveTraslado', '_trasRaw', '_trasSave',
-  'buildTrasPayload', 'trasAgregarCamion', 'trasIrRevision', 'trasCamChange', 'trasEditar',
-  'trasCancelarEdicion', 'loadTras', 'syncAllPendingTras', 'syncOneTrasFromList', 'syncAll',
+  'buildTrasPayload', 'trasAgregarCamion', 'trasIrRevision', 'trasCamChange', 'trasBorrarTraslado',
+  'trasGuardarLocal', 'loadTras', 'syncAllPendingTras', 'syncAll',
   'buildGrid', '_reconcileMark', 'TRAS_HEADERS',
   // Auditoría 2026-08-24: el reparto en lotes y el motivo que manda el GAS.
   // `postPayload` se captura AQUÍ, que es antes de que `setPost` lo sustituya por el
@@ -83,7 +83,7 @@ beforeAll(async () => {
 
   // happy-dom ignora <option selected> al parsear innerHTML: se repara tras cada
   // repintado. Explicado a fondo en `traslado-captura.test.js`.
-  ['renderTraslado', 'trasIrRevision', 'trasAgregarCamion', 'saveTraslado', 'trasEditar']
+  ['renderTraslado', 'trasIrRevision', 'trasAgregarCamion', 'saveTraslado', 'trasBorrarTraslado']
     .forEach((n) => {
       const orig = H[n];
       if (typeof orig !== 'function') throw new Error('no se exportó ' + n);
@@ -123,7 +123,7 @@ function viajeGuardable() {
     H.trasIrRevision(i);
     const box = panel().querySelector(`.tras-rev[data-rev="${i}"]`);
     box.querySelector('[data-k="hora"]:not([data-cam])').value = horas[i];
-    box.querySelector('[data-k="lugar"]').value = 'Peaje';
+    box.querySelector('[data-k="lugar"]').value = 'Peaje 1';
     for (let t = 1; t <= 8; t += 1) {
       box.querySelector(`[data-tina="${t}"][data-k="o2"]`).value = '7.5';
       box.querySelector(`[data-tina="${t}"][data-k="temp"]`).value = '26';
@@ -137,15 +137,14 @@ beforeEach(() => {
   toasts.length = 0;
   enviados.length = 0;
   H.__envioOk = true;
-  try { H.trasCancelarEdicion(); } catch (_) { /* aún no exportada en el 1.er render */ }
+  try { H.trasBorrarTraslado(); } catch (_) { /* aún no exportada en el 1.er render */ }
   H.renderTraslado();
 });
 
 describe('Traslado · qué se envía', () => {
   it('🔴 va a Registro_Traslado con las 29 cabeceras y 32 filas', async () => {
     viajeGuardable();
-    H.saveTraslado();
-    await H.syncAllPendingTras();
+    await H.saveTraslado();
     expect(enviados).toHaveLength(1);
     expect(enviados[0].sheetName).toBe('Registro_Traslado');
     expect(enviados[0].headers).toHaveLength(29);
@@ -154,8 +153,7 @@ describe('Traslado · qué se envía', () => {
 
   it('la Corrida viaja como número y el Módulo con la grafía corta', async () => {
     viajeGuardable();
-    H.saveTraslado();
-    await H.syncAllPendingTras();
+    await H.saveTraslado();
     const { headers, rows } = enviados[0];
     expect(rows[0][headers.indexOf('Corrida')]).toBe(555);
     expect(rows[0][headers.indexOf('Módulo')]).toBe('M07');
@@ -164,8 +162,10 @@ describe('Traslado · qué se envía', () => {
 
 describe('Traslado · marcar sincronizado sólo si se entregó', () => {
   it('🔴 al entregarse, el viaje deja de estar pendiente', async () => {
+    // Se usa el guardado LOCAL para dejarlo pendiente y luego se envía aparte: así se
+    // mide el paso pendiente → sincronizado, que es lo que importa aquí.
     viajeGuardable();
-    H.saveTraslado();
+    H.trasGuardarLocal();
     expect(H._trasRaw()[0].synced).toBe(false);
     await H.syncAllPendingTras();
     expect(H._trasRaw()[0].synced).toBe(true);
@@ -176,7 +176,7 @@ describe('Traslado · marcar sincronizado sólo si se entregó', () => {
     // Marcar synced sin entrega haría creer al chequeador que su viaje está en la
     // hoja cuando no ha llegado nada. Es la peor forma de perder un dato.
     viajeGuardable();
-    H.saveTraslado();
+    H.trasGuardarLocal();
     H.__envioOk = false;
     await H.syncAllPendingTras();
     expect(enviados).toHaveLength(1);
@@ -185,54 +185,62 @@ describe('Traslado · marcar sincronizado sólo si se entregó', () => {
 
   it('sin nada pendiente no llama al servidor y lo dice', async () => {
     viajeGuardable();
-    H.saveTraslado();
-    await H.syncAllPendingTras();
+    await H.saveTraslado();
     enviados.length = 0; toasts.length = 0;
     await H.syncAllPendingTras();
     expect(enviados).toHaveLength(0);
     expect(ultimoAviso()).toContain('No hay traslados pendientes');
   });
 
-  it('🔴 editar un viaje ya sincronizado lo devuelve a pendiente', async () => {
-    // Si al reeditar se quedara marcado, la corrección no saldría nunca del móvil.
+  it('🔴 corregir un viaje ya sincronizado lo devuelve a pendiente', async () => {
+    /* Si al corregirlo se quedara marcado como enviado, la corrección no saldría
+       nunca del móvil.
+       ⚠ Ya no hay que «entrar a editar»: desde el 2026-08-25b el traslado se queda
+       ABIERTO en la ficha después de sincronizar —fue la petición del usuario—, así
+       que corregir es seguir tecleando y volver a guardar. */
     viajeGuardable();
-    H.saveTraslado();
-    await H.syncAllPendingTras();
+    await H.saveTraslado();
     const id = H._trasRaw()[0].id;
-    H.trasEditar(id);
+    expect(H._trasRaw()[0].synced, 'primero se envía').toBe(true);
+
     cab('recepcion', 'María Chuzena');
-    H.saveTraslado();
-    expect(H._trasRaw()[0].synced).toBe(false);
-    expect(H._trasRaw()[0].id).toBe(id);
+    H.trasGuardarLocal();
+    expect(H._trasRaw()[0].synced, 'la corrección lo devuelve a pendiente').toBe(false);
+    expect(H._trasRaw()[0].id, 'y sigue siendo el mismo viaje').toBe(id);
+    expect(H._trasRaw()[0].data.recepcion).toBe('María Chuzena');
   });
 });
 
-describe('Traslado · enviar un viaje suelto', () => {
-  it('🔴 marca ESE viaje y no los demás', async () => {
-    viajeGuardable();
-    H.saveTraslado();
-    const id1 = H._trasRaw()[0].id;
-    H.renderTraslado();
-    viajeGuardable();
-    H.saveTraslado();
-    expect(H._trasRaw()).toHaveLength(2);
+describe('Traslado · reenviar no duplica', () => {
+  /* `syncOneTrasFromList` se retiró el 2026-08-25b con la tabla de «Traslados
+     guardados»: ya no había desde dónde llamarla. Lo que sí sigue siendo crítico —y
+     es lo que estas pruebas cuidan— es que RE-ENVIAR el mismo viaje caiga sobre las
+     mismas filas, porque es lo que permite sincronizar parada a parada. */
 
-    await H.syncOneTrasFromList(id1);
+  it('🔴 lo ya sincronizado NO se vuelve a enviar solo', async () => {
+    viajeGuardable();
+    await H.saveTraslado();
     expect(enviados).toHaveLength(1);
-    const raw = H._trasRaw();
-    expect(raw.find((r) => r.id === id1).synced).toBe(true);
-    expect(raw.find((r) => r.id !== id1).synced, 'se marcó el viaje que no era').toBe(false);
+
+    enviados.length = 0;
+    await H.syncAllPendingTras();
+    expect(enviados, 'no había nada pendiente que reenviar').toHaveLength(0);
   });
 
-  it('🔴 re-enviarlo NO duplica: manda exactamente las mismas llaves', async () => {
-    // Es lo que permite sincronizar en cada parada. El GAS hace upsert por ID y la
-    // llave es determinista, así que el segundo envío cae sobre las mismas filas.
+  it('🔴 re-enviarlo manda exactamente las mismas llaves', async () => {
+    // El GAS hace upsert por ID y la llave es determinista, así que el segundo envío
+    // reescribe las mismas filas en vez de añadir otras 32.
     viajeGuardable();
-    H.saveTraslado();
+    await H.saveTraslado();
     const id = H._trasRaw()[0].id;
-    await H.syncOneTrasFromList(id);
-    await H.syncOneTrasFromList(id);
+
+    // Corregir lo devuelve a pendiente y permite un segundo envío del MISMO viaje.
+    cab('recepcion', 'María Chuzena');
+    H.trasGuardarLocal();
+    await H.syncAllPendingTras();
+
     expect(enviados).toHaveLength(2);
+    expect(H._trasRaw()[0].id, 'sigue siendo un solo viaje').toBe(id);
     const iId = enviados[0].headers.indexOf('ID');
     const a = enviados[0].rows.map((r) => r[iId]).sort();
     const b = enviados[1].rows.map((r) => r[iId]).sort();
@@ -241,19 +249,36 @@ describe('Traslado · enviar un viaje suelto', () => {
   });
 });
 
-describe('Traslado · los botones de envío', () => {
-  it('🔴 «Enviar todos» aparece sólo si hay pendientes', () => {
+describe('Traslado · la barra del pie', () => {
+  it('🔴 trae las tres acciones del viaje y el estado', () => {
+    // Patrón de las fichas de larvicultura (usuario, 2026-08-25b): estado a la
+    // izquierda y las acciones a la derecha, en la misma barra `.sa`.
     viajeGuardable();
-    H.saveTraslado();
-    expect(panel().innerHTML).toContain('syncAllPendingTras()');
-    expect(panel().textContent).toContain('1 traslado pendiente');
+    H.trasGuardarLocal();
+    const html = panel().innerHTML;
+    expect(html).toContain('trasGuardarLocal()');
+    expect(html).toContain('saveTraslado()');
+    expect(html).toContain('trasBorrarTraslado()');
+    expect(panel().querySelector('.sa'), 'usa la barra .sa de larvicultura').toBeTruthy();
   });
 
-  it('cada fila guardada trae su botón de envío', () => {
+  it('🔴 el estado dice «Guardado local» y pasa a «Sincronizado»', async () => {
     viajeGuardable();
-    H.saveTraslado();
-    const id = H._trasRaw()[0].id;
-    expect(panel().innerHTML).toContain(`syncOneTrasFromList('${id}')`);
+    H.trasGuardarLocal();
+    expect(document.getElementById('tras-estado').textContent).toContain('Guardado local');
+
+    await H.saveTraslado();
+    H.renderTraslado();
+    expect(document.getElementById('tras-estado').textContent).toContain('Sincronizado');
+  });
+
+  it('🔴 ya no existe la tabla de «Traslados guardados»', () => {
+    // Se retiró a petición del usuario: al guardar, el viaje se queda CONGELADO en la
+    // ficha en vez de irse a una lista de la que había que rescatarlo con ✎.
+    viajeGuardable();
+    H.trasGuardarLocal();
+    expect(panel().innerHTML).not.toContain('>Traslados guardados</h4>');
+    expect(panel().innerHTML).not.toContain('syncOneTrasFromList');
   });
 });
 
@@ -292,8 +317,7 @@ describe('Traslado · el aviso en el tablero y la cola sin conexión', () => {
 
   it('el punto pasa a «sincronizado» cuando ya no queda nada pendiente', async () => {
     viajeGuardable();
-    H.saveTraslado();
-    await H.syncAllPendingTras();
+    await H.saveTraslado();
     H.buildGrid();
     const tile = document.getElementById('mc13');
     expect(tile.className).toContain('sync');
@@ -314,16 +338,20 @@ describe('Traslado · el aviso en el tablero y la cola sin conexión', () => {
   });
 
   it('la reconciliación NO toca un viaje que no venía en la marca', () => {
+    /* ⚠ Los dos registros se siembran DIRECTAMENTE con `_trasSave`. Desde el
+       2026-08-25b la ficha guarda UN traslado a la vez, así que ya no hay forma de
+       tener dos por la interfaz; y lo que se mide aquí es `_reconcileMark`, no el
+       flujo de captura. Sembrarlos deja la prueba midiendo exactamente su regla. */
     viajeGuardable();
-    H.saveTraslado();
-    H.renderTraslado();
-    viajeGuardable();
-    H.saveTraslado();
-    const [a, b] = H._trasRaw();
+    H.trasGuardarLocal();
+    const a = H._trasRaw()[0];
+    const b = { ...a, id: a.id + '-otro', synced: false };
+    H._trasSave([a, b]);
+
     H._reconcileMark({ kind: 'tras', keys: [a.id] });
     const raw = H._trasRaw();
     expect(raw.find((r) => r.id === a.id).synced).toBe(true);
-    expect(raw.find((r) => r.id === b.id).synced).toBe(false);
+    expect(raw.find((r) => r.id === b.id).synced, 'marcó el viaje que no era').toBe(false);
   });
 
   it('una marca de otra vista no toca los traslados', () => {

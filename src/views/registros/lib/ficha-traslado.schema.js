@@ -76,8 +76,39 @@ export const CADENCIA_MAX_MIN = 120;
  *  el chequeador al desplegar el campo en carretera. */
 export const ACTIVIDAD_OPTS = ['Alta', 'Normal', 'Media', 'Baja'];
 
+/** Insumos que SUBEN AL CAMIÓN. Son casillas: se marcan los que vayan a bordo.
+ *  ⚠ Espejo de `TRAS_ALIM_OPTS` del monolito. */
 export const ALIMENTACION_OPTS = ['Artemia', 'Flake', 'Prokura', 'Vitamina C'];
-export const LUGAR_OPTS = ['Laboratorio', 'Peaje', 'Gabarra', 'Camaronera'];
+
+/** Lo que se DOSIFICA en una tina, que sí puede ser más de un insumo a la vez
+ *  (usuario, 2026-08-25). Es un desplegable de un solo valor, así que las
+ *  combinaciones tienen que existir como opción propia; viajan como UNA cadena con
+ *  "/" porque la hoja tiene una sola celda por tina, y el tablero del Supervisor
+ *  las agrupa por valor distinto sin partirlas.
+ *
+ *  ⚠ Se DERIVA de `ALIMENTACION_OPTS`, no se re-teclea: añadir un insumo nuevo
+ *  arriba tiene que llegar aquí solo, o las dos listas empezarían a discrepar.
+ *  Espejo de `TRAS_ALIM_TINA_OPTS` del monolito. */
+export const ALIMENTACION_TINA_OPTS = [
+  ...ALIMENTACION_OPTS,
+  'Artemia/Flake/Prokura/Vitamina C',
+  'Artemia/Flake',
+  'Prokura/Vitamina C',
+  'Flake/Prokura',
+];
+
+/** Paradas. «Peaje» y «Gabarra» se DESDOBLAN en las dos reales de cada tipo
+ *  (usuario, 2026-08-25) y SUSTITUYEN a los genéricos: dos grafías del mismo
+ *  sitio es lo que costó caro con los nombres del analista. Salió gratis porque
+ *  `Registro_Traslado` aún no tenía ni una fila que migrar. */
+export const LUGAR_OPTS = [
+  'Laboratorio',
+  'Peaje 1',
+  'Peaje 2',
+  'Gabarra 1',
+  'Gabarra 2',
+  'Camaronera',
+];
 export const CHECK_ITEMS = ['Oxigenómetro', 'Linterna', 'Bandeja', 'Esfero'];
 
 /** Camaroneras de destino. ES LA MISMA LISTA que `DESTINO_OPTS` del monolito
@@ -266,6 +297,32 @@ export function tinasEnUso(camion) {
  *   quedaría en la hoja con sus valores originales.
  * @returns {{sheetName: string, headers: string[], rows: Array<Array>}}
  */
+/**
+ * ¿Esta parada tiene algo que llevar a la hoja?
+ *
+ * Desde el guardado por revisión (usuario, 2026-08-25) un viaje se sincroniza a
+ * MEDIAS. Las paradas que aún no se han hecho NO deben escribir filas, o el
+ * tablero del Supervisor y el mapa pintarían paradas fantasma que nadie registró:
+ * `paradaDe` no filtra vacíos, las daría todas por buenas.
+ *
+ * ⚠ Espejo exacto de `trasRevConDatos` del monolito.
+ */
+export function revisionTieneDatos(rev) {
+  const r = rev || {};
+  if (celdaTxt(r.hora) !== '' || celdaTxt(r.lugar) !== '') return true;
+  if (celdaTxt(r.obs) !== '' || celdaTxt(r.ubicacion) !== '') return true;
+  const cams = Array.isArray(r.camiones) ? r.camiones : [];
+  return cams.some((c) => {
+    const tinas = (c || {}).tinas || {};
+    return Object.keys(tinas).some((k) => {
+      const m = tinas[k] || {};
+      return (
+        celdaTxt(m.o2) !== '' || celdaTxt(m.temp) !== '' || celdaTxt(m.act) !== '' || celdaTxt(m.alim) !== ''
+      );
+    });
+  });
+}
+
 export function buildTrasladoPayload(registro, opts) {
   const o = opts || {};
   const viajeId = String((registro && registro.id) || '');
@@ -296,6 +353,10 @@ export function buildTrasladoPayload(registro, opts) {
   revs.forEach((rev, i) => {
     const r = rev || {};
     const nRev = i + 1;
+    // Parada declarada pero aún no registrada: no escribe ni una fila. `nRev` sigue
+    // saliendo del ÍNDICE, así que saltar la 1 no renumera la 2 y la llave del
+    // upsert sigue siendo determinista.
+    if (!o.incluirVacias && !revisionTieneDatos(r)) return;
     const porCamion = Array.isArray(r.camiones) ? r.camiones : [];
     // Observaciones son POR REVISIÓN (decisión del usuario 2026-08-20): en el papel
     // es una celda combinada para las cuatro, pero una nota en la parada donde
@@ -374,14 +435,19 @@ export function validarViaje(data) {
   });
 
   const revs = Array.isArray(d.revisiones) ? d.revisiones : [];
-  if (revs.length < REVISIONES_MIN) {
-    falta(
-      'revisiones',
-      'El protocolo exige al menos ' + REVISIONES_MIN + ' revisiones; hay ' + revs.length,
-    );
+  /* ⚠ El mínimo de 3 del protocolo dejó de BLOQUEAR el 2026-08-25 (decisión del
+     usuario) y pasó a ser un aviso de la capa de captura. Con el guardado por
+     revisión el viaje se guarda ya en la parada 1, cuando por definición todavía no
+     hay tres. Lo que sí se exige es que haya ALGO: un viaje sin ninguna parada
+     registrada escribiría cero filas. */
+  if (!revs.some((r) => revisionTieneDatos(r))) {
+    falta('revisiones', 'Registra al menos una revisión antes de guardar');
   }
   revs.forEach((rev, i) => {
     const r = rev || {};
+    // Sólo se le pide hora y lugar a la parada que YA se está registrando: a una
+    // parada en blanco no se le puede exigir nada, porque no ha ocurrido.
+    if (!revisionTieneDatos(r)) return;
     if (minutosDeHora(r.hora) === null) falta('rev' + (i + 1), 'Revisión ' + (i + 1) + ': falta la hora');
     if (celdaTxt(r.lugar) === '') falta('rev' + (i + 1), 'Revisión ' + (i + 1) + ': falta el lugar');
   });

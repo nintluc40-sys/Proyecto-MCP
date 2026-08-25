@@ -1122,7 +1122,15 @@ function startAutoRecovery(){
     // y omite el bucle de fichas estándar (sus paneles no existen aquí).
     if(isMicMod(curMod)){ try{ saveMicRecovery(); }catch(_){} return; }
     // As Técnico: respalda el formulario en curso (sus paneles tampoco existen aquí).
-    if(isAstMod(curMod)){ try{ saveAstRecovery(); }catch(_){} return; }
+    // ⚠ En este módulo viven DOS fichas: la del AsT y la de Traslado. Hasta el
+    // 2026-08-25 aquí sólo se respaldaba la del AsT, así que el traslado en curso
+    // sobrevivía a `goBack()` —que sí lo respalda— pero NO a que se cerrara el
+    // navegador o se apagara el teléfono, que es justo lo que pasa en carretera.
+    if(isAstMod(curMod)){
+      try{ saveAstRecovery(); }catch(_){}
+      try{ saveTrasRecovery(); }catch(_){}
+      return;
+    }
     // Maduración: respalda la grilla activa (sus paneles tampoco existen aquí).
     if(isMadMod(curMod)){ try{ saveMadRecovery(); }catch(_){} return; }
     ALL_FICHAS.forEach(fid => {
@@ -2312,7 +2320,10 @@ function goBack(){
   _madEditing = { ficha:null, id:null }; // limpia modo edición Maduración
   if(typeof _bioEditing !== "undefined") _bioEditing = null; // limpia edición Biomol
   if(typeof _astEditing !== "undefined") _astEditing = null; // limpia edición As Técnico
-  if(typeof _trasEditing !== "undefined") _trasEditing = null; // limpia edición Traslado
+  /* ⚠ El traslado en curso NO se suelta al salir del módulo. Cuando existía la
+     tabla de «Traslados guardados» se podía volver a él con ✎; desde que esa tabla
+     ya no está, soltarlo aquí lo dejaría INALCANZABLE: la ficha abriría en blanco y
+     el viaje seguiría guardado sin que nadie pudiera verlo ni enviarlo. */
   // Purga oportunista de fotos/videos vencidos en TODOS los módulos.
   // Sin esto, los medios capturados en M01 seguirían ocupando localStorage
   // hasta el siguiente arranque, aun cuando el usuario haya cambiado de
@@ -9521,8 +9532,24 @@ const TRAS_CADENCIA_MAX = 120;
 // en papel: dos grafías del mismo valor es el problema que costó caro con el analista.
 // El orden es el de la ESCALA, de más a menos, no el alfabético.
 const TRAS_ACTIVIDAD_OPTS = ["Alta","Normal","Media","Baja"];
+// ⚠⚠ SON DOS CATÁLOGOS, y hasta el 2026-08-25 eran uno solo. `TRAS_ALIM_OPTS`
+// alimenta el grupo «Insumos y materiales a bordo» —casillas, se marcan varias— y
+// también alimentaba la casilla «Alimentación» de cada tina, que es un <select> de
+// un solo valor. Al añadir las combinaciones aparecieron OCHO casillas de insumos,
+// con «Artemia/Flake» junto a «Artemia» y «Flake»: marcar dos habría escrito
+// «Artemia, Flake, Artemia/Flake» en la hoja. Lo que sube al camión se marca suelto.
 const TRAS_ALIM_OPTS      = ["Artemia","Flake","Prokura","Vitamina C"];
-const TRAS_LUGAR_OPTS     = ["Laboratorio","Peaje","Gabarra","Camaronera"];
+// Lo que se DOSIFICA en una tina sí puede ser más de un insumo a la vez, y con un
+// <select> de una sola opción había que elegir uno y perder el resto (usuario,
+// 2026-08-25). Se DERIVA de la lista de arriba —no se re-teclea— para que añadir un
+// insumo nuevo no deje las dos listas discrepando, que es la costura de siempre.
+const TRAS_ALIM_TINA_OPTS = TRAS_ALIM_OPTS.concat(["Artemia/Flake/Prokura/Vitamina C",
+                             "Artemia/Flake","Prokura/Vitamina C","Flake/Prokura"]);
+// Paradas: «Peaje» y «Gabarra» se DESDOBLAN en las dos reales de cada tipo
+// (usuario, 2026-08-25). SUSTITUYEN a los genéricos, no conviven con ellos: dos
+// grafías del mismo sitio es justo lo que costó caro con los nombres del analista.
+// Salió gratis porque `Registro_Traslado` todavía no tiene ni una fila que migrar.
+const TRAS_LUGAR_OPTS     = ["Laboratorio","Peaje 1","Peaje 2","Gabarra 1","Gabarra 2","Camaronera"];
 const TRAS_CHECK_ITEMS    = ["Oxigenómetro","Linterna","Bandeja","Esfero"];
 // Módulo de origen del traslado (usuario, 2026-08-23). Grafía CORTA: la misma de
 // `mLabel` y de los nombres de hoja («Datos Larvicultura - M01»).
@@ -9551,9 +9578,23 @@ const TRAS_HEADERS = ["Fecha","Viaje","Corrida","Módulo","Camaronera","Placa","
   "Alimentación","Observaciones","Insumos","Check materiales","Controlador despacho",
   "Chequeador entrega","Responsable recepción","Hora registro","ID"];
 
-let _trasEditing  = null;
+/* La ficha tiene SIEMPRE un traslado abierto, y sólo uno (usuario, 2026-08-25b).
+   Por eso `_trasEditing` desapareció: «estar editando» y «el viaje en curso» eran el
+   mismo concepto, y dos variables para lo mismo es justo la costura donde este
+   proyecto ha encontrado todos sus defectos. Queda un único id, `_trasViajeActivo`. */
 let _trasFormDirty = false;
 let _trasRecovered = null;
+/* Vaciar la ficha con «🗑 Borrar traslado» es una decisión EXPLÍCITA y tiene que
+   sobrevivir al repintado: sin esta bandera, `trasAdoptarActivo` volvería a abrir el
+   traslado anterior que siguiera en el dispositivo y el chequeador pulsaría «Borrar»
+   para que le reapareciera otro viaje. Se levanta al borrar y cae al guardar. */
+let _trasEnBlanco = false;
+/* Id del viaje que se está capturando AHORA. Nace en el primer «Sellar» y vive
+   hasta que el viaje se cierra con «Guardar traslado» o se abandona. Es lo que
+   hace que sellar cuatro paradas actualice UN registro y no cree cuatro viajes:
+   sin él, cada sellado llamaría a `trasNuevoViajeId()` y la hoja recibiría el
+   mismo camión repartido en cuatro viajes distintos, imposible de reconciliar. */
+let _trasViajeActivo = null;
 function _trasMarkDirty(){ _trasFormDirty = true; }
 
 /* ── Celdas ─────────────────────────────────────────────────
@@ -9658,11 +9699,14 @@ function loadTras(){ return pruneTras(); }
 
 /* ── Recuperación del formulario en curso (espejo de AsT) ── */
 function saveTrasRecovery(){
-  if(!isAstMod(curMod) || _trasEditing) return;
+  if(!isAstMod(curMod)) return;
   let data;
   try{ data = collectTraslado(); }catch(_){ return; }
   if(!trasTieneDatos(data)) return;
-  _lsSet(TRAS_RECOV_KEY, JSON.stringify({ ts: Date.now(), data }));
+  // `viaje` viaja con el borrador para que recuperarlo CONTINÚE el mismo viaje en
+  // vez de estrenar otro: sin él, recuperar tras un cierre inesperado y volver a
+  // sellar crearía un segundo viaje con las mismas paradas.
+  _lsSet(TRAS_RECOV_KEY, JSON.stringify({ ts: Date.now(), viaje: _trasViajeActivo || null, data }));
 }
 function trasTieneDatos(data){
   if(!data) return false;
@@ -9697,7 +9741,8 @@ function recoverTrasForm(){
   if(!rec){ toast("No hay datos de recuperación disponibles","warn"); return; }
   const ts = new Date(rec.ts).toLocaleString("es-EC");
   if(!confirm("¿Recuperar el traslado autoguardado el "+ts+"?\nSe reemplazará lo que haya ahora en el formulario.")) return;
-  _trasEditing = null;
+  _trasViajeActivo = rec.viaje || null;   // continúa el viaje, no estrena otro
+  _trasEnBlanco = false;
   _trasRecovered = rec.data;
   renderTraslado();
   _trasRecovered = null;
@@ -9755,6 +9800,30 @@ function trasSellarUbicacion(idx){
   );
 }
 
+/* ¿Esta parada tiene algo que llevar a la hoja?
+   Desde el guardado por revisión (usuario, 2026-08-25) un viaje se sincroniza a
+   MEDIAS: se sella la parada 1 y se envía sin haber hecho las otras tres. Las
+   paradas que aún no existen NO deben escribir filas, o el tablero del Supervisor
+   y el mapa pintarían paradas fantasma —sin hora, sin lugar y sin oxígeno— que
+   nadie ha registrado; `paradaDe` las daría por buenas porque no filtra vacíos.
+   ⚠ El número de revisión sigue saliendo del ÍNDICE, nunca de un contador: saltar
+   la parada 1 no puede renumerar la 2, o la llave dejaría de ser determinista y el
+   upsert del GAS duplicaría en vez de reescribir. */
+function trasRevConDatos(rev){
+  const r = rev || {};
+  if(trasTxt(r.hora) !== "" || trasTxt(r.lugar) !== "") return true;
+  if(trasTxt(r.obs) !== "" || trasTxt(r.ubicacion) !== "") return true;
+  const cams = Array.isArray(r.camiones) ? r.camiones : [];
+  return cams.some(c => {
+    const tinas = (c || {}).tinas || {};
+    return Object.keys(tinas).some(k => {
+      const m = tinas[k] || {};
+      return trasTxt(m.o2) !== "" || trasTxt(m.temp) !== ""
+          || trasTxt(m.act) !== "" || trasTxt(m.alim) !== "";
+    });
+  });
+}
+
 /* ── Payload ────────────────────────────────────────────── */
 function buildTrasPayload(records, opts){
   const o = opts || {};
@@ -9782,6 +9851,9 @@ function buildTrasPayload(records, opts){
     revs.forEach((rev, i) => {
       const r = rev || {};
       const nRev = i + 1;
+      // Parada declarada pero aún no registrada: no escribe ni una fila. `nRev`
+      // sigue siendo el índice, así que las que sí van conservan su número.
+      if(!o.incluirVacias && !trasRevConDatos(r)) return;
       const porCamion = Array.isArray(r.camiones) ? r.camiones : [];
       camiones.forEach((cam, ci) => {
         const nCam = ci + 1;
@@ -9834,9 +9906,18 @@ function validarTraslado(data){
     if(trasTinasEnUso(c).length === 0) errs.push("Camión "+(i+1)+": no hay ninguna tina en uso");
   });
   const revs = Array.isArray(d.revisiones) ? d.revisiones : [];
-  if(revs.length < TRAS_REV_MIN) errs.push("El protocolo exige al menos "+TRAS_REV_MIN+" revisiones; hay "+revs.length);
+  /* ⚠ El mínimo de 3 del protocolo dejó de BLOQUEAR el 2026-08-25 (decisión del
+     usuario) y pasó a ser un aviso en `saveTraslado`. Con el guardado por revisión
+     el viaje se guarda en la parada 1, cuando por definición aún no hay tres; si
+     siguiera bloqueando, la función nueva no serviría hasta la tercera parada, que
+     es justo cuando ya no hace falta. Lo que SÍ se exige es que haya algo: guardar
+     un viaje sin ninguna parada registrada escribiría cero filas en la hoja. */
+  if(!revs.some(r => trasRevConDatos(r))) errs.push("Registra al menos una revisión antes de guardar");
   revs.forEach((rev, i) => {
     const r = rev || {};
+    // Sólo se le pide hora y lugar a la parada que YA se está registrando. A una
+    // parada todavía en blanco no se le puede exigir nada: no ha ocurrido.
+    if(!trasRevConDatos(r)) return;
     if(trasMinutosDeHora(r.hora) === null) errs.push("Revisión "+(i+1)+": falta la hora");
     if(trasTxt(r.lugar) === "") errs.push("Revisión "+(i+1)+": falta el lugar");
   });
@@ -9984,6 +10065,8 @@ function trasSelectorHtml(model, camiones){
   const camAct = camiones[_trasCamActivo] || {};
   const enUso  = trasTinasEnUso(camAct).length;
 
+  // Contra qué se compara para saber si una parada tiene cambios sin respaldar.
+  const guardado = (trasRegistroActivo() || {}).data || null;
   let fichas = "";
   for(let i = 0; i < _trasRevCount; i++){
     const est = trasRevEstado(model, i, _trasCamActivo);
@@ -9998,7 +10081,8 @@ function trasSelectorHtml(model, camiones){
           ? 'background:var(--surf);border:1.5px solid var(--bdr);border-bottom:2px solid var(--surf);font-weight:700;color:var(--teal);margin-bottom:-2px'
           : 'background:transparent;border:1.5px solid transparent;border-bottom:2px solid var(--bdr);color:var(--tx2)')
       + '">'
-      + '<span>'+(i+1)+'</span>'
+      + '<span>'+(i+1)+'<sup data-rev-sin="'+i+'" title="Esta parada tiene cambios sin guardar"'
+        + ' style="color:#b45309;font-size:9px;margin-left:1px;visibility:'+(trasRevSinGuardar(model, guardado, i)?"visible":"hidden")+'">●</sup></span>'
       + '<span style="font-size:10px;color:'+(act?"var(--teal)":col)+'">'+punto+'</span>'
     + '</button>';
   }
@@ -10152,7 +10236,7 @@ function trasGridHtml(i, ci, cam, medidas){
       const dis = apagada ? " disabled" : "";
       const bg  = apagada ? "background:#f1f5f9;color:#94a3b8" : "";
       if(kind === "select"){
-        const arr = code === "act" ? TRAS_ACTIVIDAD_OPTS : TRAS_ALIM_OPTS;
+        const arr = code === "act" ? TRAS_ACTIVIDAD_OPTS : TRAS_ALIM_TINA_OPTS;
         cells += '<td style="padding:2px"><select data-rev="'+i+'" data-cam="'+ci+'" data-tina="'+t+'" data-k="'+code+'"'+dis
           + ' style="width:100%;font-size:11px;padding:4px 2px;'+bg+'"><option value=""></option>'
           + trasOpts(arr, v||"") + '</select></td>';
@@ -10208,14 +10292,18 @@ function trasRevisionHtml(i, rev, camiones){
       + '<strong style="font-size:13px">Revisión '+num+'</strong>'
       + '<span style="font-size:11px;font-weight:700;color:var(--teal);letter-spacing:.03em">'+escapeHtml(placaAct)+'</span>'
       + gapTxt
-      + '<button class="btn" type="button" onclick="trasSellarUbicacion('+i+')" title="Sella la hora del equipo y, si el navegador lo permite, la ubicación">🕒 Sellar hora y ubicación</button>'
+      /* SELLAR y GUARDAR son dos cosas distintas (usuario, 2026-08-25b). Sellar sólo
+         escribe la hora del equipo y, si se puede, las coordenadas: no toca la red ni
+         el almacenamiento, así que se comporta igual sin cobertura. Mezclarle el
+         guardado hacía que un sellado sin señal pareciera un fallo al guardar. */
+      + '<button class="btn" type="button" onclick="trasSellarUbicacion('+i+')" title="Escribe la hora del equipo y, si el navegador lo permite, la ubicación. No envía nada: funciona sin cobertura">🕒 Sellar hora y ubicación</button>'
+      /* El guardado local vive AQUÍ además de en la barra del pie: es donde el
+         chequeador acaba de trabajar y no debería tener que bajar a buscarlo. Los dos
+         botones llaman a la MISMA función y respaldan el viaje entero. */
+      + '<button class="btn bs" type="button" onclick="trasGuardarLocal()" title="Respalda en este dispositivo todo lo registrado del viaje, sin enviarlo a Google Sheets">💾 Guardar local</button>'
       // Borrar lo tecleado en ESTA revisión sin perder el resto del viaje: es lo que
       // hace falta cuando se sella una hora equivocada o se teclea en la fila que no era.
       + '<button class="btn" type="button" onclick="trasLimpiarRevision('+i+')" title="Vacía todo lo registrado en esta revisión">🧹 Limpiar</button>'
-      // Guardar el viaje ENTERO, no sólo esta parada. Está aquí, pegado a Limpiar,
-      // porque es donde el chequeador acaba de trabajar (usuario, 2026-08-23).
-      + '<button class="btn primary" type="button" onclick="saveTraslado()" title="Guarda el viaje completo en este dispositivo">💾 '
-        + (_trasEditing?"Actualizar traslado":"Guardar traslado")+'</button>'
       + (num > TRAS_REV_MIN ? '<button class="btn" type="button" onclick="trasQuitarRevision('+i+')" style="margin-left:auto">✕ Quitar</button>' : '')
     + '</div>'
     + '<div class="meta">'
@@ -10248,12 +10336,15 @@ function renderTraslado(){
   const fp = document.getElementById("fp-traslado");
   if(!fp) return;
   const list = loadTras();
-  const rec = _trasEditing ? list.find(r => r.id === _trasEditing) : null;
-  const d = rec ? rec.data : (_trasRecovered || {});
-  // Formulario FRESCO (ni edición ni repintado): el selector vuelve al principio.
-  // Sin esto, guardar un viaje y empezar otro lo abriría en la última parada que se
+  /* UN traslado a la vez: la ficha abre el que esté en curso y, si no hay ninguno
+     señalado, ADOPTA el más reciente del dispositivo (usuario, 2026-08-25b). */
+  trasAdoptarActivo(list);
+  const rec = trasRegistroActivo(list);
+  const d = _trasRecovered || (rec ? rec.data : {});
+  // Ficha FRESCA (ni repintado ni traslado abierto): el selector vuelve al principio.
+  // Sin esto, empezar un traslado nuevo lo abriría en la última parada que se
   // estuviera mirando, que es justo donde el chequeador NO quiere empezar.
-  if(!_trasEditing && !_trasRecovered){
+  if(!_trasRecovered && !rec){
     _trasCamActivo = 0; _trasRevActiva = 0;
     _trasAltaPlaca = ""; _trasAltaOff = [];   // el alta a medio teclear no se hereda
     // …ni la memoria de la temperatura propagada: si el viaje anterior iba a 26 °C,
@@ -10280,7 +10371,7 @@ function renderTraslado(){
   if(_trasRevActiva > _trasRevCount - 1) _trasRevActiva = Math.max(0, _trasRevCount - 1);
   if(_trasRevActiva < 0) _trasRevActiva = 0;
 
-  const trasRec = (!_trasEditing) ? loadTrasRecovery() : null;
+  const trasRec = loadTrasRecovery();
   const recBtn = trasRec
     ? '<button class="btn brec" type="button" onclick="recoverTrasForm()">↩ Recuperar ('
       + escapeHtml(new Date(trasRec.ts).toLocaleString("es-EC",{hour:"2-digit",minute:"2-digit"})) + ')</button>'
@@ -10328,19 +10419,13 @@ function renderTraslado(){
       + '<div class="mf"><label>Chequeador responsable de la entrega</label><input data-k="chequeador" value="'+escapeHtml(d.chequeador||"")+'" maxlength="80"></div>'
       + '<div class="mf"><label>Responsable de la recepción</label><input data-k="recepcion" value="'+escapeHtml(d.recepcion||"")+'" maxlength="80"></div>'
     + '</div>'
-    // 💾 Guardar se mudó junto a 🧹 Limpiar, dentro del bloque de la revisión
-    // (usuario, 2026-08-23): en carretera se termina una parada y se guarda ahí
-    // mismo, sin bajar al pie de la ficha. Aquí quedan sólo las acciones de
-    // contexto, y la fila entera desaparece cuando no hay ninguna.
-    + ((_trasEditing || recBtn)
-        ? '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px">'
-          + (_trasEditing ? '<button class="btn" type="button" onclick="trasCancelarEdicion()">Cancelar edición</button>' : "")
-          + recBtn
-          + '</div>'
-        : '')
+    // El guardado ya no vive aquí suelto ni en una tabla aparte: la barra del pie
+    // reúne el estado y las tres acciones del viaje, igual que en las fichas de
+    // larvicultura y en las grillas multisala de maduración (usuario, 2026-08-25b).
+    + trasBarraHtml(recBtn)
   + '</div>';
 
-  fp.innerHTML = formHtml + trasListaHtml(list);
+  fp.innerHTML = formHtml;
 
   if(!fp.dataset.dirtyBound){
     fp.dataset.dirtyBound = "1";
@@ -10358,50 +10443,75 @@ function renderTraslado(){
 function trasRefrescar(){
   let data;
   try{ data = collectTraslado(); }catch(_){ return; }
-  const prevEdit = _trasEditing;
-  _trasEditing = null;
   _trasRecovered = data;
   renderTraslado();
   _trasRecovered = null;
-  _trasEditing = prevEdit;
 }
 
-function trasListaHtml(list){
-  if(!list.length) return '<div class="empty" style="margin-top:18px;font-size:12px;color:var(--tx3)">Todavía no hay traslados guardados en este dispositivo.</div>';
-  const filas = list.map(r => {
-    const d = r.data || {};
-    const cams = trasCamiones(d);
-    const nRev = (Array.isArray(d.revisiones)?d.revisiones:[]).length;
-    const nFilas = nRev * cams.reduce((a,c) => a + trasTinasEnUso(c).length, 0);
-    const fuera = trasFueraCadencia(d).length;
-    return '<tr>'
-      + '<td>'+escapeHtml(d.fecha||"—")+'</td>'
-      + '<td>'+escapeHtml(d.camaronera||"—")+'</td>'
-      + '<td>'+escapeHtml(cams.map(c => trasTxt(c.placa)||"—").join(" · "))+'</td>'
-      + '<td style="text-align:center">'+nRev+'</td>'
-      + '<td style="text-align:center">'+nFilas+'</td>'
-      + '<td style="text-align:center">'+(fuera?'<span style="color:#92400e;font-weight:700">'+fuera+'</span>':"—")+'</td>'
-      + '<td style="text-align:center">'+(r.synced?'<span style="color:#065f46">✔</span>':'<span style="color:#92400e">pendiente</span>')+'</td>'
-      + '<td><button class="btn" type="button" onclick="trasEditar(\''+escapeHtml(r.id)+'\')" title="Editar">✎</button> '
-        // Enviar SÓLO este viaje: en carretera se termina una parada y se manda ese
-        // viaje, sin arrastrar los demás. Reenviar es inocuo (upsert por ID).
-        + '<button class="btn" type="button" onclick="syncOneTrasFromList(\''+escapeHtml(r.id)+'\')" title="'
-        + (r.synced?'Volver a enviar este viaje (no duplica: el upsert es por ID)':'Enviar este viaje a la hoja')+'">☁️</button> '
-        + '<button class="btn" type="button" onclick="trasBorrar(\''+escapeHtml(r.id)+'\')" title="Borrar del dispositivo">🗑</button></td>'
-    + '</tr>';
-  }).join("");
-  const pend = list.filter(r => !r.synced).length;
-  const cab = pend > 0
-    ? '<div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:8px 0 4px">'
-      + '<span style="font-size:11px;color:var(--tx2)">'+pend+' traslado'+(pend!==1?'s':'')+' pendiente'+(pend!==1?'s':'')+' de sincronizar</span>'
-      + '<button class="btn bp" type="button" onclick="syncAllPendingTras()" style="font-size:11px;padding:6px 14px"'
-      + ' title="Envía todos los pendientes en una sola llamada">☁️ Enviar todos</button>'
+/* ── Estado del guardado local ──────────────────────────────
+   Mismo patrón que Biomol y Maduración: el texto se DERIVA del registro guardado y
+   no de una bandera en memoria, así que sobrevive a repintar y a recargar. */
+function trasRegistroActivo(list){
+  if(!_trasViajeActivo) return null;
+  const l = list || _trasRaw();
+  return l.find(r => r && r.id === _trasViajeActivo) || null;
+}
+
+/* Deja `_trasViajeActivo` apuntando a un registro que EXISTE. Si no hay ninguno
+   señalado —primera carga, vuelta al módulo, recarga— o el señalado ya no está,
+   adopta el MÁS RECIENTE, salvo que se acabe de vaciar la ficha a propósito.
+   `_trasRaw` inserta por delante, así que el más reciente es el primero.
+
+   ⚠ Sin esto, quitar la tabla de «Traslados guardados» habría dejado el viaje
+   INALCANZABLE en cuanto se saliera de la pestaña: seguiría guardado y pendiente,
+   pero sin ninguna forma de verlo ni de enviarlo. */
+function trasAdoptarActivo(list){
+  const l = list || _trasRaw();
+  if(_trasViajeActivo && l.some(r => r && r.id === _trasViajeActivo)) return;
+  if(_trasEnBlanco){ _trasViajeActivo = null; return; }
+  _trasViajeActivo = l.length ? l[0].id : null;
+}
+
+function trasEstadoTexto(){
+  const rec = trasRegistroActivo();
+  if(!rec) return "○ Sin guardar localmente";
+  const cuando = new Date(rec.ts || 0).toLocaleString("es-EC");
+  return (rec.synced ? "✅ Sincronizado · " : "⏳ Guardado local · ") + cuando;
+}
+
+/* ¿Esta parada tiene cambios que TODAVÍA no están respaldados? Se compara contra el
+   registro guardado y no contra una bandera, para que diga la verdad también después
+   de recargar la página. Ante la duda marca «sin guardar»: pedir un guardado de más
+   es inofensivo; callarse uno que falta, no. */
+function trasRevSinGuardar(model, guardado, i){
+  const a = (Array.isArray(model && model.revisiones) ? model.revisiones[i] : null) || {};
+  const b = (Array.isArray(guardado && guardado.revisiones) ? guardado.revisiones[i] : null) || {};
+  return JSON.stringify(a) !== JSON.stringify(b);
+}
+
+/* La barra del pie: el estado y las tres acciones del viaje. `sa`, `sa-info` y
+   `sa-btns` son las MISMAS clases que usan las fichas de larvicultura, para que se
+   vea y se opere igual (usuario, 2026-08-25b). */
+function trasBarraHtml(recBtn){
+  return '<div class="sa" style="margin-top:14px">'
+    + '<div class="sa-info"><span id="tras-estado">'+escapeHtml(trasEstadoTexto())+'</span></div>'
+    + '<div class="sa-btns">'
+      + '<button class="btn bd" type="button" onclick="trasBorrarTraslado()" title="Vacía la ficha y borra este traslado del dispositivo, para empezar el siguiente">🗑 Borrar traslado</button>'
+      + (recBtn || "")
+      + '<button class="btn bs" type="button" onclick="trasGuardarLocal()" title="Respalda el viaje en este dispositivo, sin enviarlo a Google Sheets">💾 Guardar local</button>'
+      + '<button class="btn bp" type="button" onclick="saveTraslado()" title="Guarda el viaje y lo envía a Google Sheets">☁️ Guardar traslado</button>'
     + '</div>'
-    : '';
-  return '<h4 style="margin:20px 0 8px;font-size:13px">Traslados guardados</h4>' + cab
-    + '<div style="overflow-x:auto"><table class="tbl" style="width:100%;border-collapse:collapse;font-size:12px;min-width:660px">'
-    + '<thead><tr><th>Fecha</th><th>Camaronera</th><th>Placas</th><th>Revs.</th><th>Filas</th><th>Fuera cadencia</th><th>Estado</th><th></th></tr></thead>'
-    + '<tbody>'+filas+'</tbody></table></div>';
+  + '</div>';
+}
+
+/* Refresca el rótulo de estado y apaga las marcas de «sin guardar», SIN repintar.
+   ⚠⚠ Repintar aquí sería un error caro: devolvería los campos a lo último guardado y
+   se llevaría por delante el foco del chequeador y lo que estuviera tecleando. */
+function _trasPintarEstado(){
+  const el = document.getElementById("tras-estado");
+  if(el) el.textContent = trasEstadoTexto();
+  const fp = document.getElementById("fp-traslado");
+  if(fp) fp.querySelectorAll("[data-rev-sin]").forEach(m => { m.style.visibility = "hidden"; });
 }
 
 /* Vuelca en `_trasModel` lo que hay AHORA en pantalla y lo devuelve.
@@ -10510,14 +10620,11 @@ function collectTraslado(){
   return _trasClonar(trasCommitActivo());
 }
 
-// Vuelve a pintar con `data`, conservando el modo edición.
+// Vuelve a pintar con `data` sin releerlo del registro guardado.
 function _trasRepintar(data){
-  const prevEdit = _trasEditing;
-  _trasEditing = null;
   _trasRecovered = data;
   renderTraslado();
   _trasRecovered = null;
-  _trasEditing = prevEdit;
 }
 
 /* ── Selector: cambiar de camión o de parada ────────────────
@@ -10626,53 +10733,110 @@ function trasLimpiarRevision(i){
   toast("Revisión "+(i+1)+" vaciada","ok",2500);
 }
 
-function saveTraslado(){
+/* Inserta o actualiza el viaje `id` en la lista. Devuelve true si era NUEVO.
+   Lo comparten el guardado parcial de «Sellar» y el «Guardar traslado» final,
+   para que los dos escriban EXACTAMENTE el mismo registro: si cada uno tuviera
+   su propia rutina volveríamos a la costura de dos módulos que responden distinto
+   a la misma pregunta, que es donde vivían todos los defectos de este proyecto. */
+function _trasUpsert(list, id, data){
+  const idx = list.findIndex(r => r && r.id === id);
+  if(idx >= 0){
+    list[idx].data = data;
+    list[idx].ts = Date.now();
+    list[idx].synced = false;   // hay dato nuevo: vuelve a estar pendiente
+    list[idx].syncedAt = null;
+    return false;
+  }
+  list.unshift({ id: id, ts: Date.now(), synced:false, syncedAt:null, data:data });
+  if(list.length > TRAS_MAX) list.length = TRAS_MAX;
+  return true;
+}
+
+/* Lo MÍNIMO que un viaje necesita para poder guardarse a medias. No es la
+   validación completa: en la parada 1 todavía no hay camaronera confirmada ni
+   tres revisiones, y exigirlas convertiría el guardado automático en un aviso de
+   error en cada sellado. Sólo se pide lo que hace que la fila sea DIRECCIONABLE
+   en la hoja: la fecha y una placa que distinga al camión. */
+function _trasValidarParcial(data){
+  const d = data || {};
+  const errs = [];
+  if(!isValidDate(d.fecha || "")) errs.push("falta la fecha de entrega");
+  const cams = trasCamionesUI(d);
+  if(cams.length === 0) errs.push("no hay ningún camión en el viaje");
+  else {
+    const i = cams.findIndex(c => trasTxt(c && c.placa) === "");
+    if(i >= 0) errs.push("al camión "+(i+1)+" le falta la placa");
+  }
+  return errs;
+}
+
+/* ── Guardado LOCAL ─────────────────────────────────────────
+   Botón PROPIO, separado de «Sellar» (usuario, 2026-08-25b): sellar escribe la hora
+   y las coordenadas y no toca ni la red ni el almacenamiento; guardar respalda. Que
+   fueran el mismo botón hacía que un sellado sin cobertura pareciera un fallo del
+   guardado, y mezclaba dos funciones que el chequeador entiende por separado.
+
+   Respalda el VIAJE ENTERO —cabecera, camiones y todas las paradas ya tecleadas—, no
+   sólo la parada visible: el registro del dispositivo es el viaje completo, y guardar
+   un trozo dejaría el resto sin respaldo.
+
+   ⚠⚠ NO llama a `renderTraslado()`. Repintar devolvería los campos a lo último
+   guardado y se llevaría el foco del campo en el que está el chequeador. Sólo se
+   refrescan el rótulo de estado y las marcas del selector. */
+function trasGuardarLocal(opts){
+  const callado = !!(opts && opts.callado);
+  const data = collectTraslado();
+  if(!trasTieneDatos(data)){
+    if(!callado) toast("Todavía no hay nada que guardar en este traslado","warn",3500);
+    return false;
+  }
+  const errs = _trasValidarParcial(data);
+  if(errs.length){
+    if(!callado) toast("⚠ No se pudo guardar: "+errs[0]+".","warn",5000);
+    return false;
+  }
+  const list = _trasRaw();
+  const id = _trasViajeActivo || trasNuevoViajeId();
+  _trasUpsert(list, id, data);
+  // `_trasSave` ya avisa por su cuenta si el navegador no está persistiendo de verdad.
+  if(!_trasSave(list)) return false;
+  _trasViajeActivo = id;
+  _trasEnBlanco = false;
+  _trasFormDirty = false;
+  saveTrasRecovery();   // el borrador sigue al día por si se cierra a media parada
+  _trasPintarEstado();
+  updateDots();
+  if(!callado) toast("Guardado localmente","ok");
+  return true;
+}
+
+/* «☁️ Guardar traslado»: guarda Y envía, y los datos SE QUEDAN en la ficha —cada
+   parada con su placa— en vez de irse a una lista (usuario, 2026-08-25b). Es el
+   «☁️ Guardar y sincronizar» de las fichas de larvicultura.
+
+   Envía también lo que quedara pendiente de traslados anteriores: `syncAllPendingTras`
+   barre todos los no sincronizados, así que nada se queda atrás por no verse. */
+async function saveTraslado(){
   const data = collectTraslado();
   const errs = validarTraslado(data);
   if(errs.length){
     toast("⚠ "+errs[0]+(errs.length>1?" (y "+(errs.length-1)+" más)":""), "warn", 5000);
     return;
   }
-  const list = _trasRaw();
-  const insertarNuevo = () => {
-    list.unshift({ id: trasNuevoViajeId(), ts: Date.now(), synced:false, syncedAt:null, data:data });
-    if(list.length > TRAS_MAX) list.length = TRAS_MAX;
-  };
-  let reinsertado = false;
-  if(_trasEditing){
-    const idx = list.findIndex(r => r.id === _trasEditing);
-    if(idx >= 0){
-      list[idx].data = data;
-      list[idx].ts = Date.now();
-      list[idx].synced = false;   // reeditar exige volver a sincronizar
-      list[idx].syncedAt = null;
-    } else {
-      // ⚠⚠ El registro que se estaba editando YA NO EXISTE: caducó por TTL (48 h, y
-      // los traslados son NOCTURNOS), lo borró otra pestaña, o lo barrió la
-      // recuperación de espacio. Antes esta rama no hacía NADA y aun así se
-      // anunciaba «✅ Traslado guardado»: el viaje entero se perdía en silencio,
-      // que es la peor forma de perderlo. Se reinserta como nuevo —el dato del
-      // usuario manda— y se le dice lo que ha pasado.
-      insertarNuevo();
-      reinsertado = true;
-    }
-  } else {
-    insertarNuevo();
-  }
-  if(!_trasSave(list)) return;
-  try{ localStorage.removeItem(TRAS_RECOV_KEY); }catch(_){}
-  _trasEditing = null;
-  _trasFormDirty = false;
+  // Se persiste ANTES de enviar: si la red falla, lo tecleado ya está a salvo.
+  if(!trasGuardarLocal({callado:true})) return;
+
+  // Avisos de calidad del viaje. Informan, no bloquean.
   const avisos = trasFueraCadencia(data).length;
   const caidas = trasCaidas(data, 0.5).length;
-  let msg = reinsertado
-    ? "✅ Traslado guardado COMO NUEVO — el que estabas editando ya no estaba en este dispositivo"
-    : "✅ Traslado guardado";
-  if(avisos) msg += " · "+avisos+" revisión(es) fuera de cadencia";
-  if(caidas) msg += " · "+caidas+" caída(s) de parámetro";
-  toast(msg, (reinsertado||avisos||caidas) ? "warn" : "ok", reinsertado ? 7000 : 5000);
-  renderTraslado();
-  updateDots();
+  const nRevs = (Array.isArray(data.revisiones) ? data.revisiones : []).filter(r => trasRevConDatos(r)).length;
+  let extra = "";
+  if(nRevs < TRAS_REV_MIN) extra += " · sólo "+nRevs+" revisión(es); el protocolo pide "+TRAS_REV_MIN;
+  if(avisos) extra += " · "+avisos+" revisión(es) fuera de cadencia";
+  if(caidas) extra += " · "+caidas+" caída(s) de parámetro";
+  if(extra) toast("Guardado"+extra, "warn", 6000);
+
+  await syncAllPendingTras();
 }
 
 /* ── Sincronización (T3, 2026-08-23) ─────────────────────────
@@ -10744,49 +10908,35 @@ async function syncAllPendingTras(){
   updateDots(); updateSyncUI();
 }
 
-// Un solo viaje, desde su fila en la lista. Es lo que se usa en carretera: se
-// termina una parada y se manda ESE viaje, sin arrastrar los demás.
-async function syncOneTrasFromList(id){
-  const url = gasUrl();
-  if(!url){ toast("Configura la URL de Google Apps Script primero","warn"); openCfg(); return; }
-  if(!isValidGasUrl(url)){ toast("URL de script inválida","err"); return; }
-  if(!syncRateOk()) return;
+/* ⚠ `syncOneTrasFromList` se retiró el 2026-08-25b con la tabla de «Traslados
+   guardados»: no quedaba ningún sitio desde donde llamarla. Enviar un viaje suelto
+   lo hace ahora «☁️ Guardar traslado», y `syncAllPendingTras` barre lo pendiente. */
 
-  const r = _trasRaw().find(x => x.id === id);
-  if(!r){ toast("No se encontró el traslado","warn"); return; }
-
-  setSyncUI("pend","Sincronizando…");
-  const payload = buildTrasPayload([r]);
-  const opts = { dedupeSalt: id, mark:{ kind:"tras", keys:[id] } };
-  const sent = await postPayload(payload, url, opts);
-  if(sent){
-    const list2 = _trasRaw();
-    const idx = list2.findIndex(x => x.id === id);
-    if(idx >= 0){ list2[idx].synced = true; list2[idx].syncedAt = Date.now(); }
-    _trasSave(list2);
-    setSyncUI("ok","Sincronizado ✔");
-    setTimeout(()=>{ setSyncUI("idle","Todo sincronizado"); }, 3000);
-    if(curTab === "traslado") renderTraslado();
-    updateDots(); updateSyncUI();
-  } else {
-    _syncNotOkUI(opts.outcome, "No fue posible sincronizar el traslado", null, opts.gasMessage);
+/* «🗑 Borrar traslado»: vacía la ficha y borra ESTE traslado del dispositivo, que es
+   como se empieza el siguiente (usuario, 2026-08-25b). Es el equivalente del «Borrar
+   día» de las grillas multisala de maduración.
+   ⚠ No toca Google Sheets: lo que ya se sincronizó sigue en la hoja. */
+function trasBorrarTraslado(){
+  const rec = trasRegistroActivo();
+  const aviso = (rec && !rec.synced)
+    ? "Este traslado NO se ha sincronizado todavía.\n\nSi lo borras, sus datos se pierden y no llegarán a la hoja.\n\n¿Borrarlo igualmente?"
+    : "¿Vaciar la ficha y borrar este traslado del dispositivo para empezar otro?";
+  if(!confirm(aviso)) return;
+  if(rec){
+    const list = _trasRaw().filter(x => x && x.id !== rec.id);
+    _trasSave(list);
   }
-}
-
-function trasEditar(id){
-  const r = _trasRaw().find(x => x.id === id);
-  if(!r){ toast("No se encontró el traslado","warn"); return; }
-  _trasEditing = id;
-  renderTraslado();
-}
-function trasCancelarEdicion(){ _trasEditing = null; renderTraslado(); }
-function trasBorrar(id){
-  if(!confirm("¿Borrar este traslado del dispositivo?")) return;
-  const list = _trasRaw().filter(x => x.id !== id);
-  _trasSave(list);
-  if(_trasEditing === id) _trasEditing = null;
+  _trasViajeActivo = null;
+  /* ⚠ Se declara EN BLANCO a propósito. Sin esta bandera `trasAdoptarActivo` abriría
+     el traslado anterior que siguiera guardado, y pulsar «Borrar» le haría aparecer
+     al chequeador otro viaje en vez de dejarle empezar uno limpio. */
+  _trasEnBlanco = true;
+  _trasModel = {};
+  _trasFormDirty = false;
+  try{ localStorage.removeItem(TRAS_RECOV_KEY); }catch(_){}
   renderTraslado();
   updateDots();
+  toast("Traslado borrado de este dispositivo","ok");
 }
 
 

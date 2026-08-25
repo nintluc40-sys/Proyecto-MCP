@@ -26,8 +26,8 @@ const EXPORTAR = ['renderTraslado', 'collectTraslado', 'saveTraslado', '_trasRaw
   'buildTrasPayload', 'trasAgregarRevision', 'trasQuitarRevision', 'trasLimpiarRevision',
   'trasAgregarCamion', 'trasQuitarCamion', 'validarTraslado', 'trasSellarUbicacion',
   'trasGeoDisponible', 'trasFueraCadencia', 'trasCaidas', 'trasCamiones',
-  'trasCamChange', 'trasIrRevision', 'trasRevEstado', 'trasEditar', 'trasRefrescar', 'trasCancelarEdicion',
-  'syncAllPendingTras', 'syncOneTrasFromList', 'syncAll', '_trasSave', 'loadTras',
+  'trasCamChange', 'trasIrRevision', 'trasRevEstado', 'trasBorrarTraslado', 'trasRefrescar', 'trasGuardarLocal',
+  'syncAllPendingTras', 'syncAll', '_trasSave', 'loadTras',
   'buildGrid', '_reconcileMark',
   'trasTempAuto',
   'TRAS_REV_MIN', 'TRAS_REV_INI', 'TRAS_TINAS', 'TRAS_HEADERS', 'TRAS_ACTIVIDAD_OPTS',
@@ -101,7 +101,7 @@ beforeAll(async () => {
      porque borraría los `.value` que las propias pruebas acaban de asignar. */
   ['renderTraslado', 'trasIrRevision', 'trasCamChange', 'trasAgregarCamion',
     'trasQuitarCamion', 'trasAgregarRevision', 'trasQuitarRevision',
-    'trasLimpiarRevision', 'saveTraslado', 'trasEditar', 'trasRefrescar'].forEach((n) => {
+    'trasLimpiarRevision', 'saveTraslado', 'trasBorrarTraslado', 'trasRefrescar'].forEach((n) => {
     const orig = H[n];
     if (typeof orig !== 'function') throw new Error('no se exportó ' + n);
     H[n] = function envuelta(...args) {
@@ -243,7 +243,7 @@ function viajeCompleto(nCam) {
   cab('controlador', 'Juanito de las Mercedes');
   cab('chequeador', 'Pepito Acosta');
   const horas = ['20:30', '22:00', '23:30', '01:00'];
-  const lugares = ['Laboratorio', 'Peaje', 'Gabarra', 'Camaronera'];
+  const lugares = ['Laboratorio', 'Peaje 1', 'Gabarra 1', 'Camaronera'];
   const nRev = nRevisiones();
   for (let i = 0; i < nRev; i += 1) {
     for (let ci = 0; ci < total; ci += 1) {
@@ -270,7 +270,7 @@ beforeEach(() => {
   H.__envioOk = true;
   // ⚠ `_trasEditing` es estado de MÓDULO: sin esto, una prueba que edita deja a la
   // siguiente en modo edición apuntando a un registro que ya no existe.
-  try { H.trasCancelarEdicion(); } catch (_) { /* aún no exportada en el 1.er render */ }
+  try { H.trasBorrarTraslado(); } catch (_) { /* aún no exportada en el 1.er render */ }
   H.renderTraslado();
 });
 
@@ -437,9 +437,9 @@ describe('Traslado · dos camiones en un viaje', () => {
 describe('Traslado · guardar', () => {
   it('un viaje de un camión se guarda y produce 32 filas', () => {
     viajeCompleto(1);
-    H.saveTraslado();
+    H.trasGuardarLocal();
     expect(H._trasRaw()).toHaveLength(1);
-    expect(ultimoAviso()).toContain('Traslado guardado');
+    expect(ultimoAviso()).toContain('Guardado localmente');
     const { rows, headers } = H.buildTrasPayload(H._trasRaw());
     expect(headers).toHaveLength(29);   // 27 + Corrida y Módulo, añadidas el 08-23
     expect(rows).toHaveLength(32);
@@ -543,7 +543,9 @@ describe('Traslado · avisos del protocolo', () => {
     const fuera = H.trasFueraCadencia(H._trasRaw()[0].data);
     expect(fuera).toHaveLength(3);
     expect(fuera.every((f) => f.minutos === 190)).toBe(true);
-    expect(ultimoAviso()).toContain('fuera de cadencia');
+    // ⚠ Ya no es el ÚLTIMO aviso: desde el 2026-08-25b «Guardar traslado» sincroniza
+    // y su mensaje va detrás. Se busca en TODOS, que es lo que de verdad importa.
+    expect(toasts.join(' || ')).toContain('fuera de cadencia');
   });
 
   it('🔴 la caída de oxígeno dice en qué camión ocurre', () => {
@@ -632,13 +634,27 @@ describe('Traslado · el selector de camión y parada', () => {
   });
 
   it('🔴 lo que nunca se llegó a abrir sigue vacío, no se inventa', () => {
-    // El otro lado del commit: rellenar el modelo con paradas fantasma sería tan
-    // dañino como borrarlas, porque el payload las mandaría a la hoja.
+    /* El otro lado del commit: rellenar el modelo con paradas fantasma sería tan
+       dañino como borrarlas, porque el payload las mandaría a la hoja.
+
+       ⚠ Cambió el 2026-08-25 con el guardado por revisión. Antes esto se comprobaba
+       DE REBOTE —la parada en blanco hacía fallar la validación y no se guardaba
+       nada—, y esa vía ya no existe: el viaje se guarda desde la parada 1, cuando por
+       definición aún no hay cuatro. La garantía se mide ahora de frente, y es más
+       fuerte: la 5.ª parada se guarda en el dispositivo pero NO escribe ni una fila
+       en la hoja, así que el Supervisor nunca ve una parada que nadie hizo. */
     viajeCompleto(1);
     H.trasAgregarRevision();          // la 5.ª nace vacía y no se toca
     H.saveTraslado();
-    expect(H._trasRaw()).toHaveLength(0);   // no valida: le falta hora y lugar
-    expect(ultimoAviso()).toContain('Revisión 5');
+    const recs = H._trasRaw();
+    expect(recs, 'el viaje sí se guarda: la parada en blanco ya no lo impide').toHaveLength(1);
+
+    const rows = H.buildTrasPayload(recs).rows;
+    const colRev = H.TRAS_HEADERS.indexOf('Revisión');
+    const nums = [...new Set(rows.map((r) => r[colRev]))].sort((a, b) => a - b);
+    expect(nums, 'la 5.ª parada no llega a la hoja').toEqual([1, 2, 3, 4]);
+    // Y las cuatro que sí ocurrieron conservan su número: saltar una no renumera.
+    expect(rows.length).toBe(4 * H.TRAS_TINAS);
   });
 
   it('🔴 las fichas dicen qué paradas están llenas y cuáles no', () => {
@@ -671,10 +687,14 @@ describe('Traslado · el selector de camión y parada', () => {
   });
 
   it('un viaje nuevo empieza en blanco y abre en la primera parada', () => {
+    /* ⚠ Cambió el 2026-08-25b. Antes bastaba con guardar: la ficha se vaciaba sola y
+       el viaje se iba a la tabla «Traslados guardados». Ahora el traslado se queda
+       ABIERTO —fue la petición del usuario— y para empezar el siguiente se pulsa
+       «Borrar traslado», igual que el «Borrar día» de las grillas de maduración. */
     viajeCompleto(1);
     irA(3, 0);                        // se termina el viaje mirando la última
-    H.saveTraslado();
-    H.renderTraslado();               // formulario fresco tras guardar
+    H.trasGuardarLocal();
+    H.trasBorrarTraslado();           // así se empieza el viaje siguiente
     // El viaje siguiente arranca sin camiones y sin el alta a medio teclear…
     expect(nCamiones()).toBe(0);
     expect(panel().querySelector('#tras-alta-placa').value).toBe('');
@@ -898,34 +918,46 @@ describe('Traslado · dónde están los botones y los títulos', () => {
     expect(txt.indexOf('Oxigenómetro')).toBeGreaterThan(i);
   });
 
-  it('🔴 «Guardar traslado» está en la misma fila que «Limpiar»', () => {
+  /* ⚠ Los tres casos siguientes cambiaron el 2026-08-25b. Antes vigilaban que
+     «Guardar traslado» viviera DENTRO del bloque de la revisión y que no hubiera un
+     segundo botón al pie. El usuario pidió después el patrón de larvicultura, que
+     reparte esos papeles: en la revisión va el guardado LOCAL —junto a «Sellar», que
+     es donde se acaba de trabajar— y al pie la barra con guardar-y-enviar. */
+
+  it('🔴 «Guardar local» está en la misma fila que «Sellar» y «Limpiar»', () => {
     conCamion();
-    const limpiar = Array.from(panel().querySelectorAll('.tras-rev button'))
-      .find((b) => b.textContent.includes('Limpiar'));
-    const guardar = Array.from(panel().querySelectorAll('.tras-rev button'))
-      .find((b) => b.textContent.includes('Guardar traslado'));
+    const botones = Array.from(panel().querySelectorAll('.tras-rev button'));
+    const sellar = botones.find((b) => b.textContent.includes('Sellar'));
+    const limpiar = botones.find((b) => b.textContent.includes('Limpiar'));
+    const guardar = botones.find((b) => b.textContent.includes('Guardar local'));
+    expect(sellar, 'no está el botón Sellar').toBeTruthy();
     expect(limpiar, 'no está el botón Limpiar').toBeTruthy();
-    expect(guardar, 'Guardar no está dentro del bloque de la revisión').toBeTruthy();
+    expect(guardar, 'el guardado local no está en el bloque de la revisión').toBeTruthy();
     expect(guardar.parentElement).toBe(limpiar.parentElement);
+    expect(sellar.parentElement).toBe(limpiar.parentElement);
   });
 
-  it('🔴 y ya NO hay un segundo Guardar al pie de la ficha', () => {
-    // Dos botones de guardar en la misma pantalla es peor que ninguno: el usuario
-    // no sabe si hacen lo mismo.
+  it('🔴 «Guardar traslado» NO está en la revisión: vive en la barra del pie', () => {
+    // Sincronizar es una acción del VIAJE, no de una parada. Tenerla dentro del
+    // bloque invitaba a pulsarla en cada parada creyendo que guardaba sólo ésa.
     conCamion();
-    const todos = Array.from(panel().querySelectorAll('button'))
+    const enRev = Array.from(panel().querySelectorAll('.tras-rev button'))
       .filter((b) => b.textContent.includes('Guardar traslado'));
-    expect(todos).toHaveLength(1);
+    expect(enRev).toHaveLength(0);
+    const enBarra = Array.from(panel().querySelectorAll('.sa button'))
+      .filter((b) => b.textContent.includes('Guardar traslado'));
+    expect(enBarra, 'y hay exactamente uno al pie').toHaveLength(1);
   });
 
-  it('el botón dice «Actualizar» cuando se está editando un viaje guardado', () => {
-    viajeCompleto(1);
-    H.saveTraslado();
-    const id = H._trasRaw()[0].id;
-    H.trasEditar(id);
-    const guardar = Array.from(panel().querySelectorAll('.tras-rev button'))
-      .find((b) => b.textContent.includes('Actualizar traslado'));
-    expect(guardar).toBeTruthy();
+  it('🔴 sellar ya no promete guardar: su rótulo dice que funciona sin cobertura', () => {
+    /* Separar sellar de guardar fue la petición: mezclados, un sellado sin señal
+       parecía un fallo del guardado. El texto del botón es la única señal que el
+       chequeador tiene de que sellar no depende de la red. */
+    conCamion();
+    const sellar = Array.from(panel().querySelectorAll('.tras-rev button'))
+      .find((b) => b.textContent.includes('Sellar'));
+    expect(sellar.getAttribute('title')).toContain('sin cobertura');
+    expect(sellar.getAttribute('title')).not.toContain('Guarda el viaje');
   });
 });
 
@@ -978,36 +1010,52 @@ describe('Traslado · el viaje entero llega a la hoja', () => {
   });
 });
 
-describe('Traslado · editar un viaje que ya no está', () => {
-  it('🔴 no lo pierde en silencio: lo reinserta como nuevo y lo dice', () => {
-    // Reachable de verdad: el TTL son 48 h y los traslados son NOCTURNOS, así que
-    // un viaje puede caducar justo mientras se corrige. Antes esta rama no escribía
-    // nada y aun así avisaba «✅ Traslado guardado» — el peor final posible.
+describe('Traslado · corregir el viaje que está abierto', () => {
+  it('🔴 si el registro se evapora, guardar NO lo pierde en silencio', () => {
+    /* Alcanzable de verdad: el TTL son 48 h y los traslados son NOCTURNOS, así que un
+       viaje puede caducar justo mientras se corrige; también lo puede barrer otra
+       pestaña o la recuperación de espacio.
+
+       ⚠ Cambió el 2026-08-25b. Antes se reinsertaba con una llave NUEVA y se avisaba
+       «COMO NUEVO»; ahora `_trasUpsert` lo vuelve a insertar bajo la MISMA llave, que
+       es mejor: las filas que ya hubieran llegado a la hoja se reescriben en su sitio
+       en vez de duplicarse, porque el upsert del GAS es por ID. */
     viajeCompleto(1);
-    H.saveTraslado();
+    H.trasGuardarLocal();
     const id = H._trasRaw()[0].id;
-    H.trasEditar(id);
     localStorage.removeItem('larv4_tras_records');   // el registro se evapora
     toasts.length = 0;
-    H.saveTraslado();
-    expect(H._trasRaw(), 'el viaje editado se perdió').toHaveLength(1);
-    expect(H._trasRaw()[0].id).not.toBe(id);         // es uno nuevo
-    expect(ultimoAviso()).toContain('COMO NUEVO');
+    H.trasGuardarLocal();
+
+    expect(H._trasRaw(), 'el viaje NO se perdió').toHaveLength(1);
+    expect(H._trasRaw()[0].id, 'y conserva su llave, que quizá ya viajó a la hoja').toBe(id);
     // y el contenido es el que había en pantalla, no un viaje vacío
     const { rows } = H.buildTrasPayload(H._trasRaw());
     expect(rows).toHaveLength(32);
   });
 
-  it('editar un viaje que SÍ está lo actualiza en su sitio, sin duplicar', () => {
+  it('corregir el viaje abierto lo actualiza en su sitio, sin duplicar', () => {
+    // Ya no hay que «entrar a editar»: el traslado se queda abierto en la ficha.
     viajeCompleto(1);
-    H.saveTraslado();
+    H.trasGuardarLocal();
     const id = H._trasRaw()[0].id;
-    H.trasEditar(id);
     cab('recepcion', 'María Chuzena');
-    H.saveTraslado();
+    H.trasGuardarLocal();
     expect(H._trasRaw()).toHaveLength(1);
     expect(H._trasRaw()[0].id).toBe(id);
     expect(H._trasRaw()[0].data.recepcion).toBe('María Chuzena');
+  });
+
+  it('🔴 «Borrar traslado» vacía la ficha para empezar el siguiente', () => {
+    // Es como se pasa al viaje siguiente desde que no hay lista (usuario, 2026-08-25b).
+    viajeCompleto(1);
+    H.trasGuardarLocal();
+    expect(H._trasRaw()).toHaveLength(1);
+
+    H.trasBorrarTraslado();
+    expect(H._trasRaw(), 'el traslado sale del dispositivo').toHaveLength(0);
+    expect(panel().querySelectorAll('.tras-camion'), 'y la ficha queda vacía').toHaveLength(0);
+    expect(document.getElementById('tras-estado').textContent).toContain('Sin guardar');
   });
 });
 

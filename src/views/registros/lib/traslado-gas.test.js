@@ -108,7 +108,7 @@ const viaje = (id, opts) => ({
     camiones: [{ placa: 'GSA-1147', tinasOff: [] }],
     revisiones: [1, 2, 3, 4].map((n) => ({
       hora: ['20:30', '22:00', '23:30', '01:00'][n - 1],
-      lugar: 'Peaje',
+      lugar: 'Peaje 1',
       // Mar Bravo: latitud Y LONGITUD negativas. El dato que rompe la costura.
       lat: -2.2135, lon: -80.9791, precision: 12,
       ubicacion: '-2.213500, -80.979100',

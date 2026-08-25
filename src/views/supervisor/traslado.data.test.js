@@ -35,7 +35,7 @@ function viaje(opts) {
   const camiones = [{ placa: 'GSA-1147', tinasOff: [] }];
   if (nCam > 1) camiones.push({ placa: 'PBX-0392', tinasOff: [] });
   const HORAS = ['20:30', '22:00', '23:30', '01:00'];
-  const LUGARES = ['Laboratorio', 'Peaje', 'Gabarra', 'Camaronera'];
+  const LUGARES = ['Laboratorio', 'Peaje 1', 'Gabarra 1', 'Camaronera'];
   return {
     id: o.viajeId || 'tv1',
     data: {

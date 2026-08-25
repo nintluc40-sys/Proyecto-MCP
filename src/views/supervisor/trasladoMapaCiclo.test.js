@@ -50,7 +50,7 @@ const viaje = () => ({
     controlador: 'J', chequeador: 'P', recepcion: 'M',
     camiones: [{ placa: 'GSA-1147', tinasOff: [] }, { placa: 'PBX-0392', tinasOff: [] }],
     revisiones: [0, 1].map((i) => ({
-      hora: ['20:30', '22:00'][i], lugar: 'Peaje',
+      hora: ['20:30', '22:00'][i], lugar: 'Peaje 1',
       lat: -2.21 - i * 0.01, lon: -80.97 - i * 0.01, precision: 12, ubicacion: 'x',
       horaRegistro: 'x', obs: '',
       camiones: [{ tinas: tinasDe() }, { tinas: tinasDe() }],

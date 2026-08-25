@@ -22,6 +22,8 @@ import {
   ACTIVIDAD_OPTS,
   MODULO_OPTS,
   ALIMENTACION_OPTS,
+  ALIMENTACION_TINA_OPTS,
+  LUGAR_OPTS,
   CAMARONERA_OPTS,
   buildTrasladoPayload,
   filaId,
@@ -50,7 +52,7 @@ const TEMP = [
   [25, 26, 26.4, 26, 26, 24.3, 26, 24.5],
 ];
 const HORAS = ['20:30', '23:40', '02:50', '06:00'];
-const LUGARES = ['Laboratorio', 'Peaje', 'Gabarra', 'Camaronera'];
+const LUGARES = ['Laboratorio', 'Peaje 1', 'Gabarra 1', 'Camaronera'];
 
 /** Mediciones de un camión en la revisión `i`. `delta` desplaza el O2 del 2.º camión. */
 function medidas(i, delta) {
@@ -154,6 +156,57 @@ describe('Traslado · esquema de la hoja', () => {
   it('el catálogo de alimentación es el del formato, no el del procedimiento', () => {
     expect(ALIMENTACION_OPTS).toEqual(['Artemia', 'Flake', 'Prokura', 'Vitamina C']);
     expect(ALIMENTACION_OPTS).not.toContain('Proker');
+  });
+
+  it('🔴 la tina admite combinaciones; los INSUMOS a bordo siguen sueltos', () => {
+    /* Petición del usuario (2026-08-25): en carretera se dosifica más de un insumo a
+       la vez y con un desplegable de un solo valor había que elegir uno y perder el
+       resto. Las combinaciones son SÓLO de la dosificación por tina.
+
+       ⚠ Los dos catálogos eran UNO hasta ese día, y `ALIMENTACION_OPTS` alimenta
+       además las casillas de «Insumos y materiales a bordo». Meter allí las
+       combinaciones dejaba «Artemia/Flake» junto a «Artemia» y «Flake»: marcar dos
+       habría escrito «Artemia, Flake, Artemia/Flake» en una sola celda de la hoja. */
+    expect(ALIMENTACION_TINA_OPTS).toEqual([
+      'Artemia',
+      'Flake',
+      'Prokura',
+      'Vitamina C',
+      'Artemia/Flake/Prokura/Vitamina C',
+      'Artemia/Flake',
+      'Prokura/Vitamina C',
+      'Flake/Prokura',
+    ]);
+    // Las casillas de a bordo NO heredan las combinaciones.
+    expect(ALIMENTACION_OPTS).toHaveLength(4);
+    expect(ALIMENTACION_OPTS.some((v) => v.includes('/'))).toBe(false);
+  });
+
+  it('🔴 la lista por tina se DERIVA de la de insumos, no se re-teclea', () => {
+    // Si un día se añade un insumo nuevo arriba tiene que aparecer aquí solo. Con dos
+    // listas escritas a mano, la costura se abre en cuanto alguien toque una sola.
+    expect(ALIMENTACION_TINA_OPTS.slice(0, ALIMENTACION_OPTS.length)).toEqual(ALIMENTACION_OPTS);
+    // Y toda combinación se compone de insumos que existen de verdad.
+    ALIMENTACION_TINA_OPTS.filter((v) => v.includes('/')).forEach((combo) => {
+      combo.split('/').forEach((parte) => expect(ALIMENTACION_OPTS).toContain(parte));
+    });
+  });
+
+  it('🔴 las paradas están desdobladas y los genéricos ya no existen', () => {
+    // «Peaje» y «Gabarra» a secas se retiraron el 2026-08-25: hay dos de cada uno y
+    // el chequeador tiene que poder decir en cuál paró. Conservar además el genérico
+    // habría dejado dos grafías del mismo sitio, que es el defecto que costó caro con
+    // los nombres del analista. Salió gratis: la hoja no tenía ni una fila que migrar.
+    expect(LUGAR_OPTS).toEqual([
+      'Laboratorio',
+      'Peaje 1',
+      'Peaje 2',
+      'Gabarra 1',
+      'Gabarra 2',
+      'Camaronera',
+    ]);
+    expect(LUGAR_OPTS).not.toContain('Peaje');
+    expect(LUGAR_OPTS).not.toContain('Gabarra');
   });
 
   it('la camaronera sale del catálogo de la ficha de Despacho', () => {
@@ -276,7 +329,7 @@ describe('Traslado · payload', () => {
     const r3t6 = rows.find((r) => r[col('ID')] === 'tvdemo001-c1-r3-t6');
     expect(r3t6[col('Oxígeno (mg/L)')]).toBe(6.1);
     expect(r3t6[col('Temperatura (°C)')]).toBe(26);
-    expect(r3t6[col('Lugar')]).toBe('Gabarra');
+    expect(r3t6[col('Lugar')]).toBe('Gabarra 1');
     expect(r3t6[col('Hora')]).toBe('02:50');
     expect(r3t6[col('Revisión')]).toBe(3);
     expect(r3t6[col('Tina')]).toBe(6);
@@ -381,11 +434,61 @@ describe('Traslado · validación', () => {
     expect(errs.some((e) => /repetida/.test(e.mensaje))).toBe(true);
   });
 
-  it('exige el mínimo de revisiones del protocolo', () => {
+  it('🔴 el mínimo del protocolo YA NO bloquea: se guarda con una sola parada', () => {
+    /* Cambió el 2026-08-25 por decisión del usuario, con el guardado por revisión.
+       Antes exigir 3 paradas era correcto porque sólo se guardaba el viaje TERMINADO;
+       ahora se guarda en la parada 1 —cuando por definición aún no hay tres— y seguir
+       bloqueando dejaría la función nueva sin servir hasta la tercera parada, que es
+       justo cuando ya no hace falta. El aviso lo da la capa de captura. */
     const v = unCamion();
-    v.data.revisiones = v.data.revisiones.slice(0, REVISIONES_MIN - 1);
-    expect(validarViaje(v.data).some((e) => e.campo === 'revisiones')).toBe(true);
+    v.data.revisiones = v.data.revisiones.slice(0, 1);
+    expect(validarViaje(v.data).some((e) => e.campo === 'revisiones')).toBe(false);
+    // Y con las cuatro tampoco protesta, claro.
     expect(validarViaje(unCamion().data).some((e) => e.campo === 'revisiones')).toBe(false);
+  });
+
+  it('🔴 pero SÍ exige que haya al menos una parada registrada', () => {
+    // Un viaje sin ninguna parada con datos escribiría CERO filas en la hoja: se
+    // anunciaría «guardado» y no habría nada que sincronizar. Ese es el suelo.
+    const v = unCamion();
+    v.data.revisiones = [];
+    expect(validarViaje(v.data).some((e) => e.campo === 'revisiones')).toBe(true);
+
+    // Cuatro paradas DECLARADAS pero todas en blanco valen lo mismo que ninguna.
+    const w = unCamion();
+    w.data.revisiones = w.data.revisiones.map(() => ({ camiones: [] }));
+    expect(validarViaje(w.data).some((e) => e.campo === 'revisiones')).toBe(true);
+  });
+
+  it('🔴 a una parada en blanco no se le reclama ni hora ni lugar', () => {
+    /* La parada 4 aún no ha ocurrido: exigirle hora y lugar llenaría el aviso de
+       errores por algo que el chequeador no puede arreglar todavía. A la parada que
+       SÍ se está registrando se le siguen exigiendo las dos. */
+    const v = unCamion();
+    v.data.revisiones[3] = { camiones: [] };
+    expect(validarViaje(v.data).some((e) => e.campo === 'rev4')).toBe(false);
+
+    // La misma parada, ya empezada pero sin lugar, sí se reclama.
+    v.data.revisiones[3] = { hora: '06:00', lugar: '', camiones: [] };
+    expect(validarViaje(v.data).some((e) => e.campo === 'rev4')).toBe(true);
+  });
+
+  it('🔴 las paradas en blanco no escriben filas en la hoja', () => {
+    /* Es la otra mitad de la misma decisión: si una parada no registrada llegara a la
+       hoja, el tablero del Supervisor y el mapa pintarían una parada fantasma —sin
+       hora, sin lugar y sin oxígeno— que nadie visitó. `paradaDe` no filtra vacíos. */
+    const v = unCamion();
+    const completas = buildTrasladoPayload(v).rows.length;
+    v.data.revisiones[2] = { camiones: [] };
+    v.data.revisiones[3] = { camiones: [] };
+    const rows = buildTrasladoPayload(v).rows;
+    expect(rows).toHaveLength(completas - 2 * TINAS);
+
+    // ⚠ Y el número de revisión sigue saliendo del ÍNDICE: saltar paradas NO renumera
+    // las que quedan, o la llave dejaría de ser determinista y el upsert del GAS
+    // duplicaría en vez de reescribir.
+    const colRev = TRASLADO_COLUMNS.findIndex((c) => c.k === 'revision');
+    expect([...new Set(rows.map((r) => r[colRev]))]).toEqual([1, 2]);
   });
 
   it('admite MÁS revisiones que el mínimo', () => {
