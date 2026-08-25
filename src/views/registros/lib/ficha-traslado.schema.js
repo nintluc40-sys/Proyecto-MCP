@@ -232,11 +232,49 @@ export function nuevoViajeId(now, rnd) {
 
 /** Llave de fila: determinista y estable para (viaje, camión, revisión, tina).
  *  La misma tina, del mismo camión, en la misma parada, del mismo viaje, produce
- *  SIEMPRE el mismo ID. */
+ *  SIEMPRE el mismo ID.
+ *
+ *  ⚠⚠ `camion` y `revision` son TOKENS ESTABLES (`cid` / `rid`), NO índices. Que
+ *  fueran la posición costó un defecto de pérdida silenciosa: quitar el primer
+ *  camión de un viaje ya sincronizado ascendía al segundo, y sus filas se escribían
+ *  encima de las del primero, que desaparecía de la hoja sin ningún aviso. */
 export function filaId(viajeId, camion, revision, tina) {
   return (
-    String(viajeId || '') + '-c' + Number(camion) + '-r' + Number(revision) + '-t' + Number(tina)
+    String(viajeId || '') + '-c' + String(camion) + '-r' + String(revision) + '-t' + Number(tina)
   );
+}
+
+/** Token estable para el elemento `i`, sin chocar con los ya usados. Se prueba
+ *  primero el NATURAL de la posición ('1', '2', …): así un viaje sin tokens —todo
+ *  lo guardado antes de este cambio— produce EXACTAMENTE los mismos IDs de antes y
+ *  nada queda huérfano en la hoja. Si el natural está cogido se cae a un aleatorio
+ *  con prefijo 'x', que nunca puede coincidir con uno natural (sólo dígitos). */
+export function token(usados, i, rnd) {
+  const nat = String(Number(i) + 1);
+  if (usados.indexOf(nat) === -1) return nat;
+  let t;
+  do {
+    t = 'x' + (typeof rnd === 'number' ? rnd : Math.random()).toString(36).slice(2, 7);
+  } while (usados.indexOf(t) !== -1);
+  return t;
+}
+
+/** Garantiza `cid` en cada camión y `rid` en cada parada. IDEMPOTENTE: a quien ya
+ *  lo tiene no se le toca, que es lo que hace que la identidad sobreviva a que se
+ *  quite a un vecino. */
+export function asegurarIds(data) {
+  const d = data || {};
+  const cams = Array.isArray(d.camiones) ? d.camiones : [];
+  const usadosC = cams.map((c) => (c && c.cid ? String(c.cid) : '')).filter(Boolean);
+  cams.forEach((c, i) => {
+    if (c && !c.cid) { c.cid = token(usadosC, i); usadosC.push(c.cid); }
+  });
+  const revs = Array.isArray(d.revisiones) ? d.revisiones : [];
+  const usadosR = revs.map((r) => (r && r.rid ? String(r.rid) : '')).filter(Boolean);
+  revs.forEach((r, i) => {
+    if (r && !r.rid) { r.rid = token(usadosR, i); usadosR.push(r.rid); }
+  });
+  return d;
 }
 
 /* ── Tiempo ───────────────────────────────────────────────── */
@@ -329,6 +367,12 @@ export function buildTrasladoPayload(registro, opts) {
   const d = (registro && registro.data) || {};
   const revs = Array.isArray(d.revisiones) ? d.revisiones : [];
   const camiones = camionesDe(d);
+  // Un registro que venga del almacenamiento puede no traer tokens. Se los damos
+  // sobre las MISMAS listas que se van a recorrer (incluido el camión fantasma que
+  // `camionesDe` inventa cuando no hay ninguno, que también necesita el suyo).
+  asegurarIds({ camiones, revisiones: revs });
+  // Llaves que este envío escribe VIVAS: lo que esté aquí no se puede apagar.
+  const vivos = {};
 
   // Valores de viaje: se calculan UNA vez y se repiten en cada fila. Denormalizado
   // a propósito — es como escriben Microbiología y Calidad de Agua, y es lo que
@@ -389,11 +433,25 @@ export function buildTrasladoPayload(registro, opts) {
         fila.temp = celdaNum(m.temp);
         fila.act = celdaTxt(m.act);
         fila.alim = celdaTxt(m.alim);
-        fila.id = filaId(viajeId, nCam, nRev, t);
+        fila.id = filaId(viajeId, (cam && cam.cid) || nCam, (r && r.rid) || nRev, t);
+        vivos[fila.id] = true;
         rows.push(TRASLADO_COLUMNS.map((c) => (fila[c.k] === undefined ? '' : fila[c.k])));
       });
     });
   });
+
+  /* Filas de lo que se retiró del viaje: TODO en blanco menos el ID, para que el
+     upsert las apague. Sin esto, un camión o una parada que se quitan siguen en la
+     hoja enseñando su última medición como si el viaje aún los tuviera.
+     ⚠ Sólo si el registro YA se sincronizó alguna vez (si no, esas filas no existen
+     y mandarlas las CREARÍA), y nunca sobre una llave que este envío escribe viva. */
+  if (registro && registro.everSynced) {
+    (Array.isArray(d._quitados) ? d._quitados : []).forEach((suf) => {
+      const id = viajeId + String(suf);
+      if (vivos[id]) return;
+      rows.push(TRASLADO_COLUMNS.map((c) => (c.k === 'id' ? id : '')));
+    });
+  }
 
   return { sheetName: TRASLADO_SHEET, headers: TRASLADO_HEADERS.slice(), rows };
 }

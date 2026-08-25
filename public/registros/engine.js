@@ -9502,6 +9502,8 @@ const TRAS_SHEET     = "Registro_Traslado";
    los dos lados se ponga rojo ahí y no en carretera. Ver `_trasLotes`. */
 const TRAS_MAX_FILAS = 600;
 const TRAS_TINAS     = 8;
+// Tope de llaves «a apagar» que se arrastran en un registro (ver `_trasOlvidar`).
+const TRAS_OLVIDO_MAX = 600;
 
 /* Reparte los viajes pendientes en lotes que quepan en un solo POST.
    ⚠ Un viaje NUNCA se parte entre dos lotes. Sus filas son un todo: si el segundo
@@ -9620,11 +9622,57 @@ function trasLista(v){
 function trasNuevoViajeId(){
   return "tv" + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 }
-// Llave DETERMINISTA por (viaje, camión, revisión, tina). Sin la parte -c<n> los
+// Llave DETERMINISTA por (viaje, camión, revisión, tina). Sin la parte -c<..> los
 // dos camiones del mismo viaje escribirían sobre la misma fila y el segundo
 // borraría al primero en cada sincronización.
+//
+// ⚠⚠ `camion` y `revision` son TOKENS ESTABLES (`cid` / `rid`), no índices. Que
+// fueran la posición en el array costó un defecto de pérdida silenciosa: quitar el
+// primer camión de un viaje YA sincronizado ascendía al segundo a la posición 1, y
+// en la siguiente sincronización sus filas se escribían ENCIMA de las del primero,
+// que desaparecía de la hoja sin un solo aviso —el GAS informaba de una
+// actualización perfecta—. Lo mismo con las paradas. Ver `_trasAsegurarIds`.
 function trasFilaId(viajeId, camion, revision, tina){
-  return String(viajeId || "") + "-c" + Number(camion) + "-r" + Number(revision) + "-t" + Number(tina);
+  return String(viajeId || "") + "-c" + String(camion) + "-r" + String(revision) + "-t" + Number(tina);
+}
+
+/* Token estable para el elemento `i` de una lista, sin chocar con los ya usados.
+   Se intenta primero el NATURAL de la posición ("1" para el primero, "2" para el
+   segundo…). Con eso, un viaje que aún no tiene tokens —todo lo guardado antes de
+   este cambio— genera EXACTAMENTE los mismos IDs que generaba, y nada de lo que ya
+   esté en la hoja queda huérfano.
+   Si el natural ya está cogido —porque se quitó un camión y se añadió otro— se cae
+   a un token aleatorio con prefijo "x", que por construcción no puede coincidir
+   nunca con un natural (los naturales son sólo dígitos). */
+function _trasToken(usados, i){
+  const nat = String(Number(i) + 1);
+  if(usados.indexOf(nat) === -1) return nat;
+  let t;
+  do { t = "x" + Math.random().toString(36).slice(2,7); } while(usados.indexOf(t) !== -1);
+  return t;
+}
+
+/* Garantiza que cada camión tenga su `cid` y cada parada su `rid`. Es IDEMPOTENTE:
+   a quien ya lo tiene no se le toca, que es justo lo que hace que la identidad
+   sobreviva a quitar a un vecino.
+   Se llama en dos sitios a propósito: al commitear el formulario (para que el
+   modelo vivo los tenga siempre) y al construir el payload (para que un registro
+   que venga del almacenamiento no pueda llegar nunca sin ellos). */
+function _trasAsegurarIds(data){
+  const d = data || {};
+  const cams = Array.isArray(d.camiones) ? d.camiones : [];
+  const usadosC = cams.map(c => (c && c.cid) ? String(c.cid) : "").filter(Boolean);
+  cams.forEach((c, i) => {
+    if(!c) return;
+    if(!c.cid){ c.cid = _trasToken(usadosC, i); usadosC.push(c.cid); }
+  });
+  const revs = Array.isArray(d.revisiones) ? d.revisiones : [];
+  const usadosR = revs.map(r => (r && r.rid) ? String(r.rid) : "").filter(Boolean);
+  revs.forEach((r, i) => {
+    if(!r) return;
+    if(!r.rid){ r.rid = _trasToken(usadosR, i); usadosR.push(r.rid); }
+  });
+  return d;
 }
 
 /* ── Tiempo ─────────────────────────────────────────────── */
@@ -9643,6 +9691,22 @@ function trasMinutosEntre(a, b){
   const d = mb - ma;
   return d < 0 ? d + 24*60 : d;
 }
+/* Intenta leer como hora lo que se tecleó a mano en «Hora de salida» / «Hora de
+   llegada». A diferencia de la hora de cada parada, esas dos son campos libres y
+   llegaban a la hoja tal cual: "8:5", "20.30" o "s/n". Se normaliza lo que tenga
+   arreglo —separador raro, falta de cero— y se devuelve "" si de verdad no es una
+   hora, para que quien llame pueda AVISAR sin bloquear (que es como el usuario
+   quiere estos casos: el chequeador nunca se queda sin poder guardar). */
+function trasNormalizarHora(v){
+  const s = String(v == null ? "" : v).trim();
+  if(s === "") return "";
+  const m = /^(\d{1,2})[:.,hH ]?(\d{2})$/.exec(s);
+  if(!m) return "";
+  const h = Number(m[1]), min = Number(m[2]);
+  if(h > 23 || min > 59) return "";
+  return String(h).padStart(2,"0") + ":" + String(min).padStart(2,"0");
+}
+
 function trasHoraAhora(){
   const d = new Date();
   return String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
@@ -9833,6 +9897,13 @@ function buildTrasPayload(records, opts){
     const d = (reg && reg.data) || {};
     const revs = Array.isArray(d.revisiones) ? d.revisiones : [];
     const camiones = trasCamiones(d);
+    // Un registro que venga del almacenamiento puede no tener tokens todavía. Se
+    // los damos aquí sobre las MISMAS listas que se van a recorrer: `trasCamiones`
+    // devuelve `d.camiones` cuando existe, y el camión fantasma que inventa cuando
+    // no hay ninguno también necesita el suyo para poder construir la llave.
+    _trasAsegurarIds({ camiones: camiones, revisiones: revs });
+    // Llaves que este envío escribe VIVAS. Lo que esté aquí no se puede apagar.
+    const vivos = {};
     const viaje = {
       fecha: trasTxt(d.fecha),
       viaje: viajeId,
@@ -9863,6 +9934,8 @@ function buildTrasPayload(records, opts){
         tinas.forEach(t => {
           const apagada = enUso.indexOf(t) === -1;
           const m = (!apagada && medidas[t]) || {};
+          const fid = trasFilaId(viajeId, (cam && cam.cid) || nCam, (r && r.rid) || nRev, t);
+          vivos[fid] = true;
           rows.push([
             viaje.fecha, viaje.viaje, viaje.corrida, viaje.modulo,
             viaje.camaronera, trasTxt(cam && cam.placa),
@@ -9874,13 +9947,211 @@ function buildTrasPayload(records, opts){
             viaje.insumos, viaje.check,
             viaje.controlador, viaje.chequeador, viaje.recepcion,
             trasTxt(r.horaRegistro),
-            trasFilaId(viajeId, nCam, nRev, t)
+            fid
           ]);
         });
       });
     });
+
+    /* ── Las filas de lo que se quitó del viaje ──────────────
+       Van con TODO en blanco menos el ID: el upsert las localiza por esa columna y
+       las apaga. Una fila sin módulo ni placa no la recoge ninguna vista, así que
+       el camión o la parada retirados desaparecen del tablero en vez de quedarse
+       enseñando su última medición como si el viaje siguiera teniéndolos.
+
+       ⚠ Sólo para registros que YA se sincronizaron alguna vez: si el viaje nunca
+       salió del dispositivo, esas filas no existen en la hoja y mandarlas las
+       CREARÍA — filas huérfanas que nunca hubo.
+       ⚠ Y nunca se apaga una llave que este mismo envío está escribiendo viva:
+       apagar una tina y volver a encenderla antes de sincronizar no puede borrar
+       lo que se acaba de medir. */
+    if(reg && reg.everSynced){
+      const olvidados = Array.isArray(d._quitados) ? d._quitados : [];
+      olvidados.forEach(suf => {
+        const fid = viajeId + String(suf);
+        if(vivos[fid]) return;
+        const fila = [];
+        for(let k = 0; k < TRAS_HEADERS.length; k++) fila.push("");
+        fila[TRAS_HEADERS.length - 1] = fid;   // el ID es la ÚLTIMA columna
+        rows.push(fila);
+      });
+    }
   });
   return { sheetName: TRAS_SHEET, headers: TRAS_HEADERS.slice(), rows: rows };
+}
+
+/* ── PDF del viaje ──────────────────────────────────────────
+   UN solo documento con el viaje entero: la cabecera común y, detrás, una sección
+   por CAMIÓN con todas sus revisiones (elección del usuario, 2026-08-26). Cada
+   camión empieza en página nueva, así que la hoja de un camión se puede separar y
+   entregar sola.
+
+   Se imprime lo MISMO que se sincroniza: sólo las paradas con algo registrado
+   (`trasRevConDatos`) y sólo las tinas que viajan (`trasTinasEnUso`). Si el papel
+   dijera una cosa y la hoja otra, el papel dejaría de servir para reclamar nada. */
+
+/** Minutos → «4 h 30 min». Presentación, no regla: la regla (envolver la medianoche)
+ *  es `trasMinutosEntre` y NO se duplica. */
+function trasFmtMin(min){
+  if(min === null || min === undefined || isNaN(min)) return "—";
+  const m = Math.max(0, Math.round(min)), h = Math.floor(m/60), r = m % 60;
+  if(!h) return r + " min";
+  return r ? h + " h " + r + " min" : h + " h";
+}
+
+function buildTrasPdfHtml(data){
+  const d = data || {};
+  const camiones = trasCamionesUI(d);
+  const revs = (Array.isArray(d.revisiones) ? d.revisiones : []).filter(trasRevConDatos);
+  const esc = (v) => escapeHtml(String(v == null ? "" : v));
+  const dato = (v) => { const s = trasTxt(v); return s === "" ? '<span class="vac">—</span>' : esc(s); };
+
+  // Tiempos: los mismos dos que enseña el tablero del Supervisor, para que el papel
+  // y la pantalla no puedan discrepar.
+  const conHora = revs.filter(r => trasMinutosDeHora((r||{}).hora) !== null);
+  const enRuta = conHora.length > 1
+    ? trasMinutosEntre(conHora[0].hora, conHora[conHora.length-1].hora) : null;
+  const puerta = trasMinutosEntre(d.horaSalida, d.horaLlegada);
+
+  const chk = (lista, todos) => {
+    const set = trasLista(lista);
+    return todos.map(x => '<span class="chk' + (set.indexOf(x) !== -1 ? " on" : "") + '">'
+      + (set.indexOf(x) !== -1 ? "☑" : "☐") + " " + esc(x) + "</span>").join("");
+  };
+
+  /* Una matriz parada × tina. Se usa tres veces —oxígeno, temperatura y actividad—
+     porque son tres lecturas distintas de la misma parada y superponerlas en una
+     sola tabla obliga a leer con lupa lo que se mira de un vistazo en carretera. */
+  const matriz = (ci, cam, titulo, celda, media) => {
+    const tinas = trasTinasEnUso(cam);
+    const filas = revs.map((r, i) => {
+      const med = ((Array.isArray(r.camiones) ? r.camiones : [])[ci] || {}).tinas || {};
+      // Sólo entran las tinas con un número de verdad. El DIVISOR es cuántas hay,
+      // no cuántas tinas lleva el camión: contar una tina sin medir como cero
+      // hundiría la media de la parada y el papel acusaría de algo que no pasó.
+      const num = [];
+      const tds = tinas.map(t => {
+        const v = celda(med[t] || {});
+        const n = parseFloat(v);
+        if(isFinite(n)) num.push(n);
+        return "<td>" + (v === "" ? '<span class="vac">—</span>' : esc(v)) + "</td>";
+      }).join("");
+      const prom = (media && num.length) ? (num.reduce((a,b)=>a+b,0)/num.length).toFixed(2) : "";
+      return "<tr><td class='np'>" + (i+1) + "</td><td>" + dato(r.hora) + "</td>"
+        + "<td class='lug'>" + dato(r.lugar) + "</td>" + tds
+        + (media ? "<td class='med'>" + (prom === "" ? '<span class="vac">—</span>' : prom) + "</td>" : "")
+        + "</tr>";
+    }).join("");
+    return '<div class="grp"><div class="cat">' + esc(titulo) + "</div>"
+      + '<table class="tt"><thead><tr><th>Parada</th><th>Hora</th><th>Lugar</th>'
+      + tinas.map(t => "<th>T" + t + "</th>").join("")
+      + (media ? "<th>Media</th>" : "") + "</tr></thead><tbody>" + filas + "</tbody></table></div>";
+  };
+
+  const seccion = (cam, ci) => {
+    const tinas = trasTinasEnUso(cam);
+    // Alimentación y observaciones son de la PARADA, no de la tina: van en una lista
+    // debajo de las matrices en vez de en una cuarta matriz que repetiría el valor.
+    const notas = revs.map((r, i) => {
+      const med = ((Array.isArray(r.camiones) ? r.camiones : [])[ci] || {}).tinas || {};
+      const alim = [];
+      tinas.forEach(t => { const a = trasTxt((med[t]||{}).alim); if(a !== "" && alim.indexOf(a) === -1) alim.push(a); });
+      const obs = trasTxt(r.obs);
+      if(!alim.length && obs === "") return "";
+      return "<div class='nota'><b>Parada " + (i+1) + "</b> · " + dato(r.hora)
+        + (alim.length ? " · Alimentación: " + esc(alim.join(", ")) : "")
+        + (obs !== "" ? " · " + esc(obs) : "") + "</div>";
+    }).join("");
+    return '<div class="camion">'
+      + '<div class="ctit">🚚 ' + dato(cam && cam.placa)
+      + '<span>' + tinas.length + " tina(s) · " + revs.length + " parada(s)</span></div>"
+      + matriz(ci, cam, "Oxígeno disuelto (mg/L)", (m) => trasTxt(m.o2), true)
+      + matriz(ci, cam, "Temperatura (°C)", (m) => trasTxt(m.temp), true)
+      + matriz(ci, cam, "Actividad", (m) => trasTxt(m.act), false)
+      + (notas ? '<div class="notas"><div class="nlab">Alimentación y observaciones</div>' + notas + "</div>" : "")
+    + "</div>";
+  };
+
+  const cuerpo = camiones.length
+    ? camiones.map((c, i) => (i ? '<div class="brk"></div>' : "") + seccion(c, i)).join("")
+    : '<div class="nota">Este traslado todavía no tiene ningún camión.</div>';
+
+  const css = "@page{size:A4 landscape;margin:8mm 9mm}"
+    + "*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}"
+    + "html,body{font-family:Arial,Helvetica,sans-serif;font-size:9pt;color:#111}"
+    + ".ph{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #09192e;padding-bottom:4px;margin-bottom:5px}"
+    + ".ph .co{font-size:12pt;font-weight:800;color:#09192e}"
+    + ".ph .su{font-size:7pt;color:#64748b;text-transform:uppercase;letter-spacing:.6px}"
+    + ".ph .code{font-family:monospace;font-size:8.5pt;font-weight:800;color:#09192e;background:#f0fdfa;border:1.5px solid #99f6e4;border-radius:3px;padding:3px 9px}"
+    + ".ph .mod{font-size:12pt;font-weight:800;color:#09192e;text-align:right}"
+    + ".ftitle{font-size:10pt;font-weight:800;color:#fff;background:#09192e;padding:4px 10px;margin-bottom:6px;border-radius:2px}"
+    + ".meta{display:flex;gap:4px 22px;flex-wrap:wrap;margin-bottom:6px}"
+    + ".meta .mf{display:flex;flex-direction:column}"
+    + ".meta label{font-size:7pt;text-transform:uppercase;letter-spacing:.4px;color:#0f766e;font-weight:800}"
+    + ".meta span{font-size:9.5pt;font-weight:600;border-bottom:1px solid #cbd5e1;min-width:70px;padding-bottom:1px}"
+    + ".chks{display:flex;gap:5px 14px;flex-wrap:wrap;margin-bottom:8px}"
+    + ".chk{font-size:8pt;color:#64748b}.chk.on{color:#065f46;font-weight:700}"
+    + ".camion{break-inside:avoid}"
+    + ".ctit{font-size:10pt;font-weight:800;color:#0f172a;background:#ecfeff;border-left:4px solid #14b8a6;padding:4px 9px;margin:6px 0 4px;display:flex;justify-content:space-between;align-items:baseline}"
+    + ".ctit span{font-size:8pt;font-weight:600;color:#0f766e}"
+    + ".grp{break-inside:avoid;page-break-inside:avoid;margin-bottom:5px}"
+    + ".cat{font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#0f766e;margin:4px 0 2px}"
+    + "table.tt{border-collapse:collapse;width:100%}"
+    + ".tt th{background:#0f2942;color:#fff;border:1px solid #1e3a5f;padding:2px 5px;font-size:7.5pt;text-align:center}"
+    + ".tt td{border:1px solid #cbd5e1;padding:2px 6px;font-size:8.5pt;text-align:center}"
+    + ".tt tr:nth-child(even) td{background:#f0fdfa}"
+    + ".tt td.np{font-weight:800;color:#0f766e}.tt td.lug{text-align:left}"
+    + ".tt td.med{font-weight:800;background:#ecfeff}"
+    + ".vac{color:#94a3b8}"
+    + ".notas{border:1px solid #e2e8f0;background:#f8fafc;border-radius:3px;padding:5px 9px;margin-top:4px}"
+    + ".nlab{font-size:7pt;text-transform:uppercase;color:#0f766e;font-weight:800;margin-bottom:2px}"
+    + ".nota{font-size:8.5pt;margin-bottom:1px}"
+    + ".foot{margin-top:16px;display:flex;justify-content:space-around;gap:24px;break-inside:avoid}"
+    + ".sig{flex:1;text-align:center;font-size:8pt;font-weight:700;color:#0f172a}"
+    + ".sig-line{border-top:1.5px solid #0f172a;width:200px;max-width:80%;margin:24px auto 4px}"
+    + ".sig i{display:block;font-style:normal;font-size:7pt;font-weight:600;color:#64748b;margin-top:1px}"
+    + ".ts{margin-top:8px;font-size:7pt;color:#94a3b8;text-align:right}"
+    + ".brk{page-break-before:always;break-before:page;height:0}";
+
+  const ts = new Date().toLocaleString("es-EC",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
+  /* El identificador del viaje hace de verificador del documento. `_trasViajeActivo`
+     se fija al GUARDAR, no al sincronizar: si está vacío es que el viaje no existe
+     todavía ni en el dispositivo, y eso es más grave que no haberlo subido. Decirlo
+     en mayúsculas, porque es un papel que se firma y se entrega. */
+  const viajeId = trasTxt(_trasViajeActivo) || "SIN GUARDAR";
+
+  return '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+    + "<title>Traslado " + esc(trasTxt(d.modulo)) + " " + esc(trasTxt(d.fecha)) + "</title>"
+    + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    + "<style>" + css + "</style></head><body>"
+    + '<div class="ph"><div><div class="co">OMARSA · Larvicultura</div>'
+      + '<div class="su">Control de traslado de larvas</div></div>'
+      + '<div><span class="code">' + esc(viajeId) + "</span></div>"
+      + '<div><div class="mod">' + esc(trasTxt(d.modulo) || "—") + "</div></div></div>"
+    + '<div class="ftitle">🚚 Hoja de control de alimentación y parámetros durante el traslado</div>'
+    + '<div class="meta">'
+      + '<div class="mf"><label>Fecha de entrega</label><span>' + dato(d.fecha) + "</span></div>"
+      + '<div class="mf"><label>Corrida</label><span>' + dato(d.corrida) + "</span></div>"
+      + '<div class="mf"><label>Módulo</label><span>' + dato(d.modulo) + "</span></div>"
+      + '<div class="mf"><label>Camaronera</label><span>' + dato(d.camaronera) + "</span></div>"
+      + '<div class="mf"><label>Salinidad</label><span>' + dato(d.salinidad) + "</span></div>"
+      + '<div class="mf"><label>Salida → llegada</label><span>' + dato(d.horaSalida) + " → " + dato(d.horaLlegada) + "</span></div>"
+      + '<div class="mf"><label>Tiempo en ruta</label><span>' + esc(trasFmtMin(enRuta)) + "</span></div>"
+      + '<div class="mf"><label>Puerta a puerta</label><span>' + esc(trasFmtMin(puerta)) + "</span></div>"
+    + "</div>"
+    + '<div class="chks"><b style="font-size:8pt;color:#0f766e">INSUMOS A BORDO</b>'
+      + chk(d.insumos, TRAS_ALIM_OPTS) + '<b style="font-size:8pt;color:#0f766e">CHECK DE MATERIALES</b>'
+      + chk(d.check, TRAS_CHECK_ITEMS) + "</div>"
+    + cuerpo
+    + '<div class="foot">'
+      + '<div class="sig"><div class="sig-line"></div>' + dato(d.controlador) + "<i>Controlador de despacho</i></div>"
+      + '<div class="sig"><div class="sig-line"></div>' + dato(d.chequeador) + "<i>Chequeador de entrega</i></div>"
+      + '<div class="sig"><div class="sig-line"></div>' + dato(d.recepcion) + "<i>Responsable de recepción</i></div>"
+    + "</div>"
+    + '<div class="ts">Generado el ' + esc(ts) + " · viaje " + esc(viajeId) + "</div>"
+    + '<scr' + 'ipt>var _p=false;function dp(){if(_p)return;_p=true;setTimeout(function(){window.print();},350);}'
+      + 'if(document.readyState==="complete")dp();else window.addEventListener("load",dp,{once:true});</scr' + "ipt>"
+    + "</body></html>";
 }
 
 /* ── Validación ─────────────────────────────────────────── */
@@ -10206,7 +10477,10 @@ function trasCamionHtml(ci, cam){
   const c = cam || {};
   const off = new Set((Array.isArray(c.tinasOff)?c.tinasOff:[]).map(Number));
   const enUso = TRAS_TINAS - off.size;
-  return '<div class="tras-camion" data-cam="'+ci+'" style="border:1.5px solid var(--bdr);border-radius:10px;padding:9px 12px;margin-bottom:6px;background:#fff">'
+  // ⚠ El `cid` viaja en el DOM porque `trasCommitActivo` RECONSTRUYE cada camión
+  // desde su tarjeta: si el token no estuviera aquí, se perdería en el primer
+  // repintado y la identidad volvería a ser posicional sin que nada lo dijera.
+  return '<div class="tras-camion" data-cam="'+ci+'" data-cid="'+escapeHtml(String(c.cid||""))+'" style="border:1.5px solid var(--bdr);border-radius:10px;padding:9px 12px;margin-bottom:6px;background:#fff">'
     + '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px">'
       + '<span style="font-size:11px;font-weight:700;color:var(--teal);min-width:62px">Camión '+(ci+1)+'</span>'
       + '<input data-k="placa" value="'+escapeHtml(c.placa||"")+'" maxlength="20" placeholder="Sin placa"'
@@ -10498,6 +10772,7 @@ function trasBarraHtml(recBtn){
     + '<div class="sa-btns">'
       + '<button class="btn bd" type="button" onclick="trasBorrarTraslado()" title="Vacía la ficha y borra este traslado del dispositivo, para empezar el siguiente">🗑 Borrar traslado</button>'
       + (recBtn || "")
+      + '<button class="btn bpdf" type="button" onclick="downloadTrasladoPDF()" title="Informe A4 del viaje entero: cada revisión de cada camión">📄 PDF</button>'
       + '<button class="btn bs" type="button" onclick="trasGuardarLocal()" title="Respalda el viaje en este dispositivo, sin enviarlo a Google Sheets">💾 Guardar local</button>'
       + '<button class="btn bp" type="button" onclick="saveTraslado()" title="Guarda el viaje y lo envía a Google Sheets">☁️ Guardar traslado</button>'
     + '</div>'
@@ -10542,6 +10817,17 @@ function trasCommitActivo(){
     if(!k) return;
     if(el.type === "date") d[k] = isValidDate(el.value) ? el.value : "";
     else if(el.type === "number") d[k] = el.value === "" ? "" : el.value;
+    else if(k === "horaSalida" || k === "horaLlegada"){
+      /* Son los dos ÚNICOS campos de hora que se teclean libres (la de cada parada
+         se valida al guardar y la sella el botón). Llegaban a la hoja tal cual: se
+         han visto "8:5", "20.30" y "s/n". Se arregla lo que tiene arreglo y se
+         devuelve al propio campo, para que el chequeador vea lo que quedó; lo que
+         no es una hora se conserva TAL CUAL —no se borra lo que alguien escribió—
+         y `saveTraslado` avisa sin impedir el guardado. */
+      const norm = trasNormalizarHora(el.value);
+      d[k] = norm || sanitizeStr(el.value);
+      if(norm && el.value !== norm) el.value = norm;
+    }
     else d[k] = sanitizeStr(el.value);
   });
   d.insumos = Array.from(fp.querySelectorAll('[data-group="insumos"]:checked')).map(x => x.value);
@@ -10556,13 +10842,29 @@ function trasCommitActivo(){
     const ci = Number(box.dataset.cam);
     const placaEl = box.querySelector('[data-k="placa"]');
     camiones[ci] = {
+      // El token sale del DOM; si la tarjeta es anterior a este cambio se recupera
+      // del modelo vivo, y `_trasAsegurarIds` lo crea si tampoco estaba ahí.
+      cid: box.dataset.cid || ((Array.isArray(d.camiones) ? d.camiones[ci] : null) || {}).cid || "",
       placa: placaEl ? sanitizeStr(placaEl.value) : "",
       // Casillas POSITIVAS: `tinasOff` son las que quedan SIN marcar.
       tinasOff: Array.from(box.querySelectorAll('[data-tina-on]'))
         .filter(x => !x.checked).map(x => Number(x.dataset.tinaOn))
     };
   });
+  /* Una tina que se APAGA también deja su fila viva en la hoja con la última
+     medición. Se detecta comparando con el modelo anterior, que es el único sitio
+     donde consta que antes viajaba. (Si vuelve a encenderse antes de sincronizar,
+     el propio envío descarta el apagado: ver la regla 2 de `buildTrasPayload`.) */
+  const camsAntes = Array.isArray(d.camiones) ? d.camiones : [];
+  camiones.forEach((c, ci) => {
+    const antes = camsAntes[ci];
+    if(!c || !antes || !antes.cid || antes.cid !== c.cid) return;
+    const offAntes = new Set((Array.isArray(antes.tinasOff) ? antes.tinasOff : []).map(Number));
+    const nuevas = (Array.isArray(c.tinasOff) ? c.tinasOff : []).map(Number).filter(t => !offAntes.has(t));
+    if(nuevas.length) _trasOlvidar(d, _trasSufijos([c.cid], _trasRids(d), nuevas));
+  });
   d.camiones = camiones.filter(Boolean);
+  d.camiones.forEach(c => { if(c && !c.cid) delete c.cid; });   // "" no es un token
   const nCam = d.camiones.length;
 
   // Estado del formulario de alta: vive fuera del modelo del viaje (no es un dato
@@ -10610,7 +10912,7 @@ function trasCommitActivo(){
     });
     r.camiones[ci] = { tinas: tinas };   // por ÍNDICE: nunca push, nunca filter
   });
-  return d;
+  return _trasAsegurarIds(d);
 }
 
 /* El viaje entero, listo para validar, guardar o construir el payload. Se devuelve
@@ -10686,9 +10988,7 @@ function trasQuitarCamion(ci){
   // volver a empezar es un camino legítimo (una placa mal apuntada, por ejemplo).
   const placa = trasTxt(cams[ci] && cams[ci].placa) || ("camión "+(ci+1));
   if(!confirm("¿Quitar «"+placa+"» del viaje?\nSe borrarán sus mediciones en todas las revisiones.")) return;
-  cams.splice(ci, 1);
-  data.camiones = cams;
-  (data.revisiones || []).forEach(r => { if(Array.isArray(r.camiones)) r.camiones.splice(ci, 1); });
+  _trasSacarCamion(data, ci, cams);
   _trasRepintar(data);
   toast("Camión retirado del viaje","ok",2500);
 }
@@ -10711,7 +11011,7 @@ function trasQuitarRevision(i){
     toast("El protocolo exige al menos "+TRAS_REV_MIN+" revisiones","warn",3500);
     return;
   }
-  revs.splice(i, 1);
+  _trasSacarRevision(data, i, revs);
   data.revisiones = revs;
   _trasRevCount = revs.length;
   _trasRepintar(data);
@@ -10727,6 +11027,10 @@ function trasLimpiarRevision(i){
   const nCam = trasCamionesUI(data).length;
   const vacia = { hora:"", lugar:"", lat:"", lon:"", precision:"", ubicacion:"", horaRegistro:"", obs:"", camiones:[] };
   for(let c = 0; c < nCam; c++) vacia.camiones.push({ tinas:{} });
+  // ⚠ El `rid` SOBREVIVE al vaciado: vaciar es borrar lo medido, no crear una
+  // parada distinta. Sin esto, vaciar la parada 2 de un viaje ya sincronizado le
+  // daría una identidad nueva y dejaría sus filas viejas huérfanas en la hoja.
+  if(revs[i] && revs[i].rid) vacia.rid = revs[i].rid;
   revs[i] = vacia;
   data.revisiones = revs;
   _trasRepintar(data);
@@ -10752,6 +11056,73 @@ function _trasUpsert(list, id, data){
   return true;
 }
 
+/* Anota las llaves de lo que se acaba de quitar del viaje para que la próxima
+   sincronización las APAGUE en la hoja. Se guardan los sufijos concretos
+   ("-c3-r2-t5"), no una regla a reconstruir después: al quitar es cuando se sabe
+   con certeza qué camiones, qué paradas y qué tinas había, y reconstruirlo más
+   tarde —cuando ya se quitaron otras cosas— es de donde salen los defectos. */
+function _trasOlvidar(data, sufijos){
+  const d = data || {};
+  const lista = Array.isArray(d._quitados) ? d._quitados : [];
+  (sufijos || []).forEach(s => { if(s && lista.indexOf(s) === -1) lista.push(s); });
+  // Tope de seguridad: un viaje son ~64 filas, así que esto no se alcanza en uso
+  // normal. Está para que un bucle inesperado no engorde el registro sin fin.
+  if(lista.length > TRAS_OLVIDO_MAX) lista.splice(0, lista.length - TRAS_OLVIDO_MAX);
+  d._quitados = lista;
+  return d;
+}
+
+/* Los sufijos de llave de un camión (todas sus paradas y todas sus tinas) o de una
+   parada (todos sus camiones y todas sus tinas). `tinas` acota cuándo se quita una
+   sola tina. */
+function _trasSufijos(cids, rids, tinas){
+  const out = [];
+  (cids || []).forEach(c => (rids || []).forEach(r => (tinas || []).forEach(t => {
+    // Se DERIVA de trasFilaId con el viaje vacío, en vez de repetir el formato:
+    // si algún día cambia la llave, cambia en un solo sitio y esto la sigue.
+    out.push(trasFilaId("", c, r, t));
+  })));
+  return out;
+}
+function _trasRids(data){
+  const revs = Array.isArray((data||{}).revisiones) ? data.revisiones : [];
+  return revs.map(r => (r && r.rid) || "").filter(Boolean);
+}
+
+/* ── «Quitar», sin DOM ───────────────────────────────────────
+   La parte que decide QUÉ LLAVES se anotan para apagarlas vive aquí y no dentro
+   de trasQuitarCamion / trasQuitarRevision, que necesitan el formulario montado.
+   Una regla que no se puede llamar desde una prueba acaba reimplementada EN la
+   prueba, y entonces la prueba sólo comprueba su propia copia: pasa en verde con
+   el producto roto. Lo cazó el banco de mutaciones el 2026-08-26 (M07 y M08
+   sobrevivían). Estas dos sí se pueden llamar. */
+function _trasSacarCamion(data, ci, camsOpt){
+  const cams = camsOpt || trasCamionesUI(data);
+  const fuera = cams[ci];
+  if(!fuera) return data;
+  // ANTES de sacarlo: después ya no se sabe cuál era su token ni qué tinas
+  // llevaba. Y SÓLO sus tinas: una que nunca viajó no tiene fila en la hoja, y
+  // mandarla en blanco la CREARÍA en vez de apagarla.
+  if(fuera.cid) _trasOlvidar(data, _trasSufijos([fuera.cid], _trasRids(data), trasTinasEnUso(fuera)));
+  cams.splice(ci, 1);
+  data.camiones = cams;
+  (data.revisiones || []).forEach(r => { if(Array.isArray(r.camiones)) r.camiones.splice(ci, 1); });
+  return data;
+}
+
+function _trasSacarRevision(data, i, revsOpt){
+  const revs = revsOpt || (Array.isArray(data.revisiones) ? data.revisiones : []);
+  const fuera = revs[i];
+  if(!fuera) return data;
+  // Cada camión tiene SUS tinas: apagar las 8 en todos crearía filas inexistentes.
+  if(fuera.rid) trasCamiones(_trasAsegurarIds(data)).forEach(cam => {
+    if(cam && cam.cid) _trasOlvidar(data, _trasSufijos([cam.cid], [fuera.rid], trasTinasEnUso(cam)));
+  });
+  revs.splice(i, 1);
+  data.revisiones = revs;
+  return data;
+}
+
 /* Lo MÍNIMO que un viaje necesita para poder guardarse a medias. No es la
    validación completa: en la parada 1 todavía no hay camaronera confirmada ni
    tres revisiones, y exigirlas convertiría el guardado automático en un aviso de
@@ -10768,6 +11139,21 @@ function _trasValidarParcial(data){
     if(i >= 0) errs.push("al camión "+(i+1)+" le falta la placa");
   }
   return errs;
+}
+
+/* «📄 PDF»: el informe del viaje que se está capturando. No guarda ni envía nada —es
+   sólo una lectura— así que no exige validación: un viaje a medias se imprime a
+   medias, que es justo lo que hace falta para revisarlo en carretera. */
+function downloadTrasladoPDF(){
+  const data = collectTraslado();
+  if(!trasTieneDatos(data)){
+    toast("Todavía no hay nada que imprimir en este traslado","warn",3500);
+    return;
+  }
+  const w = window.open("","_blank","width=1100,height=820");
+  if(!w){ toast("El navegador bloqueó la ventana emergente. Permite pop-ups para este sitio.","warn",6000); return; }
+  w.document.write(buildTrasPdfHtml(data));
+  w.document.close();
 }
 
 /* ── Guardado LOCAL ─────────────────────────────────────────
@@ -10834,6 +11220,12 @@ async function saveTraslado(){
   if(nRevs < TRAS_REV_MIN) extra += " · sólo "+nRevs+" revisión(es); el protocolo pide "+TRAS_REV_MIN;
   if(avisos) extra += " · "+avisos+" revisión(es) fuera de cadencia";
   if(caidas) extra += " · "+caidas+" caída(s) de parámetro";
+  // Lo que no se pudo normalizar en el commit sigue sin ser una hora. Se dice, pero
+  // no se bloquea: en carretera puede no saberse aún la hora de llegada.
+  const horasMal = [["horaSalida","salida"],["horaLlegada","llegada"]]
+    .filter(p => trasTxt(data[p[0]]) !== "" && trasNormalizarHora(data[p[0]]) === "")
+    .map(p => p[1]);
+  if(horasMal.length) extra += " · la hora de "+horasMal.join(" y la de ")+" no es una hora válida";
   if(extra) toast("Guardado"+extra, "warn", 6000);
 
   await syncAllPendingTras();
@@ -10883,7 +11275,17 @@ async function syncAllPendingTras(){
     const list2 = _trasRaw();
     lote.forEach(p => {
       const idx = list2.findIndex(x => x.id === p.id);
-      if(idx >= 0){ list2[idx].synced = true; list2[idx].syncedAt = Date.now(); }
+      if(idx >= 0){
+        list2[idx].synced = true;
+        list2[idx].syncedAt = Date.now();
+        /* `everSynced` NO se apaga nunca: es lo que distingue «este viaje ya tiene
+           filas en la hoja» de «esto todavía no ha salido del dispositivo», y de
+           eso depende que apagar lo quitado no invente filas. */
+        list2[idx].everSynced = true;
+        // Ya se apagó lo que había que apagar; arrastrarlo otra vez no haría daño
+        // pero engordaría cada envío para siempre.
+        if(list2[idx].data) list2[idx].data._quitados = [];
+      }
     });
     _trasSave(list2);
     enviados += lote.length;
