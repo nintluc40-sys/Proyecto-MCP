@@ -647,6 +647,18 @@ th.sv-sie-proy { white-space: nowrap; }
 .sv-tras-chip:hover{filter:brightness(.96)}
 .sv-tras-todos{background:#f1f5f9;color:#334155;border-style:dashed}
 
+/* ── Una SECCIÓN por viaje ──────────────────────────────────
+   La unidad de la vista es el TRASLADO, no la corrida: una corrida puede salir en
+   varios viajes, a distintas camaroneras y con distintos camiones. Cada sección
+   envuelve los KPI, el mapa y los camiones de UNO, para que no quede duda de a qué
+   viaje pertenece cada número. Paleta clara, como el resto de este bloque. */
+.sv-tras-viaje{margin:18px 0 26px}
+.sv-tras-viaje+.sv-tras-viaje{padding-top:18px;border-top:2px dashed #e2e8f0}
+.sv-tras-viaje-h{padding:10px 16px;background:#f8fafc;border:1px solid #e2e8f0;
+  border-radius:12px;margin-bottom:12px}
+.sv-tras-viaje-t{font-size:14px;font-weight:800;color:#0f172a;letter-spacing:.01em}
+.sv-tras-viaje-s{font-size:11px;color:#64748b;margin-top:3px}
+
 .sv-tras-cards{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(420px,1fr))}
 .sv-tras-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;
   box-shadow:0 1px 3px rgba(15,23,42,.06)}

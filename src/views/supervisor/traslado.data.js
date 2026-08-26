@@ -188,6 +188,73 @@ export function fmtMinutos(min) {
   return r ? h + ' h ' + r + ' min' : h + ' h';
 }
 
+/** Los VIAJES del conjunto visible, cada uno con lo que es SUYO.
+ *
+ *  Un traslado es la unidad real de esta vista: una misma corrida de un módulo
+ *  puede salir en VARIOS viajes —distintas noches, distintas camaroneras, distintos
+ *  camiones—, y cada uno tiene su fecha, su destino, su tiempo y sus observaciones.
+ *  Antes la vista trataba todo lo visible como un solo traslado, y entonces el
+ *  tiempo salía del PRIMERO y los demás no se veían por ninguna parte.
+ *
+ *  🔑 El reparto de granos, tal y como lo declara el esquema en `TRASLADO_COLUMNS`:
+ *    · `grain: 'tina'`     → O₂, temperatura, actividad, alimentación ⇒ POR PLACA.
+ *    · `grain: 'revision'` → hora, lugar, GPS y observaciones, que son de la parada
+ *                            y los camiones del viaje comparten ⇒ POR VIAJE.
+ *    · `grain: 'viaje'`    → fecha, camaronera, salida/llegada, responsables.
+ *
+ *  Por eso `tiempo` se calcula aquí sobre los camiones de UN viaje: dentro de un
+ *  viaje los camiones sí paran juntos, que es la suposición que `tiempoDe` necesita
+ *  y la que se rompía al mezclar dos traslados. */
+export function viajesDe(camiones) {
+  const porViaje = new Map();
+  (camiones || []).forEach((c) => {
+    if (!porViaje.has(c.viaje)) porViaje.set(c.viaje, []);
+    porViaje.get(c.viaje).push(c);
+  });
+  const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  return [...porViaje.values()].map((cams) => {
+    const base = cams[0] || {};
+    // Una sola pasada: `nObservaciones` es la longitud de la MISMA lista, no un
+    // segundo recorrido que podría acabar discrepando de ella.
+    const obs = observacionesDelViaje(cams);
+    return {
+      viaje: base.viaje || '',
+      fecha: base.fecha || '',
+      camaronera: base.camaronera || '',
+      camiones: cams,
+      placas: [...new Set(cams.map((c) => c.placa))],
+      tiempo: tiempoDe(cams),
+      observaciones: obs,
+      nObservaciones: obs.length,
+    };
+  }).sort((a, b) => cmp(a.fecha, b.fecha) || cmp(a.viaje, b.viaje));
+}
+
+/** Las observaciones del conjunto visible, SIN REPETIR.
+ *
+ *  ⚠⚠ Una observación es de la PARADA, no del camión — en el esquema
+ *  `Observaciones` tiene `grain: 'revision'`, y `buildTrasPayload` escribe el mismo
+ *  texto en las filas de TODOS los camiones de esa parada. Contarlas por camión y
+ *  sumar multiplicaba el KPI por el número de camiones: un viaje con UNA
+ *  observación y dos camiones decía «2», y con tres decía «3». Medido el
+ *  2026-08-26; no hacía falta ningún caso raro, pasaba en el viaje normal.
+ *
+ *  La llave lleva el VIAJE además de la parada, porque dos traslados distintos de
+ *  la misma corrida sí pueden dejar observaciones distintas en su parada 1.
+ *  Y lleva el TEXTO: si dos filas de la misma parada trajeran textos diferentes
+ *  —cosa que la app no produce, pero una edición a mano de la hoja sí— esconder
+ *  uno de los dos sería peor que enseñarlos. */
+export function observacionesDelViaje(camiones) {
+  const vistas = new Map();
+  (camiones || []).forEach((c) => {
+    (c.observaciones || []).forEach((o) => {
+      const k = JSON.stringify([c.viaje, o.revision, o.texto]);
+      if (!vistas.has(k)) vistas.set(k, { ...o, viaje: c.viaje, fecha: c.fecha, camaronera: c.camaronera });
+    });
+  });
+  return [...vistas.values()];
+}
+
 /** Las paradas del conjunto visible, sin repetir: los camiones comparten parada.
  *  Se ordenan por número de revisión, no por hora: una hora tecleada mal no puede
  *  reordenar el viaje. */
@@ -348,11 +415,47 @@ function camionDe(filasPlaca) {
   };
 }
 
-/** Reconstruye el traslado de un (módulo, corrida), agrupado por camión. */
+/** Reconstruye el traslado de un (módulo, corrida), agrupado por camión.
+ *
+ *  ⚠⚠ EL GRUPO ES (VIAJE, PLACA), NO SÓLO LA PLACA.
+ *  Una misma corrida puede salir en MÁS DE UN viaje —dos noches, o dos
+ *  camaroneras distintas, cada una con su ficha y su id de `Viaje`— y la barra de
+ *  fecha está oculta a propósito en esta vista, así que todos ellos llegan juntos.
+ *  Agrupando sólo por placa, los dos viajes del mismo camión caían en la misma
+ *  tarjeta y `camionDe` los fundía POR NÚMERO DE PARADA: la parada 1 de un viaje y
+ *  la del otro se mezclaban en una sola.
+ *
+ *  El resultado no era un error visible sino algo peor: la cabecera salía del
+ *  primer viaje (fecha, horas, camaronera) y las mediciones del segundo. Medido el
+ *  2026-08-26 con dos viajes de la misma corrida —uno con O₂ 7.5 y otro con 3.1—:
+ *  el tablero enseñaba 3 paradas en vez de 6, con los horarios del primero, las
+ *  lecturas del segundo y una media de 3.1. El viaje bueno desaparecía sin que
+ *  nada lo dijera. Los datos de la hoja estaban intactos: el daño era de lectura.
+ *
+ *  Con un solo viaje —el caso de hoy— esto se comporta exactamente igual que
+ *  antes: hay un `Viaje` y el grupo vuelve a ser la placa. */
 export function trasladoDe(data, mod, corrida) {
   const filas = filasDe(data, mod, corrida);
   const placas = placasDe(filas);
-  const camiones = placas.map((pl) => camionDe(filas.filter((r) => txt(r, TK.placa) === pl)));
+  const grupos = new Map();
+  filas.forEach((r) => {
+    const pl = txt(r, TK.placa);
+    // Sin placa no hay camión: son las filas que la captura manda en blanco para
+    // APAGAR lo que se quitó del viaje. Se descartan aquí igual que antes.
+    if (!pl) return;
+    // La llave va como JSON de los dos campos: cualquier separador suelto
+    // podría aparecer dentro de una placa escrita a mano y unir dos grupos que
+    // no son el mismo.
+    const k = JSON.stringify([txt(r, TK.viaje), pl]);
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(r);
+  });
+  // Orden estable: por placa primero —que es como se ordenaba antes— y dentro de
+  // cada placa por fecha, para que dos viajes del mismo camión salgan en el orden
+  // en que ocurrieron y no en el que la hoja los devuelva.
+  const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  const camiones = [...grupos.values()].map((fs) => camionDe(fs))
+    .sort((a, b) => cmp(a.placa, b.placa) || cmp(a.fecha, b.fecha) || cmp(a.viaje, b.viaje));
   const todasAct = camiones.flatMap((c) => c.paradas.flatMap((p) => Object.values(p.tinas).map((t) => t.act)));
   const todoO2 = camiones.flatMap((c) => c.paradas.flatMap((p) => Object.values(p.tinas).map((t) => t.o2))).filter((v) => v !== null);
   const todoTemp = camiones.flatMap((c) => c.paradas.flatMap((p) => Object.values(p.tinas).map((t) => t.temp))).filter((v) => v !== null);
@@ -367,7 +470,9 @@ export function trasladoDe(data, mod, corrida) {
     o2: prom(todoO2),
     temp: prom(todoTemp),
     actividad: actividadDe(todasAct),
-    nObservaciones: camiones.reduce((a, c) => a + c.nObservaciones, 0),
+    // ⚠ NO se suman las de cada camión: una observación es de la PARADA y viaja
+    // repetida en las filas de todos los camiones. Ver `observacionesDelViaje`.
+    nObservaciones: observacionesDelViaje(camiones).length,
     // El check es del VIAJE, no del camión: se resume como «cuántos camiones lo
     // llevan completo», que es la pregunta que se hace el supervisor.
     insumosCompletos: camiones.filter((c) => c.insumos.completo).length,

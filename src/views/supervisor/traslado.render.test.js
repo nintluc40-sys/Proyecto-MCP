@@ -215,14 +215,56 @@ describe('Traslado · los desgloses por parada', () => {
     expect(c).toContain('8');
   });
 
-  it('🔴 las observaciones se desglosan por camión y parada', () => {
+  it('🔴 una observación del viaje NO se cuenta una vez por camión', () => {
+    /* Una observación es de la PARADA (`grain: 'revision'` en el esquema) y
+       `buildTrasladoPayload` escribe el mismo texto en las filas de TODOS los
+       camiones de esa parada. Este fixture es un viaje con DOS camiones y UNA sola
+       observación: contándolas por camión el KPI decía «2» y el desglose repetía
+       la misma frase, así que el supervisor leía dos incidencias donde hubo una.
+       ⚠ Hasta el 2026-08-26 esta prueba EXIGÍA el «2» —fijaba el defecto como si
+       fuera la regla—, y por eso nadie lo vio. */
     const root = montar(ctxCon(aFilas(buildTrasladoPayload(viaje(2, [1])))));
-    expect(kpi(root, 'obs')).toBe('2');       // una por camión
+    expect(kpi(root, 'obs'), 'una observación y dos camiones: el KPI es 1').toBe('1');
     const c = abrir(root, 'obs');
+    // El desglose sigue diciendo QUIÉN llevaba el viaje…
     expect(c).toContain('GSA-1147');
     expect(c).toContain('PBX-0392');
     expect(c).toContain('Parada 2');
-    expect(c).toContain('Tracto digestivo');
+    // …pero la observación se enseña UNA vez. Ésta es la aserción que vigila la
+    // regla: el `toContain` de arriba pasaba igual con el texto duplicado.
+    expect(c.split('Tracto digestivo').length - 1,
+      'la misma observación no puede salir dos veces').toBe(1);
+  });
+
+  it('🔴 dos viajes distintos SÍ suman sus observaciones', () => {
+    // La deduplicación no puede pasarse de lista: la parada 2 de un viaje y la
+    // parada 2 de otro son dos incidencias distintas aunque compartan número.
+    const segundo = viaje(2, [1]);
+    segundo.id = 'tv2';
+    segundo.data.fecha = '2026-08-28';
+    segundo.data.revisiones[1].obs = 'Espuma en la tina 3.';
+    const root = montar(ctxCon(
+      aFilas(buildTrasladoPayload(viaje(2, [1])))
+        .concat(aFilas(buildTrasladoPayload(segundo))),
+    ));
+    /* Desde que hay UNA SECCIÓN POR VIAJE, cada uno lleva su propio KPI: no hay un
+       número global que sumar. Lo que se comprueba es que salgan DOS secciones y
+       que cada una cuente SÓLO la suya — antes los dos viajes caían en la misma
+       tarjeta y uno tapaba al otro. */
+    const kpis = [...root.querySelectorAll('[data-tras-modal="obs"] .sv-kpi-value')]
+      .map((e) => e.textContent.trim());
+    expect(kpis, 'tiene que haber un KPI de observaciones por viaje').toEqual(['1', '1']);
+
+    // Y el desglose de cada viaje enseña la observación de ESE viaje, no la del otro.
+    const botones = [...root.querySelectorAll('[data-tras-modal="obs"]')];
+    botones[0].click();
+    const c1 = root.querySelector('#sv-tras-modal-b').textContent;
+    botones[1].click();
+    const c2 = root.querySelector('#sv-tras-modal-b').textContent;
+    expect(c1).toContain('Tracto digestivo');
+    expect(c1).not.toContain('Espuma en la tina 3');
+    expect(c2).toContain('Espuma en la tina 3');
+    expect(c2).not.toContain('Tracto digestivo');
   });
 
   it('sin observaciones el desglose lo dice en vez de salir vacío', () => {
@@ -467,5 +509,60 @@ describe('Traslado · el KPI de tiempo en la cabecera', () => {
     expect(cuerpo.querySelectorAll('tbody tr').length).toBeGreaterThanOrEqual(4);
     // 23:30 → 01:00 son 90 min: dentro. 20:30→22:00 son 90. Ninguno se pasa de 120.
     expect(cuerpo.querySelectorAll('.sv-t-excede').length).toBe(0);
+  });
+});
+
+describe('Traslado · una sección por VIAJE', () => {
+  /* El defecto que esto cierra: la vista trataba todo lo visible como UN traslado.
+     Los KPI de medición mezclaban los viajes de la corrida, y el de tiempo ni
+     siquiera mezclaba — `paradasDelViaje` deduplica por número de parada, así que
+     enseñaba el PRIMER viaje y el resto desaparecía. Medido: un segundo viaje de
+     10 h se anunciaba como 4 h. */
+  function dosViajes() {
+    const v1 = viaje(1, []);
+    v1.data.horaSalida = '20:00';
+    v1.data.horaLlegada = '00:00';
+    ['20:00', '21:00', '22:00', '00:00'].forEach((h, i) => { v1.data.revisiones[i].hora = h; });
+
+    const v2 = viaje(1, []);
+    v2.id = 'tvLARGO';
+    v2.data.fecha = '2026-08-28';
+    v2.data.camaronera = 'Taura';
+    v2.data.horaSalida = '20:00';
+    v2.data.horaLlegada = '06:00';
+    ['20:00', '23:00', '02:00', '06:00'].forEach((h, i) => { v2.data.revisiones[i].hora = h; });
+    return aFilas(buildTrasladoPayload(v1)).concat(aFilas(buildTrasladoPayload(v2)));
+  }
+
+  it('🔴 cada viaje enseña SU tiempo, no el del primero', () => {
+    const root = montar(ctxCon(dosViajes()));
+    const tiempos = [...root.querySelectorAll('[data-tras-modal="tiempo"] .sv-kpi-value')]
+      .map((e) => e.textContent.trim());
+    // v1: 20:00→00:00 son 4 h en ruta. v2: 20:00→06:00 son 10 h.
+    expect(tiempos, 'el segundo viaje tiene que traer SU tiempo').toEqual(['4 h', '10 h']);
+  });
+
+  it('hay una sección por viaje, con su fecha y su destino', () => {
+    const root = montar(ctxCon(dosViajes()));
+    const secciones = root.querySelectorAll('.sv-tras-viaje');
+    expect(secciones).toHaveLength(2);
+    const t = txt(root);
+    expect(t).toContain('Puná 1');
+    expect(t).toContain('Taura');
+    expect(t).toContain('2026-08-28');
+  });
+
+  it('cada viaje monta su PROPIO mapa', () => {
+    // Un solo contenedor para dos rutas distintas las superpondría.
+    const root = montar(ctxCon(dosViajes()));
+    expect(root.querySelectorAll('[data-tras-mapa]')).toHaveLength(2);
+  });
+
+  it('con UN viaje la vista es la de siempre: una sección', () => {
+    const root = montar(ctxCon(aFilas(buildTrasladoPayload(viaje(2, [1])))));
+    expect(root.querySelectorAll('.sv-tras-viaje')).toHaveLength(1);
+    expect(root.querySelectorAll('[data-tras-mapa]')).toHaveLength(1);
+    // Y sus dos camiones siguen siendo dos tarjetas dentro de esa sección.
+    expect(root.querySelectorAll('.sv-tras-card')).toHaveLength(2);
   });
 });

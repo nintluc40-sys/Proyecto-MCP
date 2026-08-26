@@ -23,7 +23,7 @@ import { esc } from '../../core/format.js';
 import {
   trasladoDe, ACTIVIDAD_ORDEN,
   deltasDe, resumenPorTina, valoresDe, escalaDe, nivelDe, tinaMasInestable,
-  tiempoDe, fmtMinutos, CADENCIA_MAX_MIN,
+  tiempoDe, fmtMinutos, CADENCIA_MAX_MIN, observacionesDelViaje, viajesDe,
 } from './traslado.data.js';
 import { montarMapa, paradasSinGps, COLORES_CAMION } from './trasladoMapa.js';
 
@@ -43,14 +43,17 @@ let _placaSola = null;
  *  puede seguir ocultando algo en otra, donde esa placa ni existe. */
 let _ambito = '';
 
-/** Mapa de Leaflet actualmente montado. Se destruye antes de montar otro; ver la
- *  nota sobre la fuga en `after()`. */
-let _mapaActivo = null;
+/** Mapas de Leaflet actualmente montados: uno por VIAJE visible. Se destruyen
+ *  todos antes de montar los siguientes; ver la nota sobre la fuga en `after()`.
+ *  ⚠ Era una sola instancia hasta el 2026-08-26; con una sección por viaje puede
+ *  haber varias a la vez y olvidarse de una la deja viva escuchando `resize`. */
+let _mapasActivos = [];
 
 export function resetTrasladoFiltro() {
   _placaSola = null;
   _ambito = '';
-  if (_mapaActivo) { _mapaActivo.destroy(); _mapaActivo = null; }
+  _mapasActivos.forEach((m) => { try { m.destroy(); } catch (_) { /* ya estaba */ } });
+  _mapasActivos = [];
 }
 
 const barra = (n, total, color) => {
@@ -222,16 +225,32 @@ function tablaTiempo(camiones) {
   </div>`;
 }
 
+/* ⚠⚠ Se agrupa por VIAJE, no por camión. Una observación es de la PARADA
+   (`grain: 'revision'` en el esquema) y viaja repetida en las filas de todos los
+   camiones: agrupando por placa, la misma frase salía una vez por camión y el
+   supervisor leía dos incidencias donde sólo hubo una. */
 function tablaObs(camiones) {
-  const conObs = camiones.filter((c) => c.nObservaciones > 0);
-  if (!conObs.length) return '<div class="sv-tras-vacio">Ninguna parada dejó observaciones.</div>';
-  return conObs.map((c) => `<div class="sv-tras-blk">
-    <div class="sv-tras-blk-h">🚚 ${esc(c.placa)} <span>${c.nObservaciones} observación(es)</span></div>
-    ${c.observaciones.map((o) => `<div class="sv-tras-obs">
+  const obs = observacionesDelViaje(camiones);
+  if (!obs.length) return '<div class="sv-tras-vacio">Ninguna parada dejó observaciones.</div>';
+  const porViaje = new Map();
+  obs.forEach((o) => {
+    if (!porViaje.has(o.viaje)) porViaje.set(o.viaje, []);
+    porViaje.get(o.viaje).push(o);
+  });
+  return [...porViaje.values()].map((lista) => {
+    const v = lista[0];
+    // Sólo se nombran las placas del viaje: quién lo llevaba sigue haciendo falta,
+    // pero como dato del viaje, no como forma de partir las observaciones.
+    const placas = [...new Set(camiones.filter((c) => c.viaje === v.viaje).map((c) => c.placa))];
+    return `<div class="sv-tras-blk">
+    <div class="sv-tras-blk-h">🚚 ${esc(v.fecha || '—')} · ${esc(v.camaronera || '—')}
+      <span>${esc(placas.join(' · '))} — ${lista.length} observación(es)</span></div>
+    ${lista.map((o) => `<div class="sv-tras-obs">
       <div class="sv-tras-obs-h">Parada ${o.revision} · ${esc(o.hora || '—')} · ${esc(o.lugar || '—')}</div>
       <div class="sv-tras-obs-t">${esc(o.texto)}</div>
     </div>`).join('')}
-  </div>`).join('');
+  </div>`;
+  }).join('');
 }
 
 /* ── Vista ──────────────────────────────────────────────────── */
@@ -247,10 +266,16 @@ export function renderTraslado(ctx, mod) {
   // no puede vaciar la vista: se ignora y se enseñan todos.
   if (_placaSola && !t.camiones.some((c) => c.placa === _placaSola)) _placaSola = null;
   const visibles = _placaSola ? t.camiones.filter((c) => c.placa === _placaSola) : t.camiones;
-  const vista = visibles.length ? trasladoVisible(t, visibles) : trasladoVisible(t, []);
-  // Sobre el MISMO conjunto visible que los demás KPIs: si el filtro esconde un
-  // camión, el tiempo tiene que hablar de lo que se está viendo.
-  const tiempo = tiempoDe(visibles);
+  /* ⚠⚠ LA UNIDAD DE ESTA VISTA ES EL VIAJE, NO LA CORRIDA.
+     Una corrida puede salir en varios traslados —distintas noches, distintas
+     camaroneras, distintos camiones— y antes la página los trataba como si fueran
+     uno solo: los KPI de la cabecera agregaban las mediciones de todos, y el de
+     tiempo ni siquiera agregaba —`paradasDelViaje` deduplica por número de parada,
+     así que enseñaba el PRIMER viaje y los demás desaparecían—. Medido: un segundo
+     viaje de 10 h se anunciaba como 4 h.
+     Ahora cada viaje tiene su propia sección con sus propios KPI, y todos los
+     números de esa sección hablan de ese traslado. */
+  const viajes = viajesDe(visibles);
 
   let html = breadcrumb(col.accent, [
     { label: '← Módulos', nav: 'modules' },
@@ -263,18 +288,7 @@ export function renderTraslado(ctx, mod) {
     <div class="sv-card-orb"></div>
     <div class="sv-card-tag">🚚 TRASLADO EN RUTA</div>
     <div class="sv-banner-name">${esc(mod)}</div>
-    <div class="sv-card-sub">🔄 ${corrida ? 'Corrida: ' + esc(corrida) : 'Todas las corridas'} · ${t.placas.length} camión(es)</div>
-    <div class="sv-kpi-grid sv-kpi-wide">
-      ${kpiGlass('🚚', 'Camiones', String(visibles.length) + (visibles.length !== t.placas.length ? ' / ' + t.placas.length : ''))}
-      ${kpiGlass('🫧', 'O₂ promedio (mg/L)', n2(vista.o2), 'data-tras-modal="o2" role="button" tabindex="0" title="Ver el desglose por parada y tina"')}
-      ${kpiGlass('🌡️', 'Temp. promedio (°C)', n2(vista.temp), 'data-tras-modal="temp" role="button" tabindex="0" title="Ver el desglose por parada y tina"')}
-      ${kpiGlass('🦐', 'Actividad dominante', etiquetaActividad(vista.actividad), 'data-tras-modal="act" role="button" tabindex="0" title="Ver la frecuencia por parada"')}
-      ${kpiGlass('📝', 'Observaciones', String(vista.nObservaciones), 'data-tras-modal="obs" role="button" tabindex="0" title="Ver las observaciones por camión y parada"')}
-      ${kpiGlass('⏱️', 'Tiempo en ruta', fmtMinutos(tiempo.enRuta),
-        'data-tras-modal="tiempo" role="button" tabindex="0" title="Ver el tiempo de cada tramo entre paradas"',
-        tiempo.fueraDeCadencia > 0,
-        tiempo.puertaAPuerta === null ? '' : 'puerta a puerta ' + fmtMinutos(tiempo.puertaAPuerta))}
-    </div>
+    <div class="sv-card-sub">🔄 ${corrida ? 'Corrida: ' + esc(corrida) : 'Todas las corridas'} · ${viajes.length} viaje(s) · ${visibles.length} camión(es)</div>
   </div>`;
 
   if (!t.hayDatos) {
@@ -304,61 +318,91 @@ export function renderTraslado(ctx, mod) {
   }).join('')}
   </div>`;
 
-  // ── Mapa de la ruta ──
-  const sinGps = paradasSinGps(visibles);
-  html += `<div class="sv-tmap-blk">
-    <div class="sv-tmap-h">
-      <div class="sv-tmap-t">🗺️ Recorrido geolocalizado</div>
-      <div class="sv-tmap-leyenda">
-        ${visibles.map((c, i) => `<span class="sv-tmap-leg">
-          <i style="background:${COLORES_CAMION[i % COLORES_CAMION.length]}"></i>${esc(c.placa)}</span>`).join('')}
-      </div>
-    </div>
-    <div class="sv-tmap" id="sv-tras-mapa" role="application"
-      aria-label="Mapa con las paradas del traslado">
-      <div class="sv-tmap-cargando">Cargando mapa…</div>
-    </div>
-    <div class="sv-tmap-pie">Pulsa una parada para ver su oxígeno, temperatura, actividad, alimento y observaciones.${
-  sinGps ? ` · ⚠ ${sinGps} parada(s) sin coordenadas: se quedaron sin señal y no se sitúan.` : ''}</div>
-  </div>`;
+  /* ── UNA SECCIÓN POR VIAJE ──────────────────────────────────
+     Cada traslado con su cabecera, sus KPI, su mapa y sus camiones. Todo lo que
+     cuelga de una sección habla de ESE viaje y de ningún otro, que es lo que antes
+     no se cumplía: los KPI mezclaban los traslados de la corrida y el de tiempo
+     enseñaba el primero como si fuera el único.
 
-  // ── Una tarjeta por camión ──
-  html += '<div class="sv-tras-cards">';
-  visibles.forEach((c) => {
-    html += `<div class="sv-tras-card">
-      <div class="sv-tras-card-h" style="border-left:4px solid ${col.accent}">
-        <div class="sv-tras-placa">🚚 ${esc(c.placa)}</div>
-        <div class="sv-tras-meta">${esc(c.fecha || '—')} · ${esc(c.camaronera || '—')} · ${c.nParadas} parada(s) · ${c.tinas.length} tina(s)</div>
+     🔑 Los KPI de MEDICIÓN (O₂, temperatura, actividad) son del viaje y su desglose
+     se abre POR PLACA —`tablaPorParada` ya pinta un bloque por camión—, mientras
+     que el TIEMPO y las OBSERVACIONES son del viaje entero porque su grano es la
+     PARADA, que los camiones comparten. Ver `viajesDe` en `traslado.data.js`. */
+  viajes.forEach((v, vi) => {
+    const vista = trasladoVisible(t, v.camiones);
+    const sinGps = paradasSinGps(v.camiones);
+    const ident = `data-tras-viaje="${esc(v.viaje)}"`;
+    html += `<section class="sv-tras-viaje">
+      <div class="sv-tras-viaje-h" style="border-left:4px solid ${col.accent}">
+        <div class="sv-tras-viaje-t">🚚 ${esc(v.fecha || 'sin fecha')} · → ${esc(v.camaronera || 'sin destino')}</div>
+        <div class="sv-tras-viaje-s">${v.placas.length} camión(es) · ${esc(v.placas.join(' · '))}</div>
       </div>
-      <div class="sv-tras-card-b">
-        <div class="sv-tras-mini">
-          <div><span>O₂ medio</span><b>${n2(c.o2.promedio)}</b> mg/L</div>
-          <div><span>Temp. media</span><b>${n2(c.temp.promedio)}</b> °C</div>
-          <div><span>Actividad</span><b>${esc(etiquetaActividad(c.actividad))}</b></div>
-          <div><span>Observaciones</span><b>${c.nObservaciones}</b></div>
-        </div>
-        <div class="sv-tras-checks">
-          ${chipCheck('Insumos a bordo', c.insumos)}
-          ${chipCheck('Check de materiales', c.check)}
-        </div>
-        <div class="sv-tras-ruta">
-          ${c.paradas.map((p) => `<div class="sv-tras-parada" title="${esc(p.ubicacion || 'sin ubicación')}">
-            <div class="sv-tras-parada-n">${p.revision}</div>
-            <div class="sv-tras-parada-d">
-              <b>${esc(p.lugar || '—')}</b><span>${esc(p.hora || '—')}</span>
-              <span>${n1(p.o2)} mg/L · ${n1(p.temp)} °C</span>
-            </div>
-          </div>`).join('<div class="sv-tras-flecha">→</div>')}
-        </div>
-        <div class="sv-tras-firmas">
-          Controlador: <b>${esc(c.controlador || '—')}</b> ·
-          Chequeador: <b>${esc(c.chequeador || '—')}</b> ·
-          Recepción: <b>${esc(c.recepcion || '—')}</b>
-        </div>
+      <div class="sv-kpi-grid sv-kpi-wide">
+        ${kpiGlass('🫧', 'O₂ promedio (mg/L)', n2(vista.o2), `${ident} data-tras-modal="o2" role="button" tabindex="0" title="Ver el desglose por parada y tina, camión a camión"`)}
+        ${kpiGlass('🌡️', 'Temp. promedio (°C)', n2(vista.temp), `${ident} data-tras-modal="temp" role="button" tabindex="0" title="Ver el desglose por parada y tina, camión a camión"`)}
+        ${kpiGlass('🦐', 'Actividad dominante', etiquetaActividad(vista.actividad), `${ident} data-tras-modal="act" role="button" tabindex="0" title="Ver la frecuencia por parada"`)}
+        ${kpiGlass('📝', 'Observaciones', String(v.nObservaciones), `${ident} data-tras-modal="obs" role="button" tabindex="0" title="Ver las observaciones de cada parada"`)}
+        ${kpiGlass('⏱️', 'Tiempo en ruta', fmtMinutos(v.tiempo.enRuta),
+    `${ident} data-tras-modal="tiempo" role="button" tabindex="0" title="Ver el tiempo de cada tramo entre paradas"`,
+    v.tiempo.fueraDeCadencia > 0,
+    v.tiempo.puertaAPuerta === null ? '' : 'puerta a puerta ' + fmtMinutos(v.tiempo.puertaAPuerta))}
       </div>
-    </div>`;
+      <div class="sv-tmap-blk">
+        <div class="sv-tmap-h">
+          <div class="sv-tmap-t">🗺️ Recorrido geolocalizado</div>
+          <div class="sv-tmap-leyenda">
+            ${v.camiones.map((c, i) => `<span class="sv-tmap-leg">
+              <i style="background:${COLORES_CAMION[i % COLORES_CAMION.length]}"></i>${esc(c.placa)}</span>`).join('')}
+          </div>
+        </div>
+        <div class="sv-tmap" id="sv-tras-mapa-${vi}" data-tras-mapa="${vi}" role="application"
+          aria-label="Mapa con las paradas del traslado">
+          <div class="sv-tmap-cargando">Cargando mapa…</div>
+        </div>
+        <div class="sv-tmap-pie">Pulsa una parada para ver su oxígeno, temperatura, actividad, alimento y observaciones.${
+  sinGps ? ` · ⚠ ${sinGps} parada(s) sin coordenadas: se quedaron sin señal y no se sitúan.` : ''}</div>
+      </div>
+      <div class="sv-tras-cards">`;
+
+    v.camiones.forEach((c) => {
+      html += `<div class="sv-tras-card">
+        <div class="sv-tras-card-h" style="border-left:4px solid ${col.accent}">
+          <div class="sv-tras-placa">🚚 ${esc(c.placa)}</div>
+          <div class="sv-tras-meta">${c.nParadas} parada(s) · ${c.tinas.length} tina(s)</div>
+        </div>
+        <div class="sv-tras-card-b">
+          ${/* Las tres medidas SON del camión (grano `tina`). Las observaciones ya no
+               salen aquí: son de la parada y las comparten los camiones del viaje, así
+               que repetirlas por tarjeta era contar la misma incidencia dos veces.
+               Viven en el KPI del viaje, arriba. */''}
+          <div class="sv-tras-mini">
+            <div><span>O₂ medio</span><b>${n2(c.o2.promedio)}</b> mg/L</div>
+            <div><span>Temp. media</span><b>${n2(c.temp.promedio)}</b> °C</div>
+            <div><span>Actividad</span><b>${esc(etiquetaActividad(c.actividad))}</b></div>
+          </div>
+          <div class="sv-tras-checks">
+            ${chipCheck('Insumos a bordo', c.insumos)}
+            ${chipCheck('Check de materiales', c.check)}
+          </div>
+          <div class="sv-tras-ruta">
+            ${c.paradas.map((p) => `<div class="sv-tras-parada" title="${esc(p.ubicacion || 'sin ubicación')}">
+              <div class="sv-tras-parada-n">${p.revision}</div>
+              <div class="sv-tras-parada-d">
+                <b>${esc(p.lugar || '—')}</b><span>${esc(p.hora || '—')}</span>
+                <span>${n1(p.o2)} mg/L · ${n1(p.temp)} °C</span>
+              </div>
+            </div>`).join('<div class="sv-tras-flecha">→</div>')}
+          </div>
+          <div class="sv-tras-firmas">
+            Controlador: <b>${esc(c.controlador || '—')}</b> ·
+            Chequeador: <b>${esc(c.chequeador || '—')}</b> ·
+            Recepción: <b>${esc(c.recepcion || '—')}</b>
+          </div>
+        </div>
+      </div>`;
+    });
+    html += '</div></section>';
   });
-  html += '</div>';
   if (!visibles.length) html += '<div class="sv-tras-vacio">Todos los camiones están ocultos por el filtro.</div>';
 
   // ── Modales de desglose ──
@@ -381,25 +425,30 @@ export function renderTraslado(ctx, mod) {
     after(root) {
       // El mapa se monta aparte y en diferido: si Leaflet no carga, la vista ya está
       // completa sin él. Nunca se espera a la red para enseñar los datos.
-      const elMapa = root.querySelector('#sv-tras-mapa');
-      if (elMapa) {
-        /* ⚠⚠ FUGA QUE HUBO QUE CERRAR (auditoría del 2026-08-23).
-           La versión anterior sólo destruía el mapa si su contenedor YA estaba
-           desprendido al resolverse la promesa — y en el caso normal no lo está: el
-           mapa monta, y sólo DESPUÉS el usuario pulsa un filtro e `innerHTML` se
-           lleva el contenedor por delante. Resultado: cada clic dejaba un mapa de
-           Leaflet vivo, con sus escuchas de `resize` sobre un nodo huérfano, y se
-           acumulaban en silencio.
-           Ahora se guarda la instancia ACTIVA y se destruye la anterior ANTES de
-           montar la siguiente: así no depende del orden en que resuelva nada. */
-        if (_mapaActivo) { _mapaActivo.destroy(); _mapaActivo = null; }
-        montarMapa(elMapa, visibles).then((m) => {
+      /* ⚠⚠ FUGA QUE HUBO QUE CERRAR (auditoría del 2026-08-23).
+         La versión anterior sólo destruía el mapa si su contenedor YA estaba
+         desprendido al resolverse la promesa — y en el caso normal no lo está: el
+         mapa monta, y sólo DESPUÉS el usuario pulsa un filtro e `innerHTML` se
+         lleva el contenedor por delante. Resultado: cada clic dejaba un mapa de
+         Leaflet vivo, con sus escuchas de `resize` sobre un nodo huérfano, y se
+         acumulaban en silencio.
+         Se destruyen los ANTERIORES antes de montar los siguientes, así no depende
+         del orden en que resuelva nada.
+         ⚠ Desde que hay una sección por viaje puede haber VARIOS mapas a la vez, así
+         que lo que se guarda es una LISTA. Con un solo viaje —el caso de hoy— es
+         exactamente un mapa, igual que antes. */
+      _mapasActivos.forEach((m) => { try { m.destroy(); } catch (_) { /* ya estaba */ } });
+      _mapasActivos = [];
+      viajes.forEach((v, vi) => {
+        const elMapa = root.querySelector('#sv-tras-mapa-' + vi);
+        if (!elMapa) return;
+        montarMapa(elMapa, v.camiones).then((m) => {
           if (!m) return;
           // Si mientras cargaba ya se repintó, este mapa nace huérfano: se suelta.
           if (!root.contains(elMapa)) { m.destroy(); return; }
-          _mapaActivo = m;
+          _mapasActivos.push(m);
         }).catch(() => { /* ya lo dice el propio contenedor */ });
-      }
+      });
 
       // Filtro de placas: sólo mueve el estado. El repintado lo hace el enrutador
       // del Supervisor al burbujear el clic (los chips llevan `data-nav`).
@@ -419,7 +468,7 @@ export function renderTraslado(ctx, mod) {
         o2: '🫧 Oxígeno por parada y tina (mg/L)',
         temp: '🌡️ Temperatura por parada y tina (°C)',
         act: '🦐 Actividad por parada',
-        obs: '📝 Observaciones por camión y parada',
+        obs: '📝 Observaciones del viaje, parada a parada',
         tiempo: '⏱️ Tiempo del traslado, tramo a tramo',
       };
       bindModal(root, overlay, {
@@ -428,20 +477,34 @@ export function renderTraslado(ctx, mod) {
         keyboard: true,
         onOpen(trigger) {
           const k = trigger && trigger.dataset ? trigger.dataset.trasModal : 'o2';
-          titulo.textContent = TITULOS[k] || 'Desglose';
-          cuerpo.innerHTML = k === 'obs' ? tablaObs(visibles)
-            : k === 'tiempo' ? tablaTiempo(visibles)
-              : k === 'act' ? tablaActividad(visibles)
-                : tablaPorParada(visibles, k === 'temp' ? 'temp' : 'o2', k === 'temp' ? '°C' : 'mg/L');
+          /* ⚠ El desglose es del VIAJE cuyo KPI se ha pulsado, no de todo lo visible.
+             Sin esto, abrir el desglose desde la segunda sección enseñaría los datos
+             de las dos —que es el mismo error que se acaba de corregir, sólo que
+             dentro del modal. */
+          const idV = trigger && trigger.dataset ? trigger.dataset.trasViaje : null;
+          const v = viajes.find((x) => x.viaje === idV);
+          const cams = v ? v.camiones : visibles;
+          const suf = v && v.fecha ? ' · ' + v.fecha + (v.camaronera ? ' → ' + v.camaronera : '') : '';
+          titulo.textContent = (TITULOS[k] || 'Desglose') + suf;
+          cuerpo.innerHTML = k === 'obs' ? tablaObs(cams)
+            : k === 'tiempo' ? tablaTiempo(cams)
+              : k === 'act' ? tablaActividad(cams)
+                : tablaPorParada(cams, k === 'temp' ? 'temp' : 'o2', k === 'temp' ? '°C' : 'mg/L');
         },
       });
     },
   };
 }
 
-/** Recalcula los totales de cabecera para el subconjunto visible del filtro.
- *  Se recalcula, no se reusa el total: si el filtro esconde un camión, el KPI
- *  tiene que hablar de lo que se está viendo o miente. */
+/** Recalcula las MEDICIONES de la cabecera de un viaje para el subconjunto visible
+ *  del filtro. Se recalcula, no se reusa el total: si el filtro esconde un camión,
+ *  el KPI tiene que hablar de lo que se está viendo o miente.
+ *
+ *  ⚠ Sólo devuelve lo de grano `tina` —O₂, temperatura y actividad—. Las
+ *  observaciones NO salen de aquí: son de la parada y las comparten los camiones
+ *  del viaje, así que las cuenta `viajesDe` una sola vez. Mientras estuvieron
+ *  también aquí eran código muerto, y un banco de mutaciones lo delató: romperlas
+ *  no ponía roja ninguna prueba porque ya no las leía nadie. */
 function trasladoVisible(t, camiones) {
   const vals = (campo) => camiones.flatMap((c) => c.paradas.flatMap((p) => Object.values(p.tinas).map((x) => x[campo]))).filter((v) => v !== null);
   const prom = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
@@ -461,7 +524,6 @@ function trasladoVisible(t, camiones) {
     o2: prom(vals('o2')),
     temp: prom(vals('temp')),
     actividad: { conteo: cnt, moda: max ? moda : null, empate: max ? empate : false },
-    nObservaciones: camiones.reduce((a, c) => a + c.nObservaciones, 0),
   };
 }
 

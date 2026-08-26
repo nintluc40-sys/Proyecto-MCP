@@ -363,7 +363,14 @@ describe('Traslado · las filas apagadas no son una parada', () => {
       // entonces `filasDe` descartaba la fila por estar fuera de alcance: la regla
       // que se quería probar no llegaba a ejecutarse y la prueba pasaba en verde
       // aunque se quitara. Lo cazó la mutación M11.
+      // ⚠ El VIAJE se conserva por el MISMO motivo que la corrida. Desde el
+      // 2026-08-26 el tablero agrupa por (Viaje, Placa) —dos traslados de la misma
+      // corrida ya no se funden en una tarjeta—, así que una fila con la placa
+      // puesta pero el viaje en blanco caería en OTRO grupo, y la parada seguiría
+      // viva por una razón que NO es la regla que aquí se prueba. La prueba pasaría
+      // o fallaría por el motivo equivocado.
       o[TK.modulo] = f[TK.modulo]; o[TK.placa] = f[TK.placa]; o[TK.corrida] = f[TK.corrida];
+      o[TK.viaje] = f[TK.viaje];
       o[TK.revision] = f[TK.revision]; o[TK.tina] = f[TK.tina];
       o[TK.id] = f[TK.id];
       return o;
@@ -489,5 +496,91 @@ describe('Traslado · el tiempo del viaje', () => {
     expect(fmtMinutos(60)).toBe('1 h');
     expect(fmtMinutos(150)).toBe('2 h 30 min');
     expect(fmtMinutos(null)).toBe('—');
+  });
+});
+
+describe('Traslado · dos viajes de la MISMA corrida no pueden fundirse', () => {
+  /* Una corrida puede salir en más de un viaje —dos noches, o dos camaroneras— y
+     la barra de fecha está OCULTA a propósito en esta vista, así que los dos
+     llegan juntos a `trasladoDe`. Agrupando sólo por placa caían en la misma
+     tarjeta y `camionDe` los fundía por NÚMERO de parada: la cabecera salía del
+     primer viaje y las mediciones del segundo. No daba error; enseñaba una
+     quimera, y el viaje bueno desaparecía sin que nada lo dijera. */
+  it('cada viaje conserva su cabecera, sus paradas y sus mediciones', () => {
+    const v1 = viaje({ viajeId: 'tvUNO' });
+    const v2 = viaje({ viajeId: 'tvDOS' });
+    v2.data.fecha = '2026-08-28';
+    // El segundo viaje mide MUCHO peor. Si los dos se fundieran, uno taparía al
+    // otro y la diferencia sería justo lo que dejaría de verse.
+    v2.data.revisiones.forEach((r) => r.camiones.forEach((c) => {
+      Object.keys(c.tinas).forEach((k) => { c.tinas[k].o2 = 3.1; });
+    }));
+
+    const filas = aFilas(buildTrasladoPayload(v1)).concat(aFilas(buildTrasladoPayload(v2)));
+    const t = trasladoDe(filas, 'M07', '555');
+
+    expect(t.camiones.length, 'los dos viajes salen como DOS tarjetas').toBe(2);
+    const uno = t.camiones.find((c) => c.viaje === 'tvUNO');
+    const dos = t.camiones.find((c) => c.viaje === 'tvDOS');
+    expect(uno, 'falta el primer viaje').toBeTruthy();
+    expect(dos, 'falta el segundo viaje').toBeTruthy();
+
+    // La cabecera de cada tarjeta es la SUYA, no la del otro viaje.
+    expect(uno.fecha).toBe('2026-08-18');
+    expect(dos.fecha).toBe('2026-08-28');
+
+    // Y las mediciones también. Éste es el corazón del defecto.
+    expect(dos.o2.promedio, 'el viaje malo debe conservar su 3.1').toBeCloseTo(3.1, 5);
+    expect(uno.o2.promedio, 'el viaje bueno NO puede llevar el 3.1 del otro')
+      .toBeGreaterThan(6);
+
+    // Cada uno con sus cuatro paradas: fundidos salían cuatro en total, no ocho.
+    expect(uno.nParadas).toBe(4);
+    expect(dos.nParadas).toBe(4);
+  });
+
+  it('con UN solo viaje el agrupado sigue siendo el de siempre', () => {
+    // La corrección no puede cambiar el caso de hoy: un viaje, dos camiones, una
+    // tarjeta por placa.
+    const filas = filasDeViaje({ nCam: 2 });
+    const t = trasladoDe(filas, 'M07', '555');
+    expect(t.camiones.length).toBe(2);
+    expect(t.camiones.map((c) => c.placa)).toEqual(['GSA-1147', 'PBX-0392']);
+    expect(t.camiones[0].nParadas).toBe(4);
+  });
+});
+
+describe('Traslado · una observación es de la PARADA, no del camión', () => {
+  /* En el esquema, Observaciones tiene grain 'revision': buildTrasladoPayload
+     escribe el MISMO texto en las filas de todos los camiones de esa parada.
+     Contarlas por camión y sumar multiplicaba el KPI por el nº de camiones —con
+     dos camiones, una observación decía «2»—, y pasaba en el viaje normal. */
+  it('con dos camiones, UNA observación cuenta UNA vez', () => {
+    const unCam = trasladoDe(filasDeViaje({ nCam: 1, obsEn: [1] }), 'M07', '555');
+    const dosCam = trasladoDe(filasDeViaje({ nCam: 2, obsEn: [1] }), 'M07', '555');
+    expect(unCam.nObservaciones, 'el fixture no tiene observación: no probaría nada').toBe(1);
+    expect(dosCam.nObservaciones, 'añadir un camión no añade observaciones').toBe(1);
+  });
+
+  it('pero dos VIAJES distintos sí suman las suyas', () => {
+    // La deduplicación no puede pasarse de lista: la parada 2 de un viaje y la
+    // parada 2 de otro son incidencias distintas aunque compartan número.
+    const v2 = viaje({ nCam: 2, obsEn: [1], viajeId: 'tvDOS' });
+    v2.data.fecha = '2026-08-28';
+    v2.data.revisiones[1].obs = 'Espuma en la tina 3.';
+    const filas = filasDeViaje({ nCam: 2, obsEn: [1] })
+      .concat(aFilas(buildTrasladoPayload(v2)));
+    const t = trasladoDe(filas, 'M07', '555');
+    expect(t.nObservaciones).toBe(2);
+  });
+
+  it('cada camión sigue llevando la observación de su parada', () => {
+    // Deduplicar el CONTEO no puede vaciar la tarjeta: el camión sigue habiendo
+    // pasado por esa parada y la observación le concierne.
+    const t = trasladoDe(filasDeViaje({ nCam: 2, obsEn: [1] }), 'M07', '555');
+    t.camiones.forEach((c) => {
+      expect(c.observaciones).toHaveLength(1);
+      expect(c.observaciones[0].texto).toContain('Tracto digestivo');
+    });
   });
 });
