@@ -3,13 +3,19 @@
    Segunda tajada del estrangulamiento del monolito.
    Funciones PURAS sobre el índice de módulo. engine.js delega vía window.__rgLib.
 
-   NOTA: las constantes ESPEJAN las de engine.js (mismo valor). engine.js conserva
-   sus propias constantes top-level (usadas como identificadores en todo el archivo);
-   estas son la copia canónica/testeada. Si alguna cambia, cambiar en AMBOS sitios.
+   ⚠ LAS CONSTANTES ESTÁN ESPEJADAS con las de engine.js (mismo valor). El monolito
+   conserva las suyas top-level porque las usa como identificadores en todo el archivo
+   y, siendo un script clásico, no puede importar este módulo. Estas son la copia
+   canónica y testeada: si alguna cambia, hay que cambiarla en AMBOS sitios.
+
+   🔑 Ese espejo ya NO depende de que alguien se acuerde: `modules.espejo.test.js`
+   ejecuta el bloque de constantes real de engine.js y lo compara con lo que exporta
+   este archivo — valores y juego de nombres—, y comprueba además que el monolito
+   siga DELEGANDO los predicados en __rgLib en vez de reimplementarlos.
    ============================================================ */
 
 // Índices de módulo (mismos valores que engine.js).
-const MODS = 10; // módulos de larvicultura estándar M01..M10
+export const MODS = 10; // módulos de larvicultura estándar M01..M10
 export const TQS = 12; // tanques por módulo (13–20 retirados)
 export const CIO_MOD = 0;
 export const LAB_MOD = 11; // Lab. Algas
