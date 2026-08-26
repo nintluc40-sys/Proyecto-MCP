@@ -1,5 +1,5 @@
 /* ============================================================
-   REGISTROS · Traslado — el informe PDF del viaje (tanda C, 2026-08-26)
+   REGISTROS · Traslado — el informe PDF del viaje (tanda C, 2026-08-25)
 
    UN documento con el viaje entero y una sección por CAMIÓN, cada una en su hoja
    (elección del usuario). Lo construye `buildTrasPdfHtml`, que es PURO: no abre

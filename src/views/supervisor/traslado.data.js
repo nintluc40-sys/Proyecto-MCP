@@ -169,7 +169,7 @@ function paradaDe(filasParada) {
        VALIDADOS: la captura exige hora en toda parada que se registra, así que
        este número nunca miente.
      · PUERTA A PUERTA — de «Hora de salida» a «Hora de llegada». Es el total real
-       del viaje, pero son campos que se teclean libres; hasta el 2026-08-26 no se
+       del viaje, pero son campos que se teclean libres; hasta el 2026-08-25 no se
        validaban de ninguna forma. Por eso se calcula sólo cuando las dos son
        legibles, y si no, se calla en vez de inventar un número.
 

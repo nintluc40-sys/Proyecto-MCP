@@ -324,7 +324,7 @@ describe('Traslado · el modal usa las clases REALES del proyecto', () => {
   });
 
   it('🔴 el contenido del modal LLENA la tarjeta, no se queda a la izquierda', () => {
-    // La revisión visual del 2026-08-26 encontró media tarjeta en blanco: la tabla
+    // La revisión visual del 2026-08-25 encontró media tarjeta en blanco: la tabla
     // se quedaba a su ancho natural. happy-dom no calcula diseño, así que aquí se
     // fija la DECISIÓN de CSS que lo evita; el hueco sólo se ve en pantalla.
     const regla = (sel) => (CSS.split(sel)[1] || '').split('}')[0];

@@ -1,5 +1,5 @@
 /* ============================================================
-   REGISTROS · Traslado — la IDENTIDAD de camiones y paradas (2026-08-26)
+   REGISTROS · Traslado — la IDENTIDAD de camiones y paradas (2026-08-25)
 
    Lo que esta batería vigila lo encontró una auditoría, y era pérdida SILENCIOSA:
    la llave de fila era POSICIONAL (`-c<índice>-r<índice>`), así que quitar un

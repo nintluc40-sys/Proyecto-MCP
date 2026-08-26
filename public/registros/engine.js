@@ -9982,7 +9982,7 @@ function buildTrasPayload(records, opts){
 
 /* ── PDF del viaje ──────────────────────────────────────────
    UN solo documento con el viaje entero: la cabecera común y, detrás, una sección
-   por CAMIÓN con todas sus revisiones (elección del usuario, 2026-08-26). Cada
+   por CAMIÓN con todas sus revisiones (elección del usuario, 2026-08-25). Cada
    camión empieza en página nueva, así que la hoja de un camión se puede separar y
    entregar sola.
 
@@ -11094,7 +11094,7 @@ function _trasRids(data){
    de trasQuitarCamion / trasQuitarRevision, que necesitan el formulario montado.
    Una regla que no se puede llamar desde una prueba acaba reimplementada EN la
    prueba, y entonces la prueba sólo comprueba su propia copia: pasa en verde con
-   el producto roto. Lo cazó el banco de mutaciones el 2026-08-26 (M07 y M08
+   el producto roto. Lo cazó el banco de mutaciones el 2026-08-25 (M07 y M08
    sobrevivían). Estas dos sí se pueden llamar. */
 function _trasSacarCamion(data, ci, camsOpt){
   const cams = camsOpt || trasCamionesUI(data);
