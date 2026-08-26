@@ -543,6 +543,16 @@
 .registros-app .ft input.mic-in.mic-y{background:#fef08a!important;border-color:#facc15!important;color:#713f12!important;font-weight:700}
 .registros-app .ft input.mic-in.mic-o{background:#fed7aa!important;border-color:#fb923c!important;color:#7c2d12!important;font-weight:700}
 .registros-app .ft input.mic-in.mic-r{background:#fecaca!important;border-color:#f87171!important;color:#7f1d1d!important;font-weight:700}
+/* Amonio Toxico: se DERIVA del TAN, no se teclea. El campo va en solo lectura y
+   se distingue del resto para que nadie intente escribir en el y crea que la app
+   no responde. El fondo es mas tenue, no un color de rango: los colores de rango
+   (mic-v / mic-r) siguen aplicandose ENCIMA con !important, que es lo que debe
+   verse cuando el valor calculado se sale de banda. */
+.registros-app .ft input.mic-in-calc{background:#f1f5f9;color:#334155;font-style:italic;cursor:default}
+/* Salinidad por encima del tope del modelo (S = 40.9 por mil): el Excel devuelve
+   -S- y aqui no se calcula. La celda queda vacia y marcada, en vez de ensenar un
+   numero extrapolado que pareceria bueno. */
+.registros-app .ft input.mic-in.mic-amtox-fuera{background:#fef3c7;border-color:#f59e0b}
 .registros-app td.mic-v{background:#bbf7d0;color:#14532d;font-weight:700}
 .registros-app td.mic-y{background:#fef08a;color:#713f12;font-weight:700}
 .registros-app td.mic-o{background:#fed7aa;color:#7c2d12;font-weight:700}

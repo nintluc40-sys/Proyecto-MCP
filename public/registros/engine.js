@@ -4828,6 +4828,12 @@ const ALG_OBS_OPTS = [
   "Células Deformes","Células Reventadas","Células con Agregaciones a la Pared Celular",
   "Tanque Despachado en la Mañana"
 ];
+/* Volúmenes de despacho habituales (usuario, 2026-08-26). Es una SUGERENCIA, no
+   una lista cerrada: el campo sigue admitiendo cualquier número, igual que el
+   Responsable/Analista de Microbiología. Por eso va en un `datalist` y no en un
+   `<select>` — un desplegable cerrado obligaría a inventarse una opción «Otro»
+   y a teclear el valor en otro sitio. */
+const ALG_VOL_DESPACHO_OPTS = [700, 2500, 20000, 25000];
 
 function algAreaType(area){
   if(!area) return "none";
@@ -4930,7 +4936,8 @@ function renderAlgas(){
           <option value="Si"${(d.descarte||"")==="Si"?" selected":""}>Si</option>
         </select></div>
       <div class="mf"><label>Volumen de Despacho (L)</label>
-        <input type="number" name="vol_despacho" value="${vl(d,'vol_despacho')}" placeholder="Litros" step="0.1" min="0"></div>
+        <input type="number" name="vol_despacho" value="${vl(d,'vol_despacho')}" placeholder="Litros" step="0.1" min="0" list="alg-vol-dl">
+        <datalist id="alg-vol-dl">${ALG_VOL_DESPACHO_OPTS.map(v=>`<option value="${v}">`).join("")}</datalist></div>
     </div>
     <input type="hidden" name="sid" value="${escapeHtml(d.sid||'')}">
     <div class="meta">
@@ -12983,7 +12990,7 @@ const CAL_FORMATS = {
       // dos grafías del mismo valor es el defecto que ya costó caro con el Analista.
       { k:"tipoMuestra", l:"Muestra", type:"sel", opts:["","Agua Camaronera","Agua Recepción Camaronera","Agua Enjuague","Agua de Desove"], w:170 }
     ],
-    params:["alc","ph","sal","calcio","magnesio","potasio","nitrato","nitrito","tan","amtox","amonio","ntot","dureza","hierro","fosforo","cobre","manganeso","cl_libre","cl_total","cl_comb"]
+    params:["alc","ph","sal","temp","calcio","magnesio","potasio","nitrato","nitrito","tan","amtox","amonio","ntot","dureza","hierro","fosforo","cobre","manganeso","cl_libre","cl_total","cl_comb"]
   },
   // Los tres formatos de agua de Maduración (Agua, RAS y Agua de mar) comparten el
   // MISMO juego de parámetros: son el mismo análisis físico-químico sobre distintos
@@ -13150,6 +13157,10 @@ function collectCalDraft(){
       const get=(k)=>{ const el=tr.querySelector(`[name="cal_${fmtKey}_${fila}_${k}"]`); return el?el.value:""; };
       fmt.ctx.forEach(c=> d[c.k] = sanitizeStr(get(c.k)));
       fmt.params.forEach(pk=> d[pk] = sanitizeStr(get(pk)));
+      // La marca de Amonio Tóxico heredado NO es un parámetro y no viaja a la
+      // hoja: sólo dice que esa celda venía escrita y no debe recalcularse.
+      const _am = tr.querySelector(`[name="cal_${fmtKey}_${fila}_amtox"]`);
+      if(_am && _am.dataset.amtoxManual === "1") d._amtoxManual = "1";
       rows.push(d);
     });
     const obsEl = document.getElementById("cal-obs-"+fmtKey);
@@ -13162,6 +13173,71 @@ function collectCalDraft(){
 function calDraftTouch(){ clearTimeout(_calDraftTm); _calDraftTm = setTimeout(()=>{ try{ saveCalDraft(collectCalDraft()); }catch(_){} }, 500); }
 function calRowHasData(fmt, d){ return fmt.params.some(pk=> d[pk]!=null && String(d[pk]).trim()!==""); }
 
+// ── Amonio Tóxico (NH₃) · se DERIVA, no se mide ────────
+/* Fórmula del Excel «Calculo NH3.xlsx» del usuario, reproducida paso a paso y
+   verificada contra sus dos filas de ejemplo (S=35, pH=7.99, T=28.7, TAN=2 →
+   0.11388236390272104, idéntico a la celda del Excel).
+
+     K   = 19.9273·S / (1000 − 1.005109·S)          ← fuerza iónica
+     pKa = 9.245 + 0.116·K                          ← sólo si K ≤ 0.85
+     f   = 1 / (1 + 10^( pKa + 0.0324·(25−T) + 0.0415/(T+273) − pH ))
+     NH₃ = TAN · f
+
+   ⚠ El Excel escribe el término de temperatura como 0.0324*(298−T−273), que es
+     exactamente 0.0324*(25−T). Y usa 273, no 273.15: se respeta para que el
+     número salga IDÉNTICO al de la hoja con la que trabaja el laboratorio.
+
+   ⚠⚠ EL MODELO TIENE TOPE DE SALINIDAD. El Excel devuelve el texto "↑S" cuando
+     K > 0.85 —a partir de S ≈ 40.9 ‰— y ahí el cálculo entero deja de valer. No
+     se extrapola: un número calculado con una fórmula que no aplica es un dato
+     falso con apariencia de bueno. Se devuelve "fuera" y la celda lo dice.
+
+   ⚠ Y con celdas vacías el Excel SÍ da un número (su fila 13 devuelve 8.8e-11
+     partiendo de todo en blanco). Eso no se imita: sin las cuatro variables no
+     hay resultado. */
+const CAL_AMTOX_K_MAX = 0.85;
+function calAmonioTox(sal, ph, temp, tan){
+  const S = parseFloat(sal), H = parseFloat(ph), T = parseFloat(temp), N = parseFloat(tan);
+  if(!isFinite(S) || !isFinite(H) || !isFinite(T) || !isFinite(N)) return { estado:"faltan" };
+  const den = 1000 - 1.005109 * S;
+  if(den <= 0) return { estado:"fuera" };
+  const K = 19.9273 * S / den;
+  if(K > CAL_AMTOX_K_MAX) return { estado:"fuera" };
+  if(T + 273 === 0) return { estado:"fuera" };
+  const pKa = 9.245 + 0.116 * K;
+  const f = 1 / (1 + Math.pow(10, pKa + 0.0324 * (25 - T) + 0.0415 / (T + 273) - H));
+  const v = N * f;
+  if(!isFinite(v)) return { estado:"fuera" };
+  return { estado:"ok", valor:v };
+}
+/* Recalcula el Amonio Tóxico de UNA fila de la grilla. Devuelve el estado para que
+   quien llame decida qué enseñar. No toca la celda si el analista la tiene marcada
+   como MANUAL (valor heredado de un registro anterior: decisión del usuario,
+   «no tocar nunca lo ya guardado»). */
+function calRecalcAmtox(tr, fmtKey, fila){
+  if(!tr) return { estado:"faltan" };
+  const cel = (k)=> tr.querySelector('[name="cal_'+fmtKey+'_'+fila+'_'+k+'"]');
+  const out = cel("amtox");
+  if(!out) return { estado:"faltan" };
+  if(out.dataset.amtoxManual === "1") return { estado:"manual" };
+  const v = (k)=>{ const e = cel(k); return e ? e.value : ""; };
+  const r = calAmonioTox(v("sal"), v("ph"), v("temp"), v("tan"));
+  if(r.estado === "ok"){
+    // 4 decimales: el límite del parámetro es 0.1 mg/L, así que con menos se
+    // perdería justo la resolución con la que se decide si está dentro o fuera.
+    out.value = String(Math.round(r.valor * 10000) / 10000);
+    out.title = "Calculado a partir de S‰, pH, Temperatura y TAN";
+  } else {
+    out.value = "";
+    out.title = r.estado === "fuera"
+      ? "Salinidad fuera del rango del modelo (S ≈ 40.9 ‰): no se calcula"
+      : "Se calcula solo al completar S‰, pH, Temperatura y TAN";
+  }
+  out.classList.toggle("mic-amtox-fuera", r.estado === "fuera");
+  _calApplyCls(out);
+  return r;
+}
+
 // ── Cálculo en vivo (clasificación por rango) ──────────
 function _calApplyCls(inp){
   const raw = parseFloat(inp.value);
@@ -13171,10 +13247,32 @@ function _calApplyCls(inp){
   const cls = calClassify(raw, calRangeOf(inp.dataset.param, inp.dataset.fmt));
   inp.className = "mic-in" + (cls==="in" ? " mic-v" : cls==="out" ? " mic-r" : "");
 }
-function calCalcCell(inp){ _calApplyCls(inp); calDraftTouch(); }
+/* Las cuatro variables de las que sale el Amonio Tóxico. Tocar cualquiera obliga
+   a rehacer el cálculo de ESA fila. */
+const CAL_AMTOX_DEPS = ["sal","ph","temp","tan"];
+function calCalcCell(inp){
+  _calApplyCls(inp);
+  if(CAL_AMTOX_DEPS.indexOf(inp.dataset.param) !== -1){
+    const tr = inp.closest("tr");
+    const m = /^cal_(.+)_(\d+)_[a-z_]+$/.exec(inp.name||"");
+    if(tr && m) calRecalcAmtox(tr, m[1], m[2]);
+  }
+  calDraftTouch();
+}
+/* Repasa TODAS las filas de un formato. Hace falta al pintar la grilla: lo
+   guardado en el borrador puede traer ya las cuatro variables y el campo
+   calculado tiene que aparecer relleno sin tocar una tecla. */
+function calRecalcAmtoxSection(fmtKey){
+  const tbody = document.getElementById("cal-tb-"+fmtKey); if(!tbody) return;
+  Array.prototype.forEach.call(tbody.querySelectorAll("tr"), (tr, i)=> calRecalcAmtox(tr, fmtKey, i+1));
+}
 function calRecalcSection(fmtKey){
   const tbody = document.getElementById("cal-tb-"+fmtKey); if(!tbody) return;
   tbody.querySelectorAll('input[data-param]').forEach(_calApplyCls);
+  // El Amonio Tóxico se rehace aquí y no en cada punto de llamada: un borrador
+  // recuperado puede traer ya las cuatro variables y el campo tiene que salir
+  // relleno sin tocar una tecla.
+  calRecalcAmtoxSection(fmtKey);
 }
 
 // ── Ocultar columnas + pegado + navegación ─────────────
@@ -13433,6 +13531,20 @@ function calRowHtml(fmt, fmtKey, fila, d, hid, hdrDef){
       }
     } else {
       const pk=col.pk; const base=`cal_${fmtKey}_${fila}_${pk}`; const val=d[pk]||"";
+      /* El Amonio Tóxico se DERIVA del TAN: no se teclea, se calcula. Va en sólo
+         lectura para que no puedan convivir un número escrito a mano y la fórmula
+         diciendo otra cosa (decisión del usuario, 2026-08-26).
+         ⚠ EXCEPCIÓN: una fila recuperada del historial que YA traía un valor lo
+         conserva y se queda EDITABLE — es la otra decisión, «no tocar nunca lo ya
+         guardado». Bloquearla dejaría un dato viejo imposible de corregir. */
+      if(pk === "amtox"){
+        /* SIEMPRE de sólo lectura. Lo tecleado a mano hasta hoy se CONGELA —el
+           usuario decidió que lo histórico no se toca ni se corrige— y lo nuevo
+           lo escribe la fórmula. La marca `data-amtox-manual` no cambia si se
+           puede escribir (nunca se puede): sólo impide que el cálculo lo pise. */
+        const man = String(d._amtoxManual||"") === "1";
+        cells += `<td ${tdAttr}><input class="mic-in mic-in-calc" type="text" inputmode="decimal" name="${base}" data-fmt="${fmtKey}" data-param="${pk}"${man?' data-amtox-manual="1"':''} readonly ${pos} value="${escapeHtml(val)}" title="${man?"Valor registrado antes del cálculo automático: se conserva tal cual":"Calculado a partir de S‰, pH, Temperatura y TAN"}" style="min-width:64px"></td>`;
+      } else
       cells += `<td ${tdAttr}><input class="mic-in" type="text" inputmode="decimal" name="${base}" data-fmt="${fmtKey}" data-param="${pk}" ${pos} oninput="calCalcCell(this)" onpaste="calGridPaste(event,'${fmtKey}')" value="${escapeHtml(val)}" style="min-width:64px"></td>`;
     }
   });
@@ -13743,6 +13855,9 @@ function calEditSession(k){
     const d=r.data; const row={};
     fmt.ctx.forEach(c=> row[c.k]=d[c.k]||"");
     fmt.params.forEach(pk=> row[pk]=(d[pk]!=null?String(d[pk]):""));
+    // «No tocar nunca lo ya guardado» (usuario, 2026-08-26): un Amonio Tóxico que
+    // YA venía en el registro se conserva tal cual y no lo pisa la fórmula.
+    if(String(row.amtox||"").trim() !== "") row._amtoxManual = "1";
     return row;
   });
   const draft={ meta:{ fechaMuestreo:d0.fechaMuestreo, fechaResultados:d0.fechaResultados||"", corrida:d0.corrida||"", responsable:d0.responsable||"" }, sections:{}, activeFmt:fmtKey };
