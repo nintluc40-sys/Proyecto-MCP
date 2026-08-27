@@ -470,9 +470,12 @@ export function trasladoDe(data, mod, corrida) {
     o2: prom(todoO2),
     temp: prom(todoTemp),
     actividad: actividadDe(todasAct),
-    // ⚠ NO se suman las de cada camión: una observación es de la PARADA y viaja
-    // repetida en las filas de todos los camiones. Ver `observacionesDelViaje`.
-    nObservaciones: observacionesDelViaje(camiones).length,
+    /* ⚠ Aquí NO hay conteo de observaciones a propósito. Son de la PARADA y los
+       camiones del viaje las comparten, así que el número sólo significa algo
+       DENTRO de un viaje: lo lleva `viajesDe`, que es de donde lo lee el KPI.
+       Un `nObservaciones` de todo el conjunto llegó a existir aquí y se quedó sin
+       lector; sobrevivía en verde porque sólo lo miraban las pruebas, y un banco de
+       mutaciones lo delató. Se quitó el 2026-08-26. */
     // El check es del VIAJE, no del camión: se resume como «cuántos camiones lo
     // llevan completo», que es la pregunta que se hace el supervisor.
     insumosCompletos: camiones.filter((c) => c.insumos.completo).length,

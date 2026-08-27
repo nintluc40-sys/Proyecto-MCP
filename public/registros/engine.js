@@ -12951,8 +12951,10 @@ const CAL_PARAMS_FULL = ["sal","ph","alc","temp","nitrato","nitrito","tan","amto
 const CAL_ALGAS_MUESTRA = ["Funda producción","Funda matriz","Reservorio PBR"];
 // Sugerencias de la columna "Muestra" de Maduración · Agua de mar (admite escribir otra).
 const CAL_MAR_MUESTRA = ["Agua de mar"];
-// Juego de parámetros común a los formatos de agua de Maduración. Es el de
-// "Maduración · Agua" más Temperatura, que RAS y Agua de mar sí registran.
+// Juego de parámetros común a los TRES formatos de agua de Maduración (Agua, RAS y
+// Agua de mar). Desde que «Maduración · Agua» ganó Temperatura —2026-08-26, para que
+// pudiera calcular el Amonio Tóxico— los tres comparten EXACTAMENTE esta lista, así
+// que los tres la usan de aquí y ninguno la repite tecleada.
 const CAL_PARAMS_MAD_AGUA = ["alc","ph","sal","temp","calcio","magnesio","potasio","nitrato",
   "nitrito","tan","amtox","amonio","ntot","dureza","hierro","fosforo","cobre","manganeso",
   "cl_libre","cl_total","cl_comb"];
@@ -12990,12 +12992,13 @@ const CAL_FORMATS = {
       // dos grafías del mismo valor es el defecto que ya costó caro con el Analista.
       { k:"tipoMuestra", l:"Muestra", type:"sel", opts:["","Agua Camaronera","Agua Recepción Camaronera","Agua Enjuague","Agua de Desove"], w:170 }
     ],
-    params:["alc","ph","sal","temp","calcio","magnesio","potasio","nitrato","nitrito","tan","amtox","amonio","ntot","dureza","hierro","fosforo","cobre","manganeso","cl_libre","cl_total","cl_comb"]
+    params:CAL_PARAMS_MAD_AGUA
   },
   // Los tres formatos de agua de Maduración (Agua, RAS y Agua de mar) comparten el
   // MISMO juego de parámetros: son el mismo análisis físico-químico sobre distintos
   // puntos, y tenerlos alineados evita que una medición exista en un formato y no en
-  // otro. RAS y Agua de mar añaden Temperatura, que Agua no lleva.
+  // otro. Desde el 2026-08-26 los TRES llevan Temperatura (Agua la ganó para poder
+  // calcular el Amonio Tóxico), así que los tres usan `CAL_PARAMS_MAD_AGUA`.
   "mad-ras": {
     depto:"Maduración", label:"Maduración · RAS",
     // Misma lista de componentes que el formato "ras" de Bacteriología (ver allí).
@@ -13209,6 +13212,33 @@ function calAmonioTox(sal, ph, temp, tan){
   const v = N * f;
   if(!isFinite(v)) return { estado:"fuera" };
   return { estado:"ok", valor:v };
+}
+/* ¿Hay que CONGELAR el Amonio Tóxico de una fila recuperada del historial?
+
+   Sólo si el valor guardado NO puede haberlo escrito esta fórmula. Entonces lo
+   tecleó una persona y no se toca: «los datos ya ingresados manualmente, hasta la
+   fecha, no se van a modificar» (usuario, 2026-08-26).
+
+   ⚠⚠ Y AL REVÉS: si CUADRA con lo que da la fórmula desde las cuatro variables
+   guardadas, lo escribió la app y tiene que seguir VIVO — es la otra mitad de la
+   misma frase, «los de ahora para adelante sí». Congelarlo todo por igual dejaba
+   un agujero medido el 2026-08-26: al reabrir una sesión para corregir un TAN mal
+   tecleado, el NH₃ se quedaba en el valor viejo y a la hoja iba un par incoherente
+   (TAN=8 con NH₃=0.1139, cuando le tocaba 0.4555). Y no se quedaba ahí: el tablero
+   clasifica el Am.Tóxico contra su límite de 0.1 mg/L y ese sub-índice entra en el
+   WQI, así que un dato congelado falseaba el nivel de riesgo del Supervisor. */
+function _calAmtoxCongelar(row){
+  const txt = String((row && row.amtox != null) ? row.amtox : "").trim();
+  if(txt === "") return false;                 // no hay nada que conservar
+  const guardado = parseFloat(txt);
+  if(!isFinite(guardado)) return true;         // texto que la fórmula jamás escribió
+  const r = calAmonioTox(row.sal, row.ph, row.temp, row.tan);
+  // Sin las cuatro variables la fórmula no pudo escribirlo: es de una persona. Y
+  // recalcular VACIARÍA la celda, que es justo perder el dato que se quiere conservar.
+  if(r.estado !== "ok") return true;
+  // Se compara con el MISMO redondeo con el que se escribe la celda (4 decimales):
+  // la hoja puede devolver el número con más cifras de las que se guardaron.
+  return Math.round(r.valor * 10000) / 10000 !== Math.round(guardado * 10000) / 10000;
 }
 /* Recalcula el Amonio Tóxico de UNA fila de la grilla. Devuelve el estado para que
    quien llame decida qué enseñar. No toca la celda si el analista la tiene marcada
@@ -13534,9 +13564,9 @@ function calRowHtml(fmt, fmtKey, fila, d, hid, hdrDef){
       /* El Amonio Tóxico se DERIVA del TAN: no se teclea, se calcula. Va en sólo
          lectura para que no puedan convivir un número escrito a mano y la fórmula
          diciendo otra cosa (decisión del usuario, 2026-08-26).
-         ⚠ EXCEPCIÓN: una fila recuperada del historial que YA traía un valor lo
-         conserva y se queda EDITABLE — es la otra decisión, «no tocar nunca lo ya
-         guardado». Bloquearla dejaría un dato viejo imposible de corregir. */
+         ⚠ La única excepción es al REESCRIBIRLO, no al teclearlo: una fila del
+         historial cuyo valor NO lo produjo esta fórmula se conserva tal cual. Sigue
+         siendo de sólo lectura — la marca no abre el campo. Ver `_calAmtoxCongelar`. */
       if(pk === "amtox"){
         /* SIEMPRE de sólo lectura. Lo tecleado a mano hasta hoy se CONGELA —el
            usuario decidió que lo histórico no se toca ni se corrige— y lo nuevo
@@ -13855,9 +13885,9 @@ function calEditSession(k){
     const d=r.data; const row={};
     fmt.ctx.forEach(c=> row[c.k]=d[c.k]||"");
     fmt.params.forEach(pk=> row[pk]=(d[pk]!=null?String(d[pk]):""));
-    // «No tocar nunca lo ya guardado» (usuario, 2026-08-26): un Amonio Tóxico que
-    // YA venía en el registro se conserva tal cual y no lo pisa la fórmula.
-    if(String(row.amtox||"").trim() !== "") row._amtoxManual = "1";
+    // «No tocar nunca lo ya guardado» (usuario, 2026-08-26) SIN congelar de paso lo
+    // que calculó la propia app: se congela sólo lo que la fórmula no pudo escribir.
+    if(_calAmtoxCongelar(row)) row._amtoxManual = "1";
     return row;
   });
   const draft={ meta:{ fechaMuestreo:d0.fechaMuestreo, fechaResultados:d0.fechaResultados||"", corrida:d0.corrida||"", responsable:d0.responsable||"" }, sections:{}, activeFmt:fmtKey };

@@ -13,7 +13,7 @@ import {
   trasladoDe, filasDe, placasDe, actividadDe, isTrasladoRow,
   TK, ACTIVIDAD_ORDEN, INSUMOS_POSIBLES, CHECK_POSIBLES,
   deltasDe, resumenPorTina, valoresDe, escalaDe, nivelDe, tinaMasInestable,
-  tiempoDe, fmtMinutos, paradasDelViaje,
+  tiempoDe, fmtMinutos, paradasDelViaje, viajesDe,
 } from './traslado.data.js';
 
 /* ── De payload a filas de hoja, como las leería el tablero ── */
@@ -243,7 +243,7 @@ describe('Traslado · sin datos', () => {
     expect(t.camiones).toEqual([]);
     expect(t.o2).toBeNull();
     expect(t.actividad.moda).toBeNull();
-    expect(t.nObservaciones).toBe(0);
+    expect(viajesDe(t.camiones)).toEqual([]);
   });
 
   it('🔴 una parada sin GPS no se inventa un punto en el mapa', () => {
@@ -555,11 +555,17 @@ describe('Traslado · una observación es de la PARADA, no del camión', () => {
      escribe el MISMO texto en las filas de todos los camiones de esa parada.
      Contarlas por camión y sumar multiplicaba el KPI por el nº de camiones —con
      dos camiones, una observación decía «2»—, y pasaba en el viaje normal. */
+  /* Se mide sobre `viajesDe`, que es de donde lo lee el KPI: un conteo que sólo
+     existiera en un campo que nadie pinta no probaría lo que se quiere probar. */
   it('con dos camiones, UNA observación cuenta UNA vez', () => {
     const unCam = trasladoDe(filasDeViaje({ nCam: 1, obsEn: [1] }), 'M07', '555');
     const dosCam = trasladoDe(filasDeViaje({ nCam: 2, obsEn: [1] }), 'M07', '555');
-    expect(unCam.nObservaciones, 'el fixture no tiene observación: no probaría nada').toBe(1);
-    expect(dosCam.nObservaciones, 'añadir un camión no añade observaciones').toBe(1);
+    const nUno = viajesDe(unCam.camiones);
+    const nDos = viajesDe(dosCam.camiones);
+    expect(nUno, 'un solo viaje').toHaveLength(1);
+    expect(nDos, 'sigue siendo un solo viaje: cambia el nº de camiones').toHaveLength(1);
+    expect(nUno[0].nObservaciones, 'el fixture no tiene observación: no probaría nada').toBe(1);
+    expect(nDos[0].nObservaciones, 'añadir un camión no añade observaciones').toBe(1);
   });
 
   it('pero dos VIAJES distintos sí suman las suyas', () => {
@@ -571,7 +577,9 @@ describe('Traslado · una observación es de la PARADA, no del camión', () => {
     const filas = filasDeViaje({ nCam: 2, obsEn: [1] })
       .concat(aFilas(buildTrasladoPayload(v2)));
     const t = trasladoDe(filas, 'M07', '555');
-    expect(t.nObservaciones).toBe(2);
+    // Dos viajes, cada uno con LA SUYA: el tablero pinta una sección por viaje, así
+    // que lo que tiene que salir son dos KPI de 1 y no un 2 global.
+    expect(viajesDe(t.camiones).map((v) => v.nObservaciones)).toEqual([1, 1]);
   });
 
   it('cada camión sigue llevando la observación de su parada', () => {

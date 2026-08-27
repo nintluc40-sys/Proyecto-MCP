@@ -232,20 +232,25 @@ describe('Amonio Tóxico · «no tocar nunca lo ya guardado»', () => {
      sólo lectura, pero un registro guardado ANTES de esta función puede traer un
      Amonio Tóxico tecleado a mano, y ése no se pisa.
 
-     La reconciliación: lo que llega escrito desde el historial se marca como
-     heredado, se conserva y se queda EDITABLE —bloquearlo dejaría un dato viejo
-     imposible de corregir, que no es lo que se pidió—. Todo lo demás lo calcula
-     la fórmula y va bloqueado. */
+     La reconciliación: el campo es SIEMPRE de sólo lectura, y lo único que decide
+     la marca es si el cálculo puede REESCRIBIRLO. Y se congela sólo lo que esta
+     fórmula no pudo haber escrito — si el valor cuadra con las cuatro variables
+     guardadas, lo puso la app y sigue vivo. Congelarlo todo por igual era un
+     agujero medido el 2026-08-26: ver el bloque de abajo. */
   const celda = (fmt, fila, k) => document.querySelector(`[name="cal_${fmt}_${fila}_${k}"]`);
 
-  function sesionGuardada(amtox) {
+  /* `vars` permite guardar una sesión SIN las cuatro variables, que es como se
+     registraba antes de que el cálculo existiera: entonces el valor no puede venir
+     de la fórmula y recalcularlo lo BORRARÍA. */
+  function sesionGuardada(amtox, vars) {
     localStorage.clear();
     H.micTypeSet('cal');
+    const v = vars === undefined ? { sal: '35', ph: '7.99', temp: '28.7', tan: '2' } : vars;
     const base = {
       fechaMuestreo: '2026-08-01', fechaResultados: '', corrida: '900',
       departamento: 'Larvicultura', formato: 'larv', responsable: 'Ana',
       sid: 'cTEST', fila: '1',
-      sal: '35', ph: '7.99', temp: '28.7', tan: '2', amtox,
+      ...v, amtox,
     };
     H._calSave([{ id: 'r1', ts: Date.now(), synced: true, data: base }]);
     return H.calSessionKey(base);
@@ -272,6 +277,43 @@ describe('Amonio Tóxico · «no tocar nunca lo ya guardado»', () => {
     expect(out.title).toContain('se conserva tal cual');
   });
 
+  it('🔴 lo que CALCULÓ la app sigue VIVO al reabrir la sesión', () => {
+    /* La otra mitad de la frase del usuario: «los de ahora para adelante sí».
+       Hasta el 2026-08-26 se congelaba TODO lo que llegara escrito, así que una
+       sesión que había calculado la propia app quedaba clavada: al reabrirla para
+       corregir un TAN mal tecleado, el NH₃ se quedaba en el valor viejo y a la hoja
+       iba un par incoherente —medido: TAN=8 con NH₃=0.1139, cuando le tocaba
+       0.4555—. Y el tablero clasifica el Am.Tóxico contra 0.1 mg/L y mete ese
+       sub-índice en el WQI, así que el dato congelado falseaba el nivel de riesgo. */
+    const nh3 = H.calAmonioTox(35, 7.99, 28.7, 2).valor;
+    const guardado = String(Math.round(nh3 * 10000) / 10000);
+    H.calEditSession(sesionGuardada(guardado));
+    const out = celda('larv', 1, 'amtox');
+    expect(out.dataset.amtoxManual, 'lo calculó la app: no puede quedar congelado').toBeUndefined();
+    expect(Number(out.value)).toBeCloseTo(0.1139, 4);
+
+    // El analista corrige el TAN: el NH₃ TIENE que seguirle.
+    const tan = celda('larv', 1, 'tan');
+    tan.value = '8'; H.calCalcCell(tan);
+    const esperado = H.calAmonioTox(35, 7.99, 28.7, 8).valor;
+    expect(Number(out.value), 'el NH₃ se quedó en el valor viejo').toBeCloseTo(esperado, 4);
+
+    // Y el par coherente es el que viaja: no basta con verlo en pantalla.
+    const fila = H.collectCalDraft().sections.larv.rows[0];
+    expect(Number(fila.tan)).toBe(8);
+    expect(Number(fila.amtox)).toBeCloseTo(esperado, 4);
+  });
+
+  it('🔴 un valor a mano SIN las cuatro variables no se BORRA', () => {
+    /* El caso real del histórico: se tecleaba el NH₃ sin dejar registro de la
+       salinidad, el pH ni la temperatura. Ahí la fórmula no puede confirmar nada, y
+       recalcular no dejaría el valor viejo: lo VACIARÍA, que es perder justo el dato
+       que se quiere conservar. */
+    H.calEditSession(sesionGuardada('0.5', {}));
+    const out = celda('larv', 1, 'amtox');
+    expect(out.value, 'el valor histórico se ha perdido').toBe('0.5');
+    expect(out.dataset.amtoxManual).toBe('1');
+  });
   it('🔴 una sesión SIN Amonio Tóxico guardado sí se calcula', () => {
     // La marca no puede pegarse a todas las filas recuperadas: sólo a las que
     // traían un valor. Si no, recuperar una sesión desactivaría el cálculo.

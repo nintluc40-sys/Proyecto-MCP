@@ -28,7 +28,17 @@ const engine = readFileSync(ENGINE, 'utf8').split('\r\n').join('\n');
 const NITRO = ['nitrato', 'nitrito', 'tan', 'amtox', 'amonio'];
 const VIBRIOS = ['valg', 'vvuln', 'vpara'];
 
-/** Todos los arrays de PRESENTACIÓN, con su nombre para poder señalar al culpable. */
+/** Todos los arrays de PRESENTACIÓN, con su nombre para poder señalar al culpable.
+ *
+ *  ⚠ Un formato declara sus parámetros de DOS maneras: con un literal
+ *  (`params:["alc",…]`) o apuntando a una constante (`params:CAL_PARAMS_MAD_AGUA`).
+ *  El barrido tiene que ver las dos. Cuando «Maduración · Agua» dejó de repetir su
+ *  lista y pasó a reutilizar la constante (2026-08-26), este barrido se quedó viendo
+ *  un formato MENOS y la guarda de abajo se puso ROJA — que es exactamente su
+ *  trabajo: avisar de que comprobaba menos de lo que decía comprobar.
+ *
+ *  ⚠ Sólo se siguen los nombres en MAYÚSCULAS. `params: renderParams` y compañía
+ *  son argumentos de función, no declaraciones de formato, y resolverlos reventaría. */
 function arraysDePantalla() {
   const out = [];
   const re = /(params\s*:\s*|const\s+(CAL_PARAMS_FULL|CAL_PARAMS_MAD_AGUA)\s*=\s*)\[([^\]]*)\]/g;
@@ -36,6 +46,15 @@ function arraysDePantalla() {
   while ((m = re.exec(engine)) !== null) {
     const claves = [...m[3].matchAll(/"([^"]+)"/g)].map((x) => x[1]);
     if (claves.length) out.push({ nombre: m[2] || 'params:[…]', claves, pos: m.index });
+  }
+  // …y los formatos que APUNTAN a una constante en vez de repetir la lista.
+  // ⚠ Se captura el identificador ENTERO y se filtra después. Un patrón que sólo
+  //   aceptara mayúsculas casaba el guion bajo suelto de `params: _renderBlancoParams`
+  //   y `arrayPorNombre` reventaba buscando una constante llamada «_».
+  const reRef = new RegExp('params[ ]*:[ ]*([A-Za-z_][A-Za-z0-9_]*)', 'g');
+  while ((m = reRef.exec(engine)) !== null) {
+    if (!/^[A-Z][A-Z0-9_]*$/.test(m[1])) continue;   // argumento de función, no constante
+    out.push({ nombre: 'params:' + m[1], claves: arrayPorNombre(m[1]), pos: m.index });
   }
   return out;
 }
@@ -54,7 +73,12 @@ describe('registros · orden visual de los compuestos nitrogenados', () => {
   const conNitro = arraysDePantalla().filter((a) => NITRO.every((k) => a.claves.includes(k)));
 
   it('el barrido encuentra formatos que los llevan (si no, la prueba no probaría nada)', () => {
+    // Hoy son 7: las dos constantes y los cinco formatos que apuntan a ellas
+    // (larv y mad → CAL_PARAMS_FULL; Agua, RAS y Agua de mar → CAL_PARAMS_MAD_AGUA).
     expect(conNitro.length).toBeGreaterThanOrEqual(3);
+    // Y que el barrido esté RESOLVIENDO las referencias, no sólo los literales: sin
+    // esto, deduplicar una lista volvería a dejar formatos sin vigilar en silencio.
+    expect(conNitro.map((a) => a.nombre)).toContain('params:CAL_PARAMS_MAD_AGUA');
   });
 
   it('SIEMPRE salen como Nitrato · Nitrito · TAN · Am.Tóxico · Amonio', () => {
