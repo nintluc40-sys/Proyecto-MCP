@@ -13,7 +13,12 @@ const matriz = [
   { 'Trovan ID': 'A4', 'Número': '4', 'Sala actual': 'S2', 'Tanque actual': 'T3', Estado: 'Muerto', 'Fecha ingreso': '2026-05-01', 'Fecha muerte': '2026-06-20' },
   { 'Trovan ID': 'A5', 'Número': '5', 'Sala actual': 'S2', 'Tanque actual': 'T3', Estado: 'Vivo', 'Fecha ingreso': '2026-05-01' }, // nunca desova
 ];
-// La Bitácora REAL solo trae Trovan/Fecha/Tipo — la ubicación se deriva por Trovan.
+// ⚠ Estas filas NO llevan Sala/Tanque A PROPÓSITO: ejercitan la rama de DERIVACIÓN,
+// que es el RESPALDO. Hasta el 2026-08-31 el comentario de aquí decía que así es «la
+// Bitácora REAL» y que la derivación era el caso normal. Es FALSO, medido contra la hoja
+// viva: sus 1.970 filas traen Sala Y Tanque (1970/1970), así que producción usa siempre
+// el SNAPSHOT — y esta suite no cubría esa rama en absoluto.
+// La cobertura del caso real está en el bloque «ubicación · el snapshot manda».
 const bitacora = [
   { 'Trovan ID': 'A1', Fecha: '2026-06-01', Tipo: 'Desove' },   // A1 → MATRIZ T1
   { 'Trovan ID': 'A1', Fecha: '2026-06-11', Tipo: 'Desove' },

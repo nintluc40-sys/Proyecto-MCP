@@ -157,6 +157,22 @@ function dataWarnings(model) {
       No existen en el calendario, así que <b>esas filas no se cuentan</b> en ningún indicador.
       Corrígelas en el Sheet para recuperarlas.</div>`);
   }
+  // Derivación A CIEGAS: hay eventos SIN ubicación propia y NINGUNA transferencia con la
+  // que reconstruir dónde estaba la hembra, así que cada uno hereda su posición de HOY.
+  // Para la que se haya movido, su historial queda contado en el tanque equivocado y las
+  // cifras por sala/tanque salen mal sin un solo síntoma.
+  // ⚠ La condición es DOBLE a propósito. Avisar sólo de «Transferencias está vacía» sería
+  // ruido permanente: medido el 2026-08-31 contra la hoja viva, las 1.970 filas de la
+  // Bitácora traen su propio Sala/Tanque, así que hoy la hoja vacía no afecta a nada y
+  // este aviso NO sale. Aparece únicamente cuando la derivación entra de verdad en juego.
+  const der = model.derivedEvents || 0;
+  if (der > 0 && !(model.transferRowCount > 0)) {
+    w.push(`<div class="mc-warn">⚠️ <b>${n0(der)} evento(s) sin Sala/Tanque propios</b> y la hoja
+      <b>Maduración Transferencias</b> no tiene ninguna fila con la que reconstruir dónde estaba
+      la hembra. A esos eventos se les asigna la ubicación <b>ACTUAL</b> de la MATRIZ, así que los
+      de cualquier hembra que se haya movido quedan contados en el <b>tanque equivocado</b>.
+      Registra los traslados en <b>Registros → Maduración → Reproductivo</b> para corregirlo.</div>`);
+  }
   const dup = model.duplicateTrovans || [];
   if (dup.length) {
     w.push(`<div class="mc-warn">⚠️ <b>${n0(dup.length)} Trovan ID repetido(s)</b> en la hoja MATRIZ

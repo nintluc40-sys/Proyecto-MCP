@@ -10,10 +10,21 @@
    · "Maduración Bitácora"        → 1 fila por evento (Desove | Mortalidad) + snapshot Sala/Tanque.
    · "Maduración Transferencias"  → 1 fila por (TR-ID × Trovan) movido.
 
-   IMPORTANTE — la hoja Bitácora REAL solo guarda Trovan/Fecha/Tipo (SIN Sala/Tanque
-   ni Observaciones). La ubicación de cada evento se DERIVA siguiendo al Trovan: por
-   la MATRIZ (Sala/Tanque actual) y, si hay transferencias, reconstruyendo la
-   ubicación vigente a la fecha del evento (ver resolveEventLocation).
+   IMPORTANTE — la ubicación del evento sale de DOS sitios, y el orden importa:
+   1.º el snapshot Sala/Tanque de la propia fila de Bitácora, si viene;
+   2.º si no viene, se DERIVA siguiendo al Trovan (MATRIZ + transferencias, ver
+       `resolveEventLocation`).
+
+   ⚠ Hasta el 2026-08-31 este bloque afirmaba que «la Bitácora REAL solo guarda
+   Trovan/Fecha/Tipo (SIN Sala/Tanque)» y que por tanto «el caso normal es la
+   derivación». **Es FALSO, y medido contra la hoja viva**: las 1.970 filas de la
+   Bitácora traen Sala Y Tanque rellenos (1970/1970, GET ?p=rows, 2026-08-31). El caso
+   normal es el SNAPSHOT; la derivación no llega a ejecutarse ni una vez.
+   Se corrige porque el error invitaba a borrar la guarda `if (!sala && !tanque)`
+   tomándola por código muerto — y eso cambiaría la ubicación de los 1.970 eventos a
+   la posición ACTUAL de cada hembra, falseando producción y fertilidad POR TANQUE sin
+   un solo síntoma. La derivación sigue haciendo falta: es el respaldo para las filas
+   antiguas o parciales que no traigan ubicación.
 
    DEFINICIONES (documentadas para que el usuario pueda ajustarlas en revisión):
    · Un "desove"/"mortalidad" = una fila de Bitácora del Tipo correspondiente; su
@@ -102,12 +113,15 @@ export function monthLabel(key) {
 }
 const DAY_MS = 86400000;
 
-/* ── Resolución de ubicación por Trovan ──
-   La hoja Bitácora REAL solo trae Trovan/Fecha/Tipo (sin Sala/Tanque). La ubicación
-   de un evento se DERIVA siguiendo al Trovan: si hay transferencias, se reconstruye
-   la ubicación vigente a la fecha del evento (último destino con fecha ≤ evento, o el
-   origen del primer movimiento si el evento es anterior); si no, la ubicación ACTUAL
-   de la MATRIZ (que, sin transferencias, es la única que ha tenido). */
+/* ── Resolución de ubicación por Trovan · RESPALDO, no el caso normal ──
+   Sólo se llama cuando la fila de Bitácora NO trae Sala ni Tanque (ver el llamador).
+   Reconstruye la ubicación siguiendo al Trovan: si hay transferencias, la vigente a la
+   fecha del evento (último destino con fecha ≤ evento, o el origen del primer
+   movimiento si el evento es anterior); si no las hay, la ubicación ACTUAL de la MATRIZ.
+   ⚠ Ese último respaldo es el frágil: sin filas de Transferencias, un evento antiguo
+   hereda la posición de HOY, que es errónea para toda hembra que se haya movido. Hoy no
+   afecta a nadie —las 1970 filas traen su propio snapshot— pero el modelo cuenta cuántos
+   eventos han tenido que derivarse (`derivedEvents`) para que deje de ser invisible. */
 function resolveEventLocation(trovan, date, byTrovan, movByTrovan) {
   const movs = movByTrovan.get(trovan);
   if (movs && movs.length && date) {
@@ -130,9 +144,13 @@ function resolveEventLocation(trovan, date, byTrovan, movByTrovan) {
  * Construye el modelo del Registro Reproductivo a partir de las filas crudas.
  * @returns {{females:Array, byTrovan:Map, desoves:Array, mortalidades:Array,
  *   movimientos:Array, desovesByTrovan:Map, movByTrovan:Map, dataMaxDate:?Date, months:string[],
- *   duplicateTrovans:string[], futureEvents:Array}}
+ *   duplicateTrovans:string[], futureEvents:Array, derivedEvents:number,
+ *   transferRowCount:number}}
  *   `dataMaxDate` va acotada a hoy; `futureEvents` son los eventos con fecha posterior
  *   (típicamente un año mal tecleado) y `duplicateTrovans` los repetidos en MATRIZ.
+ *   `derivedEvents` = eventos sin ubicación propia que hubo que derivar por Trovan, y
+ *   `transferRowCount` = filas útiles de «Maduración Transferencias». Los dos juntos
+ *   dicen si la derivación está trabajando A CIEGAS (derivedEvents>0 y sin transferencias).
  */
 export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
   const females = [];
@@ -144,6 +162,13 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
   // eventos futuros y los Trovan repetidos que ya se avisaban.
   const invalidDates = [];
   const noteBadDate = (hoja, trovan, raw) => { if (raw) invalidDates.push({ hoja, trovan, fecha: String(raw) }); };
+  // Eventos cuya ubicación NO venía en la fila y hubo que derivar. Medido el 2026-08-31
+  // contra la hoja viva vale 0 (las 1970 filas traen su snapshot), y ése es justamente
+  // el motivo de contarlo: si algún día deja de ser 0 mientras «Maduración
+  // Transferencias» sigue vacía, la ubicación de esos eventos pasa a ser la posición de
+  // HOY de cada hembra. Callarlo es el mismo fallo que este módulo ya evita con las
+  // fechas imposibles y los Trovan repetidos.
+  let derivedEvents = 0;
   (matrizRows || []).forEach((o) => {
     const trovan = normTrovan(gv(o, H.trovan));
     if (!trovan) return;
@@ -197,11 +222,18 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
     const date = parseAnyDate(raw);
     if (!trovan) return;
     if (!date) { noteBadDate('Bitácora', trovan, raw); return; }
-    // Ubicación del evento: usa el snapshot de la fila SÓLO si viene (compatibilidad);
-    // si no, la deriva por Trovan (MATRIZ + transferencias). La Bitácora real solo
-    // trae Trovan/Fecha/Tipo, así que el caso normal es la derivación.
+    // Ubicación del evento: manda el snapshot de la propia fila; sólo si no viene se
+    // deriva por Trovan (MATRIZ + transferencias).
+    // ⚠ El comentario anterior decía que la Bitácora real no trae Sala/Tanque y que
+    // «el caso normal es la derivación». Medido el 2026-08-31 contra la hoja viva:
+    // 1970/1970 filas traen ambas. El caso normal es ESTA línea, y la derivación es el
+    // respaldo. No es código muerto: cúbrelo antes de tocarlo.
     let sala = gv(o, H.sala), tanque = gv(o, H.tanque);
-    if (!sala && !tanque) { const loc = resolveEventLocation(trovan, date, byTrovan, movByTrovan); sala = loc.sala; tanque = loc.tanque; }
+    if (!sala && !tanque) {
+      const loc = resolveEventLocation(trovan, date, byTrovan, movByTrovan);
+      sala = loc.sala; tanque = loc.tanque;
+      derivedEvents++;   // se cuenta para poder AVISAR cuando el respaldo entra en juego
+    }
     const ev = { trovan, fecha: raw, date, sala, tanque, obs: gv(o, H.obs) };
     if (tipo === EVENTO_DESOVE) desoves.push(ev);
     else if (tipo === EVENTO_MORTALIDAD) mortalidades.push(ev);
@@ -242,7 +274,7 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
   });
   const months = [...monthSet].sort();
 
-  return { females, byTrovan, desoves, mortalidades, movimientos, desovesByTrovan, movByTrovan, dataMaxDate, months, duplicateTrovans, futureEvents, invalidDates };
+  return { females, byTrovan, desoves, mortalidades, movimientos, desovesByTrovan, movByTrovan, dataMaxDate, months, duplicateTrovans, futureEvents, invalidDates, derivedEvents, transferRowCount: movimientos.length };
 }
 
 /* ── Filtros ── */
