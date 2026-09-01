@@ -3737,7 +3737,8 @@ function clearCSData(){
    a demanda (no se puede editar un PDF ya guardado). NO requiere re-deploy del GAS.
 ══════════════════════════════════════════ */
 let _recalcAffected = {};   // fecha -> snapshot de Población recalculado (para el PDF)
-let _recalcStatus   = {};   // fecha -> estado de reenvío ("ok"|"err"|"…"|…)
+let _recalcStatus   = {};   // fecha -> estado de reenvío ("ok"|"err"|"queued"|"inflight"|"…"|…)
+let _recalcMotivo   = {};   // fecha -> `message` del GAS cuando RECHAZÓ (motivo accionable)
 
 // Compara dos mapas CS; true si algún si_i cambió.
 function _csChanged(a, b){
@@ -3796,7 +3797,7 @@ async function recalcSurvivalForCorrida(){
   if(!scan.days.length){ toast("No hay días de la corrida "+scan.corr+" en el historial","info",3500); return; }
 
   // 1) Recalcular en memoria: historial (snapshots) + día de hoy (loadE).
-  _recalcAffected = {}; _recalcStatus = {};
+  _recalcAffected = {}; _recalcStatus = {}; _recalcMotivo = {};
   const fullHist = loadHist(curMod);
   let histChanged = false;
   fullHist.forEach(h=>{
@@ -3836,6 +3837,10 @@ async function recalcSurvivalForCorrida(){
         const sent = await postPayload(payload, url, o);
         _recalcStatus[f] = sent ? "ok"
           : (o.outcome === "queued" || o.outcome === "inflight") ? o.outcome : "err";
+        /* El GAS manda el porqué en `message` y postPayload lo deja aquí SÓLO cuando
+           rechaza. Sin recogerlo, «hoja no permitida» y «límite de filas» se veían
+           exactamente igual y no había por dónde empezar. */
+        _recalcMotivo[f] = sent ? "" : (o.gasMessage || "");
         _recalcRenderPanel(fechas, "");
       }catch(_){ _recalcStatus[f] = "err"; _recalcRenderPanel(fechas, ""); }
     }
@@ -3857,7 +3862,9 @@ function _recalcRenderPanel(fechas, note){
       : st === "sin filas" ? '<span style="color:#6b7280">sin datos por tanque</span>'
       : '<span style="color:#6b7280">recalculado (local)</span>';
     return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid #eee">
-      <span style="font-size:12px"><b>📅 ${escapeHtml(f)}</b> · ${badge}</span>
+      <span style="font-size:12px"><b>📅 ${escapeHtml(f)}</b> · ${badge}${_recalcMotivo[f]
+        ? `<span style="display:block;font-size:10.5px;color:#b45309;margin-top:2px">${escapeHtml(_gasMotivo(_recalcMotivo[f]).trim())}</span>`
+        : ""}</span>
       <button class="btn bpdf" type="button" style="padding:3px 9px;font-size:11px" onclick="recalcDayPDF('${escapeHtml(f)}')">📄 PDF</button>
     </div>`;
   }).join("");

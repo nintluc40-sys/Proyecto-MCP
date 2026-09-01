@@ -20,6 +20,10 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createContext, Script } from 'node:vm';
+/* El escapador REAL del producto, no uno de mentira: un arnés más benévolo que el
+   producto no puede certificar al producto (la lección del `sanitizeStr` de los arneses
+   de Traslado). `_gasMotivo` se trae del propio motor, por lo mismo. */
+import { escapeHtml } from './security.js';
 
 const ENGINE = new URL('../../../../public/registros/engine.js', import.meta.url);
 const engine = readFileSync(ENGINE, 'utf8').split('\r\n').join('\n');
@@ -48,13 +52,19 @@ function cajaDelMotor(nombres, extra = {}) {
 
 const FECHA = '2026-08-14';
 
-/** Monta el recálculo de UN día cuyo envío termina con el `outcome` pedido. */
-function escenario(outcome, devuelve) {
+/** Monta el recálculo de UN día cuyo envío termina con el `outcome` pedido.
+ *  `gasMessage` simula el motivo que el GAS manda al RECHAZAR (postPayload lo deja
+ *  en el objeto de opciones; sólo lo fija en `rejected`). */
+function escenario(outcome, devuelve, gasMessage) {
   const toasts = [];
   const panel = { innerHTML: '' };
+  /* Mutable para poder encadenar DOS recálculos en la misma caja (un rechazo seguido
+     de un éxito), que es lo único que delata si el estado se arrastra entre corridas. */
+  const cfg = { outcome, devuelve, gasMessage };
   const ctx = {
     _recalcAffected: {},
     _recalcStatus: {},
+    _recalcMotivo: {},
     curMod: 0,
     curTab: 'otro',
     isStdMod: () => true,
@@ -77,20 +87,24 @@ function escenario(outcome, devuelve) {
     buildDatosPayload: () => ({ sheetName: 'Datos Larvicultura - M01', headers: [], rows: [{}] }),
     postPayload: async (_p, _u, o) => {
       // Reproduce el contrato REAL: postPayload SIEMPRE fija `outcome` antes de
-      // devolver, y devuelve false en tres de los cuatro desenlaces.
-      if (o) o.outcome = outcome;
-      return devuelve;
+      // devolver, y devuelve false en tres de los cuatro desenlaces. El `message`
+      // del GAS SÓLO lo propaga cuando rechaza.
+      if (o) {
+        o.outcome = cfg.outcome;
+        if (cfg.outcome === 'rejected' && cfg.gasMessage) o.gasMessage = cfg.gasMessage;
+      }
+      return cfg.devuelve;
     },
     updateDots: () => {},
     updateSyncUI: () => {},
-    escapeHtml: (s) => String(s),
+    escapeHtml,
     document: { getElementById: (id) => (id === 'cs-recalc-panel' ? panel : null) },
   };
   const { api, ctx: caja } = cajaDelMotor(
-    ['recalcSurvivalForCorrida', '_recalcRenderPanel'],
+    ['recalcSurvivalForCorrida', '_recalcRenderPanel', '_gasMotivo'],
     ctx
   );
-  return { api, caja, toasts, panel };
+  return { api, caja, toasts, panel, cfg };
 }
 
 describe('recalcSurvivalForCorrida · el desenlace del envío, día a día', () => {
@@ -134,6 +148,77 @@ describe('recalcSurvivalForCorrida · el desenlace del envío, día a día', () 
 
     expect(caja._recalcStatus[FECHA]).toBe('ok');
     expect(panel.innerHTML).toContain('reenviado');
+  });
+
+  /* ── El MOTIVO del rechazo (2026-09-01) ────────────────────────────────────────
+     El GAS manda el porqué en `message`; `postPayload` lo deja en el objeto de
+     opciones y `_gasMotivo` lo traduce a algo accionable. Las rutas que pasan por
+     `_syncNotOkUI` lo enseñan desde el 2026-08-24; este panel lo tiraba, así que
+     «hoja no permitida» y «límite de filas» se veían EXACTAMENTE IGUAL y desde la
+     carretera no había por dónde empezar. */
+  it('un RECHAZO enseña el motivo del GAS, no sólo «error de envío»', async () => {
+    const { api, caja, panel } = escenario('rejected', false, 'Hoja no permitida');
+    await api.recalcSurvivalForCorrida();
+
+    expect(caja._recalcStatus[FECHA]).toBe('err');
+    expect(caja._recalcMotivo[FECHA]).toBe('Hoja no permitida');
+    expect(panel.innerHTML).toContain('Hoja no permitida');
+  });
+
+  it('y con el motivo viene la ACCIÓN concreta, que es lo que lo hace útil', async () => {
+    const { panel } = await (async () => {
+      const e = escenario('rejected', false, 'Hoja no permitida');
+      await e.api.recalcSurvivalForCorrida();
+      return e;
+    })();
+    // `_gasMotivo` añade la pista; sin ella el mensaje del GAS no dice qué hacer.
+    expect(panel.innerHTML).toContain('vuelve a desplegarlo');
+  });
+
+  it('cada motivo trae SU pista, no una genérica', async () => {
+    const e = escenario('rejected', false, 'Límite de filas excedido');
+    await e.api.recalcSurvivalForCorrida();
+    expect(e.panel.innerHTML).toContain('envía menos registros');
+    expect(e.panel.innerHTML).not.toContain('vuelve a desplegarlo');
+  });
+
+  /* ⚠ El mensaje viene del SERVIDOR: es contenido dinámico en innerHTML y va escapado
+     (regla 4 de CLAUDE.md). Se usa el `escapeHtml` REAL del producto, no un doble. */
+  it('el motivo va ESCAPADO: no puede inyectar HTML en el panel', async () => {
+    const e = escenario('rejected', false, '<img src=x onerror=alert(1)>');
+    await e.api.recalcSurvivalForCorrida();
+    expect(e.panel.innerHTML).not.toContain('<img');
+    expect(e.panel.innerHTML).toContain('&lt;img');
+  });
+
+  it('un envío ENCOLADO no arrastra motivo: no es un rechazo', async () => {
+    const e = escenario('queued', false);
+    await e.api.recalcSurvivalForCorrida();
+    expect(e.caja._recalcMotivo[FECHA]).toBe('');
+  });
+
+  it('un envío OK tampoco', async () => {
+    const e = escenario('ok', true);
+    await e.api.recalcSurvivalForCorrida();
+    expect(e.caja._recalcMotivo[FECHA]).toBe('');
+    expect(e.panel.innerHTML).not.toContain('color:#b45309');
+  });
+
+  /* Un motivo es de UNA corrida. Si no se limpiara al empezar la siguiente, el panel
+     seguiría enseñando el rechazo de hace un rato sobre un día que acaba de irse bien
+     — un error fantasma que manda a perseguir algo ya resuelto. */
+  it('el motivo NO se arrastra: un recálculo que va bien borra el rechazo anterior', async () => {
+    const e = escenario('rejected', false, 'Hoja no permitida');
+    await e.api.recalcSurvivalForCorrida();
+    expect(e.caja._recalcMotivo[FECHA]).toBe('Hoja no permitida');
+
+    e.cfg.outcome = 'ok';
+    e.cfg.devuelve = true;
+    await e.api.recalcSurvivalForCorrida();
+
+    expect(e.caja._recalcStatus[FECHA]).toBe('ok');
+    expect(e.caja._recalcMotivo[FECHA]).toBe('');
+    expect(e.panel.innerHTML).not.toContain('Hoja no permitida');
   });
 
   /* El fixture no puede ser degenerado: si `postPayload` no se llamara, TODOS los
