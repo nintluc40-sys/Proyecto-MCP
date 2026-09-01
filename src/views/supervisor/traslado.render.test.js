@@ -73,6 +73,16 @@ function montar(ctx, mod = 'M07') {
 const txt = (root) => root.textContent.replace(/\s+/g, ' ');
 const kpi = (root, k) => root.querySelector(`[data-tras-modal="${k}"] .sv-kpi-value`).textContent.trim();
 
+/* Elegir camión. Desde el 2026-08-27 el filtro es un `<select>` y no pastillas:
+   cadena vacía = todos. El `change` mueve el estado y pide el repintado pulsando el
+   testigo oculto, que es lo que el enrutador del Supervisor sabe escuchar. */
+const elegirCamion = (root, placa) => {
+  const sel = root.querySelector('[data-tras-placa-sel]');
+  sel.value = placa;
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+};
+const camionElegido = (root) => root.querySelector('[data-tras-placa-sel]').value;
+
 beforeEach(() => { document.body.innerHTML = ''; resetTrasladoFiltro(); });
 
 describe('Traslado · la vista se dibuja', () => {
@@ -116,7 +126,7 @@ describe('Traslado · el selector de camiones', () => {
     // para quedarse con uno: con dos ya era incómodo y con tres, absurdo.
     const root = montar(ctxCon(aFilas(buildTrasladoPayload(viaje(2)))));
     expect(root.querySelectorAll('.sv-tras-card')).toHaveLength(2);
-    root.querySelector('[data-tras-placa="PBX-0392"]').click();
+    elegirCamion(root, 'PBX-0392');
     const placas = [...root.querySelectorAll('.sv-tras-placa')].map((e) => e.textContent).join(' ');
     expect(root.querySelectorAll('.sv-tras-card')).toHaveLength(1);
     expect(placas).toContain('PBX-0392');
@@ -127,44 +137,49 @@ describe('Traslado · el selector de camiones', () => {
     // Si el KPI siguiera dando el promedio de los dos, el filtro mentiría.
     const root = montar(ctxCon(aFilas(buildTrasladoPayload(viaje(2)))));
     expect(kpi(root, 'o2')).toBe('7.05');                 // los dos
-    root.querySelector('[data-tras-placa="PBX-0392"]').click();
+    elegirCamion(root, 'PBX-0392');
     expect(kpi(root, 'o2'), 'el KPI no se recalculó').toBe('6.80');
-    root.querySelector('[data-tras-placa="GSA-1147"]').click();
+    elegirCamion(root, 'GSA-1147');
     expect(kpi(root, 'o2')).toBe('7.30');
   });
 
-  it('pulsar la MISMA placa otra vez devuelve todos', () => {
+  it('🔴 el selector NO alterna: elegir el mismo camión lo MANTIENE', () => {
+    /* Con pastillas, volver a pulsar la misma placa devolvía todos. Un `<select>`
+       no funciona así —ni debe—: lo que elige es lo que se ve, y para volver a
+       todos está la opción «Todos». Se fija aquí porque es un cambio de conducta
+       deliberado (usuario, 2026-08-27) y no un descuido. */
     const root = montar(ctxCon(aFilas(buildTrasladoPayload(viaje(2)))));
-    root.querySelector('[data-tras-placa="PBX-0392"]').click();
+    elegirCamion(root, 'PBX-0392');
     expect(root.querySelectorAll('.sv-tras-card')).toHaveLength(1);
-    root.querySelector('[data-tras-placa="PBX-0392"]').click();
-    expect(root.querySelectorAll('.sv-tras-card')).toHaveLength(2);
+    elegirCamion(root, 'PBX-0392');
+    expect(root.querySelectorAll('.sv-tras-card'), 'el selector alternó').toHaveLength(1);
+    expect(camionElegido(root)).toBe('PBX-0392');
   });
 
   it('«Todos» devuelve la vista completa', () => {
     const root = montar(ctxCon(aFilas(buildTrasladoPayload(viaje(2)))));
-    root.querySelector('[data-tras-placa="GSA-1147"]').click();
+    elegirCamion(root, 'GSA-1147');
     expect(root.querySelectorAll('.sv-tras-card')).toHaveLength(1);
-    root.querySelector('[data-tras-placa="*"]').click();
+    elegirCamion(root, '');
     expect(root.querySelectorAll('.sv-tras-card')).toHaveLength(2);
   });
 
-  it('🔴 el chip marcado es el que se está viendo', () => {
+  it('🔴 la opción seleccionada es la que se está viendo', () => {
+    /* Un select que enseñara «Todos» mientras la vista tiene un solo camión sería
+       peor que no tener filtro: el supervisor creería estar viendo el viaje entero. */
     const root = montar(ctxCon(aFilas(buildTrasladoPayload(viaje(2)))));
-    // De inicio manda «Todos».
-    expect(root.querySelector('[data-tras-placa="*"]').getAttribute('aria-pressed')).toBe('true');
-    root.querySelector('[data-tras-placa="PBX-0392"]').click();
-    expect(root.querySelector('[data-tras-placa="PBX-0392"]').getAttribute('aria-pressed')).toBe('true');
-    expect(root.querySelector('[data-tras-placa="GSA-1147"]').getAttribute('aria-pressed')).toBe('false');
-    expect(root.querySelector('[data-tras-placa="*"]').getAttribute('aria-pressed')).toBe('false');
+    expect(camionElegido(root), 'de inicio manda «Todos»').toBe('');
+    elegirCamion(root, 'PBX-0392');
+    expect(camionElegido(root)).toBe('PBX-0392');
+    expect(root.querySelectorAll('.sv-tras-card')).toHaveLength(1);
   });
 
   it('🔴 NUNCA se puede llegar a cero camiones', () => {
     // Dejaría la vista sin nada que mirar y todos los KPIs en «—».
     const root = montar(ctxCon(aFilas(buildTrasladoPayload(viaje(1)))));
-    root.querySelector('[data-tras-placa="GSA-1147"]').click();
+    elegirCamion(root, 'GSA-1147');
     expect(root.querySelectorAll('.sv-tras-card')).toHaveLength(1);
-    root.querySelector('[data-tras-placa="GSA-1147"]').click();
+    elegirCamion(root, '');
     expect(root.querySelectorAll('.sv-tras-card')).toHaveLength(1);
     expect(kpi(root, 'o2')).toBe('7.30');
   });
@@ -172,7 +187,7 @@ describe('Traslado · el selector de camiones', () => {
   it('🔴 el filtro NO se hereda al cambiar de corrida', () => {
     const filas = aFilas(buildTrasladoPayload(viaje(2)));
     const root = montar(ctxCon(filas));
-    root.querySelector('[data-tras-placa="PBX-0392"]').click();
+    elegirCamion(root, 'PBX-0392');
     expect(root.querySelectorAll('.sv-tras-card')).toHaveLength(1);
     const otro = montar(ctxCon(filas, '444'));   // otra corrida: ámbito distinto
     expect(txt(otro)).toContain('Todavía no hay traslados');
@@ -251,16 +266,23 @@ describe('Traslado · los desgloses por parada', () => {
        número global que sumar. Lo que se comprueba es que salgan DOS secciones y
        que cada una cuente SÓLO la suya — antes los dos viajes caían en la misma
        tarjeta y uno tapaba al otro. */
-    const kpis = [...root.querySelectorAll('[data-tras-modal="obs"] .sv-kpi-value')]
-      .map((e) => e.textContent.trim());
-    expect(kpis, 'tiene que haber un KPI de observaciones por viaje').toEqual(['1', '1']);
+    /* Desde el índice (2026-08-27) el conteo de cada viaje vive en SU FILA; en
+       pantalla sólo hay un KPI de observaciones, el del viaje abierto. La regla que
+       se vigila no cambia: cada viaje cuenta LA SUYA y no la del otro. */
+    const obsPorFila = [...root.querySelectorAll('[data-tras-viajesel]')]
+      .map((tr) => tr.children[8].textContent.trim());
+    expect(obsPorFila, 'cada viaje cuenta sólo su observación').toEqual(['1', '1']);
 
     // Y el desglose de cada viaje enseña la observación de ESE viaje, no la del otro.
-    const botones = [...root.querySelectorAll('[data-tras-modal="obs"]')];
-    botones[0].click();
+    root.querySelector('[data-tras-modal="obs"]').click();
     const c1 = root.querySelector('#sv-tras-modal-b').textContent;
-    botones[1].click();
-    const c2 = root.querySelector('#sv-tras-modal-b').textContent;
+    root.querySelectorAll('[data-tras-viajesel]')[1].click();
+    const root2 = montar(ctxCon(
+      aFilas(buildTrasladoPayload(viaje(2, [1])))
+        .concat(aFilas(buildTrasladoPayload(segundo))),
+    ));
+    root2.querySelector('[data-tras-modal="obs"]').click();
+    const c2 = root2.querySelector('#sv-tras-modal-b').textContent;
     expect(c1).toContain('Tracto digestivo');
     expect(c1).not.toContain('Espuma en la tina 3');
     expect(c2).toContain('Espuma en la tina 3');
@@ -275,7 +297,7 @@ describe('Traslado · los desgloses por parada', () => {
 
   it('🔴 el desglose respeta el filtro de placas', () => {
     const root = montar(ctxCon(aFilas(buildTrasladoPayload(viaje(2, [1])))));
-    root.querySelector('[data-tras-placa="GSA-1147"]').click();   // sólo ese
+    elegirCamion(root, 'GSA-1147');   // sólo ese
     const c = abrir(root, 'obs');
     expect(c).toContain('GSA-1147');
     expect(c, 'el desglose enseñó un camión que el filtro dejó fuera').not.toContain('PBX-0392');
@@ -341,6 +363,48 @@ describe('Traslado · el modal usa las clases REALES del proyecto', () => {
     });
   });
 
+  it('🔴 las superficies de Traslado salen del TEMA, no de un hex escrito a mano', () => {
+    /* El bloque nació con la paleta clara a mano —138 hex contra 4 tokens— mientras
+       la app SÍ tiene conmutador de tema oscuro (`shell.js`): en oscuro la vista se
+       quedaba clara. Ahora los NEUTROS (fondo, borde, texto) salen de tokens.
+
+       Lo que sigue en hex es deliberado y no entra aquí: la marca (el teal), la
+       paleta de semáforo (verdes, ámbares, rojos), los valores dentro de reglas
+       `[data-theme="dark"]`, y el `color:#fff` de los chips —ahí el blanco es «texto
+       sobre el acento» y tokenizarlo daría texto oscuro sobre teal—. */
+    const bloque = CSS.slice(CSS.indexOf('TRASLADO EN RUTA (sub-vista de Despacho)'));
+    expect(bloque.length, 'no se localizó el bloque de Traslado').toBeGreaterThan(1000);
+
+    // Se miran sólo las reglas que NO son de tema oscuro.
+    const normales = bloque.split(/(?=[^{}]*\{)/).filter((r) => !r.includes('[data-theme="dark"]')).join('');
+    const claros = [
+      ['background:#fff', 'fondo blanco fijo'],
+      ['background:#f8fafc', 'superficie clara fija'],
+      ['background:#f1f5f9', 'superficie clara fija'],
+      ['#e2e8f0', 'borde claro fijo'],
+      ['color:#0f172a', 'texto oscuro fijo'],
+      ['color:#64748b', 'texto secundario fijo'],
+    ];
+    /* ⚠ Coincidencia con LÍMITE de color, no `includes`: «background:#fff» es
+       subcadena de «#fffbeb» y «#fff7ed» —dos ámbares del semáforo— y a secas los
+       señalaba como paleta clara colada. Basta mirar el carácter SIGUIENTE: si es
+       hexadecimal, el color era más largo y no es el que se busca. */
+    const coladoEn = (h) => {
+      let i = normales.indexOf(h);
+      while (i !== -1) {
+        if (!/[0-9a-fA-F]/.test(normales[i + h.length] || '')) return true;
+        i = normales.indexOf(h, i + 1);
+      }
+      return false;
+    };
+    const colados = claros.filter(([h]) => coladoEn(h));
+    expect(colados.map(([h, q]) => h + ' (' + q + ')'),
+      'volvió a colarse la paleta clara escrita a mano: en tema oscuro no cambiará').toEqual([]);
+
+    // Y la guarda de que esto prueba algo: el bloque tiene que USAR tokens de verdad.
+    expect((bloque.match(/var\(--c-(surface|border|text)/g) || []).length,
+      'el bloque dejó de usar tokens: la comprobación de arriba pasaría sola').toBeGreaterThan(40);
+  });
   it('🔴 toda variable CSS usada existe en tokens.css', () => {
     // Una variable inventada NO da error: cae al valor de respaldo y el estilo se
     // queda congelado en claro, así que el tema oscuro deja de aplicarle. Es la
@@ -493,7 +557,7 @@ describe('Traslado · el KPI de tiempo en la cabecera', () => {
     const root = montar(ctxCon(filas));
     expect(root.querySelector('[data-tras-modal="tiempo"] .sv-kpi-value').textContent.trim())
       .toBe('4 h 30 min');
-    root.querySelector('[data-tras-placa="PBX-0392"]').click();
+    elegirCamion(root, 'PBX-0392');
     expect(root.querySelector('[data-tras-modal="tiempo"] .sv-kpi-value').textContent.trim(),
       'el KPI siguió hablando del camión escondido').toBe('1 h 30 min');
   });
@@ -534,32 +598,85 @@ describe('Traslado · una sección por VIAJE', () => {
     return aFilas(buildTrasladoPayload(v1)).concat(aFilas(buildTrasladoPayload(v2)));
   }
 
+  /* ⚠⚠ DÓNDE VIVE AHORA LA SEÑAL. Hasta el 2026-08-27 el tablero pintaba una
+     SECCIÓN entera por viaje y estas pruebas contaban secciones y mapas. Con el
+     índice, la separación entre viajes se demuestra en las FILAS de la tabla: si
+     `viajesDe` volviera a fundirlos, saldría UNA fila en vez de dos. Contar
+     secciones ya no probaría nada —siempre hay una, la del viaje abierto—, así que
+     la aserción se mudó con la señal. */
+  const filasIdx = (root) => [...root.querySelectorAll('[data-tras-viajesel]')];
+
   it('🔴 cada viaje enseña SU tiempo, no el del primero', () => {
     const root = montar(ctxCon(dosViajes()));
-    const tiempos = [...root.querySelectorAll('[data-tras-modal="tiempo"] .sv-kpi-value')]
-      .map((e) => e.textContent.trim());
     // v1: 20:00→00:00 son 4 h en ruta. v2: 20:00→06:00 son 10 h.
-    expect(tiempos, 'el segundo viaje tiene que traer SU tiempo').toEqual(['4 h', '10 h']);
+    const enRuta = filasIdx(root).map((tr) => tr.children[4].textContent.trim());
+    /* Sin marca de cadencia en la fila (usuario, 2026-08-27): el aviso de los 120 min
+       sigue vivo donde hace falta —el desglose de Tiempo y la ficha de captura—, pero
+       la tabla es de consulta y el ⚠ la ensuciaba. */
+    expect(enRuta, 'el segundo viaje tiene que traer SU tiempo').toEqual(['4 h', '10 h']);
+    expect(filasIdx(root)[1].className, 'volvió la marca de cadencia a la fila')
+      .not.toContain('sv-t-excede');
+
+    // Y el KPI del detalle habla del viaje ABIERTO, que es el primero por defecto.
+    const kpi = root.querySelector('[data-tras-modal="tiempo"] .sv-kpi-value').textContent.trim();
+    expect(kpi, 'el KPI del detalle no es el del viaje abierto').toBe('4 h');
   });
 
-  it('hay una sección por viaje, con su fecha y su destino', () => {
+  it('🔴 el índice trae una fila por viaje, con su fecha y su destino', () => {
     const root = montar(ctxCon(dosViajes()));
-    const secciones = root.querySelectorAll('.sv-tras-viaje');
-    expect(secciones).toHaveLength(2);
+    expect(filasIdx(root), 'los dos viajes tienen que salir por separado').toHaveLength(2);
     const t = txt(root);
     expect(t).toContain('Puná 1');
     expect(t).toContain('Taura');
     expect(t).toContain('2026-08-28');
   });
 
-  it('cada viaje monta su PROPIO mapa', () => {
-    // Un solo contenedor para dos rutas distintas las superpondría.
+  it('🔴 al elegir otro viaje, el detalle pasa a ser SUYO', () => {
+    /* Es la prueba que sostiene todo el layout: si el clic no cambiara el detalle,
+       el índice sería decorativo y el supervisor vería siempre el primer viaje
+       creyendo que mira el segundo. */
     const root = montar(ctxCon(dosViajes()));
-    expect(root.querySelectorAll('[data-tras-mapa]')).toHaveLength(2);
+    expect(txt(root.querySelector('.sv-tras-viaje-t'))).toContain('Puná 1');
+    filasIdx(root)[1].click();
+    const root2 = montar(ctxCon(dosViajes()));   // el clic repinta la vista
+    expect(txt(root2.querySelector('.sv-tras-viaje-t')), 'el detalle no siguió al índice')
+      .toContain('Taura');
+    expect(root2.querySelector('[data-tras-viajesel][aria-pressed="true"]')
+      .textContent, 'la fila elegida no quedó marcada').toContain('2026-08-28');
   });
 
-  it('con UN viaje la vista es la de siempre: una sección', () => {
+  it('🔴 se monta UN solo mapa, el del viaje abierto', () => {
+    // Antes se instanciaba un Leaflet por viaje de la corrida —420 px y una
+    // instancia viva cada uno— aunque el supervisor sólo mirase uno.
+    const root = montar(ctxCon(dosViajes()));
+    expect(root.querySelectorAll('[data-tras-mapa]')).toHaveLength(1);
+  });
+
+  it('🔴 el desglose de Tiempo ofrece el PDF del viaje, y el modal sigue entero', () => {
+    /* Lo que se vigila NO es que el PDF salga bien —eso lo hace `trasladoPdf.test.js`—
+       sino que añadirlo no se haya llevado por delante el modal: el desglose de
+       tiempo tiene que seguir enseñando sus tramos, y el botón tiene que estar
+       cableado a un viaje concreto. Un botón que se pinta pero no se cablea se ve
+       exactamente igual que uno que funciona. */
+    const root = montar(ctxCon(dosViajes()));
+    root.querySelector('[data-tras-modal="tiempo"]').click();
+    const cuerpo = root.querySelector('#sv-tras-modal-b');
+    expect(cuerpo.textContent, 'el desglose de tiempo perdió sus tramos').toContain('En ruta');
+    const b = cuerpo.querySelector('[data-tras-pdf]');
+    expect(b, 'no hay botón de PDF en el desglose de tiempo').toBeTruthy();
+    expect(b.disabled, 'el botón nació deshabilitado: no se identificó el viaje').toBe(false);
+
+    // Los OTROS desgloses no lo llevan: el PDF es del viaje y se pide desde el tiempo.
+    ['o2', 'temp', 'act', 'obs'].forEach((k) => {
+      root.querySelector(`[data-tras-modal="${k}"]`).click();
+      expect(root.querySelector('#sv-tras-modal-b [data-tras-pdf]'),
+        `el desglose «${k}» no debería ofrecer el PDF`).toBeNull();
+    });
+  });
+
+  it('con UN viaje no hay índice: la vista es la de siempre', () => {
     const root = montar(ctxCon(aFilas(buildTrasladoPayload(viaje(2, [1])))));
+    expect(root.querySelectorAll('.sv-tras-idx'), 'un índice de una fila es ruido').toHaveLength(0);
     expect(root.querySelectorAll('.sv-tras-viaje')).toHaveLength(1);
     expect(root.querySelectorAll('[data-tras-mapa]')).toHaveLength(1);
     // Y sus dos camiones siguen siendo dos tarjetas dentro de esa sección.

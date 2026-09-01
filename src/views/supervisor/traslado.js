@@ -26,6 +26,8 @@ import {
   tiempoDe, fmtMinutos, CADENCIA_MAX_MIN, observacionesDelViaje, viajesDe,
 } from './traslado.data.js';
 import { montarMapa, paradasSinGps, COLORES_CAMION } from './trasladoMapa.js';
+import { buildTrasladoPdfDoc } from './trasladoPdf.js';
+import { printFichaDocs } from './fichaPdf.js';
 
 const n1 = (v) => (v === null || v === undefined || Number.isNaN(v) ? '—' : Number(v).toFixed(1));
 const n2 = (v) => (v === null || v === undefined || Number.isNaN(v) ? '—' : Number(v).toFixed(2));
@@ -43,14 +45,36 @@ let _placaSola = null;
  *  puede seguir ocultando algo en otra, donde esa placa ni existe. */
 let _ambito = '';
 
+/** Viaje abierto en el detalle. `null` = el primero de la lista.
+ *  Vive fuera del render por lo mismo que `_placaSola`: tiene que sobrevivir al
+ *  repintado que provoca el propio clic. Se limpia con el ámbito, y además el
+ *  render lo descarta si ese viaje ya no existe —cambió la corrida, o el filtro
+ *  de placas lo dejó fuera—, en vez de quedarse con una vista vacía. */
+let _viajeSel = null;
+
 /** Mapas de Leaflet actualmente montados: uno por VIAJE visible. Se destruyen
  *  todos antes de montar los siguientes; ver la nota sobre la fuga en `after()`.
  *  ⚠ Era una sola instancia hasta el 2026-08-26; con una sección por viaje puede
  *  haber varias a la vez y olvidarse de una la deja viva escuchando `resize`. */
 let _mapasActivos = [];
 
+/** Corta las escuchas del montaje ANTERIOR del mapa.
+ *
+ *  ⚠⚠ `document` y `root` SOBREVIVEN al repintado —lo que se va es el `innerHTML`—,
+ *  así que las escuchas que cuelgan de ellos no mueren con el nodo del mapa: sin
+ *  esto, cada clic en un filtro dejaba tres más (`fullscreenchange` ×2 y `keydown`),
+ *  cada una cerrada sobre un bloque y un mapa YA MUERTOS. Es exactamente la fuga que
+ *  costó las instancias de Leaflet acumuladas, con otro disfraz.
+ *  Las que cuelgan de nodos del propio render (botones, selects, filas) no entran
+ *  aquí: ésas sí se van con el `innerHTML`. */
+let _fsAbort = null;
+
 export function resetTrasladoFiltro() {
   _placaSola = null;
+  _viajeSel = null;
+  // Abandonar la sub-vista tiene que soltar las escuchas igual que suelta el mapa.
+  if (_fsAbort) { try { _fsAbort.abort(); } catch (_) { /* ya cortado */ } }
+  _fsAbort = null;
   _ambito = '';
   _mapasActivos.forEach((m) => { try { m.destroy(); } catch (_) { /* ya estaba */ } });
   _mapasActivos = [];
@@ -222,6 +246,15 @@ function tablaTiempo(camiones) {
     <div class="sv-hm-leyenda"><i>El tiempo de cada parada es el transcurrido desde la
       anterior. Los traslados cruzan la medianoche: 23:40 → 02:50 son 3 h 10 min, no un
       número negativo.</i></div>
+    ${/* El PDF vive AQUÍ y no en la cabecera del viaje porque éste es el desglose que
+         el supervisor abre cuando algo le chirría, y es justo entonces cuando quiere el
+         papel para reclamar. El botón sólo se pinta; lo cabléa `onOpen`, que es quien
+         sabe de QUÉ viaje se abrió el modal. */''}
+    <div class="sv-tras-pdf-bar">
+      <button type="button" class="sv-btn-pdf" data-tras-pdf
+        title="Genera el registro completo de este traslado: cabecera, tiempos y una hoja por camión">📄 Descargar PDF del viaje</button>
+      <span class="sv-tras-pdf-hint">Incluye los tramos de arriba y, por cada camión, sus matrices de oxígeno, temperatura y actividad parada a parada.</span>
+    </div>
   </div>`;
 }
 
@@ -258,7 +291,7 @@ export function renderTraslado(ctx, mod) {
   const corrida = ctx.vState ? ctx.vState.corrida : null;
   const col = colorFor(ctx.allMods.indexOf(mod));
   const ambito = mod + '|' + (corrida || '');
-  if (_ambito !== ambito) { _placaSola = null; _ambito = ambito; }
+  if (_ambito !== ambito) { _placaSola = null; _viajeSel = null; _ambito = ambito; }
 
   const t = trasladoDe(ctx.data || [], mod, corrida);
   // El filtro sólo esconde; el conjunto completo se conserva para poder volver.
@@ -300,35 +333,92 @@ export function renderTraslado(ctx, mod) {
     return { html, after: () => {} };
   }
 
-  // ── Filtro de placas ──
+  /* ── Filtro de camiones ──────────────────────────────────────
+     Un `<select>`, no pastillas (usuario, 2026-08-27): las pastillas se leían como
+     etiquetas y no como un control, y la app ya tiene su patrón de filtro
+     —`sv-modal-select`— en Comparar tanques y en la exportación de Despacho.
+
+     ⚠ El repintado NO puede colgarse del propio `<select>`: el enrutador del
+     Supervisor delega en `click`, y un clic sobre el select es el que ABRE el
+     desplegable. Se dispara sobre un elemento oculto que sí lleva `data-nav`, así
+     que el mecanismo es el mismo de siempre sin pelearse con el control. */
   html += `<div class="sv-tras-filtros">
-    <span class="sv-tras-filtros-l">Camiones:</span>
-    <button type="button" class="sv-tras-chip${_placaSola ? '' : ' is-on'}" data-tras-placa="*"
-      data-nav="traslado" data-mod="${esc(mod)}" aria-pressed="${!_placaSola}"
-      title="Ver todos los camiones">${_placaSola ? '' : '✓ '}Todos (${t.placas.length})</button>
-    ${t.camiones.map((c) => {
-    const solo = _placaSola === c.placa;
-    // `data-nav="traslado"` reusa el enrutador del Supervisor para repintar: el
-    // handler propio de abajo cambia el filtro y el delegado de `root` re-renderiza
-    // justo después, en el mismo clic.
-    return `<button type="button" class="sv-tras-chip${solo ? ' is-on' : ''}" data-tras-placa="${esc(c.placa)}"
-        data-nav="traslado" data-mod="${esc(mod)}" aria-pressed="${solo}"
-        title="${solo ? 'Volver a ver todos' : 'Ver SÓLO ' + esc(c.placa)}">
-        ${solo ? '✓ ' : ''}${esc(c.placa)}</button>`;
-  }).join('')}
+    <label class="sv-tras-filtros-l" for="sv-tras-placa">Camión</label>
+    <select id="sv-tras-placa" class="sv-modal-select" data-tras-placa-sel
+      title="Filtra la vista por camión">
+      <option value=""${_placaSola ? '' : ' selected'}>Todos (${t.placas.length})</option>
+      ${t.camiones.map((c) => `<option value="${esc(c.placa)}"
+        ${_placaSola === c.placa ? 'selected' : ''}>${esc(c.placa)}</option>`).join('')}
+    </select>
+    ${_placaSola ? `<span class="sv-tras-filtros-n">viendo sólo ${esc(_placaSola)}</span>` : ''}
+    <span data-tras-repaint data-nav="traslado" data-mod="${esc(mod)}" hidden></span>
   </div>`;
 
-  /* ── UNA SECCIÓN POR VIAJE ──────────────────────────────────
-     Cada traslado con su cabecera, sus KPI, su mapa y sus camiones. Todo lo que
-     cuelga de una sección habla de ESE viaje y de ningún otro, que es lo que antes
-     no se cumplía: los KPI mezclaban los traslados de la corrida y el de tiempo
-     enseñaba el primero como si fuera el único.
+  /* ── ÍNDICE DE VIAJES + DETALLE DEL ELEGIDO ──────────────────
+     Una corrida puede salir en VARIOS traslados —distintas noches, distintas
+     camaroneras, distintos camiones—. Hasta el 2026-08-26 la página los trataba
+     como uno solo y los fundía; desde entonces cada uno tenía su sección completa,
+     con su mapa de 420 px y sus tarjetas. Correcto, pero **cada viaje costaba
+     ~1.060 px de scroll** y con tres ya eran cinco pantallas.
 
+     Ahora hay UNA TABLA con una fila por viaje —que es la vista integral que se
+     pedía, sin agregar nada: cada número sigue siendo de su traslado porque cada
+     traslado es una fila— y DEBAJO el detalle del que se elija.
+
+     ⚠⚠ NO se agregan los KPI entre viajes, y en particular NO el TIEMPO: «en ruta»
+     de un viaje de 4 h y otro de 9 h no da ningún número que le pasara a nadie.
+     Ése fue justo el defecto de agosto. La tabla los pone en COLUMNAS, no en una
+     media.
+
+     🔑 Con UN SOLO viaje la tabla no se pinta: sería una fila de índice para un
+     único destino, y la vista queda exactamente como estaba. */
+  if (_viajeSel && !viajes.some((v) => v.viaje === _viajeSel)) _viajeSel = null;
+  const vSel = viajes.find((v) => v.viaje === _viajeSel) || viajes[0] || null;
+
+  if (viajes.length > 1) {
+    html += `<div class="sv-tras-idx">
+      <div class="sv-tras-idx-h">🗂️ ${viajes.length} traslados en esta corrida
+        <span>Pulsa uno para ver su mapa, sus camiones y su desglose</span></div>
+      <div class="sv-sie-wrap"><table class="sv-table sv-tras-idx-t">
+        <thead><tr>
+          <th>Fecha</th><th>Destino</th><th>Camiones</th><th>Paradas</th>
+          <th>En ruta</th><th>O₂ (mg/L)</th><th>Temp. (°C)</th><th>Actividad</th><th>Obs.</th>
+        </tr></thead>
+        <tbody>${viajes.map((v) => {
+    const vv = trasladoVisible(t, v.camiones);
+    const on = vSel && v.viaje === vSel.viaje;
+    /* ⚠ SIN marca de cadencia en la fila (usuario, 2026-08-27). El aviso de los 120
+       min del protocolo NO desaparece del sistema: sigue en el desglose de Tiempo
+       («Fuera de cadencia») y en la ficha de captura, que es donde el chequeador lo
+       necesita. Aquí ensuciaba una tabla que es de consulta. */
+    return `<tr class="sv-tras-idx-r${on ? ' is-on' : ''}"
+        data-tras-viajesel="${esc(v.viaje)}" data-nav="traslado" data-mod="${esc(mod)}"
+        role="button" tabindex="0" aria-pressed="${!!on}"
+        title="Ver el detalle de este traslado">
+        <td><b>${esc(v.fecha || '—')}</b></td>
+        <td class="sv-hm-lugar">${esc(v.camaronera || '—')}</td>
+        <td>${v.placas.length}<span class="sv-tras-idx-pl">${esc(v.placas.join(' · '))}</span></td>
+        <td>${v.tiempo.paradas.length}</td>
+        <td class="sv-tras-media">${esc(fmtMinutos(v.tiempo.enRuta))}</td>
+        <td class="sv-tras-media">${n2(vv.o2)}</td>
+        <td class="sv-tras-media">${n2(vv.temp)}</td>
+        <td>${esc(etiquetaActividad(vv.actividad))}</td>
+        <td class="sv-tras-media">${v.nObservaciones}</td>
+      </tr>`;
+  }).join('')}</tbody>
+      </table></div>
+      <div class="sv-hm-leyenda"><i>Cada fila es un traslado y sus números son sólo suyos:
+        no se promedian entre viajes. Pulsa una fila para ver su mapa y sus camiones.</i></div>
+    </div>`;
+  }
+
+  /* ── DETALLE DEL VIAJE ELEGIDO ──────────────────────────────
      🔑 Los KPI de MEDICIÓN (O₂, temperatura, actividad) son del viaje y su desglose
      se abre POR PLACA —`tablaPorParada` ya pinta un bloque por camión—, mientras
      que el TIEMPO y las OBSERVACIONES son del viaje entero porque su grano es la
      PARADA, que los camiones comparten. Ver `viajesDe` en `traslado.data.js`. */
-  viajes.forEach((v, vi) => {
+  if (vSel) {
+    const v = vSel;
     const vista = trasladoVisible(t, v.camiones);
     const sinGps = paradasSinGps(v.camiones);
     const ident = `data-tras-viaje="${esc(v.viaje)}"`;
@@ -343,23 +433,38 @@ export function renderTraslado(ctx, mod) {
         ${kpiGlass('🦐', 'Actividad dominante', etiquetaActividad(vista.actividad), `${ident} data-tras-modal="act" role="button" tabindex="0" title="Ver la frecuencia por parada"`)}
         ${kpiGlass('📝', 'Observaciones', String(v.nObservaciones), `${ident} data-tras-modal="obs" role="button" tabindex="0" title="Ver las observaciones de cada parada"`)}
         ${kpiGlass('⏱️', 'Tiempo en ruta', fmtMinutos(v.tiempo.enRuta),
-    `${ident} data-tras-modal="tiempo" role="button" tabindex="0" title="Ver el tiempo de cada tramo entre paradas"`,
+    `${ident} data-tras-modal="tiempo" role="button" tabindex="0" title="Ver el tiempo de cada tramo entre paradas y descargar el PDF del viaje"`,
     v.tiempo.fueraDeCadencia > 0,
     v.tiempo.puertaAPuerta === null ? '' : 'puerta a puerta ' + fmtMinutos(v.tiempo.puertaAPuerta))}
       </div>
       <div class="sv-tmap-blk">
         <div class="sv-tmap-h">
           <div class="sv-tmap-t">🗺️ Recorrido geolocalizado</div>
+          ${/* Los camiones del viaje paran JUNTOS —la coordenada es de la parada—, así
+               que la ruta es UNA. La leyenda ya no promete un trazo por camión: dice
+               quiénes van y remite al popup, que es donde sus datos sí se separan. */''}
           <div class="sv-tmap-leyenda">
+            <span class="sv-tmap-leg-t">${v.placas.length} camión(es) en la misma ruta:</span>
             ${v.camiones.map((c, i) => `<span class="sv-tmap-leg">
               <i style="background:${COLORES_CAMION[i % COLORES_CAMION.length]}"></i>${esc(c.placa)}</span>`).join('')}
           </div>
+          ${/* El MISMO filtro que el de arriba, repetido aquí porque en pantalla
+               completa el de fuera queda fuera de alcance. Los dos se mantienen
+               sincronizados; nunca pueden decir cosas distintas. */''}
+          <label class="sv-tmap-sel-l" for="sv-tmap-placa">Camión</label>
+          <select id="sv-tmap-placa" class="sv-modal-select sv-tmap-sel" data-tras-placa-mapa
+            title="Acota las mediciones de los popups a un camión">
+            <option value="">Todos (${v.placas.length})</option>
+            ${v.placas.map((pl) => `<option value="${esc(pl)}">${esc(pl)}</option>`).join('')}
+          </select>
+          <button type="button" class="sv-tmap-full" data-tras-full
+            aria-pressed="false" title="Ver el mapa a pantalla completa (Esc para salir)">⛶ Pantalla completa</button>
         </div>
-        <div class="sv-tmap" id="sv-tras-mapa-${vi}" data-tras-mapa="${vi}" role="application"
+        <div class="sv-tmap" id="sv-tras-mapa-0" data-tras-mapa="0" role="application"
           aria-label="Mapa con las paradas del traslado">
           <div class="sv-tmap-cargando">Cargando mapa…</div>
         </div>
-        <div class="sv-tmap-pie">Pulsa una parada para ver su oxígeno, temperatura, actividad, alimento y observaciones.${
+        <div class="sv-tmap-pie">Pulsa una parada para ver lo que midió CADA camión en ella.${
   sinGps ? ` · ⚠ ${sinGps} parada(s) sin coordenadas: se quedaron sin señal y no se sitúan.` : ''}</div>
       </div>
       <div class="sv-tras-cards">`;
@@ -402,7 +507,7 @@ export function renderTraslado(ctx, mod) {
       </div>`;
     });
     html += '</div></section>';
-  });
+  }
   if (!visibles.length) html += '<div class="sv-tras-vacio">Todos los camiones están ocultos por el filtro.</div>';
 
   // ── Modales de desglose ──
@@ -434,32 +539,162 @@ export function renderTraslado(ctx, mod) {
          acumulaban en silencio.
          Se destruyen los ANTERIORES antes de montar los siguientes, así no depende
          del orden en que resuelva nada.
-         ⚠ Desde que hay una sección por viaje puede haber VARIOS mapas a la vez, así
-         que lo que se guarda es una LISTA. Con un solo viaje —el caso de hoy— es
-         exactamente un mapa, igual que antes. */
+         ⚠ Se guarda una LISTA aunque hoy sólo se monte UNO —el del viaje abierto—:
+         la lista es lo que garantiza que no quede ninguno vivo si mañana vuelven a
+         convivir varios. Montar sólo el visible es, además, la mitad del ahorro de
+         esta tanda: antes se instanciaba un Leaflet por viaje de la corrida. */
+      /* Antes de soltar los mapas: si el anterior se quedó a pantalla completa, hay
+         que deshacerlo. El nodo se va con el `innerHTML` y el navegador saldría solo
+         del modo nativo, pero la clase del `<body>` NO se limpia sola y dejaría la
+         página entera sin scroll. */
+      salirPantallaCompleta(root);
+      if (_fsAbort) { try { _fsAbort.abort(); } catch (_) { /* ya cortado */ } }
+      _fsAbort = (typeof AbortController === 'function') ? new AbortController() : null;
+      const _sig = _fsAbort ? { signal: _fsAbort.signal } : undefined;
       _mapasActivos.forEach((m) => { try { m.destroy(); } catch (_) { /* ya estaba */ } });
       _mapasActivos = [];
-      viajes.forEach((v, vi) => {
-        const elMapa = root.querySelector('#sv-tras-mapa-' + vi);
-        if (!elMapa) return;
-        montarMapa(elMapa, v.camiones).then((m) => {
-          if (!m) return;
-          // Si mientras cargaba ya se repintó, este mapa nace huérfano: se suelta.
-          if (!root.contains(elMapa)) { m.destroy(); return; }
-          _mapasActivos.push(m);
-        }).catch(() => { /* ya lo dice el propio contenedor */ });
-      });
+      if (vSel) {
+        const elMapa = root.querySelector('#sv-tras-mapa-0');
+        if (elMapa) {
+          montarMapa(elMapa, vSel.camiones).then((m) => {
+            if (!m) return;
+            // Si mientras cargaba ya se repintó, este mapa nace huérfano: se suelta.
+            if (!root.contains(elMapa)) { m.destroy(); return; }
+            _mapasActivos.push(m);
 
-      // Filtro de placas: sólo mueve el estado. El repintado lo hace el enrutador
-      // del Supervisor al burbujear el clic (los chips llevan `data-nav`).
-      root.querySelectorAll('[data-tras-placa]').forEach((b) => {
-        b.addEventListener('click', () => {
-          const pl = b.dataset.trasPlaca;
-          // Pulsar una placa deja SÓLO esa; pulsarla de nuevo, o pulsar «Todos»,
-          // devuelve la vista completa. Nunca se puede llegar a cero camiones.
-          _placaSola = (pl === '*' || _placaSola === pl) ? null : pl;
+            /* El botón se cablea AQUÍ y no antes: sin mapa montado no hay nada que
+               redimensionar, y un botón que responde antes de tiempo dejaría el
+               bloque a pantalla completa con el «Cargando mapa…» dentro. */
+            const blk = elMapa.closest('.sv-tmap-blk');
+            const bFull = blk && blk.querySelector('[data-tras-full]');
+            if (!blk || !bFull) return;
+
+            const enPantallaCompleta = () => blk.classList.contains('is-full') || _fsElem() === blk;
+
+            /* ── El filtro de camión DENTRO del mapa ──────────────────────
+               Es el MISMO filtro de la vista, no uno paralelo: mueve `_placaSola` y
+               deja el selector de arriba en el mismo valor, así que los dos no pueden
+               discrepar.
+
+               ⚠⚠ En pantalla completa NO se repinta. Repintar rehace el `innerHTML`,
+               se lleva por delante el nodo del mapa y el navegador expulsa del modo
+               — justo lo que este selector existe para evitar. Se acota el mapa en
+               sitio (`filtrar`) y se anota que el resto de la vista está pendiente;
+               al salir se repinta y los KPI y las tarjetas se ponen al día, que es
+               cuando vuelven a verse. Fuera de pantalla completa se comporta igual
+               que el selector de arriba: repinta al momento. */
+            const selMapa = blk.querySelector('[data-tras-placa-mapa]');
+            let pendienteRepintar = false;
+            if (selMapa) {
+              // happy-dom ignora `<option selected>`; y en el navegador esto además
+              // sobrevive a que el filtro venga puesto de un repintado anterior.
+              selMapa.value = _placaSola || '';
+              selMapa.addEventListener('change', () => {
+                _placaSola = selMapa.value || null;
+                const fuera = root.querySelector('[data-tras-placa-sel]');
+                if (fuera) fuera.value = _placaSola || '';
+                if (enPantallaCompleta()) {
+                  if (m.filtrar) m.filtrar(_placaSola);
+                  pendienteRepintar = true;
+                  return;
+                }
+                const testigo = root.querySelector('[data-tras-repaint]');
+                if (testigo) testigo.click();
+              });
+            }
+
+            const pintarEstado = () => {
+              const on = enPantallaCompleta();
+              bFull.setAttribute('aria-pressed', String(on));
+              bFull.textContent = on ? '⛶ Salir de pantalla completa' : '⛶ Pantalla completa';
+              /* Al SALIR, si el filtro cambió mientras estábamos dentro, el resto de
+                 la vista sigue hablando del camión viejo: se repinta ahora, que es
+                 cuando los KPI y las tarjetas vuelven a estar a la vista. */
+              if (!on && pendienteRepintar) {
+                pendienteRepintar = false;
+                const testigo = root.querySelector('[data-tras-repaint]');
+                if (testigo) { testigo.click(); return; }
+              }
+              // El tamaño cambia DESPUÉS de que el navegador aplique el modo.
+              // ⚠ Se comprueba que exista: la vista no puede dar por hecho la forma del
+              //   objeto que devuelve `montarMapa` — el doble de las pruebas no lo traía
+              //   y esto reventaba dentro de un setTimeout, donde nadie lo ve.
+              setTimeout(() => { if (m && m.invalidar) m.invalidar(); }, 0);
+            };
+
+            bFull.addEventListener('click', () => {
+              const yaCapa = blk.classList.contains('is-full');
+              if (_fsElem() === blk) { _fsSalir(); return; }   // el evento repinta
+              if (yaCapa) {
+                blk.classList.remove('is-full');
+                document.body.classList.remove('sv-tmap-full-on');
+                pintarEstado();
+                return;
+              }
+              if (_fsApi() && blk.requestFullscreen) {
+                blk.requestFullscreen().then(pintarEstado).catch(() => {
+                  // El navegador puede negarse (permisos, iframe): queda la capa.
+                  blk.classList.add('is-full');
+                  document.body.classList.add('sv-tmap-full-on');
+                  pintarEstado();
+                });
+                return;
+              }
+              blk.classList.add('is-full');
+              document.body.classList.add('sv-tmap-full-on');
+              pintarEstado();
+            });
+
+            /* El modo nativo se puede abandonar con Esc o con el gesto del sistema,
+               sin pasar por el botón: hay que enterarse igualmente o el rótulo
+               mentiría y el mapa se quedaría sin redimensionar. */
+            document.addEventListener('fullscreenchange', pintarEstado, _sig);
+            document.addEventListener('webkitfullscreenchange', pintarEstado, _sig);
+
+            /* Esc cierra la CAPA. En el modo nativo lo gestiona el navegador, así que
+               esto sólo actúa sobre el respaldo. */
+            root.addEventListener('keydown', (ev) => {
+              if (ev.key === 'Escape' && blk.classList.contains('is-full')) {
+                blk.classList.remove('is-full');
+                document.body.classList.remove('sv-tmap-full-on');
+                pintarEstado();
+              }
+            }, _sig);
+          }).catch(() => { /* ya lo dice el propio contenedor */ });
+        }
+      }
+
+      /* Índice de viajes: igual que los chips de placa, sólo mueve el estado. El
+         repintado lo hace el enrutador del Supervisor al burbujear el clic (las
+         filas llevan `data-nav`). Enter y Espacio porque la fila es `role="button"`
+         y una tabla no se navega con el ratón en una tablet. */
+      root.querySelectorAll('[data-tras-viajesel]').forEach((tr) => {
+        const elegir = () => { _viajeSel = tr.dataset.trasViajesel; };
+        tr.addEventListener('click', elegir);
+        tr.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); elegir(); tr.click(); }
         });
       });
+
+      /* Filtro de camiones: mueve el estado y pide el repintado. El enrutador delega
+         en `click`, y hacer clic en el propio `<select>` es lo que abre el
+         desplegable, así que el clic se dispara sobre el testigo oculto. */
+      const selPlaca = root.querySelector('[data-tras-placa-sel]');
+      if (selPlaca) {
+        /* ⚠⚠ El valor se fija por JS y no sólo con `selected` en el HTML. happy-dom
+           IGNORA el atributo `selected` —trampa ya documentada en este proyecto— así
+           que la prueba veía «Todos» con la vista filtrada; pero el arreglo no es de
+           la prueba: un select que anuncie «Todos» mientras se ve un solo camión
+           haría creer al supervisor que mira el viaje entero. Asignarlo aquí garantiza
+           que el control diga siempre lo que la vista está enseñando. */
+        selPlaca.value = _placaSola || '';
+        selPlaca.addEventListener('change', () => {
+          // Cadena vacía = todos. Nunca se puede llegar a cero camiones.
+          _placaSola = selPlaca.value || null;
+          const testigo = root.querySelector('[data-tras-repaint]');
+          if (testigo) testigo.click();
+        });
+      }
 
       const overlay = root.querySelector('#sv-tras-modal');
       const cuerpo = root.querySelector('#sv-tras-modal-b');
@@ -490,6 +725,41 @@ export function renderTraslado(ctx, mod) {
             : k === 'tiempo' ? tablaTiempo(cams)
               : k === 'act' ? tablaActividad(cams)
                 : tablaPorParada(cams, k === 'temp' ? 'temp' : 'o2', k === 'temp' ? '°C' : 'mg/L');
+
+          /* ── PDF del viaje ──────────────────────────────────────
+             Se cablea aquí, después de pintar, porque el cuerpo del modal se
+             reescribe entero en CADA apertura: un `addEventListener` puesto una vez
+             al arrancar quedaría sobre un nodo que ya no está.
+             ⚠ El documento se arma con el MISMO objeto de viaje que alimenta la
+             vista (`v`, de `viajesDe`), no con una lectura nueva de la hoja: papel y
+             pantalla no pueden discrepar porque salen del mismo sitio.
+             ⚠⚠ Y se pasa `v.camiones`, NO `cams`: si el usuario tuviera activo el
+             filtro de placas, `cams` sería un subconjunto y el papel diría que en el
+             viaje iba un solo camión. El PDF es del VIAJE ENTERO (usuario,
+             2026-08-27). */
+          const bPdf = cuerpo.querySelector('[data-tras-pdf]');
+          if (bPdf) {
+            if (!v) { bPdf.disabled = true; bPdf.title = 'No se pudo identificar el viaje de este desglose'; }
+            else bPdf.addEventListener('click', () => {
+              /* Nada de esto toca el estado de la vista ni el DOM del modal: se
+                 construye una cadena y se imprime en un iframe oculto. Si algo
+                 fallara, el modal tiene que quedarse exactamente como estaba. */
+              try {
+                const doc = buildTrasladoPdfDoc(v, { mod, corrida });
+                if (!doc.camiones) { bPdf.textContent = '⚠ Este viaje no tiene camiones que imprimir'; return; }
+                const previo = bPdf.textContent;
+                bPdf.textContent = '⏳ Preparando…';
+                bPdf.disabled = true;
+                const ok = printFichaDocs([{ page: doc.page, fileName: doc.fileName }], (n, total, f, done) => {
+                  if (done) { bPdf.textContent = previo; bPdf.disabled = false; }
+                });
+                if (!ok) { bPdf.textContent = '⚠ No se pudo abrir el documento'; bPdf.disabled = false; }
+              } catch (_) {
+                bPdf.textContent = '⚠ No se pudo generar el PDF';
+                bPdf.disabled = false;
+              }
+            });
+          }
         },
       });
     },
@@ -525,6 +795,44 @@ function trasladoVisible(t, camiones) {
     temp: prom(vals('temp')),
     actividad: { conteo: cnt, moda: max ? moda : null, empate: max ? empate : false },
   };
+}
+
+/* ── Pantalla completa del mapa ──────────────────────────────
+   Dos caminos a propósito. Se intenta la API nativa —que es la de verdad: esconde
+   la barra del navegador, y el Esc y el gesto de salir los gestiona el sistema— y,
+   si no está disponible, se cae a una capa CSS a pantalla. La API nativa NO existe
+   en Safari de iPhone para elementos arbitrarios, y esta vista se mira en tablet y
+   en móvil en carretera: sin el respaldo, el botón no haría nada justo donde más
+   falta hace.
+
+   🔑 En los DOS caminos hay que llamar a `invalidar()` DESPUÉS de que el contenedor
+   haya cambiado de tamaño. Leaflet cachea las medidas: sin eso el mapa se queda
+   dibujado al tamaño viejo, con las teselas cortadas y los marcadores desplazados.
+   Es el mismo motivo del `invalidateSize` que ya había al montar. */
+const _fsApi = () => (typeof document !== 'undefined'
+  && (document.fullscreenEnabled || document.webkitFullscreenEnabled));
+const _fsElem = () => (typeof document === 'undefined' ? null
+  : (document.fullscreenElement || document.webkitFullscreenElement || null));
+
+function _fsSalir() {
+  try {
+    if (document.exitFullscreen) return document.exitFullscreen();
+    if (document.webkitExitFullscreen) return document.webkitExitFullscreen();
+  } catch (_) { /* el navegador ya salió por su cuenta */ }
+  return undefined;
+}
+
+/** Deja el bloque del mapa fuera de pantalla completa, venga de donde venga.
+ *  Se llama también al repintar: un bloque que se va del DOM estando en modo capa
+ *  dejaría la clase puesta en un nodo muerto y, peor, el `<body>` bloqueado.
+ *  NO se exporta: sólo la usa esta vista, y una superficie pública que nadie consume
+ *  es la misma clase de peso muerto que el `nObservaciones` que se retiró el 08-26. */
+function salirPantallaCompleta(root) {
+  if (typeof document === 'undefined') return;
+  const blk = root && root.querySelector ? root.querySelector('.sv-tmap-blk.is-full') : null;
+  if (blk) blk.classList.remove('is-full');
+  document.body.classList.remove('sv-tmap-full-on');
+  if (_fsElem()) _fsSalir();
 }
 
 /** Etiqueta de actividad que NO esconde un empate. */

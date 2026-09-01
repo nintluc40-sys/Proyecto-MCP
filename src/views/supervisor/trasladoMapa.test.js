@@ -13,6 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   limitesDe, paradasSinGps, fichaPunto, fichaHtml, montarMapa, COLORES_CAMION,
+  paradasDelMapa, paradaHtml,
 } from './trasladoMapa.js';
 
 const parada = (rev, lat, lon, extra) => ({
@@ -147,5 +148,97 @@ describe('Traslado · el mapa degrada sin romper la vista', () => {
     expect(COLORES_CAMION.length).toBeGreaterThanOrEqual(4);
     expect(new Set(COLORES_CAMION).size).toBe(COLORES_CAMION.length);
     expect(COLORES_CAMION[0]).not.toBe(COLORES_CAMION[1]);
+  });
+});
+
+describe('Traslado · LA RUTA ES DEL VIAJE, no del camión', () => {
+  /* ⚠⚠ EL DEFECTO QUE ESTO CIERRA, medido el 2026-08-27.
+     `Latitud` y `Longitud` tienen `grain: 'revision'` en el esquema: la coordenada es
+     de la PARADA y la captura escribe la MISMA en la fila de cada camión, porque los
+     camiones del viaje paran juntos.
+
+     El mapa pintaba una polilínea y un juego de marcadores POR CAMIÓN. Con dos
+     camiones, 4 de 4 puntos caían en la misma coordenada: dos líneas exactamente
+     superpuestas y 8 marcadores en 4 posiciones. Sólo se veía el ÚLTIMO camión y su
+     popup; el primero quedaba debajo, invisible. Es la misma familia de defecto que
+     el KPI de observaciones: tratar un dato de grano PARADA como si fuera de camión. */
+  const dosCamionesJuntos = () => [
+    camion('GSA-1147', [parada(1, -2.21, -80.98, { o2: 7.4 }), parada(2, -2.25, -80.94, { o2: 7.0 })]),
+    camion('PBX-0392', [parada(1, -2.21, -80.98, { o2: 6.9 }), parada(2, -2.25, -80.94, { o2: 6.5 })]),
+  ];
+
+  it('🔴 dos camiones en los mismos puntos dan UNA parada, no dos', () => {
+    const ps = paradasDelMapa(dosCamionesJuntos());
+    expect(ps, 'el mapa volvería a superponer marcadores').toHaveLength(2);
+    expect(ps.map((p) => p.revision)).toEqual([1, 2]);
+  });
+
+  it('🔴 cada parada lleva a TODOS los camiones que pararon en ella', () => {
+    // Es lo que sustituye a la ruta por camión: los datos se separan en el popup.
+    const ps = paradasDelMapa(dosCamionesJuntos());
+    expect(ps[0].camiones.map((c) => c.placa)).toEqual(['GSA-1147', 'PBX-0392']);
+    expect(ps[0].camiones[0].o2).toBe(7.4);
+    expect(ps[0].camiones[1].o2, 'se perdió el segundo camión').toBe(6.9);
+  });
+
+  it('🔴 el popup enseña a los dos camiones, con su color', () => {
+    const h = paradaHtml(paradasDelMapa(dosCamionesJuntos())[0]);
+    expect(h).toContain('GSA-1147');
+    expect(h, 'el segundo camión no sale en el popup').toContain('PBX-0392');
+    expect(h).toContain('7.4');
+    expect(h).toContain('6.9');
+    // Colores distintos: es lo que los distingue ahora que la ruta es una.
+    expect(h).toContain(COLORES_CAMION[0]);
+    expect(h).toContain(COLORES_CAMION[1]);
+  });
+
+  it('🔴 las paradas salen ORDENADAS por número, no por orden de lectura', () => {
+    // Una hora mal tecleada no puede reordenar el recorrido dibujado.
+    const cs = [
+      camion('A', [parada(3, -2.30, -80.90), parada(1, -2.21, -80.98)]),
+      camion('B', [parada(2, -2.25, -80.94)]),
+    ];
+    expect(paradasDelMapa(cs).map((p) => p.revision)).toEqual([1, 2, 3]);
+  });
+
+  it('un camión con una parada que al otro le falta NO se pierde', () => {
+    const cs = [
+      camion('A', [parada(1, -2.21, -80.98)]),
+      camion('B', [parada(1, -2.21, -80.98), parada(2, -2.25, -80.94)]),
+    ];
+    const ps = paradasDelMapa(cs);
+    expect(ps).toHaveLength(2);
+    expect(ps[1].camiones.map((c) => c.placa)).toEqual(['B']);
+  });
+
+  it('🔴 acotado a un camión, el popup enseña SÓLO ese', () => {
+    // Es lo único que el filtro puede acotar con honestidad: la ruta y los marcadores
+    // son del VIAJE y no dependen de qué camión se mire.
+    const h = paradaHtml(paradasDelMapa(dosCamionesJuntos())[0], 'PBX-0392');
+    expect(h).toContain('PBX-0392');
+    expect(h, 'se coló el camión que no se pidió').not.toContain('GSA-1147');
+    expect(h).toContain('6.9');
+    expect(h, 'se colaron las mediciones del otro').not.toContain('7.4');
+  });
+
+  it('🔴 sin acotar, siguen saliendo los dos', () => {
+    // La guarda de la de arriba: si el filtro se aplicara siempre, aquella pasaría
+    // igual y no probaría nada.
+    const h = paradaHtml(paradasDelMapa(dosCamionesJuntos())[0]);
+    expect(h).toContain('GSA-1147');
+    expect(h).toContain('PBX-0392');
+  });
+
+  it('🔴 un camión que no paró ahí lo DICE, no sale vacío', () => {
+    // Un popup en blanco se lee como un fallo de la app, no como un dato que falta.
+    const h = paradaHtml(paradasDelMapa(dosCamionesJuntos())[0], 'NO-EXISTE');
+    expect(h).toContain('no registró mediciones');
+    expect(h).toContain('Parada 1');
+  });
+
+  it('escapa el contenido del popup', () => {
+    const cs = [camion('A"><script>bad()</script>', [parada(1, -2.21, -80.98)])];
+    const h = paradaHtml(paradasDelMapa(cs)[0]);
+    expect(h).not.toContain('<script>bad()</script>');
   });
 });
