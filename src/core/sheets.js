@@ -110,19 +110,52 @@ export function detectSheetName(rows, gid, rawTitle) {
     if (has((k) => k.includes('sala actual') || k.includes('color anillo'))) return 'Maduración MATRIZ';
     return 'Maduración Bitácora';
   }
-  if (has((k) => k.includes('sala') && (k.includes('machos') || k.includes('hembras') || k.includes('nauplio')))) return 'Maduracion';
+  // Maduración Lotes / Tanques: «Sala» MÁS una columna de población reproductiva.
+  // ⚠ Son DOS `has` independientes a propósito. Hasta el 2026-09-01 esto pedía que UNA
+  //   MISMA cabecera contuviera «sala» Y «machos|hembras|nauplio», y en las hojas reales
+  //   son columnas SEPARADAS («Sala» por un lado, «Total de nauplios» por otro): la
+  //   condición no podía cumplirse NUNCA. Medido, casaba 0 de 35 pestañas, y Lotes y
+  //   Tanques caían al final como "Hoja<N>". Corregida casa esas dos y sólo esas.
+  if (has((k) => k.includes('sala')) &&
+      has((k) => k.includes('machos') || k.includes('hembras') || k.includes('nauplio'))) return 'Maduracion';
+  // Maduración Sala es la hoja de AMBIENTE: no lleva machos ni hembras ni nauplios, así
+  // que la regla de arriba no la alcanza. Su firma es la columna «RAS».
+  // ⚠⚠ POR IGUALDAD EXACTA, nunca por `includes`: como subcadena, «ras» casa 16 de las
+  //   35 pestañas —«% Atraso», «Muestras», «Levaduras», «Hembras muertas», «Retraso»…—
+  //   y se las robaría todas. Medido el 2026-09-01 sobre las cabeceras reales.
+  if (has((k) => k === 'ras') || has((k) => k.includes('temperatura 2:00'))) return 'Maduracion';
   // Registro_Supervisión comparte columnas (Intestino, Deformidad, Módulo) con
   // Morfologia/Larvicultura; debe detectarse ANTES por su firma propia.
   if (has((k) => k.includes('supervisor')) &&
       has((k) => k.includes('tipo_revis') || k.includes('condici') || k.includes('acci'))) return 'Registro_Supervision';
-  // ⚠ Patología en Fresco va ANTES que Morfologia: su ficha trae SEIS columnas
-  // «Intestino — …» (Gregarinas, Baculovirus, Nemátodos, Balanceado, Algas, Detritos)
-  // que disparan la heurística `intestino` de la línea siguiente. Esta rama sólo se
-  // recorre cuando el gid llegó SIN título (respaldo CSV, sheets.js:320), que es
-  // justo cuando no hay nombre del que tirar. Firma propia: los otros dos grupos de
-  // la ficha —Hepatopáncreas y Branquias—, que Morfologia no tiene.
+  // Patología en Fresco tiene firma PROPIA: los grupos «Hepatopáncreas» y «Branquias»
+  // de su ficha, que ninguna otra hoja del documento lleva. Esta rama sólo se recorre
+  // cuando el gid llegó SIN título (respaldo CSV, sheets.js:320), que es justo cuando
+  // no hay nombre del que tirar.
   if (has((k) => k.includes('hepatop') || k.includes('branquias'))) return 'Patología en Fresco';
-  if (has((k) => k.includes('intestino') || k.includes('deformidad') || k.includes('lleno'))) return 'Morfologia';
+  /* ❌ NO devolver 'Morfologia' por `intestino|deformidad|lleno`. Esa regla vivió aquí
+     hasta el 2026-09-01 y era un MISCLASIFICADOR puro: «Intestino» y «Deformidad» no
+     son firma de Morfología —los llevan también las ONCE hojas «Datos Larvicultura» y
+     Registro_Supervisión—, así que las once salían como 'Morfologia' cuando el gid
+     llegaba sin título. Y como `isLarviculturaRow` (core/fields.js) compara la cadena
+     EXACTA, TODA la producción de Larvicultura desaparecía del tablero sin un solo
+     error visible.
+     No existe ninguna pestaña «Morfologia» en el documento (35 medidas el 2026-09-01)
+     y NADIE consume ese origen. Si algún día la hubiera, `classifyOrigin` la reconoce
+     por NOMBRE (/morfolog/i), que sí es una firma específica. Una regla cuya firma no
+     distingue su objetivo de otras hojas es peor que no tener regla. */
+  /* ── Hojas que caían en el cajón genérico por no tener firma propia ───────────────
+     Las cuatro llevan Corrida y/o Módulo, así que sin firma propia caían en
+     'Larvicultura' —la regla de abajo— y sus filas entraban en el tablero equivocado.
+     Cada token de aquí está MEDIDO como único entre las 35 pestañas reales
+     (2026-09-01); van antes de 'Larvicultura' justo porque ésa es quien las capturaba. */
+  if (has((k) => k.includes('viaje')) && has((k) => k.includes('placa'))) return 'Registro_Traslado';
+  if (has((k) => k.includes('alcalinidad') || k.includes('am.tóxico')
+              || k.includes('cloro libre'))) return 'Calidad de Agua';
+  if (has((k) => k.includes('tipo de registro')) &&
+      has((k) => k.includes('elemento'))) return 'Registro_Desinfección';
+  if (has((k) => k.includes('pleamar') || k.includes('bajamar')
+              || k.includes('fase lunar'))) return 'Marea';
   if (has((k) => k.includes('corrida') || k.includes('módulo') || k.includes('modulo') || k.includes('supervivencia'))) return 'Larvicultura';
   return rawTitle || ('Hoja' + (gid + 1));
 }

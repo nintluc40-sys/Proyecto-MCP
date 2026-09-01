@@ -76,14 +76,24 @@ describe('H3 · classifyOrigin reconoce Patología en Fresco', () => {
 describe('H3 · detectSheetName: Patología no se confunde con Morfología', () => {
   // Esta es la rama del respaldo CSV cuando el gid llegó SIN título (sheets.js:320
   // llama detectSheetName con 2 argumentos). La ficha de Patología trae SEIS columnas
-  // «Intestino — …» que disparan la heurística `intestino` de Morfologia.
+  // «Intestino — …», y su firma propia son los OTROS dos grupos: Hepatopáncreas y
+  // Branquias, que ninguna otra hoja del documento lleva.
   it('un gid sin título con las columnas de Patología se identifica como Patología', () => {
     expect(detectSheetName([patRow()], 7)).toBe('Patología en Fresco');
   });
 
-  it('Morfología de verdad (Intestino/Deformidad, sin los grupos de la ficha) sigue siendo Morfologia', () => {
+  /* ⚠ CAMBIO DE COMPORTAMIENTO DELIBERADO (2026-09-01). Esto devolvía 'Morfologia' por
+     una regla `intestino|deformidad|lleno` que se RETIRÓ de `detectSheetName`: no
+     distinguía Morfología de las ONCE hojas «Datos Larvicultura» reales —que llevan las
+     mismas columnas— y las mandaba a un origen que NADIE consume, con lo que toda la
+     producción de Larvicultura desaparecía del tablero sin un solo error a la vista.
+     Fíjate en que el propio fixture lleva `Corrida`: describía una hoja hipotética que
+     en este documento NO existe, y sostenía la regla que rompía once que sí existen.
+     El NOMBRE sigue mandando cuando llega: `classifyOrigin('Morfologia')` lo comprueba. */
+  it('Intestino/Deformidad junto a una Corrida es Larvicultura, no Morfología', () => {
     const morfo = [{ Fecha: '04/09/2026', Corrida: '590', Intestino: 'Lleno', Deformidad: 'No', Lleno: '80' }];
-    expect(detectSheetName(morfo, 9)).toBe('Morfologia');
+    expect(detectSheetName(morfo, 9)).toBe('Larvicultura');
+    expect(detectSheetName(morfo, 9)).not.toBe('Morfologia');
   });
 
   it('con título reconocible el nombre manda y ni se miran las columnas', () => {
