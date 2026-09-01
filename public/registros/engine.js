@@ -7454,8 +7454,40 @@ function bioPatCambio(){
   _collectBioGrid().forEach(d => { if(d && d.fila != null) filas[String(d.fila)] = d; });
   const quiere = _bioPatVisibles(filas);
   if(!_bioQpcrDesfase(fp, filas, quiere)) return;
+  /* Desde que esto se dispara AL TECLEAR, el repintado cae en mitad de la escritura:
+     `renderBiomol` recrea el panel entero, así que hay que devolver el cursor a la
+     celda que se estaba escribiendo o la palabra se parte a la mitad. */
+  const act = document.activeElement;
+  let foco = null;
+  try{
+    if(act && act.name && fp.contains(act)) foco = { name: act.name, s: act.selectionStart, e: act.selectionEnd };
+  }catch(_){ foco = (act && act.name) ? { name: act.name, s: null, e: null } : null; }
+  /* `renderBiomol` termina poniendo _bioGridDirty a false («lo pintado es lo
+     persistido»). Aquí es FALSO: se repinta con lo TECLEADO y aún sin guardar, y
+     perder la marca deja salir del módulo sin el aviso de cambios pendientes. */
+  const sucio = _bioGridDirty;
   _bioPintarCon = filas;
   renderBiomol();
+  _bioGridDirty = sucio;
+  if(foco){
+    const el = fp.querySelector('[name="' + foco.name + '"]');
+    if(el && !el.disabled){
+      try{ el.focus(); if(foco.s != null) el.setSelectionRange(foco.s, foco.e); }catch(_){}
+    }
+  }
+}
+
+/* Asa de TECLEO de una celda de resultado con qPCR (ver bioPatCambio).
+   ⚠ El GATE no es un adorno: sin él habría un repaso completo del DOM en CADA tecla
+   (con 100 filas son ~2.200 querySelector por pulsación, en tablets de campo).
+   `defaultValue` es el valor que pintó el último render, así que comparar contra él
+   dice exactamente si ESTA celda acaba de cruzar —o descruzar— la frontera de
+   «positivo»; sólo entonces hay algo que abrir o cerrar. */
+function bioPatInput(el){
+  _bioDirty();
+  if(!el) return;
+  if(_bioPositivoEstricto(el.defaultValue) === _bioPositivoEstricto(el.value)) return;
+  bioPatCambio();
 }
 
 /* ¿Este valor de una celda de patógeno significa POSITIVO?
@@ -8793,10 +8825,16 @@ function renderBiomol(){
       if(c.pat && !_bioQpcrCeldaAbierta(d, c.pat, c.k)){
         return `<td class="bio-qc"><input class="pinp" type="text" name="bg_${fila}_${c.k}" data-r="${fila-1}" data-c="${ci}" disabled value="" title="Sólo se registra cuando la muestra es positiva a ${escapeHtml(c.pat.toUpperCase())}" style="min-width:${w}px;background:#f1f5f9;color:#cbd5e1"></td>`;
       }
-      // Una celda de RESULTADO de un patógeno con qPCR avisa al soltar el foco: es
-      // lo que hace aparecer sus columnas de Ct y copias sin tener que guardar.
-      const av = BIO_QPCR_PATS.indexOf(c.k) !== -1 ? ' onchange="bioPatCambio()"' : '';
-      return `<td${c.pat ? ' class="bio-qc"' : ''}><input class="pinp" type="text" name="bg_${fila}_${c.k}" data-r="${fila-1}" data-c="${ci}"${av} onpaste="madGridPaste(event,'biomol')" oninput="_bioDirty()" value="${escapeHtml(d[c.k]||"")}" maxlength="200" style="min-width:${w}px"></td>`;
+      /* Una celda de RESULTADO de un patógeno con qPCR abre sus columnas de Ct y
+         Copias AL TECLEAR (`oninput` -> bioPatInput), no al soltar el foco.
+         ⚠ `onchange` sólo dispara cuando el campo PIERDE el foco: con él solo, el
+         analista escribía «Positivo» y no pasaba nada hasta irse del campo, y marcar
+         positiva la 2.ª fila no la abría —pinchar su celda deshabilitada no produce
+         blur—. Se conserva de todos modos: cubre autocompletado y algún pegado. */
+      const esRes = BIO_QPCR_PATS.indexOf(c.k) !== -1;
+      const av = esRes ? ' onchange="bioPatCambio()"' : '';
+      const oi = esRes ? "bioPatInput(this)" : "_bioDirty()";
+      return `<td${c.pat ? ' class="bio-qc"' : ''}><input class="pinp" type="text" name="bg_${fila}_${c.k}" data-r="${fila-1}" data-c="${ci}"${av} onpaste="madGridPaste(event,'biomol')" oninput="${oi}" value="${escapeHtml(d[c.k]||"")}" maxlength="200" style="min-width:${w}px"></td>`;
     }).join("");
     rowsHtml += `<tr>
       <td class="tqc" style="font-size:10px;min-width:34px;text-align:center">${fila}</td>
