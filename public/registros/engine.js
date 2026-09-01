@@ -9185,7 +9185,12 @@ async function syncOneAstFromList(id){
 
   setSyncUI("pend","Sincronizando…");
   const payload = buildAstPayload([r]);
-  const sent = await postPayload(payload, url, {dedupeSalt: id});
+  // H1 · marca de reconciliación: si este envío acaba EN LA COLA, al entregarse hay
+  // que marcar el registro local. Sin ella se queda «pendiente» para siempre y el
+  // chequeador lo reenvía a mano. El kind "ast" ya lo despacha _reconcileMark, y la
+  // llave es la MISMA que usa syncAllPendingAst: el id del registro.
+  const opts = { dedupeSalt: id, mark:{ kind:"ast", keys:[id] } };
+  const sent = await postPayload(payload, url, opts);
   if(sent){
     const list2 = _astRaw();
     const idx = list2.findIndex(x => x.id === id);
@@ -9196,8 +9201,7 @@ async function syncOneAstFromList(id){
     if(curTab === "ast") renderAst();
     updateDots(); updateSyncUI(); buildGrid();
   } else {
-    setSyncUI("err","No fue posible sincronizar");
-    toast("No fue posible sincronizar con Google Sheets","err",4500);
+    _syncNotOkUI(opts.outcome, "No fue posible sincronizar", null, opts.gasMessage);
   }
 }
 
