@@ -73,13 +73,15 @@ describe('A · toda ruta que envía CONSULTA el resultado', () => {
     return out;
   }
 
-  /* La ÚNICA excepción admitida, y va nombrada a propósito para que una ruta nueva no
-     pueda colarse detrás de ella. `recalcSurvivalForCorrida` pinta `_recalcStatus[f]`
-     como "err" cuando el envío se encoló: es engañoso, pero no hay dato en riesgo ni
-     estado local que reconciliar —el recálculo re-deriva valores y se puede repetir—,
-     así que se deja anotado en vez de arreglado a escondidas. Si algún día se corrige,
-     hay que quitarla de aquí y esta prueba lo pedirá sola. */
-  const EXCEPCIONES = ['recalcSurvivalForCorrida'];
+  /* ✅ YA NO HAY EXCEPCIONES: TODAS las rutas que envían consultan el desenlace.
+     La última era `recalcSurvivalForCorrida`, que pintaba `_recalcStatus[f]` como "err"
+     con el envío ENCOLADO. Se corrigió el 2026-09-01 y se retiró de esta lista, que es
+     justo lo que pedía la nota que había aquí: una anotación huérfana —para una función
+     ya arreglada, o que ya no envía— es ruido que esconde el fallo siguiente.
+     Su caso concreto vive ahora en `recalc-outcome.test.js`; esta lista sigue existiendo
+     para que, si algún día hay que admitir otra excepción, tenga que ir NOMBRADA y no
+     pueda colarse en silencio. */
+  const EXCEPCIONES = [];
 
   const rutas = rutasQueEnvian();
 

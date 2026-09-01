@@ -3826,8 +3826,17 @@ async function recalcSurvivalForCorrida(){
       try{
         const payload = buildDatosPayload(curMod, ["poblacion"], { dataByFicha:{ poblacion:_recalcAffected[f] }, fecha:f });
         if(!payload.rows.length){ _recalcStatus[f] = "sin filas"; _recalcRenderPanel(fechas, ""); continue; }
-        const sent = await postPayload(payload, url, { dedupeSalt:"recalc:"+mLabel(curMod)+":"+f });
-        _recalcStatus[f] = sent ? "ok" : "err"; _recalcRenderPanel(fechas, "");
+        /* H1 · el `false` de postPayload NO significa error. «encolado» (el dato se
+           entrega y se verifica solo) y «en curso» (ya hay un envío de esta hoja en
+           vuelo, del que postPayload ya avisó) devuelven false igual que un rechazo.
+           Pintarlos «⚠ error de envío» empujaba a reenviar a mano lo que ya estaba a
+           salvo. Mismo criterio que `_syncNotOkUI`; aquí va por DÍA porque el panel
+           de recálculo lleva una fila por día. Un `rejected` sí sigue siendo error. */
+        const o = { dedupeSalt:"recalc:"+mLabel(curMod)+":"+f };
+        const sent = await postPayload(payload, url, o);
+        _recalcStatus[f] = sent ? "ok"
+          : (o.outcome === "queued" || o.outcome === "inflight") ? o.outcome : "err";
+        _recalcRenderPanel(fechas, "");
       }catch(_){ _recalcStatus[f] = "err"; _recalcRenderPanel(fechas, ""); }
     }
   }
@@ -3842,6 +3851,8 @@ function _recalcRenderPanel(fechas, note){
     const st = _recalcStatus[f];
     const badge = st === "ok" ? '<span style="color:#15803d;font-weight:600">✔ reenviado</span>'
       : st === "err" ? '<span style="color:#b91c1c;font-weight:600">⚠ error de envío</span>'
+      : st === "queued" ? '<span style="color:#a16207;font-weight:600">📤 en cola · se enviará solo</span>'
+      : st === "inflight" ? '<span style="color:#a16207">⏳ sincronización en curso</span>'
       : st === "…" ? '<span style="color:#a16207">enviando…</span>'
       : st === "sin filas" ? '<span style="color:#6b7280">sin datos por tanque</span>'
       : '<span style="color:#6b7280">recalculado (local)</span>';
