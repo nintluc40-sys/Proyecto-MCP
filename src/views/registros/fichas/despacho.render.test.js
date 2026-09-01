@@ -38,11 +38,14 @@ describe('renderDespachoFicha', () => {
     expect(html).toMatch(/name="bm_0"[^>]*class="sv-auto"[^>]*readonly/);
   });
 
-  it('select Destino con DESTINO_OPTS inyectado', () => {
-    expect(html).toContain('<select name="de_0"');
-    expect(html).toContain('>Piscina A<');
-    expect(html).toContain('>Piscina B<');
+  it('Destino: una casilla por DESTINO_OPTS y el valor en un input oculto', () => {
+    expect(html).toContain('name="de_0"');
+    expect(html).toContain('type="hidden"');
+    expect(html).toContain('value="Piscina A"');
+    expect(html).toContain('value="Piscina B"');
     expect(html).toContain('— Selecciona —');
+    // Las casillas son la interfaz; lo que se guarda es el oculto.
+    expect((html.match(/data-dest-ms/g) || []).length).toBe(destinos.length * 12);
   });
 
   it('sv editable sin CS, readonly auto con CS', () => {
@@ -58,6 +61,33 @@ describe('renderDespachoFicha', () => {
 
   it('Destino preselecciona el valor guardado', () => {
     const h = renderDespachoFicha({ modLabel: 'M01', destinos, data: { de_0: 'Piscina B' } });
-    expect(h).toMatch(/<option value="Piscina B" selected>/);
+    expect(h).toMatch(/value="Piscina B" checked/);
+    expect(h).not.toMatch(/value="Piscina A" checked/);
+  });
+
+  /* 🔴 El defecto que motivó el cambio, medido contra el despliegue el 2026-08-30:
+     la columna Destino de producción tiene 12 filas con DOS destinos separados por
+     coma. Con el `<select>` anterior, la comparación `cur === opción` no casaba con
+     ninguna, la celda mostraba «— Selecciona —» y al guardar el Destino quedaba
+     VACÍO. La ficha destruía el dato por el simple hecho de abrirse. */
+  it('🔴 un Destino con DOS valores se conserva entero y marca sus dos casillas', () => {
+    const h = renderDespachoFicha({
+      modLabel: 'M01', destinos, data: { de_0: 'Piscina A, Piscina B' },
+    });
+    // El valor que viaja a la hoja sigue completo.
+    expect(h).toContain('<input type="hidden" name="de_0" value="Piscina A, Piscina B">');
+    // Y las dos casillas salen marcadas.
+    expect(h).toMatch(/value="Piscina A" checked/);
+    expect(h).toMatch(/value="Piscina B" checked/);
+    // El resumen visible lo enseña, en vez de fingir que no hay nada elegido.
+    expect(h).toContain('>Piscina A, Piscina B</summary>');
+  });
+
+  it('tolera espacios y comas sobrantes en lo guardado', () => {
+    const h = renderDespachoFicha({
+      modLabel: 'M01', destinos, data: { de_0: ' Piscina B ,, ' },
+    });
+    expect(h).toContain('value="Piscina B">');
+    expect(h).toMatch(/value="Piscina B" checked/);
   });
 });

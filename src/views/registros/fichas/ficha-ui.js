@@ -44,14 +44,10 @@ export function saveArea({
   lastSaved = '—',
   recover = null,
   pdfAction = 'pdf',
-  share = true,
 } = {}) {
   const recBtn = recover
     ? `<button class="btn brec" data-action="recover" data-ficha="${ficha}" title="Recuperar autoguardado de ${escapeHtml(recover.label)}">↩ Recuperar (${escapeHtml(recover.label)})</button>`
     : '<button class="btn brec" disabled style="opacity:.35;cursor:not-allowed">↩ Recuperar</button>';
-  const shareBtn = share
-    ? `<button class="btn bs" data-action="share" data-ficha="${ficha}" title="Genera el PDF y lo sube a Drive para descargarlo por el QR en otro dispositivo (sin instalar el sistema)">📤 Compartir PDF</button>`
-    : '';
   return `<div class="sa">
     <div class="sa-info">
       <span>💾 Último guardado: <strong>${escapeHtml(lastSaved)}</strong></span>
@@ -61,7 +57,6 @@ export function saveArea({
       <button class="btn bd" data-action="clear" data-ficha="${ficha}" title="Borrar datos">🗑 Borrar</button>
       ${recBtn}
       <button class="btn bpdf" data-action="${pdfAction}" data-ficha="${ficha}" title="PDF A4">📄 PDF</button>
-      ${shareBtn}
       <button class="btn bs" data-action="save" data-ficha="${ficha}">💾 Guardar local</button>
       <button class="btn bp" data-action="sync" data-ficha="${ficha}">☁️ Guardar y sincronizar</button>
     </div>

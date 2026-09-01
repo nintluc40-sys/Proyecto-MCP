@@ -543,7 +543,7 @@ describe('Traslado · avisos del protocolo', () => {
     const fuera = H.trasFueraCadencia(H._trasRaw()[0].data);
     expect(fuera).toHaveLength(3);
     expect(fuera.every((f) => f.minutos === 190)).toBe(true);
-    // ⚠ Ya no es el ÚLTIMO aviso: desde el 2026-08-25b «Guardar traslado» sincroniza
+    // ⚠ Ya no es el ÚLTIMO aviso: desde el 2026-08-25b «Enviar traslado» sincroniza
     // y su mensaje va detrás. Se busca en TODOS, que es lo que de verdad importa.
     expect(toasts.join(' || ')).toContain('fuera de cadencia');
   });
@@ -919,7 +919,7 @@ describe('Traslado · dónde están los botones y los títulos', () => {
   });
 
   /* ⚠ Los tres casos siguientes cambiaron el 2026-08-25b. Antes vigilaban que
-     «Guardar traslado» viviera DENTRO del bloque de la revisión y que no hubiera un
+     «Enviar traslado» viviera DENTRO del bloque de la revisión y que no hubiera un
      segundo botón al pie. El usuario pidió después el patrón de larvicultura, que
      reparte esos papeles: en la revisión va el guardado LOCAL —junto a «Sellar», que
      es donde se acaba de trabajar— y al pie la barra con guardar-y-enviar. */
@@ -937,15 +937,15 @@ describe('Traslado · dónde están los botones y los títulos', () => {
     expect(sellar.parentElement).toBe(limpiar.parentElement);
   });
 
-  it('🔴 «Guardar traslado» NO está en la revisión: vive en la barra del pie', () => {
+  it('🔴 «Enviar traslado» NO está en la revisión: vive en la barra del pie', () => {
     // Sincronizar es una acción del VIAJE, no de una parada. Tenerla dentro del
     // bloque invitaba a pulsarla en cada parada creyendo que guardaba sólo ésa.
     conCamion();
     const enRev = Array.from(panel().querySelectorAll('.tras-rev button'))
-      .filter((b) => b.textContent.includes('Guardar traslado'));
+      .filter((b) => b.textContent.includes('Enviar traslado'));
     expect(enRev).toHaveLength(0);
     const enBarra = Array.from(panel().querySelectorAll('.sa button'))
-      .filter((b) => b.textContent.includes('Guardar traslado'));
+      .filter((b) => b.textContent.includes('Enviar traslado'));
     expect(enBarra, 'y hay exactamente uno al pie').toHaveLength(1);
   });
 

@@ -25,7 +25,6 @@ describe('attachFichaEvents', () => {
       clearFicha: vi.fn(),
       recoverFicha: vi.fn(),
       downloadPDF: vi.fn(),
-      shareFichaPDF: vi.fn(),
       openCS: vi.fn(),
       aguaSyncRowColor: vi.fn(),
     };
@@ -65,14 +64,12 @@ describe('attachFichaEvents', () => {
     expect(engine.localSync).toHaveBeenCalledWith('calidad');
   });
 
-  it('botonera: Borrar/PDF/Compartir delegan en el motor', () => {
+  it('botonera: Borrar y PDF delegan en el motor', () => {
     const root = mount(engine);
     root.querySelector('[data-action="clear"]').click();
     expect(engine.clearFicha).toHaveBeenCalledWith('calidad');
     root.querySelector('[data-action="pdf"]').click();
     expect(engine.downloadPDF).toHaveBeenCalledWith('calidad');
-    root.querySelector('[data-action="share"]').click();
-    expect(engine.shareFichaPDF).toHaveBeenCalledWith('calidad');
   });
 
   it('Recuperar (cuando hay autoguardado) llama recoverFicha', () => {

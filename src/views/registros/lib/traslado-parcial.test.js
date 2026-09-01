@@ -3,7 +3,7 @@
    REGISTROS · Traslado — GUARDADO LOCAL, patrón de larvicultura (2026-08-25b)
 
    Hasta el 08-25 el viaje sólo existía cuando estaba TERMINADO: había que rellenar
-   las cuatro paradas y pulsar «Guardar traslado». En carretera eso significaba
+   las cuatro paradas y pulsar «Enviar traslado». En carretera eso significaba
    llevar tres horas de mediciones vivas únicamente en el DOM de un teléfono, y
    perderlas enteras si se cerraba el navegador o se agotaba la batería.
 
@@ -14,7 +14,7 @@
 
      · «Sellar» escribe hora y coordenadas y NO guarda.
      · «💾 Guardar local» respalda el VIAJE ENTERO y lo deja pendiente.
-     · «☁️ Guardar traslado» guarda Y envía, y los datos SE QUEDAN en la ficha.
+     · «☁️ Enviar traslado» guarda Y envía, y los datos SE QUEDAN en la ficha.
      · «🗑 Borrar traslado» la vacía para empezar el siguiente.
      · Un viaje a medias no ensucia la hoja: las paradas en blanco NO escriben filas,
        o el tablero del Supervisor y el mapa pintarían paradas fantasma —sin hora y
@@ -267,7 +267,7 @@ describe('Traslado · sellar sella; guardar guarda', () => {
     expect(revsEnHoja(registros()), 'y las tres paradas, no sólo la visible').toEqual([1, 2, 3]);
   });
 
-  it('🔴 «Guardar traslado» NO duplica el viaje que se fue guardando', () => {
+  it('🔴 «Enviar traslado» NO duplica el viaje que se fue guardando', () => {
     /* Si guardar-y-enviar creara un registro nuevo, la hoja se quedaría con las filas
        del viaje enviado en carretera Y las del completo, bajo llaves distintas. */
     conCamion();

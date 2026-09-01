@@ -23,7 +23,6 @@ const SS_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
 const EV_FOLDER_ID = "1cwUeTxbsP3T4y8BwRVlHPaCh39KbIWWa";
 const EV_TOKEN     = "evd_8f3kq2m9wzx7";
 const EV_SHEET     = "Evidencias";
-const PDF_SHEET    = "PDFs_Dia";
 
 // Hojas permitidas — lista blanca estricta
 const ALLOWED = [
@@ -53,11 +52,15 @@ const ALLOWED = [
 ];
 
 const LIMITS = {
-  // maxCols: 50 contempla las 49 cols actuales del schema + 1 de margen.
-  // Schema actual: cols 0–28 (Calidad/PLG/Población/Técnico) + cols 29–36
-  // (otro sistema, vacías) + cols 37–41 (Despacho) + cols 42–47 (Cal. Agua).
-  datos:   { maxRows: 30,  maxCols: 50 },
-  control: { maxRows: 300, maxCols: 8  },
+  // ⚠⚠ maxCols YA NO RECORTA: desde el 2026-08-30 un payload más ancho que su tope
+  // se RECHAZA (ver doPost). Aun así los topes van con holgura, porque un rechazo en
+  // producción el día que alguien añade una columna es un mal día para enterarse.
+  // Datos Larvicultura son 49 columnas: 0–28 (Calidad/PLG/Población/Técnico),
+  // 29–36 (otro sistema, vacías), 37–41 (Despacho), 42–47 (Cal. Agua) y 48 Toneladas.
+  datos:   { maxRows: 30,  maxCols: 60 },
+  // Control_Tanque son 8 (Fecha, Hora, Corrida, Módulo, Tanque, OD, Temp, Observación)
+  // y el tope estaba EXACTAMENTE en 8: margen cero, la peor cifra posible.
+  control: { maxRows: 300, maxCols: 12 },
   algas:   { maxRows: 500, maxCols: 28 },
   mad:     { maxRows: 1000, maxCols: 25 },
   // Biomol: 23 columnas desde 2026-08-23 (las 19 anteriores MENOS la pareja
@@ -119,13 +122,6 @@ function doPost(e) {
       return respond({ status: "error", message: "Solicitud inválida" });
     }
 
-    // Acción especial F3: compartir el PDF de una ficha. La app manda el HTML de
-    // la ficha; el GAS lo convierte a PDF y lo guarda/comparte en Drive (PDFs/Fecha)
-    // para descargarlo por el QR. Valida su propio token (EV_TOKEN), no va por la
-    // allowlist de hojas.
-    if (payload && payload.action === "pdfShare") {
-      return respond(evPdfShare(payload));
-    }
 
     // Rate limiting por session key. Se usan hasta 24 chars (no 8): el sessionId
     // del cliente empieza por Date.now().toString(36) (~8 chars que varían lento
@@ -228,11 +224,26 @@ function doPost(e) {
       return respond({ status: "error", message: "Límite de filas excedido" });
     }
 
+    // ⚠⚠ Y LO MISMO CON EL ANCHO. Hasta el 2026-08-30 las filas se RECORTABAN a
+    // maxCols sin decir nada y el GAS respondía "ok": así se perdieron dos columnas
+    // del AsT en agosto, con el cliente informando de una escritura perfecta. Un dato
+    // que no llega y nadie ve es lo más caro que puede pasar aquí, así que ahora se
+    // rechaza igual que las filas. La única causa posible es que este GAS sea anterior
+    // a la app que le habla, y eso se arregla re-desplegando, no tocando el registro.
+    var anchoMax = 0;
+    for (var ri0 = 0; ri0 < payload.rows.length; ri0++) {
+      var f0 = payload.rows[ri0];
+      if (f0 && f0.length > anchoMax) anchoMax = f0.length;
+    }
+    if (anchoMax > limits.maxCols) {
+      return respond({ status: "error", message: "Límite de columnas excedido" });
+    }
+
     // ── LOCK: serializa el read-modify-write (open + upsert/append/delete)
     // entre invocaciones CONCURRENTES. Sin esto, dos dispositivos sincronizando
     // la MISMA hoja a la vez podían leer el mismo estado y pisarse (merge sobre
     // datos obsoletos) o duplicar filas en hojas append. F1: waitLock espera
-    // hasta 25s (< el timeout de 30s del cliente, F2a) para dar holgura y NO
+    // hasta 25s (< el timeout de 40s del cliente, F2a) para dar holgura y NO
     // rechazar por "Servidor ocupado" bajo ráfagas; con F4b el lock se sostiene
     // poco tiempo (escritura O(sesión)), así que la espera real casi nunca llega
     // a agotarse. Si aun así no obtiene el lock, devuelve un error transitorio →
@@ -247,6 +258,8 @@ function doPost(e) {
     try {
       rows = payload.rows.map(function(row, ri) {
         if (!Array.isArray(row)) throw new Error("row_" + ri);
+        // El recorte se conserva como cinturón: con la comprobación de ancho de arriba
+        // ya no puede activarse, pero asegura que el rango nunca supere el tope.
         return row.slice(0, limits.maxCols).map(function(cell) {
           return cleanCell(cell);
         });
@@ -275,19 +288,20 @@ function doPost(e) {
     // quedaba en blanco. Llamarlo siempre lo cubre y evita repetir el caso a futuro.
     ensureHeaders(ws, payload.headers || []);
 
-    // Borrado explícito de sesiones (Microbiología / Calidad de Agua / Patología
-    // en Fresco): permite VACIAR de la hoja una sesión completa. Un upsert/replace
-    // con 0 filas no podría borrar nada (no hay clave que emparejar); por eso el
-    // cliente envía deleteKeys = [[v0,...], ...] con los valores de keyCols.
-    var _deleted = 0;
-    if ((isMicro || isCal || isPat) && Array.isArray(payload.deleteKeys) &&
-        payload.deleteKeys.length && Array.isArray(payload.keyCols)) {
-      _deleted = deleteByKeyRows(ws, payload.keyCols, payload.deleteKeys);
-    }
+    // ⚠ AQUÍ HUBO un borrado explícito de sesiones por payload.deleteKeys
+    // (Microbiología / Calidad de Agua / Patología). RETIRADO el 2026-08-30 porque
+    // NINGÚN cliente lo enviaba: el botón de la papelera del historial borra sólo del
+    // dispositivo, y su propio rótulo lo dice. El comentario que había aquí describía
+    // un comportamiento del cliente que no existía.
+    // Y no era una rama muerta inofensiva: con SHARED_TOKEN vacío doPost no pide
+    // autenticación, así que era un borrado de filas de PRODUCCIÓN al alcance de
+    // cualquiera con la URL — y la URL va dentro del JavaScript público.
+    // Si algún día el borrado local debe llegar a la hoja, vuelve: pero con la
+    // autenticación puesta y decidido a propósito, no como resto de otra cosa.
 
     if (rows.length === 0) {
       if (reqId) { try { CacheService.getScriptCache().put("idem_" + reqId, "1", 600); } catch (_e) {} }
-      return respond({ status: "ok", sheet: payload.sheetName, rows: 0, upserted: _deleted, appended: 0 });
+      return respond({ status: "ok", sheet: payload.sheetName, rows: 0, upserted: 0, appended: 0 });
     }
 
     // Routing según hoja destino:
@@ -533,11 +547,11 @@ function upsertRows(ws, newRows, isCtrl) {
   var added = 0;
   if (toAdd.length > 0) {
     var startRow = lastRow(ws) + 1;
-    var nc2      = toAdd[0].length;
-    if (isCtrl) ws.getRange(startRow, 2, toAdd.length, 1).setNumberFormat("@");
-    ws.getRange(startRow, 1, toAdd.length, nc2).setValues(toAdd);
-    fmtData(ws, startRow, toAdd.length, nc2, isCtrl);
-    added = toAdd.length;
+    var u        = filasUniformes(toAdd);
+    if (isCtrl) ws.getRange(startRow, 2, u.filas.length, 1).setNumberFormat("@");
+    ws.getRange(startRow, 1, u.filas.length, u.ancho).setValues(u.filas);
+    fmtData(ws, startRow, u.filas.length, u.ancho, isCtrl);
+    added = u.filas.length;
   }
   return { upserted: updated, appended: added };
 }
@@ -642,13 +656,37 @@ function lastRow(ws) {
   return lr > 0 ? lr : 0;
 }
 
+// ── Ancho uniforme de un bloque de filas ─────────────────
+// setValues exige que TODAS las filas midan exactamente lo mismo que el rango. Una
+// sola más corta hace fallar la escritura ENTERA, y el error de Apps Script no dice
+// cuál fila fue. Hasta el 2026-08-30 tres de las cinco rutas de escritura tomaban el
+// ancho de la PRIMERA fila y daban por hecho que las demás medían igual: cierto hoy,
+// pero es una propiedad de los constructores del CLIENTE, no de estas funciones, y
+// basta una celda condicional al otro lado del contrato para romperla.
+// Devuelve las filas con un único ancho: las cortas se rellenan con "" y las largas
+// se recortan (recortar ya lo hacía doPost con maxCols). No muta lo que recibe.
+function filasUniformes(filas) {
+  var ancho = 0, i;
+  for (i = 0; i < filas.length; i++) if (filas[i].length > ancho) ancho = filas[i].length;
+  var out = [];
+  for (i = 0; i < filas.length; i++) {
+    var f = filas[i];
+    if (f.length === ancho) { out.push(f); continue; }
+    var c = f.slice();
+    while (c.length < ancho) c.push("");
+    out.push(c.length > ancho ? c.slice(0, ancho) : c);
+  }
+  return { filas: out, ancho: ancho };
+}
+
 // ── Append simple (queda como utilidad genérica) ──
 function appendRows(ws, newRows) {
+  if (!newRows || !newRows.length) return { upserted: 0, appended: 0 };
   var startRow = lastRow(ws) + 1;
-  var nc       = newRows[0].length;
-  ws.getRange(startRow, 1, newRows.length, nc).setValues(newRows);
-  fmtData(ws, startRow, newRows.length, nc, false);
-  return { upserted: 0, appended: newRows.length };
+  var u        = filasUniformes(newRows);
+  ws.getRange(startRow, 1, u.filas.length, u.ancho).setValues(u.filas);
+  fmtData(ws, startRow, u.filas.length, u.ancho, false);
+  return { upserted: 0, appended: u.filas.length };
 }
 
 // ── F4b · Reemplazo O(sesión) sin reescribir la hoja entera ──────────────
@@ -672,17 +710,12 @@ function _replaceMatched(ws, newRows, matchPred) {
   }
   var added = 0;
   if (newRows && newRows.length) {
-    var widest = 0;
-    for (var w = 0; w < newRows.length; w++) if (newRows[w].length > widest) widest = newRows[w].length;
-    if (widest > ws.getMaxColumns()) ws.insertColumnsAfter(ws.getMaxColumns(), widest - ws.getMaxColumns());
-    var norm = newRows.map(function(r){
-      if (r.length === widest) return r;
-      var c = r.slice(); while (c.length < widest) c.push(""); return c.slice(0, widest);
-    });
+    var u = filasUniformes(newRows);
+    if (u.ancho > ws.getMaxColumns()) ws.insertColumnsAfter(ws.getMaxColumns(), u.ancho - ws.getMaxColumns());
     var startRow = lastRow(ws) + 1;
-    ws.getRange(startRow, 1, norm.length, widest).setValues(norm);
-    fmtData(ws, startRow, norm.length, widest, false);
-    added = norm.length;
+    ws.getRange(startRow, 1, u.filas.length, u.ancho).setValues(u.filas);
+    fmtData(ws, startRow, u.filas.length, u.ancho, false);
+    added = u.filas.length;
   }
   SpreadsheetApp.flush();   // el APPEND queda comprometido ANTES de cualquier borrado
   var removed = 0;
@@ -727,27 +760,6 @@ function replaceByKeyRows(ws, newRows, keyCols) {
   return { upserted: res.removed, appended: res.added };
 }
 
-// ── Borrado por clave compuesta (vaciar sesión en hojas anchas) ──────────
-// Elimina las filas cuya clave (keyCols) coincide con alguna de deleteKeys.
-// deleteKeys = array de tuplas con los valores de las columnas clave EN EL
-// MISMO ORDEN que keyCols (compactas, no filas completas). Se usa para borrar
-// de la hoja una sesión que el usuario eliminó del historial local
-// (Microbiología / Calidad de Agua). No usa regex (en el template literal del
-// HTML las secuencias \d colapsarían); la normalización de fecha la hace
-// madRowKey al leer las celdas de la hoja (Date → yyyy-MM-dd).
-function deleteByKeyRows(ws, keyCols, deleteKeys) {
-  if (!deleteKeys || !deleteKeys.length || !keyCols || !keyCols.length) return 0;
-  var present = {};
-  for (var r = 0; r < deleteKeys.length; r++) {
-    var dk = deleteKeys[r] || [];
-    var parts = [];
-    for (var j = 0; j < dk.length; j++) parts.push(String(dk[j] == null ? "" : dk[j]).trim());
-    present[parts.join("|")] = 1;
-  }
-  var res = _replaceMatched(ws, [], function(row){ return present[madRowKey(row, keyCols)] === 1; });
-  return res.removed;
-}
-
 // ── Upsert Registro_Supervisión (AsT) por columna ID estable ──
 // Cada registro local de AsT viaja con un ID único en la ÚLTIMA columna del
 // payload. Al re-sincronizar un registro editado, se localiza su fila por ese
@@ -765,10 +777,17 @@ function upsertAstRows(ws, newRows) {
   if (widest > ws.getMaxColumns()) {
     ws.insertColumnsAfter(ws.getMaxColumns(), widest - ws.getMaxColumns());
   }
-  // El ID ya NO es forzosamente la última columna: desde 2026-08 el payload lleva
-  // Flacidez/Necrosis/Disparidad DESPUÉS del ID, para no desplazar ninguna columna
-  // histórica de la hoja. Se localiza por cabecera; si la hoja es heredada y no la
-  // tiene, se conserva el comportamiento anterior (última columna del payload).
+  // El ID es la ÚLTIMA columna del payload —la 27 en el AsT, la 29 en Traslado— y
+  // Flacidez/Necrosis/Disparidad van DELANTE de él, no detrás. El orden se invirtió
+  // el 2026-08-15 a propósito y no debe volver a cambiarse: la hoja de producción
+  // tenía la cabecera del ID EN BLANCO, así que la búsqueda por cabecera no lo
+  // encontraba y caía al respaldo «última columna del payload»; con el ID en la 24
+  // de 27, ese respaldo apuntaba a «Disparidad». Resultado: cada sync añadía una
+  // fila nueva —la duplicación que este upsert existe para evitar— y dos registros
+  // con la misma Disparidad se pisaban entre sí.
+  // Con el ID al final las DOS rutas —cabecera y respaldo— dan la misma columna, de
+  // modo que empareja aunque la cabecera siga en blanco. ensureHeaders NO salva ese
+  // caso: sale antes de escribir nada si la hoja ya tiene el ancho completo.
   var idCol = -1;
   for (var h = 0; h < hdr.length; h++) {
     if (String(hdr[h] == null ? "" : hdr[h]).trim() === "ID") { idCol = h; break; }
@@ -805,9 +824,10 @@ function upsertAstRows(ws, newRows) {
   var added = 0;
   if (toAdd.length > 0) {
     var startRow = lastRow(ws) + 1;
-    ws.getRange(startRow, 1, toAdd.length, widest).setValues(toAdd);
-    fmtData(ws, startRow, toAdd.length, widest, false);
-    added = toAdd.length;
+    var u = filasUniformes(toAdd);
+    ws.getRange(startRow, 1, u.filas.length, u.ancho).setValues(u.filas);
+    fmtData(ws, startRow, u.filas.length, u.ancho, false);
+    added = u.filas.length;
   }
   return { upserted: updated, appended: added };
 }
@@ -871,9 +891,10 @@ function upsertAlgasRows(ws, newRows) {
   var added = 0;
   if (toAdd.length > 0) {
     var startRow = lastRow(ws) + 1;
-    ws.getRange(startRow, 1, toAdd.length, widest).setValues(toAdd);
-    fmtData(ws, startRow, toAdd.length, widest, false);
-    added = toAdd.length;
+    var u = filasUniformes(toAdd);
+    ws.getRange(startRow, 1, u.filas.length, u.ancho).setValues(u.filas);
+    fmtData(ws, startRow, u.filas.length, u.ancho, false);
+    added = u.filas.length;
   }
   return { upserted: updated, appended: added };
 }
@@ -969,12 +990,12 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol) {
   var added = 0;
   if (toAdd.length > 0) {
     var startRow = lastRow(ws) + 1;
-    var nc2 = toAdd[0].length;
-    if (trovanCol >= 0 && trovanCol < nc2) ws.getRange(startRow, trovanCol + 1, toAdd.length, 1).setNumberFormat("@");
-    if (numCol >= 0 && numCol < nc2) ws.getRange(startRow, numCol + 1, toAdd.length, 1).setNumberFormat("General");
-    ws.getRange(startRow, 1, toAdd.length, nc2).setValues(toAdd);
-    fmtData(ws, startRow, toAdd.length, nc2, false);
-    added = toAdd.length;
+    var u = filasUniformes(toAdd);
+    if (trovanCol >= 0 && trovanCol < u.ancho) ws.getRange(startRow, trovanCol + 1, u.filas.length, 1).setNumberFormat("@");
+    if (numCol >= 0 && numCol < u.ancho) ws.getRange(startRow, numCol + 1, u.filas.length, 1).setNumberFormat("General");
+    ws.getRange(startRow, 1, u.filas.length, u.ancho).setValues(u.filas);
+    fmtData(ws, startRow, u.filas.length, u.ancho, false);
+    added = u.filas.length;
   }
   return { upserted: updated, appended: added };
 }
@@ -1000,7 +1021,7 @@ function madInKey(row, keyCols) {
     // Fecha ISO (yyyy-mm-dd) → normaliza a 10 chars para casar con madRowKey
     // (que formatea las celdas Date a yyyy-MM-dd). SIN regex a propósito: dentro
     // del template literal de GAS() los escapes de regex colapsan (mismo criterio
-    // que deleteByKeyRows / _evDate).
+    // que _evDate).
     var isIso = s.length >= 10 && s.charAt(4) === "-" && s.charAt(7) === "-" &&
                 !isNaN(+s.slice(0, 4)) && !isNaN(+s.slice(5, 7)) && !isNaN(+s.slice(8, 10));
     parts.push(isIso ? s.slice(0, 10) : s);
@@ -1016,9 +1037,7 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.p === "evlist") {
     return evList(e.parameter.t || "", e.parameter.m || "", e.parameter.f || "");
   }
-  if (e && e.parameter && e.parameter.p === "pdf") {
-    return evPdfPage(e.parameter.t || "", e.parameter.m || "");
-  }
+
   if (e && e.parameter && e.parameter.p === "rows") {
     return sheetRows(e.parameter.sheet || "", e.parameter.t || "", e.parameter.cols || "");
   }
@@ -1156,108 +1175,6 @@ function _evCellDate(v) {
 function _evCellHora(v) {
   if (v instanceof Date) { return Utilities.formatDate(v, Session.getScriptTimeZone(), "HH:mm"); }
   return String(v == null ? "" : v);
-}
-
-// Lista los PDFs de una fecha. Devuelve OBJETO PLANO (lo consume el portal vía
-// google.script.run; NO un ContentService). Recientes primero; tope 200.
-function evPdfListData(t, f) {
-  var out = { ok: false, rows: [] };
-  try {
-    if (String(t) !== EV_TOKEN) { out.error = "No autorizado"; return out; }
-    var fecha = f ? _evDate(f) : "";
-    var ss = SpreadsheetApp.openById(SS_ID);
-    var ws = ss.getSheetByName(PDF_SHEET);
-    if (!ws) { out.ok = true; return out; }
-    var vals = ws.getDataRange().getValues();
-    var rows = [];
-    for (var i = 1; i < vals.length; i++) {
-      var r = vals[i];
-      var rFecha = _evCellDate(r[0]);
-      if (fecha && rFecha !== fecha) continue;
-      rows.push({
-        fecha:   rFecha,
-        modulo:  String(r[1] == null ? "" : r[1]),
-        archivo: String(r[2] == null ? "" : r[2]),
-        url:     String(r[3] == null ? "" : r[3]),
-        fileId:  String(r[4] == null ? "" : r[4]),
-        hora:    _evCellHora(r[5])
-      });
-    }
-    rows.reverse();
-    if (rows.length > 200) rows = rows.slice(0, 200);
-    out.ok = true; out.rows = rows;
-    return out;
-  } catch (err) {
-    out.error = "Error al leer"; return out;
-  }
-}
-// Registra el PDF en la hoja "PDFs_Dia" (se autocrea).
-function _evPdfLog(fecha, modulo, archivo, url, id) {
-  try {
-    var ss = SpreadsheetApp.openById(SS_ID);
-    var ws = ss.getSheetByName(PDF_SHEET);
-    if (!ws) { ws = ss.insertSheet(PDF_SHEET); ws.appendRow(["Fecha", "Modulo", "Archivo", "URL", "FileId", "Hora"]); }
-    ws.appendRow([fecha, modulo, archivo, url, id, new Date()]);
-  } catch (e) {}
-}
-// F3: la app manda el HTML de una ficha; aquí se convierte a PDF (HTML→PDF de
-// Apps Script), se guarda en PDFs/Fecha, se comparte por enlace y se registra en
-// la hoja "PDFs_Dia" para que el portal lo liste y se descargue en otro equipo.
-function evPdfShare(payload) {
-  try {
-    if (String(payload.token || "") !== EV_TOKEN) return { status: "error", message: "No autorizado" };
-    var fecha = _evDate(payload.fecha);
-    if (!fecha) return { status: "error", message: "Fecha inválida" };
-    var modulo = _evClean(payload.modulo);
-    var html = String(payload.html || "");
-    if (!html) return { status: "error", message: "Ficha sin contenido" };
-    var base = _evClean(payload.name) || ("Ficha_" + fecha);
-    if (base.toLowerCase().slice(-4) === ".pdf") base = base.slice(0, -4);
-    var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "HHmmss");
-    var fname = (modulo ? ("M" + modulo + "_") : "") + base + "_" + stamp + ".pdf";
-    var pdf = Utilities.newBlob(html, "text/html", base + ".html").getAs("application/pdf").setName(fname);
-    var folder = _evFolder(["PDFs", fecha]);
-    var file = folder.createFile(pdf);
-    try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (eSh) {}
-    _evPdfLog(fecha, modulo, fname, file.getUrl(), file.getId());
-    return { status: "ok", url: file.getUrl() };
-  } catch (err) {
-    return { status: "error", message: "No se pudo generar el PDF: " + ((err && err.message) ? err.message : String(err)) };
-  }
-}
-// Página HTML del portal de PDFs (servida por doGet ?p=pdf). SOLO DESCARGA: lista
-// los PDFs de fichas compartidos desde la app y permite bajarlos en otro equipo
-// sin instalar nada. Mismas reglas de escape que evPortalPage: sin backticks ni
-// interpolación del cliente; cierre de script escapado; NO refleja el token (XSS).
-function evPdfPage(t, m) {
-  var safeToken = (String(t) === EV_TOKEN) ? EV_TOKEN : "";
-  var h = ""
-    + '<!doctype html><html><head><meta charset="utf-8">'
-    + '<meta name="viewport" content="width=device-width,initial-scale=1">'
-    + "<title>PDFs del dia</title><style>"
-    + "body{font-family:system-ui,Arial,sans-serif;margin:0;background:#0f172a;color:#e2e8f0;padding:16px}"
-    + "h2{font-size:18px;margin:0 0 4px}p.s{color:#94a3b8;font-size:12px;margin:0 0 12px}"
-    + "label{display:block;font-size:12px;margin:10px 0 3px;color:#94a3b8}"
-    + "input{width:100%;box-sizing:border-box;padding:11px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;font-size:15px}"
-    + "h3{font-size:14px;margin:18px 0 8px}"
-    + ".rec{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 11px;border-radius:8px;background:#1e293b;margin-bottom:6px}"
-    + ".rn{font-size:12px;word-break:break-all}.dl{color:#38bdf8;font-weight:700;font-size:13px;text-decoration:none;white-space:nowrap}"
-    + ".muted{color:#94a3b8;font-size:13px}"
-    + "</style></head><body>"
-    + "<h2>PDFs del dia</h2><p class=s>Descarga en este dispositivo los PDFs de las fichas compartidas desde el sistema. Elige la fecha.</p>"
-    + '<label>Fecha</label><input type="date" id="f">'
-    + '<h3>Disponibles para descargar</h3><div id="recs" class="muted">Cargando...</div>'
-    + "<script>"
-    + "var EV_T=" + JSON.stringify(safeToken) + ";"
-    + "(function(){var f=document.getElementById('f');"
-    + "var d=new Date(),z=function(n){return(n<10?'0':'')+n;};f.value=d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate());"
-    + "function renderList(res){var box=document.getElementById('recs');box.innerHTML='';box.className='';if(!res||!res.ok){box.className='muted';box.textContent='No se pudo cargar la lista.';return;}var rows=res.rows||[];if(!rows.length){box.className='muted';box.textContent='Sin PDFs compartidos para esta fecha.';return;}for(var i=0;i<rows.length;i++){var r=rows[i];var it=document.createElement('div');it.className='rec';var nm=document.createElement('div');nm.className='rn';nm.textContent=(r.modulo?('M'+r.modulo+' · '):'')+(r.archivo||'archivo.pdf')+(r.hora?(' · '+r.hora):'');it.appendChild(nm);var a=document.createElement('a');a.className='dl';a.textContent='⬇️ Descargar';a.setAttribute('href',r.fileId?('https://drive.google.com/uc?export=download&id='+encodeURIComponent(r.fileId)):(r.url||'#'));a.setAttribute('target','_blank');a.setAttribute('rel','noopener');it.appendChild(a);box.appendChild(it);}}"
-    + "function loadList(){var box=document.getElementById('recs');box.className='muted';box.textContent='Cargando...';google.script.run.withSuccessHandler(renderList).withFailureHandler(function(){box.className='muted';box.textContent='No se pudo cargar la lista.';}).evPdfListData(EV_T,f.value);}"
-    + "f.addEventListener('change',loadList);loadList();})();"
-    + "<\/script></body></html>";
-  return HtmlService.createHtmlOutput(h)
-    .setTitle("PDFs del dia")
-    .addMetaTag("viewport", "width=device-width,initial-scale=1");
 }
 
 // ── Evidencias: recibe UNA foto desde el portal (vía google.script.run) ──

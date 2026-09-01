@@ -58,7 +58,7 @@ describe('renderCalidadFicha', () => {
     expect(html).toContain('data-upper="1"');
     expect(html).toContain('data-feeds="poblacion"'); // columna %Mortalidad
     // 'recover' es condicional (solo si hay autoguardado) → se prueba aparte.
-    for (const a of ['clear', 'pdf', 'share', 'save', 'sync']) {
+    for (const a of ['clear', 'pdf', 'save', 'sync']) {
       expect(html).toContain(`data-action="${a}"`);
     }
   });

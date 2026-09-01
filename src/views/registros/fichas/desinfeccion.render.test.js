@@ -43,9 +43,9 @@ describe('renderDesinfeccionFicha', () => {
     expect(html).not.toContain('name="dx_2_obsgen"'); // tipo 2 obsGen:false
   });
 
-  it('PDF propio (pdfdesinf) y SIN botón Compartir', () => {
+  it('PDF propio (pdfdesinf) en vez del PDF estándar', () => {
     expect(html).toContain('data-action="pdfdesinf"');
-    expect(html).not.toContain('data-action="share"');
+    expect(html).not.toContain('data-action="pdf"');
     expect(html).toContain('data-action="save"');
     expect(html).toContain('id="sp-desinfeccion"');
   });

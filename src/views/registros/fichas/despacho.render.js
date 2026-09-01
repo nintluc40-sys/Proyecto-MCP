@@ -1,6 +1,6 @@
 /* ============================================================
    REGISTROS · render NATIVO de la ficha "Despacho" (despacho)
-   Reconstrucción modular de renderDespacho(): TON, select Destino, sv auto (CS),
+   Reconstrucción modular de renderDespacho(): TON, Destino multi-selección, sv auto (CS),
    columnas computadas (Densidad/Biomasa). Sin handlers inline:
      po  → data-desp-po  (rcDespSv + rcDespBiomasa + rcDespDensidad)
      pgm → data-desp-pgm (rcDespBiomasa)
@@ -32,14 +32,26 @@ function tableHead() {
   return `<thead><tr><th class="tqh">Tanque</th>${ths}</tr></thead>`;
 }
 
+/* Destino admite VARIOS valores y viaja a la hoja como CSV. Las casillas son sólo la
+   interfaz: lo que se guarda vive en el input OCULTO `de_<i>`, y `destMsSync` del
+   motor lo mantiene al día junto con el resumen visible.
+
+   ⚠⚠ Aquí había un `<select>` simple, que sólo entiende UN valor. Medido contra el
+   despliegue el 2026-08-30: 12 filas de producción llevan ya dos destinos
+   («Pto.Inca 4, Chongón»…). Al abrir una de ellas, la comparación `cur === opción` no
+   casaba con ninguna, el desplegable mostraba «— Selecciona —» y guardar dejaba el
+   Destino VACÍO. Sin un solo aviso: el dato se perdía por pasar por la ficha. */
 function destinoCell(i, cur, destinos) {
+  const sel = String(cur == null ? '' : cur).split(',').map((s) => s.trim()).filter(Boolean);
+  const csv = sel.join(', ');
   const opts = destinos
-    .map((o) => `<option value="${escapeHtml(o)}"${cur === o ? ' selected' : ''}>${escapeHtml(o)}</option>`)
+    .map((o) => `<label class="dest-ms-opt"><input type="checkbox" data-dest-ms value="${escapeHtml(o)}"${sel.indexOf(o) !== -1 ? ' checked' : ''}><span>${escapeHtml(o)}</span></label>`)
     .join('');
-  return `<td><select name="${fieldName('de', i)}" style="min-width:120px">
-    <option value=""${cur === '' ? ' selected' : ''}>— Selecciona —</option>
-    ${opts}
-  </select></td>`;
+  return `<td><details class="dest-ms">
+    <summary class="dest-ms-sum"${sel.length ? '' : ' data-empty="1"'}>${sel.length ? escapeHtml(csv) : '— Selecciona —'}</summary>
+    <div class="dest-ms-list">${opts}</div>
+    <input type="hidden" name="${fieldName('de', i)}" value="${escapeHtml(csv)}">
+  </details></td>`;
 }
 
 function cell(col, i, data, cs, destinos) {

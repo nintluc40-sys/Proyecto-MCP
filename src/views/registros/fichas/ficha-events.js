@@ -47,7 +47,6 @@ export function attachFichaEvents(root, engine = globalThis) {
     clear: 'clearFicha',
     recover: 'recoverFicha',
     pdf: 'downloadPDF',
-    share: 'shareFichaPDF',
     cs: 'openCS',
     ton: 'openTON',
     pdfdesinf: 'downloadDesinfeccionPDF',
@@ -76,6 +75,13 @@ export function attachFichaEvents(root, engine = globalThis) {
     }
     if (t.matches('[data-dx-tipo]') && typeof engine.dxSwitchType === 'function') {
       engine.dxSwitchType(t.value);
+    }
+    // Despacho: el Destino admite VARIOS valores. Las casillas son sólo la interfaz;
+    // el valor que se guarda vive en el input oculto `de_<i>` y lo pone al día
+    // `destMsSync` del motor — la MISMA función que usa la ficha «Blanco», para que
+    // no haya dos maneras de mantener ese CSV.
+    if (t.matches('[data-dest-ms]') && typeof engine.destMsSync === 'function') {
+      engine.destMsSync(t);
     }
   });
 }

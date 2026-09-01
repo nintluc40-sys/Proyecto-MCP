@@ -614,6 +614,66 @@ describe('Biomol · la cuantificación es POR PATÓGENO', () => {
     expect(v('Copias/μl AHPND/EMS')).toBe('');
   });
 
+  /* ⚠ La prueba de arriba cubre UNA fila con dos patógenos. Lo que el defecto del
+     2026-08-31 ponía en duda es lo otro: que VARIAS FILAS lleven cada una LO SUYO hasta
+     la hoja. Mientras las celdas de la 2.ª en adelante estaban congeladas, ese camino
+     nunca podía ejercitarse — así que tampoco estaba probado. */
+  it('🔴 VARIAS filas positivas: cada una lleva SUS valores a la hoja, sin pisarse', () => {
+    localStorage.clear();
+    H.renderBiomol();
+
+    // Tres muestras, patógenos y valores distintos a propósito: si algo se pisara,
+    // el fixture lo distingue.
+    celda(1, 'wssv').value = 'Positivo';
+    disparar(1, 'wssv');
+    celda(2, 'wssv').value = 'Positivo';
+    disparar(2, 'wssv');
+    celda(3, 'ihhnv').value = 'Positivo';
+    disparar(3, 'ihhnv');
+
+    celda(1, 'ciclo_wssv').value = '18.1';   celda(1, 'copias_wssv').value = '9.10E+05';
+    celda(2, 'ciclo_wssv').value = '25.7';   celda(2, 'copias_wssv').value = '2.20E+03';
+    celda(3, 'ciclo_ihhnv').value = '31.2';  celda(3, 'copias_ihhnv').value = '4.50E+02';
+    H.saveBioGrid();
+
+    const { rows, headers } = H.buildBioPayload(H.bioGridFecha(), H._collectBioGrid());
+    const v = (i, h) => rows[i][headers.indexOf(h)];
+    expect(rows, 'deberían viajar las tres muestras').toHaveLength(3);
+
+    expect(v(0, 'Ciclo de amplificación WSSV')).toBe('18.1');
+    expect(v(0, 'Copias/μl WSSV')).toBe('9.10E+05');
+    expect(v(1, 'Ciclo de amplificación WSSV')).toBe('25.7');
+    expect(v(1, 'Copias/μl WSSV')).toBe('2.20E+03');
+    expect(v(2, 'Ciclo de amplificación IHHNV')).toBe('31.2');
+    expect(v(2, 'Copias/μl IHHNV')).toBe('4.50E+02');
+
+    // Y ninguna arrastra lo del vecino: la fila 3 no marcó WSSV, las 1 y 2 no marcaron IHHNV.
+    expect(v(2, 'Ciclo de amplificación WSSV'), 'la fila 3 heredó el WSSV de otra').toBe('');
+    expect(v(0, 'Ciclo de amplificación IHHNV'), 'la fila 1 heredó el IHHNV de otra').toBe('');
+    expect(v(1, 'Ciclo de amplificación IHHNV')).toBe('');
+  });
+
+  it('🔴 lo tecleado sobrevive a guardar, salir y volver a pintar', () => {
+    // «Verifica además que la información se conserve correctamente» (encargo 08-31).
+    // El repintado va por `_bioPintarCon`; este camino pasa por el guardado LOCAL.
+    localStorage.clear();
+    H.renderBiomol();
+    celda(1, 'wssv').value = 'Positivo';
+    disparar(1, 'wssv');
+    celda(2, 'wssv').value = 'Positivo';
+    disparar(2, 'wssv');
+    celda(1, 'ciclo_wssv').value = '18.1';
+    celda(2, 'ciclo_wssv').value = '25.7';
+    H.saveBioGrid();
+
+    H.renderBiomol();                       // como si se volviera a entrar a la pestaña
+    expect(celda(1, 'ciclo_wssv').value).toBe('18.1');
+    expect(celda(2, 'ciclo_wssv').value).toBe('25.7');
+    // y siguen EDITABLES tras recargar, no sólo la primera
+    expect(celda(1, 'ciclo_wssv').disabled).toBe(false);
+    expect(celda(2, 'ciclo_wssv').disabled, 'al recargar, la 2.ª volvió a congelarse').toBe(false);
+  });
+
   it('🔴 las columnas salen al TECLEAR el resultado, sin pasar por «Guardar»', () => {
     // Es la petición literal del usuario (2026-08-23): antes sólo aparecían tras el
     // guardado local, que es al revés de como se trabaja —primero se marca el resultado
@@ -688,6 +748,121 @@ describe('Biomol · la cuantificación es POR PATÓGENO', () => {
     H.renderBiomol();
     expect(cabeceras(), 'se escondió una columna con dato dentro').toContain('Ct WSSV');
     expect(celda(1, 'ciclo_wssv').value).toBe('18.1');
+  });
+
+  /* ⚠⚠ EL DEFECTO DEL 2026-08-31, reportado desde el laboratorio: «al seleccionar un
+     resultado positivo, sólo se pueden ingresar CT y Copias en el primer resultado;
+     los demás quedan bloqueados o congelados».
+
+     Causa: una confusión de GRANULARIDAD en `bioPatCambio`. Decidía si repintar
+     comparando qué COLUMNAS se ven —propiedad del GRID entero— cuando lo que cambia al
+     marcar un positivo es si una CELDA está habilitada, que es propiedad de la FILA.
+     Con la columna ya abierta por la fila 1, marcar «Positivo» en la fila 2 daba
+     `quiere === hay` y salía por el `return` sin repintar: la fila 2 seguía `disabled`.
+
+     Estas pruebas recorren el camino REAL —disparan el `onchange` del atributo, no
+     llaman a la función a mano— porque el defecto vivía justo en esa decisión. */
+  const disparar = (fila, k) => {
+    const c = celda(fila, k);
+    new Function('bioPatCambio', c.getAttribute('onchange'))(H.bioPatCambio);
+  };
+
+  it('🔴 la SEGUNDA fila positiva también abre sus celdas, con la columna ya abierta', () => {
+    localStorage.clear();
+    H.renderBiomol();
+
+    celda(1, 'wssv').value = 'Positivo';
+    disparar(1, 'wssv');
+    expect(celda(1, 'ciclo_wssv').disabled, 'la 1.ª fila debería abrirse').toBe(false);
+
+    // La columna YA existe por culpa de la fila 1: aquí es donde se congelaba.
+    celda(2, 'wssv').value = 'Positivo';
+    disparar(2, 'wssv');
+    expect(celda(2, 'ciclo_wssv').disabled, 'la 2.ª fila positiva se quedó CONGELADA').toBe(false);
+    expect(celda(2, 'copias_wssv').disabled, 'y sus copias también').toBe(false);
+    expect(celda(1, 'ciclo_wssv').disabled, 'abrir la 2.ª no puede cerrar la 1.ª').toBe(false);
+  });
+
+  it('🔴 cada patógeno abre SU celda, sin arrastrar a los demás', () => {
+    localStorage.clear();
+    H.renderBiomol();
+    celda(1, 'wssv').value = 'Positivo';
+    disparar(1, 'wssv');
+    celda(2, 'ihhnv').value = 'Positivo';
+    disparar(2, 'ihhnv');
+
+    expect(celda(1, 'ciclo_wssv').disabled, 'fila 1 · WSSV positivo').toBe(false);
+    expect(celda(2, 'ciclo_ihhnv').disabled, 'fila 2 · IHHNV positivo').toBe(false);
+    // Cruzados: cada fila abre SÓLO el patógeno que marcó.
+    expect(celda(1, 'ciclo_ihhnv').disabled, 'fila 1 no marcó IHHNV').toBe(true);
+    expect(celda(2, 'ciclo_wssv').disabled, 'fila 2 no marcó WSSV').toBe(true);
+  });
+
+  it('🔴 los valores de VARIAS filas sobreviven al repintado y no se pisan', () => {
+    // El repintado va por `_bioPintarCon`, que recoge el DOM entero. Si sólo conservara
+    // la fila que disparó el cambio, abrir la segunda borraría lo tecleado en la primera.
+    localStorage.clear();
+    H.renderBiomol();
+    celda(1, 'wssv').value = 'Positivo';
+    disparar(1, 'wssv');
+    celda(1, 'ciclo_wssv').value = '18.1';
+    celda(1, 'copias_wssv').value = '1.00E+05';
+
+    celda(2, 'wssv').value = 'Positivo';
+    disparar(2, 'wssv');
+
+    expect(celda(1, 'ciclo_wssv').value, 'el Ct de la fila 1 se perdió al abrir la 2').toBe('18.1');
+    expect(celda(1, 'copias_wssv').value).toBe('1.00E+05');
+    expect(celda(2, 'wssv').value).toBe('Positivo');
+
+    // Valores DISTINTOS en filas distintas: el fixture sirve para distinguir.
+    celda(2, 'ciclo_wssv').value = '25.7';
+    celda(3, 'wssv').value = 'Positivo';
+    disparar(3, 'wssv');
+    expect(celda(1, 'ciclo_wssv').value).toBe('18.1');
+    expect(celda(2, 'ciclo_wssv').value).toBe('25.7');
+    expect(celda(3, 'ciclo_wssv').disabled, 'la 3.ª tampoco debe congelarse').toBe(false);
+  });
+
+  /* ⚠ La otra mitad del contrato del detector, y sin ella el banco dejaba VIVAS dos
+     mutaciones: no basta con que repinte CUANDO hace falta, tiene que NO repintar cuando
+     no hace falta. Un detector «repinta siempre» arregla las celdas congeladas y a cambio
+     roba el foco a media captura — que es justo lo que el `return` temprano evita. */
+  it('🔴 NO repinta cuando nada cambia: el foco no se pierde a media captura', () => {
+    localStorage.clear();
+    H.renderBiomol();
+    celda(1, 'wssv').value = 'Positivo';
+    disparar(1, 'wssv');                       // este SÍ debe repintar: abre la columna
+
+    // Testigo en el DOM: si sobrevive, no hubo repintado.
+    const testigo = {};
+    celda(1, 'ciclo_wssv').__testigo = testigo;
+
+    // Un cambio que no altera NADA: la fila 2 se queda vacía.
+    celda(2, 'wssv').value = '';
+    disparar(2, 'wssv');
+    expect(celda(1, 'ciclo_wssv').__testigo, 'repintó sin necesidad: robaría el foco').toBe(testigo);
+
+    // Y uno que sí altera algo tiene que seguir repintando.
+    celda(2, 'wssv').value = 'Positivo';
+    disparar(2, 'wssv');
+    expect(celda(1, 'ciclo_wssv').__testigo, 'debía repintar y no lo hizo').toBeUndefined();
+    expect(celda(2, 'ciclo_wssv').disabled).toBe(false);
+  });
+
+  it('🔴 quitar el positivo vuelve a bloquear ESA celda y no las otras', () => {
+    localStorage.clear();
+    H.renderBiomol();
+    celda(1, 'wssv').value = 'Positivo';
+    disparar(1, 'wssv');
+    celda(2, 'wssv').value = 'Positivo';
+    disparar(2, 'wssv');
+    expect(celda(2, 'ciclo_wssv').disabled).toBe(false);
+
+    celda(2, 'wssv').value = 'Negativo';     // rectifica, sin haber escrito Ct
+    disparar(2, 'wssv');
+    expect(celda(2, 'ciclo_wssv').disabled, 'sin positivo debe volver a bloquearse').toBe(true);
+    expect(celda(1, 'ciclo_wssv').disabled, 'la fila 1 sigue positiva: no se toca').toBe(false);
   });
 
   it('una fila con Ct por patógeno cuenta como qPCR', () => {

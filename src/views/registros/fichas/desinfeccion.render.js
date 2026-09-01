@@ -78,7 +78,7 @@ export function renderDesinfeccionFicha(o = {}) {
         <span>Marca <b>Sí/No</b> la desinfección de cada elemento. Cambia el <b>Tipo de Registro</b> para llenar otra grilla (todas se guardan juntas). Solo se envían las filas con estado marcado.</span>
       </div>
       ${blocks}
-      ${saveArea({ ficha: 'desinfeccion', status, lastSaved, recover, pdfAction: 'pdfdesinf', share: false })}
+      ${saveArea({ ficha: 'desinfeccion', status, lastSaved, recover, pdfAction: 'pdfdesinf' })}
     </div>
   </div>`;
 }

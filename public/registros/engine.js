@@ -1220,7 +1220,11 @@ function setSyncUI(st, lbl){
    los datos» — acusando al dato cuando el problema era el despliegue. */
 function _esRechazoDeEntorno(msg){
   const m = String(msg || "").toLowerCase();
-  return m.indexOf("hoja no permitida") !== -1 || m.indexOf("no autorizado") !== -1;
+  // «Límite de columnas excedido» es SIEMPRE de entorno: los esquemas del cliente son
+  // fijos, así que la única forma de excederlo es que el GAS desplegado sea anterior a
+  // esta app. El registro está perfecto y debe ESPERAR en la cola, no descartarse.
+  return m.indexOf("hoja no permitida") !== -1 || m.indexOf("no autorizado") !== -1 ||
+         m.indexOf("límite de columnas") !== -1;
 }
 function _gasMotivo(gasMsg){
   const m = String(gasMsg || "").trim();
@@ -1229,6 +1233,7 @@ function _gasMotivo(gasMsg){
   let pista = "";
   if(ml.indexOf("hoja no permitida") !== -1)        pista = " · el GAS desplegado es anterior a esta app: vuelve a desplegarlo desde Apps Script";
   else if(ml.indexOf("límite de filas") !== -1)     pista = " · envía menos registros de una vez";
+  else if(ml.indexOf("límite de columnas") !== -1)  pista = " · el GAS desplegado es anterior a esta app: vuelve a desplegarlo desde Apps Script";
   else if(ml.indexOf("no autorizado") !== -1)       pista = " · revisa el token compartido en la configuración";
   return " — " + m + pista;
 }
@@ -1557,11 +1562,18 @@ const _sleep = (ms) => new Promise(res => setTimeout(res, ms));
 const _BUSY_RE = /ocupad|reintenta|demasiadas solicitudes|too many|rate limit|try again/i;
 async function _postOnce(bodyPayload, finalUrl, info){
   const ctrl  = new AbortController();
-  // F2a: el timeout del cliente debe superar la peor espera del servidor
-  // (waitLock hasta 15 s + reescritura de la hoja + red). Con 15 s el cliente
-  // abortaba justo cuando el GAS aún estaba escribiendo → "error de conexión"
-  // aunque el dato SÍ se guardaba. 30 s deja margen sobre la espera del lock.
-  const timer = setTimeout(()=>ctrl.abort(), 30000); // 30s timeout (> waitLock 15s)
+  // F2a: el tope del cliente tiene que cubrir la PEOR espera del servidor entera:
+  // waitLock hasta 25 s + la reescritura de la hoja + la red. Y tiene que ser MAYOR
+  // que el waitLock, para que el GAS alcance a contestar «Servidor ocupado» —un
+  // rechazo transitorio legible— antes de que aquí se aborte a ciegas.
+  // ⚠ Este comentario dijo «waitLock hasta 15 s» hasta el 2026-08-30. Era cierto antes
+  // de F1, que lo subió a 25: con el tope en 30 s quedaban 5 s para escribir, así que
+  // un lock conseguido en el segundo 24 hacía abortar a mitad de una escritura que SÍ
+  // se completaba. No se perdía el dato (reqId + verificación por lectura), pero se
+  // informaba de un fallo que no había ocurrido. Con 40 s quedan 15 s de margen real.
+  // 🔑 La relación entre este número y el waitLock del GAS la fija una prueba
+  // (gas-tiempos.test.js), que los lee de los dos fuentes: no vuelven a separarse.
+  const timer = setTimeout(()=>ctrl.abort(), 40000); // 40 s (> waitLock 25 s del GAS)
   try{
     // Content-Type text/plain: deliberado — evita el preflight CORS que GAS
     // no soporta. El GAS parsea el cuerpo con JSON.parse(e.postData.contents).
@@ -1698,9 +1710,70 @@ function _purgeQueueMark(mark){
 // al envío → se marcan synced para que no sigan "pendientes" ni se reenvíen.
 // Solo se invoca con status "ok" (dato realmente en Sheets), nunca con
 // "rejected" (rechazo permanente: el dato NO se escribió).
+/** Marca de reconciliación para las fichas que se guardan con saveE (Datos, Parámetros,
+ *  Desinfección). SELLA el `updatedAt` de cada una: al entregarse desde la cola sólo se
+ *  marcará la que siga siendo EXACTAMENTE la que se envió. Sin ese sello, editar la ficha
+ *  después de encolar y recibir luego la entrega la pintaría como sincronizada mientras
+ *  la edición NO ha viajado. Devuelve null si no hay nada que sellar. */
+function _marcaFichas(mod, fichas){
+  const keys = [], stamps = {};
+  (fichas || []).forEach(f => {
+    const e = loadE(mod, f);
+    if(!e) return;
+    const k = mod + "|" + f;
+    keys.push(k); stamps[k] = e.updatedAt;
+  });
+  return keys.length ? { kind:"fichas", keys:keys, stamps:stamps } : null;
+}
+
+/* Reconciliación de las fichas saveE tras una ENTREGA confirmada desde la cola.
+   Reproduce lo mismo que hace el camino directo al tener éxito: Historial + synced.
+   `pushHist` se auto-protege (sólo acepta FICHAS), así que Desinfección no entra en el
+   Historial, igual que en el camino directo. */
+function _reconcileFichas(mark){
+  const sellos = (mark && mark.stamps) || {};
+  let ch = false;
+  mark.keys.forEach(k => {
+    const p = String(k).split("|");
+    if(p.length !== 2) return;
+    const mod = p[0], ficha = p[1];
+    const e = loadE(mod, ficha);
+    if(!e || e.synced) return;
+    // El sello: si no casa, la ficha se editó después de encolarse. Sigue pendiente, y
+    // eso es la VERDAD — lo que hay en pantalla no es lo que está en Sheets.
+    if(e.updatedAt !== sellos[k]) return;
+    try{ pushHist(mod, ficha, e.data); }catch(_){}
+    if(saveE(mod, ficha, e.data, true)) ch = true;
+  });
+  return ch;
+}
+
+/* Reconciliación de Lab. Algas. Su modelo NO marca: al entregarse, los registros del
+   historial pasan a la Bitácora y se retiran de la cola local, que es lo que hace el
+   camino directo. La clave son los ids del historial que se enviaron. */
+function _reconcileAlgas(mark){
+  if(typeof loadAlgHist !== "function") return false;
+  const enviados = new Set(mark.keys.map(String));
+  const hist = loadAlgHist();
+  const idos = hist.filter(h => h && enviados.has(String(h.id)));
+  if(!idos.length) return false;             // otro día, u otra sesión: no hay nada que casar
+  idos.forEach(h => { if(h.data) pushAlgLog(h.data); });
+  saveAlgHist(hist.filter(h => !(h && enviados.has(String(h.id)))));
+  if(mark.mod){
+    const e = loadE(mark.mod, "algas");
+    if(e) saveE(mark.mod, "algas", e.data, true);
+  }
+  return true;
+}
+
 function _reconcileMark(mark){
   if(!mark || !mark.kind || !Array.isArray(mark.keys) || !mark.keys.length) return false;
   try{
+    // Estos dos NO encajan en el trío raw/save/keyOf de abajo: las fichas de Larvicultura
+    // guardan UNA entrada por (módulo, ficha) en vez de una lista, y Lab. Algas RETIRA sus
+    // registros en vez de marcarlos. Van aparte, antes del despacho genérico.
+    if(mark.kind === "fichas") return _reconcileFichas(mark);
+    if(mark.kind === "alg")    return _reconcileAlgas(mark);
     const keys = new Set(mark.keys.map(String));
     const now  = Date.now();
     // Cada vista define: raw() lee su lista local, save(l) la persiste y keyOf(r)
@@ -1908,6 +1981,31 @@ async function postPayload(payload, url, opts){
   }
 }
 
+/* H1 · clasifica un envío NO-OK dentro de syncAll. «queued» NO es un fallo: el dato
+   quedó a salvo en la cola y se verifica solo al reconectar. Contarlo como error era el
+   defecto: la app gritaba «revisa la conexión» justo cuando había hecho bien su trabajo,
+   y desde el camión eso empuja a reenviar a mano lo que ya estaba entregado.
+   Devuelve qué contador incrementar: "queued" | "fail" | "" (inflight, ya avisado). */
+function _syncAllBucket(opts, etiqueta){
+  if(opts && opts.outcome === "queued"){
+    toast("📤 "+etiqueta+": en cola — se enviará solo al reconectar. No lo repitas.","info",4500);
+    return "queued";
+  }
+  if(opts && opts.outcome === "inflight") return "";
+  toast("No fue posible sincronizar con Google Sheets ("+etiqueta+")"+_gasMotivo(opts && opts.gasMessage),"err",5500);
+  return "fail";
+}
+/* H1 · mismo criterio para las rutas del Registro reproductivo, que mandan DOS payloads
+   (MATRIZ + Bitácora/Transferencias) y comparten un único mensaje final. */
+function _madReproNotOk(lista){
+  const l = (lista||[]).filter(o=> o && o.outcome);
+  if(l.length && l.every(o=> o.outcome === "queued" || o.outcome === "ok")){
+    toast("📤 Sin conexión confirmada: el registro quedó EN COLA y se enviará solo al reconectar. NO lo repitas.","info",6500);
+    return;
+  }
+  const rej = l.find(o=> o.gasMessage);
+  toast("No se pudo enviar a Google Sheets"+_gasMotivo(rej && rej.gasMessage)+". Reintenta.","err",6000);
+}
 async function syncAll(){
   // Atajo: Microbiología delega en syncMic / syncCal (reemplazo por sesión a sus hojas).
   if(isMicMod(curMod)){
@@ -1963,7 +2061,7 @@ async function syncAll(){
   try{ await flushSyncQueue(); }catch(_){}
 
   setSyncUI("pend","Sincronizando...");
-  let ok=0, fail=0, total=0;
+  let ok=0, fail=0, queued=0, total=0;
 
   // Block sync without corrida/técnico for M01-M10 and CIO (no aplica a Lab. Algas ni Maduración).
   // La Corrida puede provenir de cualquier ficha estándar O de Desinfección.
@@ -2002,7 +2100,12 @@ async function syncAll(){
       toast("Enviando "+MAD_SHEET[f]+" — "+pending.length+" registro(s)…","info",2200);
       const payload = buildMadPayload(f, pending);
       if(payload && payload.rows.length > 0){
-        const sent = await postPayload(payload, url);
+        // F3 · la marca liga el envío a estos registros locales, así que si acaba en la
+        // cola se marcarán SOLOS al entregarse. Sin ella seguían "pendientes" para
+        // siempre y el usuario los reenviaba a mano. Es la única de las 16 rutas donde
+        // hoy es posible: _reconcileMark tiene el kind "mad:*" y el modelo marca synced.
+        const opts = { mark:{ kind:"mad:"+f, keys: pending.map(p=>p.id) } };
+        const sent = await postPayload(payload, url, opts);
         if(sent){
           const list2 = loadMad(f);
           pending.forEach(p => {
@@ -2012,10 +2115,7 @@ async function syncAll(){
           saveMadList(f, list2);
           if(curTab === f) renderMad(f);
           ok++;
-        } else {
-          fail++;
-          toast("No fue posible sincronizar con Google Sheets ("+MAD_SHEET[f]+")","err",4500);
-        }
+        } else { const _b=_syncAllBucket(opts, MAD_SHEET[f]); if(_b==="queued") queued++; else if(_b==="fail") fail++; }
       }
     }
   } else if(isLabMod(curMod)){
@@ -2032,7 +2132,8 @@ async function syncAll(){
       toast("Enviando Lab. Algas — "+_histLen+" registro(s) del historial…","info",2200);
       const ap = buildAlgasPayload(curMod, histSnapshot);
       if(ap.rows.length > 0){
-        const sent = await postPayload(ap, url);
+        const opts = { mark:{ kind:"alg", keys: histSnapshot.map(h => h && h.id).filter(Boolean), mod: curMod } };
+        const sent = await postPayload(ap, url, opts);
         if(sent){
           // Vuelca SOLO los registros del snapshot a la Bitácora (TTL 72 h)
           histSnapshot.forEach(h => { if(h && h.data) pushAlgLog(h.data); });
@@ -2046,7 +2147,7 @@ async function syncAll(){
           if(curTab === "algas")    try{ renderAlgas(); }catch(_){}
           if(curTab === "bitacora") try{ renderBitacora(); }catch(_){}
         }
-        else { fail++; }
+        else { const _b=_syncAllBucket(opts, "Lab. Algas"); if(_b==="queued") queued++; else if(_b==="fail") fail++; }
       }
     } else {
       const ae = loadE(curMod,"algas");
@@ -2068,7 +2169,8 @@ async function syncAll(){
       toast("Enviando Datos Larvicultura…","info",2000);
       const dp = buildDatosPayload(curMod);
       if(dp.rows.length > 0){
-        const sent = await postPayload(dp, url);
+        const opts = { mark: _marcaFichas(curMod, pendDatos) };
+        const sent = await postPayload(dp, url, opts);
         if(sent){
           pendDatos.forEach(f=>{
             const e=loadE(curMod,f);
@@ -2078,7 +2180,7 @@ async function syncAll(){
             saveE(curMod,f,e.data,true);
           });
           ok++;
-        } else { fail++; }
+        } else { const _b=_syncAllBucket(opts, "Datos Larvicultura"); if(_b==="queued") queued++; else if(_b==="fail") fail++; }
       } else {
         // Sin filas por tanque: nada llegó a Sheets. NO marcar como
         // sincronizado (evita un ✅ falso); la(s) ficha(s) siguen pendientes.
@@ -2092,7 +2194,8 @@ async function syncAll(){
       toast("Enviando Parámetros…","info",2000);
       const cp = buildControlPayload(curMod);
       if(cp.rows.length > 0){
-        const sent = await postPayload(cp, url);
+        const opts = { mark: _marcaFichas(curMod, ["params"]) };
+        const sent = await postPayload(cp, url, opts);
         if(sent){
           const e=loadE(curMod,"params");
           if(e){
@@ -2101,7 +2204,7 @@ async function syncAll(){
           }
           ok++;
         }
-        else { fail++; }
+        else { const _b=_syncAllBucket(opts, "Parámetros"); if(_b==="queued") queued++; else if(_b==="fail") fail++; }
       } else {
         // Sin lecturas (OD/Temp): nada llegó a Sheets. NO marcar como
         // sincronizado; la ficha de Parámetros sigue pendiente.
@@ -2115,12 +2218,13 @@ async function syncAll(){
       toast("Enviando Desinfección…","info",2000);
       const dxp = buildDesinfeccionPayload(curMod);
       if(dxp.rows.length > 0){
-        const sent = await postPayload(dxp, url);
+        const opts = { mark: _marcaFichas(curMod, ["desinfeccion"]) };
+        const sent = await postPayload(dxp, url, opts);
         if(sent){
           const e=loadE(curMod,"desinfeccion");
           if(e) saveE(curMod,"desinfeccion",e.data,true);
           ok++;
-        } else { fail++; }
+        } else { const _b=_syncAllBucket(opts, "Desinfección"); if(_b==="queued") queued++; else if(_b==="fail") fail++; }
       } else {
         // Sin elementos marcados: nada llegó a Sheets. La ficha sigue pendiente.
         total--;
@@ -2130,10 +2234,15 @@ async function syncAll(){
   }
 
   if(!total){ setSyncUI("idle","Sin datos nuevos"); toast("No hay datos pendientes","info",2000); updateDots(); return; }
-  if(!fail){
+  if(!fail && !queued){
     setSyncUI("ok", ok+" hoja(s) sincronizada(s) ✔");
     toast("¡Datos registrados en Google Sheets!","ok");
     setTimeout(()=>{ setSyncUI("idle","Todo sincronizado"); }, 4000);
+  } else if(!fail){
+    // Nada falló: lo que no se confirmó quedó EN COLA. Decirlo así evita el "error"
+    // que hacía reenviar a mano un dato que el sistema ya tenía a salvo.
+    setSyncUI("pend", queued+" hoja(s) en cola — se verificarán al reconectar");
+    toast("📤 "+queued+" hoja(s) quedaron en cola. Se envían solas al recuperar la conexión.","info",5500);
   } else {
     setSyncUI("err", fail+" hoja(s) con error — revisa la conexión");
     toast("Error en "+fail+" hoja(s). Revisa la conexión y reintenta.","err");
@@ -2233,8 +2342,10 @@ function buildGrid(){
     <div class="mc-lbl">Biomol</div>
     <span class="mc-dot"></span>
   </div>`;
-  // Guard: el host puede estar desadjuntado (condición de carrera al cargar el
-  // engine y salir de la vista Registros antes de que termine). Evita TypeError.
+  // Guarda: el contenedor puede no estar en el DOM. En el proyecto Vite ocurre al
+  // cargar el motor y salir de la vista Registros antes de que termine; en el
+  // monolito, si algo repinta antes de que exista la rejilla. Sin ella, asignar
+  // innerHTML sobre null aborta el repintado entero.
   const _grid = document.getElementById("mod-grid");
   if(_grid) _grid.innerHTML = h;
 }
@@ -2677,11 +2788,15 @@ async function syncOneFicha(fid){
   // valores por tanque/lecturas). En ese caso NO se envía ni se marca como
   // sincronizado: se informa al usuario y la ficha sigue pendiente.
   let hadRows = true;
+  // H1 · recoge outcome/gasMessage de la rama que se ejecute, y lleva la marca de
+  // reconciliación de ESTA ficha: si el envío acaba en la cola, al entregarse se marcará
+  // sola — siempre que siga siendo la que se mandó (ver _marcaFichas).
+  const opts = { mark: _marcaFichas(curMod, [fid]) };
 
   if(fid === "params"){
     const cp = buildControlPayload(curMod);
     if(cp.rows.length > 0){
-      sent = await postPayload(cp, url);
+      sent = await postPayload(cp, url, opts);
     } else { hadRows = false; }
     if(sent){
       const e = loadE(curMod,"params");
@@ -2691,7 +2806,7 @@ async function syncOneFicha(fid){
     // Desinfección → hoja propia "Registro_Desinfección" (formato tidy).
     const dxp = buildDesinfeccionPayload(curMod);
     if(dxp.rows.length > 0){
-      sent = await postPayload(dxp, url);
+      sent = await postPayload(dxp, url, opts);
     } else { hadRows = false; }
     if(sent){
       const e = loadE(curMod, "desinfeccion");
@@ -2700,7 +2815,7 @@ async function syncOneFicha(fid){
   } else if(["calidad","plg","poblacion","calagua","despacho"].includes(fid)){
     const dp = buildDatosPayload(curMod, [fid]);
     if(dp.rows.length > 0){
-      sent = await postPayload(dp, url);
+      sent = await postPayload(dp, url, opts);
     } else { hadRows = false; }
     if(sent){
       const e = loadE(curMod, fid);
@@ -2721,8 +2836,7 @@ async function syncOneFicha(fid){
     toast("✅ "+(FICHA_LABELS[fid]||fid)+" enviada a Google Sheets","ok");
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
-    setSyncUI("err","Error al sincronizar "+(FICHA_LABELS[fid]||fid));
-    toast("Error al sincronizar. Revisa la conexión.","err",4500);
+    _syncNotOkUI(opts.outcome, "Error al sincronizar "+(FICHA_LABELS[fid]||fid), null, opts.gasMessage);
   }
   updateDots(); updateSyncUI();
   if(curTab === "historial") try{ renderHistorial(); }catch(_){}
@@ -2751,11 +2865,6 @@ function saveArea(fid){
       ? `<button class="btn bpdf" onclick="downloadDesinfeccionPDF()" title="PDF del Tipo de Registro activo">📄 PDF</button>`
       : `<button class="btn bpdf" onclick="downloadPDF('${fid}')" title="PDF A4">📄 PDF</button>`;
 
-  // Botón "Compartir PDF" — solo fichas estándar con plantilla PDF (FICHAS). Envía
-  // el PDF a Drive para descargarlo por el QR "PDFs del día" en otro dispositivo.
-  const shareBtn = FICHAS.includes(fid)
-    ? `<button class="btn bs" onclick="shareFichaPDF('${fid}')" title="Genera el PDF y lo sube a Drive para descargarlo por el QR en otro dispositivo (sin instalar el sistema)">📤 Compartir PDF</button>`
-    : "";
 
   // Botón "Agregar al historial" — exclusivo Lab. Algas
   // En modo edición se transforma en "Actualizar registro" + Cancelar.
@@ -2787,7 +2896,6 @@ function saveArea(fid){
       <button class="btn bd" onclick="clearFicha('${fid}')" title="Borrar datos">🗑 Borrar</button>
       ${recBtn}
       ${pdfBtn}
-      ${shareBtn}
       <button class="btn bs" onclick="localSave('${fid}')">💾 Guardar local</button>
       <button class="btn bp" onclick="localSync('${fid}')">☁️ Guardar y sincronizar</button>
     </div>
@@ -3433,7 +3541,6 @@ function _calcDespBiomasa(fp){
   }
 }
 function rcDespBiomasa(){ _calcDespBiomasa(document.getElementById("fp-despacho")); }
-function rcBlancoDespBiomasa(){ _calcDespBiomasa(document.getElementById("fp-blanco")); }
 
 // Densidad cosechada por tanque = Población ÷ Toneladas (TON), entero.
 // El "(×1000)" del campo Población es solo su UNIDAD (se teclea en miles); NO es un
@@ -3459,6 +3566,34 @@ function _calcDespDensidad(fp, ton){
 }
 function rcDespDensidad(){ _calcDespDensidad(document.getElementById("fp-despacho"), loadTON(curMod)); }
 
+/* ── DESTINO multiselección (Despacho) ───────────────────────────────
+   El campo Destino admite varios valores. Se guarda como CSV en un input
+   hidden name="de_i"; los checkboxes solo son la UI. destMsSync mantiene
+   sincronizados el hidden y el resumen visible cuando cambia la selección. */
+function _destSel(raw){ return String(raw==null?"":raw).split(",").map(s=>s.trim()).filter(Boolean); }
+function despDestWidget(i, raw){
+  const sel = _destSel(raw);
+  const csv = sel.join(", ");
+  const opts = DESTINO_OPTS.map(o=>{
+    const on = sel.indexOf(o) !== -1;
+    return `<label class="dest-ms-opt"><input type="checkbox" value="${escapeHtml(o)}"${on?" checked":""} onchange="destMsSync(this)"><span>${escapeHtml(o)}</span></label>`;
+  }).join("");
+  return `<details class="dest-ms">
+    <summary class="dest-ms-sum"${sel.length?"":' data-empty="1"'}>${sel.length?escapeHtml(csv):"— Selecciona —"}</summary>
+    <div class="dest-ms-list">${opts}</div>
+    <input type="hidden" name="de_${i}" value="${escapeHtml(csv)}">
+  </details>`;
+}
+function destMsSync(cb){
+  const det = cb.closest("details.dest-ms"); if(!det) return;
+  const sel = Array.prototype.slice.call(det.querySelectorAll('input[type="checkbox"]'))
+    .filter(c=>c.checked).map(c=>c.value);
+  const csv = sel.join(", ");
+  const hid = det.querySelector('input[type="hidden"]'); if(hid) hid.value = csv;
+  const sum = det.querySelector("summary");
+  if(sum){ sum.textContent = sel.length ? csv : "— Selecciona —";
+    if(sel.length) sum.removeAttribute("data-empty"); else sum.setAttribute("data-empty","1"); }
+}
 /* ══════════════════════════════════════════
    CANTIDAD SEMBRADA (CS) — población inicial
    por tanque, persistida solo en localStorage
@@ -3762,8 +3897,8 @@ function renderTONRows(){
     html += `<tr>
       <td class="cs-tqc">${tqCell(curMod,i,_tqn)}</td>
       <td><input type="number" name="ton_in_${i}" value="${v===""?"":escapeHtml(v)}"
-            min="0" step="any" placeholder="Ej: 0.85"
-            oninput="tonUpdateSummary()" title="Toneladas cosechadas de este tanque"></td>
+            min="0" step="any" placeholder="Ej: 27.5"
+            oninput="tonUpdateSummary()" title="Volumen del tanque en toneladas (normalmente ~27-28). Base de la Densidad cosechada = Población ÷ Toneladas."></td>
     </tr>`;
   }
   tbody.innerHTML = html;
@@ -4618,7 +4753,7 @@ function pdfChartsPage(fid, d, mod, tqN){
     + '</div>';
 }
 
-function downloadPDF(fid, dataOverride, opts){
+function downloadPDF(fid, dataOverride){
   // algas ficha has no PDF template; FICHAS only includes standard fichas
   if(!FICHAS.includes(fid)) return;
   // Fuente de datos del PDF, por prioridad:
@@ -4693,9 +4828,6 @@ function downloadPDF(fid, dataOverride, opts){
     else window.addEventListener('load',doPrint,{once:true});
   <\/script></body></html>`;
 
-  // Modo "compartir": en vez de abrir la ventana de impresión, devuelve el HTML
-  // del PDF (lo usa shareFichaPDF para que el GAS lo convierta a PDF en Drive).
-  if(opts && opts.returnDoc) return { page, fileName, fecha, codigo };
 
   const w = window.open('','_blank','width=1100,height=720');
   if(!w){
@@ -4709,39 +4841,6 @@ function downloadPDF(fid, dataOverride, opts){
   toast('📄 PDF: ' + fileName + ' · cód. ' + codigo,'ok',5500);
 }
 
-// Genera el PDF de una ficha de Larvicultura y lo envía al GAS, que lo convierte
-// (HTML→PDF) y lo guarda/comparte en Drive (PDFs/Fecha) para descargarlo por el
-// QR "PDFs del día" en otro dispositivo. NO sube un archivo: la app manda el HTML.
-async function shareFichaPDF(fid){
-  if(!FICHAS.includes(fid)) return;
-  const url = gasUrl();
-  if(!url){ toast("Configura la URL de Google Apps Script en ⚙ Config","warn"); openCfg(); return; }
-  if(!isValidGasUrl(url)){ toast("URL inválida","err"); return; }
-  let d;
-  if(curTab === fid && document.getElementById("fp-"+fid)) d = collect(fid, {quiet:true});
-  else d = (loadE(curMod, fid) || {}).data || {};
-  const doc = downloadPDF(fid, d, { returnDoc:true });
-  if(!doc || !doc.page){ toast("No se pudo generar el PDF","err"); return; }
-  toast("📤 Generando PDF y enviándolo a Drive…","info",4000);
-  try{
-    const ctrl = new AbortController();
-    const timer = setTimeout(()=>ctrl.abort(), 30000);
-    const r = await fetch(url, {
-      method:"POST", headers:{"Content-Type":"text/plain"},
-      body: JSON.stringify({ action:"pdfShare", token:EV_TOKEN, fecha:doc.fecha, modulo:_evModParam(), name:doc.fileName, html:doc.page }),
-      signal: ctrl.signal
-    });
-    clearTimeout(timer);
-    const j = JSON.parse(await r.text());
-    if(j && j.status === "ok"){
-      toast("✅ PDF compartido — disponible para descargar desde el QR “PDFs del día”.","ok",6000);
-    } else {
-      toast("No se pudo compartir el PDF" + (j && j.message ? (": "+j.message) : ""), "err", 6000);
-    }
-  }catch(x){
-    toast(x.name==="AbortError" ? "Tiempo de espera agotado al enviar el PDF." : "Error de conexión al enviar el PDF.", "err", 5000);
-  }
-}
 
 /* ══════════════════════════════════════════
    LAB. ALGAS — PAYLOAD BUILDER
@@ -5338,14 +5437,14 @@ async function resyncBitacoraDay(fecha){
     toast("No hay filas válidas para reenviar","warn",3500);
     return;
   }
-  const sent = await postPayload(payload, url);
+  const opts = {};
+  const sent = await postPayload(payload, url, opts);
   if(sent){
     setSyncUI("ok", list.length+" registro(s) reenviado(s) ✔");
     toast("✅ "+list.length+" registro(s) del "+fecha+" reenviados a Lab_Algas","ok",4500);
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
-    setSyncUI("err","Error al reenviar");
-    toast("No fue posible reenviar a Google Sheets. Revisa la conexión y reintenta.","err",4500);
+    _syncNotOkUI(opts.outcome, "Error al reenviar", null, opts.gasMessage);
   }
 }
 
@@ -6026,15 +6125,15 @@ async function madReproProcess(){
   }
   const url = gasUrl();
   toast("Procesando "+res.report.processed.length+" código(s) válido(s)…","info",2200);
-  let okAll=true;
-  if(res.bitacora){ okAll = (await postPayload(res.bitacora, url)) && okAll; }
-  if(res.matriz){ okAll = (await postPayload(res.matriz, url)) && okAll; }
+  let okAll=true; const _o1={}, _o2={};
+  if(res.bitacora){ okAll = (await postPayload(res.bitacora, url, _o1)) && okAll; }
+  if(res.matriz){ okAll = (await postPayload(res.matriz, url, _o2)) && okAll; }
   _madReproShowReport(res.report, parsed.duplicates, tipo, okAll);
   if(okAll){
     toast("✅ "+res.report.processed.length+" "+(tipo==="Desove"?"desove(s)":"mortalidad(es)")+" registrado(s).","ok",4200);
     cEl.value="";
   } else {
-    toast("No se pudo enviar a Google Sheets. Reintenta cuando haya conexión.","err",5000);
+    _madReproNotOk([_o1,_o2]);
   }
 }
 
@@ -6068,10 +6167,11 @@ async function madReproAltaBatch(){
   const res=window.__rgLib.buildAltaBatch(_reproAltaCollect(fecha), _reproMatrixIndex());
   if(!res.payload){ _madReproShowAltaReport(res.report, false); toast("No hay filas válidas para registrar (¿falta el Trovan ID?).","warn",4200); return; }
   toast("Registrando "+res.report.created.length+" individuo(s)…","info",2000);
-  const sent=await postPayload(res.payload, gasUrl());
+  const _oA={};
+  const sent=await postPayload(res.payload, gasUrl(), _oA);
   _madReproShowAltaReport(res.report, sent);
   if(sent){ toast("✅ "+res.report.created.length+" individuo(s) registrado(s).","ok",4200); }
-  else { toast("No se pudo enviar a Google Sheets. Reintenta.","err",5000); }
+  else { _madReproNotOk([_oA]); }
 }
 function madReproAltaClear(){
   const tb=document.getElementById("repro-a-tbody"); if(tb) tb.querySelectorAll("input").forEach(function(i){ i.value=""; });
@@ -6133,12 +6233,12 @@ async function madReproTransfer(){
   if(res.error){ toast(res.error,"err",3500); return; }
   if(!res.transfer){ _madReproShowTransferReport(res.report, trId, false); toast("No hay individuos válidos para transferir.","warn",4000); return; }
   toast("Procesando transferencia "+trId+"…","info",2200);
-  let okAll=true;
-  if(res.matriz){ okAll=(await postPayload(res.matriz, gasUrl())) && okAll; }
-  if(res.transfer){ okAll=(await postPayload(res.transfer, gasUrl())) && okAll; }
+  let okAll=true; const _t1={}, _t2={};
+  if(res.matriz){ okAll=(await postPayload(res.matriz, gasUrl(), _t1)) && okAll; }
+  if(res.transfer){ okAll=(await postPayload(res.transfer, gasUrl(), _t2)) && okAll; }
   _madReproShowTransferReport(res.report, trId, okAll);
   if(okAll){ toast("✅ "+res.report.moved.length+" individuo(s) transferido(s) — "+trId,"ok",4500); _reproBumpTrSeq(trId); }
-  else { toast("No se pudo enviar a Google Sheets. Reintenta.","err",5000); }
+  else { _madReproNotOk([_t1,_t2]); }
 }
 
 function _madReproShowTransferReport(rep, trId, okSent){
@@ -6160,7 +6260,7 @@ function _madReproShowTransferReport(rep, trId, okSent){
 
 function _madReproShowReport(rep, duplicates, tipo, okSent){
   const el=document.getElementById("repro-report"); if(!el) return;
-  const chip=(txt,bg,fg)=>'<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:'+bg+';color:'+fg+'">'+escapeHtml(txt)+'</span>';
+  const chip=function(txt,bg,fg){ return '<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:'+bg+';color:'+fg+'">'+escapeHtml(txt)+'</span>'; };
   let h = '<div style="font-size:12px;font-weight:700;margin-bottom:6px">'+(okSent?"✅ Enviado":"⚠️ Procesado (sin enviar)")+' · '+escapeHtml(tipo)+'</div>';
   h += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
   h += chip(rep.processed.length+" registrado(s)", "#dcfce7", "#166534");
@@ -7273,16 +7373,58 @@ function _bioPatVisibles(datosPorFila){
   return out;
 }
 
-/* Se dispara al cambiar una celda de resultado. Repinta SÓLO si eso cambia qué
-   columnas se ven: repintar en cada tecla robaría el foco a media palabra. */
+/** ¿Va EDITABLE la celda `k` (ciclo_x | copias_x) del patógeno `pat` en una fila con
+ *  datos `d`? Se abre si esa fila es positiva a ese patógeno, o si la celda YA trae dato
+ *  (una fila vieja, o el resultado se rectificó después: bloquear encima de un dato
+ *  escrito lo volvería inalcanzable sin borrarlo).
+ *  🔑 REGLA ÚNICA a propósito: la usan el PINTADO (renderBiomol) y el DETECTOR DE
+ *  DESFASE (_bioQpcrDesfase). Tenerla escrita en dos sitios es exactamente la costura
+ *  por la que se coló el defecto del 2026-08-31. */
+function _bioQpcrCeldaAbierta(d, pat, k){
+  return _bioPositivoEstricto((d||{})[pat]) || String((d||{})[k] || "").trim() !== "";
+}
+
+/* ¿Lo que se ve difiere de lo que DEBERÍA verse? Hay DOS niveles y confundirlos fue el
+   defecto: las COLUMNAS de qPCR son del grid entero —se abren si ALGUNA fila es
+   positiva—, pero que una CELDA esté habilitada es de la FILA. Comparando sólo columnas,
+   con la columna ya abierta por la fila 1, marcar «Positivo» en la fila 2 no repintaba
+   nada y sus celdas seguían bloqueadas: sólo el PRIMER positivo podía anotar su Ct. */
+function _bioQpcrDesfase(fp, filas, quiere){
+  // 1 · columnas del grid
+  for(let i=0; i<BIO_QPCR_PATS.length; i++){
+    const p = BIO_QPCR_PATS[i];
+    if(quiere[p] !== !!fp.querySelector('[name$="_ciclo_' + p + '"]')) return true;
+  }
+  // 2 · celdas de cada fila. Se recorre el DOM y no `filas`, porque una fila que se
+  //     acaba de vaciar ya no viene en `filas` y también tiene que volver a bloquearse.
+  const celdas = fp.querySelectorAll('[name*="_ciclo_"],[name*="_copias_"]');
+  for(let i=0; i<celdas.length; i++){
+    const el = celdas[i];
+    const nm = String(el.name || "");
+    if(nm.indexOf("bg_") !== 0) continue;
+    const resto = nm.slice(3);
+    const corte = resto.indexOf("_");
+    if(corte < 1) continue;
+    const fila  = resto.slice(0, corte);       // "2"
+    const clave = resto.slice(corte + 1);      // "ciclo_wssv"
+    const guion = clave.indexOf("_");
+    if(guion < 1) continue;
+    const pat = clave.slice(guion + 1);        // "wssv"
+    if(BIO_QPCR_PATS.indexOf(pat) === -1) continue;
+    // Si el DOM dice lo CONTRARIO de lo que toca, hay desfase (abierta === disabled).
+    if(_bioQpcrCeldaAbierta(filas[fila], pat, clave) === !!el.disabled) return true;
+  }
+  return false;
+}
+
+/* Se dispara al cambiar una celda de resultado. Repinta SÓLO si algo se ve distinto de
+   como debería: repintar en cada tecla robaría el foco a media palabra. */
 function bioPatCambio(){
   const fp = document.getElementById("fp-biomol"); if(!fp) return;
   const filas = {};
   _collectBioGrid().forEach(d => { if(d && d.fila != null) filas[String(d.fila)] = d; });
   const quiere = _bioPatVisibles(filas);
-  const hay = {};
-  BIO_QPCR_PATS.forEach(p => { hay[p] = !!fp.querySelector('[name$="_ciclo_' + p + '"]'); });
-  if(BIO_QPCR_PATS.every(p => quiere[p] === hay[p])) return;
+  if(!_bioQpcrDesfase(fp, filas, quiere)) return;
   _bioPintarCon = filas;
   renderBiomol();
 }
@@ -7755,14 +7897,14 @@ async function syncMareaGrid(){
   const payload = buildMareaPayload(_collectMareaGrid());
   if(!payload.rows.length){ toast("No hay filas con Fecha para enviar","warn",3000); return; }
   setSyncUI("pend","Enviando "+payload.rows.length+" fila(s) de mareas…");
-  const sent = await postPayload(payload, url);
+  const opts = {};
+  const sent = await postPayload(payload, url, opts);
   if(sent){
     setSyncUI("ok", payload.rows.length+" fila(s) de mareas sincronizada(s) ✔");
     toast("✅ "+payload.rows.length+" fila(s) enviadas a la hoja Marea","ok",4500);
     setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
   } else {
-    setSyncUI("err","Error al sincronizar Mareas");
-    toast("No fue posible sincronizar con Google Sheets","err",4500);
+    _syncNotOkUI(opts.outcome, "Error al sincronizar Mareas", null, opts.gasMessage);
   }
 }
 function renderMarea(){
@@ -8619,7 +8761,7 @@ function renderBiomol(){
       // vez de esconderse, para no descuadrar la tabla. Si ya trae dato (una fila
       // vieja, o el resultado cambió después) se deja editable: bloquear encima de
       // un dato escrito lo volvería inalcanzable sin borrarlo.
-      if(c.pat && !_bioPositivoEstricto(d[c.pat]) && String(d[c.k] || "").trim() === ""){
+      if(c.pat && !_bioQpcrCeldaAbierta(d, c.pat, c.k)){
         return `<td class="bio-qc"><input class="pinp" type="text" name="bg_${fila}_${c.k}" data-r="${fila-1}" data-c="${ci}" disabled value="" title="Sólo se registra cuando la muestra es positiva a ${escapeHtml(c.pat.toUpperCase())}" style="min-width:${w}px;background:#f1f5f9;color:#cbd5e1"></td>`;
       }
       // Una celda de RESULTADO de un patógeno con qPCR avisa al soltar el foco: es
@@ -9599,7 +9741,7 @@ let _trasRecovered = null;
    para que le reapareciera otro viaje. Se levanta al borrar y cae al guardar. */
 let _trasEnBlanco = false;
 /* Id del viaje que se está capturando AHORA. Nace en el primer «Sellar» y vive
-   hasta que el viaje se cierra con «Guardar traslado» o se abandona. Es lo que
+   hasta que el viaje se cierra con «Enviar traslado» o se abandona. Es lo que
    hace que sellar cuatro paradas actualice UN registro y no cree cuatro viajes:
    sin él, cada sellado llamaría a `trasNuevoViajeId()` y la hoja recibiría el
    mismo camión repartido en cuatro viajes distintos, imposible de reconciliar. */
@@ -10781,7 +10923,7 @@ function trasBarraHtml(recBtn){
       + (recBtn || "")
       + '<button class="btn bpdf" type="button" onclick="downloadTrasladoPDF()" title="Informe A4 del viaje entero: cada revisión de cada camión">📄 PDF</button>'
       + '<button class="btn bs" type="button" onclick="trasGuardarLocal()" title="Respalda el viaje en este dispositivo, sin enviarlo a Google Sheets">💾 Guardar local</button>'
-      + '<button class="btn bp" type="button" onclick="saveTraslado()" title="Guarda el viaje y lo envía a Google Sheets">☁️ Guardar traslado</button>'
+      + '<button class="btn bp" type="button" onclick="saveTraslado()" title="Guarda el viaje y lo envía a Google Sheets">☁️ Enviar traslado</button>'
     + '</div>'
   + '</div>';
 }
@@ -11045,7 +11187,7 @@ function trasLimpiarRevision(i){
 }
 
 /* Inserta o actualiza el viaje `id` en la lista. Devuelve true si era NUEVO.
-   Lo comparten el guardado parcial de «Sellar» y el «Guardar traslado» final,
+   Lo comparten el guardado parcial de «Sellar» y el «Enviar traslado» final,
    para que los dos escriban EXACTAMENTE el mismo registro: si cada uno tuviera
    su propia rutina volveríamos a la costura de dos módulos que responden distinto
    a la misma pregunta, que es donde vivían todos los defectos de este proyecto. */
@@ -11203,7 +11345,7 @@ function trasGuardarLocal(opts){
   return true;
 }
 
-/* «☁️ Guardar traslado»: guarda Y envía, y los datos SE QUEDAN en la ficha —cada
+/* «☁️ Enviar traslado»: guarda Y envía, y los datos SE QUEDAN en la ficha —cada
    parada con su placa— en vez de irse a una lista (usuario, 2026-08-25b). Es el
    «☁️ Guardar y sincronizar» de las fichas de larvicultura.
 
@@ -11319,7 +11461,7 @@ async function syncAllPendingTras(){
 
 /* ⚠ `syncOneTrasFromList` se retiró el 2026-08-25b con la tabla de «Traslados
    guardados»: no quedaba ningún sitio desde donde llamarla. Enviar un viaje suelto
-   lo hace ahora «☁️ Guardar traslado», y `syncAllPendingTras` barre lo pendiente. */
+   lo hace ahora «☁️ Enviar traslado», y `syncAllPendingTras` barre lo pendiente. */
 
 /* «🗑 Borrar traslado»: vacía la ficha y borra ESTE traslado del dispositivo, que es
    como se empieza el siguiente (usuario, 2026-08-25b). Es el equivalente del «Borrar
@@ -11989,8 +12131,12 @@ function _micSave(list){
 // (MIC_TTL). Las pendientes (no sincronizadas) se CONSERVAN para no perder datos
 // sin enviar. Se aplica al leer el historial y desde cleanup() en el arranque.
 function pruneMic(){
+  // La retención de 7 d se cuenta desde la SINCRONIZACIÓN (syncedAt), no desde la
+  // creación (ts): así, al sincronizar análisis pendientes de varios días, los más
+  // antiguos NO desaparecen al instante del historial local. Heredados sin syncedAt
+  // → se usa ts como respaldo. Las pendientes (sin synced) se conservan siempre.
   const now = Date.now(); const raw = _micRaw();
-  const list = raw.filter(r=> !(r && r.synced && r.ts && (now - r.ts) > MIC_TTL));
+  const list = raw.filter(r=> !(r && r.synced && (r.syncedAt || r.ts) && (now - (r.syncedAt || r.ts)) > MIC_TTL));
   if(list.length !== raw.length) _micSave(list);
   return list;
 }
@@ -13112,8 +13258,10 @@ function _calSave(list){
 // Poda Calidad de Agua: igual que pruneMic → borra SOLO sesiones sincronizadas con
 // más de MIC_TTL (7 d); las pendientes se conservan. Consistencia del módulo Mic.
 function pruneCal(){
+  // Retención 7 d desde syncedAt (no desde ts) — ver nota en pruneMic. Evita que al
+  // sincronizar pendientes antiguos estos se borren de inmediato del historial local.
   const now = Date.now(); const raw = _calRaw();
-  const list = raw.filter(r=> !(r && r.synced && r.ts && (now - r.ts) > MIC_TTL));
+  const list = raw.filter(r=> !(r && r.synced && (r.syncedAt || r.ts) && (now - (r.syncedAt || r.ts)) > MIC_TTL));
   if(list.length !== raw.length) _calSave(list);
   return list;
 }
@@ -14151,7 +14299,7 @@ function _patSave(list){
 // Poda Patología: igual que pruneMic/pruneCal (sincronizadas con +7 d). Consistencia.
 function prunePat(){
   const now = Date.now(); const raw = _patRaw();
-  const list = raw.filter(r=> !(r && r.synced && r.ts && (now - r.ts) > MIC_TTL));
+  const list = raw.filter(r=> !(r && r.synced && (r.syncedAt || r.ts) && (now - (r.syncedAt || r.ts)) > MIC_TTL));
   if(list.length !== raw.length) _patSave(list);
   return list;
 }
@@ -14642,7 +14790,6 @@ const SS_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
 const EV_FOLDER_ID = "${EV_FOLDER_ID}";
 const EV_TOKEN     = "${EV_TOKEN}";
 const EV_SHEET     = "Evidencias";
-const PDF_SHEET    = "PDFs_Dia";
 
 // Hojas permitidas — lista blanca estricta
 const ALLOWED = [
@@ -14672,11 +14819,15 @@ const ALLOWED = [
 ];
 
 const LIMITS = {
-  // maxCols: 50 contempla las 49 cols actuales del schema + 1 de margen.
-  // Schema actual: cols 0–28 (Calidad/PLG/Población/Técnico) + cols 29–36
-  // (otro sistema, vacías) + cols 37–41 (Despacho) + cols 42–47 (Cal. Agua).
-  datos:   { maxRows: 30,  maxCols: 50 },
-  control: { maxRows: 300, maxCols: 8  },
+  // ⚠⚠ maxCols YA NO RECORTA: desde el 2026-08-30 un payload más ancho que su tope
+  // se RECHAZA (ver doPost). Aun así los topes van con holgura, porque un rechazo en
+  // producción el día que alguien añade una columna es un mal día para enterarse.
+  // Datos Larvicultura son 49 columnas: 0–28 (Calidad/PLG/Población/Técnico),
+  // 29–36 (otro sistema, vacías), 37–41 (Despacho), 42–47 (Cal. Agua) y 48 Toneladas.
+  datos:   { maxRows: 30,  maxCols: 60 },
+  // Control_Tanque son 8 (Fecha, Hora, Corrida, Módulo, Tanque, OD, Temp, Observación)
+  // y el tope estaba EXACTAMENTE en 8: margen cero, la peor cifra posible.
+  control: { maxRows: 300, maxCols: 12 },
   algas:   { maxRows: 500, maxCols: 28 },
   mad:     { maxRows: 1000, maxCols: 25 },
   // Biomol: 23 columnas desde 2026-08-23 (las 19 anteriores MENOS la pareja
@@ -14738,13 +14889,6 @@ function doPost(e) {
       return respond({ status: "error", message: "Solicitud inválida" });
     }
 
-    // Acción especial F3: compartir el PDF de una ficha. La app manda el HTML de
-    // la ficha; el GAS lo convierte a PDF y lo guarda/comparte en Drive (PDFs/Fecha)
-    // para descargarlo por el QR. Valida su propio token (EV_TOKEN), no va por la
-    // allowlist de hojas.
-    if (payload && payload.action === "pdfShare") {
-      return respond(evPdfShare(payload));
-    }
 
     // Rate limiting por session key. Se usan hasta 24 chars (no 8): el sessionId
     // del cliente empieza por Date.now().toString(36) (~8 chars que varían lento
@@ -14847,11 +14991,26 @@ function doPost(e) {
       return respond({ status: "error", message: "Límite de filas excedido" });
     }
 
+    // ⚠⚠ Y LO MISMO CON EL ANCHO. Hasta el 2026-08-30 las filas se RECORTABAN a
+    // maxCols sin decir nada y el GAS respondía "ok": así se perdieron dos columnas
+    // del AsT en agosto, con el cliente informando de una escritura perfecta. Un dato
+    // que no llega y nadie ve es lo más caro que puede pasar aquí, así que ahora se
+    // rechaza igual que las filas. La única causa posible es que este GAS sea anterior
+    // a la app que le habla, y eso se arregla re-desplegando, no tocando el registro.
+    var anchoMax = 0;
+    for (var ri0 = 0; ri0 < payload.rows.length; ri0++) {
+      var f0 = payload.rows[ri0];
+      if (f0 && f0.length > anchoMax) anchoMax = f0.length;
+    }
+    if (anchoMax > limits.maxCols) {
+      return respond({ status: "error", message: "Límite de columnas excedido" });
+    }
+
     // ── LOCK: serializa el read-modify-write (open + upsert/append/delete)
     // entre invocaciones CONCURRENTES. Sin esto, dos dispositivos sincronizando
     // la MISMA hoja a la vez podían leer el mismo estado y pisarse (merge sobre
     // datos obsoletos) o duplicar filas en hojas append. F1: waitLock espera
-    // hasta 25s (< el timeout de 30s del cliente, F2a) para dar holgura y NO
+    // hasta 25s (< el timeout de 40s del cliente, F2a) para dar holgura y NO
     // rechazar por "Servidor ocupado" bajo ráfagas; con F4b el lock se sostiene
     // poco tiempo (escritura O(sesión)), así que la espera real casi nunca llega
     // a agotarse. Si aun así no obtiene el lock, devuelve un error transitorio →
@@ -14866,6 +15025,8 @@ function doPost(e) {
     try {
       rows = payload.rows.map(function(row, ri) {
         if (!Array.isArray(row)) throw new Error("row_" + ri);
+        // El recorte se conserva como cinturón: con la comprobación de ancho de arriba
+        // ya no puede activarse, pero asegura que el rango nunca supere el tope.
         return row.slice(0, limits.maxCols).map(function(cell) {
           return cleanCell(cell);
         });
@@ -14894,19 +15055,20 @@ function doPost(e) {
     // quedaba en blanco. Llamarlo siempre lo cubre y evita repetir el caso a futuro.
     ensureHeaders(ws, payload.headers || []);
 
-    // Borrado explícito de sesiones (Microbiología / Calidad de Agua / Patología
-    // en Fresco): permite VACIAR de la hoja una sesión completa. Un upsert/replace
-    // con 0 filas no podría borrar nada (no hay clave que emparejar); por eso el
-    // cliente envía deleteKeys = [[v0,...], ...] con los valores de keyCols.
-    var _deleted = 0;
-    if ((isMicro || isCal || isPat) && Array.isArray(payload.deleteKeys) &&
-        payload.deleteKeys.length && Array.isArray(payload.keyCols)) {
-      _deleted = deleteByKeyRows(ws, payload.keyCols, payload.deleteKeys);
-    }
+    // ⚠ AQUÍ HUBO un borrado explícito de sesiones por payload.deleteKeys
+    // (Microbiología / Calidad de Agua / Patología). RETIRADO el 2026-08-30 porque
+    // NINGÚN cliente lo enviaba: el botón de la papelera del historial borra sólo del
+    // dispositivo, y su propio rótulo lo dice. El comentario que había aquí describía
+    // un comportamiento del cliente que no existía.
+    // Y no era una rama muerta inofensiva: con SHARED_TOKEN vacío doPost no pide
+    // autenticación, así que era un borrado de filas de PRODUCCIÓN al alcance de
+    // cualquiera con la URL — y la URL va dentro del JavaScript público.
+    // Si algún día el borrado local debe llegar a la hoja, vuelve: pero con la
+    // autenticación puesta y decidido a propósito, no como resto de otra cosa.
 
     if (rows.length === 0) {
       if (reqId) { try { CacheService.getScriptCache().put("idem_" + reqId, "1", 600); } catch (_e) {} }
-      return respond({ status: "ok", sheet: payload.sheetName, rows: 0, upserted: _deleted, appended: 0 });
+      return respond({ status: "ok", sheet: payload.sheetName, rows: 0, upserted: 0, appended: 0 });
     }
 
     // Routing según hoja destino:
@@ -15152,11 +15314,11 @@ function upsertRows(ws, newRows, isCtrl) {
   var added = 0;
   if (toAdd.length > 0) {
     var startRow = lastRow(ws) + 1;
-    var nc2      = toAdd[0].length;
-    if (isCtrl) ws.getRange(startRow, 2, toAdd.length, 1).setNumberFormat("@");
-    ws.getRange(startRow, 1, toAdd.length, nc2).setValues(toAdd);
-    fmtData(ws, startRow, toAdd.length, nc2, isCtrl);
-    added = toAdd.length;
+    var u        = filasUniformes(toAdd);
+    if (isCtrl) ws.getRange(startRow, 2, u.filas.length, 1).setNumberFormat("@");
+    ws.getRange(startRow, 1, u.filas.length, u.ancho).setValues(u.filas);
+    fmtData(ws, startRow, u.filas.length, u.ancho, isCtrl);
+    added = u.filas.length;
   }
   return { upserted: updated, appended: added };
 }
@@ -15261,13 +15423,37 @@ function lastRow(ws) {
   return lr > 0 ? lr : 0;
 }
 
+// ── Ancho uniforme de un bloque de filas ─────────────────
+// setValues exige que TODAS las filas midan exactamente lo mismo que el rango. Una
+// sola más corta hace fallar la escritura ENTERA, y el error de Apps Script no dice
+// cuál fila fue. Hasta el 2026-08-30 tres de las cinco rutas de escritura tomaban el
+// ancho de la PRIMERA fila y daban por hecho que las demás medían igual: cierto hoy,
+// pero es una propiedad de los constructores del CLIENTE, no de estas funciones, y
+// basta una celda condicional al otro lado del contrato para romperla.
+// Devuelve las filas con un único ancho: las cortas se rellenan con "" y las largas
+// se recortan (recortar ya lo hacía doPost con maxCols). No muta lo que recibe.
+function filasUniformes(filas) {
+  var ancho = 0, i;
+  for (i = 0; i < filas.length; i++) if (filas[i].length > ancho) ancho = filas[i].length;
+  var out = [];
+  for (i = 0; i < filas.length; i++) {
+    var f = filas[i];
+    if (f.length === ancho) { out.push(f); continue; }
+    var c = f.slice();
+    while (c.length < ancho) c.push("");
+    out.push(c.length > ancho ? c.slice(0, ancho) : c);
+  }
+  return { filas: out, ancho: ancho };
+}
+
 // ── Append simple (queda como utilidad genérica) ──
 function appendRows(ws, newRows) {
+  if (!newRows || !newRows.length) return { upserted: 0, appended: 0 };
   var startRow = lastRow(ws) + 1;
-  var nc       = newRows[0].length;
-  ws.getRange(startRow, 1, newRows.length, nc).setValues(newRows);
-  fmtData(ws, startRow, newRows.length, nc, false);
-  return { upserted: 0, appended: newRows.length };
+  var u        = filasUniformes(newRows);
+  ws.getRange(startRow, 1, u.filas.length, u.ancho).setValues(u.filas);
+  fmtData(ws, startRow, u.filas.length, u.ancho, false);
+  return { upserted: 0, appended: u.filas.length };
 }
 
 // ── F4b · Reemplazo O(sesión) sin reescribir la hoja entera ──────────────
@@ -15291,17 +15477,12 @@ function _replaceMatched(ws, newRows, matchPred) {
   }
   var added = 0;
   if (newRows && newRows.length) {
-    var widest = 0;
-    for (var w = 0; w < newRows.length; w++) if (newRows[w].length > widest) widest = newRows[w].length;
-    if (widest > ws.getMaxColumns()) ws.insertColumnsAfter(ws.getMaxColumns(), widest - ws.getMaxColumns());
-    var norm = newRows.map(function(r){
-      if (r.length === widest) return r;
-      var c = r.slice(); while (c.length < widest) c.push(""); return c.slice(0, widest);
-    });
+    var u = filasUniformes(newRows);
+    if (u.ancho > ws.getMaxColumns()) ws.insertColumnsAfter(ws.getMaxColumns(), u.ancho - ws.getMaxColumns());
     var startRow = lastRow(ws) + 1;
-    ws.getRange(startRow, 1, norm.length, widest).setValues(norm);
-    fmtData(ws, startRow, norm.length, widest, false);
-    added = norm.length;
+    ws.getRange(startRow, 1, u.filas.length, u.ancho).setValues(u.filas);
+    fmtData(ws, startRow, u.filas.length, u.ancho, false);
+    added = u.filas.length;
   }
   SpreadsheetApp.flush();   // el APPEND queda comprometido ANTES de cualquier borrado
   var removed = 0;
@@ -15346,27 +15527,6 @@ function replaceByKeyRows(ws, newRows, keyCols) {
   return { upserted: res.removed, appended: res.added };
 }
 
-// ── Borrado por clave compuesta (vaciar sesión en hojas anchas) ──────────
-// Elimina las filas cuya clave (keyCols) coincide con alguna de deleteKeys.
-// deleteKeys = array de tuplas con los valores de las columnas clave EN EL
-// MISMO ORDEN que keyCols (compactas, no filas completas). Se usa para borrar
-// de la hoja una sesión que el usuario eliminó del historial local
-// (Microbiología / Calidad de Agua). No usa regex (en el template literal del
-// HTML las secuencias \\d colapsarían); la normalización de fecha la hace
-// madRowKey al leer las celdas de la hoja (Date → yyyy-MM-dd).
-function deleteByKeyRows(ws, keyCols, deleteKeys) {
-  if (!deleteKeys || !deleteKeys.length || !keyCols || !keyCols.length) return 0;
-  var present = {};
-  for (var r = 0; r < deleteKeys.length; r++) {
-    var dk = deleteKeys[r] || [];
-    var parts = [];
-    for (var j = 0; j < dk.length; j++) parts.push(String(dk[j] == null ? "" : dk[j]).trim());
-    present[parts.join("|")] = 1;
-  }
-  var res = _replaceMatched(ws, [], function(row){ return present[madRowKey(row, keyCols)] === 1; });
-  return res.removed;
-}
-
 // ── Upsert Registro_Supervisión (AsT) por columna ID estable ──
 // Cada registro local de AsT viaja con un ID único en la ÚLTIMA columna del
 // payload. Al re-sincronizar un registro editado, se localiza su fila por ese
@@ -15384,10 +15544,17 @@ function upsertAstRows(ws, newRows) {
   if (widest > ws.getMaxColumns()) {
     ws.insertColumnsAfter(ws.getMaxColumns(), widest - ws.getMaxColumns());
   }
-  // El ID ya NO es forzosamente la última columna: desde 2026-08 el payload lleva
-  // Flacidez/Necrosis/Disparidad DESPUÉS del ID, para no desplazar ninguna columna
-  // histórica de la hoja. Se localiza por cabecera; si la hoja es heredada y no la
-  // tiene, se conserva el comportamiento anterior (última columna del payload).
+  // El ID es la ÚLTIMA columna del payload —la 27 en el AsT, la 29 en Traslado— y
+  // Flacidez/Necrosis/Disparidad van DELANTE de él, no detrás. El orden se invirtió
+  // el 2026-08-15 a propósito y no debe volver a cambiarse: la hoja de producción
+  // tenía la cabecera del ID EN BLANCO, así que la búsqueda por cabecera no lo
+  // encontraba y caía al respaldo «última columna del payload»; con el ID en la 24
+  // de 27, ese respaldo apuntaba a «Disparidad». Resultado: cada sync añadía una
+  // fila nueva —la duplicación que este upsert existe para evitar— y dos registros
+  // con la misma Disparidad se pisaban entre sí.
+  // Con el ID al final las DOS rutas —cabecera y respaldo— dan la misma columna, de
+  // modo que empareja aunque la cabecera siga en blanco. ensureHeaders NO salva ese
+  // caso: sale antes de escribir nada si la hoja ya tiene el ancho completo.
   var idCol = -1;
   for (var h = 0; h < hdr.length; h++) {
     if (String(hdr[h] == null ? "" : hdr[h]).trim() === "ID") { idCol = h; break; }
@@ -15424,9 +15591,10 @@ function upsertAstRows(ws, newRows) {
   var added = 0;
   if (toAdd.length > 0) {
     var startRow = lastRow(ws) + 1;
-    ws.getRange(startRow, 1, toAdd.length, widest).setValues(toAdd);
-    fmtData(ws, startRow, toAdd.length, widest, false);
-    added = toAdd.length;
+    var u = filasUniformes(toAdd);
+    ws.getRange(startRow, 1, u.filas.length, u.ancho).setValues(u.filas);
+    fmtData(ws, startRow, u.filas.length, u.ancho, false);
+    added = u.filas.length;
   }
   return { upserted: updated, appended: added };
 }
@@ -15490,9 +15658,10 @@ function upsertAlgasRows(ws, newRows) {
   var added = 0;
   if (toAdd.length > 0) {
     var startRow = lastRow(ws) + 1;
-    ws.getRange(startRow, 1, toAdd.length, widest).setValues(toAdd);
-    fmtData(ws, startRow, toAdd.length, widest, false);
-    added = toAdd.length;
+    var u = filasUniformes(toAdd);
+    ws.getRange(startRow, 1, u.filas.length, u.ancho).setValues(u.filas);
+    fmtData(ws, startRow, u.filas.length, u.ancho, false);
+    added = u.filas.length;
   }
   return { upserted: updated, appended: added };
 }
@@ -15588,12 +15757,12 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol) {
   var added = 0;
   if (toAdd.length > 0) {
     var startRow = lastRow(ws) + 1;
-    var nc2 = toAdd[0].length;
-    if (trovanCol >= 0 && trovanCol < nc2) ws.getRange(startRow, trovanCol + 1, toAdd.length, 1).setNumberFormat("@");
-    if (numCol >= 0 && numCol < nc2) ws.getRange(startRow, numCol + 1, toAdd.length, 1).setNumberFormat("General");
-    ws.getRange(startRow, 1, toAdd.length, nc2).setValues(toAdd);
-    fmtData(ws, startRow, toAdd.length, nc2, false);
-    added = toAdd.length;
+    var u = filasUniformes(toAdd);
+    if (trovanCol >= 0 && trovanCol < u.ancho) ws.getRange(startRow, trovanCol + 1, u.filas.length, 1).setNumberFormat("@");
+    if (numCol >= 0 && numCol < u.ancho) ws.getRange(startRow, numCol + 1, u.filas.length, 1).setNumberFormat("General");
+    ws.getRange(startRow, 1, u.filas.length, u.ancho).setValues(u.filas);
+    fmtData(ws, startRow, u.filas.length, u.ancho, false);
+    added = u.filas.length;
   }
   return { upserted: updated, appended: added };
 }
@@ -15619,7 +15788,7 @@ function madInKey(row, keyCols) {
     // Fecha ISO (yyyy-mm-dd) → normaliza a 10 chars para casar con madRowKey
     // (que formatea las celdas Date a yyyy-MM-dd). SIN regex a propósito: dentro
     // del template literal de GAS() los escapes de regex colapsan (mismo criterio
-    // que deleteByKeyRows / _evDate).
+    // que _evDate).
     var isIso = s.length >= 10 && s.charAt(4) === "-" && s.charAt(7) === "-" &&
                 !isNaN(+s.slice(0, 4)) && !isNaN(+s.slice(5, 7)) && !isNaN(+s.slice(8, 10));
     parts.push(isIso ? s.slice(0, 10) : s);
@@ -15635,9 +15804,7 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.p === "evlist") {
     return evList(e.parameter.t || "", e.parameter.m || "", e.parameter.f || "");
   }
-  if (e && e.parameter && e.parameter.p === "pdf") {
-    return evPdfPage(e.parameter.t || "", e.parameter.m || "");
-  }
+
   if (e && e.parameter && e.parameter.p === "rows") {
     return sheetRows(e.parameter.sheet || "", e.parameter.t || "", e.parameter.cols || "");
   }
@@ -15775,108 +15942,6 @@ function _evCellDate(v) {
 function _evCellHora(v) {
   if (v instanceof Date) { return Utilities.formatDate(v, Session.getScriptTimeZone(), "HH:mm"); }
   return String(v == null ? "" : v);
-}
-
-// Lista los PDFs de una fecha. Devuelve OBJETO PLANO (lo consume el portal vía
-// google.script.run; NO un ContentService). Recientes primero; tope 200.
-function evPdfListData(t, f) {
-  var out = { ok: false, rows: [] };
-  try {
-    if (String(t) !== EV_TOKEN) { out.error = "No autorizado"; return out; }
-    var fecha = f ? _evDate(f) : "";
-    var ss = SpreadsheetApp.openById(SS_ID);
-    var ws = ss.getSheetByName(PDF_SHEET);
-    if (!ws) { out.ok = true; return out; }
-    var vals = ws.getDataRange().getValues();
-    var rows = [];
-    for (var i = 1; i < vals.length; i++) {
-      var r = vals[i];
-      var rFecha = _evCellDate(r[0]);
-      if (fecha && rFecha !== fecha) continue;
-      rows.push({
-        fecha:   rFecha,
-        modulo:  String(r[1] == null ? "" : r[1]),
-        archivo: String(r[2] == null ? "" : r[2]),
-        url:     String(r[3] == null ? "" : r[3]),
-        fileId:  String(r[4] == null ? "" : r[4]),
-        hora:    _evCellHora(r[5])
-      });
-    }
-    rows.reverse();
-    if (rows.length > 200) rows = rows.slice(0, 200);
-    out.ok = true; out.rows = rows;
-    return out;
-  } catch (err) {
-    out.error = "Error al leer"; return out;
-  }
-}
-// Registra el PDF en la hoja "PDFs_Dia" (se autocrea).
-function _evPdfLog(fecha, modulo, archivo, url, id) {
-  try {
-    var ss = SpreadsheetApp.openById(SS_ID);
-    var ws = ss.getSheetByName(PDF_SHEET);
-    if (!ws) { ws = ss.insertSheet(PDF_SHEET); ws.appendRow(["Fecha", "Modulo", "Archivo", "URL", "FileId", "Hora"]); }
-    ws.appendRow([fecha, modulo, archivo, url, id, new Date()]);
-  } catch (e) {}
-}
-// F3: la app manda el HTML de una ficha; aquí se convierte a PDF (HTML→PDF de
-// Apps Script), se guarda en PDFs/Fecha, se comparte por enlace y se registra en
-// la hoja "PDFs_Dia" para que el portal lo liste y se descargue en otro equipo.
-function evPdfShare(payload) {
-  try {
-    if (String(payload.token || "") !== EV_TOKEN) return { status: "error", message: "No autorizado" };
-    var fecha = _evDate(payload.fecha);
-    if (!fecha) return { status: "error", message: "Fecha inválida" };
-    var modulo = _evClean(payload.modulo);
-    var html = String(payload.html || "");
-    if (!html) return { status: "error", message: "Ficha sin contenido" };
-    var base = _evClean(payload.name) || ("Ficha_" + fecha);
-    if (base.toLowerCase().slice(-4) === ".pdf") base = base.slice(0, -4);
-    var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "HHmmss");
-    var fname = (modulo ? ("M" + modulo + "_") : "") + base + "_" + stamp + ".pdf";
-    var pdf = Utilities.newBlob(html, "text/html", base + ".html").getAs("application/pdf").setName(fname);
-    var folder = _evFolder(["PDFs", fecha]);
-    var file = folder.createFile(pdf);
-    try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (eSh) {}
-    _evPdfLog(fecha, modulo, fname, file.getUrl(), file.getId());
-    return { status: "ok", url: file.getUrl() };
-  } catch (err) {
-    return { status: "error", message: "No se pudo generar el PDF: " + ((err && err.message) ? err.message : String(err)) };
-  }
-}
-// Página HTML del portal de PDFs (servida por doGet ?p=pdf). SOLO DESCARGA: lista
-// los PDFs de fichas compartidos desde la app y permite bajarlos en otro equipo
-// sin instalar nada. Mismas reglas de escape que evPortalPage: sin backticks ni
-// interpolación del cliente; cierre de script escapado; NO refleja el token (XSS).
-function evPdfPage(t, m) {
-  var safeToken = (String(t) === EV_TOKEN) ? EV_TOKEN : "";
-  var h = ""
-    + '<!doctype html><html><head><meta charset="utf-8">'
-    + '<meta name="viewport" content="width=device-width,initial-scale=1">'
-    + "<title>PDFs del dia</title><style>"
-    + "body{font-family:system-ui,Arial,sans-serif;margin:0;background:#0f172a;color:#e2e8f0;padding:16px}"
-    + "h2{font-size:18px;margin:0 0 4px}p.s{color:#94a3b8;font-size:12px;margin:0 0 12px}"
-    + "label{display:block;font-size:12px;margin:10px 0 3px;color:#94a3b8}"
-    + "input{width:100%;box-sizing:border-box;padding:11px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;font-size:15px}"
-    + "h3{font-size:14px;margin:18px 0 8px}"
-    + ".rec{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 11px;border-radius:8px;background:#1e293b;margin-bottom:6px}"
-    + ".rn{font-size:12px;word-break:break-all}.dl{color:#38bdf8;font-weight:700;font-size:13px;text-decoration:none;white-space:nowrap}"
-    + ".muted{color:#94a3b8;font-size:13px}"
-    + "</style></head><body>"
-    + "<h2>PDFs del dia</h2><p class=s>Descarga en este dispositivo los PDFs de las fichas compartidas desde el sistema. Elige la fecha.</p>"
-    + '<label>Fecha</label><input type="date" id="f">'
-    + '<h3>Disponibles para descargar</h3><div id="recs" class="muted">Cargando...</div>'
-    + "<script>"
-    + "var EV_T=" + JSON.stringify(safeToken) + ";"
-    + "(function(){var f=document.getElementById('f');"
-    + "var d=new Date(),z=function(n){return(n<10?'0':'')+n;};f.value=d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate());"
-    + "function renderList(res){var box=document.getElementById('recs');box.innerHTML='';box.className='';if(!res||!res.ok){box.className='muted';box.textContent='No se pudo cargar la lista.';return;}var rows=res.rows||[];if(!rows.length){box.className='muted';box.textContent='Sin PDFs compartidos para esta fecha.';return;}for(var i=0;i<rows.length;i++){var r=rows[i];var it=document.createElement('div');it.className='rec';var nm=document.createElement('div');nm.className='rn';nm.textContent=(r.modulo?('M'+r.modulo+' · '):'')+(r.archivo||'archivo.pdf')+(r.hora?(' · '+r.hora):'');it.appendChild(nm);var a=document.createElement('a');a.className='dl';a.textContent='⬇️ Descargar';a.setAttribute('href',r.fileId?('https://drive.google.com/uc?export=download&id='+encodeURIComponent(r.fileId)):(r.url||'#'));a.setAttribute('target','_blank');a.setAttribute('rel','noopener');it.appendChild(a);box.appendChild(it);}}"
-    + "function loadList(){var box=document.getElementById('recs');box.className='muted';box.textContent='Cargando...';google.script.run.withSuccessHandler(renderList).withFailureHandler(function(){box.className='muted';box.textContent='No se pudo cargar la lista.';}).evPdfListData(EV_T,f.value);}"
-    + "f.addEventListener('change',loadList);loadList();})();"
-    + "<\\/script></body></html>";
-  return HtmlService.createHtmlOutput(h)
-    .setTitle("PDFs del dia")
-    .addMetaTag("viewport", "width=device-width,initial-scale=1");
 }
 
 // ── Evidencias: recibe UNA foto desde el portal (vía google.script.run) ──
@@ -16494,18 +16559,7 @@ function evCopyUrl(){
   try{ navigator.clipboard.writeText(u); toast("🔗 Enlace copiado","ok",2000); }
   catch(_){ toast("Copia manual el enlace de abajo","info",2500); }
 }
-// F3: portal de DESCARGA de PDFs del día (?p=pdf). Mismo token; solo descarga (los
-// PDFs los pone la app con "📤 Compartir PDF" desde cada ficha; aquí se bajan en otro equipo).
-function evPdfUrl(){
-  const u = gasUrl(); if(!u) return "";
-  return u + (u.indexOf("?") === -1 ? "?" : "&") +
-    "p=pdf&t=" + encodeURIComponent(EV_TOKEN) + "&m=" + encodeURIComponent(_evModParam());
-}
-function evPdfCopyUrl(){
-  const u = evPdfUrl(); if(!u) return;
-  try{ navigator.clipboard.writeText(u); toast("🔗 Enlace de PDFs copiado","ok",2000); }
-  catch(_){ toast("Copia manual el enlace de abajo","info",2500); }
-}
+
 // La librería QR va EMBEBIDA (bloque <script> propio arriba) → 100% offline,
 // sin CDN. cb(false) si está disponible; cb(true) activa el respaldo por enlace.
 function _ensureQr(cb){ cb(typeof window.qrcode !== "function"); }
@@ -16543,26 +16597,8 @@ function renderEvidenciaPortal(fp){
       <div class="foto-empty"><span class="foto-empty-ico">⚙️</span>
         Configura primero la <b>URL de Google Apps Script</b> en ⚙ Config para generar el QR de evidencias.</div>
     `) + `</div>
-  </div>` + (url ? `
-  <div class="fc" style="margin-top:12px">
-    <div class="fc-h"><div class="fc-t">📄 PDFs del día</div>
-      <span class="ssp ssp-mt">Descarga por QR</span></div>
-    <div class="fc-b">
-      <div style="text-align:center">
-        <div id="evpdf-qr" style="display:inline-block;background:#fff;padding:12px;border-radius:12px;min-height:150px;min-width:150px"></div>
-        <div style="font-size:12px;color:var(--tx3);margin-top:8px">Escanea para <b>descargar</b> en otro dispositivo los PDFs compartidos</div>
-      </div>
-      <div style="background:#fefce8;border:1.5px solid #fde68a;border-radius:8px;padding:10px 12px;margin:12px 0;font-size:12px;color:#854d0e;line-height:1.6">
-        📄 En cada ficha usa <b>📤 Compartir PDF</b>: el sistema genera el PDF y lo deja en Google Drive (<b>PDFs/Fecha</b>). Cualquier equipo que escanee este QR puede <b>descargarlo</b> sin instalar nada — útil para enviar la ficha a otra persona.
-      </div>
-      <div class="sa-btns" style="justify-content:center;flex-wrap:wrap;gap:8px">
-        <button class="btn bp" type="button" onclick="window.open(evPdfUrl(),'_blank')">📥 Abrir descargas de PDF</button>
-        <button class="btn bo" type="button" onclick="evPdfCopyUrl()">🔗 Copiar enlace</button>
-      </div>
-      <div style="font-size:10px;color:var(--tx3);margin-top:10px;word-break:break-all">${escapeHtml(evPdfUrl())}</div>
-    </div>
-  </div>` : ``);
-  if(url){ _evRenderQr(url); _evRenderQr(evPdfUrl(), "evpdf-qr"); }
+  </div>`;
+  if(url){ _evRenderQr(url); }
 }
 
 /* ── GALERÍA DE EVIDENCIAS (F2) ──────────────────────────────
@@ -17440,25 +17476,18 @@ function _renderBlancoCalidadAgua(fp, d, _tqn, tec, _corrida, fecha, lbl){
 }
 
 function _renderBlancoDespacho(fp, d, _tqn, tec, _corrida, fecha, lbl){
-  const destOpts = (sel) => DESTINO_OPTS.map(o =>
-    `<option value="${escapeHtml(o)}"${sel===o?" selected":""}>${escapeHtml(o)}</option>`
-  ).join("");
-
   const rows = tqHtml(i=>{
     return `<tr>
       <td class="tqc">${tqCell(curMod,i,_tqn)}</td>
       <td><input type="text" name="e_${i}" value="${vlU(d,"e_"+i)}" placeholder="N5…PL" style="min-width:58px;text-transform:uppercase" oninput="upInp(this)"></td>
-      <td><input type="number" name="po_${i}" value="${vl(d,"po_"+i)}" placeholder="miles" oninput="rcBlancoDespBiomasa()" title="En miles. Ej: 4300 = 4.300.000"></td>
+      <td><input type="number" name="po_${i}" value="${vl(d,"po_"+i)}" placeholder="miles" title="En miles. Ej: 4300 = 4.300.000"></td>
       <td><input type="number" name="sv_${i}" value="${vl(d,"sv_"+i)}" min="0" max="100" step="0.01" placeholder="%"></td>
-      <td><input type="number" name="pgm_${i}" value="${vl(d,"pgm_"+i)}" step="0.001" placeholder="0.000" oninput="rcBlancoDespBiomasa()"></td>
+      <td><input type="number" name="pgm_${i}" value="${vl(d,"pgm_"+i)}" step="0.001" placeholder="0.000"></td>
       <td><input type="number" name="pg_${i}" value="${vl(d,"pg_"+i)}" step="0.001" placeholder="0.000"></td>
-      <td><input type="number" name="dc_${i}" value="${vl(d,"dc_"+i)}" step="0.01" min="0" placeholder="0.00"></td>
-      <td><input type="number" name="bm_${i}" value="${vl(d,"bm_"+i)}" class="sv-auto" readonly title="Calculado automáticamente: Población (×1000) ÷ PLG (manual)"></td>
+      <td><input type="number" name="dc_${i}" value="${vl(d,"dc_"+i)}" step="0.01" min="0" placeholder="0.00" title="Editable en Blanco — Densidad cosechada"></td>
+      <td><input type="number" name="bm_${i}" value="${vl(d,"bm_"+i)}" step="1" min="0" placeholder="0" title="Editable en Blanco — Biomasa"></td>
       <td><input type="number" name="cj_${i}" value="${vl(d,"cj_"+i)}" step="1" min="0" placeholder="0"></td>
-      <td><select name="de_${i}" style="min-width:120px">
-        <option value=""${(d["de_"+i]||"")===""?" selected":""}>— Selecciona —</option>
-        ${destOpts(d["de_"+i]||"")}
-      </select></td>
+      <td>${despDestWidget(i, d["de_"+i]||"")}</td>
       <td><input type="text" name="ps_${i}" value="${vl(d,"ps_"+i)}" placeholder="55 ó 55-60" style="min-width:90px"></td>
     </tr>`;
   });
@@ -17501,7 +17530,8 @@ function _renderBlancoDespacho(fp, d, _tqn, tec, _corrida, fecha, lbl){
       ${_blancoSaveArea("despacho", fecha)}
     </div>
   </div>`;
-  rcBlancoDespBiomasa();
+  // En Blanco, Biomasa y Densidad cosechada se editan a mano (no se autocalculan):
+  // así el técnico puede corregir un registro histórico sin que se sobrescriban.
 }
 
 function collectBlanco(){
@@ -17562,7 +17592,8 @@ async function syncBlanco(){
   if(!payload || !payload.rows || payload.rows.length === 0){
     setSyncUI("idle","Sin datos"); toast("No hay filas para sincronizar","warn"); return;
   }
-  sent = await postPayload(payload, url);
+  const opts = {};
+  sent = await postPayload(payload, url, opts);
   if(sent){
     pushHist(curMod, ficha, data);
     setSyncUI("ok","Blanco sincronizado ✔");
@@ -17571,8 +17602,7 @@ async function syncBlanco(){
     _blancoState = null;
     renderBlanco();
   } else {
-    setSyncUI("err","Error al sincronizar Blanco");
-    toast("Error al sincronizar desde Blanco","err",4500);
+    _syncNotOkUI(opts.outcome, "Error al sincronizar Blanco", null, opts.gasMessage);
   }
   updateDots(); updateSyncUI();
 }

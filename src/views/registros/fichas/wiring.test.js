@@ -18,9 +18,9 @@ function fullEngine() {
     upInp: vi.fn(), rcPob: vi.fn(), chkParam: vi.fn(),
     rcDespSv: vi.fn(), rcDespBiomasa: vi.fn(), rcDespDensidad: vi.fn(),
     localSave: vi.fn(), localSync: vi.fn(), clearFicha: vi.fn(), recoverFicha: vi.fn(),
-    downloadPDF: vi.fn(), shareFichaPDF: vi.fn(), downloadDesinfeccionPDF: vi.fn(),
+    downloadPDF: vi.fn(), downloadDesinfeccionPDF: vi.fn(),
     openCS: vi.fn(), openTON: vi.fn(), onTqNameChange: vi.fn(), aguaSyncRowColor: vi.fn(),
-    dxFechaChange: vi.fn(), dxSwitchType: vi.fn(),
+    dxFechaChange: vi.fn(), dxSwitchType: vi.fn(), destMsSync: vi.fn(),
   };
 }
 
@@ -82,6 +82,19 @@ describe('Registros · cableado de eventos por ficha', () => {
     expect(engine.openTON).toHaveBeenCalled();
   });
 
+  /* El Destino multi-selección no lleva handler inline (regla del repo): las casillas
+     avisan por delegación y quien mantiene el CSV del input oculto es `destMsSync`
+     del motor, la misma que usa la ficha «Blanco». Sin este cable, marcar una casilla
+     no cambiaría nada de lo que se guarda. */
+  it('despacho: marcar un Destino → destMsSync del motor', () => {
+    const root = mount(renderDespachoFicha({ modLabel: 'M01', destinos: ['P1', 'P2'] }), engine);
+    const cb = root.querySelector('input[data-dest-ms]');
+    expect(cb).toBeTruthy();
+    cb.checked = true;
+    change(cb);
+    expect(engine.destMsSync).toHaveBeenCalledWith(cb);
+  });
+
   it('poblacion: input en Población dispara rcPob; botón CS → openCS', () => {
     const root = mount(renderPoblacionFicha({ modLabel: 'M01' }), engine);
     input(root.querySelector('input[data-feeds="poblacion"]'));
@@ -109,8 +122,6 @@ describe('Registros · cableado de eventos por ficha', () => {
     expect(engine.dxSwitchType).toHaveBeenCalledWith('2');
     root.querySelector('[data-action="pdfdesinf"]').click();
     expect(engine.downloadDesinfeccionPDF).toHaveBeenCalledWith('desinfeccion');
-    // Desinfección NO ofrece botón Compartir
-    expect(root.querySelector('[data-action="share"]')).toBeNull();
   });
 
   it('tqname: tanque personalizado (i>=12) → onTqNameChange(idx, el)', () => {

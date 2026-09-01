@@ -38,6 +38,10 @@ function motorGas() {
   const code = bloque(src, 'const ALLOWED = [', 'const RATE_MAX = 30, RATE_MS = 60000;')
     + '\n' + bloque(src, 'function cleanCell(val) {', '\n}')
     + '\n' + bloque(src, 'function lastRow(ws) {', '\n}')
+    // Desde M9 (2026-08-30) las seis rutas de escritura del GAS delegan el ancho de
+    // fila en este ayudante compartido. Sin él, el upsert revienta con un
+    // «filasUniformes is not defined» que no dice nada del contrato que se prueba.
+    + '\n' + bloque(src, 'function filasUniformes(filas) {', '\n}')
     + '\n' + bloque(src, 'function upsertAstRows(ws, newRows) {', '  return { upserted: updated, appended: added };\n}');
   // `fmtData` sólo pinta (fuentes, alineación, formato de fecha): no decide dónde
   // va ninguna fila, así que se stubea. Lo que se está probando es el EMPAREJADO.
