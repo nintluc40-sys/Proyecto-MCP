@@ -35,6 +35,28 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
+      # ⚠⚠ ESTOS DOS PASOS SON LA PUERTA A PRODUCCIÓN.
+      # Hasta el 2026-08-30 este flujo sólo compilaba: un push a master publicaba
+      # aunque la suite estuviera roja, y compilar NO detecta una regresión — Vite
+      # empaqueta igual de bien un cálculo equivocado que uno correcto.
+      # Van ANTES de compilar y en este mismo job para reaprovechar el `npm ci`.
+      # Si cualquiera de los dos falla, el job cae y `deploy` (que declara
+      # `needs: build`) no llega a ejecutarse: lo roto no sale a producción.
+      # El lint va primero por ser segundos frente al minuto y medio de la suite.
+      - name: Lint
+        run: npm run lint
+
+      # 2091 pruebas en 160 archivos, ~115 s (`npm test`, medido el 2026-08-31).
+      # ⚠ Esta cifra CADUCA SOLA y ya lo hizo DOS veces: decía «1944 pruebas en 149
+      # archivos» (2026-08-30) y luego «2064 en 159» (2026-08-31): las dos
+      # envejecieron en horas sin aviso. Va fechada y con el comando del que
+      # sale a propósito: si no cuadra, manda el comando, no este comentario.
+      # `traslado-captura.test.js` arranca el monolito ENTERO sobre happy-dom y necesita
+      # más heap del normal: se lo da `vite.config.js` (test.poolOptions.forks.execArgv),
+      # que rige también aquí.
+      - name: Pruebas
+        run: npm test
+
       - name: Compilar (genera /dist)
         run: npm run build
 
