@@ -89,6 +89,47 @@ describe('detectSheetName · las 35 pestañas reales, con el gid SIN título', (
     expect(divergen, 'hojas que se clasifican distinto según por dónde entraron:\n' + divergen.join('\n')).toHaveLength(0);
   });
 
+  /* ⚠⚠ LA COMPOSICIÓN QUE DE VERDAD CORRE EN LA APP, y que la prueba de arriba NO cubre.
+     La tubería no compara los dos caminos: los ENCADENA.
+
+         sheets.js:407   name   = title || detectSheetName(rows, gid)
+         stampRows       origin = classifyOrigin(name)     <-- classifyOrigin OTRA VEZ
+
+     Lo que acaba sellado en `row._SheetOrigin` es `classifyOrigin(detectSheetName(...))`,
+     no `detectSheetName(...)` a secas. Si classifyOrigin dejara de ser IDEMPOTENTE sobre
+     alguno de los valores que detectSheetName devuelve —basta añadirle una regla que
+     reescriba una de esas cadenas—, la prueba de arriba SEGUIRÍA VERDE y el origen que
+     llega a la fila sería otro. Medido el 2026-09-01: hoy se cumple; esto lo vigila. */
+  it('la TUBERÍA REAL (classifyOrigin sobre lo detectado) coincide con el camino del nombre', () => {
+    const divergen = HOJAS
+      .filter(([n, , cab]) => classifyOrigin(detectSheetName([filaDe(cab)], 0)) !== classifyOrigin(n))
+      .map(([n, , cab]) => `${n}: tubería=${classifyOrigin(detectSheetName([filaDe(cab)], 0))} vs nombre=${classifyOrigin(n)}`);
+    expect(divergen, 'el origen sellado en la fila NO es el que certifica la prueba anterior:\n' + divergen.join('\n')).toHaveLength(0);
+  });
+
+  /* El mismo invariante dicho sobre el VOCABULARIO, no sobre las hojas: así queda cubierto
+     también un origen que hoy ninguna pestaña produce (Patología en Fresco, Maduración
+     Transferencias) pero que detectSheetName sí puede devolver. */
+  it('cada origen que detectSheetName puede devolver es PUNTO FIJO de classifyOrigin', () => {
+    const SALIDAS = [
+      'Control_Tanque', 'Lab_Algas', 'Biomol', 'Microbiología',
+      'Maduración Transferencias', 'Maduración MATRIZ', 'Maduración Bitácora',
+      'Maduracion', 'Registro_Supervision', 'Patología en Fresco',
+      'Registro_Traslado', 'Calidad de Agua', 'Registro_Desinfección', 'Marea',
+      'Larvicultura',
+    ];
+    const movidas = SALIDAS.filter((s) => classifyOrigin(s) !== s);
+    expect(movidas, 'classifyOrigin reescribe estas salidas de detectSheetName:\n' + movidas.join('\n')).toHaveLength(0);
+  });
+
+  /* Y el cajón de sastre: un gid que no se reconoce sale como «Hoja<N>», y esa cadena
+     tampoco puede reescribirse por el camino (nadie la consume, pero si classifyOrigin
+     la tocara, dejaría de ser reconocible como «no identificada»). */
+  it('el respaldo «Hoja<N>» sobrevive a classifyOrigin', () => {
+    expect(detectSheetName([], 7)).toBe('Hoja8');
+    expect(classifyOrigin('Hoja8')).toBe('Hoja8');
+  });
+
   it('un título que classifyOrigin NORMALIZA manda sobre las columnas', () => {
     // Cabeceras de Marea, pero el título dice «Datos Larvicultura - M01»: gana el título,
     // porque classifyOrigin lo transforma ('Datos Larvicultura - M01' -> 'Larvicultura').
