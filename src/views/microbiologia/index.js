@@ -21,12 +21,12 @@ const micDlgOpen = (m) => { m.classList.add('is-open'); document.body.classList.
 const micDlgClose = (m) => { m.classList.remove('is-open'); makeAccessibleDialog(m)?.restoreFocus(); };
 
 import { esc, wqiBand } from '../../core/format.js';
-import { fmtShort, dayNum, rangeLabel } from '../../core/dates.js';
+import { fmtShort, dayNum, rangeLabel, parseAnyDate } from '../../core/dates.js';
 import { natCmp } from '../../core/util.js';
 import { monthIndexOfCorrida, monthLabelAt } from '../../core/prodCalendar.js';
 import { toast } from '../../ui/toast.js';
 import {
-  isMicroRow, pathogenRecords, rowContext, meltRow, PATHOGENS, PATHOGEN_COLOR,
+  isMicroRow, isPatRow, patFecha, pathogenRecords, rowContext, meltRow, PATHOGENS, PATHOGEN_COLOR,
   NIVELES, NIVEL_COLOR, NIVEL_RANK, isAlerta, FORMATO_LABEL, AGGREGATE_KEYS,
   DEPARTAMENTOS, deptoOfFormato, classifyFormato, PATHOGEN_AGAR,
   loadMicThresholds, MIC_FACTORS_KEY, MIC_AREAS, filterKey, groupValues,
@@ -188,14 +188,50 @@ function subnavHTML() {
     ${SUBS.map((s) => `<button class="mic-pill ${s.key === vState.sub ? 'is-active' : ''}" data-mic-sub="${s.key}" role="tab">${s.icon} ${esc(s.label)}</button>`).join('')}
   </div>`;
 }
+// Filas de Patología en Fresco, memoizadas igual que microRows().
+let _patCache = { src: null, rows: [] };
+function patRows() {
+  if (_patCache.src !== store.globalData) _patCache = { src: store.globalData, rows: store.globalData.filter(isPatRow) };
+  return _patCache.rows;
+}
+
+/* Aviso de Patología en Fresco.
+   El módulo de captura está COMPLETO y sincroniza; lo que no ha ocurrido todavía es
+   que alguien registre un análisis. Medido el 2026-08-31 contra el despliegue real
+   (GET ?p=rows + enumeración de pestañas): el documento tiene 35 hojas y NINGUNA casa
+   /patolog/i. Y eso es prueba, no indicio: el GAS crea la hoja en el primer envío
+   (`if (!ws) ss.insertSheet(...)`, Code.gs:273-275), así que «sin pestaña» equivale a
+   «nunca se ha capturado». El mensaje de abajo es, pues, CIERTO hoy.
+   ⚠ Por eso mismo NO puede ser una constante, que es lo que era: el día que entre el
+   primer análisis la hoja nacerá y sus filas llegarán al store, y un cartel fijo
+   seguiría diciendo que no está disponible — pasando por alto el estreno del módulo.
+   Se resuelve por el DATO: 0 filas → el aviso de siempre; ≥1 → se declaran. */
+function patologiaAvisoHTML() {
+  const rows = patRows();
+  if (!rows.length) {
+    return { icono: '🚧', texto: 'La hoja de Patología en fresco aún no está disponible en el Google Sheet origen; se conectará cuando exista.' };
+  }
+  const fechas = rows.map((r) => parseAnyDate(patFecha(r))).filter((d) => d && !isNaN(d)).sort((a, b) => a - b);
+  const rango = fechas.length
+    ? (fechas.length > 1 && fmtShort(fechas[0]) !== fmtShort(fechas[fechas.length - 1])
+        ? ` (del ${fmtShort(fechas[0])} al ${fmtShort(fechas[fechas.length - 1])})`
+        : ` (${fmtShort(fechas[0])})`)
+    : '';
+  const n = rows.length;
+  return {
+    icono: '✅',
+    texto: `${n} análisis de Patología en Fresco ${n === 1 ? 'sincronizado' : 'sincronizados'}${rango}. La visualización detallada llega en una tanda posterior.`,
+  };
+}
+
 function placeholderHTML(sub) {
-  const extra = sub.key === 'patologia'
-    ? 'La hoja de Patología en fresco aún no está disponible en el Google Sheet origen; se conectará cuando exista.'
-    : 'Esta sub-vista llega en una tanda posterior.';
+  const aviso = sub.key === 'patologia'
+    ? patologiaAvisoHTML()
+    : { icono: '🚧', texto: 'Esta sub-vista llega en una tanda posterior.' };
   return `<div class="empty-state" style="padding:56px 20px">
       <div style="font-size:40px">${sub.icon}</div>
       <h2 style="margin:10px 0 6px;color:var(--c-brand)">${esc(sub.label)}</h2>
-      <p class="muted">🚧 ${esc(extra)}</p>
+      <p class="muted">${aviso.icono} ${esc(aviso.texto)}</p>
     </div>`;
 }
 

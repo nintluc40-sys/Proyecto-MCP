@@ -57,6 +57,13 @@ export function groupValues(values) {
 
 // ── identificación de la hoja ──
 export const isMicroRow = (r) => !!r && /microbiolog/i.test(stripAccents(r._SheetOrigin || ''));
+// Patología en Fresco. La sub-vista todavía no tiene tablero, pero SÍ necesita saber
+// si han llegado análisis: su aviso es condicional, no una constante. Mismo estilo
+// que isMicroRow (sin acentos) para que aguante grafías de la pestaña.
+export const isPatRow = (r) => !!r && /patolog/i.test(stripAccents(r._SheetOrigin || ''));
+
+/** Fecha de un análisis de Patología: «Fecha muestreo» es la columna 1 de PAT_SHEET_HEADERS. */
+export const patFecha = (r) => (r && (r['Fecha muestreo'] || r['Fecha resultados'])) || '';
 
 // ── niveles (semáforo de 4 grados ya calculado en la hoja) ──
 export const NIVELES = ['Mínimo', 'Leve', 'Moderado', 'Elevado'];

@@ -47,6 +47,14 @@ export function classifyOrigin(name) {
   // esa palabra hoy, pero dejarla detrás sería confiar en que nunca la lleve. Su
   // origen alimenta la sub-vista de Traslado del Supervisor.
   if (/registro[_\s]*traslado/i.test(n)) return 'Registro_Traslado';
+  // ⚠ Va ANTES que la regla de «microbiolog»: "Patología en Fresco" es una hoja del
+  // módulo Microbiología, así que una pestaña renombrada a "Microbiología — Patología
+  // en Fresco" la reclamaría /microbiolog/i y sus filas entrarían en Bacteriología,
+  // que lee un juego de columnas por completo distinto. Delante, cae donde debe.
+  // Sin esta regla el origen era el nombre CRUDO de la pestaña: nada lo consumía mal,
+  // pero tampoco había cadena canónica contra la que comparar (acentos, "fresco" en
+  // minúscula). La hoja la escribe el monolito como PAT_SHEET (engine.js).
+  if (/patolog/i.test(n)) return 'Patología en Fresco';
   if (/microbiolog/i.test(n)) return 'Microbiología';
   if (/calidad\s*de\s*agua/i.test(n)) return 'Calidad de Agua';
   if (/^marea/i.test(n)) return 'Marea';
@@ -72,8 +80,10 @@ function moduleFromTabName(name, isTanque) {
   return m ? m.toUpperCase() : null;
 }
 
-/** Detecta nombre de hoja por título o por columnas (para el fallback CSV). */
-function detectSheetName(rows, gid, rawTitle) {
+/** Detecta nombre de hoja por título o por columnas (para el fallback CSV).
+ *  Exportada SÓLO para poder probarla: es la rama que se recorre cuando el gid llegó
+ *  sin título, y su orden de heurísticas es justo lo que hay que fijar con pruebas. */
+export function detectSheetName(rows, gid, rawTitle) {
   if (rawTitle) {
     const origin = classifyOrigin(rawTitle);
     if (origin !== String(rawTitle).trim()) return origin;
@@ -87,11 +97,31 @@ function detectSheetName(rows, gid, rawTitle) {
   if (has((k) => k.includes('ihhnv') || k.includes('wssv') || k.includes('ahpnd'))) return 'Biomol';
   // Microbiología: tríos "<patógeno> UFC"/"… Nivel" + V.Luminiscentes (firma propia).
   if (has((k) => k.includes('luminiscent')) || has((k) => k.includes('v.totales') || k.includes('v.amarillos'))) return 'Microbiología';
+  // Registro reproductivo (MATRIZ / Bitácora / Transferencias). El «Trovan ID» es su
+  // firma y NO aparece en ninguna otra hoja del documento (medido el 2026-08-31 sobre
+  // las cabeceras reales de las 35 pestañas: sólo lo llevan estas). Sin esta rama las
+  // tres caían al final y salían como "Hoja<N>", con lo que MAD_MATRIZ_ORIGIN y sus
+  // hermanas no casaban y la vista de Maduración se quedaba VACÍA — el mismo fallo
+  // silencioso que tenía Patología, y por la misma razón: ninguna firma por columnas.
+  // Se distinguen entre sí por su columna exclusiva; el orden va de la más específica
+  // a la más genérica.
+  if (has((k) => k.includes('trovan'))) {
+    if (has((k) => k.includes('tr-id'))) return 'Maduración Transferencias';
+    if (has((k) => k.includes('sala actual') || k.includes('color anillo'))) return 'Maduración MATRIZ';
+    return 'Maduración Bitácora';
+  }
   if (has((k) => k.includes('sala') && (k.includes('machos') || k.includes('hembras') || k.includes('nauplio')))) return 'Maduracion';
   // Registro_Supervisión comparte columnas (Intestino, Deformidad, Módulo) con
   // Morfologia/Larvicultura; debe detectarse ANTES por su firma propia.
   if (has((k) => k.includes('supervisor')) &&
       has((k) => k.includes('tipo_revis') || k.includes('condici') || k.includes('acci'))) return 'Registro_Supervision';
+  // ⚠ Patología en Fresco va ANTES que Morfologia: su ficha trae SEIS columnas
+  // «Intestino — …» (Gregarinas, Baculovirus, Nemátodos, Balanceado, Algas, Detritos)
+  // que disparan la heurística `intestino` de la línea siguiente. Esta rama sólo se
+  // recorre cuando el gid llegó SIN título (respaldo CSV, sheets.js:320), que es
+  // justo cuando no hay nombre del que tirar. Firma propia: los otros dos grupos de
+  // la ficha —Hepatopáncreas y Branquias—, que Morfologia no tiene.
+  if (has((k) => k.includes('hepatop') || k.includes('branquias'))) return 'Patología en Fresco';
   if (has((k) => k.includes('intestino') || k.includes('deformidad') || k.includes('lleno'))) return 'Morfologia';
   if (has((k) => k.includes('corrida') || k.includes('módulo') || k.includes('modulo') || k.includes('supervivencia'))) return 'Larvicultura';
   return rawTitle || ('Hoja' + (gid + 1));
@@ -260,6 +290,15 @@ function cacheTabs(docId, list) {
   if (isUnsafeKey(docId)) return;
   try { const all = JSON.parse(localStorage.getItem(GID_CACHE_KEY) || '{}'); all[docId] = list; localStorage.setItem(GID_CACHE_KEY, JSON.stringify(all)); } catch (_) {}
 }
+/** Rellena con la caché los títulos de pestaña que el raspado no trajo. Puro y testeable.
+ *  Sólo toca los vacíos: un título recién raspado SIEMPRE manda sobre el recordado (una
+ *  pestaña renombrada tiene que poder cambiar de nombre). Un gid que ya no aparece en el
+ *  raspado NO se resucita desde la caché: puede haberse borrado la hoja. */
+export function fillTitlesFromCache(list, cached) {
+  const previos = new Map((cached || []).map((t) => [Number(t && t.gid), t && t.title]));
+  return (list || []).map(({ gid, title }) => ({ gid, title: title || previos.get(Number(gid)) || '' }));
+}
+
 function cachedTabs(docId) {
   try { const all = JSON.parse(localStorage.getItem(GID_CACHE_KEY) || '{}'); return Array.isArray(all[docId]) ? all[docId] : []; } catch (_) { return []; }
 }
@@ -277,7 +316,7 @@ async function mapLimit(items, limit, fn) {
 /** Descubre las pestañas (gid + nombre) de un documento accesible por enlace, SIN depender
  *  de que esté "publicado en la web": raspa /htmlview (funciona con lectura por enlace),
  *  con /pub como respaldo, y cachea el resultado. Si la enumeración falla, usa la caché. */
-async function discoverGids(ids) {
+export async function discoverGids(ids) {
   let realId = ids.type === 'real' ? ids.realId : null;
   if (!realId && ids.type === 'pub') {
     try {
@@ -302,7 +341,22 @@ async function discoverGids(ids) {
       : (realId ? `https://docs.google.com/spreadsheets/d/${realId}/pub` : null);
     if (pubUrl) await scrape(pubUrl);
   }
-  const list = [...merge.entries()].map(([gid, title]) => ({ gid, title }));
+  // ⚠ Un gid puede llegar SIN nombre: `extractSheetTabs` tiene un respaldo que recoge
+  // gids sueltos del HTML sin título. Antes esos caían directos a `detectSheetName`, que
+  // los adivina POR COLUMNAS — y adivina mal casi siempre: medido el 2026-08-31 sobre las
+  // cabeceras reales, las once hojas «Datos Larvicultura» salían como 'Morfologia', y
+  // `isLarviculturaRow` (core/fields.js:143) compara la cadena EXACTA, así que toda la
+  // producción de Larvicultura habría desaparecido del tablero sin un solo error.
+  // El sistema YA sabe cómo se llama esa pestaña —la cacheó en una carga anterior— y no
+  // se lo estaba preguntando. Un nombre real recordado gana a cualquier adivinanza.
+  const list = fillTitlesFromCache(
+    [...merge.entries()].map(([gid, title]) => ({ gid, title })),
+    docId ? cachedTabs(docId) : [],
+  );
+  // Al guardar se escribe la lista YA rellenada, no la cruda: antes un raspado incompleto
+  // (30 pestañas con nombre y 3 sin él) machacaba en la caché los nombres buenos de esas 3
+  // con cadenas vacías, y a partir de ahí ni la caché podía rescatarlas. La caché se
+  // degradaba sola, y el único síntoma habría sido el tablero vacío.
   if (list.length) { if (docId) cacheTabs(docId, list); return list; }
   return docId ? cachedTabs(docId) : [];
 }
