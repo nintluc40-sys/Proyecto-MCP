@@ -1,9 +1,14 @@
-> # ⚠ DOCUMENTO OBSOLETO — no usar como estado actual (revisado 2026-08-11)
+> # ⚠ DOCUMENTO OBSOLETO — no usar como estado actual (revisado 2026-08-30)
 >
 > Se conserva por trazabilidad: de aquí salió la red de seguridad que hoy existe.
-> **Dos afirmaciones de abajo son FALSAS a día de hoy:**
-> - «13.149 líneas» de `engine.js` → hoy son **13.972**.
-> - «todo el proyecto carece de tests» → hoy hay **1080 tests en 99 archivos**.
+> **Dos afirmaciones de abajo son FALSAS:**
+> - «13.149 líneas» de `engine.js` → **17.723** (`wc -l`, medido el 2026-08-30).
+> - «todo el proyecto carece de tests» → **2.001 pruebas en 154 archivos** (`npm test`, íd.).
+>
+> ⚠ Estas dos correcciones YA caducaron una vez: decían 13.972 líneas y 1.080 pruebas en
+> 99 archivos, cifras de agosto de 2026 que envejecieron sin que nadie se enterara — el
+> aviso que corrige al cuerpo se quedó tan viejo como el cuerpo. Van fechadas y con el
+> comando del que salen: si no cuadran, manda el comando.
 >
 > **La Fase A está COMPLETA** (ESLint+Prettier, `CLAUDE.md`, Vitest y los tests de
 > `core/dates`, `core/format`, `core/fields` y `core/sheets`: los cuatro existen).
