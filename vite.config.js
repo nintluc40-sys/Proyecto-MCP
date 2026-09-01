@@ -49,9 +49,21 @@ export default defineConfig(({ command }) => ({
     assetsInlineLimit: 4096,
     rollupOptions: {
       output: {
-        // Separa Chart.js a su propio chunk: mejor cacheo (no se reinvalida al
-        // tocar el código de la app) y reduce el bundle principal. Quita el aviso
-        // "chunk > 500 kB".
+        // Chart.js va a su propio chunk: mejor cacheo (no se reinvalida al tocar el
+        // código de la app) y ~194 kB menos en el bundle principal. Eso sí ocurre.
+        //
+        // ⚠ Lo que NO hace —y este comentario lo afirmó hasta el 2026-08-30— es quitar
+        // el aviso "chunk > 500 kB": el chunk principal sigue en ~730 kB (230 kB gzip) y
+        // el aviso sale en cada compilación. No es culpa de ninguna librería: son las
+        // SIETE vistas que main.js importa de forma ESTÁTICA (supervisor, larvicultura,
+        // revisiones, visitante, algas, microbiología y maduración). Sólo Registros y
+        // Biología Molecular se cargan con import() diferido.
+        //
+        // El aviso se deja SONANDO a propósito. Subir chunkSizeWarningLimit lo callaría
+        // sin quitar un solo kilobyte, y esta app se abre desde el móvil en el laboratorio
+        // y en carretera: esos 230 kB son la primera carga, con la señal que haya. Lo que
+        // lo arregla de verdad es pasar esas siete vistas a import() diferido, como ya
+        // están las otras dos.
         manualChunks: {
           'vendor-chart': ['chart.js'],
         },

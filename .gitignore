@@ -2,3 +2,10 @@ node_modules
 dist
 *.local
 .DS_Store
+
+# Respaldos manuales del motor (engine.js.bak_pre-*). Uno de ellos vivía DENTRO de
+# public/, y Vite copia public/ TAL CUAL a dist/: cada compilación local publicaba
+# 756 KB de un motor de semanas atrás. Que no puedan volver a colarse en el repo.
+# Los dos que había se movieron a Music/_respaldos-engine/ el 2026-08-30.
+*.bak
+*.bak_*
