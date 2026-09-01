@@ -46,11 +46,10 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      # 2100 pruebas en 161 archivos, ~165 s (`npm test`, medido el 2026-08-31).
-      # ⚠ Esta cifra CADUCA SOLA y ya lo ha hecho TRES veces: 1944/149 el 2026-08-30,
-      # y 2064/159 y 2091/160 el 2026-08-31. Las tres envejecieron en horas sin un aviso.
-      # Va fechada y con el comando del que sale a propósito: si no cuadra, manda
-      # el comando, no este comentario.
+      # 2114 pruebas en 162 archivos, ~165 s (`npm test`, medido el 2026-09-01).
+      # ⚠ Esta cifra CADUCA SOLA: ya lo ha hecho CUATRO veces en dos días
+      # (1944/149, 2064/159, 2091/160 y 2100/161). Va fechada y con el comando del
+      # que sale a propósito: si no cuadra, manda el comando, no este comentario.
       # `traslado-captura.test.js` arranca el monolito ENTERO sobre happy-dom y necesita
       # más heap del normal: se lo da `vite.config.js` (test.poolOptions.forks.execArgv),
       # que rige también aquí.

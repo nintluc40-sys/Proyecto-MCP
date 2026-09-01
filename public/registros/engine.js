@@ -1680,10 +1680,16 @@ function _enqueueSync(payload, reqId, url, mark){
   // mismas sesiones — su contenido quedó obsoleto (el usuario reeditó y reenvió).
   // Así el flush nunca reescribe datos viejos sobre los nuevos ni marca
   // "sincronizado" contra una versión superada.
+  //
+  // ⚠⚠ Sólo se descarta lo que este envío cubre ENTERO. Con la pregunta laxa —¿comparte
+  // ALGUNA llave?— encolar un registro suelto tiraba un lote de cinco con los otros
+  // cuatro dentro. Lo que no queda cubierto se queda en la cola, y es seguro: el flush
+  // es FIFO y esto empuja al final, así que si una versión más nueva del mismo registro
+  // entra después, se escribe la última y gana.
   if(mark && mark.kind && Array.isArray(mark.keys) && mark.keys.length){
     const supKeys = new Set(mark.keys);
     q = q.filter(it => !(it && it.mark && it.mark.kind === mark.kind &&
-      Array.isArray(it.mark.keys) && it.mark.keys.some(k => supKeys.has(k))));
+      Array.isArray(it.mark.keys) && it.mark.keys.length && it.mark.keys.every(k => supKeys.has(k))));
   }
   q.push({ payload, reqId: reqId || "", url: url || "", ts: Date.now(), mark: (mark && mark.kind) ? mark : null });
   if(q.length > SYNCQ_MAX) q = q.slice(q.length - SYNCQ_MAX); // conserva los más recientes
@@ -1694,13 +1700,18 @@ function _enqueueSync(payload, reqId, url, mark){
 // tras un envío directo exitoso ("ok"): lo que se acaba de escribir supera a
 // cualquier reintento pendiente de esa sesión (evita que el flush reescriba
 // datos ya superados).
+//
+// ⚠⚠ ENTERO, no «a medias». Medido el 2026-09-01: con la cola en [ast:a,b,c,d,e], un
+// éxito directo de «a» borraba el lote completo y con él la entrega automática de b, c,
+// d y e. Se volvió alcanzable al dar marca a syncOneAstFromList: «ast» es el único kind
+// donde conviven una marca de UNA llave y un lote de VARIAS.
 function _purgeQueueMark(mark){
   if(!mark || !mark.kind || !Array.isArray(mark.keys) || !mark.keys.length) return;
   try{
     const supKeys = new Set(mark.keys);
     const q  = _loadSyncQueue();
     const q2 = q.filter(it => !(it && it.mark && it.mark.kind === mark.kind &&
-      Array.isArray(it.mark.keys) && it.mark.keys.some(k => supKeys.has(k))));
+      Array.isArray(it.mark.keys) && it.mark.keys.length && it.mark.keys.every(k => supKeys.has(k))));
     if(q2.length !== q.length) _saveSyncQueue(q2);
   }catch(_){}
 }
