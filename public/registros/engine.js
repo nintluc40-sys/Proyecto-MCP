@@ -8052,7 +8052,7 @@ function bioBorrarSes(sid){
   const nombre = bioSesNombre(sid);
   const list = _bioRaw();
   const mias = list.filter(r => r && r.data && r.data.sid === sid);
-  if(!confirm("¿Borrar «"+nombre+"» ("+mias.length+" muestra(s)) del "+ses.fecha+"?\nSe borra también su reporte y su foto del gel.\nNo elimina lo ya enviado a Google Sheets.")) return;
+  if(!confirm("¿Borrar «"+nombre+"» ("+mias.length+" muestra(s)) del "+ses.fecha+"?\nSe borra también su reporte y sus imágenes (gel y curvas).\nNo elimina lo ya enviado a Google Sheets.")) return;
   _bioSave(list.filter(r => !(r && r.data && r.data.sid === sid)));
   const all = _bioSesAll(); delete all[sid]; _bioSesSave(all);
   try{ bioRptDelSes(sid); }catch(_){}
@@ -8269,8 +8269,39 @@ function clearAllBio(){
 const BIO_RPT_KEY     = "larv4_biomol_rpt";       // { "<sid>": {...} }
 const BIO_RPT_DEF_KEY = "larv4_biomol_rpt_def";   // últimos textos usados (plantilla)
 const BIO_GEL_PRE     = "larv4_biomol_gel_";      // + sid → dataURL del gel
+const BIO_CUR_PRE     = "larv4_biomol_curvas_";   // + sid → dataURL de las curvas qPCR
 const BIO_GEL_MAXPX   = 1400;                     // el gel debe leerse en papel
 const BIO_GEL_Q       = 0.8;
+
+/* ── Las imágenes del informe, en un REGISTRO y no sueltas ──────────────
+   Cada una vive en su propia clave de localStorage (son cientos de KB) y NINGUNA
+   viaja a la hoja: existen sólo para armar el PDF.
+
+   ⚠⚠ POR QUÉ UN REGISTRO Y NO DOS JUEGOS DE FUNCIONES COPIADAS. La purga por
+   retención (`_bioPruneRpt`) barre las fotos de los análisis vencidos recorriendo
+   localStorage por PREFIJO. Con los prefijos escritos a mano en ese barrido, añadir
+   una imagen nueva y olvidarse de tocarlo la deja en el dispositivo PARA SIEMPRE, sin
+   ningún síntoma: no se ve en pantalla, no sale en ningún informe y sólo se nota
+   cuando el almacenamiento se llena y deja de poder guardarse una foto legítima.
+   Recorriendo este registro, una imagen nueva queda barrida por el hecho de existir. */
+const BIO_FOTOS = {
+  gel: {
+    pre: BIO_GEL_PRE,
+    rotulo: "Foto del gel de agarosa",
+    alt: "Gel de agarosa",
+    aviso: "Foto del gel",
+  },
+  curvas: {
+    pre: BIO_CUR_PRE,
+    rotulo: "Curvas de los ciclos de amplificación",
+    alt: "Curvas de los ciclos de amplificación",
+    aviso: "Curvas de amplificación",
+    /* Sólo tiene sentido con qPCR: las curvas las produce la corrida en tiempo real,
+       y en un análisis de PCR convencional no existen. Se pide en el propio registro
+       para que la condición viva junto a la imagen y no repartida por la UI. */
+    soloQpcr: true,
+  },
+};
 
 // Tipos de muestra que puede cubrir un análisis. NO salen de la grilla ni se
 // registran: son un texto del reporte y se eligen los que apliquen.
@@ -8405,7 +8436,8 @@ function saveBioRpt(sid, obj){
 function bioRptDelSes(sid){
   const all = _bioRptAll();
   if(all[sid]){ delete all[sid]; _lsSet(BIO_RPT_KEY, JSON.stringify(all)); }
-  bioGelClear(sid, true);
+  // Todas las imágenes del análisis, no sólo el gel: ver BIO_FOTOS.
+  Object.keys(BIO_FOTOS).forEach(t => bioFotoClear(t, sid, true));
 }
 // Reportes y fotos de gel caducan con su análisis (BIO_TTL, 48 h). Sin esto la foto
 // del gel —cientos de KB y una por análisis— crecería sin techo en localStorage.
@@ -8437,7 +8469,11 @@ function _bioPruneRpt(){
   const all = _bioRptAll();
   const vencidas = Object.keys(all).filter(caduco);
   if(vencidas.length){
-    vencidas.forEach(k => { delete all[k]; try{ localStorage.removeItem(bioGelKey(k)); }catch(_){} });
+    vencidas.forEach(k => {
+      delete all[k];
+      // Todas las imágenes del registro, no sólo el gel: ver BIO_FOTOS.
+      Object.keys(BIO_FOTOS).forEach(t => { try{ localStorage.removeItem(bioFotoKey(t, k)); }catch(_){} });
+    });
     _lsSet(BIO_RPT_KEY, JSON.stringify(all));
   }
   // Análisis sin filas vivas y ya vencidos: se sueltan para no crecer sin techo.
@@ -8448,24 +8484,38 @@ function _bioPruneRpt(){
   }
   if(_bioGelSwept) return;
   _bioGelSwept = true;
+  /* Barrido general por PREFIJO: recoge las imágenes cuyo análisis ya ni figura en el
+     índice de reportes. Recorre BIO_FOTOS, así que añadir una imagen nueva al registro
+     la deja barrida sin tocar esta función — que es justo lo que se olvidaría. */
+  const pres = Object.keys(BIO_FOTOS).map(t => BIO_FOTOS[t].pre);
   const del = [];
   for(let i=0; i<localStorage.length; i++){
     const k = localStorage.key(i);
-    if(k && k.startsWith(BIO_GEL_PRE) && caduco(k.slice(BIO_GEL_PRE.length))) del.push(k);
+    if(!k) continue;
+    const pre = pres.find(p => k.startsWith(p));
+    if(pre && caduco(k.slice(pre.length))) del.push(k);
   }
   del.forEach(k => { try{ localStorage.removeItem(k); }catch(_){} });
 }
 
-// ── Foto del gel (una por ANÁLISIS) ────────────────────
-function bioGelKey(sid){ return BIO_GEL_PRE + sid; }
-function bioGelGet(sid){ try{ return localStorage.getItem(bioGelKey(sid)) || ""; }catch(_){ return ""; } }
-function bioGelClear(sid, silent){
-  try{ localStorage.removeItem(bioGelKey(sid)); }catch(_){}
-  if(!silent){ renderBioReport(); toast("Foto del gel eliminada","ok",2000); }
+// ── Imágenes del informe (una de cada por ANÁLISIS) ────
+/* `tipo` es una clave de BIO_FOTOS ("gel" | "curvas"). Un tipo desconocido devolvería
+   una clave "undefined<sid>" que nadie barrería nunca, así que se corta antes. */
+function bioFotoDef(tipo){ return BIO_FOTOS[tipo] || null; }
+function bioFotoKey(tipo, sid){ const d = bioFotoDef(tipo); return d ? d.pre + sid : ""; }
+function bioFotoGet(tipo, sid){
+  const k = bioFotoKey(tipo, sid); if(!k) return "";
+  try{ return localStorage.getItem(k) || ""; }catch(_){ return ""; }
+}
+function bioFotoClear(tipo, sid, silent){
+  const d = bioFotoDef(tipo); if(!d) return;
+  try{ localStorage.removeItem(bioFotoKey(tipo, sid)); }catch(_){}
+  if(!silent){ renderBioReport(); toast(d.aviso + " eliminada","ok",2000); }
 }
 /** Comprime en canvas antes de guardar: un JPEG de cámara son varios MB y
  *  localStorage no los aguanta. Mismo enfoque que la galería del módulo. */
-function bioGelPick(input){
+function bioFotoPick(input, tipo){
+  const d = bioFotoDef(tipo); if(!d) return;
   const f = input && input.files && input.files[0];
   if(!f) return;
   const sid = bioSidActivo();
@@ -8480,11 +8530,11 @@ function bioGelPick(input){
     cv.width = w; cv.height = h;
     cv.getContext("2d").drawImage(im, 0, 0, w, h);
     const durl = cv.toDataURL("image/jpeg", BIO_GEL_Q);
-    if(!_lsSet(bioGelKey(sid), durl)){
+    if(!_lsSet(bioFotoKey(tipo, sid), durl)){
       toast("No se pudo guardar la foto (almacenamiento lleno). Libera espacio e inténtalo de nuevo.","err",6000); return;
     }
     renderBioReport();
-    toast("📷 Foto del gel lista para el PDF","ok",2500);
+    toast("📷 " + d.aviso + " lista para el PDF","ok",2500);
   };
   im.onerror = function(){ try{ URL.revokeObjectURL(u); }catch(_){}; toast("No se pudo leer la imagen","err",4000); };
   im.src = u;
@@ -8581,16 +8631,35 @@ function bioDescReset(){
 // ── Bloque de reporte en pantalla ──────────────────────
 function _bioReportBlock(fecha, rows, sid){
   const r = loadBioRpt(sid);
-  const gel = bioGelGet(sid);
   const descVal = r.desc || bioDescAuto(rows);
   const chips = BIO_MUESTRA_OPTS.map((o, i) =>
     `<span class="mic-colchip${r.muestras.indexOf(o) === -1 ? ' off' : ''}" onclick="bioMuestraToggle(${i})" title="Clic para incluir o quitar esta muestra del PDF">${escapeHtml(o)}</span>`).join("");
-  const gelBox = gel
-    ? `<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
-         <img src="${gel}" alt="Gel de agarosa" style="max-width:220px;max-height:150px;border:1px solid var(--bdr);border-radius:6px">
-         <button class="btn bd" type="button" onclick="bioGelClear('${escapeHtml(sid)}')">🗑 Quitar foto</button>
-       </div>`
-    : `<input type="file" accept="image/*" onchange="bioGelPick(this)" style="font-size:11px">`;
+  /* El MISMO criterio que usa el resto del módulo para decir «esto es qPCR»
+     (`_bioEsQpcr`: basta un Ct, aunque no se hayan cuantificado copias). Reescribirlo
+     aquí con otra regla es como nacieron los clasificadores que había que corregir. */
+  const hayQpcr = (rows || []).some(_bioEsQpcr);
+  /* Un campo por imagen del registro. Devuelve "" si no toca enseñarlo.
+     ⚠ Si YA hay imagen guardada se enseña SIEMPRE, aunque su condición deje de
+     cumplirse: quitar los valores de qPCR con una foto de curvas dentro escondería el
+     único botón capaz de borrarla, y esa foto seguiría ocupando sitio y saliendo en el
+     PDF. Es el mismo criterio que la grilla («una columna CON DATO se sigue viendo»). */
+  const campoFoto = (tipo) => {
+    const d = BIO_FOTOS[tipo];
+    const img = bioFotoGet(tipo, sid);
+    if(!img && d.soloQpcr && !hayQpcr) return "";
+    const caja = img
+      ? `<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
+           <img src="${img}" alt="${escapeHtml(d.alt)}" style="max-width:220px;max-height:150px;border:1px solid var(--bdr);border-radius:6px">
+           <button class="btn bd" type="button" onclick="bioFotoClear('${tipo}','${escapeHtml(sid)}')">🗑 Quitar foto</button>
+         </div>`
+      : `<input type="file" accept="image/*" onchange="bioFotoPick(this,'${tipo}')" style="font-size:11px">`;
+    const pista = d.soloQpcr && !hayQpcr
+      ? "Este análisis ya no tiene valores de qPCR. La imagen sigue aquí para que puedas quitarla."
+      : "Se guarda solo en este dispositivo para armar el PDF. No viaja a Google Sheets.";
+    return `<div class="mf" style="margin-top:8px"><label>${escapeHtml(d.rotulo)}</label>${caja}
+        <div style="font-size:10px;color:var(--tx3);margin-top:3px">${escapeHtml(pista)}</div></div>`;
+  };
+  const fotos = Object.keys(BIO_FOTOS).map(campoFoto).join("");
   return `<div class="fc" id="bio-rpt-box" style="margin-top:12px;background:#faf5ff;border-color:#e9d5ff">
     <div class="fc-h"><div class="fc-t">📄 Datos del reporte PDF</div>
       <span class="ssp">solo para el PDF · no se envía a la hoja</span></div>
@@ -8616,8 +8685,7 @@ function _bioReportBlock(fecha, rows, sid){
         <button class="btn bo" type="button" onclick="bioDescReset()" style="margin-left:6px;padding:1px 7px;font-size:10px" title="Rehacerla a partir de los patógenos con resultado en la grilla">↻ Regenerar</button></label>
         <textarea oninput="bioRptSet('desc',this.value)" style="width:100%;min-height:52px">${escapeHtml(descVal)}</textarea>
         <div style="font-size:10px;color:var(--tx3);margin-top:3px">Se propone desde los patógenos con resultado del día. Las filas con <b>Ciclo de amplificación</b> o <b>Copias/μl</b> se redactan como <b>qPCR</b>; el resto, como <b>PCR</b>. Puedes editarla.</div></div>
-      <div class="mf"><label>Foto del gel de agarosa</label>${gelBox}
-        <div style="font-size:10px;color:var(--tx3);margin-top:3px">Se guarda solo en este dispositivo para armar el PDF. No viaja a Google Sheets.</div></div>
+      ${fotos}
     </div></div>`;
 }
 
@@ -8659,7 +8727,15 @@ function downloadBioPDF(){
   if(!rows.length){ toast("No hay filas con datos en la grilla de "+fecha,"warn",4000); return; }
   const sid = bioSidActivo(fecha);
   const r = loadBioRpt(sid);
-  const gel = bioGelGet(sid);
+  /* Las imágenes del informe, en el orden del registro (gel y después curvas).
+     Cada una sale SÓLO si el analista la cargó: un informe de PCR convencional no
+     lleva curvas, y un hueco con título y sin imagen es peor que no imprimir nada. */
+  const fotosPdf = Object.keys(BIO_FOTOS).map(t => {
+    const img = bioFotoGet(t, sid);
+    if(!img) return "";
+    const d = BIO_FOTOS[t];
+    return `<div class="bp-gel"><h3>${escapeHtml(d.rotulo)}</h3><img src="${img}" alt="${escapeHtml(d.alt)}"></div>`;
+  }).join("");
   const fFmt = (f)=> isValidDate(f) ? f : "—";
   const tsStr = new Date().toLocaleString("es-EC",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
   const codigo = genCodigo("biomol", BIO_MOD, fecha);
@@ -8755,7 +8831,7 @@ function downloadBioPDF(){
       ${bloque("Método utilizado", r.metodo)}
     </div>
     <table><thead><tr><th>#</th>${ths}</tr></thead><tbody>${trs}${resumen}</tbody></table>
-    ${gel?`<div class="bp-gel"><h3>Foto del gel de agarosa</h3><img src="${gel}" alt="Gel de agarosa"></div>`:""}
+    ${fotosPdf}
     <div class="bp-foot">
       <div><div style="text-transform:uppercase;letter-spacing:.4px">Código verificador</div>
         <div style="font-weight:700;color:#0f172a">${escapeHtml(codigo)}</div>
