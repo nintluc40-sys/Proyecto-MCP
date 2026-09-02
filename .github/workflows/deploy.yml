@@ -46,10 +46,15 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      # 2114 pruebas en 162 archivos, ~165 s (`npm test`, medido el 2026-09-01).
-      # ⚠ Esta cifra CADUCA SOLA: ya lo ha hecho CUATRO veces en dos días
-      # (1944/149, 2064/159, 2091/160 y 2100/161). Va fechada y con el comando del
-      # que sale a propósito: si no cuadra, manda el comando, no este comentario.
+      # El tamaño de la suite se pregunta con `npm test`; aquí ya no se escribe.
+      # ⚠ Había una cifra exacta y CADUCÓ CINCO VECES en tres días: 1944/149, 2064/159,
+      # 2091/160, 2100/161 y 2114/162 — esta última se quedó vieja el mismo día que se
+      # fechó, porque los commits de esa tarde añadieron archivos DESPUÉS de escribirla.
+      # Ir a por el sexto número era repetir el gesto esperando otro resultado: cualquier
+      # dato que sólo se actualiza a mano acaba mintiendo, y un comentario que se sabe
+      # falso enseña a no leer los comentarios de al lado — que aquí sí importan.
+      # Lo que NO caduca y por eso se queda: la suite tarda minutos, no segundos (cuenta
+      # para el presupuesto de CI), y
       # `traslado-captura.test.js` arranca el monolito ENTERO sobre happy-dom y necesita
       # más heap del normal: se lo da `vite.config.js` (test.poolOptions.forks.execArgv),
       # que rige también aquí.

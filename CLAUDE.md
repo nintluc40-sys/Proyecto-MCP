@@ -11,9 +11,12 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
   `sheets`, `refresh`, `charts`.
 - `src/ui/` — `router` (registro/cambio de vistas) y `shell` (cabecera, drawer, roles, filtro de fecha).
 - `src/views/<vista>/` — cada vista es un módulo con su `index.js` orquestador y su `.css` propio.
-- `public/registros/engine.js` — **DEUDA TÉCNICA**: monolito heredado embebido (~17.800
-  líneas, medidas el 2026-08-30; la cifra caduca sola, manda `wc -l`). No seguir su
+- `public/registros/engine.js` — **DEUDA TÉCNICA**: monolito heredado embebido de
+  ~18.000 líneas (`wc -l public/registros/engine.js` da la cifra del día). No seguir su
   estilo. Ver `docs/analisis/04-refactor-plan.md`.
+  ⚠ Aquí vivía la cifra exacta y caducaba cada pocos días, igual que la del número de
+  pruebas en `.github/workflows/deploy.yml`. Se deja el orden de magnitud —que es lo
+  único que informa una decisión: «esto es un monolito, no un módulo»— y el comando.
 
 ## Reglas (qué hace bueno a este código)
 
