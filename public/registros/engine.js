@@ -8720,10 +8720,21 @@ function _bioReportBlock(fecha, rows, sid){
     /* `data-foto` no es decoración: es la marca que deja a `bioQpcrInput` preguntar
        «¿está ya ofrecida esta imagen?» con UN querySelector, en vez de serializar el
        bloque entero —que puede llevar dentro dos imágenes en base64— en cada tecla. */
-    return `<div class="mf" data-foto="${tipo}" style="margin-top:8px"><label>${escapeHtml(d.rotulo)}</label>${caja}
+    return `<div class="mf" data-foto="${tipo}"><label>${escapeHtml(d.rotulo)}</label>${caja}
         <div style="font-size:10px;color:var(--tx3);margin-top:3px">${escapeHtml(pista)}</div></div>`;
   };
-  const fotos = Object.keys(BIO_FOTOS).map(campoFoto).join("");
+  /* Las dos imágenes van EN PARALELO, no apiladas: el usuario pidió «a lado» y se
+     había entendido «a continuación». Rejilla propia y NO `.meta` a secas, porque
+     sus pistas miden 148px y la vista previa 220: la imagen se saldría de su columna.
+     🔑 El mínimo de 224px va ACOPLADO al ancho de esa vista previa — `biomol-curvas
+     .test.js` lee los DOS del propio HTML y exige que la columna no sea más estrecha,
+     así que cambiar uno sin el otro se pone rojo solo.
+     `auto-fit` hace lo que toca en los dos extremos: con UNA sola imagen ocupa todo
+     el ancho igual que antes, y en un móvil estrecho se apilan solas. */
+  const cajasFoto = Object.keys(BIO_FOTOS).map(campoFoto).filter(Boolean);
+  const fotos = cajasFoto.length
+    ? `<div class="meta" style="grid-template-columns:repeat(auto-fit,minmax(224px,1fr));margin-top:8px">${cajasFoto.join("")}</div>`
+    : "";
   return `<div class="fc" id="bio-rpt-box" style="margin-top:12px;background:#faf5ff;border-color:#e9d5ff">
     <div class="fc-h"><div class="fc-t">📄 Datos del reporte PDF</div>
       <span class="ssp">solo para el PDF · no se envía a la hoja</span></div>

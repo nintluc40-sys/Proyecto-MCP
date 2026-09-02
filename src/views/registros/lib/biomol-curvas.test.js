@@ -564,3 +564,103 @@ describe('Biomol · los handlers de la selección múltiple usan el lote', () =>
     expect(c.value, 'se adelantó al onpaste por grilla').toBe('');
   });
 });
+
+/* ============================================================
+   PETICIÓN DEL USUARIO: «las dos imágenes, a lado».
+   Se había interpretado como «a continuación» y salieron APILADAS en la misma
+   columna. Aquí se fija que van EN PARALELO.
+
+   ⚠⚠ happy-dom NO calcula diseño: no se puede medir que estén una al lado de otra
+   en píxeles. Lo que sí se puede fijar —y es lo que de verdad decide el diseño— es
+   la ESTRUCTURA que lo produce, y estas tres cosas separan lo correcto de lo que
+   había antes:
+
+     a) las dos cajas comparten padre  → antes YA lo cumplían (`.fc-b`), así que
+        sola no distingue nada y no basta;
+     b) ese padre es un contenedor DEDICADO, sólo para las imágenes → antes NO:
+        colgaban sueltas entre los demás campos del formulario;
+     c) ese padre declara varias columnas → antes NO existía tal declaración.
+
+   (b) y (c) son las que fallan sobre el código sin corregir. Comprobado en rojo
+   antes de tocar el motor.
+   ============================================================ */
+describe('Biomol · las dos imágenes del informe van EN PARALELO, no apiladas', () => {
+  /** Renderiza el bloque del informe en un DOM aparte y devuelve su raíz. */
+  function informe() {
+    const d = document.createElement('div');
+    d.innerHTML = bloque();
+    return d;
+  }
+  const conQpcr = () =>
+    rellenarQpcr(1, { codigo: 'L-1', wssv: 'Positivo' }, { ciclo_wssv: '22.4' });
+
+  it('con qPCR hay DOS imágenes y cuelgan del MISMO contenedor', () => {
+    conQpcr();
+    const cajas = [...informe().querySelectorAll('[data-foto]')];
+    expect(cajas.map((c) => c.getAttribute('data-foto')).sort()).toEqual(['curvas', 'gel']);
+    expect(cajas[0].parentElement, 'quedaron en contenedores distintos')
+      .toBe(cajas[1].parentElement);
+  });
+
+  it('🔴 ese contenedor es DEDICADO: no arrastra los demás campos del formulario', () => {
+    conQpcr();
+    const cajas = [...informe().querySelectorAll('[data-foto]')];
+    const padre = cajas[0].parentElement;
+    expect(padre.children.length,
+      'el padre lleva más cosas dentro: las imágenes siguen sueltas entre los campos')
+      .toBe(cajas.length);
+  });
+
+  it('🔴 ese contenedor declara VARIAS COLUMNAS, que es lo que las pone a lado', () => {
+    conQpcr();
+    const padre = informe().querySelector('[data-foto]').parentElement;
+    const estilo = padre.getAttribute('style') || '';
+    expect(estilo, 'sin rejilla declarada las imágenes se apilan')
+      .toMatch(/grid-template-columns:\s*repeat\(/);
+  });
+
+  it('el ancho de columna cabe la vista previa (220px), o la imagen se desborda', () => {
+    conQpcr();
+    const padre = informe().querySelector('[data-foto]').parentElement;
+    const m = (padre.getAttribute('style') || '').match(/minmax\((\d+)px/);
+    expect(m, 'la rejilla no declara un mínimo por columna').toBeTruthy();
+    expect(Number(m[1]),
+      'la columna es más estrecha que la vista previa: se saldría de su celda')
+      .toBeGreaterThanOrEqual(220);
+  });
+
+  /* 🔑 ACOPLE. No se comprueba contra un número escrito aquí —eso caduca— sino que se
+     leen LOS DOS del HTML que produce el motor y se exige la relación entre ellos. Si
+     alguien agranda la vista previa y no la columna, o encoge la columna y no la vista
+     previa, esto se pone rojo solo. Es la misma idea que acopla `TRAS_MAX_FILAS` al
+     `maxRows` del GAS, o el tope de la grilla de Biomol a `LIMITS.biomol.maxRows`. */
+  it('🔑 ACOPLE · la columna nunca es más estrecha que la vista previa', () => {
+    conQpcr();
+    H.bioFotoClear('gel', H.bioSidActivo(), true);
+    localStorage.setItem(H.bioFotoKey('gel', H.bioSidActivo()), IMG);
+
+    const raiz = informe();
+    const img = raiz.querySelector('[data-foto="gel"] img');
+    expect(img, 'no se pintó la vista previa').toBeTruthy();
+
+    const mImg = (img.getAttribute('style') || '').match(/max-width:\s*(\d+)px/);
+    const mCol = (raiz.querySelector('[data-foto]').parentElement.getAttribute('style') || '')
+      .match(/minmax\((\d+)px/);
+    expect(mImg, 'la vista previa ya no declara un ancho máximo').toBeTruthy();
+    expect(mCol, 'la rejilla ya no declara un mínimo por columna').toBeTruthy();
+
+    const anchoImg = Number(mImg[1]);
+    const minCol = Number(mCol[1]);
+    expect(minCol,
+      `la columna mide ${minCol}px y la vista previa ${anchoImg}px: la imagen se desbordaría`)
+      .toBeGreaterThanOrEqual(anchoImg);
+  });
+
+  it('SIN qPCR el contenedor sigue existiendo y el gel no se pierde', () => {
+    rellenar(1, { codigo: 'L-1', wssv: 'Negativo' });
+    const cajas = [...informe().querySelectorAll('[data-foto]')];
+    expect(cajas.map((c) => c.getAttribute('data-foto')), 'el gel es incondicional')
+      .toEqual(['gel']);
+    expect(cajas[0].parentElement.children.length).toBe(1);
+  });
+});
