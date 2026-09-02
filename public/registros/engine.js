@@ -7459,9 +7459,43 @@ function _bioQpcrDesfase(fp, filas, quiere){
   return false;
 }
 
+/* ── LOTE de escrituras sobre una selección múltiple ────────────────────────
+   La selección tipo Excel (`_gsel…`, más abajo) escribe en VARIAS celdas seguidas
+   recorriendo un array de elementos que capturó ANTES de empezar. Si una de esas
+   escrituras provoca un repintado, las referencias que quedan en el array apuntan a
+   nodos ya DESPRENDIDOS: se les escribe el valor y no se ve absolutamente nada.
+
+   🔴 Pasaba exactamente eso con las celdas de resultado de Biomol desde `fa5e439`: al
+   ganar `oninput`, la PRIMERA celda del lote disparaba `bioPatCambio`, que recrea la
+   grilla entera, y las 9 restantes se escribían sobre huérfanos. El aviso decía
+   «Pegado en 10 celda(s)» —porque contaba las seleccionadas— y sólo entraba una.
+   Reportado por el usuario el 2026-09-02.
+
+   La salida NO es repintar por celda (serían N repintados completos de la grilla, en
+   tablets de campo): es APLAZAR el repintado al final del lote y hacerlo UNA vez.
+   El rango dice qué hace falta, porque un lote puede tocar celdas de las dos clases:
+     2 = la grilla entera (`bioPatCambio`), que ya incluye el bloque del informe
+     1 = sólo el bloque del informe (`renderBioReport`)
+   Gana el más alto: repintar la grilla ya cubre lo que haría el informe solo. */
+let _gridLote = 0;          // profundidad, por si algún día se anidara
+let _gridLotePend = 0;      // 0 nada · 1 informe · 2 grilla entera
+function gridEnLote(fn){
+  _gridLote++;
+  try{ fn(); }
+  finally{
+    _gridLote--;
+    if(_gridLote === 0 && _gridLotePend){
+      const q = _gridLotePend; _gridLotePend = 0;
+      try{ if(q >= 2) bioPatCambio(); else renderBioReport(); }catch(_){}
+    }
+  }
+}
+
 /* Se dispara al cambiar una celda de resultado. Repinta SÓLO si algo se ve distinto de
    como debería: repintar en cada tecla robaría el foco a media palabra. */
 function bioPatCambio(){
+  // Dentro de un lote no se repinta: se anota y se hace una sola vez al cerrarlo.
+  if(_gridLote > 0){ if(_gridLotePend < 2) _gridLotePend = 2; return; }
   const fp = document.getElementById("fp-biomol"); if(!fp) return;
   const filas = {};
   _collectBioGrid().forEach(d => { if(d && d.fila != null) filas[String(d.fila)] = d; });
@@ -7501,6 +7535,33 @@ function bioPatInput(el){
   if(!el) return;
   if(_bioPositivoEstricto(el.defaultValue) === _bioPositivoEstricto(el.value)) return;
   bioPatCambio();
+}
+
+/* Asa de TECLEO de una celda de Ct o Copias/μl.
+   Lo que decide si el informe ofrece «Curvas de los ciclos de amplificación» es que el
+   análisis TENGA medición de qPCR, y eso cambia justo aquí. Sin esta asa la celda sólo
+   llevaba `_bioDirty()` —marcar la grilla como sucia— y el bloque del informe no se
+   enteraba: el cargador de curvas no aparecía hasta el siguiente repintado, que en la
+   práctica era pulsar «Guardar local». Reportado por el usuario el 2026-09-02.
+
+   🔑 EL GATE SE MIDE CONTRA LO PINTADO, NO CONTRA `defaultValue`. Es la diferencia con
+   `bioPatInput`: aquél repinta la GRILLA, así que `defaultValue` se refresca y sirve de
+   referencia. Aquí se repinta sólo el bloque del informe y la grilla no se toca, de modo
+   que `defaultValue` se quedaría en "" para siempre y la comparación daría «ha cambiado»
+   en CADA tecla. Preguntarle al informe si ya ofrece las curvas es exacto y es O(1). */
+function bioQpcrInput(el){
+  _bioDirty();
+  if(!el) return;
+  // Dentro de un lote se anota y se repinta una sola vez al cerrarlo (ver `gridEnLote`).
+  if(_gridLote > 0){ if(_gridLotePend < 1) _gridLotePend = 1; return; }
+  const box = document.getElementById("bio-rpt-box");
+  if(!box) return;                                   // el informe no está en pantalla
+  const ofrece = !!box.querySelector('[data-foto="curvas"]');
+  const tiene  = String(el.value == null ? "" : el.value).trim() !== "";
+  // Escribir en una celda vacía puede ABRIR la oferta; vaciarla puede CERRARLA — y eso
+  // sólo se sabe mirando el resto de la grilla, que es lo que hace `renderBioReport`.
+  if(tiene === ofrece) return;
+  renderBioReport();
 }
 
 /* ¿Este valor de una celda de patógeno significa POSITIVO?
@@ -8656,7 +8717,10 @@ function _bioReportBlock(fecha, rows, sid){
     const pista = d.soloQpcr && !hayQpcr
       ? "Este análisis ya no tiene valores de qPCR. La imagen sigue aquí para que puedas quitarla."
       : "Se guarda solo en este dispositivo para armar el PDF. No viaja a Google Sheets.";
-    return `<div class="mf" style="margin-top:8px"><label>${escapeHtml(d.rotulo)}</label>${caja}
+    /* `data-foto` no es decoración: es la marca que deja a `bioQpcrInput` preguntar
+       «¿está ya ofrecida esta imagen?» con UN querySelector, en vez de serializar el
+       bloque entero —que puede llevar dentro dos imágenes en base64— en cada tecla. */
+    return `<div class="mf" data-foto="${tipo}" style="margin-top:8px"><label>${escapeHtml(d.rotulo)}</label>${caja}
         <div style="font-size:10px;color:var(--tx3);margin-top:3px">${escapeHtml(pista)}</div></div>`;
   };
   const fotos = Object.keys(BIO_FOTOS).map(campoFoto).join("");
@@ -8922,7 +8986,11 @@ function renderBiomol(){
          blur—. Se conserva de todos modos: cubre autocompletado y algún pegado. */
       const esRes = BIO_QPCR_PATS.indexOf(c.k) !== -1;
       const av = esRes ? ' onchange="bioPatCambio()"' : '';
-      const oi = esRes ? "bioPatInput(this)" : "_bioDirty()";
+      /* Tres asas distintas, y cada una hace falta:
+         · celda de RESULTADO (wssv/ihhnv/ahpnd) → abre sus columnas de Ct y Copias.
+         · celda de Ct o Copias (`c.pat`)        → el informe ofrece las CURVAS.
+         · el resto                              → sólo marcar la grilla como sucia. */
+      const oi = esRes ? "bioPatInput(this)" : (c.pat ? "bioQpcrInput(this)" : "_bioDirty()");
       return `<td${c.pat ? ' class="bio-qc"' : ''}><input class="pinp" type="text" name="bg_${fila}_${c.k}" data-r="${fila-1}" data-c="${ci}"${av} onpaste="madGridPaste(event,'biomol')" oninput="${oi}" value="${escapeHtml(d[c.k]||"")}" maxlength="200" style="min-width:${w}px"></td>`;
     }).join("");
     rowsHtml += `<tr>
@@ -13812,7 +13880,9 @@ function _gselKeyH(ev){
   if(!info || info.tbody!==_gsel.tbody) return;
   const ctls = _gselControls(); if(!ctls.length) return;
   ev.preventDefault();
-  ctls.forEach(c=>_gselSetVal(c,""));
+  // En LOTE: si una celda provoca un repintado, el resto del array quedaría desprendido
+  // y se borrarían huérfanos. Ver `gridEnLote`.
+  gridEnLote(()=>ctls.forEach(c=>_gselSetVal(c,"")));
   toast("🧹 "+ctls.length+" celda(s) borradas","ok",1800);
 }
 function _gselPasteH(ev){
@@ -13826,7 +13896,11 @@ function _gselPasteH(ev){
   ev.preventDefault(); ev.stopImmediatePropagation();
   const val = norm.trim();
   const ctls = _gselControls();
-  ctls.forEach(c=>_gselSetVal(c,val));
+  /* En LOTE, y no es un adorno: en Biomol la primera celda de resultado disparaba
+     `bioPatCambio` -> `renderBiomol`, y las demás del array quedaban desprendidas. El
+     aviso de abajo contaba las SELECCIONADAS, así que decía «Pegado en N» mientras
+     sólo entraba una. Ver `gridEnLote`. */
+  gridEnLote(()=>ctls.forEach(c=>_gselSetVal(c,val)));
   toast("📋 Pegado en "+ctls.length+" celda(s)","ok",1800);
 }
 if(typeof document!=="undefined" && !window.__gridSel){

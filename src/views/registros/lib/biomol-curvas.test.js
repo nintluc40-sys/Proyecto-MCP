@@ -39,7 +39,7 @@ const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderBiomol', '_collectBioGrid', 'bioGridFecha', 'saveBioGrid',
   '_bioReportBlock', 'bioSidActivo', 'bioFotoKey', 'bioFotoGet', 'bioFotoClear',
   'BIO_FOTOS', 'BIO_GEL_PRE', 'BIO_CUR_PRE', '_bioEsQpcr', 'buildBioPayload',
-  'BIO_GRID_COLS', '_bioPruneRpt', 'saveBioRpt', 'loadBioRpt', 'bioPatCambio', 'downloadBioPDF', 'bioRptDelSes'];
+  'BIO_GRID_COLS', '_bioPruneRpt', 'saveBioRpt', 'loadBioRpt', 'bioPatCambio', 'downloadBioPDF', 'bioRptDelSes', 'bioQpcrInput', 'renderBioReport', 'bioPatInput', 'gridEnLote', '_gselSetVal', '_bioDirty', '_gselPasteH', '_gselKeyH'];
 const H = {};
 
 beforeAll(async () => {
@@ -63,6 +63,9 @@ beforeAll(async () => {
 
   const epilogo = '\n;(function(){ var H = globalThis.__ENG;\n'
     + EXPORTAR.map((n) => `try{ H[${JSON.stringify(n)}] = ${n}; }catch(_){}`).join('\n')
+    // `_gsel` es un `let` de módulo: hace falta un setter para montar una selección
+    // múltiple sin tener que simular el arrastre del ratón celda a celda.
+    + '\ntry{ H.setGsel=function(g){_gsel=g;}; }catch(_){}'
     + '\ntry{ H.setToast=function(f){toast=f;}; }catch(_){}'
     + '\ntry{ H.setMod=function(m){curMod=m;}; }catch(_){}'
     + '\ntry{ H.setTab=function(t){curTab=t;}; }catch(_){}\n})();';
@@ -303,5 +306,261 @@ describe('Biomol · las curvas de amplificación son una imagen más del informe
 
     expect(H.bioFotoGet('gel', sid), 'la purga borró el gel del análisis vivo').toBe(IMG);
     expect(H.bioFotoGet('curvas', sid), 'la purga borró las curvas del análisis vivo').toBe(IMG);
+  });
+});
+
+/* ============================================================
+   REPORTADO POR EL USUARIO (2026-09-02): «las Curvas sólo salen cuando se hace
+   guardado local de los resultados en Ct; no se identifica solo al ubicarlo».
+
+   LA CAUSA. La celda de Ct llevaba `oninput="_bioDirty()"`, que se limita a marcar la
+   grilla como sucia. El bloque del informe no se enteraba de nada, así que el cargador
+   de curvas no aparecía hasta el siguiente `renderBioReport()` — que en la práctica era
+   pulsar «Guardar local».
+
+   ⚠⚠ ESTAS PRUEBAS EJERCITAN EL ASA, NO LA FUNCIÓN. happy-dom no corre los handlers en
+   línea, así que se ejecuta el atributo tal cual, con `this` apuntando al elemento,
+   igual que haría el navegador. Probar `renderBioReport()` a pelo habría pasado en
+   verde sin decir nada de CUÁNDO se le llama, que es justo donde vivía el defecto.
+   ============================================================ */
+describe('Biomol · las curvas aparecen AL TECLEAR el Ct, sin guardar', () => {
+  /** Teclea en una celda y ejecuta SU asa `oninput`, como haría el navegador. */
+  function teclear(fila, k, valor) {
+    const c = cel(fila, k);
+    expect(c, `no existe la celda bg_${fila}_${k}`).toBeTruthy();
+    c.value = valor;
+    const attr = c.getAttribute('oninput');
+    expect(attr, `la celda ${k} no tiene asa oninput`).toBeTruthy();
+    new Function('bioPatCambio', 'bioPatInput', 'bioQpcrInput', '_bioDirty', attr)
+      .call(c, H.bioPatCambio, H.bioPatInput, H.bioQpcrInput, H._bioDirty);
+  }
+  const cel = (f, k) => document.querySelector(`#fp-biomol [name="bg_${f}_${k}"]`);
+  const ofreceCurvas = () => {
+    const box = document.getElementById('bio-rpt-box');
+    return !!(box && box.querySelector('[data-foto="curvas"]'));
+  };
+
+  beforeEach(() => { localStorage.clear(); H.renderBiomol(); });
+
+  it('la celda de Ct tiene un asa propia, no la genérica de «marcar sucio»', () => {
+    teclear(1, 'wssv', 'Positivo');
+    const ct = cel(1, 'ciclo_wssv');
+    expect(ct, 'la columna de Ct debería estar abierta').toBeTruthy();
+    expect(ct.getAttribute('oninput'), 'el Ct seguía con el asa genérica').toBe('bioQpcrInput(this)');
+  });
+
+  it('🔴 EL DEFECTO: teclear el Ct saca el cargador de curvas SIN guardar', () => {
+    teclear(1, 'wssv', 'Positivo');
+    expect(ofreceCurvas(), 'de partida no debería ofrecerlas: aún no hay qPCR').toBe(false);
+
+    teclear(1, 'ciclo_wssv', '22.4');
+
+    expect(ofreceCurvas(), 'hubo que guardar para que salieran').toBe(true);
+  });
+
+  it('también con Copias/μl, que es la otra mitad del qPCR', () => {
+    teclear(1, 'wssv', 'Positivo');
+    teclear(1, 'copias_wssv', '1500');
+    expect(ofreceCurvas()).toBe(true);
+  });
+
+  it('vaciar el último valor de qPCR vuelve a retirar la oferta', () => {
+    teclear(1, 'wssv', 'Positivo');
+    teclear(1, 'ciclo_wssv', '22.4');
+    expect(ofreceCurvas()).toBe(true);
+
+    teclear(1, 'ciclo_wssv', '');
+    expect(ofreceCurvas(), 'sin ningún valor de qPCR ya no hay curvas que adjuntar').toBe(false);
+  });
+
+  it('seguir tecleando la misma celda NO repinta una y otra vez', () => {
+    teclear(1, 'wssv', 'Positivo');
+    const box1 = document.getElementById('bio-rpt-box');
+    teclear(1, 'ciclo_wssv', '2');
+    const box2 = document.getElementById('bio-rpt-box');
+    expect(box2, 'el primer carácter SÍ debe repintar').not.toBe(box1);
+
+    // A partir de aquí la oferta ya está puesta: repintar en cada tecla sería el
+    // repaso completo del DOM que el gate de `bioPatInput` existe para evitar.
+    teclear(1, 'ciclo_wssv', '22');
+    teclear(1, 'ciclo_wssv', '22.');
+    teclear(1, 'ciclo_wssv', '22.4');
+    expect(document.getElementById('bio-rpt-box'), 'repintó en cada tecla').toBe(box2);
+  });
+});
+
+/* ============================================================
+   REPORTADO POR EL USUARIO (2026-09-02): «al pegar desde Excel resultados de Positivo
+   en IHHNV / WSSV / AHPND/EMS no me deja pegar en tanda; sale un mensaje de que se pegó
+   en las filas que subrayé pero no sale. Solo se pega una grilla por grilla».
+
+   LA CAUSA, y es una REGRESIÓN de `fa5e439`. La selección múltiple tipo Excel captura el
+   pegado antes que el `onpaste` de la grilla y escribe la MISMA celda en todo el rango:
+   `ctls.forEach(c => _gselSetVal(c, val))`, sobre un array de elementos capturado ANTES.
+   `_gselSetVal` despacha `input` en cada uno; desde que las celdas de resultado tienen
+   `oninput="bioPatInput(this)"`, la PRIMERA del lote dispara `bioPatCambio`, que recrea
+   la grilla entera — y las demás referencias del array quedan apuntando a nodos
+   DESPRENDIDOS. Se les escribe el valor y no se ve nada. El aviso contaba las celdas
+   SELECCIONADAS, de ahí «Pegado en N celda(s)» con una sola entrando.
+
+   ⚠⚠ happy-dom no ejecuta los handlers en línea, así que un `dispatchEvent` aquí NO
+   despierta a `bioPatInput` y el defecto NO se reproduce: la prueba pasaría en verde sin
+   tocar el defecto. Por eso las asas se cablean como listeners reales antes del lote.
+   ============================================================ */
+describe('Biomol · pegar sobre una selección múltiple entra en TODAS las celdas', () => {
+  const cel = (f, k) => document.querySelector(`#fp-biomol [name="bg_${f}_${k}"]`);
+
+  /** Cablea el `oninput` en línea como listener real: es lo que hace el navegador y lo
+   *  que happy-dom no hace. Sin esto el lote no dispara ningún repintado y la prueba
+   *  no probaría nada. */
+  function conAsasVivas(celdas, fn) {
+    const quitar = celdas.map((c) => {
+      const attr = c.getAttribute('oninput') || '';
+      const h = () => new Function('bioPatCambio', 'bioPatInput', 'bioQpcrInput', '_bioDirty', attr)
+        .call(c, H.bioPatCambio, H.bioPatInput, H.bioQpcrInput, H._bioDirty);
+      c.addEventListener('input', h);
+      return () => c.removeEventListener('input', h);
+    });
+    try { return fn(); } finally { quitar.forEach((f) => f()); }
+  }
+
+  beforeEach(() => { localStorage.clear(); H.renderBiomol(); });
+
+  it('🔴 EL DEFECTO: 5 filas marcadas en WSSV reciben las 5, no sólo la primera', () => {
+    const celdas = [1, 2, 3, 4, 5].map((f) => cel(f, 'wssv'));
+    expect(celdas.every(Boolean), 'control: las 5 celdas existen').toBe(true);
+
+    conAsasVivas(celdas, () => H.gridEnLote(() => celdas.forEach((c) => H._gselSetVal(c, 'Positivo'))));
+
+    const vivos = [1, 2, 3, 4, 5].map((f) => { const c = cel(f, 'wssv'); return c ? c.value : '(no existe)'; });
+    expect(vivos, 'sólo entró la primera: el resto se escribió sobre nodos desprendidos')
+      .toEqual(['Positivo', 'Positivo', 'Positivo', 'Positivo', 'Positivo']);
+    // Y lo que se recoge para guardar dice lo mismo: no es sólo pintura.
+    expect(H._collectBioGrid().filter((r) => r.wssv === 'Positivo')).toHaveLength(5);
+  });
+
+  it('y el lote deja las columnas de qPCR abiertas en las 5 filas', () => {
+    const celdas = [1, 2, 3, 4, 5].map((f) => cel(f, 'wssv'));
+    conAsasVivas(celdas, () => H.gridEnLote(() => celdas.forEach((c) => H._gselSetVal(c, 'Positivo'))));
+
+    // El repintado aplazado tiene que haber ocurrido: si no, las celdas de Ct no existen.
+    [1, 2, 3, 4, 5].forEach((f) => {
+      const ct = cel(f, 'ciclo_wssv');
+      expect(ct, `la fila ${f} no abrió su celda de Ct`).toBeTruthy();
+      expect(ct.disabled, `la fila ${f} quedó bloqueada`).toBe(false);
+    });
+  });
+
+  it('borrar un rango también entra en todas', () => {
+    const celdas = [1, 2, 3].map((f) => cel(f, 'wssv'));
+    conAsasVivas(celdas, () => H.gridEnLote(() => celdas.forEach((c) => H._gselSetVal(c, 'Positivo'))));
+    expect(H._collectBioGrid().filter((r) => r.wssv === 'Positivo')).toHaveLength(3);
+
+    const vivas = [1, 2, 3].map((f) => cel(f, 'wssv'));
+    conAsasVivas(vivas, () => H.gridEnLote(() => vivas.forEach((c) => H._gselSetVal(c, ''))));
+    expect(H._collectBioGrid().filter((r) => r.wssv === 'Positivo'), 'quedaron positivos sin borrar').toHaveLength(0);
+  });
+
+  it('un lote sobre celdas SIN qPCR sigue funcionando igual (control)', () => {
+    const celdas = [1, 2, 3, 4].map((f) => cel(f, 'bp'));
+    conAsasVivas(celdas, () => H.gridEnLote(() => celdas.forEach((c) => H._gselSetVal(c, 'Negativo'))));
+    expect(H._collectBioGrid().filter((r) => r.bp === 'Negativo')).toHaveLength(4);
+  });
+
+  it('fuera de un lote, una celda suelta sigue repintando al instante', () => {
+    // El aplazamiento no puede volverse permanente: si `gridEnLote` no cerrara bien,
+    // la grilla dejaría de reaccionar a un tecleo normal y nadie lo notaría aquí.
+    const c = cel(1, 'ihhnv');
+    c.value = 'Positivo';
+    H.bioPatInput(c);
+    expect(cel(1, 'ciclo_ihhnv'), 'el repintado quedó aplazado para siempre').toBeTruthy();
+  });
+});
+
+/* Las pruebas de arriba llaman a `gridEnLote` DIRECTAMENTE, así que dejaban sin cubrir
+   el CABLEADO: que los dos handlers de la selección múltiple lo usen de verdad. El banco
+   lo cazó — `pegado-sin-lote` y `borrado-sin-lote` sobrevivían—. Es el mismo error que
+   `fa5e439`: probar la función y no el asa. Aquí se llama a los handlers REALES. */
+describe('Biomol · los handlers de la selección múltiple usan el lote', () => {
+  const cel = (f, k) => document.querySelector(`#fp-biomol [name="bg_${f}_${k}"]`);
+
+  /** Monta la selección de la columna `k` entre las filas `f0` y `f1`, como si el
+   *  analista hubiera arrastrado el ratón, y devuelve las celdas del rango. */
+  function seleccionar(f0, f1, k) {
+    const a = cel(f0, k), b = cel(f1, k);
+    const tdA = a.closest('td'), tdB = b.closest('td');
+    const trA = tdA.parentElement, trB = tdB.parentElement;
+    const tbody = trA.parentElement;
+    /* ⚠⚠ happy-dom NO implementa `HTMLTableSectionElement.rows` — medido: sale
+       `undefined`, mientras que `tr.cells` sí existe. Y `_gselControls` y
+       `_gridCellInfo` lo usan, así que sin esto los handlers REALES no pueden correr
+       aquí y estas pruebas serían imposibles. Se define sobre la instancia con la misma
+       semántica que el navegador (las `<tr>` hijas): es compensar un hueco del arnés,
+       igual que ejecutar a mano los handlers en línea, no maquillar el producto. */
+    if (!tbody.rows) {
+      Object.defineProperty(tbody, 'rows', {
+        configurable: true,
+        get() { return Array.prototype.filter.call(this.children, (n) => n.tagName === 'TR'); },
+      });
+    }
+    // `cells` es HTMLCollection y en happy-dom no es iterable con spread: se indexa
+    // como lo hace el propio motor, que además garantiza el mismo sistema de coordenadas.
+    const idx = (col, el) => Array.prototype.indexOf.call(col, el);
+    H.setGsel({
+      tbody,
+      ar: idx(tbody.rows, trA), ac: idx(trA.cells, tdA),
+      fr: idx(tbody.rows, trB), fc: idx(trB.cells, tdB),
+    });
+    const celdas = [];
+    for (let f = f0; f <= f1; f++) celdas.push(cel(f, k));
+    return celdas;
+  }
+
+  /** Cablea el `oninput` en línea como listener real (happy-dom no lo hace). */
+  function conAsasVivas(celdas, fn) {
+    const quitar = celdas.map((c) => {
+      const attr = c.getAttribute('oninput') || '';
+      const h = () => new Function('bioPatCambio', 'bioPatInput', 'bioQpcrInput', '_bioDirty', attr)
+        .call(c, H.bioPatCambio, H.bioPatInput, H.bioQpcrInput, H._bioDirty);
+      c.addEventListener('input', h);
+      return () => c.removeEventListener('input', h);
+    });
+    try { return fn(); } finally { quitar.forEach((f) => f()); }
+  }
+
+  const evento = (target, texto) => ({
+    clipboardData: { getData: () => texto },
+    preventDefault() {}, stopImmediatePropagation() {}, target,
+  });
+
+  beforeEach(() => { localStorage.clear(); H.renderBiomol(); });
+
+  it('🔴 el PEGADO real sobre 5 filas de WSSV entra en las 5', () => {
+    const celdas = seleccionar(1, 5, 'wssv');
+    conAsasVivas(celdas, () => H._gselPasteH(evento(celdas[0], 'Positivo')));
+
+    const vivos = [1, 2, 3, 4, 5].map((f) => cel(f, 'wssv').value);
+    expect(vivos, 'el aviso decía «Pegado en 5» y sólo entró la primera')
+      .toEqual(['Positivo', 'Positivo', 'Positivo', 'Positivo', 'Positivo']);
+    expect(H._collectBioGrid().filter((r) => r.wssv === 'Positivo')).toHaveLength(5);
+  });
+
+  it('🔴 el BORRADO real (tecla Supr) sobre el rango vacía las 5', () => {
+    let celdas = seleccionar(1, 5, 'wssv');
+    conAsasVivas(celdas, () => H._gselPasteH(evento(celdas[0], 'Positivo')));
+    expect(H._collectBioGrid().filter((r) => r.wssv === 'Positivo')).toHaveLength(5);
+
+    celdas = seleccionar(1, 5, 'wssv');   // la grilla se repintó: hay que re-seleccionar
+    conAsasVivas(celdas, () => H._gselKeyH({
+      key: 'Delete', preventDefault() {}, target: celdas[0],
+    }));
+    expect(H._collectBioGrid().filter((r) => r.wssv === 'Positivo'), 'quedaron sin borrar').toHaveLength(0);
+  });
+
+  it('sin rango seleccionado el handler no toca nada: lo hace el onpaste de la grilla', () => {
+    seleccionar(2, 2, 'wssv');            // una sola celda = no es rango múltiple
+    const c = cel(2, 'wssv');
+    H._gselPasteH(evento(c, 'Positivo'));
+    expect(c.value, 'se adelantó al onpaste por grilla').toBe('');
   });
 });
