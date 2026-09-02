@@ -1,3 +1,31 @@
+# ── Finales de línea ─────────────────────────────────────────────────────────
+# Todo el texto del repo va en LF, en el índice Y en el árbol de trabajo.
+#
+# ⚠ EL ORDEN DE ESTE ARCHIVO IMPORTA: para un mismo atributo gana la ÚLTIMA regla
+# que casa. Por eso `* text=auto eol=lf` va AQUÍ ARRIBA y `public/vendor/** -text`
+# al final: si se intercambiaran, el comodín pisaría la protección del SRI.
+#
+# POR QUÉ. El índice ya era LF puro en los 412 archivos de texto (`git ls-files --eol`,
+# medido el 2026-09-01), pero el ÁRBOL estaba mezclado: 299 CRLF y 113 LF. Lo hacía
+# `core.autocrlf=true`, que entrega CRLF en el checkout mientras cualquier archivo que
+# una herramienta reescriba después se queda en LF. Resultado: **el final de línea de
+# un archivo dependía de quién lo había tocado el último**, no de dónde vivía, y
+# convivían `aguaColor.test.js` en CRLF y `trovan.test.js` en LF en la misma carpeta.
+#
+# QUÉ ROMPÍA ESO, y no era teórico:
+#  1. `src/views/registros/shell.html` es el ÚNICO archivo que entra al bundle como
+#     texto crudo (`import shellHtml from './shell.html?raw'`). Sus 269 CRLF se
+#     codificaban como escapes dentro de la plantilla — 538 bytes de más — así que el
+#     hash del fragmento cambiaba y con él el del bundle. Una compilación local en
+#     Windows NUNCA daba el mismo nombre de archivo que producción, y comparar el
+#     bundle contra el desplegado hacía **denunciar un despliegue perfectamente sano**.
+#  2. Las anclas de los bancos de mutación: escribir una con el salto equivocado da
+#     «0 coincidencias» y el banco **se lee como si fuera bien**.
+#
+# ⚠ Esto NO cambia ni un byte de lo versionado: `git add --renormalize .` no produjo
+# ningún cambio, porque el índice ya estaba en LF. Sólo fija el árbol de trabajo.
+* text=auto eol=lf
+
 # ⚠⚠ Los archivos de `public/vendor/` se sirven con SRI (`integrity` en index.html).
 # Sus bytes NO pueden cambiar: si cambian, el hash deja de casar y el navegador se
 # NIEGA a ejecutar el script — SheetJS o D3 no cargan y la vista se cae sin decir
