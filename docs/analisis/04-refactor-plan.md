@@ -1,14 +1,17 @@
-> # ⚠ DOCUMENTO OBSOLETO — no usar como estado actual (revisado 2026-08-30)
+<!-- AVISO-VIGENCIA -->
+> # ⚠ DOCUMENTO OBSOLETO — no usar como estado actual (revisado 2026-09-02)
 >
 > Se conserva por trazabilidad: de aquí salió la red de seguridad que hoy existe.
 > **Dos afirmaciones de abajo son FALSAS:**
-> - «13.149 líneas» de `engine.js` → **17.723** (`wc -l`, medido el 2026-08-30).
-> - «todo el proyecto carece de tests» → **2.001 pruebas en 154 archivos** (`npm test`, íd.).
+> - El tamaño de `engine.js` en líneas → `wc -l public/registros/engine.js`.
+> - «todo el proyecto carece de tests» → hay miles, en cientos de archivos → `npm test`.
 >
-> ⚠ Estas dos correcciones YA caducaron una vez: decían 13.972 líneas y 1.080 pruebas en
-> 99 archivos, cifras de agosto de 2026 que envejecieron sin que nadie se enterara — el
-> aviso que corrige al cuerpo se quedó tan viejo como el cuerpo. Van fechadas y con el
-> comando del que salen: si no cuadran, manda el comando.
+> ⚠⚠ **ESTE AVISO HA CADUCADO TRES VECES, y por escribir cifras dentro.** Decía 13.972
+> líneas y 1.080 pruebas; luego 17.723 y 2.001 en 154 archivos; el 2026-09-02 esas
+> segundas también estaban muertas. **El aviso que corrige al cuerpo envejecía tan rápido
+> como el cuerpo.** Por eso ahora **no lleva ningún número**: nombra la CLASE de dato
+> caducado y el COMANDO que da el del día. Los avisos de los otros nueve documentos de
+> esta carpeta se escribieron el 2026-09-02 con esa misma regla, aprendida aquí.
 >
 > **La Fase A está COMPLETA** (ESLint+Prettier, `CLAUDE.md`, Vitest y los tests de
 > `core/dates`, `core/format`, `core/fields` y `core/sheets`: los cuatro existen).

@@ -1,3 +1,18 @@
+<!-- AVISO-VIGENCIA -->
+> # 📄 DOCUMENTO HISTÓRICO · 2026-07-06 — no es el estado actual
+>
+> Se conserva por TRAZABILIDAD: explica por qué el sistema es como es hoy.
+> **No usarlo como estado actual.** El estado vivo está en la memoria del proyecto
+> (`project_punto-guardado-*`) y, ante cualquier discrepancia, **manda el CÓDIGO**.
+>
+> ⚠ Da un tamaño de `engine.js` en líneas que hoy es FALSO: `wc -l public/registros/engine.js`.
+> ⚠ Dice «las 8 vistas» y **ya no son 8**: `ls src/views` da las del día (se añadió
+>   `revisiones`). Cualquier barrido «por vista» hecho con esa lista deja una fuera.
+>
+> *(Aviso puesto el 2026-09-02. **Deliberadamente sin cifras**: el aviso de*
+> *`04-refactor-plan.md` escribió las suyas y ha caducado TRES veces. Se nombra la*
+> *clase de dato caducado y el comando que da el del día.)*
+
 # 08 · Auditoría Definitiva del Sistema
 
 **Fecha:** 2026-07-06 · **Modelo:** Claude Fable 5 · **Alcance:** las 8 vistas + capa `core`/`ui` (incidental) + monolito `public/registros/engine.js` (12 866 líneas).

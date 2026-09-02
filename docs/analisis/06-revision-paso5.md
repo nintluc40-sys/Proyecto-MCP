@@ -1,3 +1,18 @@
+<!-- AVISO-VIGENCIA -->
+> # 📄 DOCUMENTO HISTÓRICO · 2026-06-13 — no es el estado actual
+>
+> Se conserva por TRAZABILIDAD: explica por qué el sistema es como es hoy.
+> **No usarlo como estado actual.** El estado vivo está en la memoria del proyecto
+> (`project_punto-guardado-*`) y, ante cualquier discrepancia, **manda el CÓDIGO**.
+>
+> ⚠ Da un tamaño de `engine.js` en líneas que hoy es FALSO: `wc -l public/registros/engine.js`.
+> ⚠ Revisa la carpeta `Music\Nuevo proyecto definitivo`, que **no es la base oficial**.
+>   La base es `Desktop\Proyecto Beta 17` (ver `project_base-beta17`).
+>
+> *(Aviso puesto el 2026-09-02. **Deliberadamente sin cifras**: el aviso de*
+> *`04-refactor-plan.md` escribió las suyas y ha caducado TRES veces. Se nombra la*
+> *clase de dato caducado y el comando que da el del día.)*
+
 # Revisión completa — Paso 5 (reconstrucción nativa de la ficha estándar)
 
 > Fecha: 2026-06-13. Revisión minuciosa de todo lo realizado hasta ahora en la

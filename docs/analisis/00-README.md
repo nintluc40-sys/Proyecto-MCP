@@ -1,3 +1,18 @@
+<!-- AVISO-VIGENCIA -->
+> # 📄 DOCUMENTO HISTÓRICO · 2026-06-12 — no es el estado actual
+>
+> Se conserva por TRAZABILIDAD: explica por qué el sistema es como es hoy.
+> **No usarlo como estado actual.** El estado vivo está en la memoria del proyecto
+> (`project_punto-guardado-*`) y, ante cualquier discrepancia, **manda el CÓDIGO**.
+>
+> ⚠ Da un tamaño de `engine.js` en líneas que hoy es FALSO (el monolito ha crecido
+>   mucho desde junio): `wc -l public/registros/engine.js`.
+> ⚠ La ruta que dice haber analizado es la del proyecto ANTERIOR, no esta base.
+>
+> *(Aviso puesto el 2026-09-02. **Deliberadamente sin cifras**: el aviso de*
+> *`04-refactor-plan.md` escribió las suyas y ha caducado TRES veces. Se nombra la*
+> *clase de dato caducado y el comando que da el del día.)*
+
 # Análisis del proyecto — Sistema Larvicultura (Vite)
 
 > Análisis previo a la "versión definitiva". **No se ha copiado ni modificado código.**

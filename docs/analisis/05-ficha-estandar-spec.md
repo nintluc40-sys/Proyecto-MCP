@@ -1,3 +1,17 @@
+<!-- AVISO-VIGENCIA -->
+> # 📄 DOCUMENTO HISTÓRICO · 2026-06-12 — no es el estado actual
+>
+> Se conserva por TRAZABILIDAD: explica por qué el sistema es como es hoy.
+> **No usarlo como estado actual.** El estado vivo está en la memoria del proyecto
+> (`project_punto-guardado-*`) y, ante cualquier discrepancia, **manda el CÓDIGO**.
+>
+> ⚠ Spec de reconstrucción ya EJECUTADA: las fichas viven hoy en
+>   `src/views/registros/fichas/`. Vale como mapa de intención, no de estado.
+>
+> *(Aviso puesto el 2026-09-02. **Deliberadamente sin cifras**: el aviso de*
+> *`04-refactor-plan.md` escribió las suyas y ha caducado TRES veces. Se nombra la*
+> *clase de dato caducado y el comando que da el del día.)*
+
 # Spec — Ficha Larvicultura estándar (reconstrucción nativa)
 
 > Mapa de la ficha estándar extraído del monolito `public/registros/engine.js`, para

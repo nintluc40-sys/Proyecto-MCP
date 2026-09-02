@@ -1,3 +1,17 @@
+<!-- AVISO-VIGENCIA -->
+> # 📄 DOCUMENTO HISTÓRICO · 2026-06-12 — no es el estado actual
+>
+> Se conserva por TRAZABILIDAD: explica por qué el sistema es como es hoy.
+> **No usarlo como estado actual.** El estado vivo está en la memoria del proyecto
+> (`project_punto-guardado-*`) y, ante cualquier discrepancia, **manda el CÓDIGO**.
+>
+> ⚠ Da un tamaño de `engine.js` en líneas que hoy es FALSO: `wc -l public/registros/engine.js`.
+> ⚠ Dice que «no existe documento de estándares en el repo». **Ya existe: `CLAUDE.md`.**
+>
+> *(Aviso puesto el 2026-09-02. **Deliberadamente sin cifras**: el aviso de*
+> *`04-refactor-plan.md` escribió las suyas y ha caducado TRES veces. Se nombra la*
+> *clase de dato caducado y el comando que da el del día.)*
+
 # Review — dos ejes (Estándares · Spec)
 
 > Skill `review`. La fuente no es repo git, así que se revisó el árbol `src/` completo

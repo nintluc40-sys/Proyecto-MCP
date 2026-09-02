@@ -1,3 +1,18 @@
+<!-- AVISO-VIGENCIA -->
+> # 📄 DOCUMENTO HISTÓRICO · 2026-06-13 — no es el estado actual
+>
+> Se conserva por TRAZABILIDAD: explica por qué el sistema es como es hoy.
+> **No usarlo como estado actual.** El estado vivo está en la memoria del proyecto
+> (`project_punto-guardado-*`) y, ante cualquier discrepancia, **manda el CÓDIGO**.
+>
+> ⚠ Da un tamaño de `engine.js` en líneas que hoy es FALSO: `wc -l public/registros/engine.js`.
+> ⚠ Audita el «Nuevo proyecto definitivo», no esta base. Sus recomendaciones abiertas
+>   no se han seguido desde entonces: no dar por pendiente nada de aquí sin re-medir.
+>
+> *(Aviso puesto el 2026-09-02. **Deliberadamente sin cifras**: el aviso de*
+> *`04-refactor-plan.md` escribió las suyas y ha caducado TRES veces. Se nombra la*
+> *clase de dato caducado y el comando que da el del día.)*
+
 # Auditoría técnica y funcional — Nuevo proyecto definitivo
 
 > Fecha: 2026-06-13. Análisis **desde cero** del código real (arquitectura, calidad,

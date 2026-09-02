@@ -1,3 +1,23 @@
+<!-- AVISO-VIGENCIA -->
+> # 📄 DOCUMENTO HISTÓRICO · 2026-08-03 — no es el estado actual
+>
+> Se conserva por TRAZABILIDAD: explica por qué el sistema es como es hoy.
+> **No usarlo como estado actual.** El estado vivo está en la memoria del proyecto
+> (`project_punto-guardado-*`) y, ante cualquier discrepancia, **manda el CÓDIGO**.
+>
+> 🔴 **CONTIENE UN SEGUNDO «PUNTO DE GUARDADO» (2026-08-03, al final).** Durante semanas
+>   la memoria afirmó tener el «único» punto de guardado y los pendientes de éste no se
+>   miraron. Triado el 2026-09-02: de sus 4 entradas, 1 duplicaba la auditoría por vista,
+>   1 estaba obsoleta (`fsCard` ya no existe en ningún destino) y **2 seguían vivas** —
+>   la maquetación línea a línea de las 7 fichas y la revisión visual de Microbiología—,
+>   hoy recogidas como pendientes 7 y 8 del punto de guardado vigente.
+> ⚠ Su comparación engine.js ↔ Music es de agosto. Hoy las tres copias se vigilan solas
+>   con `verificar-3copias-v3.mjs`, que es la fuente buena.
+>
+> *(Aviso puesto el 2026-09-02. **Deliberadamente sin cifras**: el aviso de*
+> *`04-refactor-plan.md` escribió las suyas y ha caducado TRES veces. Se nombra la*
+> *clase de dato caducado y el comando que da el del día.)*
+
 # 09 · Análisis de módulos — Sistema de Registro (Larvicultura) · AMBOS sistemas
 
 > **Fecha:** 2026-08-03 · Alcance: los dos ejecutables gemelos de la vista Registro.
