@@ -6793,6 +6793,19 @@ function madGridPaste(ev, ficha){
   // la celda destino para marcar "cambios sin guardar" (Biomol: _bioDirty; demás
   // grillas: su propio oninput, p.ej. madDraftTouch).
   try{ ev.target.dispatchEvent(new Event('input', {bubbles:true})); }catch(_){}
+  /* Biomol · un pegado puede volver POSITIVAS filas enteras sin tocar la celda del
+     patógeno: basta que el bloque la CRUCE. El 'input' de arriba sólo avisa a la celda
+     donde EMPEZÓ el pegado —si fue «Código», su asa es `_bioDirty` y nadie llama a
+     `bioPatInput`—, así que las columnas de Ct y Copias no se abrían hasta guardar o
+     salir del campo. `bioPatCambio` mira la grilla entera, así que cubre las N filas de
+     una vez y no sólo la de origen.
+     🔑 VA DESPUÉS del dispatch, y el orden NO es indiferente: `bioPatCambio` repinta la
+     grilla, y con `ev.target` ya desprendido del documento el 'input' no llegaría a
+     marcar los cambios sin guardar. (`bioPatCambio` preserva esa marca al repintar.)
+     🔑 Es idempotente y barato: sale solo si nada está descolocado, así que pegar
+     empezando YA en la celda del patógeno —que dispara `bioPatInput`— no repinta dos
+     veces. */
+  if(ficha === 'biomol'){ try{ bioPatCambio(); }catch(_){} }
 }
 
 // ── Navegación tipo Excel entre celdas de las grillas de Maduración ──

@@ -218,6 +218,73 @@ describe('Biomol · las columnas Ciclo de amplificación y Copias/μl', () => {
     expect(recogidas[1].wssv).toBe('Positivo');
     // La Fecha no se pisa: la manda el selector del día, no la tabla pegada.
     expect(recogidas[0].fecha).toBe(H.bioGridFecha());
+
+    /* ⚠⚠ Y las columnas de qPCR TIENEN QUE ABRIRSE. Que los valores entren no basta:
+       el pegado sólo emitía un 'input' en la celda donde EMPEZÓ (aquí «Código», cuyo
+       asa es `_bioDirty`), así que nadie avisaba a `bioPatInput` de que dos filas
+       acababan de volverse positivas en WSSV. Los datos quedaban bien y la tabla no
+       enseñaba dónde escribir el Ct hasta guardar o salir del campo.
+       Se comprueba en la CABECERA (la columna existe) y en las DOS filas (la celda se
+       escribe), porque abrir sólo la primera fue un defecto real de esta misma grilla. */
+    const th = [...document.querySelectorAll('#fp-biomol thead th')].map((t) => t.textContent.trim());
+    expect(th, 'el pegado no abrió la columna Ct WSSV').toContain('Ct WSSV');
+    expect(th).toContain('Copias WSSV');
+    const cel = (f, k) => document.querySelector(`#fp-biomol [name="bg_${f}_${k}"]`);
+    expect(cel(1, 'ciclo_wssv').disabled, 'la 1.ª fila positiva sigue bloqueada').toBe(false);
+    expect(cel(2, 'ciclo_wssv').disabled, 'la 2.ª fila positiva sigue bloqueada').toBe(false);
+    expect(cel(2, 'copias_wssv').disabled).toBe(false);
+    // Y sólo las suyas: IHHNV se pegó Negativo, abrir de más sería el defecto contrario.
+    expect(th, 'abrió columnas de un patógeno negativo').not.toContain('Ct IHHNV');
+  });
+
+  it('el aviso de «sin guardar» se emite ANTES de repintar, no sobre una celda muerta', () => {
+    /* EL ORDEN NO ES INDIFERENTE. `bioPatCambio` recrea la grilla entera, así que la
+       celda donde empezó el pegado queda DESPRENDIDA del documento. El 'input' que
+       marca «cambios sin guardar» tiene que haberse emitido ya para entonces: al revés,
+       el analista pega, se va del módulo y nadie le avisa de que pierde el trabajo.
+       happy-dom no corre los handlers en línea, pero sí los de addEventListener, así
+       que se mide lo único que decide el caso: si la celda seguía viva al avisar. */
+    localStorage.clear();
+    H.renderBiomol();
+    const origen = document.querySelector('#fp-biomol [name="bg_1_codigo"]');
+    let vivaAlAvisar = null;
+    origen.addEventListener('input', () => { vivaAlAvisar = origen.isConnected; });
+
+    pegar(origen, ['L-7', 'C1', 'P1', 'Sala 2', 'TQ1', '-', '1', 'Adulto',
+      'Hembra', 'Negativo', 'Positivo', '', '', '', ''].join('\t'));
+
+    expect(vivaAlAvisar, 'no se emitió ningún «input»: se perdió la marca de sin guardar').not.toBeNull();
+    expect(vivaAlAvisar, 'se avisó sobre una celda ya desprendida: el repintado se adelantó').toBe(true);
+    // Y el repintado sí ocurrió: si no, esta prueba pasaría por no hacer nada.
+    expect(origen.isConnected, 'control: la grilla debería haberse repintado').toBe(false);
+  });
+
+  it('pegar en OTRA ficha no repinta la grilla de Biomol', () => {
+    /* Todos los paneles `fp-*` conviven en shell.html —sólo cambia cuál se ve—, así que
+       `getElementById("fp-biomol")` devuelve elemento aunque el analista esté en Salas.
+       Sin la guarda por ficha, un pegado en Salas repintaría Biomol por debajo: efecto
+       cruzado entre dos fichas que no se tocan. Se monta un desfase deliberado en Biomol
+       (un positivo escrito a pelo, sin avisar a nadie) y se comprueba que un pegado
+       ajeno lo deja EXACTAMENTE como estaba: no es asunto suyo repararlo. */
+    localStorage.clear();
+    H.renderBiomol();
+    const wssv = document.querySelector('#fp-biomol [name="bg_1_wssv"]');
+    wssv.value = 'Positivo';                       // desfase: nadie ha repintado aún
+    const cabs = () => [...document.querySelectorAll('#fp-biomol thead th')].map((t) => t.textContent.trim());
+    expect(cabs(), 'control: el desfase debe existir antes de pegar').not.toContain('Ct WSSV');
+
+    // Una celda mínima dentro del panel de Salas, que es donde miraría el pegado.
+    const salas = document.getElementById('fp-salas');
+    expect(salas, 'shell.html debería traer el panel de Salas').toBeTruthy();
+    const cel = document.createElement('input');
+    cel.setAttribute('data-r', '0'); cel.setAttribute('data-c', '0');
+    salas.appendChild(cel);
+
+    H.madGridPaste({ clipboardData: { getData: () => 'a\tb\nc\td' }, preventDefault() {}, target: cel }, 'salas');
+
+    expect(cabs(), 'un pegado en Salas repintó Biomol').not.toContain('Ct WSSV');
+    expect(wssv.isConnected, 'un pegado en Salas recreó la grilla de Biomol').toBe(true);
+    salas.removeChild(cel);
   });
 
   it('una tabla ANTIGUA, sin las dos columnas, se sigue pegando sin descolocarse', () => {
