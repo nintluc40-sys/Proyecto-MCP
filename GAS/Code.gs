@@ -65,20 +65,23 @@ const LIMITS = {
   mad:     { maxRows: 1000, maxCols: 25 },
   // Biomol: 23 columnas desde 2026-08-23 (las 19 anteriores MENOS la pareja
   // genérica, que se retiró, MÁS el Ct y las copias de WSSV, IHHNV y AHPND/EMS).
-  // maxCols sube de 20 a 32 con holgura.
-  // ⚠⚠ maxCols RECORTA en silencio, no valida: con el 20 anterior las SEIS columnas
-  // nuevas habrían llegado vacías a la hoja sin un solo error. Exige RE-DESPLEGAR.
+  // maxCols subió de 20 a 32 con holgura, y el despliegue lo lleva desde el 2026-08-24.
+  // ⚠ POR QUÉ IMPORTÓ: mientras maxCols RECORTABA en silencio, el 20 anterior habría
+  // dejado las SEIS columnas nuevas vacías en la hoja sin un solo error. Desde el
+  // 2026-08-30 un payload más ancho se RECHAZA (ver la cabecera de este bloque), así
+  // que hoy el fallo se ve; la holgura es lo que evita llegar siquiera al rechazo.
   biomol:  { maxRows: 100, maxCols: 32 },
   // ast: 27 columnas desde 2026-08 (23 de datos + ID + Flacidez/Necrosis/Disparidad).
-  // ⚠ maxCols NO es sólo una validación: las filas se RECORTAN a este ancho más abajo.
-  // Con el 25 anterior, un payload de 27 perdía en silencio las 2 últimas columnas.
+  // ⚠ POR QUÉ EL MARGEN: con el 25 anterior, y mientras maxCols todavía RECORTABA, un
+  // payload de 27 perdía en silencio las 2 últimas columnas. Hoy eso se rechaza en vez
+  // de recortarse, pero un rechazo en producción sigue siendo un mal día: de ahí la holgura.
   ast:     { maxRows: 100, maxCols: 32 },
   // Desinfección: 9 cols (Fecha…Fecha Elemento) + margen. maxRows holgado:
   // los 4 tipos suman ~50 elementos posibles por módulo/día.
   desinf:  { maxRows: 200, maxCols: 12 },
   // Microbiología: hoja ancha (76 cols base + EM: pH + Conteo BA/Lev. crudo·UFC = 81)
-  // + margen para fases futuras. OJO: las filas se recortan a maxCols en doPost, así
-  // que este tope DEBE cubrir todas las columnas o se truncaría la última.
+  // + margen para fases futuras. OJO: este tope DEBE cubrir todas las columnas, o doPost
+  // rechaza el envío entero. Antes del 2026-08-30 era peor: truncaba la última en silencio.
   micro:   { maxRows: 300, maxCols: 90 },
   // Calidad de Agua: hoja ancha (14 contexto + 31 parámetros = 45 cols) + margen.
   cal:     { maxRows: 300, maxCols: 80 },
@@ -91,9 +94,9 @@ const LIMITS = {
   // Un viaje normal son 2 camiones x 4 revisiones x 8 tinas = 64 filas, pero el
   // formulario admite añadir camiones y paradas, y el cliente puede enviar VARIOS
   // viajes pendientes en un solo lote. 600 cubre ~9 viajes normales de golpe.
-  // ⚠ maxCols NO es sólo validación: las filas se RECORTAN a este ancho más abajo.
-  // Con menos de 29 se perderían en silencio las últimas columnas — es el mismo
-  // fallo que costó las 2 últimas del AsT cuando maxCols estaba en 25.
+  // ⚠ Con menos de 29, doPost rechaza el envío entero. Antes del 2026-08-30 era peor: se
+  // recortaba en silencio, que es el fallo que costó las 2 últimas columnas del AsT
+  // cuando maxCols estaba en 25.
   tras:    { maxRows: 600, maxCols: 40 }
 };
 
