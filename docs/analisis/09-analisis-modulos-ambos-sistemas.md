@@ -5,12 +5,11 @@
 > **No usarlo como estado actual.** El estado vivo está en la memoria del proyecto
 > (`project_punto-guardado-*`) y, ante cualquier discrepancia, **manda el CÓDIGO**.
 >
-> 🔴 **CONTIENE UN SEGUNDO «PUNTO DE GUARDADO» (2026-08-03, al final).** Durante semanas
->   la memoria afirmó tener el «único» punto de guardado y los pendientes de éste no se
->   miraron. Triado el 2026-09-02: de sus 4 entradas, 1 duplicaba la auditoría por vista,
->   1 estaba obsoleta (`fsCard` ya no existe en ningún destino) y **2 seguían vivas** —
->   la maquetación línea a línea de las 7 fichas y la revisión visual de Microbiología—,
->   hoy recogidas como pendientes 7 y 8 del punto de guardado vigente.
+> ✅ **CONTUVO un segundo «PUNTO DE GUARDADO» (2026-08-03), RETIRADO el 2026-09-03.**
+>   Durante semanas la memoria afirmó tener el «único» punto de guardado mientras éste vivía
+>   aquí dentro, versionado, y sus pendientes no los miró nadie. Triado el 2026-09-02 y
+>   retirado el 09-03, dejando al final constancia de dónde fue cada una de sus 4 entradas.
+>   **El estado del proyecto vive ahora en UN solo sitio: la memoria.**
 > ⚠ Su comparación engine.js ↔ Music es de agosto. Hoy las tres copias se vigilan solas
 >   con `verificar-3copias-v3.mjs`, que es la fuente buena.
 >
@@ -23,7 +22,8 @@
 > **Fecha:** 2026-08-03 · Alcance: los dos ejecutables gemelos de la vista Registro.
 > **Estado:** primer pase (arquitectura + todos los módulos a nivel funcional/estructural/sync
 > + paridad entre sistemas). Marcados con 🔎 los puntos que merecen un pase más profundo.
-> Ver el bloque **PUNTO DE GUARDADO** al final.
+> Su punto de guardado se retiró el 2026-09-03; al final queda la constancia de adónde fue
+> cada pendiente.
 
 ## 0. Los dos sistemas y su relación
 
@@ -190,28 +190,28 @@ UI (ficha/grid) → collect() → localStorage "larv4_*" → cola "larv4_syncque
   `evPdfUrl`) — descartado por el usuario.
 - **Ya reconciliado esta sesión:** T1a (panel de datos congelados) portado al HTML.
 
+
 ---
 
-## PUNTO DE GUARDADO (2026-08-03)
+## 🗄 Aquí había un segundo «PUNTO DE GUARDADO» (2026-08-03) — RETIRADO el 2026-09-03
 
-**Hecho esta sesión:**
-1. Diagnóstico de fork + reconciliación completa T1/T2/T3 → el HTML de Music es el superconjunto;
-   único injerto neto: **T1a freeze panel** (en el HTML).
-2. **Microbiología (ambos sistemas):** T1 algas-mensual (+Pseudomonas/Aeromonas/Hongos, área de
-   factores dedicada `algas-mensual`, área "algas" compartida intacta), T2 Calidad·mad-agua
-   (+Sala/Tanque +17 química), T3 Bacteriología·mad-agua (Tanque→escritura). Validado (acorn 9/9),
-   `dist/` sincronizado.
-3. Este análisis por módulo (primer pase).
+Durante semanas la memoria del proyecto afirmó tener el «único» punto de guardado mientras
+éste vivía aquí dentro, versionado y sin que nadie lo mirara. Se triaron sus cuatro
+pendientes el 2026-09-02 y se retira el bloque el 09-03, con constancia de dónde fue cada
+uno para que no haga falta recuperarlo:
 
-**Salud / validación:** ambos ficheros PARSE OK (acorn). `engine.js` excluido del ESLint (monolito).
-Backups: `_backup_index8_2026-08-03_pre-microbiologia.html`, `engine.js.bak_pre-microbiologia`,
-`_backup_index8_2026-08-03_pre-T1a.html`.
+- **Pase profundo por módulo** (Lab. Algas, As. Técnico, Biomol, matriz Reproductores) →
+  duplicaba, con menos alcance, la **auditoría por vista** del punto de guardado vigente,
+  que cubre las **9** vistas con su cobertura medida. Sigue abierta allí.
+- **Comparación línea a línea de la maquetación de las 7 fichas** → sigue ABIERTA, y hoy es
+  un pendiente numerado del punto de guardado vigente. El cálculo ya se verificó idéntico
+  en agosto; falta sólo el marcado.
+- **Fuga de Escape en Biomol (`fsCard` colgante)** → **muerta**: medido el 2026-09-02,
+  `fsCard` ya no existe en ninguno de los tres destinos.
+- **Revisión visual del usuario** → hecha entonces para T1a y Microbiología, y la de los
+  formatos T1/T2/T3 la dio por buena el usuario el 2026-09-02.
 
-**Pendiente (para continuar):**
-- 🔎 Pase **profundo** por módulo del render/validaciones internas de: **Lab. Algas, As. Técnico,
-  Biomol**, y el detalle de la **matriz Reproductores** (Maduración). Este doc los cubre a nivel
-  funcional/estructural/sync pero no línea-a-línea.
-- 🔎 Grupo 2 de la reconciliación: comparación **línea-a-línea de la maquetación** de las 7 fichas
-  estándar (cálculo ya verificado idéntico; solo faltaría el marcado).
-- ⚠ Nota histórica a verificar en ambos: fuga de Escape en Biomol (`fsCard` colgante).
-- Revisión visual del usuario: **hecha** para T1a + Microbiología.
+⚠ **La lección, que es la que justifica retirarlo:** un punto de guardado escondido dentro
+de un documento de análisis no lo lee nadie, y compite con el que sí se mantiene. El estado
+del proyecto vive en UN solo sitio — la memoria — y este documento se queda con lo que sabe
+hacer bien: el análisis por módulo.
