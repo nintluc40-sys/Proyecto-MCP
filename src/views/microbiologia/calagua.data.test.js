@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   isCalAguaRow, calEstado, calRangeText, calCtx, calValue, calMeasured, loadCalRanges,
   calEnsayoData, CAL_PARAMS, CAL_PARAM_BY_KEY,
-  calExcursion, calSeverity, calSubIndex, calWQI, calRiskLevel, calGroupTree, calDiagnosis,
+  calExcursion, calSeverity, calSubIndex, calWQI, calRiskLevel, calGroupTree, calDiagnosis, calLocation,
   controlStats, boxStats, calStageCmp,
 } from './calagua.data.js';
 
@@ -63,6 +63,19 @@ describe('calValue / calCtx', () => {
     expect(c.modulo).toBe('3');
     expect(c.tq).toBe('4');
     expect(c.fecha instanceof Date).toBe(true);
+  });
+
+  /* CIO entró como opción del selector de Módulo, y no es un número: la ubicación no
+     puede componerse con el `'M' + modulo` del 1..10 o se lee «MCIO». Las dos
+     aserciones van juntas — la de CIO sola la aprobaría un cambio que quitara la M
+     a todos. */
+  it('CIO se lee CIO en la ubicación, y los numerados conservan la M', () => {
+    expect(calLocation(calCtx({ ...row, 'Módulo': 'CIO' }))).toContain('CIO');
+    expect(calLocation(calCtx({ ...row, 'Módulo': 'CIO' }))).not.toContain('MCIO');
+    expect(calLocation(calCtx({ ...row, 'Módulo': '3' }))).toContain('M3');
+  });
+  it('CIO llega entero al contexto de Calidad de Agua', () => {
+    expect(calCtx({ ...row, 'Módulo': 'CIO' }).modulo).toBe('CIO');
   });
 });
 

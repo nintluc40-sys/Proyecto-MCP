@@ -25,6 +25,17 @@ export function intStr(v) {
   return (Number.isFinite(n) && Number.isInteger(n)) ? String(n) : s;
 }
 
+/* Etiqueta del módulo para la columna «Módulo/Sala».
+   ⚠ NO es `'M' + modulo`: desde que CIO es una opción más de los selectores de
+   Microbiología (Hisopados, los formatos de Larvicultura y las cabeceras «Módulo
+   (todas)» de Bacteriología y Calidad de Agua), ese atajo producía «MCIO». La M
+   sólo tiene sentido delante del 1..10 — CIO ya ES su propio nombre, que es como
+   lo tratan `lib/modules.js` y el PDF de fichas del Supervisor.
+   La comparación es indiferente a la caja igual que la de `sala` justo al lado, y
+   devuelve la grafía canónica en mayúsculas. */
+export const isCio = (m) => String(m == null ? '' : m).trim().toUpperCase() === 'CIO';
+export const modLabel = (m) => (isCio(m) ? 'CIO' : 'M' + m);
+
 /* ── Agrupación de valores TECLEADOS para los filtros ──────────────────────────────
    Las columnas de contexto (Departamento, Formato, Muestra, Componente, Punto, Etapa,
    Siembra…) las escribe una persona, así que la MISMA realidad llega con grafías
@@ -591,7 +602,7 @@ export function rowContext(row) {
     formatoKey: classifyFormato(getField(row, CF.formato)),
     tipoMuestra: normTipoMuestra(getField(row, CF.tipoMuestra)),
     modulo, sala,
-    modSalaLabel: modulo ? ('M' + modulo) : sala, // etiqueta para la columna Módulo/Sala
+    modSalaLabel: modulo ? modLabel(modulo) : sala, // etiqueta para la columna Módulo/Sala
     estadio: getField(row, CF.estadio),
     tq, reservorio, ubicacion,
     sexo, componente, punto, origen, lugar, muestras, carro, tina,

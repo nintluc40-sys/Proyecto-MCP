@@ -11772,7 +11772,7 @@ let _micDraftTm = null;
 const MIC_ESTADIOS = ["","AS","N5 (MB)","N5 TEX","Z1","Z2","Z3","M1","M2","M3",
   "PL1","PL2","PL3","PL4","PL5","PL6","PL7","PL8","PL9","PL10","PL11","PL12","PL13","PL14"];
 const MIC_SALAS    = ["","Sala 1","Sala 2","Sala 3","Sala 4","Sala 5"];      // sin 4A/4B
-const MIC_MODULOS  = ["","1","2","3","4","5","6","7","8","9","10"];
+const MIC_MODULOS  = ["","1","2","3","4","5","6","7","8","9","10","CIO"];
 const MIC_TQS_LARV = ["", "1","2","3","4","5","6","7","8","9","10","11","12"];
 const MIC_SEXO     = ["","Machos","Hembras"];
 const MIC_TIPO_M   = ["","Animal","Agua"];

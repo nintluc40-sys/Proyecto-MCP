@@ -218,6 +218,23 @@ describe('rowContext', () => {
     const c = rowContext({ ...baseRow, 'TQ/N°': '', 'Tanque/Reservorio': '3' });
     expect(c.ubicacion).toBe('R3');
   });
+
+  /* CIO es un módulo más en los selectores de Microbiología, pero NO es un número: su
+     etiqueta no puede salir del `'M' + modulo` que sirve para el 1..10, o se lee «MCIO».
+     Las dos aserciones van JUNTAS a propósito — sola, la de CIO la aprobaría un cambio
+     que devolviera el módulo crudo siempre y rompiera el M9. */
+  it('CIO se etiqueta CIO, y los numerados siguen llevando la M', () => {
+    expect(rowContext({ ...baseRow, 'Módulo/Sala': 'CIO' }).modSalaLabel).toBe('CIO');
+    expect(rowContext({ ...baseRow, 'Módulo/Sala': '9.0' }).modSalaLabel).toBe('M9');
+  });
+  it('CIO llega entero al contexto: intStr no lo convierte ni lo vacía', () => {
+    expect(rowContext({ ...baseRow, 'Módulo/Sala': 'CIO' }).modulo).toBe('CIO');
+  });
+  it('«Sala …» sigue ganando sobre el módulo, y no se confunde con CIO', () => {
+    const c = rowContext({ ...baseRow, 'Módulo/Sala': 'Sala 2' });
+    expect(c.modulo).toBe('');
+    expect(c.modSalaLabel).toBe('Sala 2');
+  });
 });
 
 describe('pathogenRecords', () => {

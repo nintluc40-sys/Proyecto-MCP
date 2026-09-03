@@ -11,7 +11,7 @@ import { getField, parseNum } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { isUnsafeKey } from '../../core/util.js';
 import { THRESHOLDS } from '../../config.js';
-import { intStr, normTipoMuestra } from './data.js';
+import { intStr, normTipoMuestra, modLabel } from './data.js';
 
 export const isCalAguaRow = (r) => !!r && /calidad\s*de\s*agua/i.test(String(r._SheetOrigin || ''));
 
@@ -166,7 +166,7 @@ export function calMeasured(row, ranges, params = CAL_PARAMS) {
 /** Etiqueta de ubicación legible según lo que traiga el departamento/formato. */
 export function calLocation(ctx) {
   const parts = [];
-  if (ctx.modulo) parts.push('M' + ctx.modulo);
+  if (ctx.modulo) parts.push(modLabel(ctx.modulo));   // «M3», pero «CIO» sin la M
   if (ctx.sala) parts.push(ctx.sala);
   if (ctx.tq) parts.push('TQ ' + ctx.tq);
   if (ctx.componente) parts.push(ctx.componente);
