@@ -1,10 +1,17 @@
 /* ============================================================
    BIOLOGÍA MOLECULAR — port de BIOMOL.html (D3)
-   ETAPA 1: capa de datos (lee la hoja "Biomol" del store) + KPIs +
-   filterbar (diagnóstico / lugar / período) + chips + modo AUD +
-   modal de detalle de muestras. Los gráficos D3 (Heatmap, Calendario,
-   Treemap, Swarm, Sankey, Trend, Donut, Tabla, Reporte) llegan en las
-   etapas siguientes; aquí van como placeholders.
+   Capa de datos (lee la hoja "Biomol" del store), KPIs, filterbar
+   (diagnóstico / lugar / período), chips, modo AUD, modal de detalle,
+   los gráficos D3 y el reporte comparativo. El port está COMPLETO.
+   🔑 La lista de lo que se pinta NO se escribe aquí: vive en
+   `renderCharts()`, y cada bloque lleva su propia cabecera de sección
+   (`GRÁFICOS D3`, `REPORTE COMPARATIVO`) — ahí es donde hay que mirar.
+   ⚠ Esta cabecera decía hasta el 2026-09-03 que los gráficos «llegan en
+   las etapas siguientes; aquí van como placeholders». Era el texto de la
+   ETAPA 1 y llevaba meses siendo falso: no queda ningún placeholder. Se
+   retira la lista en vez de actualizarla porque una lista mantenida a
+   mano vuelve a caducar en cuanto se añada la siguiente pieza — a ésta ya
+   le pasó: nunca llegó a mencionar la carga de qPCR de dfadf47/debcc84.
    ============================================================ */
 import { store } from '../../core/store.js';
 import { esc as escH } from '../../core/format.js'; // output-encoding único (antes había un escH local duplicado)
