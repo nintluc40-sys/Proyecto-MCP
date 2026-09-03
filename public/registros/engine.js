@@ -12013,9 +12013,13 @@ const MIC_FORMATS = {
   },
   "hisopados-despacho": {
     // Antes/Después por Carro/Tina = DOS filas (columna Etapa = Antes / Después),
-    // usando las columnas de bacteria YA existentes (valg/vvuln/vpara/pseudo/aero).
-    // No crea columnas de bacteria nuevas; Módulo→"Módulo/Sala", Etapa→"Etapa"
+    // usando columnas de bacteria YA existentes. Módulo→"Módulo/Sala", Etapa→"Etapa"
     // (existentes), y se añaden "Carro"/"Tina" a la hoja (al final).
+    // 2026-09-03 (usuario): suma C. Amarillas, C. Verdes y C. Totales, «como en
+    // Hisopados». SIGUE SIN CREAR COLUMNAS: MIC_SHEET_HEADERS se construye de
+    // MIC_LEVEL_PARAMS, que es FIJA y ya las incluye — la hoja tiene las mismas 81
+    // columnas para todos los formatos y `params` sólo decide qué celdas se rellenan.
+    // Los umbrales tampoco hacen falta: el área "ambiental" ya los define para las tres.
     depto:"Otras", label:"Hisopados (despacho)",
     rkeyFn:()=> "ambiental",
     ctx:[
@@ -12025,7 +12029,7 @@ const MIC_FORMATS = {
       { k:"etapa",  l:"Etapa",  type:"sel", opts:["","Antes","Después"], w:96 },
       { k:"lote",   l:"Lote",   type:"txt", w:80 }
     ],
-    params:["valg","vvuln","vpara","pseudo","aero"]
+    params:["vamar","vverd","vtot","valg","vvuln","vpara","pseudo","aero"]
   },
   "algas": {
     depto:"Algas", label:"Algas Hisopado",
