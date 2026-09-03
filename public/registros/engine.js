@@ -11165,6 +11165,151 @@ function trasRevSinGuardar(model, guardado, i){
   return JSON.stringify(a) !== JSON.stringify(b);
 }
 
+/* ═══════════════════════════════════════════════════════════
+   HISTORIAL DE TRASLADOS (usuario, 2026-09-03)
+
+   «Cada vez que se envíe algún traslado de algún camión (placa), y llegue al
+   Google Sheet, salga ahí referenciado, y si uno lo quiere revisar tenga un
+   botón para hacerlo. Esto es para que el usuario sepa de que su información
+   llegó al Google Sheet.»
+
+   🔑 SE LEE DEL DISPOSITIVO, NO DEL SHEET (decisión del usuario, 2026-09-03).
+   Medido antes de decidir: `?p=rows` sobre `Registro_Traslado` funciona hoy sin
+   tocar el GAS, pero devuelve las 936 filas del histórico entero y tarda entre
+   2 y 52 s — la banda que ya documenta la memoria del proyecto. El store local
+   (`larv4_tras_records`, TTL 48 h) tiene lo mismo que hace falta y abre al
+   instante, también sin señal.
+
+   🔑 Y LA MARCA QUE SE ENSEÑA NO ES UNA CREENCIA DE LA APP: `syncedAt` lo sella
+   la RECONCILIACIÓN con la respuesta del GAS (ver H1), así que «✅ Llegó al
+   Sheet» es lo que dijo el servidor, no lo que supone el cliente.
+
+   ⚠⚠ REVISAR CAMBIA EL VIAJE ACTIVO, y eso repinta la ficha. Si lo visible tiene
+   cambios sin guardar, se pierden — es el mismo agujero que la memoria describe
+   en la captura («el DOM ya no contiene el viaje entero»). Por eso `trasHistRevisar`
+   PREGUNTA antes, y ofrece guardar. Ante la duda, no se mueve.
+   ═══════════════════════════════════════════════════════════ */
+
+/* Resumen legible de un registro guardado, para la lista. Se deriva del propio
+   `data` y no se guarda aparte: un segundo sitio que mantener es de donde salen
+   las divergencias. */
+function trasHistResumen(rec){
+  const d = (rec && rec.data) || {};
+  const cams = trasCamionesUI(d);
+  const placas = cams.map(c => trasTxt(c && c.placa)).filter(Boolean);
+  const revs = (Array.isArray(d.revisiones) ? d.revisiones : []).filter(r => trasRevConDatos(r));
+  return {
+    fecha: trasTxt(d.fecha) || "—",
+    corrida: trasTxt(d.corrida),
+    modulo: trasTxt(d.modulo),
+    camaronera: trasTxt(d.camaronera),
+    placas: placas,
+    nCam: cams.length,
+    nRev: revs.length
+  };
+}
+
+/* Cuánto le queda al registro antes de que `pruneTras` lo retire (TTL 48 h).
+   Se dice en la lista para que nadie descubra por sorpresa que ya no está. */
+function trasHistTtl(ts){
+  const left = TRAS_TTL - (Date.now() - (ts || 0));
+  if(left <= 0) return "caduca ya";
+  const h = Math.floor(left / 3600000);
+  const m = Math.floor((left % 3600000) / 60000);
+  return h >= 1 ? ("caduca en " + h + " h " + m + " min") : ("caduca en " + m + " min");
+}
+
+function trasHistItemHtml(rec, activo){
+  const s = trasHistResumen(rec);
+  const sinc = rec.synced && rec.syncedAt
+    ? new Date(rec.syncedAt).toLocaleString("es-EC",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})
+    : "";
+  const estado = rec.synced
+    ? '<span class="th-tag th-ok">✅ Llegó al Sheet</span><span class="th-meta">' + escapeHtml(sinc) + '</span>'
+    : '<span class="th-tag th-pend">⏳ Sin enviar</span>';
+  const guardado = new Date(rec.ts || 0).toLocaleString("es-EC",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+  const placas = s.placas.length
+    ? s.placas.map(p => '<span class="th-placa">🚚 ' + escapeHtml(p) + '</span>').join("")
+    : '<span class="th-meta">sin placa</span>';
+  return '<div class="th-item' + (activo ? ' is-act' : '') + '">'
+    + '<div class="th-top">' + placas + estado + (activo ? '<span class="th-tag th-act">abierto ahora</span>' : '') + '</div>'
+    + '<div class="th-meta">'
+      + '<span><b>📅</b> ' + escapeHtml(s.fecha) + '</span>'
+      + (s.camaronera ? '<span><b>Destino:</b> ' + escapeHtml(s.camaronera) + '</span>' : '')
+      + (s.corrida ? '<span><b>Corrida:</b> ' + escapeHtml(s.corrida) + '</span>' : '')
+      + (s.modulo ? '<span><b>Módulo:</b> ' + escapeHtml(s.modulo) + '</span>' : '')
+      + '<span><b>Camiones:</b> ' + s.nCam + '</span>'
+      + '<span><b>Paradas:</b> ' + s.nRev + '</span>'
+      + '<span><b>Guardado:</b> ' + escapeHtml(guardado) + '</span>'
+      + '<span class="th-ttl">⏱ ' + escapeHtml(trasHistTtl(rec.ts)) + '</span>'
+    + '</div>'
+    + '<div class="th-acts">'
+      + '<button class="btn bs" type="button" onclick="trasHistRevisar(' + JSON.stringify(String(rec.id)) + ')"'
+      + (activo ? ' disabled title="Es el que ya tienes abierto"' : ' title="Abre este viaje en la ficha para revisarlo"')
+      + '>🔍 Revisar</button>'
+    + '</div>'
+  + '</div>';
+}
+
+function trasHistHtml(){
+  /* `loadTras` ya poda por TTL. Se ordena por ts desc: lo último enviado, arriba. */
+  const list = loadTras().slice().sort((a,b) => (b.ts || 0) - (a.ts || 0));
+  const nSync = list.filter(r => r.synced).length;
+  const cuerpo = list.length
+    ? list.map(r => trasHistItemHtml(r, r.id === _trasViajeActivo)).join("")
+    : '<div class="th-vacio">Todavía no hay traslados guardados en este dispositivo.<br>'
+      + 'Aparecerán aquí en cuanto guardes o envíes uno.</div>';
+  return '<div class="th-ov" id="tras-hist-ov">'
+    + '<div class="th-box">'
+      + '<div class="th-head">'
+        + '<div><b>📋 Historial de traslados</b>'
+          + '<div class="th-sub">' + list.length + ' en este dispositivo · ' + nSync + ' con llegada confirmada al Sheet</div>'
+        + '</div>'
+        + '<button class="th-x" type="button" onclick="trasHistCerrar()" aria-label="Cerrar historial">✕</button>'
+      + '</div>'
+      + '<div class="th-aviso">Se guardan <b>48 horas</b> en este teléfono. «✅ Llegó al Sheet» es lo que confirmó el servidor al sincronizar, no una suposición.</div>'
+      + '<div class="th-list">' + cuerpo + '</div>'
+    + '</div>'
+  + '</div>';
+}
+
+function trasHistAbrir(){
+  const fp = document.getElementById("fp-traslado");
+  if(!fp) return;
+  trasHistCerrar();
+  fp.insertAdjacentHTML("beforeend", trasHistHtml());
+}
+
+function trasHistCerrar(){
+  const ov = document.getElementById("tras-hist-ov");
+  if(ov && ov.parentNode) ov.parentNode.removeChild(ov);
+}
+
+/* Abre OTRO viaje en la ficha. ⚠ Repinta, así que lo que estuviera tecleado y sin
+   guardar se perdería: se pregunta antes y se ofrece guardarlo. */
+function trasHistRevisar(id){
+  const list = loadTras();
+  const rec = list.find(r => r && String(r.id) === String(id));
+  if(!rec){ toast("Ese traslado ya no está en el dispositivo","warn",4000); trasHistAbrir(); return; }
+  if(String(id) === String(_trasViajeActivo)){ trasHistCerrar(); return; }
+  if(_trasFormDirty){
+    const seguir = confirm("El traslado abierto tiene cambios SIN guardar.\n\n"
+      + "Aceptar = guardarlos y abrir el otro.\nCancelar = quedarse donde estás.");
+    if(!seguir) return;
+    if(!trasGuardarLocal({callado:true})){
+      toast("No se pudo guardar lo que tenías: no se cambia de traslado","err",5000);
+      return;
+    }
+  }
+  _trasViajeActivo = String(id);
+  _trasEnBlanco = false;
+  _trasCamActivo = 0;
+  _trasRevActiva = 0;
+  trasHistCerrar();
+  renderTraslado();
+  toast("Abierto el traslado del " + (trasHistResumen(rec).fecha || "—"), "ok", 3000);
+}
+
 /* La barra del pie: el estado y las tres acciones del viaje. `sa`, `sa-info` y
    `sa-btns` son las MISMAS clases que usan las fichas de larvicultura, para que se
    vea y se opere igual (usuario, 2026-08-25b). */
@@ -11174,6 +11319,7 @@ function trasBarraHtml(recBtn){
     + '<div class="sa-btns">'
       + '<button class="btn bd" type="button" onclick="trasBorrarTraslado()" title="Vacía la ficha y borra este traslado del dispositivo, para empezar el siguiente">🗑 Borrar traslado</button>'
       + (recBtn || "")
+      + '<button class="btn bs" type="button" onclick="trasHistAbrir()" title="Traslados guardados en este dispositivo y si llegaron al Google Sheet">📋 Historial</button>'
       + '<button class="btn bpdf" type="button" onclick="downloadTrasladoPDF()" title="Informe A4 del viaje entero: cada revisión de cada camión">📄 PDF</button>'
       + '<button class="btn bs" type="button" onclick="trasGuardarLocal()" title="Respalda el viaje en este dispositivo, sin enviarlo a Google Sheets">💾 Guardar local</button>'
       + '<button class="btn bp" type="button" onclick="saveTraslado()" title="Guarda el viaje y lo envía a Google Sheets">☁️ Enviar traslado</button>'
