@@ -100,7 +100,12 @@ export const ALIMENTACION_TINA_OPTS = [
 /** Paradas. «Peaje» y «Gabarra» se DESDOBLAN en las dos reales de cada tipo
  *  (usuario, 2026-08-25) y SUSTITUYEN a los genéricos: dos grafías del mismo
  *  sitio es lo que costó caro con los nombres del analista. Salió gratis porque
- *  `Registro_Traslado` aún no tenía ni una fila que migrar. */
+ *  `Registro_Traslado` aún no tenía ni una fila que migrar.
+ *  «Precría» se AÑADE al final (usuario, 2026-09-03): no desdobla ni sustituye a
+ *  ninguna, sólo faltaba en el catálogo.
+ *  ⚠ Esta lista está DUPLICADA en `TRAS_LUGAR_OPTS` del monolito (y por tanto en
+ *  las dos copias de Music): son 4 destinos, y la mutación L20 de
+ *  `mutar-traslado-parcial` ancla en la línea del monolito. */
 export const LUGAR_OPTS = [
   'Laboratorio',
   'Peaje 1',
@@ -108,6 +113,7 @@ export const LUGAR_OPTS = [
   'Gabarra 1',
   'Gabarra 2',
   'Camaronera',
+  'Precría',
 ];
 export const CHECK_ITEMS = ['Oxigenómetro', 'Linterna', 'Bandeja', 'Esfero'];
 

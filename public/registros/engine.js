@@ -9953,7 +9953,7 @@ const TRAS_ALIM_TINA_OPTS = TRAS_ALIM_OPTS.concat(["Artemia/Flake/Prokura/Vitami
 // (usuario, 2026-08-25). SUSTITUYEN a los genéricos, no conviven con ellos: dos
 // grafías del mismo sitio es justo lo que costó caro con los nombres del analista.
 // Salió gratis porque `Registro_Traslado` todavía no tiene ni una fila que migrar.
-const TRAS_LUGAR_OPTS     = ["Laboratorio","Peaje 1","Peaje 2","Gabarra 1","Gabarra 2","Camaronera"];
+const TRAS_LUGAR_OPTS     = ["Laboratorio","Peaje 1","Peaje 2","Gabarra 1","Gabarra 2","Camaronera","Precría"];
 const TRAS_CHECK_ITEMS    = ["Oxigenómetro","Linterna","Bandeja","Esfero"];
 // Módulo de origen del traslado (usuario, 2026-08-23). Grafía CORTA: la misma de
 // `mLabel` y de los nombres de hoja («Datos Larvicultura - M01»).

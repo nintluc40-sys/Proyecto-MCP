@@ -197,6 +197,8 @@ describe('Traslado · esquema de la hoja', () => {
     // el chequeador tiene que poder decir en cuál paró. Conservar además el genérico
     // habría dejado dos grafías del mismo sitio, que es el defecto que costó caro con
     // los nombres del analista. Salió gratis: la hoja no tenía ni una fila que migrar.
+    // 2026-09-03: «Precría» se suma al final como una parada más (usuario). No desdobla
+    // nada ni sustituye a ninguna: sólo faltaba en el catálogo.
     expect(LUGAR_OPTS).toEqual([
       'Laboratorio',
       'Peaje 1',
@@ -204,9 +206,13 @@ describe('Traslado · esquema de la hoja', () => {
       'Gabarra 1',
       'Gabarra 2',
       'Camaronera',
+      'Precría',
     ]);
     expect(LUGAR_OPTS).not.toContain('Peaje');
     expect(LUGAR_OPTS).not.toContain('Gabarra');
+    // La grafía es CON tilde y una sola: dos formas del mismo sitio es justo el defecto
+    // que costó caro con los nombres del analista.
+    expect(LUGAR_OPTS).not.toContain('Precria');
   });
 
   it('la camaronera sale del catálogo de la ficha de Despacho', () => {
