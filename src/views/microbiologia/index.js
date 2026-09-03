@@ -29,7 +29,7 @@ import {
   isMicroRow, isPatRow, patFecha, pathogenRecords, rowContext, meltRow, PATHOGENS, PATHOGEN_COLOR,
   NIVELES, NIVEL_COLOR, NIVEL_RANK, isAlerta, FORMATO_LABEL, AGGREGATE_KEYS,
   DEPARTAMENTOS, deptoOfFormato, classifyFormato, PATHOGEN_AGAR,
-  loadMicThresholds, MIC_FACTORS_KEY, MIC_AREAS, filterKey, groupValues,
+  loadMicThresholds, MIC_FACTORS_KEY, MIC_AREAS, filterKey, groupValues, modLabel, cmpMod,
 } from './data.js';
 import { petriSVG } from './petri.js';
 import { buildPetriPdfDoc, dayKeyOf } from './petriPdf.js';
@@ -67,9 +67,9 @@ const vState = {
 // ≥2 valores distintos en los datos vigentes → la barra se adapta a cada formato
 // (Larvicultura: Módulo/TQ/Estadío/Tipo · Maduración: Sala/Sexo/TQ/Componente/… · Otros: Punto/Laboratorio/…).
 const numCmp = (a, b) => (+a) - (+b);
-const FILTER_DIMS = [
+export const FILTER_DIMS = [
   { key: 'corrida', label: 'Corrida', pick: (c) => c.corrida, fmt: (v) => 'C' + v, cmp: numCmp },
-  { key: 'modulo', label: 'Módulo', pick: (c) => c.modulo, fmt: (v) => 'M' + v, cmp: numCmp },
+  { key: 'modulo', label: 'Módulo', pick: (c) => c.modulo, fmt: modLabel, cmp: cmpMod },
   { key: 'sala', label: 'Sala', pick: (c) => c.sala },
   { key: 'tq', label: 'TQ/N°', pick: (c) => c.tq, fmt: (v) => 'TQ ' + v, cmp: numCmp },
   { key: 'reservorio', label: 'Reservorio', pick: (c) => c.reservorio, fmt: (v) => 'R' + v, cmp: numCmp },
@@ -507,7 +507,7 @@ function genPatByAlert(records) {
 }
 
 /* ---- Panorama General · modal de desglose por área ---- */
-const genCtxLabel = (ctx) => [ctx.modulo ? 'M' + ctx.modulo : '', ctx.sala, ctx.tq ? 'TQ ' + ctx.tq : '', ctx.estadio].filter(Boolean).join(' · ') || '—';
+const genCtxLabel = (ctx) => [ctx.modulo ? modLabel(ctx.modulo) : '', ctx.sala, ctx.tq ? 'TQ ' + ctx.tq : '', ctx.estadio].filter(Boolean).join(' · ') || '—';
 function genDeptoModalHTML() {
   return `<div class="mic-modal" id="genDeptoModal" data-gen-depto-overlay>
       <div class="mic-modal-card">
@@ -605,9 +605,9 @@ function calSampleCompliance(sampleList) {
 
 // Dimensiones de contexto de Calidad de Agua (cascada; cada una se muestra si ≥2
 // valores distintos en el pool). Se adaptan al departamento/formato de cada muestra.
-const CAL_DIMS = [
+export const CAL_DIMS = [
   { key: 'tipoMuestra', label: 'Tipo de muestra', pick: (c) => c.tipoMuestra },
-  { key: 'modulo', label: 'Módulo', pick: (c) => c.modulo, fmt: (v) => 'M' + v, cmp: (a, b) => (+a) - (+b), multi: true },
+  { key: 'modulo', label: 'Módulo', pick: (c) => c.modulo, fmt: modLabel, cmp: cmpMod, multi: true },
   { key: 'sala', label: 'Sala', pick: (c) => c.sala },
   { key: 'estadio', label: 'Estadío', pick: (c) => c.estadio, cmp: calStageCmp },
   { key: 'tq', label: 'TQ/N°', pick: (c) => c.tq, fmt: (v) => 'TQ ' + v, cmp: (a, b) => (+a) - (+b) },
@@ -1513,7 +1513,7 @@ const sevRank = (s) => (CAL_SEV[s] ? CAL_SEV[s].rank : -1);
 
 // Etiqueta de agrupación por tanque (coherente con el árbol Módulo→Tanque de "Por ubicación").
 function calTankGroupLabel(ctx) {
-  const mod = ctx.modulo ? 'M' + ctx.modulo : (ctx.depto || '—');
+  const mod = ctx.modulo ? modLabel(ctx.modulo) : (ctx.depto || '—');
   const tq = ctx.tq ? 'TQ ' + ctx.tq : (ctx.componente || ctx.muestras || ctx.sala || '—');
   return mod + ' · ' + tq;
 }

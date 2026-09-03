@@ -36,6 +36,21 @@ export function intStr(v) {
 export const isCio = (m) => String(m == null ? '' : m).trim().toUpperCase() === 'CIO';
 export const modLabel = (m) => (isCio(m) ? 'CIO' : 'M' + m);
 
+/* Orden de los módulos en los filtros. ⚠ NO vale `(+a) - (+b)`: con CIO devuelve NaN,
+   y NaN no significa «da igual dónde caiga» — MEDIDO el 2026-09-03, el resultado
+   depende del orden de ENTRADA. La misma lista llegaba con CIO el primero o el último
+   según cómo salieran los datos, así que el desplegable se reordenaba solo.
+   Regla: los numerados por VALOR (10 después de 2, no antes), y lo que no es número
+   al final y entre sí por texto. Determinista con cualquier entrada. */
+export const cmpMod = (a, b) => {
+  const na = Number(a), nb = Number(b);
+  const oka = a !== '' && Number.isFinite(na);
+  const okb = b !== '' && Number.isFinite(nb);
+  if (oka && okb) return na - nb;
+  if (oka !== okb) return oka ? -1 : 1;
+  return String(a).localeCompare(String(b));
+};
+
 /* ── Agrupación de valores TECLEADOS para los filtros ──────────────────────────────
    Las columnas de contexto (Departamento, Formato, Muestra, Componente, Punto, Etapa,
    Siembra…) las escribe una persona, así que la MISMA realidad llega con grafías

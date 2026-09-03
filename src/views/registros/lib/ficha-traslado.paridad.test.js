@@ -23,6 +23,7 @@ import {
   TRASLADO_SHEET,
   ACTIVIDAD_OPTS,
   MODULO_OPTS,
+  LUGAR_OPTS,
   buildTrasladoPayload,
 } from './ficha-traslado.schema.js';
 
@@ -55,7 +56,7 @@ function motorTraslado() {
   createContext(ctx);
   new Script(
     code + '\n;globalThis.__api = { buildTrasPayload, TRAS_HEADERS, TRAS_SHEET, TRAS_ACTIVIDAD_OPTS,'
-    + ' TRAS_REV_MIN, TRAS_REV_INI, TRAS_MODULO_OPTS, trasFilaId, trasMinutosEntre, trasNum, trasTxt, trasCamiones };',
+    + ' TRAS_REV_MIN, TRAS_REV_INI, TRAS_MODULO_OPTS, TRAS_LUGAR_OPTS, trasFilaId, trasMinutosEntre, trasNum, trasTxt, trasCamiones };',
   ).runInContext(ctx);
   return ctx.__api;
 }
@@ -133,6 +134,20 @@ describe('Traslado · el monolito y el módulo ES coinciden', () => {
     // ⚠ NUNCA la grafía larga: ésa es la de Registro_Supervisión y son hojas
     // distintas. Dos grafías del mismo valor es el defecto del analista.
     expect(m.TRAS_MODULO_OPTS).not.toContain('Módulo 1');
+  });
+
+  /* 🔴 Esta paridad FALTABA, y se notó el 2026-09-03 al añadir «Precría»: hubo que
+     tocar las dos listas A MANO sin que nada avisara si te olvidabas de una. Es
+     justo la costura que este archivo existe para cerrar. */
+  it('🔴 comparten el catálogo de Lugar (las paradas)', () => {
+    const m = motorTraslado();
+    expect(m.TRAS_LUGAR_OPTS).toEqual(LUGAR_OPTS);
+    expect(m.TRAS_LUGAR_OPTS).toEqual(
+      ['Laboratorio', 'Peaje 1', 'Peaje 2', 'Gabarra 1', 'Gabarra 2', 'Camaronera', 'Precría'],
+    );
+    // Los genéricos se retiraron el 2026-08-25 y no pueden volver por ninguno de los dos lados.
+    expect(m.TRAS_LUGAR_OPTS).not.toContain('Peaje');
+    expect(m.TRAS_LUGAR_OPTS).not.toContain('Gabarra');
   });
 
   it('comparten el catálogo de Actividad y el mínimo de revisiones', () => {
