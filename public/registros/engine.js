@@ -11477,7 +11477,7 @@ function trasFotosItemHtml(f, i){
     + '<figcaption class="tf-cap">'
       + '<span class="tf-num">Figura ' + (i+1) + '</span>'
       + '<input class="tf-nota" type="text" maxlength="160" placeholder="Pie de figura (sale en el PDF)"'
-        + ' value="' + escapeHtml(f.nota) + '" oninput="trasFotoNota(' + JSON.stringify(String(f.id)) + ',this.value)">'
+        + ' value="' + escapeHtml(f.nota) + '" oninput="trasFotoNota(' + trasAttrArg(f.id) + ',this.value)">'
       + '<button class="tf-del" type="button" onclick="trasFotoDel(' + trasAttrArg(f.id) + ')" title="Eliminar esta foto del viaje">🗑 Eliminar</button>'
     + '</figcaption>'
   + '</figure>';

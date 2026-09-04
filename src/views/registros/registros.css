@@ -403,17 +403,17 @@
 @media(min-width:700px){.registros-app .th-ov{align-items:center}.registros-app .th-box{border-radius:14px}}
 /* Fotos del viaje (usuario, 2026-09-04) */
 .registros-app .tf-ov{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:60;display:flex;align-items:flex-end;justify-content:center;padding:12px}
-.registros-app .tf-box{background:var(--card,#fff);border-radius:14px 14px 0 0;width:100%;max-width:760px;max-height:86vh;display:flex;flex-direction:column;box-shadow:0 -8px 30px rgba(0,0,0,.25)}
+.registros-app .tf-box{background:var(--card,#fff);border-radius:14px 14px 0 0;width:100%;max-width:760px;max-height:86vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 -8px 30px rgba(0,0,0,.25)}
 .registros-app .tf-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:14px 16px 8px;border-bottom:1px solid var(--bdr,#e2e8f0)}
 .registros-app .tf-sub{font-size:12px;color:#64748b;font-weight:400;margin-top:2px}
 .registros-app .tf-x{border:0;background:#f1f5f9;border-radius:9px;width:34px;height:34px;font-size:15px;cursor:pointer;color:#334155;flex:0 0 auto}
 .registros-app .tf-aviso{font-size:11.5px;color:#475569;background:#f8fafc;padding:8px 16px;border-bottom:1px solid var(--bdr,#e2e8f0)}
-.registros-app .tf-list{overflow-y:auto;padding:10px 12px;display:grid;grid-template-columns:1fr;gap:10px}
-.registros-app .tf-item{margin:0;border:1px solid var(--bdr,#e2e8f0);border-radius:11px;overflow:hidden;background:var(--card,#fff)}
-.registros-app .tf-img{display:block;width:100%;max-height:230px;object-fit:contain;background:#0f172a}
-.registros-app .tf-cap{display:flex;align-items:center;gap:8px;padding:8px 10px}
+.registros-app .tf-list{overflow-y:auto;min-height:0;flex:1 1 auto;-webkit-overflow-scrolling:touch;padding:10px 12px;display:grid;grid-template-columns:1fr;gap:10px;align-content:start}
+.registros-app .tf-item{margin:0;border:1px solid var(--bdr,#e2e8f0);border-radius:11px;background:var(--card,#fff);display:flex;flex-direction:column}
+.registros-app .tf-img{display:block;width:100%;max-height:190px;object-fit:contain;background:#0f172a;border-radius:10px 10px 0 0;flex:0 0 auto}
+.registros-app .tf-cap{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:8px 10px;flex:0 0 auto}
 .registros-app .tf-num{font-size:11px;font-weight:700;color:#0f766e;background:#f0fdfa;padding:2px 8px;border-radius:20px;flex:0 0 auto}
-.registros-app .tf-nota{flex:1 1 auto;min-width:0;border:1px solid var(--bdr,#e2e8f0);border-radius:8px;padding:6px 9px;font-size:13px;font-family:inherit}
+.registros-app .tf-nota{flex:1 1 150px;min-width:130px;border:1px solid var(--bdr,#e2e8f0);border-radius:8px;padding:6px 9px;font-size:13px;font-family:inherit}
 .registros-app .tf-del{border:0;background:#fef2f2;color:#b91c1c;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;flex:0 0 auto;white-space:nowrap}
 .registros-app .tf-vacio{text-align:center;color:#64748b;font-size:13px;padding:26px 10px;line-height:1.7}
 .registros-app .tf-pie{padding:10px 14px 14px;border-top:1px solid var(--bdr,#e2e8f0);display:flex;justify-content:center}

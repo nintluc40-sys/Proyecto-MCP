@@ -235,6 +235,36 @@ describe('el modal del álbum', () => {
     expect(H.trasFotoList('tv1').length).toBe(1);
   });
 
+  /* 🔴🔴 BARRIDO DE LA CLASE ENTERA, y ésta es la prueba que faltaba de verdad.
+     El atributo truncado apareció TRES veces: el «Revisar» del Historial, el «Eliminar»
+     de las fotos y —la peor— el `oninput` del PIE DE FIGURA, donde no había botón muerto
+     sino PÉRDIDA SILENCIOSA: se tecleaba el pie, se veía en pantalla, y no se guardaba
+     una letra; al PDF sólo llegaba «Figura N».
+     🔑 La tercera se escapó al arreglo de las dos primeras porque busqué la INSTANCIA
+     (`onclick`) en vez de la CLASE. Así que esto no comprueba los atributos que conozco
+     hoy: comprueba TODOS los del modal, y por eso cubre también los que se añadan mañana. */
+  it('🔴 NINGÚN atributo de evento del modal queda truncado', () => {
+    H.__ponViaje('tv1');
+    ponFoto('tv1', 'fa', 'un pie cualquiera');
+    ponFoto('tv1', 'fb', 'otro', 1000);
+    const caja = document.createElement('div');
+    caja.innerHTML = H.trasFotosHtml();
+    const eventos = [];
+    for (const el of caja.querySelectorAll('*')) {
+      for (const at of el.attributes) {
+        if (/^on[a-z]+$/.test(at.name)) eventos.push({ nombre: at.name, valor: at.value });
+      }
+    }
+    expect(eventos.length, 'el modal tiene manejadores que revisar').toBeGreaterThan(2);
+    for (const e of eventos) {
+      /* Un manejador entero abre y CIERRA su paréntesis. El defecto dejaba `f(` a secas. */
+      expect(e.valor, e.nombre + ' truncado: ' + e.valor).toMatch(/^[A-Za-z_$][\w$]*\(.*\)$/);
+      const abre = (e.valor.match(/\(/g) || []).length;
+      const cierra = (e.valor.match(/\)/g) || []).length;
+      expect(abre, e.nombre + ' descuadrado: ' + e.valor).toBe(cierra);
+    }
+  });
+
   it('con el álbum LLENO retira el botón de añadir y lo dice', () => {
     H.__ponViaje('tv1');
     for (let i = 0; i < H.TRAS_FOTO_MAX; i++) ponFoto('tv1', 'f' + i, 'n' + i, i * 10);
@@ -246,5 +276,67 @@ describe('el modal del álbum', () => {
   it('sin fotos lo dice en vez de salir vacío', () => {
     H.__ponViaje('tv1');
     expect(H.trasFotosHtml()).toContain('todavía no tiene fotos');
+  });
+
+  /* 🔴 REPORTADO POR EL USUARIO (2026-09-04): «con una tercera foto o más, el campo de
+     pie de figura desaparece, y sólo sale el nombre de la figura. El botón de eliminar
+     también». Medido: el MARCADO estaba bien con 1..N, el fallo era de MAQUETACIÓN. Esta
+     prueba fija la mitad que sí se puede comprobar aquí —que el marcado no se degrada al
+     crecer el álbum—; la otra mitad, el CSS, la vigila la prueba de contrato de abajo. */
+  it('🔴 CADA figura conserva su pie y su botón, sea cual sea el número de fotos', () => {
+    for (const n of [1, 2, 3, 4, H.TRAS_FOTO_MAX]) {
+      globalThis.localStorage.clear();
+      H.__ponViaje('tv1');
+      for (let k = 0; k < n; k++) ponFoto('tv1', 'f' + k, 'pie' + k, (n - k) * 1000);
+      const caja = document.createElement('div');
+      caja.innerHTML = H.trasFotosHtml();
+      expect(caja.querySelectorAll('.tf-item').length, n + ' figuras').toBe(n);
+      expect(caja.querySelectorAll('.tf-nota').length, n + ' pies de figura').toBe(n);
+      expect(caja.querySelectorAll('.tf-del').length, n + ' botones de eliminar').toBe(n);
+      // y cada pie lleva SU texto, no el de otra figura
+      const valores = [...caja.querySelectorAll('.tf-nota')].map((i) => i.getAttribute('value'));
+      expect(new Set(valores).size, 'cada pie es el suyo').toBe(n);
+    }
+  });
+});
+
+/* ⚠⚠ CONTRATO DEL CSS. happy-dom no maqueta, así que el defecto que reportó el usuario
+   —el pie y el botón invisibles con 3+ fotos— NO se puede reproducir aquí. Lo que sí se
+   puede es exigir que las protecciones que lo arreglan sigan escritas, y que quitarlas se
+   ponga rojo en vez de descubrirse otra vez en un móvil en carretera.
+
+   ⚠ Vigila el CSS del REPO. El de los dos de Music va EN LÍNEA y sin prefijo, y no hay
+   nada que compruebe que los dos lados coinciden: eso sigue siendo trabajo a mano. */
+describe('🔴 contrato del CSS del álbum (el defecto de las 3 fotos)', () => {
+  const CSS = readFileSync(join(process.cwd(), 'src/views/registros/registros.css'), 'utf8');
+  const regla = (sel) => (CSS.match(new RegExp('\\.registros-app \\' + sel + '\\{([^}]*)\\}')) || [])[1] || '';
+
+  it('la lista puede DESPLAZAR: es un hijo flex con min-height:0', () => {
+    /* Sin `min-height:0` un ítem flex no encoge por debajo de su contenido, así que la
+       lista no desplaza — se derrama fuera de la caja y lo que sobra se sale de la
+       pantalla. Es la causa nº 1 de lo que reportó el usuario. */
+    const l = regla('.tf-list');
+    expect(l).toContain('overflow-y:auto');
+    expect(l).toContain('min-height:0');
+  });
+
+  it('la caja recorta lo que se derrame, en vez de dejarlo salir', () => {
+    expect(regla('.tf-box')).toContain('overflow:hidden');
+  });
+
+  it('la fila del pie ENVUELVE, así que el campo y el botón nunca se estrujan', () => {
+    const c = regla('.tf-cap');
+    expect(c).toContain('flex-wrap:wrap');
+    /* y el campo tiene una base real: con `min-width:0` podía quedarse en cero. */
+    const n = regla('.tf-nota');
+    expect(n).toMatch(/min-width:1\d\dpx/);
+    expect(n).not.toContain('min-width:0');
+  });
+
+  it('el ítem NO recorta su propio contenido', () => {
+    /* `overflow:hidden` en la tarjeta era lo que cortaba el pie cuando la altura se
+       quedaba corta. El redondeo vive ahora en la imagen. */
+    expect(regla('.tf-item')).not.toContain('overflow:hidden');
+    expect(regla('.tf-img')).toContain('border-radius');
   });
 });
