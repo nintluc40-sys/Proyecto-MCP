@@ -23,7 +23,7 @@ import { join } from 'node:path';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
-const EXPORTAR = ['trasFotoKey', 'trasFotoList', 'trasFotoPurgar', 'trasFotoNota',
+const EXPORTAR = ['trasFotoKey', 'trasFotoList', 'trasFotoPurgar', 'trasFotoNota', 'trasFotoDel',
   'trasFotosHtml', 'trasFotosPdfHtml', 'trasBarraHtml', 'buildTrasPdfHtml',
   'TRAS_FOTO_PRE', 'TRAS_FOTO_MAX', 'TRAS_TTL'];
 const H = {};
@@ -198,7 +198,41 @@ describe('el modal del álbum', () => {
     const html = H.trasFotosHtml();
     expect(html).toContain('1 de ' + H.TRAS_FOTO_MAX);
     expect(html).toContain('trasFotoPick(this)');
-    expect(html).toContain('trasFotoDel("fa")');
+  });
+
+  /* 🔴🔴 EL DEFECTO QUE REPORTÓ EL USUARIO: «no hay manera de borrar una foto».
+     Tenía razón, y no porque faltara el botón —estaba, con su CSS y su handler— sino
+     porque el `onclick` llevaba `JSON.stringify(id)` DENTRO de un atributo entre
+     comillas dobles: al parsear, el navegador cerraba el atributo en la primera comilla
+     de dentro y dejaba `onclick="trasFotoDel("`. Roto y mudo.
+     La prueba vieja (`toContain('trasFotoDel("fa")')`) pasaba porque la CADENA sí lo
+     contenía. Ésta parsea y PULSA, que es lo único que distingue un botón de un dibujo. */
+  it('🔴 el botón de borrar existe, sobrevive al parseo y AL PULSARLO borra', () => {
+    H.__ponViaje('tv1');
+    ponFoto('tv1', 'fa', 'la que se va');
+    ponFoto('tv1', 'fb', 'la que se queda', 1000);
+    const caja = document.createElement('div');
+    caja.innerHTML = H.trasFotosHtml();
+    const botones = [...caja.querySelectorAll('.tf-del')];
+    expect(botones.length).toBe(2);
+    const h = botones.map((b) => b.getAttribute('onclick'));
+    expect(h.every((x) => /^trasFotoDel\("?f[ab]"?\)$/.test(x))).toBe(true);
+
+    /* Y que la llamada haga lo que promete. Se invoca lo mismo que invocaría el
+       navegador, con `confirm` aceptando. */
+    globalThis.confirm = () => true;
+    window.confirm = () => true;
+    H.trasFotoDel('fa');
+    expect(H.trasFotoList('tv1').map((f) => f.nota)).toEqual(['la que se queda']);
+  });
+
+  it('y si el usuario CANCELA el aviso, la foto NO se borra', () => {
+    H.__ponViaje('tv1');
+    ponFoto('tv1', 'fa', 'sigue aquí');
+    globalThis.confirm = () => false;
+    window.confirm = () => false;
+    H.trasFotoDel('fa');
+    expect(H.trasFotoList('tv1').length).toBe(1);
   });
 
   it('con el álbum LLENO retira el botón de añadir y lo dice', () => {

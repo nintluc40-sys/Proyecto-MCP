@@ -414,7 +414,7 @@
 .registros-app .tf-cap{display:flex;align-items:center;gap:8px;padding:8px 10px}
 .registros-app .tf-num{font-size:11px;font-weight:700;color:#0f766e;background:#f0fdfa;padding:2px 8px;border-radius:20px;flex:0 0 auto}
 .registros-app .tf-nota{flex:1 1 auto;min-width:0;border:1px solid var(--bdr,#e2e8f0);border-radius:8px;padding:6px 9px;font-size:13px;font-family:inherit}
-.registros-app .tf-del{border:0;background:#fef2f2;color:#b91c1c;border-radius:8px;width:34px;height:34px;font-size:14px;cursor:pointer;flex:0 0 auto}
+.registros-app .tf-del{border:0;background:#fef2f2;color:#b91c1c;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;flex:0 0 auto;white-space:nowrap}
 .registros-app .tf-vacio{text-align:center;color:#64748b;font-size:13px;padding:26px 10px;line-height:1.7}
 .registros-app .tf-pie{padding:10px 14px 14px;border-top:1px solid var(--bdr,#e2e8f0);display:flex;justify-content:center}
 .registros-app .tf-add{cursor:pointer}

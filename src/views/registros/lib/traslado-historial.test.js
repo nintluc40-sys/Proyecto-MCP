@@ -129,10 +129,31 @@ describe('cada entrada trae su botón de revisar', () => {
   it('hay un botón Revisar por traslado, con su id', () => {
     localStorage.setItem(KEY, JSON.stringify([rec('v1', ['AAA-1'], true), rec('v2', ['BBB-2'], true)]));
     const html = H.trasHistHtml();
-    expect(html).toContain('trasHistRevisar("v1")');
-    expect(html).toContain('trasHistRevisar("v2")');
+    expect(html).toContain('trasHistRevisar(');
     // ⚠ Contar /Revisar/ a secas casaba TAMBIÉN dentro de `trasHistRevisar`: 4, no 2.
     expect((html.match(/🔍 Revisar/g) || []).length).toBe(2);
+  });
+
+  /* 🔴🔴 ESTA ES LA QUE FALTABA, Y COSTÓ UN BOTÓN MUERTO EN PRODUCCIÓN (2026-09-04).
+     La aserción de arriba decía `toContain('trasHistRevisar("v1")')` y era CIERTA sobre
+     la cadena… pero el marcado ponía esas comillas DOBLES dentro de un atributo entre
+     comillas dobles, así que al PARSEARLO el navegador cerraba el atributo en la primera
+     y dejaba `onclick="trasHistRevisar("`. Sintaxis rota, ningún error en consola, y el
+     botón —lo único que el usuario pidió de esta vista— no hacía nada.
+     🔑 La lección: comprobar la CADENA de HTML no prueba que el HTML FUNCIONE. Lo que
+     distingue lo correcto de lo roto es parsear y leer el atributo. */
+  it('🔴 el onclick SOBREVIVE AL PARSEO y lleva su id entero', () => {
+    localStorage.setItem(KEY, JSON.stringify([rec('v1', ['AAA-1'], true), rec('v2', ['BBB-2'], true)]));
+    const caja = document.createElement('div');
+    caja.innerHTML = H.trasHistHtml();
+    const ids = [...caja.querySelectorAll('button')]
+      .map((b) => b.getAttribute('onclick') || '')
+      .filter((h) => h.startsWith('trasHistRevisar('));
+    expect(ids.length).toBe(2);
+    expect(ids.some((h) => /^trasHistRevisar\("?v1"?\)$/.test(h))).toBe(true);
+    expect(ids.some((h) => /^trasHistRevisar\("?v2"?\)$/.test(h))).toBe(true);
+    // y ninguno queda truncado
+    expect(ids.every((h) => h.endsWith(')'))).toBe(true);
   });
 });
 

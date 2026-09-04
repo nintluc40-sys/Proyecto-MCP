@@ -11229,6 +11229,24 @@ function trasRevSinGuardar(model, guardado, i){
 /* Resumen legible de un registro guardado, para la lista. Se deriva del propio
    `data` y no se guarda aparte: un segundo sitio que mantener es de donde salen
    las divergencias. */
+/* Un id que viaja DENTRO de un atributo HTML entre comillas dobles.
+   ⚠⚠ «JSON.stringify» a secas NO vale aquí, y falla en silencio: sus comillas dobles
+   cierran el atributo en cuanto el navegador lo parsea, y «onclick="f("v1")"» queda en
+   «onclick="f("» — sintaxis rota, ningún error en consola, el botón no hace nada.
+   Pasó en los DOS únicos sitios que lo usaban (el «Revisar» del Historial y el
+   «Eliminar» de las fotos) y ninguna prueba lo vio, porque comprobaban la CADENA y no
+   el DOM parseado. Escapando a «&quot;» el parser devuelve la comilla al leer el
+   atributo, así que el argumento llega entero y sigue escapado por JSON.
+   ⚠ Sin BACKTICKS a propósito: aquí descolocan a verificar-3copias-v3, que los toma
+   por el principio de una plantilla y denuncia divergencias falsas. */
+function trasAttrArg(v){
+  /* ⚠ Se escapa con split/join y NO con una regex: una regex que contiene una COMILLA
+     DOBLE desincroniza al tokenizador de verificar-3copias-v3, que la toma por el
+     principio de una cadena y acaba denunciando divergencias falsas. Medido el
+     2026-09-04. El comportamiento es idéntico. */
+  return JSON.stringify(String(v == null ? "" : v)).split('"').join("&quot;");
+}
+
 function trasHistResumen(rec){
   const d = (rec && rec.data) || {};
   const cams = trasCamionesUI(d);
@@ -11280,7 +11298,7 @@ function trasHistItemHtml(rec, activo){
       + '<span class="th-ttl">⏱ ' + escapeHtml(trasHistTtl(rec.ts)) + '</span>'
     + '</div>'
     + '<div class="th-acts">'
-      + '<button class="btn bs" type="button" onclick="trasHistRevisar(' + JSON.stringify(String(rec.id)) + ')"'
+      + '<button class="btn bs" type="button" onclick="trasHistRevisar(' + trasAttrArg(rec.id) + ')"'
       + (activo ? ' disabled title="Es el que ya tienes abierto"' : ' title="Abre este viaje en la ficha para revisarlo"')
       + '>🔍 Revisar</button>'
     + '</div>'
@@ -11460,7 +11478,7 @@ function trasFotosItemHtml(f, i){
       + '<span class="tf-num">Figura ' + (i+1) + '</span>'
       + '<input class="tf-nota" type="text" maxlength="160" placeholder="Pie de figura (sale en el PDF)"'
         + ' value="' + escapeHtml(f.nota) + '" oninput="trasFotoNota(' + JSON.stringify(String(f.id)) + ',this.value)">'
-      + '<button class="tf-del" type="button" onclick="trasFotoDel(' + JSON.stringify(String(f.id)) + ')" title="Eliminar esta foto">🗑</button>'
+      + '<button class="tf-del" type="button" onclick="trasFotoDel(' + trasAttrArg(f.id) + ')" title="Eliminar esta foto del viaje">🗑 Eliminar</button>'
     + '</figcaption>'
   + '</figure>';
 }
