@@ -4957,13 +4957,17 @@ const ALG_OBS_OPTS = [
   "Tanque pasado del día de uso","Células agrupadas","Grumos","Filamentosas",
   "Residual de Cloro","Mala desinfección",
   "Células Deformes","Células Reventadas","Células con Agregaciones a la Pared Celular",
-  "Tanque Despachado en la Mañana"
+  "Tanque Despachado en la Mañana",
+  "Descartado nm"
 ];
 /* Volúmenes de despacho habituales (usuario, 2026-08-26). Es una SUGERENCIA, no
    una lista cerrada: el campo sigue admitiendo cualquier número, igual que el
-   Responsable/Analista de Microbiología. Por eso va en un `datalist` y no en un
-   `<select>` — un desplegable cerrado obligaría a inventarse una opción «Otro»
-   y a teclear el valor en otro sitio. */
+   Responsable/Analista de Microbiología.
+   ⚠ Esto vivía en un `datalist` hasta el 2026-09-04, con la nota de que un
+   desplegable CERRADO habría invalidado cualquier volumen fuera de la lista. Sigue
+   siendo cierto — por eso el desplegable de ahora NO es cerrado: es un `<select>`
+   que sólo RELLENA, junto a un input que admite cualquier número. Se cambió porque
+   el `datalist` no se despliega en el móvil y allí el campo se quedaba sin lista. */
 const ALG_VOL_DESPACHO_OPTS = [700, 2500, 20000, 25000];
 
 function algAreaType(area){
