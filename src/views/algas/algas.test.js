@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { sysCat, SYS_CATS, growthByLote, tasaChartData, periodStats, cellCompositionByDay, dispatchByModule, covSpan, dailySeries, isMicAlgaeRow, micAlgSystem, algSysFromText, algSanitData, algCloroData } from './index.js';
+import { readFileSync } from 'node:fs';
+import { modulosDisponibles, sysCat, SYS_CATS, growthByLote, tasaChartData, periodStats, cellCompositionByDay, dispatchByModule, covSpan, dailySeries, isMicAlgaeRow, micAlgSystem, algSysFromText, algSanitData, algCloroData } from './index.js';
 
 // Fila de Lab_Algas con cabeceras canónicas (las que lee el acceso tolerante AF).
 const row = (o) => ({ ...o });
@@ -567,5 +568,77 @@ describe('Control sanitario · algCloroData (calidad de agua · cloro)', () => {
     expect(cl.detectPct).toBeNull();
     expect(cl.bySystem).toEqual([]);
     expect(cl.params.every((p) => p.n === 0 && p.avg === null)).toBe(true);
+  });
+});
+
+/* ============================================================
+   🔴 EL FILTRO DE MÓDULO SÓLO OFRECE LOS DE LA CORRIDA (usuario, 2026-09-04)
+
+   «Al escoger un mes, una corrida, y luego ir a escoger un módulo, sólo salgan
+   los módulos disponibles en esa corrida y no todos.»
+
+   La lista se construía sobre el MES entero, así que elegir una corrida no la
+   estrechaba: el desplegable ofrecía módulos sin NI UNA fila en esa corrida, y
+   escoger uno dejaba la vista vacía sin explicar por qué.
+
+   ⚠ EL FIXTURE ESTÁ HECHO PARA DISTINGUIR: cada corrida tiene un módulo que la
+   otra NO tiene. Con módulos compartidos, la regla vieja y la nueva darían la
+   misma lista y la prueba no probaría nada.
+   ============================================================ */
+describe('modulosDisponibles · el módulo se acota a la corrida elegida', () => {
+  const fila = (corrida, modulo) => ({ Corrida_Larv: corrida, Modulo_Larv: modulo });
+  const mes = [
+    fila('585', 'M01'), fila('585', 'M03'), fila('585', 'M01'),
+    fila('586', 'M05'), fila('586', 'M03'),
+  ];
+
+  it('🔴 con una corrida elegida, sólo salen SUS módulos', () => {
+    expect(modulosDisponibles(mes, '585')).toEqual(['M01', 'M03']);
+    // M05 es de la 586: ofrecerlo dejaría la vista vacía al escogerlo.
+    expect(modulosDisponibles(mes, '585')).not.toContain('M05');
+    expect(modulosDisponibles(mes, '586')).toEqual(['M03', 'M05']);
+    expect(modulosDisponibles(mes, '586')).not.toContain('M01');
+  });
+
+  it('sin corrida elegida («Todas»), salen los del mes — como siempre', () => {
+    expect(modulosDisponibles(mes, null)).toEqual(['M01', 'M03', 'M05']);
+  });
+
+  it('una corrida sin filas no ofrece ningún módulo', () => {
+    // Mejor una lista vacía que ofrecer módulos de otra corrida.
+    expect(modulosDisponibles(mes, '999')).toEqual([]);
+  });
+
+  it('sin duplicados y en orden natural', () => {
+    // M01 sale dos veces en la 585; el desplegable no puede repetirlo.
+    expect(modulosDisponibles(mes, '585')).toHaveLength(2);
+    expect(modulosDisponibles([fila('1', 'M10'), fila('1', 'M2')], '1')).toEqual(['M2', 'M10']);
+  });
+
+  it('ignora las filas sin módulo, en vez de ofrecer un hueco', () => {
+    const conVacios = [...mes, fila('585', ''), fila('585', null)];
+    expect(modulosDisponibles(conVacios, '585')).toEqual(['M01', 'M03']);
+  });
+});
+
+/* 🔴🔴 Y EL CABLEADO, que es la mitad que se escapa siempre.
+   Las pruebas de arriba certifican la FUNCIÓN. Medido por mutación el 2026-09-04: si el
+   render vuelve a llamarla con `null` en vez de con la corrida elegida, la función sigue
+   siendo perfecta, todas ellas siguen VERDES… y el defecto del usuario vuelve entero.
+   Es la trampa que este proyecto ya tiene escrita: mutar la LLAMADA, no sólo el cuerpo.
+   No se puede montar la vista aquí, así que se afirma sobre el FUENTE — igual que el
+   contrato del CSS de las fotos. Barato, y distingue exactamente lo que hay que distinguir. */
+describe('modulosDisponibles · el render la llama con la corrida ELEGIDA', () => {
+  it('🔴 el sitio de la llamada pasa vState.corrida, no null', () => {
+    /* ⚠ Por LÍNEAS y no con un regex de paréntesis: los argumentos llevan paréntesis
+       dentro (`all.filter(inMonth)`), así que `\([^)]*\)` se corta a la mitad y acaba
+       comparando contra un trozo. El primer intento de esta prueba salió rojo por eso. */
+    const src = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+    const llamadas = src.split('\n')
+      .filter((l) => l.includes('modulosDisponibles(') && !l.includes('export function'));
+    expect(llamadas, 'no se encontró ninguna llamada a modulosDisponibles').not.toHaveLength(0);
+    for (const l of llamadas) {
+      expect(l.trim(), 'la llamada no pasa la corrida elegida').toContain('vState.corrida');
+    }
   });
 });

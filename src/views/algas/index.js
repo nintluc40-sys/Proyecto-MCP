@@ -78,6 +78,25 @@ function algaeRows() {
 // ⚠ 'MASIVO' (sin dígito) cae en 'Otros' porque /^M\d/ exige número. Es la regla vigente
 // por decisión del laboratorio; se deja tal cual a propósito.
 export const SYS_CATS = ['Masivos', 'Premasivos', 'Fundas', 'Carboys', 'PBR', 'Otros'];
+/**
+ * Módulos que EXISTEN en las filas dadas, acotados a una corrida si hay una elegida.
+ *
+ * 🔴 POR QUÉ EXISTE (usuario, 2026-09-04). La lista se construía sobre el MES entero, así
+ * que elegir una corrida no la estrechaba: el desplegable ofrecía módulos sin NI UNA fila
+ * en esa corrida, y escoger uno dejaba la vista vacía sin decir por qué.
+ *
+ * ⚠ `rows` ya viene filtrado por mes; aquí sólo se acota por corrida. Si `corrida` es
+ * null —«Todas las corridas»— devuelve los del mes, que es el comportamiento de siempre.
+ *
+ * @param {object[]} rows filas del mes
+ * @param {string|null} corrida corrida elegida, o null
+ * @returns {string[]} módulos presentes, en orden natural
+ */
+export function modulosDisponibles(rows, corrida) {
+  const dentro = (r) => !corrida || g(r, 'corrida') === corrida;
+  return [...new Set(rows.filter(dentro).map((r) => g(r, 'modulo')).filter(Boolean))].sort(natCmp);
+}
+
 export function sysCat(sistema) {
   const s = String(sistema || '').trim().toUpperCase();
   if (!s) return null;
@@ -611,7 +630,9 @@ export function algasView(root) {
   // ── Filtros: Corrida + Módulo + Especie + Área (el SISTEMA es una subvista, no un filtro) ──
   const corridas = monthCorridas;
   if (vState.corrida && !corridas.includes(vState.corrida)) vState.corrida = null;
-  const modulos = [...new Set(all.filter(inMonth).map((r) => g(r, 'modulo')).filter(Boolean))].sort(natCmp);
+  // ⚠ Se calcula DESPUÉS de validar `vState.corrida` (arriba): los módulos que se ofrecen
+  // dependen de la corrida elegida, no del mes entero. Ver `modulosDisponibles`.
+  const modulos = modulosDisponibles(all.filter(inMonth), vState.corrida);
   if (vState.modulo && !modulos.includes(vState.modulo)) vState.modulo = null;
   const especies = [...new Set(all.filter(inMonth).map((r) => g(r, 'especie')).filter(Boolean))].sort();
   if (vState.especie && !especies.includes(vState.especie)) vState.especie = null;
