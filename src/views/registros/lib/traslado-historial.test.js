@@ -32,9 +32,17 @@ const rec = (id, placas, synced, edadMs) => ({
   data: {
     fecha: '2026-09-03', corrida: '585', modulo: 'M03', camaronera: 'Puná 1',
     camiones: placas.map((p) => ({ placa: p, tinasOff: [] })),
+    /* ⚠ LA TERCERA REVISIÓN VA VACÍA A PROPÓSITO, y no es decorado: `trasHistResumen`
+       cuenta las paradas FILTRANDO por `trasRevConDatos`, y con dos revisiones llenas
+       el filtro y la ausencia de filtro daban el mismo 2 — el aserto `nRev === 2` pasaba
+       con la regla puesta y con la regla quitada. Lo cazó el banco de mutación el
+       2026-09-04 (M07 SOBREVIVÍA). Con ésta, `revisiones.length` es 3 y `nRev` sigue
+       siendo 2, así que el aserto ya distingue. Vacía de verdad: sin hora, sin lugar y
+       sin camiones, que es lo que `trasRevConDatos` mira. */
     revisiones: [
       { hora: '06:00', lugar: 'Laboratorio', camiones: [{ tinas: { 1: { ox: '6.1' } } }] },
       { hora: '07:30', lugar: 'Peaje 1', camiones: [{ tinas: { 1: { ox: '6.0' } } }] },
+      { hora: '', lugar: '', camiones: [] },
     ],
   },
 });
@@ -160,6 +168,24 @@ describe('lo que caduca y lo que no', () => {
   it('pasado el TTL lo dice, sin números negativos', () => {
     expect(H.trasHistTtl(Date.now() - H.TRAS_TTL)).toBe('caduca ya');
     expect(H.trasHistTtl(Date.now() - H.TRAS_TTL * 3)).toBe('caduca ya');
+  });
+});
+
+/* Añadido el 2026-09-04: el orden era la otra regla que NADIE vigilaba (M13 SOBREVIVÍA).
+   `trasHistHtml` ordena por `ts` descendente a propósito —«lo último enviado, arriba»—
+   y sin este test se podía invertir, o quitar el `.sort()` entero, sin poner nada rojo. */
+describe('lo último guardado sale ARRIBA', () => {
+  it('el más reciente va delante del más viejo', () => {
+    localStorage.setItem(KEY, JSON.stringify([
+      rec('viejo', ['VIEJA-1'], true, 6 * 3600000),
+      rec('nuevo', ['NUEVA-2'], true, 0),
+    ]));
+    const html = H.trasHistHtml();
+    /* ⚠ Los dos `toContain` NO sobran: si una placa faltara, su `indexOf` sería -1 y la
+       comparación de abajo pasaría sola, que es el fixture que no prueba nada. */
+    expect(html).toContain('NUEVA-2');
+    expect(html).toContain('VIEJA-1');
+    expect(html.indexOf('NUEVA-2')).toBeLessThan(html.indexOf('VIEJA-1'));
   });
 });
 
