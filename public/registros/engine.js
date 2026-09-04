@@ -9972,9 +9972,22 @@ const TRAS_MODULO_OPTS    = ["M01","M02","M03","M04","M05","M06","M07","M08","M0
 // Retirados el 2026-08-20 por el usuario: Laboratorio (siempre Omarsa), Guía,
 // Camión (lo sustituye la Placa) y Alimentos (queda sólo Insumos).
 // Retirado el 2026-08-23 por el usuario: Tanque. La hoja pasa de 28 a 27 columnas.
-// ⚠ Salió GRATIS porque Registro_Traslado todavía NO existe en producción (el GAS
-// responde «Hoja no permitida»). En cuanto T3 la cree, quitar una columna deja de
-// ser una edición y pasa a ser una migración de la hoja real.
+// ⚠⚠ ESA CONDICIÓN YA SE CUMPLIÓ: HOY ESTO ES UNA MIGRACIÓN (revisado el 2026-09-04).
+// La retirada de arriba salió GRATIS porque entonces Registro_Traslado NO existía en
+// producción y el GAS respondía «Hoja no permitida». La propia nota puso la condición
+// —«en cuanto T3 la cree, quitar una columna deja de ser una edición»— y ya se cumplió:
+// la hoja EXISTE, el GAS la acepta y devuelve estas 29 cabeceras con «ID» la última, y
+// tiene filas reales. La cifra no se anota: node sonda-hojas.mjs Registro_Traslado
+// 🔑 POR QUÉ IMPORTA, medido en el propio GAS: ensureHeaders sólo AÑADE al final y sale
+// antes si la hoja ya es igual de ancha, así que jamás reescribe ni estrecha lo que ya
+// hay; y el upsert, si el "ID" de la cabecera cae fuera del ancho del payload, retrocede
+// al respaldo «última columna del payload». Quitar una columna deja la HOJA con 29 y los
+// ENVÍOS con 28: el ID pasa a leerse de una posición que no es la de las filas ya
+// escritas, ninguna empareja, y cada registro se RE-AÑADE en vez de actualizarse.
+// ⚠ No es hipótesis: eso mismo le pasó al AsT el 2026-08-15 — está registrado en el
+// upsert del GAS, y es la duplicación contra la que avisa el párrafo de arriba.
+// 🔑 AÑADIR al final sigue siendo barato (ensureHeaders crea la columna y el tope de
+// «tras» es maxCols: 40). Quitar, renombrar o REORDENAR ya no lo es.
 // Añadidas el 2026-08-23 por el usuario: Corrida y Módulo, la trazabilidad del lote.
 const TRAS_HEADERS = ["Fecha","Viaje","Corrida","Módulo","Camaronera","Placa","Salinidad",
   "Hora salida","Hora llegada","Revisión","Hora","Lugar","Latitud","Longitud",
