@@ -263,6 +263,9 @@
 .registros-app .mod-grid{grid-template-columns:repeat(3,1fr)}
 }
 .registros-app .alg-row{display:none}
+.registros-app .alg-vol{display:flex;gap:6px;align-items:center}
+.registros-app .alg-vol-sel{flex:0 0 auto;max-width:46%;min-width:104px}
+.registros-app .alg-vol input{flex:1 1 auto;min-width:0}
 .registros-app .alg-hint{font-size:10px;color:var(--tx3);margin-top:2px;font-style:italic}
 .registros-app .foto-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
 .registros-app .foto-capbtn{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;

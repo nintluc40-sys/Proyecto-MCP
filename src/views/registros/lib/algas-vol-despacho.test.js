@@ -6,19 +6,30 @@
    —700, 2500, 20000 y 25000— «como el campo de responsable/analista de
    microbiología»: una lista para escoger que NO impide teclear otro valor.
 
-   POR QUÉ UN `datalist` Y NO UN `<select>`. Un desplegable cerrado obligaría a
-   inventar una opción «Otro» y a teclear el número en otro sitio, y sobre todo
-   convertiría en INVÁLIDO cualquier volumen que no esté en la lista — que es
-   justo lo contrario de lo que se pidió. El Responsable de Microbiología usa
-   exactamente este patrón (`<input list=…>` + `<datalist>`), y seguirlo hace que
-   los dos campos se comporten igual para quien los rellena.
+   ⚠⚠ CAMBIÓ LA FORMA, NO EL ENCARGO (2026-09-04). Al principio se resolvió con un
+   `<datalist>`, y el motivo que había escrito aquí era bueno: un `<select>` CERRADO
+   obligaría a inventar una opción «Otro» y convertiría en INVÁLIDO cualquier volumen
+   que no esté en la lista, que es lo contrario de lo pedido. Pero el usuario reportó
+   que **en el MÓVIL no sirve**: los navegadores de teléfono no despliegan el datalist
+   de forma fiable, así que el campo se quedaba en un número suelto, sin lista y sin
+   manera de escoger.
+
+   LA FORMA DE AHORA cumple las dos mitades y sí funciona en un teléfono: un
+   `<select>` NATIVO —que en móvil abre el selector del sistema— AL LADO del mismo
+   `<input type="number">` de siempre.
+   - el INPUT sigue siendo el dato: conserva su `name` (nada cambia al guardar),
+     mantiene el teclado numérico y admite CUALQUIER volumen;
+   - el SELECT sólo rellena, y **no lleva `name`**, así que nunca entra en el
+     payload — los campos se recogen con `fp.querySelectorAll("[name]")`.
+   Ningún volumen se vuelve inválido, que era el motivo REAL para descartar el select
+   cerrado. El razonamiento viejo no era falso: era sobre otra cosa.
 
    QUÉ VIGILA ESTA PRUEBA, Y POR QUÉ ASÍ
-   Comprobar que el `<datalist>` existe no basta: un `datalist` al que el `<input>`
-   no apunta con `list=` es decorativo y no sale por ninguna parte —el campo se
-   vería exactamente igual que antes—. Por eso se comprueba el ENLACE (que el
-   `list` del input case con el `id` del datalist) además del contenido, y que el
-   campo SIGA aceptando un valor libre.
+   Que el desplegable EXISTA no basta, y que el input exista tampoco: lo que hay que
+   distinguir es que los dos estén CONECTADOS (elegir rellena el campo) y que el
+   campo siga aceptando un valor libre. Y una que sale barata y evita un defecto
+   silencioso: que el select NO tenga `name`, porque si lo tuviera se colaría en el
+   registro guardado.
    ============================================================ */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -26,7 +37,7 @@ import { join } from 'node:path';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
-const EXPORTAR = ['renderAlgas', 'ALG_VOL_DESPACHO_OPTS'];
+const EXPORTAR = ['renderAlgas', 'ALG_VOL_DESPACHO_OPTS', 'algVolPick', 'algVolSync'];
 const H = {};
 
 beforeAll(async () => {
@@ -60,40 +71,82 @@ beforeAll(async () => {
 
 const fp = () => document.getElementById('fp-algas');
 const campo = () => fp().querySelector('[name="vol_despacho"]');
+const desplegable = () => fp().querySelector('.alg-vol-sel');
 
-describe('Algas · el Volumen de Despacho sugiere los volúmenes habituales', () => {
-  it('🔴 el campo APUNTA a un datalist que existe', () => {
-    // Un datalist suelto, sin `list=` que lo enlace, no se ve: el campo quedaría
-    // igual que antes y la prueba pasaría igualmente si sólo mirase el datalist.
+describe('Algas · el Volumen de Despacho se elige de una lista Y se escribe', () => {
+  it('🔴 hay un DESPLEGABLE de verdad, que en el móvil sí se abre', () => {
+    /* Es la mitad del encargo que el `datalist` no cumplía en un teléfono. Se exige un
+       `<select>` nativo, no un adorno: el selector del sistema sólo aparece con éste. */
     H.renderAlgas();
-    const inp = campo();
-    expect(inp, 'no se encontró el campo Volumen de Despacho').toBeTruthy();
-    const idLista = inp.getAttribute('list');
-    expect(idLista, 'el input no enlaza ningún datalist').toBeTruthy();
-    expect(fp().querySelector(`datalist#${idLista}`),
-      'el datalist al que apunta el input no existe').toBeTruthy();
+    const sel = desplegable();
+    expect(sel, 'no se encontró el desplegable de volúmenes').toBeTruthy();
+    expect(sel.tagName).toBe('SELECT');
   });
 
-  it('🔴 sugiere exactamente los cuatro volúmenes que pidió el usuario', () => {
+  it('🔴 el desplegable NO se guarda: no lleva `name`', () => {
+    /* Los campos del registro se recogen con `querySelectorAll("[name]")`. Si el select
+       llevara `name`, se colaría en el payload y ensuciaría el registro con un duplicado
+       del volumen. */
     H.renderAlgas();
-    const idLista = campo().getAttribute('list');
-    const valores = [...fp().querySelectorAll(`datalist#${idLista} option`)]
-      .map((o) => o.getAttribute('value'));
+    expect(desplegable().hasAttribute('name')).toBe(false);
+  });
+
+  it('🔴 ofrece exactamente los cuatro volúmenes que pidió el usuario', () => {
+    H.renderAlgas();
+    const valores = [...desplegable().querySelectorAll('option')]
+      .map((o) => o.getAttribute('value')).filter(Boolean);
     expect(valores).toEqual(['700', '2500', '20000', '25000']);
-    // Y la lista sale de la constante, no de un literal tecleado en el HTML: si
-    // alguien añade un volumen a `ALG_VOL_DESPACHO_OPTS` tiene que aparecer solo.
+    // Y salen de la constante, no de un literal tecleado: si alguien añade un volumen a
+    // `ALG_VOL_DESPACHO_OPTS` tiene que aparecer solo.
     expect(valores).toEqual(H.ALG_VOL_DESPACHO_OPTS.map(String));
+    // La primera opción es el rótulo, y no vale como volumen.
+    expect(desplegable().querySelector('option').getAttribute('value')).toBe('');
+  });
+
+  it('🔴 elegir del desplegable RELLENA el campo', () => {
+    /* Los dos elementos pueden existir y no estar conectados — se vería igual y no
+       serviría de nada. Esto distingue «hay un select» de «el select funciona». */
+    H.renderAlgas();
+    const sel = desplegable(), inp = campo();
+    inp.value = '';
+    sel.value = '2500';
+    H.algVolPick(sel);
+    expect(inp.value).toBe('2500');
   });
 
   it('🔴 sigue admitiendo un volumen que NO está en la lista', () => {
-    // Es la mitad del encargo: sugerir sin cerrar. Un `<select>` habría roto esto.
+    // La otra mitad del encargo: sugerir sin cerrar. Un select CERRADO rompería esto.
     H.renderAlgas();
     const inp = campo();
     expect(inp.tagName).toBe('INPUT');
     inp.value = '13750';
     expect(inp.value).toBe('13750');
-    // `type=number` se conserva: el dato ES un número y así el móvil abre el
-    // teclado numérico. El datalist funciona igual sobre un campo numérico.
+    // `type=number` se conserva: el dato ES un número y así el móvil abre el teclado
+    // numérico, que es media usabilidad del campo.
     expect(inp.getAttribute('type')).toBe('number');
+  });
+
+  it('🔴 el desplegable NUNCA dice un volumen distinto del que hay escrito', () => {
+    /* Si se elige 2500 y luego se teclea 13750, un select que siguiera marcando 2500
+       estaría mintiendo sobre el dato que se va a guardar. Se sincroniza al teclear. */
+    H.renderAlgas();
+    const sel = desplegable(), inp = campo();
+    sel.value = '2500'; H.algVolPick(sel);
+    expect(sel.value).toBe('2500');
+    inp.value = '13750'; H.algVolSync(inp);
+    expect(sel.value, 'con un volumen libre el select vuelve al rótulo').toBe('');
+    inp.value = '700'; H.algVolSync(inp);
+    expect(sel.value, 'y si coincide con uno habitual, lo refleja').toBe('700');
+  });
+
+  it('elegir vacío («Habituales…») NO borra lo que hay escrito', () => {
+    /* Volver al rótulo es sólo dejar de sugerir; llevarse por delante un volumen ya
+       tecleado sería perder un dato por tocar un desplegable. */
+    H.renderAlgas();
+    const sel = desplegable(), inp = campo();
+    inp.value = '13750';
+    sel.value = '';
+    H.algVolPick(sel);
+    expect(inp.value).toBe('13750');
   });
 });

@@ -4992,6 +4992,27 @@ function algSistemaType(sistema){
 // Scope to fp-algas to avoid stale matches on hidden panels
 function _algFp(){ return document.getElementById("fp-algas"); }
 
+/* «Volumen de Despacho (L)» · elegir Y escribir, también en el móvil.
+   El desplegable sólo RELLENA: no lleva `name`, así que nunca entra en el payload (los
+   campos se recogen con fp.querySelectorAll("[name]")). El dato sigue siendo el input,
+   que admite cualquier volumen. Sustituye al `datalist`, que en el teléfono no se
+   despliega y dejaba el campo sin lista (reportado por el usuario el 2026-09-04). */
+function algVolPick(sel){
+  const fp = _algFp(); if(!fp || !sel) return;
+  const inp = fp.querySelector('[name="vol_despacho"]');
+  if(!inp || !sel.value) return;
+  inp.value = sel.value;
+}
+/* Al teclear, el desplegable refleja el valor si es uno de los habituales y vuelve al
+   rótulo si no. Así el select NUNCA dice un volumen distinto del que hay escrito. */
+function algVolSync(inp){
+  const fp = _algFp(); if(!fp || !inp) return;
+  const sel = fp.querySelector(".alg-vol-sel");
+  if(!sel) return;
+  const v = String(inp.value == null ? "" : inp.value);
+  sel.value = ALG_VOL_DESPACHO_OPTS.map(String).indexOf(v) !== -1 ? v : "";
+}
+
 function algAreaChange(){
   const fp   = _algFp(); if(!fp) return;
   const area = fp.querySelector('[name="area"]')?.value || "";
@@ -5067,8 +5088,14 @@ function renderAlgas(){
           <option value="Si"${(d.descarte||"")==="Si"?" selected":""}>Si</option>
         </select></div>
       <div class="mf"><label>Volumen de Despacho (L)</label>
-        <input type="number" name="vol_despacho" value="${vl(d,'vol_despacho')}" placeholder="Litros" step="0.1" min="0" list="alg-vol-dl">
-        <datalist id="alg-vol-dl">${ALG_VOL_DESPACHO_OPTS.map(v=>`<option value="${v}">`).join("")}</datalist></div>
+        <div class="alg-vol">
+          <select class="alg-vol-sel" onchange="algVolPick(this)" aria-label="Volúmenes habituales">
+            <option value="">Habituales…</option>
+            ${ALG_VOL_DESPACHO_OPTS.map(v=>`<option value="${v}"${String(vl(d,'vol_despacho'))===String(v)?" selected":""}>${v} L</option>`).join("")}
+          </select>
+          <input type="number" name="vol_despacho" value="${vl(d,'vol_despacho')}" placeholder="o escribe otro" step="0.1" min="0" oninput="algVolSync(this)">
+        </div>
+        <span class="alg-hint">Elige uno habitual o escribe cualquier otro</span></div>
     </div>
     <input type="hidden" name="sid" value="${escapeHtml(d.sid||'')}">
     <div class="meta">
