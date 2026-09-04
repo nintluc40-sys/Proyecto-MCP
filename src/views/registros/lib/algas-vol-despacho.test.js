@@ -37,7 +37,7 @@ import { join } from 'node:path';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
-const EXPORTAR = ['renderAlgas', 'ALG_VOL_DESPACHO_OPTS', 'algVolPick', 'algVolSync'];
+const EXPORTAR = ['renderAlgas', 'ALG_VOL_DESPACHO_OPTS', 'algVolPick', 'algVolSync', 'collect'];
 const H = {};
 
 beforeAll(async () => {
@@ -148,5 +148,44 @@ describe('Algas · el Volumen de Despacho se elige de una lista Y se escribe', (
     sel.value = '';
     H.algVolPick(sel);
     expect(inp.value).toBe('13750');
+  });
+});
+
+/* 🔴🔴 EL VIAJE COMPLETO — el hueco que destapó la auditoría del 2026-09-04.
+   Todo lo de arriba mira el DOM. Pero lo que de verdad importa es qué DATO sale, y eso
+   lo decide `collect()`, que recorre `[name]`. Entre «el input tiene el valor» y «el
+   valor llega al registro» cabe justo el defecto que este cambio podía introducir: que
+   el select se colara con un `name`, o que el input perdiera el suyo.
+   Comprobar el DOM y no el dato es la versión de este campo del error que ya costó tres
+   botones muertos: mirar la representación en vez del efecto. */
+describe('Algas · Volumen de Despacho · lo que de verdad se GUARDA', () => {
+  it('🔴 elegir en el desplegable llega hasta el dato recolectado', () => {
+    H.renderAlgas();
+    const sel = desplegable();
+    sel.value = '20000';
+    H.algVolPick(sel);
+    const d = H.collect('algas', { quiet: true });
+    expect(d.vol_despacho).toBe(20000);
+  });
+
+  it('🔴 un volumen LIBRE también llega, sin que el select lo pise', () => {
+    H.renderAlgas();
+    const inp = campo();
+    inp.value = '13750';
+    H.algVolSync(inp);
+    const d = H.collect('algas', { quiet: true });
+    expect(d.vol_despacho).toBe(13750);
+  });
+
+  it('🔴 el desplegable NO aporta ninguna clave al registro', () => {
+    /* Si el select ganara un `name`, aparecería aquí una clave de más que acabaría en la
+       hoja. Se comprueba que NINGUNA clave recolectada huela al desplegable. */
+    H.renderAlgas();
+    const sel = desplegable();
+    sel.value = '700';
+    H.algVolPick(sel);
+    const claves = Object.keys(H.collect('algas', { quiet: true }));
+    expect(claves).toContain('vol_despacho');
+    expect(claves.filter((k) => k !== 'vol_despacho' && /vol/i.test(k))).toEqual([]);
   });
 });
