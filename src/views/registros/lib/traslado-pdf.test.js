@@ -43,6 +43,15 @@ function motor() {
     escapeHtml: (s) => String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;'),
+    /* El anexo fotográfico (2026-09-04) vive FUERA de los dos bloques que esta caja
+       recorta, y además lee `localStorage`, que aquí no existe. Se stubea a vacío a
+       propósito: esta batería comprueba el ACTA del viaje, y con el álbum vacío el anexo
+       no se imprime — que es justo el caso que estas pruebas describen.
+       ⚠ El anexo NO se queda sin cubrir: `traslado-fotos.test.js` arranca el monolito
+       ENTERO y comprueba allí que sale, que va DETRÁS de las firmas y que lleva su pie de
+       figura. Si algún día este stub tapara una regresión sería porque alguien movió esa
+       cobertura, no porque no exista. */
+    trasFotosPdfHtml: () => '',
   };
   ctx.globalThis = ctx;
   createContext(ctx);

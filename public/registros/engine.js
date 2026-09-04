@@ -2451,6 +2451,9 @@ function goBack(){
   // hasta el siguiente arranque, aun cuando el usuario haya cambiado de
   // módulo varias veces. Es complementario a cleanup() del boot.
   try{ if(typeof purgeExpiredFotosAllModules === "function") purgeExpiredFotosAllModules(); }catch(_){}
+  // Y las fotos de viajes ya borrados o caducados: su álbum sólo se poda al LISTARLO,
+  // y a un viaje que ya no existe no vuelve a listarlo nadie.
+  try{ if(typeof trasFotoPurgar === "function") trasFotoPurgar(); }catch(_){}
   document.getElementById("rgApp").classList.remove("on");
   document.getElementById("rgLogin").classList.remove("gone");
   document.getElementById("pin").value = "";
@@ -9894,6 +9897,19 @@ const TRAS_REC_KEY   = "larv4_tras_records";
 const TRAS_RECOV_KEY = RPRE + "trasform";   // recuperación del formulario en curso (TTL 1h = RTTL)
 const TRAS_MAX       = 40;
 const TRAS_TTL       = 48 * 60 * 60 * 1000;
+/* Álbum de fotos del VIAJE (usuario, 2026-09-03). Las fotos son del viaje entero, no
+   del camión ni de la parada, así que la llave es el id del viaje y el álbum viaja con
+   él: se abre desde su barra, sale en SU PDF y caduca cuando caduca él.
+   ⚠ Por eso NO se reutiliza FTTL (24 h) de la galería por módulo: un viaje todavía vivo
+   a la hora 30 se habría quedado sin fotos en silencio.
+   ⚠ CUPO: una foto de 900 px a q=0.76 pesa ~60-120 KB, que en dataURL son ~80-160 KB y
+   en localStorage (UTF-16, 2 bytes por carácter) ~160-320 KB. Doce son ~2-4 MB, que
+   caben junto a los registros dentro del tope habitual de 5-10 MB. Si aun así no cupiera,
+   `_lsSet` recupera espacio y avisa. */
+const TRAS_FOTO_PRE  = "larv4_tras_foto_";
+const TRAS_FOTO_MAX  = 12;
+const TRAS_FOTO_PX   = 900;
+const TRAS_FOTO_Q    = 0.76;
 const TRAS_SHEET     = "Registro_Traslado";
 /* Techo de filas por ENVÍO. Es `LIMITS.tras.maxRows` del GAS, y no es holgura: si un
    POST lo supera, el GAS responde «Límite de filas excedido» y NO escribe NADA —ni
@@ -10526,6 +10542,12 @@ function buildTrasPdfHtml(data){
     + ".sig-line{border-top:1.5px solid #0f172a;width:200px;max-width:80%;margin:24px auto 4px}"
     + ".sig i{display:block;font-style:normal;font-size:7pt;font-weight:600;color:#64748b;margin-top:1px}"
     + ".ts{margin-top:8px;font-size:7pt;color:#94a3b8;text-align:right}"
+    + ".fanexo{margin-top:14px;break-before:page;page-break-before:always}"
+    + ".fa-tit{font-size:10pt;font-weight:800;color:#fff;background:#09192e;padding:4px 10px;margin-bottom:8px;border-radius:2px}"
+    + ".fa-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px 14px}"
+    + ".fa-fig{margin:0;break-inside:avoid;page-break-inside:avoid}"
+    + ".fa-fig img{width:100%;max-height:78mm;object-fit:contain;border:1px solid #cbd5e1;border-radius:3px;background:#f8fafc}"
+    + ".fa-fig figcaption{font-size:8pt;color:#0f172a;font-weight:600;margin-top:3px;text-align:center}"
     + ".brk{page-break-before:always;break-before:page;height:0}";
 
   const ts = new Date().toLocaleString("es-EC",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
@@ -10563,6 +10585,7 @@ function buildTrasPdfHtml(data){
       + '<div class="sig"><div class="sig-line"></div>' + dato(d.chequeador) + "<i>Chequeador de entrega</i></div>"
       + '<div class="sig"><div class="sig-line"></div>' + dato(d.recepcion) + "<i>Responsable de recepción</i></div>"
     + "</div>"
+    + trasFotosPdfHtml(_trasViajeActivo)
     + '<div class="ts">Generado el ' + esc(ts) + " · viaje " + esc(viajeId) + "</div>"
     + '<scr' + 'ipt>var _p=false;function dp(){if(_p)return;_p=true;setTimeout(function(){window.print();},350);}'
       + 'if(document.readyState==="complete")dp();else window.addEventListener("load",dp,{once:true});</scr' + "ipt>"
@@ -11323,6 +11346,205 @@ function trasHistRevisar(id){
   toast("Abierto el traslado del " + (trasHistResumen(rec).fecha || "—"), "ok", 3000);
 }
 
+/* ══ ÁLBUM DE FOTOS DEL VIAJE ═════════════════════════════════════════════
+   Ni el id del viaje ni el de la foto llevan "_" (`tv<base36>` y `f<base36>`), que es
+   lo que permite partir la clave por el ÚLTIMO "_" y quedarse con el viaje. Si algún día
+   uno de los dos admite "_", esta partición deja de valer. */
+function trasFotoNuevoId(){ return "f" + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function trasFotoKey(viaje, id){ return TRAS_FOTO_PRE + viaje + "_" + id; }
+
+/* Lista el álbum de un viaje y de paso poda lo caducado y lo ilegible.
+   ⚠ Orden ASCENDENTE, al revés que el Historial: el anexo del PDF numera las figuras en
+   ORDEN DE CAPTURA, que es como se cuenta un viaje. */
+function trasFotoList(viaje){
+  const v = trasTxt(viaje);
+  if(!v) return [];
+  const pre = TRAS_FOTO_PRE + v + "_";
+  const ahora = Date.now(), out = [], muertas = [];
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(!k || k.indexOf(pre) !== 0) continue;
+    try{
+      const e = JSON.parse(localStorage.getItem(k));
+      if(!e || !e.ts || !e.durl){ muertas.push(k); continue; }
+      if(ahora - e.ts > TRAS_TTL){ muertas.push(k); continue; }
+      out.push({ key:k, id:k.slice(pre.length), ts:e.ts, nota:e.nota || "", durl:e.durl });
+    }catch(_){ muertas.push(k); }
+  }
+  muertas.forEach(k => { try{ localStorage.removeItem(k); }catch(_){} });
+  out.sort((a,b) => a.ts - b.ts);
+  return out;
+}
+
+/* Retira las fotos caducadas y las de viajes que ya no están en el dispositivo. Sin
+   esto, borrar un traslado dejaría su álbum ocupando cuota para siempre: nadie volvería
+   a listarlo, porque listar es SIEMPRE por viaje. */
+function trasFotoPurgar(){
+  const ahora = Date.now(), vivos = {}, muertas = [];
+  try{ (loadTras() || []).forEach(r => { if(r && r.id) vivos[String(r.id)] = 1; }); }catch(_){ return 0; }
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(!k || k.indexOf(TRAS_FOTO_PRE) !== 0) continue;
+    let e = null;
+    try{ e = JSON.parse(localStorage.getItem(k)); }catch(_){}
+    if(!e || !e.ts || (ahora - e.ts) > TRAS_TTL){ muertas.push(k); continue; }
+    const resto = k.slice(TRAS_FOTO_PRE.length);
+    const corte = resto.lastIndexOf("_");
+    const viaje = corte > 0 ? resto.slice(0, corte) : "";
+    if(!viaje || !vivos[viaje]) muertas.push(k);
+  }
+  muertas.forEach(k => { try{ localStorage.removeItem(k); }catch(_){} });
+  return muertas.length;
+}
+
+/* Comprime en canvas antes de guardar: un JPEG de cámara son varios MB y localStorage
+   no los aguanta. Mismo enfoque que la galería del módulo y que Biomol. */
+function trasFotoPick(input){
+  const f = input && input.files && input.files[0];
+  if(input) input.value = "";
+  if(!f) return;
+  const viaje = trasTxt(_trasViajeActivo);
+  if(!viaje){ toast("Guarda el viaje antes de añadirle fotos","warn",4000); return; }
+  if(trasFotoList(viaje).length >= TRAS_FOTO_MAX){
+    toast("Límite de " + TRAS_FOTO_MAX + " fotos por viaje. Elimina alguna primero.","warn",5000);
+    return;
+  }
+  const im = new Image(), u = URL.createObjectURL(f);
+  im.onload = function(){
+    try{ URL.revokeObjectURL(u); }catch(_){}
+    let w = im.width, h = im.height;
+    const mx = TRAS_FOTO_PX;
+    if(w >= h && w > mx){ h = Math.round(h * mx / w); w = mx; }
+    else if(h > w && h > mx){ w = Math.round(w * mx / h); h = mx; }
+    const cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    cv.getContext("2d").drawImage(im, 0, 0, w, h);
+    const durl = cv.toDataURL("image/jpeg", TRAS_FOTO_Q);
+    const id = trasFotoNuevoId();
+    if(!_lsSet(trasFotoKey(viaje, id), JSON.stringify({ ts: Date.now(), nota: "", durl: durl }))){
+      toast("No se pudo guardar la foto (almacenamiento lleno). Elimina alguna e inténtalo de nuevo.","err",6000);
+      return;
+    }
+    trasFotosPintar();
+    toast("📷 Foto añadida al viaje","ok",2200);
+  };
+  im.onerror = function(){ try{ URL.revokeObjectURL(u); }catch(_){}; toast("No se pudo leer la imagen","err",4000); };
+  im.src = u;
+}
+
+/* El pie de figura. Se guarda al vuelo y NO repinta: repintar mientras se teclea se
+   llevaría por delante el foco y el cursor, que es el defecto que este proyecto ya ha
+   encontrado tres veces en Biomol. */
+function trasFotoNota(id, val){
+  const viaje = trasTxt(_trasViajeActivo); if(!viaje) return;
+  const k = trasFotoKey(viaje, id);
+  let e = null;
+  try{ e = JSON.parse(localStorage.getItem(k)); }catch(_){}
+  if(!e) return;
+  e.nota = sanitizeStr(val, 160);
+  _lsSet(k, JSON.stringify(e));
+}
+
+function trasFotoDel(id){
+  const viaje = trasTxt(_trasViajeActivo); if(!viaje) return;
+  if(!confirm("¿Eliminar esta foto del viaje?\n\nNo se puede deshacer.")) return;
+  try{ localStorage.removeItem(trasFotoKey(viaje, id)); }catch(_){}
+  trasFotosPintar();
+  toast("Foto eliminada","ok",2000);
+}
+
+function trasFotosItemHtml(f, i){
+  return '<figure class="tf-item">'
+    + '<img class="tf-img" src="' + f.durl + '" alt="Figura ' + (i+1) + ' del viaje">'
+    + '<figcaption class="tf-cap">'
+      + '<span class="tf-num">Figura ' + (i+1) + '</span>'
+      + '<input class="tf-nota" type="text" maxlength="160" placeholder="Pie de figura (sale en el PDF)"'
+        + ' value="' + escapeHtml(f.nota) + '" oninput="trasFotoNota(' + JSON.stringify(String(f.id)) + ',this.value)">'
+      + '<button class="tf-del" type="button" onclick="trasFotoDel(' + JSON.stringify(String(f.id)) + ')" title="Eliminar esta foto">🗑</button>'
+    + '</figcaption>'
+  + '</figure>';
+}
+
+function trasFotosHtml(){
+  const viaje = trasTxt(_trasViajeActivo);
+  const fotos = viaje ? trasFotoList(viaje) : [];
+  const quedan = TRAS_FOTO_MAX - fotos.length;
+  const cuerpo = fotos.length
+    ? fotos.map(trasFotosItemHtml).join("")
+    : '<div class="tf-vacio">Este viaje todavía no tiene fotos.<br>'
+      + 'Las que añadas saldrán al final de su PDF, con su pie de figura.</div>';
+  return '<div class="tf-ov" id="tras-fotos-ov">'
+    + '<div class="tf-box">'
+      + '<div class="tf-head">'
+        + '<div><b>📷 Fotos del viaje</b>'
+          + '<div class="tf-sub">' + fotos.length + ' de ' + TRAS_FOTO_MAX
+            + ' · salen al final del PDF, en el orden en que las tomaste</div>'
+        + '</div>'
+        + '<button class="tf-x" type="button" onclick="trasFotosCerrar()" aria-label="Cerrar fotos">✕</button>'
+      + '</div>'
+      + '<div class="tf-aviso">Se guardan <b>48 horas</b> en este teléfono, junto al viaje. '
+        + '<b>No</b> se envían a Google Sheets.</div>'
+      + '<div class="tf-list">' + cuerpo + '</div>'
+      + '<div class="tf-pie">'
+        + (quedan > 0
+            ? '<label class="btn bs tf-add">📷 Añadir foto'
+              + '<input type="file" accept="image/*" capture="environment" hidden onchange="trasFotoPick(this)">'
+              + '</label>'
+            : '<span class="tf-lleno">Álbum lleno: elimina alguna para añadir otra</span>')
+      + '</div>'
+    + '</div>'
+  + '</div>';
+}
+
+/* Repinta SÓLO el modal, no la ficha: la ficha lleva lo tecleado sin guardar. */
+function trasFotosPintar(){
+  const ov = document.getElementById("tras-fotos-ov");
+  if(!ov) return;
+  ov.outerHTML = trasFotosHtml();
+}
+
+/* ⚠ Exige un viaje ACTIVO, porque la llave del álbum es su id: unas fotos tomadas antes
+   de que el viaje exista quedarían huérfanas y no las listaría nadie. Si no lo hay, se
+   ofrece guardarlo — mismo trato que da `trasHistRevisar` a lo tecleado sin guardar. */
+function trasFotosAbrir(){
+  const fp = document.getElementById("fp-traslado");
+  if(!fp) return;
+  if(!trasTxt(_trasViajeActivo)){
+    if(!confirm("Las fotos se guardan junto al viaje, así que hay que guardarlo primero.\n\n"
+      + "Aceptar = guardar el viaje y abrir las fotos.\nCancelar = quedarse como estás.")) return;
+    if(!trasGuardarLocal({callado:true})){
+      toast("No se pudo guardar el viaje: revisa la fecha y las placas","err",5000);
+      return;
+    }
+  }
+  trasFotosCerrar();
+  fp.insertAdjacentHTML("beforeend", trasFotosHtml());
+}
+
+function trasFotosCerrar(){
+  const ov = document.getElementById("tras-fotos-ov");
+  if(ov && ov.parentNode) ov.parentNode.removeChild(ov);
+}
+
+/* Anexo del PDF. Va AL FINAL, como pidió el usuario, y DESPUÉS de las firmas a
+   propósito: es un anexo del informe, no parte del acta que se firma. Si el álbum está
+   vacío no se imprime NADA, ni el título — un anexo vacío en un papel de carretera sólo
+   hace dudar de si faltan fotos o no las hubo. */
+function trasFotosPdfHtml(viaje){
+  const fotos = trasFotoList(viaje);
+  if(!fotos.length) return "";
+  return '<div class="fanexo">'
+    + '<div class="fa-tit">ANEXO FOTOGRÁFICO DEL VIAJE</div>'
+    + '<div class="fa-grid">'
+    + fotos.map(function(f, i){
+        return '<figure class="fa-fig">'
+          + '<img src="' + f.durl + '" alt="Figura ' + (i+1) + '">'
+          + '<figcaption>Figura ' + (i+1) + (f.nota ? " · " + escapeHtml(f.nota) : "") + '</figcaption>'
+        + '</figure>';
+      }).join("")
+    + '</div></div>';
+}
+
 /* La barra del pie: el estado y las tres acciones del viaje. `sa`, `sa-info` y
    `sa-btns` son las MISMAS clases que usan las fichas de larvicultura, para que se
    vea y se opere igual (usuario, 2026-08-25b). */
@@ -11333,6 +11555,7 @@ function trasBarraHtml(recBtn){
       + '<button class="btn bd" type="button" onclick="trasBorrarTraslado()" title="Vacía la ficha y borra este traslado del dispositivo, para empezar el siguiente">🗑 Borrar traslado</button>'
       + (recBtn || "")
       + '<button class="btn bs" type="button" onclick="trasHistAbrir()" title="Traslados guardados en este dispositivo y si llegaron al Google Sheet">📋 Historial</button>'
+      + '<button class="btn bs" type="button" onclick="trasFotosAbrir()" title="Fotos del viaje: se guardan en este dispositivo y salen al final del PDF">📷 Fotos</button>'
       + '<button class="btn bpdf" type="button" onclick="downloadTrasladoPDF()" title="Informe A4 del viaje entero: cada revisión de cada camión">📄 PDF</button>'
       + '<button class="btn bs" type="button" onclick="trasGuardarLocal()" title="Respalda el viaje en este dispositivo, sin enviarlo a Google Sheets">💾 Guardar local</button>'
       + '<button class="btn bp" type="button" onclick="saveTraslado()" title="Guarda el viaje y lo envía a Google Sheets">☁️ Enviar traslado</button>'
