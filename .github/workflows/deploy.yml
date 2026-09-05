@@ -61,6 +61,19 @@ jobs:
       - name: Pruebas
         run: npm test
 
+      # ⚠⚠ LA TERCERA PUERTA, y nace de un defecto medido, no de la teoría.
+      # Estas dos auditorías recorren el viaje ENTERO con el código real de las tres
+      # mitades (captura → payload → GAS → hoja → tablero, más el PDF), que es justo lo
+      # que la suite no cubre: comprueban que el papel y la pantalla cuenten lo MISMO del
+      # mismo viaje, y la adversa mete los casos hostiles.
+      # Vivían FUERA del repo y no las corría nadie, así que se rompieron dos veces —M5
+      # con `filasUniformes`, y el anexo de fotos con `trasFotosPdfHtml`— y las dos veces
+      # se quedaron rotas EN SILENCIO desde un commit que YA estaba en producción.
+      # Aquí dejan de depender de que alguien se acuerde. Tardan segundos: no mueven el
+      # presupuesto de CI.
+      - name: Auditorías de Traslado (extremo a extremo)
+        run: npm run auditorias
+
       - name: Compilar (genera /dist)
         run: npm run build
 
