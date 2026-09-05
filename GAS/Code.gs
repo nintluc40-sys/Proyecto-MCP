@@ -115,6 +115,34 @@ const RATE_MAX = 30, RATE_MS = 60000;
 // con token distinto se rechazan con 401-like.
 const SHARED_TOKEN = "";
 
+// Lee el token del proyecto de Apps Script (Configuración → Propiedades del script),
+// NO del código. Así el secreto nunca entra en el repo, que es público.
+//
+// Para ACTIVAR la autenticación: añade una propiedad llamada SHARED_TOKEN con la
+// misma cadena que hayas puesto en el cliente (Config -> "Token compartido"). No hace
+// falta tocar el código ni volver a desplegar. Para desactivarla, borra la propiedad.
+//
+// ⚠ ORDEN OBLIGATORIO: configura el token en TODOS los dispositivos ANTES de crear la
+// propiedad. El cliente solo manda el token si lo tiene configurado, así que activarlo
+// antes deja a todo el mundo con "No autorizado" en pleno campo.
+//
+// Si la propiedad no existe, devuelve SHARED_TOKEN (hoy "") y todo sigue como estaba:
+// eso es lo que permite desplegar este cambio sin riesgo.
+var _tkCache = null;
+function sharedToken_() {
+  if (_tkCache !== null) return _tkCache;
+  var v = SHARED_TOKEN;
+  try {
+    var p = PropertiesService.getScriptProperties().getProperty("SHARED_TOKEN");
+    if (p) v = String(p);
+  } catch (err) {
+    // Sin permisos o sin propiedades: se queda con la constante. Nunca revienta la
+    // petición por esto — un fallo aquí no puede tumbar la escritura de campo.
+  }
+  _tkCache = v;
+  return v;
+}
+
 // ── Punto de entrada POST ──────────────────────────────────
 function doPost(e) {
   try {
@@ -140,7 +168,8 @@ function doPost(e) {
     // Validación de token compartido (opt-in): si SHARED_TOKEN está
     // configurado, exige coincidencia exacta con payload.token. Pequeño
     // delay para frustrar fuerza bruta. Si está vacío, se omite (BC).
-    if (SHARED_TOKEN && String(payload.token || "") !== SHARED_TOKEN) {
+    var _tkPost = sharedToken_();
+    if (_tkPost && String(payload.token || "") !== _tkPost) {
       Utilities.sleep(800);
       return respond({ status: "error", message: "No autorizado" });
     }
@@ -1056,7 +1085,8 @@ function doGet(e) {
 // SÍ llegó, sin re-enviar. Respeta SHARED_TOKEN (mismo gate que sheetRows).
 function verifyReq(reqId, t) {
   try {
-    if (SHARED_TOKEN && String(t) !== SHARED_TOKEN) return respond({ status: "error", message: "No autorizado" });
+    var _tkVer = sharedToken_();
+    if (_tkVer && String(t) !== _tkVer) return respond({ status: "error", message: "No autorizado" });
     var rid = String(reqId || "").slice(0, 120);
     if (!rid) return respond({ status: "ok", processed: false });
     var hit = CacheService.getScriptCache().get("idem_" + rid);
@@ -1081,7 +1111,8 @@ function verifyReq(reqId, t) {
 function sheetRows(name, t, cols) {
   var out = { ok: false, sheet: name, headers: [], rows: [] };
   try {
-    if (SHARED_TOKEN && String(t) !== SHARED_TOKEN) { out.error = "No autorizado"; return _evJson(out); }
+    var _tkRows = sharedToken_();
+    if (_tkRows && String(t) !== _tkRows) { out.error = "No autorizado"; return _evJson(out); }
     if (ALLOWED.indexOf(name) === -1) { out.error = "Hoja no permitida"; return _evJson(out); }
     var ss = SpreadsheetApp.openById(SS_ID);
     var ws = ss.getSheetByName(name);
