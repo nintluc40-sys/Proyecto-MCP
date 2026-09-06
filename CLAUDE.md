@@ -8,9 +8,19 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
 
 - `src/config.js` — constantes (URL del Sheet, timeouts, umbrales de semáforo, orden de estadios).
 - `src/core/` — **capa de datos SIN DOM**, pura y testeable: `store`, `dates`, `fields`, `format`,
-  `sheets`, `refresh`, `charts`.
-- `src/ui/` — `router` (registro/cambio de vistas) y `shell` (cabecera, drawer, roles, filtro de fecha).
+  `sheets`, `refresh`, `charts`, `prodCalendar`, `aguaColor`, `trovan`, `util`.
+- `src/ui/` — `router` (registro/cambio de vistas), `shell` (cabecera, drawer, roles, filtro de
+  fecha) y las piezas transversales que tocan el DOM: `modal`, `modalEscape`, `toast`.
 - `src/views/<vista>/` — cada vista es un módulo con su `index.js` orquestador y su `.css` propio.
+  ⚠ **Estas tres listas se comprueban con `ls src/core src/ui src/views`, no se leen de aquí.**
+  Se dice porque caducaron las tres a la vez: `core/` llegó a nombrar 7 módulos de 11, `ui/` 2
+  de 5, y el `README.md` listaba 8 vistas de 9. Es la misma lección que la cifra de `engine.js`
+  de abajo, aplicada a un inventario en vez de a un número.
+- `public/sw.js` + `public/manifest.webmanifest` — **la app es una PWA**, y no por comodidad: la
+  vista Registros captura en campo sin señal. ⚠ El service worker es el único código del
+  proyecto capaz de dejar a alguien viendo una versión **antigua** durante días sin que nadie se
+  entere, así que **«desplegado» no implica «los dispositivos lo ven»**. Se prueba de verdad en
+  `src/sw.test.js`, que lo carga en un ámbito falso y comprueba qué hace con cada petición.
 - `public/registros/engine.js` — **DEUDA TÉCNICA**: monolito heredado embebido de
   ~18.000 líneas (`wc -l public/registros/engine.js` da la cifra del día). No seguir su
   estilo. Ver `docs/analisis/04-refactor-plan.md`.
@@ -38,6 +48,21 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
    o transformar datos sigue siendo puro y testeable sin navegador.
 2. **Sin estado global colgado de `window`.** El estado compartido va en `core/store.js`; la
    comunicación entre módulos usa el bus de eventos (`on`/`emit`/`EV`).
+
+   **Excepción vigente, y sólo una** (documentada por el mismo motivo que las de la regla 1:
+   una norma que todos saben que se incumple deja de guiar):
+   - `window.__rgLib` en `src/views/registros/index.js` — **no es estado, es el PUENTE** por el
+     que el monolito `engine.js` alcanza los módulos ES nativos que renderizan las 7 fichas
+     estándar. `engine.js` no es un módulo ES y no puede importarlos; `window` es el único
+     canal que tienen en común. Se asigna una vez, es de sólo lectura para el monolito, y su
+     retirada va atada a la del propio `engine.js`.
+   ⚠ **No es decorativa: la vigila una herramienta.** `verificar-3copias-v3.mjs` cuenta las
+   funciones que delegan a través de este puente y exige que las tres copias coincidan.
+   Romperlo deja las fichas sin render, no da error de compilación y la suite no lo ve.
+
+   **Criterio para lo nuevo:** que un módulo ES exponga algo en `window` sólo se acepta para
+   hablar con código que **no puede importar** (hoy, únicamente el monolito heredado). Todo lo
+   demás usa `store` y el bus.
 3. **Navegación por delegación de eventos.** Nada de `onclick="fn()"` inline en strings de HTML.
    Usa `addEventListener` con `data-*` y `closest()`. (El `engine.js` heredado viola esto; es deuda.)
 4. **Escapa SIEMPRE el contenido dinámico en `innerHTML`** con `esc()` de `core/format.js`,

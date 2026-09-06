@@ -69,9 +69,15 @@ npm run lint       # ESLint
 
 ## Arquitectura
 
+> Este árbol es una **guía de lectura**, no un inventario. La lista viva sale de
+> `ls src/core src/ui src/views` — se comprueba en segundos y no caduca. *(Se advierte
+> porque caducó: llegó a listar 8 vistas de 9, 7 módulos de `core/` de 11 y 2 de `ui/` de 5,
+> y omitía entera la PWA.)*
+
 ```
 src/
   main.js                  Entry: registra vistas, monta el shell, conecta y arranca refresco
+  config.js                URL del Sheet, timeouts, umbrales de semáforo, orden de estadios
   styles/                  tokens.css (diseño + tema oscuro) · base.css · app.css
   core/                    ── Capa de datos (sin DOM, reutilizable y testeable) ──
     store.js               Estado central + bus de eventos
@@ -81,9 +87,16 @@ src/
     sheets.js              Motor Google Sheets: XLSX-first + fallback CSV + clasificación
     refresh.js             Auto-refresco silencioso con fingerprint e inactividad
     charts.js              Registro central de Chart.js + destrucción gestionada
+    prodCalendar.js        Calendario de producción: el «mes interno» como rango de corridas
+    aguaColor.js           Color del agua → tono, clasificación y mensaje (espejo de la ficha)
+    trovan.js              Identidad de un Trovan ID — definición ÚNICA (escritura y lectura)
+    util.js                Helpers puros compartidos (avg, natCmp, fmtPct)
   ui/
     router.js              Registro y conmutación de vistas
-    shell.js               Cabecera, pestañas, filtro de fecha global, toast, loader
+    shell.js               Cabecera, pestañas, filtro de fecha global, loader
+    modal.js               Diálogos accesibles compartidos (role/aria, foco atrapado)
+    modalEscape.js         Cierre con Escape, uniforme para todas las vistas
+    toast.js               Aviso efímero no bloqueante (sustituye a window.alert)
   views/
     supervisor/            Ejecutiva · módulo · tanque · larvia · despacho · omtex · compareTanks
     larvicultura/          Radar, evolución, heatmap, registros, ICL, ranking, modales
@@ -92,9 +105,28 @@ src/
     visitante/             Resumen mensual en lenguaje llano + microalgas
     biomolecular/          D3 (heatmap/treemap/swarm/sankey/E.D.T.) + reporte + export
     microbiologia/         data.js (capa pura) · index.js · petri.js (placa de agar SVG)
+    maduracion/            Registro reproductivo por Trovan: panorama · salas y tanques · hembras
     registros/             Fichas nativas (lib/ + fichas/) sobre el motor engine.js
-public/registros/engine.js Monolito heredado de las fichas (se estrangula gradualmente)
+  sw.test.js               Ejerce las reglas de enrutado de public/sw.js en un ámbito falso
+public/
+  registros/engine.js      Monolito heredado de las fichas (se estrangula gradualmente)
+  sw.js                    Service worker: la app arranca y captura SIN CONEXIÓN
+  manifest.webmanifest     PWA instalable (standalone) + icons/ 192 · 512 · maskable
 ```
+
+### La PWA no es un adorno: es lo que permite capturar en campo
+
+La vista **Registros** se usa de noche y en carretera, donde no hay señal. `public/sw.js`
+sirve el shell desde caché y la cola de sincronización se vacía al recuperar cobertura.
+Dos consecuencias que conviene tener presentes al desplegar:
+
+- **El service worker es el único código del proyecto capaz de dejar a alguien viendo una
+  versión ANTIGUA durante días sin que nadie se entere.** Por eso se prueba de verdad
+  (`src/sw.test.js` lo carga en un ámbito falso y comprueba qué hace con cada petición).
+  «Está desplegado» y «los dispositivos lo ven» **no son la misma afirmación**.
+- Los `assets/` de Vite llevan hash, así que no pueden escribirse a mano en el precache:
+  el worker los deduce leyendo el `index.html` que acaba de guardar (`assetsDelShell`).
+  Gracias a eso la app arranca sin conexión **a la primera carga, no a la segunda**.
 
 ## Flujo de datos (Google Sheets)
 
