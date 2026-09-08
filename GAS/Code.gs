@@ -41,6 +41,9 @@ const ALLOWED = [
   "Lab_Algas",
   "Maduración Sala","Maduración Tanques","Maduración Lotes",
   "Maduración MATRIZ","Maduración Bitácora","Maduración Transferencias",
+  // Registro operativo de Maduración (2026-09-08). Llave por columna "ID", no
+  // compuesta por posición: ver isMadId en doPost.
+  "Maduración Ingreso","Maduración Movimientos","Maduración Fin de Ciclo",
   "BIOMOL",
   "Registro_Supervisión",
   "Registro_Desinfección",
@@ -62,7 +65,12 @@ const LIMITS = {
   // y el tope estaba EXACTAMENTE en 8: margen cero, la peor cifra posible.
   control: { maxRows: 300, maxCols: 12 },
   algas:   { maxRows: 500, maxCols: 28 },
-  mad:     { maxRows: 1000, maxCols: 25 },
+  // Subido de 25 a 32 el 2026-09-08, al entrar el registro operativo. La hoja mas
+  // ancha prevista es "Maduración Sala" con 21 columnas: con el tope en 25 el margen
+  // quedaba en 4, y ese margen justo es exactamente el error que ya se pago dos
+  // veces (Biomol con 20, AsT con 25). Desde el 2026-08-30 un payload mas ancho se
+  // RECHAZA entero, asi que el margen es lo que evita llegar siquiera al rechazo.
+  mad:     { maxRows: 1000, maxCols: 32 },
   // Biomol: 23 columnas desde 2026-08-23 (las 19 anteriores MENOS la pareja
   // genérica, que se retiró, MÁS el Ct y las copias de WSSV, IHHNV y AHPND/EMS).
   // maxCols subió de 20 a 32 con holgura, y el despliegue lo lleva desde el 2026-08-24.
@@ -227,6 +235,16 @@ function doPost(e) {
     else if (payload.sheetName === "Maduración Bitácora")       madKeyCols = [0,1,2]; // Trovan + Fecha + Tipo
     else if (payload.sheetName === "Maduración Transferencias") madKeyCols = [0,3];   // TR-ID + Trovan
     var isMad   = madKeyCols !== null;
+    // Maduración operativa (2026-09-08): estas NO usan clave compuesta por posición.
+    // Llevan una columna "ID" determinista en la ÚLTIMA posición y van por
+    // upsertAstRows, que la localiza POR CABECERA y cae a la última columna si la
+    // cabecera estuviera en blanco. Con el ID al final las dos rutas coinciden, que
+    // es la leccion del defecto del AsT del 2026-08-15: con el ID en medio, el
+    // respaldo apuntaba a otra columna y cada sync ANADIA una fila en vez de
+    // reemplazarla.
+    var isMadId = payload.sheetName === "Maduración Ingreso"
+               || payload.sheetName === "Maduración Movimientos"
+               || payload.sheetName === "Maduración Fin de Ciclo";
     // Columna Trovan ID (0-indexed) por hoja: se fuerza a formato TEXTO ("@") al
     // escribir, así Sheets NO reinterpreta el código como notación científica ni
     // le quita ceros a la izquierda (es un identificador, no un número).
@@ -242,6 +260,7 @@ function doPost(e) {
     var madNumCol = payload.sheetName === "Maduración MATRIZ" ? 0 : -1;
     var limits  = isAlgas  ? LIMITS.algas
                 : isMad    ? LIMITS.mad
+                : isMadId  ? LIMITS.mad
                 : isBiomol ? LIMITS.biomol
                 : isAst    ? LIMITS.ast
                 : isTras   ? LIMITS.tras
@@ -371,6 +390,7 @@ function doPost(e) {
     // determinista (viaje-c<camión>-r<revisión>-t<tina>), así que el camión puede
     // sincronizar en cada parada sin duplicar una sola fila.
     else if (isTras)   result = upsertAstRows(ws, rows);
+    else if (isMadId)  result = upsertAstRows(ws, rows);
     // Registro_Desinfección: upsert por clave compuesta Fecha+Módulo+Tipo de
     // Registro+Categoría+Elemento → re-sincronizar no duplica; editar Estado /
     // Observaciones / Fecha Elemento actualiza la misma fila.
