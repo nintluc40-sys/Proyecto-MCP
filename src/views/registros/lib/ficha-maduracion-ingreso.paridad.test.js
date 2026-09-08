@@ -237,7 +237,15 @@ describe('Ingreso · el catálogo de salas del monolito', () => {
   });
 
   it('la ficha de Ingreso es la PRIMERA pestaña de Maduración', () => {
-    expect(src).toContain('const MAD_TABS      = ["ingreso","salas","tanques","lotes","reproductivo","fotos"];');
+    /* ⚠ Se comprueba la POSICIÓN, no el array literal. La primera versión fijaba la lista
+       entera y se puso roja el mismo día, al añadir la pestaña «saldo» de la Fase 2 — sin
+       que nada de lo que decía vigilar hubiera cambiado. Una prueba sobre-especificada se
+       rompe con cambios legítimos, y el rojo que no significa nada es el que esconde el
+       rojo siguiente. Lo que importa es que el ingreso vaya primero: es la ficha que da de
+       alta el lote, y sin ella las demás no saben de qué tanque hablan. */
+    const m = src.match(/const MAD_TABS\s+= \[([^\]]*)\];/);
+    const tabs = m[1].split(',').map((s) => s.trim().replace(/^"|"$/g, ''));
+    expect(tabs[0]).toBe('ingreso');
   });
 
   it('el ingreso NO entra en MAD_FICHAS: no es una grilla con CRUD local', () => {

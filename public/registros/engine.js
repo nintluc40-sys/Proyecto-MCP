@@ -2477,7 +2477,7 @@ const STANDARD_TABS = [...FICHAS,"desinfeccion","fotos","historial","blanco"];
 // no saben qué lote, piscina ni código genético corresponde a cada tanque.
 // ⚠ NO entra en MAD_FICHAS: no es una grilla por día con CRUD local, es un formulario
 // de evento, como «reproductivo».
-const MAD_TABS      = ["ingreso","salas","tanques","lotes","reproductivo","fotos"];
+const MAD_TABS      = ["ingreso","saldo","salas","tanques","lotes","reproductivo","fotos"];
 // Tabs del módulo Biomol — form + historial inline + fotos
 const BIO_TABS      = ["biomol","fotos"];
 // Tabs del módulo As Técnico — form de supervisión + registro de mareas + fotos
@@ -2499,6 +2499,7 @@ const TAB_META = {
   tanques:  ["🛢️","Tanques"],
   lotes:    ["📦","Lotes"],
   ingreso:  ["📥","Ingreso"],
+  saldo:    ["⚖️","Saldo"],
   reproductivo: ["🦐","Reproductivo"],
   biomol:   ["🧬","Biomol"],
   ast:      ["📋","As Técnico"],
@@ -2564,6 +2565,7 @@ function selTab(t){
   if(t==="bitacora") renderBitacora();
   if(MAD_FICHAS.includes(t)) renderMad(t);
   if(t==="ingreso") renderMadIngreso();
+  if(t==="saldo") renderMadSaldo();
   if(t==="reproductivo") renderMadReproductivo();
   if(t==="biomol") renderBiomol();
   if(t==="ast")    renderAst();
@@ -2940,7 +2942,8 @@ const FICHA_LABELS = {
   tanques:"Maduración · Tanques",
   lotes:"Maduración · Lotes",
   reproductivo:"Maduración · Reproductivo",
-  ingreso:"Maduración · Ingreso"
+  ingreso:"Maduración · Ingreso",
+  saldo:"Maduración · Saldo"
 };
 function renderFicha(fid){
   const fn = {
@@ -5733,6 +5736,253 @@ function renderMad(ficha){
   // Accesibilidad: asocia labels↔inputs después de cada render de
   // Maduración (igual que renderFicha). El flujo CRUD/sync no cambia.
   fixupLabels(document.getElementById("fp-"+ficha));
+}
+
+// ── Maduración · EL LIBRO MAYOR (Fase 2, 2026-09-08) ─────────────────────────
+// Responde una sola pregunta: ¿cuántos animales hay VIVOS ahora en cada tanque y lote?
+//
+// Nadie teclea un saldo. El saldo es la suma de los eventos: + ingreso, − mortalidad,
+// − descarte, y más adelante ± movimientos y − fin de ciclo. Un saldo tecleado se
+// equivoca y nadie se entera; uno deducido no puede mentir sin que la resta lo cante.
+// El objetivo no es que cuadre siempre: es que CUANDO NO CUADRE se vea el mismo día.
+//
+// ⚠⚠ ES CRONOLÓGICO, y no por elegancia. La mortalidad de un tanque MEZCLADO se reparte
+// entre sus lotes en proporción a los vivos QUE CADA UNO TIENE ESE DÍA (decisión del
+// usuario), así que el peso del reparto de hoy depende del resultado de ayer. Aplanar
+// por tipo —todos los ingresos y luego todas las bajas— reparte una baja de ayer con un
+// lote que entró hoy y da números PLAUSIBLES y equivocados, que es la peor clase de
+// error aquí. Este bloque lo tuvo de verdad en su primera versión.
+//
+// Gemelo probado en src/views/registros/lib/mad-libro.js; la paridad los ata.
+const MAD_CUARENTENA_DIAS = 15;
+const MAD_EST_CUAR = "Cuarentena";
+const MAD_EST_PROD = "Producción";
+const MAD_EST_MIXTO = "Mixto";
+const MAD_LIBRO_SHEETS = { ingreso: "Maduración Ingreso", tanques: "Maduración Tanques" };
+function madLibroTxt(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
+function madLibroEnt(v){ const n=parseInt(v,10); return (isFinite(n)&&n>0)?n:0; }
+function madUbicKey(sala,tanque){ return madLibroTxt(sala)+"|"+madLibroEnt(tanque); }
+function madPosKey(sala,tanque,lote,cg){ return madUbicKey(sala,tanque)+"|"+madLibroTxt(lote)+"|"+madLibroTxt(cg); }
+// Reparto por RESTO MAYOR. Redondear cada parte por separado no garantiza que lo
+// repartido sume el total: 10 muertos entre tres lotes iguales darían 3+3+3=9 y un
+// animal desaparecería del libro sin que nada lo dijera.
+// El desempate es por ÍNDICE, no por azar: el mismo libro tiene que dar el mismo reparto
+// cada vez, o dos pantallas abiertas a la vez enseñarían cifras distintas del mismo día.
+function madRepartirProporcional(total, pesos){
+  const t=madLibroEnt(total);
+  const w=(pesos||[]).map(function(p){ return (isFinite(+p)&&+p>0)?Math.floor(+p):0; });
+  const suma=w.reduce(function(a,b){ return a+b; },0);
+  if(t===0||suma===0) return w.map(function(){ return 0; });
+  const exactos=w.map(function(p){ return (p*t)/suma; });
+  const base=exactos.map(function(e){ return Math.floor(e); });
+  let resto=t-base.reduce(function(a,b){ return a+b; },0);
+  const orden=exactos.map(function(e,i){ return { i:i, frac:e-Math.floor(e) }; })
+    .sort(function(a,b){ return (b.frac-a.frac)||(a.i-b.i); });
+  for(let k=0; resto>0 && k<orden.length; k++, resto--) base[orden[k].i]++;
+  return base;
+}
+// El saldo se para en 0 y el sobrante se cuenta aparte: un «−5 vivos» no significa nada
+// para quien lo lee; un «0 vivos y 5 bajas sin explicar» es la señal que se busca.
+function madDescontar(posiciones, sexo, cantidad){
+  const total=madLibroEnt(cantidad);
+  if(total===0) return 0;
+  const pesos=posiciones.map(function(p){ return p[sexo]; });
+  const disp=pesos.reduce(function(a,b){ return a+b; },0);
+  if(disp===0) return total;
+  const aplicable=Math.min(total, disp);
+  const partes=madRepartirProporcional(aplicable, pesos);
+  posiciones.forEach(function(p,i){ p[sexo]-=partes[i]; });
+  return total-aplicable;
+}
+const MAD_PRIORIDAD = { ingreso:0, tanque:1 };
+function madFlujo(f){
+  const ev=[];
+  (f.ingresos||[]).forEach(function(r){ ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"ingreso", r:r }); });
+  (f.tanques||[]).forEach(function(r){ ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"tanque", r:r }); });
+  return ev.sort(function(a,b){ return a.fecha.localeCompare(b.fecha) || (MAD_PRIORIDAD[a.tipo]-MAD_PRIORIDAD[b.tipo]); });
+}
+function madSumarDias(fecha, dias){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(madLibroTxt(fecha));
+  if(!m) return "";
+  // En UTC a propósito: con horas locales, al oeste de Greenwich se retrocede un día y
+  // la cuarentena terminaría con 24 h de desfase.
+  const d=new Date(Date.UTC(+m[1], +m[2]-1, +m[3]));
+  d.setUTCDate(d.getUTCDate()+Number(dias||0));
+  return d.toISOString().slice(0,10);
+}
+function madEstadoDeLote(lote, fecha){
+  const L=lote||{}, hoy=madLibroTxt(fecha);
+  if(!L.ingreso||!hoy) return "";
+  if(L.copulaDesde && L.copulaDesde<=hoy) return MAD_EST_PROD;
+  return hoy < madSumarDias(L.ingreso, MAD_CUARENTENA_DIAS) ? MAD_EST_CUAR : MAD_EST_PROD;
+}
+function madConstruirLibro(fuentes, opts){
+  const f=fuentes||{}, hoy=madLibroTxt((opts||{}).hoy)||null;
+  const pos={}, lotes={}, avisos=[]; let hasta="";
+  const anota=function(fecha,tipo,texto,extra){
+    const a={ fecha:madLibroTxt(fecha), tipo:tipo, texto:texto };
+    if(extra) for(const k in extra) a[k]=extra[k];
+    avisos.push(a);
+  };
+  madFlujo(f).forEach(function(ev){
+    const fecha=ev.fecha, r=ev.r;
+    if(fecha>hasta) hasta=fecha;
+    if(ev.tipo==="ingreso"){
+      const lote=madLibroTxt(r.Lote), cg=madLibroTxt(r["Código genético"]);
+      const sala=madLibroTxt(r.Sala), tq=madLibroEnt(r.Tanque);
+      if(!lote||!sala||!tq){ anota(fecha,"ingreso-incompleto","Un ingreso sin lote, sala o tanque no entra en el libro.",{ lote:lote, sala:sala, tanque:tq }); return; }
+      const k=madPosKey(sala,tq,lote,cg);
+      if(!pos[k]) pos[k]={ sala:sala, tanque:tq, lote:lote, codigoGenetico:cg, machos:0, hembras:0 };
+      pos[k].machos+=madLibroEnt(r.Machos);
+      pos[k].hembras+=madLibroEnt(r.Hembras);
+      if(!lotes[lote]) lotes[lote]={ lote:lote, ingreso:fecha, copulaDesde:null };
+      if(!lotes[lote].ingreso || fecha<lotes[lote].ingreso) lotes[lote].ingreso=fecha;
+      return;
+    }
+    const sala=madLibroTxt(r.Sala), tq=madLibroEnt(r.Tanque);
+    if(!sala||!tq) return;
+    const uk=madUbicKey(sala,tq);
+    const enTanque=Object.keys(pos).map(function(k){ return pos[k]; })
+      .filter(function(p){ return madUbicKey(p.sala,p.tanque)===uk; });
+    const bajas={
+      machos: madLibroEnt(r["Machos muertos"])+madLibroEnt(r["Machos muertos por descarte de selección"]),
+      hembras: madLibroEnt(r["Hembras muertas"])+madLibroEnt(r["Hembras muertas por descarte de selección"])
+    };
+    if(!enTanque.length){
+      if(bajas.machos||bajas.hembras) anota(fecha,"sin-ingreso","Se registraron bajas en "+sala+" tanque "+tq+" y ningún ingreso explica qué había ahí.",{ sala:sala, tanque:tq, machos:bajas.machos, hembras:bajas.hembras });
+    } else {
+      ["machos","hembras"].forEach(function(sexo){
+        const sobra=madDescontar(enTanque, sexo, bajas[sexo]);
+        if(sobra>0) anota(fecha,"deficit","En "+sala+" tanque "+tq+" se registraron "+sobra+" "+sexo+" de baja de más de los que quedaban vivos.",{ sala:sala, tanque:tq, sexo:sexo, cantidad:sobra });
+      });
+    }
+    // La CÓPULA rompe la cuarentena: es la señal real de que dejó de estarlo.
+    if(madLibroEnt(r["Cópulas"])>0){
+      enTanque.forEach(function(p){
+        const L=lotes[p.lote];
+        if(L && (!L.copulaDesde || fecha<L.copulaDesde)) L.copulaDesde=fecha;
+      });
+    }
+  });
+  const porTanque={}, porLote={};
+  Object.keys(pos).forEach(function(k){
+    const p=pos[k], uk=madUbicKey(p.sala,p.tanque);
+    if(!porTanque[uk]) porTanque[uk]={ sala:p.sala, tanque:p.tanque, machos:0, hembras:0, composicion:[] };
+    porTanque[uk].machos+=p.machos; porTanque[uk].hembras+=p.hembras;
+    porTanque[uk].composicion.push({ lote:p.lote, codigoGenetico:p.codigoGenetico, machos:p.machos, hembras:p.hembras });
+    if(!porLote[p.lote]){
+      const L=lotes[p.lote]||{ ingreso:"", copulaDesde:null };
+      porLote[p.lote]={ lote:p.lote, ingreso:L.ingreso, copulaDesde:L.copulaDesde, machos:0, hembras:0, ubicaciones:[] };
+    }
+    porLote[p.lote].machos+=p.machos; porLote[p.lote].hembras+=p.hembras;
+    if(porLote[p.lote].ubicaciones.indexOf(uk)===-1) porLote[p.lote].ubicaciones.push(uk);
+  });
+  Object.keys(porLote).forEach(function(n){ porLote[n].estado=madEstadoDeLote(porLote[n], hoy||hasta); });
+  return { posiciones:Object.keys(pos).map(function(k){ return pos[k]; }), tanques:porTanque, lotes:porLote, avisos:avisos, hasta:hasta };
+}
+function madEstadoDeSala(libro, sala, fecha){
+  const dentro={};
+  Object.keys(libro.tanques||{}).forEach(function(uk){
+    const T=libro.tanques[uk];
+    if(T.sala!==madLibroTxt(sala)) return;
+    T.composicion.forEach(function(c){ if(c.machos>0||c.hembras>0) dentro[c.lote]=1; });
+  });
+  const estados=Object.keys(dentro).map(function(n){ return madEstadoDeLote(libro.lotes[n], fecha); }).filter(Boolean);
+  if(!estados.length) return "";
+  const unicos=estados.filter(function(e,i){ return estados.indexOf(e)===i; });
+  // Mixto es más veraz que elegir uno de los dos y esconder el otro (decisión del usuario).
+  return unicos.length===1 ? unicos[0] : MAD_EST_MIXTO;
+}
+// El nombre del tanque mezclado lo PROPONE el sistema, ordenado, para que nadie vuelva a
+// teclearlo de dos maneras: en producción ya convive «BC/BA» escrito a mano.
+function madNombreComposicion(tanque){
+  const vivos=((tanque&&tanque.composicion)||[]).filter(function(c){ return c.machos>0||c.hembras>0; });
+  const lotes=[];
+  vivos.forEach(function(c){ if(lotes.indexOf(c.lote)===-1) lotes.push(c.lote); });
+  return lotes.sort().join("+");
+}
+
+// ── Maduración · vista SALDO ─────────────────────────────────────────────────
+let _madLibro = null;
+async function madSaldoCargar(force){
+  // La lectura se apoya en la cañería del reproductivo, que ya resuelve reintentos y
+  // caché y es GENÉRICA: toma el nombre de la hoja. El prefijo _repro es de dónde nació,
+  // no de lo que hace. Duplicarla habría creado dos cañerías divergiendo en silencio.
+  await _reproEnsureSheet(MAD_LIBRO_SHEETS.ingreso, null);
+  await _reproEnsureSheet(MAD_LIBRO_SHEETS.tanques, null);
+  _madLibro = madConstruirLibro({
+    ingresos: _reproReadRows(MAD_LIBRO_SHEETS.ingreso),
+    tanques:  _reproReadRows(MAD_LIBRO_SHEETS.tanques)
+  }, { hoy: today() });
+  return _madLibro;
+}
+function _madSaldoAvisoHTML(a){
+  return '<li style="margin-bottom:3px">'+escapeHtml(a.fecha)+' · '+escapeHtml(a.texto)+'</li>';
+}
+function _madSaldoHTML(libro){
+  const uks=Object.keys(libro.tanques).sort(function(x,y){
+    const A=libro.tanques[x], B=libro.tanques[y];
+    return A.sala.localeCompare(B.sala) || (A.tanque-B.tanque);
+  });
+  const filas=uks.map(function(uk){
+    const T=libro.tanques[uk];
+    const vivos=T.machos+T.hembras;
+    const comp=madNombreComposicion(T) || "—";
+    const det=T.composicion.filter(function(c){ return c.machos>0||c.hembras>0; })
+      .map(function(c){ return escapeHtml(c.lote)+"/"+escapeHtml(c.codigoGenetico)+" "+c.machos+"♂ "+c.hembras+"♀"; }).join(" · ");
+    return '<tr'+(vivos===0?' style="opacity:.5"':'')+'>'
+      + '<td class="tqc" style="font-size:10px">'+escapeHtml(T.sala)+'</td>'
+      + '<td style="text-align:center">'+T.tanque+'</td>'
+      + '<td>'+escapeHtml(comp)+'</td>'
+      + '<td style="text-align:right;font-variant-numeric:tabular-nums">'+T.machos+'</td>'
+      + '<td style="text-align:right;font-variant-numeric:tabular-nums">'+T.hembras+'</td>'
+      + '<td style="text-align:right;font-variant-numeric:tabular-nums"><b>'+vivos+'</b></td>'
+      + '<td style="font-size:10px;color:#64748b">'+det+'</td></tr>';
+  }).join("");
+  const lotes=Object.keys(libro.lotes).sort().map(function(n){
+    const L=libro.lotes[n];
+    const badge=L.estado===MAD_EST_CUAR ? 'background:#fef3c7;color:#92400e' : 'background:#dcfce7;color:#166534';
+    return '<tr><td><b>'+escapeHtml(L.lote)+'</b></td>'
+      + '<td style="font-size:10px">'+escapeHtml(L.ingreso||"—")+'</td>'
+      + '<td><span style="'+badge+';padding:1px 6px;border-radius:4px;font-size:10px">'+escapeHtml(L.estado||"—")+'</span></td>'
+      + '<td style="text-align:right;font-variant-numeric:tabular-nums">'+L.machos+'</td>'
+      + '<td style="text-align:right;font-variant-numeric:tabular-nums">'+L.hembras+'</td>'
+      + '<td style="text-align:right">'+L.ubicaciones.length+'</td></tr>';
+  }).join("");
+  const av=libro.avisos.length
+    ? '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#92400e">'
+      + '<b>'+libro.avisos.length+' discrepancia(s)</b> — el libro y lo registrado no cuadran:'
+      + '<ul style="margin:6px 0 0;padding-left:18px">'+libro.avisos.slice(0,40).map(_madSaldoAvisoHTML).join("")+'</ul>'
+      + (libro.avisos.length>40 ? '<div style="margin-top:4px">…y '+(libro.avisos.length-40)+' más.</div>' : '')
+      + '</div>'
+    : '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#065f46">✅ Sin discrepancias: cada baja registrada tiene ingreso que la explique.</div>';
+  return av
+    + '<h3 style="margin:8px 0 4px;font-size:14px">Por tanque</h3>'
+    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Sala</th><th>Tanque</th><th>Lote(s)</th><th>♂</th><th>♀</th><th>Vivos</th><th>Detalle</th></tr></thead><tbody>'+(filas||'<tr><td colspan="7" style="color:#94a3b8">Sin ingresos registrados.</td></tr>')+'</tbody></table></div>'
+    + '<h3 style="margin:14px 0 4px;font-size:14px">Por lote</h3>'
+    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Lote</th><th>Ingreso</th><th>Estado</th><th>♂</th><th>♀</th><th>Tanques</th></tr></thead><tbody>'+(lotes||'<tr><td colspan="6" style="color:#94a3b8">—</td></tr>')+'</tbody></table></div>';
+}
+async function madSaldoRefrescar(){
+  const c=document.getElementById("ms-body");
+  if(c) c.innerHTML='<div style="padding:14px;color:#64748b;font-size:12px">Leyendo las hojas… puede tardar unos segundos.</div>';
+  try{
+    const libro=await madSaldoCargar(true);
+    if(c) c.innerHTML=_madSaldoHTML(libro);
+  }catch(x){
+    if(c) c.innerHTML='<div style="padding:14px;color:#991b1b;font-size:12px">No se pudieron leer las hojas. Reintenta con 🔄.</div>';
+  }
+}
+function renderMadSaldo(){
+  const fp=document.getElementById("fp-saldo"); if(!fp) return;
+  fp.innerHTML='<div class="fc">'
+    + '<div class="fc-h"><div class="fc-t">⚖️ Maduración · Saldo</div><span class="ssp ssp-mt">'+escapeHtml(today())+'</span></div>'
+    + '<div class="fc-b">'
+    +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:center;gap:8px">'
+    +     '<span style="font-size:16px">ℹ️</span><span>Nadie teclea este saldo: se deduce de los ingresos menos las bajas. Si no cuadra, es que falta o sobra un registro — y eso es lo que se ve abajo.</span>'
+    +   '</div>'
+    +   '<div style="margin-bottom:10px"><button class="btn" type="button" onclick="madSaldoRefrescar()">🔄 Recalcular</button></div>'
+    +   '<div id="ms-body"><div style="padding:14px;color:#64748b;font-size:12px">Pulsa 🔄 Recalcular para leer las hojas.</div></div>'
+    + '</div></div>';
 }
 
 // ── Maduración · Ingreso de un lote (Fase 1, 2026-09-08) ──────────────────────
