@@ -85,14 +85,16 @@ const PINS = {
 // ── Maduración: constantes globales ──
 const MAD_PRE       = "larv4_mad_";
 const MAD_FICHAS    = ["salas","tanques","lotes"];
-const MAD_SALA_OPTS = ["Sala 1","Sala 2","Sala 3","Sala 4","Sala 4A","Sala 4B","Sala 5"];
+// ⚠ Sala 4A y 4B se RETIRARON el 2026-09-08 (quedaron disueltas). Se midió antes:
+// 4A se usó hasta el 2026-09-01 y 4B hasta el 2026-08-29, y sus 57 filas siguen en
+// «Maduración Sala». Quitarlas de aquí las saca del SELECTOR, no del pasado: la
+// lectura del histórico tiene que seguir tolerándolas.
+const MAD_SALA_OPTS = ["Sala 1","Sala 2","Sala 3","Sala 4","Sala 5"];
 const MAD_TANQUES_POR_SALA = {
   "Sala 1":  Array.from({length:15},(_,i)=>i+1),
   "Sala 2":  Array.from({length:6},(_,i)=>i+16),
   "Sala 3":  Array.from({length:6},(_,i)=>i+22),
   "Sala 4":  Array.from({length:6},(_,i)=>i+1),
-  "Sala 4A": Array.from({length:4},(_,i)=>i+1),
-  "Sala 4B": Array.from({length:4},(_,i)=>i+5),
   "Sala 5":  Array.from({length:5},(_,i)=>i+7)
 };
 const MAD_SHEET     = {
@@ -2471,7 +2473,11 @@ function goBack(){
 ══════════════════════════════════════════ */
 const LAB_TABS      = ["algas","bitacora","fotos"];
 const STANDARD_TABS = [...FICHAS,"desinfeccion","fotos","historial","blanco"];
-const MAD_TABS      = ["salas","tanques","lotes","reproductivo","fotos"];
+// «ingreso» va PRIMERA porque es la que da de alta el lote: sin ella las demás fichas
+// no saben qué lote, piscina ni código genético corresponde a cada tanque.
+// ⚠ NO entra en MAD_FICHAS: no es una grilla por día con CRUD local, es un formulario
+// de evento, como «reproductivo».
+const MAD_TABS      = ["ingreso","salas","tanques","lotes","reproductivo","fotos"];
 // Tabs del módulo Biomol — form + historial inline + fotos
 const BIO_TABS      = ["biomol","fotos"];
 // Tabs del módulo As Técnico — form de supervisión + registro de mareas + fotos
@@ -2492,6 +2498,7 @@ const TAB_META = {
   salas:    ["🏠","Salas"],
   tanques:  ["🛢️","Tanques"],
   lotes:    ["📦","Lotes"],
+  ingreso:  ["📥","Ingreso"],
   reproductivo: ["🦐","Reproductivo"],
   biomol:   ["🧬","Biomol"],
   ast:      ["📋","As Técnico"],
@@ -2556,6 +2563,7 @@ function selTab(t){
   if(t==="blanco") renderBlanco();
   if(t==="bitacora") renderBitacora();
   if(MAD_FICHAS.includes(t)) renderMad(t);
+  if(t==="ingreso") renderMadIngreso();
   if(t==="reproductivo") renderMadReproductivo();
   if(t==="biomol") renderBiomol();
   if(t==="ast")    renderAst();
@@ -2931,7 +2939,8 @@ const FICHA_LABELS = {
   salas:"Maduración · Salas",
   tanques:"Maduración · Tanques",
   lotes:"Maduración · Lotes",
-  reproductivo:"Maduración · Reproductivo"
+  reproductivo:"Maduración · Reproductivo",
+  ingreso:"Maduración · Ingreso"
 };
 function renderFicha(fid){
   const fn = {
@@ -5724,6 +5733,312 @@ function renderMad(ficha){
   // Accesibilidad: asocia labels↔inputs después de cada render de
   // Maduración (igual que renderFicha). El flujo CRUD/sync no cambia.
   fixupLabels(document.getElementById("fp-"+ficha));
+}
+
+// ── Maduración · Ingreso de un lote (Fase 1, 2026-09-08) ──────────────────────
+// Registra la ENTRADA de un lote: de qué piscina broodstock y camaronera viene, con
+// qué código genético, y cómo se reparte por salas y tanques.
+//
+// ⚠⚠ ESTA LÓGICA EXISTE DOS VECES A PROPÓSITO: aquí (inline, porque los dos monolitos
+// de Music no tienen módulos ES) y en `src/views/registros/lib/ficha-maduracion-ingreso.schema.js`.
+// `ficha-maduracion-ingreso.paridad.test.js` extrae ESTE bloque, lo ejecuta y exige que
+// produzca el MISMO payload que el módulo. Si tocas una y no la otra, se pone rojo.
+//
+// 🔑 UN LOTE, VARIAS COMPOSICIONES, VARIOS TANQUES. El lote es UNO aunque se reparta
+// entre salas. Dentro puede traer más de una pareja (código genético, piscina), y los
+// operarios sí saben qué tanques recibe cada una: por eso el grano es
+// (lote, composición, sala, tanque).
+const MAD_ING_SHEET = "Maduración Ingreso";
+const MAD_ING_AGUA_OPTS = ["RAS","Agua de playa"];
+// Las cabeceras se DERIVAN de aquí, nunca se teclean aparte: una lista escrita al lado
+// se desincroniza del constructor de filas en silencio y la hoja recibe valores en la
+// columna equivocada sin un solo error.
+const MAD_ING_COLUMNS = [
+  { h:"Fecha", k:"fecha" },
+  { h:"Lote", k:"lote" },
+  { h:"Código genético", k:"codigoGenetico" },
+  { h:"Piscina Broodstock", k:"piscina" },
+  { h:"Camaronera origen", k:"camaronera" },
+  { h:"Sala", k:"sala" },
+  { h:"Tanque", k:"tanque" },
+  { h:"Machos", k:"machos" },
+  { h:"Hembras", k:"hembras" },
+  { h:"Peso promedio machos (g)", k:"pesoMachos" },
+  { h:"Peso promedio hembras (g)", k:"pesoHembras" },
+  { h:"Supervivencia piscina (%)", k:"supervivencia" },
+  { h:"Camarones por m2", k:"camaronesM2" },
+  { h:"Densidad de siembra", k:"densidad" },
+  { h:"Agua", k:"agua" },
+  { h:"ID", k:"id" }
+];
+const MAD_ING_HEADERS = MAD_ING_COLUMNS.map(function(c){ return c.h; });
+
+// Normalización de grafías. En producción ya conviven "Ab" y "AB" como código de lote:
+// dos grafías del mismo valor parten los filtros y duplican filas sin dar síntoma.
+// Normalizando AQUÍ, dos personas que escriben el mismo lote con distinta caja producen
+// la MISMA llave, así que la segunda ACTUALIZA la fila de la primera en vez de clonarla.
+function madIngNormLote(s){ return sanitizeStr(s,40).toUpperCase().replace(/\s+/g,""); }
+function madIngNormCG(s){ return sanitizeStr(s,60).toUpperCase().replace(/\s+/g,""); }
+function madIngSalaTag(sala){
+  const s = sanitizeStr(sala,30);
+  const m = s.match(/(\d+[A-Za-z]*)\s*$/);
+  return m ? "S"+m[1].toUpperCase() : "S"+s.toUpperCase().replace(/\s+/g,"");
+}
+// Llave NATURAL y determinista. El número de tanque se repite entre salas (la 1 y la 4
+// tienen ambas un tanque 1), así que la sala es parte imprescindible de la llave.
+function madIngRowId(lote, cg, sala, tanque){
+  return madIngNormLote(lote)+"-"+madIngNormCG(cg)+"-"+madIngSalaTag(sala)+"-t"+Number(tanque);
+}
+function madIngNum(v){ if(v===""||v==null) return ""; const n=Number(v); return isFinite(n)?n:""; }
+// Entero NO NEGATIVO: un conteo negativo restaría animales que nunca entraron.
+function madIngInt(v){ if(v===""||v==null) return ""; const n=parseInt(v,10); return (isFinite(n)&&n>=0)?n:""; }
+function madIngSumaReparto(rep, campo){
+  return (rep||[]).reduce(function(a,r){ const n=parseInt(r&&r[campo],10); return a+((isFinite(n)&&n>0)?n:0); },0);
+}
+// Reparto por CONTEO, no por capacidad: todavía no existe una tabla de capacidades de
+// tanque, así que esto no puede avisar de sobrecarga; sólo ahorra tecleo.
+function madIngRepartirParejo(total, n){
+  const t=parseInt(total,10), k=parseInt(n,10);
+  if(!isFinite(t)||t<0||!isFinite(k)||k<=0) return [];
+  const base=Math.floor(t/k), resto=t-base*k;
+  const out=[]; for(let i=0;i<k;i++) out.push(base+(i<resto?1:0));
+  return out;
+}
+function madIngBuildRows(model){
+  const m = model||{};
+  const fecha = sanitizeStr(m.fecha,10), lote = madIngNormLote(m.lote);
+  const filas = [];
+  (m.composiciones||[]).forEach(function(comp){
+    const c = comp||{};
+    const cg = madIngNormCG(c.codigoGenetico);
+    (c.reparto||[]).forEach(function(rep){
+      const r = rep||{};
+      const sala = sanitizeStr(r.sala,30), tanque = madIngInt(r.tanque);
+      if(sala===""||tanque==="") return;   // sin ubicación no hay fila que escribir
+      const v = {
+        fecha: fecha, lote: lote, codigoGenetico: cg,
+        piscina: sanitizeStr(c.piscina,60), camaronera: sanitizeStr(c.camaronera,80),
+        sala: sala, tanque: tanque,
+        machos: madIngInt(r.machos), hembras: madIngInt(r.hembras),
+        pesoMachos: madIngNum(c.pesoMachos), pesoHembras: madIngNum(c.pesoHembras),
+        supervivencia: madIngNum(c.supervivencia), camaronesM2: madIngNum(c.camaronesM2),
+        densidad: madIngNum(c.densidad), agua: sanitizeStr(r.agua,20),
+        id: madIngRowId(lote, cg, sala, tanque)
+      };
+      filas.push(MAD_ING_COLUMNS.map(function(col){ return v[col.k]; }));
+    });
+  });
+  return filas;
+}
+function buildMadIngresoPayload(model){
+  return { sheetName: MAD_ING_SHEET, headers: MAD_ING_HEADERS.slice(), rows: madIngBuildRows(model) };
+}
+// Dos niveles, y la diferencia importa: ERROR impide guardar (sólo lo que produciría
+// PÉRDIDA de datos); AVISO deja guardar. Es el criterio que eligió el usuario para el
+// descuadre del fin de ciclo, aplicado igual aquí: bloquear impediría registrar hoy un
+// error que viene de antes.
+function madIngValidar(model){
+  const m = model||{}, errores = [], avisos = [];
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(m.fecha||""))) errores.push("La fecha no es válida.");
+  if(madIngNormLote(m.lote)==="") errores.push("Falta el código de lote.");
+  const comps = m.composiciones||[];
+  if(!comps.length) errores.push("El ingreso no tiene ninguna composición (código genético + piscina).");
+  const vistos = {}, codigos = {};
+  comps.forEach(function(comp, i){
+    const c = comp||{}, cg = madIngNormCG(c.codigoGenetico);
+    const et = cg || ("composición "+(i+1));
+    if(cg==="") errores.push("Falta el código genético de la composición "+(i+1)+".");
+    else if(codigos[cg]) errores.push("El código genético «"+cg+"» está repetido en este ingreso.");
+    else codigos[cg]=1;
+    if(sanitizeStr(c.piscina,60)==="") avisos.push("«"+et+"» no declara piscina broodstock.");
+    const reparto = c.reparto||[];
+    if(!reparto.length) errores.push("«"+et+"» no se repartió en ningún tanque.");
+    reparto.forEach(function(rep){
+      const r = rep||{}, sala = sanitizeStr(r.sala,30), tanque = madIngInt(r.tanque);
+      if(sala===""||tanque==="") return;
+      // ⚠⚠ ESTO EVITA UNA PÉRDIDA SILENCIOSA, no es una molestia de formulario: dos filas
+      // de la MISMA composición en el MISMO tanque generan el MISMO ID y el upsert escribe
+      // la segunda ENCIMA de la primera. Es el defecto que ya se pagó en Traslado.
+      const llave = cg+"|"+madIngSalaTag(sala)+"|"+tanque;
+      if(vistos[llave]) errores.push("«"+et+"» aparece dos veces en "+sala+" tanque "+tanque+". La segunda borraría a la primera.");
+      vistos[llave]=1;
+      const permitidos = MAD_TANQUES_POR_SALA[sala];
+      if(permitidos && permitidos.indexOf(tanque)===-1) avisos.push("El tanque "+tanque+" no es de "+sala+".");
+      if(!permitidos) avisos.push("«"+sala+"» no es una sala conocida.");
+    });
+    ["machos","hembras"].forEach(function(sexo){
+      const dec = parseInt(c[sexo],10);
+      if(!isFinite(dec)) return;
+      const rep = madIngSumaReparto(reparto, sexo);
+      if(rep!==dec) avisos.push("«"+et+"»: se declararon "+dec+" "+sexo+" y se repartieron "+rep+" (diferencia "+(dec-rep)+").");
+    });
+  });
+  return { errores: errores, avisos: avisos };
+}
+
+// ── Maduración · Ingreso · interfaz ──────────────────────────────────────────
+const _MAD_ING_LBL = "display:flex;flex-direction:column;gap:3px;font-size:11px;font-weight:600;color:#475569";
+const _MAD_ING_INP = "padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-weight:400";
+function madIngTanqueOpts(sala, sel){
+  const list = MAD_TANQUES_POR_SALA[sala] || [];
+  return '<option value=""></option>' + list.map(function(t){
+    return '<option value="'+t+'"'+(String(sel)===String(t)?' selected':'')+'>'+t+'</option>';
+  }).join("");
+}
+function madIngSalaOpts(sel){
+  return '<option value=""></option>' + MAD_SALA_OPTS.map(function(s){
+    return '<option value="'+escapeHtml(s)+'"'+(sel===s?' selected':'')+'>'+escapeHtml(s)+'</option>';
+  }).join("");
+}
+function madIngAguaOpts(sel){
+  return MAD_ING_AGUA_OPTS.map(function(a){
+    return '<option value="'+escapeHtml(a)+'"'+(sel===a?' selected':'')+'>'+escapeHtml(a)+'</option>';
+  }).join("");
+}
+function _madIngRepHTML(){
+  return '<tr class="mi-rep">'
+    + '<td><select class="mi-sala" onchange="madIngSalaChange(this)" style="font-size:12px;min-width:86px">'+madIngSalaOpts("")+'</select></td>'
+    + '<td><select class="mi-tanque" style="font-size:12px;min-width:64px">'+madIngTanqueOpts("","")+'</select></td>'
+    + '<td><input class="mi-machos" type="number" min="0" step="1" inputmode="numeric" style="font-size:12px;width:78px"></td>'
+    + '<td><input class="mi-hembras" type="number" min="0" step="1" inputmode="numeric" style="font-size:12px;width:78px"></td>'
+    + '<td><select class="mi-agua" style="font-size:12px;min-width:96px">'+madIngAguaOpts("RAS")+'</select></td>'
+    + '<td><button class="btn" type="button" onclick="madIngDelRep(this)" style="font-size:11px">✕</button></td>'
+    + '</tr>';
+}
+function _madIngCompHTML(){
+  return '<div class="mi-comp" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px;background:#fff">'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
+    +   '<label style="'+_MAD_ING_LBL+'">Código genético<input class="mi-cg" style="'+_MAD_ING_INP+';width:120px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Piscina Broodstock<input class="mi-piscina" style="'+_MAD_ING_INP+';width:120px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Camaronera origen<input class="mi-camaronera" style="'+_MAD_ING_INP+';width:160px"></label>'
+    +   '<button class="btn" type="button" onclick="madIngDelComp(this)" style="font-size:11px">✕ Quitar composición</button>'
+    + '</div>'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
+    +   '<label style="'+_MAD_ING_LBL+'">Machos (total)<input class="mi-tmachos" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:96px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Hembras (total)<input class="mi-thembras" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:96px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Peso prom. ♂ (g)<input class="mi-pmachos" type="number" min="0" step="0.1" style="'+_MAD_ING_INP+';width:96px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Peso prom. ♀ (g)<input class="mi-phembras" type="number" min="0" step="0.1" style="'+_MAD_ING_INP+';width:96px"></label>'
+    + '</div>'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">'
+    +   '<label style="'+_MAD_ING_LBL+'">Supervivencia piscina (%)<input class="mi-superv" type="number" min="0" step="0.1" style="'+_MAD_ING_INP+';width:110px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Camarones por m²<input class="mi-cm2" type="number" min="0" step="0.1" style="'+_MAD_ING_INP+';width:110px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Densidad de siembra<input class="mi-densidad" type="number" min="0" step="0.1" style="'+_MAD_ING_INP+';width:110px"></label>'
+    + '</div>'
+    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr>'
+    +   '<th>Sala</th><th>Tanque</th><th>Machos</th><th>Hembras</th><th>Agua</th><th></th>'
+    + '</tr></thead><tbody class="mi-reps">'+_madIngRepHTML()+'</tbody></table></div>'
+    + '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'
+    +   '<button class="btn" type="button" onclick="madIngAddRep(this)" style="font-size:11px">➕ Tanque</button>'
+    +   '<button class="btn" type="button" onclick="madIngRepartir(this)" style="font-size:11px">⚖️ Repartir parejo</button>'
+    + '</div>'
+    + '</div>';
+}
+function madIngAddComp(){ const c=document.getElementById("mi-comps"); if(c) c.insertAdjacentHTML("beforeend", _madIngCompHTML()); }
+function madIngDelComp(btn){
+  const b=btn.closest(".mi-comp"), c=document.getElementById("mi-comps");
+  if(b && c && c.querySelectorAll(".mi-comp").length>1) b.remove();
+  else toast("Debe quedar al menos una composición.","warn",2500);
+}
+function madIngAddRep(btn){
+  const comp=btn.closest(".mi-comp"); if(!comp) return;
+  comp.querySelector(".mi-reps").insertAdjacentHTML("beforeend", _madIngRepHTML());
+}
+function madIngDelRep(btn){
+  const tr=btn.closest("tr"), tb=btn.closest("tbody");
+  if(tb && tb.querySelectorAll("tr.mi-rep").length>1) tr.remove();
+  else toast("Debe quedar al menos un tanque.","warn",2500);
+}
+// El desplegable de tanque depende de la sala: se recalcula al cambiarla y se conserva
+// el valor si sigue siendo válido en la sala nueva.
+function madIngSalaChange(sel){
+  const tr=sel.closest("tr"); if(!tr) return;
+  const tq=tr.querySelector(".mi-tanque"), antes=tq?tq.value:"";
+  if(tq) tq.innerHTML = madIngTanqueOpts(sel.value, antes);
+}
+function madIngRepartir(btn){
+  const comp=btn.closest(".mi-comp"); if(!comp) return;
+  const reps=comp.querySelectorAll("tr.mi-rep");
+  const tm=comp.querySelector(".mi-tmachos"), th=comp.querySelector(".mi-thembras");
+  const m=madIngRepartirParejo(tm?tm.value:"", reps.length);
+  const h=madIngRepartirParejo(th?th.value:"", reps.length);
+  reps.forEach(function(tr,i){
+    if(m.length){ const e=tr.querySelector(".mi-machos"); if(e) e.value=m[i]; }
+    if(h.length){ const e=tr.querySelector(".mi-hembras"); if(e) e.value=h[i]; }
+  });
+  if(!m.length && !h.length) toast("Escribe primero los totales de machos u hembras.","warn",3000);
+}
+// Lee el DOM y devuelve el modelo. Es la única función que sabe de la maqueta: todo lo
+// demás trabaja sobre el modelo, que es lo que la prueba de paridad puede ejercer.
+function madIngCollect(){
+  const g=function(el,sel){ const e=el.querySelector(sel); return e?e.value:""; };
+  const fEl=document.getElementById("mi-fecha"), lEl=document.getElementById("mi-lote");
+  const comps=[];
+  document.querySelectorAll("#mi-comps .mi-comp").forEach(function(c){
+    const reparto=[];
+    c.querySelectorAll("tr.mi-rep").forEach(function(tr){
+      reparto.push({ sala:g(tr,".mi-sala"), tanque:g(tr,".mi-tanque"), machos:g(tr,".mi-machos"), hembras:g(tr,".mi-hembras"), agua:g(tr,".mi-agua") });
+    });
+    comps.push({
+      codigoGenetico:g(c,".mi-cg"), piscina:g(c,".mi-piscina"), camaronera:g(c,".mi-camaronera"),
+      machos:g(c,".mi-tmachos"), hembras:g(c,".mi-thembras"),
+      pesoMachos:g(c,".mi-pmachos"), pesoHembras:g(c,".mi-phembras"),
+      supervivencia:g(c,".mi-superv"), camaronesM2:g(c,".mi-cm2"), densidad:g(c,".mi-densidad"),
+      reparto:reparto
+    });
+  });
+  return { fecha:fEl?fEl.value:"", lote:lEl?lEl.value:"", composiciones:comps };
+}
+function _madIngPinta(res, filas){
+  const box=document.getElementById("mi-report"); if(!box) return;
+  let h="";
+  if(res.errores.length) h += '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#991b1b"><b>No se puede guardar:</b><ul style="margin:4px 0 0;padding-left:18px">'+res.errores.map(function(e){ return "<li>"+escapeHtml(e)+"</li>"; }).join("")+"</ul></div>";
+  if(res.avisos.length) h += '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#92400e"><b>Avisos (se puede guardar igual):</b><ul style="margin:4px 0 0;padding-left:18px">'+res.avisos.map(function(a){ return "<li>"+escapeHtml(a)+"</li>"; }).join("")+"</ul></div>";
+  if(!res.errores.length) h += '<div style="font-size:12px;color:#475569">Se escribirán <b>'+filas+'</b> fila(s) en «'+escapeHtml(MAD_ING_SHEET)+'».</div>';
+  box.innerHTML=h;
+}
+function madIngRevisar(){
+  const model=madIngCollect();
+  _madIngPinta(madIngValidar(model), madIngBuildRows(model).length);
+}
+async function madIngGuardar(){
+  const model=madIngCollect();
+  const res=madIngValidar(model);
+  const payload=buildMadIngresoPayload(model);
+  _madIngPinta(res, payload.rows.length);
+  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
+  if(!payload.rows.length){ toast("No hay ningún tanque con ubicación que guardar.","warn",4000); return; }
+  toast("Enviando ingreso del lote "+madIngNormLote(model.lote)+"…","info",2200);
+  const _t={};
+  const ok=await postPayload(payload, gasUrl(), _t);
+  if(ok){ toast("✅ Ingreso registrado · "+payload.rows.length+" fila(s)","ok",5000); return; }
+  // ⚠⚠ NO basta con `if(ok) … else error`: postPayload devuelve false TAMBIÉN cuando el
+  // envío quedó ENCOLADO, y decirle «no se pudo enviar» a alguien cuyo ingreso ya está a
+  // salvo le empuja a registrarlo dos veces. `_syncNotOkUI` es quien sabe distinguir
+  // «encolado» de «error de verdad». Es el invariante H1, y esta ficha lo incumplió al
+  // nacer: lo cazó `h1-ast-una.test.js` antes de que llegara a producción.
+  _syncNotOkUI(_t.outcome, "No se pudo registrar el ingreso", null, _t.gasMessage);
+}
+function renderMadIngreso(){
+  const fp=document.getElementById("fp-ingreso"); if(!fp) return;
+  const todayStr=today();
+  fp.innerHTML='<div class="fc">'
+    + '<div class="fc-h"><div class="fc-t">📥 Maduración · Ingreso</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
+    + '<div class="fc-b">'
+    +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:center;gap:8px">'
+    +     '<span style="font-size:16px">ℹ️</span><span>Un lote puede traer varias parejas de código genético y piscina, y repartirse entre varias salas. El lote es UNO para todas.</span>'
+    +   '</div>'
+    +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha de ingreso<input type="date" id="mi-fecha" value="'+escapeHtml(todayStr)+'" style="'+_MAD_ING_INP+'"></label>'
+    +     '<label style="'+_MAD_ING_LBL+'">Lote<input id="mi-lote" placeholder="AB" style="'+_MAD_ING_INP+';width:100px;text-transform:uppercase"></label>'
+    +   '</div>'
+    +   '<div id="mi-comps">'+_madIngCompHTML()+'</div>'
+    +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
+    +     '<button class="btn" type="button" onclick="madIngAddComp()">➕ Composición</button>'
+    +     '<button class="btn" type="button" onclick="madIngRevisar()">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" style="font-weight:700" onclick="madIngGuardar()">☁️ Guardar y sincronizar</button>'
+    +   '</div>'
+    +   '<div id="mi-report" style="margin-top:12px"></div>'
+    + '</div></div>';
 }
 
 // ── Maduración · Registro reproductivo (desoves/mortalidades por lote de Trovan) ──
@@ -15502,6 +15817,9 @@ const ALLOWED = [
   "Lab_Algas",
   "Maduración Sala","Maduración Tanques","Maduración Lotes",
   "Maduración MATRIZ","Maduración Bitácora","Maduración Transferencias",
+  // Registro operativo de Maduración (2026-09-08). Llave por columna "ID", no
+  // compuesta por posición: ver isMadId en doPost.
+  "Maduración Ingreso","Maduración Movimientos","Maduración Fin de Ciclo",
   "BIOMOL",
   "Registro_Supervisión",
   "Registro_Desinfección",
@@ -15523,7 +15841,12 @@ const LIMITS = {
   // y el tope estaba EXACTAMENTE en 8: margen cero, la peor cifra posible.
   control: { maxRows: 300, maxCols: 12 },
   algas:   { maxRows: 500, maxCols: 28 },
-  mad:     { maxRows: 1000, maxCols: 25 },
+  // Subido de 25 a 32 el 2026-09-08, al entrar el registro operativo. La hoja mas
+  // ancha prevista es "Maduración Sala" con 21 columnas: con el tope en 25 el margen
+  // quedaba en 4, y ese margen justo es exactamente el error que ya se pago dos
+  // veces (Biomol con 20, AsT con 25). Desde el 2026-08-30 un payload mas ancho se
+  // RECHAZA entero, asi que el margen es lo que evita llegar siquiera al rechazo.
+  mad:     { maxRows: 1000, maxCols: 32 },
   // Biomol: 23 columnas desde 2026-08-23 (las 19 anteriores MENOS la pareja
   // genérica, que se retiró, MÁS el Ct y las copias de WSSV, IHHNV y AHPND/EMS).
   // maxCols subió de 20 a 32 con holgura, y el despliegue lo lleva desde el 2026-08-24.
@@ -15688,6 +16011,16 @@ function doPost(e) {
     else if (payload.sheetName === "Maduración Bitácora")       madKeyCols = [0,1,2]; // Trovan + Fecha + Tipo
     else if (payload.sheetName === "Maduración Transferencias") madKeyCols = [0,3];   // TR-ID + Trovan
     var isMad   = madKeyCols !== null;
+    // Maduración operativa (2026-09-08): estas NO usan clave compuesta por posición.
+    // Llevan una columna "ID" determinista en la ÚLTIMA posición y van por
+    // upsertAstRows, que la localiza POR CABECERA y cae a la última columna si la
+    // cabecera estuviera en blanco. Con el ID al final las dos rutas coinciden, que
+    // es la leccion del defecto del AsT del 2026-08-15: con el ID en medio, el
+    // respaldo apuntaba a otra columna y cada sync ANADIA una fila en vez de
+    // reemplazarla.
+    var isMadId = payload.sheetName === "Maduración Ingreso"
+               || payload.sheetName === "Maduración Movimientos"
+               || payload.sheetName === "Maduración Fin de Ciclo";
     // Columna Trovan ID (0-indexed) por hoja: se fuerza a formato TEXTO ("@") al
     // escribir, así Sheets NO reinterpreta el código como notación científica ni
     // le quita ceros a la izquierda (es un identificador, no un número).
@@ -15703,6 +16036,7 @@ function doPost(e) {
     var madNumCol = payload.sheetName === "Maduración MATRIZ" ? 0 : -1;
     var limits  = isAlgas  ? LIMITS.algas
                 : isMad    ? LIMITS.mad
+                : isMadId  ? LIMITS.mad
                 : isBiomol ? LIMITS.biomol
                 : isAst    ? LIMITS.ast
                 : isTras   ? LIMITS.tras
@@ -15832,6 +16166,7 @@ function doPost(e) {
     // determinista (viaje-c<camión>-r<revisión>-t<tina>), así que el camión puede
     // sincronizar en cada parada sin duplicar una sola fila.
     else if (isTras)   result = upsertAstRows(ws, rows);
+    else if (isMadId)  result = upsertAstRows(ws, rows);
     // Registro_Desinfección: upsert por clave compuesta Fecha+Módulo+Tipo de
     // Registro+Categoría+Elemento → re-sincronizar no duplica; editar Estado /
     // Observaciones / Fecha Elemento actualiza la misma fila.
