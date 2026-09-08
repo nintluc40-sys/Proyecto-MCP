@@ -10,8 +10,8 @@
        + Ingreso           (Maduración Ingreso)
        − Mortalidad        (Maduración Tanques)
        − Descarte          (Maduración Tanques)
-       ± Movimientos       (Maduración Movimientos · Fase 3)
-       − Fin de ciclo      (Maduración Fin de Ciclo · Fase 4)
+       ± Movimientos       (Maduración Movimientos · Fase 3, 2026-09-08) ✔
+       − Fin de ciclo      (Maduración Fin de Ciclo · Fase 4B, 2026-09-08) ✔
 
    Un saldo tecleado se equivoca y nadie se entera. Un saldo deducido no puede
    mentir sin que la resta lo cante: un olvido o una cifra mal escrita separan el
@@ -43,6 +43,9 @@ export const ESTADO_PRODUCCION = 'Producción';
 /** Una sala con lotes en estados distintos. El usuario confirmó que ocurre: no se
  *  elige uno de los dos y se esconde el otro — se dice que hay de las dos cosas. */
 export const ESTADO_MIXTO = 'Mixto';
+/** Un lote al que se le registró un cierre TOTAL. Se distingue de «0 vivos» a propósito:
+ *  un lote cerrado está terminado, uno a cero puede ser un descuadre. */
+export const ESTADO_CERRADO = 'Cerrado';
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const ent = (v) => {
@@ -104,21 +107,43 @@ function nuevaPos(sala, tanque, lote, cg) {
  *  ⚠ El saldo se detiene en 0 y el sobrante se cuenta aparte en vez de dejarlo
  *  negativo. Un «−5 vivos» en pantalla no significa nada para quien lo lee; un
  *  «0 vivos y 5 muertes sin explicar» es exactamente la señal que se busca. */
-function descontar(posiciones, sexo, cantidad) {
+/** Saca `cantidad` de las posiciones dadas, repartida en proporción al sexo, y devuelve
+ *  QUÉ se sacó de cada una además del déficit.
+ *
+ *  ⚠ Existe porque un MOVIMIENTO necesita las partes: lo que sale del tanque de origen
+ *  tiene que llegar al de destino conservando su lote y su código genético. Una baja sólo
+ *  necesita el déficit, y por eso `descontar` es una fachada de ésta — NO una segunda
+ *  implementación. Dos cañerías con la misma aritmética habrían divergido en silencio, que
+ *  es exactamente lo que este proyecto ya tiene escrito que no vuelve a hacer. */
+function tomarDe(posiciones, sexo, cantidad) {
   const total = ent(cantidad);
-  if (total === 0) return 0;
+  const nada = posiciones.map(() => 0);
+  if (total === 0) return { partes: nada, sobra: 0 };
   const pesos = posiciones.map((p) => p[sexo]);
   const disponible = pesos.reduce((a, b) => a + b, 0);
-  if (disponible === 0) return total;                 // nada a lo que atribuir
+  if (disponible === 0) return { partes: nada, sobra: total };   // nada a lo que atribuir
   const aplicable = Math.min(total, disponible);
   const partes = repartirProporcional(aplicable, pesos);
   posiciones.forEach((p, i) => { p[sexo] -= partes[i]; });
-  return total - aplicable;
+  return { partes, sobra: total - aplicable };
 }
 
-/* Prioridad dentro de un mismo día. Un animal que entra hoy puede morir hoy, así que
-   el ingreso se aplica antes que la baja. */
-const PRIORIDAD = { ingreso: 0, tanque: 1 };
+function descontar(posiciones, sexo, cantidad) {
+  return tomarDe(posiciones, sexo, cantidad).sobra;
+}
+
+/* Prioridad dentro de un mismo día, y las tres posiciones están razonadas:
+     ingreso (0)     un animal que entra hoy puede moverse hoy y puede morir hoy;
+     movimiento (1)  el que llega hoy a un tanque puede morir hoy EN ESE tanque;
+     tanque (2)      las bajas se registran por tanque al cerrar el día.
+   🔑 Es el único orden que permite las dos cosas a la vez. Con el movimiento DESPUÉS de
+   la baja, los animales que llegaron hoy no podrían aparecer en la mortalidad de hoy de su
+   tanque nuevo, y esa baja se repartiría entre los que ya estaban — números plausibles y
+   equivocados, la misma familia de error que la lección M01. */
+/* El cierre va el ÚLTIMO: es lo que le pasa a un lote al final, después de que hayan
+   entrado, se hayan movido y se hayan contado las bajas del día. Ponerlo antes haría que
+   una baja registrada hoy se repartiera sobre animales que ya se habían ido. */
+const PRIORIDAD = { ingreso: 0, movimiento: 1, tanque: 2, fin: 3 };
 
 /** Funde TODAS las fuentes en un solo flujo cronológico.
  *
@@ -134,14 +159,16 @@ const PRIORIDAD = { ingreso: 0, tanque: 1 };
 function flujo(fuentes) {
   const ev = [];
   for (const r of fuentes.ingresos || []) ev.push({ fecha: txt(r.Fecha), tipo: 'ingreso', r });
+  for (const r of fuentes.movimientos || []) ev.push({ fecha: txt(r.Fecha), tipo: 'movimiento', r });
   for (const r of fuentes.tanques || []) ev.push({ fecha: txt(r.Fecha), tipo: 'tanque', r });
+  for (const r of fuentes.cierres || []) ev.push({ fecha: txt(r.Fecha), tipo: 'fin', r });
   return ev.sort((a, b) => a.fecha.localeCompare(b.fecha) || (PRIORIDAD[a.tipo] - PRIORIDAD[b.tipo]));
 }
 
 /**
  * Construye el libro a partir de las filas ya leídas de las hojas.
  *
- * @param {{ingresos?:object[], tanques?:object[]}} fuentes filas tal como las devuelve
+ * @param {{ingresos?:object[], movimientos?:object[], tanques?:object[], cierres?:object[]}} fuentes filas tal como las devuelve
  *        `?p=rows` (objetos con las cabeceras por clave).
  * @param {{hoy?:string}} [opts] fecha de referencia para el estado de cuarentena.
  * @returns {{posiciones, tanques, lotes, avisos, hasta}}
@@ -180,9 +207,118 @@ export function construirLibro(fuentes, opts) {
       p.machos += ent(r.Machos);
       p.hembras += ent(r.Hembras);
 
-      if (!lotes.has(lote)) lotes.set(lote, { lote, ingreso: fecha, copulaDesde: null });
+      if (!lotes.has(lote)) lotes.set(lote, { lote, ingreso: fecha, copulaDesde: null, cerrado: null });
       const L = lotes.get(lote);
-      if (!L.ingreso || fecha < L.ingreso) L.ingreso = fecha;
+      /* DECISIÓN DEL USUARIO (2026-09-08): un SEGUNDO ingreso REINICIA la cuarentena, así
+         que manda la fecha MÁS RECIENTE. Antes se guardaba la MENOR.
+         Y hay que BORRAR la cópula anterior, o la decisión no haría nada en el caso común:
+         un lote que ya copuló arrastraría un copulaDesde viejo y estadoDeLote lo devolvería
+         a Producción el mismo día en que llegan los animales nuevos. Sólo una cópula DESDE
+         el último ingreso vuelve a romperla; el flujo va en orden cronológico, así que con
+         borrarla aquí basta.
+         Dos filas del MISMO día no reinician nada: la comparación es estricta. */
+      if (!L.ingreso || fecha > L.ingreso) { L.ingreso = fecha; L.copulaDesde = null; }
+      continue;
+    }
+
+    /* ── MOVIMIENTOS (Fase 3) ────────────────────────────────
+       Un tramo saca animales de un tanque y los mete en otro. Lo MEDIDO es cuántos se
+       movieron; DE QUÉ LOTE eran es una deducción, y por eso se calcula en vez de pedirse:
+       se reparte en proporción a los vivos que cada lote tiene en el origen ESE DÍA —la
+       misma regla que la mortalidad, y por el mismo motivo: en un tanque mezclado nadie
+       sabe de qué lote era cada animal—.
+       🔑 Lo que sale LLEGA conservando lote y código genético. Sin eso, el destino tendría
+       animales sin dueño y el saldo por lote dejaría de cuadrar con el saldo por tanque. */
+    if (tipo === 'movimiento') {
+      const sO = txt(r['Sala origen']);
+      const tO = ent(r['Tanque origen']);
+      const sD = txt(r['Sala destino']);
+      const tD = ent(r['Tanque destino']);
+      const pedido = { machos: ent(r.Machos), hembras: ent(r.Hembras) };
+      if (!sO || !tO || !sD || !tD) {
+        anota(fecha, 'movimiento-incompleto',
+          'Un movimiento sin origen o sin destino completos no entra en el libro.',
+          { salaOrigen: sO, tanqueOrigen: tO, salaDestino: sD, tanqueDestino: tD });
+        continue;
+      }
+      if (ubicKey(sO, tO) === ubicKey(sD, tD)) {
+        anota(fecha, 'movimiento-circular',
+          'Un movimiento de ' + sO + ' tanque ' + tO + ' a sí mismo no mueve nada.',
+          { sala: sO, tanque: tO });
+        continue;
+      }
+      const ukO = ubicKey(sO, tO);
+      const origen = [...pos.values()].filter((p) => ubicKey(p.sala, p.tanque) === ukO);
+      if (!origen.length) {
+        if (pedido.machos || pedido.hembras) {
+          anota(fecha, 'movimiento-sin-origen',
+            'Se movieron animales desde ' + sO + ' tanque ' + tO + ' y ningún ingreso explica qué había ahí.',
+            { sala: sO, tanque: tO, machos: pedido.machos, hembras: pedido.hembras });
+        }
+        continue;
+      }
+      for (const sexo of ['machos', 'hembras']) {
+        const { partes, sobra } = tomarDe(origen, sexo, pedido[sexo]);
+        origen.forEach((p, i) => {
+          if (!partes[i]) return;
+          const k = posKey(sD, tD, p.lote, p.codigoGenetico);
+          if (!pos.has(k)) pos.set(k, nuevaPos(sD, tD, p.lote, p.codigoGenetico));
+          pos.get(k)[sexo] += partes[i];
+        });
+        if (sobra > 0) {
+          anota(fecha, 'deficit-movimiento',
+            'Se movieron ' + sobra + ' ' + sexo + ' de más desde ' + sO + ' tanque ' + tO +
+            ' de los que quedaban vivos: esos no llegaron al destino.',
+            { sala: sO, tanque: tO, sexo, cantidad: sobra });
+        }
+      }
+      continue;
+    }
+
+    /* ── FIN DE CICLO (Fase 4B) ───────────────────────────────
+       Se cierra un LOTE, no un tanque (decisión del usuario): lo que sale se descuenta de
+       cada tanque donde el lote esté, en proporción a lo que tenga vivo ese día. El
+       operario no enumera tanques, igual que no los enumera al desovar.
+       🔑🔑 Y en un cierre TOTAL, lo que el libro creía que quedaba y NO salió es LA
+       DIFERENCIA: se anota con su fecha y el lote se pone a cero. No se esconde ni se
+       bloquea — «la diferencia ES el producto», que es la regla del módulo entero. */
+    if (tipo === 'fin') {
+      const lote = txt(r.Lote);
+      const esTotal = txt(r.Tipo) === 'Total';
+      const pedido = { machos: ent(r.Machos), hembras: ent(r.Hembras) };
+      if (!lote) {
+        anota(fecha, 'cierre-incompleto', 'Un cierre sin lote no entra en el libro.');
+        continue;
+      }
+      const posLote = [...pos.values()].filter((p) => p.lote === lote);
+      if (!posLote.length) {
+        anota(fecha, 'cierre-sin-lote',
+          'Se cerró el lote ' + lote + ' y ningún ingreso explica dónde estaba.',
+          { lote, machos: pedido.machos, hembras: pedido.hembras });
+        continue;
+      }
+      for (const sexo of ['machos', 'hembras']) {
+        const { sobra } = tomarDe(posLote, sexo, pedido[sexo]);
+        if (sobra > 0) {
+          anota(fecha, 'deficit-cierre',
+            'Del lote ' + lote + ' salieron ' + sobra + ' ' + sexo + ' de más de los que el libro tenía vivos.',
+            { lote, sexo, cantidad: sobra });
+        }
+      }
+      if (esTotal) {
+        for (const sexo of ['machos', 'hembras']) {
+          const resto = posLote.reduce((a, p) => a + p[sexo], 0);
+          if (resto > 0) {
+            anota(fecha, 'diferencia-cierre',
+              'Al cerrar el lote ' + lote + ' el libro contaba ' + resto + ' ' + sexo +
+              ' que no salieron. Esa diferencia se anota y el lote queda a cero.',
+              { lote, sexo, cantidad: resto });
+            posLote.forEach((p) => { p[sexo] = 0; });
+          }
+        }
+        const L = lotes.get(lote);
+        if (L && (!L.cerrado || fecha > L.cerrado)) L.cerrado = fecha;
+      }
       continue;
     }
 
@@ -219,7 +355,8 @@ export function construirLibro(fuentes, opts) {
     }
 
     /* La CÓPULA rompe la cuarentena: es la señal real de que dejó de estarlo, antes de
-       que se cumplan los 15 días. Se apunta la primera fecha por lote. */
+       que se cumplan los 15 días. Se apunta la primera DESDE EL ÚLTIMO INGRESO: un ingreso
+       nuevo la borra, porque reinicia la cuarentena (decisión del usuario, 2026-09-08). */
     if (ent(r['Cópulas']) > 0) {
       for (const p of enTanque) {
         const L = lotes.get(p.lote);
@@ -242,7 +379,7 @@ export function construirLibro(fuentes, opts) {
 
     if (!porLote.has(p.lote)) {
       const L = lotes.get(p.lote) || { lote: p.lote, ingreso: '', copulaDesde: null };
-      porLote.set(p.lote, { lote: p.lote, ingreso: L.ingreso, copulaDesde: L.copulaDesde, machos: 0, hembras: 0, ubicaciones: [] });
+      porLote.set(p.lote, { lote: p.lote, ingreso: L.ingreso, copulaDesde: L.copulaDesde, cerrado: L.cerrado || null, machos: 0, hembras: 0, ubicaciones: [] });
     }
     const Lo = porLote.get(p.lote);
     Lo.machos += p.machos;
@@ -269,12 +406,18 @@ export function sumarDias(fecha, dias) {
   return d.toISOString().slice(0, 10);
 }
 
-/** Estado de un lote en una fecha: Cuarentena hasta cumplir los 15 días desde su
- *  ingreso, o hasta que se le registre una cópula — lo que ocurra ANTES. */
+/** Estado de un lote en una fecha: Cuarentena hasta cumplir los 15 días desde su ÚLTIMO
+ *  ingreso, o hasta que se le registre una cópula POSTERIOR a ese ingreso — lo que ocurra
+ *  ANTES. Un segundo ingreso reinicia el plazo y anula la cópula previa: los animales que
+ *  acaban de llegar no quedan certificados por una cópula de los que ya estaban. */
 export function estadoDeLote(lote, fecha) {
   const L = lote || {};
   const hoy = txt(fecha);
   if (!L.ingreso || !hoy) return '';
+  /* Va PRIMERO: un lote cerrado ya no está en cuarentena ni en producción, está terminado.
+     Y se distingue de «0 vivos» a propósito — un cero puede ser un descuadre; un cierre es
+     una decisión que alguien registró. */
+  if (L.cerrado && L.cerrado <= hoy) return ESTADO_CERRADO;
   if (L.copulaDesde && L.copulaDesde <= hoy) return ESTADO_PRODUCCION;
   return hoy < sumarDias(L.ingreso, CUARENTENA_DIAS) ? ESTADO_CUARENTENA : ESTADO_PRODUCCION;
 }

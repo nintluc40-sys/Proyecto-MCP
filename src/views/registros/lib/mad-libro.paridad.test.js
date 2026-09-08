@@ -89,10 +89,59 @@ const tq = (Fecha, Sala, Tanque, extra = {}) => Object.assign({
   'Cópulas': 0,
 }, extra);
 
+const fin = (Fecha, Lote, Tipo, Machos, Hembras) => ({
+  Fecha, Lote, Tipo, Motivo: 'Pedido', Destino: 'Chongón', Machos, Hembras, Observaciones: '',
+});
+
+const mov = (Fecha, sO, tO, sD, tD, Machos, Hembras) => ({
+  Fecha, Tipo: 'Transferencia',
+  'Sala origen': sO, 'Tanque origen': tO,
+  'Sala destino': sD, 'Tanque destino': tD,
+  Machos, Hembras, 'Agua destino': 'RAS', Motivo: 'Mezcla de lotes', Observaciones: '',
+});
+
 /* Cada escenario ejerce una rama distinta. Un fixture único no distinguiría una
    implementación correcta de una que se dejó un caso — y aquí «dejarse un caso» es
    exactamente lo que produce cifras plausibles y falsas. */
 const ESCENARIOS = {
+  /* ── Fase 3 · MOVIMIENTOS ─────────────────────────────────
+     Cuatro escenarios, y no por completismo: la lógica del movimiento vive DOS veces
+     (módulo ES y bloque inline del monolito) y cada rama que no se ejerza aquí es una
+     divergencia que puede vivir meses sin dar síntoma. Ya pasó con el GRUPO del Ingreso:
+     el banco de paridad metió la divergencia y la paridad no la vio porque ningún fixture
+     la ejercía. */
+  'movimiento simple entre dos tanques': {
+    ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 60)],
+    movimientos: [mov('2026-01-05', 'Sala 1', 1, 'Sala 2', 16, 40, 20)],
+    tanques: [],
+  },
+  'movimiento desde un tanque MEZCLADO (reparto proporcional)': {
+    ingresos: [
+      ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 150, 0),
+      ing('2026-01-01', 'BC', 'CG2', 'Sala 1', 1, 50, 0),
+    ],
+    movimientos: [mov('2026-01-05', 'Sala 1', 1, 'Sala 2', 16, 120, 0)],
+    tanques: [],
+  },
+  'movimiento con DÉFICIT y otro sin origen': {
+    ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 0)],
+    movimientos: [
+      mov('2026-01-05', 'Sala 1', 1, 'Sala 2', 16, 25, 0),
+      mov('2026-01-06', 'Sala 3', 22, 'Sala 5', 7, 8, 8),
+    ],
+    tanques: [],
+  },
+  'agrupación: dos orígenes a un mismo destino, y baja el mismo día': {
+    ingresos: [
+      ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 60, 40),
+      ing('2026-01-01', 'BC', 'CG2', 'Sala 1', 2, 30, 20),
+    ],
+    movimientos: [
+      mov('2026-01-05', 'Sala 1', 1, 'Sala 2', 16, 30, 20),
+      mov('2026-01-05', 'Sala 1', 2, 'Sala 2', 16, 15, 10),
+    ],
+    tanques: [tq('2026-01-05', 'Sala 2', 16, { 'Machos muertos': 5, 'Cópulas': 2 })],
+  },
   'ingreso simple': {
     ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 200)],
     tanques: [],
@@ -162,6 +211,47 @@ const ESCENARIOS = {
     ingresos: [ing('2026-01-01', 'AB', 'CG1', '', 0, 100, 0)],
     tanques: [],
   },
+  /* 2026-09-08 · el reinicio de cuarentena por segundo ingreso, con una cópula previa que
+     deja de contar. Entra aquí porque la regla vive DOS veces y una divergencia silenciosa
+     entre monolito y módulo daría estados sanitarios distintos en la misma pantalla. */
+  'segundo ingreso: reinicia la cuarentena y anula la cópula previa': {
+    ingresos: [
+      ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 20),
+      ing('2026-01-20', 'AB', 'CG2', 'Sala 1', 1, 30, 10),
+    ],
+    tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Cópulas': 4 })],
+  },
+  /* ── Fase 4B · FIN DE CICLO ───────────────────────────────
+     Por lo mismo que los de movimientos: la lógica del cierre vive DOS veces y cada rama
+     que no se ejerza aquí es una divergencia que puede vivir meses sin síntoma. Ya pasó
+     dos veces el mismo día —el GRUPO del Ingreso y el tramo a medias de Movimientos—, las
+     dos cazadas por el banco y no por la paridad. */
+  'cierre PARCIAL repartido entre dos tanques': {
+    ingresos: [
+      ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 150, 0),
+      ing('2026-01-01', 'AB', 'CG1', 'Sala 2', 16, 50, 0),
+    ],
+    cierres: [fin('2026-01-05', 'AB', 'Parcial', 60, 0)],
+    tanques: [],
+  },
+  'cierre TOTAL con diferencia, y el lote queda cerrado': {
+    ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 40)],
+    cierres: [fin('2026-01-05', 'AB', 'Total', 90, 40)],
+    tanques: [],
+  },
+  'cierre con déficit y otro de un lote que no existe': {
+    ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 0)],
+    cierres: [
+      fin('2026-01-05', 'AB', 'Parcial', 25, 0),
+      fin('2026-01-06', 'ZZ', 'Total', 5, 5),
+    ],
+    tanques: [],
+  },
+  'cierre el mismo día que las bajas (fija el orden)': {
+    ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 0)],
+    cierres: [fin('2026-01-05', 'AB', 'Total', 95, 0)],
+    tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Machos muertos': 5 })],
+  },
   'vacío': { ingresos: [], tanques: [] },
 };
 
@@ -181,6 +271,22 @@ describe('Libro · el mismo saldo, posición a posición', () => {
     const mezcla = construirLibro(ESCENARIOS['tanque mezclado, reparto al saldo vivo'], { hoy: HOY });
     expect(mezcla.lotes.get('AB').machos).toBe(120);
     expect(mezcla.lotes.get('BC').machos).toBe(40);
+    /* Fase 3: sin esto, comparar dos libros que no movieron nada pasaría siempre. */
+    const mezcla3 = construirLibro(ESCENARIOS['movimiento desde un tanque MEZCLADO (reparto proporcional)'], { hoy: HOY });
+    expect(mezcla3.tanques.get('Sala 2|16').machos).toBe(120);
+    expect(mezcla3.tanques.get('Sala 1|1').machos).toBe(80);
+    expect(construirLibro(ESCENARIOS['movimiento con DÉFICIT y otro sin origen'], { hoy: HOY }).avisos).toHaveLength(2);
+    const agr = construirLibro(ESCENARIOS['agrupación: dos orígenes a un mismo destino, y baja el mismo día'], { hoy: HOY });
+    expect(agr.tanques.get('Sala 2|16').machos).toBe(40);   // 30 + 15 − 5 muertos
+
+    /* Fase 4B: sin esto, comparar dos libros que no cerraron nada pasaría siempre. */
+    const parc = construirLibro(ESCENARIOS['cierre PARCIAL repartido entre dos tanques'], { hoy: HOY });
+    expect(parc.tanques.get('Sala 1|1').machos).toBe(105);
+    const tot = construirLibro(ESCENARIOS['cierre TOTAL con diferencia, y el lote queda cerrado'], { hoy: HOY });
+    expect(tot.avisos.filter((a) => a.tipo === 'diferencia-cierre')).toHaveLength(1);
+    expect(tot.tanques.get('Sala 1|1').machos).toBe(0);
+    expect(construirLibro(ESCENARIOS['cierre con déficit y otro de un lote que no existe'], { hoy: HOY }).avisos).toHaveLength(2);
+
     expect(construirLibro(ESCENARIOS['déficit: más bajas que vivos'], { hoy: HOY }).avisos).toHaveLength(1);
     expect(construirLibro(ESCENARIOS['bajas sin ingreso que las explique'], { hoy: HOY }).avisos).toHaveLength(1);
   });
@@ -255,8 +361,29 @@ describe('Libro · la vista tiene DÓNDE pintarse', () => {
     expect(tabs.filter((t) => !shell.includes('id="fp-' + t + '"'))).toEqual([]);
   });
 
-  it('lee las dos hojas que el libro necesita', () => {
-    expect(api.MAD_LIBRO_SHEETS).toEqual({ ingreso: 'Maduración Ingreso', tanques: 'Maduración Tanques' });
+  it('lee las CUATRO hojas que el libro necesita', () => {
+    /* Eran dos hasta la Fase 3, tres con Movimientos y cuatro con Fin de Ciclo. Cada una
+       entra como fuente de pleno derecho: si alguna se cayera de aquí, el libro seguiría
+       construyéndose —y daría saldos equivocados sin un solo aviso, porque esos eventos
+       simplemente no existirían para él. Es el saldo entero: +ingreso −bajas ±movimientos
+       −fin de ciclo. */
+    expect(api.MAD_LIBRO_SHEETS).toEqual({
+      ingreso: 'Maduración Ingreso',
+      movimientos: 'Maduración Movimientos',
+      tanques: 'Maduración Tanques',
+      cierres: 'Maduración Fin de Ciclo',
+    });
+  });
+
+  it('las tres se piden Y las tres se cuentan entre las que pueden faltar', () => {
+    /* El defecto A1 de la auditoría del 09-08 fue justo éste con dos hojas: una que no se
+       podía leer se trataba como vacía y la vista cantaba «sin discrepancias». Con tres
+       fuentes el riesgo es el mismo, así que se exige que cada una aparezca en las dos
+       listas: la de lectura y la de fallos. */
+    for (const clave of ['ingreso', 'movimientos', 'tanques', 'cierres']) {
+      expect(src).toContain('await _reproEnsureSheet(MAD_LIBRO_SHEETS.' + clave + ', null);');
+      expect(src).toContain('if(!_madHojaLeida(MAD_LIBRO_SHEETS.' + clave + ')) fallos.push(MAD_LIBRO_SHEETS.' + clave + ');');
+    }
   });
 
   it('la lectura REUTILIZA la cañería que ya existe, no fabrica otra', () => {
@@ -297,5 +424,17 @@ describe('Libro · lo que encontró la auditoría del 2026-09-08', () => {
   it('A3 · volver a la pestaña de Saldo no tira lo ya calculado', () => {
     // Recalcular cuesta una lectura que en este GAS se midió entre 2 y 52 s.
     expect(src).toContain('if(fp.querySelector("#ms-body")) return;');
+  });
+
+  it('D · Maduración abre en «Ingreso», no en «Salas» — decisión del usuario, 09-08', () => {
+    /* Estructural por el mismo motivo que las tres de arriba: la pestaña inicial se fija
+       dentro de `renderAll`, que necesita el monolito entero y un documento.
+       🔑 Y hasta hoy NADA la vigilaba: era la decisión 13a del punto de guardado, tomada
+       sin confirmar y sin una sola prueba encima. Ahora está confirmada y fijada. */
+    expect(src).toContain(': isMadMod(curMod) ? "ingreso"');
+    expect(src).toContain('selTab("ingreso");');
+    expect(src).not.toContain(': isMadMod(curMod) ? "salas"');
+    // Coherente con el orden: Ingreso es además la PRIMERA de la lista de pestañas.
+    expect(src).toContain('const MAD_TABS      = ["ingreso","saldo",');
   });
 });

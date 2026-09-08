@@ -112,7 +112,12 @@ describe('B · toda marca usa un kind que _reconcileMark sabe reconciliar', () =
     const m = /const MAD_FICHAS\s*=\s*\[([^\]]*)\]/.exec(engine);
     expect(m).toBeTruthy();
     const fichas = m[1].split(',').map((s) => s.trim().replace(/^"|"$/g, ''));
-    expect(fichas).toEqual(['salas', 'tanques', 'lotes']);
+    /* ⚠ «lotes» SALIÓ el 2026-09-08 (Fase 4A). Era una grilla que escribía en «Maduración
+       Lotes» con otro juego de columnas; esa hoja se rediseñó como registro de DESOVES y
+       ahora la escribe una ficha de formulario, no una grilla. La lista se sigue fijando
+       aquí —no es sobre-especificación— porque el kind de la marca se compone con ella y
+       un miembro que loadMad no reconozca deja la marca INERTE sin dar síntoma. */
+    expect(fichas).toEqual(['salas', 'tanques']);
     // y loadMad valida contra esa misma lista
     expect(engine).toContain('if(!MAD_FICHAS.includes(ficha)) return [];');
   });

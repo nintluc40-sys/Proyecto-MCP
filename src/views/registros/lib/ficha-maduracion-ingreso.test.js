@@ -49,9 +49,23 @@ describe('Ingreso a Maduración · la hoja y sus columnas', () => {
     expect(MAD_INGRESO_HEADERS).toEqual(MAD_INGRESO_COLUMNS.map((c) => c.h));
   });
 
-  it('son 16 columnas y el ID va la ÚLTIMA', () => {
-    expect(MAD_INGRESO_HEADERS).toHaveLength(16);
-    expect(MAD_INGRESO_HEADERS[15]).toBe('ID');
+  it('son 17 columnas y el ID va la ÚLTIMA', () => {
+    /* Eran 16 hasta el 2026-09-08; entró «Grupo». Lo que NO se mueve —y por eso se
+       comprueba aparte— es que `ID` siga siendo la última: en AsT ya costó caro. */
+    expect(MAD_INGRESO_HEADERS).toHaveLength(17);
+    expect(MAD_INGRESO_HEADERS[MAD_INGRESO_HEADERS.length - 1]).toBe('ID');
+  });
+
+  it('«Grupo» acompaña al código genético, no lo sustituye', () => {
+    /* La razón de existir de esta columna: cuando dos piscinas entran MEZCLADAS, cada una
+       sigue escribiendo SUS cifras en SUS filas con SU código, y «Grupo» sólo dice que
+       comparten tanque. Si algún día alguien fusionara los códigos en uno solo, la
+       pregunta «¿cuántos machos entraron con la 766?» se quedaría sin respuesta. */
+    expect(MAD_INGRESO_HEADERS).toContain('Código genético');
+    expect(MAD_INGRESO_HEADERS).toContain('Grupo');
+    const cols = MAD_INGRESO_COLUMNS.filter((c) => c.k === 'grupo');
+    expect(cols).toHaveLength(1);
+    expect(cols[0].grain).toBe('composicion');
   });
 
   it('cabe en el tope de columnas del GAS para Maduración', () => {
@@ -228,10 +242,20 @@ describe('Ingreso · validación', () => {
     const m = base();
     m.composiciones[0].reparto.push({ sala: 'Sala 1', tanque: 1, machos: 5, hembras: 5 });
     const { errores } = validarIngreso(m);
-    expect(errores.some((e) => /dos veces en Sala 1 tanque 1/.test(e))).toBe(true);
+    expect(errores.some((e) => /aparece dos veces en Sala 1 tanque 1/.test(e))).toBe(true);
   });
 
-  it('NO es error que dos composiciones distintas compartan tanque (es una mezcla)', () => {
+  /* ⚠⚠ ESTAS TRES SOSTIENEN LA DECISIÓN DEL USUARIO Y SU CORRECCIÓN POSTERIOR, y se deja
+     dicho para que nadie las «arregle» de vuelta.
+     · Hasta el 2026-09-08 valía que dos composiciones compartieran tanque: era la vía
+       para declarar un tanque mixto. Se prohibió.
+     · Ese mismo día, la PRIMERA solución —fundirlas en una composición «766/767» con los
+       totales sumados— resultó ser un defecto de modelado CON PÉRDIDA DE DATO: destruía
+       lo medido (lo que entró por cada piscina) para representar lo no medido (cuántos
+       de cada código hay en cada tanque). Lo cazó el usuario, no las pruebas.
+     · La solución buena AGRUPA en vez de fundir: cada composición conserva su código y
+       sus cifras, y «Grupo» declara que comparten tanque. */
+  it('ERROR si dos composiciones SIN grupo se reparten el MISMO tanque', () => {
     const m = base();
     m.composiciones.push({
       codigoGenetico: 'CG02',
@@ -239,6 +263,71 @@ describe('Ingreso · validación', () => {
       machos: 10,
       hembras: 10,
       reparto: [{ sala: 'Sala 1', tanque: 1, machos: 10, hembras: 10 }],
+    });
+    const { errores } = validarIngreso(m);
+    expect(errores.some((e) => /lo ocupan dos ingresos distintos/.test(e))).toBe(true);
+    // Y el mensaje tiene que decir QUÉ HACER, no sólo que está mal.
+    expect(errores.some((e) => /Combinar/.test(e))).toBe(true);
+  });
+
+  it('dos composiciones DEL MISMO GRUPO sí comparten tanque, cada una con SUS cifras', () => {
+    /* El caso real: lote BM con las piscinas 766 y 767, que entran mezcladas. Las dos
+       filas conviven en el tanque 1 y cada una lleva lo suyo — que es justo lo que la
+       versión que fundía había hecho imposible. */
+    const m = base();
+    m.composiciones[0].codigoGenetico = '766';
+    m.composiciones[0].grupo = '766/767';
+    m.composiciones[0].machos = 200;
+    m.composiciones[0].reparto = [{ sala: 'Sala 1', tanque: 1, machos: 200, hembras: 0 }];
+    m.composiciones.push({
+      codigoGenetico: '767',
+      piscina: 'P-19',
+      grupo: '766/767',
+      machos: 150,
+      hembras: 0,
+      reparto: [{ sala: 'Sala 1', tanque: 1, machos: 150, hembras: 0 }],
+    });
+    expect(validarIngreso(m).errores).toEqual([]);
+
+    // Y lo que de verdad importa: la hoja conserva las DOS cifras por separado.
+    const filas = buildIngresoRows(m);
+    const iCG = MAD_INGRESO_HEADERS.indexOf('Código genético');
+    const iM = MAD_INGRESO_HEADERS.indexOf('Machos');
+    const iG = MAD_INGRESO_HEADERS.indexOf('Grupo');
+    const de766 = filas.find((f) => f[iCG] === '766');
+    const de767 = filas.find((f) => f[iCG] === '767');
+    expect(de766[iM]).toBe(200);
+    expect(de767[iM]).toBe(150);
+    expect(de766[iG]).toBe('766/767');
+    expect(de767[iG]).toBe('766/767');
+    // Y sus IDs son DISTINTOS, así que el upsert no borra una con la otra.
+    const iID = MAD_INGRESO_HEADERS.indexOf('ID');
+    expect(de766[iID]).not.toBe(de767[iID]);
+  });
+
+  it('un GRUPO no puede compartir tanque con quien NO es del grupo', () => {
+    const m = base();
+    m.composiciones[0].grupo = '766/767';
+    m.composiciones.push({
+      codigoGenetico: 'CG03',
+      piscina: 'P-20',
+      machos: 10,
+      hembras: 10,
+      reparto: [{ sala: 'Sala 1', tanque: 1, machos: 10, hembras: 10 }],
+    });
+    expect(validarIngreso(m).errores.some((e) => /lo ocupan dos ingresos distintos/.test(e))).toBe(true);
+  });
+
+  it('el mismo NÚMERO de tanque en salas distintas NO choca', () => {
+    /* Sala 1 y Sala 4 tienen ambas tanques 1-6: si la llave del control perdiera la sala
+       al perder el código genético, ocupar el tanque 1 de Sala 1 bloquearía el de Sala 4. */
+    const m = base();
+    m.composiciones.push({
+      codigoGenetico: 'CG02',
+      piscina: 'P-19',
+      machos: 10,
+      hembras: 10,
+      reparto: [{ sala: 'Sala 4', tanque: 1, machos: 10, hembras: 10 }],
     });
     expect(validarIngreso(m).errores).toEqual([]);
   });

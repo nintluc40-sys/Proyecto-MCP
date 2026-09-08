@@ -105,6 +105,31 @@ const MODELOS = {
       ],
     }],
   },
+  /* ⚠⚠ ESTE FIXTURE NACIÓ DE UN AGUJERO MEDIDO. El banco de paridad metió la divergencia
+     «el monolito ignora el GRUPO al decidir quién ocupa el tanque» y la paridad NO LA VIO:
+     ninguno de los modelos de aquí traía `grupo`, así que la regla nueva no se ejercía y el
+     verde no significaba nada sobre ella. Es el defecto de
+     `feedback_fixtures-que-no-prueban-nada`, encontrado por su propio banco.
+     Reproduce el caso real: lote BM con las piscinas 766 y 767, que entran MEZCLADAS y
+     comparten los dos tanques, cada una con SUS cifras. */
+  'tanque compartido POR GRUPO (el caso 766/767)': {
+    fecha: '2026-09-08',
+    lote: 'BM',
+    composiciones: [
+      { codigoGenetico: '766', piscina: 'P-766', camaronera: 'Chongón', grupo: '766/767',
+        machos: 200, hembras: 300, pesoMachos: 33.1, pesoHembras: 40.4,
+        reparto: [
+          { sala: 'Sala 1', tanque: 3, machos: 100, hembras: 150, agua: 'RAS' },
+          { sala: 'Sala 1', tanque: 4, machos: 100, hembras: 150, agua: 'RAS' },
+        ] },
+      { codigoGenetico: '767', piscina: 'P-767', camaronera: 'Chongón', grupo: '766/767',
+        machos: 150, hembras: 250, pesoMachos: 35.8, pesoHembras: 42.9,
+        reparto: [
+          { sala: 'Sala 1', tanque: 3, machos: 75, hembras: 125, agua: 'RAS' },
+          { sala: 'Sala 1', tanque: 4, machos: 75, hembras: 125, agua: 'RAS' },
+        ] },
+    ],
+  },
   'tanque MEZCLADO, dos composiciones': {
     fecha: '2026-09-08',
     lote: 'BC',
@@ -160,7 +185,7 @@ describe('Ingreso · el monolito y el módulo declaran lo mismo', () => {
   it('las mismas claves de columna, en el mismo orden', () => {
     // Si el orden de `k` divergiera, las cabeceras podrían coincidir y las CELDAS no.
     expect(api.MAD_ING_COLUMNS.map((c) => c.k)).toEqual(
-      ['fecha', 'lote', 'codigoGenetico', 'piscina', 'camaronera', 'sala', 'tanque',
+      ['fecha', 'lote', 'codigoGenetico', 'piscina', 'camaronera', 'grupo', 'sala', 'tanque',
         'machos', 'hembras', 'pesoMachos', 'pesoHembras', 'supervivencia', 'camaronesM2',
         'densidad', 'agua', 'id'],
     );
@@ -183,6 +208,11 @@ describe('Ingreso · el mismo payload, celda a celda', () => {
     // produzca filas de verdad, para que el toEqual de arriba signifique algo.
     expect(buildIngresoRows(MODELOS['reparto en varias salas'])).toHaveLength(3);
     expect(buildIngresoRows(MODELOS['tanque MEZCLADO, dos composiciones'])).toHaveLength(2);
+    // El agrupado: 2 composiciones × 2 tanques = 4 filas, y las 4 con su Grupo.
+    const gr = buildIngresoRows(MODELOS['tanque compartido POR GRUPO (el caso 766/767)']);
+    expect(gr).toHaveLength(4);
+    const iG = MAD_INGRESO_HEADERS.indexOf('Grupo');
+    expect(gr.every((f) => f[iG] === '766/767')).toBe(true);
   });
 });
 
@@ -249,7 +279,18 @@ describe('Ingreso · el catálogo de salas del monolito', () => {
   });
 
   it('el ingreso NO entra en MAD_FICHAS: no es una grilla con CRUD local', () => {
-    expect(src).toContain('const MAD_FICHAS    = ["salas","tanques","lotes"];');
+    /* ⚠ Antes fijaba la LISTA ENTERA (`["salas","tanques","lotes"]`) y se puso roja el
+       2026-09-08 al salir «lotes» — sin que nada de lo que vigilaba hubiera cambiado. Una
+       prueba sobre-especificada da rojos que no significan nada, y ésos esconden el rojo
+       siguiente; es la misma corrección que ya se le hizo a la de las pestañas. Ahora
+       comprueba lo que dice su nombre. */
+    const m = /const MAD_FICHAS\s*=\s*\[([^\]]*)\]/.exec(src);
+    expect(m).toBeTruthy();
+    const fichas = m[1].split(',').map((s) => s.trim().replace(/^"|"$/g, ''));
+    expect(fichas).not.toContain('ingreso');
+    // Y las que sí son grillas siguen estándolo.
+    expect(fichas).toContain('salas');
+    expect(fichas).toContain('tanques');
   });
 });
 
@@ -278,5 +319,79 @@ describe('Ingreso · la pestaña tiene DÓNDE pintarse', () => {
   it('el motor busca ese panel por el mismo id que el shell declara', () => {
     // Si alguien renombrara uno de los dos, esto se pone rojo antes que el usuario.
     expect(src).toContain('document.getElementById("fp-ingreso")');
+  });
+});
+
+describe('Ingreso · lo que pidió el usuario el 2026-09-08', () => {
+  const src = leer(ENGINE);
+
+  /* ⚠⚠ LAS CINCO SON ESTRUCTURALES, y el motivo es el de siempre en esta ficha: viven en
+     funciones de RENDER que necesitan el monolito entero y un documento para ejercerse.
+     Se dice aquí porque este módulo ya enseñó que sus defectos NO están en la lógica —que
+     estaba probada al 100 %— sino en las costuras, y una comprobación estructural sobre
+     una regla clara vale más que ninguna. */
+
+  it('la camaronera es una LISTA, y sale de DESTINO_OPTS, no de una copia', () => {
+    /* Copiar la lista habría creado un segundo sitio que se desincroniza el día que se
+       abra una camaronera nueva: la ficha ofrecería un juego de opciones y el resto de la
+       app otro, sin que nada lo cantara. */
+    expect(src).toContain('function madIngCamaroneraOpts(');
+    expect(src).toContain('DESTINO_OPTS.map(');
+    expect(src).toContain('<select class="mi-camaronera"');
+    // Y ya NO es un campo de texto libre.
+    expect(src).not.toContain('<input class="mi-camaronera"');
+  });
+
+  it('los tanques se eligen en una REJILLA de la sala, no en un desplegable por fila', () => {
+    expect(src).toContain('function _madIngRejillaHTML(');
+    expect(src).toContain('function madIngTanqueToggle(');
+    // La fila del reparto ya no lleva sus propios selectores de sala y tanque.
+    expect(src).not.toContain('<select class="mi-tanque"');
+  });
+
+  it('un tanque ocupado por otra composición sale APAGADO en la rejilla', () => {
+    /* La regla «un tanque se ocupa una vez» ya la comprueba la validación. Esto es lo que
+       la hace VISIBLE: si sólo viviera en la validación, el operario la descubriría al
+       final, después de haber tecleado todo el reparto. */
+    expect(src).toContain('function madIngOcupados(');
+    expect(src).toContain('disabled');
+    expect(src).toContain('Ya ocupado por otra composición de este ingreso');
+  });
+
+  it('existe 🔗 Combinar y el contador de lo que falta por repartir', () => {
+    expect(src).toContain('function madIngCombinar(');
+    expect(src).toContain('function _madIngPendHTML(');
+    expect(src).toContain('Faltan por repartir');
+    // Combinar tiene que estar EN la barra de botones, no sólo definido.
+    expect(src).toContain('onclick="madIngCombinar()"');
+  });
+
+  it('🔗 Combinar AGRUPA, no funde: nadie pierde sus cifras', () => {
+    /* ⚠⚠ LA PRIMERA VERSIÓN SÍ FUNDÍA, y era un defecto de modelado con pérdida de dato:
+       al unir 766 y 767 en una composición «766/767» con los totales SUMADOS, la pregunta
+       «¿cuántos machos entraron con la 766?» se quedaba sin respuesta para siempre. Se
+       destruía lo MEDIDO —lo que entró por cada piscina— para representar lo NO MEDIDO
+       —cuántos de cada código hay en cada tanque una vez mezclados—. Lo vio el usuario,
+       no las pruebas; por eso esta comprobación existe. */
+    expect(src).toContain('function madIngGrupoDe(');
+    expect(src).toContain('function madIngDesagrupar(');
+    // Marca el grupo en las marcadas...
+    expect(src).toContain('const g=c.querySelector(".mi-grupo"); if(g) g.value=grupo;');
+    // ...y NO borra ninguna composición ni suma totales, que es lo que hacía al fundir.
+    expect(src).not.toContain('sel.forEach(function(c){ c.remove(); });');
+    // El grupo viaja a la hoja en su propia columna, junto al código genético.
+    expect(src).toContain('{ h:"Grupo", k:"grupo" }');
+    expect(src).toContain('grupo: sanitizeStr(c.grupo,60)');
+  });
+
+  it('un envío ENCOLADO deja rastro, y el formulario se vacía al guardar bien', () => {
+    /* Los dos defectos que encontró la auditoría de esta tanda. El primero era el peor: sin
+       señal el dato quedaba a salvo en la cola pero no dejaba rastro en NINGÚN sitio —ni
+       fila local, ni punto, ni historial—, así que el operario no podía comprobarlo. */
+    expect(src).toContain('function madIngLogAnota(');
+    expect(src).toContain('madIngLogAnota(model.fecha, lote, payload.rows.length, "cola")');
+    expect(src).toContain('function madIngReiniciar(');
+    // Y se limpia SÓLO tras un envío a salvo, nunca al volver a la pestaña (defecto A2).
+    expect(src).toContain('if(fp.querySelector("#mi-comps")) return;');
   });
 });

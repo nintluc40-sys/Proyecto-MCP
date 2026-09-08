@@ -84,7 +84,14 @@ const PINS = {
 
 // ── Maduración: constantes globales ──
 const MAD_PRE       = "larv4_mad_";
-const MAD_FICHAS    = ["salas","tanques","lotes"];
+/* ⚠⚠ «lotes» SALIÓ DE AQUÍ el 2026-09-08 (Fase 4A) y no es un olvido.
+   Era una grilla por sala y día que escribía en «Maduración Lotes» con OTRO juego de
+   columnas. Esa hoja se rediseñó como registro de DESOVES —estaba a 0 filas, así que salió
+   gratis— y ahora la escribe la ficha 🥚 Desoves.
+   🔑 Dejar viva la grilla habría sido el peligro real: seguía pudiendo escribir el layout
+   VIEJO encima de la hoja nueva, corrompiéndola sin un solo error. Al salir de MAD_FICHAS
+   y de MAD_TABS, su camino queda cortado. */
+const MAD_FICHAS    = ["salas","tanques"];
 // ⚠ Sala 4A y 4B se RETIRARON el 2026-09-08 (quedaron disueltas). Se midió antes:
 // 4A se usó hasta el 2026-09-01 y 4B hasta el 2026-08-29, y sus 57 filas siguen en
 // «Maduración Sala». Quitarlas de aquí las saca del SELECTOR, no del pasado: la
@@ -99,8 +106,7 @@ const MAD_TANQUES_POR_SALA = {
 };
 const MAD_SHEET     = {
   salas:   "Maduración Sala",
-  tanques: "Maduración Tanques",
-  lotes:   "Maduración Lotes"
+  tanques: "Maduración Tanques"
 };
 
 // ── Biomol: constantes globales ──
@@ -333,13 +339,12 @@ let curMod = null, curTab = "calidad";
 let _algEditingId = null;
 // Estado de edición y filtros de cada vista del módulo Maduración.
 let _madEditing = { ficha:null, id:null };
-const _madFilters = { salas:{}, tanques:{}, lotes:{} };
+const _madFilters = { salas:{}, tanques:{} };
 // Blanco: sandbox para editar registros históricos sin pisar fichas del día.
 let _blancoState = null; // { ficha, histId, data }
 // Grillas Tanques/Lotes (Maduración): sala seleccionada por ficha. Persiste en
 // la sesión al cambiar de pestaña/módulo (se reinicia solo al recargar).
 let _madTanquesSala = "";
-let _madLotesSala   = "";
 // Memoria del último Lote usado por (sala|tanque), 70 días — sólo Tanques.
 // Vive bajo MAD_PRE, así que cleanup() la conserva (sin TTL automático); la
 // purga de 70 d la hace loadMadLoteMem() al leerla.
@@ -2420,7 +2425,7 @@ function enter(){
    : curMod === BIO_MOD ? " bio"
    : "");
   curTab = isLabMod(curMod) ? "algas"
-         : isMadMod(curMod) ? "salas"
+         : isMadMod(curMod) ? "ingreso"   /* decisión del usuario, 2026-09-08 */
          : isBioMod(curMod) ? "biomol"
          : isAstMod(curMod) ? "ast"
          : isMicMod(curMod) ? "micnuevo"
@@ -2477,7 +2482,7 @@ const STANDARD_TABS = [...FICHAS,"desinfeccion","fotos","historial","blanco"];
 // no saben qué lote, piscina ni código genético corresponde a cada tanque.
 // ⚠ NO entra en MAD_FICHAS: no es una grilla por día con CRUD local, es un formulario
 // de evento, como «reproductivo».
-const MAD_TABS      = ["ingreso","saldo","salas","tanques","lotes","reproductivo","fotos"];
+const MAD_TABS      = ["ingreso","saldo","movimientos","salas","tanques","desoves","fin","reproductivo","fotos"];
 // Tabs del módulo Biomol — form + historial inline + fotos
 const BIO_TABS      = ["biomol","fotos"];
 // Tabs del módulo As Técnico — form de supervisión + registro de mareas + fotos
@@ -2497,9 +2502,11 @@ const TAB_META = {
   historial:["📜","Historial"],
   salas:    ["🏠","Salas"],
   tanques:  ["🛢️","Tanques"],
-  lotes:    ["📦","Lotes"],
+  desoves:  ["🥚","Desoves"],
+  fin:      ["🏁","Fin de Ciclo"],
   ingreso:  ["📥","Ingreso"],
   saldo:    ["⚖️","Saldo"],
+  movimientos: ["🔄","Movimientos"],
   reproductivo: ["🦐","Reproductivo"],
   biomol:   ["🧬","Biomol"],
   ast:      ["📋","As Técnico"],
@@ -2566,6 +2573,9 @@ function selTab(t){
   if(MAD_FICHAS.includes(t)) renderMad(t);
   if(t==="ingreso") renderMadIngreso();
   if(t==="saldo") renderMadSaldo();
+  if(t==="movimientos") renderMadMovimientos();
+  if(t==="desoves") renderMadDesoves();
+  if(t==="fin") renderMadFinCiclo();
   if(t==="reproductivo") renderMadReproductivo();
   if(t==="biomol") renderBiomol();
   if(t==="ast")    renderAst();
@@ -2940,7 +2950,6 @@ const FICHA_LABELS = {
   algas:"Lab. Algas",
   salas:"Maduración · Salas",
   tanques:"Maduración · Tanques",
-  lotes:"Maduración · Lotes",
   reproductivo:"Maduración · Reproductivo",
   ingreso:"Maduración · Ingreso",
   saldo:"Maduración · Saldo"
@@ -3101,7 +3110,9 @@ function renderAll(){
   } else if(isMadMod(curMod)){
     MAD_FICHAS.forEach(f => renderMad(f));
     updateDots();
-    selTab("salas");
+    /* Ingreso, no Salas: sin el ingreso las demás fichas no saben qué lote hay en cada
+       tanque. Los tres grids se pre-renderizan igual, arriba. Decisión del usuario 09-08. */
+    selTab("ingreso");
   } else if(isBioMod(curMod)){
     // selTab("biomol") YA renderiza la grilla → evita un render doble al entrar
     // (cada render parsea localStorage; en equipos lentos el doble render se
@@ -4010,7 +4021,7 @@ function genCodigo(fid, mod, fecha){
   const ts   = Date.now();
   const seed = (ts & 0xFFFFFF) ^ (mod * 7919) ^ (fid.charCodeAt(0) * 1031) ^ (_genCodigoSeq * 31);
   const hex  = Math.abs(seed).toString(16).toUpperCase().padStart(6,'0').slice(-6);
-  const abb  = {calidad:'CAL',plg:'PLG',params:'PAR',poblacion:'POB',calagua:'CAG',despacho:'DES',algas:'ALG',salas:'SAL',tanques:'TAN',lotes:'LOT',biomol:'BIO',ast:'AST',micnuevo:'MIC',calnuevo:'CDA',patnuevo:'PAT'}[fid]||'FIC';
+  const abb  = {calidad:'CAL',plg:'PLG',params:'PAR',poblacion:'POB',calagua:'CAG',despacho:'DES',algas:'ALG',salas:'SAL',tanques:'TAN',biomol:'BIO',ast:'AST',micnuevo:'MIC',calnuevo:'CDA',patnuevo:'PAT'}[fid]||'FIC';
   const d    = (fecha||today()).replace(/-/g,'');
   return abb + String(mod).padStart(2,'0') + '-' + d + '-' + hex;
 }
@@ -5606,7 +5617,7 @@ function saveMadList(ficha, list){
 
 // ── Maduración · estado "grilla sin guardar" + commit/recuperación ───────
 let _madGridDirty = false;                          // grilla activa con datos AÚN sin guardar
-const _madRendered = { salas:null, tanques:null, lotes:null };  // {sala,fecha} con que se renderizó cada grilla
+const _madRendered = { salas:null, tanques:null };  // {sala,fecha} con que se renderizó cada grilla
 function _madDirty(ev){
   // Solo celdas de la grilla; ignora los selectores Sala/Fecha (viven en .meta).
   if(ev && ev.target && ev.target.closest && ev.target.closest(".meta")) return;
@@ -5624,7 +5635,7 @@ function _madAfterRender(ficha){
   }
   const fechaEl = document.getElementById("mad-"+ficha+"-fecha");
   const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
-  const sala = ficha==="salas" ? "" : (ficha==="tanques" ? _madTanquesSala : _madLotesSala);
+  const sala = ficha==="salas" ? "" : _madTanquesSala;
   _madRendered[ficha] = { sala, fecha };
   _madGridDirty = false;   // la grilla recién renderizada refleja lo persistido (limpio)
 }
@@ -5648,9 +5659,13 @@ function _madCommitActive(){
   if(!isMadMod(curMod) || !MAD_FICHAS.includes(curTab)) return;
   const r = _madRendered[curTab]; if(!r) return;
   try{
+    /* ⚠ La rama de caída (`else`) desapareció con la grilla de Lotes el 2026-09-08. Era
+       un catch-all: CUALQUIER ficha que no fuera salas ni tanques acababa guardándose como
+       si fuera Lotes. Con dos fichas es inalcanzable, pero un `else` que significa «la
+       tercera» envejece mal — si mañana entra una cuarta, se guardaría en la equivocada
+       sin dar síntoma. Ahora cada ficha se nombra. */
     if(curTab==="salas")        saveMadSalasGrid({ fechaOverride:r.fecha, silent:true, noRender:true });
     else if(curTab==="tanques") saveMadTanquesGrid({ salaOverride:r.sala, fechaOverride:r.fecha, silent:true, noRender:true });
-    else                        saveMadLotesGrid({ salaOverride:r.sala, fechaOverride:r.fecha, silent:true, noRender:true });
   }catch(_){}
 }
 // Autoguardado de recuperación (espejo de Biomol): la grilla activa cada 60s y en goBack.
@@ -5658,9 +5673,9 @@ function saveMadRecovery(){
   if(!isMadMod(curMod) || !MAD_FICHAS.includes(curTab)) return;
   const ficha = curTab;
   let rows = [];
-  try{ rows = ficha==="salas" ? _collectSalasGrid() : ficha==="tanques" ? _collectTanquesGrid() : _collectLotesGrid(); }catch(_){ return; }
+  try{ rows = ficha==="salas" ? _collectSalasGrid() : _collectTanquesGrid(); }catch(_){ return; }
   if(!rows.length) return;
-  const sala = ficha==="salas" ? "" : (ficha==="tanques" ? _madTanquesSala : _madLotesSala);
+  const sala = ficha==="salas" ? "" : _madTanquesSala;
   const fechaEl = document.getElementById("mad-"+ficha+"-fecha");
   const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
   _lsSet(MAD_RECOV_KEY, JSON.stringify({ ficha, sala, fecha, ts:Date.now(), rows }));
@@ -5681,7 +5696,6 @@ function recoverMadGrid(){
   const ts = new Date(rec.ts).toLocaleString("es-EC");
   if(!confirm("¿Recuperar las "+rec.rows.length+" fila(s) autoguardadas el "+ts+"?\nSe combinarán con la grilla guardada.")) return;
   if(rec.ficha==="tanques") _madTanquesSala = rec.sala;
-  if(rec.ficha==="lotes")   _madLotesSala   = rec.sala;
   const list = loadMad(rec.ficha);
   rec.rows.forEach(data=>{
     _madMergeRow(list, rec.ficha, data);
@@ -5731,7 +5745,7 @@ function _madSalaOpts(sel){
 function renderMad(ficha){
   if(ficha === "salas")   renderMadSalas();
   else if(ficha === "tanques") renderMadTanques();
-  else if(ficha === "lotes")   renderMadLotes();
+
   else return;
   // Accesibilidad: asocia labels↔inputs después de cada render de
   // Maduración (igual que renderFicha). El flujo CRUD/sync no cambia.
@@ -5758,7 +5772,10 @@ const MAD_CUARENTENA_DIAS = 15;
 const MAD_EST_CUAR = "Cuarentena";
 const MAD_EST_PROD = "Producción";
 const MAD_EST_MIXTO = "Mixto";
-const MAD_LIBRO_SHEETS = { ingreso: "Maduración Ingreso", tanques: "Maduración Tanques" };
+// Un lote con un cierre TOTAL registrado. Se distingue de «0 vivos» a propósito: un cero
+// puede ser un descuadre; un cierre es una decisión que alguien registró.
+const MAD_EST_CERRADO = "Cerrado";
+const MAD_LIBRO_SHEETS = { ingreso: "Maduración Ingreso", movimientos: "Maduración Movimientos", tanques: "Maduración Tanques", cierres: "Maduración Fin de Ciclo" };
 function madLibroTxt(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
 function madLibroEnt(v){ const n=parseInt(v,10); return (isFinite(n)&&n>0)?n:0; }
 function madUbicKey(sala,tanque){ return madLibroTxt(sala)+"|"+madLibroEnt(tanque); }
@@ -5783,22 +5800,40 @@ function madRepartirProporcional(total, pesos){
 }
 // El saldo se para en 0 y el sobrante se cuenta aparte: un «−5 vivos» no significa nada
 // para quien lo lee; un «0 vivos y 5 bajas sin explicar» es la señal que se busca.
-function madDescontar(posiciones, sexo, cantidad){
+// Saca la cantidad y devuelve QUÉ salió de cada posición, además del déficit. Existe
+// porque un MOVIMIENTO necesita las partes: lo que sale del origen tiene que llegar al
+// destino conservando su lote. Una baja sólo necesita el déficit, y por eso madDescontar
+// es una FACHADA de ésta y no una segunda implementación: dos cañerías con la misma
+// aritmética habrían divergido en silencio.
+function madTomarDe(posiciones, sexo, cantidad){
   const total=madLibroEnt(cantidad);
-  if(total===0) return 0;
+  const nada=posiciones.map(function(){ return 0; });
+  if(total===0) return { partes:nada, sobra:0 };
   const pesos=posiciones.map(function(p){ return p[sexo]; });
   const disp=pesos.reduce(function(a,b){ return a+b; },0);
-  if(disp===0) return total;
+  if(disp===0) return { partes:nada, sobra:total };
   const aplicable=Math.min(total, disp);
   const partes=madRepartirProporcional(aplicable, pesos);
   posiciones.forEach(function(p,i){ p[sexo]-=partes[i]; });
-  return total-aplicable;
+  return { partes:partes, sobra:total-aplicable };
 }
-const MAD_PRIORIDAD = { ingreso:0, tanque:1 };
+function madDescontar(posiciones, sexo, cantidad){
+  return madTomarDe(posiciones, sexo, cantidad).sobra;
+}
+// Prioridad dentro de un mismo día, y las tres posiciones están razonadas: un animal que
+// entra hoy puede moverse hoy y morir hoy; el que LLEGA hoy a un tanque puede morir hoy en
+// ESE tanque; las bajas se registran por tanque al cerrar el día. Es el único orden que
+// permite las dos cosas a la vez.
+// El cierre va el ÚLTIMO: es lo que le pasa a un lote al final, después de que hayan
+// entrado, se hayan movido y se hayan contado las bajas del día. Antes haría que una baja
+// de hoy se repartiera sobre animales que ya se habían ido.
+const MAD_PRIORIDAD = { ingreso:0, movimiento:1, tanque:2, fin:3 };
 function madFlujo(f){
   const ev=[];
   (f.ingresos||[]).forEach(function(r){ ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"ingreso", r:r }); });
+  (f.movimientos||[]).forEach(function(r){ ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"movimiento", r:r }); });
   (f.tanques||[]).forEach(function(r){ ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"tanque", r:r }); });
+  (f.cierres||[]).forEach(function(r){ ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"fin", r:r }); });
   return ev.sort(function(a,b){ return a.fecha.localeCompare(b.fecha) || (MAD_PRIORIDAD[a.tipo]-MAD_PRIORIDAD[b.tipo]); });
 }
 function madSumarDias(fecha, dias){
@@ -5813,6 +5848,8 @@ function madSumarDias(fecha, dias){
 function madEstadoDeLote(lote, fecha){
   const L=lote||{}, hoy=madLibroTxt(fecha);
   if(!L.ingreso||!hoy) return "";
+  // Va PRIMERO: un lote cerrado ya no está en cuarentena ni en producción, está terminado.
+  if(L.cerrado && L.cerrado<=hoy) return MAD_EST_CERRADO;
   if(L.copulaDesde && L.copulaDesde<=hoy) return MAD_EST_PROD;
   return hoy < madSumarDias(L.ingreso, MAD_CUARENTENA_DIAS) ? MAD_EST_CUAR : MAD_EST_PROD;
 }
@@ -5835,8 +5872,78 @@ function madConstruirLibro(fuentes, opts){
       if(!pos[k]) pos[k]={ sala:sala, tanque:tq, lote:lote, codigoGenetico:cg, machos:0, hembras:0 };
       pos[k].machos+=madLibroEnt(r.Machos);
       pos[k].hembras+=madLibroEnt(r.Hembras);
-      if(!lotes[lote]) lotes[lote]={ lote:lote, ingreso:fecha, copulaDesde:null };
-      if(!lotes[lote].ingreso || fecha<lotes[lote].ingreso) lotes[lote].ingreso=fecha;
+      if(!lotes[lote]) lotes[lote]={ lote:lote, ingreso:fecha, copulaDesde:null, cerrado:null };
+      /* DECISIÓN DEL USUARIO (2026-09-08): un SEGUNDO ingreso REINICIA la cuarentena, así
+         que manda la fecha MÁS RECIENTE. Antes se guardaba la MENOR (fecha<...).
+         Y hay que BORRAR la cópula anterior, o la decisión no haría nada en el caso común:
+         un lote que ya copuló arrastraría un copulaDesde viejo y madEstadoDeLote lo
+         devolvería a Producción el mismo día en que llegan los animales nuevos. Sólo una
+         cópula DESDE el último ingreso vuelve a romperla. El flujo se recorre en orden
+         cronológico, así que con borrarla aquí basta.
+         Dos filas del MISMO día no reinician nada: la comparación es estricta. */
+      if(!lotes[lote].ingreso || fecha>lotes[lote].ingreso){ lotes[lote].ingreso=fecha; lotes[lote].copulaDesde=null; }
+      return;
+    }
+    // MOVIMIENTOS (Fase 3). Lo MEDIDO es cuántos animales se movieron; DE QUÉ LOTE eran es
+    // una deducción, y por eso se calcula en vez de pedirse: se reparte en proporción a los
+    // vivos que cada lote tiene en el origen ESE DÍA, la misma regla que la mortalidad y por
+    // el mismo motivo. Lo que sale LLEGA conservando lote y código genético; sin eso el
+    // destino tendría animales sin dueño y el saldo por lote dejaría de cuadrar con el saldo
+    // por tanque.
+    if(ev.tipo==="movimiento"){
+      const sO=madLibroTxt(r["Sala origen"]), tO=madLibroEnt(r["Tanque origen"]);
+      const sD=madLibroTxt(r["Sala destino"]), tD=madLibroEnt(r["Tanque destino"]);
+      const pedido={ machos: madLibroEnt(r.Machos), hembras: madLibroEnt(r.Hembras) };
+      if(!sO||!tO||!sD||!tD){ anota(fecha,"movimiento-incompleto","Un movimiento sin origen o sin destino completos no entra en el libro.",{ salaOrigen:sO, tanqueOrigen:tO, salaDestino:sD, tanqueDestino:tD }); return; }
+      if(madUbicKey(sO,tO)===madUbicKey(sD,tD)){ anota(fecha,"movimiento-circular","Un movimiento de "+sO+" tanque "+tO+" a sí mismo no mueve nada.",{ sala:sO, tanque:tO }); return; }
+      const ukO=madUbicKey(sO,tO);
+      const origen=Object.keys(pos).map(function(k){ return pos[k]; })
+        .filter(function(p){ return madUbicKey(p.sala,p.tanque)===ukO; });
+      if(!origen.length){
+        if(pedido.machos||pedido.hembras) anota(fecha,"movimiento-sin-origen","Se movieron animales desde "+sO+" tanque "+tO+" y ningún ingreso explica qué había ahí.",{ sala:sO, tanque:tO, machos:pedido.machos, hembras:pedido.hembras });
+        return;
+      }
+      ["machos","hembras"].forEach(function(sexo){
+        const res=madTomarDe(origen, sexo, pedido[sexo]);
+        origen.forEach(function(p,i){
+          if(!res.partes[i]) return;
+          const k=madPosKey(sD,tD,p.lote,p.codigoGenetico);
+          if(!pos[k]) pos[k]={ sala:sD, tanque:tD, lote:p.lote, codigoGenetico:p.codigoGenetico, machos:0, hembras:0 };
+          pos[k][sexo]+=res.partes[i];
+        });
+        if(res.sobra>0) anota(fecha,"deficit-movimiento","Se movieron "+res.sobra+" "+sexo+" de más desde "+sO+" tanque "+tO+" de los que quedaban vivos: esos no llegaron al destino.",{ sala:sO, tanque:tO, sexo:sexo, cantidad:res.sobra });
+      });
+      return;
+    }
+    // FIN DE CICLO (Fase 4B). Se cierra un LOTE, no un tanque: lo que sale se descuenta de
+    // cada tanque donde el lote esté, en proporción a lo que tenga vivo ese día.
+    // 🔑🔑 En un cierre TOTAL, lo que el libro creía que quedaba y NO salió es LA DIFERENCIA:
+    // se anota con su fecha y el lote se pone a cero. «La diferencia ES el producto».
+    if(ev.tipo==="fin"){
+      const lote=madLibroTxt(r.Lote);
+      const esTotal=madLibroTxt(r.Tipo)==="Total";
+      const pedido={ machos: madLibroEnt(r.Machos), hembras: madLibroEnt(r.Hembras) };
+      if(!lote){ anota(fecha,"cierre-incompleto","Un cierre sin lote no entra en el libro."); return; }
+      const posLote=Object.keys(pos).map(function(k){ return pos[k]; }).filter(function(p){ return p.lote===lote; });
+      if(!posLote.length){
+        anota(fecha,"cierre-sin-lote","Se cerró el lote "+lote+" y ningún ingreso explica dónde estaba.",{ lote:lote, machos:pedido.machos, hembras:pedido.hembras });
+        return;
+      }
+      ["machos","hembras"].forEach(function(sexo){
+        const res=madTomarDe(posLote, sexo, pedido[sexo]);
+        if(res.sobra>0) anota(fecha,"deficit-cierre","Del lote "+lote+" salieron "+res.sobra+" "+sexo+" de más de los que el libro tenía vivos.",{ lote:lote, sexo:sexo, cantidad:res.sobra });
+      });
+      if(esTotal){
+        ["machos","hembras"].forEach(function(sexo){
+          const resto=posLote.reduce(function(a,p){ return a+p[sexo]; },0);
+          if(resto>0){
+            anota(fecha,"diferencia-cierre","Al cerrar el lote "+lote+" el libro contaba "+resto+" "+sexo+" que no salieron. Esa diferencia se anota y el lote queda a cero.",{ lote:lote, sexo:sexo, cantidad:resto });
+            posLote.forEach(function(p){ p[sexo]=0; });
+          }
+        });
+        const L=lotes[lote];
+        if(L && (!L.cerrado || fecha>L.cerrado)) L.cerrado=fecha;
+      }
       return;
     }
     const sala=madLibroTxt(r.Sala), tq=madLibroEnt(r.Tanque);
@@ -5856,7 +5963,8 @@ function madConstruirLibro(fuentes, opts){
         if(sobra>0) anota(fecha,"deficit","En "+sala+" tanque "+tq+" se registraron "+sobra+" "+sexo+" de baja de más de los que quedaban vivos.",{ sala:sala, tanque:tq, sexo:sexo, cantidad:sobra });
       });
     }
-    // La CÓPULA rompe la cuarentena: es la señal real de que dejó de estarlo.
+    // La CÓPULA rompe la cuarentena: es la señal real de que dejó de estarlo. Se apunta la
+    // PRIMERA DESDE EL ÚLTIMO INGRESO — un ingreso nuevo la borra y la cuarentena reinicia.
     if(madLibroEnt(r["Cópulas"])>0){
       enTanque.forEach(function(p){
         const L=lotes[p.lote];
@@ -5872,7 +5980,7 @@ function madConstruirLibro(fuentes, opts){
     porTanque[uk].composicion.push({ lote:p.lote, codigoGenetico:p.codigoGenetico, machos:p.machos, hembras:p.hembras });
     if(!porLote[p.lote]){
       const L=lotes[p.lote]||{ ingreso:"", copulaDesde:null };
-      porLote[p.lote]={ lote:p.lote, ingreso:L.ingreso, copulaDesde:L.copulaDesde, machos:0, hembras:0, ubicaciones:[] };
+      porLote[p.lote]={ lote:p.lote, ingreso:L.ingreso, copulaDesde:L.copulaDesde, cerrado:L.cerrado||null, machos:0, hembras:0, ubicaciones:[] };
     }
     porLote[p.lote].machos+=p.machos; porLote[p.lote].hembras+=p.hembras;
     if(porLote[p.lote].ubicaciones.indexOf(uk)===-1) porLote[p.lote].ubicaciones.push(uk);
@@ -5920,13 +6028,19 @@ async function madSaldoCargar(force){
   // caché y es GENÉRICA: toma el nombre de la hoja. El prefijo _repro es de dónde nació,
   // no de lo que hace. Duplicarla habría creado dos cañerías divergiendo en silencio.
   await _reproEnsureSheet(MAD_LIBRO_SHEETS.ingreso, null);
+  await _reproEnsureSheet(MAD_LIBRO_SHEETS.movimientos, null);
   await _reproEnsureSheet(MAD_LIBRO_SHEETS.tanques, null);
+  await _reproEnsureSheet(MAD_LIBRO_SHEETS.cierres, null);
   const fallos = [];
   if(!_madHojaLeida(MAD_LIBRO_SHEETS.ingreso)) fallos.push(MAD_LIBRO_SHEETS.ingreso);
+  if(!_madHojaLeida(MAD_LIBRO_SHEETS.movimientos)) fallos.push(MAD_LIBRO_SHEETS.movimientos);
   if(!_madHojaLeida(MAD_LIBRO_SHEETS.tanques)) fallos.push(MAD_LIBRO_SHEETS.tanques);
+  if(!_madHojaLeida(MAD_LIBRO_SHEETS.cierres)) fallos.push(MAD_LIBRO_SHEETS.cierres);
   _madLibro = madConstruirLibro({
-    ingresos: _reproReadRows(MAD_LIBRO_SHEETS.ingreso),
-    tanques:  _reproReadRows(MAD_LIBRO_SHEETS.tanques)
+    ingresos:    _reproReadRows(MAD_LIBRO_SHEETS.ingreso),
+    movimientos: _reproReadRows(MAD_LIBRO_SHEETS.movimientos),
+    tanques:     _reproReadRows(MAD_LIBRO_SHEETS.tanques),
+    cierres:     _reproReadRows(MAD_LIBRO_SHEETS.cierres)
   }, { hoy: today() });
   _madLibro.fallos = fallos;
   return _madLibro;
@@ -6037,6 +6151,7 @@ const MAD_ING_COLUMNS = [
   { h:"Código genético", k:"codigoGenetico" },
   { h:"Piscina Broodstock", k:"piscina" },
   { h:"Camaronera origen", k:"camaronera" },
+  { h:"Grupo", k:"grupo" },
   { h:"Sala", k:"sala" },
   { h:"Tanque", k:"tanque" },
   { h:"Machos", k:"machos" },
@@ -6096,6 +6211,7 @@ function madIngBuildRows(model){
       const v = {
         fecha: fecha, lote: lote, codigoGenetico: cg,
         piscina: sanitizeStr(c.piscina,60), camaronera: sanitizeStr(c.camaronera,80),
+        grupo: sanitizeStr(c.grupo,60),
         sala: sala, tanque: tanque,
         machos: madIngInt(r.machos), hembras: madIngInt(r.hembras),
         pesoMachos: madIngNum(c.pesoMachos), pesoHembras: madIngNum(c.pesoHembras),
@@ -6121,9 +6237,10 @@ function madIngValidar(model){
   if(madIngNormLote(m.lote)==="") errores.push("Falta el código de lote.");
   const comps = m.composiciones||[];
   if(!comps.length) errores.push("El ingreso no tiene ninguna composición (código genético + piscina).");
-  const vistos = {}, codigos = {};
+  const vistos = {}, codigos = {}, ocupante = {};
   comps.forEach(function(comp, i){
     const c = comp||{}, cg = madIngNormCG(c.codigoGenetico);
+    const grupo = sanitizeStr(c.grupo,60);
     const et = cg || ("composición "+(i+1));
     if(cg==="") errores.push("Falta el código genético de la composición "+(i+1)+".");
     else if(codigos[cg]) errores.push("El código genético «"+cg+"» está repetido en este ingreso.");
@@ -6137,9 +6254,19 @@ function madIngValidar(model){
       // ⚠⚠ ESTO EVITA UNA PÉRDIDA SILENCIOSA, no es una molestia de formulario: dos filas
       // de la MISMA composición en el MISMO tanque generan el MISMO ID y el upsert escribe
       // la segunda ENCIMA de la primera. Es el defecto que ya se pagó en Traslado.
-      const llave = cg+"|"+madIngSalaTag(sala)+"|"+tanque;
-      if(vistos[llave]) errores.push("«"+et+"» aparece dos veces en "+sala+" tanque "+tanque+". La segunda borraría a la primera.");
-      vistos[llave]=1;
+      // 🔑🔑 Desde el 2026-09-08 la llave NO lleva el código genético, así que alcanza a
+      // TODO el ingreso: un tanque se ocupa una vez. La mezcla se declara antes con
+      // 🔗 Combinar, porque al mezclarse al entrar nadie sabe cuántos de cada código hay.
+      // DOS controles distintos: (1) la MISMA composición dos veces en el mismo tanque —
+      // mismo ID, el upsert borra la primera; (2) DOS OCUPANTES distintos en un tanque, y
+      // ahí un GRUPO cuenta como uno solo, porque sus composiciones entraron mezcladas.
+      const llaveComp = cg+"|"+madIngSalaTag(sala)+"|"+tanque;
+      if(vistos[llaveComp]) errores.push("«"+et+"» aparece dos veces en "+sala+" tanque "+tanque+". La segunda borraría a la primera.");
+      vistos[llaveComp]=1;
+      const ubic = madIngSalaTag(sala)+"|"+tanque;
+      const quien = grupo || cg;
+      if(ocupante[ubic] !== undefined && ocupante[ubic] !== quien) errores.push("El tanque "+tanque+" de "+sala+" lo ocupan dos ingresos distintos ("+ocupante[ubic]+" y "+quien+"). Un tanque se ocupa UNA vez: si entraron mezclados, agrúpalos antes con «Combinar».");
+      else if(ocupante[ubic] === undefined) ocupante[ubic] = quien;
       const permitidos = MAD_TANQUES_POR_SALA[sala];
       if(permitidos && permitidos.indexOf(tanque)===-1) avisos.push("El tanque "+tanque+" no es de "+sala+".");
       if(!permitidos) avisos.push("«"+sala+"» no es una sala conocida.");
@@ -6173,27 +6300,107 @@ function madIngAguaOpts(sel){
     return '<option value="'+escapeHtml(a)+'"'+(sel===a?' selected':'')+'>'+escapeHtml(a)+'</option>';
   }).join("");
 }
-function _madIngRepHTML(){
-  return '<tr class="mi-rep">'
-    + '<td><select class="mi-sala" onchange="madIngSalaChange(this)" style="font-size:12px;min-width:86px">'+madIngSalaOpts("")+'</select></td>'
-    + '<td><select class="mi-tanque" style="font-size:12px;min-width:64px">'+madIngTanqueOpts("","")+'</select></td>'
-    + '<td><input class="mi-machos" type="number" min="0" step="1" inputmode="numeric" style="font-size:12px;width:78px"></td>'
-    + '<td><input class="mi-hembras" type="number" min="0" step="1" inputmode="numeric" style="font-size:12px;width:78px"></td>'
+function madIngCamaroneraOpts(sel){
+  /* La lista de camaroneras es la MISMA que la de destinos de Larvicultura, así que se
+     REUTILIZA `DESTINO_OPTS` en vez de copiarla. Una segunda copia se desincroniza el día
+     que se abra una camaronera nueva, y entonces la ficha ofrece un juego de opciones y el
+     resto de la app otro, sin que nada lo cante. */
+  return '<option value=""></option>' + DESTINO_OPTS.map(function(c){
+    return '<option value="'+escapeHtml(c)+'"'+(sel===c?' selected':'')+'>'+escapeHtml(c)+'</option>';
+  }).join("");
+}
+
+/* ⚠⚠ UN TANQUE SE OCUPA UNA VEZ POR INGRESO · decisión del usuario, 2026-09-08.
+   Antes dos composiciones podían compartir tanque, y ÉSA era la vía para declarar un tanque
+   mixto. Ya no: la mezcla se declara ANTES, con 🔗 Combinar, que funde las composiciones en
+   una sola con dos códigos genéticos (767/766) y dos piscinas.
+   🔑 Y es más fiel a la operación, no sólo más cómodo: cuando dos piscinas se mezclan AL
+   ENTRAR, nadie sabe cuántos de cada código quedan en cada tanque. El tanque tiene la
+   MEZCLA, no dos cuentas separadas. Registrarlas aparte habría sido inventar un desglose. */
+function madIngGrupoDe(comp){
+  const g = comp ? comp.querySelector(".mi-grupo") : null;
+  return g ? String(g.value||"").trim() : "";
+}
+/* Devuelve, por ubicación, QUIÉNES la ocupan — ya no un simple «sí/no». Hace falta desde
+   que existen los grupos: dos composiciones del MISMO grupo comparten tanque a propósito
+   (entraron mezcladas), y dos de grupos distintos siguen sin poder. */
+function madIngOcupados(exceptoComp){
+  const m={};
+  document.querySelectorAll("#mi-comps .mi-comp").forEach(function(c){
+    if(c===exceptoComp) return;
+    const gr = madIngGrupoDe(c);
+    c.querySelectorAll("tr.mi-rep").forEach(function(tr){
+      const k = tr.getAttribute("data-sala")+"|"+tr.getAttribute("data-tanque");
+      if(!m[k]) m[k]=[];
+      if(m[k].indexOf(gr)===-1) m[k].push(gr);
+    });
+  });
+  return m;
+}
+function madIngElegidos(comp){
+  const m={};
+  if(!comp) return m;
+  comp.querySelectorAll("tr.mi-rep").forEach(function(tr){
+    m[tr.getAttribute("data-sala")+"|"+tr.getAttribute("data-tanque")]=1;
+  });
+  return m;
+}
+/* La rejilla DIBUJA la sala. Un tanque está libre, elegido aquí, u ocupado por otra
+   composición — y el tercero sale apagado y no se puede clicar, que es lo que hace VISIBLE
+   la regla de arriba sin un solo mensaje de error. La validación la sigue comprobando
+   igual: la pantalla evita el error, no lo sustituye. */
+function _madIngRejillaHTML(comp, sala){
+  const list = MAD_TANQUES_POR_SALA[sala] || [];
+  if(!list.length) return '<div style="font-size:11px;color:#94a3b8;padding:8px 0;max-width:210px">Elige una sala y aparecerán sus tanques.</div>';
+  const ocup = madIngOcupados(comp), eleg = madIngElegidos(comp);
+  const miGrupo = madIngGrupoDe(comp);
+  const cel = list.map(function(t){
+    const k = sala+"|"+t;
+    const ocupantes = ocup[k] || [];
+    const on = !!eleg[k];
+    /* AJENO = lo ocupa alguien que NO es de mi grupo, o yo no tengo grupo. Sólo eso apaga
+       el tanque. Si lo ocupa un compañero de grupo se puede clicar: entraron mezclados y
+       comparten tanque a propósito. */
+    const ajeno = ocupantes.some(function(g){ return miGrupo==="" || g!==miGrupo; });
+    const off = !on && ajeno;
+    const compartido = !on && !ajeno && ocupantes.length>0;
+    const st = off ? "background:#e2e8f0;color:#94a3b8;border-color:#cbd5e1;cursor:not-allowed"
+             : on  ? "background:#0369a1;color:#fff;border-color:#0369a1;font-weight:700;cursor:pointer"
+             : compartido ? "background:#e0f2fe;color:#075985;border-color:#0369a1;border-style:dashed;cursor:pointer"
+                   : "background:#fff;color:#334155;border-color:#cbd5e1;cursor:pointer";
+    const tit = off ? "Ya ocupado por otra composición de este ingreso"
+              : compartido ? "Lo ocupa otra composición de tu MISMO grupo: podéis compartirlo"
+              : (on ? "Quitar este tanque" : "Asignar este tanque");
+    return '<button type="button" class="mi-tq" data-t="'+t+'"'+(off?' disabled':'')+' title="'+tit+'"'
+      + ' onclick="madIngTanqueToggle(this)"'
+      + ' style="width:38px;height:34px;border:1.5px solid;border-radius:6px;font-size:12px;padding:0;'+st+'">'+t+'</button>';
+  }).join("");
+  return '<div style="display:flex;flex-wrap:wrap;gap:5px;max-width:210px">'+cel+'</div>';
+}
+function _madIngRepHTML(sala, tanque){
+  return '<tr class="mi-rep" data-sala="'+escapeHtml(sala)+'" data-tanque="'+escapeHtml(String(tanque))+'">'
+    + '<td style="font-size:11px">'+escapeHtml(sala)+'</td>'
+    + '<td style="text-align:center;font-size:12px;font-weight:700">'+escapeHtml(String(tanque))+'</td>'
+    + '<td><input class="mi-machos" type="number" min="0" step="1" inputmode="numeric" oninput="madIngRefrescarDe(this)" style="font-size:12px;width:74px"></td>'
+    + '<td><input class="mi-hembras" type="number" min="0" step="1" inputmode="numeric" oninput="madIngRefrescarDe(this)" style="font-size:12px;width:74px"></td>'
     + '<td><select class="mi-agua" style="font-size:12px;min-width:96px">'+madIngAguaOpts("RAS")+'</select></td>'
-    + '<td><button class="btn" type="button" onclick="madIngDelRep(this)" style="font-size:11px">✕</button></td>'
+    + '<td><button class="btn" type="button" onclick="madIngQuitarTanque(this)" style="font-size:11px">✕</button></td>'
     + '</tr>';
 }
 function _madIngCompHTML(){
   return '<div class="mi-comp" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px;background:#fff">'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
+    +   '<label style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#475569;padding-bottom:8px;white-space:nowrap"><input type="checkbox" class="mi-sel">Combinar</label>'
+    +   '<input type="hidden" class="mi-grupo" value="">'
+    +   '<span class="mi-grupo-badge" style="padding-bottom:8px"></span>'
     +   '<label style="'+_MAD_ING_LBL+'">Código genético<input class="mi-cg" style="'+_MAD_ING_INP+';width:120px"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Piscina Broodstock<input class="mi-piscina" style="'+_MAD_ING_INP+';width:120px"></label>'
-    +   '<label style="'+_MAD_ING_LBL+'">Camaronera origen<input class="mi-camaronera" style="'+_MAD_ING_INP+';width:160px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Camaronera origen<select class="mi-camaronera" style="'+_MAD_ING_INP+';width:160px">'+madIngCamaroneraOpts("")+'</select></label>'
     +   '<button class="btn" type="button" onclick="madIngDelComp(this)" style="font-size:11px">✕ Quitar composición</button>'
     + '</div>'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
-    +   '<label style="'+_MAD_ING_LBL+'">Machos (total)<input class="mi-tmachos" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:96px"></label>'
-    +   '<label style="'+_MAD_ING_LBL+'">Hembras (total)<input class="mi-thembras" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:96px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Machos (total)<input class="mi-tmachos" type="number" min="0" step="1" oninput="madIngRefrescarDe(this)" style="'+_MAD_ING_INP+';width:96px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Hembras (total)<input class="mi-thembras" type="number" min="0" step="1" oninput="madIngRefrescarDe(this)" style="'+_MAD_ING_INP+';width:96px"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Peso prom. ♂ (g)<input class="mi-pmachos" type="number" min="0" step="0.1" style="'+_MAD_ING_INP+';width:96px"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Peso prom. ♀ (g)<input class="mi-phembras" type="number" min="0" step="0.1" style="'+_MAD_ING_INP+';width:96px"></label>'
     + '</div>'
@@ -6202,40 +6409,108 @@ function _madIngCompHTML(){
     +   '<label style="'+_MAD_ING_LBL+'">Camarones por m²<input class="mi-cm2" type="number" min="0" step="0.1" style="'+_MAD_ING_INP+';width:110px"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Densidad de siembra<input class="mi-densidad" type="number" min="0" step="0.1" style="'+_MAD_ING_INP+';width:110px"></label>'
     + '</div>'
-    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr>'
-    +   '<th>Sala</th><th>Tanque</th><th>Machos</th><th>Hembras</th><th>Agua</th><th></th>'
-    + '</tr></thead><tbody class="mi-reps">'+_madIngRepHTML()+'</tbody></table></div>'
-    + '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'
-    +   '<button class="btn" type="button" onclick="madIngAddRep(this)" style="font-size:11px">➕ Tanque</button>'
-    +   '<button class="btn" type="button" onclick="madIngRepartir(this)" style="font-size:11px">⚖️ Repartir parejo</button>'
+    + '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">'
+    +   '<div>'
+    +     '<label style="'+_MAD_ING_LBL+'">Sala<select class="mi-sala" onchange="madIngSalaChange(this)" style="'+_MAD_ING_INP+';width:130px">'+madIngSalaOpts("")+'</select></label>'
+    +     '<div class="mi-rejilla" style="margin-top:7px">'+_madIngRejillaHTML(null,"")+'</div>'
+    +     '<div style="font-size:10px;color:#94a3b8;margin-top:5px;max-width:210px">Clic para asignar o quitar. Los apagados ya los ocupa otra composición.</div>'
+    +   '</div>'
+    +   '<div style="flex:1;min-width:300px">'
+    +     '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr>'
+    +       '<th>Sala</th><th>Tq</th><th>Machos</th><th>Hembras</th><th>Agua</th><th></th>'
+    +     '</tr></thead><tbody class="mi-reps"></tbody></table></div>'
+    +     '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">'
+    +       '<button class="btn" type="button" onclick="madIngRepartir(this)" style="font-size:11px">⚖️ Repartir parejo</button>'
+    +       '<span class="mi-pend" style="font-size:11px"></span>'
+    +     '</div>'
+    +   '</div>'
     + '</div>'
     + '</div>';
 }
-function madIngAddComp(){ const c=document.getElementById("mi-comps"); if(c) c.insertAdjacentHTML("beforeend", _madIngCompHTML()); }
+function madIngAddComp(){
+  const c=document.getElementById("mi-comps");
+  if(!c) return;
+  c.insertAdjacentHTML("beforeend", _madIngCompHTML());
+  madIngRefrescar();
+}
 function madIngDelComp(btn){
   const b=btn.closest(".mi-comp"), c=document.getElementById("mi-comps");
-  if(b && c && c.querySelectorAll(".mi-comp").length>1) b.remove();
+  if(b && c && c.querySelectorAll(".mi-comp").length>1){ b.remove(); madIngRefrescar(); }
   else toast("Debe quedar al menos una composición.","warn",2500);
 }
-function madIngAddRep(btn){
-  const comp=btn.closest(".mi-comp"); if(!comp) return;
-  comp.querySelector(".mi-reps").insertAdjacentHTML("beforeend", _madIngRepHTML());
-}
-function madIngDelRep(btn){
-  const tr=btn.closest("tr"), tb=btn.closest("tbody");
-  if(tb && tb.querySelectorAll("tr.mi-rep").length>1) tr.remove();
-  else toast("Debe quedar al menos un tanque.","warn",2500);
-}
-// El desplegable de tanque depende de la sala: se recalcula al cambiarla y se conserva
-// el valor si sigue siendo válido en la sala nueva.
+/* El desplegable de sala repinta la rejilla. NO borra los tanques ya elegidos de otra sala:
+   una composición puede repartirse entre varias salas —el lote es UNO aunque se reparta—,
+   así que se eligen los de una sala, se cambia de sala y se siguen eligiendo. */
 function madIngSalaChange(sel){
-  const tr=sel.closest("tr"); if(!tr) return;
-  const tq=tr.querySelector(".mi-tanque"), antes=tq?tq.value:"";
-  if(tq) tq.innerHTML = madIngTanqueOpts(sel.value, antes);
+  const comp = sel.closest(".mi-comp"); if(!comp) return;
+  const cont = comp.querySelector(".mi-rejilla");
+  if(cont) cont.innerHTML = _madIngRejillaHTML(comp, sel.value);
+}
+function madIngTanqueToggle(btn){
+  const comp = btn.closest(".mi-comp"); if(!comp) return;
+  const selEl = comp.querySelector(".mi-sala");
+  const sala = selEl ? selEl.value : "";
+  if(!sala) return;
+  const t = btn.getAttribute("data-t");
+  const tb = comp.querySelector(".mi-reps"); if(!tb) return;
+  let ya = null;
+  tb.querySelectorAll("tr.mi-rep").forEach(function(tr){
+    if(tr.getAttribute("data-sala")===sala && tr.getAttribute("data-tanque")===String(t)) ya=tr;
+  });
+  if(ya) ya.remove();
+  else tb.insertAdjacentHTML("beforeend", _madIngRepHTML(sala, t));
+  madIngRefrescar();
+}
+function madIngQuitarTanque(btn){
+  const tr = btn.closest("tr");
+  if(tr) tr.remove();
+  madIngRefrescar();
+}
+function madIngRefrescarDe(el){ madIngRefrescar(); }
+/* Repinta la rejilla y el contador de TODAS las composiciones, no sólo la tocada: ocupar un
+   tanque aquí tiene que apagarlo allí. Si sólo se repintara la propia, la regla existiría
+   en la validación pero no en la pantalla, que es donde el operario la necesita. */
+function madIngRefrescar(){
+  document.querySelectorAll("#mi-comps .mi-comp").forEach(function(c){
+    const sel = c.querySelector(".mi-sala"), cont = c.querySelector(".mi-rejilla");
+    if(sel && cont) cont.innerHTML = _madIngRejillaHTML(c, sel.value);
+    const p = c.querySelector(".mi-pend");
+    if(p) p.innerHTML = _madIngPendHTML(c);
+    const b = c.querySelector(".mi-grupo-badge");
+    if(b){
+      const gr = madIngGrupoDe(c);
+      b.innerHTML = gr
+        ? '<span style="background:#e0f2fe;color:#075985;border:1px solid #7dd3fc;padding:2px 7px;border-radius:5px;font-size:11px;font-weight:600">🔗 '+escapeHtml(gr)+'</span>'
+          + '<button class="btn" type="button" onclick="madIngDesagrupar(this)" style="font-size:10px;margin-left:5px">separar</button>'
+        : '';
+    }
+  });
+}
+/* «Cuántos faltan por repartir», pedido por el usuario el 2026-09-08. Va EN VIVO porque
+   antes esa diferencia sólo aparecía al pulsar 🔍 Revisar, y para entonces ya se había
+   tecleado todo el reparto. La validación sigue avisando igual al guardar: esto adelanta
+   el aviso, no lo reemplaza. */
+function _madIngPendHTML(comp){
+  const val = function(s){ const e=comp.querySelector(s); const n=parseInt(e?e.value:"",10); return isFinite(n)?n:null; };
+  const rep = function(cls){
+    let s=0;
+    comp.querySelectorAll("tr.mi-rep "+cls).forEach(function(e){ const n=parseInt(e.value,10); if(isFinite(n)) s+=n; });
+    return s;
+  };
+  const n = comp.querySelectorAll("tr.mi-rep").length;
+  const cola = '<span style="color:#64748b"> · '+n+' tanque(s)</span>';
+  const tm=val(".mi-tmachos"), th=val(".mi-thembras");
+  if(tm===null && th===null) return '<span style="color:#94a3b8">Escribe los totales para ver cuánto falta por repartir.</span>'+cola;
+  const parte=[];
+  if(tm!==null && (tm-rep(".mi-machos"))!==0) parte.push((tm-rep(".mi-machos"))+" ♂");
+  if(th!==null && (th-rep(".mi-hembras"))!==0) parte.push((th-rep(".mi-hembras"))+" ♀");
+  if(!parte.length) return '<span style="color:#166534;font-weight:600">✅ Repartido completo</span>'+cola;
+  return '<span style="color:#92400e;font-weight:600">⚠ Faltan por repartir: '+escapeHtml(parte.join(" · "))+'</span>'+cola;
 }
 function madIngRepartir(btn){
   const comp=btn.closest(".mi-comp"); if(!comp) return;
   const reps=comp.querySelectorAll("tr.mi-rep");
+  if(!reps.length){ toast("Elige primero los tanques en la rejilla de la sala.","warn",3200); return; }
   const tm=comp.querySelector(".mi-tmachos"), th=comp.querySelector(".mi-thembras");
   const m=madIngRepartirParejo(tm?tm.value:"", reps.length);
   const h=madIngRepartirParejo(th?th.value:"", reps.length);
@@ -6244,6 +6519,54 @@ function madIngRepartir(btn){
     if(h.length){ const e=tr.querySelector(".mi-hembras"); if(e) e.value=h[i]; }
   });
   if(!m.length && !h.length) toast("Escribe primero los totales de machos u hembras.","warn",3000);
+  madIngRefrescar();
+}
+/* 🔗 COMBINAR · pedido por el usuario el 2026-09-08 para un caso real: dos piscinas con
+   códigos genéticos distintos, el MISMO lote de ingreso, que se mezclan al entrar y forman
+   tanques mixtos.
+   Qué hace, y por qué cada cosa:
+     · junta los TEXTOS con «/» (767/766) — es la notación que usa el propio usuario;
+     · SUMA los totales de machos y hembras, porque la mezcla es la suma;
+     · para los promedios (pesos, supervivencia, camarones/m², densidad) hace la media
+       PONDERADA, no la simple: una media simple mentiría cuando una piscina aporta 400
+       animales y la otra 40. Los pesos se ponderan por su propio sexo; el resto, por el
+       total de animales de cada composición;
+     · DESCARTA el reparto de las fundidas. No es un descuido: la mezcla es un lote nuevo y
+       se reparte de nuevo, que es lo que de verdad ocurre en la sala. Los tanques que
+       ocupaban quedan libres en la rejilla al instante. */
+/* 🔗 COMBINAR · AGRUPA, NO FUNDE — y la primera versión de esto SÍ fundía, que era un
+   defecto de modelado CON PÉRDIDA DE DATO. Fusionar 766 y 767 en una composición
+   «766/767» con los totales sumados dejaba sin respuesta la pregunta «¿cuántos machos
+   entraron con la 766?»: destruía lo MEDIDO —lo que entró por cada piscina, que se sabe
+   exacto— para representar lo NO MEDIDO —cuántos animales de cada código hay en cada
+   tanque, que nadie puede saber una vez mezclados—.
+   🔑 Ahora cada composición conserva su código, su piscina, su camaronera y sus cifras, y
+   el grupo sólo DECLARA que entraron mezcladas y por eso comparten tanque. La hoja
+   responde las dos preguntas: el detalle por código (sumando sus filas) y el agrupado
+   (sumando las del grupo). El grupo viaja en su propia columna. */
+function madIngCombinar(){
+  const sel = Array.prototype.slice.call(document.querySelectorAll("#mi-comps .mi-comp"))
+    .filter(function(c){ const k=c.querySelector(".mi-sel"); return !!(k && k.checked); });
+  if(sel.length<2){ toast("Marca «Combinar» en al menos DOS composiciones.","warn",3500); return; }
+  const cgs=[];
+  sel.forEach(function(c){
+    const e=c.querySelector(".mi-cg"), v=e?madIngNormCG(e.value):"";
+    if(v && cgs.indexOf(v)===-1) cgs.push(v);
+  });
+  if(cgs.length<2){ toast("Las marcadas tienen que traer códigos genéticos DISTINTOS para agruparse.","warn",4500); return; }
+  const grupo = cgs.join("/");
+  sel.forEach(function(c){
+    const g=c.querySelector(".mi-grupo"); if(g) g.value=grupo;
+    const k=c.querySelector(".mi-sel"); if(k) k.checked=false;
+  });
+  madIngRefrescar();
+  toast("🔗 Agrupadas en «"+grupo+"». Cada una conserva sus cifras; ya pueden compartir tanque.","ok",6500);
+}
+function madIngDesagrupar(btn){
+  const comp=btn.closest(".mi-comp"); if(!comp) return;
+  const g=comp.querySelector(".mi-grupo"); if(g) g.value="";
+  madIngRefrescar();
+  toast("Composición separada del grupo.","info",2500);
 }
 // Lee el DOM y devuelve el modelo. Es la única función que sabe de la maqueta: todo lo
 // demás trabaja sobre el modelo, que es lo que la prueba de paridad puede ejercer.
@@ -6254,10 +6577,12 @@ function madIngCollect(){
   document.querySelectorAll("#mi-comps .mi-comp").forEach(function(c){
     const reparto=[];
     c.querySelectorAll("tr.mi-rep").forEach(function(tr){
-      reparto.push({ sala:g(tr,".mi-sala"), tanque:g(tr,".mi-tanque"), machos:g(tr,".mi-machos"), hembras:g(tr,".mi-hembras"), agua:g(tr,".mi-agua") });
+      // Sala y tanque ya no son campos: los fija la rejilla y viven en el data- de la fila.
+      reparto.push({ sala:tr.getAttribute("data-sala")||"", tanque:tr.getAttribute("data-tanque")||"", machos:g(tr,".mi-machos"), hembras:g(tr,".mi-hembras"), agua:g(tr,".mi-agua") });
     });
     comps.push({
       codigoGenetico:g(c,".mi-cg"), piscina:g(c,".mi-piscina"), camaronera:g(c,".mi-camaronera"),
+      grupo:g(c,".mi-grupo"),
       machos:g(c,".mi-tmachos"), hembras:g(c,".mi-thembras"),
       pesoMachos:g(c,".mi-pmachos"), pesoHembras:g(c,".mi-phembras"),
       supervivencia:g(c,".mi-superv"), camaronesM2:g(c,".mi-cm2"), densidad:g(c,".mi-densidad"),
@@ -6265,6 +6590,55 @@ function madIngCollect(){
     });
   });
   return { fecha:fEl?fEl.value:"", lote:lEl?lEl.value:"", composiciones:comps };
+}
+/* ── Registro local de lo enviado desde este dispositivo ──────────────────────────────
+   ⚠ POR QUÉ UN REGISTRO PROPIO Y NO `pushHist`: el Historial identifica cada entrada por
+   (ficha, fecha) y guarda UNA por día, así que dos lotes ingresados el mismo día se
+   pisarían; y además `pushHist` sale por la puerta si la ficha no está en `FICHAS`, que es
+   la lista de las grillas de M01–M10. Meter «ingreso» ahí tocaría los puntos y el estado de
+   otras siete fichas para arreglar una.
+   🔑 Y hace falta porque esta ficha NO guarda filas locales: cuando un envío quedaba
+   ENCOLADO sin señal, el dato estaba a salvo pero no dejaba rastro en ningún sitio —ni
+   fila, ni punto, ni historial—, así que el operario no tenía forma de comprobarlo. */
+const MAD_ING_LOG_KEY = "larv4_mad_ing_log";
+function madIngLogLeer(){
+  try{ const v=JSON.parse(localStorage.getItem(MAD_ING_LOG_KEY)||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; }
+}
+function madIngLogGuardar(list){
+  try{ localStorage.setItem(MAD_ING_LOG_KEY, JSON.stringify(list.slice(-40))); }catch(_){}
+}
+function madIngLogAnota(fecha, lote, filas, estado){
+  const l=madIngLogLeer();
+  l.push({ id:Date.now().toString(36)+Math.random().toString(36).slice(2,6), ts:Date.now(), fecha:fecha, lote:lote, filas:filas, estado:estado });
+  madIngLogGuardar(l);
+}
+function madIngLogHTML(){
+  const l=madIngLogLeer();
+  if(!l.length) return "";
+  const enCola = (typeof syncQueueLen==="function") ? syncQueueLen() : 0;
+  /* Reconciliación barata: si la cola de envíos está VACÍA, no queda nada por entregar, así
+     que lo que figuraba «en cola» ya llegó. Evita un estado que se quedaría mintiendo para
+     siempre, y sin cablear nada dentro de flushSyncQueue. */
+  if(enCola===0){
+    let cambio=false;
+    l.forEach(function(e){ if(e.estado==="cola"){ e.estado="ok"; cambio=true; } });
+    if(cambio) madIngLogGuardar(l);
+  }
+  const filas=l.slice().reverse().slice(0,10).map(function(e){
+    const st = e.estado==="cola"
+      ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px">📶 en cola</span>'
+      : '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px">✅ enviado</span>';
+    const d=new Date(e.ts), hh=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+    return '<tr><td style="font-size:11px">'+escapeHtml(String(e.fecha||""))+' '+hh+'</td>'
+      + '<td style="font-weight:600">'+escapeHtml(String(e.lote||""))+'</td>'
+      + '<td style="text-align:right">'+(e.filas||0)+'</td>'
+      + '<td>'+st+'</td></tr>';
+  }).join("");
+  return '<div style="margin-top:18px">'
+    + '<h3 style="margin:0 0 4px;font-size:13px">Registrado desde este dispositivo</h3>'
+    + (enCola ? '<div style="font-size:11px;color:#92400e;margin-bottom:5px">📶 '+enCola+' envío(s) esperando conexión. Se entregan y se verifican solos.</div>' : '')
+    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Lote</th><th>Filas</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div>'
+    + '</div>';
 }
 function _madIngPinta(res, filas){
   const box=document.getElementById("mi-report"); if(!box) return;
@@ -6285,27 +6659,42 @@ async function madIngGuardar(){
   _madIngPinta(res, payload.rows.length);
   if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
   if(!payload.rows.length){ toast("No hay ningún tanque con ubicación que guardar.","warn",4000); return; }
-  toast("Enviando ingreso del lote "+madIngNormLote(model.lote)+"…","info",2200);
+  const lote=madIngNormLote(model.lote);
+  toast("Enviando ingreso del lote "+lote+"…","info",2200);
   const _t={};
   const ok=await postPayload(payload, gasUrl(), _t);
-  if(ok){ toast("✅ Ingreso registrado · "+payload.rows.length+" fila(s)","ok",5000); return; }
+  if(ok){
+    madIngLogAnota(model.fecha, lote, payload.rows.length, "ok");
+    toast("✅ Ingreso registrado · "+payload.rows.length+" fila(s)","ok",5000);
+    madIngReiniciar();
+    return;
+  }
   // ⚠⚠ NO basta con `if(ok) … else error`: postPayload devuelve false TAMBIÉN cuando el
   // envío quedó ENCOLADO, y decirle «no se pudo enviar» a alguien cuyo ingreso ya está a
   // salvo le empuja a registrarlo dos veces. `_syncNotOkUI` es quien sabe distinguir
   // «encolado» de «error de verdad». Es el invariante H1, y esta ficha lo incumplió al
   // nacer: lo cazó `h1-ast-una.test.js` antes de que llegara a producción.
+  if(_t.outcome==="queued"){
+    // Encolado = a salvo: se anota y se limpia igual que un envío entregado, y el registro
+    // de abajo lo enseña como «en cola» hasta que la cola se vacía.
+    madIngLogAnota(model.fecha, lote, payload.rows.length, "cola");
+    madIngReiniciar();
+  }
   _syncNotOkUI(_t.outcome, "No se pudo registrar el ingreso", null, _t.gasMessage);
 }
-// ⚠⚠ NO SE RE-PINTA SI YA ESTÁ MONTADO. `selTab` llama a este render cada vez que se
-// vuelve a la pestaña, y volver a escribir innerHTML BORRA lo tecleado: varias
-// composiciones con su reparto por tanques, sin un aviso ni forma de recuperarlo. Es el
-// mismo anti-pérdida que las grillas resuelven con `_madCommitActive`; aquí basta con no
-// destruir. Para empezar de cero está el botón 🧹 Vaciar, que pregunta antes.
-function madIngVaciar(){
-  if(!confirm("¿Vaciar el formulario de ingreso?\nSe perderá todo lo tecleado.")) return;
+/* ⚠⚠ EL RENDER NO SE RE-PINTA SI YA ESTÁ MONTADO. `selTab` llama a este render cada vez que
+   se vuelve a la pestaña, y volver a escribir innerHTML BORRA lo tecleado: varias
+   composiciones con su reparto por tanques, sin un aviso ni forma de recuperarlo.
+   Por eso el vaciado es EXPLÍCITO y pasa por aquí: `madIngReiniciar` es el único sitio que
+   tiene permiso para destruir el formulario. */
+function madIngReiniciar(){
   const fp=document.getElementById("fp-ingreso");
   if(fp) fp.innerHTML="";
   renderMadIngreso();
+}
+function madIngVaciar(){
+  if(!confirm("¿Vaciar el formulario de ingreso?\nSe perderá todo lo tecleado.")) return;
+  madIngReiniciar();
 }
 function renderMadIngreso(){
   const fp=document.getElementById("fp-ingreso"); if(!fp) return;
@@ -6314,8 +6703,8 @@ function renderMadIngreso(){
   fp.innerHTML='<div class="fc">'
     + '<div class="fc-h"><div class="fc-t">📥 Maduración · Ingreso</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
     + '<div class="fc-b">'
-    +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:center;gap:8px">'
-    +     '<span style="font-size:16px">ℹ️</span><span>Un lote puede traer varias parejas de código genético y piscina, y repartirse entre varias salas. El lote es UNO para todas.</span>'
+    +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
+    +     '<span style="font-size:16px">ℹ️</span><span>Un lote puede traer varias parejas de código genético y piscina, y repartirse entre varias salas. El lote es UNO para todas.<br>Si dos piscinas se <b>mezclan al entrar</b>, márcalas y pulsa <b>🔗 Combinar</b>: entran como una sola composición (767/766). Un tanque se ocupa <b>una vez</b>.</span>'
     +   '</div>'
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
     +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha de ingreso<input type="date" id="mi-fecha" value="'+escapeHtml(todayStr)+'" style="'+_MAD_ING_INP+'"></label>'
@@ -6324,12 +6713,864 @@ function renderMadIngreso(){
     +   '<div id="mi-comps">'+_madIngCompHTML()+'</div>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
     +     '<button class="btn" type="button" onclick="madIngAddComp()">➕ Composición</button>'
+    +     '<button class="btn" type="button" onclick="madIngCombinar()">🔗 Combinar marcadas</button>'
     +     '<button class="btn" type="button" onclick="madIngRevisar()">🔍 Revisar</button>'
     +     '<button class="btn" type="button" style="font-weight:700" onclick="madIngGuardar()">☁️ Guardar y sincronizar</button>'
     +     '<button class="btn" type="button" onclick="madIngVaciar()">🧹 Vaciar</button>'
     +   '</div>'
     +   '<div id="mi-report" style="margin-top:12px"></div>'
+    +   '<div id="mi-log">'+madIngLogHTML()+'</div>'
     + '</div></div>';
+  madIngRefrescar();
+}
+
+
+// ── Maduración · MOVIMIENTOS (Fase 3, 2026-09-08) ────────────────────────────
+// Copia inline del esquema `ficha-maduracion-movimientos.schema.js`. Vive dos veces a
+// propósito —los dos de Music no tienen módulos ES— y la costura la cierra la prueba de
+// paridad, que extrae ESTE bloque y exige el mismo payload y el mismo veredicto.
+// 🔑 El grano es el TRAMO (origen → destino), no el evento: con eso las tres operaciones
+// del usuario —transferencia, agrupación, mezcla— salen de la misma forma sin lógica
+// especial para cada una. El `Tipo` sólo etiqueta para quien lee.
+const MAD_MOV_SHEET = "Maduración Movimientos";
+const MAD_MOV_TIPOS = ["Transferencia","Agrupación","Mezcla"];
+const MAD_MOV_MOTIVOS = ["Agrupación por baja densidad","Mezcla de lotes","Reubicación por mantenimiento","Reubicación sanitaria","Otro"];
+const MAD_MOV_COLUMNS = [
+  { h:"Fecha", k:"fecha" },
+  { h:"Tipo", k:"tipo" },
+  { h:"Sala origen", k:"salaOrigen" },
+  { h:"Tanque origen", k:"tanqueOrigen" },
+  { h:"Sala destino", k:"salaDestino" },
+  { h:"Tanque destino", k:"tanqueDestino" },
+  { h:"Machos", k:"machos" },
+  { h:"Hembras", k:"hembras" },
+  { h:"Agua destino", k:"agua" },
+  { h:"Motivo", k:"motivo" },
+  { h:"Observaciones", k:"observaciones" },
+  { h:"ID", k:"id" }
+];
+const MAD_MOV_HEADERS = MAD_MOV_COLUMNS.map(function(c){ return c.h; });
+// Llave natural del tramo. Lleva las DOS salas además de los tanques porque la numeración
+// se repite entre salas: sin ellas, «t3 → t7» sería ambiguo.
+function madMovRowId(fecha, sO, tO, sD, tD){
+  return sanitizeStr(fecha,10)+"-"+madIngSalaTag(sO)+"t"+Number(tO)+"-"+madIngSalaTag(sD)+"t"+Number(tD);
+}
+function madMovBuildRows(model){
+  const m = model||{};
+  const fecha = sanitizeStr(m.fecha,10);
+  const cab = { fecha:fecha, tipo:sanitizeStr(m.tipo,30), motivo:sanitizeStr(m.motivo,60), observaciones:sanitizeStr(m.observaciones,300) };
+  const filas = [];
+  (m.tramos||[]).forEach(function(tramo){
+    const t = tramo||{};
+    const sO = sanitizeStr(t.salaOrigen,30), tO = madIngInt(t.tanqueOrigen);
+    const sD = sanitizeStr(t.salaDestino,30), tD = madIngInt(t.tanqueDestino);
+    if(sO===""||tO===""||sD===""||tD==="") return;
+    const v = {
+      fecha: cab.fecha, tipo: cab.tipo, motivo: cab.motivo, observaciones: cab.observaciones,
+      salaOrigen: sO, tanqueOrigen: tO, salaDestino: sD, tanqueDestino: tD,
+      machos: madIngInt(t.machos), hembras: madIngInt(t.hembras),
+      agua: sanitizeStr(t.agua,20),
+      id: madMovRowId(fecha, sO, tO, sD, tD)
+    };
+    filas.push(MAD_MOV_COLUMNS.map(function(col){ return v[col.k]; }));
+  });
+  return filas;
+}
+function buildMadMovPayload(model){
+  return { sheetName: MAD_MOV_SHEET, headers: MAD_MOV_HEADERS.slice(), rows: madMovBuildRows(model) };
+}
+function madMovValidar(model){
+  const m = model||{}, errores=[], avisos=[];
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(m.fecha||""))) errores.push("La fecha no es válida.");
+  if(sanitizeStr(m.tipo,30)==="") errores.push("Falta el tipo de movimiento.");
+  const tramos = m.tramos||[];
+  if(!tramos.length) errores.push("El movimiento no tiene ningún tramo (origen → destino).");
+  // ⚠⚠ EL DUPLICADO ES ERROR, NO AVISO: dos tramos con el mismo (fecha, origen, destino)
+  // generan el MISMO ID y el upsert escribe el segundo ENCIMA del primero. Los animales
+  // del primero desaparecen sin un solo síntoma. Es el defecto que ya se pagó en Traslado.
+  const vistos = {};
+  const origenes = {}, destinos = {};
+  tramos.forEach(function(tramo, i){
+    const t = tramo||{};
+    const sO = sanitizeStr(t.salaOrigen,30), tO = madIngInt(t.tanqueOrigen);
+    const sD = sanitizeStr(t.salaDestino,30), tD = madIngInt(t.tanqueDestino);
+    const et = "tramo "+(i+1);
+    if(sO===""||tO===""||sD===""||tD===""){ errores.push("El "+et+" no tiene origen y destino completos."); return; }
+    // Mover un tanque a sí mismo no es un movimiento: no dice nada y el libro lo aplicaría
+    // como sacar y volver a meter.
+    if(sO===sD && tO===tD){ errores.push("El "+et+" sale y llega al mismo sitio ("+sO+" tanque "+tO+")."); return; }
+    const llave = madIngSalaTag(sO)+"|"+tO+"|"+madIngSalaTag(sD)+"|"+tD;
+    if(vistos[llave]) errores.push("El "+et+" repite el mismo origen y destino que otro tramo. Los dos generarían la misma fila y el segundo borraría al primero: regístralos sumados.");
+    vistos[llave]=1;
+    const mach = madIngInt(t.machos), hemb = madIngInt(t.hembras);
+    if((mach===""||mach===0) && (hemb===""||hemb===0)) errores.push("El "+et+" no mueve ningún animal.");
+    [[sO,tO,"origen"],[sD,tD,"destino"]].forEach(function(par){
+      const permitidos = MAD_TANQUES_POR_SALA[par[0]];
+      if(!permitidos) avisos.push("«"+par[0]+"» no es una sala conocida ("+par[2]+" del "+et+").");
+      else if(permitidos.indexOf(par[1])===-1) avisos.push("El tanque "+par[1]+" no es de "+par[0]+" ("+par[2]+" del "+et+").");
+    });
+    origenes[madIngSalaTag(sO)+"|"+tO]=1;
+    destinos[madIngSalaTag(sD)+"|"+tD]=1;
+  });
+  // Un tanque que es origen de un tramo y destino de otro dentro del MISMO movimiento no es
+  // un error —una rotación es legítima—, pero el orden en que se aplican cambia el
+  // resultado, así que se avisa en vez de callarlo.
+  for(const k in origenes){
+    if(destinos[k]){ avisos.push("Un mismo tanque es origen y destino dentro de este movimiento. Se aplicará en el orden de los tramos; si no es lo que quieres, regístralos en dos movimientos."); break; }
+  }
+  return { errores: errores, avisos: avisos };
+}
+
+// ── Maduración · Movimientos · interfaz ──────────────────────────────────────
+function madMovTipoOpts(sel){
+  return MAD_MOV_TIPOS.map(function(t){ return '<option value="'+escapeHtml(t)+'"'+(sel===t?' selected':'')+'>'+escapeHtml(t)+'</option>'; }).join("");
+}
+function madMovMotivoOpts(sel){
+  return '<option value=""></option>' + MAD_MOV_MOTIVOS.map(function(t){ return '<option value="'+escapeHtml(t)+'"'+(sel===t?' selected':'')+'>'+escapeHtml(t)+'</option>'; }).join("");
+}
+function _madMovTramoHTML(){
+  return '<tr class="mv-tramo">'
+    + '<td><select class="mv-so" onchange="madMovSalaChange(this)" style="font-size:12px;min-width:84px">'+madIngSalaOpts("")+'</select></td>'
+    + '<td><select class="mv-to" onchange="madMovOrigenChange(this)" style="font-size:12px;min-width:58px">'+madIngTanqueOpts("","")+'</select></td>'
+    + '<td class="mv-saldo-o" style="font-size:10px;color:#94a3b8;white-space:nowrap">—</td>'
+    + '<td style="text-align:center;color:#0369a1;font-weight:700">→</td>'
+    + '<td><select class="mv-sd" onchange="madMovSalaChange(this)" style="font-size:12px;min-width:84px">'+madIngSalaOpts("")+'</select></td>'
+    + '<td><select class="mv-td" style="font-size:12px;min-width:58px">'+madIngTanqueOpts("","")+'</select></td>'
+    + '<td><input class="mv-machos" type="number" min="0" step="1" inputmode="numeric" style="font-size:12px;width:72px"></td>'
+    + '<td><input class="mv-hembras" type="number" min="0" step="1" inputmode="numeric" style="font-size:12px;width:72px"></td>'
+    + '<td><select class="mv-agua" style="font-size:12px;min-width:92px">'+madIngAguaOpts("RAS")+'</select></td>'
+    + '<td><button class="btn" type="button" onclick="madMovDelTramo(this)" style="font-size:11px">✕</button></td>'
+    + '</tr>';
+}
+// El desplegable de tanque depende de su sala, y hay DOS por fila (origen y destino): se
+// resuelve cuál toca por la clase del select que cambió, no por posición.
+function madMovSalaChange(sel){
+  const tr = sel.closest("tr"); if(!tr) return;
+  const esOrigen = sel.classList.contains("mv-so");
+  const tqEl = tr.querySelector(esOrigen ? ".mv-to" : ".mv-td");
+  if(tqEl) tqEl.innerHTML = madIngTanqueOpts(sel.value, tqEl.value);
+  if(esOrigen) madMovOrigenChange(sel);
+}
+/* ⚠⚠ EL SALDO SE BORRA EN CUANTO CAMBIA EL ORIGEN, y no es cosmética: un saldo que se
+   queda en pantalla mientras el tanque de abajo ya es otro es PEOR que no enseñar nada —
+   se lee como una medición del tanque nuevo y decide cuántos animales se teclean. Es la
+   misma familia del verde en falso que la auditoría del 09-08 encontró en la vista Saldo:
+   un dato viejo que no se sabe viejo. */
+function madMovOrigenChange(sel){
+  const tr = sel.closest("tr"); if(!tr) return;
+  const c = tr.querySelector(".mv-saldo-o");
+  if(c){ c.textContent = "—"; c.style.color = "#94a3b8"; }
+}
+function madMovAddTramo(){
+  const tb = document.getElementById("mv-tramos");
+  if(tb) tb.insertAdjacentHTML("beforeend", _madMovTramoHTML());
+}
+function madMovDelTramo(btn){
+  const tb = btn.closest("tbody"), tr = btn.closest("tr");
+  if(tb && tb.querySelectorAll("tr.mv-tramo").length>1) tr.remove();
+  else toast("Debe quedar al menos un tramo.","warn",2500);
+}
+/* 🔄 VER SALDO DE LOS ORÍGENES · decisión del usuario (2026-09-08): bajo un BOTÓN, no al
+   abrir la pestaña. El motivo es medido, no de gusto: leer estas hojas cuesta entre 2 y 52 s
+   en este GAS, así que hacerlo siempre castigaría a quien ya trae la cifra del papel. Bajo
+   botón, quien duda consulta y quien no, no espera.
+   🔑 Reutiliza madSaldoCargar, que es el MISMO cargador de la vista Saldo: dos lecturas
+   distintas del mismo libro habrían divergido en silencio, y una de las dos habría acabado
+   enseñando un saldo que la otra no reconoce. */
+async function madMovVerSaldo(){
+  const btn = document.getElementById("mv-saldo-btn");
+  const nota = document.getElementById("mv-saldo-nota");
+  if(nota) nota.innerHTML = '<span style="color:#64748b">Leyendo las hojas… puede tardar unos segundos.</span>';
+  if(btn) btn.disabled = true;
+  try{
+    const libro = await madSaldoCargar(true);
+    _madMovPintaSaldo(libro);
+  }catch(_){
+    if(nota) nota.innerHTML = '<span style="color:#991b1b">No se pudieron leer las hojas. Reintenta con 🔄.</span>';
+  }finally{
+    if(btn) btn.disabled = false;
+  }
+}
+function _madMovPintaSaldo(libro){
+  const nota = document.getElementById("mv-saldo-nota");
+  /* Si alguna hoja no se pudo leer, el saldo está INCOMPLETO y hay que decirlo ANTES de
+     enseñarlo. Callarlo sería repetir el defecto A1: un libro a medias leído como completo. */
+  const roto = !!(libro.fallos && libro.fallos.length);
+  if(nota){
+    nota.innerHTML = roto
+      ? '<span style="color:#991b1b">⚠ No se pudieron leer '+libro.fallos.length+' hoja(s) ('+escapeHtml(libro.fallos.join(", "))+'): lo de abajo está INCOMPLETO y puede quedarse corto.</span>'
+      : '<span style="color:#166534">Saldo al '+escapeHtml(today())+'. Se recalcula al pulsar de nuevo.</span>';
+  }
+  document.querySelectorAll("#mv-tramos tr.mv-tramo").forEach(function(tr){
+    const c = tr.querySelector(".mv-saldo-o"); if(!c) return;
+    const s = tr.querySelector(".mv-so"), t = tr.querySelector(".mv-to");
+    const sala = s ? s.value : "", tq = t ? t.value : "";
+    if(!sala || !tq){ c.textContent = "—"; c.style.color = "#94a3b8"; return; }
+    const T = libro.tanques[madUbicKey(sala, tq)];
+    if(!T){
+      // Ningún ingreso explica ese tanque: no es «cero vivos», es «el libro no lo conoce».
+      c.textContent = roto ? "?" : "sin ingreso";
+      c.style.color = "#92400e";
+      return;
+    }
+    c.textContent = T.machos + "♂ " + T.hembras + "♀";
+    c.style.color = (T.machos + T.hembras) > 0 ? "#0369a1" : "#92400e";
+  });
+}
+function madMovCollect(){
+  const g = function(el,sel){ const e=el.querySelector(sel); return e?e.value:""; };
+  const v = function(id){ const e=document.getElementById(id); return e?e.value:""; };
+  const tramos = [];
+  document.querySelectorAll("#mv-tramos tr.mv-tramo").forEach(function(tr){
+    tramos.push({
+      salaOrigen:g(tr,".mv-so"), tanqueOrigen:g(tr,".mv-to"),
+      salaDestino:g(tr,".mv-sd"), tanqueDestino:g(tr,".mv-td"),
+      machos:g(tr,".mv-machos"), hembras:g(tr,".mv-hembras"), agua:g(tr,".mv-agua")
+    });
+  });
+  return { fecha:v("mv-fecha"), tipo:v("mv-tipo"), motivo:v("mv-motivo"), observaciones:v("mv-obs"), tramos:tramos };
+}
+function _madMovPinta(res, filas){
+  const box=document.getElementById("mv-report"); if(!box) return;
+  let h="";
+  if(res.errores.length) h += '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#991b1b"><b>No se puede guardar:</b><ul style="margin:4px 0 0;padding-left:18px">'+res.errores.map(function(e){ return "<li>"+escapeHtml(e)+"</li>"; }).join("")+"</ul></div>";
+  if(res.avisos.length) h += '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#92400e"><b>Avisos (se puede guardar igual):</b><ul style="margin:4px 0 0;padding-left:18px">'+res.avisos.map(function(a){ return "<li>"+escapeHtml(a)+"</li>"; }).join("")+"</ul></div>";
+  if(!res.errores.length) h += '<div style="font-size:12px;color:#475569">Se escribirán <b>'+filas+'</b> fila(s) en «'+escapeHtml(MAD_MOV_SHEET)+'».</div>';
+  box.innerHTML=h;
+}
+function madMovRevisar(){
+  const model=madMovCollect();
+  _madMovPinta(madMovValidar(model), madMovBuildRows(model).length);
+}
+// Registro local propio, por lo mismo que en Ingreso: esta ficha no guarda filas locales,
+// así que sin esto un envío ENCOLADO sin señal no dejaría rastro en ningún sitio.
+const MAD_MOV_LOG_KEY = "larv4_mad_mov_log";
+function madMovLogLeer(){
+  try{ const v=JSON.parse(localStorage.getItem(MAD_MOV_LOG_KEY)||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; }
+}
+function madMovLogGuardar(list){
+  try{ localStorage.setItem(MAD_MOV_LOG_KEY, JSON.stringify(list.slice(-40))); }catch(_){}
+}
+function madMovLogAnota(fecha, tipo, filas, estado){
+  const l=madMovLogLeer();
+  l.push({ id:Date.now().toString(36)+Math.random().toString(36).slice(2,6), ts:Date.now(), fecha:fecha, tipo:tipo, filas:filas, estado:estado });
+  madMovLogGuardar(l);
+}
+function madMovLogHTML(){
+  const l=madMovLogLeer();
+  if(!l.length) return "";
+  const enCola = (typeof syncQueueLen==="function") ? syncQueueLen() : 0;
+  if(enCola===0){
+    let cambio=false;
+    l.forEach(function(e){ if(e.estado==="cola"){ e.estado="ok"; cambio=true; } });
+    if(cambio) madMovLogGuardar(l);
+  }
+  const filas=l.slice().reverse().slice(0,10).map(function(e){
+    const st = e.estado==="cola"
+      ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px">📶 en cola</span>'
+      : '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px">✅ enviado</span>';
+    const d=new Date(e.ts), hh=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+    return '<tr><td style="font-size:11px">'+escapeHtml(String(e.fecha||""))+' '+hh+'</td>'
+      + '<td>'+escapeHtml(String(e.tipo||""))+'</td>'
+      + '<td style="text-align:right">'+(e.filas||0)+'</td>'
+      + '<td>'+st+'</td></tr>';
+  }).join("");
+  return '<div style="margin-top:18px">'
+    + '<h3 style="margin:0 0 4px;font-size:13px">Registrado desde este dispositivo</h3>'
+    + (enCola ? '<div style="font-size:11px;color:#92400e;margin-bottom:5px">📶 '+enCola+' envío(s) esperando conexión. Se entregan y se verifican solos.</div>' : '')
+    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Tipo</th><th>Tramos</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div>'
+    + '</div>';
+}
+async function madMovGuardar(){
+  const model=madMovCollect();
+  const res=madMovValidar(model);
+  const payload=buildMadMovPayload(model);
+  _madMovPinta(res, payload.rows.length);
+  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
+  if(!payload.rows.length){ toast("No hay ningún tramo completo que guardar.","warn",4000); return; }
+  toast("Enviando "+payload.rows.length+" tramo(s)…","info",2200);
+  const _t={};
+  const ok=await postPayload(payload, gasUrl(), _t);
+  if(ok){
+    madMovLogAnota(model.fecha, model.tipo, payload.rows.length, "ok");
+    toast("✅ Movimiento registrado · "+payload.rows.length+" tramo(s)","ok",5000);
+    madMovReiniciar();
+    return;
+  }
+  // ⚠⚠ `postPayload` devuelve false TAMBIÉN cuando el envío quedó ENCOLADO. Decirle «no se
+  // pudo enviar» a alguien cuyo movimiento ya está a salvo le empuja a registrarlo dos
+  // veces, y aquí eso descuadraría el saldo de dos tanques. Es el invariante H1.
+  if(_t.outcome==="queued"){
+    madMovLogAnota(model.fecha, model.tipo, payload.rows.length, "cola");
+    madMovReiniciar();
+  }
+  _syncNotOkUI(_t.outcome, "No se pudo registrar el movimiento", null, _t.gasMessage);
+}
+function madMovReiniciar(){
+  const fp=document.getElementById("fp-movimientos");
+  if(fp) fp.innerHTML="";
+  renderMadMovimientos();
+}
+function madMovVaciar(){
+  if(!confirm("¿Vaciar el formulario de movimientos?\nSe perderá todo lo tecleado.")) return;
+  madMovReiniciar();
+}
+// ⚠⚠ NO SE RE-PINTA SI YA ESTÁ MONTADO, por lo mismo que la ficha de Ingreso: `selTab`
+// llama a este render cada vez que se vuelve a la pestaña, y reescribir innerHTML borraría
+// los tramos tecleados sin aviso. Para empezar de cero está 🧹 Vaciar.
+function renderMadMovimientos(){
+  const fp=document.getElementById("fp-movimientos"); if(!fp) return;
+  if(fp.querySelector("#mv-tramos")) return;
+  const todayStr=today();
+  fp.innerHTML='<div class="fc">'
+    + '<div class="fc-h"><div class="fc-t">🔄 Maduración · Movimientos</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
+    + '<div class="fc-b">'
+    +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
+    +     '<span style="font-size:16px">ℹ️</span><span>Registra sólo <b>cuántos</b> animales se movieron y entre qué tanques. <b>De qué lote eran lo deduce el libro</b>, repartiendo en proporción a los vivos del tanque de origen ese día: en un tanque mezclado nadie puede saberlo, y teclearlo sería inventarlo.<br>Para una <b>agrupación</b>, añade un tramo por cada tanque de origen con el mismo destino.</span>'
+    +   '</div>'
+    +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mv-fecha" value="'+escapeHtml(todayStr)+'" style="'+_MAD_ING_INP+'"></label>'
+    +     '<label style="'+_MAD_ING_LBL+'">Tipo<select id="mv-tipo" style="'+_MAD_ING_INP+';width:150px">'+madMovTipoOpts("Transferencia")+'</select></label>'
+    +     '<label style="'+_MAD_ING_LBL+'">Motivo<select id="mv-motivo" style="'+_MAD_ING_INP+';width:220px">'+madMovMotivoOpts("")+'</select></label>'
+    +   '</div>'
+    +   '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr>'
+    +     '<th>Sala origen</th><th>Tq</th><th>Vivos</th><th></th><th>Sala destino</th><th>Tq</th><th>Machos</th><th>Hembras</th><th>Agua dest.</th><th></th>'
+    +   '</tr></thead><tbody id="mv-tramos">'+_madMovTramoHTML()+'</tbody></table></div>'
+    +   '<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+    +     '<button class="btn" type="button" onclick="madMovAddTramo()" style="font-size:11px">➕ Tramo</button>'
+    +     '<button class="btn" type="button" id="mv-saldo-btn" onclick="madMovVerSaldo()" style="font-size:11px">🔄 Ver saldo de los orígenes</button>'
+    +     '<span id="mv-saldo-nota" style="font-size:11px"></span>'
+    +   '</div>'
+    +   '<label style="'+_MAD_ING_LBL+';margin-top:12px">Observaciones<textarea id="mv-obs" rows="2" style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box;resize:vertical"></textarea></label>'
+    +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'
+    +     '<button class="btn" type="button" onclick="madMovRevisar()">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" style="font-weight:700" onclick="madMovGuardar()">☁️ Guardar y sincronizar</button>'
+    +     '<button class="btn" type="button" onclick="madMovVaciar()">🧹 Vaciar</button>'
+    +   '</div>'
+    +   '<div id="mv-report" style="margin-top:12px"></div>'
+    +   '<div id="mv-log">'+madMovLogHTML()+'</div>'
+    + '</div></div>';
+}
+
+// ── Maduración · DESOVES (Fase 4A, 2026-09-08) ───────────────────────────────
+// Copia inline del esquema `ficha-maduracion-desoves.schema.js`. La costura la cierra la
+// prueba de paridad, que extrae ESTE bloque y exige el mismo payload y el mismo veredicto.
+//
+// ⚠⚠ EL DESOVE NO ES DE UN TANQUE. Lo corrigió el usuario el 2026-09-08 y la primera
+// versión de este diseño lo tenía mal: los operarios sacan copuladas de VARIOS tanques y
+// las juntan en un pool —siempre del mismo lote, piscina y código genético—, y al devolver
+// los animales nadie identifica cuáles eran. Así que «cuánto desovó el tanque 3» NO EXISTE
+// como dato: preguntarlo obligaría a inventarlo. El pool lo identifica el CÓDIGO GENÉTICO
+// dentro de su lote, y ése es el grano.
+//
+// ⚠ Un desove NO mueve el saldo: las hembras vuelven a su tanque. Esta hoja NO es fuente
+// del libro mayor — es producción, no un movimiento de animales.
+//
+// 🔴🔴 LA LLAVE ES POSICIONAL: el GAS escribe esta hoja con `upsertMadRows` y clave por
+// POSICIÓN [0,1,2] (madKeyCols en Code.gs), NO por columna "ID" como Ingreso, Movimientos
+// y Fin de Ciclo. Las TRES PRIMERAS COLUMNAS NO SE PUEDEN REORDENAR NI MOVER: mover una
+// haría que dos desoves distintos compartieran llave y uno pisara al otro, en silencio.
+// Es la familia de la llave posicional que ya destruyó datos en Traslado.
+const MAD_DESOVE_SHEET = "Maduración Lotes";
+const MAD_DESOVE_MIL = 1000;
+const MAD_DESOVE_COLUMNS = [
+  { h:"Fecha", k:"fecha" },
+  { h:"Lote", k:"lote" },
+  { h:"Código genético", k:"codigoGenetico" },
+  { h:"Piscina Broodstock", k:"piscina" },
+  { h:"Desoves", k:"desoves" },
+  { h:"Total de huevos", k:"huevos" },
+  { h:"Total de nauplios", k:"nauplios" },
+  { h:"No viables", k:"noViables" },
+  { h:"Fecha N2", k:"fechaN2" },
+  { h:"N2", k:"n2" },
+  { h:"Fecha N5", k:"fechaN5" },
+  { h:"N5", k:"n5" },
+  { h:"Observaciones", k:"observaciones" }
+];
+const MAD_DESOVE_HEADERS = MAD_DESOVE_COLUMNS.map(function(c){ return c.h; });
+const MAD_DESOVE_KEY_COLS = [0,1,2];
+function madDesFecha(v){ return /^\d{4}-\d{2}-\d{2}$/.test(String(v||"")); }
+// ⚠ Devuelve VACÍO cuando no hay cifra, no cero. `upsertMadRows` conserva la celda cuando
+// el valor entrante viene vacío, y de eso depende poder completar N2 y N5 días después sin
+// borrar los nauplios. Con cero, el segundo envío los machacaría.
+function madDesMiles(v){
+  const n = madIngInt(v);
+  return n==="" ? "" : n*MAD_DESOVE_MIL;
+}
+function madDesNormLote(s){ return sanitizeStr(s,40).toUpperCase().replace(/\s+/g,""); }
+function madDesNormCG(s){ return sanitizeStr(s,60).toUpperCase().replace(/\s+/g,""); }
+function madDesBuildRows(model){
+  const m = model||{};
+  const fecha = sanitizeStr(m.fecha,10);
+  const filas = [];
+  (m.desoves||[]).forEach(function(d){
+    const x = d||{};
+    const lote = madDesNormLote(x.lote), cg = madDesNormCG(x.codigoGenetico);
+    if(lote===""||cg==="") return;   // sin llave completa no hay fila que escribir
+    const v = {
+      fecha: fecha, lote: lote, codigoGenetico: cg,
+      piscina: sanitizeStr(x.piscina,60),
+      desoves: madIngInt(x.desoves),
+      huevos: madDesMiles(x.huevos), nauplios: madDesMiles(x.nauplios), noViables: madDesMiles(x.noViables),
+      fechaN2: sanitizeStr(x.fechaN2,10), n2: madDesMiles(x.n2),
+      fechaN5: sanitizeStr(x.fechaN5,10), n5: madDesMiles(x.n5),
+      observaciones: sanitizeStr(x.observaciones,300)
+    };
+    filas.push(MAD_DESOVE_COLUMNS.map(function(col){ return v[col.k]; }));
+  });
+  return filas;
+}
+function buildMadDesovePayload(model){
+  return { sheetName: MAD_DESOVE_SHEET, headers: MAD_DESOVE_HEADERS.slice(), rows: madDesBuildRows(model) };
+}
+function madDesValidar(model){
+  const m = model||{}, errores=[], avisos=[];
+  if(!madDesFecha(m.fecha)) errores.push("La fecha del desove no es válida.");
+  const desoves = m.desoves||[];
+  if(!desoves.length) errores.push("No hay ningún desove que registrar.");
+  // ⚠⚠ EL DUPLICADO ES ERROR: dos filas con la misma (fecha, lote, código) comparten la
+  // llave POSICIONAL y la segunda se fusiona sobre la primera, pisando sus cifras.
+  const vistos = {};
+  desoves.forEach(function(d, i){
+    const x = d||{};
+    const lote = madDesNormLote(x.lote), cg = madDesNormCG(x.codigoGenetico);
+    const et = cg ? "«"+cg+"»" : "el desove "+(i+1);
+    if(lote==="") errores.push("Falta el lote "+(cg ? "de "+et : "del desove "+(i+1))+".");
+    if(cg==="") errores.push("Falta el código genético del desove "+(i+1)+". Es lo que identifica el pool que desovó.");
+    if(lote===""||cg==="") return;
+    const llave = lote+"|"+cg;
+    if(vistos[llave]) errores.push("El lote "+lote+" con código "+cg+" aparece dos veces en esta fecha. Los dos escribirían la misma fila y el segundo pisaría al primero: regístralos sumados.");
+    vistos[llave]=1;
+    // 🔒 EL CANDADO que pidió el usuario: N5 exige N2. Un N5 sin su N2 deja un hueco que
+    // después nadie sabe si fue que no se contó o que se olvidó registrar.
+    const hayN2 = madIngInt(x.n2)!=="" || madDesFecha(x.fechaN2);
+    const hayN5 = madIngInt(x.n5)!=="" || madDesFecha(x.fechaN5);
+    if(hayN5 && !hayN2) errores.push("En "+et+" hay N5 sin N2. El N5 sólo se registra después del N2.");
+    // ⚠ NO se comparan los tamaños entre sí (N5 ≤ N2 ≤ nauplios): el usuario confirmó el
+    // 2026-09-08 que son cosas DISTINTAS y no comparables. Un aviso por tamaño relativo
+    // aquí sería un rojo que no significa nada, y ésos esconden el rojo siguiente.
+    if(x.fechaN2 && !madDesFecha(x.fechaN2)) avisos.push("La fecha de N2 de "+et+" no es válida.");
+    if(x.fechaN5 && !madDesFecha(x.fechaN5)) avisos.push("La fecha de N5 de "+et+" no es válida.");
+    if(madDesFecha(m.fecha) && madDesFecha(x.fechaN2) && x.fechaN2 < m.fecha) avisos.push("El N2 de "+et+" es ANTERIOR al desove.");
+    if(madDesFecha(x.fechaN2) && madDesFecha(x.fechaN5) && x.fechaN5 < x.fechaN2) avisos.push("El N5 de "+et+" es ANTERIOR al N2.");
+    const algo = ["desoves","huevos","nauplios","noViables","n2","n5"].some(function(k){ const n=madIngInt(x[k]); return n!=="" && n>0; });
+    if(!algo) avisos.push(et+" no trae ninguna cifra: la fila se escribirá vacía.");
+  });
+  return { errores: errores, avisos: avisos };
+}
+
+// ── Maduración · Desoves · interfaz ──────────────────────────────────────────
+function _madDesCardHTML(){
+  return '<div class="md-des" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px;background:#fff">'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
+    +   '<label style="'+_MAD_ING_LBL+'">Lote<input class="md-lote" style="'+_MAD_ING_INP+';width:100px;text-transform:uppercase"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Código genético<input class="md-cg" style="'+_MAD_ING_INP+';width:120px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Piscina Broodstock<input class="md-piscina" style="'+_MAD_ING_INP+';width:130px"></label>'
+    +   '<button class="btn" type="button" onclick="madDesDelCard(this)" style="font-size:11px">✕ Quitar</button>'
+    + '</div>'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
+    +   '<label style="'+_MAD_ING_LBL+'">Desoves<input class="md-desoves" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:88px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Total de huevos (miles)<input class="md-huevos" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:130px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Total de nauplios (miles)<input class="md-nauplios" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:140px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">No viables (miles)<input class="md-noviables" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:120px"></label>'
+    + '</div>'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
+    +   '<label style="'+_MAD_ING_LBL+'">Fecha N2<input class="md-fn2" type="date" style="'+_MAD_ING_INP+'"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">N2 (miles)<input class="md-n2" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:110px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Fecha N5<input class="md-fn5" type="date" style="'+_MAD_ING_INP+'"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">N5 (miles)<input class="md-n5" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:110px"></label>'
+    + '</div>'
+    + '<label style="'+_MAD_ING_LBL+'">Observaciones<input class="md-obs" style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
+    + '</div>';
+}
+function madDesAddCard(){
+  const c=document.getElementById("md-cards");
+  if(c) c.insertAdjacentHTML("beforeend", _madDesCardHTML());
+}
+function madDesDelCard(btn){
+  const b=btn.closest(".md-des"), c=document.getElementById("md-cards");
+  if(b && c && c.querySelectorAll(".md-des").length>1) b.remove();
+  else toast("Debe quedar al menos un desove.","warn",2500);
+}
+function madDesCollect(){
+  const g=function(el,sel){ const e=el.querySelector(sel); return e?e.value:""; };
+  const f=document.getElementById("md-fecha");
+  const desoves=[];
+  document.querySelectorAll("#md-cards .md-des").forEach(function(c){
+    desoves.push({
+      lote:g(c,".md-lote"), codigoGenetico:g(c,".md-cg"), piscina:g(c,".md-piscina"),
+      desoves:g(c,".md-desoves"), huevos:g(c,".md-huevos"), nauplios:g(c,".md-nauplios"),
+      noViables:g(c,".md-noviables"),
+      fechaN2:g(c,".md-fn2"), n2:g(c,".md-n2"), fechaN5:g(c,".md-fn5"), n5:g(c,".md-n5"),
+      observaciones:g(c,".md-obs")
+    });
+  });
+  return { fecha:f?f.value:"", desoves:desoves };
+}
+function _madDesPinta(res, filas){
+  const box=document.getElementById("md-report"); if(!box) return;
+  let h="";
+  if(res.errores.length) h += '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#991b1b"><b>No se puede guardar:</b><ul style="margin:4px 0 0;padding-left:18px">'+res.errores.map(function(e){ return "<li>"+escapeHtml(e)+"</li>"; }).join("")+"</ul></div>";
+  if(res.avisos.length) h += '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#92400e"><b>Avisos (se puede guardar igual):</b><ul style="margin:4px 0 0;padding-left:18px">'+res.avisos.map(function(a){ return "<li>"+escapeHtml(a)+"</li>"; }).join("")+"</ul></div>";
+  if(!res.errores.length) h += '<div style="font-size:12px;color:#475569">Se escribirán <b>'+filas+'</b> fila(s) en «'+escapeHtml(MAD_DESOVE_SHEET)+'».</div>';
+  box.innerHTML=h;
+}
+function madDesRevisar(){
+  const model=madDesCollect();
+  _madDesPinta(madDesValidar(model), madDesBuildRows(model).length);
+}
+// Registro local propio, por lo mismo que en Ingreso y Movimientos: esta ficha no guarda
+// filas locales, así que sin esto un envío ENCOLADO no dejaría rastro en ningún sitio.
+const MAD_DES_LOG_KEY = "larv4_mad_des_log";
+function madDesLogLeer(){
+  try{ const v=JSON.parse(localStorage.getItem(MAD_DES_LOG_KEY)||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; }
+}
+function madDesLogGuardar(list){
+  try{ localStorage.setItem(MAD_DES_LOG_KEY, JSON.stringify(list.slice(-40))); }catch(_){}
+}
+function madDesLogAnota(fecha, filas, estado){
+  const l=madDesLogLeer();
+  l.push({ id:Date.now().toString(36)+Math.random().toString(36).slice(2,6), ts:Date.now(), fecha:fecha, filas:filas, estado:estado });
+  madDesLogGuardar(l);
+}
+function madDesLogHTML(){
+  const l=madDesLogLeer();
+  if(!l.length) return "";
+  const enCola = (typeof syncQueueLen==="function") ? syncQueueLen() : 0;
+  if(enCola===0){
+    let cambio=false;
+    l.forEach(function(e){ if(e.estado==="cola"){ e.estado="ok"; cambio=true; } });
+    if(cambio) madDesLogGuardar(l);
+  }
+  const filas=l.slice().reverse().slice(0,10).map(function(e){
+    const st = e.estado==="cola"
+      ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px">📶 en cola</span>'
+      : '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px">✅ enviado</span>';
+    const d=new Date(e.ts), hh=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+    return '<tr><td style="font-size:11px">'+escapeHtml(String(e.fecha||""))+' '+hh+'</td>'
+      + '<td style="text-align:right">'+(e.filas||0)+'</td><td>'+st+'</td></tr>';
+  }).join("");
+  return '<div style="margin-top:18px">'
+    + '<h3 style="margin:0 0 4px;font-size:13px">Registrado desde este dispositivo</h3>'
+    + (enCola ? '<div style="font-size:11px;color:#92400e;margin-bottom:5px">📶 '+enCola+' envío(s) esperando conexión. Se entregan y se verifican solos.</div>' : '')
+    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Desoves</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div>'
+    + '</div>';
+}
+async function madDesGuardar(){
+  const model=madDesCollect();
+  const res=madDesValidar(model);
+  const payload=buildMadDesovePayload(model);
+  _madDesPinta(res, payload.rows.length);
+  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
+  if(!payload.rows.length){ toast("No hay ningún desove completo que guardar.","warn",4000); return; }
+  toast("Enviando "+payload.rows.length+" desove(s)…","info",2200);
+  const _t={};
+  const ok=await postPayload(payload, gasUrl(), _t);
+  if(ok){
+    madDesLogAnota(model.fecha, payload.rows.length, "ok");
+    toast("✅ Desove registrado · "+payload.rows.length+" fila(s)","ok",5000);
+    madDesReiniciar();
+    return;
+  }
+  // ⚠⚠ `postPayload` devuelve false TAMBIÉN cuando el envío quedó ENCOLADO. Es el
+  // invariante H1: decir «no se pudo» a alguien cuyo dato ya está a salvo le empuja a
+  // registrarlo dos veces, y aquí el segundo envío se fusionaría sobre el primero.
+  if(_t.outcome==="queued"){
+    madDesLogAnota(model.fecha, payload.rows.length, "cola");
+    madDesReiniciar();
+  }
+  _syncNotOkUI(_t.outcome, "No se pudo registrar el desove", null, _t.gasMessage);
+}
+function madDesReiniciar(){
+  const fp=document.getElementById("fp-desoves");
+  if(fp) fp.innerHTML="";
+  renderMadDesoves();
+}
+function madDesVaciar(){
+  if(!confirm("¿Vaciar el formulario de desoves?\nSe perderá todo lo tecleado.")) return;
+  madDesReiniciar();
+}
+// ⚠⚠ NO SE RE-PINTA SI YA ESTÁ MONTADO, por lo mismo que Ingreso y Movimientos: `selTab`
+// llama a este render cada vez que se vuelve a la pestaña, y reescribir innerHTML borraría
+// lo tecleado sin aviso. Para empezar de cero está 🧹 Vaciar.
+function renderMadDesoves(){
+  const fp=document.getElementById("fp-desoves"); if(!fp) return;
+  if(fp.querySelector("#md-cards")) return;
+  const todayStr=today();
+  fp.innerHTML='<div class="fc">'
+    + '<div class="fc-h"><div class="fc-t">🥚 Maduración · Desoves</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
+    + '<div class="fc-b">'
+    +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
+    +     '<span style="font-size:16px">ℹ️</span><span>La producción se registra por <b>lote y código genético</b>, no por tanque: las copuladas de varios tanques se juntan en un pool y al devolverlas nadie identifica cuáles eran.<br>Los conteos grandes van <b>en miles</b> (escribe <b>6500</b> para 6.500.000). <b>N2 y N5 se completan después</b>: vuelve otro día, teclea el mismo lote y código, y rellena sólo lo nuevo.</span>'
+    +   '</div>'
+    +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha del desove<input type="date" id="md-fecha" value="'+escapeHtml(todayStr)+'" style="'+_MAD_ING_INP+'"></label>'
+    +   '</div>'
+    +   '<div id="md-cards">'+_madDesCardHTML()+'</div>'
+    +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
+    +     '<button class="btn" type="button" onclick="madDesAddCard()">➕ Desove</button>'
+    +     '<button class="btn" type="button" onclick="madDesRevisar()">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" style="font-weight:700" onclick="madDesGuardar()">☁️ Guardar y sincronizar</button>'
+    +     '<button class="btn" type="button" onclick="madDesVaciar()">🧹 Vaciar</button>'
+    +   '</div>'
+    +   '<div id="md-report" style="margin-top:12px"></div>'
+    +   '<div id="md-log">'+madDesLogHTML()+'</div>'
+    + '</div></div>';
+}
+
+// ── Maduración · FIN DE CICLO (Fase 4B, 2026-09-08) ──────────────────────────
+// Copia inline de `ficha-maduracion-fin-ciclo.schema.js`. La costura la cierra la prueba
+// de paridad, que extrae ESTE bloque y exige el mismo payload y el mismo veredicto.
+//
+// 🔑 ES LA ÚNICA SALIDA DEL SISTEMA (decisión del usuario, 2026-09-08): un MOVIMIENTO
+// siempre aterriza en otro tanque; lo que se va de Maduración —un pedido a otra camaronera,
+// un descarte— sale por esta ficha y por ninguna otra. Por eso lleva Destino.
+//
+// 🔑🔑 EL CIERRE ES DEL LOTE, NO DE UN TANQUE, por la misma razón que el desove: el libro
+// descuenta de CADA tanque donde el lote esté, en proporción a lo que tenga vivo ese día.
+// Y en un cierre TOTAL, lo que el libro creía que quedaba y NO salió es LA DIFERENCIA: se
+// anota y el lote va a cero. No se esconde ni se bloquea.
+const MAD_FIN_SHEET = "Maduración Fin de Ciclo";
+const MAD_FIN_TIPOS = ["Total","Parcial"];
+const MAD_FIN_MOTIVOS = ["Pedido","Descarte parcial","Fin de vida útil","Descarte sanitario","Otro"];
+const MAD_FIN_COLUMNS = [
+  { h:"Fecha", k:"fecha" },
+  { h:"Lote", k:"lote" },
+  { h:"Tipo", k:"tipo" },
+  { h:"Motivo", k:"motivo" },
+  { h:"Destino", k:"destino" },
+  { h:"Machos", k:"machos" },
+  { h:"Hembras", k:"hembras" },
+  { h:"Observaciones", k:"observaciones" },
+  { h:"ID", k:"id" }
+];
+const MAD_FIN_HEADERS = MAD_FIN_COLUMNS.map(function(c){ return c.h; });
+// El motivo, compacto, para la llave. Sin él un pedido y un descarte del mismo lote el
+// mismo día compartirían ID y el segundo borraría al primero — y con él su descuento.
+function madFinMotivoTag(s){ return sanitizeStr(s,60).toUpperCase().replace(/[^A-ZÁÉÍÓÚÑ0-9]+/g,""); }
+function madFinRowId(fecha, lote, motivo){
+  return sanitizeStr(fecha,10)+"-"+madDesNormLote(lote)+"-"+madFinMotivoTag(motivo);
+}
+function madFinBuildRows(model){
+  const m = model||{};
+  const fecha = sanitizeStr(m.fecha,10);
+  const filas = [];
+  (m.cierres||[]).forEach(function(c){
+    const x = c||{};
+    const lote = madDesNormLote(x.lote), motivo = sanitizeStr(x.motivo,60);
+    if(lote===""||motivo==="") return;   // sin llave completa no hay fila
+    const v = {
+      fecha: fecha, lote: lote, tipo: sanitizeStr(x.tipo,20), motivo: motivo,
+      destino: sanitizeStr(x.destino,80),
+      machos: madIngInt(x.machos), hembras: madIngInt(x.hembras),
+      observaciones: sanitizeStr(x.observaciones,300),
+      id: madFinRowId(fecha, lote, motivo)
+    };
+    filas.push(MAD_FIN_COLUMNS.map(function(col){ return v[col.k]; }));
+  });
+  return filas;
+}
+function buildMadFinPayload(model){
+  return { sheetName: MAD_FIN_SHEET, headers: MAD_FIN_HEADERS.slice(), rows: madFinBuildRows(model) };
+}
+function madFinValidar(model){
+  const m = model||{}, errores=[], avisos=[];
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(m.fecha||""))) errores.push("La fecha no es válida.");
+  const cierres = m.cierres||[];
+  if(!cierres.length) errores.push("No hay ningún cierre que registrar.");
+  // ⚠⚠ ERROR y no aviso: dos cierres con el mismo (fecha, lote, motivo) generan el MISMO ID
+  // y el upsert escribe el segundo ENCIMA del primero. Los animales del primero desaparecen
+  // de la hoja sin síntoma, y con ellos su descuento del saldo.
+  const vistos = {};
+  cierres.forEach(function(c, i){
+    const x = c||{};
+    const lote = madDesNormLote(x.lote), motivo = sanitizeStr(x.motivo,60), tipo = sanitizeStr(x.tipo,20);
+    const et = lote ? "el cierre de "+lote : "el cierre "+(i+1);
+    if(lote==="") errores.push("Falta el lote del cierre "+(i+1)+".");
+    if(motivo==="") errores.push("Falta el motivo del cierre "+(i+1)+". Va en la llave: sin él, un pedido y un descarte del mismo día se pisarían.");
+    if(tipo==="") errores.push("Falta decir si "+et+" es Total o Parcial.");
+    else if(MAD_FIN_TIPOS.indexOf(tipo)===-1) avisos.push("«"+tipo+"» no es un tipo conocido de cierre.");
+    if(lote===""||motivo==="") return;
+    const llave = lote+"|"+madFinMotivoTag(motivo);
+    if(vistos[llave]) errores.push("El lote "+lote+" se cierra dos veces por «"+motivo+"» en esta fecha. Los dos escribirían la misma fila y el segundo borraría al primero: regístralos sumados.");
+    vistos[llave]=1;
+    const mach = madIngInt(x.machos), hemb = madIngInt(x.hembras);
+    if((mach===""||mach===0) && (hemb===""||hemb===0)){
+      // Un cierre TOTAL sin cifras es legítimo: «no salió nada y el resto es diferencia», y
+      // además es el registro que MÁS información da. Uno PARCIAL sin cifras no dice nada.
+      if(tipo==="Parcial") errores.push("Un cierre Parcial de "+lote+" sin animales no descuenta nada.");
+      else avisos.push("El cierre total de "+lote+" no declara animales: TODO lo que el libro tenga se anotará como diferencia.");
+    }
+    if(motivo==="Pedido" && sanitizeStr(x.destino,80)==="") avisos.push("El pedido de "+lote+" no dice a qué destino fue.");
+  });
+  return { errores: errores, avisos: avisos };
+}
+
+// ── Maduración · Fin de Ciclo · interfaz ─────────────────────────────────────
+function madFinTipoOpts(sel){
+  return '<option value=""></option>' + MAD_FIN_TIPOS.map(function(t){ return '<option value="'+escapeHtml(t)+'"'+(sel===t?' selected':'')+'>'+escapeHtml(t)+'</option>'; }).join("");
+}
+function madFinMotivoOpts(sel){
+  return '<option value=""></option>' + MAD_FIN_MOTIVOS.map(function(t){ return '<option value="'+escapeHtml(t)+'"'+(sel===t?' selected':'')+'>'+escapeHtml(t)+'</option>'; }).join("");
+}
+function _madFinCardHTML(){
+  return '<div class="mf-cierre" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px;background:#fff">'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
+    +   '<label style="'+_MAD_ING_LBL+'">Lote<input class="mf-lote" style="'+_MAD_ING_INP+';width:100px;text-transform:uppercase"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Tipo<select class="mf-tipo" onchange="madFinTipoChange(this)" style="'+_MAD_ING_INP+';width:120px">'+madFinTipoOpts("Parcial")+'</select></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Motivo<select class="mf-motivo" style="'+_MAD_ING_INP+';width:190px">'+madFinMotivoOpts("")+'</select></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Destino<select class="mf-destino" style="'+_MAD_ING_INP+';width:150px">'+madIngCamaroneraOpts("")+'</select></label>'
+    +   '<button class="btn" type="button" onclick="madFinDelCard(this)" style="font-size:11px">✕ Quitar</button>'
+    + '</div>'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
+    +   '<label style="'+_MAD_ING_LBL+'">Machos que salen<input class="mf-machos" type="number" min="0" step="1" inputmode="numeric" style="'+_MAD_ING_INP+';width:120px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Hembras que salen<input class="mf-hembras" type="number" min="0" step="1" inputmode="numeric" style="'+_MAD_ING_INP+';width:120px"></label>'
+    +   '<span class="mf-nota" style="font-size:11px;color:#64748b;padding-bottom:8px"></span>'
+    + '</div>'
+    + '<label style="'+_MAD_ING_LBL+'">Observaciones<input class="mf-obs" style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
+    + '</div>';
+}
+// Un cierre TOTAL y uno PARCIAL no significan lo mismo, y la diferencia no es evidente al
+// leer dos palabras en un desplegable: se dice al lado, en el momento de elegir.
+function madFinTipoChange(sel){
+  const c = sel.closest(".mf-cierre"); if(!c) return;
+  const n = c.querySelector(".mf-nota"); if(!n) return;
+  n.innerHTML = sel.value==="Total"
+    ? '<b>Total:</b> lo que el libro crea que queda y no salga se anotará como <b>diferencia</b>, y el lote quedará cerrado.'
+    : (sel.value==="Parcial" ? '<b>Parcial:</b> sólo descuenta lo que sale. El lote sigue vivo.' : '');
+}
+function madFinAddCard(){
+  const c=document.getElementById("mf-cards");
+  if(c) c.insertAdjacentHTML("beforeend", _madFinCardHTML());
+}
+function madFinDelCard(btn){
+  const b=btn.closest(".mf-cierre"), c=document.getElementById("mf-cards");
+  if(b && c && c.querySelectorAll(".mf-cierre").length>1) b.remove();
+  else toast("Debe quedar al menos un cierre.","warn",2500);
+}
+function madFinCollect(){
+  const g=function(el,sel){ const e=el.querySelector(sel); return e?e.value:""; };
+  const f=document.getElementById("mf-fecha");
+  const cierres=[];
+  document.querySelectorAll("#mf-cards .mf-cierre").forEach(function(c){
+    cierres.push({
+      lote:g(c,".mf-lote"), tipo:g(c,".mf-tipo"), motivo:g(c,".mf-motivo"), destino:g(c,".mf-destino"),
+      machos:g(c,".mf-machos"), hembras:g(c,".mf-hembras"), observaciones:g(c,".mf-obs")
+    });
+  });
+  return { fecha:f?f.value:"", cierres:cierres };
+}
+function _madFinPinta(res, filas){
+  const box=document.getElementById("mf-report"); if(!box) return;
+  let h="";
+  if(res.errores.length) h += '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#991b1b"><b>No se puede guardar:</b><ul style="margin:4px 0 0;padding-left:18px">'+res.errores.map(function(e){ return "<li>"+escapeHtml(e)+"</li>"; }).join("")+"</ul></div>";
+  if(res.avisos.length) h += '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#92400e"><b>Avisos (se puede guardar igual):</b><ul style="margin:4px 0 0;padding-left:18px">'+res.avisos.map(function(a){ return "<li>"+escapeHtml(a)+"</li>"; }).join("")+"</ul></div>";
+  if(!res.errores.length) h += '<div style="font-size:12px;color:#475569">Se escribirán <b>'+filas+'</b> fila(s) en «'+escapeHtml(MAD_FIN_SHEET)+'».</div>';
+  box.innerHTML=h;
+}
+function madFinRevisar(){
+  const model=madFinCollect();
+  _madFinPinta(madFinValidar(model), madFinBuildRows(model).length);
+}
+// Registro local propio, por lo mismo que en las otras tres fichas: sin filas locales, un
+// envío ENCOLADO no dejaría rastro en ningún sitio.
+const MAD_FIN_LOG_KEY = "larv4_mad_fin_log";
+function madFinLogLeer(){
+  try{ const v=JSON.parse(localStorage.getItem(MAD_FIN_LOG_KEY)||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; }
+}
+function madFinLogGuardar(list){
+  try{ localStorage.setItem(MAD_FIN_LOG_KEY, JSON.stringify(list.slice(-40))); }catch(_){}
+}
+function madFinLogAnota(fecha, filas, estado){
+  const l=madFinLogLeer();
+  l.push({ id:Date.now().toString(36)+Math.random().toString(36).slice(2,6), ts:Date.now(), fecha:fecha, filas:filas, estado:estado });
+  madFinLogGuardar(l);
+}
+function madFinLogHTML(){
+  const l=madFinLogLeer();
+  if(!l.length) return "";
+  const enCola = (typeof syncQueueLen==="function") ? syncQueueLen() : 0;
+  if(enCola===0){
+    let cambio=false;
+    l.forEach(function(e){ if(e.estado==="cola"){ e.estado="ok"; cambio=true; } });
+    if(cambio) madFinLogGuardar(l);
+  }
+  const filas=l.slice().reverse().slice(0,10).map(function(e){
+    const st = e.estado==="cola"
+      ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px">📶 en cola</span>'
+      : '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px">✅ enviado</span>';
+    const d=new Date(e.ts), hh=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+    return '<tr><td style="font-size:11px">'+escapeHtml(String(e.fecha||""))+' '+hh+'</td>'
+      + '<td style="text-align:right">'+(e.filas||0)+'</td><td>'+st+'</td></tr>';
+  }).join("");
+  return '<div style="margin-top:18px">'
+    + '<h3 style="margin:0 0 4px;font-size:13px">Registrado desde este dispositivo</h3>'
+    + (enCola ? '<div style="font-size:11px;color:#92400e;margin-bottom:5px">📶 '+enCola+' envío(s) esperando conexión. Se entregan y se verifican solos.</div>' : '')
+    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Cierres</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div>'
+    + '</div>';
+}
+async function madFinGuardar(){
+  const model=madFinCollect();
+  const res=madFinValidar(model);
+  const payload=buildMadFinPayload(model);
+  _madFinPinta(res, payload.rows.length);
+  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
+  if(!payload.rows.length){ toast("No hay ningún cierre completo que guardar.","warn",4000); return; }
+  toast("Enviando "+payload.rows.length+" cierre(s)…","info",2200);
+  const _t={};
+  const ok=await postPayload(payload, gasUrl(), _t);
+  if(ok){
+    madFinLogAnota(model.fecha, payload.rows.length, "ok");
+    toast("✅ Cierre registrado · "+payload.rows.length+" fila(s)","ok",5000);
+    madFinReiniciar();
+    return;
+  }
+  // ⚠⚠ `postPayload` devuelve false TAMBIÉN cuando el envío quedó ENCOLADO. Es el invariante
+  // H1: decir «no se pudo» a alguien cuyo cierre ya está a salvo le empuja a registrarlo dos
+  // veces, y aquí el segundo se fusionaría sobre el primero descontando el doble.
+  if(_t.outcome==="queued"){
+    madFinLogAnota(model.fecha, payload.rows.length, "cola");
+    madFinReiniciar();
+  }
+  _syncNotOkUI(_t.outcome, "No se pudo registrar el cierre", null, _t.gasMessage);
+}
+function madFinReiniciar(){
+  const fp=document.getElementById("fp-fin");
+  if(fp) fp.innerHTML="";
+  renderMadFinCiclo();
+}
+function madFinVaciar(){
+  if(!confirm("¿Vaciar el formulario de cierres?\nSe perderá todo lo tecleado.")) return;
+  madFinReiniciar();
+}
+// ⚠⚠ NO SE RE-PINTA SI YA ESTÁ MONTADO, como las otras tres fichas: `selTab` llama al render
+// cada vez que se vuelve a la pestaña, y reescribir innerHTML borraría lo tecleado.
+function renderMadFinCiclo(){
+  const fp=document.getElementById("fp-fin"); if(!fp) return;
+  if(fp.querySelector("#mf-cards")) return;
+  const todayStr=today();
+  fp.innerHTML='<div class="fc">'
+    + '<div class="fc-h"><div class="fc-t">🏁 Maduración · Fin de Ciclo</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
+    + '<div class="fc-b">'
+    +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
+    +     '<span style="font-size:16px">ℹ️</span><span>Es la <b>única salida</b> del departamento: un pedido a otra camaronera, un descarte, el fin de la vida útil. Los movimientos entre tanques van en 🔄 Movimientos.<br>Se cierra el <b>lote entero</b> — el libro descuenta de cada tanque donde esté, en proporción. Y en un cierre <b>Total</b>, lo que el libro creía que quedaba y no salió se anota como <b>diferencia</b>: no se esconde.</span>'
+    +   '</div>'
+    +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mf-fecha" value="'+escapeHtml(todayStr)+'" style="'+_MAD_ING_INP+'"></label>'
+    +   '</div>'
+    +   '<div id="mf-cards">'+_madFinCardHTML()+'</div>'
+    +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
+    +     '<button class="btn" type="button" onclick="madFinAddCard()">➕ Cierre</button>'
+    +     '<button class="btn" type="button" onclick="madFinRevisar()">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" style="font-weight:700" onclick="madFinGuardar()">☁️ Guardar y sincronizar</button>'
+    +     '<button class="btn" type="button" onclick="madFinVaciar()">🧹 Vaciar</button>'
+    +   '</div>'
+    +   '<div id="mf-report" style="margin-top:12px"></div>'
+    +   '<div id="mf-log">'+madFinLogHTML()+'</div>'
+    + '</div></div>';
+  const t=document.querySelector("#mf-cards .mf-tipo");
+  if(t) madFinTipoChange(t);
 }
 
 // ── Maduración · Registro reproductivo (desoves/mortalidades por lote de Trovan) ──
@@ -7144,17 +8385,27 @@ function clearMadSalasGrid(){
 // ── Grilla Tanques (filas = tanques de la sala) ───────
 // Columnas EDITABLES en orden — el índice es el data-c usado para el pegado
 // desde Excel. El Lote se prellena con el último usado por tanque (editable).
+/* ⚠⚠ SALIERON TRES CAMPOS el 2026-09-08, y no por estética: LOTE y las dos POBLACIONES
+   INICIALES los declara ahora la ficha de Ingreso, y el libro deduce de ella qué lote está
+   en cada tanque. Tecleados aquí no los consumía NADIE —medido— y abrían una vía para que
+   la grilla contradijera al libro sobre el mismo tanque sin que nada lo dijera.
+   🔑 Sus COLUMNAS siguen en la hoja, y eso sí es obligatorio: el GAS escribe «Maduración
+   Tanques» con clave POSICIONAL [0,1,3] (Fecha, Sala, Tanque). Quitar «Lote» de la hoja
+   correría «Tanque» al índice 2 y la llave pasaría a apuntar a «Machos muertos»,
+   destruyendo datos en cada sync. Se envían vacías, y el MERGE del GAS no pisa nada.
+   ENTRARON tres: los dos pesos y la observación sanitaria (decisión del usuario). Van al
+   FINAL de la hoja, que es lo único que `ensureHeaders` sabe añadir sin migrar. */
 const _TANQ_GRID_COLS = [
-  {k:"lote",            type:"text", ph:"BB"},
   {k:"rel_hm",          type:"text", ph:"1:1"},
-  {k:"pob_hembras",     type:"int"},
-  {k:"pob_machos",      type:"int"},
   {k:"machos_muertos",  type:"int"},
   {k:"hembras_muertas", type:"int"},
   {k:"machos_descarte", type:"int"},
   {k:"hembras_descarte",type:"int"},
   {k:"copulas",         type:"int"},
-  {k:"muda",            type:"int"}
+  {k:"muda",            type:"int"},
+  {k:"peso_machos",     type:"num"},
+  {k:"peso_hembras",    type:"num"},
+  {k:"obs_sanitarias",  type:"text", ph:"—", ancho:"110px"}
 ];
 const _TANQ_GRID_NUM_KEYS = _TANQ_GRID_COLS.filter(c => c.type === "int").map(c => c.k);
 
@@ -7197,20 +8448,21 @@ function renderMadTanques(){
     const r = byTank[String(tank)];
     const d = r ? r.data : {};
     const st = r ? (r.synced ? "✅" : "⏳") : "○";
-    const loteVal = (d.lote!=null && d.lote!=="") ? d.lote : getMadLote(sala, tank);
     const cells = _TANQ_GRID_COLS.map((col, ci) => {
       const attrs = `name="tg_${tank}_${col.k}" data-r="${ri}" data-c="${ci}" onpaste="madGridPaste(event,'tanques')"`;
-      if(col.k === "lote"){
-        return `<td><input class="pinp" type="text" ${attrs} value="${escapeHtml(loteVal||"")}" maxlength="40" placeholder="${col.ph||""}" style="min-width:60px"></td>`;
-      }
       if(col.type === "text"){
-        return `<td><input class="pinp" type="text" ${attrs} value="${vl(d,col.k)}" maxlength="20" placeholder="${col.ph||"-"}" style="min-width:52px"></td>`;
+        return `<td><input class="pinp" type="text" ${attrs} value="${vl(d,col.k)}" maxlength="${col.k==="obs_sanitarias"?120:20}" placeholder="${col.ph||"-"}" style="min-width:${col.ancho||"52px"}"></td>`;
+      }
+      // Los PESOS son decimales: con step="1" el navegador rechaza 34,5 en silencio.
+      if(col.type === "num"){
+        return `<td><input class="pinp" type="number" ${attrs} value="${vl(d,col.k)}" min="0" step="0.1" inputmode="decimal" placeholder="-" style="min-width:62px"></td>`;
       }
       return `<td><input class="pinp" type="number" ${attrs} value="${vl(d,col.k)}" min="0" step="1" inputmode="numeric" placeholder="-"></td>`;
     }).join("");
     return `<tr>
       <td class="tqc" style="font-size:10px;min-width:44px;text-align:center">${tank}</td>
       <td style="font-size:10px;text-align:center">${st}</td>
+      <td class="tq-vivos" data-tq="${tank}" style="font-size:10px;text-align:center;color:#94a3b8;white-space:nowrap">—</td>
       ${cells}
     </tr>`;
   }).join("");
@@ -7231,16 +8483,17 @@ function renderMadTanques(){
           <tr>
             <th class="tqh" style="min-width:44px">Tanque</th>
             <th style="min-width:28px">St</th>
-            <th>Lote</th>
+            <th>Vivos</th>
             <th>Relación<br>H:M</th>
-            <th>Población<br>Hembras</th>
-            <th>Población<br>Machos</th>
             <th>Machos<br>Muertos</th>
             <th>Hembras<br>Muertas</th>
             <th>Machos<br>Descarte</th>
             <th>Hembras<br>Descarte</th>
             <th>Cópulas</th>
             <th>Muda</th>
+            <th>Peso ♂<br>(g)</th>
+            <th>Peso ♀<br>(g)</th>
+            <th>Obs.<br>sanitarias</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -7248,6 +8501,8 @@ function renderMadTanques(){
       <div class="sa" style="margin-top:12px">
         <div class="sa-info"><span>💾 Guarda para persistir los tanques de ${escapeHtml(sala)}</span></div>
         <div class="sa-btns">
+          <button class="btn" type="button" id="tq-vivos-btn" onclick="madTanquesVerVivos()" title="Lee el libro y muestra cuántos animales tiene vivos cada tanque">🔄 Ver vivos</button>
+          <span id="tq-vivos-nota" style="font-size:11px;align-self:center"></span>
           <button class="btn bd" type="button" onclick="clearMadTanquesGrid()" title="Borrar registros de Tanques de esta sala y fecha">🗑 Borrar sala</button>
           <button class="btn bpdf" type="button" onclick="madGridPDF('tanques')" title="PDF de esta sala y fecha">📄 PDF</button>
           ${madRecBtn}
@@ -7259,148 +8514,68 @@ function renderMadTanques(){
   </div>`;
   _madAfterRender("tanques");
 }
-
-// ── Grilla Lotes (filas libres por sala, 6 por defecto + botón) ──
-// Cada fila se identifica por su Nº (data.fila), no por tanque. La clave de
-// upsert es Fecha+Sala+Fila → editar el texto del Lote no duplica filas.
-const _LOTES_GRID_NUM_KEYS   = ["total_nauplios","total_huevos","n2_lote","desoves_lote","no_viables_lote"];
-const MAD_LOTES_DEFAULT_ROWS = 6;
-const MAD_LOTES_MAX_ROWS     = 8;   // 6 por defecto + hasta 2 extra
-let _madLotesExtra = {};            // { "fecha|sala": filas extra agregadas (0..2) }
-
-function _madLotesShownRows(fecha, sala){
-  let maxFila = 0;
-  loadMad("lotes").forEach(r => {
-    if(r && r.data && r.data.fecha===fecha && r.data.sala===sala){
-      const f = parseInt(r.data.fila,10);
-      if(Number.isFinite(f) && f > maxFila) maxFila = f;
+/* 🔄 VER VIVOS · decisión del usuario (2026-09-08). Los «vivos» de la Fase 6 se MUESTRAN,
+   no se guardan en la hoja, y la razón es la misma que hace valioso al libro: son una vista
+   DERIVADA. Guardarlos crearía una foto que envejece — corregir mañana un registro de la
+   semana pasada recalcula el libro, pero la cifra congelada se quedaría con el valor viejo y
+   las dos dejarían de coincidir sin que nada lo dijera.
+   🔑 Y va bajo BOTÓN, no al abrir la grilla: leer estas hojas cuesta entre 2 y 52 s en este
+   GAS, y quien viene a teclear la mortalidad del día no tiene por qué esperar.
+   ⚠ No hace falta borrar las celdas al cambiar de sala o de fecha: los dos manejadores
+   re-renderizan la grilla entera, así que vuelven solas a «—». Si algún día dejaran de
+   hacerlo, habría que borrarlas a mano — un vivo viejo bajo un tanque nuevo se leería como
+   una medición. */
+async function madTanquesVerVivos(){
+  const btn = document.getElementById("tq-vivos-btn");
+  const nota = document.getElementById("tq-vivos-nota");
+  if(nota) nota.innerHTML = '<span style="color:#64748b">Leyendo las hojas… puede tardar unos segundos.</span>';
+  if(btn) btn.disabled = true;
+  try{
+    const libro = await madSaldoCargar(true);
+    _madTanquesPintaVivos(libro);
+  }catch(_){
+    if(nota) nota.innerHTML = '<span style="color:#991b1b">No se pudieron leer las hojas. Reintenta con 🔄.</span>';
+  }finally{
+    if(btn) btn.disabled = false;
+  }
+}
+function _madTanquesPintaVivos(libro){
+  const nota = document.getElementById("tq-vivos-nota");
+  /* Si alguna hoja no se pudo leer, lo de abajo está INCOMPLETO y hay que decirlo ANTES de
+     enseñarlo: es el defecto A1 de la auditoría del 09-08, un libro a medias leído como
+     completo. */
+  const roto = !!(libro.fallos && libro.fallos.length);
+  if(nota){
+    nota.innerHTML = roto
+      ? '<span style="color:#991b1b">⚠ No se pudieron leer ' + libro.fallos.length + ' hoja(s) (' + escapeHtml(libro.fallos.join(", ")) + '): lo de abajo está INCOMPLETO.</span>'
+      : '<span style="color:#166534">Vivos al ' + escapeHtml(today()) + '. Se recalcula al pulsar de nuevo.</span>';
+  }
+  const sala = _madTanquesSala;
+  document.querySelectorAll(".tq-vivos").forEach(function(c){
+    const tq = c.getAttribute("data-tq");
+    if(!sala || !tq){ c.textContent = "—"; return; }
+    const T = libro.tanques[madUbicKey(sala, tq)];
+    if(!T){
+      // Ningún ingreso explica ese tanque: no es «cero vivos», es «el libro no lo conoce».
+      c.textContent = roto ? "?" : "sin ingreso";
+      c.style.color = "#92400e";
+      return;
     }
+    c.textContent = T.machos + "♂ " + T.hembras + "♀";
+    c.style.color = (T.machos + T.hembras) > 0 ? "#0369a1" : "#92400e";
   });
-  const extra = _madLotesExtra[fecha+"|"+sala] || 0;
-  return Math.min(MAD_LOTES_MAX_ROWS, Math.max(MAD_LOTES_DEFAULT_ROWS + extra, maxFila));
 }
 
-function renderMadLotes(){
-  const fp = document.getElementById("fp-lotes");
-  if(!fp) return;
-  const list = loadMad("lotes");
-  const sala = _madLotesSala;
-  const fechaEl = document.getElementById("mad-lotes-fecha");
-  const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
-  const madRec = loadMadRecovery();
-  const madRecBtn = (madRec && madRec.ficha === "lotes")
-    ? `<button class="btn brec" type="button" onclick="recoverMadGrid()" title="Recuperar autoguardado de ${escapeHtml(new Date(madRec.ts).toLocaleString("es-EC",{hour:"2-digit",minute:"2-digit"}))}">↩ Recuperar (${escapeHtml(new Date(madRec.ts).toLocaleString("es-EC",{hour:"2-digit",minute:"2-digit"}))})</button>`
-    : "";
 
-  const salaSel = `<div class="mf"><label>Sala</label>
-    <select id="mad-lotes-sala" onchange="madLotesSalaChange()">
-      <option value="">— Selecciona —</option>${_madSalaOpts(sala)}
-    </select></div>`;
-  const fechaInp = `<div class="mf"><label>Fecha</label>
-    <input type="date" id="mad-lotes-fecha" value="${escapeHtml(fecha)}" onchange="madLotesFechaChange()"></div>`;
-
-  if(!sala){
-    fp.innerHTML = `<div class="fc">
-      <div class="fc-h"><div class="fc-t">📦 Maduración · Lotes</div>
-        <span class="ssp ssp-mt">${fecha}</span></div>
-      <div class="fc-b">
-        <div class="meta" style="margin-bottom:8px">${salaSel}${fechaInp}</div>
-        <div class="mad-empty">📦 Selecciona una sala para registrar sus lotes.</div>
-      </div></div>`;
-    return;
-  }
-
-  const byFila = {};
-  list.forEach(r => { if(r && r.data && r.data.fecha===fecha && r.data.sala===sala && r.data.fila!=null && r.data.fila!=="") byFila[String(r.data.fila)] = r; });
-  const pending = list.filter(r => r.data && r.data.fecha===fecha && r.data.sala===sala && !r.synced).length;
-  const nRows = _madLotesShownRows(fecha, sala);
-
-  const histOpts = (cur) => `<option value="">—</option>
-    <option value="Activo"${cur==="Activo"?" selected":""}>Activo</option>
-    <option value="Agrupación"${cur==="Agrupación"?" selected":""}>Agrupación</option>
-    <option value="Descarte"${cur==="Descarte"?" selected":""}>Descarte</option>`;
-
-  let rows = "";
-  for(let fila=1; fila<=nRows; fila++){
-    const ri = fila-1;
-    const r = byFila[String(fila)];
-    const d = r ? r.data : {};
-    const st = r ? (r.synced ? "✅" : "⏳") : "○";
-    const numCells = _LOTES_GRID_NUM_KEYS.map((k, j) => {
-      const ci = 2 + j; // 0=lote, 1=historial, luego numéricos
-      return `<td><input class="pinp" type="number" name="lg_${fila}_${k}" data-r="${ri}" data-c="${ci}" onpaste="madGridPaste(event,'lotes')" value="${vl(d,k)}" min="0" step="1" inputmode="numeric" placeholder="-"></td>`;
-    }).join("");
-    rows += `<tr>
-      <td class="tqc" style="font-size:10px;min-width:34px;text-align:center">${fila}</td>
-      <td style="font-size:10px;text-align:center">${st}</td>
-      <td><input class="pinp" type="text" name="lg_${fila}_lote" data-r="${ri}" data-c="0" onpaste="madGridPaste(event,'lotes')" value="${escapeHtml(d.lote||"")}" maxlength="40" placeholder="BB" style="min-width:66px"></td>
-      <td><select class="pinp" name="lg_${fila}_historial" data-r="${ri}" data-c="1" style="min-width:96px">${histOpts(d.historial||"")}</select></td>
-      ${numCells}
-    </tr>`;
-  }
-
-  const canAdd = nRows < MAD_LOTES_MAX_ROWS;
-
-  fp.innerHTML = `<div class="fc">
-    <div class="fc-h">
-      <div class="fc-t">📦 Maduración · Lotes</div>
-      <span class="ssp ssp-mt">${escapeHtml(sala)} · ${fecha} · ${pending ? pending+" pendiente(s)" : "sin pendientes"}</span>
-    </div>
-    <div class="fc-b">
-      <div class="meta" style="margin-bottom:8px">${salaSel}${fechaInp}</div>
-      <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#065f46;display:flex;align-items:center;gap:8px">
-        <span style="font-size:16px">ℹ️</span>
-        <span>6 filas por sala. Usa “➕ Agregar fila” si necesitas más (hasta ${MAD_LOTES_MAX_ROWS}). Puedes pegar bloques desde Excel.</span>
-      </div>
-      <div class="tw"><table class="ft" style="font-size:10.5px">
-        <thead>
-          <tr>
-            <th class="tqh" style="min-width:34px">#</th>
-            <th style="min-width:28px">St</th>
-            <th>Lote</th><th>Historial</th>
-            <th>Total nauplios</th><th>Total huevos</th>
-            <th>N2/lote</th><th>Desoves/lote</th><th>No viables/lote</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table></div>
-      <div style="margin-top:8px">
-        <button class="btn bo" type="button" onclick="madLotesAddRow()" ${canAdd?"":"disabled"} title="Agregar una fila más (máximo ${MAD_LOTES_MAX_ROWS})">➕ Agregar fila</button>
-      </div>
-      <div class="sa" style="margin-top:12px">
-        <div class="sa-info"><span>💾 Guarda para persistir los lotes de ${escapeHtml(sala)}</span></div>
-        <div class="sa-btns">
-          <button class="btn bd" type="button" onclick="clearMadLotesGrid()" title="Borrar registros de Lotes de esta sala y fecha">🗑 Borrar sala</button>
-          <button class="btn bpdf" type="button" onclick="madGridPDF('lotes')" title="PDF de esta sala y fecha">📄 PDF</button>
-          ${madRecBtn}
-          <button class="btn bs" type="button" onclick="saveMadLotesGrid()">💾 Guardar local</button>
-          <button class="btn bp" type="button" onclick="syncMadLotesGrid()">☁️ Guardar y sincronizar</button>
-        </div>
-      </div>
-    </div>
-  </div>`;
-  _madAfterRender("lotes");
-}
-
-// ── Cambios de sala en las grillas ────────────────────
 function madTanquesSalaChange(){
   _madCommitActive();   // persiste la grilla de la sala ANTERIOR antes de cambiar
   const el = document.getElementById("mad-tanques-sala");
   _madTanquesSala = el ? el.value : "";
   renderMadTanques();
 }
-function madLotesSalaChange(){
-  _madCommitActive();
-  const el = document.getElementById("mad-lotes-sala");
-  _madLotesSala = el ? el.value : "";
-  renderMadLotes();
-}
 // Cambio de fecha en las grillas: commit anti-pérdida del día anterior antes de re-render.
 function madSalasFechaChange(){   _madCommitActive(); renderMadSalas();   }
 function madTanquesFechaChange(){ _madCommitActive(); renderMadTanques(); }
-function madLotesFechaChange(){   _madCommitActive(); renderMadLotes();   }
-
-// ── Pegado desde Excel: derrama un bloque tab/newline desde la celda origen ──
 function madGridPaste(ev, ficha){
   const cd = ev.clipboardData || window.clipboardData;
   if(!cd) return;
@@ -7461,7 +8636,7 @@ function madGridKey(ev){
   if(!t || (t.tagName!=="INPUT" && t.tagName!=="SELECT") || typeof t.getAttribute!=="function") return;
   const rA = t.getAttribute("data-r"), cA = t.getAttribute("data-c");
   if(rA===null || cA===null) return;
-  const panel = t.closest("#fp-salas,#fp-tanques,#fp-lotes,#fp-biomol,#fp-reproductivo,#fp-marea");
+  const panel = t.closest("#fp-salas,#fp-tanques,#fp-biomol,#fp-reproductivo,#fp-marea");
   if(!panel) return;
   const r = parseInt(rA,10), c = parseInt(cA,10);
   if(!Number.isFinite(r) || !Number.isFinite(c)) return;
@@ -7497,7 +8672,7 @@ if(typeof document!=="undefined" && !window.__madKeyNav){
 
 // ── PDF de la grilla: fija el filtro fecha+sala y reutiliza downloadMadPDF ──
 function madGridPDF(ficha){
-  const sala = ficha==='tanques' ? _madTanquesSala : _madLotesSala;
+  const sala = _madTanquesSala;
   if(!sala){ toast("Selecciona una sala primero","warn",2500); return; }
   const fechaEl = document.getElementById("mad-"+ficha+"-fecha");
   const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
@@ -7594,100 +8769,6 @@ function clearMadTanquesGrid(){
 }
 
 // ── Grilla Lotes: recolección / guardado / sync / borrado / agregar fila ──
-function _collectLotesGrid(salaOverride, fechaOverride){
-  const fp = document.getElementById("fp-lotes");
-  if(!fp) return [];
-  const sala = salaOverride || _madLotesSala;
-  if(!sala) return [];
-  const fechaEl = document.getElementById("mad-lotes-fecha");
-  const fecha = isValidDate(fechaOverride) ? fechaOverride : ((fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today());
-  const nRows = _madLotesShownRows(fecha, sala);
-  const result = [];
-  for(let fila=1; fila<=nRows; fila++){
-    const g = (k) => { const el = fp.querySelector(`[name="lg_${fila}_${k}"]`); return el ? el.value : ""; };
-    const data = { fecha, sala, fila, lote: sanitizeStr(g("lote")), historial: sanitizeStr(g("historial")) };
-    let hasData = !!(data.lote || data.historial);
-    _LOTES_GRID_NUM_KEYS.forEach(k => { const v = g(k); if(v !== ""){ data[k] = sanitizeNum(v,0,1e9); hasData = true; } else { data[k] = ""; } });
-    if(hasData) result.push(data);
-  }
-  return result;
-}
-
-function saveMadLotesGrid(opts){
-  opts = opts || {};
-  const silent = !!opts.silent;
-  const sala = opts.salaOverride || _madLotesSala;
-  if(!sala){ if(!silent) toast("Selecciona una sala","warn"); return 0; }
-  const rows = _collectLotesGrid(opts.salaOverride, opts.fechaOverride);
-  if(rows.length === 0){ if(!silent) toast("No hay datos para guardar","warn"); return 0; }
-  const list = loadMad("lotes");
-  let saved = 0;
-  rows.forEach(data => { if(!isValidDate(data.fecha)) return; _madMergeRow(list, "lotes", data); saved++; });
-  const _ok = saveMadList("lotes", list);
-  if(_ok) _madGridDirty = false;
-  if(!opts.noRender) renderMadLotes();
-  updateDots(); updateSyncUI();
-  if(!_ok) return -1;
-  if(!silent) toast("💾 "+saved+" lote(s) guardado(s) localmente","ok",2500);
-  return saved;
-}
-
-async function syncMadLotesGrid(){
-  if(saveMadLotesGrid() === -1) return;
-  const url = gasUrl();
-  if(!url){ toast("Configura la URL de Google Apps Script","warn"); openCfg(); return; }
-  if(!isValidGasUrl(url)){ toast("URL inválida","err"); return; }
-  if(!syncRateOk()) return;
-  const pending = loadMad("lotes").filter(r => !r.synced);
-  if(pending.length === 0){ toast("Sin pendientes","info"); return; }
-  setSyncUI("pend","Enviando "+pending.length+" lote(s)…");
-  const payload = buildMadPayload("lotes", pending);
-  const opts = { mark:{ kind:"mad:lotes", keys: pending.map(p=>p.id) } };   // F3
-  const sent = await postPayload(payload, url, opts);
-  if(sent){
-    const list2 = loadMad("lotes");
-    pending.forEach(p => { const idx = list2.findIndex(x => x.id===p.id); if(idx>=0){ list2[idx].synced = true; list2[idx].syncedAt = Date.now(); } });
-    saveMadList("lotes", list2);
-    setSyncUI("ok",pending.length+" lote(s) sincronizado(s) ✔");
-    toast("✅ Lotes enviados a Google Sheets","ok");
-    setTimeout(()=> setSyncUI("idle","Todo sincronizado"), 3500);
-  } else {
-    _syncNotOkUI(opts.outcome, "Error al sincronizar Lotes", null, opts.gasMessage);
-  }
-  renderMadLotes();
-  updateDots(); updateSyncUI();
-}
-
-function clearMadLotesGrid(){
-  const sala = _madLotesSala;
-  if(!sala){ toast("Selecciona una sala","warn"); return; }
-  const fechaEl = document.getElementById("mad-lotes-fecha");
-  const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
-  const list = loadMad("lotes");
-  const matching = list.filter(r => r && r.data && r.data.fecha===fecha && r.data.sala===sala);
-  if(matching.length === 0){ toast("No hay registros de Lotes para "+sala+" ("+fecha+")","info",2500); return; }
-  if(!confirm("¿Borrar los "+matching.length+" registro(s) de Lotes de "+sala+" del "+fecha+"?\nNo se eliminan las filas ya enviadas a Google Sheets.")) return;
-  const ids = new Set(matching.map(r => r.id));
-  saveMadList("lotes", list.filter(r => !ids.has(r.id)));
-  _madLotesExtra[fecha+"|"+sala] = 0;
-  renderMadLotes();
-  updateDots(); updateSyncUI();
-  toast("🗑 "+matching.length+" registro(s) de Lotes borrados","ok",3000);
-}
-
-function madLotesAddRow(){
-  const sala = _madLotesSala;
-  if(!sala){ toast("Selecciona una sala","warn"); return; }
-  const fechaEl = document.getElementById("mad-lotes-fecha");
-  const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
-  const cur = _madLotesShownRows(fecha, sala);
-  if(cur >= MAD_LOTES_MAX_ROWS){ toast("Máximo "+MAD_LOTES_MAX_ROWS+" filas por sala","info",2500); return; }
-  // Persiste lo ya escrito antes de re-renderizar (no perder datos no guardados).
-  const typed = _collectLotesGrid();
-  _madLotesExtra[fecha+"|"+sala] = Math.min(MAD_LOTES_MAX_ROWS - MAD_LOTES_DEFAULT_ROWS, cur - MAD_LOTES_DEFAULT_ROWS + 1);
-  if(typed.length){ saveMadLotesGrid(); } else { renderMadLotes(); }
-}
-
 // ── PDF horizontal con tabla de registros (todos los visibles) ──
 function downloadMadPDF(ficha){
   if(!MAD_FICHAS.includes(ficha)) return;
@@ -7741,7 +8822,7 @@ function downloadMadPDF(ficha){
     }).join('');
   } else if(ficha === 'tanques'){
     titleIco = '🛢️'; titleText = 'Maduración · Tanques'; docCode = 'OMR-MAD-TAN';
-    headers = ['#','Fecha','Sala','Lote','Tanque','Relación H:M','Población Hembras','Población Machos','Machos Muertos','Hembras Muertas','Machos Descarte','Hembras Descarte','Cópulas','Muda','Sync'];
+    headers = ['#','Fecha','Sala','Tanque','Relación H:M','Machos Muertos','Hembras Muertas','Machos Descarte','Hembras Descarte','Cópulas','Muda','Peso ♂','Peso ♀','Obs. sanitarias','Sync'];
     rowsHtml = list.map((r, idx) => {
       const d = r.data || {};
       const st = r.synced ? '<b style="color:#166534">✔</b>' : '<b style="color:#92400e">⏳</b>';
@@ -7749,17 +8830,22 @@ function downloadMadPDF(ficha){
         <td class="tqc">${idx+1}</td>
         <td>${escapeHtml(d.fecha||'—')}</td>
         <td>${escapeHtml(d.sala||'—')}</td>
-        <td>${escapeHtml(String(d.lote||'—'))}</td>
+        <!-- ⚠ Estas celdas y las cabeceras de arriba son UNA SOLA cosa: al quitar Lote y
+             las dos poblaciones de las cabeceras y no de aquí, la tabla salió con 15
+             títulos y 16 columnas y todo el PDF se corrió una casilla. No dio ningún
+             error: sólo un papel con los números bajo la etiqueta equivocada. Si se toca
+             una lista, se toca la otra. -->
         <td>${pdfVal(d.tanque)}</td>
         <td>${escapeHtml(d.rel_hm||'—')}</td>
-        <td>${pdfVal(d.pob_hembras)}</td>
-        <td>${pdfVal(d.pob_machos)}</td>
         <td>${pdfVal(d.machos_muertos)}</td>
         <td>${pdfVal(d.hembras_muertas)}</td>
         <td>${pdfVal(d.machos_descarte)}</td>
         <td>${pdfVal(d.hembras_descarte)}</td>
         <td>${pdfVal(d.copulas)}</td>
         <td>${pdfVal(d.muda)}</td>
+        <td>${pdfVal(d.peso_machos)}</td>
+        <td>${pdfVal(d.peso_hembras)}</td>
+        <td>${escapeHtml(d.obs_sanitarias||'—')}</td>
         <td>${st}</td>
       </tr>`;
     }).join('');
@@ -7889,22 +8975,14 @@ function buildMadPayload(ficha, records){
   if(ficha === "tanques"){
     return {
       sheetName: "Maduración Tanques",
-      headers: ["Fecha","Sala","Lote","Tanque","Relación H:M","Población inicial hembras","Población inicial machos","Machos muertos","Hembras muertas","Machos muertos por descarte de selección","Hembras muertas por descarte de selección","Cópulas","Muda"],
+      // ⚠ «Lote» y las dos poblaciones ya NO se teclean (las declara el Ingreso), pero sus
+      // COLUMNAS se quedan y se envían VACÍAS: la llave del GAS para esta hoja es posicional
+      // [0,1,3] y quitar «Lote» correría «Tanque» fuera de su sitio. El merge no pisa nada
+      // con un valor vacío, así que no borran lo que hubiera.
+      headers: ["Fecha","Sala","Lote","Tanque","Relación H:M","Población inicial hembras","Población inicial machos","Machos muertos","Hembras muertas","Machos muertos por descarte de selección","Hembras muertas por descarte de selección","Cópulas","Muda","Peso promedio machos (g)","Peso promedio hembras (g)","Observaciones sanitarias"],
       rows: records.map(r => {
         const d = r.data || {};
-        return [d.fecha, d.sala, d.lote, int(d.tanque), d.rel_hm, int(d.pob_hembras), int(d.pob_machos), int(d.machos_muertos), int(d.hembras_muertas), int(d.machos_descarte), int(d.hembras_descarte), int(d.copulas), int(d.muda)];
-      })
-    };
-  }
-  if(ficha === "lotes"){
-    return {
-      sheetName: "Maduración Lotes",
-      headers: ["Fecha","Sala","Fila","Lote","Historial",
-        "Total de nauplios","Total de huevos","N2 por lote","Desoves por lote","No viables por lote"],
-      rows: records.map(r => {
-        const d = r.data || {};
-        return [d.fecha, d.sala, int(d.fila), d.lote, d.historial,
-          int(d.total_nauplios), int(d.total_huevos), int(d.n2_lote), int(d.desoves_lote), int(d.no_viables_lote)];
+        return [d.fecha, d.sala, "", int(d.tanque), d.rel_hm, "", "", int(d.machos_muertos), int(d.hembras_muertas), int(d.machos_descarte), int(d.hembras_descarte), int(d.copulas), int(d.muda), num(d.peso_machos), num(d.peso_hembras), d.obs_sanitarias || ""];
       })
     };
   }
@@ -14837,7 +15915,7 @@ if(typeof document!=="undefined" && !window.__calKeyNav){
    Las fichas estándar (Calidad/Población/etc.) NO están incluidas (no tienen
    panel en la allowlist), así que conservan su comportamiento.
 ══════════════════════════════════════════════════════════════════════════ */
-const _GSEL_PANELS = "#fp-salas,#fp-tanques,#fp-lotes,#fp-biomol,#fp-micnuevo,#fp-marea";
+const _GSEL_PANELS = "#fp-salas,#fp-tanques,#fp-biomol,#fp-micnuevo,#fp-marea";
 let _gsel = null;                 // { tbody, ar, ac, fr, fc }
 let _gselMouseDown = false, _gselDragged = false;
 

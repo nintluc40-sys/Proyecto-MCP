@@ -72,6 +72,14 @@ export const MAD_INGRESO_COLUMNS = [
   { h: 'Código genético', k: 'codigoGenetico', grain: 'composicion' },
   { h: 'Piscina Broodstock', k: 'piscina', grain: 'composicion' },
   { h: 'Camaronera origen', k: 'camaronera', grain: 'composicion' },
+  /* 🔗 GRUPO · vacío casi siempre. Se rellena («766/767») cuando dos piscinas de códigos
+     genéticos distintos entran MEZCLADAS en el mismo lote y por eso comparten tanque.
+     🔑 No sustituye al código genético: lo acompaña. Cada composición sigue escribiendo
+     SUS cifras en SUS filas, así que «¿cuántos machos entraron con la 766?» se responde
+     sumando sus filas, y «¿cuántos entraron en la mezcla?» sumando las del grupo. La
+     primera versión de Combinar fundía las dos en una sola fila y perdía la primera
+     pregunta para siempre. */
+  { h: 'Grupo', k: 'grupo', grain: 'composicion' },
   { h: 'Sala', k: 'sala', grain: 'reparto' },
   { h: 'Tanque', k: 'tanque', grain: 'reparto', num: true },
   { h: 'Machos', k: 'machos', grain: 'reparto', num: true },
@@ -192,6 +200,7 @@ export function buildIngresoRows(model) {
         codigoGenetico,
         piscina: sanitizeStr(c.piscina, 60),
         camaronera: sanitizeStr(c.camaronera, 80),
+        grupo: sanitizeStr(c.grupo, 60),
         sala,
         tanque,
         machos: int(r.machos),
@@ -244,13 +253,20 @@ export function validarIngreso(model) {
      ID, y el upsert del GAS escribe la segunda ENCIMA de la primera: los animales de
      la primera desaparecen de la hoja sin ningún aviso. Es exactamente el defecto que
      ya se pagó en Traslado con la llave posicional. Por eso es ERROR y no aviso.
-     🔑 Repetir (sala, tanque) entre composiciones DISTINTAS sí vale: eso es un tanque
-     mezclado, y el código genético las mantiene separadas en la llave. */
+     🔑🔑 Y DESDE EL 2026-09-08 ALCANZA A TODO EL INGRESO, no sólo a la composición.
+     Antes repetir (sala, tanque) entre composiciones DISTINTAS valía: era la vía para
+     declarar un tanque mezclado. El usuario decidió lo contrario, y la razón es del
+     dominio, no de la interfaz: cuando dos piscinas se mezclan AL ENTRAR, nadie sabe
+     cuántos animales de cada código quedan en cada tanque. Registrarlas por separado en
+     el mismo tanque habría sido INVENTAR un desglose que nadie midió. La mezcla se declara
+     antes, con «Combinar», y entra como UNA composición de dos códigos (767/766). */
   const vistos = new Set();
+  const ocupante = new Map();
   const codigosVistos = new Set();
   comps.forEach((comp, i) => {
     const c = comp || {};
     const cg = normCodigoGenetico(c.codigoGenetico);
+    const grupo = sanitizeStr(c.grupo, 60);
     const etiqueta = cg || 'composición ' + (i + 1);
     if (cg === '') errores.push('Falta el código genético de la composición ' + (i + 1) + '.');
     else if (codigosVistos.has(cg)) errores.push('El código genético «' + cg + '» está repetido en este ingreso.');
@@ -266,11 +282,29 @@ export function validarIngreso(model) {
       const sala = sanitizeStr(r.sala, 30);
       const tanque = int(r.tanque);
       if (sala === '' || tanque === '') return;
-      const llave = cg + '|' + salaTag(sala) + '|' + tanque;
-      if (vistos.has(llave)) {
+      /* DOS controles distintos, y conviene no confundirlos:
+         1) la MISMA composición dos veces en el mismo tanque → mismo ID, el upsert borra
+            la primera. Es pérdida de datos, y por eso mira el código genético.
+         2) DOS OCUPANTES distintos en el mismo tanque → un tanque se ocupa una vez. Aquí
+            un GRUPO cuenta como un solo ocupante: sus composiciones entraron mezcladas y
+            comparten tanque a propósito, cada una con sus propias cifras y su propio ID. */
+      const llaveComp = cg + '|' + salaTag(sala) + '|' + tanque;
+      if (vistos.has(llaveComp)) {
         errores.push('«' + etiqueta + '» aparece dos veces en ' + sala + ' tanque ' + tanque + '. La segunda borraría a la primera.');
       }
-      vistos.add(llave);
+      vistos.add(llaveComp);
+
+      const ubic = salaTag(sala) + '|' + tanque;
+      const quien = grupo || cg;
+      if (ocupante.has(ubic) && ocupante.get(ubic) !== quien) {
+        errores.push(
+          'El tanque ' + tanque + ' de ' + sala + ' lo ocupan dos ingresos distintos (' +
+          ocupante.get(ubic) + ' y ' + quien + '). Un tanque se ocupa UNA vez: si entraron ' +
+          'mezclados, agrúpalos antes con «Combinar».'
+        );
+      } else if (!ocupante.has(ubic)) {
+        ocupante.set(ubic, quien);
+      }
 
       const permitidos = MAD_TANQUES_POR_SALA[sala];
       if (permitidos && permitidos.indexOf(tanque) === -1) {

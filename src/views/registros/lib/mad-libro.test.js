@@ -12,6 +12,7 @@ import {
   ESTADO_CUARENTENA,
   ESTADO_PRODUCCION,
   ESTADO_MIXTO,
+  ESTADO_CERRADO,
 } from './mad-libro.js';
 
 /* Constructores de filas con la forma REAL de las hojas (las claves son las cabeceras,
@@ -28,6 +29,20 @@ const tq = (Fecha, Sala, Tanque, extra = {}) => Object.assign({
   'Hembras muertas por descarte de selección': 0,
   'Cópulas': 0, Muda: 0,
 }, extra);
+
+/* Fila de «Maduración Movimientos» con la forma REAL de la hoja (Fase 3). */
+const mov = (Fecha, sO, tO, sD, tD, Machos, Hembras) => ({
+  Fecha, Tipo: 'Transferencia',
+  'Sala origen': sO, 'Tanque origen': tO,
+  'Sala destino': sD, 'Tanque destino': tD,
+  Machos, Hembras, 'Agua destino': 'RAS', Motivo: 'Mezcla de lotes', Observaciones: '',
+});
+
+/* Fila de «Maduración Fin de Ciclo» con la forma REAL de la hoja (Fase 4B). */
+const fin = (Fecha, Lote, Tipo, Machos, Hembras, Motivo) => ({
+  Fecha, Lote, Tipo, Motivo: Motivo || 'Pedido', Destino: 'Chongón',
+  Machos, Hembras, Observaciones: '',
+});
 
 const saldo = (libro, sala, tanque) => libro.tanques.get(ubicKey(sala, tanque));
 const dePos = (libro, lote) => libro.lotes.get(lote);
@@ -241,9 +256,327 @@ describe('Libro · la cuarentena se deduce', () => {
     expect(dePos(l, 'AB').estado).toBe(ESTADO_CUARENTENA);
   });
 
+  /* ⚠⚠ LAS CUATRO DE ABAJO NACEN DE UN VERDE QUE NO PROBABA NADA. El 2026-09-08 se
+     cambió la regla del ingreso —de quedarse con la fecha MENOR a quedarse con la MAYOR,
+     más el borrado de la cópula previa— y la suite entera siguió en verde: NINGUNA prueba
+     ejercía un lote con un segundo ingreso. La regla vieja y la nueva eran indistinguibles
+     para los fixtures, que es exactamente el defecto que este proyecto tiene escrito.
+     Cada una de estas cuatro se pone ROJA con la regla vieja. */
+
+  it('un SEGUNDO ingreso REINICIA la cuarentena: manda la fecha más reciente', () => {
+    const l = construirLibro({
+      ingresos: [
+        ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 10),
+        ing('2026-01-20', 'AB', 'CG2', 'Sala 1', 2, 5, 5),
+      ],
+      tanques: [],
+    }, { hoy: '2026-01-25' });
+    const L = dePos(l, 'AB');
+    expect(L.ingreso).toBe('2026-01-20');            // con la regla vieja: '2026-01-01'
+    expect(L.estado).toBe(ESTADO_CUARENTENA);        // con la vieja: Producción, ya pasados 15 d
+    expect(estadoDeLote(L, '2026-02-03')).toBe(ESTADO_CUARENTENA);
+    expect(estadoDeLote(L, '2026-02-04')).toBe(ESTADO_PRODUCCION);
+  });
+
+  it('una cópula ANTERIOR al segundo ingreso no certifica a los que acaban de llegar', () => {
+    /* Es la sub-decisión forzada por la del usuario: sin borrar la cópula previa, el
+       reinicio no haría nada en el caso común —un lote que ya copuló—, porque
+       `estadoDeLote` mira `copulaDesde` ANTES que los 15 días. */
+    const l = construirLibro({
+      ingresos: [
+        ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 10),
+        ing('2026-01-20', 'AB', 'CG2', 'Sala 1', 1, 5, 5),
+      ],
+      tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Cópulas': 3 })],
+    }, { hoy: '2026-01-21' });
+    const L = dePos(l, 'AB');
+    expect(L.copulaDesde).toBe(null);                // con la vieja: '2026-01-05'
+    expect(L.estado).toBe(ESTADO_CUARENTENA);        // con la vieja: Producción
+  });
+
+  it('pero una cópula POSTERIOR al segundo ingreso sí la rompe', () => {
+    const l = construirLibro({
+      ingresos: [
+        ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 10),
+        ing('2026-01-20', 'AB', 'CG2', 'Sala 1', 1, 5, 5),
+      ],
+      tanques: [
+        tq('2026-01-05', 'Sala 1', 1, { 'Cópulas': 3 }),
+        tq('2026-01-22', 'Sala 1', 1, { 'Cópulas': 1 }),
+      ],
+    }, { hoy: '2026-01-25' });
+    const L = dePos(l, 'AB');
+    expect(L.copulaDesde).toBe('2026-01-22');
+    expect(L.estado).toBe(ESTADO_PRODUCCION);
+  });
+
+  it('un ingreso repartido en varias filas del mismo día no pierde la cópula', () => {
+    /* Un ingreso se reparte en varias filas (una por composición y tanque), y el caso
+       NORMAL no puede quedar roto por la regla del caso raro.
+       ⚠⚠ ESTA PRUEBA NO DISTINGUE `fecha > L.ingreso` DE `fecha >= L.ingreso`, y su
+       nombre anterior daba a entender que sí. Se comprobó por mutación: `>=` SOBREVIVE, y
+       sobrevive porque es EQUIVALENTE — `PRIORIDAD` mete todos los ingresos del día antes
+       que cualquier fila de tanque, así que cuando se procesa la 2.ª fila de un mismo día
+       `copulaDesde` ya es null y volver a ponerlo a null no cambia nada.
+       🔑 La equivalencia NO es gratis: depende del orden. La prueba de abajo lo fija. */
+    const l = construirLibro({
+      ingresos: [
+        ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 10),
+        ing('2026-01-01', 'AB', 'CG2', 'Sala 1', 2, 5, 5),
+      ],
+      tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Cópulas': 2 })],
+    }, { hoy: '2026-01-06' });
+    const L = dePos(l, 'AB');
+    expect(L.ingreso).toBe('2026-01-01');
+    expect(L.copulaDesde).toBe('2026-01-05');
+    expect(L.estado).toBe(ESTADO_PRODUCCION);
+  });
+
+  it('un animal que entra HOY puede morir HOY: el ingreso va antes que la baja', () => {
+    /* El invariante que sostiene `PRIORIDAD = { ingreso: 0, tanque: 1 }`, y que hasta el
+       2026-09-08 NO fijaba ninguna prueba pese a ser carga estructural de dos cosas: del
+       reparto cronológico (la lección M01, «aplanar por tipo da números plausibles y
+       equivocados») y de que `>` y `>=` sean equivalentes en el reinicio de cuarentena.
+       Si las bajas pasaran a ir primero, esta prueba se pone roja ANTES de que nadie se
+       pregunte por qué el saldo de un tanque nuevo no cuadra. */
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 10)],
+      tanques: [tq('2026-01-01', 'Sala 1', 1, { 'Machos muertos': 4 })],
+    }, { hoy: '2026-01-02' });
+    expect(saldo(l, 'Sala 1', 1).machos).toBe(6);
+    // Con la baja primero: el tanque estaría vacío, saldría un aviso «sin-ingreso» y
+    // los 10 machos seguirían vivos. Las dos cosas se comprueban, no sólo el saldo.
+    expect(l.avisos).toHaveLength(0);
+  });
+
   it('sin fecha de ingreso no se inventa un estado', () => {
     expect(estadoDeLote({ ingreso: '', copulaDesde: null }, '2026-01-06')).toBe('');
     expect(estadoDeLote({ ingreso: '2026-01-01' }, '')).toBe('');
+  });
+});
+
+describe('Libro · los MOVIMIENTOS (Fase 3)', () => {
+  it('lo que sale de un tanque LLEGA al otro, con su lote', () => {
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 60)],
+      movimientos: [mov('2026-01-05', 'Sala 1', 1, 'Sala 2', 16, 40, 20)],
+      tanques: [],
+    }, { hoy: '2026-01-10' });
+    expect(saldo(l, 'Sala 1', 1)).toMatchObject({ machos: 60, hembras: 40 });
+    expect(saldo(l, 'Sala 2', 16)).toMatchObject({ machos: 40, hembras: 20 });
+    expect(dePos(l, 'AB')).toMatchObject({ machos: 100, hembras: 60 });
+  });
+
+  it('🔴 un movimiento NO cambia el saldo del lote: sólo lo cambia de sitio', () => {
+    /* El invariante más fuerte de la Fase 3, y el que cazaría casi cualquier error de
+       aritmética: mover animales no los crea ni los destruye. Si esto se rompe, el saldo
+       por tanque y el saldo por lote dejan de cuadrar entre sí. */
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 97, 53)],
+      movimientos: [
+        mov('2026-01-05', 'Sala 1', 1, 'Sala 2', 16, 33, 17),
+        mov('2026-01-06', 'Sala 2', 16, 'Sala 3', 22, 10, 5),
+      ],
+      tanques: [],
+    }, { hoy: '2026-01-10' });
+    expect(dePos(l, 'AB')).toMatchObject({ machos: 97, hembras: 53 });
+    const suma = ['Sala 1|1', 'Sala 2|16', 'Sala 3|22']
+      .map((k) => l.tanques.get(k))
+      .reduce((a, t) => ({ machos: a.machos + t.machos, hembras: a.hembras + t.hembras }), { machos: 0, hembras: 0 });
+    expect(suma).toEqual({ machos: 97, hembras: 53 });
+    expect(l.avisos).toEqual([]);
+  });
+
+  it('de un tanque MEZCLADO sale en proporción, y llegan las DOS identidades', () => {
+    /* Nadie sabe de qué lote era cada animal que se movió: se deduce en proporción a los
+       vivos de ese día, igual que la mortalidad. 120 de 200 vivos (150 AB + 50 BC) salen
+       como 90 AB + 30 BC. */
+    const l = construirLibro({
+      ingresos: [
+        ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 150, 0),
+        ing('2026-01-01', 'BC', 'CG2', 'Sala 1', 1, 50, 0),
+      ],
+      movimientos: [mov('2026-01-05', 'Sala 1', 1, 'Sala 2', 16, 120, 0)],
+      tanques: [],
+    }, { hoy: '2026-01-10' });
+    expect(saldo(l, 'Sala 1', 1).machos).toBe(80);
+    expect(saldo(l, 'Sala 2', 16).machos).toBe(120);
+    const destino = saldo(l, 'Sala 2', 16).composicion;
+    expect(destino.find((c) => c.lote === 'AB').machos).toBe(90);
+    expect(destino.find((c) => c.lote === 'BC').machos).toBe(30);
+    // Y los lotes siguen enteros: 150 y 50.
+    expect(dePos(l, 'AB').machos).toBe(150);
+    expect(dePos(l, 'BC').machos).toBe(50);
+  });
+
+  it('🔴 un lote con DOS códigos genéticos llega al destino SIN fundirse', () => {
+    /* ⚠⚠ ESTA PRUEBA NACIÓ DE UN MUTANTE SUPERVIVIENTE. El banco metió «lo movido llega al
+       destino sin su código genético» y NADA se puso rojo: las pruebas del movimiento
+       usaban dos LOTES distintos, así que quitar el código genético de la llave seguía
+       dejándolos separados. El caso que sí lo distingue es el REAL que describió el
+       usuario: el lote BM con las piscinas 766 y 767, que entraron mezcladas.
+       Si las dos posiciones se fundieran al llegar, el desglose por composición del tanque
+       destino sería falso y ya no habría forma de saber cuántos de cada código hay. */
+    const l = construirLibro({
+      ingresos: [
+        ing('2026-01-01', 'BM', '766', 'Sala 1', 1, 200, 0),
+        ing('2026-01-01', 'BM', '767', 'Sala 1', 1, 100, 0),
+      ],
+      movimientos: [mov('2026-01-05', 'Sala 1', 1, 'Sala 2', 16, 150, 0)],
+      tanques: [],
+    }, { hoy: '2026-01-10' });
+
+    const destino = saldo(l, 'Sala 2', 16).composicion;
+    expect(destino).toHaveLength(2);
+    expect(destino.find((c) => c.codigoGenetico === '766').machos).toBe(100);
+    expect(destino.find((c) => c.codigoGenetico === '767').machos).toBe(50);
+
+    // Y en el origen queda la otra mitad, también separada.
+    const origen = saldo(l, 'Sala 1', 1).composicion;
+    expect(origen.find((c) => c.codigoGenetico === '766').machos).toBe(100);
+    expect(origen.find((c) => c.codigoGenetico === '767').machos).toBe(50);
+
+    // El lote sigue entero: mover no crea ni destruye.
+    expect(dePos(l, 'BM').machos).toBe(300);
+  });
+
+  it('mover MÁS de los que hay avisa, y no inventa los que faltan', () => {
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 0)],
+      movimientos: [mov('2026-01-05', 'Sala 1', 1, 'Sala 2', 16, 25, 0)],
+      tanques: [],
+    }, { hoy: '2026-01-10' });
+    expect(saldo(l, 'Sala 1', 1).machos).toBe(0);
+    expect(saldo(l, 'Sala 2', 16).machos).toBe(10);   // llegaron los que había, no 25
+    expect(l.avisos).toHaveLength(1);
+    expect(l.avisos[0].tipo).toBe('deficit-movimiento');
+    expect(l.avisos[0].cantidad).toBe(15);
+  });
+
+  it('mover desde un tanque que el libro no conoce se AVISA, no se inventa', () => {
+    const l = construirLibro({
+      ingresos: [],
+      movimientos: [mov('2026-01-05', 'Sala 1', 1, 'Sala 2', 16, 30, 10)],
+      tanques: [],
+    }, { hoy: '2026-01-10' });
+    expect(l.tanques.size).toBe(0);
+    expect(l.avisos.map((a) => a.tipo)).toEqual(['movimiento-sin-origen']);
+  });
+
+  it('un movimiento de un tanque a sí mismo no mueve nada y lo dice', () => {
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 10)],
+      movimientos: [mov('2026-01-05', 'Sala 1', 1, 'Sala 1', 1, 5, 5)],
+      tanques: [],
+    }, { hoy: '2026-01-10' });
+    expect(saldo(l, 'Sala 1', 1)).toMatchObject({ machos: 10, hembras: 10 });
+    expect(l.avisos.map((a) => a.tipo)).toEqual(['movimiento-circular']);
+  });
+
+  it('🔴 el que LLEGA hoy puede morir hoy en su tanque nuevo', () => {
+    /* Fija la prioridad del día: ingreso → movimiento → baja. Con el movimiento después
+       de la baja, esos 20 machos no estarían aún en Sala 2 y la mortalidad de allí no
+       tendría a quién restarse: saldría un aviso «sin-ingreso» y el saldo quedaría mal. */
+    const l = construirLibro({
+      ingresos: [ing('2026-01-05', 'AB', 'CG1', 'Sala 1', 1, 50, 0)],
+      movimientos: [mov('2026-01-05', 'Sala 1', 1, 'Sala 2', 16, 20, 0)],
+      tanques: [tq('2026-01-05', 'Sala 2', 16, { 'Machos muertos': 3 })],
+    }, { hoy: '2026-01-06' });
+    expect(saldo(l, 'Sala 2', 16).machos).toBe(17);
+    expect(saldo(l, 'Sala 1', 1).machos).toBe(30);
+    expect(l.avisos).toEqual([]);
+  });
+});
+
+describe('Libro · el FIN DE CICLO (Fase 4B)', () => {
+  it('un cierre PARCIAL descuenta del lote entero, repartido entre sus tanques', () => {
+    /* Se cierra el LOTE, no un tanque (decisión del usuario). 60 de 200 vivos repartidos
+       150/50 entre dos tanques salen como 45 y 15. */
+    const l = construirLibro({
+      ingresos: [
+        ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 150, 0),
+        ing('2026-01-01', 'AB', 'CG1', 'Sala 2', 16, 50, 0),
+      ],
+      cierres: [fin('2026-01-05', 'AB', 'Parcial', 60, 0)],
+      tanques: [],
+    }, { hoy: '2026-01-10' });
+    expect(saldo(l, 'Sala 1', 1).machos).toBe(105);
+    expect(saldo(l, 'Sala 2', 16).machos).toBe(35);
+    expect(dePos(l, 'AB').machos).toBe(140);
+    expect(l.avisos).toEqual([]);
+    // Un cierre parcial NO cierra el lote.
+    expect(dePos(l, 'AB').estado).not.toBe(ESTADO_CERRADO);
+  });
+
+  it('🔴 un cierre TOTAL anota LA DIFERENCIA y deja el lote a cero', () => {
+    /* El corazón de la Fase 4B: lo que el libro creía que quedaba y no salió no se
+       esconde ni bloquea — se anota. «La diferencia ES el producto». */
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 40)],
+      cierres: [fin('2026-01-05', 'AB', 'Total', 90, 40)],
+      tanques: [],
+    }, { hoy: '2026-01-10' });
+    expect(saldo(l, 'Sala 1', 1)).toMatchObject({ machos: 0, hembras: 0 });
+    const dif = l.avisos.filter((a) => a.tipo === 'diferencia-cierre');
+    expect(dif).toHaveLength(1);
+    expect(dif[0].cantidad).toBe(10);      // los 10 machos que no salieron
+    expect(dif[0].sexo).toBe('machos');
+    expect(dePos(l, 'AB').estado).toBe(ESTADO_CERRADO);
+  });
+
+  it('un cierre TOTAL que cuadra no inventa ninguna diferencia', () => {
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 40)],
+      cierres: [fin('2026-01-05', 'AB', 'Total', 100, 40)],
+      tanques: [],
+    }, { hoy: '2026-01-10' });
+    expect(l.avisos).toEqual([]);
+    expect(dePos(l, 'AB').estado).toBe(ESTADO_CERRADO);
+  });
+
+  it('un cierre TOTAL sin cifras convierte TODO lo vivo en diferencia', () => {
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 30, 20)],
+      cierres: [fin('2026-01-05', 'AB', 'Total', 0, 0)],
+      tanques: [],
+    }, { hoy: '2026-01-10' });
+    expect(saldo(l, 'Sala 1', 1)).toMatchObject({ machos: 0, hembras: 0 });
+    expect(l.avisos.filter((a) => a.tipo === 'diferencia-cierre')).toHaveLength(2);   // ♂ y ♀
+  });
+
+  it('sacar MÁS de los que hay avisa, y no deja el saldo negativo', () => {
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 0)],
+      cierres: [fin('2026-01-05', 'AB', 'Parcial', 25, 0)],
+      tanques: [],
+    }, { hoy: '2026-01-10' });
+    expect(saldo(l, 'Sala 1', 1).machos).toBe(0);
+    const d = l.avisos.filter((a) => a.tipo === 'deficit-cierre');
+    expect(d).toHaveLength(1);
+    expect(d[0].cantidad).toBe(15);
+  });
+
+  it('cerrar un lote que el libro no conoce se AVISA, no se inventa', () => {
+    const l = construirLibro({
+      ingresos: [],
+      cierres: [fin('2026-01-05', 'ZZ', 'Total', 10, 10)],
+      tanques: [],
+    }, { hoy: '2026-01-10' });
+    expect(l.avisos.map((a) => a.tipo)).toEqual(['cierre-sin-lote']);
+  });
+
+  it('🔴 el cierre va DESPUÉS de las bajas del día', () => {
+    /* Fija la prioridad: ingreso → movimiento → baja → cierre. Si el cierre fuera antes,
+       la mortalidad de hoy se repartiría sobre animales que ya se habían ido, y el cierre
+       total anotaría una diferencia que en realidad eran los muertos de la mañana. */
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 0)],
+      cierres: [fin('2026-01-05', 'AB', 'Total', 95, 0)],
+      tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Machos muertos': 5 })],
+    }, { hoy: '2026-01-10' });
+    // 100 − 5 muertos = 95, y salen 95: cuadra exacto, sin diferencia.
+    expect(l.avisos.filter((a) => a.tipo === 'diferencia-cierre')).toEqual([]);
+    expect(saldo(l, 'Sala 1', 1).machos).toBe(0);
   });
 });
 
