@@ -266,3 +266,36 @@ describe('Libro · la vista tiene DÓNDE pintarse', () => {
     expect(src).toContain('_reproReadRows(MAD_LIBRO_SHEETS.tanques)');
   });
 });
+
+describe('Libro · lo que encontró la auditoría del 2026-09-08', () => {
+  /* Las tres son ESTRUCTURALES —miran el fuente, no el comportamiento— y conviene decir
+     por qué: las tres viven en funciones de RENDER que necesitan el monolito entero y un
+     documento para ejercerse. Una comprobación estructural sobre una regla clara vale más
+     que ninguna, y estas tres reglas son claras. Si algún día se monta el arnés que arranca
+     el motor completo, se sustituyen por las de comportamiento. */
+
+  it('A1 · una hoja ILEGIBLE no se confunde con una hoja vacía', () => {
+    /* Medido de punta a punta: el GAS responde {"ok":false,"error":"Hoja no permitida"}
+       para una hoja que aún no existe, `_reproFetchSheet` lo lanza y `_reproEnsureSheet`
+       lo TRAGA. Sin distinguirlas, el libro sale a cero y la vista canta «✅ Sin
+       discrepancias» sobre un libro que no se ha podido construir — un verde en falso
+       justo sobre la señal que este módulo existe para dar. */
+    expect(src).toContain('function _madHojaLeida(name){');
+    expect(src).toContain('_madLibro.fallos = fallos;');
+    // Y la vista tiene que CALLARSE el ✅ cuando falta una hoja, no sólo avisar aparte.
+    expect(src).toContain('const av=(libro.fallos&&libro.fallos.length)');
+  });
+
+  it('A2 · volver a la pestaña de Ingreso NO borra lo tecleado', () => {
+    /* `selTab` llama al render cada vez que se vuelve a la pestaña, y el render reescribía
+       innerHTML: varias composiciones con su reparto por tanques desaparecían sin aviso ni
+       forma de recuperarlas. */
+    expect(src).toContain('if(fp.querySelector("#mi-comps")) return;   // ya montado: se conserva lo tecleado');
+    expect(src).toContain('function madIngVaciar(){');   // la forma DELIBERADA de empezar de cero
+  });
+
+  it('A3 · volver a la pestaña de Saldo no tira lo ya calculado', () => {
+    // Recalcular cuesta una lectura que en este GAS se midió entre 2 y 52 s.
+    expect(src).toContain('if(fp.querySelector("#ms-body")) return;');
+  });
+});

@@ -5904,16 +5904,31 @@ function madNombreComposicion(tanque){
 
 // ── Maduración · vista SALDO ─────────────────────────────────────────────────
 let _madLibro = null;
+// ⚠⚠ UNA HOJA QUE NO SE PUDO LEER NO ES UNA HOJA VACÍA, y confundirlas produce el peor
+// resultado posible aquí: el libro sale a cero y la vista dice «sin discrepancias» —
+// exactamente sobre la señal que este módulo existe para dar.
+// Se puede distinguir porque `_reproPutRows` SÓLO se llama al leer bien: una hoja vacía
+// deja [] (clave presente), una ilegible no deja nada. Medido el 2026-09-08 contra el
+// despliegue vivo: el GAS responde {"ok":false,"error":"Hoja no permitida"} para una hoja
+// que todavía no existe, `_reproFetchSheet` lo lanza y `_reproEnsureSheet` lo traga.
+function _madHojaLeida(name){
+  if(_reproStoreRows(name).length) return true;
+  return !!(_reproSheets && Object.prototype.hasOwnProperty.call(_reproSheets, name));
+}
 async function madSaldoCargar(force){
   // La lectura se apoya en la cañería del reproductivo, que ya resuelve reintentos y
   // caché y es GENÉRICA: toma el nombre de la hoja. El prefijo _repro es de dónde nació,
   // no de lo que hace. Duplicarla habría creado dos cañerías divergiendo en silencio.
   await _reproEnsureSheet(MAD_LIBRO_SHEETS.ingreso, null);
   await _reproEnsureSheet(MAD_LIBRO_SHEETS.tanques, null);
+  const fallos = [];
+  if(!_madHojaLeida(MAD_LIBRO_SHEETS.ingreso)) fallos.push(MAD_LIBRO_SHEETS.ingreso);
+  if(!_madHojaLeida(MAD_LIBRO_SHEETS.tanques)) fallos.push(MAD_LIBRO_SHEETS.tanques);
   _madLibro = madConstruirLibro({
     ingresos: _reproReadRows(MAD_LIBRO_SHEETS.ingreso),
     tanques:  _reproReadRows(MAD_LIBRO_SHEETS.tanques)
   }, { hoy: today() });
+  _madLibro.fallos = fallos;
   return _madLibro;
 }
 function _madSaldoAvisoHTML(a){
@@ -5949,14 +5964,24 @@ function _madSaldoHTML(libro){
       + '<td style="text-align:right;font-variant-numeric:tabular-nums">'+L.hembras+'</td>'
       + '<td style="text-align:right">'+L.ubicaciones.length+'</td></tr>';
   }).join("");
-  const av=libro.avisos.length
+  // Con una hoja sin leer NO se puede afirmar nada del saldo: se dice, y se calla el ✅.
+  const roto=(libro.fallos&&libro.fallos.length)
+    ? '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#991b1b">'
+      + '<b>No se pudieron leer '+libro.fallos.length+' hoja(s):</b> '+escapeHtml(libro.fallos.join(", "))+'.<br>'
+      + 'El saldo de abajo está INCOMPLETO y las discrepancias no significan nada todavía. '
+      + 'Si la hoja aún no existe, aparecerá con el primer registro que se envíe.'
+      + '</div>'
+    : '';
+  const av=(libro.fallos&&libro.fallos.length)
+    ? ''
+    : libro.avisos.length
     ? '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#92400e">'
       + '<b>'+libro.avisos.length+' discrepancia(s)</b> — el libro y lo registrado no cuadran:'
       + '<ul style="margin:6px 0 0;padding-left:18px">'+libro.avisos.slice(0,40).map(_madSaldoAvisoHTML).join("")+'</ul>'
       + (libro.avisos.length>40 ? '<div style="margin-top:4px">…y '+(libro.avisos.length-40)+' más.</div>' : '')
       + '</div>'
     : '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#065f46">✅ Sin discrepancias: cada baja registrada tiene ingreso que la explique.</div>';
-  return av
+  return roto + av
     + '<h3 style="margin:8px 0 4px;font-size:14px">Por tanque</h3>'
     + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Sala</th><th>Tanque</th><th>Lote(s)</th><th>♂</th><th>♀</th><th>Vivos</th><th>Detalle</th></tr></thead><tbody>'+(filas||'<tr><td colspan="7" style="color:#94a3b8">Sin ingresos registrados.</td></tr>')+'</tbody></table></div>'
     + '<h3 style="margin:14px 0 4px;font-size:14px">Por lote</h3>'
@@ -5974,6 +5999,9 @@ async function madSaldoRefrescar(){
 }
 function renderMadSaldo(){
   const fp=document.getElementById("fp-saldo"); if(!fp) return;
+  // Igual que el Ingreso: volver a la pestaña no debe tirar lo ya calculado. Aquí además
+  // recalcular cuesta una lectura de hojas que en este GAS se midió entre 2 y 52 s.
+  if(fp.querySelector("#ms-body")) return;
   fp.innerHTML='<div class="fc">'
     + '<div class="fc-h"><div class="fc-t">⚖️ Maduración · Saldo</div><span class="ssp ssp-mt">'+escapeHtml(today())+'</span></div>'
     + '<div class="fc-b">'
@@ -6268,8 +6296,20 @@ async function madIngGuardar(){
   // nacer: lo cazó `h1-ast-una.test.js` antes de que llegara a producción.
   _syncNotOkUI(_t.outcome, "No se pudo registrar el ingreso", null, _t.gasMessage);
 }
+// ⚠⚠ NO SE RE-PINTA SI YA ESTÁ MONTADO. `selTab` llama a este render cada vez que se
+// vuelve a la pestaña, y volver a escribir innerHTML BORRA lo tecleado: varias
+// composiciones con su reparto por tanques, sin un aviso ni forma de recuperarlo. Es el
+// mismo anti-pérdida que las grillas resuelven con `_madCommitActive`; aquí basta con no
+// destruir. Para empezar de cero está el botón 🧹 Vaciar, que pregunta antes.
+function madIngVaciar(){
+  if(!confirm("¿Vaciar el formulario de ingreso?\nSe perderá todo lo tecleado.")) return;
+  const fp=document.getElementById("fp-ingreso");
+  if(fp) fp.innerHTML="";
+  renderMadIngreso();
+}
 function renderMadIngreso(){
   const fp=document.getElementById("fp-ingreso"); if(!fp) return;
+  if(fp.querySelector("#mi-comps")) return;   // ya montado: se conserva lo tecleado
   const todayStr=today();
   fp.innerHTML='<div class="fc">'
     + '<div class="fc-h"><div class="fc-t">📥 Maduración · Ingreso</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
@@ -6286,6 +6326,7 @@ function renderMadIngreso(){
     +     '<button class="btn" type="button" onclick="madIngAddComp()">➕ Composición</button>'
     +     '<button class="btn" type="button" onclick="madIngRevisar()">🔍 Revisar</button>'
     +     '<button class="btn" type="button" style="font-weight:700" onclick="madIngGuardar()">☁️ Guardar y sincronizar</button>'
+    +     '<button class="btn" type="button" onclick="madIngVaciar()">🧹 Vaciar</button>'
     +   '</div>'
     +   '<div id="mi-report" style="margin-top:12px"></div>'
     + '</div></div>';
