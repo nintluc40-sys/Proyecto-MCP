@@ -31,7 +31,8 @@ const H_TRANSFER = ['TR-ID', 'Fecha', 'Tipo', 'Trovan ID', 'Sala origen', 'Tanqu
   'Piscinas presentes', 'Observaciones'];
 // Vecinas que NO deben caer en la rama del Trovan (cabeceras reales de producción).
 const H_MAD_SALA = ['Fecha', 'Sala', 'Estado', 'Temperatura 2:00', 'Oxígeno 06:00', 'RAS'];
-const H_MAD_TANQUES = ['Fecha', 'Sala', 'Lote', 'Tanque', 'Relación H:M',
+// ⚠ Sin «Relación H:M»: se retiró el 2026-09-08 porque esa relación se CALCULA.
+const H_MAD_TANQUES = ['Fecha', 'Sala', 'Lote', 'Tanque',
   'Población inicial hembras', 'Población inicial machos', 'Machos muertos', 'Hembras muertas', 'Cópulas', 'Muda'];
 const H_MAD_LOTES = ['Fecha', 'Sala', 'Fila', 'Lote', 'Historial', 'Total de nauplios',
   'Total de huevos', 'N2 por lote', 'Desoves por lote', 'No viables por lote'];

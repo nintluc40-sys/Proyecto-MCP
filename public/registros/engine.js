@@ -8505,8 +8505,16 @@ function clearMadSalasGrid(){
    destruyendo datos en cada sync. Se envían vacías, y el MERGE del GAS no pisa nada.
    ENTRARON tres: los dos pesos y la observación sanitaria (decisión del usuario). Van al
    FINAL de la hoja, que es lo único que `ensureHeaders` sabe añadir sin migrar. */
+/* ⚠⚠ AQUÍ ESTABA «Relación H:M», y la retiró el usuario el 2026-09-08: esa relación SE
+   CALCULA después a partir de los conteos, así que pedirla a mano era pedir un dato
+   derivado — y un dato derivado que se teclea es un dato que puede contradecir al que lo
+   deriva. Se pudo quitar sin coste porque `Maduración Tanques` estaba a 0 filas (medido
+   contra producción ese día, no supuesto).
+   ⚠ Quitarla NO toca la llave: la del GAS para esta hoja es POSICIONAL [0,1,3] —Fecha,
+   Sala, Tanque— y `H:M` vivía en el índice 4, detrás de las tres. Las columnas VACÍAS de
+   `Lote` y las dos `Población inicial` siguen siendo intocables por lo contrario: quitar
+   `Lote` correría `Tanque` al índice 2 y la llave apuntaría a «Machos muertos». */
 const _TANQ_GRID_COLS = [
-  {k:"rel_hm",          type:"text", ph:"1:1"},
   {k:"machos_muertos",  type:"int"},
   {k:"hembras_muertas", type:"int"},
   {k:"machos_descarte", type:"int"},
@@ -8517,7 +8525,6 @@ const _TANQ_GRID_COLS = [
   {k:"peso_hembras",    type:"num"},
   {k:"obs_sanitarias",  type:"text", ph:"—", ancho:"110px"}
 ];
-const _TANQ_GRID_NUM_KEYS = _TANQ_GRID_COLS.filter(c => c.type === "int").map(c => c.k);
 
 function renderMadTanques(){
   const fp = document.getElementById("fp-tanques");
@@ -8594,7 +8601,6 @@ function renderMadTanques(){
             <th class="tqh" style="min-width:44px">Tanque</th>
             <th style="min-width:28px">St</th>
             <th>Vivos</th>
-            <th>Relación<br>H:M</th>
             <th>Machos<br>Muertos</th>
             <th>Hembras<br>Muertas</th>
             <th>Machos<br>Descarte</th>
@@ -8671,7 +8677,11 @@ function _madTanquesPintaVivos(libro){
       c.style.color = "#92400e";
       return;
     }
-    c.textContent = T.machos + "♂ " + T.hembras + "♀";
+    /* El TOTAL lo pidió el usuario el 2026-09-08. Es la cifra que se compara con la capacidad
+       del tanque, y sumar dos números de cabeza delante de una grilla de veinte filas se hace
+       mal más veces de las que parece. Sigue SIN GUARDARSE, como el resto de esta vista: es
+       derivada, y congelarla crearía una foto que envejece sin decirlo. */
+    c.textContent = T.machos + "♂ " + T.hembras + "♀ · " + (T.machos + T.hembras);
     c.style.color = (T.machos + T.hembras) > 0 ? "#0369a1" : "#92400e";
   });
 }
@@ -8804,9 +8814,30 @@ function _collectTanquesGrid(salaOverride, fechaOverride){
     const g = (k) => { const el = fp.querySelector(`[name="tg_${tank}_${k}"]`); return el ? el.value : ""; };
     // El Lote prellenado NO cuenta como dato por sí solo: la fila se guarda
     // sólo si hay algún otro campo. Si la hay, el Lote se persiste con ella.
-    const data = { fecha, sala, tanque: tank, lote: sanitizeStr(g("lote")), rel_hm: sanitizeStr(g("rel_hm")) };
-    let hasData = !!data.rel_hm;
-    _TANQ_GRID_NUM_KEYS.forEach(k => { const v = g(k); if(v !== ""){ data[k] = sanitizeNum(v,0,1e9); hasData = true; } else { data[k] = ""; } });
+    const data = { fecha, sala, tanque: tank, lote: sanitizeStr(g("lote")) };
+    /* 🔴🔴 SE RECORREN TODAS LAS COLUMNAS DE DATO, y no sólo las enteras. Hasta el 2026-09-08
+       este bucle iba por `_TANQ_GRID_NUM_KEYS`, que filtraba `type === "int"`, con lo que
+       los DOS PESOS (`type:"num"`) y las OBSERVACIONES SANITARIAS (`type:"text"`) se
+       pintaban, se tecleaban, tenían su celda en el payload... y NUNCA SE RECOGÍAN: llegaban
+       `undefined` y la hoja recibía la celda vacía. Los tres son campos que el usuario pidió
+       esa misma noche, y ninguno guardaba nada.
+       No daba un solo error. Es la clase de defecto más cara de este proyecto —el dato que no
+       llega y nadie ve— y sobrevivió a la suite, al lint y a las tres copias «a la par».
+       ⚠ El TEXTO cuenta para `hasData`: si no, una fila con SÓLO una observación sanitaria no
+       se guardaría, que es exactamente lo que hacía la versión anterior con `rel_hm` fuera. */
+    let hasData = false;
+    _TANQ_GRID_COLS.forEach(col => {
+      const v = g(col.k);
+      if(col.type === "text"){
+        data[col.k] = sanitizeStr(v, col.k === "obs_sanitarias" ? 120 : 20);
+        if(data[col.k] !== "") hasData = true;
+      } else if(v !== ""){
+        data[col.k] = sanitizeNum(v, 0, 1e9);   // parseFloat: los pesos conservan decimales
+        hasData = true;
+      } else {
+        data[col.k] = "";
+      }
+    });
     if(hasData) result.push(data);
   });
   return result;
@@ -8935,7 +8966,8 @@ function downloadMadPDF(ficha){
     }).join('');
   } else if(ficha === 'tanques'){
     titleIco = '🛢️'; titleText = 'Maduración · Tanques'; docCode = 'OMR-MAD-TAN';
-    headers = ['#','Fecha','Sala','Tanque','Relación H:M','Machos Muertos','Hembras Muertas','Machos Descarte','Hembras Descarte','Cópulas','Muda','Peso ♂','Peso ♀','Obs. sanitarias','Sync'];
+    // ⚠ Cabecera y celda van JUNTAS: separarlas ya salió mal el 2026-09-08.
+    headers = ['#','Fecha','Sala','Tanque','Machos Muertos','Hembras Muertas','Machos Descarte','Hembras Descarte','Cópulas','Muda','Peso ♂','Peso ♀','Obs. sanitarias','Sync'];
     rowsHtml = list.map((r, idx) => {
       const d = r.data || {};
       const st = r.synced ? '<b style="color:#166534">✔</b>' : '<b style="color:#92400e">⏳</b>';
@@ -8949,7 +8981,6 @@ function downloadMadPDF(ficha){
              error: sólo un papel con los números bajo la etiqueta equivocada. Si se toca
              una lista, se toca la otra. -->
         <td>${pdfVal(d.tanque)}</td>
-        <td>${escapeHtml(d.rel_hm||'—')}</td>
         <td>${pdfVal(d.machos_muertos)}</td>
         <td>${pdfVal(d.hembras_muertas)}</td>
         <td>${pdfVal(d.machos_descarte)}</td>
@@ -9103,10 +9134,17 @@ function buildMadPayload(ficha, records){
       // COLUMNAS se quedan y se envían VACÍAS: la llave del GAS para esta hoja es posicional
       // [0,1,3] y quitar «Lote» correría «Tanque» fuera de su sitio. El merge no pisa nada
       // con un valor vacío, así que no borran lo que hubiera.
-      headers: ["Fecha","Sala","Lote","Tanque","Relación H:M","Población inicial hembras","Población inicial machos","Machos muertos","Hembras muertas","Machos muertos por descarte de selección","Hembras muertas por descarte de selección","Cópulas","Muda","Peso promedio machos (g)","Peso promedio hembras (g)","Observaciones sanitarias"],
+      /* ⚠⚠ LAS TRES COLUMNAS VACÍAS SE QUEDAN Y ES OBLIGATORIO: `Lote` y las dos
+         `Población inicial` ya no se capturan —las declara el Ingreso— pero la llave del GAS
+         para esta hoja es POSICIONAL [0,1,3] y quitarlas correría `Tanque` fuera de su sitio,
+         destruyendo datos en cada sync. Sólo se pueden limpiar en el MISMO despliegue en que
+         cambie `madKeyCols`.
+         ⚠ «Relación H:M» sí se fue (2026-09-08, decisión del usuario: se calcula), y se pudo
+         porque vivía en el índice 4, DETRÁS de la llave, y la hoja estaba a 0 filas. */
+      headers: ["Fecha","Sala","Lote","Tanque","Población inicial hembras","Población inicial machos","Machos muertos","Hembras muertas","Machos muertos por descarte de selección","Hembras muertas por descarte de selección","Cópulas","Muda","Peso promedio machos (g)","Peso promedio hembras (g)","Observaciones sanitarias"],
       rows: records.map(r => {
         const d = r.data || {};
-        return [d.fecha, d.sala, "", int(d.tanque), d.rel_hm, "", "", int(d.machos_muertos), int(d.hembras_muertas), int(d.machos_descarte), int(d.hembras_descarte), int(d.copulas), int(d.muda), num(d.peso_machos), num(d.peso_hembras), d.obs_sanitarias || ""];
+        return [d.fecha, d.sala, "", int(d.tanque), "", "", int(d.machos_muertos), int(d.hembras_muertas), int(d.machos_descarte), int(d.hembras_descarte), int(d.copulas), int(d.muda), num(d.peso_machos), num(d.peso_hembras), d.obs_sanitarias || ""];
       })
     };
   }

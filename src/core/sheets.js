@@ -116,7 +116,19 @@ export function detectSheetName(rows, gid, rawTitle) {
   //   son columnas SEPARADAS («Sala» por un lado, «Total de nauplios» por otro): la
   //   condición no podía cumplirse NUNCA. Medido, casaba 0 de 35 pestañas, y Lotes y
   //   Tanques caían al final como "Hoja<N>". Corregida casa esas dos y sólo esas.
-  if (has((k) => k.includes('sala')) &&
+  /* ⚠⚠ «CÓDIGO GENÉTICO» ENTRA COMO SEGUNDA FIRMA · 2026-09-08, y no es un adorno.
+     La hoja `Maduración Lotes` se rediseñó a evento de DESOVE (Fase 4A) y en el camino perdió
+     su columna «Sala» —un desove es de (lote, código genético), NUNCA de un tanque ni de una
+     sala—. Con sólo la firma «sala» dejó de reconocerse y caía a «Hoja<N>», que es EXACTAMENTE
+     el fallo silencioso que el comentario de arriba describe para MATRIZ/Bitácora: la vista se
+     queda vacía y nadie ve un error.
+     🔑 Se eligió «código genético» porque sólo lo llevan hojas de Maduración —`Lotes` e
+     `Ingreso`—, así que ensancha lo justo. Que no se lleve por delante ninguna de las otras lo
+     comprueba la prueba de las 35 pestañas, que exige que el camino por COLUMNAS y el camino
+     por NOMBRE coincidan en todas.
+     ⚠ Va con y sin tilde: las cabeceras se comparan en minúsculas pero nadie garantiza la
+     acentuación de una pestaña tecleada a mano. */
+  if ((has((k) => k.includes('sala')) || has((k) => k.includes('genético') || k.includes('genetico'))) &&
       has((k) => k.includes('machos') || k.includes('hembras') || k.includes('nauplio'))) return 'Maduracion';
   // Maduración Sala es la hoja de AMBIENTE: no lleva machos ni hembras ni nauplios, así
   // que la regla de arriba no la alcanza. Su firma es la columna «RAS».
