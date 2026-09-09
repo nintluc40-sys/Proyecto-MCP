@@ -57,7 +57,10 @@ npm run lint       # ESLint
   ubicación). Sub-vista **Patología en fresco** pendiente (a la espera de su
   hoja en el Google Sheet).
 - **Maduración · "Microchips"** (🥚): seguimiento reproductivo por Trovan ID sobre
-  las hojas `Maduración MATRIZ`/`Bitácora`/`Transferencias`. Tres sub-vistas —
+  las hojas `Maduración MATRIZ`/`Bitácora`/`Transferencias`.
+  ⚠ **Es el REPRODUCTIVO. Hay otra «Maduración» distinta** —el registro OPERATIVO, por
+  conteos— que no es una vista sino un grupo de fichas de captura: ver más abajo.
+  Tres sub-vistas —
   **Panorama** (KPIs, distribución de estados activa/inactiva/transferida/fallecida,
   tendencias de desoves/mortalidad/fertilidad, top salas y tanques), **Salas y
   Tanques** (producción, fertilidad y eficiencia por ubicación + mortalidad) y
@@ -66,6 +69,54 @@ npm run lint       # ESLint
   individuo). Filtros de período (mes o todo) + Sala + Tanque.
 - **Registros**: fichas de captura (estrangulamiento gradual del monolito
   `public/registros/engine.js`) que escriben al Sheet vía Google Apps Script.
+  Incluye el **registro operativo de Maduración**, que tiene su propia sección aquí abajo
+  por ser lo único del sistema que además CALCULA.
+
+### Maduración · el registro OPERATIVO
+
+> ⚠⚠ **No confundirlo con «Microchips».** Conviven dos «Maduración» y registran cosas
+> distintas: aquélla sigue **individuos** con microchip Trovan y es una vista de lectura;
+> ésta cuenta **animales** por sala/tanque/lote y es captura. No comparten hojas ni código.
+
+Seis fichas de captura más una vista derivada (Saldo), todas dentro del módulo Maduración
+de Registros. **Su interfaz vive ÚNICAMENTE en `public/registros/engine.js`**, porque los
+dos monolitos gemelos de `Music\` no tienen módulos ES.
+⚠ Ojo al buscarlo: **`src/views/maduracion/` NO es esto** —es la vista del reproductivo por
+Trovan— y no hay ninguna carpeta nativa para el operativo. Lo que sí tiene gemelo probado en
+`src/views/registros/lib/` es el CÁLCULO: los esquemas de cada ficha y el libro mayor, con
+una prueba de paridad que exige que las dos implementaciones coincidan y que ningún export
+del módulo se quede sin contraparte en el monolito.
+
+| Ficha | Hoja | Grano |
+|---|---|---|
+| 📥 **Ingreso** | `Maduración Ingreso` | (lote, composición, sala, tanque) |
+| ⚖️ **Saldo** | *(derivada)* | vista del libro mayor, no escribe |
+| 🔄 **Movimientos** | `Maduración Movimientos` | el **tramo** origen → destino |
+| 🥚 **Desoves** | `Maduración Lotes` | (fecha, lote, código genético) |
+| 🏁 **Fin de Ciclo** | `Maduración Fin de Ciclo` | (fecha, lote, motivo) |
+| 🏠 **Salas** · 🛢️ **Tanques** | `Maduración Sala` · `Maduración Tanques` | la grilla diaria |
+
+**El libro mayor** (`src/views/registros/lib/mad-libro.js` + su gemelo inline) responde
+*«¿cuántos animales hay vivos ahora en cada tanque y en cada lote?»*. Nadie teclea un saldo:
+se DEDUCE de `+ ingreso − bajas ± movimientos − fin de ciclo`. El objetivo no es que la
+cifra cuadre siempre, sino que **cuando no cuadre se vea el mismo día**.
+
+🔑 Dos reglas que explican casi todo el diseño y no se deducen del código:
+
+- **Es cronológico, no una suma.** En un tanque mezclado la mortalidad se reparte entre sus
+  lotes en proporción a los vivos **de ese día**, así que el peso de hoy depende del
+  resultado de ayer. Aplanar por tipo da números plausibles y equivocados.
+- **Movimientos y Desoves no dicen de qué lote salió cada animal, y es deliberado.** En un
+  tanque mezclado nadie lo sabe, y las copuladas de un desove se juntan en un pool de varios
+  tanques. Lo deduce el libro; inventarlo sería registrar lo que no se midió.
+
+⚠ **Las llaves del GAS mandan sobre el diseño de estas hojas.** `Maduración Sala`,
+`Tanques` y `Lotes` se identifican por POSICIÓN (`[0,1]`, `[0,1,3]` y `[0,1,2]`), así que
+mover una columna de las primeras destruye datos en cada sincronización; `Ingreso`,
+`Movimientos` y `Fin de Ciclo` van por la columna `ID`, que el GAS localiza por su cabecera.
+Por eso `Maduración Tanques` conserva tres columnas **vacías a propósito** (`Lote` y las dos
+`Población inicial`): sólo se pueden limpiar en el mismo despliegue en que cambie
+`madKeyCols`.
 
 ## Arquitectura
 
@@ -105,11 +156,17 @@ src/
     visitante/             Resumen mensual en lenguaje llano + microalgas
     biomolecular/          D3 (heatmap/treemap/swarm/sankey/E.D.T.) + reporte + export
     microbiologia/         data.js (capa pura) · index.js · petri.js (placa de agar SVG)
-    maduracion/            Registro reproductivo por Trovan: panorama · salas y tanques · hembras
+    maduracion/            Registro REPRODUCTIVO por Trovan: panorama · salas y tanques · hembras
+                           ⚠ el registro OPERATIVO de Maduración NO está aquí: ver engine.js
     registros/             Fichas nativas (lib/ + fichas/) sobre el motor engine.js
+                           lib/ tiene los esquemas y el LIBRO MAYOR de Maduración, con su
+                           prueba de paridad contra el gemelo inline del monolito
   sw.test.js               Ejerce las reglas de enrutado de public/sw.js en un ámbito falso
 public/
   registros/engine.js      Monolito heredado de las fichas (se estrangula gradualmente)
+                           ⚠ ÚNICO sitio donde vive la INTERFAZ del registro operativo de
+                           Maduración (Ingreso · Saldo · Movimientos · Desoves · Fin de
+                           Ciclo · Salas · Tanques). Su cálculo sí tiene gemelo en src/
   sw.js                    Service worker: la app arranca y captura SIN CONEXIÓN
   manifest.webmanifest     PWA instalable (standalone) + icons/ 192 · 512 · maskable
 ```
@@ -136,6 +193,11 @@ Dos consecuencias que conviene tener presentes al desplegar:
 2. Cada fila se etiqueta con `_SheetOrigin` (Larvicultura, Control_Tanque,
    Maduracion, `Lab_Algas`, `Registro_Supervision`, `Biomol`, `Microbiología`…) y
    se sella el `Módulo` desde el nombre de pestaña.
+   ⚠ Cuando el `gid` llega sin título, el origen se deduce de las CABECERAS
+   (`detectSheetName`). Una hoja que no case cae a `Hoja<N>` y su vista se queda **vacía sin
+   dar error**: ya pasó, y por eso la firma de Maduración admite «sala» **o** «código
+   genético» — la hoja de Desoves no tiene columna `Sala`, porque un desove es de un lote y
+   un código, nunca de un tanque.
 3. Se aplanan a `store.globalData` y se emite `EV.DATA`; las vistas se
    re-renderizan reactivamente.
 4. `startAutoRefresh()` repite cada 60 s comparando un *fingerprint* (no
@@ -167,6 +229,13 @@ Dos consecuencias que conviene tener presentes al desplegar:
 
 ## Pendiente / siguientes pasos
 
+- 🔴 **Re-desplegar el GAS.** Tres hojas del registro operativo de Maduración —`Ingreso`,
+  `Movimientos` y `Fin de Ciclo`— están en el `ALLOWED` del código pero **no en el
+  despliegue vivo**, que responde `{"ok":false,"error":"Hoja no permitida"}`. Hasta
+  entonces esas tres fichas no pueden escribir. **Desoves y la grilla de Salas sí
+  funcionan** ya: reutilizan hojas que el despliegue actual permite.
+- **Maduración · histórico** (Fase 5): la única fase del registro operativo sin construir.
+  Aplazada a propósito hasta probar el resto en operación.
 - Microbiología: construir la sub-vista **Patología en fresco** (depende de que
   exista su hoja en el Sheet). General y Calidad de Agua ya están completas.
 - Validación visual en navegador de los cambios recientes.
