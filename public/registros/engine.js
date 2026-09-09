@@ -6001,6 +6001,29 @@ function madEstadoDeSala(libro, sala, fecha){
   // Mixto es más veraz que elegir uno de los dos y esconder el otro (decisión del usuario).
   return unicos.length===1 ? unicos[0] : MAD_EST_MIXTO;
 }
+// Desglose legible para la columna «Estado por lote»: `AB: Cuarentena · BC: Producción`.
+// Es lo que hace que MAD_EST_MIXTO sea útil en vez de una etiqueta que esconde el detalle:
+// «Mixto» dice que hay de las dos cosas, y esto dice CUÁL es cuál.
+// ⚠⚠ Vivió SÓLO en el módulo desde la Fase 2 hasta el 2026-09-08, sin gemelo aquí ni en los
+// dos de Music, y la prueba de paridad NO LO VEÍA porque importaba una lista de nombres
+// escrita a mano. Desde entonces esa prueba pregunta al módulo qué exporta, así que un hueco
+// como éste ya no puede volver a abrirse en silencio.
+// ⚠ Se usa un objeto plano en vez de Set, como madEstadoDeSala: los lotes van normalizados a
+// mayúsculas por normLote, así que no pueden chocar con las claves de Object.prototype.
+function madEstadoPorLoteTexto(libro, sala, fecha){
+  const partes=[], vistos={};
+  Object.keys(libro.tanques||{}).forEach(function(uk){
+    const T=libro.tanques[uk];
+    if(T.sala!==madLibroTxt(sala)) return;
+    T.composicion.forEach(function(c){
+      if((c.machos<=0&&c.hembras<=0)||vistos[c.lote]) return;
+      vistos[c.lote]=1;
+      const e=madEstadoDeLote(libro.lotes[c.lote], fecha);
+      if(e) partes.push(c.lote+": "+e);
+    });
+  });
+  return partes.sort().join(" · ");
+}
 // El nombre del tanque mezclado lo PROPONE el sistema, ordenado, para que nadie vuelva a
 // teclearlo de dos maneras: en producción ya convive «BC/BA» escrito a mano.
 function madNombreComposicion(tanque){
@@ -8218,9 +8241,13 @@ function renderMadSalas(){
     }
   });
 
+  /* ⚠ «Mixto» sale de MAD_EST_MIXTO, no de un literal: es el MISMO valor que devuelve
+     madEstadoDeSala, y escribirlo aparte sería otra copia que puede divergir. Una sala en
+     dos estados es más veraz que elegir uno y esconder el otro (decisión del usuario). */
   const estadoOpts = (cur) => `<option value="">—</option>
     <option value="Cuarentena"${cur==="Cuarentena"?" selected":""}>Cuarentena</option>
-    <option value="Producción"${cur==="Producción"?" selected":""}>Producción</option>`;
+    <option value="Producción"${cur==="Producción"?" selected":""}>Producción</option>
+    <option value="${MAD_EST_MIXTO}"${cur===MAD_EST_MIXTO?" selected":""}>${MAD_EST_MIXTO}</option>`;
   const rasOpts = (cur) => `<option value="">—</option>
     <option value="SI"${cur==="SI"?" selected":""}>SI</option>
     <option value="NO"${cur==="NO"?" selected":""}>NO</option>`;
@@ -8230,16 +8257,17 @@ function renderMadSalas(){
     const d = r ? r.data : {};
     const st = r ? (r.synced ? "✅" : "⏳") : "○";
     const tempCells = _SALA_TEMP_KEYS.map((k,ki) =>
-      `<td><input class="pinp" type="number" name="sg_${si}_${k}" data-r="${si}" data-c="${2+ki}" onpaste="madGridPaste(event,'salas')" value="${vl(d,k)}" min="0" max="50" step="0.1" inputmode="decimal" placeholder="-"></td>`
+      `<td><input class="pinp" type="number" name="sg_${si}_${k}" data-r="${si}" data-c="${3+ki}" onpaste="madGridPaste(event,'salas')" value="${vl(d,k)}" min="0" max="50" step="0.1" inputmode="decimal" placeholder="-"></td>`
     ).join("");
     const oxCells = _SALA_OX_KEYS.map((k,ki) =>
-      `<td><input class="pinp" type="number" name="sg_${si}_${k}" data-r="${si}" data-c="${14+ki}" onpaste="madGridPaste(event,'salas')" value="${vl(d,k)}" min="0" max="20" step="0.01" inputmode="decimal" placeholder="-"></td>`
+      `<td><input class="pinp" type="number" name="sg_${si}_${k}" data-r="${si}" data-c="${15+ki}" onpaste="madGridPaste(event,'salas')" value="${vl(d,k)}" min="0" max="20" step="0.01" inputmode="decimal" placeholder="-"></td>`
     ).join("");
     return `<tr>
       <td class="tqc" style="font-size:10px;min-width:60px">${escapeHtml(sala)}</td>
       <td style="font-size:10px;text-align:center">${st}</td>
       <td><select name="sg_${si}_estado" data-r="${si}" data-c="0" onpaste="madGridPaste(event,'salas')" style="font-size:10px;min-width:70px">${estadoOpts(d.estado||"")}</select></td>
-      <td><select name="sg_${si}_ras" data-r="${si}" data-c="1" onpaste="madGridPaste(event,'salas')" style="font-size:10px;min-width:44px">${rasOpts(d.ras||"")}</select></td>
+      <td><input class="pinp" type="text" name="sg_${si}_estado_lote" data-r="${si}" data-c="1" onpaste="madGridPaste(event,'salas')" value="${vl(d,'estado_lote')}" maxlength="200" placeholder="—" style="font-size:10px;min-width:170px"></td>
+      <td><select name="sg_${si}_ras" data-r="${si}" data-c="2" onpaste="madGridPaste(event,'salas')" style="font-size:10px;min-width:44px">${rasOpts(d.ras||"")}</select></td>
       ${tempCells}${oxCells}
     </tr>`;
   }).join("");
@@ -8274,17 +8302,22 @@ function renderMadSalas(){
             <th class="tqh" style="min-width:60px">Sala</th>
             <th style="min-width:28px">St</th>
             <th>Estado</th>
+            <th>Estado por lote</th>
             <th>RAS</th>
             <th colspan="12" class="thg">Temperatura (°C) · cada 2 horas</th>
             <th colspan="4" class="thg2">O₂ (mg/L) · cada 6 horas</th>
           </tr>
           <tr>
-            <th></th><th></th><th></th><th></th>
+            <th></th><th></th><th></th><th></th><th></th>
             ${thTemp}${thOx}
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <button class="btn" type="button" id="sal-estado-btn" onclick="madSalasProponerEstado()" title="Lee el libro y propone el estado de cada sala y su desglose por lote">🔄 Proponer estado</button>
+        <span id="sal-estado-nota" style="font-size:11px;align-self:center"></span>
+      </div>
       <div class="sa" style="margin-top:12px">
         <div class="sa-info"><span>💾 Guarda para persistir las 7 salas a la vez</span></div>
         <div class="sa-btns">
@@ -8300,6 +8333,60 @@ function renderMadSalas(){
   _madAfterRender("salas");
 }
 
+// ── Maduración · Salas: el libro PROPONE el estado y su desglose ─────────────
+// Decisión del usuario (2026-09-08): el libro los propone bajo botón y se GUARDAN, con el
+// operario pudiendo corregir antes. Se distingue del botón de VIVOS de Tanques, que no
+// guarda nada: allí es una vista derivada que envejecería congelada; aquí es el registro
+// del día, y el día es la fila.
+async function madSalasProponerEstado(){
+  const btn  = document.getElementById("sal-estado-btn");
+  const nota = document.getElementById("sal-estado-nota");
+  if(nota) nota.innerHTML = '<span style="color:#64748b">Leyendo las hojas… puede tardar unos segundos.</span>';
+  if(btn) btn.disabled = true;
+  try{
+    const libro = await madSaldoCargar(true);
+    _madSalasPintaEstado(libro);
+  }catch(_){
+    if(nota) nota.innerHTML = '<span style="color:#991b1b">No se pudieron leer las hojas. Reintenta con 🔄.</span>';
+  }finally{
+    if(btn) btn.disabled = false;
+  }
+}
+function _madSalasPintaEstado(libro){
+  const fp = document.getElementById("fp-salas"); if(!fp) return;
+  const nota = document.getElementById("sal-estado-nota");
+  const roto = !!(libro.fallos && libro.fallos.length);
+  const fechaEl = document.getElementById("mad-salas-fecha");
+  const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
+  /* 🔴🔴 CON EL LIBRO A MEDIAS NO SE RELLENA NADA, y aquí es más grave que en Tanques: allí
+     una propuesta incompleta sólo se MIRA, y aquí se GUARDA en la hoja. Un estado deducido
+     sin la hoja de ingresos diría «Cuarentena» de una sala llena de lotes en producción, y
+     quedaría escrito. Es el defecto A1 de la auditoría del 09-08 —una hoja ilegible leída
+     como vacía— con consecuencias permanentes. */
+  if(roto){
+    if(nota) nota.innerHTML = '<span style="color:#991b1b">⚠ No se pudieron leer ' + libro.fallos.length
+      + ' hoja(s) (' + escapeHtml(libro.fallos.join(", ")) + '): la propuesta sería INCOMPLETA y no se ha rellenado nada.</span>';
+    return;
+  }
+  let n = 0;
+  MAD_SALA_OPTS.forEach(function(sala, si){
+    const est = madEstadoDeSala(libro, sala, fecha);
+    const det = madEstadoPorLoteTexto(libro, sala, fecha);
+    const selEl = fp.querySelector('[name="sg_' + si + '_estado"]');
+    const txtEl = fp.querySelector('[name="sg_' + si + '_estado_lote"]');
+    if(est && selEl){ selEl.value = est; n++; }
+    if(txtEl) txtEl.value = det;
+  });
+  if(nota){
+    nota.innerHTML = n
+      ? '<span style="color:#166534">Propuesto al ' + escapeHtml(fecha) + ' para ' + n + ' sala(s). Revisa y corrige antes de guardar.</span>'
+      : '<span style="color:#92400e">El libro no conoce ninguna sala con animales en esa fecha: no hay nada que proponer.</span>';
+  }
+  // Marca «cambios sin guardar», como hace el pegado: si no, lo propuesto se perdería
+  // al cambiar de pestaña sin que nadie avisara.
+  try{ fp.dispatchEvent(new Event("input", {bubbles:true})); }catch(_){}
+}
+
 // ── Recolecta las 7 filas de la grilla de Salas ────────
 function _collectSalasGrid(fechaOverride){
   const fp = document.getElementById("fp-salas");
@@ -8312,8 +8399,8 @@ function _collectSalasGrid(fechaOverride){
       const el = fp.querySelector(`[name="sg_${si}_${k}"]`);
       return el ? el.value : "";
     };
-    const data = { fecha, sala, estado: sanitizeStr(g("estado")), ras: sanitizeStr(g("ras")) };
-    let hasAny = !!(data.estado || data.ras);
+    const data = { fecha, sala, estado: sanitizeStr(g("estado")), estado_lote: sanitizeStr(g("estado_lote"), 200), ras: sanitizeStr(g("ras")) };
+    let hasAny = !!(data.estado || data.estado_lote || data.ras);
     _SALA_TEMP_KEYS.forEach(k => { const v = g(k); if(v !== ""){ data[k] = sanitizeNum(v,0,50); hasAny = true; } else { data[k] = ""; } });
     _SALA_OX_KEYS.forEach(k =>   { const v = g(k); if(v !== ""){ data[k] = sanitizeNum(v,0,20); hasAny = true; } else { data[k] = ""; } });
     if(hasAny) result.push(data);
@@ -8789,7 +8876,9 @@ function downloadMadPDF(ficha){
   let headers, rowsHtml, titleIco, titleText, docCode;
   if(ficha === 'salas'){
     titleIco = '🏠'; titleText = 'Maduración · Salas'; docCode = 'OMR-MAD-SAL';
-    headers = ['#','Fecha','Sala','Estado','RAS',
+    /* ⚠⚠ CABECERA Y CELDA VAN JUNTAS. El 2026-09-08 se cambió una sin la otra en esta misma
+       función y el PDF salió con las columnas corridas. Si tocas esta lista, baja a rowsHtml. */
+    headers = ['#','Fecha','Sala','Estado','Estado por lote','RAS',
       'T 02:00','T 04:00','T 06:00','T 08:00','T 10:00','T 12:00','T 14:00','T 16:00','T 18:00','T 20:00','T 22:00','T 00:00',
       'O₂ 06:00','O₂ 12:00','O₂ 18:00','O₂ 00:00','Estado sync'];
     rowsHtml = list.map((r, idx) => {
@@ -8800,6 +8889,7 @@ function downloadMadPDF(ficha){
         <td>${escapeHtml(d.fecha||'—')}</td>
         <td>${escapeHtml(d.sala||'—')}</td>
         <td>${escapeHtml(d.estado||'—')}</td>
+        <td>${escapeHtml(d.estado_lote||'—')}</td>
         <td>${escapeHtml(d.ras||'—')}</td>
         <td>${pdfVal(d.temp_02)}</td>
         <td>${pdfVal(d.temp_04)}</td>
@@ -8962,13 +9052,24 @@ function buildMadPayload(ficha, records){
       sheetName: "Maduración Sala",
       headers: ["Fecha","Sala","Estado",
         "Temperatura 2:00","Temperatura 4:00","Temperatura 6:00","Temperatura 8:00","Temperatura 10:00","Temperatura 12:00","Temperatura 14:00","Temperatura 16:00","Temperatura 18:00","Temperatura 20:00","Temperatura 22:00","Temperatura 0:00",
-        "Oxígeno 06:00","Oxígeno 12:00","Oxígeno 18:00","Oxígeno 00:00","RAS"],
+        "Oxígeno 06:00","Oxígeno 12:00","Oxígeno 18:00","Oxígeno 00:00","RAS",
+        /* ⚠⚠ «Estado por lote» va LA ÚLTIMA, y no es una preferencia de estilo. La llave del
+           GAS para «Maduración Sala» es POSICIONAL [0,1] (Fecha, Sala) y va al principio, así
+           que añadir AL FINAL no mueve la llave ni toca las filas que ya existen — medido el
+           2026-09-08: 540 filas y 20 columnas en producción. Meterla junto a «Estado», que es
+           donde se lee mejor, habría corrido diecisiete columnas y convertido esto en una
+           MIGRACIÓN de 540 filas. En la grilla sí va junto a Estado: el orden de la pantalla
+           es libre, el de la hoja no.
+           ⚠ 21 columnas siguen por debajo de LIMITS.mad.maxCols del GAS desplegado, así que
+           esto NO necesita re-despliegue: la crea sola ensureHeaders. */
+        "Estado por lote"],
       rows: records.map(r => {
         const d = r.data || {};
         return [d.fecha, d.sala, d.estado,
           num(d.temp_02), num(d.temp_04), num(d.temp_06), num(d.temp_08), num(d.temp_10), num(d.temp_12),
           num(d.temp_14), num(d.temp_16), num(d.temp_18), num(d.temp_20), num(d.temp_22), num(d.temp_00),
-          num(d.ox_06), num(d.ox_12), num(d.ox_18), num(d.ox_00), d.ras];
+          num(d.ox_06), num(d.ox_12), num(d.ox_18), num(d.ox_00), d.ras,
+          d.estado_lote || ""];
       })
     };
   }

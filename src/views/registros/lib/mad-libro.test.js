@@ -607,6 +607,38 @@ describe('Libro · el estado de la SALA', () => {
     expect(estadoPorLoteTexto(l, 'Sala 1', '2026-01-25')).toBe('AB: Producción · BC: Cuarentena');
   });
 
+  /* ⚠⚠ SIN ESTA PRUEBA, quitarle a `estadoPorLoteTexto` su comprobación de vivos SOBREVIVE a
+     la mutación, y lo comprobé: la de más abajo mira `estadoDeSala`, que tiene la suya. Dos
+     funciones que comparten una regla necesitan DOS pruebas, o una de las dos se queda sin
+     vigilar mientras el banco entero sale en verde. Encontrado el 2026-09-08 al cerrar la
+     Fase 6, y es el mismo defecto que este proyecto ya tiene escrito en
+     `feedback_fixtures-que-no-prueban-nada`. */
+  it('el desglose tampoco cuenta un lote que se ha vaciado', () => {
+    const l = construirLibro({
+      ingresos: [
+        ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 0),
+        ing('2026-01-20', 'BC', 'CG2', 'Sala 1', 2, 10, 0),
+      ],
+      tanques: [tq('2026-01-21', 'Sala 1', 2, { 'Machos muertos': 10 })],   // BC se vacía
+    }, { hoy: '2026-01-25' });
+    expect(estadoPorLoteTexto(l, 'Sala 1', '2026-01-25')).toBe('AB: Producción');
+  });
+
+  /* ⚠ El orden es ALFABÉTICO, no de aparición, y hace falta un fixture donde los dos no
+     coincidan para que la diferencia se note: aquí BC entra en el tanque 1 y AB en el 2, así
+     que un desglose que respetara el orden de recorrido diría «BC: … · AB: …». Importa porque
+     dos pantallas con el mismo dato en distinto orden hacen dudar de un número que es
+     correcto. */
+  it('el desglose va en orden alfabético, no de aparición', () => {
+    const l = construirLibro({
+      ingresos: [
+        ing('2026-01-01', 'BC', 'CG2', 'Sala 1', 1, 10, 0),
+        ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 2, 10, 0),
+      ],
+    }, { hoy: '2026-01-25' });
+    expect(estadoPorLoteTexto(l, 'Sala 1', '2026-01-25')).toBe('AB: Producción · BC: Producción');
+  });
+
   it('un lote que ya no tiene animales vivos NO cuenta para el estado', () => {
     const l = construirLibro({
       ingresos: [

@@ -24,9 +24,14 @@ import {
   sumarDias,
   repartirProporcional,
   estadoDeLote,
+  estadoPorLoteTexto,
   CUARENTENA_DIAS,
   ESTADO_MIXTO,
 } from './mad-libro.js';
+/* ⚠ El módulo ENTERO, además de los nombres sueltos de arriba. Los de arriba se usan en los
+   escenarios; éste sirve para preguntarle al módulo QUÉ EXPORTA, que es una pregunta que una
+   lista escrita a mano no puede contestar — ver la comprobación estructural de más abajo. */
+import * as modulo from './mad-libro.js';
 
 const ENGINE = new URL('../../../../public/registros/engine.js', import.meta.url);
 const leer = (u) => readFileSync(u, 'utf8').split('\r\n').join('\n');
@@ -55,8 +60,8 @@ function motorLibro() {
   createContext(ctx);
   new Script(
     code + '\n;globalThis.__api = { madConstruirLibro, madEstadoDeSala, madNombreComposicion,'
-    + ' madSumarDias, madRepartirProporcional, madEstadoDeLote, MAD_CUARENTENA_DIAS, MAD_EST_MIXTO,'
-    + ' MAD_LIBRO_SHEETS };',
+    + ' madSumarDias, madRepartirProporcional, madEstadoDeLote, madEstadoPorLoteTexto,'
+    + ' MAD_CUARENTENA_DIAS, MAD_EST_MIXTO, MAD_LIBRO_SHEETS };',
   ).runInContext(ctx);
   return ctx.__api;
 }
@@ -66,6 +71,72 @@ const api = motorLibro();
    dos veces hoy, y el rojo que sale («src is not defined») no señala la regla que falla
    sino el descuido de quien escribió la prueba. */
 const src = leer(ENGINE);
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PARIDAD ESTRUCTURAL · NINGÚN EXPORT PUEDE QUEDARSE SIN GEMELO
+
+   ⚠⚠ NACE DE UN HUECO REAL, encontrado el 2026-09-08 revisando puntos de guardado.
+   `estadoPorLoteTexto` existía SÓLO en el módulo: sin contraparte en el monolito y, por
+   tanto, sin contraparte en ninguno de los dos de Music. Y esta prueba de paridad —que es
+   justo la que existe para que eso no pase— NO LO VEÍA, porque importaba una LISTA DE
+   NOMBRES ESCRITA A MANO. Una función que nadie mete en la lista es invisible para ella.
+
+   🔑 ES EL DEFECTO DE `feedback_fixtures-que-no-prueban-nada` APLICADO AL PROPIO ARNÉS: el
+   instrumento pasaba en verde sin ejercer la regla que dice vigilar. Y no es teórico: las
+   tres copias estaban «a la par» y el módulo tenía una función más que ninguna de ellas.
+
+   Ahora la lista se le pregunta AL MÓDULO. Añadir un export sin decidir qué pasa con su
+   gemelo pone esto rojo, que es exactamente cuando hay que decidirlo — y no meses después.
+   ⚠ El GEMELO se declara, no se deduce: los nombres no siguen una regla mecánica
+   (`ESTADO_CUARENTENA` → `MAD_EST_CUAR`), y fingir una regla que no existe es peor que
+   escribir la tabla. Lo que NO se declara es la lista de exports: ésa la da el módulo.
+   ══════════════════════════════════════════════════════════════════════════ */
+const GEMELO = {
+  construirLibro: 'madConstruirLibro',
+  estadoDeLote: 'madEstadoDeLote',
+  estadoDeSala: 'madEstadoDeSala',
+  estadoPorLoteTexto: 'madEstadoPorLoteTexto',
+  nombreComposicion: 'madNombreComposicion',
+  repartirProporcional: 'madRepartirProporcional',
+  sumarDias: 'madSumarDias',
+  ubicKey: 'madUbicKey',
+  posKey: 'madPosKey',
+  CUARENTENA_DIAS: 'MAD_CUARENTENA_DIAS',
+  ESTADO_CUARENTENA: 'MAD_EST_CUAR',
+  ESTADO_PRODUCCION: 'MAD_EST_PROD',
+  ESTADO_MIXTO: 'MAD_EST_MIXTO',
+  ESTADO_CERRADO: 'MAD_EST_CERRADO',
+};
+
+/* El monolito declara las funciones como `function X(` y las constantes como `const X =`,
+   medido sobre las catorce. El tipo se saca del propio módulo en vez de declararlo otra vez:
+   una segunda declaración es una segunda cosa que puede quedarse atrás. */
+const declaradoEnMonolito = (nombre, esFuncion) =>
+  src.includes((esFuncion ? 'function ' : 'const ') + nombre + (esFuncion ? '(' : ' ='));
+
+describe('paridad estructural · el módulo no puede tener nada que el monolito no tenga', () => {
+  it('cada export del módulo tiene un gemelo DECLARADO', () => {
+    const sinDeclarar = Object.keys(modulo).filter((n) => !GEMELO[n]).sort();
+    expect(sinDeclarar).toEqual([]);
+  });
+
+  it('cada gemelo declarado EXISTE de verdad en el monolito', () => {
+    const ausentes = Object.keys(GEMELO)
+      .filter((n) => !declaradoEnMonolito(GEMELO[n], typeof modulo[n] === 'function'))
+      .map((n) => n + ' → ' + GEMELO[n])
+      .sort();
+    expect(ausentes).toEqual([]);
+  });
+
+  /* ⚠ Y al revés: un gemelo declarado para algo que el módulo ya no exporta es una entrada
+     muerta, y una tabla con entradas muertas deja de leerse. Misma familia que el ancla
+     muerta de los bancos: la pregunta no es «¿cómo la re-anclo?» sino «¿sigue existiendo la
+     regla que vigilaba?». */
+  it('la tabla no tiene entradas muertas', () => {
+    const sobran = Object.keys(GEMELO).filter((n) => !(n in modulo)).sort();
+    expect(sobran).toEqual([]);
+  });
+});
 
 /* El módulo usa Map (más expresivo dentro de src/) y el monolito objetos planos (más
    seguro en un script clásico de 18.000 líneas). Se normalizan las DOS formas a la misma
@@ -336,6 +407,52 @@ describe('Libro · las mismas funciones puras', () => {
     expect(api.madEstadoDeSala(a, 'Sala 1', HOY)).toBe(estadoDeSala(b, 'Sala 1', HOY));
     expect(estadoDeSala(b, 'Sala 1', HOY)).toBe(ESTADO_MIXTO);   // el fixture prueba algo
     expect(api.MAD_EST_MIXTO).toBe(ESTADO_MIXTO);
+  });
+
+  /* ⚠⚠ EL DESGLOSE ES LA MITAD ÚTIL DE «Mixto», y hasta el 2026-09-08 no tenía gemelo: la
+     función vivía sólo en el módulo. Comparar que las dos den el mismo texto es lo que impide
+     que la columna «Estado por lote» de la hoja diga una cosa en el repo y otra en los dos de
+     Music — que es exactamente el tipo de divergencia que nadie ve hasta que alguien compara
+     dos pantallas.
+     ⚠ El fixture PRUEBA ALGO: AB entró el 01-01 (24 días, ya en Producción) y BC el 01-20
+     (5 días, aún en cuarentena), así que el texto esperado distingue los dos estados. Con un
+     fixture de un solo lote, una implementación que ignorara el estado daría lo mismo. */
+  it('el mismo desglose por lote, y ordenado igual', () => {
+    const f = ESCENARIOS['dos lotes, un tanque cada uno'];
+    const a = api.madConstruirLibro(f, { hoy: HOY });
+    const b = construirLibro(f, { hoy: HOY });
+    expect(api.madEstadoPorLoteTexto(a, 'Sala 1', HOY)).toBe(estadoPorLoteTexto(b, 'Sala 1', HOY));
+    expect(estadoPorLoteTexto(b, 'Sala 1', HOY)).toBe('AB: Producción · BC: Cuarentena');
+  });
+
+  /* Un lote sin animales vivos NO cuenta, y las dos tienen que estar de acuerdo en eso: si
+     una lo incluyera, la sala saldría «Mixta» por un lote que ya no está. */
+  it('el mismo desglose cuando un lote se ha vaciado', () => {
+    const f = ESCENARIOS['dos lotes, un tanque cada uno'];
+    const vaciado = Object.assign({}, f, {
+      tanques: [tq('2026-01-21', 'Sala 1', 2, { 'Machos muertos': 10, 'Hembras muertas': 10 })],
+    });
+    const a = api.madConstruirLibro(vaciado, { hoy: HOY });
+    const b = construirLibro(vaciado, { hoy: HOY });
+    expect(api.madEstadoPorLoteTexto(a, 'Sala 1', HOY)).toBe(estadoPorLoteTexto(b, 'Sala 1', HOY));
+    expect(estadoPorLoteTexto(b, 'Sala 1', HOY)).toBe('AB: Producción');   // BC ya no cuenta
+  });
+
+  /* ⚠ El fixture de arriba mete AB en el tanque 1 y BC en el 2, así que el orden de recorrido
+     YA es el alfabético y una implementación sin `sort` daría lo mismo. Éste los invierte: sin
+     él, una divergencia de orden entre monolito y módulo pasaría desapercibida, y la paridad
+     estaría verde por el motivo equivocado. */
+  it('el mismo desglose cuando el orden de aparición NO es el alfabético', () => {
+    const f = {
+      ingresos: [
+        ing('2026-01-01', 'BC', 'CG2', 'Sala 1', 1, 10, 0),
+        ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 2, 10, 0),
+      ],
+    };
+    const a = api.madConstruirLibro(f, { hoy: HOY });
+    const b = construirLibro(f, { hoy: HOY });
+    expect(api.madEstadoPorLoteTexto(a, 'Sala 1', HOY)).toBe(estadoPorLoteTexto(b, 'Sala 1', HOY));
+    expect(estadoPorLoteTexto(b, 'Sala 1', HOY)).toBe('AB: Producción · BC: Producción');
   });
 
   it('el mismo nombre de tanque mezclado', () => {
