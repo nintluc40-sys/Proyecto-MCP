@@ -15,7 +15,7 @@ import {
 const base = () => ({
   fecha: '2026-09-08',
   cierres: [
-    { lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', destino: 'Chongón', machos: 40, hembras: 60, observaciones: '' },
+    { lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', metabisulfito: 12.5, fechaMetabisulfito: '2026-09-09', machos: 40, hembras: 60, observaciones: '' },
   ],
 });
 
@@ -40,9 +40,33 @@ describe('Fin de Ciclo · la hoja y sus columnas', () => {
     expect(MAD_FIN_HEADERS).toContain('Lote');
   });
 
-  it('lleva DESTINO, porque es la única salida del sistema', () => {
-    // Un movimiento siempre aterriza en otro tanque; lo que se va de Maduración sale aquí.
-    expect(MAD_FIN_HEADERS).toContain('Destino');
+  /* ⚠⚠ AQUÍ HABÍA UNA COLUMNA `Destino`, y la retiró el usuario el 2026-09-08: NINGÚN
+     REPRODUCTOR VUELVE A CAMARONERA, así que pedía un dato que no existe — y un campo que no
+     se puede rellenar con la verdad se acaba rellenando con cualquier cosa. En su lugar va el
+     proceso que sí ocurre al cerrar. Se pudo cambiar sin coste porque la hoja aún no existe
+     en producción; tras el re-despliegue del GAS esto sería una migración. */
+  it('lleva el METABISULFITO, que es el proceso real del cierre', () => {
+    expect(MAD_FIN_HEADERS).toContain('Metabisulfito (kg)');
+    expect(MAD_FIN_HEADERS).toContain('Fecha aplicación');
+    expect(MAD_FIN_HEADERS).not.toContain('Destino');
+  });
+
+  /* La dosis va en kg y admite decimales, al revés que los conteos de animales. Un `int`
+     aquí redondearía 12,5 kg a 12 sin decir nada. */
+  it('la dosis conserva los decimales', () => {
+    const filas = buildFinRows(base());
+    expect(filas[0][col('Metabisulfito (kg)')]).toBe(12.5);
+    expect(filas[0][col('Fecha aplicación')]).toBe('2026-09-09');
+  });
+
+  /* ⚠ VACÍO Y NO CERO cuando no hay dosis: el GAS hace MERGE y no pisa con vacío, pero un 0
+     sí escribiría — y borraría una dosis real registrada antes. Es el mismo criterio que el
+     ×1000 de Desoves, y la razón por la que aquel se probó aparte. */
+  it('sin dosis manda VACÍO, no cero', () => {
+    const m = base();
+    delete m.cierres[0].metabisulfito;
+    const filas = buildFinRows(m);
+    expect(filas[0][col('Metabisulfito (kg)')]).toBe('');
   });
 
   it('ofrece los tipos y los motivos que nombró el usuario', () => {
@@ -151,12 +175,41 @@ describe('Fin de Ciclo · validación', () => {
     expect(avisos.some((a) => /se anotará como diferencia/.test(a))).toBe(true);
   });
 
-  it('AVISO si un Pedido no dice a dónde fue', () => {
+  /* ⚠⚠ EL METABISULFITO SON DOS DATOS QUE SÓLO VALEN JUNTOS. Medio registro es peor que
+     ninguno: parece completo. Aviso y no error, porque un cierre sin tratar es legítimo.
+     ⚠ Las tres ramas van por separado a propósito: con una sola prueba que mirara «hay algún
+     aviso», quitar dos de las tres comprobaciones sobreviviría a la mutación. */
+  it('AVISO si hay dosis de metabisulfito pero no fecha', () => {
     const m = base();
-    m.cierres[0].destino = '';
+    m.cierres[0].fechaMetabisulfito = '';
     const { errores, avisos } = validarFinCiclo(m);
     expect(errores).toEqual([]);
-    expect(avisos.some((a) => /no dice a qué destino/.test(a))).toBe(true);
+    expect(avisos.some((a) => /no dice en qué fecha se aplicó/.test(a))).toBe(true);
+  });
+
+  it('AVISO si hay fecha de metabisulfito pero no dosis', () => {
+    const m = base();
+    m.cierres[0].metabisulfito = '';
+    const { errores, avisos } = validarFinCiclo(m);
+    expect(errores).toEqual([]);
+    expect(avisos.some((a) => /tiene fecha pero no dosis/.test(a))).toBe(true);
+  });
+
+  it('AVISO si la fecha de metabisulfito no es una fecha', () => {
+    const m = base();
+    m.cierres[0].fechaMetabisulfito = '09/09/2026';
+    const { avisos } = validarFinCiclo(m);
+    expect(avisos.some((a) => /no es una fecha válida/.test(a))).toBe(true);
+  });
+
+  /* Y el caso que NO debe avisar: los dos puestos, o los dos vacíos. */
+  it('sin metabisulfito ninguno, no avisa nada de metabisulfito', () => {
+    const m = base();
+    m.cierres[0].metabisulfito = '';
+    m.cierres[0].fechaMetabisulfito = '';
+    const { errores, avisos } = validarFinCiclo(m);
+    expect(errores).toEqual([]);
+    expect(avisos.some((a) => /metabisulfito/i.test(a))).toBe(false);
   });
 
   it('AVISO si el tipo no es uno de los dos conocidos', () => {

@@ -5,9 +5,25 @@
    de su vida útil. Modelo PURO — sin DOM, sin localStorage, sin red.
 
    ── ES LA ÚNICA SALIDA DEL SISTEMA ─────────────────────────
-   Decisión del usuario (2026-09-08): aquí entran también los animales que se van a otra
-   camaronera. Un MOVIMIENTO siempre aterriza en otro tanque; lo que se va de Maduración
-   sale por esta ficha y por ninguna otra. Por eso lleva `Destino`.
+   Un MOVIMIENTO siempre aterriza en otro tanque; lo que se va de Maduración sale por esta
+   ficha y por ninguna otra.
+
+   ⚠⚠ FUERA `Destino` · corrección del usuario, 2026-09-08.
+   Esta ficha nació con una columna `Destino` porque se creyó que un cierre podía mandar
+   reproductores a otra camaronera. **No ocurre: ningún reproductor vuelve a camaronera.**
+   La columna pedía un dato que no existe, y un campo que no se puede rellenar con la verdad
+   se acaba rellenando con cualquier cosa.
+   🔑 Se pudo quitar SIN COSTE porque la hoja aún NO EXISTE en producción —el GAS responde
+   «Hoja no permitida» hasta que se re-despliegue— y porque su llave es la columna `ID`,
+   que el GAS busca POR SU CABECERA y no por su posición. El día del re-despliegue esto deja
+   de ser gratis: entonces quitar o mover una columna es una migración.
+   ⚠ El motivo `Pedido` SE QUEDA (decisión del usuario): un pedido puede ir a un sitio que
+   no sea camaronera. Lo que se retira es la exigencia de nombrar un destino.
+
+   ── EL METABISULFITO ───────────────────────────────────────
+   En su lugar va el proceso de metabisulfito, que sí ocurre al cerrar: la dosis aplicada y
+   la fecha en que se aplicó, que PUEDE NO SER la del cierre. Van juntas a propósito — una
+   dosis sin fecha o una fecha sin dosis son medio registro, y el validador lo dice.
 
    ── EL CIERRE ES DEL LOTE, NO DE UN TANQUE ─────────────────
    También decisión del usuario, y por la misma razón que el desove no es de un tanque: se
@@ -52,7 +68,10 @@ export const MAD_FIN_COLUMNS = [
   { h: 'Lote', k: 'lote', grain: 'evento' },
   { h: 'Tipo', k: 'tipo', grain: 'evento' },
   { h: 'Motivo', k: 'motivo', grain: 'evento' },
-  { h: 'Destino', k: 'destino', grain: 'evento' },
+  /* ⚠ El orden es libre: la llave la da la columna `ID`, que el GAS localiza POR SU
+     CABECERA. Lo que NO es libre es el nombre de esa columna. */
+  { h: 'Metabisulfito (kg)', k: 'metabisulfito', grain: 'evento', num: true },
+  { h: 'Fecha aplicación', k: 'fechaMetabisulfito', grain: 'evento' },
   { h: 'Machos', k: 'machos', grain: 'evento', num: true },
   { h: 'Hembras', k: 'hembras', grain: 'evento', num: true },
   { h: 'Observaciones', k: 'observaciones', grain: 'evento' },
@@ -64,6 +83,15 @@ export const MAD_FIN_HEADERS = MAD_FIN_COLUMNS.map((c) => c.h);
 const int = (v) => {
   if (v === '' || v === null || v === undefined) return '';
   const n = parseInt(v, 10);
+  return Number.isFinite(n) && n >= 0 ? n : '';
+};
+
+/** Dosis en kg: admite decimales, a diferencia de los conteos. Devuelve '' cuando no hay
+ *  cifra —no 0— para que el MERGE del GAS conserve lo que ya hubiera en la celda: un 0
+ *  escrito por descuido borraría una dosis real. Mismo criterio que el ×1000 de Desoves. */
+const kg = (v) => {
+  if (v === '' || v === null || v === undefined) return '';
+  const n = parseFloat(v);
   return Number.isFinite(n) && n >= 0 ? n : '';
 };
 
@@ -90,7 +118,8 @@ export function buildFinRows(model) {
       lote,
       tipo: sanitizeStr(x.tipo, 20),
       motivo,
-      destino: sanitizeStr(x.destino, 80),
+      metabisulfito: kg(x.metabisulfito),
+      fechaMetabisulfito: sanitizeStr(x.fechaMetabisulfito, 10),
       machos: int(x.machos),
       hembras: int(x.hembras),
       observaciones: sanitizeStr(x.observaciones, 300),
@@ -152,8 +181,19 @@ export function validarFinCiclo(model) {
       else avisos.push('El cierre total de ' + lote + ' no declara animales: TODO lo que el libro tenga se anotará como diferencia.');
     }
 
-    if (motivo === 'Pedido' && sanitizeStr(x.destino, 80) === '') {
-      avisos.push('El pedido de ' + lote + ' no dice a qué destino fue.');
+    /* ⚠ El metabisulfito son DOS datos que sólo valen juntos: una dosis sin fecha no dice
+       cuándo se trató, y una fecha sin dosis no dice cuánto. Medio registro es peor que
+       ninguno, porque parece completo. Aviso y no error: el cierre es válido sin tratar. */
+    const mbs = kg(x.metabisulfito);
+    const fmbs = sanitizeStr(x.fechaMetabisulfito, 10);
+    if (mbs !== '' && fmbs === '') {
+      avisos.push('El metabisulfito de ' + lote + ' no dice en qué fecha se aplicó.');
+    }
+    if (fmbs !== '' && mbs === '') {
+      avisos.push('El metabisulfito de ' + lote + ' tiene fecha pero no dosis.');
+    }
+    if (fmbs !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(fmbs)) {
+      avisos.push('La fecha de metabisulfito de ' + lote + ' no es una fecha válida.');
     }
   });
 

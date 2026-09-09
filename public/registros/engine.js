@@ -7362,7 +7362,8 @@ const MAD_FIN_COLUMNS = [
   { h:"Lote", k:"lote" },
   { h:"Tipo", k:"tipo" },
   { h:"Motivo", k:"motivo" },
-  { h:"Destino", k:"destino" },
+  { h:"Metabisulfito (kg)", k:"metabisulfito" },
+  { h:"Fecha aplicación", k:"fechaMetabisulfito" },
   { h:"Machos", k:"machos" },
   { h:"Hembras", k:"hembras" },
   { h:"Observaciones", k:"observaciones" },
@@ -7375,6 +7376,14 @@ function madFinMotivoTag(s){ return sanitizeStr(s,60).toUpperCase().replace(/[^A
 function madFinRowId(fecha, lote, motivo){
   return sanitizeStr(fecha,10)+"-"+madDesNormLote(lote)+"-"+madFinMotivoTag(motivo);
 }
+// Dosis en kg: admite decimales, al revés que los conteos. Devuelve "" cuando no hay cifra
+// —no 0— para que el MERGE del GAS conserve la celda: un 0 por descuido borraría una dosis
+// real. Mismo criterio que el ×1000 de Desoves.
+function madFinKg(v){
+  if(v===""||v===null||v===undefined) return "";
+  const n = parseFloat(v);
+  return Number.isFinite(n) && n>=0 ? n : "";
+}
 function madFinBuildRows(model){
   const m = model||{};
   const fecha = sanitizeStr(m.fecha,10);
@@ -7385,7 +7394,8 @@ function madFinBuildRows(model){
     if(lote===""||motivo==="") return;   // sin llave completa no hay fila
     const v = {
       fecha: fecha, lote: lote, tipo: sanitizeStr(x.tipo,20), motivo: motivo,
-      destino: sanitizeStr(x.destino,80),
+      metabisulfito: madFinKg(x.metabisulfito),
+      fechaMetabisulfito: sanitizeStr(x.fechaMetabisulfito,10),
       machos: madIngInt(x.machos), hembras: madIngInt(x.hembras),
       observaciones: sanitizeStr(x.observaciones,300),
       id: madFinRowId(fecha, lote, motivo)
@@ -7425,7 +7435,11 @@ function madFinValidar(model){
       if(tipo==="Parcial") errores.push("Un cierre Parcial de "+lote+" sin animales no descuenta nada.");
       else avisos.push("El cierre total de "+lote+" no declara animales: TODO lo que el libro tenga se anotará como diferencia.");
     }
-    if(motivo==="Pedido" && sanitizeStr(x.destino,80)==="") avisos.push("El pedido de "+lote+" no dice a qué destino fue.");
+    // El metabisulfito son DOS datos que sólo valen juntos: medio registro parece completo.
+    const mbs = madFinKg(x.metabisulfito), fmbs = sanitizeStr(x.fechaMetabisulfito,10);
+    if(mbs!=="" && fmbs==="") avisos.push("El metabisulfito de "+lote+" no dice en qué fecha se aplicó.");
+    if(fmbs!=="" && mbs==="") avisos.push("El metabisulfito de "+lote+" tiene fecha pero no dosis.");
+    if(fmbs!=="" && !/^\d{4}-\d{2}-\d{2}$/.test(fmbs)) avisos.push("La fecha de metabisulfito de "+lote+" no es una fecha válida.");
   });
   return { errores: errores, avisos: avisos };
 }
@@ -7443,7 +7457,8 @@ function _madFinCardHTML(){
     +   '<label style="'+_MAD_ING_LBL+'">Lote<input class="mf-lote" style="'+_MAD_ING_INP+';width:100px;text-transform:uppercase"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Tipo<select class="mf-tipo" onchange="madFinTipoChange(this)" style="'+_MAD_ING_INP+';width:120px">'+madFinTipoOpts("Parcial")+'</select></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Motivo<select class="mf-motivo" style="'+_MAD_ING_INP+';width:190px">'+madFinMotivoOpts("")+'</select></label>'
-    +   '<label style="'+_MAD_ING_LBL+'">Destino<select class="mf-destino" style="'+_MAD_ING_INP+';width:150px">'+madIngCamaroneraOpts("")+'</select></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Metabisulfito (kg)<input class="mf-mbs" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:130px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Fecha aplicación<input class="mf-mbsf" type="date" style="'+_MAD_ING_INP+';width:145px"></label>'
     +   '<button class="btn" type="button" onclick="madFinDelCard(this)" style="font-size:11px">✕ Quitar</button>'
     + '</div>'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
@@ -7478,7 +7493,8 @@ function madFinCollect(){
   const cierres=[];
   document.querySelectorAll("#mf-cards .mf-cierre").forEach(function(c){
     cierres.push({
-      lote:g(c,".mf-lote"), tipo:g(c,".mf-tipo"), motivo:g(c,".mf-motivo"), destino:g(c,".mf-destino"),
+      lote:g(c,".mf-lote"), tipo:g(c,".mf-tipo"), motivo:g(c,".mf-motivo"),
+      metabisulfito:g(c,".mf-mbs"), fechaMetabisulfito:g(c,".mf-mbsf"),
       machos:g(c,".mf-machos"), hembras:g(c,".mf-hembras"), observaciones:g(c,".mf-obs")
     });
   });

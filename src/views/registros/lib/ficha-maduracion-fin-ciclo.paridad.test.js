@@ -66,44 +66,47 @@ const api = motorFin();
 const MODELOS = {
   'un pedido parcial': {
     fecha: '2026-09-08',
-    cierres: [{ lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', destino: 'Chongón', machos: 40, hembras: 60, observaciones: 'camión 2' }],
+    cierres: [{ lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', machos: 40, hembras: 60, observaciones: 'camión 2' }],
   },
-  'un cierre total con destino vacío': {
+  'un cierre TOTAL, que anota la diferencia': {
     fecha: '2026-09-08',
-    cierres: [{ lote: 'AB', tipo: 'Total', motivo: 'Fin de vida útil', destino: '', machos: 100, hembras: 80 }],
+    cierres: [{ lote: 'AB', tipo: 'Total', motivo: 'Fin de vida útil', machos: 100, hembras: 80 }],
   },
   'mismo lote, dos motivos el mismo día': {
     fecha: '2026-09-08',
     cierres: [
-      { lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', destino: 'Puná 1', machos: 10, hembras: 10 },
-      { lote: 'AB', tipo: 'Parcial', motivo: 'Descarte parcial', destino: '', machos: 5, hembras: 5 },
+      { lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', machos: 10, hembras: 10 },
+      { lote: 'AB', tipo: 'Parcial', motivo: 'Descarte parcial', machos: 5, hembras: 5 },
     ],
   },
   'duplicado: mismo lote y motivo dos veces': {
     fecha: '2026-09-08',
     cierres: [
-      { lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', destino: 'Taura', machos: 10, hembras: 0 },
-      { lote: 'ab', tipo: 'Parcial', motivo: 'Pedido', destino: 'Taura', machos: 7, hembras: 0 },
+      { lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', machos: 10, hembras: 0 },
+      { lote: 'ab', tipo: 'Parcial', motivo: 'Pedido', machos: 7, hembras: 0 },
     ],
   },
   'parcial sin animales (error) y total sin animales (aviso)': {
     fecha: '2026-09-08',
     cierres: [
-      { lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', destino: 'Taura', machos: 0, hembras: 0 },
-      { lote: 'BC', tipo: 'Total', motivo: 'Descarte sanitario', destino: '', machos: 0, hembras: 0 },
+      { lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', machos: 0, hembras: 0 },
+      { lote: 'BC', tipo: 'Total', motivo: 'Descarte sanitario', machos: 0, hembras: 0 },
     ],
   },
   'sin llave completa y tipo desconocido': {
     fecha: '2026-09-08',
     cierres: [
-      { lote: 'AB', tipo: 'Definitivo', motivo: 'Otro', destino: '', machos: 3, hembras: 3 },
-      { lote: 'BC', tipo: 'Total', motivo: '', destino: '', machos: 5, hembras: 5 },
-      { lote: '', tipo: 'Total', motivo: 'Pedido', destino: '', machos: 5, hembras: 5 },
+      { lote: 'AB', tipo: 'Definitivo', motivo: 'Otro', machos: 3, hembras: 3 },
+      { lote: 'BC', tipo: 'Total', motivo: '', machos: 5, hembras: 5 },
+      { lote: '', tipo: 'Total', motivo: 'Pedido', machos: 5, hembras: 5 },
     ],
   },
-  'un pedido SIN destino (aviso)': {
+  /* ⚠ Era «un pedido SIN destino». El usuario retiró esa columna el 2026-09-08 —ningún
+     reproductor vuelve a camaronera— y el aviso que este fixture ejercía se fue con ella.
+     Se sustituye por el que ocupó su sitio: media pareja de metabisulfito. */
+  'metabisulfito con dosis y SIN fecha (aviso)': {
     fecha: '2026-09-08',
-    cierres: [{ lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', destino: '', machos: 12, hembras: 12 }],
+    cierres: [{ lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', metabisulfito: 8, fechaMetabisulfito: '', machos: 12, hembras: 12 }],
   },
   'sin cierres': { fecha: '2026-09-08', cierres: [] },
   'fecha inválida': { fecha: '8-9-2026', cierres: [{ lote: 'AB', tipo: 'Total', motivo: 'Pedido', machos: 1, hembras: 1 }] },
@@ -165,7 +168,7 @@ describe('Fin de Ciclo · el mismo veredicto', () => {
     expect(validarFinCiclo(MODELOS['duplicado: mismo lote y motivo dos veces']).errores.length).toBeGreaterThan(0);
     expect(validarFinCiclo(MODELOS['parcial sin animales (error) y total sin animales (aviso)']).errores.length).toBeGreaterThan(0);
     expect(validarFinCiclo(MODELOS['parcial sin animales (error) y total sin animales (aviso)']).avisos.length).toBeGreaterThan(0);
-    expect(validarFinCiclo(MODELOS['un pedido SIN destino (aviso)']).avisos.length).toBeGreaterThan(0);
+    expect(validarFinCiclo(MODELOS['metabisulfito con dosis y SIN fecha (aviso)']).avisos.length).toBeGreaterThan(0);
     expect(validarFinCiclo(MODELOS['sin llave completa y tipo desconocido']).avisos.length).toBeGreaterThan(0);
     // Y el caso que SÍ tiene que pasar: dos motivos distintos el mismo día conviven.
     expect(validarFinCiclo(MODELOS['mismo lote, dos motivos el mismo día']).errores).toEqual([]);

@@ -161,7 +161,7 @@ const tq = (Fecha, Sala, Tanque, extra = {}) => Object.assign({
 }, extra);
 
 const fin = (Fecha, Lote, Tipo, Machos, Hembras) => ({
-  Fecha, Lote, Tipo, Motivo: 'Pedido', Destino: 'Chongón', Machos, Hembras, Observaciones: '',
+  Fecha, Lote, Tipo, Motivo: 'Pedido', Machos, Hembras, Observaciones: '',
 });
 
 const mov = (Fecha, sO, tO, sD, tD, Machos, Hembras) => ({
