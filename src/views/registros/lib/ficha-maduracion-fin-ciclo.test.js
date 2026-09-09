@@ -69,6 +69,23 @@ describe('Fin de Ciclo · la hoja y sus columnas', () => {
     expect(filas[0][col('Metabisulfito (kg)')]).toBe('');
   });
 
+  /* ⚠⚠ ESTA PRUEBA LA PIDIÓ EL BANCO, NO LA LECTURA. Con sólo la de arriba, la mutación «la
+     dosis vacía manda CERO en vez de VACÍO» SOBREVIVÍA: un `undefined` sale por la PRIMERA
+     guarda de `kg()` y nunca llega al return final, que es donde vive la regla. Sólo una
+     dosis PRESENTE pero inválida recorre la función entera.
+     🔑 Es la diferencia entre probar el resultado y probar el CAMINO, y es justo lo que
+     `feedback_fixtures-que-no-prueban-nada` describe: el verde de la prueba de arriba era
+     correcto y no significaba lo que parecía. */
+  it('una dosis inválida manda VACÍO, tampoco cero', () => {
+    const conTexto = base();
+    conTexto.cierres[0].metabisulfito = 'doce kilos';
+    expect(buildFinRows(conTexto)[0][col('Metabisulfito (kg)')]).toBe('');
+
+    const negativa = base();
+    negativa.cierres[0].metabisulfito = -3;
+    expect(buildFinRows(negativa)[0][col('Metabisulfito (kg)')]).toBe('');
+  });
+
   it('ofrece los tipos y los motivos que nombró el usuario', () => {
     expect(MAD_FIN_TIPOS).toEqual(['Total', 'Parcial']);
     expect(MAD_FIN_MOTIVOS).toContain('Pedido');

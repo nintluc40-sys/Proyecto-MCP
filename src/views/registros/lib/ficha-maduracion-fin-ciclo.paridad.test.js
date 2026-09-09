@@ -64,9 +64,13 @@ const api = motorFin();
 /* Cada modelo ejerce una rama distinta. Ya pasó tres veces en este módulo que un fixture
    incompleto dejaba una regla sin ejercer y la paridad daba verde sin significar nada. */
 const MODELOS = {
+  /* ⚠ La dosis lleva DECIMALES a propósito. Con un entero, una implementación que redondeara
+     daría el mismo resultado y la paridad estaría verde sin significar nada: la divergencia
+     «el monolito redondea la dosis» SE LE ESCAPABA hasta que este fixture cambió. Lo cazó el
+     banco, no la lectura. */
   'un pedido parcial': {
     fecha: '2026-09-08',
-    cierres: [{ lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', machos: 40, hembras: 60, observaciones: 'camión 2' }],
+    cierres: [{ lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', metabisulfito: 12.75, fechaMetabisulfito: '2026-09-10', machos: 40, hembras: 60, observaciones: 'camión 2' }],
   },
   'un cierre TOTAL, que anota la diferencia': {
     fecha: '2026-09-08',
