@@ -7109,6 +7109,10 @@ const MAD_DESOVE_COLUMNS = [
   { h:"N2", k:"n2" },
   { h:"Fecha N5", k:"fechaN5" },
   { h:"N5", k:"n5" },
+  // ⚠⚠ DESPUÉS de N5 y antes de Observaciones. La llave de esta hoja es POSICIONAL
+  // (MAD_DESOVE_KEY_COLS = [0,1,2], y el GAS la lee por índice), así que toda columna nueva
+  // tiene que caer después de la tercera. Aquí además se lee junto a lo que despacha.
+  { h:"Despacho", k:"despacho" },
   { h:"Observaciones", k:"observaciones" }
 ];
 const MAD_DESOVE_HEADERS = MAD_DESOVE_COLUMNS.map(function(c){ return c.h; });
@@ -7138,6 +7142,7 @@ function madDesBuildRows(model){
       huevos: madDesMiles(x.huevos), nauplios: madDesMiles(x.nauplios), noViables: madDesMiles(x.noViables),
       fechaN2: sanitizeStr(x.fechaN2,10), n2: madDesMiles(x.n2),
       fechaN5: sanitizeStr(x.fechaN5,10), n5: madDesMiles(x.n5),
+      despacho: sanitizeStr(x.despacho,200),
       observaciones: sanitizeStr(x.observaciones,300)
     };
     filas.push(MAD_DESOVE_COLUMNS.map(function(col){ return v[col.k]; }));
@@ -7204,6 +7209,7 @@ function _madDesCardHTML(){
     +   '<label style="'+_MAD_ING_LBL+'">Fecha N5<input class="md-fn5" type="date" style="'+_MAD_ING_INP+'"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">N5 (miles)<input class="md-n5" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:110px"></label>'
     + '</div>'
+    + '<label style="'+_MAD_ING_LBL+'">Despacho<input class="md-desp" maxlength="200" placeholder="a dónde van los N5" style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
     + '<label style="'+_MAD_ING_LBL+'">Observaciones<input class="md-obs" style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
     + '</div>';
 }
@@ -7226,6 +7232,7 @@ function madDesCollect(){
       desoves:g(c,".md-desoves"), huevos:g(c,".md-huevos"), nauplios:g(c,".md-nauplios"),
       noViables:g(c,".md-noviables"),
       fechaN2:g(c,".md-fn2"), n2:g(c,".md-n2"), fechaN5:g(c,".md-fn5"), n5:g(c,".md-n5"),
+      despacho:g(c,".md-desp"),
       observaciones:g(c,".md-obs")
     });
   });

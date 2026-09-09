@@ -14,7 +14,7 @@ import {
 const base = () => ({
   fecha: '2026-09-08',
   desoves: [
-    { lote: 'BM', codigoGenetico: '766', piscina: 'P-766', desoves: 4, huevos: 9800, nauplios: 6500, noViables: 300, fechaN2: '', n2: '', fechaN5: '', n5: '', observaciones: '' },
+    { lote: 'BM', codigoGenetico: '766', piscina: 'P-766', desoves: 4, huevos: 9800, nauplios: 6500, noViables: 300, fechaN2: '', n2: '', fechaN5: '', n5: '', despacho: 'Laboratorio Rosario', observaciones: '' },
   ],
 });
 
@@ -23,6 +23,30 @@ const col = (h) => MAD_DESOVE_HEADERS.indexOf(h);
 describe('Desoves · la hoja y su llave POSICIONAL', () => {
   it('reutiliza la hoja de Lotes, que estaba a 0 filas', () => {
     expect(MAD_DESOVE_SHEET).toBe('Maduración Lotes');
+  });
+
+  /* ⚠ DESPACHO · lo pidió el usuario el 2026-09-08: dónde van los N5 o dónde se despachan.
+     Texto LIBRE a propósito — el destino no siempre es un sitio que el sistema conozca, y un
+     desplegable obligaría a elegir mal.
+     🔴 Lo que NO es libre es su POSICIÓN. La llave de esta hoja es posicional [0,1,2] y el GAS
+     la lee por índice: una columna nueva colada antes de la tercera desplazaría la llave y
+     cada sync escribiría sobre la fila equivocada, sin un solo error.
+     ⚠ Se fija que va DESPUÉS de la llave, y NO en qué posición exacta: lo primero es el
+     contrato con el GAS, lo segundo sería una prueba frágil que se rompe cada vez que se
+     añada una columna legítima. */
+  it('lleva DESPACHO, texto libre y siempre después de la llave', () => {
+    expect(MAD_DESOVE_HEADERS).toContain('Despacho');
+    expect(MAD_DESOVE_HEADERS.indexOf('Despacho')).toBeGreaterThan(2);
+    expect(buildDesoveRows(base())[0][col('Despacho')]).toBe('Laboratorio Rosario');
+  });
+
+  /* ⚠ El despacho se RECORTA, no tumba la fila: una celda de Sheets aguanta mucho más, pero
+     un campo sin tope es la vía por la que un pegado accidental mete media hoja en una celda. */
+  it('el despacho se recorta y no tumba la fila', () => {
+    const m = base();
+    m.desoves[0].despacho = 'x'.repeat(500);
+    expect(buildDesoveRows(m)[0][col('Despacho')].length).toBe(200);
+    expect(buildDesoveRows(m)).toHaveLength(1);
   });
 
   it('🔴 la llave son las TRES PRIMERAS columnas, en este orden exacto', () => {

@@ -68,6 +68,14 @@ export const MAD_DESOVE_COLUMNS = [
   { h: 'N2', k: 'n2', grain: 'dato', num: true, mil: true },
   { h: 'Fecha N5', k: 'fechaN5', grain: 'dato' },
   { h: 'N5', k: 'n5', grain: 'dato', num: true, mil: true },
+  /* ⚠⚠ VA DESPUÉS DE N5 Y ANTES DE Observaciones, y el sitio no es indiferente: la llave de
+     esta hoja es POSICIONAL —`MAD_DESOVE_KEY_COLS = [0,1,2]`, y el GAS la lee por índice—,
+     así que cualquier columna nueva tiene que caer DESPUÉS de la tercera. Aquí, además, se
+     lee junto a lo que despacha.
+     ⚠ Se pudo añadir sin coste porque `Maduración Lotes` estaba a 0 filas el 2026-09-08
+     (medido, no supuesto). Es la única ficha nueva que YA es escribible —esa hoja lleva en el
+     ALLOWED del GAS desplegado—, así que en cuanto se use, mover columnas deja de ser gratis. */
+  { h: 'Despacho', k: 'despacho', grain: 'dato' },
   { h: 'Observaciones', k: 'observaciones', grain: 'dato' },
 ];
 
@@ -121,6 +129,7 @@ export function buildDesoveRows(model) {
       n2: aMiles(x.n2),
       fechaN5: sanitizeStr(x.fechaN5, 10),
       n5: aMiles(x.n5),
+      despacho: sanitizeStr(x.despacho, 200),
       observaciones: sanitizeStr(x.observaciones, 300),
     };
     filas.push(MAD_DESOVE_COLUMNS.map((col) => valores[col.k]));
