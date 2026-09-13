@@ -6237,8 +6237,11 @@ function madIngSalaTag(sala){
 }
 // Llave NATURAL y determinista. El número de tanque se repite entre salas (la 1 y la 4
 // tienen ambas un tanque 1), así que la sala es parte imprescindible de la llave.
-function madIngRowId(lote, cg, sala, tanque){
-  return madIngNormLote(lote)+"-"+madIngNormCG(cg)+"-"+madIngSalaTag(sala)+"-t"+Number(tanque);
+// 🔴 Y LA FECHA TAMBIÉN (D1, 2026-09-13): sin ella, un segundo ingreso del mismo lote y código
+// al MISMO tanque, otro día, caía en la misma fila y el merge del GAS sustituía los conteos del
+// primero. Va delante, como en Movimientos y Fin de Ciclo. Ver ingresoRowId en el módulo.
+function madIngRowId(fecha, lote, cg, sala, tanque){
+  return sanitizeStr(fecha,10)+"-"+madIngNormLote(lote)+"-"+madIngNormCG(cg)+"-"+madIngSalaTag(sala)+"-t"+Number(tanque);
 }
 function madIngNum(v){ if(v===""||v==null) return ""; const n=Number(v); return isFinite(n)?n:""; }
 // Entero NO NEGATIVO: un conteo negativo restaría animales que nunca entraron.
@@ -6275,7 +6278,7 @@ function madIngBuildRows(model){
         pesoMachos: madIngNum(c.pesoMachos), pesoHembras: madIngNum(c.pesoHembras),
         supervivencia: madIngNum(c.supervivencia), camaronesM2: madIngNum(c.camaronesM2),
         densidad: madIngNum(c.densidad), agua: sanitizeStr(r.agua,20),
-        id: madIngRowId(lote, cg, sala, tanque)
+        id: madIngRowId(fecha, lote, cg, sala, tanque)
       };
       filas.push(MAD_ING_COLUMNS.map(function(col){ return v[col.k]; }));
     });

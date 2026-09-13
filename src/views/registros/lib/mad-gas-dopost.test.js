@@ -331,3 +331,37 @@ describe('GAS · el MERGE de las tres hojas por «ID», por la ruta de verdad de
     expect(hojas['Registro_Supervisión'].filas[1][1]).toBe('');
   });
 });
+
+describe('GAS + libro · un SEGUNDO ingreso al mismo tanque, otro día, SUMA (D1, 2026-09-13)', () => {
+  /* 🔴 EL DEFECTO. El ID de Ingreso no llevaba la fecha: `BP-OLF5.F2-S4-t1`. Un segundo ingreso
+     del mismo lote y código genético al MISMO tanque, días después, caía en la misma fila, y el
+     merge del GAS SUSTITUÍA sus conteos. El libro mayor —que suma las filas de Ingreso— perdía
+     los animales del primero sin un solo síntoma.
+     Se prueba por la ruta completa: el constructor real de filas → doPost → la hoja → el libro. */
+  const ingreso = (fecha, machos, hembras) => buildIngresoRows({ fecha, lote: 'BP',
+    composiciones: [{ codigoGenetico: 'OLF5.F2', piscina: '558', reparto: [{ sala: 'Sala 4', tanque: '1', machos, hembras, agua: 'RAS' }] }] });
+  const comoObjetos = (hoja) => hoja.filas.slice(1).map((f) => Object.fromEntries(hoja.filas[0].map((h, i) => [h, f[i]])));
+
+  it('🔴 la hoja guarda LOS DOS ingresos y el libro cuenta los animales de ambos', async () => {
+    const { construirLibro } = await import('./mad-libro.js');
+    const hojas = {};
+    const g = gas(hojas);
+    expect(g.post({ sheetName: 'Maduración Ingreso', headers: MAD_INGRESO_HEADERS, rows: ingreso('2026-08-29', '180', '235') }).status).toBe('ok');
+    expect(g.post({ sheetName: 'Maduración Ingreso', headers: MAD_INGRESO_HEADERS, rows: ingreso('2026-09-13', '50', '60') }).status).toBe('ok');
+    const hoja = hojas['Maduración Ingreso'];
+    expect(hoja.filas).toHaveLength(3);                                  // cabecera + DOS ingresos
+    const libro = construirLibro({ ingresos: comoObjetos(hoja), tanques: [] }, { hoy: '2026-09-13' });
+    const T = libro.tanques.get('Sala 4|1');
+    expect(T.machos).toBe(230);
+    expect(T.hembras).toBe(295);
+  });
+
+  it('pero reenviar el MISMO ingreso el mismo día sigue actualizando, no duplica', () => {
+    const hojas = {};
+    const g = gas(hojas);
+    g.post({ sheetName: 'Maduración Ingreso', headers: MAD_INGRESO_HEADERS, rows: ingreso('2026-09-13', '50', '60') });
+    g.post({ sheetName: 'Maduración Ingreso', headers: MAD_INGRESO_HEADERS, rows: ingreso('2026-09-13', '55', '60') });
+    expect(hojas['Maduración Ingreso'].filas).toHaveLength(2);
+    expect(hojas['Maduración Ingreso'].filas[1][MAD_INGRESO_HEADERS.indexOf('Machos')]).toBe(55);
+  });
+});

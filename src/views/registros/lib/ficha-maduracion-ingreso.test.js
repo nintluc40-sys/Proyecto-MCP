@@ -119,7 +119,7 @@ describe('Ingreso · normalización de grafías', () => {
   it('«Ab» y «AB» producen la MISMA llave — que es el punto', () => {
     // En producción ya conviven las dos grafías. Si la llave las distinguiera,
     // dos personas registrando el mismo ingreso crearían filas gemelas.
-    expect(ingresoRowId('Ab', 'cg01', 'Sala 1', 1)).toBe(ingresoRowId('AB', 'CG01', 'Sala 1', 1));
+    expect(ingresoRowId('2026-09-08', 'Ab', 'cg01', 'Sala 1', 1)).toBe(ingresoRowId('2026-09-08', 'AB', 'CG01', 'Sala 1', 1));
   });
 
   it('el código genético también se normaliza', () => {
@@ -131,17 +131,28 @@ describe('Ingreso · normalización de grafías', () => {
     expect(salaTag('Sala 12')).toBe('S12');
   });
 
-  it('la llave completa tiene la forma documentada', () => {
-    expect(ingresoRowId('AB', 'CG01', 'Sala 3', 22)).toBe('AB-CG01-S3-t22');
+  it('la llave completa tiene la forma documentada, con la FECHA delante como Movimientos y Fin de Ciclo', () => {
+    expect(ingresoRowId('2026-09-08', 'AB', 'CG01', 'Sala 3', 22)).toBe('2026-09-08-AB-CG01-S3-t22');
+  });
+
+  /* 🔴 D1 (2026-09-13) · el defecto que cierra la fecha en la llave. Sin ella, un SEGUNDO ingreso
+     del mismo lote y código genético al MISMO tanque, otro día, caía en la misma fila: el merge
+     del GAS SUSTITUÍA los conteos del primero y el libro perdía esos animales sin un síntoma. */
+  it('🔴 el mismo lote, código y tanque en OTRA fecha NO comparte llave', () => {
+    expect(ingresoRowId('2026-08-29', 'BP', 'OLF5.F2', 'Sala 4', 1)).not.toBe(ingresoRowId('2026-09-13', 'BP', 'OLF5.F2', 'Sala 4', 1));
+  });
+
+  it('pero el MISMO ingreso reenviado el mismo día SÍ la comparte: corregir sigue actualizando', () => {
+    expect(ingresoRowId('2026-09-13', 'bp', 'olf5.f2', 'Sala 4', 1)).toBe(ingresoRowId('2026-09-13', 'BP', 'OLF5.F2', 'Sala 4', 1));
   });
 
   it('lotes distintos NO comparten llave en el mismo tanque', () => {
-    expect(ingresoRowId('AB', 'CG01', 'Sala 1', 1)).not.toBe(ingresoRowId('BC', 'CG01', 'Sala 1', 1));
+    expect(ingresoRowId('2026-09-08', 'AB', 'CG01', 'Sala 1', 1)).not.toBe(ingresoRowId('2026-09-08', 'BC', 'CG01', 'Sala 1', 1));
   });
 
   it('el mismo tanque de salas distintas NO comparte llave', () => {
     // Sala 1 y Sala 4 tienen ambas un tanque 1.
-    expect(ingresoRowId('AB', 'CG01', 'Sala 1', 1)).not.toBe(ingresoRowId('AB', 'CG01', 'Sala 4', 1));
+    expect(ingresoRowId('2026-09-08', 'AB', 'CG01', 'Sala 1', 1)).not.toBe(ingresoRowId('2026-09-08', 'AB', 'CG01', 'Sala 4', 1));
   });
 });
 
@@ -167,7 +178,7 @@ describe('Ingreso · construcción de filas', () => {
     expect(f[col('Camarones por m2')]).toBe(12);
     expect(f[col('Densidad de siembra')]).toBe(9.5);
     expect(f[col('Agua')]).toBe('RAS');
-    expect(f[col('ID')]).toBe('AB-CG01-S1-t1');
+    expect(f[col('ID')]).toBe('2026-09-08-AB-CG01-S1-t1');
   });
 
   it('la fila tiene tantas celdas como cabeceras', () => {
@@ -203,8 +214,8 @@ describe('Ingreso · construcción de filas', () => {
     expect(filas).toHaveLength(3);
     const ids = filas.map((f) => f[col('ID')]);
     expect(new Set(ids).size).toBe(3);
-    expect(ids).toContain('AB-CG01-S1-t1');
-    expect(ids).toContain('AB-CG02-S1-t1');
+    expect(ids).toContain('2026-09-08-AB-CG01-S1-t1');
+    expect(ids).toContain('2026-09-08-AB-CG02-S1-t1');
   });
 
   it('el payload lleva hoja, cabeceras y filas', () => {

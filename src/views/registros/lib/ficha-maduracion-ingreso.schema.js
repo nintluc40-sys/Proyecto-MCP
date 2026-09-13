@@ -132,20 +132,29 @@ export function salaTag(sala) {
    ✅ A favor: dos dispositivos que registren el mismo ingreso producen la MISMA
       llave, así que el segundo ACTUALIZA en vez de duplicar. Con «todos registran»
       y captura sin conexión, un duplicado silencioso es peor que un huérfano.
-   ⚠ En contra: corregir el lote, el código genético, la sala o el tanque DESPUÉS de
-      sincronizar cambia la llave y deja huérfana la fila anterior en la hoja. Es
-      visible y arreglable a mano; el duplicado no se ve.
+   ⚠ En contra: corregir la fecha, el lote, el código genético, la sala o el tanque
+      DESPUÉS de sincronizar cambia la llave y deja huérfana la fila anterior en la hoja.
+      Es visible y arreglable a mano; el duplicado no se ve.
+
+   🔴 LA FECHA VA EN LA LLAVE desde el 2026-09-13 (D1). Sin ella, un SEGUNDO ingreso del mismo
+   lote y código genético al MISMO tanque, otro día, caía en la misma fila y el merge del GAS
+   SUSTITUÍA los conteos del primero: el libro mayor perdía esos animales sin un síntoma. Con
+   ella, cada ingreso es su fila y el libro los suma; y el mismo ingreso reenviado el mismo día
+   sigue actualizando. Va delante, como en Movimientos y Fin de Ciclo.
+   ⚠ Las filas escritas ANTES de este cambio conservan su llave sin fecha: reenviarlas desde la
+   app crearía otra fila. Se arregla poniendo la fecha delante de su ID en la hoja.
 
    🔑 Y por eso la llave se construye sobre los valores NORMALIZADOS: si no, `ab` y
    `AB` serían dos filas distintas y volveríamos justo al problema que se quiere
    evitar. */
 
-/** Llave de fila: determinista y estable para (lote, código genético, sala, tanque).
- *  La misma composición, en el mismo tanque, del mismo lote, produce SIEMPRE el
- *  mismo ID — se registre desde donde se registre y se escriba como se escriba. */
-export function ingresoRowId(lote, codigoGenetico, sala, tanque) {
+/** Llave de fila: determinista y estable para (fecha, lote, código genético, sala, tanque).
+ *  El mismo ingreso —misma fecha, composición, tanque y lote— produce SIEMPRE el
+ *  mismo ID, se registre desde donde se registre y se escriba como se escriba. */
+export function ingresoRowId(fecha, lote, codigoGenetico, sala, tanque) {
   return (
-    normLote(lote) +
+    sanitizeStr(fecha, 10) +
+    '-' + normLote(lote) +
     '-' + normCodigoGenetico(codigoGenetico) +
     '-' + salaTag(sala) +
     '-t' + Number(tanque)
@@ -211,7 +220,7 @@ export function buildIngresoRows(model) {
         camaronesM2: num(c.camaronesM2),
         densidad: num(c.densidad),
         agua: sanitizeStr(r.agua, 20),
-        id: ingresoRowId(lote, codigoGenetico, sala, tanque),
+        id: ingresoRowId(fecha, lote, codigoGenetico, sala, tanque),
       };
       filas.push(MAD_INGRESO_COLUMNS.map((col) => valores[col.k]));
     });

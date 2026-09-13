@@ -234,10 +234,12 @@ describe('Ingreso · el mismo veredicto', () => {
 describe('Ingreso · las mismas funciones puras', () => {
   it('la misma llave de fila, normalización incluida', () => {
     const casos = [
-      ['AB', 'CG01', 'Sala 1', 1],
-      [' ab ', 'cg01', 'Sala 1', 1],
-      ['BD', 'CG 07', 'Sala 5', 11],
-      ['BC', 'CG02', 'Sala 4', 3],
+      ['2026-09-08', 'AB', 'CG01', 'Sala 1', 1],
+      ['2026-09-08', ' ab ', 'cg01', 'Sala 1', 1],
+      ['2026-09-13', 'BD', 'CG 07', 'Sala 5', 11],
+      ['2026-08-29', 'BC', 'CG02', 'Sala 4', 3],
+      // D1: el mismo lote y tanque en dos fechas tiene que dar dos llaves en las DOS copias
+      ['2026-09-13', 'AB', 'CG01', 'Sala 1', 1],
     ];
     for (const c of casos) expect(api.madIngRowId(...c)).toBe(ingresoRowId(...c));
   });
