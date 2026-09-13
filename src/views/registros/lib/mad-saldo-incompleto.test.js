@@ -37,7 +37,7 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['madLibroIncompleto', '_madSalasPintaEstado', 'renderMadSalas',
   '_collectSalasGrid', 'madEstadoDeSala', 'MAD_SALA_OPTS', 'MAD_EST_CUAR', 'MAD_EST_PROD',
-  'madSaldoCargar', 'MAD_LIBRO_SHEETS'];
+  'madSaldoCargar', 'MAD_LIBRO_SHEETS', '_madSaldoHTML', 'MAD_EST_CERRADO'];
 const H = {};
 
 beforeAll(async () => {
@@ -225,5 +225,33 @@ describe('Maduración · el libro RECOGE el aviso de recorte al construirse', ()
     H.setLecturas(leidas(), { 'Maduración MATRIZ': true });
     const libro = await H.madSaldoCargar(false);
     expect(libro.recortadas).toEqual([]);
+  });
+});
+
+/* ── 2026-09-13 · V1: el color de «Cerrado» en la vista Saldo ───────────────────────────
+   La tanda B le dio a «Cerrado» un color PROPIO: con dos ramas caía en el verde de Producción,
+   y un lote terminado pintado como uno en producción se lee mal justo cuando más importa.
+   Ninguna prueba lo miraba — se comprobó al montar su banco de mutación. */
+describe('Maduración · la vista Saldo pinta «Cerrado» con su propio color', () => {
+  const lote = (nombre, estado) => ({ lote: nombre, ingreso: '2026-01-01', copulaDesde: null, cerrado: null,
+    estado, machos: 0, hembras: 0, ubicaciones: [] });
+  const insignia = (html, nombre) => {
+    const caja = document.createElement('div');
+    caja.innerHTML = html;
+    const fila = Array.from(caja.querySelectorAll('tr')).find((tr) => tr.cells[0] && tr.cells[0].textContent === nombre);
+    return fila ? fila.querySelector('span').getAttribute('style') : '';
+  };
+  const html = () => H._madSaldoHTML({ tanques: {}, avisos: [], fallos: [], recortadas: [],
+    lotes: { AB: lote('AB', H.MAD_EST_PROD), CD: lote('CD', H.MAD_EST_CERRADO), EF: lote('EF', H.MAD_EST_CUAR) } });
+
+  it('el fixture ejerce algo: Producción va en verde y Cuarentena en ámbar', () => {
+    expect(insignia(html(), 'AB')).toContain('#dcfce7');
+    expect(insignia(html(), 'EF')).toContain('#fef3c7');
+  });
+
+  it('🔴 un lote CERRADO no se pinta con el verde de Producción', () => {
+    const estilo = insignia(html(), 'CD');
+    expect(estilo).toContain('#e2e8f0');
+    expect(estilo).not.toContain('#dcfce7');
   });
 });
