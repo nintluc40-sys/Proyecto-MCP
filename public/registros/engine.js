@@ -9377,7 +9377,11 @@ const BIO_GRID_COLS = [
   { k:"piscina", label:"Piscina"   },
   { k:"lugar",   label:"Lugar"     },
   { k:"tanque",  label:"Tanque"    },
-  { k:"otros",   label:"Otros"     },
+  /* `sug`: SUGERENCIAS de la celda (datalist), no una lista cerrada — se elige una o se
+     escribe cualquier otra, igual que las columnas «editables con sugerencias» de
+     Microbiología. «Otros» ya recibía texto libre en producción («Calamar (Funda en uso)»…);
+     el usuario pidió el 2026-09-13 que ofrezca estos cuatro términos. */
+  { k:"otros",   label:"Otros",   sug:["Heces","Branquias","Hisopado","Agua"] },
   { k:"muestra", label:"Muestra"   },
   { k:"estadio", label:"Estadío"   },
   { k:"sexo",    label:"Sexo"      },
@@ -11054,7 +11058,8 @@ function renderBiomol(){
          · celda de Ct o Copias (`c.pat`)        → el informe ofrece las CURVAS.
          · el resto                              → sólo marcar la grilla como sucia. */
       const oi = esRes ? "bioPatInput(this)" : (c.pat ? "bioQpcrInput(this)" : "_bioDirty()");
-      return `<td${c.pat ? ' class="bio-qc"' : ''}><input class="pinp" type="text" name="bg_${fila}_${c.k}" data-r="${fila-1}" data-c="${ci}"${av} onpaste="madGridPaste(event,'biomol')" oninput="${oi}" value="${escapeHtml(d[c.k]||"")}" maxlength="200" style="min-width:${w}px"></td>`;
+      const dl = c.sug ? ` list="bio-dl-${c.k}"` : "";
+      return `<td${c.pat ? ' class="bio-qc"' : ''}><input class="pinp" type="text" name="bg_${fila}_${c.k}" data-r="${fila-1}" data-c="${ci}"${dl}${av} onpaste="madGridPaste(event,'biomol')" oninput="${oi}" value="${escapeHtml(d[c.k]||"")}" maxlength="200" style="min-width:${w}px"></td>`;
     }).join("");
     rowsHtml += `<tr>
       <td class="tqc" style="font-size:10px;min-width:34px;text-align:center">${fila}</td>
@@ -11099,6 +11104,7 @@ function renderBiomol(){
         </tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table></div>
+      ${celdas.filter(c => c.sug).map(c => `<datalist id="bio-dl-${c.k}">` + c.sug.map(o => `<option value="${escapeHtml(o)}">`).join("") + `</datalist>`).join("")}
       <div style="margin-top:8px">
         <button class="btn bo" type="button" onclick="bioGridAddRows()" ${canAdd?"":"disabled"} title="Agregar ${BIO_GRID_ROW_STEP} filas más (máximo ${BIO_GRID_MAX_ROWS})">➕ Agregar ${BIO_GRID_ROW_STEP} filas</button>
       </div>
