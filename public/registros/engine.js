@@ -4928,7 +4928,7 @@ function buildAlgasPayload(m, histSnapshot){
     // obs es ahora un CSV de frases (multiselección); puede superar el tope de
     // 200 de sanitizeStr. Se permite hasta 480 (bajo el límite 500 del GAS) y
     // se elimina cualquier carácter inicial de fórmula por seguridad.
-    String(a.obs || "").replace(/^[=+\-@]+/, "").slice(0, 480),
+    algObsCanon(a.obs).replace(/^[=+\-@]+/, "").slice(0, 480),
     safeNum(a.ciliados),
     safeNum(a.filamentosos),
     sanitizeStr(a.tec || gcfg("tec","") || ""),
@@ -4973,8 +4973,21 @@ const ALG_OBS_OPTS = [
   "Residual de Cloro","Mala desinfección",
   "Células Deformes","Células Reventadas","Células con Agregaciones a la Pared Celular",
   "Tanque Despachado en la Mañana",
-  "Descartado nm"
+  "Descartado por bueno"
 ];
+/* Frases RENOMBRADAS: lo guardado con el texto viejo se lee con el nuevo. «Descartado nm» pasó
+   a «Descartado por bueno» el 2026-09-13 (pedido del usuario): es la MISMA observación. Se
+   traduce al pintar el formulario —si no, el chip saldría desmarcado y el siguiente guardado
+   borraría la marca sin avisar— y al armar el envío a la hoja. Frase a frase y EXACTA
+   («Descartado nmx» no se toca), y un CSV sin frases renombradas se devuelve TAL CUAL. */
+const ALG_OBS_RENOMBRADAS = { "Descartado nm": "Descartado por bueno" };
+function algObsCanon(csv){
+  const s = String(csv == null ? "" : csv);
+  const esVieja = function(p){ return Object.prototype.hasOwnProperty.call(ALG_OBS_RENOMBRADAS, p); };
+  const partes = s.split(",").map(function(p){ return p.trim(); });
+  if(!partes.some(esVieja)) return s;
+  return partes.filter(Boolean).map(function(p){ return esVieja(p) ? ALG_OBS_RENOMBRADAS[p] : p; }).join(", ");
+}
 /* Volúmenes de despacho habituales (usuario, 2026-08-26). Es una SUGERENCIA, no
    una lista cerrada: el campo sigue admitiendo cualquier número, igual que el
    Responsable/Analista de Microbiología.
@@ -5076,7 +5089,7 @@ function renderAlgas(){
   const sistemaOpts = `<option value="">— Selecciona —</option>` + buildSistemaOpts(area, sistema);
 
   // Observaciones → multiselección por chips. Conjunto marcado derivado del CSV.
-  const _obsSet = new Set((d.obs||"").split(",").map(s=>s.trim()).filter(Boolean));
+  const _obsSet = new Set(algObsCanon(d.obs).split(",").map(s=>s.trim()).filter(Boolean));
   const obsChips = ALG_OBS_OPTS.map(s=>{
     const checked = _obsSet.has(s) ? " checked" : "";
     return `<label style="display:inline-flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;background:#fff;padding:5px 11px;border-radius:14px;border:1.5px solid var(--bdr)">
@@ -5407,7 +5420,7 @@ function downloadBitacoraPDF(fecha){
         <td>${cell(a.temperatura)}</td>
         <td>${cell(a.intensidad)}</td>
         <td>${a.descarte==='Si' ? '<b style="color:#991b1b">Si</b>' : '<span class="empty">—</span>'}</td>
-        <td style="text-align:left;max-width:140px;white-space:normal;word-break:break-word">${cell(a.obs)}</td>
+        <td style="text-align:left;max-width:140px;white-space:normal;word-break:break-word">${cell(algObsCanon(a.obs))}</td>
         <td>${cell(a.tec)}</td>
         <td>${cell(a.cel_vacias)}</td>
         <td>${cell(a.cel_semillenas)}</td>
