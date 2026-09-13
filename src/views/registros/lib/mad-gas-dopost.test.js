@@ -37,7 +37,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createContext, Script } from 'node:vm';
-import { MAD_DESOVE_HEADERS } from './ficha-maduracion-desoves.schema.js';
+import { MAD_DESOVE_HEADERS, buildDesoveRows } from './ficha-maduracion-desoves.schema.js';
 import { MAD_INGRESO_HEADERS, buildIngresoRows } from './ficha-maduracion-ingreso.schema.js';
 import { MAD_MOV_HEADERS } from './ficha-maduracion-movimientos.schema.js';
 import { MAD_FIN_HEADERS, buildFinRows } from './ficha-maduracion-fin-ciclo.schema.js';
@@ -70,17 +70,31 @@ const DESOVES_58A9675 = ['Fecha', 'Lote', 'Código genético', 'Piscina Broodsto
 const FIN_58A9675 = ['Fecha', 'Lote', 'Tipo', 'Motivo', 'Destino', 'Machos', 'Hembras', 'Observaciones', 'ID'];
 const SALA_SIN_FASE6 = SALA.slice(0, 20);
 
-/* ── Hoja de Google falsa: guarda filas y apunta cada escritura ── */
-function hojaFalsa(filasIniciales) {
+/* ── Hoja de Google falsa: guarda filas y apunta cada escritura ──
+   `opts.comoSheets` (D2, 2026-09-13) imita lo que Google Sheets hace con una celda SIN formato de
+   texto: «0766» se guarda como el número 766 (se pierde el cero) y «3-5» como una fecha. Es
+   opcional para no cambiar lo que ya prueban los demás casos. `opts.maxRows` fija el alto. */
+function hojaFalsa(filasIniciales, opts = {}) {
   const filas = filasIniciales.map((f) => f.slice());
   const escrituras = [];
+  const texto = [];                                   // rangos con formato «@»: [r, c, nR, nC]
+  let maxRows = opts.maxRows || 1000;
+  const esTexto = (fila, col) => texto.some(([r, c, nR, nC]) => fila >= r && fila < r + nR && col >= c && col < c + nC);
+  const comoGuardaSheets = (fila, col, v) => {
+    if (!opts.comoSheets || typeof v !== 'string' || esTexto(fila, col)) return v;
+    if (/^\d+$/.test(v)) return Number(v);
+    const f = v.match(/^(\d{1,2})[-/](\d{1,2})$/);
+    if (f) return new Date(Date.UTC(2026, Number(f[2]) - 1, Number(f[1])));
+    return v;
+  };
   const cadena = () => new Proxy({}, { get: (_t, k) => (k === 'then' ? undefined : () => cadena()) });
   const hoja = {
-    filas, escrituras,
+    filas, escrituras, texto,
     getLastRow: () => filas.length,
     getLastColumn: () => filas.reduce((m, f) => Math.max(m, f.length), 0),
     getMaxColumns: () => 60,
-    getMaxRows: () => 1000,
+    getMaxRows: () => maxRows,
+    insertRowsAfter(_despues, n) { escrituras.push('insertRows+' + n); maxRows += n; },
     insertColumnsAfter() {},
     setFrozenRows() {},
     appendRow(v) { escrituras.push('appendRow'); filas.push(v.slice()); },
@@ -101,8 +115,12 @@ function hojaFalsa(filasIniciales) {
           escrituras.push('setValues@' + r);
           vals.forEach((v, i) => {
             const fila = filas[r - 1 + i] || (filas[r - 1 + i] = []);
-            v.forEach((cell, k) => { fila[c - 1 + k] = cell; });
+            v.forEach((cell, k) => { fila[c - 1 + k] = comoGuardaSheets(r + i, c + k, cell); });
           });
+          return cadena();
+        },
+        setNumberFormat: (fmt) => {
+          if (fmt === '@') { texto.push([r, c, nR, nC]); escrituras.push('texto@' + r + ',' + c + 'x' + nR + ',' + nC); }
           return cadena();
         },
       };
@@ -363,5 +381,51 @@ describe('GAS + libro · un SEGUNDO ingreso al mismo tanque, otro día, SUMA (D1
     g.post({ sheetName: 'Maduración Ingreso', headers: MAD_INGRESO_HEADERS, rows: ingreso('2026-09-13', '55', '60') });
     expect(hojas['Maduración Ingreso'].filas).toHaveLength(2);
     expect(hojas['Maduración Ingreso'].filas[1][MAD_INGRESO_HEADERS.indexOf('Machos')]).toBe(55);
+  });
+});
+
+describe('GAS · la llave de Desoves se guarda como TEXTO (D2, 2026-09-13)', () => {
+  /* 🔴 EL RIESGO. «Maduración Lotes» (Desoves) se escribe por llave POSICIONAL [0,1,2] = Fecha,
+     Lote y Código genético. Google Sheets convierte lo que parece un número o una fecha: un código
+     «0766» se guarda como 766 y «3-5» como una fecha. Al volver a la fila —para completar N2 o N5,
+     que es el uso normal— la llave leída ya no casa con la enviada y el GAS AÑADE una fila nueva:
+     el desove queda partido en dos. Se prueba con una hoja que imita esa conversión.
+     El arreglo fuerza el formato «@» en esas dos columnas antes de escribir, como ya se hace con
+     el Trovan ID del registro reproductivo. */
+  const desove = (cg, extra) => buildDesoveRows({ fecha: '2026-09-07',
+    desoves: [Object.assign({ lote: 'BP', codigoGenetico: cg, piscina: '558', desoves: '64', huevos: '14440' }, extra)] });
+
+  for (const [cg, porque] of [['0766', 'con un cero delante'], ['3-5', 'que parece una fecha']]) {
+    it(`🔴 completar N2 días después sobre un código ${porque} ACTUALIZA la fila, no la duplica`, () => {
+      const hoja = hojaFalsa([MAD_DESOVE_HEADERS], { comoSheets: true });
+      const g = gas({ 'Maduración Lotes': hoja });
+      expect(g.post({ sheetName: 'Maduración Lotes', headers: MAD_DESOVE_HEADERS, rows: desove(cg) }).status).toBe('ok');
+      expect(g.post({ sheetName: 'Maduración Lotes', headers: MAD_DESOVE_HEADERS, rows: desove(cg, { fechaN2: '2026-09-08', n2: '9000' }) }).status).toBe('ok');
+      expect(hoja.filas).toHaveLength(2);                                  // cabecera + UNA fila
+      expect(hoja.filas[1][MAD_DESOVE_HEADERS.indexOf('Código genético')]).toBe(cg);
+      expect(hoja.filas[1][MAD_DESOVE_HEADERS.indexOf('N2')]).toBe(9000000);
+      expect(hoja.filas[1][MAD_DESOVE_HEADERS.indexOf('Desoves')]).toBe(64);   // y el merge conservó lo primero
+    });
+  }
+
+  it('el fixture ejerce algo: la hoja imitada SÍ pierde el cero de una celda sin formato de texto', () => {
+    const hoja = hojaFalsa([['A']], { comoSheets: true });
+    hoja.getRange(2, 1, 1, 1).setValues([['0766']]);
+    expect(hoja.filas[1][0]).toBe(766);
+  });
+
+  it('las demás hojas no reciben ese formato: sólo la de Desoves tiene código en la llave', () => {
+    const hoja = hojaFalsa([TANQUES], { comoSheets: true });
+    const g = gas({ 'Maduración Tanques': hoja });
+    g.post({ sheetName: 'Maduración Tanques', headers: TANQUES, rows: [conValores(TANQUES, { Fecha: '2026-09-13', Sala: 'Sala 4', Tanque: 1, Muda: 1 })] });
+    expect(hoja.texto).toEqual([]);
+  });
+
+  it('si la hoja se queda corta, se amplía antes de formatear: el formato cubre lo que se escribe', () => {
+    const hoja = hojaFalsa([MAD_DESOVE_HEADERS], { comoSheets: true, maxRows: 2 });
+    const g = gas({ 'Maduración Lotes': hoja });
+    const filas = buildDesoveRows({ fecha: '2026-09-07', desoves: ['0761', '0762', '0763'].map((cg) => ({ lote: 'BP', codigoGenetico: cg, desoves: '1' })) });
+    expect(g.post({ sheetName: 'Maduración Lotes', headers: MAD_DESOVE_HEADERS, rows: filas }).status).toBe('ok');
+    expect(hoja.filas.slice(1).map((f) => f[MAD_DESOVE_HEADERS.indexOf('Código genético')])).toEqual(['0761', '0762', '0763']);
   });
 });

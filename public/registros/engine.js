@@ -17446,7 +17446,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "a59acab7325c";
+const GAS_VERSION = "039648a0d4c8";
 
 const SS_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
 
@@ -17814,7 +17814,19 @@ function doPost(e) {
       // Las 3 hojas de Maduración usan upsert con su clave compuesta:
       //   Sala     → [0,1]   Fecha+Sala
       //   Tanques  → [0,1,3] Fecha+Sala+Tanque (Lote editable, fuera de clave)
-      //   Lotes    → [0,1,2] Fecha+Sala+Fila   (Lote/Historial editables)
+      //   Lotes    → [0,1,2] Fecha+Lote+Código genético (la hoja de Desoves desde el 2026-09-08)
+      // D2 (2026-09-13) · la llave de Desoves se guarda como TEXTO. Sheets convierte lo que
+      // parece número o fecha: un código «0766» se guardaría como 766 y «3-5» como una fecha,
+      // así que al volver a la fila —N2 o N5, días después— la llave leída no casaría con la
+      // enviada y se AÑADIRÍA otra fila: el desove quedaría partido en dos. Se fuerza «@» en
+      // Lote y Código genético ANTES de escribir, como con el Trovan ID del reproductivo. Si la
+      // hoja se queda corta se amplía primero, para que el formato cubra también las filas
+      // nuevas. Las celdas que ya estaban escritas conservan su valor.
+      if (payload.sheetName === "Maduración Lotes") {
+        var _filasNecesarias = lastRow(ws) + rows.length;
+        if (_filasNecesarias > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasNecesarias - ws.getMaxRows());
+        if (ws.getMaxRows() > 1) ws.getRange(2, 2, ws.getMaxRows() - 1, 2).setNumberFormat("@");
+      }
       result = upsertMadRows(ws, rows, madKeyCols, madTrovanCol, madNumCol);
     }
     else if (isAlgas)  result = upsertAlgasRows(ws, rows);
