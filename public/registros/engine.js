@@ -345,31 +345,12 @@ let _blancoState = null; // { ficha, histId, data }
 // Grillas Tanques/Lotes (Maduración): sala seleccionada por ficha. Persiste en
 // la sesión al cambiar de pestaña/módulo (se reinicia solo al recargar).
 let _madTanquesSala = "";
-// Memoria del último Lote usado por (sala|tanque), 70 días — sólo Tanques.
-// Vive bajo MAD_PRE, así que cleanup() la conserva (sin TTL automático); la
-// purga de 70 d la hace loadMadLoteMem() al leerla.
-const MADLOTE_KEY = MAD_PRE + "lotemem";
-const MADLOTE_TTL = 70*24*60*60*1000;
+// ⚠ Aquí vivía la MEMORIA DEL ÚLTIMO LOTE por (sala|tanque): tres funciones de lectura y
+// escritura y la clave larv4_mad_lotemem. Quedó inerte el 2026-09-08, cuando la grilla de
+// Tanques dejó de capturar el Lote (lo declara el Ingreso), y se RETIRÓ el 2026-09-13 (D7) a
+// petición del usuario tras medir que nada la usaba. cleanup() borra la clave que dejó en cada
+// dispositivo. Lo fija mad-lote-memoria-retirada.test.js.
 const MAD_RECOV_KEY = RPRE + "madgrid";   // recuperación de la grilla en curso (espejo de Biomol; TTL RTTL=1h)
-function loadMadLoteMem(){
-  let obj = {};
-  try{ const raw = localStorage.getItem(MADLOTE_KEY); if(raw){ const p = JSON.parse(raw); if(p && typeof p === "object") obj = p; } }catch(_){}
-  const now = Date.now(); let changed = false;
-  Object.keys(obj).forEach(k => { const e = obj[k]; if(!e || !e.ts || (now - e.ts) > MADLOTE_TTL){ delete obj[k]; changed = true; } });
-  if(changed){ try{ localStorage.setItem(MADLOTE_KEY, JSON.stringify(obj)); }catch(_){} }
-  return obj;
-}
-function getMadLote(sala, tank){
-  const e = loadMadLoteMem()[sala+"|"+tank];
-  return e && e.lote ? e.lote : "";
-}
-function setMadLote(sala, tank, lote){
-  const mem = loadMadLoteMem();
-  const key = sala+"|"+tank;
-  const v = (lote==null) ? "" : String(lote).trim();
-  if(v){ mem[key] = { lote: v, ts: Date.now() }; } else { delete mem[key]; }
-  try{ localStorage.setItem(MADLOTE_KEY, JSON.stringify(mem)); }catch(_){}
-}
 
 /* ── Memoria de Lote por módulo+tanque (25 d) para fichas estándar ──────────
    "Congela" el Lote de cada tanque y lo prellena en Población y PLG externo
@@ -901,6 +882,10 @@ function cleanup(){
   // Hace efectiva la limpieza que loadHist() sólo aplica en memoria,
   // evitando bloat en módulos con sincronizaciones antiguas.
   try{ if(typeof pruneHist === "function") pruneHist(); }catch(_){}
+  // D7 (2026-09-13) · la memoria del último Lote de Maduración se retiró: se borra la clave que
+  // dejó. Va por su nombre EXACTO, no por prefijo: bajo larv4_mad_ viven las fichas de Salas y
+  // Tanques. La de las fichas estándar (larv4_lotemem, sin «mad_») es otra y SÍ se usa.
+  try{ localStorage.removeItem(MAD_PRE + "lotemem"); }catch(_){}
   const now = Date.now(), keys = [];
   let _removed = 0;   // #10: cuenta remociones para decidir si re-pintar el grid
   for(let i = 0; i < localStorage.length; i++){
@@ -5706,7 +5691,6 @@ function recoverMadGrid(){
   const list = loadMad(rec.ficha);
   rec.rows.forEach(data=>{
     _madMergeRow(list, rec.ficha, data);
-    if(rec.ficha==="tanques" && data.lote) setMadLote(rec.sala, data.tanque, data.lote);
   });
   saveMadList(rec.ficha, list);
   try{ localStorage.removeItem(MAD_RECOV_KEY); }catch(_){}
@@ -8987,7 +8971,6 @@ function saveMadTanquesGrid(opts){
   rows.forEach(data => {
     if(!isValidDate(data.fecha)) return;
     _madMergeRow(list, "tanques", data);
-    if(data.lote) setMadLote(sala, data.tanque, data.lote);
     saved++;
   });
   const _ok = saveMadList("tanques", list);
@@ -17453,6 +17436,15 @@ function GAS(){
 //  • Normalización de Date objects para coincidencia exacta de clave
 // ════════════════════════════════════════════════════════
 
+// ── PRUEBA DE VERSIÓN (D8, 2026-09-13) ─────────────────────────────
+// GET ?p=ver → {"ok":true,"version":GAS_VERSION}, sin token y sin abrir ninguna hoja.
+// El sello es la HUELLA del resto de este archivo (sha-256, 12 caracteres), y la exige la
+// prueba gas-version.test.js del repo: tocar cualquier otra línea sin actualizarlo pone la
+// suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
+// Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
+// la URL del Web App con ?p=ver y comparar con esta línea.
+const GAS_VERSION = "a59acab7325c";
+
 const SS_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
 
 // ── Evidencias por QR (Fase 1) ─────────────────────────────────────
@@ -18635,6 +18627,10 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.p === "verify") {
     return verifyReq(e.parameter.reqId || "", e.parameter.t || "");
   }
+  // D8 (2026-09-13) · qué versión está desplegada: ver GAS_VERSION, arriba del todo.
+  if (e && e.parameter && e.parameter.p === "ver") {
+    return _evJson({ ok: true, version: GAS_VERSION });
+  }
   return ContentService.createTextOutput("FichasLarv-OK");
 }
 
@@ -19097,12 +19093,42 @@ async function testConn(){
     // doGet() del GAS responde exactamente "FichasLarv-OK"; validar esa cadena
     // (no un "OK" genérico) evita falsos positivos con páginas de error/login
     // de Google que pudieran contener "OK" en su HTML.
-    t.includes("FichasLarv-OK")
-      ? toast("✅ Conexión exitosa","ok")
-      : toast("Respuesta: " + t.slice(0,80),"warn");
+    if(!t.includes("FichasLarv-OK")){ toast("Respuesta: " + t.slice(0,80),"warn"); return; }
+    /* D8 (2026-09-13) · la conexión no basta: ¿el GAS desplegado es el de ESTA app? Se
+       pregunta a ?p=ver y se compara con el sello de la plantilla que esta app entrega en
+       ⚙ Config. Hasta hoy la versión desplegada sólo se deducía por efectos secundarios, y
+       dos veces se dio por hecho un despliegue que nadie había medido.
+       ⚠ Tres respuestas distintas, y no se confunden: sello igual (al día), sello distinto
+       o texto en vez de JSON (hay que volver a desplegar), y SIN respuesta (no se afirma
+       nada: un tiempo agotado no dice qué versión hay). */
+    const local = _gasVersionLocal();
+    let vivo = "", sinRespuesta = false;
+    try{
+      const c2 = new AbortController();
+      const t2 = setTimeout(()=>c2.abort(), 8000);
+      const r2 = await fetch(url + (url.indexOf("?")===-1 ? "?" : "&") + "p=ver", {signal: c2.signal});
+      clearTimeout(t2);
+      const txt2 = await r2.text();
+      try{ const j2 = JSON.parse(txt2); if(j2 && j2.ok && typeof j2.version === "string") vivo = j2.version; }catch(_){}
+    }catch(_){ sinRespuesta = true; }
+    if(sinRespuesta) toast("Conexión exitosa, pero no se pudo comprobar la versión del GAS desplegado. Reintenta.","warn",6000);
+    else if(vivo && vivo === local) toast("Conexión exitosa · el GAS desplegado es el de esta app (" + vivo + ")","ok",5000);
+    else if(vivo) toast("Conexión exitosa, pero el GAS desplegado (" + vivo + ") NO es el de esta app (" + local + "): vuelve a desplegarlo desde Apps Script","warn",8000);
+    else toast("Conexión exitosa, pero el GAS desplegado es anterior a la prueba de versión: vuelve a desplegarlo desde Apps Script","warn",8000);
   }catch(x){
     toast(x.name==="AbortError" ? "Tiempo de espera agotado" : "Error de conexión","err");
   }
+}
+
+/* D8 · el sello de la plantilla GAS que esta app entrega en ⚙ Config. Se LEE de la
+   plantilla y no se copia aparte: un segundo sitio con el sello se quedaría atrás. */
+function _gasVersionLocal(){
+  const t = GAS();
+  const a = 'const GAS_VERSION = "';
+  const i = t.indexOf(a);
+  if(i < 0) return "";
+  const j = t.indexOf('"', i + a.length);
+  return j > i ? t.slice(i + a.length, j) : "";
 }
 
 

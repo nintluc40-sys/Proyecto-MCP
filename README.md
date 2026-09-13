@@ -118,6 +118,15 @@ Por eso `Maduración Tanques` conserva tres columnas **vacías a propósito** (`
 `Población inicial`): sólo se pueden limpiar en el mismo despliegue en que cambie
 `madKeyCols`.
 
+🛡 **Y como se escriben por posición, el GAS comprueba el esquema antes de escribir.** En las
+seis hojas del registro operativo, si una cabecera del envío no coincide con la de la hoja en
+su misma posición, `doPost` responde «Esquema desactualizado» y **no toca nada**. Existe porque
+estas hojas cambiaron de columnas y siguen vivos clientes con el esquema anterior: sin la
+guarda, un guardado de Tanques desde uno de ellos corría una columna todo lo que va detrás de
+«Tanque» con respuesta «ok». Que el envío traiga **menos** columnas no es un desfase (le falta
+el final, no está corrida). Lo prueba `mad-gas-dopost.test.js`, que ejecuta el `Code.gs`
+entero con una hoja de Google simulada.
+
 ## Arquitectura
 
 > Este árbol es una **guía de lectura**, no un inventario. La lista viva sale de
@@ -229,15 +238,27 @@ Dos consecuencias que conviene tener presentes al desplegar:
 
 ## Pendiente / siguientes pasos
 
-- 🔴 **Re-desplegar el GAS.** Tres hojas del registro operativo de Maduración —`Ingreso`,
-  `Movimientos` y `Fin de Ciclo`— están en el `ALLOWED` del código pero **no en el
-  despliegue vivo**, que responde `{"ok":false,"error":"Hoja no permitida"}`. Hasta
-  entonces esas tres fichas no pueden escribir. **Desoves y la grilla de Salas sí
-  funcionan** ya: reutilizan hojas que el despliegue actual permite.
+> Esta lista describe el estado de un día, no un inventario: lo que depende del despliegue
+> se comprueba contra el despliegue, no se lee de aquí. *(La versión anterior pedía
+> re-desplegar un GAS que ya estaba re-desplegado.)*
+
+- 🔴 **Re-desplegar el GAS** para activar la **guarda de esquema** del registro operativo
+  (ver la sección de Maduración) y la **prueba de versión**. Las tres hojas nuevas —Ingreso,
+  Movimientos y Fin de Ciclo— **ya escriben**: ese despliegue entró entre el 09-09 y el
+  09-12. Pegar `GAS/Code.gs` en Apps Script y publicar una **versión nueva**; guardar sin
+  publicar no cambia lo que sirve el Web App.
+  🔑 **Cómo saber si entró, sin escribir nada:** ⚙ Config → «🔗 Probar conexión» compara el
+  GAS desplegado con el de la app y dice si hay que volver a desplegar. Por debajo, la URL
+  del Web App con `?p=ver` devuelve el sello `GAS_VERSION`, que es la huella de `Code.gs`
+  y lo exige `gas-version.test.js`: no puede quedarse atrás sin poner la suite en rojo.
+- 🔴 **Publicar el cliente** (`git push` a `master`). GitHub Pages sirve una versión
+  anterior al registro operativo. Con la guarda desplegada, sus envíos de Tanques y de
+  Desoves se **rechazan** en vez de escribir columnas corridas: lo tecleado se queda en el
+  dispositivo, pero no llega a la hoja hasta que ese dispositivo se actualice.
 - **Maduración · histórico** (Fase 5): la única fase del registro operativo sin construir.
   Aplazada a propósito hasta probar el resto en operación.
-- Microbiología: construir la sub-vista **Patología en fresco** (depende de que
-  exista su hoja en el Sheet). General y Calidad de Agua ya están completas.
-- Validación visual en navegador de los cambios recientes.
-- Confirmar en una sincronización de prueba que el GAS escribe las columnas
-  nuevas (`% Protusión`, `Protusión`, `% No viables`) en su posición correcta.
+- **Maduración · vaciado de las hojas antiguas**: cuando el registro operativo se dé por
+  listo se borran los datos anteriores. Es el momento de retirar las tres columnas vacías
+  de `Maduración Tanques`, cambiando `madKeyCols` **en el mismo despliegue**.
+- Microbiología: la sub-vista **Patología en fresco** se construye cuando los usuarios
+  estrenen su hoja (hoy no existe). General y Calidad de Agua ya están completas.

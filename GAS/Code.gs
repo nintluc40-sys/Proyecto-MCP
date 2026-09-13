@@ -14,6 +14,15 @@
 //  • Normalización de Date objects para coincidencia exacta de clave
 // ════════════════════════════════════════════════════════
 
+// ── PRUEBA DE VERSIÓN (D8, 2026-09-13) ─────────────────────────────
+// GET ?p=ver → {"ok":true,"version":GAS_VERSION}, sin token y sin abrir ninguna hoja.
+// El sello es la HUELLA del resto de este archivo (sha-256, 12 caracteres), y la exige la
+// prueba gas-version.test.js del repo: tocar cualquier otra línea sin actualizarlo pone la
+// suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
+// Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
+// la URL del Web App con ?p=ver y comparar con esta línea.
+const GAS_VERSION = "a59acab7325c";
+
 const SS_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
 
 // ── Evidencias por QR (Fase 1) ─────────────────────────────────────
@@ -1195,6 +1204,10 @@ function doGet(e) {
   }
   if (e && e.parameter && e.parameter.p === "verify") {
     return verifyReq(e.parameter.reqId || "", e.parameter.t || "");
+  }
+  // D8 (2026-09-13) · qué versión está desplegada: ver GAS_VERSION, arriba del todo.
+  if (e && e.parameter && e.parameter.p === "ver") {
+    return _evJson({ ok: true, version: GAS_VERSION });
   }
   return ContentService.createTextOutput("FichasLarv-OK");
 }
