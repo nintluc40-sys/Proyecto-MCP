@@ -12,15 +12,27 @@
    ⚠ El tablero agrupa «Tipo de muestra» con `normTipoMuestra`, que pliega todo lo que empieza
    por «agua» a «Agua»: «Afluente» y «Efluente» NO empiezan así y se ven como tipos propios,
    que es lo que se quiere (son puntos distintos del agua de mar).
+   · «Algas»: Muestras suma «Agua Ultrafiltrada»; el formato gana pH, Alcalinidad, S‰, Calcio,
+     Magnesio, Potasio, Dureza total, Hierro, Fósforo, Cobre y Manganeso —los MISMOS parámetros
+     de los otros formatos: misma etiqueta, unidad y rango— y una columna NUEVA, «Sulfato».
+
+   ⚠⚠ SULFATO ES LA ÚNICA COLUMNA NUEVA DE LA HOJA, y va DETRÁS DE «Lote». La hoja «Calidad de
+   Agua» se escribe por POSICIÓN y medida el 2026-09-13 tenía 2081 filas en 47 columnas que
+   terminan en «Sesión · Lote». Meterla en `CAL_PARAM_ORDER` correría esas dos columnas (y la
+   clave de sesión del upsert) en todas las filas nuevas. Al final, `ensureHeaders` del GAS la
+   añade sola en la primera sincronización y el tope `LIMITS.cal.maxCols` (80) la admite.
    ============================================================ */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { CAL_PARAM_BY_KEY as TABLERO } from '../../microbiologia/calagua.data.js';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['CAL_FORMATS', 'renderCalNuevo', 'micTypeSet', 'loadCalDraft', 'saveCalDraft',
-  'collectCalDraft', 'buildCalPayload', 'CAL_SHEET_HEADERS'];
+  'collectCalDraft', 'buildCalPayload', 'CAL_SHEET_HEADERS', 'CAL_SID_COL', 'CAL_PARAMS',
+  'CAL_PARAMS_MAD_AGUA', '_calHeadLabel', 'calRangeOf', 'renderCalRangos'];
+const GAS = readFileSync(join(process.cwd(), 'GAS/Code.gs'), 'utf8');
 const H = {};
 
 beforeAll(async () => {
@@ -96,5 +108,103 @@ describe('Calidad de Agua · Maduración · Agua de mar · Muestra', () => {
     expect(fila.tipoMuestra).toBe('Efluente');
     const p = H.buildCalPayload([{ data: Object.assign({ formato: 'mad-mar', fechaMuestreo: '2026-09-13' }, fila) }]);
     expect(p.rows[0][col('Tipo de muestra')]).toBe('Efluente');
+  });
+});
+
+describe('Calidad de Agua · Algas · muestras, química y Sulfato', () => {
+  const MUESTRAS = ['Funda producción', 'Funda matriz', 'Reservorio PBR', 'Agua Ultrafiltrada'];
+  const QUIMICA = ['ph', 'alc', 'sal', 'calcio', 'magnesio', 'potasio', 'dureza', 'hierro', 'fosforo', 'cobre', 'manganeso'];
+
+  it('🔴 Muestras sugiere también «Agua Ultrafiltrada», al final', () => {
+    const c = H.CAL_FORMATS.algas.ctx.find((x) => x.k === 'muestras');
+    expect(c.type).toBe('txtlist');
+    expect(c.opts).toEqual(MUESTRAS);
+    pintar('algas');
+    expect(opcionesDe(celda('algas', 1, 'muestras'))).toEqual(MUESTRAS);
+  });
+
+  it('🔴 el formato lleva la química pedida, en ese orden, luego Sulfato y los cloros', () => {
+    expect(H.CAL_FORMATS.algas.params).toEqual([...QUIMICA, 'sulfato', 'cl_libre', 'cl_total', 'cl_comb']);
+  });
+
+  it('🔴 los parámetros añadidos son LOS MISMOS de los otros formatos (etiqueta, unidad, rango)', () => {
+    QUIMICA.forEach((pk) => {
+      expect(H.CAL_PARAMS_MAD_AGUA, pk + ' no existe en los otros formatos').toContain(pk);
+      expect(H.calRangeOf(pk, 'algas'), 'rango de ' + pk).toEqual(H.calRangeOf(pk, 'mad'));
+    });
+    expect(H._calHeadLabel('calcio')).toBe('Calcio (mg/L)');
+  });
+
+  it('🔴 Sulfato es un parámetro con su etiqueta y su unidad', () => {
+    expect(H.CAL_PARAMS.sulfato && H.CAL_PARAMS.sulfato.l).toBe('Sulfato');
+    expect(H._calHeadLabel('sulfato')).toBe('Sulfato (mg/L)');
+  });
+
+  it('🔴 la grilla de Algas pinta una celda para cada parámetro nuevo', () => {
+    pintar('algas');
+    [...QUIMICA, 'sulfato'].forEach((pk) => {
+      expect(celda('algas', 1, pk), 'falta la celda ' + pk).toBeTruthy();
+    });
+  });
+
+  it('🔴🔴 Sulfato va AL FINAL de la hoja: Sesión y Lote no se mueven de sitio', () => {
+    const h = H.CAL_SHEET_HEADERS;
+    expect(h[h.length - 1]).toBe('Sulfato');
+    expect(h.indexOf('Sesión')).toBe(45);   // medido en la hoja de producción el 2026-09-13
+    expect(h.indexOf('Lote')).toBe(46);
+    expect(H.CAL_SID_COL).toBe(45);
+    expect(h.filter((x) => x === 'Sulfato')).toHaveLength(1);
+  });
+
+  it('🔴 el viaje: lo tecleado en Algas llega a su columna, Sulfato incluido', () => {
+    pintar('algas');
+    celda('algas', 1, 'muestras').value = 'Agua Ultrafiltrada';
+    celda('algas', 1, 'ph').value = '7.9';
+    celda('algas', 1, 'magnesio').value = '1300';
+    celda('algas', 1, 'sulfato').value = '2400';
+    celda('algas', 1, 'cl_libre').value = '0.2';
+    const fila = H.collectCalDraft().sections.algas.rows[0];
+    const p = H.buildCalPayload([{ data: Object.assign({ formato: 'algas', fechaMuestreo: '2026-09-13', sid: 's1', lote: 'L7' }, fila) }]);
+    const r = p.rows[0];
+    expect(r).toHaveLength(p.headers.length);
+    expect(r[col('Muestras')]).toBe('Agua Ultrafiltrada');
+    expect(r[col('pH')]).toBe(7.9);
+    expect(r[col('Magnesio')]).toBe(1300);
+    expect(r[col('Sulfato')]).toBe(2400);
+    expect(r[col('Cloro libre (mg/L)')]).toBe(0.2);
+    expect(r[col('Sesión')]).toBe('s1');
+    expect(r[col('Lote')]).toBe('L7');
+  });
+
+  it('una fila SIN sulfato manda la celda vacía, no un cero', () => {
+    const p = H.buildCalPayload([{ data: { formato: 'algas', fechaMuestreo: '2026-09-13', ph: '8' } }]);
+    expect(p.rows[0][col('Sulfato')]).toBe('');
+  });
+
+  it('el envío cabe en el tope de columnas del GAS', () => {
+    const m = GAS.match(/cal:\s*\{\s*maxRows:\s*\d+,\s*maxCols:\s*(\d+)/);
+    expect(m, 'no se encontró LIMITS.cal en Code.gs').toBeTruthy();
+    expect(H.CAL_SHEET_HEADERS.length).toBeLessThanOrEqual(Number(m[1]));
+  });
+
+  it('🔴 el TABLERO conoce cada parámetro que la ficha escribe, con la misma cabecera', () => {
+    /* El tablero localiza las columnas por cabecera (`col`). Un parámetro que la ficha manda y
+       el tablero no declara llega a la hoja y NUNCA se ve: es justo lo que habría pasado con
+       Sulfato. Se barren TODOS los de la ficha (menos los pares antes/después del Ensayo, que
+       el tablero lleva en su catálogo aparte). */
+    const claves = Object.keys(H.CAL_PARAMS).filter((k) => !/_(a|d)$/.test(k));
+    expect(claves).toContain('sulfato');
+    claves.forEach((k) => {
+      expect(TABLERO[k], 'el tablero no declara ' + k).toBeTruthy();
+      expect(TABLERO[k].col, 'cabecera de ' + k).toBe(H.CAL_PARAMS[k].l);
+    });
+  });
+
+  it('🔴 en ⚙️ Rangos se le puede poner rango a Sulfato', () => {
+    let fp = document.getElementById('fp-micfact');
+    if (!fp) { fp = document.createElement('div'); fp.id = 'fp-micfact'; document.body.appendChild(fp); }
+    H.renderCalRangos();
+    expect(fp.textContent).toContain('Sulfato');
+    expect(fp.querySelector('[onchange*="calRangeSet(\'sulfato\'"]')).toBeTruthy();
   });
 });

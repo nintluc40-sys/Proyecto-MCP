@@ -15787,6 +15787,9 @@ const CAL_PARAMS = {
   amonio:{l:"Amonio"}, ntot:{l:"Nitrógeno total"}, calcio:{l:"Calcio"}, magnesio:{l:"Magnesio"},
   potasio:{l:"Potasio"}, dureza:{l:"Dureza total"}, hierro:{l:"Hierro"}, fosforo:{l:"Fósforo"},
   cobre:{l:"Cobre"}, manganeso:{l:"Manganeso"},
+  // 2026-09-13 (usuario, formato Algas). NO está en CAL_PARAM_ORDER: su columna va al FINAL
+  // de la hoja, detrás de «Lote» (ver CAL_SHEET_HEADERS y buildCalPayload).
+  sulfato:{l:"Sulfato"},
   sal_a:{l:"S‰ antes"}, sal_d:{l:"S‰ después"}, ph_a:{l:"pH antes"}, ph_d:{l:"pH después"},
   calcio_a:{l:"Calcio antes"}, calcio_d:{l:"Calcio después"},
   magnesio_a:{l:"Magnesio antes"}, magnesio_d:{l:"Magnesio después"},
@@ -15796,7 +15799,7 @@ const CAL_PARAMS = {
 // Orden estable de columnas de parámetros en la hoja ancha.
 const CAL_PARAM_ORDER = ["sal","ph","alc","temp","nitrito","tan","amtox","nitrato","amonio","ntot","calcio","magnesio","potasio","dureza","hierro","fosforo","cobre","manganeso","sal_a","sal_d","ph_a","ph_d","calcio_a","calcio_d","magnesio_a","magnesio_d","potasio_a","potasio_d","cl_libre","cl_total","cl_comb"];
 const CAL_PARAMS_FULL = ["sal","ph","alc","temp","nitrato","nitrito","tan","amtox","amonio","ntot","calcio","magnesio","potasio","dureza","hierro","fosforo","cobre","manganeso"];
-const CAL_ALGAS_MUESTRA = ["Funda producción","Funda matriz","Reservorio PBR"];
+const CAL_ALGAS_MUESTRA = ["Funda producción","Funda matriz","Reservorio PBR","Agua Ultrafiltrada"];
 // Sugerencias de la columna "Muestra" de Maduración · Agua de mar (admite escribir otra).
 // 2026-09-13 (usuario): + «Afluente» y «Efluente», detrás de «Agua de mar». Son valores de
 // «Tipo de muestra», no columnas: no tocan la hoja ni el GAS.
@@ -15872,7 +15875,10 @@ const CAL_FORMATS = {
   "algas": {
     depto:"Algas", label:"Algas",
     ctx:[ { k:"muestras", l:"Muestras", type:"txtlist", opts:CAL_ALGAS_MUESTRA, w:150 } ],
-    params:["cl_libre","cl_total","cl_comb"]
+    // 2026-09-13 (usuario): la química de los otros formatos —las MISMAS claves, así que misma
+    // etiqueta, unidad y rango— en el orden pedido, luego Sulfato y los cloros de siempre.
+    params:["ph","alc","sal","calcio","magnesio","potasio","dureza","hierro","fosforo","cobre","manganeso",
+            "sulfato","cl_libre","cl_total","cl_comb"]
   }
 };
 const CAL_FORMAT_KEYS = ["larv","mad","mad-agua","mad-ras","mad-mar","mad-ensayo","algas"];
@@ -16673,6 +16679,7 @@ const CAL_SHEET_HEADERS = (function(){
   CAL_PARAM_ORDER.forEach(pk=> h.push(CAL_PARAMS[pk].l));
   h.push("Sesión");   // id único por análisis (clave de upsert; vacío en filas heredadas)
   h.push("Lote");     // añadida al FINAL (el GAS escribe por posición; no desalinea lo existente)
+  h.push("Sulfato");  // 2026-09-13 · col. 48, también al FINAL por lo mismo: la hoja tenía 47 (medido)
   return h;
 })();
 const CAL_SID_COL = CAL_SHEET_HEADERS.indexOf("Sesión");
@@ -16689,7 +16696,8 @@ function buildCalPayload(records){
     ];
     CAL_PARAM_ORDER.forEach(pk=>{ const v=parseFloat(d[pk]); row.push(isFinite(v)?v:""); });
     row.push(sanitizeStr(d.sid||""));   // Sesión
-    row.push(sanitizeStr(d.lote||""));  // Lote (última columna)
+    row.push(sanitizeStr(d.lote||""));  // Lote
+    { const v=parseFloat(d.sulfato); row.push(isFinite(v)?v:""); }   // Sulfato (última columna)
     return row;
   });
   return { sheetName:CAL_SHEET, headers:CAL_SHEET_HEADERS, rows, replaceKey:true, keyCols:[0,2,4,5,CAL_SID_COL] };
@@ -16771,9 +16779,9 @@ function renderCalRangos(){
   const fp=document.getElementById("fp-micfact"); if(!fp) return;
   const R=loadCalRanges();
   const groupDefs=[
-    { t:"Parámetros generales (Larvicultura / Maduración / RAS / Agua)", keys:CAL_PARAMS_FULL },
+    { t:"Parámetros generales (Larvicultura / Maduración / RAS / Agua / Algas)", keys:CAL_PARAMS_FULL },
     { t:"Ensayo (antes / después)", keys:["sal_a","sal_d","ph_a","ph_d","calcio_a","calcio_d","magnesio_a","magnesio_d","potasio_a","potasio_d"] },
-    { t:"Cloro (Algas)", keys:["cl_libre","cl_total","cl_comb"] }
+    { t:"Algas · Sulfato y Cloro", keys:["sulfato","cl_libre","cl_total","cl_comb"] }
   ];
   const inp=(pk,field,w)=>{ const r=R[pk]||{}; return `<input type="number" class="pinp" value="${r[field]!=null?r[field]:""}" onchange="calRangeSet('${pk}','${field}',this.value)" step="any" placeholder="—" style="width:${w}px">`; };
   const blocks=groupDefs.map(g=>{
@@ -16883,7 +16891,7 @@ function renderCalReporte(){
 // Unidad por parámetro (los pares antes/después heredan la del parámetro base).
 const CAL_UNITS = { sal:"‰", temp:"°C", alc:"mg/L", nitrito:"mg/L", tan:"mg/L", amtox:"mg/L",
   nitrato:"mg/L", amonio:"mg/L", ntot:"mg/L", calcio:"mg/L", magnesio:"mg/L", potasio:"mg/L",
-  dureza:"mg/L", hierro:"mg/L", fosforo:"mg/L", cobre:"mg/L", manganeso:"mg/L" };
+  dureza:"mg/L", hierro:"mg/L", fosforo:"mg/L", cobre:"mg/L", manganeso:"mg/L", sulfato:"mg/L" };
 function calUnit(pk){ return CAL_UNITS[pk.replace(/_(a|d)$/,"")] || ""; }
 function _calHeadLabel(pk){
   const l = CAL_PARAMS[pk] ? CAL_PARAMS[pk].l : pk;
@@ -17498,7 +17506,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "79754145f505";
+const GAS_VERSION = "e6ec06704881";
 
 const SS_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
 
@@ -17577,7 +17585,8 @@ const LIMITS = {
   // + margen para fases futuras. OJO: este tope DEBE cubrir todas las columnas, o doPost
   // rechaza el envío entero. Antes del 2026-08-30 era peor: truncaba la última en silencio.
   micro:   { maxRows: 300, maxCols: 90 },
-  // Calidad de Agua: hoja ancha (14 contexto + 31 parámetros = 45 cols) + margen.
+  // Calidad de Agua: hoja ancha (14 contexto + 31 parámetros + Sesión + Lote + Sulfato = 48
+  // cols, Sulfato desde el 2026-09-13 y AL FINAL: ensureHeaders la añade sola) + margen.
   cal:     { maxRows: 300, maxCols: 80 },
   // Patología en Fresco: 6 contexto + 15 columnas internas + Peso + Obs = 23 cols.
   pat:     { maxRows: 300, maxCols: 40 },

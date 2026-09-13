@@ -98,6 +98,7 @@ function hojaFalsa(filasIniciales, opts = {}) {
     insertColumnsAfter() {},
     setFrozenRows() {},
     appendRow(v) { escrituras.push('appendRow'); filas.push(v.slice()); },
+    deleteRows(r, n) { escrituras.push('deleteRows@' + r + 'x' + n); filas.splice(r - 1, n); },
     getDataRange: () => ({ getValues: () => filas.map((f) => f.slice()) }),
     getRange(r, c, nR = 1, nC = 1) {
       const rango = {
@@ -140,6 +141,7 @@ function gas(hojas) {
         getSheetByName: (n) => hojas[n] || null,
         insertSheet: (n) => (hojas[n] = hojaFalsa([])),
       }),
+      flush() {},
     },
     LockService: { getScriptLock: () => ({ waitLock() { candado.tomado++; }, releaseLock() { candado.soltado++; } }) },
     CacheService: { getScriptCache: () => ({ get: (k) => cache.get(k) || null, put: (k, v) => cache.set(k, v) }) },
@@ -427,5 +429,75 @@ describe('GAS · la llave de Desoves se guarda como TEXTO (D2, 2026-09-13)', () 
     const filas = buildDesoveRows({ fecha: '2026-09-07', desoves: ['0761', '0762', '0763'].map((cg) => ({ lote: 'BP', codigoGenetico: cg, desoves: '1' })) });
     expect(g.post({ sheetName: 'Maduración Lotes', headers: MAD_DESOVE_HEADERS, rows: filas }).status).toBe('ok');
     expect(hoja.filas.slice(1).map((f) => f[MAD_DESOVE_HEADERS.indexOf('Código genético')])).toEqual(['0761', '0762', '0763']);
+  });
+});
+
+/* ── Calidad de Agua · la columna nueva «Sulfato» (2026-09-13) ──────────────
+   La ficha de Algas manda desde hoy 48 columnas a una hoja que en producción tiene 47 (medido:
+   2081 filas, terminan en «Sesión · Lote»). Lo que tiene que pasar, y sólo se ve ejecutando el
+   `doPost` real: el GAS AÑADE «Sulfato» como columna 48 (`ensureHeaders`), escribe cada valor
+   bajo su cabecera y NO mueve nada de lo ya escrito. Y un cliente que aún mande 47 sigue
+   escribiendo bien sobre la hoja ya ensanchada. Las cabeceras salen del motor, no se teclean. */
+function cabecerasCalidad() {
+  const trozo = (a, z) => { const i = engineSrc.indexOf(a); return engineSrc.slice(i, engineSrc.indexOf(z, i) + z.length); };
+  const ctx = {};
+  createContext(ctx);
+  new Script(trozo('const CAL_PARAMS = {', '\n};') + '\n' + trozo('const CAL_PARAM_ORDER = [', '];')
+    + '\n' + trozo('const CAL_SHEET_HEADERS = (function(){', '})();') + '\n;globalThis.__h = CAL_SHEET_HEADERS;').runInContext(ctx);
+  return ctx.__h;
+}
+
+describe('GAS · Calidad de Agua recibe la columna nueva «Sulfato» sin desalinear nada', () => {
+  const CAL = cabecerasCalidad();
+  const CAL_47 = CAL.slice(0, CAL.indexOf('Sulfato'));
+  const KEYS = [0, 2, 4, 5, CAL.indexOf('Sesión')];
+  const filaCal = (cab, v) => cab.map((h) => (h in v ? v[h] : ''));
+
+  it('el fixture ejerce algo: el motor manda 48 y la hoja de producción tiene 47', () => {
+    expect(CAL).toHaveLength(48);
+    expect(CAL_47).toHaveLength(47);
+    expect(CAL_47[46]).toBe('Lote');
+  });
+
+  it('🔴 un envío de 48 añade «Sulfato» como columna 48 y cada dato cae bajo su cabecera', () => {
+    const vieja = filaCal(CAL_47, { 'Fecha muestreo': '2026-09-01', Departamento: 'Algas', Formato: 'Algas',
+      'Cloro libre (mg/L)': 0.3, Sesión: 's-vieja', Lote: 'L1' });
+    const hoja = hojaFalsa([CAL_47.slice(), vieja.slice()]);
+    const g = gas({ 'Calidad de Agua': hoja });
+    const r = g.post({ sheetName: 'Calidad de Agua', headers: CAL, replaceKey: true, keyCols: KEYS,
+      rows: [filaCal(CAL, { 'Fecha muestreo': '2026-09-13', Departamento: 'Algas', Formato: 'Algas',
+        Muestras: 'Agua Ultrafiltrada', pH: 7.9, Magnesio: 1300, Sesión: 's-nueva', Lote: 'L7', Sulfato: 2400 })] });
+    expect(r.status).toBe('ok');
+    expect(hoja.filas[0]).toHaveLength(48);
+    expect(hoja.filas[0][47]).toBe('Sulfato');
+    expect(hoja.filas[0].slice(0, 47)).toEqual(CAL_47);              // la cabecera vieja, intacta
+    expect(hoja.filas[1]).toEqual(vieja);                             // la fila vieja, intacta
+    const nueva = hoja.filas[2];
+    expect(nueva[CAL.indexOf('Sulfato')]).toBe(2400);
+    expect(nueva[CAL.indexOf('Lote')]).toBe('L7');
+    expect(nueva[CAL.indexOf('Sesión')]).toBe('s-nueva');
+    expect(nueva[CAL.indexOf('pH')]).toBe(7.9);
+  });
+
+  it('un cliente que aún manda 47 columnas sigue escribiendo bien sobre la hoja ya ensanchada', () => {
+    const hoja = hojaFalsa([CAL.slice()]);
+    const g = gas({ 'Calidad de Agua': hoja });
+    const r = g.post({ sheetName: 'Calidad de Agua', headers: CAL_47, replaceKey: true, keyCols: KEYS,
+      rows: [filaCal(CAL_47, { 'Fecha muestreo': '2026-09-13', Formato: 'Maduración · Agua', Sesión: 's2', Lote: 'L2' })] });
+    expect(r.status).toBe('ok');
+    expect(hoja.filas[0]).toEqual(CAL);                               // no encoge ni reescribe la cabecera
+    expect(hoja.filas[1][CAL.indexOf('Lote')]).toBe('L2');
+    expect(hoja.filas[1][CAL.indexOf('Sulfato')] ?? '').toBe('');
+  });
+
+  it('re-enviar la MISMA sesión con Sulfato la reemplaza, no la duplica', () => {
+    const hoja = hojaFalsa([CAL.slice()]);
+    const g = gas({ 'Calidad de Agua': hoja });
+    const envio = (s) => g.post({ sheetName: 'Calidad de Agua', headers: CAL, replaceKey: true, keyCols: KEYS,
+      rows: [filaCal(CAL, { 'Fecha muestreo': '2026-09-13', Departamento: 'Algas', Formato: 'Algas', Sesión: 's3', Sulfato: s })] });
+    expect(envio(100).status).toBe('ok');
+    expect(envio(250).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(2);
+    expect(hoja.filas[1][CAL.indexOf('Sulfato')]).toBe(250);
   });
 });

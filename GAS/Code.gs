@@ -21,7 +21,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "79754145f505";
+const GAS_VERSION = "e6ec06704881";
 
 const SS_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
 
@@ -100,7 +100,8 @@ const LIMITS = {
   // + margen para fases futuras. OJO: este tope DEBE cubrir todas las columnas, o doPost
   // rechaza el envío entero. Antes del 2026-08-30 era peor: truncaba la última en silencio.
   micro:   { maxRows: 300, maxCols: 90 },
-  // Calidad de Agua: hoja ancha (14 contexto + 31 parámetros = 45 cols) + margen.
+  // Calidad de Agua: hoja ancha (14 contexto + 31 parámetros + Sesión + Lote + Sulfato = 48
+  // cols, Sulfato desde el 2026-09-13 y AL FINAL: ensureHeaders la añade sola) + margen.
   cal:     { maxRows: 300, maxCols: 80 },
   // Patología en Fresco: 6 contexto + 15 columnas internas + Peso + Obs = 23 cols.
   pat:     { maxRows: 300, maxCols: 40 },

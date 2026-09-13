@@ -43,6 +43,9 @@ export const CAL_PARAMS = [
   P('calcio', 'Calcio', 'Calcio', 'mg/L', 'iones'),
   P('magnesio', 'Magnesio', 'Magnesio', 'mg/L', 'iones'),
   P('potasio', 'Potasio', 'Potasio', 'mg/L', 'iones'),
+  // 2026-09-13: la escribe el formato Algas de la ficha, en la columna 48 (detrás de «Lote»).
+  // Aquí se lee por cabecera, así que su sitio en este catálogo es sólo el de presentación.
+  P('sulfato', 'Sulfato', 'Sulfato', 'mg/L', 'iones'),
   P('dureza', 'Dureza total', 'Dureza total', 'mg/L', 'iones'),
   P('hierro', 'Hierro', 'Hierro', 'mg/L', 'metales'),
   P('fosforo', 'Fósforo', 'Fósforo', 'mg/L', 'metales', ['Fosforo']),
