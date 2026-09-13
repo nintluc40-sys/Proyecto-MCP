@@ -14312,6 +14312,10 @@ const MIC_PARAMS = {
   clev:   { l:"Conteo Lev.", noRange:true }
 };
 
+// Sugerencias de la columna «Muestra» de «Agua de mar y Reservorios» (usuario, 2026-09-13):
+// se elige una o se escribe otra. Va a la clave `muestras` (columna «Muestras» de la hoja), NO
+// a `tipoMuestra`: ése lleva el valor FIJO del formato, con el que el tablero decide el área.
+const MIC_AGUAMAR_MUESTRA = ["Agua de Mar","Reservorio"];
 // Formatos de Fase 1
 const MIC_FORMATS = {
   "larv-muestra": {
@@ -14428,7 +14432,7 @@ const MIC_FORMATS = {
   "agua-limpia-mar": {
     depto:"Maduración", label:"Agua de mar y Reservorios", fixedTipo:"Agua limpia y mar",
     rkeyFn:()=> "agua-limpia-mar",
-    ctx:[],
+    ctx:[ { k:"muestras", l:"Muestra", type:"txtlist", opts:MIC_AGUAMAR_MUESTRA, w:130 } ],
     params:["vamar","vverd","vtot","valg","vvuln","vpara","aero","pseudo","btot","bnar","hongos"]
   },
   "externas": {
