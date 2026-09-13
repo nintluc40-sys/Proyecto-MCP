@@ -15794,7 +15794,9 @@ const CAL_PARAM_ORDER = ["sal","ph","alc","temp","nitrito","tan","amtox","nitrat
 const CAL_PARAMS_FULL = ["sal","ph","alc","temp","nitrato","nitrito","tan","amtox","amonio","ntot","calcio","magnesio","potasio","dureza","hierro","fosforo","cobre","manganeso"];
 const CAL_ALGAS_MUESTRA = ["Funda producción","Funda matriz","Reservorio PBR"];
 // Sugerencias de la columna "Muestra" de Maduración · Agua de mar (admite escribir otra).
-const CAL_MAR_MUESTRA = ["Agua de mar"];
+// 2026-09-13 (usuario): + «Afluente» y «Efluente», detrás de «Agua de mar». Son valores de
+// «Tipo de muestra», no columnas: no tocan la hoja ni el GAS.
+const CAL_MAR_MUESTRA = ["Agua de mar","Afluente","Efluente"];
 // Juego de parámetros común a los TRES formatos de agua de Maduración (Agua, RAS y
 // Agua de mar). Desde que «Maduración · Agua» ganó Temperatura —2026-08-26, para que
 // pudiera calcular el Amonio Tóxico— los tres comparten EXACTAMENTE esta lista, así
