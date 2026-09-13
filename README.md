@@ -253,10 +253,13 @@ Dos consecuencias que conviene tener presentes al desplegar:
   GAS desplegado con el de la app y dice si hay que volver a desplegar. Por debajo, la URL
   del Web App con `?p=ver` devuelve el sello `GAS_VERSION`, que es la huella de `Code.gs`
   y lo exige `gas-version.test.js`: no puede quedarse atrás sin poner la suite en rojo.
-- 🔴 **Publicar el cliente** (`git push` a `master`). GitHub Pages sirve una versión
-  anterior al registro operativo. Con la guarda desplegada, sus envíos de Tanques y de
-  Desoves se **rechazan** en vez de escribir columnas corridas: lo tecleado se queda en el
-  dispositivo, pero no llega a la hoja hasta que ese dispositivo se actualice.
+- ✅ **El cliente ya está publicado** (push del 2026-09-13; Pages sirve el `engine.js` del
+  commit, comprobado byte a byte). Un dispositivo que siga con la app en caché envía aún el
+  esquema anterior: con la guarda desplegada, sus envíos de Tanques y de Desoves se
+  **rechazan** en vez de escribir columnas corridas y lo tecleado se queda en el dispositivo
+  hasta que la app se recargue.
+- ℹ La hoja «Calidad de Agua» ganará la columna 48 «Sulfato» en la primera sincronización del
+  formato Algas: la añade el GAS al final, sin mover las anteriores, y no exige re-desplegarlo.
 - **Maduración · histórico** (Fase 5): la única fase del registro operativo sin construir.
   Aplazada a propósito hasta probar el resto en operación.
 - **Maduración · vaciado de las hojas antiguas**: cuando el registro operativo se dé por
