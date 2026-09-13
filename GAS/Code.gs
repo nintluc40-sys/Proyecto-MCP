@@ -21,7 +21,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "039648a0d4c8";
+const GAS_VERSION = "79754145f505";
 
 const SS_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
 
@@ -1245,7 +1245,7 @@ function verifyReq(reqId, t) {
 // el monolito standalone). GET ?p=rows&sheet=<nombre>&t=<token>. Devuelve JSON
 // {ok, sheet, headers, rows} con cada fila como objeto {cabecera: valor}. Sólo
 // hojas de ALLOWED; respeta SHARED_TOKEN si está configurado (mismo gate que
-// doPost). Fechas → yyyy-MM-dd. Tope 5000 filas.
+// doPost). Fechas → yyyy-MM-dd. Tope 20000 filas (ver TOPE_FILAS).
 //
 // El parámetro "cols" (opcional, ?cols=A,B,C) PROYECTA: devuelve sólo esas columnas.
 // Medido el 2026-08-12 contra el despliegue real: "Maduración MATRIZ" son 1508 filas
@@ -1284,8 +1284,12 @@ function sheetRows(name, t, cols) {
     // sobre lo devuelto —el libro mayor de Maduración lo hace— obtendría un saldo
     // incompleto sin un solo síntoma, que es el peor resultado posible aquí.
     // «Maduración Tanques» crece hasta 38 filas al día (los tanques de las 5 salas),
-    // así que el tope no es teórico: se alcanza en unos meses de uso diario.
-    var TOPE_FILAS = 5000;
+    // así que el tope no es teórico: con uso diario, se acaba alcanzando.
+    // 🔑 D11 (2026-09-13): el tope pasa de 5000 a 20000. Se lee desde ARRIBA, así que lo
+    // que se pierde al recortar son las filas MÁS RECIENTES; con 5000, la Bitácora del
+    // reproductivo (2227 filas y unas 30 nuevas al día) lo alcanzaba entre diciembre de
+    // 2026 y enero de 2027. El precio es el tamaño: 20000 filas de Bitácora rondan 2,4 MB.
+    var TOPE_FILAS = 20000;
     var rows = [], cortada = false;
     for (var i = 1; i < vals.length; i++) {
       if (rows.length >= TOPE_FILAS) { cortada = true; break; }

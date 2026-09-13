@@ -243,7 +243,9 @@ Dos consecuencias que conviene tener presentes al desplegar:
 > re-desplegar un GAS que ya estaba re-desplegado.)*
 
 - 🔴 **Re-desplegar el GAS** para activar la **guarda de esquema** del registro operativo
-  (ver la sección de Maduración) y la **prueba de versión**. Las tres hojas nuevas —Ingreso,
+  (ver la sección de Maduración), la **prueba de versión**, la **llave de Desoves guardada
+  como texto** y el **tope de lectura de `?p=rows` en 20000 filas** (antes 5000; el registro
+  reproductivo avisa si una hoja llega recortada). Las tres hojas nuevas —Ingreso,
   Movimientos y Fin de Ciclo— **ya escriben**: ese despliegue entró entre el 09-09 y el
   09-12. Pegar `GAS/Code.gs` en Apps Script y publicar una **versión nueva**; guardar sin
   publicar no cambia lo que sirve el Web App.
