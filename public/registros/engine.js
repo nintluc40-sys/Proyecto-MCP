@@ -1230,6 +1230,12 @@ function _esRechazoDeEntorno(msg){
   // «Límite de columnas excedido» es SIEMPRE de entorno: los esquemas del cliente son
   // fijos, así que la única forma de excederlo es que el GAS desplegado sea anterior a
   // esta app. El registro está perfecto y debe ESPERAR en la cola, no descartarse.
+  // «Esquema desactualizado» (V3, 2026-09-13) también es de entorno: la hoja y la app no
+  // tienen las mismas columnas y el GAS no escribió nada. El registro está bien; lo que hay
+  // que arreglar es la versión de la app (o una cabecera retocada a mano en la hoja).
+  // ⚠ Va en su PROPIA línea y no dentro del return de abajo: esa línea es el ancla de la
+  //   mutación Q1 de mutar-lotes-y-motivo, y reescribirla la dejaba sin vigilar.
+  if(m.indexOf("esquema desactualizado") !== -1) return true;
   return m.indexOf("hoja no permitida") !== -1 || m.indexOf("no autorizado") !== -1 ||
          m.indexOf("límite de columnas") !== -1;
 }
@@ -1242,6 +1248,7 @@ function _gasMotivo(gasMsg){
   else if(ml.indexOf("límite de filas") !== -1)     pista = " · envía menos registros de una vez";
   else if(ml.indexOf("límite de columnas") !== -1)  pista = " · el GAS desplegado es anterior a esta app: vuelve a desplegarlo desde Apps Script";
   else if(ml.indexOf("no autorizado") !== -1)       pista = " · revisa el token compartido en la configuración";
+  else if(ml.indexOf("esquema desactualizado") !== -1) pista = " · la app y la hoja no tienen las mismas columnas: recarga la app para actualizarla; si ya lo está, revisa la fila de cabecera de la hoja";
   return " — " + m + pista;
 }
 function _syncNotOkUI(outcome, errLabel, indId, gasMsg){
@@ -5880,8 +5887,15 @@ function madConstruirLibro(fuentes, opts){
          devolvería a Producción el mismo día en que llegan los animales nuevos. Sólo una
          cópula DESDE el último ingreso vuelve a romperla. El flujo se recorre en orden
          cronológico, así que con borrarla aquí basta.
-         Dos filas del MISMO día no reinician nada: la comparación es estricta. */
-      if(!lotes[lote].ingreso || fecha>lotes[lote].ingreso){ lotes[lote].ingreso=fecha; lotes[lote].copulaDesde=null; }
+         Dos filas del MISMO día no reinician nada: la comparación es estricta.
+         🔴 Y POR LA MISMA RAZÓN SE BORRA «cerrado» (2026-09-09). Sin esto, un lote cerrado
+         en Total que vuelve a recibir animales se quedaba «Cerrado» PARA SIEMPRE con vivos
+         en el saldo: el estado imposible que M19 de su banco declara inaceptable —«el lote
+         quedaría cerrado y con animales vivos a la vez»—. Y llegaba a la HOJA:
+         madEstadoDeSala devolvía «Cerrado», que el desplegable de Estado de «Maduración
+         Sala» NO TIENE, así que la propuesta vaciaba esa casilla en silencio.
+         Cuenta el cierre POSTERIOR al último ingreso, igual que la cópula. */
+      if(!lotes[lote].ingreso || fecha>lotes[lote].ingreso){ lotes[lote].ingreso=fecha; lotes[lote].copulaDesde=null; lotes[lote].cerrado=null; }
       return;
     }
     // MOVIMIENTOS (Fase 3). Lo MEDIDO es cuántos animales se movieron; DE QUÉ LOTE eran es
@@ -6050,15 +6064,31 @@ async function madSaldoCargar(force){
   // La lectura se apoya en la cañería del reproductivo, que ya resuelve reintentos y
   // caché y es GENÉRICA: toma el nombre de la hoja. El prefijo _repro es de dónde nació,
   // no de lo que hace. Duplicarla habría creado dos cañerías divergiendo en silencio.
-  await _reproEnsureSheet(MAD_LIBRO_SHEETS.ingreso, null);
-  await _reproEnsureSheet(MAD_LIBRO_SHEETS.movimientos, null);
-  await _reproEnsureSheet(MAD_LIBRO_SHEETS.tanques, null);
-  await _reproEnsureSheet(MAD_LIBRO_SHEETS.cierres, null);
+  /* ⚠⚠ force SE PROPAGA, y hasta el 2026-09-09 no lo hacía: el parámetro se declaraba
+     y se ignoraba, así que tras la PRIMERA lectura el libro se quedaba congelado toda
+     la sesión. Los CUATRO botones que llaman aquí pasan true —🔄 Recalcular, el saldo
+     de los orígenes de Movimientos, los vivos de Tanques y la propuesta de estado de
+     Salas— y dos de ellos rotulan «Se recalcula al pulsar de nuevo». Registrar un
+     ingreso y pulsar 🔄 no cambiaba una sola cifra.
+     🔴 El peor de los cuatro es el de Salas, que GUARDA lo propuesto: escribía en la
+     hoja un estado deducido de un libro viejo. */
+  await _reproEnsureSheet(MAD_LIBRO_SHEETS.ingreso, null, force);
+  await _reproEnsureSheet(MAD_LIBRO_SHEETS.movimientos, null, force);
+  await _reproEnsureSheet(MAD_LIBRO_SHEETS.tanques, null, force);
+  await _reproEnsureSheet(MAD_LIBRO_SHEETS.cierres, null, force);
   const fallos = [];
   if(!_madHojaLeida(MAD_LIBRO_SHEETS.ingreso)) fallos.push(MAD_LIBRO_SHEETS.ingreso);
   if(!_madHojaLeida(MAD_LIBRO_SHEETS.movimientos)) fallos.push(MAD_LIBRO_SHEETS.movimientos);
   if(!_madHojaLeida(MAD_LIBRO_SHEETS.tanques)) fallos.push(MAD_LIBRO_SHEETS.tanques);
   if(!_madHojaLeida(MAD_LIBRO_SHEETS.cierres)) fallos.push(MAD_LIBRO_SHEETS.cierres);
+  /* ⚠⚠ UNA HOJA RECORTADA NO ES UNA HOJA LEÍDA, y va aparte de los fallos porque no es lo
+     mismo: aquélla no se pudo leer, ésta se leyó A MEDIAS. Las dos hacen lo mismo con el
+     saldo —lo dejan incompleto sin un solo síntoma—, así que las dos tienen que callar el
+     ✅. «Maduración Tanques» crece hasta 38 filas al día, de modo que el tope de 5000 del
+     servidor no es teórico: se alcanza con unos meses de uso diario. */
+  const recortadas = [];
+  [MAD_LIBRO_SHEETS.ingreso, MAD_LIBRO_SHEETS.movimientos, MAD_LIBRO_SHEETS.tanques, MAD_LIBRO_SHEETS.cierres]
+    .forEach(function(h){ if(_reproTrunc && _reproTrunc[h]) recortadas.push(h); });
   _madLibro = madConstruirLibro({
     ingresos:    _reproReadRows(MAD_LIBRO_SHEETS.ingreso),
     movimientos: _reproReadRows(MAD_LIBRO_SHEETS.movimientos),
@@ -6066,7 +6096,22 @@ async function madSaldoCargar(force){
     cierres:     _reproReadRows(MAD_LIBRO_SHEETS.cierres)
   }, { hoy: today() });
   _madLibro.fallos = fallos;
+  _madLibro.recortadas = recortadas;
   return _madLibro;
+}
+/* ¿Se puede afirmar algo del saldo? Devuelve el motivo por el que NO, o "" si el libro
+   está entero. Vive UNA vez porque los CUATRO consumidores —Saldo, el saldo de los
+   orígenes de Movimientos, los vivos de Tanques y la propuesta de estado de Salas— tienen
+   que decir lo mismo: cuatro textos escritos aparte divergen, y el que se quede atrás dirá
+   «✅» sobre un libro a medias. Ese ✅ es justo lo que este módulo existe para no dar. */
+function madLibroIncompleto(libro){
+  const f=(libro&&libro.fallos)||[], r=(libro&&libro.recortadas)||[];
+  const noLeidas="no se pudieron leer "+f.length+" hoja(s) ("+f.join(", ")+")";
+  const cortadas=r.length+" hoja(s) llegaron RECORTADAS por el tope del servidor ("+r.join(", ")+")";
+  if(f.length && r.length) return noLeidas+", y "+cortadas;
+  if(f.length) return noLeidas;
+  if(r.length) return cortadas;
+  return "";
 }
 function _madSaldoAvisoHTML(a){
   return '<li style="margin-bottom:3px">'+escapeHtml(a.fecha)+' · '+escapeHtml(a.texto)+'</li>';
@@ -6093,7 +6138,11 @@ function _madSaldoHTML(libro){
   }).join("");
   const lotes=Object.keys(libro.lotes).sort().map(function(n){
     const L=libro.lotes[n];
-    const badge=L.estado===MAD_EST_CUAR ? 'background:#fef3c7;color:#92400e' : 'background:#dcfce7;color:#166534';
+    /* ⚠ «Cerrado» tiene color PROPIO: con dos ramas caía en el verde de Producción, y un
+       lote terminado pintado como uno en producción se lee mal justo cuando más importa. */
+    const badge=L.estado===MAD_EST_CUAR ? 'background:#fef3c7;color:#92400e'
+      : L.estado===MAD_EST_CERRADO ? 'background:#e2e8f0;color:#475569'
+      : 'background:#dcfce7;color:#166534';
     return '<tr><td><b>'+escapeHtml(L.lote)+'</b></td>'
       + '<td style="font-size:10px">'+escapeHtml(L.ingreso||"—")+'</td>'
       + '<td><span style="'+badge+';padding:1px 6px;border-radius:4px;font-size:10px">'+escapeHtml(L.estado||"—")+'</span></td>'
@@ -6101,15 +6150,17 @@ function _madSaldoHTML(libro){
       + '<td style="text-align:right;font-variant-numeric:tabular-nums">'+L.hembras+'</td>'
       + '<td style="text-align:right">'+L.ubicaciones.length+'</td></tr>';
   }).join("");
-  // Con una hoja sin leer NO se puede afirmar nada del saldo: se dice, y se calla el ✅.
-  const roto=(libro.fallos&&libro.fallos.length)
+  // Con una hoja sin leer —o leída A MEDIAS— NO se puede afirmar nada del saldo: se dice,
+  // y se calla el ✅.
+  const _mal=madLibroIncompleto(libro);
+  const roto=_mal
     ? '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#991b1b">'
-      + '<b>No se pudieron leer '+libro.fallos.length+' hoja(s):</b> '+escapeHtml(libro.fallos.join(", "))+'.<br>'
-      + 'El saldo de abajo está INCOMPLETO y las discrepancias no significan nada todavía. '
+      + '<b>Saldo INCOMPLETO:</b> '+escapeHtml(_mal)+'.<br>'
+      + 'Las discrepancias de abajo no significan nada todavía. '
       + 'Si la hoja aún no existe, aparecerá con el primer registro que se envíe.'
       + '</div>'
     : '';
-  const av=(libro.fallos&&libro.fallos.length)
+  const av=_mal
     ? ''
     : libro.avisos.length
     ? '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#92400e">'
@@ -6918,10 +6969,11 @@ function _madMovPintaSaldo(libro){
   const nota = document.getElementById("mv-saldo-nota");
   /* Si alguna hoja no se pudo leer, el saldo está INCOMPLETO y hay que decirlo ANTES de
      enseñarlo. Callarlo sería repetir el defecto A1: un libro a medias leído como completo. */
-  const roto = !!(libro.fallos && libro.fallos.length);
+  const _mal = madLibroIncompleto(libro);
+  const roto = !!_mal;
   if(nota){
     nota.innerHTML = roto
-      ? '<span style="color:#991b1b">⚠ No se pudieron leer '+libro.fallos.length+' hoja(s) ('+escapeHtml(libro.fallos.join(", "))+'): lo de abajo está INCOMPLETO y puede quedarse corto.</span>'
+      ? '<span style="color:#991b1b">⚠ '+escapeHtml(_mal)+': lo de abajo está INCOMPLETO y puede quedarse corto.</span>'
       : '<span style="color:#166534">Saldo al '+escapeHtml(today())+'. Se recalcula al pulsar de nuevo.</span>';
   }
   document.querySelectorAll("#mv-tramos tr.mv-tramo").forEach(function(tr){
@@ -6936,7 +6988,11 @@ function _madMovPintaSaldo(libro){
       c.style.color = "#92400e";
       return;
     }
-    c.textContent = T.machos + "♂ " + T.hembras + "♀";
+    /* El TOTAL lo pidió el usuario el 2026-09-12 (punto D6), para que esta cifra se lea IGUAL
+       que los vivos de Tanques: es la misma clase de dato —el saldo vivo de un tanque— y dos
+       pantallas con formatos distintos invitan a leerlas distinto. La prueba
+       mad-saldo-origen-total.test.js exige que las dos escriban exactamente lo mismo. */
+    c.textContent = T.machos + "♂ " + T.hembras + "♀ · " + (T.machos + T.hembras);
     c.style.color = (T.machos + T.hembras) > 0 ? "#0369a1" : "#92400e";
   });
 }
@@ -7780,6 +7836,14 @@ const _REPRO_CACHE_TTL = 15*24*60*60*1000;      // 15 días: más vieja no se us
 var _reproSheets      = null;    // respaldo GAS: { "<hoja>": [filas] }, puede ser PARCIAL
 var _reproSheetsState = "idle";  // idle | loading | ready | error
 var _reproSheetsErr   = "";      // motivo legible del último fallo
+/* ⚠⚠ EL GAS RECORTA A 5000 FILAS, y desde el 2026-09-09 lo DICE (truncated+limit en la
+   respuesta). Aquí se recuerda por hoja, porque quien SUMA sobre lo devuelto —el libro
+   mayor de Maduración— tiene que saber que sumó sobre media hoja: un saldo incompleto que
+   se lee como completo es el peor resultado posible de ese módulo, y es exactamente la
+   familia del defecto A1 (hoja ilegible tomada por vacía).
+   ⚠ Se escribe en CADA lectura buena, también cuando NO recorta: así una hoja que dejó de
+   estarlo no arrastra el aviso de la lectura anterior. */
+var _reproTrunc       = {};      // { "<hoja>": true } si el GAS la devolvió RECORTADA
 var _reproMatrixSrc   = "";      // "store" | "red" | "cache" | "" — procedencia en uso
 var _reproMatrixTs    = 0;       // fecha (ms) de la copia en uso si vino de caché
 var _reproLoadPromise = null;    // carga COMPLETA (Consulta) en curso
@@ -7853,6 +7917,9 @@ async function _reproFetchSheet(name, cols){
       let j=null;
       try{ j=JSON.parse(txt); }catch(_){ throw new Error("Respuesta ilegible del servidor"); }
       if(!j || !j.ok) throw new Error((j&&j.error) || "Respuesta inválida");
+      // Un GAS anterior al 2026-09-09 no manda «truncated»: undefined → false, y el
+      // comportamiento es exactamente el de antes. Retrocompatible a propósito.
+      _reproTrunc[name] = !!j.truncated;
       return j.rows || [];
     }catch(x){
       failed = (x && x.name==="AbortError")
@@ -7898,9 +7965,19 @@ async function _reproEnsureMatrixRun(){
 /* Carga puntual de UNA hoja suelta. La usa la transferencia, que necesita el ledger
    de Transferencias para reconciliar el TR-ID contra el máximo real. Tolerante: si
    falla, el llamador sigue con lo que haya. */
-async function _reproEnsureSheet(name, cols){
-  if(_reproStoreRows(name).length) return;
-  if(_reproSheets && _reproSheets[name]) return;
+async function _reproEnsureSheet(name, cols, force){
+  if(!force){
+    if(_reproStoreRows(name).length) return;
+    if(_reproSheets && _reproSheets[name]) return;
+  } else if(_reproSheets){
+    /* ⚠⚠ CON force SE BORRA LA ENTRADA ANTES DE RELEER, y ésa es la mitad importante
+       de este parámetro. _madHojaLeida da por leída una hoja por el mero hecho de
+       tener clave en _reproSheets; si la relectura FALLA y la entrada vieja siguiera
+       ahí, el libro se calcularía con datos de hace horas mientras la vista canta «sin
+       discrepancias». Es el defecto A1 de la auditoría del 09-08 otra vez —una hoja no
+       leída tomada por leída—, sólo que con la lectura vieja en lugar de con []. */
+    delete _reproSheets[name];
+  }
   try{ _reproPutRows(name, await _reproFetchSheet(name, cols||null)); }
   catch(_){ /* degradación decidida por el llamador */ }
 }
@@ -8242,6 +8319,17 @@ function _madReproShowReport(rep, duplicates, tipo, okSent){
 // Sin historial visual — la grilla ES la vista del día.
 const _SALA_TEMP_KEYS = ["temp_02","temp_04","temp_06","temp_08","temp_10","temp_12","temp_14","temp_16","temp_18","temp_20","temp_22","temp_00"];
 const _SALA_OX_KEYS   = ["ox_06","ox_12","ox_18","ox_00"];
+/* ⚠⚠ RANGO DE TEMPERATURA DE SALA · decisión del usuario (2026-09-12, punto D13): una sala de
+   maduración NO pasa de 40 °C. Vive en UN sitio porque lo usan dos —el min/max de la celda y
+   el colector— y dos números escritos aparte divergen en silencio.
+   🔴 Y FUERA DE RANGO NO SE RECORTA. Hasta ese día el colector pasaba el valor por sanitizeNum
+   con tope 50, y sanitizeNum RECORTA: un «289» tecleado sin la coma se guardaba como 50 (el 50 de la Sala 5 del 09-09,
+   entre 28,8 y 28,9, tiene toda la pinta de ser eso) y con el tope en 40 se habría guardado
+   como 40, una cifra plausible y falsa. Es la regla R2 de las fichas estándar —«ya NO se
+   recorta al rango»—, que esta grilla nunca había adoptado: la celda se marca y no se guarda.
+   El oxígeno conserva su tratamiento: la decisión fue sólo sobre la temperatura. */
+const _SALA_TEMP_MIN  = 0;
+const _SALA_TEMP_MAX  = 40;
 
 function renderMadSalas(){
   const fp = document.getElementById("fp-salas");
@@ -8280,7 +8368,7 @@ function renderMadSalas(){
     const d = r ? r.data : {};
     const st = r ? (r.synced ? "✅" : "⏳") : "○";
     const tempCells = _SALA_TEMP_KEYS.map((k,ki) =>
-      `<td><input class="pinp" type="number" name="sg_${si}_${k}" data-r="${si}" data-c="${3+ki}" onpaste="madGridPaste(event,'salas')" value="${vl(d,k)}" min="0" max="50" step="0.1" inputmode="decimal" placeholder="-"></td>`
+      `<td><input class="pinp" type="number" name="sg_${si}_${k}" data-r="${si}" data-c="${3+ki}" onpaste="madGridPaste(event,'salas')" value="${vl(d,k)}" min="${_SALA_TEMP_MIN}" max="${_SALA_TEMP_MAX}" step="0.1" inputmode="decimal" placeholder="-"></td>`
     ).join("");
     const oxCells = _SALA_OX_KEYS.map((k,ki) =>
       `<td><input class="pinp" type="number" name="sg_${si}_${k}" data-r="${si}" data-c="${15+ki}" onpaste="madGridPaste(event,'salas')" value="${vl(d,k)}" min="0" max="20" step="0.01" inputmode="decimal" placeholder="-"></td>`
@@ -8378,7 +8466,8 @@ async function madSalasProponerEstado(){
 function _madSalasPintaEstado(libro){
   const fp = document.getElementById("fp-salas"); if(!fp) return;
   const nota = document.getElementById("sal-estado-nota");
-  const roto = !!(libro.fallos && libro.fallos.length);
+  const _mal = madLibroIncompleto(libro);
+  const roto = !!_mal;
   const fechaEl = document.getElementById("mad-salas-fecha");
   const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
   /* 🔴🔴 CON EL LIBRO A MEDIAS NO SE RELLENA NADA, y aquí es más grave que en Tanques: allí
@@ -8387,23 +8476,37 @@ function _madSalasPintaEstado(libro){
      quedaría escrito. Es el defecto A1 de la auditoría del 09-08 —una hoja ilegible leída
      como vacía— con consecuencias permanentes. */
   if(roto){
-    if(nota) nota.innerHTML = '<span style="color:#991b1b">⚠ No se pudieron leer ' + libro.fallos.length
-      + ' hoja(s) (' + escapeHtml(libro.fallos.join(", ")) + '): la propuesta sería INCOMPLETA y no se ha rellenado nada.</span>';
+    if(nota) nota.innerHTML = '<span style="color:#991b1b">⚠ ' + escapeHtml(_mal)
+      + ': la propuesta sería INCOMPLETA y no se ha rellenado nada.</span>';
     return;
   }
   let n = 0;
+  const sinOpcion = [];
   MAD_SALA_OPTS.forEach(function(sala, si){
     const est = madEstadoDeSala(libro, sala, fecha);
     const det = madEstadoPorLoteTexto(libro, sala, fecha);
     const selEl = fp.querySelector('[name="sg_' + si + '_estado"]');
     const txtEl = fp.querySelector('[name="sg_' + si + '_estado_lote"]');
-    if(est && selEl){ selEl.value = est; n++; }
+    /* ⚠⚠ SÓLO SE ASIGNA UN VALOR QUE EL DESPLEGABLE TENGA, y no es paranoia: asignarle a un
+       select un valor que no está entre sus opciones NO da error — el navegador lo deja EN
+       BLANCO. Y aquí lo que queda en la casilla SE GUARDA en la hoja, así que una propuesta
+       imposible BORRABA el Estado que el operario ya hubiera puesto, y encima se contaba
+       como «propuesta» en el rótulo. Es la misma guarda que ya hace el pegado —madGridPaste
+       sólo asigna si encuentra la opción—; aquí faltaba.
+       🔴 No era teórico: hasta el 2026-09-09 un lote cerrado que volvía a recibir animales
+       hacía que madEstadoDeSala devolviera «Cerrado», que este desplegable NO tiene. */
+    const hayOpcion = !!(est && selEl && Array.prototype.some.call(selEl.options, function(o){ return o.value === est; }));
+    if(hayOpcion){ selEl.value = est; n++; }
+    else if(est && selEl) sinOpcion.push(sala + ": " + est);
     if(txtEl) txtEl.value = det;
   });
   if(nota){
-    nota.innerHTML = n
+    const aviso = sinOpcion.length
+      ? '<span style="color:#92400e">⚠ ' + escapeHtml(sinOpcion.join(" · ")) + ' — el desplegable de Estado no tiene ese valor, así que esas salas se han dejado como estaban.</span><br>'
+      : '';
+    nota.innerHTML = aviso + (n
       ? '<span style="color:#166534">Propuesto al ' + escapeHtml(fecha) + ' para ' + n + ' sala(s). Revisa y corrige antes de guardar.</span>'
-      : '<span style="color:#92400e">El libro no conoce ninguna sala con animales en esa fecha: no hay nada que proponer.</span>';
+      : '<span style="color:#92400e">El libro no conoce ninguna sala con animales en esa fecha: no hay nada que proponer.</span>');
   }
   // Marca «cambios sin guardar», como hace el pegado: si no, lo propuesto se perdería
   // al cambiar de pestaña sin que nadie avisara.
@@ -8416,7 +8519,7 @@ function _collectSalasGrid(fechaOverride){
   if(!fp) return [];
   const fechaEl = document.getElementById("mad-salas-fecha");
   const fecha = isValidDate(fechaOverride) ? fechaOverride : ((fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today());
-  const result = [];
+  const result = [], fueraDeRango = [];
   MAD_SALA_OPTS.forEach((sala,si) => {
     const g = (k) => {
       const el = fp.querySelector(`[name="sg_${si}_${k}"]`);
@@ -8424,10 +8527,24 @@ function _collectSalasGrid(fechaOverride){
     };
     const data = { fecha, sala, estado: sanitizeStr(g("estado")), estado_lote: sanitizeStr(g("estado_lote"), 200), ras: sanitizeStr(g("ras")) };
     let hasAny = !!(data.estado || data.estado_lote || data.ras);
-    _SALA_TEMP_KEYS.forEach(k => { const v = g(k); if(v !== ""){ data[k] = sanitizeNum(v,0,50); hasAny = true; } else { data[k] = ""; } });
+    _SALA_TEMP_KEYS.forEach(k => {
+      const el = fp.querySelector('[name="sg_' + si + '_' + k + '"]');
+      const v = el ? el.value : "";
+      if(v === ""){ data[k] = ""; if(el && el.classList) el.classList.remove("inp-bad"); return; }
+      const n = parseFloat(v);
+      /* Fuera de [_SALA_TEMP_MIN, _SALA_TEMP_MAX] NO se recorta ni se guarda: la celda se marca
+         en rojo y se anota, para que saveMadSalasGrid lo DIGA. Ver la cabecera de _SALA_TEMP_MAX. */
+      const fuera = !isFinite(n) || n < _SALA_TEMP_MIN || n > _SALA_TEMP_MAX;
+      if(el && el.classList) el.classList.toggle("inp-bad", fuera);
+      if(fuera){ fueraDeRango.push({ sala: sala, hora: "Temperatura " + parseInt(k.replace("temp_",""),10) + ":00", valor: v }); data[k] = ""; return; }
+      data[k] = n; hasAny = true;
+    });
     _SALA_OX_KEYS.forEach(k =>   { const v = g(k); if(v !== ""){ data[k] = sanitizeNum(v,0,20); hasAny = true; } else { data[k] = ""; } });
     if(hasAny) result.push(data);
   });
+  /* Los rechazos viajan PEGADOS al array y no en un global: así quien no los mira (el
+     autoguardado de recuperación) no cambia, y JSON.stringify ni siquiera los ve. */
+  result.fueraDeRango = fueraDeRango;
   return result;
 }
 
@@ -8435,6 +8552,20 @@ function saveMadSalasGrid(opts){
   opts = opts || {};
   const silent = !!opts.silent;
   const rows = _collectSalasGrid(opts.fechaOverride);
+  /* D13 (2026-09-12) · una temperatura fuera de rango NO se guarda, y se DICE siempre:
+     · a mano (💾 / ☁️): se BLOQUEA entero, como la regla R2, y devuelve -1 para que
+       syncMadSalasGrid no envíe nada. La celda queda en rojo y con lo tecleado.
+     · silencioso (al cambiar de fecha o de pestaña): bloquearlo perdería TODO lo demás que se
+       tecleó, así que se guardan las celdas válidas y se avisa de las que no. */
+  const _fuera = rows.fueraDeRango || [];
+  if(_fuera.length){
+    const _it = _fuera[0];
+    const _msg = _it.sala + " · " + _it.hora + ": " + _it.valor + " °C está fuera de rango (permitido "
+      + _SALA_TEMP_MIN + " a " + _SALA_TEMP_MAX + " °C)."
+      + (_fuera.length > 1 ? " Y " + (_fuera.length - 1) + " celda(s) más." : "");
+    if(!silent){ toast(_msg + " Corrige el dato antes de guardar.", "err", 6500); return -1; }
+    toast(_msg + " Esa celda NO se guardó; el resto sí.", "warn", 6500);
+  }
   if(rows.length === 0){ if(!silent) toast("No hay datos para guardar","warn"); return 0; }
   // Carga la lista UNA vez, mergea en memoria y persiste UNA vez (O(n)).
   const list = loadMad("salas");
@@ -8450,7 +8581,7 @@ function saveMadSalasGrid(opts){
 }
 
 async function syncMadSalasGrid(){
-  if(saveMadSalasGrid() === -1) return;   // almacenamiento falló (ya avisó): no enviar datos no persistidos
+  if(saveMadSalasGrid() === -1) return;   // almacenamiento falló, o una temperatura fuera de rango lo bloqueó (ya avisó): no enviar lo que no se guardó
   const url = gasUrl();
   if(!url){ toast("Configura la URL de Google Apps Script","warn"); openCfg(); return; }
   if(!isValidGasUrl(url)){ toast("URL inválida","err"); return; }
@@ -8660,10 +8791,11 @@ function _madTanquesPintaVivos(libro){
   /* Si alguna hoja no se pudo leer, lo de abajo está INCOMPLETO y hay que decirlo ANTES de
      enseñarlo: es el defecto A1 de la auditoría del 09-08, un libro a medias leído como
      completo. */
-  const roto = !!(libro.fallos && libro.fallos.length);
+  const _mal = madLibroIncompleto(libro);
+  const roto = !!_mal;
   if(nota){
     nota.innerHTML = roto
-      ? '<span style="color:#991b1b">⚠ No se pudieron leer ' + libro.fallos.length + ' hoja(s) (' + escapeHtml(libro.fallos.join(", ")) + '): lo de abajo está INCOMPLETO.</span>'
+      ? '<span style="color:#991b1b">⚠ ' + escapeHtml(_mal) + ': lo de abajo está INCOMPLETO.</span>'
       : '<span style="color:#166534">Vivos al ' + escapeHtml(today()) + '. Se recalcula al pulsar de nuevo.</span>';
   }
   const sala = _madTanquesSala;
@@ -17544,8 +17676,8 @@ function doPost(e) {
     var isMad   = madKeyCols !== null;
     // Maduración operativa (2026-09-08): estas NO usan clave compuesta por posición.
     // Llevan una columna "ID" determinista en la ÚLTIMA posición y van por
-    // upsertAstRows, que la localiza POR CABECERA y cae a la última columna si la
-    // cabecera estuviera en blanco. Con el ID al final las dos rutas coinciden, que
+    // upsertAstRows CON MERGE (2026-09-09), que la localiza POR CABECERA y cae a la
+    // última columna si la cabecera estuviera en blanco. Con el ID al final las dos rutas coinciden, que
     // es la leccion del defecto del AsT del 2026-08-15: con el ID en medio, el
     // respaldo apuntaba a otra columna y cada sync ANADIA una fila en vez de
     // reemplazarla.
@@ -17644,6 +17776,19 @@ function doPost(e) {
     // sí ensancha la hoja para que quepa la fila, así que al añadir una columna al final
     // (p.ej. Toneladas, 2026-08) el DATO entraba en la columna nueva y su CABECERA se
     // quedaba en blanco. Llamarlo siempre lo cubre y evita repetir el caso a futuro.
+    // V3 (2026-09-13) · un cliente con el ESQUEMA VIEJO no escribe: ver MAD_ESQUEMA_VIGILADO.
+    // Va ANTES de ensureHeaders y de cualquier escritura, y dentro del candado: el finally
+    // lo suelta también al rechazar. El reqId no se marca, así que un reintento tras
+    // actualizar la app entra normal. El mensaje nombra la columna de la HOJA, nunca lo que
+    // mandó el cliente.
+    if (MAD_ESQUEMA_VIGILADO.indexOf(payload.sheetName) !== -1 && Array.isArray(payload.headers)
+        && ws.getLastRow() > 0 && ws.getLastColumn() > 0) {
+      var _desfase = esquemaIncompatible_(ws.getRange(1, 1, 1, ws.getLastColumn()).getValues()[0], payload.headers);
+      if (_desfase) {
+        return respond({ status: "error", message: "Esquema desactualizado en «" + payload.sheetName + "» (columna "
+          + _desfase.col + ": la hoja espera «" + _desfase.hoja + "»). Actualiza la app antes de sincronizar: no se escribió nada y lo tecleado sigue en este dispositivo." });
+      }
+    }
     ensureHeaders(ws, payload.headers || []);
 
     // ⚠ AQUÍ HUBO un borrado explícito de sesiones por payload.deleteKeys
@@ -17697,7 +17842,9 @@ function doPost(e) {
     // determinista (viaje-c<camión>-r<revisión>-t<tina>), así que el camión puede
     // sincronizar en cada parada sin duplicar una sola fila.
     else if (isTras)   result = upsertAstRows(ws, rows);
-    else if (isMadId)  result = upsertAstRows(ws, rows);
+    // Las tres de Maduración van con MERGE (3.er argumento), al revés que AsT y
+    // Traslado: ver la cabecera de upsertAstRows para el porqué.
+    else if (isMadId)  result = upsertAstRows(ws, rows, true);
     // Registro_Desinfección: upsert por clave compuesta Fecha+Módulo+Tipo de
     // Registro+Categoría+Elemento → re-sincronizar no duplica; editar Estado /
     // Observaciones / Fecha Elemento actualiza la misma fila.
@@ -18009,6 +18156,41 @@ function ensureHeaders(ws, headers) {
   ws.setFrozenRows(1);
 }
 
+// ── Esquema de las hojas del registro OPERATIVO de Maduración (V3, 2026-09-13) ──
+// ⚠⚠ ESTAS HOJAS SE ESCRIBEN POR POSICIÓN: upsertMadRows y upsertAstRows copian la celda
+// i del envío en la columna i de la hoja, sin mirar cómo se llama. Sus columnas cambiaron
+// entre el 08 y el 09-09, y siguen vivos clientes con el esquema anterior (GitHub Pages y
+// copias viejas de la app): un guardado de Tanques desde uno de ellos correría una columna
+// todo lo que va detrás de «Tanque» —los machos muertos en «Hembras muertas»— y el GAS
+// respondería «ok». Por eso, antes de escribir, se comparan las cabeceras del envío con
+// las de la hoja, posición a posición.
+//   · Que el envío traiga MENOS columnas no es un desfase: le falta el final, no está
+//     corrido (Sala sin la Fase 6 sigue escribiendo, y el merge conserva la 21.ª).
+//   · Una cabecera en blanco en la hoja no se compara: no hay con qué.
+//   · Espacios y la forma Unicode de los acentos no cuentan como diferencia.
+// Sólo estas seis. El registro reproductivo también es posicional, pero su esquema no ha
+// cambiado, y bloquearlo por un nombre retocado a mano pararía el trabajo de campo.
+// El cliente, ante el rechazo, no marca nada como sincronizado: lo tecleado se queda en
+// el dispositivo hasta que se actualice la app (medido en el cliente de f1d9687).
+var MAD_ESQUEMA_VIGILADO = [
+  "Maduración Sala", "Maduración Tanques", "Maduración Lotes",
+  "Maduración Ingreso", "Maduración Movimientos", "Maduración Fin de Ciclo"
+];
+function _cabeceraNorm_(v) {
+  var s = String(v == null ? "" : v).trim();
+  return (typeof s.normalize === "function") ? s.normalize("NFC") : s;
+}
+// null si son compatibles; si no, { col: número de columna (desde 1), hoja: lo que espera }.
+function esquemaIncompatible_(cabHoja, cabEnvio) {
+  var n = Math.min(cabHoja.length, cabEnvio.length);
+  for (var i = 0; i < n; i++) {
+    var h = _cabeceraNorm_(cabHoja[i]);
+    var p = _cabeceraNorm_(cleanCell(cabEnvio[i]));
+    if (h && p && h !== p) return { col: i + 1, hoja: h };
+  }
+  return null;
+}
+
 // ── Última fila con datos ────────────────────────────────
 function lastRow(ws) {
   var lr = ws.getLastRow();
@@ -18126,7 +18308,23 @@ function replaceByKeyRows(ws, newRows, keyCols) {
 // duplicaba la información). Filas antiguas sin ID (anteriores a este cambio)
 // no tienen clave de coincidencia: un registro cuyo ID no se encuentre se
 // añade como fila nueva (comportamiento heredado, sin pérdida de datos).
-function upsertAstRows(ws, newRows) {
+//
+// merge (2026-09-09, opcional, por defecto FALSE):
+//   false → REEMPLAZO total de la fila. Es lo que quieren AsT y Traslado: su
+//           registro viaja COMPLETO desde el almacén local del dispositivo, así
+//           que la fila entrante es la verdad entera y borrar lo que no trae es
+//           lo correcto.
+//   true  → lo que llega VACÍO conserva lo que hubiera. Lo usan las tres hojas
+//           del registro operativo de Maduración, y no por gusto: sus fichas se
+//           VACÍAN al guardar, así que volver a esa fila para completar un dato
+//           posterior —el metabisulfito de un cierre, que puede aplicarse otro
+//           día— manda todo lo demás en blanco. Con reemplazo eso borraba Machos,
+//           Hembras, Tipo y Observaciones sin un solo síntoma, y cambiaba el
+//           descuento del libro mayor.
+//   ⚠ La contrapartida del merge, que hay que conocer: un campo de TEXTO no se
+//     puede vaciar reenviándolo en blanco. Se corrige en la hoja. Es el mismo
+//     trato que ya tienen Sala, Tanques y Lotes por upsertMadRows.
+function upsertAstRows(ws, newRows, merge) {
   var widest = 0;
   for (var wi = 0; wi < newRows.length; wi++) {
     if (newRows[wi].length > widest) widest = newRows[wi].length;
@@ -18154,11 +18352,13 @@ function upsertAstRows(ws, newRows) {
   if (idCol < 0 || idCol >= widest) idCol = widest - 1;
   var data  = ws.getDataRange().getValues();
 
-  // Mapa ID → número de fila del sheet (1-indexed) de filas ya existentes.
+  // Mapa ID → { fila del sheet (1-indexed), índice en data } de las ya existentes.
+  // El ÍNDICE se guarda desde 2026-09-09 porque el merge necesita la fila vieja
+  // delante para saber qué celda conservar; sin él sólo se puede reemplazar.
   var map = {};
   for (var i = 1; i < data.length; i++) {
     var idv = (idCol < data[i].length) ? String(data[i][idCol]).trim() : "";
-    if (idv) map[idv] = i + 1;
+    if (idv) map[idv] = { row: i + 1, idx: i };
   }
 
   var toAdd = [], pending = {}, updated = 0;
@@ -18167,13 +18367,45 @@ function upsertAstRows(ws, newRows) {
     while (nr.length < widest) nr.push("");      // normaliza ancho
     var id = String(nr[idCol] != null ? nr[idCol] : "").trim();
     if (id && map[id]) {
-      // Fila existente → reemplazo total en sitio (el registro es el mismo).
-      ws.getRange(map[id], 1, 1, nr.length).setValues([nr]);
-      fmtData(ws, map[id], 1, nr.length, false);
+      var ent = map[id], fila = nr;
+      if (merge) {
+        // MERGE: lo que llega VACÍO conserva lo que ya hubiera en la celda; un 0 sí
+        // escribe 0 (sólo "" cuenta como vacío, y cleanCell deja los números tal cual).
+        // Es lo que permite completar un registro DÍAS DESPUÉS sin re-teclearlo entero:
+        // el metabisulfito de un cierre, el N2/N5 de un desove. La columna ID se
+        // preserva: es la llave, y por definición ya coincide.
+        var ex = data[ent.idx], nc = Math.max(ex.length, nr.length), merged = [];
+        for (var c = 0; c < nc; c++) {
+          var eo = c < ex.length ? ex[c] : "";
+          var nu = c < nr.length ? nr[c] : "";
+          var nEmpty = (nu === "" || nu === null || nu === undefined);
+          if (c === idCol) merged.push((eo === "" || eo === null || eo === undefined) ? nu : eo);
+          else             merged.push(nEmpty ? eo : nu);
+        }
+        fila = merged;
+      }
+      ws.getRange(ent.row, 1, 1, fila.length).setValues([fila]);
+      fmtData(ws, ent.row, 1, fila.length, false);
+      // La foto de la hoja se actualiza con lo escrito. «data» se lee UNA vez al
+      // entrar, así que sin esto una segunda fila del MISMO envío con el mismo ID se
+      // fusionaría contra la versión VIEJA y borraría lo que aportó la primera —
+      // mientras que dos envíos seguidos sí acumulan. Con merge, las dos rutas tienen
+      // que dar lo mismo; sin merge la línea es inocua (fila es la entrante entera).
+      data[ent.idx] = fila;
       updated++;
     } else if (id && pending[id] !== undefined) {
-      // Mismo ID repetido dentro del batch → conserva la última versión.
-      toAdd[pending[id]] = nr.slice();
+      // Mismo ID repetido dentro del batch. Sin merge se conserva la última versión;
+      // con merge se fusionan los no vacíos, igual que contra la hoja — si no, dos filas
+      // del mismo envío se comportarían distinto que dos envíos seguidos, y ésa es
+      // exactamente la clase de divergencia que nadie mira hasta que muerde.
+      if (merge) {
+        var pi = pending[id];
+        for (var pc = 0; pc < nr.length; pc++) {
+          if (pc !== idCol && nr[pc] !== "" && nr[pc] !== null && nr[pc] !== undefined) toAdd[pi][pc] = nr[pc];
+        }
+      } else {
+        toAdd[pending[id]] = nr.slice();
+      }
     } else {
       if (id) pending[id] = toAdd.length;
       toAdd.push(nr.slice());
@@ -18462,8 +18694,15 @@ function sheetRows(name, t, cols) {
     }
     if (!keep.length) { for (var c1 = 0; c1 < headers.length; c1++) { if (headers[c1]) keep.push(c1); } }
     var outHeaders = keep.map(function (ci) { return headers[ci]; });
-    var rows = [];
-    for (var i = 1; i < vals.length && rows.length < 5000; i++) {
+    // ⚠⚠ EL TOPE RECORTA, y hasta el 2026-09-09 lo hacía EN SILENCIO. Quien suma
+    // sobre lo devuelto —el libro mayor de Maduración lo hace— obtendría un saldo
+    // incompleto sin un solo síntoma, que es el peor resultado posible aquí.
+    // «Maduración Tanques» crece hasta 38 filas al día (los tanques de las 5 salas),
+    // así que el tope no es teórico: se alcanza en unos meses de uso diario.
+    var TOPE_FILAS = 5000;
+    var rows = [], cortada = false;
+    for (var i = 1; i < vals.length; i++) {
+      if (rows.length >= TOPE_FILAS) { cortada = true; break; }
       var r = vals[i], obj = {}, any = false;
       for (var k = 0; k < keep.length; k++) {
         var key = outHeaders[k];
@@ -18476,6 +18715,10 @@ function sheetRows(name, t, cols) {
       if (any) rows.push(obj);
     }
     out.ok = true; out.headers = outHeaders; out.rows = rows;
+    // Retrocompatible a propósito: un cliente que no mire «truncated» ve exactamente
+    // lo mismo que antes. El que lo mire puede decir «esto está incompleto» en vez
+    // de calcular sobre media hoja.
+    if (cortada) { out.truncated = true; out.limit = TOPE_FILAS; }
     return _evJson(out);
   } catch (err) {
     out.error = "Error al leer la hoja"; return _evJson(out);

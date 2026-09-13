@@ -138,7 +138,7 @@ const gcode = bloque(gsrc, 'const ALLOWED = [', 'const RATE_MAX = 30, RATE_MS = 
      corrieron a mano. Se trae la REAL de Code.gs, nunca un stub: un arnés más
      benévolo que el producto no puede certificar al producto. */
   + '\n' + bloque(gsrc, 'function filasUniformes(filas) {', '  return { filas: out, ancho: ancho };\n}')
-  + '\n' + bloque(gsrc, 'function upsertAstRows(ws, newRows) {', '  return { upserted: updated, appended: added };\n}');
+  + '\n' + bloque(gsrc, 'function upsertAstRows(ws, newRows, merge) {', '  return { upserted: updated, appended: added };\n}');
 const gctx = { String, Number, Object, Array, JSON, Math, isFinite, Date, fmtData() {} };
 gctx.globalThis = gctx;
 createContext(gctx);

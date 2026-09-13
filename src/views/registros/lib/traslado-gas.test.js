@@ -42,7 +42,7 @@ function motorGas() {
     // fila en este ayudante compartido. Sin él, el upsert revienta con un
     // «filasUniformes is not defined» que no dice nada del contrato que se prueba.
     + '\n' + bloque(src, 'function filasUniformes(filas) {', '\n}')
-    + '\n' + bloque(src, 'function upsertAstRows(ws, newRows) {', '  return { upserted: updated, appended: added };\n}');
+    + '\n' + bloque(src, 'function upsertAstRows(ws, newRows, merge) {', '  return { upserted: updated, appended: added };\n}');
   // `fmtData` sólo pinta (fuentes, alineación, formato de fecha): no decide dónde
   // va ninguna fila, así que se stubea. Lo que se está probando es el EMPAREJADO.
   const ctx = { String, Number, Object, Array, JSON, Math, isFinite, Date, fmtData() {} };

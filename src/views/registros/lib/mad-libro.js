@@ -216,8 +216,16 @@ export function construirLibro(fuentes, opts) {
          a Producción el mismo día en que llegan los animales nuevos. Sólo una cópula DESDE
          el último ingreso vuelve a romperla; el flujo va en orden cronológico, así que con
          borrarla aquí basta.
-         Dos filas del MISMO día no reinician nada: la comparación es estricta. */
-      if (!L.ingreso || fecha > L.ingreso) { L.ingreso = fecha; L.copulaDesde = null; }
+         Dos filas del MISMO día no reinician nada: la comparación es estricta.
+         🔴 Y POR LA MISMA RAZÓN SE BORRA «cerrado» (2026-09-09). Sin esto, un lote que se
+         cerró en Total y vuelve a recibir animales se quedaba «Cerrado» PARA SIEMPRE con
+         vivos en el saldo: es el estado imposible que M19 de su propio banco declara
+         inaceptable —«el lote quedaría cerrado y con animales vivos a la vez»—, y no se
+         quedaba en la pantalla. estadoDeSala devolvía «Cerrado», que el desplegable de
+         Estado de «Maduración Sala» NO TIENE, así que la propuesta VACIABA esa casilla y
+         el operario la guardaba vacía sin enterarse.
+         Cuenta el cierre POSTERIOR al último ingreso, igual que la cópula. */
+      if (!L.ingreso || fecha > L.ingreso) { L.ingreso = fecha; L.copulaDesde = null; L.cerrado = null; }
       continue;
     }
 

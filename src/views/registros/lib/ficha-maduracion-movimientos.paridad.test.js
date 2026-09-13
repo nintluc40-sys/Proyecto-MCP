@@ -246,9 +246,17 @@ describe('Movimientos · la pestaña tiene DÓNDE pintarse', () => {
 
   it('si alguna hoja no se pudo leer, el saldo lo DICE antes de enseñarse', () => {
     // Repetir el defecto A1 aquí sería enseñar un saldo corto como si fuera completo.
-    expect(src).toContain('const roto = !!(libro.fallos && libro.fallos.length);');
-    expect(src).toContain('está INCOMPLETO y puede quedarse corto');
+    /* ⚠ 2026-09-13 · Desde el 09-09 el veredicto NO se deduce aquí: lo da madLibroIncompleto,
+       que además cuenta las hojas RECORTADAS por el tope del GAS. Esta comprobación buscaba
+       la forma anterior («libro.fallos && libro.fallos.length») y se quedó en rojo al
+       mejorarse la regla. Se mira DENTRO de la función, porque la misma línea existe en los
+       otros consumidores del libro y un «toContain» sobre el archivo entero no distinguiría
+       a éste de los demás. */
+    const pinta = bloque(src, 'function _madMovPintaSaldo(libro){', '\n}');
+    expect(pinta).toContain('const _mal = madLibroIncompleto(libro);');
+    expect(pinta).toContain('const roto = !!_mal;');
+    expect(pinta).toContain('está INCOMPLETO y puede quedarse corto');
     // Y un tanque que el libro no conoce no se pinta como «cero vivos».
-    expect(src).toContain('"sin ingreso"');
+    expect(pinta).toContain('"sin ingreso"');
   });
 });

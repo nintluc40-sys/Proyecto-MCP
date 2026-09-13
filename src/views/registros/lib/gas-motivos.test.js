@@ -61,7 +61,9 @@ function mensajeDelGas(fragmento) {
 
 describe('GAS ↔ cliente · los motivos de rechazo', () => {
   describe('el mensaje que emite el GAS lo reconoce el cliente', () => {
-    const DE_ENTORNO = ['Hoja no permitida', 'No autorizado', 'Límite de columnas'];
+    /* «Esquema desactualizado» entró el 2026-09-13 (V3): la hoja y la app no tienen las mismas
+       columnas y el GAS no escribió nada. El registro está bien, así que ESPERA en la cola. */
+    const DE_ENTORNO = ['Hoja no permitida', 'No autorizado', 'Límite de columnas', 'Esquema desactualizado'];
     const DE_DATOS = ['Límite de filas', 'Error en datos', 'Formato inválido'];
 
     for (const frag of DE_ENTORNO) {
@@ -114,6 +116,14 @@ describe('GAS ↔ cliente · los motivos de rechazo', () => {
 
     it('«No autorizado» manda al token compartido', () => {
       expect(_gasMotivo(mensajeDelGas('No autorizado'))).toContain('token');
+    });
+
+    it('🔴 «Esquema desactualizado» manda a ACTUALIZAR LA APP, no a re-desplegar el GAS', () => {
+      /* Es el caso contrario a «Hoja no permitida»: aquí lo viejo es la app, no el GAS.
+         Mandar a re-desplegar sería mandar a arreglar lo que ya está bien. */
+      const t = _gasMotivo(mensajeDelGas('Esquema desactualizado'));
+      expect(t).toContain('actualizarla');
+      expect(t).not.toContain('vuelve a desplegarlo');
     });
 
     it('siempre incluye el mensaje literal del servidor', () => {

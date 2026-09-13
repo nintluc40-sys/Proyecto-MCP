@@ -237,8 +237,8 @@ function doPost(e) {
     var isMad   = madKeyCols !== null;
     // Maduración operativa (2026-09-08): estas NO usan clave compuesta por posición.
     // Llevan una columna "ID" determinista en la ÚLTIMA posición y van por
-    // upsertAstRows, que la localiza POR CABECERA y cae a la última columna si la
-    // cabecera estuviera en blanco. Con el ID al final las dos rutas coinciden, que
+    // upsertAstRows CON MERGE (2026-09-09), que la localiza POR CABECERA y cae a la
+    // última columna si la cabecera estuviera en blanco. Con el ID al final las dos rutas coinciden, que
     // es la leccion del defecto del AsT del 2026-08-15: con el ID en medio, el
     // respaldo apuntaba a otra columna y cada sync ANADIA una fila en vez de
     // reemplazarla.
@@ -337,6 +337,19 @@ function doPost(e) {
     // sí ensancha la hoja para que quepa la fila, así que al añadir una columna al final
     // (p.ej. Toneladas, 2026-08) el DATO entraba en la columna nueva y su CABECERA se
     // quedaba en blanco. Llamarlo siempre lo cubre y evita repetir el caso a futuro.
+    // V3 (2026-09-13) · un cliente con el ESQUEMA VIEJO no escribe: ver MAD_ESQUEMA_VIGILADO.
+    // Va ANTES de ensureHeaders y de cualquier escritura, y dentro del candado: el finally
+    // lo suelta también al rechazar. El reqId no se marca, así que un reintento tras
+    // actualizar la app entra normal. El mensaje nombra la columna de la HOJA, nunca lo que
+    // mandó el cliente.
+    if (MAD_ESQUEMA_VIGILADO.indexOf(payload.sheetName) !== -1 && Array.isArray(payload.headers)
+        && ws.getLastRow() > 0 && ws.getLastColumn() > 0) {
+      var _desfase = esquemaIncompatible_(ws.getRange(1, 1, 1, ws.getLastColumn()).getValues()[0], payload.headers);
+      if (_desfase) {
+        return respond({ status: "error", message: "Esquema desactualizado en «" + payload.sheetName + "» (columna "
+          + _desfase.col + ": la hoja espera «" + _desfase.hoja + "»). Actualiza la app antes de sincronizar: no se escribió nada y lo tecleado sigue en este dispositivo." });
+      }
+    }
     ensureHeaders(ws, payload.headers || []);
 
     // ⚠ AQUÍ HUBO un borrado explícito de sesiones por payload.deleteKeys
@@ -390,7 +403,9 @@ function doPost(e) {
     // determinista (viaje-c<camión>-r<revisión>-t<tina>), así que el camión puede
     // sincronizar en cada parada sin duplicar una sola fila.
     else if (isTras)   result = upsertAstRows(ws, rows);
-    else if (isMadId)  result = upsertAstRows(ws, rows);
+    // Las tres de Maduración van con MERGE (3.er argumento), al revés que AsT y
+    // Traslado: ver la cabecera de upsertAstRows para el porqué.
+    else if (isMadId)  result = upsertAstRows(ws, rows, true);
     // Registro_Desinfección: upsert por clave compuesta Fecha+Módulo+Tipo de
     // Registro+Categoría+Elemento → re-sincronizar no duplica; editar Estado /
     // Observaciones / Fecha Elemento actualiza la misma fila.
@@ -702,6 +717,41 @@ function ensureHeaders(ws, headers) {
   ws.setFrozenRows(1);
 }
 
+// ── Esquema de las hojas del registro OPERATIVO de Maduración (V3, 2026-09-13) ──
+// ⚠⚠ ESTAS HOJAS SE ESCRIBEN POR POSICIÓN: upsertMadRows y upsertAstRows copian la celda
+// i del envío en la columna i de la hoja, sin mirar cómo se llama. Sus columnas cambiaron
+// entre el 08 y el 09-09, y siguen vivos clientes con el esquema anterior (GitHub Pages y
+// copias viejas de la app): un guardado de Tanques desde uno de ellos correría una columna
+// todo lo que va detrás de «Tanque» —los machos muertos en «Hembras muertas»— y el GAS
+// respondería «ok». Por eso, antes de escribir, se comparan las cabeceras del envío con
+// las de la hoja, posición a posición.
+//   · Que el envío traiga MENOS columnas no es un desfase: le falta el final, no está
+//     corrido (Sala sin la Fase 6 sigue escribiendo, y el merge conserva la 21.ª).
+//   · Una cabecera en blanco en la hoja no se compara: no hay con qué.
+//   · Espacios y la forma Unicode de los acentos no cuentan como diferencia.
+// Sólo estas seis. El registro reproductivo también es posicional, pero su esquema no ha
+// cambiado, y bloquearlo por un nombre retocado a mano pararía el trabajo de campo.
+// El cliente, ante el rechazo, no marca nada como sincronizado: lo tecleado se queda en
+// el dispositivo hasta que se actualice la app (medido en el cliente de f1d9687).
+var MAD_ESQUEMA_VIGILADO = [
+  "Maduración Sala", "Maduración Tanques", "Maduración Lotes",
+  "Maduración Ingreso", "Maduración Movimientos", "Maduración Fin de Ciclo"
+];
+function _cabeceraNorm_(v) {
+  var s = String(v == null ? "" : v).trim();
+  return (typeof s.normalize === "function") ? s.normalize("NFC") : s;
+}
+// null si son compatibles; si no, { col: número de columna (desde 1), hoja: lo que espera }.
+function esquemaIncompatible_(cabHoja, cabEnvio) {
+  var n = Math.min(cabHoja.length, cabEnvio.length);
+  for (var i = 0; i < n; i++) {
+    var h = _cabeceraNorm_(cabHoja[i]);
+    var p = _cabeceraNorm_(cleanCell(cabEnvio[i]));
+    if (h && p && h !== p) return { col: i + 1, hoja: h };
+  }
+  return null;
+}
+
 // ── Última fila con datos ────────────────────────────────
 function lastRow(ws) {
   var lr = ws.getLastRow();
@@ -819,7 +869,23 @@ function replaceByKeyRows(ws, newRows, keyCols) {
 // duplicaba la información). Filas antiguas sin ID (anteriores a este cambio)
 // no tienen clave de coincidencia: un registro cuyo ID no se encuentre se
 // añade como fila nueva (comportamiento heredado, sin pérdida de datos).
-function upsertAstRows(ws, newRows) {
+//
+// merge (2026-09-09, opcional, por defecto FALSE):
+//   false → REEMPLAZO total de la fila. Es lo que quieren AsT y Traslado: su
+//           registro viaja COMPLETO desde el almacén local del dispositivo, así
+//           que la fila entrante es la verdad entera y borrar lo que no trae es
+//           lo correcto.
+//   true  → lo que llega VACÍO conserva lo que hubiera. Lo usan las tres hojas
+//           del registro operativo de Maduración, y no por gusto: sus fichas se
+//           VACÍAN al guardar, así que volver a esa fila para completar un dato
+//           posterior —el metabisulfito de un cierre, que puede aplicarse otro
+//           día— manda todo lo demás en blanco. Con reemplazo eso borraba Machos,
+//           Hembras, Tipo y Observaciones sin un solo síntoma, y cambiaba el
+//           descuento del libro mayor.
+//   ⚠ La contrapartida del merge, que hay que conocer: un campo de TEXTO no se
+//     puede vaciar reenviándolo en blanco. Se corrige en la hoja. Es el mismo
+//     trato que ya tienen Sala, Tanques y Lotes por upsertMadRows.
+function upsertAstRows(ws, newRows, merge) {
   var widest = 0;
   for (var wi = 0; wi < newRows.length; wi++) {
     if (newRows[wi].length > widest) widest = newRows[wi].length;
@@ -847,11 +913,13 @@ function upsertAstRows(ws, newRows) {
   if (idCol < 0 || idCol >= widest) idCol = widest - 1;
   var data  = ws.getDataRange().getValues();
 
-  // Mapa ID → número de fila del sheet (1-indexed) de filas ya existentes.
+  // Mapa ID → { fila del sheet (1-indexed), índice en data } de las ya existentes.
+  // El ÍNDICE se guarda desde 2026-09-09 porque el merge necesita la fila vieja
+  // delante para saber qué celda conservar; sin él sólo se puede reemplazar.
   var map = {};
   for (var i = 1; i < data.length; i++) {
     var idv = (idCol < data[i].length) ? String(data[i][idCol]).trim() : "";
-    if (idv) map[idv] = i + 1;
+    if (idv) map[idv] = { row: i + 1, idx: i };
   }
 
   var toAdd = [], pending = {}, updated = 0;
@@ -860,13 +928,45 @@ function upsertAstRows(ws, newRows) {
     while (nr.length < widest) nr.push("");      // normaliza ancho
     var id = String(nr[idCol] != null ? nr[idCol] : "").trim();
     if (id && map[id]) {
-      // Fila existente → reemplazo total en sitio (el registro es el mismo).
-      ws.getRange(map[id], 1, 1, nr.length).setValues([nr]);
-      fmtData(ws, map[id], 1, nr.length, false);
+      var ent = map[id], fila = nr;
+      if (merge) {
+        // MERGE: lo que llega VACÍO conserva lo que ya hubiera en la celda; un 0 sí
+        // escribe 0 (sólo "" cuenta como vacío, y cleanCell deja los números tal cual).
+        // Es lo que permite completar un registro DÍAS DESPUÉS sin re-teclearlo entero:
+        // el metabisulfito de un cierre, el N2/N5 de un desove. La columna ID se
+        // preserva: es la llave, y por definición ya coincide.
+        var ex = data[ent.idx], nc = Math.max(ex.length, nr.length), merged = [];
+        for (var c = 0; c < nc; c++) {
+          var eo = c < ex.length ? ex[c] : "";
+          var nu = c < nr.length ? nr[c] : "";
+          var nEmpty = (nu === "" || nu === null || nu === undefined);
+          if (c === idCol) merged.push((eo === "" || eo === null || eo === undefined) ? nu : eo);
+          else             merged.push(nEmpty ? eo : nu);
+        }
+        fila = merged;
+      }
+      ws.getRange(ent.row, 1, 1, fila.length).setValues([fila]);
+      fmtData(ws, ent.row, 1, fila.length, false);
+      // La foto de la hoja se actualiza con lo escrito. «data» se lee UNA vez al
+      // entrar, así que sin esto una segunda fila del MISMO envío con el mismo ID se
+      // fusionaría contra la versión VIEJA y borraría lo que aportó la primera —
+      // mientras que dos envíos seguidos sí acumulan. Con merge, las dos rutas tienen
+      // que dar lo mismo; sin merge la línea es inocua (fila es la entrante entera).
+      data[ent.idx] = fila;
       updated++;
     } else if (id && pending[id] !== undefined) {
-      // Mismo ID repetido dentro del batch → conserva la última versión.
-      toAdd[pending[id]] = nr.slice();
+      // Mismo ID repetido dentro del batch. Sin merge se conserva la última versión;
+      // con merge se fusionan los no vacíos, igual que contra la hoja — si no, dos filas
+      // del mismo envío se comportarían distinto que dos envíos seguidos, y ésa es
+      // exactamente la clase de divergencia que nadie mira hasta que muerde.
+      if (merge) {
+        var pi = pending[id];
+        for (var pc = 0; pc < nr.length; pc++) {
+          if (pc !== idCol && nr[pc] !== "" && nr[pc] !== null && nr[pc] !== undefined) toAdd[pi][pc] = nr[pc];
+        }
+      } else {
+        toAdd[pending[id]] = nr.slice();
+      }
     } else {
       if (id) pending[id] = toAdd.length;
       toAdd.push(nr.slice());
@@ -1155,8 +1255,15 @@ function sheetRows(name, t, cols) {
     }
     if (!keep.length) { for (var c1 = 0; c1 < headers.length; c1++) { if (headers[c1]) keep.push(c1); } }
     var outHeaders = keep.map(function (ci) { return headers[ci]; });
-    var rows = [];
-    for (var i = 1; i < vals.length && rows.length < 5000; i++) {
+    // ⚠⚠ EL TOPE RECORTA, y hasta el 2026-09-09 lo hacía EN SILENCIO. Quien suma
+    // sobre lo devuelto —el libro mayor de Maduración lo hace— obtendría un saldo
+    // incompleto sin un solo síntoma, que es el peor resultado posible aquí.
+    // «Maduración Tanques» crece hasta 38 filas al día (los tanques de las 5 salas),
+    // así que el tope no es teórico: se alcanza en unos meses de uso diario.
+    var TOPE_FILAS = 5000;
+    var rows = [], cortada = false;
+    for (var i = 1; i < vals.length; i++) {
+      if (rows.length >= TOPE_FILAS) { cortada = true; break; }
       var r = vals[i], obj = {}, any = false;
       for (var k = 0; k < keep.length; k++) {
         var key = outHeaders[k];
@@ -1169,6 +1276,10 @@ function sheetRows(name, t, cols) {
       if (any) rows.push(obj);
     }
     out.ok = true; out.headers = outHeaders; out.rows = rows;
+    // Retrocompatible a propósito: un cliente que no mire «truncated» ve exactamente
+    // lo mismo que antes. El que lo mire puede decir «esto está incompleto» en vez
+    // de calcular sobre media hoja.
+    if (cortada) { out.truncated = true; out.limit = TOPE_FILAS; }
     return _evJson(out);
   } catch (err) {
     out.error = "Error al leer la hoja"; return _evJson(out);

@@ -230,7 +230,7 @@ describe('registros · AsT · acuerdo con el GAS', () => {
     // Desde M9 (2026-08-30) el upsert delega el ancho de fila en `filasUniformes`,
     // compartido por las seis rutas de escritura del GAS: va al sandbox o no resuelve.
     const upsert = bloque(gas, 'function filasUniformes(filas) {', '\n}')
-      + '\n' + bloque(gas, 'function upsertAstRows(ws, newRows) {', '\n}');
+      + '\n' + bloque(gas, 'function upsertAstRows(ws, newRows, merge) {', '\n}');
     const ctx = { String, Number, Object, Array, Math, fmtData: () => {}, lastRow: (w) => w.getLastRow() };
     ctx.globalThis = ctx;
     createContext(ctx);

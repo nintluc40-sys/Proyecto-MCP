@@ -323,6 +323,18 @@ const ESCENARIOS = {
     cierres: [fin('2026-01-05', 'AB', 'Total', 95, 0)],
     tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Machos muertos': 5 })],
   },
+  /* ⚠ 2026-09-09 · UN LOTE CERRADO QUE VUELVE A RECIBIR ANIMALES. Ningún escenario
+     anterior tenía un lote que se cierra y vuelve a entrar, así que la copia inline podía
+     divergir de la del módulo en el borrado de «cerrado» sin que nada lo dijera: el estado
+     del MISMO lote saldría distinto en el monolito y en el dashboard. */
+  'lote CERRADO que vuelve a recibir animales': {
+    ingresos: [
+      ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 100),
+      ing('2026-01-20', 'AB', 'CG9', 'Sala 1', 2, 80, 80),
+    ],
+    cierres: [fin('2026-01-10', 'AB', 'Total', 100, 100)],
+    tanques: [],
+  },
   'vacío': { ingresos: [], tanques: [] },
 };
 
@@ -357,6 +369,12 @@ describe('Libro · el mismo saldo, posición a posición', () => {
     expect(tot.avisos.filter((a) => a.tipo === 'diferencia-cierre')).toHaveLength(1);
     expect(tot.tanques.get('Sala 1|1').machos).toBe(0);
     expect(construirLibro(ESCENARIOS['cierre con déficit y otro de un lote que no existe'], { hoy: HOY }).avisos).toHaveLength(2);
+
+    /* 2026-09-09: sin esto, el escenario del re-ingreso podría compararse en verde con las
+       DOS copias dejando el lote cerrado, que es justo el defecto que vino a fijar. */
+    const reab = construirLibro(ESCENARIOS['lote CERRADO que vuelve a recibir animales'], { hoy: HOY });
+    expect(reab.lotes.get('AB').cerrado).toBe(null);
+    expect(reab.lotes.get('AB').machos).toBe(80);
 
     expect(construirLibro(ESCENARIOS['déficit: más bajas que vivos'], { hoy: HOY }).avisos).toHaveLength(1);
     expect(construirLibro(ESCENARIOS['bajas sin ingreso que las explique'], { hoy: HOY }).avisos).toHaveLength(1);
@@ -498,7 +516,7 @@ describe('Libro · la vista tiene DÓNDE pintarse', () => {
        fuentes el riesgo es el mismo, así que se exige que cada una aparezca en las dos
        listas: la de lectura y la de fallos. */
     for (const clave of ['ingreso', 'movimientos', 'tanques', 'cierres']) {
-      expect(src).toContain('await _reproEnsureSheet(MAD_LIBRO_SHEETS.' + clave + ', null);');
+      expect(src).toContain('await _reproEnsureSheet(MAD_LIBRO_SHEETS.' + clave + ', null, force);');
       expect(src).toContain('if(!_madHojaLeida(MAD_LIBRO_SHEETS.' + clave + ')) fallos.push(MAD_LIBRO_SHEETS.' + clave + ');');
     }
   });
@@ -506,7 +524,7 @@ describe('Libro · la vista tiene DÓNDE pintarse', () => {
   it('la lectura REUTILIZA la cañería que ya existe, no fabrica otra', () => {
     // Dos cañerías de lectura habrían divergido en silencio; ésta ya resuelve reintentos
     // y caché, y es genérica pese a llevar el prefijo del reproductivo.
-    expect(src).toContain('await _reproEnsureSheet(MAD_LIBRO_SHEETS.ingreso, null);');
+    expect(src).toContain('await _reproEnsureSheet(MAD_LIBRO_SHEETS.ingreso, null, force);');
     expect(src).toContain('_reproReadRows(MAD_LIBRO_SHEETS.tanques)');
   });
 });
@@ -527,7 +545,13 @@ describe('Libro · lo que encontró la auditoría del 2026-09-08', () => {
     expect(src).toContain('function _madHojaLeida(name){');
     expect(src).toContain('_madLibro.fallos = fallos;');
     // Y la vista tiene que CALLARSE el ✅ cuando falta una hoja, no sólo avisar aparte.
-    expect(src).toContain('const av=(libro.fallos&&libro.fallos.length)');
+    /* ⚠ 2026-09-13 · Desde el 09-09 el veredicto lo da madLibroIncompleto (que también cuenta
+       las hojas RECORTADAS), y esta línea buscaba la forma anterior. Se mira DENTRO de
+       _madSaldoHTML: el aviso rojo y el silencio del ✅ tienen que salir del MISMO veredicto. */
+    const vista = bloque(src, 'function _madSaldoHTML(libro){', '\n}');
+    expect(vista).toContain('const _mal=madLibroIncompleto(libro);');
+    expect(vista).toContain('const roto=_mal');
+    expect(vista).toContain('const av=_mal');
   });
 
   it('A2 · volver a la pestaña de Ingreso NO borra lo tecleado', () => {
@@ -553,5 +577,60 @@ describe('Libro · lo que encontró la auditoría del 2026-09-08', () => {
     expect(src).not.toContain(': isMadMod(curMod) ? "salas"');
     // Coherente con el orden: Ingreso es además la PRIMERA de la lista de pestañas.
     expect(src).toContain('const MAD_TABS      = ["ingreso","saldo",');
+  });
+});
+
+describe('Libro · «Recalcular» RECALCULA de verdad (2026-09-09)', () => {
+  /* 🔴🔴 EL DEFECTO. `madSaldoCargar(force)` declaraba `force` y no lo usaba, y
+     `_reproEnsureSheet` sale antes de leer en cuanto la hoja tiene clave en
+     `_reproSheets`. Resultado: tras la PRIMERA lectura el libro quedaba congelado
+     TODA la sesión. Los cuatro botones que llaman aquí pasan `true` —🔄 Recalcular,
+     el saldo de los orígenes de Movimientos, los vivos de Tanques y la propuesta de
+     estado de Salas— y dos de ellos rotulan «Se recalcula al pulsar de nuevo».
+     Registrar un ingreso y pulsar 🔄 no cambiaba una sola cifra.
+     🔴 El más caro de los cuatro es el de Salas, que GUARDA lo propuesto en la hoja:
+     escribía un estado deducido de un libro viejo, y eso ya no es una vista que
+     envejece sino un registro equivocado.
+
+     ⚠ Es la contrapartida de A3, y por eso vive al lado: A3 pide NO tirar lo ya
+     calculado al volver a la pestaña; esto pide que el botón SÍ pueda tirarlo. Las dos
+     a la vez sólo se sostienen si el forzado es explícito. */
+
+  it('force se PROPAGA a las cuatro hojas del libro', () => {
+    for (const hoja of ['ingreso', 'movimientos', 'tanques', 'cierres']) {
+      expect(src, hoja + ' se carga sin propagar force')
+        .toContain('_reproEnsureSheet(MAD_LIBRO_SHEETS.' + hoja + ', null, force);');
+    }
+    // Y que no quede ninguna de las cuatro con la llamada vieja.
+    expect(src).not.toContain('_reproEnsureSheet(MAD_LIBRO_SHEETS.ingreso, null);');
+  });
+
+  it('_reproEnsureSheet admite force y sólo entonces se salta la caché', () => {
+    const fn = bloque(src, 'async function _reproEnsureSheet(name, cols, force){', '\n}');
+    expect(fn).toContain('if(!force){');
+    expect(fn).toContain('if(_reproStoreRows(name).length) return;');
+    expect(fn).toContain('if(_reproSheets && _reproSheets[name]) return;');
+  });
+
+  /* 🔑 LA MITAD QUE MÁS IMPORTA, y sin la cual el arreglo habría creado un defecto
+     nuevo: al forzar hay que BORRAR la entrada antes de releer. `_madHojaLeida` da por
+     leída una hoja por el mero hecho de tener clave en `_reproSheets`; si la relectura
+     falla y la entrada vieja siguiera ahí, el libro se calcularía con datos de hace
+     horas mientras la vista canta «sin discrepancias». Es A1 otra vez —una hoja no
+     leída tomada por leída—, sólo que con la lectura vieja en vez de con []. */
+  it('al forzar se BORRA la entrada antes de releer, para que un fallo se vea', () => {
+    const fn = bloque(src, 'async function _reproEnsureSheet(name, cols, force){', '\n}');
+    expect(fn).toContain('delete _reproSheets[name];');
+    // El borrado va ANTES de la lectura, no después: si fuera después, un fallo
+    // dejaría la entrada vieja intacta y `_madHojaLeida` seguiría diciendo que sí.
+    expect(fn.indexOf('delete _reproSheets[name];'))
+      .toBeLessThan(fn.indexOf('await _reproFetchSheet(name, cols||null)'));
+  });
+
+  it('los cuatro botones siguen pidiendo el recálculo', () => {
+    // Si alguien quitara el `true` de un botón, ese botón enseñaría una cifra vieja
+    // sin decirlo — y los rótulos de la vista seguirían prometiendo lo contrario.
+    const veces = src.split('madSaldoCargar(true)').length - 1;
+    expect(veces, 'se esperaban las 4 llamadas forzadas del libro').toBe(4);
   });
 });

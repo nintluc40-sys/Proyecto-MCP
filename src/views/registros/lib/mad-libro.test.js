@@ -38,9 +38,13 @@ const mov = (Fecha, sO, tO, sD, tD, Machos, Hembras) => ({
   Machos, Hembras, 'Agua destino': 'RAS', Motivo: 'Mezcla de lotes', Observaciones: '',
 });
 
-/* Fila de «Maduración Fin de Ciclo» con la forma REAL de la hoja (Fase 4B). */
+/* Fila de «Maduración Fin de Ciclo» con la forma REAL de la hoja (Fase 4B).
+   ⚠ «Destino» estuvo aquí hasta el 2026-09-09 y ya NO existe: el usuario lo retiró el
+   2026-09-08 —ningún reproductor vuelve a camaronera— y en su sitio entró el proceso de
+   metabisulfito. Un fixture que dice ser «la forma REAL» y no lo es engaña dos veces. */
 const fin = (Fecha, Lote, Tipo, Machos, Hembras, Motivo) => ({
-  Fecha, Lote, Tipo, Motivo: Motivo || 'Pedido', Destino: 'Chongón',
+  Fecha, Lote, Tipo, Motivo: Motivo || 'Pedido',
+  'Metabisulfito (kg)': '', 'Fecha aplicación': '',
   Machos, Hembras, Observaciones: '',
 });
 
@@ -577,6 +581,71 @@ describe('Libro · el FIN DE CICLO (Fase 4B)', () => {
     // 100 − 5 muertos = 95, y salen 95: cuadra exacto, sin diferencia.
     expect(l.avisos.filter((a) => a.tipo === 'diferencia-cierre')).toEqual([]);
     expect(saldo(l, 'Sala 1', 1).machos).toBe(0);
+  });
+
+  /* ⚠⚠ LAS TRES DE ABAJO NACEN DE UN DEFECTO REAL (2026-09-09), y son la MISMA familia que
+     las cuatro de la cuarentena: al decidir el usuario que un 2.º ingreso reinicia el plazo
+     se borró «copulaDesde» y se dejó «cerrado». Resultado medido: un lote cerrado en Total
+     que vuelve a recibir animales quedaba CERRADO PARA SIEMPRE con vivos en el saldo — que
+     es el estado que M19 de su propio banco declara inaceptable, sólo que por otra puerta.
+     Y llegaba a producción: «estadoDeSala» devolvía «Cerrado», valor que el desplegable de
+     Estado de «Maduración Sala» NO TIENE, así que la propuesta vaciaba la casilla en
+     silencio y el operario la guardaba vacía.
+     🔑 Ninguna prueba lo veía porque ninguna ejercía un lote cerrado que vuelve a entrar.
+     Otra vez fixtures que no prueban nada, sobre lógica que se creía cubierta. */
+
+  it('🔴 un lote CERRADO que vuelve a recibir animales deja de estar cerrado', () => {
+    const l = construirLibro({
+      ingresos: [
+        ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 100),
+        ing('2026-03-01', 'AB', 'CG9', 'Sala 1', 2, 80, 80),   // el mismo código de lote, después del cierre
+      ],
+      cierres: [fin('2026-02-01', 'AB', 'Total', 100, 100)],
+      tanques: [],
+    }, { hoy: '2026-03-10' });
+    const L = dePos(l, 'AB');
+    expect(L.cerrado).toBe(null);                       // antes del arreglo: '2026-02-01'
+    expect(L.machos).toBe(80);
+    expect(L.estado).toBe(ESTADO_CUARENTENA);           // antes: ESTADO_CERRADO
+  });
+
+  it('🔴 ningún lote queda CERRADO y con animales vivos a la vez', () => {
+    /* El invariante, dicho como invariante y no como caso: es lo que M19 protege por la
+       puerta del cierre, y esta prueba lo protege por la del ingreso. */
+    const l = construirLibro({
+      ingresos: [
+        ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 100),
+        ing('2026-03-01', 'AB', 'CG9', 'Sala 1', 2, 80, 80),
+      ],
+      cierres: [fin('2026-02-01', 'AB', 'Total', 100, 100)],
+      tanques: [],
+    }, { hoy: '2026-03-10' });
+    for (const L of l.lotes.values()) {
+      if (L.machos > 0 || L.hembras > 0) expect(L.estado).not.toBe(ESTADO_CERRADO);
+    }
+    /* Y la consecuencia que llegaba a la HOJA: el estado de la sala tiene que ser uno de
+       los que el desplegable de «Maduración Sala» sabe guardar. */
+    expect(estadoDeSala(l, 'Sala 1', '2026-03-10')).not.toBe(ESTADO_CERRADO);
+  });
+
+  it('pero un cierre POSTERIOR al re-ingreso SÍ vuelve a cerrar el lote', () => {
+    /* El borrado no puede pasarse de listo: sólo anula los cierres ANTERIORES al último
+       ingreso, igual que hace con la cópula. */
+    const l = construirLibro({
+      ingresos: [
+        ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 100),
+        ing('2026-03-01', 'AB', 'CG9', 'Sala 1', 2, 80, 80),
+      ],
+      cierres: [
+        fin('2026-02-01', 'AB', 'Total', 100, 100),
+        fin('2026-03-05', 'AB', 'Total', 80, 80),
+      ],
+      tanques: [],
+    }, { hoy: '2026-03-10' });
+    const L = dePos(l, 'AB');
+    expect(L.cerrado).toBe('2026-03-05');
+    expect(L.estado).toBe(ESTADO_CERRADO);
+    expect(L.machos).toBe(0);
   });
 });
 

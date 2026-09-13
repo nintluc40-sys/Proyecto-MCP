@@ -60,7 +60,7 @@ function motorGas() {
     // Desde M9 (2026-08-30) las seis rutas de escritura del GAS delegan el ancho de
     // fila en este ayudante compartido; sin él el upsert no resuelve el símbolo.
     + '\n' + bloque(src, 'function filasUniformes(filas) {', '\n}')
-    + '\n' + bloque(src, 'function upsertAstRows(ws, newRows) {', '  return { upserted: updated, appended: added };\n}');
+    + '\n' + bloque(src, 'function upsertAstRows(ws, newRows, merge) {', '  return { upserted: updated, appended: added };\n}');
   const ctx = { String, Number, Object, Array, JSON, Math, isFinite, Date, fmtData() {} };
   ctx.globalThis = ctx;
   createContext(ctx);

@@ -130,6 +130,17 @@ export function detectSheetName(rows, gid, rawTitle) {
      acentuación de una pestaña tecleada a mano. */
   if ((has((k) => k.includes('sala')) || has((k) => k.includes('genético') || k.includes('genetico'))) &&
       has((k) => k.includes('machos') || k.includes('hembras') || k.includes('nauplio'))) return 'Maduracion';
+  /* ⚠⚠ «Maduración Fin de Ciclo» NO TIENE NI «Sala» NI «código genético», así que la regla
+     de arriba no la alcanza: un cierre es de un LOTE entero, y ni la sala ni el pool
+     genético entran en su registro. Sin esta línea cae al final como «Hoja<N>» — el mismo
+     fallo silencioso que se cazó el 2026-09-08 con «Maduración Lotes», y por el mismo
+     motivo: un diseño nuevo la dejó sin la columna que le servía de firma.
+     Medido el 2026-09-09 sobre sus cabeceras reales: por COLUMNAS daba «Hoja1» y por
+     NOMBRE «Maduracion». La hoja aún NO EXISTE en producción —nace con el re-despliegue
+     del GAS—, así que esto se corrige ANTES de que nadie pueda verlo roto.
+     🔑 «metabisulfito» es firma PROPIA: no aparece en ninguna cabecera de las 35 pestañas
+     vivas (medido sobre cabeceras-produccion.json), así que no le roba nada a nadie. */
+  if (has((k) => k.includes('metabisulfito'))) return 'Maduracion';
   // Maduración Sala es la hoja de AMBIENTE: no lleva machos ni hembras ni nauplios, así
   // que la regla de arriba no la alcanza. Su firma es la columna «RAS».
   // ⚠⚠ POR IGUALDAD EXACTA, nunca por `includes`: como subcadena, «ras» casa 16 de las
