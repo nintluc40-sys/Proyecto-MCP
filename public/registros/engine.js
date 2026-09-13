@@ -5110,7 +5110,7 @@ function renderAlgas(){
         <div class="alg-vol">
           <select class="alg-vol-sel" onchange="algVolPick(this)" aria-label="Volúmenes habituales">
             <option value="">Habituales…</option>
-            ${ALG_VOL_DESPACHO_OPTS.map(v=>`<option value="${v}"${String(vl(d,'vol_despacho'))===String(v)?" selected":""}>${v} L</option>`).join("")}
+            ${ALG_VOL_DESPACHO_OPTS.map(v=>`<option value="${v}"${String(vl(d,'vol_despacho'))===String(v)?" selected":""}>${v}</option>`).join("")}
           </select>
           <input type="number" name="vol_despacho" value="${vl(d,'vol_despacho')}" placeholder="o escribe otro" step="0.1" min="0" oninput="algVolSync(this)">
         </div>

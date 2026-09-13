@@ -151,6 +151,42 @@ describe('Algas · el Volumen de Despacho se elige de una lista Y se escribe', (
   });
 });
 
+/* 🔴 2026-09-13 · SIN «L» Y CON SITIO PARA ESCRIBIR (pedido del usuario).
+   1 · Las opciones decían «700 L»: el usuario quiere sólo la cantidad, que es lo que va a la
+       hoja (el dato ya salía numérico por `safeNum`; la «L» era sólo rótulo, pero sobraba).
+   2 · En el móvil el campo libre se veía como «o esc»: el desplegable reservaba 104 px fijos y
+       el input tenía `min-width:0`, así que en una celda de ~170 px quedaba sin sitio para
+       teclear. Ahora el input tiene un mínimo real y la fila SE PARTE en dos cuando no caben.
+       Visto en Chrome a 390 px antes y después; aquí se fija la regla que lo garantiza, porque
+       happy-dom no maqueta. */
+describe('Algas · Volumen de Despacho · opciones sin unidad y campo con sitio', () => {
+  it('🔴 cada opción dice SÓLO la cantidad, igual que su valor', () => {
+    H.renderAlgas();
+    const opciones = [...desplegable().querySelectorAll('option')].filter((o) => o.getAttribute('value'));
+    expect(opciones.map((o) => o.textContent.trim())).toEqual(H.ALG_VOL_DESPACHO_OPTS.map(String));
+  });
+
+  const css = readFileSync(join(process.cwd(), 'src/views/registros/registros.css'), 'utf8');
+  const regla = (sel) => {
+    const i = css.indexOf(sel + '{');
+    return i < 0 ? '' : css.slice(i + sel.length + 1, css.indexOf('}', i));
+  };
+
+  it('🔴 la fila del volumen se PARTE cuando no caben los dos', () => {
+    expect(regla('.registros-app .alg-vol')).toMatch(/flex-wrap:\s*wrap/);
+  });
+
+  it('🔴 el campo libre no puede encogerse por debajo de lo que se lee al teclear', () => {
+    const min = regla('.registros-app .alg-vol input').match(/min-width:\s*(\d+)px/);
+    expect(min, 'el input vuelve a poder quedarse en 0 px').toBeTruthy();
+    expect(Number(min[1])).toBeGreaterThanOrEqual(100);
+  });
+
+  it('el desplegable ya no reserva un ancho fijo que se come la celda', () => {
+    expect(regla('.registros-app .alg-vol-sel')).not.toMatch(/flex:\s*0 0 auto/);
+  });
+});
+
 /* 🔴🔴 EL VIAJE COMPLETO — el hueco que destapó la auditoría del 2026-09-04.
    Todo lo de arriba mira el DOM. Pero lo que de verdad importa es qué DATO sale, y eso
    lo decide `collect()`, que recorre `[name]`. Entre «el input tiene el valor» y «el
