@@ -9,6 +9,15 @@ const views = new Map(); // id -> { label, icon, render(container) }
 
 export function registerView(id, def) { views.set(id, def); }
 
+/** ¿La vista usa la barra de fecha global? Lo DECLARA al registrarse con `usaBarraFecha: true`
+ *  (D12, 2026-09-13). Una vista que no lo declara no la enseña: nace sin ella, que es lo
+ *  seguro. `dateBarVisibility.test.js` exige que declararla y leer `store.dateFrom/dateTo`
+ *  vayan juntas. */
+export function viewUsesDateBar(id) {
+  const def = views.get(id);
+  return !!(def && def.usaBarraFecha);
+}
+
 let container = null;
 export function setContainer(el) { container = el; }
 

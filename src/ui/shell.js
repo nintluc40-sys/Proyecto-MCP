@@ -3,7 +3,7 @@
    ============================================================ */
 import { store, on, EV } from '../core/store.js';
 import { connectSheets } from '../core/sheets.js';
-import { changeView, setContainer, renderCurrentView } from './router.js';
+import { changeView, setContainer, renderCurrentView, viewUsesDateBar } from './router.js';
 import { destroyAllCharts } from '../core/charts.js';
 import { fmtShort, parseAnyDate } from '../core/dates.js';
 import { getField, F } from '../core/fields.js';
@@ -98,9 +98,11 @@ export function mountShell(appEl) {
     }
   });
   on(EV.VIEW, renderDrawer);
-  // Al cambiar de vista, la barra de fecha vuelve a mostrarse por defecto (EV.VIEW se
-  // emite ANTES de renderizar la nueva vista, que la re-ocultará si le corresponde).
-  on(EV.VIEW, () => setDateBarHidden(false));
+  // Al cambiar de vista, la barra de fecha se muestra SÓLO si la vista la usa (D12, 2026-09-13):
+  // la declara al registrarse con `usaBarraFecha`. Antes se mostraba siempre, y en seis vistas
+  // se veía sin filtrar nada. EV.VIEW se emite ANTES de renderizar la nueva vista, así que la
+  // vista todavía puede ocultarla en sus sub-vistas (el Supervisor lo hace).
+  on(EV.VIEW, (id) => setDateBarHidden(!viewUsesDateBar(id)));
   on(EV.DATA, () => { renderDateBar(); renderCurrentView(); });
 }
 

@@ -34,9 +34,11 @@ async function boot() {
   const app = document.getElementById('app');
 
   // Vistas desarrolladas
-  registerView('supervisor', { label: 'Supervisor', icon: '👁️', render: supervisorView });
+  // `usaBarraFecha: true` = la vista LEE el rango de la barra de fecha global (store.dateFrom/
+  // dateTo). Sólo esas la enseñan (D12, 2026-09-13); lo vigila src/ui/dateBarVisibility.test.js.
+  registerView('supervisor', { label: 'Supervisor', icon: '👁️', render: supervisorView, usaBarraFecha: true });
   registerView('larvicultura', { label: 'Larvicultura', icon: '🦐', render: larviculturaView });
-  registerView('revisiones', { label: 'Revisiones', icon: '🔍', render: revisionesView });
+  registerView('revisiones', { label: 'Revisiones', icon: '🔍', render: revisionesView, usaBarraFecha: true });
 
   registerView('maduracion', { label: 'Maduración', icon: '🥚', render: maduracionView });
   registerView('microbiologia', { label: 'Microbiología', icon: '🧫', render: microbiologiaView });
