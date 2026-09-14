@@ -21,7 +21,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "e6ec06704881";
+const GAS_VERSION = "baa8dd0954ff";
 
 const SS_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
 
@@ -877,9 +877,36 @@ function replaceByDateRows(ws, newRows, dateCol, dateStr) {
 // -- Reemplazo por clave compuesta (Microbiología: grilla por sesión) --
 // Borra todas las filas cuya clave (keyCols) coincide con alguna del envío y
 // agrega las nuevas. Reemplaza cada sesión completa sin duplicar.
+// D9 (2026-09-14) · NUNCA BORRA A CIEGAS, la misma regla que replaceByDateRows. Los índices
+// de la clave los manda el CLIENTE (payload.keyCols) y hasta ese día no se comprobaban:
+//   · keyCols vacío, o con un índice que no existe en la fila (999, o el -1 de un indexOf
+//     que no encuentra «Sesión»), daba la clave "" a TODAS las filas: UN envío vaciaba la hoja;
+//   · una fila con la clave ENTERA en blanco borraba todas las de clave vacía, y en BIOMOL la
+//     Sesión vacía es justo la de las filas escritas antes de existir esa columna.
+// Ahora un índice que no sea un entero >= 0 dentro de la fila MÁS CORTA del envío cae a APPEND
+// puro, y una fila cuya clave es la de una fila en blanco se añade sin reemplazar nada (la
+// clave en blanco se calcula con el mismo madInKey, así que normaliza igual). Lo peor que
+// puede pasar es un duplicado visible, nunca un borrado. Una clave PARCIAL sigue valiendo:
+// una Corrida vacía con su Sesión es legítima. Lo fija gas-replace-clave.test.js del repo.
+function keyColsValidas_(keyCols, filas) {
+  var ancho = -1;
+  for (var f = 0; f < filas.length; f++) {
+    if (ancho < 0 || filas[f].length < ancho) ancho = filas[f].length;
+  }
+  for (var k = 0; k < keyCols.length; k++) {
+    var c = keyCols[k];
+    if (typeof c !== "number" || c < 0 || c % 1 !== 0 || c >= ancho) return false;
+  }
+  return true;
+}
 function replaceByKeyRows(ws, newRows, keyCols) {
+  if (!keyColsValidas_(keyCols, newRows)) return appendRows(ws, newRows);
+  var enBlanco = madInKey([], keyCols);
   var present = {};
-  for (var r = 0; r < newRows.length; r++) present[madInKey(newRows[r], keyCols)] = 1;
+  for (var r = 0; r < newRows.length; r++) {
+    var clave = madInKey(newRows[r], keyCols);
+    if (clave !== enBlanco) present[clave] = 1;
+  }
   var res = _replaceMatched(ws, newRows, function(row){ return present[madRowKey(row, keyCols)] === 1; });
   return { upserted: res.removed, appended: res.added };
 }
