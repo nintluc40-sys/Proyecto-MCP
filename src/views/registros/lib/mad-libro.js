@@ -53,8 +53,8 @@ export const ESTADO_DESINFECCION = 'Desinfección';
  *  AGRUPADOS en pocos tanques mientras los demás están vacíos (y se desinfectan). */
 export const ESTADO_DESINFECCION_AGRUPADA = 'Desinfección - Producción agrupada';
 /** «Pocos tanques»: como mucho esta fracción de los tanques de la sala tiene animales (la
- *  mitad o menos ocupada → la otra mitad o más, vacía). Es la regla por defecto; lo propuesto
- *  lo revisa el operario antes de guardar. */
+ *  mitad o menos ocupada → la otra mitad o más, vacía). CONFIRMADO por el usuario el 2026-09-14
+ *  (D3): no es un valor provisional. Lo propuesto lo revisa el operario antes de guardar. */
 export const AGRUPADA_MAX_FRACCION = 0.5;
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
