@@ -31,7 +31,8 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['CAL_FORMATS', 'renderCalNuevo', 'micTypeSet', 'loadCalDraft', 'saveCalDraft',
   'collectCalDraft', 'buildCalPayload', 'CAL_SHEET_HEADERS', 'CAL_SID_COL', 'CAL_PARAMS',
-  'CAL_PARAMS_MAD_AGUA', '_calHeadLabel', 'calRangeOf', 'renderCalRangos'];
+  'CAL_PARAMS_MAD_AGUA', '_calHeadLabel', 'calRangeOf', 'renderCalRangos',
+  'saveCalLocal', 'loadCal', 'calSessionKey', 'calEditSession', 'downloadCalPDF'];
 const GAS = readFileSync(join(process.cwd(), 'GAS/Code.gs'), 'utf8');
 const H = {};
 
@@ -206,5 +207,46 @@ describe('Calidad de Agua · Algas · muestras, química y Sulfato', () => {
     H.renderCalRangos();
     expect(fp.textContent).toContain('Sulfato');
     expect(fp.querySelector('[onchange*="calRangeSet(\'sulfato\'"]')).toBeTruthy();
+  });
+});
+
+/* 🔎 AUDITORÍA (2026-09-13, después del push). Las pruebas de arriba cubrían pintar, recoger y
+   enviar; quedaban dos caminos que también tocan las columnas nuevas y que nadie ejercía:
+   GUARDAR → volver a abrir la sesión desde el Historial (si no se restaurara, re-guardar
+   borraría Sulfato y la muestra), y el PDF del análisis. */
+describe('Calidad de Agua · Algas · lo guardado se reabre y se imprime entero', () => {
+  const guardarAlgas = () => {
+    pintar('algas');
+    /* ⚠ happy-dom no respeta `selected` dentro de un <optgroup> y devuelve otra opción; en Chrome
+       el desplegable sí muestra «Algas» (visto en captura). Se fija como lo vería el navegador. */
+    document.getElementById('cal-fmt-sel').value = 'algas';
+    document.getElementById('cal-resp').value = 'Analista QA';
+    celda('algas', 1, 'muestras').value = 'Agua Ultrafiltrada';
+    celda('algas', 1, 'ph').value = '7.9';
+    celda('algas', 1, 'sulfato').value = '2400';
+    celda('algas', 1, 'cl_libre').value = '0.2';
+    expect(H.saveCalLocal()).toBe(1);
+    return H.calSessionKey(H.loadCal()[0].data);
+  };
+
+  it('🔎 editar la sesión guardada devuelve Sulfato, la química y la muestra a su celda', () => {
+    const k = guardarAlgas();
+    document.getElementById('cal-resp').value = '';
+    H.calEditSession(k);
+    expect(celda('algas', 1, 'muestras').value).toBe('Agua Ultrafiltrada');
+    expect(celda('algas', 1, 'ph').value).toBe('7.9');
+    expect(celda('algas', 1, 'sulfato').value).toBe('2400');
+    expect(celda('algas', 1, 'cl_libre').value).toBe('0.2');
+  });
+
+  it('🔎 el PDF del análisis lleva la columna Sulfato con su valor', () => {
+    guardarAlgas();
+    let html = '';
+    const abrir = window.open;
+    window.open = () => ({ document: { write(s) { html += s; }, close() {}, title: '' }, focus() {}, print() {} });
+    try { H.downloadCalPDF(); } finally { window.open = abrir; }
+    expect(html).toContain('Sulfato');
+    expect(html).toContain('2400');
+    expect(html).toContain('Agua Ultrafiltrada');
   });
 });

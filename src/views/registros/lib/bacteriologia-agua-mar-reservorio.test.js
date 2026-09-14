@@ -20,7 +20,8 @@ import { join } from 'node:path';
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['MIC_FORMATS', 'renderMicNuevo', 'micTypeSet', 'loadMicDraft', 'saveMicDraft',
-  'collectMicDraft', 'buildMicPayload', 'MIC_SHEET_HEADERS'];
+  'collectMicDraft', 'buildMicPayload', 'MIC_SHEET_HEADERS',
+  'saveMicLocal', 'loadMic', 'micSessionKey', 'micEditSession', 'downloadMicPDF'];
 const H = {};
 const FMT = 'agua-limpia-mar';
 const OPCIONES = ['Agua de Mar', 'Reservorio'];
@@ -109,5 +110,38 @@ describe('Bacteriología · Agua de mar y Reservorios · columna Muestra', () =>
 
   it('no añade columnas a la hoja: «Muestras» ya existía y sigue siendo UNA', () => {
     expect(H.MIC_SHEET_HEADERS.filter((h) => h === 'Muestras')).toHaveLength(1);
+  });
+});
+
+/* 🔎 AUDITORÍA (2026-09-13, después del push): los dos caminos que la tanda no ejercía —
+   reabrir la sesión guardada desde el Historial y el PDF— también llevan la columna nueva. */
+describe('Bacteriología · Agua de mar y Reservorios · lo guardado se reabre y se imprime entero', () => {
+  const guardar = () => {
+    pintar();
+    /* ⚠ happy-dom no respeta `selected` dentro de un <optgroup>: se fija el formato activo como
+       lo vería el navegador. */
+    document.getElementById('mic-fmt-sel').value = FMT;
+    document.getElementById('mic-resp').value = 'Analista QA';
+    celda(1, 'muestras').value = 'Reservorio';
+    celda(1, 'vamar').value = '12';
+    expect(H.saveMicLocal()).toBeGreaterThan(0);
+    return H.micSessionKey(H.loadMic()[0].data);
+  };
+
+  it('🔎 editar la sesión guardada devuelve la Muestra a su celda', () => {
+    const k = guardar();
+    H.micEditSession(k);
+    expect(celda(1, 'muestras').value).toBe('Reservorio');
+    expect(celda(1, 'vamar').value).toBe('12');
+  });
+
+  it('🔎 el PDF del análisis lleva la columna Muestra con su valor', () => {
+    guardar();
+    let html = '';
+    const abrir = window.open;
+    window.open = () => ({ document: { write(s) { html += s; }, close() {}, title: '' }, focus() {}, print() {} });
+    try { H.downloadMicPDF(); } finally { window.open = abrir; }
+    expect(html).toContain('Muestra');
+    expect(html).toContain('Reservorio');
   });
 });
