@@ -10,11 +10,12 @@ import {
   buildDesovePayload,
   validarDesove,
 } from './ficha-maduracion-desoves.schema.js';
+import { detectSheetName, classifyOrigin } from '../../../core/sheets.js';
 
 const base = () => ({
   fecha: '2026-09-08',
   desoves: [
-    { lote: 'BM', codigoGenetico: '766', piscina: 'P-766', desoves: 4, huevos: 9800, nauplios: 6500, noViables: 300, fechaN2: '', n2: '', fechaN5: '', n5: '', despacho: 'Laboratorio Rosario', observaciones: '' },
+    { lote: 'BM', codigoGenetico: '766', piscina: 'P-766', desoves: 4, huevos: 9800, nauplios: 6500, hembrasNoViables: 12, fechaN2: '', n2: '', fechaN5: '', n5: '', despacho: 'Laboratorio Rosario', observaciones: '' },
   ],
 });
 
@@ -81,7 +82,7 @@ describe('Desoves · la hoja y su llave POSICIONAL', () => {
   });
 
   it('conserva el vocabulario que ya usaba el laboratorio', () => {
-    for (const h of ['Total de huevos', 'Total de nauplios', 'No viables', 'Desoves']) {
+    for (const h of ['Total de huevos', 'Total de nauplios', 'Hembras no viables', 'Desoves']) {
       expect(MAD_DESOVE_HEADERS).toContain(h);
     }
   });
@@ -110,8 +111,47 @@ describe('Desoves · el ×1000', () => {
     const filas = buildDesoveRows(base());
     expect(filas[0][col('Total de huevos')]).toBe(9800000);
     expect(filas[0][col('Total de nauplios')]).toBe(6500000);
-    expect(filas[0][col('No viables')]).toBe(300000);
     expect(filas[0][col('Desoves')]).toBe(4);   // número de desoves: pequeño, tal cual
+  });
+});
+
+/* 🔴 2026-09-14 (usuario): «No viables (miles)» pasa a «Hembras no viables»: reproductoras que
+   estaban maduras pero NO desovaron. Es un conteo de animales, como «Desoves», así que va TAL
+   CUAL y sin el ×1000. Medido ese día: la única fila de la hoja tenía «No viables» vacío. */
+describe('Desoves · Hembras no viables', () => {
+  it('🔴 la columna se llama «Hembras no viables» y «No viables» ya no existe', () => {
+    expect(MAD_DESOVE_HEADERS).toContain('Hembras no viables');
+    expect(col('No viables')).toBe(-1);
+  });
+
+  it('🔴 es un conteo: va tal cual, SIN el ×1000', () => {
+    const c = MAD_DESOVE_COLUMNS.find((x) => x.k === 'hembrasNoViables');
+    expect(c).toBeTruthy();
+    expect(c.mil).toBeFalsy();
+    expect(buildDesoveRows(base())[0][col('Hembras no viables')]).toBe(12);
+  });
+
+  it('sin cifra va vacía (el merge conserva la celda) y un negativo no llega', () => {
+    const m = base();
+    m.desoves[0].hembrasNoViables = '';
+    expect(buildDesoveRows(m)[0][col('Hembras no viables')]).toBe('');
+    m.desoves[0].hembrasNoViables = -3;
+    expect(buildDesoveRows(m)[0][col('Hembras no viables')]).toBe('');
+  });
+
+  it('🔴 un desove que sólo trae hembras no viables NO se avisa como «sin ninguna cifra»', () => {
+    const v = validarDesove({ fecha: '2026-09-14', desoves: [{ lote: 'BM', codigoGenetico: '766', hembrasNoViables: 3 }] });
+    expect(v.avisos.join(' ')).not.toMatch(/ninguna cifra/);
+  });
+
+  /* 🔴🔴 LA FIRMA DE LA PESTAÑA. El tablero reconoce «Maduración Lotes» por sus columnas: pide
+     «código genético» Y una cabecera con machos, hembras o nauplio. Hoy la da «Total de
+     nauplios»; si esa columna se borra, la da «Hembras no viables». Sin ninguna de las dos la
+     pestaña caería a «Hoja<N>» y sus filas desaparecerían del tablero sin un error. */
+  it('🔴 con las cabeceras nuevas la pestaña se sigue reconociendo como Maduración', () => {
+    const fila = Object.fromEntries(MAD_DESOVE_HEADERS.map((h) => [h, '']));
+    expect(detectSheetName([fila], 0)).toBe('Maduracion');
+    expect(classifyOrigin(MAD_DESOVE_SHEET)).toBe('Maduracion');
   });
 });
 

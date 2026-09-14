@@ -63,7 +63,11 @@ export const MAD_DESOVE_COLUMNS = [
   { h: 'Desoves', k: 'desoves', grain: 'dato', num: true },
   { h: 'Total de huevos', k: 'huevos', grain: 'dato', num: true, mil: true },
   { h: 'Total de nauplios', k: 'nauplios', grain: 'dato', num: true, mil: true },
-  { h: 'No viables', k: 'noViables', grain: 'dato', num: true, mil: true },
+  /* 2026-09-14 (usuario): «No viables (miles)» pasa a «Hembras no viables» — reproductoras que
+     estaban maduras pero NO desovaron. Es un CONTEO de animales, como «Desoves»: sin ×1000.
+     🔑 Además es la columna que mantiene la FIRMA de la pestaña en el tablero (sheets.js pide
+     «código genético» y una cabecera con machos/hembras/nauplio). */
+  { h: 'Hembras no viables', k: 'hembrasNoViables', grain: 'dato', num: true },
   { h: 'Fecha N2', k: 'fechaN2', grain: 'dato' },
   { h: 'N2', k: 'n2', grain: 'dato', num: true, mil: true },
   { h: 'Fecha N5', k: 'fechaN5', grain: 'dato' },
@@ -124,7 +128,7 @@ export function buildDesoveRows(model) {
       desoves: int(x.desoves),
       huevos: aMiles(x.huevos),
       nauplios: aMiles(x.nauplios),
-      noViables: aMiles(x.noViables),
+      hembrasNoViables: int(x.hembrasNoViables),
       fechaN2: sanitizeStr(x.fechaN2, 10),
       n2: aMiles(x.n2),
       fechaN5: sanitizeStr(x.fechaN5, 10),
@@ -197,7 +201,7 @@ export function validarDesove(model) {
       avisos.push('El N5 de ' + et + ' es ANTERIOR al N2.');
     }
 
-    const algo = ['desoves', 'huevos', 'nauplios', 'noViables', 'n2', 'n5']
+    const algo = ['desoves', 'huevos', 'nauplios', 'hembrasNoViables', 'n2', 'n5']
       .some((k) => int(x[k]) !== '' && int(x[k]) > 0);
     if (!algo) avisos.push(et + ' no trae ninguna cifra: la fila se escribirá vacía.');
   });

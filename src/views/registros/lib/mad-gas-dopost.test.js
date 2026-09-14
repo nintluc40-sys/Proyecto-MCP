@@ -204,7 +204,9 @@ describe('GAS · un cliente con el ESQUEMA VIEJO no puede escribir en Maduració
   });
 
   it('🔴 un cambio al FINAL también se ve: Desoves sin «Despacho» (58a9675) se RECHAZA', () => {
-    const hoja = hojaFalsa([MAD_DESOVE_HEADERS]);
+    /* La hoja es la del esquema CON «Despacho» y anterior a los cambios del 2026-09-14 (que movieron
+       el primer desfase a la columna 7-8): así la prueba sigue midiendo un cambio SÓLO al final. */
+    const hoja = hojaFalsa([DESOVES_58A9675.slice(0, 12).concat(['Despacho', 'Observaciones'])]);
     const g = gas({ 'Maduración Lotes': hoja });
     const r = g.post({ sheetName: 'Maduración Lotes', headers: DESOVES_58A9675,
       rows: [['2026-09-07', 'BP', 'CG1', 558, 64, 1, 2, 0, '', '', '', '', 'obs']] });
@@ -557,6 +559,63 @@ describe('GAS · Maduración Ingreso con Crecimiento y Libras: la hoja en uso no
     const hoja = hojaFalsa([MAD_INGRESO_HEADERS.slice()]);
     const g = gas({ 'Maduración Ingreso': hoja });
     const r = g.post({ sheetName: 'Maduración Ingreso', headers: INGRESO_PRODUCCION_0913, rows: [filaVieja.slice()] });
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('Esquema desactualizado');
+    expect(hoja.filas).toHaveLength(1);
+  });
+});
+
+/* ── Maduración Lotes (Desoves) · cambios del 2026-09-14: la hoja en uso NO se desalinea ──
+   Las cabeceras de producción, copiadas TAL CUAL de la hoja medida ese día (1 fila, 14
+   columnas; «Total de nauplios» y «No viables» vacíos en ella). El cliente nuevo manda las de
+   su módulo. La columna del desfase se CALCULA comparando las dos listas: así la prueba vale
+   igual con el renombrado de «No viables» y con el borrado de «Total de nauplios». */
+const DESOVES_PRODUCCION_0914 = ['Fecha', 'Lote', 'Código genético', 'Piscina Broodstock', 'Desoves', 'Total de huevos',
+  'Total de nauplios', 'No viables', 'Fecha N2', 'N2', 'Fecha N5', 'N5', 'Despacho', 'Observaciones'];
+
+describe('GAS · Maduración Lotes (Desoves) con sus cambios: la hoja en uso no se desalinea', () => {
+  const primerDesfase = MAD_DESOVE_HEADERS.findIndex((h, i) => h !== DESOVES_PRODUCCION_0914[i]);
+  const nuevoDesove = () => buildDesoveRows({ fecha: '2026-09-14', desoves: [{
+    lote: 'BP', codigoGenetico: 'OLF5.F2', desoves: '64', hembrasNoViables: '9', fechaN2: '2026-09-15', n2: '9000' }] });
+  const filaVieja = DESOVES_PRODUCCION_0914.map((h) => ({ Fecha: '2026-09-07', Lote: 'BP', 'Código genético': 'OLF5.F2',
+    Desoves: 64, 'Total de huevos': 14440000, N2: 9000000, N5: 9000000 })[h] ?? '');
+
+  it('el fixture ejerce algo: las cabeceras del cliente ya NO son las de producción', () => {
+    expect(primerDesfase).toBeGreaterThan(2);                 // la llave [0,1,2] no se mueve
+    expect(MAD_DESOVE_HEADERS.slice(0, 3)).toEqual(DESOVES_PRODUCCION_0914.slice(0, 3));
+  });
+
+  it('🔴 con la hoja SIN migrar, el envío nuevo se RECHAZA y no se escribe nada', () => {
+    const hoja = hojaFalsa([DESOVES_PRODUCCION_0914.slice(), filaVieja.slice()]);
+    const antes = JSON.stringify(hoja.filas);
+    const g = gas({ 'Maduración Lotes': hoja });
+    const r = g.post({ sheetName: 'Maduración Lotes', headers: MAD_DESOVE_HEADERS, rows: nuevoDesove() });
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('Esquema desactualizado');
+    expect(r.message).toContain('columna ' + (primerDesfase + 1));
+    expect(r.message).toContain(DESOVES_PRODUCCION_0914[primerDesfase]);
+    expect(JSON.stringify(hoja.filas)).toBe(antes);
+  });
+
+  it('🔴 con la hoja MIGRADA cada dato cae en su columna, y la fila vieja no se toca', () => {
+    const cab = MAD_DESOVE_HEADERS.slice();
+    const vieja = cab.map((h) => ({ Fecha: '2026-09-07', Lote: 'BP', 'Código genético': 'OLF5.F2', Desoves: 64, 'Total de huevos': 14440000 })[h] ?? '');
+    const hoja = hojaFalsa([cab, vieja.slice()]);
+    const g = gas({ 'Maduración Lotes': hoja });
+    const r = g.post({ sheetName: 'Maduración Lotes', headers: MAD_DESOVE_HEADERS, rows: nuevoDesove() });
+    expect(r.status).toBe('ok');
+    expect(hoja.filas[1]).toEqual(vieja);
+    const nueva = hoja.filas[2];
+    expect(nueva[cab.indexOf('Hembras no viables')]).toBe(9);
+    expect(nueva[cab.indexOf('Desoves')]).toBe(64);
+    expect(nueva[cab.indexOf('N2')]).toBe(9000000);
+    expect(nueva[cab.indexOf('Fecha N2')]).toBe('2026-09-15');
+  });
+
+  it('🔴 y un cliente VIEJO no puede escribir sobre la hoja ya migrada', () => {
+    const hoja = hojaFalsa([MAD_DESOVE_HEADERS.slice()]);
+    const g = gas({ 'Maduración Lotes': hoja });
+    const r = g.post({ sheetName: 'Maduración Lotes', headers: DESOVES_PRODUCCION_0914, rows: [filaVieja.slice()] });
     expect(r.status).toBe('error');
     expect(r.message).toContain('Esquema desactualizado');
     expect(hoja.filas).toHaveLength(1);

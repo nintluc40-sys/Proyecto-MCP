@@ -1835,9 +1835,9 @@ async function flushSyncQueue(){
     for(const it of q){
       const url = it.url || gasUrl();
       if(!url || !isValidGasUrl(url)){ remaining.push(it); continue; }
-      // Un ingreso de Maduración NO se entrega a un GAS viejo: escribiría desalineado (ver _madIngGasAlDia).
-      if(it.payload && it.payload.sheetName === MAD_ING_SHEET && (await _madIngGasAlDia(url)) === false){
-        remaining.push(it); enEspera++; msgEntorno = MAD_ING_GAS_VIEJO; continue;
+      // Un ingreso o un desove de Maduración NO se entrega a un GAS viejo: escribiría desalineado (ver _madIngGasAlDia).
+      if(it.payload && _madHojaPideGasNuevo(it.payload.sheetName) && (await _madIngGasAlDia(url)) === false){
+        remaining.push(it); enEspera++; msgEntorno = _madGasViejoMsg(it.payload.sheetName); continue;
       }
       const sid      = getSessionId();
       const finalUrl = url + (url.indexOf("?") === -1 ? "?" : "&") + "z=" + encodeURIComponent(sid);
@@ -6799,6 +6799,10 @@ async function _madIngGasAlDia(url){
     return txt.indexOf("FichasLarv-OK") !== -1 ? false : null;
   }catch(_){ return null; }
 }
+/* Hojas de Maduración cuyas columnas cambiaron y se escriben POR POSICIÓN: no se entregan a un
+   GAS viejo (sin guarda de esquema). Ingreso desde el 2026-09-13; Desoves desde el 2026-09-14. */
+function _madHojaPideGasNuevo(hoja){ return hoja === MAD_ING_SHEET || hoja === MAD_DESOVE_SHEET; }
+function _madGasViejoMsg(hoja){ return "el GAS publicado es anterior a las columnas nuevas de «" + hoja + "» y escribiría los datos en columnas equivocadas"; }
 const MAD_ING_GAS_VIEJO = "el GAS publicado es anterior a las columnas nuevas de «Maduración Ingreso» (Crecimiento y Libras) y escribiría los datos en columnas equivocadas";
 async function madIngGuardar(){
   const model=madIngCollect();
@@ -7241,7 +7245,8 @@ const MAD_DESOVE_COLUMNS = [
   { h:"Desoves", k:"desoves" },
   { h:"Total de huevos", k:"huevos" },
   { h:"Total de nauplios", k:"nauplios" },
-  { h:"No viables", k:"noViables" },
+  // 2026-09-14: «Hembras no viables» (reproductoras maduras que no desovaron), conteo SIN ×1000. Ver el módulo.
+  { h:"Hembras no viables", k:"hembrasNoViables" },
   { h:"Fecha N2", k:"fechaN2" },
   { h:"N2", k:"n2" },
   { h:"Fecha N5", k:"fechaN5" },
@@ -7276,7 +7281,7 @@ function madDesBuildRows(model){
       fecha: fecha, lote: lote, codigoGenetico: cg,
       piscina: sanitizeStr(x.piscina,60),
       desoves: madIngInt(x.desoves),
-      huevos: madDesMiles(x.huevos), nauplios: madDesMiles(x.nauplios), noViables: madDesMiles(x.noViables),
+      huevos: madDesMiles(x.huevos), nauplios: madDesMiles(x.nauplios), hembrasNoViables: madIngInt(x.hembrasNoViables),
       fechaN2: sanitizeStr(x.fechaN2,10), n2: madDesMiles(x.n2),
       fechaN5: sanitizeStr(x.fechaN5,10), n5: madDesMiles(x.n5),
       despacho: sanitizeStr(x.despacho,200),
@@ -7319,7 +7324,7 @@ function madDesValidar(model){
     if(x.fechaN5 && !madDesFecha(x.fechaN5)) avisos.push("La fecha de N5 de "+et+" no es válida.");
     if(madDesFecha(m.fecha) && madDesFecha(x.fechaN2) && x.fechaN2 < m.fecha) avisos.push("El N2 de "+et+" es ANTERIOR al desove.");
     if(madDesFecha(x.fechaN2) && madDesFecha(x.fechaN5) && x.fechaN5 < x.fechaN2) avisos.push("El N5 de "+et+" es ANTERIOR al N2.");
-    const algo = ["desoves","huevos","nauplios","noViables","n2","n5"].some(function(k){ const n=madIngInt(x[k]); return n!=="" && n>0; });
+    const algo = ["desoves","huevos","nauplios","hembrasNoViables","n2","n5"].some(function(k){ const n=madIngInt(x[k]); return n!=="" && n>0; });
     if(!algo) avisos.push(et+" no trae ninguna cifra: la fila se escribirá vacía.");
   });
   return { errores: errores, avisos: avisos };
@@ -7338,7 +7343,7 @@ function _madDesCardHTML(){
     +   '<label style="'+_MAD_ING_LBL+'">Desoves<input class="md-desoves" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:88px"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Total de huevos (miles)<input class="md-huevos" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:130px"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Total de nauplios (miles)<input class="md-nauplios" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:140px"></label>'
-    +   '<label style="'+_MAD_ING_LBL+'">No viables (miles)<input class="md-noviables" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:120px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'" title="Reproductoras que estaban maduras pero no desovaron">Hembras no viables<input class="md-hnoviables" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:120px"></label>'
     + '</div>'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
     +   '<label style="'+_MAD_ING_LBL+'">Fecha N2<input class="md-fn2" type="date" style="'+_MAD_ING_INP+'"></label>'
@@ -7367,7 +7372,7 @@ function madDesCollect(){
     desoves.push({
       lote:g(c,".md-lote"), codigoGenetico:g(c,".md-cg"), piscina:g(c,".md-piscina"),
       desoves:g(c,".md-desoves"), huevos:g(c,".md-huevos"), nauplios:g(c,".md-nauplios"),
-      noViables:g(c,".md-noviables"),
+      hembrasNoViables:g(c,".md-hnoviables"),
       fechaN2:g(c,".md-fn2"), n2:g(c,".md-n2"), fechaN5:g(c,".md-fn5"), n5:g(c,".md-n5"),
       despacho:g(c,".md-desp"),
       observaciones:g(c,".md-obs")
@@ -7431,6 +7436,14 @@ async function madDesGuardar(){
   _madDesPinta(res, payload.rows.length);
   if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
   if(!payload.rows.length){ toast("No hay ningún desove completo que guardar.","warn",4000); return; }
+  // La hoja se escribe POR POSICIÓN y sus columnas cambiaron: contra el GAS viejo no se envía (ver _madIngGasAlDia).
+  if((await _madIngGasAlDia()) === false){
+    const aviso = "No se envió: " + _madGasViejoMsg(MAD_DESOVE_SHEET) + ". Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo tecleado sigue aquí.";
+    const box = document.getElementById("md-report");
+    if(box) box.innerHTML = '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:12px;color:#991b1b">' + escapeHtml(aviso) + '</div>';
+    toast(aviso, "err", 10000);
+    return;
+  }
   toast("Enviando "+payload.rows.length+" desove(s)…","info",2200);
   const _t={};
   const ok=await postPayload(payload, gasUrl(), _t);

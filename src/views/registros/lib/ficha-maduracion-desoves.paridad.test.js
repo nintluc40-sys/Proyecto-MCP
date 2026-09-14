@@ -63,7 +63,7 @@ const api = motorDesoves();
 const MODELOS = {
   'un desove simple': {
     fecha: '2026-09-08',
-    desoves: [{ lote: 'BM', codigoGenetico: '766', piscina: 'P-766', desoves: 4, huevos: 9800, nauplios: 6500, noViables: 300, fechaN2: '', n2: '', fechaN5: '', n5: '', observaciones: 'sin novedad' }],
+    desoves: [{ lote: 'BM', codigoGenetico: '766', piscina: 'P-766', desoves: 4, huevos: 9800, nauplios: 6500, hembrasNoViables: 12, fechaN2: '', n2: '', fechaN5: '', n5: '', observaciones: 'sin novedad' }],
   },
   'un lote con DOS códigos el mismo día': {
     fecha: '2026-09-08',
@@ -94,6 +94,8 @@ const MODELOS = {
       { lote: 'BC', codigoGenetico: '801', n2: 10, fechaN2: '2026-09-01', n5: 5, fechaN5: '2026-08-30' },
     ],
   },
+  // 2026-09-14: un desove que sólo trae hembras no viables (conteo, sin ×1000) ejerce su rama.
+  'sólo hembras no viables': { fecha: '2026-09-14', desoves: [{ lote: 'BM', codigoGenetico: '766', hembrasNoViables: 3 }] },
   'sin desoves': { fecha: '2026-09-08', desoves: [] },
   'fecha inválida': { fecha: '08/09/2026', desoves: [{ lote: 'BM', codigoGenetico: '766', nauplios: 10 }] },
 };

@@ -275,6 +275,14 @@ Dos consecuencias que conviene tener presentes al desplegar:
   («Esquema desactualizado… columna 14») y lo tecleado queda en el dispositivo; y contra el GAS
   viejo el cliente **no envía** (pregunta antes con `?p=ver`). Un dispositivo con la app vieja
   en caché queda igualmente rechazado tras la migración hasta que la recargue.
+- 🔴🔴 **Maduración Lotes (Desoves) · migrar la hoja ANTES de publicar el cliente** (cambio del
+  2026-09-14: «No viables (miles)» → «Hembras no viables», reproductoras maduras que no
+  desovaron, un conteo **sin** ×1000). También se escribe **por posición**. Mismo orden que el
+  Ingreso: 1) re-desplegar el GAS; 2) en la pestaña «Maduración Lotes», escribir en **H1**
+  `Hembras no viables` y comprobar que **H2** hacia abajo está vacío (medido el 09-14: la única
+  fila lo tenía vacío; una cifra vieja estaría en unidades ×1000 y significaría otra cosa, así
+  que se borra); 3) `git push`. Sin migrar, el GAS nuevo **rechaza** los desoves («Esquema
+  desactualizado… columna 8») y contra el GAS viejo el cliente **no envía**.
 - **Maduración · histórico** (Fase 5): la única fase del registro operativo sin construir.
   Aplazada a propósito hasta probar el resto en operación.
 - **Maduración · vaciado de las hojas antiguas**: cuando el registro operativo se dé por
