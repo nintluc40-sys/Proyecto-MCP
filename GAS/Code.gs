@@ -21,7 +21,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "baa8dd0954ff";
+const GAS_VERSION = "63498421af0b";
 
 const SS_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
 
@@ -238,8 +238,8 @@ function doPost(e) {
     // Routing Maduración: clave compuesta por columnas (0-indexed)
     var madKeyCols = null;
     if      (payload.sheetName === "Maduración Sala")     madKeyCols = [0,1];   // Fecha, Sala
-    else if (payload.sheetName === "Maduración Tanques")  madKeyCols = [0,1,3]; // Fecha, Sala, Tanque (Lote editable, fuera de la clave)
-    else if (payload.sheetName === "Maduración Lotes")    madKeyCols = [0,1,2]; // Fecha, Sala, Fila (Lote/Historial editables)
+    else if (payload.sheetName === "Maduración Tanques")  madKeyCols = [0,1,3]; // Fecha, Sala, Tanque («Lote», en la C, va vacía: sólo guarda la posición)
+    else if (payload.sheetName === "Maduración Lotes")    madKeyCols = [0,1,2]; // Fecha, Lote, Código genético (la hoja de Desoves)
     // Registro reproductivo (upsert por clave, MERGE preserva campos permanentes vacíos):
     else if (payload.sheetName === "Maduración MATRIZ")         madKeyCols = [1];     // Trovan ID
     else if (payload.sheetName === "Maduración Bitácora")       madKeyCols = [0,1,2]; // Trovan + Fecha + Tipo
@@ -379,7 +379,7 @@ function doPost(e) {
     }
 
     // Routing según hoja destino:
-    //   • Maduración (3 hojas): UPSERT por clave compuesta (ver madKeyCols).
+    //   • Maduración (Sala, Tanques, Lotes y las tres del reproductivo): UPSERT por clave compuesta (ver madKeyCols).
     //   • Lab_Algas: UPSERT por la columna "Sesión" (id estable por registro).
     //   • BIOMOL: APPEND puro — cada registro de diagnóstico es independiente.
     //   • Registro_Supervisión (AsT): UPSERT por columna ID estable — al editar
@@ -387,9 +387,9 @@ function doPost(e) {
     //   • Datos / Control: UPSERT estándar (Fecha+Módulo+Tanque[+Hora]).
     var result;
     if (isMad) {
-      // Las 3 hojas de Maduración usan upsert con su clave compuesta:
+      // Las hojas POSICIONALES del registro operativo usan upsert con su clave compuesta (las del reproductivo, en madKeyCols):
       //   Sala     → [0,1]   Fecha+Sala
-      //   Tanques  → [0,1,3] Fecha+Sala+Tanque (Lote editable, fuera de clave)
+      //   Tanques  → [0,1,3] Fecha+Sala+Tanque («Lote» va vacía: sólo guarda la posición)
       //   Lotes    → [0,1,2] Fecha+Lote+Código genético (la hoja de Desoves desde el 2026-09-08)
       // D2 (2026-09-13) · la llave de Desoves se guarda como TEXTO. Sheets convierte lo que
       // parece número o fecha: un código «0766» se guardaría como 766 y «3-5» como una fecha,
@@ -1130,8 +1130,8 @@ function algasInKey(row) {
 // ── Upsert genérico para hojas de Maduración ──
 // keyCols es un array de índices de columnas que forman la clave compuesta:
 //   • Maduración Sala     → [0,1]   (Fecha, Sala)
-//   • Maduración Tanques  → [0,1,3] (Fecha, Sala, Tanque) — Lote editable, fuera de la clave
-//   • Maduración Lotes    → [0,1,2] (Fecha, Sala, Fila)   — Lote/Historial editables
+//   • Maduración Tanques  → [0,1,3] (Fecha, Sala, Tanque) — «Lote» y las dos «Población inicial» van vacías
+//   • Maduración Lotes    → [0,1,2] (Fecha, Lote, Código genético) — la hoja de Desoves
 // Si la clave coincide con una fila existente: merge (los nuevos valores
 // no vacíos reemplazan al anterior; los vacíos preservan el dato actual).
 function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol) {

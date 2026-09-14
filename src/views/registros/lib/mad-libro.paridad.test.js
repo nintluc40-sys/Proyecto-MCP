@@ -2,7 +2,8 @@
    MADURACIÓN · el LIBRO MAYOR — LAS DOS IMPLEMENTACIONES DEBEN COINCIDIR
 
    El libro existe DOS veces, y no por descuido:
-     · `mad-libro.js` — módulo ES puro, probado y mutado (12 mutaciones).
+     · `mad-libro.js` — módulo ES puro, probado y mutado (cuántas mutaciones lo dice
+       `mutar-mad-libro` al correr: aquí decía 12 y el banco ya tenía más).
      · el bloque MAD_LIBRO de `public/registros/engine.js` — inline, porque las dos
        copias de Music son monolitos autónomos SIN módulos ES.
 

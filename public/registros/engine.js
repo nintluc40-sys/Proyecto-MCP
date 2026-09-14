@@ -18,7 +18,7 @@
 const MODS    = 10, TQS = 12;   // tanques 13–20 retirados (nadie los usaba) — decisión del usuario 2026-06-12
 const CIO_MOD = 0;   // Módulo CIO
 const LAB_MOD = 11;  // Módulo Lab. Algas
-const MAD_MOD = 12;  // Módulo Maduración (Salas / Tanques / Lotes)
+const MAD_MOD = 12;  // Módulo Maduración (sus pestañas: MAD_TABS)
 const AST_MOD = 13;  // Módulo As Técnico
 const MIC_MOD = 14;  // Módulo Microbiología
 const BIO_MOD = 15;  // Módulo Biomol
@@ -5595,13 +5595,16 @@ function bitDelete(id){
   toast("Registro eliminado de la bitácora","ok",2500);
 }
 /* ══════════════════════════════════════════
-   MADURACIÓN — módulo CRUD con 3 vistas
-   (Salas / Tanques / Lotes).
-   Almacenamiento por ficha en una única clave
-   (lista JSON) con flag `synced`. Sync por upsert:
+   MADURACIÓN — las grillas DIARIAS (MAD_FICHAS:
+   Salas y Tanques). Almacenamiento por ficha en
+   una única clave (lista JSON) con flag `synced`.
+   Sync por upsert POSICIONAL (madKeyCols del GAS):
      • Maduración Sala     → Fecha + Sala
      • Maduración Tanques  → Fecha + Sala + Tanque
-     • Maduración Lotes    → Fecha + Sala + Fila
+   Las demás pestañas de MAD_TABS no usan este
+   almacenamiento: Ingreso, Movimientos, Desoves y
+   Fin de Ciclo son formularios que envían y se
+   vacían. La grilla de Lotes se retiró el 2026-09-08.
 ══════════════════════════════════════════ */
 function madKey(ficha){ return MAD_PRE + ficha; }
 function loadMad(ficha){
@@ -9299,7 +9302,6 @@ function clearMadTanquesGrid(){
   toast("🗑 "+matching.length+" registro(s) de Tanques borrados","ok",3000);
 }
 
-// ── Grilla Lotes: recolección / guardado / sync / borrado / agregar fila ──
 // ── PDF horizontal con tabla de registros (todos los visibles) ──
 function downloadMadPDF(ficha){
   if(!MAD_FICHAS.includes(ficha)) return;
@@ -9309,7 +9311,6 @@ function downloadMadPDF(ficha){
     return;
   }
   if(ficha === 'tanques')      list.sort((a,b) => (parseInt((a.data||{}).tanque,10)||0) - (parseInt((b.data||{}).tanque,10)||0));
-  else if(ficha === 'lotes')   list.sort((a,b) => (parseInt((a.data||{}).fila,10)||0)   - (parseInt((b.data||{}).fila,10)||0));
 
   const ts    = new Date();
   const tsStr = ts.toLocaleString('es-EC',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
@@ -9383,27 +9384,6 @@ function downloadMadPDF(ficha){
         <td>${st}</td>
       </tr>`;
     }).join('');
-  } else {
-    titleIco = '📦'; titleText = 'Maduración · Lotes'; docCode = 'OMR-MAD-LOT';
-    headers = ['#','Fecha','Sala','Fila','Lote','Historial','Total nauplios','Total huevos','N2/lote','Desoves/lote','No viables/lote','Estado sync'];
-    rowsHtml = list.map((r, idx) => {
-      const d = r.data || {};
-      const st = r.synced ? '<b style="color:#166534">✔ Sinc.</b>' : '<b style="color:#92400e">⏳ Pend.</b>';
-      return `<tr>
-        <td class="tqc">${idx+1}</td>
-        <td>${escapeHtml(d.fecha||'—')}</td>
-        <td>${escapeHtml(d.sala||'—')}</td>
-        <td>${pdfVal(d.fila)}</td>
-        <td>${escapeHtml(String(d.lote||'—'))}</td>
-        <td>${escapeHtml(d.historial||'—')}</td>
-        <td>${pdfVal(d.total_nauplios)}</td>
-        <td>${pdfVal(d.total_huevos)}</td>
-        <td>${pdfVal(d.n2_lote)}</td>
-        <td>${pdfVal(d.desoves_lote)}</td>
-        <td>${pdfVal(d.no_viables_lote)}</td>
-        <td>${st}</td>
-      </tr>`;
-    }).join('');
   }
 
   const fl = _madFilters[ficha] || {};
@@ -9414,7 +9394,7 @@ function downloadMadPDF(ficha){
   if(fl.search) fParts.push("Búsqueda: "+fl.search);
   const filterStr = fParts.length ? fParts.join(' · ') : 'Todos los registros';
 
-  const code3 = ficha === 'salas' ? 'SAL' : ficha === 'tanques' ? 'TAN' : 'LOT';
+  const code3 = ficha === 'salas' ? 'SAL' : 'TAN';
   const fileName = 'MAD-' + code3 + '_' + fecha.replace(/-/g,'') + '_' + list.length + 'reg';
   const title    = escapeHtml(fileName);
 
@@ -17738,7 +17718,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "baa8dd0954ff";
+const GAS_VERSION = "63498421af0b";
 
 const SS_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
 
@@ -17955,8 +17935,8 @@ function doPost(e) {
     // Routing Maduración: clave compuesta por columnas (0-indexed)
     var madKeyCols = null;
     if      (payload.sheetName === "Maduración Sala")     madKeyCols = [0,1];   // Fecha, Sala
-    else if (payload.sheetName === "Maduración Tanques")  madKeyCols = [0,1,3]; // Fecha, Sala, Tanque (Lote editable, fuera de la clave)
-    else if (payload.sheetName === "Maduración Lotes")    madKeyCols = [0,1,2]; // Fecha, Sala, Fila (Lote/Historial editables)
+    else if (payload.sheetName === "Maduración Tanques")  madKeyCols = [0,1,3]; // Fecha, Sala, Tanque («Lote», en la C, va vacía: sólo guarda la posición)
+    else if (payload.sheetName === "Maduración Lotes")    madKeyCols = [0,1,2]; // Fecha, Lote, Código genético (la hoja de Desoves)
     // Registro reproductivo (upsert por clave, MERGE preserva campos permanentes vacíos):
     else if (payload.sheetName === "Maduración MATRIZ")         madKeyCols = [1];     // Trovan ID
     else if (payload.sheetName === "Maduración Bitácora")       madKeyCols = [0,1,2]; // Trovan + Fecha + Tipo
@@ -18096,7 +18076,7 @@ function doPost(e) {
     }
 
     // Routing según hoja destino:
-    //   • Maduración (3 hojas): UPSERT por clave compuesta (ver madKeyCols).
+    //   • Maduración (Sala, Tanques, Lotes y las tres del reproductivo): UPSERT por clave compuesta (ver madKeyCols).
     //   • Lab_Algas: UPSERT por la columna "Sesión" (id estable por registro).
     //   • BIOMOL: APPEND puro — cada registro de diagnóstico es independiente.
     //   • Registro_Supervisión (AsT): UPSERT por columna ID estable — al editar
@@ -18104,9 +18084,9 @@ function doPost(e) {
     //   • Datos / Control: UPSERT estándar (Fecha+Módulo+Tanque[+Hora]).
     var result;
     if (isMad) {
-      // Las 3 hojas de Maduración usan upsert con su clave compuesta:
+      // Las hojas POSICIONALES del registro operativo usan upsert con su clave compuesta (las del reproductivo, en madKeyCols):
       //   Sala     → [0,1]   Fecha+Sala
-      //   Tanques  → [0,1,3] Fecha+Sala+Tanque (Lote editable, fuera de clave)
+      //   Tanques  → [0,1,3] Fecha+Sala+Tanque («Lote» va vacía: sólo guarda la posición)
       //   Lotes    → [0,1,2] Fecha+Lote+Código genético (la hoja de Desoves desde el 2026-09-08)
       // D2 (2026-09-13) · la llave de Desoves se guarda como TEXTO. Sheets convierte lo que
       // parece número o fecha: un código «0766» se guardaría como 766 y «3-5» como una fecha,
@@ -18847,8 +18827,8 @@ function algasInKey(row) {
 // ── Upsert genérico para hojas de Maduración ──
 // keyCols es un array de índices de columnas que forman la clave compuesta:
 //   • Maduración Sala     → [0,1]   (Fecha, Sala)
-//   • Maduración Tanques  → [0,1,3] (Fecha, Sala, Tanque) — Lote editable, fuera de la clave
-//   • Maduración Lotes    → [0,1,2] (Fecha, Sala, Fila)   — Lote/Historial editables
+//   • Maduración Tanques  → [0,1,3] (Fecha, Sala, Tanque) — «Lote» y las dos «Población inicial» van vacías
+//   • Maduración Lotes    → [0,1,2] (Fecha, Lote, Código genético) — la hoja de Desoves
 // Si la clave coincide con una fila existente: merge (los nuevos valores
 // no vacíos reemplazan al anterior; los vacíos preservan el dato actual).
 function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol) {
