@@ -63,8 +63,9 @@ export const MAD_DESOVE_COLUMNS = [
   { h: 'Desoves', k: 'desoves', grain: 'dato', num: true },
   { h: 'Total de huevos', k: 'huevos', grain: 'dato', num: true, mil: true },
   /* 2026-09-14 (usuario): se BORRA «Total de nauplios (miles)» — los nauplios ya se registran
-     por separado en N2 y N5, y un tercer total repetía el dato. La hoja pierde su columna G
-     (migración en el README). */
+     por separado en N2 y N5, y un tercer total repetía el dato. La hoja pierde su columna G: no
+     se migra (sus filas eran de prueba, decisión del usuario del 2026-09-14), pero no puede
+     conservar la cabecera vieja o la guarda de esquema rechaza cada envío (ver el README). */
   /* 2026-09-14 (usuario): «No viables (miles)» pasa a «Hembras no viables» — reproductoras que
      estaban maduras pero NO desovaron. Es un CONTEO de animales, como «Desoves»: sin ×1000.
      🔑🔑 Además es la columna que mantiene la FIRMA de la pestaña en el tablero (sheets.js pide

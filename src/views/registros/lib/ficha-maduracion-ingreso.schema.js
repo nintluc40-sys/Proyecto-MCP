@@ -95,9 +95,10 @@ export const MAD_INGRESO_COLUMNS = [
   { h: 'Supervivencia piscina (%)', k: 'supervivencia', grain: 'composicion', num: true },
   /* 2026-09-13 (usuario): «Camarones por m2» se BORRA y en su sitio va «Crecimiento semanal
      promedio»; «Libras por hectárea promedio» entra justo detrás.
-     ⚠⚠ LA HOJA DE PRODUCCIÓN HAY QUE MIGRARLA A MANO (ver README): se escribe POR POSICIÓN y
-     esto corre Densidad, Agua e ID un sitio. Mientras no se migre, el GAS nuevo RECHAZA el
-     envío (guarda de esquema) y el cliente no escribe contra el GAS viejo (`_madIngGasAlDia`). */
+     ⚠⚠ LA HOJA SE ESCRIBE POR POSICIÓN y esto corre Densidad, Agua e ID un sitio. No se migra
+     (sus filas eran de prueba, decisión del usuario del 2026-09-14), pero mientras conserve la
+     cabecera vieja el GAS nuevo RECHAZA el envío (guarda de esquema), y contra el GAS viejo el
+     cliente no escribe (`_madIngGasAlDia`). Ver el README. */
   { h: 'Crecimiento semanal promedio', k: 'crecimientoSemanal', grain: 'composicion', num: true },
   { h: 'Libras por hectárea promedio', k: 'librasHectarea', grain: 'composicion', num: true },
   { h: 'Densidad de siembra', k: 'densidad', grain: 'composicion', num: true },
