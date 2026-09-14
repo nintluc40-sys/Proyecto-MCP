@@ -32,7 +32,8 @@ const base = () => ({
       pesoMachos: 34.5,
       pesoHembras: 41.2,
       supervivencia: 78.4,
-      camaronesM2: 12,
+      crecimientoSemanal: 1.8,
+      librasHectarea: 2450,
       densidad: 9.5,
       reparto: [
         { sala: 'Sala 1', tanque: 1, machos: 150, hembras: 300, agua: 'RAS' },
@@ -49,11 +50,27 @@ describe('Ingreso a Maduración · la hoja y sus columnas', () => {
     expect(MAD_INGRESO_HEADERS).toEqual(MAD_INGRESO_COLUMNS.map((c) => c.h));
   });
 
-  it('son 17 columnas y el ID va la ÚLTIMA', () => {
-    /* Eran 16 hasta el 2026-09-08; entró «Grupo». Lo que NO se mueve —y por eso se
-       comprueba aparte— es que `ID` siga siendo la última: en AsT ya costó caro. */
-    expect(MAD_INGRESO_HEADERS).toHaveLength(17);
+  it('son 18 columnas y el ID va la ÚLTIMA', () => {
+    /* Eran 16 hasta el 2026-09-08; entró «Grupo». El 2026-09-13 «Camarones por m2» se cambió
+       por «Crecimiento semanal promedio» y entró «Libras por hectárea promedio». Lo que NO se
+       mueve —y por eso se comprueba aparte— es que `ID` siga siendo la última: en AsT ya costó caro. */
+    expect(MAD_INGRESO_HEADERS).toHaveLength(18);
     expect(MAD_INGRESO_HEADERS[MAD_INGRESO_HEADERS.length - 1]).toBe('ID');
+  });
+
+  it('🔴 2026-09-13 · «Camarones por m2» ya no existe; en su sitio va el crecimiento y detrás las libras', () => {
+    /* Pedido del usuario. El ORDEN es parte del dato: la hoja se escribe por posición. Crecimiento
+       ocupa la posición que tenía Camarones por m2 y Libras va justo detrás, antes de Densidad,
+       Agua e ID. La hoja de producción hay que migrarla a mano (ver README). */
+    expect(col('Camarones por m2')).toBe(-1);
+    expect(MAD_INGRESO_HEADERS.slice(12)).toEqual(['Supervivencia piscina (%)', 'Crecimiento semanal promedio',
+      'Libras por hectárea promedio', 'Densidad de siembra', 'Agua', 'ID']);
+    for (const k of ['crecimientoSemanal', 'librasHectarea']) {
+      const c = MAD_INGRESO_COLUMNS.find((x) => x.k === k);
+      expect(c, k).toBeTruthy();
+      expect(c.grain).toBe('composicion');
+      expect(c.num).toBe(true);
+    }
   });
 
   it('«Grupo» acompaña al código genético, no lo sustituye', () => {
@@ -175,7 +192,8 @@ describe('Ingreso · construcción de filas', () => {
     expect(f[col('Peso promedio machos (g)')]).toBe(34.5);
     expect(f[col('Peso promedio hembras (g)')]).toBe(41.2);
     expect(f[col('Supervivencia piscina (%)')]).toBe(78.4);
-    expect(f[col('Camarones por m2')]).toBe(12);
+    expect(f[col('Crecimiento semanal promedio')]).toBe(1.8);
+    expect(f[col('Libras por hectárea promedio')]).toBe(2450);
     expect(f[col('Densidad de siembra')]).toBe(9.5);
     expect(f[col('Agua')]).toBe('RAS');
     expect(f[col('ID')]).toBe('2026-09-08-AB-CG01-S1-t1');

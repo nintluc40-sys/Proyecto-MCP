@@ -1835,6 +1835,10 @@ async function flushSyncQueue(){
     for(const it of q){
       const url = it.url || gasUrl();
       if(!url || !isValidGasUrl(url)){ remaining.push(it); continue; }
+      // Un ingreso de Maduración NO se entrega a un GAS viejo: escribiría desalineado (ver _madIngGasAlDia).
+      if(it.payload && it.payload.sheetName === MAD_ING_SHEET && (await _madIngGasAlDia(url)) === false){
+        remaining.push(it); enEspera++; msgEntorno = MAD_ING_GAS_VIEJO; continue;
+      }
       const sid      = getSessionId();
       const finalUrl = url + (url.indexOf("?") === -1 ? "?" : "&") + "z=" + encodeURIComponent(sid);
       const _gasTok  = gcfg("gas-token", "");
@@ -6230,7 +6234,9 @@ const MAD_ING_COLUMNS = [
   { h:"Peso promedio machos (g)", k:"pesoMachos" },
   { h:"Peso promedio hembras (g)", k:"pesoHembras" },
   { h:"Supervivencia piscina (%)", k:"supervivencia" },
-  { h:"Camarones por m2", k:"camaronesM2" },
+  // 2026-09-13: «Camarones por m2» se borró; en su sitio Crecimiento y detrás Libras (ver el módulo).
+  { h:"Crecimiento semanal promedio", k:"crecimientoSemanal" },
+  { h:"Libras por hectárea promedio", k:"librasHectarea" },
   { h:"Densidad de siembra", k:"densidad" },
   { h:"Agua", k:"agua" },
   { h:"ID", k:"id" }
@@ -6289,7 +6295,7 @@ function madIngBuildRows(model){
         sala: sala, tanque: tanque,
         machos: madIngInt(r.machos), hembras: madIngInt(r.hembras),
         pesoMachos: madIngNum(c.pesoMachos), pesoHembras: madIngNum(c.pesoHembras),
-        supervivencia: madIngNum(c.supervivencia), camaronesM2: madIngNum(c.camaronesM2),
+        supervivencia: madIngNum(c.supervivencia), crecimientoSemanal: madIngNum(c.crecimientoSemanal), librasHectarea: madIngNum(c.librasHectarea),
         densidad: madIngNum(c.densidad), agua: sanitizeStr(r.agua,20),
         id: madIngRowId(fecha, lote, cg, sala, tanque)
       };
@@ -6480,7 +6486,8 @@ function _madIngCompHTML(){
     + '</div>'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">'
     +   '<label style="'+_MAD_ING_LBL+'">Supervivencia piscina (%)<input class="mi-superv" type="number" min="0" step="0.1" style="'+_MAD_ING_INP+';width:110px"></label>'
-    +   '<label style="'+_MAD_ING_LBL+'">Camarones por m²<input class="mi-cm2" type="number" min="0" step="0.1" style="'+_MAD_ING_INP+';width:110px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Crecimiento semanal promedio<input class="mi-crec" type="number" min="0" step="0.01" style="'+_MAD_ING_INP+';width:110px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Libras por hectárea promedio<input class="mi-lbha" type="number" min="0" step="0.1" style="'+_MAD_ING_INP+';width:110px"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Densidad de siembra<input class="mi-densidad" type="number" min="0" step="0.1" style="'+_MAD_ING_INP+';width:110px"></label>'
     + '</div>'
     + '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">'
@@ -6659,7 +6666,7 @@ function madIngCollect(){
       grupo:g(c,".mi-grupo"),
       machos:g(c,".mi-tmachos"), hembras:g(c,".mi-thembras"),
       pesoMachos:g(c,".mi-pmachos"), pesoHembras:g(c,".mi-phembras"),
-      supervivencia:g(c,".mi-superv"), camaronesM2:g(c,".mi-cm2"), densidad:g(c,".mi-densidad"),
+      supervivencia:g(c,".mi-superv"), crecimientoSemanal:g(c,".mi-crec"), librasHectarea:g(c,".mi-lbha"), densidad:g(c,".mi-densidad"),
       reparto:reparto
     });
   });
@@ -6726,6 +6733,29 @@ function madIngRevisar(){
   const model=madIngCollect();
   _madIngPinta(madIngValidar(model), madIngBuildRows(model).length);
 }
+/* ⚠⚠ INGRESO · COLUMNAS NUEVAS (2026-09-13) Y EL GAS VIEJO. «Maduración Ingreso» se escribe POR
+   POSICIÓN y ya tiene filas. Con Crecimiento y Libras el envío pasa de 17 a 18 columnas y corre
+   Densidad, Agua e ID un sitio. El GAS NUEVO lo aguanta: su guarda de esquema rechaza cualquier
+   desfase sin escribir. El GAS VIEJO (sin guarda) escribiría cada dato en la columna de al lado
+   y el ID fuera de la suya, rompiendo la llave. Así que, SÓLO para esta hoja, se pregunta antes:
+     true  → responde su sello en ?p=ver: es el GAS nuevo, se envía;
+     false → responde el texto «FichasLarv-OK»: es el GAS viejo, NO se envía;
+     null  → no responde (sin señal o una página rara): no se sabe, se sigue como siempre y, si
+             el envío queda en cola, la cola vuelve a preguntar antes de entregarlo. */
+async function _madIngGasAlDia(url){
+  const base = url || gasUrl();
+  if(!base || !isValidGasUrl(base)) return null;
+  try{
+    const ctrl = new AbortController();
+    const t = setTimeout(function(){ ctrl.abort(); }, 6000);
+    const r = await fetch(base + (base.indexOf("?")===-1 ? "?" : "&") + "p=ver", { signal: ctrl.signal, cache: "no-store" });
+    clearTimeout(t);
+    const txt = await r.text();
+    try{ const j = JSON.parse(txt); if(j && j.ok && typeof j.version === "string") return true; }catch(_){}
+    return txt.indexOf("FichasLarv-OK") !== -1 ? false : null;
+  }catch(_){ return null; }
+}
+const MAD_ING_GAS_VIEJO = "el GAS publicado es anterior a las columnas nuevas de «Maduración Ingreso» (Crecimiento y Libras) y escribiría los datos en columnas equivocadas";
 async function madIngGuardar(){
   const model=madIngCollect();
   const res=madIngValidar(model);
@@ -6733,6 +6763,13 @@ async function madIngGuardar(){
   _madIngPinta(res, payload.rows.length);
   if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
   if(!payload.rows.length){ toast("No hay ningún tanque con ubicación que guardar.","warn",4000); return; }
+  if((await _madIngGasAlDia()) === false){
+    const aviso = "No se envió: " + MAD_ING_GAS_VIEJO + ". Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo tecleado sigue aquí.";
+    const box = document.getElementById("mi-report");
+    if(box) box.innerHTML = '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:12px;color:#991b1b">' + escapeHtml(aviso) + '</div>';
+    toast(aviso, "err", 10000);
+    return;
+  }
   const lote=madIngNormLote(model.lote);
   toast("Enviando ingreso del lote "+lote+"…","info",2200);
   const _t={};

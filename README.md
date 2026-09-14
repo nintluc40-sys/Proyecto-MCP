@@ -260,6 +260,21 @@ Dos consecuencias que conviene tener presentes al desplegar:
   hasta que la app se recargue.
 - ℹ La hoja «Calidad de Agua» ganará la columna 48 «Sulfato» en la primera sincronización del
   formato Algas: la añade el GAS al final, sin mover las anteriores, y no exige re-desplegarlo.
+- 🔴🔴 **Maduración Ingreso · migrar la hoja ANTES de publicar el cliente** (cambio del
+  2026-09-13: «Camarones por m2» → «Crecimiento semanal promedio» y columna nueva «Libras por
+  hectárea promedio»). La hoja se escribe **por posición** y ya tiene filas; el cliente nuevo
+  manda 18 columnas en vez de 17. **Orden obligatorio:**
+  1. Re-desplegar el GAS (punto de arriba): su guarda de esquema es la que impide escribir
+     desalineado.
+  2. En Google Sheets, pestaña «Maduración Ingreso»: clic derecho en la columna **O**
+     («Densidad de siembra») → *Insertar 1 columna a la izquierda*; escribir en **N1**
+     `Crecimiento semanal promedio` y en **O1** `Libras por hectárea promedio`; borrar el
+     contenido de **N2** hacia abajo (eran los «Camarones por m2», un campo que se eliminó).
+  3. Publicar el cliente (`git push`).
+  Si se publica antes de migrar, no se corrompe nada: el GAS nuevo **rechaza** los ingresos
+  («Esquema desactualizado… columna 14») y lo tecleado queda en el dispositivo; y contra el GAS
+  viejo el cliente **no envía** (pregunta antes con `?p=ver`). Un dispositivo con la app vieja
+  en caché queda igualmente rechazado tras la migración hasta que la recargue.
 - **Maduración · histórico** (Fase 5): la única fase del registro operativo sin construir.
   Aplazada a propósito hasta probar el resto en operación.
 - **Maduración · vaciado de las hojas antiguas**: cuando el registro operativo se dé por

@@ -86,10 +86,16 @@ export const MAD_INGRESO_COLUMNS = [
   { h: 'Hembras', k: 'hembras', grain: 'reparto', num: true },
   { h: 'Peso promedio machos (g)', k: 'pesoMachos', grain: 'composicion', num: true },
   { h: 'Peso promedio hembras (g)', k: 'pesoHembras', grain: 'composicion', num: true },
-  // Las tres siguientes son REFERENCIALES de la camaronera: las teclea quien
+  // Las cuatro siguientes son REFERENCIALES de la camaronera: las teclea quien
   // registra y el sistema sólo las arrastra a la reportería (decisión del usuario).
   { h: 'Supervivencia piscina (%)', k: 'supervivencia', grain: 'composicion', num: true },
-  { h: 'Camarones por m2', k: 'camaronesM2', grain: 'composicion', num: true },
+  /* 2026-09-13 (usuario): «Camarones por m2» se BORRA y en su sitio va «Crecimiento semanal
+     promedio»; «Libras por hectárea promedio» entra justo detrás.
+     ⚠⚠ LA HOJA DE PRODUCCIÓN HAY QUE MIGRARLA A MANO (ver README): se escribe POR POSICIÓN y
+     esto corre Densidad, Agua e ID un sitio. Mientras no se migre, el GAS nuevo RECHAZA el
+     envío (guarda de esquema) y el cliente no escribe contra el GAS viejo (`_madIngGasAlDia`). */
+  { h: 'Crecimiento semanal promedio', k: 'crecimientoSemanal', grain: 'composicion', num: true },
+  { h: 'Libras por hectárea promedio', k: 'librasHectarea', grain: 'composicion', num: true },
   { h: 'Densidad de siembra', k: 'densidad', grain: 'composicion', num: true },
   { h: 'Agua', k: 'agua', grain: 'reparto' },
   { h: 'ID', k: 'id', grain: 'llave' },
@@ -217,7 +223,8 @@ export function buildIngresoRows(model) {
         pesoMachos: num(c.pesoMachos),
         pesoHembras: num(c.pesoHembras),
         supervivencia: num(c.supervivencia),
-        camaronesM2: num(c.camaronesM2),
+        crecimientoSemanal: num(c.crecimientoSemanal),
+        librasHectarea: num(c.librasHectarea),
         densidad: num(c.densidad),
         agua: sanitizeStr(r.agua, 20),
         id: ingresoRowId(fecha, lote, codigoGenetico, sala, tanque),

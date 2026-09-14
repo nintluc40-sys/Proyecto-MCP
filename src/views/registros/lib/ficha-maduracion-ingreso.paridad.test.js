@@ -88,7 +88,7 @@ const MODELOS = {
     composiciones: [{
       codigoGenetico: 'CG01', piscina: 'P-12', camaronera: 'Camaronera Norte',
       machos: 150, hembras: 300, pesoMachos: 34.5, pesoHembras: 41.2,
-      supervivencia: 78.4, camaronesM2: 12, densidad: 9.5,
+      supervivencia: 78.4, crecimientoSemanal: 1.8, librasHectarea: 2450, densidad: 9.5,
       reparto: [{ sala: 'Sala 1', tanque: 1, machos: 150, hembras: 300, agua: 'RAS' }],
     }],
   },
@@ -186,8 +186,8 @@ describe('Ingreso · el monolito y el módulo declaran lo mismo', () => {
     // Si el orden de `k` divergiera, las cabeceras podrían coincidir y las CELDAS no.
     expect(api.MAD_ING_COLUMNS.map((c) => c.k)).toEqual(
       ['fecha', 'lote', 'codigoGenetico', 'piscina', 'camaronera', 'grupo', 'sala', 'tanque',
-        'machos', 'hembras', 'pesoMachos', 'pesoHembras', 'supervivencia', 'camaronesM2',
-        'densidad', 'agua', 'id'],
+        'machos', 'hembras', 'pesoMachos', 'pesoHembras', 'supervivencia', 'crecimientoSemanal',
+        'librasHectarea', 'densidad', 'agua', 'id'],
     );
   });
 

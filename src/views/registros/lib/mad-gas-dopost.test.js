@@ -501,3 +501,64 @@ describe('GAS · Calidad de Agua recibe la columna nueva «Sulfato» sin desalin
     expect(hoja.filas[1][CAL.indexOf('Sulfato')]).toBe(250);
   });
 });
+
+/* ── Maduración Ingreso · «Crecimiento» y «Libras» (2026-09-13): la hoja en uso NO se corrompe ──
+   Las cabeceras de producción, copiadas TAL CUAL de la hoja medida ese día (6 filas, 17
+   columnas): son el pasado a propósito. El cliente nuevo manda 18 con Densidad, Agua e ID
+   corridos un sitio. Con el GAS nuevo, mientras la hoja no se migre, la guarda RECHAZA sin
+   escribir; tras la migración manual (README) escribe cada dato en su columna. */
+const INGRESO_PRODUCCION_0913 = ['Fecha', 'Lote', 'Código genético', 'Piscina Broodstock', 'Camaronera origen',
+  'Grupo', 'Sala', 'Tanque', 'Machos', 'Hembras', 'Peso promedio machos (g)', 'Peso promedio hembras (g)',
+  'Supervivencia piscina (%)', 'Camarones por m2', 'Densidad de siembra', 'Agua', 'ID'];
+
+describe('GAS · Maduración Ingreso con Crecimiento y Libras: la hoja en uso no se desalinea', () => {
+  const nuevoIngreso = () => buildIngresoRows({ fecha: '2026-09-13', lote: 'BP', composiciones: [{
+    codigoGenetico: 'OLF5.F2', crecimientoSemanal: '1.8', librasHectarea: '2450', densidad: '214000',
+    reparto: [{ sala: 'Sala 4', tanque: '1', machos: '10', hembras: '12', agua: 'Agua de playa' }] }] });
+  const filaVieja = INGRESO_PRODUCCION_0913.map((h) => ({ Fecha: '2026-08-29', Lote: 'BP', 'Camarones por m2': 21.4,
+    'Densidad de siembra': 214000, Agua: 'Agua de playa', ID: 'BP-OLF5.F2-S4-t1' })[h] ?? '');
+
+  it('el fixture ejerce algo: el cliente manda 18 columnas y la hoja de producción tiene 17', () => {
+    expect(MAD_INGRESO_HEADERS).toHaveLength(18);
+    expect(INGRESO_PRODUCCION_0913).toHaveLength(17);
+  });
+
+  it('🔴 con la hoja SIN migrar, el envío nuevo se RECHAZA y no se escribe nada', () => {
+    const hoja = hojaFalsa([INGRESO_PRODUCCION_0913.slice(), filaVieja.slice()]);
+    const antes = JSON.stringify(hoja.filas);
+    const g = gas({ 'Maduración Ingreso': hoja });
+    const r = g.post({ sheetName: 'Maduración Ingreso', headers: MAD_INGRESO_HEADERS, rows: nuevoIngreso() });
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('Esquema desactualizado');
+    expect(r.message).toContain('columna 14');
+    expect(r.message).toContain('Camarones por m2');
+    expect(JSON.stringify(hoja.filas)).toBe(antes);
+  });
+
+  it('🔴 con la hoja MIGRADA (columna insertada y cabeceras renombradas) cada dato cae en su columna', () => {
+    // La migración manual: se inserta una columna tras la 14, se renombran la 14 y la 15 y se
+    // vacían los «Camarones por m2» viejos, que pertenecen al campo que se borró.
+    const cab = MAD_INGRESO_HEADERS.slice();
+    const vieja = cab.map((h) => ({ Fecha: '2026-08-29', Lote: 'BP', 'Densidad de siembra': 214000, Agua: 'Agua de playa', ID: 'BP-OLF5.F2-S4-t1' })[h] ?? '');
+    const hoja = hojaFalsa([cab, vieja.slice()]);
+    const g = gas({ 'Maduración Ingreso': hoja });
+    const r = g.post({ sheetName: 'Maduración Ingreso', headers: MAD_INGRESO_HEADERS, rows: nuevoIngreso() });
+    expect(r.status).toBe('ok');
+    expect(hoja.filas[1]).toEqual(vieja);                                  // la fila vieja, intacta
+    const nueva = hoja.filas[2];
+    expect(nueva[cab.indexOf('Crecimiento semanal promedio')]).toBe(1.8);
+    expect(nueva[cab.indexOf('Libras por hectárea promedio')]).toBe(2450);
+    expect(nueva[cab.indexOf('Densidad de siembra')]).toBe(214000);
+    expect(nueva[cab.indexOf('Agua')]).toBe('Agua de playa');
+    expect(nueva[cab.indexOf('ID')]).toBe('2026-09-13-BP-OLF5.F2-S4-t1');
+  });
+
+  it('🔴 y un cliente VIEJO (17 columnas) no puede escribir sobre la hoja ya migrada', () => {
+    const hoja = hojaFalsa([MAD_INGRESO_HEADERS.slice()]);
+    const g = gas({ 'Maduración Ingreso': hoja });
+    const r = g.post({ sheetName: 'Maduración Ingreso', headers: INGRESO_PRODUCCION_0913, rows: [filaVieja.slice()] });
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('Esquema desactualizado');
+    expect(hoja.filas).toHaveLength(1);
+  });
+});
