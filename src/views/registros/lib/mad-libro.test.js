@@ -3,6 +3,7 @@ import {
   repartirProporcional,
   construirLibro,
   estadoDeLote,
+  estadoDeLoteEnSala,
   estadoDeSala,
   estadoPorLoteTexto,
   nombreComposicion,
@@ -846,6 +847,160 @@ describe('Libro · el nombre del tanque mezclado lo propone el sistema', () => {
   it('sin nada dentro, no hay nombre que inventar', () => {
     expect(nombreComposicion(undefined)).toBe('');
     expect(nombreComposicion({ composicion: [] })).toBe('');
+  });
+});
+
+/* ══ 2026-09-14 (usuario) · UN LOTE PUEDE ESTAR EN VARIAS SALAS, Y UNA SALA TENER VARIOS LOTES ══════
+   «Un lote puede estar en varias salas pero en distintos tanques, y a su vez en una misma sala
+   pueden haber distintos lotes.» La cuarentena y la cópula se llevaban POR LOTE, sin sala: un segundo
+   ingreso del lote en la Sala 2 devolvía a «Cuarentena» a la Sala 1 que llevaba un mes produciendo, y
+   una cópula en la Sala 1 sacaba de cuarentena a la Sala 2. Y «🔄 Proponer estado» de Salas lo GUARDA.
+   Ahora cada sala lleva la suya: el ingreso reinicia la cuarentena de su sala, la cópula la rompe en
+   su sala, el cierre sigue siendo del lote entero, y lo que se mueve de sala lleva consigo su reloj.
+   Cada fixture está hecho para que la regla vieja (por lote) dé otro resultado. */
+describe('Libro · un lote en VARIAS salas: la cuarentena es de cada sala', () => {
+  it('🔴 un segundo ingreso del lote en OTRA sala no devuelve a la primera a cuarentena', () => {
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 10), ing('2026-01-20', 'AB', 'CG2', 'Sala 2', 16, 10, 10)],
+      tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Cópulas': 2 })],
+    }, { hoy: '2026-01-21' });
+    expect(estadoDeSala(l, 'Sala 1', '2026-01-21')).toBe(ESTADO_PRODUCCION);   // con la regla vieja: Cuarentena
+    expect(estadoDeSala(l, 'Sala 2', '2026-01-21')).toBe(ESTADO_CUARENTENA);
+    expect(estadoPorLoteTexto(l, 'Sala 1', '2026-01-21')).toBe('AB: Producción');
+    expect(estadoPorLoteTexto(l, 'Sala 2', '2026-01-21')).toBe('AB: Cuarentena');
+  });
+
+  it('🔴 una cópula en una sala no saca de cuarentena al mismo lote en otra', () => {
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 10), ing('2026-01-01', 'AB', 'CG1', 'Sala 2', 16, 10, 10)],
+      tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Cópulas': 3 })],
+    }, { hoy: '2026-01-06' });
+    expect(estadoDeSala(l, 'Sala 1', '2026-01-06')).toBe(ESTADO_PRODUCCION);
+    expect(estadoDeSala(l, 'Sala 2', '2026-01-06')).toBe(ESTADO_CUARENTENA);    // con la regla vieja: Producción
+    expect(estadoDeSala(l, 'Sala 2', '2026-01-16')).toBe(ESTADO_PRODUCCION);    // y sus 15 días le cuentan igual
+  });
+
+  it('🔴 lo que se mueve a una sala donde el lote no estaba lleva su reloj: ni se reinicia ni se pierde', () => {
+    const f = {
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 100)],
+      movimientos: [mov('2026-01-10', 'Sala 1', 1, 'Sala 2', 16, 40, 40)],
+    };
+    const l = construirLibro(f, { hoy: '2026-01-12' });
+    expect(estadoDeSala(l, 'Sala 2', '2026-01-12')).toBe(ESTADO_CUARENTENA);
+    expect(estadoDeSala(l, 'Sala 2', '2026-01-16')).toBe(ESTADO_PRODUCCION);    // 15 días desde su INGRESO, no desde el movimiento
+    const copulado = construirLibro(Object.assign({}, f, { tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Cópulas': 1 })] }), { hoy: '2026-01-11' });
+    expect(estadoDeSala(copulado, 'Sala 2', '2026-01-11')).toBe(ESTADO_PRODUCCION);   // y su cópula viaja con ellos
+  });
+
+  it('🔴 si el lote ya estaba en la sala destino, manda la cuarentena que termina MÁS TARDE', () => {
+    // Sala 2 produce desde el 01-04; llegan animales del MISMO lote que entraron el 01-20 a la Sala 1.
+    const llegan = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 2', 16, 10, 10), ing('2026-01-20', 'AB', 'CG2', 'Sala 1', 1, 50, 50)],
+      tanques: [tq('2026-01-04', 'Sala 2', 16, { 'Cópulas': 2 })],
+      movimientos: [mov('2026-01-22', 'Sala 1', 1, 'Sala 2', 17, 20, 20)],
+    }, { hoy: '2026-01-23' });
+    expect(estadoDeSala(llegan, 'Sala 2', '2026-01-23')).toBe(ESTADO_CUARENTENA);   // conservar la del destino: Producción
+    // Y al revés: animales que ya producen llegan a una sala donde el lote está en cuarentena → sigue en cuarentena.
+    const certificados = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 50, 50), ing('2026-01-20', 'AB', 'CG2', 'Sala 2', 16, 10, 10)],
+      tanques: [tq('2026-01-04', 'Sala 1', 1, { 'Cópulas': 2 })],
+      movimientos: [mov('2026-01-22', 'Sala 1', 1, 'Sala 2', 17, 20, 20)],
+    }, { hoy: '2026-01-23' });
+    expect(estadoDeSala(certificados, 'Sala 2', '2026-01-23')).toBe(ESTADO_CUARENTENA); // tomar la del origen: Producción
+    expect(estadoDeSala(certificados, 'Sala 1', '2026-01-23')).toBe(ESTADO_PRODUCCION);
+  });
+
+  it('🔴 la sala nueva hereda el reloj de la sala de ORIGEN, no el del lote (que otro ingreso ya reinició)', () => {
+    /* ⚠ Con el lote en una sola sala, «heredar» y «caer al reloj del lote» dan lo mismo, y la
+       herencia podía desaparecer sin que nada lo notara. Aquí el lote tiene un segundo ingreso en
+       la Sala 3: su reloj de lote dice cuarentena, pero lo que sale de la Sala 1 ya produce. */
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 50, 50), ing('2026-01-20', 'AB', 'CG2', 'Sala 3', 22, 10, 10)],
+      tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Cópulas': 2 })],
+      movimientos: [mov('2026-01-22', 'Sala 1', 1, 'Sala 2', 16, 20, 20)],
+    }, { hoy: '2026-01-23' });
+    expect(estadoDeSala(l, 'Sala 2', '2026-01-23')).toBe(ESTADO_PRODUCCION);
+    expect(estadoDeSala(l, 'Sala 3', '2026-01-23')).toBe(ESTADO_CUARENTENA);
+  });
+
+  it('🔴 «termina más tarde» cuenta la CÓPULA: unos que ya copularon no alargan la cuarentena de la sala', () => {
+    // Sala 2: AB entró el 01-10 (cuarentena hasta el 01-25). Llegan de la Sala 1 animales que
+    // entraron el 01-12 pero COPULARON el 01-14: su cuarentena terminó antes, así que manda la de la sala.
+    const l = construirLibro({
+      ingresos: [ing('2026-01-10', 'AB', 'CG1', 'Sala 2', 16, 10, 10), ing('2026-01-12', 'AB', 'CG2', 'Sala 1', 1, 30, 30)],
+      tanques: [tq('2026-01-14', 'Sala 1', 1, { 'Cópulas': 1 })],
+      movimientos: [mov('2026-01-16', 'Sala 1', 1, 'Sala 2', 17, 10, 10)],
+    }, { hoy: '2026-01-17' });
+    expect(estadoDeSala(l, 'Sala 2', '2026-01-17')).toBe(ESTADO_CUARENTENA);   // mirando sólo los 15 días: Producción
+    expect(estadoDeSala(l, 'Sala 2', '2026-01-25')).toBe(ESTADO_PRODUCCION);
+  });
+
+  it('una cópula en la sala destino DESPUÉS de la llegada sí rompe esa cuarentena', () => {
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 2', 16, 10, 10), ing('2026-01-20', 'AB', 'CG2', 'Sala 1', 1, 50, 50)],
+      tanques: [tq('2026-01-04', 'Sala 2', 16, { 'Cópulas': 2 }), tq('2026-01-24', 'Sala 2', 17, { 'Cópulas': 1 })],
+      movimientos: [mov('2026-01-22', 'Sala 1', 1, 'Sala 2', 17, 20, 20)],
+    }, { hoy: '2026-01-25' });
+    expect(estadoDeSala(l, 'Sala 2', '2026-01-25')).toBe(ESTADO_PRODUCCION);
+  });
+
+  it('🔴 el estado del LOTE en el saldo: Mixto si sus salas no coinciden, con el desglose por sala', () => {
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 10), ing('2026-01-20', 'AB', 'CG2', 'Sala 2', 16, 5, 5)],
+      tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Cópulas': 2 })],
+    }, { hoy: '2026-01-21' });
+    const L = dePos(l, 'AB');
+    expect(L.estado).toBe(ESTADO_MIXTO);
+    expect(L.salas).toEqual([
+      { sala: 'Sala 1', ingreso: '2026-01-01', copulaDesde: '2026-01-05', machos: 10, hembras: 10, estado: ESTADO_PRODUCCION },
+      { sala: 'Sala 2', ingreso: '2026-01-20', copulaDesde: null, machos: 5, hembras: 5, estado: ESTADO_CUARENTENA },
+    ]);
+  });
+
+  it('🔴 una sala donde el lote ya no tiene animales no lo vuelve Mixto', () => {
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 10), ing('2026-01-20', 'AB', 'CG2', 'Sala 2', 16, 10, 10)],
+      tanques: [tq('2026-01-21', 'Sala 1', 1, { 'Machos muertos': 10, 'Hembras muertas': 10 })],   // la Sala 1 se vacía
+    }, { hoy: '2026-01-22' });
+    expect(dePos(l, 'AB').estado).toBe(ESTADO_CUARENTENA);
+  });
+
+  it('con el lote en UNA sola sala todo sigue igual: su estado es el de siempre', () => {
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 20), ing('2026-01-20', 'AB', 'CG2', 'Sala 1', 1, 30, 10)],
+      tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Cópulas': 4 })],
+    }, { hoy: '2026-01-21' });
+    const L = dePos(l, 'AB');
+    expect(L.salas).toHaveLength(1);
+    expect(L.estado).toBe(estadoDeLote(L, '2026-01-21'));
+    expect(L.estado).toBe(ESTADO_CUARENTENA);
+  });
+
+  it('el CIERRE es del lote entero: cierra sus dos salas', () => {
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 10), ing('2026-01-02', 'AB', 'CG1', 'Sala 2', 16, 10, 10)],
+      cierres: [fin('2026-01-10', 'AB', 'Total', 20, 20)],
+    }, { hoy: '2026-01-11' });
+    expect(estadoDeLoteEnSala(dePos(l, 'AB'), 'Sala 1', '2026-01-11')).toBe(ESTADO_CERRADO);
+    expect(estadoDeLoteEnSala(dePos(l, 'AB'), 'Sala 2', '2026-01-11')).toBe(ESTADO_CERRADO);
+    expect(dePos(l, 'AB').estado).toBe(ESTADO_CERRADO);
+  });
+
+  it('estadoDeLoteEnSala: una sala que el lote no conoce cae al estado del lote', () => {
+    const L = { ingreso: '2026-01-01', copulaDesde: null, cerrado: null, salas: [{ sala: 'Sala 1', ingreso: '2026-01-20', copulaDesde: null }] };
+    expect(estadoDeLoteEnSala(L, 'Sala 1', '2026-01-21')).toBe(ESTADO_CUARENTENA);
+    expect(estadoDeLoteEnSala(L, 'Sala 9', '2026-01-21')).toBe(ESTADO_PRODUCCION);
+    expect(estadoDeLoteEnSala(undefined, 'Sala 1', '2026-01-21')).toBe('');
+  });
+
+  it('y en una MISMA sala, dos lotes siguen siendo Mixto con su desglose', () => {
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 10), ing('2026-01-20', 'BC', 'CG2', 'Sala 1', 2, 10, 10),
+        ing('2026-01-20', 'AB', 'CG1', 'Sala 3', 22, 10, 10)],
+    }, { hoy: '2026-01-25' });
+    expect(estadoDeSala(l, 'Sala 1', '2026-01-25')).toBe(ESTADO_MIXTO);
+    expect(estadoPorLoteTexto(l, 'Sala 1', '2026-01-25')).toBe('AB: Producción · BC: Cuarentena');
+    expect(estadoPorLoteTexto(l, 'Sala 3', '2026-01-25')).toBe('AB: Cuarentena');
   });
 });
 

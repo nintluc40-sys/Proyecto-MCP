@@ -25,6 +25,7 @@ import {
   sumarDias,
   repartirProporcional,
   estadoDeLote,
+  estadoDeLoteEnSala,
   estadoPorLoteTexto,
   CUARENTENA_DIAS,
   ESTADO_MIXTO,
@@ -65,7 +66,7 @@ function motorLibro() {
   createContext(ctx);
   new Script(
     code + '\n;globalThis.__api = { madConstruirLibro, madEstadoDeSala, madNombreComposicion,'
-    + ' madSumarDias, madRepartirProporcional, madEstadoDeLote, madEstadoPorLoteTexto,'
+    + ' madSumarDias, madRepartirProporcional, madEstadoDeLote, madEstadoDeLoteEnSala, madEstadoPorLoteTexto,'
     + ' MAD_CUARENTENA_DIAS, MAD_EST_MIXTO, MAD_LIBRO_SHEETS,'
     + ' madOcupacionDeSala, MAD_EST_DESINF, MAD_EST_DESINF_AGRUP, MAD_AGRUPADA_MAX_FRACCION };',
   ).runInContext(ctx);
@@ -100,6 +101,7 @@ const src = leer(ENGINE);
 const GEMELO = {
   construirLibro: 'madConstruirLibro',
   estadoDeLote: 'madEstadoDeLote',
+  estadoDeLoteEnSala: 'madEstadoDeLoteEnSala',
   estadoDeSala: 'madEstadoDeSala',
   estadoPorLoteTexto: 'madEstadoPorLoteTexto',
   nombreComposicion: 'madNombreComposicion',
@@ -345,6 +347,31 @@ const ESCENARIOS = {
     cierres: [fin('2026-01-10', 'AB', 'Total', 100, 100)],
     tanques: [],
   },
+  /* ── 2026-09-14 · UN LOTE EN VARIAS SALAS: la cuarentena es de cada sala ────────
+     El reloj por (lote, sala) vive DOS veces, y cada rama tiene su escenario: el segundo ingreso en
+     otra sala, la cópula de una sola sala, lo que se mueve a una sala nueva (hereda) y a una donde
+     el lote ya estaba (manda la cuarentena que termina más tarde, en los dos sentidos). */
+  'un lote en DOS salas: segundo ingreso y cópula de una sola': {
+    ingresos: [
+      ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 10),
+      ing('2026-01-02', 'BC', 'CG2', 'Sala 1', 2, 10, 10),
+      ing('2026-01-20', 'AB', 'CG2', 'Sala 2', 16, 10, 10),
+    ],
+    tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Cópulas': 2 }), tq('2026-01-21', 'Sala 2', 16, { 'Hembras muertas': 1 })],
+  },
+  'movimiento de sala: hereda el reloj y manda la cuarentena más tardía': {
+    ingresos: [
+      ing('2026-01-01', 'AB', 'CG1', 'Sala 2', 16, 10, 10),
+      ing('2026-01-20', 'AB', 'CG2', 'Sala 1', 1, 50, 50),
+      ing('2026-01-01', 'BC', 'CG3', 'Sala 3', 22, 40, 40),
+    ],
+    tanques: [tq('2026-01-04', 'Sala 2', 16, { 'Cópulas': 2 }), tq('2026-01-06', 'Sala 3', 22, { 'Cópulas': 1 })],
+    movimientos: [
+      mov('2026-01-22', 'Sala 1', 1, 'Sala 2', 17, 20, 20),   // en cuarentena → a una sala que produce
+      mov('2026-01-22', 'Sala 3', 22, 'Sala 4', 1, 10, 10),   // produciendo → a una sala donde BC no estaba
+      mov('2026-01-23', 'Sala 2', 16, 'Sala 1', 2, 5, 5),     // produciendo → a una sala en cuarentena
+    ],
+  },
   'vacío': { ingresos: [], tanques: [] },
 };
 
@@ -530,6 +557,29 @@ describe('Libro · las mismas funciones puras', () => {
     const b = construirLibro(f, { hoy: HOY });
     expect(api.madEstadoPorLoteTexto(a, 'Sala 1', HOY)).toBe(estadoPorLoteTexto(b, 'Sala 1', HOY));
     expect(estadoPorLoteTexto(b, 'Sala 1', HOY)).toBe('AB: Producción · BC: Producción');
+  });
+
+  /* 2026-09-14 · la cuarentena POR SALA: el desglose y el estado de un lote dentro de cada sala, en
+     varias fechas, igual en los dos. El fixture prueba algo: se exige un lote que en la misma fecha
+     está en cuarentena en una sala y produciendo en otra. */
+  it('el mismo estado de cada lote EN CADA SALA, y el mismo desglose, a varias fechas', () => {
+    const vistos = new Set();
+    for (const nombre of ['un lote en DOS salas: segundo ingreso y cópula de una sola', 'movimiento de sala: hereda el reloj y manda la cuarentena más tardía']) {
+      const f = ESCENARIOS[nombre];
+      for (const d of ['2026-01-06', '2026-01-21', '2026-01-23', '2026-02-10']) {
+        const a = api.madConstruirLibro(f, { hoy: d, hasta: d });
+        const b = construirLibro(f, { hoy: d, hasta: d });
+        for (const s of Object.keys(MAD_TANQUES_POR_SALA)) {
+          expect(api.madEstadoPorLoteTexto(a, s, d), nombre + ' · ' + s + ' · ' + d).toBe(estadoPorLoteTexto(b, s, d));
+          for (const lote of ['AB', 'BC']) {
+            const e = estadoDeLoteEnSala(b.lotes.get(lote), s, d);
+            expect(api.madEstadoDeLoteEnSala(a.lotes[lote], s, d)).toBe(e);
+            if (b.lotes.get(lote) && (b.lotes.get(lote).salas || []).some((x) => x.sala === s)) vistos.add(lote + '|' + d + '|' + e);
+          }
+        }
+      }
+    }
+    expect(vistos.has('AB|2026-01-21|Producción') && vistos.has('AB|2026-01-21|Cuarentena')).toBe(true);
   });
 
   it('el mismo nombre de tanque mezclado', () => {

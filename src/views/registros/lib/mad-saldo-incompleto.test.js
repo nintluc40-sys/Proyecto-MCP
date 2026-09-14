@@ -37,7 +37,7 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['madLibroIncompleto', '_madSalasPintaEstado', 'renderMadSalas',
   '_collectSalasGrid', 'madEstadoDeSala', 'MAD_SALA_OPTS', 'MAD_EST_CUAR', 'MAD_EST_PROD',
-  'madSaldoCargar', 'MAD_LIBRO_SHEETS', '_madSaldoHTML', 'MAD_EST_CERRADO'];
+  'madSaldoCargar', 'MAD_LIBRO_SHEETS', '_madSaldoHTML', 'MAD_EST_CERRADO', 'MAD_EST_MIXTO'];
 const H = {};
 
 beforeAll(async () => {
@@ -260,5 +260,33 @@ describe('Maduración · la vista Saldo pinta «Cerrado» con su propio color', 
     const estilo = insignia(html(), 'CD');
     expect(estilo).toContain('#e2e8f0');
     expect(estilo).not.toContain('#dcfce7');
+  });
+});
+
+/* 2026-09-14 (usuario) · UN LOTE PUEDE ESTAR EN VARIAS SALAS, y su cuarentena es de cada sala. El
+   saldo «Por lote» dice «Mixto» cuando sus salas no coinciden —con color propio, no el verde de
+   Producción— y nombra el estado de cada sala: «Mixto» sin desglose no dice cuál es cuál. */
+describe('Maduración · la vista Saldo dice el estado del lote en CADA sala', () => {
+  const fila = (html, nombre) => {
+    const caja = document.createElement('div');
+    caja.innerHTML = html;
+    return Array.from(caja.querySelectorAll('tr')).find((tr) => tr.cells[0] && tr.cells[0].textContent === nombre);
+  };
+  const html = () => H._madSaldoHTML({ tanques: {}, avisos: [], fallos: [], recortadas: [], lotes: {
+    AB: { lote: 'AB', ingreso: '2026-01-20', copulaDesde: null, cerrado: null, estado: H.MAD_EST_MIXTO, machos: 15, hembras: 15,
+      ubicaciones: ['Sala 1|1', 'Sala 2|16'], salas: [{ sala: 'Sala 1', estado: H.MAD_EST_PROD }, { sala: 'Sala 2', estado: H.MAD_EST_CUAR }] },
+    BC: { lote: 'BC', ingreso: '2026-01-02', copulaDesde: null, cerrado: null, estado: H.MAD_EST_PROD, machos: 10, hembras: 10,
+      ubicaciones: ['Sala 1|2'], salas: [{ sala: 'Sala 1', estado: H.MAD_EST_PROD }] },
+  } });
+
+  it('🔴 con el lote en dos salas, cada una con su estado, y «Mixto» con color propio', () => {
+    const f = fila(html(), 'AB');
+    expect(f.cells[6].textContent).toBe('Sala 1: Producción · Sala 2: Cuarentena');
+    expect(f.querySelector('span').getAttribute('style')).toContain('#e0f2fe');
+    expect(f.querySelector('span').getAttribute('style')).not.toContain('#dcfce7');
+  });
+
+  it('con una sola sala basta su nombre (el estado ya va en su columna)', () => {
+    expect(fila(html(), 'BC').cells[6].textContent).toBe('Sala 1');
   });
 });

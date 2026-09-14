@@ -121,3 +121,38 @@ describe('Salas · «Proponer estado» es el de la fecha de la ficha', () => {
     expect(nota()).toContain('RECORTADAS');
   });
 });
+
+/* ── 2026-09-14 (usuario) · UN LOTE EN VARIAS SALAS, VARIOS LOTES EN UNA SALA ──────────────────
+   «Un lote puede estar en varias salas pero en distintos tanques, y a su vez en una misma sala
+   pueden haber distintos lotes.» La cuarentena se llevaba por lote, sin sala: un segundo ingreso de
+   BP en la Sala 2 devolvía la Sala 1 —que llevaba días produciendo— a «Cuarentena», y este botón lo
+   dejaba escrito. Ahora cada sala lleva la suya. Se ejercita el botón de verdad. */
+describe('Salas · «Proponer estado» con un lote repartido en dos salas', () => {
+  const escenarioSalas = () => {
+    HOJAS[H.MAD_LIBRO_SHEETS.ingreso] = [
+      { Fecha: '2026-09-01', Lote: 'BP', 'Código genético': 'OLF5.F2', Sala: 'Sala 1', Tanque: 1, Machos: 10, Hembras: 12 },
+      { Fecha: '2026-09-10', Lote: 'BP', 'Código genético': 'OLF5.F3', Sala: 'Sala 2', Tanque: 16, Machos: 8, Hembras: 9 },
+      { Fecha: '2026-09-10', Lote: 'CD', 'Código genético': 'X1', Sala: 'Sala 1', Tanque: 2, Machos: 5, Hembras: 5 },
+    ];
+    HOJAS[H.MAD_LIBRO_SHEETS.tanques] = [{ Fecha: '2026-09-04', Sala: 'Sala 1', Tanque: 1, 'Cópulas': 3 }];
+  };
+  const texto = (sala) => document.querySelector(`[name="sg_${H.MAD_SALA_OPTS.indexOf(sala)}_estado_lote"]`).value;
+
+  it('🔴 el segundo ingreso de BP en la Sala 2 no devuelve la Sala 1 a cuarentena, y lo que se guarda lo dice', async () => {
+    escenarioSalas();
+    await proponerAl('2026-09-11');
+    expect(texto('Sala 1')).toBe('BP: Producción · CD: Cuarentena');   // con la regla vieja: «BP: Cuarentena · CD: Cuarentena»
+    expect(sel('Sala 1').value).toBe('Mixto');
+    expect(texto('Sala 2')).toBe('BP: Cuarentena');
+    expect(sel('Sala 2').value).toBe('Cuarentena');
+    const filas = H._collectSalasGrid();
+    expect(filas.find((r) => r.sala === 'Sala 1').estado_lote).toBe('BP: Producción · CD: Cuarentena');
+  });
+
+  it('el fixture ejerce algo: ANTES del segundo ingreso, la Sala 1 sólo tiene BP y produce', async () => {
+    escenarioSalas();
+    await proponerAl('2026-09-05');
+    expect(texto('Sala 1')).toBe('BP: Producción');
+    expect(sel('Sala 1').value).not.toBe('');
+  });
+});

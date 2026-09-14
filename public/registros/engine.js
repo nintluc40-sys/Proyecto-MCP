@@ -5869,6 +5869,13 @@ function madEstadoDeLote(lote, fecha){
   if(L.copulaDesde && L.copulaDesde<=hoy) return MAD_EST_PROD;
   return hoy < madSumarDias(L.ingreso, MAD_CUARENTENA_DIAS) ? MAD_EST_CUAR : MAD_EST_PROD;
 }
+// Estado de un lote DENTRO de una sala (2026-09-14): el reloj de esa sala y el cierre del lote
+// entero. Sin reloj en esa sala, el del lote. Ver estadoDeLoteEnSala en el módulo.
+function madEstadoDeLoteEnSala(lote, sala, fecha){
+  const L=lote||{};
+  const S=(L.salas||[]).filter(function(s){ return s.sala===madLibroTxt(sala); })[0];
+  return S ? madEstadoDeLote({ ingreso:S.ingreso, copulaDesde:S.copulaDesde, cerrado:L.cerrado }, fecha) : madEstadoDeLote(L, fecha);
+}
 function madConstruirLibro(fuentes, opts){
   // opts.hasta (D4, 2026-09-14): el libro AL CIERRE de ese día; ver construirLibro en el módulo.
   const f=fuentes||{}, hoy=madLibroTxt((opts||{}).hoy)||null, corte=madLibroTxt((opts||{}).hasta)||null;
@@ -5877,6 +5884,21 @@ function madConstruirLibro(fuentes, opts){
     const a={ fecha:madLibroTxt(fecha), tipo:tipo, texto:texto };
     if(extra) for(const k in extra) a[k]=extra[k];
     avisos.push(a);
+  };
+  /* LA CUARENTENA ES DE CADA SALA (usuario, 2026-09-14): «un lote puede estar en varias salas pero
+     en distintos tanques, y en una misma sala pueden haber distintos lotes». Cada (lote, sala) lleva
+     su reloj: el ingreso lo reinicia en su sala, la cópula lo rompe en su sala y el cierre es del
+     lote entero. Lo que se mueve de sala lleva su reloj; si el lote ya estaba en la sala destino,
+     manda la cuarentena que termina MÁS TARDE. Ver construirLibro en el módulo. */
+  const finDeCuarentena=function(S){ return S.copulaDesde || madSumarDias(S.ingreso, MAD_CUARENTENA_DIAS); };
+  const llevaReloj=function(lote, desde, hacia){
+    const L=lotes[lote];
+    if(!L || desde===hacia) return;
+    const O=L.salas[desde];
+    if(!O) return;
+    const D=L.salas[hacia];
+    if(!D) L.salas[hacia]={ sala:hacia, ingreso:O.ingreso, copulaDesde:O.copulaDesde };
+    else if(finDeCuarentena(O) > finDeCuarentena(D)){ D.ingreso=O.ingreso; D.copulaDesde=O.copulaDesde; }
   };
   madFlujo(f).forEach(function(ev){
     const fecha=ev.fecha, r=ev.r;
@@ -5890,7 +5912,10 @@ function madConstruirLibro(fuentes, opts){
       if(!pos[k]) pos[k]={ sala:sala, tanque:tq, lote:lote, codigoGenetico:cg, machos:0, hembras:0 };
       pos[k].machos+=madLibroEnt(r.Machos);
       pos[k].hembras+=madLibroEnt(r.Hembras);
-      if(!lotes[lote]) lotes[lote]={ lote:lote, ingreso:fecha, copulaDesde:null, cerrado:null };
+      if(!lotes[lote]) lotes[lote]={ lote:lote, ingreso:fecha, copulaDesde:null, cerrado:null, salas:{} };
+      // El reloj de ESTA sala: el ingreso reinicia la cuarentena donde entran los animales.
+      if(!lotes[lote].salas[sala]) lotes[lote].salas[sala]={ sala:sala, ingreso:fecha, copulaDesde:null };
+      else if(fecha>lotes[lote].salas[sala].ingreso){ lotes[lote].salas[sala].ingreso=fecha; lotes[lote].salas[sala].copulaDesde=null; }
       /* DECISIÓN DEL USUARIO (2026-09-08): un SEGUNDO ingreso REINICIA la cuarentena, así
          que manda la fecha MÁS RECIENTE. Antes se guardaba la MENOR (fecha<...).
          Y hay que BORRAR la cópula anterior, o la decisión no haría nada en el caso común:
@@ -5935,6 +5960,7 @@ function madConstruirLibro(fuentes, opts){
           const k=madPosKey(sD,tD,p.lote,p.codigoGenetico);
           if(!pos[k]) pos[k]={ sala:sD, tanque:tD, lote:p.lote, codigoGenetico:p.codigoGenetico, machos:0, hembras:0 };
           pos[k][sexo]+=res.partes[i];
+          llevaReloj(p.lote, p.sala, sD);   // los animales llegan con su cuarentena
         });
         if(res.sobra>0) anota(fecha,"deficit-movimiento","Se movieron "+res.sobra+" "+sexo+" de más desde "+sO+" tanque "+tO+" de los que quedaban vivos: esos no llegaron al destino.",{ sala:sO, tanque:tO, sexo:sexo, cantidad:res.sobra });
       });
@@ -5994,6 +6020,8 @@ function madConstruirLibro(fuentes, opts){
       enTanque.forEach(function(p){
         const L=lotes[p.lote];
         if(L && (!L.copulaDesde || fecha<L.copulaDesde)) L.copulaDesde=fecha;
+        const S=L ? L.salas[sala] : null;   // y la rompe EN ESTA SALA, no en las demás
+        if(S && (!S.copulaDesde || fecha<S.copulaDesde)) S.copulaDesde=fecha;
       });
     }
   });
@@ -6005,12 +6033,30 @@ function madConstruirLibro(fuentes, opts){
     porTanque[uk].composicion.push({ lote:p.lote, codigoGenetico:p.codigoGenetico, machos:p.machos, hembras:p.hembras });
     if(!porLote[p.lote]){
       const L=lotes[p.lote]||{ ingreso:"", copulaDesde:null };
-      porLote[p.lote]={ lote:p.lote, ingreso:L.ingreso, copulaDesde:L.copulaDesde, cerrado:L.cerrado||null, machos:0, hembras:0, ubicaciones:[] };
+      porLote[p.lote]={ lote:p.lote, ingreso:L.ingreso, copulaDesde:L.copulaDesde, cerrado:L.cerrado||null, machos:0, hembras:0, ubicaciones:[], salas:[] };
     }
     porLote[p.lote].machos+=p.machos; porLote[p.lote].hembras+=p.hembras;
     if(porLote[p.lote].ubicaciones.indexOf(uk)===-1) porLote[p.lote].ubicaciones.push(uk);
+    let S=porLote[p.lote].salas.filter(function(s){ return s.sala===p.sala; })[0];
+    if(!S){
+      const reloj=((lotes[p.lote]||{}).salas||{})[p.sala] || { ingreso:"", copulaDesde:null };
+      S={ sala:p.sala, ingreso:reloj.ingreso, copulaDesde:reloj.copulaDesde, machos:0, hembras:0 };
+      porLote[p.lote].salas.push(S);
+    }
+    S.machos+=p.machos; S.hembras+=p.hembras;
   });
-  Object.keys(porLote).forEach(function(n){ porLote[n].estado=madEstadoDeLote(porLote[n], hoy||hasta); });
+  // El estado del lote sale de SUS SALAS: el de las que tienen animales (si ninguna, el de todas);
+  // si no coinciden, Mixto. Con el lote en una sola sala es el de siempre. Ver el módulo.
+  const ref=hoy||hasta;
+  Object.keys(porLote).forEach(function(n){
+    const L=porLote[n];
+    L.salas.sort(function(a,b){ return a.sala<b.sala ? -1 : a.sala>b.sala ? 1 : 0; });
+    L.salas.forEach(function(s){ s.estado=madEstadoDeLote({ ingreso:s.ingreso, copulaDesde:s.copulaDesde, cerrado:L.cerrado }, ref); });
+    const conVivos=L.salas.filter(function(s){ return s.machos>0||s.hembras>0; });
+    const estados=[];
+    (conVivos.length ? conVivos : L.salas).forEach(function(s){ if(s.estado && estados.indexOf(s.estado)===-1) estados.push(s.estado); });
+    L.estado=estados.length>1 ? MAD_EST_MIXTO : (estados[0]||"");
+  });
   return { posiciones:Object.keys(pos).map(function(k){ return pos[k]; }), tanques:porTanque, lotes:porLote, avisos:avisos, hasta:hasta };
 }
 // Ocupación física de una sala según el libro. `tanquesDeSala` es la lista FÍSICA
@@ -6040,7 +6086,7 @@ function madEstadoDeSala(libro, sala, fecha, tanquesDeSala){
   // tenía ingresos de la Sala 4 y las Salas 1, 2 y 5 estaban en «Producción» con animales de
   // antes del registro. Lo propuesto SE GUARDA. Ver el módulo.
   if(!Object.keys(dentro).length) return oc.conocida ? MAD_EST_DESINF : "";
-  const estados=Object.keys(dentro).map(function(n){ return madEstadoDeLote(libro.lotes[n], fecha); }).filter(Boolean);
+  const estados=Object.keys(dentro).map(function(n){ return madEstadoDeLoteEnSala(libro.lotes[n], sala, fecha); }).filter(Boolean);   // el de cada lote EN ESTA sala
   if(!estados.length) return "";
   const unicos=estados.filter(function(e,i){ return estados.indexOf(e)===i; });
   // Mixto es más veraz que elegir uno de los dos y esconder el otro (decisión del usuario).
@@ -6066,7 +6112,7 @@ function madEstadoPorLoteTexto(libro, sala, fecha){
     T.composicion.forEach(function(c){
       if((c.machos<=0&&c.hembras<=0)||vistos[c.lote]) return;
       vistos[c.lote]=1;
-      const e=madEstadoDeLote(libro.lotes[c.lote], fecha);
+      const e=madEstadoDeLoteEnSala(libro.lotes[c.lote], sala, fecha);   // en ESTA sala
       if(e) partes.push(c.lote+": "+e);
     });
   });
@@ -6195,13 +6241,21 @@ function _madSaldoHTML(libro){
        lote terminado pintado como uno en producción se lee mal justo cuando más importa. */
     const badge=L.estado===MAD_EST_CUAR ? 'background:#fef3c7;color:#92400e'
       : L.estado===MAD_EST_CERRADO ? 'background:#e2e8f0;color:#475569'
+      : L.estado===MAD_EST_MIXTO ? 'background:#e0f2fe;color:#075985'
       : 'background:#dcfce7;color:#166534';
+    /* 2026-09-14 (usuario): un lote puede estar en VARIAS salas, y su cuarentena es de cada sala.
+       Con más de una, se dice el estado de cada una: «Mixto» sin el desglose no dice cuál es cuál. */
+    const salas=(L.salas||[]);
+    const enSalas=salas.length>1
+      ? salas.map(function(s){ return escapeHtml(s.sala)+": "+escapeHtml(s.estado||"—"); }).join(" · ")
+      : (salas.length ? escapeHtml(salas[0].sala) : "—");
     return '<tr><td><b>'+escapeHtml(L.lote)+'</b></td>'
       + '<td style="font-size:10px">'+escapeHtml(L.ingreso||"—")+'</td>'
       + '<td><span style="'+badge+';padding:1px 6px;border-radius:4px;font-size:10px">'+escapeHtml(L.estado||"—")+'</span></td>'
       + '<td style="text-align:right;font-variant-numeric:tabular-nums">'+L.machos+'</td>'
       + '<td style="text-align:right;font-variant-numeric:tabular-nums">'+L.hembras+'</td>'
-      + '<td style="text-align:right">'+L.ubicaciones.length+'</td></tr>';
+      + '<td style="text-align:right">'+L.ubicaciones.length+'</td>'
+      + '<td style="font-size:10px;color:#475569">'+enSalas+'</td></tr>';
   }).join("");
   // Con una hoja sin leer —o leída A MEDIAS— NO se puede afirmar nada del saldo: se dice,
   // y se calla el ✅.
@@ -6226,7 +6280,7 @@ function _madSaldoHTML(libro){
     + '<h3 style="margin:8px 0 4px;font-size:14px">Por tanque</h3>'
     + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Sala</th><th>Tanque</th><th>Lote(s)</th><th>♂</th><th>♀</th><th>Vivos</th><th>Detalle</th></tr></thead><tbody>'+(filas||'<tr><td colspan="7" style="color:#94a3b8">Sin ingresos registrados.</td></tr>')+'</tbody></table></div>'
     + '<h3 style="margin:14px 0 4px;font-size:14px">Por lote</h3>'
-    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Lote</th><th>Ingreso</th><th>Estado</th><th>♂</th><th>♀</th><th>Tanques</th></tr></thead><tbody>'+(lotes||'<tr><td colspan="6" style="color:#94a3b8">—</td></tr>')+'</tbody></table></div>';
+    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Lote</th><th>Ingreso</th><th>Estado</th><th>♂</th><th>♀</th><th>Tanques</th><th>Salas</th></tr></thead><tbody>'+(lotes||'<tr><td colspan="7" style="color:#94a3b8">—</td></tr>')+'</tbody></table></div>';
 }
 async function madSaldoRefrescar(){
   const c=document.getElementById("ms-body");

@@ -193,12 +193,37 @@ export function construirLibro(fuentes, opts) {
   const corte = txt((opts || {}).hasta) || null;
 
   const pos = new Map();      // posKey → posición
-  const lotes = new Map();    // lote   → { lote, ingreso, copulaDesde }
+  const lotes = new Map();    // lote   → { lote, ingreso, copulaDesde, cerrado, salas: Map sala → { sala, ingreso, copulaDesde } }
   const avisos = [];
   let hasta = '';
 
   const anota = (fecha, tipo, texto, extra) => {
     avisos.push(Object.assign({ fecha: txt(fecha), tipo, texto }, extra || {}));
+  };
+
+  /* ── LA CUARENTENA ES DE CADA SALA (usuario, 2026-09-14) ──────────────────
+     «Un lote puede estar en varias salas pero en distintos tanques, y a su vez en una misma sala
+     pueden haber distintos lotes.» Hasta ese día la cuarentena y la cópula se llevaban POR LOTE,
+     sin sala: un segundo ingreso del lote en la Sala 2 devolvía a «Cuarentena» a la Sala 1, que
+     llevaba un mes produciendo, y una cópula en la Sala 1 sacaba de cuarentena a la Sala 2. Y
+     «🔄 Proponer estado» de Salas GUARDA lo que propone.
+     Ahora cada (lote, sala) lleva su propio reloj: el ingreso lo reinicia EN SU SALA (la decisión
+     del 09-08 sobre el segundo ingreso, en la sala donde entran los animales), la cópula lo rompe EN
+     SU SALA, y el cierre sigue siendo del lote entero. Los campos del lote (`ingreso`, `copulaDesde`)
+     siguen calculándose como siempre; el estado del lote sale de sus salas.
+     `finDeCuarentena`: el día en que el reloj deja de estar en cuarentena (su cópula, o sus 15 días). */
+  const finDeCuarentena = (S) => S.copulaDesde || sumarDias(S.ingreso, CUARENTENA_DIAS);
+  /* Lo que se MUEVE de sala lleva consigo su reloj: la sala destino, si el lote no estaba, lo
+     hereda; si ya estaba, manda la cuarentena que termina MÁS TARDE —unos animales en cuarentena
+     no dejan de estarlo por llegar a una sala que produce, y a la inversa la sala sigue en la suya—. */
+  const llevaReloj = (lote, desde, hacia) => {
+    const L = lotes.get(lote);
+    if (!L || desde === hacia) return;
+    const O = L.salas.get(desde);
+    if (!O) return;
+    const D = L.salas.get(hacia);
+    if (!D) L.salas.set(hacia, { sala: hacia, ingreso: O.ingreso, copulaDesde: O.copulaDesde });
+    else if (finDeCuarentena(O) > finDeCuarentena(D)) { D.ingreso = O.ingreso; D.copulaDesde = O.copulaDesde; }
   };
 
   /* ── 1 · El recorrido cronológico ────────────────────────
@@ -223,8 +248,12 @@ export function construirLibro(fuentes, opts) {
       p.machos += ent(r.Machos);
       p.hembras += ent(r.Hembras);
 
-      if (!lotes.has(lote)) lotes.set(lote, { lote, ingreso: fecha, copulaDesde: null, cerrado: null });
+      if (!lotes.has(lote)) lotes.set(lote, { lote, ingreso: fecha, copulaDesde: null, cerrado: null, salas: new Map() });
       const L = lotes.get(lote);
+      /* ♻ El reloj de ESTA sala: el ingreso reinicia la cuarentena donde entran los animales. */
+      const S = L.salas.get(sala);
+      if (!S) L.salas.set(sala, { sala, ingreso: fecha, copulaDesde: null });
+      else if (fecha > S.ingreso) { S.ingreso = fecha; S.copulaDesde = null; }
       /* DECISIÓN DEL USUARIO (2026-09-08): un SEGUNDO ingreso REINICIA la cuarentena, así
          que manda la fecha MÁS RECIENTE. Antes se guardaba la MENOR.
          Y hay que BORRAR la cópula anterior, o la decisión no haría nada en el caso común:
@@ -288,6 +317,7 @@ export function construirLibro(fuentes, opts) {
           const k = posKey(sD, tD, p.lote, p.codigoGenetico);
           if (!pos.has(k)) pos.set(k, nuevaPos(sD, tD, p.lote, p.codigoGenetico));
           pos.get(k)[sexo] += partes[i];
+          llevaReloj(p.lote, p.sala, sD);   // ♻ los animales llegan con su cuarentena
         });
         if (sobra > 0) {
           anota(fecha, 'deficit-movimiento',
@@ -385,6 +415,8 @@ export function construirLibro(fuentes, opts) {
       for (const p of enTanque) {
         const L = lotes.get(p.lote);
         if (L && (!L.copulaDesde || fecha < L.copulaDesde)) L.copulaDesde = fecha;
+        const S = L ? L.salas.get(sala) : null;   // ♻ y la rompe EN ESTA SALA, no en las demás
+        if (S && (!S.copulaDesde || fecha < S.copulaDesde)) S.copulaDesde = fecha;
       }
     }
   }
@@ -403,16 +435,34 @@ export function construirLibro(fuentes, opts) {
 
     if (!porLote.has(p.lote)) {
       const L = lotes.get(p.lote) || { lote: p.lote, ingreso: '', copulaDesde: null };
-      porLote.set(p.lote, { lote: p.lote, ingreso: L.ingreso, copulaDesde: L.copulaDesde, cerrado: L.cerrado || null, machos: 0, hembras: 0, ubicaciones: [] });
+      porLote.set(p.lote, { lote: p.lote, ingreso: L.ingreso, copulaDesde: L.copulaDesde, cerrado: L.cerrado || null, machos: 0, hembras: 0, ubicaciones: [], salas: [] });
     }
     const Lo = porLote.get(p.lote);
     Lo.machos += p.machos;
     Lo.hembras += p.hembras;
     if (Lo.ubicaciones.indexOf(uk) === -1) Lo.ubicaciones.push(uk);
+    let S = Lo.salas.find((s) => s.sala === p.sala);
+    if (!S) {
+      const reloj = ((lotes.get(p.lote) || {}).salas || new Map()).get(p.sala) || { ingreso: '', copulaDesde: null };
+      S = { sala: p.sala, ingreso: reloj.ingreso, copulaDesde: reloj.copulaDesde, machos: 0, hembras: 0 };
+      Lo.salas.push(S);
+    }
+    S.machos += p.machos;
+    S.hembras += p.hembras;
   }
 
-  /* El estado de cada lote se DEDUCE; el operario deja de teclearlo. */
-  for (const L of porLote.values()) L.estado = estadoDeLote(L, hoy || hasta);
+  /* El estado de cada lote se DEDUCE; el operario deja de teclearlo. ♻ Y sale de SUS SALAS: el de
+     cada una con su reloj, y el del lote es el de las salas donde le quedan animales —si no le
+     queda en ninguna, el de todas—; si no coinciden, `Mixto`, con el desglose en `salas`. Con el
+     lote en una sola sala es exactamente el de siempre. */
+  const ref = hoy || hasta;
+  for (const L of porLote.values()) {
+    L.salas.sort((a, b) => (a.sala < b.sala ? -1 : a.sala > b.sala ? 1 : 0));
+    L.salas.forEach((s) => { s.estado = estadoDeLote({ ingreso: s.ingreso, copulaDesde: s.copulaDesde, cerrado: L.cerrado }, ref); });
+    const conVivos = L.salas.filter((s) => s.machos > 0 || s.hembras > 0);
+    const estados = [...new Set((conVivos.length ? conVivos : L.salas).map((s) => s.estado).filter(Boolean))];
+    L.estado = estados.length > 1 ? ESTADO_MIXTO : (estados[0] || '');
+  }
 
   return { posiciones: [...pos.values()], tanques: porTanque, lotes: porLote, avisos, hasta };
 }
@@ -444,6 +494,17 @@ export function estadoDeLote(lote, fecha) {
   if (L.cerrado && L.cerrado <= hoy) return ESTADO_CERRADO;
   if (L.copulaDesde && L.copulaDesde <= hoy) return ESTADO_PRODUCCION;
   return hoy < sumarDias(L.ingreso, CUARENTENA_DIAS) ? ESTADO_CUARENTENA : ESTADO_PRODUCCION;
+}
+
+/** Estado de un lote DENTRO de una sala (2026-09-14): con el reloj de esa sala —su último ingreso
+ *  y su cópula ahí— y el cierre del lote entero. Es el que usan la sala y su desglose: un lote
+ *  repartido en dos salas puede estar en cuarentena en una y produciendo en la otra.
+ *  Si el lote no tiene reloj en esa sala (no debería pasar: lo crean su ingreso o lo que se mueve
+ *  ahí), cae al estado del lote. */
+export function estadoDeLoteEnSala(lote, sala, fecha) {
+  const L = lote || {};
+  const S = (L.salas || []).find((s) => s.sala === txt(sala));
+  return S ? estadoDeLote({ ingreso: S.ingreso, copulaDesde: S.copulaDesde, cerrado: L.cerrado }, fecha) : estadoDeLote(L, fecha);
 }
 
 /** Ocupación física de una SALA según el libro: cuántos tanques tienen animales vivos y de
@@ -492,7 +553,7 @@ export function estadoDeSala(libro, sala, fecha, tanquesDeSala) {
      lo propuesto SE GUARDA. Una sala que el libro nunca ha visto no tiene estado deducible. */
   if (!dentro.size) return oc.conocida ? ESTADO_DESINFECCION : '';
   const estados = [...dentro]
-    .map((n) => estadoDeLote(libro.lotes.get(n), fecha))
+    .map((n) => estadoDeLoteEnSala(libro.lotes.get(n), sala, fecha))   // ♻ el de cada lote EN ESTA sala
     .filter(Boolean);
   if (!estados.length) return '';
   const unicos = [...new Set(estados)];
@@ -510,7 +571,7 @@ export function estadoPorLoteTexto(libro, sala, fecha) {
     for (const c of T.composicion) {
       if ((c.machos <= 0 && c.hembras <= 0) || vistos.has(c.lote)) continue;
       vistos.add(c.lote);
-      const e = estadoDeLote(libro.lotes.get(c.lote), fecha);
+      const e = estadoDeLoteEnSala(libro.lotes.get(c.lote), sala, fecha);   // ♻ en ESTA sala
       if (e) partes.push(c.lote + ': ' + e);
     }
   }
