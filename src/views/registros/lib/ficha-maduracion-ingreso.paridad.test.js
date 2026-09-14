@@ -28,6 +28,7 @@ import {
   MAD_SALA_OPTS,
   MAD_TANQUES_POR_SALA,
   AGUA_OPTS,
+  AGUA_DEFECTO,
   buildIngresoPayload,
   buildIngresoRows,
   validarIngreso,
@@ -72,7 +73,7 @@ function motorIngreso() {
   createContext(ctx);
   new Script(
     code + '\n;globalThis.__api = { buildMadIngresoPayload, madIngBuildRows, madIngValidar,'
-    + ' madIngRowId, madIngRepartirParejo, madIngRepartirRespetando, MAD_ING_HEADERS, MAD_ING_SHEET, MAD_ING_AGUA_OPTS,'
+    + ' madIngRowId, madIngRepartirParejo, madIngRepartirRespetando, MAD_ING_HEADERS, MAD_ING_SHEET, MAD_ING_AGUA_OPTS, MAD_ING_AGUA_DEFECTO,'
     + ' MAD_ING_COLUMNS };',
   ).runInContext(ctx);
   return ctx.__api;
@@ -194,6 +195,10 @@ describe('Ingreso · el monolito y el módulo declaran lo mismo', () => {
 
   it('las mismas opciones de agua', () => {
     expect(api.MAD_ING_AGUA_OPTS).toEqual(AGUA_OPTS);
+  });
+
+  it('🔴 el mismo valor de agua por defecto', () => {
+    expect(api.MAD_ING_AGUA_DEFECTO).toBe(AGUA_DEFECTO);
   });
 });
 

@@ -56,6 +56,10 @@ export const MAD_TANQUES_POR_SALA = {
  *  ⚠ En `Maduración Sala` esto vive en la columna `RAS` con valores `SI`/`NO`, que
  *  ya codifica exactamente lo mismo: no hace falta migrarla, sólo re-etiquetarla. */
 export const AGUA_OPTS = ['RAS', 'Agua de playa'];
+/** Agua con la que NACE cada tanque del ingreso (usuario, 2026-09-13). Medido ese día: las 6 filas
+ *  reales llevaban «Agua de playa» y el formulario nacía en RAS. Es el valor por defecto, no un
+ *  candado: RAS se sigue eligiendo. Sólo el Ingreso; Movimientos no se tocó. */
+export const AGUA_DEFECTO = 'Agua de playa';
 
 /* ── Columnas ──────────────────────────────────────────────
    Se declaran UNA vez y las cabeceras se DERIVAN de aquí. Es deliberado: una lista

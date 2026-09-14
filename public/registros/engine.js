@@ -6217,6 +6217,8 @@ function renderMadSaldo(){
 // (lote, composición, sala, tanque).
 const MAD_ING_SHEET = "Maduración Ingreso";
 const MAD_ING_AGUA_OPTS = ["RAS","Agua de playa"];
+// Agua con la que NACE cada tanque del ingreso (usuario, 2026-09-13): ver AGUA_DEFECTO en el módulo.
+const MAD_ING_AGUA_DEFECTO = "Agua de playa";
 // Las cabeceras se DERIVAN de aquí, nunca se teclean aparte: una lista escrita al lado
 // se desincroniza del constructor de filas en silencio y la hoja recibe valores en la
 // columna equivocada sin un solo error.
@@ -6479,7 +6481,7 @@ function _madIngRepHTML(sala, tanque){
     + '<td style="text-align:center;font-size:12px;font-weight:700">'+escapeHtml(String(tanque))+'</td>'
     + '<td><input class="mi-machos" type="number" min="0" step="1" inputmode="numeric" oninput="madIngCeldaEditada(this)" style="font-size:12px;width:74px"></td>'
     + '<td><input class="mi-hembras" type="number" min="0" step="1" inputmode="numeric" oninput="madIngCeldaEditada(this)" style="font-size:12px;width:74px"></td>'
-    + '<td><select class="mi-agua" style="font-size:12px;min-width:96px">'+madIngAguaOpts("RAS")+'</select></td>'
+    + '<td><select class="mi-agua" style="font-size:12px;min-width:96px">'+madIngAguaOpts(MAD_ING_AGUA_DEFECTO)+'</select></td>'
     + '<td><button class="btn" type="button" onclick="madIngQuitarTanque(this)" style="font-size:11px">✕</button></td>'
     + '</tr>';
 }

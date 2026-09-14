@@ -6,6 +6,7 @@ import {
   MAD_SALA_OPTS,
   MAD_TANQUES_POR_SALA,
   AGUA_OPTS,
+  AGUA_DEFECTO,
   normLote,
   normCodigoGenetico,
   salaTag,
@@ -488,5 +489,13 @@ describe('Ingreso · reparto sugerido', () => {
 describe('Ingreso · el agua es una elección entre dos', () => {
   it('sólo hay dos opciones y son las que el usuario nombró', () => {
     expect(AGUA_OPTS).toEqual(['RAS', 'Agua de playa']);
+  });
+
+  /* 🔴 2026-09-13 (usuario): «Agua de playa» por defecto. Medido ese día: las 6 filas reales de
+     «Maduración Ingreso» llevaban «Agua de playa», y el formulario obligaba a cambiarla desde RAS
+     en cada tanque. RAS sigue siendo elegible: es el valor POR DEFECTO, no una lista cerrada. */
+  it('🔴 el valor por defecto es «Agua de playa», y es una de las dos opciones', () => {
+    expect(AGUA_DEFECTO).toBe('Agua de playa');
+    expect(AGUA_OPTS).toContain(AGUA_DEFECTO);
   });
 });
