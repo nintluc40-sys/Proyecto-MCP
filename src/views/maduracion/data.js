@@ -234,7 +234,11 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
       sala = loc.sala; tanque = loc.tanque;
       derivedEvents++;   // se cuenta para poder AVISAR cuando el respaldo entra en juego
     }
-    const ev = { trovan, fecha: raw, date, sala, tanque, obs: gv(o, H.obs) };
+    // Lote y Código genético son de la HEMBRA (MATRIZ), no del evento: la Bitácora no los
+    // trae. El evento los hereda para que los filtros globales de la vista lo alcancen. Un
+    // Trovan que no está en la MATRIZ queda sin lote/código: cuenta sin filtro, no con él.
+    const fem = byTrovan.get(trovan);
+    const ev = { trovan, fecha: raw, date, sala, tanque, obs: gv(o, H.obs), lote: fem ? fem.lote : '', codigo: fem ? fem.codigo : '' };
     if (tipo === EVENTO_DESOVE) desoves.push(ev);
     else if (tipo === EVENTO_MORTALIDAD) mortalidades.push(ev);
   });
@@ -278,12 +282,25 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
 }
 
 /* ── Filtros ── */
-/** ¿El evento pasa el filtro Sala/Tanque + rango de fechas [from,to] (Date, opcional)? */
+/** ¿El evento pasa el filtro Sala/Tanque + Lote/Código + rango de fechas [from,to] (Date, opcional)? */
 function passLoc(ev, f) {
   if (f.sala && String(ev.sala) !== f.sala) return false;
   if (f.tanque && String(ev.tanque) !== f.tanque) return false;
+  if (f.lote && String(ev.lote) !== f.lote) return false;
+  if (f.codigo && String(ev.codigo) !== f.codigo) return false;
   if (f.from && ev.date < f.from) return false;
   if (f.to && ev.date > f.to) return false;
+  return true;
+}
+/** ¿La HEMBRA pasa el filtro? Ubicación ACTUAL (MATRIZ) + Lote/Código.
+ *  Criterio ÚNICO para toda la población (KPIs, ubicación, nunca desovadas, estados, tendencias):
+ *  antes cada función repetía su `(!f.sala || …) && (!f.tanque || …)`, y añadir un filtro a
+ *  cinco copias es como una se queda sin él y la vista deja de cuadrar consigo misma. */
+function passFem(r, f) {
+  if (f.sala && String(r.sala) !== f.sala) return false;
+  if (f.tanque && String(r.tanque) !== f.tanque) return false;
+  if (f.lote && String(r.lote) !== f.lote) return false;
+  if (f.codigo && String(r.codigo) !== f.codigo) return false;
   return true;
 }
 /** Rango [from,to] de un mes "yyyy-mm" (o null,null si key falsy). */
@@ -292,10 +309,10 @@ export function monthBounds(key) {
   const [y, m] = String(key).split('-').map(Number);
   return { from: new Date(y, m - 1, 1, 0, 0, 0), to: new Date(y, m, 0, 23, 59, 59) };
 }
-/** Normaliza un objeto de filtro de UI a {sala,tanque,from,to}. */
-export function makeFilter({ sala = null, tanque = null, month = null } = {}) {
+/** Normaliza un objeto de filtro de UI a {sala,tanque,lote,codigo,from,to}. */
+export function makeFilter({ sala = null, tanque = null, lote = null, codigo = null, month = null } = {}) {
   const { from, to } = monthBounds(month);
-  return { sala: sala || null, tanque: tanque || null, from, to, month: month || null };
+  return { sala: sala || null, tanque: tanque || null, lote: lote || null, codigo: codigo || null, from, to, month: month || null };
 }
 
 const desovesIn = (model, f) => model.desoves.filter((e) => passLoc(e, f));
@@ -306,8 +323,8 @@ export function kpis(model, f) {
   const des = desovesIn(model, f);
   const mor = mortsIn(model, f);
   const spawners = new Set(des.map((e) => e.trovan));
-  // Población de hembras (según filtro de sala/tanque, por ubicación ACTUAL en matriz).
-  const pop = model.females.filter((r) => (!f.sala || String(r.sala) === f.sala) && (!f.tanque || String(r.tanque) === f.tanque));
+  // Población de hembras (según filtro de sala/tanque —ubicación ACTUAL en matriz— y lote/código).
+  const pop = model.females.filter((r) => passFem(r, f));
   const vivas = pop.filter((r) => r.estado !== ESTADO_MUERTO).length;
   const muertas = pop.length - vivas;
   // Fertilidad = % de hembras VIVAS (en la ubicación) que ALGUNA VEZ han desovado.
@@ -341,8 +358,7 @@ export function locationStats(model, f, level = 'tanque') {
   // Ocupantes vivas actuales (aunque no tengan eventos en el período) — denominador de fertilidad.
   model.females.forEach((r) => {
     if (r.estado === ESTADO_MUERTO) return;
-    if (f.sala && String(r.sala) !== f.sala) return;
-    if (f.tanque && String(r.tanque) !== f.tanque) return;
+    if (!passFem(r, f)) return;
     const k = level === 'sala' ? dash(r.sala) : level === 'loc' ? locKey(r.sala, r.tanque) : dash(r.tanque);
     // Sin tanque asignado NO se crea una fila fantasma... pero si la fila «—» ya existe
     // —la creó un evento cuya ubicación no se pudo resolver— hay que sumarle también estas
@@ -421,8 +437,7 @@ export function neverSpawned(model, f = {}) {
   const everSpawned = new Set(model.desoves.map((e) => e.trovan));
   return model.females.filter((r) => r.estado !== ESTADO_MUERTO
     && !everSpawned.has(r.trovan)
-    && (!f.sala || String(r.sala) === f.sala)
-    && (!f.tanque || String(r.tanque) === f.tanque))
+    && passFem(r, f))
     .sort((a, b) => (a.trovan < b.trovan ? -1 : 1));
 }
 
@@ -475,8 +490,7 @@ export function stateDistribution(model, f = {}) {
   const ref = model.dataMaxDate;
   const counts = { activa: 0, inactiva: 0, transferida: 0, fallecida: 0 };
   model.females.forEach((r) => {
-    if (f.sala && String(r.sala) !== f.sala) return;
-    if (f.tanque && String(r.tanque) !== f.tanque) return;
+    if (!passFem(r, f)) return;
     counts[classifyFemale(r, model, ref)]++;
   });
   return counts;
@@ -534,8 +548,8 @@ export function trends(model, f, granularity = 'month') {
       d.setMonth(d.getMonth() + 1);
     }
   }
-  // Población filtrada por ubicación actual (para "vivas durante el bucket").
-  const pop = model.females.filter((r) => (!f.sala || String(r.sala) === f.sala) && (!f.tanque || String(r.tanque) === f.tanque));
+  // Población filtrada por ubicación actual y lote/código (para "vivas durante el bucket").
+  const pop = model.females.filter((r) => passFem(r, f));
   // Reparto de eventos por CLAVE de bucket en UNA sola pasada. Antes se recorrían los
   // eventos TRES veces por bucket (desoves, mortalidades y otra vez desoves para contar
   // desovadoras distintas): con 30.000 eventos y 72 buckets son ~6,5 M de comparaciones
@@ -572,6 +586,19 @@ export function salasOf(model) {
   model.females.forEach((r) => { if (r.sala) set.add(String(r.sala)); });
   model.desoves.concat(model.mortalidades).forEach((e) => { if (e.sala) set.add(String(e.sala)); });
   return [...set].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+}
+const _ordenEs = (a, b) => a.localeCompare(b, 'es', { numeric: true });
+/** Lotes presentes en la MATRIZ (el lote es de la hembra, no del evento). */
+export function lotesOf(model) {
+  const set = new Set();
+  model.females.forEach((r) => { if (r.lote) set.add(String(r.lote)); });
+  return [...set].sort(_ordenEs);
+}
+/** Códigos genéticos presentes en la MATRIZ; con `lote`, sólo los de ese lote (cascada). */
+export function codigosOf(model, lote) {
+  const set = new Set();
+  model.females.forEach((r) => { if (r.codigo && (!lote || String(r.lote) === lote)) set.add(String(r.codigo)); });
+  return [...set].sort(_ordenEs);
 }
 export function tanquesOf(model, sala) {
   const set = new Set();

@@ -13,7 +13,7 @@ import {
   FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS,
   buildReproModel, makeFilter, monthLabel, kpis, locationStats, femaleRanking,
   femaleHistory, neverSpawned, recoveryDistribution, stateDistribution,
-  mortalityBreakdown, trends, salasOf, tanquesOf, locKey,
+  mortalityBreakdown, trends, salasOf, tanquesOf, lotesOf, codigosOf, locKey,
 } from './data.js';
 
 // ── Paleta (coherente en tema claro/oscuro; muted + grid como el resto de vistas) ──
@@ -27,7 +27,7 @@ const SUBS = [
   { key: 'hembras', label: 'Hembras', icon: '🦐' },
 ];
 
-const vState = { sub: 'panorama', month: null, sala: null, tanque: null, locLevel: 'tanque', femSearch: '', femSel: null, trendGran: null, trendMetric: 'todas' };
+const vState = { sub: 'panorama', month: null, sala: null, tanque: null, lote: null, codigo: null, locLevel: 'tanque', femSearch: '', femSel: null, trendGran: null, trendMetric: 'todas' };
 
 // Modelo memoizado por identidad de store.globalData.
 let _cache = { src: null, model: null };
@@ -92,7 +92,14 @@ export function maduracionView(root) {
   const tanques = tanquesOf(model, vState.sala);
   if (vState.tanque && !tanques.includes(vState.tanque)) vState.tanque = null;
 
-  const f = makeFilter({ sala: vState.sala, tanque: vState.tanque, month: vState.month });
+  // Filtros de la hembra (cascada Lote → Código genético). Un código que no pertenece al
+  // lote elegido se descarta, igual que un tanque que no está en la sala.
+  const lotes = lotesOf(model);
+  if (vState.lote && !lotes.includes(vState.lote)) { vState.lote = null; vState.codigo = null; }
+  const codigos = codigosOf(model, vState.lote);
+  if (vState.codigo && !codigos.includes(vState.codigo)) vState.codigo = null;
+
+  const f = makeFilter({ sala: vState.sala, tanque: vState.tanque, lote: vState.lote, codigo: vState.codigo, month: vState.month });
 
   let h = headHTML();
   h += `<div class="mc-filters">
@@ -103,6 +110,8 @@ export function maduracionView(root) {
       </div>
       ${sel('sala', vState.sala, salas, 'Todas las salas')}
       ${sel('tanque', vState.tanque, tanques, 'Todos los tanques')}
+      ${sel('lote', vState.lote, lotes, 'Todos los lotes')}
+      ${sel('codigo', vState.codigo, codigos, 'Todos los códigos genéticos')}
     </div>`;
 
   h += `<div class="mc-subnav">${SUBS.map((s) => `<button class="mc-pill ${vState.sub === s.key ? 'is-on' : ''}" data-mc-sub="${s.key}">${s.icon} ${esc(s.label)}</button>`).join('')}</div>`;
@@ -192,6 +201,14 @@ function headHTML() {
 }
 
 const periodIdx = () => _periods.indexOf(vState.month);
+/** Nota «filtrado por …» del ranking: dice QUÉ filtros de la hembra están puestos. */
+function rankNote() {
+  const partes = [];
+  if (vState.sala || vState.tanque) partes.push('ubicación');
+  if (vState.lote) partes.push('lote');
+  if (vState.codigo) partes.push('código genético');
+  return partes.length ? `<span class="mc-h-note">filtrado por ${esc(partes.join(', '))}</span>` : '';
+}
 function sel(dim, value, values, ph) {
   return `<select class="mc-select" data-mc-filter="${dim}">
     <option value="">${esc(ph)}</option>
@@ -214,7 +231,7 @@ function trendCtx(model) {
   const latestMonth = model.months.length ? model.months[model.months.length - 1] : null;
   const effGran = vState.trendGran ?? (vState.month ? 'dia' : 'mes');
   const trendMonth = effGran === 'dia' ? (vState.month || latestMonth) : null;
-  const ftrend = makeFilter({ sala: vState.sala, tanque: vState.tanque, month: trendMonth });
+  const ftrend = makeFilter({ sala: vState.sala, tanque: vState.tanque, lote: vState.lote, codigo: vState.codigo, month: trendMonth });
   return { effGran, trendMonth, ftrend, gran: effGran === 'dia' ? 'day' : 'month', metric: vState.trendMetric || 'todas' };
 }
 
@@ -453,7 +470,7 @@ function renderHembras(model, f) {
   </div>`;
 
   const rankTable = `<div class="mc-card mc-card-wide">
-    <h4 class="mc-card-h">Ranking de hembras por desoves ${vState.sala || vState.tanque ? '<span class="mc-h-note">filtrado por ubicación</span>' : ''}</h4>
+    <h4 class="mc-card-h">Ranking de hembras por desoves ${rankNote()}</h4>
     ${shown.length ? `<div class="mc-tablewrap"><table class="mc-table">
       <thead><tr><th>#</th><th>Trovan ID</th><th>Ubicación actual</th><th class="r">Desoves</th><th class="r">Últ. desove</th><th class="r">Interv. prom.</th><th></th></tr></thead>
       <tbody>${shown.slice(0, 200).map((r, i) => `<tr>
