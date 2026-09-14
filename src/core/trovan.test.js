@@ -133,10 +133,15 @@ describe('core · cadenaDelChip (qué filas son individuos que se suceden)', () 
     expect(cadenaDelChip([vieja, fila(1, '2026-07-08', '', false)]).conflictos).toHaveLength(1);
     expect(cadenaDelChip([vieja, fila(1, '2026-07-09', '', false)]).conflictos).toHaveLength(0);
   });
-  it('🔴 el tope es el MAYOR de ingreso y muerte de la anterior (una muerte mal tecleada antes del ingreso no abre hueco)', () => {
+  it('🔴 el tope es el MAYOR de ingreso y muerte de la anterior: una muerte mal tecleada, o sin teclear, no abre hueco', () => {
+    /* ⚠ Tiene que ser con el MISMO día de ingreso. Una sucesora que ingresa ANTES que la anterior
+       ya queda delante al ordenar por vida, así que ese caso no distingue el tope de «sólo la
+       muerte» (lo cazó la mutación C02 de mutar-repro-reciclaje, que sobrevivía). */
     const sucia = fila(0, '2026-05-01', '2026-04-01', true);           // murió «antes» de ingresar
-    expect(cadenaDelChip([sucia, fila(1, '2026-04-15', '', false)]).conflictos).toHaveLength(1);
-    expect(cadenaDelChip([sucia, fila(1, '2026-05-02', '', false)]).conflictos).toHaveLength(0);
+    expect(cadenaDelChip([sucia, fila(1, '2026-05-01', '', false)]).conflictos).toHaveLength(1);
+    const sinMuerte = fila(0, '2026-05-01', '', true);                  // muerta sin fecha de muerte
+    expect(cadenaDelChip([sinMuerte, fila(1, '2026-05-01', '', false)]).conflictos).toHaveLength(1);
+    expect(cadenaDelChip([sinMuerte, fila(1, '2026-05-02', '', false)]).conflictos).toHaveLength(0);
   });
   it('una muerta SIN fechas puede tener sucesora; una fila SIN fecha de ingreso nunca sucede a otra', () => {
     const sinFechas = fila(0, '', '', true);

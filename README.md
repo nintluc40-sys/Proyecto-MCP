@@ -67,6 +67,11 @@ npm run lint       # ESLint
   **Hembras** (ranking por desoves, buscador de Trovan, hembras que nunca han
   desovado, distribución del intervalo de recuperación e historial completo por
   individuo). Filtros de período (mes o todo) + Sala + Tanque.
+  ♻ **Microchips reciclados (2026-09-14):** el chip de una hembra **muerta** se puede dar de
+  alta en otra, así que un Trovan ID es de un chip y la MATRIZ puede tener varias hembras
+  suyas. La regla vive en `src/core/trovan.js`: una hembra sucede a otra si la anterior murió
+  y la nueva ingresó **después**; cada evento es de la que había ingresado en su fecha. La que
+  lleva hoy el chip se llama como él y las anteriores, `chip·fecha de ingreso`.
 - **Registros**: fichas de captura (estrangulamiento gradual del monolito
   `public/registros/engine.js`) que escriben al Sheet vía Google Apps Script.
   Incluye el **registro operativo de Maduración**, que tiene su propia sección aquí abajo
@@ -249,7 +254,10 @@ Dos consecuencias que conviene tener presentes al desplegar:
   como texto**, el **tope de lectura de `?p=rows` en 20000 filas** (antes 5000; el registro
   reproductivo avisa si una hoja llega recortada) y el **reemplazo por clave que nunca borra a
   ciegas** (BIOMOL, Microbiología, Calidad de Agua, Patología y Marea: un `keyCols` inválido o
-  una clave en blanco ya no vacían la hoja; lo prueba `gas-replace-clave.test.js`). Las tres
+  una clave en blanco ya no vacían la hoja; lo prueba `gas-replace-clave.test.js`), y la
+  **MATRIZ con microchips reciclados** (`llaveMatriz_`: el alta de una hembra con el chip de una
+  muerta añade su fila en vez de fundirse sobre la de la muerta; lo prueba
+  `mad-gas-dopost.test.js`). Las tres
   hojas nuevas —Ingreso, Movimientos y Fin de Ciclo— **ya escriben**: ese despliegue entró
   entre el 09-09 y el 09-12. Pegar `GAS/Code.gs` en Apps Script y publicar una **versión
   nueva**; guardar sin publicar no cambia lo que sirve el Web App. ⚠ Copiarlo siempre de
@@ -267,6 +275,12 @@ Dos consecuencias que conviene tener presentes al desplegar:
   `?p=ver`; si esa pregunta no contesta en 6 s, envía como siempre (y la cola vuelve a
   preguntar antes de entregar). Y un envío que espera en la cola más de 24 h se descarta, así
   que conviene no dejar pasar días entre publicar el cliente y re-desplegar el GAS.
+- ⚠ **Y tampoco envía el alta de un microchip reciclado.** Un GAS anterior la fundiría sobre la
+  fila de la hembra muerta (su llave era sólo el Trovan), así que la app pregunta a `?p=ver` si
+  el GAS anuncia `"matriz-reciclaje"` en `caps`, y si no lo confirma —o no contesta— envía el
+  resto del lote y deja esas filas en la grilla con el motivo. El GAS nuevo es además quien
+  rechaza, sin escribir nada, el alta del chip de una hembra **viva** o con una fecha de
+  ingreso que no es posterior a la muerte de la anterior.
 - ℹ La hoja «Calidad de Agua» ganará la columna 48 «Sulfato» en la primera sincronización del
   formato Algas: la añade el GAS al final, sin mover las anteriores, y no exige re-desplegarlo.
 - 🔴 **Maduración Ingreso y Maduración Lotes (Desoves): sin migración, pero sin la cabecera
