@@ -372,6 +372,16 @@ const ESCENARIOS = {
       mov('2026-01-23', 'Sala 2', 16, 'Sala 1', 2, 5, 5),     // produciendo → a una sala en cuarentena
     ],
   },
+  /* ⚠ Sin éste, un monolito que contara para el estado del lote una sala donde ya no le quedan
+     animales daba lo mismo que el módulo (lo cazó P17 de probar-paridad-mad-libro): ningún escenario
+     vaciaba al lote en una sala mientras seguía vivo, y en otro estado, en otra. */
+  'un lote que se VACÍA en una de sus dos salas': {
+    ingresos: [
+      ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 10),
+      ing('2026-01-20', 'AB', 'CG2', 'Sala 2', 16, 10, 10),
+    ],
+    tanques: [tq('2026-01-21', 'Sala 1', 1, { 'Machos muertos': 10, 'Hembras muertas': 10 })],
+  },
   'vacío': { ingresos: [], tanques: [] },
 };
 

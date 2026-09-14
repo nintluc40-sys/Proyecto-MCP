@@ -116,6 +116,12 @@ Salas, que propone —y al guardar escribe— el estado de la fecha elegida en l
 - **Movimientos y Desoves no dicen de qué lote salió cada animal, y es deliberado.** En un
   tanque mezclado nadie lo sabe, y las copuladas de un desove se juntan en un pool de varios
   tanques. Lo deduce el libro; inventarlo sería registrar lo que no se midió.
+- **La cuarentena es de cada SALA (2026-09-14).** Un lote puede estar en varias salas —en
+  tanques distintos, salvo mezcla o agrupación— y una sala tener varios lotes. Cada (lote, sala)
+  lleva su reloj: el ingreso lo reinicia en su sala, la cópula lo rompe en su sala y el cierre es
+  del lote entero. Lo que se mueve a otra sala lleva su reloj; si el lote ya estaba allí, manda la
+  cuarentena que termina más tarde. El Saldo da `Mixto` a un lote cuyas salas no coinciden y dice
+  el estado de cada una.
 
 ⚠ **Las llaves del GAS mandan sobre el diseño de estas hojas.** `Maduración Sala`,
 `Tanques` y `Lotes` se identifican por POSICIÓN (`[0,1]`, `[0,1,3]` y `[0,1,2]`), así que
