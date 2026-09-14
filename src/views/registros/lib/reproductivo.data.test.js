@@ -4,7 +4,7 @@ import {
   REPRO_TRANSFER_HEADERS, REPRO_TRANSFER_KEYCOLS, REPRO_ESTADO, REPRO_EVENTO, REPRO_TRANSFER_TIPO,
   normTrovan, parseTrovanList, isValidTrovan, matrixRecordFromSheet, buildMatrixIndex,
   buildAltaBatch, buildEventBatch, nextTrId, buildTransferBatch,
-  matrixIndexFromRows, pivotDesoves, individualTrace, matrixSummary, nextTrIdFromRows,
+  matrixIndexFromRows, pivotDesoves, individualTrace, matrixSummary, nextTrIdFromRows, trazaDelChip,
 } from './reproductivo.data.js';
 
 // Índice de matriz de prueba: 3 hembras (una muerta). Trovan = 10 hex (formato del lector).
@@ -277,5 +277,188 @@ describe('Tanda 5 · Consulta / reportes', () => {
   it('nextTrIdFromRows reconcilia con el máximo del ledger', () => {
     expect(nextTrIdFromRows([trow({ tr: 'TR-000007' }), trow({ tr: 'TR-000123' })])).toBe('TR-000124');
     expect(nextTrIdFromRows([])).toBe('TR-000001');
+  });
+});
+
+/* ── ♻ MICROCHIPS RECICLADOS (2026-09-14) ─────────────────────────────────────
+   Pedido del usuario: dar de alta hembras nuevas con el microchip de una que YA MURIÓ (otro lote,
+   otra piscina, otro código genético). Antes el alta lo rechazaba como «ya existente» por la sola
+   presencia del chip en la MATRIZ. Filas como las entrega la hoja (objetos con cabeceras). */
+const CHIP = '0008219380';
+const VIEJA = { 'Número': '7', 'Trovan ID': CHIP, 'Color anillo': 'Rojo', 'Piscina': 'P2', 'Código genético': 'G01', 'Lote': 'L12',
+  'Sala actual': 'S1', 'Tanque actual': 'T1', 'Estado': 'Muerto', 'Fecha muerte': '2026-07-08', 'Fecha ingreso': '2026-01-05' };
+const NUEVA = { 'Número': '31', 'Trovan ID': CHIP, 'Color anillo': 'Azul', 'Piscina': 'P9', 'Código genético': 'G07', 'Lote': 'L20',
+  'Sala actual': 'S3', 'Tanque actual': 'T4', 'Estado': 'Vivo', 'Fecha muerte': '', 'Fecha ingreso': '2026-08-01' };
+const OTRA_VIVA = { 'Trovan ID': '0008218CCC', 'Sala actual': 'S5', 'Tanque actual': 'T1', 'Estado': 'Vivo', 'Fecha ingreso': '2026-02-01' };
+// La lectura de respaldo del GAS sólo trae 4 columnas: SIN fechas (ver _REPRO_MATRIZ_COLS en engine.js).
+const sinFechas = (o) => ({ 'Trovan ID': o['Trovan ID'], 'Sala actual': o['Sala actual'], 'Tanque actual': o['Tanque actual'], 'Estado': o['Estado'] });
+const altaDe = (fecha, extra) => [Object.assign({ trovan: CHIP, numero: '44', lote: 'L33', codigo: 'G09', piscina: 'P4', sala: 'S2', tanque: 'T8', fecha }, extra)];
+
+describe('♻ reciclaje · el índice da la hembra VIGENTE de cada chip', () => {
+  it('🔴 con la muerta y la nueva, el índice da la NUEVA, esté arriba o abajo en la hoja', () => {
+    for (const filas of [[VIEJA, NUEVA], [NUEVA, VIEJA]]) {
+      const r = matrixIndexFromRows(filas).get(CHIP);
+      expect(r.sala).toBe('S3');
+      expect(r.estado).toBe('Vivo');
+      expect(r.individuos).toBe(2);
+    }
+  });
+  it('fechaLimite = la última fecha de ingreso o de muerte del chip, también con fechas dd/mm/yyyy', () => {
+    expect(matrixIndexFromRows([VIEJA]).get(CHIP).fechaLimite).toBe('2026-07-08');
+    expect(matrixIndexFromRows([VIEJA, NUEVA]).get(CHIP).fechaLimite).toBe('2026-08-01');
+    const delStore = Object.assign({}, VIEJA, { 'Fecha muerte': '08/07/2026', 'Fecha ingreso': '05/01/2026' });
+    expect(matrixIndexFromRows([delStore]).get(CHIP).fechaLimite).toBe('2026-07-08');
+  });
+  it('un chip con una sola fila sigue igual: 1 individuo', () => {
+    const r = matrixIndexFromRows([OTRA_VIVA]).get('0008218CCC');
+    expect(r.individuos).toBe(1);
+    expect(r.sala).toBe('S5');
+  });
+});
+
+describe('♻ reciclaje · alta de una hembra nueva con el chip de una muerta', () => {
+  it('🔴 si la hembra del chip está MUERTA, entra como hembra nueva con SUS datos', () => {
+    const r = buildAltaBatch(altaDe('2026-07-20'), matrixIndexFromRows([VIEJA]), { reciclaje: true });
+    expect(r.report.created).toEqual([CHIP]);
+    expect(r.report.reciclados).toEqual([CHIP]);
+    expect(r.report.existentes).toEqual([]);
+    const fila = r.payload.rows[0];
+    expect(fila[col(REPRO_MATRIZ_HEADERS, 'Lote')]).toBe('L33');
+    expect(fila[col(REPRO_MATRIZ_HEADERS, 'Código genético')]).toBe('G09');
+    expect(fila[col(REPRO_MATRIZ_HEADERS, 'Estado')]).toBe(REPRO_ESTADO.VIVO);
+    expect(fila[col(REPRO_MATRIZ_HEADERS, 'Fecha ingreso')]).toBe('2026-07-20');
+    expect(fila[col(REPRO_MATRIZ_HEADERS, 'Fecha muerte')]).toBe('');
+  });
+  it('🔴 si la hembra del chip está VIVA sigue siendo «ya existente», aunque tenga una muerta detrás', () => {
+    const r = buildAltaBatch(altaDe('2026-09-10'), matrixIndexFromRows([VIEJA, NUEVA]), { reciclaje: true });
+    expect(r.report.existentes).toEqual([CHIP]);
+    expect(r.report.reciclados).toEqual([]);
+    expect(r.payload).toBeNull();
+  });
+  it('🔴 la fecha de ingreso tiene que ser POSTERIOR a la muerte de la anterior: el mismo día no vale', () => {
+    const idxV = matrixIndexFromRows([VIEJA]);
+    const mismoDia = buildAltaBatch(altaDe('2026-07-08'), idxV, { reciclaje: true });
+    expect(mismoDia.report.reciclajeFecha).toEqual([CHIP]);
+    expect(mismoDia.payload).toBeNull();
+    expect(buildAltaBatch(altaDe('2026-07-09'), idxV, { reciclaje: true }).report.created).toEqual([CHIP]);
+  });
+  it('🔴 sin confirmar que el GAS sabe reciclar NO se envía (un GAS viejo la fundiría sobre la muerta)', () => {
+    const r = buildAltaBatch(altaDe('2026-07-20'), matrixIndexFromRows([VIEJA]));
+    expect(r.report.reciclajeSinGas).toEqual([CHIP]);
+    expect(r.report.created).toEqual([]);
+    expect(r.payload).toBeNull();
+    expect(buildAltaBatch(altaDe('2026-07-20'), matrixIndexFromRows([VIEJA]), { reciclaje: false }).payload).toBeNull();
+  });
+  it('con una fecha mal escrita no se recicla (no se puede comparar con la muerte)', () => {
+    expect(buildAltaBatch(altaDe('20/13/2026'), matrixIndexFromRows([VIEJA]), { reciclaje: true }).report.reciclajeFecha).toEqual([CHIP]);
+  });
+  it('sin fechas en la lectura (respaldo del GAS) se deja pasar: la fecha la valida el GAS al escribir', () => {
+    const r = buildAltaBatch(altaDe('2026-07-01'), matrixIndexFromRows([sinFechas(VIEJA)]), { reciclaje: true });
+    expect(r.report.reciclados).toEqual([CHIP]);
+  });
+  it('mezcla en un mismo lote: la nueva se registra y la del chip vivo no; nada más cambia', () => {
+    const forms = [
+      { trovan: '000821BC99', sala: 'S6', tanque: 'T2', fecha: '2026-09-10' },   // chip nuevo
+      altaDe('2026-09-10')[0],                                                    // chip reciclado
+      { trovan: '0008218CCC', fecha: '2026-09-10' },                              // chip de una viva
+    ];
+    const r = buildAltaBatch(forms, matrixIndexFromRows([VIEJA, OTRA_VIVA]), { reciclaje: true });
+    expect(r.report.created).toEqual(['000821BC99', CHIP]);
+    expect(r.report.reciclados).toEqual([CHIP]);
+    expect(r.report.existentes).toEqual(['0008218CCC']);
+    expect(r.payload.rows).toHaveLength(2);
+  });
+});
+
+describe('♻ reciclaje · un evento anterior al ingreso de la hembra vigente es de otra', () => {
+  const idxR = () => matrixIndexFromRows([VIEJA, NUEVA]);
+  it('🔴 un desove anterior a su ingreso NO se registra con la ubicación de la nueva', () => {
+    const r = buildEventBatch({ ids: [CHIP], fecha: '2026-07-30', tipo: REPRO_EVENTO.DESOVE, matrixIndex: idxR() });
+    expect(r.report.antesDelIngreso).toEqual([CHIP]);
+    expect(r.bitacora).toBeNull();
+  });
+  it('🔴 una mortalidad anterior a su ingreso NO mata a la nueva', () => {
+    const r = buildEventBatch({ ids: [CHIP], fecha: '2026-07-30', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: idxR() });
+    expect(r.report.antesDelIngreso).toEqual([CHIP]);
+    expect(r.matriz).toBeNull();
+  });
+  it('desde su ingreso, el evento es de la nueva: su Sala y su Tanque', () => {
+    const r = buildEventBatch({ ids: [CHIP], fecha: '2026-08-01', tipo: REPRO_EVENTO.DESOVE, matrixIndex: idxR() });
+    expect(r.report.processed).toEqual([CHIP]);
+    expect(r.bitacora.rows[0][col(REPRO_BITACORA_HEADERS, 'Sala')]).toBe('S3');
+    expect(r.bitacora.rows[0][col(REPRO_BITACORA_HEADERS, 'Tanque')]).toBe('T4');
+  });
+  it('con UNA sola hembra en el chip no cambia nada: un evento anterior a su ingreso se registra como siempre', () => {
+    const r = buildEventBatch({ ids: [CHIP], fecha: '2026-07-30', tipo: REPRO_EVENTO.DESOVE, matrixIndex: matrixIndexFromRows([NUEVA]) });
+    expect(r.report.processed).toEqual([CHIP]);
+    expect(r.report.antesDelIngreso).toEqual([]);
+  });
+  it('sin fechas en la lectura no se puede saber: se registra (la mortalidad la frena el GAS)', () => {
+    const r = buildEventBatch({ ids: [CHIP], fecha: '2026-07-30', tipo: REPRO_EVENTO.DESOVE, matrixIndex: matrixIndexFromRows([sinFechas(VIEJA), sinFechas(NUEVA)]) });
+    expect(r.report.processed).toEqual([CHIP]);
+  });
+  it('🔴 un traslado anterior a su ingreso NO mueve a la nueva; desde su ingreso, sí', () => {
+    const tr = (fecha) => buildTransferBatch({ fecha, tipo: REPRO_TRANSFER_TIPO.TRASLADO, origen: { sala: 'S3', tanque: 'T4' },
+      destinos: [{ sala: 'S6', tanque: 'T2', ids: [CHIP] }], matrixIndex: idxR(), trId: 'TR-000300' });
+    const antes = tr('2026-07-30');
+    expect(antes.report.antesDelIngreso).toEqual([CHIP]);
+    expect(antes.matriz).toBeNull();
+    expect(tr('2026-08-02').report.moved).toEqual([CHIP]);
+  });
+});
+
+describe('♻ reciclaje · Consulta: matriz de desoves y trazabilidad por HEMBRA', () => {
+  const BIT = [
+    { 'Trovan ID': CHIP, 'Fecha': '2026-06-01', 'Tipo': 'Desove' },       // de la vieja
+    { 'Trovan ID': CHIP, 'Fecha': '2026-06-20', 'Tipo': 'Desove' },       // de la vieja
+    { 'Trovan ID': CHIP, 'Fecha': '2026-08-10', 'Tipo': 'Desove' },       // de la nueva
+    { 'Trovan ID': CHIP, 'Fecha': '2026-07-08', 'Tipo': 'Mortalidad' },
+  ];
+  it('🔴 con la MATRIZ, la matriz de desoves da una fila por hembra y no suma las dos', () => {
+    const p = pivotDesoves(BIT, [VIEJA, NUEVA]);
+    expect(p.rows.map((r) => [r.trovan, r.total])).toEqual([[CHIP, 1], [CHIP + '·2026-01-05', 2]]);
+  });
+  it('sin la MATRIZ sale como siempre: una fila por chip', () => {
+    expect(pivotDesoves(BIT).rows.map((r) => [r.trovan, r.total])).toEqual([[CHIP, 3]]);
+  });
+  it('las fechas dd/mm/yyyy del store se ordenan como fechas (antes «01/08» iba delante de «20/06»)', () => {
+    const p = pivotDesoves([
+      { 'Trovan ID': CHIP, 'Fecha': '20/06/2026', 'Tipo': 'Desove' },
+      { 'Trovan ID': CHIP, 'Fecha': '01/08/2026', 'Tipo': 'Desove' },
+    ]);
+    expect(p.dates).toEqual(['2026-06-20', '2026-08-01']);
+  });
+  it('🔴 la trazabilidad de un chip reciclado es la de la hembra que lo lleva hoy, y lista las anteriores', () => {
+    const t = trazaDelChip([VIEJA, NUEVA], BIT, [
+      trow({ tr: 'TR-000001', f: '2026-03-01', t: CHIP, so: 'S1', to: 'T1', sd: 'S1', td: 'T2' }),    // de la vieja
+      trow({ tr: 'TR-000009', f: '2026-08-05', t: CHIP, so: 'S2', to: 'T8', sd: 'S3', td: 'T4' }),    // de la nueva
+    ], CHIP);
+    expect(t.rec.lote).toBe('L20');
+    expect(t.reciclado).toBe(true);
+    expect(t.desde).toBe('2026-08-01');
+    expect(t.desoves).toEqual(['2026-08-10']);
+    expect(t.movimientos.map((m) => m.trId)).toEqual(['TR-000009']);
+    expect(t.current).toEqual({ sala: 'S3', tanque: 'T4' });
+    expect(t.anteriores).toEqual([{ ingreso: '2026-01-05', muerte: '2026-07-08', estado: 'Muerto', lote: 'L12', codigo: 'G01', sala: 'S1', tanque: 'T1' }]);
+  });
+  it('sin fechas en la lectura no se puede partir, y lo dice: se ve todo lo del chip', () => {
+    const t = trazaDelChip([sinFechas(VIEJA), sinFechas(NUEVA)], BIT, [], CHIP);
+    expect(t.reciclado).toBe(true);
+    expect(t.sinFechas).toBe(true);
+    expect(t.desoves).toHaveLength(3);
+    expect(t.anteriores).toHaveLength(1);
+  });
+  it('un chip de UNA sola hembra se traza como siempre', () => {
+    const t = trazaDelChip([OTRA_VIVA], [{ 'Trovan ID': '0008218CCC', 'Fecha': '2026-01-01', 'Tipo': 'Desove' }], [], '0008218ccc');
+    expect(t.reciclado).toBe(false);
+    expect(t.sinFechas).toBe(false);
+    expect(t.anteriores).toEqual([]);
+    expect(t.desoves).toEqual(['2026-01-01']);                 // anterior a su ingreso y aun así suyo
+    expect(t.rec.sala).toBe('S5');
+  });
+  it('un chip que no está en la MATRIZ no tiene hembra vigente', () => {
+    const t = trazaDelChip([OTRA_VIVA], [], [], CHIP);
+    expect(t.rec).toBeNull();
+    expect(t.reciclado).toBe(false);
   });
 });

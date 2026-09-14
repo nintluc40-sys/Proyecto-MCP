@@ -15,13 +15,20 @@
 // ════════════════════════════════════════════════════════
 
 // ── PRUEBA DE VERSIÓN (D8, 2026-09-13) ─────────────────────────────
-// GET ?p=ver → {"ok":true,"version":GAS_VERSION}, sin token y sin abrir ninguna hoja.
+// GET ?p=ver → {"ok":true,"version":GAS_VERSION,"caps":GAS_CAPACIDADES}, sin token y sin abrir ninguna hoja.
 // El sello es la HUELLA del resto de este archivo (sha-256, 12 caracteres), y la exige la
 // prueba gas-version.test.js del repo: tocar cualquier otra línea sin actualizarlo pone la
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "63498421af0b";
+const GAS_VERSION = "40464830dcf8";
+
+// ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
+// Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
+// no nombra una capacidad no la tiene.
+//  · "matriz-reciclaje": el alta de una hembra con el microchip de una MUERTA entra como hembra
+//    nueva (ver llaveMatriz_). Un GAS anterior la FUNDIRÍA sobre la fila de la muerta.
+const GAS_CAPACIDADES = ["matriz-reciclaje"];
 
 const SS_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
 
@@ -241,7 +248,7 @@ function doPost(e) {
     else if (payload.sheetName === "Maduración Tanques")  madKeyCols = [0,1,3]; // Fecha, Sala, Tanque («Lote», en la C, va vacía: sólo guarda la posición)
     else if (payload.sheetName === "Maduración Lotes")    madKeyCols = [0,1,2]; // Fecha, Lote, Código genético (la hoja de Desoves)
     // Registro reproductivo (upsert por clave, MERGE preserva campos permanentes vacíos):
-    else if (payload.sheetName === "Maduración MATRIZ")         madKeyCols = [1];     // Trovan ID
+    else if (payload.sheetName === "Maduración MATRIZ")         madKeyCols = [1];     // Trovan ID (a qué hembra del chip va cada fila: llaveMatriz_)
     else if (payload.sheetName === "Maduración Bitácora")       madKeyCols = [0,1,2]; // Trovan + Fecha + Tipo
     else if (payload.sheetName === "Maduración Transferencias") madKeyCols = [0,3];   // TR-ID + Trovan
     var isMad   = madKeyCols !== null;
@@ -403,7 +410,11 @@ function doPost(e) {
         if (_filasNecesarias > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasNecesarias - ws.getMaxRows());
         if (ws.getMaxRows() > 1) ws.getRange(2, 2, ws.getMaxRows() - 1, 2).setNumberFormat("@");
       }
-      result = upsertMadRows(ws, rows, madKeyCols, madTrovanCol, madNumCol);
+      // ♻ En la MATRIZ, a qué hembra del chip va cada fila lo decide llaveMatriz_ (microchips
+      // reciclados), y un chip que no se puede reciclar rechaza el envío ENTERO sin escribir nada.
+      result = upsertMadRows(ws, rows, madKeyCols, madTrovanCol, madNumCol,
+        payload.sheetName === "Maduración MATRIZ" ? llaveMatriz_(rows) : null);
+      if (result.error) return respond({ status: "error", message: result.error });
     }
     else if (isAlgas)  result = upsertAlgasRows(ws, rows);
     else if (isBiomol) {
@@ -1134,16 +1145,19 @@ function algasInKey(row) {
 //   • Maduración Lotes    → [0,1,2] (Fecha, Lote, Código genético) — la hoja de Desoves
 // Si la clave coincide con una fila existente: merge (los nuevos valores
 // no vacíos reemplazan al anterior; los vacíos preservan el dato actual).
-function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol) {
+function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol, llave) {
   if (trovanCol === undefined || trovanCol === null) trovanCol = -1;
   if (numCol === undefined || numCol === null) numCol = -1;
   var lastR = ws.getLastRow();
   var data  = ws.getDataRange().getValues();
+  // «llave» (2026-09-14, sólo la MATRIZ): cuando la clave no basta para saber a qué fila va cada
+  // una del envío —un chip reciclado tiene varias—, lo decide ella, y puede rechazar el envío.
+  if (llave) { var rechazo = llave.preparar(data); if (rechazo) return { error: rechazo }; }
   var map   = {};
   var keySet = {};
   for (var j = 0; j < keyCols.length; j++) keySet[keyCols[j]] = 1;
   for (var i = 1; i < data.length; i++) {
-    var k = madRowKey(data[i], keyCols);
+    var k = llave ? llave.deHoja(i) : madRowKey(data[i], keyCols);
     if (k) map[k] = { row: i + 1, idx: i };
   }
   var toAdd = [];
@@ -1151,7 +1165,7 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol) {
   var pendingMap = {};
   for (var r = 0; r < newRows.length; r++) {
     var nr    = newRows[r];
-    var k2    = madInKey(nr, keyCols);
+    var k2    = llave ? llave.deEnvio(r) : madInKey(nr, keyCols);
     var entry = map[k2];
     if (entry && entry.row > 0) {
       var ex     = data[entry.idx];
@@ -1230,6 +1244,101 @@ function madInKey(row, keyCols) {
   return parts.join("|");
 }
 
+// ── Registro reproductivo · MATRIZ con microchips RECICLADOS (2026-09-14) ──
+// El microchip de una hembra MUERTA se puede volver a implantar en otra. Hasta hoy la llave de la
+// MATRIZ era sólo el Trovan ID, y el alta de la hembra nueva se FUNDÍA sobre la fila de la muerta:
+// salía «Vivo» con la fecha de muerte de la otra, y el lote, el código y la piscina de la anterior
+// se perdían. Ahora cada fila del envío va a UNA hembra del chip:
+//  · la fila de ALTA (trae «Fecha ingreso») va a la hembra de ese chip con ESA fecha de ingreso, así
+//    que reenviarla no duplica. Si no hay ninguna es una hembra NUEVA y se añade, pero sólo si todas
+//    las del chip están muertas y la fecha es posterior a su ingreso y a su muerte;
+//  · la fila sin «Fecha ingreso» (mortalidad, traslado) va a la hembra VIGENTE del chip: la viva;
+//    entre varias, o sin ninguna viva, la de ingreso más reciente; a igualdad, la de más abajo. Con
+//    el chip reciclado, una muerte anterior al ingreso de esa hembra no puede ser suya.
+// Lo que no cumple rechaza el envío ENTERO sin escribir nada, con un mensaje que el cliente no toma
+// por «servidor ocupado»: no se reintenta. La fusión de cada fila es la de upsertMadRows (una celda
+// vacía conserva el dato). La regla es la de core/trovan.js del repo, y la fijan las pruebas de
+// mad-gas-dopost.test.js.
+// ⚠ Las fechas se leen SÓLO de las filas de los chips del envío: formatear una fecha cuesta dos
+// llamadas de servicio, y con la hoja entera son decenas de segundos bajo el candado (medido en
+// ?p=rows el 2026-09-14: de 3-6 s a 40-64 s por pedir las dos columnas de fecha de la MATRIZ).
+var MATRIZ_COL_ESTADO = 8, MATRIZ_COL_MUERTE = 9, MATRIZ_COL_INGRESO = 10;
+function llaveMatriz_(envio) {
+  var claves = [], deHoja = {};
+  return {
+    preparar: function(data) {
+      var tz = null;
+      var fecha = function(v) {
+        if (tz === null && esFecha_(v)) tz = Session.getScriptTimeZone();
+        return fechaIsoGas_(v, tz);
+      };
+      var enEnvio = {};
+      for (var e0 = 0; e0 < envio.length; e0++) enEnvio[madInKey(envio[e0], [1])] = 1;
+      var porChip = {};
+      for (var i = 1; i < data.length; i++) {
+        var chip = madRowKey(data[i], [1]);
+        if (!chip || enEnvio[chip] !== 1) continue;
+        deHoja[i] = "f" + i;
+        if (!porChip[chip]) porChip[chip] = [];
+        porChip[chip].push({ clave: "f" + i, ingreso: fecha(data[i][MATRIZ_COL_INGRESO]),
+          muerte: fecha(data[i][MATRIZ_COL_MUERTE]), muerto: estadoMuerto_(data[i][MATRIZ_COL_ESTADO]) });
+      }
+      for (var r = 0; r < envio.length; r++) {
+        var nr = envio[r], chipN = madInKey(nr, [1]), ingN = fecha(nr[MATRIZ_COL_INGRESO]);
+        if (!porChip[chipN]) porChip[chipN] = [];
+        var lista = porChip[chipN], destino = null, a;
+        if (ingN) {
+          for (a = 0; a < lista.length; a++) if (lista[a].ingreso === ingN) destino = lista[a];
+          if (!destino) {
+            for (a = 0; a < lista.length; a++) {
+              if (!lista[a].muerto) return "No se escribió nada: el microchip " + chipN + " lo lleva una hembra VIVA en la MATRIZ. Sólo se puede volver a usar el de una hembra muerta.";
+              var tope = lista[a].muerte > lista[a].ingreso ? lista[a].muerte : lista[a].ingreso;
+              if (ingN <= tope) return "No se escribió nada: el microchip " + chipN + " lo llevó una hembra que ingresó o murió el " + tope + ", y la hembra nueva tiene que ingresar DESPUÉS de esa fecha.";
+            }
+            destino = { clave: "n" + r, ingreso: ingN, muerte: fecha(nr[MATRIZ_COL_MUERTE]), muerto: estadoMuerto_(nr[MATRIZ_COL_ESTADO]) };
+            lista.push(destino);
+          }
+        } else {
+          for (a = 0; a < lista.length; a++) {
+            var x = lista[a];
+            if (!destino || (destino.muerto && !x.muerto) || (destino.muerto === x.muerto && x.ingreso >= destino.ingreso)) destino = x;
+          }
+          var muerteN = fecha(nr[MATRIZ_COL_MUERTE]);
+          if (destino && lista.length > 1 && muerteN && destino.ingreso && muerteN < destino.ingreso) {
+            return "No se escribió nada: la muerte del " + muerteN + " es anterior al ingreso (" + destino.ingreso + ") de la hembra que lleva hoy el microchip " + chipN + ", así que es de una hembra anterior.";
+          }
+          if (!destino) { destino = { clave: "n" + r, ingreso: "", muerte: "", muerto: false }; lista.push(destino); }
+        }
+        claves[r] = destino.clave;
+      }
+      return "";
+    },
+    deHoja: function(i) { return deHoja[i] || ""; },
+    deEnvio: function(r) { return claves[r]; }
+  };
+}
+// ¿Es una fecha de Sheets? Se mira así y no con instanceof para que valga también entre contextos
+// (las pruebas del repo corren este GAS dentro de una caja vm).
+function esFecha_(v) { return Object.prototype.toString.call(v) === "[object Date]"; }
+// Fecha ISO (yyyy-mm-dd) de una celda, o "" si no es una fecha real: una fecha de Sheets, ISO (con
+// hora detrás o sin ella) o dd/mm/yyyy. SIN regex a propósito, como madInKey: dentro de la
+// plantilla GAS() de la app las barras invertidas de una regex colapsan.
+function fechaIsoGas_(v, tz) {
+  if (esFecha_(v)) return isNaN(v.getTime()) ? "" : Utilities.formatDate(v, tz || Session.getScriptTimeZone(), "yyyy-MM-dd");
+  var s = String(v == null ? "" : v).trim(), y, m, d, p;
+  if (s.length >= 10 && s.charAt(4) === "-" && s.charAt(7) === "-") { y = s.slice(0, 4); m = s.slice(5, 7); d = s.slice(8, 10); }
+  else {
+    p = s.split("/");
+    if (p.length !== 3 || p[2].length !== 4 || p[1].length < 1 || p[1].length > 2 || p[0].length < 1 || p[0].length > 2) return "";
+    y = p[2]; m = (p[1].length === 1 ? "0" : "") + p[1]; d = (p[0].length === 1 ? "0" : "") + p[0];
+  }
+  for (var i = 0; i < 8; i++) if ("0123456789".indexOf((y + m + d).charAt(i)) === -1) return "";
+  var f = new Date(Date.UTC(+y, +m - 1, +d));
+  if (f.getUTCFullYear() !== +y || f.getUTCMonth() !== +m - 1 || f.getUTCDate() !== +d) return "";
+  return y + "-" + m + "-" + d;
+}
+function estadoMuerto_(v) { return String(v == null ? "" : v).trim() === "Muerto"; }
+
 // ── Health check + portal de evidencias (Fase 1) ─────────
 function doGet(e) {
   if (e && e.parameter && e.parameter.p === "ev") {
@@ -1246,8 +1355,9 @@ function doGet(e) {
     return verifyReq(e.parameter.reqId || "", e.parameter.t || "");
   }
   // D8 (2026-09-13) · qué versión está desplegada: ver GAS_VERSION, arriba del todo.
+  // Y desde el 2026-09-14, qué sabe hacer: ver GAS_CAPACIDADES.
   if (e && e.parameter && e.parameter.p === "ver") {
-    return _evJson({ ok: true, version: GAS_VERSION });
+    return _evJson({ ok: true, version: GAS_VERSION, caps: GAS_CAPACIDADES });
   }
   return ContentService.createTextOutput("FichasLarv-OK");
 }

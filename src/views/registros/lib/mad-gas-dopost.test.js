@@ -41,6 +41,7 @@ import { MAD_DESOVE_HEADERS, buildDesoveRows } from './ficha-maduracion-desoves.
 import { MAD_INGRESO_HEADERS, buildIngresoRows } from './ficha-maduracion-ingreso.schema.js';
 import { MAD_MOV_HEADERS } from './ficha-maduracion-movimientos.schema.js';
 import { MAD_FIN_HEADERS, buildFinRows } from './ficha-maduracion-fin-ciclo.schema.js';
+import { REPRO_MATRIZ_HEADERS, REPRO_EVENTO, REPRO_TRANSFER_TIPO, buildAltaBatch, buildEventBatch, buildTransferBatch, matrixIndexFromRows } from './reproductivo.data.js';
 
 const leer = (u) => readFileSync(new URL(u, import.meta.url), 'utf8').split('\r\n').join('\n');
 const gasSrc = leer('../../../../GAS/Code.gs');
@@ -135,6 +136,7 @@ function hojaFalsa(filasIniciales, opts = {}) {
 function gas(hojas) {
   const cache = new Map();
   const candado = { tomado: 0, soltado: 0 };
+  let fechas = 0;                                     // llamadas a Utilities.formatDate (♻ MATRIZ)
   const ctx = {
     SpreadsheetApp: {
       openById: () => ({
@@ -147,7 +149,7 @@ function gas(hojas) {
     CacheService: { getScriptCache: () => ({ get: (k) => cache.get(k) || null, put: (k, v) => cache.set(k, v) }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (s) => ({ setMimeType: () => JSON.parse(s) }) },
-    Utilities: { sleep() {}, formatDate: (d) => d.toISOString().slice(0, 10) },
+    Utilities: { sleep() {}, formatDate: (d) => { fechas++; return d.toISOString().slice(0, 10); } },
     Session: { getScriptTimeZone: () => 'America/Guayaquil' },
     Logger: { log() {} },
     console: { error() {}, log() {} },
@@ -160,7 +162,7 @@ function gas(hojas) {
     postData: { contents: JSON.stringify(Object.assign({ reqId: 'req-' + (n++) }, payload)) },
     parameter: { z: 'prueba-' + n },
   });
-  return { post, cache, candado, hojas, cmp: ctx.__cmp };
+  return { post, cache, candado, hojas, cmp: ctx.__cmp, fechasFormateadas: () => fechas };
 }
 
 const filaVacia = (cab) => cab.map(() => '');
@@ -619,5 +621,180 @@ describe('GAS · Maduración Lotes (Desoves) con sus cambios: la hoja en uso no 
     expect(r.status).toBe('error');
     expect(r.message).toContain('Esquema desactualizado');
     expect(hoja.filas).toHaveLength(1);
+  });
+});
+
+/* ── ♻ MATRIZ · MICROCHIPS RECICLADOS (2026-09-14) ─────────────────────────────
+   Pedido del usuario: dar de alta hembras nuevas con el microchip de una que YA MURIÓ. Hasta hoy la
+   llave de la MATRIZ era sólo el Trovan ID, así que el alta nueva se FUNDÍA sobre la fila de la
+   muerta —«Vivo» con la fecha de muerte de la otra, y el lote y el código de la anterior perdidos—.
+   El GAS es quien ve a todos los clientes: aquí se decide a qué fila va cada fila del envío.
+   Los envíos salen de los constructores REALES. Los de mortalidad y traslado se arman con un índice
+   SIN fechas —el de la lectura de respaldo de 4 columnas—, porque ése es el cliente que no puede
+   frenar nada por sí mismo y lo que manda es lo que el GAS tiene que parar. */
+describe('GAS · ♻ la MATRIZ admite microchips reciclados sin pisar a la hembra muerta', () => {
+  const CAB = REPRO_MATRIZ_HEADERS;
+  const CHIP = '0008219380';
+  const fila = (o) => CAB.map((h) => (h in o ? o[h] : ''));
+  const celda = (hoja, i, h) => hoja.filas[i][CAB.indexOf(h)];
+  const VIEJA = { 'Número': 7, 'Trovan ID': CHIP, 'Piscina': 'P2', 'Código genético': 'G01', 'Lote': 'L12', 'Sala actual': 'S1',
+    'Tanque actual': 'T1', 'Estado': 'Muerto', 'Fecha muerte': '2026-07-08', 'Fecha ingreso': '2026-01-05' };
+  const NUEVA = { 'Número': 31, 'Trovan ID': CHIP, 'Piscina': 'P9', 'Código genético': 'G07', 'Lote': 'L20', 'Sala actual': 'S3',
+    'Tanque actual': 'T4', 'Estado': 'Vivo', 'Fecha ingreso': '2026-08-01' };
+  const alta = (fecha, extra) => buildAltaBatch([Object.assign({ trovan: CHIP, numero: '44', lote: 'L33', codigo: 'G09',
+    piscina: 'P4', sala: 'S2', tanque: 'T8', fecha }, extra)], null).payload;
+  const indiceSinFechas = (...hembras) => matrixIndexFromRows(hembras.map((o) => ({ 'Trovan ID': o['Trovan ID'],
+    'Sala actual': o['Sala actual'], 'Tanque actual': o['Tanque actual'], 'Estado': o['Estado'] })));
+  const mortalidad = (fecha, ...hembras) => buildEventBatch({ ids: [CHIP], fecha, tipo: REPRO_EVENTO.MORTALIDAD,
+    matrixIndex: indiceSinFechas(...hembras) }).matriz;
+
+  it('🔴 el alta con el chip de una MUERTA añade su fila, y la de la muerta queda INTACTA', () => {
+    const hoja = hojaFalsa([CAB, fila(VIEJA)]);
+    const g = gas({ 'Maduración MATRIZ': hoja });
+    expect(g.post(alta('2026-07-20')).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(3);
+    expect(hoja.filas[1]).toEqual(fila(VIEJA));
+    expect(celda(hoja, 2, 'Lote')).toBe('L33');
+    expect(celda(hoja, 2, 'Código genético')).toBe('G09');
+    expect(celda(hoja, 2, 'Estado')).toBe('Vivo');
+    expect(celda(hoja, 2, 'Fecha muerte')).toBe('');
+    expect(celda(hoja, 2, 'Fecha ingreso')).toBe('2026-07-20');
+  });
+
+  it('reenviar la MISMA alta no duplica: vuelve a la fila de esa hembra', () => {
+    const hoja = hojaFalsa([CAB, fila(VIEJA)]);
+    const g = gas({ 'Maduración MATRIZ': hoja });
+    expect(g.post(alta('2026-07-20')).status).toBe('ok');
+    expect(g.post(alta('2026-07-20', { tanque: 'T9' })).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(3);
+    expect(celda(hoja, 2, 'Tanque actual')).toBe('T9');
+    expect(hoja.filas[1]).toEqual(fila(VIEJA));
+  });
+
+  it('🔴 con la hembra del chip VIVA se rechaza el envío ENTERO: ni ésa ni las demás del lote', () => {
+    const hoja = hojaFalsa([CAB, fila(VIEJA), fila(NUEVA)]);
+    const antes = JSON.stringify(hoja.filas);
+    const g = gas({ 'Maduración MATRIZ': hoja });
+    const lote = buildAltaBatch([{ trovan: '000821BC99', sala: 'S1', tanque: 'T1', fecha: '2026-09-10' },
+      { trovan: CHIP, lote: 'L40', sala: 'S2', tanque: 'T2', fecha: '2026-09-10' }], null).payload;
+    const r = g.post(lote);
+    expect(r.status).toBe('error');
+    expect(r.message).toContain(CHIP);
+    expect(r.message).toContain('VIVA');
+    expect(JSON.stringify(hoja.filas)).toBe(antes);
+    expect(hoja.escrituras).toEqual([]);
+    expect(g.candado.soltado).toBe(g.candado.tomado);
+    expect([...g.cache.keys()].some((k) => k.startsWith('idem_'))).toBe(false);
+  });
+
+  it('🔴 la hembra nueva tiene que ingresar DESPUÉS de la muerte de la anterior: el mismo día se rechaza y dice la fecha', () => {
+    const hoja = hojaFalsa([CAB, fila(VIEJA)]);
+    const g = gas({ 'Maduración MATRIZ': hoja });
+    const r = g.post(alta('2026-07-08'));
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('2026-07-08');
+    expect(hoja.filas).toHaveLength(2);
+    expect(g.post(alta('2026-07-09')).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(3);
+  });
+
+  it('🔴 el rechazo es DEFINITIVO para el cliente: no suena a «servidor ocupado», así que no se reintenta ni se encola', () => {
+    const ocupado = new Function('return ' + engineSrc.match(/const _BUSY_RE = (\/.+\/i);/)[1])();
+    const viva = gas({ 'Maduración MATRIZ': hojaFalsa([CAB, fila(VIEJA), fila(NUEVA)]) }).post(alta('2026-09-10'));
+    const temprana = gas({ 'Maduración MATRIZ': hojaFalsa([CAB, fila(VIEJA)]) }).post(alta('2026-07-01'));
+    const muerte = gas({ 'Maduración MATRIZ': hojaFalsa([CAB, fila(VIEJA), fila(NUEVA)]) }).post(mortalidad('2026-07-30', VIEJA, NUEVA));
+    for (const r of [viva, temprana, muerte]) {
+      expect(r.status).toBe('error');
+      expect(ocupado.test(r.message), r.message).toBe(false);
+    }
+  });
+
+  it('🔴 la mortalidad va a la hembra VIVA del chip aunque la muerta esté más abajo en la hoja', () => {
+    const hoja = hojaFalsa([CAB, fila(NUEVA), fila(VIEJA)]);            // hoja reordenada a mano: la muerta, última
+    const g = gas({ 'Maduración MATRIZ': hoja });
+    expect(g.post(mortalidad('2026-09-12', VIEJA, NUEVA)).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(3);
+    expect(celda(hoja, 1, 'Estado')).toBe('Muerto');
+    expect(celda(hoja, 1, 'Fecha muerte')).toBe('2026-09-12');
+    expect(celda(hoja, 1, 'Lote')).toBe('L20');                           // el merge conserva lo suyo
+    expect(hoja.filas[2]).toEqual(fila(VIEJA));                           // la muerta, intacta
+  });
+
+  it('🔴 el traslado también va a la hembra VIVA', () => {
+    const hoja = hojaFalsa([CAB, fila(NUEVA), fila(VIEJA)]);
+    const g = gas({ 'Maduración MATRIZ': hoja });
+    const tr = buildTransferBatch({ fecha: '2026-09-12', tipo: REPRO_TRANSFER_TIPO.TRASLADO, origen: { sala: 'S3', tanque: 'T4' },
+      destinos: [{ sala: 'S6', tanque: 'T2', ids: [CHIP] }], matrixIndex: indiceSinFechas(VIEJA, NUEVA), trId: 'TR-000400' }).matriz;
+    expect(g.post(tr).status).toBe('ok');
+    expect(celda(hoja, 1, 'Sala actual')).toBe('S6');
+    expect(hoja.filas[2]).toEqual(fila(VIEJA));
+  });
+
+  it('sin vivas, la actualización va a la hembra de ingreso más reciente, esté donde esté', () => {
+    const muerta2 = Object.assign({}, NUEVA, { 'Estado': 'Muerto', 'Fecha muerte': '2026-09-01' });
+    const hoja = hojaFalsa([CAB, fila(muerta2), fila(VIEJA)]);
+    const g = gas({ 'Maduración MATRIZ': hoja });
+    expect(g.post({ sheetName: 'Maduración MATRIZ', headers: CAB, rows: [fila({ 'Trovan ID': CHIP, 'Observaciones': 'revisada' })] }).status).toBe('ok');
+    expect(celda(hoja, 1, 'Observaciones')).toBe('revisada');
+    expect(hoja.filas[2]).toEqual(fila(VIEJA));
+  });
+
+  it('a igual fecha de ingreso (filas repetidas a mano), la actualización va a la de MÁS ABAJO, como siempre', () => {
+    const repetida = Object.assign({}, VIEJA, { 'Lote': 'L13' });
+    const hoja = hojaFalsa([CAB, fila(VIEJA), fila(repetida)]);
+    const g = gas({ 'Maduración MATRIZ': hoja });
+    expect(g.post({ sheetName: 'Maduración MATRIZ', headers: CAB, rows: [fila({ 'Trovan ID': CHIP, 'Observaciones': 'revisada' })] }).status).toBe('ok');
+    expect(celda(hoja, 2, 'Observaciones')).toBe('revisada');
+    expect(celda(hoja, 1, 'Observaciones')).toBe('');
+  });
+
+  it('🔴 una muerte ANTERIOR al ingreso de la hembra que lleva hoy el chip se rechaza: no la mata', () => {
+    const hoja = hojaFalsa([CAB, fila(VIEJA), fila(NUEVA)]);
+    const antes = JSON.stringify(hoja.filas);
+    const g = gas({ 'Maduración MATRIZ': hoja });
+    const r = g.post(mortalidad('2026-07-30', VIEJA, NUEVA));
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('2026-08-01');
+    expect(JSON.stringify(hoja.filas)).toBe(antes);
+  });
+
+  it('con UNA sola hembra en el chip, una muerte anterior a su ingreso se guarda como siempre', () => {
+    const hoja = hojaFalsa([CAB, fila(NUEVA)]);
+    const g = gas({ 'Maduración MATRIZ': hoja });
+    expect(g.post(mortalidad('2026-07-30', NUEVA)).status).toBe('ok');
+    expect(celda(hoja, 1, 'Estado')).toBe('Muerto');
+  });
+
+  it('las fechas de la hoja como FECHAS de Sheets (Date) o como dd/mm/yyyy valen igual', () => {
+    const conDate = Object.assign({}, VIEJA, { 'Fecha muerte': new Date(Date.UTC(2026, 6, 8)), 'Fecha ingreso': new Date(Date.UTC(2026, 0, 5)) });
+    const conBarras = Object.assign({}, VIEJA, { 'Fecha muerte': '8/07/2026', 'Fecha ingreso': '05/01/2026' });
+    for (const vieja of [conDate, conBarras]) {
+      const hoja = hojaFalsa([CAB, fila(vieja)]);
+      const g = gas({ 'Maduración MATRIZ': hoja });
+      expect(g.post(alta('2026-07-08')).status).toBe('error');
+      expect(g.post(alta('2026-07-09')).status).toBe('ok');
+      expect(hoja.filas).toHaveLength(3);
+    }
+  });
+
+  it('🔑 sólo formatea las fechas de las filas de los chips del ENVÍO (con la hoja entera eran decenas de segundos)', () => {
+    const otras = Array.from({ length: 40 }, (_, i) => fila({ 'Trovan ID': '00082100' + String(i).padStart(2, '0'), 'Estado': 'Muerto',
+      'Fecha ingreso': new Date(Date.UTC(2026, 0, 1)), 'Fecha muerte': new Date(Date.UTC(2026, 1, 1)) }));
+    const vieja = Object.assign({}, VIEJA, { 'Fecha muerte': new Date(Date.UTC(2026, 6, 8)), 'Fecha ingreso': new Date(Date.UTC(2026, 0, 5)) });
+    const hoja = hojaFalsa([CAB, ...otras, fila(vieja)]);
+    const g = gas({ 'Maduración MATRIZ': hoja });
+    expect(g.post(alta('2026-07-20')).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(43);
+    expect(g.fechasFormateadas()).toBe(2);                                // el ingreso y la muerte de SU fila
+  });
+
+  it('chips nuevos se añaden como siempre y sin leer una sola fecha', () => {
+    const hoja = hojaFalsa([CAB, fila(Object.assign({}, VIEJA, { 'Fecha ingreso': new Date(Date.UTC(2026, 0, 5)) }))]);
+    const g = gas({ 'Maduración MATRIZ': hoja });
+    const lote = buildAltaBatch([{ trovan: '000821BC99', sala: 'S1', tanque: 'T1', fecha: '2026-09-10' },
+      { trovan: '000821ADD7', sala: 'S1', tanque: 'T2', fecha: '2026-09-10' }], null).payload;
+    expect(g.post(lote).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(4);
+    expect(g.fechasFormateadas()).toBe(0);
   });
 });

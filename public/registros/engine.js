@@ -7957,6 +7957,7 @@ function _reproAltaHTML(){
   return ''
     + '<h3 style="margin:6px 0 2px;font-size:15px">➕ Alta masiva de individuos</h3>'
     + '<p style="margin:0 0 10px;font-size:12px;color:#64748b">Pega desde Excel en la grilla (copiar-pegar tipo hoja). Cada fila es una hembra nueva; se crean con Estado=Vivo y ubicación actual = la de ingreso. Todas comparten la fecha de ingreso de abajo.</p>'
+    + '<p style="margin:0 0 10px;font-size:12px;color:#64748b">♻ El microchip de una hembra <b>muerta</b> se puede volver a usar: la nueva entra con sus propios datos (lote, piscina, código…) y la anterior queda como estaba. Su fecha de ingreso tiene que ser <b>posterior</b> a la muerte de la anterior.</p>'
     + '<div id="repro-matrix-banner">' + _reproMatrixBannerHTML() + '</div>'
     + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px"><label style="'+_RLBL+'">📅 Fecha de ingreso<input type="date" id="repro-a-fecha" value="'+escapeHtml(todayStr)+'" style="'+_RINP+'"></label></div>'
     + '<div style="overflow:auto;max-height:360px;border:1px solid #e2e8f0;border-radius:8px"><table id="repro-a-grid" style="border-collapse:collapse"><thead><tr>'+th+'</tr></thead><tbody id="repro-a-tbody">'+rows+'</tbody></table></div>'
@@ -8029,6 +8030,11 @@ const _REPRO_SHEETS = { matriz:"Maduración MATRIZ", bitacora:"Maduración Bitá
 // cuatro. Pedir sólo éstas baja la respuesta de 392 KB a 65 KB, que es lo que dispara
 // los timeouts. ⚠ Si un consumidor nuevo necesita otra columna (Lote, Piscina…) hay
 // que añadirla AQUÍ o le llegará vacía.
+// ⚠⚠ Y LAS FECHAS NO SE PIDEN, A PROPÓSITO (2026-09-14). El GAS formatea cada celda de fecha con
+// dos llamadas de servicio: medido contra producción, la MATRIZ con «Fecha ingreso» y «Fecha
+// muerte» pasó de 3-6 s a 40-64 s, más que el tope de 30 s por intento. Sin ellas, esta lectura
+// no sabe las fechas de un microchip reciclado: la regla de fechas la aplica el GAS al escribir
+// (llaveMatriz_), y la trazabilidad avisa de que no puede separar a sus hembras.
 const _REPRO_MATRIZ_COLS = ["Trovan ID","Sala actual","Tanque actual","Estado"];
 const _REPRO_FETCH_MS  = 30000;                 // por intento
 const _REPRO_ATTEMPTS  = 2;
@@ -8246,10 +8252,11 @@ function _reproMatrixBannerHTML(){
     return box("#fef2f2","#fecaca","#b91c1c","❌ No se pudo leer «Maduración MATRIZ»: "+escapeHtml(_reproSheetsErr||"error")+".<br><b>No es tu configuración ni el token</b>: es el servidor de Google, que a veces tarda o falla. Reintenta."+btn);
   }
   const n=_reproReadRows(_REPRO_SHEETS.matriz).length;
-  // D11 · media MATRIZ no está «al día»: el alta de un individuo que no llegó no se ve repetida
-  // y, como la llave de la hoja es el Trovan, lo sobrescribe (hasta revivir a una muerta).
+  // D11 · media MATRIZ no está «al día»: el alta de un individuo que no llegó no se ve repetida.
+  // Un GAS anterior al 2026-09-14 lo sobrescribe (su llave es sólo el Trovan: hasta revivir a una
+  // muerta); el actual la rechaza al escribir (llaveMatriz_).
   if(n && _reproRecortada(_REPRO_SHEETS.matriz)){
-    return box("#fffbeb","#fde68a","#854d0e","⚠ «Maduración MATRIZ» llegó <b>RECORTADA</b> por el tope del servidor: sólo se leyeron sus primeros "+n+" individuo(s).<br>Los registrados después saldrán «no encontrado», y un alta de uno de ellos no se detectaría como repetida y lo sobrescribiría."+btn);
+    return box("#fffbeb","#fde68a","#854d0e","⚠ «Maduración MATRIZ» llegó <b>RECORTADA</b> por el tope del servidor: sólo se leyeron sus primeros "+n+" individuo(s).<br>Los registrados después saldrán «no encontrado», y un alta de uno de ellos no se detectaría aquí como repetida: el GAS actualizado la rechaza, pero uno anterior lo sobrescribiría."+btn);
   }
   if(n) return box("#f0fdf4","#bbf7d0","#166534","✅ MATRIZ al día · "+n+" individuo(s)."+btn);
   return "";
@@ -8297,7 +8304,8 @@ function _reproConsultaHTML(){
     ? '<div style="padding:8px 10px;margin-bottom:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:11px;color:#854d0e">⚠ Datos incompletos — '+cortadas.length+' hoja(s) llegaron RECORTADAS por el tope del servidor ('+escapeHtml(cortadas.join(", "))+'): faltan sus filas más recientes, así que los totales, la matriz de desoves y la trazabilidad se quedan cortos.</div>'
     : '';
   const sum=window.__rgLib.matrixSummary(mrows);
-  const piv=window.__rgLib.pivotDesoves(brows);
+  // ♻ Con la MATRIZ, un microchip reciclado da una fila por hembra (la anterior, «chip·fecha de ingreso»).
+  const piv=window.__rgLib.pivotDesoves(brows, mrows);
   const kpi=function(label,val){ return '<div style="flex:1;min-width:90px;padding:8px 10px;background:#f8fafc;border-radius:8px"><div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase">'+label+'</div><div style="font-size:20px;font-weight:800;color:#0f172a">'+val+'</div></div>'; };
   let h=head+parcial+recorte;
   h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+kpi("Hembras",sum.total)+kpi("Vivas",sum.vivas)+kpi("Muertas",sum.muertas)+'</div>';
@@ -8325,21 +8333,29 @@ function madReproTrace(){
   const inp=document.getElementById("repro-trace-id"), out=document.getElementById("repro-trace-out");
   if(!inp||!out) return;
   const id=inp.value.trim(); if(!id){ out.innerHTML=""; return; }
-  const norm=window.__rgLib.normTrovan(id);
-  const trRows=_reproReadRows("Maduración Transferencias"), bRows=_reproReadRows("Maduración Bitácora");
-  const mIdx=_reproMatrixIndex(); const rec=mIdx?mIdx.get(norm):null;
-  const trace=window.__rgLib.individualTrace(trRows, id);
-  const desoves=bRows.filter(function(r){ return window.__rgLib.normTrovan(r["Trovan ID"])===norm && String(r["Tipo"])==="Desove"; }).map(function(r){ return r["Fecha"]; });
+  // ♻ La traza es de la hembra que lleva HOY el chip: con un chip reciclado, sólo lo de su ingreso
+  // en adelante, y las anteriores se nombran aparte (trazaDelChip).
+  const trace=window.__rgLib.trazaDelChip(_reproReadRows(_REPRO_SHEETS.matriz), _reproReadRows("Maduración Bitácora"), _reproReadRows("Maduración Transferencias"), id);
+  const rec=trace.rec, desoves=trace.desoves;
   let h="";
   if(rec) h+='<div style="font-size:12px"><b>'+escapeHtml(id)+'</b> · Estado: '+escapeHtml(rec.estado||"—")+' · Ubicación actual: '+escapeHtml((rec.sala||"—")+" · "+(rec.tanque||"—"))+'</div>';
   else if(trace.current) h+='<div style="font-size:12px"><b>'+escapeHtml(id)+'</b> · Ubicación (por transferencias): '+escapeHtml((trace.current.sala||"—")+" · "+(trace.current.tanque||"—"))+'</div>';
   else h+='<div style="font-size:12px;color:#991b1b">Sin registro para '+escapeHtml(id)+'.</div>';
+  if(trace.reciclado) h+=_reproTraceRecicladoHTML(trace);
   if(desoves.length) h+='<div style="font-size:11px;color:#475569;margin-top:4px"><b>Desoves ('+desoves.length+'):</b> '+escapeHtml(desoves.join(", "))+'</div>';
   if(trace.movimientos.length){
     h+='<div style="font-size:11px;color:#475569;margin-top:4px"><b>Movimientos:</b></div>';
     h+=trace.movimientos.map(function(m){ return '<div style="font-size:11px;color:#475569">'+escapeHtml(m.trId||"")+' · '+escapeHtml(m.fecha||"")+' · '+escapeHtml((m.salaOrigen||"—")+"/"+(m.tanqueOrigen||"—"))+' → '+escapeHtml((m.salaDestino||"—")+"/"+(m.tanqueDestino||"—"))+(String(m.mezcla)==="Sí"?" (mezcla)":"")+'</div>'; }).join("");
   }
   out.innerHTML=h;
+}
+/* ♻ La trazabilidad de un microchip reciclado dice desde cuándo es de esta hembra y quiénes lo
+   llevaron antes. Sin fechas en la lectura (el respaldo de 4 columnas) no se puede separar, y se dice. */
+function _reproTraceRecicladoHTML(t){
+  const n=t.anteriores.length;
+  if(t.sinFechas) return '<div style="font-size:11px;color:#854d0e;margin-top:4px">♻ Microchip reciclado: la MATRIZ tiene '+(n+1)+' hembras con este chip, pero esta lectura no trae sus fechas de ingreso y no se pueden separar. Lo de abajo puede ser de cualquiera de ellas.</div>';
+  const quienes=t.anteriores.map(function(a){ return "ingresó "+(a.ingreso||"¿?")+(a.muerte?", murió "+a.muerte:"")+(a.lote?", lote "+a.lote:"")+(a.codigo?", código "+a.codigo:""); }).join(" · ");
+  return '<div style="font-size:11px;color:#075985;margin-top:4px">♻ Microchip reciclado: esta hembra lo lleva desde su ingreso el '+escapeHtml(t.desde)+', y lo de abajo es sólo suyo. '+(n>1?"Antes lo llevaron "+n+" hembras":"Antes lo llevó otra hembra")+': '+escapeHtml(quienes)+'.</div>';
 }
 
 async function madReproProcess(){
@@ -8410,21 +8426,57 @@ function _reproAltaCollect(fecha){
   });
   return forms;
 }
+/* ♻ MICROCHIPS RECICLADOS (2026-09-14) · ¿el GAS publicado sabe dar de alta a una hembra con el chip
+   de una muerta? Lo dice ?p=ver en «caps». Un GAS anterior FUNDIRÍA esa alta sobre la fila de la
+   muerta —la nueva heredaría su fecha de muerte y la historia de la anterior se perdería—, y el GAS
+   vivo el día del cambio era anterior. Mismo patrón que _madIngGasAlDia, con otra pregunta:
+     true  → dice «matriz-reciclaje»: se envía;
+     false → responde sin ella (sello sin «caps», o el texto «FichasLarv-OK»): no se envía;
+     null  → no responde: tampoco, porque lo que se estropearía no tiene vuelta atrás. */
+async function _reproGasRecicla(url){
+  const base = url || gasUrl();
+  if(!base || !isValidGasUrl(base)) return null;
+  try{
+    const ctrl = new AbortController();
+    const t = setTimeout(function(){ ctrl.abort(); }, 6000);
+    const r = await fetch(base + (base.indexOf("?")===-1 ? "?" : "&") + "p=ver", { signal: ctrl.signal, cache: "no-store" });
+    clearTimeout(t);
+    const txt = await r.text();
+    try{ const j = JSON.parse(txt); if(j && j.ok && typeof j.version === "string") return Array.isArray(j.caps) && j.caps.indexOf("matriz-reciclaje") !== -1; }catch(_){}
+    return txt.indexOf("FichasLarv-OK") !== -1 ? false : null;
+  }catch(_){ return null; }
+}
+const _REPRO_GAS_SIN_RECICLAJE = "el GAS publicado no confirma que sepa dar de alta un microchip reciclado (o no respondió), y uno anterior fundiría el alta sobre la fila de la hembra muerta. Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a registrarlas; lo tecleado sigue aquí";
 async function madReproAltaBatch(){
   const fEl=document.getElementById("repro-a-fecha"); const fecha=fEl?fEl.value:"";
   if(!isValidDate(fecha)){ toast("Fecha de ingreso inválida.","err",3500); return; }
-  // Mejor esfuerzo: la MATRIZ aquí sólo sirve para avisar de altas YA existentes, así
-  // que si no se puede leer NO se bloquea el alta (buildAltaBatch acepta índice nulo).
+  // Mejor esfuerzo: la MATRIZ aquí avisa de altas YA existentes y reconoce un microchip RECICLADO
+  // (su hembra murió); si no se puede leer NO se bloquea el alta (buildAltaBatch acepta índice
+  // nulo) y quien decide es el GAS al escribir.
   if(!_reproMatrixIndex()) await _reproEnsureMatrix();
   _reproPaintMatrixBanner();
-  const res=window.__rgLib.buildAltaBatch(_reproAltaCollect(fecha), _reproMatrixIndex());
-  if(!res.payload){ _madReproShowAltaReport(res.report, false); toast("No hay filas válidas para registrar (¿falta el Trovan ID?).","warn",4200); return; }
+  const forms=_reproAltaCollect(fecha), mIdx=_reproMatrixIndex();
+  // ♻ Primero como si el GAS supiera reciclar: sólo si sale algún chip reciclado se le pregunta, y si
+  // no lo confirma se rehace el lote sin ellos.
+  let res=window.__rgLib.buildAltaBatch(forms, mIdx, { reciclaje:true });
+  if(res.report.reciclados.length && (await _reproGasRecicla()) !== true){
+    res=window.__rgLib.buildAltaBatch(forms, mIdx, { reciclaje:false });
+  }
+  const sinGas=res.report.reciclajeSinGas.length;
+  if(!res.payload){
+    _madReproShowAltaReport(res.report, false);
+    if(sinGas) toast("No se envió nada: "+_REPRO_GAS_SIN_RECICLAJE+".","warn",10000);
+    else if(res.report.reciclajeFecha.length) toast("No se envió nada: la fecha de ingreso de un microchip reciclado tiene que ser posterior a la muerte de su hembra anterior (ver el detalle).","warn",7000);
+    else toast("No hay filas válidas para registrar (¿falta el Trovan ID?).","warn",4200);
+    return;
+  }
   toast("Registrando "+res.report.created.length+" individuo(s)…","info",2000);
   const _oA={};
   const sent=await postPayload(res.payload, gasUrl(), _oA);
   _madReproShowAltaReport(res.report, sent);
   if(sent){ toast("✅ "+res.report.created.length+" individuo(s) registrado(s).","ok",4200); }
   else { _madReproNotOk([_oA]); }
+  if(sinGas) toast("⚠ "+sinGas+" con microchip reciclado NO se enviaron: "+_REPRO_GAS_SIN_RECICLAJE+".","warn",10000);
 }
 function madReproAltaClear(){
   const tb=document.getElementById("repro-a-tbody"); if(tb) tb.querySelectorAll("input").forEach(function(i){ i.value=""; });
@@ -8437,12 +8489,18 @@ function _madReproShowAltaReport(rep, okSent){
   h+=chip(rep.created.length+" registrado(s)", "#dcfce7", "#166534");
   if(rep.duplicados && rep.duplicados.length) h+=chip(rep.duplicados.length+" duplicado(s) en el lote", "#fef9c3", "#854d0e");
   if(rep.existentes && rep.existentes.length) h+=chip(rep.existentes.length+" ya existente(s)", "#fef9c3", "#854d0e");
+  if(rep.reciclados && rep.reciclados.length) h+=chip("♻ "+rep.reciclados.length+" con microchip reciclado", "#e0f2fe", "#075985");
+  if(rep.reciclajeFecha && rep.reciclajeFecha.length) h+=chip(rep.reciclajeFecha.length+" reciclado(s) con fecha no válida", "#fee2e2", "#991b1b");
+  if(rep.reciclajeSinGas && rep.reciclajeSinGas.length) h+=chip(rep.reciclajeSinGas.length+" reciclado(s) sin enviar", "#fee2e2", "#991b1b");
   if(rep.invalidFormat && rep.invalidFormat.length) h+=chip(rep.invalidFormat.length+" con formato inválido (señalados)", "#ffedd5", "#9a3412");
   if(rep.sinTrovan) h+=chip(rep.sinTrovan+" sin Trovan (omitidas)", "#fee2e2", "#991b1b");
   h+='</div>';
   const lists=[];
   if(rep.duplicados && rep.duplicados.length) lists.push(["Duplicados en el lote", rep.duplicados]);
-  if(rep.existentes && rep.existentes.length) lists.push(["Ya existentes en la matriz", rep.existentes]);
+  if(rep.existentes && rep.existentes.length) lists.push(["Ya existentes en la matriz (su hembra está viva)", rep.existentes]);
+  if(rep.reciclados && rep.reciclados.length) lists.push(["Microchip reciclado (su hembra anterior está muerta: entra como hembra nueva)", rep.reciclados]);
+  if(rep.reciclajeFecha && rep.reciclajeFecha.length) lists.push(["Microchip reciclado con fecha no válida (no registrados — la fecha de ingreso tiene que ser posterior al ingreso y a la muerte de la hembra anterior)", rep.reciclajeFecha]);
+  if(rep.reciclajeSinGas && rep.reciclajeSinGas.length) lists.push(["Microchip reciclado sin enviar (el GAS publicado no confirma que sepa reciclar: actualízalo en ⚙ Config)", rep.reciclajeSinGas]);
   if(rep.invalidFormat && rep.invalidFormat.length) lists.push(["Formato inválido (no registrados — revisa el código en el lector)", rep.invalidFormat]);
   lists.forEach(function(pair){ h+='<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
   el.innerHTML=h;
@@ -8511,11 +8569,13 @@ function _madReproShowTransferReport(rep, trId, okSent){
   if(rep.invalidFormat && rep.invalidFormat.length) h+=chip(rep.invalidFormat.length+" con formato inválido (señalados)", "#ffedd5", "#9a3412");
   if(rep.notFound && rep.notFound.length) h+=chip(rep.notFound.length+" no encontrado(s)", "#fee2e2", "#991b1b");
   if(rep.wrongLocation && rep.wrongLocation.length) h+=chip(rep.wrongLocation.length+" fuera del origen", "#fef9c3", "#854d0e");
+  if(rep.antesDelIngreso && rep.antesDelIngreso.length) h+=chip(rep.antesDelIngreso.length+" anterior(es) a su ingreso", "#fee2e2", "#991b1b");
   h+='</div>';
   const lists=[];
   if(rep.invalidFormat && rep.invalidFormat.length) lists.push(["Formato inválido (no transferidos — revisa el código en el lector)", rep.invalidFormat]);
   if(rep.notFound && rep.notFound.length) lists.push(["No encontrados", rep.notFound]);
   if(rep.wrongLocation && rep.wrongLocation.length) lists.push(["Fuera del origen declarado", rep.wrongLocation]);
+  if(rep.antesDelIngreso && rep.antesDelIngreso.length) lists.push(["Anteriores al ingreso de la hembra que lleva hoy ese microchip reciclado (son de una hembra anterior: no transferidos)", rep.antesDelIngreso]);
   lists.forEach(function(pair){ h+='<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
   el.innerHTML=h;
 }
@@ -8531,6 +8591,7 @@ function _madReproShowReport(rep, duplicates, tipo, okSent){
   if(rep.notFound && rep.notFound.length) h += chip(rep.notFound.length+" no está(n) en la MATRIZ", "#fee2e2", "#991b1b");
   if(rep.sinUbicacion && rep.sinUbicacion.length) h += chip(rep.sinUbicacion.length+" sin Sala/Tanque en la MATRIZ", "#fee2e2", "#991b1b");
   if(rep.alreadyDead && rep.alreadyDead.length) h += chip(rep.alreadyDead.length+" ya muerta(s)", "#fef9c3", "#854d0e");
+  if(rep.antesDelIngreso && rep.antesDelIngreso.length) h += chip(rep.antesDelIngreso.length+" anterior(es) a su ingreso", "#fee2e2", "#991b1b");
   h += '</div>';
   const lists=[];
   if(duplicates && duplicates.length) lists.push(["Duplicados", duplicates]);
@@ -8538,6 +8599,7 @@ function _madReproShowReport(rep, duplicates, tipo, okSent){
   if(rep.notFound && rep.notFound.length) lists.push(["No encontrados en Maduración MATRIZ (no registrados)", rep.notFound]);
   if(rep.sinUbicacion && rep.sinUbicacion.length) lists.push(["Sin Sala/Tanque en Maduración MATRIZ (no registrados — completa su ubicación)", rep.sinUbicacion]);
   if(rep.alreadyDead && rep.alreadyDead.length) lists.push(["Ya registradas como muertas", rep.alreadyDead]);
+  if(rep.antesDelIngreso && rep.antesDelIngreso.length) lists.push(["Anteriores al ingreso de la hembra que lleva hoy ese microchip reciclado (son de una hembra anterior: no registrados)", rep.antesDelIngreso]);
   lists.forEach(function(pair){ h += '<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
   el.innerHTML = h;
 }
@@ -17736,13 +17798,20 @@ function GAS(){
 // ════════════════════════════════════════════════════════
 
 // ── PRUEBA DE VERSIÓN (D8, 2026-09-13) ─────────────────────────────
-// GET ?p=ver → {"ok":true,"version":GAS_VERSION}, sin token y sin abrir ninguna hoja.
+// GET ?p=ver → {"ok":true,"version":GAS_VERSION,"caps":GAS_CAPACIDADES}, sin token y sin abrir ninguna hoja.
 // El sello es la HUELLA del resto de este archivo (sha-256, 12 caracteres), y la exige la
 // prueba gas-version.test.js del repo: tocar cualquier otra línea sin actualizarlo pone la
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "63498421af0b";
+const GAS_VERSION = "40464830dcf8";
+
+// ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
+// Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
+// no nombra una capacidad no la tiene.
+//  · "matriz-reciclaje": el alta de una hembra con el microchip de una MUERTA entra como hembra
+//    nueva (ver llaveMatriz_). Un GAS anterior la FUNDIRÍA sobre la fila de la muerta.
+const GAS_CAPACIDADES = ["matriz-reciclaje"];
 
 const SS_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
 
@@ -17962,7 +18031,7 @@ function doPost(e) {
     else if (payload.sheetName === "Maduración Tanques")  madKeyCols = [0,1,3]; // Fecha, Sala, Tanque («Lote», en la C, va vacía: sólo guarda la posición)
     else if (payload.sheetName === "Maduración Lotes")    madKeyCols = [0,1,2]; // Fecha, Lote, Código genético (la hoja de Desoves)
     // Registro reproductivo (upsert por clave, MERGE preserva campos permanentes vacíos):
-    else if (payload.sheetName === "Maduración MATRIZ")         madKeyCols = [1];     // Trovan ID
+    else if (payload.sheetName === "Maduración MATRIZ")         madKeyCols = [1];     // Trovan ID (a qué hembra del chip va cada fila: llaveMatriz_)
     else if (payload.sheetName === "Maduración Bitácora")       madKeyCols = [0,1,2]; // Trovan + Fecha + Tipo
     else if (payload.sheetName === "Maduración Transferencias") madKeyCols = [0,3];   // TR-ID + Trovan
     var isMad   = madKeyCols !== null;
@@ -18124,7 +18193,11 @@ function doPost(e) {
         if (_filasNecesarias > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasNecesarias - ws.getMaxRows());
         if (ws.getMaxRows() > 1) ws.getRange(2, 2, ws.getMaxRows() - 1, 2).setNumberFormat("@");
       }
-      result = upsertMadRows(ws, rows, madKeyCols, madTrovanCol, madNumCol);
+      // ♻ En la MATRIZ, a qué hembra del chip va cada fila lo decide llaveMatriz_ (microchips
+      // reciclados), y un chip que no se puede reciclar rechaza el envío ENTERO sin escribir nada.
+      result = upsertMadRows(ws, rows, madKeyCols, madTrovanCol, madNumCol,
+        payload.sheetName === "Maduración MATRIZ" ? llaveMatriz_(rows) : null);
+      if (result.error) return respond({ status: "error", message: result.error });
     }
     else if (isAlgas)  result = upsertAlgasRows(ws, rows);
     else if (isBiomol) {
@@ -18855,16 +18928,19 @@ function algasInKey(row) {
 //   • Maduración Lotes    → [0,1,2] (Fecha, Lote, Código genético) — la hoja de Desoves
 // Si la clave coincide con una fila existente: merge (los nuevos valores
 // no vacíos reemplazan al anterior; los vacíos preservan el dato actual).
-function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol) {
+function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol, llave) {
   if (trovanCol === undefined || trovanCol === null) trovanCol = -1;
   if (numCol === undefined || numCol === null) numCol = -1;
   var lastR = ws.getLastRow();
   var data  = ws.getDataRange().getValues();
+  // «llave» (2026-09-14, sólo la MATRIZ): cuando la clave no basta para saber a qué fila va cada
+  // una del envío —un chip reciclado tiene varias—, lo decide ella, y puede rechazar el envío.
+  if (llave) { var rechazo = llave.preparar(data); if (rechazo) return { error: rechazo }; }
   var map   = {};
   var keySet = {};
   for (var j = 0; j < keyCols.length; j++) keySet[keyCols[j]] = 1;
   for (var i = 1; i < data.length; i++) {
-    var k = madRowKey(data[i], keyCols);
+    var k = llave ? llave.deHoja(i) : madRowKey(data[i], keyCols);
     if (k) map[k] = { row: i + 1, idx: i };
   }
   var toAdd = [];
@@ -18872,7 +18948,7 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol) {
   var pendingMap = {};
   for (var r = 0; r < newRows.length; r++) {
     var nr    = newRows[r];
-    var k2    = madInKey(nr, keyCols);
+    var k2    = llave ? llave.deEnvio(r) : madInKey(nr, keyCols);
     var entry = map[k2];
     if (entry && entry.row > 0) {
       var ex     = data[entry.idx];
@@ -18951,6 +19027,101 @@ function madInKey(row, keyCols) {
   return parts.join("|");
 }
 
+// ── Registro reproductivo · MATRIZ con microchips RECICLADOS (2026-09-14) ──
+// El microchip de una hembra MUERTA se puede volver a implantar en otra. Hasta hoy la llave de la
+// MATRIZ era sólo el Trovan ID, y el alta de la hembra nueva se FUNDÍA sobre la fila de la muerta:
+// salía «Vivo» con la fecha de muerte de la otra, y el lote, el código y la piscina de la anterior
+// se perdían. Ahora cada fila del envío va a UNA hembra del chip:
+//  · la fila de ALTA (trae «Fecha ingreso») va a la hembra de ese chip con ESA fecha de ingreso, así
+//    que reenviarla no duplica. Si no hay ninguna es una hembra NUEVA y se añade, pero sólo si todas
+//    las del chip están muertas y la fecha es posterior a su ingreso y a su muerte;
+//  · la fila sin «Fecha ingreso» (mortalidad, traslado) va a la hembra VIGENTE del chip: la viva;
+//    entre varias, o sin ninguna viva, la de ingreso más reciente; a igualdad, la de más abajo. Con
+//    el chip reciclado, una muerte anterior al ingreso de esa hembra no puede ser suya.
+// Lo que no cumple rechaza el envío ENTERO sin escribir nada, con un mensaje que el cliente no toma
+// por «servidor ocupado»: no se reintenta. La fusión de cada fila es la de upsertMadRows (una celda
+// vacía conserva el dato). La regla es la de core/trovan.js del repo, y la fijan las pruebas de
+// mad-gas-dopost.test.js.
+// ⚠ Las fechas se leen SÓLO de las filas de los chips del envío: formatear una fecha cuesta dos
+// llamadas de servicio, y con la hoja entera son decenas de segundos bajo el candado (medido en
+// ?p=rows el 2026-09-14: de 3-6 s a 40-64 s por pedir las dos columnas de fecha de la MATRIZ).
+var MATRIZ_COL_ESTADO = 8, MATRIZ_COL_MUERTE = 9, MATRIZ_COL_INGRESO = 10;
+function llaveMatriz_(envio) {
+  var claves = [], deHoja = {};
+  return {
+    preparar: function(data) {
+      var tz = null;
+      var fecha = function(v) {
+        if (tz === null && esFecha_(v)) tz = Session.getScriptTimeZone();
+        return fechaIsoGas_(v, tz);
+      };
+      var enEnvio = {};
+      for (var e0 = 0; e0 < envio.length; e0++) enEnvio[madInKey(envio[e0], [1])] = 1;
+      var porChip = {};
+      for (var i = 1; i < data.length; i++) {
+        var chip = madRowKey(data[i], [1]);
+        if (!chip || enEnvio[chip] !== 1) continue;
+        deHoja[i] = "f" + i;
+        if (!porChip[chip]) porChip[chip] = [];
+        porChip[chip].push({ clave: "f" + i, ingreso: fecha(data[i][MATRIZ_COL_INGRESO]),
+          muerte: fecha(data[i][MATRIZ_COL_MUERTE]), muerto: estadoMuerto_(data[i][MATRIZ_COL_ESTADO]) });
+      }
+      for (var r = 0; r < envio.length; r++) {
+        var nr = envio[r], chipN = madInKey(nr, [1]), ingN = fecha(nr[MATRIZ_COL_INGRESO]);
+        if (!porChip[chipN]) porChip[chipN] = [];
+        var lista = porChip[chipN], destino = null, a;
+        if (ingN) {
+          for (a = 0; a < lista.length; a++) if (lista[a].ingreso === ingN) destino = lista[a];
+          if (!destino) {
+            for (a = 0; a < lista.length; a++) {
+              if (!lista[a].muerto) return "No se escribió nada: el microchip " + chipN + " lo lleva una hembra VIVA en la MATRIZ. Sólo se puede volver a usar el de una hembra muerta.";
+              var tope = lista[a].muerte > lista[a].ingreso ? lista[a].muerte : lista[a].ingreso;
+              if (ingN <= tope) return "No se escribió nada: el microchip " + chipN + " lo llevó una hembra que ingresó o murió el " + tope + ", y la hembra nueva tiene que ingresar DESPUÉS de esa fecha.";
+            }
+            destino = { clave: "n" + r, ingreso: ingN, muerte: fecha(nr[MATRIZ_COL_MUERTE]), muerto: estadoMuerto_(nr[MATRIZ_COL_ESTADO]) };
+            lista.push(destino);
+          }
+        } else {
+          for (a = 0; a < lista.length; a++) {
+            var x = lista[a];
+            if (!destino || (destino.muerto && !x.muerto) || (destino.muerto === x.muerto && x.ingreso >= destino.ingreso)) destino = x;
+          }
+          var muerteN = fecha(nr[MATRIZ_COL_MUERTE]);
+          if (destino && lista.length > 1 && muerteN && destino.ingreso && muerteN < destino.ingreso) {
+            return "No se escribió nada: la muerte del " + muerteN + " es anterior al ingreso (" + destino.ingreso + ") de la hembra que lleva hoy el microchip " + chipN + ", así que es de una hembra anterior.";
+          }
+          if (!destino) { destino = { clave: "n" + r, ingreso: "", muerte: "", muerto: false }; lista.push(destino); }
+        }
+        claves[r] = destino.clave;
+      }
+      return "";
+    },
+    deHoja: function(i) { return deHoja[i] || ""; },
+    deEnvio: function(r) { return claves[r]; }
+  };
+}
+// ¿Es una fecha de Sheets? Se mira así y no con instanceof para que valga también entre contextos
+// (las pruebas del repo corren este GAS dentro de una caja vm).
+function esFecha_(v) { return Object.prototype.toString.call(v) === "[object Date]"; }
+// Fecha ISO (yyyy-mm-dd) de una celda, o "" si no es una fecha real: una fecha de Sheets, ISO (con
+// hora detrás o sin ella) o dd/mm/yyyy. SIN regex a propósito, como madInKey: dentro de la
+// plantilla GAS() de la app las barras invertidas de una regex colapsan.
+function fechaIsoGas_(v, tz) {
+  if (esFecha_(v)) return isNaN(v.getTime()) ? "" : Utilities.formatDate(v, tz || Session.getScriptTimeZone(), "yyyy-MM-dd");
+  var s = String(v == null ? "" : v).trim(), y, m, d, p;
+  if (s.length >= 10 && s.charAt(4) === "-" && s.charAt(7) === "-") { y = s.slice(0, 4); m = s.slice(5, 7); d = s.slice(8, 10); }
+  else {
+    p = s.split("/");
+    if (p.length !== 3 || p[2].length !== 4 || p[1].length < 1 || p[1].length > 2 || p[0].length < 1 || p[0].length > 2) return "";
+    y = p[2]; m = (p[1].length === 1 ? "0" : "") + p[1]; d = (p[0].length === 1 ? "0" : "") + p[0];
+  }
+  for (var i = 0; i < 8; i++) if ("0123456789".indexOf((y + m + d).charAt(i)) === -1) return "";
+  var f = new Date(Date.UTC(+y, +m - 1, +d));
+  if (f.getUTCFullYear() !== +y || f.getUTCMonth() !== +m - 1 || f.getUTCDate() !== +d) return "";
+  return y + "-" + m + "-" + d;
+}
+function estadoMuerto_(v) { return String(v == null ? "" : v).trim() === "Muerto"; }
+
 // ── Health check + portal de evidencias (Fase 1) ─────────
 function doGet(e) {
   if (e && e.parameter && e.parameter.p === "ev") {
@@ -18967,8 +19138,9 @@ function doGet(e) {
     return verifyReq(e.parameter.reqId || "", e.parameter.t || "");
   }
   // D8 (2026-09-13) · qué versión está desplegada: ver GAS_VERSION, arriba del todo.
+  // Y desde el 2026-09-14, qué sabe hacer: ver GAS_CAPACIDADES.
   if (e && e.parameter && e.parameter.p === "ver") {
-    return _evJson({ ok: true, version: GAS_VERSION });
+    return _evJson({ ok: true, version: GAS_VERSION, caps: GAS_CAPACIDADES });
   }
   return ContentService.createTextOutput("FichasLarv-OK");
 }

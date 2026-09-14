@@ -184,9 +184,11 @@ function dataWarnings(model) {
   }
   const dup = model.duplicateTrovans || [];
   if (dup.length) {
+    // ♻ 2026-09-14 · un microchip RECICLADO no es un repetido (data.js): sólo lo que no encaja.
     w.push(`<div class="mc-warn">⚠️ <b>${n0(dup.length)} Trovan ID repetido(s)</b> en la hoja MATRIZ
       (${dup.slice(0, 8).map((t) => esc(t)).join(', ')}${dup.length > 8 ? `, +${n0(dup.length - 8)} más` : ''}).
-      Se conserva la <b>primera</b> fila de cada uno; el resto no se cuenta.</div>`);
+      Un microchip sólo puede repetirse si es <b>reciclado</b>: la hembra anterior murió antes de que ingresara la siguiente.
+      Las filas que no cumplen eso —otra hembra viva con el mismo chip, o un ingreso que no es posterior a la muerte de la anterior— <b>no se cuentan</b>.</div>`);
   }
   return w.join('');
 }
@@ -528,7 +530,10 @@ function openFemale(root, trovan) {
   const titleEl = root.querySelector('#mcFemTitle');
   const bodyEl = root.querySelector('#mcFemBody');
   if (!bodyEl) return;
-  if (titleEl) titleEl.innerHTML = `🦐 Trovan <b>${esc(hist.trovan)}</b>`;
+  // ♻ Una hembra ANTERIOR de un microchip reciclado se llama «chip·fecha de ingreso»: el título dice el chip.
+  if (titleEl) titleEl.innerHTML = rec && rec.chip && rec.chip !== hist.trovan
+    ? `🦐 Trovan <b>${esc(rec.chip)}</b> <span class="muted">· hembra anterior del chip (ingresó ${esc(rec.fechaIngreso || '—')})</span>`
+    : `🦐 Trovan <b>${esc(hist.trovan)}</b>`;
 
   const info = rec ? `<div class="mc-fem-info">
     ${infoCell('Estado', rec.estado)}

@@ -69,7 +69,9 @@ describe('GAS · el sello de versión no puede quedarse atrás', () => {
     createContext(ctx);
     new Script(code + '\n;globalThis.__get = doGet;').runInContext(ctx);
     const r = ctx.__get({ parameter: { p: 'ver' } });
-    expect(JSON.parse(r.texto)).toEqual({ ok: true, version: selloDeclarado() });
+    // ♻ 2026-09-14 · y lo que sabe hacer: el alta con un microchip reciclado sólo se entrega a un
+    // GAS que diga «matriz-reciclaje» (uno anterior la fundiría sobre la fila de la hembra muerta).
+    expect(JSON.parse(r.texto)).toEqual({ ok: true, version: selloDeclarado(), caps: ['matriz-reciclaje'] });
     // y la raíz sigue igual: es la que usa la comprobación de conexión de siempre
     expect(ctx.__get({ parameter: {} }).texto).toBe('FichasLarv-OK');
   });

@@ -39,7 +39,7 @@
      durante el bucket (ingreso ≤ fin del bucket y sin muerte previa), ×100.
    ============================================================ */
 import { parseAnyDate, yearMonthKey } from '../../core/dates.js';
-import { normTrovan } from '../../core/trovan.js';
+import { normTrovan, cadenaDelChip, individuoEnFecha, idsDeCadena } from '../../core/trovan.js';
 
 export const MAD_MATRIZ_ORIGIN = 'Maduración MATRIZ';
 export const MAD_BITACORA_ORIGIN = 'Maduración Bitácora';
@@ -147,7 +147,9 @@ function resolveEventLocation(trovan, date, byTrovan, movByTrovan) {
  *   duplicateTrovans:string[], futureEvents:Array, derivedEvents:number,
  *   transferRowCount:number}}
  *   `dataMaxDate` va acotada a hoy; `futureEvents` son los eventos con fecha posterior
- *   (típicamente un año mal tecleado) y `duplicateTrovans` los repetidos en MATRIZ.
+ *   (típicamente un año mal tecleado) y `duplicateTrovans` los chips con filas en MATRIZ que no
+ *   encajan en su cadena de hembras (un chip RECICLADO no es un repetido: ver ♻ más abajo).
+ *   Cada hembra lleva `chip` (su Trovan ID) y `trovan` (su nombre: el chip, o chip·fecha de ingreso).
  *   `derivedEvents` = eventos sin ubicación propia que hubo que derivar por Trovan, y
  *   `transferRowCount` = filas útiles de «Maduración Transferencias». Los dos juntos
  *   dicen si la derivación está trabajando A CIEGAS (derivedEvents>0 y sin transferencias).
@@ -169,7 +171,17 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
   // HOY de cada hembra. Callarlo es el mismo fallo que este módulo ya evita con las
   // fechas imposibles y los Trovan repetidos.
   let derivedEvents = 0;
-  (matrizRows || []).forEach((o) => {
+  /* ♻ MICROCHIPS RECICLADOS (2026-09-14). El microchip de una hembra muerta se vuelve a usar en
+     otra, así que un Trovan ID es de un CHIP y la MATRIZ puede tener varias hembras suyas. Las filas
+     se agrupan por chip y se encadenan en orden de vida (core/trovan.js): cada eslabón es una hembra
+     aparte; la que lleva hoy el chip se llama como él y las anteriores, «chip·fecha de ingreso». Los
+     eventos y los traslados se reparten por fecha (`hembraDe`). Sólo lo que NO encaja en la cadena
+     —otra viva con el mismo chip, o un ingreso que no es posterior a la muerte de la anterior— es un
+     Trovan repetido: se avisa y no se cuenta. Antes se contaba la PRIMERA fila de cada Trovan, y con
+     un chip reciclado la nueva habría heredado los desoves, el lote y el código de la muerta. */
+  const todas = [];
+  const filasPorChip = new Map();
+  (matrizRows || []).forEach((o, pos) => {
     const trovan = normTrovan(gv(o, H.trovan));
     if (!trovan) return;
     const rawIngreso = gv(o, H.fIngreso), rawMuerte = gv(o, H.fMuerte);
@@ -177,7 +189,7 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
     if (rawIngreso && !dIngreso) noteBadDate('MATRIZ', trovan, rawIngreso);
     if (rawMuerte && !dMuerte) noteBadDate('MATRIZ', trovan, rawMuerte);
     const rec = {
-      trovan,
+      trovan, chip: trovan,
       numero: gv(o, H.numero), color: gv(o, H.color), piscina: gv(o, H.piscina),
       codigo: gv(o, H.codigo), lote: gv(o, H.lote),
       sala: gv(o, H.salaAct), tanque: gv(o, H.tanqueAct),
@@ -187,25 +199,39 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
       _ingreso: dIngreso,
       _muerte: dMuerte,
     };
-    // Un Trovan repetido en MATRIZ conserva la PRIMERA fila. Antes el resto se
-    // descartaba en silencio (la hembra podía aparecer con sala/tanque equivocados y
-    // nadie se enteraba); ahora se reporta para avisar en pantalla.
-    if (!byTrovan.has(trovan)) { byTrovan.set(trovan, rec); females.push(rec); }
-    else dupSet.add(trovan);
+    todas.push(rec);
+    if (!filasPorChip.has(trovan)) filasPorChip.set(trovan, []);
+    filasPorChip.get(trovan).push({ rec, pos, ingreso: dIngreso ? dayKey(dIngreso) : '', muerte: dMuerte ? dayKey(dMuerte) : '', muerto: rec.estado === ESTADO_MUERTO });
   });
+  const cadenas = new Map();                // chip → sus hembras en orden de vida (sólo si son varias)
+  const cuentan = new Set();
+  filasPorChip.forEach((filas, chip) => {
+    if (filas.length === 1) { cuentan.add(filas[0].rec); return; }
+    const { cadena, conflictos } = cadenaDelChip(filas);
+    if (conflictos.length) dupSet.add(chip);
+    const ids = idsDeCadena(chip, cadena);
+    cadena.forEach((f, k) => { f.rec.trovan = ids[k]; cuentan.add(f.rec); });
+    if (cadena.length > 1) cadenas.set(chip, cadena);
+  });
+  todas.forEach((rec) => { if (cuentan.has(rec)) { byTrovan.set(rec.trovan, rec); females.push(rec); } });
   const duplicateTrovans = [...dupSet];
+  /** Nombre de la hembra que llevaba el chip `chip` el día `date` (con un solo individuo, el chip). */
+  const hembraDe = (chip, date) => {
+    const cadena = cadenas.get(chip);
+    return cadena ? individuoEnFecha(cadena, date ? dayKey(date) : '').rec.trovan : chip;
+  };
 
   // Movimientos (transferencias) — se parsean ANTES de la bitácora para poder
   // derivar la ubicación de cada evento por Trovan.
   const movimientos = [];
   (transferRows || []).forEach((o) => {
-    const trovan = normTrovan(gv(o, H.trovan));
+    const chip = normTrovan(gv(o, H.trovan));
     const rawFecha = gv(o, H.fecha);
     const date = parseAnyDate(rawFecha);
-    if (!trovan) return;
-    if (rawFecha && !date) noteBadDate('Transferencias', trovan, rawFecha);
+    if (!chip) return;
+    if (rawFecha && !date) noteBadDate('Transferencias', chip, rawFecha);
     movimientos.push({
-      trId: gv(o, H.trId), trovan, fecha: gv(o, H.fecha), date, tipo: gv(o, H.tipo),
+      trId: gv(o, H.trId), trovan: hembraDe(chip, date), fecha: gv(o, H.fecha), date, tipo: gv(o, H.tipo),
       salaOrigen: gv(o, H.salaOrigen), tanqueOrigen: gv(o, H.tanqueOrigen),
       salaDestino: gv(o, H.salaDestino), tanqueDestino: gv(o, H.tanqueDestino),
     });
@@ -216,12 +242,13 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
 
   const desoves = [], mortalidades = [];
   (bitacoraRows || []).forEach((o) => {
-    const trovan = normTrovan(gv(o, H.trovan));
+    const chip = normTrovan(gv(o, H.trovan));
     const tipo = gv(o, H.tipo);
     const raw = gv(o, H.fecha);
     const date = parseAnyDate(raw);
-    if (!trovan) return;
-    if (!date) { noteBadDate('Bitácora', trovan, raw); return; }
+    if (!chip) return;
+    if (!date) { noteBadDate('Bitácora', chip, raw); return; }
+    const trovan = hembraDe(chip, date);   // ♻ de qué hembra del chip es el evento
     // Ubicación del evento: manda el snapshot de la propia fila; sólo si no viene se
     // deriva por Trovan (MATRIZ + transferencias).
     // ⚠ El comentario anterior decía que la Bitácora real no trae Sala/Tanque y que

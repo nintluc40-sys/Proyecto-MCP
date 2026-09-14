@@ -455,3 +455,99 @@ describe('maduracion.data · la fila «—» de eventos sin ubicación resoluble
     expect(stats.map((r) => r.key)).toEqual(['T1']);
   });
 });
+
+/* ── ♻ MICROCHIPS RECICLADOS (2026-09-14) ──────────────────────────────────────
+   Desde que el alta admite el microchip de una hembra muerta, un Trovan ID es de un CHIP y la
+   MATRIZ puede tener varias hembras suyas. Si el tablero siguiera contando chips, la nueva heredaría
+   los desoves, el lote y el código de la anterior, y las dos contarían como una sola hembra.
+   La hembra NUEVA va ARRIBA en la hoja a propósito: el orden de la hoja no puede decidir. */
+describe('maduracion.data · ♻ un chip reciclado son hembras distintas', () => {
+  const CHIP = '0008219380';
+  const VIEJA = { 'Trovan ID': CHIP, Lote: 'L12', 'Código genético': 'G01', 'Sala actual': 'S1', 'Tanque actual': 'T1',
+    Estado: 'Muerto', 'Fecha ingreso': '2026-01-05', 'Fecha muerte': '2026-07-08' };
+  const NUEVA = { 'Trovan ID': CHIP, Lote: 'L20', 'Código genético': 'G07', 'Sala actual': 'S3', 'Tanque actual': 'T4',
+    Estado: 'Vivo', 'Fecha ingreso': '2026-08-01' };
+  const ANTERIOR = CHIP + '·2026-01-05';
+  const BIT = [
+    { 'Trovan ID': CHIP, Fecha: '2026-06-01', Tipo: 'Desove', Sala: 'S1', Tanque: 'T1' },
+    { 'Trovan ID': CHIP, Fecha: '20/06/2026', Tipo: 'Desove', Sala: 'S1', Tanque: 'T1' },   // del store: dd/mm/yyyy
+    { 'Trovan ID': CHIP, Fecha: '2026-07-08', Tipo: 'Mortalidad', Sala: 'S1', Tanque: 'T1' },
+    { 'Trovan ID': CHIP, Fecha: '2026-08-10', Tipo: 'Desove', Sala: 'S3', Tanque: 'T4' },
+  ];
+  const m = buildReproModel([NUEVA, VIEJA], BIT, []);
+
+  it('🔴 son DOS hembras y NO un Trovan repetido: la que lleva hoy el chip se llama como él', () => {
+    expect(m.females).toHaveLength(2);
+    expect(m.duplicateTrovans).toEqual([]);
+    expect(m.byTrovan.get(CHIP).lote).toBe('L20');
+    expect(m.byTrovan.get(ANTERIOR).lote).toBe('L12');
+    expect(m.byTrovan.get(ANTERIOR).chip).toBe(CHIP);
+  });
+
+  it('🔴 cada evento es de la hembra que había ingresado en su fecha, con SU lote y SU código', () => {
+    expect(m.desoves.map((e) => [e.trovan, e.lote, e.codigo])).toEqual([
+      [ANTERIOR, 'L12', 'G01'], [ANTERIOR, 'L12', 'G01'], [CHIP, 'L20', 'G07']]);
+    expect(m.mortalidades.map((e) => e.trovan)).toEqual([ANTERIOR]);
+  });
+
+  it('🔴 los indicadores cuentan hembras, no chips', () => {
+    const k = kpis(m, all);
+    expect(k.totalHembras).toBe(2);
+    expect(k.vivas).toBe(1);
+    expect(k.muertas).toBe(1);
+    expect(k.spawners).toBe(2);
+    expect(femaleHistory(m, CHIP).totalDesoves).toBe(1);
+    expect(femaleHistory(m, ANTERIOR).totalDesoves).toBe(2);
+    expect(femaleRanking(m, all).map((r) => [r.trovan, r.desoves])).toEqual([[ANTERIOR, 2], [CHIP, 1]]);
+  });
+
+  it('🔴 la hembra nueva que aún no desovó sale en «nunca han desovado», aunque la anterior sí desovara', () => {
+    const sinNuevo = buildReproModel([NUEVA, VIEJA], BIT.slice(0, 3), []);
+    expect(neverSpawned(sinNuevo, all).map((r) => r.trovan)).toEqual([CHIP]);
+  });
+
+  it('el filtro por lote alcanza los eventos de la hembra correcta', () => {
+    expect(kpis(m, makeFilter({ lote: 'L12' })).desoves).toBe(2);
+    expect(kpis(m, makeFilter({ lote: 'L20' })).desoves).toBe(1);
+  });
+
+  it('una transferencia es de la hembra de su fecha', () => {
+    const tr = buildReproModel([NUEVA, VIEJA], [], [
+      { 'TR-ID': 'TR-000001', Fecha: '2026-03-01', Tipo: 'Traslado', 'Trovan ID': CHIP, 'Sala origen': 'S1', 'Tanque origen': 'T0', 'Sala destino': 'S1', 'Tanque destino': 'T1' },
+      { 'TR-ID': 'TR-000009', Fecha: '2026-08-05', Tipo: 'Traslado', 'Trovan ID': CHIP, 'Sala origen': 'S2', 'Tanque origen': 'T8', 'Sala destino': 'S3', 'Tanque destino': 'T4' },
+    ]);
+    expect(tr.movByTrovan.get(ANTERIOR).map((x) => x.trId)).toEqual(['TR-000001']);
+    expect(tr.movByTrovan.get(CHIP).map((x) => x.trId)).toEqual(['TR-000009']);
+  });
+
+  it('un evento SIN Sala/Tanque deriva la ubicación de la hembra de su fecha, no de la de hoy', () => {
+    const d = buildReproModel([NUEVA, VIEJA], [{ 'Trovan ID': CHIP, Fecha: '2026-06-01', Tipo: 'Desove' }], []);
+    expect([d.desoves[0].sala, d.desoves[0].tanque]).toEqual(['S1', 'T1']);
+  });
+
+  it('🔴 dos hembras VIVAS con el mismo chip siguen siendo un Trovan repetido: cuenta la de ingreso más antiguo', () => {
+    const otraViva = Object.assign({}, NUEVA, { 'Fecha ingreso': '2026-09-01', Lote: 'L99' });
+    const r = buildReproModel([otraViva, NUEVA], [], []);
+    expect(r.duplicateTrovans).toEqual([CHIP]);
+    expect(r.females).toHaveLength(1);
+    expect(r.byTrovan.get(CHIP).lote).toBe('L20');
+  });
+
+  it('🔴 con las fechas de la MATRIZ como las trae el store (dd/mm/yyyy) sale exactamente lo mismo', () => {
+    // El store del tablero lee el XLSX con dateNF 'dd/mm/yyyy': comparar esas fechas como TEXTO pondría
+    // «01/08/2026» antes que «05/01/2026» y encadenaría a las hembras al revés.
+    const store = (o) => Object.assign({}, o, { 'Fecha ingreso': o['Fecha ingreso'].split('-').reverse().join('/'),
+      'Fecha muerte': o['Fecha muerte'] ? o['Fecha muerte'].split('-').reverse().join('/') : '' });
+    const s = buildReproModel([store(NUEVA), store(VIEJA)], BIT, []);
+    expect(s.duplicateTrovans).toEqual([]);
+    expect(s.desoves.map((e) => [e.trovan, e.lote])).toEqual(m.desoves.map((e) => [e.trovan, e.lote]));
+    expect(s.byTrovan.get(CHIP).lote).toBe('L20');
+  });
+
+  it('🔴 una hembra que ingresó el MISMO día de la muerte de la anterior no la sucede: es un repetido', () => {
+    const mismoDia = Object.assign({}, NUEVA, { 'Fecha ingreso': '2026-07-08' });
+    const r = buildReproModel([VIEJA, mismoDia], [], []);
+    expect(r.duplicateTrovans).toEqual([CHIP]);
+    expect(r.females).toHaveLength(1);
+  });
+});
