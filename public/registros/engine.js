@@ -6793,17 +6793,64 @@ function madIngLogHTML(){
     + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Lote</th><th>Filas</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div>'
     + '</div>';
 }
+/* ── «🔍 Revisar» de las cuatro fichas de Maduración · PARA QUÉ ES (auditado el 2026-09-14) ──
+   Comprueba lo tecleado SIN ENVIAR NADA y adelanta lo que hará «☁️ Guardar y sincronizar»: los
+   errores que lo impiden, los avisos que dejan guardar y cuántas filas escribirá en qué hoja.
+   La auditoría (pedida por el usuario) encontró que no cumplía del todo ese papel:
+   1) con todo bien sólo decía «Se escribirán N fila(s)» en gris: ahora lo dice con ✅;
+   2) en Ingreso y Desoves, con el GAS publicado VIEJO, prometía filas que Guardar se niega a
+      enviar (_madIngGasAlDia) — y el GAS vivo ERA el viejo ese día: ahora, sin errores, pregunta;
+   3) el veredicto se quedaba en pantalla aunque se cambiara lo tecleado: ahora se marca;
+   4) el botón no decía para qué servía: lleva un title.
+   Lo fija mad-revisar.test.js. Revisar NUNCA envía: eso es de Guardar. */
+const MAD_REVISAR_TITLE = "Comprueba lo tecleado sin enviar nada: errores, avisos y cuántas filas se escribirán al guardar";
+function _madRevisarOkHTML(res, filas, hoja){
+  return '<div class="mad-rev-ok" style="font-size:12px;color:#166534">✅ Sin errores'
+    + (res.avisos.length ? ' (con '+res.avisos.length+' aviso(s))' : '')
+    + ': al guardar se escribirán <b>'+filas+'</b> fila(s) en «'+escapeHtml(hoja)+'».</div>';
+}
+// Marca el veredicto como DESACTUALIZADO al primer cambio del formulario. Se engancha una vez
+// por ficha: el contenedor sobrevive a los repintados (Vaciar sólo cambia su interior), y el
+// informe se busca por id en cada evento porque ése sí se vuelve a crear.
+function _madReporteVigila(fpId, repId){
+  const fp=document.getElementById(fpId);
+  if(!fp || fp.getAttribute("data-rev-vigila")) return;
+  fp.setAttribute("data-rev-vigila","1");
+  const caduca=function(ev){
+    const b=document.getElementById(repId);
+    if(!b || !b.innerHTML || b.contains(ev.target) || b.querySelector(".mad-rev-caduco")) return;
+    b.insertAdjacentHTML("afterbegin", '<div class="mad-rev-caduco" style="font-size:11px;color:#92400e;margin-bottom:6px">✏️ Cambiaste el formulario: lo de abajo puede no valer ya. Pulsa 🔍 Revisar otra vez.</div>');
+  };
+  fp.addEventListener("input", caduca);
+  fp.addEventListener("change", caduca);
+}
+// Tras pintar el veredicto de Revisar: lo trae a la vista y, sólo si no hay errores y la hoja
+// pide el GAS nuevo, pregunta al GAS — así Revisar no promete filas que Guardar va a negar.
+async function _madRevisarRemata(repId, res, hoja){
+  const box=document.getElementById(repId); if(!box) return;
+  try{ if(typeof box.scrollIntoView==="function") box.scrollIntoView({ block:"nearest" }); }catch(_){}
+  if(res.errores.length || !_madHojaPideGasNuevo(hoja)) return;
+  const antes=box.innerHTML;
+  if((await _madIngGasAlDia()) !== false) return;
+  // Si mientras respondía se revisó otra vez, se guardó o se tocó el formulario, ya no es este veredicto.
+  const ahora=document.getElementById(repId);
+  if(ahora!==box || box.innerHTML!==antes) return;
+  box.insertAdjacentHTML("beforeend", '<div class="mad-rev-gas" style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;margin-top:8px;font-size:12px;color:#991b1b">⛔ Pero al guardar NO se enviará: '+escapeHtml(_madGasViejoMsg(hoja))+'. Actualiza el GAS (⚙ Config → Probar conexión).</div>');
+}
 function _madIngPinta(res, filas){
   const box=document.getElementById("mi-report"); if(!box) return;
   let h="";
   if(res.errores.length) h += '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#991b1b"><b>No se puede guardar:</b><ul style="margin:4px 0 0;padding-left:18px">'+res.errores.map(function(e){ return "<li>"+escapeHtml(e)+"</li>"; }).join("")+"</ul></div>";
   if(res.avisos.length) h += '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#92400e"><b>Avisos (se puede guardar igual):</b><ul style="margin:4px 0 0;padding-left:18px">'+res.avisos.map(function(a){ return "<li>"+escapeHtml(a)+"</li>"; }).join("")+"</ul></div>";
-  if(!res.errores.length) h += '<div style="font-size:12px;color:#475569">Se escribirán <b>'+filas+'</b> fila(s) en «'+escapeHtml(MAD_ING_SHEET)+'».</div>';
+  if(!res.errores.length) h += _madRevisarOkHTML(res, filas, MAD_ING_SHEET);
   box.innerHTML=h;
+  _madReporteVigila("fp-ingreso", "mi-report");
 }
 function madIngRevisar(){
   const model=madIngCollect();
-  _madIngPinta(madIngValidar(model), madIngBuildRows(model).length);
+  const res=madIngValidar(model);
+  _madIngPinta(res, madIngBuildRows(model).length);
+  return _madRevisarRemata("mi-report", res, MAD_ING_SHEET);
 }
 /* ⚠⚠ INGRESO · COLUMNAS NUEVAS (2026-09-13) Y EL GAS VIEJO. «Maduración Ingreso» se escribe POR
    POSICIÓN y ya tiene filas. Con Crecimiento y Libras el envío pasa de 17 a 18 columnas y corre
@@ -6901,7 +6948,7 @@ function renderMadIngreso(){
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
     +     '<button class="btn" type="button" onclick="madIngAddComp()">➕ Composición</button>'
     +     '<button class="btn" type="button" onclick="madIngCombinar()">🔗 Combinar marcadas</button>'
-    +     '<button class="btn" type="button" onclick="madIngRevisar()">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" onclick="madIngRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
     +     '<button class="btn" type="button" style="font-weight:700" onclick="madIngGuardar()">☁️ Guardar y sincronizar</button>'
     +     '<button class="btn" type="button" onclick="madIngVaciar()">🧹 Vaciar</button>'
     +   '</div>'
@@ -7128,12 +7175,15 @@ function _madMovPinta(res, filas){
   let h="";
   if(res.errores.length) h += '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#991b1b"><b>No se puede guardar:</b><ul style="margin:4px 0 0;padding-left:18px">'+res.errores.map(function(e){ return "<li>"+escapeHtml(e)+"</li>"; }).join("")+"</ul></div>";
   if(res.avisos.length) h += '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#92400e"><b>Avisos (se puede guardar igual):</b><ul style="margin:4px 0 0;padding-left:18px">'+res.avisos.map(function(a){ return "<li>"+escapeHtml(a)+"</li>"; }).join("")+"</ul></div>";
-  if(!res.errores.length) h += '<div style="font-size:12px;color:#475569">Se escribirán <b>'+filas+'</b> fila(s) en «'+escapeHtml(MAD_MOV_SHEET)+'».</div>';
+  if(!res.errores.length) h += _madRevisarOkHTML(res, filas, MAD_MOV_SHEET);
   box.innerHTML=h;
+  _madReporteVigila("fp-movimientos", "mv-report");
 }
 function madMovRevisar(){
   const model=madMovCollect();
-  _madMovPinta(madMovValidar(model), madMovBuildRows(model).length);
+  const res=madMovValidar(model);
+  _madMovPinta(res, madMovBuildRows(model).length);
+  return _madRevisarRemata("mv-report", res, MAD_MOV_SHEET);
 }
 // Registro local propio, por lo mismo que en Ingreso: esta ficha no guarda filas locales,
 // así que sin esto un envío ENCOLADO sin señal no dejaría rastro en ningún sitio.
@@ -7236,7 +7286,7 @@ function renderMadMovimientos(){
     +   '</div>'
     +   '<label style="'+_MAD_ING_LBL+';margin-top:12px">Observaciones<textarea id="mv-obs" rows="2" style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box;resize:vertical"></textarea></label>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'
-    +     '<button class="btn" type="button" onclick="madMovRevisar()">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" onclick="madMovRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
     +     '<button class="btn" type="button" style="font-weight:700" onclick="madMovGuardar()">☁️ Guardar y sincronizar</button>'
     +     '<button class="btn" type="button" onclick="madMovVaciar()">🧹 Vaciar</button>'
     +   '</div>'
@@ -7413,12 +7463,15 @@ function _madDesPinta(res, filas){
   let h="";
   if(res.errores.length) h += '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#991b1b"><b>No se puede guardar:</b><ul style="margin:4px 0 0;padding-left:18px">'+res.errores.map(function(e){ return "<li>"+escapeHtml(e)+"</li>"; }).join("")+"</ul></div>";
   if(res.avisos.length) h += '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#92400e"><b>Avisos (se puede guardar igual):</b><ul style="margin:4px 0 0;padding-left:18px">'+res.avisos.map(function(a){ return "<li>"+escapeHtml(a)+"</li>"; }).join("")+"</ul></div>";
-  if(!res.errores.length) h += '<div style="font-size:12px;color:#475569">Se escribirán <b>'+filas+'</b> fila(s) en «'+escapeHtml(MAD_DESOVE_SHEET)+'».</div>';
+  if(!res.errores.length) h += _madRevisarOkHTML(res, filas, MAD_DESOVE_SHEET);
   box.innerHTML=h;
+  _madReporteVigila("fp-desoves", "md-report");
 }
 function madDesRevisar(){
   const model=madDesCollect();
-  _madDesPinta(madDesValidar(model), madDesBuildRows(model).length);
+  const res=madDesValidar(model);
+  _madDesPinta(res, madDesBuildRows(model).length);
+  return _madRevisarRemata("md-report", res, MAD_DESOVE_SHEET);
 }
 // Registro local propio, por lo mismo que en Ingreso y Movimientos: esta ficha no guarda
 // filas locales, así que sin esto un envío ENCOLADO no dejaría rastro en ningún sitio.
@@ -7518,7 +7571,7 @@ function renderMadDesoves(){
     +   '<div id="md-cards">'+_madDesCardHTML()+'</div>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
     +     '<button class="btn" type="button" onclick="madDesAddCard()">➕ Desove</button>'
-    +     '<button class="btn" type="button" onclick="madDesRevisar()">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" onclick="madDesRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
     +     '<button class="btn" type="button" style="font-weight:700" onclick="madDesGuardar()">☁️ Guardar y sincronizar</button>'
     +     '<button class="btn" type="button" onclick="madDesVaciar()">🧹 Vaciar</button>'
     +   '</div>'
@@ -7690,12 +7743,15 @@ function _madFinPinta(res, filas){
   let h="";
   if(res.errores.length) h += '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#991b1b"><b>No se puede guardar:</b><ul style="margin:4px 0 0;padding-left:18px">'+res.errores.map(function(e){ return "<li>"+escapeHtml(e)+"</li>"; }).join("")+"</ul></div>";
   if(res.avisos.length) h += '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#92400e"><b>Avisos (se puede guardar igual):</b><ul style="margin:4px 0 0;padding-left:18px">'+res.avisos.map(function(a){ return "<li>"+escapeHtml(a)+"</li>"; }).join("")+"</ul></div>";
-  if(!res.errores.length) h += '<div style="font-size:12px;color:#475569">Se escribirán <b>'+filas+'</b> fila(s) en «'+escapeHtml(MAD_FIN_SHEET)+'».</div>';
+  if(!res.errores.length) h += _madRevisarOkHTML(res, filas, MAD_FIN_SHEET);
   box.innerHTML=h;
+  _madReporteVigila("fp-fin", "mf-report");
 }
 function madFinRevisar(){
   const model=madFinCollect();
-  _madFinPinta(madFinValidar(model), madFinBuildRows(model).length);
+  const res=madFinValidar(model);
+  _madFinPinta(res, madFinBuildRows(model).length);
+  return _madRevisarRemata("mf-report", res, MAD_FIN_SHEET);
 }
 // Registro local propio, por lo mismo que en las otras tres fichas: sin filas locales, un
 // envío ENCOLADO no dejaría rastro en ningún sitio.
@@ -7786,7 +7842,7 @@ function renderMadFinCiclo(){
     +   '<div id="mf-cards">'+_madFinCardHTML()+'</div>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
     +     '<button class="btn" type="button" onclick="madFinAddCard()">➕ Cierre</button>'
-    +     '<button class="btn" type="button" onclick="madFinRevisar()">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" onclick="madFinRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
     +     '<button class="btn" type="button" style="font-weight:700" onclick="madFinGuardar()">☁️ Guardar y sincronizar</button>'
     +     '<button class="btn" type="button" onclick="madFinVaciar()">🧹 Vaciar</button>'
     +   '</div>'
