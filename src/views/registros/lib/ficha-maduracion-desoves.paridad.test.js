@@ -63,13 +63,13 @@ const api = motorDesoves();
 const MODELOS = {
   'un desove simple': {
     fecha: '2026-09-08',
-    desoves: [{ lote: 'BM', codigoGenetico: '766', piscina: 'P-766', desoves: 4, huevos: 9800, nauplios: 6500, hembrasNoViables: 12, fechaN2: '', n2: '', fechaN5: '', n5: '', observaciones: 'sin novedad' }],
+    desoves: [{ lote: 'BM', codigoGenetico: '766', piscina: 'P-766', desoves: 4, huevos: 9800, hembrasNoViables: 12, fechaN2: '', n2: '', fechaN5: '', n5: '', observaciones: 'sin novedad' }],
   },
   'un lote con DOS códigos el mismo día': {
     fecha: '2026-09-08',
     desoves: [
-      { lote: 'BM', codigoGenetico: '766', piscina: 'P-766', desoves: 4, nauplios: 6500 },
-      { lote: 'BM', codigoGenetico: '767', piscina: 'P-767', desoves: 3, nauplios: 4200 },
+      { lote: 'BM', codigoGenetico: '766', piscina: 'P-766', desoves: 4, huevos: 6500 },
+      { lote: 'BM', codigoGenetico: '767', piscina: 'P-767', desoves: 3, huevos: 4200 },
     ],
   },
   'completando N2 y N5 días después': {
@@ -83,21 +83,23 @@ const MODELOS = {
   'duplicado: mismo lote y código dos veces': {
     fecha: '2026-09-08',
     desoves: [
-      { lote: 'BM', codigoGenetico: '766', nauplios: 100 },
-      { lote: 'bm', codigoGenetico: ' 766 ', nauplios: 200 },
+      { lote: 'BM', codigoGenetico: '766', huevos: 100 },
+      { lote: 'bm', codigoGenetico: ' 766 ', huevos: 200 },
     ],
   },
   'sin llave completa y fechas al revés': {
     fecha: '2026-09-08',
     desoves: [
-      { lote: 'BM', codigoGenetico: '', nauplios: 100 },
+      { lote: 'BM', codigoGenetico: '', huevos: 100 },
       { lote: 'BC', codigoGenetico: '801', n2: 10, fechaN2: '2026-09-01', n5: 5, fechaN5: '2026-08-30' },
     ],
   },
   // 2026-09-14: un desove que sólo trae hembras no viables (conteo, sin ×1000) ejerce su rama.
   'sólo hembras no viables': { fecha: '2026-09-14', desoves: [{ lote: 'BM', codigoGenetico: '766', hembrasNoViables: 3 }] },
+  // 2026-09-14: «Total de nauplios» se borró. Un borrador viejo que aún los traiga: ni fila ni cifra.
+  'sólo nauplios (campo retirado)': { fecha: '2026-09-14', desoves: [{ lote: 'BM', codigoGenetico: '766', nauplios: 6500 }] },
   'sin desoves': { fecha: '2026-09-08', desoves: [] },
-  'fecha inválida': { fecha: '08/09/2026', desoves: [{ lote: 'BM', codigoGenetico: '766', nauplios: 10 }] },
+  'fecha inválida': { fecha: '08/09/2026', desoves: [{ lote: 'BM', codigoGenetico: '766', huevos: 10 }] },
 };
 
 describe('Desoves · el monolito y el módulo declaran lo mismo', () => {

@@ -1,7 +1,7 @@
 /* ============================================================
    REGISTROS · esquema de la ficha "Desoves de Maduración" (Fase 4A, 2026-09-08)
 
-   Registra la PRODUCCIÓN de un pool que desovó: huevos, nauplios, no viables y los
+   Registra la PRODUCCIÓN de un pool que desovó: huevos, hembras no viables y los
    recuentos N2 y N5 con sus fechas. Modelo PURO — sin DOM, sin localStorage, sin red.
 
    ── EL DESOVE NO ES DE UN TANQUE, Y ESTO ES LO IMPORTANTE ──
@@ -32,7 +32,7 @@
    ── EL UPSERT FUSIONA, Y DE ESO DEPENDE N2/N5 ──
    `upsertMadRows` conserva el valor existente cuando el entrante viene VACÍO. Gracias a
    eso el desove se registra hoy y días después se vuelve a enviar con N2 —y luego con
-   N5— sin borrar los nauplios. Es lo que hace posible «una fila que se completa».
+   N5— sin borrar los huevos. Es lo que hace posible «una fila que se completa».
    ⚠ La contrapartida: un campo NO se puede vaciar reenviándolo en blanco. Para corregir
    una cifra hay que escribir otra, no borrarla.
    ============================================================ */
@@ -49,7 +49,7 @@ export const MIL = 1000;
 
 /* ── Columnas ──────────────────────────────────────────────
    Se declaran UNA vez y las cabeceras se DERIVAN de aquí. El vocabulario es el que ya
-   usaba la hoja vieja (`Total de nauplios`, `Total de huevos`, `No viables`…): es el que
+   usaba la hoja vieja (`Total de huevos`, `Desoves`, `N2`…): es el que
    el laboratorio reconoce, y cambiarlo habría obligado a traducir dos veces.
 
    `grain`:
@@ -62,11 +62,14 @@ export const MAD_DESOVE_COLUMNS = [
   { h: 'Piscina Broodstock', k: 'piscina', grain: 'dato' },
   { h: 'Desoves', k: 'desoves', grain: 'dato', num: true },
   { h: 'Total de huevos', k: 'huevos', grain: 'dato', num: true, mil: true },
-  { h: 'Total de nauplios', k: 'nauplios', grain: 'dato', num: true, mil: true },
+  /* 2026-09-14 (usuario): se BORRA «Total de nauplios (miles)» — los nauplios ya se registran
+     por separado en N2 y N5, y un tercer total repetía el dato. La hoja pierde su columna G
+     (migración en el README). */
   /* 2026-09-14 (usuario): «No viables (miles)» pasa a «Hembras no viables» — reproductoras que
      estaban maduras pero NO desovaron. Es un CONTEO de animales, como «Desoves»: sin ×1000.
-     🔑 Además es la columna que mantiene la FIRMA de la pestaña en el tablero (sheets.js pide
-     «código genético» y una cabecera con machos/hembras/nauplio). */
+     🔑🔑 Además es la columna que mantiene la FIRMA de la pestaña en el tablero (sheets.js pide
+     «código genético» y una cabecera con machos/hembras/nauplio): desde que se borró «Total de
+     nauplios» es la ÚNICA que la da. Renombrarla sin «hembras» vaciaría la vista sin un error. */
   { h: 'Hembras no viables', k: 'hembrasNoViables', grain: 'dato', num: true },
   { h: 'Fecha N2', k: 'fechaN2', grain: 'dato' },
   { h: 'N2', k: 'n2', grain: 'dato', num: true, mil: true },
@@ -127,7 +130,6 @@ export function buildDesoveRows(model) {
       piscina: sanitizeStr(x.piscina, 60),
       desoves: int(x.desoves),
       huevos: aMiles(x.huevos),
-      nauplios: aMiles(x.nauplios),
       hembrasNoViables: int(x.hembrasNoViables),
       fechaN2: sanitizeStr(x.fechaN2, 10),
       n2: aMiles(x.n2),
@@ -188,7 +190,7 @@ export function validarDesove(model) {
     const hayN5 = int(x.n5) !== '' || esFecha(x.fechaN5);
     if (hayN5 && !hayN2) errores.push('En ' + et + ' hay N5 sin N2. El N5 sólo se registra después del N2.');
 
-    /* ⚠ NO se comparan los tamaños entre sí (N5 ≤ N2 ≤ nauplios): el usuario confirmó el
+    /* ⚠ NO se comparan los tamaños entre sí (N5 ≤ N2 ≤ huevos): el usuario confirmó el
        2026-09-08 que son cosas DISTINTAS y no comparables. Un aviso por tamaño relativo
        aquí sería un rojo que no significa nada, y ésos esconden el rojo siguiente. */
 
@@ -201,7 +203,7 @@ export function validarDesove(model) {
       avisos.push('El N5 de ' + et + ' es ANTERIOR al N2.');
     }
 
-    const algo = ['desoves', 'huevos', 'nauplios', 'hembrasNoViables', 'n2', 'n5']
+    const algo = ['desoves', 'huevos', 'hembrasNoViables', 'n2', 'n5']
       .some((k) => int(x[k]) !== '' && int(x[k]) > 0);
     if (!algo) avisos.push(et + ' no trae ninguna cifra: la fila se escribirá vacía.');
   });

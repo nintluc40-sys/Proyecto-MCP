@@ -15,7 +15,7 @@ import { detectSheetName, classifyOrigin } from '../../../core/sheets.js';
 const base = () => ({
   fecha: '2026-09-08',
   desoves: [
-    { lote: 'BM', codigoGenetico: '766', piscina: 'P-766', desoves: 4, huevos: 9800, nauplios: 6500, hembrasNoViables: 12, fechaN2: '', n2: '', fechaN5: '', n5: '', despacho: 'Laboratorio Rosario', observaciones: '' },
+    { lote: 'BM', codigoGenetico: '766', piscina: 'P-766', desoves: 4, huevos: 9800, hembrasNoViables: 12, fechaN2: '', n2: '', fechaN5: '', n5: '', despacho: 'Laboratorio Rosario', observaciones: '' },
   ],
 });
 
@@ -82,7 +82,7 @@ describe('Desoves · la hoja y su llave POSICIONAL', () => {
   });
 
   it('conserva el vocabulario que ya usaba el laboratorio', () => {
-    for (const h of ['Total de huevos', 'Total de nauplios', 'Hembras no viables', 'Desoves']) {
+    for (const h of ['Total de huevos', 'Hembras no viables', 'Desoves']) {
       expect(MAD_DESOVE_HEADERS).toContain(h);
     }
   });
@@ -97,7 +97,7 @@ describe('Desoves · el ×1000', () => {
 
   it('sin cifra devuelve vacío, para que el MERGE del GAS conserve lo que hubiera', () => {
     /* Si devolviera 0, reenviar el desove para completar el N2 escribiría CEROS encima de
-       los nauplios ya guardados. El vacío es lo que hace posible «una fila que se completa». */
+       los huevos ya guardados. El vacío es lo que hace posible «una fila que se completa». */
     expect(aMiles('')).toBe('');
     expect(aMiles(null)).toBe('');
     expect(aMiles(undefined)).toBe('');
@@ -110,7 +110,6 @@ describe('Desoves · el ×1000', () => {
   it('se aplica a los conteos grandes y NO a «Desoves»', () => {
     const filas = buildDesoveRows(base());
     expect(filas[0][col('Total de huevos')]).toBe(9800000);
-    expect(filas[0][col('Total de nauplios')]).toBe(6500000);
     expect(filas[0][col('Desoves')]).toBe(4);   // número de desoves: pequeño, tal cual
   });
 });
@@ -145,13 +144,40 @@ describe('Desoves · Hembras no viables', () => {
   });
 
   /* 🔴🔴 LA FIRMA DE LA PESTAÑA. El tablero reconoce «Maduración Lotes» por sus columnas: pide
-     «código genético» Y una cabecera con machos, hembras o nauplio. Hoy la da «Total de
-     nauplios»; si esa columna se borra, la da «Hembras no viables». Sin ninguna de las dos la
-     pestaña caería a «Hoja<N>» y sus filas desaparecerían del tablero sin un error. */
+     «código genético» Y una cabecera con machos, hembras o nauplio. La daba «Total de
+     nauplios»; desde que esa columna se borró (2026-09-14) la da SÓLO «Hembras no viables». Sin
+     ella la pestaña caería a «Hoja<N>» y sus filas desaparecerían del tablero sin un error. */
   it('🔴 con las cabeceras nuevas la pestaña se sigue reconociendo como Maduración', () => {
+    expect(MAD_DESOVE_HEADERS.some((h) => /nauplio/i.test(h))).toBe(false);   // la firma la da «hembras»
     const fila = Object.fromEntries(MAD_DESOVE_HEADERS.map((h) => [h, '']));
     expect(detectSheetName([fila], 0)).toBe('Maduracion');
     expect(classifyOrigin(MAD_DESOVE_SHEET)).toBe('Maduracion');
+  });
+});
+
+/* 🔴 2026-09-14 (usuario): se BORRA «Total de nauplios (miles)». Los nauplios ya se registran por
+   separado en N2 y N5, y un tercer total repetía el dato. Medido ese día: la única fila de la
+   hoja lo tenía vacío, así que borrar la columna no pierde nada. */
+describe('Desoves · sin «Total de nauplios»', () => {
+  it('🔴 la columna ya no existe, y N2 y N5 siguen ahí con su ×1000', () => {
+    expect(col('Total de nauplios')).toBe(-1);
+    expect(MAD_DESOVE_COLUMNS.some((c) => c.k === 'nauplios')).toBe(false);
+    const n = MAD_DESOVE_COLUMNS.filter((c) => c.h === 'N2' || c.h === 'N5');
+    expect(n.map((c) => c.mil)).toEqual([true, true]);
+  });
+
+  it('🔴 un borrador viejo que aún traiga nauplios NO los escribe en ninguna columna', () => {
+    const m = base();
+    m.desoves[0].nauplios = 6500;
+    const fila = buildDesoveRows(m)[0];
+    expect(fila).toHaveLength(MAD_DESOVE_HEADERS.length);
+    expect(fila).not.toContain(6500000);
+    expect(fila).not.toContain(6500);
+  });
+
+  it('🔴 y unos nauplios sueltos ya no cuentan como cifra: la fila se avisa vacía', () => {
+    const v = validarDesove({ fecha: '2026-09-14', desoves: [{ lote: 'BM', codigoGenetico: '766', nauplios: 6500 }] });
+    expect(v.avisos.join(' ')).toMatch(/ninguna cifra/);
   });
 });
 
@@ -167,15 +193,15 @@ describe('Desoves · las filas', () => {
 
   it('sin lote o sin código NO produce fila: la llave estaría incompleta', () => {
     const m = base();
-    m.desoves.push({ lote: 'BM', codigoGenetico: '', nauplios: 100 });
-    m.desoves.push({ lote: '', codigoGenetico: '767', nauplios: 100 });
+    m.desoves.push({ lote: 'BM', codigoGenetico: '', huevos: 100 });
+    m.desoves.push({ lote: '', codigoGenetico: '767', huevos: 100 });
     expect(buildDesoveRows(m)).toHaveLength(1);
   });
 
   it('un lote con DOS códigos son DOS filas del mismo día', () => {
     // Es el caso real: el lote BM con las piscinas 766 y 767 desovando por separado.
     const m = base();
-    m.desoves.push({ lote: 'BM', codigoGenetico: '767', piscina: 'P-767', desoves: 3, nauplios: 4200 });
+    m.desoves.push({ lote: 'BM', codigoGenetico: '767', piscina: 'P-767', desoves: 3, huevos: 4200 });
     const filas = buildDesoveRows(m);
     expect(filas).toHaveLength(2);
     expect(filas.map((f) => f[col('Código genético')])).toEqual(['766', '767']);
@@ -210,7 +236,7 @@ describe('Desoves · validación', () => {
 
   it('ERROR si el mismo lote y código aparecen dos veces esa fecha', () => {
     const m = base();
-    m.desoves.push({ lote: 'bm', codigoGenetico: '766', nauplios: 100 });
+    m.desoves.push({ lote: 'bm', codigoGenetico: '766', huevos: 100 });
     const { errores } = validarDesove(m);
     expect(errores.some((e) => /aparece dos veces en esta fecha/.test(e))).toBe(true);
     expect(errores.some((e) => /sumados/.test(e))).toBe(true);
@@ -232,12 +258,12 @@ describe('Desoves · validación', () => {
     expect(validarDesove(m).errores.some((e) => /N5 sin N2/.test(e))).toBe(true);
   });
 
-  it('NO compara los tamaños de N2, N5 y nauplios entre sí', () => {
+  it('NO compara los tamaños de N2, N5 y huevos entre sí', () => {
     /* Decisión del usuario (2026-09-08): son cosas DISTINTAS y no comparables. Un aviso
        por tamaño relativo sería un rojo que no significa nada, y ésos esconden el
        siguiente. Si algún día alguien añade esa comparación, esta prueba se pone roja. */
     const m = base();
-    m.desoves[0].nauplios = 100;
+    m.desoves[0].huevos = 100;
     m.desoves[0].n2 = 9999;
     m.desoves[0].n5 = 99999;
     const { errores, avisos } = validarDesove(m);

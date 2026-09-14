@@ -5,6 +5,7 @@
 
    · «No viables (miles)» → «Hembras no viables»: reproductoras que estaban maduras y NO
      desovaron. Conteo de animales como «Desoves»: sin ×1000.
+   · «Total de nauplios (miles)» se BORRA: los nauplios ya se registran en N2 y N5.
 
    🔴🔴 LA HOJA EN USO. «Maduración Lotes» se escribe POR POSICIÓN (llave [0,1,2]) y ya tiene
    una fila. El GAS NUEVO rechaza un envío cuyas cabeceras no casan con la hoja (guarda de
@@ -99,6 +100,29 @@ describe('Desoves · Hembras no viables en el formulario', () => {
     expect(p.headers).toEqual(MAD_DESOVE_HEADERS);
     expect(p.rows[0][col('Hembras no viables')]).toBe(9);
     expect(p.rows[0][col('Desoves')]).toBe(64);
+  });
+});
+
+describe('Desoves · sin «Total de nauplios» en el formulario', () => {
+  it('🔴 el campo ya no está, y N2 y N5 sí', () => {
+    const txt = document.getElementById('fp-desoves').textContent;
+    expect(txt).not.toContain('Total de nauplios');
+    expect(q('.md-nauplios')).toBeNull();
+    expect(q('.md-n2')).not.toBeNull();
+    expect(q('.md-n5')).not.toBeNull();
+  });
+
+  it('🔴 el payload no lleva la columna y cada dato sigue bajo SU cabecera', () => {
+    llenar();
+    q('.md-huevos').value = '14440';
+    q('.md-n2').value = '9000';
+    q('.md-fn2').value = '2026-09-15';
+    const p = H.buildMadDesovePayload(H.madDesCollect());
+    expect(p.headers).not.toContain('Total de nauplios');
+    expect(p.rows[0]).toHaveLength(p.headers.length);
+    expect(p.rows[0][col('Total de huevos')]).toBe(14440000);
+    expect(p.rows[0][col('N2')]).toBe(9000000);
+    expect(p.rows[0][col('Hembras no viables')]).toBe(9);
   });
 });
 

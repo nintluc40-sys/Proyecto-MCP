@@ -7244,7 +7244,7 @@ const MAD_DESOVE_COLUMNS = [
   { h:"Piscina Broodstock", k:"piscina" },
   { h:"Desoves", k:"desoves" },
   { h:"Total de huevos", k:"huevos" },
-  { h:"Total de nauplios", k:"nauplios" },
+  // 2026-09-14: se BORRÓ «Total de nauplios (miles)»: los nauplios ya van en N2 y N5. Ver el módulo.
   // 2026-09-14: «Hembras no viables» (reproductoras maduras que no desovaron), conteo SIN ×1000. Ver el módulo.
   { h:"Hembras no viables", k:"hembrasNoViables" },
   { h:"Fecha N2", k:"fechaN2" },
@@ -7262,7 +7262,7 @@ const MAD_DESOVE_KEY_COLS = [0,1,2];
 function madDesFecha(v){ return /^\d{4}-\d{2}-\d{2}$/.test(String(v||"")); }
 // ⚠ Devuelve VACÍO cuando no hay cifra, no cero. `upsertMadRows` conserva la celda cuando
 // el valor entrante viene vacío, y de eso depende poder completar N2 y N5 días después sin
-// borrar los nauplios. Con cero, el segundo envío los machacaría.
+// borrar los huevos. Con cero, el segundo envío los machacaría.
 function madDesMiles(v){
   const n = madIngInt(v);
   return n==="" ? "" : n*MAD_DESOVE_MIL;
@@ -7281,7 +7281,7 @@ function madDesBuildRows(model){
       fecha: fecha, lote: lote, codigoGenetico: cg,
       piscina: sanitizeStr(x.piscina,60),
       desoves: madIngInt(x.desoves),
-      huevos: madDesMiles(x.huevos), nauplios: madDesMiles(x.nauplios), hembrasNoViables: madIngInt(x.hembrasNoViables),
+      huevos: madDesMiles(x.huevos), hembrasNoViables: madIngInt(x.hembrasNoViables),
       fechaN2: sanitizeStr(x.fechaN2,10), n2: madDesMiles(x.n2),
       fechaN5: sanitizeStr(x.fechaN5,10), n5: madDesMiles(x.n5),
       despacho: sanitizeStr(x.despacho,200),
@@ -7317,14 +7317,14 @@ function madDesValidar(model){
     const hayN2 = madIngInt(x.n2)!=="" || madDesFecha(x.fechaN2);
     const hayN5 = madIngInt(x.n5)!=="" || madDesFecha(x.fechaN5);
     if(hayN5 && !hayN2) errores.push("En "+et+" hay N5 sin N2. El N5 sólo se registra después del N2.");
-    // ⚠ NO se comparan los tamaños entre sí (N5 ≤ N2 ≤ nauplios): el usuario confirmó el
+    // ⚠ NO se comparan los tamaños entre sí (N5 ≤ N2 ≤ huevos): el usuario confirmó el
     // 2026-09-08 que son cosas DISTINTAS y no comparables. Un aviso por tamaño relativo
     // aquí sería un rojo que no significa nada, y ésos esconden el rojo siguiente.
     if(x.fechaN2 && !madDesFecha(x.fechaN2)) avisos.push("La fecha de N2 de "+et+" no es válida.");
     if(x.fechaN5 && !madDesFecha(x.fechaN5)) avisos.push("La fecha de N5 de "+et+" no es válida.");
     if(madDesFecha(m.fecha) && madDesFecha(x.fechaN2) && x.fechaN2 < m.fecha) avisos.push("El N2 de "+et+" es ANTERIOR al desove.");
     if(madDesFecha(x.fechaN2) && madDesFecha(x.fechaN5) && x.fechaN5 < x.fechaN2) avisos.push("El N5 de "+et+" es ANTERIOR al N2.");
-    const algo = ["desoves","huevos","nauplios","hembrasNoViables","n2","n5"].some(function(k){ const n=madIngInt(x[k]); return n!=="" && n>0; });
+    const algo = ["desoves","huevos","hembrasNoViables","n2","n5"].some(function(k){ const n=madIngInt(x[k]); return n!=="" && n>0; });
     if(!algo) avisos.push(et+" no trae ninguna cifra: la fila se escribirá vacía.");
   });
   return { errores: errores, avisos: avisos };
@@ -7342,7 +7342,6 @@ function _madDesCardHTML(){
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
     +   '<label style="'+_MAD_ING_LBL+'">Desoves<input class="md-desoves" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:88px"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Total de huevos (miles)<input class="md-huevos" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:130px"></label>'
-    +   '<label style="'+_MAD_ING_LBL+'">Total de nauplios (miles)<input class="md-nauplios" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:140px"></label>'
     +   '<label style="'+_MAD_ING_LBL+'" title="Reproductoras que estaban maduras pero no desovaron">Hembras no viables<input class="md-hnoviables" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:120px"></label>'
     + '</div>'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
@@ -7371,7 +7370,7 @@ function madDesCollect(){
   document.querySelectorAll("#md-cards .md-des").forEach(function(c){
     desoves.push({
       lote:g(c,".md-lote"), codigoGenetico:g(c,".md-cg"), piscina:g(c,".md-piscina"),
-      desoves:g(c,".md-desoves"), huevos:g(c,".md-huevos"), nauplios:g(c,".md-nauplios"),
+      desoves:g(c,".md-desoves"), huevos:g(c,".md-huevos"),
       hembrasNoViables:g(c,".md-hnoviables"),
       fechaN2:g(c,".md-fn2"), n2:g(c,".md-n2"), fechaN5:g(c,".md-fn5"), n5:g(c,".md-n5"),
       despacho:g(c,".md-desp"),

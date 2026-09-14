@@ -43,7 +43,11 @@ const HOJAS = [
      existen, la prueba seguía verde sobre una hoja imaginaria.
      🔑 La lección: un fixture que describe el pasado no es neutral, ENGAÑA — da verde sobre
      algo que ya no es. Se arregló ensanchando la firma con «código genético» en `sheets.js`. */
-  ['Maduración Lotes (esquema Desoves)', 'Maduracion', ['Fecha', 'Lote', 'Código genético', 'Piscina Broodstock', 'Desoves', 'Total de huevos', 'Total de nauplios', 'No viables', 'Fecha N2', 'N2', 'Fecha N5', 'N5', 'Despacho', 'Observaciones']],
+  /* 🔴 2026-09-14: la hoja pierde «Total de nauplios» y «No viables» pasa a «Hembras no viables»
+     (migración obligatoria ANTES del push, en el README). Por la lección de arriba el fixture
+     describe la hoja tal como queda: ya no hay ninguna cabecera con «nauplio», y la firma
+     la da SÓLO «Hembras no viables». */
+  ['Maduración Lotes (esquema Desoves)', 'Maduracion', ['Fecha', 'Lote', 'Código genético', 'Piscina Broodstock', 'Desoves', 'Total de huevos', 'Hembras no viables', 'Fecha N2', 'N2', 'Fecha N5', 'N5', 'Despacho', 'Observaciones']],
   /* ⚠ «Relación H:M» se retiró el 2026-09-08 (el usuario: esa relación se CALCULA). La
      detección no se resiente —casa por «sala» MÁS una columna de población— pero el fixture
      tiene que decir la verdad sobre la hoja, o deja de servir para saber qué hay ahí. */
