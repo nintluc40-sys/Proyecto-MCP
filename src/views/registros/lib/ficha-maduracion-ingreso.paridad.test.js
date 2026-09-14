@@ -33,6 +33,7 @@ import {
   validarIngreso,
   ingresoRowId,
   repartirParejo,
+  repartirRespetando,
 } from './ficha-maduracion-ingreso.schema.js';
 
 const ENGINE = new URL('../../../../public/registros/engine.js', import.meta.url);
@@ -71,7 +72,7 @@ function motorIngreso() {
   createContext(ctx);
   new Script(
     code + '\n;globalThis.__api = { buildMadIngresoPayload, madIngBuildRows, madIngValidar,'
-    + ' madIngRowId, madIngRepartirParejo, MAD_ING_HEADERS, MAD_ING_SHEET, MAD_ING_AGUA_OPTS,'
+    + ' madIngRowId, madIngRepartirParejo, madIngRepartirRespetando, MAD_ING_HEADERS, MAD_ING_SHEET, MAD_ING_AGUA_OPTS,'
     + ' MAD_ING_COLUMNS };',
   ).runInContext(ctx);
   return ctx.__api;
@@ -242,6 +243,12 @@ describe('Ingreso · las mismas funciones puras', () => {
       ['2026-09-13', 'AB', 'CG01', 'Sala 1', 1],
     ];
     for (const c of casos) expect(api.madIngRowId(...c)).toBe(ingresoRowId(...c));
+  });
+
+  it('el mismo reparto que respeta lo fijado a mano', () => {
+    const casos = [[100, [43, 50], [true, false]], [100, ['', 43, ''], [false, true, false]], [100, [120, ''], [true, false]],
+      [100, [40, 50], [true, true]], [100, ['', 43], [true, true]], ['', [1], [false]], [7, ['', '', ''], [false, false, false]]];
+    for (const [t, v, f] of casos) expect(api.madIngRepartirRespetando(t, v, f)).toEqual(repartirRespetando(t, v, f));
   });
 
   it('el mismo reparto parejo', () => {

@@ -6277,6 +6277,22 @@ function madIngRepartirParejo(total, n){
   const out=[]; for(let i=0;i<k;i++) out.push(base+(i<resto?1:0));
   return out;
 }
+// Reparto que RESPETA lo tecleado a mano (usuario, 2026-09-13: «100 en 2 tanques da 50 y 50; si pongo
+// 43 en uno, debería dar 43 y 57»). Gemela de `repartirRespetando` del módulo: ver allí los estados.
+function madIngRepartirRespetando(total, valores, fijos){
+  const t=parseInt(total,10), vals=valores||[];
+  if(!isFinite(t)||t<0||!vals.length) return { valores:[], resto:0, estado:"sin-total" };
+  const fijo=vals.map(function(v,i){ const n=parseInt(v,10); return !!(fijos&&fijos[i]) && isFinite(n) && n>=0; });
+  const suma=vals.reduce(function(a,v,i){ return a+(fijo[i]?parseInt(v,10):0); },0);
+  const resto=t-suma;
+  if(resto<0) return { valores:null, resto:resto, estado:"excede" };
+  const libres=[]; fijo.forEach(function(f,i){ if(!f) libres.push(i); });
+  const out=vals.map(function(v,i){ return fijo[i]?parseInt(v,10):v; });
+  if(!libres.length) return { valores:out, resto:resto, estado:(resto===0?"ok":"sin-libres") };
+  const rep=madIngRepartirParejo(resto, libres.length);
+  libres.forEach(function(idx,k){ out[idx]=rep[k]; });
+  return { valores:out, resto:0, estado:"ok" };
+}
 function madIngBuildRows(model){
   const m = model||{};
   const fecha = sanitizeStr(m.fecha,10), lote = madIngNormLote(m.lote);
@@ -6461,8 +6477,8 @@ function _madIngRepHTML(sala, tanque){
   return '<tr class="mi-rep" data-sala="'+escapeHtml(sala)+'" data-tanque="'+escapeHtml(String(tanque))+'">'
     + '<td style="font-size:11px">'+escapeHtml(sala)+'</td>'
     + '<td style="text-align:center;font-size:12px;font-weight:700">'+escapeHtml(String(tanque))+'</td>'
-    + '<td><input class="mi-machos" type="number" min="0" step="1" inputmode="numeric" oninput="madIngRefrescarDe(this)" style="font-size:12px;width:74px"></td>'
-    + '<td><input class="mi-hembras" type="number" min="0" step="1" inputmode="numeric" oninput="madIngRefrescarDe(this)" style="font-size:12px;width:74px"></td>'
+    + '<td><input class="mi-machos" type="number" min="0" step="1" inputmode="numeric" oninput="madIngCeldaEditada(this)" style="font-size:12px;width:74px"></td>'
+    + '<td><input class="mi-hembras" type="number" min="0" step="1" inputmode="numeric" oninput="madIngCeldaEditada(this)" style="font-size:12px;width:74px"></td>'
     + '<td><select class="mi-agua" style="font-size:12px;min-width:96px">'+madIngAguaOpts("RAS")+'</select></td>'
     + '<td><button class="btn" type="button" onclick="madIngQuitarTanque(this)" style="font-size:11px">✕</button></td>'
     + '</tr>';
@@ -6501,7 +6517,8 @@ function _madIngCompHTML(){
     +       '<th>Sala</th><th>Tq</th><th>Machos</th><th>Hembras</th><th>Agua</th><th></th>'
     +     '</tr></thead><tbody class="mi-reps"></tbody></table></div>'
     +     '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">'
-    +       '<button class="btn" type="button" onclick="madIngRepartir(this)" style="font-size:11px">⚖️ Repartir parejo</button>'
+    +       '<button class="btn" type="button" onclick="madIngRepartir(this)" title="Reparte lo que falta entre los tanques que NO tecleaste a mano (los amarillos se respetan)" style="font-size:11px">⚖️ Repartir</button>'
+    +       '<button class="btn" type="button" onclick="madIngRevertir(this)" title="Olvida lo tecleado a mano y reparte todo por igual" style="font-size:11px">↺ Revertir</button>'
     +       '<span class="mi-pend" style="font-size:11px"></span>'
     +     '</div>'
     +   '</div>'
@@ -6588,19 +6605,44 @@ function _madIngPendHTML(comp){
   if(!parte.length) return '<span style="color:#166534;font-weight:600">✅ Repartido completo</span>'+cola;
   return '<span style="color:#92400e;font-weight:600">⚠ Faltan por repartir: '+escapeHtml(parte.join(" · "))+'</span>'+cola;
 }
+/* ⚖️ REPARTIR · respeta lo tecleado a mano (usuario, 2026-09-13). Una celda que la persona
+   tecleó queda FIJADA (data-fijo, fondo amarillo): se deja como está y lo que falta del total
+   se reparte parejo entre las demás. Sin nada fijado es el reparto parejo de siempre. Machos
+   y hembras van por separado. Lo que escribe Repartir NO fija: sólo lo que teclea alguien. */
 function madIngRepartir(btn){
   const comp=btn.closest(".mi-comp"); if(!comp) return;
   const reps=comp.querySelectorAll("tr.mi-rep");
   if(!reps.length){ toast("Elige primero los tanques en la rejilla de la sala.","warn",3200); return; }
-  const tm=comp.querySelector(".mi-tmachos"), th=comp.querySelector(".mi-thembras");
-  const m=madIngRepartirParejo(tm?tm.value:"", reps.length);
-  const h=madIngRepartirParejo(th?th.value:"", reps.length);
-  reps.forEach(function(tr,i){
-    if(m.length){ const e=tr.querySelector(".mi-machos"); if(e) e.value=m[i]; }
-    if(h.length){ const e=tr.querySelector(".mi-hembras"); if(e) e.value=h[i]; }
+  let hecho=false;
+  [[".mi-tmachos",".mi-machos","machos"],[".mi-thembras",".mi-hembras","hembras"]].forEach(function(par){
+    const tot=comp.querySelector(par[0]);
+    const celdas=Array.prototype.map.call(reps, function(tr){ return tr.querySelector(par[1]); });
+    const r=madIngRepartirRespetando(tot?tot.value:"",
+      celdas.map(function(e){ return e?e.value:""; }),
+      celdas.map(function(e){ return !!(e && e.getAttribute("data-fijo")==="1"); }));
+    if(r.estado==="sin-total") return;
+    hecho=true;
+    if(r.estado==="excede"){ toast("Lo tecleado a mano en "+par[2]+" supera el total en "+(-r.resto)+": corrige un tanque o pulsa ↺ Revertir.","warn",5500); return; }
+    if(r.estado==="sin-libres"){ toast("Todos los tanques de "+par[2]+" están tecleados a mano y faltan "+r.resto+" por repartir: corrige uno o pulsa ↺ Revertir.","warn",5500); return; }
+    celdas.forEach(function(e,i){ if(e) e.value=r.valores[i]; });
   });
-  if(!m.length && !h.length) toast("Escribe primero los totales de machos u hembras.","warn",3000);
+  if(!hecho) toast("Escribe primero los totales de machos u hembras.","warn",3000);
   madIngRefrescar();
+}
+/* Teclear en la celda de un tanque la FIJA; vaciarla la libera. Se VE (fondo amarillo) para que
+   nadie se sorprenda de que Repartir no la toque. */
+function madIngCeldaEditada(el){
+  if(el){
+    if(String(el.value).trim()!==""){ el.setAttribute("data-fijo","1"); el.style.background="#fef9c3"; el.title="Tecleado a mano: ⚖️ Repartir lo respeta · ↺ Revertir lo libera"; }
+    else { el.removeAttribute("data-fijo"); el.style.background=""; el.removeAttribute("title"); }
+  }
+  madIngRefrescar();
+}
+/* ↺ REVERTIR · olvida lo tecleado a mano en ESTA composición y reparte todo por igual otra vez. */
+function madIngRevertir(btn){
+  const comp=btn.closest(".mi-comp"); if(!comp) return;
+  comp.querySelectorAll("tr.mi-rep [data-fijo]").forEach(function(e){ e.removeAttribute("data-fijo"); e.style.background=""; e.removeAttribute("title"); });
+  madIngRepartir(btn);
 }
 /* 🔗 COMBINAR · pedido por el usuario el 2026-09-08 para un caso real: dos piscinas con
    códigos genéticos distintos, el MISMO lote de ingreso, que se mezclan al entrar y forman

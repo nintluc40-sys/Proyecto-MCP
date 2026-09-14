@@ -15,6 +15,7 @@ import {
   validarIngreso,
   sumaReparto,
   repartirParejo,
+  repartirRespetando,
 } from './ficha-maduracion-ingreso.schema.js';
 
 /* Modelo base VÁLIDO. Cada prueba parte de aquí y rompe UNA cosa, para que el rojo
@@ -440,6 +441,42 @@ describe('Ingreso · reparto sugerido', () => {
     expect(repartirParejo(10, 0)).toEqual([]);
     expect(repartirParejo(-1, 3)).toEqual([]);
     expect(repartirParejo('x', 3)).toEqual([]);
+  });
+
+  /* 🔴 2026-09-13 (usuario): «si son 100 animales para 2 tanques, recalcular reparte 50 y 50; si
+     modifico uno y pongo 43, al recalcular debería tomar 43 y 57». Lo tecleado a mano se RESPETA
+     y lo que falta se reparte parejo entre los demás. */
+  it('🔴 el ejemplo del usuario: 100 en 2 tanques, uno fijado en 43 → 43 y 57', () => {
+    expect(repartirRespetando(100, [43, 50], [true, false])).toEqual({ valores: [43, 57], resto: 0, estado: 'ok' });
+    expect(repartirRespetando(100, [50, 43], [false, true])).toEqual({ valores: [57, 43], resto: 0, estado: 'ok' });
+  });
+
+  it('🔴 sin nada fijado es el reparto parejo de siempre', () => {
+    expect(repartirRespetando(100, ['', ''], [false, false]).valores).toEqual([50, 50]);
+    expect(repartirRespetando(10, [9, 9, 9], [false, false, false]).valores).toEqual(repartirParejo(10, 3));
+  });
+
+  it('🔴 con varios libres, el resto se reparte parejo entre ELLOS (el sobrante a los primeros libres)', () => {
+    expect(repartirRespetando(100, ['', 43, ''], [false, true, false]).valores).toEqual([29, 43, 28]);
+  });
+
+  it('🔴 lo fijado que supera el total NO se reparte: se avisa', () => {
+    expect(repartirRespetando(100, [120, ''], [true, false])).toEqual({ valores: null, resto: -20, estado: 'excede' });
+  });
+
+  it('todo fijado: no hay a quién repartir y se dice cuánto falta', () => {
+    expect(repartirRespetando(100, [40, 50], [true, true])).toEqual({ valores: [40, 50], resto: 10, estado: 'sin-libres' });
+    expect(repartirRespetando(90, [40, 50], [true, true]).estado).toBe('ok');
+  });
+
+  it('una celda «fijada» pero VACÍA cuenta como libre (no fija un cero que nadie tecleó)', () => {
+    expect(repartirRespetando(100, ['', 43], [true, true]).valores).toEqual([57, 43]);
+  });
+
+  it('sin total válido o sin tanques no hace nada', () => {
+    expect(repartirRespetando('', [1, 2], [false, false]).estado).toBe('sin-total');
+    expect(repartirRespetando(-5, [1], [false]).estado).toBe('sin-total');
+    expect(repartirRespetando(10, [], []).estado).toBe('sin-total');
   });
 
   it('sumaReparto ignora lo que no sea un conteo', () => {

@@ -366,3 +366,32 @@ export function repartirParejo(total, n) {
   const resto = t - base * k;
   return Array.from({ length: k }, (_, i) => base + (i < resto ? 1 : 0));
 }
+
+/** Reparte `total` RESPETANDO lo tecleado a mano (pedido del usuario, 2026-09-13): «100 en 2
+ *  tanques da 50 y 50; si pongo 43 en uno, al recalcular debería dar 43 y 57».
+ *  `valores[i]` es lo que hay en la celda i y `fijos[i]` si la tecleó una persona. Las fijadas
+ *  conservan su número; lo que falta se reparte parejo entre las LIBRES (el sobrante, a las
+ *  primeras libres). Una fijada VACÍA cuenta como libre: no se fija un cero que nadie tecleó.
+ *  Devuelve `{ valores, resto, estado }`:
+ *    'ok'         → `valores` listos (fijadas intactas, libres repartidas), resto 0;
+ *    'excede'     → lo fijado supera el total: `valores` null y `resto` negativo (no se toca nada);
+ *    'sin-libres' → todo está fijado y no suma el total: `resto` es lo que falta;
+ *    'sin-total'  → total no válido o sin tanques: no hay nada que hacer. */
+export function repartirRespetando(total, valores, fijos) {
+  const t = parseInt(total, 10);
+  const vals = valores || [];
+  if (!Number.isFinite(t) || t < 0 || !vals.length) return { valores: [], resto: 0, estado: 'sin-total' };
+  const fijo = vals.map((v, i) => {
+    const n = parseInt(v, 10);
+    return !!(fijos && fijos[i]) && Number.isFinite(n) && n >= 0;
+  });
+  const suma = vals.reduce((a, v, i) => a + (fijo[i] ? parseInt(v, 10) : 0), 0);
+  const resto = t - suma;
+  if (resto < 0) return { valores: null, resto, estado: 'excede' };
+  const libres = fijo.reduce((a, f, i) => (f ? a : a.concat(i)), []);
+  const out = vals.map((v, i) => (fijo[i] ? parseInt(v, 10) : v));
+  if (!libres.length) return { valores: out, resto, estado: resto === 0 ? 'ok' : 'sin-libres' };
+  const reparto = repartirParejo(resto, libres.length);
+  libres.forEach((idx, k) => { out[idx] = reparto[k]; });
+  return { valores: out, resto: 0, estado: 'ok' };
+}
