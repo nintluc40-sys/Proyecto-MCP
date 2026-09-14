@@ -22,7 +22,7 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
   entere, así que **«desplegado» no implica «los dispositivos lo ven»**. Se prueba de verdad en
   `src/sw.test.js`, que lo carga en un ámbito falso y comprueba qué hace con cada petición.
 - `public/registros/engine.js` — **DEUDA TÉCNICA**: monolito heredado embebido de
-  ~18.000 líneas (`wc -l public/registros/engine.js` da la cifra del día). No seguir su
+  ~21.000 líneas (`wc -l public/registros/engine.js` da la cifra del día). No seguir su
   estilo. Ver `docs/analisis/04-refactor-plan.md`.
   ⚠ Aquí vivía la cifra exacta y caducaba cada pocos días, igual que la del número de
   pruebas en `.github/workflows/deploy.yml`. Se deja el orden de magnitud —que es lo

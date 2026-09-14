@@ -79,8 +79,8 @@ npm run lint       # ESLint
 > ésta cuenta **animales** por sala/tanque/lote y es captura. No comparten hojas ni código.
 
 Seis fichas de captura más una vista derivada (Saldo), todas dentro del módulo Maduración
-de Registros. **Su interfaz vive ÚNICAMENTE en `public/registros/engine.js`**, porque los
-dos monolitos gemelos de `Music\` no tienen módulos ES.
+de Registros. **Su interfaz vive ÚNICAMENTE en `public/registros/engine.js`** (y en su gemelo
+autónomo `Music\index (8).html`), porque ese monolito no tiene módulos ES.
 ⚠ Ojo al buscarlo: **`src/views/maduracion/` NO es esto** —es la vista del reproductivo por
 Trovan— y no hay ninguna carpeta nativa para el operativo. Lo que sí tiene gemelo probado en
 `src/views/registros/lib/` es el CÁLCULO: los esquemas de cada ficha y el libro mayor, con
@@ -99,7 +99,9 @@ del módulo se quede sin contraparte en el monolito.
 **El libro mayor** (`src/views/registros/lib/mad-libro.js` + su gemelo inline) responde
 *«¿cuántos animales hay vivos ahora en cada tanque y en cada lote?»*. Nadie teclea un saldo:
 se DEDUCE de `+ ingreso − bajas ± movimientos − fin de ciclo`. El objetivo no es que la
-cifra cuadre siempre, sino que **cuando no cuadre se vea el mismo día**.
+cifra cuadre siempre, sino que **cuando no cuadre se vea el mismo día**. Con la opción
+`hasta`, el libro se construye **al cierre de un día**: es lo que usa «🔄 Proponer estado» de
+Salas, que propone —y al guardar escribe— el estado de la fecha elegida en la ficha.
 
 🔑 Dos reglas que explican casi todo el diseño y no se deducen del código:
 
@@ -244,52 +246,40 @@ Dos consecuencias que conviene tener presentes al desplegar:
 
 - 🔴 **Re-desplegar el GAS** para activar la **guarda de esquema** del registro operativo
   (ver la sección de Maduración), la **prueba de versión**, la **llave de Desoves guardada
-  como texto** y el **tope de lectura de `?p=rows` en 20000 filas** (antes 5000; el registro
-  reproductivo avisa si una hoja llega recortada). Las tres hojas nuevas —Ingreso,
-  Movimientos y Fin de Ciclo— **ya escriben**: ese despliegue entró entre el 09-09 y el
-  09-12. Pegar `GAS/Code.gs` en Apps Script y publicar una **versión nueva**; guardar sin
-  publicar no cambia lo que sirve el Web App.
+  como texto**, el **tope de lectura de `?p=rows` en 20000 filas** (antes 5000; el registro
+  reproductivo avisa si una hoja llega recortada) y el **reemplazo por clave que nunca borra a
+  ciegas** (BIOMOL, Microbiología, Calidad de Agua, Patología y Marea: un `keyCols` inválido o
+  una clave en blanco ya no vacían la hoja; lo prueba `gas-replace-clave.test.js`). Las tres
+  hojas nuevas —Ingreso, Movimientos y Fin de Ciclo— **ya escriben**: ese despliegue entró
+  entre el 09-09 y el 09-12. Pegar `GAS/Code.gs` en Apps Script y publicar una **versión
+  nueva**; guardar sin publicar no cambia lo que sirve el Web App. ⚠ Copiarlo siempre de
+  `GAS/Code.gs` o de la app al día: una copia antigua de la app lleva un GAS viejo.
   🔑 **Cómo saber si entró, sin escribir nada:** ⚙ Config → «🔗 Probar conexión» compara el
   GAS desplegado con el de la app y dice si hay que volver a desplegar. Por debajo, la URL
   del Web App con `?p=ver` devuelve el sello `GAS_VERSION`, que es la huella de `Code.gs`
   y lo exige `gas-version.test.js`: no puede quedarse atrás sin poner la suite en rojo.
-- ✅ **El cliente ya está publicado** (push del 2026-09-13; Pages sirve el `engine.js` del
-  commit, comprobado byte a byte). Un dispositivo que siga con la app en caché envía aún el
-  esquema anterior: con la guarda desplegada, sus envíos de Tanques y de Desoves se
-  **rechazan** en vez de escribir columnas corridas y lo tecleado se queda en el dispositivo
-  hasta que la app se recargue.
+- ℹ **El cliente se publica con cada push a `master`** (GitHub Pages). Un dispositivo que siga
+  con la app en caché envía aún el esquema anterior: con la guarda desplegada, sus envíos de
+  las hojas que cambiaron se **rechazan** en vez de escribir columnas corridas, y lo tecleado
+  se queda en el dispositivo hasta que la app se recargue.
+- ⚠ **Mientras el GAS publicado sea el anterior**, la app **no envía Ingreso ni Desoves**: sus
+  columnas cambiaron y ese GAS, sin guarda, las escribiría corridas. Lo pregunta antes con
+  `?p=ver`; si esa pregunta no contesta en 6 s, envía como siempre (y la cola vuelve a
+  preguntar antes de entregar). Y un envío que espera en la cola más de 24 h se descarta, así
+  que conviene no dejar pasar días entre publicar el cliente y re-desplegar el GAS.
 - ℹ La hoja «Calidad de Agua» ganará la columna 48 «Sulfato» en la primera sincronización del
   formato Algas: la añade el GAS al final, sin mover las anteriores, y no exige re-desplegarlo.
-- 🔴🔴 **Maduración Ingreso · migrar la hoja ANTES de publicar el cliente** (cambio del
-  2026-09-13: «Camarones por m2» → «Crecimiento semanal promedio» y columna nueva «Libras por
-  hectárea promedio»). La hoja se escribe **por posición** y ya tiene filas; el cliente nuevo
-  manda 18 columnas en vez de 17. **Orden obligatorio:**
-  1. Re-desplegar el GAS (punto de arriba): su guarda de esquema es la que impide escribir
-     desalineado.
-  2. En Google Sheets, pestaña «Maduración Ingreso»: clic derecho en la columna **O**
-     («Densidad de siembra») → *Insertar 1 columna a la izquierda*; escribir en **N1**
-     `Crecimiento semanal promedio` y en **O1** `Libras por hectárea promedio`; borrar el
-     contenido de **N2** hacia abajo (eran los «Camarones por m2», un campo que se eliminó).
-  3. Publicar el cliente (`git push`).
-  Si se publica antes de migrar, no se corrompe nada: el GAS nuevo **rechaza** los ingresos
-  («Esquema desactualizado… columna 14») y lo tecleado queda en el dispositivo; y contra el GAS
-  viejo el cliente **no envía** (pregunta antes con `?p=ver`). Un dispositivo con la app vieja
-  en caché queda igualmente rechazado tras la migración hasta que la recargue.
-- 🔴🔴 **Maduración Lotes (Desoves) · migrar la hoja ANTES de publicar el cliente** (cambios del
-  2026-09-14: se **borra** «Total de nauplios (miles)» —ya van N2 y N5— y «No viables (miles)»
-  pasa a «Hembras no viables», reproductoras maduras que no desovaron, un conteo **sin** ×1000).
-  También se escribe **por posición**: el cliente nuevo manda 13 columnas en vez de 14. Mismo
-  orden que el Ingreso:
-  1. Re-desplegar el GAS.
-  2. En la pestaña «Maduración Lotes»: clic derecho en la columna **G** («Total de nauplios») →
-     *Eliminar columna*; «No viables» pasa a ser la **G**: escribir en **G1**
-     `Hembras no viables` y comprobar que **G2** hacia abajo está vacío (medido el 09-14: la
-     única fila tenía vacías las dos columnas; una cifra vieja de «No viables» estaría en
-     unidades ×1000 y significaría otra cosa, así que se borra).
-  3. `git push`.
-  Sin migrar, el GAS nuevo **rechaza** los desoves («Esquema desactualizado… columna 7») y
-  contra el GAS viejo el cliente **no envía**. La pestaña se sigue reconociendo en el tablero
-  por «Hembras no viables» (ya no queda ninguna cabecera con «nauplio»).
+- 🔴 **Maduración Ingreso y Maduración Lotes (Desoves): sin migración, pero sin la cabecera
+  vieja.** Sus columnas cambiaron el 2026-09-13/14 —Ingreso: «Camarones por m2» pasa a
+  «Crecimiento semanal promedio» y entra «Libras por hectárea promedio» (18 columnas); Lotes:
+  fuera «Total de nauplios (miles)» y «No viables (miles)» pasa a «Hembras no viables», un
+  conteo sin ×1000 (13 columnas)— y las dos se escriben **por posición**. Las filas que tenían
+  eran **de prueba**, así que no se migran: se descartan. ⚠ Lo que no puede quedarse es la
+  **fila de cabeceras vieja**: con ella, la guarda de esquema del GAS nuevo rechaza cada envío
+  («Esquema desactualizado… columna N») y lo tecleado se queda en el dispositivo. Basta con
+  eliminar la pestaña, o vaciarla **incluida la fila 1**: el primer envío escribe las
+  cabeceras nuevas. La pestaña de Desoves se sigue reconociendo en el tablero por «Hembras no
+  viables» (ya no queda ninguna cabecera con «nauplio»).
 - **Maduración · histórico** (Fase 5): la única fase del registro operativo sin construir.
   Aplazada a propósito hasta probar el resto en operación.
 - **Maduración · vaciado de las hojas antiguas**: cuando el registro operativo se dé por
