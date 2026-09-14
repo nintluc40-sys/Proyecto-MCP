@@ -350,6 +350,29 @@ const ESCENARIOS = {
 
 const HOY = '2026-01-25';
 
+/* D4 (2026-09-14) · EL LIBRO «AL CIERRE DE UN DÍA» (opción `hasta`), igual en los dos. Si uno
+   la ignorara, «🔄 Proponer estado» de Salas propondría en Music para una fecha pasada otra cosa
+   que el módulo. Cada escenario se corta ANTES de todo, EN MEDIO y AL FINAL: con un solo corte al
+   final, las dos implementaciones coincidirían aunque las dos ignoraran la opción. */
+describe('Libro · el MISMO libro al cierre de un día (opción hasta)', () => {
+  const CORTES = ['2025-12-31', '2026-01-01', '2026-01-04', '2026-01-05', '2026-01-10', '2026-01-19', HOY];
+  for (const [nombre, fuentes] of Object.entries(ESCENARIOS)) {
+    it('coincide con «' + nombre + '» a cada corte', () => {
+      for (const c of CORTES) {
+        expect(plano(api.madConstruirLibro(fuentes, { hoy: c, hasta: c })), 'corte ' + c)
+          .toEqual(plano(construirLibro(fuentes, { hoy: c, hasta: c })));
+      }
+    });
+  }
+
+  it('y el corte cambia el libro de verdad (si no, la paridad de arriba no probaría nada)', () => {
+    const f = ESCENARIOS['movimiento simple entre dos tanques'];
+    const al4 = plano(construirLibro(f, { hoy: HOY, hasta: '2026-01-04' }));
+    expect(al4).not.toEqual(plano(construirLibro(f, { hoy: HOY })));
+    expect(al4.tanques['Sala 2|16']).toBeUndefined();       // el movimiento del 5 aún no pasó
+  });
+});
+
 describe('Libro · el mismo saldo, posición a posición', () => {
   for (const [nombre, fuentes] of Object.entries(ESCENARIOS)) {
     it('coincide con «' + nombre + '»', () => {

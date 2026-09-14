@@ -5870,7 +5870,8 @@ function madEstadoDeLote(lote, fecha){
   return hoy < madSumarDias(L.ingreso, MAD_CUARENTENA_DIAS) ? MAD_EST_CUAR : MAD_EST_PROD;
 }
 function madConstruirLibro(fuentes, opts){
-  const f=fuentes||{}, hoy=madLibroTxt((opts||{}).hoy)||null;
+  // opts.hasta (D4, 2026-09-14): el libro AL CIERRE de ese día; ver construirLibro en el módulo.
+  const f=fuentes||{}, hoy=madLibroTxt((opts||{}).hoy)||null, corte=madLibroTxt((opts||{}).hasta)||null;
   const pos={}, lotes={}, avisos=[]; let hasta="";
   const anota=function(fecha,tipo,texto,extra){
     const a={ fecha:madLibroTxt(fecha), tipo:tipo, texto:texto };
@@ -5879,6 +5880,7 @@ function madConstruirLibro(fuentes, opts){
   };
   madFlujo(f).forEach(function(ev){
     const fecha=ev.fecha, r=ev.r;
+    if(corte && fecha>corte) return;   // D4: lo posterior al corte todavía no ha pasado
     if(fecha>hasta) hasta=fecha;
     if(ev.tipo==="ingreso"){
       const lote=madLibroTxt(r.Lote), cg=madLibroTxt(r["Código genético"]);
@@ -6121,15 +6123,34 @@ async function madSaldoCargar(force){
   const recortadas = [];
   [MAD_LIBRO_SHEETS.ingreso, MAD_LIBRO_SHEETS.movimientos, MAD_LIBRO_SHEETS.tanques, MAD_LIBRO_SHEETS.cierres]
     .forEach(function(h){ if(_reproTrunc && _reproTrunc[h]) recortadas.push(h); });
-  _madLibro = madConstruirLibro({
+  _madLibro = madConstruirLibro(madLibroFuentes(), { hoy: today() });
+  _madLibro.fallos = fallos;
+  _madLibro.recortadas = recortadas;
+  return _madLibro;
+}
+/* Las filas que suma el libro, tal como las dejó la última lectura. Vive UNA vez: la usan el
+   libro de hoy (madSaldoCargar) y el libro al cierre de un día (madLibroAlDia), y dos listas de
+   fuentes escritas aparte acabarían sumando hojas distintas. */
+function madLibroFuentes(){
+  return {
     ingresos:    _reproReadRows(MAD_LIBRO_SHEETS.ingreso),
     movimientos: _reproReadRows(MAD_LIBRO_SHEETS.movimientos),
     tanques:     _reproReadRows(MAD_LIBRO_SHEETS.tanques),
     cierres:     _reproReadRows(MAD_LIBRO_SHEETS.cierres)
-  }, { hoy: today() });
-  _madLibro.fallos = fallos;
-  _madLibro.recortadas = recortadas;
-  return _madLibro;
+  };
+}
+/* D4 (2026-09-14) · EL LIBRO AL CIERRE DE UN DÍA, con las MISMAS filas que madSaldoCargar acaba
+   de leer. Lo usa «🔄 Proponer estado» de Salas, que propone —y al guardar ESCRIBE— el estado de
+   la fecha elegida en la ficha: con el libro de hoy, una fecha pasada heredaba qué lotes y
+   cuántos tanques ocupados hay HOY, y podía dejar «Desinfección» escrita en un día de sala
+   llena. Decisión del usuario: la fecha actual o la de la ficha (que por defecto es hoy).
+   Conserva el veredicto del libro leído (hojas sin leer o recortadas): cortar por fecha no
+   arregla una lectura a medias. */
+function madLibroAlDia(base, fecha){
+  const libro = madConstruirLibro(madLibroFuentes(), { hoy: fecha, hasta: fecha });
+  libro.fallos = (base && base.fallos) || [];
+  libro.recortadas = (base && base.recortadas) || [];
+  return libro;
 }
 /* ¿Se puede afirmar algo del saldo? Devuelve el motivo por el que NO, o "" si el libro
    está entero. Vive UNA vez porque los CUATRO consumidores —Saldo, el saldo de los
@@ -8666,7 +8687,10 @@ async function madSalasProponerEstado(){
   if(btn) btn.disabled = true;
   try{
     const libro = await madSaldoCargar(true);
-    _madSalasPintaEstado(libro);
+    // D4: la propuesta es la del día de la FICHA (ver madLibroAlDia), no la del libro de hoy.
+    const fechaEl = document.getElementById("mad-salas-fecha");
+    const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
+    _madSalasPintaEstado(madLibroAlDia(libro, fecha));
   }catch(_){
     if(nota) nota.innerHTML = '<span style="color:#991b1b">No se pudieron leer las hojas. Reintenta con 🔄.</span>';
   }finally{

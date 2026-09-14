@@ -180,12 +180,17 @@ function flujo(fuentes) {
  *
  * @param {{ingresos?:object[], movimientos?:object[], tanques?:object[], cierres?:object[]}} fuentes filas tal como las devuelve
  *        `?p=rows` (objetos con las cabeceras por clave).
- * @param {{hoy?:string}} [opts] fecha de referencia para el estado de cuarentena.
+ * @param {{hoy?:string, hasta?:string}} [opts] `hoy`: fecha de referencia para el estado de
+ *        cuarentena. `hasta` (D4, 2026-09-14): si se da, sólo entran los eventos de esa fecha o
+ *        anteriores —el libro «al cierre» de ese día—; sin ella, entran todos. La usa «🔄 Proponer
+ *        estado» de Salas, que propone el estado de la fecha elegida en la ficha: con el libro de
+ *        HOY, una fecha pasada heredaba qué lotes y cuántos tanques hay hoy.
  * @returns {{posiciones, tanques, lotes, avisos, hasta}}
  */
 export function construirLibro(fuentes, opts) {
   const f = fuentes || {};
   const hoy = txt((opts || {}).hoy) || null;
+  const corte = txt((opts || {}).hasta) || null;
 
   const pos = new Map();      // posKey → posición
   const lotes = new Map();    // lote   → { lote, ingreso, copulaDesde }
@@ -200,6 +205,7 @@ export function construirLibro(fuentes, opts) {
      Un solo bucle sobre TODOS los eventos en orden. El saldo con que se reparte una
      baja es el que hay en ese instante del recorrido, ni antes ni después. */
   for (const { fecha, tipo, r } of flujo(f)) {
+    if (corte && fecha > corte) continue;       // D4: lo posterior al corte todavía no ha pasado
     if (fecha > hasta) hasta = fecha;
 
     if (tipo === 'ingreso') {
