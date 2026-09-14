@@ -53,9 +53,14 @@ export { MAD_SALA_OPTS, MAD_TANQUES_POR_SALA, AGUA_OPTS };
  *  porque el nombre de la operación es lo que el operario reconoce, no «movimiento». */
 export const MAD_MOV_TIPOS = ['Transferencia', 'Agrupación', 'Mezcla'];
 
-/** Motivos frecuentes. `Otro` deja el detalle para Observaciones. */
+/** Motivos frecuentes. `Otro` deja el detalle para Observaciones.
+ *  2026-09-14 (usuario): «Logística» (motivo de transferencia) y «Anillado». Van en orden
+ *  alfabético como el resto, con `Otro` siempre al final. El Motivo es TEXTO en la hoja: añadir
+ *  opciones no mueve columnas ni exige re-desplegar el GAS, y el libro no lo lee. */
 export const MAD_MOV_MOTIVOS = [
   'Agrupación por baja densidad',
+  'Anillado',
+  'Logística',
   'Mezcla de lotes',
   'Reubicación por mantenimiento',
   'Reubicación sanitaria',

@@ -6921,7 +6921,8 @@ function renderMadIngreso(){
 // especial para cada una. El `Tipo` sólo etiqueta para quien lee.
 const MAD_MOV_SHEET = "Maduración Movimientos";
 const MAD_MOV_TIPOS = ["Transferencia","Agrupación","Mezcla"];
-const MAD_MOV_MOTIVOS = ["Agrupación por baja densidad","Mezcla de lotes","Reubicación por mantenimiento","Reubicación sanitaria","Otro"];
+// 2026-09-14 (usuario): «Logística» y «Anillado». Orden alfabético con «Otro» al final. Ver el módulo.
+const MAD_MOV_MOTIVOS = ["Agrupación por baja densidad","Anillado","Logística","Mezcla de lotes","Reubicación por mantenimiento","Reubicación sanitaria","Otro"];
 const MAD_MOV_COLUMNS = [
   { h:"Fecha", k:"fecha" },
   { h:"Tipo", k:"tipo" },

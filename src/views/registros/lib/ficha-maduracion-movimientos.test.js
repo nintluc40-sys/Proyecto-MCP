@@ -54,6 +54,28 @@ describe('Movimientos · la hoja y sus columnas', () => {
     expect(MAD_MOV_TIPOS).toEqual(['Transferencia', 'Agrupación', 'Mezcla']);
     expect(MAD_MOV_MOTIVOS).toContain('Otro');
   });
+
+  /* 🔴 2026-09-14 (usuario): «Logística» como motivo de transferencia, y «Anillado». El Motivo es
+     texto en la hoja: las opciones nuevas no mueven columnas ni exigen re-desplegar el GAS. */
+  it('🔴 ofrece «Logística» y «Anillado», en orden alfabético y con «Otro» al final', () => {
+    expect(MAD_MOV_MOTIVOS).toContain('Logística');
+    expect(MAD_MOV_MOTIVOS).toContain('Anillado');
+    expect(MAD_MOV_MOTIVOS[MAD_MOV_MOTIVOS.length - 1]).toBe('Otro');
+    const sinOtro = MAD_MOV_MOTIVOS.slice(0, -1);
+    expect(sinOtro).toEqual(sinOtro.slice().sort((a, b) => a.localeCompare(b, 'es')));
+    expect(new Set(MAD_MOV_MOTIVOS).size).toBe(MAD_MOV_MOTIVOS.length);
+  });
+
+  it('🔴 el motivo nuevo llega TAL CUAL a su columna, y no da ni error ni aviso', () => {
+    for (const motivo of ['Logística', 'Anillado']) {
+      const m = base();
+      m.motivo = motivo;
+      expect(buildMovRows(m)[0][col('Motivo')]).toBe(motivo);
+      const v = validarMovimiento(m);
+      expect(v.errores).toEqual([]);
+      expect(v.avisos).toEqual([]);
+    }
+  });
 });
 
 describe('Movimientos · la llave', () => {
