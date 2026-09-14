@@ -98,7 +98,7 @@ del módulo se quede sin contraparte en el monolito.
 | ⚖️ **Saldo** | *(derivada)* | vista del libro mayor, no escribe |
 | 🔄 **Movimientos** | `Maduración Movimientos` | el **tramo** origen → destino |
 | 🥚 **Desoves** | `Maduración Lotes` | (fecha, lote, código genético) |
-| 🏁 **Fin de Ciclo** | `Maduración Fin de Ciclo` | (fecha, lote, motivo, sala si es Parcial) · pesos del registro |
+| 🏁 **Fin de Ciclo** | `Maduración Fin de Ciclo` | (fecha, lote, motivo, sala si es Parcial) · Registro y sus pesos |
 | 🏠 **Salas** · 🛢️ **Tanques** | `Maduración Sala` · `Maduración Tanques` | la grilla diaria |
 
 **El libro mayor** (`src/views/registros/lib/mad-libro.js` + su gemelo inline) responde
@@ -123,10 +123,12 @@ Salas, que propone —y al guardar escribe— el estado de la fecha elegida en l
   cuarentena que termina más tarde. El Saldo da `Mixto` a un lote cuyas salas no coinciden y dice
   el estado de cada una. **Dos lotes en un mismo tanque sólo por mezcla o agrupación (D13):** con
   el libro leído, Ingreso marca en ámbar los tanques con otro lote vivo y Revisar/Guardar lo avisan,
-  igual que Movimientos con un tramo de tipo Transferencia hacia un tanque con otro lote (aviso, no error).
+  igual que Movimientos con un tramo de tipo Transferencia hacia un tanque con otro lote (aviso, no error;
+  al corregir una Transferencia ya guardada no cuenta la fila que el envío reemplaza).
   **Un cierre Parcial puede indicar la sala (D14)** y descuenta sólo de ella; un Total es siempre
   del lote entero. Los **pesos** (promedio y total de machos y hembras) son del registro entero —se
-  pesan juntos todos los lotes— y se escriben iguales en cada fila.
+  pesan juntos todos los lotes— y se escriben iguales en cada fila con el mismo **«Registro»** (un
+  identificador por formulario): para no multiplicarlos, se leen una vez por Registro.
 
 ⚠ **Las llaves del GAS mandan sobre el diseño de estas hojas.** `Maduración Sala`,
 `Tanques` y `Lotes` se identifican por POSICIÓN (`[0,1]`, `[0,1,3]` y `[0,1,2]`), así que
@@ -282,7 +284,7 @@ Dos consecuencias que conviene tener presentes al desplegar:
   las hojas que cambiaron se **rechazan** en vez de escribir columnas corridas, y lo tecleado
   se queda en el dispositivo hasta que la app se recargue.
 - ⚠ **Mientras el GAS publicado sea el anterior**, la app **no envía Ingreso, Desoves ni Fin de
-  Ciclo**: sus columnas cambiaron (Fin de Ciclo ganó «Sala» y los cuatro pesos el 2026-09-14; su
+  Ciclo**: sus columnas cambiaron (Fin de Ciclo ganó «Sala», «Registro» y los cuatro pesos el 2026-09-14; su
   hoja sigue vacía, así que no hay nada que migrar) y ese GAS, sin guarda, las escribiría corridas. Lo pregunta antes con
   `?p=ver`; si esa pregunta no contesta en 6 s, envía como siempre (y la cola vuelve a
   preguntar antes de entregar). Y un envío que espera en la cola más de 24 h se descarta, así

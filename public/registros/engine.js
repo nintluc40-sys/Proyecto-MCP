@@ -6630,7 +6630,8 @@ function _madIngRejillaHTML(comp, sala){
     const tit = (off ? "Ya ocupado por otra composición de este ingreso"
               : compartido ? "Lo ocupa otra composición de tu MISMO grupo: podéis compartirlo"
               : (on ? "Quitar este tanque" : "Asignar este tanque"))
-              + (otroLote.length ? " · ⚠ Tiene vivo el lote "+otroLote.join(", ")+": dos lotes sólo comparten tanque en una mezcla o agrupación" : "");
+              // A1: el lote viene CRUDO de la hoja (y la escritura anónima sigue abierta): se escapa, va dentro de un atributo.
+              + (otroLote.length ? " · ⚠ Tiene vivo el lote "+escapeHtml(otroLote.join(", "))+": dos lotes sólo comparten tanque en una mezcla o agrupación" : "");
     return '<button type="button" class="mi-tq" data-t="'+t+'"'+(off?' disabled':'')+' title="'+tit+'"'
       + ' onclick="madIngTanqueToggle(this)"'
       + ' style="width:38px;height:34px;border:1.5px solid;border-radius:6px;font-size:12px;padding:0;'+st+'">'+t+'</button>';
@@ -7348,8 +7349,20 @@ function _madMovPinta(res, filas){
   _madReporteVigila("fp-movimientos", "mv-report");
 }
 /* D13: una Transferencia a un tanque con OTRO lote vivo se avisa, si hay libro leído (🔄 Ver saldo). */
+/* A2: el libro al cierre del día SIN las filas que este envío reemplazaría (mismo ID). Al corregir una
+   Transferencia ya guardada, el libro del día ya la contiene: si vació su origen, el destino «tenía» el
+   lote que se mueve y avisaba en falso. Sin ellas, el libro es el de antes de este movimiento. */
+function _madLibroSinMovimientos(fecha, ids){
+  if(!_madLibro || !isValidDate(fecha)) return null;
+  const fuera={};
+  (ids||[]).forEach(function(id){ if(id) fuera[id]=1; });
+  const f=madLibroFuentes();
+  f.movimientos=(f.movimientos||[]).filter(function(r){ return !fuera[madLibroTxt(r.ID)]; });
+  return madConstruirLibro(f, { hoy: fecha, hasta: fecha });
+}
 function madMovAvisosOcupacion(model){
-  const libro=_madLibroDeFicha(model.fecha);
+  const ids=madMovBuildRows(model).map(function(fila){ return fila[fila.length-1]; });
+  const libro=_madLibroSinMovimientos(model.fecha, ids);
   return libro ? madAvisosTransferenciaCompartida(libro, model.tipo, model.tramos) : [];
 }
 function madMovRevisar(){
@@ -7782,6 +7795,8 @@ const MAD_FIN_COLUMNS = [
   { h:"Machos", k:"machos" },
   { h:"Hembras", k:"hembras" },
   // 2026-09-14: los pesos son del REGISTRO (todos los lotes juntos) y van iguales en cada fila. Ver el módulo.
+  // A3: identificador del REGISTRO (uno por formulario): agrupa sus filas para leer los pesos una vez. Ver el módulo.
+  { h:"Registro", k:"registro" },
   { h:"Peso promedio machos (g)", k:"pesoPromMachos" },
   { h:"Peso promedio hembras (g)", k:"pesoPromHembras" },
   { h:"Peso total machos (kg)", k:"pesoTotalMachos" },
@@ -7824,6 +7839,7 @@ function madFinBuildRows(model){
       machos: madIngInt(x.machos), hembras: madIngInt(x.hembras),
       pesoPromMachos: madFinKg(m.pesoPromMachos), pesoPromHembras: madFinKg(m.pesoPromHembras),
       pesoTotalMachos: madFinKg(m.pesoTotalMachos), pesoTotalHembras: madFinKg(m.pesoTotalHembras),
+      registro: sanitizeStr(m.registro,40),
       observaciones: sanitizeStr(x.observaciones,300),
       id: madFinRowId(fecha, lote, motivo, sala)
     };
@@ -7947,8 +7963,11 @@ function madFinCollect(){
   const fp=document.getElementById("fp-fin") || document;
   return { fecha:f?f.value:"", cierres:cierres,
     pesoPromMachos:g(fp,"#mf-ppm"), pesoPromHembras:g(fp,"#mf-pph"),
-    pesoTotalMachos:g(fp,"#mf-ptm"), pesoTotalHembras:g(fp,"#mf-pth") };
+    pesoTotalMachos:g(fp,"#mf-ptm"), pesoTotalHembras:g(fp,"#mf-pth"), registro:g(fp,"#mf-registro") };
 }
+/* A3: un identificador por FORMULARIO, no por pulsación: Revisar y Guardar dan el mismo, y reintentar un
+   envío fallido no crea otro registro. Se renueva al vaciar o tras guardar (el render pinta uno nuevo). */
+function madFinNuevoRegistro(){ return "R-"+(Date.now().toString(36)+Math.random().toString(36).slice(2,6)).toUpperCase(); }
 function _madFinPinta(res, filas){
   const box=document.getElementById("mf-report"); if(!box) return;
   let h="";
@@ -8048,6 +8067,7 @@ function renderMadFinCiclo(){
   const fp=document.getElementById("fp-fin"); if(!fp) return;
   if(fp.querySelector("#mf-cards")) return;
   const todayStr=today();
+  const registro=madFinNuevoRegistro();
   fp.innerHTML='<div class="fc">'
     + '<div class="fc-h"><div class="fc-t">🏁 Maduración · Fin de Ciclo</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
     + '<div class="fc-b">'
@@ -8060,7 +8080,7 @@ function renderMadFinCiclo(){
     +   '<div id="mf-cards">'+_madFinCardHTML()+'</div>'
     +   '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin:4px 0 10px;background:#f8fafc">'
     +     '<div style="font-size:12px;font-weight:700;margin-bottom:2px">⚖️ Pesos de lo que sale</div>'
-    +     '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Se pesan <b>juntos todos los lotes</b> de este registro, no lote por lote: se guardan iguales en cada fila.</div>'
+    +     '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Se pesan <b>juntos todos los lotes</b> de este registro, no lote por lote: se guardan iguales en cada fila, con el mismo <b>Registro</b> <span id="mf-registro-txt" style="font-family:monospace">'+escapeHtml(registro)+'</span> para leerlos una sola vez.<input type="hidden" id="mf-registro" value="'+escapeHtml(registro)+'"></div>'
     +     '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
     +       '<label style="'+_MAD_ING_LBL+'">Peso promedio machos (g)<input id="mf-ppm" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:150px"></label>'
     +       '<label style="'+_MAD_ING_LBL+'">Peso promedio hembras (g)<input id="mf-pph" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:150px"></label>'

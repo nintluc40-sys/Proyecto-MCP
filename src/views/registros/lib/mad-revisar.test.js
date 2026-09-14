@@ -22,7 +22,7 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['madIngReiniciar', 'madIngRevisar', '_madIngRepHTML', 'madMovReiniciar', 'madMovRevisar',
   'madMovSalaChange', 'madDesReiniciar', 'madDesRevisar', 'madFinReiniciar', 'madFinRevisar', 'MAD_REVISAR_TITLE',
-  'madFinGuardar', 'madFinTipoChange', 'madFinAddCard', 'madIngRefrescar'];
+  'madFinGuardar', 'madFinTipoChange', 'madFinAddCard', 'madIngRefrescar', 'buildMadMovPayload', 'madMovCollect'];
 const H = {};
 const envios = [];
 let respuestaVer = null;
@@ -242,6 +242,8 @@ describe('Fin de Ciclo · la sala del Parcial y los pesos del registro, en el en
     pon(a.querySelector('.mf-machos'), '5');
     pon(b.querySelector('.mf-lote'), 'BQ'); pon(b.querySelector('.mf-motivo'), 'Pedido'); pon(b.querySelector('.mf-hembras'), '4');
     pon($('fp-fin', '#mf-ppm'), '45.5'); pon($('fp-fin', '#mf-pph'), '60'); pon($('fp-fin', '#mf-ptm'), '0.23'); pon($('fp-fin', '#mf-pth'), '0.24');
+    const reg = $('fp-fin', '#mf-registro').value;
+    expect(reg).toMatch(/^R-[0-9A-Z]{8,}$/);
     await H.madFinGuardar();
     expect(envios).toHaveLength(1);
     const { headers, rows } = envios[0];
@@ -252,6 +254,10 @@ describe('Fin de Ciclo · la sala del Parcial y los pesos del registro, en el en
       expect([v(f, 'Peso promedio machos (g)'), v(f, 'Peso promedio hembras (g)'), v(f, 'Peso total machos (kg)'), v(f, 'Peso total hembras (kg)')])
         .toEqual([45.5, 60, 0.23, 0.24]);
     }
+    // A3: el MISMO registro en todas las filas del envío, y uno NUEVO para el siguiente formulario.
+    expect(rows.map((f) => v(f, 'Registro'))).toEqual([reg, reg]);
+    expect($('fp-fin', '#mf-registro').value).toMatch(/^R-[0-9A-Z]{8,}$/);
+    expect($('fp-fin', '#mf-registro').value).not.toBe(reg);
   });
 
   it('🔴 con el GAS VIEJO Guardar NO envía (la hoja cambió de columnas) y lo dice', async () => {
@@ -305,6 +311,30 @@ describe('D13 · Ingreso y Movimientos avisan del tanque compartido con OTRO lot
     expect(document.getElementById('mv-report').textContent).not.toContain('Tramo 1: el tanque 2');
   });
 
+  it('🔴 A1: un lote leído de la hoja con comillas NO inyecta atributos en la rejilla', () => {
+    H.setLibro({ ingresos: [ING('AB', 1, 20), ING('X" onmouseover="alert(1)', 3, 20)] });
+    pon(document.getElementById('mi-lote'), 'AB');
+    pon($('fp-ingreso', '.mi-sala'), 'Sala 1');
+    H.madIngRefrescar();
+    const b = $('fp-ingreso', '.mi-tq[data-t="3"]');
+    expect(b.hasAttribute('onmouseover')).toBe(false);
+    expect(b.getAttribute('title')).toContain('⚠ Tiene vivo el lote X" onmouseover="alert(1)');
+  });
+
+  it('🔴 A2: corregir una Transferencia YA guardada que vació su origen no avisa en falso', async () => {
+    const f = $('fp-movimientos', '#mv-tramos tr.mv-tramo');
+    H.madMovSalaChange(pon(f.querySelector('.mv-so'), 'Sala 1')); pon(f.querySelector('.mv-to'), '1');
+    H.madMovSalaChange(pon(f.querySelector('.mv-sd'), 'Sala 1')); pon(f.querySelector('.mv-td'), '4');
+    pon(f.querySelector('.mv-machos'), '20'); pon(f.querySelector('.mv-hembras'), '0');
+    pon(document.getElementById('mv-tipo'), 'Transferencia');
+    // La misma transferencia, ya en la hoja: AB entero de T1 a T4 (vacío), con el ID que da este formulario.
+    const { headers, rows } = H.buildMadMovPayload(H.madMovCollect());
+    const guardada = rows.map((fila) => Object.fromEntries(headers.map((h, i) => [h, fila[i]])));
+    H.setLibro({ ingresos: [ING('AB', 1, 20)], movimientos: guardada });
+    await H.madMovRevisar();
+    expect(document.getElementById('mv-report').textContent).not.toContain('ya tiene animales vivos');
+  });
+
   it('sin libro leído no se inventa ningún aviso de tanque compartido', async () => {
     H.setLibro(null);
     const f = $('fp-movimientos', '#mv-tramos tr.mv-tramo');
@@ -314,5 +344,10 @@ describe('D13 · Ingreso y Movimientos avisan del tanque compartido con OTRO lot
     pon(document.getElementById('mv-tipo'), 'Transferencia');
     await H.madMovRevisar();
     expect(document.getElementById('mv-report').textContent).not.toContain('ya tiene animales vivos');
+    // Y en Ingreso, que tiene su propio camino (la rejilla): las filas de la última lectura siguen en caché.
+    pon(document.getElementById('mi-lote'), 'AB');
+    pon($('fp-ingreso', '.mi-sala'), 'Sala 1');
+    H.madIngRefrescar();
+    expect($('fp-ingreso', '.mi-tq[data-t="2"]').getAttribute('title')).not.toContain('⚠');
   });
 });

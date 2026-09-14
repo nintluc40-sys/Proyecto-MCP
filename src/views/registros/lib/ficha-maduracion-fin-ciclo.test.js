@@ -143,8 +143,15 @@ describe('Fin de Ciclo · los pesos del registro', () => {
   const conPesos = () => {
     const m = base();
     m.cierres.push({ lote: 'BC', tipo: 'Parcial', motivo: 'Pedido', machos: 10, hembras: 0 });
-    return Object.assign(m, { pesoPromMachos: '45.5', pesoPromHembras: 60, pesoTotalMachos: 2.3, pesoTotalHembras: '3.6' });
+    return Object.assign(m, { pesoPromMachos: '45.5', pesoPromHembras: 60, pesoTotalMachos: 2.3, pesoTotalHembras: '3.6', registro: 'R-MFJ3K2QX7A' });
   };
+
+  /* A3: los pesos se leen UNA vez por registro, así que el registro va en cada fila y es el mismo en todas. */
+  it('A3 · todas las filas llevan el MISMO «Registro» del modelo; sin él va vacío', () => {
+    expect(MAD_FIN_HEADERS).toContain('Registro');
+    expect(buildFinRows(conPesos()).map((f) => f[col('Registro')])).toEqual(['R-MFJ3K2QX7A', 'R-MFJ3K2QX7A']);
+    expect(buildFinRows(base())[0][col('Registro')]).toBe('');
+  });
 
   it('se repiten iguales en cada fila, con sus decimales', () => {
     const filas = buildFinRows(conPesos());

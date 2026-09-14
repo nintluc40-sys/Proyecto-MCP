@@ -82,6 +82,10 @@ export const MAD_FIN_COLUMNS = [
   /* 2026-09-14 (usuario): los PESOS de lo que sale se toman de TODOS los lotes del registro juntos, no
      por lote. Son del REGISTRO y se escriben iguales en cada una de sus filas: sumarlos fila a fila
      los multiplicaría. */
+  /* A3 (2026-09-14, usuario): el REGISTRO lleva identificador, uno por formulario, igual en todas sus filas.
+     Sin él, dos registros del mismo día —o un reenvío parcial con otros pesos— no se distinguían: para
+     leer los pesos sin multiplicarlos se agrupa por «Registro» y se toman una vez. */
+  { h: 'Registro', k: 'registro', grain: 'registro' },
   { h: 'Peso promedio machos (g)', k: 'pesoPromMachos', grain: 'registro', num: true },
   { h: 'Peso promedio hembras (g)', k: 'pesoPromHembras', grain: 'registro', num: true },
   { h: 'Peso total machos (kg)', k: 'pesoTotalMachos', grain: 'registro', num: true },
@@ -126,6 +130,7 @@ export function buildFinRows(model) {
   const pesos = {
     pesoPromMachos: kg(m.pesoPromMachos), pesoPromHembras: kg(m.pesoPromHembras),
     pesoTotalMachos: kg(m.pesoTotalMachos), pesoTotalHembras: kg(m.pesoTotalHembras),
+    registro: sanitizeStr(m.registro, 40),
   };
   const filas = [];
   (m.cierres || []).forEach((c) => {

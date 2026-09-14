@@ -129,7 +129,7 @@ const MODELOS = {
   },
   'pesos del registro: decimales, inválido y sexo que no sale': {
     fecha: '2026-09-08',
-    pesoPromMachos: '45.25', pesoPromHembras: 'sesenta', pesoTotalMachos: 2.75, pesoTotalHembras: '3.5',
+    pesoPromMachos: '45.25', pesoPromHembras: 'sesenta', pesoTotalMachos: 2.75, pesoTotalHembras: '3.5', registro: ' R-MFJ3K2QX7A ',
     cierres: [
       { lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', machos: 10, hembras: 0 },
       { lote: 'BC', tipo: 'Parcial', motivo: 'Pedido', machos: 3, hembras: 0 },
