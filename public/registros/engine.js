@@ -8868,18 +8868,57 @@ function renderMadTanques(){
     </div>
   </div>`;
   _madAfterRender("tanques");
+  _madTanquesPintaVivosGuardados();
 }
 /* 🔄 VER VIVOS · decisión del usuario (2026-09-08). Los «vivos» de la Fase 6 se MUESTRAN,
-   no se guardan en la hoja, y la razón es la misma que hace valioso al libro: son una vista
-   DERIVADA. Guardarlos crearía una foto que envejece — corregir mañana un registro de la
+   no se guardan en la HOJA, y la razón es la misma que hace valioso al libro: son una vista
+   DERIVADA. Guardarlos allí crearía una foto que envejece — corregir mañana un registro de la
    semana pasada recalcula el libro, pero la cifra congelada se quedaría con el valor viejo y
    las dos dejarían de coincidir sin que nada lo dijera.
    🔑 Y va bajo BOTÓN, no al abrir la grilla: leer estas hojas cuesta entre 2 y 52 s en este
    GAS, y quien viene a teclear la mortalidad del día no tiene por qué esperar.
-   ⚠ No hace falta borrar las celdas al cambiar de sala o de fecha: los dos manejadores
-   re-renderizan la grilla entera, así que vuelven solas a «—». Si algún día dejaran de
-   hacerlo, habría que borrarlas a mano — un vivo viejo bajo un tanque nuevo se leería como
-   una medición. */
+   📌 REFERENCIA LOCAL (usuario, 2026-09-14): «que el dato se quede local hasta que se estime
+   otra vez, para tener siempre una referencia». Antes cualquier repintado —cambiar de sala o de
+   fecha, guardar, recargar— devolvía las celdas a «—». Ahora un «Ver vivos» con el libro
+   COMPLETO guarda en el DISPOSITIVO (nunca en la hoja) los vivos de TODOS los tanques con su
+   fecha y hora, y la grilla los enseña al pintarse con una nota que dice de cuándo son: esa nota
+   es lo que impide que una cifra vieja se lea como de hoy. Sólo otro «Ver vivos» la sustituye, y
+   un libro INCOMPLETO no pisa una referencia buena. */
+const MAD_TQ_VIVOS_KEY = MAD_PRE + "tqvivos";
+function _madTqVivosLeer(){
+  try{
+    const g = JSON.parse(localStorage.getItem(MAD_TQ_VIVOS_KEY) || "null");
+    return (g && g.ts > 0 && g.tanques && typeof g.tanques === "object") ? g : null;
+  }catch(_){ return null; }
+}
+function _madTqVivosGuardar(libro){
+  const tanques = {};
+  Object.keys(libro.tanques || {}).forEach(function(k){
+    const T = libro.tanques[k];
+    if(T) tanques[k] = { machos: Number(T.machos) || 0, hembras: Number(T.hembras) || 0 };
+  });
+  return safeSetItem(MAD_TQ_VIVOS_KEY, JSON.stringify({ ts: Date.now(), hoy: today(), tanques: tanques }), { silent: true });
+}
+/* Una celda de vivos, escrita IGUAL venga del libro recién leído o de la referencia guardada:
+   Movimientos y Tanques tienen que decir exactamente lo mismo del mismo tanque. */
+function _madTqVivosCelda(c, T, desconocido){
+  if(!T){
+    // Ningún ingreso explica ese tanque: no es «cero vivos», es «el libro no lo conoce».
+    c.textContent = desconocido;
+    c.style.color = "#92400e";
+    return;
+  }
+  /* El TOTAL lo pidió el usuario el 2026-09-08. Es la cifra que se compara con la capacidad
+     del tanque, y sumar dos números de cabeza delante de una grilla de veinte filas se hace
+     mal más veces de las que parece. */
+  c.textContent = T.machos + "♂ " + T.hembras + "♀ · " + (T.machos + T.hembras);
+  c.style.color = (T.machos + T.hembras) > 0 ? "#0369a1" : "#92400e";
+}
+function _madTqVivosNotaRef(g){
+  const deHoy = g.hoy === today();
+  return '<span style="color:' + (deHoy ? "#166534" : "#92400e") + '">📌 Referencia del ' + escapeHtml(_reproFmtTs(g.ts))
+    + (deHoy ? "" : " (no es de hoy)") + ' · guardada en este dispositivo; 🔄 para volver a estimar.</span>';
+}
 async function madTanquesVerVivos(){
   const btn = document.getElementById("tq-vivos-btn");
   const nota = document.getElementById("tq-vivos-nota");
@@ -8889,7 +8928,9 @@ async function madTanquesVerVivos(){
     const libro = await madSaldoCargar(true);
     _madTanquesPintaVivos(libro);
   }catch(_){
-    if(nota) nota.innerHTML = '<span style="color:#991b1b">No se pudieron leer las hojas. Reintenta con 🔄.</span>';
+    const g = _madTqVivosLeer();
+    if(nota) nota.innerHTML = '<span style="color:#991b1b">No se pudieron leer las hojas. Reintenta con 🔄.'
+      + (g ? " Se mantiene la referencia del " + escapeHtml(_reproFmtTs(g.ts)) + "." : "") + '</span>';
   }finally{
     if(btn) btn.disabled = false;
   }
@@ -8898,32 +8939,36 @@ function _madTanquesPintaVivos(libro){
   const nota = document.getElementById("tq-vivos-nota");
   /* Si alguna hoja no se pudo leer, lo de abajo está INCOMPLETO y hay que decirlo ANTES de
      enseñarlo: es el defecto A1 de la auditoría del 09-08, un libro a medias leído como
-     completo. */
+     completo. Y por lo mismo NO se guarda como referencia: pisaría una buena con una a medias. */
   const _mal = madLibroIncompleto(libro);
   const roto = !!_mal;
+  if(!roto) _madTqVivosGuardar(libro);
   if(nota){
+    const g = roto ? _madTqVivosLeer() : null;
     nota.innerHTML = roto
-      ? '<span style="color:#991b1b">⚠ ' + escapeHtml(_mal) + ': lo de abajo está INCOMPLETO.</span>'
-      : '<span style="color:#166534">Vivos al ' + escapeHtml(today()) + '. Se recalcula al pulsar de nuevo.</span>';
+      ? '<span style="color:#991b1b">⚠ ' + escapeHtml(_mal) + ': lo de abajo está INCOMPLETO y no se guardó como referencia'
+        + (g ? " (se mantiene la del " + escapeHtml(_reproFmtTs(g.ts)) + ")" : "") + '.</span>'
+      : '<span style="color:#166534">Vivos al ' + escapeHtml(today()) + ' · guardados en este dispositivo como referencia hasta el próximo 🔄.</span>';
   }
   const sala = _madTanquesSala;
   document.querySelectorAll(".tq-vivos").forEach(function(c){
     const tq = c.getAttribute("data-tq");
     if(!sala || !tq){ c.textContent = "—"; return; }
-    const T = libro.tanques[madUbicKey(sala, tq)];
-    if(!T){
-      // Ningún ingreso explica ese tanque: no es «cero vivos», es «el libro no lo conoce».
-      c.textContent = roto ? "?" : "sin ingreso";
-      c.style.color = "#92400e";
-      return;
-    }
-    /* El TOTAL lo pidió el usuario el 2026-09-08. Es la cifra que se compara con la capacidad
-       del tanque, y sumar dos números de cabeza delante de una grilla de veinte filas se hace
-       mal más veces de las que parece. Sigue SIN GUARDARSE, como el resto de esta vista: es
-       derivada, y congelarla crearía una foto que envejece sin decirlo. */
-    c.textContent = T.machos + "♂ " + T.hembras + "♀ · " + (T.machos + T.hembras);
-    c.style.color = (T.machos + T.hembras) > 0 ? "#0369a1" : "#92400e";
+    _madTqVivosCelda(c, libro.tanques[madUbicKey(sala, tq)], roto ? "?" : "sin ingreso");
   });
+}
+/* Al pintar la grilla: la última referencia completa guardada, con su fecha. Sin referencia, «—». */
+function _madTanquesPintaVivosGuardados(){
+  const g = _madTqVivosLeer();
+  const sala = _madTanquesSala;
+  if(!g || !sala) return;
+  document.querySelectorAll(".tq-vivos").forEach(function(c){
+    const tq = c.getAttribute("data-tq");
+    if(!tq) return;
+    _madTqVivosCelda(c, g.tanques[madUbicKey(sala, tq)], "sin ingreso");
+  });
+  const nota = document.getElementById("tq-vivos-nota");
+  if(nota) nota.innerHTML = _madTqVivosNotaRef(g);
 }
 
 
