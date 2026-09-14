@@ -5783,6 +5783,11 @@ const MAD_EST_MIXTO = "Mixto";
 // Un lote con un cierre TOTAL registrado. Se distingue de «0 vivos» a propósito: un cero
 // puede ser un descuadre; un cierre es una decisión que alguien registró.
 const MAD_EST_CERRADO = "Cerrado";
+// 2026-09-14 (usuario): estados de SALA, nunca de lote. Sin animales → Desinfección; en producción
+// con los animales en pocos tanques (la mitad o menos) y el resto vacío → la agrupada. Ver el módulo.
+const MAD_EST_DESINF = "Desinfección";
+const MAD_EST_DESINF_AGRUP = "Desinfección - Producción agrupada";
+const MAD_AGRUPADA_MAX_FRACCION = 0.5;
 const MAD_LIBRO_SHEETS = { ingreso: "Maduración Ingreso", movimientos: "Maduración Movimientos", tanques: "Maduración Tanques", cierres: "Maduración Fin de Ciclo" };
 function madLibroTxt(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
 function madLibroEnt(v){ const n=parseInt(v,10); return (isFinite(n)&&n>0)?n:0; }
@@ -6003,18 +6008,41 @@ function madConstruirLibro(fuentes, opts){
   Object.keys(porLote).forEach(function(n){ porLote[n].estado=madEstadoDeLote(porLote[n], hoy||hasta); });
   return { posiciones:Object.keys(pos).map(function(k){ return pos[k]; }), tanques:porTanque, lotes:porLote, avisos:avisos, hasta:hasta };
 }
-function madEstadoDeSala(libro, sala, fecha){
+// Ocupación física de una sala según el libro. `tanquesDeSala` es la lista FÍSICA
+// (MAD_TANQUES_POR_SALA): el libro sólo conoce los tanques que alguna vez tuvieron animales.
+function madOcupacionDeSala(libro, sala, tanquesDeSala){
+  const todos={}, ocupados={}; let conocida=false;
+  (Array.isArray(tanquesDeSala)?tanquesDeSala:[]).forEach(function(t){ const n=madLibroEnt(t); if(n) todos[n]=1; });
+  Object.keys(libro.tanques||{}).forEach(function(uk){
+    const T=libro.tanques[uk];
+    if(T.sala!==madLibroTxt(sala)) return;
+    conocida=true;
+    const n=madLibroEnt(T.tanque);
+    // Sin la lista física, total = ocupados: un tanque vaciado no se suma por su cuenta. Ver el módulo.
+    if(T.composicion.some(function(c){ return c.machos>0||c.hembras>0; })){ ocupados[n]=1; todos[n]=1; }
+  });
+  return { conocida:conocida, ocupados:Object.keys(ocupados).length, total:Object.keys(todos).length };
+}
+function madEstadoDeSala(libro, sala, fecha, tanquesDeSala){
   const dentro={};
   Object.keys(libro.tanques||{}).forEach(function(uk){
     const T=libro.tanques[uk];
     if(T.sala!==madLibroTxt(sala)) return;
     T.composicion.forEach(function(c){ if(c.machos>0||c.hembras>0) dentro[c.lote]=1; });
   });
+  const oc=madOcupacionDeSala(libro, sala, tanquesDeSala);
+  // 🔴🔴 Sólo una sala que el libro CONOCE puede declararse vacía: el 2026-09-14 el libro sólo
+  // tenía ingresos de la Sala 4 y las Salas 1, 2 y 5 estaban en «Producción» con animales de
+  // antes del registro. Lo propuesto SE GUARDA. Ver el módulo.
+  if(!Object.keys(dentro).length) return oc.conocida ? MAD_EST_DESINF : "";
   const estados=Object.keys(dentro).map(function(n){ return madEstadoDeLote(libro.lotes[n], fecha); }).filter(Boolean);
   if(!estados.length) return "";
   const unicos=estados.filter(function(e,i){ return estados.indexOf(e)===i; });
   // Mixto es más veraz que elegir uno de los dos y esconder el otro (decisión del usuario).
-  return unicos.length===1 ? unicos[0] : MAD_EST_MIXTO;
+  const estado=unicos.length===1 ? unicos[0] : MAD_EST_MIXTO;
+  // Lo agrupado sólo se dice de una sala en PRODUCCIÓN: cuarentena y mixto siguen diciendo eso.
+  if(estado===MAD_EST_PROD && oc.ocupados <= oc.total*MAD_AGRUPADA_MAX_FRACCION) return MAD_EST_DESINF_AGRUP;
+  return estado;
 }
 // Desglose legible para la columna «Estado por lote»: `AB: Cuarentena · BC: Producción`.
 // Es lo que hace que MAD_EST_MIXTO sea útil en vez de una etiqueta que esconde el detalle:
@@ -8478,7 +8506,9 @@ function renderMadSalas(){
   const estadoOpts = (cur) => `<option value="">—</option>
     <option value="Cuarentena"${cur==="Cuarentena"?" selected":""}>Cuarentena</option>
     <option value="Producción"${cur==="Producción"?" selected":""}>Producción</option>
-    <option value="${MAD_EST_MIXTO}"${cur===MAD_EST_MIXTO?" selected":""}>${MAD_EST_MIXTO}</option>`;
+    <option value="${MAD_EST_MIXTO}"${cur===MAD_EST_MIXTO?" selected":""}>${MAD_EST_MIXTO}</option>
+    <option value="${MAD_EST_DESINF}"${cur===MAD_EST_DESINF?" selected":""}>${MAD_EST_DESINF}</option>
+    <option value="${MAD_EST_DESINF_AGRUP}"${cur===MAD_EST_DESINF_AGRUP?" selected":""}>${MAD_EST_DESINF_AGRUP}</option>`;
   const rasOpts = (cur) => `<option value="">—</option>
     <option value="SI"${cur==="SI"?" selected":""}>SI</option>
     <option value="NO"${cur==="NO"?" selected":""}>NO</option>`;
@@ -8601,9 +8631,12 @@ function _madSalasPintaEstado(libro){
     return;
   }
   let n = 0;
-  const sinOpcion = [];
+  const sinOpcion = [], desinf = [], agrup = [], sinLibro = [];
   MAD_SALA_OPTS.forEach(function(sala, si){
-    const est = madEstadoDeSala(libro, sala, fecha);
+    const est = madEstadoDeSala(libro, sala, fecha, MAD_TANQUES_POR_SALA[sala]);
+    if(est === MAD_EST_DESINF) desinf.push(sala);
+    if(est === MAD_EST_DESINF_AGRUP){ const oc = madOcupacionDeSala(libro, sala, MAD_TANQUES_POR_SALA[sala]); agrup.push(sala + " (" + oc.ocupados + " de " + oc.total + " tanques con animales)"); }
+    if(!est && !madOcupacionDeSala(libro, sala).conocida) sinLibro.push(sala);
     const det = madEstadoPorLoteTexto(libro, sala, fecha);
     const selEl = fp.querySelector('[name="sg_' + si + '_estado"]');
     const txtEl = fp.querySelector('[name="sg_' + si + '_estado_lote"]');
@@ -8626,7 +8659,11 @@ function _madSalasPintaEstado(libro){
       : '';
     nota.innerHTML = aviso + (n
       ? '<span style="color:#166534">Propuesto al ' + escapeHtml(fecha) + ' para ' + n + ' sala(s). Revisa y corrige antes de guardar.</span>'
-      : '<span style="color:#92400e">El libro no conoce ninguna sala con animales en esa fecha: no hay nada que proponer.</span>');
+      : '<span style="color:#92400e">El libro no conoce ninguna sala con animales en esa fecha: no hay nada que proponer.</span>')
+      // Lo que más conviene revisar se nombra: vaciar una sala en la hoja es lo que más cuesta deshacer.
+      + (desinf.length ? '<br><span style="color:#475569">🧽 Sin animales en el libro → ' + escapeHtml(MAD_EST_DESINF) + ': ' + escapeHtml(desinf.join(" · ")) + '</span>' : '')
+      + (agrup.length ? '<br><span style="color:#475569">🧽 Animales agrupados → ' + escapeHtml(MAD_EST_DESINF_AGRUP) + ': ' + escapeHtml(agrup.join(" · ")) + '</span>' : '')
+      + (sinLibro.length ? '<br><span style="color:#64748b">Sin ingresos registrados en el libro (se dejan como estaban): ' + escapeHtml(sinLibro.join(" · ")) + '</span>' : '');
   }
   // Marca «cambios sin guardar», como hace el pegado: si no, lo propuesto se perdería
   // al cambiar de pestaña sin que nadie avisara.

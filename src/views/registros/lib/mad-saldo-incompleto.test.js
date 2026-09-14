@@ -126,8 +126,15 @@ describe('Maduración · la propuesta de Estado de sala sólo escribe lo que se 
 
   it('el fixture ejerce algo: con un estado NORMAL, propone y lo cuenta', () => {
     /* Sin este caso, los dos de abajo podrían pasar por el motivo equivocado —que la
-       propuesta no escriba NUNCA— y estarían verdes sin significar nada. */
-    pinta(libroCon({ ingreso: '2026-01-01', copulaDesde: '2026-01-03' }));
+       propuesta no escriba NUNCA— y estarían verdes sin significar nada.
+       ⚠ 2026-09-14: la sala va LLENA (8 de sus 15 tanques). Con un solo tanque ocupado el estado
+       propuesto es ahora «Desinfección - Producción agrupada», que tiene su propia prueba. */
+    const l = libroCon({ ingreso: '2026-01-01', copulaDesde: '2026-01-03' });
+    for (let t = 2; t <= 8; t++) {
+      l.tanques['Sala 1|' + t] = { sala: 'Sala 1', tanque: t, machos: 10, hembras: 10,
+        composicion: [{ lote: 'AB', codigoGenetico: 'CG1', machos: 10, hembras: 10 }] };
+    }
+    pinta(l);
     expect(selEstado(0).value).toBe(H.MAD_EST_PROD);
     expect(nota().innerHTML).toContain('Propuesto');
   });

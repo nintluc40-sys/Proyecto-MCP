@@ -46,6 +46,16 @@ export const ESTADO_MIXTO = 'Mixto';
 /** Un lote al que se le registró un cierre TOTAL. Se distingue de «0 vivos» a propósito:
  *  un lote cerrado está terminado, uno a cero puede ser un descuadre. */
 export const ESTADO_CERRADO = 'Cerrado';
+/** 2026-09-14 (usuario): una SALA sin animales está en DESINFECCIÓN. Es un estado de la SALA,
+ *  nunca de un lote: por eso sólo lo devuelve `estadoDeSala`, no `estadoDeLote`. */
+export const ESTADO_DESINFECCION = 'Desinfección';
+/** ...y el caso mixto que describió el usuario: la sala SÍ tiene animales, en producción, pero
+ *  AGRUPADOS en pocos tanques mientras los demás están vacíos (y se desinfectan). */
+export const ESTADO_DESINFECCION_AGRUPADA = 'Desinfección - Producción agrupada';
+/** «Pocos tanques»: como mucho esta fracción de los tanques de la sala tiene animales (la
+ *  mitad o menos ocupada → la otra mitad o más, vacía). Es la regla por defecto; lo propuesto
+ *  lo revisa el operario antes de guardar. */
+export const AGRUPADA_MAX_FRACCION = 0.5;
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const ent = (v) => {
@@ -430,23 +440,59 @@ export function estadoDeLote(lote, fecha) {
   return hoy < sumarDias(L.ingreso, CUARENTENA_DIAS) ? ESTADO_CUARENTENA : ESTADO_PRODUCCION;
 }
 
+/** Ocupación física de una SALA según el libro: cuántos tanques tienen animales vivos y de
+ *  cuántos dispone. `tanquesDeSala` es la lista FÍSICA (MAD_TANQUES_POR_SALA): el libro sólo
+ *  conoce los tanques que alguna vez recibieron animales, así que sin ella no sabe cuántos hay
+ *  vacíos y `total` se queda en los ocupados (nunca sale «agrupada»). ⚠ Un tanque vaciado que el
+ *  libro conoce NO se suma por su cuenta: la sala es la lista física, no la memoria del libro.
+ *  `conocida` dice si el libro ha tenido ALGUNA vez animales en esa sala. */
+export function ocupacionDeSala(libro, sala, tanquesDeSala) {
+  const todos = new Set();
+  const ocupados = new Set();
+  let conocida = false;
+  for (const t of (Array.isArray(tanquesDeSala) ? tanquesDeSala : [])) if (ent(t)) todos.add(ent(t));
+  for (const T of (libro.tanques || new Map()).values()) {
+    if (T.sala !== txt(sala)) continue;
+    conocida = true;
+    if (T.composicion.some((c) => c.machos > 0 || c.hembras > 0)) {
+      ocupados.add(ent(T.tanque));
+      todos.add(ent(T.tanque));
+    }
+  }
+  return { conocida, ocupados: ocupados.size, total: todos.size };
+}
+
 /** Estado de una SALA: el de sus lotes, y `Mixto` cuando conviven los dos.
  *
  *  ⚠ La hoja `Maduración Sala` tiene UNA columna `Estado` por (Fecha, Sala), así que no
  *  puede llevar el detalle por lote sin migrarla. `Mixto` es más veraz que elegir uno de
- *  los dos y esconder el otro; el desglose va en la columna «Estado por lote». */
-export function estadoDeSala(libro, sala, fecha) {
+ *  los dos y esconder el otro; el desglose va en la columna «Estado por lote».
+ *
+ *  2026-09-14 (usuario): sin animales es `Desinfección`; y en producción con los animales en
+ *  pocos tanques (AGRUPADA_MAX_FRACCION) y el resto vacío, `Desinfección - Producción agrupada`.
+ *  ⚠ Lo agrupado sólo se dice de una sala en PRODUCCIÓN: una en cuarentena o mixta sigue
+ *  diciendo eso, que es lo sanitario, y el nombre del estado nombra la producción. */
+export function estadoDeSala(libro, sala, fecha, tanquesDeSala) {
   const dentro = new Set();
   for (const T of (libro.tanques || new Map()).values()) {
     if (T.sala !== txt(sala)) continue;
     for (const c of T.composicion) if (c.machos > 0 || c.hembras > 0) dentro.add(c.lote);
   }
+  const oc = ocupacionDeSala(libro, sala, tanquesDeSala);
+  /* 🔴🔴 SÓLO UNA SALA QUE EL LIBRO CONOCE PUEDE DECLARARSE VACÍA. Medido el 2026-09-14: el
+     libro sólo tenía ingresos de la Sala 4, y los operarios habían tecleado «Producción» en
+     las Salas 1, 2 y 5 el 09-08 — animales de antes del registro que el libro no ve. Decir
+     «Desinfección» de toda sala sin ingresos habría propuesto vaciar tres salas llenas, y
+     lo propuesto SE GUARDA. Una sala que el libro nunca ha visto no tiene estado deducible. */
+  if (!dentro.size) return oc.conocida ? ESTADO_DESINFECCION : '';
   const estados = [...dentro]
     .map((n) => estadoDeLote(libro.lotes.get(n), fecha))
     .filter(Boolean);
   if (!estados.length) return '';
   const unicos = [...new Set(estados)];
-  return unicos.length === 1 ? unicos[0] : ESTADO_MIXTO;
+  const estado = unicos.length === 1 ? unicos[0] : ESTADO_MIXTO;
+  if (estado === ESTADO_PRODUCCION && oc.ocupados <= oc.total * AGRUPADA_MAX_FRACCION) return ESTADO_DESINFECCION_AGRUPADA;
+  return estado;
 }
 
 /** Desglose legible para la columna «Estado por lote»: `AB: Cuarentena · BC: Producción`. */

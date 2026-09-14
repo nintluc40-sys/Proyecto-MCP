@@ -27,7 +27,11 @@ import {
   estadoPorLoteTexto,
   CUARENTENA_DIAS,
   ESTADO_MIXTO,
+  ESTADO_DESINFECCION,
+  ESTADO_DESINFECCION_AGRUPADA,
+  ocupacionDeSala,
 } from './mad-libro.js';
+import { MAD_TANQUES_POR_SALA } from './ficha-maduracion-ingreso.schema.js';
 /* ⚠ El módulo ENTERO, además de los nombres sueltos de arriba. Los de arriba se usan en los
    escenarios; éste sirve para preguntarle al módulo QUÉ EXPORTA, que es una pregunta que una
    lista escrita a mano no puede contestar — ver la comprobación estructural de más abajo. */
@@ -61,7 +65,8 @@ function motorLibro() {
   new Script(
     code + '\n;globalThis.__api = { madConstruirLibro, madEstadoDeSala, madNombreComposicion,'
     + ' madSumarDias, madRepartirProporcional, madEstadoDeLote, madEstadoPorLoteTexto,'
-    + ' MAD_CUARENTENA_DIAS, MAD_EST_MIXTO, MAD_LIBRO_SHEETS };',
+    + ' MAD_CUARENTENA_DIAS, MAD_EST_MIXTO, MAD_LIBRO_SHEETS,'
+    + ' madOcupacionDeSala, MAD_EST_DESINF, MAD_EST_DESINF_AGRUP, MAD_AGRUPADA_MAX_FRACCION };',
   ).runInContext(ctx);
   return ctx.__api;
 }
@@ -106,6 +111,10 @@ const GEMELO = {
   ESTADO_PRODUCCION: 'MAD_EST_PROD',
   ESTADO_MIXTO: 'MAD_EST_MIXTO',
   ESTADO_CERRADO: 'MAD_EST_CERRADO',
+  ESTADO_DESINFECCION: 'MAD_EST_DESINF',
+  ESTADO_DESINFECCION_AGRUPADA: 'MAD_EST_DESINF_AGRUP',
+  AGRUPADA_MAX_FRACCION: 'MAD_AGRUPADA_MAX_FRACCION',
+  ocupacionDeSala: 'madOcupacionDeSala',
 };
 
 /* El monolito declara las funciones como `function X(` y las constantes como `const X =`,
@@ -425,6 +434,32 @@ describe('Libro · las mismas funciones puras', () => {
     expect(api.madEstadoDeSala(a, 'Sala 1', HOY)).toBe(estadoDeSala(b, 'Sala 1', HOY));
     expect(estadoDeSala(b, 'Sala 1', HOY)).toBe(ESTADO_MIXTO);   // el fixture prueba algo
     expect(api.MAD_EST_MIXTO).toBe(ESTADO_MIXTO);
+  });
+
+  /* 2026-09-14: Desinfección y la agrupada se comparan en TODOS los escenarios y TODAS las salas,
+     con la lista física de tanques. El fixture prueba algo: se exige que salgan las dos. */
+  it('el mismo estado de sala con Desinfección y Producción agrupada, y la misma ocupación', () => {
+    const vistos = new Set();
+    /* La MITAD EXACTA (3 de 6) es la frontera de «pocos tanques»: sin ella, un monolito con `<`
+       en vez de `<=` daba lo mismo que el módulo en todos los escenarios (lo destapó E09). */
+    const mitad = { ingresos: [16, 17, 18].map((t) => ing('2026-01-01', 'AB', 'CG1', 'Sala 2', t, 10, 10)) };
+    expect(estadoDeSala(construirLibro(mitad, { hoy: HOY }), 'Sala 2', HOY, MAD_TANQUES_POR_SALA['Sala 2']))
+      .toBe(ESTADO_DESINFECCION_AGRUPADA);
+    for (const f of [...Object.values(ESCENARIOS), mitad]) {
+      const a = api.madConstruirLibro(f, { hoy: HOY });
+      const b = construirLibro(f, { hoy: HOY });
+      for (const [s, lista] of Object.entries(MAD_TANQUES_POR_SALA)) {
+        const e = estadoDeSala(b, s, HOY, lista);
+        vistos.add(e);
+        expect(api.madEstadoDeSala(a, s, HOY, lista)).toBe(e);
+        expect({ ...api.madOcupacionDeSala(a, s, lista) }).toEqual(ocupacionDeSala(b, s, lista));
+        expect({ ...api.madOcupacionDeSala(a, s) }).toEqual(ocupacionDeSala(b, s));
+      }
+    }
+    expect(vistos.has(ESTADO_DESINFECCION)).toBe(true);
+    expect(vistos.has(ESTADO_DESINFECCION_AGRUPADA)).toBe(true);
+    expect(api.MAD_EST_DESINF).toBe(ESTADO_DESINFECCION);
+    expect(api.MAD_EST_DESINF_AGRUP).toBe(ESTADO_DESINFECCION_AGRUPADA);
   });
 
   /* ⚠⚠ EL DESGLOSE ES LA MITAD ÚTIL DE «Mixto», y hasta el 2026-09-08 no tenía gemelo: la

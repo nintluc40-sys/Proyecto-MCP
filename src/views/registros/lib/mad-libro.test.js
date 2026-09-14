@@ -13,7 +13,12 @@ import {
   ESTADO_PRODUCCION,
   ESTADO_MIXTO,
   ESTADO_CERRADO,
+  ESTADO_DESINFECCION,
+  ESTADO_DESINFECCION_AGRUPADA,
+  AGRUPADA_MAX_FRACCION,
+  ocupacionDeSala,
 } from './mad-libro.js';
+import { MAD_TANQUES_POR_SALA } from './ficha-maduracion-ingreso.schema.js';
 
 /* Constructores de filas con la forma REAL de las hojas (las claves son las cabeceras,
    que es como las devuelve `?p=rows`). Escribirlas a mano en cada prueba invita a que
@@ -721,6 +726,91 @@ describe('Libro · el estado de la SALA', () => {
 
   it('una sala sin nada no inventa estado', () => {
     expect(estadoDeSala(construirLibro({}), 'Sala 3', '2026-01-25')).toBe('');
+  });
+});
+
+
+/* ══ 2026-09-14 (usuario) · ESTADOS DE SALA LIGADOS A LA DESINFECCIÓN ═══════════════════════════
+   «Desinfección»: la sala no tiene animales. «Desinfección - Producción agrupada»: la sala SÍ los
+   tiene, en producción, pero en pocos tanques y el resto vacío. Son estados de la SALA, no de un
+   lote, así que viven en estadoDeSala.
+   🔴🔴 Y una regla que salió de MEDIR: el 09-14 el libro sólo tenía ingresos de la Sala 4 y los
+   operarios habían puesto «Producción» en las Salas 1, 2 y 5 — animales de antes del registro.
+   Una sala que el libro nunca ha visto NO se declara vacía: lo propuesto se guarda en la hoja. */
+describe('Libro · Desinfección de sala (2026-09-14)', () => {
+  const HOY = '2026-02-10';                    // AB entró el 01-01: 40 días, en Producción
+  const S2 = MAD_TANQUES_POR_SALA['Sala 2'];   // 16..21 (6 tanques)
+  const S5 = MAD_TANQUES_POR_SALA['Sala 5'];   // 7..11 (5 tanques)
+  const enTanques = (sala, tanques, fecha = '2026-01-01', lote = 'AB') =>
+    tanques.map((t) => ing(fecha, lote, 'CG1', sala, t, 10, 10));
+
+  it('los valores son los que pidió el usuario, y la regla de «pocos» es la mitad', () => {
+    expect(ESTADO_DESINFECCION).toBe('Desinfección');
+    expect(ESTADO_DESINFECCION_AGRUPADA).toBe('Desinfección - Producción agrupada');
+    expect(AGRUPADA_MAX_FRACCION).toBe(0.5);
+  });
+
+  it('🔴 una sala que el libro conoce y se quedó SIN animales está en Desinfección', () => {
+    const l = construirLibro({
+      ingresos: enTanques('Sala 2', [16, 17]),
+      cierres: [fin('2026-02-01', 'AB', 'Total', 20, 20)],
+    }, { hoy: HOY });
+    expect(estadoDeSala(l, 'Sala 2', HOY, S2)).toBe(ESTADO_DESINFECCION);
+  });
+
+  it('🔴🔴 una sala que el libro NUNCA ha visto no se declara vacía (medido el 09-14)', () => {
+    const l = construirLibro({ ingresos: enTanques('Sala 4', [1, 2, 3, 4, 5, 6]) }, { hoy: HOY });
+    expect(estadoDeSala(l, 'Sala 4', HOY, MAD_TANQUES_POR_SALA['Sala 4'])).toBe(ESTADO_PRODUCCION);
+    expect(estadoDeSala(l, 'Sala 1', HOY, MAD_TANQUES_POR_SALA['Sala 1'])).toBe('');
+    expect(ocupacionDeSala(l, 'Sala 1', MAD_TANQUES_POR_SALA['Sala 1']).conocida).toBe(false);
+  });
+
+  it('🔴 producción en la MITAD o menos de los tanques → agrupada; en más, Producción', () => {
+    const tres = construirLibro({ ingresos: enTanques('Sala 2', [16, 17, 18]) }, { hoy: HOY });
+    expect(estadoDeSala(tres, 'Sala 2', HOY, S2)).toBe(ESTADO_DESINFECCION_AGRUPADA);
+    const cuatro = construirLibro({ ingresos: enTanques('Sala 2', [16, 17, 18, 19]) }, { hoy: HOY });
+    expect(estadoDeSala(cuatro, 'Sala 2', HOY, S2)).toBe(ESTADO_PRODUCCION);
+  });
+
+  it('con un número IMPAR de tanques la frontera cae donde dice la regla (5 → 2 sí, 3 no)', () => {
+    const dos = construirLibro({ ingresos: enTanques('Sala 5', [7, 8]) }, { hoy: HOY });
+    expect(estadoDeSala(dos, 'Sala 5', HOY, S5)).toBe(ESTADO_DESINFECCION_AGRUPADA);
+    const tres = construirLibro({ ingresos: enTanques('Sala 5', [7, 8, 9]) }, { hoy: HOY });
+    expect(estadoDeSala(tres, 'Sala 5', HOY, S5)).toBe(ESTADO_PRODUCCION);
+  });
+
+  it('🔴 un tanque que se VACÍA pasa a contar como vacío', () => {
+    const f = { ingresos: enTanques('Sala 2', [16, 17, 18, 19]) };
+    expect(estadoDeSala(construirLibro(f, { hoy: HOY }), 'Sala 2', HOY, S2)).toBe(ESTADO_PRODUCCION);
+    f.tanques = [tq('2026-02-01', 'Sala 2', 19, { 'Machos muertos': 10, 'Hembras muertas': 10 })];
+    expect(estadoDeSala(construirLibro(f, { hoy: HOY }), 'Sala 2', HOY, S2)).toBe(ESTADO_DESINFECCION_AGRUPADA);
+  });
+
+  it('🔴 cuarentena y mixto NO se convierten en «Producción agrupada»', () => {
+    const cuar = construirLibro({ ingresos: enTanques('Sala 2', [16], '2026-02-05') }, { hoy: HOY });
+    expect(estadoDeSala(cuar, 'Sala 2', HOY, S2)).toBe(ESTADO_CUARENTENA);
+    const mixto = construirLibro({
+      ingresos: [...enTanques('Sala 2', [16]), ...enTanques('Sala 2', [17], '2026-02-05', 'BC')],
+    }, { hoy: HOY });
+    expect(estadoDeSala(mixto, 'Sala 2', HOY, S2)).toBe(ESTADO_MIXTO);
+  });
+
+  it('un tanque con DOS lotes cuenta una sola vez, y los tanques se cuentan sobre la lista física', () => {
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 2', 16, 10, 10), ing('2026-01-01', 'BC', 'CG2', 'Sala 2', 16, 10, 10)],
+    }, { hoy: HOY });
+    expect(ocupacionDeSala(l, 'Sala 2', S2)).toEqual({ conocida: true, ocupados: 1, total: 6 });
+  });
+
+  it('sin la lista física no se inventan tanques vacíos: sólo cuenta los que el libro conoce', () => {
+    const l = construirLibro({ ingresos: enTanques('Sala 2', [16, 17]) }, { hoy: HOY });
+    expect(ocupacionDeSala(l, 'Sala 2')).toEqual({ conocida: true, ocupados: 2, total: 2 });
+    expect(estadoDeSala(l, 'Sala 2', HOY)).toBe(ESTADO_PRODUCCION);
+  });
+
+  it('una sala con animales pero sin estado deducible sigue sin estado (no es Desinfección)', () => {
+    const l = construirLibro({ ingresos: enTanques('Sala 2', [16]) }, { hoy: HOY });
+    expect(estadoDeSala(l, 'Sala 2', '', S2)).toBe('');
   });
 });
 
