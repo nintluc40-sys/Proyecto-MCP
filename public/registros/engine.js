@@ -5975,14 +5975,17 @@ function madConstruirLibro(fuentes, opts){
       const esTotal=madLibroTxt(r.Tipo)==="Total";
       const pedido={ machos: madLibroEnt(r.Machos), hembras: madLibroEnt(r.Hembras) };
       if(!lote){ anota(fecha,"cierre-incompleto","Un cierre sin lote no entra en el libro."); return; }
-      const posLote=Object.keys(pos).map(function(k){ return pos[k]; }).filter(function(p){ return p.lote===lote; });
+      // D14: un Parcial con sala descuenta sólo de esa sala; un Total, del lote entero. Ver el módulo.
+      const salaCierre=esTotal ? "" : madLibroTxt(r.Sala);
+      const enSala=function(o){ if(salaCierre) o.sala=salaCierre; return o; };
+      const posLote=Object.keys(pos).map(function(k){ return pos[k]; }).filter(function(p){ return p.lote===lote && (!salaCierre || p.sala===salaCierre); });
       if(!posLote.length){
-        anota(fecha,"cierre-sin-lote","Se cerró el lote "+lote+" y ningún ingreso explica dónde estaba.",{ lote:lote, machos:pedido.machos, hembras:pedido.hembras });
+        anota(fecha,"cierre-sin-lote",salaCierre ? "Se cerró el lote "+lote+" en "+salaCierre+" y ningún ingreso explica que estuviera allí." : "Se cerró el lote "+lote+" y ningún ingreso explica dónde estaba.",enSala({ lote:lote, machos:pedido.machos, hembras:pedido.hembras }));
         return;
       }
       ["machos","hembras"].forEach(function(sexo){
         const res=madTomarDe(posLote, sexo, pedido[sexo]);
-        if(res.sobra>0) anota(fecha,"deficit-cierre","Del lote "+lote+" salieron "+res.sobra+" "+sexo+" de más de los que el libro tenía vivos.",{ lote:lote, sexo:sexo, cantidad:res.sobra });
+        if(res.sobra>0) anota(fecha,"deficit-cierre","Del lote "+lote+" salieron "+res.sobra+" "+sexo+" de más de los que el libro tenía vivos"+(salaCierre ? " en "+salaCierre : "")+".",enSala({ lote:lote, sexo:sexo, cantidad:res.sobra }));
       });
       if(esTotal){
         ["machos","hembras"].forEach(function(sexo){
@@ -6118,6 +6121,40 @@ function madEstadoPorLoteTexto(libro, sala, fecha){
   });
   return partes.sort().join(" · ");
 }
+// ── D13 (2026-09-14) · dos lotes en un tanque, sólo por mezcla o agrupación: se AVISA. Ver el módulo.
+function madLotesVivosEnTanque(libro, sala, tanque){
+  const T=((libro&&libro.tanques)||{})[madUbicKey(sala,tanque)];
+  const lotes=[];
+  ((T&&T.composicion)||[]).forEach(function(c){ if((c.machos>0||c.hembras>0) && lotes.indexOf(c.lote)===-1) lotes.push(c.lote); });
+  return lotes.sort();
+}
+function _madDeLotes(ls){ return (ls.length>1 ? "de los lotes " : "del lote ")+ls.join(", "); }
+function madAvisosIngresoCompartido(libro, lote, ubicaciones){
+  const avisos=[], l=madLibroTxt(lote);
+  if(!l) return avisos;
+  const vistos={};
+  (ubicaciones||[]).forEach(function(u){
+    const sala=madLibroTxt(u&&u.sala), t=madLibroEnt(u&&u.tanque);
+    if(!sala||!t||vistos[madUbicKey(sala,t)]) return;
+    vistos[madUbicKey(sala,t)]=1;
+    const otros=madLotesVivosEnTanque(libro, sala, t).filter(function(x){ return x!==l; });
+    if(otros.length) avisos.push("El tanque "+t+" de "+sala+" ya tiene animales vivos "+_madDeLotes(otros)+": el lote "+l+" lo compartiría. Dos lotes sólo comparten tanque en una mezcla o una agrupación (🔄 Movimientos).");
+  });
+  return avisos;
+}
+function madAvisosTransferenciaCompartida(libro, tipo, tramos){
+  const avisos=[];
+  if(madLibroTxt(tipo)!=="Transferencia") return avisos;
+  (tramos||[]).forEach(function(tr, i){
+    const x=tr||{};
+    const sD=madLibroTxt(x.salaDestino), tD=madLibroEnt(x.tanqueDestino);
+    if(!sD||!tD) return;
+    const vienen=madLotesVivosEnTanque(libro, x.salaOrigen, x.tanqueOrigen);
+    const otros=madLotesVivosEnTanque(libro, sD, tD).filter(function(l){ return vienen.indexOf(l)===-1; });
+    if(otros.length) avisos.push("Tramo "+(i+1)+": el tanque "+tD+" de "+sD+" ya tiene animales vivos "+_madDeLotes(otros)+(otros.length>1 ? ", que no están" : ", que no está")+" en el origen: la Transferencia los dejaría compartiendo tanque. Si se juntan lotes, el tipo es Mezcla o Agrupación.");
+  });
+  return avisos;
+}
 // El nombre del tanque mezclado lo PROPONE el sistema, ordenado, para que nadie vuelva a
 // teclearlo de dos maneras: en producción ya convive «BC/BA» escrito a mano.
 function madNombreComposicion(tanque){
@@ -6203,6 +6240,18 @@ function madLibroAlDia(base, fecha){
    orígenes de Movimientos, los vivos de Tanques y la propuesta de estado de Salas— tienen
    que decir lo mismo: cuatro textos escritos aparte divergen, y el que se quede atrás dirá
    «✅» sobre un libro a medias. Ese ✅ es justo lo que este módulo existe para no dar. */
+/* D13 · el libro al cierre de la FECHA DE LA FICHA, sobre la última lectura (`_madLibro`, que deja
+   cualquier 🔄). Se guarda por (lectura, fecha): la rejilla de Ingreso lo pide a cada tecla. Sin
+   lectura devuelve null y los avisos de tanque compartido no se dan (no se inventan). */
+let _madLibroFichaCache = { base:null, fecha:"", libro:null };
+function _madLibroDeFicha(fecha){
+  if(!_madLibro || !/^\d{4}-\d{2}-\d{2}$/.test(String(fecha||""))) return null;
+  const c=_madLibroFichaCache;
+  if(c.base===_madLibro && c.fecha===fecha) return c.libro;
+  const libro=madLibroAlDia(_madLibro, fecha);
+  _madLibroFichaCache={ base:_madLibro, fecha:fecha, libro:libro };
+  return libro;
+}
 function madLibroIncompleto(libro){
   const f=(libro&&libro.fallos)||[], r=(libro&&libro.recortadas)||[];
   const noLeidas="no se pudieron leer "+f.length+" hoja(s) ("+f.join(", ")+")";
@@ -6558,6 +6607,10 @@ function _madIngRejillaHTML(comp, sala){
   if(!list.length) return '<div style="font-size:11px;color:#94a3b8;padding:8px 0;max-width:210px">Elige una sala y aparecerán sus tanques.</div>';
   const ocup = madIngOcupados(comp), eleg = madIngElegidos(comp);
   const miGrupo = madIngGrupoDe(comp);
+  // D13: con el libro leído (🔄 Ver ocupación), los tanques con OTRO lote vivo salen en ámbar. No se apagan: es un aviso.
+  const fEl = document.getElementById("mi-fecha"), lEl = document.getElementById("mi-lote");
+  const libro = _madLibroDeFicha(fEl ? fEl.value : "");
+  const miLote = madIngNormLote(lEl ? lEl.value : "");
   const cel = list.map(function(t){
     const k = sala+"|"+t;
     const ocupantes = ocup[k] || [];
@@ -6568,13 +6621,16 @@ function _madIngRejillaHTML(comp, sala){
     const ajeno = ocupantes.some(function(g){ return miGrupo==="" || g!==miGrupo; });
     const off = !on && ajeno;
     const compartido = !on && !ajeno && ocupantes.length>0;
+    const otroLote = libro ? madLotesVivosEnTanque(libro, sala, t).filter(function(x){ return x!==miLote; }) : [];
     const st = off ? "background:#e2e8f0;color:#94a3b8;border-color:#cbd5e1;cursor:not-allowed"
-             : on  ? "background:#0369a1;color:#fff;border-color:#0369a1;font-weight:700;cursor:pointer"
+             : on  ? "background:#0369a1;color:#fff;border-color:"+(otroLote.length ? "#f59e0b;box-shadow:0 0 0 2px #f59e0b" : "#0369a1")+";font-weight:700;cursor:pointer"
              : compartido ? "background:#e0f2fe;color:#075985;border-color:#0369a1;border-style:dashed;cursor:pointer"
+             : otroLote.length ? "background:#fef3c7;color:#92400e;border-color:#f59e0b;cursor:pointer"
                    : "background:#fff;color:#334155;border-color:#cbd5e1;cursor:pointer";
-    const tit = off ? "Ya ocupado por otra composición de este ingreso"
+    const tit = (off ? "Ya ocupado por otra composición de este ingreso"
               : compartido ? "Lo ocupa otra composición de tu MISMO grupo: podéis compartirlo"
-              : (on ? "Quitar este tanque" : "Asignar este tanque");
+              : (on ? "Quitar este tanque" : "Asignar este tanque"))
+              + (otroLote.length ? " · ⚠ Tiene vivo el lote "+otroLote.join(", ")+": dos lotes sólo comparten tanque en una mezcla o agrupación" : "");
     return '<button type="button" class="mi-tq" data-t="'+t+'"'+(off?' disabled':'')+' title="'+tit+'"'
       + ' onclick="madIngTanqueToggle(this)"'
       + ' style="width:38px;height:34px;border:1.5px solid;border-radius:6px;font-size:12px;padding:0;'+st+'">'+t+'</button>';
@@ -6924,9 +6980,37 @@ function _madIngPinta(res, filas){
   box.innerHTML=h;
   _madReporteVigila("fp-ingreso", "mi-report");
 }
+/* D13: avisos de tanque compartido con OTRO lote, si hay libro leído. Van con los del validador. */
+function madIngAvisosOcupacion(model){
+  const libro=_madLibroDeFicha(model.fecha);
+  if(!libro) return [];
+  const ubic=[];
+  (model.composiciones||[]).forEach(function(c){ (c.reparto||[]).forEach(function(r){ ubic.push(r); }); });
+  return madAvisosIngresoCompartido(libro, madIngNormLote(model.lote), ubic);
+}
+async function madIngVerOcupacion(){
+  const btn=document.getElementById("mi-ocup-btn"), nota=document.getElementById("mi-ocup-nota");
+  if(nota) nota.innerHTML='<span style="color:#64748b">Leyendo las hojas… puede tardar unos segundos.</span>';
+  if(btn) btn.disabled=true;
+  try{
+    await madSaldoCargar(true);
+    const f=document.getElementById("mi-fecha"), fecha=f ? f.value : "";
+    const libro=_madLibroDeFicha(fecha);
+    const mal=madLibroIncompleto(_madLibro);
+    if(nota) nota.innerHTML = !libro ? '<span style="color:#92400e">Pon una fecha válida para ver la ocupación de ese día.</span>'
+      : mal ? '<span style="color:#991b1b">⚠ '+escapeHtml(mal)+': la ocupación puede quedarse corta.</span>'
+      : '<span style="color:#166534">Ocupación al cierre del '+escapeHtml(fecha)+': en ámbar, los tanques con OTRO lote vivo. Se recalcula al pulsar de nuevo.</span>';
+    madIngRefrescar();
+  }catch(_){
+    if(nota) nota.innerHTML='<span style="color:#991b1b">No se pudieron leer las hojas. Reintenta con 🔄.</span>';
+  }finally{
+    if(btn) btn.disabled=false;
+  }
+}
 function madIngRevisar(){
   const model=madIngCollect();
   const res=madIngValidar(model);
+  res.avisos=res.avisos.concat(madIngAvisosOcupacion(model));
   _madIngPinta(res, madIngBuildRows(model).length);
   return _madRevisarRemata("mi-report", res, MAD_ING_SHEET);
 }
@@ -6953,13 +7037,15 @@ async function _madIngGasAlDia(url){
   }catch(_){ return null; }
 }
 /* Hojas de Maduración cuyas columnas cambiaron y se escriben POR POSICIÓN: no se entregan a un
-   GAS viejo (sin guarda de esquema). Ingreso desde el 2026-09-13; Desoves desde el 2026-09-14. */
-function _madHojaPideGasNuevo(hoja){ return hoja === MAD_ING_SHEET || hoja === MAD_DESOVE_SHEET; }
+   GAS viejo (sin guarda de esquema). Ingreso desde el 2026-09-13; Desoves y Fin de Ciclo (Sala y
+   pesos, D14) desde el 2026-09-14. */
+function _madHojaPideGasNuevo(hoja){ return hoja === MAD_ING_SHEET || hoja === MAD_DESOVE_SHEET || hoja === MAD_FIN_SHEET; }
 function _madGasViejoMsg(hoja){ return "el GAS publicado es anterior a las columnas nuevas de «" + hoja + "» y escribiría los datos en columnas equivocadas"; }
 const MAD_ING_GAS_VIEJO = "el GAS publicado es anterior a las columnas nuevas de «Maduración Ingreso» (Crecimiento y Libras) y escribiría los datos en columnas equivocadas";
 async function madIngGuardar(){
   const model=madIngCollect();
   const res=madIngValidar(model);
+  res.avisos=res.avisos.concat(madIngAvisosOcupacion(model));
   const payload=buildMadIngresoPayload(model);
   _madIngPinta(res, payload.rows.length);
   if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
@@ -7019,8 +7105,12 @@ function renderMadIngreso(){
     +     '<span style="font-size:16px">ℹ️</span><span>Un lote puede traer varias parejas de código genético y piscina, y repartirse entre varias salas. El lote es UNO para todas.<br>Si dos piscinas se <b>mezclan al entrar</b>, márcalas y pulsa <b>🔗 Combinar</b>: entran como una sola composición (767/766). Un tanque se ocupa <b>una vez</b>.</span>'
     +   '</div>'
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
-    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha de ingreso<input type="date" id="mi-fecha" value="'+escapeHtml(todayStr)+'" style="'+_MAD_ING_INP+'"></label>'
-    +     '<label style="'+_MAD_ING_LBL+'">Lote<input id="mi-lote" placeholder="AB" style="'+_MAD_ING_INP+';width:100px;text-transform:uppercase"></label>'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha de ingreso<input type="date" id="mi-fecha" value="'+escapeHtml(todayStr)+'" onchange="madIngRefrescar()" style="'+_MAD_ING_INP+'"></label>'
+    +     '<label style="'+_MAD_ING_LBL+'">Lote<input id="mi-lote" placeholder="AB" oninput="madIngRefrescar()" style="'+_MAD_ING_INP+';width:100px;text-transform:uppercase"></label>'
+    +     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding-bottom:2px">'
+    +       '<button class="btn" type="button" id="mi-ocup-btn" onclick="madIngVerOcupacion()" title="Lee el libro al cierre de la fecha de ingreso y marca en ámbar los tanques que ya tienen OTRO lote vivo" style="font-size:11px">🔄 Ver ocupación</button>'
+    +       '<span id="mi-ocup-nota" style="font-size:11px"></span>'
+    +     '</div>'
     +   '</div>'
     +   '<div id="mi-comps">'+_madIngCompHTML()+'</div>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
@@ -7257,9 +7347,15 @@ function _madMovPinta(res, filas){
   box.innerHTML=h;
   _madReporteVigila("fp-movimientos", "mv-report");
 }
+/* D13: una Transferencia a un tanque con OTRO lote vivo se avisa, si hay libro leído (🔄 Ver saldo). */
+function madMovAvisosOcupacion(model){
+  const libro=_madLibroDeFicha(model.fecha);
+  return libro ? madAvisosTransferenciaCompartida(libro, model.tipo, model.tramos) : [];
+}
 function madMovRevisar(){
   const model=madMovCollect();
   const res=madMovValidar(model);
+  res.avisos=res.avisos.concat(madMovAvisosOcupacion(model));
   _madMovPinta(res, madMovBuildRows(model).length);
   return _madRevisarRemata("mv-report", res, MAD_MOV_SHEET);
 }
@@ -7305,6 +7401,7 @@ function madMovLogHTML(){
 async function madMovGuardar(){
   const model=madMovCollect();
   const res=madMovValidar(model);
+  res.avisos=res.avisos.concat(madMovAvisosOcupacion(model));
   const payload=buildMadMovPayload(model);
   _madMovPinta(res, payload.rows.length);
   if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
@@ -7678,10 +7775,17 @@ const MAD_FIN_COLUMNS = [
   { h:"Lote", k:"lote" },
   { h:"Tipo", k:"tipo" },
   { h:"Motivo", k:"motivo" },
+  // D14 (2026-09-14): la sala de un cierre PARCIAL (vacía = el lote entero). Ver el módulo.
+  { h:"Sala", k:"sala" },
   { h:"Metabisulfito (kg)", k:"metabisulfito" },
   { h:"Fecha aplicación", k:"fechaMetabisulfito" },
   { h:"Machos", k:"machos" },
   { h:"Hembras", k:"hembras" },
+  // 2026-09-14: los pesos son del REGISTRO (todos los lotes juntos) y van iguales en cada fila. Ver el módulo.
+  { h:"Peso promedio machos (g)", k:"pesoPromMachos" },
+  { h:"Peso promedio hembras (g)", k:"pesoPromHembras" },
+  { h:"Peso total machos (kg)", k:"pesoTotalMachos" },
+  { h:"Peso total hembras (kg)", k:"pesoTotalHembras" },
   { h:"Observaciones", k:"observaciones" },
   { h:"ID", k:"id" }
 ];
@@ -7689,9 +7793,13 @@ const MAD_FIN_HEADERS = MAD_FIN_COLUMNS.map(function(c){ return c.h; });
 // El motivo, compacto, para la llave. Sin él un pedido y un descarte del mismo lote el
 // mismo día compartirían ID y el segundo borraría al primero — y con él su descuento.
 function madFinMotivoTag(s){ return sanitizeStr(s,60).toUpperCase().replace(/[^A-ZÁÉÍÓÚÑ0-9]+/g,""); }
-function madFinRowId(fecha, lote, motivo){
-  return sanitizeStr(fecha,10)+"-"+madDesNormLote(lote)+"-"+madFinMotivoTag(motivo);
+// La sala entra en la llave SÓLO si se dice: sin ella el ID es el de siempre.
+function madFinRowId(fecha, lote, motivo, sala){
+  const s = sanitizeStr(sala,30);
+  return sanitizeStr(fecha,10)+"-"+madDesNormLote(lote)+"-"+madFinMotivoTag(motivo)+(s ? "-"+madIngSalaTag(s) : "");
 }
+// Sala de un cierre: la de un Parcial; un Total es del lote entero y nunca la lleva.
+function madFinSalaDeCierre(x){ return sanitizeStr(x.tipo,20)==="Total" ? "" : sanitizeStr(x.sala,30); }
 // Dosis en kg: admite decimales, al revés que los conteos. Devuelve "" cuando no hay cifra
 // —no 0— para que el MERGE del GAS conserve la celda: un 0 por descuido borraría una dosis
 // real. Mismo criterio que el ×1000 de Desoves.
@@ -7708,13 +7816,16 @@ function madFinBuildRows(model){
     const x = c||{};
     const lote = madDesNormLote(x.lote), motivo = sanitizeStr(x.motivo,60);
     if(lote===""||motivo==="") return;   // sin llave completa no hay fila
+    const sala = madFinSalaDeCierre(x);
     const v = {
-      fecha: fecha, lote: lote, tipo: sanitizeStr(x.tipo,20), motivo: motivo,
+      fecha: fecha, lote: lote, tipo: sanitizeStr(x.tipo,20), motivo: motivo, sala: sala,
       metabisulfito: madFinKg(x.metabisulfito),
       fechaMetabisulfito: sanitizeStr(x.fechaMetabisulfito,10),
       machos: madIngInt(x.machos), hembras: madIngInt(x.hembras),
+      pesoPromMachos: madFinKg(m.pesoPromMachos), pesoPromHembras: madFinKg(m.pesoPromHembras),
+      pesoTotalMachos: madFinKg(m.pesoTotalMachos), pesoTotalHembras: madFinKg(m.pesoTotalHembras),
       observaciones: sanitizeStr(x.observaciones,300),
-      id: madFinRowId(fecha, lote, motivo)
+      id: madFinRowId(fecha, lote, motivo, sala)
     };
     filas.push(MAD_FIN_COLUMNS.map(function(col){ return v[col.k]; }));
   });
@@ -7740,9 +7851,13 @@ function madFinValidar(model){
     if(motivo==="") errores.push("Falta el motivo del cierre "+(i+1)+". Va en la llave: sin él, un pedido y un descarte del mismo día se pisarían.");
     if(tipo==="") errores.push("Falta decir si "+et+" es Total o Parcial.");
     else if(MAD_FIN_TIPOS.indexOf(tipo)===-1) avisos.push("«"+tipo+"» no es un tipo conocido de cierre.");
+    const salaDicha = sanitizeStr(x.sala,30);
+    if(salaDicha!=="" && tipo==="Total") errores.push("Un cierre Total cierra "+(lote||"el lote")+" ENTERO, en todas sus salas: deja la sala vacía o regístralo como Parcial.");
+    if(salaDicha!=="" && !MAD_TANQUES_POR_SALA[salaDicha]) avisos.push("«"+salaDicha+"» no es una sala conocida ("+et+").");
     if(lote===""||motivo==="") return;
-    const llave = lote+"|"+madFinMotivoTag(motivo);
-    if(vistos[llave]) errores.push("El lote "+lote+" se cierra dos veces por «"+motivo+"» en esta fecha. Los dos escribirían la misma fila y el segundo borraría al primero: regístralos sumados.");
+    const sala = madFinSalaDeCierre(x);
+    const llave = lote+"|"+madFinMotivoTag(motivo)+"|"+(sala ? madIngSalaTag(sala) : "");
+    if(vistos[llave]) errores.push("El lote "+lote+" se cierra dos veces por «"+motivo+"»"+(sala ? " en "+sala : "")+" en esta fecha. Los dos escribirían la misma fila y el segundo borraría al primero: regístralos sumados.");
     vistos[llave]=1;
     const mach = madIngInt(x.machos), hemb = madIngInt(x.hembras);
     if((mach===""||mach===0) && (hemb===""||hemb===0)){
@@ -7756,6 +7871,17 @@ function madFinValidar(model){
     if(mbs!=="" && fmbs==="") avisos.push("El metabisulfito de "+lote+" no dice en qué fecha se aplicó.");
     if(fmbs!=="" && mbs==="") avisos.push("El metabisulfito de "+lote+" tiene fecha pero no dosis.");
     if(fmbs!=="" && !/^\d{4}-\d{2}-\d{2}$/.test(fmbs)) avisos.push("La fecha de metabisulfito de "+lote+" no es una fecha válida.");
+  });
+  // Los PESOS son del registro entero: aviso si no son cifra, o si pesan un sexo que ningún cierre saca. Ver el módulo.
+  const saca = { machos:0, hembras:0 };
+  cierres.forEach(function(c){ saca.machos += madIngInt((c||{}).machos)||0; saca.hembras += madIngInt((c||{}).hembras)||0; });
+  [["pesoPromMachos","El peso promedio de machos","machos"],["pesoPromHembras","El peso promedio de hembras","hembras"],
+   ["pesoTotalMachos","El peso total de machos","machos"],["pesoTotalHembras","El peso total de hembras","hembras"]].forEach(function(p){
+    const crudo = m[p[0]];
+    if(crudo===""||crudo===null||crudo===undefined) return;
+    const v = madFinKg(crudo);
+    if(v==="") avisos.push(p[1]+" no es una cifra válida y no se guardará.");
+    else if(v>0 && saca[p[2]]===0) avisos.push(p[1]+" está anotado, pero ningún cierre saca "+p[2]+".");
   });
   return { errores: errores, avisos: avisos };
 }
@@ -7773,6 +7899,7 @@ function _madFinCardHTML(){
     +   '<label style="'+_MAD_ING_LBL+'">Lote<input class="mf-lote" style="'+_MAD_ING_INP+';width:100px;text-transform:uppercase"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Tipo<select class="mf-tipo" onchange="madFinTipoChange(this)" style="'+_MAD_ING_INP+';width:120px">'+madFinTipoOpts("Parcial")+'</select></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Motivo<select class="mf-motivo" style="'+_MAD_ING_INP+';width:190px">'+madFinMotivoOpts("")+'</select></label>'
+    +   '<label style="'+_MAD_ING_LBL+'" title="Sólo en un cierre Parcial: el libro descuenta de esa sala. Vacía = de todas las salas donde esté el lote.">Sala (sólo Parcial)<select class="mf-sala" style="'+_MAD_ING_INP+';width:120px">'+madIngSalaOpts("")+'</select></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Metabisulfito (kg)<input class="mf-mbs" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:130px"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Fecha aplicación<input class="mf-mbsf" type="date" style="'+_MAD_ING_INP+';width:145px"></label>'
     +   '<button class="btn" type="button" onclick="madFinDelCard(this)" style="font-size:11px">✕ Quitar</button>'
@@ -7789,10 +7916,13 @@ function _madFinCardHTML(){
 // leer dos palabras en un desplegable: se dice al lado, en el momento de elegir.
 function madFinTipoChange(sel){
   const c = sel.closest(".mf-cierre"); if(!c) return;
+  // D14: un Total es del lote ENTERO, en todas sus salas; la sala sólo la lleva un Parcial.
+  const s = c.querySelector(".mf-sala");
+  if(s){ s.disabled = sel.value==="Total"; if(s.disabled) s.value=""; }
   const n = c.querySelector(".mf-nota"); if(!n) return;
   n.innerHTML = sel.value==="Total"
-    ? '<b>Total:</b> lo que el libro crea que queda y no salga se anotará como <b>diferencia</b>, y el lote quedará cerrado.'
-    : (sel.value==="Parcial" ? '<b>Parcial:</b> sólo descuenta lo que sale. El lote sigue vivo.' : '');
+    ? '<b>Total:</b> lo que el libro crea que queda y no salga se anotará como <b>diferencia</b>, y el lote quedará cerrado en todas sus salas.'
+    : (sel.value==="Parcial" ? '<b>Parcial:</b> sólo descuenta lo que sale —de la sala indicada, o de todas si la dejas vacía—. El lote sigue vivo.' : '');
 }
 function madFinAddCard(){
   const c=document.getElementById("mf-cards");
@@ -7809,12 +7939,15 @@ function madFinCollect(){
   const cierres=[];
   document.querySelectorAll("#mf-cards .mf-cierre").forEach(function(c){
     cierres.push({
-      lote:g(c,".mf-lote"), tipo:g(c,".mf-tipo"), motivo:g(c,".mf-motivo"),
+      lote:g(c,".mf-lote"), tipo:g(c,".mf-tipo"), motivo:g(c,".mf-motivo"), sala:g(c,".mf-sala"),
       metabisulfito:g(c,".mf-mbs"), fechaMetabisulfito:g(c,".mf-mbsf"),
       machos:g(c,".mf-machos"), hembras:g(c,".mf-hembras"), observaciones:g(c,".mf-obs")
     });
   });
-  return { fecha:f?f.value:"", cierres:cierres };
+  const fp=document.getElementById("fp-fin") || document;
+  return { fecha:f?f.value:"", cierres:cierres,
+    pesoPromMachos:g(fp,"#mf-ppm"), pesoPromHembras:g(fp,"#mf-pph"),
+    pesoTotalMachos:g(fp,"#mf-ptm"), pesoTotalHembras:g(fp,"#mf-pth") };
 }
 function _madFinPinta(res, filas){
   const box=document.getElementById("mf-report"); if(!box) return;
@@ -7875,6 +8008,13 @@ async function madFinGuardar(){
   _madFinPinta(res, payload.rows.length);
   if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
   if(!payload.rows.length){ toast("No hay ningún cierre completo que guardar.","warn",4000); return; }
+  if((await _madIngGasAlDia()) === false){
+    const aviso = "No se envió: " + _madGasViejoMsg(MAD_FIN_SHEET) + ". Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo tecleado sigue aquí.";
+    const box = document.getElementById("mf-report");
+    if(box) box.innerHTML = '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:12px;color:#991b1b">' + escapeHtml(aviso) + '</div>';
+    toast(aviso, "err", 10000);
+    return;
+  }
   toast("Enviando "+payload.rows.length+" cierre(s)…","info",2200);
   const _t={};
   const ok=await postPayload(payload, gasUrl(), _t);
@@ -7912,12 +8052,22 @@ function renderMadFinCiclo(){
     + '<div class="fc-h"><div class="fc-t">🏁 Maduración · Fin de Ciclo</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
     + '<div class="fc-b">'
     +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
-    +     '<span style="font-size:16px">ℹ️</span><span>Es la <b>única salida</b> del departamento: un pedido a otra camaronera, un descarte, el fin de la vida útil. Los movimientos entre tanques van en 🔄 Movimientos.<br>Se cierra el <b>lote entero</b> — el libro descuenta de cada tanque donde esté, en proporción. Y en un cierre <b>Total</b>, lo que el libro creía que quedaba y no salió se anota como <b>diferencia</b>: no se esconde.</span>'
+    +     '<span style="font-size:16px">ℹ️</span><span>Es la <b>única salida</b> del departamento: un pedido a otra camaronera, un descarte, el fin de la vida útil. Los movimientos entre tanques van en 🔄 Movimientos.<br>Se cierra el <b>lote entero</b> — el libro descuenta de cada tanque donde esté, en proporción; un cierre <b>Parcial</b> puede indicar la <b>sala</b> y entonces descuenta sólo de ella. Y en un cierre <b>Total</b>, lo que el libro creía que quedaba y no salió se anota como <b>diferencia</b>: no se esconde.</span>'
     +   '</div>'
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
     +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mf-fecha" value="'+escapeHtml(todayStr)+'" style="'+_MAD_ING_INP+'"></label>'
     +   '</div>'
     +   '<div id="mf-cards">'+_madFinCardHTML()+'</div>'
+    +   '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin:4px 0 10px;background:#f8fafc">'
+    +     '<div style="font-size:12px;font-weight:700;margin-bottom:2px">⚖️ Pesos de lo que sale</div>'
+    +     '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Se pesan <b>juntos todos los lotes</b> de este registro, no lote por lote: se guardan iguales en cada fila.</div>'
+    +     '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
+    +       '<label style="'+_MAD_ING_LBL+'">Peso promedio machos (g)<input id="mf-ppm" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:150px"></label>'
+    +       '<label style="'+_MAD_ING_LBL+'">Peso promedio hembras (g)<input id="mf-pph" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:150px"></label>'
+    +       '<label style="'+_MAD_ING_LBL+'">Peso total machos (kg)<input id="mf-ptm" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:150px"></label>'
+    +       '<label style="'+_MAD_ING_LBL+'">Peso total hembras (kg)<input id="mf-pth" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:150px"></label>'
+    +     '</div>'
+    +   '</div>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
     +     '<button class="btn" type="button" onclick="madFinAddCard()">➕ Cierre</button>'
     +     '<button class="btn" type="button" onclick="madFinRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
@@ -17858,7 +18008,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "40464830dcf8";
+const GAS_VERSION = "1bd16a23cc20";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -18521,11 +18671,28 @@ function inKey(row, isCtrl) {
        String(row[3])].join("|");
 }
 
+// P15 (2026-09-14) · FORMATEAR UNA FECHA ES UNA LLAMADA DE SERVICIO, y se hacía POR CELDA, con otra
+// más para pedir la zona horaria: medido en ?p=rows, la MATRIZ con sus dos columnas de fecha pasaba de
+// 3-6 s a 40-64 s, y la misma pareja corría en madRowKey para cada fila de la hoja en cada escritura con
+// fecha en la llave. Ahora la zona se pide UNA vez por petición y cada fecha distinta se formatea UNA vez
+// (un día son decenas de filas): el mismo texto, sin la carga. Una ejecución del GAS no comparte
+// variables con la siguiente, así que la caché no envejece.
+var _celdaTz_ = null, _celdaFmt_ = {};
+function formatoCelda_(d, patron) {
+  var k = patron + "|" + d.getTime();
+  var hecho = _celdaFmt_[k];
+  if (hecho === undefined) {
+    if (_celdaTz_ === null) _celdaTz_ = Session.getScriptTimeZone();
+    hecho = Utilities.formatDate(d, _celdaTz_, patron);
+    _celdaFmt_[k] = hecho;
+  }
+  return hecho;
+}
 // dStr: normaliza fecha (Date o string) a "YYYY-MM-DD"
 function dStr(val) {
   if (!val && val !== 0) return "";
   if (val instanceof Date) {
-    return Utilities.formatDate(val, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    return formatoCelda_(val, "yyyy-MM-dd");
   }
   return String(val).slice(0, 10);
 }
@@ -18534,7 +18701,7 @@ function dStr(val) {
 function timeStr(val) {
   if (!val && val !== 0) return "";
   if (val instanceof Date) {
-    return Utilities.formatDate(val, Session.getScriptTimeZone(), "HH:mm");
+    return formatoCelda_(val, "HH:mm");
   }
   return String(val).slice(0, 5);
 }
@@ -19025,6 +19192,7 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol, llave) {
       if (numCol >= 0 && numCol < merged.length) ws.getRange(entry.row, numCol + 1, 1, 1).setNumberFormat("General");
       ws.getRange(entry.row, 1, 1, merged.length).setValues([merged]);
       fmtData(ws, entry.row, 1, merged.length, false);
+      madFormatosFijos_(ws, entry.row, 1, merged.length, trovanCol, numCol);
       updated++;
     } else if (pendingMap[k2] !== undefined) {
       var pi = pendingMap[k2];
@@ -19047,9 +19215,18 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol, llave) {
     if (numCol >= 0 && numCol < u.ancho) ws.getRange(startRow, numCol + 1, u.filas.length, 1).setNumberFormat("General");
     ws.getRange(startRow, 1, u.filas.length, u.ancho).setValues(u.filas);
     fmtData(ws, startRow, u.filas.length, u.ancho, false);
+    madFormatosFijos_(ws, startRow, u.filas.length, u.ancho, trovanCol, numCol);
     added = u.filas.length;
   }
   return { upserted: updated, appended: added };
+}
+// P16 (2026-09-14) · fmtData pone formato de FECHA a la columna 1 de toda fila escrita, y en la MATRIZ
+// la columna 1 es «Número»: el 7 se veía «06/01/1900». Los formatos propios de la hoja (Trovan como
+// texto, Número automático) se vuelven a poner DESPUÉS de fmtData, que es lo que queda. El texto del
+// Trovan se pone también ANTES de escribir: sin él Sheets convertiría el código al guardarlo.
+function madFormatosFijos_(ws, fila, nFilas, ancho, trovanCol, numCol) {
+  if (trovanCol >= 0 && trovanCol < ancho) ws.getRange(fila, trovanCol + 1, nFilas, 1).setNumberFormat("@");
+  if (numCol >= 0 && numCol < ancho) ws.getRange(fila, numCol + 1, nFilas, 1).setNumberFormat("General");
 }
 
 function madRowKey(row, keyCols) {
@@ -19058,7 +19235,7 @@ function madRowKey(row, keyCols) {
     var c = keyCols[i];
     var v = row[c];
     if (v instanceof Date) {
-      parts.push(Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd"));
+      parts.push(formatoCelda_(v, "yyyy-MM-dd"));
     } else {
       parts.push(String(v == null ? "" : v).trim());
     }
@@ -19104,11 +19281,7 @@ function llaveMatriz_(envio) {
   var claves = [], deHoja = {};
   return {
     preparar: function(data) {
-      var tz = null;
-      var fecha = function(v) {
-        if (tz === null && esFecha_(v)) tz = Session.getScriptTimeZone();
-        return fechaIsoGas_(v, tz);
-      };
+      var fecha = function(v) { return fechaIsoGas_(v); };
       var enEnvio = {};
       for (var e0 = 0; e0 < envio.length; e0++) enEnvio[madInKey(envio[e0], [1])] = 1;
       var porChip = {};
@@ -19160,8 +19333,8 @@ function esFecha_(v) { return Object.prototype.toString.call(v) === "[object Dat
 // Fecha ISO (yyyy-mm-dd) de una celda, o "" si no es una fecha real: una fecha de Sheets, ISO (con
 // hora detrás o sin ella) o dd/mm/yyyy. SIN regex a propósito, como madInKey: dentro de la
 // plantilla GAS() de la app las barras invertidas de una regex colapsan.
-function fechaIsoGas_(v, tz) {
-  if (esFecha_(v)) return isNaN(v.getTime()) ? "" : Utilities.formatDate(v, tz || Session.getScriptTimeZone(), "yyyy-MM-dd");
+function fechaIsoGas_(v) {
+  if (esFecha_(v)) return isNaN(v.getTime()) ? "" : formatoCelda_(v, "yyyy-MM-dd");
   var s = String(v == null ? "" : v).trim(), y, m, d, p;
   if (s.length >= 10 && s.charAt(4) === "-" && s.charAt(7) === "-") { y = s.slice(0, 4); m = s.slice(5, 7); d = s.slice(8, 10); }
   else {
@@ -19290,7 +19463,7 @@ function sheetRows(name, t, cols) {
   }
 }
 function _rowsCell(v) {
-  if (v instanceof Date) { return Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd"); }
+  if (v instanceof Date) { return formatoCelda_(v, "yyyy-MM-dd"); }
   return v == null ? "" : v;
 }
 
@@ -19337,12 +19510,12 @@ function _evJson(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 function _evCellDate(v) {
-  if (v instanceof Date) { return Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd"); }
+  if (v instanceof Date) { return formatoCelda_(v, "yyyy-MM-dd"); }
   var s = String(v == null ? "" : v).trim();
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
 function _evCellHora(v) {
-  if (v instanceof Date) { return Utilities.formatDate(v, Session.getScriptTimeZone(), "HH:mm"); }
+  if (v instanceof Date) { return formatoCelda_(v, "HH:mm"); }
   return String(v == null ? "" : v);
 }
 
@@ -19585,7 +19758,7 @@ function _astFilasIguales(a, b) {
 // Normaliza una celda a texto comparable. Date -> yyyy-MM-dd, que es como las
 // devuelve getValues() y como las escribe el cliente.
 function _astCelda(v) {
-  if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  if (v instanceof Date) return formatoCelda_(v, "yyyy-MM-dd");
   return String(v == null ? "" : v).trim();
 }
 

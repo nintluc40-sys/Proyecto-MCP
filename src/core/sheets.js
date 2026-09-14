@@ -130,9 +130,9 @@ export function detectSheetName(rows, gid, rawTitle) {
      acentuación de una pestaña tecleada a mano. */
   if ((has((k) => k.includes('sala')) || has((k) => k.includes('genético') || k.includes('genetico'))) &&
       has((k) => k.includes('machos') || k.includes('hembras') || k.includes('nauplio'))) return 'Maduracion';
-  /* ⚠⚠ «Maduración Fin de Ciclo» NO TIENE NI «Sala» NI «código genético», así que la regla
-     de arriba no la alcanza: un cierre es de un LOTE entero, y ni la sala ni el pool
-     genético entran en su registro. Sin esta línea cae al final como «Hoja<N>» — el mismo
+  /* ⚠⚠ «Maduración Fin de Ciclo» NO TENÍA NI «Sala» NI «código genético», así que la regla
+     de arriba no la alcanzaba: un cierre es de un LOTE entero. (Desde D14, 2026-09-14, lleva
+     «Sala» para el Parcial y la regla de arriba también la alcanza; esta firma se queda.) Sin esta línea cae al final como «Hoja<N>» — el mismo
      fallo silencioso que se cazó el 2026-09-08 con «Maduración Lotes», y por el mismo
      motivo: un diseño nuevo la dejó sin la columna que le servía de firma.
      Medido el 2026-09-09 sobre sus cabeceras reales: por COLUMNAS daba «Hoja1» y por

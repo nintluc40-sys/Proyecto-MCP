@@ -79,6 +79,7 @@ function hojaFalsa(filasIniciales, opts = {}) {
   const filas = filasIniciales.map((f) => f.slice());
   const escrituras = [];
   const texto = [];                                   // rangos con formato «@»: [r, c, nR, nC]
+  const formatos = [];                                // TODOS los setNumberFormat, en orden: [r, c, nR, nC, formato]
   let maxRows = opts.maxRows || 1000;
   const esTexto = (fila, col) => texto.some(([r, c, nR, nC]) => fila >= r && fila < r + nR && col >= c && col < c + nC);
   const comoGuardaSheets = (fila, col, v) => {
@@ -90,7 +91,7 @@ function hojaFalsa(filasIniciales, opts = {}) {
   };
   const cadena = () => new Proxy({}, { get: (_t, k) => (k === 'then' ? undefined : () => cadena()) });
   const hoja = {
-    filas, escrituras, texto,
+    filas, escrituras, texto, formatos,
     getLastRow: () => filas.length,
     getLastColumn: () => filas.reduce((m, f) => Math.max(m, f.length), 0),
     getMaxColumns: () => 60,
@@ -122,6 +123,7 @@ function hojaFalsa(filasIniciales, opts = {}) {
           return cadena();
         },
         setNumberFormat: (fmt) => {
+          formatos.push([r, c, nR, nC, fmt]);
           if (fmt === '@') { texto.push([r, c, nR, nC]); escrituras.push('texto@' + r + ',' + c + 'x' + nR + ',' + nC); }
           return cadena();
         },
@@ -137,6 +139,7 @@ function gas(hojas) {
   const cache = new Map();
   const candado = { tomado: 0, soltado: 0 };
   let fechas = 0;                                     // llamadas a Utilities.formatDate (♻ MATRIZ)
+  let zonas = 0;                                      // llamadas a Session.getScriptTimeZone (P15)
   const ctx = {
     SpreadsheetApp: {
       openById: () => ({
@@ -150,19 +153,22 @@ function gas(hojas) {
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (s) => ({ setMimeType: () => JSON.parse(s) }) },
     Utilities: { sleep() {}, formatDate: (d) => { fechas++; return d.toISOString().slice(0, 10); } },
-    Session: { getScriptTimeZone: () => 'America/Guayaquil' },
+    Session: { getScriptTimeZone: () => { zonas++; return 'America/Guayaquil'; } },
     Logger: { log() {} },
     console: { error() {}, log() {} },
   };
   ctx.globalThis = ctx;
   createContext(ctx);
-  new Script(gasSrc + '\n;globalThis.__doPost = doPost; globalThis.__cmp = typeof esquemaIncompatible_ === "function" ? esquemaIncompatible_ : null;').runInContext(ctx);
+  new Script(gasSrc + '\n;globalThis.__doPost = doPost; globalThis.__doGet = doGet; globalThis.__cmp = typeof esquemaIncompatible_ === "function" ? esquemaIncompatible_ : null;').runInContext(ctx);
   let n = 0;
   const post = (payload) => ctx.__doPost({
     postData: { contents: JSON.stringify(Object.assign({ reqId: 'req-' + (n++) }, payload)) },
     parameter: { z: 'prueba-' + n },
   });
-  return { post, cache, candado, hojas, cmp: ctx.__cmp, fechasFormateadas: () => fechas };
+  /* Una fecha de Sheets tiene que nacer DENTRO de la caja: el GAS pregunta instanceof Date, y un Date de fuera no lo es. */
+  const FechaCaja = new Script('Date').runInContext(ctx);
+  return { post, cache, candado, hojas, cmp: ctx.__cmp, fechasFormateadas: () => fechas, zonasPedidas: () => zonas,
+    leer: (parameter) => ctx.__doGet({ parameter }), fecha: (d) => new FechaCaja(Date.UTC(2026, 8, d)) };
 }
 
 const filaVacia = (cab) => cab.map(() => '');
@@ -796,5 +802,57 @@ describe('GAS · ♻ la MATRIZ admite microchips reciclados sin pisar a la hembr
     expect(g.post(lote).status).toBe('ok');
     expect(hoja.filas).toHaveLength(4);
     expect(g.fechasFormateadas()).toBe(0);
+  });
+});
+
+/* ── P15 · FECHAS: una llamada de servicio por fecha DISTINTA, no por celda · P16 · «Número» sin formato de fecha ──
+   P15 (2026-09-14): formatear una fecha (y pedir la zona horaria) es una llamada de servicio, y se hacía por
+   CELDA: medido, la MATRIZ con sus dos columnas de fecha pasaba de 3-6 s a 40-64 s en ?p=rows, y madRowKey
+   hacía lo mismo con cada fila de la hoja en cada escritura con fecha en la llave (Bitácora, Sala, Tanques…).
+   P16: fmtData pone «dd/mm/yyyy» a la columna 1 de toda fila escrita, y en la MATRIZ la columna 1 es «Número». */
+const formatoFinal = (hoja, fila, col) => {
+  let f = '';
+  for (const [r, c, nR, nC, fmt] of hoja.formatos) if (fila >= r && fila < r + nR && col >= c && col < c + nC) f = fmt;
+  return f;
+};
+describe('GAS · P15 las fechas se formatean una vez por fecha distinta · P16 «Número» no queda con formato de fecha', () => {
+  it('🔴 P15 · escribir en la Bitácora ya no formatea la fecha de CADA fila de la hoja', () => {
+    const CAB = ['Trovan ID', 'Fecha', 'Tipo', 'Sala', 'Tanque', 'Observaciones'];
+    const hoja = hojaFalsa([CAB]);
+    const g = gas({ 'Maduración Bitácora': hoja });
+    for (let i = 0; i < 60; i++) hoja.filas.push(['00082100' + String(i % 30).padStart(2, '0'), g.fecha(1 + (i % 3)), i % 2 ? 'Desove' : 'Mortalidad', 'S1', 'T1', '']);
+    expect(g.post({ sheetName: 'Maduración Bitácora', headers: CAB, rows: [['000821AAAA', '2026-09-10', 'Desove', 'S1', 'T1', '']] }).status).toBe('ok');
+    expect(g.fechasFormateadas()).toBe(3);        // 3 fechas distintas; antes, 60
+    expect(g.zonasPedidas()).toBe(1);             // la zona, UNA vez; antes, 60
+  });
+  it('🔴 P15 · ?p=rows con columnas de fecha: una llamada por fecha distinta, y el mismo texto', () => {
+    const CAB = ['Trovan ID', 'Fecha ingreso', 'Fecha muerte'];
+    const hoja = hojaFalsa([CAB]);
+    const g = gas({ 'Maduración MATRIZ': hoja });
+    for (let i = 0; i < 50; i++) hoja.filas.push(['00082100' + String(i).padStart(2, '0'), g.fecha(1 + (i % 2)), g.fecha(20)]);
+    const r = g.leer({ p: 'rows', sheet: 'Maduración MATRIZ' });
+    expect(r.rows).toHaveLength(50);
+    expect(r.rows[1]['Fecha ingreso']).toBe('2026-09-02');
+    expect(r.rows[1]['Fecha muerte']).toBe('2026-09-20');
+    expect(g.fechasFormateadas()).toBe(3);        // antes, 100
+    expect(g.zonasPedidas()).toBe(1);
+  });
+  it('🔴 P16 · la columna «Número» de la MATRIZ termina en formato automático y el Trovan en texto, al añadir y al fusionar', () => {
+    const hoja = hojaFalsa([REPRO_MATRIZ_HEADERS]);
+    const g = gas({ 'Maduración MATRIZ': hoja });
+    const alta = buildAltaBatch([{ trovan: '000821BC99', numero: '7', sala: 'S1', tanque: 'T1', fecha: '2026-09-10' }], null).payload;
+    expect(g.post(alta).status).toBe('ok');
+    expect(formatoFinal(hoja, 2, 1)).toBe('General');
+    expect(formatoFinal(hoja, 2, 2)).toBe('@');
+    const muerte = { sheetName: 'Maduración MATRIZ', headers: REPRO_MATRIZ_HEADERS, rows: [REPRO_MATRIZ_HEADERS.map((h) => ({ 'Trovan ID': '000821BC99', Estado: 'Muerto', 'Fecha muerte': '2026-09-12' })[h] ?? '')] };
+    expect(g.post(muerte).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(2);           // fusionó
+    expect(formatoFinal(hoja, 2, 1)).toBe('General');
+  });
+  it('P16 · la fecha de la columna 1 de las hojas que SÍ la llevan conserva su formato de fecha', () => {
+    const hoja = hojaFalsa([TANQUES]);
+    const g = gas({ 'Maduración Tanques': hoja });
+    expect(g.post({ sheetName: 'Maduración Tanques', headers: TANQUES, rows: [conValores(TANQUES, { Fecha: '2026-09-13', Sala: 'Sala 4', Tanque: 1, Muda: 1 })] }).status).toBe('ok');
+    expect(formatoFinal(hoja, 2, 1)).toBe('dd/mm/yyyy');
   });
 });

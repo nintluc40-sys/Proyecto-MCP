@@ -98,7 +98,7 @@ del módulo se quede sin contraparte en el monolito.
 | ⚖️ **Saldo** | *(derivada)* | vista del libro mayor, no escribe |
 | 🔄 **Movimientos** | `Maduración Movimientos` | el **tramo** origen → destino |
 | 🥚 **Desoves** | `Maduración Lotes` | (fecha, lote, código genético) |
-| 🏁 **Fin de Ciclo** | `Maduración Fin de Ciclo` | (fecha, lote, motivo) |
+| 🏁 **Fin de Ciclo** | `Maduración Fin de Ciclo` | (fecha, lote, motivo, sala si es Parcial) · pesos del registro |
 | 🏠 **Salas** · 🛢️ **Tanques** | `Maduración Sala` · `Maduración Tanques` | la grilla diaria |
 
 **El libro mayor** (`src/views/registros/lib/mad-libro.js` + su gemelo inline) responde
@@ -121,7 +121,12 @@ Salas, que propone —y al guardar escribe— el estado de la fecha elegida en l
   lleva su reloj: el ingreso lo reinicia en su sala, la cópula lo rompe en su sala y el cierre es
   del lote entero. Lo que se mueve a otra sala lleva su reloj; si el lote ya estaba allí, manda la
   cuarentena que termina más tarde. El Saldo da `Mixto` a un lote cuyas salas no coinciden y dice
-  el estado de cada una.
+  el estado de cada una. **Dos lotes en un mismo tanque sólo por mezcla o agrupación (D13):** con
+  el libro leído, Ingreso marca en ámbar los tanques con otro lote vivo y Revisar/Guardar lo avisan,
+  igual que Movimientos con un tramo de tipo Transferencia hacia un tanque con otro lote (aviso, no error).
+  **Un cierre Parcial puede indicar la sala (D14)** y descuenta sólo de ella; un Total es siempre
+  del lote entero. Los **pesos** (promedio y total de machos y hembras) son del registro entero —se
+  pesan juntos todos los lotes— y se escriben iguales en cada fila.
 
 ⚠ **Las llaves del GAS mandan sobre el diseño de estas hojas.** `Maduración Sala`,
 `Tanques` y `Lotes` se identifican por POSICIÓN (`[0,1]`, `[0,1,3]` y `[0,1,2]`), así que
@@ -276,8 +281,9 @@ Dos consecuencias que conviene tener presentes al desplegar:
   con la app en caché envía aún el esquema anterior: con la guarda desplegada, sus envíos de
   las hojas que cambiaron se **rechazan** en vez de escribir columnas corridas, y lo tecleado
   se queda en el dispositivo hasta que la app se recargue.
-- ⚠ **Mientras el GAS publicado sea el anterior**, la app **no envía Ingreso ni Desoves**: sus
-  columnas cambiaron y ese GAS, sin guarda, las escribiría corridas. Lo pregunta antes con
+- ⚠ **Mientras el GAS publicado sea el anterior**, la app **no envía Ingreso, Desoves ni Fin de
+  Ciclo**: sus columnas cambiaron (Fin de Ciclo ganó «Sala» y los cuatro pesos el 2026-09-14; su
+  hoja sigue vacía, así que no hay nada que migrar) y ese GAS, sin guarda, las escribiría corridas. Lo pregunta antes con
   `?p=ver`; si esa pregunta no contesta en 6 s, envía como siempre (y la cola vuelve a
   preguntar antes de entregar). Y un envío que espera en la cola más de 24 h se descarta, así
   que conviene no dejar pasar días entre publicar el cliente y re-desplegar el GAS.
@@ -300,6 +306,12 @@ Dos consecuencias que conviene tener presentes al desplegar:
   eliminar la pestaña, o vaciarla **incluida la fila 1**: el primer envío escribe las
   cabeceras nuevas. La pestaña de Desoves se sigue reconociendo en el tablero por «Hembras no
   viables» (ya no queda ninguna cabecera con «nauplio»).
+- ⚠ **MATRIZ · «Número» con aspecto de fecha (P16).** El GAS anterior daba formato de fecha a la
+  columna 1 de toda fila escrita, y en la MATRIZ esa columna es «Número» (un 7 se veía
+  «06/01/1900»). El GAS nuevo lo corrige en cada escritura, pero las celdas ya escritas conservan
+  el formato: una vez, seleccionar la columna «Número» → Formato → Número → **Automático**. El dato
+  no cambió, sólo cómo se ve. En el mismo despliegue entra P15: las fechas se formatean una vez por
+  petición (`?p=rows` de la MATRIZ tardaba 40-64 s por formatear celda a celda).
 - **Maduración · histórico** (Fase 5): la única fase del registro operativo sin construir.
   Aplazada a propósito hasta probar el resto en operación.
 - **Maduración · vaciado de las hojas antiguas**: cuando el registro operativo se dé por

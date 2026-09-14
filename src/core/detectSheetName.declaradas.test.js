@@ -76,14 +76,17 @@ describe('detectSheetName · las hojas de Maduración que aún no existen', () =
       .toHaveLength(0);
   });
 
-  /* ⚠ La firma de Fin de Ciclo es «metabisulfito», y sólo vale mientras siga siendo
-     SUYA. Si algún día otra hoja gana una columna con esa palabra, las dos caerían en
-     el mismo cajón — así que se fija aquí que la columna existe y que es lo único que
-     la sostiene: quitarla del esquema tiene que poner esta prueba en rojo, no dejar
-     que la hoja vuelva a «Hoja<N>» sin avisar. */
-  it('Fin de Ciclo depende de «metabisulfito», y sin esa columna se cae', () => {
+  /* ⚠ La firma de Fin de Ciclo era SÓLO «metabisulfito», que vale mientras siga siendo SUYA.
+     D14 (2026-09-14) le dio una columna «Sala», y con «Machos» ya la alcanza la regla general de
+     Maduración: ahora tiene DOS firmas. Se fija que cada una la sostiene sola y que sin las dos
+     se cae — quitar las dos del esquema tiene que poner esta prueba en rojo, no dejar que la hoja
+     vuelva a «Hoja<N>» sin avisar. */
+  it('Fin de Ciclo se sostiene por «metabisulfito» y por «Sala»+«Machos», cada una sola; sin las dos se cae', () => {
+    const cab = (fuera) => MAD_FIN_HEADERS.filter((h) => !fuera.some((f) => h.toLowerCase().includes(f)));
     expect(MAD_FIN_HEADERS.some((h) => h.toLowerCase().includes('metabisulfito'))).toBe(true);
-    const sinFirma = MAD_FIN_HEADERS.filter((h) => !h.toLowerCase().includes('metabisulfito'));
-    expect(detectSheetName([filaDe(sinFirma)], 0)).not.toBe('Maduracion');
+    expect(MAD_FIN_HEADERS).toContain('Sala');
+    expect(detectSheetName([filaDe(cab(['metabisulfito']))], 0)).toBe('Maduracion');
+    expect(detectSheetName([filaDe(cab(['sala']))], 0)).toBe('Maduracion');
+    expect(detectSheetName([filaDe(cab(['metabisulfito', 'sala']))], 0)).not.toBe('Maduracion');
   });
 });

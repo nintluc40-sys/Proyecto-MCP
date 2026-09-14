@@ -21,7 +21,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "40464830dcf8";
+const GAS_VERSION = "1bd16a23cc20";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -684,11 +684,28 @@ function inKey(row, isCtrl) {
        String(row[3])].join("|");
 }
 
+// P15 (2026-09-14) · FORMATEAR UNA FECHA ES UNA LLAMADA DE SERVICIO, y se hacía POR CELDA, con otra
+// más para pedir la zona horaria: medido en ?p=rows, la MATRIZ con sus dos columnas de fecha pasaba de
+// 3-6 s a 40-64 s, y la misma pareja corría en madRowKey para cada fila de la hoja en cada escritura con
+// fecha en la llave. Ahora la zona se pide UNA vez por petición y cada fecha distinta se formatea UNA vez
+// (un día son decenas de filas): el mismo texto, sin la carga. Una ejecución del GAS no comparte
+// variables con la siguiente, así que la caché no envejece.
+var _celdaTz_ = null, _celdaFmt_ = {};
+function formatoCelda_(d, patron) {
+  var k = patron + "|" + d.getTime();
+  var hecho = _celdaFmt_[k];
+  if (hecho === undefined) {
+    if (_celdaTz_ === null) _celdaTz_ = Session.getScriptTimeZone();
+    hecho = Utilities.formatDate(d, _celdaTz_, patron);
+    _celdaFmt_[k] = hecho;
+  }
+  return hecho;
+}
 // dStr: normaliza fecha (Date o string) a "YYYY-MM-DD"
 function dStr(val) {
   if (!val && val !== 0) return "";
   if (val instanceof Date) {
-    return Utilities.formatDate(val, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    return formatoCelda_(val, "yyyy-MM-dd");
   }
   return String(val).slice(0, 10);
 }
@@ -697,7 +714,7 @@ function dStr(val) {
 function timeStr(val) {
   if (!val && val !== 0) return "";
   if (val instanceof Date) {
-    return Utilities.formatDate(val, Session.getScriptTimeZone(), "HH:mm");
+    return formatoCelda_(val, "HH:mm");
   }
   return String(val).slice(0, 5);
 }
@@ -1188,6 +1205,7 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol, llave) {
       if (numCol >= 0 && numCol < merged.length) ws.getRange(entry.row, numCol + 1, 1, 1).setNumberFormat("General");
       ws.getRange(entry.row, 1, 1, merged.length).setValues([merged]);
       fmtData(ws, entry.row, 1, merged.length, false);
+      madFormatosFijos_(ws, entry.row, 1, merged.length, trovanCol, numCol);
       updated++;
     } else if (pendingMap[k2] !== undefined) {
       var pi = pendingMap[k2];
@@ -1210,9 +1228,18 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol, llave) {
     if (numCol >= 0 && numCol < u.ancho) ws.getRange(startRow, numCol + 1, u.filas.length, 1).setNumberFormat("General");
     ws.getRange(startRow, 1, u.filas.length, u.ancho).setValues(u.filas);
     fmtData(ws, startRow, u.filas.length, u.ancho, false);
+    madFormatosFijos_(ws, startRow, u.filas.length, u.ancho, trovanCol, numCol);
     added = u.filas.length;
   }
   return { upserted: updated, appended: added };
+}
+// P16 (2026-09-14) · fmtData pone formato de FECHA a la columna 1 de toda fila escrita, y en la MATRIZ
+// la columna 1 es «Número»: el 7 se veía «06/01/1900». Los formatos propios de la hoja (Trovan como
+// texto, Número automático) se vuelven a poner DESPUÉS de fmtData, que es lo que queda. El texto del
+// Trovan se pone también ANTES de escribir: sin él Sheets convertiría el código al guardarlo.
+function madFormatosFijos_(ws, fila, nFilas, ancho, trovanCol, numCol) {
+  if (trovanCol >= 0 && trovanCol < ancho) ws.getRange(fila, trovanCol + 1, nFilas, 1).setNumberFormat("@");
+  if (numCol >= 0 && numCol < ancho) ws.getRange(fila, numCol + 1, nFilas, 1).setNumberFormat("General");
 }
 
 function madRowKey(row, keyCols) {
@@ -1221,7 +1248,7 @@ function madRowKey(row, keyCols) {
     var c = keyCols[i];
     var v = row[c];
     if (v instanceof Date) {
-      parts.push(Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd"));
+      parts.push(formatoCelda_(v, "yyyy-MM-dd"));
     } else {
       parts.push(String(v == null ? "" : v).trim());
     }
@@ -1267,11 +1294,7 @@ function llaveMatriz_(envio) {
   var claves = [], deHoja = {};
   return {
     preparar: function(data) {
-      var tz = null;
-      var fecha = function(v) {
-        if (tz === null && esFecha_(v)) tz = Session.getScriptTimeZone();
-        return fechaIsoGas_(v, tz);
-      };
+      var fecha = function(v) { return fechaIsoGas_(v); };
       var enEnvio = {};
       for (var e0 = 0; e0 < envio.length; e0++) enEnvio[madInKey(envio[e0], [1])] = 1;
       var porChip = {};
@@ -1323,8 +1346,8 @@ function esFecha_(v) { return Object.prototype.toString.call(v) === "[object Dat
 // Fecha ISO (yyyy-mm-dd) de una celda, o "" si no es una fecha real: una fecha de Sheets, ISO (con
 // hora detrás o sin ella) o dd/mm/yyyy. SIN regex a propósito, como madInKey: dentro de la
 // plantilla GAS() de la app las barras invertidas de una regex colapsan.
-function fechaIsoGas_(v, tz) {
-  if (esFecha_(v)) return isNaN(v.getTime()) ? "" : Utilities.formatDate(v, tz || Session.getScriptTimeZone(), "yyyy-MM-dd");
+function fechaIsoGas_(v) {
+  if (esFecha_(v)) return isNaN(v.getTime()) ? "" : formatoCelda_(v, "yyyy-MM-dd");
   var s = String(v == null ? "" : v).trim(), y, m, d, p;
   if (s.length >= 10 && s.charAt(4) === "-" && s.charAt(7) === "-") { y = s.slice(0, 4); m = s.slice(5, 7); d = s.slice(8, 10); }
   else {
@@ -1453,7 +1476,7 @@ function sheetRows(name, t, cols) {
   }
 }
 function _rowsCell(v) {
-  if (v instanceof Date) { return Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd"); }
+  if (v instanceof Date) { return formatoCelda_(v, "yyyy-MM-dd"); }
   return v == null ? "" : v;
 }
 
@@ -1500,12 +1523,12 @@ function _evJson(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 function _evCellDate(v) {
-  if (v instanceof Date) { return Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd"); }
+  if (v instanceof Date) { return formatoCelda_(v, "yyyy-MM-dd"); }
   var s = String(v == null ? "" : v).trim();
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
 function _evCellHora(v) {
-  if (v instanceof Date) { return Utilities.formatDate(v, Session.getScriptTimeZone(), "HH:mm"); }
+  if (v instanceof Date) { return formatoCelda_(v, "HH:mm"); }
   return String(v == null ? "" : v);
 }
 
@@ -1748,7 +1771,7 @@ function _astFilasIguales(a, b) {
 // Normaliza una celda a texto comparable. Date -> yyyy-MM-dd, que es como las
 // devuelve getValues() y como las escribe el cliente.
 function _astCelda(v) {
-  if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  if (v instanceof Date) return formatoCelda_(v, "yyyy-MM-dd");
   return String(v == null ? "" : v).trim();
 }
 

@@ -344,19 +344,26 @@ export function construirLibro(fuentes, opts) {
         anota(fecha, 'cierre-incompleto', 'Un cierre sin lote no entra en el libro.');
         continue;
       }
-      const posLote = [...pos.values()].filter((p) => p.lote === lote);
+      /* D14 (2026-09-14): un cierre PARCIAL que dice su sala descuenta sólo de los tanques del lote
+         en esa sala. Un Total es siempre del lote entero: su sala, si la hubiera, no cuenta. */
+      const salaCierre = esTotal ? '' : txt(r.Sala);
+      const enSala = salaCierre ? { sala: salaCierre } : {};
+      const posLote = [...pos.values()].filter((p) => p.lote === lote && (!salaCierre || p.sala === salaCierre));
       if (!posLote.length) {
         anota(fecha, 'cierre-sin-lote',
-          'Se cerró el lote ' + lote + ' y ningún ingreso explica dónde estaba.',
-          { lote, machos: pedido.machos, hembras: pedido.hembras });
+          salaCierre
+            ? 'Se cerró el lote ' + lote + ' en ' + salaCierre + ' y ningún ingreso explica que estuviera allí.'
+            : 'Se cerró el lote ' + lote + ' y ningún ingreso explica dónde estaba.',
+          { lote, ...enSala, machos: pedido.machos, hembras: pedido.hembras });
         continue;
       }
       for (const sexo of ['machos', 'hembras']) {
         const { sobra } = tomarDe(posLote, sexo, pedido[sexo]);
         if (sobra > 0) {
           anota(fecha, 'deficit-cierre',
-            'Del lote ' + lote + ' salieron ' + sobra + ' ' + sexo + ' de más de los que el libro tenía vivos.',
-            { lote, sexo, cantidad: sobra });
+            'Del lote ' + lote + ' salieron ' + sobra + ' ' + sexo + ' de más de los que el libro tenía vivos' +
+            (salaCierre ? ' en ' + salaCierre : '') + '.',
+            { lote, ...enSala, sexo, cantidad: sobra });
         }
       }
       if (esTotal) {
@@ -584,4 +591,60 @@ export function nombreComposicion(tanque) {
   const vivos = ((tanque && tanque.composicion) || []).filter((c) => c.machos > 0 || c.hembras > 0);
   const lotes = [...new Set(vivos.map((c) => c.lote))].sort();
   return lotes.join('+');
+}
+
+/* ── D13 (2026-09-14) · DOS LOTES EN UN TANQUE, SÓLO POR MEZCLA O AGRUPACIÓN ────────────────
+   Decisión del usuario: un lote puede estar en varias salas y una sala tener varios lotes, pero dos
+   lotes comparten TANQUE sólo en una mezcla o una agrupación, que se registran como tales en
+   Movimientos. Un ingreso o una Transferencia que deje dos lotes juntos se AVISA, no se bloquea:
+   el libro puede ir atrasado respecto a lo que hay en el agua, y la decisión es del operario. */
+
+/** Los lotes con animales VIVOS en un tanque, ordenados. */
+export function lotesVivosEnTanque(libro, sala, tanque) {
+  const T = ((libro && libro.tanques) || new Map()).get(ubicKey(sala, tanque));
+  const vivos = ((T && T.composicion) || []).filter((c) => c.machos > 0 || c.hembras > 0);
+  return [...new Set(vivos.map((c) => c.lote))].sort();
+}
+
+const deLotes = (ls) => (ls.length > 1 ? 'de los lotes ' : 'del lote ') + ls.join(', ');
+
+/** Ingreso: un aviso por cada tanque del reparto que ya tenga vivo OTRO lote. `lote` va normalizado. */
+export function avisosIngresoCompartido(libro, lote, ubicaciones) {
+  const avisos = [];
+  const l = txt(lote);
+  if (!l) return avisos;
+  const vistos = new Set();
+  for (const u of ubicaciones || []) {
+    const sala = txt(u && u.sala);
+    const t = ent(u && u.tanque);
+    if (!sala || !t || vistos.has(ubicKey(sala, t))) continue;
+    vistos.add(ubicKey(sala, t));
+    const otros = lotesVivosEnTanque(libro, sala, t).filter((x) => x !== l);
+    if (otros.length) {
+      avisos.push('El tanque ' + t + ' de ' + sala + ' ya tiene animales vivos ' + deLotes(otros) + ': el lote ' + l +
+        ' lo compartiría. Dos lotes sólo comparten tanque en una mezcla o una agrupación (🔄 Movimientos).');
+    }
+  }
+  return avisos;
+}
+
+/** Movimientos: en una TRANSFERENCIA, un aviso por tramo cuyo destino tenga vivo un lote que no está
+ *  en su origen. Agrupación y Mezcla juntan lotes a propósito: no avisan. */
+export function avisosTransferenciaCompartida(libro, tipo, tramos) {
+  const avisos = [];
+  if (txt(tipo) !== 'Transferencia') return avisos;
+  (tramos || []).forEach((tr, i) => {
+    const x = tr || {};
+    const sD = txt(x.salaDestino);
+    const tD = ent(x.tanqueDestino);
+    if (!sD || !tD) return;
+    const vienen = lotesVivosEnTanque(libro, x.salaOrigen, x.tanqueOrigen);
+    const otros = lotesVivosEnTanque(libro, sD, tD).filter((l) => vienen.indexOf(l) === -1);
+    if (otros.length) {
+      avisos.push('Tramo ' + (i + 1) + ': el tanque ' + tD + ' de ' + sD + ' ya tiene animales vivos ' + deLotes(otros) +
+        (otros.length > 1 ? ', que no están' : ', que no está') + ' en el origen: la Transferencia los dejaría compartiendo tanque. ' +
+        'Si se juntan lotes, el tipo es Mezcla o Agrupación.');
+    }
+  });
+  return avisos;
 }

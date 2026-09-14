@@ -176,6 +176,7 @@ describe('GAS · ancho uniforme de fila', () => {
       bloque('function madRowKey(row, keyCols) {', '\n}'),
       bloque('function madInKey(row, keyCols) {', '\n}'),
       bloque('function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol, llave) {', '  return { upserted: updated, appended: added };\n}'),
+      bloque('function madFormatosFijos_(', '\n}'),   // P16: upsertMadRows la llama tras fmtData
     ]);
 
     it('🔴 añade filas de anchos distintos sin romper la escritura', () => {

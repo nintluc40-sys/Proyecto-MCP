@@ -31,13 +31,20 @@ describe('Fin de Ciclo · la hoja y sus columnas', () => {
     expect(MAD_FIN_HEADERS).toEqual(MAD_FIN_COLUMNS.map((c) => c.h));
   });
 
-  it('NO lleva sala ni tanque: se cierra el LOTE', () => {
-    /* Decisión del usuario: el cierre es del lote entero y el libro descuenta de cada
-       tanque donde esté, en proporción. Pedir el tanque obligaría a enumerar dónde está,
-       que es justo lo que el libro ya sabe. */
-    expect(MAD_FIN_HEADERS).not.toContain('Sala');
+  it('NO lleva tanque: se cierra el LOTE (y un Parcial puede decir su SALA · D14)', () => {
+    /* Decisión del usuario: el cierre es del lote y el libro descuenta de cada tanque donde
+       esté, en proporción. Pedir el tanque obligaría a enumerar dónde está, que es justo lo
+       que el libro ya sabe. D14 (2026-09-14): un lote vive en varias salas, y un Parcial
+       puede acotar a una; vacía = el lote entero. */
+    expect(MAD_FIN_HEADERS).toContain('Sala');
     expect(MAD_FIN_HEADERS).not.toContain('Tanque');
     expect(MAD_FIN_HEADERS).toContain('Lote');
+  });
+
+  it('lleva los PESOS del registro: promedio (g) y total (kg) de machos y de hembras', () => {
+    for (const h of ['Peso promedio machos (g)', 'Peso promedio hembras (g)', 'Peso total machos (kg)', 'Peso total hembras (kg)']) {
+      expect(MAD_FIN_HEADERS).toContain(h);
+    }
   });
 
   /* ⚠⚠ AQUÍ HABÍA UNA COLUMNA `Destino`, y la retiró el usuario el 2026-09-08: NINGÚN
@@ -109,6 +116,66 @@ describe('Fin de Ciclo · la llave', () => {
 
   it('y va en la fila, en la última columna', () => {
     expect(buildFinRows(base())[0][col('ID')]).toBe('2026-09-08-AB-PEDIDO');
+  });
+
+  /* D14: la sala entra en la llave SÓLO si se dice, así que los IDs de siempre no cambian; y dos
+     Parciales del mismo lote y motivo en salas distintas son dos filas, no una encima de otra. */
+  it('D14 · la sala va en la llave sólo cuando se dice', () => {
+    expect(finRowId('2026-09-08', 'AB', 'Pedido', '')).toBe('2026-09-08-AB-PEDIDO');
+    expect(finRowId('2026-09-08', 'AB', 'Pedido', 'Sala 2')).toBe('2026-09-08-AB-PEDIDO-S2');
+  });
+
+  it('D14 · un Parcial con sala la escribe y la lleva en el ID; un Total nunca', () => {
+    const m = base();
+    m.cierres[0].sala = 'Sala 2';
+    m.cierres.push({ lote: 'BC', tipo: 'Total', motivo: 'Fin de vida útil', sala: 'Sala 3', machos: 1 });
+    const [parcial, total] = buildFinRows(m);
+    expect(parcial[col('Sala')]).toBe('Sala 2');
+    expect(parcial[col('ID')]).toBe('2026-09-08-AB-PEDIDO-S2');
+    expect(total[col('Sala')]).toBe('');
+    expect(total[col('ID')]).toBe('2026-09-08-BC-FINDEVIDAÚTIL');
+  });
+});
+
+/* Los pesos se toman de TODOS los lotes del registro juntos (usuario, 2026-09-14): van IGUALES en
+   cada fila. Dividirlos o ponerlos sólo en la primera daría otra cifra al leer la hoja. */
+describe('Fin de Ciclo · los pesos del registro', () => {
+  const conPesos = () => {
+    const m = base();
+    m.cierres.push({ lote: 'BC', tipo: 'Parcial', motivo: 'Pedido', machos: 10, hembras: 0 });
+    return Object.assign(m, { pesoPromMachos: '45.5', pesoPromHembras: 60, pesoTotalMachos: 2.3, pesoTotalHembras: '3.6' });
+  };
+
+  it('se repiten iguales en cada fila, con sus decimales', () => {
+    const filas = buildFinRows(conPesos());
+    expect(filas).toHaveLength(2);
+    for (const f of filas) {
+      expect(f[col('Peso promedio machos (g)')]).toBe(45.5);
+      expect(f[col('Peso promedio hembras (g)')]).toBe(60);
+      expect(f[col('Peso total machos (kg)')]).toBe(2.3);
+      expect(f[col('Peso total hembras (kg)')]).toBe(3.6);
+    }
+    expect(validarFinCiclo(conPesos())).toEqual({ errores: [], avisos: [] });
+  });
+
+  it('sin pesos van VACÍOS (el MERGE conserva la celda), y uno inválido también, con aviso', () => {
+    const sin = buildFinRows(base())[0];
+    expect(sin[col('Peso total machos (kg)')]).toBe('');
+    const m = conPesos();
+    m.pesoTotalMachos = 'dos kilos';
+    expect(buildFinRows(m)[0][col('Peso total machos (kg)')]).toBe('');
+    expect(validarFinCiclo(m).avisos).toEqual(['El peso total de machos no es una cifra válida y no se guardará.']);
+  });
+
+  it('AVISO si se pesa un sexo que ningún cierre del registro saca', () => {
+    const m = conPesos();
+    m.cierres.forEach((c) => { c.hembras = 0; });
+    const { errores, avisos } = validarFinCiclo(m);
+    expect(errores).toEqual([]);
+    expect(avisos).toEqual([
+      'El peso promedio de hembras está anotado, pero ningún cierre saca hembras.',
+      'El peso total de hembras está anotado, pero ningún cierre saca hembras.',
+    ]);
   });
 });
 
@@ -233,5 +300,27 @@ describe('Fin de Ciclo · validación', () => {
     const m = base();
     m.cierres[0].tipo = 'Definitivo';
     expect(validarFinCiclo(m).avisos.some((a) => /no es un tipo conocido/.test(a))).toBe(true);
+  });
+
+  it('D14 · ERROR si un cierre Total dice sala: cierra el lote en TODAS', () => {
+    const m = base();
+    Object.assign(m.cierres[0], { tipo: 'Total', sala: 'Sala 2' });
+    expect(validarFinCiclo(m).errores).toEqual(['Un cierre Total cierra AB ENTERO, en todas sus salas: deja la sala vacía o regístralo como Parcial.']);
+  });
+
+  it('D14 · AVISO si la sala no es conocida', () => {
+    const m = base();
+    m.cierres[0].sala = 'Sala 9';
+    expect(validarFinCiclo(m).avisos).toEqual(['«Sala 9» no es una sala conocida (el cierre de AB).']);
+  });
+
+  it('D14 · el mismo lote y motivo en salas DISTINTAS vale; en la MISMA sala, no', () => {
+    const m = base();
+    m.cierres[0].sala = 'Sala 1';
+    m.cierres.push({ lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', sala: 'Sala 2', machos: 5 });
+    m.cierres.push({ lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', machos: 5 });   // sin sala: el lote entero, otro ID
+    expect(validarFinCiclo(m).errores).toEqual([]);
+    m.cierres.push({ lote: 'ab', tipo: 'Parcial', motivo: 'Pedido', sala: 'Sala 2', machos: 1 });
+    expect(validarFinCiclo(m).errores).toEqual(['El lote AB se cierra dos veces por «Pedido» en Sala 2 en esta fecha. Los dos escribirían la misma fila y el segundo borraría al primero: regístralos sumados.']);
   });
 });

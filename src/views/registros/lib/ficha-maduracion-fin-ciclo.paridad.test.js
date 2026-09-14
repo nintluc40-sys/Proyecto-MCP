@@ -114,6 +114,27 @@ const MODELOS = {
   },
   'sin cierres': { fecha: '2026-09-08', cierres: [] },
   'fecha inválida': { fecha: '8-9-2026', cierres: [{ lote: 'AB', tipo: 'Total', motivo: 'Pedido', machos: 1, hembras: 1 }] },
+  /* D14 + pesos (2026-09-14): la sala en llave y fila, el Total que la ignora, la duplicada POR sala,
+     la sala desconocida, y los cuatro pesos del registro con decimales, uno inválido y uno sin sexo. */
+  'D14: salas, Total con sala y duplicado en la misma sala': {
+    fecha: '2026-09-08',
+    cierres: [
+      { lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', sala: 'Sala 1', machos: 10, hembras: 0 },
+      { lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', sala: 'Sala 2', machos: 4, hembras: 0 },
+      { lote: 'ab', tipo: 'Parcial', motivo: 'Pedido', sala: 'Sala 2', machos: 1, hembras: 0 },
+      { lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', machos: 2, hembras: 0 },
+      { lote: 'BC', tipo: 'Total', motivo: 'Fin de vida útil', sala: 'Sala 3', machos: 5, hembras: 5 },
+      { lote: 'CD', tipo: 'Parcial', motivo: 'Otro', sala: 'Sala 9', machos: 1, hembras: 1 },
+    ],
+  },
+  'pesos del registro: decimales, inválido y sexo que no sale': {
+    fecha: '2026-09-08',
+    pesoPromMachos: '45.25', pesoPromHembras: 'sesenta', pesoTotalMachos: 2.75, pesoTotalHembras: '3.5',
+    cierres: [
+      { lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', machos: 10, hembras: 0 },
+      { lote: 'BC', tipo: 'Parcial', motivo: 'Pedido', machos: 3, hembras: 0 },
+    ],
+  },
 };
 
 describe('Fin de Ciclo · el monolito y el módulo declaran lo mismo', () => {
@@ -155,6 +176,8 @@ describe('Fin de Ciclo · la misma llave', () => {
       ['2026-09-08', 'AB', 'Pedido'],
       ['2026-09-08', ' ab ', 'Descarte parcial'],
       ['2026-12-31', 'BM', 'Fin de vida útil'],
+      ['2026-09-08', 'AB', 'Pedido', 'Sala 2'],
+      ['2026-09-08', 'AB', 'Pedido', ''],
     ];
     for (const c of casos) expect(api.madFinRowId(...c)).toBe(finRowId(...c));
     for (const m of MAD_FIN_MOTIVOS) expect(api.madFinMotivoTag(m)).toBe(motivoTag(m));
@@ -176,6 +199,12 @@ describe('Fin de Ciclo · el mismo veredicto', () => {
     expect(validarFinCiclo(MODELOS['sin llave completa y tipo desconocido']).avisos.length).toBeGreaterThan(0);
     // Y el caso que SÍ tiene que pasar: dos motivos distintos el mismo día conviven.
     expect(validarFinCiclo(MODELOS['mismo lote, dos motivos el mismo día']).errores).toEqual([]);
+    const d14 = validarFinCiclo(MODELOS['D14: salas, Total con sala y duplicado en la misma sala']);
+    expect(d14.errores).toHaveLength(2);   // el duplicado en Sala 2 y el Total con sala
+    expect(d14.avisos).toHaveLength(1);    // Sala 9
+    expect(buildFinRows(MODELOS['D14: salas, Total con sala y duplicado en la misma sala']).map((f) => f[f.length - 1]))
+      .toEqual(['2026-09-08-AB-PEDIDO-S1', '2026-09-08-AB-PEDIDO-S2', '2026-09-08-AB-PEDIDO-S2', '2026-09-08-AB-PEDIDO', '2026-09-08-BC-FINDEVIDAÚTIL', '2026-09-08-CD-OTRO-S9']);
+    expect(validarFinCiclo(MODELOS['pesos del registro: decimales, inválido y sexo que no sale']).avisos).toHaveLength(2);
   });
 });
 

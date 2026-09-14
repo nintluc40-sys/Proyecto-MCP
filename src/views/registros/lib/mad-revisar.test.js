@@ -14,14 +14,15 @@
    4) el botón no decía para qué servía.
    Cada prueba de abajo fija una de esas correcciones, y que Revisar NUNCA envía.
    ============================================================ */
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['madIngReiniciar', 'madIngRevisar', '_madIngRepHTML', 'madMovReiniciar', 'madMovRevisar',
-  'madMovSalaChange', 'madDesReiniciar', 'madDesRevisar', 'madFinReiniciar', 'madFinRevisar', 'MAD_REVISAR_TITLE'];
+  'madMovSalaChange', 'madDesReiniciar', 'madDesRevisar', 'madFinReiniciar', 'madFinRevisar', 'MAD_REVISAR_TITLE',
+  'madFinGuardar', 'madFinTipoChange', 'madFinAddCard', 'madIngRefrescar'];
 const H = {};
 const envios = [];
 let respuestaVer = null;
@@ -52,7 +53,11 @@ beforeAll(async () => {
     + '\ntry{ H.setToast=function(f){toast=f;}; }catch(_){}'
     + '\ntry{ H.setPost=function(f){postPayload=f;}; }catch(_){}'
     + '\ntry{ H.setPostOnce=function(f){_postOnce=f;}; }catch(_){}'
-    + '\ntry{ H.setGasUrl=function(f){gasUrl=f;}; }catch(_){}\n})();';
+    + '\ntry{ H.setGasUrl=function(f){gasUrl=f;}; }catch(_){}'
+    // D13: un libro «leído» sin red, con las filas dadas (null lo olvida).
+    + '\ntry{ H.setLibro=function(f){ if(!f){ _madLibro=null; return; }'
+    + ' ["ingreso","movimientos","tanques","cierres"].forEach(function(k){ _reproPutRows(MAD_LIBRO_SHEETS[k], f[k==="ingreso"?"ingresos":k]||[]); });'
+    + ' _madLibro=madConstruirLibro(madLibroFuentes(), { hoy: today() }); _madLibro.fallos=[]; _madLibro.recortadas=[]; }; }catch(_){}\n})();';
   globalThis.__ENG = H;
   new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(
     window, document, globalThis.localStorage, globalThis,
@@ -102,7 +107,8 @@ const FICHAS = [
       pon($('fp-desoves', '.md-lote'), 'BP'); pon($('fp-desoves', '.md-cg'), 'OLF5.F2'); pon($('fp-desoves', '.md-desoves'), '64');
     },
     campo: () => $('fp-desoves', '.md-desoves') },
-  { nombre: 'Fin de Ciclo', fp: 'fp-fin', rep: 'mf-report', pideGas: false, reiniciar: 'madFinReiniciar', revisar: 'madFinRevisar',
+  /* D14 (2026-09-14): Fin de Ciclo estrena Sala y pesos, así que tampoco se entrega a un GAS viejo. */
+  { nombre: 'Fin de Ciclo', fp: 'fp-fin', rep: 'mf-report', pideGas: true, reiniciar: 'madFinReiniciar', revisar: 'madFinRevisar',
     llenar: () => {
       pon($('fp-fin', '.mf-lote'), 'BP'); pon($('fp-fin', '.mf-tipo'), 'Parcial'); pon($('fp-fin', '.mf-motivo'), 'Pedido');
       pon($('fp-fin', '.mf-machos'), '5'); pon($('fp-fin', '.mf-hembras'), '5');
@@ -211,4 +217,102 @@ describe.each(FICHAS)('«🔍 Revisar» · $nombre', (F) => {
       expect(rep().textContent).not.toMatch(/NO se enviará/);
     });
   }
+});
+
+/* D14 + pesos (2026-09-14): la sala de un Parcial y los pesos del REGISTRO llegan al envío. */
+describe('Fin de Ciclo · la sala del Parcial y los pesos del registro, en el envío', () => {
+  beforeEach(() => { H.madFinReiniciar(); });
+  const cols = () => document.querySelectorAll('#fp-fin .mf-cierre');
+
+  it('un Total deshabilita y vacía la sala; un Parcial la devuelve', () => {
+    const c = cols()[0];
+    pon(c.querySelector('.mf-sala'), 'Sala 2');
+    H.madFinTipoChange(pon(c.querySelector('.mf-tipo'), 'Total'));
+    expect(c.querySelector('.mf-sala').disabled).toBe(true);
+    expect(c.querySelector('.mf-sala').value).toBe('');
+    H.madFinTipoChange(pon(c.querySelector('.mf-tipo'), 'Parcial'));
+    expect(c.querySelector('.mf-sala').disabled).toBe(false);
+  });
+
+  it('🔴 Guardar manda la sala en su fila y los MISMOS pesos en cada fila', async () => {
+    H.madFinAddCard();
+    const [a, b] = cols();
+    for (const c of [a, b]) pon(c.querySelector('.mf-tipo'), 'Parcial');   // happy-dom no respeta el `selected` de las opciones
+    pon(a.querySelector('.mf-lote'), 'BP'); pon(a.querySelector('.mf-motivo'), 'Pedido'); pon(a.querySelector('.mf-sala'), 'Sala 2');
+    pon(a.querySelector('.mf-machos'), '5');
+    pon(b.querySelector('.mf-lote'), 'BQ'); pon(b.querySelector('.mf-motivo'), 'Pedido'); pon(b.querySelector('.mf-hembras'), '4');
+    pon($('fp-fin', '#mf-ppm'), '45.5'); pon($('fp-fin', '#mf-pph'), '60'); pon($('fp-fin', '#mf-ptm'), '0.23'); pon($('fp-fin', '#mf-pth'), '0.24');
+    await H.madFinGuardar();
+    expect(envios).toHaveLength(1);
+    const { headers, rows } = envios[0];
+    const v = (f, h) => f[headers.indexOf(h)];
+    expect(rows.map((f) => v(f, 'Sala'))).toEqual(['Sala 2', '']);
+    expect(v(rows[0], 'ID')).toMatch(/-BP-PEDIDO-S2$/);
+    for (const f of rows) {
+      expect([v(f, 'Peso promedio machos (g)'), v(f, 'Peso promedio hembras (g)'), v(f, 'Peso total machos (kg)'), v(f, 'Peso total hembras (kg)')])
+        .toEqual([45.5, 60, 0.23, 0.24]);
+    }
+  });
+
+  it('🔴 con el GAS VIEJO Guardar NO envía (la hoja cambió de columnas) y lo dice', async () => {
+    const c = cols()[0];
+    pon(c.querySelector('.mf-tipo'), 'Parcial');
+    pon(c.querySelector('.mf-lote'), 'BP'); pon(c.querySelector('.mf-motivo'), 'Pedido'); pon(c.querySelector('.mf-machos'), '5');
+    respuestaVer = 'FichasLarv-OK';
+    await H.madFinGuardar();
+    expect(envios).toHaveLength(0);
+    expect(document.getElementById('mf-report').textContent).toContain('«Maduración Fin de Ciclo»');
+  });
+});
+
+/* D13 (2026-09-14): con el libro leído, Revisar avisa del tanque que compartirían dos lotes. */
+describe('D13 · Ingreso y Movimientos avisan del tanque compartido con OTRO lote', () => {
+  const ING = (Lote, Tanque, Machos) => ({ Fecha: '2026-01-01', Lote, 'Código genético': 'CG', Sala: 'Sala 1', Tanque, Machos, Hembras: 0 });
+  beforeEach(() => {
+    H.setLibro({ ingresos: [ING('AB', 1, 20), ING('BC', 2, 20)] });
+    H.madIngReiniciar(); H.madMovReiniciar();
+  });
+  afterEach(() => { H.setLibro(null); });
+
+  it('🔴 Ingreso: el tanque con otro lote sale en ámbar y Revisar lo avisa (se puede guardar igual)', async () => {
+    pon(document.getElementById('mi-lote'), 'AB');
+    pon($('fp-ingreso', '.mi-cg'), 'CG'); pon($('fp-ingreso', '.mi-tmachos'), '10'); pon($('fp-ingreso', '.mi-thembras'), '0');
+    pon($('fp-ingreso', '.mi-sala'), 'Sala 1');
+    H.madIngRefrescar();
+    const boton = (t) => $('fp-ingreso', '.mi-tq[data-t="' + t + '"]');
+    expect(boton(2).getAttribute('title')).toContain('⚠ Tiene vivo el lote BC');
+    expect(boton(1).getAttribute('title')).not.toContain('⚠');   // el propio lote no avisa
+    const t = document.createElement('table');
+    t.innerHTML = '<tbody>' + H._madIngRepHTML('Sala 1', 2) + '</tbody>';
+    $('fp-ingreso', '.mi-reps').appendChild(t.querySelector('tr'));
+    pon($('fp-ingreso', 'tr.mi-rep .mi-machos'), '10'); pon($('fp-ingreso', 'tr.mi-rep .mi-hembras'), '0');
+    await H.madIngRevisar();
+    const rep = document.getElementById('mi-report').textContent;
+    expect(rep).toContain('El tanque 2 de Sala 1 ya tiene animales vivos del lote BC: el lote AB lo compartiría.');
+    expect(rep).toMatch(/✅ Sin errores/);
+  });
+
+  it('🔴 Movimientos: una Transferencia a un tanque con otro lote lo avisa; una Mezcla no', async () => {
+    const f = $('fp-movimientos', '#mv-tramos tr.mv-tramo');
+    H.madMovSalaChange(pon(f.querySelector('.mv-so'), 'Sala 1')); pon(f.querySelector('.mv-to'), '1');
+    H.madMovSalaChange(pon(f.querySelector('.mv-sd'), 'Sala 1')); pon(f.querySelector('.mv-td'), '2');
+    pon(f.querySelector('.mv-machos'), '5'); pon(f.querySelector('.mv-hembras'), '0');
+    pon(document.getElementById('mv-tipo'), 'Transferencia');
+    await H.madMovRevisar();
+    expect(document.getElementById('mv-report').textContent).toContain('Tramo 1: el tanque 2 de Sala 1 ya tiene animales vivos del lote BC, que no está en el origen');
+    pon(document.getElementById('mv-tipo'), 'Mezcla');
+    await H.madMovRevisar();
+    expect(document.getElementById('mv-report').textContent).not.toContain('Tramo 1: el tanque 2');
+  });
+
+  it('sin libro leído no se inventa ningún aviso de tanque compartido', async () => {
+    H.setLibro(null);
+    const f = $('fp-movimientos', '#mv-tramos tr.mv-tramo');
+    H.madMovSalaChange(pon(f.querySelector('.mv-so'), 'Sala 1')); pon(f.querySelector('.mv-to'), '1');
+    H.madMovSalaChange(pon(f.querySelector('.mv-sd'), 'Sala 1')); pon(f.querySelector('.mv-td'), '2');
+    pon(f.querySelector('.mv-machos'), '5');
+    pon(document.getElementById('mv-tipo'), 'Transferencia');
+    await H.madMovRevisar();
+    expect(document.getElementById('mv-report').textContent).not.toContain('ya tiene animales vivos');
+  });
 });

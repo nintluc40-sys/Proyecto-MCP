@@ -46,6 +46,7 @@
 
 import { sanitizeStr } from '../../../core/trovan.js';
 import { normLote } from './ficha-maduracion-desoves.schema.js';
+import { salaTag, MAD_TANQUES_POR_SALA } from './ficha-maduracion-ingreso.schema.js';
 
 /** Hoja destino. Ya está en el `ALLOWED` del GAS desde `f66a3c4` y va por `isMadId`, así
  *  que no hace falta otro re-despliegue. */
@@ -68,12 +69,23 @@ export const MAD_FIN_COLUMNS = [
   { h: 'Lote', k: 'lote', grain: 'evento' },
   { h: 'Tipo', k: 'tipo', grain: 'evento' },
   { h: 'Motivo', k: 'motivo', grain: 'evento' },
+  /* D14 (2026-09-14, usuario): un lote puede estar en varias salas, y un cierre PARCIAL puede decir de
+     cuál salen los animales: el libro descuenta sólo de esa sala. Vacía = el lote entero, como hasta
+     ahora. Un cierre Total es siempre del lote entero. Va en la llave cuando se dice. */
+  { h: 'Sala', k: 'sala', grain: 'evento' },
   /* ⚠ El orden es libre: la llave la da la columna `ID`, que el GAS localiza POR SU
      CABECERA. Lo que NO es libre es el nombre de esa columna. */
   { h: 'Metabisulfito (kg)', k: 'metabisulfito', grain: 'evento', num: true },
   { h: 'Fecha aplicación', k: 'fechaMetabisulfito', grain: 'evento' },
   { h: 'Machos', k: 'machos', grain: 'evento', num: true },
   { h: 'Hembras', k: 'hembras', grain: 'evento', num: true },
+  /* 2026-09-14 (usuario): los PESOS de lo que sale se toman de TODOS los lotes del registro juntos, no
+     por lote. Son del REGISTRO y se escriben iguales en cada una de sus filas: sumarlos fila a fila
+     los multiplicaría. */
+  { h: 'Peso promedio machos (g)', k: 'pesoPromMachos', grain: 'registro', num: true },
+  { h: 'Peso promedio hembras (g)', k: 'pesoPromHembras', grain: 'registro', num: true },
+  { h: 'Peso total machos (kg)', k: 'pesoTotalMachos', grain: 'registro', num: true },
+  { h: 'Peso total hembras (kg)', k: 'pesoTotalHembras', grain: 'registro', num: true },
   { h: 'Observaciones', k: 'observaciones', grain: 'evento' },
   { h: 'ID', k: 'id', grain: 'llave' },
 ];
@@ -99,32 +111,42 @@ const kg = (v) => {
  *  lote el mismo día compartirían ID y el segundo borraría al primero. */
 export const motivoTag = (s) => sanitizeStr(s, 60).toUpperCase().replace(/[^A-ZÁÉÍÓÚÑ0-9]+/g, '');
 
-export function finRowId(fecha, lote, motivo) {
-  return sanitizeStr(fecha, 10) + '-' + normLote(lote) + '-' + motivoTag(motivo);
+/** La sala entra en la llave SÓLO si se dice: sin ella el ID es el de siempre. */
+export function finRowId(fecha, lote, motivo, sala) {
+  const s = sanitizeStr(sala, 30);
+  return sanitizeStr(fecha, 10) + '-' + normLote(lote) + '-' + motivoTag(motivo) + (s ? '-' + salaTag(s) : '');
 }
+/** Sala de un cierre: la de un Parcial; un Total es del lote entero y nunca la lleva. */
+const salaDeCierre = (x) => (sanitizeStr(x.tipo, 20) === 'Total' ? '' : sanitizeStr(x.sala, 30));
 
 /** Una fila por cierre. */
 export function buildFinRows(model) {
   const m = model || {};
   const fecha = sanitizeStr(m.fecha, 10);
+  const pesos = {
+    pesoPromMachos: kg(m.pesoPromMachos), pesoPromHembras: kg(m.pesoPromHembras),
+    pesoTotalMachos: kg(m.pesoTotalMachos), pesoTotalHembras: kg(m.pesoTotalHembras),
+  };
   const filas = [];
   (m.cierres || []).forEach((c) => {
     const x = c || {};
     const lote = normLote(x.lote);
     const motivo = sanitizeStr(x.motivo, 60);
     if (lote === '' || motivo === '') return;   // sin llave completa no hay fila
-    const valores = {
+    const sala = salaDeCierre(x);
+    const valores = Object.assign({
       fecha,
       lote,
       tipo: sanitizeStr(x.tipo, 20),
       motivo,
+      sala,
       metabisulfito: kg(x.metabisulfito),
       fechaMetabisulfito: sanitizeStr(x.fechaMetabisulfito, 10),
       machos: int(x.machos),
       hembras: int(x.hembras),
       observaciones: sanitizeStr(x.observaciones, 300),
-      id: finRowId(fecha, lote, motivo),
-    };
+      id: finRowId(fecha, lote, motivo, sala),
+    }, pesos);
     filas.push(MAD_FIN_COLUMNS.map((col) => valores[col.k]));
   });
   return filas;
@@ -161,12 +183,16 @@ export function validarFinCiclo(model) {
     if (motivo === '') errores.push('Falta el motivo del cierre ' + (i + 1) + '. Va en la llave: sin él, un pedido y un descarte del mismo día se pisarían.');
     if (tipo === '') errores.push('Falta decir si ' + et + ' es Total o Parcial.');
     else if (MAD_FIN_TIPOS.indexOf(tipo) === -1) avisos.push('«' + tipo + '» no es un tipo conocido de cierre.');
+    const salaDicha = sanitizeStr(x.sala, 30);
+    if (salaDicha !== '' && tipo === 'Total') errores.push('Un cierre Total cierra ' + (lote || 'el lote') + ' ENTERO, en todas sus salas: deja la sala vacía o regístralo como Parcial.');
+    if (salaDicha !== '' && !MAD_TANQUES_POR_SALA[salaDicha]) avisos.push('«' + salaDicha + '» no es una sala conocida (' + et + ').');
     if (lote === '' || motivo === '') return;
 
-    const llave = lote + '|' + motivoTag(motivo);
+    const sala = salaDeCierre(x);
+    const llave = lote + '|' + motivoTag(motivo) + '|' + (sala ? salaTag(sala) : '');
     if (vistos.has(llave)) {
       errores.push(
-        'El lote ' + lote + ' se cierra dos veces por «' + motivo + '» en esta fecha. ' +
+        'El lote ' + lote + ' se cierra dos veces por «' + motivo + '»' + (sala ? ' en ' + sala : '') + ' en esta fecha. ' +
         'Los dos escribirían la misma fila y el segundo borraría al primero: regístralos sumados.'
       );
     }
@@ -195,6 +221,20 @@ export function validarFinCiclo(model) {
     if (fmbs !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(fmbs)) {
       avisos.push('La fecha de metabisulfito de ' + lote + ' no es una fecha válida.');
     }
+  });
+
+  /* Los PESOS son del registro entero. Aviso y no error: el cierre vale sin pesar. Una cifra que no
+     es un número positivo no se guarda —se dice—, y un peso de un sexo que ningún cierre saca no
+     cuadra con nada. */
+  const saca = { machos: 0, hembras: 0 };
+  cierres.forEach((c) => { saca.machos += int((c || {}).machos) || 0; saca.hembras += int((c || {}).hembras) || 0; });
+  [['pesoPromMachos', 'El peso promedio de machos', 'machos'], ['pesoPromHembras', 'El peso promedio de hembras', 'hembras'],
+    ['pesoTotalMachos', 'El peso total de machos', 'machos'], ['pesoTotalHembras', 'El peso total de hembras', 'hembras']].forEach(([k, et, sexo]) => {
+    const crudo = m[k];
+    if (crudo === '' || crudo === null || crudo === undefined) return;
+    const v = kg(crudo);
+    if (v === '') avisos.push(et + ' no es una cifra válida y no se guardará.');
+    else if (v > 0 && saca[sexo] === 0) avisos.push(et + ' está anotado, pero ningún cierre saca ' + sexo + '.');
   });
 
   return { errores, avisos };

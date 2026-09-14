@@ -18,6 +18,9 @@ import {
   ESTADO_DESINFECCION_AGRUPADA,
   AGRUPADA_MAX_FRACCION,
   ocupacionDeSala,
+  lotesVivosEnTanque,
+  avisosIngresoCompartido,
+  avisosTransferenciaCompartida,
 } from './mad-libro.js';
 import { MAD_TANQUES_POR_SALA } from './ficha-maduracion-ingreso.schema.js';
 
@@ -48,10 +51,12 @@ const mov = (Fecha, sO, tO, sD, tD, Machos, Hembras) => ({
    ⚠ «Destino» estuvo aquí hasta el 2026-09-09 y ya NO existe: el usuario lo retiró el
    2026-09-08 —ningún reproductor vuelve a camaronera— y en su sitio entró el proceso de
    metabisulfito. Un fixture que dice ser «la forma REAL» y no lo es engaña dos veces. */
-const fin = (Fecha, Lote, Tipo, Machos, Hembras, Motivo) => ({
-  Fecha, Lote, Tipo, Motivo: Motivo || 'Pedido',
+const fin = (Fecha, Lote, Tipo, Machos, Hembras, Motivo, Sala) => ({
+  Fecha, Lote, Tipo, Motivo: Motivo || 'Pedido', Sala: Sala || '',   // D14 (2026-09-14): Sala de un Parcial
   'Metabisulfito (kg)': '', 'Fecha aplicación': '',
-  Machos, Hembras, Observaciones: '',
+  Machos, Hembras,
+  'Peso promedio machos (g)': '', 'Peso promedio hembras (g)': '', 'Peso total machos (kg)': '', 'Peso total hembras (kg)': '',
+  Observaciones: '',
 });
 
 const saldo = (libro, sala, tanque) => libro.tanques.get(ubicKey(sala, tanque));
@@ -516,6 +521,44 @@ describe('Libro · el FIN DE CICLO (Fase 4B)', () => {
     expect(l.avisos).toEqual([]);
     // Un cierre parcial NO cierra el lote.
     expect(dePos(l, 'AB').estado).not.toBe(ESTADO_CERRADO);
+  });
+
+  /* D14 (2026-09-14, usuario): un lote vive en varias salas y un Parcial puede decir de cuál salen. */
+  const dosSalas = () => [
+    ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 150, 0),
+    ing('2026-01-01', 'AB', 'CG1', 'Sala 2', 16, 50, 0),
+  ];
+
+  it('🔴 D14 · un Parcial con SALA descuenta sólo de esa sala', () => {
+    const l = construirLibro({ ingresos: dosSalas(), cierres: [fin('2026-01-05', 'AB', 'Parcial', 30, 0, 'Pedido', 'Sala 2')], tanques: [] }, { hoy: '2026-01-10' });
+    expect(saldo(l, 'Sala 1', 1).machos).toBe(150);
+    expect(saldo(l, 'Sala 2', 16).machos).toBe(20);
+    expect(l.avisos).toEqual([]);
+  });
+
+  it('D14 · sacar de una sala más de lo que hay en ELLA avisa con la sala, aunque en otra sobren', () => {
+    const l = construirLibro({ ingresos: dosSalas(), cierres: [fin('2026-01-05', 'AB', 'Parcial', 80, 0, 'Pedido', 'Sala 2')], tanques: [] }, { hoy: '2026-01-10' });
+    expect(saldo(l, 'Sala 1', 1).machos).toBe(150);
+    expect(saldo(l, 'Sala 2', 16).machos).toBe(0);
+    expect(l.avisos).toEqual([{ fecha: '2026-01-05', tipo: 'deficit-cierre',
+      texto: 'Del lote AB salieron 30 machos de más de los que el libro tenía vivos en Sala 2.',
+      lote: 'AB', sala: 'Sala 2', sexo: 'machos', cantidad: 30 }]);
+  });
+
+  it('D14 · un Parcial en una sala donde el lote no está se AVISA y no toca las otras', () => {
+    const l = construirLibro({ ingresos: dosSalas(), cierres: [fin('2026-01-05', 'AB', 'Parcial', 10, 0, 'Pedido', 'Sala 3')], tanques: [] }, { hoy: '2026-01-10' });
+    expect(saldo(l, 'Sala 1', 1).machos).toBe(150);
+    expect(saldo(l, 'Sala 2', 16).machos).toBe(50);
+    expect(l.avisos.map((a) => [a.tipo, a.texto, a.sala])).toEqual([
+      ['cierre-sin-lote', 'Se cerró el lote AB en Sala 3 y ningún ingreso explica que estuviera allí.', 'Sala 3']]);
+  });
+
+  it('D14 · un TOTAL ignora la sala (si alguien la escribe en la hoja): cierra el lote entero', () => {
+    const l = construirLibro({ ingresos: dosSalas(), cierres: [fin('2026-01-05', 'AB', 'Total', 200, 0, 'Pedido', 'Sala 2')], tanques: [] }, { hoy: '2026-01-10' });
+    expect(saldo(l, 'Sala 1', 1).machos).toBe(0);
+    expect(saldo(l, 'Sala 2', 16).machos).toBe(0);
+    expect(l.avisos).toEqual([]);
+    expect(dePos(l, 'AB').estado).toBe(ESTADO_CERRADO);
   });
 
   it('🔴 un cierre TOTAL anota LA DIFERENCIA y deja el lote a cero', () => {
@@ -1017,5 +1060,54 @@ describe('Libro · dos composiciones del mismo lote en un tanque', () => {
     expect(dePos(l, 'AB').machos).toBe(90);
     const porCg = Object.fromEntries(l.posiciones.map((p) => [p.codigoGenetico, p.machos]));
     expect(porCg).toEqual({ CG1: 54, CG2: 36 });   // 10 repartidos 60:40
+  });
+});
+
+/* D13 (2026-09-14, usuario): dos lotes comparten TANQUE sólo en una mezcla o una agrupación. */
+describe('Libro · D13 · dos lotes en un tanque sólo por mezcla o agrupación: se AVISA', () => {
+  const libro = () => construirLibro({
+    ingresos: [
+      ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 30, 30),
+      ing('2026-01-01', 'BC', 'CG2', 'Sala 1', 2, 20, 20),
+      ing('2026-01-01', 'CD', 'CG3', 'Sala 1', 2, 5, 0),
+      ing('2026-01-01', 'DE', 'CG4', 'Sala 1', 3, 10, 0),
+    ],
+    tanques: [tq('2026-01-02', 'Sala 1', 3, { 'Machos muertos': 10 })],   // el 3 queda VACÍO
+  }, { hoy: '2026-01-05' });
+
+  it('los lotes VIVOS de un tanque, ordenados; un tanque vacío o desconocido no tiene ninguno', () => {
+    const l = libro();
+    expect(lotesVivosEnTanque(l, 'Sala 1', 2)).toEqual(['BC', 'CD']);
+    expect(lotesVivosEnTanque(l, 'Sala 1', '1')).toEqual(['AB']);
+    expect(lotesVivosEnTanque(l, 'Sala 1', 3)).toEqual([]);
+    expect(lotesVivosEnTanque(l, 'Sala 2', 16)).toEqual([]);
+  });
+
+  it('🔴 Ingreso: avisa por cada tanque con OTRO lote vivo, una vez por tanque; el propio lote y un tanque vacío no', () => {
+    const ubic = [{ sala: 'Sala 1', tanque: '1' }, { sala: 'Sala 1', tanque: '2' }, { sala: 'Sala 1', tanque: 2 }, { sala: 'Sala 1', tanque: '3' }];
+    expect(avisosIngresoCompartido(libro(), 'AB', ubic)).toEqual([
+      'El tanque 2 de Sala 1 ya tiene animales vivos de los lotes BC, CD: el lote AB lo compartiría. Dos lotes sólo comparten tanque en una mezcla o una agrupación (🔄 Movimientos).',
+    ]);
+    expect(avisosIngresoCompartido(libro(), 'BC', ubic)).toEqual([
+      'El tanque 1 de Sala 1 ya tiene animales vivos del lote AB: el lote BC lo compartiría. Dos lotes sólo comparten tanque en una mezcla o una agrupación (🔄 Movimientos).',
+      'El tanque 2 de Sala 1 ya tiene animales vivos del lote CD: el lote BC lo compartiría. Dos lotes sólo comparten tanque en una mezcla o una agrupación (🔄 Movimientos).',
+    ]);
+    expect(avisosIngresoCompartido(libro(), '', ubic)).toEqual([]);
+  });
+
+  it('🔴 Transferencia: avisa si el destino tiene un lote que NO está en el origen; Mezcla y Agrupación no avisan', () => {
+    const tramos = [
+      { salaOrigen: 'Sala 1', tanqueOrigen: '1', salaDestino: 'Sala 1', tanqueDestino: '2' },   // AB → BC+CD: avisa
+      { salaOrigen: 'Sala 1', tanqueOrigen: '2', salaDestino: 'Sala 1', tanqueDestino: '3' },   // a un vacío: no
+      { salaOrigen: 'Sala 1', tanqueOrigen: '2', salaDestino: 'Sala 1', tanqueDestino: '2' },   // mismos lotes: no
+      { salaOrigen: 'Sala 1', tanqueOrigen: '2', salaDestino: 'Sala 1', tanqueDestino: '1' },   // BC+CD → AB: avisa
+      { salaOrigen: 'Sala 1', tanqueOrigen: '1', salaDestino: '', tanqueDestino: '' },          // incompleto: no
+    ];
+    expect(avisosTransferenciaCompartida(libro(), 'Transferencia', tramos)).toEqual([
+      'Tramo 1: el tanque 2 de Sala 1 ya tiene animales vivos de los lotes BC, CD, que no están en el origen: la Transferencia los dejaría compartiendo tanque. Si se juntan lotes, el tipo es Mezcla o Agrupación.',
+      'Tramo 4: el tanque 1 de Sala 1 ya tiene animales vivos del lote AB, que no está en el origen: la Transferencia los dejaría compartiendo tanque. Si se juntan lotes, el tipo es Mezcla o Agrupación.',
+    ]);
+    expect(avisosTransferenciaCompartida(libro(), 'Mezcla', tramos)).toEqual([]);
+    expect(avisosTransferenciaCompartida(libro(), 'Agrupación', tramos)).toEqual([]);
   });
 });

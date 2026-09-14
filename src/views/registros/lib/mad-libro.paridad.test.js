@@ -32,6 +32,9 @@ import {
   ESTADO_DESINFECCION,
   ESTADO_DESINFECCION_AGRUPADA,
   ocupacionDeSala,
+  lotesVivosEnTanque,
+  avisosIngresoCompartido,
+  avisosTransferenciaCompartida,
 } from './mad-libro.js';
 import { MAD_TANQUES_POR_SALA } from './ficha-maduracion-ingreso.schema.js';
 /* ⚠ El módulo ENTERO, además de los nombres sueltos de arriba. Los de arriba se usan en los
@@ -68,7 +71,8 @@ function motorLibro() {
     code + '\n;globalThis.__api = { madConstruirLibro, madEstadoDeSala, madNombreComposicion,'
     + ' madSumarDias, madRepartirProporcional, madEstadoDeLote, madEstadoDeLoteEnSala, madEstadoPorLoteTexto,'
     + ' MAD_CUARENTENA_DIAS, MAD_EST_MIXTO, MAD_LIBRO_SHEETS,'
-    + ' madOcupacionDeSala, MAD_EST_DESINF, MAD_EST_DESINF_AGRUP, MAD_AGRUPADA_MAX_FRACCION };',
+    + ' madOcupacionDeSala, MAD_EST_DESINF, MAD_EST_DESINF_AGRUP, MAD_AGRUPADA_MAX_FRACCION,'
+    + ' madLotesVivosEnTanque, madAvisosIngresoCompartido, madAvisosTransferenciaCompartida };',
   ).runInContext(ctx);
   return ctx.__api;
 }
@@ -118,6 +122,9 @@ const GEMELO = {
   ESTADO_DESINFECCION_AGRUPADA: 'MAD_EST_DESINF_AGRUP',
   AGRUPADA_MAX_FRACCION: 'MAD_AGRUPADA_MAX_FRACCION',
   ocupacionDeSala: 'madOcupacionDeSala',
+  lotesVivosEnTanque: 'madLotesVivosEnTanque',
+  avisosIngresoCompartido: 'madAvisosIngresoCompartido',
+  avisosTransferenciaCompartida: 'madAvisosTransferenciaCompartida',
 };
 
 /* El monolito declara las funciones como `function X(` y las constantes como `const X =`,
@@ -172,8 +179,8 @@ const tq = (Fecha, Sala, Tanque, extra = {}) => Object.assign({
   'Cópulas': 0,
 }, extra);
 
-const fin = (Fecha, Lote, Tipo, Machos, Hembras) => ({
-  Fecha, Lote, Tipo, Motivo: 'Pedido', Machos, Hembras, Observaciones: '',
+const fin = (Fecha, Lote, Tipo, Machos, Hembras, Sala) => ({
+  Fecha, Lote, Tipo, Motivo: 'Pedido', Sala: Sala || '', Machos, Hembras, Observaciones: '',
 });
 
 const mov = (Fecha, sO, tO, sD, tD, Machos, Hembras) => ({
@@ -330,6 +337,21 @@ const ESCENARIOS = {
     ],
     tanques: [],
   },
+  /* D14 (2026-09-14): Parcial con sala (descuenta sólo allí, con déficit en esa sala), Parcial en una
+     sala donde el lote no está, y un Total con sala escrita, que la ignora. */
+  'D14: cierres por SALA': {
+    ingresos: [
+      ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 150, 0),
+      ing('2026-01-01', 'AB', 'CG1', 'Sala 2', 16, 50, 0),
+      ing('2026-01-01', 'BC', 'CG2', 'Sala 3', 22, 40, 40),
+    ],
+    cierres: [
+      fin('2026-01-05', 'AB', 'Parcial', 80, 0, 'Sala 2'),
+      fin('2026-01-06', 'AB', 'Parcial', 10, 0, 'Sala 4'),
+      fin('2026-01-07', 'BC', 'Total', 30, 40, 'Sala 1'),
+    ],
+    tanques: [],
+  },
   'cierre el mismo día que las bajas (fija el orden)': {
     ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 0)],
     cierres: [fin('2026-01-05', 'AB', 'Total', 95, 0)],
@@ -439,6 +461,10 @@ describe('Libro · el mismo saldo, posición a posición', () => {
     expect(tot.avisos.filter((a) => a.tipo === 'diferencia-cierre')).toHaveLength(1);
     expect(tot.tanques.get('Sala 1|1').machos).toBe(0);
     expect(construirLibro(ESCENARIOS['cierre con déficit y otro de un lote que no existe'], { hoy: HOY }).avisos).toHaveLength(2);
+    const d14 = construirLibro(ESCENARIOS['D14: cierres por SALA'], { hoy: HOY });
+    expect(d14.tanques.get('Sala 1|1').machos).toBe(150);
+    expect(d14.tanques.get('Sala 3|22').machos).toBe(0);
+    expect(d14.avisos.map((a) => a.tipo)).toEqual(['deficit-cierre', 'cierre-sin-lote', 'diferencia-cierre']);
 
     /* 2026-09-09: sin esto, el escenario del re-ingreso podría compararse en verde con las
        DOS copias dejando el lote cerrado, que es justo el defecto que vino a fijar. */
@@ -486,6 +512,38 @@ describe('Libro · las mismas funciones puras', () => {
     }
     const C = { ingreso: '2026-01-01', copulaDesde: '2026-01-05' };
     expect(api.madEstadoDeLote(C, '2026-01-05')).toBe(estadoDeLote(C, '2026-01-05'));
+  });
+
+  /* D13 (2026-09-14): los lotes vivos de cada tanque y los dos avisos de tanque compartido, en TODOS
+     los escenarios y todos los tanques físicos. El fixture prueba algo: se exige que salgan avisos. */
+  it('D13 · los mismos lotes vivos por tanque y los mismos avisos de tanque compartido', () => {
+    let nIng = 0, nMov = 0;
+    const cerca = [['Sala 1', 1], ['Sala 1', 2], ['Sala 1', 3], ['Sala 2', 16], ['Sala 2', 17]];
+    const tramos = [];
+    for (const [sO, tO] of cerca) for (const [sD, tD] of cerca) tramos.push({ salaOrigen: sO, tanqueOrigen: String(tO), salaDestino: sD, tanqueDestino: String(tD) });
+    for (const f of Object.values(ESCENARIOS)) {
+      const a = api.madConstruirLibro(f, { hoy: HOY });
+      const b = construirLibro(f, { hoy: HOY });
+      const ubic = [];
+      for (const [s, lista] of Object.entries(MAD_TANQUES_POR_SALA)) {
+        for (const t of lista) {
+          expect([...api.madLotesVivosEnTanque(a, s, t)]).toEqual(lotesVivosEnTanque(b, s, t));
+          ubic.push({ sala: s, tanque: String(t) });
+        }
+      }
+      for (const lote of ['AB', 'BC', 'ZZ', '']) {
+        const esp = avisosIngresoCompartido(b, lote, ubic.concat(ubic.slice(0, 3)));
+        nIng += esp.length;
+        expect([...api.madAvisosIngresoCompartido(a, lote, ubic.concat(ubic.slice(0, 3)))]).toEqual(esp);
+      }
+      for (const tipo of ['Transferencia', 'Mezcla']) {
+        const esp = avisosTransferenciaCompartida(b, tipo, tramos);
+        nMov += esp.length;
+        expect([...api.madAvisosTransferenciaCompartida(a, tipo, tramos)]).toEqual(esp);
+      }
+    }
+    expect(nIng).toBeGreaterThan(0);
+    expect(nMov).toBeGreaterThan(0);
   });
 
   it('el mismo estado de sala, Mixto incluido', () => {
@@ -746,10 +804,12 @@ describe('Libro · «Recalcular» RECALCULA de verdad (2026-09-09)', () => {
       .toBeLessThan(fn.indexOf('await _reproFetchSheet(name, cols||null)'));
   });
 
-  it('los cuatro botones siguen pidiendo el recálculo', () => {
+  it('los cinco botones siguen pidiendo el recálculo', () => {
     // Si alguien quitara el `true` de un botón, ese botón enseñaría una cifra vieja
     // sin decirlo — y los rótulos de la vista seguirían prometiendo lo contrario.
+    // D13 (2026-09-14): el quinto es «🔄 Ver ocupación» de Ingreso.
     const veces = src.split('madSaldoCargar(true)').length - 1;
-    expect(veces, 'se esperaban las 4 llamadas forzadas del libro').toBe(4);
+    expect(veces, 'se esperaban las 5 llamadas forzadas del libro').toBe(5);
+    expect(src).toContain('async function madIngVerOcupacion(){');
   });
 });
