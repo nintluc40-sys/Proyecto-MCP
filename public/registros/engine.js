@@ -2478,7 +2478,7 @@ const STANDARD_TABS = [...FICHAS,"desinfeccion","fotos","historial","blanco"];
 // no saben qué lote, piscina ni código genético corresponde a cada tanque.
 // ⚠ NO entra en MAD_FICHAS: no es una grilla por día con CRUD local, es un formulario
 // de evento, como «reproductivo».
-const MAD_TABS      = ["ingreso","saldo","movimientos","salas","tanques","desoves","fin","reproductivo","fotos"];
+const MAD_TABS      = ["ingreso","saldo","movimientos","salas","tanques","desoves","fin","tratamientos","reproductivo","fotos"];
 // Tabs del módulo Biomol — form + historial inline + fotos
 const BIO_TABS      = ["biomol","fotos"];
 // Tabs del módulo As Técnico — form de supervisión + registro de mareas + fotos
@@ -2500,6 +2500,7 @@ const TAB_META = {
   tanques:  ["🛢️","Tanques"],
   desoves:  ["🥚","Desoves"],
   fin:      ["🏁","Fin de Ciclo"],
+  tratamientos: ["🧪","Tratamientos"],
   ingreso:  ["📥","Ingreso"],
   saldo:    ["⚖️","Saldo"],
   movimientos: ["🔄","Movimientos"],
@@ -2572,6 +2573,7 @@ function selTab(t){
   if(t==="movimientos") renderMadMovimientos();
   if(t==="desoves") renderMadDesoves();
   if(t==="fin") renderMadFinCiclo();
+  if(t==="tratamientos") renderMadTratamientos();
   if(t==="reproductivo") renderMadReproductivo();
   if(t==="biomol") renderBiomol();
   if(t==="ast")    renderAst();
@@ -7039,8 +7041,8 @@ async function _madIngGasAlDia(url){
 }
 /* Hojas de Maduración cuyas columnas cambiaron y se escriben POR POSICIÓN: no se entregan a un
    GAS viejo (sin guarda de esquema). Ingreso desde el 2026-09-13; Desoves y Fin de Ciclo (Sala y
-   pesos, D14) desde el 2026-09-14. */
-function _madHojaPideGasNuevo(hoja){ return hoja === MAD_ING_SHEET || hoja === MAD_DESOVE_SHEET || hoja === MAD_FIN_SHEET; }
+   pesos, D14) desde el 2026-09-14; Tratamientos (hoja nueva) desde el 2026-09-15. */
+function _madHojaPideGasNuevo(hoja){ return hoja === MAD_ING_SHEET || hoja === MAD_DESOVE_SHEET || hoja === MAD_FIN_SHEET || hoja === MAD_TRAT_SHEET; }
 function _madGasViejoMsg(hoja){ return "el GAS publicado es anterior a las columnas nuevas de «" + hoja + "» y escribiría los datos en columnas equivocadas"; }
 const MAD_ING_GAS_VIEJO = "el GAS publicado es anterior a las columnas nuevas de «Maduración Ingreso» (Crecimiento y Libras) y escribiría los datos en columnas equivocadas";
 async function madIngGuardar(){
@@ -7771,18 +7773,29 @@ function madDesRevisar(){
   _madDesPinta(res, madDesBuildRows(model).length);
   return _madRevisarRemata("md-report", res, MAD_DESOVE_SHEET);
 }
-// Registro local propio, por lo mismo que en Ingreso y Movimientos: esta ficha no guarda
-// filas locales, así que sin esto un envío ENCOLADO no dejaría rastro en ningún sitio.
+// Registro local propio: esta ficha no guarda filas locales, así que sin esto un envío ENCOLADO no dejaría
+// rastro. 2026-09-15 (usuario): es el HISTORIAL de este dispositivo —cada desove guardado, con sus cifras—
+// durante 36 h, el plazo en el que ya deberían estar N2 y N5, sin tener que leer la hoja.
 const MAD_DES_LOG_KEY = "larv4_mad_des_log";
+const MAD_DES_LOG_TTL = 36*60*60*1000;
 function madDesLogLeer(){
-  try{ const v=JSON.parse(localStorage.getItem(MAD_DES_LOG_KEY)||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; }
+  try{
+    const v=JSON.parse(localStorage.getItem(MAD_DES_LOG_KEY)||"[]"), desde=Date.now()-MAD_DES_LOG_TTL;
+    return Array.isArray(v) ? v.filter(function(e){ return e && e.ts>=desde; }) : [];
+  }catch(_){ return []; }
 }
+// La lista llega siempre de madDesLogLeer, que ya quitó lo de más de 36 h: aquí sólo se pone tope.
 function madDesLogGuardar(list){
-  try{ localStorage.setItem(MAD_DES_LOG_KEY, JSON.stringify(list.slice(-40))); }catch(_){}
+  try{ localStorage.setItem(MAD_DES_LOG_KEY, JSON.stringify(list.slice(-200))); }catch(_){}
 }
-function madDesLogAnota(fecha, filas, estado){
-  const l=madDesLogLeer();
-  l.push({ id:Date.now().toString(36)+Math.random().toString(36).slice(2,6), ts:Date.now(), fecha:fecha, filas:filas, estado:estado });
+function madDesLogAnota(model, filas, estado){
+  const m=model||{}, l=madDesLogLeer();
+  const desoves=(m.desoves||[]).filter(function(x){ return x && madDesNormLote(x.lote)!=="" && madDesNormCG(x.codigoGenetico)!==""; }).map(function(x){
+    return { lote:madDesNormLote(x.lote), codigoGenetico:madDesNormCG(x.codigoGenetico), desoves:_madDesTxt(x.desoves), huevos:_madDesTxt(x.huevos),
+      hembrasNoViables:_madDesTxt(x.hembrasNoViables), fechaN2:_madDesTxt(x.fechaN2), n2:_madDesTxt(x.n2),
+      fechaN5:_madDesTxt(x.fechaN5), n5:_madDesTxt(x.n5), despacho:madDesDespachoTexto(x.despacho) };
+  });
+  l.push({ id:Date.now().toString(36)+Math.random().toString(36).slice(2,6), ts:Date.now(), fecha:sanitizeStr(m.fecha,10), filas:filas, estado:estado, desoves:desoves });
   madDesLogGuardar(l);
 }
 function madDesLogHTML(){
@@ -7794,18 +7807,23 @@ function madDesLogHTML(){
     l.forEach(function(e){ if(e.estado==="cola"){ e.estado="ok"; cambio=true; } });
     if(cambio) madDesLogGuardar(l);
   }
-  const filas=l.slice().reverse().slice(0,10).map(function(e){
+  const cel=function(v){ return (v===undefined||v===null||v==="") ? "—" : escapeHtml(String(v)); };
+  const filas=[];
+  l.slice().reverse().forEach(function(e){
     const st = e.estado==="cola"
-      ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px">📶 en cola</span>'
-      : '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px">✅ enviado</span>';
-    const d=new Date(e.ts), hh=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
-    return '<tr><td style="font-size:11px">'+escapeHtml(String(e.fecha||""))+' '+hh+'</td>'
-      + '<td style="text-align:right">'+(e.filas||0)+'</td><td>'+st+'</td></tr>';
-  }).join("");
+      ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;white-space:nowrap">📶 en cola</span>'
+      : '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px;white-space:nowrap">✅ enviado</span>';
+    const d=new Date(e.ts), cuando=("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+    ((e.desoves && e.desoves.length) ? e.desoves : [{}]).forEach(function(x){
+      filas.push('<tr class="md-hist"><td style="white-space:nowrap">'+cuando+'</td><td style="white-space:nowrap">'+cel(e.fecha)+'</td><td>'+cel(x.lote)+'</td><td>'+cel(x.codigoGenetico)+'</td>'
+        + '<td style="text-align:right">'+cel(x.desoves)+'</td><td style="text-align:right">'+cel(x.huevos)+'</td>'
+        + '<td style="text-align:right">'+cel(x.n2)+'</td><td style="text-align:right">'+cel(x.n5)+'</td><td>'+cel(x.despacho)+'</td><td>'+st+'</td></tr>');
+    });
+  });
   return '<div style="margin-top:18px">'
-    + '<h3 style="margin:0 0 4px;font-size:13px">Registrado desde este dispositivo</h3>'
+    + '<h3 style="margin:0 0 4px;font-size:13px">🕘 Historial de este dispositivo (últimas 36 h)</h3>'
     + (enCola ? '<div style="font-size:11px;color:#92400e;margin-bottom:5px">📶 '+enCola+' envío(s) esperando conexión. Se entregan y se verifican solos.</div>' : '')
-    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Desoves</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div>'
+    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Guardado</th><th>Desove</th><th>Lote</th><th>Código</th><th>Desoves</th><th>Huevos (mil)</th><th>N2 (mil)</th><th>N5 (mil)</th><th>Despacho</th><th>Estado</th></tr></thead><tbody>'+filas.join("")+'</tbody></table></div>'
     + '</div>';
 }
 async function madDesGuardar(){
@@ -7827,7 +7845,7 @@ async function madDesGuardar(){
   const _t={};
   const ok=await postPayload(payload, gasUrl(), _t);
   if(ok){
-    madDesLogAnota(model.fecha, payload.rows.length, "ok");
+    madDesLogAnota(model, payload.rows.length, "ok");
     madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), model, Date.now()));
     toast("✅ Desove registrado · "+payload.rows.length+" fila(s)","ok",5000);
     madDesReiniciar();
@@ -7837,7 +7855,7 @@ async function madDesGuardar(){
   // invariante H1: decir «no se pudo» a alguien cuyo dato ya está a salvo le empuja a
   // registrarlo dos veces, y aquí el segundo envío se fusionaría sobre el primero.
   if(_t.outcome==="queued"){
-    madDesLogAnota(model.fecha, payload.rows.length, "cola");
+    madDesLogAnota(model, payload.rows.length, "cola");
     madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), model, Date.now()));
     madDesReiniciar();
   }
@@ -7974,13 +7992,15 @@ const MAD_FIN_COLUMNS = [
   { h:"Fecha aplicación", k:"fechaMetabisulfito" },
   { h:"Machos", k:"machos" },
   { h:"Hembras", k:"hembras" },
-  // 2026-09-14: los pesos son del REGISTRO (todos los lotes juntos) y van iguales en cada fila. Ver el módulo.
-  // A3: identificador del REGISTRO (uno por formulario): agrupa sus filas para leer los pesos una vez. Ver el módulo.
-  { h:"Registro", k:"registro" },
+  // 2026-09-15: «Rojos» por lote, DENTRO de machos y hembras (no mueven el saldo). Ver el módulo.
+  { h:"Rojos", k:"rojos" },
+  // 2026-09-15: los pesos PROMEDIO son por LOTE. Ver el módulo.
   { h:"Peso promedio machos (g)", k:"pesoPromMachos" },
   { h:"Peso promedio hembras (g)", k:"pesoPromHembras" },
-  { h:"Peso total machos (kg)", k:"pesoTotalMachos" },
-  { h:"Peso total hembras (kg)", k:"pesoTotalHembras" },
+  // A3: identificador del REGISTRO (uno por formulario): agrupa sus filas para leer el peso total una vez. Ver el módulo.
+  { h:"Registro", k:"registro" },
+  // 2026-09-15: UN peso total del REGISTRO (todos los lotes juntos), igual en cada fila. Ver el módulo.
+  { h:"Peso total (kg)", k:"pesoTotal" },
   { h:"Observaciones", k:"observaciones" },
   { h:"ID", k:"id" }
 ];
@@ -8016,9 +8036,9 @@ function madFinBuildRows(model){
       fecha: fecha, lote: lote, tipo: sanitizeStr(x.tipo,20), motivo: motivo, sala: sala,
       metabisulfito: madFinKg(x.metabisulfito),
       fechaMetabisulfito: sanitizeStr(x.fechaMetabisulfito,10),
-      machos: madIngInt(x.machos), hembras: madIngInt(x.hembras),
-      pesoPromMachos: madFinKg(m.pesoPromMachos), pesoPromHembras: madFinKg(m.pesoPromHembras),
-      pesoTotalMachos: madFinKg(m.pesoTotalMachos), pesoTotalHembras: madFinKg(m.pesoTotalHembras),
+      machos: madIngInt(x.machos), hembras: madIngInt(x.hembras), rojos: madIngInt(x.rojos),
+      pesoPromMachos: madFinKg(x.pesoPromMachos), pesoPromHembras: madFinKg(x.pesoPromHembras),
+      pesoTotal: madFinKg(m.pesoTotal),
       registro: sanitizeStr(m.registro,40),
       observaciones: sanitizeStr(x.observaciones,300),
       id: madFinRowId(fecha, lote, motivo, sala)
@@ -8067,18 +8087,24 @@ function madFinValidar(model){
     if(mbs!=="" && fmbs==="") avisos.push("El metabisulfito de "+lote+" no dice en qué fecha se aplicó.");
     if(fmbs!=="" && mbs==="") avisos.push("El metabisulfito de "+lote+" tiene fecha pero no dosis.");
     if(fmbs!=="" && !/^\d{4}-\d{2}-\d{2}$/.test(fmbs)) avisos.push("La fecha de metabisulfito de "+lote+" no es una fecha válida.");
+    // Rojos y pesos promedio son del LOTE (avisos). Los rojos van dentro de machos y hembras. Ver el módulo.
+    const rojos = madIngInt(x.rojos);
+    if(rojos!=="" && rojos > (mach||0)+(hemb||0)) avisos.push("Los rojos de "+lote+" ("+rojos+") son más que los machos y hembras que salen: van dentro de ellos.");
+    [["pesoPromMachos","El peso promedio de machos",mach,"machos"],["pesoPromHembras","El peso promedio de hembras",hemb,"hembras"]].forEach(function(p){
+      const crudo = x[p[0]];
+      if(crudo===""||crudo===null||crudo===undefined) return;
+      const v = madFinKg(crudo);
+      if(v==="") avisos.push(p[1]+" de "+lote+" no es una cifra válida y no se guardará.");
+      else if(v>0 && !(p[2]>0)) avisos.push(p[1]+" de "+lote+" está anotado, pero ese cierre no saca "+p[3]+".");
+    });
   });
-  // Los PESOS son del registro entero: aviso si no son cifra, o si pesan un sexo que ningún cierre saca. Ver el módulo.
-  const saca = { machos:0, hembras:0 };
-  cierres.forEach(function(c){ saca.machos += madIngInt((c||{}).machos)||0; saca.hembras += madIngInt((c||{}).hembras)||0; });
-  [["pesoPromMachos","El peso promedio de machos","machos"],["pesoPromHembras","El peso promedio de hembras","hembras"],
-   ["pesoTotalMachos","El peso total de machos","machos"],["pesoTotalHembras","El peso total de hembras","hembras"]].forEach(function(p){
-    const crudo = m[p[0]];
-    if(crudo===""||crudo===null||crudo===undefined) return;
-    const v = madFinKg(crudo);
-    if(v==="") avisos.push(p[1]+" no es una cifra válida y no se guardará.");
-    else if(v>0 && saca[p[2]]===0) avisos.push(p[1]+" está anotado, pero ningún cierre saca "+p[2]+".");
-  });
+  // El PESO TOTAL es del registro entero: aviso si no es cifra, o si pesa algo que ningún cierre saca. Ver el módulo.
+  const saca = cierres.reduce(function(a,c){ return a + (madIngInt((c||{}).machos)||0) + (madIngInt((c||{}).hembras)||0); }, 0);
+  if(!(m.pesoTotal===""||m.pesoTotal===null||m.pesoTotal===undefined)){
+    const v = madFinKg(m.pesoTotal);
+    if(v==="") avisos.push("El peso total no es una cifra válida y no se guardará.");
+    else if(v>0 && saca===0) avisos.push("El peso total está anotado, pero ningún cierre saca animales.");
+  }
   return { errores: errores, avisos: avisos };
 }
 
@@ -8103,8 +8129,11 @@ function _madFinCardHTML(){
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
     +   '<label style="'+_MAD_ING_LBL+'">Machos que salen<input class="mf-machos" type="number" min="0" step="1" inputmode="numeric" style="'+_MAD_ING_INP+';width:120px"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Hembras que salen<input class="mf-hembras" type="number" min="0" step="1" inputmode="numeric" style="'+_MAD_ING_INP+';width:120px"></label>'
-    +   '<span class="mf-nota" style="font-size:11px;color:#64748b;padding-bottom:8px"></span>'
+    +   '<label style="'+_MAD_ING_LBL+'" title="Van dentro de los machos y hembras que salen">Rojos<input class="mf-rojos" type="number" min="0" step="1" inputmode="numeric" style="'+_MAD_ING_INP+';width:90px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Peso promedio machos (g)<input class="mf-ppm" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:150px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Peso promedio hembras (g)<input class="mf-pph" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:150px"></label>'
     + '</div>'
+    + '<div class="mf-nota" style="font-size:11px;color:#64748b;margin-bottom:8px"></div>'
     + '<label style="'+_MAD_ING_LBL+'">Observaciones<input class="mf-obs" style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
     + '</div>';
 }
@@ -8137,13 +8166,12 @@ function madFinCollect(){
     cierres.push({
       lote:g(c,".mf-lote"), tipo:g(c,".mf-tipo"), motivo:g(c,".mf-motivo"), sala:g(c,".mf-sala"),
       metabisulfito:g(c,".mf-mbs"), fechaMetabisulfito:g(c,".mf-mbsf"),
-      machos:g(c,".mf-machos"), hembras:g(c,".mf-hembras"), observaciones:g(c,".mf-obs")
+      machos:g(c,".mf-machos"), hembras:g(c,".mf-hembras"), rojos:g(c,".mf-rojos"),
+      pesoPromMachos:g(c,".mf-ppm"), pesoPromHembras:g(c,".mf-pph"), observaciones:g(c,".mf-obs")
     });
   });
   const fp=document.getElementById("fp-fin") || document;
-  return { fecha:f?f.value:"", cierres:cierres,
-    pesoPromMachos:g(fp,"#mf-ppm"), pesoPromHembras:g(fp,"#mf-pph"),
-    pesoTotalMachos:g(fp,"#mf-ptm"), pesoTotalHembras:g(fp,"#mf-pth"), registro:g(fp,"#mf-registro") };
+  return { fecha:f?f.value:"", cierres:cierres, pesoTotal:g(fp,"#mf-ptotal"), registro:g(fp,"#mf-registro") };
 }
 /* A3: un identificador por FORMULARIO, no por pulsación: Revisar y Guardar dan el mismo, y reintentar un
    envío fallido no crea otro registro. Se renueva al vaciar o tras guardar (el render pinta uno nuevo). */
@@ -8259,13 +8287,10 @@ function renderMadFinCiclo(){
     +   '</div>'
     +   '<div id="mf-cards">'+_madFinCardHTML()+'</div>'
     +   '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin:4px 0 10px;background:#f8fafc">'
-    +     '<div style="font-size:12px;font-weight:700;margin-bottom:2px">⚖️ Pesos de lo que sale</div>'
-    +     '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Se pesan <b>juntos todos los lotes</b> de este registro, no lote por lote: se guardan iguales en cada fila, con el mismo <b>Registro</b> <span id="mf-registro-txt" style="font-family:monospace">'+escapeHtml(registro)+'</span> para leerlos una sola vez.<input type="hidden" id="mf-registro" value="'+escapeHtml(registro)+'"></div>'
+    +     '<div style="font-size:12px;font-weight:700;margin-bottom:2px">⚖️ Peso total de lo que sale</div>'
+    +     '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Un solo peso de <b>todos los lotes</b> de este registro (los promedios van en cada lote): se guarda igual en cada fila, con el mismo <b>Registro</b> <span id="mf-registro-txt" style="font-family:monospace">'+escapeHtml(registro)+'</span> para leerlo una sola vez.<input type="hidden" id="mf-registro" value="'+escapeHtml(registro)+'"></div>'
     +     '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
-    +       '<label style="'+_MAD_ING_LBL+'">Peso promedio machos (g)<input id="mf-ppm" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:150px"></label>'
-    +       '<label style="'+_MAD_ING_LBL+'">Peso promedio hembras (g)<input id="mf-pph" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:150px"></label>'
-    +       '<label style="'+_MAD_ING_LBL+'">Peso total machos (kg)<input id="mf-ptm" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:150px"></label>'
-    +       '<label style="'+_MAD_ING_LBL+'">Peso total hembras (kg)<input id="mf-pth" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:150px"></label>'
+    +       '<label style="'+_MAD_ING_LBL+'">Peso total (kg)<input id="mf-ptotal" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:150px"></label>'
     +     '</div>'
     +   '</div>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
@@ -8279,6 +8304,280 @@ function renderMadFinCiclo(){
     + '</div></div>';
   const t=document.querySelector("#mf-cards .mf-tipo");
   if(t) madFinTipoChange(t);
+}
+
+// ── Maduración · TRATAMIENTOS (2026-09-15, usuario) ──────────────────────────
+// Copia inline de `ficha-maduracion-tratamientos.schema.js` (la paridad la ata). Dos bloques: 🛡 preventivos
+// por LOTE (productos + RAS) y 🧽 desinfección por ÁREA; una fila por tarjeta. El estado de la sala elegido
+// en la ficha pre-marca sus productos; un área pre-marca lo suyo si la tarjeta no tiene nada. Hoja por «ID» con MERGE.
+const MAD_TRAT_SHEET = "Maduración Tratamientos";
+const MAD_TRAT_ESTADOS = ["Producción","Cuarentena","Mixto","Desinfección","Desinfección - Producción agrupada"];
+const MAD_TRAT_PREVENTIVOS = ["Cooper","Formol","Bacmil","Lactosac","Lipofeed","Carbonato de Calcio","Complex B","Vitamina C","Full Calcio","Prokura"];
+const MAD_TRAT_RAS = ["Bicarbonato","EM-1","Full Calcio","Prokura"];
+const MAD_TRAT_DESINFECTANTES = ["Formol","Cloro","Jabón neutro","Virkon","Vitamina C","Bicarbonato","Full Calcio","EM-1","Prokura","Cooper"];
+const MAD_TRAT_AREAS = ["Salas y tanques","RAS y tuberías","Líneas de agua y aire, tinas y reservorios","Desove, Eclosión y Despacho","Conos, baldes, tinas y tuberías"];
+const _MAD_TRAT_AREA_TAG = { "Salas y tanques":"SALAS", "RAS y tuberías":"RAS", "Líneas de agua y aire, tinas y reservorios":"LINEAS", "Desove, Eclosión y Despacho":"DESOVE", "Conos, baldes, tinas y tuberías":"UTENSILIOS" };
+const _MAD_TRAT_LIMPIEZA = ["Formol","Cloro","Jabón neutro","Virkon","Vitamina C"];
+const _MAD_TRAT_AREA_PRODUCTOS = { "Salas y tanques":_MAD_TRAT_LIMPIEZA, "RAS y tuberías":["Cloro","Vitamina C","Bicarbonato","Full Calcio","EM-1","Prokura"], "Líneas de agua y aire, tinas y reservorios":_MAD_TRAT_LIMPIEZA, "Desove, Eclosión y Despacho":_MAD_TRAT_LIMPIEZA, "Conos, baldes, tinas y tuberías":_MAD_TRAT_LIMPIEZA };
+const _MAD_TRAT_PRODUCCION = { preventivos:["Bacmil","Lactosac","Lipofeed","Vitamina C","Complex B","Full Calcio"], ras:["Bicarbonato","EM-1"], desinfeccion:[] };
+const _MAD_TRAT_DESINF = { preventivos:[], ras:[], desinfeccion:["Formol","Cooper","Virkon"] };
+const _MAD_TRAT_PLANTILLAS = { "Producción":_MAD_TRAT_PRODUCCION, "Cuarentena":_MAD_TRAT_PRODUCCION, "Mixto":_MAD_TRAT_PRODUCCION, "Desinfección":_MAD_TRAT_DESINF,
+  "Desinfección - Producción agrupada":{ preventivos:_MAD_TRAT_PRODUCCION.preventivos, ras:_MAD_TRAT_PRODUCCION.ras, desinfeccion:_MAD_TRAT_DESINF.desinfeccion } };
+function _madTratPropia(o, k){ return Object.prototype.hasOwnProperty.call(o, k); }
+function madTratPlantilla(estado){
+  const e=sanitizeStr(estado,60), p=_madTratPropia(_MAD_TRAT_PLANTILLAS, e) ? _MAD_TRAT_PLANTILLAS[e] : { preventivos:[], ras:[], desinfeccion:[] };
+  return { preventivos:p.preventivos.slice(), ras:p.ras.slice(), desinfeccion:p.desinfeccion.slice() };
+}
+function madTratProductosArea(area){ const a=sanitizeStr(area,80); return _madTratPropia(_MAD_TRAT_AREA_PRODUCTOS, a) ? _MAD_TRAT_AREA_PRODUCTOS[a].slice() : []; }
+const MAD_TRAT_COLUMNS = [
+  { h:"Fecha", k:"fecha" }, { h:"Sala", k:"sala" }, { h:"Estado de la sala", k:"estado" }, { h:"Tipo", k:"tipo" },
+  { h:"Área", k:"area" }, { h:"Lotes", k:"lotes" }, { h:"Productos", k:"productos" }, { h:"Productos RAS", k:"ras" },
+  { h:"Dosis y observaciones", k:"dosis" },
+  { h:"ID", k:"id" }   // ⚠ el ÚLTIMO: el GAS lo localiza por cabecera y, si faltara, cae a la última columna
+];
+const MAD_TRAT_HEADERS = MAD_TRAT_COLUMNS.map(function(c){ return c.h; });
+function _madTratNorm(s){ return String(s==null?"":s).trim().replace(/\s+/g," ").toLowerCase(); }
+function madTratProductos(catalogo, v){
+  const pedidos={};
+  (Array.isArray(v) ? v : String(v==null?"":v).split(",")).forEach(function(p){ pedidos[_madTratNorm(p)]=1; });
+  return catalogo.filter(function(p){ return pedidos[_madTratNorm(p)]===1; });
+}
+function madTratLotes(v){
+  const vistos={}, out=[];
+  (Array.isArray(v) ? v : String(v==null?"":v).split(",")).forEach(function(x){ const l=madDesNormLote(x); if(l && vistos[l]!==1){ vistos[l]=1; out.push(l); } });
+  return out.sort();
+}
+function _madTratSalaId(sala){ return sanitizeStr(sala,30) ? madIngSalaTag(sala) : "GEN"; }
+function madTratIdPreventivo(fecha, sala, lotes){ return sanitizeStr(fecha,10)+"-"+_madTratSalaId(sala)+"-P-"+madTratLotes(lotes).join("."); }
+function madTratIdDesinfeccion(fecha, sala, area){ const a=sanitizeStr(area,80); return sanitizeStr(fecha,10)+"-"+_madTratSalaId(sala)+"-D-"+(_madTratPropia(_MAD_TRAT_AREA_TAG, a) ? _MAD_TRAT_AREA_TAG[a] : "OTRA"); }
+function madTratBuildRows(model){
+  const m=model||{}, fecha=sanitizeStr(m.fecha,10), sala=sanitizeStr(m.sala,30), estado=sanitizeStr(m.estado,60), filas=[];
+  const fila=function(v){ filas.push(MAD_TRAT_COLUMNS.map(function(c){ return v[c.k]; })); };
+  (m.preventivos||[]).forEach(function(p){
+    const x=p||{}, lotes=madTratLotes(x.lotes), productos=madTratProductos(MAD_TRAT_PREVENTIVOS, x.productos), ras=madTratProductos(MAD_TRAT_RAS, x.ras);
+    if(!lotes.length || (!productos.length && !ras.length)) return;
+    fila({ fecha:fecha, sala:sala, estado:estado, tipo:"Preventivo", area:"Lotes", lotes:lotes.join(", "), productos:productos.join(", "),
+      ras:ras.join(", "), dosis:sanitizeStr(x.dosis,300), id:madTratIdPreventivo(fecha, sala, lotes) });
+  });
+  (m.desinfecciones||[]).forEach(function(d){
+    const x=d||{}, area=sanitizeStr(x.area,80), productos=madTratProductos(MAD_TRAT_DESINFECTANTES, x.productos);
+    if(MAD_TRAT_AREAS.indexOf(area)===-1 || !productos.length) return;
+    fila({ fecha:fecha, sala:sala, estado:estado, tipo:"Desinfección", area:area, lotes:"", productos:productos.join(", "),
+      ras:"", dosis:sanitizeStr(x.dosis,300), id:madTratIdDesinfeccion(fecha, sala, area) });
+  });
+  return filas;
+}
+function buildMadTratPayload(model){
+  return { sheetName: MAD_TRAT_SHEET, headers: MAD_TRAT_HEADERS.slice(), rows: madTratBuildRows(model) };
+}
+function madTratValidar(model){
+  const m=model||{}, errores=[], avisos=[];
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(m.fecha||""))) errores.push("La fecha no es válida.");
+  const sala=sanitizeStr(m.sala,30);
+  if(sala!=="" && !MAD_TANQUES_POR_SALA[sala]) avisos.push("«"+sala+"» no es una sala conocida.");
+  const estado=sanitizeStr(m.estado,60);
+  if(estado!=="" && MAD_TRAT_ESTADOS.indexOf(estado)===-1) avisos.push("«"+estado+"» no es un estado de sala conocido.");
+  const ids={};
+  let completas=0;
+  (m.preventivos||[]).forEach(function(p, i){
+    const x=p||{}, lotes=madTratLotes(x.lotes);
+    const algo=madTratProductos(MAD_TRAT_PREVENTIVOS, x.productos).length + madTratProductos(MAD_TRAT_RAS, x.ras).length;
+    const et="el preventivo "+(i+1);
+    if(!lotes.length && !algo && sanitizeStr(x.dosis,300)==="") return;
+    if(!lotes.length) errores.push("Falta el lote de "+et+".");
+    if(!algo) errores.push("En "+et+" no hay ningún producto marcado.");
+    if(sala==="") errores.push("Falta la sala de "+et+": los lotes se tratan en su sala.");
+    if(!lotes.length || !algo) return;
+    const id=madTratIdPreventivo(m.fecha, sala, lotes);
+    if(ids[id]===1) errores.push("Los lotes "+lotes.join(", ")+" tienen dos preventivos en esta fecha y sala: escribirían la misma fila. Júntalos.");
+    ids[id]=1;
+    completas++;
+  });
+  (m.desinfecciones||[]).forEach(function(d, i){
+    const x=d||{}, area=sanitizeStr(x.area,80), productos=madTratProductos(MAD_TRAT_DESINFECTANTES, x.productos);
+    const et="la desinfección "+(i+1);
+    if(area==="" && !productos.length && sanitizeStr(x.dosis,300)==="") return;
+    if(area==="") errores.push("Falta el área de "+et+".");
+    else if(MAD_TRAT_AREAS.indexOf(area)===-1) errores.push("«"+area+"» no es un área conocida ("+et+").");
+    if(!productos.length) errores.push("En "+et+" no hay ningún producto marcado.");
+    if(area==="Salas y tanques" && sala==="") errores.push("Falta la sala de "+et+": es la desinfección de sus salas y tanques.");
+    if(MAD_TRAT_AREAS.indexOf(area)===-1 || !productos.length) return;
+    const id=madTratIdDesinfeccion(m.fecha, sala, area);
+    if(ids[id]===1) errores.push("«"+area+"» se desinfecta dos veces en esta fecha"+(sala ? " y sala" : "")+": escribirían la misma fila. Júntalas.");
+    ids[id]=1;
+    completas++;
+  });
+  if(!completas && !errores.length) errores.push("No hay ningún tratamiento que registrar: marca al menos un producto.");
+  return { errores: errores, avisos: avisos };
+}
+
+// ── Maduración · Tratamientos · interfaz ─────────────────────────────────────
+const _MAD_TRAT_CARD = "border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px;background:#fff";
+function _madTratChecks(cls, catalogo){
+  return '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0 12px;margin:2px 0 6px">'
+    + catalogo.map(function(p){
+      return '<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 2px;cursor:pointer"><input type="checkbox" class="'+cls+'" value="'+escapeHtml(p)+'">'+escapeHtml(p)+'</label>';
+    }).join("") + '</div>';
+}
+function _madTratPrevHTML(){
+  return '<div class="mt-prev mt-card" style="'+_MAD_TRAT_CARD+'">'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px">'
+    +   '<label style="'+_MAD_ING_LBL+'">Lotes (separados por coma)<input class="mt-lotes" placeholder="BP, BC" style="'+_MAD_ING_INP+';width:190px;text-transform:uppercase"></label>'
+    +   '<button class="btn" type="button" onclick="madTratDelCard(this)" style="font-size:11px">✕ Quitar</button>'
+    + '</div>'
+    + '<div style="'+_MAD_ING_LBL+'">Productos</div>' + _madTratChecks("mt-prod", MAD_TRAT_PREVENTIVOS)
+    + '<div style="'+_MAD_ING_LBL+'">RAS</div>' + _madTratChecks("mt-ras", MAD_TRAT_RAS)
+    + '<label style="'+_MAD_ING_LBL+'">Dosis y observaciones<input class="mt-dosis" style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
+    + '</div>';
+}
+function _madTratDesHTML(){
+  return '<div class="mt-des mt-card" style="'+_MAD_TRAT_CARD+'">'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px">'
+    +   '<label style="'+_MAD_ING_LBL+'">Área<select class="mt-area" onchange="madTratAreaChange(this)" style="'+_MAD_ING_INP+';width:280px"><option value=""></option>'
+    +     MAD_TRAT_AREAS.map(function(a){ return '<option value="'+escapeHtml(a)+'">'+escapeHtml(a)+'</option>'; }).join("")+'</select></label>'
+    +   '<button class="btn" type="button" onclick="madTratDelCard(this)" style="font-size:11px">✕ Quitar</button>'
+    + '</div>'
+    + '<div style="'+_MAD_ING_LBL+'">Productos</div>' + _madTratChecks("mt-prod", MAD_TRAT_DESINFECTANTES)
+    + '<label style="'+_MAD_ING_LBL+'">Dosis y observaciones<input class="mt-dosis" style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
+    + '</div>';
+}
+function _madTratMarca(card, sel, lista){ card.querySelectorAll(sel).forEach(function(c){ c.checked = lista.indexOf(c.value)!==-1; }); }
+// El estado de la sala pre-marca la PRIMERA tarjeta de cada bloque (se ajusta a mano).
+function madTratEstadoChange(sel){
+  const p=madTratPlantilla(sel.value);
+  const prev=document.querySelector("#mt-prevs .mt-prev"), des=document.querySelector("#mt-dess .mt-des");
+  if(prev){ _madTratMarca(prev, ".mt-prod", p.preventivos); _madTratMarca(prev, ".mt-ras", p.ras); }
+  if(des){
+    _madTratMarca(des, ".mt-prod", p.desinfeccion);
+    const a=des.querySelector(".mt-area"); if(a && p.desinfeccion.length && !a.value) a.value="Salas y tanques";
+  }
+}
+// Un área pre-marca lo suyo sólo si la tarjeta no tiene nada marcado: no pisa lo que ya se eligió.
+function madTratAreaChange(sel){
+  const c=sel.closest(".mt-des"); if(!c || c.querySelector(".mt-prod:checked")) return;
+  _madTratMarca(c, ".mt-prod", madTratProductosArea(sel.value));
+}
+function madTratAddPrev(){ const c=document.getElementById("mt-prevs"); if(c) c.insertAdjacentHTML("beforeend", _madTratPrevHTML()); }
+function madTratAddDes(){ const c=document.getElementById("mt-dess"); if(c) c.insertAdjacentHTML("beforeend", _madTratDesHTML()); }
+function madTratDelCard(btn){ const b=btn.closest(".mt-card"); if(b) b.remove(); }
+function madTratCollect(){
+  const g=function(el,sel){ const e=el.querySelector(sel); return e?e.value:""; };
+  const marcados=function(el,sel){ return Array.prototype.map.call(el.querySelectorAll(sel+":checked"), function(c){ return c.value; }); };
+  const preventivos=[], desinfecciones=[];
+  document.querySelectorAll("#mt-prevs .mt-prev").forEach(function(c){ preventivos.push({ lotes:g(c,".mt-lotes"), productos:marcados(c,".mt-prod"), ras:marcados(c,".mt-ras"), dosis:g(c,".mt-dosis") }); });
+  document.querySelectorAll("#mt-dess .mt-des").forEach(function(c){ desinfecciones.push({ area:g(c,".mt-area"), productos:marcados(c,".mt-prod"), dosis:g(c,".mt-dosis") }); });
+  return { fecha:g(document,"#mt-fecha"), sala:g(document,"#mt-sala"), estado:g(document,"#mt-estado"), preventivos:preventivos, desinfecciones:desinfecciones };
+}
+function _madTratPinta(res, filas){
+  const box=document.getElementById("mt-report"); if(!box) return;
+  let h="";
+  if(res.errores.length) h += '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#991b1b"><b>No se puede guardar:</b><ul style="margin:4px 0 0;padding-left:18px">'+res.errores.map(function(e){ return "<li>"+escapeHtml(e)+"</li>"; }).join("")+"</ul></div>";
+  if(res.avisos.length) h += '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#92400e"><b>Avisos (se puede guardar igual):</b><ul style="margin:4px 0 0;padding-left:18px">'+res.avisos.map(function(a){ return "<li>"+escapeHtml(a)+"</li>"; }).join("")+"</ul></div>";
+  if(!res.errores.length) h += _madRevisarOkHTML(res, filas, MAD_TRAT_SHEET);
+  box.innerHTML=h;
+  _madReporteVigila("fp-tratamientos", "mt-report");
+}
+function madTratRevisar(){
+  const model=madTratCollect();
+  const res=madTratValidar(model);
+  _madTratPinta(res, madTratBuildRows(model).length);
+  return _madRevisarRemata("mt-report", res, MAD_TRAT_SHEET);
+}
+// Registro local propio, como en las otras fichas: sin filas locales, un envío ENCOLADO no dejaría rastro.
+const MAD_TRAT_LOG_KEY = "larv4_mad_trat_log";
+function madTratLogLeer(){
+  try{ const v=JSON.parse(localStorage.getItem(MAD_TRAT_LOG_KEY)||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; }
+}
+function madTratLogAnota(fecha, filas, estado){
+  const l=madTratLogLeer();
+  l.push({ ts:Date.now(), fecha:fecha, filas:filas, estado:estado });
+  try{ localStorage.setItem(MAD_TRAT_LOG_KEY, JSON.stringify(l.slice(-40))); }catch(_){}
+}
+function madTratLogHTML(){
+  const l=madTratLogLeer();
+  if(!l.length) return "";
+  const enCola=(typeof syncQueueLen==="function") ? syncQueueLen() : 0;
+  const filas=l.slice().reverse().slice(0,10).map(function(e){
+    const st=(e.estado==="cola" && enCola)
+      ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px">📶 en cola</span>'
+      : '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px">✅ enviado</span>';
+    const d=new Date(e.ts), hh=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+    return '<tr><td>'+escapeHtml(String(e.fecha||""))+' '+hh+'</td><td style="text-align:right">'+(e.filas||0)+'</td><td>'+st+'</td></tr>';
+  }).join("");
+  return '<div style="margin-top:18px"><h3 style="margin:0 0 4px;font-size:13px">Registrado desde este dispositivo</h3>'
+    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Tratamientos</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div></div>';
+}
+async function madTratGuardar(){
+  const model=madTratCollect();
+  const res=madTratValidar(model);
+  const payload=buildMadTratPayload(model);
+  _madTratPinta(res, payload.rows.length);
+  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
+  if(!payload.rows.length){ toast("No hay ningún tratamiento completo que guardar.","warn",4000); return; }
+  // Hoja nueva: el GAS publicado hoy no la conoce. Contra él no se envía y lo tecleado se queda (ver _madIngGasAlDia).
+  if((await _madIngGasAlDia()) === false){
+    const aviso="No se envió: el GAS publicado no conoce la hoja «"+MAD_TRAT_SHEET+"». Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo tecleado sigue aquí.";
+    const box=document.getElementById("mt-report");
+    if(box) box.innerHTML='<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:12px;color:#991b1b">'+escapeHtml(aviso)+'</div>';
+    toast(aviso,"err",10000);
+    return;
+  }
+  toast("Enviando "+payload.rows.length+" tratamiento(s)…","info",2200);
+  const _t={};
+  const ok=await postPayload(payload, gasUrl(), _t);
+  if(ok){
+    madTratLogAnota(model.fecha, payload.rows.length, "ok");
+    toast("✅ Tratamientos registrados · "+payload.rows.length+" fila(s)","ok",5000);
+    madTratReiniciar();
+    return;
+  }
+  // ⚠ `postPayload` devuelve false TAMBIÉN cuando el envío quedó ENCOLADO (invariante H1).
+  if(_t.outcome==="queued"){
+    madTratLogAnota(model.fecha, payload.rows.length, "cola");
+    madTratReiniciar();
+  }
+  _syncNotOkUI(_t.outcome, "No se pudieron registrar los tratamientos", null, _t.gasMessage);
+}
+function madTratReiniciar(){
+  const fp=document.getElementById("fp-tratamientos");
+  if(fp) fp.innerHTML="";
+  renderMadTratamientos();
+}
+function madTratVaciar(){
+  if(!confirm("¿Vaciar el formulario de tratamientos?\nSe perderá todo lo tecleado.")) return;
+  madTratReiniciar();
+}
+// ⚠⚠ NO SE RE-PINTA SI YA ESTÁ MONTADO, como las demás fichas: reescribir innerHTML borraría lo tecleado.
+function renderMadTratamientos(){
+  const fp=document.getElementById("fp-tratamientos"); if(!fp) return;
+  if(fp.querySelector("#mt-prevs")) return;
+  const todayStr=today();
+  fp.innerHTML='<div class="fc">'
+    + '<div class="fc-h"><div class="fc-t">🧪 Maduración · Tratamientos</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
+    + '<div class="fc-b">'
+    +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
+    +     '<span style="font-size:16px">ℹ️</span><span>Registra los <b>preventivos por lote</b> y la <b>desinfección</b> de instalaciones. Al elegir el <b>estado de la sala</b> quedan pre-marcados sus productos habituales: ajústalos antes de guardar. Cada tarjeta es una fila de la hoja.</span>'
+    +   '</div>'
+    +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mt-fecha" value="'+escapeHtml(todayStr)+'" style="'+_MAD_ING_INP+'"></label>'
+    +     '<label style="'+_MAD_ING_LBL+'" title="Vacía para áreas generales (Desove, Eclosión y Despacho, utensilios…)">Sala<select id="mt-sala" style="'+_MAD_ING_INP+';width:120px">'+madIngSalaOpts("")+'</select></label>'
+    +     '<label style="'+_MAD_ING_LBL+'">Estado de la sala<select id="mt-estado" onchange="madTratEstadoChange(this)" style="'+_MAD_ING_INP+';width:260px"><option value=""></option>'
+    +       MAD_TRAT_ESTADOS.map(function(e){ return '<option value="'+escapeHtml(e)+'">'+escapeHtml(e)+'</option>'; }).join("")+'</select></label>'
+    +   '</div>'
+    +   '<h3 style="margin:4px 0 6px;font-size:13px">🛡 Preventivos por lote</h3>'
+    +   '<div id="mt-prevs">'+_madTratPrevHTML()+'</div>'
+    +   '<button class="btn" type="button" onclick="madTratAddPrev()" style="font-size:11px;margin-bottom:10px">➕ Preventivo</button>'
+    +   '<h3 style="margin:4px 0 6px;font-size:13px">🧽 Desinfección</h3>'
+    +   '<div id="mt-dess">'+_madTratDesHTML()+'</div>'
+    +   '<button class="btn" type="button" onclick="madTratAddDes()" style="font-size:11px;margin-bottom:10px">➕ Desinfección</button>'
+    +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
+    +     '<button class="btn" type="button" onclick="madTratRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" style="font-weight:700" onclick="madTratGuardar()">☁️ Guardar y sincronizar</button>'
+    +     '<button class="btn" type="button" onclick="madTratVaciar()">🧹 Vaciar</button>'
+    +   '</div>'
+    +   '<div id="mt-report" style="margin-top:12px"></div>'
+    +   '<div id="mt-log">'+madTratLogHTML()+'</div>'
+    + '</div></div>';
 }
 
 // ── Maduración · Registro reproductivo (desoves/mortalidades por lote de Trovan) ──
@@ -18208,7 +18507,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "441a7ef25c94";
+const GAS_VERSION = "2c12219f29ff";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -18247,6 +18546,8 @@ const ALLOWED = [
   // Registro operativo de Maduración (2026-09-08). Llave por columna "ID", no
   // compuesta por posición: ver isMadId en doPost.
   "Maduración Ingreso","Maduración Movimientos","Maduración Fin de Ciclo",
+  // Tratamientos de Maduración (2026-09-15): preventivos por lote y desinfección, por columna "ID".
+  "Maduración Tratamientos",
   "BIOMOL",
   "Registro_Supervisión",
   "Registro_Desinfección",
@@ -18448,7 +18749,8 @@ function doPost(e) {
     // reemplazarla.
     var isMadId = payload.sheetName === "Maduración Ingreso"
                || payload.sheetName === "Maduración Movimientos"
-               || payload.sheetName === "Maduración Fin de Ciclo";
+               || payload.sheetName === "Maduración Fin de Ciclo"
+               || payload.sheetName === "Maduración Tratamientos";
     // Columna Trovan ID (0-indexed) por hoja: se fuerza a formato TEXTO ("@") al
     // escribir, así Sheets NO reinterpreta el código como notación científica ni
     // le quita ceros a la izquierda (es un identificador, no un número).
@@ -18981,7 +19283,8 @@ function ensureHeaders(ws, headers) {
 // el dispositivo hasta que se actualice la app (medido en el cliente de f1d9687).
 var MAD_ESQUEMA_VIGILADO = [
   "Maduración Sala", "Maduración Tanques", "Maduración Lotes",
-  "Maduración Ingreso", "Maduración Movimientos", "Maduración Fin de Ciclo"
+  "Maduración Ingreso", "Maduración Movimientos", "Maduración Fin de Ciclo",
+  "Maduración Tratamientos"
 ];
 function _cabeceraNorm_(v) {
   var s = String(v == null ? "" : v).trim();
@@ -19006,7 +19309,7 @@ function esquemaIncompatible_(cabHoja, cabEnvio) {
 var MAD_ESQUEMA_FIRMA = {
   "Maduración Ingreso":      [[14, "Crecimiento semanal promedio"]],
   "Maduración Lotes":        [[7, "Hembras no viables"]],
-  "Maduración Fin de Ciclo": [[5, "Sala"], [10, "Registro"]]
+  "Maduración Fin de Ciclo": [[5, "Sala"], [10, "Rojos"]]
 };
 // null si el envío trae la firma (o la hoja no tiene); si no, { col, cab: lo que espera }.
 function firmaAusente_(hoja, cabEnvio) {

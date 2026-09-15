@@ -41,10 +41,13 @@ describe('Fin de Ciclo · la hoja y sus columnas', () => {
     expect(MAD_FIN_HEADERS).toContain('Lote');
   });
 
-  it('lleva los PESOS del registro: promedio (g) y total (kg) de machos y de hembras', () => {
-    for (const h of ['Peso promedio machos (g)', 'Peso promedio hembras (g)', 'Peso total machos (kg)', 'Peso total hembras (kg)']) {
+  it('2026-09-15 · Rojos y pesos promedio por lote, y UN peso total (sin total por sexo)', () => {
+    for (const h of ['Rojos', 'Peso promedio machos (g)', 'Peso promedio hembras (g)', 'Peso total (kg)']) {
       expect(MAD_FIN_HEADERS).toContain(h);
     }
+    expect(MAD_FIN_HEADERS).not.toContain('Peso total machos (kg)');
+    expect(MAD_FIN_HEADERS).not.toContain('Peso total hembras (kg)');
+    expect(MAD_FIN_HEADERS.indexOf('Rojos')).toBe(MAD_FIN_HEADERS.indexOf('Hembras') + 1);
   });
 
   /* ⚠⚠ AQUÍ HABÍA UNA COLUMNA `Destino`, y la retiró el usuario el 2026-09-08: NINGÚN
@@ -137,52 +140,61 @@ describe('Fin de Ciclo · la llave', () => {
   });
 });
 
-/* Los pesos se toman de TODOS los lotes del registro juntos (usuario, 2026-09-14): van IGUALES en
-   cada fila. Dividirlos o ponerlos sólo en la primera daría otra cifra al leer la hoja. */
-describe('Fin de Ciclo · los pesos del registro', () => {
+/* 2026-09-15 (usuario): Rojos y pesos PROMEDIO van por LOTE (cada fila el suyo); el PESO TOTAL es de TODOS
+   los lotes del registro juntos y va IGUAL en cada fila. Los rojos van dentro de machos y hembras. */
+describe('Fin de Ciclo · rojos y pesos por lote, peso total del registro', () => {
   const conPesos = () => {
     const m = base();
-    m.cierres.push({ lote: 'BC', tipo: 'Parcial', motivo: 'Pedido', machos: 10, hembras: 0 });
-    return Object.assign(m, { pesoPromMachos: '45.5', pesoPromHembras: 60, pesoTotalMachos: 2.3, pesoTotalHembras: '3.6', registro: 'R-MFJ3K2QX7A' });
+    m.cierres[0] = Object.assign(m.cierres[0], { rojos: 3, pesoPromMachos: '45.5', pesoPromHembras: 60 });
+    m.cierres.push({ lote: 'BC', tipo: 'Parcial', motivo: 'Pedido', machos: 10, hembras: 0, pesoPromMachos: '38.25' });
+    return Object.assign(m, { pesoTotal: '12.4', registro: 'R-MFJ3K2QX7A' });
   };
 
-  /* A3: los pesos se leen UNA vez por registro, así que el registro va en cada fila y es el mismo en todas. */
+  /* A3: el peso total se lee UNA vez por registro, así que el registro va en cada fila y es el mismo en todas. */
   it('A3 · todas las filas llevan el MISMO «Registro» del modelo; sin él va vacío', () => {
     expect(MAD_FIN_HEADERS).toContain('Registro');
     expect(buildFinRows(conPesos()).map((f) => f[col('Registro')])).toEqual(['R-MFJ3K2QX7A', 'R-MFJ3K2QX7A']);
     expect(buildFinRows(base())[0][col('Registro')]).toBe('');
   });
 
-  it('se repiten iguales en cada fila, con sus decimales', () => {
-    const filas = buildFinRows(conPesos());
-    expect(filas).toHaveLength(2);
-    for (const f of filas) {
-      expect(f[col('Peso promedio machos (g)')]).toBe(45.5);
-      expect(f[col('Peso promedio hembras (g)')]).toBe(60);
-      expect(f[col('Peso total machos (kg)')]).toBe(2.3);
-      expect(f[col('Peso total hembras (kg)')]).toBe(3.6);
-    }
+  it('🔴 cada lote lleva SUS rojos y SUS pesos promedio; el peso total se repite igual', () => {
+    const [a, b] = buildFinRows(conPesos());
+    expect([a[col('Rojos')], a[col('Peso promedio machos (g)')], a[col('Peso promedio hembras (g)')]]).toEqual([3, 45.5, 60]);
+    expect([b[col('Rojos')], b[col('Peso promedio machos (g)')], b[col('Peso promedio hembras (g)')]]).toEqual(['', 38.25, '']);
+    expect([a[col('Peso total (kg)')], b[col('Peso total (kg)')]]).toEqual([12.4, 12.4]);
     expect(validarFinCiclo(conPesos())).toEqual({ errores: [], avisos: [] });
   });
 
-  it('sin pesos van VACÍOS (el MERGE conserva la celda), y uno inválido también, con aviso', () => {
+  it('sin cifras van VACÍAS (el MERGE conserva la celda), y una inválida también, con aviso', () => {
     const sin = buildFinRows(base())[0];
-    expect(sin[col('Peso total machos (kg)')]).toBe('');
+    expect([sin[col('Rojos')], sin[col('Peso promedio machos (g)')], sin[col('Peso total (kg)')]]).toEqual(['', '', '']);
     const m = conPesos();
-    m.pesoTotalMachos = 'dos kilos';
-    expect(buildFinRows(m)[0][col('Peso total machos (kg)')]).toBe('');
-    expect(validarFinCiclo(m).avisos).toEqual(['El peso total de machos no es una cifra válida y no se guardará.']);
+    m.pesoTotal = 'doce kilos';
+    m.cierres[1].pesoPromMachos = 'mucho';
+    expect(buildFinRows(m)[0][col('Peso total (kg)')]).toBe('');
+    expect(buildFinRows(m)[1][col('Peso promedio machos (g)')]).toBe('');
+    expect(validarFinCiclo(m).avisos).toEqual([
+      'El peso promedio de machos de BC no es una cifra válida y no se guardará.',
+      'El peso total no es una cifra válida y no se guardará.',
+    ]);
   });
 
-  it('AVISO si se pesa un sexo que ningún cierre del registro saca', () => {
+  it('AVISO si un lote pesa un sexo que ese cierre no saca, o trae más rojos que animales', () => {
     const m = conPesos();
-    m.cierres.forEach((c) => { c.hembras = 0; });
+    m.cierres[0].hembras = 0;
+    m.cierres[0].rojos = 41;
     const { errores, avisos } = validarFinCiclo(m);
     expect(errores).toEqual([]);
     expect(avisos).toEqual([
-      'El peso promedio de hembras está anotado, pero ningún cierre saca hembras.',
-      'El peso total de hembras está anotado, pero ningún cierre saca hembras.',
+      'Los rojos de AB (41) son más que los machos y hembras que salen: van dentro de ellos.',
+      'El peso promedio de hembras de AB está anotado, pero ese cierre no saca hembras.',
     ]);
+  });
+
+  it('AVISO si hay peso total y ningún cierre saca animales', () => {
+    const m = conPesos();
+    m.cierres.forEach((c) => { c.machos = 0; c.hembras = 0; c.rojos = ''; c.pesoPromMachos = ''; c.pesoPromHembras = ''; });
+    expect(validarFinCiclo(m).avisos).toContain('El peso total está anotado, pero ningún cierre saca animales.');
   });
 });
 

@@ -79,17 +79,19 @@ export const MAD_FIN_COLUMNS = [
   { h: 'Fecha aplicación', k: 'fechaMetabisulfito', grain: 'evento' },
   { h: 'Machos', k: 'machos', grain: 'evento', num: true },
   { h: 'Hembras', k: 'hembras', grain: 'evento', num: true },
-  /* 2026-09-14 (usuario): los PESOS de lo que sale se toman de TODOS los lotes del registro juntos, no
-     por lote. Son del REGISTRO y se escriben iguales en cada una de sus filas: sumarlos fila a fila
-     los multiplicaría. */
+  /* 2026-09-15 (usuario): «Rojos», por lote. Van DENTRO de los machos y hembras que salen: sólo se anotan
+     y no mueven el saldo. Más rojos que animales que salen se avisa. */
+  { h: 'Rojos', k: 'rojos', grain: 'evento', num: true },
+  /* 2026-09-15 (usuario): los PESOS PROMEDIO son por LOTE, como los animales que salen. */
+  { h: 'Peso promedio machos (g)', k: 'pesoPromMachos', grain: 'evento', num: true },
+  { h: 'Peso promedio hembras (g)', k: 'pesoPromHembras', grain: 'evento', num: true },
   /* A3 (2026-09-14, usuario): el REGISTRO lleva identificador, uno por formulario, igual en todas sus filas.
-     Sin él, dos registros del mismo día —o un reenvío parcial con otros pesos— no se distinguían: para
-     leer los pesos sin multiplicarlos se agrupa por «Registro» y se toman una vez. */
+     Sin él, dos registros del mismo día —o un reenvío parcial con otro peso— no se distinguían: para
+     leer el peso total sin multiplicarlo se agrupa por «Registro» y se toma una vez. */
   { h: 'Registro', k: 'registro', grain: 'registro' },
-  { h: 'Peso promedio machos (g)', k: 'pesoPromMachos', grain: 'registro', num: true },
-  { h: 'Peso promedio hembras (g)', k: 'pesoPromHembras', grain: 'registro', num: true },
-  { h: 'Peso total machos (kg)', k: 'pesoTotalMachos', grain: 'registro', num: true },
-  { h: 'Peso total hembras (kg)', k: 'pesoTotalHembras', grain: 'registro', num: true },
+  /* 2026-09-15 (usuario): UN solo peso total de lo que sale, de TODOS los lotes del registro juntos. Es del
+     REGISTRO y se escribe igual en cada una de sus filas: sumarlo fila a fila lo multiplicaría. */
+  { h: 'Peso total (kg)', k: 'pesoTotal', grain: 'registro', num: true },
   { h: 'Observaciones', k: 'observaciones', grain: 'evento' },
   { h: 'ID', k: 'id', grain: 'llave' },
 ];
@@ -127,11 +129,7 @@ const salaDeCierre = (x) => (sanitizeStr(x.tipo, 20) === 'Total' ? '' : sanitize
 export function buildFinRows(model) {
   const m = model || {};
   const fecha = sanitizeStr(m.fecha, 10);
-  const pesos = {
-    pesoPromMachos: kg(m.pesoPromMachos), pesoPromHembras: kg(m.pesoPromHembras),
-    pesoTotalMachos: kg(m.pesoTotalMachos), pesoTotalHembras: kg(m.pesoTotalHembras),
-    registro: sanitizeStr(m.registro, 40),
-  };
+  const pesos = { pesoTotal: kg(m.pesoTotal), registro: sanitizeStr(m.registro, 40) };
   const filas = [];
   (m.cierres || []).forEach((c) => {
     const x = c || {};
@@ -149,6 +147,9 @@ export function buildFinRows(model) {
       fechaMetabisulfito: sanitizeStr(x.fechaMetabisulfito, 10),
       machos: int(x.machos),
       hembras: int(x.hembras),
+      rojos: int(x.rojos),
+      pesoPromMachos: kg(x.pesoPromMachos),
+      pesoPromHembras: kg(x.pesoPromHembras),
       observaciones: sanitizeStr(x.observaciones, 300),
       id: finRowId(fecha, lote, motivo, sala),
     }, pesos);
@@ -226,21 +227,29 @@ export function validarFinCiclo(model) {
     if (fmbs !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(fmbs)) {
       avisos.push('La fecha de metabisulfito de ' + lote + ' no es una fecha válida.');
     }
+
+    /* Rojos y pesos promedio son del LOTE. Aviso y no error: el cierre vale sin ellos. Los rojos van dentro
+       de los machos y hembras que salen; un peso de un sexo que ese cierre no saca no cuadra con nada. */
+    const rojos = int(x.rojos);
+    if (rojos !== '' && rojos > (mach || 0) + (hemb || 0)) {
+      avisos.push('Los rojos de ' + lote + ' (' + rojos + ') son más que los machos y hembras que salen: van dentro de ellos.');
+    }
+    [['pesoPromMachos', 'El peso promedio de machos', mach, 'machos'], ['pesoPromHembras', 'El peso promedio de hembras', hemb, 'hembras']].forEach(([k, et, n, sexo]) => {
+      const crudo = x[k];
+      if (crudo === '' || crudo === null || crudo === undefined) return;
+      const v = kg(crudo);
+      if (v === '') avisos.push(et + ' de ' + lote + ' no es una cifra válida y no se guardará.');
+      else if (v > 0 && !(n > 0)) avisos.push(et + ' de ' + lote + ' está anotado, pero ese cierre no saca ' + sexo + '.');
+    });
   });
 
-  /* Los PESOS son del registro entero. Aviso y no error: el cierre vale sin pesar. Una cifra que no
-     es un número positivo no se guarda —se dice—, y un peso de un sexo que ningún cierre saca no
-     cuadra con nada. */
-  const saca = { machos: 0, hembras: 0 };
-  cierres.forEach((c) => { saca.machos += int((c || {}).machos) || 0; saca.hembras += int((c || {}).hembras) || 0; });
-  [['pesoPromMachos', 'El peso promedio de machos', 'machos'], ['pesoPromHembras', 'El peso promedio de hembras', 'hembras'],
-    ['pesoTotalMachos', 'El peso total de machos', 'machos'], ['pesoTotalHembras', 'El peso total de hembras', 'hembras']].forEach(([k, et, sexo]) => {
-    const crudo = m[k];
-    if (crudo === '' || crudo === null || crudo === undefined) return;
-    const v = kg(crudo);
-    if (v === '') avisos.push(et + ' no es una cifra válida y no se guardará.');
-    else if (v > 0 && saca[sexo] === 0) avisos.push(et + ' está anotado, pero ningún cierre saca ' + sexo + '.');
-  });
+  /* El PESO TOTAL es del registro entero: aviso si no es cifra, o si pesa algo que ningún cierre saca. */
+  const saca = cierres.reduce((a, c) => a + (int((c || {}).machos) || 0) + (int((c || {}).hembras) || 0), 0);
+  if (!(m.pesoTotal === '' || m.pesoTotal === null || m.pesoTotal === undefined)) {
+    const v = kg(m.pesoTotal);
+    if (v === '') avisos.push('El peso total no es una cifra válida y no se guardará.');
+    else if (v > 0 && saca === 0) avisos.push('El peso total está anotado, pero ningún cierre saca animales.');
+  }
 
   return { errores, avisos };
 }

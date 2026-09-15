@@ -234,14 +234,15 @@ describe('Fin de Ciclo · la sala del Parcial y los pesos del registro, en el en
     expect(c.querySelector('.mf-sala').disabled).toBe(false);
   });
 
-  it('🔴 Guardar manda la sala en su fila y los MISMOS pesos en cada fila', async () => {
+  it('🔴 Guardar manda la sala, los rojos y los pesos promedio de CADA lote, y el MISMO peso total en cada fila', async () => {
     H.madFinAddCard();
     const [a, b] = cols();
     for (const c of [a, b]) pon(c.querySelector('.mf-tipo'), 'Parcial');   // happy-dom no respeta el `selected` de las opciones
     pon(a.querySelector('.mf-lote'), 'BP'); pon(a.querySelector('.mf-motivo'), 'Pedido'); pon(a.querySelector('.mf-sala'), 'Sala 2');
-    pon(a.querySelector('.mf-machos'), '5');
-    pon(b.querySelector('.mf-lote'), 'BQ'); pon(b.querySelector('.mf-motivo'), 'Pedido'); pon(b.querySelector('.mf-hembras'), '4');
-    pon($('fp-fin', '#mf-ppm'), '45.5'); pon($('fp-fin', '#mf-pph'), '60'); pon($('fp-fin', '#mf-ptm'), '0.23'); pon($('fp-fin', '#mf-pth'), '0.24');
+    pon(a.querySelector('.mf-machos'), '5'); pon(a.querySelector('.mf-rojos'), '1'); pon(a.querySelector('.mf-ppm'), '45.5');
+    pon(b.querySelector('.mf-lote'), 'BQ'); pon(b.querySelector('.mf-motivo'), 'Pedido'); pon(b.querySelector('.mf-hembras'), '4'); pon(b.querySelector('.mf-pph'), '60');
+    pon($('fp-fin', '#mf-ptotal'), '0.47');
+    expect($('fp-fin', '#mf-ptm')).toBeNull();
     const reg = $('fp-fin', '#mf-registro').value;
     expect(reg).toMatch(/^R-[0-9A-Z]{8,}$/);
     await H.madFinGuardar();
@@ -250,10 +251,8 @@ describe('Fin de Ciclo · la sala del Parcial y los pesos del registro, en el en
     const v = (f, h) => f[headers.indexOf(h)];
     expect(rows.map((f) => v(f, 'Sala'))).toEqual(['Sala 2', '']);
     expect(v(rows[0], 'ID')).toMatch(/-BP-PEDIDO-S2$/);
-    for (const f of rows) {
-      expect([v(f, 'Peso promedio machos (g)'), v(f, 'Peso promedio hembras (g)'), v(f, 'Peso total machos (kg)'), v(f, 'Peso total hembras (kg)')])
-        .toEqual([45.5, 60, 0.23, 0.24]);
-    }
+    expect(rows.map((f) => [v(f, 'Rojos'), v(f, 'Peso promedio machos (g)'), v(f, 'Peso promedio hembras (g)'), v(f, 'Peso total (kg)')]))
+      .toEqual([[1, 45.5, '', 0.47], ['', '', 60, 0.47]]);
     // A3: el MISMO registro en todas las filas del envío, y uno NUEVO para el siguiente formulario.
     expect(rows.map((f) => v(f, 'Registro'))).toEqual([reg, reg]);
     expect($('fp-fin', '#mf-registro').value).toMatch(/^R-[0-9A-Z]{8,}$/);

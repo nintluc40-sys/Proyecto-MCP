@@ -141,6 +141,8 @@ export function detectSheetName(rows, gid, rawTitle) {
      🔑 «metabisulfito» es firma PROPIA: no aparece en ninguna cabecera de las 35 pestañas
      vivas (medido sobre cabeceras-produccion.json), así que no le roba nada a nadie. */
   if (has((k) => k.includes('metabisulfito'))) return 'Maduracion';
+  // «Maduración Tratamientos» (2026-09-15): «Productos RAS», por igualdad exacta, es firma propia.
+  if (has((k) => k === 'productos ras')) return 'Maduracion';
   // Maduración Sala es la hoja de AMBIENTE: no lleva machos ni hembras ni nauplios, así
   // que la regla de arriba no la alcanza. Su firma es la columna «RAS».
   // ⚠⚠ POR IGUALDAD EXACTA, nunca por `includes`: como subcadena, «ras» casa 16 de las

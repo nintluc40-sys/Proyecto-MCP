@@ -250,6 +250,30 @@ describe('Desoves · pendientes: guardar el N2 hoy y completar el N5 otro día (
     expect(JSON.parse(localStorage.getItem(H.MAD_DES_PEND_KEY))).toEqual([]);
   });
 
+  it('🔴 el HISTORIAL de 36 h: cada desove guardado con sus cifras; lo de más de 36 h no se ve y se borra al guardar', async () => {
+    const hace = (h) => Date.now() - h * 3600e3;
+    localStorage.setItem('larv4_mad_des_log', JSON.stringify([
+      { ts: hace(37), fecha: '2026-09-12', filas: 1, estado: 'ok', desoves: [{ lote: 'VIEJO', codigoGenetico: 'X' }] },
+      { ts: hace(35), fecha: '2026-09-13', filas: 1, estado: 'ok', desoves: [{ lote: 'RECIENTE', codigoGenetico: 'Y', n2: '100' }] },
+    ]));
+    H.madDesReiniciar();
+    const hist = () => [...document.querySelectorAll('#md-log tr.md-hist')].map((tr) => tr.textContent);
+    expect(document.getElementById('md-log').textContent).toContain('últimas 36 h');
+    expect(hist()).toHaveLength(1);
+    expect(hist()[0]).toContain('RECIENTE');
+    llenar();
+    q('.md-huevos').value = '14440';
+    q('.md-desp-op[value="Tabasca"]').checked = true;
+    await H.madDesGuardar();
+    expect(hist()).toHaveLength(2);
+    expect(hist()[0]).toContain('BP');
+    expect(hist()[0]).toContain('OLF5.F2');
+    expect(hist()[0]).toContain('14440');
+    expect(hist()[0]).toContain('Tabasca');
+    expect(JSON.parse(localStorage.getItem('larv4_mad_des_log')).map((e) => e.fecha)).toEqual(['2026-09-13', '2026-09-14']);
+    localStorage.removeItem('larv4_mad_des_log');
+  });
+
   it('🔴 si la relectura FALLA no se enseña la hoja anterior como actual: sólo lo de este dispositivo', async () => {
     respuestaRows = { ok: true, headers: MAD_DESOVE_HEADERS, rows: [{ Fecha: '2026-09-07', Lote: 'BP', 'Código genético': 'OLF5.F2', N5: '' }] };
     await H.madDesPendVer();

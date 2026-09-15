@@ -318,7 +318,17 @@ Dos consecuencias que conviene tener presentes al desplegar:
   (varios a la vez); la celda los guarda separados por «, » en el orden de la lista. La ficha lista
   los **desoves pendientes** (sin cifra de N5) de la hoja —bajo 🔄— y de este dispositivo;
   ✏️ Completar abre el desove con su fecha, lote y código fijos para añadir N2 o N5, y con el N5
-  guardado sale de la lista. Lo guardado en el dispositivo vive en `larv4_mad_des_pend`.
+  guardado sale de la lista. Lo guardado en el dispositivo vive en `larv4_mad_des_pend`. Debajo, el
+  **historial de este dispositivo** enseña cada desove guardado en las últimas **36 h** con sus cifras
+  (`larv4_mad_des_log`; lo más viejo se borra solo).
+- **Fin de Ciclo (2026-09-15).** «Rojos» y los pesos **promedio** van **por lote** (los rojos van dentro
+  de los machos y hembras que salen: no mueven el saldo), y hay **un solo «Peso total (kg)»** de todos
+  los lotes del registro. La hoja sigue vacía, así que no hay nada que migrar; la firma A4 de Fin de
+  Ciclo pasa a «Sala» (col. 5) y «Rojos» (col. 10).
+- 🧪 **Tratamientos (2026-09-15), hoja nueva `Maduración Tratamientos`.** Preventivos por lote
+  (productos + RAS) y desinfección por área, una fila por tarjeta, por `ID` con MERGE. El estado de la
+  sala elegido en la ficha pre-marca sus productos. **Necesita el GAS nuevo**: contra el publicado hoy
+  la ficha no envía y lo tecleado se queda.
 - ⚠ **MATRIZ · «Número» con aspecto de fecha (P16).** El GAS anterior daba formato de fecha a la
   columna 1 de toda fila escrita, y en la MATRIZ esa columna es «Número» (un 7 se veía
   «06/01/1900»). El GAS nuevo lo corrige en cada escritura, pero las celdas ya escritas conservan

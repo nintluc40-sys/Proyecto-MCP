@@ -21,7 +21,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "441a7ef25c94";
+const GAS_VERSION = "2c12219f29ff";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -60,6 +60,8 @@ const ALLOWED = [
   // Registro operativo de Maduración (2026-09-08). Llave por columna "ID", no
   // compuesta por posición: ver isMadId en doPost.
   "Maduración Ingreso","Maduración Movimientos","Maduración Fin de Ciclo",
+  // Tratamientos de Maduración (2026-09-15): preventivos por lote y desinfección, por columna "ID".
+  "Maduración Tratamientos",
   "BIOMOL",
   "Registro_Supervisión",
   "Registro_Desinfección",
@@ -261,7 +263,8 @@ function doPost(e) {
     // reemplazarla.
     var isMadId = payload.sheetName === "Maduración Ingreso"
                || payload.sheetName === "Maduración Movimientos"
-               || payload.sheetName === "Maduración Fin de Ciclo";
+               || payload.sheetName === "Maduración Fin de Ciclo"
+               || payload.sheetName === "Maduración Tratamientos";
     // Columna Trovan ID (0-indexed) por hoja: se fuerza a formato TEXTO ("@") al
     // escribir, así Sheets NO reinterpreta el código como notación científica ni
     // le quita ceros a la izquierda (es un identificador, no un número).
@@ -794,7 +797,8 @@ function ensureHeaders(ws, headers) {
 // el dispositivo hasta que se actualice la app (medido en el cliente de f1d9687).
 var MAD_ESQUEMA_VIGILADO = [
   "Maduración Sala", "Maduración Tanques", "Maduración Lotes",
-  "Maduración Ingreso", "Maduración Movimientos", "Maduración Fin de Ciclo"
+  "Maduración Ingreso", "Maduración Movimientos", "Maduración Fin de Ciclo",
+  "Maduración Tratamientos"
 ];
 function _cabeceraNorm_(v) {
   var s = String(v == null ? "" : v).trim();
@@ -819,7 +823,7 @@ function esquemaIncompatible_(cabHoja, cabEnvio) {
 var MAD_ESQUEMA_FIRMA = {
   "Maduración Ingreso":      [[14, "Crecimiento semanal promedio"]],
   "Maduración Lotes":        [[7, "Hembras no viables"]],
-  "Maduración Fin de Ciclo": [[5, "Sala"], [10, "Registro"]]
+  "Maduración Fin de Ciclo": [[5, "Sala"], [10, "Rojos"]]
 };
 // null si el envío trae la firma (o la hoja no tiene); si no, { col, cab: lo que espera }.
 function firmaAusente_(hoja, cabEnvio) {

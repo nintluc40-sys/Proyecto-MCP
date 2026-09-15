@@ -55,7 +55,7 @@ const fin = (Fecha, Lote, Tipo, Machos, Hembras, Motivo, Sala) => ({
   Fecha, Lote, Tipo, Motivo: Motivo || 'Pedido', Sala: Sala || '',   // D14 (2026-09-14): Sala de un Parcial
   'Metabisulfito (kg)': '', 'Fecha aplicación': '',
   Machos, Hembras,
-  'Peso promedio machos (g)': '', 'Peso promedio hembras (g)': '', 'Peso total machos (kg)': '', 'Peso total hembras (kg)': '',
+  'Peso promedio machos (g)': '', 'Peso promedio hembras (g)': '', 'Rojos': '', 'Peso total (kg)': '',
   Observaciones: '',
 });
 

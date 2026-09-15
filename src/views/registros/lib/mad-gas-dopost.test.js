@@ -41,6 +41,7 @@ import { MAD_DESOVE_HEADERS, buildDesoveRows } from './ficha-maduracion-desoves.
 import { MAD_INGRESO_HEADERS, buildIngresoRows } from './ficha-maduracion-ingreso.schema.js';
 import { MAD_MOV_HEADERS } from './ficha-maduracion-movimientos.schema.js';
 import { MAD_FIN_HEADERS, buildFinRows } from './ficha-maduracion-fin-ciclo.schema.js';
+import { MAD_TRAT_HEADERS } from './ficha-maduracion-tratamientos.schema.js';
 import { REPRO_MATRIZ_HEADERS, REPRO_EVENTO, REPRO_TRANSFER_TIPO, buildAltaBatch, buildEventBatch, buildTransferBatch, matrixIndexFromRows } from './reproductivo.data.js';
 
 const leer = (u) => readFileSync(new URL(u, import.meta.url), 'utf8').split('\r\n').join('\n');
@@ -326,7 +327,8 @@ describe('GAS · lo que la guarda NO puede romper (V3)', () => {
    vacía, V3 no tiene con qué comparar: el primer envío fijaría la cabecera vieja y bloquearía a las
    apps al día. Ingreso y Lotes quedan igual en cuanto se vacíen (paso 3 de P1). */
 const FIN_6DF4B3A = ['Fecha', 'Lote', 'Tipo', 'Motivo', 'Metabisulfito (kg)', 'Fecha aplicación', 'Machos', 'Hembras', 'Observaciones', 'ID'];
-const FIN_SIN_REGISTRO = MAD_FIN_HEADERS.filter((h) => h !== 'Registro');
+const FIN_E955C72 = ['Fecha', 'Lote', 'Tipo', 'Motivo', 'Sala', 'Metabisulfito (kg)', 'Fecha aplicación', 'Machos', 'Hembras', 'Registro',
+  'Peso promedio machos (g)', 'Peso promedio hembras (g)', 'Peso total machos (kg)', 'Peso total hembras (kg)', 'Observaciones', 'ID'];
 const INGRESO_6DF4B3A_PREVIO = ['Fecha', 'Lote', 'Código genético', 'Piscina Broodstock', 'Camaronera origen', 'Grupo', 'Sala', 'Tanque',
   'Machos', 'Hembras', 'Peso promedio machos (g)', 'Peso promedio hembras (g)', 'Supervivencia piscina (%)', 'Camarones por m2',
   'Densidad de siembra', 'Agua', 'ID'];
@@ -356,11 +358,12 @@ describe('GAS · A4 · una app vieja no fija la cabecera vieja en una hoja vací
     expect(hoja.escrituras).toEqual([]);
   });
 
-  it('🔴 Fin de Ciclo con Sala pero SIN «Registro» se rechaza por la columna 10', () => {
+  it('🔴 Fin de Ciclo con Sala pero sin «Rojos» (esquema de e955c72) se rechaza por la columna 10', () => {
     const g = gas({});
-    const r = g.post({ sheetName: 'Maduración Fin de Ciclo', headers: FIN_SIN_REGISTRO, rows: [filaVacia(FIN_SIN_REGISTRO)] });
+    const r = g.post({ sheetName: 'Maduración Fin de Ciclo', headers: FIN_E955C72, rows: [filaVacia(FIN_E955C72)] });
     expect(r.status).toBe('error');
     expect(r.message).toContain('columna 10');
+    expect(r.message).toContain('«Rojos»');
   });
 
   it('🔴 Ingreso con «Camarones por m2» y Lotes con «Total de nauplios», en hojas vacías, se rechazan', () => {
@@ -390,6 +393,35 @@ describe('GAS · A4 · una app vieja no fija la cabecera vieja en una hoja vací
       rows: [MAD_MOV_HEADERS.map((h) => (h === 'ID' ? 'x1' : h === 'Fecha' ? '2026-09-15' : ''))] });
     expect(r.status).toBe('ok');
     expect(hojas['Maduración Movimientos'].filas[0]).toEqual(MAD_MOV_HEADERS);
+  });
+});
+
+describe('GAS · «Maduración Tratamientos», la hoja nueva (2026-09-15)', () => {
+  const fila = (valores) => conValores(MAD_TRAT_HEADERS, valores);
+  it('🔴 se permite, nace con sus cabeceras y reenviar por el mismo ID FUSIONA (no duplica ni borra)', () => {
+    const hojas = {};
+    const g = gas(hojas);
+    const id = '2026-09-15-S4-P-BC.BP';
+    const r1 = g.post({ sheetName: 'Maduración Tratamientos', headers: MAD_TRAT_HEADERS,
+      rows: [fila({ Fecha: '2026-09-15', Sala: 'Sala 4', Tipo: 'Preventivo', Lotes: 'BC, BP', Productos: 'Bacmil', ID: id })] });
+    expect(r1.status).toBe('ok');
+    const hoja = hojas['Maduración Tratamientos'];
+    expect(hoja.filas[0]).toEqual(MAD_TRAT_HEADERS);
+    const r2 = g.post({ sheetName: 'Maduración Tratamientos', headers: MAD_TRAT_HEADERS,
+      rows: [fila({ Fecha: '2026-09-15', 'Dosis y observaciones': '2 g/L', ID: id })] });
+    expect(r2.status).toBe('ok');
+    expect(hoja.filas).toHaveLength(2);
+    expect(hoja.filas[1][MAD_TRAT_HEADERS.indexOf('Productos')]).toBe('Bacmil');
+    expect(hoja.filas[1][MAD_TRAT_HEADERS.indexOf('Dosis y observaciones')]).toBe('2 g/L');
+  });
+
+  it('🔴 la guarda V3 la vigila: columnas cruzadas contra la hoja se rechazan', () => {
+    const cruzada = MAD_TRAT_HEADERS.map((h) => (h === 'Productos' ? 'Lotes' : h === 'Lotes' ? 'Productos' : h));
+    const hoja = hojaFalsa([MAD_TRAT_HEADERS]);
+    const r = gas({ 'Maduración Tratamientos': hoja }).post({ sheetName: 'Maduración Tratamientos', headers: cruzada, rows: [filaVacia(cruzada)] });
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('Esquema desactualizado');
+    expect(hoja.escrituras).toEqual([]);
   });
 });
 

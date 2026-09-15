@@ -127,14 +127,15 @@ const MODELOS = {
       { lote: 'CD', tipo: 'Parcial', motivo: 'Otro', sala: 'Sala 9', machos: 1, hembras: 1 },
     ],
   },
-  'pesos del registro: decimales, inválido y sexo que no sale': {
+  'rojos y pesos por lote, peso total: decimales, inválido, sexo que no sale y rojos de más': {
     fecha: '2026-09-08',
-    pesoPromMachos: '45.25', pesoPromHembras: 'sesenta', pesoTotalMachos: 2.75, pesoTotalHembras: '3.5', registro: ' R-MFJ3K2QX7A ',
+    pesoTotal: '12.75', registro: ' R-MFJ3K2QX7A ',
     cierres: [
-      { lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', machos: 10, hembras: 0 },
-      { lote: 'BC', tipo: 'Parcial', motivo: 'Pedido', machos: 3, hembras: 0 },
+      { lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', machos: 10, hembras: 0, rojos: 11, pesoPromMachos: '45.25', pesoPromHembras: 'sesenta' },
+      { lote: 'BC', tipo: 'Parcial', motivo: 'Pedido', machos: 3, hembras: 0, rojos: '2', pesoPromHembras: 50 },
     ],
   },
+  'peso total inválido': { fecha: '2026-09-08', pesoTotal: 'x', cierres: [{ lote: 'AB', tipo: 'Total', motivo: 'Pedido' }] },
 };
 
 describe('Fin de Ciclo · el monolito y el módulo declaran lo mismo', () => {
@@ -204,7 +205,8 @@ describe('Fin de Ciclo · el mismo veredicto', () => {
     expect(d14.avisos).toHaveLength(1);    // Sala 9
     expect(buildFinRows(MODELOS['D14: salas, Total con sala y duplicado en la misma sala']).map((f) => f[f.length - 1]))
       .toEqual(['2026-09-08-AB-PEDIDO-S1', '2026-09-08-AB-PEDIDO-S2', '2026-09-08-AB-PEDIDO-S2', '2026-09-08-AB-PEDIDO', '2026-09-08-BC-FINDEVIDAÚTIL', '2026-09-08-CD-OTRO-S9']);
-    expect(validarFinCiclo(MODELOS['pesos del registro: decimales, inválido y sexo que no sale']).avisos).toHaveLength(2);
+    expect(validarFinCiclo(MODELOS['rojos y pesos por lote, peso total: decimales, inválido, sexo que no sale y rojos de más']).avisos).toHaveLength(3);
+    expect(validarFinCiclo(MODELOS['peso total inválido']).avisos).toContain('El peso total no es una cifra válida y no se guardará.');
   });
 });
 
