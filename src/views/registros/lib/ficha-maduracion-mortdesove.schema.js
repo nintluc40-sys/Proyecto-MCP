@@ -102,7 +102,9 @@ export function buildMortRows(model) {
       const r = revisionDe(x, revision);
       if (!revisionConDato(r)) return;
       fila({ fecha, lote, revision, deformidad: opcionNauplios(MAD_NAUP_DEFORMIDAD, r.deformidad), actividad: opcionNauplios(MAD_NAUP_ACTIVIDAD, r.actividad),
-        hongos: opcionNauplios(MAD_NAUP_HONGOS, r.hongos), salinidad: dec(r.salinidad), temperatura: dec(r.temperatura), id: nauplioRowId(fecha, lote, revision) });
+        hongos: opcionNauplios(MAD_NAUP_HONGOS, r.hongos), salinidad: dec(r.salinidad), temperatura: dec(r.temperatura),
+        // I1 (auditoría 2026-09-15): las observaciones son del LOTE y van también aquí; con sólo la revisión se perdían.
+        observaciones: sanitizeStr(x.observaciones, 300), id: nauplioRowId(fecha, lote, revision) });
     });
   });
   return filas;

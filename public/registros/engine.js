@@ -9027,7 +9027,8 @@ function madMortBuildRows(model){
       const r=_madNaupRevision(x, revision);
       if(!_madNaupConDato(r)) return;
       fila({ fecha:fecha, lote:lote, revision:revision, deformidad:madNaupOpcion(MAD_NAUP_DEFORMIDAD, r.deformidad), actividad:madNaupOpcion(MAD_NAUP_ACTIVIDAD, r.actividad),
-        hongos:madNaupOpcion(MAD_NAUP_HONGOS, r.hongos), salinidad:_madNaupDec(r.salinidad), temperatura:_madNaupDec(r.temperatura), id:madNaupRowId(fecha, lote, revision) });
+        hongos:madNaupOpcion(MAD_NAUP_HONGOS, r.hongos), salinidad:_madNaupDec(r.salinidad), temperatura:_madNaupDec(r.temperatura),
+        observaciones:sanitizeStr(x.observaciones,300), id:madNaupRowId(fecha, lote, revision) });   // I1: las observaciones del lote también aquí
     });
   });
   return filas;

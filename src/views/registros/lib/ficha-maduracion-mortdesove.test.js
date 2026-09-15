@@ -19,7 +19,8 @@ const rev = (deformidad, actividad, hongos, salinidad, temperatura) => ({ deform
 const conNauplios = () => ({ fecha: '2026-09-15', lotes: [
   { lote: 'bp', desove: { entran: 40, muertas: 3 }, observaciones: 'ok',
     nauplios: { entrada: rev('baja', 'Alta', 'Ausente', '34.5', '29'), lavado: rev('', '', '', '', ''), lavado2: rev('Ausente', 'media', 'Ausente', 34, 28.8), postlavado: {} } },
-  { lote: 'BC', nauplios: { postlavado: rev('Media', 'Baja', 'Presente', '', '30') } },
+  // I1: BC sólo trae revisión; sus observaciones no pueden perderse.
+  { lote: 'BC', nauplios: { postlavado: rev('Media', 'Baja', 'Presente', '', '30') }, observaciones: 'sin hongos al inicio' },
 ] });
 
 describe('Inf. Supervisor · la hoja', () => {
@@ -38,9 +39,9 @@ describe('Inf. Supervisor · la hoja', () => {
       f[col('Hongos')], f[col('Salinidad')], f[col('Temperatura')], f[col('Observaciones')], f[col('ID')]];
     expect(filas.map(ver)).toEqual([
       ['BP', 'Desove', 7.5, '', '', '', '', '', '', 'ok', '2026-09-15-BP-DESOVE'],
-      ['BP', '', '', 'Entrada', 'Baja', 'Alta', 'Ausente', 34.5, 29, '', '2026-09-15-BP-NAUP-ENTRADA'],
-      ['BP', '', '', 'Lavado 2', 'Ausente', 'Media', 'Ausente', 34, 28.8, '', '2026-09-15-BP-NAUP-LAVADO2'],
-      ['BC', '', '', 'Postlavado', 'Media', 'Baja', 'Presente', '', 30, '', '2026-09-15-BC-NAUP-POSTLAVADO'],
+      ['BP', '', '', 'Entrada', 'Baja', 'Alta', 'Ausente', 34.5, 29, 'ok', '2026-09-15-BP-NAUP-ENTRADA'],
+      ['BP', '', '', 'Lavado 2', 'Ausente', 'Media', 'Ausente', 34, 28.8, 'ok', '2026-09-15-BP-NAUP-LAVADO2'],
+      ['BC', '', '', 'Postlavado', 'Media', 'Baja', 'Presente', '', 30, 'sin hongos al inicio', '2026-09-15-BC-NAUP-POSTLAVADO'],
     ]);
     expect(filas.every((f) => f.length === MAD_MORT_HEADERS.length)).toBe(true);
     expect(nauplioRowId('2026-09-15', ' b p ', 'Lavado 2')).toBe('2026-09-15-BP-NAUP-LAVADO2');
