@@ -42,6 +42,7 @@ import { MAD_INGRESO_HEADERS, buildIngresoRows } from './ficha-maduracion-ingres
 import { MAD_MOV_HEADERS } from './ficha-maduracion-movimientos.schema.js';
 import { MAD_FIN_HEADERS, buildFinRows } from './ficha-maduracion-fin-ciclo.schema.js';
 import { MAD_TRAT_HEADERS } from './ficha-maduracion-tratamientos.schema.js';
+import { MAD_MORT_HEADERS } from './ficha-maduracion-mortdesove.schema.js';
 import { REPRO_MATRIZ_HEADERS, REPRO_EVENTO, REPRO_TRANSFER_TIPO, buildAltaBatch, buildEventBatch, buildTransferBatch, matrixIndexFromRows } from './reproductivo.data.js';
 
 const leer = (u) => readFileSync(new URL(u, import.meta.url), 'utf8').split('\r\n').join('\n');
@@ -393,6 +394,25 @@ describe('GAS · A4 · una app vieja no fija la cabecera vieja en una hoja vací
       rows: [MAD_MOV_HEADERS.map((h) => (h === 'ID' ? 'x1' : h === 'Fecha' ? '2026-09-15' : ''))] });
     expect(r.status).toBe('ok');
     expect(hojas['Maduración Movimientos'].filas[0]).toEqual(MAD_MOV_HEADERS);
+  });
+});
+
+describe('GAS · «Maduración Mortalidad Desove», la hoja nueva (2026-09-15)', () => {
+  it('🔴 se permite, nace con sus cabeceras, fusiona por ID y la guarda V3 la vigila', () => {
+    const hojas = {};
+    const g = gas(hojas);
+    const fila = (v) => conValores(MAD_MORT_HEADERS, v);
+    const id = '2026-09-15-BP-DESOVE';
+    expect(g.post({ sheetName: 'Maduración Mortalidad Desove', headers: MAD_MORT_HEADERS,
+      rows: [fila({ Fecha: '2026-09-15', Lote: 'BP', 'Tipo de tanque': 'Desove', 'Hembras que entran': 40, 'Hembras muertas': 3, ID: id })] }).status).toBe('ok');
+    const hoja = hojas['Maduración Mortalidad Desove'];
+    expect(hoja.filas[0]).toEqual(MAD_MORT_HEADERS);
+    expect(g.post({ sheetName: 'Maduración Mortalidad Desove', headers: MAD_MORT_HEADERS, rows: [fila({ Fecha: '2026-09-15', Observaciones: 'revisado', ID: id })] }).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(2);
+    expect([hoja.filas[1][MAD_MORT_HEADERS.indexOf('Hembras muertas')], hoja.filas[1][MAD_MORT_HEADERS.indexOf('Observaciones')]]).toEqual([3, 'revisado']);
+    const cruzada = MAD_MORT_HEADERS.map((h) => (h === 'Hembras muertas' ? 'Hembras que entran' : h === 'Hembras que entran' ? 'Hembras muertas' : h));
+    const r = gas({ 'Maduración Mortalidad Desove': hojaFalsa([MAD_MORT_HEADERS]) }).post({ sheetName: 'Maduración Mortalidad Desove', headers: cruzada, rows: [filaVacia(cruzada)] });
+    expect(r.message).toContain('Esquema desactualizado');
   });
 });
 

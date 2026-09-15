@@ -94,6 +94,6 @@ describe('Tratamientos · la pestaña', () => {
     expect(src).toContain('tratamientos: ["🧪","Tratamientos"]');
     expect(src).toContain('if(t==="tratamientos") renderMadTratamientos();');
     expect(src).toContain('if(fp.querySelector("#mt-prevs")) return;');
-    expect(src).toContain('|| hoja === MAD_TRAT_SHEET; }');
+    expect(src).toMatch(/function _madHojaPideGasNuevo\(hoja\)\{[^}]*hoja === MAD_TRAT_SHEET/);
   });
 });

@@ -182,7 +182,7 @@ describe('Maduración · el aviso de recorte del GAS llega hasta el libro', () =
     const b = src.slice(src.indexOf('async function madSaldoCargar('), src.indexOf('function _madSaldoAvisoHTML('));
     expect(b).toContain('const recortadas = []');
     expect(b).toContain('_madLibro.recortadas = recortadas;');
-    for (const k of ['ingreso', 'movimientos', 'tanques', 'cierres']) {
+    for (const k of ['ingreso', 'movimientos', 'tanques', 'cierres', 'mortDesove']) {
       expect(b).toContain('MAD_LIBRO_SHEETS.' + k);
     }
   });
@@ -209,7 +209,7 @@ describe('Maduración · el aviso de recorte del GAS llega hasta el libro', () =
 describe('Maduración · el libro RECOGE el aviso de recorte al construirse', () => {
   const leidas = () => {
     const h = {};
-    for (const k of ['ingreso', 'movimientos', 'tanques', 'cierres']) h[H.MAD_LIBRO_SHEETS[k]] = [];
+    for (const k of ['ingreso', 'movimientos', 'tanques', 'cierres', 'mortDesove']) h[H.MAD_LIBRO_SHEETS[k]] = [];
     return h;
   };
 

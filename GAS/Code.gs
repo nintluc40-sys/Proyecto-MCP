@@ -21,7 +21,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "2c12219f29ff";
+const GAS_VERSION = "61a3c7e2eb8b";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -62,6 +62,8 @@ const ALLOWED = [
   "Maduración Ingreso","Maduración Movimientos","Maduración Fin de Ciclo",
   // Tratamientos de Maduración (2026-09-15): preventivos por lote y desinfección, por columna "ID".
   "Maduración Tratamientos",
+  // Mortalidad de hembras en tanques de desove y de recuperación (2026-09-15), por columna "ID".
+  "Maduración Mortalidad Desove",
   "BIOMOL",
   "Registro_Supervisión",
   "Registro_Desinfección",
@@ -264,7 +266,8 @@ function doPost(e) {
     var isMadId = payload.sheetName === "Maduración Ingreso"
                || payload.sheetName === "Maduración Movimientos"
                || payload.sheetName === "Maduración Fin de Ciclo"
-               || payload.sheetName === "Maduración Tratamientos";
+               || payload.sheetName === "Maduración Tratamientos"
+               || payload.sheetName === "Maduración Mortalidad Desove";
     // Columna Trovan ID (0-indexed) por hoja: se fuerza a formato TEXTO ("@") al
     // escribir, así Sheets NO reinterpreta el código como notación científica ni
     // le quita ceros a la izquierda (es un identificador, no un número).
@@ -798,7 +801,7 @@ function ensureHeaders(ws, headers) {
 var MAD_ESQUEMA_VIGILADO = [
   "Maduración Sala", "Maduración Tanques", "Maduración Lotes",
   "Maduración Ingreso", "Maduración Movimientos", "Maduración Fin de Ciclo",
-  "Maduración Tratamientos"
+  "Maduración Tratamientos", "Maduración Mortalidad Desove"
 ];
 function _cabeceraNorm_(v) {
   var s = String(v == null ? "" : v).trim();

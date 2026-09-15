@@ -325,6 +325,17 @@ Dos consecuencias que conviene tener presentes al desplegar:
   de los machos y hembras que salen: no mueven el saldo), y hay **un solo «Peso total (kg)»** de todos
   los lotes del registro. La hoja sigue vacía, así que no hay nada que migrar; la firma A4 de Fin de
   Ciclo pasa a «Sala» (col. 5) y «Rojos» (col. 10).
+- ⚖️ **Saldo = resumen rápido (2026-09-15).** 🔄 Recalcular lee todas las fichas y resume por **sala** (estado
+  y el de sus lotes, lotes, RAS, T° y O2 con promedio, última lectura, Δ con el registro anterior y CV, tanques y
+  animales en producción y cuarentena, desinfecciones) y por **lote** (población, muertos y descartes con tasas
+  sobre lo ingresado, días de cuarentena y producción, H:M por tanque, último peso, % mudas y % cópulas del último
+  día, desoves con Nauplios/Hembra = N5 ÷ desoves y fertilidad = N2 ÷ huevos, mortalidad en desove y
+  recuperación, preventivos). **⚙️ Variables** elige qué se ve (se recuerda en el dispositivo) y hay **🖨 PDF**
+  por sala o lote y **de todo**. Lógica en `mad-resumen.js`; el detalle del libro sigue debajo.
+- 📉 **Mortalidad de hembras en desove y recuperación (2026-09-15), hoja nueva `Maduración Mortalidad Desove`.**
+  Por fecha y lote: hembras que entran y que mueren en cada tipo de tanque; el % se calcula. Las muertas **se
+  descuentan del saldo** del lote (el libro las reparte entre sus tanques). Con el GAS publicado hoy la ficha no
+  envía y el libro da la hoja por vacía.
 - 🧪 **Tratamientos (2026-09-15), hoja nueva `Maduración Tratamientos`.** Preventivos por lote
   (productos + RAS) y desinfección por área, una fila por tarjeta, por `ID` con MERGE. El estado de la
   sala elegido en la ficha pre-marca sus productos. **Necesita el GAS nuevo**: contra el publicado hoy

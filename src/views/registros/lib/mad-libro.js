@@ -12,6 +12,8 @@
        − Descarte          (Maduración Tanques)
        ± Movimientos       (Maduración Movimientos · Fase 3, 2026-09-08) ✔
        − Fin de ciclo      (Maduración Fin de Ciclo · Fase 4B, 2026-09-08) ✔
+       − Hembras muertas en tanques de desove y de recuperación
+                           (Maduración Mortalidad Desove · 2026-09-15) ✔
 
    Un saldo tecleado se equivoca y nadie se entera. Un saldo deducido no puede
    mentir sin que la resta lo cante: un olvido o una cifra mal escrita separan el
@@ -111,20 +113,17 @@ function nuevaPos(sala, tanque, lote, cg) {
   return { sala: txt(sala), tanque: ent(tanque), lote: txt(lote), codigoGenetico: txt(cg), machos: 0, hembras: 0 };
 }
 
-/** Aplica una baja de `cantidad` sobre las posiciones dadas, repartida en proporción
- *  al sexo indicado. Devuelve cuánto NO se pudo descontar (el déficit).
- *
- *  ⚠ El saldo se detiene en 0 y el sobrante se cuenta aparte en vez de dejarlo
- *  negativo. Un «−5 vivos» en pantalla no significa nada para quien lo lee; un
- *  «0 vivos y 5 muertes sin explicar» es exactamente la señal que se busca. */
 /** Saca `cantidad` de las posiciones dadas, repartida en proporción al sexo, y devuelve
  *  QUÉ se sacó de cada una además del déficit.
  *
- *  ⚠ Existe porque un MOVIMIENTO necesita las partes: lo que sale del tanque de origen
- *  tiene que llegar al de destino conservando su lote y su código genético. Una baja sólo
- *  necesita el déficit, y por eso `descontar` es una fachada de ésta — NO una segunda
- *  implementación. Dos cañerías con la misma aritmética habrían divergido en silencio, que
- *  es exactamente lo que este proyecto ya tiene escrito que no vuelve a hacer. */
+ *  ⚠ El saldo se detiene en 0 y el sobrante se cuenta aparte en vez de dejarlo
+ *  negativo. Un «−5 vivos» en pantalla no significa nada para quien lo lee; un
+ *  «0 vivos y 5 muertes sin explicar» es exactamente la señal que se busca.
+ *
+ *  ⚠ Es la ÚNICA cañería del reparto: la usan los movimientos (lo que sale llega al destino
+ *  conservando lote y código genético), las bajas (desde el 2026-09-15 necesitan las partes
+ *  para contar muertos y descartes de cada lote), los cierres y la mortalidad en desove. Dos
+ *  cañerías con la misma aritmética habrían divergido en silencio. */
 function tomarDe(posiciones, sexo, cantidad) {
   const total = ent(cantidad);
   const nada = posiciones.map(() => 0);
@@ -138,10 +137,6 @@ function tomarDe(posiciones, sexo, cantidad) {
   return { partes, sobra: total - aplicable };
 }
 
-function descontar(posiciones, sexo, cantidad) {
-  return tomarDe(posiciones, sexo, cantidad).sobra;
-}
-
 /* Prioridad dentro de un mismo día, y las tres posiciones están razonadas:
      ingreso (0)     un animal que entra hoy puede moverse hoy y puede morir hoy;
      movimiento (1)  el que llega hoy a un tanque puede morir hoy EN ESE tanque;
@@ -153,7 +148,9 @@ function descontar(posiciones, sexo, cantidad) {
 /* El cierre va el ÚLTIMO: es lo que le pasa a un lote al final, después de que hayan
    entrado, se hayan movido y se hayan contado las bajas del día. Ponerlo antes haría que
    una baja registrada hoy se repartiera sobre animales que ya se habían ido. */
-const PRIORIDAD = { ingreso: 0, movimiento: 1, tanque: 2, fin: 3 };
+/* 2026-09-15 · la mortalidad de hembras en tanques de DESOVE y de RECUPERACIÓN va después de las bajas de
+   los tanques (los animales salieron de ellos a desovar) y antes del cierre. */
+const PRIORIDAD = { ingreso: 0, movimiento: 1, tanque: 2, mortdes: 3, fin: 4 };
 
 /** Funde TODAS las fuentes en un solo flujo cronológico.
  *
@@ -172,6 +169,7 @@ function flujo(fuentes) {
   for (const r of fuentes.movimientos || []) ev.push({ fecha: txt(r.Fecha), tipo: 'movimiento', r });
   for (const r of fuentes.tanques || []) ev.push({ fecha: txt(r.Fecha), tipo: 'tanque', r });
   for (const r of fuentes.cierres || []) ev.push({ fecha: txt(r.Fecha), tipo: 'fin', r });
+  for (const r of fuentes.mortDesove || []) ev.push({ fecha: txt(r.Fecha), tipo: 'mortdes', r });
   return ev.sort((a, b) => a.fecha.localeCompare(b.fecha) || (PRIORIDAD[a.tipo] - PRIORIDAD[b.tipo]));
 }
 
@@ -200,6 +198,13 @@ export function construirLibro(fuentes, opts) {
   const anota = (fecha, tipo, texto, extra) => {
     avisos.push(Object.assign({ fecha: txt(fecha), tipo, texto }, extra || {}));
   };
+  /* 2026-09-15 · lo que el RESUMEN necesita por lote y el saldo sólo no dice: cuántos entraron, cuántos
+     murieron y cuántos se descartaron (lo que salió de CADA lote en las bajas de sus tanques, repartido igual
+     que el saldo), y la mortalidad de hembras en tanques de desove y de recuperación. */
+  const contadores = () => ({
+    ingresados: { machos: 0, hembras: 0 }, muertos: { machos: 0, hembras: 0 }, descartes: { machos: 0, hembras: 0 },
+    mortDesove: { entran: 0, muertas: 0 }, mortRecuperacion: { entran: 0, muertas: 0 },
+  });
 
   /* ── LA CUARENTENA ES DE CADA SALA (usuario, 2026-09-14) ──────────────────
      «Un lote puede estar en varias salas pero en distintos tanques, y a su vez en una misma sala
@@ -248,8 +253,10 @@ export function construirLibro(fuentes, opts) {
       p.machos += ent(r.Machos);
       p.hembras += ent(r.Hembras);
 
-      if (!lotes.has(lote)) lotes.set(lote, { lote, ingreso: fecha, copulaDesde: null, cerrado: null, salas: new Map() });
+      if (!lotes.has(lote)) lotes.set(lote, { lote, ingreso: fecha, copulaDesde: null, cerrado: null, salas: new Map(), ...contadores() });
       const L = lotes.get(lote);
+      L.ingresados.machos += ent(r.Machos);
+      L.ingresados.hembras += ent(r.Hembras);
       /* ♻ El reloj de ESTA sala: el ingreso reinicia la cuarentena donde entran los animales. */
       const S = L.salas.get(sala);
       if (!S) L.salas.set(sala, { sala, ingreso: fecha, copulaDesde: null });
@@ -383,6 +390,40 @@ export function construirLibro(fuentes, opts) {
       continue;
     }
 
+    /* ── MORTALIDAD EN TANQUES DE DESOVE Y DE RECUPERACIÓN (2026-09-15, usuario) ──
+       Las hembras salen de sus tanques a desovar y a recuperarse; las que mueren allí no vuelven, así que se
+       descuentan del LOTE entero, repartidas entre sus tanques en proporción a sus hembras vivas (como un
+       cierre parcial sin sala). Cuentan como MUERTAS del lote y se acumulan por tipo de tanque. */
+    if (tipo === 'mortdes') {
+      const lote = txt(r.Lote);
+      const clase = txt(r['Tipo de tanque']);
+      const reg = clase === 'Recuperación' ? 'mortRecuperacion' : clase === 'Desove' ? 'mortDesove' : '';
+      const muertas = ent(r['Hembras muertas']);
+      const donde = clase === 'Recuperación' ? 'recuperación' : 'desove';
+      if (!reg) {
+        anota(fecha, 'mortdes-tipo', '«' + clase + '» no es un tipo de tanque conocido (Desove o Recuperación): la fila no entra en el libro.', { lote });
+        continue;
+      }
+      const L = lotes.get(lote);
+      const posLote = [...pos.values()].filter((p) => p.lote === lote);
+      if (!lote || !L || !posLote.length) {
+        if (muertas) {
+          anota(fecha, 'mortdes-sin-lote', 'Murieron ' + muertas + ' hembras del lote ' + (lote || '(sin lote)') +
+            ' en tanques de ' + donde + ' y ningún ingreso explica dónde estaba.', { lote, hembras: muertas });
+        }
+        continue;
+      }
+      L[reg].entran += ent(r['Hembras que entran']);
+      L[reg].muertas += muertas;
+      const { partes, sobra } = tomarDe(posLote, 'hembras', muertas);
+      L.muertos.hembras += partes.reduce((a, b) => a + b, 0);
+      if (sobra > 0) {
+        anota(fecha, 'deficit-mortdes', 'Del lote ' + lote + ' murieron ' + sobra + ' hembras de más en tanques de ' + donde +
+          ' de las que el libro tenía vivas.', { lote, sexo: 'hembras', cantidad: sobra });
+      }
+      continue;
+    }
+
     /* Bajas del día. Mortalidad y descarte se registran POR TANQUE, como bloque, porque
        en un tanque mezclado no se distingue de qué lote era cada animal. */
     const sala = txt(r.Sala);
@@ -392,10 +433,9 @@ export function construirLibro(fuentes, opts) {
     const uk = ubicKey(sala, tq);
     const enTanque = [...pos.values()].filter((p) => ubicKey(p.sala, p.tanque) === uk);
 
-    const bajas = {
-      machos: ent(r['Machos muertos']) + ent(r['Machos muertos por descarte de selección']),
-      hembras: ent(r['Hembras muertas']) + ent(r['Hembras muertas por descarte de selección']),
-    };
+    const muertes = { machos: ent(r['Machos muertos']), hembras: ent(r['Hembras muertas']) };
+    const selecc = { machos: ent(r['Machos muertos por descarte de selección']), hembras: ent(r['Hembras muertas por descarte de selección']) };
+    const bajas = { machos: muertes.machos + selecc.machos, hembras: muertes.hembras + selecc.hembras };
 
     if (!enTanque.length) {
       if (bajas.machos || bajas.hembras) {
@@ -405,7 +445,17 @@ export function construirLibro(fuentes, opts) {
       }
     } else {
       for (const sexo of ['machos', 'hembras']) {
-        const sobra = descontar(enTanque, sexo, bajas[sexo]);
+        const { partes, sobra } = tomarDe(enTanque, sexo, bajas[sexo]);
+        /* Lo que salió de cada lote se parte entre muertos y descartes en la proporción del tanque ese día:
+           por resto mayor, así que muertos + descartes es EXACTAMENTE lo que el saldo le quitó al lote. */
+        enTanque.forEach((p, i) => {
+          if (!partes[i]) return;
+          const L = lotes.get(p.lote);
+          if (!L) return;
+          const [m, d] = repartirProporcional(partes[i], [muertes[sexo], selecc[sexo]]);
+          L.muertos[sexo] += m;
+          L.descartes[sexo] += d;
+        });
         if (sobra > 0) {
           anota(fecha, 'deficit',
             'En ' + sala + ' tanque ' + tq + ' se registraron ' + sobra + ' ' + sexo +
@@ -441,8 +491,11 @@ export function construirLibro(fuentes, opts) {
     T.composicion.push({ lote: p.lote, codigoGenetico: p.codigoGenetico, machos: p.machos, hembras: p.hembras });
 
     if (!porLote.has(p.lote)) {
-      const L = lotes.get(p.lote) || { lote: p.lote, ingreso: '', copulaDesde: null };
-      porLote.set(p.lote, { lote: p.lote, ingreso: L.ingreso, copulaDesde: L.copulaDesde, cerrado: L.cerrado || null, machos: 0, hembras: 0, ubicaciones: [], salas: [] });
+      const L = lotes.get(p.lote) || { lote: p.lote, ingreso: '', copulaDesde: null, ...contadores() };
+      const copia = (o) => ({ ...o });
+      porLote.set(p.lote, { lote: p.lote, ingreso: L.ingreso, copulaDesde: L.copulaDesde, cerrado: L.cerrado || null, machos: 0, hembras: 0, ubicaciones: [], salas: [],
+        ingresados: copia(L.ingresados), muertos: copia(L.muertos), descartes: copia(L.descartes),
+        mortDesove: copia(L.mortDesove), mortRecuperacion: copia(L.mortRecuperacion) });
     }
     const Lo = porLote.get(p.lote);
     Lo.machos += p.machos;

@@ -1111,3 +1111,63 @@ describe('Libro · D13 · dos lotes en un tanque sólo por mezcla o agrupación:
     expect(avisosTransferenciaCompartida(libro(), 'Agrupación', tramos)).toEqual([]);
   });
 });
+
+/* 2026-09-15 · lo que el RESUMEN pide por lote: ingresados, muertos y descartes (partidos EXACTO sobre lo que el
+   saldo le quitó a cada lote), y la mortalidad de hembras en tanques de desove y de recuperación. */
+const mdes = (Fecha, Lote, tipo, entran, muertas) => ({ Fecha, Lote, 'Tipo de tanque': tipo, 'Hembras que entran': entran, 'Hembras muertas': muertas });
+
+describe('Libro · contadores por lote para el resumen (2026-09-15)', () => {
+  it('🔴 ingresados suma todos los ingresos del lote, de todas sus salas', () => {
+    const L = dePos(construirLibro({ ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 30, 70), ing('2026-01-03', 'AB', 'CG2', 'Sala 2', 2, 5, 11)] }), 'AB');
+    expect(L.ingresados).toEqual({ machos: 35, hembras: 81 });
+    expect([L.muertos, L.descartes]).toEqual([{ machos: 0, hembras: 0 }, { machos: 0, hembras: 0 }]);
+  });
+
+  it('🔴 en un tanque MEZCLADO, lo que sale de cada lote se parte en muertos y descartes y suma lo que perdió', () => {
+    const libro = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 30, 70), ing('2026-01-01', 'CD', 'CG2', 'Sala 1', 1, 10, 30)],
+      tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Machos muertos': 3, 'Machos muertos por descarte de selección': 1, 'Hembras muertas': 6, 'Hembras muertas por descarte de selección': 4 })],
+    });
+    const AB = dePos(libro, 'AB');
+    const CD = dePos(libro, 'CD');
+    // AB pierde 3♂ (de 4) y 7♀ (de 10); partidos 3:1 y 6:4 por resto mayor → 2+1 y 4+3. CD, el resto.
+    expect([AB.muertos, AB.descartes]).toEqual([{ machos: 2, hembras: 4 }, { machos: 1, hembras: 3 }]);
+    expect([CD.muertos, CD.descartes]).toEqual([{ machos: 1, hembras: 2 }, { machos: 0, hembras: 1 }]);
+    for (const L of [AB, CD]) {
+      expect(L.machos).toBe(L.ingresados.machos - L.muertos.machos - L.descartes.machos);
+      expect(L.hembras).toBe(L.ingresados.hembras - L.muertos.hembras - L.descartes.hembras);
+    }
+  });
+
+  it('🔴 la mortalidad en desove DESCUENTA hembras del lote, repartidas entre sus tanques, y cuenta como muertas', () => {
+    const libro = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 60), ing('2026-01-01', 'AB', 'CG1', 'Sala 2', 2, 10, 20)],
+      mortDesove: [mdes('2026-01-06', 'AB', 'Desove', 40, 8), mdes('2026-01-08', 'AB', 'Recuperación', 30, 4)],
+    });
+    expect([saldo(libro, 'Sala 1', 1).hembras, saldo(libro, 'Sala 2', 2).hembras]).toEqual([51, 17]);
+    const L = dePos(libro, 'AB');
+    expect(L.muertos).toEqual({ machos: 0, hembras: 12 });
+    expect([L.mortDesove, L.mortRecuperacion]).toEqual([{ entran: 40, muertas: 8 }, { entran: 30, muertas: 4 }]);
+    expect(libro.avisos).toEqual([]);
+  });
+
+  it('🔴 va DESPUÉS de las bajas del tanque y ANTES del cierre del mismo día', () => {
+    const libro = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 0, 10)],
+      tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Hembras muertas': 6 })],
+      mortDesove: [mdes('2026-01-05', 'AB', 'Desove', 4, 5)],
+      cierres: [fin('2026-01-05', 'AB', 'Total', 0, 0)],
+    });
+    expect(libro.avisos.map((a) => a.tipo)).toEqual(['deficit-mortdes']);   // quedaban 4: murieron 5 → 1 de más
+    expect(dePos(libro, 'AB').muertos.hembras).toBe(10);
+  });
+
+  it('avisa del tipo de tanque desconocido y de un lote que no existe, sin descontar', () => {
+    const libro = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 0, 10)],
+      mortDesove: [mdes('2026-01-02', 'AB', 'Cuarentena', 5, 2), mdes('2026-01-02', 'ZZ', 'Desove', 5, 2), mdes('2026-01-02', 'ZZ', 'Desove', 5, 0)],
+    });
+    expect(libro.avisos.map((a) => a.tipo)).toEqual(['mortdes-tipo', 'mortdes-sin-lote']);
+    expect(saldo(libro, 'Sala 1', 1).hembras).toBe(10);
+  });
+});

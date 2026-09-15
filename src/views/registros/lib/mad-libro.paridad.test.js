@@ -404,6 +404,22 @@ const ESCENARIOS = {
     ],
     tanques: [tq('2026-01-21', 'Sala 1', 1, { 'Machos muertos': 10, 'Hembras muertas': 10 })],
   },
+  /* 2026-09-15 · los contadores del resumen (muertos y descartes partidos en un tanque MEZCLADO) y la mortalidad
+     en tanques de desove y recuperación: repartida entre dos tanques, con déficit, tipo desconocido y sin lote. */
+  'muertos y descartes en tanque mezclado, y mortalidad en desove': {
+    ingresos: [
+      ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 30, 70),
+      ing('2026-01-01', 'CD', 'CG2', 'Sala 1', 1, 10, 30),
+      ing('2026-01-01', 'AB', 'CG1', 'Sala 2', 2, 5, 11),
+    ],
+    tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Machos muertos': 3, 'Machos muertos por descarte de selección': 2, 'Hembras muertas': 7, 'Hembras muertas por descarte de selección': 3 })],
+    mortDesove: [
+      { Fecha: '2026-01-06', Lote: 'AB', 'Tipo de tanque': 'Desove', 'Hembras que entran': 40, 'Hembras muertas': 9 },
+      { Fecha: '2026-01-07', Lote: 'AB', 'Tipo de tanque': 'Recuperación', 'Hembras que entran': 31, 'Hembras muertas': 200 },
+      { Fecha: '2026-01-07', Lote: 'AB', 'Tipo de tanque': 'Otro', 'Hembras muertas': 1 },
+      { Fecha: '2026-01-07', Lote: 'ZZ', 'Tipo de tanque': 'Desove', 'Hembras muertas': 4 },
+    ],
+  },
   'vacío': { ingresos: [], tanques: [] },
 };
 
@@ -684,6 +700,7 @@ describe('Libro · la vista tiene DÓNDE pintarse', () => {
       movimientos: 'Maduración Movimientos',
       tanques: 'Maduración Tanques',
       cierres: 'Maduración Fin de Ciclo',
+      mortDesove: 'Maduración Mortalidad Desove',
     });
   });
 
@@ -692,7 +709,7 @@ describe('Libro · la vista tiene DÓNDE pintarse', () => {
        podía leer se trataba como vacía y la vista cantaba «sin discrepancias». Con tres
        fuentes el riesgo es el mismo, así que se exige que cada una aparezca en las dos
        listas: la de lectura y la de fallos. */
-    for (const clave of ['ingreso', 'movimientos', 'tanques', 'cierres']) {
+    for (const clave of ['ingreso', 'movimientos', 'tanques', 'cierres', 'mortDesove']) {
       expect(src).toContain('await _reproEnsureSheet(MAD_LIBRO_SHEETS.' + clave + ', null, force);');
       expect(src).toContain('if(!_madHojaLeida(MAD_LIBRO_SHEETS.' + clave + ')) fallos.push(MAD_LIBRO_SHEETS.' + clave + ');');
     }

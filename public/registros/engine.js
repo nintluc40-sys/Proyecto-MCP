@@ -2478,7 +2478,7 @@ const STANDARD_TABS = [...FICHAS,"desinfeccion","fotos","historial","blanco"];
 // no saben qué lote, piscina ni código genético corresponde a cada tanque.
 // ⚠ NO entra en MAD_FICHAS: no es una grilla por día con CRUD local, es un formulario
 // de evento, como «reproductivo».
-const MAD_TABS      = ["ingreso","saldo","movimientos","salas","tanques","desoves","fin","tratamientos","reproductivo","fotos"];
+const MAD_TABS      = ["ingreso","saldo","movimientos","salas","tanques","desoves","mortdes","fin","tratamientos","reproductivo","fotos"];
 // Tabs del módulo Biomol — form + historial inline + fotos
 const BIO_TABS      = ["biomol","fotos"];
 // Tabs del módulo As Técnico — form de supervisión + registro de mareas + fotos
@@ -2499,6 +2499,7 @@ const TAB_META = {
   salas:    ["🏠","Salas"],
   tanques:  ["🛢️","Tanques"],
   desoves:  ["🥚","Desoves"],
+  mortdes:  ["📉","Mortalidad ♀"],
   fin:      ["🏁","Fin de Ciclo"],
   tratamientos: ["🧪","Tratamientos"],
   ingreso:  ["📥","Ingreso"],
@@ -2572,6 +2573,7 @@ function selTab(t){
   if(t==="saldo") renderMadSaldo();
   if(t==="movimientos") renderMadMovimientos();
   if(t==="desoves") renderMadDesoves();
+  if(t==="mortdes") renderMadMortDesove();
   if(t==="fin") renderMadFinCiclo();
   if(t==="tratamientos") renderMadTratamientos();
   if(t==="reproductivo") renderMadReproductivo();
@@ -5793,7 +5795,7 @@ const MAD_EST_CERRADO = "Cerrado";
 const MAD_EST_DESINF = "Desinfección";
 const MAD_EST_DESINF_AGRUP = "Desinfección - Producción agrupada";
 const MAD_AGRUPADA_MAX_FRACCION = 0.5;
-const MAD_LIBRO_SHEETS = { ingreso: "Maduración Ingreso", movimientos: "Maduración Movimientos", tanques: "Maduración Tanques", cierres: "Maduración Fin de Ciclo" };
+const MAD_LIBRO_SHEETS = { ingreso: "Maduración Ingreso", movimientos: "Maduración Movimientos", tanques: "Maduración Tanques", cierres: "Maduración Fin de Ciclo", mortDesove: "Maduración Mortalidad Desove" };
 function madLibroTxt(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
 function madLibroEnt(v){ const n=parseInt(v,10); return (isFinite(n)&&n>0)?n:0; }
 function madUbicKey(sala,tanque){ return madLibroTxt(sala)+"|"+madLibroEnt(tanque); }
@@ -5820,9 +5822,9 @@ function madRepartirProporcional(total, pesos){
 // para quien lo lee; un «0 vivos y 5 bajas sin explicar» es la señal que se busca.
 // Saca la cantidad y devuelve QUÉ salió de cada posición, además del déficit. Existe
 // porque un MOVIMIENTO necesita las partes: lo que sale del origen tiene que llegar al
-// destino conservando su lote. Una baja sólo necesita el déficit, y por eso madDescontar
-// es una FACHADA de ésta y no una segunda implementación: dos cañerías con la misma
-// aritmética habrían divergido en silencio.
+// destino conservando su lote. Desde el 2026-09-15 también las bajas usan las partes (muertos y
+// descartes de cada lote), así que es la ÚNICA cañería: dos con la misma aritmética habrían
+// divergido en silencio.
 function madTomarDe(posiciones, sexo, cantidad){
   const total=madLibroEnt(cantidad);
   const nada=posiciones.map(function(){ return 0; });
@@ -5835,9 +5837,6 @@ function madTomarDe(posiciones, sexo, cantidad){
   posiciones.forEach(function(p,i){ p[sexo]-=partes[i]; });
   return { partes:partes, sobra:total-aplicable };
 }
-function madDescontar(posiciones, sexo, cantidad){
-  return madTomarDe(posiciones, sexo, cantidad).sobra;
-}
 // Prioridad dentro de un mismo día, y las tres posiciones están razonadas: un animal que
 // entra hoy puede moverse hoy y morir hoy; el que LLEGA hoy a un tanque puede morir hoy en
 // ESE tanque; las bajas se registran por tanque al cerrar el día. Es el único orden que
@@ -5845,13 +5844,15 @@ function madDescontar(posiciones, sexo, cantidad){
 // El cierre va el ÚLTIMO: es lo que le pasa a un lote al final, después de que hayan
 // entrado, se hayan movido y se hayan contado las bajas del día. Antes haría que una baja
 // de hoy se repartiera sobre animales que ya se habían ido.
-const MAD_PRIORIDAD = { ingreso:0, movimiento:1, tanque:2, fin:3 };
+// 2026-09-15: la mortalidad en tanques de desove y de recuperación, tras las bajas del día y antes del cierre.
+const MAD_PRIORIDAD = { ingreso:0, movimiento:1, tanque:2, mortdes:3, fin:4 };
 function madFlujo(f){
   const ev=[];
   (f.ingresos||[]).forEach(function(r){ ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"ingreso", r:r }); });
   (f.movimientos||[]).forEach(function(r){ ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"movimiento", r:r }); });
   (f.tanques||[]).forEach(function(r){ ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"tanque", r:r }); });
   (f.cierres||[]).forEach(function(r){ ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"fin", r:r }); });
+  (f.mortDesove||[]).forEach(function(r){ ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"mortdes", r:r }); });
   return ev.sort(function(a,b){ return a.fecha.localeCompare(b.fecha) || (MAD_PRIORIDAD[a.tipo]-MAD_PRIORIDAD[b.tipo]); });
 }
 function madSumarDias(fecha, dias){
@@ -5887,6 +5888,8 @@ function madConstruirLibro(fuentes, opts){
     if(extra) for(const k in extra) a[k]=extra[k];
     avisos.push(a);
   };
+  // 2026-09-15: ingresados, muertos y descartes de cada lote, y su mortalidad en desove y recuperación. Ver el módulo.
+  const contadores=function(){ return { ingresados:{ machos:0, hembras:0 }, muertos:{ machos:0, hembras:0 }, descartes:{ machos:0, hembras:0 }, mortDesove:{ entran:0, muertas:0 }, mortRecuperacion:{ entran:0, muertas:0 } }; };
   /* LA CUARENTENA ES DE CADA SALA (usuario, 2026-09-14): «un lote puede estar en varias salas pero
      en distintos tanques, y en una misma sala pueden haber distintos lotes». Cada (lote, sala) lleva
      su reloj: el ingreso lo reinicia en su sala, la cópula lo rompe en su sala y el cierre es del
@@ -5914,7 +5917,9 @@ function madConstruirLibro(fuentes, opts){
       if(!pos[k]) pos[k]={ sala:sala, tanque:tq, lote:lote, codigoGenetico:cg, machos:0, hembras:0 };
       pos[k].machos+=madLibroEnt(r.Machos);
       pos[k].hembras+=madLibroEnt(r.Hembras);
-      if(!lotes[lote]) lotes[lote]={ lote:lote, ingreso:fecha, copulaDesde:null, cerrado:null, salas:{} };
+      if(!lotes[lote]){ lotes[lote]={ lote:lote, ingreso:fecha, copulaDesde:null, cerrado:null, salas:{} }; const c0=contadores(); for(const k in c0) lotes[lote][k]=c0[k]; }
+      lotes[lote].ingresados.machos+=madLibroEnt(r.Machos);
+      lotes[lote].ingresados.hembras+=madLibroEnt(r.Hembras);
       // El reloj de ESTA sala: el ingreso reinicia la cuarentena donde entran los animales.
       if(!lotes[lote].salas[sala]) lotes[lote].salas[sala]={ sala:sala, ingreso:fecha, copulaDesde:null };
       else if(fecha>lotes[lote].salas[sala].ingreso){ lotes[lote].salas[sala].ingreso=fecha; lotes[lote].salas[sala].copulaDesde=null; }
@@ -6002,21 +6007,47 @@ function madConstruirLibro(fuentes, opts){
       }
       return;
     }
+    // MORTALIDAD EN TANQUES DE DESOVE Y DE RECUPERACIÓN (2026-09-15): se descuenta del LOTE entero, repartida
+    // entre sus tanques por hembras vivas, y cuenta como muertas del lote. Ver el módulo.
+    if(ev.tipo==="mortdes"){
+      const lote=madLibroTxt(r.Lote), clase=madLibroTxt(r["Tipo de tanque"]);
+      const reg=clase==="Recuperación" ? "mortRecuperacion" : clase==="Desove" ? "mortDesove" : "";
+      const muertas=madLibroEnt(r["Hembras muertas"]), donde=clase==="Recuperación" ? "recuperación" : "desove";
+      if(!reg){ anota(fecha,"mortdes-tipo","«"+clase+"» no es un tipo de tanque conocido (Desove o Recuperación): la fila no entra en el libro.",{ lote:lote }); return; }
+      const L=lotes[lote];
+      const posLote=Object.keys(pos).map(function(k){ return pos[k]; }).filter(function(p){ return p.lote===lote; });
+      if(!lote || !L || !posLote.length){
+        if(muertas) anota(fecha,"mortdes-sin-lote","Murieron "+muertas+" hembras del lote "+(lote||"(sin lote)")+" en tanques de "+donde+" y ningún ingreso explica dónde estaba.",{ lote:lote, hembras:muertas });
+        return;
+      }
+      L[reg].entran+=madLibroEnt(r["Hembras que entran"]);
+      L[reg].muertas+=muertas;
+      const res=madTomarDe(posLote, "hembras", muertas);
+      L.muertos.hembras+=res.partes.reduce(function(a,b){ return a+b; },0);
+      if(res.sobra>0) anota(fecha,"deficit-mortdes","Del lote "+lote+" murieron "+res.sobra+" hembras de más en tanques de "+donde+" de las que el libro tenía vivas.",{ lote:lote, sexo:"hembras", cantidad:res.sobra });
+      return;
+    }
     const sala=madLibroTxt(r.Sala), tq=madLibroEnt(r.Tanque);
     if(!sala||!tq) return;
     const uk=madUbicKey(sala,tq);
     const enTanque=Object.keys(pos).map(function(k){ return pos[k]; })
       .filter(function(p){ return madUbicKey(p.sala,p.tanque)===uk; });
-    const bajas={
-      machos: madLibroEnt(r["Machos muertos"])+madLibroEnt(r["Machos muertos por descarte de selección"]),
-      hembras: madLibroEnt(r["Hembras muertas"])+madLibroEnt(r["Hembras muertas por descarte de selección"])
-    };
+    const muertes={ machos: madLibroEnt(r["Machos muertos"]), hembras: madLibroEnt(r["Hembras muertas"]) };
+    const selecc={ machos: madLibroEnt(r["Machos muertos por descarte de selección"]), hembras: madLibroEnt(r["Hembras muertas por descarte de selección"]) };
+    const bajas={ machos: muertes.machos+selecc.machos, hembras: muertes.hembras+selecc.hembras };
     if(!enTanque.length){
       if(bajas.machos||bajas.hembras) anota(fecha,"sin-ingreso","Se registraron bajas en "+sala+" tanque "+tq+" y ningún ingreso explica qué había ahí.",{ sala:sala, tanque:tq, machos:bajas.machos, hembras:bajas.hembras });
     } else {
       ["machos","hembras"].forEach(function(sexo){
-        const sobra=madDescontar(enTanque, sexo, bajas[sexo]);
-        if(sobra>0) anota(fecha,"deficit","En "+sala+" tanque "+tq+" se registraron "+sobra+" "+sexo+" de baja de más de los que quedaban vivos.",{ sala:sala, tanque:tq, sexo:sexo, cantidad:sobra });
+        const res=madTomarDe(enTanque, sexo, bajas[sexo]);
+        // Lo que salió de cada lote se parte entre muertos y descartes en la proporción del tanque (resto mayor). Ver el módulo.
+        enTanque.forEach(function(p,i){
+          if(!res.partes[i] || !lotes[p.lote]) return;
+          const md=madRepartirProporcional(res.partes[i], [muertes[sexo], selecc[sexo]]);
+          lotes[p.lote].muertos[sexo]+=md[0];
+          lotes[p.lote].descartes[sexo]+=md[1];
+        });
+        if(res.sobra>0) anota(fecha,"deficit","En "+sala+" tanque "+tq+" se registraron "+res.sobra+" "+sexo+" de baja de más de los que quedaban vivos.",{ sala:sala, tanque:tq, sexo:sexo, cantidad:res.sobra });
       });
     }
     // La CÓPULA rompe la cuarentena: es la señal real de que dejó de estarlo. Se apunta la
@@ -6037,8 +6068,10 @@ function madConstruirLibro(fuentes, opts){
     porTanque[uk].machos+=p.machos; porTanque[uk].hembras+=p.hembras;
     porTanque[uk].composicion.push({ lote:p.lote, codigoGenetico:p.codigoGenetico, machos:p.machos, hembras:p.hembras });
     if(!porLote[p.lote]){
-      const L=lotes[p.lote]||{ ingreso:"", copulaDesde:null };
-      porLote[p.lote]={ lote:p.lote, ingreso:L.ingreso, copulaDesde:L.copulaDesde, cerrado:L.cerrado||null, machos:0, hembras:0, ubicaciones:[], salas:[] };
+      const L=lotes[p.lote]||contadores();
+      const copia=function(o){ const c={}; for(const k in o) c[k]=o[k]; return c; };
+      porLote[p.lote]={ lote:p.lote, ingreso:L.ingreso||"", copulaDesde:L.copulaDesde||null, cerrado:L.cerrado||null, machos:0, hembras:0, ubicaciones:[], salas:[],
+        ingresados:copia(L.ingresados), muertos:copia(L.muertos), descartes:copia(L.descartes), mortDesove:copia(L.mortDesove), mortRecuperacion:copia(L.mortRecuperacion) };
     }
     porLote[p.lote].machos+=p.machos; porLote[p.lote].hembras+=p.hembras;
     if(porLote[p.lote].ubicaciones.indexOf(uk)===-1) porLote[p.lote].ubicaciones.push(uk);
@@ -6166,6 +6199,163 @@ function madNombreComposicion(tanque){
   return lotes.sort().join("+");
 }
 
+// ── Maduración · RESUMEN RÁPIDO (pestaña Saldo, 2026-09-15, usuario) ─────────
+// Copia inline de `mad-resumen.js` (la paridad la ata): libro + Sala + Tanques + Desoves + Tratamientos.
+// Tasa de mortalidad = muertos ÷ ingresados; % mudas y % cópulas del último registro diario ÷ vivos de ese
+// día; Nauplios/Hembra = N5 ÷ desoves y Fertilidad = N2 ÷ huevos, sobre los desoves que ya tienen N5 / N2.
+const MAD_RES_TEMPS = ["Temperatura 2:00","Temperatura 4:00","Temperatura 6:00","Temperatura 8:00","Temperatura 10:00","Temperatura 12:00",
+  "Temperatura 14:00","Temperatura 16:00","Temperatura 18:00","Temperatura 20:00","Temperatura 22:00","Temperatura 0:00"];
+const MAD_RES_OXIGENOS = ["Oxígeno 06:00","Oxígeno 12:00","Oxígeno 18:00","Oxígeno 00:00"];
+const MAD_RES_MAX_TRAT = 5;
+function _madResNum(v){ const t=madLibroTxt(v); if(t==="") return null; const n=Number(t); return isFinite(n) ? n : null; }
+function _madResR2(n){ return Math.round(n*100)/100; }
+function _madResF10(v){ return madLibroTxt(v).slice(0,10); }
+function _madResEsFecha(v){ return /^\d{4}-\d{2}-\d{2}$/.test(v); }
+function _madResLote(s){ return madLibroTxt(s).toUpperCase().replace(/\s+/g,""); }
+function _madResOrden(a,b){ return a<b ? -1 : a>b ? 1 : 0; }
+function madResDiasEntre(a, b){
+  const x=/^(\d{4})-(\d{2})-(\d{2})$/.exec(madLibroTxt(a)), y=/^(\d{4})-(\d{2})-(\d{2})$/.exec(madLibroTxt(b));
+  if(!x||!y) return "";
+  return Math.round((Date.UTC(+y[1], +y[2]-1, +y[3]) - Date.UTC(+x[1], +x[2]-1, +x[3]))/86400000);
+}
+function madResEstadisticaDia(valores){
+  const v=(valores||[]).map(function(x){ return _madResNum(x); }).filter(function(n){ return n!==null; });
+  if(!v.length) return { n:0, prom:"", ultima:"", cv:"" };
+  const prom=v.reduce(function(a,b){ return a+b; },0)/v.length;
+  let cv="";
+  if(v.length>=2 && prom!==0){
+    const sd=Math.sqrt(v.reduce(function(a,b){ return a+(b-prom)*(b-prom); },0)/(v.length-1));
+    cv=_madResR2((sd/Math.abs(prom))*100);
+  }
+  return { n:v.length, prom:_madResR2(prom), ultima:_madResR2(v[v.length-1]), cv:cv };
+}
+function _madResRecientes(filas){ return filas.slice().sort(function(a,b){ return _madResOrden(_madResF10(b.Fecha), _madResF10(a.Fecha)); }).slice(0, MAD_RES_MAX_TRAT); }
+function _madResLotesCelda(v){ return madLibroTxt(v).split(",").map(_madResLote).filter(Boolean); }
+function _madResSalas(filasSala, libro, filasTrat){
+  const porSala={}, nombres=[];
+  const nombre=function(s){ if(nombres.indexOf(s)===-1) nombres.push(s); };
+  (filasSala||[]).forEach(function(r){
+    const s=madLibroTxt(r.Sala);
+    if(!s || !_madResEsFecha(_madResF10(r.Fecha))) return;
+    if(!porSala[s]){ porSala[s]=[]; nombre(s); }
+    porSala[s].push(r);
+  });
+  Object.keys(libro.tanques).forEach(function(k){ const T=libro.tanques[k]; if(T.machos+T.hembras>0) nombre(T.sala); });
+  return nombres.sort(_madResOrden).map(function(sala){
+    const filas=(porSala[sala]||[]).slice().sort(function(a,b){ return _madResOrden(_madResF10(a.Fecha), _madResF10(b.Fecha)); });
+    const ult=filas.length ? filas[filas.length-1] : null, fUlt=ult ? _madResF10(ult.Fecha) : "";
+    const prev=filas.filter(function(r){ return _madResF10(r.Fecha)<fUlt; }).pop() || null;
+    const est=function(r, cols){ return madResEstadisticaDia(r ? cols.map(function(c){ return r[c]; }) : []); };
+    const t=est(ult, MAD_RES_TEMPS), tp=est(prev, MAD_RES_TEMPS), o=est(ult, MAD_RES_OXIGENOS), op=est(prev, MAD_RES_OXIGENOS);
+    const delta=function(a,b){ return (a.prom===""||b.prom==="") ? "" : _madResR2(a.prom-b.prom); };
+    const lotes=[]; let animalesProduccion=0, animalesCuarentena=0;
+    Object.keys(libro.lotes).forEach(function(n){
+      const L=libro.lotes[n], S=(L.salas||[]).filter(function(x){ return x.sala===sala; })[0];
+      if(!S || S.machos+S.hembras===0) return;
+      lotes.push({ lote:L.lote, estado:S.estado, machos:S.machos, hembras:S.hembras });
+      if(S.estado===MAD_EST_PROD) animalesProduccion+=S.machos+S.hembras;
+      if(S.estado===MAD_EST_CUAR) animalesCuarentena+=S.machos+S.hembras;
+    });
+    lotes.sort(function(a,b){ return _madResOrden(a.lote, b.lote); });
+    const enProduccion=lotes.filter(function(l){ return l.estado===MAD_EST_PROD; }).map(function(l){ return l.lote; });
+    let tanquesProduccion=0;
+    Object.keys(libro.tanques).forEach(function(k){
+      const T=libro.tanques[k];
+      if(T.sala===sala && T.composicion.some(function(c){ return (c.machos>0||c.hembras>0) && enProduccion.indexOf(c.lote)!==-1; })) tanquesProduccion++;
+    });
+    const tratamientos=_madResRecientes((filasTrat||[]).filter(function(r){ return madLibroTxt(r.Sala)===sala; }))
+      .map(function(r){ return { fecha:_madResF10(r.Fecha), tipo:madLibroTxt(r.Tipo), area:madLibroTxt(r["Área"]), lotes:madLibroTxt(r.Lotes), productos:madLibroTxt(r.Productos), ras:madLibroTxt(r["Productos RAS"]) }; });
+    return { sala:sala, fecha:fUlt, estado:ult ? madLibroTxt(ult.Estado) : "", ras:ult ? madLibroTxt(ult.RAS) : "", lotes:lotes,
+      temp:{ prom:t.prom, ultima:t.ultima, cv:t.cv, delta:delta(t,tp) }, ox:{ prom:o.prom, ultima:o.ultima, cv:o.cv, delta:delta(o,op) },
+      tanquesProduccion:tanquesProduccion, animalesProduccion:animalesProduccion, animalesCuarentena:animalesCuarentena, tratamientos:tratamientos };
+  });
+}
+function _madResDesoves(filas){
+  const m={};
+  (filas||[]).forEach(function(r){
+    const k=_madResLote(r.Lote); if(!k) return;
+    if(!m[k]) m[k]={ desoves:0, huevos:0, noViables:0, n2:0, n5:0, huevosConN2:0, desovesConN5:0 };
+    const a=m[k], n2=madLibroEnt(r.N2), n5=madLibroEnt(r.N5);
+    a.desoves+=madLibroEnt(r.Desoves); a.huevos+=madLibroEnt(r["Total de huevos"]); a.noViables+=madLibroEnt(r["Hembras no viables"]);
+    a.n2+=n2; a.n5+=n5;
+    if(n2>0) a.huevosConN2+=madLibroEnt(r["Total de huevos"]);
+    if(n5>0) a.desovesConN5+=madLibroEnt(r.Desoves);
+  });
+  return m;
+}
+function _madResLotes(fuentes, libro, hoy){
+  const alDia={};
+  const libroAl=function(fecha){ if(!alDia[fecha]) alDia[fecha]=madConstruirLibro(fuentes, { hoy:fecha, hasta:fecha }); return alDia[fecha]; };
+  const filasTanque=(fuentes.tanques||[]).filter(function(r){ return madLibroTxt(r.Sala) && madLibroEnt(r.Tanque) && _madResEsFecha(_madResF10(r.Fecha)); });
+  const desoves=_madResDesoves(fuentes.desoves), trat=fuentes.tratamientos||[];
+  const tasa=function(m,i){ return i>0 ? _madResR2((m/i)*100) : ""; };
+  const ultimaFecha=function(filas){ return filas.reduce(function(m,r){ return _madResF10(r.Fecha)>m ? _madResF10(r.Fecha) : m; },""); };
+  const out=[];
+  Object.keys(libro.lotes).forEach(function(n){
+    const L=libro.lotes[n];
+    if(L.machos+L.hembras===0 && L.estado===MAD_EST_CERRADO) return;
+    const tanques=[];
+    Object.keys(libro.tanques).forEach(function(k){
+      const T=libro.tanques[k];
+      if(!T.composicion.some(function(c){ return c.lote===L.lote && (c.machos>0||c.hembras>0); })) return;
+      tanques.push({ sala:T.sala, tanque:T.tanque, machos:T.machos, hembras:T.hembras, relacion:T.machos>0 ? _madResR2(T.hembras/T.machos) : "" });
+    });
+    tanques.sort(function(a,b){ return _madResOrden(a.sala,b.sala) || a.tanque-b.tanque; });
+    const suyas=filasTanque.filter(function(r){ return tanques.some(function(u){ return u.sala===madLibroTxt(r.Sala) && u.tanque===madLibroEnt(r.Tanque); }); });
+    const peso=function(col){
+      const con=suyas.filter(function(r){ return _madResNum(r[col])!==null && _madResNum(r[col])>0; });
+      const f=ultimaFecha(con);
+      if(!f) return { valor:"", fecha:"" };
+      const del=con.filter(function(r){ return _madResF10(r.Fecha)===f; }).map(function(r){ return _madResNum(r[col]); });
+      return { valor:_madResR2(del.reduce(function(a,b){ return a+b; },0)/del.length), fecha:f };
+    };
+    const fDia=ultimaFecha(suyas);
+    let pctMudas="", pctCopulas="";
+    if(fDia){
+      const delDia=suyas.filter(function(r){ return _madResF10(r.Fecha)===fDia; }), lib=libroAl(fDia), vistos={};
+      let vivosDia=0, hembrasDia=0;
+      delDia.forEach(function(r){
+        const k=madUbicKey(r.Sala, r.Tanque), T=lib.tanques[k];
+        if(vistos[k]===1 || !T) return;
+        vistos[k]=1; vivosDia+=T.machos+T.hembras; hembrasDia+=T.hembras;
+      });
+      const mudas=delDia.reduce(function(a,r){ return a+madLibroEnt(r.Muda); },0), copulas=delDia.reduce(function(a,r){ return a+madLibroEnt(r["Cópulas"]); },0);
+      pctMudas=vivosDia>0 ? _madResR2((mudas/vivosDia)*100) : "";
+      pctCopulas=hembrasDia>0 ? _madResR2((copulas/hembrasDia)*100) : "";
+    }
+    const dias=(L.salas||[]).filter(function(s){ return s.machos+s.hembras>0; }).map(function(s){
+      const q15=madSumarDias(s.ingreso, MAD_CUARENTENA_DIAS), fin=(s.copulaDesde && s.copulaDesde<q15) ? s.copulaDesde : q15;
+      return { sala:s.sala, estado:s.estado,
+        diasCuarentena:s.estado===MAD_EST_CUAR ? madResDiasEntre(s.ingreso, hoy) : madResDiasEntre(s.ingreso, fin),
+        diasProduccion:s.estado===MAD_EST_PROD ? madResDiasEntre(fin, hoy) : 0 };
+    });
+    const d=desoves[_madResLote(L.lote)] || { desoves:0, huevos:0, noViables:0, n2:0, n5:0, huevosConN2:0, desovesConN5:0 };
+    const ing=L.ingresados, mu=L.muertos;
+    const mort=function(o){ return { entran:o.entran, muertas:o.muertas, pct:tasa(o.muertas, o.entran) }; };
+    out.push({ lote:L.lote, estado:L.estado, machos:L.machos, hembras:L.hembras,
+      ingresados:{ machos:ing.machos, hembras:ing.hembras }, muertos:{ machos:mu.machos, hembras:mu.hembras },
+      descartes:{ machos:L.descartes.machos, hembras:L.descartes.hembras },
+      tasaMortalidad:{ machos:tasa(mu.machos, ing.machos), hembras:tasa(mu.hembras, ing.hembras), total:tasa(mu.machos+mu.hembras, ing.machos+ing.hembras) },
+      dias:dias, tanques:tanques,
+      pesoMachos:peso("Peso promedio machos (g)"), pesoHembras:peso("Peso promedio hembras (g)"),
+      fechaDia:fDia, pctMudas:pctMudas, pctCopulas:pctCopulas,
+      desoves:{ desoves:d.desoves, noViables:d.noViables, huevos:d.huevos, n2:d.n2, n5:d.n5,
+        naupliosPorHembra:d.desovesConN5>0 ? Math.round(d.n5/d.desovesConN5) : "",
+        fertilidad:d.huevosConN2>0 ? _madResR2((d.n2/d.huevosConN2)*100) : "" },
+      mortDesove:mort(L.mortDesove), mortRecuperacion:mort(L.mortRecuperacion),
+      tratamientos:_madResRecientes(trat.filter(function(r){ return madLibroTxt(r.Tipo)==="Preventivo" && _madResLotesCelda(r.Lotes).indexOf(_madResLote(L.lote))!==-1; }))
+        .map(function(r){ return { fecha:_madResF10(r.Fecha), sala:madLibroTxt(r.Sala), productos:madLibroTxt(r.Productos), ras:madLibroTxt(r["Productos RAS"]) }; }) });
+  });
+  return out.sort(function(a,b){ return _madResOrden(a.lote, b.lote); });
+}
+function madResumenMaduracion(fuentes, opts){
+  const f=fuentes||{}, hoy=madLibroTxt((opts||{}).hoy);
+  const libro=madConstruirLibro(f, { hoy:hoy });
+  const ras=_madResRecientes((f.tratamientos||[]).filter(function(r){ return madLibroTxt(r["Productos RAS"])!=="" || madLibroTxt(r["Área"])==="RAS y tuberías"; }))
+    .map(function(r){ return { fecha:_madResF10(r.Fecha), sala:madLibroTxt(r.Sala), tipo:madLibroTxt(r.Tipo), productos:madLibroTxt(r["Área"])==="RAS y tuberías" ? madLibroTxt(r.Productos) : madLibroTxt(r["Productos RAS"]) }; });
+  return { hoy:hoy, hasta:libro.hasta, avisos:libro.avisos.length, salas:_madResSalas(f.sala, libro, f.tratamientos), lotes:_madResLotes(f, libro, hoy), ras:ras };
+}
+
 // ── Maduración · vista SALDO ─────────────────────────────────────────────────
 let _madLibro = null;
 // ⚠⚠ UNA HOJA QUE NO SE PUDO LEER NO ES UNA HOJA VACÍA, y confundirlas produce el peor
@@ -6195,18 +6385,24 @@ async function madSaldoCargar(force){
   await _reproEnsureSheet(MAD_LIBRO_SHEETS.movimientos, null, force);
   await _reproEnsureSheet(MAD_LIBRO_SHEETS.tanques, null, force);
   await _reproEnsureSheet(MAD_LIBRO_SHEETS.cierres, null, force);
+  /* 2026-09-15 · la hoja de mortalidad en desove y recuperación es NUEVA: un GAS anterior no la permite, así que no
+     puede tener filas de esta app (su ficha no envía contra él). Con ese GAS se da por leída y vacía; si no se sabe
+     (sin respuesta), se lee y cuenta como las demás, fallo incluido. */
+  if((await _madIngGasAlDia()) === false) _reproPutRows(MAD_LIBRO_SHEETS.mortDesove, []);
+  else await _reproEnsureSheet(MAD_LIBRO_SHEETS.mortDesove, null, force);
   const fallos = [];
   if(!_madHojaLeida(MAD_LIBRO_SHEETS.ingreso)) fallos.push(MAD_LIBRO_SHEETS.ingreso);
   if(!_madHojaLeida(MAD_LIBRO_SHEETS.movimientos)) fallos.push(MAD_LIBRO_SHEETS.movimientos);
   if(!_madHojaLeida(MAD_LIBRO_SHEETS.tanques)) fallos.push(MAD_LIBRO_SHEETS.tanques);
   if(!_madHojaLeida(MAD_LIBRO_SHEETS.cierres)) fallos.push(MAD_LIBRO_SHEETS.cierres);
+  if(!_madHojaLeida(MAD_LIBRO_SHEETS.mortDesove)) fallos.push(MAD_LIBRO_SHEETS.mortDesove);
   /* ⚠⚠ UNA HOJA RECORTADA NO ES UNA HOJA LEÍDA, y va aparte de los fallos porque no es lo
      mismo: aquélla no se pudo leer, ésta se leyó A MEDIAS. Las dos hacen lo mismo con el
      saldo —lo dejan incompleto sin un solo síntoma—, así que las dos tienen que callar el
      ✅. «Maduración Tanques» crece hasta 38 filas al día, de modo que el tope del servidor
      (20000 desde el 2026-09-13; antes 5000) no es teórico: se alcanza en año y medio de uso. */
   const recortadas = [];
-  [MAD_LIBRO_SHEETS.ingreso, MAD_LIBRO_SHEETS.movimientos, MAD_LIBRO_SHEETS.tanques, MAD_LIBRO_SHEETS.cierres]
+  [MAD_LIBRO_SHEETS.ingreso, MAD_LIBRO_SHEETS.movimientos, MAD_LIBRO_SHEETS.tanques, MAD_LIBRO_SHEETS.cierres, MAD_LIBRO_SHEETS.mortDesove]
     .forEach(function(h){ if(_reproTrunc && _reproTrunc[h]) recortadas.push(h); });
   _madLibro = madConstruirLibro(madLibroFuentes(), { hoy: today() });
   _madLibro.fallos = fallos;
@@ -6221,7 +6417,8 @@ function madLibroFuentes(){
     ingresos:    _reproReadRows(MAD_LIBRO_SHEETS.ingreso),
     movimientos: _reproReadRows(MAD_LIBRO_SHEETS.movimientos),
     tanques:     _reproReadRows(MAD_LIBRO_SHEETS.tanques),
-    cierres:     _reproReadRows(MAD_LIBRO_SHEETS.cierres)
+    cierres:     _reproReadRows(MAD_LIBRO_SHEETS.cierres),
+    mortDesove:  _reproReadRows(MAD_LIBRO_SHEETS.mortDesove)
   };
 }
 /* D4 (2026-09-14) · EL LIBRO AL CIERRE DE UN DÍA, con las MISMAS filas que madSaldoCargar acaba
@@ -6333,15 +6530,165 @@ function _madSaldoHTML(libro){
     + '<h3 style="margin:14px 0 4px;font-size:14px">Por lote</h3>'
     + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Lote</th><th>Ingreso</th><th>Estado</th><th>♂</th><th>♀</th><th>Tanques</th><th>Salas</th></tr></thead><tbody>'+(lotes||'<tr><td colspan="7" style="color:#94a3b8">—</td></tr>')+'</tbody></table></div>';
 }
+// ── Saldo · RESUMEN RÁPIDO: filtro de variables por ficha y PDF individual o grupal (2026-09-15, usuario) ──
+const MAD_RES_VARS = [
+  { grupo:"🏠 Salas", vars:[["sala-estado","Estado de la sala y de sus lotes"],["sala-lotes","Lotes participantes"],["sala-ras","Uso del RAS"],
+    ["sala-temp","Temperatura: promedio, última, Δ con el registro anterior y CV"],["sala-ox","Oxígeno: promedio, último, Δ con el registro anterior y CV"],
+    ["sala-ocupacion","Tanques y animales en producción y en cuarentena"],["sala-trat","Desinfección y controles de la sala"]] },
+  { grupo:"🦐 Lotes", vars:[["lote-poblacion","Población actual ♂ y ♀"],["lote-mortalidad","Mortalidad ♂ y ♀ con tasas por sexo y total"],
+    ["lote-dias","Días de cuarentena y de producción"],["lote-relacion","Relación H:M por tanque"],["lote-pesos","Peso ♂ y ♀ (último registrado)"],
+    ["lote-mudas","% Mudas y % Cópulas (último día)"]] },
+  { grupo:"🥚 Desoves", vars:[["des-totales","Total de desoves, no viables y N5"],["des-nauplios","Nauplios/Hembra (N5 ÷ desoves)"],["des-fertilidad","Tasa de fertilidad (N2 ÷ huevos)"]] },
+  { grupo:"📉 Mortalidad de hembras", vars:[["mortdes","% en tanques de desove y de recuperación"]] },
+  { grupo:"🧪 Tratamientos", vars:[["lote-trat","Preventivos aplicados a cada lote"],["ras-trat","Tratamientos del RAS"]] }
+];
+const MAD_RES_VARS_KEY = "larv4_mad_resumen_vars";
+let _madResumen = null;
+function madResVarsLeer(){
+  const sel={};
+  MAD_RES_VARS.forEach(function(g){ g.vars.forEach(function(v){ sel[v[0]]=true; }); });
+  try{
+    const v=JSON.parse(localStorage.getItem(MAD_RES_VARS_KEY)||"null");
+    if(v && typeof v==="object") Object.keys(sel).forEach(function(k){ if(typeof v[k]==="boolean") sel[k]=v[k]; });
+  }catch(_){}
+  return sel;
+}
+function madResVarsAbrir(){
+  const fp=document.getElementById("fp-saldo"); if(!fp) return;
+  const sel=madResVarsLeer();
+  let m=document.getElementById("ms-vars");
+  if(!m){ m=document.createElement("div"); m.id="ms-vars"; fp.appendChild(m); }
+  m.innerHTML='<div style="position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px">'
+    + '<div style="background:#fff;border-radius:10px;max-width:560px;width:100%;max-height:85vh;overflow:auto;padding:14px 16px;box-shadow:0 10px 30px rgba(0,0,0,.25)">'
+    +   '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>⚙️ Variables del resumen</b><button class="btn" type="button" onclick="madResVarsCerrar()">✕</button></div>'
+    +   MAD_RES_VARS.map(function(g){
+          return '<fieldset style="border:1px solid #e2e8f0;border-radius:8px;margin:0 0 8px;padding:6px 10px"><legend style="font-size:12px;font-weight:700">'+escapeHtml(g.grupo)+'</legend>'
+            + g.vars.map(function(v){ return '<label style="display:flex;gap:6px;align-items:center;font-size:12px;padding:2px 0"><input type="checkbox" class="ms-var" value="'+escapeHtml(v[0])+'"'+(sel[v[0]]?' checked':'')+'>'+escapeHtml(v[1])+'</label>'; }).join("")
+            + '</fieldset>';
+        }).join("")
+    +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><button class="btn" type="button" onclick="madResVarsTodas(true)">Marcar todas</button><button class="btn" type="button" onclick="madResVarsTodas(false)">Ninguna</button><button class="btn" type="button" style="font-weight:700" onclick="madResVarsAplicar()">✔ Aplicar</button></div>'
+    + '</div></div>';
+}
+function madResVarsCerrar(){ const m=document.getElementById("ms-vars"); if(m) m.remove(); }
+function madResVarsTodas(on){ document.querySelectorAll("#ms-vars .ms-var").forEach(function(c){ c.checked=!!on; }); }
+function madResVarsAplicar(){
+  const sel={};
+  document.querySelectorAll("#ms-vars .ms-var").forEach(function(c){ sel[c.value]=c.checked; });
+  try{ localStorage.setItem(MAD_RES_VARS_KEY, JSON.stringify(sel)); }catch(_){}
+  madResVarsCerrar();
+  madResPintar();
+}
+function _madResCel(v, suf){ return (v===""||v===null||v===undefined) ? "—" : escapeHtml(String(v))+(suf||""); }
+function _madResMiles(v){ return (v===""||v===null||v===undefined) ? "—" : escapeHtml(String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ".")); }
+function _madResDelta(v){
+  if(v===""||v===null||v===undefined) return "—";
+  return '<span style="color:'+(v>0 ? "#b45309" : v<0 ? "#0369a1" : "#475569")+'">'+(v>0 ? "+" : "")+escapeHtml(String(v))+'</span>';
+}
+function _madResGris(t){ return t ? ' <span style="color:#94a3b8">('+escapeHtml(t)+')</span>' : ""; }
+function _madResFila(etiqueta, valor){ return '<tr><th style="text-align:left;font-weight:600;color:#475569;vertical-align:top;white-space:nowrap;padding:2px 10px 2px 0">'+escapeHtml(etiqueta)+'</th><td style="padding:2px 0">'+valor+'</td></tr>'; }
+function _madResTratLista(lista, fmt){ return (lista && lista.length) ? lista.map(function(t){ return escapeHtml(t.fecha)+" — "+fmt(t); }).join("<br>") : "—"; }
+function _madResTarjeta(titulo, cuerpo, alcance, conPdf){
+  return '<div class="ms-card" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin-bottom:10px;background:#fff;break-inside:avoid;page-break-inside:avoid">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:13px">'+titulo+'</b>'
+    + (conPdf ? '<button class="btn ms-pdf" type="button" style="font-size:11px" data-a="'+escapeHtml(alcance)+'" onclick="madResumenPdf(this.dataset.a)">🖨 PDF</button>' : '')
+    + '</div><table style="font-size:12px;border-collapse:collapse">'+(cuerpo || _madResFila("", '<span style="color:#94a3b8">Sin variables elegidas.</span>'))+'</table></div>';
+}
+function _madResSalaHTML(s, sel, conPdf){
+  let b="";
+  if(sel["sala-estado"]) b+=_madResFila("Estado de la sala", _madResCel(s.estado)+_madResGris(s.fecha))
+    + _madResFila("Estado de sus lotes", s.lotes.length ? s.lotes.map(function(l){ return escapeHtml(l.lote)+": "+_madResCel(l.estado); }).join(" · ") : "—");
+  if(sel["sala-lotes"]) b+=_madResFila("Lotes participantes", s.lotes.length ? s.lotes.map(function(l){ return '<b>'+escapeHtml(l.lote)+'</b> '+l.machos+'♂ '+l.hembras+'♀'; }).join(" · ") : "—");
+  if(sel["sala-ras"]) b+=_madResFila("Uso del RAS", _madResCel(s.ras));
+  if(sel["sala-temp"]) b+=_madResFila("Temperatura", "prom "+_madResCel(s.temp.prom)+" · última "+_madResCel(s.temp.ultima)+" · Δ "+_madResDelta(s.temp.delta)+" · CV "+_madResCel(s.temp.cv,"%"));
+  if(sel["sala-ox"]) b+=_madResFila("Oxígeno", "prom "+_madResCel(s.ox.prom)+" · último "+_madResCel(s.ox.ultima)+" · Δ "+_madResDelta(s.ox.delta)+" · CV "+_madResCel(s.ox.cv,"%"));
+  if(sel["sala-ocupacion"]) b+=_madResFila("En producción", s.tanquesProduccion+" tanque(s) · "+s.animalesProduccion+" animales")+_madResFila("En cuarentena", s.animalesCuarentena+" animales");
+  if(sel["sala-trat"]) b+=_madResFila("Desinfección y controles", _madResTratLista(s.tratamientos, function(t){ return escapeHtml(t.tipo)+" · "+escapeHtml(t.area)+(t.lotes ? " ("+escapeHtml(t.lotes)+")" : "")+": "+escapeHtml(t.productos||t.ras); }));
+  return _madResTarjeta("🏠 "+escapeHtml(s.sala), b, "sala:"+s.sala, conPdf);
+}
+function _madResLoteHTML(L, sel, conPdf){
+  let b="";
+  const md=function(o){ return _madResCel(o.pct,"%")+" ("+o.muertas+" de "+o.entran+")"; };
+  if(sel["lote-poblacion"]) b+=_madResFila("Población actual", L.machos+"♂ · "+L.hembras+"♀ · "+(L.machos+L.hembras)+" · "+_madResCel(L.estado));
+  if(sel["lote-mortalidad"]) b+=_madResFila("Mortalidad", L.muertos.machos+"♂ ("+_madResCel(L.tasaMortalidad.machos,"%")+") · "+L.muertos.hembras+"♀ ("+_madResCel(L.tasaMortalidad.hembras,"%")+") · total "+_madResCel(L.tasaMortalidad.total,"%"))
+    + _madResFila("Descartes de selección", L.descartes.machos+"♂ · "+L.descartes.hembras+"♀")
+    + _madResFila("Ingresados", L.ingresados.machos+"♂ · "+L.ingresados.hembras+"♀");
+  if(sel["lote-dias"]) b+=_madResFila("Días", L.dias.length ? L.dias.map(function(d){ return escapeHtml(d.sala)+": cuarentena "+_madResCel(d.diasCuarentena)+" · producción "+_madResCel(d.diasProduccion); }).join("<br>") : "—");
+  if(sel["lote-relacion"]) b+=_madResFila("Relación H:M por tanque", L.tanques.length ? L.tanques.map(function(t){ return escapeHtml(t.sala)+" t"+t.tanque+": "+_madResCel(t.relacion)+" ("+t.hembras+"♀/"+t.machos+"♂)"; }).join("<br>") : "—");
+  if(sel["lote-pesos"]) b+=_madResFila("Peso promedio", "♂ "+_madResCel(L.pesoMachos.valor," g")+_madResGris(L.pesoMachos.fecha)+" · ♀ "+_madResCel(L.pesoHembras.valor," g")+_madResGris(L.pesoHembras.fecha));
+  if(sel["lote-mudas"]) b+=_madResFila("% Mudas · % Cópulas", _madResCel(L.pctMudas,"%")+" · "+_madResCel(L.pctCopulas,"%")+_madResGris(L.fechaDia));
+  if(sel["des-totales"]) b+=_madResFila("Desoves · no viables · N5", L.desoves.desoves+" · "+L.desoves.noViables+" · "+_madResMiles(L.desoves.n5));
+  if(sel["des-nauplios"]) b+=_madResFila("Nauplios/Hembra", _madResMiles(L.desoves.naupliosPorHembra));
+  if(sel["des-fertilidad"]) b+=_madResFila("Tasa de fertilidad", _madResCel(L.desoves.fertilidad,"%"));
+  if(sel["mortdes"]) b+=_madResFila("Mortalidad ♀ en desove", md(L.mortDesove))+_madResFila("Mortalidad ♀ en recuperación", md(L.mortRecuperacion));
+  if(sel["lote-trat"]) b+=_madResFila("Preventivos", _madResTratLista(L.tratamientos, function(t){ return escapeHtml(t.productos)+(t.ras ? " · RAS: "+escapeHtml(t.ras) : "")+(t.sala ? " ("+escapeHtml(t.sala)+")" : ""); }));
+  return _madResTarjeta("🦐 Lote "+escapeHtml(L.lote), b, "lote:"+L.lote, conPdf);
+}
+// `filtro`: null = todo; { tipo:"sala"|"lote", nombre } = una tarjeta (PDF individual).
+function _madResCuerpoHTML(R, sel, conPdf, filtro){
+  const salas=R.salas.filter(function(s){ return !filtro || (filtro.tipo==="sala" && s.sala===filtro.nombre); });
+  const lotes=R.lotes.filter(function(l){ return !filtro || (filtro.tipo==="lote" && l.lote===filtro.nombre); });
+  const alguna=function(ids){ return ids.some(function(id){ return sel[id]; }); };
+  const rejilla=function(html){ return '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:0 10px">'+html+'</div>'; };
+  let h="";
+  if(salas.length && alguna(MAD_RES_VARS[0].vars.map(function(v){ return v[0]; }))) h+='<h3 style="margin:8px 0 6px;font-size:14px">🏠 Salas</h3>'+rejilla(salas.map(function(s){ return _madResSalaHTML(s, sel, conPdf); }).join(""));
+  if(lotes.length && alguna(["lote-poblacion","lote-mortalidad","lote-dias","lote-relacion","lote-pesos","lote-mudas","des-totales","des-nauplios","des-fertilidad","mortdes","lote-trat"])) h+='<h3 style="margin:8px 0 6px;font-size:14px">🦐 Lotes</h3>'+rejilla(lotes.map(function(l){ return _madResLoteHTML(l, sel, conPdf); }).join(""));
+  if(!filtro && sel["ras-trat"]) h+='<h3 style="margin:8px 0 6px;font-size:14px">💧 RAS</h3>'+_madResTarjeta("Tratamientos del RAS", _madResFila("Últimos", _madResTratLista(R.ras, function(t){ return escapeHtml(t.tipo)+(t.sala ? " · "+escapeHtml(t.sala) : "")+": "+escapeHtml(t.productos); })), "", false);
+  return h || '<div style="color:#94a3b8;font-size:12px;padding:8px 0">Nada que mostrar con las variables elegidas.</div>';
+}
+function madResPintar(){
+  const c=document.getElementById("ms-body"); if(!c || !_madResumen) return;
+  const R=_madResumen, mal=madLibroIncompleto(R.libro);
+  c.innerHTML='<div style="font-size:11px;color:#64748b;margin-bottom:8px">Calculado el '+escapeHtml(R.hoy)+' · último registro del libro: '+escapeHtml(R.hasta||"—")+(R.avisos ? ' · <b style="color:#92400e">'+R.avisos+' discrepancia(s)</b> (ver el detalle)' : '')+'</div>'
+    + (mal ? '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#991b1b"><b>Resumen INCOMPLETO:</b> '+escapeHtml(mal)+'. Las cifras del libro pueden quedarse cortas.</div>' : '')
+    + (R.faltan && R.faltan.length ? '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#92400e">No se pudieron leer: '+escapeHtml(R.faltan.join(", "))+'. Sus variables salen vacías.</div>' : '')
+    + _madResCuerpoHTML(R, madResVarsLeer(), true, null)
+    + '<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700;font-size:13px">📒 Detalle del libro: por tanque, por lote y discrepancias</summary>'+_madSaldoHTML(R.libro)+'</details>';
+}
+// Las hojas que el libro no lee y el resumen sí. Tratamientos es nueva: con el GAS publicado viejo no se pide.
+async function _madResLeerExtra(){
+  const faltan=[], out={ sala:[], desoves:[], tratamientos:[] };
+  const leer=async function(hoja, clave){
+    try{ out[clave]=await _reproFetchSheet(hoja, null); if(_reproTrunc[hoja]) faltan.push(hoja+" (llegó recortada)"); }
+    catch(_){ faltan.push(hoja); }
+  };
+  await leer("Maduración Sala", "sala");
+  await leer(MAD_DESOVE_SHEET, "desoves");
+  if((await _madIngGasAlDia()) === false) faltan.push(MAD_TRAT_SHEET+" (el GAS publicado aún no la tiene)");
+  else await leer(MAD_TRAT_SHEET, "tratamientos");
+  out.faltan=faltan;
+  return out;
+}
 async function madSaldoRefrescar(){
   const c=document.getElementById("ms-body");
   if(c) c.innerHTML='<div style="padding:14px;color:#64748b;font-size:12px">Leyendo las hojas… puede tardar unos segundos.</div>';
   try{
     const libro=await madSaldoCargar(true);
-    if(c) c.innerHTML=_madSaldoHTML(libro);
+    const extra=await _madResLeerExtra();
+    const f=madLibroFuentes();
+    f.sala=extra.sala; f.desoves=extra.desoves; f.tratamientos=extra.tratamientos;
+    _madResumen=madResumenMaduracion(f, { hoy: today() });
+    _madResumen.libro=libro;
+    _madResumen.faltan=extra.faltan;
+    madResPintar();
   }catch(x){
     if(c) c.innerHTML='<div style="padding:14px;color:#991b1b;font-size:12px">No se pudieron leer las hojas. Reintenta con 🔄.</div>';
   }
+}
+// PDF individual (una sala o un lote) o grupal (todo lo visible), con las variables elegidas.
+function madResumenPdf(alcance){
+  if(!_madResumen){ toast("Pulsa 🔄 Recalcular antes de imprimir.","warn",3500); return; }
+  const a=String(alcance||"todo"), i=a.indexOf(":");
+  const filtro=i>0 ? { tipo:a.slice(0,i), nombre:a.slice(i+1) } : null;
+  const titulo="Maduración · Resumen"+(filtro ? " · "+(filtro.tipo==="sala" ? filtro.nombre : "Lote "+filtro.nombre) : "")+" · "+_madResumen.hoy;
+  const page='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+escapeHtml(titulo)+'</title>'
+    + '<style>body{font-family:Arial,Helvetica,sans-serif;margin:18px;color:#0f172a}h1{font-size:16px;margin:0 0 4px}.ms-card{page-break-inside:avoid}</style></head><body>'
+    + '<h1>'+escapeHtml(titulo)+'</h1><div style="font-size:11px;color:#64748b;margin-bottom:8px">Deducido de las hojas el '+escapeHtml(_madResumen.hoy)+'. Si se corrigen registros pasados, este informe puede no cuadrar con uno posterior.</div>'
+    + _madResCuerpoHTML(_madResumen, madResVarsLeer(), false, filtro)
+    + '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},300);});<\/script></body></html>';
+  const w=window.open("","_blank","width=1000,height=720");
+  if(!w){ toast("El navegador bloqueó la ventana emergente. Permite pop-ups para este sitio.","warn",6000); return; }
+  w.document.write(page);
+  w.document.close();
 }
 function renderMadSaldo(){
   const fp=document.getElementById("fp-saldo"); if(!fp) return;
@@ -6349,12 +6696,16 @@ function renderMadSaldo(){
   // recalcular cuesta una lectura de hojas que en este GAS se midió entre 2 y 52 s.
   if(fp.querySelector("#ms-body")) return;
   fp.innerHTML='<div class="fc">'
-    + '<div class="fc-h"><div class="fc-t">⚖️ Maduración · Saldo</div><span class="ssp ssp-mt">'+escapeHtml(today())+'</span></div>'
+    + '<div class="fc-h"><div class="fc-t">⚖️ Maduración · Saldo y resumen</div><span class="ssp ssp-mt">'+escapeHtml(today())+'</span></div>'
     + '<div class="fc-b">'
     +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:center;gap:8px">'
-    +     '<span style="font-size:16px">ℹ️</span><span>Nadie teclea este saldo: se deduce de los ingresos menos las bajas. Si no cuadra, es que falta o sobra un registro — y eso es lo que se ve abajo.</span>'
+    +     '<span style="font-size:16px">ℹ️</span><span>Resumen de lo que hay hoy en Maduración, deducido de todas las fichas. Elige qué ver en <b>⚙️ Variables</b>; imprime una sala o un lote con su <b>🖨 PDF</b>, o todo con <b>🖨 PDF de todo</b>. Nadie teclea el saldo: si no cuadra, falta o sobra un registro, y se ve en el detalle.</span>'
     +   '</div>'
-    +   '<div style="margin-bottom:10px"><button class="btn" type="button" onclick="madSaldoRefrescar()">🔄 Recalcular</button></div>'
+    +   '<div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap">'
+    +     '<button class="btn" type="button" onclick="madSaldoRefrescar()">🔄 Recalcular</button>'
+    +     '<button class="btn" type="button" onclick="madResVarsAbrir()">⚙️ Variables</button>'
+    +     '<button class="btn" type="button" data-a="todo" onclick="madResumenPdf(this.dataset.a)">🖨 PDF de todo</button>'
+    +   '</div>'
     +   '<div id="ms-body"><div style="padding:14px;color:#64748b;font-size:12px">Pulsa 🔄 Recalcular para leer las hojas.</div></div>'
     + '</div></div>';
 }
@@ -7041,8 +7392,8 @@ async function _madIngGasAlDia(url){
 }
 /* Hojas de Maduración cuyas columnas cambiaron y se escriben POR POSICIÓN: no se entregan a un
    GAS viejo (sin guarda de esquema). Ingreso desde el 2026-09-13; Desoves y Fin de Ciclo (Sala y
-   pesos, D14) desde el 2026-09-14; Tratamientos (hoja nueva) desde el 2026-09-15. */
-function _madHojaPideGasNuevo(hoja){ return hoja === MAD_ING_SHEET || hoja === MAD_DESOVE_SHEET || hoja === MAD_FIN_SHEET || hoja === MAD_TRAT_SHEET; }
+   pesos, D14) desde el 2026-09-14; Tratamientos y Mortalidad Desove (hojas nuevas) desde el 2026-09-15. */
+function _madHojaPideGasNuevo(hoja){ return hoja === MAD_ING_SHEET || hoja === MAD_DESOVE_SHEET || hoja === MAD_FIN_SHEET || hoja === MAD_TRAT_SHEET || hoja === MAD_MORT_SHEET; }
 function _madGasViejoMsg(hoja){ return "el GAS publicado es anterior a las columnas nuevas de «" + hoja + "» y escribiría los datos en columnas equivocadas"; }
 const MAD_ING_GAS_VIEJO = "el GAS publicado es anterior a las columnas nuevas de «Maduración Ingreso» (Crecimiento y Libras) y escribiría los datos en columnas equivocadas";
 async function madIngGuardar(){
@@ -8577,6 +8928,210 @@ function renderMadTratamientos(){
     +   '</div>'
     +   '<div id="mt-report" style="margin-top:12px"></div>'
     +   '<div id="mt-log">'+madTratLogHTML()+'</div>'
+    + '</div></div>';
+}
+
+// ── Maduración · MORTALIDAD DE HEMBRAS EN DESOVE Y RECUPERACIÓN (2026-09-15, usuario) ──
+// Copia inline de `ficha-maduracion-mortdesove.schema.js` (la paridad la ata). Por fecha y lote, en cada tipo de
+// tanque: hembras que entran y que mueren; el % se calcula. Las muertas se descuentan del saldo (lo hace el libro).
+const MAD_MORT_SHEET = "Maduración Mortalidad Desove";
+const MAD_MORT_TIPOS = ["Desove","Recuperación"];
+const _MAD_MORT_CLAVE = { "Desove":"desove", "Recuperación":"recuperacion" };
+const _MAD_MORT_TAG = { "Desove":"DESOVE", "Recuperación":"RECUPERACION" };
+const MAD_MORT_COLUMNS = [
+  { h:"Fecha", k:"fecha" }, { h:"Lote", k:"lote" }, { h:"Tipo de tanque", k:"tipo" }, { h:"Hembras que entran", k:"entran" },
+  { h:"Hembras muertas", k:"muertas" }, { h:"% Mortalidad", k:"pct" }, { h:"Observaciones", k:"observaciones" }, { h:"ID", k:"id" }
+];
+const MAD_MORT_HEADERS = MAD_MORT_COLUMNS.map(function(c){ return c.h; });
+function madMortPct(entran, muertas){
+  const e=madIngInt(entran), m=madIngInt(muertas);
+  return (e===""||e===0||m==="") ? "" : Math.round((m/e)*10000)/100;
+}
+function madMortRowId(fecha, lote, tipo){ return sanitizeStr(fecha,10)+"-"+madDesNormLote(lote)+"-"+(_MAD_MORT_TAG[tipo]||"OTRO"); }
+function madMortBuildRows(model){
+  const m=model||{}, fecha=sanitizeStr(m.fecha,10), filas=[];
+  (m.lotes||[]).forEach(function(c){
+    const x=c||{}, lote=madDesNormLote(x.lote);
+    if(!lote) return;
+    MAD_MORT_TIPOS.forEach(function(tipo){
+      const t=x[_MAD_MORT_CLAVE[tipo]]||{}, entran=madIngInt(t.entran), muertas=madIngInt(t.muertas);
+      if(entran==="" && muertas==="") return;
+      const v={ fecha:fecha, lote:lote, tipo:tipo, entran:entran, muertas:muertas, pct:madMortPct(entran, muertas), observaciones:sanitizeStr(x.observaciones,300), id:madMortRowId(fecha, lote, tipo) };
+      filas.push(MAD_MORT_COLUMNS.map(function(col){ return v[col.k]; }));
+    });
+  });
+  return filas;
+}
+function buildMadMortPayload(model){ return { sheetName: MAD_MORT_SHEET, headers: MAD_MORT_HEADERS.slice(), rows: madMortBuildRows(model) }; }
+function madMortValidar(model){
+  const m=model||{}, errores=[], avisos=[];
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(m.fecha||""))) errores.push("La fecha no es válida.");
+  const vistos={};
+  let filas=0;
+  (m.lotes||[]).forEach(function(c, i){
+    const x=c||{}, lote=madDesNormLote(x.lote);
+    const conCifras=MAD_MORT_TIPOS.filter(function(tipo){ const t=x[_MAD_MORT_CLAVE[tipo]]||{}; return madIngInt(t.entran)!=="" || madIngInt(t.muertas)!==""; });
+    if(!lote && !conCifras.length) return;
+    if(!lote){ errores.push("Falta el lote del registro "+(i+1)+"."); return; }
+    if(!conCifras.length){ errores.push("El lote "+lote+" no trae ninguna cifra."); return; }
+    if(vistos[lote]===1) errores.push("El lote "+lote+" aparece dos veces en esta fecha: escribiría las mismas filas. Súmalos.");
+    vistos[lote]=1;
+    conCifras.forEach(function(tipo){
+      const t=x[_MAD_MORT_CLAVE[tipo]]||{}, e=madIngInt(t.entran), mu=madIngInt(t.muertas), donde=tipo==="Desove" ? "desove" : "recuperación";
+      if((e===""||e===0) && mu!=="" && mu>0) errores.push("En "+lote+" (tanques de "+donde+") hay muertas pero no las hembras que entran: sin ellas no hay porcentaje.");
+      else if(e!=="" && mu!=="" && mu>e) errores.push("En "+lote+" (tanques de "+donde+") mueren más hembras ("+mu+") de las que entran ("+e+").");
+      if(mu==="") avisos.push("En "+lote+" (tanques de "+donde+") no se anotaron muertas: se guarda como 0 % sólo si escribes 0.");
+      filas++;
+    });
+  });
+  if(!filas && !errores.length) errores.push("No hay ningún registro que guardar.");
+  return { errores: errores, avisos: avisos };
+}
+
+// ── Maduración · Mortalidad de hembras · interfaz ────────────────────────────
+function _madMortTipoHTML(tipo){
+  const k=_MAD_MORT_CLAVE[tipo];
+  return '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px">'
+    + '<div style="font-size:12px;font-weight:700;min-width:150px;padding-bottom:8px">Tanques de '+(tipo==="Desove" ? "desove" : "recuperación")+'</div>'
+    + '<label style="'+_MAD_ING_LBL+'">Hembras que entran<input class="mm-'+k+'-e" type="number" min="0" step="1" inputmode="numeric" oninput="madMortPctVivo(this)" style="'+_MAD_ING_INP+';width:130px"></label>'
+    + '<label style="'+_MAD_ING_LBL+'">Hembras muertas<input class="mm-'+k+'-m" type="number" min="0" step="1" inputmode="numeric" oninput="madMortPctVivo(this)" style="'+_MAD_ING_INP+';width:120px"></label>'
+    + '<div style="'+_MAD_ING_LBL+'">% Mortalidad<span class="mm-'+k+'-p" style="padding:6px 8px;font-size:13px;font-weight:700;color:#0f172a">—</span></div>'
+    + '</div>';
+}
+function _madMortCardHTML(){
+  return '<div class="mm-card" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px;background:#fff">'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
+    +   '<label style="'+_MAD_ING_LBL+'">Lote<input class="mm-lote" style="'+_MAD_ING_INP+';width:110px;text-transform:uppercase"></label>'
+    +   '<button class="btn" type="button" onclick="madMortDelCard(this)" style="font-size:11px">✕ Quitar</button>'
+    + '</div>'
+    + _madMortTipoHTML("Desove") + _madMortTipoHTML("Recuperación")
+    + '<label style="'+_MAD_ING_LBL+'">Observaciones<input class="mm-obs" style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
+    + '</div>';
+}
+function madMortPctVivo(el){
+  const c=el && el.closest ? el.closest(".mm-card") : null; if(!c) return;
+  ["desove","recuperacion"].forEach(function(k){
+    const e=c.querySelector(".mm-"+k+"-e"), m=c.querySelector(".mm-"+k+"-m"), p=c.querySelector(".mm-"+k+"-p");
+    const v=madMortPct(e?e.value:"", m?m.value:"");
+    if(p) p.textContent = v==="" ? "—" : v+" %";
+  });
+}
+function madMortAddCard(){ const c=document.getElementById("mm-cards"); if(c) c.insertAdjacentHTML("beforeend", _madMortCardHTML()); }
+function madMortDelCard(btn){
+  const b=btn.closest(".mm-card"), c=document.getElementById("mm-cards");
+  if(b && c && c.querySelectorAll(".mm-card").length>1) b.remove();
+  else toast("Debe quedar al menos un lote.","warn",2500);
+}
+function madMortCollect(){
+  const g=function(el,sel){ const e=el.querySelector(sel); return e?e.value:""; };
+  const lotes=[];
+  document.querySelectorAll("#mm-cards .mm-card").forEach(function(c){
+    lotes.push({ lote:g(c,".mm-lote"), desove:{ entran:g(c,".mm-desove-e"), muertas:g(c,".mm-desove-m") },
+      recuperacion:{ entran:g(c,".mm-recuperacion-e"), muertas:g(c,".mm-recuperacion-m") }, observaciones:g(c,".mm-obs") });
+  });
+  return { fecha:g(document,"#mm-fecha"), lotes:lotes };
+}
+function _madMortPinta(res, filas){
+  const box=document.getElementById("mm-report"); if(!box) return;
+  let h="";
+  if(res.errores.length) h += '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#991b1b"><b>No se puede guardar:</b><ul style="margin:4px 0 0;padding-left:18px">'+res.errores.map(function(e){ return "<li>"+escapeHtml(e)+"</li>"; }).join("")+"</ul></div>";
+  if(res.avisos.length) h += '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#92400e"><b>Avisos (se puede guardar igual):</b><ul style="margin:4px 0 0;padding-left:18px">'+res.avisos.map(function(a){ return "<li>"+escapeHtml(a)+"</li>"; }).join("")+"</ul></div>";
+  if(!res.errores.length) h += _madRevisarOkHTML(res, filas, MAD_MORT_SHEET);
+  box.innerHTML=h;
+  _madReporteVigila("fp-mortdes", "mm-report");
+}
+function madMortRevisar(){
+  const model=madMortCollect();
+  const res=madMortValidar(model);
+  _madMortPinta(res, madMortBuildRows(model).length);
+  return _madRevisarRemata("mm-report", res, MAD_MORT_SHEET);
+}
+const MAD_MORT_LOG_KEY = "larv4_mad_mort_log";
+function madMortLogLeer(){
+  try{ const v=JSON.parse(localStorage.getItem(MAD_MORT_LOG_KEY)||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; }
+}
+function madMortLogAnota(fecha, filas, estado){
+  const l=madMortLogLeer();
+  l.push({ ts:Date.now(), fecha:fecha, filas:filas, estado:estado });
+  try{ localStorage.setItem(MAD_MORT_LOG_KEY, JSON.stringify(l.slice(-40))); }catch(_){}
+}
+function madMortLogHTML(){
+  const l=madMortLogLeer();
+  if(!l.length) return "";
+  const enCola=(typeof syncQueueLen==="function") ? syncQueueLen() : 0;
+  const filas=l.slice().reverse().slice(0,10).map(function(e){
+    const st=(e.estado==="cola" && enCola)
+      ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px">📶 en cola</span>'
+      : '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px">✅ enviado</span>';
+    const d=new Date(e.ts), hh=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+    return '<tr><td>'+escapeHtml(String(e.fecha||""))+' '+hh+'</td><td style="text-align:right">'+(e.filas||0)+'</td><td>'+st+'</td></tr>';
+  }).join("");
+  return '<div style="margin-top:18px"><h3 style="margin:0 0 4px;font-size:13px">Registrado desde este dispositivo</h3>'
+    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Filas</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div></div>';
+}
+async function madMortGuardar(){
+  const model=madMortCollect();
+  const res=madMortValidar(model);
+  const payload=buildMadMortPayload(model);
+  _madMortPinta(res, payload.rows.length);
+  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
+  if(!payload.rows.length){ toast("No hay ningún registro completo que guardar.","warn",4000); return; }
+  // Hoja nueva: el GAS publicado hoy no la conoce. Contra él no se envía y lo tecleado se queda (ver _madIngGasAlDia).
+  if((await _madIngGasAlDia()) === false){
+    const aviso="No se envió: el GAS publicado no conoce la hoja «"+MAD_MORT_SHEET+"». Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo tecleado sigue aquí.";
+    const box=document.getElementById("mm-report");
+    if(box) box.innerHTML='<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:12px;color:#991b1b">'+escapeHtml(aviso)+'</div>';
+    toast(aviso,"err",10000);
+    return;
+  }
+  toast("Enviando "+payload.rows.length+" fila(s)…","info",2200);
+  const _t={};
+  const ok=await postPayload(payload, gasUrl(), _t);
+  if(ok){
+    madMortLogAnota(model.fecha, payload.rows.length, "ok");
+    toast("✅ Mortalidad registrada · "+payload.rows.length+" fila(s)","ok",5000);
+    madMortReiniciar();
+    return;
+  }
+  // ⚠ `postPayload` devuelve false TAMBIÉN cuando el envío quedó ENCOLADO (invariante H1).
+  if(_t.outcome==="queued"){
+    madMortLogAnota(model.fecha, payload.rows.length, "cola");
+    madMortReiniciar();
+  }
+  _syncNotOkUI(_t.outcome, "No se pudo registrar la mortalidad", null, _t.gasMessage);
+}
+function madMortReiniciar(){
+  const fp=document.getElementById("fp-mortdes");
+  if(fp) fp.innerHTML="";
+  renderMadMortDesove();
+}
+function madMortVaciar(){
+  if(!confirm("¿Vaciar el formulario de mortalidad?\nSe perderá todo lo tecleado.")) return;
+  madMortReiniciar();
+}
+// ⚠⚠ NO SE RE-PINTA SI YA ESTÁ MONTADO, como las demás fichas: reescribir innerHTML borraría lo tecleado.
+function renderMadMortDesove(){
+  const fp=document.getElementById("fp-mortdes"); if(!fp) return;
+  if(fp.querySelector("#mm-cards")) return;
+  const todayStr=today();
+  fp.innerHTML='<div class="fc">'
+    + '<div class="fc-h"><div class="fc-t">📉 Maduración · Mortalidad de hembras en desove y recuperación</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
+    + '<div class="fc-b">'
+    +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
+    +     '<span style="font-size:16px">ℹ️</span><span>Por <b>lote</b>: cuántas hembras entran a los tanques de <b>desove</b> y de <b>recuperación</b> y cuántas mueren. El % se calcula solo. Las muertas <b>se descuentan del saldo</b> del lote, repartidas entre sus tanques.</span>'
+    +   '</div>'
+    +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mm-fecha" value="'+escapeHtml(todayStr)+'" style="'+_MAD_ING_INP+'"></label>'
+    +   '</div>'
+    +   '<div id="mm-cards">'+_madMortCardHTML()+'</div>'
+    +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
+    +     '<button class="btn" type="button" onclick="madMortAddCard()">➕ Lote</button>'
+    +     '<button class="btn" type="button" onclick="madMortRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" style="font-weight:700" onclick="madMortGuardar()">☁️ Guardar y sincronizar</button>'
+    +     '<button class="btn" type="button" onclick="madMortVaciar()">🧹 Vaciar</button>'
+    +   '</div>'
+    +   '<div id="mm-report" style="margin-top:12px"></div>'
+    +   '<div id="mm-log">'+madMortLogHTML()+'</div>'
     + '</div></div>';
 }
 
@@ -18507,7 +19062,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "2c12219f29ff";
+const GAS_VERSION = "61a3c7e2eb8b";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -18548,6 +19103,8 @@ const ALLOWED = [
   "Maduración Ingreso","Maduración Movimientos","Maduración Fin de Ciclo",
   // Tratamientos de Maduración (2026-09-15): preventivos por lote y desinfección, por columna "ID".
   "Maduración Tratamientos",
+  // Mortalidad de hembras en tanques de desove y de recuperación (2026-09-15), por columna "ID".
+  "Maduración Mortalidad Desove",
   "BIOMOL",
   "Registro_Supervisión",
   "Registro_Desinfección",
@@ -18750,7 +19307,8 @@ function doPost(e) {
     var isMadId = payload.sheetName === "Maduración Ingreso"
                || payload.sheetName === "Maduración Movimientos"
                || payload.sheetName === "Maduración Fin de Ciclo"
-               || payload.sheetName === "Maduración Tratamientos";
+               || payload.sheetName === "Maduración Tratamientos"
+               || payload.sheetName === "Maduración Mortalidad Desove";
     // Columna Trovan ID (0-indexed) por hoja: se fuerza a formato TEXTO ("@") al
     // escribir, así Sheets NO reinterpreta el código como notación científica ni
     // le quita ceros a la izquierda (es un identificador, no un número).
@@ -19284,7 +19842,7 @@ function ensureHeaders(ws, headers) {
 var MAD_ESQUEMA_VIGILADO = [
   "Maduración Sala", "Maduración Tanques", "Maduración Lotes",
   "Maduración Ingreso", "Maduración Movimientos", "Maduración Fin de Ciclo",
-  "Maduración Tratamientos"
+  "Maduración Tratamientos", "Maduración Mortalidad Desove"
 ];
 function _cabeceraNorm_(v) {
   var s = String(v == null ? "" : v).trim();
