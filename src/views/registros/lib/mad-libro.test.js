@@ -1170,4 +1170,14 @@ describe('Libro · contadores por lote para el resumen (2026-09-15)', () => {
     expect(libro.avisos.map((a) => a.tipo)).toEqual(['mortdes-tipo', 'mortdes-sin-lote']);
     expect(saldo(libro, 'Sala 1', 1).hembras).toBe(10);
   });
+
+  it('🔴 Inf. Supervisor: las filas de REVISIÓN DE NAUPLIOS de la misma hoja no descuentan ni avisan', () => {
+    // Una fila de revisión lleva «Revisión» y el «Tipo de tanque» vacío; si entrara, avisaría de tipo desconocido. Y una
+    // con cifras de hembras muertas por error tampoco debe descontar: no es mortalidad.
+    const naup = { Fecha: '2026-01-02', Lote: 'AB', 'Tipo de tanque': '', Revisión: 'Entrada', Deformidad: 'Baja', 'Hembras muertas': 3 };
+    const libro = construirLibro({ ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 0, 10)], mortDesove: [naup, mdes('2026-01-03', 'AB', 'Desove', 5, 1)] });
+    expect(libro.avisos).toEqual([]);
+    expect(saldo(libro, 'Sala 1', 1).hembras).toBe(9);
+    expect(dePos(libro, 'AB').mortDesove).toEqual({ entran: 5, muertas: 1 });
+  });
 });

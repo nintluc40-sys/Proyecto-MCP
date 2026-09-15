@@ -2499,7 +2499,7 @@ const TAB_META = {
   salas:    ["🏠","Salas"],
   tanques:  ["🛢️","Tanques"],
   desoves:  ["🥚","Desoves"],
-  mortdes:  ["📉","Mortalidad ♀"],
+  mortdes:  ["📋","Inf. Supervisor"],
   fin:      ["🏁","Fin de Ciclo"],
   tratamientos: ["🧪","Tratamientos"],
   ingreso:  ["📥","Ingreso"],
@@ -5852,7 +5852,8 @@ function madFlujo(f){
   (f.movimientos||[]).forEach(function(r){ ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"movimiento", r:r }); });
   (f.tanques||[]).forEach(function(r){ ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"tanque", r:r }); });
   (f.cierres||[]).forEach(function(r){ ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"fin", r:r }); });
-  (f.mortDesove||[]).forEach(function(r){ ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"mortdes", r:r }); });
+  // Las filas de REVISIÓN DE NAUPLIOS (Inf. Supervisor, 2026-09-15) van en la misma hoja y no son mortalidad. Ver el módulo.
+  (f.mortDesove||[]).forEach(function(r){ if(madLibroTxt(r["Revisión"])==="") ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"mortdes", r:r }); });
   return ev.sort(function(a,b){ return a.fecha.localeCompare(b.fecha) || (MAD_PRIORIDAD[a.tipo]-MAD_PRIORIDAD[b.tipo]); });
 }
 function madSumarDias(fecha, dias){
@@ -8974,33 +8975,59 @@ function renderMadTratamientos(){
     + '</div></div>';
 }
 
-// ── Maduración · MORTALIDAD DE HEMBRAS EN DESOVE Y RECUPERACIÓN (2026-09-15, usuario) ──
-// Copia inline de `ficha-maduracion-mortdesove.schema.js` (la paridad la ata). Por fecha y lote, en cada tipo de
-// tanque: hembras que entran y que mueren; el % se calcula. Las muertas se descuentan del saldo (lo hace el libro).
+// ── Maduración · INF. SUPERVISOR: MORTALIDAD DE HEMBRAS Y REVISIÓN DE NAUPLIOS (2026-09-15, usuario) ──
+// Copia inline de `ficha-maduracion-mortdesove.schema.js` (la paridad la ata). Por fecha y lote, en la MISMA hoja (sin
+// re-desplegar el GAS): la mortalidad en cada tipo de tanque (se descuenta del saldo: lo hace el libro) y la revisión
+// de nauplios, una fila por revisión con «Revisión» rellena y «Tipo de tanque» vacío (el libro se la salta).
 const MAD_MORT_SHEET = "Maduración Mortalidad Desove";
 const MAD_MORT_TIPOS = ["Desove","Recuperación"];
 const _MAD_MORT_CLAVE = { "Desove":"desove", "Recuperación":"recuperacion" };
 const _MAD_MORT_TAG = { "Desove":"DESOVE", "Recuperación":"RECUPERACION" };
+const MAD_NAUP_REVISIONES = ["Entrada","Lavado","Lavado 2","Postlavado"];
+const _MAD_NAUP_CLAVE = { "Entrada":"entrada", "Lavado":"lavado", "Lavado 2":"lavado2", "Postlavado":"postlavado" };
+const _MAD_NAUP_TAG = { "Entrada":"ENTRADA", "Lavado":"LAVADO", "Lavado 2":"LAVADO2", "Postlavado":"POSTLAVADO" };
+const MAD_NAUP_DEFORMIDAD = ["Alta","Media","Baja","Ausente"];
+const MAD_NAUP_ACTIVIDAD = ["Alta","Media","Baja"];
+const MAD_NAUP_HONGOS = ["Ausente","Presente"];
+const MAD_NAUP_TEMP_MAX = 40;
+const MAD_NAUP_SAL_MAX = 60;
 const MAD_MORT_COLUMNS = [
   { h:"Fecha", k:"fecha" }, { h:"Lote", k:"lote" }, { h:"Tipo de tanque", k:"tipo" }, { h:"Hembras que entran", k:"entran" },
-  { h:"Hembras muertas", k:"muertas" }, { h:"% Mortalidad", k:"pct" }, { h:"Observaciones", k:"observaciones" }, { h:"ID", k:"id" }
+  { h:"Hembras muertas", k:"muertas" }, { h:"% Mortalidad", k:"pct" },
+  { h:"Revisión", k:"revision" }, { h:"Deformidad", k:"deformidad" }, { h:"Actividad", k:"actividad" }, { h:"Hongos", k:"hongos" },
+  { h:"Salinidad", k:"salinidad" }, { h:"Temperatura", k:"temperatura" },
+  { h:"Observaciones", k:"observaciones" }, { h:"ID", k:"id" }   // ⚠ el ID, el ÚLTIMO
 ];
 const MAD_MORT_HEADERS = MAD_MORT_COLUMNS.map(function(c){ return c.h; });
+function _madNaupDec(v){ if(v===""||v===null||v===undefined) return ""; const n=parseFloat(v); return (Number.isFinite(n) && n>=0) ? n : ""; }
+function _madNaupCrudo(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
+function _madNaupNorm(s){ return _madNaupCrudo(s).replace(/\s+/g," ").toLowerCase(); }
+function madNaupOpcion(lista, v){ const n=_madNaupNorm(v); return lista.filter(function(o){ return _madNaupNorm(o)===n; })[0] || ""; }
 function madMortPct(entran, muertas){
   const e=madIngInt(entran), m=madIngInt(muertas);
   return (e===""||e===0||m==="") ? "" : Math.round((m/e)*10000)/100;
 }
 function madMortRowId(fecha, lote, tipo){ return sanitizeStr(fecha,10)+"-"+madDesNormLote(lote)+"-"+(_MAD_MORT_TAG[tipo]||"OTRO"); }
+function madNaupRowId(fecha, lote, revision){ return sanitizeStr(fecha,10)+"-"+madDesNormLote(lote)+"-NAUP-"+(_MAD_NAUP_TAG[revision]||"OTRA"); }
+const _MAD_NAUP_CAMPOS = [["deformidad","Deformidad"],["actividad","Actividad"],["hongos","Hongos"],["salinidad","Salinidad"],["temperatura","Temperatura"]];
+function _madNaupRevision(x, rev){ return (x.nauplios && x.nauplios[_MAD_NAUP_CLAVE[rev]]) || {}; }
+function _madNaupConDato(r){ return _MAD_NAUP_CAMPOS.some(function(c){ return _madNaupCrudo(r[c[0]])!==""; }); }
 function madMortBuildRows(model){
   const m=model||{}, fecha=sanitizeStr(m.fecha,10), filas=[];
+  const fila=function(v){ filas.push(MAD_MORT_COLUMNS.map(function(col){ return v[col.k]===undefined ? "" : v[col.k]; })); };
   (m.lotes||[]).forEach(function(c){
     const x=c||{}, lote=madDesNormLote(x.lote);
     if(!lote) return;
     MAD_MORT_TIPOS.forEach(function(tipo){
       const t=x[_MAD_MORT_CLAVE[tipo]]||{}, entran=madIngInt(t.entran), muertas=madIngInt(t.muertas);
       if(entran==="" && muertas==="") return;
-      const v={ fecha:fecha, lote:lote, tipo:tipo, entran:entran, muertas:muertas, pct:madMortPct(entran, muertas), observaciones:sanitizeStr(x.observaciones,300), id:madMortRowId(fecha, lote, tipo) };
-      filas.push(MAD_MORT_COLUMNS.map(function(col){ return v[col.k]; }));
+      fila({ fecha:fecha, lote:lote, tipo:tipo, entran:entran, muertas:muertas, pct:madMortPct(entran, muertas), observaciones:sanitizeStr(x.observaciones,300), id:madMortRowId(fecha, lote, tipo) });
+    });
+    MAD_NAUP_REVISIONES.forEach(function(revision){
+      const r=_madNaupRevision(x, revision);
+      if(!_madNaupConDato(r)) return;
+      fila({ fecha:fecha, lote:lote, revision:revision, deformidad:madNaupOpcion(MAD_NAUP_DEFORMIDAD, r.deformidad), actividad:madNaupOpcion(MAD_NAUP_ACTIVIDAD, r.actividad),
+        hongos:madNaupOpcion(MAD_NAUP_HONGOS, r.hongos), salinidad:_madNaupDec(r.salinidad), temperatura:_madNaupDec(r.temperatura), id:madNaupRowId(fecha, lote, revision) });
     });
   });
   return filas;
@@ -9014,9 +9041,10 @@ function madMortValidar(model){
   (m.lotes||[]).forEach(function(c, i){
     const x=c||{}, lote=madDesNormLote(x.lote);
     const conCifras=MAD_MORT_TIPOS.filter(function(tipo){ const t=x[_MAD_MORT_CLAVE[tipo]]||{}; return madIngInt(t.entran)!=="" || madIngInt(t.muertas)!==""; });
-    if(!lote && !conCifras.length) return;
+    const conRevision=MAD_NAUP_REVISIONES.filter(function(rev){ return _madNaupConDato(_madNaupRevision(x, rev)); });
+    if(!lote && !conCifras.length && !conRevision.length) return;
     if(!lote){ errores.push("Falta el lote del registro "+(i+1)+"."); return; }
-    if(!conCifras.length){ errores.push("El lote "+lote+" no trae ninguna cifra."); return; }
+    if(!conCifras.length && !conRevision.length){ errores.push("El lote "+lote+" no trae ninguna cifra ni revisión de nauplios."); return; }
     if(vistos[lote]===1) errores.push("El lote "+lote+" aparece dos veces en esta fecha: escribiría las mismas filas. Súmalos.");
     vistos[lote]=1;
     conCifras.forEach(function(tipo){
@@ -9024,6 +9052,21 @@ function madMortValidar(model){
       if((e===""||e===0) && mu!=="" && mu>0) errores.push("En "+lote+" (tanques de "+donde+") hay muertas pero no las hembras que entran: sin ellas no hay porcentaje.");
       else if(e!=="" && mu!=="" && mu>e) errores.push("En "+lote+" (tanques de "+donde+") mueren más hembras ("+mu+") de las que entran ("+e+").");
       if(mu==="") avisos.push("En "+lote+" (tanques de "+donde+") no se anotaron muertas: se guarda como 0 % sólo si escribes 0.");
+      filas++;
+    });
+    conRevision.forEach(function(rev){
+      const r=_madNaupRevision(x, rev), et="En "+lote+" (nauplios · "+rev+")";
+      [["deformidad","Deformidad",MAD_NAUP_DEFORMIDAD],["actividad","Actividad",MAD_NAUP_ACTIVIDAD],["hongos","Hongos",MAD_NAUP_HONGOS]].forEach(function(p){
+        if(_madNaupCrudo(r[p[0]])!=="" && !madNaupOpcion(p[2], r[p[0]])) errores.push(et+" «"+_madNaupCrudo(r[p[0]])+"» no es un valor de "+p[1]+" ("+p[2].join(", ")+").");
+      });
+      [["salinidad","la salinidad",MAD_NAUP_SAL_MAX],["temperatura","la temperatura",MAD_NAUP_TEMP_MAX]].forEach(function(p){
+        if(_madNaupCrudo(r[p[0]])==="") return;
+        const v=_madNaupDec(r[p[0]]);
+        if(v==="") errores.push(et+" "+p[1]+" no es una cifra válida.");
+        else if(v>p[2]) avisos.push(et+" "+p[1]+" ("+v+") pasa de "+p[2]+": revisa que esté bien escrita.");
+      });
+      const faltan=_MAD_NAUP_CAMPOS.filter(function(c){ return _madNaupCrudo(r[c[0]])===""; }).map(function(c){ return c[1]; });
+      if(faltan.length) avisos.push(et+" faltan: "+faltan.join(", ")+".");
       filas++;
     });
   });
@@ -9041,14 +9084,34 @@ function _madMortTipoHTML(tipo){
     + '<div style="'+_MAD_ING_LBL+'">% Mortalidad<span class="mm-'+k+'-p" style="padding:6px 8px;font-size:13px;font-weight:700;color:#0f172a">—</span></div>'
     + '</div>';
 }
+// Revisión de nauplios (2026-09-15, usuario): una fila por revisión; selects con sus listas y dos cifras.
+function _madNaupSelHTML(cls, lista){
+  return '<select class="'+cls+'" style="'+_MAD_ING_INP+';width:100%;min-width:90px"><option value=""></option>'
+    + lista.map(function(o){ return '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>'; }).join("")+'</select>';
+}
+function _madNaupTablaHTML(){
+  const filas=MAD_NAUP_REVISIONES.map(function(rev){
+    const k="mm-n-"+_MAD_NAUP_CLAVE[rev];
+    return '<tr><td style="font-weight:700;white-space:nowrap">'+escapeHtml(rev)+'</td>'
+      + '<td>'+_madNaupSelHTML(k+"-def", MAD_NAUP_DEFORMIDAD)+'</td>'
+      + '<td>'+_madNaupSelHTML(k+"-act", MAD_NAUP_ACTIVIDAD)+'</td>'
+      + '<td>'+_madNaupSelHTML(k+"-hon", MAD_NAUP_HONGOS)+'</td>'
+      + '<td><input class="'+k+'-sal" type="number" min="0" max="'+MAD_NAUP_SAL_MAX+'" step="0.1" inputmode="decimal" style="'+_MAD_ING_INP+';width:90px"></td>'
+      + '<td><input class="'+k+'-tem" type="number" min="0" max="'+MAD_NAUP_TEMP_MAX+'" step="0.1" inputmode="decimal" style="'+_MAD_ING_INP+';width:90px"></td></tr>';
+  }).join("");
+  return '<div class="tw"><table class="ft mm-naup" style="font-size:12px"><thead><tr><th>Revisión</th><th>Deformidad</th><th>Actividad</th><th>Hongos</th><th>Salinidad</th><th>Temperatura (°C)</th></tr></thead><tbody>'+filas+'</tbody></table></div>';
+}
 function _madMortCardHTML(){
   return '<div class="mm-card" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px;background:#fff">'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
     +   '<label style="'+_MAD_ING_LBL+'">Lote<input class="mm-lote" style="'+_MAD_ING_INP+';width:110px;text-transform:uppercase"></label>'
     +   '<button class="btn" type="button" onclick="madMortDelCard(this)" style="font-size:11px">✕ Quitar</button>'
     + '</div>'
+    + '<div style="font-size:12px;font-weight:700;margin:2px 0 6px;color:#334155">📉 Mortalidad de hembras</div>'
     + _madMortTipoHTML("Desove") + _madMortTipoHTML("Recuperación")
-    + '<label style="'+_MAD_ING_LBL+'">Observaciones<input class="mm-obs" style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
+    + '<div style="font-size:12px;font-weight:700;margin:8px 0 6px;color:#334155">🔬 Revisión de nauplios</div>'
+    + _madNaupTablaHTML()
+    + '<label style="'+_MAD_ING_LBL+';margin-top:8px">Observaciones<input class="mm-obs" style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
     + '</div>';
 }
 function madMortPctVivo(el){
@@ -9069,8 +9132,13 @@ function madMortCollect(){
   const g=function(el,sel){ const e=el.querySelector(sel); return e?e.value:""; };
   const lotes=[];
   document.querySelectorAll("#mm-cards .mm-card").forEach(function(c){
+    const nauplios={};
+    MAD_NAUP_REVISIONES.forEach(function(rev){
+      const k=".mm-n-"+_MAD_NAUP_CLAVE[rev];
+      nauplios[_MAD_NAUP_CLAVE[rev]]={ deformidad:g(c,k+"-def"), actividad:g(c,k+"-act"), hongos:g(c,k+"-hon"), salinidad:g(c,k+"-sal"), temperatura:g(c,k+"-tem") };
+    });
     lotes.push({ lote:g(c,".mm-lote"), desove:{ entran:g(c,".mm-desove-e"), muertas:g(c,".mm-desove-m") },
-      recuperacion:{ entran:g(c,".mm-recuperacion-e"), muertas:g(c,".mm-recuperacion-m") }, observaciones:g(c,".mm-obs") });
+      recuperacion:{ entran:g(c,".mm-recuperacion-e"), muertas:g(c,".mm-recuperacion-m") }, nauplios:nauplios, observaciones:g(c,".mm-obs") });
   });
   return { fecha:g(document,"#mm-fecha"), lotes:lotes };
 }
@@ -9132,7 +9200,7 @@ async function madMortGuardar(){
   const ok=await postPayload(payload, gasUrl(), _t);
   if(ok){
     madMortLogAnota(model.fecha, payload.rows.length, "ok");
-    toast("✅ Mortalidad registrada · "+payload.rows.length+" fila(s)","ok",5000);
+    toast("✅ Inf. Supervisor registrado · "+payload.rows.length+" fila(s)","ok",5000);
     madMortReiniciar();
     return;
   }
@@ -9141,7 +9209,7 @@ async function madMortGuardar(){
     madMortLogAnota(model.fecha, payload.rows.length, "cola");
     madMortReiniciar();
   }
-  _syncNotOkUI(_t.outcome, "No se pudo registrar la mortalidad", null, _t.gasMessage);
+  _syncNotOkUI(_t.outcome, "No se pudo registrar el Inf. Supervisor", null, _t.gasMessage);
 }
 function madMortReiniciar(){
   const fp=document.getElementById("fp-mortdes");
@@ -9149,7 +9217,7 @@ function madMortReiniciar(){
   renderMadMortDesove();
 }
 function madMortVaciar(){
-  if(!confirm("¿Vaciar el formulario de mortalidad?\nSe perderá todo lo tecleado.")) return;
+  if(!confirm("¿Vaciar el Inf. Supervisor?\nSe perderá todo lo tecleado.")) return;
   madMortReiniciar();
 }
 // ⚠⚠ NO SE RE-PINTA SI YA ESTÁ MONTADO, como las demás fichas: reescribir innerHTML borraría lo tecleado.
@@ -9158,10 +9226,10 @@ function renderMadMortDesove(){
   if(fp.querySelector("#mm-cards")) return;
   const todayStr=today();
   fp.innerHTML='<div class="fc">'
-    + '<div class="fc-h"><div class="fc-t">📉 Maduración · Mortalidad de hembras en desove y recuperación</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
+    + '<div class="fc-h"><div class="fc-t">📋 Maduración · Inf. Supervisor</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
     + '<div class="fc-b">'
     +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
-    +     '<span style="font-size:16px">ℹ️</span><span>Por <b>lote</b>: cuántas hembras entran a los tanques de <b>desove</b> y de <b>recuperación</b> y cuántas mueren. El % se calcula solo. Las muertas <b>se descuentan del saldo</b> del lote, repartidas entre sus tanques.</span>'
+    +     '<span style="font-size:16px">ℹ️</span><span>Por <b>lote</b>. <b>📉 Mortalidad de hembras:</b> cuántas entran a los tanques de <b>desove</b> y de <b>recuperación</b> y cuántas mueren; el % se calcula solo y las muertas <b>se descuentan del saldo</b> del lote. <b>🔬 Revisión de nauplios:</b> Deformidad, Actividad, Hongos, Salinidad y Temperatura en cada revisión (Entrada, Lavado, Lavado 2 y Postlavado); rellena sólo las revisiones hechas.</span>'
     +   '</div>'
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
     +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mm-fecha" value="'+escapeHtml(todayStr)+'" style="'+_MAD_ING_INP+'"></label>'

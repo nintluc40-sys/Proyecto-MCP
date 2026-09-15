@@ -204,8 +204,33 @@ describe('Mortalidad de hembras · la ficha', () => {
     const { sheetName, headers, rows } = envios[0];
     expect(sheetName).toBe('Maduración Mortalidad Desove');
     expect(headers).toEqual(MAD_MORT_HEADERS);
-    expect(rows.map((f) => [f[1], f[2], f[5], f[7]])).toEqual([['BP', 'Desove', 7.5, '2026-09-15-BP-DESOVE'], ['BP', 'Recuperación', 2.7, '2026-09-15-BP-RECUPERACION']]);
+    const id = MAD_MORT_HEADERS.indexOf('ID');
+    expect(rows.map((f) => [f[1], f[2], f[5], f[id]])).toEqual([['BP', 'Desove', 7.5, '2026-09-15-BP-DESOVE'], ['BP', 'Recuperación', 2.7, '2026-09-15-BP-RECUPERACION']]);
     expect(q('.mm-lote').value).toBe('');
+  });
+
+  it('🔴 Inf. Supervisor: título, y la revisión de nauplios de cada lote va en filas propias con lo elegido', async () => {
+    expect(document.querySelector('#fp-mortdes .fc-t').textContent).toBe('📋 Maduración · Inf. Supervisor');
+    expect([...document.querySelectorAll('#fp-mortdes .mm-naup tbody tr')].map((tr) => tr.cells[0].textContent)).toEqual(['Entrada', 'Lavado', 'Lavado 2', 'Postlavado']);
+    expect([...q('.mm-n-entrada-def').options].map((o) => o.value)).toEqual(['', 'Alta', 'Media', 'Baja', 'Ausente']);
+    expect([...q('.mm-n-entrada-act').options].map((o) => o.value)).toEqual(['', 'Alta', 'Media', 'Baja']);
+    expect([...q('.mm-n-entrada-hon').options].map((o) => o.value)).toEqual(['', 'Ausente', 'Presente']);
+    q('#mm-fecha').value = '2026-09-15';
+    q('.mm-lote').value = 'bp';
+    q('.mm-n-lavado2-def').value = 'Baja';
+    q('.mm-n-lavado2-act').value = 'Alta';
+    q('.mm-n-lavado2-hon').value = 'Presente';
+    q('.mm-n-lavado2-sal').value = '34.5';
+    q('.mm-n-lavado2-tem').value = '29.1';
+    q('.mm-n-postlavado-def').value = 'Ausente';
+    await H.madMortGuardar();
+    expect(envios).toHaveLength(1);
+    const c = (h) => MAD_MORT_HEADERS.indexOf(h);
+    expect(envios[0].rows.map((f) => [f[c('Lote')], f[c('Tipo de tanque')], f[c('Revisión')], f[c('Deformidad')], f[c('Actividad')], f[c('Hongos')], f[c('Salinidad')], f[c('Temperatura')], f[c('ID')]])).toEqual([
+      ['BP', '', 'Lavado 2', 'Baja', 'Alta', 'Presente', 34.5, 29.1, '2026-09-15-BP-NAUP-LAVADO2'],
+      ['BP', '', 'Postlavado', 'Ausente', '', '', '', '', '2026-09-15-BP-NAUP-POSTLAVADO'],
+    ]);
+    expect(avisos.some((a) => a.msg.includes('Inf. Supervisor registrado'))).toBe(true);
   });
 
   it('🔴 con el GAS VIEJO no se envía y lo tecleado se queda', async () => {

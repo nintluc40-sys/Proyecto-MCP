@@ -418,6 +418,8 @@ const ESCENARIOS = {
       { Fecha: '2026-01-07', Lote: 'AB', 'Tipo de tanque': 'Recuperación', 'Hembras que entran': 31, 'Hembras muertas': 200 },
       { Fecha: '2026-01-07', Lote: 'AB', 'Tipo de tanque': 'Otro', 'Hembras muertas': 1 },
       { Fecha: '2026-01-07', Lote: 'ZZ', 'Tipo de tanque': 'Desove', 'Hembras muertas': 4 },
+      // Inf. Supervisor: una fila de revisión de nauplios en la misma hoja, que los dos tienen que saltarse.
+      { Fecha: '2026-01-07', Lote: 'AB', 'Tipo de tanque': '', Revisión: 'Lavado', Deformidad: 'Media', 'Hembras muertas': 2 },
     ],
   },
   'vacío': { ingresos: [], tanques: [] },

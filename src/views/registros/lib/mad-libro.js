@@ -169,7 +169,9 @@ function flujo(fuentes) {
   for (const r of fuentes.movimientos || []) ev.push({ fecha: txt(r.Fecha), tipo: 'movimiento', r });
   for (const r of fuentes.tanques || []) ev.push({ fecha: txt(r.Fecha), tipo: 'tanque', r });
   for (const r of fuentes.cierres || []) ev.push({ fecha: txt(r.Fecha), tipo: 'fin', r });
-  for (const r of fuentes.mortDesove || []) ev.push({ fecha: txt(r.Fecha), tipo: 'mortdes', r });
+  // La hoja de Mortalidad Desove lleva también la REVISIÓN DE NAUPLIOS (Inf. Supervisor, 2026-09-15): esas filas traen
+  // «Revisión» y no son mortalidad, así que no entran en el libro (ni como aviso de tipo de tanque desconocido).
+  for (const r of fuentes.mortDesove || []) if (txt(r['Revisión']) === '') ev.push({ fecha: txt(r.Fecha), tipo: 'mortdes', r });
   return ev.sort((a, b) => a.fecha.localeCompare(b.fecha) || (PRIORIDAD[a.tipo] - PRIORIDAD[b.tipo]));
 }
 
