@@ -825,7 +825,8 @@ describe('Libro · «Recalcular» RECALCULA de verdad (2026-09-09)', () => {
     // Si alguien quitara el `true` de un botón, ese botón enseñaría una cifra vieja
     // sin decirlo — y los rótulos de la vista seguirían prometiendo lo contrario.
     // D13 (2026-09-14): el quinto es «🔄 Ver ocupación» de Ingreso.
-    const veces = src.split('madSaldoCargar(true)').length - 1;
+    // A2 (2026-09-15): 🔄 Recalcular pasa además la respuesta de ?p=ver → `madSaldoCargar(true, gas)`.
+    const veces = (src.match(/madSaldoCargar\(true[,)]/g) || []).length;
     expect(veces, 'se esperaban las 5 llamadas forzadas del libro').toBe(5);
     expect(src).toContain('async function madIngVerOcupacion(){');
   });

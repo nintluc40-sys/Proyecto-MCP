@@ -6369,7 +6369,7 @@ function _madHojaLeida(name){
   if(_reproStoreRows(name).length) return true;
   return !!(_reproSheets && Object.prototype.hasOwnProperty.call(_reproSheets, name));
 }
-async function madSaldoCargar(force){
+async function madSaldoCargar(force, gasAlDia){
   // La lectura se apoya en la cañería del reproductivo, que ya resuelve reintentos y
   // caché y es GENÉRICA: toma el nombre de la hoja. El prefijo _repro es de dónde nació,
   // no de lo que hace. Duplicarla habría creado dos cañerías divergiendo en silencio.
@@ -6387,8 +6387,11 @@ async function madSaldoCargar(force){
   await _reproEnsureSheet(MAD_LIBRO_SHEETS.cierres, null, force);
   /* 2026-09-15 · la hoja de mortalidad en desove y recuperación es NUEVA: un GAS anterior no la permite, así que no
      puede tener filas de esta app (su ficha no envía contra él). Con ese GAS se da por leída y vacía; si no se sabe
-     (sin respuesta), se lee y cuenta como las demás, fallo incluido. */
-  if((await _madIngGasAlDia()) === false) _reproPutRows(MAD_LIBRO_SHEETS.mortDesove, []);
+     (sin respuesta), se lee y cuenta como las demás, fallo incluido.
+     A2 (2026-09-15) · quien ya preguntó a ?p=ver pasa la respuesta en gasAlDia (true/false/null) y no se pregunta
+     otra vez; sin ella (undefined) se pregunta aquí. */
+  const gas = gasAlDia === undefined ? await _madIngGasAlDia() : gasAlDia;
+  if(gas === false) _reproPutRows(MAD_LIBRO_SHEETS.mortDesove, []);
   else await _reproEnsureSheet(MAD_LIBRO_SHEETS.mortDesove, null, force);
   const fallos = [];
   if(!_madHojaLeida(MAD_LIBRO_SHEETS.ingreso)) fallos.push(MAD_LIBRO_SHEETS.ingreso);
@@ -6645,7 +6648,8 @@ function madResPintar(){
     + '<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700;font-size:13px">📒 Detalle del libro: por tanque, por lote y discrepancias</summary>'+_madSaldoHTML(R.libro)+'</details>';
 }
 // Las hojas que el libro no lee y el resumen sí. Tratamientos es nueva: con el GAS publicado viejo no se pide.
-async function _madResLeerExtra(){
+// gasAlDia: la respuesta de ?p=ver que madSaldoRefrescar ya pidió para el libro (A2: una sola pregunta).
+async function _madResLeerExtra(gasAlDia){
   const faltan=[], out={ sala:[], desoves:[], tratamientos:[] };
   const leer=async function(hoja, clave){
     try{ out[clave]=await _reproFetchSheet(hoja, null); if(_reproTrunc[hoja]) faltan.push(hoja+" (llegó recortada)"); }
@@ -6653,7 +6657,7 @@ async function _madResLeerExtra(){
   };
   await leer("Maduración Sala", "sala");
   await leer(MAD_DESOVE_SHEET, "desoves");
-  if((await _madIngGasAlDia()) === false) faltan.push(MAD_TRAT_SHEET+" (el GAS publicado aún no la tiene)");
+  if(gasAlDia === false) faltan.push(MAD_TRAT_SHEET+" (el GAS publicado aún no la tiene)");
   else await leer(MAD_TRAT_SHEET, "tratamientos");
   out.faltan=faltan;
   return out;
@@ -6662,8 +6666,9 @@ async function madSaldoRefrescar(){
   const c=document.getElementById("ms-body");
   if(c) c.innerHTML='<div style="padding:14px;color:#64748b;font-size:12px">Leyendo las hojas… puede tardar unos segundos.</div>';
   try{
-    const libro=await madSaldoCargar(true);
-    const extra=await _madResLeerExtra();
+    const gas=await _madIngGasAlDia();
+    const libro=await madSaldoCargar(true, gas);
+    const extra=await _madResLeerExtra(gas);
     const f=madLibroFuentes();
     f.sala=extra.sala; f.desoves=extra.desoves; f.tratamientos=extra.tratamientos;
     _madResumen=madResumenMaduracion(f, { hoy: today() });

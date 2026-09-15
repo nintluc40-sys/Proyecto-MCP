@@ -29,7 +29,7 @@
    animales) sin depender de que siga siendo alcanzable — la guarda tiene que aguantar
    aunque el camino que lo producía se cierre, que es justo lo que pasó ese día.
    ============================================================ */
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -37,7 +37,8 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['madLibroIncompleto', '_madSalasPintaEstado', 'renderMadSalas',
   '_collectSalasGrid', 'madEstadoDeSala', 'MAD_SALA_OPTS', 'MAD_EST_CUAR', 'MAD_EST_PROD',
-  'madSaldoCargar', 'MAD_LIBRO_SHEETS', '_madSaldoHTML', 'MAD_EST_CERRADO', 'MAD_EST_MIXTO'];
+  'madSaldoCargar', 'MAD_LIBRO_SHEETS', '_madSaldoHTML', 'MAD_EST_CERRADO', 'MAD_EST_MIXTO',
+  'madSaldoRefrescar', '_madIngGasAlDia', '_reproFetchSheet', 'MAD_TRAT_SHEET'];
 const H = {};
 
 beforeAll(async () => {
@@ -67,6 +68,9 @@ beforeAll(async () => {
     /* Acceso a las dos cachés de lectura, que son `var` del monolito: permite construir el
        libro sin red, con las hojas ya «leídas» y el aviso de recorte que habría dado el GAS. */
     + '\ntry{ H.setLecturas=function(hojas, trunc){ _reproSheets=hojas; _reproTrunc=trunc; }; }catch(_){}'
+    /* A2: sustituir la pregunta a ?p=ver y la lectura de una hoja, para contar sin red. */
+    + '\ntry{ H.setRed=function(gas, leer){ _madIngGasAlDia=gas; _reproFetchSheet=leer; }; }catch(_){}'
+    + '\ntry{ H.getResumen=function(){ return _madResumen; }; }catch(_){}'
     + '\n})();';
   globalThis.__ENG = H;
   new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(
@@ -232,6 +236,55 @@ describe('Maduración · el libro RECOGE el aviso de recorte al construirse', ()
     H.setLecturas(leidas(), { 'Maduración MATRIZ': true });
     const libro = await H.madSaldoCargar(false);
     expect(libro.recortadas).toEqual([]);
+  });
+});
+
+/* ── 2026-09-15 · A2: 🔄 Recalcular pregunta a ?p=ver UNA vez ─────────────────────────────
+   Antes el libro y las hojas extra del resumen preguntaban cada uno (4–11 s por pregunta, medido).
+   Las hojas nuevas (Mortalidad Desove, Tratamientos) FALLAN al leerse, como con un GAS viejo: así
+   se distingue si la respuesta que se pasa llega de verdad a los dos sitios, y no sólo se cuenta. */
+describe('Maduración · A2 · el resumen reutiliza la respuesta de ?p=ver', () => {
+  let preguntas = 0;
+  const red = (respuesta) => {
+    preguntas = 0;
+    const nuevas = [H.MAD_LIBRO_SHEETS.mortDesove, H.MAD_TRAT_SHEET];
+    H.setLecturas({}, {});
+    H.setRed(async () => { preguntas++; return respuesta; },
+      async (hoja) => { if (nuevas.includes(hoja)) throw new Error('Hoja no permitida'); return []; });
+  };
+  const originales = {};
+  beforeAll(() => { originales.gas = H._madIngGasAlDia; originales.leer = H._reproFetchSheet; });
+  afterAll(() => H.setRed(originales.gas, originales.leer));
+
+  it('🔴 con el GAS viejo: una sola pregunta, y las dos hojas nuevas se tratan como tal', async () => {
+    red(false);
+    await H.madSaldoRefrescar();
+    const R = H.getResumen();
+    expect(preguntas).toBe(1);
+    expect(R.libro.fallos).toEqual([]);
+    expect(R.faltan).toContain(H.MAD_TRAT_SHEET + ' (el GAS publicado aún no la tiene)');
+  });
+
+  it('🔴 con el GAS nuevo: una sola pregunta, y las dos hojas nuevas se leen (y aquí fallan)', async () => {
+    red(true);
+    await H.madSaldoRefrescar();
+    const R = H.getResumen();
+    expect(preguntas).toBe(1);
+    expect(R.libro.fallos).toEqual([H.MAD_LIBRO_SHEETS.mortDesove]);
+    expect(R.faltan).toEqual([H.MAD_TRAT_SHEET]);
+  });
+
+  it('sin respuesta del GAS (null) tampoco se repite la pregunta: serían otros 6 s de espera', async () => {
+    red(null);
+    await H.madSaldoRefrescar();
+    expect(preguntas).toBe(1);
+  });
+
+  it('los demás llamadores, sin respuesta previa, siguen preguntando ellos', async () => {
+    red(false);
+    const libro = await H.madSaldoCargar(true);
+    expect(preguntas).toBe(1);
+    expect(libro.fallos).toEqual([]);
   });
 });
 
