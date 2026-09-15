@@ -6582,16 +6582,34 @@ function madResVarsAbrir(){
   m.innerHTML='<div style="position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px">'
     + '<div style="background:#fff;border-radius:10px;max-width:560px;width:100%;max-height:85vh;overflow:auto;padding:14px 16px;box-shadow:0 10px 30px rgba(0,0,0,.25)">'
     +   '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>⚙️ Variables del resumen</b><button class="btn" type="button" onclick="madResVarsCerrar()">✕</button></div>'
+    +   '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Marca una <b>ficha entera</b> con su casilla, o sus variables una a una.</div>'
     +   MAD_RES_VARS.map(function(g){
-          return '<fieldset style="border:1px solid #e2e8f0;border-radius:8px;margin:0 0 8px;padding:6px 10px"><legend style="font-size:12px;font-weight:700">'+escapeHtml(g.grupo)+'</legend>'
-            + g.vars.map(function(v){ return '<label style="display:flex;gap:6px;align-items:center;font-size:12px;padding:2px 0"><input type="checkbox" class="ms-var" value="'+escapeHtml(v[0])+'"'+(sel[v[0]]?' checked':'')+'>'+escapeHtml(v[1])+'</label>'; }).join("")
+          return '<fieldset style="border:1px solid #e2e8f0;border-radius:8px;margin:0 0 8px;padding:6px 10px"><legend style="font-size:12px;font-weight:700">'
+            + '<label style="display:inline-flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" class="ms-grupo" onchange="madResVarsGrupo(this)">'+escapeHtml(g.grupo)+' <span style="font-weight:400;color:#64748b">(toda la ficha)</span></label></legend>'
+            + g.vars.map(function(v){ return '<label style="display:flex;gap:6px;align-items:center;font-size:12px;padding:2px 0"><input type="checkbox" class="ms-var" value="'+escapeHtml(v[0])+'"'+(sel[v[0]]?' checked':'')+' onchange="madResVarsSync()">'+escapeHtml(v[1])+'</label>'; }).join("")
             + '</fieldset>';
         }).join("")
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><button class="btn" type="button" onclick="madResVarsTodas(true)">Marcar todas</button><button class="btn" type="button" onclick="madResVarsTodas(false)">Ninguna</button><button class="btn" type="button" style="font-weight:700" onclick="madResVarsAplicar()">✔ Aplicar</button></div>'
     + '</div></div>';
+  madResVarsSync();
 }
 function madResVarsCerrar(){ const m=document.getElementById("ms-vars"); if(m) m.remove(); }
-function madResVarsTodas(on){ document.querySelectorAll("#ms-vars .ms-var").forEach(function(c){ c.checked=!!on; }); }
+function madResVarsTodas(on){ document.querySelectorAll("#ms-vars .ms-var").forEach(function(c){ c.checked=!!on; }); madResVarsSync(); }
+// 2026-09-15 (usuario): la casilla de la FICHA marca o desmarca todas sus variables. No se guarda: se deduce de ellas.
+function madResVarsGrupo(c){
+  const fs=c && c.closest ? c.closest("fieldset") : null; if(!fs) return;
+  fs.querySelectorAll(".ms-var").forEach(function(v){ v.checked=c.checked; });
+  madResVarsSync();
+}
+// La casilla de cada ficha queda marcada (todas sus variables), a medias (algunas) o sin marcar (ninguna).
+function madResVarsSync(){
+  document.querySelectorAll("#ms-vars fieldset").forEach(function(fs){
+    const g=fs.querySelector(".ms-grupo"); if(!g) return;
+    const vs=fs.querySelectorAll(".ms-var"), n=Array.prototype.filter.call(vs, function(v){ return v.checked; }).length;
+    g.checked = n>0 && n===vs.length;
+    g.indeterminate = n>0 && n<vs.length;
+  });
+}
 function madResVarsAplicar(){
   const sel={};
   document.querySelectorAll("#ms-vars .ms-var").forEach(function(c){ sel[c.value]=c.checked; });
@@ -6652,7 +6670,9 @@ function _madResCuerpoHTML(R, sel, conPdf, filtro){
   const rejilla=function(html){ return '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:0 10px">'+html+'</div>'; };
   let h="";
   if(salas.length && alguna(MAD_RES_VARS[0].vars.map(function(v){ return v[0]; }))) h+='<h3 style="margin:8px 0 6px;font-size:14px">🏠 Salas</h3>'+rejilla(salas.map(function(s){ return _madResSalaHTML(s, sel, conPdf); }).join(""));
-  if(lotes.length && alguna(["lote-poblacion","lote-mortalidad","lote-dias","lote-relacion","lote-pesos","lote-mudas","des-totales","des-nauplios","des-fertilidad","mortdes","lote-trat"])) h+='<h3 style="margin:8px 0 6px;font-size:14px">🦐 Lotes</h3>'+rejilla(lotes.map(function(l){ return _madResLoteHTML(l, sel, conPdf); }).join(""));
+  // Las variables de la tarjeta de lote son las de todas las fichas salvo Salas y el RAS: se deducen de MAD_RES_VARS, no se teclean aparte.
+  const deLote=[].concat.apply([], MAD_RES_VARS.slice(1).map(function(g){ return g.vars.map(function(v){ return v[0]; }); })).filter(function(id){ return id!=="ras-trat"; });
+  if(lotes.length && alguna(deLote)) h+='<h3 style="margin:8px 0 6px;font-size:14px">🦐 Lotes</h3>'+rejilla(lotes.map(function(l){ return _madResLoteHTML(l, sel, conPdf); }).join(""));
   if(!filtro && sel["ras-trat"]) h+='<h3 style="margin:8px 0 6px;font-size:14px">💧 RAS</h3>'+_madResTarjeta("Tratamientos del RAS", _madResFila("Últimos", _madResTratLista(R.ras, function(t){ return escapeHtml(t.tipo)+(t.sala ? " · "+escapeHtml(t.sala) : "")+": "+escapeHtml(t.productos); })), "", false);
   return h || '<div style="color:#94a3b8;font-size:12px;padding:8px 0">Nada que mostrar con las variables elegidas.</div>';
 }

@@ -9,6 +9,7 @@ import { MAD_MORT_HEADERS } from './ficha-maduracion-mortdesove.schema.js';
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderMadSaldo', 'madSaldoRefrescar', 'madResVarsAbrir', 'madResVarsAplicar', 'madResumenPdf', 'MAD_RES_VARS_KEY',
+  'madResVarsGrupo', 'madResVarsSync', 'madResVarsTodas',
   'madMortReiniciar', 'madMortCollect', 'buildMadMortPayload', 'madMortGuardar', 'madMortPctVivo'];
 const H = {};
 const avisos = [];
@@ -111,6 +112,56 @@ describe('Saldo · resumen con filtro de variables y PDF', () => {
     expect(t).not.toContain('Temperatura');
     expect(t).not.toContain('Oxígeno');
     expect(t).not.toContain('Nauplios/Hembra');
+  });
+
+  it('🔴 la casilla de una FICHA marca o quita todas sus variables, y queda a medias si se toca una suelta', async () => {
+    await H.madSaldoRefrescar();
+    H.madResVarsAbrir();
+    const sets = () => [...document.querySelectorAll('#ms-vars fieldset')];
+    const deFicha = (txt) => sets().find((fs) => fs.querySelector('legend').textContent.includes(txt));
+    const grupo = (txt) => deFicha(txt).querySelector('.ms-grupo');
+    const vars = (txt) => [...deFicha(txt).querySelectorAll('.ms-var')];
+    expect(sets()).toHaveLength(5);
+    expect(grupo('Desoves').getAttribute('onchange')).toBe('madResVarsGrupo(this)');
+    expect(vars('Desoves')[0].getAttribute('onchange')).toBe('madResVarsSync()');
+    expect(sets().every((fs) => fs.querySelector('.ms-grupo').checked)).toBe(true);   // por defecto, todo marcado
+    // Quitar la ficha Desoves entera: sus tres variables se desmarcan y las de Lotes no se tocan.
+    grupo('Desoves').checked = false;
+    H.madResVarsGrupo(grupo('Desoves'));
+    expect(vars('Desoves').map((c) => c.checked)).toEqual([false, false, false]);
+    expect(vars('Lotes').every((c) => c.checked)).toBe(true);
+    // Volver a marcar una sola: la casilla de la ficha queda a medias.
+    vars('Desoves')[1].checked = true;
+    H.madResVarsSync();
+    expect([grupo('Desoves').checked, grupo('Desoves').indeterminate]).toEqual([false, true]);
+    // «Ninguna» deja todas las fichas sin marcar y sin «a medias».
+    H.madResVarsTodas(false);
+    expect(sets().map((fs) => [fs.querySelector('.ms-grupo').checked, fs.querySelector('.ms-grupo').indeterminate]).flat().some(Boolean)).toBe(false);
+    H.madResVarsTodas(true);
+    grupo('Desoves').checked = false;
+    H.madResVarsGrupo(grupo('Desoves'));
+    H.madResVarsAplicar();
+    const guardado = JSON.parse(localStorage.getItem(H.MAD_RES_VARS_KEY));
+    expect([guardado['des-totales'], guardado['des-nauplios'], guardado['des-fertilidad'], guardado['lote-pesos']]).toEqual([false, false, false, true]);
+    expect(Object.keys(guardado)).not.toContain('undefined');   // la casilla de ficha no se guarda como variable
+    const t = cuerpo().textContent;
+    expect(t).not.toContain('Nauplios/Hembra');
+    expect(t).toContain('Peso promedio');
+  });
+
+  it('una ficha de lote sola (sólo Mortalidad ♀) sigue pintando la tarjeta del lote', async () => {
+    await H.madSaldoRefrescar();
+    H.madResVarsAbrir();
+    document.querySelectorAll('#ms-vars .ms-var').forEach((c) => { c.checked = c.value === 'mortdes'; });
+    H.madResVarsAplicar();
+    expect(cuerpo().textContent).toContain('Mortalidad ♀ en desove');
+    expect(cuerpo().textContent).not.toContain('🏠 Salas');
+    // Sólo «Tratamientos del RAS»: es del RAS, no del lote; no pinta tarjetas de lote vacías.
+    H.madResVarsAbrir();
+    document.querySelectorAll('#ms-vars .ms-var').forEach((c) => { c.checked = c.value === 'ras-trat'; });
+    H.madResVarsAplicar();
+    expect(cuerpo().textContent).toContain('💧 RAS');
+    expect(cuerpo().textContent).not.toContain('Lote AB');
   });
 
   it('🔴 PDF individual de un lote sólo lleva ESE lote; el de todo lleva salas y lotes', async () => {
