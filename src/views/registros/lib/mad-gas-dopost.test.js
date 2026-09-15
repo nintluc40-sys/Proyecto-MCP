@@ -43,6 +43,7 @@ import { MAD_MOV_HEADERS } from './ficha-maduracion-movimientos.schema.js';
 import { MAD_FIN_HEADERS, buildFinRows } from './ficha-maduracion-fin-ciclo.schema.js';
 import { MAD_TRAT_HEADERS } from './ficha-maduracion-tratamientos.schema.js';
 import { MAD_MORT_HEADERS } from './ficha-maduracion-mortdesove.schema.js';
+import { MAD_ALIM_HEADERS } from './ficha-maduracion-alimentacion.schema.js';
 import { REPRO_MATRIZ_HEADERS, REPRO_EVENTO, REPRO_TRANSFER_TIPO, buildAltaBatch, buildEventBatch, buildTransferBatch, matrixIndexFromRows } from './reproductivo.data.js';
 
 const leer = (u) => readFileSync(new URL(u, import.meta.url), 'utf8').split('\r\n').join('\n');
@@ -412,6 +413,30 @@ describe('GAS · «Maduración Mortalidad Desove», la hoja nueva (2026-09-15)',
     expect([hoja.filas[1][MAD_MORT_HEADERS.indexOf('Hembras muertas')], hoja.filas[1][MAD_MORT_HEADERS.indexOf('Observaciones')]]).toEqual([3, 'revisado']);
     const cruzada = MAD_MORT_HEADERS.map((h) => (h === 'Hembras muertas' ? 'Hembras que entran' : h === 'Hembras que entran' ? 'Hembras muertas' : h));
     const r = gas({ 'Maduración Mortalidad Desove': hojaFalsa([MAD_MORT_HEADERS]) }).post({ sheetName: 'Maduración Mortalidad Desove', headers: cruzada, rows: [filaVacia(cruzada)] });
+    expect(r.message).toContain('Esquema desactualizado');
+  });
+});
+
+describe('GAS · «Maduración Alimentación», la hoja nueva (2026-09-15)', () => {
+  it('🔴 se permite, nace con sus cabeceras, fusiona por ID (el ID no es la última del ENVÍO corto) y la guarda V3 la vigila', () => {
+    const hojas = {};
+    const g = gas(hojas);
+    const fila = (v) => conValores(MAD_ALIM_HEADERS, v);
+    const id = '2026-09-15-S1-T1';
+    expect(g.post({ sheetName: 'Maduración Alimentación', headers: MAD_ALIM_HEADERS,
+      rows: [fila({ Fecha: '2026-09-15', Sala: 'Sala 1', Tanque: 1, Hembras: 33, Machos: 59, 'Total (kg/día)': 0.763, Tomas: '06:00 Krill 1', ID: id })] }).status).toBe('ok');
+    const hoja = hojas['Maduración Alimentación'];
+    expect(hoja.filas[0]).toEqual(MAD_ALIM_HEADERS);
+    // Reenviar la misma fila corregida REEMPLAZA por ID (lo vacío conserva).
+    expect(g.post({ sheetName: 'Maduración Alimentación', headers: MAD_ALIM_HEADERS, rows: [fila({ Fecha: '2026-09-15', Sala: 'Sala 1', Tanque: 1, 'Total (kg/día)': 0.8, ID: id })] }).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(2);
+    expect([hoja.filas[1][MAD_ALIM_HEADERS.indexOf('Hembras')], hoja.filas[1][MAD_ALIM_HEADERS.indexOf('Total (kg/día)')]]).toEqual([33, 0.8]);
+    // El número de tanque se repite entre salas (T1 de la Sala 1 y de la Sala 4): por ID son dos filas; una llave por
+    // posición (Fecha, Tanque, Lotes) las fundiría en una.
+    expect(g.post({ sheetName: 'Maduración Alimentación', headers: MAD_ALIM_HEADERS, rows: [fila({ Fecha: '2026-09-15', Sala: 'Sala 4', Tanque: 1, Hembras: 50, ID: '2026-09-15-S4-T1' })] }).status).toBe('ok');
+    expect(hoja.filas.map((f) => f[MAD_ALIM_HEADERS.indexOf('ID')])).toEqual(['ID', id, '2026-09-15-S4-T1']);
+    const cruzada = MAD_ALIM_HEADERS.map((h) => (h === 'Hembras' ? 'Machos' : h === 'Machos' ? 'Hembras' : h));
+    const r = gas({ 'Maduración Alimentación': hojaFalsa([MAD_ALIM_HEADERS]) }).post({ sheetName: 'Maduración Alimentación', headers: cruzada, rows: [filaVacia(cruzada)] });
     expect(r.message).toContain('Esquema desactualizado');
   });
 });

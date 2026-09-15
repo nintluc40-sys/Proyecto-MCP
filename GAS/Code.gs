@@ -21,14 +21,16 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "61a3c7e2eb8b";
+const GAS_VERSION = "e70b1986f901";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
 // no nombra una capacidad no la tiene.
 //  · "matriz-reciclaje": el alta de una hembra con el microchip de una MUERTA entra como hembra
 //    nueva (ver llaveMatriz_). Un GAS anterior la FUNDIRÍA sobre la fila de la muerta.
-const GAS_CAPACIDADES = ["matriz-reciclaje"];
+//  · "mad-alimentacion" (2026-09-15): conoce la hoja «Maduración Alimentación». Un GAS anterior
+//    la rechazaría («Hoja no permitida») y el envío esperaría en la cola hasta caducar.
+const GAS_CAPACIDADES = ["matriz-reciclaje", "mad-alimentacion"];
 
 const SS_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
 
@@ -64,6 +66,8 @@ const ALLOWED = [
   "Maduración Tratamientos",
   // Mortalidad de hembras en tanques de desove y de recuperación (2026-09-15), por columna "ID".
   "Maduración Mortalidad Desove",
+  // Alimentación de Maduración (2026-09-15): una fila por fecha, sala y tanque, por columna "ID".
+  "Maduración Alimentación",
   "BIOMOL",
   "Registro_Supervisión",
   "Registro_Desinfección",
@@ -267,7 +271,8 @@ function doPost(e) {
                || payload.sheetName === "Maduración Movimientos"
                || payload.sheetName === "Maduración Fin de Ciclo"
                || payload.sheetName === "Maduración Tratamientos"
-               || payload.sheetName === "Maduración Mortalidad Desove";
+               || payload.sheetName === "Maduración Mortalidad Desove"
+               || payload.sheetName === "Maduración Alimentación";
     // Columna Trovan ID (0-indexed) por hoja: se fuerza a formato TEXTO ("@") al
     // escribir, así Sheets NO reinterpreta el código como notación científica ni
     // le quita ceros a la izquierda (es un identificador, no un número).
@@ -794,14 +799,14 @@ function ensureHeaders(ws, headers) {
 //     corrido (Sala sin la Fase 6 sigue escribiendo, y el merge conserva la 21.ª).
 //   · Una cabecera en blanco en la hoja no se compara: no hay con qué.
 //   · Espacios y la forma Unicode de los acentos no cuentan como diferencia.
-// Sólo estas seis. El registro reproductivo también es posicional, pero su esquema no ha
+// Sólo las de esta lista (el registro operativo). El reproductivo también es posicional, pero su esquema no ha
 // cambiado, y bloquearlo por un nombre retocado a mano pararía el trabajo de campo.
 // El cliente, ante el rechazo, no marca nada como sincronizado: lo tecleado se queda en
 // el dispositivo hasta que se actualice la app (medido en el cliente de f1d9687).
 var MAD_ESQUEMA_VIGILADO = [
   "Maduración Sala", "Maduración Tanques", "Maduración Lotes",
   "Maduración Ingreso", "Maduración Movimientos", "Maduración Fin de Ciclo",
-  "Maduración Tratamientos", "Maduración Mortalidad Desove"
+  "Maduración Tratamientos", "Maduración Mortalidad Desove", "Maduración Alimentación"
 ];
 function _cabeceraNorm_(v) {
   var s = String(v == null ? "" : v).trim();

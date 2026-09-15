@@ -45,6 +45,7 @@ import {
   MAD_TRAT_HEADERS,
 } from '../views/registros/lib/ficha-maduracion-tratamientos.schema.js';
 import { MAD_MORT_SHEET, MAD_MORT_HEADERS } from '../views/registros/lib/ficha-maduracion-mortdesove.schema.js';
+import { MAD_ALIM_SHEET, MAD_ALIM_HEADERS } from '../views/registros/lib/ficha-maduracion-alimentacion.schema.js';
 
 /** [nombre real de la pestaña, cabeceras SEGÚN SU MÓDULO] */
 const DECLARADAS = [
@@ -53,6 +54,7 @@ const DECLARADAS = [
   [MAD_FIN_SHEET, MAD_FIN_HEADERS],
   [MAD_TRAT_SHEET, MAD_TRAT_HEADERS],
   [MAD_MORT_SHEET, MAD_MORT_HEADERS],
+  [MAD_ALIM_SHEET, MAD_ALIM_HEADERS],
 ];
 
 /** Una fila con esas cabeceras y valores vacíos: detectSheetName sólo mira las CLAVES. */
@@ -60,7 +62,7 @@ const filaDe = (cabeceras) => Object.fromEntries(cabeceras.map((c) => [c, '']));
 
 describe('detectSheetName · las hojas de Maduración que aún no existen', () => {
   it('el fixture viene de los módulos y no está vacío', () => {
-    expect(DECLARADAS).toHaveLength(5);
+    expect(DECLARADAS).toHaveLength(6);
     for (const [n, cab] of DECLARADAS) {
       expect(cab.length, n + ' sin cabeceras').toBeGreaterThan(0);
       expect(cab[cab.length - 1], n + ' no acaba en ID').toBe('ID');
@@ -99,6 +101,10 @@ describe('detectSheetName · las hojas de Maduración que aún no existen', () =
 
   it('Mortalidad Desove se sostiene por «Tipo de tanque»: sin ella se cae', () => {
     expect(detectSheetName([filaDe(MAD_MORT_HEADERS.filter((h) => h !== 'Tipo de tanque'))], 0)).not.toBe('Maduracion');
+  });
+
+  it('Alimentación (2026-09-15) se sostiene por «Sala» + «Hembras/Machos» (la regla general): sin «Sala» se cae', () => {
+    expect(detectSheetName([filaDe(MAD_ALIM_HEADERS.filter((h) => h !== 'Sala'))], 0)).not.toBe('Maduracion');
   });
 
   it('Tratamientos se sostiene por «Productos RAS»: sin ella se cae', () => {

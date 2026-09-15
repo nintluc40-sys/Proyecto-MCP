@@ -2478,7 +2478,7 @@ const STANDARD_TABS = [...FICHAS,"desinfeccion","fotos","historial","blanco"];
 // no saben qué lote, piscina ni código genético corresponde a cada tanque.
 // ⚠ NO entra en MAD_FICHAS: no es una grilla por día con CRUD local, es un formulario
 // de evento, como «reproductivo».
-const MAD_TABS      = ["ingreso","saldo","movimientos","salas","tanques","desoves","mortdes","fin","tratamientos","reproductivo","fotos"];
+const MAD_TABS      = ["ingreso","saldo","movimientos","salas","tanques","desoves","mortdes","fin","tratamientos","alimentacion","reproductivo","fotos"];
 // Tabs del módulo Biomol — form + historial inline + fotos
 const BIO_TABS      = ["biomol","fotos"];
 // Tabs del módulo As Técnico — form de supervisión + registro de mareas + fotos
@@ -2502,6 +2502,7 @@ const TAB_META = {
   mortdes:  ["📋","Inf. Supervisor"],
   fin:      ["🏁","Fin de Ciclo"],
   tratamientos: ["🧪","Tratamientos"],
+  alimentacion: ["🍤","Alimentación"],
   ingreso:  ["📥","Ingreso"],
   saldo:    ["⚖️","Saldo"],
   movimientos: ["🔄","Movimientos"],
@@ -2576,6 +2577,7 @@ function selTab(t){
   if(t==="mortdes") renderMadMortDesove();
   if(t==="fin") renderMadFinCiclo();
   if(t==="tratamientos") renderMadTratamientos();
+  if(t==="alimentacion") renderMadAlimentacion();
   if(t==="reproductivo") renderMadReproductivo();
   if(t==="biomol") renderBiomol();
   if(t==="ast")    renderAst();
@@ -9245,6 +9247,639 @@ function renderMadMortDesove(){
     +   '<div id="mm-report" style="margin-top:12px"></div>'
     +   '<div id="mm-log">'+madMortLogHTML()+'</div>'
     + '</div></div>';
+}
+
+// ── Maduración · ALIMENTACIÓN (2026-09-15, usuario) ──────────────────────────
+// Copia inline de `ficha-maduracion-alimentacion.schema.js` (la paridad la ata). Hoja «ALIMENTACION %» del Excel del
+// módulo: por sala, tomas (hora, alimento, % de la biomasa); ración de un tanque = biomasa (♀ + ♂) × % ÷ 100. Animales
+// del libro; peso de la última biometría del lote en ese tanque o, si no, de su Ingreso. Hoja nueva, por «ID» con MERGE.
+const MAD_ALIM_SHEET = "Maduración Alimentación";
+const MAD_ALIM_PRODUCTOS = ["Poliqueto","Redy Mate","Calamar","Mejillón","Krill","Vitallis"];
+const MAD_ALIM_PCT_MIN = 0.25;
+const MAD_ALIM_PCT_MAX = 2;
+const MAD_ALIM_DIAS_MES = 30;
+const MAD_ALIM_TOMAS_ESTANDAR = [
+  ["06:00","Redy Mate",0.25], ["07:00","Krill",1.5], ["08:30","Calamar",2], ["10:00","Poliqueto",1],
+  ["11:30","Calamar",2], ["13:00","Krill",1.5], ["14:00","",""], ["15:00","Calamar",1.5], ["16:00","Krill",0.75],
+  ["18:00","Redy Mate",0.25], ["20:00","Calamar",1.5], ["22:00","Mejillón",0.75], ["23:00","Krill",0.75], ["02:00","Vitallis",0.3]
+].map(function(t){ return { hora:t[0], producto:t[1], pct:t[2] }; });
+const MAD_ALIM_COLUMNS = [
+  { h:"Fecha", k:"fecha" }, { h:"Sala", k:"sala" }, { h:"Tanque", k:"tanque" }, { h:"Lotes", k:"lotes" },
+  { h:"Hembras", k:"hembras" }, { h:"Machos", k:"machos" }, { h:"Peso hembras (g)", k:"pesoH" }, { h:"Peso machos (g)", k:"pesoM" },
+  { h:"Fuente del peso", k:"fuente" }, { h:"Biomasa hembras (kg)", k:"biomasaH" }, { h:"Biomasa machos (kg)", k:"biomasaM" }, { h:"Biomasa total (kg)", k:"biomasa" }
+].concat(MAD_ALIM_PRODUCTOS.map(function(p){ return { h:p+" (kg/día)", k:"kg:"+p }; }))
+ .concat([{ h:"Total (kg/día)", k:"kgDia" }, { h:"Tomas", k:"tomas" }, { h:"ID", k:"id" }]);   // ⚠ el ID, el ÚLTIMO
+const MAD_ALIM_HEADERS = MAD_ALIM_COLUMNS.map(function(c){ return c.h; });
+function _madAlimTxt(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
+function _madAlimR2(n){ return Math.round(n*100)/100; }
+function _madAlimR3(n){ return Math.round(n*1000)/1000; }
+function _madAlimF10(v){ return _madAlimTxt(v).slice(0,10); }
+function _madAlimEsFecha(v){ return /^\d{4}-\d{2}-\d{2}$/.test(v); }
+function _madAlimEntero(v){ if(_madAlimTxt(v)==="") return ""; const n=parseInt(v,10); return (Number.isFinite(n) && n>=0) ? n : ""; }
+function madAlimNum(v){ const t=_madAlimTxt(v).replace(",","."); if(t==="") return ""; const n=Number(t); return (Number.isFinite(n) && n>=0) ? n : ""; }
+function madAlimHora(v){
+  const m=/^(\d{1,2}):(\d{2})$/.exec(_madAlimTxt(v));
+  if(!m || +m[1]>23 || +m[2]>59) return "";
+  return (m[1].length===1 ? "0" : "")+m[1]+":"+m[2];
+}
+function madAlimOrdenDelDia(hora){ const h=madAlimHora(hora); if(!h) return Infinity; return (+h.slice(0,2)*60 + +h.slice(3) - 360 + 1440) % 1440; }
+function _madAlimPlano(s){ return _madAlimTxt(s).normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g,"").toLowerCase(); }
+const _MAD_ALIM_ALIAS = { redimate:"Redy Mate" };
+function madAlimProducto(v){
+  const p=_madAlimPlano(v);
+  if(!p) return "";
+  return MAD_ALIM_PRODUCTOS.filter(function(o){ return _madAlimPlano(o)===p; })[0] || _MAD_ALIM_ALIAS[p] || "";
+}
+function madAlimOrdenarTomas(tomas){
+  return (tomas||[]).map(function(t,i){ return { t:t||{}, i:i }; }).sort(function(a,b){
+    const x=madAlimOrdenDelDia(a.t.hora), y=madAlimOrdenDelDia(b.t.hora);
+    return x===y ? a.i-b.i : x-y;
+  }).map(function(o){ return { hora:_madAlimTxt(o.t.hora), producto:_madAlimTxt(o.t.producto), pct:_madAlimTxt(o.t.pct) }; });
+}
+function madAlimTomasActivas(tomas){
+  return madAlimOrdenarTomas(tomas)
+    .filter(function(t){ return madAlimHora(t.hora) && madAlimProducto(t.producto) && madAlimNum(t.pct)!=="" && madAlimNum(t.pct)>0; })
+    .map(function(t){ return { hora:madAlimHora(t.hora), producto:madAlimProducto(t.producto), pct:madAlimNum(t.pct) }; });
+}
+function madAlimTomasTexto(tomas){
+  return madAlimOrdenarTomas(tomas).filter(function(t){ return madAlimHora(t.hora); }).map(function(t){
+    const p=madAlimProducto(t.producto), pct=madAlimNum(t.pct);
+    return madAlimHora(t.hora)+" "+(p ? p+(pct!=="" ? " "+pct : "") : "—");
+  }).join("; ");
+}
+function madAlimTomasDesdeTexto(s){
+  return _madAlimTxt(s).split(";").map(function(parte){
+    const m=/^(\d{1,2}:\d{2})\s+(.*)$/.exec(_madAlimTxt(parte));
+    if(!m || !madAlimHora(m[1])) return null;
+    const resto=_madAlimTxt(m[2]), n=/^(.*?)\s+(\d+(?:[.,]\d+)?)$/.exec(resto);
+    const producto=madAlimProducto(n ? n[1] : resto);
+    return { hora:madAlimHora(m[1]), producto:producto, pct:(producto && n) ? madAlimNum(n[2]) : "" };
+  }).filter(Boolean);
+}
+function madAlimCalcularSala(sala, tomas, tanques){
+  const activas=madAlimTomasActivas(tomas);
+  const pctTotal=activas.reduce(function(a,t){ return a+t.pct; },0);
+  const porProductoPct={};
+  MAD_ALIM_PRODUCTOS.forEach(function(p){ porProductoPct[p]=0; });
+  activas.forEach(function(t){ porProductoPct[t.producto]+=t.pct; });
+  const tq=(tanques||[]).map(function(x0){
+    const x=x0||{}, hembras=_madAlimEntero(x.hembras)||0, machos=_madAlimEntero(x.machos)||0, pesoH=madAlimNum(x.pesoH), pesoM=madAlimNum(x.pesoM);
+    const gH=hembras*(pesoH==="" ? 0 : pesoH), gM=machos*(pesoM==="" ? 0 : pesoM), g=gH+gM;
+    const porProducto={};
+    MAD_ALIM_PRODUCTOS.forEach(function(p){ porProducto[p]=_madAlimR3((g*porProductoPct[p])/100/1000); });
+    return { tanque:_madAlimEntero(x.tanque)==="" ? _madAlimTxt(x.tanque) : _madAlimEntero(x.tanque), lotes:_madAlimTxt(x.lotes), hembras:hembras, machos:machos, pesoH:pesoH, pesoM:pesoM,
+      fuente:_madAlimTxt(x.fuente), gramos:g, biomasaH:_madAlimR3(gH/1000), biomasaM:_madAlimR3(gM/1000), biomasa:_madAlimR3(g/1000),
+      kgDia:_madAlimR3((g*pctTotal)/100/1000), porProducto:porProducto,
+      tomasG:activas.map(function(t){ return Math.round(((g*t.pct)/100)*10)/10; }) };
+  });
+  const gSala=tq.reduce(function(a,t){ return a+t.gramos; },0);
+  return {
+    sala:_madAlimTxt(sala),
+    tomas:activas.map(function(t){ return { hora:t.hora, producto:t.producto, pct:t.pct, kgSala:_madAlimR3((gSala*t.pct)/100/1000) }; }),
+    tanques:tq.map(function(t){ const c={}; for(const k in t){ if(k!=="gramos") c[k]=t[k]; } return c; }),
+    productos:MAD_ALIM_PRODUCTOS.map(function(p){
+      const kgDia=_madAlimR3((gSala*porProductoPct[p])/100/1000);
+      return { producto:p, pct:_madAlimR2(porProductoPct[p]), kgDia:kgDia, kgMes:_madAlimR2(kgDia*MAD_ALIM_DIAS_MES) };
+    }),
+    totales:{
+      hembras:tq.reduce(function(a,t){ return a+t.hembras; },0), machos:tq.reduce(function(a,t){ return a+t.machos; },0),
+      biomasaH:_madAlimR3(tq.reduce(function(a,t){ return a+t.hembras*(t.pesoH==="" ? 0 : t.pesoH); },0)/1000),
+      biomasaM:_madAlimR3(tq.reduce(function(a,t){ return a+t.machos*(t.pesoM==="" ? 0 : t.pesoM); },0)/1000),
+      biomasa:_madAlimR3(gSala/1000), pctDia:_madAlimR2(pctTotal),
+      kgDia:_madAlimR3((gSala*pctTotal)/100/1000), kgMes:_madAlimR2(_madAlimR3((gSala*pctTotal)/100/1000)*MAD_ALIM_DIAS_MES)
+    }
+  };
+}
+function madAlimResumenGeneral(salasCalculadas){
+  const salas=salasCalculadas||[];
+  const productos=MAD_ALIM_PRODUCTOS.map(function(p){
+    const kgDia=_madAlimR3(salas.reduce(function(a,s){ return a+((s.productos||[]).filter(function(x){ return x.producto===p; })[0] || { kgDia:0 }).kgDia; },0));
+    return { producto:p, kgDia:kgDia, kgMes:_madAlimR2(kgDia*MAD_ALIM_DIAS_MES) };
+  });
+  const suma=function(k){ return salas.reduce(function(a,s){ return a+((s.totales||{})[k]||0); },0); };
+  const kgDia=_madAlimR3(suma("kgDia"));   // de los totales de cada sala, no de alimentos ya redondeados
+  return { productos:productos, totales:{ hembras:suma("hembras"), machos:suma("machos"), biomasa:_madAlimR3(suma("biomasa")), kgDia:kgDia, kgMes:_madAlimR2(kgDia*MAD_ALIM_DIAS_MES) } };
+}
+function madAlimPoblacion(libro){
+  const out={ produccion:{ hembras:0, machos:0 }, cuarentena:{ hembras:0, machos:0 } };
+  Object.keys(libro.lotes).forEach(function(n){
+    (libro.lotes[n].salas||[]).forEach(function(S){
+      const k=S.estado===MAD_EST_PROD ? "produccion" : S.estado===MAD_EST_CUAR ? "cuarentena" : "";
+      if(!k) return;
+      out[k].hembras+=S.hembras; out[k].machos+=S.machos;
+    });
+  });
+  return out;
+}
+function madAlimTanquesDelLibro(libro){
+  const porSala={};
+  Object.keys(libro.tanques).forEach(function(k){
+    const T=libro.tanques[k], vivos=T.composicion.filter(function(c){ return c.machos>0 || c.hembras>0; });
+    if(!vivos.length) return;
+    if(!porSala[T.sala]) porSala[T.sala]=[];
+    const lotes=[];
+    vivos.forEach(function(c){ if(lotes.indexOf(c.lote)===-1) lotes.push(c.lote); });
+    porSala[T.sala].push({ tanque:T.tanque, lotes:lotes.join(", "), hembras:T.hembras, machos:T.machos });
+  });
+  Object.keys(porSala).forEach(function(s){ porSala[s].sort(function(a,b){ return a.tanque-b.tanque; }); });
+  return porSala;
+}
+function madAlimPesosDeReferencia(fuentes, libro){
+  const f=fuentes||{}, alDia={};
+  const libroAl=function(fecha){ if(!alDia[fecha]) alDia[fecha]=madConstruirLibro(f, { hoy:fecha, hasta:fecha }); return alDia[fecha]; };
+  const filasTq=(f.tanques||[]).filter(function(r){ return _madAlimTxt(r.Sala) && _madAlimEntero(r.Tanque)!=="" && _madAlimEsFecha(_madAlimF10(r.Fecha)); });
+  const ingresos=f.ingresos||[], vacio={ valor:"", fuente:"", fecha:"" }, out={};
+  Object.keys(libro.tanques).forEach(function(kt){
+    const T=libro.tanques[kt];
+    const lotes=T.composicion.filter(function(c){ return c.machos>0 || c.hembras>0; }).map(function(c){ return c.lote; });
+    if(!lotes.length) return;
+    const k=madUbicKey(T.sala, T.tanque);
+    const desde=lotes.map(function(l){ return (libro.lotes[l]||{}).ingreso || ""; }).filter(Boolean).sort()[0] || "";
+    const suyas=filasTq.filter(function(r){ return madUbicKey(r.Sala, r.Tanque)===k && _madAlimF10(r.Fecha)>=desde; });
+    const biometria=function(col){
+      const con=suyas.filter(function(r){ return madAlimNum(r[col])!=="" && madAlimNum(r[col])>0; });
+      const fechas=con.map(function(r){ return _madAlimF10(r.Fecha); }).filter(function(x,i,a){ return a.indexOf(x)===i; }).sort().reverse();
+      for(let i=0;i<fechas.length;i++){
+        const d=fechas[i], Tf=libroAl(d).tanques[k];
+        if(!Tf || !Tf.composicion.some(function(c){ return lotes.indexOf(c.lote)!==-1 && (c.machos>0 || c.hembras>0); })) continue;
+        const v=con.filter(function(r){ return _madAlimF10(r.Fecha)===d; }).map(function(r){ return madAlimNum(r[col]); });
+        return { valor:_madAlimR2(v.reduce(function(a,b){ return a+b; },0)/v.length), fuente:"Biometría", fecha:d };
+      }
+      return null;
+    };
+    const ingreso=function(col, colAnimales){
+      const del=ingresos.filter(function(r){ return lotes.indexOf(_madAlimTxt(r.Lote))!==-1 && madAlimNum(r[col])!=="" && madAlimNum(r[col])>0; });
+      const mismos=del.filter(function(r){ return madUbicKey(r.Sala, r.Tanque)===k; }), usar=mismos.length ? mismos : del;
+      if(!usar.length) return null;
+      const n=usar.reduce(function(a,r){ return a+(_madAlimEntero(r[colAnimales])||0); },0);
+      const valor=n>0
+        ? usar.reduce(function(a,r){ return a+madAlimNum(r[col])*(_madAlimEntero(r[colAnimales])||0); },0)/n
+        : usar.reduce(function(a,r){ return a+madAlimNum(r[col]); },0)/usar.length;
+      return { valor:_madAlimR2(valor), fuente:"Ingreso", fecha:usar.map(function(r){ return _madAlimF10(r.Fecha); }).sort().reverse()[0] || "" };
+    };
+    out[k]={
+      hembras:biometria("Peso promedio hembras (g)") || ingreso("Peso promedio hembras (g)", "Hembras") || vacio,
+      machos:biometria("Peso promedio machos (g)") || ingreso("Peso promedio machos (g)", "Machos") || vacio
+    };
+  });
+  return out;
+}
+function madAlimAgendasDeHoja(filas){
+  const out={};
+  (filas||[]).forEach(function(r){
+    const sala=_madAlimTxt(r.Sala), fecha=_madAlimF10(r.Fecha), tomas=_madAlimTxt(r.Tomas);
+    if(!sala || !_madAlimEsFecha(fecha) || !tomas) return;
+    if(!out[sala] || fecha>=out[sala].fecha) out[sala]={ fecha:fecha, tomas:madAlimTomasDesdeTexto(tomas) };
+  });
+  return out;
+}
+function madAlimRowId(fecha, sala, tanque){ return sanitizeStr(fecha,10)+"-"+madIngSalaTag(sala)+"-T"+_madAlimEntero(tanque); }
+function madAlimBuildRows(model){
+  const m=model||{}, fecha=sanitizeStr(m.fecha,10), filas=[];
+  (m.salas||[]).forEach(function(s0){
+    const s=s0||{}, sala=sanitizeStr(s.sala,30);
+    if(!sala) return;
+    const calc=madAlimCalcularSala(sala, s.tomas, s.tanques), texto=madAlimTomasTexto(s.tomas);
+    calc.tanques.forEach(function(t){
+      if(t.hembras+t.machos===0 || _madAlimEntero(t.tanque)==="") return;
+      const v={ fecha:fecha, sala:sala, tanque:t.tanque, lotes:sanitizeStr(t.lotes,120), hembras:t.hembras, machos:t.machos, pesoH:t.pesoH, pesoM:t.pesoM,
+        fuente:sanitizeStr(t.fuente,120), biomasaH:t.biomasaH, biomasaM:t.biomasaM, biomasa:t.biomasa, kgDia:t.kgDia, tomas:texto, id:madAlimRowId(fecha, sala, t.tanque) };
+      MAD_ALIM_PRODUCTOS.forEach(function(p){ v["kg:"+p]=t.porProducto[p]; });
+      filas.push(MAD_ALIM_COLUMNS.map(function(c){ return v[c.k]===undefined ? "" : v[c.k]; }));
+    });
+  });
+  return filas;
+}
+function buildMadAlimPayload(model){ return { sheetName: MAD_ALIM_SHEET, headers: MAD_ALIM_HEADERS.slice(), rows: madAlimBuildRows(model) }; }
+function madAlimValidar(model){
+  const m=model||{}, errores=[], avisos=[];
+  if(!_madAlimEsFecha(String(m.fecha||""))) errores.push("La fecha no es válida.");
+  let filas=0;
+  (m.salas||[]).forEach(function(s0){
+    const s=s0||{}, sala=sanitizeStr(s.sala,30);
+    if(!sala) return;
+    const vistas={};
+    (s.tomas||[]).forEach(function(t0, i){
+      const t=t0||{}, et=sala+" · toma "+(i+1)+(madAlimHora(t.hora) ? " ("+madAlimHora(t.hora)+")" : "");
+      if(_madAlimTxt(t.hora)==="" && _madAlimTxt(t.producto)==="" && _madAlimTxt(t.pct)==="") return;
+      if(!madAlimHora(t.hora)) errores.push(et+": la hora no es válida (usa HH:MM).");
+      if(_madAlimTxt(t.producto)!=="" && !madAlimProducto(t.producto)) errores.push(et+": «"+_madAlimTxt(t.producto)+"» no es un alimento de la lista.");
+      if(_madAlimTxt(t.pct)!=="" && madAlimNum(t.pct)==="") errores.push(et+": el % no es una cifra válida.");
+      const p=madAlimProducto(t.producto), pct=madAlimNum(t.pct);
+      if(!p && pct!=="" && pct>0) errores.push(et+": tiene % pero no alimento.");
+      if(p && (pct==="" || pct===0)) avisos.push(et+": "+p+" sin %: no reparte alimento.");
+      if(p && pct!=="" && pct>0 && (pct<MAD_ALIM_PCT_MIN || pct>MAD_ALIM_PCT_MAX)) avisos.push(et+": "+pct+" % está fuera de lo habitual ("+MAD_ALIM_PCT_MIN+" a "+MAD_ALIM_PCT_MAX+").");
+      const clave=madAlimHora(t.hora)+"|"+p;
+      if(p && madAlimHora(t.hora)){
+        if(vistas[clave]===1) errores.push(et+": "+p+" ya está a esa hora. Júntalas.");
+        vistas[clave]=1;
+      }
+    });
+    let conAnimales=0;
+    (s.tanques||[]).forEach(function(x0){
+      const x=x0||{}, et=sala+" · tanque "+_madAlimTxt(x.tanque);
+      ["hembras","machos"].forEach(function(k){ if(_madAlimTxt(x[k])!=="" && _madAlimEntero(x[k])==="") errores.push(et+": "+k+" no es una cifra válida."); });
+      [["pesoH","hembras"],["pesoM","machos"]].forEach(function(par){
+        if(_madAlimTxt(x[par[0]])!=="" && madAlimNum(x[par[0]])==="") errores.push(et+": el peso de "+par[1]+" no es una cifra válida.");
+        else if((_madAlimEntero(x[par[1]])||0)>0 && !(madAlimNum(x[par[0]])>0)) avisos.push(et+": hay "+par[1]+" sin peso; su biomasa cuenta 0.");
+      });
+      if((_madAlimEntero(x.hembras)||0)+(_madAlimEntero(x.machos)||0)>0 && _madAlimEntero(x.tanque)!==""){ conAnimales++; filas++; }
+    });
+    if(conAnimales && !madAlimTomasActivas(s.tomas).length) errores.push(sala+": tiene animales y ninguna toma con alimento y %.");
+  });
+  if(!filas && !errores.length) errores.push("No hay tanques con animales que guardar: pulsa 🔄 Leer saldo y pesos.");
+  return { errores: errores, avisos: avisos };
+}
+
+// ── Maduración · Alimentación · interfaz ─────────────────────────────────────
+// La AGENDA de cada sala vive en este dispositivo (MAD_ALIM_CFG_KEY) y en la hoja (columna «Tomas»): al leer, la última
+// guardada en la hoja manda salvo que aquí haya cambios sin guardar. Los tanques y pesos, en _madAlim (última lectura).
+const MAD_ALIM_CFG_KEY = "larv4_mad_alim_cfg";
+const MAD_ALIM_LOG_KEY = "larv4_mad_alim_log";
+let _madAlim = null;
+function madAlimCfgLeer(){
+  try{ const v=JSON.parse(localStorage.getItem(MAD_ALIM_CFG_KEY)||"{}"); return (v && typeof v==="object" && !Array.isArray(v)) ? v : {}; }catch(_){ return {}; }
+}
+function madAlimCfgGuardar(cfg){ try{ localStorage.setItem(MAD_ALIM_CFG_KEY, JSON.stringify(cfg)); }catch(_){} }
+function madAlimTomasDe(sala){
+  const c=madAlimCfgLeer()[sala];
+  return (c && Array.isArray(c.tomas) && c.tomas.length) ? c.tomas : MAD_ALIM_TOMAS_ESTANDAR.map(function(t){ return { hora:t.hora, producto:t.producto, pct:t.pct }; });
+}
+function _madAlimSalas(){
+  const s=MAD_SALA_OPTS.slice();
+  if(_madAlim) Object.keys(_madAlim.tanques).forEach(function(x){ if(s.indexOf(x)===-1) s.push(x); });
+  return s;
+}
+function _madAlimFuenteTxt(p){ return (p && p.fuente) ? p.fuente+(p.fecha ? " "+p.fecha : "") : ""; }
+function _madAlimTomaFilaHTML(t){
+  const x=t||{}, prod=madAlimProducto(x.producto), pct=(x.pct===""||x.pct===null||x.pct===undefined) ? "" : String(x.pct);
+  return '<tr class="ma-toma">'
+    + '<td><input class="ma-hora" type="time" value="'+escapeHtml(madAlimHora(x.hora))+'" onchange="madAlimTomaCambio(this, true)" style="'+_MAD_ING_INP+';width:110px"></td>'
+    + '<td><select class="ma-prod" data-v="'+escapeHtml(prod)+'" onchange="madAlimTomaCambio(this)" style="'+_MAD_ING_INP+';width:130px"><option value="">— sin alimento —</option>'
+    +   MAD_ALIM_PRODUCTOS.map(function(p){ return '<option value="'+escapeHtml(p)+'"'+(prod===p ? ' selected' : '')+'>'+escapeHtml(p)+'</option>'; }).join("")+'</select></td>'
+    + '<td><input class="ma-pct" type="number" min="0" max="'+MAD_ALIM_PCT_MAX+'" step="0.05" inputmode="decimal" value="'+escapeHtml(pct)+'" oninput="madAlimTomaCambio(this)" style="'+_MAD_ING_INP+';width:80px"></td>'
+    + '<td class="ma-kg-toma" style="text-align:right;white-space:nowrap">—</td>'
+    + '<td><button class="btn" type="button" onclick="madAlimTomaQuitar(this)" title="Quitar esta toma" style="font-size:11px">✕</button></td></tr>';
+}
+function _madAlimTanqueFilaHTML(sala, t){
+  const p=(_madAlim && _madAlim.pesos[madUbicKey(sala, t.tanque)]) || { hembras:{ valor:"", fuente:"" }, machos:{ valor:"", fuente:"" } };
+  const inp=function(cls, valor, paso, ancho){ return '<input class="'+cls+'" type="number" min="0" step="'+paso+'" inputmode="decimal" value="'+escapeHtml(String(valor))+'" oninput="madAlimTanqueCambio(this)" style="'+_MAD_ING_INP+';width:'+ancho+'px">'; };
+  return '<tr class="ma-tq" data-tq="'+escapeHtml(String(t.tanque))+'" data-lotes="'+escapeHtml(t.lotes)+'" data-ref-h="'+escapeHtml(String(p.hembras.valor))+'" data-ref-m="'+escapeHtml(String(p.machos.valor))+'"'
+    + ' data-fuente-h="'+escapeHtml(_madAlimFuenteTxt(p.hembras))+'" data-fuente-m="'+escapeHtml(_madAlimFuenteTxt(p.machos))+'">'
+    + '<td><b>'+escapeHtml(String(t.tanque))+'</b></td><td>'+escapeHtml(t.lotes)+'</td>'
+    + '<td>'+inp("ma-h", t.hembras, 1, 70)+'</td><td>'+inp("ma-m", t.machos, 1, 70)+'</td>'
+    + '<td>'+inp("ma-ph", p.hembras.valor, 0.1, 78)+'</td><td>'+inp("ma-pm", p.machos.valor, 0.1, 78)+'</td>'
+    + '<td class="ma-fuente" style="font-size:11px;color:#64748b">—</td>'
+    + '<td class="ma-bio" style="text-align:right">—</td><td class="ma-kgdia" style="text-align:right;font-weight:700">—</td></tr>';
+}
+// De dónde sale cada peso: la referencia leída, o «Manual» si se cambió a mano.
+function _madAlimFuenteFila(tr){
+  const parte=function(sexo, cls, ref, fuente){
+    const v=tr.querySelector(cls).value;
+    if(_madAlimTxt(v)==="") return "";
+    const manual=madAlimNum(v)!==madAlimNum(tr.getAttribute(ref)) || !tr.getAttribute(fuente);
+    return sexo+" "+(manual ? "Manual" : tr.getAttribute(fuente));
+  };
+  return [parte("♀", ".ma-ph", "data-ref-h", "data-fuente-h"), parte("♂", ".ma-pm", "data-ref-m", "data-fuente-m")].filter(Boolean).join(" · ");
+}
+function _madAlimSalaDeDom(el){
+  const v=function(tr, cls){ const e=tr.querySelector(cls); return e ? e.value : ""; };
+  return {
+    sala:el.getAttribute("data-sala"),
+    tomas:Array.prototype.map.call(el.querySelectorAll(".ma-toma"), function(tr){ return { hora:v(tr,".ma-hora"), producto:v(tr,".ma-prod"), pct:v(tr,".ma-pct") }; }),
+    tanques:Array.prototype.map.call(el.querySelectorAll(".ma-tq"), function(tr){
+      return { tanque:tr.getAttribute("data-tq"), lotes:tr.getAttribute("data-lotes"), hembras:v(tr,".ma-h"), machos:v(tr,".ma-m"), pesoH:v(tr,".ma-ph"), pesoM:v(tr,".ma-pm"), fuente:_madAlimFuenteFila(tr) };
+    })
+  };
+}
+function _madAlimSumTxt(C){ return "♀ "+C.totales.hembras+" · ♂ "+C.totales.machos+" · biomasa "+C.totales.biomasa+" kg · "+C.totales.kgDia+" kg/día"; }
+function _madAlimGridHTML(C){
+  if(!C.tomas.length || !C.tanques.length) return '<div style="font-size:11px;color:#94a3b8">Sin tomas con alimento y %.</div>';
+  const td='<td style="text-align:right">';
+  return '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Tanque</th>'
+    + C.tomas.map(function(t){ return '<th style="white-space:nowrap">'+escapeHtml(t.hora)+'<br><span style="font-weight:400">'+escapeHtml(t.producto)+' '+escapeHtml(String(t.pct))+' %</span></th>'; }).join("")
+    + '<th>Día (g)</th></tr></thead><tbody>'
+    + C.tanques.map(function(T){ return '<tr><td><b>'+escapeHtml(String(T.tanque))+'</b></td>'+T.tomasG.map(function(g){ return td+g+'</td>'; }).join("")+'<td style="text-align:right;font-weight:700">'+_madAlimR2(T.kgDia*1000)+'</td></tr>'; }).join("")
+    + '<tr><td><b>Sala (kg)</b></td>'+C.tomas.map(function(t){ return '<td style="text-align:right;font-weight:700">'+t.kgSala+'</td>'; }).join("")+'<td style="text-align:right;font-weight:700">'+C.totales.kgDia+'</td></tr>'
+    + '</tbody></table></div>';
+}
+function _madAlimResSalaHTML(C){
+  const td='<td style="text-align:right">';
+  return '<div class="tw"><table class="ft" style="font-size:12px;margin-top:6px"><thead><tr><th>Alimento</th><th>% del día</th><th>kg/día</th><th>kg/mes</th></tr></thead><tbody>'
+    + C.productos.filter(function(p){ return p.pct>0; }).map(function(p){ return '<tr><td>'+escapeHtml(p.producto)+'</td>'+td+p.pct+'</td>'+td+p.kgDia+'</td>'+td+p.kgMes+'</td></tr>'; }).join("")
+    + '<tr><td><b>Total</b></td>'+td+'<b>'+C.totales.pctDia+'</b></td>'+td+'<b>'+C.totales.kgDia+'</b></td>'+td+'<b>'+C.totales.kgMes+'</b></td></tr></tbody></table></div>';
+}
+function _madAlimGeneralHTML(salas, pob){
+  const G=madAlimResumenGeneral(salas), td='<td style="text-align:right">';
+  return '<div class="ms-card" style="border:1.5px solid #bfdbfe;border-radius:8px;padding:10px 12px;margin:10px 0;background:#f8fafc">'
+    + '<div style="font-weight:700;font-size:13px;margin-bottom:6px">📊 Resumen general · todas las salas</div>'
+    + '<div class="tw"><table class="ft" style="font-size:12px"><thead><tr><th>Alimento</th>'+salas.map(function(C){ return '<th>'+escapeHtml(C.sala)+'<br><span style="font-weight:400">kg/día</span></th>'; }).join("")+'<th>Total kg/día</th><th>kg/mes</th></tr></thead><tbody>'
+    + G.productos.map(function(p){
+        return '<tr><td>'+escapeHtml(p.producto)+'</td>'+salas.map(function(C){ const x=C.productos.filter(function(q){ return q.producto===p.producto; })[0]; return td+((x && x.kgDia) ? x.kgDia : "—")+'</td>'; }).join("")
+          + td+'<b>'+p.kgDia+'</b></td>'+td+p.kgMes+'</td></tr>';
+      }).join("")
+    + '<tr><td><b>Total</b></td>'+salas.map(function(C){ return td+'<b>'+C.totales.kgDia+'</b></td>'; }).join("")+td+'<b>'+G.totales.kgDia+'</b></td>'+td+'<b>'+G.totales.kgMes+'</b></td></tr>'
+    + '</tbody></table></div>'
+    + '<div style="font-size:12px;margin-top:6px">Biomasa <b>'+G.totales.biomasa+' kg</b> · ♀ '+G.totales.hembras+' · ♂ '+G.totales.machos
+    + (pob ? '<br>Población en producción: ♀ '+pob.produccion.hembras+' · ♂ '+pob.produccion.machos+' · en cuarentena: ♀ '+pob.cuarentena.hembras+' · ♂ '+pob.cuarentena.machos : '')+'</div>'
+    + '</div>';
+}
+function _madAlimSalaHTML(sala, tomas, tanques, pendiente){
+  return '<details class="ma-sala" data-sala="'+escapeHtml(sala)+'"'+(tanques.length ? ' open' : '')+' style="border:1px solid #e2e8f0;border-radius:8px;margin-bottom:10px;background:#fff">'
+    + '<summary style="cursor:pointer;padding:8px 12px;font-weight:700;font-size:13px">🏠 '+escapeHtml(sala)+' <span class="ma-sum" style="font-weight:400;color:#475569;font-size:12px"></span>'
+    +   ' <span class="ma-pend" style="font-weight:400;font-size:11px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px"'+(pendiente ? '' : ' hidden')+'>agenda sin guardar</span></summary>'
+    + '<div style="padding:4px 12px 12px">'
+    +   '<div style="font-size:12px;font-weight:700;margin:4px 0">🕒 Tomas del día</div>'
+    +   '<div class="tw"><table class="ft" style="font-size:12px"><thead><tr><th>Hora</th><th>Alimento</th><th>% biomasa</th><th>kg sala</th><th></th></tr></thead><tbody class="ma-tomas">'+tomas.map(_madAlimTomaFilaHTML).join("")+'</tbody></table></div>'
+    +   '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px">'
+    +     '<button class="btn" type="button" onclick="madAlimTomaAgregar(this)" style="font-size:11px">➕ Toma</button>'
+    +     '<button class="btn" type="button" onclick="madAlimEstandar(this)" style="font-size:11px">↺ Estándar</button>'
+    +     '<button class="btn" type="button" onclick="madAlimCopiarATodas(this)" style="font-size:11px">📋 Copiar a todas las salas</button>'
+    +   '</div>'
+    +   (tanques.length
+        ? '<div style="font-size:12px;font-weight:700;margin:4px 0">🦐 Tanques</div>'
+          + '<div class="tw"><table class="ft" style="font-size:12px"><thead><tr><th>Tanque</th><th>Lotes</th><th>♀</th><th>♂</th><th>Peso ♀ (g)</th><th>Peso ♂ (g)</th><th>Fuente del peso</th><th>Biomasa (kg)</th><th>kg/día</th></tr></thead><tbody>'
+          + tanques.map(function(t){ return _madAlimTanqueFilaHTML(sala, t); }).join("")+'</tbody></table></div>'
+          + '<details style="margin:8px 0"><summary style="cursor:pointer;font-size:12px;font-weight:700">📋 Ración por tanque y toma (g)</summary><div class="ma-grid"></div></details>'
+          + '<div class="ma-res"></div>'
+          + '<button class="btn" type="button" data-a="'+escapeHtml("sala:"+sala)+'" onclick="madAlimPdf(this.dataset.a)" style="font-size:11px;margin-top:6px">🖨 PDF de la sala</button>'
+        : '<div style="font-size:11px;color:#94a3b8">'+(_madAlim ? 'Sin animales según el saldo.' : 'Pulsa 🔄 Leer saldo y pesos para ver sus tanques.')+'</div>')
+    + '</div></details>';
+}
+function madAlimRecalcular(el){
+  const d=_madAlimSalaDeDom(el), C=madAlimCalcularSala(d.sala, d.tomas, d.tanques);
+  el.querySelectorAll(".ma-toma").forEach(function(tr, i){
+    const t=d.tomas[i], x=C.tomas.filter(function(c){ return c.hora===madAlimHora(t.hora) && c.producto===madAlimProducto(t.producto); })[0];
+    tr.querySelector(".ma-kg-toma").textContent = x ? x.kgSala+" kg" : "—";
+  });
+  el.querySelectorAll(".ma-tq").forEach(function(tr, i){
+    const T=C.tanques[i];
+    tr.querySelector(".ma-bio").textContent=String(T.biomasa);
+    tr.querySelector(".ma-kgdia").textContent=String(T.kgDia);
+    tr.querySelector(".ma-fuente").textContent=d.tanques[i].fuente || "—";
+  });
+  const s=el.querySelector(".ma-sum"); if(s) s.textContent = C.tanques.length ? "· "+_madAlimSumTxt(C) : "· "+madAlimTomasActivas(d.tomas).length+" toma(s)";
+  const g=el.querySelector(".ma-grid"); if(g) g.innerHTML=_madAlimGridHTML(C);
+  const r=el.querySelector(".ma-res"); if(r) r.innerHTML=_madAlimResSalaHTML(C);
+  return C;
+}
+function madAlimCalcularTodo(){
+  return Array.prototype.map.call(document.querySelectorAll("#ma-salas .ma-sala"), function(el){ const d=_madAlimSalaDeDom(el); return madAlimCalcularSala(d.sala, d.tomas, d.tanques); })
+    .filter(function(C){ return C.tanques.length; });
+}
+function madAlimPintarGeneral(){
+  const box=document.getElementById("ma-general"); if(!box) return;
+  const salas=madAlimCalcularTodo();
+  box.innerHTML = salas.length ? _madAlimGeneralHTML(salas, _madAlim ? _madAlim.poblacion : null) : "";
+}
+function madAlimPintarSalas(){
+  const box=document.getElementById("ma-salas"); if(!box) return;
+  const cfg=madAlimCfgLeer();
+  box.innerHTML=_madAlimSalas().map(function(sala){
+    return _madAlimSalaHTML(sala, madAlimOrdenarTomas(madAlimTomasDe(sala)), _madAlim ? (_madAlim.tanques[sala]||[]) : [], !!(cfg[sala] && cfg[sala].pendiente));
+  }).join("");
+  _madAlimFijarAlimentos(box);
+  box.querySelectorAll(".ma-sala").forEach(function(el){ madAlimRecalcular(el); });
+  madAlimPintarGeneral();
+}
+// La agenda tecleada de una sala se guarda en este dispositivo como PENDIENTE hasta que se guarde en la hoja.
+function _madAlimCfgDeSala(el, pendiente){
+  const d=_madAlimSalaDeDom(el), cfg=madAlimCfgLeer();
+  cfg[d.sala]={ tomas:d.tomas.map(function(t){ return { hora:madAlimHora(t.hora) || _madAlimTxt(t.hora), producto:_madAlimTxt(t.producto), pct:_madAlimTxt(t.pct) }; }), pendiente:!!pendiente, ts:Date.now() };
+  madAlimCfgGuardar(cfg);
+  const b=el.querySelector(".ma-pend"); if(b) b.hidden=!pendiente;
+}
+// El alimento elegido se fija también por PROPIEDAD: no todos los entornos respetan el `selected` de un HTML
+// insertado (happy-dom no), y una toma leída con otro alimento repartiría mal sin dar error.
+function _madAlimFijarAlimentos(root){ root.querySelectorAll(".ma-prod").forEach(function(s){ s.value=s.getAttribute("data-v")||""; }); }
+function _madAlimRepintarTomas(el, tomas){
+  const tb=el.querySelector(".ma-tomas"); if(!tb) return;
+  tb.innerHTML=(tomas || madAlimOrdenarTomas(madAlimTomasDe(el.getAttribute("data-sala")))).map(_madAlimTomaFilaHTML).join("");
+  _madAlimFijarAlimentos(tb);
+}
+function madAlimTomaCambio(input, reordenar){
+  const el=input && input.closest ? input.closest(".ma-sala") : null; if(!el) return;
+  _madAlimCfgDeSala(el, true);
+  if(reordenar) _madAlimRepintarTomas(el);
+  madAlimRecalcular(el);
+  madAlimPintarGeneral();
+}
+function madAlimTanqueCambio(input){
+  const el=input && input.closest ? input.closest(".ma-sala") : null; if(!el) return;
+  madAlimRecalcular(el);
+  madAlimPintarGeneral();
+}
+// Se repinta el cuerpo con la toma vacía al final (sin reordenar): insertar un <tr> suelto no lo parsean todos los entornos.
+function madAlimTomaAgregar(btn){
+  const el=btn.closest(".ma-sala"), tb=el ? el.querySelector(".ma-tomas") : null; if(!tb) return;
+  _madAlimRepintarTomas(el, _madAlimSalaDeDom(el).tomas.concat([{ hora:"", producto:"", pct:"" }]));
+  madAlimRecalcular(el);
+  const nueva=tb.querySelector(".ma-toma:last-child .ma-hora"); if(nueva && nueva.focus) nueva.focus();
+}
+function madAlimTomaQuitar(btn){
+  const tr=btn.closest(".ma-toma"), el=btn.closest(".ma-sala"); if(!tr || !el) return;
+  tr.remove();
+  _madAlimCfgDeSala(el, true);
+  madAlimRecalcular(el);
+  madAlimPintarGeneral();
+}
+function madAlimEstandar(btn){
+  const el=btn.closest(".ma-sala"); if(!el) return;
+  if(!confirm("¿Volver a la agenda estándar en "+el.getAttribute("data-sala")+"?")) return;
+  const cfg=madAlimCfgLeer();
+  cfg[el.getAttribute("data-sala")]={ tomas:MAD_ALIM_TOMAS_ESTANDAR.map(function(t){ return { hora:t.hora, producto:t.producto, pct:t.pct }; }), pendiente:true, ts:Date.now() };
+  madAlimCfgGuardar(cfg);
+  _madAlimRepintarTomas(el);
+  const b=el.querySelector(".ma-pend"); if(b) b.hidden=false;
+  madAlimRecalcular(el);
+  madAlimPintarGeneral();
+}
+function madAlimCopiarATodas(btn){
+  const el=btn.closest(".ma-sala"); if(!el) return;
+  const origen=el.getAttribute("data-sala");
+  if(!confirm("¿Copiar la agenda de "+origen+" a todas las salas?\nSe reemplazan sus horas, alimentos y %.")) return;
+  _madAlimCfgDeSala(el, true);
+  const tomas=madAlimTomasDe(origen), cfg=madAlimCfgLeer();
+  document.querySelectorAll("#ma-salas .ma-sala").forEach(function(otra){
+    const s=otra.getAttribute("data-sala");
+    if(s===origen) return;
+    cfg[s]={ tomas:tomas.map(function(t){ return { hora:t.hora, producto:t.producto, pct:t.pct }; }), pendiente:true, ts:Date.now() };
+  });
+  madAlimCfgGuardar(cfg);
+  document.querySelectorAll("#ma-salas .ma-sala").forEach(function(otra){
+    if(otra.getAttribute("data-sala")===origen) return;
+    _madAlimRepintarTomas(otra);
+    const b=otra.querySelector(".ma-pend"); if(b) b.hidden=false;
+    madAlimRecalcular(otra);
+  });
+  madAlimPintarGeneral();
+  toast("📋 Agenda de "+origen+" copiada a las demás salas: guarda para dejarla en la hoja.","ok",4000);
+}
+async function madAlimLeer(){
+  const btn=document.getElementById("ma-leer-btn"), nota=document.getElementById("ma-nota");
+  if(nota) nota.innerHTML='<span style="color:#64748b">Leyendo las hojas… puede tardar unos segundos.</span>';
+  if(btn) btn.disabled=true;
+  try{
+    const libro=await madSaldoCargar(true), f=madLibroFuentes();
+    let agendas=null, fallo="";
+    try{ agendas=madAlimAgendasDeHoja(await _reproFetchSheet(MAD_ALIM_SHEET, null)); }
+    catch(x){ fallo=(x && x.message) || "error"; }
+    const cfg=madAlimCfgLeer();
+    let cargadas=0;
+    if(agendas) Object.keys(agendas).forEach(function(sala){
+      if(cfg[sala] && cfg[sala].pendiente) return;   // lo tecleado aquí y sin guardar no se pisa
+      cfg[sala]={ tomas:agendas[sala].tomas, pendiente:false, ts:Date.now(), desde:agendas[sala].fecha };
+      cargadas++;
+    });
+    madAlimCfgGuardar(cfg);
+    _madAlim={ tanques:madAlimTanquesDelLibro(libro), pesos:madAlimPesosDeReferencia(f, libro), poblacion:madAlimPoblacion(libro), ts:Date.now() };
+    madAlimPintarSalas();
+    const mal=madLibroIncompleto(libro);
+    if(nota) nota.innerHTML = (mal ? '<span style="color:#991b1b">⚠ '+escapeHtml(mal)+': los animales pueden quedarse cortos.</span> ' : '<span style="color:#166534">Saldo y pesos leídos. Se relee al pulsar de nuevo.</span> ')
+      + (agendas ? '<span style="color:#475569">'+(cargadas ? cargadas+' agenda(s) guardada(s) traída(s) de la hoja.' : 'La hoja no tiene agendas guardadas.')+'</span>'
+                 : '<span style="color:#92400e">No se pudo leer la agenda guardada en la hoja ('+escapeHtml(fallo)+'): se usa la de este dispositivo.</span>');
+  }catch(_){
+    if(nota) nota.innerHTML='<span style="color:#991b1b">No se pudieron leer las hojas. Reintenta con 🔄.</span>';
+  }finally{
+    if(btn) btn.disabled=false;
+  }
+}
+function madAlimCollect(){
+  const f=document.getElementById("ma-fecha");
+  return { fecha:f ? f.value : "", salas:Array.prototype.map.call(document.querySelectorAll("#ma-salas .ma-sala"), _madAlimSalaDeDom).filter(function(s){ return s.tanques.length; }) };
+}
+function _madAlimPinta(res, filas){
+  const box=document.getElementById("ma-report"); if(!box) return;
+  let h="";
+  if(res.errores.length) h += '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#991b1b"><b>No se puede guardar:</b><ul style="margin:4px 0 0;padding-left:18px">'+res.errores.map(function(e){ return "<li>"+escapeHtml(e)+"</li>"; }).join("")+"</ul></div>";
+  if(res.avisos.length) h += '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#92400e"><b>Avisos (se puede guardar igual):</b><ul style="margin:4px 0 0;padding-left:18px">'+res.avisos.map(function(a){ return "<li>"+escapeHtml(a)+"</li>"; }).join("")+"</ul></div>";
+  if(!res.errores.length) h += _madRevisarOkHTML(res, filas, MAD_ALIM_SHEET);
+  box.innerHTML=h;
+  _madReporteVigila("fp-alimentacion", "ma-report");
+}
+function madAlimRevisar(){
+  const model=madAlimCollect(), res=madAlimValidar(model);
+  _madAlimPinta(res, madAlimBuildRows(model).length);
+  return _madRevisarRemata("ma-report", res, MAD_ALIM_SHEET);
+}
+/* ¿El GAS publicado conoce la hoja? Lo dice ?p=ver en «caps» («mad-alimentacion»). Mismo patrón que _reproGasRecicla:
+     true → la conoce: se envía · false → responde sin ella: NO se envía · null → no responde: se envía y, si falla, espera en la cola. */
+async function _madAlimGasListo(url){
+  const base = url || gasUrl();
+  if(!base || !isValidGasUrl(base)) return null;
+  try{
+    const ctrl = new AbortController();
+    const t = setTimeout(function(){ ctrl.abort(); }, 6000);
+    const r = await fetch(base + (base.indexOf("?")===-1 ? "?" : "&") + "p=ver", { signal: ctrl.signal, cache: "no-store" });
+    clearTimeout(t);
+    const txt = await r.text();
+    try{ const j = JSON.parse(txt); if(j && j.ok && typeof j.version === "string") return Array.isArray(j.caps) && j.caps.indexOf("mad-alimentacion") !== -1; }catch(_){}
+    return txt.indexOf("FichasLarv-OK") !== -1 ? false : null;
+  }catch(_){ return null; }
+}
+function madAlimLogLeer(){
+  try{ const v=JSON.parse(localStorage.getItem(MAD_ALIM_LOG_KEY)||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; }
+}
+function madAlimLogAnota(fecha, filas, estado){
+  const l=madAlimLogLeer();
+  l.push({ ts:Date.now(), fecha:fecha, filas:filas, estado:estado });
+  try{ localStorage.setItem(MAD_ALIM_LOG_KEY, JSON.stringify(l.slice(-40))); }catch(_){}
+}
+function madAlimLogHTML(){
+  const l=madAlimLogLeer();
+  if(!l.length) return "";
+  const enCola=(typeof syncQueueLen==="function") ? syncQueueLen() : 0;
+  const filas=l.slice().reverse().slice(0,10).map(function(e){
+    const st=(e.estado==="cola" && enCola)
+      ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px">📶 en cola</span>'
+      : '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px">✅ enviado</span>';
+    const d=new Date(e.ts), hh=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+    return '<tr><td>'+escapeHtml(String(e.fecha||""))+' '+hh+'</td><td style="text-align:right">'+(e.filas||0)+'</td><td>'+st+'</td></tr>';
+  }).join("");
+  return '<div style="margin-top:18px"><h3 style="margin:0 0 4px;font-size:13px">Registrado desde este dispositivo</h3>'
+    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Tanques</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div></div>';
+}
+async function madAlimGuardar(){
+  const model=madAlimCollect(), res=madAlimValidar(model), payload=buildMadAlimPayload(model);
+  _madAlimPinta(res, payload.rows.length);
+  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
+  if(!payload.rows.length){ toast("No hay tanques con animales que guardar.","warn",4000); return; }
+  if((await _madAlimGasListo()) === false){
+    const aviso="No se envió: el GAS publicado no conoce la hoja «"+MAD_ALIM_SHEET+"». Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo calculado sigue aquí.";
+    const box=document.getElementById("ma-report");
+    if(box) box.innerHTML='<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:12px;color:#991b1b">'+escapeHtml(aviso)+'</div>';
+    toast(aviso,"err",10000);
+    return;
+  }
+  toast("Enviando "+payload.rows.length+" fila(s)…","info",2200);
+  const _t={};
+  const ok=await postPayload(payload, gasUrl(), _t);
+  // ⚠ `postPayload` devuelve false TAMBIÉN cuando el envío quedó ENCOLADO (invariante H1): la agenda ya va en camino.
+  if(ok || _t.outcome==="queued"){
+    const cfg=madAlimCfgLeer(), enviadas=model.salas.map(function(s){ return s.sala; });
+    enviadas.forEach(function(s){ if(cfg[s]) cfg[s].pendiente=false; });
+    madAlimCfgGuardar(cfg);
+    document.querySelectorAll("#ma-salas .ma-sala").forEach(function(el){ if(enviadas.indexOf(el.getAttribute("data-sala"))!==-1){ const b=el.querySelector(".ma-pend"); if(b) b.hidden=true; } });
+    madAlimLogAnota(model.fecha, payload.rows.length, ok ? "ok" : "cola");
+    const lg=document.getElementById("ma-log"); if(lg) lg.innerHTML=madAlimLogHTML();
+  }
+  if(ok){ toast("✅ Alimentación registrada · "+payload.rows.length+" fila(s)","ok",5000); return; }
+  _syncNotOkUI(_t.outcome, "No se pudo registrar la alimentación", null, _t.gasMessage);
+}
+// PDF de una sala (con su ración por tanque y toma) o general (todas las salas y el resumen).
+function madAlimPdf(alcance){
+  const salas=madAlimCalcularTodo();
+  if(!salas.length){ toast("Pulsa 🔄 Leer saldo y pesos antes de imprimir.","warn",3500); return; }
+  const a=String(alcance||"todo"), i=a.indexOf(":"), sala=i>0 ? a.slice(i+1) : "";
+  const elegidas=sala ? salas.filter(function(C){ return C.sala===sala; }) : salas;
+  const f=document.getElementById("ma-fecha"), fecha=(f && f.value) || today();
+  const titulo="Maduración · Alimentación"+(sala ? " · "+sala : "")+" · "+fecha;
+  const page='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+escapeHtml(titulo)+'</title>'
+    + '<style>body{font-family:Arial,Helvetica,sans-serif;margin:18px;color:#0f172a}h1{font-size:16px;margin:0 0 4px}h2{font-size:14px;margin:12px 0 4px}table{border-collapse:collapse}th,td{border:1px solid #cbd5e1;padding:2px 5px}.ms-card{page-break-inside:avoid}</style></head><body>'
+    + '<h1>'+escapeHtml(titulo)+'</h1>'
+    + elegidas.map(function(C){ return '<div class="ms-card"><h2>🏠 '+escapeHtml(C.sala)+'</h2><div style="font-size:12px;margin-bottom:4px">'+escapeHtml(_madAlimSumTxt(C))+'</div>'+_madAlimGridHTML(C)+_madAlimResSalaHTML(C)+'</div>'; }).join("")
+    + (sala ? '' : _madAlimGeneralHTML(salas, _madAlim ? _madAlim.poblacion : null))
+    + '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},300);});<\/script></body></html>';
+  const w=window.open("","_blank","width=1000,height=720");
+  if(!w){ toast("El navegador bloqueó la ventana emergente. Permite pop-ups para este sitio.","warn",6000); return; }
+  w.document.write(page);
+  w.document.close();
+}
+function madAlimVaciar(){
+  if(!confirm("¿Vaciar el cálculo de alimentación?\nLas agendas de cada sala se conservan.")) return;
+  _madAlim=null;
+  const fp=document.getElementById("fp-alimentacion");
+  if(fp) fp.innerHTML="";
+  renderMadAlimentacion();
+}
+// ⚠⚠ NO SE RE-PINTA SI YA ESTÁ MONTADO, como las demás fichas: reescribir innerHTML borraría lo tecleado.
+function renderMadAlimentacion(){
+  const fp=document.getElementById("fp-alimentacion"); if(!fp) return;
+  if(fp.querySelector("#ma-salas")) return;
+  const todayStr=today();
+  fp.innerHTML='<div class="fc">'
+    + '<div class="fc-h"><div class="fc-t">🍤 Maduración · Alimentación</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
+    + '<div class="fc-b">'
+    +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
+    +     '<span style="font-size:16px">ℹ️</span><span>Ración por sala y tanque: <b>biomasa (♀ + ♂) × % ÷ 100</b> en cada toma. Pulsa <b>🔄 Leer saldo y pesos</b>: los animales salen del saldo y el peso, de la última biometría de Tanques del lote (o de su Ingreso); los dos se pueden corregir. Cambia horas, alimentos y % de cada sala (0,25 a 2): al guardar quedan como agenda de todos hasta que otro la cambie.</span>'
+    +   '</div>'
+    +   '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="ma-fecha" value="'+escapeHtml(todayStr)+'" style="'+_MAD_ING_INP+'"></label>'
+    +     '<button class="btn" type="button" id="ma-leer-btn" onclick="madAlimLeer()">🔄 Leer saldo y pesos</button>'
+    +     '<button class="btn" type="button" data-a="todo" onclick="madAlimPdf(this.dataset.a)">🖨 PDF general</button>'
+    +   '</div>'
+    +   '<div id="ma-nota" style="font-size:11px;margin-bottom:8px;color:#64748b">Pulsa 🔄 para traer los animales de cada tanque y sus pesos.</div>'
+    +   '<div id="ma-salas"></div>'
+    +   '<div id="ma-general"></div>'
+    +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
+    +     '<button class="btn" type="button" onclick="madAlimRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" style="font-weight:700" onclick="madAlimGuardar()">☁️ Guardar y sincronizar</button>'
+    +     '<button class="btn" type="button" onclick="madAlimVaciar()">🧹 Vaciar</button>'
+    +   '</div>'
+    +   '<div id="ma-report" style="margin-top:12px"></div>'
+    +   '<div id="ma-log">'+madAlimLogHTML()+'</div>'
+    + '</div></div>';
+  madAlimPintarSalas();
 }
 
 // ── Maduración · Registro reproductivo (desoves/mortalidades por lote de Trovan) ──
@@ -19174,14 +19809,16 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "61a3c7e2eb8b";
+const GAS_VERSION = "e70b1986f901";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
 // no nombra una capacidad no la tiene.
 //  · "matriz-reciclaje": el alta de una hembra con el microchip de una MUERTA entra como hembra
 //    nueva (ver llaveMatriz_). Un GAS anterior la FUNDIRÍA sobre la fila de la muerta.
-const GAS_CAPACIDADES = ["matriz-reciclaje"];
+//  · "mad-alimentacion" (2026-09-15): conoce la hoja «Maduración Alimentación». Un GAS anterior
+//    la rechazaría («Hoja no permitida») y el envío esperaría en la cola hasta caducar.
+const GAS_CAPACIDADES = ["matriz-reciclaje", "mad-alimentacion"];
 
 const SS_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
 
@@ -19217,6 +19854,8 @@ const ALLOWED = [
   "Maduración Tratamientos",
   // Mortalidad de hembras en tanques de desove y de recuperación (2026-09-15), por columna "ID".
   "Maduración Mortalidad Desove",
+  // Alimentación de Maduración (2026-09-15): una fila por fecha, sala y tanque, por columna "ID".
+  "Maduración Alimentación",
   "BIOMOL",
   "Registro_Supervisión",
   "Registro_Desinfección",
@@ -19420,7 +20059,8 @@ function doPost(e) {
                || payload.sheetName === "Maduración Movimientos"
                || payload.sheetName === "Maduración Fin de Ciclo"
                || payload.sheetName === "Maduración Tratamientos"
-               || payload.sheetName === "Maduración Mortalidad Desove";
+               || payload.sheetName === "Maduración Mortalidad Desove"
+               || payload.sheetName === "Maduración Alimentación";
     // Columna Trovan ID (0-indexed) por hoja: se fuerza a formato TEXTO ("@") al
     // escribir, así Sheets NO reinterpreta el código como notación científica ni
     // le quita ceros a la izquierda (es un identificador, no un número).
@@ -19947,14 +20587,14 @@ function ensureHeaders(ws, headers) {
 //     corrido (Sala sin la Fase 6 sigue escribiendo, y el merge conserva la 21.ª).
 //   · Una cabecera en blanco en la hoja no se compara: no hay con qué.
 //   · Espacios y la forma Unicode de los acentos no cuentan como diferencia.
-// Sólo estas seis. El registro reproductivo también es posicional, pero su esquema no ha
+// Sólo las de esta lista (el registro operativo). El reproductivo también es posicional, pero su esquema no ha
 // cambiado, y bloquearlo por un nombre retocado a mano pararía el trabajo de campo.
 // El cliente, ante el rechazo, no marca nada como sincronizado: lo tecleado se queda en
 // el dispositivo hasta que se actualice la app (medido en el cliente de f1d9687).
 var MAD_ESQUEMA_VIGILADO = [
   "Maduración Sala", "Maduración Tanques", "Maduración Lotes",
   "Maduración Ingreso", "Maduración Movimientos", "Maduración Fin de Ciclo",
-  "Maduración Tratamientos", "Maduración Mortalidad Desove"
+  "Maduración Tratamientos", "Maduración Mortalidad Desove", "Maduración Alimentación"
 ];
 function _cabeceraNorm_(v) {
   var s = String(v == null ? "" : v).trim();

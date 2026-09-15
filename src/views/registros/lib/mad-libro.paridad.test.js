@@ -829,7 +829,9 @@ describe('Libro · «Recalcular» RECALCULA de verdad (2026-09-09)', () => {
     // D13 (2026-09-14): el quinto es «🔄 Ver ocupación» de Ingreso.
     // A2 (2026-09-15): 🔄 Recalcular pasa además la respuesta de ?p=ver → `madSaldoCargar(true, gas)`.
     const veces = (src.match(/madSaldoCargar\(true[,)]/g) || []).length;
-    expect(veces, 'se esperaban las 5 llamadas forzadas del libro').toBe(5);
+    // 2026-09-15: el sexto es «🔄 Leer saldo y pesos» de Alimentación.
+    expect(veces, 'se esperaban las 6 llamadas forzadas del libro').toBe(6);
+    expect(src).toContain('async function madAlimLeer(){');
     expect(src).toContain('async function madIngVerOcupacion(){');
   });
 });
