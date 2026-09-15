@@ -35,6 +35,13 @@ const FUENTES = () => ({
     trat('2026-01-31', '', 'Desinfección', 'RAS y tuberías', '', 'Cloro', ''),
   ],
 });
+const SALA_PARCIAL = () => [
+  sala('2026-01-07', 'Sala 9', 'Producción', '', { 'Temperatura 2:00': 27, 'Temperatura 4:00': 27, 'Oxígeno 06:00': 4 }),
+  sala('2026-01-08', 'Sala 9', 'Producción', 'NO', {}),
+  sala('2026-01-09', 'Sala 9', '', '', { 'Temperatura 2:00': 30, 'Temperatura 4:00': 31 }),
+  sala('2026-01-12', 'Sala 9', 'Cuarentena', '', {}),
+  sala('2026-01-13', 'Sala 9', '', '', { 'Oxígeno 06:00': 5 }),
+];
 const R = resumenMaduracion(FUENTES(), { hoy: '2026-02-01' });
 const lote = (n) => R.lotes.find((l) => l.lote === n);
 const deSala = (n) => R.salas.find((s) => s.sala === n);
@@ -60,6 +67,16 @@ describe('Resumen · salas', () => {
       temp: { prom: 28.5, ultima: 29, cv: 1.75, delta: 1 }, ox: { prom: 5.5, ultima: 6, cv: 12.86, delta: 0.5 } });
     expect(deSala('Sala 2')).toMatchObject({ ras: 'NO', temp: { prom: 30, ultima: 30, cv: '', delta: '' }, ox: { prom: '', ultima: '', cv: '', delta: '' } });
     expect(R.salas.map((s) => s.sala)).toEqual(['Sala 1', 'Sala 2']);   // la fila sin fecha de la Sala 3 no cuenta
+  });
+  it('🔴 H2: cada variable sale del último registro QUE LA TRAE (el de sólo estado no borra la T°)', () => {
+    // Medido en producción (Sala 4, 2026-09-13): el registro de «Proponer estado» no trae lecturas. T°: la última con
+    // lecturas es la del 01-09 [30, 31] → prom 30.5, CV 0.7071/30.5 = 2.32 %; la anterior CON T° es la del 01-07 (27) → Δ 3.5,
+    // no la del 01-08, que no tiene T°. O2: el 01-13 (5) contra el 01-07 (4) → Δ 1. RAS del 01-08. Estado del 01-12: el último
+    // registro (01-13) no trae estado.
+    const f = { sala: SALA_PARCIAL() };
+    expect(resumenMaduracion(f, { hoy: '2026-01-14' }).salas[0]).toMatchObject({ sala: 'Sala 9', fecha: '2026-01-12', estado: 'Cuarentena',
+      ras: 'NO', fechaRas: '2026-01-08', temp: { prom: 30.5, ultima: 31, cv: 2.32, delta: 3.5, fecha: '2026-01-09' },
+      ox: { prom: 5, ultima: 5, cv: '', delta: 1, fecha: '2026-01-13' } });
   });
   it('🔴 lotes de la sala con su estado, y tanques y animales en producción y cuarentena', () => {
     // Sala 1: AB 18♂ 49♀ (copuló el 01-10: Producción) y CD 10♂ 18♀ (entró el 01-20, sin cópula: Cuarentena).
@@ -141,7 +158,7 @@ describe('Resumen · el monolito y el módulo dan lo mismo', () => {
 
   it('🔴 el mismo resumen, cifra a cifra, en el caso completo y en variantes', () => {
     const variantes = [FUENTES(), Object.assign(FUENTES(), { cierres: [{ Fecha: '2026-01-31', Lote: 'CD', Tipo: 'Total', Machos: 10, Hembras: 18, Sala: '' }] }),
-      Object.assign(FUENTES(), { sala: [], desoves: [], tratamientos: [] }), {}];
+      Object.assign(FUENTES(), { sala: [], desoves: [], tratamientos: [] }), {}, Object.assign(FUENTES(), { sala: FUENTES().sala.concat(SALA_PARCIAL()) })];
     for (const f of variantes) {
       for (const hoy of ['2026-02-01', '2026-01-25']) expect(api.madResumenMaduracion(f, { hoy })).toEqual(resumenMaduracion(f, { hoy }));
     }

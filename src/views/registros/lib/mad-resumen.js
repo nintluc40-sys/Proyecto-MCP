@@ -11,9 +11,10 @@
        (mudas sobre vivos totales; cópulas sobre hembras vivas), con el libro al cierre de ese día.
      · Nauplios/Hembra = N5 ÷ desoves · Tasa de fertilidad = N2 ÷ Total de huevos × 100. Las dos sólo
        sobre los desoves que YA tienen su N5 / su N2: un desove pendiente no diluye la cifra.
-   Decisiones mías, revisables: Δ = promedio del último registro de la sala menos el del registro
+   Confirmadas por el usuario el 2026-09-15: Δ = promedio del último registro de la sala menos el del registro
    anterior; CV = desviación estándar MUESTRAL de las lecturas del último registro ÷ su promedio × 100;
-   el peso es el promedio de los tanques del lote en la última fecha con peso.
+   el peso es el promedio de los tanques del lote en la última fecha con peso. «Último registro» es el último
+   que TRAE esa variable (H2): un registro de sólo estado no borra la T° del día anterior.
    ============================================================ */
 
 import { construirLibro, sumarDias, ubicKey, CUARENTENA_DIAS, ESTADO_PRODUCCION, ESTADO_CUARENTENA, ESTADO_CERRADO } from './mad-libro.js';
@@ -76,15 +77,21 @@ function resumenSalas(filasSala, libro, filasTrat) {
   for (const T of libro.tanques.values()) if (T.machos + T.hembras > 0) nombres.add(T.sala);
   return [...nombres].sort(porNombre).map((sala) => {
     const filas = (porSala.get(sala) || []).slice().sort((a, b) => porNombre(fecha10(a.Fecha), fecha10(b.Fecha)));
-    const ult = filas.length ? filas[filas.length - 1] : null;
-    const fUlt = ult ? fecha10(ult.Fecha) : '';
-    const prev = filas.filter((r) => fecha10(r.Fecha) < fUlt).pop() || null;
-    const est = (r, cols) => estadisticaDia(r ? cols.map((c) => r[c]) : []);
-    const t = est(ult, RESUMEN_TEMPS);
-    const tp = est(prev, RESUMEN_TEMPS);
-    const o = est(ult, RESUMEN_OXIGENOS);
-    const op = est(prev, RESUMEN_OXIGENOS);
-    const delta = (a, b) => (a.prom === '' || b.prom === '' ? '' : r2(a.prom - b.prom));
+    /* H2 (2026-09-15) · CADA VARIABLE SALE DEL ÚLTIMO REGISTRO QUE LA TRAE, no del último registro a secas: un
+       registro con sólo el estado (el de «Proponer estado», medido en producción) dejaba la T° y el O2 en blanco, y
+       uno con sólo lecturas dejaba el estado en blanco. El Δ compara con el registro anterior que también la trae. */
+    const ultimaCon = (tiene) => filas.filter(tiene).pop() || null;
+    const variable = (cols) => {
+      const con = filas.filter((r) => cols.some((c) => num(r[c]) !== null));
+      const u = con.length ? con[con.length - 1] : null;
+      const f = u ? fecha10(u.Fecha) : '';
+      const p = con.filter((r) => fecha10(r.Fecha) < f).pop() || null;
+      const a = estadisticaDia(u ? cols.map((c) => u[c]) : []);
+      const b = estadisticaDia(p ? cols.map((c) => p[c]) : []);
+      return { prom: a.prom, ultima: a.ultima, cv: a.cv, delta: a.prom === '' || b.prom === '' ? '' : r2(a.prom - b.prom), fecha: f };
+    };
+    const conEstado = ultimaCon((r) => txt(r.Estado) !== '');
+    const conRas = ultimaCon((r) => txt(r.RAS) !== '');
     const lotes = [];
     let animalesProduccion = 0;
     let animalesCuarentena = 0;
@@ -104,9 +111,10 @@ function resumenSalas(filasSala, libro, filasTrat) {
     const tratamientos = recientes((filasTrat || []).filter((r) => txt(r.Sala) === sala))
       .map((r) => ({ fecha: fecha10(r.Fecha), tipo: txt(r.Tipo), area: txt(r['Área']), lotes: txt(r.Lotes), productos: txt(r.Productos), ras: txt(r['Productos RAS']) }));
     return {
-      sala, fecha: fUlt, estado: ult ? txt(ult.Estado) : '', ras: ult ? txt(ult.RAS) : '', lotes,
-      temp: { prom: t.prom, ultima: t.ultima, cv: t.cv, delta: delta(t, tp) },
-      ox: { prom: o.prom, ultima: o.ultima, cv: o.cv, delta: delta(o, op) },
+      sala, fecha: conEstado ? fecha10(conEstado.Fecha) : '', estado: conEstado ? txt(conEstado.Estado) : '',
+      ras: conRas ? txt(conRas.RAS) : '', fechaRas: conRas ? fecha10(conRas.Fecha) : '', lotes,
+      temp: variable(RESUMEN_TEMPS),
+      ox: variable(RESUMEN_OXIGENOS),
       tanquesProduccion, animalesProduccion, animalesCuarentena, tratamientos,
     };
   });

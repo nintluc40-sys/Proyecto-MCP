@@ -6243,11 +6243,16 @@ function _madResSalas(filasSala, libro, filasTrat){
   Object.keys(libro.tanques).forEach(function(k){ const T=libro.tanques[k]; if(T.machos+T.hembras>0) nombre(T.sala); });
   return nombres.sort(_madResOrden).map(function(sala){
     const filas=(porSala[sala]||[]).slice().sort(function(a,b){ return _madResOrden(_madResF10(a.Fecha), _madResF10(b.Fecha)); });
-    const ult=filas.length ? filas[filas.length-1] : null, fUlt=ult ? _madResF10(ult.Fecha) : "";
-    const prev=filas.filter(function(r){ return _madResF10(r.Fecha)<fUlt; }).pop() || null;
-    const est=function(r, cols){ return madResEstadisticaDia(r ? cols.map(function(c){ return r[c]; }) : []); };
-    const t=est(ult, MAD_RES_TEMPS), tp=est(prev, MAD_RES_TEMPS), o=est(ult, MAD_RES_OXIGENOS), op=est(prev, MAD_RES_OXIGENOS);
-    const delta=function(a,b){ return (a.prom===""||b.prom==="") ? "" : _madResR2(a.prom-b.prom); };
+    // H2 (2026-09-15): cada variable sale del ÚLTIMO REGISTRO QUE LA TRAE (un registro de sólo estado no borra la T°). Ver el módulo.
+    const ultimaCon=function(tiene){ return filas.filter(tiene).pop() || null; };
+    const variable=function(cols){
+      const con=filas.filter(function(r){ return cols.some(function(c){ return _madResNum(r[c])!==null; }); });
+      const u=con.length ? con[con.length-1] : null, f=u ? _madResF10(u.Fecha) : "";
+      const p=con.filter(function(r){ return _madResF10(r.Fecha)<f; }).pop() || null;
+      const a=madResEstadisticaDia(u ? cols.map(function(c){ return u[c]; }) : []), b=madResEstadisticaDia(p ? cols.map(function(c){ return p[c]; }) : []);
+      return { prom:a.prom, ultima:a.ultima, cv:a.cv, delta:(a.prom===""||b.prom==="") ? "" : _madResR2(a.prom-b.prom), fecha:f };
+    };
+    const conEstado=ultimaCon(function(r){ return madLibroTxt(r.Estado)!==""; }), conRas=ultimaCon(function(r){ return madLibroTxt(r.RAS)!==""; });
     const lotes=[]; let animalesProduccion=0, animalesCuarentena=0;
     Object.keys(libro.lotes).forEach(function(n){
       const L=libro.lotes[n], S=(L.salas||[]).filter(function(x){ return x.sala===sala; })[0];
@@ -6265,8 +6270,9 @@ function _madResSalas(filasSala, libro, filasTrat){
     });
     const tratamientos=_madResRecientes((filasTrat||[]).filter(function(r){ return madLibroTxt(r.Sala)===sala; }))
       .map(function(r){ return { fecha:_madResF10(r.Fecha), tipo:madLibroTxt(r.Tipo), area:madLibroTxt(r["Área"]), lotes:madLibroTxt(r.Lotes), productos:madLibroTxt(r.Productos), ras:madLibroTxt(r["Productos RAS"]) }; });
-    return { sala:sala, fecha:fUlt, estado:ult ? madLibroTxt(ult.Estado) : "", ras:ult ? madLibroTxt(ult.RAS) : "", lotes:lotes,
-      temp:{ prom:t.prom, ultima:t.ultima, cv:t.cv, delta:delta(t,tp) }, ox:{ prom:o.prom, ultima:o.ultima, cv:o.cv, delta:delta(o,op) },
+    return { sala:sala, fecha:conEstado ? _madResF10(conEstado.Fecha) : "", estado:conEstado ? madLibroTxt(conEstado.Estado) : "",
+      ras:conRas ? madLibroTxt(conRas.RAS) : "", fechaRas:conRas ? _madResF10(conRas.Fecha) : "", lotes:lotes,
+      temp:variable(MAD_RES_TEMPS), ox:variable(MAD_RES_OXIGENOS),
       tanquesProduccion:tanquesProduccion, animalesProduccion:animalesProduccion, animalesCuarentena:animalesCuarentena, tratamientos:tratamientos };
   });
 }
@@ -6601,9 +6607,9 @@ function _madResSalaHTML(s, sel, conPdf){
   if(sel["sala-estado"]) b+=_madResFila("Estado de la sala", _madResCel(s.estado)+_madResGris(s.fecha))
     + _madResFila("Estado de sus lotes", s.lotes.length ? s.lotes.map(function(l){ return escapeHtml(l.lote)+": "+_madResCel(l.estado); }).join(" · ") : "—");
   if(sel["sala-lotes"]) b+=_madResFila("Lotes participantes", s.lotes.length ? s.lotes.map(function(l){ return '<b>'+escapeHtml(l.lote)+'</b> '+l.machos+'♂ '+l.hembras+'♀'; }).join(" · ") : "—");
-  if(sel["sala-ras"]) b+=_madResFila("Uso del RAS", _madResCel(s.ras));
-  if(sel["sala-temp"]) b+=_madResFila("Temperatura", "prom "+_madResCel(s.temp.prom)+" · última "+_madResCel(s.temp.ultima)+" · Δ "+_madResDelta(s.temp.delta)+" · CV "+_madResCel(s.temp.cv,"%"));
-  if(sel["sala-ox"]) b+=_madResFila("Oxígeno", "prom "+_madResCel(s.ox.prom)+" · último "+_madResCel(s.ox.ultima)+" · Δ "+_madResDelta(s.ox.delta)+" · CV "+_madResCel(s.ox.cv,"%"));
+  if(sel["sala-ras"]) b+=_madResFila("Uso del RAS", _madResCel(s.ras)+_madResGris(s.fechaRas));
+  if(sel["sala-temp"]) b+=_madResFila("Temperatura", "prom "+_madResCel(s.temp.prom)+" · última "+_madResCel(s.temp.ultima)+" · Δ "+_madResDelta(s.temp.delta)+" · CV "+_madResCel(s.temp.cv,"%")+_madResGris(s.temp.fecha));
+  if(sel["sala-ox"]) b+=_madResFila("Oxígeno", "prom "+_madResCel(s.ox.prom)+" · último "+_madResCel(s.ox.ultima)+" · Δ "+_madResDelta(s.ox.delta)+" · CV "+_madResCel(s.ox.cv,"%")+_madResGris(s.ox.fecha));
   if(sel["sala-ocupacion"]) b+=_madResFila("En producción", s.tanquesProduccion+" tanque(s) · "+s.animalesProduccion+" animales")+_madResFila("En cuarentena", s.animalesCuarentena+" animales");
   if(sel["sala-trat"]) b+=_madResFila("Desinfección y controles", _madResTratLista(s.tratamientos, function(t){ return escapeHtml(t.tipo)+" · "+escapeHtml(t.area)+(t.lotes ? " ("+escapeHtml(t.lotes)+")" : "")+": "+escapeHtml(t.productos||t.ras); }));
   return _madResTarjeta("🏠 "+escapeHtml(s.sala), b, "sala:"+s.sala, conPdf);

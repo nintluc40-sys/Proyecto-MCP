@@ -89,6 +89,9 @@ describe('Saldo · resumen con filtro de variables y PDF', () => {
     expect(t).toContain('Detalle del libro');
     expect(cuerpo().querySelectorAll('.ms-card').length).toBe(3);   // Sala 1, Lote AB y el RAS
     expect(t).not.toContain('No se pudieron leer');
+    // H2: cada variable de la sala dice de qué registro sale.
+    const fila = (th) => [...cuerpo().querySelectorAll('tr')].find((tr) => tr.querySelector('th') && tr.querySelector('th').textContent === th);
+    for (const th of ['Temperatura', 'Oxígeno', 'Uso del RAS']) expect(fila(th).textContent).toContain('(2026-01-10)');
   });
 
   it('🔴 el filtro se guarda y oculta lo desmarcado; con el GAS viejo Tratamientos no se pide y se dice', async () => {
