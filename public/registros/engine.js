@@ -6295,7 +6295,6 @@ function _madResLotes(fuentes, libro, hoy){
   const filasTanque=(fuentes.tanques||[]).filter(function(r){ return madLibroTxt(r.Sala) && madLibroEnt(r.Tanque) && _madResEsFecha(_madResF10(r.Fecha)); });
   const desoves=_madResDesoves(fuentes.desoves), trat=fuentes.tratamientos||[];
   const tasa=function(m,i){ return i>0 ? _madResR2((m/i)*100) : ""; };
-  const ultimaFecha=function(filas){ return filas.reduce(function(m,r){ return _madResF10(r.Fecha)>m ? _madResF10(r.Fecha) : m; },""); };
   const out=[];
   Object.keys(libro.lotes).forEach(function(n){
     const L=libro.lotes[n];
@@ -6307,18 +6306,31 @@ function _madResLotes(fuentes, libro, hoy){
       tanques.push({ sala:T.sala, tanque:T.tanque, machos:T.machos, hembras:T.hembras, relacion:T.machos>0 ? _madResR2(T.hembras/T.machos) : "" });
     });
     tanques.sort(function(a,b){ return _madResOrden(a.sala,b.sala) || a.tanque-b.tanque; });
-    const suyas=filasTanque.filter(function(r){ return tanques.some(function(u){ return u.sala===madLibroTxt(r.Sala) && u.tanque===madLibroEnt(r.Tanque); }); });
-    const peso=function(col){
-      const con=suyas.filter(function(r){ return _madResNum(r[col])!==null && _madResNum(r[col])>0; });
-      const f=ultimaFecha(con);
-      if(!f) return { valor:"", fecha:"" };
-      const del=con.filter(function(r){ return _madResF10(r.Fecha)===f; }).map(function(r){ return _madResNum(r[col]); });
-      return { valor:_madResR2(del.reduce(function(a,b){ return a+b; },0)/del.length), fecha:f };
+    // H1 (2026-09-15): una fila de Tanques es del lote si ESE DÍA el tanque lo tenía (libro al cierre del día). Ver el módulo.
+    const candidatas=filasTanque.filter(function(r){ return !L.ingreso || _madResF10(r.Fecha)>=L.ingreso; });
+    const ultimoDia=function(filas){
+      const fechas=filas.map(function(r){ return _madResF10(r.Fecha); }).filter(function(f,i,a){ return a.indexOf(f)===i; }).sort().reverse();
+      for(let i=0;i<fechas.length;i++){
+        const f=fechas[i], lib=libroAl(f);
+        const del=filas.filter(function(r){
+          if(_madResF10(r.Fecha)!==f) return false;
+          const T=lib.tanques[madUbicKey(r.Sala, r.Tanque)];
+          return !!T && T.composicion.some(function(c){ return c.lote===L.lote && (c.machos>0||c.hembras>0); });
+        });
+        if(del.length) return { fecha:f, filas:del };
+      }
+      return { fecha:"", filas:[] };
     };
-    const fDia=ultimaFecha(suyas);
+    const peso=function(col){
+      const d=ultimoDia(candidatas.filter(function(r){ return _madResNum(r[col])!==null && _madResNum(r[col])>0; }));
+      if(!d.fecha) return { valor:"", fecha:"" };
+      const del=d.filas.map(function(r){ return _madResNum(r[col]); });
+      return { valor:_madResR2(del.reduce(function(a,b){ return a+b; },0)/del.length), fecha:d.fecha };
+    };
+    const dia=ultimoDia(candidatas), fDia=dia.fecha;
     let pctMudas="", pctCopulas="";
     if(fDia){
-      const delDia=suyas.filter(function(r){ return _madResF10(r.Fecha)===fDia; }), lib=libroAl(fDia), vistos={};
+      const delDia=dia.filas, lib=libroAl(fDia), vistos={};
       let vivosDia=0, hembrasDia=0;
       delDia.forEach(function(r){
         const k=madUbicKey(r.Sala, r.Tanque), T=lib.tanques[k];

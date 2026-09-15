@@ -159,20 +159,36 @@ function resumenLotes(fuentes, libro, hoy) {
       tanques.push({ sala: T.sala, tanque: T.tanque, machos: T.machos, hembras: T.hembras, relacion: T.machos > 0 ? r2(T.hembras / T.machos) : '' });
     }
     tanques.sort((a, b) => porNombre(a.sala, b.sala) || a.tanque - b.tanque);
-    const suyas = filasTanque.filter((r) => tanques.some((u) => u.sala === txt(r.Sala) && u.tanque === ent(r.Tanque)));
-    const ultimaFecha = (filas) => filas.reduce((m, r) => (fecha10(r.Fecha) > m ? fecha10(r.Fecha) : m), '');
-    const peso = (col) => {
-      const con = suyas.filter((r) => num(r[col]) !== null && num(r[col]) > 0);
-      const f = ultimaFecha(con);
-      if (!f) return { valor: '', fecha: '' };
-      const del = con.filter((r) => fecha10(r.Fecha) === f).map((r) => num(r[col]));
-      return { valor: r2(del.reduce((a, b) => a + b, 0) / del.length), fecha: f };
+    /* H1 (2026-09-15) · UNA FILA DE TANQUES ES DEL LOTE SI ESE DÍA EL TANQUE LO TENÍA, según el libro al cierre de
+       ese día. La hoja no guarda el lote por fila y los tanques se reutilizan: con «las filas de los tanques donde está
+       hoy» un lote recién entrado heredaba el peso y las mudas del lote anterior de su tanque, y el que se movió perdía
+       lo pesado en su tanque de antes. Se busca de la fecha más reciente hacia atrás, sin bajar de su ingreso. */
+    const candidatas = filasTanque.filter((r) => !L.ingreso || fecha10(r.Fecha) >= L.ingreso);
+    const ultimoDia = (filas) => {
+      const fechas = [...new Set(filas.map((r) => fecha10(r.Fecha)))].sort().reverse();
+      for (const f of fechas) {
+        const lib = libroAl(f);
+        const del = filas.filter((r) => {
+          if (fecha10(r.Fecha) !== f) return false;
+          const T = lib.tanques.get(ubicKey(r.Sala, r.Tanque));
+          return !!T && T.composicion.some((c) => c.lote === L.lote && (c.machos > 0 || c.hembras > 0));
+        });
+        if (del.length) return { fecha: f, filas: del };
+      }
+      return { fecha: '', filas: [] };
     };
-    const fDia = ultimaFecha(suyas);
+    const peso = (col) => {
+      const d = ultimoDia(candidatas.filter((r) => num(r[col]) !== null && num(r[col]) > 0));
+      if (!d.fecha) return { valor: '', fecha: '' };
+      const del = d.filas.map((r) => num(r[col]));
+      return { valor: r2(del.reduce((a, b) => a + b, 0) / del.length), fecha: d.fecha };
+    };
+    const dia = ultimoDia(candidatas);
+    const fDia = dia.fecha;
     let pctMudas = '';
     let pctCopulas = '';
     if (fDia) {
-      const delDia = suyas.filter((r) => fecha10(r.Fecha) === fDia);
+      const delDia = dia.filas;
       const lib = libroAl(fDia);
       const vistos = new Set();
       let vivosDia = 0;

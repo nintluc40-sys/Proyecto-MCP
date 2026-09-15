@@ -42,6 +42,16 @@ const SALA_PARCIAL = () => [
   sala('2026-01-12', 'Sala 9', 'Cuarentena', '', {}),
   sala('2026-01-13', 'Sala 9', '', '', { 'Oxígeno 06:00': 5 }),
 ];
+/* H1: el tanque 2 de la Sala 7 lo usó OLD (pesado el 01-05, cerrado el 01-06) y después recibió a NEW, que venía del
+   tanque 3, donde se pesó el 01-04. */
+const TANQUE_REUTILIZADO = () => ({
+  ingresos: [ing('2026-01-01', 'OLD', 'CG1', 'Sala 7', 2, 4, 8), ing('2026-01-02', 'NEW', 'CG2', 'Sala 7', 3, 5, 10)],
+  tanques: [tq('2026-01-04', 'Sala 7', 3, { Muda: 1, 'Peso promedio machos (g)': 30, 'Peso promedio hembras (g)': 35 }),
+    tq('2026-01-05', 'Sala 7', 2, { Muda: 2, 'Cópulas': 3, 'Peso promedio machos (g)': 50, 'Peso promedio hembras (g)': 60 })],
+  cierres: [{ Fecha: '2026-01-06', Lote: 'OLD', Tipo: 'Total', Machos: 4, Hembras: 8, Sala: '' }],
+  movimientos: [{ Fecha: '2026-01-08', Tipo: 'Transferencia', 'Sala origen': 'Sala 7', 'Tanque origen': 3, 'Sala destino': 'Sala 7', 'Tanque destino': 2,
+    Machos: 5, Hembras: 10, 'Agua destino': 'RAS', Motivo: 'Logística', Observaciones: '' }],
+});
 const R = resumenMaduracion(FUENTES(), { hoy: '2026-02-01' });
 const lote = (n) => R.lotes.find((l) => l.lote === n);
 const deSala = (n) => R.salas.find((s) => s.sala === n);
@@ -108,6 +118,20 @@ describe('Resumen · lotes', () => {
     ]);
     expect([lote('AB').pesoMachos, lote('AB').pesoHembras]).toEqual([{ valor: 42, fecha: '2026-01-30' }, { valor: 59, fecha: '2026-01-30' }]);
   });
+  it('🔴 H1: peso, mudas y cópulas sólo de las filas de tanques que ESE DÍA tenían el lote (tanque reutilizado y lote movido)', () => {
+    // NEW está hoy en el tanque 2, pero la fila del 01-05 de ese tanque es de OLD (50 g, 2 mudas, 3 cópulas). Lo de NEW es
+    // la fila del 01-04 en el tanque 3, donde estaba: 30 g ♂, 35 g ♀, 1 muda sobre 15 vivos = 6.67 %, 0 cópulas sobre 10 ♀.
+    const X = resumenMaduracion(TANQUE_REUTILIZADO(), { hoy: '2026-01-09' });
+    expect(X.lotes.map((l) => l.lote)).toEqual(['NEW']);
+    expect(X.lotes[0].tanques.map((t) => t.tanque)).toEqual([2]);
+    expect(X.lotes[0]).toMatchObject({ pesoMachos: { valor: 30, fecha: '2026-01-04' }, pesoHembras: { valor: 35, fecha: '2026-01-04' },
+      fechaDia: '2026-01-04', pctMudas: 6.67, pctCopulas: 0 });
+  });
+  it('H1: un lote sin ninguna fila suya en Tanques sale sin peso ni mudas, aunque su tanque tenga filas de otro lote', () => {
+    const f = TANQUE_REUTILIZADO();
+    f.tanques = f.tanques.filter((r) => r.Tanque === 2);
+    expect(resumenMaduracion(f, { hoy: '2026-01-09' }).lotes[0]).toMatchObject({ pesoMachos: { valor: '', fecha: '' }, fechaDia: '', pctMudas: '', pctCopulas: '' });
+  });
   it('🔴 % mudas y % cópulas del último día, sobre los vivos DE ESE DÍA (antes de la mortalidad en desove del 01-31)', () => {
     // AB el 01-30: mudas 3+1 = 4 sobre 96 + 49 vivos = 2.76 %; cópulas 0+2 sobre 68 + 40 hembras = 1.85 %.
     expect([lote('AB').fechaDia, lote('AB').pctMudas, lote('AB').pctCopulas]).toEqual(['2026-01-30', 2.76, 1.85]);
@@ -158,7 +182,7 @@ describe('Resumen · el monolito y el módulo dan lo mismo', () => {
 
   it('🔴 el mismo resumen, cifra a cifra, en el caso completo y en variantes', () => {
     const variantes = [FUENTES(), Object.assign(FUENTES(), { cierres: [{ Fecha: '2026-01-31', Lote: 'CD', Tipo: 'Total', Machos: 10, Hembras: 18, Sala: '' }] }),
-      Object.assign(FUENTES(), { sala: [], desoves: [], tratamientos: [] }), {}, Object.assign(FUENTES(), { sala: FUENTES().sala.concat(SALA_PARCIAL()) })];
+      Object.assign(FUENTES(), { sala: [], desoves: [], tratamientos: [] }), {}, Object.assign(FUENTES(), { sala: FUENTES().sala.concat(SALA_PARCIAL()) }), TANQUE_REUTILIZADO()];
     for (const f of variantes) {
       for (const hoy of ['2026-02-01', '2026-01-25']) expect(api.madResumenMaduracion(f, { hoy })).toEqual(resumenMaduracion(f, { hoy }));
     }
