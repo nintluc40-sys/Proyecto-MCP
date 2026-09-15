@@ -206,20 +206,31 @@ describe('GAS · un cliente con el ESQUEMA VIEJO no puede escribir en Maduració
     const r = g.post({ sheetName: 'Maduración Lotes', headers: LOTES_F1D9687,
       rows: [['2026-09-07', 'Sala 4', 1, 'BP', '', 100, 200, 0, 1, 0]] });
     expect(r.status).toBe('error');
-    expect(r.message).toContain('columna 2');
+    expect(r.message).toContain('columna 7');                         // desde A4 lo para antes la firma de Lotes
     expect(hoja.filas).toHaveLength(1);
     expect(hoja.escrituras).toEqual([]);
   });
 
-  it('🔴 un cambio al FINAL también se ve: Desoves sin «Despacho» (58a9675) se RECHAZA', () => {
-    /* La hoja es la del esquema CON «Despacho» y anterior a los cambios del 2026-09-14 (que movieron
-       el primer desfase a la columna 7-8): así la prueba sigue midiendo un cambio SÓLO al final. */
-    const hoja = hojaFalsa([DESOVES_58A9675.slice(0, 12).concat(['Despacho', 'Observaciones'])]);
+  it('🔴 un cambio al FINAL también se ve: Desoves sin «Despacho» se RECHAZA', () => {
+    /* El envío lleva la firma de Lotes (A4), así que lo que mide es la guarda V3 contra la hoja: el
+       único desfase es que falta «Despacho» al final. */
+    const sinDespacho = MAD_DESOVE_HEADERS.filter((h) => h !== 'Despacho');
+    const hoja = hojaFalsa([MAD_DESOVE_HEADERS]);
     const g = gas({ 'Maduración Lotes': hoja });
-    const r = g.post({ sheetName: 'Maduración Lotes', headers: DESOVES_58A9675,
-      rows: [['2026-09-07', 'BP', 'CG1', 558, 64, 1, 2, 0, '', '', '', '', 'obs']] });
+    const r = g.post({ sheetName: 'Maduración Lotes', headers: sinDespacho,
+      rows: [['2026-09-07', 'BP', 'CG1', 558, 64, 1, 2, '', '', '', '', 'obs']] });
     expect(r.status).toBe('error');
-    expect(r.message).toContain('columna 13');
+    expect(r.message).toContain('columna 12');
+    expect(r.message).toContain('la hoja espera «Despacho»');
+    expect(hoja.escrituras).toEqual([]);
+  });
+
+  it('🔴 Fin de Ciclo CON la firma pero con columnas cruzadas se RECHAZA por la guarda V3', () => {
+    const cruzada = MAD_FIN_HEADERS.map((h) => (h === 'Machos' ? 'Hembras' : h === 'Hembras' ? 'Machos' : h));
+    const hoja = hojaFalsa([MAD_FIN_HEADERS]);
+    const r = gas({ 'Maduración Fin de Ciclo': hoja }).post({ sheetName: 'Maduración Fin de Ciclo', headers: cruzada, rows: [filaVacia(cruzada)] });
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('la hoja espera «Machos»');
     expect(hoja.escrituras).toEqual([]);
   });
 
@@ -307,6 +318,78 @@ describe('GAS · lo que la guarda NO puede romper (V3)', () => {
     const g = gas({ 'Maduración MATRIZ': hojaFalsa([['Nº', 'Trovan', 'Sala']]) });
     const r = g.post({ sheetName: 'Maduración MATRIZ', headers: cab, rows: [[1, '0008218CCC', 'Sala 1']] });
     expect(r.status).toBe('ok');
+  });
+});
+
+/* ── A4 (2026-09-14) · la FIRMA del esquema vigente, también con la hoja vacía ──
+   La app publicada (6df4b3a) guarda Fin de Ciclo sin preguntar al GAS y con 10 columnas. Con la hoja
+   vacía, V3 no tiene con qué comparar: el primer envío fijaría la cabecera vieja y bloquearía a las
+   apps al día. Ingreso y Lotes quedan igual en cuanto se vacíen (paso 3 de P1). */
+const FIN_6DF4B3A = ['Fecha', 'Lote', 'Tipo', 'Motivo', 'Metabisulfito (kg)', 'Fecha aplicación', 'Machos', 'Hembras', 'Observaciones', 'ID'];
+const FIN_SIN_REGISTRO = MAD_FIN_HEADERS.filter((h) => h !== 'Registro');
+const INGRESO_6DF4B3A_PREVIO = ['Fecha', 'Lote', 'Código genético', 'Piscina Broodstock', 'Camaronera origen', 'Grupo', 'Sala', 'Tanque',
+  'Machos', 'Hembras', 'Peso promedio machos (g)', 'Peso promedio hembras (g)', 'Supervivencia piscina (%)', 'Camarones por m2',
+  'Densidad de siembra', 'Agua', 'ID'];
+
+describe('GAS · A4 · una app vieja no fija la cabecera vieja en una hoja vacía', () => {
+  it('🔴 Fin de Ciclo de la app publicada, con la hoja SIN crear: se rechaza y la hoja NO nace', () => {
+    const hojas = {};
+    const g = gas(hojas);
+    const r = g.post({ sheetName: 'Maduración Fin de Ciclo', headers: FIN_6DF4B3A,
+      rows: [['2026-09-15', 'BP', 'Total', 'Pedido', '', '', 10, 12, '', '2026-09-15-BP-Pedido']] });
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('Esquema desactualizado');
+    expect(r.message).toContain('columna 5');
+    expect(r.message).toContain('«Sala»');
+    expect(r.message).not.toContain('Metabisulfito');                  // no echa en cara lo que mandó
+    expect(hojas['Maduración Fin de Ciclo']).toBeUndefined();
+    expect(g.candado.soltado).toBe(g.candado.tomado);
+    expect([...g.cache.keys()].some((k) => k.startsWith('idem_'))).toBe(false);
+  });
+
+  it('🔴 lo mismo con la hoja creada pero VACÍA: no escribe ni la cabecera', () => {
+    const hoja = hojaFalsa([]);
+    const g = gas({ 'Maduración Fin de Ciclo': hoja });
+    const r = g.post({ sheetName: 'Maduración Fin de Ciclo', headers: FIN_6DF4B3A, rows: [filaVacia(FIN_6DF4B3A)] });
+    expect(r.status).toBe('error');
+    expect(hoja.filas).toEqual([]);
+    expect(hoja.escrituras).toEqual([]);
+  });
+
+  it('🔴 Fin de Ciclo con Sala pero SIN «Registro» se rechaza por la columna 10', () => {
+    const g = gas({});
+    const r = g.post({ sheetName: 'Maduración Fin de Ciclo', headers: FIN_SIN_REGISTRO, rows: [filaVacia(FIN_SIN_REGISTRO)] });
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('columna 10');
+  });
+
+  it('🔴 Ingreso con «Camarones por m2» y Lotes con «Total de nauplios», en hojas vacías, se rechazan', () => {
+    const casos = [['Maduración Ingreso', INGRESO_6DF4B3A_PREVIO, 'columna 14'], ['Maduración Lotes', DESOVES_58A9675, 'columna 7']];
+    for (const [nombre, cab, col] of casos) {
+      const hoja = hojaFalsa([]);
+      const r = gas({ [nombre]: hoja }).post({ sheetName: nombre, headers: cab, rows: [filaVacia(cab)] });
+      expect(r.status, nombre).toBe('error');
+      expect(r.message, nombre).toContain(col);
+      expect(hoja.escrituras, nombre).toEqual([]);
+    }
+  });
+
+  it('el fixture ejerce algo: las tres, AL DÍA y sin hoja, escriben y la crean con la cabecera vigente', () => {
+    for (const [nombre, cab] of [['Maduración Ingreso', MAD_INGRESO_HEADERS], ['Maduración Lotes', MAD_DESOVE_HEADERS], ['Maduración Fin de Ciclo', MAD_FIN_HEADERS]]) {
+      const hojas = {};
+      const fila = cab.map((h) => (h === 'ID' ? 'x1' : h === 'Fecha' ? '2026-09-15' : h === 'Lote' ? 'BP' : h === 'Código genético' ? 'CG1' : ''));
+      const r = gas(hojas).post({ sheetName: nombre, headers: cab, rows: [fila] });
+      expect(r.status, nombre).toBe('ok');
+      expect(hojas[nombre].filas[0], nombre).toEqual(cab);
+    }
+  });
+
+  it('🔑 sólo esas tres: una hoja sin firma sigue naciendo con las cabeceras del envío', () => {
+    const hojas = {};
+    const r = gas(hojas).post({ sheetName: 'Maduración Movimientos', headers: MAD_MOV_HEADERS,
+      rows: [MAD_MOV_HEADERS.map((h) => (h === 'ID' ? 'x1' : h === 'Fecha' ? '2026-09-15' : ''))] });
+    expect(r.status).toBe('ok');
+    expect(hojas['Maduración Movimientos'].filas[0]).toEqual(MAD_MOV_HEADERS);
   });
 });
 

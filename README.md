@@ -308,6 +308,17 @@ Dos consecuencias que conviene tener presentes al desplegar:
   eliminar la pestaña, o vaciarla **incluida la fila 1**: el primer envío escribe las
   cabeceras nuevas. La pestaña de Desoves se sigue reconociendo en el tablero por «Hembras no
   viables» (ya no queda ninguna cabecera con «nauplio»).
+- 🛡 **A4 · la firma del esquema vigente.** El GAS nuevo exige a los envíos de Ingreso, Lotes y Fin
+  de Ciclo las cabeceras que sólo tiene su esquema actual («Crecimiento semanal promedio»,
+  «Hembras no viables», «Sala» y «Registro»), **aunque la hoja esté vacía o no exista**: una app
+  vieja (Pages antes del push, o una copia en caché) ya no puede fijar la cabecera vieja y bloquear
+  a las apps al día. Si una de esas cabeceras cambia, se actualiza `MAD_ESQUEMA_FIRMA` en el mismo
+  cambio. Hasta desplegarlo, el orden seguro sigue siendo push → GAS.
+- **Desoves · Despacho y pendientes (2026-09-14).** Despacho se elige de una lista de 19 destinos
+  (varios a la vez); la celda los guarda separados por «, » en el orden de la lista. La ficha lista
+  los **desoves pendientes** (sin cifra de N5) de la hoja —bajo 🔄— y de este dispositivo;
+  ✏️ Completar abre el desove con su fecha, lote y código fijos para añadir N2 o N5, y con el N5
+  guardado sale de la lista. Lo guardado en el dispositivo vive en `larv4_mad_des_pend`.
 - ⚠ **MATRIZ · «Número» con aspecto de fecha (P16).** El GAS anterior daba formato de fecha a la
   columna 1 de toda fila escrita, y en la MATRIZ esa columna es «Número» (un 7 se veía
   «06/01/1900»). El GAS nuevo lo corrige en cada escritura, pero las celdas ya escritas conservan

@@ -21,7 +21,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "1bd16a23cc20";
+const GAS_VERSION = "441a7ef25c94";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -334,6 +334,15 @@ function doPost(e) {
       });
     } catch(sanErr) {
       return respond({ status: "error", message: "Error en datos" });
+    }
+
+    // A4 (2026-09-14) · un envío SIN la firma del esquema vigente no escribe, aunque la hoja esté
+    // vacía o no exista: ver MAD_ESQUEMA_FIRMA. Va ANTES de abrir o crear la hoja porque fmtHeader
+    // escribiría las cabeceras viejas del envío y la guarda V3 de abajo ya no vería el desfase.
+    var _sinFirma = firmaAusente_(payload.sheetName, payload.headers);
+    if (_sinFirma) {
+      return respond({ status: "error", message: "Esquema desactualizado en «" + payload.sheetName + "» (columna "
+        + _sinFirma.col + ": este GAS espera «" + _sinFirma.cab + "»). Actualiza la app antes de sincronizar: no se escribió nada y lo tecleado sigue en este dispositivo." });
     }
 
     // Abrir o crear hoja
@@ -798,6 +807,27 @@ function esquemaIncompatible_(cabHoja, cabEnvio) {
     var h = _cabeceraNorm_(cabHoja[i]);
     var p = _cabeceraNorm_(cleanCell(cabEnvio[i]));
     if (h && p && h !== p) return { col: i + 1, hoja: h };
+  }
+  return null;
+}
+// A4 (2026-09-14) · LA FIRMA DEL ESQUEMA VIGENTE. La guarda V3 compara el envío con la HOJA, y una
+// hoja vacía o inexistente no tiene con qué compararse: el primer envío fija sus cabeceras. Si sale de
+// una app vieja (Pages antes del push, o una copia en caché), la hoja nace con el esquema viejo y desde
+// ahí la guarda rechaza a las apps al día. Estas hojas exigen al ENVÍO las cabeceras que sólo tiene su
+// esquema actual (columna desde 1). Si una de ellas cambia de nombre o de sitio, se actualiza aquí en el
+// mismo cambio y se re-despliega el GAS.
+var MAD_ESQUEMA_FIRMA = {
+  "Maduración Ingreso":      [[14, "Crecimiento semanal promedio"]],
+  "Maduración Lotes":        [[7, "Hembras no viables"]],
+  "Maduración Fin de Ciclo": [[5, "Sala"], [10, "Registro"]]
+};
+// null si el envío trae la firma (o la hoja no tiene); si no, { col, cab: lo que espera }.
+function firmaAusente_(hoja, cabEnvio) {
+  var firma = Object.prototype.hasOwnProperty.call(MAD_ESQUEMA_FIRMA, hoja) ? MAD_ESQUEMA_FIRMA[hoja] : null;
+  if (!firma) return null;
+  var cab = Array.isArray(cabEnvio) ? cabEnvio : [];
+  for (var i = 0; i < firma.length; i++) {
+    if (_cabeceraNorm_(cleanCell(cab[firma[i][0] - 1])) !== firma[i][1]) return { col: firma[i][0], cab: firma[i][1] };
   }
   return null;
 }

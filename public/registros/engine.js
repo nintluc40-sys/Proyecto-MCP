@@ -7551,7 +7551,7 @@ function madDesBuildRows(model){
       huevos: madDesMiles(x.huevos), hembrasNoViables: madIngInt(x.hembrasNoViables),
       fechaN2: sanitizeStr(x.fechaN2,10), n2: madDesMiles(x.n2),
       fechaN5: sanitizeStr(x.fechaN5,10), n5: madDesMiles(x.n5),
-      despacho: sanitizeStr(x.despacho,200),
+      despacho: madDesDespachoTexto(x.despacho),
       observaciones: sanitizeStr(x.observaciones,300)
     };
     filas.push(MAD_DESOVE_COLUMNS.map(function(col){ return v[col.k]; }));
@@ -7560,6 +7560,91 @@ function madDesBuildRows(model){
 }
 function buildMadDesovePayload(model){
   return { sheetName: MAD_DESOVE_SHEET, headers: MAD_DESOVE_HEADERS.slice(), rows: madDesBuildRows(model) };
+}
+// 2026-09-14 (usuario): Despacho deja de ser texto libre; se eligen destinos de esta lista y la celda los
+// guarda separados por «, » en este orden. Ver el módulo.
+const MAD_DESOVE_DESPACHO_OPTS = ["Fuentes del Mar",
+  "Mar Bravo M01","Mar Bravo M02","Mar Bravo M03","Mar Bravo M04","Mar Bravo M05",
+  "Mar Bravo M06","Mar Bravo M07","Mar Bravo M08","Mar Bravo M09","Mar Bravo M10","Mar Bravo CIO",
+  "Punta Carnero","Tabasca","Hisenor","Incamar","Megalatina","SanLab","SanLab Eva"];
+function _madDesDespNorm(s){ return String(s==null?"":s).trim().replace(/\s+/g," ").toLowerCase(); }
+function madDesDespachoLista(v){
+  const pedidos={};
+  (Array.isArray(v) ? v : String(v==null?"":v).split(",")).forEach(function(p){ pedidos[_madDesDespNorm(p)]=1; });
+  return MAD_DESOVE_DESPACHO_OPTS.filter(function(o){ return pedidos[_madDesDespNorm(o)]===1; });
+}
+function madDesDespachoTexto(v){ return madDesDespachoLista(v).join(", "); }
+// ── Desoves PENDIENTES (2026-09-14, usuario): guardar hoy y completar N2/N5 otro día ──
+// Pendiente = sin cifra de N5. La hoja (todos los dispositivos, bajo botón) con lo guardado desde este
+// dispositivo encima, como el MERGE del GAS: lo local no vacío pisa, lo vacío conserva. Lo local completo
+// se guarda como marca hasta que la hoja lo tenga completo. Ver el módulo.
+const MAD_DES_CAMPOS_DATO = ["piscina","desoves","huevos","hembrasNoViables","fechaN2","n2","fechaN5","n5","despacho","observaciones"];
+const MAD_DES_CAMPOS_MIL = ["huevos","n2","n5"];
+const MAD_DES_LOCALES_MAX = 60;
+function _madDesVacio(v){ return Array.isArray(v) ? v.length===0 : (v===""||v===null||v===undefined); }
+function _madDesTxt(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
+function madDesLlave(d){ const x=d||{}; return sanitizeStr(x.fecha,10)+"|"+madDesNormLote(x.lote)+"|"+madDesNormCG(x.codigoGenetico); }
+function madDesCompleto(d){ return madIngInt((d||{}).n5)!==""; }
+function madDesDesdeHoja(fila){
+  const f=fila||{}, r={};
+  MAD_DESOVE_COLUMNS.forEach(function(c){
+    const t=_madDesTxt(f[c.h]);
+    r[c.k] = MAD_DES_CAMPOS_MIL.indexOf(c.k)!==-1 ? ((t===""||!isFinite(Number(t))) ? "" : String(Number(t)/MAD_DESOVE_MIL)) : t;
+  });
+  r.fecha=r.fecha.slice(0,10); r.fechaN2=r.fechaN2.slice(0,10); r.fechaN5=r.fechaN5.slice(0,10);
+  r.lote=madDesNormLote(r.lote); r.codigoGenetico=madDesNormCG(r.codigoGenetico);
+  r.despacho=madDesDespachoLista(r.despacho);
+  return r;
+}
+function madDesPendientes(filasHoja, locales){
+  const porLlave={}, orden=[];
+  (filasHoja||[]).forEach(function(fila){
+    const d=madDesDesdeHoja(fila);
+    if(!madDesFecha(d.fecha)||!d.lote||!d.codigoGenetico) return;
+    d.origen="hoja";
+    const k=madDesLlave(d);
+    if(!porLlave[k]) orden.push(k);
+    porLlave[k]=d;
+  });
+  (locales||[]).forEach(function(l){
+    const x=l||{};
+    if(!madDesFecha(x.fecha)||!madDesNormLote(x.lote)||!madDesNormCG(x.codigoGenetico)) return;
+    const k=madDesLlave(x);
+    let d=porLlave[k];
+    if(!d){ d={ fecha:sanitizeStr(x.fecha,10), lote:madDesNormLote(x.lote), codigoGenetico:madDesNormCG(x.codigoGenetico), origen:"dispositivo" }; porLlave[k]=d; orden.push(k); }
+    MAD_DES_CAMPOS_DATO.forEach(function(c){
+      const v = c==="despacho" ? madDesDespachoLista(x.despacho) : _madDesTxt(x[c]);
+      if(!_madDesVacio(v)) d[c]=v;
+      else if(d[c]===undefined) d[c] = c==="despacho" ? [] : "";
+    });
+  });
+  return orden.map(function(k){ return porLlave[k]; })
+    .filter(function(d){ return !madDesCompleto(d); })
+    .sort(function(a,b){ const ka=madDesLlave(a), kb=madDesLlave(b); return ka<kb ? 1 : (ka>kb ? -1 : 0); });
+}
+function madDesLocalesAnota(locales, model, ahora){
+  const m=model||{}, fecha=sanitizeStr(m.fecha,10);
+  let lista=(locales||[]).filter(function(l){ return l && typeof l==="object"; });
+  (m.desoves||[]).forEach(function(dd){
+    const x=dd||{}, lote=madDesNormLote(x.lote), cg=madDesNormCG(x.codigoGenetico);
+    if(!madDesFecha(fecha)||lote===""||cg==="") return;
+    const nuevo={ fecha:fecha, lote:lote, codigoGenetico:cg };
+    const k=madDesLlave(nuevo);
+    const previo=lista.filter(function(l){ return madDesLlave(l)===k; })[0]||{};
+    MAD_DES_CAMPOS_DATO.forEach(function(c){
+      const v = c==="despacho" ? madDesDespachoLista(x.despacho) : _madDesTxt(x[c]);
+      nuevo[c] = (_madDesVacio(v) && previo[c]!==undefined) ? previo[c] : v;
+    });
+    nuevo.ts=ahora;
+    lista=lista.filter(function(l){ return madDesLlave(l)!==k; });
+    lista.push(nuevo);
+  });
+  return lista.slice(-MAD_DES_LOCALES_MAX);
+}
+function madDesLocalesPoda(locales, filasHoja){
+  const completos={};
+  (filasHoja||[]).forEach(function(f){ const d=madDesDesdeHoja(f); if(madDesCompleto(d)) completos[madDesLlave(d)]=1; });
+  return (locales||[]).filter(function(l){ return l && typeof l==="object" && completos[madDesLlave(l)]!==1; });
 }
 function madDesValidar(model){
   const m = model||{}, errores=[], avisos=[];
@@ -7598,28 +7683,53 @@ function madDesValidar(model){
 }
 
 // ── Maduración · Desoves · interfaz ──────────────────────────────────────────
-function _madDesCardHTML(){
+// `d` (opcional) rellena la tarjeta con un desove guardado; `bloq` fija su llave (lote y código) al completarlo.
+function _madDesCardHTML(d, bloq){
+  const x=d||{};
+  const val=function(k){ const v=x[k]; return (v===undefined||v===null||v==="") ? "" : ' value="'+escapeHtml(String(v))+'"'; };
+  const llave=function(k){ return val(k) + (bloq ? ' readonly title="Es la llave del desove: no cambia al completarlo"' : ''); };
+  const gris = bloq ? ';background:#f1f5f9' : '';
   return '<div class="md-des" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px;background:#fff">'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
-    +   '<label style="'+_MAD_ING_LBL+'">Lote<input class="md-lote" style="'+_MAD_ING_INP+';width:100px;text-transform:uppercase"></label>'
-    +   '<label style="'+_MAD_ING_LBL+'">Código genético<input class="md-cg" style="'+_MAD_ING_INP+';width:120px"></label>'
-    +   '<label style="'+_MAD_ING_LBL+'">Piscina Broodstock<input class="md-piscina" style="'+_MAD_ING_INP+';width:130px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Lote<input class="md-lote"'+llave("lote")+' style="'+_MAD_ING_INP+';width:100px;text-transform:uppercase'+gris+'"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Código genético<input class="md-cg"'+llave("codigoGenetico")+' style="'+_MAD_ING_INP+';width:120px'+gris+'"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Piscina Broodstock<input class="md-piscina"'+val("piscina")+' style="'+_MAD_ING_INP+';width:130px"></label>'
     +   '<button class="btn" type="button" onclick="madDesDelCard(this)" style="font-size:11px">✕ Quitar</button>'
     + '</div>'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
-    +   '<label style="'+_MAD_ING_LBL+'">Desoves<input class="md-desoves" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:88px"></label>'
-    +   '<label style="'+_MAD_ING_LBL+'">Total de huevos (miles)<input class="md-huevos" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:130px"></label>'
-    +   '<label style="'+_MAD_ING_LBL+'" title="Reproductoras que estaban maduras pero no desovaron">Hembras no viables<input class="md-hnoviables" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:120px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Desoves<input class="md-desoves" type="number" min="0" step="1"'+val("desoves")+' style="'+_MAD_ING_INP+';width:88px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Total de huevos (miles)<input class="md-huevos" type="number" min="0" step="1"'+val("huevos")+' style="'+_MAD_ING_INP+';width:130px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'" title="Reproductoras que estaban maduras pero no desovaron">Hembras no viables<input class="md-hnoviables" type="number" min="0" step="1"'+val("hembrasNoViables")+' style="'+_MAD_ING_INP+';width:120px"></label>'
     + '</div>'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
-    +   '<label style="'+_MAD_ING_LBL+'">Fecha N2<input class="md-fn2" type="date" style="'+_MAD_ING_INP+'"></label>'
-    +   '<label style="'+_MAD_ING_LBL+'">N2 (miles)<input class="md-n2" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:110px"></label>'
-    +   '<label style="'+_MAD_ING_LBL+'">Fecha N5<input class="md-fn5" type="date" style="'+_MAD_ING_INP+'"></label>'
-    +   '<label style="'+_MAD_ING_LBL+'">N5 (miles)<input class="md-n5" type="number" min="0" step="1" style="'+_MAD_ING_INP+';width:110px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Fecha N2<input class="md-fn2" type="date"'+val("fechaN2")+' style="'+_MAD_ING_INP+'"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">N2 (miles)<input class="md-n2" type="number" min="0" step="1"'+val("n2")+' style="'+_MAD_ING_INP+';width:110px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Fecha N5<input class="md-fn5" type="date"'+val("fechaN5")+' style="'+_MAD_ING_INP+'"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">N5 (miles)<input class="md-n5" type="number" min="0" step="1"'+val("n5")+' style="'+_MAD_ING_INP+';width:110px"></label>'
     + '</div>'
-    + '<label style="'+_MAD_ING_LBL+'">Despacho<input class="md-desp" maxlength="200" placeholder="a dónde van los N5" style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
-    + '<label style="'+_MAD_ING_LBL+'">Observaciones<input class="md-obs" style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
+    + _madDesDespachoHTML(x.despacho)
+    + '<label style="'+_MAD_ING_LBL+'">Observaciones<input class="md-obs"'+val("observaciones")+' style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
     + '</div>';
+}
+// Despacho: desplegable de selección múltiple. ⚠ Va en un <div> y no en un <label>: dentro de un label,
+// pulsar el resumen marcaría la primera casilla.
+function _madDesDespachoRotulo(lista){ return lista.length ? lista.join(", ") : "Elige uno o varios destinos"; }
+function _madDesDespachoHTML(sel){
+  const elegidos=madDesDespachoLista(sel);
+  const ops=MAD_DESOVE_DESPACHO_OPTS.map(function(o){
+    return '<label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:400;padding:3px 2px;cursor:pointer">'
+      + '<input type="checkbox" class="md-desp-op" value="'+escapeHtml(o)+'"'+(elegidos.indexOf(o)!==-1?' checked':'')+' onchange="madDesDespachoResumen(this)">'+escapeHtml(o)+'</label>';
+  }).join("");
+  return '<div style="'+_MAD_ING_LBL+';margin-bottom:8px">Despacho (a dónde van los N5)'
+    + '<details class="md-desp" style="border:1px solid #cbd5e1;border-radius:6px;background:#fff">'
+    +   '<summary class="md-desp-res" style="padding:6px 10px;cursor:pointer;font-size:12px;font-weight:400;color:#334155">'+escapeHtml(_madDesDespachoRotulo(elegidos))+'</summary>'
+    +   '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0 12px;padding:6px 10px;border-top:1px solid #e2e8f0">'+ops+'</div>'
+    + '</details></div>';
+}
+function madDesDespachoResumen(el){
+  const det = el && el.closest ? el.closest(".md-desp") : null; if(!det) return;
+  const lista = Array.prototype.map.call(det.querySelectorAll(".md-desp-op:checked"), function(c){ return c.value; });
+  const s = det.querySelector(".md-desp-res"); if(s) s.textContent = _madDesDespachoRotulo(madDesDespachoLista(lista));
 }
 function madDesAddCard(){
   const c=document.getElementById("md-cards");
@@ -7640,7 +7750,7 @@ function madDesCollect(){
       desoves:g(c,".md-desoves"), huevos:g(c,".md-huevos"),
       hembrasNoViables:g(c,".md-hnoviables"),
       fechaN2:g(c,".md-fn2"), n2:g(c,".md-n2"), fechaN5:g(c,".md-fn5"), n5:g(c,".md-n5"),
-      despacho:g(c,".md-desp"),
+      despacho:Array.prototype.map.call(c.querySelectorAll(".md-desp-op:checked"), function(e){ return e.value; }),
       observaciones:g(c,".md-obs")
     });
   });
@@ -7718,6 +7828,7 @@ async function madDesGuardar(){
   const ok=await postPayload(payload, gasUrl(), _t);
   if(ok){
     madDesLogAnota(model.fecha, payload.rows.length, "ok");
+    madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), model, Date.now()));
     toast("✅ Desove registrado · "+payload.rows.length+" fila(s)","ok",5000);
     madDesReiniciar();
     return;
@@ -7727,6 +7838,7 @@ async function madDesGuardar(){
   // registrarlo dos veces, y aquí el segundo envío se fusionaría sobre el primero.
   if(_t.outcome==="queued"){
     madDesLogAnota(model.fecha, payload.rows.length, "cola");
+    madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), model, Date.now()));
     madDesReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudo registrar el desove", null, _t.gasMessage);
@@ -7740,10 +7852,71 @@ function madDesVaciar(){
   if(!confirm("¿Vaciar el formulario de desoves?\nSe perderá todo lo tecleado.")) return;
   madDesReiniciar();
 }
+// ── Desoves PENDIENTES · interfaz ── lo guardado desde este dispositivo vive en MAD_DES_PEND_KEY; la hoja,
+// en _madDesHoja (última lectura BUENA de esta sesión, o null).
+const MAD_DES_PEND_KEY = "larv4_mad_des_pend";
+let _madDesHoja = null;
+let _madDesPendUltimos = [];
+function madDesLocalesLeer(){
+  try{ const v=JSON.parse(localStorage.getItem(MAD_DES_PEND_KEY)||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; }
+}
+function madDesLocalesGuardar(list){
+  try{ localStorage.setItem(MAD_DES_PEND_KEY, JSON.stringify(list)); }catch(_){}
+}
+function madDesPendTablaHTML(){
+  const lista=madDesPendientes(_madDesHoja||[], madDesLocalesLeer());
+  _madDesPendUltimos=lista;
+  if(!lista.length) return '<div style="font-size:11px;color:#94a3b8">No hay desoves pendientes'+(_madDesHoja ? '' : ' guardados desde este dispositivo')+'.</div>';
+  const mil=function(v){ return v==="" ? "—" : escapeHtml(v)+" mil"; };
+  const filas=lista.map(function(d){
+    return '<tr><td>'+escapeHtml(d.fecha)+'</td><td>'+escapeHtml(d.lote)+'</td><td>'+escapeHtml(d.codigoGenetico)+'</td>'
+      + '<td style="text-align:right">'+mil(d.huevos)+'</td><td style="text-align:right">'+mil(d.n2)+'</td>'
+      + '<td>'+(d.origen==="dispositivo" ? '<span title="Aún no está en la hoja leída: en cola, o la hoja no se ha leído" style="background:#e0f2fe;color:#075985;padding:1px 6px;border-radius:4px;white-space:nowrap">📱 este dispositivo</span>' : '')+'</td>'
+      + '<td><button class="btn md-pend-ed" type="button" style="font-size:11px;white-space:nowrap" data-k="'+escapeHtml(madDesLlave(d))+'" onclick="madDesEditar(this.dataset.k)">✏️ Completar</button></td></tr>';
+  }).join("");
+  return '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Desove</th><th>Lote</th><th>Código</th><th>Huevos</th><th>N2</th><th></th><th></th></tr></thead><tbody>'+filas+'</tbody></table></div>';
+}
+async function madDesPendVer(){
+  const btn=document.getElementById("md-pend-btn"), nota=document.getElementById("md-pend-nota");
+  if(nota) nota.innerHTML='<span style="color:#64748b">Leyendo la hoja… puede tardar unos segundos.</span>';
+  if(btn) btn.disabled=true;
+  let msg;
+  try{
+    const filas=await _reproFetchSheet(MAD_DESOVE_SHEET, null);
+    _madDesHoja=filas;
+    madDesLocalesGuardar(madDesLocalesPoda(madDesLocalesLeer(), filas));
+    msg = _reproTrunc[MAD_DESOVE_SHEET]
+      ? '<span style="color:#991b1b">⚠ La hoja llegó RECORTADA: pueden faltar los desoves más recientes.</span>'
+      : '<span style="color:#166534">Hoja leída. Se relee al pulsar de nuevo.</span>';
+  }catch(x){
+    // ⚠ Una lectura fallida NO deja la anterior como si fuera actual (el defecto A1): sólo queda lo de este dispositivo.
+    _madDesHoja=null;
+    msg='<span style="color:#991b1b">No se pudo leer la hoja ('+escapeHtml((x&&x.message)||"error")+'). Abajo, sólo lo guardado desde este dispositivo.</span>';
+  }finally{
+    if(btn) btn.disabled=false;
+  }
+  const n=document.getElementById("md-pend-nota"); if(n) n.innerHTML=msg;
+  const box=document.getElementById("md-pend"); if(box) box.innerHTML=madDesPendTablaHTML();
+}
+function _madDesHayTecleado(){
+  return Array.prototype.some.call(document.querySelectorAll("#md-cards input"), function(i){
+    return i.type==="checkbox" ? i.checked : String(i.value||"").trim()!=="";
+  });
+}
+function madDesEditar(k){
+  const d=(_madDesPendUltimos||[]).filter(function(x){ return madDesLlave(x)===k; })[0];
+  if(!d){ toast("Ese desove ya no está en la lista: pulsa 🔄 Leer la hoja.","warn",4000); return; }
+  if(_madDesHayTecleado() && !confirm("Se reemplazará lo tecleado por el desove "+d.lote+" · "+d.codigoGenetico+" del "+d.fecha+". ¿Continuar?")) return;
+  const fp=document.getElementById("fp-desoves"); if(!fp) return;
+  fp.innerHTML="";
+  renderMadDesoves(d);
+  const e=document.getElementById("md-edit"); if(e && e.scrollIntoView) e.scrollIntoView({block:"start"});
+}
 // ⚠⚠ NO SE RE-PINTA SI YA ESTÁ MONTADO, por lo mismo que Ingreso y Movimientos: `selTab`
 // llama a este render cada vez que se vuelve a la pestaña, y reescribir innerHTML borraría
 // lo tecleado sin aviso. Para empezar de cero está 🧹 Vaciar.
-function renderMadDesoves(){
+// `d` (opcional, desde ✏️ Completar): abre ese desove guardado, con su fecha y su llave fijas.
+function renderMadDesoves(d){
   const fp=document.getElementById("fp-desoves"); if(!fp) return;
   if(fp.querySelector("#md-cards")) return;
   const todayStr=today();
@@ -7751,12 +7924,13 @@ function renderMadDesoves(){
     + '<div class="fc-h"><div class="fc-t">🥚 Maduración · Desoves</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
     + '<div class="fc-b">'
     +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
-    +     '<span style="font-size:16px">ℹ️</span><span>La producción se registra por <b>lote y código genético</b>, no por tanque: las copuladas de varios tanques se juntan en un pool y al devolverlas nadie identifica cuáles eran.<br>Los conteos grandes van <b>en miles</b> (escribe <b>6500</b> para 6.500.000). <b>N2 y N5 se completan después</b>: vuelve otro día, teclea el mismo lote y código, y rellena sólo lo nuevo.</span>'
+    +     '<span style="font-size:16px">ℹ️</span><span>La producción se registra por <b>lote y código genético</b>, no por tanque: las copuladas de varios tanques se juntan en un pool y al devolverlas nadie identifica cuáles eran.<br>Los conteos grandes van <b>en miles</b> (escribe <b>6500</b> para 6.500.000). <b>N2 y N5 se completan después</b>: en <b>📋 Desoves pendientes</b> pulsa <b>✏️ Completar</b>, rellena lo nuevo y guarda. Con el N5 guardado, el desove sale de la lista.</span>'
     +   '</div>'
+    +   (d ? '<div id="md-edit" style="background:#fef9c3;border:1.5px solid #fde047;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:12px;color:#713f12">✏️ Completando el desove del <b>'+escapeHtml(d.fecha)+'</b> · <b>'+escapeHtml(d.lote)+'</b> · <b>'+escapeHtml(d.codigoGenetico)+'</b>. Rellena lo nuevo y guarda; 🧹 Vaciar sale sin guardar.</div>' : '')
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
-    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha del desove<input type="date" id="md-fecha" value="'+escapeHtml(todayStr)+'" style="'+_MAD_ING_INP+'"></label>'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha del desove<input type="date" id="md-fecha" value="'+escapeHtml(d ? d.fecha : todayStr)+'"'+(d ? ' readonly' : '')+' style="'+_MAD_ING_INP+(d ? ';background:#f1f5f9' : '')+'"></label>'
     +   '</div>'
-    +   '<div id="md-cards">'+_madDesCardHTML()+'</div>'
+    +   '<div id="md-cards">'+_madDesCardHTML(d, !!d)+'</div>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
     +     '<button class="btn" type="button" onclick="madDesAddCard()">➕ Desove</button>'
     +     '<button class="btn" type="button" onclick="madDesRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
@@ -7764,6 +7938,12 @@ function renderMadDesoves(){
     +     '<button class="btn" type="button" onclick="madDesVaciar()">🧹 Vaciar</button>'
     +   '</div>'
     +   '<div id="md-report" style="margin-top:12px"></div>'
+    +   '<div style="margin-top:18px">'
+    +     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px"><h3 style="margin:0;font-size:13px">📋 Desoves pendientes (sin N5)</h3>'
+    +       '<button class="btn" type="button" id="md-pend-btn" onclick="madDesPendVer()" style="font-size:11px">🔄 Leer la hoja</button></div>'
+    +     '<div id="md-pend-nota" style="font-size:11px;color:#64748b;margin-bottom:5px">'+(_madDesHoja ? 'Hoja leída en esta sesión, con lo guardado desde este dispositivo. Pulsa 🔄 para releerla.' : 'Lo guardado desde este dispositivo. Pulsa 🔄 para ver también lo de los demás.')+'</div>'
+    +     '<div id="md-pend">'+madDesPendTablaHTML()+'</div>'
+    +   '</div>'
     +   '<div id="md-log">'+madDesLogHTML()+'</div>'
     + '</div></div>';
 }
@@ -18028,7 +18208,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "1bd16a23cc20";
+const GAS_VERSION = "441a7ef25c94";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -18341,6 +18521,15 @@ function doPost(e) {
       });
     } catch(sanErr) {
       return respond({ status: "error", message: "Error en datos" });
+    }
+
+    // A4 (2026-09-14) · un envío SIN la firma del esquema vigente no escribe, aunque la hoja esté
+    // vacía o no exista: ver MAD_ESQUEMA_FIRMA. Va ANTES de abrir o crear la hoja porque fmtHeader
+    // escribiría las cabeceras viejas del envío y la guarda V3 de abajo ya no vería el desfase.
+    var _sinFirma = firmaAusente_(payload.sheetName, payload.headers);
+    if (_sinFirma) {
+      return respond({ status: "error", message: "Esquema desactualizado en «" + payload.sheetName + "» (columna "
+        + _sinFirma.col + ": este GAS espera «" + _sinFirma.cab + "»). Actualiza la app antes de sincronizar: no se escribió nada y lo tecleado sigue en este dispositivo." });
     }
 
     // Abrir o crear hoja
@@ -18805,6 +18994,27 @@ function esquemaIncompatible_(cabHoja, cabEnvio) {
     var h = _cabeceraNorm_(cabHoja[i]);
     var p = _cabeceraNorm_(cleanCell(cabEnvio[i]));
     if (h && p && h !== p) return { col: i + 1, hoja: h };
+  }
+  return null;
+}
+// A4 (2026-09-14) · LA FIRMA DEL ESQUEMA VIGENTE. La guarda V3 compara el envío con la HOJA, y una
+// hoja vacía o inexistente no tiene con qué compararse: el primer envío fija sus cabeceras. Si sale de
+// una app vieja (Pages antes del push, o una copia en caché), la hoja nace con el esquema viejo y desde
+// ahí la guarda rechaza a las apps al día. Estas hojas exigen al ENVÍO las cabeceras que sólo tiene su
+// esquema actual (columna desde 1). Si una de ellas cambia de nombre o de sitio, se actualiza aquí en el
+// mismo cambio y se re-despliega el GAS.
+var MAD_ESQUEMA_FIRMA = {
+  "Maduración Ingreso":      [[14, "Crecimiento semanal promedio"]],
+  "Maduración Lotes":        [[7, "Hembras no viables"]],
+  "Maduración Fin de Ciclo": [[5, "Sala"], [10, "Registro"]]
+};
+// null si el envío trae la firma (o la hoja no tiene); si no, { col, cab: lo que espera }.
+function firmaAusente_(hoja, cabEnvio) {
+  var firma = Object.prototype.hasOwnProperty.call(MAD_ESQUEMA_FIRMA, hoja) ? MAD_ESQUEMA_FIRMA[hoja] : null;
+  if (!firma) return null;
+  var cab = Array.isArray(cabEnvio) ? cabEnvio : [];
+  for (var i = 0; i < firma.length; i++) {
+    if (_cabeceraNorm_(cleanCell(cab[firma[i][0] - 1])) !== firma[i][1]) return { col: firma[i][0], cab: firma[i][1] };
   }
   return null;
 }

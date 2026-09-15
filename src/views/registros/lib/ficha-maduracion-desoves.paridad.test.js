@@ -23,6 +23,15 @@ import {
   buildDesoveRows,
   buildDesovePayload,
   validarDesove,
+  MAD_DESOVE_DESPACHO_OPTS,
+  despachoLista,
+  despachoTexto,
+  desoveLlave,
+  desoveCompleto,
+  desoveDesdeHoja,
+  desovesPendientes,
+  anotarDesovesLocales,
+  podarDesovesLocales,
 } from './ficha-maduracion-desoves.schema.js';
 
 const ENGINE = new URL('../../../../public/registros/engine.js', import.meta.url);
@@ -51,7 +60,8 @@ function motorDesoves() {
     ing + '\n' + des
     + '\n;globalThis.__api = { buildMadDesovePayload, madDesBuildRows, madDesValidar,'
     + ' madDesMiles, MAD_DESOVE_HEADERS, MAD_DESOVE_SHEET, MAD_DESOVE_COLUMNS,'
-    + ' MAD_DESOVE_KEY_COLS, MAD_DESOVE_MIL };',
+    + ' MAD_DESOVE_KEY_COLS, MAD_DESOVE_MIL, MAD_DESOVE_DESPACHO_OPTS, madDesDespachoLista, madDesDespachoTexto,'
+    + ' madDesLlave, madDesCompleto, madDesDesdeHoja, madDesPendientes, madDesLocalesAnota, madDesLocalesPoda };',
   ).runInContext(ctx);
   return ctx.__api;
 }
@@ -98,6 +108,11 @@ const MODELOS = {
   'sólo hembras no viables': { fecha: '2026-09-14', desoves: [{ lote: 'BM', codigoGenetico: '766', hembrasNoViables: 3 }] },
   // 2026-09-14: «Total de nauplios» se borró. Un borrador viejo que aún los traiga: ni fila ni cifra.
   'sólo nauplios (campo retirado)': { fecha: '2026-09-14', desoves: [{ lote: 'BM', codigoGenetico: '766', nauplios: 6500 }] },
+  // 2026-09-14: Despacho elegido de la lista (array) y un texto viejo de celda.
+  'con despacho elegido': { fecha: '2026-09-15', desoves: [
+    { lote: 'BP', codigoGenetico: 'CG1', n2: 9000, fechaN2: '2026-09-16', n5: 8000, fechaN5: '2026-09-17', despacho: ['SanLab Eva', 'fuentes del mar', 'X'] },
+    { lote: 'BP', codigoGenetico: 'CG2', despacho: 'Mar Bravo CIO, MAR BRAVO M09-M10' },
+  ] },
   'sin desoves': { fecha: '2026-09-08', desoves: [] },
   'fecha inválida': { fecha: '08/09/2026', desoves: [{ lote: 'BM', codigoGenetico: '766', huevos: 10 }] },
 };
@@ -159,6 +174,52 @@ describe('Desoves · el mismo veredicto', () => {
     expect(validarDesove(MODELOS['N5 sin N2 (el candado)']).errores.length).toBeGreaterThan(0);
     expect(validarDesove(MODELOS['duplicado: mismo lote y código dos veces']).errores.length).toBeGreaterThan(0);
     expect(validarDesove(MODELOS['sin llave completa y fechas al revés']).avisos.length).toBeGreaterThan(0);
+  });
+});
+
+describe('Desoves · Despacho y pendientes: el monolito y el módulo dicen lo mismo (2026-09-14)', () => {
+  const HOJA = (o) => Object.assign({ Fecha: '2026-09-07', Lote: 'BP', 'Código genético': 'OLF5.F2', 'Piscina Broodstock': 558,
+    Desoves: 64, 'Total de huevos': 14440000, 'Hembras no viables': 3, 'Fecha N2': '', N2: '', 'Fecha N5': '', N5: '',
+    Despacho: 'Tabasca, SanLab', Observaciones: 'ok' }, o);
+  const FILAS = [HOJA(), HOJA({ 'Código genético': 'CG2', N5: 9000000 }), HOJA({ Fecha: '2026-09-10', Lote: 766, N2: '5000000', 'Total de huevos': ' ' }),
+    HOJA({ Fecha: '' }), HOJA({ 'Código genético': 'CG3', N5: 0 })];
+  const LOCALES = [
+    { fecha: '2026-09-07', lote: 'bp', codigoGenetico: 'olf5.f2', desoves: '', n2: '8800', fechaN2: '2026-09-08', despacho: [] },
+    { fecha: '2026-09-12', lote: 'BC', codigoGenetico: 'X1', huevos: '500', despacho: ['Hisenor'] },
+    { fecha: '2026-09-10', lote: '766', codigoGenetico: 'OLF5.F2', n5: '4000' },
+    { fecha: 'mal', lote: 'A', codigoGenetico: 'B' }, null,
+  ];
+
+  it('las mismas opciones, y la misma lista y texto para cada entrada', () => {
+    expect(api.MAD_DESOVE_DESPACHO_OPTS).toEqual(MAD_DESOVE_DESPACHO_OPTS);
+    for (const v of [['Mar Bravo M10', ' mar  bravo m09 ', 'X', 'Mar Bravo M10'], 'SanLab Eva', 'SanLab, SanLab Eva', '', null, undefined, [], 'MAR BRAVO M09-M10']) {
+      expect(api.madDesDespachoLista(v)).toEqual(despachoLista(v));
+      expect(api.madDesDespachoTexto(v)).toBe(despachoTexto(v));
+    }
+  });
+
+  it('la misma conversión de cada fila de la hoja, llave y «completo»', () => {
+    for (const f of FILAS.concat([{}, null])) {
+      expect(api.madDesDesdeHoja(f)).toEqual(desoveDesdeHoja(f));
+      expect(api.madDesLlave(desoveDesdeHoja(f))).toBe(desoveLlave(desoveDesdeHoja(f)));
+      expect(api.madDesCompleto(desoveDesdeHoja(f))).toBe(desoveCompleto(desoveDesdeHoja(f)));
+    }
+  });
+
+  it('la misma lista de pendientes', () => {
+    const esperado = desovesPendientes(FILAS, LOCALES);
+    expect(esperado.length).toBeGreaterThan(1);                        // el fixture ejerce algo
+    expect(api.madDesPendientes(FILAS, LOCALES)).toEqual(esperado);
+    expect(api.madDesPendientes([], LOCALES)).toEqual(desovesPendientes([], LOCALES));
+    expect(api.madDesPendientes(FILAS, [])).toEqual(desovesPendientes(FILAS, []));
+  });
+
+  it('lo mismo al anotar y al podar', () => {
+    const modelo = { fecha: '2026-09-07', desoves: [{ lote: 'bp', codigoGenetico: 'olf5.f2', n5: '9000', despacho: ['Incamar'] }, { lote: '', codigoGenetico: 'Z' }, { lote: 'NU', codigoGenetico: 'EVO', huevos: '10' }] };
+    const anotado = anotarDesovesLocales(LOCALES, modelo, 7);
+    expect(api.madDesLocalesAnota(LOCALES, modelo, 7)).toEqual(anotado);
+    expect(api.madDesLocalesPoda(anotado, FILAS)).toEqual(podarDesovesLocales(anotado, FILAS));
+    expect(podarDesovesLocales(anotado, [HOJA({ N5: 1000 })]).length).toBeLessThan(anotado.length);   // el fixture poda algo
   });
 });
 

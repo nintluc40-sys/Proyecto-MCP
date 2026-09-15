@@ -9,6 +9,15 @@ import {
   buildDesoveRows,
   buildDesovePayload,
   validarDesove,
+  MAD_DESOVE_DESPACHO_OPTS,
+  despachoLista,
+  despachoTexto,
+  desoveLlave,
+  desoveCompleto,
+  desoveDesdeHoja,
+  desovesPendientes,
+  anotarDesovesLocales,
+  podarDesovesLocales,
 } from './ficha-maduracion-desoves.schema.js';
 import { detectSheetName, classifyOrigin } from '../../../core/sheets.js';
 
@@ -35,18 +44,20 @@ describe('Desoves · la hoja y su llave POSICIONAL', () => {
      ⚠ Se fija que va DESPUÉS de la llave, y NO en qué posición exacta: lo primero es el
      contrato con el GAS, lo segundo sería una prueba frágil que se rompe cada vez que se
      añada una columna legítima. */
-  it('lleva DESPACHO, texto libre y siempre después de la llave', () => {
+  /* 2026-09-14 (usuario): Despacho deja de ser texto libre; lo que no es un destino de la lista no se escribe. */
+  it('lleva DESPACHO, de la lista de destinos y siempre después de la llave', () => {
     expect(MAD_DESOVE_HEADERS).toContain('Despacho');
     expect(MAD_DESOVE_HEADERS.indexOf('Despacho')).toBeGreaterThan(2);
-    expect(buildDesoveRows(base())[0][col('Despacho')]).toBe('Laboratorio Rosario');
+    expect(buildDesoveRows(base())[0][col('Despacho')]).toBe('');
+    const m = base();
+    m.desoves[0].despacho = ['Punta Carnero'];
+    expect(buildDesoveRows(m)[0][col('Despacho')]).toBe('Punta Carnero');
   });
 
-  /* ⚠ El despacho se RECORTA, no tumba la fila: una celda de Sheets aguanta mucho más, pero
-     un campo sin tope es la vía por la que un pegado accidental mete media hoja en una celda. */
-  it('el despacho se recorta y no tumba la fila', () => {
+  it('un pegado sin destinos no tumba la fila: Despacho va vacío', () => {
     const m = base();
     m.desoves[0].despacho = 'x'.repeat(500);
-    expect(buildDesoveRows(m)[0][col('Despacho')].length).toBe(200);
+    expect(buildDesoveRows(m)[0][col('Despacho')]).toBe('');
     expect(buildDesoveRows(m)).toHaveLength(1);
   });
 
@@ -289,5 +300,107 @@ describe('Desoves · validación', () => {
     const { errores, avisos } = validarDesove(m);
     expect(errores).toEqual([]);
     expect(avisos.some((a) => /no trae ninguna cifra/.test(a))).toBe(true);
+  });
+});
+
+describe('Desoves · Despacho es una lista cerrada de destinos (2026-09-14, usuario)', () => {
+  it('las 19 opciones del usuario, en su orden', () => {
+    expect(MAD_DESOVE_DESPACHO_OPTS).toEqual(['Fuentes del Mar', 'Mar Bravo M01', 'Mar Bravo M02', 'Mar Bravo M03',
+      'Mar Bravo M04', 'Mar Bravo M05', 'Mar Bravo M06', 'Mar Bravo M07', 'Mar Bravo M08', 'Mar Bravo M09', 'Mar Bravo M10',
+      'Mar Bravo CIO', 'Punta Carnero', 'Tabasca', 'Hisenor', 'Incamar', 'Megalatina', 'SanLab', 'SanLab Eva']);
+  });
+
+  it('🔴 la celda sale en el ORDEN DE LA LISTA, sin repetir, sin lo desconocido y sin mirar mayúsculas', () => {
+    expect(despachoTexto(['Mar Bravo M10', ' mar  bravo m09 ', 'Inventado', 'Mar Bravo M10'])).toBe('Mar Bravo M09, Mar Bravo M10');
+    expect(despachoTexto([])).toBe('');
+  });
+
+  it('🔴 «SanLab Eva» no marca «SanLab»: se compara el destino entero', () => {
+    expect(despachoLista('SanLab Eva')).toEqual(['SanLab Eva']);
+    expect(despachoLista('SanLab, SanLab Eva')).toEqual(['SanLab', 'SanLab Eva']);
+  });
+
+  it('el texto de una celda vuelve a ser la elección; lo que no es un destino, no', () => {
+    expect(despachoLista('Tabasca, Fuentes del Mar')).toEqual(['Fuentes del Mar', 'Tabasca']);
+    expect(despachoLista('MAR BRAVO M09-M10')).toEqual([]);
+  });
+
+  it('🔴 el payload lleva la elección como texto bajo «Despacho»', () => {
+    const filas = buildDesoveRows({ fecha: '2026-09-15', desoves: [{ lote: 'BP', codigoGenetico: 'CG1', n5: 900, fechaN5: '2026-09-17', despacho: ['SanLab', 'Fuentes del Mar'] }] });
+    expect(filas[0][MAD_DESOVE_HEADERS.indexOf('Despacho')]).toBe('Fuentes del Mar, SanLab');
+  });
+});
+
+describe('Desoves · pendientes: guardar hoy y completar N2/N5 otro día (2026-09-14, usuario)', () => {
+  const HOJA = (o) => Object.assign({ Fecha: '2026-09-07', Lote: 'BP', 'Código genético': 'OLF5.F2', 'Piscina Broodstock': 558,
+    Desoves: 64, 'Total de huevos': 14440000, 'Hembras no viables': 3, 'Fecha N2': '', N2: '', 'Fecha N5': '', N5: '',
+    Despacho: '', Observaciones: '' }, o);
+
+  it('🔴 de la hoja al formulario: lo ×1000 vuelve a miles y un lote numérico vuelve a texto', () => {
+    const d = desoveDesdeHoja(HOJA({ Lote: 766, N2: 9000000, 'Fecha N2': '2026-09-08', Despacho: 'Mar Bravo M09, Mar Bravo M10' }));
+    expect(d).toMatchObject({ fecha: '2026-09-07', lote: '766', piscina: '558', desoves: '64', huevos: '14440',
+      hembrasNoViables: '3', fechaN2: '2026-09-08', n2: '9000', n5: '', despacho: ['Mar Bravo M09', 'Mar Bravo M10'] });
+  });
+
+  it('🔴 completo = cifra de N5; una fecha de N5 sola NO completa; un N5 de 0 sí', () => {
+    expect(desoveCompleto({ n5: '' , fechaN5: '2026-09-09' })).toBe(false);
+    expect(desoveCompleto({ n5: '0' })).toBe(true);
+    expect(desoveCompleto({ n5: 9000 })).toBe(true);
+  });
+
+  it('🔴 la hoja sin N5 es pendiente; con N5, no', () => {
+    const p = desovesPendientes([HOJA(), HOJA({ 'Código genético': 'CG2', N5: 9000000 })], []);
+    expect(p.map((d) => d.codigoGenetico)).toEqual(['OLF5.F2']);
+    expect(p[0].origen).toBe('hoja');
+  });
+
+  it('🔴 lo de este dispositivo pisa lo NO vacío y conserva lo vacío (como el MERGE del GAS)', () => {
+    const local = { fecha: '2026-09-07', lote: 'bp', codigoGenetico: 'olf5.f2', desoves: '', n2: '8800', fechaN2: '2026-09-08', despacho: [] };
+    const [d] = desovesPendientes([HOJA({ Despacho: 'Tabasca' })], [local]);
+    expect(d).toMatchObject({ desoves: '64', huevos: '14440', n2: '8800', fechaN2: '2026-09-08', despacho: ['Tabasca'], origen: 'hoja' });
+  });
+
+  it('🔴 un N5 guardado en este dispositivo saca de la lista aunque la hoja leída aún no lo tenga', () => {
+    expect(desovesPendientes([HOJA()], [{ fecha: '2026-09-07', lote: 'BP', codigoGenetico: 'OLF5.F2', n5: '9000' }])).toEqual([]);
+  });
+
+  it('lo que sólo está en este dispositivo aparece como tal; lo más reciente, primero', () => {
+    const p = desovesPendientes([HOJA()], [{ fecha: '2026-09-12', lote: 'BC', codigoGenetico: 'X1', huevos: '500' }]);
+    expect(p.map((d) => [d.fecha, d.origen])).toEqual([['2026-09-12', 'dispositivo'], ['2026-09-07', 'hoja']]);
+    expect(p[0]).toMatchObject({ huevos: '500', n2: '', despacho: [] });
+  });
+
+  it('una fila sin fecha válida o sin llave no entra', () => {
+    expect(desovesPendientes([HOJA({ Fecha: '' }), HOJA({ Lote: '' })], [{ fecha: 'x', lote: 'A', codigoGenetico: 'B' }])).toEqual([]);
+  });
+
+  it('🔴 anotar FUSIONA con lo anotado antes y conserva el completo como marca', () => {
+    let l = anotarDesovesLocales([], { fecha: '2026-09-07', desoves: [{ lote: 'BP', codigoGenetico: 'CG1', desoves: '64', huevos: '14440' }] }, 1);
+    l = anotarDesovesLocales(l, { fecha: '2026-09-07', desoves: [{ lote: 'bp', codigoGenetico: 'cg1', desoves: '', n2: '9000', despacho: ['Tabasca'] }] }, 2);
+    expect(l).toHaveLength(1);
+    expect(l[0]).toMatchObject({ desoves: '64', huevos: '14440', n2: '9000', despacho: ['Tabasca'], ts: 2 });
+    l = anotarDesovesLocales(l, { fecha: '2026-09-07', desoves: [{ lote: 'BP', codigoGenetico: 'CG1', n5: '8000' }] }, 3);
+    expect(l).toHaveLength(1);
+    expect(desoveCompleto(l[0])).toBe(true);
+    expect(l[0].n2).toBe('9000');
+  });
+
+  it('anotar ignora lo que no tiene llave y guarda los 60 más recientes', () => {
+    let l = [];
+    for (let i = 0; i < 65; i++) l = anotarDesovesLocales(l, { fecha: '2026-09-07', desoves: [{ lote: 'L' + i, codigoGenetico: 'C' }, { lote: '', codigoGenetico: 'C' }] }, i);
+    expect(l).toHaveLength(60);
+    expect(l[0].lote).toBe('L5');
+    expect(l[59].lote).toBe('L64');
+  });
+
+  it('🔴 podar quita lo que la hoja ya tiene COMPLETO y deja lo demás', () => {
+    const locales = [{ fecha: '2026-09-07', lote: 'BP', codigoGenetico: 'OLF5.F2', n5: '9000' }, { fecha: '2026-09-07', lote: 'BP', codigoGenetico: 'CG2', n2: '1' }];
+    const hoja = [HOJA({ N5: 9000000 }), HOJA({ 'Código genético': 'CG2' })];
+    expect(podarDesovesLocales(locales, hoja).map((l) => l.codigoGenetico)).toEqual(['CG2']);
+    expect(podarDesovesLocales(locales, [HOJA()])).toHaveLength(2);
+  });
+
+  it('la llave es la del GAS: fecha, lote y código normalizados', () => {
+    expect(desoveLlave({ fecha: '2026-09-07', lote: ' b p ', codigoGenetico: 'olf5.f2' })).toBe('2026-09-07|BP|OLF5.F2');
   });
 });

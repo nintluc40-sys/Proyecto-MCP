@@ -114,6 +114,27 @@ export function aMiles(v) {
 export const normLote = (s) => sanitizeStr(s, 40).toUpperCase().replace(/\s+/g, '');
 export const normCodigoGenetico = (s) => sanitizeStr(s, 60).toUpperCase().replace(/\s+/g, '');
 
+/* ── Despacho: a dónde van los N5 (2026-09-14, usuario) ──
+   Deja de ser texto libre: se ELIGEN uno o varios destinos de esta lista. La celda guarda los elegidos
+   separados por «, » y SIEMPRE en el orden de la lista, así que la misma elección escribe el mismo
+   texto. Lo que no está en la lista no se escribe; sin destino va vacío y el MERGE conserva la celda. */
+export const MAD_DESOVE_DESPACHO_OPTS = [
+  'Fuentes del Mar',
+  'Mar Bravo M01', 'Mar Bravo M02', 'Mar Bravo M03', 'Mar Bravo M04', 'Mar Bravo M05',
+  'Mar Bravo M06', 'Mar Bravo M07', 'Mar Bravo M08', 'Mar Bravo M09', 'Mar Bravo M10', 'Mar Bravo CIO',
+  'Punta Carnero', 'Tabasca', 'Hisenor', 'Incamar', 'Megalatina', 'SanLab', 'SanLab Eva',
+];
+const despNorm = (s) => String(s == null ? '' : s).trim().replace(/\s+/g, ' ').toLowerCase();
+
+/** Destinos conocidos, sin repetir y en el orden de la lista. Acepta la elección (array) o el texto de la celda. */
+export function despachoLista(v) {
+  const pedidos = new Set((Array.isArray(v) ? v : String(v == null ? '' : v).split(',')).map(despNorm));
+  return MAD_DESOVE_DESPACHO_OPTS.filter((o) => pedidos.has(despNorm(o)));
+}
+
+/** Texto de la celda «Despacho». */
+export const despachoTexto = (v) => despachoLista(v).join(', ');
+
 /** Filas listas para la hoja. Una por desove. */
 export function buildDesoveRows(model) {
   const m = model || {};
@@ -136,7 +157,7 @@ export function buildDesoveRows(model) {
       n2: aMiles(x.n2),
       fechaN5: sanitizeStr(x.fechaN5, 10),
       n5: aMiles(x.n5),
-      despacho: sanitizeStr(x.despacho, 200),
+      despacho: despachoTexto(x.despacho),
       observaciones: sanitizeStr(x.observaciones, 300),
     };
     filas.push(MAD_DESOVE_COLUMNS.map((col) => valores[col.k]));
@@ -210,4 +231,106 @@ export function validarDesove(model) {
   });
 
   return { errores, avisos };
+}
+
+/* ── Desoves PENDIENTES: guardar hoy y completar N2/N5 otro día (2026-09-14, usuario) ──
+   N2 y N5 se cuentan días después del desove, así que la ficha guarda y vuelve a ABRIR lo guardado.
+   Pendiente = sin cifra de N5; con N5 sale de la lista. Dos fuentes: la HOJA (todos los dispositivos,
+   bajo botón) y lo guardado desde ESTE dispositivo (sirve sin red y mientras el envío espera en la
+   cola). Se fusionan como lo hará el MERGE del GAS al entregar: lo local NO vacío pisa, lo vacío conserva.
+   ⚠ Lo local COMPLETO se conserva como marca hasta que la hoja lo tenga completo (`podarDesovesLocales`):
+   sin ella, una lectura de la hoja anterior al envío volvería a enseñarlo como pendiente. */
+const CAMPOS_DATO = MAD_DESOVE_COLUMNS.filter((c) => c.grain === 'dato').map((c) => c.k);
+const vacio = (v) => (Array.isArray(v) ? v.length === 0 : v === '' || v === null || v === undefined);
+const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
+const LOCALES_MAX = 60;
+
+/** Llave del desove, la misma que usa el GAS: fecha, lote y código genético normalizados. */
+export const desoveLlave = (d) => {
+  const x = d || {};
+  return sanitizeStr(x.fecha, 10) + '|' + normLote(x.lote) + '|' + normCodigoGenetico(x.codigoGenetico);
+};
+
+/** Completo = tiene cifra de N5 (una fecha de N5 sin cifra, no). */
+export const desoveCompleto = (d) => int((d || {}).n5) !== '';
+
+/** Fila leída de la hoja (objeto por cabecera) → registro en las unidades del formulario: lo ×1000 vuelve a miles. */
+export function desoveDesdeHoja(fila) {
+  const f = fila || {};
+  const r = {};
+  MAD_DESOVE_COLUMNS.forEach((c) => {
+    const t = txt(f[c.h]);
+    r[c.k] = c.mil ? (t === '' || !Number.isFinite(Number(t)) ? '' : String(Number(t) / MIL)) : t;
+  });
+  r.fecha = r.fecha.slice(0, 10);
+  r.fechaN2 = r.fechaN2.slice(0, 10);
+  r.fechaN5 = r.fechaN5.slice(0, 10);
+  r.lote = normLote(r.lote);
+  r.codigoGenetico = normCodigoGenetico(r.codigoGenetico);
+  r.despacho = despachoLista(r.despacho);
+  return r;
+}
+
+/** Lo pendiente (sin N5): la hoja con lo de este dispositivo encima. Más reciente primero. */
+export function desovesPendientes(filasHoja, locales) {
+  const porLlave = new Map();
+  (filasHoja || []).forEach((fila) => {
+    const d = desoveDesdeHoja(fila);
+    if (!esFecha(d.fecha) || !d.lote || !d.codigoGenetico) return;
+    d.origen = 'hoja';
+    porLlave.set(desoveLlave(d), d);
+  });
+  (locales || []).forEach((l) => {
+    const x = l || {};
+    if (!esFecha(x.fecha) || !normLote(x.lote) || !normCodigoGenetico(x.codigoGenetico)) return;
+    const k = desoveLlave(x);
+    let d = porLlave.get(k);
+    if (!d) {
+      d = { fecha: sanitizeStr(x.fecha, 10), lote: normLote(x.lote), codigoGenetico: normCodigoGenetico(x.codigoGenetico), origen: 'dispositivo' };
+      porLlave.set(k, d);
+    }
+    CAMPOS_DATO.forEach((c) => {
+      const v = c === 'despacho' ? despachoLista(x.despacho) : txt(x[c]);
+      if (!vacio(v)) d[c] = v;
+      else if (d[c] === undefined) d[c] = c === 'despacho' ? [] : '';
+    });
+  });
+  return [...porLlave.values()]
+    .filter((d) => !desoveCompleto(d))
+    .sort((a, b) => {
+      const ka = desoveLlave(a);
+      const kb = desoveLlave(b);
+      return ka < kb ? 1 : ka > kb ? -1 : 0;
+    });
+}
+
+/** Tras guardar (o dejar en cola) desde este dispositivo: anota cada desove fusionado sobre lo que ya
+ *  hubiera. Se conservan los LOCALES_MAX más recientes. */
+export function anotarDesovesLocales(locales, model, ahora) {
+  const m = model || {};
+  const fecha = sanitizeStr(m.fecha, 10);
+  let lista = (locales || []).filter((l) => l && typeof l === 'object');
+  (m.desoves || []).forEach((dd) => {
+    const x = dd || {};
+    const lote = normLote(x.lote);
+    const cg = normCodigoGenetico(x.codigoGenetico);
+    if (!esFecha(fecha) || lote === '' || cg === '') return;
+    const nuevo = { fecha, lote, codigoGenetico: cg };
+    const k = desoveLlave(nuevo);
+    const previo = lista.find((l) => desoveLlave(l) === k) || {};
+    CAMPOS_DATO.forEach((c) => {
+      const v = c === 'despacho' ? despachoLista(x.despacho) : txt(x[c]);
+      nuevo[c] = vacio(v) && previo[c] !== undefined ? previo[c] : v;
+    });
+    nuevo.ts = ahora;
+    lista = lista.filter((l) => desoveLlave(l) !== k);
+    lista.push(nuevo);
+  });
+  return lista.slice(-LOCALES_MAX);
+}
+
+/** Tras leer la hoja: lo de este dispositivo que la hoja ya tiene COMPLETO sobra. */
+export function podarDesovesLocales(locales, filasHoja) {
+  const completos = new Set((filasHoja || []).map(desoveDesdeHoja).filter(desoveCompleto).map(desoveLlave));
+  return (locales || []).filter((l) => l && typeof l === 'object' && !completos.has(desoveLlave(l)));
 }
