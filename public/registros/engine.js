@@ -9514,7 +9514,7 @@ function _madAlimFuenteTxt(p){ return (p && p.fuente) ? p.fuente+(p.fecha ? " "+
 function _madAlimTomaFilaHTML(t){
   const x=t||{}, prod=madAlimProducto(x.producto), pct=(x.pct===""||x.pct===null||x.pct===undefined) ? "" : String(x.pct);
   return '<tr class="ma-toma">'
-    + '<td><input class="ma-hora" type="time" value="'+escapeHtml(madAlimHora(x.hora))+'" onchange="madAlimTomaCambio(this, true)" style="'+_MAD_ING_INP+';width:110px"></td>'
+    + '<td><input class="ma-hora" type="time" value="'+escapeHtml(madAlimHora(x.hora))+'" onchange="madAlimTomaCambio(this)" onblur="madAlimTomaOrdenar(this)" style="'+_MAD_ING_INP+';width:110px"></td>'
     + '<td><select class="ma-prod" data-v="'+escapeHtml(prod)+'" onchange="madAlimTomaCambio(this)" style="'+_MAD_ING_INP+';width:130px"><option value="">— sin alimento —</option>'
     +   MAD_ALIM_PRODUCTOS.map(function(p){ return '<option value="'+escapeHtml(p)+'"'+(prod===p ? ' selected' : '')+'>'+escapeHtml(p)+'</option>'; }).join("")+'</select></td>'
     + '<td><input class="ma-pct" type="number" min="0" max="'+MAD_ALIM_PCT_MAX+'" step="0.05" inputmode="decimal" value="'+escapeHtml(pct)+'" oninput="madAlimTomaCambio(this)" style="'+_MAD_ING_INP+';width:80px"></td>'
@@ -9645,7 +9645,9 @@ function madAlimPintarSalas(){
 // La agenda tecleada de una sala se guarda en este dispositivo como PENDIENTE hasta que se guarde en la hoja.
 function _madAlimCfgDeSala(el, pendiente){
   const d=_madAlimSalaDeDom(el), cfg=madAlimCfgLeer();
-  cfg[d.sala]={ tomas:d.tomas.map(function(t){ return { hora:madAlimHora(t.hora) || _madAlimTxt(t.hora), producto:_madAlimTxt(t.producto), pct:_madAlimTxt(t.pct) }; }), pendiente:!!pendiente, ts:Date.now() };
+  // J2 (auditoría 2026-09-15): una toma del todo vacía (➕ sin rellenar) no se guarda en la agenda.
+  cfg[d.sala]={ tomas:d.tomas.filter(function(t){ return _madAlimTxt(t.hora)!=="" || _madAlimTxt(t.producto)!=="" || _madAlimTxt(t.pct)!==""; })
+    .map(function(t){ return { hora:madAlimHora(t.hora) || _madAlimTxt(t.hora), producto:_madAlimTxt(t.producto), pct:_madAlimTxt(t.pct) }; }), pendiente:!!pendiente, ts:Date.now() };
   madAlimCfgGuardar(cfg);
   const b=el.querySelector(".ma-pend"); if(b) b.hidden=!pendiente;
 }
@@ -9657,12 +9659,21 @@ function _madAlimRepintarTomas(el, tomas){
   tb.innerHTML=(tomas || madAlimOrdenarTomas(madAlimTomasDe(el.getAttribute("data-sala")))).map(_madAlimTomaFilaHTML).join("");
   _madAlimFijarAlimentos(tb);
 }
-function madAlimTomaCambio(input, reordenar){
+function madAlimTomaCambio(input){
   const el=input && input.closest ? input.closest(".ma-sala") : null; if(!el) return;
   _madAlimCfgDeSala(el, true);
-  if(reordenar) _madAlimRepintarTomas(el);
   madAlimRecalcular(el);
   madAlimPintarGeneral();
+}
+/* J1 (auditoría 2026-09-15) · SE REORDENA AL SALIR DE LA HORA, NO AL CAMBIARLA. Un <input type="time"> dispara `change`
+   en cuanto la hora es válida (Chrome, al completar las horas): repintar ahí quitaba el foco antes de escribir los
+   minutos y movía la fila. Y sólo se repinta si el orden cambió. */
+function madAlimTomaOrdenar(input){
+  const el=input && input.closest ? input.closest(".ma-sala") : null; if(!el) return;
+  const tomas=_madAlimSalaDeDom(el).tomas, ordenadas=madAlimOrdenarTomas(tomas);
+  if(tomas.map(function(t){ return t.hora; }).join("|")===ordenadas.map(function(t){ return t.hora; }).join("|")) return;
+  _madAlimRepintarTomas(el, ordenadas);
+  madAlimRecalcular(el);
 }
 function madAlimTanqueCambio(input){
   const el=input && input.closest ? input.closest(".ma-sala") : null; if(!el) return;

@@ -9,7 +9,7 @@ import { MAD_ALIM_HEADERS } from './ficha-maduracion-alimentacion.schema.js';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
-const EXPORTAR = ['renderMadAlimentacion', 'madAlimLeer', 'madAlimTomaCambio', 'madAlimTanqueCambio', 'madAlimTomaAgregar', 'madAlimTomaQuitar',
+const EXPORTAR = ['renderMadAlimentacion', 'madAlimLeer', 'madAlimTomaCambio', 'madAlimTomaOrdenar', 'madAlimTanqueCambio', 'madAlimTomaAgregar', 'madAlimTomaQuitar',
   'madAlimEstandar', 'madAlimCopiarATodas', 'madAlimGuardar', 'madAlimRevisar', 'madAlimPdf', 'madAlimVaciar', 'MAD_ALIM_CFG_KEY'];
 const H = {};
 const avisos = [];
@@ -127,15 +127,31 @@ describe('Alimentación · la ficha', () => {
     expect(sala('Sala 2').querySelector('.ma-toma .ma-pct').value).toBe('2');
   });
 
-  it('cambiar la hora reordena por el día de alimentación; ➕ y ✕ tomas; ↺ Estándar y 📋 Copiar a todas', async () => {
+  it('🔴 J1: cambiar la hora NO repinta (se sigue escribiendo); al salir del campo reordena por el día de alimentación', async () => {
     await H.madAlimLeer();
     const el = sala('Sala 2');
     const hora = el.querySelector('.ma-toma .ma-hora');
+    expect([hora.getAttribute('onchange'), hora.getAttribute('onblur')]).toEqual(['madAlimTomaCambio(this)', 'madAlimTomaOrdenar(this)']);
     hora.value = '02:00';
-    H.madAlimTomaCambio(hora, true);
+    H.madAlimTomaCambio(hora);
+    expect(el.querySelector('.ma-toma .ma-hora')).toBe(hora);   // la misma fila, el mismo input: el foco no se pierde
+    expect(cfg()['Sala 2'].tomas.map((t) => t.hora)).toEqual(['02:00', '14:00']);
+    H.madAlimTomaOrdenar(hora);
     expect([...el.querySelectorAll('.ma-hora')].map((h) => h.value)).toEqual(['14:00', '02:00']);
+    // Ya ordenadas, salir de otra hora no repinta.
+    const primera = el.querySelector('.ma-toma .ma-hora');
+    H.madAlimTomaOrdenar(primera);
+    expect(el.querySelector('.ma-toma .ma-hora')).toBe(primera);
+  });
+
+  it('➕ y ✕ tomas (J2: la vacía no se guarda en la agenda); ↺ Estándar y 📋 Copiar a todas', async () => {
+    await H.madAlimLeer();
+    const el = sala('Sala 2');
     H.madAlimTomaAgregar(el.querySelector('.ma-toma button'));
     expect(el.querySelectorAll('.ma-toma')).toHaveLength(3);
+    const pct = el.querySelector('.ma-toma .ma-pct');
+    H.madAlimTomaCambio(pct);
+    expect(cfg()['Sala 2'].tomas).toHaveLength(2);
     H.madAlimTomaQuitar(el.querySelector('.ma-toma:last-child button'));
     expect(el.querySelectorAll('.ma-toma')).toHaveLength(2);
     H.madAlimEstandar(el.querySelector('.ma-toma button'));
