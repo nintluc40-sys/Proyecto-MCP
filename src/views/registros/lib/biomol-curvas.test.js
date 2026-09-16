@@ -39,7 +39,8 @@ const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderBiomol', '_collectBioGrid', 'bioGridFecha', 'saveBioGrid',
   '_bioReportBlock', 'bioSidActivo', 'bioFotoKey', 'bioFotoGet', 'bioFotoClear',
   'BIO_FOTOS', 'BIO_GEL_PRE', 'BIO_CUR_PRE', '_bioEsQpcr', 'buildBioPayload',
-  'BIO_GRID_COLS', '_bioPruneRpt', 'saveBioRpt', 'loadBioRpt', 'bioPatCambio', 'downloadBioPDF', 'bioRptDelSes', 'bioQpcrInput', 'renderBioReport', 'bioPatInput', 'gridEnLote', '_gselSetVal', '_bioDirty', '_gselPasteH', '_gselKeyH'];
+  'BIO_GRID_COLS', '_bioPruneRpt', 'saveBioRpt', 'loadBioRpt', 'bioPatCambio', 'downloadBioPDF', 'bioRptDelSes', 'bioQpcrInput', 'renderBioReport', 'bioPatInput', 'gridEnLote', '_gselSetVal', '_bioDirty', '_gselPasteH', '_gselKeyH',
+  'bioRptSet', 'BIO_METODOS', '_bioMetodoConCurvas', 'bioMetodoInput'];
 const H = {};
 
 beforeAll(async () => {
@@ -106,6 +107,14 @@ function rellenarQpcr(fila, base, qpcr) {
 /** El bloque del reporte, ya renderizado con las filas de la grilla. */
 const bloque = () => H._bioReportBlock(H.bioGridFecha(), H._collectBioGrid(), H.bioSidActivo());
 
+/* 2026-09-15 (usuario) · EL MÉTODO TAMBIÉN ABRE LAS CURVAS, así que «sin valores de qPCR» ya
+   no basta para que el cargador no salga: hace falta además un método que NO sea de tiempo
+   real. Y un informe NUEVO propone el (1) Kit Comercial IQ REAL, que sí lo es — por eso casi
+   todos los casos de «sin qPCR» de abajo empiezan declarando el (2), la PCR Nested.
+   ⚠ Va DESPUÉS de cualquier `localStorage.clear()` del propio caso: el método vive ahí.
+   Repinta, porque el gate se mide contra el bloque que hay en pantalla. */
+const soloPCR = () => { H.bioRptSet('metodo', H.BIO_METODOS[1].tx); H.renderBioReport(); };
+
 const IMG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAP//////////'
   + '////////////////////////////////////////////////////////2wBDAf//////////////'
   + '////////////////////////////////////////////////////////wAARCAABAAEDASIA/8QA'
@@ -130,13 +139,17 @@ describe('Biomol · las curvas de amplificación son una imagen más del informe
 
   it('SIN valores de qPCR el cargador de curvas no aparece — y el del gel SÍ', () => {
     rellenar(1, { codigo: 'L-1', ihhnv: 'Negativo' });
+    soloPCR();
     const b = bloque();
     expect(b).toContain('Foto del gel de agarosa');
     expect(b, 'las curvas no deberían ofrecerse sin qPCR').not.toContain('Curvas de los ciclos de amplificación');
   });
 
   it('CON un Ct aparece el cargador de curvas, junto al del gel', () => {
+    // `soloPCR` deja fuera el método: así lo que se mide es el criterio de la GRILLA. Sin él,
+    // el método propuesto por defecto las sacaría igual y el caso no distinguiría nada.
     rellenarQpcr(1, { codigo: 'L-1', wssv: 'Positivo' }, { ciclo_wssv: '22.4' });
+    soloPCR();
     const b = bloque();
     expect(b).toContain('Curvas de los ciclos de amplificación');
     expect(b, 'el gel debe seguir estando').toContain('Foto del gel de agarosa');
@@ -149,12 +162,14 @@ describe('Biomol · las curvas de amplificación son una imagen más del informe
 
   it('basta el Ct, sin copias — el mismo criterio que usa el resto del módulo', () => {
     rellenarQpcr(1, { codigo: 'L-1', ihhnv: 'Positivo' }, { ciclo_ihhnv: '30' });
+    soloPCR();
     expect(H._bioEsQpcr(H._collectBioGrid()[0]), 'control: la fila ES qPCR').toBe(true);
     expect(bloque()).toContain('Curvas de los ciclos de amplificación');
   });
 
   it('sólo con Copias/μl, sin Ct, también sale', () => {
     rellenarQpcr(1, { codigo: 'L-1', wssv: 'Positivo' }, { copias_wssv: '1500' });
+    soloPCR();
     expect(bloque()).toContain('Curvas de los ciclos de amplificación');
   });
 
@@ -171,6 +186,7 @@ describe('Biomol · las curvas de amplificación son una imagen más del informe
     const sid2 = H.bioSidActivo();
     localStorage.setItem(H.bioFotoKey('curvas', sid2), IMG);
     rellenar(1, { codigo: 'L-1', ihhnv: 'Negativo' });
+    soloPCR();
     const b = bloque();
     // Escondida seguiría ocupando sitio y saliendo en el PDF, sin forma de borrarla.
     expect(b, 'la imagen huérfana quedó sin botón de quitar').toContain('Curvas de los ciclos de amplificación');
@@ -350,6 +366,7 @@ describe('Biomol · las curvas aparecen AL TECLEAR el Ct, sin guardar', () => {
   });
 
   it('🔴 EL DEFECTO: teclear el Ct saca el cargador de curvas SIN guardar', () => {
+    soloPCR();
     teclear(1, 'wssv', 'Positivo');
     expect(ofreceCurvas(), 'de partida no debería ofrecerlas: aún no hay qPCR').toBe(false);
 
@@ -365,6 +382,7 @@ describe('Biomol · las curvas aparecen AL TECLEAR el Ct, sin guardar', () => {
   });
 
   it('vaciar el último valor de qPCR vuelve a retirar la oferta', () => {
+    soloPCR();
     teclear(1, 'wssv', 'Positivo');
     teclear(1, 'ciclo_wssv', '22.4');
     expect(ofreceCurvas()).toBe(true);
@@ -374,6 +392,7 @@ describe('Biomol · las curvas aparecen AL TECLEAR el Ct, sin guardar', () => {
   });
 
   it('seguir tecleando la misma celda NO repinta una y otra vez', () => {
+    soloPCR();
     teclear(1, 'wssv', 'Positivo');
     const box1 = document.getElementById('bio-rpt-box');
     teclear(1, 'ciclo_wssv', '2');
@@ -658,9 +677,125 @@ describe('Biomol · las dos imágenes del informe van EN PARALELO, no apiladas',
 
   it('SIN qPCR el contenedor sigue existiendo y el gel no se pierde', () => {
     rellenar(1, { codigo: 'L-1', wssv: 'Negativo' });
+    soloPCR();
     const cajas = [...informe().querySelectorAll('[data-foto]')];
     expect(cajas.map((c) => c.getAttribute('data-foto')), 'el gel es incondicional')
       .toEqual(['gel']);
     expect(cajas[0].parentElement.children.length).toBe(1);
+  });
+});
+
+/* ── 2026-09-15 (usuario) · EL MÉTODO ABRE LAS CURVAS AUNQUE EL DÍA SALGA LIMPIO ──────────
+   El defecto que corrige: las columnas de Ct y Copias/μl SÓLO se rellenan cuando hay
+   positivos, así que un día entero corrido en tiempo real y sin un solo positivo no tenía
+   dónde adjuntar la curva — que es justamente la prueba de que el proceso se hizo y salió
+   negativo. Pedido así: «aunque sea para demostrar que no hubo positivos pero se hizo».
+   De los cuatro métodos del catálogo, el único que NO produce curvas es el (2), la PCR
+   Nested de punto final: revela en gel. Los fixtures usan el (2) como control negativo,
+   porque si no distinguieran los dos casos el verde no probaría nada. */
+describe('Biomol · el método de tiempo real ofrece las curvas sin un solo positivo', () => {
+  const ofrece = () => {
+    const box = document.getElementById('bio-rpt-box');
+    return !!(box && box.querySelector('[data-foto="curvas"]'));
+  };
+  const negativo = () => rellenar(1, { codigo: 'L-1', wssv: 'Negativo', ihhnv: 'Negativo' });
+
+  it('el catálogo marca los TRES de tiempo real y deja fuera la PCR Nested', () => {
+    expect(H.BIO_METODOS.map((m) => !!m.qpcr)).toEqual([true, false, true, true]);
+    expect(H.BIO_METODOS[1].et).toContain('Nested');
+    // Sin `clave` el predicado no reconocería el método dentro del texto libre.
+    H.BIO_METODOS.filter((m) => m.qpcr).forEach((m) => {
+      expect(m.clave, m.et + ' no declara su clave').toBeTruthy();
+      expect(m.tx.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''),
+        m.et + ': su clave no aparece en su propio texto').toContain(m.clave);
+    });
+  });
+
+  it('🔴 el predicado reconoce los tres, y NO la PCR Nested', () => {
+    expect(H._bioMetodoConCurvas(H.BIO_METODOS[0].tx)).toBe(true);   // IQ REAL
+    expect(H._bioMetodoConCurvas(H.BIO_METODOS[2].tx)).toBe(true);   // dúplex
+    expect(H._bioMetodoConCurvas(H.BIO_METODOS[3].tx)).toBe(true);   // DHELIX
+    expect(H._bioMetodoConCurvas(H.BIO_METODOS[1].tx), 'la Nested no produce curvas').toBe(false);
+    expect(H._bioMetodoConCurvas(''), 'sin método no se inventa nada').toBe(false);
+  });
+
+  it('🔴 el campo es TEXTO LIBRE: reconoce el método sin tildes y en cualquier caja', () => {
+    // En producción conviven «dúplex» y «duplex»; comparar tal cual dejaría sin curvas a
+    // quien reescribe el párrafo a mano, que es justo lo que el campo permite hacer.
+    expect(H._bioMetodoConCurvas('Amplificación por REACCIÓN DUPLEX del laboratorio')).toBe(true);
+    expect(H._bioMetodoConCurvas('kit comercial dhelix duplex')).toBe(true);
+    expect(H._bioMetodoConCurvas('Se usó el Kit Comercial IQ Real')).toBe(true);
+    expect(H._bioMetodoConCurvas('PCR convencional con primers específicos')).toBe(false);
+  });
+
+  it('🔴 SIN un solo Ct, el método de tiempo real saca el cargador; la Nested no', () => {
+    negativo();
+    H.bioRptSet('metodo', H.BIO_METODOS[1].tx);
+    expect(bloque(), 'la Nested no debería ofrecerlas').not.toContain('Curvas de los ciclos de amplificación');
+
+    [0, 2, 3].forEach((i) => {
+      H.bioRptSet('metodo', H.BIO_METODOS[i].tx);
+      expect(bloque(), H.BIO_METODOS[i].et + ' debería ofrecer las curvas')
+        .toContain('Curvas de los ciclos de amplificación');
+    });
+  });
+
+  it('y el aviso NO dice que al análisis le falte el qPCR: el método lo justifica', () => {
+    negativo();
+    H.bioRptSet('metodo', H.BIO_METODOS[2].tx);
+    expect(bloque()).not.toContain('Este análisis ya no tiene valores de qPCR');
+  });
+
+  it('un informe NUEVO ya las ofrece: su método propuesto incluye el Kit IQ REAL', () => {
+    negativo();
+    expect(bloque()).toContain('Curvas de los ciclos de amplificación');
+  });
+
+  it('🔴 elegir el método ABRE la oferta sin guardar, y volver a la Nested la CIERRA', () => {
+    negativo();
+    H.bioMetodoInput(H.BIO_METODOS[1].tx);
+    expect(ofrece(), 'la Nested no las pide').toBe(false);
+
+    H.bioMetodoInput(H.BIO_METODOS[2].tx);
+    expect(ofrece(), 'hubo que guardar para que salieran').toBe(true);
+
+    H.bioMetodoInput(H.BIO_METODOS[1].tx);
+    expect(ofrece(), 'volver a la Nested tenía que cerrarla').toBe(false);
+  });
+
+  it('seguir escribiendo el MISMO método no repinta: el textarea perdería el foco', () => {
+    negativo();
+    H.bioMetodoInput(H.BIO_METODOS[2].tx);
+    const box1 = document.getElementById('bio-rpt-box');
+    H.bioMetodoInput(H.BIO_METODOS[2].tx + ' con primers propios');
+    expect(document.getElementById('bio-rpt-box'), 'repintó sin cambiar la oferta').toBe(box1);
+  });
+
+  it('🔴 con un Ct en la grilla, cambiar a la Nested NO retira las curvas — ni repinta', () => {
+    // La grilla las sostiene por su cuenta. Y no basta con comprobar que siguen ahí: sin la
+    // guarda, el asa llamaría a renderBioReport() en CADA tecla del método y el resultado
+    // saldría igual —el repintado las vuelve a poner— pero el textarea perdería el foco a
+    // media palabra. Lo que distingue una cosa de la otra es que el nodo sea el MISMO.
+    rellenarQpcr(1, { codigo: 'L-1', wssv: 'Positivo' }, { ciclo_wssv: '22.4' });
+    const box1 = document.getElementById('bio-rpt-box');
+    H.bioMetodoInput(H.BIO_METODOS[1].tx);
+    expect(ofrece()).toBe(true);
+    expect(document.getElementById('bio-rpt-box'), 'repintó sin que cambiara la oferta').toBe(box1);
+  });
+
+  it('🔴 con una foto YA guardada, cambiar a la Nested tampoco las retira', () => {
+    negativo();
+    localStorage.setItem(H.bioFotoKey('curvas', H.bioSidActivo()), IMG);
+    H.renderBioReport();
+    H.bioMetodoInput(H.BIO_METODOS[1].tx);
+    expect(ofrece(), 'la foto se quedaría sin botón de quitar').toBe(true);
+    expect(document.getElementById('bio-rpt-box').innerHTML).toContain("bioFotoClear('curvas'");
+  });
+
+  it('el textarea del método pasa por el asa, no por el setter a secas', () => {
+    negativo();
+    const ta = document.getElementById('bio-rpt-metodo');
+    expect(ta, 'el campo Método debería estar en pantalla').toBeTruthy();
+    expect(ta.getAttribute('oninput')).toBe('bioMetodoInput(this.value)');
   });
 });

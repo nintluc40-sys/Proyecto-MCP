@@ -12855,20 +12855,57 @@ function _bioEsPositivo(v){
 // marcados `def` —los dos históricos—: arrancar con los cuatro obligaría al analista a
 // borrar dos en cada informe. Por eso la marca va en el objeto y no es un `slice(0,2)`,
 // que se rompería en silencio al reordenar el catálogo (decisión del usuario, 2026-08-19).
+/* `qpcr` (2026-09-15, usuario) · este método corre en TIEMPO REAL, así que produce curvas de
+   amplificación aunque el día salga sin un solo positivo. El único que no es `qpcr` es el (2),
+   la PCR Nested de punto final: revela en gel y no hay curva que enseñar.
+   `clave` es la frase por la que se reconoce el método dentro del campo Método, que es TEXTO
+   LIBRE: se compara sin tildes y en minúsculas, así que aguanta que el usuario lo retoque.
+   ⚠ Al añadir un método de tiempo real se le ponen las dos cosas aquí: si no, su día sin
+   positivos se queda otra vez sin dónde adjuntar la curva, y sin ningún error. */
 const BIO_METODOS = [
-  { et: "1) Kit Comercial IQ REAL", def: true,
+  { et: "1) Kit Comercial IQ REAL", def: true, qpcr: true, clave: "iq real",
     tx: "1) Extracción y amplificación de ADN mediante el Kit Comercial IQ REAL, el límite de detección es de 10 copias/μl extracción de ADN." },
   { et: "2) PCR Nested punto final", def: true,
     tx: "2) Extracción de ADN tradicional mediante soluciones lisis y etanoles, amplificación por PCR Nested punto final con primers específicos, el límite de detección es de 10 copias/μl extracción de ADN." },
-  { et: "3) Reacción dúplex",
+  { et: "3) Reacción dúplex", qpcr: true, clave: "duplex",
     tx: "3) Extracción y amplificación de ADN mediante reacción dúplex, el límite de detección es de 10 copias/μl extracción de ADN." },
-  { et: "4) Kit Comercial DHELIX",
+  { et: "4) Kit Comercial DHELIX", qpcr: true, clave: "dhelix",
     tx: "4) Extracción y amplificación de ADN mediante el Kit Comercial DHELIX, el límite de detección es de 10 copias/μl extracción de ADN." }
 ];
 // El catálogo entero, para la opción «Todos» del desplegable.
 const BIO_METODO_TODOS = BIO_METODOS.map(function(m){ return m.tx; }).join("\n");
 // Lo que propone un reporte NUEVO: solo los marcados por defecto, no el catálogo entero.
 const BIO_METODO_DEF = BIO_METODOS.filter(function(m){ return m.def; }).map(function(m){ return m.tx; }).join("\n");
+
+/* Sin tildes y en minúsculas: el campo Método es libre y en producción conviven «dúplex» y
+   «duplex». Comparar el texto tal cual habría dejado sin curvas justo a quien lo reescribe. */
+function _bioSinTildes(s){
+  return String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+/** ¿El método declarado en el informe es de los que producen curvas de amplificación?
+ *  Basta con que el texto nombre a UNO de tiempo real: un informe puede llevar varios. */
+function _bioMetodoConCurvas(txt){
+  const t = _bioSinTildes(txt);
+  return BIO_METODOS.some(function(m){ return m.qpcr && t.indexOf(m.clave) !== -1; });
+}
+/** Asa del campo Método. Igual que `bioQpcrInput`, el método puede ABRIR o CERRAR la oferta
+ *  de las curvas, así que hay que repintar el bloque del informe — pero SÓLO cuando cambia:
+ *  repintar en cada tecla le quitaría el foco al textarea a media palabra.
+ *  🔑 Para cerrar no basta con que el método ya no las pida: puede sostenerlas una foto ya
+ *  guardada (que se enseña siempre para poder quitarla) o un Ct en la grilla. Esas dos sólo
+ *  se preguntan en esa rama, así que con un método de tiempo real —el caso normal— no se
+ *  recorre la grilla ni una vez. */
+function bioMetodoInput(val){
+  bioRptSet("metodo", val);
+  const box = document.getElementById("bio-rpt-box");
+  if(!box) return;
+  const caja = box.querySelector('[data-foto="curvas"]');
+  if(_bioMetodoConCurvas(val)){ if(!caja) renderBioReport(); return; }
+  if(!caja) return;
+  if(caja.querySelector("img")) return;
+  if(_collectBioGrid().some(_bioEsQpcr)) return;
+  renderBioReport();
+}
 
 function _bioRptAll(){
   try{ const o = JSON.parse(localStorage.getItem(BIO_RPT_KEY) || "{}"); return (o && typeof o==="object") ? o : {}; }
@@ -13028,7 +13065,7 @@ function bioMetodoPick(sel){
   if(!tx) return;
   const ta = document.getElementById("bio-rpt-metodo");
   if(ta) ta.value = tx;
-  bioRptSet("metodo", tx);
+  bioMetodoInput(tx);
 }
 /** Repinta SOLO el bloque del reporte. Nunca renderBiomol() desde aquí: eso
  *  reconstruye la grilla desde lo GUARDADO y se lleva por delante lo tecleado o
@@ -13102,8 +13139,12 @@ function _bioReportBlock(fecha, rows, sid){
     `<span class="mic-colchip${r.muestras.indexOf(o) === -1 ? ' off' : ''}" onclick="bioMuestraToggle(${i})" title="Clic para incluir o quitar esta muestra del PDF">${escapeHtml(o)}</span>`).join("");
   /* El MISMO criterio que usa el resto del módulo para decir «esto es qPCR»
      (`_bioEsQpcr`: basta un Ct, aunque no se hayan cuantificado copias). Reescribirlo
-     aquí con otra regla es como nacieron los clasificadores que había que corregir. */
-  const hayQpcr = (rows || []).some(_bioEsQpcr);
+     aquí con otra regla es como nacieron los clasificadores que había que corregir.
+     🔑 2026-09-15 (usuario) · O QUE EL MÉTODO SEA DE TIEMPO REAL, aunque la grilla no traiga
+     un solo Ct. Las columnas de qPCR sólo se rellenan con POSITIVOS, así que un día limpio
+     corrido en tiempo real no tenía dónde adjuntar la curva — que es justamente la prueba de
+     que el proceso se hizo y salió negativo. */
+  const hayQpcr = (rows || []).some(_bioEsQpcr) || _bioMetodoConCurvas(r.metodo);
   /* Un campo por imagen del registro. Devuelve "" si no toca enseñarlo.
      ⚠ Si YA hay imagen guardada se enseña SIEMPRE, aunque su condición deje de
      cumplirse: quitar los valores de qPCR con una foto de curvas dentro escondería el
@@ -13160,7 +13201,7 @@ function _bioReportBlock(fecha, rows, sid){
           ${BIO_METODOS.map(function(m,i){ return '<option value="'+i+'">'+escapeHtml(m.et)+'</option>'; }).join("")}
           <option value="*">Todos</option>
         </select></label>
-        <textarea id="bio-rpt-metodo" oninput="bioRptSet('metodo',this.value)" style="width:100%;min-height:70px">${escapeHtml(r.metodo)}</textarea></div>
+        <textarea id="bio-rpt-metodo" oninput="bioMetodoInput(this.value)" style="width:100%;min-height:70px">${escapeHtml(r.metodo)}</textarea></div>
       <div class="mf" style="margin-bottom:8px"><label>Descripción del análisis
         <button class="btn bo" type="button" onclick="bioDescReset()" style="margin-left:6px;padding:1px 7px;font-size:10px" title="Rehacerla a partir de los patógenos con resultado en la grilla">↻ Regenerar</button></label>
         <textarea oninput="bioRptSet('desc',this.value)" style="width:100%;min-height:52px">${escapeHtml(descVal)}</textarea>
