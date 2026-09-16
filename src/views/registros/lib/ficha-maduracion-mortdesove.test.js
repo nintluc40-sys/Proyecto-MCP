@@ -4,11 +4,12 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createContext, Script } from 'node:vm';
 import { sanitizeStr } from '../../../core/trovan.js';
-import { MAD_TANQUES_POR_SALA } from './ficha-maduracion-ingreso.schema.js';
+import { MAD_TANQUES_POR_SALA, MAD_SALA_OPTS } from './ficha-maduracion-ingreso.schema.js';
 import {
   MAD_MORT_SHEET, MAD_MORT_HEADERS, MAD_MORT_COLUMNS, MAD_MORT_TIPOS, pctMortalidad, mortRowId, buildMortRows, buildMortPayload, validarMort,
   MAD_NAUP_REVISIONES, MAD_NAUP_DEFORMIDAD, MAD_NAUP_ACTIVIDAD, MAD_NAUP_HONGOS, nauplioRowId, opcionNauplios,
   MAD_NAUP_FOTOTROPISMO, MAD_NAUP_AIREACION,
+  MAD_ALC_AREAS, alcalinidadRowId,
 } from './ficha-maduracion-mortdesove.schema.js';
 
 const col = (h) => MAD_MORT_HEADERS.indexOf(h);
@@ -32,7 +33,8 @@ describe('Inf. Supervisor · la hoja', () => {
   it('la misma hoja: mortalidad, después la revisión de nauplios, y el ID al final', () => {
     expect(MAD_MORT_SHEET).toBe('Maduración Mortalidad Desove');
     expect(MAD_MORT_HEADERS).toEqual(['Fecha', 'Lote', 'Tipo de tanque', 'Hembras que entran', 'Hembras muertas', '% Mortalidad',
-      'Revisión', 'Deformidad', 'Actividad', 'Hongos', 'Fototropismo', 'Aireación', 'Salinidad', 'Temperatura', 'Observaciones', 'ID']);
+      'Revisión', 'Deformidad', 'Actividad', 'Hongos', 'Fototropismo', 'Aireación', 'Salinidad', 'Temperatura',
+      'Área', 'Alcalinidad', 'Observaciones', 'ID']);
     expect(MAD_MORT_TIPOS).toEqual(['Desove', 'Recuperación']);
     expect([MAD_NAUP_REVISIONES, MAD_NAUP_DEFORMIDAD, MAD_NAUP_ACTIVIDAD, MAD_NAUP_HONGOS]).toEqual([
       ['Entrada', 'Lavado', 'Lavado 2', 'Postlavado'], ['Alta', 'Media', 'Baja', 'Ausente'], ['Alta', 'Media', 'Baja'], ['Ausente', 'Presente']]);
@@ -141,13 +143,17 @@ const bloque = (desde, hasta) => {
 };
 const api = (() => {
   const fin = '  return { errores: errores, avisos: avisos };\n}';
-  const ctx = { String, Number, Object, Array, JSON, Math, Date, parseInt, parseFloat, isFinite, sanitizeStr, MAD_TANQUES_POR_SALA };
+  /* MAD_SALA_OPTS vive arriba del monolito, fuera de los bloques que se extraen: se le da al vm
+     igual que MAD_TANQUES_POR_SALA. Es una constante ESPEJADA, no lógica, y su paridad la vigila
+     verificar-3copias. */
+  const ctx = { String, Number, Object, Array, JSON, Math, Date, parseInt, parseFloat, isFinite, sanitizeStr, MAD_TANQUES_POR_SALA, MAD_SALA_OPTS };
   ctx.globalThis = ctx;
   createContext(ctx);
   new Script(bloque('const MAD_ING_SHEET = "Maduración Ingreso";', fin) + '\n' + bloque('const MAD_DESOVE_SHEET = "Maduración Lotes";', fin) + '\n'
     + bloque('const MAD_MORT_SHEET = "Maduración Mortalidad Desove";', fin)
     + '\n;globalThis.__api = { MAD_MORT_SHEET, MAD_MORT_HEADERS, MAD_MORT_COLUMNS, MAD_MORT_TIPOS, madMortPct, madMortRowId, buildMadMortPayload, madMortValidar,'
-    + ' MAD_NAUP_REVISIONES, MAD_NAUP_DEFORMIDAD, MAD_NAUP_ACTIVIDAD, MAD_NAUP_HONGOS, madNaupRowId, madNaupOpcion };').runInContext(ctx);
+    + ' MAD_NAUP_REVISIONES, MAD_NAUP_DEFORMIDAD, MAD_NAUP_ACTIVIDAD, MAD_NAUP_HONGOS, madNaupRowId, madNaupOpcion,'
+    + ' MAD_NAUP_FOTOTROPISMO, MAD_NAUP_AIREACION, MAD_ALC_AREAS, madAlcRowId };').runInContext(ctx);
   return ctx.__api;
 })();
 
@@ -181,5 +187,58 @@ describe('Inf. Supervisor · el monolito y el módulo dicen lo mismo', () => {
     expect(src).toContain('if(t==="mortdes") renderMadMortDesove();');
     expect(src).toMatch(/function _madHojaPideGasNuevo\(hoja\)\{[^}]*hoja === MAD_MORT_SHEET/);
     expect(src).toContain('if(fp.querySelector("#mm-cards")) return;');
+  });
+});
+
+/* ── 2026-09-15 (usuario) · ALCALINIDAD POR ÁREA ──────────────────────────────────────────
+   «Añadir un campo denominado Alcalinidad, donde el usuario marcará el valor de alcalinidad
+   diaria que puede ser a estas áreas: RAS, Sala 1 … Sala 5.»
+
+   🔑 SU GRANO NO ES EL DE LA FICHA. Las demás filas son por (fecha, lote) o por (fecha, lote,
+   revisión); ésta es por (fecha, ÁREA), y el RAS no es un lote ni una sala del libro. Es el
+   tercer tipo de fila de esta hoja, y lo que hay que vigilar es justamente que no se confunda
+   con los otros dos: ni escribe columnas de mortalidad, ni el libro la cuenta. */
+describe('Inf. Supervisor · la alcalinidad del día', () => {
+  const soloAlc = (alcalinidad) => ({ fecha: '2026-09-15', lotes: [], alcalinidad });
+
+  it('el fixture ejerce algo: las áreas son el RAS y las cinco salas', () => {
+    expect(MAD_ALC_AREAS).toEqual(['RAS', 'Sala 1', 'Sala 2', 'Sala 3', 'Sala 4', 'Sala 5']);
+    expect(MAD_ALC_AREAS[0], 'el RAS no es una sala: va aparte y primero').toBe('RAS');
+  });
+
+  it('🔴 una fila por área CON VALOR, y ninguna por las demás', () => {
+    // Sin valor no se escribe fila, y con el MERGE del GAS no escribir es CONSERVAR lo que hubiera.
+    const filas = buildMortRows(soloAlc({ RAS: '120', 'Sala 3': 95.5, 'Sala 1': '' }));
+    expect(filas.map((f) => [f[col('Área')], f[col('Alcalinidad')], f[col('ID')]])).toEqual([
+      ['RAS', 120, '2026-09-15-ALC-RAS'],
+      ['Sala 3', 95.5, '2026-09-15-ALC-S3'],
+    ]);
+  });
+
+  it('🔴 no escribe nada de las otras dos clases de fila', () => {
+    /* Si escribiera «Tipo de tanque» o «Revisión», el libro y el tablero la leerían como lo que
+       no es. Las columnas que no son suyas van vacías. */
+    const f = buildMortRows(soloAlc({ RAS: 120 }))[0];
+    expect([f[col('Lote')], f[col('Tipo de tanque')], f[col('Revisión')], f[col('Hembras muertas')]]).toEqual(['', '', '', '']);
+    expect(f).toHaveLength(MAD_MORT_HEADERS.length);
+  });
+
+  it('el ID distingue el RAS de cada sala', () => {
+    expect(alcalinidadRowId('2026-09-15', 'RAS')).toBe('2026-09-15-ALC-RAS');
+    expect(alcalinidadRowId('2026-09-15', 'Sala 5')).toBe('2026-09-15-ALC-S5');
+    expect(alcalinidadRowId('2026-09-15', 'RAS')).not.toBe(alcalinidadRowId('2026-09-15', 'Sala 1'));
+  });
+
+  it('🔴 un día con SÓLO alcalinidad es un registro válido', () => {
+    // Es del día y no de un lote: sin contarla, moriría en «No hay ningún registro que guardar».
+    expect(validarMort(soloAlc({ 'Sala 2': 110 }))).toEqual({ errores: [], avisos: [] });
+    expect(validarMort(soloAlc({}))).toEqual({ errores: ['No hay ningún registro que guardar.'], avisos: [] });
+  });
+
+  it('una alcalinidad que no es cifra da ERROR y dice de qué área', () => {
+    // Y no se le suma «no hay nada que guardar»: con un error delante, esa guarda calla.
+    expect(validarMort(soloAlc({ 'Sala 4': 'mucha' })).errores).toEqual([
+      'La alcalinidad de Sala 4 no es una cifra válida.',
+    ]);
   });
 });

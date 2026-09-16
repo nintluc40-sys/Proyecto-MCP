@@ -14,6 +14,8 @@
 
 import { sanitizeStr } from '../../../core/trovan.js';
 import { normLote } from './ficha-maduracion-desoves.schema.js';
+// La alcalinidad es por ÁREA, y las áreas son el RAS más las salas del catálogo del Ingreso.
+import { MAD_SALA_OPTS, salaTag } from './ficha-maduracion-ingreso.schema.js';
 
 export const MAD_MORT_SHEET = 'Maduración Mortalidad Desove';
 export const MAD_MORT_TIPOS = ['Desove', 'Recuperación'];
@@ -30,6 +32,11 @@ export const MAD_NAUP_HONGOS = ['Ausente', 'Presente'];
    la de Actividad: compartir el array haría que retocar una cambiara las otras dos en silencio, y
    son tres juicios distintos del laboratorio que no tienen por qué moverse juntos. */
 export const MAD_NAUP_FOTOTROPISMO = ['Alta', 'Media', 'Baja'];
+/* ALCALINIDAD (usuario, 2026-09-15) · un valor DIARIO por área. El RAS va primero porque no es
+   una sala: es el circuito que las alimenta, y por eso esto no cabía en `Maduración Sala`. */
+export const MAD_ALC_AREAS = ['RAS'].concat(MAD_SALA_OPTS);
+export const alcalinidadRowId = (fecha, area) =>
+  sanitizeStr(fecha, 10) + '-ALC-' + (area === 'RAS' ? 'RAS' : salaTag(area));
 export const MAD_NAUP_AIREACION = ['Alta', 'Media', 'Baja'];
 /* Topes de AVISO, CONFIRMADOS por el usuario el 2026-09-15 (hasta entonces eran del asistente, y una
    cifra sin dueño se vuelve a discutir cada vez que aparece). Por encima, la cifra se guarda y se marca:
@@ -54,6 +61,10 @@ export const MAD_MORT_COLUMNS = [
   { h: 'Aireación', k: 'aireacion' },
   { h: 'Salinidad', k: 'salinidad' },
   { h: 'Temperatura', k: 'temperatura' },
+  /* Sólo las llevan las filas de alcalinidad, igual que «Revisión» sólo la llevan las de la
+     revisión de nauplios y «Tipo de tanque» sólo las de mortalidad. */
+  { h: 'Área', k: 'area' },
+  { h: 'Alcalinidad', k: 'alcalinidad' },
   { h: 'Observaciones', k: 'observaciones' },
   { h: 'ID', k: 'id' },
 ];
@@ -121,6 +132,13 @@ export function buildMortRows(model) {
         observaciones: sanitizeStr(x.observaciones, 300), id: nauplioRowId(fecha, lote, revision) });
     });
   });
+  /* Una fila por ÁREA con valor. Va fuera del bucle de lotes porque no es de ningún lote: es del
+     día. Sin valor no se escribe fila — y con el MERGE del GAS, no escribir es CONSERVAR. */
+  MAD_ALC_AREAS.forEach((area) => {
+    const v = dec((m.alcalinidad || {})[area]);
+    if (v === '') return;
+    fila({ fecha, area, alcalinidad: v, id: alcalinidadRowId(fecha, area) });
+  });
   return filas;
 }
 
@@ -178,6 +196,17 @@ export function validarMort(model) {
       filas++;
     });
   });
-  if (!filas && !errores.length) errores.push('No hay ningún registro que guardar.');
+  /* Se exige que sea una cifra y nada más: el usuario no dio un rango plausible, y un tope
+     inventado aquí sería una cifra sin dueño de las que este proyecto ya ha tenido que retirar. */
+  let alcalinidades = 0;
+  MAD_ALC_AREAS.forEach((area) => {
+    const crudoV = crudo((m.alcalinidad || {})[area]);
+    if (crudoV === '') return;
+    if (dec(crudoV) === '') errores.push('La alcalinidad de ' + area + ' no es una cifra válida.');
+    else alcalinidades++;
+  });
+  /* ⚠ La alcalinidad CUENTA: es del día y no de un lote, así que un día en el que sólo se anota
+     ella es un registro perfectamente válido. Sin sumarla aquí moriría en la guarda de abajo. */
+  if (!filas && !alcalinidades && !errores.length) errores.push('No hay ningún registro que guardar.');
   return { errores, avisos };
 }

@@ -247,6 +247,26 @@ describe('Mortalidad de hembras · la ficha', () => {
      desplazamiento vertical: al llenar la primera fila se pueden editar las demás, y si
      modifico alguna, igual se queda así». Las cuatro revisiones de un mismo lote se miden
      casi siempre con la misma salinidad y la misma temperatura. */
+  /* 2026-09-15 (usuario) · la ALCALINIDAD es del DÍA y no de un lote: va fuera de las tarjetas,
+     una casilla por área, y escribe una fila propia por cada una con valor. */
+  it('🔴 Inf. Supervisor: la alcalinidad del día se recoge por área y va a la hoja', async () => {
+    const alc = (area) => document.querySelector('#fp-mortdes .mm-alc[data-area="' + area + '"]');
+    expect(alc('RAS'), 'falta la casilla del RAS').toBeTruthy();
+    expect([...document.querySelectorAll('#fp-mortdes .mm-alc')].map((e) => e.getAttribute('data-area')))
+      .toEqual(['RAS', 'Sala 1', 'Sala 2', 'Sala 3', 'Sala 4', 'Sala 5']);
+
+    q('#mm-fecha').value = '2026-09-15';
+    alc('RAS').value = '120';
+    alc('Sala 3').value = '95.5';
+    await H.madMortGuardar();
+
+    const c = (h) => MAD_MORT_HEADERS.indexOf(h);
+    expect(envios[0].rows.map((f) => [f[c('Área')], f[c('Alcalinidad')], f[c('ID')]])).toEqual([
+      ['RAS', 120, '2026-09-15-ALC-RAS'],
+      ['Sala 3', 95.5, '2026-09-15-ALC-S3'],
+    ]);
+  });
+
   it('🔴 Inf. Supervisor: salinidad y temperatura BAJAN, y una corregida a mano no se pisa', () => {
     const cifra = (rev, k) => document.querySelector('#fp-mortdes .mm-n-' + rev + '-' + k);
     const columna = (k) => ['entrada', 'lavado', 'lavado2', 'postlavado'].map((r) => cifra(r, k).value);

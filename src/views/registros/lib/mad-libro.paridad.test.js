@@ -420,6 +420,12 @@ const ESCENARIOS = {
       { Fecha: '2026-01-07', Lote: 'ZZ', 'Tipo de tanque': 'Desove', 'Hembras muertas': 4 },
       // Inf. Supervisor: una fila de revisión de nauplios en la misma hoja, que los dos tienen que saltarse.
       { Fecha: '2026-01-07', Lote: 'AB', 'Tipo de tanque': '', Revisión: 'Lavado', Deformidad: 'Media', 'Hembras muertas': 2 },
+      /* Y una de ALCALINIDAD (2026-09-15), que es la TERCERA clase de fila de esta hoja: trae
+         «Revisión» vacía, así que si el filtro no nombrara también el «Área» entraría como
+         mortalidad y avisaría de un tipo de tanque que esa fila nunca tuvo. Con las dos copias
+         saltándosela, la paridad sólo lo ve si el fixture la trae. */
+      { Fecha: '2026-01-07', 'Área': 'RAS', Alcalinidad: 120 },
+      { Fecha: '2026-01-07', 'Área': 'Sala 1', Alcalinidad: 95.5 },
     ],
   },
   'vacío': { ingresos: [], tanques: [] },

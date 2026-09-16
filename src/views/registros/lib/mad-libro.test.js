@@ -1181,3 +1181,37 @@ describe('Libro · contadores por lote para el resumen (2026-09-15)', () => {
     expect(dePos(libro, 'AB').mortDesove).toEqual({ entran: 5, muertas: 1 });
   });
 });
+
+/* ── 2026-09-15 · la fila de ALCALINIDAD no es mortalidad ────────────────────────────────────
+   La hoja «Maduración Mortalidad Desove» tiene TRES clases de fila. El libro sólo suma las de
+   mortalidad, y las reconocía por tener «Revisión» vacía. Una fila de alcalinidad también la
+   tiene vacía: sin nombrar además el «Área» entraría aquí y el libro avisaría de un «tipo de
+   tanque desconocido» que esa fila nunca tuvo — un rojo permanente sobre una fila perfecta. */
+describe('Libro · las filas que NO son mortalidad se saltan', () => {
+  const ingreso = (Fecha, Lote, Sala, Tanque, Machos, Hembras) =>
+    ({ Fecha, Lote, 'Código genético': 'CG1', Sala, Tanque, Machos, Hembras });
+  const base = () => ({ ingresos: [ingreso('2026-01-01', 'AB', 'Sala 1', 1, 10, 40)], tanques: [] });
+
+  it('🔴 una fila de alcalinidad no avisa ni descuenta nada', () => {
+    const l = construirLibro(Object.assign(base(), { mortDesove: [
+      { Fecha: '2026-01-10', 'Área': 'RAS', Alcalinidad: 120 },
+      { Fecha: '2026-01-10', 'Área': 'Sala 1', Alcalinidad: 95 },
+    ] }), { hoy: '2026-01-20' });
+    expect(l.avisos, 'la alcalinidad entró como si fuera mortalidad').toEqual([]);
+    expect(l.lotes.get('AB').hembras).toBe(40);
+  });
+
+  it('el fixture ejerce algo: una fila de mortalidad SÍ entra y descuenta', () => {
+    const l = construirLibro(Object.assign(base(), { mortDesove: [
+      { Fecha: '2026-01-10', Lote: 'AB', 'Tipo de tanque': 'Desove', 'Hembras que entran': 10, 'Hembras muertas': 3 },
+    ] }), { hoy: '2026-01-20' });
+    expect(l.lotes.get('AB').hembras).toBe(37);
+  });
+
+  it('y una con el tipo de tanque MAL escrito sigue avisando: ese aviso no se pierde', () => {
+    const l = construirLibro(Object.assign(base(), { mortDesove: [
+      { Fecha: '2026-01-10', Lote: 'AB', 'Tipo de tanque': 'Desobe', 'Hembras muertas': 3 },
+    ] }), { hoy: '2026-01-20' });
+    expect(l.avisos.map((a) => a.tipo)).toEqual(['mortdes-tipo']);
+  });
+});

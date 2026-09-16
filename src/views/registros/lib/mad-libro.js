@@ -171,7 +171,15 @@ function flujo(fuentes) {
   for (const r of fuentes.cierres || []) ev.push({ fecha: txt(r.Fecha), tipo: 'fin', r });
   // La hoja de Mortalidad Desove lleva también la REVISIÓN DE NAUPLIOS (Inf. Supervisor, 2026-09-15): esas filas traen
   // «Revisión» y no son mortalidad, así que no entran en el libro (ni como aviso de tipo de tanque desconocido).
-  for (const r of fuentes.mortDesove || []) if (txt(r['Revisión']) === '') ev.push({ fecha: txt(r.Fecha), tipo: 'mortdes', r });
+  /* ⚠ 2026-09-15 · el filtro nombra las DOS clases de fila que NO son mortalidad. La de
+     alcalinidad trae «Revisión» vacía, así que sin nombrar el «Área» entraría aquí y el libro
+     avisaría de un «tipo de tanque desconocido» que esa fila nunca tuvo — un rojo permanente
+     sobre una fila perfecta. El aviso sigue cazando erratas del tipo de tanque, que es para lo
+     que está. */
+  for (const r of fuentes.mortDesove || []) {
+    if (txt(r['Revisión']) !== '' || txt(r['Área']) !== '') continue;
+    ev.push({ fecha: txt(r.Fecha), tipo: 'mortdes', r });
+  }
   return ev.sort((a, b) => a.fecha.localeCompare(b.fecha) || (PRIORIDAD[a.tipo] - PRIORIDAD[b.tipo]));
 }
 

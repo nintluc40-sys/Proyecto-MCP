@@ -5869,7 +5869,13 @@ function madFlujo(f){
   (f.tanques||[]).forEach(function(r){ ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"tanque", r:r }); });
   (f.cierres||[]).forEach(function(r){ ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"fin", r:r }); });
   // Las filas de REVISIÓN DE NAUPLIOS (Inf. Supervisor, 2026-09-15) van en la misma hoja y no son mortalidad. Ver el módulo.
-  (f.mortDesove||[]).forEach(function(r){ if(madLibroTxt(r["Revisión"])==="") ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"mortdes", r:r }); });
+  /* ⚠ 2026-09-15 · las DOS clases de fila que no son mortalidad. La de alcalinidad trae
+     «Revisión» vacía: sin nombrar el «Área» entraría aquí y el libro avisaría de un «tipo de
+     tanque desconocido» que esa fila nunca tuvo. */
+  (f.mortDesove||[]).forEach(function(r){
+    if(madLibroTxt(r["Revisión"])!=="" || madLibroTxt(r["Área"])!=="") return;
+    ev.push({ fecha:madLibroTxt(r.Fecha), tipo:"mortdes", r:r });
+  });
   return ev.sort(function(a,b){ return a.fecha.localeCompare(b.fecha) || (MAD_PRIORIDAD[a.tipo]-MAD_PRIORIDAD[b.tipo]); });
 }
 function madSumarDias(fecha, dias){
@@ -9219,6 +9225,12 @@ const MAD_NAUP_HONGOS = ["Ausente","Presente"];
    la de Actividad: compartir el array haría que retocar una cambiara las otras dos en silencio, y
    son tres juicios distintos del laboratorio que no tienen por qué moverse juntos. */
 const MAD_NAUP_FOTOTROPISMO = ["Alta","Media","Baja"];
+/* ALCALINIDAD (usuario, 2026-09-15) · un valor DIARIO por área. El RAS va primero porque no es
+   una sala: es el circuito que las alimenta, y por eso esto no cabía en «Maduración Sala». */
+const MAD_ALC_AREAS = ["RAS"].concat(MAD_SALA_OPTS);
+function madAlcRowId(fecha, area){
+  return sanitizeStr(fecha, 10) + "-ALC-" + (area === "RAS" ? "RAS" : madIngSalaTag(area));
+}
 const MAD_NAUP_AIREACION = ["Alta","Media","Baja"];
 /* Topes de AVISO de la revisión de nauplios, CONFIRMADOS por el usuario el 2026-09-15. Avisan y no
    bloquean, al revés que la temperatura de Sala (D13): allí la cifra alimenta promedios y un 50 los
@@ -9232,6 +9244,8 @@ const MAD_MORT_COLUMNS = [
   { h:"Revisión", k:"revision" }, { h:"Deformidad", k:"deformidad" }, { h:"Actividad", k:"actividad" }, { h:"Hongos", k:"hongos" },
   { h:"Fototropismo", k:"fototropismo" }, { h:"Aireación", k:"aireacion" },
   { h:"Salinidad", k:"salinidad" }, { h:"Temperatura", k:"temperatura" },
+  /* Sólo las llevan las filas de alcalinidad, como «Revisión» sólo las de nauplios. */
+  { h:"Área", k:"area" }, { h:"Alcalinidad", k:"alcalinidad" },
   { h:"Observaciones", k:"observaciones" }, { h:"ID", k:"id" }   // ⚠ el ID, el ÚLTIMO
 ];
 const MAD_MORT_HEADERS = MAD_MORT_COLUMNS.map(function(c){ return c.h; });
@@ -9269,6 +9283,13 @@ function madMortBuildRows(model){
         salinidad:_madNaupDec(r.salinidad), temperatura:_madNaupDec(r.temperatura),
         observaciones:sanitizeStr(x.observaciones,300), id:madNaupRowId(fecha, lote, revision) });   // I1: las observaciones del lote también aquí
     });
+  });
+  /* Una fila por ÁREA con valor: es del DÍA, no de un lote. Sin valor no se escribe fila, y con
+     el MERGE del GAS no escribir es CONSERVAR lo que hubiera. */
+  MAD_ALC_AREAS.forEach(function(area){
+    const v=_madNaupDec((m.alcalinidad||{})[area]);
+    if(v==="") return;
+    fila({ fecha:fecha, area:area, alcalinidad:v, id:madAlcRowId(fecha, area) });
   });
   return filas;
 }
@@ -9311,7 +9332,18 @@ function madMortValidar(model){
       filas++;
     });
   });
-  if(!filas && !errores.length) errores.push("No hay ningún registro que guardar.");
+  /* Se exige que sea una cifra y nada más: el usuario no dio un rango plausible, y un tope
+     inventado aquí sería una cifra sin dueño de las que este proyecto ya ha tenido que retirar. */
+  let alcalinidades=0;
+  MAD_ALC_AREAS.forEach(function(area){
+    const c=_madNaupCrudo((m.alcalinidad||{})[area]);
+    if(c==="") return;
+    if(_madNaupDec(c)==="") errores.push("La alcalinidad de "+area+" no es una cifra válida.");
+    else alcalinidades++;
+  });
+  /* ⚠ La alcalinidad CUENTA: es del día y no de un lote, así que un día en el que sólo se anota
+     ella es un registro válido. Sin sumarla aquí moriría en la guarda de abajo. */
+  if(!filas && !alcalinidades && !errores.length) errores.push("No hay ningún registro que guardar.");
   return { errores: errores, avisos: avisos };
 }
 
@@ -9352,6 +9384,17 @@ function _madNaupTablaHTML(){
 }
 /** Salinidad y temperatura tecleadas: bajan por su columna a las revisiones de abajo. */
 function madNaupBaja(el){ _madBajarColumna(el, null); }
+/* La alcalinidad es del DÍA y no de un lote, así que va FUERA de las tarjetas: dentro se
+   repetiría una vez por lote y habría que decidir cuál de las copias vale. */
+function _madAlcTablaHTML(){
+  const filas=MAD_ALC_AREAS.map(function(area){
+    return '<tr><td style="font-weight:700;white-space:nowrap">'+escapeHtml(area)+'</td>'
+      + '<td><input class="mm-alc" data-area="'+escapeHtml(area)+'" type="number" min="0" step="0.1" inputmode="decimal" style="'+_MAD_ING_INP+';width:110px"></td></tr>';
+  }).join("");
+  return '<div style="font-size:12px;font-weight:700;margin:2px 0 6px;color:#334155">🧪 Alcalinidad del día</div>'
+    + '<div class="tw" style="margin-bottom:10px"><table class="ft mm-alc-t" style="font-size:12px">'
+    + '<thead><tr><th>Área</th><th>Alcalinidad</th></tr></thead><tbody>'+filas+'</tbody></table></div>';
+}
 function _madMortCardHTML(){
   return '<div class="mm-card" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px;background:#fff">'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
@@ -9392,7 +9435,9 @@ function madMortCollect(){
     lotes.push({ lote:g(c,".mm-lote"), desove:{ entran:g(c,".mm-desove-e"), muertas:g(c,".mm-desove-m") },
       recuperacion:{ entran:g(c,".mm-recuperacion-e"), muertas:g(c,".mm-recuperacion-m") }, nauplios:nauplios, observaciones:g(c,".mm-obs") });
   });
-  return { fecha:g(document,"#mm-fecha"), lotes:lotes };
+  const alcalinidad={};
+  document.querySelectorAll("#fp-mortdes .mm-alc").forEach(function(e){ alcalinidad[e.getAttribute("data-area")]=e.value; });
+  return { fecha:g(document,"#mm-fecha"), lotes:lotes, alcalinidad:alcalinidad };
 }
 function _madMortPinta(res, filas){
   const box=document.getElementById("mm-report"); if(!box) return;
@@ -9487,6 +9532,7 @@ function renderMadMortDesove(){
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
     +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mm-fecha" value="'+escapeHtml(todayStr)+'" onchange="madBorrFechaChange(&quot;mortdes&quot;)" style="'+_MAD_ING_INP+'"></label>'
     +   '</div>'
+    + _madAlcTablaHTML()
     +   '<div id="mm-cards">'+_madMortCardHTML()+'</div>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
     +     '<button class="btn" type="button" onclick="madMortAddCard()">➕ Lote</button>'
