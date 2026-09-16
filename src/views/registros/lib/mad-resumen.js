@@ -86,12 +86,17 @@ const toneladasDe = (tons, sala) => {
   return { valor: d == null ? '' : d, fecha: '' };
 };
 
-/* VOLUMEN MEDIO de UN tanque de la sala, en m³ (1 t de agua = 1 m³). Las toneladas se registran
-   POR SALA —es lo que el usuario sabe—, así que el volumen de un tanque suelto es un promedio, y
-   de ahí que la carga que sale de él se llame «volumétrica PROMEDIO» y no «volumétrica». */
+/* VOLUMEN de UN tanque de la sala, en m³ (1 t de agua = 1 m³).
+   🔑 LAS TONELADAS SON POR TANQUE, NO DE LA SALA ENTERA, y no es una interpretación: el Excel del
+   módulo («SEPTIEMBRE 2026») trae la fórmula con su rótulo —«Carga volumetrica (kG/m3)» = biomasa
+   del tanque ÷ 4,65 en la Sala 1 y ÷ 19 en la Sala 2— y cuadra al decimal con el tanque 1
+   (5,43 kg ÷ 4,65 = 1,168). Repartir además las toneladas entre los tanques de la sala multiplicaba
+   la carga por el número de tanques: 14,8 kg/m³ donde son 1,17.
+   Sigue llamándose «PROMEDIO» porque la cifra es la misma para todos los tanques de la sala: es el
+   volumen típico de uno de ellos, no el medido en ése. */
 const volumenTanque = (sala, toneladas) => {
-  const n = (MAD_TANQUES_POR_SALA[sala] || []).length;
-  return n > 0 && toneladas !== '' ? r2(toneladas / n) : '';
+  void sala;
+  return toneladas === '' ? '' : r2(toneladas);
 };
 const lotesDeCelda = (v) => txt(v).split(',').map(loteKey).filter(Boolean);
 

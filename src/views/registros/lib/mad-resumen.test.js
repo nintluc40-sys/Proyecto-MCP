@@ -57,7 +57,7 @@ const TANQUE_REUTILIZADO = () => ({
      · Sala 3 t22 SIN ningún peso           → la carga métrica queda vacía, nunca en cero;
      · Sala 4 t1 con SÓLO el peso de ♀      → sí se calcula, contando los ♂ como 0;
      · Sala 5 con 0 t registradas           → volumen 0, y la volumétrica NO se divide entre cero;
-     · Sala 9, que no está en el catálogo de tanques, CON toneladas → no hay volumen por tanque;
+     · Sala 9, que no está en NINGÚN catálogo, CON toneladas → vale lo registrado;
      · Sala 4 con DOS registros de toneladas → manda el último;
      · dos días de revisión de nauplios      → sólo el último, sin acumular. */
 const CARGA_LIMITES = () => ({
@@ -142,16 +142,14 @@ describe('Resumen · lotes', () => {
   });
   it('🔴 relación H:M de cada tanque y peso del último registro (promedio de sus tanques ese día)', () => {
     /* Las cargas van con la relación porque salen de las mismas dos cifras. A mano, con los pesos
-       del 01-30 (♂ 42 g · ♀ 59 g):
-         · Sala 1 t1 → (67×59 + 28×42) ÷ 1000 = 5,129 → 5,13 kg · volumen 5,5 t ÷ 15 tanques =
-           0,37 m³ · 5,13 ÷ 0,37 = 13,86 kg/m³
-         · Sala 2 t3 → (39×59 + 9×42) ÷ 1000 = 2,679 → 2,68 kg · volumen 21 ÷ 6 = 3,5 m³ ·
-           2,68 ÷ 3,5 = 0,77 kg/m³
-       Las dos salas tienen volúmenes MUY distintos a propósito: con tanques iguales, dividir por
-       el número equivocado daría lo mismo y esta prueba no probaría nada. */
+       del 01-30 (♂ 42 g · ♀ 59 g) y las toneladas de CADA tanque de su sala:
+         · Sala 1 t1 → (67×59 + 28×42) ÷ 1000 = 5,129 → 5,13 kg ÷ 5,5 m³ = 0,93 kg/m³
+         · Sala 2 t3 → (39×59 + 9×42) ÷ 1000 = 2,679 → 2,68 kg ÷ 21 m³ = 0,13 kg/m³
+       Las dos salas llevan volúmenes MUY distintos a propósito: con el mismo, tomar el de la sala
+       equivocada daría lo mismo y esta prueba no probaría nada. */
     expect(lote('AB').tanques).toEqual([
-      { sala: 'Sala 1', tanque: 1, machos: 28, hembras: 67, relacion: 2.39, cargaMetrica: 5.13, volumen: 0.37, cargaVolumetrica: 13.86 },
-      { sala: 'Sala 2', tanque: 3, machos: 9, hembras: 39, relacion: 4.33, cargaMetrica: 2.68, volumen: 3.5, cargaVolumetrica: 0.77 },
+      { sala: 'Sala 1', tanque: 1, machos: 28, hembras: 67, relacion: 2.39, cargaMetrica: 5.13, volumen: 5.5, cargaVolumetrica: 0.93 },
+      { sala: 'Sala 2', tanque: 3, machos: 9, hembras: 39, relacion: 4.33, cargaMetrica: 2.68, volumen: 21, cargaVolumetrica: 0.13 },
     ]);
     expect([lote('AB').pesoMachos, lote('AB').pesoHembras]).toEqual([{ valor: 42, fecha: '2026-01-30' }, { valor: 59, fecha: '2026-01-30' }]);
   });
@@ -163,7 +161,7 @@ describe('Resumen · lotes', () => {
     sinPeso.tanques = sinPeso.tanques.map((r) => Object.assign({}, r, { 'Peso promedio machos (g)': '', 'Peso promedio hembras (g)': '' }));
     const t = resumenMaduracion(sinPeso, { hoy: '2026-02-01' }).lotes.find((x) => x.lote === 'AB').tanques[0];
     expect([t.cargaMetrica, t.cargaVolumetrica]).toEqual(['', '']);
-    expect(t.volumen, 'el volumen no depende del peso').toBe(0.37);
+    expect(t.volumen, 'el volumen no depende del peso').toBe(5.5);
   });
 
   it('🔑 lo REGISTRADO en la ficha de Salas manda sobre el catálogo de toneladas', () => {
@@ -172,26 +170,46 @@ describe('Resumen · lotes', () => {
     f.sala = f.sala.concat([{ Fecha: '2026-01-31', Sala: 'Sala 2', Toneladas: 10.5 }]);
     const R = resumenMaduracion(f, { hoy: '2026-02-01' });
     const t = R.lotes.find((x) => x.lote === 'AB').tanques.find((x) => x.sala === 'Sala 2');
-    expect(t.volumen).toBe(1.75);
-    expect(t.cargaVolumetrica).toBe(1.53);                       // 2,68 ÷ 1,75
+    expect(t.volumen).toBe(10.5);
+    expect(t.cargaVolumetrica).toBe(0.26);                       // 2,68 ÷ 10,5
     const s2 = R.salas.find((x) => x.sala === 'Sala 2');
-    expect([s2.toneladas, s2.fechaToneladas, s2.volumenTanque, s2.tanquesSala]).toEqual([10.5, '2026-01-31', 1.75, 6]);
+    expect([s2.toneladas, s2.fechaToneladas, s2.volumenTanque, s2.tanquesSala]).toEqual([10.5, '2026-01-31', 10.5, 6]);
   });
 
   it('🔑 los BORDES de la carga: sin peso, con medio peso, con 0 t y con una sala desconocida', () => {
     const X = resumenMaduracion(CARGA_LIMITES(), { hoy: '2026-02-01' });
     const tq1 = (n) => X.lotes.find((l) => l.lote === n).tanques[0];
-    // Sin ningún peso: vacía, NO cero. El volumen sí se sabe (21 ÷ 6 tanques de la Sala 3).
-    expect([tq1('ZZ').cargaMetrica, tq1('ZZ').cargaVolumetrica, tq1('ZZ').volumen]).toEqual(['', '', 3.5]);
+    // Sin ningún peso: vacía, NO cero. El volumen sí se sabe (21 t por tanque en la Sala 3).
+    expect([tq1('ZZ').cargaMetrica, tq1('ZZ').cargaVolumetrica, tq1('ZZ').volumen]).toEqual(['', '', 21]);
     // Con sólo el peso de ♀ sí se calcula, contando los ♂ como 0: (6 × 50) ÷ 1000 = 0,3 kg.
-    // Y la Sala 4 tiene DOS registros de toneladas: manda el último (12 ÷ 6 = 2 m³).
-    expect([tq1('XX').cargaMetrica, tq1('XX').volumen, tq1('XX').cargaVolumetrica]).toEqual([0.3, 2, 0.15]);
+    // Y la Sala 4 tiene DOS registros de toneladas: manda el último (12 m³).
+    expect([tq1('XX').cargaMetrica, tq1('XX').volumen, tq1('XX').cargaVolumetrica]).toEqual([0.3, 12, 0.03]);
     // 0 t registradas: el volumen es 0 y la volumétrica NO se divide entre cero.
     expect([tq1('WW').cargaMetrica, tq1('WW').volumen, tq1('WW').cargaVolumetrica]).toEqual([0.08, 0, '']);
-    // Sala 9 no está en el catálogo de tanques: hay toneladas pero no hay volumen POR TANQUE.
-    expect([tq1('YY').cargaMetrica, tq1('YY').volumen, tq1('YY').cargaVolumetrica]).toEqual([0.15, '', '']);
+    // Sala 9 no está en ningún catálogo, pero SÍ registró toneladas: vale lo registrado.
+    expect([tq1('YY').cargaMetrica, tq1('YY').volumen, tq1('YY').cargaVolumetrica]).toEqual([0.15, 8, 0.02]);
     const s4 = X.salas.find((s) => s.sala === 'Sala 4');
-    expect([s4.toneladas, s4.fechaToneladas, s4.volumenTanque]).toEqual([12, '2026-01-20', 2]);
+    expect([s4.toneladas, s4.fechaToneladas, s4.volumenTanque]).toEqual([12, '2026-01-20', 12]);
+  });
+
+  /* 🔴 CONTRA EL EXCEL DEL MÓDULO, que es de donde sale la definición. Hoja «SEPTIEMBRE 2026»,
+     fila 4 = tanque 1 de la Sala 1: 33♀ a 68 g (AK) y 59♂ a 54 g (AL), y su celda BA lleva el
+     rótulo «Carga volumetrica (kG/m3)» con la fórmula ((♀+♂) × pesoPromedio ÷ 1000) ÷ 4,65.
+       (33×68 + 59×54) = 5430 g = 5,43 kg · 5,43 ÷ 4,65 = 1,1677 → 1,17 kg/m³
+     Se registran las 4,65 t DEL EXCEL, no las 5,5 del catálogo, para comparar contra su divisor.
+     ⚠ Esta prueba es la que fija que las toneladas son POR TANQUE: con el reparto entre los 15
+     tanques de la Sala 1 saldría 17,5 kg/m³, quince veces la cifra del Excel. */
+  it('🔴 contra el EXCEL: la carga volumétrica del tanque 1 de la Sala 1 cuadra al decimal', () => {
+    const f = {
+      ingresos: [ing('2026-01-01', 'EX', 'CG1', 'Sala 1', 1, 59, 33)],
+      tanques: [tq('2026-01-02', 'Sala 1', 1, { 'Peso promedio machos (g)': 54, 'Peso promedio hembras (g)': 68 })],
+      sala: [Object.assign(sala('2026-01-02', 'Sala 1', 'Producción', ''), { Toneladas: 4.65 })],
+    };
+    const t = resumenMaduracion(f, { hoy: '2026-01-05' }).lotes.find((l) => l.lote === 'EX').tanques[0];
+    expect([t.hembras, t.machos]).toEqual([33, 59]);
+    expect(t.cargaMetrica).toBe(5.43);
+    expect(t.volumen).toBe(4.65);
+    expect(t.cargaVolumetrica).toBe(1.17);
   });
 
   it('🔑 de la revisión de nauplios sólo queda el ÚLTIMO día, sin acumular los anteriores', () => {
@@ -204,7 +222,7 @@ describe('Resumen · lotes', () => {
 
   it('sin nada registrado, la sala sale con las toneladas de su catálogo y sin fecha', () => {
     const s1 = resumenMaduracion(FUENTES(), { hoy: '2026-02-01' }).salas.find((x) => x.sala === 'Sala 1');
-    expect([s1.toneladas, s1.fechaToneladas, s1.volumenTanque, s1.tanquesSala]).toEqual([5.5, '', 0.37, 15]);
+    expect([s1.toneladas, s1.fechaToneladas, s1.volumenTanque, s1.tanquesSala]).toEqual([5.5, '', 5.5, 15]);
   });
   it('🔴 H1: peso, mudas y cópulas sólo de las filas de tanques que ESE DÍA tenían el lote (tanque reutilizado y lote movido)', () => {
     // NEW está hoy en el tanque 2, pero la fila del 01-05 de ese tanque es de OLD (50 g, 2 mudas, 3 cópulas). Lo de NEW es

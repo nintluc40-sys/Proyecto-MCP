@@ -229,9 +229,13 @@ describe('Maduración · Salas · Toneladas · dónde cae en la hoja', () => {
 });
 
 describe('Maduración · Salas · Toneladas · en la grilla va junto al RAS', () => {
-  it('la cabecera visible pone «Toneladas» justo después de «RAS»', () => {
+  it('la cabecera visible pone «Toneladas», y dice POR TANQUE, justo después de «RAS»', () => {
     const ths = Array.from(document.querySelectorAll('#fp-salas thead th')).map((t) => t.textContent.trim());
-    expect(ths.indexOf('Toneladas')).toBe(ths.indexOf('RAS') + 1);
+    const iTon = ths.findIndex((t) => t.startsWith('Toneladas'));
+    expect(iTon).toBe(ths.indexOf('RAS') + 1);
+    /* «por tanque» no es adorno: sin él, «Toneladas» en la fila de una SALA se lee como el total de
+       la sala, y con esa lectura la carga volumétrica sale multiplicada por el nº de tanques. */
+    expect(ths[iTon]).toContain('por tanque');
   });
 
   it('y la celda va justo después de la del RAS en la MISMA fila', () => {

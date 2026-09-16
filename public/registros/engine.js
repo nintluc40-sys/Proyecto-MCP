@@ -103,8 +103,11 @@ const MAD_SALA_OPTS = ["Sala 1","Sala 2","Sala 3","Sala 4","Sala 5"];
    ⚠ La hoja guarda TEXTO y conserva filas viejas con «SI»/«NO»: el desplegable añade el valor
    que traiga la fila si no está aquí, para no borrarlo al volver a guardar. */
 const MAD_RAS_OPTS = ["No","10%","15%","20%","25%","30%","40%","50%","60%","100%"];
-/* TONELADAS de agua que llevan TODOS los tanques de cada sala (usuario, 2026-09-15). Es el
-   volumen con el que se estima la carga, así que vive aquí y no repartido por la interfaz.
+/* TONELADAS de agua que lleva CADA tanque de la sala (usuario, 2026-09-15). Es el volumen con
+   el que se estima la carga, así que vive aquí y no repartido por la interfaz.
+   🔑 POR TANQUE, no de la sala entera: el Excel del módulo («SEPTIEMBRE 2026») divide la biomasa
+   de UN tanque entre 4,65 en la Sala 1 y entre 19 en la Sala 2 para su «Carga volumetrica
+   (kG/m3)», y cuadra al decimal. Repartirlas entre los tanques multiplicaba la carga por 15.
    🔑 Es un valor POR DEFECTO, no un candado: la celda nace con él y se puede pisar, y lo que se
    guarda es siempre lo que está en la celda. El día que una sala cambie de volumen basta con
    teclearlo — el catálogo sólo decide de dónde parte. */
@@ -6285,12 +6288,17 @@ function _madResToneladasDe(tons, sala){
   const d=_madResDe(MAD_SALA_TONELADAS, sala);
   return { valor:(d==null ? "" : d), fecha:"" };
 }
-/* VOLUMEN MEDIO de UN tanque de la sala, en m³ (1 t de agua = 1 m³). Las toneladas se registran
-   POR SALA —es lo que el usuario sabe—, así que el volumen de un tanque suelto es un promedio, y
-   de ahí que la carga que sale de él se llame «volumétrica PROMEDIO» y no «volumétrica». */
+/* VOLUMEN de UN tanque de la sala, en m³ (1 t de agua = 1 m³).
+   🔑 LAS TONELADAS SON POR TANQUE, NO DE LA SALA ENTERA, y no es una interpretación: el Excel del
+   módulo («SEPTIEMBRE 2026») trae la fórmula con su rótulo —«Carga volumetrica (kG/m3)» = biomasa
+   del tanque ÷ 4,65 en la Sala 1 y ÷ 19 en la Sala 2— y cuadra al decimal con el tanque 1
+   (5,43 kg ÷ 4,65 = 1,168). Repartir además las toneladas entre los tanques de la sala multiplicaba
+   la carga por el número de tanques: 14,8 kg/m³ donde son 1,17.
+   Sigue llamándose «PROMEDIO» porque la cifra es la misma para todos los tanques de la sala: es el
+   volumen típico de uno de ellos, no el medido en ése. */
 function _madResVolTanque(sala, toneladas){
-  const n=(_madResDe(MAD_TANQUES_POR_SALA, sala)||[]).length;
-  return (n>0 && toneladas!=="") ? _madResR2(toneladas/n) : "";
+  void sala;
+  return toneladas==="" ? "" : _madResR2(toneladas);
 }
 function _madResLotesCelda(v){ return madLibroTxt(v).split(",").map(_madResLote).filter(Boolean); }
 function _madResSalas(filasSala, libro, filasTrat, tons, alc){
@@ -6816,8 +6824,8 @@ function _madResSalaHTML(s, sel, conPdf){
   if(sel["sala-ras"]) b+=_madResFila("Uso del RAS", _madResCel(s.ras)+_madResGris(s.fechaRas));
   /* El gris dice «por defecto» cuando NADIE ha registrado las toneladas: la cifra es igual de
      buena para estimar, pero no es lo mismo un dato del catálogo que uno que alguien midió. */
-  if(sel["sala-toneladas"]) b+=_madResFila("Agua de la sala", _madResCel(s.toneladas," t")+_madResGris(s.fechaToneladas || "por defecto")
-    + " · "+_madResCel(s.volumenTanque," m³")+" por tanque"+_madResGris(s.tanquesSala ? s.tanquesSala+" tanques" : ""));
+  if(sel["sala-toneladas"]) b+=_madResFila("Agua por tanque", _madResCel(s.toneladas," t")+_madResGris(s.fechaToneladas || "por defecto")
+    + " = "+_madResCel(s.volumenTanque," m³")+_madResGris(s.tanquesSala ? s.tanquesSala+" tanques en la sala" : ""));
   if(sel["sala-temp"]) b+=_madResFila("Temperatura", "prom "+_madResCel(s.temp.prom)+" · última "+_madResCel(s.temp.ultima)+" · Δ "+_madResDelta(s.temp.delta)+" · CV "+_madResCel(s.temp.cv,"%")+_madResGris(s.temp.fecha));
   if(sel["sala-ox"]) b+=_madResFila("Oxígeno", "prom "+_madResCel(s.ox.prom)+" · último "+_madResCel(s.ox.ultima)+" · Δ "+_madResDelta(s.ox.delta)+" · CV "+_madResCel(s.ox.cv,"%")+_madResGris(s.ox.fecha));
   if(sel["sala-alcalinidad"]) b+=_madResFila("Alcalinidad", _madResCel(s.alcalinidad.valor," mg/L")+_madResGris(s.alcalinidad.fecha));
@@ -11161,7 +11169,7 @@ function renderMadSalas(){
             <th>Estado</th>
             <th>Estado por lote</th>
             <th>RAS</th>
-            <th>Toneladas</th>
+            <th>Toneladas<br><span style="font-weight:400;font-size:9px">por tanque</span></th>
             <th colspan="12" class="thg">Temperatura (°C) · cada 2 horas</th>
             <th colspan="4" class="thg2">O₂ (mg/L) · cada 6 horas</th>
           </tr>

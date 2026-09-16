@@ -741,6 +741,36 @@ body.sv-tmap-full-on{overflow:hidden}
 .sv-tras-viaje-t{font-size:14px;font-weight:800;color:var(--c-text);letter-spacing:.01em}
 .sv-tras-viaje-s{font-size:11px;color:var(--c-text-soft);margin-top:3px}
 
+/* ── Los CINCO KPI del viaje (O₂, Temperatura, Actividad, Observaciones, Tiempo) ──────────
+   🔴 EL DEFECTO QUE ARREGLAN, reportado por el usuario: «se ven blancos y se mezclan con el
+   fondo, no se logran diferenciar». `.sv-kpi-glass` es VIDRIO —blanco al 15 % con la etiqueta
+   en blanco al 75 %— y funciona donde nació: dentro de `.sv-banner` y `.sv-card`, que llevan
+   un fondo de color. Estos cinco cuelgan de `.sv-tras-viaje`, que NO tiene fondo: quedaban
+   blanco sobre blanco, el recuadro no se veía, la etiqueta tampoco y los cinco parecían uno.
+   Sólo el número se leía, porque hereda el color de texto de la página.
+
+   Se opacan con los tokens de superficie, que además siguen al TEMA OSCURO solos: poner aquí
+   un #fff literal habría devuelto el mismo defecto al revés en cuanto se cambie de tema.
+   ⚠ Va SIEMPRE con el prefijo `.sv-tras-viaje`: sin él se despintarían los KPI de Despacho,
+   Módulo y Tanque, que sí están sobre color y ahí el vidrio es lo correcto. */
+.sv-tras-viaje .sv-kpi-glass{background:var(--c-surface);border:1px solid var(--c-border);
+  box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.sv-tras-viaje .sv-kpi-label{color:var(--c-text-soft)}
+.sv-tras-viaje .sv-kpi-value{color:var(--c-text)}
+.sv-tras-viaje .sv-kpi-sub{color:var(--c-text-soft)}
+/* Los cinco se pulsan: el borde de marca lo dice antes de pasar el ratón, que en tablet —donde
+   se usa -- no hay ratón que pasar. La lupa de `.sv-kpi-click::after` sigue puesta. */
+.sv-tras-viaje .sv-kpi-click{border-color:#b0bec5}
+.sv-tras-viaje .sv-kpi-click:hover,
+.sv-tras-viaje .sv-kpi-click:focus-visible{background:var(--c-surface-2);border-color:var(--c-brand);
+  box-shadow:0 4px 12px rgba(0,0,0,.12)}
+/* Fuera de cadencia: el rojo tiene que leerse sobre fondo CLARO, no sobre la tarjeta de color. */
+.sv-tras-viaje .sv-kpi-alert{background:#fdecea;border-color:#e57373;
+  box-shadow:inset 0 0 0 1.5px #e57373}
+.sv-tras-viaje .sv-kpi-alert .sv-kpi-value{color:#b71c1c}
+.sv-tras-viaje .sv-kpi-alert .sv-kpi-label,
+.sv-tras-viaje .sv-kpi-alert .sv-kpi-sub{color:#8e2b24}
+
 .sv-tras-cards{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(420px,1fr))}
 .sv-tras-card{background:var(--c-surface);border:1px solid var(--c-border);border-radius:14px;overflow:hidden;
   box-shadow:0 1px 3px rgba(15,23,42,.06)}

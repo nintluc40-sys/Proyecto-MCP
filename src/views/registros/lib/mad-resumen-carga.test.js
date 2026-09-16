@@ -18,8 +18,8 @@
    observaciones sanitarias y operativas de los tanques.
 
    🔑 EL FIXTURE ESTÁ ELEGIDO PARA QUE DISTINGA. Las dos salas tienen volúmenes muy distintos
-   (Sala 1: 5,5 t entre 15 tanques · Sala 2: 21 t entre 6), así que dividir por el número
-   equivocado NO da lo mismo; y la alcalinidad del RAS y la de la sala llevan cifras distintas,
+   (Sala 1: 5,5 t por tanque · Sala 2: 21 t), así que tomar el de la sala equivocada NO da lo
+   mismo; y la alcalinidad del RAS y la de la sala llevan cifras distintas,
    para que cruzarlas se note.
 
    El cálculo puro ya lo prueba `mad-resumen.test.js` (y su paridad con el monolito). Aquí se
@@ -40,8 +40,8 @@ const H = {};
    🔑 La carga va sobre los animales VIVOS del libro, no sobre los ingresados: la hembra que muere
    en el tanque de desove (01-11) deja la Sala 1 t1 en 59♀, y por eso la cifra no es la del
    ingreso. Si alguien «simplificara» leyendo los ingresos, estas dos cuentas lo dirían:
-     → Sala 1 t1: (59×50 + 30×40) ÷ 1000 = 4,15 kg · vol 5,5 ÷ 15 = 0,37 m³ · = 11,22 kg/m³
-     → Sala 2 t16: (20×50 + 10×40) ÷ 1000 = 1,4 kg · vol 21 ÷ 6 = 3,5 m³ · = 0,4 kg/m³ */
+     → Sala 1 t1: (59×50 + 30×40) ÷ 1000 = 4,15 kg ÷ 5,5 m³ = 0,75 kg/m³
+     → Sala 2 t16: (20×50 + 10×40) ÷ 1000 = 1,4 kg ÷ 21 m³ = 0,07 kg/m³ */
 const HOJAS = {
   'Maduración Ingreso': [
     { Fecha: '2026-01-01', Lote: 'AB', 'Código genético': 'CG1', Sala: 'Sala 1', Tanque: 1, Machos: 30, Hembras: 60 },
@@ -137,19 +137,19 @@ describe('Saldo · Carga métrica y Carga volumétrica promedio por tanque', () 
   it('🔴 cada tanque con su biomasa, su carga y el volumen con el que se dividió', () => {
     soloEstas(['lote-carga']);
     const t = texto();
-    expect(t).toContain('Sala 1 t1: 4.15 kg · 11.22 kg/m³ (0.37 m³)');
-    expect(t).toContain('Sala 2 t16: 1.4 kg · 0.4 kg/m³ (3.5 m³)');
+    expect(t).toContain('Sala 1 t1: 4.15 kg · 0.75 kg/m³ (5.5 m³)');
+    expect(t).toContain('Sala 2 t16: 1.4 kg · 0.07 kg/m³ (21 m³)');
   });
 
   it('🔑 las dos salas NO dan lo mismo: el volumen sale de SU sala, no de una cualquiera', () => {
     soloEstas(['lote-carga']);
-    // 0,37 m³ (5,5 ÷ 15) frente a 3,5 m³ (21 ÷ 6). Si se cruzaran, la prueba de arriba caería.
-    expect(texto()).not.toContain('Sala 1 t1: 4.15 kg · 1.19 kg/m³');
+    // 5,5 m³ frente a 21 m³. Si se cruzaran, la prueba de arriba caería.
+    expect(texto()).not.toContain('Sala 1 t1: 4.15 kg · 0.2 kg/m³');
   });
 
   it('se enseña el volumen usado: una carga que no se puede comprobar no sirve', () => {
     soloEstas(['lote-carga']);
-    expect(texto()).toMatch(/kg\/m³ \(0\.37 m³\)/);
+    expect(texto()).toMatch(/kg\/m³ \(5\.5 m³\)/);
   });
 
   it('apagar la variable la quita del resumen', () => {
@@ -164,8 +164,8 @@ describe('Saldo · las toneladas de la sala', () => {
     soloEstas(['sala-toneladas']);
     const t = texto();
     // La Sala 1 no registró toneladas en el fixture → catálogo, y se avisa.
-    expect(t).toContain('5.5 t (por defecto) · 0.37 m³ por tanque (15 tanques)');
-    expect(t).toContain('21 t (por defecto) · 3.5 m³ por tanque (6 tanques)');
+    expect(t).toContain('5.5 t (por defecto) = 5.5 m³ (15 tanques en la sala)');
+    expect(t).toContain('21 t (por defecto) = 21 m³ (6 tanques en la sala)');
   });
 
   it('🔑 lo REGISTRADO manda, y entonces el gris es la fecha y no «por defecto»', async () => {
@@ -173,7 +173,7 @@ describe('Saldo · las toneladas de la sala', () => {
     try {
       await H.madSaldoRefrescar();
       soloEstas(['sala-toneladas']);
-      expect(texto()).toContain('10.5 t (2026-01-22) · 1.75 m³ por tanque (6 tanques)');
+      expect(texto()).toContain('10.5 t (2026-01-22) = 10.5 m³ (6 tanques en la sala)');
     } finally { HOJAS['Maduración Sala'].pop(); }
   });
 });
