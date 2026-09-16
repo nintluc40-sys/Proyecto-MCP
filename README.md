@@ -83,7 +83,7 @@ npm run lint       # ESLint
 > distintas: aquélla sigue **individuos** con microchip Trovan y es una vista de lectura;
 > ésta cuenta **animales** por sala/tanque/lote y es captura. No comparten hojas ni código.
 
-Seis fichas de captura más una vista derivada (Saldo), todas dentro del módulo Maduración
+Fichas de captura más una vista derivada (Saldo), todas dentro del módulo Maduración
 de Registros. **Su interfaz vive ÚNICAMENTE en `public/registros/engine.js`** (y en su gemelo
 autónomo `Music\index (8).html`), porque ese monolito no tiene módulos ES.
 ⚠ Ojo al buscarlo: **`src/views/maduracion/` NO es esto** —es la vista del reproductivo por
@@ -92,14 +92,31 @@ Trovan— y no hay ninguna carpeta nativa para el operativo. Lo que sí tiene ge
 una prueba de paridad que exige que las dos implementaciones coincidan y que ningún export
 del módulo se quede sin contraparte en el monolito.
 
+> ⚠ **La lista de abajo NO se cuenta de memoria.** Aquí ponía «seis fichas» y llevaba tres
+> tandas siendo falso: Tratamientos, Inf. Supervisor y Alimentación entraron sin que nadie
+> tocara esta frase, y la auditoría del 2026-09-15 se encontró una ficha entera —Alimentación,
+> con su hoja y su capacidad del GAS— sin una sola mención en este archivo. El inventario
+> vivo es **`MAD_TABS` en `engine.js`**; esta tabla es su explicación, no su fuente.
+
 | Ficha | Hoja | Grano |
 |---|---|---|
 | 📥 **Ingreso** | `Maduración Ingreso` | (lote, composición, sala, tanque) |
-| ⚖️ **Saldo** | *(derivada)* | vista del libro mayor, no escribe |
+| ⚖️ **Saldo** | *(derivada)* | vista del libro mayor y resumen por sala y lote, no escribe |
 | 🔄 **Movimientos** | `Maduración Movimientos` | el **tramo** origen → destino |
 | 🥚 **Desoves** | `Maduración Lotes` | (fecha, lote, código genético) |
+| 📋 **Inf. Supervisor** | `Maduración Mortalidad Desove` | (fecha, lote): mortalidad ♀ + una fila por revisión de nauplios |
 | 🏁 **Fin de Ciclo** | `Maduración Fin de Ciclo` | (fecha, lote, motivo, sala si es Parcial) · Registro y sus pesos |
+| 🧪 **Tratamientos** | `Maduración Tratamientos` | una fila por tarjeta: preventivo por lote o desinfección por área |
+| 🍤 **Alimentación** | `Maduración Alimentación` | (fecha, sala, tanque): agenda de tomas y ración calculada |
 | 🏠 **Salas** · 🛢️ **Tanques** | `Maduración Sala` · `Maduración Tanques` | la grilla diaria |
+
+**🍤 Alimentación** es la única ficha que no registra lo ocurrido sino lo que hay que dar: por
+sala se define una agenda de tomas (hora · alimento · % de biomasa) y la ración sale de
+`biomasa (♀+♂) × % ÷ 100`, con los animales del libro mayor y el peso de la biometría de
+Tanques del lote en ese tanque (si no hay, del Ingreso ponderado; y siempre se puede teclear
+a mano). La agenda se comparte por la columna `Tomas` de la última fila de la sala, así que
+un dispositivo que lee la hoja adopta la del resto salvo que tenga cambios sin guardar.
+Necesita que el GAS anuncie la capacidad **`mad-alimentacion`**: sin ella calcula pero no envía.
 
 **El libro mayor** (`src/views/registros/lib/mad-libro.js` + su gemelo inline) responde
 *«¿cuántos animales hay vivos ahora en cada tanque y en cada lote?»*. Nadie teclea un saldo:
@@ -270,7 +287,11 @@ Dos consecuencias que conviene tener presentes al desplegar:
   una clave en blanco ya no vacían la hoja; lo prueba `gas-replace-clave.test.js`), y la
   **MATRIZ con microchips reciclados** (`llaveMatriz_`: el alta de una hembra con el chip de una
   muerta añade su fila en vez de fundirse sobre la de la muerta; lo prueba
-  `mad-gas-dopost.test.js`). Las tres
+  `mad-gas-dopost.test.js`), y las **tres hojas nuevas del 2026-09-15** —`Maduración
+  Tratamientos`, `Maduración Mortalidad Desove` y `Maduración Alimentación`—, que el GAS
+  publicado hoy **no tiene en su lista blanca**: sus fichas calculan pero no envían. La de
+  Alimentación va además atada a la capacidad **`mad-alimentacion`** que ese despliegue
+  anuncia en `?p=ver` (`GAS_CAPACIDADES`). Las tres
   hojas nuevas —Ingreso, Movimientos y Fin de Ciclo— **ya escriben**: ese despliegue entró
   entre el 09-09 y el 09-12. Pegar `GAS/Code.gs` en Apps Script y publicar una **versión
   nueva**; guardar sin publicar no cambia lo que sirve el Web App. ⚠ Copiarlo siempre de
@@ -332,10 +353,16 @@ Dos consecuencias que conviene tener presentes al desplegar:
   día, desoves con Nauplios/Hembra = N5 ÷ desoves y fertilidad = N2 ÷ huevos, mortalidad en desove y
   recuperación, preventivos). **⚙️ Variables** elige qué se ve (se recuerda en el dispositivo) y hay **🖨 PDF**
   por sala o lote y **de todo**. Lógica en `mad-resumen.js`; el detalle del libro sigue debajo.
-- 📉 **Mortalidad de hembras en desove y recuperación (2026-09-15), hoja nueva `Maduración Mortalidad Desove`.**
-  Por fecha y lote: hembras que entran y que mueren en cada tipo de tanque; el % se calcula. Las muertas **se
-  descuentan del saldo** del lote (el libro las reparte entre sus tanques). Con el GAS publicado hoy la ficha no
-  envía y el libro da la hoja por vacía.
+- 📋 **Inf. Supervisor (2026-09-15), hoja nueva `Maduración Mortalidad Desove` (14 columnas).** Dos cosas en la
+  MISMA hoja, por decisión del usuario. (1) **Mortalidad de hembras** en tanques de desove y de recuperación: por
+  fecha y lote, las que entran y las que mueren; el % se calcula. Las muertas **se descuentan del saldo** del lote
+  (el libro las reparte entre sus tanques). (2) **Revisión de nauplios por lote**, *una fila por revisión*
+  (Entrada · Lavado · Lavado 2 · Postlavado) con deformidad, actividad, hongos, salinidad y temperatura; esas filas
+  llevan «Revisión» y el «Tipo de tanque» vacío, y **el libro mayor las salta**. Las observaciones del lote se
+  escriben en todas sus filas. Con el GAS publicado hoy la ficha no envía y el libro da la hoja por vacía.
+- 🍤 **Alimentación (2026-09-15), hoja nueva `Maduración Alimentación` (21 columnas, `ID` = fecha-S*n*-T*tanque*,
+  MERGE).** Ver la sección de Maduración. **Necesita el GAS nuevo Y su capacidad `mad-alimentacion`**: sin ella
+  calcula, imprime y guarda la agenda en el dispositivo, pero no envía ni lee la agenda compartida — y lo avisa.
 - 🧪 **Tratamientos (2026-09-15), hoja nueva `Maduración Tratamientos`.** Preventivos por lote
   (productos + RAS) y desinfección por área, una fila por tarjeta, por `ID` con MERGE. El estado de la
   sala elegido en la ficha pre-marca sus productos. **Necesita el GAS nuevo**: contra el publicado hoy
@@ -346,8 +373,11 @@ Dos consecuencias que conviene tener presentes al desplegar:
   el formato: una vez, seleccionar la columna «Número» → Formato → Número → **Automático**. El dato
   no cambió, sólo cómo se ve. En el mismo despliegue entra P15: las fechas se formatean una vez por
   petición (`?p=rows` de la MATRIZ tardaba 40-64 s por formatear celda a celda).
-- **Maduración · histórico** (Fase 5): la única fase del registro operativo sin construir.
-  Aplazada a propósito hasta probar el resto en operación.
+- **Maduración · el reproductivo: `Maduración Transferencias` sigue sin estrenar.** Medido el
+  2026-09-15: la hoja **no existe** (0 cabeceras), mientras `MATRIZ` va por 1665 filas y `Bitácora`
+  por 2227. La ficha de traslado de hembras está escrita y probada; lo que falta es que alguien
+  registre la primera, y la hoja nace con ese envío. Hasta entonces, el panel de transferencias del
+  tablero reproductivo se dibuja vacío y eso es lo correcto, no un fallo.
 - **Maduración · vaciado de las hojas antiguas**: cuando el registro operativo se dé por
   listo se borran los datos anteriores. Es el momento de retirar las tres columnas vacías
   de `Maduración Tanques`, cambiando `madKeyCols` **en el mismo despliegue**.

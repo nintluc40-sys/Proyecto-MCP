@@ -20,6 +20,9 @@ import { salaTag } from './ficha-maduracion-ingreso.schema.js';
 
 export const MAD_ALIM_SHEET = 'Maduración Alimentación';
 export const MAD_ALIM_PRODUCTOS = ['Poliqueto', 'Redy Mate', 'Calamar', 'Mejillón', 'Krill', 'Vitallis'];
+/* Rango HABITUAL del % de biomasa por toma, CONFIRMADO por el usuario el 2026-09-15. Fuera de él se
+   avisa y se guarda igual. Sale de la agenda estándar del Excel, cuyo extremo alto (08:30 Calamar) es
+   exactamente 2: por eso la comparación es estricta (> MAX) y la propia agenda no se avisa a sí misma. */
 export const MAD_ALIM_PCT_MIN = 0.25;
 export const MAD_ALIM_PCT_MAX = 2;
 export const MAD_ALIM_DIAS_MES = 30;

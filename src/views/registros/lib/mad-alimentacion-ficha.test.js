@@ -88,6 +88,10 @@ describe('Alimentación · la ficha', () => {
     expect(src).toContain('alimentacion: ["🍤","Alimentación"]');
     expect(src).toContain('if(t==="alimentacion") renderMadAlimentacion();');
     expect(src).toMatch(/const MAD_TABS\s+= \[[^\]]*"tratamientos","alimentacion"/);
+    /* 2026-09-15 · su hoja es NUEVA, así que entra en la lista que impide entregarla a un GAS viejo.
+       Faltaba: las otras cuatro hojas nuevas sí estaban, y cada una lo fija en su prueba. Sin ella, un
+       envío encolado salía a la red para volver con «Hoja no permitida» en vez de esperar en la cola. */
+    expect(src).toMatch(/function _madHojaPideGasNuevo\(hoja\)\{[^}]*hoja === MAD_ALIM_SHEET/);
     expect(q('.fc-t').textContent).toBe('🍤 Maduración · Alimentación');
     expect(sala('Sala 1').querySelectorAll('.ma-toma')).toHaveLength(14);
     expect(sala('Sala 1').querySelector('.ma-tq')).toBeNull();

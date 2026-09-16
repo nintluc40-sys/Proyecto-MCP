@@ -26,7 +26,11 @@ const REV_TAG = { Entrada: 'ENTRADA', Lavado: 'LAVADO', 'Lavado 2': 'LAVADO2', P
 export const MAD_NAUP_DEFORMIDAD = ['Alta', 'Media', 'Baja', 'Ausente'];
 export const MAD_NAUP_ACTIVIDAD = ['Alta', 'Media', 'Baja'];
 export const MAD_NAUP_HONGOS = ['Ausente', 'Presente'];
-/* Por encima de estos topes la cifra se guarda, pero avisa: casi siempre es un error de tecleo. */
+/* Topes de AVISO, CONFIRMADOS por el usuario el 2026-09-15 (hasta entonces eran del asistente, y una
+   cifra sin dueño se vuelve a discutir cada vez que aparece). Por encima, la cifra se guarda y se marca:
+   casi siempre es un error de tecleo. Avisan y NO bloquean, al revés que la temperatura de Sala (D13):
+   allí la cifra alimenta promedios, Δ y CV, y un 50 los envenena; aquí es una lectura suelta que se lee
+   tal cual, y bloquear impediría anotar una medición rara pero real. */
 export const MAD_NAUP_TEMP_MAX = 40;
 export const MAD_NAUP_SAL_MAX = 60;
 

@@ -242,15 +242,21 @@ describe('Maduración · el libro RECOGE el aviso de recorte al construirse', ()
 /* ── 2026-09-15 · A2: 🔄 Recalcular pregunta a ?p=ver UNA vez ─────────────────────────────
    Antes el libro y las hojas extra del resumen preguntaban cada uno (4–11 s por pregunta, medido).
    Las hojas nuevas (Mortalidad Desove, Tratamientos) FALLAN al leerse, como con un GAS viejo: así
-   se distingue si la respuesta que se pasa llega de verdad a los dos sitios, y no sólo se cuenta. */
+   se distingue si la respuesta que se pasa llega de verdad a los dos sitios, y no sólo se cuenta.
+
+   ⚠ 2026-09-15 · EL FALLO DEL FIXTURE ERA «Hoja no permitida», y desde A1 ese mensaje ya no es un
+   fallo: significa «el GAS desplegado aún no conoce esta hoja» y la hoja se da por VACÍA. Con él,
+   estas pruebas habrían pasado a medir lo contrario de lo que dicen. Se cambia por un fallo de
+   VERDAD (HTTP 500), que es lo que siempre quisieron ejercer; «Hoja no permitida» tiene su propio
+   bloque más abajo. */
 describe('Maduración · A2 · el resumen reutiliza la respuesta de ?p=ver', () => {
   let preguntas = 0;
-  const red = (respuesta) => {
+  const red = (respuesta, error) => {
     preguntas = 0;
     const nuevas = [H.MAD_LIBRO_SHEETS.mortDesove, H.MAD_TRAT_SHEET];
     H.setLecturas({}, {});
     H.setRed(async () => { preguntas++; return respuesta; },
-      async (hoja) => { if (nuevas.includes(hoja)) throw new Error('Hoja no permitida'); return []; });
+      async (hoja) => { if (nuevas.includes(hoja)) throw new Error(error || 'Google respondió HTTP 500'); return []; });
   };
   const originales = {};
   beforeAll(() => { originales.gas = H._madIngGasAlDia; originales.leer = H._reproFetchSheet; });
@@ -285,6 +291,36 @@ describe('Maduración · A2 · el resumen reutiliza la respuesta de ?p=ver', () 
     const libro = await H.madSaldoCargar(true);
     expect(preguntas).toBe(1);
     expect(libro.fallos).toEqual([]);
+  });
+
+  /* ── 2026-09-15 · A1: una hoja que el GAS aún no conoce está VACÍA, no ilegible ──────────
+     El defecto: sólo se daba por vacía cuando ?p=ver CONTESTABA «GAS viejo». Sin respuesta en
+     6 s se leía, el GAS devolvía «Hoja no permitida», el error se tragaba y la hoja quedaba sin
+     entrada → el Saldo se declaraba INCOMPLETO en rojo sin faltar un dato, que es exactamente
+     la señal que esta vista existe para dar. Es seguro darla por vacía porque las fichas de esas
+     hojas se niegan a enviar contra un GAS que no las conoce: no puede tener filas de esta app.
+     ⚠ Lo que NO se relaja: cualquier otro error sigue contando como fallo — lo fija la última. */
+  it('🔴 sin respuesta de ?p=ver, «Hoja no permitida» NO deja el libro incompleto', async () => {
+    red(null, 'Hoja no permitida');
+    await H.madSaldoRefrescar();
+    const R = H.getResumen();
+    expect(R.libro.fallos).toEqual([]);
+  });
+
+  it('🔴 y el resumen da el MISMO motivo que si lo hubiera dicho ?p=ver, no «no se pudo leer»', async () => {
+    red(null, 'Hoja no permitida');
+    await H.madSaldoRefrescar();
+    const R = H.getResumen();
+    expect(R.faltan).toContain(H.MAD_TRAT_SHEET + ' (el GAS publicado aún no la tiene)');
+    expect(R.faltan).not.toContain(H.MAD_TRAT_SHEET);
+  });
+
+  it('un fallo de VERDAD sin respuesta de ?p=ver sigue dejando el libro incompleto', async () => {
+    red(null, 'Google devolvió una página de error, no datos');
+    await H.madSaldoRefrescar();
+    const R = H.getResumen();
+    expect(R.libro.fallos).toEqual([H.MAD_LIBRO_SHEETS.mortDesove]);
+    expect(R.faltan).toEqual([H.MAD_TRAT_SHEET]);
   });
 });
 

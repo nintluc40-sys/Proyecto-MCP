@@ -6390,6 +6390,23 @@ function _madHojaLeida(name){
   if(_reproStoreRows(name).length) return true;
   return !!(_reproSheets && Object.prototype.hasOwnProperty.call(_reproSheets, name));
 }
+/* A1 (2026-09-15) · ¿el error de lectura es «esta hoja aún no existe para el GAS desplegado»?
+   Sólo vale para las hojas NUEVAS, cuyas fichas se niegan a enviar contra ese GAS: si él no la
+   permite, no puede tener filas de esta app y darla por VACÍA es exacto, no optimista. */
+function _madHojaAunNoCreada(e){
+  return String((e && e.message) || "").toLowerCase().indexOf("hoja no permitida") !== -1;
+}
+/* Como _reproEnsureSheet, pero una hoja que el GAS aún no permite se guarda VACÍA en vez de
+   quedarse sin entrada. Sin esto, no saber qué GAS hay (?p=ver sin respuesta en 6 s) declaraba
+   el libro INCOMPLETO —un rojo permanente sobre la señal que el Saldo existe para dar—. */
+async function _madEnsureHojaNueva(name, force){
+  if(!force){
+    if(_reproStoreRows(name).length) return;
+    if(_reproSheets && _reproSheets[name]) return;
+  } else if(_reproSheets){ delete _reproSheets[name]; }
+  try{ _reproPutRows(name, await _reproFetchSheet(name, null)); }
+  catch(e){ if(_madHojaAunNoCreada(e)) _reproPutRows(name, []); }
+}
 async function madSaldoCargar(force, gasAlDia){
   // La lectura se apoya en la cañería del reproductivo, que ya resuelve reintentos y
   // caché y es GENÉRICA: toma el nombre de la hoja. El prefijo _repro es de dónde nació,
@@ -6407,13 +6424,15 @@ async function madSaldoCargar(force, gasAlDia){
   await _reproEnsureSheet(MAD_LIBRO_SHEETS.tanques, null, force);
   await _reproEnsureSheet(MAD_LIBRO_SHEETS.cierres, null, force);
   /* 2026-09-15 · la hoja de mortalidad en desove y recuperación es NUEVA: un GAS anterior no la permite, así que no
-     puede tener filas de esta app (su ficha no envía contra él). Con ese GAS se da por leída y vacía; si no se sabe
-     (sin respuesta), se lee y cuenta como las demás, fallo incluido.
+     puede tener filas de esta app (su ficha no envía contra él). Con ese GAS se da por leída y vacía.
      A2 (2026-09-15) · quien ya preguntó a ?p=ver pasa la respuesta en gasAlDia (true/false/null) y no se pregunta
-     otra vez; sin ella (undefined) se pregunta aquí. */
+     otra vez; sin ella (undefined) se pregunta aquí.
+     A1 (2026-09-15) · y si NO se sabe (sin respuesta en 6 s) se lee, pero un «Hoja no permitida» de vuelta dice
+     lo mismo que habría dicho ?p=ver: también se da por vacía. Antes contaba como fallo y el Saldo salía
+     INCOMPLETO en rojo sin faltar un dato. Cualquier otro error sigue siendo fallo. */
   const gas = gasAlDia === undefined ? await _madIngGasAlDia() : gasAlDia;
   if(gas === false) _reproPutRows(MAD_LIBRO_SHEETS.mortDesove, []);
-  else await _reproEnsureSheet(MAD_LIBRO_SHEETS.mortDesove, null, force);
+  else await _madEnsureHojaNueva(MAD_LIBRO_SHEETS.mortDesove, force);
   const fallos = [];
   if(!_madHojaLeida(MAD_LIBRO_SHEETS.ingreso)) fallos.push(MAD_LIBRO_SHEETS.ingreso);
   if(!_madHojaLeida(MAD_LIBRO_SHEETS.movimientos)) fallos.push(MAD_LIBRO_SHEETS.movimientos);
@@ -6692,14 +6711,18 @@ function madResPintar(){
 // gasAlDia: la respuesta de ?p=ver que madSaldoRefrescar ya pidió para el libro (A2: una sola pregunta).
 async function _madResLeerExtra(gasAlDia){
   const faltan=[], out={ sala:[], desoves:[], tratamientos:[] };
-  const leer=async function(hoja, clave){
+  /* A1 (2026-09-15) · `siNoPermitida` es el motivo que se anota cuando la hoja es NUEVA y el GAS
+     desplegado no la conoce: el mismo texto que pone la rama de abajo cuando ?p=ver sí contestó.
+     Así el aviso es idéntico se sepa por ?p=ver o por el propio error, y deja de decir «no se pudo
+     leer» de una hoja que simplemente aún no existe. */
+  const leer=async function(hoja, clave, siNoPermitida){
     try{ out[clave]=await _reproFetchSheet(hoja, null); if(_reproTrunc[hoja]) faltan.push(hoja+" (llegó recortada)"); }
-    catch(_){ faltan.push(hoja); }
+    catch(e){ faltan.push(siNoPermitida && _madHojaAunNoCreada(e) ? siNoPermitida : hoja); }
   };
   await leer("Maduración Sala", "sala");
   await leer(MAD_DESOVE_SHEET, "desoves");
   if(gasAlDia === false) faltan.push(MAD_TRAT_SHEET+" (el GAS publicado aún no la tiene)");
-  else await leer(MAD_TRAT_SHEET, "tratamientos");
+  else await leer(MAD_TRAT_SHEET, "tratamientos", MAD_TRAT_SHEET+" (el GAS publicado aún no la tiene)");
   out.faltan=faltan;
   return out;
 }
@@ -7436,10 +7459,15 @@ async function _madIngGasAlDia(url){
     return txt.indexOf("FichasLarv-OK") !== -1 ? false : null;
   }catch(_){ return null; }
 }
-/* Hojas de Maduración cuyas columnas cambiaron y se escriben POR POSICIÓN: no se entregan a un
-   GAS viejo (sin guarda de esquema). Ingreso desde el 2026-09-13; Desoves y Fin de Ciclo (Sala y
-   pesos, D14) desde el 2026-09-14; Tratamientos y Mortalidad Desove (hojas nuevas) desde el 2026-09-15. */
-function _madHojaPideGasNuevo(hoja){ return hoja === MAD_ING_SHEET || hoja === MAD_DESOVE_SHEET || hoja === MAD_FIN_SHEET || hoja === MAD_TRAT_SHEET || hoja === MAD_MORT_SHEET; }
+/* Hojas de Maduración que un GAS viejo escribiría mal o no conoce: no se le entregan. Las que
+   cambiaron de columnas y se escriben POR POSICIÓN —Ingreso desde el 2026-09-13; Desoves y Fin de
+   Ciclo (Sala y pesos, D14) desde el 2026-09-14— y las hojas NUEVAS: Tratamientos, Mortalidad
+   Desove y Alimentación, las tres del 2026-09-15.
+   ⚠ 2026-09-15 · Alimentación se quedó fuera al nacer. No costaba datos —«Hoja no permitida» es
+   rechazo de ENTORNO y la cola conserva el envío—, pero la cola salía a la red para volver con un
+   error previsible y el aviso no era el mismo que el de sus cuatro hermanas. Al añadir una hoja
+   nueva, esta lista se toca en el mismo cambio. */
+function _madHojaPideGasNuevo(hoja){ return hoja === MAD_ING_SHEET || hoja === MAD_DESOVE_SHEET || hoja === MAD_FIN_SHEET || hoja === MAD_TRAT_SHEET || hoja === MAD_MORT_SHEET || hoja === MAD_ALIM_SHEET; }
 function _madGasViejoMsg(hoja){ return "el GAS publicado es anterior a las columnas nuevas de «" + hoja + "» y escribiría los datos en columnas equivocadas"; }
 const MAD_ING_GAS_VIEJO = "el GAS publicado es anterior a las columnas nuevas de «Maduración Ingreso» (Crecimiento y Libras) y escribiría los datos en columnas equivocadas";
 async function madIngGuardar(){
@@ -8991,6 +9019,10 @@ const _MAD_NAUP_TAG = { "Entrada":"ENTRADA", "Lavado":"LAVADO", "Lavado 2":"LAVA
 const MAD_NAUP_DEFORMIDAD = ["Alta","Media","Baja","Ausente"];
 const MAD_NAUP_ACTIVIDAD = ["Alta","Media","Baja"];
 const MAD_NAUP_HONGOS = ["Ausente","Presente"];
+/* Topes de AVISO de la revisión de nauplios, CONFIRMADOS por el usuario el 2026-09-15. Avisan y no
+   bloquean, al revés que la temperatura de Sala (D13): allí la cifra alimenta promedios y un 50 los
+   envenena; aquí es una lectura suelta que se lee tal cual, y un tope que bloquea impediría anotar una
+   medición rara pero real. Por encima, la cifra se guarda y se marca: casi siempre es un error de tecleo. */
 const MAD_NAUP_TEMP_MAX = 40;
 const MAD_NAUP_SAL_MAX = 60;
 const MAD_MORT_COLUMNS = [
@@ -9255,6 +9287,9 @@ function renderMadMortDesove(){
 // del libro; peso de la última biometría del lote en ese tanque o, si no, de su Ingreso. Hoja nueva, por «ID» con MERGE.
 const MAD_ALIM_SHEET = "Maduración Alimentación";
 const MAD_ALIM_PRODUCTOS = ["Poliqueto","Redy Mate","Calamar","Mejillón","Krill","Vitallis"];
+/* Rango HABITUAL del % de biomasa por toma, CONFIRMADO por el usuario el 2026-09-15. Fuera de él se
+   avisa y se guarda igual. Sale de la agenda estándar del Excel, cuyo extremo alto (08:30 Calamar) es
+   exactamente 2: por eso la comparación es estricta (> MAX) y la propia agenda no se avisa a sí misma. */
 const MAD_ALIM_PCT_MIN = 0.25;
 const MAD_ALIM_PCT_MAX = 2;
 const MAD_ALIM_DIAS_MES = 30;

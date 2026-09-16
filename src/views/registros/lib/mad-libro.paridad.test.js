@@ -710,9 +710,16 @@ describe('Libro · la vista tiene DÓNDE pintarse', () => {
     /* El defecto A1 de la auditoría del 09-08 fue justo éste con dos hojas: una que no se
        podía leer se trataba como vacía y la vista cantaba «sin discrepancias». Con tres
        fuentes el riesgo es el mismo, así que se exige que cada una aparezca en las dos
-       listas: la de lectura y la de fallos. */
+       listas: la de lectura y la de fallos.
+       ⚠ 2026-09-15 · «Mortalidad Desove» se lee con `_madEnsureHojaNueva`, que sólo cambia UNA
+       cosa: un «Hoja no permitida» (el GAS aún no la conoce) la guarda VACÍA en vez de dejarla
+       sin entrada. Sigue leyéndose y sigue contando entre las que pueden faltar, que es lo que
+       esta prueba vigila; lo que distingue vacía de ilegible lo ejerce mad-saldo-incompleto. */
+    const lector = (clave) => (clave === 'mortDesove'
+      ? 'await _madEnsureHojaNueva(MAD_LIBRO_SHEETS.' + clave + ', force);'
+      : 'await _reproEnsureSheet(MAD_LIBRO_SHEETS.' + clave + ', null, force);');
     for (const clave of ['ingreso', 'movimientos', 'tanques', 'cierres', 'mortDesove']) {
-      expect(src).toContain('await _reproEnsureSheet(MAD_LIBRO_SHEETS.' + clave + ', null, force);');
+      expect(src).toContain(lector(clave));
       expect(src).toContain('if(!_madHojaLeida(MAD_LIBRO_SHEETS.' + clave + ')) fallos.push(MAD_LIBRO_SHEETS.' + clave + ');');
     }
   });
