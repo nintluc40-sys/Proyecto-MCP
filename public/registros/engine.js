@@ -11224,6 +11224,89 @@ function clearMadSalasGrid(){
    Sala, Tanque— y `H:M` vivía en el índice 4, detrás de las tres. Las columnas VACÍAS de
    `Lote` y las dos `Población inicial` siguen siendo intocables por lo contrario: quitar
    `Lote` correría `Tanque` al índice 2 y la llave apuntaría a «Machos muertos». */
+/* OBSERVACIONES DE UN TANQUE (usuario, 2026-09-15) · dos columnas de MULTISELECCIÓN: un tanque
+   puede padecer por a o b motivo a la vez. En el orden en que las dio el usuario.
+   🔑 No son texto libre a propósito: «animales estresados», «Estresados» y «estrés» son tres
+   cosas distintas para cualquier recuento posterior, y con catálogo dos tanques con lo mismo
+   marcado dan LA MISMA cadena. */
+const MAD_TQ_OBS_SANITARIAS = [
+  "Animales maduros — Nivel bajo",
+  "Animales maduros — Nivel medio",
+  "Animales maduros — Nivel alto",
+  "Animales aclimatados",
+  "Animales estresados",
+  "Animales con baja asimilación",
+  "Animales en muda",
+  "Presencia de colonia de Pseudomonas"
+];
+const MAD_TQ_OBS_OPERATIVAS = [
+  "Residuales de alimento — Nivel bajo",
+  "Residuales de alimento — Nivel alto",
+  "En recambio",
+  "Recambio realizado",
+  "Falta de recambio",
+  "Entrada de agua normal",
+  "Entrada de agua bajo supervisión",
+  "Sifoneo bajo",
+  "Falta de sifoneo",
+  "Aireación normal",
+  "Aireación bajo supervisión"
+];
+/** Lo elegido, EN EL ORDEN DE LA LISTA y sin lo que no esté en ella: una celda vieja con texto
+ *  libre no se inventa como opción, se deja fuera. Admite el texto de la celda o un array. */
+function madTqObsLista(catalogo, v){
+  const crudo = Array.isArray(v) ? v : String(v == null ? "" : v).split(",");
+  const marcado = {};
+  crudo.forEach(function(x){ marcado[String(x).trim()] = 1; });
+  return catalogo.filter(function(o){ return marcado[o] === 1; });
+}
+function madTqObsTexto(catalogo, v){ return madTqObsLista(catalogo, v).join(", "); }
+function _madTqMsRotulo(lista){ return lista.length ? lista.join(", ") : "—"; }
+function _madTqMsValores(celda){
+  return Array.prototype.map.call(celda.querySelectorAll(".tg-ms-op:checked"), function(c){ return c.value; });
+}
+function _madTqMsSync(celda){
+  const s = celda.querySelector(".tg-ms-res");
+  if(s) s.textContent = _madTqMsRotulo(_madTqMsValores(celda));
+}
+/** Una celda de multiselección: un <details> con casillas.
+ *  ⚠ El <details> va en un <div> y NO en un <label>, como el Despacho de Desoves: dentro de un
+ *  label, pulsar el resumen marcaría la primera casilla. */
+function _madTqMsHTML(tank, col, ri, ci, valor){
+  const elegidos = madTqObsLista(col.opts, valor);
+  const ops = col.opts.map(function(o){
+    return '<label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:400;padding:2px;cursor:pointer">'
+      + '<input type="checkbox" class="tg-ms-op" value="' + escapeHtml(o) + '"' + (elegidos.indexOf(o) !== -1 ? ' checked' : '')
+      + ' onchange="madTqObsBaja(this)">' + escapeHtml(o) + '</label>';
+  }).join("");
+  return '<div class="tg-ms" data-k="' + col.k + '" data-r="' + ri + '" data-c="' + ci + '" data-tq="' + tank + '">'
+    + '<details style="border:1px solid #cbd5e1;border-radius:6px;background:#fff">'
+    +   '<summary class="tg-ms-res" style="padding:4px 8px;cursor:pointer;font-size:10px;font-weight:400;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:190px">'
+    +     escapeHtml(_madTqMsRotulo(elegidos)) + '</summary>'
+    +   '<div style="padding:4px 8px;border-top:1px solid #e2e8f0;min-width:230px">' + ops + '</div>'
+    + '</details></div>';
+}
+/** Lo marcado BAJA a las celdas de abajo de su columna que nadie haya tocado a mano.
+ *  Misma regla que los pesos y mismo significado de `data-fijo`; lo que cambia es que aquí se
+ *  copia un juego de casillas y no un valor, así que no puede pasar por `_madBajarColumna`. */
+function madTqObsBaja(el){
+  const celda = (el && el.closest) ? el.closest(".tg-ms") : null;
+  if(!celda) return;
+  _madTqMsSync(celda);
+  celda.setAttribute("data-fijo", "1");
+  const cuerpo = celda.closest("tbody");
+  const fila = Number(celda.getAttribute("data-r"));
+  const k = celda.getAttribute("data-k");
+  if(!cuerpo || !isFinite(fila)) return;
+  const marcados = _madTqMsValores(celda);
+  cuerpo.querySelectorAll('.tg-ms[data-k="' + k + '"]').forEach(function(o){
+    if(o === celda || Number(o.getAttribute("data-r")) <= fila) return;
+    if(o.getAttribute("data-fijo")) return;
+    o.querySelectorAll(".tg-ms-op").forEach(function(c){ c.checked = marcados.indexOf(c.value) !== -1; });
+    _madTqMsSync(o);
+  });
+}
+
 const _TANQ_GRID_COLS = [
   {k:"machos_muertos",  type:"int"},
   {k:"hembras_muertas", type:"int"},
@@ -11236,7 +11319,10 @@ const _TANQ_GRID_COLS = [
      por `type:"num"` a propósito: una tercera columna decimal no tiene por qué heredarlo. */
   {k:"peso_machos",     type:"num", bajar:true},
   {k:"peso_hembras",    type:"num", bajar:true},
-  {k:"obs_sanitarias",  type:"text", ph:"—", ancho:"110px"}
+  {k:"obs_sanitarias",  type:"ms", opts:MAD_TQ_OBS_SANITARIAS},
+  /* ⚠ AL FINAL Y NO EN MEDIO: esta hoja se escribe POR POSICIÓN (la llave del GAS es [0,1,3])
+     y ya tiene filas. Añadir al final no mueve ninguna columna; insertar sí. */
+  {k:"obs_operativas",  type:"ms", opts:MAD_TQ_OBS_OPERATIVAS}
 ];
 
 function renderMadTanques(){
@@ -11280,8 +11366,11 @@ function renderMadTanques(){
     const st = r ? (r.synced ? "✅" : "⏳") : "○";
     const cells = _TANQ_GRID_COLS.map((col, ci) => {
       const attrs = `name="tg_${tank}_${col.k}" data-r="${ri}" data-c="${ci}" onpaste="madGridPaste(event,'tanques')"`;
+      if(col.type === "ms"){
+        return '<td>' + _madTqMsHTML(tank, col, ri, ci, vl(d,col.k)) + '</td>';
+      }
       if(col.type === "text"){
-        return `<td><input class="pinp" type="text" ${attrs} value="${vl(d,col.k)}" maxlength="${col.k==="obs_sanitarias"?120:20}" placeholder="${col.ph||"-"}" style="min-width:${col.ancho||"52px"}"></td>`;
+        return `<td><input class="pinp" type="text" ${attrs} value="${vl(d,col.k)}" maxlength="20" placeholder="${col.ph||"-"}" style="min-width:${col.ancho||"52px"}"></td>`;
       }
       // Los PESOS son decimales: con step="1" el navegador rechaza 34,5 en silencio.
       if(col.type === "num"){
@@ -11324,6 +11413,7 @@ function renderMadTanques(){
             <th>Peso ♂<br>(g)</th>
             <th>Peso ♀<br>(g)</th>
             <th>Obs.<br>sanitarias</th>
+            <th>Obs.<br>operativas</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -11633,9 +11723,17 @@ function _collectTanquesGrid(salaOverride, fechaOverride){
        se guardaría, que es exactamente lo que hacía la versión anterior con `rel_hm` fuera. */
     let hasData = false;
     _TANQ_GRID_COLS.forEach(col => {
+      /* 2026-09-15 · una multiselección no tiene `value`: lo elegido vive en sus casillas. Se lee
+         del catálogo para que llegue a la hoja SIEMPRE en el mismo orden, venga de donde venga. */
+      if(col.type === "ms"){
+        const celda = fp.querySelector('.tg-ms[data-k="' + col.k + '"][data-tq="' + tank + '"]');
+        data[col.k] = celda ? madTqObsTexto(col.opts, _madTqMsValores(celda)) : "";
+        if(data[col.k] !== "") hasData = true;
+        return;
+      }
       const v = g(col.k);
       if(col.type === "text"){
-        data[col.k] = sanitizeStr(v, col.k === "obs_sanitarias" ? 120 : 20);
+        data[col.k] = sanitizeStr(v, 20);
         if(data[col.k] !== "") hasData = true;
       } else if(v !== ""){
         data[col.k] = sanitizeNum(v, 0, 1e9);   // parseFloat: los pesos conservan decimales
@@ -11770,7 +11868,7 @@ function downloadMadPDF(ficha){
   } else if(ficha === 'tanques'){
     titleIco = '🛢️'; titleText = 'Maduración · Tanques'; docCode = 'OMR-MAD-TAN';
     // ⚠ Cabecera y celda van JUNTAS: separarlas ya salió mal el 2026-09-08.
-    headers = ['#','Fecha','Sala','Tanque','Machos Muertos','Hembras Muertas','Machos Descarte','Hembras Descarte','Cópulas','Muda','Peso ♂','Peso ♀','Obs. sanitarias','Sync'];
+    headers = ['#','Fecha','Sala','Tanque','Machos Muertos','Hembras Muertas','Machos Descarte','Hembras Descarte','Cópulas','Muda','Peso ♂','Peso ♀','Obs. sanitarias','Obs. operativas','Sync'];
     rowsHtml = list.map((r, idx) => {
       const d = r.data || {};
       const st = r.synced ? '<b style="color:#166534">✔</b>' : '<b style="color:#92400e">⏳</b>';
@@ -11793,6 +11891,7 @@ function downloadMadPDF(ficha){
         <td>${pdfVal(d.peso_machos)}</td>
         <td>${pdfVal(d.peso_hembras)}</td>
         <td>${escapeHtml(d.obs_sanitarias||'—')}</td>
+        <td>${escapeHtml(d.obs_operativas||'—')}</td>
         <td>${st}</td>
       </tr>`;
     }).join('');
@@ -11923,10 +12022,10 @@ function buildMadPayload(ficha, records){
          cambie `madKeyCols`.
          ⚠ «Relación H:M» sí se fue (2026-09-08, decisión del usuario: se calcula), y se pudo
          porque vivía en el índice 4, DETRÁS de la llave, y la hoja estaba a 0 filas. */
-      headers: ["Fecha","Sala","Lote","Tanque","Población inicial hembras","Población inicial machos","Machos muertos","Hembras muertas","Machos muertos por descarte de selección","Hembras muertas por descarte de selección","Cópulas","Muda","Peso promedio machos (g)","Peso promedio hembras (g)","Observaciones sanitarias"],
+      headers: ["Fecha","Sala","Lote","Tanque","Población inicial hembras","Población inicial machos","Machos muertos","Hembras muertas","Machos muertos por descarte de selección","Hembras muertas por descarte de selección","Cópulas","Muda","Peso promedio machos (g)","Peso promedio hembras (g)","Observaciones sanitarias","Observaciones operativas"],
       rows: records.map(r => {
         const d = r.data || {};
-        return [d.fecha, d.sala, "", int(d.tanque), "", "", int(d.machos_muertos), int(d.hembras_muertas), int(d.machos_descarte), int(d.hembras_descarte), int(d.copulas), int(d.muda), num(d.peso_machos), num(d.peso_hembras), d.obs_sanitarias || ""];
+        return [d.fecha, d.sala, "", int(d.tanque), "", "", int(d.machos_muertos), int(d.hembras_muertas), int(d.machos_descarte), int(d.hembras_descarte), int(d.copulas), int(d.muda), num(d.peso_machos), num(d.peso_hembras), d.obs_sanitarias || "", d.obs_operativas || ""];
       })
     };
   }

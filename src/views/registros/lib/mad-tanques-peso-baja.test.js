@@ -100,7 +100,11 @@ describe('Tanques · el peso baja por su columna', () => {
     expect(cel(7, 'peso_machos').getAttribute('oninput')).toBe('madTqPesoBaja(this)');
     expect(cel(7, 'peso_hembras').getAttribute('oninput')).toBe('madTqPesoBaja(this)');
     expect(cel(7, 'copulas').getAttribute('oninput'), 'una columna de conteo no baja').toBeNull();
-    expect(cel(7, 'obs_sanitarias').getAttribute('oninput')).toBeNull();
+    expect(cel(7, 'muda').getAttribute('oninput')).toBeNull();
+    /* ⚠ 2026-09-15 · las observaciones ya NO son un input con `name`: son multiselección y
+       bajan por su propia vía (`madTqObsBaja`, ver mad-tanques-observaciones). Pedirlas aquí
+       con `cel()` devolvía null y el caso reventaba en vez de decir lo que quería decir. */
+    expect(cel(7, 'obs_sanitarias'), 'las observaciones dejaron de ser un input suelto').toBeNull();
   });
 
   it('🔴 teclear el primero lo pasa a los de abajo CON vivos, y salta el vacío', () => {
