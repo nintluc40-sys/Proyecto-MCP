@@ -52,6 +52,13 @@ export const MAD_TANQUES_POR_SALA = {
   'Sala 5': [7, 8, 9, 10, 11],
 };
 
+/** Toneladas de agua que llevan TODOS los tanques de cada sala (usuario, 2026-09-15). Vive junto
+ *  al catálogo de tanques porque las dos se usan siempre juntas: las toneladas entre los tanques
+ *  dan el volumen MEDIO de un tanque, que es con lo que se estima su carga.
+ *  🔑 Es un valor POR DEFECTO, no un candado: la ficha de Salas pre-rellena la celda con él, el
+ *  usuario puede pisarlo, y lo registrado manda siempre sobre esta tabla. */
+export const MAD_SALA_TONELADAS = { 'Sala 1': 5.5, 'Sala 2': 21, 'Sala 3': 21, 'Sala 4': 14, 'Sala 5': 13 };
+
 /** Origen del agua de un TANQUE en su ingreso. Es una elección entre dos y puede cambiar por día.
  *  ⚠ NO confundir con la columna `RAS` de `Maduración Sala`, que es otra cosa desde el
  *  2026-09-15: allí no se dice «sí o no», se dice EN QUÉ PORCENTAJE usa el RAS esa sala

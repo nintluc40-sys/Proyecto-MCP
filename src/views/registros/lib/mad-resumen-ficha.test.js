@@ -126,7 +126,12 @@ describe('Saldo · resumen con filtro de variables y PDF', () => {
     const deFicha = (txt) => sets().find((fs) => fs.querySelector('legend').textContent.includes(txt));
     const grupo = (txt) => deFicha(txt).querySelector('.ms-grupo');
     const vars = (txt) => [...deFicha(txt).querySelectorAll('.ms-var')];
-    expect(sets()).toHaveLength(5);
+    /* Las seis fichas del catálogo, cada una con su casilla. Se cuentan a mano y no con
+       MAD_RES_VARS.length: si mañana una ficha se cae del modal por un error de pintura, una cifra
+       deducida del propio catálogo caería con ella y la prueba seguiría en verde. */
+    expect(sets()).toHaveLength(6);
+    expect(sets().map((fs) => fs.querySelector('legend').textContent.replace(/\s*\(toda la ficha\)\s*$/, '').trim()))
+      .toEqual(['🏠 Salas', '🦐 Lotes', '🥚 Desoves', '🔬 Revisión de nauplios', '📉 Mortalidad de hembras', '🧪 Tratamientos']);
     expect(grupo('Desoves').getAttribute('onchange')).toBe('madResVarsGrupo(this)');
     expect(vars('Desoves')[0].getAttribute('onchange')).toBe('madResVarsSync()');
     expect(sets().every((fs) => fs.querySelector('.ms-grupo').checked)).toBe(true);   // por defecto, todo marcado

@@ -6263,8 +6263,37 @@ function madResEstadisticaDia(valores){
   return { n:v.length, prom:_madResR2(prom), ultima:_madResR2(v[v.length-1]), cv:cv };
 }
 function _madResRecientes(filas){ return filas.slice().sort(function(a,b){ return _madResOrden(_madResF10(b.Fecha), _madResF10(a.Fecha)); }).slice(0, MAD_RES_MAX_TRAT); }
+/* Una lectura de un mapa por nombre de hoja SIN heredar del prototipo: con `m[k]` a secas, un
+   área llamada «constructor» devolvería una función y se colaría como si fuera un registro. */
+function _madResDe(m, k){ return Object.prototype.hasOwnProperty.call(m, k) ? m[k] : null; }
+/* «El ÚLTIMO registro que TRAE esa variable» (la regla H2 de la sala), aplicada a UNA columna y
+   agrupando por otra. Vale para las toneladas por sala y para la alcalinidad por área: las dos se
+   registran de vez en cuando, no todos los días, y tomar «el último registro» a secas las dejaría
+   en blanco en cuanto alguien guarde una fila sin ellas. */
+function _madResUltimoPor(filas, clave, col){
+  const m={};
+  (filas||[]).filter(function(r){ return madLibroTxt(r[clave])!=="" && _madResEsFecha(_madResF10(r.Fecha)) && _madResNum(r[col])!==null; })
+    .sort(function(a,b){ return _madResOrden(_madResF10(a.Fecha), _madResF10(b.Fecha)); })
+    .forEach(function(r){ m[madLibroTxt(r[clave])]={ valor:_madResNum(r[col]), fecha:_madResF10(r.Fecha) }; });
+  return m;
+}
+/* Las TONELADAS de una sala: lo registrado manda; si nunca se registró, el catálogo. Nunca queda
+   en blanco cuando la sala es conocida, que es lo que permite estimar la carga desde el día uno. */
+function _madResToneladasDe(tons, sala){
+  const t=_madResDe(tons, sala);
+  if(t) return t;
+  const d=_madResDe(MAD_SALA_TONELADAS, sala);
+  return { valor:(d==null ? "" : d), fecha:"" };
+}
+/* VOLUMEN MEDIO de UN tanque de la sala, en m³ (1 t de agua = 1 m³). Las toneladas se registran
+   POR SALA —es lo que el usuario sabe—, así que el volumen de un tanque suelto es un promedio, y
+   de ahí que la carga que sale de él se llame «volumétrica PROMEDIO» y no «volumétrica». */
+function _madResVolTanque(sala, toneladas){
+  const n=(_madResDe(MAD_TANQUES_POR_SALA, sala)||[]).length;
+  return (n>0 && toneladas!=="") ? _madResR2(toneladas/n) : "";
+}
 function _madResLotesCelda(v){ return madLibroTxt(v).split(",").map(_madResLote).filter(Boolean); }
-function _madResSalas(filasSala, libro, filasTrat){
+function _madResSalas(filasSala, libro, filasTrat, tons, alc){
   const porSala={}, nombres=[];
   const nombre=function(s){ if(nombres.indexOf(s)===-1) nombres.push(s); };
   (filasSala||[]).forEach(function(r){
@@ -6303,8 +6332,14 @@ function _madResSalas(filasSala, libro, filasTrat){
     });
     const tratamientos=_madResRecientes((filasTrat||[]).filter(function(r){ return madLibroTxt(r.Sala)===sala; }))
       .map(function(r){ return { fecha:_madResF10(r.Fecha), tipo:madLibroTxt(r.Tipo), area:madLibroTxt(r["Área"]), lotes:madLibroTxt(r.Lotes), productos:madLibroTxt(r.Productos), ras:madLibroTxt(r["Productos RAS"]) }; });
+    const ton=_madResToneladasDe(tons, sala);
+    /* La alcalinidad se registra en la ficha «Inf. Supervisor» POR ÁREA, y las áreas son el RAS y
+       las salas: aquí sale la del área que se llama como esta sala. La del RAS va en su tarjeta. */
+    const alcalinidad=_madResDe(alc, sala) || { valor:"", fecha:"" };
     return { sala:sala, fecha:conEstado ? _madResF10(conEstado.Fecha) : "", estado:conEstado ? madLibroTxt(conEstado.Estado) : "",
       ras:conRas ? madLibroTxt(conRas.RAS) : "", fechaRas:conRas ? _madResF10(conRas.Fecha) : "", lotes:lotes,
+      toneladas:ton.valor, fechaToneladas:ton.fecha, volumenTanque:_madResVolTanque(sala, ton.valor),
+      tanquesSala:(_madResDe(MAD_TANQUES_POR_SALA, sala)||[]).length, alcalinidad:alcalinidad,
       temp:variable(MAD_RES_TEMPS), ox:variable(MAD_RES_OXIGENOS),
       tanquesProduccion:tanquesProduccion, animalesProduccion:animalesProduccion, animalesCuarentena:animalesCuarentena, tratamientos:tratamientos };
   });
@@ -6322,11 +6357,30 @@ function _madResDesoves(filas){
   });
   return m;
 }
+/* LA REVISIÓN DE NAUPLIOS de «Inf. Supervisor», del ÚLTIMO día que la tiene, por lote.
+   Sus filas viven en la MISMA hoja que la mortalidad de hembras y que la alcalinidad, y las tres
+   se distinguen por la columna que sólo ellas traen: «Revisión» aquí, «Tipo de tanque» en la
+   mortalidad y «Área» en la alcalinidad. Mezclarlas es justo el defecto que el libro mayor tuvo
+   que corregir dos veces, así que el filtro se escribe una vez y se comprueba. */
+function _madResNauplios(filas){
+  const m={};
+  (filas||[]).filter(function(r){ return madLibroTxt(r["Revisión"])!=="" && _madResLote(r.Lote)!=="" && _madResEsFecha(_madResF10(r.Fecha)); })
+    .sort(function(a,b){ return _madResOrden(_madResF10(a.Fecha), _madResF10(b.Fecha)); })
+    .forEach(function(r){
+      const k=_madResLote(r.Lote), f=_madResF10(r.Fecha), a=_madResDe(m,k);
+      if(!a || a.fecha!==f) m[k]={ fecha:f, revisiones:[] };
+      m[k].revisiones.push({ revision:madLibroTxt(r["Revisión"]), deformidad:madLibroTxt(r.Deformidad), actividad:madLibroTxt(r.Actividad), hongos:madLibroTxt(r.Hongos),
+        fototropismo:madLibroTxt(r.Fototropismo), aireacion:madLibroTxt(r["Aireación"]),
+        salinidad:(_madResNum(r.Salinidad)===null ? "" : _madResNum(r.Salinidad)), temperatura:(_madResNum(r.Temperatura)===null ? "" : _madResNum(r.Temperatura)) });
+    });
+  return m;
+}
 function _madResLotes(fuentes, libro, hoy){
   const alDia={};
   const libroAl=function(fecha){ if(!alDia[fecha]) alDia[fecha]=madConstruirLibro(fuentes, { hoy:fecha, hasta:fecha }); return alDia[fecha]; };
   const filasTanque=(fuentes.tanques||[]).filter(function(r){ return madLibroTxt(r.Sala) && madLibroEnt(r.Tanque) && _madResEsFecha(_madResF10(r.Fecha)); });
   const desoves=_madResDesoves(fuentes.desoves), trat=fuentes.tratamientos||[];
+  const tons=_madResUltimoPor(fuentes.sala, "Sala", "Toneladas"), nauplios=_madResNauplios(fuentes.mortDesove);
   const tasa=function(m,i){ return i>0 ? _madResR2((m/i)*100) : ""; };
   const out=[];
   Object.keys(libro.lotes).forEach(function(n){
@@ -6360,9 +6414,32 @@ function _madResLotes(fuentes, libro, hoy){
       const del=d.filas.map(function(r){ return _madResNum(r[col]); });
       return { valor:_madResR2(del.reduce(function(a,b){ return a+b; },0)/del.length), fecha:d.fecha };
     };
+    const pesoM=peso("Peso promedio machos (g)"), pesoH=peso("Peso promedio hembras (g)");
+    /* CARGA POR TANQUE (usuario, 2026-09-15). Las dos son ESTIMACIONES, y conviene saber de qué:
+         · CARGA MÉTRICA = la biomasa viva del tanque en kg: (♀ × peso♀ + ♂ × peso♂) ÷ 1000, con
+           los ÚLTIMOS pesos registrados del lote —los mismos que usa la ración de Alimentación—.
+           Sin ningún peso registrado queda VACÍA: un cero diría «el tanque no pesa nada», que es
+           falso, y con él la carga volumétrica saldría en cero sobre un tanque lleno.
+         · CARGA VOLUMÉTRICA PROMEDIO = esa biomasa ÷ el volumen medio de un tanque de su sala
+           (kg/m³). Es «promedio» porque las toneladas se registran POR SALA, no por tanque.
+       Se calculan aquí, y no en la tarjeta, para que el PDF y la pantalla no puedan divergir. */
+    tanques.forEach(function(t){
+      const kg=(pesoH.valor==="" && pesoM.valor==="") ? ""
+        : _madResR2((t.hembras*(pesoH.valor||0) + t.machos*(pesoM.valor||0))/1000);
+      const vol=_madResVolTanque(t.sala, _madResToneladasDe(tons, t.sala).valor);
+      t.cargaMetrica=kg;
+      t.volumen=vol;
+      t.cargaVolumetrica=(kg==="" || vol==="" || vol===0) ? "" : _madResR2(kg/vol);
+    });
     const dia=ultimoDia(candidatas), fDia=dia.fecha;
     let pctMudas="", pctCopulas="";
     let muertosDia={ machos:0, hembras:0 }, tasaMortalidadDia={ machos:"", hembras:"", total:"" };
+    /* Las dos observaciones de multiselección de Tanques, del ÚLTIMO día del lote. Sólo las filas
+       que dicen algo: una lista de tanques con «—» es ruido que tapa a los que sí avisan. */
+    const observaciones=dia.filas
+      .map(function(r){ return { sala:madLibroTxt(r.Sala), tanque:madLibroEnt(r.Tanque), sanitarias:madLibroTxt(r["Observaciones sanitarias"]), operativas:madLibroTxt(r["Observaciones operativas"]) }; })
+      .filter(function(o){ return o.sanitarias!=="" || o.operativas!==""; })
+      .sort(function(a,b){ return _madResOrden(a.sala,b.sala) || a.tanque-b.tanque; });
     if(fDia){
       const delDia=dia.filas, lib=libroAl(fDia), vistos={};
       let vivosDia=0, hembrasDia=0;
@@ -6407,8 +6484,9 @@ function _madResLotes(fuentes, libro, hoy){
          fuera del día. Del ingreso del lote a la fecha de cálculo, que es lo que pidió el usuario. */
       rangoAcumulado:{ desde:L.ingreso || "", hasta:hoy },
       dias:dias, tanques:tanques,
-      pesoMachos:peso("Peso promedio machos (g)"), pesoHembras:peso("Peso promedio hembras (g)"),
-      fechaDia:fDia, pctMudas:pctMudas, pctCopulas:pctCopulas,
+      pesoMachos:pesoM, pesoHembras:pesoH,
+      fechaDia:fDia, pctMudas:pctMudas, pctCopulas:pctCopulas, observaciones:observaciones,
+      nauplios:_madResDe(nauplios, _madResLote(L.lote)) || { fecha:"", revisiones:[] },
       desoves:{ desoves:d.desoves, noViables:d.noViables, huevos:d.huevos, n2:d.n2, n5:d.n5,
         naupliosPorHembra:d.desovesConN5>0 ? Math.round(d.n5/d.desovesConN5) : "",
         fertilidad:d.huevosConN2>0 ? _madResR2((d.n2/d.huevosConN2)*100) : "" },
@@ -6423,7 +6501,14 @@ function madResumenMaduracion(fuentes, opts){
   const libro=madConstruirLibro(f, { hoy:hoy });
   const ras=_madResRecientes((f.tratamientos||[]).filter(function(r){ return madLibroTxt(r["Productos RAS"])!=="" || madLibroTxt(r["Área"])==="RAS y tuberías"; }))
     .map(function(r){ return { fecha:_madResF10(r.Fecha), sala:madLibroTxt(r.Sala), tipo:madLibroTxt(r.Tipo), productos:madLibroTxt(r["Área"])==="RAS y tuberías" ? madLibroTxt(r.Productos) : madLibroTxt(r["Productos RAS"]) }; });
-  return { hoy:hoy, hasta:libro.hasta, avisos:libro.avisos.length, salas:_madResSalas(f.sala, libro, f.tratamientos), lotes:_madResLotes(f, libro, hoy), ras:ras };
+  const tons=_madResUltimoPor(f.sala, "Sala", "Toneladas");
+  /* La alcalinidad de «Inf. Supervisor» es POR ÁREA, y sus áreas son el RAS y las cinco salas: la
+     de cada sala va a su tarjeta y la del RAS a la suya, que es donde se mira el agua del sistema. */
+  const alc=_madResUltimoPor(f.mortDesove, "Área", "Alcalinidad");
+  return { hoy:hoy, hasta:libro.hasta, avisos:libro.avisos.length,
+    salas:_madResSalas(f.sala, libro, f.tratamientos, tons, alc),
+    lotes:_madResLotes(f, libro, hoy),
+    ras:ras, rasAlcalinidad:(_madResDe(alc, "RAS") || { valor:"", fecha:"" }) };
 }
 
 // ── Maduración · vista SALDO ─────────────────────────────────────────────────
@@ -6632,16 +6717,28 @@ function _madSaldoHTML(libro){
 }
 // ── Saldo · RESUMEN RÁPIDO: filtro de variables por ficha y PDF individual o grupal (2026-09-15, usuario) ──
 const MAD_RES_VARS = [
-  { grupo:"🏠 Salas", vars:[["sala-estado","Estado de la sala y de sus lotes"],["sala-lotes","Lotes participantes"],["sala-ras","Uso del RAS"],
+  { grupo:"🏠 Salas", vars:[["sala-estado","Estado de la sala y de sus lotes"],["sala-lotes","Lotes participantes"],["sala-ras","Uso del RAS (% de recirculación)"],
+    ["sala-toneladas","Toneladas de agua y volumen medio de sus tanques"],
     ["sala-temp","Temperatura: promedio, última, Δ con el registro anterior y CV"],["sala-ox","Oxígeno: promedio, último, Δ con el registro anterior y CV"],
+    ["sala-alcalinidad","Alcalinidad del área (Inf. Supervisor)"],
     ["sala-ocupacion","Tanques y animales en producción y en cuarentena"],["sala-trat","Desinfección y controles de la sala"]] },
   { grupo:"🦐 Lotes", vars:[["lote-poblacion","Población actual ♂ y ♀"],["lote-mortalidad","Mortalidad del día y acumulada (con su rango), tasas por sexo y total"],
-    ["lote-dias","Días de cuarentena y de producción"],["lote-relacion","Relación H:M por tanque"],["lote-pesos","Peso ♂ y ♀ (último registrado)"],
-    ["lote-mudas","% Mudas y % Cópulas (último día)"]] },
+    ["lote-dias","Días de cuarentena y de producción"],["lote-relacion","Relación H:M por tanque"],
+    ["lote-carga","Carga por tanque: métrica (kg) y volumétrica promedio (kg/m³)"],
+    ["lote-pesos","Peso ♂ y ♀ (último registrado)"],
+    ["lote-mudas","% Mudas y % Cópulas (último día)"],
+    ["lote-obs","Observaciones sanitarias y operativas de sus tanques (último día)"]] },
   { grupo:"🥚 Desoves", vars:[["des-totales","Total de desoves, no viables y N5"],["des-nauplios","Nauplios/Hembra (N5 ÷ desoves)"],["des-fertilidad","Tasa de fertilidad (N2 ÷ huevos)"]] },
+  { grupo:"🔬 Revisión de nauplios", vars:[["naup-calidad","Deformidad, actividad, hongos, fototropismo y aireación (última revisión)"],
+    ["naup-agua","Salinidad y temperatura de esa revisión"]] },
   { grupo:"📉 Mortalidad de hembras", vars:[["mortdes","% en tanques de desove y de recuperación"]] },
-  { grupo:"🧪 Tratamientos", vars:[["lote-trat","Preventivos aplicados a cada lote"],["ras-trat","Tratamientos del RAS"]] }
+  { grupo:"🧪 Tratamientos", vars:[["lote-trat","Preventivos aplicados a cada lote"],["ras-trat","Tratamientos del RAS"],["ras-alc","Alcalinidad del RAS"]] }
 ];
+/* ⚠ LAS VARIABLES DEL RAS NO SON DE NINGÚN LOTE. La tarjeta de lote se deduce de MAD_RES_VARS
+   quitando las de Salas y estas; escrita esa exclusión como una comparación suelta contra un solo
+   id, la siguiente variable del RAS aparecería dentro de cada lote sin que nadie la pusiera ahí.
+   Declararlas en una lista es la diferencia. */
+const MAD_RES_VARS_RAS = ["ras-trat","ras-alc"];
 const MAD_RES_VARS_KEY = "larv4_mad_resumen_vars";
 let _madResumen = null;
 function madResVarsLeer(){
@@ -6717,8 +6814,13 @@ function _madResSalaHTML(s, sel, conPdf){
     + _madResFila("Estado de sus lotes", s.lotes.length ? s.lotes.map(function(l){ return escapeHtml(l.lote)+": "+_madResCel(l.estado); }).join(" · ") : "—");
   if(sel["sala-lotes"]) b+=_madResFila("Lotes participantes", s.lotes.length ? s.lotes.map(function(l){ return '<b>'+escapeHtml(l.lote)+'</b> '+l.machos+'♂ '+l.hembras+'♀'; }).join(" · ") : "—");
   if(sel["sala-ras"]) b+=_madResFila("Uso del RAS", _madResCel(s.ras)+_madResGris(s.fechaRas));
+  /* El gris dice «por defecto» cuando NADIE ha registrado las toneladas: la cifra es igual de
+     buena para estimar, pero no es lo mismo un dato del catálogo que uno que alguien midió. */
+  if(sel["sala-toneladas"]) b+=_madResFila("Agua de la sala", _madResCel(s.toneladas," t")+_madResGris(s.fechaToneladas || "por defecto")
+    + " · "+_madResCel(s.volumenTanque," m³")+" por tanque"+_madResGris(s.tanquesSala ? s.tanquesSala+" tanques" : ""));
   if(sel["sala-temp"]) b+=_madResFila("Temperatura", "prom "+_madResCel(s.temp.prom)+" · última "+_madResCel(s.temp.ultima)+" · Δ "+_madResDelta(s.temp.delta)+" · CV "+_madResCel(s.temp.cv,"%")+_madResGris(s.temp.fecha));
   if(sel["sala-ox"]) b+=_madResFila("Oxígeno", "prom "+_madResCel(s.ox.prom)+" · último "+_madResCel(s.ox.ultima)+" · Δ "+_madResDelta(s.ox.delta)+" · CV "+_madResCel(s.ox.cv,"%")+_madResGris(s.ox.fecha));
+  if(sel["sala-alcalinidad"]) b+=_madResFila("Alcalinidad", _madResCel(s.alcalinidad.valor," mg/L")+_madResGris(s.alcalinidad.fecha));
   if(sel["sala-ocupacion"]) b+=_madResFila("En producción", s.tanquesProduccion+" tanque(s) · "+s.animalesProduccion+" animales")+_madResFila("En cuarentena", s.animalesCuarentena+" animales");
   if(sel["sala-trat"]) b+=_madResFila("Desinfección y controles", _madResTratLista(s.tratamientos, function(t){ return escapeHtml(t.tipo)+" · "+escapeHtml(t.area)+(t.lotes ? " ("+escapeHtml(t.lotes)+")" : "")+": "+escapeHtml(t.productos||t.ras); }));
   return _madResTarjeta("🏠 "+escapeHtml(s.sala), b, "sala:"+s.sala, conPdf);
@@ -6741,8 +6843,23 @@ function _madResLoteHTML(L, sel, conPdf){
     + _madResFila("Ingresados", L.ingresados.machos+"♂ · "+L.ingresados.hembras+"♀");
   if(sel["lote-dias"]) b+=_madResFila("Días", L.dias.length ? L.dias.map(function(d){ return escapeHtml(d.sala)+": cuarentena "+_madResCel(d.diasCuarentena)+" · producción "+_madResCel(d.diasProduccion); }).join("<br>") : "—");
   if(sel["lote-relacion"]) b+=_madResFila("Relación H:M por tanque", L.tanques.length ? L.tanques.map(function(t){ return escapeHtml(t.sala)+" t"+t.tanque+": "+_madResCel(t.relacion)+" ("+t.hembras+"♀/"+t.machos+"♂)"; }).join("<br>") : "—");
+  /* Se pinta junto a la relación H:M porque sale de las mismas dos cifras, y se enseña el
+     volumen usado: una carga sin decir entre cuántos m³ se dividió no se puede comprobar. */
+  if(sel["lote-carga"]) b+=_madResFila("Carga por tanque", L.tanques.length ? L.tanques.map(function(t){
+    return escapeHtml(t.sala)+" t"+t.tanque+": "+_madResCel(t.cargaMetrica," kg")+" · "+_madResCel(t.cargaVolumetrica," kg/m³")+_madResGris(t.volumen==="" ? "" : t.volumen+" m³");
+  }).join("<br>") : "—");
   if(sel["lote-pesos"]) b+=_madResFila("Peso promedio", "♂ "+_madResCel(L.pesoMachos.valor," g")+_madResGris(L.pesoMachos.fecha)+" · ♀ "+_madResCel(L.pesoHembras.valor," g")+_madResGris(L.pesoHembras.fecha));
   if(sel["lote-mudas"]) b+=_madResFila("% Mudas · % Cópulas", _madResCel(L.pctMudas,"%")+" · "+_madResCel(L.pctCopulas,"%")+_madResGris(L.fechaDia));
+  if(sel["lote-obs"]) b+=_madResFila("Observaciones de sus tanques", L.observaciones.length ? L.observaciones.map(function(o){
+    return escapeHtml(o.sala)+" t"+o.tanque+": "+[o.sanitarias,o.operativas].filter(Boolean).map(escapeHtml).join(" · ");
+  }).join("<br>")+_madResGris(L.fechaDia) : "—");
+  /* Cada valor va con su etiqueta: cinco categorías seguidas —«Alta · Media · Ausente · Alta ·
+     Baja»— se leen mal y se confunden entre sí justo cuando hay que decidir algo. */
+  const naup=function(campos){ return L.nauplios.revisiones.length
+    ? L.nauplios.revisiones.map(function(x){ return "<b>"+escapeHtml(x.revision)+"</b> "+campos.map(function(c){ return c[1]+" "+_madResCel(x[c[0]], c[2]); }).join(" · "); }).join("<br>")+_madResGris(L.nauplios.fecha)
+    : "—"; };
+  if(sel["naup-calidad"]) b+=_madResFila("Revisión de nauplios", naup([["deformidad","Def."],["actividad","Act."],["hongos","Hongos"],["fototropismo","Fototrop."],["aireacion","Aireac."]]));
+  if(sel["naup-agua"]) b+=_madResFila("Agua de la revisión", naup([["salinidad","Sal."," ‰"],["temperatura","T°"," °C"]]));
   if(sel["des-totales"]) b+=_madResFila("Desoves · no viables · N5", L.desoves.desoves+" · "+L.desoves.noViables+" · "+_madResMiles(L.desoves.n5));
   if(sel["des-nauplios"]) b+=_madResFila("Nauplios/Hembra", _madResMiles(L.desoves.naupliosPorHembra));
   if(sel["des-fertilidad"]) b+=_madResFila("Tasa de fertilidad", _madResCel(L.desoves.fertilidad,"%"));
@@ -6759,9 +6876,12 @@ function _madResCuerpoHTML(R, sel, conPdf, filtro){
   let h="";
   if(salas.length && alguna(MAD_RES_VARS[0].vars.map(function(v){ return v[0]; }))) h+='<h3 style="margin:8px 0 6px;font-size:14px">🏠 Salas</h3>'+rejilla(salas.map(function(s){ return _madResSalaHTML(s, sel, conPdf); }).join(""));
   // Las variables de la tarjeta de lote son las de todas las fichas salvo Salas y el RAS: se deducen de MAD_RES_VARS, no se teclean aparte.
-  const deLote=[].concat.apply([], MAD_RES_VARS.slice(1).map(function(g){ return g.vars.map(function(v){ return v[0]; }); })).filter(function(id){ return id!=="ras-trat"; });
+  const deLote=[].concat.apply([], MAD_RES_VARS.slice(1).map(function(g){ return g.vars.map(function(v){ return v[0]; }); })).filter(function(id){ return MAD_RES_VARS_RAS.indexOf(id)===-1; });
   if(lotes.length && alguna(deLote)) h+='<h3 style="margin:8px 0 6px;font-size:14px">🦐 Lotes</h3>'+rejilla(lotes.map(function(l){ return _madResLoteHTML(l, sel, conPdf); }).join(""));
-  if(!filtro && sel["ras-trat"]) h+='<h3 style="margin:8px 0 6px;font-size:14px">💧 RAS</h3>'+_madResTarjeta("Tratamientos del RAS", _madResFila("Últimos", _madResTratLista(R.ras, function(t){ return escapeHtml(t.tipo)+(t.sala ? " · "+escapeHtml(t.sala) : "")+": "+escapeHtml(t.productos); })), "", false);
+  if(!filtro && alguna(MAD_RES_VARS_RAS)) h+='<h3 style="margin:8px 0 6px;font-size:14px">💧 RAS</h3>'
+    + _madResTarjeta("Sistema RAS",
+        (sel["ras-alc"] ? _madResFila("Alcalinidad", _madResCel(R.rasAlcalinidad ? R.rasAlcalinidad.valor : "", " mg/L")+_madResGris(R.rasAlcalinidad ? R.rasAlcalinidad.fecha : "")) : "")
+      + (sel["ras-trat"] ? _madResFila("Últimos tratamientos", _madResTratLista(R.ras, function(t){ return escapeHtml(t.tipo)+(t.sala ? " · "+escapeHtml(t.sala) : "")+": "+escapeHtml(t.productos); })) : ""), "", false);
   return h || '<div style="color:#94a3b8;font-size:12px;padding:8px 0">Nada que mostrar con las variables elegidas.</div>';
 }
 function madResPintar(){

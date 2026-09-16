@@ -18,6 +18,7 @@
    ============================================================ */
 
 import { construirLibro, sumarDias, ubicKey, CUARENTENA_DIAS, ESTADO_PRODUCCION, ESTADO_CUARENTENA, ESTADO_CERRADO } from './mad-libro.js';
+import { MAD_TANQUES_POR_SALA, MAD_SALA_TONELADAS } from './ficha-maduracion-ingreso.schema.js';
 
 export const RESUMEN_TEMPS = ['Temperatura 2:00', 'Temperatura 4:00', 'Temperatura 6:00', 'Temperatura 8:00', 'Temperatura 10:00', 'Temperatura 12:00',
   'Temperatura 14:00', 'Temperatura 16:00', 'Temperatura 18:00', 'Temperatura 20:00', 'Temperatura 22:00', 'Temperatura 0:00'];
@@ -63,9 +64,38 @@ export function estadisticaDia(valores) {
 }
 
 const recientes = (filas) => filas.slice().sort((a, b) => porNombre(fecha10(b.Fecha), fecha10(a.Fecha))).slice(0, RESUMEN_MAX_TRAT);
+
+/* «El ÚLTIMO registro que TRAE esa variable», que es la regla H2 de arriba, aplicada a una sola
+   columna y agrupando por otra. Vale para las toneladas por sala y para la alcalinidad por área:
+   las dos se registran de vez en cuando, no todos los días, y tomar «el último registro» a secas
+   las dejaría en blanco en cuanto alguien guarde una fila sin ellas. */
+const ultimoPor = (filas, clave, col) => {
+  const m = new Map();
+  (filas || []).filter((r) => txt(r[clave]) !== '' && esFecha(fecha10(r.Fecha)) && num(r[col]) !== null)
+    .sort((a, b) => porNombre(fecha10(a.Fecha), fecha10(b.Fecha)))
+    .forEach((r) => m.set(txt(r[clave]), { valor: num(r[col]), fecha: fecha10(r.Fecha) }));
+  return m;
+};
+
+/* Las TONELADAS de una sala: lo registrado manda; si nunca se registró, el catálogo. Nunca queda
+   en blanco cuando la sala es conocida, que es lo que permite estimar la carga desde el día uno. */
+const toneladasDe = (tons, sala) => {
+  const t = tons.get(sala);
+  if (t) return t;
+  const d = MAD_SALA_TONELADAS[sala];
+  return { valor: d == null ? '' : d, fecha: '' };
+};
+
+/* VOLUMEN MEDIO de UN tanque de la sala, en m³ (1 t de agua = 1 m³). Las toneladas se registran
+   POR SALA —es lo que el usuario sabe—, así que el volumen de un tanque suelto es un promedio, y
+   de ahí que la carga que sale de él se llame «volumétrica PROMEDIO» y no «volumétrica». */
+const volumenTanque = (sala, toneladas) => {
+  const n = (MAD_TANQUES_POR_SALA[sala] || []).length;
+  return n > 0 && toneladas !== '' ? r2(toneladas / n) : '';
+};
 const lotesDeCelda = (v) => txt(v).split(',').map(loteKey).filter(Boolean);
 
-function resumenSalas(filasSala, libro, filasTrat) {
+function resumenSalas(filasSala, libro, filasTrat, tons, alc) {
   const porSala = new Map();
   (filasSala || []).forEach((r) => {
     const s = txt(r.Sala);
@@ -110,9 +140,15 @@ function resumenSalas(filasSala, libro, filasTrat) {
     }
     const tratamientos = recientes((filasTrat || []).filter((r) => txt(r.Sala) === sala))
       .map((r) => ({ fecha: fecha10(r.Fecha), tipo: txt(r.Tipo), area: txt(r['Área']), lotes: txt(r.Lotes), productos: txt(r.Productos), ras: txt(r['Productos RAS']) }));
+    const ton = toneladasDe(tons, sala);
+    /* La alcalinidad se registra en la ficha «Inf. Supervisor» POR ÁREA, y las áreas son el RAS y
+       las salas: aquí sale la del área que se llama como esta sala. La del RAS va en su tarjeta. */
+    const alcalinidad = alc.get(sala) || { valor: '', fecha: '' };
     return {
       sala, fecha: conEstado ? fecha10(conEstado.Fecha) : '', estado: conEstado ? txt(conEstado.Estado) : '',
       ras: conRas ? txt(conRas.RAS) : '', fechaRas: conRas ? fecha10(conRas.Fecha) : '', lotes,
+      toneladas: ton.valor, fechaToneladas: ton.fecha, volumenTanque: volumenTanque(sala, ton.valor),
+      tanquesSala: (MAD_TANQUES_POR_SALA[sala] || []).length, alcalinidad,
       temp: variable(RESUMEN_TEMPS),
       ox: variable(RESUMEN_OXIGENOS),
       tanquesProduccion, animalesProduccion, animalesCuarentena, tratamientos,
@@ -140,6 +176,29 @@ function acumularDesoves(filas) {
   return m;
 }
 
+/* LA REVISIÓN DE NAUPLIOS de «Inf. Supervisor», del ÚLTIMO día que la tiene, por lote.
+   Sus filas viven en la MISMA hoja que la mortalidad de hembras y que la alcalinidad, y las tres
+   se distinguen por la columna que sólo ellas traen: «Revisión» aquí, «Tipo de tanque» en la
+   mortalidad y «Área» en la alcalinidad. Mezclarlas es justo el defecto que el libro mayor tuvo
+   que corregir dos veces, así que el filtro se escribe una vez y se comprueba. */
+function naupliosPorLote(filas) {
+  const m = new Map();
+  (filas || []).filter((r) => txt(r['Revisión']) !== '' && loteKey(r.Lote) !== '' && esFecha(fecha10(r.Fecha)))
+    .sort((a, b) => porNombre(fecha10(a.Fecha), fecha10(b.Fecha)))
+    .forEach((r) => {
+      const k = loteKey(r.Lote);
+      const f = fecha10(r.Fecha);
+      const a = m.get(k);
+      if (!a || a.fecha !== f) m.set(k, { fecha: f, revisiones: [] });
+      m.get(k).revisiones.push({
+        revision: txt(r['Revisión']), deformidad: txt(r.Deformidad), actividad: txt(r.Actividad), hongos: txt(r.Hongos),
+        fototropismo: txt(r.Fototropismo), aireacion: txt(r['Aireación']),
+        salinidad: num(r.Salinidad) === null ? '' : num(r.Salinidad), temperatura: num(r.Temperatura) === null ? '' : num(r.Temperatura),
+      });
+    });
+  return m;
+}
+
 function resumenLotes(fuentes, libro, hoy) {
   const alDia = new Map();
   const libroAl = (fecha) => {
@@ -149,6 +208,8 @@ function resumenLotes(fuentes, libro, hoy) {
   const filasTanque = (fuentes.tanques || []).filter((r) => txt(r.Sala) && ent(r.Tanque) && esFecha(fecha10(r.Fecha)));
   const desoves = acumularDesoves(fuentes.desoves);
   const trat = fuentes.tratamientos || [];
+  const tons = ultimoPor(fuentes.sala, 'Sala', 'Toneladas');
+  const nauplios = naupliosPorLote(fuentes.mortDesove);
   const tasa = (m, i) => (i > 0 ? r2((m / i) * 100) : '');
   const out = [];
   for (const L of libro.lotes.values()) {
@@ -183,12 +244,36 @@ function resumenLotes(fuentes, libro, hoy) {
       const del = d.filas.map((r) => num(r[col]));
       return { valor: r2(del.reduce((a, b) => a + b, 0) / del.length), fecha: d.fecha };
     };
+    const pesoM = peso('Peso promedio machos (g)');
+    const pesoH = peso('Peso promedio hembras (g)');
+    /* CARGA POR TANQUE (usuario, 2026-09-15). Las dos son ESTIMACIONES, y conviene saber de qué:
+         · CARGA MÉTRICA = la biomasa viva del tanque en kg: (♀ × peso♀ + ♂ × peso♂) ÷ 1000, con
+           los ÚLTIMOS pesos registrados del lote —los mismos que usa la ración de Alimentación—.
+           Sin ningún peso registrado queda VACÍA: un cero diría «el tanque no pesa nada», que es
+           falso, y con él la carga volumétrica saldría en cero sobre un tanque lleno.
+         · CARGA VOLUMÉTRICA PROMEDIO = esa biomasa ÷ el volumen medio de un tanque de su sala
+           (kg/m³). Es «promedio» porque las toneladas se registran POR SALA, no por tanque.
+       Se calculan aquí, y no en la tarjeta, para que el PDF y la pantalla no puedan divergir. */
+    tanques.forEach((t) => {
+      const kg = (pesoH.valor === '' && pesoM.valor === '') ? ''
+        : r2((t.hembras * (pesoH.valor || 0) + t.machos * (pesoM.valor || 0)) / 1000);
+      const vol = volumenTanque(t.sala, toneladasDe(tons, t.sala).valor);
+      t.cargaMetrica = kg;
+      t.volumen = vol;
+      t.cargaVolumetrica = (kg === '' || vol === '' || vol === 0) ? '' : r2(kg / vol);
+    });
     const dia = ultimoDia(candidatas);
     const fDia = dia.fecha;
     let pctMudas = '';
     let pctCopulas = '';
     let muertosDia = { machos: 0, hembras: 0 };
     let tasaMortalidadDia = { machos: '', hembras: '', total: '' };
+    /* Las dos observaciones de multiselección de Tanques, del ÚLTIMO día del lote. Sólo las filas
+       que dicen algo: una lista de tanques con «—» es ruido que tapa a los que sí avisan. */
+    const observaciones = dia.filas
+      .map((r) => ({ sala: txt(r.Sala), tanque: ent(r.Tanque), sanitarias: txt(r['Observaciones sanitarias']), operativas: txt(r['Observaciones operativas']) }))
+      .filter((o) => o.sanitarias !== '' || o.operativas !== '')
+      .sort((a, b) => porNombre(a.sala, b.sala) || a.tanque - b.tanque);
     if (fDia) {
       const delDia = dia.filas;
       const lib = libroAl(fDia);
@@ -254,8 +339,9 @@ function resumenLotes(fuentes, libro, hoy) {
          fuera del día. Del ingreso del lote a la fecha de cálculo, que es lo que pidió el usuario. */
       rangoAcumulado: { desde: L.ingreso || '', hasta: hoy },
       dias, tanques,
-      pesoMachos: peso('Peso promedio machos (g)'), pesoHembras: peso('Peso promedio hembras (g)'),
-      fechaDia: fDia, pctMudas, pctCopulas,
+      pesoMachos: pesoM, pesoHembras: pesoH,
+      fechaDia: fDia, pctMudas, pctCopulas, observaciones,
+      nauplios: nauplios.get(loteKey(L.lote)) || { fecha: '', revisiones: [] },
       desoves: {
         desoves: d.desoves, noViables: d.noViables, huevos: d.huevos, n2: d.n2, n5: d.n5,
         naupliosPorHembra: d.desovesConN5 > 0 ? Math.round(d.n5 / d.desovesConN5) : '',
@@ -279,5 +365,12 @@ export function resumenMaduracion(fuentes, opts) {
   const libro = construirLibro(f, { hoy });
   const ras = recientes((f.tratamientos || []).filter((r) => txt(r['Productos RAS']) !== '' || txt(r['Área']) === 'RAS y tuberías'))
     .map((r) => ({ fecha: fecha10(r.Fecha), sala: txt(r.Sala), tipo: txt(r.Tipo), productos: txt(r['Área']) === 'RAS y tuberías' ? txt(r.Productos) : txt(r['Productos RAS']) }));
-  return { hoy, hasta: libro.hasta, avisos: libro.avisos.length, salas: resumenSalas(f.sala, libro, f.tratamientos), lotes: resumenLotes(f, libro, hoy), ras };
+  const tons = ultimoPor(f.sala, 'Sala', 'Toneladas');
+  /* La alcalinidad de «Inf. Supervisor» es POR ÁREA, y sus áreas son el RAS y las cinco salas: la
+     de cada sala va a su tarjeta y la del RAS a la suya, que es donde se mira el agua del sistema. */
+  const alc = ultimoPor(f.mortDesove, 'Área', 'Alcalinidad');
+  return { hoy, hasta: libro.hasta, avisos: libro.avisos.length,
+    salas: resumenSalas(f.sala, libro, f.tratamientos, tons, alc),
+    lotes: resumenLotes(f, libro, hoy),
+    ras, rasAlcalinidad: alc.get('RAS') || { valor: '', fecha: '' } };
 }
