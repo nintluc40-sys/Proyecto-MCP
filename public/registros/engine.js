@@ -97,6 +97,12 @@ const MAD_FICHAS    = ["salas","tanques"];
 // «Maduración Sala». Quitarlas de aquí las saca del SELECTOR, no del pasado: la
 // lectura del histórico tiene que seguir tolerándolas.
 const MAD_SALA_OPTS = ["Sala 1","Sala 2","Sala 3","Sala 4","Sala 5"];
+/* Uso del RAS de una sala (usuario, 2026-09-15). Antes era SI/NO; ahora dice EN QUÉ PORCENTAJE:
+   «No» es toda agua de playa, y un porcentaje es la parte que viene del RAS — lo que falta hasta
+   el 100 es de playa y NO se anota, porque sería un segundo sitio donde equivocarse.
+   ⚠ La hoja guarda TEXTO y conserva filas viejas con «SI»/«NO»: el desplegable añade el valor
+   que traiga la fila si no está aquí, para no borrarlo al volver a guardar. */
+const MAD_RAS_OPTS = ["No","10%","15%","20%","25%","30%","40%","50%","60%","100%"];
 const MAD_TANQUES_POR_SALA = {
   "Sala 1":  Array.from({length:15},(_,i)=>i+1),
   "Sala 2":  Array.from({length:6},(_,i)=>i+16),
@@ -10866,9 +10872,11 @@ function renderMadSalas(){
     <option value="${MAD_EST_MIXTO}"${cur===MAD_EST_MIXTO?" selected":""}>${MAD_EST_MIXTO}</option>
     <option value="${MAD_EST_DESINF}"${cur===MAD_EST_DESINF?" selected":""}>${MAD_EST_DESINF}</option>
     <option value="${MAD_EST_DESINF_AGRUP}"${cur===MAD_EST_DESINF_AGRUP?" selected":""}>${MAD_EST_DESINF_AGRUP}</option>`;
-  const rasOpts = (cur) => `<option value="">—</option>
-    <option value="SI"${cur==="SI"?" selected":""}>SI</option>
-    <option value="NO"${cur==="NO"?" selected":""}>NO</option>`;
+  /* Un valor que no esté en el catálogo —«SI» y «NO» de las filas viejas— se añade delante y
+     queda elegido: el desplegable no puede ser el sitio donde se pierde un dato de la hoja. */
+  const rasOpts = (cur) => `<option value="">—</option>`
+    + (cur && MAD_RAS_OPTS.indexOf(cur) === -1 ? `<option value="${escapeHtml(cur)}" selected>${escapeHtml(cur)}</option>` : "")
+    + MAD_RAS_OPTS.map((o) => `<option value="${o}"${cur===o?" selected":""}>${o}</option>`).join("");
 
   const rows = MAD_SALA_OPTS.map((sala,si) => {
     const r = bySala[sala];

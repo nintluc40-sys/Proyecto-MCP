@@ -23,7 +23,7 @@ import { join } from 'node:path';
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderMadSalas', '_madSalasPintaEstado', '_collectSalasGrid', 'MAD_SALA_OPTS',
-  'MAD_EST_DESINF', 'MAD_EST_DESINF_AGRUP', 'MAD_EST_PROD', 'MAD_TANQUES_POR_SALA', 'today'];
+  'MAD_EST_DESINF', 'MAD_EST_DESINF_AGRUP', 'MAD_EST_PROD', 'MAD_TANQUES_POR_SALA', 'MAD_RAS_OPTS', 'today'];
 const H = {};
 
 beforeAll(async () => {
@@ -130,5 +130,67 @@ describe('Salas · «Proponer estado» con la desinfección', () => {
     H._madSalasPintaEstado(l);
     expect(sel('Sala 1').value).toBe(H.MAD_EST_PROD);
     expect(nota().textContent).not.toContain('Animales agrupados');
+  });
+});
+
+
+/* ── 2026-09-15 (usuario) · EL RAS DE UNA SALA SE MARCA EN PORCENTAJE, NO EN SÍ/NO ──────────
+   «La idea es que el usuario marque si dicha sala tiene RAS y en qué porcentaje. El sistema
+   identifica: si tiene RAS se marcará el porcentaje, y ya sabe que lo demás es agua de playa.
+   Y en caso no se use RAS se marcará con No.»
+   Por eso el complemento NO se anota: es 100 − el porcentaje, y tenerlo en dos sitios es tener
+   dos sitios donde equivocarse.
+
+   🔑 LO QUE DE VERDAD HAY QUE PROBAR es la LECTURA de lo viejo. La hoja guarda texto y conserva
+   filas con «SI» y «NO»; si el desplegable no las reconociera, abrir un día viejo y volver a
+   guardar borraría ese dato sin un solo error — la forma más cara de perderlo. */
+describe('Salas · el RAS se marca en porcentaje', () => {
+  const selRas = (sala) => document.querySelector(`[name="sg_${H.MAD_SALA_OPTS.indexOf(sala)}_ras"]`);
+  /* ⚠ LO ELEGIDO SE COMPRUEBA EN EL ATRIBUTO, no en `select.value`: happy-dom NO honra
+     `selected` al parsear HTML (medido — con la tercera opción marcada devuelve la segunda).
+     Un navegador sí lo honra. Mirar `value` aquí daría un verde de casualidad justo para la
+     opción que ocupa ese sitio, que es exactamente lo que pasaba con «SI». */
+  const marcada = (sala) => Array.from(selRas(sala).options).filter((o) => o.hasAttribute('selected')).map((o) => o.value);
+  const guardado = (sala, ras) => {
+    localStorage.setItem('larv4_mad_salas', JSON.stringify([
+      { id: 'x', synced: false, data: { fecha: H.today(), sala, estado: '', estado_lote: '', ras } },
+    ]));
+    H.renderMadSalas();
+  };
+
+  it('🔴 el desplegable ofrece «No» y los porcentajes que pidió el usuario', () => {
+    const valores = Array.from(selRas('Sala 1').options).map((o) => o.value);
+    expect(valores).toEqual(['', 'No', '10%', '15%', '20%', '25%', '30%', '40%', '50%', '60%', '100%']);
+    expect(H.MAD_RAS_OPTS[0], 'sin RAS se marca «No», no «NO» ni «0%»').toBe('No');
+  });
+
+  it('el catálogo NO trae el complemento: el agua de playa se deduce', () => {
+    // Anotar «70% playa» junto a «30% RAS» sería un segundo sitio donde equivocarse.
+    expect(H.MAD_RAS_OPTS.join(' ')).not.toMatch(/playa/i);
+    expect(H.MAD_RAS_OPTS).toHaveLength(10);
+  });
+
+  it('un porcentaje guardado vuelve elegido', () => {
+    guardado('Sala 2', '25%');
+    expect(marcada('Sala 2')).toEqual(['25%']);
+  });
+
+  it('🔴 un valor VIEJO de la hoja («SI») se conserva en vez de borrarse al reabrir', () => {
+    guardado('Sala 3', 'SI');
+    expect(marcada('Sala 3'), 'el desplegable se comió un dato de la hoja').toEqual(['SI']);
+    const valores = Array.from(selRas('Sala 3').options).map((o) => o.value);
+    expect(valores[1], 'el valor ajeno va delante del catálogo').toBe('SI');
+    // Y sólo en la fila que lo trae: las demás salas siguen con el catálogo limpio.
+    expect(Array.from(selRas('Sala 1').options).map((o) => o.value)).not.toContain('SI');
+  });
+
+  it('sin nada guardado, la celda queda en «—» y no inventa un porcentaje', () => {
+    expect(marcada('Sala 1'), 'marcó algo sin que nadie lo eligiera').toEqual([]);
+  });
+
+  it('lo elegido llega al payload tal cual, sin traducir', () => {
+    // Aquí se elige como lo haría el usuario —tocando el desplegable— y no reparseando HTML.
+    selRas('Sala 4').value = '60%';
+    expect(H._collectSalasGrid().find((r) => r.sala === 'Sala 4').ras).toBe('60%');
   });
 });

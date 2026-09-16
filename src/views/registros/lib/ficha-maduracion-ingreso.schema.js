@@ -52,9 +52,11 @@ export const MAD_TANQUES_POR_SALA = {
   'Sala 5': [7, 8, 9, 10, 11],
 };
 
-/** Origen del agua de la sala. Es una elección entre dos, y puede cambiar por día.
- *  ⚠ En `Maduración Sala` esto vive en la columna `RAS` con valores `SI`/`NO`, que
- *  ya codifica exactamente lo mismo: no hace falta migrarla, sólo re-etiquetarla. */
+/** Origen del agua de un TANQUE en su ingreso. Es una elección entre dos y puede cambiar por día.
+ *  ⚠ NO confundir con la columna `RAS` de `Maduración Sala`, que es otra cosa desde el
+ *  2026-09-15: allí no se dice «sí o no», se dice EN QUÉ PORCENTAJE usa el RAS esa sala
+ *  (`MAD_RAS_OPTS` en el monolito), y lo que falta hasta el 100 es agua de playa. Aquí se sigue
+ *  eligiendo entre los dos orígenes porque un tanque concreto se llena de uno o del otro. */
 export const AGUA_OPTS = ['RAS', 'Agua de playa'];
 /** Agua con la que NACE cada tanque del ingreso (usuario, 2026-09-13). Medido ese día: las 6 filas
  *  reales llevaban «Agua de playa» y el formulario nacía en RAS. Es el valor por defecto, no un
