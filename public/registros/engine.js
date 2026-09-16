@@ -6340,6 +6340,7 @@ function _madResLotes(fuentes, libro, hoy){
     };
     const dia=ultimoDia(candidatas), fDia=dia.fecha;
     let pctMudas="", pctCopulas="";
+    let muertosDia={ machos:0, hembras:0 }, tasaMortalidadDia={ machos:"", hembras:"", total:"" };
     if(fDia){
       const delDia=dia.filas, lib=libroAl(fDia), vistos={};
       let vivosDia=0, hembrasDia=0;
@@ -6351,6 +6352,20 @@ function _madResLotes(fuentes, libro, hoy){
       const mudas=delDia.reduce(function(a,r){ return a+madLibroEnt(r.Muda); },0), copulas=delDia.reduce(function(a,r){ return a+madLibroEnt(r["Cópulas"]); },0);
       pctMudas=vivosDia>0 ? _madResR2((mudas/vivosDia)*100) : "";
       pctCopulas=hembrasDia>0 ? _madResR2((copulas/hembrasDia)*100) : "";
+      /* MORTALIDAD DEL DÍA (usuario, 2026-09-15). Se saca RESTANDO el libro al cierre de la
+         víspera del libro al cierre de este día, y no sumando las filas de Tanques: en un tanque
+         MEZCLADO las bajas son del TANQUE, y repartirlas entre sus lotes es justo lo que hace el
+         libro. Sumar la fila entera se las apuntaría todas a cada lote, con un número plausible.
+         El % va sobre los animales EN RIESGO ese día —vivos al cierre de la víspera + los que
+         ingresaron ese mismo día—: dividirlo entre lo ingresado hace meses no significa nada. */
+      const hoyL=lib.lotes[L.lote], ayer=libroAl(madSumarDias(fDia,-1)).lotes[L.lote];
+      const dif=function(a,b){ return Math.max(0, (a||0)-(b||0)); };
+      muertosDia={ machos:dif(hoyL && hoyL.muertos.machos, ayer && ayer.muertos.machos),
+        hembras:dif(hoyL && hoyL.muertos.hembras, ayer && ayer.muertos.hembras) };
+      const riesgo={ machos:(ayer ? ayer.machos : 0)+dif(hoyL && hoyL.ingresados.machos, ayer && ayer.ingresados.machos),
+        hembras:(ayer ? ayer.hembras : 0)+dif(hoyL && hoyL.ingresados.hembras, ayer && ayer.ingresados.hembras) };
+      tasaMortalidadDia={ machos:tasa(muertosDia.machos, riesgo.machos), hembras:tasa(muertosDia.hembras, riesgo.hembras),
+        total:tasa(muertosDia.machos+muertosDia.hembras, riesgo.machos+riesgo.hembras) };
     }
     const dias=(L.salas||[]).filter(function(s){ return s.machos+s.hembras>0; }).map(function(s){
       const q15=madSumarDias(s.ingreso, MAD_CUARENTENA_DIAS), fin=(s.copulaDesde && s.copulaDesde<q15) ? s.copulaDesde : q15;
@@ -6365,6 +6380,10 @@ function _madResLotes(fuentes, libro, hoy){
       ingresados:{ machos:ing.machos, hembras:ing.hembras }, muertos:{ machos:mu.machos, hembras:mu.hembras },
       descartes:{ machos:L.descartes.machos, hembras:L.descartes.hembras },
       tasaMortalidad:{ machos:tasa(mu.machos, ing.machos), hembras:tasa(mu.hembras, ing.hembras), total:tasa(mu.machos+mu.hembras, ing.machos+ing.hembras) },
+      muertosDia:muertosDia, tasaMortalidadDia:tasaMortalidadDia,
+      /* El rango del ACUMULADO: sin él, un total no dice de cuánto tiempo es y se lee como si
+         fuera del día. Del ingreso del lote a la fecha de cálculo, que es lo que pidió el usuario. */
+      rangoAcumulado:{ desde:L.ingreso || "", hasta:hoy },
       dias:dias, tanques:tanques,
       pesoMachos:peso("Peso promedio machos (g)"), pesoHembras:peso("Peso promedio hembras (g)"),
       fechaDia:fDia, pctMudas:pctMudas, pctCopulas:pctCopulas,
@@ -6586,7 +6605,7 @@ const MAD_RES_VARS = [
   { grupo:"🏠 Salas", vars:[["sala-estado","Estado de la sala y de sus lotes"],["sala-lotes","Lotes participantes"],["sala-ras","Uso del RAS"],
     ["sala-temp","Temperatura: promedio, última, Δ con el registro anterior y CV"],["sala-ox","Oxígeno: promedio, último, Δ con el registro anterior y CV"],
     ["sala-ocupacion","Tanques y animales en producción y en cuarentena"],["sala-trat","Desinfección y controles de la sala"]] },
-  { grupo:"🦐 Lotes", vars:[["lote-poblacion","Población actual ♂ y ♀"],["lote-mortalidad","Mortalidad ♂ y ♀ con tasas por sexo y total"],
+  { grupo:"🦐 Lotes", vars:[["lote-poblacion","Población actual ♂ y ♀"],["lote-mortalidad","Mortalidad del día y acumulada (con su rango), tasas por sexo y total"],
     ["lote-dias","Días de cuarentena y de producción"],["lote-relacion","Relación H:M por tanque"],["lote-pesos","Peso ♂ y ♀ (último registrado)"],
     ["lote-mudas","% Mudas y % Cópulas (último día)"]] },
   { grupo:"🥚 Desoves", vars:[["des-totales","Total de desoves, no viables y N5"],["des-nauplios","Nauplios/Hembra (N5 ÷ desoves)"],["des-fertilidad","Tasa de fertilidad (N2 ÷ huevos)"]] },
@@ -6674,11 +6693,20 @@ function _madResSalaHTML(s, sel, conPdf){
   if(sel["sala-trat"]) b+=_madResFila("Desinfección y controles", _madResTratLista(s.tratamientos, function(t){ return escapeHtml(t.tipo)+" · "+escapeHtml(t.area)+(t.lotes ? " ("+escapeHtml(t.lotes)+")" : "")+": "+escapeHtml(t.productos||t.ras); }));
   return _madResTarjeta("🏠 "+escapeHtml(s.sala), b, "sala:"+s.sala, conPdf);
 }
+/* Las dos mortalidades se escriben IGUAL —del día y acumulada— para que se comparen de un
+   vistazo: dos formatos distintos para la misma cifra se leen mal justo cuando importa. */
+function _madResMort(m, t){
+  return m.machos+"♂ ("+_madResCel(t.machos,"%")+") · "+m.hembras+"♀ ("+_madResCel(t.hembras,"%")+") · total "+_madResCel(t.total,"%");
+}
+/* «De qué fecha a qué fecha», al lado del acumulado: sin el rango, un total no dice de cuánto
+   tiempo es y se lee como si fuera del día. */
+function _madResRango(r){ return (r && r.desde) ? r.desde+" → "+r.hasta : ""; }
 function _madResLoteHTML(L, sel, conPdf){
   let b="";
   const md=function(o){ return _madResCel(o.pct,"%")+" ("+o.muertas+" de "+o.entran+")"; };
   if(sel["lote-poblacion"]) b+=_madResFila("Población actual", L.machos+"♂ · "+L.hembras+"♀ · "+(L.machos+L.hembras)+" · "+_madResCel(L.estado));
-  if(sel["lote-mortalidad"]) b+=_madResFila("Mortalidad", L.muertos.machos+"♂ ("+_madResCel(L.tasaMortalidad.machos,"%")+") · "+L.muertos.hembras+"♀ ("+_madResCel(L.tasaMortalidad.hembras,"%")+") · total "+_madResCel(L.tasaMortalidad.total,"%"))
+  if(sel["lote-mortalidad"]) b+=_madResFila("Mortalidad del día", _madResMort(L.muertosDia, L.tasaMortalidadDia)+_madResGris(L.fechaDia))
+    + _madResFila("Mortalidad acumulada", _madResMort(L.muertos, L.tasaMortalidad)+_madResGris(_madResRango(L.rangoAcumulado)))
     + _madResFila("Descartes de selección", L.descartes.machos+"♂ · "+L.descartes.hembras+"♀")
     + _madResFila("Ingresados", L.ingresados.machos+"♂ · "+L.ingresados.hembras+"♀");
   if(sel["lote-dias"]) b+=_madResFila("Días", L.dias.length ? L.dias.map(function(d){ return escapeHtml(d.sala)+": cuarentena "+_madResCel(d.diasCuarentena)+" · producción "+_madResCel(d.diasProduccion); }).join("<br>") : "—");

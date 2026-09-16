@@ -187,6 +187,8 @@ function resumenLotes(fuentes, libro, hoy) {
     const fDia = dia.fecha;
     let pctMudas = '';
     let pctCopulas = '';
+    let muertosDia = { machos: 0, hembras: 0 };
+    let tasaMortalidadDia = { machos: '', hembras: '', total: '' };
     if (fDia) {
       const delDia = dia.filas;
       const lib = libroAl(fDia);
@@ -205,6 +207,28 @@ function resumenLotes(fuentes, libro, hoy) {
       const copulas = delDia.reduce((a, r) => a + ent(r['Cópulas']), 0);
       pctMudas = vivosDia > 0 ? r2((mudas / vivosDia) * 100) : '';
       pctCopulas = hembrasDia > 0 ? r2((copulas / hembrasDia) * 100) : '';
+      /* MORTALIDAD DEL DÍA (usuario, 2026-09-15). Se saca RESTANDO el libro al cierre de la
+         víspera del libro al cierre de este día, y no sumando las filas de Tanques: en un tanque
+         MEZCLADO las bajas son del TANQUE, y repartirlas entre sus lotes es justo lo que hace el
+         libro. Sumar la fila entera se las apuntaría todas a cada lote, con un número plausible.
+         El % va sobre los animales EN RIESGO ese día —vivos al cierre de la víspera + los que
+         ingresaron ese mismo día—: dividirlo entre lo ingresado hace meses no significa nada. */
+      const hoyL = lib.lotes.get(L.lote);
+      const ayer = libroAl(sumarDias(fDia, -1)).lotes.get(L.lote);
+      const dif = (a, b) => Math.max(0, (a || 0) - (b || 0));
+      muertosDia = {
+        machos: dif(hoyL && hoyL.muertos.machos, ayer && ayer.muertos.machos),
+        hembras: dif(hoyL && hoyL.muertos.hembras, ayer && ayer.muertos.hembras),
+      };
+      const riesgo = {
+        machos: (ayer ? ayer.machos : 0) + dif(hoyL && hoyL.ingresados.machos, ayer && ayer.ingresados.machos),
+        hembras: (ayer ? ayer.hembras : 0) + dif(hoyL && hoyL.ingresados.hembras, ayer && ayer.ingresados.hembras),
+      };
+      tasaMortalidadDia = {
+        machos: tasa(muertosDia.machos, riesgo.machos),
+        hembras: tasa(muertosDia.hembras, riesgo.hembras),
+        total: tasa(muertosDia.machos + muertosDia.hembras, riesgo.machos + riesgo.hembras),
+      };
     }
     const dias = (L.salas || []).filter((s) => s.machos + s.hembras > 0).map((s) => {
       const q15 = sumarDias(s.ingreso, CUARENTENA_DIAS);
@@ -225,6 +249,10 @@ function resumenLotes(fuentes, libro, hoy) {
       muertos: { machos: mu.machos, hembras: mu.hembras },
       descartes: { machos: L.descartes.machos, hembras: L.descartes.hembras },
       tasaMortalidad: { machos: tasa(mu.machos, ing.machos), hembras: tasa(mu.hembras, ing.hembras), total: tasa(mu.machos + mu.hembras, ing.machos + ing.hembras) },
+      muertosDia, tasaMortalidadDia,
+      /* El rango del ACUMULADO: sin él, un total no dice de cuánto tiempo es y se lee como si
+         fuera del día. Del ingreso del lote a la fecha de cálculo, que es lo que pidió el usuario. */
+      rangoAcumulado: { desde: L.ingreso || '', hasta: hoy },
       dias, tanques,
       pesoMachos: peso('Peso promedio machos (g)'), pesoHembras: peso('Peso promedio hembras (g)'),
       fechaDia: fDia, pctMudas, pctCopulas,

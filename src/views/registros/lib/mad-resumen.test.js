@@ -157,6 +157,72 @@ describe('Resumen · lotes', () => {
   });
 });
 
+/* ── 2026-09-15 (usuario) · MORTALIDAD DEL DÍA + ACUMULADA CON SU RANGO ────────────────────
+   «Rematar la cantidad registrada del día (más el porcentaje) y adicional cómo se lleva el
+   total hasta el día (acumulada) y sus porcentajes asimismo; ubicar al lado la fecha de dicho
+   total, de qué fecha a qué fecha es.»
+
+   🔑 EL FIXTURE ESTÁ ELEGIDO PARA QUE DISTINGA. El tanque 1 de la Sala 1 está MEZCLADO el
+   01-30 (AB desde el 01-01, CD desde el 01-20), así que las 6 hembras muertas y las 2 de
+   descarte de esa fila son del TANQUE y hay que repartirlas. Si la cifra del día se calculara
+   sumando la fila —que es la implementación «obvia»— AB se apuntaría las 6, y el número
+   saldría plausible y equivocado. */
+describe('Resumen · mortalidad del día y acumulada', () => {
+  const AB = () => R.lotes.find((x) => x.lote === 'AB');
+  const CD = () => R.lotes.find((x) => x.lote === 'CD');
+
+  it('el fixture ejerce algo: los dos lotes comparten el tanque 1 de la Sala 1', () => {
+    const enT1 = (L) => L.tanques.some((t) => t.sala === 'Sala 1' && t.tanque === 1);
+    expect(enT1(AB()) && enT1(CD()), 'sin tanque mezclado el caso no distinguiría nada').toBe(true);
+    expect(AB().fechaDia).toBe('2026-01-30');
+  });
+
+  it('🔴 la del día NO es la suma de la fila: el tanque mezclado se reparte por vivos', () => {
+    /* El 01-30, AB tenía 56♀ vivas en el t1 y CD 20♀. Las 8 bajas (6 muertas + 2 de descarte)
+       se reparten 6 para AB y 2 para CD, y dentro de cada lote se parten entre muertas y
+       descarte en la proporción de la fila: AB acaba con 5 muertas + 1 de descarte, CD con 2 + 0.
+       Y en la Sala 2, el tanque 3 —sólo de AB— aporta su macho. */
+    expect(AB().muertosDia).toEqual({ machos: 1, hembras: 5 });
+    expect(AB().muertosDia.hembras, 'se apuntó a AB la fila entera').toBeLessThan(6);
+    expect(CD().muertosDia).toEqual({ machos: 0, hembras: 2 });
+  });
+
+  it('🔴 el % del día va sobre los animales EN RIESGO ese día, no sobre lo ingresado', () => {
+    /* AB llegaba al 01-30 con 28♂ y 96♀ vivos (30♂ 100♀ ingresados menos las bajas del 01-10).
+       1/28 = 3,57 % · 5/96 = 5,21 % · 6/124 = 4,84 %. Sobre lo INGRESADO darían 3,33 y 5,00:
+       parecido, y por eso hay que fijarlo — dividir la mortalidad de un día entre lo que
+       ingresó hace un mes da una cifra que no significa nada. */
+    expect(AB().tasaMortalidadDia).toEqual({ machos: 3.57, hembras: 5.21, total: 4.84 });
+    expect(AB().tasaMortalidadDia.hembras).not.toBe(5);
+  });
+
+  it('la acumulada sigue siendo sobre lo ingresado, y es OTRA cifra', () => {
+    expect(AB().muertos).toEqual({ machos: 3, hembras: 11 });
+    expect(AB().tasaMortalidad).toEqual({ machos: 10, hembras: 11, total: 10.77 });
+  });
+
+  it('un lote con un solo día tiene la misma cifra en el día y en el acumulado', () => {
+    // CD entró el 01-20 y sólo tiene bajas del 01-30: es el control de que las dos no se cruzan.
+    expect(CD().muertosDia).toEqual(CD().muertos);
+    expect(CD().tasaMortalidadDia.total).toBe(CD().tasaMortalidad.total);
+  });
+
+  it('🔴 el acumulado dice DESDE CUÁNDO: del ingreso del lote a la fecha de cálculo', () => {
+    // Sin el rango, un total no dice de cuánto tiempo es y se lee como si fuera del día.
+    expect(AB().rangoAcumulado).toEqual({ desde: '2026-01-01', hasta: '2026-02-01' });
+    // Y es el de CADA lote, no el del libro: CD entró diecinueve días después.
+    expect(CD().rangoAcumulado).toEqual({ desde: '2026-01-20', hasta: '2026-02-01' });
+  });
+
+  it('sin ningún día con filas de sus tanques, el día sale en cero y sin tasas', () => {
+    const solo = resumenMaduracion({ ingresos: FUENTES().ingresos }, { hoy: '2026-02-01' });
+    const ab = solo.lotes.find((x) => x.lote === 'AB');
+    expect(ab.muertosDia).toEqual({ machos: 0, hembras: 0 });
+    expect(ab.tasaMortalidadDia).toEqual({ machos: '', hembras: '', total: '' });
+    expect(ab.rangoAcumulado.desde, 'el rango no depende de que haya bajas').toBe('2026-01-01');
+  });
+});
+
 /* ── PARIDAD con el monolito ── */
 describe('Resumen · el monolito y el módulo dan lo mismo', () => {
   const src = readFileSync(new URL('../../../../public/registros/engine.js', import.meta.url), 'utf8').split('\r\n').join('\n');

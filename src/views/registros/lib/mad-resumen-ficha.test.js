@@ -93,6 +93,11 @@ describe('Saldo · resumen con filtro de variables y PDF', () => {
     // H2: cada variable de la sala dice de qué registro sale.
     const fila = (th) => [...cuerpo().querySelectorAll('tr')].find((tr) => tr.querySelector('th') && tr.querySelector('th').textContent === th);
     for (const th of ['Temperatura', 'Oxígeno', 'Uso del RAS']) expect(fila(th).textContent).toContain('(2026-01-10)');
+    /* 2026-09-15 (usuario) · la mortalidad va en DOS filas, la del día y la acumulada, y el
+       acumulado dice de qué fecha a qué fecha es. Una sola fila con el total se lee como si
+       fuera del día, que es justo lo que el usuario pidió separar. */
+    expect(fila('Mortalidad del día'), 'falta la fila del día').toBeTruthy();
+    expect(fila('Mortalidad acumulada').textContent, 'el acumulado no dice desde cuándo').toContain('→');
   });
 
   it('🔴 el filtro se guarda y oculta lo desmarcado; con el GAS viejo Tratamientos no se pide y se dice', async () => {
