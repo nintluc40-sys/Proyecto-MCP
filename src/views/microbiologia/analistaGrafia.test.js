@@ -28,7 +28,21 @@ import { sanitizeStr } from '../../core/trovan.js';
 
 const leer = (u) => readFileSync(new URL(u, import.meta.url), 'utf8').split('\r\n').join('\n');
 const engineSrc = leer('../../../public/registros/engine.js');
-const musicSrc = leer('../../../../../Music/index (8).html');
+
+/* ⚠⚠ `Music\index (8).html` NO ESTÁ EN EL REPO, así que en la CI NO EXISTE. Una prueba que lo lea
+   a secas deja el despliegue en rojo — pasó el 2026-09-16: la suite cayó en GitHub Actions y Pages
+   no llegó a publicarse (la puerta hizo su trabajo, pero el rojo era mío, no del código).
+   🔑 Por eso se lee si está y, si no, se SALTA sólo lo suyo. La paridad con `index (8)` no se
+   pierde: la exige `verificar-3copias-v3` en la máquina donde ese archivo vive, que es justo el
+   reparto de siempre —la CI vigila el repo; los verificadores de copias, los dos destinos—.
+   ⚠ Lo que NO es opcional es lo del repo: `engine.js` se comprueba siempre. */
+let musicSrc = null;
+try {
+  musicSrc = leer('../../../../../Music/index (8).html');
+} catch (_) {
+  musicSrc = null;
+}
+const conMusic = musicSrc ? it : it.skip;
 
 /* El catálogo tal y como lo declara cada monolito, leído del fuente (no tecleado aquí). */
 function catalogoDe(src, quien) {
@@ -102,8 +116,11 @@ describe('R7 · la grafía del analista se pliega a la del catálogo', () => {
 });
 
 describe('R7 · las dos mitades no pueden divergir', () => {
-  it('🔴 el catálogo del módulo es el MISMO que el de los dos monolitos', () => {
+  it('🔴 el catálogo del módulo es el MISMO que el del motor del repo', () => {
     expect(catalogoDe(engineSrc, 'engine.js')).toEqual(MIC_ANALISTAS);
+  });
+
+  conMusic('🔴 …y el mismo que el de index (8), cuando ese archivo está a mano', () => {
     expect(catalogoDe(musicSrc, 'index (8).html')).toEqual(MIC_ANALISTAS);
   });
 
@@ -115,12 +132,19 @@ describe('R7 · las dos mitades no pueden divergir', () => {
     }
   });
 
-  it('🔴 la captura la USA: los tres formularios guardan el Responsable canonizado', () => {
-    /* Sin esto, `micAnalistaCanon` podría existir y no llamarla nadie: el defecto seguiría vivo
-       con la función escrita al lado. Son Bacteriología, Calidad de Agua y Patología. */
-    for (const src of [engineSrc, musicSrc]) {
-      expect((src.match(/meta\.responsable\s*=\s*micAnalistaCanon\(re\.value\)/g) || []).length).toBe(3);
-      expect(src).not.toMatch(/meta\.responsable\s*=\s*sanitizeStr\(re\.value\)/);
-    }
+  /* Sin esto, `micAnalistaCanon` podría existir y no llamarla nadie: el defecto seguiría vivo con
+     la función escrita justo al lado. Son tres formularios: Bacteriología, Calidad de Agua y
+     Patología. */
+  const laUsanLosTres = (src, quien) => {
+    expect((src.match(/meta\.responsable\s*=\s*micAnalistaCanon\(re\.value\)/g) || []).length, quien).toBe(3);
+    expect(src, quien).not.toMatch(/meta\.responsable\s*=\s*sanitizeStr\(re\.value\)/);
+  };
+
+  it('🔴 la captura la USA: los tres formularios del motor guardan el Responsable canonizado', () => {
+    laUsanLosTres(engineSrc, 'engine.js');
+  });
+
+  conMusic('🔴 …y los tres de index (8) también, cuando ese archivo está a mano', () => {
+    laUsanLosTres(musicSrc, 'index (8).html');
   });
 });
