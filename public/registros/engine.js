@@ -103,6 +103,16 @@ const MAD_SALA_OPTS = ["Sala 1","Sala 2","Sala 3","Sala 4","Sala 5"];
    ⚠ La hoja guarda TEXTO y conserva filas viejas con «SI»/«NO»: el desplegable añade el valor
    que traiga la fila si no está aquí, para no borrarlo al volver a guardar. */
 const MAD_RAS_OPTS = ["No","10%","15%","20%","25%","30%","40%","50%","60%","100%"];
+/* TONELADAS de agua que llevan TODOS los tanques de cada sala (usuario, 2026-09-15). Es el
+   volumen con el que se estima la carga, así que vive aquí y no repartido por la interfaz.
+   🔑 Es un valor POR DEFECTO, no un candado: la celda nace con él y se puede pisar, y lo que se
+   guarda es siempre lo que está en la celda. El día que una sala cambie de volumen basta con
+   teclearlo — el catálogo sólo decide de dónde parte. */
+const MAD_SALA_TONELADAS = { "Sala 1":5.5, "Sala 2":21, "Sala 3":21, "Sala 4":14, "Sala 5":13 };
+function madSalaToneladasDef(sala){
+  const v = MAD_SALA_TONELADAS[sala];
+  return v == null ? "" : String(v);
+}
 const MAD_TANQUES_POR_SALA = {
   "Sala 1":  Array.from({length:15},(_,i)=>i+1),
   "Sala 2":  Array.from({length:6},(_,i)=>i+16),
@@ -10983,10 +10993,10 @@ function renderMadSalas(){
     const d = r ? r.data : {};
     const st = r ? (r.synced ? "✅" : "⏳") : "○";
     const tempCells = _SALA_TEMP_KEYS.map((k,ki) =>
-      `<td><input class="pinp" type="number" name="sg_${si}_${k}" data-r="${si}" data-c="${3+ki}" onpaste="madGridPaste(event,'salas')" value="${vl(d,k)}" min="${_SALA_TEMP_MIN}" max="${_SALA_TEMP_MAX}" step="0.1" inputmode="decimal" placeholder="-"></td>`
+      `<td><input class="pinp" type="number" name="sg_${si}_${k}" data-r="${si}" data-c="${4+ki}" onpaste="madGridPaste(event,'salas')" value="${vl(d,k)}" min="${_SALA_TEMP_MIN}" max="${_SALA_TEMP_MAX}" step="0.1" inputmode="decimal" placeholder="-"></td>`
     ).join("");
     const oxCells = _SALA_OX_KEYS.map((k,ki) =>
-      `<td><input class="pinp" type="number" name="sg_${si}_${k}" data-r="${si}" data-c="${15+ki}" onpaste="madGridPaste(event,'salas')" value="${vl(d,k)}" min="0" max="20" step="0.01" inputmode="decimal" placeholder="-"></td>`
+      `<td><input class="pinp" type="number" name="sg_${si}_${k}" data-r="${si}" data-c="${16+ki}" onpaste="madGridPaste(event,'salas')" value="${vl(d,k)}" min="0" max="20" step="0.01" inputmode="decimal" placeholder="-"></td>`
     ).join("");
     return `<tr>
       <td class="tqc" style="font-size:10px;min-width:60px">${escapeHtml(sala)}</td>
@@ -10994,6 +11004,7 @@ function renderMadSalas(){
       <td><select name="sg_${si}_estado" data-r="${si}" data-c="0" onpaste="madGridPaste(event,'salas')" style="font-size:10px;min-width:70px">${estadoOpts(d.estado||"")}</select></td>
       <td><input class="pinp" type="text" name="sg_${si}_estado_lote" data-r="${si}" data-c="1" onpaste="madGridPaste(event,'salas')" value="${vl(d,'estado_lote')}" maxlength="200" placeholder="—" style="font-size:10px;min-width:170px"></td>
       <td><select name="sg_${si}_ras" data-r="${si}" data-c="2" onpaste="madGridPaste(event,'salas')" style="font-size:10px;min-width:44px">${rasOpts(d.ras||"")}</select></td>
+      <td><input class="pinp" type="number" name="sg_${si}_toneladas" data-r="${si}" data-c="3" onpaste="madGridPaste(event,'salas')" min="0" step="0.1" inputmode="decimal" value="${d.toneladas != null && d.toneladas !== "" ? vl(d,'toneladas') : escapeHtml(madSalaToneladasDef(sala))}" style="font-size:10px;min-width:62px"></td>
       ${tempCells}${oxCells}
     </tr>`;
   }).join("");
@@ -11030,11 +11041,16 @@ function renderMadSalas(){
             <th>Estado</th>
             <th>Estado por lote</th>
             <th>RAS</th>
+            <th>Toneladas</th>
             <th colspan="12" class="thg">Temperatura (°C) · cada 2 horas</th>
             <th colspan="4" class="thg2">O₂ (mg/L) · cada 6 horas</th>
           </tr>
           <tr>
-            <th></th><th></th><th></th><th></th><th></th>
+            <!-- ⚠ un <th> vacío por CADA columna anterior a las temperaturas (Sala · St ·
+                 Estado · Estado por lote · RAS · Toneladas). Si añades una columna ahí
+                 delante y no añades su hueco aquí, las dos filas de cabecera dejan de casar
+                 y las horas salen corridas. -->
+            <th></th><th></th><th></th><th></th><th></th><th></th>
             ${thTemp}${thOx}
           </tr>
         </thead>
@@ -11045,7 +11061,7 @@ function renderMadSalas(){
         <span id="sal-estado-nota" style="font-size:11px;align-self:center"></span>
       </div>
       <div class="sa" style="margin-top:12px">
-        <div class="sa-info"><span>💾 Guarda para persistir las 7 salas a la vez</span></div>
+        <div class="sa-info"><span>💾 Guarda para persistir las ${MAD_SALA_OPTS.length} salas a la vez</span></div>
         <div class="sa-btns">
           <button class="btn bd" type="button" onclick="clearMadSalasGrid()" title="Borrar todos los registros de Salas del día seleccionado">🗑 Borrar día</button>
           <button class="btn bpdf" type="button" onclick="downloadMadPDF('salas')" title="PDF con todos los registros visibles">📄 PDF</button>
@@ -11150,7 +11166,15 @@ function _collectSalasGrid(fechaOverride){
       const el = fp.querySelector(`[name="sg_${si}_${k}"]`);
       return el ? el.value : "";
     };
-    const data = { fecha, sala, estado: sanitizeStr(g("estado")), estado_lote: sanitizeStr(g("estado_lote"), 200), ras: sanitizeStr(g("ras")) };
+    const data = { fecha, sala, estado: sanitizeStr(g("estado")), estado_lote: sanitizeStr(g("estado_lote"), 200), ras: sanitizeStr(g("ras")),
+      /* Lo que se guarda es lo que hay en la CELDA. Viene pre-rellena con el defecto de su sala,
+         así que una sala sin tocar guarda su volumen de siempre y una tocada, el nuevo. */
+      toneladas: sanitizeNum(g("toneladas"), 0, 1e6) };
+    /* ⚠ Las toneladas NO cuentan como dato por sí solas, igual que el Lote prellenado de la
+       grilla de Tanques: la celda nace con el valor por defecto de su sala, así que contarlas
+       haría que las CINCO salas se guardaran cada día aunque el usuario sólo llenara una — y la
+       hoja se llenaría de filas que sólo dicen el volumen del tanque, que es del catálogo y no
+       una medición. Si la fila tiene algo más, las toneladas se persisten con ella. */
     let hasAny = !!(data.estado || data.estado_lote || data.ras);
     _SALA_TEMP_KEYS.forEach(k => {
       const el = fp.querySelector('[name="sg_' + si + '_' + k + '"]');
@@ -11879,7 +11903,7 @@ function downloadMadPDF(ficha){
     titleIco = '🏠'; titleText = 'Maduración · Salas'; docCode = 'OMR-MAD-SAL';
     /* ⚠⚠ CABECERA Y CELDA VAN JUNTAS. El 2026-09-08 se cambió una sin la otra en esta misma
        función y el PDF salió con las columnas corridas. Si tocas esta lista, baja a rowsHtml. */
-    headers = ['#','Fecha','Sala','Estado','Estado por lote','RAS',
+    headers = ['#','Fecha','Sala','Estado','Estado por lote','RAS','Ton',
       'T 02:00','T 04:00','T 06:00','T 08:00','T 10:00','T 12:00','T 14:00','T 16:00','T 18:00','T 20:00','T 22:00','T 00:00',
       'O₂ 06:00','O₂ 12:00','O₂ 18:00','O₂ 00:00','Estado sync'];
     rowsHtml = list.map((r, idx) => {
@@ -11892,6 +11916,7 @@ function downloadMadPDF(ficha){
         <td>${escapeHtml(d.estado||'—')}</td>
         <td>${escapeHtml(d.estado_lote||'—')}</td>
         <td>${escapeHtml(d.ras||'—')}</td>
+        <td>${pdfVal(d.toneladas)}</td>
         <td>${pdfVal(d.temp_02)}</td>
         <td>${pdfVal(d.temp_04)}</td>
         <td>${pdfVal(d.temp_06)}</td>
@@ -12043,14 +12068,17 @@ function buildMadPayload(ficha, records){
            es libre, el de la hoja no.
            ⚠ 21 columnas siguen por debajo de LIMITS.mad.maxCols del GAS desplegado, así que
            esto NO necesita re-despliegue: la crea sola ensureHeaders. */
-        "Estado por lote"],
+        /* «Toneladas» (2026-09-15) va DETRÁS de «Estado por lote» por lo mismo que aquélla fue
+           la última en su día: añadir al final no mueve la llave posicional [0,1] ni toca las
+           filas que ya existen. En la GRILLA sí va al lado del RAS, que es donde se lee. */
+        "Estado por lote", "Toneladas"],
       rows: records.map(r => {
         const d = r.data || {};
         return [d.fecha, d.sala, d.estado,
           num(d.temp_02), num(d.temp_04), num(d.temp_06), num(d.temp_08), num(d.temp_10), num(d.temp_12),
           num(d.temp_14), num(d.temp_16), num(d.temp_18), num(d.temp_20), num(d.temp_22), num(d.temp_00),
           num(d.ox_06), num(d.ox_12), num(d.ox_18), num(d.ox_00), d.ras,
-          d.estado_lote || ""];
+          d.estado_lote || "", num(d.toneladas)];
       })
     };
   }
