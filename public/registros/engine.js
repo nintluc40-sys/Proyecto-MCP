@@ -5674,7 +5674,15 @@ function _madMergeRow(list, ficha, data){
 // Persiste (silencioso, sin re-render) la grilla activa usando el contexto con que
 // se renderizó. Se llama ANTES de cambiar de sala/fecha o de pestaña.
 function _madCommitActive(){
-  if(!isMadMod(curMod) || !MAD_FICHAS.includes(curTab)) return;
+  if(!isMadMod(curMod)) return;
+  /* 2026-09-15 · el borrador por fecha de las fichas de formulario se guarda en el MISMO
+     momento que las grillas —cambiar de pestaña, volver atrás—, que es cuando se sabe que el
+     usuario ha terminado de teclear. Va antes del `return` de abajo porque esas fichas no
+     están en MAD_FICHAS: aquélla es la lista de las GRILLAS. */
+  if(MAD_BORR_FICHAS[curTab]){
+    try{ madBorrGuardar(curTab, (document.getElementById(MAD_BORR_FICHAS[curTab].fecha) || {}).value); }catch(_){}
+  }
+  if(!MAD_FICHAS.includes(curTab)) return;
   const r = _madRendered[curTab]; if(!r) return;
   try{
     /* ⚠ La rama de caída (`else`) desapareció con la grilla de Lotes el 2026-09-08. Era
@@ -7522,10 +7530,131 @@ function madIngVaciar(){
   if(!confirm("¿Vaciar el formulario de ingreso?\nSe perderá todo lo tecleado.")) return;
   madIngReiniciar();
 }
+/* ── BORRADOR POR FECHA de las fichas de Maduración (usuario, 2026-09-15) ─────────────
+   «Que sea como la de Salas: si cambio la fecha a un día anterior, veo lo registrado.»
+   Salas y Tanques ya lo hacían por ser GRILLAS —su lista local lleva la fecha dentro de cada
+   fila—; estas siete son FORMULARIOS que se montan una vez y no se repintan.
+   🔑 SE GUARDA EL PANEL, NO UN MODELO POR FICHA: siete modelos habrían pedido siete
+   restauradores y cada uno habría envejecido con su ficha, en silencio.
+   ⚠ `innerHTML` NO lleva lo tecleado (el valor vive en la PROPIEDAD, no en el atributo): por
+   eso se vuelca a atributos antes de serializar. Sin ese volcado se guarda el formulario en
+   blanco y no hay ningún error que lo diga.
+   ⚠ Es lo tecleado EN ESTE DISPOSITIVO, como el borrador de Salas: no sustituye a la hoja. */
+const MAD_BORR_PRE = "larv4_mad_borr_";
+const MAD_BORR_MAX = 30;    // días guardados por ficha; al pasarse se olvida el más viejo
+const MAD_BORR_FICHAS = {
+  ingreso:      { panel:"fp-ingreso",      fecha:"mi-fecha" },
+  movimientos:  { panel:"fp-movimientos",  fecha:"mv-fecha" },
+  desoves:      { panel:"fp-desoves",      fecha:"md-fecha" },
+  mortdes:      { panel:"fp-mortdes",      fecha:"mm-fecha" },
+  fin:          { panel:"fp-fin",          fecha:"mf-fecha" },
+  tratamientos: { panel:"fp-tratamientos", fecha:"mt-fecha" },
+  alimentacion: { panel:"fp-alimentacion", fecha:"ma-fecha" }
+};
+/* La fecha que la ficha tenía ANTES del cambio: es bajo la que hay que guardar lo que se deja.
+   No se puede deducir del input, que para cuando salta el `onchange` ya lleva la nueva. */
+let _madBorrFecha = {};
+
+function _madBorrKey(ficha){ return MAD_BORR_PRE + ficha; }
+function madBorrTodo(ficha){
+  if(!MAD_BORR_FICHAS[ficha]) return {};
+  try{ const o = JSON.parse(localStorage.getItem(_madBorrKey(ficha)) || "{}"); return (o && typeof o === "object") ? o : {}; }
+  catch(_){ return {}; }
+}
+/* El volcado de lo VIVO a atributos. Es la pieza sin la que todo esto guardaría en blanco. */
+function _madBorrFijarValores(root){
+  if(!root) return;
+  root.querySelectorAll("input,select,textarea").forEach(function(el){
+    const t = String(el.type || "").toLowerCase();
+    if(t === "checkbox" || t === "radio"){
+      if(el.checked) el.setAttribute("checked", "checked"); else el.removeAttribute("checked");
+      return;
+    }
+    if(el.tagName === "SELECT"){
+      Array.prototype.forEach.call(el.options, function(o){
+        if(o.selected) o.setAttribute("selected", "selected"); else o.removeAttribute("selected");
+      });
+      return;
+    }
+    if(el.tagName === "TEXTAREA"){ el.textContent = el.value == null ? "" : el.value; return; }
+    el.setAttribute("value", el.value == null ? "" : el.value);
+  });
+}
+/** Guarda el panel de `ficha` bajo `fecha`. Sin fecha válida o sin panel montado, no hace nada. */
+function madBorrGuardar(ficha, fecha){
+  const cfg = MAD_BORR_FICHAS[ficha];
+  if(!cfg || !isValidDate(fecha)) return false;
+  const fp = document.getElementById(cfg.panel);
+  if(!fp || !fp.firstChild) return false;
+  _madBorrFijarValores(fp);
+  const todo = madBorrTodo(ficha);
+  todo[fecha] = fp.innerHTML;
+  /* Tope por DÍAS y no por tamaño: una ficha de tres campos y otra con doce tarjetas no caben
+     en el mismo presupuesto, y «los últimos 30 días» es lo que el usuario puede predecir. */
+  const dias = Object.keys(todo).sort();
+  while(dias.length > MAD_BORR_MAX) delete todo[dias.shift()];
+  return _lsSet(_madBorrKey(ficha), JSON.stringify(todo));
+}
+function madBorrLeer(ficha, fecha){
+  const t = madBorrTodo(ficha);
+  return typeof t[fecha] === "string" ? t[fecha] : "";
+}
+/** Olvida el borrador de un día. Lo llaman las fichas al vaciarse: dejar el borrador vivo
+ *  resucitaría al día siguiente lo que el usuario acaba de tirar. */
+function madBorrOlvidar(ficha, fecha){
+  const todo = madBorrTodo(ficha);
+  if(!Object.prototype.hasOwnProperty.call(todo, fecha)) return;
+  delete todo[fecha];
+  _lsSet(_madBorrKey(ficha), JSON.stringify(todo));
+}
+/* Cada ficha se nombra, en vez de un `window[nombre]`: el monolito se arranca en las pruebas
+   con `new Function`, donde nada cuelga de `window`, y ahí un despacho por nombre se caería
+   sin decir nada. Es la misma razón por la que `_madCommitActive` nombra sus dos grillas. */
+function _madBorrRender(ficha){
+  if(ficha === "ingreso")           renderMadIngreso();
+  else if(ficha === "movimientos")  renderMadMovimientos();
+  else if(ficha === "desoves")      renderMadDesoves();
+  else if(ficha === "mortdes")      renderMadMortDesove();
+  else if(ficha === "fin")          renderMadFinCiclo();
+  else if(ficha === "tratamientos") renderMadTratamientos();
+  else if(ficha === "alimentacion") renderMadAlimentacion();
+}
+/** Asa del campo Fecha: guarda el día que se deja y trae el que se elige. */
+function madBorrFechaChange(ficha){
+  const cfg = MAD_BORR_FICHAS[ficha];
+  if(!cfg) return;
+  const f = document.getElementById(cfg.fecha);
+  if(!f) return;
+  const nueva = f.value;
+  const previa = _madBorrFecha[ficha];
+  if(previa && previa !== nueva) madBorrGuardar(ficha, previa);
+  /* Una fecha A MEDIO TECLEAR llega aquí vacía. Ni se guarda ni se trae, y sobre todo NO se
+     toca `_madBorrFecha`: perder el último día válido haría que la siguiente fecha entera ya no
+     supiera bajo qué día guardar lo que hay en pantalla, y se perdería el día en curso. */
+  if(!isValidDate(nueva)) return;
+  const fp = document.getElementById(cfg.panel);
+  if(!fp) return;
+  const html = madBorrLeer(ficha, nueva);
+  /* Sin borrador de ese día, la ficha se monta LIMPIA: arrastrar lo de ayer a un día en el
+     que no se tecleó nada es justo lo que esta función viene a arreglar. */
+  fp.innerHTML = html;
+  if(!html) _madBorrRender(ficha);
+  /* DESPUÉS del render: el montaje escribe today() en su campo de fecha, y aquí manda la
+     fecha elegida. Y `_madBorrFecha` se fija al final por lo mismo. */
+  const f2 = document.getElementById(cfg.fecha);
+  if(f2) f2.value = nueva;
+  _madBorrFecha[ficha] = nueva;
+}
+/** La ficha acaba de montarse con la fecha de hoy: desde aquí se sabe bajo qué día guardar. */
+function madBorrMontada(ficha){
+  if(MAD_BORR_FICHAS[ficha]) _madBorrFecha[ficha] = today();
+}
+
 function renderMadIngreso(){
   const fp=document.getElementById("fp-ingreso"); if(!fp) return;
   if(fp.querySelector("#mi-comps")) return;   // ya montado: se conserva lo tecleado
   const todayStr=today();
+  madBorrMontada("ingreso");
   fp.innerHTML='<div class="fc">'
     + '<div class="fc-h"><div class="fc-t">📥 Maduración · Ingreso</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
     + '<div class="fc-b">'
@@ -7533,7 +7662,7 @@ function renderMadIngreso(){
     +     '<span style="font-size:16px">ℹ️</span><span>Un lote puede traer varias parejas de código genético y piscina, y repartirse entre varias salas. El lote es UNO para todas.<br>Si dos piscinas se <b>mezclan al entrar</b>, márcalas y pulsa <b>🔗 Combinar</b>: entran como una sola composición (767/766). Un tanque se ocupa <b>una vez</b>.</span>'
     +   '</div>'
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
-    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha de ingreso<input type="date" id="mi-fecha" value="'+escapeHtml(todayStr)+'" onchange="madIngRefrescar()" style="'+_MAD_ING_INP+'"></label>'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha de ingreso<input type="date" id="mi-fecha" value="'+escapeHtml(todayStr)+'" onchange="madBorrFechaChange(&quot;ingreso&quot;);madIngRefrescar()" style="'+_MAD_ING_INP+'"></label>'
     +     '<label style="'+_MAD_ING_LBL+'">Lote<input id="mi-lote" placeholder="AB" oninput="madIngRefrescar()" style="'+_MAD_ING_INP+';width:100px;text-transform:uppercase"></label>'
     +     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding-bottom:2px">'
     +       '<button class="btn" type="button" id="mi-ocup-btn" onclick="madIngVerOcupacion()" title="Lee el libro al cierre de la fecha de ingreso y marca en ámbar los tanques que ya tienen OTRO lote vivo" style="font-size:11px">🔄 Ver ocupación</button>'
@@ -7880,6 +8009,7 @@ function renderMadMovimientos(){
   const fp=document.getElementById("fp-movimientos"); if(!fp) return;
   if(fp.querySelector("#mv-tramos")) return;
   const todayStr=today();
+  madBorrMontada("movimientos");
   fp.innerHTML='<div class="fc">'
     + '<div class="fc-h"><div class="fc-t">🔄 Maduración · Movimientos</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
     + '<div class="fc-b">'
@@ -7887,7 +8017,7 @@ function renderMadMovimientos(){
     +     '<span style="font-size:16px">ℹ️</span><span>Registra sólo <b>cuántos</b> animales se movieron y entre qué tanques. <b>De qué lote eran lo deduce el libro</b>, repartiendo en proporción a los vivos del tanque de origen ese día: en un tanque mezclado nadie puede saberlo, y teclearlo sería inventarlo.<br>Para una <b>agrupación</b>, añade un tramo por cada tanque de origen con el mismo destino.</span>'
     +   '</div>'
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
-    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mv-fecha" value="'+escapeHtml(todayStr)+'" style="'+_MAD_ING_INP+'"></label>'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mv-fecha" value="'+escapeHtml(todayStr)+'" onchange="madBorrFechaChange(&quot;movimientos&quot;)" style="'+_MAD_ING_INP+'"></label>'
     +     '<label style="'+_MAD_ING_LBL+'">Tipo<select id="mv-tipo" style="'+_MAD_ING_INP+';width:150px">'+madMovTipoOpts("Transferencia")+'</select></label>'
     +     '<label style="'+_MAD_ING_LBL+'">Motivo<select id="mv-motivo" style="'+_MAD_ING_INP+';width:220px">'+madMovMotivoOpts("")+'</select></label>'
     +   '</div>'
@@ -8363,6 +8493,7 @@ function renderMadDesoves(d){
   const fp=document.getElementById("fp-desoves"); if(!fp) return;
   if(fp.querySelector("#md-cards")) return;
   const todayStr=today();
+  madBorrMontada("desoves");
   fp.innerHTML='<div class="fc">'
     + '<div class="fc-h"><div class="fc-t">🥚 Maduración · Desoves</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
     + '<div class="fc-b">'
@@ -8371,7 +8502,7 @@ function renderMadDesoves(d){
     +   '</div>'
     +   (d ? '<div id="md-edit" style="background:#fef9c3;border:1.5px solid #fde047;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:12px;color:#713f12">✏️ Completando el desove del <b>'+escapeHtml(d.fecha)+'</b> · <b>'+escapeHtml(d.lote)+'</b> · <b>'+escapeHtml(d.codigoGenetico)+'</b>. Rellena lo nuevo y guarda; 🧹 Vaciar sale sin guardar.</div>' : '')
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
-    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha del desove<input type="date" id="md-fecha" value="'+escapeHtml(d ? d.fecha : todayStr)+'"'+(d ? ' readonly' : '')+' style="'+_MAD_ING_INP+(d ? ';background:#f1f5f9' : '')+'"></label>'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha del desove<input type="date" id="md-fecha" value="'+escapeHtml(d ? d.fecha : todayStr)+'"'+(d ? ' readonly' : ' onchange="madBorrFechaChange(&quot;desoves&quot;)"')+' style="'+_MAD_ING_INP+(d ? ';background:#f1f5f9' : '')+'"></label>'
     +   '</div>'
     +   '<div id="md-cards">'+_madDesCardHTML(d, !!d)+'</div>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
@@ -8700,6 +8831,7 @@ function renderMadFinCiclo(){
   const fp=document.getElementById("fp-fin"); if(!fp) return;
   if(fp.querySelector("#mf-cards")) return;
   const todayStr=today();
+  madBorrMontada("fin");
   const registro=madFinNuevoRegistro();
   fp.innerHTML='<div class="fc">'
     + '<div class="fc-h"><div class="fc-t">🏁 Maduración · Fin de Ciclo</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
@@ -8708,7 +8840,7 @@ function renderMadFinCiclo(){
     +     '<span style="font-size:16px">ℹ️</span><span>Es la <b>única salida</b> del departamento: un pedido a otra camaronera, un descarte, el fin de la vida útil. Los movimientos entre tanques van en 🔄 Movimientos.<br>Se cierra el <b>lote entero</b> — el libro descuenta de cada tanque donde esté, en proporción; un cierre <b>Parcial</b> puede indicar la <b>sala</b> y entonces descuenta sólo de ella. Y en un cierre <b>Total</b>, lo que el libro creía que quedaba y no salió se anota como <b>diferencia</b>: no se esconde.</span>'
     +   '</div>'
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
-    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mf-fecha" value="'+escapeHtml(todayStr)+'" style="'+_MAD_ING_INP+'"></label>'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mf-fecha" value="'+escapeHtml(todayStr)+'" onchange="madBorrFechaChange(&quot;fin&quot;)" style="'+_MAD_ING_INP+'"></label>'
     +   '</div>'
     +   '<div id="mf-cards">'+_madFinCardHTML()+'</div>'
     +   '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin:4px 0 10px;background:#f8fafc">'
@@ -8977,6 +9109,7 @@ function renderMadTratamientos(){
   const fp=document.getElementById("fp-tratamientos"); if(!fp) return;
   if(fp.querySelector("#mt-prevs")) return;
   const todayStr=today();
+  madBorrMontada("tratamientos");
   fp.innerHTML='<div class="fc">'
     + '<div class="fc-h"><div class="fc-t">🧪 Maduración · Tratamientos</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
     + '<div class="fc-b">'
@@ -8984,7 +9117,7 @@ function renderMadTratamientos(){
     +     '<span style="font-size:16px">ℹ️</span><span>Registra los <b>preventivos por lote</b> y la <b>desinfección</b> de instalaciones. Al elegir el <b>estado de la sala</b> quedan pre-marcados sus productos habituales: ajústalos antes de guardar. Cada tarjeta es una fila de la hoja.</span>'
     +   '</div>'
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
-    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mt-fecha" value="'+escapeHtml(todayStr)+'" style="'+_MAD_ING_INP+'"></label>'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mt-fecha" value="'+escapeHtml(todayStr)+'" onchange="madBorrFechaChange(&quot;tratamientos&quot;)" style="'+_MAD_ING_INP+'"></label>'
     +     '<label style="'+_MAD_ING_LBL+'" title="Vacía para áreas generales (Desove, Eclosión y Despacho, utensilios…)">Sala<select id="mt-sala" style="'+_MAD_ING_INP+';width:120px">'+madIngSalaOpts("")+'</select></label>'
     +     '<label style="'+_MAD_ING_LBL+'">Estado de la sala<select id="mt-estado" onchange="madTratEstadoChange(this)" style="'+_MAD_ING_INP+';width:260px"><option value=""></option>'
     +       MAD_TRAT_ESTADOS.map(function(e){ return '<option value="'+escapeHtml(e)+'">'+escapeHtml(e)+'</option>'; }).join("")+'</select></label>'
@@ -9260,6 +9393,7 @@ function renderMadMortDesove(){
   const fp=document.getElementById("fp-mortdes"); if(!fp) return;
   if(fp.querySelector("#mm-cards")) return;
   const todayStr=today();
+  madBorrMontada("mortdes");
   fp.innerHTML='<div class="fc">'
     + '<div class="fc-h"><div class="fc-t">📋 Maduración · Inf. Supervisor</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
     + '<div class="fc-b">'
@@ -9267,7 +9401,7 @@ function renderMadMortDesove(){
     +     '<span style="font-size:16px">ℹ️</span><span>Por <b>lote</b>. <b>📉 Mortalidad de hembras:</b> cuántas entran a los tanques de <b>desove</b> y de <b>recuperación</b> y cuántas mueren; el % se calcula solo y las muertas <b>se descuentan del saldo</b> del lote. <b>🔬 Revisión de nauplios:</b> Deformidad, Actividad, Hongos, Salinidad y Temperatura en cada revisión (Entrada, Lavado, Lavado 2 y Postlavado); rellena sólo las revisiones hechas.</span>'
     +   '</div>'
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
-    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mm-fecha" value="'+escapeHtml(todayStr)+'" style="'+_MAD_ING_INP+'"></label>'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mm-fecha" value="'+escapeHtml(todayStr)+'" onchange="madBorrFechaChange(&quot;mortdes&quot;)" style="'+_MAD_ING_INP+'"></label>'
     +   '</div>'
     +   '<div id="mm-cards">'+_madMortCardHTML()+'</div>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
@@ -9903,6 +10037,7 @@ function renderMadAlimentacion(){
   const fp=document.getElementById("fp-alimentacion"); if(!fp) return;
   if(fp.querySelector("#ma-salas")) return;
   const todayStr=today();
+  madBorrMontada("alimentacion");
   fp.innerHTML='<div class="fc">'
     + '<div class="fc-h"><div class="fc-t">🍤 Maduración · Alimentación</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
     + '<div class="fc-b">'
@@ -9910,7 +10045,7 @@ function renderMadAlimentacion(){
     +     '<span style="font-size:16px">ℹ️</span><span>Ración por sala y tanque: <b>biomasa (♀ + ♂) × % ÷ 100</b> en cada toma. Pulsa <b>🔄 Leer saldo y pesos</b>: los animales salen del saldo y el peso, de la última biometría de Tanques del lote (o de su Ingreso); los dos se pueden corregir. Cambia horas, alimentos y % de cada sala (0,25 a 2): al guardar quedan como agenda de todos hasta que otro la cambie.</span>'
     +   '</div>'
     +   '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
-    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="ma-fecha" value="'+escapeHtml(todayStr)+'" style="'+_MAD_ING_INP+'"></label>'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="ma-fecha" value="'+escapeHtml(todayStr)+'" onchange="madBorrFechaChange(&quot;alimentacion&quot;)" style="'+_MAD_ING_INP+'"></label>'
     +     '<button class="btn" type="button" id="ma-leer-btn" onclick="madAlimLeer()">🔄 Leer saldo y pesos</button>'
     +     '<button class="btn" type="button" data-a="todo" onclick="madAlimPdf(this.dataset.a)">🖨 PDF general</button>'
     +   '</div>'
