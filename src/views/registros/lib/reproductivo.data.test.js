@@ -17,7 +17,13 @@ const col = (headers, name) => headers.indexOf(name);
 
 describe('esquema de hojas', () => {
   it('las claves de upsert apuntan a las columnas correctas', () => {
-    expect(REPRO_MATRIZ_KEYCOLS).toEqual([col(REPRO_MATRIZ_HEADERS, 'Trovan ID')]);
+    /* 🔑 2026-09-16 · la MATRIZ se llavea por la CUATERNA que identifica al individuo, no por el
+       Trovan solo: el mismo chip puede llevar varias hembras (otra piscina, otro código, otro
+       lote). Era `[Trovan ID]`, y eso obligaba al GAS a decidir por fechas a qué fila iba cada
+       envío. */
+    expect(REPRO_MATRIZ_KEYCOLS).toEqual(
+      ['Trovan ID', 'Piscina', 'Código genético', 'Lote'].map((n) => col(REPRO_MATRIZ_HEADERS, n)),
+    );
     expect(REPRO_BITACORA_KEYCOLS).toEqual(['Trovan ID', 'Fecha', 'Tipo'].map((n) => col(REPRO_BITACORA_HEADERS, n)));
     expect(REPRO_TRANSFER_KEYCOLS).toEqual(['TR-ID', 'Trovan ID'].map((n) => col(REPRO_TRANSFER_HEADERS, n)));
   });
@@ -329,28 +335,81 @@ describe('♻ reciclaje · alta de una hembra nueva con el chip de una muerta', 
     expect(fila[col(REPRO_MATRIZ_HEADERS, 'Fecha ingreso')]).toBe('2026-07-20');
     expect(fila[col(REPRO_MATRIZ_HEADERS, 'Fecha muerte')]).toBe('');
   });
-  it('🔴 si la hembra del chip está VIVA sigue siendo «ya existente», aunque tenga una muerta detrás', () => {
-    const r = buildAltaBatch(altaDe('2026-09-10'), matrixIndexFromRows([VIEJA, NUEVA]), { reciclaje: true });
-    expect(r.report.existentes).toEqual([CHIP]);
-    expect(r.report.reciclados).toEqual([]);
-    expect(r.payload).toBeNull();
+  /* 🔑 2026-09-16 · LAS CUATRO PRUEBAS QUE HABÍA AQUÍ FIJABAN LOS TRES RECHAZOS QUE EL USUARIO
+     REPORTÓ, y se reescriben porque la regla cambió por decisión suya: «puedo usar el mismo Trovan
+     mientras no se repitan Piscina, Código genético y Lote». Lo que exigían —la anterior muerta, el
+     ingreso posterior a su muerte, y que el GAS anunciara saber reciclar— ya no son condiciones. */
+  it('🔴 con la hembra del chip VIVA también entra: es otro individuo, no un duplicado', () => {
+    const r = buildAltaBatch(altaDe('2026-09-10'), matrixIndexFromRows([VIEJA, NUEVA]));
+    expect(r.report.created).toEqual([CHIP]);
+    expect(r.report.existentes).toEqual([]);
+    expect(r.report.reciclados).toEqual([CHIP]);      // informativo: el chip ya tenía individuos
+    expect(r.payload.rows).toHaveLength(1);
   });
-  it('🔴 la fecha de ingreso tiene que ser POSTERIOR a la muerte de la anterior: el mismo día no vale', () => {
+  it('🔴 la fecha YA NO decide: el mismo día de la muerte, o antes, entra igual', () => {
     const idxV = matrixIndexFromRows([VIEJA]);
-    const mismoDia = buildAltaBatch(altaDe('2026-07-08'), idxV, { reciclaje: true });
-    expect(mismoDia.report.reciclajeFecha).toEqual([CHIP]);
-    expect(mismoDia.payload).toBeNull();
-    expect(buildAltaBatch(altaDe('2026-07-09'), idxV, { reciclaje: true }).report.created).toEqual([CHIP]);
+    expect(buildAltaBatch(altaDe('2026-07-08'), idxV).report.created).toEqual([CHIP]);
+    expect(buildAltaBatch(altaDe('2026-01-01'), idxV).report.created).toEqual([CHIP]);
+    expect(buildAltaBatch(altaDe('20/13/2026'), idxV).report.created).toEqual([CHIP]);   // fecha ilegible
   });
-  it('🔴 sin confirmar que el GAS sabe reciclar NO se envía (un GAS viejo la fundiría sobre la muerta)', () => {
+  it('🔴 y ya NO se pide nada al GAS: sin opciones se envía igual', () => {
     const r = buildAltaBatch(altaDe('2026-07-20'), matrixIndexFromRows([VIEJA]));
-    expect(r.report.reciclajeSinGas).toEqual([CHIP]);
+    expect(r.report.created).toEqual([CHIP]);
+    expect(r.payload.rows).toHaveLength(1);
+    expect(r.report.reciclajeSinGas).toBeUndefined();   // el motivo se retiró, no se dejó en cero
+    expect(r.report.reciclajeFecha).toBeUndefined();
+  });
+  it('🔴 lo que SÍ se rechaza: la misma cuaterna que ya está en la hoja', () => {
+    /* NUEVA es (CHIP · P9 · G07 · L20). Un alta con esos tres mismos es el MISMO individuo. */
+    const misma = [{ trovan: CHIP, piscina: 'P9', codigo: 'G07', lote: 'L20', sala: 'S3', tanque: 'T4', fecha: '2026-09-11' }];
+    const r = buildAltaBatch(misma, matrixIndexFromRows([VIEJA, NUEVA]));
+    expect(r.report.existentes).toEqual([CHIP]);
     expect(r.report.created).toEqual([]);
     expect(r.payload).toBeNull();
-    expect(buildAltaBatch(altaDe('2026-07-20'), matrixIndexFromRows([VIEJA]), { reciclaje: false }).payload).toBeNull();
   });
-  it('con una fecha mal escrita no se recicla (no se puede comparar con la muerte)', () => {
-    expect(buildAltaBatch(altaDe('20/13/2026'), matrixIndexFromRows([VIEJA]), { reciclaje: true }).report.reciclajeFecha).toEqual([CHIP]);
+  it('🔴 y cambiar UNA sola de las tres ya la convierte en otra: el fixture lo distingue', () => {
+    const idx = matrixIndexFromRows([VIEJA, NUEVA]);
+    for (const dif of [{ piscina: 'P1' }, { codigo: 'G99' }, { lote: 'L77' }]) {
+      const f = [Object.assign({ trovan: CHIP, piscina: 'P9', codigo: 'G07', lote: 'L20', fecha: '2026-09-11' }, dif)];
+      expect(buildAltaBatch(f, idx).report.created, JSON.stringify(dif)).toEqual([CHIP]);
+    }
+  });
+  /* 🔴 LO DESTAPÓ EL BANCO: la mutación «la mortalidad no manda la identidad» SOBREVIVÍA aquí. Que
+     el GAS lo probara no basta —esto es el constructor, y es donde se decide qué viaja—. Si estas
+     tres columnas salieran en blanco, la fila no casaría con la de la hembra y el upsert AÑADIRÍA
+     una suelta con un Trovan y una fecha de muerte, en vez de marcarla muerta. */
+  it('🔴 la mortalidad manda la CUATERNA, no sólo el Trovan (o no casaría con su fila)', () => {
+    const idx = matrixIndexFromRows([NUEVA]);
+    const r = buildEventBatch({ ids: [CHIP], fecha: '2026-09-12', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: idx });
+    const f = r.matriz.rows[0];
+    expect(f[col(REPRO_MATRIZ_HEADERS, 'Trovan ID')]).toBe(CHIP);
+    expect(f[col(REPRO_MATRIZ_HEADERS, 'Piscina')]).toBe('P9');
+    expect(f[col(REPRO_MATRIZ_HEADERS, 'Código genético')]).toBe('G07');
+    expect(f[col(REPRO_MATRIZ_HEADERS, 'Lote')]).toBe('L20');
+    expect(f[col(REPRO_MATRIZ_HEADERS, 'Estado')]).toBe(REPRO_ESTADO.MUERTO);
+    expect(r.matriz.keyCols).toEqual(REPRO_MATRIZ_KEYCOLS);
+  });
+
+  it('🔴 y el traslado también: cambia la ubicación pero la identidad viaja entera', () => {
+    const idx = matrixIndexFromRows([NUEVA]);
+    const t = buildTransferBatch({ fecha: '2026-09-12', tipo: REPRO_TRANSFER_TIPO.TRASLADO,
+      origen: { sala: 'S3', tanque: 'T4' }, destinos: [{ sala: 'S9', tanque: 'T9', ids: [CHIP] }],
+      composicion: {}, matrixIndex: idx, trId: 'TR-000009' });
+    const f = t.matriz.rows[0];
+    expect(f[col(REPRO_MATRIZ_HEADERS, 'Piscina')]).toBe('P9');
+    expect(f[col(REPRO_MATRIZ_HEADERS, 'Código genético')]).toBe('G07');
+    expect(f[col(REPRO_MATRIZ_HEADERS, 'Lote')]).toBe('L20');
+    expect(f[col(REPRO_MATRIZ_HEADERS, 'Sala actual')]).toBe('S9');
+  });
+
+  it('🔴 dentro del MISMO lote, la cuaterna repetida es un duplicado; con una distinta, entran las dos', () => {
+    const base = { trovan: CHIP, piscina: 'P4', codigo: 'G09', lote: 'L33', fecha: '2026-09-11' };
+    const r = buildAltaBatch([Object.assign({}, base), Object.assign({}, base)], null);
+    expect(r.report.created).toEqual([CHIP]);
+    expect(r.report.duplicados).toEqual([CHIP]);
+    const r2 = buildAltaBatch([Object.assign({}, base), Object.assign({}, base, { lote: 'L34' })], null);
+    expect(r2.report.created).toEqual([CHIP, CHIP]);
+    expect(r2.report.duplicados).toEqual([]);
   });
   it('sin fechas en la lectura (respaldo del GAS) se deja pasar: la fecha la valida el GAS al escribir', () => {
     const r = buildAltaBatch(altaDe('2026-07-01'), matrixIndexFromRows([sinFechas(VIEJA)]), { reciclaje: true });

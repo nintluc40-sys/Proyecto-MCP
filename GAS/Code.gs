@@ -21,16 +21,17 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "a609d2e84fa3";
+const GAS_VERSION = "a9cd92704b08";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
 // no nombra una capacidad no la tiene.
-//  · "matriz-reciclaje": el alta de una hembra con el microchip de una MUERTA entra como hembra
-//    nueva (ver llaveMatriz_). Un GAS anterior la FUNDIRÍA sobre la fila de la muerta.
+//  · "matriz-cuaterna" (2026-09-16): la MATRIZ se llavea por (Trovan · Piscina · Código genético ·
+//    Lote), así que el mismo chip admite varios individuos. Sustituye a "matriz-reciclaje", que
+//    nombraba la regla anterior: un chip = una hembra viva, y sólo se reutilizaba el de una muerta.
 //  · "mad-alimentacion" (2026-09-15): conoce la hoja «Maduración Alimentación». Un GAS anterior
 //    la rechazaría («Hoja no permitida») y el envío esperaría en la cola hasta caducar.
-const GAS_CAPACIDADES = ["matriz-reciclaje", "mad-alimentacion"];
+const GAS_CAPACIDADES = ["matriz-cuaterna", "mad-alimentacion"];
 
 const SS_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
 
@@ -265,7 +266,11 @@ function doPost(e) {
     else if (payload.sheetName === "Maduración Tanques")  madKeyCols = [0,1,3]; // Fecha, Sala, Tanque («Lote», en la C, va vacía: sólo guarda la posición)
     else if (payload.sheetName === "Maduración Lotes")    madKeyCols = [0,1,2]; // Fecha, Lote, Código genético (la hoja de Desoves)
     // Registro reproductivo (upsert por clave, MERGE preserva campos permanentes vacíos):
-    else if (payload.sheetName === "Maduración MATRIZ")         madKeyCols = [1];     // Trovan ID (a qué hembra del chip va cada fila: llaveMatriz_)
+    // 🔑 2026-09-16 · la MATRIZ va por la CUATERNA que identifica al individuo: Trovan, Piscina,
+    // Código genético y Lote. Era sólo [1] (el Trovan), y por eso hacía falta llaveMatriz_ para
+    // decidir por fechas a qué hembra del chip iba cada envío. Con la llave compuesta, cada
+    // individuo tiene la suya y esa pregunta desaparece.
+    else if (payload.sheetName === "Maduración MATRIZ")         madKeyCols = [1, 3, 4, 5];
     else if (payload.sheetName === "Maduración Bitácora")       madKeyCols = [0,1,2]; // Trovan + Fecha + Tipo
     else if (payload.sheetName === "Maduración Transferencias") madKeyCols = [0,3];   // TR-ID + Trovan
     var isMad   = madKeyCols !== null;
@@ -439,10 +444,11 @@ function doPost(e) {
         if (_filasNecesarias > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasNecesarias - ws.getMaxRows());
         if (ws.getMaxRows() > 1) ws.getRange(2, 2, ws.getMaxRows() - 1, 2).setNumberFormat("@");
       }
-      // ♻ En la MATRIZ, a qué hembra del chip va cada fila lo decide llaveMatriz_ (microchips
-      // reciclados), y un chip que no se puede reciclar rechaza el envío ENTERO sin escribir nada.
-      result = upsertMadRows(ws, rows, madKeyCols, madTrovanCol, madNumCol,
-        payload.sheetName === "Maduración MATRIZ" ? llaveMatriz_(rows) : null);
+      // ⚠ 2026-09-16 · aquí se le pasaba llaveMatriz_(rows) a la MATRIZ: una llave a medida que
+      // decidía por fechas y muertes a qué hembra del chip iba cada envío, y que RECHAZABA el envío
+      // entero cuando no encajaba. Con la identidad por cuaterna, la llave posicional normal ya
+      // distingue a cada individuo, así que la MATRIZ pasa por el mismo camino que las demás.
+      result = upsertMadRows(ws, rows, madKeyCols, madTrovanCol, madNumCol, null);
       if (result.error) return respond({ status: "error", message: result.error });
     }
     else if (isAlgas)  result = upsertAlgasRows(ws, rows);
@@ -1343,96 +1349,17 @@ function madInKey(row, keyCols) {
   return parts.join("|");
 }
 
-// ── Registro reproductivo · MATRIZ con microchips RECICLADOS (2026-09-14) ──
-// El microchip de una hembra MUERTA se puede volver a implantar en otra. Hasta hoy la llave de la
-// MATRIZ era sólo el Trovan ID, y el alta de la hembra nueva se FUNDÍA sobre la fila de la muerta:
-// salía «Vivo» con la fecha de muerte de la otra, y el lote, el código y la piscina de la anterior
-// se perdían. Ahora cada fila del envío va a UNA hembra del chip:
-//  · la fila de ALTA (trae «Fecha ingreso») va a la hembra de ese chip con ESA fecha de ingreso, así
-//    que reenviarla no duplica. Si no hay ninguna es una hembra NUEVA y se añade, pero sólo si todas
-//    las del chip están muertas y la fecha es posterior a su ingreso y a su muerte;
-//  · la fila sin «Fecha ingreso» (mortalidad, traslado) va a la hembra VIGENTE del chip: la viva;
-//    entre varias, o sin ninguna viva, la de ingreso más reciente; a igualdad, la de más abajo. Con
-//    el chip reciclado, una muerte anterior al ingreso de esa hembra no puede ser suya.
-// Lo que no cumple rechaza el envío ENTERO sin escribir nada, con un mensaje que el cliente no toma
-// por «servidor ocupado»: no se reintenta. La fusión de cada fila es la de upsertMadRows (una celda
-// vacía conserva el dato). La regla es la de core/trovan.js del repo, y la fijan las pruebas de
-// mad-gas-dopost.test.js.
-// ⚠ Las fechas se leen SÓLO de las filas de los chips del envío: formatear una fecha cuesta dos
-// llamadas de servicio, y con la hoja entera son decenas de segundos bajo el candado (medido en
-// ?p=rows el 2026-09-14: de 3-6 s a 40-64 s por pedir las dos columnas de fecha de la MATRIZ).
-var MATRIZ_COL_ESTADO = 8, MATRIZ_COL_MUERTE = 9, MATRIZ_COL_INGRESO = 10;
-function llaveMatriz_(envio) {
-  var claves = [], deHoja = {};
-  return {
-    preparar: function(data) {
-      var fecha = function(v) { return fechaIsoGas_(v); };
-      var enEnvio = {};
-      for (var e0 = 0; e0 < envio.length; e0++) enEnvio[madInKey(envio[e0], [1])] = 1;
-      var porChip = {};
-      for (var i = 1; i < data.length; i++) {
-        var chip = madRowKey(data[i], [1]);
-        if (!chip || enEnvio[chip] !== 1) continue;
-        deHoja[i] = "f" + i;
-        if (!porChip[chip]) porChip[chip] = [];
-        porChip[chip].push({ clave: "f" + i, ingreso: fecha(data[i][MATRIZ_COL_INGRESO]),
-          muerte: fecha(data[i][MATRIZ_COL_MUERTE]), muerto: estadoMuerto_(data[i][MATRIZ_COL_ESTADO]) });
-      }
-      for (var r = 0; r < envio.length; r++) {
-        var nr = envio[r], chipN = madInKey(nr, [1]), ingN = fecha(nr[MATRIZ_COL_INGRESO]);
-        if (!porChip[chipN]) porChip[chipN] = [];
-        var lista = porChip[chipN], destino = null, a;
-        if (ingN) {
-          for (a = 0; a < lista.length; a++) if (lista[a].ingreso === ingN) destino = lista[a];
-          if (!destino) {
-            for (a = 0; a < lista.length; a++) {
-              if (!lista[a].muerto) return "No se escribió nada: el microchip " + chipN + " lo lleva una hembra VIVA en la MATRIZ. Sólo se puede volver a usar el de una hembra muerta.";
-              var tope = lista[a].muerte > lista[a].ingreso ? lista[a].muerte : lista[a].ingreso;
-              if (ingN <= tope) return "No se escribió nada: el microchip " + chipN + " lo llevó una hembra que ingresó o murió el " + tope + ", y la hembra nueva tiene que ingresar DESPUÉS de esa fecha.";
-            }
-            destino = { clave: "n" + r, ingreso: ingN, muerte: fecha(nr[MATRIZ_COL_MUERTE]), muerto: estadoMuerto_(nr[MATRIZ_COL_ESTADO]) };
-            lista.push(destino);
-          }
-        } else {
-          for (a = 0; a < lista.length; a++) {
-            var x = lista[a];
-            if (!destino || (destino.muerto && !x.muerto) || (destino.muerto === x.muerto && x.ingreso >= destino.ingreso)) destino = x;
-          }
-          var muerteN = fecha(nr[MATRIZ_COL_MUERTE]);
-          if (destino && lista.length > 1 && muerteN && destino.ingreso && muerteN < destino.ingreso) {
-            return "No se escribió nada: la muerte del " + muerteN + " es anterior al ingreso (" + destino.ingreso + ") de la hembra que lleva hoy el microchip " + chipN + ", así que es de una hembra anterior.";
-          }
-          if (!destino) { destino = { clave: "n" + r, ingreso: "", muerte: "", muerto: false }; lista.push(destino); }
-        }
-        claves[r] = destino.clave;
-      }
-      return "";
-    },
-    deHoja: function(i) { return deHoja[i] || ""; },
-    deEnvio: function(r) { return claves[r]; }
-  };
-}
-// ¿Es una fecha de Sheets? Se mira así y no con instanceof para que valga también entre contextos
-// (las pruebas del repo corren este GAS dentro de una caja vm).
-function esFecha_(v) { return Object.prototype.toString.call(v) === "[object Date]"; }
-// Fecha ISO (yyyy-mm-dd) de una celda, o "" si no es una fecha real: una fecha de Sheets, ISO (con
-// hora detrás o sin ella) o dd/mm/yyyy. SIN regex a propósito, como madInKey: dentro de la
-// plantilla GAS() de la app las barras invertidas de una regex colapsan.
-function fechaIsoGas_(v) {
-  if (esFecha_(v)) return isNaN(v.getTime()) ? "" : formatoCelda_(v, "yyyy-MM-dd");
-  var s = String(v == null ? "" : v).trim(), y, m, d, p;
-  if (s.length >= 10 && s.charAt(4) === "-" && s.charAt(7) === "-") { y = s.slice(0, 4); m = s.slice(5, 7); d = s.slice(8, 10); }
-  else {
-    p = s.split("/");
-    if (p.length !== 3 || p[2].length !== 4 || p[1].length < 1 || p[1].length > 2 || p[0].length < 1 || p[0].length > 2) return "";
-    y = p[2]; m = (p[1].length === 1 ? "0" : "") + p[1]; d = (p[0].length === 1 ? "0" : "") + p[0];
-  }
-  for (var i = 0; i < 8; i++) if ("0123456789".indexOf((y + m + d).charAt(i)) === -1) return "";
-  var f = new Date(Date.UTC(+y, +m - 1, +d));
-  if (f.getUTCFullYear() !== +y || f.getUTCMonth() !== +m - 1 || f.getUTCDate() !== +d) return "";
-  return y + "-" + m + "-" + d;
-}
-function estadoMuerto_(v) { return String(v == null ? "" : v).trim() === "Muerto"; }
+// ── Registro reproductivo · MATRIZ: la identidad es una CUATERNA (2026-09-16) ──
+// Aquí vivía llaveMatriz_, casi noventa líneas que decidían, por fechas y muertes, a qué hembra de
+// un chip iba cada fila del envío, más fechaIsoGas_, esFecha_ y estadoMuerto_, que sólo usaba
+// ella. Se retiró entero al cambiar la regla por decisión del usuario: lo que identifica a un
+// individuo es (Trovan · Piscina · Código genético · Lote), así que la llave POSICIONAL normal
+// —madKeyCols = [1, 3, 4, 5]— ya distingue a cada uno y no hay nada que deducir.
+// 🔑 Con ella se fueron sus dos rechazos, que eran los que el usuario veía en pantalla:
+//   «...lo lleva una hembra VIVA en la MATRIZ» y «...tiene que ingresar DESPUÉS de esa fecha».
+// ⚠ Y con ella se va la ÚNICA razón por la que un envío a la MATRIZ podía rechazarse ENTERO sin
+//   escribir nada. Si alguna vez vuelve a hacer falta esa clase de guarda, se escribe de nuevo:
+//   no se resucita ésta, que medía otra cosa.
 
 // ── Health check + portal de evidencias (Fase 1) ─────────
 function doGet(e) {

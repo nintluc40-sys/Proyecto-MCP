@@ -39,7 +39,7 @@
      durante el bucket (ingreso ≤ fin del bucket y sin muerte previa), ×100.
    ============================================================ */
 import { parseAnyDate, yearMonthKey } from '../../core/dates.js';
-import { normTrovan, cadenaDelChip, individuoEnFecha, idsDeCadena } from '../../core/trovan.js';
+import { normTrovan, cadenaDelChip, individuoEnFecha, idsDeCadena, claveIndividuo } from '../../core/trovan.js';
 
 export const MAD_MATRIZ_ORIGIN = 'Maduración MATRIZ';
 export const MAD_BITACORA_ORIGIN = 'Maduración Bitácora';
@@ -201,7 +201,12 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
     };
     todas.push(rec);
     if (!filasPorChip.has(trovan)) filasPorChip.set(trovan, []);
-    filasPorChip.get(trovan).push({ rec, pos, ingreso: dIngreso ? dayKey(dIngreso) : '', muerte: dMuerte ? dayKey(dMuerte) : '', muerto: rec.estado === ESTADO_MUERTO });
+    /* `ind` = la cuaterna que IDENTIFICA al individuo (2026-09-16). Sin ella, `cadenaDelChip` no
+       distingue «dos hembras distintas del mismo chip» —que desde ese día es lo normal— de «la
+       misma fila repetida», que es el único duplicado de verdad. Y de eso depende el aviso de
+       Trovan duplicados de esta vista: sin `ind` no avisaría NUNCA. */
+    filasPorChip.get(trovan).push({ rec, pos, ingreso: dIngreso ? dayKey(dIngreso) : '', muerte: dMuerte ? dayKey(dMuerte) : '',
+      muerto: rec.estado === ESTADO_MUERTO, ind: claveIndividuo(trovan, rec.piscina, rec.codigo, rec.lote) });
   });
   const cadenas = new Map();                // chip → sus hembras en orden de vida (sólo si son varias)
   const cuentan = new Set();

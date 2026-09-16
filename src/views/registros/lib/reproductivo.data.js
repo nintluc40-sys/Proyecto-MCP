@@ -14,7 +14,7 @@
    se recicla en otra, que entra con su propia fila (ver buildAltaBatch y core/trovan.js).
    ============================================================ */
 import { sanitizeStr } from './security.js';
-import { normTrovan, fechaIso, vigenteDelChip, cadenaDelChip, individuoEnFecha, idsDeCadena } from '../../../core/trovan.js';
+import { normTrovan, fechaIso, vigenteDelChip, cadenaDelChip, individuoEnFecha, idsDeCadena, claveIndividuo } from '../../../core/trovan.js';
 
 /* ── Esquema de las 3 hojas (cabecera EXACTA + claves de upsert) ── */
 export const REPRO_MATRIZ_SHEET = 'Maduración MATRIZ';
@@ -22,7 +22,16 @@ export const REPRO_MATRIZ_HEADERS = [
   'Número', 'Trovan ID', 'Color anillo', 'Piscina', 'Código genético', 'Lote',
   'Sala actual', 'Tanque actual', 'Estado', 'Fecha muerte', 'Fecha ingreso', 'Observaciones',
 ];
-export const REPRO_MATRIZ_KEYCOLS = [1]; // Trovan ID
+/* Llave de upsert de la MATRIZ = la CUATERNA que identifica al individuo: Trovan ID (1), Piscina
+   (3), Código genético (4) y Lote (5). Ver `claveIndividuo` en core/trovan.js.
+   ⚠⚠ 2026-09-16 · ERA SÓLO `[1]`, el Trovan, y por eso hacía falta `llaveMatriz_` en el GAS: una
+   máquina de sucesión por fechas y muertes que decidía a QUÉ fila de ese chip iba cada envío. Con
+   la llave compuesta esa pregunta desaparece —cada individuo tiene su propia llave— y con ella se
+   fueron sus dos rechazos («lo lleva una hembra VIVA», «tiene que ingresar DESPUÉS»).
+   🔴 Y trae una obligación: TODO envío a la MATRIZ tiene que traer las cuatro columnas, o no casará
+   con su fila y se añadirá una nueva. La mortalidad, que sólo conocía el Trovan, las copia ahora
+   del registro que ya leyó (ver `buildEventBatch`). */
+export const REPRO_MATRIZ_KEYCOLS = [1, 3, 4, 5];
 
 export const REPRO_BITACORA_SHEET = 'Maduración Bitácora';
 export const REPRO_BITACORA_HEADERS = ['Trovan ID', 'Fecha', 'Tipo', 'Sala', 'Tanque', 'Observaciones'];
@@ -79,7 +88,12 @@ export function matrixRecordFromSheet(o) {
 }
 const esMuerto = (estado) => String(estado == null ? '' : estado).trim() === REPRO_ESTADO.MUERTO;
 /** «Fila de chip» (core/trovan.js) de un registro normalizado de la MATRIZ. */
-const filaDeChip = (rec, pos) => ({ rec, pos, ingreso: fechaIso(rec.fechaIngreso), muerte: fechaIso(rec.fechaMuerte), muerto: esMuerto(rec.estado) });
+const filaDeChip = (rec, pos) => ({
+  rec, pos, ingreso: fechaIso(rec.fechaIngreso), muerte: fechaIso(rec.fechaMuerte), muerto: esMuerto(rec.estado),
+  /* `ind` = la cuaterna que IDENTIFICA al individuo (2026-09-16). Sin ella `cadenaDelChip` no puede
+     distinguir «dos hembras distintas del mismo chip» de «la misma fila repetida». */
+  ind: claveIndividuo(rec.trovan, rec.piscina, rec.codigo, rec.lote),
+});
 /** Filas de chip agrupadas por Trovan, en el orden de la hoja. */
 function filasPorChip(records) {
   const grupos = new Map();
@@ -105,6 +119,20 @@ function registroVigente(filas) {
 export function buildMatrixIndex(records) {
   const m = new Map();
   filasPorChip(records).forEach((filas, id) => m.set(id, registroVigente(filas)));
+  /* 🔑 2026-09-16 · el MISMO índice responde a DOS preguntas distintas, y conviene no confundirlas:
+       · `get(chip)`      → la hembra VIGENTE de ese chip. La usan los EVENTOS (desove, mortalidad),
+                            que sólo traen el Trovan y no saben de qué individuo son.
+       · `get(cuaterna)`  → ESE individuo exacto. La usa el ALTA, que sí conoce piscina, código y
+                            lote y necesita saber si ya existe.
+     Van en un solo Map a propósito: dos estructuras separadas habrían obligado a cambiar la firma
+     de todos los llamadores. No pueden chocar porque la cuaterna lleva separadores de control
+     (), que `normTrovan` no deja pasar en un chip. */
+  (records || []).forEach((r) => {
+    const rec = r || {};
+    const chip = normTrovan(rec.trovan);
+    if (!chip) return;
+    m.set(claveIndividuo(chip, rec.piscina, rec.codigo, rec.lote), rec);
+  });
   return m;
 }
 /** ¿El día ISO `dia` es anterior al ingreso de la hembra vigente de un chip RECICLADO? Entonces el
@@ -131,18 +159,21 @@ export function syncPayload(sheetName, headers, keyCols, rows) {
  *  Omite filas vacías; reporta filas con datos pero sin Trovan (sinTrovan), Trovan repetidos
  *  dentro del lote (duplicados) y —si hay matriz— los que ya existen (existentes).
  *
- *  ♻ MICROCHIP RECICLADO (pedido del usuario, 2026-09-14). Un Trovan que ya está en la MATRIZ se
- *  vuelve a dar de alta si la hembra que lo lleva está MUERTA: la nueva entra con su propia fila
- *  —su lote, su código, su piscina— y la anterior se queda como estaba. Cada fallo va aparte:
- *    · la hembra vigente del chip está viva → `existentes`, como siempre;
- *    · la fecha de ingreso no es posterior a la última fecha del chip → `reciclajeFecha`;
- *    · sin `opts.reciclaje` —confirmar que el GAS publicado sabe reciclar— → `reciclajeSinGas`.
- *      Es la salvaguarda: un GAS anterior FUNDIRÍA el alta sobre la fila de la muerta.
- *  Las que pasan van a `created` y también a `reciclados`. Si la lectura no trae fechas
- *  (`fechaLimite` vacía), la fecha la comprueba el GAS al escribir. */
+ *  🔑 UN CHIP, VARIOS INDIVIDUOS (decisión del usuario, 2026-09-16). Lo que identifica a una hembra
+ *  es la CUATERNA (Trovan · Piscina · Código genético · Lote), así que **el mismo Trovan se puede
+ *  dar de alta tantas veces como haga falta mientras esas tres no se repitan a la vez**. Sólo hay
+ *  un motivo de rechazo: que esa cuaterna YA exista (en la hoja → `existentes`; dentro del propio
+ *  lote → `duplicados`). `reciclados` cuenta las altas cuyo chip ya tenía otro individuo: es
+ *  INFORMACIÓN para que el técnico vea que está reutilizando un código, no un freno.
+ *
+ *  ⚠⚠ ESTO RECHAZABA ALTAS BUENAS, y es el defecto que vino a corregir. Del 09-14 al 09-16 exigía
+ *  que la anterior estuviera MUERTA (`existentes`), que el ingreso fuera POSTERIOR a su muerte
+ *  (`reciclajeFecha`) y que el GAS anunciara saber reciclar (`reciclajeSinGas`, que en pantalla
+ *  decía «actualiza el GAS»). Los tres motivos se retiraron con la regla que los sostenía; el
+ *  parámetro `opts.reciclaje` ya no se mira. */
 export function buildAltaBatch(forms, matrixIndex, opts) {
-  const reciclaje = !!(opts && opts.reciclaje);
-  const report = { created: [], sinTrovan: 0, duplicados: [], existentes: [], invalidFormat: [], reciclados: [], reciclajeFecha: [], reciclajeSinGas: [] };
+  void opts;                                       // `reciclaje` se retiró: ver la cabecera
+  const report = { created: [], sinTrovan: 0, duplicados: [], existentes: [], invalidFormat: [], reciclados: [] };
   const seen = new Set(); const rows = [];
   const OTHER = ['numero', 'color', 'piscina', 'codigo', 'lote', 'sala', 'tanque'];
   (forms || []).forEach((form) => {
@@ -152,15 +183,16 @@ export function buildAltaBatch(forms, matrixIndex, opts) {
     if (!hasData) return;                          // fila totalmente vacía → se ignora
     if (!trovan) { report.sinTrovan++; return; }   // tiene datos pero le falta el Trovan
     if (!isValidTrovan(trovan)) { report.invalidFormat.push(trovan); return; } // formato corrupto → NO se registra, señalado
-    if (seen.has(trovan)) { report.duplicados.push(trovan); return; }
+    /* 🔑 Lo que decide si un alta vale es la CUATERNA, no el chip: el mismo Trovan puede entrar
+       tantas veces como haga falta mientras piscina, código genético y lote no se repitan los
+       tres a la vez. Ni el estado de la anterior ni las fechas entran ya en la decisión. */
+    const clave = claveIndividuo(trovan, form.piscina, form.codigo, form.lote);
+    if (seen.has(clave)) { report.duplicados.push(trovan); return; }   // repetido DENTRO del lote
+    if (matrixIndex && matrixIndex.get(clave)) { report.existentes.push(trovan); return; } // ya en la hoja
+    /* Informativo, no un freno: el chip ya tenía otro individuo. Se cuenta para que el técnico vea
+       que está reutilizando un código y confirme que es lo que quería. */
     const previo = matrixIndex ? matrixIndex.get(trovan) : null;
-    if (previo) {
-      if (!esMuerto(previo.estado)) { report.existentes.push(trovan); return; }
-      const fecha = fechaIso(form.fecha);
-      if (!fecha || (previo.fechaLimite && fecha <= previo.fechaLimite)) { report.reciclajeFecha.push(trovan); return; }
-      if (!reciclaje) { report.reciclajeSinGas.push(trovan); return; }
-    }
-    seen.add(trovan);
+    seen.add(clave);
     rows.push(rowFromObj(REPRO_MATRIZ_HEADERS, {
       'Número': sanitizeStr(form.numero),
       'Trovan ID': trovan,
@@ -222,7 +254,16 @@ export function buildEventBatch({ ids, fecha, tipo, matrixIndex } = {}) {
     }));
     if (tipo === REPRO_EVENTO.MORTALIDAD) {
       if (dead) report.alreadyDead.push(id); // informativo; el re-registro es idempotente
-      matRows.push(rowFromObj(REPRO_MATRIZ_HEADERS, { 'Trovan ID': id, 'Estado': REPRO_ESTADO.MUERTO, 'Fecha muerte': fx }));
+      /* 🔴 Las tres columnas de identidad viajan AUNQUE no se editen. Desde que la llave de la
+         MATRIZ es la cuaterna (2026-09-16), una fila de mortalidad con la piscina, el código y el
+         lote en blanco no casaría con ninguna: en vez de marcar muerta a la hembra, el upsert
+         AÑADIRÍA una fila suelta con un Trovan y una fecha de muerte. Salen del registro que ya se
+         leyó de la hoja, así que no se inventa nada. */
+      matRows.push(rowFromObj(REPRO_MATRIZ_HEADERS, {
+        'Trovan ID': id,
+        'Piscina': sanitizeStr(rec.piscina), 'Código genético': sanitizeStr(rec.codigo), 'Lote': sanitizeStr(rec.lote),
+        'Estado': REPRO_ESTADO.MUERTO, 'Fecha muerte': fx,
+      }));
     }
     report.processed.push(id);
   });
@@ -270,7 +311,16 @@ export function buildTransferBatch({ fecha, tipo, origen, destinos, composicion,
       if (matrixIndex && rec && ((org.sala && String(rec.sala) !== org.sala) || (org.tanque && String(rec.tanque) !== org.tanque))) {
         report.wrongLocation.push(id); return; // no está en el origen declarado → se omite
       }
-      matRows.push(rowFromObj(REPRO_MATRIZ_HEADERS, { 'Trovan ID': id, 'Sala actual': dSala, 'Tanque actual': dTanque }));
+      /* 🔴 Igual que en la mortalidad: desde que la llave de la MATRIZ es la cuaterna, la piscina,
+         el código y el lote tienen que VIAJAR aunque la transferencia no los toque, o la fila no
+         casa con la suya y el upsert añade una nueva. Salen de `rec`, que ya se leyó de la hoja.
+         ⚠ Si no hay `matrixIndex` no hay `rec`, y entonces sí van en blanco: es el modo degradado
+         de siempre —sin la MATRIZ tampoco se valida el origen— y no empeora nada. */
+      matRows.push(rowFromObj(REPRO_MATRIZ_HEADERS, {
+        'Trovan ID': id,
+        'Piscina': sanitizeStr(rec && rec.piscina), 'Código genético': sanitizeStr(rec && rec.codigo), 'Lote': sanitizeStr(rec && rec.lote),
+        'Sala actual': dSala, 'Tanque actual': dTanque,
+      }));
       trRows.push(rowFromObj(REPRO_TRANSFER_HEADERS, {
         'TR-ID': trId, 'Fecha': fx, 'Tipo': tp, 'Trovan ID': id,
         'Sala origen': org.sala, 'Tanque origen': org.tanque,

@@ -45,16 +45,42 @@ export function normTrovan(s) {
   return sanitizeStr(String(s == null ? '' : s)).replace(/\s+/g, '').toUpperCase();
 }
 
-/* ── Microchips RECICLADOS (2026-09-14) ──────────────────────────────────────
-   El microchip de una hembra MUERTA se puede volver a implantar en otra, así que un Trovan ID ya
-   no nombra a UNA hembra sino a un chip, y la MATRIZ puede tener varias filas suyas: una por
-   individuo. Una sucede a la anterior sólo si la anterior está muerta y la nueva ingresó DESPUÉS
-   de su ingreso y de su muerte: así sus vidas no se pisan y cada evento de la Bitácora es de una
-   sola, la que había ingresado en su fecha.
-   Aquí vive esa regla para la escritura (Registros) y la lectura (el tablero de Maduración). El GAS
-   la repite con su propio código (llaveMatriz_) e `index (8)` la copia en línea (_repro…).
-   Trabajan con «filas de chip» { ingreso, muerte, muerto, pos }: fechas en ISO ('' si no hay) y
-   `pos` = el orden en la hoja. */
+/* ── QUÉ IDENTIFICA A UN INDIVIDUO (2026-09-16, decisión del usuario) ─────────
+   🔑 Un Trovan ID **NO nombra a una hembra: nombra a un CHIP**, y el mismo código se reutiliza. La
+   identidad de un individuo es la CUATERNA
+
+       (Trovan ID · Piscina · Código genético · Lote)
+
+   y el mismo chip puede darse de alta tantas veces como haga falta **mientras esas tres no se
+   repitan a la vez**. No hace falta que la anterior esté muerta, ni que las fechas se ordenen.
+
+   ⚠⚠ ANTES ERA OTRA COSA, y por eso esto se explica tan largo. Del 2026-09-14 al 09-16 la regla fue
+   «un chip nombra a UNA hembra viva a la vez, y sólo se recicla el de una muerta, con el ingreso
+   posterior a su muerte». Con ella el alta masiva RECHAZABA altas legítimas con tres mensajes
+   distintos —«lo lleva una hembra VIVA», «tiene que ingresar DESPUÉS de esa fecha» y «actualiza el
+   GAS»—, que es justo lo que el usuario reportó. La sucesión por muerte deja de ser una CONDICIÓN:
+   pasa a ser sólo una de las formas en que un chip acumula individuos.
+
+   Aquí vive la definición para la ESCRITURA (Registros) y la LECTURA (el tablero de Maduración).
+   El GAS la repite como llave POSICIONAL compuesta —mucho menos código que la máquina de sucesión
+   que había— e `index (8)` la copia en línea (_repro…).
+   Trabajan con «filas de chip» { ingreso, muerte, muerto, pos, ind }: fechas en ISO ('' si no hay),
+   `pos` = el orden en la hoja e `ind` = la cuaterna de arriba. */
+
+/** Clave de IDENTIDAD de un individuo: chip + piscina + código genético + lote, normalizados.
+ *  Definición ÚNICA: la usan el alta (para saber si ya existe), el upsert del GAS (como llave) y la
+ *  lectura (para no cantar como duplicadas a dos hembras distintas).
+ *  ⚠ Se pliegan espacios y mayúsculas SÓLO para comparar; en la hoja se escribe lo que se tecleó.
+ *  ⚠ El separador es un carácter de control, que no sale de un teclado: con «|» o «·», un lote que
+ *  lo llevara dentro podría fabricar la clave de OTRO individuo. */
+/* ⚠ El separador se escribe con `fromCharCode`, NO como un literal, y no es manía: al teclearlo
+   directo entra en el archivo como carácter de CONTROL crudo —invisible en el editor, en un `grep`
+   y en un ancla de banco—. Con esto el fuente es ASCII legible y el valor sigue siendo el mismo. */
+const SEP_IND = String.fromCharCode(31);
+export function claveIndividuo(trovan, piscina, codigo, lote) {
+  const parte = (v) => sanitizeStr(String(v == null ? '' : v)).replace(/\s+/g, ' ').trim().toUpperCase();
+  return [normTrovan(trovan), parte(piscina), parte(codigo), parte(lote)].join(SEP_IND);
+}
 
 /** Fecha ISO (yyyy-mm-dd) de una celda, o '' si no es una fecha real. Admite Date, ISO (con hora
  *  detrás o sin ella) y dd/mm/yyyy, que es como llegan del GAS y del store del tablero. */
@@ -74,7 +100,8 @@ export function fechaIso(v) {
   return String(y) + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
 }
 
-const topeDe = (f) => (f.muerte > f.ingreso ? f.muerte : f.ingreso);
+/* `topeDe` (la última fecha de una fila: su muerte o, si no la hay, su ingreso) se retiró el
+   2026-09-16 con la regla de sucesión que la usaba. La fecha ya no decide si un alta vale. */
 
 /** Individuo VIGENTE de un chip: el que lo lleva hoy, y por eso el destino de la mortalidad y del
  *  traslado, que no dicen de qué individuo son. La viva; entre varias, o sin ninguna viva, la de
@@ -90,16 +117,24 @@ export function vigenteDelChip(filas) {
 }
 
 /** Los individuos de un chip EN ORDEN DE VIDA (ingreso; sin fecha, primero; a igualdad, el orden de
- *  la hoja). `cadena` son los que se suceden; `conflictos`, las filas que no encajan —otra hembra
- *  viva con el mismo chip, o un ingreso que no es posterior a la anterior—: eso no es un reciclaje,
- *  es un error de la hoja. */
+ *  la hoja). `cadena` son todos los individuos DISTINTOS del chip; `conflictos`, las filas que
+ *  repiten una identidad ya vista —la MISMA cuaterna dos veces—, que sí es un error de la hoja.
+ *
+ *  ⚠⚠ 2026-09-16 · ESTO CONTABA OTRA COSA. Exigía que cada fila SUCEDIERA a la anterior (la
+ *  anterior muerta y el ingreso posterior a su muerte) y mandaba a `conflictos` todo lo demás. Con
+ *  la identidad por cuaterna eso convertía en «error» lo que ahora es normal: dos hembras VIVAS
+ *  del mismo chip en piscinas o lotes distintos. Y `conflictos` no es decorativo —el tablero de
+ *  Maduración lo usa para marcar el chip como duplicado (`data.js`)—, así que sin este cambio el
+ *  alta nueva habría llenado la vista de avisos falsos. Lo que se vigila ahora es lo que de verdad
+ *  no puede pasar: la misma cuaterna repetida. */
 export function cadenaDelChip(filas) {
   const orden = (filas || []).slice().sort((a, b) => (a.ingreso < b.ingreso ? -1 : a.ingreso > b.ingreso ? 1 : a.pos - b.pos));
-  const cadena = [], conflictos = [];
+  const cadena = [], conflictos = [], vistas = new Set();
   orden.forEach((f) => {
-    const prev = cadena[cadena.length - 1];
-    if (!prev || (prev.muerto && f.ingreso && f.ingreso > topeDe(prev))) cadena.push(f);
-    else conflictos.push(f);
+    const id = f.ind == null ? 'pos' + SEP_IND + f.pos : f.ind;   // sin `ind` no hay con qué duplicar
+    if (vistas.has(id)) { conflictos.push(f); return; }
+    vistas.add(id);
+    cadena.push(f);
   });
   return { cadena, conflictos };
 }

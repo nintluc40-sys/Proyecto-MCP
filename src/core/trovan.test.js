@@ -77,7 +77,10 @@ describe('core · la LECTURA de Maduración cruza con la misma clave', () => {
 /* ── Microchips RECICLADOS (2026-09-14) ──────────────────────────────────
    El chip de una hembra muerta vuelve a usarse en otra: un Trovan deja de nombrar a UNA hembra.
    Cada fixture está hecho para que la regla EQUIVOCADA más probable dé otro resultado. */
-const fila = (pos, ingreso, muerte, muerto) => ({ pos, ingreso, muerte, muerto });
+/* `ind` = la cuaterna que IDENTIFICA al individuo (2026-09-16). Por defecto cada fila es un
+   individuo DISTINTO —el caso normal—; se pasa el mismo `ind` a dos filas para ejercer el único
+   conflicto que queda: la misma identidad repetida. */
+const fila = (pos, ingreso, muerte, muerto, ind) => ({ pos, ingreso, muerte, muerto, ind: ind == null ? 'IND-' + pos : ind });
 
 describe('core · fechaIso', () => {
   it('normaliza las formas en que llegan las fechas: ISO (con hora o sin ella), dd/mm/yyyy y Date', () => {
@@ -123,32 +126,39 @@ describe('core · cadenaDelChip (qué filas son individuos que se suceden)', () 
     expect(r.cadena).toEqual([vieja, nueva]);
     expect(r.conflictos).toEqual([]);
   });
-  it('🔴 dos hembras VIVAS con el mismo chip no son un reciclaje: la segunda es un conflicto', () => {
+  /* 🔑 2026-09-16 · AQUÍ HABÍA CUATRO PRUEBAS QUE FIJABAN LA REGLA CONTRARIA, y las cuatro se
+     reescriben porque la regla cambió por decisión del usuario, no porque estuvieran mal escritas.
+     Exigían que cada individuo SUCEDIERA al anterior —la anterior muerta y el ingreso posterior a
+     su muerte— y mandaban todo lo demás a `conflictos`. Eso convertía en «error» lo que ahora es lo
+     normal: varias hembras del mismo chip, vivas a la vez, en piscinas o lotes distintos. */
+  it('🔴 dos hembras VIVAS con el mismo chip YA NO son un conflicto: son dos individuos', () => {
     const a = fila(0, '2026-01-05', '', false);
     const b = fila(1, '2026-08-01', '', false);
+    expect(cadenaDelChip([a, b])).toEqual({ cadena: [a, b], conflictos: [] });
+  });
+  it('🔴 las fechas YA NO deciden: ingresar el mismo día de la muerte de la anterior, o antes, vale', () => {
+    const vieja = fila(0, '2026-01-05', '2026-07-08', true);
+    expect(cadenaDelChip([vieja, fila(1, '2026-07-08', '', false)]).conflictos).toHaveLength(0);
+    expect(cadenaDelChip([vieja, fila(1, '2026-01-01', '', false)]).conflictos).toHaveLength(0);
+  });
+  it('🔴 lo ÚNICO que sigue siendo conflicto es la MISMA identidad repetida', () => {
+    const a = fila(0, '2026-05-01', '', false, 'MISMA');
+    const b = fila(1, '2026-08-01', '', false, 'MISMA');   // misma cuaterna: no puede haber dos
     expect(cadenaDelChip([a, b])).toEqual({ cadena: [a], conflictos: [b] });
   });
-  it('🔴 ingresar EL MISMO día de la muerte de la anterior no basta: tiene que ser después', () => {
-    const vieja = fila(0, '2026-01-05', '2026-07-08', true);
-    expect(cadenaDelChip([vieja, fila(1, '2026-07-08', '', false)]).conflictos).toHaveLength(1);
-    expect(cadenaDelChip([vieja, fila(1, '2026-07-09', '', false)]).conflictos).toHaveLength(0);
+  it('el fixture ejerce algo: cambiar SÓLO la identidad convierte el conflicto en dos individuos', () => {
+    /* Si la regla mirase las fechas o el estado, este par daría lo mismo que el de arriba: son las
+       MISMAS fechas y los mismos estados. Lo único que cambia es `ind`. */
+    const a = fila(0, '2026-05-01', '', false, 'UNA');
+    const b = fila(1, '2026-08-01', '', false, 'OTRA');
+    expect(cadenaDelChip([a, b])).toEqual({ cadena: [a, b], conflictos: [] });
   });
-  it('🔴 el tope es el MAYOR de ingreso y muerte de la anterior: una muerte mal tecleada, o sin teclear, no abre hueco', () => {
-    /* ⚠ Tiene que ser con el MISMO día de ingreso. Una sucesora que ingresa ANTES que la anterior
-       ya queda delante al ordenar por vida, así que ese caso no distingue el tope de «sólo la
-       muerte» (lo cazó la mutación C02 de mutar-repro-reciclaje, que sobrevivía). */
-    const sucia = fila(0, '2026-05-01', '2026-04-01', true);           // murió «antes» de ingresar
-    expect(cadenaDelChip([sucia, fila(1, '2026-05-01', '', false)]).conflictos).toHaveLength(1);
-    const sinMuerte = fila(0, '2026-05-01', '', true);                  // muerta sin fecha de muerte
-    expect(cadenaDelChip([sinMuerte, fila(1, '2026-05-01', '', false)]).conflictos).toHaveLength(1);
-    expect(cadenaDelChip([sinMuerte, fila(1, '2026-05-02', '', false)]).conflictos).toHaveLength(0);
-  });
-  it('una muerta SIN fechas puede tener sucesora; una fila SIN fecha de ingreso nunca sucede a otra', () => {
+  it('sin fechas tampoco pasa nada: siguen siendo individuos distintos si su identidad lo es', () => {
     const sinFechas = fila(0, '', '', true);
     const conFecha = fila(1, '2026-02-01', '', false);
-    expect(cadenaDelChip([sinFechas, conFecha])).toEqual({ cadena: [sinFechas, conFecha], conflictos: [] });
     const otraSinFecha = fila(2, '', '', false);
-    expect(cadenaDelChip([sinFechas, conFecha, otraSinFecha])).toEqual({ cadena: [sinFechas, conFecha], conflictos: [otraSinFecha] });
+    expect(cadenaDelChip([sinFechas, conFecha, otraSinFecha]))
+      .toEqual({ cadena: [sinFechas, otraSinFecha, conFecha], conflictos: [] });
   });
 });
 

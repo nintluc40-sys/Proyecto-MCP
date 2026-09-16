@@ -24,7 +24,12 @@ const ENGINE = join(RAIZ, 'public/registros/engine.js');
 const SHELL = join(RAIZ, 'src/views/registros/shell.html');
 
 const EXPORTAR = ['_REPRO_SHEETS', '_reproAltaHTML', 'madReproAltaBatch', '_reproEventosHTML', 'madReproProcess',
-  '_reproTransferHTML', 'madReproTransfer', '_reproConsultaHTML', 'madReproTrace'];
+  '_reproTransferHTML', 'madReproTransfer', '_reproConsultaHTML', 'madReproTrace',
+  /* 2026-09-16 · las columnas que se le piden a la MATRIZ. No es un detalle: desde que la llave es
+     la cuaterna, si esta lista no trae Piscina, Código genético y Lote, la mortalidad y el traslado
+     mandan la llave a medias y el upsert AÑADE una fila suelta en vez de actualizar la suya. Lo
+     destapó el banco: dos mutaciones que recortaban esta lista SOBREVIVÍAN. */
+  '_REPRO_MATRIZ_COLS'];
 const H = {};
 const avisos = [];
 const envios = [];
@@ -75,8 +80,10 @@ const VIEJA = { 'Número': '7', 'Trovan ID': CHIP, 'Piscina': 'P2', 'Código gen
 const NUEVA = { 'Número': '31', 'Trovan ID': CHIP, 'Piscina': 'P9', 'Código genético': 'G07', 'Lote': 'L20', 'Sala actual': 'S3',
   'Tanque actual': 'T4', 'Estado': 'Vivo', 'Fecha muerte': '', 'Fecha ingreso': '2026-08-01' };
 const VIVA = { 'Trovan ID': '0008218CCC', 'Sala actual': 'S5', 'Tanque actual': 'T1', 'Estado': 'Vivo', 'Fecha ingreso': '2026-02-01' };
-const CON_CAPS = JSON.stringify({ ok: true, version: 'abcdefabcdef', caps: ['matriz-reciclaje'] });
-const SIN_CAPS = JSON.stringify({ ok: true, version: '63498421af0b' });
+/* 2026-09-16 · `SIN_CAPS` se retira con el portón que lo usaba: el alta ya no le pregunta al GAS
+   por ninguna capacidad, así que un GAS «sin ella» dejó de ser un caso. `CON_CAPS` se queda porque
+   sigue siendo la respuesta normal de ?p=ver para el resto del arnés. */
+const CON_CAPS = JSON.stringify({ ok: true, version: 'abcdefabcdef', caps: ['matriz-cuaterna'] });
 let S;
 
 beforeEach(() => {
@@ -99,75 +106,81 @@ function teclearAlta(fecha, filas) {
   caja('rc-alta').innerHTML = H._reproAltaHTML();
   document.getElementById('repro-a-fecha').value = fecha;
   const trs = document.querySelectorAll('#repro-a-tbody tr');
-  filas.forEach(([trovan, lote, sala, tanque], i) => {
+  /* 2026-09-16 · entran PISCINA y CÓDIGO: son parte de la identidad, y sin ellos ninguna prueba
+     podría distinguir «la misma hembra otra vez» de «otra hembra con el mismo chip». */
+  filas.forEach(([trovan, piscina, codigo, lote, sala, tanque], i) => {
     const pon = (c, v) => { trs[i].querySelector(`[data-c="${c}"]`).value = v; };
-    pon(1, trovan); pon(5, lote); pon(6, sala); pon(7, tanque);
+    pon(1, trovan); pon(3, piscina); pon(4, codigo); pon(5, lote); pon(6, sala); pon(7, tanque);
   });
 }
 const trovanes = () => envios.flatMap((p) => p.rows.map((r) => r[1]));
 const informeAlta = () => document.getElementById('repro-a-report').textContent;
 const preguntoVer = () => pedidas.some((u) => u.includes('p=ver'));
 
-describe('♻ alta · el chip de una hembra muerta sólo sale hacia un GAS que sabe reciclar', () => {
-  it('🔴 con «matriz-reciclaje» en ?p=ver, la hembra nueva SE ENVÍA con sus datos', async () => {
-    teclearAlta('2026-07-20', [[CHIP, 'L33', 'S2', 'T8']]);
+/* ⚠⚠ 2026-09-16 · ESTE BLOQUE PROBABA UN PORTÓN QUE YA NO EXISTE. Se llamaba «el chip de una hembra
+   muerta sólo sale hacia un GAS que sabe reciclar» y fijaba, con siete pruebas, los tres rechazos
+   que el usuario reportó: preguntar a ?p=ver por «matriz-reciclaje» y no enviar sin él, exigir que
+   la anterior estuviera muerta, y exigir que la fecha fuera posterior a su muerte.
+   Con la identidad por CUATERNA (Trovan · Piscina · Código genético · Lote) el alta no negocia nada
+   con el servidor: sólo mira si esa cuaterna ya existe. Lo que se prueba aquí es eso, y sobre todo
+   lo que ANTES fallaba — que el alta SALGA—. */
+describe('alta masiva · el mismo Trovan entra tantas veces como cuaternas distintas tenga', () => {
+  it('🔴 con el chip de una MUERTA sale, y ya no se le pregunta nada al GAS', async () => {
+    teclearAlta('2026-07-20', [[CHIP, 'P4', 'G09', 'L33', 'S2', 'T8']]);
     await H.madReproAltaBatch();
-    expect(preguntoVer()).toBe(true);
+    expect(preguntoVer()).toBe(false);          // antes preguntaba por «matriz-reciclaje»
     expect(trovanes()).toEqual([CHIP]);
     expect(envios[0].rows[0][5]).toBe('L33');
-    expect(informeAlta()).toContain('reciclado');
   });
 
-  for (const [caso, respuesta] of [
-    ['un GAS con sello pero SIN la capacidad', SIN_CAPS],
-    ['un GAS anterior a la prueba de versión (texto)', 'FichasLarv-OK'],
-    ['un GAS que no responde', new Error('sin red')],
-  ]) {
-    it(`🔴 con ${caso} NO se envía, y lo demás del lote sí`, async () => {
-      respuestaVer = respuesta;
-      teclearAlta('2026-07-20', [['000821BC99', 'L33', 'S2', 'T8'], [CHIP, 'L33', 'S2', 'T9']]);
-      await H.madReproAltaBatch();
-      expect(trovanes()).toEqual(['000821BC99']);
-      expect(informeAlta()).toContain(CHIP);
-      expect(informeAlta()).toContain('GAS');
-      expect(avisos.some((a) => a.tipo === 'warn' && a.msg.includes('GAS'))).toBe(true);
-    });
-  }
+  it('🔴 con el chip de una VIVA también sale: antes era «ya existente»', async () => {
+    teclearAlta('2026-09-10', [['0008218CCC', 'P4', 'G09', 'L33', 'S2', 'T8']]);
+    await H.madReproAltaBatch();
+    expect(envios).toHaveLength(1);
+    expect(trovanes()).toEqual(['0008218CCC']);
+  });
 
-  it('🔴 si SÓLO había chips reciclados y el GAS no sabe, no sale nada y el aviso dice por qué (no «¿falta el Trovan?»)', async () => {
-    respuestaVer = SIN_CAPS;
-    teclearAlta('2026-07-20', [[CHIP, 'L33', 'S2', 'T8']]);
+  it('🔴 la FECHA ya no frena: el mismo día de la muerte de la anterior sale igual', async () => {
+    teclearAlta('2026-07-08', [[CHIP, 'P4', 'G09', 'L33', 'S2', 'T8']]);
+    await H.madReproAltaBatch();
+    expect(envios).toHaveLength(1);
+    expect(trovanes()).toEqual([CHIP]);
+  });
+
+  it('🔴 lo único que NO sale es repetir la MISMA cuaterna, y el informe lo dice', async () => {
+    /* La que está en la MATRIZ del fixture es VIEJA = (CHIP · P2 · G01 · L12): se teclea igual. */
+    teclearAlta('2026-09-11', [[CHIP, 'P2', 'G01', 'L12', 'S3', 'T4']]);
     await H.madReproAltaBatch();
     expect(envios).toHaveLength(0);
-    const aviso = avisos[avisos.length - 1];
-    expect(aviso.msg).toContain('GAS');
-    expect(aviso.msg).not.toContain('falta el Trovan');
+    expect(informeAlta()).toContain('ya existente');
+    expect(avisos[avisos.length - 1].msg).not.toContain('falta el Trovan');
     expect(document.querySelector('#repro-a-tbody [data-c="1"]').value).toBe(CHIP);   // lo tecleado sigue ahí
   });
 
-  it('un lote SIN chips reciclados no pregunta nada al GAS y se envía como siempre', async () => {
-    respuestaVer = new Error('no debería preguntarse');
-    teclearAlta('2026-09-10', [['000821BC99', 'L33', 'S2', 'T8']]);
+  it('el fixture ejerce algo: cambiando SÓLO el lote, esa misma fila ya sale', async () => {
+    teclearAlta('2026-09-11', [[CHIP, 'P2', 'G01', 'L13', 'S3', 'T4']]);
     await H.madReproAltaBatch();
-    expect(preguntoVer()).toBe(false);
-    expect(trovanes()).toEqual(['000821BC99']);
+    expect(envios).toHaveLength(1);
+    expect(trovanes()).toEqual([CHIP]);
   });
 
-  it('el chip de una hembra VIVA sigue siendo «ya existente», sin preguntar al GAS', async () => {
-    teclearAlta('2026-09-10', [['0008218CCC', 'L33', 'S2', 'T8']]);
+  it('el informe avisa de que ese Trovan ya lo usa otro individuo (informativo, no un freno)', async () => {
+    teclearAlta('2026-07-20', [[CHIP, 'P4', 'G09', 'L33', 'S2', 'T8']]);
     await H.madReproAltaBatch();
-    expect(preguntoVer()).toBe(false);
-    expect(envios).toHaveLength(0);
-    expect(informeAlta()).toContain('ya existente');
+    expect(envios).toHaveLength(1);
+    /* Dos aserciones y no una: el chip de arriba y el renglón de detalle dicen los dos «ya usado»,
+       así que con un solo `toContain` se podía apagar cualquiera de los dos y la prueba seguía en
+       verde — lo destapó el banco, con E07 y E10 sobreviviendo. */
+    expect(informeAlta()).toContain('con Trovan ya usado');                  // el chip del resumen
+    expect(informeAlta()).toContain('Trovan ya usado por otro individuo');   // el renglón de detalle
   });
 
-  it('🔴 con una fecha que no es posterior a la muerte, no sale ni se pregunta al GAS, y el informe lo explica', async () => {
-    teclearAlta('2026-07-08', [[CHIP, 'L33', 'S2', 'T8']]);
-    await H.madReproAltaBatch();
-    expect(preguntoVer()).toBe(false);
-    expect(envios).toHaveLength(0);
-    expect(informeAlta()).toContain(CHIP);
-    expect(informeAlta()).toContain('posterior');
+  it('🔴 a la MATRIZ se le piden las columnas de la IDENTIDAD, o la mortalidad rompería su fila', () => {
+    /* Sin Piscina, Código genético y Lote en la lectura, `buildEventBatch` y `buildTransferBatch`
+       mandarían la llave incompleta y el upsert añadiría una fila suelta en vez de actualizar. */
+    for (const c of ['Trovan ID', 'Piscina', 'Código genético', 'Lote', 'Sala actual', 'Tanque actual', 'Estado']) {
+      expect(H._REPRO_MATRIZ_COLS, c).toContain(c);
+    }
   });
 });
 

@@ -525,12 +525,23 @@ describe('maduracion.data · ♻ un chip reciclado son hembras distintas', () =>
     expect([d.desoves[0].sala, d.desoves[0].tanque]).toEqual(['S1', 'T1']);
   });
 
-  it('🔴 dos hembras VIVAS con el mismo chip siguen siendo un Trovan repetido: cuenta la de ingreso más antiguo', () => {
+  /* 🔑 2026-09-16 · ESTA PRUEBA DECÍA LO CONTRARIO, y se reescribe porque cambió la regla: la
+     identidad es la CUATERNA (Trovan · Piscina · Código genético · Lote), así que dos hembras VIVAS
+     del mismo chip en lotes distintos son dos individuos, no un dato repetido. Dejarlas marcadas
+     como duplicadas habría llenado esta vista de avisos falsos en cuanto el alta las admitiera. */
+  it('🔴 dos hembras VIVAS con el mismo chip YA NO son un repetido: son dos, y cuentan las dos', () => {
     const otraViva = Object.assign({}, NUEVA, { 'Fecha ingreso': '2026-09-01', Lote: 'L99' });
     const r = buildReproModel([otraViva, NUEVA], [], []);
+    expect(r.duplicateTrovans).toEqual([]);
+    expect(r.females).toHaveLength(2);
+  });
+
+  it('🔴 y el repetido DE VERDAD —la misma cuaterna dos veces— se sigue avisando', () => {
+    /* El fixture distingue: es el caso de arriba con el MISMO lote en las dos filas. */
+    const clonada = Object.assign({}, NUEVA, { 'Fecha ingreso': '2026-09-01' });
+    const r = buildReproModel([clonada, NUEVA], [], []);
     expect(r.duplicateTrovans).toEqual([CHIP]);
     expect(r.females).toHaveLength(1);
-    expect(r.byTrovan.get(CHIP).lote).toBe('L20');
   });
 
   it('🔴 con las fechas de la MATRIZ como las trae el store (dd/mm/yyyy) sale exactamente lo mismo', () => {
@@ -544,10 +555,12 @@ describe('maduracion.data · ♻ un chip reciclado son hembras distintas', () =>
     expect(s.byTrovan.get(CHIP).lote).toBe('L20');
   });
 
-  it('🔴 una hembra que ingresó el MISMO día de la muerte de la anterior no la sucede: es un repetido', () => {
+  /* 🔑 2026-09-16 · también se reescribe: las FECHAS dejaron de decidir quién es quién. Una hembra
+     que ingresa el mismo día de la muerte de la anterior es otro individuo si su cuaterna lo es. */
+  it('🔴 la FECHA ya no decide: ingresar el mismo día de la muerte de la anterior no la hace repetida', () => {
     const mismoDia = Object.assign({}, NUEVA, { 'Fecha ingreso': '2026-07-08' });
     const r = buildReproModel([VIEJA, mismoDia], [], []);
-    expect(r.duplicateTrovans).toEqual([CHIP]);
-    expect(r.females).toHaveLength(1);
+    expect(r.duplicateTrovans).toEqual([]);
+    expect(r.females).toHaveLength(2);
   });
 });

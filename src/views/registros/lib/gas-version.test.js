@@ -69,10 +69,11 @@ describe('GAS · el sello de versión no puede quedarse atrás', () => {
     createContext(ctx);
     new Script(code + '\n;globalThis.__get = doGet;').runInContext(ctx);
     const r = ctx.__get({ parameter: { p: 'ver' } });
-    // ♻ 2026-09-14 · y lo que sabe hacer: el alta con un microchip reciclado sólo se entrega a un
-    // GAS que diga «matriz-reciclaje» (uno anterior la fundiría sobre la fila de la hembra muerta).
-    // 2026-09-15 · y «mad-alimentacion»: la ficha de Alimentación no envía a un GAS que no conoce su hoja.
-    expect(JSON.parse(r.texto)).toEqual({ ok: true, version: selloDeclarado(), caps: ['matriz-reciclaje', 'mad-alimentacion'] });
+    // Y lo que sabe hacer. 2026-09-15 · «mad-alimentacion»: la ficha de Alimentación no envía a un
+    // GAS que no conoce su hoja. 2026-09-16 · «matriz-cuaterna» SUSTITUYE a «matriz-reciclaje»:
+    // la MATRIZ se llavea por (Trovan · Piscina · Código genético · Lote), así que el mismo chip
+    // admite varios individuos. La capacidad cambia de nombre porque nombra OTRA regla.
+    expect(JSON.parse(r.texto)).toEqual({ ok: true, version: selloDeclarado(), caps: ['matriz-cuaterna', 'mad-alimentacion'] });
     // y la raíz sigue igual: es la que usa la comprobación de conexión de siempre
     expect(ctx.__get({ parameter: {} }).texto).toBe('FichasLarv-OK');
   });
