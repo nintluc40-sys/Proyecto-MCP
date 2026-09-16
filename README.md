@@ -48,6 +48,12 @@ npm run lint       # ESLint
   microalgas) mediante tarjetas que abren ventanas de detalle.
 - **Biología Molecular** (🧬): heatmap/calendario/treemap/swarm/sankey/E.D.T.,
   reporte comparativo y export Excel por rango de fechas.
+  En su REGISTRO, el informe ofrece dos imágenes: el gel de agarosa y las **curvas de los
+  ciclos de amplificación**. Las curvas se ofrecen cuando la grilla trae qPCR **o cuando el
+  método declarado es de tiempo real** (Kit Comercial IQ REAL, Reacción dúplex, Kit Comercial
+  DHELIX), aunque el día salga sin un solo positivo: las columnas de Ct y Copias/μl sólo se
+  rellenan con positivos, y un día limpio también hay que poder demostrarlo. El único método
+  convencional del catálogo es la PCR Nested de punto final, que revela en gel y no tiene curva.
 - **Microbiología** (🧫): Bacteriología con **filtros dinámicos por formato**
   (Larvicultura/Maduración/Otros), Conglomerado (niveles por patógeno, Agua vs
   Animal, carga total por patógeno, distribución por nivel), Placa de agar,
@@ -109,6 +115,17 @@ del módulo se quede sin contraparte en el monolito.
 | 🧪 **Tratamientos** | `Maduración Tratamientos` | una fila por tarjeta: preventivo por lote o desinfección por área |
 | 🍤 **Alimentación** | `Maduración Alimentación` | (fecha, sala, tanque): agenda de tomas y ración calculada |
 | 🏠 **Salas** · 🛢️ **Tanques** | `Maduración Sala` · `Maduración Tanques` | la grilla diaria |
+
+**Todas guardan un BORRADOR POR FECHA en el dispositivo (2026-09-15).** Salas y Tanques ya lo
+hacían por ser grillas —su lista local lleva la fecha dentro de cada fila—; desde esa fecha las
+siete fichas de formulario también: al cambiar el campo Fecha se guarda el día que se deja y se
+trae el que se elige, y lo mismo al cambiar de pestaña o volver atrás. Se guardan los últimos
+**30 días** por ficha. Es lo tecleado en ESE dispositivo, no lo que hay en la hoja.
+
+En **🛢️ Tanques**, los pesos ♂ y ♀ **bajan por su columna**: al teclear uno se copia a las filas
+de abajo que tengan animales vivos. Una fila corregida a mano ya no se pisa.
+En **🏠 Salas**, la columna `RAS` dice **en qué porcentaje** usa el RAS esa sala (`No`, `10%` …
+`100%`); lo que falta hasta el 100 es agua de playa y no se anota.
 
 **🍤 Alimentación** es la única ficha que no registra lo ocurrido sino lo que hay que dar: por
 sala se define una agenda de tomas (hora · alimento · % de biomasa) y la ración sale de
@@ -353,6 +370,11 @@ Dos consecuencias que conviene tener presentes al desplegar:
   día, desoves con Nauplios/Hembra = N5 ÷ desoves y fertilidad = N2 ÷ huevos, mortalidad en desove y
   recuperación, preventivos). **⚙️ Variables** elige qué se ve (se recuerda en el dispositivo) y hay **🖨 PDF**
   por sala o lote y **de todo**. Lógica en `mad-resumen.js`; el detalle del libro sigue debajo.
+  La **mortalidad va en dos filas**: la **del día** (con su fecha) y la **acumulada** con el rango
+  «ingreso → hoy» al lado, para que un total no se lea como si fuera del día. 🔑 La del día se saca
+  **restando dos libros** —el del cierre de ese día y el de la víspera—, no sumando las filas de
+  Tanques: en un tanque mezclado las bajas son del TANQUE y repartirlas entre sus lotes es lo que
+  hace el libro. Su % va sobre los animales **en riesgo ese día**, no sobre el total ingresado.
 - 📋 **Inf. Supervisor (2026-09-15), hoja nueva `Maduración Mortalidad Desove` (14 columnas).** Dos cosas en la
   MISMA hoja, por decisión del usuario. (1) **Mortalidad de hembras** en tanques de desove y de recuperación: por
   fecha y lote, las que entran y las que mueren; el % se calcula. Las muertas **se descuentan del saldo** del lote
