@@ -6452,10 +6452,17 @@ async function madSaldoCargar(force, gasAlDia){
      ingreso y pulsar 🔄 no cambiaba una sola cifra.
      🔴 El peor de los cuatro es el de Salas, que GUARDA lo propuesto: escribía en la
      hoja un estado deducido de un libro viejo. */
-  await _reproEnsureSheet(MAD_LIBRO_SHEETS.ingreso, null, force);
-  await _reproEnsureSheet(MAD_LIBRO_SHEETS.movimientos, null, force);
-  await _reproEnsureSheet(MAD_LIBRO_SHEETS.tanques, null, force);
-  await _reproEnsureSheet(MAD_LIBRO_SHEETS.cierres, null, force);
+  /* 2026-09-15 · EN PARALELO, y medido: las ocho hojas que leen estos botones tardaban 13,5 s
+     una detrás de otra y 3,4 s todas a la vez (−75 %, `medir-lectura-saldo.mjs`). El tiempo se
+     va en la red; el servidor las atiende de verdad a la vez.
+     🔑 Estas CUATRO se piden SIEMPRE, así que arrancan sin esperar a ?p=ver: mientras el GAS
+     contesta quién es, ellas ya están viajando. La quinta sí depende de esa respuesta. */
+  const _pendientes = [
+    _reproEnsureSheet(MAD_LIBRO_SHEETS.ingreso, null, force),
+    _reproEnsureSheet(MAD_LIBRO_SHEETS.movimientos, null, force),
+    _reproEnsureSheet(MAD_LIBRO_SHEETS.tanques, null, force),
+    _reproEnsureSheet(MAD_LIBRO_SHEETS.cierres, null, force)
+  ];
   /* 2026-09-15 · la hoja de mortalidad en desove y recuperación es NUEVA: un GAS anterior no la permite, así que no
      puede tener filas de esta app (su ficha no envía contra él). Con ese GAS se da por leída y vacía.
      A2 (2026-09-15) · quien ya preguntó a ?p=ver pasa la respuesta en gasAlDia (true/false/null) y no se pregunta
@@ -6465,7 +6472,8 @@ async function madSaldoCargar(force, gasAlDia){
      INCOMPLETO en rojo sin faltar un dato. Cualquier otro error sigue siendo fallo. */
   const gas = gasAlDia === undefined ? await _madIngGasAlDia() : gasAlDia;
   if(gas === false) _reproPutRows(MAD_LIBRO_SHEETS.mortDesove, []);
-  else await _madEnsureHojaNueva(MAD_LIBRO_SHEETS.mortDesove, force);
+  else _pendientes.push(_madEnsureHojaNueva(MAD_LIBRO_SHEETS.mortDesove, force));
+  await Promise.all(_pendientes);
   const fallos = [];
   if(!_madHojaLeida(MAD_LIBRO_SHEETS.ingreso)) fallos.push(MAD_LIBRO_SHEETS.ingreso);
   if(!_madHojaLeida(MAD_LIBRO_SHEETS.movimientos)) fallos.push(MAD_LIBRO_SHEETS.movimientos);
@@ -6756,15 +6764,23 @@ async function _madResLeerExtra(gasAlDia){
   /* A1 (2026-09-15) · `siNoPermitida` es el motivo que se anota cuando la hoja es NUEVA y el GAS
      desplegado no la conoce: el mismo texto que pone la rama de abajo cuando ?p=ver sí contestó.
      Así el aviso es idéntico se sepa por ?p=ver o por el propio error, y deja de decir «no se pudo
-     leer» de una hoja que simplemente aún no existe. */
+     leer» de una hoja que simplemente aún no existe.
+     🔑 2026-09-15 · `leer` DEVUELVE su motivo en vez de empujarlo: las tres van en paralelo y, si
+     lo empujaran, `faltan` saldría en el orden en que contestara la red. El mismo problema
+     listado en otro orden en cada recálculo se lee como si hubiera cambiado la causa. */
   const leer=async function(hoja, clave, siNoPermitida){
-    try{ out[clave]=await _reproFetchSheet(hoja, null); if(_reproTrunc[hoja]) faltan.push(hoja+" (llegó recortada)"); }
-    catch(e){ faltan.push(siNoPermitida && _madHojaAunNoCreada(e) ? siNoPermitida : hoja); }
+    try{
+      out[clave]=await _reproFetchSheet(hoja, null);
+      return _reproTrunc[hoja] ? hoja+" (llegó recortada)" : "";
+    }catch(e){ return (siNoPermitida && _madHojaAunNoCreada(e)) ? siNoPermitida : hoja; }
   };
-  await leer("Maduración Sala", "sala");
-  await leer(MAD_DESOVE_SHEET, "desoves");
-  if(gasAlDia === false) faltan.push(MAD_TRAT_SHEET+" (el GAS publicado aún no la tiene)");
-  else await leer(MAD_TRAT_SHEET, "tratamientos", MAD_TRAT_SHEET+" (el GAS publicado aún no la tiene)");
+  const _sinTrat=MAD_TRAT_SHEET+" (el GAS publicado aún no la tiene)";
+  const motivos=await Promise.all([
+    leer("Maduración Sala", "sala", ""),
+    leer(MAD_DESOVE_SHEET, "desoves", ""),
+    gasAlDia === false ? Promise.resolve(_sinTrat) : leer(MAD_TRAT_SHEET, "tratamientos", _sinTrat)
+  ]);
+  motivos.forEach(function(m){ if(m) faltan.push(m); });
   out.faltan=faltan;
   return out;
 }
@@ -6773,8 +6789,10 @@ async function madSaldoRefrescar(){
   if(c) c.innerHTML='<div style="padding:14px;color:#64748b;font-size:12px">Leyendo las hojas… puede tardar unos segundos.</div>';
   try{
     const gas=await _madIngGasAlDia();
-    const libro=await madSaldoCargar(true, gas);
-    const extra=await _madResLeerExtra(gas);
+    /* Los dos grupos a la vez: el libro (cinco hojas) y las del resumen (tres). Ninguno mira lo
+       que lee el otro —son hojas distintas— y juntos son la pasada de 3,4 s que se midió. */
+    const _dos=await Promise.all([madSaldoCargar(true, gas), _madResLeerExtra(gas)]);
+    const libro=_dos[0], extra=_dos[1];
     const f=madLibroFuentes();
     f.sala=extra.sala; f.desoves=extra.desoves; f.tratamientos=extra.tratamientos;
     _madResumen=madResumenMaduracion(f, { hoy: today() });
@@ -9966,10 +9984,14 @@ async function madAlimLeer(){
   if(nota) nota.innerHTML='<span style="color:#64748b">Leyendo las hojas… puede tardar unos segundos.</span>';
   if(btn) btn.disabled=true;
   try{
-    const libro=await madSaldoCargar(true), f=madLibroFuentes();
+    /* La agenda de la hoja no depende del libro: se piden a la vez (ver madSaldoCargar). */
     let agendas=null, fallo="";
-    try{ agendas=madAlimAgendasDeHoja(await _reproFetchSheet(MAD_ALIM_SHEET, null)); }
-    catch(x){ fallo=(x && x.message) || "error"; }
+    const pAgenda=_reproFetchSheet(MAD_ALIM_SHEET, null)
+      .then(function(filas){ agendas=madAlimAgendasDeHoja(filas); })
+      .catch(function(x){ fallo=(x && x.message) || "error"; });
+    const libro=await madSaldoCargar(true);
+    await pAgenda;
+    const f=madLibroFuentes();
     const cfg=madAlimCfgLeer();
     let cargadas=0;
     if(agendas) Object.keys(agendas).forEach(function(sala){

@@ -714,20 +714,25 @@ describe('Libro · la vista tiene DÓNDE pintarse', () => {
        ⚠ 2026-09-15 · «Mortalidad Desove» se lee con `_madEnsureHojaNueva`, que sólo cambia UNA
        cosa: un «Hoja no permitida» (el GAS aún no la conoce) la guarda VACÍA en vez de dejarla
        sin entrada. Sigue leyéndose y sigue contando entre las que pueden faltar, que es lo que
-       esta prueba vigila; lo que distingue vacía de ilegible lo ejerce mad-saldo-incompleto. */
+       esta prueba vigila; lo que distingue vacía de ilegible lo ejerce mad-saldo-incompleto.
+       ⚠ 2026-09-15 (2) · y ya no llevan `await` delante: las cinco se piden A LA VEZ y se esperan
+       juntas. Lo que esta prueba vigila —que cada hoja se PIDA y que cuente entre las que pueden
+       faltar— no depende de cuándo se pida, así que se busca la llamada sin el `await`. */
     const lector = (clave) => (clave === 'mortDesove'
-      ? 'await _madEnsureHojaNueva(MAD_LIBRO_SHEETS.' + clave + ', force);'
-      : 'await _reproEnsureSheet(MAD_LIBRO_SHEETS.' + clave + ', null, force);');
+      ? '_madEnsureHojaNueva(MAD_LIBRO_SHEETS.' + clave + ', force)'
+      : '_reproEnsureSheet(MAD_LIBRO_SHEETS.' + clave + ', null, force)');
     for (const clave of ['ingreso', 'movimientos', 'tanques', 'cierres', 'mortDesove']) {
       expect(src).toContain(lector(clave));
       expect(src).toContain('if(!_madHojaLeida(MAD_LIBRO_SHEETS.' + clave + ')) fallos.push(MAD_LIBRO_SHEETS.' + clave + ');');
     }
+    // Y se esperan TODAS antes de contar los fallos, o el libro se armaría a medias.
+    expect(src).toContain('await Promise.all(_pendientes);');
   });
 
   it('la lectura REUTILIZA la cañería que ya existe, no fabrica otra', () => {
     // Dos cañerías de lectura habrían divergido en silencio; ésta ya resuelve reintentos
     // y caché, y es genérica pese a llevar el prefijo del reproductivo.
-    expect(src).toContain('await _reproEnsureSheet(MAD_LIBRO_SHEETS.ingreso, null, force);');
+    expect(src).toContain('_reproEnsureSheet(MAD_LIBRO_SHEETS.ingreso, null, force)');
     expect(src).toContain('_reproReadRows(MAD_LIBRO_SHEETS.tanques)');
   });
 });
@@ -800,9 +805,10 @@ describe('Libro · «Recalcular» RECALCULA de verdad (2026-09-09)', () => {
      a la vez sólo se sostienen si el forzado es explícito. */
 
   it('force se PROPAGA a las cuatro hojas del libro', () => {
+    // ⚠ 2026-09-15 · sin el `;` final: las cuatro viven ahora dentro del array que se pide a la vez.
     for (const hoja of ['ingreso', 'movimientos', 'tanques', 'cierres']) {
       expect(src, hoja + ' se carga sin propagar force')
-        .toContain('_reproEnsureSheet(MAD_LIBRO_SHEETS.' + hoja + ', null, force);');
+        .toContain('_reproEnsureSheet(MAD_LIBRO_SHEETS.' + hoja + ', null, force)');
     }
     // Y que no quede ninguna de las cuatro con la llamada vieja.
     expect(src).not.toContain('_reproEnsureSheet(MAD_LIBRO_SHEETS.ingreso, null);');

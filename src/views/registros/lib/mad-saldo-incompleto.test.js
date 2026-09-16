@@ -38,7 +38,7 @@ const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['madLibroIncompleto', '_madSalasPintaEstado', 'renderMadSalas',
   '_collectSalasGrid', 'madEstadoDeSala', 'MAD_SALA_OPTS', 'MAD_EST_CUAR', 'MAD_EST_PROD',
   'madSaldoCargar', 'MAD_LIBRO_SHEETS', '_madSaldoHTML', 'MAD_EST_CERRADO', 'MAD_EST_MIXTO',
-  'madSaldoRefrescar', '_madIngGasAlDia', '_reproFetchSheet', 'MAD_TRAT_SHEET'];
+  'madSaldoRefrescar', '_madIngGasAlDia', '_reproFetchSheet', 'MAD_TRAT_SHEET', 'MAD_DESOVE_SHEET'];
 const H = {};
 
 beforeAll(async () => {
@@ -321,6 +321,73 @@ describe('Maduración · A2 · el resumen reutiliza la respuesta de ?p=ver', () 
     const R = H.getResumen();
     expect(R.libro.fallos).toEqual([H.MAD_LIBRO_SHEETS.mortDesove]);
     expect(R.faltan).toEqual([H.MAD_TRAT_SHEET]);
+  });
+});
+
+/* ── 2026-09-15 (usuario) · LOS BOTONES LENTOS PIDEN LAS HOJAS A LA VEZ ────────────────────
+   «Mejorar tiempos de carga de los botones: Saldo, Proponer estado, Ver vivos, Leer hoja,
+   Revisar, Leer saldos y pesos.» Los seis pasan por `madSaldoCargar`, que lee cinco hojas, y
+   ⚖️ Recalcular lee tres más. Iban una detrás de otra.
+
+   MEDIDO contra el GAS vivo (`medir-lectura-saldo.mjs`): las ocho, en fila, 13,5 s; a la vez,
+   3,4 s (−75 %). Cada petición suelta tarda casi lo mismo en los dos casos, así que el tiempo
+   se va en la RED y el servidor sí las atiende a la vez.
+
+   🔑 SE MIDE EL PICO DE PETICIONES VIVAS, no el reloj. Un caso que cronometrara sería lento y
+   dependería de la máquina; el pico dice exactamente lo que se quiere saber —¿se pidieron a la
+   vez?— y se rompe en cuanto alguien vuelva a encadenarlas con un await. */
+describe('Maduración · las hojas se piden en paralelo', () => {
+  const originales = {};
+  beforeAll(() => { originales.gas = H._madIngGasAlDia; originales.leer = H._reproFetchSheet; });
+  afterAll(() => H.setRed(originales.gas, originales.leer));
+
+  /** Sustituye la red contando cuántas lecturas hay VIVAS a la vez. */
+  const contador = (respuestaVer, demora) => {
+    const est = { vivas: 0, pico: 0, orden: [] };
+    H.setLecturas({}, {});
+    H.setRed(async () => respuestaVer, async (hoja) => {
+      est.vivas++;
+      est.pico = Math.max(est.pico, est.vivas);
+      await new Promise((r) => setTimeout(r, demora ? demora(hoja) : 5));
+      est.vivas--;
+      est.orden.push(hoja);
+      return [];
+    });
+    return est;
+  };
+
+  it('🔴 el libro pide sus CINCO hojas a la vez', async () => {
+    const est = contador(true);
+    await H.madSaldoCargar(true);
+    expect(est.pico, 'se pidieron de una en una').toBe(5);
+  });
+
+  it('🔴 ⚖️ Recalcular pide las OCHO a la vez: el libro y las del resumen', async () => {
+    const est = contador(true);
+    await H.madSaldoRefrescar();
+    expect(est.pico, 'el resumen esperó a que terminara el libro').toBe(8);
+  });
+
+  it('con el GAS viejo son cuatro: la hoja nueva no se pide, se da por vacía', async () => {
+    const est = contador(false);
+    await H.madSaldoCargar(true);
+    expect(est.pico).toBe(4);
+  });
+
+  it('🔴 el orden de los avisos es el de la FICHA, no el de la red', async () => {
+    /* La hoja de Sala se hace la lenta y Tratamientos contesta la primera. Si `faltan` se armara
+       por orden de llegada, el mismo problema saldría listado distinto en cada recálculo y se
+       leería como si hubiera cambiado la causa. */
+    const lento = (hoja) => (hoja === 'Maduración Sala' ? 30 : 1);
+    const est = contador(true, lento);
+    H.setRed(async () => true, async (hoja) => {
+      est.vivas++;
+      await new Promise((r) => setTimeout(r, lento(hoja)));
+      est.vivas--;
+      throw new Error('Google devolvió una página de error, no datos');
+    });
+    await H.madSaldoRefrescar();
+    expect(H.getResumen().faltan).toEqual(['Maduración Sala', H.MAD_DESOVE_SHEET, H.MAD_TRAT_SHEET]);
   });
 });
 
