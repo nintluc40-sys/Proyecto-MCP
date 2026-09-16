@@ -10,7 +10,7 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderMadSaldo', 'madSaldoRefrescar', 'madResVarsAbrir', 'madResVarsAplicar', 'madResumenPdf', 'MAD_RES_VARS_KEY',
   'madResVarsGrupo', 'madResVarsSync', 'madResVarsTodas',
-  'madMortReiniciar', 'madMortCollect', 'buildMadMortPayload', 'madMortGuardar', 'madMortPctVivo'];
+  'madMortReiniciar', 'madMortCollect', 'buildMadMortPayload', 'madMortGuardar', 'madNaupBaja', 'madMortPctVivo'];
 const H = {};
 const avisos = [];
 const envios = [];
@@ -220,22 +220,48 @@ describe('Mortalidad de hembras · la ficha', () => {
     expect([...q('.mm-n-entrada-def').options].map((o) => o.value)).toEqual(['', 'Alta', 'Media', 'Baja', 'Ausente']);
     expect([...q('.mm-n-entrada-act').options].map((o) => o.value)).toEqual(['', 'Alta', 'Media', 'Baja']);
     expect([...q('.mm-n-entrada-hon').options].map((o) => o.value)).toEqual(['', 'Ausente', 'Presente']);
+    // 2026-09-15 (usuario): dos columnas más al lado de Hongos, categóricas Alta/Media/Baja.
+    expect([...q('.mm-n-entrada-fot').options].map((o) => o.value)).toEqual(['', 'Alta', 'Media', 'Baja']);
+    expect([...q('.mm-n-entrada-air').options].map((o) => o.value)).toEqual(['', 'Alta', 'Media', 'Baja']);
     q('#mm-fecha').value = '2026-09-15';
     q('.mm-lote').value = 'bp';
     q('.mm-n-lavado2-def').value = 'Baja';
     q('.mm-n-lavado2-act').value = 'Alta';
     q('.mm-n-lavado2-hon').value = 'Presente';
+    q('.mm-n-lavado2-fot').value = 'Media';
+    q('.mm-n-lavado2-air').value = 'Baja';
     q('.mm-n-lavado2-sal').value = '34.5';
     q('.mm-n-lavado2-tem').value = '29.1';
     q('.mm-n-postlavado-def').value = 'Ausente';
     await H.madMortGuardar();
     expect(envios).toHaveLength(1);
     const c = (h) => MAD_MORT_HEADERS.indexOf(h);
-    expect(envios[0].rows.map((f) => [f[c('Lote')], f[c('Tipo de tanque')], f[c('Revisión')], f[c('Deformidad')], f[c('Actividad')], f[c('Hongos')], f[c('Salinidad')], f[c('Temperatura')], f[c('ID')]])).toEqual([
-      ['BP', '', 'Lavado 2', 'Baja', 'Alta', 'Presente', 34.5, 29.1, '2026-09-15-BP-NAUP-LAVADO2'],
-      ['BP', '', 'Postlavado', 'Ausente', '', '', '', '', '2026-09-15-BP-NAUP-POSTLAVADO'],
+    expect(envios[0].rows.map((f) => [f[c('Lote')], f[c('Tipo de tanque')], f[c('Revisión')], f[c('Deformidad')], f[c('Actividad')], f[c('Hongos')], f[c('Fototropismo')], f[c('Aireación')], f[c('Salinidad')], f[c('Temperatura')], f[c('ID')]])).toEqual([
+      ['BP', '', 'Lavado 2', 'Baja', 'Alta', 'Presente', 'Media', 'Baja', 34.5, 29.1, '2026-09-15-BP-NAUP-LAVADO2'],
+      ['BP', '', 'Postlavado', 'Ausente', '', '', '', '', '', '', '2026-09-15-BP-NAUP-POSTLAVADO'],
     ]);
     expect(avisos.some((a) => a.msg.includes('Inf. Supervisor registrado'))).toBe(true);
+  });
+
+  /* 2026-09-15 (usuario) · «que en las columnas de Salinidad y Temperatura tengan un
+     desplazamiento vertical: al llenar la primera fila se pueden editar las demás, y si
+     modifico alguna, igual se queda así». Las cuatro revisiones de un mismo lote se miden
+     casi siempre con la misma salinidad y la misma temperatura. */
+  it('🔴 Inf. Supervisor: salinidad y temperatura BAJAN, y una corregida a mano no se pisa', () => {
+    const cifra = (rev, k) => document.querySelector('#fp-mortdes .mm-n-' + rev + '-' + k);
+    const columna = (k) => ['entrada', 'lavado', 'lavado2', 'postlavado'].map((r) => cifra(r, k).value);
+    const teclear = (rev, k, v) => { const e = cifra(rev, k); e.value = v; H.madNaupBaja(e); };
+
+    expect(cifra('entrada', 'sal').getAttribute('oninput'), 'la salinidad no lleva el asa').toBe('madNaupBaja(this)');
+    expect(cifra('entrada', 'tem').getAttribute('oninput')).toBe('madNaupBaja(this)');
+
+    teclear('entrada', 'sal', '34');
+    expect(columna('sal')).toEqual(['34', '34', '34', '34']);
+    expect(columna('tem'), 'la salinidad se metió en la temperatura').toEqual(['', '', '', '']);
+
+    teclear('lavado2', 'sal', '35');                 // corrección a mano de una fila
+    teclear('entrada', 'sal', '33');                 // y se retoca la de arriba
+    expect(columna('sal')).toEqual(['33', '33', '35', '33']);
   });
 
   it('🔴 con el GAS VIEJO no se envía y lo tecleado se queda', async () => {

@@ -9186,6 +9186,11 @@ const _MAD_NAUP_TAG = { "Entrada":"ENTRADA", "Lavado":"LAVADO", "Lavado 2":"LAVA
 const MAD_NAUP_DEFORMIDAD = ["Alta","Media","Baja","Ausente"];
 const MAD_NAUP_ACTIVIDAD = ["Alta","Media","Baja"];
 const MAD_NAUP_HONGOS = ["Ausente","Presente"];
+/* Fototropismo y Aireación (usuario, 2026-09-15). Llevan su PROPIA lista aunque hoy coincida con
+   la de Actividad: compartir el array haría que retocar una cambiara las otras dos en silencio, y
+   son tres juicios distintos del laboratorio que no tienen por qué moverse juntos. */
+const MAD_NAUP_FOTOTROPISMO = ["Alta","Media","Baja"];
+const MAD_NAUP_AIREACION = ["Alta","Media","Baja"];
 /* Topes de AVISO de la revisión de nauplios, CONFIRMADOS por el usuario el 2026-09-15. Avisan y no
    bloquean, al revés que la temperatura de Sala (D13): allí la cifra alimenta promedios y un 50 los
    envenena; aquí es una lectura suelta que se lee tal cual, y un tope que bloquea impediría anotar una
@@ -9196,6 +9201,7 @@ const MAD_MORT_COLUMNS = [
   { h:"Fecha", k:"fecha" }, { h:"Lote", k:"lote" }, { h:"Tipo de tanque", k:"tipo" }, { h:"Hembras que entran", k:"entran" },
   { h:"Hembras muertas", k:"muertas" }, { h:"% Mortalidad", k:"pct" },
   { h:"Revisión", k:"revision" }, { h:"Deformidad", k:"deformidad" }, { h:"Actividad", k:"actividad" }, { h:"Hongos", k:"hongos" },
+  { h:"Fototropismo", k:"fototropismo" }, { h:"Aireación", k:"aireacion" },
   { h:"Salinidad", k:"salinidad" }, { h:"Temperatura", k:"temperatura" },
   { h:"Observaciones", k:"observaciones" }, { h:"ID", k:"id" }   // ⚠ el ID, el ÚLTIMO
 ];
@@ -9210,7 +9216,8 @@ function madMortPct(entran, muertas){
 }
 function madMortRowId(fecha, lote, tipo){ return sanitizeStr(fecha,10)+"-"+madDesNormLote(lote)+"-"+(_MAD_MORT_TAG[tipo]||"OTRO"); }
 function madNaupRowId(fecha, lote, revision){ return sanitizeStr(fecha,10)+"-"+madDesNormLote(lote)+"-NAUP-"+(_MAD_NAUP_TAG[revision]||"OTRA"); }
-const _MAD_NAUP_CAMPOS = [["deformidad","Deformidad"],["actividad","Actividad"],["hongos","Hongos"],["salinidad","Salinidad"],["temperatura","Temperatura"]];
+const _MAD_NAUP_CAMPOS = [["deformidad","Deformidad"],["actividad","Actividad"],["hongos","Hongos"],
+  ["fototropismo","Fototropismo"],["aireacion","Aireación"],["salinidad","Salinidad"],["temperatura","Temperatura"]];
 function _madNaupRevision(x, rev){ return (x.nauplios && x.nauplios[_MAD_NAUP_CLAVE[rev]]) || {}; }
 function _madNaupConDato(r){ return _MAD_NAUP_CAMPOS.some(function(c){ return _madNaupCrudo(r[c[0]])!==""; }); }
 function madMortBuildRows(model){
@@ -9228,7 +9235,9 @@ function madMortBuildRows(model){
       const r=_madNaupRevision(x, revision);
       if(!_madNaupConDato(r)) return;
       fila({ fecha:fecha, lote:lote, revision:revision, deformidad:madNaupOpcion(MAD_NAUP_DEFORMIDAD, r.deformidad), actividad:madNaupOpcion(MAD_NAUP_ACTIVIDAD, r.actividad),
-        hongos:madNaupOpcion(MAD_NAUP_HONGOS, r.hongos), salinidad:_madNaupDec(r.salinidad), temperatura:_madNaupDec(r.temperatura),
+        hongos:madNaupOpcion(MAD_NAUP_HONGOS, r.hongos),
+        fototropismo:madNaupOpcion(MAD_NAUP_FOTOTROPISMO, r.fototropismo), aireacion:madNaupOpcion(MAD_NAUP_AIREACION, r.aireacion),
+        salinidad:_madNaupDec(r.salinidad), temperatura:_madNaupDec(r.temperatura),
         observaciones:sanitizeStr(x.observaciones,300), id:madNaupRowId(fecha, lote, revision) });   // I1: las observaciones del lote también aquí
     });
   });
@@ -9258,7 +9267,8 @@ function madMortValidar(model){
     });
     conRevision.forEach(function(rev){
       const r=_madNaupRevision(x, rev), et="En "+lote+" (nauplios · "+rev+")";
-      [["deformidad","Deformidad",MAD_NAUP_DEFORMIDAD],["actividad","Actividad",MAD_NAUP_ACTIVIDAD],["hongos","Hongos",MAD_NAUP_HONGOS]].forEach(function(p){
+      [["deformidad","Deformidad",MAD_NAUP_DEFORMIDAD],["actividad","Actividad",MAD_NAUP_ACTIVIDAD],["hongos","Hongos",MAD_NAUP_HONGOS],
+       ["fototropismo","Fototropismo",MAD_NAUP_FOTOTROPISMO],["aireacion","Aireación",MAD_NAUP_AIREACION]].forEach(function(p){
         if(_madNaupCrudo(r[p[0]])!=="" && !madNaupOpcion(p[2], r[p[0]])) errores.push(et+" «"+_madNaupCrudo(r[p[0]])+"» no es un valor de "+p[1]+" ("+p[2].join(", ")+").");
       });
       [["salinidad","la salinidad",MAD_NAUP_SAL_MAX],["temperatura","la temperatura",MAD_NAUP_TEMP_MAX]].forEach(function(p){
@@ -9292,17 +9302,27 @@ function _madNaupSelHTML(cls, lista){
     + lista.map(function(o){ return '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>'; }).join("")+'</select>';
 }
 function _madNaupTablaHTML(){
-  const filas=MAD_NAUP_REVISIONES.map(function(rev){
+  /* `data-r`/`data-c` NO son decoración: son lo que la bajada usa para saber qué celda está
+     debajo de cuál y en qué columna. Las cuatro revisiones se miden casi siempre con la misma
+     salinidad y la misma temperatura, así que teclear la primera rellena las de abajo. */
+  const filas=MAD_NAUP_REVISIONES.map(function(rev, i){
     const k="mm-n-"+_MAD_NAUP_CLAVE[rev];
+    const cifra=function(cls, col, max){
+      return '<td><input class="'+cls+'" data-r="'+i+'" data-c="'+col+'" oninput="madNaupBaja(this)" type="number" min="0" max="'+max+'" step="0.1" inputmode="decimal" style="'+_MAD_ING_INP+';width:90px"></td>';
+    };
     return '<tr><td style="font-weight:700;white-space:nowrap">'+escapeHtml(rev)+'</td>'
       + '<td>'+_madNaupSelHTML(k+"-def", MAD_NAUP_DEFORMIDAD)+'</td>'
       + '<td>'+_madNaupSelHTML(k+"-act", MAD_NAUP_ACTIVIDAD)+'</td>'
       + '<td>'+_madNaupSelHTML(k+"-hon", MAD_NAUP_HONGOS)+'</td>'
-      + '<td><input class="'+k+'-sal" type="number" min="0" max="'+MAD_NAUP_SAL_MAX+'" step="0.1" inputmode="decimal" style="'+_MAD_ING_INP+';width:90px"></td>'
-      + '<td><input class="'+k+'-tem" type="number" min="0" max="'+MAD_NAUP_TEMP_MAX+'" step="0.1" inputmode="decimal" style="'+_MAD_ING_INP+';width:90px"></td></tr>';
+      + '<td>'+_madNaupSelHTML(k+"-fot", MAD_NAUP_FOTOTROPISMO)+'</td>'
+      + '<td>'+_madNaupSelHTML(k+"-air", MAD_NAUP_AIREACION)+'</td>'
+      + cifra(k+"-sal", "sal", MAD_NAUP_SAL_MAX)
+      + cifra(k+"-tem", "tem", MAD_NAUP_TEMP_MAX) + '</tr>';
   }).join("");
-  return '<div class="tw"><table class="ft mm-naup" style="font-size:12px"><thead><tr><th>Revisión</th><th>Deformidad</th><th>Actividad</th><th>Hongos</th><th>Salinidad</th><th>Temperatura (°C)</th></tr></thead><tbody>'+filas+'</tbody></table></div>';
+  return '<div class="tw"><table class="ft mm-naup" style="font-size:12px"><thead><tr><th>Revisión</th><th>Deformidad</th><th>Actividad</th><th>Hongos</th><th>Fototropismo</th><th>Aireación</th><th>Salinidad</th><th>Temperatura (°C)</th></tr></thead><tbody>'+filas+'</tbody></table></div>';
 }
+/** Salinidad y temperatura tecleadas: bajan por su columna a las revisiones de abajo. */
+function madNaupBaja(el){ _madBajarColumna(el, null); }
 function _madMortCardHTML(){
   return '<div class="mm-card" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px;background:#fff">'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
@@ -9337,7 +9357,8 @@ function madMortCollect(){
     const nauplios={};
     MAD_NAUP_REVISIONES.forEach(function(rev){
       const k=".mm-n-"+_MAD_NAUP_CLAVE[rev];
-      nauplios[_MAD_NAUP_CLAVE[rev]]={ deformidad:g(c,k+"-def"), actividad:g(c,k+"-act"), hongos:g(c,k+"-hon"), salinidad:g(c,k+"-sal"), temperatura:g(c,k+"-tem") };
+      nauplios[_MAD_NAUP_CLAVE[rev]]={ deformidad:g(c,k+"-def"), actividad:g(c,k+"-act"), hongos:g(c,k+"-hon"),
+        fototropismo:g(c,k+"-fot"), aireacion:g(c,k+"-air"), salinidad:g(c,k+"-sal"), temperatura:g(c,k+"-tem") };
     });
     lotes.push({ lote:g(c,".mm-lote"), desove:{ entran:g(c,".mm-desove-e"), muertas:g(c,".mm-desove-m") },
       recuperacion:{ entran:g(c,".mm-recuperacion-e"), muertas:g(c,".mm-recuperacion-m") }, nauplios:nauplios, observaciones:g(c,".mm-obs") });
@@ -11404,8 +11425,12 @@ function _madTqFilaConVivos(input){
   const c = fila ? fila.querySelector(".tq-vivos") : null;
   return !!c && Number(c.getAttribute("data-vivos") || 0) > 0;
 }
-/** Peso tecleado: baja por su columna a las filas de ABAJO con animales vivos (usuario). */
-function madTqPesoBaja(el){
+/** La BAJADA de una columna, para las grillas de Maduración que la tienen.
+ *  El valor tecleado se copia a las celdas de ABAJO de SU misma columna. `puede(o)` es el
+ *  filtro de cada ficha: en Tanques, «esa fila tiene animales vivos»; en Inf. Supervisor no hay.
+ *  🔑 VIVE UNA VEZ. Copiarla para la segunda ficha habría dejado dos versiones divergiendo justo
+ *  en la parte delicada —a qué filas se salta—, y las dos darían resultados plausibles. */
+function _madBajarColumna(el, puede){
   if(!el) return;
   /* La celda tecleada queda FIJA: una bajada posterior desde más arriba no la pisa. Es lo que
      hace que «si deseo modificar un número de alguna de esas filas lo puedo hacer» siga siendo
@@ -11415,19 +11440,24 @@ function madTqPesoBaja(el){
   const col = el.getAttribute("data-c");
   const cuerpo = el.closest("tbody");
   if(!cuerpo || col == null || !isFinite(fila)) return;
-  /* Si NINGUNA fila sabe sus vivos, filtrar por ellos dejaría la bajada sin efecto y parecería
-     rota. Sin dato con el que discriminar, baja a todas: sobra un número, que se borra; faltar
-     no se ve. */
-  const alguienSabe = Array.prototype.some.call(cuerpo.querySelectorAll(".tq-vivos"), function(c){
-    return Number(c.getAttribute("data-vivos") || 0) > 0;
-  });
   const v = el.value;
   cuerpo.querySelectorAll('input[data-c="' + col + '"]').forEach(function(o){
     if(o === el || Number(o.getAttribute("data-r")) <= fila) return;
     if(o.getAttribute("data-fijo")) return;
-    if(alguienSabe && !_madTqFilaConVivos(o)) return;
+    if(puede && !puede(o)) return;
     o.value = v;
   });
+}
+/** Peso tecleado: baja por su columna a las filas de ABAJO con animales vivos (usuario). */
+function madTqPesoBaja(el){
+  const cuerpo = (el && el.closest) ? el.closest("tbody") : null;
+  /* Si NINGUNA fila sabe sus vivos, filtrar por ellos dejaría la bajada sin efecto y parecería
+     rota. Sin dato con el que discriminar, baja a todas: sobra un número, que se borra; faltar
+     no se ve. */
+  const alguienSabe = !!cuerpo && Array.prototype.some.call(cuerpo.querySelectorAll(".tq-vivos"), function(c){
+    return Number(c.getAttribute("data-vivos") || 0) > 0;
+  });
+  _madBajarColumna(el, function(o){ return !alguienSabe || _madTqFilaConVivos(o); });
 }
 
 function madTanquesSalaChange(){

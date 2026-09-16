@@ -26,6 +26,11 @@ const REV_TAG = { Entrada: 'ENTRADA', Lavado: 'LAVADO', 'Lavado 2': 'LAVADO2', P
 export const MAD_NAUP_DEFORMIDAD = ['Alta', 'Media', 'Baja', 'Ausente'];
 export const MAD_NAUP_ACTIVIDAD = ['Alta', 'Media', 'Baja'];
 export const MAD_NAUP_HONGOS = ['Ausente', 'Presente'];
+/* Fototropismo y Aireación (usuario, 2026-09-15). Llevan su PROPIA lista aunque hoy coincida con
+   la de Actividad: compartir el array haría que retocar una cambiara las otras dos en silencio, y
+   son tres juicios distintos del laboratorio que no tienen por qué moverse juntos. */
+export const MAD_NAUP_FOTOTROPISMO = ['Alta', 'Media', 'Baja'];
+export const MAD_NAUP_AIREACION = ['Alta', 'Media', 'Baja'];
 /* Topes de AVISO, CONFIRMADOS por el usuario el 2026-09-15 (hasta entonces eran del asistente, y una
    cifra sin dueño se vuelve a discutir cada vez que aparece). Por encima, la cifra se guarda y se marca:
    casi siempre es un error de tecleo. Avisan y NO bloquean, al revés que la temperatura de Sala (D13):
@@ -45,6 +50,8 @@ export const MAD_MORT_COLUMNS = [
   { h: 'Deformidad', k: 'deformidad' },
   { h: 'Actividad', k: 'actividad' },
   { h: 'Hongos', k: 'hongos' },
+  { h: 'Fototropismo', k: 'fototropismo' },
+  { h: 'Aireación', k: 'aireacion' },
   { h: 'Salinidad', k: 'salinidad' },
   { h: 'Temperatura', k: 'temperatura' },
   { h: 'Observaciones', k: 'observaciones' },
@@ -80,7 +87,8 @@ export function pctMortalidad(entran, muertas) {
 export const mortRowId = (fecha, lote, tipo) => sanitizeStr(fecha, 10) + '-' + normLote(lote) + '-' + (TAG[tipo] || 'OTRO');
 export const nauplioRowId = (fecha, lote, revision) => sanitizeStr(fecha, 10) + '-' + normLote(lote) + '-NAUP-' + (REV_TAG[revision] || 'OTRA');
 
-const CAMPOS_NAUP = [['deformidad', 'Deformidad'], ['actividad', 'Actividad'], ['hongos', 'Hongos'], ['salinidad', 'Salinidad'], ['temperatura', 'Temperatura']];
+const CAMPOS_NAUP = [['deformidad', 'Deformidad'], ['actividad', 'Actividad'], ['hongos', 'Hongos'],
+  ['fototropismo', 'Fototropismo'], ['aireacion', 'Aireación'], ['salinidad', 'Salinidad'], ['temperatura', 'Temperatura']];
 const revisionDe = (x, rev) => (x.nauplios && x.nauplios[REV_CLAVE[rev]]) || {};
 const revisionConDato = (r) => CAMPOS_NAUP.some(([k]) => crudo(r[k]) !== '');
 
@@ -106,7 +114,9 @@ export function buildMortRows(model) {
       const r = revisionDe(x, revision);
       if (!revisionConDato(r)) return;
       fila({ fecha, lote, revision, deformidad: opcionNauplios(MAD_NAUP_DEFORMIDAD, r.deformidad), actividad: opcionNauplios(MAD_NAUP_ACTIVIDAD, r.actividad),
-        hongos: opcionNauplios(MAD_NAUP_HONGOS, r.hongos), salinidad: dec(r.salinidad), temperatura: dec(r.temperatura),
+        hongos: opcionNauplios(MAD_NAUP_HONGOS, r.hongos),
+        fototropismo: opcionNauplios(MAD_NAUP_FOTOTROPISMO, r.fototropismo), aireacion: opcionNauplios(MAD_NAUP_AIREACION, r.aireacion),
+        salinidad: dec(r.salinidad), temperatura: dec(r.temperatura),
         // I1 (auditoría 2026-09-15): las observaciones son del LOTE y van también aquí; con sólo la revisión se perdían.
         observaciones: sanitizeStr(x.observaciones, 300), id: nauplioRowId(fecha, lote, revision) });
     });
@@ -153,7 +163,8 @@ export function validarMort(model) {
     conRevision.forEach((rev) => {
       const r = revisionDe(x, rev);
       const et = 'En ' + lote + ' (nauplios · ' + rev + ')';
-      [['deformidad', 'Deformidad', MAD_NAUP_DEFORMIDAD], ['actividad', 'Actividad', MAD_NAUP_ACTIVIDAD], ['hongos', 'Hongos', MAD_NAUP_HONGOS]].forEach(([k, nombre, lista]) => {
+      [['deformidad', 'Deformidad', MAD_NAUP_DEFORMIDAD], ['actividad', 'Actividad', MAD_NAUP_ACTIVIDAD], ['hongos', 'Hongos', MAD_NAUP_HONGOS],
+        ['fototropismo', 'Fototropismo', MAD_NAUP_FOTOTROPISMO], ['aireacion', 'Aireación', MAD_NAUP_AIREACION]].forEach(([k, nombre, lista]) => {
         if (crudo(r[k]) !== '' && !opcionNauplios(lista, r[k])) errores.push(et + ' «' + crudo(r[k]) + '» no es un valor de ' + nombre + ' (' + lista.join(', ') + ').');
       });
       [['salinidad', 'la salinidad', MAD_NAUP_SAL_MAX], ['temperatura', 'la temperatura', MAD_NAUP_TEMP_MAX]].forEach(([k, nombre, max]) => {

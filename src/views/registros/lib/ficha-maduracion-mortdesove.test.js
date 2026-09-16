@@ -8,6 +8,7 @@ import { MAD_TANQUES_POR_SALA } from './ficha-maduracion-ingreso.schema.js';
 import {
   MAD_MORT_SHEET, MAD_MORT_HEADERS, MAD_MORT_COLUMNS, MAD_MORT_TIPOS, pctMortalidad, mortRowId, buildMortRows, buildMortPayload, validarMort,
   MAD_NAUP_REVISIONES, MAD_NAUP_DEFORMIDAD, MAD_NAUP_ACTIVIDAD, MAD_NAUP_HONGOS, nauplioRowId, opcionNauplios,
+  MAD_NAUP_FOTOTROPISMO, MAD_NAUP_AIREACION,
 } from './ficha-maduracion-mortdesove.schema.js';
 
 const col = (h) => MAD_MORT_HEADERS.indexOf(h);
@@ -15,10 +16,14 @@ const base = () => ({ fecha: '2026-09-15', lotes: [
   { lote: 'bp', desove: { entran: '40', muertas: '3' }, recuperacion: { entran: 37, muertas: 1 }, observaciones: 'ok' },
   { lote: 'BC', desove: { entran: '', muertas: '' }, recuperacion: { entran: 20, muertas: 0 } },
 ] });
-const rev = (deformidad, actividad, hongos, salinidad, temperatura) => ({ deformidad, actividad, hongos, salinidad, temperatura });
+/* 2026-09-15 · Fototropismo y Aireación van AL FINAL de la firma a propósito: así los casos que
+   no los nombran siguen valiendo y se ve, caso por caso, cuáles los ejercen de verdad. */
+const rev = (deformidad, actividad, hongos, salinidad, temperatura, fototropismo, aireacion) =>
+  ({ deformidad, actividad, hongos, salinidad, temperatura, fototropismo, aireacion });
 const conNauplios = () => ({ fecha: '2026-09-15', lotes: [
   { lote: 'bp', desove: { entran: 40, muertas: 3 }, observaciones: 'ok',
-    nauplios: { entrada: rev('baja', 'Alta', 'Ausente', '34.5', '29'), lavado: rev('', '', '', '', ''), lavado2: rev('Ausente', 'media', 'Ausente', 34, 28.8), postlavado: {} } },
+    nauplios: { entrada: rev('baja', 'Alta', 'Ausente', '34.5', '29', 'Alta', 'Media'), lavado: rev('', '', '', '', ''),
+      lavado2: rev('Ausente', 'media', 'Ausente', 34, 28.8, 'baja', 'ALTA'), postlavado: {} } },
   // I1: BC sólo trae revisión; sus observaciones no pueden perderse.
   { lote: 'BC', nauplios: { postlavado: rev('Media', 'Baja', 'Presente', '', '30') }, observaciones: 'sin hongos al inicio' },
 ] });
@@ -27,36 +32,49 @@ describe('Inf. Supervisor · la hoja', () => {
   it('la misma hoja: mortalidad, después la revisión de nauplios, y el ID al final', () => {
     expect(MAD_MORT_SHEET).toBe('Maduración Mortalidad Desove');
     expect(MAD_MORT_HEADERS).toEqual(['Fecha', 'Lote', 'Tipo de tanque', 'Hembras que entran', 'Hembras muertas', '% Mortalidad',
-      'Revisión', 'Deformidad', 'Actividad', 'Hongos', 'Salinidad', 'Temperatura', 'Observaciones', 'ID']);
+      'Revisión', 'Deformidad', 'Actividad', 'Hongos', 'Fototropismo', 'Aireación', 'Salinidad', 'Temperatura', 'Observaciones', 'ID']);
     expect(MAD_MORT_TIPOS).toEqual(['Desove', 'Recuperación']);
     expect([MAD_NAUP_REVISIONES, MAD_NAUP_DEFORMIDAD, MAD_NAUP_ACTIVIDAD, MAD_NAUP_HONGOS]).toEqual([
       ['Entrada', 'Lavado', 'Lavado 2', 'Postlavado'], ['Alta', 'Media', 'Baja', 'Ausente'], ['Alta', 'Media', 'Baja'], ['Ausente', 'Presente']]);
+    /* 2026-09-15 (usuario) · las dos nuevas son categóricas Alta/Media/Baja, y van con LISTA PROPIA
+       aunque hoy coincida con la de Actividad: compartirla haría que retocar una cambiara las otras. */
+    expect([MAD_NAUP_FOTOTROPISMO, MAD_NAUP_AIREACION]).toEqual([['Alta', 'Media', 'Baja'], ['Alta', 'Media', 'Baja']]);
+    expect(MAD_NAUP_FOTOTROPISMO, 'comparten el mismo array: retocar una cambiaría las otras').not.toBe(MAD_NAUP_ACTIVIDAD);
+    expect(MAD_NAUP_AIREACION).not.toBe(MAD_NAUP_FOTOTROPISMO);
+    // El ID sigue siendo la ÚLTIMA columna: es la llave con la que el GAS hace el MERGE.
+    expect(MAD_MORT_HEADERS[MAD_MORT_HEADERS.length - 1]).toBe('ID');
   });
 
   it('🔴 una fila por revisión con algún dato, con la grafía de la lista, sus cifras y su ID; la mortalidad sin revisión', () => {
     const filas = buildMortRows(conNauplios());
     const ver = (f) => [f[col('Lote')], f[col('Tipo de tanque')], f[col('% Mortalidad')], f[col('Revisión')], f[col('Deformidad')], f[col('Actividad')],
-      f[col('Hongos')], f[col('Salinidad')], f[col('Temperatura')], f[col('Observaciones')], f[col('ID')]];
+      f[col('Hongos')], f[col('Fototropismo')], f[col('Aireación')], f[col('Salinidad')], f[col('Temperatura')], f[col('Observaciones')], f[col('ID')]];
     expect(filas.map(ver)).toEqual([
-      ['BP', 'Desove', 7.5, '', '', '', '', '', '', 'ok', '2026-09-15-BP-DESOVE'],
-      ['BP', '', '', 'Entrada', 'Baja', 'Alta', 'Ausente', 34.5, 29, 'ok', '2026-09-15-BP-NAUP-ENTRADA'],
-      ['BP', '', '', 'Lavado 2', 'Ausente', 'Media', 'Ausente', 34, 28.8, 'ok', '2026-09-15-BP-NAUP-LAVADO2'],
-      ['BC', '', '', 'Postlavado', 'Media', 'Baja', 'Presente', '', 30, 'sin hongos al inicio', '2026-09-15-BC-NAUP-POSTLAVADO'],
+      ['BP', 'Desove', 7.5, '', '', '', '', '', '', '', '', 'ok', '2026-09-15-BP-DESOVE'],
+      ['BP', '', '', 'Entrada', 'Baja', 'Alta', 'Ausente', 'Alta', 'Media', 34.5, 29, 'ok', '2026-09-15-BP-NAUP-ENTRADA'],
+      // «baja» y «ALTA» entran con la grafía de la lista, igual que los otros tres campos.
+      ['BP', '', '', 'Lavado 2', 'Ausente', 'Media', 'Ausente', 'Baja', 'Alta', 34, 28.8, 'ok', '2026-09-15-BP-NAUP-LAVADO2'],
+      ['BC', '', '', 'Postlavado', 'Media', 'Baja', 'Presente', '', '', '', 30, 'sin hongos al inicio', '2026-09-15-BC-NAUP-POSTLAVADO'],
     ]);
     expect(filas.every((f) => f.length === MAD_MORT_HEADERS.length)).toBe(true);
     expect(nauplioRowId('2026-09-15', ' b p ', 'Lavado 2')).toBe('2026-09-15-BP-NAUP-LAVADO2');
     expect([opcionNauplios(MAD_NAUP_HONGOS, ' presente '), opcionNauplios(MAD_NAUP_ACTIVIDAD, 'Ausente')]).toEqual(['Presente', '']);
     // Un lote con sólo la revisión es un registro válido; la revisión a medias avisa de lo que falta.
-    expect(validarMort(conNauplios())).toEqual({ errores: [], avisos: ['En BC (nauplios · Postlavado) faltan: Salinidad.'] });
+    // BC sólo trae tres de los siete campos: el aviso los nombra en el orden de la ficha.
+    expect(validarMort(conNauplios())).toEqual({ errores: [], avisos: ['En BC (nauplios · Postlavado) faltan: Fototropismo, Aireación, Salinidad.'] });
   });
 
   it('🔴 revisión: ERROR si un valor no es de su lista o una cifra no es cifra; AVISO si T° o salinidad pasan del tope', () => {
     const m = { fecha: '2026-09-15', lotes: [{ lote: 'BP', nauplios: {
-      entrada: rev('Mucha', 'Alta', 'Si', '35', '29'), lavado: rev('Baja', 'Alta', 'Ausente', 'x', '41'), postlavado: rev('Baja', 'Alta', 'Ausente', '61', '28') } }] };
+      entrada: rev('Mucha', 'Alta', 'Si', '35', '29', 'Altísima', 'Baja'),
+      lavado: rev('Baja', 'Alta', 'Ausente', 'x', '41', 'Alta', 'Media'),
+      postlavado: rev('Baja', 'Alta', 'Ausente', '61', '28', 'Alta', 'Media') } }] };
     const r = validarMort(m);
     expect(r.errores).toEqual([
       'En BP (nauplios · Entrada) «Mucha» no es un valor de Deformidad (Alta, Media, Baja, Ausente).',
       'En BP (nauplios · Entrada) «Si» no es un valor de Hongos (Ausente, Presente).',
+      // Los dos campos nuevos se validan igual que los otros tres, y no al final: en su sitio.
+      'En BP (nauplios · Entrada) «Altísima» no es un valor de Fototropismo (Alta, Media, Baja).',
       'En BP (nauplios · Lavado) la salinidad no es una cifra válida.',
     ]);
     expect(r.avisos).toEqual([
