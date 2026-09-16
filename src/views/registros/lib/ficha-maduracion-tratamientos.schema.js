@@ -26,7 +26,12 @@ export const MAD_TRAT_ESTADOS = ['Producción', 'Cuarentena', 'Mixto', 'Desinfec
 /** Catálogos, en el orden en que los dio el usuario. */
 export const MAD_TRAT_PREVENTIVOS = ['Cooper', 'Formol', 'Bacmil', 'Lactosac', 'Lipofeed', 'Carbonato de Calcio', 'Complex B', 'Vitamina C', 'Full Calcio', 'Prokura'];
 export const MAD_TRAT_RAS = ['Bicarbonato', 'EM-1', 'Full Calcio', 'Prokura'];
-export const MAD_TRAT_DESINFECTANTES = ['Formol', 'Cloro', 'Jabón neutro', 'Virkon', 'Vitamina C', 'Bicarbonato', 'Full Calcio', 'EM-1', 'Prokura', 'Cooper'];
+/* 2026-09-15 (usuario) · Ácido Nítrico, Peróxido y Trilon B entran al catálogo, al final, en el
+   orden en que los dio. NO se pre-marcan en ninguna área: no dijo dónde se usan, y adivinarlo
+   dejaría casillas puestas que nadie pidió — que en una ficha de desinfección es peor que
+   tener que marcarlas a mano. */
+export const MAD_TRAT_DESINFECTANTES = ['Formol', 'Cloro', 'Jabón neutro', 'Virkon', 'Vitamina C', 'Bicarbonato', 'Full Calcio', 'EM-1', 'Prokura', 'Cooper',
+  'Ácido Nítrico', 'Peróxido', 'Trilon B'];
 
 /** Áreas de desinfección, con su etiqueta para el ID y lo habitual que se pre-marca. */
 export const MAD_TRAT_AREAS = [
@@ -35,6 +40,10 @@ export const MAD_TRAT_AREAS = [
   'Líneas de agua y aire, tinas y reservorios',
   'Desove, Eclosión y Despacho',
   'Conos, baldes, tinas y tuberías',
+  /* 2026-09-15 (usuario). «Reservorio» convive con «Líneas de agua y aire, tinas y reservorios»:
+     son áreas distintas para él y el ID las separa por su etiqueta, así que no se funden. */
+  'Reservorio',
+  'Colectores',
 ];
 const AREA_TAG = {
   'Salas y tanques': 'SALAS',
@@ -42,6 +51,8 @@ const AREA_TAG = {
   'Líneas de agua y aire, tinas y reservorios': 'LINEAS',
   'Desove, Eclosión y Despacho': 'DESOVE',
   'Conos, baldes, tinas y tuberías': 'UTENSILIOS',
+  Reservorio: 'RESERVORIO',
+  Colectores: 'COLECTORES',
 };
 const LIMPIEZA = ['Formol', 'Cloro', 'Jabón neutro', 'Virkon', 'Vitamina C'];
 const AREA_PRODUCTOS = {
@@ -50,6 +61,10 @@ const AREA_PRODUCTOS = {
   'Líneas de agua y aire, tinas y reservorios': LIMPIEZA,
   'Desove, Eclosión y Despacho': LIMPIEZA,
   'Conos, baldes, tinas y tuberías': LIMPIEZA,
+  /* La limpieza habitual, igual que sus hermanas. Sigue siendo una SUPOSICIÓN declarada, como
+     ya lo era para «Desove, Eclosión y Despacho» y los utensilios: se ajusta a mano. */
+  Reservorio: LIMPIEZA,
+  Colectores: LIMPIEZA,
 };
 
 /* Plantillas por estado (el ejemplo del usuario). La agrupada lleva las dos. */

@@ -20,8 +20,13 @@ describe('Tratamientos · la hoja y los catálogos del usuario', () => {
   it('🔴 los productos y las áreas, en el orden en que los dio el usuario', () => {
     expect(MAD_TRAT_PREVENTIVOS).toEqual(['Cooper', 'Formol', 'Bacmil', 'Lactosac', 'Lipofeed', 'Carbonato de Calcio', 'Complex B', 'Vitamina C', 'Full Calcio', 'Prokura']);
     expect(MAD_TRAT_RAS).toEqual(['Bicarbonato', 'EM-1', 'Full Calcio', 'Prokura']);
-    expect(MAD_TRAT_DESINFECTANTES).toEqual(['Formol', 'Cloro', 'Jabón neutro', 'Virkon', 'Vitamina C', 'Bicarbonato', 'Full Calcio', 'EM-1', 'Prokura', 'Cooper']);
-    expect(MAD_TRAT_AREAS).toEqual(['Salas y tanques', 'RAS y tuberías', 'Líneas de agua y aire, tinas y reservorios', 'Desove, Eclosión y Despacho', 'Conos, baldes, tinas y tuberías']);
+    /* 2026-09-15 (usuario): Ácido Nítrico, Peróxido y Trilon B al final de la lista; «Reservorio» y
+       «Colectores» como áreas propias. «Reservorio» convive con «Líneas de agua y aire, tinas y
+       reservorios»: son áreas distintas para el usuario y el ID las separa por su etiqueta. */
+    expect(MAD_TRAT_DESINFECTANTES).toEqual(['Formol', 'Cloro', 'Jabón neutro', 'Virkon', 'Vitamina C', 'Bicarbonato', 'Full Calcio', 'EM-1', 'Prokura', 'Cooper',
+      'Ácido Nítrico', 'Peróxido', 'Trilon B']);
+    expect(MAD_TRAT_AREAS).toEqual(['Salas y tanques', 'RAS y tuberías', 'Líneas de agua y aire, tinas y reservorios', 'Desove, Eclosión y Despacho', 'Conos, baldes, tinas y tuberías',
+      'Reservorio', 'Colectores']);
     expect(MAD_TRAT_ESTADOS).toEqual(['Producción', 'Cuarentena', 'Mixto', 'Desinfección', 'Desinfección - Producción agrupada']);
   });
 });
@@ -63,6 +68,13 @@ describe('Tratamientos · filas', () => {
     expect(tratIdPreventivo('2026-09-15', 'Sala 4', ['BC', 'bp'])).toBe('2026-09-15-S4-P-BC.BP');
     expect(tratIdDesinfeccion('2026-09-15', '', 'Desove, Eclosión y Despacho')).toBe('2026-09-15-GEN-D-DESOVE');
     expect(tratIdDesinfeccion('2026-09-15', 'Sala 2', 'Líneas de agua y aire, tinas y reservorios')).toBe('2026-09-15-S2-D-LINEAS');
+    /* 🔴 «Reservorio» y «Líneas de agua y aire, tinas y reservorios» tienen que dar IDs DISTINTOS:
+       si compartieran etiqueta, desinfectar las dos el mismo día en la misma sala escribiría una
+       sola fila y la segunda se comería a la primera con el MERGE. */
+    expect(tratIdDesinfeccion('2026-09-15', 'Sala 2', 'Reservorio')).toBe('2026-09-15-S2-D-RESERVORIO');
+    expect(tratIdDesinfeccion('2026-09-15', 'Sala 2', 'Colectores')).toBe('2026-09-15-S2-D-COLECTORES');
+    expect(tratIdDesinfeccion('2026-09-15', 'Sala 2', 'Reservorio'))
+      .not.toBe(tratIdDesinfeccion('2026-09-15', 'Sala 2', 'Líneas de agua y aire, tinas y reservorios'));
     expect(buildTratRows(base()).map((f) => f[col('ID')])).toEqual(['2026-09-15-S4-P-BC.BP', '2026-09-15-S4-D-RAS']);
   });
 
