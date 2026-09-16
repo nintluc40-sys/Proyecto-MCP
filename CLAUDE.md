@@ -76,6 +76,18 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
 8. **Cada archivo abre con una cabecera** de comentario que explica su propósito (y su origen en
    el monolito si aplica).
 
+## Skills vendorizadas
+
+`.claude/skills/` trae las skills de `mattpocock/skills` que sirvieron de metodología para los
+análisis de `docs/analisis/`; su procedencia y hash están en `skills-lock.json`.
+
+⚠ **Hubo una SEGUNDA copia, `.agents/skills/`, byte a byte idéntica**, y las dos estaban
+versionadas: 110 archivos en un repo público para 55 skills, sin tocar desde julio y sin ningún
+`settings.json` que cableara su hook. Se retiró la de `.agents/` el 2026-09-16. **No se re-crea el
+espejo**: si alguna herramienta necesitara leerlas desde otra ruta, se resuelve con un enlace o
+con su configuración, no duplicando el árbol —dos copias divergen en silencio, que es justo lo
+que este repo ya vigila a mano en los tres sitios donde no le queda más remedio—.
+
 ## Tests
 
 - **Vitest.** `npm test` (run único) o `npm run test:watch`.
