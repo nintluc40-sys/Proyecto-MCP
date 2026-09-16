@@ -11141,8 +11141,11 @@ const _TANQ_GRID_COLS = [
   {k:"hembras_descarte",type:"int"},
   {k:"copulas",         type:"int"},
   {k:"muda",            type:"int"},
-  {k:"peso_machos",     type:"num"},
-  {k:"peso_hembras",    type:"num"},
+  /* `bajar` (2026-09-15, usuario): el peso promedio se mide una vez y vale para los tanques
+     que tengan animales, así que al teclearlo BAJA por su columna. Se marca por columna y no
+     por `type:"num"` a propósito: una tercera columna decimal no tiene por qué heredarlo. */
+  {k:"peso_machos",     type:"num", bajar:true},
+  {k:"peso_hembras",    type:"num", bajar:true},
   {k:"obs_sanitarias",  type:"text", ph:"—", ancho:"110px"}
 ];
 
@@ -11192,14 +11195,15 @@ function renderMadTanques(){
       }
       // Los PESOS son decimales: con step="1" el navegador rechaza 34,5 en silencio.
       if(col.type === "num"){
-        return `<td><input class="pinp" type="number" ${attrs} value="${vl(d,col.k)}" min="0" step="0.1" inputmode="decimal" placeholder="-" style="min-width:62px"></td>`;
+        const baja = col.bajar ? ' oninput="madTqPesoBaja(this)"' : "";
+        return `<td><input class="pinp" type="number" ${attrs}${baja} value="${vl(d,col.k)}" min="0" step="0.1" inputmode="decimal" placeholder="-" style="min-width:62px"></td>`;
       }
       return `<td><input class="pinp" type="number" ${attrs} value="${vl(d,col.k)}" min="0" step="1" inputmode="numeric" placeholder="-"></td>`;
     }).join("");
     return `<tr>
       <td class="tqc" style="font-size:10px;min-width:44px;text-align:center">${tank}</td>
       <td style="font-size:10px;text-align:center">${st}</td>
-      <td class="tq-vivos" data-tq="${tank}" style="font-size:10px;text-align:center;color:#94a3b8;white-space:nowrap">—</td>
+      <td class="tq-vivos" data-tq="${tank}" data-vivos="" style="font-size:10px;text-align:center;color:#94a3b8;white-space:nowrap">—</td>
       ${cells}
     </tr>`;
   }).join("");
@@ -11283,12 +11287,16 @@ function _madTqVivosGuardar(libro){
 /* Una celda de vivos, escrita IGUAL venga del libro recién leído o de la referencia guardada:
    Movimientos y Tanques tienen que decir exactamente lo mismo del mismo tanque. */
 function _madTqVivosCelda(c, T, desconocido){
+  /* `data-vivos` (2026-09-15) no es decoración: es lo que lee la bajada de los pesos para saber
+     a qué filas toca. Vacío = «no se sabe», que NO es lo mismo que cero. */
   if(!T){
     // Ningún ingreso explica ese tanque: no es «cero vivos», es «el libro no lo conoce».
     c.textContent = desconocido;
+    c.setAttribute("data-vivos", "");
     c.style.color = "#92400e";
     return;
   }
+  c.setAttribute("data-vivos", String(T.machos + T.hembras));
   /* El TOTAL lo pidió el usuario el 2026-09-08. Es la cifra que se compara con la capacidad
      del tanque, y sumar dos números de cabeza delante de una grilla de veinte filas se hace
      mal más veces de las que parece. */
@@ -11352,6 +11360,39 @@ function _madTanquesPintaVivosGuardados(){
   if(nota) nota.innerHTML = _madTqVivosNotaRef(g);
 }
 
+
+/* ¿La fila de esta celda tiene animales vivos? Lo dice la celda «Vivos», que ya lo calculó.
+   Vacío es «no se sabe» —nadie ha pulsado 🔄 ni hay referencia guardada—, no «cero». */
+function _madTqFilaConVivos(input){
+  const fila = input.closest("tr");
+  const c = fila ? fila.querySelector(".tq-vivos") : null;
+  return !!c && Number(c.getAttribute("data-vivos") || 0) > 0;
+}
+/** Peso tecleado: baja por su columna a las filas de ABAJO con animales vivos (usuario). */
+function madTqPesoBaja(el){
+  if(!el) return;
+  /* La celda tecleada queda FIJA: una bajada posterior desde más arriba no la pisa. Es lo que
+     hace que «si deseo modificar un número de alguna de esas filas lo puedo hacer» siga siendo
+     cierto después de corregir el de arriba. Mismo idioma que «⚖️ Repartir» del Ingreso. */
+  el.setAttribute("data-fijo", "1");
+  const fila = Number(el.getAttribute("data-r"));
+  const col = el.getAttribute("data-c");
+  const cuerpo = el.closest("tbody");
+  if(!cuerpo || col == null || !isFinite(fila)) return;
+  /* Si NINGUNA fila sabe sus vivos, filtrar por ellos dejaría la bajada sin efecto y parecería
+     rota. Sin dato con el que discriminar, baja a todas: sobra un número, que se borra; faltar
+     no se ve. */
+  const alguienSabe = Array.prototype.some.call(cuerpo.querySelectorAll(".tq-vivos"), function(c){
+    return Number(c.getAttribute("data-vivos") || 0) > 0;
+  });
+  const v = el.value;
+  cuerpo.querySelectorAll('input[data-c="' + col + '"]').forEach(function(o){
+    if(o === el || Number(o.getAttribute("data-r")) <= fila) return;
+    if(o.getAttribute("data-fijo")) return;
+    if(alguienSabe && !_madTqFilaConVivos(o)) return;
+    o.value = v;
+  });
+}
 
 function madTanquesSalaChange(){
   _madCommitActive();   // persiste la grilla de la sala ANTERIOR antes de cambiar
