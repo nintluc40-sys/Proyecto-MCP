@@ -22,7 +22,8 @@ import { MAD_DESOVE_HEADERS } from './ficha-maduracion-desoves.schema.js';
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['madDesReiniciar', 'madDesCollect', 'buildMadDesovePayload', 'madDesGuardar', 'flushSyncQueue', 'MAD_DESOVE_SHEET',
-  'madDesPendVer', 'madDesEditar', 'MAD_DES_PEND_KEY', 'madDesDespachoResumen'];
+  'madDesPendVer', 'madDesEditar', 'MAD_DES_PEND_KEY', 'madDesDespachoResumen',
+  '_gasVersionLocal'];   // 2026-09-16 · el portón compara el SELLO: el fixture usa el de esta app
 const H = {};
 const avisos = [];
 const envios = [];
@@ -78,7 +79,7 @@ beforeAll(async () => {
 beforeEach(() => {
   avisos.length = 0;
   envios.length = 0;
-  respuestaVer = { ok: true, version: 'abc123def456' };
+  respuestaVer = { ok: true, version: H._gasVersionLocal() };   // el GAS desplegado ES el de esta app
   H.madDesReiniciar();
 });
 

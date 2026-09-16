@@ -9,9 +9,17 @@
    LAS DOS CARGAS SON ESTIMACIONES, y estas pruebas fijan de qué:
      · CARGA MÉTRICA = biomasa viva del tanque en kg = (♀ × peso♀ + ♂ × peso♂) ÷ 1000, con los
        ÚLTIMOS pesos registrados del lote. Sin ningún peso queda VACÍA, nunca en cero.
-     · CARGA VOLUMÉTRICA PROMEDIO = esa biomasa ÷ el volumen medio de un tanque de su sala, que
-       son las toneladas de la sala entre sus tanques (1 t de agua = 1 m³). Es «promedio» porque
-       las toneladas se registran POR SALA.
+     · CARGA VOLUMÉTRICA PROMEDIO = esa biomasa ÷ el volumen de UN tanque de su sala (1 t de agua
+       = 1 m³). Las toneladas registradas YA SON las de un tanque, así que no se dividen entre
+       nada: es «promedio» porque la cifra es la misma para todos los tanques de la sala —el
+       volumen típico de uno—, no porque se reparta.
+
+   ⚠⚠ ESTE PÁRRAFO DECÍA LO CONTRARIO —«las toneladas de la sala ENTRE SUS TANQUES»— y era el
+   modelo equivocado, el que se retiró el 2026-09-16 con el Excel del módulo delante: repartirlas
+   multiplicaba la carga por el número de tanques (14,8 kg/m³ donde el Excel da 1,17). Las
+   aserciones de abajo sí se corrigieron ese día; la prosa no, y se quedó nueve líneas por encima
+   de un «Sala 1: 5,5 t POR TANQUE» que decía justo lo opuesto. Un comentario que contradice a su
+   propio fixture es peor que no tenerlo: enseña a no leer los de al lado.
 
    Y las otras cinco variables que el resumen no veía: las toneladas, la alcalinidad por área (de
    la sala y del RAS), la revisión de nauplios con el fototropismo y la aireación nuevos, y las
@@ -32,7 +40,8 @@ import { join } from 'node:path';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
-const EXPORTAR = ['renderMadSaldo', 'madSaldoRefrescar', 'madResVarsAbrir', 'madResVarsAplicar', 'MAD_RES_VARS_KEY'];
+const EXPORTAR = ['renderMadSaldo', 'madSaldoRefrescar', 'madResVarsAbrir', 'madResVarsAplicar', 'MAD_RES_VARS_KEY',
+  '_gasVersionLocal'];   // 2026-09-16 · el portón compara el SELLO: el fixture usa el de esta app
 const H = {};
 
 /* Lote AB: ingresa con 30♂ y 60♀ en la Sala 1 t1, y 10♂ y 20♀ en la Sala 2 t16.
@@ -118,7 +127,7 @@ const soloEstas = (ids) => {
 
 beforeEach(async () => {
   localStorage.removeItem(H.MAD_RES_VARS_KEY);
-  respuestaVer = { ok: true, version: 'abc123def456' };
+  respuestaVer = { ok: true, version: H._gasVersionLocal() };   // el GAS desplegado ES el de esta app
   document.getElementById('fp-saldo').innerHTML = '';
   H.renderMadSaldo();
   await H.madSaldoRefrescar();

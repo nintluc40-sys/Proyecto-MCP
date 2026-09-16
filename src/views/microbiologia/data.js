@@ -12,6 +12,7 @@
 import { getField, parseNum, OBS_KEYS } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { isUnsafeKey } from '../../core/util.js';
+import { sanitizeStr } from '../../core/trovan.js';
 
 // ── utilidades locales ──
 const isDiacritic = (c) => { const x = c.charCodeAt(0); return x >= 0x300 && x <= 0x36f; };
@@ -542,6 +543,33 @@ function micLvlCode(ufc, r) {
   return 'r';
 }
 
+/* ── R7 (usuario, 2026-09-16) · EL ANALISTA, EN UNA SOLA GRAFÍA ──────────────────────
+   El campo de captura es texto LIBRE (su datalist sólo sugiere), y la misma persona acabó escrita
+   de dos formas: medido en «Calidad de Agua», «Ramirez» 512 filas contra «Ramírez» 191, y
+   «Macias» 323 contra «Macías» 212. El 63 % usaba la grafía sin tilde. Así, cualquier recuento por
+   analista partía a la persona en dos y el PDF de la placa llegaba a firmar «Macías · Macias».
+
+   🔑 DECISIÓN DEL USUARIO: la forma correcta es CON TILDE. Desde el 2026-09-16 la captura ya
+   guarda así (`micAnalistaCanon` en el monolito), pero eso sólo alcanza a lo NUEVO: las filas que
+   ya están en la hoja se pliegan AQUÍ, al leerlas, y por eso no hace falta migrar nada.
+   ⚠ Un nombre que no esté en el catálogo se devuelve tal cual, sin tocar: el laboratorio contrata
+   gente, y convertir a un analista nuevo en otro sería peor que tener dos grafías.
+   ⚠⚠ Este catálogo es GEMELO del `MIC_ANALISTAS` del monolito. Si divergen, la captura escribiría
+   una forma y el tablero plegaría a otra — que es exactamente el defecto que esto arregla. Lo
+   comprueba `analista-grafia.test.js` leyendo el motor. */
+export const MIC_ANALISTAS = ['Macías', 'Ramírez', 'Espinoza', 'Cayra', 'Chumo'];
+/* ⚠ Se usa el MISMO `sanitizeStr` que el monolito, no un `.trim()` parecido: si uno recortara a
+   200 caracteres o quitara los `=+-@` del principio y el otro no, las dos mitades devolverían
+   cosas distintas para el mismo nombre y la paridad de abajo sería mentira. */
+const grafiaPlana = (s) =>
+  sanitizeStr(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+/** Nombre del analista en su grafía canónica; lo que no está en el catálogo se respeta. */
+export function canonAnalista(v) {
+  const plano = grafiaPlana(v);
+  if (!plano) return '';
+  return MIC_ANALISTAS.find((a) => grafiaPlana(a) === plano) || sanitizeStr(v ?? '');
+}
+
 // ── contexto de columnas (acceso tolerante) ──
 const CF = {
   fecha: ['Fecha muestreo', 'Fecha de muestreo', 'fecha muestreo', 'Fecha'],
@@ -611,7 +639,7 @@ export function rowContext(row) {
     fecha: parseAnyDate(getField(row, CF.fecha)),
     fechaRaw: getField(row, CF.fecha),
     corrida: intStr(getField(row, CF.corrida)),
-    responsable: getField(row, CF.responsable),
+    responsable: canonAnalista(getField(row, CF.responsable)),   // R7 · una sola grafía
     departamento: getField(row, CF.departamento),
     formato: getField(row, CF.formato),
     formatoKey: classifyFormato(getField(row, CF.formato)),

@@ -10,7 +10,8 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderMadSaldo', 'madSaldoRefrescar', 'madResVarsAbrir', 'madResVarsAplicar', 'madResumenPdf', 'MAD_RES_VARS_KEY',
   'madResVarsGrupo', 'madResVarsSync', 'madResVarsTodas',
-  'madMortReiniciar', 'madMortCollect', 'buildMadMortPayload', 'madMortGuardar', 'madNaupBaja', 'madMortPctVivo'];
+  'madMortReiniciar', 'madMortCollect', 'buildMadMortPayload', 'madMortGuardar', 'madNaupBaja', 'madMortPctVivo',
+  '_gasVersionLocal'];   // 2026-09-16 · el portón compara el SELLO: el fixture usa el de esta app
 const H = {};
 const avisos = [];
 const envios = [];
@@ -71,7 +72,7 @@ beforeEach(() => {
   avisos.length = 0;
   envios.length = 0;
   impreso = null;
-  respuestaVer = { ok: true, version: 'abc123def456' };
+  respuestaVer = { ok: true, version: H._gasVersionLocal() };   // el GAS desplegado ES el de esta app
 });
 
 describe('Saldo · resumen con filtro de variables y PDF', () => {

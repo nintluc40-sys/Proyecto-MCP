@@ -10,7 +10,8 @@ import { MAD_ALIM_HEADERS } from './ficha-maduracion-alimentacion.schema.js';
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderMadAlimentacion', 'madAlimLeer', 'madAlimTomaCambio', 'madAlimTomaOrdenar', 'madAlimTanqueCambio', 'madAlimTomaAgregar', 'madAlimTomaQuitar',
-  'madAlimEstandar', 'madAlimCopiarATodas', 'madAlimGuardar', 'madAlimRevisar', 'madAlimPdf', 'madAlimVaciar', 'MAD_ALIM_CFG_KEY'];
+  'madAlimEstandar', 'madAlimCopiarATodas', 'madAlimGuardar', 'madAlimRevisar', 'madAlimPdf', 'madAlimVaciar', 'MAD_ALIM_CFG_KEY',
+  '_gasVersionLocal'];   // 2026-09-16 · el portón compara el SELLO: el fixture usa el de esta app
 const H = {};
 const avisos = [];
 const envios = [];
@@ -77,7 +78,7 @@ beforeEach(() => {
   avisos.length = 0;
   envios.length = 0;
   impreso = null;
-  respuestaVer = { ok: true, version: 'abc123def456', caps: ['matriz-reciclaje', 'mad-alimentacion'] };
+  respuestaVer = { ok: true, version: H._gasVersionLocal(), caps: ['matriz-reciclaje', 'mad-alimentacion'] };
   localStorage.removeItem(H.MAD_ALIM_CFG_KEY);
   H.madAlimVaciar();   // olvida la lectura anterior y vuelve a pintar
 });

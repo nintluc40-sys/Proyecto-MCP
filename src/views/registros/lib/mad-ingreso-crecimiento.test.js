@@ -30,7 +30,10 @@ import { MAD_INGRESO_HEADERS } from './ficha-maduracion-ingreso.schema.js';
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderMadIngreso', 'madIngReiniciar', 'madIngCollect', 'buildMadIngresoPayload',
-  'madIngGuardar', 'flushSyncQueue', '_madIngGasAlDia', 'MAD_ING_SHEET', '_madIngRepHTML'];
+  'madIngGuardar', 'flushSyncQueue', '_madIngGasAlDia', 'MAD_ING_SHEET', '_madIngRepHTML',
+  /* 2026-09-16 · el sello que lleva ESTA app. Desde que el portón lo compara, un fixture con un
+     sello inventado ya no significa «GAS al día»: significa «otro GAS». */
+  '_gasVersionLocal'];
 const H = {};
 const avisos = [];
 const envios = [];
@@ -60,7 +63,11 @@ beforeAll(async () => {
     + '\ntry{ H.setToast=function(f){toast=f;}; }catch(_){}'
     + '\ntry{ H.setPost=function(f){postPayload=f;}; }catch(_){}'
     + '\ntry{ H.setPostOnce=function(f){_postOnce=f;}; }catch(_){}'
-    + '\ntry{ H.setGasUrl=function(f){gasUrl=f;}; }catch(_){}\n})();';
+    + '\ntry{ H.setGasUrl=function(f){gasUrl=f;}; }catch(_){}'
+    /* 2026-09-16 · para poder ejercer el camino «no se pudo leer el sello local». Las dos viven en
+       el EPÍLOGO del arnés, no en el motor: el código de producción no gana superficie por esto. */
+    + '\ntry{ H.setGas=function(f){GAS=f;}; H.gasOriginal=GAS; }catch(_){}'
+    + '\ntry{ H.olvidarSelloLocal=function(){_gasVerLocalCache=null;}; }catch(_){}\n})();';
   globalThis.__ENG = H;
   new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(
     window, document, globalThis.localStorage, globalThis,
@@ -80,7 +87,7 @@ beforeAll(async () => {
 beforeEach(() => {
   avisos.length = 0;
   envios.length = 0;
-  respuestaVer = { ok: true, version: 'abc123def456' };
+  respuestaVer = { ok: true, version: H._gasVersionLocal() };   // el GAS desplegado ES el de esta app
   H.madIngReiniciar();
 });
 
@@ -129,13 +136,42 @@ describe('Ingreso · los campos de la camaronera', () => {
 });
 
 describe('Ingreso · no se escribe contra el GAS viejo (hoja por posición)', () => {
-  it('🔴 la pregunta al GAS distingue los tres casos', async () => {
+  /* 🔴 2026-09-16 · ESTA PRUEBA FIJABA EL DEFECTO. Decía «distingue los tres casos» y daba por
+     bueno `{version:'abc123def456'}`, o sea CUALQUIER sello: el portón sólo medía «¿contesta?».
+     Con el GAS ya desplegado y Pages por detrás, era justo el cliente viejo el que se creía al día.
+     Ahora son CUATRO casos, y el que faltaba —contesta, pero es OTRO GAS— es el que importa. */
+  it('🔴 la pregunta al GAS distingue los CUATRO casos: el sello tiene que ser el de ESTA app', async () => {
+    const sello = H._gasVersionLocal();
+    expect(sello, 'sin sello local el fixture no prueba nada').toMatch(/^[0-9a-f]{12}$/);
+
+    respuestaVer = { ok: true, version: sello };
+    expect(await H._madIngGasAlDia(), 'el sello de esta app').toBe(true);
     respuestaVer = { ok: true, version: 'abc123def456' };
-    expect(await H._madIngGasAlDia()).toBe(true);
+    expect(await H._madIngGasAlDia(), 'contesta, pero es OTRO GAS').toBe(false);
     respuestaVer = 'FichasLarv-OK';
-    expect(await H._madIngGasAlDia()).toBe(false);
+    expect(await H._madIngGasAlDia(), 'GAS anterior a la prueba de versión').toBe(false);
     respuestaVer = 'red';
-    expect(await H._madIngGasAlDia()).toBe(null);
+    expect(await H._madIngGasAlDia(), 'no contesta: no se sabe').toBe(null);
+  });
+
+  /* 🔑 El camino de escape, y por qué existe: si esta app no pudiera leer SU PROPIO sello, exigir
+     que el desplegado coincida dejaría a TODOS sin enviar por un fallo interno del cliente. Se
+     vuelve entonces al comportamiento anterior —basta con que el GAS conteste—, que es peor que
+     comparar pero mucho mejor que parar el trabajo de campo. */
+  it('🔑 si el sello local no se pudiera leer, se sigue como antes en vez de bloquear a todos', async () => {
+    try {
+      H.setGas(() => 'una plantilla sin la línea del sello');
+      H.olvidarSelloLocal();
+      expect(H._gasVersionLocal()).toBe('');
+      respuestaVer = { ok: true, version: 'cualquier-otro' };
+      expect(await H._madIngGasAlDia()).toBe(true);
+    } finally {
+      H.setGas(H.gasOriginal);
+      H.olvidarSelloLocal();
+    }
+    // y al recuperar el sello vuelve a distinguir: el escape no se queda pegado
+    respuestaVer = { ok: true, version: 'cualquier-otro' };
+    expect(await H._madIngGasAlDia()).toBe(false);
   });
 
   it('el fixture ejerce algo: con el GAS nuevo el ingreso SE ENVÍA', async () => {

@@ -22,7 +22,8 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['madIngReiniciar', 'madIngRevisar', '_madIngRepHTML', 'madMovReiniciar', 'madMovRevisar',
   'madMovSalaChange', 'madDesReiniciar', 'madDesRevisar', 'madFinReiniciar', 'madFinRevisar', 'MAD_REVISAR_TITLE',
-  'madFinGuardar', 'madFinTipoChange', 'madFinAddCard', 'madIngRefrescar', 'buildMadMovPayload', 'madMovCollect'];
+  'madFinGuardar', 'madFinTipoChange', 'madFinAddCard', 'madIngRefrescar', 'buildMadMovPayload', 'madMovCollect',
+  '_gasVersionLocal'];   // 2026-09-16 · el portón compara el SELLO: el fixture usa el de esta app
 const H = {};
 const envios = [];
 let respuestaVer = null;
@@ -120,7 +121,7 @@ beforeEach(() => {
   envios.length = 0;
   preguntasVer = 0;
   soltarVer = null;
-  respuestaVer = { ok: true, version: 'abc123def456' };
+  respuestaVer = { ok: true, version: H._gasVersionLocal() };   // el GAS desplegado ES el de esta app
 });
 
 describe.each(FICHAS)('«🔍 Revisar» · $nombre', (F) => {

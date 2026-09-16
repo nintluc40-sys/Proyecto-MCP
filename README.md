@@ -296,23 +296,19 @@ Dos consecuencias que conviene tener presentes al desplegar:
 > se comprueba contra el despliegue, no se lee de aquí. *(La versión anterior pedía
 > re-desplegar un GAS que ya estaba re-desplegado.)*
 
-- 🔴 **Re-desplegar el GAS** para activar la **guarda de esquema** del registro operativo
-  (ver la sección de Maduración), la **prueba de versión**, la **llave de Desoves guardada
-  como texto**, el **tope de lectura de `?p=rows` en 20000 filas** (antes 5000; el registro
-  reproductivo avisa si una hoja llega recortada) y el **reemplazo por clave que nunca borra a
-  ciegas** (BIOMOL, Microbiología, Calidad de Agua, Patología y Marea: un `keyCols` inválido o
-  una clave en blanco ya no vacían la hoja; lo prueba `gas-replace-clave.test.js`), y la
-  **MATRIZ con microchips reciclados** (`llaveMatriz_`: el alta de una hembra con el chip de una
-  muerta añade su fila en vez de fundirse sobre la de la muerta; lo prueba
-  `mad-gas-dopost.test.js`), y las **tres hojas nuevas del 2026-09-15** —`Maduración
-  Tratamientos`, `Maduración Mortalidad Desove` y `Maduración Alimentación`—, que el GAS
-  publicado hoy **no tiene en su lista blanca**: sus fichas calculan pero no envían. La de
-  Alimentación va además atada a la capacidad **`mad-alimentacion`** que ese despliegue
-  anuncia en `?p=ver` (`GAS_CAPACIDADES`). Las tres
-  hojas nuevas —Ingreso, Movimientos y Fin de Ciclo— **ya escriben**: ese despliegue entró
-  entre el 09-09 y el 09-12. Pegar `GAS/Code.gs` en Apps Script y publicar una **versión
-  nueva**; guardar sin publicar no cambia lo que sirve el Web App. ⚠ Copiarlo siempre de
-  `GAS/Code.gs` o de la app al día: una copia antigua de la app lleva un GAS viejo.
+- ✅ **La guarda de esquema, la prueba de versión, el tope de `?p=rows` en 20000 filas, el reemplazo
+  por clave que nunca borra a ciegas y la MATRIZ con microchips reciclados YA ESTÁN DESPLEGADOS**, y
+  las nueve hojas del registro operativo están en la lista blanca —incluidas `Maduración
+  Tratamientos`, `Mortalidad Desove` y `Alimentación`, con su capacidad `mad-alimentacion`—.
+  *(Este punto pedía re-desplegar todo eso y llevaba días siendo falso; medido con `?p=ver` el
+  2026-09-16. Es la segunda vez que le pasa a esta lista, y por eso arriba está el aviso.)*
+- 🔴 **Queda UN re-despliegue pendiente: el de los cambios de `Code.gs` del 2026-09-16** —la firma de
+  las tres hojas nuevas y la holgura de `LIMITS.biomol`—. Hasta que entre, **el cliente al día no
+  enviará las seis fichas de Maduración**, porque desde ese mismo día el portón compara el SELLO y el
+  desplegado ya no es el suyo. Es deliberado: calcula, guarda en el dispositivo y lo avisa.
+  Pegar `GAS/Code.gs` en Apps Script y publicar una **versión nueva**; guardar sin publicar no cambia
+  lo que sirve el Web App. ⚠ Copiarlo siempre de `GAS/Code.gs` o de la app al día: una copia antigua
+  de la app lleva un GAS viejo. ⚠⚠ **Y va DESPUÉS del push** (ver el orden, más abajo).
   🔑 **Cómo saber si entró, sin escribir nada:** ⚙ Config → «🔗 Probar conexión» compara el
   GAS desplegado con el de la app y dice si hay que volver a desplegar. Por debajo, la URL
   del Web App con `?p=ver` devuelve el sello `GAS_VERSION`, que es la huella de `Code.gs`
@@ -321,12 +317,14 @@ Dos consecuencias que conviene tener presentes al desplegar:
   con la app en caché envía aún el esquema anterior: con la guarda desplegada, sus envíos de
   las hojas que cambiaron se **rechazan** en vez de escribir columnas corridas, y lo tecleado
   se queda en el dispositivo hasta que la app se recargue.
-- ⚠ **Mientras el GAS publicado sea el anterior**, la app **no envía Ingreso, Desoves ni Fin de
-  Ciclo**: sus columnas cambiaron (Fin de Ciclo ganó «Sala», «Registro» y los cuatro pesos el 2026-09-14; su
-  hoja sigue vacía, así que no hay nada que migrar) y ese GAS, sin guarda, las escribiría corridas. Lo pregunta antes con
-  `?p=ver`; si esa pregunta no contesta en 6 s, envía como siempre (y la cola vuelve a
-  preguntar antes de entregar). Y un envío que espera en la cola más de 24 h se descarta, así
-  que conviene no dejar pasar días entre publicar el cliente y re-desplegar el GAS.
+- ⚠ **Mientras el GAS desplegado no sea EL DE LA APP, las seis fichas de Maduración no envían**
+  (Ingreso, Desoves, Fin de Ciclo, Tratamientos, Inf. Supervisor y Alimentación): se escriben por
+  posición y un GAS que no es el suyo podría escribirlas corridas. La app lo pregunta antes con
+  `?p=ver` y **compara el sello** (desde el 2026-09-16; antes le bastaba con que contestara, que es
+  justo lo que dejaba pasar a un cliente viejo). Si esa pregunta no contesta en 6 s, envía como
+  siempre y la cola vuelve a preguntar antes de entregar. Y un envío que espera en la cola más de
+  24 h **se descarta**, así que conviene no dejar pasar días entre publicar el cliente y
+  re-desplegar el GAS.
 - ⚠ **Y tampoco envía el alta de un microchip reciclado.** Un GAS anterior la fundiría sobre la
   fila de la hembra muerta (su llave era sólo el Trovan), así que la app pregunta a `?p=ver` si
   el GAS anuncia `"matriz-reciclaje"` en `caps`, y si no lo confirma —o no contesta— envía el
@@ -351,7 +349,19 @@ Dos consecuencias que conviene tener presentes al desplegar:
   «Hembras no viables», «Sala» y «Registro»), **aunque la hoja esté vacía o no exista**: una app
   vieja (Pages antes del push, o una copia en caché) ya no puede fijar la cabecera vieja y bloquear
   a las apps al día. Si una de esas cabeceras cambia, se actualiza `MAD_ESQUEMA_FIRMA` en el mismo
-  cambio. Hasta desplegarlo, el orden seguro sigue siendo push → GAS.
+  cambio.
+- ⚠⚠ **EL ORDEN ES `push → GAS`, y lo decide UNA pregunta: ¿alguna hoja ganó una columna EN
+  MEDIO?** Añadir AL FINAL es inocuo —`ensureHeaders` alarga la cabecera que falte, y «el envío
+  trae menos columnas» no cuenta como desfase—, así que da igual quién cree `Maduración Sala`
+  (21→22 con Toneladas) o `Maduración Tanques` (15→16 con Observaciones operativas).
+  `Maduración Mortalidad Desove` es el caso contrario: pasó de 14 a 18 columnas **insertando**
+  Fototropismo y Aireación en la 11-12 y Área y Alcalinidad en la 15-16. Si el GAS entra ANTES que
+  el push, un dispositivo con la app anterior crea esa hoja con su cabecera de 14 y desde ese
+  momento la guarda rechaza a TODOS los clientes al día («Esquema desactualizado… columna 11»):
+  sólo se sale vaciando la hoja **con su fila 1**.
+  🔑 Aquí ponía «hasta desplegarlo, el orden seguro sigue siendo push → GAS» mientras la lista de
+  la memoria ponía el GAS primero y el push al final. **Manda esta línea**, y el motivo ya no es
+  una opinión: está medido comparando las cabeceras de las dos versiones del cliente.
 - **Desoves · Despacho y pendientes (2026-09-14).** Despacho se elige de una lista de 19 destinos
   (varios a la vez); la celda los guarda separados por «, » en el orden de la lista. La ficha lista
   los **desoves pendientes** (sin cifra de N5) de la hoja —bajo 🔄— y de este dispositivo;
@@ -375,13 +385,20 @@ Dos consecuencias que conviene tener presentes al desplegar:
   **restando dos libros** —el del cierre de ese día y el de la víspera—, no sumando las filas de
   Tanques: en un tanque mezclado las bajas son del TANQUE y repartirlas entre sus lotes es lo que
   hace el libro. Su % va sobre los animales **en riesgo ese día**, no sobre el total ingresado.
-- 📋 **Inf. Supervisor (2026-09-15), hoja nueva `Maduración Mortalidad Desove` (14 columnas).** Dos cosas en la
+- 📋 **Inf. Supervisor (2026-09-15/16), hoja nueva `Maduración Mortalidad Desove`.** TRES cosas en la
   MISMA hoja, por decisión del usuario. (1) **Mortalidad de hembras** en tanques de desove y de recuperación: por
   fecha y lote, las que entran y las que mueren; el % se calcula. Las muertas **se descuentan del saldo** del lote
   (el libro las reparte entre sus tanques). (2) **Revisión de nauplios por lote**, *una fila por revisión*
-  (Entrada · Lavado · Lavado 2 · Postlavado) con deformidad, actividad, hongos, salinidad y temperatura; esas filas
-  llevan «Revisión» y el «Tipo de tanque» vacío, y **el libro mayor las salta**. Las observaciones del lote se
-  escriben en todas sus filas. Con el GAS publicado hoy la ficha no envía y el libro da la hoja por vacía.
+  (Entrada · Lavado · Lavado 2 · Postlavado) con deformidad, actividad, hongos, **fototropismo**, **aireación**,
+  salinidad y temperatura; esas filas llevan «Revisión» y el «Tipo de tanque» vacío, y **el libro mayor las salta**.
+  Salinidad y temperatura **bajan por su columna** a las revisiones de abajo, y cada fila sigue siendo editable.
+  (3) **Alcalinidad diaria por ÁREA**: el RAS y las cinco salas, en filas propias con «Área» y «Alcalinidad».
+  Las observaciones del lote se escriben en todas sus filas.
+  ⚠ **Fototropismo y Aireación llevan su PROPIA lista de valores** aunque hoy coincida con la de Actividad
+  (Alta/Media/Baja): compartir el array haría que retocar una cambiara las otras dos en silencio, y son tres
+  juicios distintos del laboratorio.
+  🔴 **Esta hoja es la única que ganó columnas EN MEDIO** (Fototropismo y Aireación en la 11-12, Área y
+  Alcalinidad en la 15-16), y de ahí sale el orden `push → GAS` de más abajo.
 - 🍤 **Alimentación (2026-09-15), hoja nueva `Maduración Alimentación` (21 columnas, `ID` = fecha-S*n*-T*tanque*,
   MERGE).** Ver la sección de Maduración. **Necesita el GAS nuevo Y su capacidad `mad-alimentacion`**: sin ella
   calcula, imprime y guarda la agenda en el dispositivo, pero no envía ni lee la agenda compartida — y lo avisa.
@@ -389,6 +406,56 @@ Dos consecuencias que conviene tener presentes al desplegar:
   (productos + RAS) y desinfección por área, una fila por tarjeta, por `ID` con MERGE. El estado de la
   sala elegido en la ficha pre-marca sus productos. **Necesita el GAS nuevo**: contra el publicado hoy
   la ficha no envía y lo tecleado se queda.
+  **2026-09-15 · entran tres desinfectantes —Ácido Nítrico, Peróxido y Trilon B— y dos áreas nuevas,
+  Reservorio y Colectores.** Son valores de catálogo: la hoja NO cambió de columnas.
+- 🛢️ **Tanques · las observaciones son de MULTISELECCIÓN (2026-09-15).** «Observaciones sanitarias» pasa
+  a marcarse de una lista de 8 y entra **«Observaciones operativas»** con 11, las dos con bajada por
+  columna y con `data-fijo` (una fila corregida a mano ya no se pisa). 🔑 Llegan a la hoja **en el ORDEN
+  DEL CATÁLOGO, no en el de marcado**: si no, contarlas después sería imposible. La columna nueva va
+  **al final**, así que no mueve nada de lo que ya hay.
+- 🏠 **Salas · columna «Toneladas» junto al RAS (2026-09-15).** Las toneladas de agua de **CADA tanque**
+  de la sala, con su valor por defecto (5,5 · 21 · 21 · 14 · 13). El defecto **se pre-rellena, no se
+  impone**: manda lo que hay en la celda, y al repintar manda lo guardado —un 0 incluido—; un defecto que
+  nadie tecleó **no cuenta** como registro. En la hoja va **al final**, detrás de «Estado por lote».
+  ✅ **Mandan las cifras del catálogo, no las del Excel del módulo** (decisión del usuario, 2026-09-16):
+  aquella hoja probó la FORMA de la cuenta, pero sus divisores son la medición de ESE módulo en septiembre.
+- ⚖️ **Saldo · ⚙️ Variables gana seis, y la tarjeta de lote la CARGA POR TANQUE (2026-09-15/16).** Las seis:
+  toneladas, alcalinidad de la sala y del RAS, revisión de nauplios (calidad y agua) y observaciones de los
+  tanques. Y por tanque: **carga métrica** (kg de biomasa viva) y **volumétrica** (kg/m³ = esa biomasa ÷ el
+  volumen de UN tanque). 🔴 **Corregido el 2026-09-16 con el Excel del módulo**: las toneladas son **POR
+  TANQUE**, no de la sala entera; repartirlas además entre sus tanques multiplicaba la carga por su número
+  (14,8 kg/m³ donde el Excel da 1,17). Fijado como prueba, al decimal.
+- ⚡ **Los botones lentos leen EN PARALELO (2026-09-15).** Saldo, Proponer estado, Ver vivos, Leer hoja,
+  Revisar y Leer saldos y pesos pasan por el mismo coste: `madSaldoCargar` lee CINCO hojas y ⚖️ Recalcular
+  tres más, y iban una detrás de otra. **Medido contra el GAS vivo, no supuesto: 13,5 s → 3,4 s (−75 %).**
+  Las cuatro hojas que se piden siempre arrancan sin esperar a `?p=ver`; la quinta sí depende de su respuesta.
+- 🎨 **Traslado en ruta · los cinco KPI del viaje se veían en blanco (2026-09-16).** O₂, Temp., Actividad,
+  Observaciones y Tiempo usaban `.sv-kpi-glass`, que es vidrio blanco, sobre `.sv-tras-viaje`, que no tiene
+  fondo. Opacados con los tokens de superficie, y el override va **SIEMPRE prefijado**: sin prefijo se
+  despintaban los KPI de Despacho, Módulo y Tanque, que sí van sobre color. Lo vigila `trasladoKpiContraste.test.js`.
+- 🛡 **2026-09-16 · las TRES hojas nuevas entran en `MAD_ESQUEMA_FIRMA`.** `Mortalidad Desove`,
+  `Tratamientos` y `Alimentación` no existían todavía en producción, así que la guarda V3 no tenía con qué
+  compararlas y quien las creara primero les fijaba la cabecera para siempre. Ahora el GAS exige a sus
+  envíos una columna que **sólo tiene el esquema actual** (Fototropismo en la 11 y Área en la 15 · Productos
+  RAS en la 8 · Fuente del peso en la 9). Las otras dos no cambiaron nunca de columnas y van igualmente: el
+  día que cambien, el cerrojo tiene que existir YA. **Exige re-desplegar el GAS.**
+- 🛡 **2026-09-16 · «¿el GAS está al día?» pasa a comparar el SELLO, no a preguntar si contesta.** El portón
+  de las seis fichas de Maduración (`_madIngGasAlDia`) devolvía `true` en cuanto `?p=ver` traía un JSON con
+  `version`, **sin mirar el valor**: se llamaba «al día» y sólo medía «está vivo», así que un cliente de hace
+  tres tandas se creía tan al día como el recién publicado. Ahora se compara contra el sello que lleva la
+  propia app. 🔑 El efecto es de **fallo seguro**: tocar `Code.gs` y no re-desplegar deja esas seis fichas
+  **sin enviar** (calculan, guardan en el dispositivo y lo avisan) en vez de dejarlas escribir contra un
+  servidor que no es el suyo. Lo tecleado no se pierde: la cola lo conserva.
+- 🔬 **2026-09-16 · el analista, en una sola grafía.** El campo «Responsable» es texto libre y la misma
+  persona quedó escrita de dos formas: medido en Calidad de Agua, «Ramirez» 512 filas contra «Ramírez» 191 y
+  «Macias» 323 contra «Macías» 212 — el 63 % sin tilde. Cualquier recuento por analista partía a la persona
+  en dos. **Decisión del usuario: la forma correcta es CON tilde.** La captura canoniza al guardar y el
+  tablero pliega al leer, así que **las filas que ya están en la hoja no hay que migrarlas**. ⚠ Un nombre
+  que no esté en el catálogo se respeta tal cual: no se convierte a nadie en otro.
+- 📏 **2026-09-16 · Biomol · el tope del cliente y el del GAS dejan de ser el mismo número.**
+  `BIO_GRID_MAX_ROWS` y `LIMITS.biomol.maxRows` valían los dos 100: una grilla llena mandaba 100 filas y
+  pasaba sólo porque «100 > 100» es falso. El del GAS sube a 200, y una prueba exige la **desigualdad** (no
+  el número, que caducaría). **Exige re-desplegar el GAS.**
 - ⚠ **MATRIZ · «Número» con aspecto de fecha (P16).** El GAS anterior daba formato de fecha a la
   columna 1 de toda fila escrita, y en la MATRIZ esa columna es «Número» (un 7 se veía
   «06/01/1900»). El GAS nuevo lo corrige en cada escritura, pero las celdas ya escritas conservan

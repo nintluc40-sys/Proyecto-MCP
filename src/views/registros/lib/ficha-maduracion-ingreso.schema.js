@@ -52,9 +52,14 @@ export const MAD_TANQUES_POR_SALA = {
   'Sala 5': [7, 8, 9, 10, 11],
 };
 
-/** Toneladas de agua que llevan TODOS los tanques de cada sala (usuario, 2026-09-15). Vive junto
- *  al catálogo de tanques porque las dos se usan siempre juntas: las toneladas entre los tanques
- *  dan el volumen MEDIO de un tanque, que es con lo que se estima su carga.
+/** Toneladas de agua que lleva CADA tanque de la sala (usuario, 2026-09-15).
+ *  ⚠⚠ Este párrafo decía «las toneladas ENTRE LOS TANQUES dan el volumen medio» y describía el
+ *  modelo EQUIVOCADO, el que se retiró el 2026-09-16: la cifra ya es la de UN tanque, y volver a
+ *  repartirla entre los de la sala multiplicaba la carga por su número (14,8 kg/m³ donde el Excel
+ *  del módulo da 1,17). Se quedó viejo el mismo día que se corrigió el cálculo.
+ *  ✅ MANDAN ESTAS CIFRAS, NO LAS DEL EXCEL (decisión del usuario, 2026-09-16): aquella hoja probó
+ *  la FORMA de la cuenta, pero sus divisores (4,65 y 19) son la medición de ESE módulo en
+ *  septiembre, no el catálogo del sistema. La diferencia entre 5,5 y 4,65 está decidida.
  *  🔑 Es un valor POR DEFECTO, no un candado: la ficha de Salas pre-rellena la celda con él, el
  *  usuario puede pisarlo, y lo registrado manda siempre sobre esta tabla. */
 export const MAD_SALA_TONELADAS = { 'Sala 1': 5.5, 'Sala 2': 21, 'Sala 3': 21, 'Sala 4': 14, 'Sala 5': 13 };

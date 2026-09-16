@@ -108,6 +108,11 @@ const MAD_RAS_OPTS = ["No","10%","15%","20%","25%","30%","40%","50%","60%","100%
    🔑 POR TANQUE, no de la sala entera: el Excel del módulo («SEPTIEMBRE 2026») divide la biomasa
    de UN tanque entre 4,65 en la Sala 1 y entre 19 en la Sala 2 para su «Carga volumetrica
    (kG/m3)», y cuadra al decimal. Repartirlas entre los tanques multiplicaba la carga por 15.
+   ✅ 2026-09-16 · MANDAN ESTAS CIFRAS, NO LAS DEL EXCEL (decisión del usuario). Aquella hoja
+   probó la FORMA de la cuenta —biomasa del tanque ÷ el volumen de UN tanque—, pero sus divisores
+   (4,65 y 19) son la medición de ESE módulo en septiembre, no el catálogo del sistema. Así que la
+   diferencia entre 5,5 y 4,65 no es un error que haya que cuadrar: está decidida. No retocar este
+   objeto para que case con el Excel.
    🔑 Es un valor POR DEFECTO, no un candado: la celda nace con él y se puede pisar, y lo que se
    guarda es siempre lo que está en la celda. El día que una sala cambie de volumen basta con
    teclearlo — el catálogo sólo decide de dónde parte. */
@@ -7646,10 +7651,28 @@ function madIngRevisar(){
    Densidad, Agua e ID un sitio. El GAS NUEVO lo aguanta: su guarda de esquema rechaza cualquier
    desfase sin escribir. El GAS VIEJO (sin guarda) escribiría cada dato en la columna de al lado
    y el ID fuera de la suya, rompiendo la llave. Así que, SÓLO para esta hoja, se pregunta antes:
-     true  → responde su sello en ?p=ver: es el GAS nuevo, se envía;
-     false → responde el texto «FichasLarv-OK»: es el GAS viejo, NO se envía;
+     true  → el sello que responde ?p=ver es EL DE ESTA APP: se envía;
+     false → contesta el texto «FichasLarv-OK» (GAS anterior a la prueba de versión) o responde
+             OTRO sello: NO se envía;
      null  → no responde (sin señal o una página rara): no se sabe, se sigue como siempre y, si
-             el envío queda en cola, la cola vuelve a preguntar antes de entregarlo. */
+             el envío queda en cola, la cola vuelve a preguntar antes de entregarlo.
+
+   ⚠⚠ 2026-09-16 · ANTES BASTABA CON QUE CONTESTARA. Devolvía `true` en cuanto ?p=ver traía un
+   JSON con `version`, SIN MIRAR el valor. O sea que la función se llamaba «al día» y sólo medía
+   «está vivo»: con el GAS desplegado, un cliente de hace tres tandas se creía al día igual que
+   uno recién publicado, y era justo el que podía crear una hoja nueva con la cabecera corrida.
+   Ahora se compara contra `_gasVersionLocal()`, que no es una copia del sello sino el sello LEÍDO
+   de la plantilla que lleva esta misma app — el mismo que ya usa ⚙ Config → Probar conexión.
+   🔑 El efecto buscado es de FALLO SEGURO: tocar `Code.gs` y no re-desplegar deja estas seis
+   fichas sin ENVIAR (calculan, guardan en el dispositivo y lo dicen), en vez de dejarlas escribir
+   contra un servidor que no es el suyo. Lo tecleado no se pierde: la cola lo conserva.
+   ⚠ Si el sello local no se pudiera leer, se vuelve al comportamiento anterior: un fallo interno
+   del cliente no puede dejar a todo el mundo sin capturar. */
+let _gasVerLocalCache = null;
+function _gasVersionLocalCacheada(){
+  if(_gasVerLocalCache === null){ try{ _gasVerLocalCache = _gasVersionLocal(); }catch(_){ _gasVerLocalCache = ""; } }
+  return _gasVerLocalCache;
+}
 async function _madIngGasAlDia(url){
   const base = url || gasUrl();
   if(!base || !isValidGasUrl(base)) return null;
@@ -7659,7 +7682,13 @@ async function _madIngGasAlDia(url){
     const r = await fetch(base + (base.indexOf("?")===-1 ? "?" : "&") + "p=ver", { signal: ctrl.signal, cache: "no-store" });
     clearTimeout(t);
     const txt = await r.text();
-    try{ const j = JSON.parse(txt); if(j && j.ok && typeof j.version === "string") return true; }catch(_){}
+    try{
+      const j = JSON.parse(txt);
+      if(j && j.ok && typeof j.version === "string"){
+        const local = _gasVersionLocalCacheada();
+        return local ? (j.version === local) : true;
+      }
+    }catch(_){}
     return txt.indexOf("FichasLarv-OK") !== -1 ? false : null;
   }catch(_){ return null; }
 }
@@ -7672,8 +7701,12 @@ async function _madIngGasAlDia(url){
    error previsible y el aviso no era el mismo que el de sus cuatro hermanas. Al añadir una hoja
    nueva, esta lista se toca en el mismo cambio. */
 function _madHojaPideGasNuevo(hoja){ return hoja === MAD_ING_SHEET || hoja === MAD_DESOVE_SHEET || hoja === MAD_FIN_SHEET || hoja === MAD_TRAT_SHEET || hoja === MAD_MORT_SHEET || hoja === MAD_ALIM_SHEET; }
-function _madGasViejoMsg(hoja){ return "el GAS publicado es anterior a las columnas nuevas de «" + hoja + "» y escribiría los datos en columnas equivocadas"; }
-const MAD_ING_GAS_VIEJO = "el GAS publicado es anterior a las columnas nuevas de «Maduración Ingreso» (Crecimiento y Libras) y escribiría los datos en columnas equivocadas";
+/* ⚠ 2026-09-16 · el aviso ya no dice «es anterior»: desde que se compara el SELLO, el GAS
+   desplegado puede ser anterior O posterior al de esta app, y las dos cosas son igual de malas
+   para una hoja que se escribe por posición. Lo que importa —y lo que el técnico puede hacer— es
+   que no es el suyo y que lo tecleado no se ha perdido. */
+function _madGasViejoMsg(hoja){ return "el GAS desplegado no es el de esta app y podría escribir «" + hoja + "» en columnas equivocadas"; }
+const MAD_ING_GAS_VIEJO = "el GAS desplegado no es el de esta app y podría escribir «Maduración Ingreso» (Crecimiento y Libras) en columnas equivocadas";
 async function madIngGuardar(){
   const model=madIngCollect();
   const res=madIngValidar(model);
@@ -12194,8 +12227,10 @@ function buildMadPayload(ficha, records){
            donde se lee mejor, habría corrido diecisiete columnas y convertido esto en una
            MIGRACIÓN de 540 filas. En la grilla sí va junto a Estado: el orden de la pantalla
            es libre, el de la hoja no.
-           ⚠ 21 columnas siguen por debajo de LIMITS.mad.maxCols del GAS desplegado, así que
-           esto NO necesita re-despliegue: la crea sola ensureHeaders. */
+           ⚠ Sigue por debajo de LIMITS.mad.maxCols del GAS desplegado, así que esto NO necesita
+           re-despliegue: la crea sola ensureHeaders. (Aquí ponía «21 columnas» y caducó el
+           2026-09-15, al entrar «Toneladas» debajo. El ancho se cuenta en el array de aquí
+           mismo; escribirlo otra vez sólo daba un sitio más donde equivocarse.) */
         /* «Toneladas» (2026-09-15) va DETRÁS de «Estado por lote» por lo mismo que aquélla fue
            la última en su día: añadir al final no mueve la llave posicional [0,1] ni toca las
            filas que ya existen. En la GRILLA sí va al lado del RAS, que es donde se lee. */
@@ -12654,10 +12689,12 @@ function bioSidActivo(fecha){
 }
 const BIO_GRID_DEFAULT_ROWS = 20;
 // 2026-08-17 (petición del usuario): más grilla disponible para registrar. El paso pasa de
-// 10 a 20 filas y el tope de 50 a 100. El tope cabe EXACTO en el límite del GAS
-// (LIMITS.biomol.maxRows = 100, ya así en el despliegue vivo), porque las filas vacías no se
-// envían: una grilla llena manda 100 y `100 > 100` es falso. No queda margen: subir de 100
-// exigiría tocar el GAS Y re-desplegarlo.
+// 10 a 20 filas y el tope de 50 a 100.
+// ⚠ AQUÍ PONÍA «el tope cabe EXACTO en el límite del GAS … no queda margen», y era verdad: los
+// dos valían 100, así que una grilla llena mandaba 100 filas y pasaba sólo porque «100 > 100» es
+// falso. El 2026-09-16 el GAS subió a 200 (ver LIMITS.biomol), así que hoy SÍ hay holgura y este
+// tope puede llegar a 150 sin volver a tocar el servidor. Lo que no cambia: los dos números viven
+// en sitios distintos, así que subir ÉSTE por encima de 150 vuelve a exigir mirar el del GAS.
 const BIO_GRID_ROW_STEP     = 20;
 const BIO_GRID_MAX_ROWS     = 100;
 const BIO_WIDE_KEYS         = { codigo:1, lugar:1, otros:1, tanque:1 };  // celdas más anchas
@@ -17187,7 +17224,28 @@ const MIC_PA_OPTS  = ["","Presencia","Ausencia"];
 // Analistas sugeridos para el campo Responsable de Bacteriología / Calidad de Agua /
 // Patología. El input admite TEXTO LIBRE (datalist): la lista es solo sugerencia con
 // valor por defecto. El Analista es OBLIGATORIO antes de sincronizar (ver los sync*).
+/* ⚠⚠ R7 (usuario, 2026-09-16) · LA MISMA PERSONA SE ESCRIBÍA DE DOS FORMAS. Medido en «Calidad de
+   Agua»: «Ramirez» 512 filas vs «Ramírez» 191, «Macias» 323 vs «Macías» 212 — el 63 % con una
+   grafía que NO está en este catálogo. El campo es texto libre (el datalist sólo SUGIERE), así que
+   cualquier agrupación por analista contaba dos veces a la misma persona, y el PDF de la placa
+   llegaba a firmar «Macías · Macias».
+   🔑 DECISIÓN DEL USUARIO: se unifica, y la forma correcta es CON TILDE — la de este catálogo.
+   Lo que se hace es canonizar al GUARDAR: lo tecleado se compara plegando tildes, mayúsculas y
+   espacios, y si casa con una entrada de aquí se guarda EXACTAMENTE como está escrita aquí.
+   ⚠ Un nombre que NO esté en el catálogo se respeta tal cual: el laboratorio contrata gente, y
+   convertir a un analista nuevo en otro sería mucho peor que dos grafías. No se inventa nadie.
+   ⚠ Esto arregla lo que se escriba DE AQUÍ EN ADELANTE. Las filas ya escritas las pliega el
+   tablero al leerlas (canonAnalista, en microbiologia/data.js), sin tocar la hoja. */
 const MIC_ANALISTAS = ["Macías","Ramírez","Espinoza","Cayra","Chumo"];
+function _analistaPlano(s){
+  return sanitizeStr(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g," ").trim().toLowerCase();
+}
+function micAnalistaCanon(v){
+  const plano = _analistaPlano(v);
+  if(!plano) return "";
+  const hit = MIC_ANALISTAS.filter(function(a){ return _analistaPlano(a) === plano; })[0];
+  return hit || sanitizeStr(v||"");
+}
 function _analistaDL(id){ return `<datalist id="${id}">`+MIC_ANALISTAS.map(a=>`<option value="${escapeHtml(a)}">`).join("")+`</datalist>`; }
 // ¿Alguna muestra pendiente va sin Analista (Responsable)? Bloquea la sincronización
 // (Mic/Cal/Pat) hasta que TODAS lo tengan; se comprueba el dato del registro, no el
@@ -17838,7 +17896,7 @@ function collectMicDraft(){
   if(fm) meta.fechaMuestreo  = isValidDate(fm.value) ? fm.value : "";
   if(fr) meta.fechaResultados= isValidDate(fr.value) ? fr.value : "";
   if(co) meta.corrida        = sanitizeStr(co.value);
-  if(re) meta.responsable    = sanitizeStr(re.value);
+  if(re) meta.responsable    = micAnalistaCanon(re.value);   // R7: «Macias» se guarda «Macías»
   const _enc=document.getElementById("mic-enc"); if(_enc) meta.encabezado = sanitizeStr(_enc.value);
   // Item 3: valores de cabecera Módulo/Estadío (rellenan todas las filas).
   const _hm=document.getElementById("mic-hdr-modulo");  if(_hm) meta.hdrModulo  = sanitizeStr(_hm.value);
@@ -18968,7 +19026,7 @@ function collectCalDraft(){
   if(fm) meta.fechaMuestreo  = isValidDate(fm.value) ? fm.value : "";
   if(fr) meta.fechaResultados= isValidDate(fr.value) ? fr.value : "";
   if(co) meta.corrida        = sanitizeStr(co.value);
-  if(re) meta.responsable    = sanitizeStr(re.value);
+  if(re) meta.responsable    = micAnalistaCanon(re.value);   // R7: «Macias» se guarda «Macías»
   const _enc=document.getElementById("cal-enc"); if(_enc) meta.encabezado = sanitizeStr(_enc.value);
   // Item 3: valores de cabecera Módulo/Estadío (rellenan todas las filas).
   const _hm=document.getElementById("cal-hdr-modulo");  if(_hm) meta.hdrModulo  = sanitizeStr(_hm.value);
@@ -20011,7 +20069,7 @@ function collectPatDraft(){
   if(fr) meta.fechaResultados= isValidDate(fr.value)?fr.value:"";
   if(co) meta.corrida        = sanitizeStr(co.value);
   const _enc=document.getElementById("pat-enc"); if(_enc) meta.encabezado = sanitizeStr(_enc.value);
-  if(re) meta.responsable    = sanitizeStr(re.value);
+  if(re) meta.responsable    = micAnalistaCanon(re.value);   // R7: «Macias» se guarda «Macías»
   const tbody=document.getElementById("pat-tb"); const rows=[];
   if(tbody){
     tbody.querySelectorAll("tr").forEach((tr,idx)=>{
@@ -20472,7 +20530,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "e70b1986f901";
+const GAS_VERSION = "a609d2e84fa3";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -20540,11 +20598,13 @@ const LIMITS = {
   // y el tope estaba EXACTAMENTE en 8: margen cero, la peor cifra posible.
   control: { maxRows: 300, maxCols: 12 },
   algas:   { maxRows: 500, maxCols: 28 },
-  // Subido de 25 a 32 el 2026-09-08, al entrar el registro operativo. La hoja mas
-  // ancha prevista es "Maduración Sala" con 21 columnas: con el tope en 25 el margen
-  // quedaba en 4, y ese margen justo es exactamente el error que ya se pago dos
-  // veces (Biomol con 20, AsT con 25). Desde el 2026-08-30 un payload mas ancho se
-  // RECHAZA entero, asi que el margen es lo que evita llegar siquiera al rechazo.
+  // Subido de 25 a 32 el 2026-09-08, al entrar el registro operativo. La hoja mas ancha
+  // del registro es "Maduración Sala": con el tope en 25 el margen quedaba en cuatro
+  // columnas, y ese margen justo es exactamente el error que ya se pago dos veces (Biomol
+  // con 20, AsT con 25). Desde el 2026-08-30 un payload mas ancho se RECHAZA entero, asi
+  // que el margen es lo que evita llegar siquiera al rechazo.
+  // ⚠ AQUI PONIA "con 21 columnas" y caduco el 2026-09-15, cuando Sala gano "Toneladas".
+  // El ancho NO se anota: lo dice buildMadPayload("salas") en el motor, o la propia hoja.
   mad:     { maxRows: 1000, maxCols: 32 },
   // Biomol: 23 columnas desde 2026-08-23 (las 19 anteriores MENOS la pareja
   // genérica, que se retiró, MÁS el Ct y las copias de WSSV, IHHNV y AHPND/EMS).
@@ -20553,7 +20613,14 @@ const LIMITS = {
   // dejado las SEIS columnas nuevas vacías en la hoja sin un solo error. Desde el
   // 2026-08-30 un payload más ancho se RECHAZA (ver la cabecera de este bloque), así
   // que hoy el fallo se ve; la holgura es lo que evita llegar siquiera al rechazo.
-  biomol:  { maxRows: 100, maxCols: 32 },
+  // ⚠⚠ maxRows SUBE DE 100 A 200 EL 2026-09-16, y el motivo no es que la grilla vaya a crecer:
+  // es que el tope del CLIENTE y el del SERVIDOR eran EL MISMO NÚMERO. BIO_GRID_MAX_ROWS vale 100,
+  // así que una grilla llena mandaba 100 filas y pasaba sólo porque «100 > 100» es falso: margen
+  // CERO, que es exactamente la cifra que este archivo ya pagó dos veces por otro lado (Biomol con
+  // maxCols 20, AsT con 25). Un tope que se roza no avisa de nada hasta el día que se pasa.
+  // 🔑 Y de paso deja de ser un par acoplado: hasta hoy, subir la grilla exigía tocar el GAS y
+  // re-desplegarlo. Con 200, la grilla puede llegar a 150 sin volver por aquí.
+  biomol:  { maxRows: 200, maxCols: 32 },
   // ast: 27 columnas desde 2026-08 (23 de datos + ID + Flacidez/Necrosis/Disparidad).
   // ⚠ POR QUÉ EL MARGEN: con el 25 anterior, y mientras maxCols todavía RECORTABA, un
   // payload de 27 perdía en silencio las 2 últimas columnas. Hoy eso se rechaza en vez
@@ -21247,7 +21314,9 @@ function ensureHeaders(ws, headers) {
 // respondería «ok». Por eso, antes de escribir, se comparan las cabeceras del envío con
 // las de la hoja, posición a posición.
 //   · Que el envío traiga MENOS columnas no es un desfase: le falta el final, no está
-//     corrido (Sala sin la Fase 6 sigue escribiendo, y el merge conserva la 21.ª).
+//     corrido (Sala sin la Fase 6 sigue escribiendo, y el merge conserva las de la cola).
+//     ⚠ Aquí ponía «conserva la 21.ª» y caducó al ganar Sala su columna «Toneladas»: el
+//     ordinal era la columna concreta de aquel día, no la regla. La regla es «las últimas».
 //   · Una cabecera en blanco en la hoja no se compara: no hay con qué.
 //   · Espacios y la forma Unicode de los acentos no cuentan como diferencia.
 // Sólo las de esta lista (el registro operativo). El reproductivo también es posicional, pero su esquema no ha
@@ -21279,10 +21348,29 @@ function esquemaIncompatible_(cabHoja, cabEnvio) {
 // ahí la guarda rechaza a las apps al día. Estas hojas exigen al ENVÍO las cabeceras que sólo tiene su
 // esquema actual (columna desde 1). Si una de ellas cambia de nombre o de sitio, se actualiza aquí en el
 // mismo cambio y se re-despliega el GAS.
+// ⚠⚠ 2026-09-16 · ENTRAN LAS TRES HOJAS NUEVAS, y no es simetría: es el ÚNICO cerrojo que les
+// quedaba. Las tres NO EXISTEN todavía en producción (medido ese día: 0 cabeceras), así que la
+// guarda V3 no tiene con qué compararlas y quien las cree primero les fija la cabecera para
+// siempre. La grave es «Mortalidad Desove»: pasó de 14 a 18 columnas INSERTANDO Fototropismo y
+// Aireación en la 11-12 y Área y Alcalinidad en la 15-16, así que una app anterior no la crearía
+// «más corta» —eso sería inofensivo— sino CORRIDA, y desde ahí rechazaría a todas las apps al día.
+// Las otras dos no cambiaron nunca de columnas; van igualmente, porque el día que cambien el
+// cerrojo tiene que existir YA (una firma añadida después del desfase llega tarde por definición).
+// 🔑 La columna elegida es siempre una que SÓLO tiene el esquema actual y que manda todo cliente
+// al día. Si alguna cambia de nombre o de sitio, se actualiza aquí EN EL MISMO CAMBIO.
 var MAD_ESQUEMA_FIRMA = {
+  // ⚠ El espaciado de estas tres líneas NO se retoca: son ancla de mutar-mad-gas-dopost
+  //   (A4-M3, A4-M4, A4-M5). Re-alinearlas por estética mató las tres el 2026-09-16.
+  //   Y el comentario va SIN comillas invertidas: este bloque viaja dentro de la plantilla
+  //   GAS() de engine.js, y una sola la cerraría (pasó ese mismo día; lo cazó la suite).
   "Maduración Ingreso":      [[14, "Crecimiento semanal promedio"]],
   "Maduración Lotes":        [[7, "Hembras no viables"]],
-  "Maduración Fin de Ciclo": [[5, "Sala"], [10, "Rojos"]]
+  "Maduración Fin de Ciclo": [[5, "Sala"], [10, "Rojos"]],
+  // 11 y 15 son justo las dos inserciones: el cliente de 14 columnas lleva «Salinidad» en la 11.
+  "Maduración Mortalidad Desove": [[11, "Fototropismo"], [15, "Área"]],
+  "Maduración Tratamientos": [[8, "Productos RAS"]],
+  // 9 va ANTES del bloque de alimentos, que es la parte del esquema que puede crecer.
+  "Maduración Alimentación": [[9, "Fuente del peso"]]
 };
 // null si el envío trae la firma (o la hoja no tiene); si no, { col, cab: lo que espera }.
 function firmaAusente_(hoja, cabEnvio) {

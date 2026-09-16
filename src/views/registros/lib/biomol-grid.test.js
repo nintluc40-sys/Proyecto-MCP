@@ -7,16 +7,17 @@
    monolito (public/registros/engine.js y C:\\Users\\Usuario\\Music\\index (8).html).
 
    LO QUE DE VERDAD HAY QUE VIGILAR NO ES LA CONSTANTE, ES EL ACOPLE CON EL GAS.
-   `LIMITS.biomol.maxRows` vale 100 y `doPost` rechaza el envío con "Límite de filas
-   excedido" cuando `payload.rows.length > maxRows`. Como las filas vacías no se envían,
-   una grilla LLENA manda exactamente 100 y `100 > 100` es falso: pasa, pero SIN NINGÚN
-   MARGEN. Por eso la última prueba arma el payload de una grilla llena y lo contrasta
-   contra el límite leído del propio GAS/Code.gs, en vez de contra un 100 escrito a mano:
-   si alguien sube el tope del cliente sin subir el del GAS, se pone roja aquí y no en
-   producción, que es donde se notaría —el analista perdería la tanda entera del día—.
+   `doPost` rechaza el envío con "Límite de filas excedido" cuando
+   `payload.rows.length > LIMITS.biomol.maxRows`. Por eso la prueba de la grilla llena arma el
+   payload real y lo contrasta contra el límite leído del propio GAS/Code.gs, en vez de contra un
+   número escrito a mano: si alguien sube el tope del cliente sin subir el del GAS, se pone roja
+   aquí y no en producción, que es donde se notaría —el analista perdería la tanda entera del día—.
 
-   El tope del GAS ya valía 100 en el despliegue vivo (desde 06c20f5), así que este cambio
-   NO necesita re-desplegar el GAS.
+   ⚠ 2026-09-16 (R8) · ESTE PÁRRAFO DECÍA «vale 100 … SIN NINGÚN MARGEN», y lo daba por bueno.
+   Los dos topes eran el MISMO número: la grilla llena mandaba 100 y pasaba sólo porque
+   «100 > 100» es falso. El GAS subió a 200 y entró una prueba que exige la DESIGUALDAD, así que
+   ya no depende de que alguien lea este comentario. Las cifras concretas no se anotan aquí: las
+   leen `topeFilasGas()` y `H.BIO_GRID_MAX_ROWS`.
 
    Verificado por mutación M49 (devolver el tope del cliente a 50) y M50 (subirlo a 120,
    por encima del GAS): cada una deja roja la prueba que le toca.
@@ -92,7 +93,18 @@ describe('Biomol · la grilla crece de 20 en 20 hasta 100', () => {
     expect(btn.textContent).toContain('20 filas');
   });
 
-  it('una grilla LLENA cabe en el tope del GAS, sin margen', () => {
+  /* 🔴 R8 (2026-09-16) · EL MARGEN, QUE ANTES ERA CERO. La prueba de abajo se llamaba «…sin
+     margen» y lo decía como quien describe el tiempo: el tope del cliente y el del GAS valían LOS
+     DOS 100, y una grilla llena pasaba sólo porque «100 > 100» es falso. Un tope que se roza no
+     avisa hasta el día que se pasa, y ese día el analista pierde la tanda entera. El GAS subió a 200.
+     🔑 Se vigila la DESIGUALDAD, no el número: fijar «200» aquí volvería a caducar al primer
+     cambio. Lo que no puede repetirse es que los dos valgan lo mismo. */
+  it('🔴 el tope del cliente está POR DEBAJO del GAS: nunca el mismo número', () => {
+    const tope = topeFilasGas();
+    expect(H.BIO_GRID_MAX_ROWS).toBeLessThan(tope.maxRows);
+  });
+
+  it('una grilla LLENA cabe en el tope del GAS, y ahora con margen', () => {
     const tope = topeFilasGas();
     const fp = document.getElementById('fp-biomol');
     // Se rellena la celda por su NOMBRE real (bg_<fila>_<clave>): llenar "el primer input

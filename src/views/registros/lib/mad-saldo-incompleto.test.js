@@ -29,7 +29,7 @@
    animales) sin depender de que siga siendo alcanzable — la guarda tiene que aguantar
    aunque el camino que lo producía se cierre, que es justo lo que pasó ese día.
    ============================================================ */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -216,6 +216,18 @@ describe('Maduración · el libro RECOGE el aviso de recorte al construirse', ()
     for (const k of ['ingreso', 'movimientos', 'tanques', 'cierres', 'mortDesove']) h[H.MAD_LIBRO_SHEETS[k]] = [];
     return h;
   };
+
+  /* 🔴 2026-09-16 · ESTE BLOQUE DECÍA «sin red» Y SALÍA A PRODUCCIÓN. `setLecturas` deja las hojas
+     puestas, sí, pero `madSaldoCargar` pregunta antes a `?p=ver` y ese portón NO estaba sustituido:
+     cada una de las tres pruebas lanzaba un fetch REAL al GAS de producción y esperaba a que el
+     navegador falso lo bloqueara por CORS. Verde, pero lento y a merced de la red.
+     Se destapó al entrar la comparación de sello (R4): el trabajo extra empujó la primera prueba
+     por encima del timeout de 5 s. Una prueba que falla según cómo vaya internet no mide nada, así
+     que la red se sustituye AQUÍ — que es lo que el comentario de arriba ya afirmaba. */
+  const originales = {};
+  beforeAll(() => { originales.gas = H._madIngGasAlDia; originales.leer = H._reproFetchSheet; });
+  afterAll(() => H.setRed(originales.gas, originales.leer));
+  beforeEach(() => H.setRed(async () => true, originales.leer));   // el GAS desplegado es el de esta app
 
   it('el fixture ejerce algo: sin recortes, el libro sale entero y sin fallos', async () => {
     H.setLecturas(leidas(), {});

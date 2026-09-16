@@ -389,12 +389,82 @@ describe('GAS · A4 · una app vieja no fija la cabecera vieja en una hoja vací
     }
   });
 
-  it('🔑 sólo esas tres: una hoja sin firma sigue naciendo con las cabeceras del envío', () => {
+  it('🔑 la firma NO es para todas: una hoja sin ella sigue naciendo con las cabeceras del envío', () => {
+    // ⚠ Decía «sólo esas tres» y caducó el 2026-09-16, cuando entraron las tres nuevas. Lo que la
+    // prueba ejerce de verdad —y no caduca— es que `Movimientos`, que NO está en la firma, sigue
+    // naciendo de su envío: sin esto, «la firma funciona» podría significar «rechaza todo».
     const hojas = {};
     const r = gas(hojas).post({ sheetName: 'Maduración Movimientos', headers: MAD_MOV_HEADERS,
       rows: [MAD_MOV_HEADERS.map((h) => (h === 'ID' ? 'x1' : h === 'Fecha' ? '2026-09-15' : ''))] });
     expect(r.status).toBe('ok');
     expect(hojas['Maduración Movimientos'].filas[0]).toEqual(MAD_MOV_HEADERS);
+  });
+});
+
+/* ── A4 · 2026-09-16 · LAS TRES HOJAS NUEVAS ENTRAN EN LA FIRMA ──────────────
+   Por qué hacía falta, medido ese día: el GAS ya estaba desplegado y Pages seguía sirviendo
+   `e27761b`, cuyo `Maduración Mortalidad Desove` tiene 14 columnas con «Salinidad» en la 11. El
+   esquema al día tiene 18 e INSERTA Fototropismo/Aireación en la 11-12 y Área/Alcalinidad en la
+   15-16: la hoja no nacería «más corta» —eso lo arregla `ensureHeaders`— sino CORRIDA, y desde ahí
+   rechazaría a todas las apps al día. Las tres hojas estaban a 0 cabeceras, así que se llegó a
+   tiempo.
+   🔑 EL FIXTURE ESTÁ ELEGIDO PARA QUE DISTINGA: las dos cabeceras viejas de Mortalidad Desove son
+   las REALES de dos clientes que existen en disco (Pages con 14 columnas y una copia anterior con
+   8), no esquemas inventados. Y cada rechazo se comprueba por su COLUMNA, no sólo por «error»:
+   con un `toContain('Esquema desactualizado')` a secas, mover la firma a otra columna seguiría
+   dando verde. */
+const MORT_14_PAGES = ['Fecha', 'Lote', 'Tipo de tanque', 'Hembras que entran', 'Hembras muertas', '% Mortalidad',
+  'Revisión', 'Deformidad', 'Actividad', 'Hongos', 'Salinidad', 'Temperatura', 'Observaciones', 'ID'];
+const MORT_8_PREVIO = ['Fecha', 'Lote', 'Tipo de tanque', 'Hembras que entran', 'Hembras muertas', '% Mortalidad',
+  'Observaciones', 'ID'];
+
+describe('GAS · A4 · las tres hojas NUEVAS tampoco las fija una app vieja', () => {
+  it('🔴 Mortalidad Desove con las 14 columnas que sirve Pages: rechazo en la 11 y la hoja NO nace', () => {
+    const hojas = {};
+    const g = gas(hojas);
+    const r = g.post({ sheetName: 'Maduración Mortalidad Desove', headers: MORT_14_PAGES,
+      rows: [conValores(MORT_14_PAGES, { Fecha: '2026-09-16', Lote: 'BP', ID: '2026-09-16-BP-DESOVE' })] });
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('columna 11');
+    expect(r.message).toContain('«Fototropismo»');
+    expect(hojas['Maduración Mortalidad Desove']).toBeUndefined();
+    expect(g.candado.soltado).toBe(g.candado.tomado);            // rechazar no deja el candado tomado
+  });
+
+  it('🔴 y con las 8 columnas de una copia anterior: también se para, sin escribir', () => {
+    const hoja = hojaFalsa([]);
+    const g = gas({ 'Maduración Mortalidad Desove': hoja });
+    const r = g.post({ sheetName: 'Maduración Mortalidad Desove', headers: MORT_8_PREVIO, rows: [filaVacia(MORT_8_PREVIO)] });
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('columna 11');
+    expect(hoja.filas).toEqual([]);
+    expect(hoja.escrituras).toEqual([]);                          // ni siquiera la fila de cabeceras
+  });
+
+  it('🔴 Tratamientos y Alimentación: si su columna de firma se mueve o se renombra, se rechazan', () => {
+    const casos = [
+      ['Maduración Tratamientos', MAD_TRAT_HEADERS, 'Productos RAS', 'columna 8'],
+      ['Maduración Alimentación', MAD_ALIM_HEADERS, 'Fuente del peso', 'columna 9'],
+    ];
+    for (const [nombre, cab, columna, esperado] of casos) {
+      const roto = cab.map((h) => (h === columna ? h + ' (viejo)' : h));
+      const hojas = {};
+      const r = gas(hojas).post({ sheetName: nombre, headers: roto, rows: [filaVacia(roto)] });
+      expect(r.status, nombre).toBe('error');
+      expect(r.message, nombre).toContain(esperado);
+      expect(hojas[nombre], nombre).toBeUndefined();
+    }
+  });
+
+  it('el fixture ejerce algo: las tres, AL DÍA y sin hoja, escriben y la crean con su cabecera vigente', () => {
+    for (const [nombre, cab] of [['Maduración Mortalidad Desove', MAD_MORT_HEADERS],
+      ['Maduración Tratamientos', MAD_TRAT_HEADERS], ['Maduración Alimentación', MAD_ALIM_HEADERS]]) {
+      const hojas = {};
+      const fila = conValores(cab, { Fecha: '2026-09-16', ID: 'x1' });
+      const r = gas(hojas).post({ sheetName: nombre, headers: cab, rows: [fila] });
+      expect(r.status, nombre).toBe('ok');
+      expect(hojas[nombre].filas[0], nombre).toEqual(cab);
+    }
   });
 });
 

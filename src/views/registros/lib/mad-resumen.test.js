@@ -198,7 +198,11 @@ describe('Resumen · lotes', () => {
        (33×68 + 59×54) = 5430 g = 5,43 kg · 5,43 ÷ 4,65 = 1,1677 → 1,17 kg/m³
      Se registran las 4,65 t DEL EXCEL, no las 5,5 del catálogo, para comparar contra su divisor.
      ⚠ Esta prueba es la que fija que las toneladas son POR TANQUE: con el reparto entre los 15
-     tanques de la Sala 1 saldría 17,5 kg/m³, quince veces la cifra del Excel. */
+     tanques de la Sala 1 saldría 17,5 kg/m³, quince veces la cifra del Excel.
+     ✅ 2026-09-16 · Y ESTO NO DICE QUE EL CATÁLOGO ESTÉ MAL (decisión del usuario): mandan sus
+     cifras (Sala 1 = 5,5 t). Lo que aquí se fija es la FORMA de la cuenta —biomasa del tanque ÷ el
+     volumen de UN tanque—, no el valor; por eso el fixture TECLEA el del Excel en vez de tirar del
+     catálogo. Nadie debe «cuadrar» `MAD_SALA_TONELADAS` con esta hoja. */
   it('🔴 contra el EXCEL: la carga volumétrica del tanque 1 de la Sala 1 cuadra al decimal', () => {
     const f = {
       ingresos: [ing('2026-01-01', 'EX', 'CG1', 'Sala 1', 1, 59, 33)],

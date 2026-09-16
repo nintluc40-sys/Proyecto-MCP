@@ -106,7 +106,13 @@ export function mountShell(appEl) {
   on(EV.DATA, () => { renderDateBar(); renderCurrentView(); });
 }
 
-// Vistas principales del sistema (las pendientes aún no están desarrolladas).
+// Vistas principales del sistema. Las NUEVE están desarrolladas: aquí ya no queda ninguna
+// «pendiente», y ninguna entrada declara esa marca.
+// ⚠ Esta línea decía «(las pendientes aún no están desarrolladas)» y llevaba tiempo siendo falsa,
+// exactamente igual que el respaldo que la acompañaba —el que esquivaba las vistas marcadas como
+// pendientes, retirado por código muerto y explicado abajo, en el render de las pestañas—: nadie
+// declaraba nunca esa marca, así que el código y el comentario describían un sistema que ya no
+// existe. Si alguna vez vuelve a haber una vista a medias, se marca Y se comprueba.
 // Exportado para el test de caracterización (shell.test.js).
 export const MAIN_VIEWS = [
   { id: 'supervisor',   label: 'Supervisor',         icon: '👁️' },

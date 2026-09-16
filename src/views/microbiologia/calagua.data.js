@@ -11,7 +11,7 @@ import { getField, parseNum } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { isUnsafeKey } from '../../core/util.js';
 import { THRESHOLDS } from '../../config.js';
-import { intStr, normTipoMuestra, modLabel } from './data.js';
+import { intStr, normTipoMuestra, modLabel, canonAnalista } from './data.js';
 
 export const isCalAguaRow = (r) => !!r && /calidad\s*de\s*agua/i.test(String(r._SheetOrigin || ''));
 
@@ -147,7 +147,7 @@ export function calCtx(row) {
     estado: getField(row, ['Estado']),
     componente: getField(row, ['Componente']),
     muestras: getField(row, ['Muestras']),
-    responsable: getField(row, ['Responsable']),
+    responsable: canonAnalista(getField(row, ['Responsable'])),   // R7 · una sola grafía
   };
 }
 

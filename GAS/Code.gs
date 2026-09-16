@@ -21,7 +21,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "e70b1986f901";
+const GAS_VERSION = "a609d2e84fa3";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -89,11 +89,13 @@ const LIMITS = {
   // y el tope estaba EXACTAMENTE en 8: margen cero, la peor cifra posible.
   control: { maxRows: 300, maxCols: 12 },
   algas:   { maxRows: 500, maxCols: 28 },
-  // Subido de 25 a 32 el 2026-09-08, al entrar el registro operativo. La hoja mas
-  // ancha prevista es "Maduración Sala" con 21 columnas: con el tope en 25 el margen
-  // quedaba en 4, y ese margen justo es exactamente el error que ya se pago dos
-  // veces (Biomol con 20, AsT con 25). Desde el 2026-08-30 un payload mas ancho se
-  // RECHAZA entero, asi que el margen es lo que evita llegar siquiera al rechazo.
+  // Subido de 25 a 32 el 2026-09-08, al entrar el registro operativo. La hoja mas ancha
+  // del registro es "Maduración Sala": con el tope en 25 el margen quedaba en cuatro
+  // columnas, y ese margen justo es exactamente el error que ya se pago dos veces (Biomol
+  // con 20, AsT con 25). Desde el 2026-08-30 un payload mas ancho se RECHAZA entero, asi
+  // que el margen es lo que evita llegar siquiera al rechazo.
+  // ⚠ AQUI PONIA "con 21 columnas" y caduco el 2026-09-15, cuando Sala gano "Toneladas".
+  // El ancho NO se anota: lo dice buildMadPayload("salas") en el motor, o la propia hoja.
   mad:     { maxRows: 1000, maxCols: 32 },
   // Biomol: 23 columnas desde 2026-08-23 (las 19 anteriores MENOS la pareja
   // genérica, que se retiró, MÁS el Ct y las copias de WSSV, IHHNV y AHPND/EMS).
@@ -102,7 +104,14 @@ const LIMITS = {
   // dejado las SEIS columnas nuevas vacías en la hoja sin un solo error. Desde el
   // 2026-08-30 un payload más ancho se RECHAZA (ver la cabecera de este bloque), así
   // que hoy el fallo se ve; la holgura es lo que evita llegar siquiera al rechazo.
-  biomol:  { maxRows: 100, maxCols: 32 },
+  // ⚠⚠ maxRows SUBE DE 100 A 200 EL 2026-09-16, y el motivo no es que la grilla vaya a crecer:
+  // es que el tope del CLIENTE y el del SERVIDOR eran EL MISMO NÚMERO. BIO_GRID_MAX_ROWS vale 100,
+  // así que una grilla llena mandaba 100 filas y pasaba sólo porque «100 > 100» es falso: margen
+  // CERO, que es exactamente la cifra que este archivo ya pagó dos veces por otro lado (Biomol con
+  // maxCols 20, AsT con 25). Un tope que se roza no avisa de nada hasta el día que se pasa.
+  // 🔑 Y de paso deja de ser un par acoplado: hasta hoy, subir la grilla exigía tocar el GAS y
+  // re-desplegarlo. Con 200, la grilla puede llegar a 150 sin volver por aquí.
+  biomol:  { maxRows: 200, maxCols: 32 },
   // ast: 27 columnas desde 2026-08 (23 de datos + ID + Flacidez/Necrosis/Disparidad).
   // ⚠ POR QUÉ EL MARGEN: con el 25 anterior, y mientras maxCols todavía RECORTABA, un
   // payload de 27 perdía en silencio las 2 últimas columnas. Hoy eso se rechaza en vez
@@ -796,7 +805,9 @@ function ensureHeaders(ws, headers) {
 // respondería «ok». Por eso, antes de escribir, se comparan las cabeceras del envío con
 // las de la hoja, posición a posición.
 //   · Que el envío traiga MENOS columnas no es un desfase: le falta el final, no está
-//     corrido (Sala sin la Fase 6 sigue escribiendo, y el merge conserva la 21.ª).
+//     corrido (Sala sin la Fase 6 sigue escribiendo, y el merge conserva las de la cola).
+//     ⚠ Aquí ponía «conserva la 21.ª» y caducó al ganar Sala su columna «Toneladas»: el
+//     ordinal era la columna concreta de aquel día, no la regla. La regla es «las últimas».
 //   · Una cabecera en blanco en la hoja no se compara: no hay con qué.
 //   · Espacios y la forma Unicode de los acentos no cuentan como diferencia.
 // Sólo las de esta lista (el registro operativo). El reproductivo también es posicional, pero su esquema no ha
@@ -828,10 +839,29 @@ function esquemaIncompatible_(cabHoja, cabEnvio) {
 // ahí la guarda rechaza a las apps al día. Estas hojas exigen al ENVÍO las cabeceras que sólo tiene su
 // esquema actual (columna desde 1). Si una de ellas cambia de nombre o de sitio, se actualiza aquí en el
 // mismo cambio y se re-despliega el GAS.
+// ⚠⚠ 2026-09-16 · ENTRAN LAS TRES HOJAS NUEVAS, y no es simetría: es el ÚNICO cerrojo que les
+// quedaba. Las tres NO EXISTEN todavía en producción (medido ese día: 0 cabeceras), así que la
+// guarda V3 no tiene con qué compararlas y quien las cree primero les fija la cabecera para
+// siempre. La grave es «Mortalidad Desove»: pasó de 14 a 18 columnas INSERTANDO Fototropismo y
+// Aireación en la 11-12 y Área y Alcalinidad en la 15-16, así que una app anterior no la crearía
+// «más corta» —eso sería inofensivo— sino CORRIDA, y desde ahí rechazaría a todas las apps al día.
+// Las otras dos no cambiaron nunca de columnas; van igualmente, porque el día que cambien el
+// cerrojo tiene que existir YA (una firma añadida después del desfase llega tarde por definición).
+// 🔑 La columna elegida es siempre una que SÓLO tiene el esquema actual y que manda todo cliente
+// al día. Si alguna cambia de nombre o de sitio, se actualiza aquí EN EL MISMO CAMBIO.
 var MAD_ESQUEMA_FIRMA = {
+  // ⚠ El espaciado de estas tres líneas NO se retoca: son ancla de mutar-mad-gas-dopost
+  //   (A4-M3, A4-M4, A4-M5). Re-alinearlas por estética mató las tres el 2026-09-16.
+  //   Y el comentario va SIN comillas invertidas: este bloque viaja dentro de la plantilla
+  //   GAS() de engine.js, y una sola la cerraría (pasó ese mismo día; lo cazó la suite).
   "Maduración Ingreso":      [[14, "Crecimiento semanal promedio"]],
   "Maduración Lotes":        [[7, "Hembras no viables"]],
-  "Maduración Fin de Ciclo": [[5, "Sala"], [10, "Rojos"]]
+  "Maduración Fin de Ciclo": [[5, "Sala"], [10, "Rojos"]],
+  // 11 y 15 son justo las dos inserciones: el cliente de 14 columnas lleva «Salinidad» en la 11.
+  "Maduración Mortalidad Desove": [[11, "Fototropismo"], [15, "Área"]],
+  "Maduración Tratamientos": [[8, "Productos RAS"]],
+  // 9 va ANTES del bloque de alimentos, que es la parte del esquema que puede crecer.
+  "Maduración Alimentación": [[9, "Fuente del peso"]]
 };
 // null si el envío trae la firma (o la hoja no tiene); si no, { col, cab: lo que espera }.
 function firmaAusente_(hoja, cabEnvio) {
