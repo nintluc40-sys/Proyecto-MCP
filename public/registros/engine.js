@@ -2186,11 +2186,18 @@ async function syncAll(){
       }
     }
     /* PE1.4 · y lo guardado con 💾 en las siete fichas de formulario, cada una por su camino (con el portón del sello en
-       las que lo piden). Sin esto, «sincronizar» diría «Todo sincronizado» con envíos guardados sin enviar. */
+       las que lo piden). Sin esto, «sincronizar» diría «Todo sincronizado» con envíos guardados sin enviar.
+       🔴 2026-09-17 · EL PORTÓN SE PREGUNTA UNA SOLA VEZ PARA LAS SIETE. Antes iba `undefined` y cada ficha lo
+       preguntaba por su cuenta: SEIS viajes a ?p=ver en fila para una sola pulsación. Y no era sólo lento —medido, ?p=ver
+       tarda de verdad y el portón corta a los 6 s—: cada espera agotada devuelve «sin confirmar», y lo que con UNA
+       consulta buena se habría entregado acababa en la cola seis veces. Se pregunta perezosamente, sólo si alguna ficha
+       con envíos guardados pide sello; `_madIngGasAlDia` nunca devuelve undefined, así que sirve de «aún no preguntado». */
+    let _gasLoc;
     for(const f of MAD_LOC_FICHAS){
       if(!madLocLeer(f).length) continue;
       total++;
-      const r = await _madLocEnviar(f, undefined, { callado:true });
+      if(_gasLoc === undefined && _madLocCfg(f).sello) _gasLoc = await _madIngGasAlDia();
+      const r = await _madLocEnviar(f, _gasLoc, { callado:true });
       if(r.enVuelo){ total--; continue; }
       if(r.outcome === "ok"){ ok++; continue; }
       // Por el clasificador, como las demás ramas (H1): un encolado no se cuenta como fallo.
@@ -7834,24 +7841,37 @@ function madLocTotal(){ return MAD_LOC_FICHAS.reduce(function(a, f){ return a+ma
 /* Lo propio de cada ficha: si pide el GAS de esta app (sello), cómo se anota en su registro al salir y qué más hace.
    Se nombra cada una (nada de window[nombre]: el monolito se arranca en las pruebas con new Function). */
 function _madLocCfg(ficha){
-  if(ficha==="ingreso") return { sello:true, hoja:MAD_ING_SHEET, loc:"mi-loc", log:"mi-log", html:madIngLogHTML, error:"No se pudo registrar el ingreso",
+  if(ficha==="ingreso") return { sello:true, cab:function(){ return MAD_ING_HEADERS; }, hoja:MAD_ING_SHEET, loc:"mi-loc", log:"mi-log", html:madIngLogHTML, error:"No se pudo registrar el ingreso",
     anota:function(e, st){ madIngLogAnota(e.fecha, e.info.lote, e.filas, st, e.id); }, resumen:function(e){ return "Lote "+(e.info.lote||"—"); } };
-  if(ficha==="movimientos") return { sello:false, hoja:MAD_MOV_SHEET, loc:"mv-loc", log:"mv-log", html:madMovLogHTML, error:"No se pudo registrar el movimiento",
+  if(ficha==="movimientos") return { sello:false, cab:function(){ return MAD_MOV_HEADERS; }, hoja:MAD_MOV_SHEET, loc:"mv-loc", log:"mv-log", html:madMovLogHTML, error:"No se pudo registrar el movimiento",
     anota:function(e, st){ madMovLogAnota(e.fecha, e.info.tipo, e.filas, st, e.id); }, resumen:function(e){ return e.info.tipo||""; } };
-  if(ficha==="desoves") return { sello:true, hoja:MAD_DESOVE_SHEET, loc:"md-loc", log:"md-log", html:madDesLogHTML, error:"No se pudo registrar el desove",
+  if(ficha==="desoves") return { sello:true, cab:function(){ return MAD_DESOVE_HEADERS; }, hoja:MAD_DESOVE_SHEET, loc:"md-loc", log:"md-log", html:madDesLogHTML, error:"No se pudo registrar el desove",
     anota:function(e, st){ madDesLogAnota({ fecha:e.fecha, desoves:e.info.desoves||[] }, e.filas, st, e.id); },
     // Como al enviar desde pantalla: entregado o en cola, el desove pasa a «pendientes» (sin N5) de este dispositivo.
     alEnviar:function(e){ madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), { fecha:e.fecha, desoves:e.info.desoves||[] }, Date.now())); const b=document.getElementById("md-pend"); if(b) b.innerHTML=madDesPendTablaHTML(); },
     resumen:function(e){ return (e.info.desoves||[]).map(function(x){ return madDesNormLote(x.lote)+" · "+madDesNormCG(x.codigoGenetico); }).join(", "); } };
-  if(ficha==="mortdes") return { sello:true, hoja:MAD_MORT_SHEET, loc:"mm-loc", log:"mm-log", html:madMortLogHTML, error:"No se pudo registrar el Inf. Supervisor",
+  if(ficha==="mortdes") return { sello:true, cab:function(){ return MAD_MORT_HEADERS; }, hoja:MAD_MORT_SHEET, loc:"mm-loc", log:"mm-log", html:madMortLogHTML, error:"No se pudo registrar el Inf. Supervisor",
     anota:function(e, st){ madMortLogAnota(e.fecha, e.filas, st, e.id); } };
-  if(ficha==="fin") return { sello:true, hoja:MAD_FIN_SHEET, loc:"mf-loc", log:"mf-log", html:madFinLogHTML, error:"No se pudo registrar el cierre",
+  if(ficha==="fin") return { sello:true, cab:function(){ return MAD_FIN_HEADERS; }, hoja:MAD_FIN_SHEET, loc:"mf-loc", log:"mf-log", html:madFinLogHTML, error:"No se pudo registrar el cierre",
     anota:function(e, st){ madFinLogAnota(e.fecha, e.filas, st, e.id); } };
-  if(ficha==="tratamientos") return { sello:true, hoja:MAD_TRAT_SHEET, loc:"mt-loc", log:"mt-log", html:madTratLogHTML, error:"No se pudieron registrar los tratamientos",
+  if(ficha==="tratamientos") return { sello:true, cab:function(){ return MAD_TRAT_HEADERS; }, hoja:MAD_TRAT_SHEET, loc:"mt-loc", log:"mt-log", html:madTratLogHTML, error:"No se pudieron registrar los tratamientos",
     anota:function(e, st){ madTratLogAnota(e.fecha, e.filas, st, e.id); } };
-  if(ficha==="alimentacion") return { sello:true, hoja:MAD_ALIM_SHEET, loc:"ma-loc", log:"ma-log", html:madAlimLogHTML, error:"No se pudo registrar la alimentación",
+  if(ficha==="alimentacion") return { sello:true, cab:function(){ return MAD_ALIM_HEADERS; }, hoja:MAD_ALIM_SHEET, loc:"ma-loc", log:"ma-log", html:madAlimLogHTML, error:"No se pudo registrar la alimentación",
     anota:function(e, st){ madAlimLogAnota(e.fecha, e.filas, st, e.id); }, alEnviar:function(e){ _madAlimAgendaEnviada(e.info.salas||[]); },
     resumen:function(e){ return (e.info.salas||[]).join(", "); } };
+  return null;
+}
+/* 💾 guarda el PAYLOAD con SUS cabeceras, y la hoja puede ganar columnas DESPUÉS: a Inf. Supervisor le pasó con PE1.5
+   (de 15 a 17, insertando). Un guardado de antes llega al GAS con el esquema viejo, que lo RECHAZA —eso está bien, no
+   corrompe nada—, pero su aviso manda «actualiza la app», que en este caso ya está al día: el usuario se queda sin
+   salida y sin entender por qué. Se detecta aquí y se dice lo que toca hacer.
+   ⚠ Sólo cuenta el desfase que CORRE las columnas. Añadir al final es inocuo (ensureHeaders alarga la cabecera) y
+     Alimentación crece por el final a propósito, así que se compara sólo el prefijo común — el mismo criterio que
+     `esquemaIncompatible_` en el GAS. Devuelve { col, cab } o null. */
+function _madLocDesfase(guardadas, actuales){
+  const a=Array.isArray(guardadas)?guardadas:[], b=Array.isArray(actuales)?actuales:[];
+  const n=Math.min(a.length, b.length);
+  for(let i=0;i<n;i++) if(String(a[i])!==String(b[i])) return { col:i+1, cab:String(b[i]) };
   return null;
 }
 /* Guarda en este dispositivo un envío ya preparado. false si no (y ya lo dijo): repetido, tope o almacenamiento. */
@@ -7884,7 +7904,7 @@ function _madLocGuardado(ficha){
    { callado:true } y el aviso final es el suyo. */
 const _madLocEnVuelo = {};
 async function _madLocEnviar(ficha, gas, opciones){
-  const c=_madLocCfg(ficha), r={ enviados:0, enCola:0, fallo:false, bloqueado:false, enVuelo:false, outcome:"ok", gasMessage:"" };
+  const c=_madLocCfg(ficha), r={ enviados:0, enCola:0, desfasados:0, fallo:false, bloqueado:false, enVuelo:false, outcome:"ok", gasMessage:"" };
   const callado=!!(opciones && opciones.callado);
   if(!c || !madLocLeer(ficha).length) return r;
   // Dos pulsaciones seguidas (o ☁️ y «Sincronizar todo» a la vez) mandarían lo mismo dos veces.
@@ -7902,6 +7922,11 @@ async function _madLocEnviar(ficha, gas, opciones){
     toast("Enviando "+pend.length+" envío(s) guardado(s) en este dispositivo…","info",2200);
     for(let i=0; i<pend.length; i++){
       const e=pend[i], t={ mark:_madLogMarca(ficha, e.id), silencioso:i>0 };
+      /* Guardado con un esquema ANTERIOR: la hoja ganó una columna EN MEDIO desde que se pulsó 💾. El GAS lo
+         rechazaría igual (bien: no corrompe), pero diciendo «actualiza la app», que aquí ya está al día, y el
+         usuario se quedaría sin salida. Se para antes y se dice la verdad. No corta a los demás: se salta. */
+      const _d=c.cab ? _madLocDesfase(e.payload && e.payload.headers, c.cab()) : null;
+      if(_d){ r.desfasados++; continue; }
       const ok=c.sello ? await _madPostConSello(e.payload, gas, t) : await postPayload(e.payload, gasUrl(), t);
       if(!ok && t.outcome!=="queued"){ r.fallo=true; malo=t; break; }
       madLocGuardar(ficha, madLocLeer(ficha).filter(function(x){ return x.id!==e.id; }));
@@ -7914,8 +7939,12 @@ async function _madLocEnviar(ficha, gas, opciones){
   }
   if(malo){ r.outcome=malo.outcome || "error"; r.gasMessage=malo.gasMessage || ""; }
   else if(r.enCola) r.outcome="queued";
+  else if(r.desfasados && !r.enviados) r.outcome="error";
   _madLocRepinta(ficha);
   updateDots(); updateSyncUI();
+  /* Este aviso sale TAMBIÉN en modo callado: «Sincronizar todo» resume por el clasificador y ahí esto se vería como
+     un fallo más, cuando ni es de red ni del GAS y no se arregla reintentando. Es el único camino que lo explica. */
+  if(r.desfasados) toast("⚠ "+r.desfasados+" envío(s) guardado(s) en esta ficha se hicieron con una versión ANTERIOR de la app, cuando la hoja tenía otras columnas: ya no se pueden enviar tal cual. Apúntalos, descártalos con 🗑 y vuelve a registrarlos.","err",12000);
   if(callado) return r;
   if(malo) _syncNotOkUI(malo.outcome, c.error, null, malo.gasMessage);
   else if(r.enCola){ _syncNotOkUI("queued", c.error, null); toast("📤 "+r.enCola+" envío(s) guardado(s) quedaron en cola: salen solos al reconectar. No los repitas.","info",5000); }
@@ -7925,15 +7954,23 @@ async function _madLocEnviar(ficha, gas, opciones){
 function _madLocHTML(ficha){
   const c=_madLocCfg(ficha), l=madLocLeer(ficha);
   if(!c || !l.length) return "";
+  const cabAhora=c.cab ? c.cab() : null;
+  let desfasados=0;
   const filas=l.slice().reverse().map(function(e){
     const d=new Date(e.ts), cuando=("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
-    return '<tr class="mad-loc-it"><td style="white-space:nowrap">'+cuando+'</td><td style="white-space:nowrap">'+escapeHtml(e.fecha||"—")+'</td>'
+    // Guardado con el esquema de una versión anterior de la app: no se podrá enviar. Se marca aquí para que 🗑 sea
+    // la acción evidente, en vez de descubrirlo sólo al pulsar ☁️.
+    const viejo=cabAhora ? _madLocDesfase(e.payload && e.payload.headers, cabAhora) : null;
+    if(viejo) desfasados++;
+    return '<tr class="mad-loc-it'+(viejo?" mad-loc-viejo":"")+'"'+(viejo?' style="background:#fef2f2" title="Se guardó con una versión anterior de la app (la hoja tenía otras columnas en la '+viejo.col+'): ya no se puede enviar. Descártalo con 🗑 y vuelve a registrarlo."':"")+'>'
+      + '<td style="white-space:nowrap">'+(viejo?"⚠ ":"")+cuando+'</td><td style="white-space:nowrap">'+escapeHtml(e.fecha||"—")+'</td>'
       + '<td style="text-align:right">'+escapeHtml(String(e.filas))+'</td><td>'+escapeHtml(c.resumen ? c.resumen(e) : "")+'</td>'
       + '<td><button class="btn mad-loc-del" type="button" style="font-size:11px" data-f="'+escapeHtml(ficha)+'" data-id="'+escapeHtml(e.id)+'" onclick="madLocDescartar(this.dataset.f, this.dataset.id)" title="Borrar de este dispositivo sin enviarlo">🗑</button></td></tr>';
   }).join("");
   return '<div style="margin-top:14px;background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:8px;padding:8px 12px">'
     + '<div style="font-size:12px;font-weight:700;color:#3730a3;margin-bottom:4px">💾 Guardado en este dispositivo, sin enviar ('+l.length+')</div>'
     + '<div style="font-size:11px;color:#4338ca;margin-bottom:6px">Pulsa <b>☁️ Guardar y sincronizar</b> para enviarlo: sale primero lo más antiguo.</div>'
+    + (desfasados ? '<div style="font-size:11px;color:#991b1b;background:#fef2f2;border:1.5px solid #fecaca;border-radius:6px;padding:6px 8px;margin-bottom:6px">⚠ <b>'+desfasados+'</b> se guardó con una versión anterior de la app, cuando la hoja tenía otras columnas: <b>ya no se puede enviar</b>. Apúntalo, descártalo con 🗑 y vuelve a registrarlo.</div>' : '')
     + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Guardado</th><th>Fecha</th><th>Filas</th><th></th><th></th></tr></thead><tbody>'+filas+'</tbody></table></div>'
     + '</div>';
 }

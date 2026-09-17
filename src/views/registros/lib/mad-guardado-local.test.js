@@ -402,6 +402,92 @@ describe('Lo guardado cuenta en el módulo: el punto, el contador y «Sincroniza
     expect(document.getElementById('slbl').textContent).toContain('en cola');
   });
 
+  /* 🔴 2026-09-17 · «Sincronizar todo» pasaba `undefined` y CADA ficha preguntaba el portón por su cuenta: seis
+     viajes a ?p=ver para una sola pulsación. Medido contra producción, ?p=ver tarda de verdad y el portón corta a
+     los 6 s, así que no era sólo lentitud: cada espera agotada devuelve «sin confirmar», y lo que con UNA consulta
+     buena se habría entregado acababa en la cola, ficha por ficha. */
+  it('🔴 «Sincronizar todo» pregunta el portón del sello UNA sola vez para todas las fichas', async () => {
+    /* ⚠ Las cabeceras se sacan de la propia ficha: con unas inventadas, la guarda del esquema desfasado (más abajo)
+       se salta el envío y la prueba mediría otra cosa. */
+    const semilla = (ficha, lote) => {
+      const c = H._madLocCfg(ficha), cab = c.cab();
+      localStorage.setItem(H.MAD_LOC_PRE + ficha, JSON.stringify([{
+        id: 'x' + ficha, ts: Date.now(), fecha: '2026-09-15', filas: 1, huella: 'h' + ficha, info: {},
+        payload: { sheetName: c.hoja, headers: cab, rows: [cab.map((_, i) => (i === 0 ? '2026-09-15' : lote + i))] },
+      }]));
+    };
+    semilla('tratamientos', 'UNAVEZ1');
+    semilla('fin', 'UNAVEZ2');
+    semilla('mortdes', 'UNAVEZ3');
+    H.setVista(MAD, 'tratamientos');
+    pideVer = 0;
+    await H.syncAll();
+    expect(pideVer, 'una consulta por ficha en vez de una para todas').toBe(1);
+    // y el fixture ejerce algo: esa respuesta única SE USA, las tres salen de verdad
+    expect(envios).toHaveLength(3);
+    expect(H.madLocTotal()).toBe(0);
+  });
+
+  /* Movimientos es la única de las siete que NO pide sello: si sólo hay guardado suyo, el portón no se pregunta.
+     Preguntarlo «por si acaso» costaría un viaje a ?p=ver —y hasta 6 s de espera— para nada. */
+  it('🔴 y NO lo pregunta si ninguna ficha con envíos guardados pide sello', async () => {
+    expect(H._madLocCfg('movimientos').sello, 'el fixture ejerce algo: ésta no pide sello').toBe(false);
+    const c = H._madLocCfg('movimientos'), cab = c.cab();
+    localStorage.setItem(H.MAD_LOC_PRE + 'movimientos', JSON.stringify([{
+      id: 'xmov', ts: Date.now(), fecha: '2026-09-15', filas: 1, huella: 'hmov', info: { tipo: 'Traslado' },
+      payload: { sheetName: c.hoja, headers: cab, rows: [cab.map((_, i) => (i === 0 ? '2026-09-15' : 'M' + i))] },
+    }]));
+    H.setVista(MAD, 'movimientos');
+    pideVer = 0;
+    await H.syncAll();
+    expect(pideVer, 'se preguntó el portón sin que nadie lo necesitara').toBe(0);
+    expect(envios, 'y aun así tiene que haber salido').toHaveLength(1);
+  });
+
+  /* 🔴 2026-09-17 · 💾 congela el PAYLOAD con SUS cabeceras, y la hoja puede ganar una columna después: a Inf.
+     Supervisor le pasó con PE1.5 (de 15 a 17, insertando). Ese guardado ya no se puede enviar. El GAS lo rechaza
+     —bien—, pero con un mensaje que manda «actualiza la app», que aquí ya está al día. Se detecta en el cliente. */
+  describe('💾 guardado con un esquema ANTERIOR', () => {
+    const conCab = (ficha, cab) => {
+      const c = H._madLocCfg(ficha);
+      localStorage.setItem(H.MAD_LOC_PRE + ficha, JSON.stringify([{
+        id: 'viejo', ts: Date.now(), fecha: '2026-09-15', filas: 1, huella: 'hv', info: {},
+        payload: { sheetName: c.hoja, headers: cab, rows: [cab.map((_, i) => (i === 0 ? '2026-09-15' : 'V' + i))] },
+      }]));
+    };
+
+    it('🔴 no se envía, se explica lo que pasa de verdad y sigue guardado para apuntarlo', async () => {
+      const cab = H._madLocCfg('mortdes').cab().slice();
+      cab.splice(10, 1);                       // como el cliente de antes de PE1.5: una columna MENOS en medio
+      conCab('mortdes', cab);
+      const r = await H._madLocEnviar('mortdes');
+      expect(envios, 'un esquema corrido no puede llegar a la hoja').toHaveLength(0);
+      expect(cola(), 'ni a la cola: reintentarlo no lo arregla').toHaveLength(0);
+      expect(r.desfasados).toBe(1);
+      expect(H.madLocLeer('mortdes'), 'se borró lo que el usuario tiene que volver a registrar').toHaveLength(1);
+      expect(deError().some((m) => /versi.n ANTERIOR de la app/.test(m)), 'no se dijo por qué').toBe(true);
+      expect(deError().some((m) => /[Aa]ctualiza el GAS/.test(m)), 'culpó al GAS, que no tiene nada que ver').toBe(false);
+    });
+
+    it('🔴 añadir una columna AL FINAL no lo invalida: eso la hoja lo absorbe', async () => {
+      conCab('mortdes', H._madLocCfg('mortdes').cab().slice(0, -1));   // una menos, pero al final
+      const r = await H._madLocEnviar('mortdes');
+      expect(r.desfasados, 'un sufijo más corto NO es un desfase: ensureHeaders alarga la cabecera').toBe(0);
+      expect(envios).toHaveLength(1);
+    });
+
+    it('la lista lo marca, para que 🗑 sea lo evidente antes de pulsar ☁️', () => {
+      const cab = H._madLocCfg('tratamientos').cab().slice();
+      cab.splice(2, 1);
+      conCab('tratamientos', cab);
+      H.setVista(MAD, 'tratamientos');
+      H.madTratReiniciar();
+      const caja = document.getElementById('mt-loc');
+      expect(caja.querySelectorAll('.mad-loc-viejo')).toHaveLength(1);
+      expect(caja.textContent).toContain('ya no se puede enviar');
+    });
+  });
+
   it('🔴 la tarjeta del módulo se enciende con lo guardado sin enviar', () => {
     H.buildGrid();
     expect(document.getElementById('mc12').className, 'el fixture ejerce algo: sin nada guardado está apagada').not.toContain('pend');
