@@ -316,11 +316,14 @@ describe('♻ reciclaje · el índice da la hembra VIGENTE de cada chip', () => 
       expect(r.individuos).toBe(2);
     }
   });
-  it('fechaLimite = la última fecha de ingreso o de muerte del chip, también con fechas dd/mm/yyyy', () => {
-    expect(matrixIndexFromRows([VIEJA]).get(CHIP).fechaLimite).toBe('2026-07-08');
-    expect(matrixIndexFromRows([VIEJA, NUEVA]).get(CHIP).fechaLimite).toBe('2026-08-01');
-    const delStore = Object.assign({}, VIEJA, { 'Fecha muerte': '08/07/2026', 'Fecha ingreso': '05/01/2026' });
-    expect(matrixIndexFromRows([delStore]).get(CHIP).fechaLimite).toBe('2026-07-08');
+  /* 🗑 2026-09-17 · AQUÍ SE PROBABA `fechaLimite`, y era una prueba en verde de algo que nadie usaba: el
+     campo lo pedía la regla de sucesión por fechas, retirada el 09-16 con la cuaterna. Se va el campo y
+     se va su prueba. Lo que queda es exigir que el registro del chip NO traiga más de lo que se usa: un
+     campo de sobra con prueba propia invita a usarlo creyendo que significa algo vigente. */
+  it('🔴 el registro del chip trae SÓLO lo que se usa: nada de restos de reglas retiradas', () => {
+    const r = matrixIndexFromRows([VIEJA, NUEVA]).get(CHIP);
+    expect(r.fechaLimite, 'volvió `fechaLimite`, que no lo lee nadie').toBeUndefined();
+    expect([r.individuos, r.vivos], 'y los dos que sí se usan siguen ahí').toEqual([2, 1]);
   });
   it('un chip con una sola fila sigue igual: 1 individuo', () => {
     const r = matrixIndexFromRows([OTRA_VIVA]).get('0008218CCC');

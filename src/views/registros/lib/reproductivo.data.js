@@ -105,9 +105,15 @@ function filasPorChip(records) {
   });
   return grupos;
 }
-/** Registro de la hembra VIGENTE de un chip, más tres datos del chip entero: cuántas hembras ha
- *  llevado (`individuos`), cuántas están VIVAS ahora mismo (`vivos`) y su última fecha de ingreso o
- *  de muerte (`fechaLimite`, '' si la lectura no trae fechas).
+/** Registro de la hembra VIGENTE de un chip, más dos datos del chip entero: cuántas hembras ha
+ *  llevado (`individuos`) y cuántas están VIVAS ahora mismo (`vivos`).
+ *
+ *  🗑 2026-09-17 · AQUÍ HABÍA UN TERCERO, `fechaLimite` (la última fecha de ingreso o de muerte del
+ *  chip). Lo usaba la regla de sucesión —un alta tenía que ingresar DESPUÉS de esa fecha— y esa regla
+ *  se retiró el 09-16 con la cuaterna, pero el campo se quedó: se calculaba, tenía prueba propia y no
+ *  lo leía NADIE. Y era además vacuo en producción, porque se deriva de `Fecha ingreso` y `Fecha
+ *  muerte`, que la lectura no pide (cuestan 10×). Un campo con prueba que nadie usa invita a usarlo
+ *  creyendo que significa algo vigente, así que se va entero.
  *
  *  🔑 `vivos` es de D17 (2026-09-17). Un evento de la Bitácora sólo trae el Trovan, así que si un chip
  *  llevara DOS hembras vivas a la vez —posible desde que la identidad es la cuaterna— habría que elegir
@@ -117,12 +123,9 @@ function filasPorChip(records) {
  *  mal atribuida marcaría «Muerto» en la fila equivocada. Por eso `buildEventBatch` NO elige: rechaza
  *  y lo dice. Medido el 2026-09-17 en producción: 1665 filas, 1665 chips, ninguno con más de una. */
 function registroVigente(filas) {
-  let limite = '';
-  filas.forEach((f) => { if (f.ingreso > limite) limite = f.ingreso; if (f.muerte > limite) limite = f.muerte; });
   return Object.assign({}, vigenteDelChip(filas).rec, {
     individuos: filas.length,
     vivos: filas.filter((f) => !f.muerto).length,
-    fechaLimite: limite,
   });
 }
 /** Índice Trovan → registro de la hembra VIGENTE de cada chip (ver `registroVigente`). Hasta el
