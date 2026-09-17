@@ -21,7 +21,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "e2acb7bd9c9e";
+const GAS_VERSION = "fca7c2059b76";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -884,7 +884,27 @@ var MAD_ESQUEMA_FIRMA = {
   // Se firman DOS columnas porque no hay ninguna «nueva» que delate al viejo: una distintiva a media tabla
   // y la última, de modo que cualquier inserción mueva al menos una. ⚠ Si el esquema cambia, ESTAS DOS
   // POSICIONES se actualizan EN EL MISMO CAMBIO, o la firma rechazaría a los clientes al día.
-  "Maduración Movimientos": [[9, "Agua destino"], [12, "ID"]]
+  "Maduración Movimientos": [[9, "Agua destino"], [12, "ID"]],
+  /* 2026-09-17 (segunda tanda) · LAS CINCO QUE FALTABAN. Con esto, las doce hojas de Maduración que
+     admite ALLOWED tienen cerrojo. Dos motivos concretos, no preventivos en abstracto:
+       · «Transferencias» NO EXISTE todavía (0 filas): nace con el primer traslado, y no la cubría ni la
+         guarda V3 —que necesita que la hoja tenga filas— ni la firma. Quien la creara primero le fijaba
+         la cabecera para siempre.
+       · «Sala» y «Tanques» sí tienen filas, así que hoy las cubre V3… pero el vaciado previsto de las
+         hojas de Maduración las deja a 0 filas, y con ello a V3 INERTE justo cuando más falta hace.
+     🔑 LA COLUMNA ELEGIDA ATRAPA UN CORRIMIENTO, NUNCA UN AÑADIDO AL FINAL. En Sala y Tanques se firma
+     la última columna que TAMBIÉN tiene el cliente anterior, no la más nueva: un envío más corto es
+     inocuo —ensureHeaders alarga la cabecera y los valores caen en su sitio—, así que rechazarlo sería
+     bloquear a un cliente que no hace daño. Firmar «Toneladas» (Sala, 22) u «Observaciones operativas»
+     (Tanques, 16) habría hecho exactamente eso.
+     Las tres del reproductivo no han cambiado nunca de columnas y todo cliente vivo las manda enteras
+     (medido contra lo que sirve Pages), así que ahí sí se firma una columna de la LLAVE —si se corre, el
+     upsert casa con la fila que no es— y otra del final. */
+  "Maduración Sala":           [[20, "RAS"]],
+  "Maduración Tanques":        [[15, "Observaciones sanitarias"]],
+  "Maduración MATRIZ":         [[6, "Lote"], [11, "Fecha ingreso"]],
+  "Maduración Bitácora":       [[3, "Tipo"], [5, "Tanque"]],
+  "Maduración Transferencias": [[4, "Trovan ID"], [12, "Piscinas presentes"]]
 };
 // null si el envío trae la firma (o la hoja no tiene); si no, { col, cab: lo que espera }.
 function firmaAusente_(hoja, cabEnvio) {

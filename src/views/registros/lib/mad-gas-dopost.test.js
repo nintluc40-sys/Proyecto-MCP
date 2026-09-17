@@ -197,8 +197,14 @@ describe('GAS · un cliente con el ESQUEMA VIEJO no puede escribir en Maduració
     expect(r.status).toBe('error');
     expect(r.message).toContain('Esquema desactualizado');
     expect(r.message).toContain('Maduración Tanques');
-    expect(r.message).toContain('columna 5');                         // «Relación H:M» frente a «Población inicial hembras»
-    expect(r.message).toContain('Población inicial hembras');
+    /* ⚠ 2026-09-17 · AQUÍ SE ESPERABA «columna 5», que es donde V3 veía el corrimiento («Relación H:M»
+       frente a «Población inicial hembras»). Desde que Tanques tiene FIRMA, este envío no llega a V3:
+       lo para antes `firmaAusente_`, que corre ANTES de abrir la hoja. Lo vigilado —se rechaza y no se
+       escribe nada— es lo mismo; lo que cambia es quién lo para, y ahora lo hace más pronto y diciendo
+       lo correcto («actualiza la app»), porque con firma se SABE que el viejo es el cliente. */
+    expect(r.message).toContain('columna 15');
+    expect(r.message).toContain('Observaciones sanitarias');
+    expect(r.message).toContain('Actualiza la app');
     expect(JSON.stringify(hoja.filas)).toBe(antes);
     expect(hoja.escrituras).toEqual([]);
   });
@@ -265,11 +271,32 @@ describe('GAS · un cliente con el ESQUEMA VIEJO no puede escribir en Maduració
     expect(hoja.escrituras).toEqual([]);
   });
 
-  it('PE1.2 · sin firma (Tanques) no se sabe quién es el viejo: el aviso dice las dos cosas', () => {
-    const r = gas({ 'Maduración Tanques': hojaFalsa([TANQUES]) }).post({ sheetName: 'Maduración Tanques', headers: TANQUES_F1D9687, rows: [filaVacia(TANQUES_F1D9687)] });
-    expect(r.message).toContain('Actualiza la app');
-    expect(r.message).toContain('si ya está al día, la cabecera vieja es la de la hoja');
-    expect(r.message).not.toContain('la cabecera vieja es la de la HOJA,');
+  /* ⚠ 2026-09-17 · ESTA PRUEBA EXIGÍA LO CONTRARIO: «sin firma (Tanques) no se sabe quién es el viejo,
+     así que el aviso dice las dos cosas». Desde que las NUEVE hojas vigiladas tienen firma, ese titubeo
+     ya no puede darse, y eso es lo que hay que fijar: con firma SIEMPRE se sabe de quién es el esquema
+     viejo. Un cliente viejo lo para la firma («actualiza la app») y una HOJA vieja la para V3 diciendo
+     que la app está bien. El mensaje a medias queda como red por si alguien añade una hoja a VIGILADO
+     sin firmarla; lo que ya no puede es salir en las que hay. */
+  it('🔴 PE1.2 · con firma SIEMPRE se sabe quién trae el esquema viejo: el aviso ya no titubea', () => {
+    // (a) cliente viejo contra hoja al día → lo para la FIRMA, y la culpa es de la app
+    const viejo = gas({ 'Maduración Tanques': hojaFalsa([TANQUES]) })
+      .post({ sheetName: 'Maduración Tanques', headers: TANQUES_F1D9687, rows: [filaVacia(TANQUES_F1D9687)] });
+    expect(viejo.message).toContain('Actualiza la app');
+    expect(viejo.message, 'con firma no hace falta hedging').not.toContain('si ya está al día');
+
+    // (b) app al día contra HOJA vieja → lo para V3, y dice que la vieja es la hoja
+    const hojaVieja = gas({ 'Maduración Tanques': hojaFalsa([TANQUES_F1D9687]) })
+      .post({ sheetName: 'Maduración Tanques', headers: TANQUES, rows: [filaVacia(TANQUES)] });
+    expect(hojaVieja.message).toContain('la cabecera vieja es la de la HOJA');
+    expect(hojaVieja.message).not.toContain('si ya está al día');
+  });
+
+  it('🔴 las NUEVE hojas vigiladas están firmadas: ninguna se queda sin saber quién es el viejo', () => {
+    const lista = (re) => [...(re.exec(gasSrc)[1].matchAll(/"([^"]+)"/g))].map((m) => m[1]);
+    const vigiladas = lista(/var MAD_ESQUEMA_VIGILADO = \[([\s\S]*?)\];/);
+    const firmadas = new Set(lista(/var MAD_ESQUEMA_FIRMA = \{([\s\S]*?)\n\};/).filter((s) => s.startsWith('Maduración ')));
+    expect(vigiladas.length).toBeGreaterThanOrEqual(9);
+    expect(vigiladas.filter((h) => !firmadas.has(h)), 'vigiladas sin firma').toEqual([]);
   });
 
   it('el rechazo NO echa en cara lo que mandó el cliente: sólo nombra la columna de la hoja', () => {
@@ -278,13 +305,24 @@ describe('GAS · un cliente con el ESQUEMA VIEJO no puede escribir en Maduració
     expect(r.message).not.toContain('Relación H:M');
   });
 
-  it('al rechazar se SUELTA el candado y NO se marca el reqId como hecho', () => {
-    const g = gas({ 'Maduración Tanques': hojaFalsa([TANQUES]) });
-    g.post({ sheetName: 'Maduración Tanques', headers: TANQUES_F1D9687, rows: [filaVacia(TANQUES_F1D9687)] });
-    expect(g.candado.tomado).toBe(1);
-    expect(g.candado.soltado).toBe(1);
-    expect([...g.cache.keys()].some((k) => k.startsWith('idem_'))).toBe(false);
-  });
+  /* ⚠ 2026-09-17 · ESTE CASO PASABA POR V3 y ahora lo para la FIRMA, que corre antes. Son DOS caminos de
+     rechazo distintos, y los dos tienen que soltar el candado y NO marcar el reqId: si lo marcaran, el
+     reintento de después de arreglar el problema se daría por hecho sin escribir nada. Se ejercen los dos
+     por separado — el del cliente viejo (firma) y el de la HOJA vieja con el cliente al día (V3)—, porque
+     desde que todas las hojas están firmadas un solo fixture ya no pasa por los dos. */
+  for (const [via, cabEnvio, cabHoja] of [
+    ['la FIRMA (cliente viejo)', TANQUES_F1D9687, TANQUES],
+    ['V3 (hoja vieja, cliente al día)', TANQUES, TANQUES_F1D9687],
+  ]) {
+    it('al rechazar por ' + via + ' se SUELTA el candado y NO se marca el reqId', () => {
+      const g = gas({ 'Maduración Tanques': hojaFalsa([cabHoja]) });
+      const r = g.post({ sheetName: 'Maduración Tanques', headers: cabEnvio, rows: [filaVacia(cabEnvio)] });
+      expect(r.status, 'el fixture tiene que ser rechazado de verdad').toBe('error');
+      expect(g.candado.tomado).toBe(1);
+      expect(g.candado.soltado).toBe(1);
+      expect([...g.cache.keys()].some((k) => k.startsWith('idem_'))).toBe(false);
+    });
+  }
 });
 
 describe('GAS · lo que la guarda NO puede romper (V3)', () => {
@@ -339,14 +377,70 @@ describe('GAS · lo que la guarda NO puede romper (V3)', () => {
     expect(r.status).toBe('ok');
   });
 
-  it('🔑 sólo vigila las hojas del registro OPERATIVO: el reproductivo y el resto no cambian', () => {
-    // La MATRIZ también es posicional, pero su esquema no ha cambiado y sus cabeceras vivas
-    // no se han medido: meterla aquí podría bloquear el registro reproductivo en campo.
-    const cab = ['Número', 'Trovan ID', 'Sala actual'];
-    const g = gas({ 'Maduración MATRIZ': hojaFalsa([['Nº', 'Trovan', 'Sala']]) });
-    const r = g.post({ sheetName: 'Maduración MATRIZ', headers: cab, rows: [[1, '0008218CCC', 'Sala 1']] });
+  /* ⚠⚠ 2026-09-17 · AQUÍ SE EXIGÍA QUE LA MATRIZ NO SE VIGILARA, y el motivo estaba escrito: «su esquema
+     no ha cambiado y SUS CABECERAS VIVAS NO SE HAN MEDIDO: meterla aquí podría bloquear el registro
+     reproductivo en campo». Era la decisión correcta con lo que se sabía. **Ya se midieron** (2026-09-17,
+     contra producción): la MATRIZ tiene 1665 filas y sus 12 cabeceras vivas son IDÉNTICAS y en el mismo
+     orden que las que manda la app; la Bitácora, 2227 filas y sus 6 igual; Transferencias sigue a 0.
+     Con eso, el motivo para dejarlas fuera desaparece — y el riesgo de no firmarlas no: la MATRIZ también
+     es posicional, y `replaceByKeyRows` casa por la POSICIÓN de sus columnas llave, así que un envío
+     corrido actualizaría la fila que no es. Ahora las tres están firmadas. */
+  it('🔴 la V3 sigue vigilando sólo el registro OPERATIVO, pero la FIRMA ya cubre el reproductivo', () => {
+    const vigiladas = /var MAD_ESQUEMA_VIGILADO = \[([\s\S]*?)\];/.exec(gasSrc)[1];
+    for (const h of ['MATRIZ', 'Bitácora', 'Transferencias']) {
+      expect(vigiladas, 'el reproductivo no entra en V3').not.toContain('Maduración ' + h);
+    }
+    // y un envío con el esquema corrido ya NO pasa: lo para la firma, sin tocar la hoja
+    const hoja = hojaFalsa([['Nº', 'Trovan', 'Sala']]);
+    const r = gas({ 'Maduración MATRIZ': hoja }).post({
+      sheetName: 'Maduración MATRIZ', headers: ['Número', 'Trovan ID', 'Sala actual'], rows: [[1, '0008218CCC', 'Sala 1']] });
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('columna 6');
+    expect(r.message).toContain('«Lote»');
+    expect(hoja.escrituras, 'no debe tocar una hoja con 1665 filas reales').toEqual([]);
+  });
+
+  /* 🔑 Y el reproductivo tiene que seguir FUERA de V3, no sólo en la lista: con la firma pasada, una hoja
+     cuya cabecera no case NO puede parar el envío. Si V3 se aplicara a todas, el registro reproductivo en
+     campo se bloquearía contra una MATRIZ de 1665 filas. El fixture manda las cabeceras BUENAS (pasa la
+     firma) contra una hoja con otras, que es justo lo que V3 rechazaría si la vigilara. */
+  it('🔴 el fixture ejerce algo: con SUS cabeceras, la MATRIZ escribe aunque la hoja tenga otras', () => {
+    const CAB = ['Número', 'Trovan ID', 'Color anillo', 'Piscina', 'Código genético', 'Lote',
+      'Sala actual', 'Tanque actual', 'Estado', 'Fecha muerte', 'Fecha ingreso', 'Observaciones'];
+    const hoja = hojaFalsa([['Nº', 'Trovan', 'Anillo', 'Pisc.', 'CG', 'Lt', 'Sala', 'Tq', 'Est.', 'F.M.', 'F.I.', 'Obs.']]);
+    const r = gas({ 'Maduración MATRIZ': hoja }).post({ sheetName: 'Maduración MATRIZ', headers: CAB,
+      rows: [conValores(CAB, { 'Trovan ID': '0008218CCC', Piscina: 'P1', 'Código genético': 'G01', Lote: 'L1' })],
+      replaceKey: true, keyCols: [1, 3, 4, 5] });
     expect(r.status).toBe('ok');
   });
+
+  /* Las otras dos del reproductivo, cada una con su propio fixture: sin esto, quitarlas de la firma no
+     pondría roja ninguna prueba. Transferencias es además la que aún NO EXISTE, y por eso se comprueba
+     que no llega a nacer con el esquema malo. */
+  for (const [hoja, cabBuena, corrida, col, cab] of [
+    ['Maduración Bitácora',
+      ['Trovan ID', 'Fecha', 'Tipo', 'Sala', 'Tanque', 'Observaciones'],
+      ['Trovan ID', 'Fecha', 'Sala', 'Tanque', 'Observaciones'], 'columna 3', '«Tipo»'],
+    ['Maduración Transferencias',
+      ['TR-ID', 'Fecha', 'Tipo', 'Trovan ID', 'Sala origen', 'Tanque origen', 'Sala destino', 'Tanque destino',
+        'Mezcla', 'Lotes presentes', 'Códigos presentes', 'Piscinas presentes', 'Observaciones'],
+      ['TR-ID', 'Fecha', 'Trovan ID', 'Sala origen', 'Tanque origen', 'Sala destino', 'Tanque destino',
+        'Mezcla', 'Lotes presentes', 'Códigos presentes', 'Piscinas presentes', 'Observaciones'], 'columna 4', '«Trovan ID»'],
+  ]) {
+    it('🔴 ' + hoja + ' · un esquema CORRIDO no escribe, y la hoja no nace', () => {
+      const hojas = {};
+      const r = gas(hojas).post({ sheetName: hoja, headers: corrida, rows: [conValores(corrida, { Fecha: '2026-09-17' })] });
+      expect(r.status).toBe('error');
+      expect(r.message).toContain(col);
+      expect(r.message).toContain(cab);
+      expect(hojas[hoja], 'se creó con el esquema malo').toBeUndefined();
+    });
+
+    it('el fixture ejerce algo: ' + hoja + ' con SUS cabeceras escribe', () => {
+      const hojas = {};
+      expect(gas(hojas).post({ sheetName: hoja, headers: cabBuena, rows: [conValores(cabBuena, { Fecha: '2026-09-17' })] }).status).toBe('ok');
+    });
+  }
 });
 
 /* ── A4 (2026-09-14) · la FIRMA del esquema vigente, también con la hoja vacía ──
