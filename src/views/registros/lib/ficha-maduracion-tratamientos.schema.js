@@ -29,9 +29,10 @@ export const MAD_TRAT_RAS = ['Bicarbonato', 'EM-1', 'Full Calcio', 'Prokura'];
 /* 2026-09-15 (usuario) · Ácido Nítrico, Peróxido y Trilon B entran al catálogo, al final, en el
    orden en que los dio. NO se pre-marcan en ninguna área: no dijo dónde se usan, y adivinarlo
    dejaría casillas puestas que nadie pidió — que en una ficha de desinfección es peor que
-   tener que marcarlas a mano. */
+   tener que marcarlas a mano.
+   2026-09-16 (usuario, PE1.7) · «Treflam», al final, con el mismo criterio: tampoco se pre-marca en ninguna área. */
 export const MAD_TRAT_DESINFECTANTES = ['Formol', 'Cloro', 'Jabón neutro', 'Virkon', 'Vitamina C', 'Bicarbonato', 'Full Calcio', 'EM-1', 'Prokura', 'Cooper',
-  'Ácido Nítrico', 'Peróxido', 'Trilon B'];
+  'Ácido Nítrico', 'Peróxido', 'Trilon B', 'Treflam'];
 
 /** Áreas de desinfección, con su etiqueta para el ID y lo habitual que se pre-marca. */
 export const MAD_TRAT_AREAS = [

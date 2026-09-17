@@ -462,6 +462,9 @@ Dos consecuencias que conviene tener presentes al desplegar:
   la ficha no envía y lo tecleado se queda.
   **2026-09-15 · entran tres desinfectantes —Ácido Nítrico, Peróxido y Trilon B— y dos áreas nuevas,
   Reservorio y Colectores.** Son valores de catálogo: la hoja NO cambió de columnas.
+  **PE1.7 (2026-09-16, usuario) · entra «Treflam»**, el último de la desinfección y con el criterio de esos
+  tres: **no lo pre-marca** ningún área ni plantilla (no se dijo dónde se usa). Valor de catálogo: ni columnas,
+  ni GAS, ni sello.
 - 🛢️ **Tanques · las observaciones son de MULTISELECCIÓN (2026-09-15).** «Observaciones sanitarias» pasa
   a marcarse de una lista de 8 y entra **«Observaciones operativas»** con 11, las dos con bajada por
   columna y con `data-fijo` (una fila corregida a mano ya no se pisa). 🔑 Llegan a la hoja **en el ORDEN

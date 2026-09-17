@@ -23,11 +23,20 @@ describe('Tratamientos · la hoja y los catálogos del usuario', () => {
     /* 2026-09-15 (usuario): Ácido Nítrico, Peróxido y Trilon B al final de la lista; «Reservorio» y
        «Colectores» como áreas propias. «Reservorio» convive con «Líneas de agua y aire, tinas y
        reservorios»: son áreas distintas para el usuario y el ID las separa por su etiqueta. */
+    // 2026-09-16 (usuario, PE1.7): «Treflam», al final.
     expect(MAD_TRAT_DESINFECTANTES).toEqual(['Formol', 'Cloro', 'Jabón neutro', 'Virkon', 'Vitamina C', 'Bicarbonato', 'Full Calcio', 'EM-1', 'Prokura', 'Cooper',
-      'Ácido Nítrico', 'Peróxido', 'Trilon B']);
+      'Ácido Nítrico', 'Peróxido', 'Trilon B', 'Treflam']);
     expect(MAD_TRAT_AREAS).toEqual(['Salas y tanques', 'RAS y tuberías', 'Líneas de agua y aire, tinas y reservorios', 'Desove, Eclosión y Despacho', 'Conos, baldes, tinas y tuberías',
       'Reservorio', 'Colectores']);
     expect(MAD_TRAT_ESTADOS).toEqual(['Producción', 'Cuarentena', 'Mixto', 'Desinfección', 'Desinfección - Producción agrupada']);
+  });
+
+  it('🔴 PE1.7 · «Treflam» se ofrece y se guarda, pero NO sale marcado en ningún área ni plantilla', () => {
+    /* El usuario no dijo dónde se usa: adivinarlo dejaría casillas puestas que nadie pidió. */
+    for (const area of MAD_TRAT_AREAS) expect(productosDeArea(area), area).not.toContain('Treflam');
+    for (const estado of MAD_TRAT_ESTADOS) expect(plantillaTrat(estado).desinfeccion, estado).not.toContain('Treflam');
+    // Marcado a mano, se escribe con su grafía y en el orden del catálogo (el último).
+    expect(productosDe(MAD_TRAT_DESINFECTANTES, [' treflam ', 'Cloro'])).toEqual(['Cloro', 'Treflam']);
   });
 });
 

@@ -9507,7 +9507,7 @@ const MAD_TRAT_RAS = ["Bicarbonato","EM-1","Full Calcio","Prokura"];
    dejaría casillas puestas que nadie pidió — que en una ficha de desinfección es peor que
    tener que marcarlas a mano. */
 const MAD_TRAT_DESINFECTANTES = ["Formol","Cloro","Jabón neutro","Virkon","Vitamina C","Bicarbonato","Full Calcio","EM-1","Prokura","Cooper",
-  "Ácido Nítrico","Peróxido","Trilon B"];
+  "Ácido Nítrico","Peróxido","Trilon B","Treflam"];   // PE1.7 (2026-09-16, usuario): Treflam, al final y sin pre-marcar. Ver el módulo.
 /* 2026-09-15 (usuario). «Reservorio» convive con «Líneas de agua y aire, tinas y reservorios»:
    son áreas distintas para él y el ID las separa por su etiqueta, así que no se funden. */
 const MAD_TRAT_AREAS = ["Salas y tanques","RAS y tuberías","Líneas de agua y aire, tinas y reservorios","Desove, Eclosión y Despacho","Conos, baldes, tinas y tuberías",

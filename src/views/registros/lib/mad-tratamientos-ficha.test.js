@@ -89,6 +89,23 @@ describe('Tratamientos · plantillas', () => {
     H.madTratAreaChange(pon(des.querySelector('.mt-area'), 'Salas y tanques'));
     expect(marcados(des, '.mt-prod')).toEqual(['Virkon']);
   });
+
+  it('🔴 PE1.7 · la desinfección ofrece «Treflam», el último, y ninguna plantilla ni área lo marca sola', () => {
+    const des = q('#mt-dess .mt-des');
+    const productos = [...des.querySelectorAll('.mt-prod')].map((c) => c.value);
+    expect(productos[productos.length - 1]).toBe('Treflam');
+    for (const estado of ['Producción', 'Desinfección', 'Desinfección - Producción agrupada']) {
+      H.madTratReiniciar();
+      H.madTratEstadoChange(pon(q('#mt-estado'), estado));
+      expect(marcados(q('#mt-dess .mt-des'), '.mt-prod'), estado).not.toContain('Treflam');
+    }
+    for (const area of ['Salas y tanques', 'RAS y tuberías', 'Reservorio', 'Colectores']) {
+      H.madTratReiniciar();
+      const d = q('#mt-dess .mt-des');
+      H.madTratAreaChange(pon(d.querySelector('.mt-area'), area));
+      expect(marcados(d, '.mt-prod'), area).not.toContain('Treflam');
+    }
+  });
 });
 
 describe('Tratamientos · guardar', () => {
