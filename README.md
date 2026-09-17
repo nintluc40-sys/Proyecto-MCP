@@ -387,6 +387,14 @@ Dos consecuencias que conviene tener presentes al desplegar:
   guardado sale de la lista. Lo guardado en el dispositivo vive en `larv4_mad_des_pend`. Debajo, el
   **historial de este dispositivo** enseña cada desove guardado en las últimas **36 h** con sus cifras
   (`larv4_mad_des_log`; lo más viejo se borra solo).
+- **Desoves · las fechas de N2 y N5 ya no se teclean (PE1.3, 2026-09-16).** Decisión del usuario: la de
+  **N2 es la del desove** y la de **N5, el día siguiente**. La tarjeta pierde sus dos campos de fecha y
+  las celdas «Fecha N2» y «Fecha N5» se **derivan** (`fechasNauplios` en el módulo, gemelo en el motor):
+  cada una **sólo junto a su cifra**, porque una fecha sin recuento diría que se contó algo que no se contó.
+  Las columnas de la hoja no cambian, así que no toca el GAS ni el sello. El candado «N5 exige N2» mira
+  ahora la CIFRA, y se retiraron los avisos de fechas al revés, que ya no pueden darse. ⚠ Al completar un
+  desove de antes, su «Fecha N2» se reescribe con la del desove. Un borrador guardado antes del cambio se
+  adapta al traerlo (`_madBorrAdaptar`): no resucita los campos de fecha.
 - **Fin de Ciclo (2026-09-15).** «Rojos» y los pesos **promedio** van **por lote** (los rojos van dentro
   de los machos y hembras que salen: no mueven el saldo), y hay **un solo «Peso total (kg)»** de todos
   los lotes del registro. La hoja sigue vacía, así que no hay nada que migrar; la firma A4 de Fin de

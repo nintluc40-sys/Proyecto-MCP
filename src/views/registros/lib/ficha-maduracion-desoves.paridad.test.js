@@ -32,6 +32,7 @@ import {
   desovesPendientes,
   anotarDesovesLocales,
   podarDesovesLocales,
+  fechasNauplios,
 } from './ficha-maduracion-desoves.schema.js';
 
 const ENGINE = new URL('../../../../public/registros/engine.js', import.meta.url);
@@ -61,7 +62,8 @@ function motorDesoves() {
     + '\n;globalThis.__api = { buildMadDesovePayload, madDesBuildRows, madDesValidar,'
     + ' madDesMiles, MAD_DESOVE_HEADERS, MAD_DESOVE_SHEET, MAD_DESOVE_COLUMNS,'
     + ' MAD_DESOVE_KEY_COLS, MAD_DESOVE_MIL, MAD_DESOVE_DESPACHO_OPTS, madDesDespachoLista, madDesDespachoTexto,'
-    + ' madDesLlave, madDesCompleto, madDesDesdeHoja, madDesPendientes, madDesLocalesAnota, madDesLocalesPoda };',
+    + ' madDesLlave, madDesCompleto, madDesDesdeHoja, madDesPendientes, madDesLocalesAnota, madDesLocalesPoda,'
+    + ' madDesFechasNauplios };',
   ).runInContext(ctx);
   return ctx.__api;
 }
@@ -97,13 +99,22 @@ const MODELOS = {
       { lote: 'bm', codigoGenetico: ' 766 ', huevos: 200 },
     ],
   },
-  'sin llave completa y fechas al revés': {
+  // 2026-09-16: las fechas ya no se teclean; las de este fixture (al revés) tienen que IGNORARSE en los dos lados.
+  'sin llave completa y fechas tecleadas al revés': {
     fecha: '2026-09-08',
     desoves: [
       { lote: 'BM', codigoGenetico: '', huevos: 100 },
       { lote: 'BC', codigoGenetico: '801', n2: 10, fechaN2: '2026-09-01', n5: 5, fechaN5: '2026-08-30' },
     ],
   },
+  'un desove sin ninguna cifra': { fecha: '2026-09-08', desoves: [{ lote: 'BM', codigoGenetico: '766' }] },
+  // 2026-09-16: N5 = día siguiente al desove, donde un «+1» mal hecho se equivoca: fin de mes, fin de año, un día inexistente.
+  'fin de mes: el N5 cae en octubre': { fecha: '2026-09-30', desoves: [{ lote: 'BM', codigoGenetico: '766', n2: 5200, n5: 4100 }] },
+  'fin de año, sólo con N5 y N2 a 0': { fecha: '2026-12-31', desoves: [{ lote: 'BM', codigoGenetico: '766', n2: 0, n5: 4100 }] },
+  'un día que no existe': { fecha: '2026-02-31', desoves: [{ lote: 'BM', codigoGenetico: '766', n2: 5200, n5: 4100 }] },
+  // 2026-09-16: una fecha tecleada SIN su cifra (la traería un borrador de antes) no abre ni cierra el candado.
+  'N5 con fecha de N2 tecleada pero sin su cifra': { fecha: '2026-09-08', desoves: [{ lote: 'BM', codigoGenetico: '766', fechaN2: '2026-09-08', n5: 4100 }] },
+  'sólo una fecha de N5 tecleada': { fecha: '2026-09-08', desoves: [{ lote: 'BM', codigoGenetico: '766', huevos: 10, fechaN5: '2026-09-09' }] },
   // 2026-09-14: un desove que sólo trae hembras no viables (conteo, sin ×1000) ejerce su rama.
   'sólo hembras no viables': { fecha: '2026-09-14', desoves: [{ lote: 'BM', codigoGenetico: '766', hembrasNoViables: 3 }] },
   // 2026-09-14: «Total de nauplios» se borró. Un borrador viejo que aún los traiga: ni fila ni cifra.
@@ -149,7 +160,24 @@ describe('Desoves · el mismo payload, celda a celda', () => {
 
   it('y los fixtures escriben filas DE VERDAD', () => {
     expect(buildDesoveRows(MODELOS['un lote con DOS códigos el mismo día'])).toHaveLength(2);
-    expect(buildDesoveRows(MODELOS['sin llave completa y fechas al revés'])).toHaveLength(1);
+    expect(buildDesoveRows(MODELOS['sin llave completa y fechas tecleadas al revés'])).toHaveLength(1);
+  });
+
+  it('y las fechas derivadas llegan DE VERDAD a la fila (o la paridad compararía dos vacíos)', () => {
+    const f = (nombre) => buildDesoveRows(MODELOS[nombre])[0];
+    const fechas = (fila) => [fila[MAD_DESOVE_HEADERS.indexOf('Fecha N2')], fila[MAD_DESOVE_HEADERS.indexOf('Fecha N5')]];
+    expect(fechas(f('fin de mes: el N5 cae en octubre'))).toEqual(['2026-09-30', '2026-10-01']);
+    expect(fechas(f('fin de año, sólo con N5 y N2 a 0'))).toEqual(['2026-12-31', '2027-01-01']);
+    expect(fechas(f('sin llave completa y fechas tecleadas al revés'))).toEqual(['2026-09-08', '2026-09-09']);
+  });
+});
+
+describe('Desoves · el mismo día siguiente (2026-09-16)', () => {
+  it('las mismas fechas de N2 y N5 para cada entrada, válida o no', () => {
+    for (const f of ['2026-09-14', '2026-09-30', '2026-12-31', '2028-02-28', '2027-02-28', '2026-02-31', '2027-02-29',
+      '2026-13-01', '08/09/2026', '2026-9-14', '', null, undefined]) {
+      expect({ ...api.madDesFechasNauplios(f) }, String(f)).toEqual(fechasNauplios(f));
+    }
   });
 });
 
@@ -173,7 +201,10 @@ describe('Desoves · el mismo veredicto', () => {
   it('y los fixtures producen errores y avisos DE VERDAD', () => {
     expect(validarDesove(MODELOS['N5 sin N2 (el candado)']).errores.length).toBeGreaterThan(0);
     expect(validarDesove(MODELOS['duplicado: mismo lote y código dos veces']).errores.length).toBeGreaterThan(0);
-    expect(validarDesove(MODELOS['sin llave completa y fechas al revés']).avisos.length).toBeGreaterThan(0);
+    expect(validarDesove(MODELOS['un desove sin ninguna cifra']).avisos.length).toBeGreaterThan(0);
+    expect(validarDesove(MODELOS['un día que no existe']).errores).toContain('La fecha del desove no es válida.');
+    expect(validarDesove(MODELOS['N5 con fecha de N2 tecleada pero sin su cifra']).errores.length).toBeGreaterThan(0);
+    expect(validarDesove(MODELOS['sólo una fecha de N5 tecleada'])).toEqual({ errores: [], avisos: [] });
   });
 });
 

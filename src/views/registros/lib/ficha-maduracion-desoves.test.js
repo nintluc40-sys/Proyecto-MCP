@@ -18,6 +18,7 @@ import {
   desovesPendientes,
   anotarDesovesLocales,
   podarDesovesLocales,
+  fechasNauplios,
 } from './ficha-maduracion-desoves.schema.js';
 import { detectSheetName, classifyOrigin } from '../../../core/sheets.js';
 
@@ -262,11 +263,18 @@ describe('Desoves · validación', () => {
     expect(validarDesove(m).errores).toEqual([]);
   });
 
-  it('el candado salta también si sólo hay FECHA de N5', () => {
-    // Registrar la fecha sin la cifra es la forma normal de empezar; el hueco es el mismo.
-    const m = base();
-    m.desoves[0].fechaN5 = '2026-09-14';
-    expect(validarDesove(m).errores.some((e) => /N5 sin N2/.test(e))).toBe(true);
+  /* 2026-09-16 (usuario): aquí se exigía que una FECHA de N5 sola cerrara el candado, porque la fecha se tecleaba
+     antes que la cifra. Las fechas ya no se teclean: el candado mira la CIFRA, y una fecha que traiga un borrador
+     de antes no lo abre ni lo cierra. */
+  it('🔒 el candado mira la CIFRA: una fecha suelta no lo abre ni lo cierra', () => {
+    const soloFecha = base();
+    soloFecha.desoves[0].fechaN5 = '2026-09-14';
+    expect(validarDesove(soloFecha).errores).toEqual([]);
+
+    const n5ConFechaN2 = base();
+    n5ConFechaN2.desoves[0].n5 = 3000;
+    n5ConFechaN2.desoves[0].fechaN2 = '2026-09-08';
+    expect(validarDesove(n5ConFechaN2).errores.some((e) => /N5 sin N2/.test(e))).toBe(true);
   });
 
   it('NO compara los tamaños de N2, N5 y huevos entre sí', () => {
@@ -282,16 +290,22 @@ describe('Desoves · validación', () => {
     expect(avisos).toEqual([]);
   });
 
-  it('AVISO si una fecha posterior es ANTERIOR a la que le precede', () => {
+  /* 2026-09-16: aquí vivía «AVISO si una fecha posterior es ANTERIOR a la que le precede». Con las fechas derivadas
+     no puede pasar, y el aviso se retiró: lo que se exige ahora es que NO salga ninguno por fechas tecleadas. */
+  it('las fechas tecleadas (de antes) no dan avisos: ya no hay nada que comparar', () => {
     const m = base();
-    m.desoves[0].n2 = 5000;
-    m.desoves[0].fechaN2 = '2026-09-01';       // antes del desove
-    expect(validarDesove(m).avisos.some((a) => /ANTERIOR al desove/.test(a))).toBe(true);
+    m.desoves[0].n2 = 5000; m.desoves[0].fechaN2 = '2026-09-01';
+    m.desoves[0].n5 = 3000; m.desoves[0].fechaN5 = 'ayer';
+    expect(validarDesove(m)).toEqual({ errores: [], avisos: [] });
+  });
 
-    const m2 = base();
-    m2.desoves[0].n2 = 5000; m2.desoves[0].fechaN2 = '2026-09-10';
-    m2.desoves[0].n5 = 3000; m2.desoves[0].fechaN5 = '2026-09-09';
-    expect(validarDesove(m2).avisos.some((a) => /ANTERIOR al N2/.test(a))).toBe(true);
+  it('🔴 la fecha del desove tiene que ser un día REAL: de ella salen las de N2 y N5', () => {
+    const m = base();
+    m.desoves[0].n2 = 5000; m.desoves[0].n5 = 3000;
+    m.fecha = '2026-02-31';
+    expect(validarDesove(m).errores).toContain('La fecha del desove no es válida.');
+    m.fecha = '2028-02-29';                      // bisiesto: sí existe
+    expect(validarDesove(m).errores).toEqual([]);
   });
 
   it('AVISO si el desove no trae ninguna cifra', () => {
@@ -328,6 +342,44 @@ describe('Desoves · Despacho es una lista cerrada de destinos (2026-09-14, usua
   it('🔴 el payload lleva la elección como texto bajo «Despacho»', () => {
     const filas = buildDesoveRows({ fecha: '2026-09-15', desoves: [{ lote: 'BP', codigoGenetico: 'CG1', n5: 900, fechaN5: '2026-09-17', despacho: ['SanLab', 'Fuentes del Mar'] }] });
     expect(filas[0][MAD_DESOVE_HEADERS.indexOf('Despacho')]).toBe('Fuentes del Mar, SanLab');
+  });
+});
+
+describe('Desoves · las fechas de N2 y N5 se DERIVAN del desove (2026-09-16, usuario)', () => {
+  /* «La de N2 es la misma que la del desove y la de N5 sale automática: N2 + 1.» Los fixtures cruzan fin de mes,
+     fin de año y febrero, que es donde un «+1» mal hecho (sumar al número del día, o en hora local) se equivoca. */
+  it('🔴 N2 es el día del desove y N5 el siguiente, también al cambiar de mes, de año y en febrero', () => {
+    expect(fechasNauplios('2026-09-14')).toEqual({ n2: '2026-09-14', n5: '2026-09-15' });
+    expect(fechasNauplios('2026-09-30')).toEqual({ n2: '2026-09-30', n5: '2026-10-01' });
+    expect(fechasNauplios('2026-12-31')).toEqual({ n2: '2026-12-31', n5: '2027-01-01' });
+    expect(fechasNauplios('2028-02-28')).toEqual({ n2: '2028-02-28', n5: '2028-02-29' });
+    expect(fechasNauplios('2027-02-28')).toEqual({ n2: '2027-02-28', n5: '2027-03-01' });
+  });
+
+  it('🔴 sin un día real no hay fechas: ni un patrón válido que no existe, ni otro formato', () => {
+    for (const f of ['2026-02-31', '2027-02-29', '2026-13-01', '08/09/2026', '', null, undefined, '2026-9-14']) {
+      expect(fechasNauplios(f), String(f)).toEqual({ n2: '', n5: '' });
+    }
+  });
+
+  const fila = (desove, fecha = '2026-09-30') => buildDesoveRows({ fecha, desoves: [{ lote: 'BP', codigoGenetico: 'CG1', ...desove }] })[0];
+
+  it('🔴 cada fecha va SÓLO con su cifra: sin recuento, la celda va vacía', () => {
+    const conAmbos = fila({ n2: 9000, n5: 8000 });
+    expect([conAmbos[col('Fecha N2')], conAmbos[col('Fecha N5')]]).toEqual(['2026-09-30', '2026-10-01']);
+    const soloN2 = fila({ n2: 9000 });
+    expect([soloN2[col('Fecha N2')], soloN2[col('Fecha N5')]]).toEqual(['2026-09-30', '']);
+    const sinNauplios = fila({ huevos: 100 });
+    expect([sinNauplios[col('Fecha N2')], sinNauplios[col('Fecha N5')]]).toEqual(['', '']);
+    const ceros = fila({ n2: 0, n5: '0' });                  // un recuento de 0 es un recuento
+    expect([ceros[col('Fecha N2')], ceros[col('Fecha N5')]]).toEqual(['2026-09-30', '2026-10-01']);
+  });
+
+  it('🔴 lo que el modelo traiga tecleado en fechaN2/fechaN5 se IGNORA', () => {
+    const r = fila({ n2: 9000, fechaN2: '2026-10-05', n5: 8000, fechaN5: '2026-09-01' });
+    expect([r[col('Fecha N2')], r[col('Fecha N5')]]).toEqual(['2026-09-30', '2026-10-01']);
+    const sinCifra = fila({ fechaN2: '2026-10-05', fechaN5: '2026-10-06' });
+    expect([sinCifra[col('Fecha N2')], sinCifra[col('Fecha N5')]]).toEqual(['', '']);
   });
 });
 

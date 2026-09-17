@@ -102,6 +102,22 @@ const int = (v) => {
   return Number.isFinite(n) && n >= 0 ? n : '';
 };
 
+/* ── Las fechas de N2 y N5 ya NO se teclean (2026-09-16, usuario) ──
+   «La de N2 es la misma que la del desove» —no ve necesario separarlas— «y la de N5 sale automática: N2 + 1».
+   Se DERIVAN de la fecha del desove, y cada una se escribe sólo JUNTO A SU CIFRA: una fecha sin recuento
+   diría que se contó algo que no se contó. Lo que traiga un modelo en `fechaN2`/`fechaN5` (un borrador o
+   un registro local de antes) se ignora.
+   ⚠ El día siguiente se cuenta en UTC y con un día REAL: `2026-02-31` pasa el patrón, pero no es un día, y
+   sumarle uno daría una fecha inventada. */
+export function fechasNauplios(fecha) {
+  if (!esFecha(fecha)) return { n2: '', n5: '' };
+  const [a, m, d] = String(fecha).split('-').map(Number);
+  const dia = new Date(Date.UTC(a, m - 1, d));
+  if (dia.getUTCFullYear() !== a || dia.getUTCMonth() !== m - 1 || dia.getUTCDate() !== d) return { n2: '', n5: '' };
+  dia.setUTCDate(d + 1);
+  return { n2: fecha, n5: dia.toISOString().slice(0, 10) };
+}
+
 /** Conteo grande: se teclea en miles y se guarda en unidades. Devuelve '' si no hay
  *  cifra, para que el MERGE del GAS conserve lo que ya hubiera en la celda. */
 export function aMiles(v) {
@@ -139,6 +155,7 @@ export const despachoTexto = (v) => despachoLista(v).join(', ');
 export function buildDesoveRows(model) {
   const m = model || {};
   const fecha = sanitizeStr(m.fecha, 10);
+  const fn = fechasNauplios(fecha);
   const filas = [];
   (m.desoves || []).forEach((d) => {
     const x = d || {};
@@ -153,9 +170,9 @@ export function buildDesoveRows(model) {
       desoves: int(x.desoves),
       huevos: aMiles(x.huevos),
       hembrasNoViables: int(x.hembrasNoViables),
-      fechaN2: sanitizeStr(x.fechaN2, 10),
+      fechaN2: int(x.n2) !== '' ? fn.n2 : '',
       n2: aMiles(x.n2),
-      fechaN5: sanitizeStr(x.fechaN5, 10),
+      fechaN5: int(x.n5) !== '' ? fn.n5 : '',
       n5: aMiles(x.n5),
       despacho: despachoTexto(x.despacho),
       observaciones: sanitizeStr(x.observaciones, 300),
@@ -177,7 +194,8 @@ export function validarDesove(model) {
   const errores = [];
   const avisos = [];
 
-  if (!esFecha(m.fecha)) errores.push('La fecha del desove no es válida.');
+  // Un día REAL: de él salen las fechas de N2 y N5, y con uno inventado se escribirían vacías sin avisar.
+  if (!fechasNauplios(m.fecha).n2) errores.push('La fecha del desove no es válida.');
 
   const desoves = m.desoves || [];
   if (!desoves.length) errores.push('No hay ningún desove que registrar.');
@@ -207,23 +225,19 @@ export function validarDesove(model) {
     vistos.add(llave);
 
     /* 🔒 EL CANDADO que pidió el usuario: N5 exige N2. Un N5 sin su N2 deja un hueco que
-       después nadie sabe si fue que no se contó o que se olvidó registrar. */
-    const hayN2 = int(x.n2) !== '' || esFecha(x.fechaN2);
-    const hayN5 = int(x.n5) !== '' || esFecha(x.fechaN5);
+       después nadie sabe si fue que no se contó o que se olvidó registrar.
+       2026-09-16: mira la CIFRA. Las fechas ya no se teclean, así que una fecha suelta (de un borrador
+       de antes) no puede ni abrirlo ni cerrarlo. */
+    const hayN2 = int(x.n2) !== '';
+    const hayN5 = int(x.n5) !== '';
     if (hayN5 && !hayN2) errores.push('En ' + et + ' hay N5 sin N2. El N5 sólo se registra después del N2.');
 
     /* ⚠ NO se comparan los tamaños entre sí (N5 ≤ N2 ≤ huevos): el usuario confirmó el
        2026-09-08 que son cosas DISTINTAS y no comparables. Un aviso por tamaño relativo
        aquí sería un rojo que no significa nada, y ésos esconden el rojo siguiente. */
 
-    if (x.fechaN2 && !esFecha(x.fechaN2)) avisos.push('La fecha de N2 de ' + et + ' no es válida.');
-    if (x.fechaN5 && !esFecha(x.fechaN5)) avisos.push('La fecha de N5 de ' + et + ' no es válida.');
-    if (esFecha(m.fecha) && esFecha(x.fechaN2) && x.fechaN2 < m.fecha) {
-      avisos.push('El N2 de ' + et + ' es ANTERIOR al desove.');
-    }
-    if (esFecha(x.fechaN2) && esFecha(x.fechaN5) && x.fechaN5 < x.fechaN2) {
-      avisos.push('El N5 de ' + et + ' es ANTERIOR al N2.');
-    }
+    /* 2026-09-16: aquí había cuatro AVISOS de fecha (la de N2 o N5 mal escrita, el N2 anterior al desove, el N5
+       anterior al N2). Con las fechas derivadas ninguno puede darse: se retiraron, no se dejaron mudos. */
 
     const algo = ['desoves', 'huevos', 'hembrasNoViables', 'n2', 'n5']
       .some((k) => int(x[k]) !== '' && int(x[k]) > 0);

@@ -7928,6 +7928,14 @@ function _madBorrRender(ficha){
   else if(ficha === "tratamientos") renderMadTratamientos();
   else if(ficha === "alimentacion") renderMadAlimentacion();
 }
+/* Un borrador es el HTML del panel TAL COMO ESTABA al guardarlo: si la ficha cambió después, trae campos que ya
+   no existen y que nadie lee. Se retiran al traerlo, ficha a ficha, para no enseñar lo que no se va a guardar.
+   · desoves (2026-09-16): las fechas de N2 y N5 dejaron de teclearse; se derivan de la del desove. */
+function _madBorrAdaptar(ficha, fp){
+  if(ficha === "desoves"){
+    fp.querySelectorAll(".md-fn2,.md-fn5").forEach(function(el){ const l = el.closest("label"); (l || el).remove(); });
+  }
+}
 /** Asa del campo Fecha: guarda el día que se deja y trae el que se elige. */
 function madBorrFechaChange(ficha){
   const cfg = MAD_BORR_FICHAS[ficha];
@@ -7947,7 +7955,8 @@ function madBorrFechaChange(ficha){
   /* Sin borrador de ese día, la ficha se monta LIMPIA: arrastrar lo de ayer a un día en el
      que no se tecleó nada es justo lo que esta función viene a arreglar. */
   fp.innerHTML = html;
-  if(!html) _madBorrRender(ficha);
+  if(html) _madBorrAdaptar(ficha, fp);
+  else _madBorrRender(ficha);
   /* DESPUÉS del render: el montaje escribe today() en su campo de fecha, y aquí manda la
      fecha elegida. Y `_madBorrFecha` se fija al final por lo mismo. */
   const f2 = document.getElementById(cfg.fecha);
@@ -8392,6 +8401,17 @@ const MAD_DESOVE_COLUMNS = [
 const MAD_DESOVE_HEADERS = MAD_DESOVE_COLUMNS.map(function(c){ return c.h; });
 const MAD_DESOVE_KEY_COLS = [0,1,2];
 function madDesFecha(v){ return /^\d{4}-\d{2}-\d{2}$/.test(String(v||"")); }
+// 2026-09-16 (usuario): las fechas de N2 y N5 ya NO se teclean. N2 es el día del desove y N5 el siguiente, y cada
+// una se escribe sólo JUNTO A SU CIFRA; lo tecleado en fechaN2/fechaN5 (un borrador de antes) se ignora. Día REAL
+// y en UTC: «2026-02-31» pasa el patrón y no existe. Gemelo de fechasNauplios en el módulo.
+function madDesFechasNauplios(fecha){
+  if(!madDesFecha(fecha)) return { n2:"", n5:"" };
+  const p=String(fecha).split("-").map(Number);
+  const dia=new Date(Date.UTC(p[0], p[1]-1, p[2]));
+  if(dia.getUTCFullYear()!==p[0] || dia.getUTCMonth()!==p[1]-1 || dia.getUTCDate()!==p[2]) return { n2:"", n5:"" };
+  dia.setUTCDate(p[2]+1);
+  return { n2:fecha, n5:dia.toISOString().slice(0,10) };
+}
 // ⚠ Devuelve VACÍO cuando no hay cifra, no cero. `upsertMadRows` conserva la celda cuando
 // el valor entrante viene vacío, y de eso depende poder completar N2 y N5 días después sin
 // borrar los huevos. Con cero, el segundo envío los machacaría.
@@ -8404,6 +8424,7 @@ function madDesNormCG(s){ return sanitizeStr(s,60).toUpperCase().replace(/\s+/g,
 function madDesBuildRows(model){
   const m = model||{};
   const fecha = sanitizeStr(m.fecha,10);
+  const fn = madDesFechasNauplios(fecha);
   const filas = [];
   (m.desoves||[]).forEach(function(d){
     const x = d||{};
@@ -8414,8 +8435,8 @@ function madDesBuildRows(model){
       piscina: sanitizeStr(x.piscina,60),
       desoves: madIngInt(x.desoves),
       huevos: madDesMiles(x.huevos), hembrasNoViables: madIngInt(x.hembrasNoViables),
-      fechaN2: sanitizeStr(x.fechaN2,10), n2: madDesMiles(x.n2),
-      fechaN5: sanitizeStr(x.fechaN5,10), n5: madDesMiles(x.n5),
+      fechaN2: madIngInt(x.n2)!=="" ? fn.n2 : "", n2: madDesMiles(x.n2),
+      fechaN5: madIngInt(x.n5)!=="" ? fn.n5 : "", n5: madDesMiles(x.n5),
       despacho: madDesDespachoTexto(x.despacho),
       observaciones: sanitizeStr(x.observaciones,300)
     };
@@ -8513,7 +8534,8 @@ function madDesLocalesPoda(locales, filasHoja){
 }
 function madDesValidar(model){
   const m = model||{}, errores=[], avisos=[];
-  if(!madDesFecha(m.fecha)) errores.push("La fecha del desove no es válida.");
+  // Un día REAL: de él salen las fechas de N2 y N5, y con uno inventado se escribirían vacías sin avisar.
+  if(!madDesFechasNauplios(m.fecha).n2) errores.push("La fecha del desove no es válida.");
   const desoves = m.desoves||[];
   if(!desoves.length) errores.push("No hay ningún desove que registrar.");
   // ⚠⚠ EL DUPLICADO ES ERROR: dos filas con la misma (fecha, lote, código) comparten la
@@ -8531,16 +8553,15 @@ function madDesValidar(model){
     vistos[llave]=1;
     // 🔒 EL CANDADO que pidió el usuario: N5 exige N2. Un N5 sin su N2 deja un hueco que
     // después nadie sabe si fue que no se contó o que se olvidó registrar.
-    const hayN2 = madIngInt(x.n2)!=="" || madDesFecha(x.fechaN2);
-    const hayN5 = madIngInt(x.n5)!=="" || madDesFecha(x.fechaN5);
+    // 2026-09-16: mira la CIFRA. Las fechas ya no se teclean, y una suelta (de un borrador de antes) no lo abre ni lo cierra.
+    const hayN2 = madIngInt(x.n2)!=="";
+    const hayN5 = madIngInt(x.n5)!=="";
     if(hayN5 && !hayN2) errores.push("En "+et+" hay N5 sin N2. El N5 sólo se registra después del N2.");
     // ⚠ NO se comparan los tamaños entre sí (N5 ≤ N2 ≤ huevos): el usuario confirmó el
     // 2026-09-08 que son cosas DISTINTAS y no comparables. Un aviso por tamaño relativo
     // aquí sería un rojo que no significa nada, y ésos esconden el rojo siguiente.
-    if(x.fechaN2 && !madDesFecha(x.fechaN2)) avisos.push("La fecha de N2 de "+et+" no es válida.");
-    if(x.fechaN5 && !madDesFecha(x.fechaN5)) avisos.push("La fecha de N5 de "+et+" no es válida.");
-    if(madDesFecha(m.fecha) && madDesFecha(x.fechaN2) && x.fechaN2 < m.fecha) avisos.push("El N2 de "+et+" es ANTERIOR al desove.");
-    if(madDesFecha(x.fechaN2) && madDesFecha(x.fechaN5) && x.fechaN5 < x.fechaN2) avisos.push("El N5 de "+et+" es ANTERIOR al N2.");
+    // 2026-09-16: aquí había cuatro AVISOS de fecha (mal escrita, N2 anterior al desove, N5 anterior al N2). Con las
+    // fechas derivadas ninguno puede darse: se retiraron, no se dejaron mudos.
     const algo = ["desoves","huevos","hembrasNoViables","n2","n5"].some(function(k){ const n=madIngInt(x[k]); return n!=="" && n>0; });
     if(!algo) avisos.push(et+" no trae ninguna cifra: la fila se escribirá vacía.");
   });
@@ -8567,10 +8588,8 @@ function _madDesCardHTML(d, bloq){
     +   '<label style="'+_MAD_ING_LBL+'" title="Reproductoras que estaban maduras pero no desovaron">Hembras no viables<input class="md-hnoviables" type="number" min="0" step="1"'+val("hembrasNoViables")+' style="'+_MAD_ING_INP+';width:120px"></label>'
     + '</div>'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
-    +   '<label style="'+_MAD_ING_LBL+'">Fecha N2<input class="md-fn2" type="date"'+val("fechaN2")+' style="'+_MAD_ING_INP+'"></label>'
-    +   '<label style="'+_MAD_ING_LBL+'">N2 (miles)<input class="md-n2" type="number" min="0" step="1"'+val("n2")+' style="'+_MAD_ING_INP+';width:110px"></label>'
-    +   '<label style="'+_MAD_ING_LBL+'">Fecha N5<input class="md-fn5" type="date"'+val("fechaN5")+' style="'+_MAD_ING_INP+'"></label>'
-    +   '<label style="'+_MAD_ING_LBL+'">N5 (miles)<input class="md-n5" type="number" min="0" step="1"'+val("n5")+' style="'+_MAD_ING_INP+';width:110px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'" title="Se registra con la fecha del desove">N2 (miles) · el día del desove<input class="md-n2" type="number" min="0" step="1"'+val("n2")+' style="'+_MAD_ING_INP+';width:110px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'" title="Se registra con el día siguiente al desove">N5 (miles) · al día siguiente<input class="md-n5" type="number" min="0" step="1"'+val("n5")+' style="'+_MAD_ING_INP+';width:110px"></label>'
     + '</div>'
     + _madDesDespachoHTML(x.despacho)
     + '<label style="'+_MAD_ING_LBL+'">Observaciones<input class="md-obs"'+val("observaciones")+' style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
@@ -8614,7 +8633,7 @@ function madDesCollect(){
       lote:g(c,".md-lote"), codigoGenetico:g(c,".md-cg"), piscina:g(c,".md-piscina"),
       desoves:g(c,".md-desoves"), huevos:g(c,".md-huevos"),
       hembrasNoViables:g(c,".md-hnoviables"),
-      fechaN2:g(c,".md-fn2"), n2:g(c,".md-n2"), fechaN5:g(c,".md-fn5"), n5:g(c,".md-n5"),
+      n2:g(c,".md-n2"), n5:g(c,".md-n5"),
       despacho:Array.prototype.map.call(c.querySelectorAll(".md-desp-op:checked"), function(e){ return e.value; }),
       observaciones:g(c,".md-obs")
     });
@@ -8806,7 +8825,7 @@ function renderMadDesoves(d){
     + '<div class="fc-h"><div class="fc-t">🥚 Maduración · Desoves</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
     + '<div class="fc-b">'
     +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
-    +     '<span style="font-size:16px">ℹ️</span><span>La producción se registra por <b>lote y código genético</b>, no por tanque: las copuladas de varios tanques se juntan en un pool y al devolverlas nadie identifica cuáles eran.<br>Los conteos grandes van <b>en miles</b> (escribe <b>6500</b> para 6.500.000). <b>N2 y N5 se completan después</b>: en <b>📋 Desoves pendientes</b> pulsa <b>✏️ Completar</b>, rellena lo nuevo y guarda. Con el N5 guardado, el desove sale de la lista.</span>'
+    +     '<span style="font-size:16px">ℹ️</span><span>La producción se registra por <b>lote y código genético</b>, no por tanque: las copuladas de varios tanques se juntan en un pool y al devolverlas nadie identifica cuáles eran.<br>Los conteos grandes van <b>en miles</b> (escribe <b>6500</b> para 6.500.000). <b>N2 y N5 se completan después</b>: en <b>📋 Desoves pendientes</b> pulsa <b>✏️ Completar</b>, rellena lo nuevo y guarda. Con el N5 guardado, el desove sale de la lista. Sus fechas no se teclean: <b>N2 lleva la del desove y N5 la del día siguiente</b>.</span>'
     +   '</div>'
     +   (d ? '<div id="md-edit" style="background:#fef9c3;border:1.5px solid #fde047;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:12px;color:#713f12">✏️ Completando el desove del <b>'+escapeHtml(d.fecha)+'</b> · <b>'+escapeHtml(d.lote)+'</b> · <b>'+escapeHtml(d.codigoGenetico)+'</b>. Rellena lo nuevo y guarda; 🧹 Vaciar sale sin guardar.</div>' : '')
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
