@@ -194,26 +194,33 @@ describe('Sección 3 · transferencias', () => {
     expect(r.matriz).toBeNull();
     expect(r.report.wrongLocation).toEqual(['0008218CCC']);
   });
-  it('sin matriz mueve TODOS los Trovan de cada destino sin validar existencia', () => {
-    const r = buildTransferBatch({
-      fecha: '2026-07-12', tipo: REPRO_TRANSFER_TIPO.TRASLADO,
-      origen: { sala: 'S5', tanque: 'T1' },
-      destinos: [{ sala: 'S6', tanque: 'T2', ids: ['000821B3B2', '000821AFA2'] }],
-      trId: 'TR-000200',
-    });
-    expect(r.transfer.rows.length).toBe(2);
-    expect(r.report.moved).toEqual(['000821B3B2', '000821AFA2']);
-    expect(r.report.notFound).toEqual([]);
-    expect(r.report.wrongLocation).toEqual([]);
+  /* 🔴 RD1 (2026-09-16) · ERA «sin matriz mueve TODOS los Trovan de cada destino sin validar». Desde que
+     la llave de la MATRIZ es la cuaterna, ese modo degradado ya no degrada: DAÑA. La fila de un traslado
+     tiene que llevar la piscina, el código y el lote del individuo, y su única fuente es la MATRIZ; sin
+     ella iría en blanco, no casaría con la suya y el upsert AÑADIRÍA una fila suelta. Como los eventos,
+     sin la MATRIZ no se arma nada. */
+  it('🔴 RD1 · sin MATRIZ no se traslada NADA: la fila iría sin su cuaterna y la hoja ganaría una suelta', () => {
+    for (const [caso, matrixIndex] of [['sin índice', undefined], ['índice nulo', null], ['algo que no es un índice', {}]]) {
+      const r = buildTransferBatch({
+        fecha: '2026-07-12', tipo: REPRO_TRANSFER_TIPO.TRASLADO,
+        origen: { sala: 'S5', tanque: 'T1' },
+        destinos: [{ sala: 'S6', tanque: 'T2', ids: ['0008218CCC', '000821AFA2'] }],
+        matrixIndex, trId: 'TR-000200',
+      });
+      expect(r.error, caso).toMatch(/Maduración MATRIZ/);
+      expect(r.matriz, caso).toBeNull();
+      expect(r.transfer, caso).toBeNull();
+      expect(r.report.moved, caso).toEqual([]);
+    }
   });
   it('señala (invalidFormat) y NO transfiere los Trovan con formato corrupto', () => {
     const r = buildTransferBatch({
       fecha: '2026-07-12', tipo: REPRO_TRANSFER_TIPO.TRASLADO,
       origen: { sala: 'S5', tanque: 'T1' },
-      destinos: [{ sala: 'S6', tanque: 'T2', ids: ['000821B3B2', '8.21E+19'] }],
-      trId: 'TR-000201',
+      destinos: [{ sala: 'S6', tanque: 'T2', ids: ['0008218CCC', '8.21E+19'] }],
+      matrixIndex: idx(), trId: 'TR-000201',   // RD1: sin la MATRIZ ya no se arma nada
     });
-    expect(r.report.moved).toEqual(['000821B3B2']);
+    expect(r.report.moved).toEqual(['0008218CCC']);
     expect(r.report.invalidFormat).toEqual(['8.21E+19']);
   });
   it('mezcla: registra la composición del destino', () => {

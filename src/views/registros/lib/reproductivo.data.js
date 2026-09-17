@@ -285,14 +285,22 @@ export function nextTrId(existingIds) {
 /** Procesa una transferencia por UBICACIÓN actual: por cada destino (con su lista de Trovan)
  *  reubica en la MATRIZ (Sala/Tanque actual) y escribe una fila en TRANSFERENCIAS (ledger por
  *  TR-ID×Trovan). En mezcla, guarda la composición del destino.
- *  `matrixIndex` es OPCIONAL: si se pasa, verifica que cada individuo exista (notFound) y esté
- *  en el origen declarado (wrongLocation), omitiendo los que no; si NO se pasa, mueve todos los
- *  Trovan de cada destino sin validar (el engine aún no lee la MATRIZ).
+ *  `matrixIndex` es OBLIGATORIO desde RD1 (2026-09-16): verifica que cada individuo exista
+ *  (notFound) y esté en el origen declarado (wrongLocation), omitiendo los que no, y —sobre todo—
+ *  es la ÚNICA fuente de la cuaterna que identifica a cada individuo. Sin él no se arma nada.
  *  ♻ Con matriz, un traslado anterior al ingreso de la hembra que lleva hoy un chip reciclado se
  *  omite (`antesDelIngreso`): movería a la nueva por un traslado de otra. */
 export function buildTransferBatch({ fecha, tipo, origen, destinos, composicion, matrixIndex, trId } = {}) {
   const report = { moved: [], notFound: [], wrongLocation: [], invalidFormat: [], antesDelIngreso: [] };
   if (!fecha) return { report, matriz: null, transfer: null, error: 'Falta la fecha.' };
+  /* 🔴 RD1 (2026-09-16) · SIN LA MATRIZ NO SE ARMA NADA. Antes se movía «sin validar» con índice nulo:
+     era un modo degradado inofensivo mientras la llave de la MATRIZ era sólo el Trovan. Desde que es la
+     CUATERNA (Trovan · Piscina · Código genético · Lote) ya no degrada sino que DAÑA: la piscina, el
+     código y el lote salen de `rec`, o sea de la propia MATRIZ, así que sin ella viajarían en blanco, la
+     fila no casaría con la suya y el upsert AÑADIRÍA una fila suelta dejando a la hembra sin mover. */
+  if (!matrixIndex || typeof matrixIndex.get !== 'function') {
+    return { report, matriz: null, transfer: null, error: 'No se pudo leer la hoja "Maduración MATRIZ": sin ella no se sabe qué individuo es cada Trovan y el traslado no se puede registrar. Carga los datos y reintenta.' };
+  }
   const fx = sanitizeStr(fecha), dia = fechaIso(fecha);
   const org = { sala: sanitizeStr(origen && origen.sala), tanque: sanitizeStr(origen && origen.tanque) };
   const comp = composicion || {};
@@ -314,8 +322,8 @@ export function buildTransferBatch({ fecha, tipo, origen, destinos, composicion,
       /* 🔴 Igual que en la mortalidad: desde que la llave de la MATRIZ es la cuaterna, la piscina,
          el código y el lote tienen que VIAJAR aunque la transferencia no los toque, o la fila no
          casa con la suya y el upsert añade una nueva. Salen de `rec`, que ya se leyó de la hoja.
-         ⚠ Si no hay `matrixIndex` no hay `rec`, y entonces sí van en blanco: es el modo degradado
-         de siempre —sin la MATRIZ tampoco se valida el origen— y no empeora nada. */
+         ⚠ Por eso RD1 exige `matrixIndex` arriba: es lo que garantiza que `rec` pueda existir. Los
+         `matrixIndex &&` de estas líneas ya no pueden ser falsos; se dejan por no tocar lo que no falla. */
       matRows.push(rowFromObj(REPRO_MATRIZ_HEADERS, {
         'Trovan ID': id,
         'Piscina': sanitizeStr(rec && rec.piscina), 'Código genético': sanitizeStr(rec && rec.codigo), 'Lote': sanitizeStr(rec && rec.lote),

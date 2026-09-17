@@ -11069,15 +11069,21 @@ function _reproRecortada(sheet){
   return !!(_reproTrunc && _reproTrunc[sheet]) && !_reproStoreRows(sheet).length;
 }
 
-/* Caché local de la MATRIZ (proyección mínima ≈ 65 KB para 1508 individuos). */
+/* Caché local de la MATRIZ: la MISMA proyección que se le pide al GAS (_REPRO_MATRIZ_COLS).
+   🔴 RD1 (2026-09-16) · GUARDA LA IDENTIDAD. Guardaba sólo Trovan, Sala, Tanque y Estado, y con Google
+   caído la mortalidad y el traslado salían de esta copia SIN piscina, código ni lote: con la llave de la
+   MATRIZ por cuaterna, la hoja ganaba una fila suelta y la hembra seguía «Vivo» en la suya. Ahora copia
+   columna a columna lo que se leyó y anota cuáles («cols»); una copia a la que le falte alguna de las que
+   hoy se leen —la de antes de este cambio, o la de cuando se leía una menos— no se usa. */
 function _reproCacheSave(rows){
   try{
     const slim=(rows||[]).map(function(o){
-      return { "Trovan ID":o["Trovan ID"], "Sala actual":o["Sala actual"],
-               "Tanque actual":o["Tanque actual"], "Estado":o["Estado"] };
+      const f={};
+      _REPRO_MATRIZ_COLS.forEach(function(c){ f[c]=o[c]; });
+      return f;
     });
     if(!slim.length) return;
-    safeSetItem(_REPRO_CACHE_KEY, JSON.stringify({ts:Date.now(), rows:slim}), {silent:true});
+    safeSetItem(_REPRO_CACHE_KEY, JSON.stringify({ts:Date.now(), cols:_REPRO_MATRIZ_COLS, rows:slim}), {silent:true});
   }catch(_){}
 }
 function _reproCacheLoad(){
@@ -11085,6 +11091,7 @@ function _reproCacheLoad(){
     const o=JSON.parse(localStorage.getItem(_REPRO_CACHE_KEY)||"null");
     if(!o || !Array.isArray(o.rows) || !o.rows.length) return null;
     if(!(o.ts>0) || (Date.now()-o.ts)>_REPRO_CACHE_TTL) return null;
+    if(!Array.isArray(o.cols) || _REPRO_MATRIZ_COLS.some(function(c){ return o.cols.indexOf(c)===-1; })) return null;   // RD1: sin la identidad no sirve
     return o;
   }catch(_){ return null; }
 }
@@ -11496,10 +11503,18 @@ async function madReproTransfer(){
   });
   if(!totalIds){ toast("Pega al menos un Trovan ID en algún destino.","warn",3800); return; }
   const composicion=(tipo==="Mezcla")?{ lotes:g("repro-t-lotes"), codigos:g("repro-t-codigos"), piscinas:g("repro-t-piscinas") }:{};
-  // La MATRIZ valida origen/existencia (mejor esfuerzo: si no se lee, se mueve sin
-  // validar, que es lo que buildTransferBatch hace con índice nulo). El ledger de
-  // Transferencias sí hace falta para que el TR-ID salga del máximo REAL.
+  // La MATRIZ valida origen/existencia y da la cuaterna de cada individuo. El ledger de
+  // Transferencias hace falta para que el TR-ID salga del máximo REAL.
   if(!_reproMatrixIndex()) await _reproEnsureMatrix();
+  /* 🔴 RD1 (2026-09-16) · SIN LA MATRIZ NO HAY TRASLADO. Antes se movía «sin validar»; desde que la llave
+     de la MATRIZ es la cuaterna eso ya no degrada sino que DAÑA: sin la piscina, el código y el lote de cada
+     individuo su fila no casa con la suya y el upsert AÑADE una fila suelta. Como el registro de eventos:
+     se dice por qué, lo pegado se queda, y no se sigue leyendo el historial con Google caído. */
+  if(!_reproMatrixIndex()){
+    _reproPaintMatrixBanner();
+    toast("No se envió: no se pudo leer «Maduración MATRIZ» ("+(_reproSheetsErr||"error")+") y sin ella no se sabe qué individuo es cada Trovan. No es tu configuración ni el token — vuelve a intentarlo con 🔄; lo pegado sigue aquí.","err",8000);
+    return;
+  }
   await _reproEnsureSheet(_REPRO_SHEETS.transfer);
   _reproPaintMatrixBanner();
   /* ⚠⚠ D11 · CON EL LEDGER RECORTADO NO HAY TR-ID SEGURO, y aquí no basta con avisar. El máximo

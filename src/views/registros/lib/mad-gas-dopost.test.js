@@ -1043,6 +1043,61 @@ describe('GAS · la MATRIZ admite varios individuos por chip, y nadie pierde su 
     expect(hoja.filas).toHaveLength(4);                    // la fila suelta que hay que evitar
   });
 
+  /* 🔴 RD1 (2026-09-16) · CON GOOGLE CAÍDO SE TRABAJA CON LA COPIA LOCAL que dejó la última lectura buena
+     (`_reproCacheSave` y `_reproCacheLoad` del motor, ejecutadas aquí tal cual). Guardaba sólo Trovan, Sala,
+     Tanque y Estado: la mortalidad y el traslado salían de ella SIN la cuaterna y la hoja ganaba una fila
+     suelta, mientras la hembra seguía «Vivo» en la suya. */
+  const copiaDelMotor = () => {
+    const i = engineSrc.indexOf('const _REPRO_MATRIZ_COLS = ');
+    const j = engineSrc.indexOf('\n}\n', engineSrc.indexOf('function _reproCacheLoad(){', i));
+    const guardado = {};
+    const ctx = { JSON, Date, Array, localStorage: { getItem: (k) => (k in guardado ? guardado[k] : null) },
+      safeSetItem: (k, v) => { guardado[k] = v; } };
+    createContext(ctx);
+    new Script(engineSrc.slice(i, j + 2) + '\n;globalThis.__c = { guardar: _reproCacheSave, cargar: _reproCacheLoad, COLS: _REPRO_MATRIZ_COLS };').runInContext(ctx);
+    return ctx.__c;
+  };
+
+  /* Un alta repetida (la misma cuaterna de NUEVA). Con la copia de antes el alta no la veía: sin identidad en el
+     índice, la cuaterna no casa con nada y el alta salía, pisando en la hoja la fila de esa hembra. */
+  const altaRepetida = (idx) => buildAltaBatch([{ trovan: CHIP, piscina: 'P9', codigo: 'G07', lote: 'L20', sala: 'S2', tanque: 'T8',
+    fecha: '2026-09-12' }], idx);
+
+  it('🔴 RD1 · con la COPIA LOCAL, la mortalidad y el traslado van a SU fila sin añadir ninguna, y el alta ve la repetida', () => {
+    const c = copiaDelMotor();
+    c.guardar([VIEJA, NUEVA].map((o) => Object.fromEntries(c.COLS.map((h) => [h, o[h]]))));   // lo que trae ?p=rows
+    const copia = c.cargar();                                                                  // …y Google no responde
+    expect(copia).not.toBeNull();
+    const idx = matrixIndexFromRows(copia.rows);
+    const casos = [
+      ['mortalidad', buildEventBatch({ ids: [CHIP], fecha: '2026-09-12', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: idx }).matriz,
+        (hoja) => expect(celda(hoja, 2, 'Estado')).toBe('Muerto')],
+      ['traslado', buildTransferBatch({ fecha: '2026-09-12', tipo: REPRO_TRANSFER_TIPO.TRASLADO, origen: { sala: 'S3', tanque: 'T4' },
+        destinos: [{ sala: 'S9', tanque: 'T9', ids: [CHIP] }], composicion: {}, matrixIndex: idx, trId: 'TR-000010' }).matriz,
+        (hoja) => expect(celda(hoja, 2, 'Sala actual')).toBe('S9')],
+    ];
+    for (const [caso, envio, efecto] of casos) {
+      const hoja = hojaFalsa([CAB, fila(VIEJA), fila(NUEVA)]);
+      expect(gas({ 'Maduración MATRIZ': hoja }).post(envio).status, caso).toBe('ok');
+      expect(hoja.filas, caso).toHaveLength(3);                     // NINGUNA fila suelta
+      efecto(hoja);                                                 // en la de la hembra vigente
+      expect(hoja.filas[1], caso).toEqual(fila(VIEJA));             // y la otra del chip, intacta
+    }
+    const alta = altaRepetida(idx);
+    expect(alta.report.existentes).toEqual([CHIP]);
+    expect(alta.payload).toBeNull();
+  });
+
+  it('el fixture ejerce algo: con la copia de ANTES (Trovan, Sala, Tanque y Estado), la mortalidad añade una fila y el alta no ve la repetida', () => {
+    const deAntes = matrixIndexFromRows([VIEJA, NUEVA].map((o) => ({ 'Trovan ID': o['Trovan ID'], 'Sala actual': o['Sala actual'],
+      'Tanque actual': o['Tanque actual'], 'Estado': o['Estado'] })));
+    const hoja = hojaFalsa([CAB, fila(VIEJA), fila(NUEVA)]);
+    const m = buildEventBatch({ ids: [CHIP], fecha: '2026-09-12', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: deAntes }).matriz;
+    expect(gas({ 'Maduración MATRIZ': hoja }).post(m).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(4);
+    expect(altaRepetida(deAntes).report.existentes).toEqual([]);
+  });
+
   it('las fechas de la hoja como FECHAS de Sheets (Date) o como dd/mm/yyyy valen igual', () => {
     const conDate = Object.assign({}, VIEJA, { 'Fecha muerte': new Date(Date.UTC(2026, 6, 8)), 'Fecha ingreso': new Date(Date.UTC(2026, 0, 5)) });
     const hoja = hojaFalsa([CAB, fila(conDate)]);

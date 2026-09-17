@@ -29,7 +29,8 @@ const EXPORTAR = ['_REPRO_SHEETS', '_reproAltaHTML', 'madReproAltaBatch', '_repr
      la cuaterna, si esta lista no trae Piscina, Código genético y Lote, la mortalidad y el traslado
      mandan la llave a medias y el upsert AÑADE una fila suelta en vez de actualizar la suya. Lo
      destapó el banco: dos mutaciones que recortaban esta lista SOBREVIVÍAN. */
-  '_REPRO_MATRIZ_COLS'];
+  '_REPRO_MATRIZ_COLS',
+  '_reproEnsureMatrix'];   // RD1 (2026-09-16) · una lectura buena, que es la que deja la copia local
 const H = {};
 const avisos = [];
 const envios = [];
@@ -68,6 +69,7 @@ beforeAll(async () => {
   H.setPost(async (payload) => { envios.push(payload); return true; });
   globalThis.fetch = async (url) => {
     pedidas.push(String(url));
+    if (lecturaRows && String(url).includes('p=rows')) return lecturaRows(String(url));   // RD1: ?p=rows a medida
     if (!String(url).includes('p=ver')) throw new Error('esta prueba sólo simula ?p=ver: ' + url);
     if (respuestaVer instanceof Error) throw respuestaVer;
     return { text: async () => respuestaVer };
@@ -85,6 +87,7 @@ const VIVA = { 'Trovan ID': '0008218CCC', 'Sala actual': 'S5', 'Tanque actual': 
    sigue siendo la respuesta normal de ?p=ver para el resto del arnés. */
 const CON_CAPS = JSON.stringify({ ok: true, version: 'abcdefabcdef', caps: ['matriz-cuaterna'] });
 let S;
+let lecturaRows = null;
 
 beforeEach(() => {
   S = H._REPRO_SHEETS;
@@ -92,6 +95,7 @@ beforeEach(() => {
   envios.length = 0;
   pedidas.length = 0;
   respuestaVer = CON_CAPS;
+  lecturaRows = null;
   window.__rgLib.reproReadSheet = undefined;
   H.setLecturas({ [S.matriz]: [VIEJA, VIVA], [S.bitacora]: [], [S.transfer]: [] });
 });
@@ -260,4 +264,51 @@ describe('♻ Consulta · cada hembra de un chip, por separado', () => {
     expect(t).toContain('2026-03-01');
     expect(t).not.toContain('reciclado');
   });
+});
+
+/* 🔴 RD1 (2026-09-16) · LA MATRIZ DICE QUIÉN ES CADA TROVAN, y desde que su llave es la cuaterna no hay
+   traslado sin ella: la fila iría sin piscina, código ni lote y la hoja ganaría una fila suelta. Con Google
+   caído se trabaja con la copia local, que por eso tiene que guardar la identidad. */
+describe('🔴 RD1 · sin la MATRIZ no hay traslado, y la copia local lleva la identidad', () => {
+  const pegarTraslado = () => {
+    caja('rc-transfer').innerHTML = H._reproTransferHTML();
+    document.getElementById('repro-t-fecha').value = '2026-09-12';
+    document.getElementById('repro-t-osala').value = 'S3';
+    document.getElementById('repro-t-otanque').value = 'T4';
+    document.querySelector('#repro-t-dests .repro-dest-sala').value = 'S9';
+    document.querySelector('#repro-t-dests .repro-dest-tanque').value = 'T9';
+    document.querySelector('#repro-t-dests .repro-dest-codes').value = CHIP;
+  };
+  const googleCaido = () => { throw new Error('Google no respondió en 30 s'); };
+  beforeEach(() => { localStorage.removeItem('larv4_mad_matriz'); H.setLecturas({}); });
+
+  it('🔴 sin MATRIZ (Google caído y sin copia) no se envía nada, se dice por qué y lo pegado se queda', async () => {
+    lecturaRows = googleCaido;
+    pegarTraslado();
+    await H.madReproTransfer();
+    expect(envios).toHaveLength(0);
+    const err = avisos.filter((a) => a.tipo === 'err').map((a) => a.msg).join(' | ');
+    expect(err).toContain('Maduración MATRIZ');
+    expect(err).toContain('Google no respondió en 30 s');                    // el motivo REAL
+    // y no se sigue: pedir el historial con Google caído serían otros dos intentos de espera para nada
+    expect(pedidas.filter((u) => decodeURIComponent(u).includes('Transferencias'))).toEqual([]);
+    expect(document.querySelector('#repro-t-dests .repro-dest-codes').value).toBe(CHIP);
+  }, 15000);
+
+  it('🔴 con Google caído, el traslado sale de la COPIA LOCAL y la fila de la MATRIZ lleva la cuaterna', async () => {
+    // 1 · una lectura buena deja la copia…
+    lecturaRows = (url) => ({ ok: true, status: 200, text: async () => JSON.stringify({ ok: true,
+      rows: decodeURIComponent(url).includes('MATRIZ') ? [VIEJA, NUEVA] : [] }) });
+    await H._reproEnsureMatrix(true);
+    // 2 · …Google deja de responder y lo leído en memoria ya no está (otra sesión, el mismo dispositivo)
+    lecturaRows = googleCaido;
+    H.setLecturas({});
+    pegarTraslado();
+    await H.madReproTransfer();
+    const m = envios.find((p) => p.sheetName === S.matriz);
+    expect(m).toBeTruthy();
+    const v = (h) => m.rows[0][m.headers.indexOf(h)];
+    expect([v('Trovan ID'), v('Piscina'), v('Código genético'), v('Lote'), v('Sala actual')]).toEqual([CHIP, 'P9', 'G07', 'L20', 'S9']);
+    localStorage.removeItem('larv4_mad_matriz');
+  }, 15000);
 });

@@ -85,7 +85,7 @@ function sandbox(code, net, opts = {}) {
   new Script(code + `
     ;globalThis.__api = {
       _reproFetchSheet, _reproEnsureMatrix, _reproLoadSheets, _reproMatrixIndex, _reproReadRows,
-      _REPRO_SHEETS,
+      _REPRO_SHEETS, _REPRO_MATRIZ_COLS,
       origen: _reproMatrixOrigen,
       get state(){ return _reproSheetsState; },
       get err(){ return _reproSheetsErr; },
@@ -94,10 +94,15 @@ function sandbox(code, net, opts = {}) {
 }
 
 const caido = () => [{ ok: false, status: 404, body: HTML_404 }, { ok: false, status: 404, body: HTML_404 }];
-const cacheCon = (edadMs, filas = 1) => JSON.stringify({
+/* RD1 (2026-09-16) · la copia anota qué columnas guardó (`cols`), y sin las que hoy se leen no se usa. Se
+   sacan del propio motor: si un día se lee una columna más, estas copias siguen siendo «de ahora». */
+const colsDelMotor = () => JSON.parse(/const _REPRO_MATRIZ_COLS = (\[[^\]]*\]);/.exec(code)[1]);
+const cacheCon = (edadMs, filas = 1, cols = colsDelMotor()) => JSON.stringify({
   ts: Date.now() - edadMs,
+  cols,
   rows: Array.from({ length: filas }, (_, i) => ({
-    'Trovan ID': '000821AFF' + i, 'Sala actual': 'S2', 'Tanque actual': 'T9', 'Estado': 'Vivo',
+    'Trovan ID': '000821AFF' + i, 'Piscina': 'P1', 'Código genético': 'G01', 'Lote': 'L1',
+    'Sala actual': 'S2', 'Tanque actual': 'T9', 'Estado': 'Vivo',
   })),
 });
 
@@ -149,6 +154,37 @@ describe('registros · lector del reproductivo · caché local de la MATRIZ', ()
     await api._reproEnsureMatrix();
     expect(api.state).toBe('error');
     expect(api.origen()).toBe('');
+  });
+
+  /* 🔴 RD1 (2026-09-16) · la copia guardaba sólo Trovan, Sala, Tanque y Estado. Con Google caído, la
+     mortalidad y el traslado salían de ella SIN piscina, código ni lote, y con la llave de la MATRIZ por
+     cuaterna la hoja ganaba una fila suelta en vez de actualizar la de la hembra. */
+  it('🔴 RD1 · la copia guarda la IDENTIDAD: justo las columnas que se leen, y anota cuáles', async () => {
+    const fila = { 'Trovan ID': '0008219380', 'Piscina': 'P9', 'Código genético': 'G07', 'Lote': 'L20',
+      'Sala actual': 'S3', 'Tanque actual': 'T4', 'Estado': 'Vivo', 'Observaciones': 'la manda un GAS que ignora «cols»' };
+    const { api, store } = sandbox(code, [{ body: JSON.stringify({ ok: true, rows: [fila] }) }]);
+    await api._reproEnsureMatrix();
+    const copia = JSON.parse(store['larv4_mad_matriz']);
+    expect(copia.cols).toEqual([...api._REPRO_MATRIZ_COLS]);
+    expect(Object.keys(copia.rows[0]).sort()).toEqual([...api._REPRO_MATRIZ_COLS].sort());   // ni más (el peso) ni menos
+    for (const c of ['Piscina', 'Código genético', 'Lote']) expect(copia.rows[0][c], c).toBe(fila[c]);
+  });
+
+  it('🔴 RD1 · una copia SIN la identidad no se usa por reciente que sea: la de antes, o a la que le falte una columna', async () => {
+    const deAntes = JSON.stringify({ ts: Date.now() - 3600e3,
+      rows: [{ 'Trovan ID': '000821AFF0', 'Sala actual': 'S2', 'Tanque actual': 'T9', 'Estado': 'Vivo' }] });
+    const sinLote = cacheCon(3600e3, 1, colsDelMotor().filter((c) => c !== 'Lote'));
+    for (const [caso, copia] of [['la de antes de RD1', deAntes], ['sin «Lote»', sinLote]]) {
+      const { api } = sandbox(code, caido(), { localStorage: { 'larv4_mad_matriz': copia } });
+      await api._reproEnsureMatrix();
+      expect(api.state, caso).toBe('error');
+      expect(api.origen(), caso).toBe('');
+      expect(api._reproMatrixIndex(), caso).toBeNull();
+    }
+    // el fixture ejerce algo: la misma copia, con todas sus columnas, sí se usa
+    const { api } = sandbox(code, caido(), { localStorage: { 'larv4_mad_matriz': cacheCon(3600e3) } });
+    await api._reproEnsureMatrix();
+    expect(api.origen()).toBe('cache');
   });
 
   it('sin red y sin copia, el motivo es real y NO culpa al token', async () => {
@@ -209,7 +245,7 @@ describe('registros · lector del reproductivo · auditoría', () => {
     const rows = [{ 'Trovan ID': '000821AFF4', 'Sala actual': 'S1', 'Tanque actual': 'T1', 'Estado': 'Vivo' }];
     let storeListo = false;
     const { api, ctx } = sandbox(code, caido(), {
-      localStorage: { 'larv4_mad_matriz': JSON.stringify({ ts: Date.now() - 3600e3, rows }) },
+      localStorage: { 'larv4_mad_matriz': JSON.stringify({ ts: Date.now() - 3600e3, cols: colsDelMotor(), rows }) },
     });
     ctx.window.__rgLib.reproReadSheet = () => (storeListo ? rows : []);
     await api._reproEnsureMatrix();
