@@ -109,7 +109,7 @@ const MAD_SALA_OPTS = ["Sala 1","Sala 2","Sala 3","Sala 4","Sala 5"];
    el 100 es de playa y NO se anota, porque sería un segundo sitio donde equivocarse.
    ⚠ La hoja guarda TEXTO y conserva filas viejas con «SI»/«NO»: el desplegable añade el valor
    que traiga la fila si no está aquí, para no borrarlo al volver a guardar. */
-const MAD_RAS_OPTS = ["No","10%","15%","20%","25%","30%","40%","50%","60%","100%"];
+const MAD_RAS_OPTS = ["No","10%","15%","20%","25%","30%","40%","50%","60%","70%","100%"];   // 70% lo pidió el usuario el 2026-09-17
 /* TONELADAS de agua que lleva CADA tanque de la sala (usuario, 2026-09-15). Es el volumen con
    el que se estima la carga, así que vive aquí y no repartido por la interfaz.
    🔑 POR TANQUE, no de la sala entera: el Excel del módulo («SEPTIEMBRE 2026») divide la biomasa

@@ -160,14 +160,14 @@ describe('Salas · el RAS se marca en porcentaje', () => {
 
   it('🔴 el desplegable ofrece «No» y los porcentajes que pidió el usuario', () => {
     const valores = Array.from(selRas('Sala 1').options).map((o) => o.value);
-    expect(valores).toEqual(['', 'No', '10%', '15%', '20%', '25%', '30%', '40%', '50%', '60%', '100%']);
+    expect(valores).toEqual(['', 'No', '10%', '15%', '20%', '25%', '30%', '40%', '50%', '60%', '70%', '100%']);
     expect(H.MAD_RAS_OPTS[0], 'sin RAS se marca «No», no «NO» ni «0%»').toBe('No');
   });
 
   it('el catálogo NO trae el complemento: el agua de playa se deduce', () => {
     // Anotar «70% playa» junto a «30% RAS» sería un segundo sitio donde equivocarse.
     expect(H.MAD_RAS_OPTS.join(' ')).not.toMatch(/playa/i);
-    expect(H.MAD_RAS_OPTS).toHaveLength(10);
+    expect(H.MAD_RAS_OPTS).toHaveLength(11);   // 2026-09-17: entra el 70%
   });
 
   it('un porcentaje guardado vuelve elegido', () => {
