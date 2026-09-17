@@ -16529,6 +16529,31 @@ function trasTinaToggles(attrCam, valCam, offSet){
    al abrir un formulario nuevo. */
 let _trasTempAuto = {};
 
+/* ── Rango plausible de O₂ y temperatura en ruta (usuario, 2026-09-17) ──────────
+   «Que el sistema marque la casilla de rojo en caso que haya una cifra o valor que no esté dentro de
+   este rango. Esto es no más para evitar que se escriban mal las cantidades tipo 77, en vez de poner
+   7,7 o 7.7, y así se acostumbra al usuario.»
+   🔑 Es un AVISO VISUAL, no un candado: no bloquea el guardado ni toca el payload. Un valor raro puede
+   ser el bueno —un equipo descalibrado, una tina en problemas— y lo que no puede es pasar sin verse.
+   Reutiliza `pinp-alert`, la MISMA clase que la ficha de Parámetros de Larvicultura (`chkParam`), para
+   que el rojo signifique lo mismo en toda la app.
+   ⚠ Los rangos NO son los de allí: allí el O₂ va de 3 a 10 porque es agua de tanque en producción; aquí
+   es una tina en ruta, con oxigenación forzada, y el margen que dio el usuario es más ancho. */
+const TRAS_RANGO = { o2: [1, 15], temp: [20, 40] };
+function trasChkRango(el){
+  if(!el) return;
+  const r = TRAS_RANGO[el.getAttribute("data-k")];
+  const v = parseFloat(el.value);
+  // Vacío o no numérico: NO se marca. Un campo sin rellenar no es un error de tecleo.
+  el.classList.toggle("pinp-alert", !!r && String(el.value).trim() !== "" && isFinite(v) && (v < r[0] || v > r[1]));
+}
+/* Repasa lo YA pintado. Sin esto, un viaje que se reabre —o una temperatura propagada a las demás tinas—
+   se vería en blanco aunque esté fuera de rango: esos valores no pasan por `oninput`. */
+function trasChkRangoAll(raiz){
+  const base = raiz || document.getElementById("fp-traslado");
+  if(!base) return;
+  base.querySelectorAll('input[data-k="o2"],input[data-k="temp"]').forEach(trasChkRango);
+}
 function trasTempAuto(i, ci, t){
   const fp = document.getElementById("fp-traslado"); if(!fp) return;
   const grid = fp.querySelector('.tras-cam-grid[data-rev="'+i+'"][data-cam="'+ci+'"]');
@@ -16556,6 +16581,9 @@ function trasTempAuto(i, ci, t){
   _trasTempAuto[clave] = val;
   if(tocadas){
     _trasMarkDirty();
+    // 2026-09-17 · lo propagado no pasa por `oninput`: si la temperatura está fuera de rango, las tinas
+    // que la reciben tienen que ponerse rojas igual. Si no, el error se vería en una celda y no en once.
+    trasChkRangoAll(grid);
     toast("Temperatura "+val+" °C aplicada a "+tocadas+" tina"+(tocadas!==1?"s":"")+" más","info",2200);
   }
 }
@@ -16623,7 +16651,8 @@ function trasGridHtml(i, ci, cam, medidas){
         // 2026-08-23): es la misma agua, se mide una vez. El oxígeno NO, que es la
         // medición que de verdad varía entre tinas y la que motiva el viaje.
         const auto = code === "temp" ? ' onchange="trasTempAuto('+i+','+ci+','+t+')"' : '';
-        cells += '<td style="padding:2px"><input type="number" step="0.01" inputmode="decimal" data-rev="'+i+'" data-cam="'+ci+'" data-tina="'+t+'" data-k="'+code+'"'+dis+auto
+        // 2026-09-17 · el rojo de fuera de rango se calcula al teclear, en las DOS filas numéricas.
+        cells += '<td style="padding:2px"><input type="number" step="0.01" inputmode="decimal" oninput="trasChkRango(this)" data-rev="'+i+'" data-cam="'+ci+'" data-tina="'+t+'" data-k="'+code+'"'+dis+auto
           + ' value="'+escapeHtml(v==null?"":String(v))+'"'
           + ' style="width:100%;font-size:11px;padding:4px 2px;text-align:center;'+bg+'"></td>';
       }
@@ -16804,6 +16833,9 @@ function renderTraslado(){
   + '</div>';
 
   fp.innerHTML = formHtml;
+  // 2026-09-17 · lo que YA venía escrito (un viaje reabierto, o la recuperación) no pasa por `oninput`:
+  // sin este repaso, un 77 guardado ayer se vería en blanco hasta que alguien lo tocara.
+  trasChkRangoAll(fp);
 
   if(!fp.dataset.dirtyBound){
     fp.dataset.dirtyBound = "1";

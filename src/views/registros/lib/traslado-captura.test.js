@@ -30,6 +30,7 @@ const EXPORTAR = ['renderTraslado', 'collectTraslado', 'saveTraslado', '_trasRaw
   'syncAllPendingTras', 'syncAll', '_trasSave', 'loadTras',
   'buildGrid', '_reconcileMark',
   'trasTempAuto',
+  'trasChkRango', 'trasChkRangoAll', 'TRAS_RANGO',   // 2026-09-17 · el rojo de fuera de rango
   'TRAS_REV_MIN', 'TRAS_REV_INI', 'TRAS_TINAS', 'TRAS_HEADERS', 'TRAS_ACTIVIDAD_OPTS',
   'DESTINO_OPTS'];
 const H = {};
@@ -1193,5 +1194,90 @@ describe('Traslado · la temperatura baja a todas las tinas', () => {
     temp(4).value = '26';             // ahora 26 es un valor TECLEADO a mano
     ponerTemp(1, '25');
     expect(temp(4).value, 'se pisó un 26 tecleado a mano tras heredar la memoria').toBe('26');
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   EL RANGO PLAUSIBLE DE O₂ Y TEMPERATURA (usuario, 2026-09-17)
+
+   «Que el sistema marque la casilla de rojo en caso que haya una cifra o valor que no esté dentro de
+   este rango. Esto es no más para evitar que se escriban mal las cantidades tipo 77, en vez de poner
+   7,7 o 7.7, y así se acostumbra al usuario.»
+   O₂ 1–15 · Temperatura 20–40. Es un AVISO VISUAL, no un candado: no bloquea el guardado.
+   ⚠ Los rangos NO son los de la ficha de Parámetros de Larvicultura (O₂ 3–10): allí es agua de tanque
+   en producción y aquí una tina en ruta. Comparten la clase `pinp-alert`, no los números.
+   ══════════════════════════════════════════════════════════════ */
+describe('Traslado · O₂ y temperatura fuera de rango se marcan en rojo', () => {
+  const rojo = (el) => el.classList.contains('pinp-alert');
+  const teclear = (el, v) => { el.value = String(v); H.trasChkRango(el); };
+
+  it('🔴 los rangos son los que pidió el usuario', () => {
+    expect([...H.TRAS_RANGO.o2]).toEqual([1, 15]);
+    expect([...H.TRAS_RANGO.temp]).toEqual([20, 40]);
+  });
+
+  it('🔴 el caso que lo motiva: 77 se marca, 7.7 no', () => {
+    conCamion();
+    teclear(oxi(1), '77');
+    expect(rojo(oxi(1)), 'un 77 de O₂ tiene que verse').toBe(true);
+    teclear(oxi(1), '7.7');
+    expect(rojo(oxi(1)), 'y al corregirlo el rojo se va').toBe(false);
+  });
+
+  for (const [campo, get, dentro, bajo, alto] of [
+    ['O₂', () => oxi(2), [1, 7.7, 15], 0.9, 15.1],
+    ['temperatura', () => temp(2), [20, 27, 40], 19.9, 40.1],
+  ]) {
+    it('🔴 ' + campo + ': los extremos ENTRAN y lo de fuera se marca', () => {
+      conCamion();
+      for (const v of dentro) { teclear(get(), v); expect(rojo(get()), campo + ' ' + v + ' está dentro').toBe(false); }
+      for (const v of [bajo, alto]) { teclear(get(), v); expect(rojo(get()), campo + ' ' + v + ' está fuera').toBe(true); }
+    });
+  }
+
+  it('🔴 vacío NO se marca: un campo sin rellenar no es un error de tecleo', () => {
+    conCamion();
+    teclear(oxi(3), '99');
+    expect(rojo(oxi(3))).toBe(true);
+    teclear(oxi(3), '');
+    expect(rojo(oxi(3)), 'al borrarlo tiene que dejar de estar rojo').toBe(false);
+  });
+
+  /* 🔑 Las demás pruebas llaman a trasChkRango a mano, así que NO ejercen el CABLEADO: quitar el oninput
+     de la celda las dejaría a todas en verde. Aquí se comprueba el atributo, como hace la ficha de
+     Desoves con su ✏️ Completar: el monolito se arranca con  y los manejadores en línea no
+     resuelven en este arnés, así que dispararlos de verdad no probaría nada. */
+  it('🔴 el cableado: TODAS las celdas de O₂ y temperatura llaman al chequeo al teclear', () => {
+    conCamion();
+    const celdas = [...panel().querySelectorAll('.tras-cam-grid input[data-k="o2"],.tras-cam-grid input[data-k="temp"]')];
+    expect(celdas.length, 'el fixture ejerce algo: tiene que haber celdas').toBe(H.TRAS_TINAS * 2);
+    for (const el of celdas) expect(el.getAttribute('oninput'), el.getAttribute('data-k') + ' tina ' + el.getAttribute('data-tina')).toBe('trasChkRango(this)');
+  });
+
+  it('🔴 la temperatura PROPAGADA también se marca: el error se ve en las ocho, no en una', () => {
+    conCamion();
+    ponerTemp(1, '77');                                  // la misma errata, pero en la que se reparte
+    expect(temps().every((v) => v === '77'), 'el fixture ejerce algo: se propagó').toBe(true);
+    for (const t of [1, 2, 8]) expect(rojo(temp(t)), 'tina ' + t).toBe(true);
+    ponerTemp(1, '27');
+    for (const t of [1, 2, 8]) expect(rojo(temp(t)), 'tina ' + t + ' tras corregir').toBe(false);
+  });
+
+  it('🔴 un viaje REABIERTO ya trae el rojo, sin tocar nada', () => {
+    conCamion();
+    teclear(oxi(1), '77');
+    irA(1, 0);                                           // se va a otra parada: el valor se commitea al modelo
+    irA(0, 0);                                           // …y vuelve: la celda se repinta SIN pasar por oninput
+    expect(oxi(1).value, 'el fixture ejerce algo: el valor tiene que seguir ahí').toBe('77');
+    expect(rojo(oxi(1)), 'lo ya pintado no pasa por oninput: hay que repasarlo al pintar').toBe(true);
+  });
+
+  it('el fixture ejerce algo: marcar NO bloquea el guardado ni toca el payload', () => {
+    viajeCompleto(1);
+    irA(0, 0);
+    teclear(oxi(1), '77');
+    H.saveTraslado();
+    const { rows } = H.buildTrasPayload(H._trasRaw());
+    expect(rows.length, 'un valor raro puede ser el bueno: se guarda igual').toBeGreaterThan(0);
   });
 });
