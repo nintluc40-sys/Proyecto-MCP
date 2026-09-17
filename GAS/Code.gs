@@ -21,7 +21,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "915181081e5a";
+const GAS_VERSION = "442353dacc35";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -267,7 +267,13 @@ function doPost(e) {
     // Routing Maduración: clave compuesta por columnas (0-indexed)
     var madKeyCols = null;
     if      (payload.sheetName === "Maduración Sala")     madKeyCols = [0,1];   // Fecha, Sala
-    else if (payload.sheetName === "Maduración Tanques")  madKeyCols = [0,1,3]; // Fecha, Sala, Tanque («Lote», en la C, va vacía: sólo guarda la posición)
+    /* ⚠⚠ 2026-09-17 · «Hora» (16) y «Parte» (17) ENTRAN EN LA LLAVE, y no es un adorno: la mortalidad se
+       recoge CINCO VECES AL DÍA y con la llave anterior —(Fecha, Sala, Tanque)— el segundo registro del
+       día PISABA al primero, así que el área venía sumando a mano en un papel. Ahora cada ronda es su
+       propia fila y el día es su SUMA, que es lo que el libro mayor ya hacía: resta fila por fila.
+       🔑 Un cliente ANTERIOR no manda esas dos columnas: su llave sale con las dos partes vacías, todas
+       sus filas del día comparten llave y se comportan como antes. No corrompe nada; sólo no gana nada. */
+    else if (payload.sheetName === "Maduración Tanques")  madKeyCols = [0,1,3,16,17]; // Fecha, Sala, Tanque, Hora, Parte («Lote», en la C, va vacía: sólo guarda la posición)
     else if (payload.sheetName === "Maduración Lotes")    madKeyCols = [0,1,2]; // Fecha, Lote, Código genético (la hoja de Desoves)
     // Registro reproductivo (upsert por clave, MERGE preserva campos permanentes vacíos):
     // 🔑 2026-09-16 · la MATRIZ va por la CUATERNA que identifica al individuo: Trovan, Piscina,

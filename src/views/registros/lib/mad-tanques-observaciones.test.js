@@ -23,7 +23,8 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderMadTanques', 'madTanquesSalaChange', '_collectTanquesGrid', 'buildMadPayload',
   'madTqObsBaja', 'madTqObsLista', 'madTqObsTexto', 'MAD_TQ_OBS_SANITARIAS', 'MAD_TQ_OBS_OPERATIVAS',
-  'MAD_TANQUES_POR_SALA', 'today'];
+  'MAD_TANQUES_POR_SALA', 'today',
+  'saveMadTanquesGrid', 'loadMad', 'saveMadList', '_madParteSiguiente', '_madParteAbierto'];   // parte de mortalidad
 const H = {};
 
 beforeAll(async () => {
@@ -162,16 +163,28 @@ describe('Tanques · las observaciones BAJAN por su columna', () => {
 });
 
 describe('Tanques · la columna nueva va AL FINAL de la hoja', () => {
-  it('🔴 «Observaciones operativas» es la ÚLTIMA cabecera', () => {
-    /* Esta hoja se escribe POR POSICIÓN —la llave del GAS es [0,1,3]— y ya tiene filas en
-       producción: insertar una columna en medio las corre todas y destruye datos en cada sync.
-       Al final no mueve ninguna. */
+  /* ⚠ 2026-09-17 · AQUÍ SE EXIGÍA QUE «Observaciones operativas» FUERA LA ÚLTIMA, y eso fijaba una foto en
+     vez de la regla: el parte de mortalidad le puso «Hora» y «Parte» detrás, que es exactamente el
+     movimiento PERMITIDO. Lo que hay que exigir es lo que de verdad protege —que ninguna columna YA
+     EXISTENTE se mueva de sitio— porque esta hoja se escribe POR POSICIÓN: insertar una en medio corre
+     todas las de detrás y destruye datos en cada sync. */
+  it('🔴 lo que ya existía no se mueve: una columna nueva sólo puede ir DETRÁS', () => {
+    const YA_EXISTÍAN = ['Fecha', 'Sala', 'Lote', 'Tanque', 'Población inicial hembras', 'Población inicial machos',
+      'Machos muertos', 'Hembras muertas', 'Machos muertos por descarte de selección',
+      'Hembras muertas por descarte de selección', 'Cópulas', 'Muda', 'Peso promedio machos (g)',
+      'Peso promedio hembras (g)', 'Observaciones sanitarias', 'Observaciones operativas'];
     marcar(7, 'obs_sanitarias', 'Animales aclimatados');
     const p = H.buildMadPayload('tanques', H._collectTanquesGrid().map((d) => ({ data: d })));
-    expect(p.headers[p.headers.length - 1]).toBe('Observaciones operativas');
-    expect(p.headers[p.headers.length - 2]).toBe('Observaciones sanitarias');
-    expect(p.headers.slice(0, 4), 'la llave [0,1,3] no se puede mover').toEqual(['Fecha', 'Sala', 'Lote', 'Tanque']);
+    expect(p.headers.slice(0, YA_EXISTÍAN.length), 'una columna se movió de sitio').toEqual(YA_EXISTÍAN);
     expect(p.rows[0]).toHaveLength(p.headers.length);
+  });
+
+  it('🔴 «Hora» y «Parte» van al final, y en las posiciones que declara la llave del GAS', () => {
+    marcar(7, 'obs_sanitarias', 'Animales aclimatados');
+    const p = H.buildMadPayload('tanques', H._collectTanquesGrid().map((d) => ({ data: d })));
+    expect(p.headers.slice(-2)).toEqual(['Hora', 'Parte']);
+    // 16 y 17 en base 0: es lo que dice `madKeyCols = [0,1,3,16,17]` en el GAS para esta hoja.
+    expect([p.headers.indexOf('Hora'), p.headers.indexOf('Parte')]).toEqual([16, 17]);
   });
 
   it('🔴 cada observación cae bajo SU cabecera, no corrida', () => {
@@ -181,5 +194,119 @@ describe('Tanques · la columna nueva va AL FINAL de la hoja', () => {
     const c = (h) => p.headers.indexOf(h);
     expect(p.rows[0][c('Observaciones sanitarias')]).toBe('Animales estresados');
     expect(p.rows[0][c('Observaciones operativas')]).toBe('Sifoneo bajo');
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   EL PARTE DE LA RONDA (usuario, 2026-09-17)
+
+   «Se recogen mortalidades 5 veces al día… lo que hacen es en una hoja ir llenando poco a poco lo que
+   encuentran y al finalizar del día suman.» Antes la llave era (Fecha, Sala, Tanque) y el segundo
+   registro del día PISABA al primero, así que sumar a mano era la única salida.
+   Ahora cada ronda es su propia fila, con su HORA y su número de PARTE puestos por EL SISTEMA.
+
+   🔑 Y la suma sale bien porque cada parte trae LO DE SU RONDA, no el acumulado: la muda se recoge
+   junto con la mortalidad —sumarla es lo correcto— y las cópulas se registran una sola vez, así que
+   en los demás partes van vacías.
+   ══════════════════════════════════════════════════════════════ */
+describe('Tanques · cada ronda es un PARTE', () => {
+  const guardado = () => H.loadMad('tanques');
+  const deTanque = (tq) => guardado().filter((r) => String(r.data.tanque) === String(tq));
+  const poner = (tq, k, v) => {
+    const el = document.querySelector('#fp-tanques [name="tg_' + tq + '_' + k + '"]');
+    if (!el) throw new Error('sin celda ' + k + ' del tanque ' + tq);
+    el.value = String(v);
+  };
+
+  it('🔴 dos guardados del mismo día son DOS filas, no una que pisa a la otra', () => {
+    poner(7, 'machos_muertos', 3);
+    H.saveMadTanquesGrid();
+    poner(7, 'machos_muertos', 2);
+    H.saveMadTanquesGrid();
+    const filas = deTanque(7);
+    expect(filas, 'el segundo parte pisó al primero').toHaveLength(2);
+    expect(filas.map((r) => r.data.machos_muertos).sort()).toEqual([2, 3]);
+    expect(filas.map((r) => r.data.parte).sort()).toEqual([1, 2]);
+  });
+
+  it('🔴 la hora y el parte los pone el SISTEMA, no el usuario', () => {
+    poner(7, 'machos_muertos', 1);
+    H.saveMadTanquesGrid();
+    const d = deTanque(7)[0].data;
+    expect(d.parte, 'el primero del día es el 1').toBe(1);
+    expect(d.hora, 'la hora es HH:MM del dispositivo').toMatch(/^\d{2}:\d{2}$/);
+    expect(document.querySelector('#fp-tanques [name$="_parte"]'), 'no se teclea').toBeNull();
+    expect(document.querySelector('#fp-tanques [name$="_hora"]')).toBeNull();
+  });
+
+  it('🔴 el parte se cierra al guardar: la grilla queda limpia para la ronda siguiente', () => {
+    /* Sin esto, el auto-guardado de al navegar escribiría la ronda 2 ENCIMA de la 1 y se perderían. */
+    poner(7, 'machos_muertos', 4);
+    H.saveMadTanquesGrid();
+    expect(document.querySelector('#fp-tanques [name="tg_7_machos_muertos"]').value).toBe('');
+    expect(H._collectTanquesGrid(), 'la grilla vacía no tiene nada que recoger').toEqual([]);
+  });
+
+  it('🔴 el AUTO-guardado actualiza el parte abierto, NO abre otro', () => {
+    poner(7, 'machos_muertos', 5);
+    H.saveMadTanquesGrid({ silent: true, noRender: true });          // como al cambiar de sala o pestaña
+    poner(7, 'hembras_muertas', 2);
+    H.saveMadTanquesGrid({ silent: true, noRender: true });
+    const filas = deTanque(7);
+    expect(filas, 'navegar no puede inflar los partes').toHaveLength(1);
+    expect([filas[0].data.machos_muertos, filas[0].data.hembras_muertas]).toEqual([5, 2]);
+  });
+
+  it('🔴 y el parte SIGUIENTE se cuenta por (fecha, sala): el día es la suma de sus rondas', () => {
+    expect(H._madParteSiguiente(guardado(), H.today(), SALA), 'sin nada guardado, el primero').toBe(1);
+    poner(7, 'machos_muertos', 1); H.saveMadTanquesGrid();
+    poner(8, 'machos_muertos', 1); H.saveMadTanquesGrid();
+    expect(H._madParteSiguiente(guardado(), H.today(), SALA)).toBe(3);
+    // Tras un guardado EXPLÍCITO no queda ninguno abierto: eso es lo que deja la grilla limpia.
+    expect(H._madParteAbierto(guardado(), H.today(), SALA)).toBe('');
+    poner(9, 'machos_muertos', 1);
+    H.saveMadTanquesGrid({ silent: true, noRender: true });
+    expect(H._madParteAbierto(guardado(), H.today(), SALA), 'el auto-guardado abre el 3').toBe(3);
+  });
+
+  it('el fixture ejerce algo: las cuatro columnas de mortalidad van en el parte, y las cópulas pueden ir vacías', () => {
+    poner(7, 'machos_muertos', 3);
+    poner(7, 'muda', 4);
+    H.saveMadTanquesGrid();                       // ronda 1: mortalidad + muda, sin cópulas
+    poner(7, 'machos_muertos', 2);
+    poner(7, 'muda', 1);
+    poner(7, 'copulas', 9);                       // las cópulas, una sola vez, a su hora
+    H.saveMadTanquesGrid();
+    const d = deTanque(7).sort((a, b) => a.data.parte - b.data.parte).map((r) => r.data);
+    expect([d[0].machos_muertos, d[1].machos_muertos], 'la mortalidad suma 5 entre las dos rondas').toEqual([3, 2]);
+    expect([d[0].muda, d[1].muda], 'la muda también, porque se recoge con ella').toEqual([4, 1]);
+    expect(d[0].copulas || '', 'en la ronda sin cópulas la celda va vacía').toBe('');
+    expect(d[1].copulas).toBe(9);
+  });
+});
+
+describe('Tanques · el parte se cuenta por SALA, no sólo por fecha', () => {
+  const guardado = () => H.loadMad('tanques');
+  const poner = (tq, k, v) => {
+    const el = document.querySelector('#fp-tanques [name="tg_' + tq + '_' + k + '"]');
+    if (!el) throw new Error('sin celda ' + k + ' del tanque ' + tq);
+    el.value = String(v);
+  };
+  const irASala = (s) => { document.getElementById('mad-tanques-sala').value = s; H.madTanquesSalaChange(); };
+
+  /* 🔴 Cada sala lleva SU ronda: el chequeador de la Sala 1 no va a la vez que el de la Sala 5. Si la
+     numeración fuera sólo por fecha, el primer parte de una sala saldría con el número que dejó la otra
+     —«parte 4» sin que hubiera habido tres— y el orden del día dejaría de significar nada. */
+  it('🔴 el primer parte de cada sala es el 1, aunque la otra ya vaya por el 2', () => {
+    irASala('Sala 5');
+    poner(7, 'machos_muertos', 1); H.saveMadTanquesGrid();
+    poner(7, 'machos_muertos', 2); H.saveMadTanquesGrid();
+    expect(H._madParteSiguiente(guardado(), H.today(), 'Sala 5'), 'la Sala 5 va por dos').toBe(3);
+
+    irASala('Sala 1');
+    poner(1, 'machos_muertos', 5); H.saveMadTanquesGrid();
+    const enSala1 = guardado().filter((r) => r.data.sala === 'Sala 1');
+    expect(enSala1, 'el fixture ejerce algo: se guardó en la otra sala').toHaveLength(1);
+    expect(enSala1[0].data.parte, 'heredó la numeración de la Sala 5').toBe(1);
   });
 });

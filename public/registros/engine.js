@@ -5736,7 +5736,11 @@ function _madAfterRender(ficha){
 function _madMergeRow(list, ficha, data){
   let ex;
   if(ficha==="salas")        ex = list.find(r=> r&&r.data&&r.data.fecha===data.fecha&&r.data.sala===data.sala);
-  else if(ficha==="tanques") ex = list.find(r=> r&&r.data&&r.data.fecha===data.fecha&&r.data.sala===data.sala&&String(r.data.tanque)===String(data.tanque));
+  /* ⚠⚠ 2026-09-17 · TANQUES CASA TAMBIÉN POR «parte». La mortalidad se recoge cinco veces al día y cada
+     ronda es su propia fila: sin el parte en esta búsqueda, el segundo guardado del día se fusionaría
+     sobre el primero —que es justo el defecto que se viene a arreglar— y el día seguiría teniendo un solo
+     registro. Un dato sin parte (los de antes de hoy) casa con los que tampoco lo tienen. */
+  else if(ficha==="tanques") ex = list.find(r=> r&&r.data&&r.data.fecha===data.fecha&&r.data.sala===data.sala&&String(r.data.tanque)===String(data.tanque)&&String(r.data.parte||"")===String(data.parte||""));
   else                       ex = list.find(r=> r&&r.data&&r.data.fecha===data.fecha&&r.data.sala===data.sala&&String(r.data.fila)===String(data.fila));
   if(ex){
     const merged = Object.assign({}, ex.data);
@@ -12214,7 +12218,10 @@ function renderMadTanques(){
 
   const tanks = MAD_TANQUES_POR_SALA[sala] || [];
   const byTank = {};
-  list.forEach(r => { if(r && r.data && r.data.fecha===fecha && r.data.sala===sala && r.data.tanque!=null && r.data.tanque!=="") byTank[String(r.data.tanque)] = r; });
+  /* ⚠ 2026-09-17 · sólo el parte ABIERTO. Con la mortalidad por rondas, un tanque tiene varias filas del
+     mismo día y pintar una ya cerrada devolvería a la grilla lo que se acaba de guardar: la ronda
+     siguiente se teclearía encima y se perdería. Sin parte (los registros de antes de hoy) sigue valiendo. */
+  list.forEach(r => { if(r && r.data && r.data.fecha===fecha && r.data.sala===sala && r.data.tanque!=null && r.data.tanque!=="" && !r.data.cerrado) byTank[String(r.data.tanque)] = r; });
   const pending = list.filter(r => r.data && r.data.fecha===fecha && r.data.sala===sala && !r.synced).length;
 
   const rows = tanks.map((tank, ri) => {
@@ -12604,6 +12611,46 @@ function _collectTanquesGrid(salaOverride, fechaOverride){
   return result;
 }
 
+/* ── EL PARTE DE LA RONDA (usuario, 2026-09-17) ───────────────────────────────
+   «Se recogen mortalidades 5 veces al día… lo que hacen es en una hoja ir llenando poco a poco lo que
+   encuentran y al finalizar del día suman.» Cada ronda pasa a ser su propia fila, con su HORA y su número
+   de PARTE puestos por el SISTEMA. El día es la suma de sus partes, que es lo que el libro mayor ya hacía.
+
+   🔑 QUIÉN ABRE UN PARTE NUEVO, que es lo delicado. La grilla se AUTO-GUARDA sola al cambiar de sala, de
+   fecha o de pestaña (`_madCommitActive`). Si cada guardado abriera un parte, navegar inflaría los partes;
+   y si ninguno lo abriera, la segunda ronda se escribiría ENCIMA de la primera. Así que:
+     · un guardado EXPLÍCITO (💾 o ☁️) cierra el parte y deja la grilla limpia para la ronda siguiente;
+     · un auto-guardado actualiza el parte ABIERTO, nunca abre otro.
+   Vaciar la grilla al cerrar no es estética: es lo que impide que la ronda siguiente se escriba sobre la
+   anterior. Lo guardado no se pierde — está en el registro local y en «Registrado desde este dispositivo». */
+function _madParteSiguiente(list, fecha, sala){
+  let max = 0;
+  (list || []).forEach(function(r){
+    const d = r && r.data;
+    if(!d || d.fecha !== fecha || d.sala !== sala) return;
+    const n = parseInt(d.parte, 10);
+    if(Number.isFinite(n) && n > max) max = n;
+  });
+  return max + 1;
+}
+/** El parte ABIERTO de (fecha, sala): el que aún no se ha cerrado con un guardado explícito. '' si no hay.
+ *  🔑 «Cerrado» vive EN EL DATO (`data.cerrado`), no en una variable de pantalla: si viviera en pantalla,
+ *  recargar la app reabriría un parte ya entregado y la ronda siguiente se escribiría encima. */
+function _madParteAbierto(list, fecha, sala){
+  let abierto = 0;
+  (list || []).forEach(function(r){
+    const d = r && r.data;
+    if(!d || d.fecha !== fecha || d.sala !== sala || d.cerrado) return;
+    const n = parseInt(d.parte, 10);
+    if(Number.isFinite(n) && n > abierto) abierto = n;
+  });
+  return abierto || "";
+}
+function _madHoraAhora(){
+  const d = new Date();
+  return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+}
+
 function saveMadTanquesGrid(opts){
   opts = opts || {};
   const silent = !!opts.silent;
@@ -12612,18 +12659,37 @@ function saveMadTanquesGrid(opts){
   const rows = _collectTanquesGrid(opts.salaOverride, opts.fechaOverride);
   if(rows.length === 0){ if(!silent) toast("No hay datos para guardar","warn"); return 0; }
   const list = loadMad("tanques");
+  /* `silent` es el auto-guardado: actualiza el parte abierto. Un guardado explícito abre el siguiente.
+     Si no hay ninguno abierto todavía, el auto-guardado abre el primero: lo tecleado no puede quedarse
+     sin fila por el hecho de que el usuario navegara antes de pulsar 💾. */
+  const explicito = !silent;
+  const fechaDeLaRonda = rows[0] && rows[0].fecha;
+  const abiertoPrevio = _madParteAbierto(list, fechaDeLaRonda, sala);
+  const parte = explicito ? (abiertoPrevio || _madParteSiguiente(list, fechaDeLaRonda, sala))
+    : (abiertoPrevio || _madParteSiguiente(list, fechaDeLaRonda, sala));
+  const hora = _madHoraAhora();
   let saved = 0;
   rows.forEach(data => {
     if(!isValidDate(data.fecha)) return;
+    data.parte = parte;
+    // La hora es la del parte, no la de cada tanque: es UNA ronda, y así sus filas se reconocen juntas
+    // en la hoja. Un auto-guardado no la reescribe: el parte abierto conserva la suya.
+    if(explicito || !abiertoPrevio) data.hora = hora;
+    // Cerrar el parte al guardar explícitamente es lo que hace que la ronda siguiente empiece limpia.
+    if(explicito) data.cerrado = 1;
     _madMergeRow(list, "tanques", data);
     saved++;
   });
   const _ok = saveMadList("tanques", list);
   if(_ok) _madGridDirty = false;
+  /* 🔑 La grilla queda LIMPIA sola: al cerrarse el parte, el render ya no encuentra ninguno abierto para
+     estos tanques y los pinta vacíos. No hace falta borrar celdas a mano —y hacerlo sería peor, porque el
+     render de después las repintaría—. Vaciar no es estética: la grilla se auto-guarda al navegar, así que
+     si la ronda siguiente empezara sobre las cifras de la anterior se escribiría ENCIMA y se perderían. */
   if(!opts.noRender) renderMadTanques();
   updateDots(); updateSyncUI();
   if(!_ok) return -1;
-  if(!silent) toast("💾 "+saved+" tanque(s) guardado(s) localmente","ok",2500);
+  if(!silent) toast("💾 Parte "+parte+" de las "+hora+" · "+saved+" tanque(s) guardado(s)","ok",3000);
   return saved;
 }
 
@@ -12885,10 +12951,21 @@ function buildMadPayload(ficha, records){
          cambie `madKeyCols`.
          ⚠ «Relación H:M» sí se fue (2026-09-08, decisión del usuario: se calcula), y se pudo
          porque vivía en el índice 4, DETRÁS de la llave, y la hoja estaba a 0 filas. */
-      headers: ["Fecha","Sala","Lote","Tanque","Población inicial hembras","Población inicial machos","Machos muertos","Hembras muertas","Machos muertos por descarte de selección","Hembras muertas por descarte de selección","Cópulas","Muda","Peso promedio machos (g)","Peso promedio hembras (g)","Observaciones sanitarias","Observaciones operativas"],
+      /* ⚠⚠ «Hora» y «Parte» (2026-09-17, usuario) van LAS ÚLTIMAS y entran en la LLAVE. La mortalidad se
+         recoge CINCO VECES AL DÍA y la llave era (Fecha, Sala, Tanque), así que el segundo registro del
+         día PISABA al primero: lo que hacían era sumar a mano en un papel. Ahora cada ronda es su propia
+         fila y el día es su suma.
+         🔑 Las pone el SISTEMA, no el usuario: la hora del dispositivo y un contador por (fecha, sala).
+         🔑 Y la suma sale bien porque cada parte trae LO DE SU RONDA, no el acumulado: la muda se recoge
+         junto con la mortalidad —así que sumarla es lo correcto—, las cópulas se registran una sola vez
+         y en los demás partes van VACÍAS, y los pesos se promedian sobre las filas no vacías.
+         ⚠ Van al FINAL a propósito: añadir ahí no mueve ninguna columna existente. Lo que sí cambia es
+         `madKeyCols` en el GAS, y eso va en el MISMO despliegue que P12 (retirar las 3 columnas vacías),
+         o los índices de la llave se moverían dos veces. */
+      headers: ["Fecha","Sala","Lote","Tanque","Población inicial hembras","Población inicial machos","Machos muertos","Hembras muertas","Machos muertos por descarte de selección","Hembras muertas por descarte de selección","Cópulas","Muda","Peso promedio machos (g)","Peso promedio hembras (g)","Observaciones sanitarias","Observaciones operativas","Hora","Parte"],
       rows: records.map(r => {
         const d = r.data || {};
-        return [d.fecha, d.sala, "", int(d.tanque), "", "", int(d.machos_muertos), int(d.hembras_muertas), int(d.machos_descarte), int(d.hembras_descarte), int(d.copulas), int(d.muda), num(d.peso_machos), num(d.peso_hembras), d.obs_sanitarias || "", d.obs_operativas || ""];
+        return [d.fecha, d.sala, "", int(d.tanque), "", "", int(d.machos_muertos), int(d.hembras_muertas), int(d.machos_descarte), int(d.hembras_descarte), int(d.copulas), int(d.muda), num(d.peso_machos), num(d.peso_hembras), d.obs_sanitarias || "", d.obs_operativas || "", d.hora || "", int(d.parte)];
       })
     };
   }
@@ -21188,7 +21265,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "915181081e5a";
+const GAS_VERSION = "442353dacc35";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -21434,7 +21511,13 @@ function doPost(e) {
     // Routing Maduración: clave compuesta por columnas (0-indexed)
     var madKeyCols = null;
     if      (payload.sheetName === "Maduración Sala")     madKeyCols = [0,1];   // Fecha, Sala
-    else if (payload.sheetName === "Maduración Tanques")  madKeyCols = [0,1,3]; // Fecha, Sala, Tanque («Lote», en la C, va vacía: sólo guarda la posición)
+    /* ⚠⚠ 2026-09-17 · «Hora» (16) y «Parte» (17) ENTRAN EN LA LLAVE, y no es un adorno: la mortalidad se
+       recoge CINCO VECES AL DÍA y con la llave anterior —(Fecha, Sala, Tanque)— el segundo registro del
+       día PISABA al primero, así que el área venía sumando a mano en un papel. Ahora cada ronda es su
+       propia fila y el día es su SUMA, que es lo que el libro mayor ya hacía: resta fila por fila.
+       🔑 Un cliente ANTERIOR no manda esas dos columnas: su llave sale con las dos partes vacías, todas
+       sus filas del día comparten llave y se comportan como antes. No corrompe nada; sólo no gana nada. */
+    else if (payload.sheetName === "Maduración Tanques")  madKeyCols = [0,1,3,16,17]; // Fecha, Sala, Tanque, Hora, Parte («Lote», en la C, va vacía: sólo guarda la posición)
     else if (payload.sheetName === "Maduración Lotes")    madKeyCols = [0,1,2]; // Fecha, Lote, Código genético (la hoja de Desoves)
     // Registro reproductivo (upsert por clave, MERGE preserva campos permanentes vacíos):
     // 🔑 2026-09-16 · la MATRIZ va por la CUATERNA que identifica al individuo: Trovan, Piscina,
