@@ -44,6 +44,7 @@ import { MAD_FIN_HEADERS, buildFinRows } from './ficha-maduracion-fin-ciclo.sche
 import { MAD_TRAT_HEADERS } from './ficha-maduracion-tratamientos.schema.js';
 import { MAD_MORT_HEADERS } from './ficha-maduracion-mortdesove.schema.js';
 import { MAD_ALIM_HEADERS } from './ficha-maduracion-alimentacion.schema.js';
+import { MAD_BS_HEADERS as BS_HEADERS } from './ficha-maduracion-broodstock.schema.js';
 import { REPRO_MATRIZ_HEADERS, REPRO_EVENTO, REPRO_TRANSFER_TIPO, buildAltaBatch, buildEventBatch, buildTransferBatch, matrixIndexFromRows } from './reproductivo.data.js';
 
 const leer = (u) => readFileSync(new URL(u, import.meta.url), 'utf8').split('\r\n').join('\n');
@@ -439,6 +440,33 @@ describe('GAS · lo que la guarda NO puede romper (V3)', () => {
     it('el fixture ejerce algo: ' + hoja + ' con SUS cabeceras escribe', () => {
       const hojas = {};
       expect(gas(hojas).post({ sheetName: hoja, headers: cabBuena, rows: [conValores(cabBuena, { Fecha: '2026-09-17' })] }).status).toBe('ok');
+    });
+  }
+
+  /* 🔴 Control Broodstock (2026-09-17) · la hoja NACE con su cerrojo puesto, que es lo que el propio
+     comentario del GAS reclama: una firma añadida después del desfase llega tarde por definición. Se
+     firman la 2 («Piscina», la segunda mitad de la LLAVE) y la 8 («Pl/g», la columna que separa las
+     postlarvas por gramo del peso en gramos — la que motivó el diseño). */
+  it('🔴 Maduración Broodstock · está permitida y escribe con SUS cabeceras', () => {
+    const hojas = {};
+    const r = gas(hojas).post({ sheetName: 'Maduración Broodstock', headers: BS_HEADERS,
+      rows: [conValores(BS_HEADERS, { 'Fecha de corte': '2026-07-19', Piscina: '815' })],
+      replaceKey: true, keyCols: [0, 1] });
+    expect(r.status, r.message).toBe('ok');
+    expect(hojas['Maduración Broodstock']).toBeDefined();
+  });
+
+  for (const [caso, cab, col, cabEsperada] of [
+    ['sin la columna «Pl/g» (un esquema anterior a ella)', BS_HEADERS.filter((h) => h !== 'Pl/g'), 'columna 8', '«Pl/g»'],
+    ['con la piscina corrida', ['Fecha de corte', 'Zona'].concat(BS_HEADERS.slice(1)), 'columna 2', '«Piscina»'],
+  ]) {
+    it('🔴 Broodstock · rechaza ' + caso + ', y la hoja NO nace', () => {
+      const hojas = {};
+      const r = gas(hojas).post({ sheetName: 'Maduración Broodstock', headers: cab, rows: [conValores(cab, { 'Fecha de corte': '2026-07-19' })] });
+      expect(r.status).toBe('error');
+      expect(r.message).toContain(col);
+      expect(r.message).toContain(cabEsperada);
+      expect(hojas['Maduración Broodstock'], 'se creó con el esquema malo').toBeUndefined();
     });
   }
 });

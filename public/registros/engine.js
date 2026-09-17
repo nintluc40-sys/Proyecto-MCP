@@ -21188,7 +21188,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "fca7c2059b76";
+const GAS_VERSION = "915181081e5a";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -21236,6 +21236,10 @@ const ALLOWED = [
   "Maduración Mortalidad Desove",
   // Alimentación de Maduración (2026-09-15): una fila por fecha, sala y tanque, por columna "ID".
   "Maduración Alimentación",
+  // Control Broodstock (2026-09-17): la CARGA SEMANAL del área. Una fila por (fecha de corte · piscina),
+  // con llave POSICIONAL [0,1] al principio, así que la hoja puede crecer por el final sin migrar nada.
+  // Es el aguas arriba del reproductivo: de estas piscinas salen las hembras que viven en la MATRIZ.
+  "Maduración Broodstock",
   "BIOMOL",
   "Registro_Supervisión",
   "Registro_Desinfección",
@@ -22071,7 +22075,13 @@ var MAD_ESQUEMA_FIRMA = {
   "Maduración Tanques":        [[15, "Observaciones sanitarias"]],
   "Maduración MATRIZ":         [[6, "Lote"], [11, "Fecha ingreso"]],
   "Maduración Bitácora":       [[3, "Tipo"], [5, "Tanque"]],
-  "Maduración Transferencias": [[4, "Trovan ID"], [12, "Piscinas presentes"]]
+  "Maduración Transferencias": [[4, "Trovan ID"], [12, "Piscinas presentes"]],
+  /* Control Broodstock (2026-09-17) · nace HOY, así que su cerrojo existe desde el primer envío y no hay
+     que esperar a que lo haga falta. Se firma la 2 —«Piscina», la segunda mitad de la llave: si se corre,
+     el upsert casa con la fila que no es— y la 8 —«Pl/g», la columna que separa las postlarvas por gramo
+     del peso en gramos; un cliente anterior a ella no puede existir, pero el día que el esquema cambie,
+     aquí estará—. */
+  "Maduración Broodstock":     [[2, "Piscina"], [8, "Pl/g"]]
 };
 // null si el envío trae la firma (o la hoja no tiene); si no, { col, cab: lo que espera }.
 function firmaAusente_(hoja, cabEnvio) {
