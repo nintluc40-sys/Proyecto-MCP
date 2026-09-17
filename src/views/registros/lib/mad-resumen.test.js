@@ -333,6 +333,29 @@ describe('Resumen · mortalidad del día y acumulada', () => {
   });
 });
 
+/* ── PE1.5 (2026-09-16, usuario) · alcalinidad de DÍA y de NOCHE ─────────────────────────────
+   Cada turno es su columna en la misma fila del área, y se anotan cuando se miden: la de noche puede
+   llegar otro día. Por eso cada uno lleva SU última cifra y SU fecha; un solo «último registro» del área
+   dejaría la de día en blanco en cuanto se guarde una fila sólo de noche. El fixture lo distingue. */
+const ALCALINIDAD_TURNOS = () => Object.assign(FUENTES(), { mortDesove: FUENTES().mortDesove.concat([
+  { Fecha: '2026-01-21', 'Área': 'Sala 1', 'Alcalinidad día': 142, 'Alcalinidad noche': '' },
+  { Fecha: '2026-01-22', 'Área': 'Sala 1', 'Alcalinidad día': '', 'Alcalinidad noche': 139 },
+  { Fecha: '2026-01-21', 'Área': 'RAS', 'Alcalinidad día': 118, 'Alcalinidad noche': 116 },
+]) });
+describe('Resumen · la alcalinidad de día y de noche (PE1.5)', () => {
+  it('🔴 cada turno con SU última cifra y SU fecha, en la sala y en el RAS', () => {
+    const r = resumenMaduracion(ALCALINIDAD_TURNOS(), { hoy: '2026-02-01' });
+    expect(r.salas.find((s) => s.sala === 'Sala 1').alcalinidad)
+      .toEqual({ dia: { valor: 142, fecha: '2026-01-21' }, noche: { valor: 139, fecha: '2026-01-22' } });
+    expect(r.rasAlcalinidad).toEqual({ dia: { valor: 118, fecha: '2026-01-21' }, noche: { valor: 116, fecha: '2026-01-21' } });
+  });
+
+  it('sin alcalinidad, los dos turnos en blanco (no uno solo)', () => {
+    expect(resumenMaduracion(FUENTES(), { hoy: '2026-02-01' }).rasAlcalinidad)
+      .toEqual({ dia: { valor: '', fecha: '' }, noche: { valor: '', fecha: '' } });
+  });
+});
+
 /* ── PARIDAD con el monolito ── */
 describe('Resumen · el monolito y el módulo dan lo mismo', () => {
   const src = readFileSync(new URL('../../../../public/registros/engine.js', import.meta.url), 'utf8').split('\r\n').join('\n');
@@ -350,7 +373,7 @@ describe('Resumen · el monolito y el módulo dan lo mismo', () => {
      monolito podría llevar OTRAS cifras y esta prueba seguiría en verde sobre las del módulo. */
   new Script(bloque('const MAD_SALA_TONELADAS = {', '"Sala 5":  Array.from({length:5},(_,i)=>i+7)\n};') + '\n'
     + bloque('const MAD_CUARENTENA_DIAS = 15;', '  return lotes.sort().join("+");\n}') + '\n'
-    + bloque('const MAD_RES_TEMPS = [', 'rasAlcalinidad:(_madResDe(alc, "RAS") || { valor:"", fecha:"" }) };\n}')
+    + bloque('const MAD_RES_TEMPS = [', 'rasAlcalinidad:{ dia:_madResDe(alc.dia, "RAS") || { valor:"", fecha:"" }, noche:_madResDe(alc.noche, "RAS") || { valor:"", fecha:"" } } };\n}')
     + '\n;globalThis.__api = { madResumenMaduracion, madResEstadisticaDia, madResDiasEntre, MAD_RES_TEMPS, MAD_RES_OXIGENOS };').runInContext(ctx);
   const api = ctx.__api;
 
@@ -362,7 +385,8 @@ describe('Resumen · el monolito y el módulo dan lo mismo', () => {
 
   it('🔴 el mismo resumen, cifra a cifra, en el caso completo y en variantes', () => {
     const variantes = [FUENTES(), Object.assign(FUENTES(), { cierres: [{ Fecha: '2026-01-31', Lote: 'CD', Tipo: 'Total', Machos: 10, Hembras: 18, Sala: '' }] }),
-      Object.assign(FUENTES(), { sala: [], desoves: [], tratamientos: [] }), {}, Object.assign(FUENTES(), { sala: FUENTES().sala.concat(SALA_PARCIAL()) }), TANQUE_REUTILIZADO(), CARGA_LIMITES()];
+      Object.assign(FUENTES(), { sala: [], desoves: [], tratamientos: [] }), {}, Object.assign(FUENTES(), { sala: FUENTES().sala.concat(SALA_PARCIAL()) }), TANQUE_REUTILIZADO(), CARGA_LIMITES(),
+      ALCALINIDAD_TURNOS()];
     for (const f of variantes) {
       for (const hoy of ['2026-02-01', '2026-01-25']) expect(api.madResumenMaduracion(f, { hoy })).toEqual(resumenMaduracion(f, { hoy }));
     }

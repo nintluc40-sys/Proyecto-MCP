@@ -9,7 +9,7 @@ import {
   MAD_MORT_SHEET, MAD_MORT_HEADERS, MAD_MORT_COLUMNS, MAD_MORT_TIPOS, pctMortalidad, mortRowId, buildMortRows, buildMortPayload, validarMort,
   MAD_NAUP_REVISIONES, MAD_NAUP_DEFORMIDAD, MAD_NAUP_ACTIVIDAD, MAD_NAUP_HONGOS, nauplioRowId, opcionNauplios,
   MAD_NAUP_FOTOTROPISMO, MAD_NAUP_AIREACION,
-  MAD_ALC_AREAS, alcalinidadRowId,
+  MAD_ALC_AREAS, alcalinidadRowId, MAD_ALC_TURNOS,
 } from './ficha-maduracion-mortdesove.schema.js';
 
 const col = (h) => MAD_MORT_HEADERS.indexOf(h);
@@ -34,7 +34,7 @@ describe('Inf. Supervisor · la hoja', () => {
     expect(MAD_MORT_SHEET).toBe('Maduración Mortalidad Desove');
     expect(MAD_MORT_HEADERS).toEqual(['Fecha', 'Lote', 'Tipo de tanque', 'Hembras que entran', 'Hembras muertas', '% Mortalidad',
       'Revisión', 'Deformidad', 'Actividad', 'Hongos', 'Fototropismo', 'Aireación', 'Salinidad', 'Temperatura',
-      'Área', 'Alcalinidad', 'Observaciones', 'ID']);
+      'Área', 'Alcalinidad día', 'Alcalinidad noche', 'Observaciones', 'ID']);
     expect(MAD_MORT_TIPOS).toEqual(['Desove', 'Recuperación']);
     expect([MAD_NAUP_REVISIONES, MAD_NAUP_DEFORMIDAD, MAD_NAUP_ACTIVIDAD, MAD_NAUP_HONGOS]).toEqual([
       ['Entrada', 'Lavado', 'Lavado 2', 'Postlavado'], ['Alta', 'Media', 'Baja', 'Ausente'], ['Alta', 'Media', 'Baja'], ['Ausente', 'Presente']]);
@@ -153,13 +153,15 @@ const api = (() => {
     + bloque('const MAD_MORT_SHEET = "Maduración Mortalidad Desove";', fin)
     + '\n;globalThis.__api = { MAD_MORT_SHEET, MAD_MORT_HEADERS, MAD_MORT_COLUMNS, MAD_MORT_TIPOS, madMortPct, madMortRowId, buildMadMortPayload, madMortValidar,'
     + ' MAD_NAUP_REVISIONES, MAD_NAUP_DEFORMIDAD, MAD_NAUP_ACTIVIDAD, MAD_NAUP_HONGOS, madNaupRowId, madNaupOpcion,'
-    + ' MAD_NAUP_FOTOTROPISMO, MAD_NAUP_AIREACION, MAD_ALC_AREAS, madAlcRowId };').runInContext(ctx);
+    + ' MAD_NAUP_FOTOTROPISMO, MAD_NAUP_AIREACION, MAD_ALC_AREAS, madAlcRowId, MAD_ALC_TURNOS };').runInContext(ctx);
   return ctx.__api;
 })();
 
 describe('Inf. Supervisor · el monolito y el módulo dicen lo mismo', () => {
   const MODELOS = [base(), { fecha: 'x', lotes: [{ lote: 'BP', desove: { muertas: 2 } }, { lote: 'BC', recuperacion: { entran: 3, muertas: 5 } }, { lote: 'bc', desove: { entran: 1 } }, { lote: '', desove: { entran: 1 } }, { lote: 'DD' }, null] }, { fecha: '2026-09-15', lotes: [] },
-    conNauplios(), { fecha: '2026-09-15', lotes: [{ lote: 'BP', nauplios: { entrada: rev('Mucha', 'Alta', 'Si', '35', '29'), lavado: rev('Baja', 'x', 'Ausente', 'x', '41'), postlavado: rev('', '', '', '61', '-3') } }, { lote: '', nauplios: { lavado2: rev('Baja') } }] }];
+    conNauplios(), { fecha: '2026-09-15', lotes: [{ lote: 'BP', nauplios: { entrada: rev('Mucha', 'Alta', 'Si', '35', '29'), lavado: rev('Baja', 'x', 'Ausente', 'x', '41'), postlavado: rev('', '', '', '61', '-3') } }, { lote: '', nauplios: { lavado2: rev('Baja') } }] },
+    // PE1.5 · alcalinidad de día y de noche: sólo día, sólo noche, las dos, una que no es cifra y un área que no existe.
+    { fecha: '2026-09-15', lotes: [], alcalinidad: { RAS: { dia: '120', noche: 'x' }, 'Sala 2': { noche: 88 }, 'Sala 3': { dia: 95.5, noche: '101' }, 'Sala 9': { dia: 1 } } }];
   it('la misma hoja, columnas, tipos y listas de la revisión', () => {
     expect([api.MAD_MORT_SHEET, api.MAD_MORT_HEADERS, api.MAD_MORT_TIPOS]).toEqual([MAD_MORT_SHEET, MAD_MORT_HEADERS, MAD_MORT_TIPOS]);
     expect(api.MAD_MORT_COLUMNS.map((c) => c.k)).toEqual(MAD_MORT_COLUMNS.map((c) => c.k));
@@ -177,6 +179,9 @@ describe('Inf. Supervisor · el monolito y el módulo dicen lo mismo', () => {
     expect(validarMort(MODELOS[1]).errores.length).toBeGreaterThan(3);   // el fixture ejerce algo
     expect(validarMort(MODELOS[4]).errores.length).toBeGreaterThan(3);
     expect(buildMortRows(MODELOS[3]).length).toBe(4);
+    expect(buildMortRows(MODELOS[5]).length, 'el fixture de alcalinidad escribe filas de verdad').toBe(3);
+    expect(validarMort(MODELOS[5]).errores.length).toBe(1);
+    expect([...api.MAD_ALC_TURNOS]).toEqual(MAD_ALC_TURNOS);
   });
   it('la pestaña: panel en el shell, rótulo, render y protección contra el GAS viejo', () => {
     const shell = readFileSync(new URL('../shell.html', import.meta.url), 'utf8');
@@ -206,19 +211,34 @@ describe('Inf. Supervisor · la alcalinidad del día', () => {
     expect(MAD_ALC_AREAS[0], 'el RAS no es una sala: va aparte y primero').toBe('RAS');
   });
 
-  it('🔴 una fila por área CON VALOR, y ninguna por las demás', () => {
+  /* 2026-09-16 (usuario, PE1.5) · «alcalinidad de día y de noche, con sus campos por cada área». */
+  it('los dos turnos, en su orden', () => {
+    expect(MAD_ALC_TURNOS).toEqual([['dia', 'día'], ['noche', 'noche']]);
+  });
+
+  it('🔴 una fila por área con ALGÚN turno, cada turno en su columna, y ninguna por las demás', () => {
     // Sin valor no se escribe fila, y con el MERGE del GAS no escribir es CONSERVAR lo que hubiera.
-    const filas = buildMortRows(soloAlc({ RAS: '120', 'Sala 3': 95.5, 'Sala 1': '' }));
-    expect(filas.map((f) => [f[col('Área')], f[col('Alcalinidad')], f[col('ID')]])).toEqual([
-      ['RAS', 120, '2026-09-15-ALC-RAS'],
-      ['Sala 3', 95.5, '2026-09-15-ALC-S3'],
+    const filas = buildMortRows(soloAlc({ RAS: { dia: '120' }, 'Sala 2': { noche: 88 }, 'Sala 3': { dia: 95.5, noche: '101' }, 'Sala 1': { dia: '', noche: '' } }));
+    expect(filas.map((f) => [f[col('Área')], f[col('Alcalinidad día')], f[col('Alcalinidad noche')], f[col('ID')]])).toEqual([
+      ['RAS', 120, '', '2026-09-15-ALC-RAS'],
+      ['Sala 2', '', 88, '2026-09-15-ALC-S2'],
+      ['Sala 3', 95.5, 101, '2026-09-15-ALC-S3'],
     ]);
+  });
+
+  it('🔴 la de noche anotada DESPUÉS va a la MISMA fila que la de día (el ID no lleva el turno)', () => {
+    /* Así, con el MERGE del GAS, guardar la de noche horas después completa la fila y no pisa la de
+       día: su celda viaja vacía y vacío es conservar. Un ID por turno partiría el área en dos filas. */
+    const [manana] = buildMortRows(soloAlc({ RAS: { dia: 120 } }));
+    const [tarde] = buildMortRows(soloAlc({ RAS: { noche: 110 } }));
+    expect(manana[col('ID')]).toBe(tarde[col('ID')]);
+    expect([tarde[col('Alcalinidad día')], tarde[col('Alcalinidad noche')]]).toEqual(['', 110]);
   });
 
   it('🔴 no escribe nada de las otras dos clases de fila', () => {
     /* Si escribiera «Tipo de tanque» o «Revisión», el libro y el tablero la leerían como lo que
        no es. Las columnas que no son suyas van vacías. */
-    const f = buildMortRows(soloAlc({ RAS: 120 }))[0];
+    const f = buildMortRows(soloAlc({ RAS: { dia: 120, noche: 118 } }))[0];
     expect([f[col('Lote')], f[col('Tipo de tanque')], f[col('Revisión')], f[col('Hembras muertas')]]).toEqual(['', '', '', '']);
     expect(f).toHaveLength(MAD_MORT_HEADERS.length);
   });
@@ -231,14 +251,17 @@ describe('Inf. Supervisor · la alcalinidad del día', () => {
 
   it('🔴 un día con SÓLO alcalinidad es un registro válido', () => {
     // Es del día y no de un lote: sin contarla, moriría en «No hay ningún registro que guardar».
-    expect(validarMort(soloAlc({ 'Sala 2': 110 }))).toEqual({ errores: [], avisos: [] });
+    expect(validarMort(soloAlc({ 'Sala 2': { dia: 110 } }))).toEqual({ errores: [], avisos: [] });
+    expect(validarMort(soloAlc({ 'Sala 2': { noche: '96' } })), 'sólo la de noche también es un registro').toEqual({ errores: [], avisos: [] });
     expect(validarMort(soloAlc({}))).toEqual({ errores: ['No hay ningún registro que guardar.'], avisos: [] });
   });
 
-  it('una alcalinidad que no es cifra da ERROR y dice de qué área', () => {
+  it('una alcalinidad que no es cifra da ERROR y dice de qué TURNO y de qué área', () => {
     // Y no se le suma «no hay nada que guardar»: con un error delante, esa guarda calla.
-    expect(validarMort(soloAlc({ 'Sala 4': 'mucha' })).errores).toEqual([
-      'La alcalinidad de Sala 4 no es una cifra válida.',
+    expect(validarMort(soloAlc({ 'Sala 4': { dia: 'mucha', noche: 'poca' }, RAS: { noche: '-' } })).errores).toEqual([
+      'La alcalinidad de noche de RAS no es una cifra válida.',
+      'La alcalinidad de día de Sala 4 no es una cifra válida.',
+      'La alcalinidad de noche de Sala 4 no es una cifra válida.',
     ]);
   });
 });

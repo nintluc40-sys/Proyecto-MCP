@@ -147,8 +147,9 @@ function resumenSalas(filasSala, libro, filasTrat, tons, alc) {
       .map((r) => ({ fecha: fecha10(r.Fecha), tipo: txt(r.Tipo), area: txt(r['Área']), lotes: txt(r.Lotes), productos: txt(r.Productos), ras: txt(r['Productos RAS']) }));
     const ton = toneladasDe(tons, sala);
     /* La alcalinidad se registra en la ficha «Inf. Supervisor» POR ÁREA, y las áreas son el RAS y
-       las salas: aquí sale la del área que se llama como esta sala. La del RAS va en su tarjeta. */
-    const alcalinidad = alc.get(sala) || { valor: '', fecha: '' };
+       las salas: aquí sale la del área que se llama como esta sala. La del RAS va en su tarjeta.
+       PE1.5 (2026-09-16): de día y de noche, cada turno con su última cifra y su fecha. */
+    const alcalinidad = { dia: alc.dia.get(sala) || { valor: '', fecha: '' }, noche: alc.noche.get(sala) || { valor: '', fecha: '' } };
     return {
       sala, fecha: conEstado ? fecha10(conEstado.Fecha) : '', estado: conEstado ? txt(conEstado.Estado) : '',
       ras: conRas ? txt(conRas.RAS) : '', fechaRas: conRas ? fecha10(conRas.Fecha) : '', lotes,
@@ -373,9 +374,9 @@ export function resumenMaduracion(fuentes, opts) {
   const tons = ultimoPor(f.sala, 'Sala', 'Toneladas');
   /* La alcalinidad de «Inf. Supervisor» es POR ÁREA, y sus áreas son el RAS y las cinco salas: la
      de cada sala va a su tarjeta y la del RAS a la suya, que es donde se mira el agua del sistema. */
-  const alc = ultimoPor(f.mortDesove, 'Área', 'Alcalinidad');
+  const alc = { dia: ultimoPor(f.mortDesove, 'Área', 'Alcalinidad día'), noche: ultimoPor(f.mortDesove, 'Área', 'Alcalinidad noche') };
   return { hoy, hasta: libro.hasta, avisos: libro.avisos.length,
     salas: resumenSalas(f.sala, libro, f.tratamientos, tons, alc),
     lotes: resumenLotes(f, libro, hoy),
-    ras, rasAlcalinidad: alc.get('RAS') || { valor: '', fecha: '' } };
+    ras, rasAlcalinidad: { dia: alc.dia.get('RAS') || { valor: '', fecha: '' }, noche: alc.noche.get('RAS') || { valor: '', fecha: '' } } };
 }

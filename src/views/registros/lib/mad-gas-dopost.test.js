@@ -466,6 +466,35 @@ describe('GAS · A4 · las tres hojas NUEVAS tampoco las fija una app vieja', ()
     expect(hoja.escrituras).toEqual([]);                          // ni siquiera la fila de cabeceras
   });
 
+  /* PE1.5 (2026-09-16) · la alcalinidad pasó a ser de día y de noche: «Alcalinidad» → «Alcalinidad día» en la 16 y
+     «Alcalinidad noche» en la 17. El cliente de 18 columnas de ANTES no puede crear la hoja con la cabecera vieja. */
+  it('🔴 Mortalidad Desove con las 18 columnas de ANTES de día/noche: rechazo en la 16 y la hoja NO nace', () => {
+    const MORT_18_ANTES = MAD_MORT_HEADERS.filter((h) => h !== 'Alcalinidad noche').map((h) => (h === 'Alcalinidad día' ? 'Alcalinidad' : h));
+    expect(MORT_18_ANTES).toHaveLength(18);
+    const hojas = {};
+    const r = gas(hojas).post({ sheetName: 'Maduración Mortalidad Desove', headers: MORT_18_ANTES,
+      rows: [conValores(MORT_18_ANTES, { Fecha: '2026-09-16', 'Área': 'RAS', Alcalinidad: 120, ID: '2026-09-16-ALC-RAS' })] });
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('columna 16');
+    expect(r.message).toContain('«Alcalinidad día»');
+    expect(hojas['Maduración Mortalidad Desove']).toBeUndefined();
+  });
+
+  it('🔴 PE1.5 · la de día y, horas después, SÓLO la de noche: la misma fila con las dos (el MERGE conserva)', () => {
+    const hojas = {};
+    const g = gas(hojas);
+    const fila = (v) => conValores(MAD_MORT_HEADERS, v);
+    const id = '2026-09-16-ALC-RAS';
+    expect(g.post({ sheetName: 'Maduración Mortalidad Desove', headers: MAD_MORT_HEADERS,
+      rows: [fila({ Fecha: '2026-09-16', 'Área': 'RAS', 'Alcalinidad día': 120, ID: id })] }).status).toBe('ok');
+    expect(g.post({ sheetName: 'Maduración Mortalidad Desove', headers: MAD_MORT_HEADERS,
+      rows: [fila({ Fecha: '2026-09-16', 'Área': 'RAS', 'Alcalinidad noche': 110, ID: id })] }).status).toBe('ok');
+    const hoja = hojas['Maduración Mortalidad Desove'];
+    expect(hoja.filas).toHaveLength(2);                            // la cabecera y UNA fila del RAS
+    const c = (h) => MAD_MORT_HEADERS.indexOf(h);
+    expect([hoja.filas[1][c('Alcalinidad día')], hoja.filas[1][c('Alcalinidad noche')]]).toEqual([120, 110]);
+  });
+
   it('🔴 Tratamientos y Alimentación: si su columna de firma se mueve o se renombra, se rechazan', () => {
     const casos = [
       ['Maduración Tratamientos', MAD_TRAT_HEADERS, 'Productos RAS', 'columna 8'],

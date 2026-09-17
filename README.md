@@ -379,14 +379,15 @@ Dos consecuencias que conviene tener presentes al desplegar:
   vieja es la de la HOJA, que hay que vaciar con su fila 1») y la app lo enseña tal cual, sin el
   «Actualiza la app» que mandaba a arreglar una app que ya estaba al día. En las hojas sin firma
   (Sala, Tanques y Movimientos) no se puede saber y el mensaje nombra las dos salidas. Cambia el
-  `Code.gs`, así que el sello pasa a `afe439753273` y **exige re-desplegar el GAS**. Lo prueban
-  `mad-gas-dopost.test.js` y `gas-motivos.test.js`.
+  `Code.gs`, así que el sello pasó a `afe439753273` (y PE1.5 lo movió después a `3a539f125e4e`) y
+  **exige re-desplegar el GAS**. Lo prueban `mad-gas-dopost.test.js` y `gas-motivos.test.js`.
 - ⚠⚠ **EL ORDEN ES `push → GAS`, y lo decide UNA pregunta: ¿alguna hoja ganó una columna EN
   MEDIO?** Añadir AL FINAL es inocuo —`ensureHeaders` alarga la cabecera que falte, y «el envío
   trae menos columnas» no cuenta como desfase—, así que da igual quién cree `Maduración Sala`
   (21→22 con Toneladas) o `Maduración Tanques` (15→16 con Observaciones operativas).
   `Maduración Mortalidad Desove` es el caso contrario: pasó de 14 a 18 columnas **insertando**
-  Fototropismo y Aireación en la 11-12 y Área y Alcalinidad en la 15-16. Si el GAS entra ANTES que
+  Fototropismo y Aireación en la 11-12 y Área y Alcalinidad en la 15-16 —y a 19 con PE1.5, que parte
+  la alcalinidad en día (16) y noche (17)—. Si el GAS entra ANTES que
   el push, un dispositivo con la app anterior crea esa hoja con su cabecera de 14 y desde ese
   momento la guarda rechaza a TODOS los clientes al día («Esquema desactualizado… columna 11»):
   sólo se sale vaciando la hoja **con su fila 1**.
@@ -431,13 +432,19 @@ Dos consecuencias que conviene tener presentes al desplegar:
   (Entrada · Lavado · Lavado 2 · Postlavado) con deformidad, actividad, hongos, **fototropismo**, **aireación**,
   salinidad y temperatura; esas filas llevan «Revisión» y el «Tipo de tanque» vacío, y **el libro mayor las salta**.
   Salinidad y temperatura **bajan por su columna** a las revisiones de abajo, y cada fila sigue siendo editable.
-  (3) **Alcalinidad diaria por ÁREA**: el RAS y las cinco salas, en filas propias con «Área» y «Alcalinidad».
+  (3) **Alcalinidad por ÁREA, de DÍA y de NOCHE** (PE1.5, 2026-09-16, usuario): el RAS y las cinco salas, en filas
+  propias con «Área», «Alcalinidad día» y «Alcalinidad noche» —un campo por turno y área—. Es la MISMA fila del área
+  (el ID no lleva el turno), así que anotar la de noche horas después no pisa la de día: con el MERGE, una celda vacía
+  conserva. La firma A4 del GAS exige «Alcalinidad día» en la 16 (**sello `3a539f125e4e`, hay que re-desplegar**), y la
+  hoja no existía en producción, así que no hubo nada que migrar. El ⚖️ Saldo pinta cada turno con su cifra y su fecha;
+  un borrador guardado antes, con el campo único, se adapta al traerlo (su valor pasa a «día», a la vista).
   Las observaciones del lote se escriben en todas sus filas.
   ⚠ **Fototropismo y Aireación llevan su PROPIA lista de valores** aunque hoy coincida con la de Actividad
   (Alta/Media/Baja): compartir el array haría que retocar una cambiara las otras dos en silencio, y son tres
   juicios distintos del laboratorio.
   🔴 **Esta hoja es la única que ganó columnas EN MEDIO** (Fototropismo y Aireación en la 11-12, Área y
-  Alcalinidad en la 15-16), y de ahí sale el orden `push → GAS` de más abajo.
+  Alcalinidad en la 15-16, y desde PE1.5 la alcalinidad de día y de noche en la 16-17), y de ahí sale el orden
+  `push → GAS` de más abajo.
 - 🍤 **Alimentación (2026-09-15), hoja nueva `Maduración Alimentación` (21 columnas, `ID` = fecha-S*n*-T*tanque*,
   MERGE).** Ver la sección de Maduración. **Necesita EL GAS DE ESTA APP** (el sello, como las otras cinco; hasta el
   2026-09-16 bastaba la capacidad `mad-alimentacion`): sin él calcula, imprime y guarda la agenda en el dispositivo,

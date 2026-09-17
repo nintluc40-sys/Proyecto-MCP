@@ -11,6 +11,7 @@ const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderMadSaldo', 'madSaldoRefrescar', 'madResVarsAbrir', 'madResVarsAplicar', 'madResumenPdf', 'MAD_RES_VARS_KEY',
   'madResVarsGrupo', 'madResVarsSync', 'madResVarsTodas',
   'madMortReiniciar', 'madMortCollect', 'buildMadMortPayload', 'madMortGuardar', 'madNaupBaja', 'madMortPctVivo',
+  'madBorrFechaChange', 'MAD_BORR_PRE', '_madBorrFijarValores',   // PE1.5 · el borrador de antes, adaptado
   '_gasVersionLocal'];   // 2026-09-16 · el portón compara el SELLO: el fixture usa el de esta app
 const H = {};
 const avisos = [];
@@ -256,22 +257,50 @@ describe('Mortalidad de hembras · la ficha', () => {
      casi siempre con la misma salinidad y la misma temperatura. */
   /* 2026-09-15 (usuario) · la ALCALINIDAD es del DÍA y no de un lote: va fuera de las tarjetas,
      una casilla por área, y escribe una fila propia por cada una con valor. */
-  it('🔴 Inf. Supervisor: la alcalinidad del día se recoge por área y va a la hoja', async () => {
-    const alc = (area) => document.querySelector('#fp-mortdes .mm-alc[data-area="' + area + '"]');
-    expect(alc('RAS'), 'falta la casilla del RAS').toBeTruthy();
-    expect([...document.querySelectorAll('#fp-mortdes .mm-alc')].map((e) => e.getAttribute('data-area')))
-      .toEqual(['RAS', 'Sala 1', 'Sala 2', 'Sala 3', 'Sala 4', 'Sala 5']);
+  /* 2026-09-16 (usuario, PE1.5) · «alcalinidad de día y de noche, con sus campos por cada área». */
+  it('🔴 Inf. Supervisor: la alcalinidad de DÍA y de NOCHE se recoge por área y va a la hoja, cada turno en su columna', async () => {
+    const alc = (turno, area) => document.querySelector('#fp-mortdes .mm-alc-' + turno + '[data-area="' + area + '"]');
+    expect(alc('dia', 'RAS'), 'falta la casilla de día del RAS').toBeTruthy();
+    expect(alc('noche', 'RAS'), 'falta la casilla de noche del RAS').toBeTruthy();
+    for (const turno of ['dia', 'noche']) {
+      expect([...document.querySelectorAll('#fp-mortdes .mm-alc-' + turno)].map((e) => e.getAttribute('data-area')))
+        .toEqual(['RAS', 'Sala 1', 'Sala 2', 'Sala 3', 'Sala 4', 'Sala 5']);
+    }
+    expect(document.querySelector('#fp-mortdes .mm-alc'), 'queda el campo único de antes').toBeNull();
 
     q('#mm-fecha').value = '2026-09-15';
-    alc('RAS').value = '120';
-    alc('Sala 3').value = '95.5';
+    alc('dia', 'RAS').value = '120';
+    alc('noche', 'Sala 3').value = '95.5';
+    alc('dia', 'Sala 3').value = '97';
     await H.madMortGuardar();
 
     const c = (h) => MAD_MORT_HEADERS.indexOf(h);
-    expect(envios[0].rows.map((f) => [f[c('Área')], f[c('Alcalinidad')], f[c('ID')]])).toEqual([
-      ['RAS', 120, '2026-09-15-ALC-RAS'],
-      ['Sala 3', 95.5, '2026-09-15-ALC-S3'],
+    expect(envios[0].rows.map((f) => [f[c('Área')], f[c('Alcalinidad día')], f[c('Alcalinidad noche')], f[c('ID')]])).toEqual([
+      ['RAS', 120, '', '2026-09-15-ALC-RAS'],
+      ['Sala 3', 97, 95.5, '2026-09-15-ALC-S3'],
     ]);
+  });
+
+  it('🔴 un BORRADOR de antes (un campo por área) se adapta: su valor pasa a «día» y no queda el campo viejo', () => {
+    const panel = document.getElementById('fp-mortdes');
+    // Se fabrica la tabla de antes y se guarda como la guardaba la ficha: lo tecleado, volcado a atributos.
+    const caja = panel.querySelector('.mm-alc-caja');
+    caja.insertAdjacentHTML('beforebegin', '<div style="font-weight:700">🧪 Alcalinidad del día</div><div class="tw"><table class="ft mm-alc-t"><tbody>'
+      + '<tr><td>RAS</td><td><input class="mm-alc" data-area="RAS" type="number" value="121"></td></tr>'
+      + '<tr><td>Sala 2</td><td><input class="mm-alc" data-area="Sala 2" type="number" value=""></td></tr></tbody></table></div>');
+    caja.remove();
+    H._madBorrFijarValores(panel);
+    localStorage.setItem(H.MAD_BORR_PRE + 'mortdes', JSON.stringify({ '2026-09-10': panel.innerHTML }));
+    H.madMortReiniciar();
+
+    q('#mm-fecha').value = '2026-09-10';
+    H.madBorrFechaChange('mortdes');
+    expect(q('.mm-alc'), 'el borrador de antes resucitó el campo único').toBeNull();
+    expect(panel.querySelectorAll('.mm-alc-t')).toHaveLength(1);
+    expect(q('.mm-alc-dia[data-area="RAS"]').value, 'se perdió lo tecleado').toBe('121');
+    expect(q('.mm-alc-noche[data-area="RAS"]').value).toBe('');
+    expect(panel.textContent).not.toContain('Alcalinidad del día');
+    localStorage.removeItem(H.MAD_BORR_PRE + 'mortdes');
   });
 
   it('🔴 Inf. Supervisor: salinidad y temperatura BAJAN, y una corregida a mano no se pisa', () => {

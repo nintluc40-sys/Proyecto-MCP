@@ -68,9 +68,11 @@ const HOJAS = {
     // La revisión de nauplios: la columna que sólo ella trae es «Revisión».
     { Fecha: '2026-01-21', Lote: 'AB', 'Revisión': 'Entrada', Deformidad: 'Baja', Actividad: 'Alta', Hongos: 'Ausente',
       Fototropismo: 'Alta', 'Aireación': 'Media', Salinidad: 33, Temperatura: 28.5 },
-    // La alcalinidad: la columna que sólo ella trae es «Área». Dos áreas con cifras distintas.
-    { Fecha: '2026-01-21', 'Área': 'Sala 1', Alcalinidad: 142 },
-    { Fecha: '2026-01-21', 'Área': 'RAS', Alcalinidad: 118 },
+    /* La alcalinidad: la columna que sólo ella trae es «Área». Dos áreas con cifras distintas.
+       PE1.5 (2026-09-16): de día y de noche, cada turno su columna; la de noche de la Sala 1 llega otro día. */
+    { Fecha: '2026-01-21', 'Área': 'Sala 1', 'Alcalinidad día': 142 },
+    { Fecha: '2026-01-22', 'Área': 'Sala 1', 'Alcalinidad noche': 139 },
+    { Fecha: '2026-01-21', 'Área': 'RAS', 'Alcalinidad día': 118, 'Alcalinidad noche': 116 },
   ],
   'Maduración Sala': [
     { Fecha: '2026-01-20', Sala: 'Sala 1', Estado: 'Producción', RAS: '25%', 'Temperatura 2:00': 28, 'Oxígeno 06:00': 5 },
@@ -191,13 +193,23 @@ describe('Saldo · la alcalinidad por área (Inf. Supervisor)', () => {
   it('🔴 la de la SALA va a su tarjeta y la del RAS a la suya, sin cruzarse', () => {
     soloEstas(['sala-alcalinidad', 'ras-alc']);
     const t = texto();
-    expect(t).toContain('142 mg/L');                       // Sala 1
-    expect(t).toContain('118 mg/L');                       // RAS
+    expect(t).toContain('142 mg/L');                       // Sala 1 · día
+    expect(t).toContain('139 mg/L');                       // Sala 1 · noche
+    expect(t).toContain('118 mg/L');                       // RAS · día
+    expect(t).toContain('116 mg/L');                       // RAS · noche
     expect(t).toContain('💧 RAS');
-    /* La Sala 2 no tiene alcalinidad registrada: sale «—». Se cuentan LAS DOS cifras: si la del
+    /* La Sala 2 no tiene alcalinidad registrada: sale «—». Se cuentan LAS cifras: si la del
        RAS se colara como respaldo, el 118 aparecería también en la tarjeta de la Sala 2. */
-    expect(t.match(/142 mg\/L/g)).toHaveLength(1);
-    expect(t.match(/118 mg\/L/g)).toHaveLength(1);
+    for (const v of ['142', '139', '118', '116']) expect(t.match(new RegExp(v + ' mg/L', 'g')), v).toHaveLength(1);
+  });
+
+  it('🔴 PE1.5 · una fila por TURNO, cada una con su fecha: la de noche no borra la de día', () => {
+    soloEstas(['sala-alcalinidad']);
+    const t = texto();
+    expect(t).toContain('Alcalinidad ☀️ día');
+    expect(t).toContain('Alcalinidad 🌙 noche');
+    expect(t).toMatch(/142 mg\/L\s*\(?2026-01-21/);
+    expect(t).toMatch(/139 mg\/L\s*\(?2026-01-22/);
   });
 
   it('la tarjeta del RAS aparece por la alcalinidad SOLA, sin tratamientos', () => {

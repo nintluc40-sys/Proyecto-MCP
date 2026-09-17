@@ -1194,8 +1194,9 @@ describe('Libro · las filas que NO son mortalidad se saltan', () => {
 
   it('🔴 una fila de alcalinidad no avisa ni descuenta nada', () => {
     const l = construirLibro(Object.assign(base(), { mortDesove: [
-      { Fecha: '2026-01-10', 'Área': 'RAS', Alcalinidad: 120 },
-      { Fecha: '2026-01-10', 'Área': 'Sala 1', Alcalinidad: 95 },
+      // PE1.5 (2026-09-16): la alcalinidad es de día y de noche, una columna por turno.
+      { Fecha: '2026-01-10', 'Área': 'RAS', 'Alcalinidad día': 120, 'Alcalinidad noche': 118 },
+      { Fecha: '2026-01-10', 'Área': 'Sala 1', 'Alcalinidad noche': 95 },
     ] }), { hoy: '2026-01-20' });
     expect(l.avisos, 'la alcalinidad entró como si fuera mortalidad').toEqual([]);
     expect(l.lotes.get('AB').hembras).toBe(40);

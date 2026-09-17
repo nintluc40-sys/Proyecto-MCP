@@ -424,8 +424,8 @@ const ESCENARIOS = {
          «Revisión» vacía, así que si el filtro no nombrara también el «Área» entraría como
          mortalidad y avisaría de un tipo de tanque que esa fila nunca tuvo. Con las dos copias
          saltándosela, la paridad sólo lo ve si el fixture la trae. */
-      { Fecha: '2026-01-07', 'Área': 'RAS', Alcalinidad: 120 },
-      { Fecha: '2026-01-07', 'Área': 'Sala 1', Alcalinidad: 95.5 },
+      { Fecha: '2026-01-07', 'Área': 'RAS', 'Alcalinidad día': 120, 'Alcalinidad noche': 118 },
+      { Fecha: '2026-01-07', 'Área': 'Sala 1', 'Alcalinidad noche': 95.5 },
     ],
   },
   'vacío': { ingresos: [], tanques: [] },

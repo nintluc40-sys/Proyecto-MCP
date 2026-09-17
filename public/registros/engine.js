@@ -6392,7 +6392,8 @@ function _madResSalas(filasSala, libro, filasTrat, tons, alc){
     const ton=_madResToneladasDe(tons, sala);
     /* La alcalinidad se registra en la ficha «Inf. Supervisor» POR ÁREA, y las áreas son el RAS y
        las salas: aquí sale la del área que se llama como esta sala. La del RAS va en su tarjeta. */
-    const alcalinidad=_madResDe(alc, sala) || { valor:"", fecha:"" };
+    // PE1.5 · de día y de noche: cada turno con su última cifra y su fecha.
+    const alcalinidad={ dia:_madResDe(alc.dia, sala) || { valor:"", fecha:"" }, noche:_madResDe(alc.noche, sala) || { valor:"", fecha:"" } };
     return { sala:sala, fecha:conEstado ? _madResF10(conEstado.Fecha) : "", estado:conEstado ? madLibroTxt(conEstado.Estado) : "",
       ras:conRas ? madLibroTxt(conRas.RAS) : "", fechaRas:conRas ? _madResF10(conRas.Fecha) : "", lotes:lotes,
       toneladas:ton.valor, fechaToneladas:ton.fecha, volumenTanque:_madResVolTanque(sala, ton.valor),
@@ -6561,11 +6562,11 @@ function madResumenMaduracion(fuentes, opts){
   const tons=_madResUltimoPor(f.sala, "Sala", "Toneladas");
   /* La alcalinidad de «Inf. Supervisor» es POR ÁREA, y sus áreas son el RAS y las cinco salas: la
      de cada sala va a su tarjeta y la del RAS a la suya, que es donde se mira el agua del sistema. */
-  const alc=_madResUltimoPor(f.mortDesove, "Área", "Alcalinidad");
+  const alc={ dia:_madResUltimoPor(f.mortDesove, "Área", "Alcalinidad día"), noche:_madResUltimoPor(f.mortDesove, "Área", "Alcalinidad noche") };
   return { hoy:hoy, hasta:libro.hasta, avisos:libro.avisos.length,
     salas:_madResSalas(f.sala, libro, f.tratamientos, tons, alc),
     lotes:_madResLotes(f, libro, hoy),
-    ras:ras, rasAlcalinidad:(_madResDe(alc, "RAS") || { valor:"", fecha:"" }) };
+    ras:ras, rasAlcalinidad:{ dia:_madResDe(alc.dia, "RAS") || { valor:"", fecha:"" }, noche:_madResDe(alc.noche, "RAS") || { valor:"", fecha:"" } } };
 }
 
 // ── Maduración · vista SALDO ─────────────────────────────────────────────────
@@ -6877,7 +6878,7 @@ function _madResSalaHTML(s, sel, conPdf){
     + " = "+_madResCel(s.volumenTanque," m³")+_madResGris(s.tanquesSala ? s.tanquesSala+" tanques en la sala" : ""));
   if(sel["sala-temp"]) b+=_madResFila("Temperatura", "prom "+_madResCel(s.temp.prom)+" · última "+_madResCel(s.temp.ultima)+" · Δ "+_madResDelta(s.temp.delta)+" · CV "+_madResCel(s.temp.cv,"%")+_madResGris(s.temp.fecha));
   if(sel["sala-ox"]) b+=_madResFila("Oxígeno", "prom "+_madResCel(s.ox.prom)+" · último "+_madResCel(s.ox.ultima)+" · Δ "+_madResDelta(s.ox.delta)+" · CV "+_madResCel(s.ox.cv,"%")+_madResGris(s.ox.fecha));
-  if(sel["sala-alcalinidad"]) b+=_madResFila("Alcalinidad", _madResCel(s.alcalinidad.valor," mg/L")+_madResGris(s.alcalinidad.fecha));
+  if(sel["sala-alcalinidad"]) b+=_madResFila("Alcalinidad ☀️ día", _madResCel(s.alcalinidad.dia.valor," mg/L")+_madResGris(s.alcalinidad.dia.fecha))+_madResFila("Alcalinidad 🌙 noche", _madResCel(s.alcalinidad.noche.valor," mg/L")+_madResGris(s.alcalinidad.noche.fecha));
   if(sel["sala-ocupacion"]) b+=_madResFila("En producción", s.tanquesProduccion+" tanque(s) · "+s.animalesProduccion+" animales")+_madResFila("En cuarentena", s.animalesCuarentena+" animales");
   if(sel["sala-trat"]) b+=_madResFila("Desinfección y controles", _madResTratLista(s.tratamientos, function(t){ return escapeHtml(t.tipo)+" · "+escapeHtml(t.area)+(t.lotes ? " ("+escapeHtml(t.lotes)+")" : "")+": "+escapeHtml(t.productos||t.ras); }));
   return _madResTarjeta("🏠 "+escapeHtml(s.sala), b, "sala:"+s.sala, conPdf);
@@ -6937,7 +6938,7 @@ function _madResCuerpoHTML(R, sel, conPdf, filtro){
   if(lotes.length && alguna(deLote)) h+='<h3 style="margin:8px 0 6px;font-size:14px">🦐 Lotes</h3>'+rejilla(lotes.map(function(l){ return _madResLoteHTML(l, sel, conPdf); }).join(""));
   if(!filtro && alguna(MAD_RES_VARS_RAS)) h+='<h3 style="margin:8px 0 6px;font-size:14px">💧 RAS</h3>'
     + _madResTarjeta("Sistema RAS",
-        (sel["ras-alc"] ? _madResFila("Alcalinidad", _madResCel(R.rasAlcalinidad ? R.rasAlcalinidad.valor : "", " mg/L")+_madResGris(R.rasAlcalinidad ? R.rasAlcalinidad.fecha : "")) : "")
+        (sel["ras-alc"] ? _madResFila("Alcalinidad ☀️ día", _madResCel(R.rasAlcalinidad.dia.valor, " mg/L")+_madResGris(R.rasAlcalinidad.dia.fecha))+_madResFila("Alcalinidad 🌙 noche", _madResCel(R.rasAlcalinidad.noche.valor, " mg/L")+_madResGris(R.rasAlcalinidad.noche.fecha)) : "")
       + (sel["ras-trat"] ? _madResFila("Últimos tratamientos", _madResTratLista(R.ras, function(t){ return escapeHtml(t.tipo)+(t.sala ? " · "+escapeHtml(t.sala) : "")+": "+escapeHtml(t.productos); })) : ""), "", false);
   return h || '<div style="color:#94a3b8;font-size:12px;padding:8px 0">Nada que mostrar con las variables elegidas.</div>';
 }
@@ -8127,6 +8128,19 @@ function _madBorrRender(ficha){
 function _madBorrAdaptar(ficha, fp){
   if(ficha === "desoves"){
     fp.querySelectorAll(".md-fn2,.md-fn5").forEach(function(el){ const l = el.closest("label"); (l || el).remove(); });
+  }
+  /* · mortdes (2026-09-16, PE1.5): la alcalinidad tenía UN campo por área y ahora son dos (día y noche). La tabla
+       vieja se cambia por la nueva y su valor pasa a «día», a la vista para corregirlo: tirarlo perdería lo tecleado. */
+  if(ficha === "mortdes"){
+    const viejos=fp.querySelectorAll(".mm-alc"), t=fp.querySelector(".mm-alc-t"), caja=t ? t.closest(".tw") : null;
+    if(viejos.length && caja){
+      const valores={}, rotulo=caja.previousElementSibling;
+      viejos.forEach(function(el){ valores[el.getAttribute("data-area")]=el.value; });
+      caja.insertAdjacentHTML("beforebegin", _madAlcTablaHTML());
+      if(rotulo && /Alcalinidad/.test(rotulo.textContent)) rotulo.remove();
+      caja.remove();
+      fp.querySelectorAll(".mm-alc-dia").forEach(function(el){ const v=valores[el.getAttribute("data-area")]; if(v) el.value=v; });
+    }
   }
 }
 /** Asa del campo Fecha: guarda el día que se deja y trae el que se elige. */
@@ -9794,6 +9808,8 @@ const MAD_NAUP_FOTOTROPISMO = ["Alta","Media","Baja"];
 /* ALCALINIDAD (usuario, 2026-09-15) · un valor DIARIO por área. El RAS va primero porque no es
    una sala: es el circuito que las alimenta, y por eso esto no cabía en «Maduración Sala». */
 const MAD_ALC_AREAS = ["RAS"].concat(MAD_SALA_OPTS);
+// PE1.5 (2026-09-16, usuario) · la alcalinidad es de DÍA y de NOCHE, cada turno con su campo por área. Ver el módulo.
+const MAD_ALC_TURNOS = [["dia","día"], ["noche","noche"]];
 function madAlcRowId(fecha, area){
   return sanitizeStr(fecha, 10) + "-ALC-" + (area === "RAS" ? "RAS" : madIngSalaTag(area));
 }
@@ -9810,8 +9826,9 @@ const MAD_MORT_COLUMNS = [
   { h:"Revisión", k:"revision" }, { h:"Deformidad", k:"deformidad" }, { h:"Actividad", k:"actividad" }, { h:"Hongos", k:"hongos" },
   { h:"Fototropismo", k:"fototropismo" }, { h:"Aireación", k:"aireacion" },
   { h:"Salinidad", k:"salinidad" }, { h:"Temperatura", k:"temperatura" },
-  /* Sólo las llevan las filas de alcalinidad, como «Revisión» sólo las de nauplios. */
-  { h:"Área", k:"area" }, { h:"Alcalinidad", k:"alcalinidad" },
+  /* Sólo las llevan las filas de alcalinidad, como «Revisión» sólo las de nauplios. PE1.5 (2026-09-16): de DÍA y de
+     NOCHE, una columna por turno antes de Observaciones e ID; la firma A4 del GAS exige «Alcalinidad día». Ver el módulo. */
+  { h:"Área", k:"area" }, { h:"Alcalinidad día", k:"alcalinidadDia" }, { h:"Alcalinidad noche", k:"alcalinidadNoche" },
   { h:"Observaciones", k:"observaciones" }, { h:"ID", k:"id" }   // ⚠ el ID, el ÚLTIMO
 ];
 const MAD_MORT_HEADERS = MAD_MORT_COLUMNS.map(function(c){ return c.h; });
@@ -9850,12 +9867,13 @@ function madMortBuildRows(model){
         observaciones:sanitizeStr(x.observaciones,300), id:madNaupRowId(fecha, lote, revision) });   // I1: las observaciones del lote también aquí
     });
   });
-  /* Una fila por ÁREA con valor: es del DÍA, no de un lote. Sin valor no se escribe fila, y con
-     el MERGE del GAS no escribir es CONSERVAR lo que hubiera. */
+  /* Una fila por ÁREA con algún turno: es del DÍA, no de un lote. Sin valor no se escribe fila, y con el MERGE del GAS
+     no escribir es CONSERVAR lo que hubiera: por eso la de noche, anotada después, no pisa la de día. */
   MAD_ALC_AREAS.forEach(function(area){
-    const v=_madNaupDec((m.alcalinidad||{})[area]);
-    if(v==="") return;
-    fila({ fecha:fecha, area:area, alcalinidad:v, id:madAlcRowId(fecha, area) });
+    const a=(m.alcalinidad||{})[area]||{};
+    const dia=_madNaupDec(a.dia), noche=_madNaupDec(a.noche);
+    if(dia==="" && noche==="") return;
+    fila({ fecha:fecha, area:area, alcalinidadDia:dia, alcalinidadNoche:noche, id:madAlcRowId(fecha, area) });
   });
   return filas;
 }
@@ -9902,10 +9920,13 @@ function madMortValidar(model){
      inventado aquí sería una cifra sin dueño de las que este proyecto ya ha tenido que retirar. */
   let alcalinidades=0;
   MAD_ALC_AREAS.forEach(function(area){
-    const c=_madNaupCrudo((m.alcalinidad||{})[area]);
-    if(c==="") return;
-    if(_madNaupDec(c)==="") errores.push("La alcalinidad de "+area+" no es una cifra válida.");
-    else alcalinidades++;
+    const a=(m.alcalinidad||{})[area]||{};
+    MAD_ALC_TURNOS.forEach(function(t){
+      const c=_madNaupCrudo(a[t[0]]);
+      if(c==="") return;
+      if(_madNaupDec(c)==="") errores.push("La alcalinidad de "+t[1]+" de "+area+" no es una cifra válida.");
+      else alcalinidades++;
+    });
   });
   /* ⚠ La alcalinidad CUENTA: es del día y no de un lote, así que un día en el que sólo se anota
      ella es un registro válido. Sin sumarla aquí moriría en la guarda de abajo. */
@@ -9952,14 +9973,17 @@ function _madNaupTablaHTML(){
 function madNaupBaja(el){ _madBajarColumna(el, null); }
 /* La alcalinidad es del DÍA y no de un lote, así que va FUERA de las tarjetas: dentro se
    repetiría una vez por lote y habría que decidir cuál de las copias vale. */
+/* PE1.5 (2026-09-16, usuario) · de DÍA y de NOCHE, cada turno con su campo por área. Va en su propia caja
+   (mm-alc-caja): así un borrador de antes se adapta sin tocar lo demás (ver _madBorrAdaptar). */
 function _madAlcTablaHTML(){
   const filas=MAD_ALC_AREAS.map(function(area){
     return '<tr><td style="font-weight:700;white-space:nowrap">'+escapeHtml(area)+'</td>'
-      + '<td><input class="mm-alc" data-area="'+escapeHtml(area)+'" type="number" min="0" step="0.1" inputmode="decimal" style="'+_MAD_ING_INP+';width:110px"></td></tr>';
+      + MAD_ALC_TURNOS.map(function(t){ return '<td><input class="mm-alc-'+t[0]+'" data-area="'+escapeHtml(area)+'" type="number" min="0" step="0.1" inputmode="decimal" title="Alcalinidad de '+t[1]+' · '+escapeHtml(area)+'" style="'+_MAD_ING_INP+';width:110px"></td>'; }).join("")
+      + '</tr>';
   }).join("");
-  return '<div style="font-size:12px;font-weight:700;margin:2px 0 6px;color:#334155">🧪 Alcalinidad del día</div>'
+  return '<div class="mm-alc-caja"><div style="font-size:12px;font-weight:700;margin:2px 0 6px;color:#334155">🧪 Alcalinidad · de día y de noche</div>'
     + '<div class="tw" style="margin-bottom:10px"><table class="ft mm-alc-t" style="font-size:12px">'
-    + '<thead><tr><th>Área</th><th>Alcalinidad</th></tr></thead><tbody>'+filas+'</tbody></table></div>';
+    + '<thead><tr><th>Área</th><th>☀️ Día</th><th>🌙 Noche</th></tr></thead><tbody>'+filas+'</tbody></table></div></div>';
 }
 function _madMortCardHTML(){
   return '<div class="mm-card" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px;background:#fff">'
@@ -10002,7 +10026,14 @@ function madMortCollect(){
       recuperacion:{ entran:g(c,".mm-recuperacion-e"), muertas:g(c,".mm-recuperacion-m") }, nauplios:nauplios, observaciones:g(c,".mm-obs") });
   });
   const alcalinidad={};
-  document.querySelectorAll("#fp-mortdes .mm-alc").forEach(function(e){ alcalinidad[e.getAttribute("data-area")]=e.value; });
+  // PE1.5 · un campo por turno y área.
+  MAD_ALC_TURNOS.forEach(function(t){
+    document.querySelectorAll("#fp-mortdes .mm-alc-"+t[0]).forEach(function(e){
+      const area=e.getAttribute("data-area");
+      if(!Object.prototype.hasOwnProperty.call(alcalinidad, area)) alcalinidad[area]={};
+      alcalinidad[area][t[0]]=e.value;
+    });
+  });
   return { fecha:g(document,"#mm-fecha"), lotes:lotes, alcalinidad:alcalinidad };
 }
 function _madMortPinta(res, filas){
@@ -20952,7 +20983,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "afe439753273";
+const GAS_VERSION = "3a539f125e4e";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -21803,7 +21834,8 @@ var MAD_ESQUEMA_FIRMA = {
   "Maduración Lotes":        [[7, "Hembras no viables"]],
   "Maduración Fin de Ciclo": [[5, "Sala"], [10, "Rojos"]],
   // 11 y 15 son justo las dos inserciones: el cliente de 14 columnas lleva «Salinidad» en la 11.
-  "Maduración Mortalidad Desove": [[11, "Fototropismo"], [15, "Área"]],
+  // 16 (PE1.5, 2026-09-16): la alcalinidad pasó a ser de día y de noche; el cliente de 18 columnas lleva ahí «Alcalinidad».
+  "Maduración Mortalidad Desove": [[11, "Fototropismo"], [15, "Área"], [16, "Alcalinidad día"]],
   "Maduración Tratamientos": [[8, "Productos RAS"]],
   // 9 va ANTES del bloque de alimentos, que es la parte del esquema que puede crecer.
   "Maduración Alimentación": [[9, "Fuente del peso"]]
