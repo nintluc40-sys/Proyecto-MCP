@@ -152,11 +152,17 @@ describe('Desoves · no se escribe contra el GAS viejo (hoja por posición)', ()
     expect(q('.md-hnoviables').value).toBe('9');
   });
 
-  it('sin respuesta del GAS sigue el camino de siempre', async () => {
+  /* 🔴 PV3 (2026-09-16) · antes decía «sin respuesta del GAS sigue el camino de siempre» y exigía que el desove
+     SALIERA sin saber a qué GAS. Ahora queda en la cola sin salir hasta que el sello se confirme. */
+  it('🔴 PV3 · sin respuesta del GAS NO se envía: queda en la cola sin salir', async () => {
+    localStorage.removeItem('larv4_syncqueue');
     llenar();
     respuestaVer = 'red';
     await H.madDesGuardar();
-    expect(envios).toHaveLength(1);
+    expect(envios).toHaveLength(0);
+    expect(JSON.parse(localStorage.getItem('larv4_syncqueue') || '[]').map((it) => it.payload.sheetName)).toEqual([H.MAD_DESOVE_SHEET]);
+    expect(avisos.filter((a) => a.tipo === 'err')).toEqual([]);
+    localStorage.removeItem('larv4_syncqueue');
   });
 
   it('🔴 la COLA tampoco entrega un desove al GAS viejo', async () => {

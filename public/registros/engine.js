@@ -1856,12 +1856,20 @@ async function flushSyncQueue(){
     // Los rechazos de ENTORNO se cuentan aparte: no son un error del usuario y su
     // envío sigue vivo en la cola. Se guarda un motivo de cada clase para el aviso.
     let enEspera = 0, msgEntorno = "", msgDatos = "";
+    const _selloPorUrl = {};   // PV3: la respuesta de ?p=ver, UNA por URL en este vaciado
     for(const it of q){
       const url = it.url || gasUrl();
       if(!url || !isValidGasUrl(url)){ remaining.push(it); continue; }
-      // Un ingreso o un desove de Maduración NO se entrega a un GAS viejo: escribiría desalineado (ver _madIngGasAlDia).
-      if(it.payload && _madHojaPideGasNuevo(it.payload.sheetName) && (await _madIngGasAlDia(url)) === false){
-        remaining.push(it); enEspera++; msgEntorno = _madGasViejoMsg(it.payload.sheetName); continue;
+      // Las seis hojas de Maduración que se escriben por posición sólo se entregan a EL GAS DE ESTA APP (ver _madIngGasAlDia).
+      // PV3 (2026-09-16) · y con el sello SIN CONFIRMAR (null) también esperan: antes sólo las frenaba un «no» explícito.
+      // Se pregunta UNA vez por URL en cada vaciado: con diez envíos en cola eran diez esperas de hasta 6 s.
+      if(it.payload && _madHojaPideGasNuevo(it.payload.sheetName)){
+        if(!Object.prototype.hasOwnProperty.call(_selloPorUrl, url)) _selloPorUrl[url] = await _madIngGasAlDia(url);
+        if(_selloPorUrl[url] !== true){
+          remaining.push(it); enEspera++;
+          msgEntorno = _selloPorUrl[url] === false ? _madGasViejoMsg(it.payload.sheetName) : MAD_GAS_SIN_CONFIRMAR;
+          continue;
+        }
       }
       const sid      = getSessionId();
       const finalUrl = url + (url.indexOf("?") === -1 ? "?" : "&") + "z=" + encodeURIComponent(sid);
@@ -7654,8 +7662,9 @@ function madIngRevisar(){
      true  → el sello que responde ?p=ver es EL DE ESTA APP: se envía;
      false → contesta el texto «FichasLarv-OK» (GAS anterior a la prueba de versión) o responde
              OTRO sello: NO se envía;
-     null  → no responde (sin señal o una página rara): no se sabe, se sigue como siempre y, si
-             el envío queda en cola, la cola vuelve a preguntar antes de entregarlo.
+     null  → no responde (sin señal o una página rara): no se sabe, y NO SE ESCRIBE en la hoja
+             (PV3, 2026-09-16): el envío entra en la cola sin salir y la cola sólo lo entrega
+             cuando el sello se confirme (ver _madPostConSello y flushSyncQueue).
 
    ⚠⚠ 2026-09-16 · ANTES BASTABA CON QUE CONTESTARA. Devolvía `true` en cuanto ?p=ver traía un
    JSON con `version`, SIN MIRAR el valor. O sea que la función se llamaba «al día» y sólo medía
@@ -7707,6 +7716,22 @@ function _madHojaPideGasNuevo(hoja){ return hoja === MAD_ING_SHEET || hoja === M
    que no es el suyo y que lo tecleado no se ha perdido. */
 function _madGasViejoMsg(hoja){ return "el GAS desplegado no es el de esta app y podría escribir «" + hoja + "» en columnas equivocadas"; }
 const MAD_ING_GAS_VIEJO = "el GAS desplegado no es el de esta app y podría escribir «Maduración Ingreso» (Crecimiento y Libras) en columnas equivocadas";
+/* PV3 (2026-09-16) · UN SELLO SIN CONFIRMAR NO ES «AL DÍA». Hasta hoy estas seis fichas sólo se frenaban ante un
+   «no» explícito: si ?p=ver no contestaba en 6 s, o Google devolvía su página 404 —pasa, está medido—, el portón
+   daba null y el envío salía igual, así que el fallo seguro de R4 tenía una puerta trasera. Ahora, sin confirmar,
+   NO se escribe en la hoja: el envío entra en la COLA sin salir, y la cola sólo lo entrega cuando ?p=ver confirma
+   que el GAS desplegado es el de esta app. Para quien captura es el trato de siempre sin señal: lo tecleado queda
+   a salvo y se entrega solo.
+   Recibe la respuesta YA preguntada: preguntar otra vez serían otros 6 s de espera (la lección de A2). */
+const MAD_GAS_SIN_CONFIRMAR = "no se pudo confirmar que el GAS desplegado sea el de esta app (no respondió)";
+async function _madPostConSello(payload, gas, opts){
+  if(gas === true) return postPayload(payload, gasUrl(), opts);
+  _enqueueSync(payload, _payloadFingerprint(payload), gasUrl(), opts && opts.mark);
+  if(opts) opts.outcome = "queued";
+  toast("📶 En cola, sin enviar: " + MAD_GAS_SIN_CONFIRMAR + ". Se enviará solo en cuanto responda.", "warn", 6500);
+  setTimeout(function(){ try{ flushSyncQueue(); }catch(_){} }, 8000);
+  return false;
+}
 async function madIngGuardar(){
   const model=madIngCollect();
   const res=madIngValidar(model);
@@ -7715,7 +7740,8 @@ async function madIngGuardar(){
   _madIngPinta(res, payload.rows.length);
   if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
   if(!payload.rows.length){ toast("No hay ningún tanque con ubicación que guardar.","warn",4000); return; }
-  if((await _madIngGasAlDia()) === false){
+  const _gas=await _madIngGasAlDia();
+  if(_gas === false){
     const aviso = "No se envió: " + MAD_ING_GAS_VIEJO + ". Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo tecleado sigue aquí.";
     const box = document.getElementById("mi-report");
     if(box) box.innerHTML = '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:12px;color:#991b1b">' + escapeHtml(aviso) + '</div>';
@@ -7725,7 +7751,7 @@ async function madIngGuardar(){
   const lote=madIngNormLote(model.lote);
   toast("Enviando ingreso del lote "+lote+"…","info",2200);
   const _t={};
-  const ok=await postPayload(payload, gasUrl(), _t);
+  const ok=await _madPostConSello(payload, _gas, _t);
   if(ok){
     madIngLogAnota(model.fecha, lote, payload.rows.length, "ok");
     toast("✅ Ingreso registrado · "+payload.rows.length+" fila(s)","ok",5000);
@@ -8618,7 +8644,8 @@ async function madDesGuardar(){
   if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
   if(!payload.rows.length){ toast("No hay ningún desove completo que guardar.","warn",4000); return; }
   // La hoja se escribe POR POSICIÓN y sus columnas cambiaron: contra el GAS viejo no se envía (ver _madIngGasAlDia).
-  if((await _madIngGasAlDia()) === false){
+  const _gas=await _madIngGasAlDia();
+  if(_gas === false){
     const aviso = "No se envió: " + _madGasViejoMsg(MAD_DESOVE_SHEET) + ". Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo tecleado sigue aquí.";
     const box = document.getElementById("md-report");
     if(box) box.innerHTML = '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:12px;color:#991b1b">' + escapeHtml(aviso) + '</div>';
@@ -8627,7 +8654,7 @@ async function madDesGuardar(){
   }
   toast("Enviando "+payload.rows.length+" desove(s)…","info",2200);
   const _t={};
-  const ok=await postPayload(payload, gasUrl(), _t);
+  const ok=await _madPostConSello(payload, _gas, _t);
   if(ok){
     madDesLogAnota(model, payload.rows.length, "ok");
     madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), model, Date.now()));
@@ -9020,7 +9047,8 @@ async function madFinGuardar(){
   _madFinPinta(res, payload.rows.length);
   if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
   if(!payload.rows.length){ toast("No hay ningún cierre completo que guardar.","warn",4000); return; }
-  if((await _madIngGasAlDia()) === false){
+  const _gas=await _madIngGasAlDia();
+  if(_gas === false){
     const aviso = "No se envió: " + _madGasViejoMsg(MAD_FIN_SHEET) + ". Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo tecleado sigue aquí.";
     const box = document.getElementById("mf-report");
     if(box) box.innerHTML = '<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:12px;color:#991b1b">' + escapeHtml(aviso) + '</div>';
@@ -9029,7 +9057,7 @@ async function madFinGuardar(){
   }
   toast("Enviando "+payload.rows.length+" cierre(s)…","info",2200);
   const _t={};
-  const ok=await postPayload(payload, gasUrl(), _t);
+  const ok=await _madPostConSello(payload, _gas, _t);
   if(ok){
     madFinLogAnota(model.fecha, payload.rows.length, "ok");
     toast("✅ Cierre registrado · "+payload.rows.length+" fila(s)","ok",5000);
@@ -9311,9 +9339,10 @@ async function madTratGuardar(){
   _madTratPinta(res, payload.rows.length);
   if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
   if(!payload.rows.length){ toast("No hay ningún tratamiento completo que guardar.","warn",4000); return; }
-  // Hoja nueva: el GAS publicado hoy no la conoce. Contra él no se envía y lo tecleado se queda (ver _madIngGasAlDia).
-  if((await _madIngGasAlDia()) === false){
-    const aviso="No se envió: el GAS publicado no conoce la hoja «"+MAD_TRAT_SHEET+"». Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo tecleado sigue aquí.";
+  // Se escribe por posición: contra un GAS que no es el de esta app no se envía y lo tecleado se queda (ver _madIngGasAlDia).
+  const _gas=await _madIngGasAlDia();
+  if(_gas === false){
+    const aviso="No se envió: "+_madGasViejoMsg(MAD_TRAT_SHEET)+". Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo tecleado sigue aquí.";
     const box=document.getElementById("mt-report");
     if(box) box.innerHTML='<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:12px;color:#991b1b">'+escapeHtml(aviso)+'</div>';
     toast(aviso,"err",10000);
@@ -9321,7 +9350,7 @@ async function madTratGuardar(){
   }
   toast("Enviando "+payload.rows.length+" tratamiento(s)…","info",2200);
   const _t={};
-  const ok=await postPayload(payload, gasUrl(), _t);
+  const ok=await _madPostConSello(payload, _gas, _t);
   if(ok){
     madTratLogAnota(model.fecha, payload.rows.length, "ok");
     toast("✅ Tratamientos registrados · "+payload.rows.length+" fila(s)","ok",5000);
@@ -9655,9 +9684,10 @@ async function madMortGuardar(){
   _madMortPinta(res, payload.rows.length);
   if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
   if(!payload.rows.length){ toast("No hay ningún registro completo que guardar.","warn",4000); return; }
-  // Hoja nueva: el GAS publicado hoy no la conoce. Contra él no se envía y lo tecleado se queda (ver _madIngGasAlDia).
-  if((await _madIngGasAlDia()) === false){
-    const aviso="No se envió: el GAS publicado no conoce la hoja «"+MAD_MORT_SHEET+"». Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo tecleado sigue aquí.";
+  // Se escribe por posición: contra un GAS que no es el de esta app no se envía y lo tecleado se queda (ver _madIngGasAlDia).
+  const _gas=await _madIngGasAlDia();
+  if(_gas === false){
+    const aviso="No se envió: "+_madGasViejoMsg(MAD_MORT_SHEET)+". Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo tecleado sigue aquí.";
     const box=document.getElementById("mm-report");
     if(box) box.innerHTML='<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:12px;color:#991b1b">'+escapeHtml(aviso)+'</div>';
     toast(aviso,"err",10000);
@@ -9665,7 +9695,7 @@ async function madMortGuardar(){
   }
   toast("Enviando "+payload.rows.length+" fila(s)…","info",2200);
   const _t={};
-  const ok=await postPayload(payload, gasUrl(), _t);
+  const ok=await _madPostConSello(payload, _gas, _t);
   if(ok){
     madMortLogAnota(model.fecha, payload.rows.length, "ok");
     toast("✅ Inf. Supervisor registrado · "+payload.rows.length+" fila(s)","ok",5000);
@@ -10247,21 +10277,6 @@ function madAlimRevisar(){
   _madAlimPinta(res, madAlimBuildRows(model).length);
   return _madRevisarRemata("ma-report", res, MAD_ALIM_SHEET);
 }
-/* ¿El GAS publicado conoce la hoja? Lo dice ?p=ver en «caps» («mad-alimentacion»). Mismo patrón que _reproGasRecicla:
-     true → la conoce: se envía · false → responde sin ella: NO se envía · null → no responde: se envía y, si falla, espera en la cola. */
-async function _madAlimGasListo(url){
-  const base = url || gasUrl();
-  if(!base || !isValidGasUrl(base)) return null;
-  try{
-    const ctrl = new AbortController();
-    const t = setTimeout(function(){ ctrl.abort(); }, 6000);
-    const r = await fetch(base + (base.indexOf("?")===-1 ? "?" : "&") + "p=ver", { signal: ctrl.signal, cache: "no-store" });
-    clearTimeout(t);
-    const txt = await r.text();
-    try{ const j = JSON.parse(txt); if(j && j.ok && typeof j.version === "string") return Array.isArray(j.caps) && j.caps.indexOf("mad-alimentacion") !== -1; }catch(_){}
-    return txt.indexOf("FichasLarv-OK") !== -1 ? false : null;
-  }catch(_){ return null; }
-}
 function madAlimLogLeer(){
   try{ const v=JSON.parse(localStorage.getItem(MAD_ALIM_LOG_KEY)||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; }
 }
@@ -10289,8 +10304,11 @@ async function madAlimGuardar(){
   _madAlimPinta(res, payload.rows.length);
   if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
   if(!payload.rows.length){ toast("No hay tanques con animales que guardar.","warn",4000); return; }
-  if((await _madAlimGasListo()) === false){
-    const aviso="No se envió: el GAS publicado no conoce la hoja «"+MAD_ALIM_SHEET+"». Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo calculado sigue aquí.";
+  /* PV3 (2026-09-16) · como las otras cinco, sólo EL GAS DE ESTA APP (su sello). Hasta hoy bastaba con que anunciara
+     «mad-alimentacion» (se retiró _madAlimGasListo): un GAS de otra versión que ya conociera la hoja recibía el envío. */
+  const _gas=await _madIngGasAlDia();
+  if(_gas === false){
+    const aviso="No se envió: "+_madGasViejoMsg(MAD_ALIM_SHEET)+". Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo calculado sigue aquí.";
     const box=document.getElementById("ma-report");
     if(box) box.innerHTML='<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:12px;color:#991b1b">'+escapeHtml(aviso)+'</div>';
     toast(aviso,"err",10000);
@@ -10298,7 +10316,7 @@ async function madAlimGuardar(){
   }
   toast("Enviando "+payload.rows.length+" fila(s)…","info",2200);
   const _t={};
-  const ok=await postPayload(payload, gasUrl(), _t);
+  const ok=await _madPostConSello(payload, _gas, _t);
   // ⚠ `postPayload` devuelve false TAMBIÉN cuando el envío quedó ENCOLADO (invariante H1): la agenda ya va en camino.
   if(ok || _t.outcome==="queued"){
     const cfg=madAlimCfgLeer(), enviadas=model.salas.map(function(s){ return s.sala; });

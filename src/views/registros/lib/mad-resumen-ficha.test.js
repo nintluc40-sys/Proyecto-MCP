@@ -57,6 +57,7 @@ beforeAll(async () => {
   globalThis.fetch = async (url) => {
     const u = decodeURIComponent(String(url));
     if (u.indexOf('p=ver') !== -1) {
+      if (respuestaVer === 'red') throw new Error('sin red');
       const cuerpo = typeof respuestaVer === 'string' ? respuestaVer : JSON.stringify(respuestaVer);
       return { ok: true, status: 200, text: async () => cuerpo };
     }
@@ -299,5 +300,19 @@ describe('Mortalidad de hembras · la ficha', () => {
     expect(envios).toHaveLength(0);
     expect((avisos.find((a) => a.tipo === 'err') || {}).msg).toMatch(/Mortalidad Desove/);
     expect(q('.mm-lote').value).toBe('BP');
+  });
+
+  /* PV3 (2026-09-16) · sin respuesta de ?p=ver no se sabe a qué GAS se escribiría: a la cola, sin salir. */
+  it('🔴 PV3 · sin respuesta del GAS no se envía: queda en la cola sin salir', async () => {
+    localStorage.removeItem('larv4_syncqueue');
+    q('.mm-lote').value = 'BP';
+    q('.mm-desove-e').value = '10';
+    q('.mm-desove-m').value = '1';
+    respuestaVer = 'red';
+    await H.madMortGuardar();
+    expect(envios).toHaveLength(0);
+    expect(JSON.parse(localStorage.getItem('larv4_syncqueue') || '[]').map((it) => it.payload.sheetName)).toEqual(['Maduración Mortalidad Desove']);
+    expect(avisos.filter((a) => a.tipo === 'err')).toEqual([]);
+    localStorage.removeItem('larv4_syncqueue');
   });
 });

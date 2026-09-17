@@ -321,10 +321,12 @@ Dos consecuencias que conviene tener presentes al desplegar:
   (Ingreso, Desoves, Fin de Ciclo, Tratamientos, Inf. Supervisor y Alimentación): se escriben por
   posición y un GAS que no es el suyo podría escribirlas corridas. La app lo pregunta antes con
   `?p=ver` y **compara el sello** (desde el 2026-09-16; antes le bastaba con que contestara, que es
-  justo lo que dejaba pasar a un cliente viejo). Si esa pregunta no contesta en 6 s, envía como
-  siempre y la cola vuelve a preguntar antes de entregar. Y un envío que espera en la cola más de
-  24 h **se descarta**, así que conviene no dejar pasar días entre publicar el cliente y
-  re-desplegar el GAS.
+  justo lo que dejaba pasar a un cliente viejo). 🔒 **Si esa pregunta no contesta** (6 s, o la
+  página 404 de Google) **tampoco se escribe** (PV3, 2026-09-16; antes se enviaba igual): el envío
+  entra en la cola sin salir y la cola sólo lo entrega cuando `?p=ver` confirma el sello, preguntando
+  una vez por vaciado. Alimentación compara el sello como las otras cinco: ya no le basta con que el
+  GAS anuncie `mad-alimentacion`. Y un envío que espera en la cola más de 24 h **se descarta**, así
+  que conviene no dejar pasar días entre publicar el cliente y re-desplegar el GAS.
 - ⚠ **Y tampoco envía el alta de un microchip reciclado.** Un GAS anterior la fundiría sobre la
   fila de la hembra muerta (su llave era sólo el Trovan), así que la app pregunta a `?p=ver` si
   el GAS anuncia `"matriz-reciclaje"` en `caps`, y si no lo confirma —o no contesta— envía el
@@ -400,8 +402,9 @@ Dos consecuencias que conviene tener presentes al desplegar:
   🔴 **Esta hoja es la única que ganó columnas EN MEDIO** (Fototropismo y Aireación en la 11-12, Área y
   Alcalinidad en la 15-16), y de ahí sale el orden `push → GAS` de más abajo.
 - 🍤 **Alimentación (2026-09-15), hoja nueva `Maduración Alimentación` (21 columnas, `ID` = fecha-S*n*-T*tanque*,
-  MERGE).** Ver la sección de Maduración. **Necesita el GAS nuevo Y su capacidad `mad-alimentacion`**: sin ella
-  calcula, imprime y guarda la agenda en el dispositivo, pero no envía ni lee la agenda compartida — y lo avisa.
+  MERGE).** Ver la sección de Maduración. **Necesita EL GAS DE ESTA APP** (el sello, como las otras cinco; hasta el
+  2026-09-16 bastaba la capacidad `mad-alimentacion`): sin él calcula, imprime y guarda la agenda en el dispositivo,
+  pero no envía ni lee la agenda compartida — y lo avisa.
 - 🧪 **Tratamientos (2026-09-15), hoja nueva `Maduración Tratamientos`.** Preventivos por lote
   (productos + RAS) y desinfección por área, una fila por tarjeta, por `ID` con MERGE. El estado de la
   sala elegido en la ficha pre-marca sus productos. **Necesita el GAS nuevo**: contra el publicado hoy

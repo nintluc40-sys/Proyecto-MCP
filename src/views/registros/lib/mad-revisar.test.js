@@ -183,7 +183,7 @@ describe.each(FICHAS)('«🔍 Revisar» · $nombre', (F) => {
       expect(envios).toHaveLength(0);
     });
 
-    it('sin respuesta del GAS (sin señal) no se inventa el aviso: Guardar seguirá el camino de siempre', async () => {
+    it('sin respuesta del GAS (sin señal) no se inventa el aviso: Guardar lo dejará en la cola hasta confirmar el GAS', async () => {
       F.llenar();
       respuestaVer = 'red';
       await H[F.revisar]();
@@ -268,6 +268,19 @@ describe('Fin de Ciclo · la sala del Parcial y los pesos del registro, en el en
     await H.madFinGuardar();
     expect(envios).toHaveLength(0);
     expect(document.getElementById('mf-report').textContent).toContain('«Maduración Fin de Ciclo»');
+  });
+
+  /* PV3 (2026-09-16) · sin respuesta de ?p=ver no se sabe a qué GAS se escribiría: a la cola, sin salir. */
+  it('🔴 PV3 · sin respuesta del GAS Guardar NO envía el cierre: queda en la cola sin salir', async () => {
+    localStorage.removeItem('larv4_syncqueue');
+    const c = cols()[0];
+    pon(c.querySelector('.mf-tipo'), 'Parcial');
+    pon(c.querySelector('.mf-lote'), 'BP'); pon(c.querySelector('.mf-motivo'), 'Pedido'); pon(c.querySelector('.mf-machos'), '5');
+    respuestaVer = 'red';
+    await H.madFinGuardar();
+    expect(envios).toHaveLength(0);
+    expect(JSON.parse(localStorage.getItem('larv4_syncqueue') || '[]').map((it) => it.payload.sheetName)).toEqual(['Maduración Fin de Ciclo']);
+    localStorage.removeItem('larv4_syncqueue');
   });
 });
 

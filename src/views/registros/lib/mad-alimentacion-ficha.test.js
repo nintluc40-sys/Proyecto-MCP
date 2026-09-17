@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 /* MADURACIÓN · la ficha 🍤 Alimentación en el monolito arrancado entero (2026-09-15): lee el saldo y los pesos, calcula
    en pantalla, respeta la agenda guardada en la hoja salvo cambios sin guardar, guarda por tanque y no envía a un GAS
-   que no conoce la hoja. */
+   que no es el de esta app (PV3, 2026-09-16: antes bastaba con que anunciara «mad-alimentacion»). */
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -59,6 +59,7 @@ beforeAll(async () => {
   globalThis.fetch = async (url) => {
     const u = decodeURIComponent(String(url));
     if (u.indexOf('p=ver') !== -1) {
+      if (respuestaVer === 'red') throw new Error('sin red');
       const cuerpo = typeof respuestaVer === 'string' ? respuestaVer : JSON.stringify(respuestaVer);
       return { ok: true, status: 200, text: async () => cuerpo };
     }
@@ -195,15 +196,38 @@ describe('Alimentación · la ficha', () => {
     expect(q('#ma-log').textContent).toContain('Registrado desde este dispositivo');
   });
 
-  it('🔴 un GAS que no anuncia «mad-alimentacion» (o el viejo) no recibe nada y lo calculado se queda', async () => {
+  it('🔴 un GAS que no es el de esta app (o el viejo) no recibe nada, se dice por qué y lo calculado se queda', async () => {
     await H.madAlimLeer();
     for (const r of [{ ok: true, version: 'x', caps: ['matriz-reciclaje'] }, 'FichasLarv-OK']) {
       respuestaVer = r;
       await H.madAlimGuardar();
       expect(envios).toHaveLength(0);
-      expect(q('#ma-report').textContent).toContain('no conoce la hoja «Maduración Alimentación»');
+      expect(q('#ma-report').textContent).toContain('no es el de esta app');
+      expect(q('#ma-report').textContent).toContain('«Maduración Alimentación»');
     }
     expect(sala('Sala 1').querySelector('.ma-tq')).not.toBeNull();
+  });
+
+  /* 🔴 PV3 (2026-09-16) · EL HUECO QUE TENÍA ESTA FICHA. Era la única de las seis que al guardar no comparaba el
+     SELLO: le bastaba con que el GAS anunciara «mad-alimentacion», así que uno de OTRA versión que ya conociera la
+     hoja recibía el envío. El fixture lo distingue a propósito: la capacidad está, el sello no. */
+  it('🔴 PV3 · un GAS de OTRA versión que SÍ anuncia «mad-alimentacion» tampoco recibe nada', async () => {
+    await H.madAlimLeer();
+    respuestaVer = { ok: true, version: 'abc123def456', caps: ['matriz-cuaterna', 'mad-alimentacion'] };
+    await H.madAlimGuardar();
+    expect(envios).toHaveLength(0);
+    expect(q('#ma-report').textContent).toContain('no es el de esta app');
+  });
+
+  it('🔴 PV3 · sin respuesta del GAS no se envía: queda en la cola sin salir', async () => {
+    localStorage.removeItem('larv4_syncqueue');
+    await H.madAlimLeer();
+    respuestaVer = 'red';
+    await H.madAlimGuardar();
+    expect(envios).toHaveLength(0);
+    expect(JSON.parse(localStorage.getItem('larv4_syncqueue') || '[]').map((it) => it.payload.sheetName)).toEqual(['Maduración Alimentación']);
+    expect(avisos.filter((a) => a.tipo === 'err')).toEqual([]);
+    localStorage.removeItem('larv4_syncqueue');
   });
 
   it('sin leer no hay nada que guardar ni imprimir; el PDF de una sala lleva su ración por tanque y toma', async () => {

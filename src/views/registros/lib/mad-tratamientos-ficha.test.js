@@ -47,6 +47,7 @@ beforeAll(async () => {
   H.setGasUrl(() => 'https://script.google.com/macros/s/AKfycbPRUEBA/exec');
   globalThis.fetch = async (url) => {
     if (String(url).indexOf('p=ver') === -1) throw new Error('fetch inesperado: ' + url);
+    if (respuestaVer === 'red') throw new Error('sin red');
     const cuerpo = typeof respuestaVer === 'string' ? respuestaVer : JSON.stringify(respuestaVer);
     return { ok: true, status: 200, text: async () => cuerpo };
   };
@@ -130,6 +131,18 @@ describe('Tratamientos · guardar', () => {
     expect(envios).toHaveLength(0);
     expect((avisos.find((a) => a.tipo === 'err') || {}).msg).toMatch(/Maduración Tratamientos/);
     expect(q('#mt-prevs .mt-lotes').value).toBe('bp, BC');
+  });
+
+  /* PV3 (2026-09-16) · sin respuesta de ?p=ver no se sabe a qué GAS se escribiría: a la cola, sin salir. */
+  it('🔴 PV3 · sin respuesta del GAS no se envía: queda en la cola sin salir', async () => {
+    localStorage.removeItem('larv4_syncqueue');
+    llenar();
+    respuestaVer = 'red';
+    await H.madTratGuardar();
+    expect(envios).toHaveLength(0);
+    expect(JSON.parse(localStorage.getItem('larv4_syncqueue') || '[]').map((it) => it.payload.sheetName)).toEqual([H.MAD_TRAT_SHEET]);
+    expect(avisos.filter((a) => a.tipo === 'err')).toEqual([]);
+    localStorage.removeItem('larv4_syncqueue');
   });
 
   it('una tarjeta a medias no se envía', async () => {

@@ -18,9 +18,10 @@
        Por eso, SÓLO para esta hoja, el cliente pregunta al GAS por `?p=ver` antes de enviar:
          · responde con su sello (JSON)        → es el GAS nuevo, con guarda: se envía;
          · responde el texto «FichasLarv-OK»   → es el GAS viejo: NO se envía y lo tecleado se queda;
-         · no responde (sin señal)            → no se sabe: sigue el camino de siempre (cola).
+         · no responde (sin señal)            → no se sabe: NO se envía, va a la cola sin salir (PV3).
        Y la COLA hace la misma pregunta antes de entregar un ingreso guardado sin señal: si el
-       GAS sigue siendo el viejo, el envío espera en la cola en vez de escribir desalineado.
+       GAS sigue siendo el viejo —o sigue sin responder—, el envío espera en la cola en vez de
+       escribir desalineado.
    ============================================================ */
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -38,6 +39,7 @@ const H = {};
 const avisos = [];
 const envios = [];
 let respuestaVer = null;       // lo que contesta ?p=ver: string (texto), objeto (JSON) o 'red' (falla)
+let preguntasVer = 0;          // cuántas veces se preguntó a ?p=ver
 
 beforeAll(async () => {
   if (typeof globalThis.localStorage === 'undefined') {
@@ -78,6 +80,7 @@ beforeAll(async () => {
   H.setGasUrl(() => 'https://script.google.com/macros/s/AKfycbPRUEBA/exec');
   globalThis.fetch = async (url) => {
     if (String(url).indexOf('p=ver') === -1) throw new Error('fetch inesperado: ' + url);
+    preguntasVer++;
     if (respuestaVer === 'red') throw new Error('sin red');
     const cuerpo = typeof respuestaVer === 'string' ? respuestaVer : JSON.stringify(respuestaVer);
     return { ok: true, status: 200, text: async () => cuerpo };
@@ -87,6 +90,8 @@ beforeAll(async () => {
 beforeEach(() => {
   avisos.length = 0;
   envios.length = 0;
+  preguntasVer = 0;
+  localStorage.removeItem('larv4_syncqueue');
   respuestaVer = { ok: true, version: H._gasVersionLocal() };   // el GAS desplegado ES el de esta app
   H.madIngReiniciar();
 });
@@ -192,11 +197,29 @@ describe('Ingreso · no se escribe contra el GAS viejo (hoja por posición)', ()
     expect(document.getElementById('mi-lote').value).toBe('BP');
   });
 
-  it('sin respuesta del GAS (sin señal) sigue el camino de siempre: se intenta y, si hace falta, se encola', async () => {
+  /* 🔴 PV3 (2026-09-16) · ESTA PRUEBA FIJABA LA PUERTA TRASERA. Se llamaba «sin respuesta del GAS sigue el
+     camino de siempre» y exigía que el ingreso SALIERA: con ?p=ver mudo (6 s, o la página 404 de Google) se
+     escribía en una hoja por posición sin saber a qué GAS. Ahora va a la cola sin salir, y la cola sólo lo
+     entrega cuando el sello se confirma. El camino sin señal no se rompe: lo tecleado queda a salvo. */
+  it('🔴 PV3 · sin respuesta del GAS NO se envía: queda en la cola, y la cola lo entrega sólo con el sello confirmado', async () => {
     llenarIngreso();
     respuestaVer = 'red';
     await H.madIngGuardar();
+    expect(envios, 'sin sello confirmado no puede salir nada').toHaveLength(0);
+    const cola = () => JSON.parse(localStorage.getItem('larv4_syncqueue') || '[]');
+    expect(cola().map((it) => it.payload.sheetName), 'lo tecleado tiene que quedar a salvo EN LA COLA').toEqual([H.MAD_ING_SHEET]);
+    expect(avisos.some((a) => /no se pudo confirmar/i.test(a.msg)), 'el aviso tiene que decir por qué').toBe(true);
+    expect(avisos.filter((a) => a.tipo === 'err'), 'no es un GAS viejo ni un error: no se acusa a nadie').toEqual([]);
+
+    await H.flushSyncQueue();                                         // sigue sin responder: la cola tampoco lo entrega…
+    expect(envios).toHaveLength(0);
+    expect(cola()).toHaveLength(1);
+
+    respuestaVer = { ok: true, version: H._gasVersionLocal() };       // …y en cuanto confirma que es EL DE ESTA APP, sí
+    await H.flushSyncQueue();
     expect(envios).toHaveLength(1);
+    expect(envios[0].sheetName).toBe(H.MAD_ING_SHEET);
+    expect(cola()).toHaveLength(0);
   });
 });
 
@@ -227,5 +250,26 @@ describe('Ingreso · la cola tampoco entrega un ingreso al GAS viejo', () => {
     respuestaVer = 'FichasLarv-OK';
     await H.flushSyncQueue();
     expect(envios).toHaveLength(1);
+  });
+
+  /* PV3 (2026-09-16) · antes la cola sólo frenaba ante el GAS viejo (false); con el GAS mudo (null) entregaba. */
+  it('🔴 PV3 · con el GAS SIN RESPONDER el ingreso también ESPERA en la cola, y el aviso dice por qué', async () => {
+    encolar(H.MAD_ING_SHEET);
+    respuestaVer = 'red';
+    await H.flushSyncQueue();
+    expect(envios).toHaveLength(0);
+    expect(cola()).toHaveLength(1);
+    expect(avisos.some((a) => /no se pudo confirmar/i.test(a.msg))).toBe(true);
+  });
+
+  /* PV3 · con null ahora se ESPERA, así que cada envío de estas hojas costaría otra pregunta de hasta 6 s:
+     la cola pregunta una vez por URL en cada vaciado. Tres envíos, una pregunta. */
+  it('PV3 · la cola pregunta a ?p=ver UNA vez por vaciado aunque lleve varios envíos de estas hojas', async () => {
+    const url = 'https://script.google.com/macros/s/AKfycbPRUEBA/exec';
+    localStorage.setItem('larv4_syncqueue', JSON.stringify(['Maduración Ingreso', 'Maduración Lotes', 'Maduración Fin de Ciclo']
+      .map((sheetName, i) => ({ ts: Date.now(), url, payload: { sheetName, headers: ['A'], rows: [['x' + i]] } }))));
+    await H.flushSyncQueue();
+    expect(envios).toHaveLength(3);
+    expect(preguntasVer).toBe(1);
   });
 });
