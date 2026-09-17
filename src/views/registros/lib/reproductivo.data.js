@@ -105,13 +105,25 @@ function filasPorChip(records) {
   });
   return grupos;
 }
-/** Registro de la hembra VIGENTE de un chip, más dos datos del chip entero: cuántas hembras ha
- *  llevado (`individuos`) y su última fecha de ingreso o de muerte (`fechaLimite`), que es la que
- *  tiene que superar el alta de una hembra nueva con ese chip ('' si la lectura no trae fechas). */
+/** Registro de la hembra VIGENTE de un chip, más tres datos del chip entero: cuántas hembras ha
+ *  llevado (`individuos`), cuántas están VIVAS ahora mismo (`vivos`) y su última fecha de ingreso o
+ *  de muerte (`fechaLimite`, '' si la lectura no trae fechas).
+ *
+ *  🔑 `vivos` es de D17 (2026-09-17). Un evento de la Bitácora sólo trae el Trovan, así que si un chip
+ *  llevara DOS hembras vivas a la vez —posible desde que la identidad es la cuaterna— habría que elegir
+ *  una, y esa elección es una convención, no un hecho. Peor: la lectura NO pide las columnas de fecha
+ *  (cuestan 10×, ver `_REPRO_MATRIZ_COLS`), así que el desempate «la de ingreso más reciente» de
+ *  `vigenteDelChip` no tiene con qué desempatar y cae en «la de más abajo en la hoja». Una mortalidad
+ *  mal atribuida marcaría «Muerto» en la fila equivocada. Por eso `buildEventBatch` NO elige: rechaza
+ *  y lo dice. Medido el 2026-09-17 en producción: 1665 filas, 1665 chips, ninguno con más de una. */
 function registroVigente(filas) {
   let limite = '';
   filas.forEach((f) => { if (f.ingreso > limite) limite = f.ingreso; if (f.muerte > limite) limite = f.muerte; });
-  return Object.assign({}, vigenteDelChip(filas).rec, { individuos: filas.length, fechaLimite: limite });
+  return Object.assign({}, vigenteDelChip(filas).rec, {
+    individuos: filas.length,
+    vivos: filas.filter((f) => !f.muerto).length,
+    fechaLimite: limite,
+  });
 }
 /** Índice Trovan → registro de la hembra VIGENTE de cada chip (ver `registroVigente`). Hasta el
  *  2026-09-14 ganaba la 1.ª aparición: con un chip reciclado ésa es la hembra MUERTA, y los desoves
@@ -221,13 +233,14 @@ export function buildAltaBatch(forms, matrixIndex, opts) {
  *  Tanque de la Bitácora SALEN de la MATRIZ. Sin ella no se puede completar la fila, de
  *  modo que se rechaza el lote entero en vez de escribir eventos con ubicación en blanco.
  *  Se omite y reporta cada código que: tenga formato corrupto (`invalidFormat`), no exista
- *  en la MATRIZ (`notFound`), exista pero sin Sala o Tanque (`sinUbicacion`), o sea un
- *  desove de una hembra ya muerta (`alreadyDead`).
+ *  en la MATRIZ (`notFound`), exista pero sin Sala o Tanque (`sinUbicacion`), lleve DOS hembras
+ *  vivas a la vez y no se sepa de cuál es el evento (`variasVivas`, D17), o sea un desove de una
+ *  hembra ya muerta (`alreadyDead`).
  *  ♻ Y de un chip reciclado, el evento anterior al ingreso de la hembra que lo lleva hoy
  *  (`antesDelIngreso`): es de una hembra anterior, y aquí se le pondría la ubicación de la nueva o,
  *  en mortalidad, se mataría a la nueva. */
 export function buildEventBatch({ ids, fecha, tipo, matrixIndex } = {}) {
-  const report = { total: 0, processed: [], notFound: [], alreadyDead: [], invalidFormat: [], sinUbicacion: [], antesDelIngreso: [] };
+  const report = { total: 0, processed: [], notFound: [], alreadyDead: [], invalidFormat: [], sinUbicacion: [], antesDelIngreso: [], variasVivas: [] };
   const okTipo = (tipo === REPRO_EVENTO.DESOVE || tipo === REPRO_EVENTO.MORTALIDAD);
   if (!fecha) return { report, bitacora: null, matriz: null, error: 'Falta la fecha.' };
   if (!okTipo) return { report, bitacora: null, matriz: null, error: 'Tipo de evento inválido.' };
@@ -243,6 +256,11 @@ export function buildEventBatch({ ids, fecha, tipo, matrixIndex } = {}) {
     const rec = matrixIndex.get(id);
     if (!rec) { report.notFound.push(id); return; }
     if (antesDeSuIngreso(rec, dia)) { report.antesDelIngreso.push(id); return; } // de una hembra anterior del chip
+    /* 🔴 D17 (2026-09-17) · DOS HEMBRAS VIVAS EN EL MISMO CHIP: NO SE ELIGE, SE RECHAZA. Un evento sólo trae el
+       Trovan y la Bitácora no guarda más, así que apuntarlo a una de las dos sería una convención —y sin las
+       columnas de fecha, que no se leen, ni siquiera una razonable: sería «la de más abajo en la hoja»—. Una
+       mortalidad así marcaría «Muerto» a la hembra equivocada, que es un daño que nadie ve. Ver `registroVigente`. */
+    if (rec.vivos > 1) { report.variasVivas.push(id); return; }
     // La Bitácora exige Sala y Tanque, y su única fuente es la MATRIZ: si el individuo no
     // los tiene allí, registrar el evento dejaría la fila incompleta → se rechaza.
     const sala = sanitizeStr(rec.sala), tanque = sanitizeStr(rec.tanque);

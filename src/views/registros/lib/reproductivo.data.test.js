@@ -381,6 +381,42 @@ describe('♻ reciclaje · alta de una hembra nueva con el chip de una muerta', 
       expect(buildAltaBatch(f, idx).report.created, JSON.stringify(dif)).toEqual([CHIP]);
     }
   });
+  /* 🔴 D17 (2026-09-17, decisión del usuario) · Un chip con DOS hembras vivas a la vez es posible desde que la
+     identidad es la cuaterna, pero el usuario lo cerró: «difícil que haya hembras vivas con el mismo patrón, por
+     lo que dicho caso no pasaría». Medido ese día en producción: 1665 filas, 1665 chips, ninguno con más de una.
+     🔑 Y como no pasa, RECHAZARLO no cuesta nada y cierra la puerta a lo único que podía salir mal: el evento
+     sólo trae el Trovan, así que elegir una sería una convención —y sin las columnas de fecha, que NO se leen,
+     sería «la de más abajo en la hoja»—, y una mortalidad así marcaría «Muerto» a la hembra equivocada. */
+  describe('🔴 D17 · dos hembras VIVAS en el mismo chip', () => {
+    const VIVA_A = Object.assign({}, NUEVA, { 'Piscina': 'P9', 'Código genético': 'G07', 'Lote': 'L20' });
+    const VIVA_B = Object.assign({}, NUEVA, { 'Número': '32', 'Piscina': 'P3', 'Código genético': 'G11', 'Lote': 'L44', 'Sala actual': 'S8', 'Tanque actual': 'T2' });
+
+    for (const tipo of [REPRO_EVENTO.MORTALIDAD, REPRO_EVENTO.DESOVE]) {
+      it('no se elige una: ' + tipo + ' se rechaza y se dice', () => {
+        const r = buildEventBatch({ ids: [CHIP], fecha: '2026-09-12', tipo, matrixIndex: matrixIndexFromRows([VIVA_A, VIVA_B]) });
+        expect(r.report.variasVivas).toEqual([CHIP]);
+        expect(r.report.processed, 'se registró igual, eligiendo una').toEqual([]);
+        expect(r.bitacora, 'se escribió en la Bitácora sin saber de quién era').toBeNull();
+        expect(r.matriz).toBeNull();
+      });
+    }
+
+    it('el fixture ejerce algo: con UNA viva y otra MUERTA en el mismo chip, el evento sí entra', () => {
+      const r = buildEventBatch({ ids: [CHIP], fecha: '2026-09-12', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: matrixIndexFromRows([VIEJA, VIVA_A]) });
+      expect(r.report.variasVivas).toEqual([]);
+      expect(r.report.processed).toEqual([CHIP]);
+      expect(r.matriz.rows[0][col(REPRO_MATRIZ_HEADERS, 'Lote')], 'fue a la fila de la que estaba viva').toBe('L20');
+    });
+
+    it('y la cuenta de vivas es de VIVAS, no de filas: tres filas con una sola viva no lo disparan', () => {
+      const MUERTA_2 = Object.assign({}, VIVA_B, { 'Estado': 'Muerto' });
+      const idxTres = matrixIndexFromRows([VIEJA, MUERTA_2, VIVA_A]);
+      expect(idxTres.get(CHIP).individuos, 'el chip tiene tres filas').toBe(3);
+      expect(idxTres.get(CHIP).vivos).toBe(1);
+      expect(buildEventBatch({ ids: [CHIP], fecha: '2026-09-12', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: idxTres }).report.processed).toEqual([CHIP]);
+    });
+  });
+
   /* 🔴 LO DESTAPÓ EL BANCO: la mutación «la mortalidad no manda la identidad» SOBREVIVÍA aquí. Que
      el GAS lo probara no basta —esto es el constructor, y es donde se decide qué viaja—. Si estas
      tres columnas salieran en blanco, la fila no casaría con la de la hembra y el upsert AÑADIRÍA

@@ -11702,6 +11702,8 @@ function _madReproShowReport(rep, duplicates, tipo, okSent){
   if(rep.sinUbicacion && rep.sinUbicacion.length) h += chip(rep.sinUbicacion.length+" sin Sala/Tanque en la MATRIZ", "#fee2e2", "#991b1b");
   if(rep.alreadyDead && rep.alreadyDead.length) h += chip(rep.alreadyDead.length+" ya muerta(s)", "#fef9c3", "#854d0e");
   if(rep.antesDelIngreso && rep.antesDelIngreso.length) h += chip(rep.antesDelIngreso.length+" anterior(es) a su ingreso", "#fee2e2", "#991b1b");
+  // D17 (2026-09-17): un chip con DOS hembras vivas. No se elige una: se rechaza y se dice. Ver el módulo.
+  if(rep.variasVivas && rep.variasVivas.length) h += chip(rep.variasVivas.length+" con DOS hembras vivas", "#fee2e2", "#991b1b");
   h += '</div>';
   const lists=[];
   if(duplicates && duplicates.length) lists.push(["Duplicados", duplicates]);
@@ -11710,6 +11712,7 @@ function _madReproShowReport(rep, duplicates, tipo, okSent){
   if(rep.sinUbicacion && rep.sinUbicacion.length) lists.push(["Sin Sala/Tanque en Maduración MATRIZ (no registrados — completa su ubicación)", rep.sinUbicacion]);
   if(rep.alreadyDead && rep.alreadyDead.length) lists.push(["Ya registradas como muertas", rep.alreadyDead]);
   if(rep.antesDelIngreso && rep.antesDelIngreso.length) lists.push(["Anteriores al ingreso de la hembra que lleva hoy ese microchip reciclado (son de una hembra anterior: no registrados)", rep.antesDelIngreso]);
+  if(rep.variasVivas && rep.variasVivas.length) lists.push(["Ese microchip lo llevan DOS hembras vivas a la vez y el evento no dice de cuál es (no registrados — cierra la que ya no esté en la MATRIZ, o corrige su piscina, código genético o lote)", rep.variasVivas]);
   lists.forEach(function(pair){ h += '<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
   el.innerHTML = h;
 }
