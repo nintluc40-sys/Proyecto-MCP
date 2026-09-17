@@ -334,6 +334,19 @@ Dos consecuencias que conviene tener presentes al desplegar:
   Ahora cada envío viaja con su marca (`madlog:<ficha>` y su id), la cola la reconcilia al entregarlo y
   el registro enseña **📶 en cola**, **✅ enviado** o **⚠ no llegó** (salió de la cola sin entregarse).
   Las entradas anteriores, sin marca, conservan la regla de antes. Lo prueba `mad-log-envios.test.js`.
+- 💾 **Guardar local, separado de ☁️ Guardar y sincronizar, en las siete fichas de formulario (PE1.4,
+  2026-09-16).** Pedido del usuario, «como en Salas y Tanques: los usuarios se sienten más seguros».
+  **💾** guarda el envío ya construido en este dispositivo, sin tocar la red, y deja la ficha limpia
+  (Alimentación conserva su cálculo, como al enviar): se ve en «💾 Guardado en este dispositivo, sin
+  enviar», con 🗑 para descartarlo. **☁️** envía primero lo guardado —lo más viejo antes, cada uno con
+  su marca— y después lo de pantalla por el camino de siempre; si lo guardado falla de verdad se para, y
+  lo de pantalla no sale y sigue ahí para corregirlo. Con la ficha vacía, ☁️ envía lo guardado. El punto
+  de la pestaña, el contador de pendientes, la tarjeta del módulo y «Sincronizar todo» lo cuentan (este
+  último, con el portón del sello y por su clasificador). Vive en `larv4_mad_loc_<ficha>`: **no caduca
+  ni se expulsa** (con 30 sin enviar, 💾 se niega y lo dice), y se guarda el PAYLOAD, no lo tecleado,
+  para que reenviarlo no dé otras filas. ⚠ De paso: el **borrador por fecha** de lo guardado, enviado o
+  vaciado ahora se olvida; `madBorrOlvidar` existía y no la llamaba nadie, y volver a ese día resucitaba
+  lo ya enviado. Lo prueba `mad-guardado-local.test.js`.
 - ⚠ **Y tampoco envía el alta de un microchip reciclado.** Un GAS anterior la fundiría sobre la
   fila de la hembra muerta (su llave era sólo el Trovan), así que la app pregunta a `?p=ver` si
   el GAS anuncia `"matriz-reciclaje"` en `caps`, y si no lo confirma —o no contesta— envía el

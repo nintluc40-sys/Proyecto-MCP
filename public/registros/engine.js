@@ -92,6 +92,13 @@ const MAD_PRE       = "larv4_mad_";
    VIEJO encima de la hoja nueva, corrompiéndola sin un solo error. Al salir de MAD_FICHAS
    y de MAD_TABS, su camino queda cortado. */
 const MAD_FICHAS    = ["salas","tanques"];
+/* PE1.4 (2026-09-16) · las siete fichas de FORMULARIO con 💾 Guardar local. NO entran en MAD_FICHAS, que es la lista
+   de las GRILLAS por día (su render, su commit al cambiar de pestaña): lo suyo vive en larv4_mad_loc_<ficha> (ver
+   _madLocEnviar). Van aquí arriba porque updateDots y updateSyncUI las leen, y un const declarado más abajo aún no
+   existiría si se llamaran antes. */
+const MAD_LOC_FICHAS = ["ingreso","movimientos","desoves","mortdes","fin","tratamientos","alimentacion"];
+const MAD_LOC_PRE    = "larv4_mad_loc_";
+const MAD_LOC_MAX    = 30;
 // ⚠ Sala 4A y 4B se RETIRARON el 2026-09-08 (quedaron disueltas). Se midió antes:
 // 4A se usó hasta el 2026-09-01 y 4B hasta el 2026-08-29, y sus 57 filas siguen en
 // «Maduración Sala». Quitarlas de aquí las saca del SELECTOR, no del pasado: la
@@ -2178,6 +2185,17 @@ async function syncAll(){
         } else { const _b=_syncAllBucket(opts, MAD_SHEET[f]); if(_b==="queued") queued++; else if(_b==="fail") fail++; }
       }
     }
+    /* PE1.4 · y lo guardado con 💾 en las siete fichas de formulario, cada una por su camino (con el portón del sello en
+       las que lo piden). Sin esto, «sincronizar» diría «Todo sincronizado» con envíos guardados sin enviar. */
+    for(const f of MAD_LOC_FICHAS){
+      if(!madLocLeer(f).length) continue;
+      total++;
+      const r = await _madLocEnviar(f, undefined, { callado:true });
+      if(r.enVuelo){ total--; continue; }
+      if(r.outcome === "ok"){ ok++; continue; }
+      // Por el clasificador, como las demás ramas (H1): un encolado no se cuenta como fallo.
+      const _b=_syncAllBucket(r, _madLocCfg(f).hoja); if(_b==="queued") queued++; else if(_b==="fail") fail++;
+    }
   } else if(isLabMod(curMod)){
     // ── Lab. Algas: hoja única Lab_Algas ──
     // Solo se sincroniza lo que está en el historial. El formulario actual
@@ -2372,7 +2390,7 @@ function buildGrid(){
     <span class="mc-dot"></span>
   </div>`;
   // Maduración tile
-  const madPend = MAD_FICHAS.some(f => loadMad(f).some(r => !r.synced));
+  const madPend = MAD_FICHAS.some(f => loadMad(f).some(r => !r.synced)) || madLocTotal() > 0;   // PE1.4
   const madSync = MAD_FICHAS.some(f => loadMad(f).some(r => r.synced));
   const madCls  = madPend?"pend":madSync?"sync":"";
   h += `<div class="mc mc-mad ${madCls}" id="mc12" onclick="pickMod(12)">
@@ -2672,7 +2690,8 @@ function updateDots(){
     el.className = "fdot " + (s==="synced"?"ok":s==="pending"?"pend":"mt");
     return;
   }
-  const tabs = isLabMod(curMod) ? ["algas"] : isMadMod(curMod) ? MAD_FICHAS : STD_FICHAS_ALL;
+  // PE1.4 · en Maduración también las siete fichas de formulario: su punto se enciende con lo guardado con 💾 sin enviar.
+  const tabs = isLabMod(curMod) ? ["algas"] : isMadMod(curMod) ? MAD_FICHAS.concat(MAD_LOC_FICHAS) : STD_FICHAS_ALL;
   tabs.forEach(f=>{
     const el = document.getElementById("dot-"+f);
     if(!el) return;
@@ -2681,6 +2700,8 @@ function updateDots(){
       const records = loadMad(f);
       s = records.some(r => !r.synced) ? "pending"
         : (records.length > 0 ? "synced" : "empty");
+    } else if(isMadMod(curMod)){
+      s = madLocLeer(f).length ? "pending" : "empty";
     } else {
       s = getStatus(curMod, f);
     }
@@ -2709,6 +2730,7 @@ function updateSyncUI(){
   if(isMadMod(curMod)){
     let p = 0;
     MAD_FICHAS.forEach(f => { p += loadMad(f).filter(r => !r.synced).length; });
+    p += madLocTotal();   // PE1.4 · lo guardado con 💾 en las fichas de formulario también está pendiente
     if(!p) setSyncUI("idle","Todo sincronizado");
     else   setSyncUI("pend", p + " registro(s) pendiente(s)");
     return;
@@ -7741,7 +7763,8 @@ async function _madPostConSello(payload, gas, opts){
   if(gas === true) return postPayload(payload, gasUrl(), opts);
   _enqueueSync(payload, _payloadFingerprint(payload), gasUrl(), opts && opts.mark);
   if(opts) opts.outcome = "queued";
-  toast("📶 En cola, sin enviar: " + MAD_GAS_SIN_CONFIRMAR + ". Se enviará solo en cuanto responda.", "warn", 6500);
+  // PE1.4 · al enviar varios guardados seguidos, el aviso sale una vez (el primero), no uno por envío.
+  if(!(opts && opts.silencioso)) toast("📶 En cola, sin enviar: " + MAD_GAS_SIN_CONFIRMAR + ". Se enviará solo en cuanto responda.", "warn", 6500);
   setTimeout(function(){ try{ flushSyncQueue(); }catch(_){} }, 8000);
   return false;
 }
@@ -7786,14 +7809,178 @@ function _madLogReconciliar(ficha, keys){
   const box=document.getElementById(f[3]); if(box) box.innerHTML=f[2]();
   return true;
 }
-async function madIngGuardar(){
+/* ── PE1.4 (2026-09-16, usuario) · 💾 GUARDAR LOCAL, SEPARADO DE ☁️ GUARDAR Y SINCRONIZAR ───────────────────────────
+   «Guardado local y guardar y sincronizar por separado en Movimientos, Ingreso, Desoves, Inf. Supervisor, Fin de Ciclo,
+   Tratamientos y Alimentación, como en Salas y Tanques: los usuarios se sienten más seguros con eso.»
+   · 💾 guarda el envío en ESTE DISPOSITIVO, sin tocar la red, y deja la ficha limpia (Alimentación conserva su cálculo,
+     como al enviar). Se ve en «💾 Guardado en este dispositivo, sin enviar», con 🗑 para descartarlo.
+   · ☁️ envía PRIMERO lo guardado con 💾 —lo más viejo antes, cada envío con su marca (PE1.2)— y después lo de pantalla,
+     por el camino de siempre. Si algo guardado falla de verdad se para ahí: lo de pantalla no sale y sigue en su sitio
+     para corregirlo. «Sincronizar todo», los puntos de las pestañas y el contador también lo cuentan.
+   🔑 Se guarda el PAYLOAD ya construido, no lo tecleado: es lo que se revisó, y reconstruirlo al enviar podría dar otras
+      filas (otro saldo, otra agenda) u otro id, y un reenvío duplicaría.
+   ⚠ Lo no enviado NO caduca ni se expulsa: vive en su propia clave (no en el registro de la ficha, que tiene tope) y con
+      MAD_LOC_MAX envíos sin enviar 💾 se niega y lo dice. */
+function madLocLeer(ficha){
+  if(MAD_LOC_FICHAS.indexOf(ficha)===-1) return [];
+  try{
+    const v=JSON.parse(localStorage.getItem(MAD_LOC_PRE+ficha)||"[]");
+    return Array.isArray(v) ? v.filter(function(e){ return e && e.id && e.payload && Array.isArray(e.payload.rows); }) : [];
+  }catch(_){ return []; }
+}
+function madLocGuardar(ficha, list){ return _lsSet(MAD_LOC_PRE+ficha, JSON.stringify(list)); }
+function madLocTotal(){ return MAD_LOC_FICHAS.reduce(function(a, f){ return a+madLocLeer(f).length; }, 0); }
+/* Lo propio de cada ficha: si pide el GAS de esta app (sello), cómo se anota en su registro al salir y qué más hace.
+   Se nombra cada una (nada de window[nombre]: el monolito se arranca en las pruebas con new Function). */
+function _madLocCfg(ficha){
+  if(ficha==="ingreso") return { sello:true, hoja:MAD_ING_SHEET, loc:"mi-loc", log:"mi-log", html:madIngLogHTML, error:"No se pudo registrar el ingreso",
+    anota:function(e, st){ madIngLogAnota(e.fecha, e.info.lote, e.filas, st, e.id); }, resumen:function(e){ return "Lote "+(e.info.lote||"—"); } };
+  if(ficha==="movimientos") return { sello:false, hoja:MAD_MOV_SHEET, loc:"mv-loc", log:"mv-log", html:madMovLogHTML, error:"No se pudo registrar el movimiento",
+    anota:function(e, st){ madMovLogAnota(e.fecha, e.info.tipo, e.filas, st, e.id); }, resumen:function(e){ return e.info.tipo||""; } };
+  if(ficha==="desoves") return { sello:true, hoja:MAD_DESOVE_SHEET, loc:"md-loc", log:"md-log", html:madDesLogHTML, error:"No se pudo registrar el desove",
+    anota:function(e, st){ madDesLogAnota({ fecha:e.fecha, desoves:e.info.desoves||[] }, e.filas, st, e.id); },
+    // Como al enviar desde pantalla: entregado o en cola, el desove pasa a «pendientes» (sin N5) de este dispositivo.
+    alEnviar:function(e){ madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), { fecha:e.fecha, desoves:e.info.desoves||[] }, Date.now())); const b=document.getElementById("md-pend"); if(b) b.innerHTML=madDesPendTablaHTML(); },
+    resumen:function(e){ return (e.info.desoves||[]).map(function(x){ return madDesNormLote(x.lote)+" · "+madDesNormCG(x.codigoGenetico); }).join(", "); } };
+  if(ficha==="mortdes") return { sello:true, hoja:MAD_MORT_SHEET, loc:"mm-loc", log:"mm-log", html:madMortLogHTML, error:"No se pudo registrar el Inf. Supervisor",
+    anota:function(e, st){ madMortLogAnota(e.fecha, e.filas, st, e.id); } };
+  if(ficha==="fin") return { sello:true, hoja:MAD_FIN_SHEET, loc:"mf-loc", log:"mf-log", html:madFinLogHTML, error:"No se pudo registrar el cierre",
+    anota:function(e, st){ madFinLogAnota(e.fecha, e.filas, st, e.id); } };
+  if(ficha==="tratamientos") return { sello:true, hoja:MAD_TRAT_SHEET, loc:"mt-loc", log:"mt-log", html:madTratLogHTML, error:"No se pudieron registrar los tratamientos",
+    anota:function(e, st){ madTratLogAnota(e.fecha, e.filas, st, e.id); } };
+  if(ficha==="alimentacion") return { sello:true, hoja:MAD_ALIM_SHEET, loc:"ma-loc", log:"ma-log", html:madAlimLogHTML, error:"No se pudo registrar la alimentación",
+    anota:function(e, st){ madAlimLogAnota(e.fecha, e.filas, st, e.id); }, alEnviar:function(e){ _madAlimAgendaEnviada(e.info.salas||[]); },
+    resumen:function(e){ return (e.info.salas||[]).join(", "); } };
+  return null;
+}
+/* Guarda en este dispositivo un envío ya preparado. false si no (y ya lo dijo): repetido, tope o almacenamiento. */
+function _madLocAnotar(ficha, payload, fecha, info){
+  const list=madLocLeer(ficha), huella=_payloadFingerprint(payload);
+  if(huella && list.some(function(e){ return e.huella===huella; })){
+    toast("💾 Eso ya estaba guardado en este dispositivo, sin enviar.","info",3500);
+    return false;
+  }
+  if(list.length>=MAD_LOC_MAX){
+    toast("💾 Ya hay "+list.length+" envíos de esta ficha guardados sin enviar: envíalos con ☁️ o descarta alguno antes de guardar más.","err",7000);
+    return false;
+  }
+  list.push({ id:_madLogEnvioId(), ts:Date.now(), fecha:sanitizeStr(fecha,10), filas:payload.rows.length, payload:payload, huella:huella, info:info||{} });
+  if(!madLocGuardar(ficha, list)){
+    toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado). Usa ☁️ Guardar y sincronizar para no perderlos.","err",7000);
+    return false;
+  }
+  return true;
+}
+function _madLocGuardado(ficha){
+  _madLocRepinta(ficha);
+  updateDots(); updateSyncUI();
+  toast("💾 Guardado en este dispositivo, sin enviar. Pulsa ☁️ Guardar y sincronizar para enviarlo.","ok",4500);
+}
+/* Envía lo guardado con 💾 de una ficha, lo más viejo primero. Entregado o en cola, sale de aquí y pasa al registro de la
+   ficha con su marca; ante el primer fallo de verdad se para y lo demás sigue guardado. «gas» es la respuesta del portón
+   ya preguntada (si falta, se pregunta aquí una vez). Devuelve { enviados, enCola, fallo, bloqueado, enVuelo } con el
+   «outcome» y el «gasMessage» de postPayload, para que «Sincronizar todo» lo pase por su clasificador (H1); ahí se llama
+   { callado:true } y el aviso final es el suyo. */
+const _madLocEnVuelo = {};
+async function _madLocEnviar(ficha, gas, opciones){
+  const c=_madLocCfg(ficha), r={ enviados:0, enCola:0, fallo:false, bloqueado:false, enVuelo:false, outcome:"ok", gasMessage:"" };
+  const callado=!!(opciones && opciones.callado);
+  if(!c || !madLocLeer(ficha).length) return r;
+  // Dos pulsaciones seguidas (o ☁️ y «Sincronizar todo» a la vez) mandarían lo mismo dos veces.
+  if(_madLocEnVuelo[ficha]){ r.enVuelo=true; toast("Ya se está enviando lo guardado de esta ficha.","info",2500); return r; }
+  _madLocEnVuelo[ficha]=true;
+  let malo=null;
+  try{
+    if(c.sello && gas===undefined) gas=await _madIngGasAlDia();
+    if(c.sello && gas===false){
+      r.bloqueado=true; r.outcome="error";
+      toast("No se envió lo guardado en este dispositivo: "+_madGasViejoMsg(c.hoja)+". Sigue guardado; actualiza el GAS (⚙ Config → Probar conexión) y vuelve a sincronizar.","err",10000);
+      return r;
+    }
+    const pend=madLocLeer(ficha);
+    toast("Enviando "+pend.length+" envío(s) guardado(s) en este dispositivo…","info",2200);
+    for(let i=0; i<pend.length; i++){
+      const e=pend[i], t={ mark:_madLogMarca(ficha, e.id), silencioso:i>0 };
+      const ok=c.sello ? await _madPostConSello(e.payload, gas, t) : await postPayload(e.payload, gasUrl(), t);
+      if(!ok && t.outcome!=="queued"){ r.fallo=true; malo=t; break; }
+      madLocGuardar(ficha, madLocLeer(ficha).filter(function(x){ return x.id!==e.id; }));
+      c.anota(e, ok ? "ok" : "cola");
+      if(c.alEnviar) c.alEnviar(e);
+      if(ok) r.enviados++; else r.enCola++;
+    }
+  }finally{
+    _madLocEnVuelo[ficha]=false;
+  }
+  if(malo){ r.outcome=malo.outcome || "error"; r.gasMessage=malo.gasMessage || ""; }
+  else if(r.enCola) r.outcome="queued";
+  _madLocRepinta(ficha);
+  updateDots(); updateSyncUI();
+  if(callado) return r;
+  if(malo) _syncNotOkUI(malo.outcome, c.error, null, malo.gasMessage);
+  else if(r.enCola){ _syncNotOkUI("queued", c.error, null); toast("📤 "+r.enCola+" envío(s) guardado(s) quedaron en cola: salen solos al reconectar. No los repitas.","info",5000); }
+  else if(r.enviados) toast("✅ "+r.enviados+" envío(s) guardado(s) en este dispositivo, registrado(s)","ok",4000);
+  return r;
+}
+function _madLocHTML(ficha){
+  const c=_madLocCfg(ficha), l=madLocLeer(ficha);
+  if(!c || !l.length) return "";
+  const filas=l.slice().reverse().map(function(e){
+    const d=new Date(e.ts), cuando=("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+    return '<tr class="mad-loc-it"><td style="white-space:nowrap">'+cuando+'</td><td style="white-space:nowrap">'+escapeHtml(e.fecha||"—")+'</td>'
+      + '<td style="text-align:right">'+escapeHtml(String(e.filas))+'</td><td>'+escapeHtml(c.resumen ? c.resumen(e) : "")+'</td>'
+      + '<td><button class="btn mad-loc-del" type="button" style="font-size:11px" data-f="'+escapeHtml(ficha)+'" data-id="'+escapeHtml(e.id)+'" onclick="madLocDescartar(this.dataset.f, this.dataset.id)" title="Borrar de este dispositivo sin enviarlo">🗑</button></td></tr>';
+  }).join("");
+  return '<div style="margin-top:14px;background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:8px;padding:8px 12px">'
+    + '<div style="font-size:12px;font-weight:700;color:#3730a3;margin-bottom:4px">💾 Guardado en este dispositivo, sin enviar ('+l.length+')</div>'
+    + '<div style="font-size:11px;color:#4338ca;margin-bottom:6px">Pulsa <b>☁️ Guardar y sincronizar</b> para enviarlo: sale primero lo más antiguo.</div>'
+    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Guardado</th><th>Fecha</th><th>Filas</th><th></th><th></th></tr></thead><tbody>'+filas+'</tbody></table></div>'
+    + '</div>';
+}
+function _madLocRepinta(ficha){
+  const c=_madLocCfg(ficha); if(!c) return;
+  const b=document.getElementById(c.loc); if(b) b.innerHTML=_madLocHTML(ficha);
+  const g=document.getElementById(c.log); if(g) g.innerHTML=c.html();
+}
+function madLocDescartar(ficha, id){
+  const l=madLocLeer(ficha), e=l.filter(function(x){ return x.id===id; })[0];
+  if(!e){ toast("Ese envío ya no está guardado en este dispositivo.","warn",3000); _madLocRepinta(ficha); return; }
+  if(!confirm("¿Borrar de este dispositivo lo guardado del "+(e.fecha||"—")+" ("+e.filas+" fila(s)) SIN enviarlo?\nNo se podrá recuperar.")) return;
+  madLocGuardar(ficha, l.filter(function(x){ return x.id!==id; }));
+  _madLocRepinta(ficha);
+  updateDots(); updateSyncUI();
+  toast("🗑 Borrado de este dispositivo, sin enviar","ok",2500);
+}
+/* Lo guardado, enviado o vaciado deja de ser borrador: se olvida su día, o volver a ese día lo resucitaría —y se podría
+   guardar dos veces—. Es la razón de madBorrOlvidar, que hasta PE1.4 no llamaba nadie. Se olvida la fecha del envío y
+   la del panel en pantalla, que son la misma salvo una fecha tecleada sin confirmar. */
+function _madBorrOlvidarPantalla(ficha, fecha){
+  [fecha, _madBorrFecha[ficha]].forEach(function(d){ if(isValidDate(d)) madBorrOlvidar(ficha, d); });
+}
+/* PE1.4 · lo que 💾 y ☁️ comparten: recoger, revisar y construir. null si hay errores (ya los pintó y avisó). */
+function _madIngPreparar(conGuardados){
   const model=madIngCollect();
   const res=madIngValidar(model);
   res.avisos=res.avisos.concat(madIngAvisosOcupacion(model));
   const payload=buildMadIngresoPayload(model);
+  // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
+  if(conGuardados && !payload.rows.length) return { model:model, payload:payload };
   _madIngPinta(res, payload.rows.length);
-  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
-  if(!payload.rows.length){ toast("No hay ningún tanque con ubicación que guardar.","warn",4000); return; }
+  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return null; }
+  return { model:model, payload:payload };
+}
+function madIngGuardarLocal(){
+  const _p=_madIngPreparar(); if(!_p) return;
+  if(!_p.payload.rows.length){ toast("No hay ningún tanque con ubicación que guardar.","warn",4000); return; }
+  if(!_madLocAnotar("ingreso", _p.payload, _p.model.fecha, { lote:madIngNormLote(_p.model.lote) })) return;
+  _madBorrOlvidarPantalla("ingreso", _p.model.fecha);
+  madIngReiniciar();
+  _madLocGuardado("ingreso");
+}
+async function madIngGuardar(){
+  const _loc=madLocLeer("ingreso").length;
+  const _p=_madIngPreparar(_loc>0); if(!_p) return;
+  const model=_p.model, payload=_p.payload;
+  if(!payload.rows.length && !_loc){ toast("No hay ningún tanque con ubicación que guardar.","warn",4000); return; }
   const _gas=await _madIngGasAlDia();
   if(_gas === false){
     const aviso = "No se envió: " + MAD_ING_GAS_VIEJO + ". Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo tecleado sigue aquí.";
@@ -7802,6 +7989,9 @@ async function madIngGuardar(){
     toast(aviso, "err", 10000);
     return;
   }
+  // PE1.4 · primero lo guardado con 💾 (lo más viejo antes); si algo falla, lo de pantalla tampoco sale.
+  if(_loc && (await _madLocEnviar("ingreso", _gas)).fallo) return;
+  if(!payload.rows.length) return;
   const lote=madIngNormLote(model.lote);
   toast("Enviando ingreso del lote "+lote+"…","info",2200);
   const _envio=_madLogEnvioId(), _t={ mark:_madLogMarca("ingreso", _envio) };
@@ -7809,6 +7999,7 @@ async function madIngGuardar(){
   if(ok){
     madIngLogAnota(model.fecha, lote, payload.rows.length, "ok", _envio);
     toast("✅ Ingreso registrado · "+payload.rows.length+" fila(s)","ok",5000);
+    _madBorrOlvidarPantalla("ingreso", model.fecha);
     madIngReiniciar();
     return;
   }
@@ -7821,6 +8012,7 @@ async function madIngGuardar(){
     // Encolado = a salvo: se anota y se limpia igual que un envío entregado, y el registro
     // de abajo lo enseña como «en cola» hasta que la cola se vacía.
     madIngLogAnota(model.fecha, lote, payload.rows.length, "cola", _envio);
+    _madBorrOlvidarPantalla("ingreso", model.fecha);
     madIngReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudo registrar el ingreso", null, _t.gasMessage);
@@ -7837,6 +8029,7 @@ function madIngReiniciar(){
 }
 function madIngVaciar(){
   if(!confirm("¿Vaciar el formulario de ingreso?\nSe perderá todo lo tecleado.")) return;
+  _madBorrOlvidarPantalla("ingreso");
   madIngReiniciar();
 }
 /* ── BORRADOR POR FECHA de las fichas de Maduración (usuario, 2026-09-15) ─────────────
@@ -7992,10 +8185,12 @@ function renderMadIngreso(){
     +     '<button class="btn" type="button" onclick="madIngAddComp()">➕ Composición</button>'
     +     '<button class="btn" type="button" onclick="madIngCombinar()">🔗 Combinar marcadas</button>'
     +     '<button class="btn" type="button" onclick="madIngRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" onclick="madIngGuardarLocal()" title="Guarda en este dispositivo, sin enviarlo a Google Sheets">💾 Guardar local</button>'
     +     '<button class="btn" type="button" style="font-weight:700" onclick="madIngGuardar()">☁️ Guardar y sincronizar</button>'
     +     '<button class="btn" type="button" onclick="madIngVaciar()">🧹 Vaciar</button>'
     +   '</div>'
     +   '<div id="mi-report" style="margin-top:12px"></div>'
+    +   '<div id="mi-loc">'+_madLocHTML("ingreso")+'</div>'
     +   '<div id="mi-log">'+madIngLogHTML()+'</div>'
     + '</div></div>';
   madIngRefrescar();
@@ -8284,20 +8479,41 @@ function madMovLogHTML(){
     + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Tipo</th><th>Tramos</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div>'
     + '</div>';
 }
-async function madMovGuardar(){
+/* PE1.4 · lo que 💾 y ☁️ comparten: recoger, revisar y construir. null si hay errores (ya los pintó y avisó). */
+function _madMovPreparar(conGuardados){
   const model=madMovCollect();
   const res=madMovValidar(model);
   res.avisos=res.avisos.concat(madMovAvisosOcupacion(model));
   const payload=buildMadMovPayload(model);
+  // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
+  if(conGuardados && !payload.rows.length) return { model:model, payload:payload };
   _madMovPinta(res, payload.rows.length);
-  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
-  if(!payload.rows.length){ toast("No hay ningún tramo completo que guardar.","warn",4000); return; }
+  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return null; }
+  return { model:model, payload:payload };
+}
+function madMovGuardarLocal(){
+  const _p=_madMovPreparar(); if(!_p) return;
+  if(!_p.payload.rows.length){ toast("No hay ningún tramo completo que guardar.","warn",4000); return; }
+  if(!_madLocAnotar("movimientos", _p.payload, _p.model.fecha, { tipo:_p.model.tipo })) return;
+  _madBorrOlvidarPantalla("movimientos", _p.model.fecha);
+  madMovReiniciar();
+  _madLocGuardado("movimientos");
+}
+async function madMovGuardar(){
+  const _loc=madLocLeer("movimientos").length;
+  const _p=_madMovPreparar(_loc>0); if(!_p) return;
+  const model=_p.model, payload=_p.payload;
+  if(!payload.rows.length && !_loc){ toast("No hay ningún tramo completo que guardar.","warn",4000); return; }
+  // PE1.4 · primero lo guardado con 💾 (lo más viejo antes); si algo falla, lo de pantalla tampoco sale.
+  if(_loc && (await _madLocEnviar("movimientos")).fallo) return;
+  if(!payload.rows.length) return;
   toast("Enviando "+payload.rows.length+" tramo(s)…","info",2200);
   const _envio=_madLogEnvioId(), _t={ mark:_madLogMarca("movimientos", _envio) };
   const ok=await postPayload(payload, gasUrl(), _t);
   if(ok){
     madMovLogAnota(model.fecha, model.tipo, payload.rows.length, "ok", _envio);
     toast("✅ Movimiento registrado · "+payload.rows.length+" tramo(s)","ok",5000);
+    _madBorrOlvidarPantalla("movimientos", model.fecha);
     madMovReiniciar();
     return;
   }
@@ -8306,6 +8522,7 @@ async function madMovGuardar(){
   // veces, y aquí eso descuadraría el saldo de dos tanques. Es el invariante H1.
   if(_t.outcome==="queued"){
     madMovLogAnota(model.fecha, model.tipo, payload.rows.length, "cola", _envio);
+    _madBorrOlvidarPantalla("movimientos", model.fecha);
     madMovReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudo registrar el movimiento", null, _t.gasMessage);
@@ -8317,6 +8534,7 @@ function madMovReiniciar(){
 }
 function madMovVaciar(){
   if(!confirm("¿Vaciar el formulario de movimientos?\nSe perderá todo lo tecleado.")) return;
+  _madBorrOlvidarPantalla("movimientos");
   madMovReiniciar();
 }
 // ⚠⚠ NO SE RE-PINTA SI YA ESTÁ MONTADO, por lo mismo que la ficha de Ingreso: `selTab`
@@ -8349,10 +8567,12 @@ function renderMadMovimientos(){
     +   '<label style="'+_MAD_ING_LBL+';margin-top:12px">Observaciones<textarea id="mv-obs" rows="2" style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box;resize:vertical"></textarea></label>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'
     +     '<button class="btn" type="button" onclick="madMovRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" onclick="madMovGuardarLocal()" title="Guarda en este dispositivo, sin enviarlo a Google Sheets">💾 Guardar local</button>'
     +     '<button class="btn" type="button" style="font-weight:700" onclick="madMovGuardar()">☁️ Guardar y sincronizar</button>'
     +     '<button class="btn" type="button" onclick="madMovVaciar()">🧹 Vaciar</button>'
     +   '</div>'
     +   '<div id="mv-report" style="margin-top:12px"></div>'
+    +   '<div id="mv-loc">'+_madLocHTML("movimientos")+'</div>'
     +   '<div id="mv-log">'+madMovLogHTML()+'</div>'
     + '</div></div>';
 }
@@ -8707,13 +8927,30 @@ function madDesLogHTML(){
     + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Guardado</th><th>Desove</th><th>Lote</th><th>Código</th><th>Desoves</th><th>Huevos (mil)</th><th>N2 (mil)</th><th>N5 (mil)</th><th>Despacho</th><th>Estado</th></tr></thead><tbody>'+filas.join("")+'</tbody></table></div>'
     + '</div>';
 }
-async function madDesGuardar(){
+/* PE1.4 · lo que 💾 y ☁️ comparten: recoger, revisar y construir. null si hay errores (ya los pintó y avisó). */
+function _madDesPreparar(conGuardados){
   const model=madDesCollect();
   const res=madDesValidar(model);
   const payload=buildMadDesovePayload(model);
+  // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
+  if(conGuardados && !payload.rows.length) return { model:model, payload:payload };
   _madDesPinta(res, payload.rows.length);
-  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
-  if(!payload.rows.length){ toast("No hay ningún desove completo que guardar.","warn",4000); return; }
+  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return null; }
+  return { model:model, payload:payload };
+}
+function madDesGuardarLocal(){
+  const _p=_madDesPreparar(); if(!_p) return;
+  if(!_p.payload.rows.length){ toast("No hay ningún desove completo que guardar.","warn",4000); return; }
+  if(!_madLocAnotar("desoves", _p.payload, _p.model.fecha, { desoves:_p.model.desoves })) return;
+  _madBorrOlvidarPantalla("desoves", _p.model.fecha);
+  madDesReiniciar();
+  _madLocGuardado("desoves");
+}
+async function madDesGuardar(){
+  const _loc=madLocLeer("desoves").length;
+  const _p=_madDesPreparar(_loc>0); if(!_p) return;
+  const model=_p.model, payload=_p.payload;
+  if(!payload.rows.length && !_loc){ toast("No hay ningún desove completo que guardar.","warn",4000); return; }
   // La hoja se escribe POR POSICIÓN y sus columnas cambiaron: contra el GAS viejo no se envía (ver _madIngGasAlDia).
   const _gas=await _madIngGasAlDia();
   if(_gas === false){
@@ -8723,6 +8960,9 @@ async function madDesGuardar(){
     toast(aviso, "err", 10000);
     return;
   }
+  // PE1.4 · primero lo guardado con 💾 (lo más viejo antes); si algo falla, lo de pantalla tampoco sale.
+  if(_loc && (await _madLocEnviar("desoves", _gas)).fallo) return;
+  if(!payload.rows.length) return;
   toast("Enviando "+payload.rows.length+" desove(s)…","info",2200);
   const _envio=_madLogEnvioId(), _t={ mark:_madLogMarca("desoves", _envio) };
   const ok=await _madPostConSello(payload, _gas, _t);
@@ -8730,6 +8970,7 @@ async function madDesGuardar(){
     madDesLogAnota(model, payload.rows.length, "ok", _envio);
     madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), model, Date.now()));
     toast("✅ Desove registrado · "+payload.rows.length+" fila(s)","ok",5000);
+    _madBorrOlvidarPantalla("desoves", model.fecha);
     madDesReiniciar();
     return;
   }
@@ -8739,6 +8980,7 @@ async function madDesGuardar(){
   if(_t.outcome==="queued"){
     madDesLogAnota(model, payload.rows.length, "cola", _envio);
     madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), model, Date.now()));
+    _madBorrOlvidarPantalla("desoves", model.fecha);
     madDesReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudo registrar el desove", null, _t.gasMessage);
@@ -8750,6 +8992,7 @@ function madDesReiniciar(){
 }
 function madDesVaciar(){
   if(!confirm("¿Vaciar el formulario de desoves?\nSe perderá todo lo tecleado.")) return;
+  _madBorrOlvidarPantalla("desoves");
   madDesReiniciar();
 }
 // ── Desoves PENDIENTES · interfaz ── lo guardado desde este dispositivo vive en MAD_DES_PEND_KEY; la hoja,
@@ -8835,6 +9078,7 @@ function renderMadDesoves(d){
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
     +     '<button class="btn" type="button" onclick="madDesAddCard()">➕ Desove</button>'
     +     '<button class="btn" type="button" onclick="madDesRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" onclick="madDesGuardarLocal()" title="Guarda en este dispositivo, sin enviarlo a Google Sheets">💾 Guardar local</button>'
     +     '<button class="btn" type="button" style="font-weight:700" onclick="madDesGuardar()">☁️ Guardar y sincronizar</button>'
     +     '<button class="btn" type="button" onclick="madDesVaciar()">🧹 Vaciar</button>'
     +   '</div>'
@@ -8845,6 +9089,7 @@ function renderMadDesoves(d){
     +     '<div id="md-pend-nota" style="font-size:11px;color:#64748b;margin-bottom:5px">'+(_madDesHoja ? 'Hoja leída en esta sesión, con lo guardado desde este dispositivo. Pulsa 🔄 para releerla.' : 'Lo guardado desde este dispositivo. Pulsa 🔄 para ver también lo de los demás.')+'</div>'
     +     '<div id="md-pend">'+madDesPendTablaHTML()+'</div>'
     +   '</div>'
+    +   '<div id="md-loc">'+_madLocHTML("desoves")+'</div>'
     +   '<div id="md-log">'+madDesLogHTML()+'</div>'
     + '</div></div>';
 }
@@ -9110,13 +9355,30 @@ function madFinLogHTML(){
     + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Cierres</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div>'
     + '</div>';
 }
-async function madFinGuardar(){
+/* PE1.4 · lo que 💾 y ☁️ comparten: recoger, revisar y construir. null si hay errores (ya los pintó y avisó). */
+function _madFinPreparar(conGuardados){
   const model=madFinCollect();
   const res=madFinValidar(model);
   const payload=buildMadFinPayload(model);
+  // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
+  if(conGuardados && !payload.rows.length) return { model:model, payload:payload };
   _madFinPinta(res, payload.rows.length);
-  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
-  if(!payload.rows.length){ toast("No hay ningún cierre completo que guardar.","warn",4000); return; }
+  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return null; }
+  return { model:model, payload:payload };
+}
+function madFinGuardarLocal(){
+  const _p=_madFinPreparar(); if(!_p) return;
+  if(!_p.payload.rows.length){ toast("No hay ningún cierre completo que guardar.","warn",4000); return; }
+  if(!_madLocAnotar("fin", _p.payload, _p.model.fecha, {})) return;
+  _madBorrOlvidarPantalla("fin", _p.model.fecha);
+  madFinReiniciar();
+  _madLocGuardado("fin");
+}
+async function madFinGuardar(){
+  const _loc=madLocLeer("fin").length;
+  const _p=_madFinPreparar(_loc>0); if(!_p) return;
+  const model=_p.model, payload=_p.payload;
+  if(!payload.rows.length && !_loc){ toast("No hay ningún cierre completo que guardar.","warn",4000); return; }
   const _gas=await _madIngGasAlDia();
   if(_gas === false){
     const aviso = "No se envió: " + _madGasViejoMsg(MAD_FIN_SHEET) + ". Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo tecleado sigue aquí.";
@@ -9125,12 +9387,16 @@ async function madFinGuardar(){
     toast(aviso, "err", 10000);
     return;
   }
+  // PE1.4 · primero lo guardado con 💾 (lo más viejo antes); si algo falla, lo de pantalla tampoco sale.
+  if(_loc && (await _madLocEnviar("fin", _gas)).fallo) return;
+  if(!payload.rows.length) return;
   toast("Enviando "+payload.rows.length+" cierre(s)…","info",2200);
   const _envio=_madLogEnvioId(), _t={ mark:_madLogMarca("fin", _envio) };
   const ok=await _madPostConSello(payload, _gas, _t);
   if(ok){
     madFinLogAnota(model.fecha, payload.rows.length, "ok", _envio);
     toast("✅ Cierre registrado · "+payload.rows.length+" fila(s)","ok",5000);
+    _madBorrOlvidarPantalla("fin", model.fecha);
     madFinReiniciar();
     return;
   }
@@ -9139,6 +9405,7 @@ async function madFinGuardar(){
   // veces, y aquí el segundo se fusionaría sobre el primero descontando el doble.
   if(_t.outcome==="queued"){
     madFinLogAnota(model.fecha, payload.rows.length, "cola", _envio);
+    _madBorrOlvidarPantalla("fin", model.fecha);
     madFinReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudo registrar el cierre", null, _t.gasMessage);
@@ -9150,6 +9417,7 @@ function madFinReiniciar(){
 }
 function madFinVaciar(){
   if(!confirm("¿Vaciar el formulario de cierres?\nSe perderá todo lo tecleado.")) return;
+  _madBorrOlvidarPantalla("fin");
   madFinReiniciar();
 }
 // ⚠⚠ NO SE RE-PINTA SI YA ESTÁ MONTADO, como las otras tres fichas: `selTab` llama al render
@@ -9180,10 +9448,12 @@ function renderMadFinCiclo(){
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
     +     '<button class="btn" type="button" onclick="madFinAddCard()">➕ Cierre</button>'
     +     '<button class="btn" type="button" onclick="madFinRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" onclick="madFinGuardarLocal()" title="Guarda en este dispositivo, sin enviarlo a Google Sheets">💾 Guardar local</button>'
     +     '<button class="btn" type="button" style="font-weight:700" onclick="madFinGuardar()">☁️ Guardar y sincronizar</button>'
     +     '<button class="btn" type="button" onclick="madFinVaciar()">🧹 Vaciar</button>'
     +   '</div>'
     +   '<div id="mf-report" style="margin-top:12px"></div>'
+    +   '<div id="mf-loc">'+_madLocHTML("fin")+'</div>'
     +   '<div id="mf-log">'+madFinLogHTML()+'</div>'
     + '</div></div>';
   const t=document.querySelector("#mf-cards .mf-tipo");
@@ -9403,13 +9673,30 @@ function madTratLogHTML(){
   return '<div style="margin-top:18px"><h3 style="margin:0 0 4px;font-size:13px">Registrado desde este dispositivo</h3>'
     + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Tratamientos</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div></div>';
 }
-async function madTratGuardar(){
+/* PE1.4 · lo que 💾 y ☁️ comparten: recoger, revisar y construir. null si hay errores (ya los pintó y avisó). */
+function _madTratPreparar(conGuardados){
   const model=madTratCollect();
   const res=madTratValidar(model);
   const payload=buildMadTratPayload(model);
+  // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
+  if(conGuardados && !payload.rows.length) return { model:model, payload:payload };
   _madTratPinta(res, payload.rows.length);
-  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
-  if(!payload.rows.length){ toast("No hay ningún tratamiento completo que guardar.","warn",4000); return; }
+  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return null; }
+  return { model:model, payload:payload };
+}
+function madTratGuardarLocal(){
+  const _p=_madTratPreparar(); if(!_p) return;
+  if(!_p.payload.rows.length){ toast("No hay ningún tratamiento completo que guardar.","warn",4000); return; }
+  if(!_madLocAnotar("tratamientos", _p.payload, _p.model.fecha, {})) return;
+  _madBorrOlvidarPantalla("tratamientos", _p.model.fecha);
+  madTratReiniciar();
+  _madLocGuardado("tratamientos");
+}
+async function madTratGuardar(){
+  const _loc=madLocLeer("tratamientos").length;
+  const _p=_madTratPreparar(_loc>0); if(!_p) return;
+  const model=_p.model, payload=_p.payload;
+  if(!payload.rows.length && !_loc){ toast("No hay ningún tratamiento completo que guardar.","warn",4000); return; }
   // Se escribe por posición: contra un GAS que no es el de esta app no se envía y lo tecleado se queda (ver _madIngGasAlDia).
   const _gas=await _madIngGasAlDia();
   if(_gas === false){
@@ -9419,18 +9706,23 @@ async function madTratGuardar(){
     toast(aviso,"err",10000);
     return;
   }
+  // PE1.4 · primero lo guardado con 💾 (lo más viejo antes); si algo falla, lo de pantalla tampoco sale.
+  if(_loc && (await _madLocEnviar("tratamientos", _gas)).fallo) return;
+  if(!payload.rows.length) return;
   toast("Enviando "+payload.rows.length+" tratamiento(s)…","info",2200);
   const _envio=_madLogEnvioId(), _t={ mark:_madLogMarca("tratamientos", _envio) };
   const ok=await _madPostConSello(payload, _gas, _t);
   if(ok){
     madTratLogAnota(model.fecha, payload.rows.length, "ok", _envio);
     toast("✅ Tratamientos registrados · "+payload.rows.length+" fila(s)","ok",5000);
+    _madBorrOlvidarPantalla("tratamientos", model.fecha);
     madTratReiniciar();
     return;
   }
   // ⚠ `postPayload` devuelve false TAMBIÉN cuando el envío quedó ENCOLADO (invariante H1).
   if(_t.outcome==="queued"){
     madTratLogAnota(model.fecha, payload.rows.length, "cola", _envio);
+    _madBorrOlvidarPantalla("tratamientos", model.fecha);
     madTratReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudieron registrar los tratamientos", null, _t.gasMessage);
@@ -9442,6 +9734,7 @@ function madTratReiniciar(){
 }
 function madTratVaciar(){
   if(!confirm("¿Vaciar el formulario de tratamientos?\nSe perderá todo lo tecleado.")) return;
+  _madBorrOlvidarPantalla("tratamientos");
   madTratReiniciar();
 }
 // ⚠⚠ NO SE RE-PINTA SI YA ESTÁ MONTADO, como las demás fichas: reescribir innerHTML borraría lo tecleado.
@@ -9470,10 +9763,12 @@ function renderMadTratamientos(){
     +   '<button class="btn" type="button" onclick="madTratAddDes()" style="font-size:11px;margin-bottom:10px">➕ Desinfección</button>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
     +     '<button class="btn" type="button" onclick="madTratRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" onclick="madTratGuardarLocal()" title="Guarda en este dispositivo, sin enviarlo a Google Sheets">💾 Guardar local</button>'
     +     '<button class="btn" type="button" style="font-weight:700" onclick="madTratGuardar()">☁️ Guardar y sincronizar</button>'
     +     '<button class="btn" type="button" onclick="madTratVaciar()">🧹 Vaciar</button>'
     +   '</div>'
     +   '<div id="mt-report" style="margin-top:12px"></div>'
+    +   '<div id="mt-loc">'+_madLocHTML("tratamientos")+'</div>'
     +   '<div id="mt-log">'+madTratLogHTML()+'</div>'
     + '</div></div>';
 }
@@ -9749,13 +10044,30 @@ function madMortLogHTML(){
   return '<div style="margin-top:18px"><h3 style="margin:0 0 4px;font-size:13px">Registrado desde este dispositivo</h3>'
     + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Filas</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div></div>';
 }
-async function madMortGuardar(){
+/* PE1.4 · lo que 💾 y ☁️ comparten: recoger, revisar y construir. null si hay errores (ya los pintó y avisó). */
+function _madMortPreparar(conGuardados){
   const model=madMortCollect();
   const res=madMortValidar(model);
   const payload=buildMadMortPayload(model);
+  // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
+  if(conGuardados && !payload.rows.length) return { model:model, payload:payload };
   _madMortPinta(res, payload.rows.length);
-  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
-  if(!payload.rows.length){ toast("No hay ningún registro completo que guardar.","warn",4000); return; }
+  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return null; }
+  return { model:model, payload:payload };
+}
+function madMortGuardarLocal(){
+  const _p=_madMortPreparar(); if(!_p) return;
+  if(!_p.payload.rows.length){ toast("No hay ningún registro completo que guardar.","warn",4000); return; }
+  if(!_madLocAnotar("mortdes", _p.payload, _p.model.fecha, {})) return;
+  _madBorrOlvidarPantalla("mortdes", _p.model.fecha);
+  madMortReiniciar();
+  _madLocGuardado("mortdes");
+}
+async function madMortGuardar(){
+  const _loc=madLocLeer("mortdes").length;
+  const _p=_madMortPreparar(_loc>0); if(!_p) return;
+  const model=_p.model, payload=_p.payload;
+  if(!payload.rows.length && !_loc){ toast("No hay ningún registro completo que guardar.","warn",4000); return; }
   // Se escribe por posición: contra un GAS que no es el de esta app no se envía y lo tecleado se queda (ver _madIngGasAlDia).
   const _gas=await _madIngGasAlDia();
   if(_gas === false){
@@ -9765,18 +10077,23 @@ async function madMortGuardar(){
     toast(aviso,"err",10000);
     return;
   }
+  // PE1.4 · primero lo guardado con 💾 (lo más viejo antes); si algo falla, lo de pantalla tampoco sale.
+  if(_loc && (await _madLocEnviar("mortdes", _gas)).fallo) return;
+  if(!payload.rows.length) return;
   toast("Enviando "+payload.rows.length+" fila(s)…","info",2200);
   const _envio=_madLogEnvioId(), _t={ mark:_madLogMarca("mortdes", _envio) };
   const ok=await _madPostConSello(payload, _gas, _t);
   if(ok){
     madMortLogAnota(model.fecha, payload.rows.length, "ok", _envio);
     toast("✅ Inf. Supervisor registrado · "+payload.rows.length+" fila(s)","ok",5000);
+    _madBorrOlvidarPantalla("mortdes", model.fecha);
     madMortReiniciar();
     return;
   }
   // ⚠ `postPayload` devuelve false TAMBIÉN cuando el envío quedó ENCOLADO (invariante H1).
   if(_t.outcome==="queued"){
     madMortLogAnota(model.fecha, payload.rows.length, "cola", _envio);
+    _madBorrOlvidarPantalla("mortdes", model.fecha);
     madMortReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudo registrar el Inf. Supervisor", null, _t.gasMessage);
@@ -9788,6 +10105,7 @@ function madMortReiniciar(){
 }
 function madMortVaciar(){
   if(!confirm("¿Vaciar el Inf. Supervisor?\nSe perderá todo lo tecleado.")) return;
+  _madBorrOlvidarPantalla("mortdes");
   madMortReiniciar();
 }
 // ⚠⚠ NO SE RE-PINTA SI YA ESTÁ MONTADO, como las demás fichas: reescribir innerHTML borraría lo tecleado.
@@ -9810,10 +10128,12 @@ function renderMadMortDesove(){
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
     +     '<button class="btn" type="button" onclick="madMortAddCard()">➕ Lote</button>'
     +     '<button class="btn" type="button" onclick="madMortRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" onclick="madMortGuardarLocal()" title="Guarda en este dispositivo, sin enviarlo a Google Sheets">💾 Guardar local</button>'
     +     '<button class="btn" type="button" style="font-weight:700" onclick="madMortGuardar()">☁️ Guardar y sincronizar</button>'
     +     '<button class="btn" type="button" onclick="madMortVaciar()">🧹 Vaciar</button>'
     +   '</div>'
     +   '<div id="mm-report" style="margin-top:12px"></div>'
+    +   '<div id="mm-loc">'+_madLocHTML("mortdes")+'</div>'
     +   '<div id="mm-log">'+madMortLogHTML()+'</div>'
     + '</div></div>';
 }
@@ -10372,11 +10692,35 @@ function madAlimLogHTML(){
   return '<div style="margin-top:18px"><h3 style="margin:0 0 4px;font-size:13px">Registrado desde este dispositivo</h3>'
     + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Tanques</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div></div>';
 }
-async function madAlimGuardar(){
+/* La agenda de esas salas ya va en camino (entregada o en cola): deja de estar «sin guardar». PE1.4: la llaman ☁️ desde
+   pantalla y el envío de lo guardado con 💾. */
+function _madAlimAgendaEnviada(enviadas){
+  const cfg=madAlimCfgLeer();
+  enviadas.forEach(function(s){ if(cfg[s]) cfg[s].pendiente=false; });
+  madAlimCfgGuardar(cfg);
+  document.querySelectorAll("#ma-salas .ma-sala").forEach(function(el){ if(enviadas.indexOf(el.getAttribute("data-sala"))!==-1){ const b=el.querySelector(".ma-pend"); if(b) b.hidden=true; } });
+}
+/* PE1.4 · lo que 💾 y ☁️ comparten: recoger, revisar y construir. null si hay errores (ya los pintó y avisó). */
+function _madAlimPreparar(conGuardados){
   const model=madAlimCollect(), res=madAlimValidar(model), payload=buildMadAlimPayload(model);
+  // Con envíos guardados con 💾, una pantalla SIN filas no es un error: ☁️ envía lo guardado y lo de pantalla se queda.
+  if(conGuardados && !payload.rows.length) return { model:model, payload:payload };
   _madAlimPinta(res, payload.rows.length);
-  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
-  if(!payload.rows.length){ toast("No hay tanques con animales que guardar.","warn",4000); return; }
+  if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return null; }
+  return { model:model, payload:payload };
+}
+function madAlimGuardarLocal(){
+  const _p=_madAlimPreparar(); if(!_p) return;
+  if(!_p.payload.rows.length){ toast("No hay tanques con animales que guardar.","warn",4000); return; }
+  if(!_madLocAnotar("alimentacion", _p.payload, _p.model.fecha, { salas:(_p.model.salas||[]).map(function(s){ return s.sala; }) })) return;
+  // Como al enviar, el cálculo sigue en pantalla; guardarlo otra vez no duplica (misma huella).
+  _madLocGuardado("alimentacion");
+}
+async function madAlimGuardar(){
+  const _loc=madLocLeer("alimentacion").length;
+  const _p=_madAlimPreparar(_loc>0); if(!_p) return;
+  const model=_p.model, payload=_p.payload;
+  if(!payload.rows.length && !_loc){ toast("No hay tanques con animales que guardar.","warn",4000); return; }
   /* PV3 (2026-09-16) · como las otras cinco, sólo EL GAS DE ESTA APP (su sello). Hasta hoy bastaba con que anunciara
      «mad-alimentacion» (se retiró _madAlimGasListo): un GAS de otra versión que ya conociera la hoja recibía el envío. */
   const _gas=await _madIngGasAlDia();
@@ -10387,15 +10731,15 @@ async function madAlimGuardar(){
     toast(aviso,"err",10000);
     return;
   }
+  // PE1.4 · primero lo guardado con 💾 (lo más viejo antes); si algo falla, lo de pantalla tampoco sale.
+  if(_loc && (await _madLocEnviar("alimentacion", _gas)).fallo) return;
+  if(!payload.rows.length) return;
   toast("Enviando "+payload.rows.length+" fila(s)…","info",2200);
   const _envio=_madLogEnvioId(), _t={ mark:_madLogMarca("alimentacion", _envio) };
   const ok=await _madPostConSello(payload, _gas, _t);
   // ⚠ `postPayload` devuelve false TAMBIÉN cuando el envío quedó ENCOLADO (invariante H1): la agenda ya va en camino.
   if(ok || _t.outcome==="queued"){
-    const cfg=madAlimCfgLeer(), enviadas=model.salas.map(function(s){ return s.sala; });
-    enviadas.forEach(function(s){ if(cfg[s]) cfg[s].pendiente=false; });
-    madAlimCfgGuardar(cfg);
-    document.querySelectorAll("#ma-salas .ma-sala").forEach(function(el){ if(enviadas.indexOf(el.getAttribute("data-sala"))!==-1){ const b=el.querySelector(".ma-pend"); if(b) b.hidden=true; } });
+    _madAlimAgendaEnviada(model.salas.map(function(s){ return s.sala; }));
     madAlimLogAnota(model.fecha, payload.rows.length, ok ? "ok" : "cola", _envio);
     const lg=document.getElementById("ma-log"); if(lg) lg.innerHTML=madAlimLogHTML();
   }
@@ -10423,6 +10767,7 @@ function madAlimPdf(alcance){
 }
 function madAlimVaciar(){
   if(!confirm("¿Vaciar el cálculo de alimentación?\nLas agendas de cada sala se conservan.")) return;
+  _madBorrOlvidarPantalla("alimentacion");
   _madAlim=null;
   const fp=document.getElementById("fp-alimentacion");
   if(fp) fp.innerHTML="";
@@ -10450,10 +10795,12 @@ function renderMadAlimentacion(){
     +   '<div id="ma-general"></div>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
     +     '<button class="btn" type="button" onclick="madAlimRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
+    +     '<button class="btn" type="button" onclick="madAlimGuardarLocal()" title="Guarda en este dispositivo, sin enviarlo a Google Sheets">💾 Guardar local</button>'
     +     '<button class="btn" type="button" style="font-weight:700" onclick="madAlimGuardar()">☁️ Guardar y sincronizar</button>'
     +     '<button class="btn" type="button" onclick="madAlimVaciar()">🧹 Vaciar</button>'
     +   '</div>'
     +   '<div id="ma-report" style="margin-top:12px"></div>'
+    +   '<div id="ma-loc">'+_madLocHTML("alimentacion")+'</div>'
     +   '<div id="ma-log">'+madAlimLogHTML()+'</div>'
     + '</div></div>';
   madAlimPintarSalas();
