@@ -386,6 +386,29 @@ describe('Maduración · las hojas se piden en paralelo', () => {
     expect(est.pico).toBe(4);
   });
 
+  /* 🔑 PV7 (2026-09-16) · el comentario de madSaldoCargar lo AFIRMA —«estas CUATRO arrancan sin esperar a
+     ?p=ver: mientras el GAS contesta quién es, ellas ya están viajando»— y ninguna prueba lo miraba: con un
+     ?p=ver instantáneo, preguntar primero y leer después da el MISMO pico. Aquí ?p=ver no contesta hasta que la
+     prueba lo suelta, y se cuenta cuántas lecturas hay en vuelo mientras tanto. */
+  it('🔴 las cuatro hojas de siempre arrancan SIN esperar a que ?p=ver conteste', async () => {
+    let soltar;
+    const ver = new Promise((r) => { soltar = r; });
+    const est = { vivas: 0 };
+    H.setLecturas({}, {});
+    H.setRed(async () => { await ver; return true; }, async () => {
+      est.vivas++;
+      await new Promise((r) => setTimeout(r, 30));
+      est.vivas--;
+      return [];
+    });
+    const carga = H.madSaldoCargar(true);
+    await new Promise((r) => setTimeout(r, 5));
+    const enVueloMientrasPregunta = est.vivas;
+    soltar();
+    await carga;
+    expect(enVueloMientrasPregunta, 'esperaron a que ?p=ver contestara para salir').toBe(4);
+  });
+
   it('🔴 el orden de los avisos es el de la FICHA, no el de la red', async () => {
     /* La hoja de Sala se hace la lenta y Tratamientos contesta la primera. Si `faltan` se armara
        por orden de llegada, el mismo problema saldría listado distinto en cada recálculo y se
