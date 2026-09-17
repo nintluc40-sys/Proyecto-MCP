@@ -7725,12 +7725,21 @@ function _gasVersionLocalCacheada(){
   if(_gasVerLocalCache === null){ try{ _gasVerLocalCache = _gasVersionLocal(); }catch(_){ _gasVerLocalCache = ""; } }
   return _gasVerLocalCache;
 }
+/* Cuánto se espera a ?p=ver. 🔴 2026-09-17 · ERA 6000, el presupuesto MÁS CORTO de toda la app, y es el de la
+   pregunta que decide si las seis fichas escriben en producción: más corto que «Probar conexión» (8000), que
+   consulta ESTE MISMO ?p=ver, y que la verificación de la cola (12000). Medido hoy contra el GAS desplegado:
+   2,5–4,9 s en caliente, pero 10,8 s en la PRIMERA llamada, que es el arranque en frío de Apps Script. O sea que
+   la primera sincronización de cada sesión se pasaba de plazo, el sello quedaba «sin confirmar» y todo iba a la
+   cola en vez de entregarse. No era una pérdida —la cola lo entrega sola 8 s después— pero sí el camino lento
+   para el caso más común. Con 12000 no se espera más en la práctica (en caliente contesta mucho antes), y donde
+   antes se tardaba 6 s + 8 s de cola, ahora se entrega directo. Sigue MUY por debajo del POST (40000 > waitLock). */
+const MAD_GAS_VER_MS = 12000;
 async function _madIngGasAlDia(url){
   const base = url || gasUrl();
   if(!base || !isValidGasUrl(base)) return null;
   try{
     const ctrl = new AbortController();
-    const t = setTimeout(function(){ ctrl.abort(); }, 6000);
+    const t = setTimeout(function(){ ctrl.abort(); }, MAD_GAS_VER_MS);
     const r = await fetch(base + (base.indexOf("?")===-1 ? "?" : "&") + "p=ver", { signal: ctrl.signal, cache: "no-store" });
     clearTimeout(t);
     const txt = await r.text();

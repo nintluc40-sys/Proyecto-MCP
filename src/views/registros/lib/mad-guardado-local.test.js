@@ -428,6 +428,33 @@ describe('Lo guardado cuenta en el módulo: el punto, el contador y «Sincroniza
     expect(H.madLocTotal()).toBe(0);
   });
 
+  /* 🔴 2026-09-17 · EL PRESUPUESTO DEL PORTÓN. Era 6000: el MÁS CORTO de toda la app, y es el de la pregunta que
+     decide si las seis fichas escriben en producción. Más corto que «Probar conexión» (8000), que consulta ESTE
+     MISMO ?p=ver, y que la verificación de la cola (12000). Medido contra el GAS desplegado: 2,5–4,9 s en caliente
+     y 10,8 s en la primera llamada (arranque en frío de Apps Script), así que la primera sincronización de cada
+     sesión se pasaba de plazo y todo iba a la cola en vez de entregarse.
+     🔑 Se vigila la RELACIÓN, no el número: fijar «12000» aquí caducaría al primer ajuste. Lo que no puede volver
+     a pasar es que la pregunta que MANDA tenga menos plazo que la que sólo informa. */
+  describe('el plazo de ?p=ver', () => {
+    const src = readFileSync(ENGINE, 'utf8');
+    const ms = (re, que) => {
+      const m = re.exec(src);
+      expect(m, 'no se encontró el plazo de ' + que).not.toBeNull();
+      return Number(m[1]);
+    };
+    const portero = () => ms(/const MAD_GAS_VER_MS = (\d+);/, 'el portón');
+
+    it('🔴 el portón NO espera menos que «Probar conexión», que pregunta lo mismo', () => {
+      const probar = ms(/toast\("Probando conexión…[\s\S]{0,200}?ctrl\.abort\(\), (\d+)\)/, '«Probar conexión»');
+      expect(portero()).toBeGreaterThanOrEqual(probar);
+    });
+
+    it('🔴 y sigue MUY por debajo del POST, que espera al candado del GAS', () => {
+      const post = ms(/ctrl\.abort\(\), (\d+)\); \/\/ 40 s/, 'el POST');
+      expect(portero()).toBeLessThan(post);
+    });
+  });
+
   /* Movimientos es la única de las siete que NO pide sello: si sólo hay guardado suyo, el portón no se pregunta.
      Preguntarlo «por si acaso» costaría un viaje a ?p=ver —y hasta 6 s de espera— para nada. */
   it('🔴 y NO lo pregunta si ninguna ficha con envíos guardados pide sello', async () => {
