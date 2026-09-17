@@ -161,6 +161,7 @@ describe('Desoves · no se escribe contra el GAS viejo (hoja por posición)', ()
     await H.madDesGuardar();
     expect(envios).toHaveLength(0);
     expect(JSON.parse(localStorage.getItem('larv4_syncqueue') || '[]').map((it) => it.payload.sheetName)).toEqual([H.MAD_DESOVE_SHEET]);
+    expect(JSON.parse(localStorage.getItem('larv4_syncqueue'))[0].mark.kind, 'PE1.2: sin su marca el registro no sabe si llegó').toBe('madlog:desoves');
     expect(avisos.filter((a) => a.tipo === 'err')).toEqual([]);
     localStorage.removeItem('larv4_syncqueue');
   });

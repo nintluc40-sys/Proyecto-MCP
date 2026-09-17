@@ -220,7 +220,7 @@ describe('Movimientos · la pestaña tiene DÓNDE pintarse', () => {
 
   it('un envío ENCOLADO deja rastro, como en Ingreso', () => {
     expect(src).toContain('function madMovLogAnota(');
-    expect(src).toContain('madMovLogAnota(model.fecha, model.tipo, payload.rows.length, "cola")');
+    expect(src).toContain('madMovLogAnota(model.fecha, model.tipo, payload.rows.length, "cola", _envio)');
   });
 
   it('el saldo del origen se consulta BAJO BOTÓN, no al abrir la pestaña', () => {

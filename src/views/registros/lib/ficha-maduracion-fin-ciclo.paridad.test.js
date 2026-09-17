@@ -238,7 +238,7 @@ describe('Fin de Ciclo · la ficha tiene DÓNDE pintarse', () => {
 
   it('un envío ENCOLADO deja rastro, como en las otras tres fichas', () => {
     expect(src).toContain('function madFinLogAnota(');
-    expect(src).toContain('madFinLogAnota(model.fecha, payload.rows.length, "cola")');
+    expect(src).toContain('madFinLogAnota(model.fecha, payload.rows.length, "cola", _envio)');
   });
 
   it('🔴 el DESTINO sale de DESTINO_OPTS, no de una copia', () => {

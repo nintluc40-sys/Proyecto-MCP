@@ -259,6 +259,6 @@ describe('Desoves · la pestaña sustituyó a la de Lotes', () => {
 
   it('un envío ENCOLADO deja rastro, como en las otras dos fichas', () => {
     expect(src).toContain('function madDesLogAnota(');
-    expect(src).toContain('madDesLogAnota(model, payload.rows.length, "cola")');
+    expect(src).toContain('madDesLogAnota(model, payload.rows.length, "cola", _envio)');
   });
 });

@@ -208,6 +208,7 @@ describe('Ingreso · no se escribe contra el GAS viejo (hoja por posición)', ()
     expect(envios, 'sin sello confirmado no puede salir nada').toHaveLength(0);
     const cola = () => JSON.parse(localStorage.getItem('larv4_syncqueue') || '[]');
     expect(cola().map((it) => it.payload.sheetName), 'lo tecleado tiene que quedar a salvo EN LA COLA').toEqual([H.MAD_ING_SHEET]);
+    expect(cola()[0].mark && cola()[0].mark.kind, 'PE1.2: sin su marca el registro no sabe si llegó').toBe('madlog:ingreso');
     expect(avisos.some((a) => /no se pudo confirmar/i.test(a.msg)), 'el aviso tiene que decir por qué').toBe(true);
     expect(avisos.filter((a) => a.tipo === 'err'), 'no es un GAS viejo ni un error: no se acusa a nadie').toEqual([]);
 

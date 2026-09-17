@@ -173,7 +173,7 @@ Por eso `Maduración Tanques` conserva tres columnas **vacías a propósito** (`
 `madKeyCols`.
 
 🛡 **Y como se escriben por posición, el GAS comprueba el esquema antes de escribir.** En las
-seis hojas del registro operativo, si una cabecera del envío no coincide con la de la hoja en
+nueve hojas del registro operativo (`MAD_ESQUEMA_VIGILADO`), si una cabecera del envío no coincide con la de la hoja en
 su misma posición, `doPost` responde «Esquema desactualizado» y **no toca nada**. Existe porque
 estas hojas cambiaron de columnas y siguen vivos clientes con el esquema anterior: sin la
 guarda, un guardado de Tanques desde uno de ellos corría una columna todo lo que va detrás de
@@ -327,6 +327,13 @@ Dos consecuencias que conviene tener presentes al desplegar:
   una vez por vaciado. Alimentación compara el sello como las otras cinco: ya no le basta con que el
   GAS anuncie `mad-alimentacion`. Y un envío que espera en la cola más de 24 h **se descarta**, así
   que conviene no dejar pasar días entre publicar el cliente y re-desplegar el GAS.
+- 📋 **«Registrado desde este dispositivo» dice qué pasó con CADA envío (PE1.2, 2026-09-16).** Los siete
+  registros (Ingreso, Movimientos, Desoves, Fin de Ciclo, Tratamientos, Inf. Supervisor y Alimentación)
+  decidían «en cola» o «enviado» mirando si la cola ENTERA tenía algo: un envío atascado de cualquier
+  ficha dejaba todo «en cola», y uno que caducaba (24 h) o que la hoja rechazaba se pintaba «✅ enviado».
+  Ahora cada envío viaja con su marca (`madlog:<ficha>` y su id), la cola la reconcilia al entregarlo y
+  el registro enseña **📶 en cola**, **✅ enviado** o **⚠ no llegó** (salió de la cola sin entregarse).
+  Las entradas anteriores, sin marca, conservan la regla de antes. Lo prueba `mad-log-envios.test.js`.
 - ⚠ **Y tampoco envía el alta de un microchip reciclado.** Un GAS anterior la fundiría sobre la
   fila de la hembra muerta (su llave era sólo el Trovan), así que la app pregunta a `?p=ver` si
   el GAS anuncia `"matriz-reciclaje"` en `caps`, y si no lo confirma —o no contesta— envía el
@@ -346,12 +353,21 @@ Dos consecuencias que conviene tener presentes al desplegar:
   eliminar la pestaña, o vaciarla **incluida la fila 1**: el primer envío escribe las
   cabeceras nuevas. La pestaña de Desoves se sigue reconociendo en el tablero por «Hembras no
   viables» (ya no queda ninguna cabecera con «nauplio»).
-- 🛡 **A4 · la firma del esquema vigente.** El GAS nuevo exige a los envíos de Ingreso, Lotes y Fin
-  de Ciclo las cabeceras que sólo tiene su esquema actual («Crecimiento semanal promedio»,
-  «Hembras no viables», «Sala» y «Registro»), **aunque la hoja esté vacía o no exista**: una app
+- 🛡 **A4 · la firma del esquema vigente.** El GAS nuevo exige a los envíos de Ingreso, Lotes, Fin de
+  Ciclo, Mortalidad Desove, Tratamientos y Alimentación las cabeceras que sólo tiene su esquema
+  actual («Crecimiento semanal promedio»; «Hembras no viables»; «Sala» y «Rojos»; «Fototropismo» y
+  «Área»; «Productos RAS»; «Fuente del peso»), **aunque la hoja esté vacía o no exista**: una app
   vieja (Pages antes del push, o una copia en caché) ya no puede fijar la cabecera vieja y bloquear
   a las apps al día. Si una de esas cabeceras cambia, se actualiza `MAD_ESQUEMA_FIRMA` en el mismo
-  cambio.
+  cambio; la lista que manda es esa constante de `Code.gs`.
+- 🔎 **Y por eso el rechazo dice DE QUIÉN es la cabecera vieja (PE1.2, 2026-09-16).** En esas seis
+  hojas la firma se comprueba antes que la guarda de esquema, así que un «Esquema desactualizado»
+  sólo puede venir de la HOJA: el GAS lo dice así («Esta app trae el esquema vigente: la cabecera
+  vieja es la de la HOJA, que hay que vaciar con su fila 1») y la app lo enseña tal cual, sin el
+  «Actualiza la app» que mandaba a arreglar una app que ya estaba al día. En las hojas sin firma
+  (Sala, Tanques y Movimientos) no se puede saber y el mensaje nombra las dos salidas. Cambia el
+  `Code.gs`, así que el sello pasa a `afe439753273` y **exige re-desplegar el GAS**. Lo prueban
+  `mad-gas-dopost.test.js` y `gas-motivos.test.js`.
 - ⚠⚠ **EL ORDEN ES `push → GAS`, y lo decide UNA pregunta: ¿alguna hoja ganó una columna EN
   MEDIO?** Añadir AL FINAL es inocuo —`ensureHeaders` alarga la cabecera que falte, y «el envío
   trae menos columnas» no cuenta como desfase—, así que da igual quién cree `Maduración Sala`

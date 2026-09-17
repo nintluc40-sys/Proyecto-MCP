@@ -403,7 +403,8 @@ describe('Ingreso · lo que pidió el usuario el 2026-09-08', () => {
        señal el dato quedaba a salvo en la cola pero no dejaba rastro en NINGÚN sitio —ni
        fila local, ni punto, ni historial—, así que el operario no podía comprobarlo. */
     expect(src).toContain('function madIngLogAnota(');
-    expect(src).toContain('madIngLogAnota(model.fecha, lote, payload.rows.length, "cola")');
+    // Con el id de SU envío (PE1.2): así el registro sabe si ése llegó, no si la cola está vacía (mad-log-envios.test.js).
+    expect(src).toContain('madIngLogAnota(model.fecha, lote, payload.rows.length, "cola", _envio)');
     expect(src).toContain('function madIngReiniciar(');
     // Y se limpia SÓLO tras un envío a salvo, nunca al volver a la pestaña (defecto A2).
     expect(src).toContain('if(fp.querySelector("#mi-comps")) return;');

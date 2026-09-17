@@ -126,6 +126,20 @@ describe('GAS ↔ cliente · los motivos de rechazo', () => {
       expect(t).not.toContain('vuelve a desplegarlo');
     });
 
+    /* PE1.2 (2026-09-16) · el GAS nuevo ya dice quién tiene la cabecera vieja; la pista de siempre («recarga la app
+       para actualizarla») lo contradiría justo cuando la app está al día. Los textos salen del PROPIO GAS. */
+    it('🔴 PE1.2 · cuando el GAS ya dijo que la vieja es la HOJA, el cliente no manda a actualizar la app', () => {
+      const literal = (frag) => { const m = new RegExp('"([^"]*' + frag + '[^"]*)"').exec(gas); if (!m) throw new Error('el GAS ya no dice «' + frag + '»'); return m[1]; };
+      const cabeza = 'Esquema desactualizado en «Maduración Ingreso» (columna 14: la hoja espera «Camarones por m2»). ';
+      const conFirma = cabeza + literal('Esta app trae el esquema vigente');
+      expect(_gasMotivo(conFirma)).toContain(conFirma);
+      expect(_gasMotivo(conFirma)).not.toContain('actualizarla');
+      const sinFirma = cabeza + literal('si ya está al día');
+      expect(_gasMotivo(sinFirma)).not.toContain('recarga la app');
+      // Con el aviso del GAS ANTERIOR (sin diagnóstico) sigue la pista de siempre.
+      expect(_gasMotivo('Esquema desactualizado en «X» (columna 3: la hoja espera «Y»). Actualiza la app antes de sincronizar.')).toContain('actualizarla');
+    });
+
     it('siempre incluye el mensaje literal del servidor', () => {
       const msg = mensajeDelGas('Hoja no permitida');
       expect(_gasMotivo(msg)).toContain(msg);

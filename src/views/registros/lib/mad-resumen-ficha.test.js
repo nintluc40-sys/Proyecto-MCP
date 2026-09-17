@@ -312,6 +312,7 @@ describe('Mortalidad de hembras · la ficha', () => {
     await H.madMortGuardar();
     expect(envios).toHaveLength(0);
     expect(JSON.parse(localStorage.getItem('larv4_syncqueue') || '[]').map((it) => it.payload.sheetName)).toEqual(['Maduración Mortalidad Desove']);
+    expect(JSON.parse(localStorage.getItem('larv4_syncqueue'))[0].mark.kind, 'PE1.2: sin su marca el registro no sabe si llegó').toBe('madlog:mortdes');
     expect(avisos.filter((a) => a.tipo === 'err')).toEqual([]);
     localStorage.removeItem('larv4_syncqueue');
   });

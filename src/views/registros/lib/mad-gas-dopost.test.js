@@ -247,6 +247,31 @@ describe('GAS · un cliente con el ESQUEMA VIEJO no puede escribir en Maduració
     expect(hoja.escrituras).toEqual([]);
   });
 
+  /* 🔴 PE1.2 (2026-09-16) · EL CASO DE PRODUCCIÓN, tal cual. Maduración Ingreso conserva su cabecera de prueba
+     (col. 14 «Camarones por m2», 17 columnas; medido ese día) y la app al día manda 18. La guarda rechaza con
+     razón, pero el aviso decía «Actualiza la app»: el usuario lo reportó con la app y el GAS al día. Ingreso tiene
+     firma y el envío la pasa, así que la vieja es la HOJA y el aviso tiene que decirlo. */
+  it('🔴 PE1.2 · Ingreso con la cabecera VIEJA de la hoja y la app al día: el aviso señala a la HOJA, no a la app', () => {
+    const vieja = MAD_INGRESO_HEADERS.slice(0, 13).concat(['Camarones por m2', 'Densidad de siembra', 'Agua', 'ID']);
+    expect(vieja).toHaveLength(17);
+    const hoja = hojaFalsa([vieja]);
+    const r = gas({ 'Maduración Ingreso': hoja }).post({ sheetName: 'Maduración Ingreso', headers: MAD_INGRESO_HEADERS, rows: [filaVacia(MAD_INGRESO_HEADERS)] });
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('Esquema desactualizado');                       // sigue siendo rechazo de ENTORNO para la cola
+    expect(r.message).toContain('la hoja espera «Camarones por m2»');
+    expect(r.message).toContain('la cabecera vieja es la de la HOJA');
+    expect(r.message).not.toContain('Actualiza la app');
+    expect(r.message, 'la cola lo leería como «servidor ocupado» y lo reintentaría').not.toMatch(/reintenta|ocupad/i);
+    expect(hoja.escrituras).toEqual([]);
+  });
+
+  it('PE1.2 · sin firma (Tanques) no se sabe quién es el viejo: el aviso dice las dos cosas', () => {
+    const r = gas({ 'Maduración Tanques': hojaFalsa([TANQUES]) }).post({ sheetName: 'Maduración Tanques', headers: TANQUES_F1D9687, rows: [filaVacia(TANQUES_F1D9687)] });
+    expect(r.message).toContain('Actualiza la app');
+    expect(r.message).toContain('si ya está al día, la cabecera vieja es la de la hoja');
+    expect(r.message).not.toContain('la cabecera vieja es la de la HOJA,');
+  });
+
   it('el rechazo NO echa en cara lo que mandó el cliente: sólo nombra la columna de la hoja', () => {
     const g = gas({ 'Maduración Tanques': hojaFalsa([TANQUES]) });
     const r = g.post({ sheetName: 'Maduración Tanques', headers: TANQUES_F1D9687, rows: [filaVacia(TANQUES_F1D9687)] });

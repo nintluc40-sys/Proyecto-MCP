@@ -226,6 +226,7 @@ describe('Alimentación · la ficha', () => {
     await H.madAlimGuardar();
     expect(envios).toHaveLength(0);
     expect(JSON.parse(localStorage.getItem('larv4_syncqueue') || '[]').map((it) => it.payload.sheetName)).toEqual(['Maduración Alimentación']);
+    expect(JSON.parse(localStorage.getItem('larv4_syncqueue'))[0].mark.kind, 'PE1.2: sin su marca el registro no sabe si llegó').toBe('madlog:alimentacion');
     expect(avisos.filter((a) => a.tipo === 'err')).toEqual([]);
     localStorage.removeItem('larv4_syncqueue');
   });

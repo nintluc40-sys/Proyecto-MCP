@@ -1252,6 +1252,9 @@ function _gasMotivo(gasMsg){
   const m = String(gasMsg || "").trim();
   if(!m) return "";
   const ml = m.toLowerCase();
+  /* PE1.2 (2026-09-16) · el GAS nuevo ya dice quién tiene la cabecera vieja. Añadir aquí «recarga la app» lo
+     contradiría justo cuando la app está al día y lo viejo es la hoja. Con el GAS anterior sigue la pista de siempre. */
+  if(ml.indexOf("esquema desactualizado") !== -1 && (ml.indexOf("esta app trae el esquema vigente") !== -1 || ml.indexOf("si ya está al día") !== -1)) return " — " + m;
   let pista = "";
   if(ml.indexOf("hoja no permitida") !== -1)        pista = " · el GAS desplegado es anterior a esta app: vuelve a desplegarlo desde Apps Script";
   else if(ml.indexOf("límite de filas") !== -1)     pista = " · envía menos registros de una vez";
@@ -1698,7 +1701,17 @@ function _enqueueSync(payload, reqId, url, mark){
   if(!payload || !Array.isArray(payload.rows) || payload.rows.length === 0) return;
   let q = _loadSyncQueue();
   // Evita acumular el mismo envío (misma huella) más de una vez.
-  if(reqId && q.some(it => it && it.reqId === reqId)) return;
+  /* PE1.2 (2026-09-16) · pero si es de una ficha de Maduración, la entrada del registro del SEGUNDO guardado tiene
+     que enterarse de la entrega igual que la primera: su id se suma a la marca del que ya espera. */
+  const _yaEnCola = reqId ? q.find(it => it && it.reqId === reqId) : null;
+  if(_yaEnCola){
+    if(mark && typeof mark.kind === "string" && mark.kind.indexOf("madlog:") === 0 && _yaEnCola.mark && _yaEnCola.mark.kind === mark.kind
+       && Array.isArray(_yaEnCola.mark.keys) && Array.isArray(mark.keys)){
+      mark.keys.forEach(k => { if(_yaEnCola.mark.keys.indexOf(k) === -1) _yaEnCola.mark.keys.push(k); });
+      _saveSyncQueue(q);
+    }
+    return;
+  }
   // F3: si el envío trae marca, descarta de la cola cualquier ítem PREVIO de las
   // mismas sesiones — su contenido quedó obsoleto (el usuario reeditó y reenvió).
   // Así el flush nunca reescribe datos viejos sobre los nuevos ni marca
@@ -1808,6 +1821,7 @@ function _reconcileMark(mark){
     // registros en vez de marcarlos. Van aparte, antes del despacho genérico.
     if(mark.kind === "fichas") return _reconcileFichas(mark);
     if(mark.kind === "alg")    return _reconcileAlgas(mark);
+    if(mark.kind.indexOf("madlog:") === 0) return _madLogReconciliar(mark.kind.slice(7), mark.keys);
     const keys = new Set(mark.keys.map(String));
     const now  = Date.now();
     // Cada vista define: raw() lee su lista local, save(l) la persiste y keyOf(r)
@@ -7534,9 +7548,9 @@ function madIngLogLeer(){
 function madIngLogGuardar(list){
   try{ localStorage.setItem(MAD_ING_LOG_KEY, JSON.stringify(list.slice(-40))); }catch(_){}
 }
-function madIngLogAnota(fecha, lote, filas, estado){
+function madIngLogAnota(fecha, lote, filas, estado, envioId){
   const l=madIngLogLeer();
-  l.push({ id:Date.now().toString(36)+Math.random().toString(36).slice(2,6), ts:Date.now(), fecha:fecha, lote:lote, filas:filas, estado:estado });
+  l.push({ id:envioId || _madLogEnvioId(), marca:!!envioId, ts:Date.now(), fecha:fecha, lote:lote, filas:filas, estado:estado });
   madIngLogGuardar(l);
 }
 function madIngLogHTML(){
@@ -7548,13 +7562,12 @@ function madIngLogHTML(){
      siempre, y sin cablear nada dentro de flushSyncQueue. */
   if(enCola===0){
     let cambio=false;
-    l.forEach(function(e){ if(e.estado==="cola"){ e.estado="ok"; cambio=true; } });
+    l.forEach(function(e){ if(e.estado==="cola" && !e.marca){ e.estado="ok"; cambio=true; } });
     if(cambio) madIngLogGuardar(l);
   }
+  const propios=l.filter(function(e){ return _madLogEstado("ingreso", e, enCola===0)==="cola"; }).length;
   const filas=l.slice().reverse().slice(0,10).map(function(e){
-    const st = e.estado==="cola"
-      ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px">📶 en cola</span>'
-      : '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px">✅ enviado</span>';
+    const st = _madLogEtiqueta(_madLogEstado("ingreso", e, enCola===0));
     const d=new Date(e.ts), hh=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
     return '<tr><td style="font-size:11px">'+escapeHtml(String(e.fecha||""))+' '+hh+'</td>'
       + '<td style="font-weight:600">'+escapeHtml(String(e.lote||""))+'</td>'
@@ -7563,7 +7576,7 @@ function madIngLogHTML(){
   }).join("");
   return '<div style="margin-top:18px">'
     + '<h3 style="margin:0 0 4px;font-size:13px">Registrado desde este dispositivo</h3>'
-    + (enCola ? '<div style="font-size:11px;color:#92400e;margin-bottom:5px">📶 '+enCola+' envío(s) esperando conexión. Se entregan y se verifican solos.</div>' : '')
+    + (propios ? '<div style="font-size:11px;color:#92400e;margin-bottom:5px">📶 '+propios+' envío(s) de esta ficha en cola. Se entregan y se verifican solos.</div>' : '')
     + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Lote</th><th>Filas</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div>'
     + '</div>';
 }
@@ -7732,6 +7745,47 @@ async function _madPostConSello(payload, gas, opts){
   setTimeout(function(){ try{ flushSyncQueue(); }catch(_){} }, 8000);
   return false;
 }
+/* PE1.2 (2026-09-16) · EL ESTADO DE UN ENVÍO ES EL SUYO, NO EL DE LA COLA ENTERA. Los siete registros «Registrado desde
+   este dispositivo» decidían «en cola» / «enviado» mirando si la cola GLOBAL tenía algo: con un solo envío atascado
+   (un Ingreso contra su cabecera vieja, por ejemplo) TODOS los de todas las fichas seguían «en cola», y cuando la cola
+   se vaciaba porque un envío CADUCÓ (24 h) o la hoja lo RECHAZÓ, se pintaban «✅ enviado» sin haber llegado nunca.
+   Ahora cada envío viaja con su MARCA (madlog:<ficha> + el id de su entrada): al entregarse, la cola la reconcilia
+   (_reconcileMark) y la entrada pasa a «ok»; si sigue en la cola, «en cola»; si salió sin entregarse, «no llegó».
+   ⚠ Las entradas de antes no llevan marca: conservan el criterio viejo, para no inventar nada sobre ellas. */
+function _madLogEnvioId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function _madLogMarca(ficha, id){ return { kind:"madlog:"+ficha, keys:[id] }; }
+function _madLogEstado(ficha, e, colaVacia){
+  if(!e || e.estado!=="cola") return "ok";
+  if(!e.marca) return colaVacia ? "ok" : "cola";
+  const kind="madlog:"+ficha;
+  const enCola=_loadSyncQueue().some(function(it){ return it && it.mark && it.mark.kind===kind && Array.isArray(it.mark.keys) && it.mark.keys.indexOf(e.id)!==-1; });
+  return enCola ? "cola" : "perdido";
+}
+function _madLogEtiqueta(estado){
+  if(estado==="cola") return '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;white-space:nowrap">📶 en cola</span>';
+  if(estado==="perdido") return '<span style="background:#fee2e2;color:#991b1b;padding:1px 6px;border-radius:4px;white-space:nowrap" title="Salió de la cola sin llegar a la hoja: caducó a las 24 h o la hoja lo rechazó. Vuelve a guardarlo.">⚠ no llegó</span>';
+  return '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px;white-space:nowrap">✅ enviado</span>';
+}
+/* Entrega confirmada desde la cola: la entrada de ese envío pasa a «ok» y, si su registro está a la vista, se
+   repinta. Cada ficha se nombra (nada de window[nombre]: el monolito se arranca en las pruebas con new Function). */
+function _madLogReconciliar(ficha, keys){
+  const f = ficha==="ingreso" ? [madIngLogLeer, madIngLogGuardar, madIngLogHTML, "mi-log"]
+    : ficha==="movimientos" ? [madMovLogLeer, madMovLogGuardar, madMovLogHTML, "mv-log"]
+    : ficha==="desoves" ? [madDesLogLeer, madDesLogGuardar, madDesLogHTML, "md-log"]
+    : ficha==="fin" ? [madFinLogLeer, madFinLogGuardar, madFinLogHTML, "mf-log"]
+    : ficha==="tratamientos" ? [madTratLogLeer, madTratLogGuardar, madTratLogHTML, "mt-log"]
+    : ficha==="mortdes" ? [madMortLogLeer, madMortLogGuardar, madMortLogHTML, "mm-log"]
+    : ficha==="alimentacion" ? [madAlimLogLeer, madAlimLogGuardar, madAlimLogHTML, "ma-log"]
+    : null;
+  if(!f) return false;
+  const ids=(keys||[]).map(String), l=f[0]();
+  let cambio=false;
+  l.forEach(function(e){ if(e && e.estado==="cola" && ids.indexOf(String(e.id))!==-1){ e.estado="ok"; cambio=true; } });
+  if(!cambio) return false;
+  f[1](l);
+  const box=document.getElementById(f[3]); if(box) box.innerHTML=f[2]();
+  return true;
+}
 async function madIngGuardar(){
   const model=madIngCollect();
   const res=madIngValidar(model);
@@ -7750,10 +7804,10 @@ async function madIngGuardar(){
   }
   const lote=madIngNormLote(model.lote);
   toast("Enviando ingreso del lote "+lote+"…","info",2200);
-  const _t={};
+  const _envio=_madLogEnvioId(), _t={ mark:_madLogMarca("ingreso", _envio) };
   const ok=await _madPostConSello(payload, _gas, _t);
   if(ok){
-    madIngLogAnota(model.fecha, lote, payload.rows.length, "ok");
+    madIngLogAnota(model.fecha, lote, payload.rows.length, "ok", _envio);
     toast("✅ Ingreso registrado · "+payload.rows.length+" fila(s)","ok",5000);
     madIngReiniciar();
     return;
@@ -7766,7 +7820,7 @@ async function madIngGuardar(){
   if(_t.outcome==="queued"){
     // Encolado = a salvo: se anota y se limpia igual que un envío entregado, y el registro
     // de abajo lo enseña como «en cola» hasta que la cola se vacía.
-    madIngLogAnota(model.fecha, lote, payload.rows.length, "cola");
+    madIngLogAnota(model.fecha, lote, payload.rows.length, "cola", _envio);
     madIngReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudo registrar el ingreso", null, _t.gasMessage);
@@ -8192,9 +8246,9 @@ function madMovLogLeer(){
 function madMovLogGuardar(list){
   try{ localStorage.setItem(MAD_MOV_LOG_KEY, JSON.stringify(list.slice(-40))); }catch(_){}
 }
-function madMovLogAnota(fecha, tipo, filas, estado){
+function madMovLogAnota(fecha, tipo, filas, estado, envioId){
   const l=madMovLogLeer();
-  l.push({ id:Date.now().toString(36)+Math.random().toString(36).slice(2,6), ts:Date.now(), fecha:fecha, tipo:tipo, filas:filas, estado:estado });
+  l.push({ id:envioId || _madLogEnvioId(), marca:!!envioId, ts:Date.now(), fecha:fecha, tipo:tipo, filas:filas, estado:estado });
   madMovLogGuardar(l);
 }
 function madMovLogHTML(){
@@ -8203,13 +8257,12 @@ function madMovLogHTML(){
   const enCola = (typeof syncQueueLen==="function") ? syncQueueLen() : 0;
   if(enCola===0){
     let cambio=false;
-    l.forEach(function(e){ if(e.estado==="cola"){ e.estado="ok"; cambio=true; } });
+    l.forEach(function(e){ if(e.estado==="cola" && !e.marca){ e.estado="ok"; cambio=true; } });
     if(cambio) madMovLogGuardar(l);
   }
+  const propios=l.filter(function(e){ return _madLogEstado("movimientos", e, enCola===0)==="cola"; }).length;
   const filas=l.slice().reverse().slice(0,10).map(function(e){
-    const st = e.estado==="cola"
-      ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px">📶 en cola</span>'
-      : '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px">✅ enviado</span>';
+    const st = _madLogEtiqueta(_madLogEstado("movimientos", e, enCola===0));
     const d=new Date(e.ts), hh=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
     return '<tr><td style="font-size:11px">'+escapeHtml(String(e.fecha||""))+' '+hh+'</td>'
       + '<td>'+escapeHtml(String(e.tipo||""))+'</td>'
@@ -8218,7 +8271,7 @@ function madMovLogHTML(){
   }).join("");
   return '<div style="margin-top:18px">'
     + '<h3 style="margin:0 0 4px;font-size:13px">Registrado desde este dispositivo</h3>'
-    + (enCola ? '<div style="font-size:11px;color:#92400e;margin-bottom:5px">📶 '+enCola+' envío(s) esperando conexión. Se entregan y se verifican solos.</div>' : '')
+    + (propios ? '<div style="font-size:11px;color:#92400e;margin-bottom:5px">📶 '+propios+' envío(s) de esta ficha en cola. Se entregan y se verifican solos.</div>' : '')
     + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Tipo</th><th>Tramos</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div>'
     + '</div>';
 }
@@ -8231,10 +8284,10 @@ async function madMovGuardar(){
   if(res.errores.length){ toast("Corrige los errores antes de guardar.","err",4000); return; }
   if(!payload.rows.length){ toast("No hay ningún tramo completo que guardar.","warn",4000); return; }
   toast("Enviando "+payload.rows.length+" tramo(s)…","info",2200);
-  const _t={};
+  const _envio=_madLogEnvioId(), _t={ mark:_madLogMarca("movimientos", _envio) };
   const ok=await postPayload(payload, gasUrl(), _t);
   if(ok){
-    madMovLogAnota(model.fecha, model.tipo, payload.rows.length, "ok");
+    madMovLogAnota(model.fecha, model.tipo, payload.rows.length, "ok", _envio);
     toast("✅ Movimiento registrado · "+payload.rows.length+" tramo(s)","ok",5000);
     madMovReiniciar();
     return;
@@ -8243,7 +8296,7 @@ async function madMovGuardar(){
   // pudo enviar» a alguien cuyo movimiento ya está a salvo le empuja a registrarlo dos
   // veces, y aquí eso descuadraría el saldo de dos tanques. Es el invariante H1.
   if(_t.outcome==="queued"){
-    madMovLogAnota(model.fecha, model.tipo, payload.rows.length, "cola");
+    madMovLogAnota(model.fecha, model.tipo, payload.rows.length, "cola", _envio);
     madMovReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudo registrar el movimiento", null, _t.gasMessage);
@@ -8598,14 +8651,14 @@ function madDesLogLeer(){
 function madDesLogGuardar(list){
   try{ localStorage.setItem(MAD_DES_LOG_KEY, JSON.stringify(list.slice(-200))); }catch(_){}
 }
-function madDesLogAnota(model, filas, estado){
+function madDesLogAnota(model, filas, estado, envioId){
   const m=model||{}, l=madDesLogLeer();
   const desoves=(m.desoves||[]).filter(function(x){ return x && madDesNormLote(x.lote)!=="" && madDesNormCG(x.codigoGenetico)!==""; }).map(function(x){
     return { lote:madDesNormLote(x.lote), codigoGenetico:madDesNormCG(x.codigoGenetico), desoves:_madDesTxt(x.desoves), huevos:_madDesTxt(x.huevos),
       hembrasNoViables:_madDesTxt(x.hembrasNoViables), fechaN2:_madDesTxt(x.fechaN2), n2:_madDesTxt(x.n2),
       fechaN5:_madDesTxt(x.fechaN5), n5:_madDesTxt(x.n5), despacho:madDesDespachoTexto(x.despacho) };
   });
-  l.push({ id:Date.now().toString(36)+Math.random().toString(36).slice(2,6), ts:Date.now(), fecha:sanitizeStr(m.fecha,10), filas:filas, estado:estado, desoves:desoves });
+  l.push({ id:envioId || _madLogEnvioId(), marca:!!envioId, ts:Date.now(), fecha:sanitizeStr(m.fecha,10), filas:filas, estado:estado, desoves:desoves });
   madDesLogGuardar(l);
 }
 function madDesLogHTML(){
@@ -8614,15 +8667,14 @@ function madDesLogHTML(){
   const enCola = (typeof syncQueueLen==="function") ? syncQueueLen() : 0;
   if(enCola===0){
     let cambio=false;
-    l.forEach(function(e){ if(e.estado==="cola"){ e.estado="ok"; cambio=true; } });
+    l.forEach(function(e){ if(e.estado==="cola" && !e.marca){ e.estado="ok"; cambio=true; } });
     if(cambio) madDesLogGuardar(l);
   }
+  const propios=l.filter(function(e){ return _madLogEstado("desoves", e, enCola===0)==="cola"; }).length;
   const cel=function(v){ return (v===undefined||v===null||v==="") ? "—" : escapeHtml(String(v)); };
   const filas=[];
   l.slice().reverse().forEach(function(e){
-    const st = e.estado==="cola"
-      ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;white-space:nowrap">📶 en cola</span>'
-      : '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px;white-space:nowrap">✅ enviado</span>';
+    const st = _madLogEtiqueta(_madLogEstado("desoves", e, enCola===0));
     const d=new Date(e.ts), cuando=("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
     ((e.desoves && e.desoves.length) ? e.desoves : [{}]).forEach(function(x){
       filas.push('<tr class="md-hist"><td style="white-space:nowrap">'+cuando+'</td><td style="white-space:nowrap">'+cel(e.fecha)+'</td><td>'+cel(x.lote)+'</td><td>'+cel(x.codigoGenetico)+'</td>'
@@ -8632,7 +8684,7 @@ function madDesLogHTML(){
   });
   return '<div style="margin-top:18px">'
     + '<h3 style="margin:0 0 4px;font-size:13px">🕘 Historial de este dispositivo (últimas 36 h)</h3>'
-    + (enCola ? '<div style="font-size:11px;color:#92400e;margin-bottom:5px">📶 '+enCola+' envío(s) esperando conexión. Se entregan y se verifican solos.</div>' : '')
+    + (propios ? '<div style="font-size:11px;color:#92400e;margin-bottom:5px">📶 '+propios+' envío(s) de esta ficha en cola. Se entregan y se verifican solos.</div>' : '')
     + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Guardado</th><th>Desove</th><th>Lote</th><th>Código</th><th>Desoves</th><th>Huevos (mil)</th><th>N2 (mil)</th><th>N5 (mil)</th><th>Despacho</th><th>Estado</th></tr></thead><tbody>'+filas.join("")+'</tbody></table></div>'
     + '</div>';
 }
@@ -8653,10 +8705,10 @@ async function madDesGuardar(){
     return;
   }
   toast("Enviando "+payload.rows.length+" desove(s)…","info",2200);
-  const _t={};
+  const _envio=_madLogEnvioId(), _t={ mark:_madLogMarca("desoves", _envio) };
   const ok=await _madPostConSello(payload, _gas, _t);
   if(ok){
-    madDesLogAnota(model, payload.rows.length, "ok");
+    madDesLogAnota(model, payload.rows.length, "ok", _envio);
     madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), model, Date.now()));
     toast("✅ Desove registrado · "+payload.rows.length+" fila(s)","ok",5000);
     madDesReiniciar();
@@ -8666,7 +8718,7 @@ async function madDesGuardar(){
   // invariante H1: decir «no se pudo» a alguien cuyo dato ya está a salvo le empuja a
   // registrarlo dos veces, y aquí el segundo envío se fusionaría sobre el primero.
   if(_t.outcome==="queued"){
-    madDesLogAnota(model, payload.rows.length, "cola");
+    madDesLogAnota(model, payload.rows.length, "cola", _envio);
     madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), model, Date.now()));
     madDesReiniciar();
   }
@@ -9012,9 +9064,9 @@ function madFinLogLeer(){
 function madFinLogGuardar(list){
   try{ localStorage.setItem(MAD_FIN_LOG_KEY, JSON.stringify(list.slice(-40))); }catch(_){}
 }
-function madFinLogAnota(fecha, filas, estado){
+function madFinLogAnota(fecha, filas, estado, envioId){
   const l=madFinLogLeer();
-  l.push({ id:Date.now().toString(36)+Math.random().toString(36).slice(2,6), ts:Date.now(), fecha:fecha, filas:filas, estado:estado });
+  l.push({ id:envioId || _madLogEnvioId(), marca:!!envioId, ts:Date.now(), fecha:fecha, filas:filas, estado:estado });
   madFinLogGuardar(l);
 }
 function madFinLogHTML(){
@@ -9023,20 +9075,19 @@ function madFinLogHTML(){
   const enCola = (typeof syncQueueLen==="function") ? syncQueueLen() : 0;
   if(enCola===0){
     let cambio=false;
-    l.forEach(function(e){ if(e.estado==="cola"){ e.estado="ok"; cambio=true; } });
+    l.forEach(function(e){ if(e.estado==="cola" && !e.marca){ e.estado="ok"; cambio=true; } });
     if(cambio) madFinLogGuardar(l);
   }
+  const propios=l.filter(function(e){ return _madLogEstado("fin", e, enCola===0)==="cola"; }).length;
   const filas=l.slice().reverse().slice(0,10).map(function(e){
-    const st = e.estado==="cola"
-      ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px">📶 en cola</span>'
-      : '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px">✅ enviado</span>';
+    const st = _madLogEtiqueta(_madLogEstado("fin", e, enCola===0));
     const d=new Date(e.ts), hh=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
     return '<tr><td style="font-size:11px">'+escapeHtml(String(e.fecha||""))+' '+hh+'</td>'
       + '<td style="text-align:right">'+(e.filas||0)+'</td><td>'+st+'</td></tr>';
   }).join("");
   return '<div style="margin-top:18px">'
     + '<h3 style="margin:0 0 4px;font-size:13px">Registrado desde este dispositivo</h3>'
-    + (enCola ? '<div style="font-size:11px;color:#92400e;margin-bottom:5px">📶 '+enCola+' envío(s) esperando conexión. Se entregan y se verifican solos.</div>' : '')
+    + (propios ? '<div style="font-size:11px;color:#92400e;margin-bottom:5px">📶 '+propios+' envío(s) de esta ficha en cola. Se entregan y se verifican solos.</div>' : '')
     + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Cierres</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div>'
     + '</div>';
 }
@@ -9056,10 +9107,10 @@ async function madFinGuardar(){
     return;
   }
   toast("Enviando "+payload.rows.length+" cierre(s)…","info",2200);
-  const _t={};
+  const _envio=_madLogEnvioId(), _t={ mark:_madLogMarca("fin", _envio) };
   const ok=await _madPostConSello(payload, _gas, _t);
   if(ok){
-    madFinLogAnota(model.fecha, payload.rows.length, "ok");
+    madFinLogAnota(model.fecha, payload.rows.length, "ok", _envio);
     toast("✅ Cierre registrado · "+payload.rows.length+" fila(s)","ok",5000);
     madFinReiniciar();
     return;
@@ -9068,7 +9119,7 @@ async function madFinGuardar(){
   // H1: decir «no se pudo» a alguien cuyo cierre ya está a salvo le empuja a registrarlo dos
   // veces, y aquí el segundo se fusionaría sobre el primero descontando el doble.
   if(_t.outcome==="queued"){
-    madFinLogAnota(model.fecha, payload.rows.length, "cola");
+    madFinLogAnota(model.fecha, payload.rows.length, "cola", _envio);
     madFinReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudo registrar el cierre", null, _t.gasMessage);
@@ -9313,19 +9364,20 @@ const MAD_TRAT_LOG_KEY = "larv4_mad_trat_log";
 function madTratLogLeer(){
   try{ const v=JSON.parse(localStorage.getItem(MAD_TRAT_LOG_KEY)||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; }
 }
-function madTratLogAnota(fecha, filas, estado){
+function madTratLogGuardar(list){
+  try{ localStorage.setItem(MAD_TRAT_LOG_KEY, JSON.stringify(list.slice(-40))); }catch(_){}
+}
+function madTratLogAnota(fecha, filas, estado, envioId){
   const l=madTratLogLeer();
-  l.push({ ts:Date.now(), fecha:fecha, filas:filas, estado:estado });
-  try{ localStorage.setItem(MAD_TRAT_LOG_KEY, JSON.stringify(l.slice(-40))); }catch(_){}
+  l.push({ id:envioId || _madLogEnvioId(), marca:!!envioId, ts:Date.now(), fecha:fecha, filas:filas, estado:estado });
+  madTratLogGuardar(l);
 }
 function madTratLogHTML(){
   const l=madTratLogLeer();
   if(!l.length) return "";
   const enCola=(typeof syncQueueLen==="function") ? syncQueueLen() : 0;
   const filas=l.slice().reverse().slice(0,10).map(function(e){
-    const st=(e.estado==="cola" && enCola)
-      ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px">📶 en cola</span>'
-      : '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px">✅ enviado</span>';
+    const st=_madLogEtiqueta(_madLogEstado("tratamientos", e, !enCola));
     const d=new Date(e.ts), hh=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
     return '<tr><td>'+escapeHtml(String(e.fecha||""))+' '+hh+'</td><td style="text-align:right">'+(e.filas||0)+'</td><td>'+st+'</td></tr>';
   }).join("");
@@ -9349,17 +9401,17 @@ async function madTratGuardar(){
     return;
   }
   toast("Enviando "+payload.rows.length+" tratamiento(s)…","info",2200);
-  const _t={};
+  const _envio=_madLogEnvioId(), _t={ mark:_madLogMarca("tratamientos", _envio) };
   const ok=await _madPostConSello(payload, _gas, _t);
   if(ok){
-    madTratLogAnota(model.fecha, payload.rows.length, "ok");
+    madTratLogAnota(model.fecha, payload.rows.length, "ok", _envio);
     toast("✅ Tratamientos registrados · "+payload.rows.length+" fila(s)","ok",5000);
     madTratReiniciar();
     return;
   }
   // ⚠ `postPayload` devuelve false TAMBIÉN cuando el envío quedó ENCOLADO (invariante H1).
   if(_t.outcome==="queued"){
-    madTratLogAnota(model.fecha, payload.rows.length, "cola");
+    madTratLogAnota(model.fecha, payload.rows.length, "cola", _envio);
     madTratReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudieron registrar los tratamientos", null, _t.gasMessage);
@@ -9658,19 +9710,20 @@ const MAD_MORT_LOG_KEY = "larv4_mad_mort_log";
 function madMortLogLeer(){
   try{ const v=JSON.parse(localStorage.getItem(MAD_MORT_LOG_KEY)||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; }
 }
-function madMortLogAnota(fecha, filas, estado){
+function madMortLogGuardar(list){
+  try{ localStorage.setItem(MAD_MORT_LOG_KEY, JSON.stringify(list.slice(-40))); }catch(_){}
+}
+function madMortLogAnota(fecha, filas, estado, envioId){
   const l=madMortLogLeer();
-  l.push({ ts:Date.now(), fecha:fecha, filas:filas, estado:estado });
-  try{ localStorage.setItem(MAD_MORT_LOG_KEY, JSON.stringify(l.slice(-40))); }catch(_){}
+  l.push({ id:envioId || _madLogEnvioId(), marca:!!envioId, ts:Date.now(), fecha:fecha, filas:filas, estado:estado });
+  madMortLogGuardar(l);
 }
 function madMortLogHTML(){
   const l=madMortLogLeer();
   if(!l.length) return "";
   const enCola=(typeof syncQueueLen==="function") ? syncQueueLen() : 0;
   const filas=l.slice().reverse().slice(0,10).map(function(e){
-    const st=(e.estado==="cola" && enCola)
-      ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px">📶 en cola</span>'
-      : '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px">✅ enviado</span>';
+    const st=_madLogEtiqueta(_madLogEstado("mortdes", e, !enCola));
     const d=new Date(e.ts), hh=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
     return '<tr><td>'+escapeHtml(String(e.fecha||""))+' '+hh+'</td><td style="text-align:right">'+(e.filas||0)+'</td><td>'+st+'</td></tr>';
   }).join("");
@@ -9694,17 +9747,17 @@ async function madMortGuardar(){
     return;
   }
   toast("Enviando "+payload.rows.length+" fila(s)…","info",2200);
-  const _t={};
+  const _envio=_madLogEnvioId(), _t={ mark:_madLogMarca("mortdes", _envio) };
   const ok=await _madPostConSello(payload, _gas, _t);
   if(ok){
-    madMortLogAnota(model.fecha, payload.rows.length, "ok");
+    madMortLogAnota(model.fecha, payload.rows.length, "ok", _envio);
     toast("✅ Inf. Supervisor registrado · "+payload.rows.length+" fila(s)","ok",5000);
     madMortReiniciar();
     return;
   }
   // ⚠ `postPayload` devuelve false TAMBIÉN cuando el envío quedó ENCOLADO (invariante H1).
   if(_t.outcome==="queued"){
-    madMortLogAnota(model.fecha, payload.rows.length, "cola");
+    madMortLogAnota(model.fecha, payload.rows.length, "cola", _envio);
     madMortReiniciar();
   }
   _syncNotOkUI(_t.outcome, "No se pudo registrar el Inf. Supervisor", null, _t.gasMessage);
@@ -10280,19 +10333,20 @@ function madAlimRevisar(){
 function madAlimLogLeer(){
   try{ const v=JSON.parse(localStorage.getItem(MAD_ALIM_LOG_KEY)||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; }
 }
-function madAlimLogAnota(fecha, filas, estado){
+function madAlimLogGuardar(list){
+  try{ localStorage.setItem(MAD_ALIM_LOG_KEY, JSON.stringify(list.slice(-40))); }catch(_){}
+}
+function madAlimLogAnota(fecha, filas, estado, envioId){
   const l=madAlimLogLeer();
-  l.push({ ts:Date.now(), fecha:fecha, filas:filas, estado:estado });
-  try{ localStorage.setItem(MAD_ALIM_LOG_KEY, JSON.stringify(l.slice(-40))); }catch(_){}
+  l.push({ id:envioId || _madLogEnvioId(), marca:!!envioId, ts:Date.now(), fecha:fecha, filas:filas, estado:estado });
+  madAlimLogGuardar(l);
 }
 function madAlimLogHTML(){
   const l=madAlimLogLeer();
   if(!l.length) return "";
   const enCola=(typeof syncQueueLen==="function") ? syncQueueLen() : 0;
   const filas=l.slice().reverse().slice(0,10).map(function(e){
-    const st=(e.estado==="cola" && enCola)
-      ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px">📶 en cola</span>'
-      : '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px">✅ enviado</span>';
+    const st=_madLogEtiqueta(_madLogEstado("alimentacion", e, !enCola));
     const d=new Date(e.ts), hh=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
     return '<tr><td>'+escapeHtml(String(e.fecha||""))+' '+hh+'</td><td style="text-align:right">'+(e.filas||0)+'</td><td>'+st+'</td></tr>';
   }).join("");
@@ -10315,7 +10369,7 @@ async function madAlimGuardar(){
     return;
   }
   toast("Enviando "+payload.rows.length+" fila(s)…","info",2200);
-  const _t={};
+  const _envio=_madLogEnvioId(), _t={ mark:_madLogMarca("alimentacion", _envio) };
   const ok=await _madPostConSello(payload, _gas, _t);
   // ⚠ `postPayload` devuelve false TAMBIÉN cuando el envío quedó ENCOLADO (invariante H1): la agenda ya va en camino.
   if(ok || _t.outcome==="queued"){
@@ -10323,7 +10377,7 @@ async function madAlimGuardar(){
     enviadas.forEach(function(s){ if(cfg[s]) cfg[s].pendiente=false; });
     madAlimCfgGuardar(cfg);
     document.querySelectorAll("#ma-salas .ma-sala").forEach(function(el){ if(enviadas.indexOf(el.getAttribute("data-sala"))!==-1){ const b=el.querySelector(".ma-pend"); if(b) b.hidden=true; } });
-    madAlimLogAnota(model.fecha, payload.rows.length, ok ? "ok" : "cola");
+    madAlimLogAnota(model.fecha, payload.rows.length, ok ? "ok" : "cola", _envio);
     const lg=document.getElementById("ma-log"); if(lg) lg.innerHTML=madAlimLogHTML();
   }
   if(ok){ toast("✅ Alimentación registrada · "+payload.rows.length+" fila(s)","ok",5000); return; }
@@ -20532,7 +20586,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "a9cd92704b08";
+const GAS_VERSION = "afe439753273";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -20906,10 +20960,18 @@ function doPost(e) {
     // mandó el cliente.
     if (MAD_ESQUEMA_VIGILADO.indexOf(payload.sheetName) !== -1 && Array.isArray(payload.headers)
         && ws.getLastRow() > 0 && ws.getLastColumn() > 0) {
+      // PE1.2 (2026-09-16) · QUIÉN TIENE EL ESQUEMA VIEJO. Si la hoja tiene firma (MAD_ESQUEMA_FIRMA), el envío ya la
+      // pasó más arriba: esta app trae el esquema VIGENTE y lo viejo es la cabecera de la HOJA. El aviso decía siempre
+      // «Actualiza la app» y mandaba a arreglar lo que ya estaba bien (Ingreso y Lotes conservan su cabecera de prueba).
+      // Sin firma no se puede saber cuál de los dos es el viejo. Sigue sin repetir lo que mandó el cliente, y sin las
+      // palabras que el cliente lee como «servidor ocupado» (reintentar ese rechazo no arreglaría nada).
+      var _conFirma = Object.prototype.hasOwnProperty.call(MAD_ESQUEMA_FIRMA, payload.sheetName);
       var _desfase = esquemaIncompatible_(ws.getRange(1, 1, 1, ws.getLastColumn()).getValues()[0], payload.headers);
       if (_desfase) {
         return respond({ status: "error", message: "Esquema desactualizado en «" + payload.sheetName + "» (columna "
-          + _desfase.col + ": la hoja espera «" + _desfase.hoja + "»). Actualiza la app antes de sincronizar: no se escribió nada y lo tecleado sigue en este dispositivo." });
+          + _desfase.col + ": la hoja espera «" + _desfase.hoja + "»). " + (_conFirma
+          ? "Esta app trae el esquema vigente: la cabecera vieja es la de la HOJA, que hay que vaciar con su fila 1 (o corregir esa cabecera). No se escribió nada y lo tecleado sigue en este dispositivo."
+          : "Actualiza la app antes de sincronizar; si ya está al día, la cabecera vieja es la de la hoja. No se escribió nada y lo tecleado sigue en este dispositivo.") });
       }
     }
     ensureHeaders(ws, payload.headers || []);

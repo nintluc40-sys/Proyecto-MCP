@@ -21,7 +21,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "a9cd92704b08";
+const GAS_VERSION = "afe439753273";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -395,10 +395,18 @@ function doPost(e) {
     // mandó el cliente.
     if (MAD_ESQUEMA_VIGILADO.indexOf(payload.sheetName) !== -1 && Array.isArray(payload.headers)
         && ws.getLastRow() > 0 && ws.getLastColumn() > 0) {
+      // PE1.2 (2026-09-16) · QUIÉN TIENE EL ESQUEMA VIEJO. Si la hoja tiene firma (MAD_ESQUEMA_FIRMA), el envío ya la
+      // pasó más arriba: esta app trae el esquema VIGENTE y lo viejo es la cabecera de la HOJA. El aviso decía siempre
+      // «Actualiza la app» y mandaba a arreglar lo que ya estaba bien (Ingreso y Lotes conservan su cabecera de prueba).
+      // Sin firma no se puede saber cuál de los dos es el viejo. Sigue sin repetir lo que mandó el cliente, y sin las
+      // palabras que el cliente lee como «servidor ocupado» (reintentar ese rechazo no arreglaría nada).
+      var _conFirma = Object.prototype.hasOwnProperty.call(MAD_ESQUEMA_FIRMA, payload.sheetName);
       var _desfase = esquemaIncompatible_(ws.getRange(1, 1, 1, ws.getLastColumn()).getValues()[0], payload.headers);
       if (_desfase) {
         return respond({ status: "error", message: "Esquema desactualizado en «" + payload.sheetName + "» (columna "
-          + _desfase.col + ": la hoja espera «" + _desfase.hoja + "»). Actualiza la app antes de sincronizar: no se escribió nada y lo tecleado sigue en este dispositivo." });
+          + _desfase.col + ": la hoja espera «" + _desfase.hoja + "»). " + (_conFirma
+          ? "Esta app trae el esquema vigente: la cabecera vieja es la de la HOJA, que hay que vaciar con su fila 1 (o corregir esa cabecera). No se escribió nada y lo tecleado sigue en este dispositivo."
+          : "Actualiza la app antes de sincronizar; si ya está al día, la cabecera vieja es la de la hoja. No se escribió nada y lo tecleado sigue en este dispositivo.") });
       }
     }
     ensureHeaders(ws, payload.headers || []);
