@@ -152,10 +152,29 @@ export function buildMatrixIndex(records) {
 }
 /** ¿El día ISO `dia` es anterior al ingreso de la hembra vigente de un chip RECICLADO? Entonces el
  *  evento es de una hembra anterior. Sólo con varias hembras en el chip: con una no hay de quién
- *  más pueda ser. Sin fechas en la lectura no se sabe y se deja pasar (el GAS frena la mortalidad). */
+ *  más pueda ser.
+ *
+ *  ⚠⚠ 2026-09-17 · AQUÍ PONÍA «sin fechas en la lectura no se sabe y se deja pasar (EL GAS FRENA LA
+ *  MORTALIDAD)», y esa red YA NO EXISTE: se fue con `llaveMatriz_` el 09-16 al pasar la identidad a la
+ *  cuaterna, y el propio `Code.gs` lo deja dicho donde estaba. Lo que queda sin fechas es que el evento
+ *  se apunta a la vigente SIN nada detrás, así que ahora al menos SE DICE (ver `ingresoNoComprobable`).
+ *
+ *  🔑 DE DÓNDE SALEN LAS FECHAS, que decide si esto puede funcionar:
+ *  · repo / Pages → la MATRIZ sale del STORE del tablero (el libro entero) y trae todas las columnas;
+ *  · `index (8)` → NO tiene store, así que siempre cae a la lectura del GAS, que no pide las de FECHA
+ *    porque cuestan 10× (ver `_REPRO_MATRIZ_COLS`). Allí esta comprobación no puede hacerse.
+ *  Es una asimetría real entre los dos destinos, no un descuido: la lectura barata es la que permite
+ *  trabajar en campo. */
 function antesDeSuIngreso(rec, dia) {
   const ingreso = fechaIso(rec && rec.fechaIngreso);
   return !!(rec && rec.individuos > 1 && dia && ingreso && dia < ingreso);
+}
+/** El chip ha llevado VARIAS hembras y la lectura no trae su fecha de ingreso: la comprobación de
+ *  arriba no puede hacerse, y el evento se apuntará a la vigente sin que nadie pueda saber si era de
+ *  una anterior. No se rechaza —la inmensa mayoría de los eventos son del día y van a la vigente, que
+ *  es lo correcto—, pero se avisa: callarlo es lo que convertía esto en un fallo invisible. */
+function ingresoNoComprobable(rec) {
+  return !!(rec && rec.individuos > 1 && !fechaIso(rec.fechaIngreso));
 }
 
 /* ── Utilidades internas ── */
@@ -243,7 +262,7 @@ export function buildAltaBatch(forms, matrixIndex, opts) {
  *  (`antesDelIngreso`): es de una hembra anterior, y aquí se le pondría la ubicación de la nueva o,
  *  en mortalidad, se mataría a la nueva. */
 export function buildEventBatch({ ids, fecha, tipo, matrixIndex } = {}) {
-  const report = { total: 0, processed: [], notFound: [], alreadyDead: [], invalidFormat: [], sinUbicacion: [], antesDelIngreso: [], variasVivas: [] };
+  const report = { total: 0, processed: [], notFound: [], alreadyDead: [], invalidFormat: [], sinUbicacion: [], antesDelIngreso: [], variasVivas: [], sinFechaIngreso: [] };
   const okTipo = (tipo === REPRO_EVENTO.DESOVE || tipo === REPRO_EVENTO.MORTALIDAD);
   if (!fecha) return { report, bitacora: null, matriz: null, error: 'Falta la fecha.' };
   if (!okTipo) return { report, bitacora: null, matriz: null, error: 'Tipo de evento inválido.' };
@@ -264,6 +283,10 @@ export function buildEventBatch({ ids, fecha, tipo, matrixIndex } = {}) {
        columnas de fecha, que no se leen, ni siquiera una razonable: sería «la de más abajo en la hoja»—. Una
        mortalidad así marcaría «Muerto» a la hembra equivocada, que es un daño que nadie ve. Ver `registroVigente`. */
     if (rec.vivos > 1) { report.variasVivas.push(id); return; }
+    /* No rechaza: sólo deja constancia de que la comprobación de «¿es de una hembra anterior?» no se pudo
+       hacer con esta lectura. Va DESPUÉS de los rechazos, porque de un código rechazado no hay nada que
+       avisar, y ANTES de registrar, porque se avisa del que SÍ se registra. */
+    if (ingresoNoComprobable(rec)) report.sinFechaIngreso.push(id);
     // La Bitácora exige Sala y Tanque, y su única fuente es la MATRIZ: si el individuo no
     // los tiene allí, registrar el evento dejaría la fila incompleta → se rechaza.
     const sala = sanitizeStr(rec.sala), tanque = sanitizeStr(rec.tanque);

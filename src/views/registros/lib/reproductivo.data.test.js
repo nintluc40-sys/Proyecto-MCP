@@ -404,6 +404,44 @@ describe('♻ reciclaje · alta de una hembra nueva con el chip de una muerta', 
       });
     }
 
+    /* 🔴 2026-09-17 · LA OTRA MITAD, la que D17 no cubre. Un chip con varias hembras donde SÓLO UNA vive:
+       el evento va a ella, que es lo correcto… salvo que sea retroactivo y fuera de una anterior. Eso lo
+       detecta `antesDeSuIngreso`, PERO sólo si la lectura trae la fecha de ingreso.
+       🔑 Y aquí está la asimetría real entre los dos destinos: en el repo/Pages la MATRIZ sale del STORE
+       del tablero y trae todas las columnas, mientras que en `index (8)` —que no tiene store— sale de la
+       lectura del GAS, que NO pide las de fecha porque cuestan 10×. Allí la comprobación no puede hacerse.
+       ⚠ Hasta hoy eso se dejaba pasar en silencio «porque el GAS frena la mortalidad», y ese freno se fue
+       con `llaveMatriz_` el 09-16. Ya no se calla: se registra igual y se DICE que no se pudo comprobar. */
+    describe('🔴 chip con varias hembras y la lectura SIN fechas', () => {
+      const SIN_FECHAS = (o) => ({ 'Trovan ID': o['Trovan ID'], 'Piscina': o['Piscina'], 'Código genético': o['Código genético'],
+        'Lote': o['Lote'], 'Sala actual': o['Sala actual'], 'Tanque actual': o['Tanque actual'], 'Estado': o['Estado'] });
+
+      it('se registra a la vigente, pero se AVISA de que no se pudo comprobar', () => {
+        const idx = matrixIndexFromRows([VIEJA, VIVA_A].map(SIN_FECHAS));
+        const r = buildEventBatch({ ids: [CHIP], fecha: '2026-09-12', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: idx });
+        expect(r.report.processed, 'no se rechaza: casi todos los eventos son del día y van a la vigente').toEqual([CHIP]);
+        expect(r.report.sinFechaIngreso, 'se registró en silencio, sin decir que la comprobación no se hizo').toEqual([CHIP]);
+      });
+
+      it('CON fechas no avisa, porque la comprobación sí se hace', () => {
+        const r = buildEventBatch({ ids: [CHIP], fecha: '2026-09-12', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: matrixIndexFromRows([VIEJA, VIVA_A]) });
+        expect(r.report.sinFechaIngreso).toEqual([]);
+        expect(r.report.processed).toEqual([CHIP]);
+      });
+
+      it('y un chip de UNA sola hembra no avisa nunca: no hay de quién más pueda ser', () => {
+        const r = buildEventBatch({ ids: [CHIP], fecha: '2026-09-12', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: matrixIndexFromRows([SIN_FECHAS(VIVA_A)]) });
+        expect(r.report.sinFechaIngreso).toEqual([]);
+        expect(r.report.processed).toEqual([CHIP]);
+      });
+
+      it('el fixture ejerce algo: CON fechas, un evento ANTERIOR al ingreso sí se rechaza', () => {
+        const r = buildEventBatch({ ids: [CHIP], fecha: '2026-02-01', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: matrixIndexFromRows([VIEJA, VIVA_A]) });
+        expect(r.report.antesDelIngreso, 'la fecha es anterior al ingreso de la viva: es de la anterior').toEqual([CHIP]);
+        expect(r.report.processed).toEqual([]);
+      });
+    });
+
     it('el fixture ejerce algo: con UNA viva y otra MUERTA en el mismo chip, el evento sí entra', () => {
       const r = buildEventBatch({ ids: [CHIP], fecha: '2026-09-12', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: matrixIndexFromRows([VIEJA, VIVA_A]) });
       expect(r.report.variasVivas).toEqual([]);

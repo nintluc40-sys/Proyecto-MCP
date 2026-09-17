@@ -11704,6 +11704,9 @@ function _madReproShowReport(rep, duplicates, tipo, okSent){
   if(rep.antesDelIngreso && rep.antesDelIngreso.length) h += chip(rep.antesDelIngreso.length+" anterior(es) a su ingreso", "#fee2e2", "#991b1b");
   // D17 (2026-09-17): un chip con DOS hembras vivas. No se elige una: se rechaza y se dice. Ver el módulo.
   if(rep.variasVivas && rep.variasVivas.length) h += chip(rep.variasVivas.length+" con DOS hembras vivas", "#fee2e2", "#991b1b");
+  // 2026-09-17 · AVISO, no rechazo (ámbar): el evento SÍ se registró, pero sin fechas no se pudo comprobar
+  // si era de una hembra anterior del chip. Ver `ingresoNoComprobable` en el módulo.
+  if(rep.sinFechaIngreso && rep.sinFechaIngreso.length) h += chip(rep.sinFechaIngreso.length+" sin comprobar la hembra", "#fef9c3", "#854d0e");
   h += '</div>';
   const lists=[];
   if(duplicates && duplicates.length) lists.push(["Duplicados", duplicates]);
@@ -11713,6 +11716,7 @@ function _madReproShowReport(rep, duplicates, tipo, okSent){
   if(rep.alreadyDead && rep.alreadyDead.length) lists.push(["Ya registradas como muertas", rep.alreadyDead]);
   if(rep.antesDelIngreso && rep.antesDelIngreso.length) lists.push(["Anteriores al ingreso de la hembra que lleva hoy ese microchip reciclado (son de una hembra anterior: no registrados)", rep.antesDelIngreso]);
   if(rep.variasVivas && rep.variasVivas.length) lists.push(["Ese microchip lo llevan DOS hembras vivas a la vez y el evento no dice de cuál es (no registrados — cierra la que ya no esté en la MATRIZ, o corrige su piscina, código genético o lote)", rep.variasVivas]);
+  if(rep.sinFechaIngreso && rep.sinFechaIngreso.length) lists.push(["SÍ se registraron, a la hembra que lleva hoy el chip. Pero ese chip ha llevado varias y esta lectura no trae la fecha de ingreso, así que no se pudo comprobar que el evento no fuera de una anterior: si lo registras con fecha atrasada, revísalo", rep.sinFechaIngreso]);
   lists.forEach(function(pair){ h += '<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
   el.innerHTML = h;
 }
