@@ -174,3 +174,54 @@ describe('Config · «Probar conexión» compara el GAS desplegado con el de la 
     expect(ultimo().msg.startsWith('✅')).toBe(false);
   });
 });
+
+/* ============================================================
+   2026-09-17 · LA TABLA DE FIRMAS DEL README, ATADA A Code.gs
+
+   El README lista las columnas que firma cada hoja. Es un dato exacto y copiado a mano, o sea
+   justo lo que caduca en silencio — y a este README ya le ha pasado dos veces afirmar un estado
+   del despliegue que nadie había medido. Si `MAD_ESQUEMA_FIRMA` cambia y la tabla no, esto se
+   pone rojo y dice qué falta. No se prueba la prosa: sólo la tabla, que es lo verificable.
+   ============================================================ */
+describe('README · la tabla de firmas dice lo que dice Code.gs', () => {
+  const README = leer(join(process.cwd(), 'README.md'));
+
+  /** MAD_ESQUEMA_FIRMA tal como está en Code.gs → { hoja: [[col, cabecera], …] } */
+  const firmaDelGas = () => {
+    const bloque = /var MAD_ESQUEMA_FIRMA = \{([\s\S]*?)\n\};/.exec(code);
+    expect(bloque, 'no se encontró MAD_ESQUEMA_FIRMA en Code.gs').not.toBeNull();
+    const out = {};
+    for (const m of bloque[1].matchAll(/"([^"]+)":\s*(\[\[[\s\S]*?\]\])/g)) {
+      out[m[1]] = [...m[2].matchAll(/\[(\d+),\s*"([^"]+)"\]/g)].map((x) => [Number(x[1]), x[2]]);
+    }
+    return out;
+  };
+
+  /** La tabla del README → { hoja: [[col, cabecera], …] }. La hoja va tal cual salvo el paréntesis
+   *  aclaratorio de Lotes, que el README añade para el lector y Code.gs no tiene. */
+  const firmaDelReadme = () => {
+    const tabla = /\| Hoja \| Columnas firmadas \|\n\|[-| ]+\|\n([\s\S]*?)\n\n/.exec(README);
+    expect(tabla, 'no se encontró la tabla de firmas en el README').not.toBeNull();
+    const out = {};
+    for (const fila of tabla[1].split('\n')) {
+      const c = fila.split('|').map((s) => s.trim());
+      if (c.length < 4 || !c[1]) continue;
+      out[c[1].replace(/\s*\(.*\)$/, '')] = c[2].split('·').map((p) => {
+        const m = /^(\d+)\s*`(.+)`$/.exec(p.trim());
+        expect(m, 'celda con formato raro: ' + p).not.toBeNull();
+        return [Number(m[1]), m[2]];
+      });
+    }
+    return out;
+  };
+
+  it('🔴 las mismas hojas, las mismas columnas y las mismas cabeceras', () => {
+    expect(firmaDelReadme()).toEqual(firmaDelGas());
+  });
+
+  it('el fixture ejerce algo: la tabla tiene TODAS las hojas firmadas y ninguna de más', () => {
+    const gas = Object.keys(firmaDelGas());
+    expect(gas.length, 'si esto baja de 7, alguien quitó una firma').toBeGreaterThanOrEqual(7);
+    expect(Object.keys(firmaDelReadme()).sort()).toEqual(gas.sort());
+  });
+});
