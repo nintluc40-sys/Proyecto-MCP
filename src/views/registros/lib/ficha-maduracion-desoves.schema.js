@@ -102,11 +102,15 @@ const int = (v) => {
   return Number.isFinite(n) && n >= 0 ? n : '';
 };
 
-/* ── Las fechas de N2 y N5 ya NO se teclean (2026-09-16, usuario) ──
+/* ── Las fechas de N2 y N5 salen AUTOMÁTICAS, pero se pueden editar (2026-09-16 / 2026-09-17, usuario) ──
    «La de N2 es la misma que la del desove» —no ve necesario separarlas— «y la de N5 sale automática: N2 + 1».
-   Se DERIVAN de la fecha del desove, y cada una se escribe sólo JUNTO A SU CIFRA: una fecha sin recuento
-   diría que se contó algo que no se contó. Lo que traiga un modelo en `fechaN2`/`fechaN5` (un borrador o
-   un registro local de antes) se ignora.
+   Se DERIVAN de la fecha del desove y son el VALOR POR DEFECTO; cada una se escribe sólo JUNTO A SU CIFRA:
+   una fecha sin recuento diría que se contó algo que no se contó.
+   ⚠⚠ 2026-09-17 · ANTES SE IMPONÍAN y lo tecleado en `fechaN2`/`fechaN5` se ignoraba. El usuario corrigió el
+   criterio: «salen automáticamente, pero se pueden editar de ser el caso». Un conteo puede hacerse un día
+   distinto del que toca, y entonces la fecha real es la suya. Si el modelo trae una fecha VÁLIDA manda ella;
+   si no trae nada (o trae basura), manda la derivada. En la interfaz, editar una la FIJA (`data-fijo`) y deja
+   de seguir a la del desove, igual que la fecha de aplicación de Fin de Ciclo (PE1.6).
    ⚠ El día siguiente se cuenta en UTC y con un día REAL: `2026-02-31` pasa el patrón, pero no es un día, y
    sumarle uno daría una fecha inventada. */
 export function fechasNauplios(fecha) {
@@ -117,6 +121,10 @@ export function fechasNauplios(fecha) {
   dia.setUTCDate(d + 1);
   return { n2: fecha, n5: dia.toISOString().slice(0, 10) };
 }
+
+/** La fecha `v` si es un día REAL del calendario, '' si no. Se apoya en `fechasNauplios` para tener UNA
+ *  sola definición de «día real»: `esFecha` es sólo el patrón y `2026-02-31` lo pasa. */
+const diaReal = (v) => fechasNauplios(sanitizeStr(v, 10)).n2;
 
 /** Conteo grande: se teclea en miles y se guarda en unidades. Devuelve '' si no hay
  *  cifra, para que el MERGE del GAS conserve lo que ya hubiera en la celda. */
@@ -170,9 +178,11 @@ export function buildDesoveRows(model) {
       desoves: int(x.desoves),
       huevos: aMiles(x.huevos),
       hembrasNoViables: int(x.hembrasNoViables),
-      fechaN2: int(x.n2) !== '' ? fn.n2 : '',
+      /* ⚠ La fecha tecleada se valida con `fechasNauplios`, NO con `esFecha`: ésta es sólo un patrón y
+         `2026-02-31` lo pasa. Un día irreal cae a la derivada en vez de escribirse en la hoja. */
+      fechaN2: int(x.n2) !== '' ? (diaReal(x.fechaN2) || fn.n2) : '',
       n2: aMiles(x.n2),
-      fechaN5: int(x.n5) !== '' ? fn.n5 : '',
+      fechaN5: int(x.n5) !== '' ? (diaReal(x.fechaN5) || fn.n5) : '',
       n5: aMiles(x.n5),
       despacho: despachoTexto(x.despacho),
       observaciones: sanitizeStr(x.observaciones, 300),
@@ -226,8 +236,9 @@ export function validarDesove(model) {
 
     /* 🔒 EL CANDADO que pidió el usuario: N5 exige N2. Un N5 sin su N2 deja un hueco que
        después nadie sabe si fue que no se contó o que se olvidó registrar.
-       2026-09-16: mira la CIFRA. Las fechas ya no se teclean, así que una fecha suelta (de un borrador
-       de antes) no puede ni abrirlo ni cerrarlo. */
+       2026-09-16: mira la CIFRA, no la fecha. Y sigue mirándola desde que las fechas se pueden editar
+       (2026-09-17): lo que dice que un recuento se hizo es el recuento, no su fecha —que viene puesta de
+       oficio en todas—, así que una fecha suelta no puede ni abrirlo ni cerrarlo. */
     const hayN2 = int(x.n2) !== '';
     const hayN5 = int(x.n5) !== '';
     if (hayN5 && !hayN2) errores.push('En ' + et + ' hay N5 sin N2. El N5 sólo se registra después del N2.');
@@ -236,8 +247,25 @@ export function validarDesove(model) {
        2026-09-08 que son cosas DISTINTAS y no comparables. Un aviso por tamaño relativo
        aquí sería un rojo que no significa nada, y ésos esconden el rojo siguiente. */
 
-    /* 2026-09-16: aquí había cuatro AVISOS de fecha (la de N2 o N5 mal escrita, el N2 anterior al desove, el N5
-       anterior al N2). Con las fechas derivadas ninguno puede darse: se retiraron, no se dejaron mudos. */
+    /* 2026-09-17 · VUELVEN los avisos de fecha. El 09-16 se retiraron porque, con las fechas impuestas,
+       ninguno podía darse; desde que se pueden EDITAR vuelven a ser posibles y son errores reales de dato.
+       Sólo miran lo TECLEADO: una fecha que salga de la derivación nunca los dispara.
+       ⚠ Son avisos, no errores: la fecha rara puede ser la buena (un conteo hecho tarde), y bloquear el
+       guardado por ella perdería lo demás. */
+    const der = fechasNauplios(sanitizeStr(m.fecha, 10));
+    [['N2', x.fechaN2, der.n2, hayN2, 'la del desove'], ['N5', x.fechaN5, der.n5, hayN5, 'la del día siguiente']]
+      .forEach(([cual, cruda, defecto, hayCifra, deDonde]) => {
+        const f = sanitizeStr(cruda, 10);
+        if (!f || f === defecto) return;                 // vacía o la de oficio: no la tecleó nadie
+        if (!diaReal(f)) { avisos.push('La fecha de ' + cual + ' de ' + et + ' no es un día real; se usará ' + deDonde + '.'); return; }
+        /* Tiene fecha propia pero no su recuento: la fecha NO se escribe (va sólo con su cifra), así que
+           el trabajo de corregirla se perdería en silencio. Mismo criterio que la fecha de aplicación de
+           Fin de Ciclo, que sólo avisa cuando la editada se va a tirar. */
+        if (!hayCifra) avisos.push(et + ' tiene fecha de ' + cual + ' pero no su recuento: esa fecha no se guardará.');
+      });
+    const fN2 = diaReal(x.fechaN2) || der.n2, fN5 = diaReal(x.fechaN5) || der.n5;
+    if (hayN2 && der.n2 && fN2 < der.n2) avisos.push('El N2 de ' + et + ' es ANTERIOR al desove.');
+    if (hayN5 && fN2 && fN5 < fN2) avisos.push('El N5 de ' + et + ' es ANTERIOR al N2.');
 
     const algo = ['desoves', 'huevos', 'hembrasNoViables', 'n2', 'n5']
       .some((k) => int(x[k]) !== '' && int(x[k]) > 0);

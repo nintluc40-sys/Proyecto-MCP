@@ -290,13 +290,45 @@ describe('Desoves · validación', () => {
     expect(avisos).toEqual([]);
   });
 
-  /* 2026-09-16: aquí vivía «AVISO si una fecha posterior es ANTERIOR a la que le precede». Con las fechas derivadas
-     no puede pasar, y el aviso se retiró: lo que se exige ahora es que NO salga ninguno por fechas tecleadas. */
-  it('las fechas tecleadas (de antes) no dan avisos: ya no hay nada que comparar', () => {
-    const m = base();
-    m.desoves[0].n2 = 5000; m.desoves[0].fechaN2 = '2026-09-01';
-    m.desoves[0].n5 = 3000; m.desoves[0].fechaN5 = 'ayer';
-    expect(validarDesove(m)).toEqual({ errores: [], avisos: [] });
+  /* 2026-09-17 · ESTA PRUEBA EXIGÍA LO CONTRARIO («que NO salga ningún aviso por fechas tecleadas»), porque
+     el 09-16 las fechas eran impuestas y ninguno podía darse. Desde que se editan, vuelven a ser posibles.
+     ⚠ Lo que NO puede pasar es que avisen las fechas de oficio: serían un rojo en cada registro normal. */
+  describe('avisos de las fechas EDITADAS (2026-09-17, usuario)', () => {
+    const conN = (o) => { const m = base(); m.desoves[0].n2 = 5000; m.desoves[0].n5 = 3000; Object.assign(m.desoves[0], o); return m; };
+
+    it('🔴 las fechas de oficio NO avisan de nada (ni tocándolas para dejarlas igual)', () => {
+      expect(validarDesove(conN({}))).toEqual({ errores: [], avisos: [] });
+      // 2026-09-08 es la del desove y 2026-09-09 la derivada: escribirlas a mano es dejarlas como estaban
+      expect(validarDesove(conN({ fechaN2: '2026-09-08', fechaN5: '2026-09-09' }))).toEqual({ errores: [], avisos: [] });
+    });
+
+    it('avisa del N2 ANTERIOR al desove, y sólo de eso', () => {
+      const { errores, avisos } = validarDesove(conN({ fechaN2: '2026-09-01' }));
+      expect(errores).toEqual([]);
+      expect(avisos).toEqual(['El N2 de «766» es ANTERIOR al desove.']);
+    });
+
+    it('avisa del N5 ANTERIOR al N2, comparando con la fecha REAL de N2 (la editada)', () => {
+      const { avisos } = validarDesove(conN({ fechaN2: '2026-09-20', fechaN5: '2026-09-15' }));
+      expect(avisos).toEqual(['El N5 de «766» es ANTERIOR al N2.']);
+      // y con la de oficio (09-09) el mismo N5 no avisa: la comparación NO usa la derivada de N2
+      expect(validarDesove(conN({ fechaN5: '2026-09-15' })).avisos).toEqual([]);
+    });
+
+    it('un día que no existe avisa y cae a la de oficio, en vez de escribirse en la hoja', () => {
+      expect(validarDesove(conN({ fechaN2: '2026-02-31' })).avisos)
+        .toEqual(['La fecha de N2 de «766» no es un día real; se usará la del desove.']);
+      expect(validarDesove(conN({ fechaN5: 'ayer' })).avisos)
+        .toEqual(['La fecha de N5 de «766» no es un día real; se usará la del día siguiente.']);
+    });
+
+    it('una fecha editada SIN su recuento avisa: no se guardaría y el trabajo se perdería', () => {
+      const m = base(); m.desoves[0].fechaN2 = '2026-09-20';
+      expect(validarDesove(m).avisos).toContain('«766» tiene fecha de N2 pero no su recuento: esa fecha no se guardará.');
+      // la de oficio sin recuento NO avisa: nadie la tecleó
+      const q = base(); q.desoves[0].fechaN2 = '2026-09-08';
+      expect(validarDesove(q).avisos).not.toContain('«766» tiene fecha de N2 pero no su recuento: esa fecha no se guardará.');
+    });
   });
 
   it('🔴 la fecha del desove tiene que ser un día REAL: de ella salen las de N2 y N5', () => {
@@ -375,9 +407,20 @@ describe('Desoves · las fechas de N2 y N5 se DERIVAN del desove (2026-09-16, us
     expect([ceros[col('Fecha N2')], ceros[col('Fecha N5')]]).toEqual(['2026-09-30', '2026-10-01']);
   });
 
-  it('🔴 lo que el modelo traiga tecleado en fechaN2/fechaN5 se IGNORA', () => {
-    const r = fila({ n2: 9000, fechaN2: '2026-10-05', n5: 8000, fechaN5: '2026-09-01' });
-    expect([r[col('Fecha N2')], r[col('Fecha N5')]]).toEqual(['2026-09-30', '2026-10-01']);
+  /* 🔴 2026-09-17 · ESTA PRUEBA DECÍA LO CONTRARIO («lo tecleado se IGNORA») y no estaba mal: el usuario
+     cambió la regla. Las fechas siguen saliendo solas, pero ahora son un DEFECTO que se puede corregir,
+     porque un recuento puede hacerse un día distinto del que toca. */
+  it('🔴 la fecha tecleada MANDA sobre la derivada, y sólo la derivada rellena lo que falta', () => {
+    const r = fila({ n2: 9000, fechaN2: '2026-10-05', n5: 8000, fechaN5: '2026-10-09' });
+    expect([r[col('Fecha N2')], r[col('Fecha N5')]]).toEqual(['2026-10-05', '2026-10-09']);
+    // una sola editada: la otra sigue saliendo de la del desove
+    const soloN2 = fila({ n2: 9000, fechaN2: '2026-10-05', n5: 8000 });
+    expect([soloN2[col('Fecha N2')], soloN2[col('Fecha N5')]]).toEqual(['2026-10-05', '2026-10-01']);
+    // basura no manda: cae a la derivada en vez de escribir un disparate en la hoja
+    for (const basura of ['2026-02-31', '05/10/2026', 'ayer', '2026-10-5']) {
+      expect(fila({ n2: 9000, fechaN2: basura })[col('Fecha N2')], String(basura)).toBe('2026-09-30');
+    }
+    // y la regla de siempre no se toca: sin cifra no hay fecha, por muy tecleada que esté
     const sinCifra = fila({ fechaN2: '2026-10-05', fechaN5: '2026-10-06' });
     expect([sinCifra[col('Fecha N2')], sinCifra[col('Fecha N5')]]).toEqual(['', '']);
   });

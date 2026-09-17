@@ -24,7 +24,8 @@ const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['madDesReiniciar', 'madDesCollect', 'buildMadDesovePayload', 'madDesGuardar', 'flushSyncQueue', 'MAD_DESOVE_SHEET',
   'madDesPendVer', 'madDesEditar', 'MAD_DES_PEND_KEY', 'madDesDespachoResumen',
   '_gasVersionLocal',    // 2026-09-16 · el portón compara el SELLO: el fixture usa el de esta app
-  'MAD_BORR_PRE', 'madBorrFechaChange', '_madBorrFijarValores'];   // PE1.3 · el borrador de antes, adaptado
+  'MAD_BORR_PRE', 'madBorrFechaChange', '_madBorrFijarValores',   // PE1.3 · el borrador de antes, adaptado
+  'madDesFechaNFija', 'madDesFechasNSiguen', '_madDesHayTecleado'];   // PE1.3 (09-17) · automáticas pero editables
 const H = {};
 const avisos = [];
 const envios = [];
@@ -135,34 +136,84 @@ describe('Desoves · sin «Total de nauplios» en el formulario', () => {
   });
 });
 
-describe('Desoves · las fechas de N2 y N5 no se teclean (PE1.3, 2026-09-16, usuario)', () => {
-  it('🔴 la tarjeta ya no tiene campos de fecha y dice de dónde sale cada una', () => {
-    expect(q('.md-fn2')).toBeNull();
-    expect(q('.md-fn5')).toBeNull();
-    expect(q('input[type="date"].md-fn2, .md-des input[type="date"]'), 'queda un campo de fecha en la tarjeta').toBeNull();
-    expect(q('.md-n2').closest('label').textContent).toContain('día del desove');
-    expect(q('.md-n5').closest('label').textContent).toContain('día siguiente');
-    expect(document.getElementById('fp-desoves').textContent).toContain('N2 lleva la del desove y N5 la del día siguiente');
+/* 🔴 2026-09-17 · ESTE BLOQUE EXIGÍA LO CONTRARIO —«la tarjeta ya no tiene campos de fecha»— y no estaba mal:
+   el usuario corrigió el criterio. «Las fechas salen automáticamente, pero se pueden editar de ser el caso»,
+   así que los campos VUELVEN, vienen puestos y siguen a la del desove hasta que alguien los toque. */
+describe('Desoves · las fechas de N2 y N5 salen solas pero se EDITAN (PE1.3, 2026-09-17, usuario)', () => {
+  const fechaDesove = (v) => { document.getElementById('md-fecha').value = v; H.madDesFechasNSiguen(); };
+
+  it('🔴 la tarjeta TRAE los dos campos, ya rellenos, y el texto dice que se pueden cambiar', () => {
+    expect(q('.md-fn2'), 'falta el campo «Fecha N2»').not.toBeNull();
+    expect(q('.md-fn5'), 'falta el campo «Fecha N5»').not.toBeNull();
+    fechaDesove('2026-09-14');
+    expect(q('.md-fn2').value).toBe('2026-09-14');
+    expect(q('.md-fn5').value).toBe('2026-09-15');
+    expect(q('.md-fn2').getAttribute('data-fijo'), 'la de oficio no puede nacer fijada').toBeNull();
+    expect(document.getElementById('fp-desoves').textContent).toContain('puedes cambiarlas');
+  });
+
+  /* 🔴 El banco destapó que sólo se miraban las fechas DESPUÉS de llamar a madDesFechasNSiguen, que las reescribe:
+     con eso, una tarjeta que naciera con el valor equivocado pasaba desapercibida. Aquí se mira el PRIMER pintado. */
+  it('🔴 la tarjeta NACE con las fechas bien, sin que nadie las refresque', () => {
+    H.madDesReiniciar();
+    const hoy = document.getElementById('md-fecha').value;
+    const manana = new Date(Date.UTC(+hoy.slice(0, 4), +hoy.slice(5, 7) - 1, +hoy.slice(8, 10) + 1)).toISOString().slice(0, 10);
+    expect(q('.md-fn2').value, 'la de N2 es la del desove').toBe(hoy);
+    expect(q('.md-fn5').value, 'la de N5 es la del día SIGUIENTE, no la del desove').toBe(manana);
   });
 
   it('🔴 cambiar la fecha del desove mueve las dos: el N5 cruza de mes', () => {
     llenar();
-    document.getElementById('md-fecha').value = '2026-09-30';
+    fechaDesove('2026-09-30');
+    expect([q('.md-fn2').value, q('.md-fn5').value]).toEqual(['2026-09-30', '2026-10-01']);
     q('.md-n2').value = '9000';
     q('.md-n5').value = '8000';
     const fila = H.buildMadDesovePayload(H.madDesCollect()).rows[0];
     expect([fila[col('Fecha')], fila[col('Fecha N2')], fila[col('Fecha N5')]]).toEqual(['2026-09-30', '2026-09-30', '2026-10-01']);
   });
 
-  it('🔴 un BORRADOR guardado antes del cambio no trae de vuelta los campos de fecha, y conserva lo demás', () => {
-    /* Se fabrica como lo guardaba la ficha anterior: la fila de N2/N5 con sus dos campos de fecha, y lo tecleado
-       volcado a atributos, que es como el borrador lo serializa. */
+  it('🔴 editar una la FIJA: deja de seguir al desove y es la que llega a la hoja', () => {
+    llenar();
+    fechaDesove('2026-09-14');
+    q('.md-n2').value = '9000'; q('.md-n5').value = '8000';
+    q('.md-fn2').value = '2026-09-18';                 // el conteo se hizo cuatro días después
+    H.madDesFechaNFija(q('.md-fn2'));
+    expect(q('.md-fn2').getAttribute('data-fijo')).toBe('1');
+    expect(q('.md-fn2').style.background, 'la fijada se marca, como los pesos de Tanques').toContain('fef9c3');
+
+    fechaDesove('2026-09-20');                          // mover el desove NO puede pisar la fijada
+    expect(q('.md-fn2').value, 'la fijada se pisó').toBe('2026-09-18');
+    expect(q('.md-fn5').value, 'la NO fijada tiene que seguir') .toBe('2026-09-21');
+    const fila = H.buildMadDesovePayload(H.madDesCollect()).rows[0];
+    expect([fila[col('Fecha N2')], fila[col('Fecha N5')]]).toEqual(['2026-09-18', '2026-09-21']);
+  });
+
+  it('🔴 devolverla a la de oficio, o vaciarla, la SUELTA y vuelve a seguir', () => {
+    llenar();
+    fechaDesove('2026-09-14');
+    q('.md-fn2').value = '2026-09-18'; H.madDesFechaNFija(q('.md-fn2'));
+    q('.md-fn2').value = '2026-09-14'; H.madDesFechaNFija(q('.md-fn2'));   // la de oficio otra vez
+    expect(q('.md-fn2').getAttribute('data-fijo')).toBeNull();
+    fechaDesove('2026-09-25');
+    expect(q('.md-fn2').value, 'soltada, tiene que volver a seguir').toBe('2026-09-25');
+  });
+
+  /* Las de oficio están puestas en TODA tarjeta, también en una recién abierta: si contaran como trabajo
+     escrito, ✏️ Completar pediría confirmación sobre un formulario en blanco. */
+  it('🔴 las fechas de oficio NO cuentan como «hay algo tecleado»; una fijada, sí', () => {
+    H.madDesReiniciar();
+    expect(H._madDesHayTecleado(), 'una ficha limpia no tiene nada tecleado').toBe(false);
+    q('.md-fn2').value = '2026-01-01'; H.madDesFechaNFija(q('.md-fn2'));
+    expect(H._madDesHayTecleado(), 'una fecha corregida SÍ es trabajo que se perdería').toBe(true);
+    H.madDesReiniciar();
+  });
+
+  it('🔴 un BORRADOR del 09-16 (sin los campos) los RECUPERA con su fecha de oficio', () => {
     const panel = document.getElementById('fp-desoves');
     llenar();
     q('.md-n2').value = '9000';
-    const filaN = q('.md-n2').closest('label').parentElement;
-    filaN.insertAdjacentHTML('afterbegin', '<label>Fecha N2<input class="md-fn2" type="date" value="2026-09-20"></label>');
-    filaN.insertAdjacentHTML('beforeend', '<label>Fecha N5<input class="md-fn5" type="date" value="2026-09-21"></label>');
+    q('.md-fn2').closest('label').remove();            // como lo guardaba la ficha del 09-16
+    q('.md-fn5').closest('label').remove();
     H._madBorrFijarValores(panel);
     localStorage.setItem(H.MAD_BORR_PRE + 'desoves', JSON.stringify({ '2026-09-10': panel.innerHTML }));
     H.madDesReiniciar();
@@ -171,11 +222,33 @@ describe('Desoves · las fechas de N2 y N5 no se teclean (PE1.3, 2026-09-16, usu
     document.getElementById('md-fecha').value = '2026-09-10';
     H.madBorrFechaChange('desoves');
     expect(q('.md-lote').value, 'no se trajo el borrador').toBe('BP');
-    expect(q('.md-fn2'), 'el borrador de antes resucitó el campo «Fecha N2»').toBeNull();
-    expect(q('.md-fn5'), 'el borrador de antes resucitó el campo «Fecha N5»').toBeNull();
-    expect(q('.md-n2').value, 'al retirar las fechas se llevó lo tecleado').toBe('9000');
+    expect(q('.md-fn2'), 'el borrador sin campos no los recuperó').not.toBeNull();
+    expect(q('.md-fn2').value, 'y tienen que venir con la fecha de oficio').toBe('2026-09-10');
+    expect(q('.md-fn5').value).toBe('2026-09-11');
+    expect(q('.md-n2').value, 'al devolver las fechas se perdió lo tecleado').toBe('9000');
     const fila = H.buildMadDesovePayload(H.madDesCollect()).rows[0];
     expect([fila[col('Fecha')], fila[col('Fecha N2')], fila[col('Fecha N5')]]).toEqual(['2026-09-10', '2026-09-10', '']);
+    localStorage.removeItem(H.MAD_BORR_PRE + 'desoves');
+  });
+
+  it('🔴 un BORRADOR anterior al 09-16 conserva sus fechas, y entran FIJADAS', () => {
+    const panel = document.getElementById('fp-desoves');
+    llenar();
+    q('.md-n2').value = '9000';
+    q('.md-fn2').value = '2026-09-20';                 // una tecleada de entonces
+    q('.md-fn5').closest('label').remove();            // aquella fila tenía otra forma: da igual, se repone
+    H._madBorrFijarValores(panel);
+    localStorage.setItem(H.MAD_BORR_PRE + 'desoves', JSON.stringify({ '2026-09-10': panel.innerHTML }));
+    H.madDesReiniciar();
+
+    document.getElementById('md-fecha').value = '2026-09-10';
+    H.madBorrFechaChange('desoves');
+    expect(q('.md-fn2').value, 'se perdió la fecha que traía el borrador').toBe('2026-09-20');
+    expect(q('.md-fn2').getAttribute('data-fijo'), 'la del borrador tiene que entrar FIJADA, o la pisaría el desove').toBe('1');
+    H.madDesFechasNSiguen();
+    expect(q('.md-fn2').value, 'entró sin fijar y el repintado la pisó').toBe('2026-09-20');
+    const fila = H.buildMadDesovePayload(H.madDesCollect()).rows[0];
+    expect(fila[col('Fecha N2')]).toBe('2026-09-20');
     localStorage.removeItem(H.MAD_BORR_PRE + 'desoves');
   });
 });
@@ -287,6 +360,25 @@ describe('Desoves · pendientes: guardar el N2 hoy y completar el N5 otro día (
     expect([fila[col('Fecha N2')], fila[col('Fecha N5')]]).toEqual(['2026-09-14', '2026-09-15']);
     expect(document.getElementById('md-edit')).toBeNull();            // la ficha vuelve a estar limpia
     expect(pendientes()).toHaveLength(0);
+  });
+
+  /* 🔴 PE1.3 (2026-09-17) · el banco destapó este hueco: al abrir ✏️ Completar, una fecha CORREGIDA que llega de
+     la hoja tiene que entrar ya FIJADA. Si entrara suelta, parecería bien hasta que algo repintase las fechas y
+     se la llevara por delante, y el usuario perdería la corrección sin enterarse. */
+  it('🔴 al completar, una fecha ya CORREGIDA entra fijada y no la pisa el repintado', async () => {
+    llenar();
+    q('.md-n2').value = '9000';
+    q('.md-fn2').value = '2026-09-18';                 // el conteo de N2 se hizo cuatro días después
+    H.madDesFechaNFija(q('.md-fn2'));
+    await H.madDesGuardar();
+    expect(envios[0].rows[0][col('Fecha N2')], 'la corregida tiene que haber llegado a la hoja').toBe('2026-09-18');
+
+    H.madDesEditar(pendientes()[0].querySelector('.md-pend-ed').dataset.k);
+    expect(q('.md-fn2').value, 'al reabrir se perdió la fecha corregida').toBe('2026-09-18');
+    expect(q('.md-fn2').getAttribute('data-fijo'), 'entró suelta: el primer repintado se la lleva').toBe('1');
+    H.madDesFechasNSiguen();
+    expect(q('.md-fn2').value, 'el repintado pisó la corregida').toBe('2026-09-18');
+    expect(q('.md-fn5').value, 'la NO corregida sí tiene que salir del desove').toBe('2026-09-15');
   });
 
   it('🔴 la hoja trae lo de otros dispositivos; lo completo no aparece y lo local completo se poda', async () => {

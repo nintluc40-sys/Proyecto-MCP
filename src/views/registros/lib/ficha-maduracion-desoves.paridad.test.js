@@ -99,13 +99,29 @@ const MODELOS = {
       { lote: 'bm', codigoGenetico: ' 766 ', huevos: 200 },
     ],
   },
-  // 2026-09-16: las fechas ya no se teclean; las de este fixture (al revés) tienen que IGNORARSE en los dos lados.
+  /* 2026-09-17 (PE1.3): las fechas se EDITAN, así que las de este fixture (al revés) tienen que llegar a la hoja
+     tal cual en los dos lados, y además disparar sus avisos. Antes se exigía justo lo contrario. */
   'sin llave completa y fechas tecleadas al revés': {
     fecha: '2026-09-08',
     desoves: [
       { lote: 'BM', codigoGenetico: '', huevos: 100 },
       { lote: 'BC', codigoGenetico: '801', n2: 10, fechaN2: '2026-09-01', n5: 5, fechaN5: '2026-08-30' },
     ],
+  },
+  /* 🔴 PE1.3 (2026-09-17) · los tres casos que el banco destapó sin vigilancia en el MOTOR. Cada uno separa una
+     regla que, sin él, sólo cubría el módulo: el día irreal, con qué N2 se compara el N5, y la fecha sin cifra. */
+  'una fecha tecleada que NO ES UN DÍA (cae a la de oficio)': {
+    fecha: '2026-09-08',
+    desoves: [{ lote: 'BM', codigoGenetico: '766', n2: 10, fechaN2: '2026-02-31', n5: 5, fechaN5: '2027-02-29' }],
+  },
+  'el N5 se compara con el N2 EDITADO, no con el derivado': {
+    fecha: '2026-09-08',
+    // con el N2 de oficio (09-08) este N5 no avisaría; con el editado (09-20) sí, porque es anterior
+    desoves: [{ lote: 'BM', codigoGenetico: '766', n2: 10, fechaN2: '2026-09-20', n5: 5, fechaN5: '2026-09-15' }],
+  },
+  'fechas editadas SIN su recuento (no se guardan y hay que decirlo)': {
+    fecha: '2026-09-08',
+    desoves: [{ lote: 'BM', codigoGenetico: '766', huevos: 50, fechaN2: '2026-09-20', fechaN5: '2026-09-21' }],
   },
   'un desove sin ninguna cifra': { fecha: '2026-09-08', desoves: [{ lote: 'BM', codigoGenetico: '766' }] },
   // 2026-09-16: N5 = día siguiente al desove, donde un «+1» mal hecho se equivoca: fin de mes, fin de año, un día inexistente.
@@ -163,12 +179,15 @@ describe('Desoves · el mismo payload, celda a celda', () => {
     expect(buildDesoveRows(MODELOS['sin llave completa y fechas tecleadas al revés'])).toHaveLength(1);
   });
 
-  it('y las fechas derivadas llegan DE VERDAD a la fila (o la paridad compararía dos vacíos)', () => {
+  /* 2026-09-17 · la última línea esperaba la DERIVADA aun con fechas tecleadas: era la regla del 09-16. Desde
+     que se editan, ese fixture —que las trae «al revés» a propósito— tiene que llegar con las SUYAS, y es lo
+     que da valor a la paridad: si las dos copias las ignorasen, estarían comparando dos derivadas iguales. */
+  it('y las fechas llegan DE VERDAD a la fila: la de oficio cuando nadie la toca, la tecleada cuando la hay', () => {
     const f = (nombre) => buildDesoveRows(MODELOS[nombre])[0];
     const fechas = (fila) => [fila[MAD_DESOVE_HEADERS.indexOf('Fecha N2')], fila[MAD_DESOVE_HEADERS.indexOf('Fecha N5')]];
     expect(fechas(f('fin de mes: el N5 cae en octubre'))).toEqual(['2026-09-30', '2026-10-01']);
     expect(fechas(f('fin de año, sólo con N5 y N2 a 0'))).toEqual(['2026-12-31', '2027-01-01']);
-    expect(fechas(f('sin llave completa y fechas tecleadas al revés'))).toEqual(['2026-09-08', '2026-09-09']);
+    expect(fechas(f('sin llave completa y fechas tecleadas al revés'))).toEqual(['2026-09-01', '2026-08-30']);
   });
 });
 

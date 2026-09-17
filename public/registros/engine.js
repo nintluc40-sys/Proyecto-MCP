@@ -8124,10 +8124,35 @@ function _madBorrRender(ficha){
 }
 /* Un borrador es el HTML del panel TAL COMO ESTABA al guardarlo: si la ficha cambió después, trae campos que ya
    no existen y que nadie lee. Se retiran al traerlo, ficha a ficha, para no enseñar lo que no se va a guardar.
-   · desoves (2026-09-16): las fechas de N2 y N5 dejaron de teclearse; se derivan de la del desove. */
-function _madBorrAdaptar(ficha, fp){
+   · desoves (2026-09-17, PE1.3): las fechas de N2 y N5 vuelven a la tarjeta, ahora AUTOMÁTICAS y editables.
+     Un borrador del 09-16 no las trae —se habían retirado—, así que hay que DEVOLVÉRSELAS con su valor de
+     oficio; si no, la ficha se quedaría sin ellas hasta repintar y se guardaría sin fecha. Uno anterior al
+     09-16 sí las trae, y entonces se respeta lo que llevara dentro: una distinta de la de oficio la tecleó
+     alguien, y se FIJA para que no la pise el siguiente cambio de la fecha del desove. */
+function _madBorrAdaptar(ficha, fp, dia){
   if(ficha === "desoves"){
-    fp.querySelectorAll(".md-fn2,.md-fn5").forEach(function(el){ const l = el.closest("label"); (l || el).remove(); });
+    /* ⚠ La referencia es `dia` —la fecha ELEGIDA—, no el `#md-fecha` que trae el borrador dentro: aquí
+       todavía lleva el de cuando se guardó, porque quien lo pone al día es la línea de después del render. */
+    const f=fp.querySelector("#md-fecha"), fn=madDesFechasNauplios(isValidDate(dia) ? dia : (f ? f.value : ""));
+    fp.querySelectorAll(".md-des").forEach(function(card){
+      [["md-fn2","Fecha N2",fn.n2,".md-n2","Sale la del desove; si la cambias, se queda la tuya"],
+       ["md-fn5","Fecha N5",fn.n5,".md-n5","Sale la del día siguiente al desove; si la cambias, se queda la tuya"]]
+      .forEach(function(t){
+        const cls=t[0], rot=t[1], def=t[2], tras=t[3], ayuda=t[4];
+        let el=card.querySelector("."+cls);
+        if(!el){
+          const ancla=card.querySelector(tras), hueco=ancla ? ancla.closest("label") : null;
+          if(!hueco) return;
+          hueco.insertAdjacentHTML("afterend", '<label style="'+_MAD_ING_LBL+'" title="'+ayuda+'">'+rot
+            + '<input class="'+cls+'" type="date" value="'+escapeHtml(def||"")+'" oninput="madDesFechaNFija(this)"'
+            + ' style="'+_MAD_ING_INP+';width:145px"></label>');
+          return;
+        }
+        if(!el.getAttribute("oninput")) el.setAttribute("oninput","madDesFechaNFija(this)");
+        if(!el.value) el.value = def || "";
+        else if(el.value!==def){ el.setAttribute("data-fijo","1"); el.style.background="#fef9c3"; }
+      });
+    });
   }
   /* · mortdes (2026-09-16, PE1.5): la alcalinidad tenía UN campo por área y ahora son dos (día y noche). La tabla
        vieja se cambia por la nueva y su valor pasa a «día», a la vista para corregirlo: tirarlo perdería lo tecleado. */
@@ -8168,7 +8193,7 @@ function madBorrFechaChange(ficha){
   /* Sin borrador de ese día, la ficha se monta LIMPIA: arrastrar lo de ayer a un día en el
      que no se tecleó nada es justo lo que esta función viene a arreglar. */
   fp.innerHTML = html;
-  if(html) _madBorrAdaptar(ficha, fp);
+  if(html) _madBorrAdaptar(ficha, fp, nueva);
   else _madBorrRender(ficha);
   /* DESPUÉS del render: el montaje escribe today() en su campo de fecha, y aquí manda la
      fecha elegida. Y `_madBorrFecha` se fija al final por lo mismo. */
@@ -8641,9 +8666,9 @@ const MAD_DESOVE_COLUMNS = [
 const MAD_DESOVE_HEADERS = MAD_DESOVE_COLUMNS.map(function(c){ return c.h; });
 const MAD_DESOVE_KEY_COLS = [0,1,2];
 function madDesFecha(v){ return /^\d{4}-\d{2}-\d{2}$/.test(String(v||"")); }
-// 2026-09-16 (usuario): las fechas de N2 y N5 ya NO se teclean. N2 es el día del desove y N5 el siguiente, y cada
-// una se escribe sólo JUNTO A SU CIFRA; lo tecleado en fechaN2/fechaN5 (un borrador de antes) se ignora. Día REAL
-// y en UTC: «2026-02-31» pasa el patrón y no existe. Gemelo de fechasNauplios en el módulo.
+// 2026-09-16 / 2026-09-17 (usuario): las fechas de N2 y N5 salen AUTOMÁTICAS —N2 el día del desove y N5 el
+// siguiente— pero SE PUEDEN EDITAR: son el valor por defecto, no una imposición. Cada una se escribe sólo JUNTO
+// A SU CIFRA. Día REAL y en UTC: «2026-02-31» pasa el patrón y no existe. Gemelo de fechasNauplios en el módulo.
 function madDesFechasNauplios(fecha){
   if(!madDesFecha(fecha)) return { n2:"", n5:"" };
   const p=String(fecha).split("-").map(Number);
@@ -8652,6 +8677,9 @@ function madDesFechasNauplios(fecha){
   dia.setUTCDate(p[2]+1);
   return { n2:fecha, n5:dia.toISOString().slice(0,10) };
 }
+// La fecha `v` si es un día REAL del calendario, "" si no. Una sola definición de «día real»: madDesFecha
+// es sólo el patrón. Gemelo de diaReal en el módulo.
+function madDesDiaReal(v){ return madDesFechasNauplios(sanitizeStr(v,10)).n2; }
 // ⚠ Devuelve VACÍO cuando no hay cifra, no cero. `upsertMadRows` conserva la celda cuando
 // el valor entrante viene vacío, y de eso depende poder completar N2 y N5 días después sin
 // borrar los huevos. Con cero, el segundo envío los machacaría.
@@ -8675,8 +8703,10 @@ function madDesBuildRows(model){
       piscina: sanitizeStr(x.piscina,60),
       desoves: madIngInt(x.desoves),
       huevos: madDesMiles(x.huevos), hembrasNoViables: madIngInt(x.hembrasNoViables),
-      fechaN2: madIngInt(x.n2)!=="" ? fn.n2 : "", n2: madDesMiles(x.n2),
-      fechaN5: madIngInt(x.n5)!=="" ? fn.n5 : "", n5: madDesMiles(x.n5),
+      // ⚠ La fecha tecleada se valida con madDesFechasNauplios, NO con madDesFecha: ésta es sólo el patrón
+      //   y «2026-02-31» lo pasa. Un día irreal cae a la de oficio en vez de escribirse en la hoja.
+      fechaN2: madIngInt(x.n2)!=="" ? (madDesDiaReal(x.fechaN2) || fn.n2) : "", n2: madDesMiles(x.n2),
+      fechaN5: madIngInt(x.n5)!=="" ? (madDesDiaReal(x.fechaN5) || fn.n5) : "", n5: madDesMiles(x.n5),
       despacho: madDesDespachoTexto(x.despacho),
       observaciones: sanitizeStr(x.observaciones,300)
     };
@@ -8793,15 +8823,28 @@ function madDesValidar(model){
     vistos[llave]=1;
     // 🔒 EL CANDADO que pidió el usuario: N5 exige N2. Un N5 sin su N2 deja un hueco que
     // después nadie sabe si fue que no se contó o que se olvidó registrar.
-    // 2026-09-16: mira la CIFRA. Las fechas ya no se teclean, y una suelta (de un borrador de antes) no lo abre ni lo cierra.
+    // 2026-09-16: mira la CIFRA, y sigue mirándola desde que las fechas se editan (2026-09-17): lo que dice que
+    // un recuento se hizo es el recuento, no su fecha, que viene puesta de oficio en todas.
     const hayN2 = madIngInt(x.n2)!=="";
     const hayN5 = madIngInt(x.n5)!=="";
     if(hayN5 && !hayN2) errores.push("En "+et+" hay N5 sin N2. El N5 sólo se registra después del N2.");
     // ⚠ NO se comparan los tamaños entre sí (N5 ≤ N2 ≤ huevos): el usuario confirmó el
     // 2026-09-08 que son cosas DISTINTAS y no comparables. Un aviso por tamaño relativo
     // aquí sería un rojo que no significa nada, y ésos esconden el rojo siguiente.
-    // 2026-09-16: aquí había cuatro AVISOS de fecha (mal escrita, N2 anterior al desove, N5 anterior al N2). Con las
-    // fechas derivadas ninguno puede darse: se retiraron, no se dejaron mudos.
+    // 2026-09-17 · VUELVEN los avisos de fecha: el 09-16 se retiraron porque, impuestas, ninguno podía darse.
+    // Desde que se editan vuelven a ser posibles. Sólo miran lo TECLEADO: la fecha de oficio nunca los dispara,
+    // o saldrían en cada registro normal. Gemelo del módulo.
+    const der = madDesFechasNauplios(sanitizeStr(m.fecha,10));
+    [["N2",x.fechaN2,der.n2,hayN2,"la del desove"],["N5",x.fechaN5,der.n5,hayN5,"la del día siguiente"]].forEach(function(t){
+      const cual=t[0], def=t[2], hayCifra=t[3], deDonde=t[4], f=sanitizeStr(t[1],10);
+      if(!f || f===def) return;                       // vacía o la de oficio: no la tecleó nadie
+      if(!madDesDiaReal(f)){ avisos.push("La fecha de "+cual+" de "+et+" no es un día real; se usará "+deDonde+"."); return; }
+      // Fecha propia sin su recuento: no se escribe (va sólo con su cifra) y el trabajo se perdería en silencio.
+      if(!hayCifra) avisos.push(et+" tiene fecha de "+cual+" pero no su recuento: esa fecha no se guardará.");
+    });
+    const fN2 = madDesDiaReal(x.fechaN2) || der.n2, fN5 = madDesDiaReal(x.fechaN5) || der.n5;
+    if(hayN2 && der.n2 && fN2 < der.n2) avisos.push("El N2 de "+et+" es ANTERIOR al desove.");
+    if(hayN5 && fN2 && fN5 < fN2) avisos.push("El N5 de "+et+" es ANTERIOR al N2.");
     const algo = ["desoves","huevos","hembrasNoViables","n2","n5"].some(function(k){ const n=madIngInt(x[k]); return n!=="" && n>0; });
     if(!algo) avisos.push(et+" no trae ninguna cifra: la fila se escribirá vacía.");
   });
@@ -8810,10 +8853,22 @@ function madDesValidar(model){
 
 // ── Maduración · Desoves · interfaz ──────────────────────────────────────────
 // `d` (opcional) rellena la tarjeta con un desove guardado; `bloq` fija su llave (lote y código) al completarlo.
-function _madDesCardHTML(d, bloq){
+function _madDesCardHTML(d, bloq, fecha){
   const x=d||{};
   const val=function(k){ const v=x[k]; return (v===undefined||v===null||v==="") ? "" : ' value="'+escapeHtml(String(v))+'"'; };
   const llave=function(k){ return val(k) + (bloq ? ' readonly title="Es la llave del desove: no cambia al completarlo"' : ''); };
+  /* PE1.3 (2026-09-17, usuario) · «las fechas salen automáticamente, pero se pueden editar de ser el caso».
+     Vienen puestas —N2 la del desove, N5 la del día siguiente— y SIGUEN a la del desove mientras nadie las
+     toque; editarlas las FIJA (data-fijo y fondo amarillo, como la fecha de aplicación de Fin de Ciclo).
+     ⚠ Una fecha del modelo distinta de la de oficio la tecleó alguien —o llega así de la hoja al ✏️ Completar—:
+     entra ya FIJADA, o el primer cambio de la fecha del desove la pisaría con la derivada. */
+  const fn=madDesFechasNauplios(sanitizeStr(fecha,10));
+  const fechaN=function(cls, rot, k, def, ayuda){
+    const v=sanitizeStr(x[k],10), propia=isValidDate(v) && v!==def;
+    return '<label style="'+_MAD_ING_LBL+'" title="'+ayuda+'">'+rot
+      + '<input class="'+cls+'" type="date" value="'+escapeHtml(propia ? v : (def||""))+'"'+(propia ? ' data-fijo="1"' : '')
+      + ' oninput="madDesFechaNFija(this)" style="'+_MAD_ING_INP+';width:145px'+(propia ? ';background:#fef9c3' : '')+'"></label>';
+  };
   const gris = bloq ? ';background:#f1f5f9' : '';
   return '<div class="md-des" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px;background:#fff">'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
@@ -8828,8 +8883,10 @@ function _madDesCardHTML(d, bloq){
     +   '<label style="'+_MAD_ING_LBL+'" title="Reproductoras que estaban maduras pero no desovaron">Hembras no viables<input class="md-hnoviables" type="number" min="0" step="1"'+val("hembrasNoViables")+' style="'+_MAD_ING_INP+';width:120px"></label>'
     + '</div>'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
-    +   '<label style="'+_MAD_ING_LBL+'" title="Se registra con la fecha del desove">N2 (miles) · el día del desove<input class="md-n2" type="number" min="0" step="1"'+val("n2")+' style="'+_MAD_ING_INP+';width:110px"></label>'
-    +   '<label style="'+_MAD_ING_LBL+'" title="Se registra con el día siguiente al desove">N5 (miles) · al día siguiente<input class="md-n5" type="number" min="0" step="1"'+val("n5")+' style="'+_MAD_ING_INP+';width:110px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">N2 (miles)<input class="md-n2" type="number" min="0" step="1"'+val("n2")+' style="'+_MAD_ING_INP+';width:110px"></label>'
+    +   fechaN("md-fn2","Fecha N2","fechaN2",fn.n2,"Sale la del desove; si la cambias, se queda la tuya")
+    +   '<label style="'+_MAD_ING_LBL+'">N5 (miles)<input class="md-n5" type="number" min="0" step="1"'+val("n5")+' style="'+_MAD_ING_INP+';width:110px"></label>'
+    +   fechaN("md-fn5","Fecha N5","fechaN5",fn.n5,"Sale la del día siguiente al desove; si la cambias, se queda la tuya")
     + '</div>'
     + _madDesDespachoHTML(x.despacho)
     + '<label style="'+_MAD_ING_LBL+'">Observaciones<input class="md-obs"'+val("observaciones")+' style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
@@ -8857,7 +8914,25 @@ function madDesDespachoResumen(el){
 }
 function madDesAddCard(){
   const c=document.getElementById("md-cards");
-  if(c) c.insertAdjacentHTML("beforeend", _madDesCardHTML());
+  if(c) c.insertAdjacentHTML("beforeend", _madDesCardHTML(null, false, (document.getElementById("md-fecha")||{}).value));
+}
+/* PE1.3 (2026-09-17, usuario) · «salen automáticamente, pero se pueden editar de ser el caso». Cada fecha
+   editada se FIJA (data-fijo, fondo amarillo, como los pesos de Tanques y la fecha de Fin de Ciclo) y deja de
+   seguir a la del desove. Volver a poner la de oficio, o vaciarla, la suelta. */
+function madDesFechaNFija(el){
+  if(!el) return;
+  const f=document.getElementById("md-fecha");
+  const fn=madDesFechasNauplios(f ? f.value : "");
+  const def=el.classList.contains("md-fn5") ? fn.n5 : fn.n2;
+  if(el.value && el.value!==def){ el.setAttribute("data-fijo","1"); el.style.background="#fef9c3"; }
+  else { el.removeAttribute("data-fijo"); el.style.background=""; }
+}
+function madDesFechasNSiguen(){
+  const f=document.getElementById("md-fecha");
+  const fn=madDesFechasNauplios(f ? f.value : "");
+  if(!fn.n2) return;   // fecha a medio teclear: no se pisa nada con vacío
+  document.querySelectorAll("#md-cards .md-fn2").forEach(function(el){ if(el.getAttribute("data-fijo")!=="1") el.value=fn.n2; });
+  document.querySelectorAll("#md-cards .md-fn5").forEach(function(el){ if(el.getAttribute("data-fijo")!=="1") el.value=fn.n5; });
 }
 function madDesDelCard(btn){
   const b=btn.closest(".md-des"), c=document.getElementById("md-cards");
@@ -8867,13 +8942,19 @@ function madDesDelCard(btn){
 function madDesCollect(){
   const g=function(el,sel){ const e=el.querySelector(sel); return e?e.value:""; };
   const f=document.getElementById("md-fecha");
+  /* PE1.3 (2026-09-17) · quién manda en la fecha lo dice `data-fijo`, NO lo que haya pintado en el campo.
+     Sin fijar, se recalcula aquí desde la fecha del desove: si ésta se cambió por programa (un borrador, el
+     ✏️ Completar, una prueba) el `onchange` no salta, el campo se queda con la de antes y esa fecha RANCIA
+     se colaría como si alguien la hubiera tecleado. Fijada, manda la del usuario, que es el punto de PE1.3. */
+  const fn=madDesFechasNauplios(f ? f.value : "");
+  const fdate=function(el,sel,def){ const e=el.querySelector(sel); if(!e) return ""; return e.getAttribute("data-fijo")==="1" ? e.value : def; };
   const desoves=[];
   document.querySelectorAll("#md-cards .md-des").forEach(function(c){
     desoves.push({
       lote:g(c,".md-lote"), codigoGenetico:g(c,".md-cg"), piscina:g(c,".md-piscina"),
       desoves:g(c,".md-desoves"), huevos:g(c,".md-huevos"),
       hembrasNoViables:g(c,".md-hnoviables"),
-      n2:g(c,".md-n2"), n5:g(c,".md-n5"),
+      fechaN2:fdate(c,".md-fn2",fn.n2), n2:g(c,".md-n2"), fechaN5:fdate(c,".md-fn5",fn.n5), n5:g(c,".md-n5"),
       despacho:Array.prototype.map.call(c.querySelectorAll(".md-desp-op:checked"), function(e){ return e.value; }),
       observaciones:g(c,".md-obs")
     });
@@ -9063,6 +9144,10 @@ async function madDesPendVer(){
 }
 function _madDesHayTecleado(){
   return Array.prototype.some.call(document.querySelectorAll("#md-cards input"), function(i){
+    /* PE1.3 (2026-09-17) · las fechas de N2 y N5 vienen puestas de oficio en TODA tarjeta, también en una
+       recién abierta: contarlas haría que «hay algo tecleado» fuera siempre cierto y ✏️ Completar pidiera
+       confirmación sobre un formulario en blanco. Cuenta sólo la que el usuario FIJÓ al cambiarla. */
+    if(i.classList.contains("md-fn2") || i.classList.contains("md-fn5")) return i.getAttribute("data-fijo")==="1";
     return i.type==="checkbox" ? i.checked : String(i.value||"").trim()!=="";
   });
 }
@@ -9088,13 +9173,13 @@ function renderMadDesoves(d){
     + '<div class="fc-h"><div class="fc-t">🥚 Maduración · Desoves</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
     + '<div class="fc-b">'
     +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
-    +     '<span style="font-size:16px">ℹ️</span><span>La producción se registra por <b>lote y código genético</b>, no por tanque: las copuladas de varios tanques se juntan en un pool y al devolverlas nadie identifica cuáles eran.<br>Los conteos grandes van <b>en miles</b> (escribe <b>6500</b> para 6.500.000). <b>N2 y N5 se completan después</b>: en <b>📋 Desoves pendientes</b> pulsa <b>✏️ Completar</b>, rellena lo nuevo y guarda. Con el N5 guardado, el desove sale de la lista. Sus fechas no se teclean: <b>N2 lleva la del desove y N5 la del día siguiente</b>.</span>'
+    +     '<span style="font-size:16px">ℹ️</span><span>La producción se registra por <b>lote y código genético</b>, no por tanque: las copuladas de varios tanques se juntan en un pool y al devolverlas nadie identifica cuáles eran.<br>Los conteos grandes van <b>en miles</b> (escribe <b>6500</b> para 6.500.000). <b>N2 y N5 se completan después</b>: en <b>📋 Desoves pendientes</b> pulsa <b>✏️ Completar</b>, rellena lo nuevo y guarda. Con el N5 guardado, el desove sale de la lista. Sus fechas <b>vienen puestas</b> —N2 la del desove y N5 la del día siguiente— y <b>puedes cambiarlas</b> si el conteo se hizo otro día: la que toques se queda en amarillo y deja de seguir a la del desove.</span>'
     +   '</div>'
     +   (d ? '<div id="md-edit" style="background:#fef9c3;border:1.5px solid #fde047;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:12px;color:#713f12">✏️ Completando el desove del <b>'+escapeHtml(d.fecha)+'</b> · <b>'+escapeHtml(d.lote)+'</b> · <b>'+escapeHtml(d.codigoGenetico)+'</b>. Rellena lo nuevo y guarda; 🧹 Vaciar sale sin guardar.</div>' : '')
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
-    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha del desove<input type="date" id="md-fecha" value="'+escapeHtml(d ? d.fecha : todayStr)+'"'+(d ? ' readonly' : ' onchange="madBorrFechaChange(&quot;desoves&quot;)"')+' style="'+_MAD_ING_INP+(d ? ';background:#f1f5f9' : '')+'"></label>'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha del desove<input type="date" id="md-fecha" value="'+escapeHtml(d ? d.fecha : todayStr)+'"'+(d ? ' readonly' : ' onchange="madBorrFechaChange(&quot;desoves&quot;);madDesFechasNSiguen()"')+' style="'+_MAD_ING_INP+(d ? ';background:#f1f5f9' : '')+'"></label>'
     +   '</div>'
-    +   '<div id="md-cards">'+_madDesCardHTML(d, !!d)+'</div>'
+    +   '<div id="md-cards">'+_madDesCardHTML(d, !!d, d ? d.fecha : todayStr)+'</div>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
     +     '<button class="btn" type="button" onclick="madDesAddCard()">➕ Desove</button>'
     +     '<button class="btn" type="button" onclick="madDesRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
