@@ -282,20 +282,37 @@ describe('Fin de Ciclo · validación', () => {
      ninguno: parece completo. Aviso y no error, porque un cierre sin tratar es legítimo.
      ⚠ Las tres ramas van por separado a propósito: con una sola prueba que mirara «hay algún
      aviso», quitar dos de las tres comprobaciones sobreviviría a la mutación. */
-  it('AVISO si hay dosis de metabisulfito pero no fecha', () => {
+  /* 2026-09-16 (usuario, PE1.6): «la fecha de aplicación sale por defecto igual que la fecha del registro». Aquí se
+     exigía un AVISO para la dosis sin fecha; con la fecha por defecto, esa dosis toma la del registro y no avisa. */
+  it('🔴 una dosis SIN fecha toma la del registro: se escribe con ella y no avisa', () => {
     const m = base();
     m.cierres[0].fechaMetabisulfito = '';
     const { errores, avisos } = validarFinCiclo(m);
     expect(errores).toEqual([]);
-    expect(avisos.some((a) => /no dice en qué fecha se aplicó/.test(a))).toBe(true);
+    expect(avisos.some((a) => /metabisulfito/i.test(a))).toBe(false);
+    expect(buildFinRows(m)[0][col('Fecha aplicación')]).toBe('2026-09-08');
   });
 
-  it('AVISO si hay fecha de metabisulfito pero no dosis', () => {
+  it('AVISO si hay fecha de metabisulfito, DISTINTA de la del registro, pero no dosis', () => {
     const m = base();
-    m.cierres[0].metabisulfito = '';
+    m.cierres[0].metabisulfito = '';            // la fecha del fixture (09-09) no es la del registro (09-08)
     const { errores, avisos } = validarFinCiclo(m);
     expect(errores).toEqual([]);
     expect(avisos.some((a) => /tiene fecha pero no dosis/.test(a))).toBe(true);
+  });
+
+  it('🔴 la fecha que trae la tarjeta de salida (la del registro) SIN dosis ni avisa ni se escribe', () => {
+    /* Cada tarjeta la trae puesta: avisarla en todos los lotes sin tratar, o escribirla en la hoja sin dosis,
+       llenaría el registro de fechas que no dicen nada. */
+    const m = base();
+    m.cierres[0].metabisulfito = '';
+    m.cierres[0].fechaMetabisulfito = m.fecha;
+    expect(validarFinCiclo(m).avisos.some((a) => /metabisulfito/i.test(a))).toBe(false);
+    expect(buildFinRows(m)[0][col('Fecha aplicación')]).toBe('');
+  });
+
+  it('una fecha tecleada a mano CON su dosis manda sobre la del registro', () => {
+    expect(buildFinRows(base())[0][col('Fecha aplicación')]).toBe('2026-09-09');
   });
 
   it('AVISO si la fecha de metabisulfito no es una fecha', () => {

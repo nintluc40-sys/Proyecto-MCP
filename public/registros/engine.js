@@ -8142,6 +8142,12 @@ function _madBorrAdaptar(ficha, fp){
       fp.querySelectorAll(".mm-alc-dia").forEach(function(el){ const v=valores[el.getAttribute("data-area")]; if(v) el.value=v; });
     }
   }
+  /* · fin (2026-09-16, PE1.6): la fecha de aplicación sigue a la del registro salvo que esté FIJADA a mano. Un borrador
+       de antes no trae la marca: una fecha distinta de la del registro la tecleó alguien, y se fija para no pisarla. */
+  if(ficha === "fin"){
+    const f=fp.querySelector("#mf-fecha"), reg=f ? f.value : "";
+    fp.querySelectorAll(".mf-mbsf").forEach(function(el){ if(el.value && el.value!==reg && el.getAttribute("data-fijo")!=="1"){ el.setAttribute("data-fijo","1"); el.style.background="#fef9c3"; } });
+  }
 }
 /** Asa del campo Fecha: guarda el día que se deja y trae el que se elige. */
 function madBorrFechaChange(ficha){
@@ -9177,7 +9183,8 @@ function madFinBuildRows(model){
     const v = {
       fecha: fecha, lote: lote, tipo: sanitizeStr(x.tipo,20), motivo: motivo, sala: sala,
       metabisulfito: madFinKg(x.metabisulfito),
-      fechaMetabisulfito: sanitizeStr(x.fechaMetabisulfito,10),
+      // PE1.6 (2026-09-16, usuario): por defecto la fecha del registro, y sólo con su dosis. Ver el módulo.
+      fechaMetabisulfito: madFinKg(x.metabisulfito)==="" ? "" : (sanitizeStr(x.fechaMetabisulfito,10) || fecha),
       machos: madIngInt(x.machos), hembras: madIngInt(x.hembras), rojos: madIngInt(x.rojos),
       pesoPromMachos: madFinKg(x.pesoPromMachos), pesoPromHembras: madFinKg(x.pesoPromHembras),
       pesoTotal: madFinKg(m.pesoTotal),
@@ -9224,10 +9231,10 @@ function madFinValidar(model){
       if(tipo==="Parcial") errores.push("Un cierre Parcial de "+lote+" sin animales no descuenta nada.");
       else avisos.push("El cierre total de "+lote+" no declara animales: TODO lo que el libro tenga se anotará como diferencia.");
     }
-    // El metabisulfito son DOS datos que sólo valen juntos: medio registro parece completo.
+    // El metabisulfito son DOS datos que sólo valen juntos: medio registro parece completo. PE1.6: la fecha sale por
+    // defecto igual que la del registro; una dosis sin fecha toma ésa, y una fecha sin dosis sólo avisa si no es ésa.
     const mbs = madFinKg(x.metabisulfito), fmbs = sanitizeStr(x.fechaMetabisulfito,10);
-    if(mbs!=="" && fmbs==="") avisos.push("El metabisulfito de "+lote+" no dice en qué fecha se aplicó.");
-    if(fmbs!=="" && mbs==="") avisos.push("El metabisulfito de "+lote+" tiene fecha pero no dosis.");
+    if(fmbs!=="" && mbs==="" && fmbs!==sanitizeStr(m.fecha,10)) avisos.push("El metabisulfito de "+lote+" tiene fecha pero no dosis.");
     if(fmbs!=="" && !/^\d{4}-\d{2}-\d{2}$/.test(fmbs)) avisos.push("La fecha de metabisulfito de "+lote+" no es una fecha válida.");
     // Rojos y pesos promedio son del LOTE (avisos). Los rojos van dentro de machos y hembras. Ver el módulo.
     const rojos = madIngInt(x.rojos);
@@ -9257,7 +9264,7 @@ function madFinTipoOpts(sel){
 function madFinMotivoOpts(sel){
   return '<option value=""></option>' + MAD_FIN_MOTIVOS.map(function(t){ return '<option value="'+escapeHtml(t)+'"'+(sel===t?' selected':'')+'>'+escapeHtml(t)+'</option>'; }).join("");
 }
-function _madFinCardHTML(){
+function _madFinCardHTML(fecha){
   return '<div class="mf-cierre" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px;background:#fff">'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
     +   '<label style="'+_MAD_ING_LBL+'">Lote<input class="mf-lote" style="'+_MAD_ING_INP+';width:100px;text-transform:uppercase"></label>'
@@ -9265,7 +9272,7 @@ function _madFinCardHTML(){
     +   '<label style="'+_MAD_ING_LBL+'">Motivo<select class="mf-motivo" style="'+_MAD_ING_INP+';width:190px">'+madFinMotivoOpts("")+'</select></label>'
     +   '<label style="'+_MAD_ING_LBL+'" title="Sólo en un cierre Parcial: el libro descuenta de esa sala. Vacía = de todas las salas donde esté el lote.">Sala (sólo Parcial)<select class="mf-sala" style="'+_MAD_ING_INP+';width:120px">'+madIngSalaOpts("")+'</select></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Metabisulfito (kg)<input class="mf-mbs" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:130px"></label>'
-    +   '<label style="'+_MAD_ING_LBL+'">Fecha aplicación<input class="mf-mbsf" type="date" style="'+_MAD_ING_INP+';width:145px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'" title="Por defecto, la fecha del registro; si la cambias, se queda la tuya">Fecha aplicación<input class="mf-mbsf" type="date"'+(isValidDate(fecha) ? ' value="'+escapeHtml(fecha)+'"' : '')+' oninput="madFinFechaAplFija(this)" style="'+_MAD_ING_INP+';width:145px"></label>'
     +   '<button class="btn" type="button" onclick="madFinDelCard(this)" style="font-size:11px">✕ Quitar</button>'
     + '</div>'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
@@ -9293,7 +9300,20 @@ function madFinTipoChange(sel){
 }
 function madFinAddCard(){
   const c=document.getElementById("mf-cards");
-  if(c) c.insertAdjacentHTML("beforeend", _madFinCardHTML());
+  if(c) c.insertAdjacentHTML("beforeend", _madFinCardHTML((document.getElementById("mf-fecha")||{}).value));
+}
+/* PE1.6 (2026-09-16, usuario) · «la fecha de aplicación sale por defecto igual que la fecha del registro». Cada tarjeta
+   la trae puesta y la SIGUE al cambiar la del registro, salvo que alguien la haya cambiado a mano: ésa queda FIJADA
+   (data-fijo, fondo amarillo, como los pesos de Tanques) y no se pisa. Volver a poner la del registro, o vaciarla, la suelta. */
+function madFinFechaAplFija(el){
+  const f=document.getElementById("mf-fecha"), reg=f ? f.value : "";
+  if(el.value && el.value!==reg){ el.setAttribute("data-fijo","1"); el.style.background="#fef9c3"; }
+  else { el.removeAttribute("data-fijo"); el.style.background=""; }
+}
+function madFinFechaAplSigue(){
+  const f=document.getElementById("mf-fecha"), reg=f ? f.value : "";
+  if(!isValidDate(reg)) return;
+  document.querySelectorAll("#fp-fin .mf-mbsf").forEach(function(el){ if(el.getAttribute("data-fijo")!=="1") el.value=reg; });
 }
 function madFinDelCard(btn){
   const b=btn.closest(".mf-cierre"), c=document.getElementById("mf-cards");
@@ -9449,9 +9469,9 @@ function renderMadFinCiclo(){
     +     '<span style="font-size:16px">ℹ️</span><span>Es la <b>única salida</b> del departamento: un pedido a otra camaronera, un descarte, el fin de la vida útil. Los movimientos entre tanques van en 🔄 Movimientos.<br>Se cierra el <b>lote entero</b> — el libro descuenta de cada tanque donde esté, en proporción; un cierre <b>Parcial</b> puede indicar la <b>sala</b> y entonces descuenta sólo de ella. Y en un cierre <b>Total</b>, lo que el libro creía que quedaba y no salió se anota como <b>diferencia</b>: no se esconde.</span>'
     +   '</div>'
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
-    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mf-fecha" value="'+escapeHtml(todayStr)+'" onchange="madBorrFechaChange(&quot;fin&quot;)" style="'+_MAD_ING_INP+'"></label>'
+    +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mf-fecha" value="'+escapeHtml(todayStr)+'" onchange="madBorrFechaChange(&quot;fin&quot;);madFinFechaAplSigue()" style="'+_MAD_ING_INP+'"></label>'
     +   '</div>'
-    +   '<div id="mf-cards">'+_madFinCardHTML()+'</div>'
+    +   '<div id="mf-cards">'+_madFinCardHTML(todayStr)+'</div>'
     +   '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin:4px 0 10px;background:#f8fafc">'
     +     '<div style="font-size:12px;font-weight:700;margin-bottom:2px">⚖️ Peso total de lo que sale</div>'
     +     '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Un solo peso de <b>todos los lotes</b> de este registro (los promedios van en cada lote): se guarda igual en cada fila, con el mismo <b>Registro</b> <span id="mf-registro-txt" style="font-family:monospace">'+escapeHtml(registro)+'</span> para leerlo una sola vez.<input type="hidden" id="mf-registro" value="'+escapeHtml(registro)+'"></div>'

@@ -107,10 +107,20 @@ const MODELOS = {
   },
   /* ⚠ Era «un pedido SIN destino». El usuario retiró esa columna el 2026-09-08 —ningún
      reproductor vuelve a camaronera— y el aviso que este fixture ejercía se fue con ella.
-     Se sustituye por el que ocupó su sitio: media pareja de metabisulfito. */
-  'metabisulfito con dosis y SIN fecha (aviso)': {
+     Se sustituye por el que ocupó su sitio: media pareja de metabisulfito.
+     2026-09-16 (PE1.6): la dosis sin fecha ya no avisa, toma la del registro; el aviso lo ejerce ahora una fecha
+     DISTINTA de la del registro sin dosis, y la de salida (la del registro) sin dosis no debe avisar ni escribirse. */
+  'metabisulfito con dosis y SIN fecha (toma la del registro)': {
     fecha: '2026-09-08',
     cierres: [{ lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', metabisulfito: 8, fechaMetabisulfito: '', machos: 12, hembras: 12 }],
+  },
+  'fecha de aplicación DISTINTA y sin dosis (aviso)': {
+    fecha: '2026-09-08',
+    cierres: [{ lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', metabisulfito: '', fechaMetabisulfito: '2026-09-10', machos: 12, hembras: 12 }],
+  },
+  'la fecha de salida (la del registro) sin dosis': {
+    fecha: '2026-09-08',
+    cierres: [{ lote: 'AB', tipo: 'Parcial', motivo: 'Pedido', metabisulfito: '', fechaMetabisulfito: '2026-09-08', machos: 12, hembras: 12 }],
   },
   'sin cierres': { fecha: '2026-09-08', cierres: [] },
   'fecha inválida': { fecha: '8-9-2026', cierres: [{ lote: 'AB', tipo: 'Total', motivo: 'Pedido', machos: 1, hembras: 1 }] },
@@ -196,7 +206,12 @@ describe('Fin de Ciclo · el mismo veredicto', () => {
     expect(validarFinCiclo(MODELOS['duplicado: mismo lote y motivo dos veces']).errores.length).toBeGreaterThan(0);
     expect(validarFinCiclo(MODELOS['parcial sin animales (error) y total sin animales (aviso)']).errores.length).toBeGreaterThan(0);
     expect(validarFinCiclo(MODELOS['parcial sin animales (error) y total sin animales (aviso)']).avisos.length).toBeGreaterThan(0);
-    expect(validarFinCiclo(MODELOS['metabisulfito con dosis y SIN fecha (aviso)']).avisos.length).toBeGreaterThan(0);
+    expect(validarFinCiclo(MODELOS['fecha de aplicación DISTINTA y sin dosis (aviso)']).avisos.length).toBeGreaterThan(0);
+    // PE1.6 · y los dos casos de la fecha por defecto dan lo que tienen que dar, o la paridad compararía dos vacíos.
+    const fechaApl = (nombre) => buildFinRows(MODELOS[nombre])[0][MAD_FIN_HEADERS.indexOf('Fecha aplicación')];
+    expect(fechaApl('metabisulfito con dosis y SIN fecha (toma la del registro)')).toBe('2026-09-08');
+    expect(fechaApl('la fecha de salida (la del registro) sin dosis')).toBe('');
+    expect(validarFinCiclo(MODELOS['la fecha de salida (la del registro) sin dosis']).avisos).toEqual([]);
     expect(validarFinCiclo(MODELOS['sin llave completa y tipo desconocido']).avisos.length).toBeGreaterThan(0);
     // Y el caso que SÍ tiene que pasar: dos motivos distintos el mismo día conviven.
     expect(validarFinCiclo(MODELOS['mismo lote, dos motivos el mismo día']).errores).toEqual([]);

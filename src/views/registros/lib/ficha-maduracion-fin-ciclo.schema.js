@@ -144,7 +144,10 @@ export function buildFinRows(model) {
       motivo,
       sala,
       metabisulfito: kg(x.metabisulfito),
-      fechaMetabisulfito: sanitizeStr(x.fechaMetabisulfito, 10),
+      /* PE1.6 (2026-09-16, usuario): «la fecha de aplicación sale por defecto igual que la fecha del registro». Sólo
+         se escribe CON su dosis —una fecha sola, como la que la ficha trae de salida, no dice nada— y una dosis sin
+         fecha toma la del registro. */
+      fechaMetabisulfito: kg(x.metabisulfito) === '' ? '' : (sanitizeStr(x.fechaMetabisulfito, 10) || fecha),
       machos: int(x.machos),
       hembras: int(x.hembras),
       rojos: int(x.rojos),
@@ -215,13 +218,13 @@ export function validarFinCiclo(model) {
 
     /* ⚠ El metabisulfito son DOS datos que sólo valen juntos: una dosis sin fecha no dice
        cuándo se trató, y una fecha sin dosis no dice cuánto. Medio registro es peor que
-       ninguno, porque parece completo. Aviso y no error: el cierre es válido sin tratar. */
+       ninguno, porque parece completo. Aviso y no error: el cierre es válido sin tratar.
+       PE1.6 (2026-09-16, usuario): la fecha sale por DEFECTO igual que la del registro. Una dosis sin fecha toma esa,
+       así que ya no avisa; y una fecha sin dosis sólo avisa si NO es la del registro, porque ésa viene de salida en
+       cada tarjeta y avisarla en todos los lotes sin tratar sería un rojo que no significa nada. */
     const mbs = kg(x.metabisulfito);
     const fmbs = sanitizeStr(x.fechaMetabisulfito, 10);
-    if (mbs !== '' && fmbs === '') {
-      avisos.push('El metabisulfito de ' + lote + ' no dice en qué fecha se aplicó.');
-    }
-    if (fmbs !== '' && mbs === '') {
+    if (fmbs !== '' && mbs === '' && fmbs !== sanitizeStr(m.fecha, 10)) {
       avisos.push('El metabisulfito de ' + lote + ' tiene fecha pero no dosis.');
     }
     if (fmbs !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(fmbs)) {

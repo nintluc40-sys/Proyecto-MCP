@@ -413,6 +413,13 @@ Dos consecuencias que conviene tener presentes al desplegar:
   de los machos y hembras que salen: no mueven el saldo), y hay **un solo «Peso total (kg)»** de todos
   los lotes del registro. La hoja sigue vacía, así que no hay nada que migrar; la firma A4 de Fin de
   Ciclo pasa a «Sala» (col. 5) y «Rojos» (col. 10).
+- **Fin de Ciclo · la fecha de aplicación sale por defecto igual que la del registro (PE1.6, 2026-09-16,
+  usuario).** Cada tarjeta la trae puesta y la **sigue** al cambiar la fecha del registro, salvo que se haya
+  cambiado a mano: ésa queda **fijada** (`data-fijo`, fondo amarillo, como los pesos de Tanques) y no se pisa;
+  volver a poner la del registro, o vaciarla, la suelta. En la hoja la fecha va **sólo con su dosis**, y una dosis
+  sin fecha toma la del registro, así que ya no avisa «no dice en qué fecha se aplicó»; «tiene fecha pero no
+  dosis» sólo avisa si la fecha no es la del registro (la de salida no es un dato). Un borrador guardado antes
+  fija, al traerlo, la fecha tecleada distinta de la del registro. No cambia columnas: ni GAS ni sello.
 - ⚖️ **Saldo = resumen rápido (2026-09-15).** 🔄 Recalcular lee todas las fichas y resume por **sala** (estado
   y el de sus lotes, lotes, RAS, T° y O2 con promedio, última lectura, Δ con el registro anterior y CV, tanques y
   animales en producción y cuarentena, desinfecciones) y por **lote** (población, muertos y descartes con tasas
