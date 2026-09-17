@@ -480,6 +480,50 @@ describe('GAS · A4 · las tres hojas NUEVAS tampoco las fija una app vieja', ()
     expect(hojas['Maduración Mortalidad Desove']).toBeUndefined();
   });
 
+  /* 🔴 2026-09-17 · MOVIMIENTOS ES UN CERROJO PREVENTIVO. A diferencia de las otras seis, esta hoja NO ha
+     cambiado nunca de columnas, así que su firma no arregla ningún desfase: existe para que, el día que cambie,
+     YA ESTÉ PUESTA —una firma añadida después del desfase llega tarde por definición, que es lo que dice el
+     propio comentario del GAS—. Estaba sólo en MAD_ESQUEMA_VIGILADO, que compara contra la cabecera de la
+     HOJA y no actúa con la hoja vacía o sin crear: justo cuando un cliente viejo la crearía con el esquema malo.
+     🔑 Se firman DOS columnas, y cada una atrapa algo distinto: la 9 una inserción anterior, la 12 una posterior.
+     Los rechazos se comprueban por su COLUMNA, no por «error» a secas, o mover la firma seguiría dando verde. */
+  describe('Movimientos · la firma que faltaba (cerrojo preventivo)', () => {
+    const conId = (cab) => conValores(cab, { Fecha: '2026-09-17', Tipo: 'Traslado', ID: '2026-09-17-MOV-1' });
+    const sin = (h) => MAD_MOV_HEADERS.filter((x) => x !== h);
+    const insertando = (i, h) => { const c = MAD_MOV_HEADERS.slice(); c.splice(i, 0, h); return c; };
+
+    it('🔴 la app AL DÍA escribe, y la hoja nace', () => {
+      const hojas = {};
+      const r = gas(hojas).post({ sheetName: 'Maduración Movimientos', headers: MAD_MOV_HEADERS, rows: [conId(MAD_MOV_HEADERS)] });
+      expect(r.status).toBe('ok');
+      expect(hojas['Maduración Movimientos']).toBeDefined();
+    });
+
+    for (const [caso, cab, col, cabEsperada] of [
+      ['una columna INSERTADA a media tabla', insertando(3, 'Piscina'), 'columna 9', '«Agua destino»'],
+      ['una columna que FALTA a media tabla', sin('Machos'), 'columna 9', '«Agua destino»'],
+      ['«Agua destino» renombrada', MAD_MOV_HEADERS.map((h) => (h === 'Agua destino' ? 'Agua' : h)), 'columna 9', '«Agua destino»'],
+      ['una inserción DESPUÉS de la 9, que sólo mueve el ID', insertando(10, 'Responsable'), 'columna 12', '«ID»'],
+    ]) {
+      it('🔴 rechaza ' + caso + ', y la hoja NO nace', () => {
+        const hojas = {};
+        const g = gas(hojas);
+        const r = g.post({ sheetName: 'Maduración Movimientos', headers: cab, rows: [conId(cab)] });
+        expect(r.status).toBe('error');
+        expect(r.message).toContain('Esquema desactualizado');
+        expect(r.message, 'la firma tiene que delatar SU columna, no una cualquiera').toContain(col);
+        expect(r.message).toContain(cabEsperada);
+        expect(hojas['Maduración Movimientos'], 'se creó la hoja con el esquema malo').toBeUndefined();
+        expect(g.candado.soltado).toBe(g.candado.tomado);          // rechazar no deja el candado tomado
+      });
+    }
+
+    it('el fixture ejerce algo: añadir AL FINAL, después del ID, NO se rechaza', () => {
+      const hojas = {}, cab = MAD_MOV_HEADERS.concat(['Extra']);
+      expect(gas(hojas).post({ sheetName: 'Maduración Movimientos', headers: cab, rows: [conId(cab)] }).status).toBe('ok');
+    });
+  });
+
   it('🔴 PE1.5 · la de día y, horas después, SÓLO la de noche: la misma fila con las dos (el MERGE conserva)', () => {
     const hojas = {};
     const g = gas(hojas);

@@ -21,7 +21,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "3a539f125e4e";
+const GAS_VERSION = "e2acb7bd9c9e";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -876,7 +876,15 @@ var MAD_ESQUEMA_FIRMA = {
   "Maduración Mortalidad Desove": [[11, "Fototropismo"], [15, "Área"], [16, "Alcalinidad día"]],
   "Maduración Tratamientos": [[8, "Productos RAS"]],
   // 9 va ANTES del bloque de alimentos, que es la parte del esquema que puede crecer.
-  "Maduración Alimentación": [[9, "Fuente del peso"]]
+  "Maduración Alimentación": [[9, "Fuente del peso"]],
+  // 2026-09-17 · Movimientos no ha cambiado nunca de columnas, así que esta firma no arregla un desfase:
+  // es el CERROJO PREVENTIVO que el comentario de arriba reclama. Estaba en MAD_ESQUEMA_VIGILADO, pero esa
+  // guarda compara contra la cabecera de la HOJA y sólo actúa si la hoja ya tiene filas; la firma vale
+  // también con la hoja vacía o sin crear, que es cuando un cliente viejo la crearía con el esquema malo.
+  // Se firman DOS columnas porque no hay ninguna «nueva» que delate al viejo: una distintiva a media tabla
+  // y la última, de modo que cualquier inserción mueva al menos una. ⚠ Si el esquema cambia, ESTAS DOS
+  // POSICIONES se actualizan EN EL MISMO CAMBIO, o la firma rechazaría a los clientes al día.
+  "Maduración Movimientos": [[9, "Agua destino"], [12, "ID"]]
 };
 // null si el envío trae la firma (o la hoja no tiene); si no, { col, cab: lo que espera }.
 function firmaAusente_(hoja, cabEnvio) {
