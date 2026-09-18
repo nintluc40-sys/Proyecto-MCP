@@ -320,10 +320,11 @@ plantillas `GAS()`. Copiar a mano es lo que los separa. ⚠ Con `--contexto` baj
 se ancla sólo en lo de alrededor: el portador se niega si la mitad de sus líneas ya están en el
 destino, porque una vez insertó un bloque dos veces.
 
-> ⚠ **Ninguna prueba del repo puede leer `index (8).html`.** En GitHub Actions el checkout no tiene
-> `Music\`, así que un `readFileSync` sobre él revienta el paso «Pruebas» y arrastra al deploy. La
-> suite vigila el repo; la paridad con el gemelo la vigilan los verificadores, que corren en la
-> máquina donde ese archivo existe.
+> ⚠ **Ninguna prueba del repo puede DEPENDER de `index (8).html`.** En GitHub Actions el checkout no
+> tiene `Music\`, así que un `readFileSync` a secas sobre él revienta el paso «Pruebas» y arrastra al
+> deploy. La suite vigila el repo; la paridad con el gemelo la vigilan los verificadores, que corren en
+> la máquina donde ese archivo existe. Si una prueba necesita mirarlo —lo hace `analistaGrafia.test.js`—,
+> lo lee con `try/catch` y se SALTA visiblemente (`it.skip`) cuando no está.
 
 ## El contrato con Google Sheets: sello, firma y cola
 
@@ -521,9 +522,3 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
    «902ch» de julio ¿se parte en piscina y camaronera?; ¿se carga el histórico de julio?
 9. **Carga volumétrica de la Sala 5:** usa 13 t para todos sus tanques, y los de 27 m² son más pequeños
    que los de 40. Hace falta el volumen de cada tipo para no subestimarla en los pequeños.
-
-**Una vez, a mano, en la hoja**
-
-10. **MATRIZ · la columna «Número» con aspecto de fecha.** Un GAS anterior le daba formato de fecha
-    (un 7 se veía «06/01/1900»). El GAS actual ya no lo hace, pero las celdas escritas conservan el
-    formato: seleccionar la columna → Formato → Número → **Automático**. El dato no cambió.
