@@ -6,6 +6,7 @@ import {
   buildAltaBatch, buildEventBatch, nextTrId, buildTransferBatch,
   matrixIndexFromRows, pivotDesoves, individualTrace, matrixSummary, nextTrIdFromRows, trazaDelChip,
 } from './reproductivo.data.js';
+import { claveIndividuo } from '../../../core/trovan.js';
 
 // Índice de matriz de prueba: 3 hembras (una muerta). Trovan = 10 hex (formato del lector).
 const idx = () => buildMatrixIndex([
@@ -455,6 +456,95 @@ describe('♻ reciclaje · alta de una hembra nueva con el chip de una muerta', 
       expect(idxTres.get(CHIP).individuos, 'el chip tiene tres filas').toBe(3);
       expect(idxTres.get(CHIP).vivos).toBe(1);
       expect(buildEventBatch({ ids: [CHIP], fecha: '2026-09-12', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: idxTres }).report.processed).toEqual([CHIP]);
+    });
+  });
+
+  /* 🔴 R5 (2026-09-18) · D17 dejaba el chip SIN SALIDA desde la app: el alta admite reutilizar el chip de una hembra
+     VIVA (la identidad es la cuaterna), y desde ese momento D17 rechazaba TODO evento de ese chip —también la
+     mortalidad que habría cerrado a una de las dos—. Sólo se arreglaba en la hoja. Y el traslado ni lo miraba: movía a
+     «la vigente». Ahora el sistema sigue sin elegir, pero ELIGE EL USUARIO, por la cuaterna de cada hembra, y el
+     módulo valida que la elegida esté viva y sea de ese chip. */
+  describe('🔴 R5 · con dos vivas elige el USUARIO, y el traslado tampoco elige solo', () => {
+    const VIVA_A = Object.assign({}, NUEVA, { 'Piscina': 'P9', 'Código genético': 'G07', 'Lote': 'L20' });
+    const VIVA_B = Object.assign({}, NUEVA, { 'Número': '32', 'Piscina': 'P3', 'Código genético': 'G11', 'Lote': 'L44', 'Sala actual': 'S8', 'Tanque actual': 'T2' });
+    const idxAB = () => matrixIndexFromRows([VIVA_A, VIVA_B]);
+    const opcion = (i, lote) => i.get(CHIP).opciones.find((o) => o.lote === lote);
+    const TRAS = (i, origen, eleccion, trId = 'TR-000010') => buildTransferBatch({ fecha: '2026-09-12', tipo: REPRO_TRANSFER_TIPO.TRASLADO,
+      origen, destinos: [{ sala: 'S9', tanque: 'T9', ids: [CHIP] }], composicion: {}, matrixIndex: i, trId, eleccion });
+
+    it('el registro del chip OFRECE sus dos vivas, con lo que hace falta para reconocerlas', () => {
+      const ops = idxAB().get(CHIP).opciones;
+      expect(ops.map((o) => [o.piscina, o.codigo, o.lote, o.sala, o.tanque])).toEqual([['P9', 'G07', 'L20', 'S3', 'T4'], ['P3', 'G11', 'L44', 'S8', 'T2']]);
+      expect(ops.map((o) => o.ind)).toEqual([claveIndividuo(CHIP, 'P9', 'G07', 'L20'), claveIndividuo(CHIP, 'P3', 'G11', 'L44')]);
+    });
+
+    it('con UNA sola viva no hay nada que elegir: el registro no trae opciones', () => {
+      expect(matrixIndexFromRows([VIEJA, VIVA_A]).get(CHIP).opciones).toBeUndefined();
+    });
+
+    it('el fixture ejerce algo: la VIGENTE es la B, así que elegir la A distingue «la elegida» de «la vigente»', () => {
+      expect(idxAB().get(CHIP).lote).toBe('L44');
+    });
+
+    for (const tipo of [REPRO_EVENTO.MORTALIDAD, REPRO_EVENTO.DESOVE]) {
+      it('🔴 ' + tipo + ' con la hembra ELEGIDA se registra a ésa: su ubicación en la Bitácora y su cuaterna en la MATRIZ', () => {
+        const i = idxAB();
+        const r = buildEventBatch({ ids: [CHIP], fecha: '2026-09-12', tipo, matrixIndex: i, eleccion: { [CHIP]: opcion(i, 'L20').ind } });
+        expect(r.report.variasVivas).toEqual([]);
+        expect(r.report.elegidas).toEqual([CHIP]);
+        expect(r.report.processed).toEqual([CHIP]);
+        const b = r.bitacora.rows[0];
+        expect([b[col(REPRO_BITACORA_HEADERS, 'Sala')], b[col(REPRO_BITACORA_HEADERS, 'Tanque')]], 'salió la ubicación de la vigente, no la de la elegida').toEqual(['S3', 'T4']);
+        if (tipo === REPRO_EVENTO.MORTALIDAD) expect(r.matriz.rows[0][col(REPRO_MATRIZ_HEADERS, 'Lote')]).toBe('L20');
+      });
+    }
+
+    it('🔴 una elección que NO vale no elige por su cuenta: una muerta, la de otro chip, el Trovan a secas o basura', () => {
+      const MUERTA = Object.assign({}, VIVA_B, { 'Estado': 'Muerto', 'Lote': 'L55', 'Fecha muerte': '2026-08-01' });
+      const OTRO = { 'Trovan ID': '000821AFF4', 'Piscina': 'P1', 'Código genético': 'G01', 'Lote': 'L01', 'Sala actual': 'S1', 'Tanque actual': 'T1', 'Estado': 'Vivo' };
+      const i = matrixIndexFromRows([VIVA_A, VIVA_B, MUERTA, OTRO]);
+      for (const mala of [claveIndividuo(CHIP, 'P3', 'G11', 'L55'), claveIndividuo('000821AFF4', 'P1', 'G01', 'L01'), CHIP, 'lo que sea']) {
+        const r = buildEventBatch({ ids: [CHIP], fecha: '2026-09-12', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: i, eleccion: { [CHIP]: mala } });
+        expect(r.report.variasVivas, JSON.stringify(mala)).toEqual([CHIP]);
+        expect(r.matriz).toBeNull();
+      }
+    });
+
+    it('🔴 el TRASLADO de un chip con dos vivas no mueve a la vigente: se rechaza y se ofrece elegir', () => {
+      const t = TRAS(idxAB(), { sala: 'S3', tanque: 'T4' });
+      expect(t.report.variasVivas).toEqual([CHIP]);
+      expect(t.report.moved).toEqual([]);
+      expect(t.matriz).toBeNull();
+      expect(t.transfer).toBeNull();
+    });
+
+    it('🔴 y con la elegida se mueve ésa, y el origen se comprueba sobre ELLA', () => {
+      const i = idxAB();
+      const a = opcion(i, 'L20').ind;                      // la A, que NO es la vigente
+      const bien = TRAS(i, { sala: 'S3', tanque: 'T4' }, { [CHIP]: a }, 'TR-000011');
+      expect(bien.report.moved).toEqual([CHIP]);
+      expect(bien.report.elegidas).toEqual([CHIP]);
+      expect(bien.matriz.rows[0][col(REPRO_MATRIZ_HEADERS, 'Lote')]).toBe('L20');
+      expect(bien.matriz.rows[0][col(REPRO_MATRIZ_HEADERS, 'Sala actual')]).toBe('S9');
+      /* La B (la vigente) está en S8/T2: declarar ese origen para mover a la A la deja FUERA del origen. */
+      expect(TRAS(i, { sala: 'S8', tanque: 'T2' }, { [CHIP]: a }).report.wrongLocation).toEqual([CHIP]);
+    });
+
+    it('🔴 con dos vivas, «anterior al ingreso» se mira sobre la ELEGIDA, y sin elegir se pregunta', () => {
+      /* A ingresó el 2026-08-01 (NUEVA) y B el 2026-09-05: un desove del 2026-08-20 puede ser de A, nunca de B. */
+      const i = matrixIndexFromRows([VIVA_A, Object.assign({}, VIVA_B, { 'Fecha ingreso': '2026-09-05' })]);
+      const ev = (eleccion) => buildEventBatch({ ids: [CHIP], fecha: '2026-08-20', tipo: REPRO_EVENTO.DESOVE, matrixIndex: i, eleccion });
+      expect(ev({ [CHIP]: opcion(i, 'L20').ind }).report.processed).toEqual([CHIP]);
+      expect(ev({ [CHIP]: opcion(i, 'L44').ind }).report.antesDelIngreso).toEqual([CHIP]);
+      expect(ev(undefined).report.variasVivas, 'sin elegir no se juzga por la vigente: se pregunta').toEqual([CHIP]);
+    });
+
+    it('🔴 el ALTA avisa cuando el chip ya lo lleva una VIVA (en la hoja o en el mismo lote), no cuando sólo lo llevó una muerta', () => {
+      expect(buildAltaBatch(altaDe('2026-09-10'), matrixIndexFromRows([VIVA_A])).report.recicladosVivos).toEqual([CHIP]);
+      const conMuerta = buildAltaBatch(altaDe('2026-09-10'), matrixIndexFromRows([VIEJA])).report;
+      expect([conMuerta.reciclados, conMuerta.recicladosVivos]).toEqual([[CHIP], []]);
+      const base = { trovan: '000821BC99', piscina: 'P4', codigo: 'G09', lote: 'L33', fecha: '2026-09-11' };
+      expect(buildAltaBatch([base, Object.assign({}, base, { lote: 'L34' })], null).report.recicladosVivos).toEqual(['000821BC99']);
     });
   });
 

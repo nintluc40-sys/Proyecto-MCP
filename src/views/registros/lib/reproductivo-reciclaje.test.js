@@ -30,7 +30,8 @@ const EXPORTAR = ['_REPRO_SHEETS', '_reproAltaHTML', 'madReproAltaBatch', '_repr
      mandan la llave a medias y el upsert AÑADE una fila suelta en vez de actualizar la suya. Lo
      destapó el banco: dos mutaciones que recortaban esta lista SOBREVIVÍAN. */
   '_REPRO_MATRIZ_COLS',
-  '_reproEnsureMatrix'];   // RD1 (2026-09-16) · una lectura buena, que es la que deja la copia local
+  '_reproEnsureMatrix',    // RD1 (2026-09-16) · una lectura buena, que es la que deja la copia local
+  'madReproRegistrarElegidas'];   // R5 (2026-09-18) · con dos vivas elige el usuario
 const H = {};
 const avisos = [];
 const envios = [];
@@ -311,4 +312,108 @@ describe('🔴 RD1 · sin la MATRIZ no hay traslado, y la copia local lleva la i
     expect([v('Trovan ID'), v('Piscina'), v('Código genético'), v('Lote'), v('Sala actual')]).toEqual([CHIP, 'P9', 'G07', 'L20', 'S9']);
     localStorage.removeItem('larv4_mad_matriz');
   }, 15000);
+});
+
+/* 🔴 R5 (2026-09-18) · UN CHIP QUE LLEVAN DOS VIVAS YA NO SE QUEDA SIN SALIDA. D17 sigue sin dejar que el sistema
+   elija, pero la app ofrece las dos hembras y registra a la que elija el usuario —y SÓLO esos chips: nada de lo que
+   ya salió se repite, y un traslado conserva su TR-ID—. Aquí se prueba con el motor entero, que es donde vive el
+   selector; la regla (qué elección vale) la prueba reproductivo.data.test.js. */
+describe('🔴 R5 · con dos hembras vivas en un chip, elige el USUARIO', () => {
+  const VIVA_A = Object.assign({}, NUEVA);                                   // P9 · G07 · L20, en S3/T4
+  const VIVA_B = Object.assign({}, NUEVA, { 'Número': '32', 'Piscina': 'P3', 'Código genético': 'G11', 'Lote': 'L44',
+    'Sala actual': 'S8', 'Tanque actual': 'T2' });                            // la vigente (más abajo en la hoja)
+  const radio = (caja, lote) => [...document.querySelectorAll('#' + caja + ' .repro-elegir input[type="radio"]')]
+    .find((r) => r.parentElement.textContent.includes(lote));
+  const valor = (p, h) => p.rows[0][p.headers.indexOf(h)];
+  /* Pulsa el botón como lo haría el navegador: con la marca que lleva ESCRITA en su onclick. Llamar al handler a mano
+     sin ella se saltaría justo lo que ata el botón al pendiente del que se pintó. */
+  const marcaDe = (caja) => {
+    const m = /^madReproRegistrarElegidas\((\d+)\)$/.exec(document.querySelector('#' + caja + ' .repro-elegir button').getAttribute('onclick'));
+    expect(m, 'el botón tiene que estar CABLEADO, con la marca de su pendiente').toBeTruthy();
+    return Number(m[1]);
+  };
+  const pulsar = (caja) => H.madReproRegistrarElegidas(marcaDe(caja));
+  const procesarEvento = async (tipo) => {
+    caja('rc-eventos').innerHTML = H._reproEventosHTML();
+    document.getElementById('repro-fecha').value = '2026-09-12';
+    document.getElementById('repro-tipo').value = tipo;
+    document.getElementById('repro-codes').value = CHIP;
+    await H.madReproProcess();
+  };
+
+  it('🔴 evento: no se registra solo, se OFRECEN las dos, y al elegir va a la elegida', async () => {
+    H.setLecturas({ [S.matriz]: [VIVA_A, VIVA_B], [S.bitacora]: [], [S.transfer]: [] });
+    await procesarEvento('Mortalidad');
+    expect(envios, 'D17: el sistema no elige').toHaveLength(0);
+    expect(document.querySelectorAll('#repro-report .repro-elegir input[type="radio"]')).toHaveLength(2);
+    radio('repro-report', 'L20').checked = true;                              // la A, que NO es la vigente
+    await pulsar('repro-report');
+    const m = envios.find((p) => p.sheetName === S.matriz), b = envios.find((p) => p.sheetName === S.bitacora);
+    expect([valor(m, 'Lote'), valor(m, 'Estado')]).toEqual(['L20', 'Muerto']);
+    expect([valor(b, 'Sala'), valor(b, 'Tanque')], 'la Bitácora lleva la ubicación de la ELEGIDA').toEqual(['S3', 'T4']);
+    expect(document.querySelector('#repro-report .repro-elegir'), 'registrada, ya no hay nada que elegir').toBeNull();
+  });
+
+  it('🔴 sin marcar ninguna no se envía nada, y se dice', async () => {
+    H.setLecturas({ [S.matriz]: [VIVA_A, VIVA_B], [S.bitacora]: [], [S.transfer]: [] });
+    await procesarEvento('Desove');
+    await pulsar('repro-report');
+    expect(envios).toHaveLength(0);
+    expect(avisos[avisos.length - 1].msg).toContain('Marca de qué hembra');
+  });
+
+  it('🔴 el botón sólo vale para el pendiente del que se PINTÓ', async () => {
+    /* La carrera real: un traslado que termina de leer sus hojas con el técnico ya en Eventos reemplaza el pendiente
+       sin repintar ese informe. Aquí el reemplazo lo hace un segundo proceso: el botón del primero (una MORTALIDAD)
+       no puede acabar registrando lo del segundo (un DESOVE). */
+    H.setLecturas({ [S.matriz]: [VIVA_A, VIVA_B], [S.bitacora]: [], [S.transfer]: [] });
+    await procesarEvento('Mortalidad');
+    const vieja = marcaDe('repro-report');
+    await procesarEvento('Desove');
+    radio('repro-report', 'L20').checked = true;
+    await H.madReproRegistrarElegidas(vieja);
+    expect(envios, 'el botón viejo no registra nada').toHaveLength(0);
+    expect(avisos[avisos.length - 1].msg).toContain('ya no está vigente');
+    await pulsar('repro-report');                                              // control: el de ahora sí registra
+    expect(valor(envios.find((p) => p.sheetName === S.bitacora), 'Tipo')).toBe('Desove');
+  });
+
+  it('🔴 se registra la hembra que se VIO, aunque la MATRIZ se relea en otro orden', async () => {
+    H.setLecturas({ [S.matriz]: [VIVA_A, VIVA_B], [S.bitacora]: [], [S.transfer]: [] });
+    await procesarEvento('Mortalidad');
+    radio('repro-report', 'L20').checked = true;                              // la A, pintada la PRIMERA
+    H.setLecturas({ [S.matriz]: [VIVA_B, VIVA_A], [S.bitacora]: [], [S.transfer]: [] });   // relectura: B primero
+    await pulsar('repro-report');
+    expect(valor(envios.find((p) => p.sheetName === S.matriz), 'Lote'), 'muere la que se marcó, no la que quedó primera').toBe('L20');
+  });
+
+  it('🔴 traslado: no mueve a la vigente; al elegir mueve ESA, con el mismo TR-ID y sólo ese chip', async () => {
+    H.setLecturas({ [S.matriz]: [VIVA_A, VIVA_B, VIVA], [S.bitacora]: [], [S.transfer]: [{ 'TR-ID': 'TR-000007', 'Trovan ID': 'X' }] });
+    caja('rc-transfer').innerHTML = H._reproTransferHTML();
+    document.getElementById('repro-t-fecha').value = '2026-09-12';
+    document.getElementById('repro-t-osala').value = 'S3';
+    document.getElementById('repro-t-otanque').value = 'T4';
+    document.querySelector('#repro-t-dests .repro-dest-sala').value = 'S6';
+    document.querySelector('#repro-t-dests .repro-dest-tanque').value = 'T2';
+    document.querySelector('#repro-t-dests .repro-dest-codes').value = CHIP;
+    await H.madReproTransfer();
+    expect(envios, 'D17 también en el traslado: no se movió a la vigente').toHaveLength(0);
+    radio('repro-t-report', 'L20').checked = true;
+    await pulsar('repro-t-report');
+    const m = envios.find((p) => p.sheetName === S.matriz), t = envios.find((p) => p.sheetName === S.transfer);
+    expect([valor(m, 'Lote'), valor(m, 'Sala actual'), valor(m, 'Tanque actual')]).toEqual(['L20', 'S6', 'T2']);
+    expect([valor(t, 'TR-ID'), valor(t, 'Trovan ID')]).toEqual(['TR-000008', CHIP]);
+    expect(t.rows, 'sólo el chip elegido').toHaveLength(1);
+  });
+
+  it('🔴 el ALTA avisa de que el chip ya lo lleva una hembra VIVA', async () => {
+    H.setLecturas({ [S.matriz]: [VIVA_A], [S.bitacora]: [], [S.transfer]: [] });
+    teclearAlta('2026-09-10', [[CHIP, 'P4', 'G09', 'L33', 'S2', 'T8']]);
+    await H.madReproAltaBatch();
+    expect(envios, 'entra igual: la identidad es la cuaterna').toHaveLength(1);
+    /* Dos aserciones y no una: el chip del resumen y el renglón de detalle dicen los dos «hembra VIVA», así que con un
+       solo `toContain` se podía apagar cualquiera de los dos y la prueba seguía en verde (lo mismo que cazó E07/E10). */
+    expect(informeAlta()).toContain('con el chip de una hembra VIVA');          // el chip del resumen
+    expect(informeAlta()).toContain('te pedirá elegir de cuál es');            // el renglón de detalle
+  });
 });

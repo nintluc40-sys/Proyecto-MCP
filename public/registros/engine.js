@@ -11520,6 +11520,8 @@ async function madReproProcess(){
   }
   const res = window.__rgLib.buildEventBatch({ ids: parsed.ids, fecha: fecha, tipo: tipo, matrixIndex: mIdx });
   if(res.error){ toast(res.error,"err",7000); return; }
+  // R5 · los chips con DOS vivas quedan pendientes de ELEGIR, con su contexto: luego se registran SÓLO ésos.
+  _reproElegirPend = res.report.variasVivas.length ? { clase:"evento", fecha:fecha, tipo:tipo, chips:res.report.variasVivas.slice() } : null;
   // Ningún código superó la validación: se muestra el informe con el motivo y NO se
   // limpia el cuadro de texto (antes decía "✅ 0 registrado(s)" y borraba lo pegado).
   if(!res.bitacora && !res.matriz){
@@ -11609,6 +11611,8 @@ function _madReproShowAltaReport(rep, okSent){
   if(rep.duplicados && rep.duplicados.length) h+=chip(rep.duplicados.length+" duplicado(s) en el lote", "#fef9c3", "#854d0e");
   if(rep.existentes && rep.existentes.length) h+=chip(rep.existentes.length+" ya existente(s)", "#fef9c3", "#854d0e");
   if(rep.reciclados && rep.reciclados.length) h+=chip("♻ "+rep.reciclados.length+" con Trovan ya usado", "#e0f2fe", "#075985");
+  // R5 (2026-09-18) · el chip ya lo lleva una hembra VIVA: entra, pero desde ahora cada evento de ese chip pedirá elegir.
+  if(rep.recicladosVivos && rep.recicladosVivos.length) h+=chip("⚠ "+rep.recicladosVivos.length+" con el chip de una hembra VIVA", "#fef9c3", "#854d0e");
   if(rep.invalidFormat && rep.invalidFormat.length) h+=chip(rep.invalidFormat.length+" con formato inválido (señalados)", "#ffedd5", "#9a3412");
   if(rep.sinTrovan) h+=chip(rep.sinTrovan+" sin Trovan (omitidas)", "#fee2e2", "#991b1b");
   h+='</div>';
@@ -11616,6 +11620,7 @@ function _madReproShowAltaReport(rep, okSent){
   if(rep.duplicados && rep.duplicados.length) lists.push(["Duplicados en el lote", rep.duplicados]);
   if(rep.existentes && rep.existentes.length) lists.push(["Ya existentes en la matriz (mismo Trovan, piscina, código genético y lote)", rep.existentes]);
   if(rep.reciclados && rep.reciclados.length) lists.push(["Trovan ya usado por otro individuo (entra igual: cambia la piscina, el código o el lote)", rep.reciclados]);
+  if(rep.recicladosVivos && rep.recicladosVivos.length) lists.push(["Ese microchip lo lleva también una hembra VIVA: entra igual, pero desde ahora cada desove, mortalidad o traslado de ese chip te pedirá elegir de cuál es", rep.recicladosVivos]);
   if(rep.invalidFormat && rep.invalidFormat.length) lists.push(["Formato inválido (no registrados — revisa el código en el lector)", rep.invalidFormat]);
   lists.forEach(function(pair){ h+='<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
   el.innerHTML=h;
@@ -11674,6 +11679,11 @@ async function madReproTransfer(){
   const trId=_trRows.length?window.__rgLib.nextTrIdFromRows(_trRows):_reproNextTrId();
   const res=window.__rgLib.buildTransferBatch({ fecha:fecha, tipo:tipo, origen:origen, destinos:destinos, composicion:composicion, matrixIndex:_reproMatrixIndex(), trId:trId });
   if(res.error){ toast(res.error,"err",3500); return; }
+  /* R5 · los chips con DOS vivas quedan pendientes de ELEGIR con el contexto del traslado —origen, destino de cada
+     uno y el MISMO TR-ID—, para moverlos después sin repetir los que ya salieron. */
+  const _vv=res.report.variasVivas||[];
+  _reproElegirPend = _vv.length ? { clase:"traslado", fecha:fecha, tipo:tipo, origen:origen, composicion:composicion, trId:trId, chips:_vv.slice(),
+    destinos:destinos.map(function(d){ return { sala:d.sala, tanque:d.tanque, ids:d.ids.filter(function(id){ return _vv.indexOf(id)!==-1; }) }; }).filter(function(d){ return d.ids.length; }) } : null;
   if(!res.transfer){ _madReproShowTransferReport(res.report, trId, false); toast("No hay individuos válidos para transferir.","warn",4000); return; }
   toast("Procesando transferencia "+trId+"…","info",2200);
   let okAll=true; const _t1={}, _t2={};
@@ -11693,14 +11703,16 @@ function _madReproShowTransferReport(rep, trId, okSent){
   if(rep.notFound && rep.notFound.length) h+=chip(rep.notFound.length+" no encontrado(s)", "#fee2e2", "#991b1b");
   if(rep.wrongLocation && rep.wrongLocation.length) h+=chip(rep.wrongLocation.length+" fuera del origen", "#fef9c3", "#854d0e");
   if(rep.antesDelIngreso && rep.antesDelIngreso.length) h+=chip(rep.antesDelIngreso.length+" anterior(es) a su ingreso", "#fee2e2", "#991b1b");
+  if(rep.variasVivas && rep.variasVivas.length) h+=chip(rep.variasVivas.length+" con DOS hembras vivas (elige abajo)", "#fee2e2", "#991b1b");   // R5
   h+='</div>';
   const lists=[];
+  if(rep.variasVivas && rep.variasVivas.length) lists.push(["Ese microchip lo llevan DOS hembras vivas a la vez (no transferidos: elige abajo cuál se mueve)", rep.variasVivas]);
   if(rep.invalidFormat && rep.invalidFormat.length) lists.push(["Formato inválido (no transferidos — revisa el código en el lector)", rep.invalidFormat]);
   if(rep.notFound && rep.notFound.length) lists.push(["No encontrados", rep.notFound]);
   if(rep.wrongLocation && rep.wrongLocation.length) lists.push(["Fuera del origen declarado", rep.wrongLocation]);
   if(rep.antesDelIngreso && rep.antesDelIngreso.length) lists.push(["Anteriores al ingreso de la hembra que lleva hoy ese microchip reciclado (son de una hembra anterior: no transferidos)", rep.antesDelIngreso]);
   lists.forEach(function(pair){ h+='<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
-  el.innerHTML=h;
+  el.innerHTML=h+_reproElegirHTML("traslado");
 }
 
 function _madReproShowReport(rep, duplicates, tipo, okSent){
@@ -11728,10 +11740,80 @@ function _madReproShowReport(rep, duplicates, tipo, okSent){
   if(rep.sinUbicacion && rep.sinUbicacion.length) lists.push(["Sin Sala/Tanque en Maduración MATRIZ (no registrados — completa su ubicación)", rep.sinUbicacion]);
   if(rep.alreadyDead && rep.alreadyDead.length) lists.push(["Ya registradas como muertas", rep.alreadyDead]);
   if(rep.antesDelIngreso && rep.antesDelIngreso.length) lists.push(["Anteriores al ingreso de la hembra que lleva hoy ese microchip reciclado (son de una hembra anterior: no registrados)", rep.antesDelIngreso]);
-  if(rep.variasVivas && rep.variasVivas.length) lists.push(["Ese microchip lo llevan DOS hembras vivas a la vez y el evento no dice de cuál es (no registrados — cierra la que ya no esté en la MATRIZ, o corrige su piscina, código genético o lote)", rep.variasVivas]);
+  if(rep.variasVivas && rep.variasVivas.length) lists.push(["Ese microchip lo llevan DOS hembras vivas a la vez y el evento no dice de cuál es (no registrados: elige abajo de cuál es cada uno)", rep.variasVivas]);
   if(rep.sinFechaIngreso && rep.sinFechaIngreso.length) lists.push(["SÍ se registraron, a la hembra que lleva hoy el chip. Pero ese chip ha llevado varias y esta lectura no trae la fecha de ingreso, así que no se pudo comprobar que el evento no fuera de una anterior: si lo registras con fecha atrasada, revísalo", rep.sinFechaIngreso]);
   lists.forEach(function(pair){ h += '<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
-  el.innerHTML = h;
+  el.innerHTML = h + _reproElegirHTML("evento");
+}
+
+/* ── R5 (2026-09-18) · ELEGIR LA HEMBRA de un chip que llevan DOS vivas ──────────────────────────────────────────
+   D17 no deja que el SISTEMA elija —sería una convención, y sin fechas «la de más abajo en la hoja»—, pero sin salida
+   el chip quedaba bloqueado: ni desoves, ni mortalidad, ni traslado, y sólo se arreglaba en la hoja. Ahora elige el
+   USUARIO, explícitamente, por la cuaterna de cada hembra (el módulo valida que la elegida esté viva y sea de ese
+   chip). Lo pendiente guarda el contexto del envío, así que el registro con la elegida manda SÓLO esos chips: nada se
+   repite de lo que ya salió, y un traslado conserva su TR-ID.
+   Dos cosas atan lo que se registra a lo que se VIO: el botón lleva la marca (`seq`) del pendiente del que se pintó
+   —un traslado que termina de leer sus hojas cuando el técnico ya está en Eventos reemplaza el pendiente sin repintar
+   ese informe—, y cada radio es la cuaterna que se pintó (`p.vistas`), no la i-ésima de una lectura posterior de la
+   MATRIZ, que puede traer las hembras en otro orden. */
+let _reproElegirPend = null, _reproElegirSeq = 0;
+function _reproElegirHTML(clase){
+  const p = _reproElegirPend, mIdx = _reproMatrixIndex();
+  if(!p || p.clase !== clase || !p.chips.length || !mIdx) return "";
+  if(!p.seq) p.seq = ++_reproElegirSeq;
+  p.vistas = {};
+  let h = '<div class="repro-elegir" style="margin-top:10px;padding:10px 12px;border:1.5px solid #fecaca;border-radius:8px;background:#fff7f7">'
+    + '<div style="font-size:12px;font-weight:700;color:#991b1b;margin-bottom:6px">👉 Elige de cuál es: estos microchips los llevan DOS hembras vivas</div>';
+  p.chips.forEach(function(chip){
+    const rec = mIdx.get(chip), ops = (rec && rec.opciones) || [];
+    p.vistas[chip] = ops.map(function(o){ return o.ind; });
+    h += '<div style="font-size:12px;margin:4px 0"><b>'+escapeHtml(chip)+'</b>: ';
+    ops.forEach(function(o, i){
+      const quien = [o.piscina, o.codigo, o.lote].map(function(v){ return String(v==null?"":v).trim() || "—"; }).join(" · ");
+      h += '<label style="margin-right:14px;white-space:nowrap"><input type="radio" name="repro-eleg-'+escapeHtml(chip)+'" value="'+i+'"> '+escapeHtml(quien)
+        + ' <span style="color:#64748b">('+escapeHtml(String(o.sala==null||o.sala===""?"—":o.sala))+' / '+escapeHtml(String(o.tanque==null||o.tanque===""?"—":o.tanque))+')</span></label>';
+    });
+    h += '</div>';
+  });
+  return h + '<button class="btn bp" type="button" id="repro-eleg-btn" onclick="madReproRegistrarElegidas('+p.seq+')">✅ Registrar con la elegida</button></div>';
+}
+async function madReproRegistrarElegidas(seq){
+  const p = _reproElegirPend, mIdx = _reproMatrixIndex();
+  if(!p || p.seq !== seq){ toast("Ese aviso ya no está vigente: vuelve a procesar el registro.","warn",5000); return; }
+  if(!mIdx){ toast("No se pudo leer «Maduración MATRIZ»: vuelve a intentarlo con 🔄.","err",6000); return; }
+  const eleccion = {}, elegidos = [];
+  p.chips.forEach(function(chip){
+    const r = document.querySelector('input[name="repro-eleg-'+chip+'"]:checked');
+    const ind = r && p.vistas && p.vistas[chip] ? p.vistas[chip][parseInt(r.value, 10)] : null;
+    if(ind){ eleccion[chip] = ind; elegidos.push(chip); }
+  });
+  if(!elegidos.length){ toast("Marca de qué hembra es cada microchip antes de registrar.","warn",4000); return; }
+  const url = gasUrl(); const _o1 = {}, _o2 = {};
+  let res, ok = true, hubo, n;
+  if(p.clase === "evento"){
+    res = window.__rgLib.buildEventBatch({ ids:elegidos, fecha:p.fecha, tipo:p.tipo, matrixIndex:mIdx, eleccion:eleccion });
+    if(res.error){ toast(res.error,"err",7000); return; }
+    hubo = !!(res.bitacora || res.matriz); n = res.report.processed.length;
+    if(res.bitacora) ok = (await postPayload(res.bitacora, url, _o1)) && ok;
+    if(res.matriz)   ok = (await postPayload(res.matriz, url, _o2)) && ok;
+  } else {
+    const destinos = p.destinos.map(function(d){ return { sala:d.sala, tanque:d.tanque, ids:d.ids.filter(function(id){ return elegidos.indexOf(id)!==-1; }) }; })
+      .filter(function(d){ return d.ids.length; });
+    res = window.__rgLib.buildTransferBatch({ fecha:p.fecha, tipo:p.tipo, origen:p.origen, destinos:destinos, composicion:p.composicion, matrixIndex:mIdx, trId:p.trId, eleccion:eleccion });
+    if(res.error){ toast(res.error,"err",7000); return; }
+    hubo = !!res.transfer; n = res.report.moved.length;
+    if(res.matriz)   ok = (await postPayload(res.matriz, url, _o1)) && ok;
+    if(res.transfer) ok = (await postPayload(res.transfer, url, _o2)) && ok;
+  }
+  // Lo registrado sale de la lista; lo que quedó sin elegir sigue pendiente, con su contexto.
+  p.chips = p.chips.filter(function(c){ return elegidos.indexOf(c) === -1; });
+  if(p.destinos) p.destinos = p.destinos.map(function(d){ return { sala:d.sala, tanque:d.tanque, ids:d.ids.filter(function(id){ return elegidos.indexOf(id)===-1; }) }; }).filter(function(d){ return d.ids.length; });
+  if(!p.chips.length) _reproElegirPend = null;
+  if(p.clase === "evento") _madReproShowReport(res.report, [], p.tipo, ok && hubo);
+  else _madReproShowTransferReport(res.report, p.trId, ok && hubo);
+  if(!hubo){ toast("La hembra elegida no superó la validación: revisa el detalle.","warn",5000); return; }
+  if(ok){ toast("✅ "+n+" registrado(s) con la hembra elegida.","ok",4200); if(p.clase === "traslado") _reproBumpTrSeq(p.trId); }
+  else _madReproNotOk([_o1,_o2]);
 }
 
 // ── Render Salas — GRILLA tipo Parámetros ─────────────

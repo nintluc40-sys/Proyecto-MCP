@@ -121,12 +121,22 @@ function filasPorChip(records) {
  *  (cuestan 10×, ver `_REPRO_MATRIZ_COLS`), así que el desempate «la de ingreso más reciente» de
  *  `vigenteDelChip` no tiene con qué desempatar y cae en «la de más abajo en la hoja». Una mortalidad
  *  mal atribuida marcaría «Muerto» en la fila equivocada. Por eso `buildEventBatch` NO elige: rechaza
- *  y lo dice. Medido el 2026-09-17 en producción: 1665 filas, 1665 chips, ninguno con más de una. */
+ *  y lo dice —y desde R5 (2026-09-18), `buildTransferBatch` igual, y los dos registran a la que elija el
+ *  USUARIO entre las `opciones`—. Medido el 2026-09-17 en producción: 1665 filas, 1665 chips, ninguno con
+ *  más de una. */
 function registroVigente(filas) {
-  return Object.assign({}, vigenteDelChip(filas).rec, {
+  const r = Object.assign({}, vigenteDelChip(filas).rec, {
     individuos: filas.length,
     vivos: filas.filter((f) => !f.muerto).length,
   });
+  /* R5 (2026-09-18) · con DOS o más vivas, el registro trae las `opciones`: una por hembra viva, con la cuaterna que
+     la identifica (`ind`) y lo que el técnico necesita para reconocerla. Son las que se le ofrecen para ELEGIR de
+     cuál es un evento o un traslado: el sistema sigue sin elegir (D17), pero ya no deja el chip sin salida. */
+  if (r.vivos > 1) {
+    r.opciones = filas.filter((f) => !f.muerto).map((f) => ({ ind: f.ind, piscina: f.rec.piscina, codigo: f.rec.codigo,
+      lote: f.rec.lote, sala: f.rec.sala, tanque: f.rec.tanque }));
+  }
+  return r;
 }
 /** Índice Trovan → registro de la hembra VIGENTE de cada chip (ver `registroVigente`). Hasta el
  *  2026-09-14 ganaba la 1.ª aparición: con un chip reciclado ésa es la hembra MUERTA, y los desoves
@@ -176,6 +186,16 @@ function antesDeSuIngreso(rec, dia) {
 function ingresoNoComprobable(rec) {
   return !!(rec && rec.individuos > 1 && !fechaIso(rec.fechaIngreso));
 }
+/** R5 (2026-09-18) · La hembra que el USUARIO eligió para `chip`, si la elección nombra por su CUATERNA a una VIVA de
+ *  ESE chip; si no, null. Validarla aquí es lo que impide que una elección vieja, de otro chip o de una hembra ya
+ *  muerta acabe apuntando el evento a quien no es. Un Trovan a secas no vale como elección: sería volver a elegir
+ *  «la vigente», que es justo lo que D17 prohíbe. */
+function elegidaDelChip(matrixIndex, eleccion, chip) {
+  const clave = eleccion && Object.prototype.hasOwnProperty.call(eleccion, chip) ? String(eleccion[chip]) : '';
+  const r = clave ? matrixIndex.get(clave) : null;
+  if (!r || normTrovan(r.trovan) !== chip || esMuerto(r.estado)) return null;
+  return claveIndividuo(r.trovan, r.piscina, r.codigo, r.lote) === clave ? r : null;
+}
 
 /* ── Utilidades internas ── */
 // Arma una fila (array del ancho de la hoja) desde un objeto con claves = cabecera.
@@ -207,8 +227,11 @@ export function syncPayload(sheetName, headers, keyCols, rows) {
  *  parámetro `opts.reciclaje` ya no se mira. */
 export function buildAltaBatch(forms, matrixIndex, opts) {
   void opts;                                       // `reciclaje` se retiró: ver la cabecera
-  const report = { created: [], sinTrovan: 0, duplicados: [], existentes: [], invalidFormat: [], reciclados: [] };
-  const seen = new Set(); const rows = [];
+  /* R5 (2026-09-18) · `recicladosVivos`: el chip ya lo lleva una hembra VIVA (en la hoja o en este mismo lote). Entra
+     igual —la identidad es la cuaterna—, pero desde ese momento cada evento o traslado de ese chip pedirá ELEGIR de
+     cuál es (D17), y el técnico tiene que saberlo AHORA, no el día que registre un desove. */
+  const report = { created: [], sinTrovan: 0, duplicados: [], existentes: [], invalidFormat: [], reciclados: [], recicladosVivos: [] };
+  const seen = new Set(); const rows = []; const chipsDelLote = new Set();
   const OTHER = ['numero', 'color', 'piscina', 'codigo', 'lote', 'sala', 'tanque'];
   (forms || []).forEach((form) => {
     form = form || {};
@@ -242,6 +265,8 @@ export function buildAltaBatch(forms, matrixIndex, opts) {
     }));
     report.created.push(trovan);
     if (previo) report.reciclados.push(trovan);
+    if ((previo && previo.vivos > 0) || chipsDelLote.has(trovan)) report.recicladosVivos.push(trovan);
+    chipsDelLote.add(trovan);
   });
   return { report, payload: rows.length ? syncPayload(REPRO_MATRIZ_SHEET, REPRO_MATRIZ_HEADERS, REPRO_MATRIZ_KEYCOLS, rows) : null };
 }
@@ -256,13 +281,14 @@ export function buildAltaBatch(forms, matrixIndex, opts) {
  *  modo que se rechaza el lote entero en vez de escribir eventos con ubicación en blanco.
  *  Se omite y reporta cada código que: tenga formato corrupto (`invalidFormat`), no exista
  *  en la MATRIZ (`notFound`), exista pero sin Sala o Tanque (`sinUbicacion`), lleve DOS hembras
- *  vivas a la vez y no se sepa de cuál es el evento (`variasVivas`, D17), o sea un desove de una
- *  hembra ya muerta (`alreadyDead`).
+ *  vivas a la vez y el usuario no haya elegido de cuál es el evento (`variasVivas`, D17; con `eleccion`
+ *  válida entra a la elegida y se anota en `elegidas`, R5), o sea un desove de una hembra ya muerta
+ *  (`alreadyDead`).
  *  ♻ Y de un chip reciclado, el evento anterior al ingreso de la hembra que lo lleva hoy
  *  (`antesDelIngreso`): es de una hembra anterior, y aquí se le pondría la ubicación de la nueva o,
  *  en mortalidad, se mataría a la nueva. */
-export function buildEventBatch({ ids, fecha, tipo, matrixIndex } = {}) {
-  const report = { total: 0, processed: [], notFound: [], alreadyDead: [], invalidFormat: [], sinUbicacion: [], antesDelIngreso: [], variasVivas: [], sinFechaIngreso: [] };
+export function buildEventBatch({ ids, fecha, tipo, matrixIndex, eleccion } = {}) {
+  const report = { total: 0, processed: [], notFound: [], alreadyDead: [], invalidFormat: [], sinUbicacion: [], antesDelIngreso: [], variasVivas: [], sinFechaIngreso: [], elegidas: [] };
   const okTipo = (tipo === REPRO_EVENTO.DESOVE || tipo === REPRO_EVENTO.MORTALIDAD);
   if (!fecha) return { report, bitacora: null, matriz: null, error: 'Falta la fecha.' };
   if (!okTipo) return { report, bitacora: null, matriz: null, error: 'Tipo de evento inválido.' };
@@ -275,14 +301,22 @@ export function buildEventBatch({ ids, fecha, tipo, matrixIndex } = {}) {
     const id = normTrovan(raw); if (!id) return;
     report.total++;
     if (!isValidTrovan(id)) { report.invalidFormat.push(id); return; } // formato corrupto → NO se registra, señalado
-    const rec = matrixIndex.get(id);
+    let rec = matrixIndex.get(id);
     if (!rec) { report.notFound.push(id); return; }
+    /* 🔴 D17 (2026-09-17) · DOS HEMBRAS VIVAS EN EL MISMO CHIP: EL SISTEMA NO ELIGE. Un evento sólo trae el Trovan y
+       la Bitácora no guarda más, así que apuntarlo a una de las dos sería una convención —y sin las columnas de fecha,
+       que no se leen, ni siquiera una razonable: sería «la de más abajo en la hoja»—. Una mortalidad así marcaría
+       «Muerto» a la hembra equivocada, que es un daño que nadie ve. Ver `registroVigente`.
+       R5 (2026-09-18) · pero tampoco se deja el chip SIN SALIDA: si el usuario eligió de cuál es (`eleccion`, por su
+       cuaterna), se registra a ésa; si no, se rechaza como antes y se le ofrece elegir. Va ANTES de mirar el ingreso,
+       porque con dos vivas «anterior al ingreso» sólo significa algo de la hembra que se ha elegido. */
+    if (rec.vivos > 1) {
+      const elegida = elegidaDelChip(matrixIndex, eleccion, id);
+      if (!elegida) { report.variasVivas.push(id); return; }
+      rec = Object.assign({}, elegida, { individuos: rec.individuos, vivos: rec.vivos });
+      report.elegidas.push(id);
+    }
     if (antesDeSuIngreso(rec, dia)) { report.antesDelIngreso.push(id); return; } // de una hembra anterior del chip
-    /* 🔴 D17 (2026-09-17) · DOS HEMBRAS VIVAS EN EL MISMO CHIP: NO SE ELIGE, SE RECHAZA. Un evento sólo trae el
-       Trovan y la Bitácora no guarda más, así que apuntarlo a una de las dos sería una convención —y sin las
-       columnas de fecha, que no se leen, ni siquiera una razonable: sería «la de más abajo en la hoja»—. Una
-       mortalidad así marcaría «Muerto» a la hembra equivocada, que es un daño que nadie ve. Ver `registroVigente`. */
-    if (rec.vivos > 1) { report.variasVivas.push(id); return; }
     /* No rechaza: sólo deja constancia de que la comprobación de «¿es de una hembra anterior?» no se pudo
        hacer con esta lectura. Va DESPUÉS de los rechazos, porque de un código rechazado no hay nada que
        avisar, y ANTES de registrar, porque se avisa del que SÍ se registra. */
@@ -334,8 +368,9 @@ export function nextTrId(existingIds) {
  *  es la ÚNICA fuente de la cuaterna que identifica a cada individuo. Sin él no se arma nada.
  *  ♻ Con matriz, un traslado anterior al ingreso de la hembra que lleva hoy un chip reciclado se
  *  omite (`antesDelIngreso`): movería a la nueva por un traslado de otra. */
-export function buildTransferBatch({ fecha, tipo, origen, destinos, composicion, matrixIndex, trId } = {}) {
-  const report = { moved: [], notFound: [], wrongLocation: [], invalidFormat: [], antesDelIngreso: [] };
+export function buildTransferBatch({ fecha, tipo, origen, destinos, composicion, matrixIndex, trId, eleccion } = {}) {
+  /* R5 (2026-09-18) · `variasVivas` y `elegidas` como en el evento: ver el bloque de D17 más abajo. */
+  const report = { variasVivas: [], elegidas: [], moved: [], notFound: [], wrongLocation: [], invalidFormat: [], antesDelIngreso: [] };
   if (!fecha) return { report, matriz: null, transfer: null, error: 'Falta la fecha.' };
   /* 🔴 RD1 (2026-09-16) · SIN LA MATRIZ NO SE ARMA NADA. Antes se movía «sin validar» con índice nulo:
      era un modo degradado inofensivo mientras la llave de la MATRIZ era sólo el Trovan. Desde que es la
@@ -357,8 +392,18 @@ export function buildTransferBatch({ fecha, tipo, origen, destinos, composicion,
     (dest.ids || []).forEach((raw) => {
       const id = normTrovan(raw); if (!id) return;
       if (!isValidTrovan(id)) { report.invalidFormat.push(id); return; } // formato corrupto → NO se transfiere, señalado
-      const rec = matrixIndex ? matrixIndex.get(id) : null;
+      let rec = matrixIndex ? matrixIndex.get(id) : null;
       if (matrixIndex && !rec) { report.notFound.push(id); return; } // solo valida si hay matriz
+      /* 🔴 R5 (2026-09-18) · D17 TAMBIÉN EN EL TRASLADO. Hasta hoy sólo lo miraba el evento, y un traslado de un chip
+         con dos vivas movía a «la vigente» —en index (8), la de más abajo en la hoja— y escribía su fila de la MATRIZ
+         y de Transferencias como si fuera la buena. Igual que en el evento: se mueve la que elija el usuario, o no se
+         mueve ninguna y se le ofrece elegir. La ubicación de origen se comprueba después, sobre la elegida. */
+      if (rec && rec.vivos > 1) {
+        const elegida = elegidaDelChip(matrixIndex, eleccion, id);
+        if (!elegida) { report.variasVivas.push(id); return; }
+        rec = Object.assign({}, elegida, { individuos: rec.individuos, vivos: rec.vivos });
+        report.elegidas.push(id);
+      }
       if (matrixIndex && antesDeSuIngreso(rec, dia)) { report.antesDelIngreso.push(id); return; } // de una hembra anterior del chip
       if (matrixIndex && rec && ((org.sala && String(rec.sala) !== org.sala) || (org.tanque && String(rec.tanque) !== org.tanque))) {
         report.wrongLocation.push(id); return; // no está en el origen declarado → se omite
