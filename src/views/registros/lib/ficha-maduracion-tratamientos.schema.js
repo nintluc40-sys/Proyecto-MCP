@@ -62,8 +62,8 @@ const AREA_PRODUCTOS = {
   'Líneas de agua y aire, tinas y reservorios': LIMPIEZA,
   'Desove, Eclosión y Despacho': LIMPIEZA,
   'Conos, baldes, tinas y tuberías': LIMPIEZA,
-  /* La limpieza habitual, igual que sus hermanas. Sigue siendo una SUPOSICIÓN declarada, como
-     ya lo era para «Desove, Eclosión y Despacho» y los utensilios: se ajusta a mano. */
+  /* La limpieza habitual, igual que sus hermanas. Era una SUPOSICIÓN declarada, como la de «Desove,
+     Eclosión y Despacho» y los utensilios, y el usuario la CONFIRMÓ el 2026-09-18 para todas. */
   Reservorio: LIMPIEZA,
   Colectores: LIMPIEZA,
 };
