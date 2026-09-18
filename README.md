@@ -308,6 +308,10 @@ Dos consecuencias que conviene tener presentes al desplegar:
 - **Vitest** (`npm test`): la capa de datos (`core/*`, `supervisor/stats`, `microbiologia/data`,
   las fichas de Registros…) y el monolito `public/registros/engine.js`, que se arranca entero en
   happy-dom sobre el shell real. **ESLint flat v9 + Prettier** (`npm run lint`).
+- ⚠ **La CI corre las pruebas con Node 20** (`deploy.yml`), no con el Node de tu equipo, y happy-dom no
+  se comporta igual en los dos: el 2026-09-18 una prueba en verde aquí tumbó la CI —y con ella el
+  despliegue— porque su simulación del `localStorage` no interceptaba en Node 20. Antes de un push, la
+  suite con Node 20 de verdad: `TZ=UTC npx -y -p node@20 -- node node_modules/vitest/vitest.mjs run`.
 - **Bancos de mutación** (fuera del repo, en `Documents\_herramientas-traslado`). Una prueba en
   verde no dice que vigile nada: cada regla que importa tiene su banco, que reintroduce el defecto
   a propósito y exige que alguna prueba se ponga roja. Cada banco se corre con `node mutar-<tema>.mjs`.
@@ -409,6 +413,10 @@ y noche 17). Si el GAS entra **antes** que el push, un dispositivo con la app an
 con su cabecera de 14 y desde ese momento el GAS rechaza a TODOS los clientes al día; sólo se sale
 vaciando la hoja **con su fila 1**.
 
+Y al re-desplegar, dos detalles: en Apps Script hay que publicar una **versión nueva** del Web App
+(guardar sin publicar no cambia lo que sirve), y el `Code.gs` se copia del repo o de una app AL DÍA:
+una copia antigua de la app lleva dentro un GAS viejo.
+
 ### 4 · La cola, y qué pasó con CADA envío
 
 Un envío que no puede salir entra en la cola con su **marca** (`madlog:<ficha>` + su id). Al
@@ -502,14 +510,24 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
 
 **Bloquea producción**
 
-1. 🔴 **La cadena, en este orden:** `git push` → re-desplegar `GAS/Code.gs` en Apps Script
-   (publicando una **versión nueva**; guardar sin publicar no cambia lo que sirve el Web App) →
-   ⚙ Config → «🔗 Probar conexión». Mientras los dos primeros no estén hechos, **las fichas de
-   Maduración que comparan el sello no envían**. ⚠ Copiar el `Code.gs` de la app al día o del repo:
-   una copia antigua de la app lleva un GAS viejo.
-2. 🔴 **El token compartido.** `SHARED_TOKEN` está vacío: la escritura sobre las hojas de producción
+1. 🔴 **El token compartido.** `SHARED_TOKEN` está vacío: la escritura sobre las hojas de producción
    sigue siendo anónima. Se activa desde el panel de Apps Script (Propiedades del script), sin tocar
-   código, pero el código que lo lee tiene que estar desplegado.
+   código: el código que lo lee ya está desplegado. ⚠ El orden importa: primero el token en ⚙ Config
+   de TODOS los dispositivos y después la propiedad; al revés, nadie puede escribir.
+
+**Por validar en producción**
+
+2. **Estrenar lo desplegado el 2026-09-18** (repo, Pages y GAS con el sello `55acbff1b746`). La
+   cadena `push` → GAS → «🔗 Probar conexión» ya se hizo; falta que lo desplegado se use de verdad:
+   - Las hojas que nacen con su primer envío —Fin de Ciclo, Mortalidad Desove, Tratamientos,
+     Alimentación y Broodstock— tienen que nacer con la cabecera actual, y el primer parte de Tanques
+     tiene que llegar con su hora y su número. Cuáles existen ya, y con cuántas columnas, lo dice
+     `estado-maduracion.mjs`, no esta lista.
+   - En cada dispositivo, recargar la app y pasar ⚙ Config → «🔗 Probar conexión»: tiene que mostrar
+     ese sello. Una copia de `index (8)` anterior en otro equipo lleva otro sello y no envía las fichas
+     selladas: se sustituye por la actual.
+   - Lo tecleado en las fichas selladas entre el 16 y el 18-09 no se envió (los sellos no casaban) y
+     sigue en el dispositivo: hay que volver a guardarlo.
 
 **Decidido, a la espera del usuario**
 
