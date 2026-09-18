@@ -145,6 +145,10 @@ export function detectSheetName(rows, gid, rawTitle) {
   if (has((k) => k === 'productos ras')) return 'Maduracion';
   // «Maduración Mortalidad Desove» (2026-09-15): «Tipo de tanque», por igualdad exacta, es firma propia.
   if (has((k) => k === 'tipo de tanque')) return 'Maduracion';
+  /* «Maduración Broodstock» (V1, 2026-09-18): «Pl/g», por igualdad exacta, es firma propia —Larvicultura lleva «Plg»
+     y «Plg (manual)», que no son iguales—. Medido antes de ponerla: por COLUMNAS daba «Hoja1» y por NOMBRE
+     «Maduracion», el mismo fallo que tuvieron Fin de Ciclo y Lotes, y se corrige antes de que la hoja exista. */
+  if (has((k) => k === 'pl/g')) return 'Maduracion';
   // Maduración Sala es la hoja de AMBIENTE: no lleva machos ni hembras ni nauplios, así
   // que la regla de arriba no la alcanza. Su firma es la columna «RAS».
   // ⚠⚠ POR IGUALDAD EXACTA, nunca por `includes`: como subcadena, «ras» casa 16 de las

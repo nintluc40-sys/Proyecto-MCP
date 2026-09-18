@@ -525,17 +525,21 @@ describe('Lo guardado cuenta en el módulo: el punto, el contador y «Sincroniza
   });
 });
 
-describe('Las siete fichas, cableadas', () => {
+/* V1 (2026-09-18) · entra la OCTAVA: el Control Broodstock. Con una diferencia que se fija aquí en vez de disimularla:
+   es una carga de ARCHIVO, no un formulario, así que no tiene borrador de pantalla que su 🧹 deba olvidar (el Excel
+   sigue en el equipo de quien lo sube). Lo demás —💾, su caja, ☁️ que envía antes lo guardado, el sello— igual. */
+describe('Las ocho fichas, cableadas', () => {
   const src = readFileSync(ENGINE, 'utf8');
-  const SIETE = [['ingreso', 'Ing', 'mi-loc', true], ['movimientos', 'Mov', 'mv-loc', false], ['desoves', 'Des', 'md-loc', true],
-    ['mortdes', 'Mort', 'mm-loc', true], ['fin', 'Fin', 'mf-loc', true], ['tratamientos', 'Trat', 'mt-loc', true], ['alimentacion', 'Alim', 'ma-loc', true]];
+  const OCHO = [['ingreso', 'Ing', 'mi-loc', true, true], ['movimientos', 'Mov', 'mv-loc', false, true], ['desoves', 'Des', 'md-loc', true, true],
+    ['mortdes', 'Mort', 'mm-loc', true, true], ['fin', 'Fin', 'mf-loc', true, true], ['tratamientos', 'Trat', 'mt-loc', true, true],
+    ['alimentacion', 'Alim', 'ma-loc', true, true], ['broodstock', 'Bs', 'mb-loc', true, false]];
 
-  it('son exactamente las siete, y ninguna es una grilla de MAD_FICHAS', () => {
-    expect([...H.MAD_LOC_FICHAS].sort()).toEqual(SIETE.map((s) => s[0]).sort());
+  it('son exactamente las ocho, y ninguna es una grilla de MAD_FICHAS', () => {
+    expect([...H.MAD_LOC_FICHAS].sort()).toEqual(OCHO.map((s) => s[0]).sort());
     expect(src).toContain('const MAD_FICHAS    = ["salas","tanques"];');
   });
 
-  it.each(SIETE)('%s · botón 💾, su caja, ☁️ envía antes lo guardado, 🧹 olvida el borrador y su portón', (ficha, pre, loc, sello) => {
+  it.each(OCHO)('%s · botón 💾, su caja, ☁️ envía antes lo guardado, 🧹 olvida el borrador (si lo tiene) y su portón', (ficha, pre, loc, sello, borrador) => {
     expect(src.split('onclick="mad' + pre + 'GuardarLocal()"')).toHaveLength(2);
     expect(src).toContain("'<div id=\"" + loc + "\">'+_madLocHTML(\"" + ficha + "\")+'</div>'");
     const ini = src.indexOf('async function mad' + pre + 'Guardar(){');
@@ -543,7 +547,8 @@ describe('Las siete fichas, cableadas', () => {
     expect(guardar).toContain('_loc=madLocLeer("' + ficha + '").length');
     expect(guardar).toContain('(await _madLocEnviar("' + ficha + '"');
     const i = src.indexOf('function mad' + pre + 'Vaciar(){');
-    expect(src.slice(i, i + 300)).toContain('_madBorrOlvidarPantalla("' + ficha + '")');
+    expect(i, 'tiene 🧹 Vaciar').toBeGreaterThan(-1);
+    if (borrador) expect(src.slice(i, i + 300)).toContain('_madBorrOlvidarPantalla("' + ficha + '")');
     const c = H._madLocCfg(ficha);
     expect([c.loc, c.sello, typeof c.anota]).toEqual([loc, sello, 'function']);
   });

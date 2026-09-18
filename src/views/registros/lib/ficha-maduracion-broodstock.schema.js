@@ -262,3 +262,211 @@ export function validarBroodstock(model) {
 
   return { errores, avisos };
 }
+
+/* ── EL LECTOR · de la hoja de cálculo al modelo (V1, 2026-09-18) ───────────────────────────────────────────
+   Recibe la hoja TAL COMO LA DA SheetJS con `XLSX.read(datos, { cellNF: true })` —sin `cellDates`—: un objeto con
+   una celda por referencia («A3» → { t, v, w, z }) y su rango en «!ref». Es puro: no llama a SheetJS, sólo lee.
+   🔑 SE LEE POR CABECERA, NO POR POSICIÓN. Medido el 2026-09-18 en los archivos del usuario: la plantilla del 17-sep
+   trae «Camaronera» en la U, y las de julio no la tienen —allí la U es «Codigo» y la V «OBSERVACION»—. Leída por
+   posición, una hoja de julio metería el código genético en «Camaronera» y la observación en «Código» sin un solo
+   error. Por eso cada columna se busca por su rótulo, y una OBLIGATORIA que falte es error: el archivo no es el que
+   se cree, o la plantilla cambió.
+   · La cabecera es la fila que dice «Piscina» en la columna A (la 5 en todos los medidos); debajo va la fila de
+     FECHAS del bloque de pesos, y los datos empiezan en la siguiente.
+   · La FECHA DE CORTE es la celda con fecha de la columna A por encima de la cabecera (la A3). El nombre de la hoja
+     NO manda: «19 Jul. 26 » es un rótulo, y se ha visto con espacios distintos.
+   · El bloque de PESOS va de «PESOS» a la columna antes de la cabecera siguiente, con la fecha de cada semana en la
+     fila de fechas. De él salen el ÚLTIMO peso (con su fecha) y el de la columna ANTERIOR: el Excel calcula su
+     «Inc. Ult. Sem» como L − K, así que si esa columna está vacía no hay incremento de UNA semana que dar.
+   · Las fechas se leen del NÚMERO DE SERIE de Excel, no de un `Date`: el `Date` de SheetJS va en la zona horaria
+     del equipo y el día se puede correr; el serial es el día y nada más. */
+
+/* Cada campo, con cómo se reconoce su rótulo (sin tildes, espacios ni signos) y si es OBLIGATORIO. Los calculados
+   (densidad, incremento, crecimiento, edad) se reconocen para no avisar de ellos, pero NO se leen: se recalculan. */
+export const MAD_BS_CABECERAS = [
+  { k: 'piscina', es: (h) => h === 'piscina', obligatoria: true },
+  { k: 'area', es: (h) => h.startsWith('area'), obligatoria: true },
+  { k: 'fechaSiembra', es: (h) => h === 'fechasiembra', obligatoria: true },
+  { k: 'cantidad', es: (h) => h.startsWith('cantidad'), obligatoria: true },
+  { k: 'densidad', es: (h) => h.startsWith('densidad'), calculada: true },
+  { k: 'pesoSiembra', es: (h) => h.startsWith('pesodesiembra') || h.startsWith('pesosiembra'), obligatoria: true },
+  { k: 'fase', es: (h) => h.startsWith('fase'), obligatoria: true },
+  { k: 'pesos', es: (h) => h === 'pesos', obligatoria: true },
+  { k: 'incremento', es: (h) => h.startsWith('inc'), calculada: true },
+  { k: 'crecimiento', es: (h) => h.startsWith('crecimiento'), calculada: true },
+  { k: 'sobrevivencia', es: (h) => h.startsWith('sobrev'), obligatoria: true },
+  { k: 'dias1', es: (h) => h.startsWith('dias') && h.includes('fase1') },
+  { k: 'dias2', es: (h) => h.startsWith('dias') && h.includes('fase2') },
+  { k: 'dias3', es: (h) => h.startsWith('dias') && h.includes('fase3') },
+  { k: 'edad', es: (h) => h.startsWith('edad'), calculada: true },
+  { k: 'piscinaOrigen', es: (h) => h.startsWith('pscorig') || h.startsWith('piscinaorig') },
+  { k: 'camaronera', es: (h) => h === 'camaronera' },
+  { k: 'codigo', es: (h) => h.startsWith('codigo'), obligatoria: true },
+  { k: 'observacion', es: (h) => h.startsWith('observ') },
+];
+const planoCab = (v) => String(v === null || v === undefined ? '' : v).toLowerCase().normalize('NFD')
+  .replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+/** Letra de la columna `c` (0 → «A», 25 → «Z», 26 → «AA»). */
+export function letraCol(c) {
+  let s = '';
+  for (let n = c + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
+  return s;
+}
+/** Última columna (0 = A) y última fila de la hoja, según su «!ref». */
+function limites(ws) {
+  const m = /:?([A-Z]+)(\d+)$/.exec(String((ws && ws['!ref']) || ''));
+  if (!m) return { c: -1, r: 0 };
+  return { c: m[1].split('').reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0) - 1, r: Number(m[2]) };
+}
+const celda = (ws, c, r) => (ws && ws[letraCol(c) + r]) || null;
+const vacia = (x) => !x || x.v === null || x.v === undefined || String(x.v).trim() === '';
+const textoDe = (x) => (vacia(x) ? '' : String(x.v).trim());
+/* ¿Formato de fecha? Lleva «d» o «y» FUERA de los literales entre comillas y de los corchetes ([Red], [$-409]). Las
+   comillas se quitan partiendo por ellas, no con una expresión regular: el monolito lleva la misma función y
+   verificar-3copias lee una regex con comillas como una cadena abierta. */
+const esFormatoFecha = (z) => /[dy]/i.test(String(z || '').split('"').filter((_, i) => i % 2 === 0).join('').replace(/\[[^\]]*\]/g, ''));
+/** El día ISO de una celda con fecha, o '' si no lo es: un serial de Excel (con formato de fecha, o cualquiera si
+ *  `seguro` dice que en esa posición sólo puede haber una fecha), un `Date`, o un texto «dd/mm/aaaa», «dd/mm/aa» o
+ *  «aaaa-mm-dd». `f1904` es el sistema de fechas de 1904 del libro (Excel de Mac antiguo). */
+export function diaDeCelda(x, f1904, seguro) {
+  if (vacia(x)) return '';
+  const v = x.v;
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return '';
+    return diaReal(v.getFullYear() + '-' + String(v.getMonth() + 1).padStart(2, '0') + '-' + String(v.getDate()).padStart(2, '0'));
+  }
+  if (typeof v === 'number') {
+    if (!Number.isFinite(v) || v < 1 || !(esFormatoFecha(x.z) || seguro)) return '';
+    const d = new Date((Math.floor(v) - (f1904 ? 24107 : 25569)) * 86400000);
+    return diaReal(d.toISOString().slice(0, 10));
+  }
+  const s = String(v).trim();
+  let m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/.exec(s);
+  if (m) return diaReal((m[3].length === 2 ? '20' + m[3] : m[3]) + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0'));
+  m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  return m ? diaReal(m[1] + '-' + m[2] + '-' + m[3]) : '';
+}
+/* La sobrevivencia viene en FRACCIÓN con formato de % (0,95 → «95%»): ahí se multiplica. Un número sin formato de %
+   se deja como vino —si es una fracción, el modelo lo avisa—, y un texto «95%» se lee como 95. */
+function sobrevivenciaDe(x) {
+  if (vacia(x)) return '';
+  if (typeof x.v === 'number') return (/%/.test(String(x.z || '')) || /%\s*$/.test(String(x.w || ''))) ? Math.round(x.v * 10000) / 100 : x.v;
+  const m = /^(-?\d+(?:[.,]\d+)?)\s*%$/.exec(String(x.v).trim());
+  return m ? Number(m[1].replace(',', '.')) : String(x.v).trim();
+}
+/* «130.pl», «130 pl», «130 pl/g»: son postlarvas por gramo, no un peso. Es lo que traía la precría. */
+const PLG_TEXTO = /^(\d+(?:[.,]\d+)?)\s*\.?\s*pl(?:\s*\/\s*g)?\.?$/i;
+
+/** Lee UNA hoja: { esBroodstock, fechaCorte, piscinas, notas, errores, avisos }. `errores` impide subirla; `avisos`
+ *  no. `esBroodstock` es false si la hoja no tiene la fila de cabecera: un libro puede traer otras hojas. */
+export function leerHojaBroodstock(ws, opts) {
+  const f1904 = !!(opts && opts.fecha1904);
+  const errores = [], avisos = [], notas = [];
+  const lim = limites(ws);
+  let fc = 0;
+  for (let r = 1; r <= Math.min(lim.r, 20) && !fc; r++) if (planoCab(textoDe(celda(ws, 0, r))) === 'piscina') fc = r;
+  if (!fc) return { esBroodstock: false, fechaCorte: '', piscinas: [], notas, avisos, errores: ['No se encuentra la fila de cabecera («Piscina» en la columna A): no parece un Control Broodstock.'] };
+
+  let fechaCorte = '';
+  for (let r = 1; r < fc && !fechaCorte; r++) fechaCorte = diaDeCelda(celda(ws, 0, r), f1904, false);
+  if (!fechaCorte) errores.push('No se encuentra la fecha de corte (una fecha en la columna A, encima de la cabecera; en la plantilla, la A3).');
+
+  /* Las columnas, por su rótulo. */
+  const pos = {}, desconocidas = [];
+  const cabeceras = [];
+  for (let c = 0; c <= lim.c; c++) {
+    const h = planoCab(textoDe(celda(ws, c, fc)));
+    if (!h) continue;
+    cabeceras.push(c);
+    const def = MAD_BS_CABECERAS.find((d) => d.es(h));
+    if (!def) { desconocidas.push(letraCol(c) + ' («' + textoDe(celda(ws, c, fc)) + '»)'); continue; }
+    if (pos[def.k] !== undefined) { errores.push('Hay dos columnas que parecen «' + def.k + '» (' + letraCol(pos[def.k]) + ' y ' + letraCol(c) + '): no se sabe cuál leer.'); continue; }
+    pos[def.k] = c;
+  }
+  MAD_BS_CABECERAS.filter((d) => d.obligatoria && pos[d.k] === undefined)
+    .forEach((d) => errores.push('Falta la columna «' + d.k + '» en la cabecera (fila ' + fc + '): no parece un Control Broodstock, o cambió la plantilla.'));
+  if (desconocidas.length) avisos.push('Columnas que no se reconocen y NO se suben: ' + desconocidas.join(', ') + '.');
+  if (pos.camaronera === undefined && !errores.length) avisos.push('El archivo no trae la columna «Camaronera» (plantilla anterior al 17-sep): se sube vacía.');
+  if (errores.length) return { esBroodstock: true, fechaCorte, piscinas: [], notas, avisos, errores };
+
+  /* El bloque de pesos y sus fechas. */
+  const fin = cabeceras.find((c) => c > pos.pesos);
+  const bloque = [];
+  for (let c = pos.pesos; c < (fin === undefined ? lim.c + 1 : fin); c++) bloque.push(c);
+  const fechas = bloque.map((c) => diaDeCelda(celda(ws, c, fc + 1), f1904, true));
+  if (fechaCorte) {
+    bloque.forEach((c, i) => {
+      const esperada = new Date(Date.parse(fechaCorte + 'T00:00:00Z') - (bloque.length - 1 - i) * 7 * 86400000).toISOString().slice(0, 10);
+      const ref = letraCol(c) + (fc + 1);
+      if (!fechas[i]) avisos.push('La fecha de la columna de pesos ' + ref + ' no es una fecha válida: los pesos de esa semana van sin fecha.');
+      else if (fechas[i] !== esperada) {
+        avisos.push(i === bloque.length - 1
+          ? 'La última columna de pesos (' + ref + ') dice ' + fechas[i] + ' y el corte es ' + fechaCorte + ': de ahí sale la fecha del peso de cada piscina. Revísala en la hoja.'
+          : 'La columna de pesos ' + ref + ' dice ' + fechas[i] + ' y, contando semanas hacia atrás desde el corte, debería ser ' + esperada + '. Revísala en la hoja.');
+      }
+    });
+  }
+
+  const piscinas = [];
+  for (let r = fc + 2; r <= lim.r; r++) {
+    const x = (k) => (pos[k] === undefined ? null : celda(ws, pos[k], r));
+    /* Una fila sin piscina no se sube. Si trae TEXTO es una nota del área (la del ejemplo: «piscinas 836 y 837
+       fueron raleadas…») y se enseña; un número suelto es el resto de una fórmula, no una nota.
+       ⚠ «Sin piscina» incluye una columna A SIN NINGÚN DÍGITO: una fila «TOTAL» o «PROMEDIO» con sus sumas se
+       subiría si no, como si fuera una piscina más. Las de julio traían además bloques auxiliares debajo («h», «m»). */
+    if (vacia(x('piscina')) || !/\d/.test(textoDe(x('piscina')))) {
+      const dice = [];
+      for (let c = 0; c <= lim.c; c++) { const y = celda(ws, c, r); if (!vacia(y) && typeof y.v === 'string') dice.push(textoDe(y)); }
+      if (dice.length) notas.push('Fila ' + r + ': ' + dice.join(' · '));
+      continue;
+    }
+    const p = { piscina: textoDe(x('piscina')), fila: r };
+    ['area', 'cantidad', 'dias1', 'dias2', 'dias3'].forEach((k) => { p[k] = vacia(x(k)) ? '' : x(k).v; });
+    ['fase', 'piscinaOrigen', 'camaronera', 'codigo', 'observacion'].forEach((k) => { p[k] = textoDe(x(k)); });
+    p.fechaSiembra = diaDeCelda(x('fechaSiembra'), f1904, true) || textoDe(x('fechaSiembra'));
+    const ps = x('pesoSiembra');
+    const plg = vacia(ps) || typeof ps.v === 'number' ? null : PLG_TEXTO.exec(String(ps.v).trim());
+    if (plg) { p.pesoSiembra = ''; p.plg = Number(plg[1].replace(',', '.')); }
+    else {
+      p.pesoSiembra = vacia(ps) ? '' : ps.v;
+      if (!vacia(ps) && num(ps.v) === '') avisos.push('La piscina ' + normPiscina(p.piscina) + ' trae en «Peso de siembra» «' + textoDe(ps) + '», que no es un peso ni unas Pl/g: se sube vacío.');
+    }
+    p.sobrevivencia = sobrevivenciaDe(x('sobrevivencia'));
+    /* El último peso con su fecha, y el de la columna de justo antes para el incremento de una semana. */
+    const pesos = bloque.map((c) => { const y = celda(ws, c, r); const n = vacia(y) ? '' : num(y.v); return n !== '' && n > 0 ? n : ''; });
+    let u = pesos.length - 1;
+    while (u >= 0 && pesos[u] === '') u--;
+    p.peso = u >= 0 ? pesos[u] : '';
+    p.fechaPeso = u >= 0 ? fechas[u] : '';
+    p.pesoPrevio = u > 0 ? pesos[u - 1] : '';
+    piscinas.push(p);
+  }
+  /* En las hojas de julio la piscina de origen venía con letras pegadas («902ch»): se sube tal cual, pero se dice. */
+  const conLetras = piscinas.filter((p) => /[a-z]/i.test(p.piscinaOrigen) && /\d/.test(p.piscinaOrigen));
+  if (conLetras.length) {
+    avisos.push(conLetras.length + ' piscina(s) traen la piscina de origen con letras junto al número (' + conLetras.map((p) => normPiscina(p.piscina) + ': ' + p.piscinaOrigen).join(', ') + '): se sube tal cual.');
+  }
+  return { esBroodstock: true, fechaCorte, piscinas, notas, avisos, errores };
+}
+
+/** Lee el LIBRO entero: una semana por hoja (el usuario va añadiendo hojas). Las hojas que no son de Broodstock
+ *  se listan aparte, sin error: un libro puede traer otras. */
+export function leerLibroBroodstock(wb) {
+  const libro = wb || {};
+  const f1904 = !!(libro.Workbook && libro.Workbook.WBProps && libro.Workbook.WBProps.date1904);
+  const hojas = [], ignoradas = [];
+  (libro.SheetNames || []).forEach((nombre) => {
+    const l = leerHojaBroodstock((libro.Sheets || {})[nombre], { fecha1904: f1904 });
+    if (l.esBroodstock) hojas.push(Object.assign({ nombre }, l));
+    else ignoradas.push(nombre);
+  });
+  return { hojas, ignoradas };
+}
+
+/** Las fechas de corte que se repiten entre las hojas ELEGIDAS: subirlas juntas haría que la segunda pisara a la
+ *  primera, piscina a piscina (la llave es fecha de corte · piscina). */
+export function cortesRepetidos(hojas) {
+  const vistos = new Set(), rep = new Set();
+  (hojas || []).forEach((h) => { const f = diaReal((h || {}).fechaCorte); if (!f) return; if (vistos.has(f)) rep.add(f); vistos.add(f); });
+  return [...rep].sort();
+}

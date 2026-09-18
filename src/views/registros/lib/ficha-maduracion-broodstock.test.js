@@ -11,6 +11,7 @@ import {
   MAD_BS_SHEET, MAD_BS_HEADERS, MAD_BS_KEY_COLS, MAD_BS_FASES, MAD_BS_COLUMNS,
   faseCanonica, normPiscina, normCodigo, diaReal, diasEntre, tieneDatos,
   buildBroodstockRows, buildBroodstockPayload, validarBroodstock,
+  leerHojaBroodstock, leerLibroBroodstock, cortesRepetidos, diaDeCelda, letraCol,
 } from './ficha-maduracion-broodstock.schema.js';
 
 const col = (h) => MAD_BS_HEADERS.indexOf(h);
@@ -240,5 +241,171 @@ describe('Broodstock · el puente con el registro reproductivo', () => {
     expect(diasEntre('2026-06-19', '2026-07-19')).toBe(30);
     expect(diasEntre('2026-02-31', '2026-07-19')).toBe('');
     expect(diasEntre('2026-12-31', '2027-01-01'), 'cruza el año').toBe(1);
+  });
+});
+
+/* ============================================================
+   V1 (2026-09-18) · EL LECTOR: de la hoja que da SheetJS al modelo
+   Las hojas se arman como las da `XLSX.read(datos, { cellNF: true })` —una celda por referencia, { t, v, w, z }—
+   con los valores MEDIDOS en los archivos del usuario: A3 = 46222 («7/19/26»), la fila de fechas de pesos con la
+   errata de K6 (46185 = 12/06 donde tocaba 12/07), la precría con «130.pl», la sobrevivencia 0,83 con formato de %.
+   ============================================================ */
+const S = (v) => ({ t: 's', v, w: v, z: 'General' });
+const N = (v, z) => ({ t: 'n', v, w: String(v), z: z || 'General' });
+const PCT = (v) => ({ t: 'n', v, w: Math.round(v * 100) + '%', z: '0%' });
+const F = (serial, z) => ({ t: 'n', v: serial, z: z || 'dd/mm/yy;@' });
+/* Las columnas de cada plantilla, por letra. La de julio NO tiene «Camaronera»: Código y Observación van un sitio antes. */
+const CAB_SEP = ['Piscina', 'Area (ha)', 'Fecha siembra', 'Cantidad Sembrada ', 'Densidad (cam/m2)', 'Peso de siembra ', 'FASE ACTUAL', 'PESOS', '', '', '', '',
+  'Inc. Ult. Sem', 'Crecimiento fase actual', 'Sobrev. Estim (%)', 'Dias Cultivos Fase 1 (precria)', 'Dias en fase 2 (engorde)',
+  'Dias de cultivo fase 3 (prereproductor)', 'Edad total (dias)', 'Psc. Orig', 'Camaronera', 'Codigo', 'OBSERVACION'];
+const CAB_JUL = CAB_SEP.filter((h) => h !== 'Camaronera');
+const PESOS_FECHAS = [46194, 46201, 46208, 46185, 46222].map((x) => ({ t: 'n', v: x, z: 'dd/mm/yy;@' }));   // H6..L6: K6 es la errata
+/** Una hoja con esas cabeceras (fila 5), sus fechas de pesos (fila 6) y filas desde la 7: cada fila es { cabecera: celda }
+ *  o { letra: celda } para lo que va por letra (los pesos, y lo que queda fuera de la tabla). */
+function hoja({ cab = CAB_SEP, fechas = PESOS_FECHAS, corte = F(46222, 'm/d/yy'), filas = [] } = {}) {
+  const ws = { A1: S('RESUMEN SEMANAL DE PISCINAS · PRUEBA'), A4: S('BROODSTOCK - PRUEBA') };
+  if (corte) ws.A3 = corte;
+  cab.forEach((h, c) => { if (h) ws[letraCol(c) + '5'] = S(h); });
+  fechas.forEach((f, i) => { ws[letraCol(7 + i) + '6'] = f; });
+  const colDe = (k) => { const i = cab.indexOf(k); return i === -1 ? k : letraCol(i); };
+  filas.forEach((f, i) => Object.entries(f).forEach(([k, celda]) => { ws[colDe(k) + (7 + i)] = celda; }));
+  ws['!ref'] = 'A1:' + letraCol(Math.max(cab.length - 1, 22)) + (6 + Math.max(filas.length, 1));
+  return ws;
+}
+/* La 815 del archivo, en la plantilla de septiembre. */
+const R815 = { Piscina: N(815), 'Area (ha)': N(0.24), 'Fecha siembra': F(46192, 'd-mmm-yy'), 'Cantidad Sembrada ': N(2270, '#,##0'),
+  'Peso de siembra ': N(23), 'FASE ACTUAL': S('Pre-reproductor'), H: N(23), I: N(28), J: N(34), K: N(40), L: N(46),
+  'Sobrev. Estim (%)': PCT(0.83), 'Dias Cultivos Fase 1 (precria)': N(0), 'Dias en fase 2 (engorde)': N(95),
+  'Dias de cultivo fase 3 (prereproductor)': N(30), 'Psc. Orig': N(810), Camaronera: S('Chongón'), Codigo: S('XPR6.F6'), OBSERVACION: S('LÍNEA DE PRUEBA') };
+/* La 810, la de PRECRIA: su «peso de siembra» es el texto «130.pl». */
+const R810 = { Piscina: N(810), 'Area (ha)': N(0.38), 'Fecha siembra': F(46215, 'd-mmm-yy'), 'Cantidad Sembrada ': N(312000),
+  'Peso de siembra ': S('130.pl'), 'FASE ACTUAL': S('PRECRIA'), L: N(0.1, '0.00'), 'Sobrev. Estim (%)': PCT(0.95),
+  'Dias Cultivos Fase 1 (precria)': N(7), Codigo: S('XPR1. F9'), OBSERVACION: S('LÍNEA DE PRUEBA') };
+const sin = (o, k) => { const x = { ...o }; delete x[k]; return x; };
+const leer = (ws, opts) => leerHojaBroodstock(ws, opts);
+const unaFila = (ws) => buildBroodstockRows(leer(ws))[0];
+
+describe('Broodstock · el LECTOR de la hoja (V1)', () => {
+  it('🔴 la plantilla de septiembre: corte de A3, el último peso con SU fecha, el anterior para el incremento y la sobrevivencia en %', () => {
+    const l = leer(hoja({ filas: [R815] }));
+    expect([l.esBroodstock, l.fechaCorte, l.errores]).toEqual([true, '2026-07-19', []]);
+    const p = l.piscinas[0];
+    expect([p.piscina, p.peso, p.fechaPeso, p.pesoPrevio, p.sobrevivencia, p.camaronera, p.codigo]).toEqual(['815', 46, '2026-07-19', 40, 83, 'Chongón', 'XPR6.F6']);
+    const f = unaFila(hoja({ filas: [R815] }));
+    // Lo que el Excel calcula, recalculado: incremento L−K = 6; crecimiento (46−23)/30×7 = 5,37; edad 0+95+30 = 125.
+    expect([f[col('Incremento última semana (g)')], f[col('Crecimiento fase actual (g/sem)')], f[col('Edad total (días)')]]).toEqual([6, 5.37, 125]);
+  });
+
+  it('🔴 «130.pl» son Pl/g y NO 130 gramos de peso de siembra (también «130 pl/g»)', () => {
+    const f = unaFila(hoja({ filas: [R810] }));
+    expect([f[col('Peso de siembra (g)')], f[col('Pl/g')]]).toEqual(['', 130]);
+    const g = unaFila(hoja({ filas: [{ ...R810, 'Peso de siembra ': S('130 pl/g') }] }));
+    expect([g[col('Peso de siembra (g)')], g[col('Pl/g')]]).toEqual(['', 130]);
+    // Un peso de siembra que no es ni peso ni Pl/g: vacío, y se dice.
+    const l = leer(hoja({ filas: [{ ...R815, 'Peso de siembra ': S('pendiente') }] }));
+    expect(l.avisos.join(' ')).toContain('«pendiente», que no es un peso ni unas Pl/g');
+  });
+
+  it('🔴 se lee POR CABECERA: en la plantilla de julio (sin «Camaronera») el código no se corre a Camaronera', () => {
+    const l = leer(hoja({ cab: CAB_JUL, filas: [sin(R815, 'Camaronera')] }));
+    expect([l.piscinas[0].codigo, l.piscinas[0].camaronera, l.piscinas[0].observacion]).toEqual(['XPR6.F6', '', 'LÍNEA DE PRUEBA']);
+    expect(l.avisos.join(' ')).toContain('no trae la columna «Camaronera»');
+    expect(leer(hoja({ filas: [R815] })).avisos.join(' '), 'la de septiembre sí la trae').not.toContain('Camaronera');
+  });
+
+  it('🔴 el incremento es de UNA semana: si la columna anterior al último peso está vacía, no hay incremento', () => {
+    const p = leer(hoja({ filas: [sin(R815, 'K')] })).piscinas[0];           // H I J · L: el último es L y K está vacía
+    expect([p.peso, p.pesoPrevio]).toEqual([46, '']);
+    expect(unaFila(hoja({ filas: [sin(R815, 'K')] }))[col('Incremento última semana (g)')]).toBe('');
+  });
+
+  it('🔴 el último peso es el de más a la DERECHA con dato, con la fecha de SU columna', () => {
+    const p = leer(hoja({ filas: [sin(R815, 'L')] })).piscinas[0];          // no se pesó esta semana: el último es K
+    expect([p.peso, p.fechaPeso, p.pesoPrevio]).toEqual([40, '2026-06-12', 34]);   // la fecha es la de K6, errata incluida
+    expect(leer(hoja({ filas: [{ ...R815, L: N(0) }] })).piscinas[0].peso, 'un 0 no es un peso').toBe(40);
+  });
+
+  it('🔴 la fecha de corte es la de A3, no la del nombre de la hoja', () => {
+    const l = leerLibroBroodstock({ SheetNames: ['26 Jul. 26  '], Sheets: { '26 Jul. 26  ': hoja({ filas: [R815] }) } });
+    expect([l.hojas[0].nombre, l.hojas[0].fechaCorte]).toEqual(['26 Jul. 26  ', '2026-07-19']);
+    expect(leer(hoja({ corte: null, filas: [R815] })).errores.join(' ')).toContain('No se encuentra la fecha de corte');
+    // Un número sin formato de fecha encima de la cabecera NO es la fecha de corte.
+    expect(leer(hoja({ corte: N(46222), filas: [R815] })).fechaCorte).toBe('');
+  });
+
+  it('🔴 una fecha del bloque de pesos fuera de su semana se avisa en SU columna, con la que le tocaba (y sólo ésa)', () => {
+    const av = leer(hoja({ filas: [R815] })).avisos;
+    expect(av.filter((a) => a.includes('columna de pesos'))).toEqual([
+      'La columna de pesos K6 dice 2026-06-12 y, contando semanas hacia atrás desde el corte, debería ser 2026-07-12. Revísala en la hoja.']);
+    const bien = [46194, 46201, 46208, 46215, 46222].map((x) => F(x));
+    expect(leer(hoja({ fechas: bien, filas: [R815] })).avisos.join(' ')).not.toContain('columna de pesos');
+    // La ÚLTIMA columna distinta del corte tiene su propio aviso: de ella sale la fecha del peso de cada piscina.
+    const l6mal = [46201, 46208, 46185, 46222, 46199].map((x) => F(x));          // el (1): L6 = 26/06 con corte 26/07
+    const l = leer(hoja({ corte: F(46229, 'm/d/yy'), fechas: l6mal, filas: [R815] }));
+    expect(l.avisos.join(' ')).toContain('La última columna de pesos (L6) dice 2026-06-26 y el corte es 2026-07-26');
+  });
+
+  it('🔴 sin la fila de cabecera la hoja NO es de Broodstock; sin una columna obligatoria, error', () => {
+    const otra = { A1: S('Otra cosa'), A2: N(3), '!ref': 'A1:B2' };
+    const libro = leerLibroBroodstock({ SheetNames: ['Resumen', 'Semana'], Sheets: { Resumen: otra, Semana: hoja({ filas: [R815] }) } });
+    expect([libro.ignoradas, libro.hojas.map((h) => h.nombre)]).toEqual([['Resumen'], ['Semana']]);
+    const sinCodigo = leer(hoja({ cab: CAB_SEP.map((h) => (h === 'Codigo' ? '' : h)), filas: [R815] }));
+    expect(sinCodigo.errores.join(' ')).toContain('Falta la columna «codigo»');
+    expect(sinCodigo.piscinas).toEqual([]);
+    const rara = leer(hoja({ cab: CAB_SEP.concat(['Tallas']), filas: [R815] }));
+    expect(rara.avisos.join(' ')).toContain('X («Tallas»)');
+    expect(rara.errores).toEqual([]);
+  });
+
+  it('🔴 lo que no es una piscina no se sube: una fila «TOTAL», las notas de texto y los números sueltos', () => {
+    const l = leer(hoja({ filas: [R815, {}, { C: S('NOTA: PISCINAS 836 Y 837 FUERON RALEADAS EL 13 DE ABRIL 2026') },
+      { Piscina: S('TOTAL'), 'Cantidad Sembrada ': N(9999) }, { E: N(0) }] }));
+    expect(l.piscinas.map((p) => p.piscina)).toEqual(['815']);
+    expect(l.notas).toEqual(['Fila 9: NOTA: PISCINAS 836 Y 837 FUERON RALEADAS EL 13 DE ABRIL 2026', 'Fila 10: TOTAL']);
+  });
+
+  it('la sobrevivencia: fracción con % → ×100; sin formato de %, tal cual; texto «95%» → 95', () => {
+    const sob = (celda) => leer(hoja({ filas: [{ ...R815, 'Sobrev. Estim (%)': celda }] })).piscinas[0].sobrevivencia;
+    expect([sob(PCT(0.57)), sob(N(0.95)), sob(N(95)), sob(S('95%')), sob(S('95,5 %'))]).toEqual([57, 0.95, 95, 95, 95.5]);
+  });
+
+  it('las fechas de siembra: serial en cualquier formato, texto dd/mm/aaaa o dd/mm/aa, y lo ilegible pasa para que el modelo lo avise', () => {
+    const siembra = (celda) => leer(hoja({ filas: [{ ...R815, 'Fecha siembra': celda }] })).piscinas[0].fechaSiembra;
+    expect([siembra(N(46192)), siembra(S('19/06/2026')), siembra(S('19/06/26')), siembra(S('2026-06-19')), siembra(S('mañana'))])
+      .toEqual(['2026-06-19', '2026-06-19', '2026-06-19', '2026-06-19', 'mañana']);
+    const l = leer(hoja({ filas: [{ ...R815, 'Fecha siembra': S('31/02/2026') }] }));
+    expect(validarBroodstock(l).avisos.join(' ')).toContain('no es un día real');
+  });
+
+  it('el sistema de fechas de 1904 (Excel de Mac antiguo) da el MISMO día', () => {
+    const ws = hoja({ corte: F(46222 - 1462, 'm/d/yy'), fechas: [46194, 46201, 46208, 46215, 46222].map((x) => F(x - 1462)),
+      filas: [{ ...R815, 'Fecha siembra': F(46192 - 1462) }] });
+    const l = leer(ws, { fecha1904: true });
+    expect([l.fechaCorte, l.piscinas[0].fechaSiembra, l.piscinas[0].fechaPeso]).toEqual(['2026-07-19', '2026-06-19', '2026-07-19']);
+    expect(leerLibroBroodstock({ SheetNames: ['S'], Sheets: { S: ws }, Workbook: { WBProps: { date1904: true } } }).hojas[0].fechaCorte).toBe('2026-07-19');
+  });
+
+  it('diaDeCelda: el serial es el día (sin zona horaria), y un Date se lee en la hora local', () => {
+    expect([diaDeCelda(F(46222)), diaDeCelda(F(46222.99)), diaDeCelda(N(46222)), diaDeCelda(N(46222), false, true)]).toEqual(['2026-07-19', '2026-07-19', '', '2026-07-19']);
+    expect(diaDeCelda({ t: 'd', v: new Date(2026, 6, 19, 23, 30) })).toBe('2026-07-19');
+    expect([diaDeCelda(null), diaDeCelda(S('')), diaDeCelda(S('31/02/2026'))]).toEqual(['', '', '']);
+    // El formato manda por lo que dice FUERA de sus literales: «"Día y"0» es un número; «"Corte: "dd/mm/yy», una fecha.
+    expect([diaDeCelda(F(46222, '"Día y"0')), diaDeCelda(F(46222, '"Corte: "dd/mm/yy')), diaDeCelda(F(46222, '[$-409]0.00')), diaDeCelda(F(46222, '[$-409]d-mmm-yy'))])
+      .toEqual(['', '2026-07-19', '', '2026-07-19']);
+  });
+
+  it('la piscina de origen con letras («902ch», plantilla de julio) se sube tal cual, y se dice una vez', () => {
+    const l = leer(hoja({ filas: [{ ...R815, 'Psc. Orig': S('902 ch') }, { ...R810, Piscina: N(811), 'Psc. Orig': S('903ch') }] }));
+    expect(l.avisos.filter((a) => a.includes('con letras'))).toEqual(['2 piscina(s) traen la piscina de origen con letras junto al número (815: 902 ch, 811: 903ch): se sube tal cual.']);
+    expect(unaFila(hoja({ filas: [{ ...R815, 'Psc. Orig': S('902 ch') }] }))[col('Piscina origen')]).toBe('902ch');
+  });
+
+  it('cortesRepetidos: dos hojas elegidas con la misma fecha de corte se pisarían', () => {
+    expect(cortesRepetidos([{ fechaCorte: '2026-07-19' }, { fechaCorte: '2026-07-26' }, { fechaCorte: '2026-07-19' }, { fechaCorte: '' }])).toEqual(['2026-07-19']);
+    expect(cortesRepetidos([{ fechaCorte: '2026-07-19' }, { fechaCorte: '2026-07-26' }])).toEqual([]);
+  });
+
+  it('letraCol: A, Z, AA, AD', () => {
+    expect([0, 25, 26, 29].map(letraCol)).toEqual(['A', 'Z', 'AA', 'AD']);
   });
 });

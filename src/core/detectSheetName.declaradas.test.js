@@ -46,6 +46,7 @@ import {
 } from '../views/registros/lib/ficha-maduracion-tratamientos.schema.js';
 import { MAD_MORT_SHEET, MAD_MORT_HEADERS } from '../views/registros/lib/ficha-maduracion-mortdesove.schema.js';
 import { MAD_ALIM_SHEET, MAD_ALIM_HEADERS } from '../views/registros/lib/ficha-maduracion-alimentacion.schema.js';
+import { MAD_BS_SHEET, MAD_BS_HEADERS } from '../views/registros/lib/ficha-maduracion-broodstock.schema.js';
 
 /** [nombre real de la pestaña, cabeceras SEGÚN SU MÓDULO] */
 const DECLARADAS = [
@@ -55,17 +56,21 @@ const DECLARADAS = [
   [MAD_TRAT_SHEET, MAD_TRAT_HEADERS],
   [MAD_MORT_SHEET, MAD_MORT_HEADERS],
   [MAD_ALIM_SHEET, MAD_ALIM_HEADERS],
+  [MAD_BS_SHEET, MAD_BS_HEADERS],   // V1 (2026-09-18) · el Control Broodstock
 ];
+/* Broodstock no acaba en «ID»: su llave es POSICIONAL (Fecha de corte · Piscina, las dos primeras), no un id. */
+const SIN_ID = [MAD_BS_SHEET];
 
 /** Una fila con esas cabeceras y valores vacíos: detectSheetName sólo mira las CLAVES. */
 const filaDe = (cabeceras) => Object.fromEntries(cabeceras.map((c) => [c, '']));
 
 describe('detectSheetName · las hojas de Maduración que aún no existen', () => {
   it('el fixture viene de los módulos y no está vacío', () => {
-    expect(DECLARADAS).toHaveLength(6);
+    expect(DECLARADAS).toHaveLength(7);
     for (const [n, cab] of DECLARADAS) {
       expect(cab.length, n + ' sin cabeceras').toBeGreaterThan(0);
-      expect(cab[cab.length - 1], n + ' no acaba en ID').toBe('ID');
+      if (SIN_ID.indexOf(n) === -1) expect(cab[cab.length - 1], n + ' no acaba en ID').toBe('ID');
+      else expect(cab.slice(0, 2), n + ' no empieza por su llave').toEqual(['Fecha de corte', 'Piscina']);
     }
   });
 
@@ -109,5 +114,10 @@ describe('detectSheetName · las hojas de Maduración que aún no existen', () =
 
   it('Tratamientos se sostiene por «Productos RAS»: sin ella se cae', () => {
     expect(detectSheetName([filaDe(MAD_TRAT_HEADERS.filter((h) => h !== 'Productos RAS'))], 0)).not.toBe('Maduracion');
+  });
+
+  it('Broodstock (V1, 2026-09-18) se sostiene por «Pl/g»: sin ella se cae', () => {
+    expect(MAD_BS_HEADERS).toContain('Pl/g');
+    expect(detectSheetName([filaDe(MAD_BS_HEADERS.filter((h) => h !== 'Pl/g'))], 0)).not.toBe('Maduracion');
   });
 });

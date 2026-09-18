@@ -96,7 +96,7 @@ const MAD_FICHAS    = ["salas","tanques"];
    de las GRILLAS por día (su render, su commit al cambiar de pestaña): lo suyo vive en larv4_mad_loc_<ficha> (ver
    _madLocEnviar). Van aquí arriba porque updateDots y updateSyncUI las leen, y un const declarado más abajo aún no
    existiría si se llamaran antes. */
-const MAD_LOC_FICHAS = ["ingreso","movimientos","desoves","mortdes","fin","tratamientos","alimentacion"];
+const MAD_LOC_FICHAS = ["ingreso","movimientos","desoves","mortdes","fin","tratamientos","alimentacion","broodstock"];
 const MAD_LOC_PRE    = "larv4_mad_loc_";
 const MAD_LOC_MAX    = 30;
 // ⚠ Sala 4A y 4B se RETIRARON el 2026-09-08 (quedaron disueltas). Se midió antes:
@@ -2566,7 +2566,8 @@ const STANDARD_TABS = [...FICHAS,"desinfeccion","fotos","historial","blanco"];
 // no saben qué lote, piscina ni código genético corresponde a cada tanque.
 // ⚠ NO entra en MAD_FICHAS: no es una grilla por día con CRUD local, es un formulario
 // de evento, como «reproductivo».
-const MAD_TABS      = ["ingreso","saldo","movimientos","salas","tanques","desoves","mortdes","fin","tratamientos","alimentacion","reproductivo","fotos"];
+// V1 (2026-09-18) · «broodstock» va antes que «reproductivo»: es su aguas arriba (las hembras salen de esas piscinas).
+const MAD_TABS      = ["ingreso","saldo","movimientos","salas","tanques","desoves","mortdes","fin","tratamientos","alimentacion","broodstock","reproductivo","fotos"];
 // Tabs del módulo Biomol — form + historial inline + fotos
 const BIO_TABS      = ["biomol","fotos"];
 // Tabs del módulo As Técnico — form de supervisión + registro de mareas + fotos
@@ -2591,6 +2592,7 @@ const TAB_META = {
   fin:      ["🏁","Fin de Ciclo"],
   tratamientos: ["🧪","Tratamientos"],
   alimentacion: ["🍤","Alimentación"],
+  broodstock: ["📈","Broodstock"],
   ingreso:  ["📥","Ingreso"],
   saldo:    ["⚖️","Saldo"],
   movimientos: ["🔄","Movimientos"],
@@ -2666,6 +2668,7 @@ function selTab(t){
   if(t==="fin") renderMadFinCiclo();
   if(t==="tratamientos") renderMadTratamientos();
   if(t==="alimentacion") renderMadAlimentacion();
+  if(t==="broodstock") renderMadBroodstock();
   if(t==="reproductivo") renderMadReproductivo();
   if(t==="biomol") renderBiomol();
   if(t==="ast")    renderAst();
@@ -7789,8 +7792,10 @@ async function _madIngGasAlDia(url){
    error previsible y el aviso no era el mismo que el de sus cuatro hermanas. Al añadir una hoja
    nueva, esta lista se toca en el mismo cambio.
    R2 (2026-09-17) · y TANQUES, que no es hoja nueva pero cambió de LLAVE con el parte de mortalidad: un GAS
-   anterior la llavea sin Hora ni Parte y funde las rondas del día (ver _madTanquesEnviar). */
-function _madHojaPideGasNuevo(hoja){ if(hoja === MAD_SHEET.tanques) return true; return hoja === MAD_ING_SHEET || hoja === MAD_DESOVE_SHEET || hoja === MAD_FIN_SHEET || hoja === MAD_TRAT_SHEET || hoja === MAD_MORT_SHEET || hoja === MAD_ALIM_SHEET; }
+   anterior la llavea sin Hora ni Parte y funde las rondas del día (ver _madTanquesEnviar).
+   V1 (2026-09-18) · y BROODSTOCK, hoja nueva cuya ruta (reemplazo por Fecha de corte · Piscina) es de R1: un GAS anterior
+   la escribiría por el camino genérico, con otra llave. Va como guarda propia, fuera de la disyunción que anclan los bancos. */
+function _madHojaPideGasNuevo(hoja){ if(hoja === MAD_SHEET.tanques) return true; if(hoja === MAD_BS_SHEET) return true; return hoja === MAD_ING_SHEET || hoja === MAD_DESOVE_SHEET || hoja === MAD_FIN_SHEET || hoja === MAD_TRAT_SHEET || hoja === MAD_MORT_SHEET || hoja === MAD_ALIM_SHEET; }
 /* ⚠ 2026-09-16 · el aviso ya no dice «es anterior»: desde que se compara el SELLO, el GAS
    desplegado puede ser anterior O posterior al de esta app, y las dos cosas son igual de malas
    para una hoja que se escribe por posición. Lo que importa —y lo que el técnico puede hacer— es
@@ -7845,6 +7850,7 @@ function _madLogReconciliar(ficha, keys){
     : ficha==="tratamientos" ? [madTratLogLeer, madTratLogGuardar, madTratLogHTML, "mt-log"]
     : ficha==="mortdes" ? [madMortLogLeer, madMortLogGuardar, madMortLogHTML, "mm-log"]
     : ficha==="alimentacion" ? [madAlimLogLeer, madAlimLogGuardar, madAlimLogHTML, "ma-log"]
+    : ficha==="broodstock" ? [madBsLogLeer, madBsLogGuardar, madBsLogHTML, "mb-log"]
     : null;
   if(!f) return false;
   const ids=(keys||[]).map(String), l=f[0]();
@@ -7897,6 +7903,9 @@ function _madLocCfg(ficha){
   if(ficha==="alimentacion") return { sello:true, cab:function(){ return MAD_ALIM_HEADERS; }, hoja:MAD_ALIM_SHEET, loc:"ma-loc", log:"ma-log", html:madAlimLogHTML, error:"No se pudo registrar la alimentación",
     anota:function(e, st){ madAlimLogAnota(e.fecha, e.filas, st, e.id); }, alEnviar:function(e){ _madAlimAgendaEnviada(e.info.salas||[]); },
     resumen:function(e){ return (e.info.salas||[]).join(", "); } };
+  // V1 (2026-09-18) · un envío por SEMANA (fecha de corte); el resumen dice de qué hoja del Excel salió.
+  if(ficha==="broodstock") return { sello:true, cab:function(){ return MAD_BS_HEADERS; }, hoja:MAD_BS_SHEET, loc:"mb-loc", log:"mb-log", html:madBsLogHTML, error:"No se pudo subir el Control Broodstock",
+    anota:function(e, st){ madBsLogAnota(e.fecha, e.filas, st, e.id); }, resumen:function(e){ return e.info && e.info.hoja ? "«"+e.info.hoja+"»" : ""; } };
   return null;
 }
 /* 💾 guarda el PAYLOAD con SUS cabeceras, y la hoja puede ganar columnas DESPUÉS: a Inf. Supervisor le pasó con PE1.5
@@ -11015,6 +11024,484 @@ function renderMadAlimentacion(){
     +   '<div id="ma-log">'+madAlimLogHTML()+'</div>'
     + '</div></div>';
   madAlimPintarSalas();
+}
+
+// ── Maduración · CONTROL BROODSTOCK: la carga SEMANAL del Excel del área (V1, 2026-09-18, usuario) ──
+// Copia inline de `ficha-maduracion-broodstock.schema.js` —el MODELO y el LECTOR de la hoja que da SheetJS—, porque
+// los monolitos de Music no tienen módulos. La paridad la ata ficha-maduracion-broodstock.paridad.test.js.
+// Es la ÚNICA ficha de CARGA MASIVA: no se teclea nada; se elige el archivo, se revisa y se sube.
+const MAD_BS_SHEET = "Maduración Broodstock";
+const MAD_BS_FASES = ["Precría","Engorde","Pre-reproductor"];
+function _madBsPlano(s){ return sanitizeStr(s, 60).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[\s._-]+/g, ""); }
+function madBsFaseCanonica(v){
+  const p=_madBsPlano(v);
+  for(let i=0;i<MAD_BS_FASES.length;i++) if(_madBsPlano(MAD_BS_FASES[i])===p) return MAD_BS_FASES[i];
+  return "";
+}
+function madBsNormPiscina(v){ return sanitizeStr(v, 20).replace(/\s+/g, ""); }
+function madBsNormCodigo(v){ return sanitizeStr(v, 60).toUpperCase().replace(/\s+/g, ""); }
+/* ⚠⚠ Todo el texto tiene que ser el número: parseFloat("130.pl") da 130, y así las Pl/g de la precría entrarían
+   como 130 GRAMOS de peso de siembra (ver el módulo). */
+function _madBsNum(v){
+  if(v===""||v===null||v===undefined) return "";
+  if(typeof v==="number") return Number.isFinite(v) ? v : "";
+  const s=String(v).trim().replace(",", ".");
+  return /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : "";
+}
+function _madBsEnt(v){ const n=_madBsNum(v); return n==="" ? "" : Math.trunc(n); }
+function madBsDiaReal(v){
+  const s=sanitizeStr(v, 10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "";
+  const p=s.split("-").map(Number), f=new Date(Date.UTC(p[0], p[1]-1, p[2]));
+  return (f.getUTCFullYear()===p[0] && f.getUTCMonth()===p[1]-1 && f.getUTCDate()===p[2]) ? s : "";
+}
+function madBsDiasEntre(a, b){
+  const x=madBsDiaReal(a), y=madBsDiaReal(b);
+  if(!x || !y) return "";
+  return Math.round((Date.parse(y+"T00:00:00Z") - Date.parse(x+"T00:00:00Z")) / 86400000);
+}
+function _madBsR2(n){ return n==="" ? "" : Math.round(n*100)/100; }
+// ⚠ «Fecha de corte» y «Piscina» van PRIMERO: son la llave posicional [0,1]. Los cinco pesos del Excel NO son columnas.
+const MAD_BS_COLUMNS = [
+  { h:"Fecha de corte", k:"fechaCorte", grain:"llave" },
+  { h:"Piscina", k:"piscina", grain:"llave" },
+  { h:"Área (ha)", k:"area", num:true },
+  { h:"Fecha siembra", k:"fechaSiembra" },
+  { h:"Cantidad sembrada", k:"cantidad", num:true },
+  { h:"Densidad (cam/m²)", k:"densidad", num:true, calc:true },
+  { h:"Peso de siembra (g)", k:"pesoSiembra", num:true },
+  { h:"Pl/g", k:"plg", num:true },
+  { h:"Fase actual", k:"fase" },
+  { h:"Peso actual (g)", k:"peso", num:true },
+  { h:"Fecha del peso", k:"fechaPeso" },
+  { h:"Incremento última semana (g)", k:"incremento", num:true, calc:true },
+  { h:"Crecimiento fase actual (g/sem)", k:"crecimiento", num:true, calc:true },
+  { h:"Sobrevivencia estimada (%)", k:"sobrevivencia", num:true },
+  { h:"Días fase 1 (precría)", k:"dias1", num:true },
+  { h:"Días fase 2 (engorde)", k:"dias2", num:true },
+  { h:"Días fase 3 (pre-reproductor)", k:"dias3", num:true },
+  { h:"Edad total (días)", k:"edad", num:true, calc:true },
+  { h:"Piscina origen", k:"piscinaOrigen" },
+  { h:"Camaronera", k:"camaronera" },
+  { h:"Código genético", k:"codigo" },
+  { h:"Observación", k:"observacion" }
+];
+const MAD_BS_HEADERS = MAD_BS_COLUMNS.map(function(c){ return c.h; });
+const MAD_BS_KEY_COLS = [0, 1];
+// Una piscina con sólo su número y su área NO se sube (decisión del usuario): lo que cuenta como dato es la siembra.
+function madBsTieneDatos(p){
+  const x=p||{};
+  return !!(madBsDiaReal(x.fechaSiembra) || _madBsEnt(x.cantidad)!=="" || _madBsNum(x.peso)!=="" || sanitizeStr(x.fase, 60));
+}
+// La fila para la hoja. Lo CALCULADO se recalcula aquí; lo que venga calculado en el archivo no se copia.
+function madBsFila(p, fechaCorte){
+  const x=p||{}, corte=madBsDiaReal(fechaCorte);
+  const area=_madBsNum(x.area), cantidad=_madBsEnt(x.cantidad), peso=_madBsNum(x.peso), pesoSiembra=_madBsNum(x.pesoSiembra);
+  const fase=madBsFaseCanonica(x.fase) || sanitizeStr(x.fase, 60);
+  const dias={ dias1:_madBsEnt(x.dias1), dias2:_madBsEnt(x.dias2), dias3:_madBsEnt(x.dias3) };
+  const enCurso={ "Precría":"dias1", "Engorde":"dias2", "Pre-reproductor":"dias3" }[fase];
+  const propios=madBsDiasEntre(x.fechaSiembra, corte);
+  if(enCurso && propios!=="") dias[enCurso]=propios;
+  const ks=["dias1","dias2","dias3"];
+  const edad=ks.every(function(k){ return dias[k]===""; }) ? "" : ks.reduce(function(a, k){ return a+(dias[k]==="" ? 0 : dias[k]); }, 0);
+  const densidad=(cantidad!=="" && area!=="" && area>0) ? _madBsR2(cantidad/(area*10000)) : "";
+  const dEnCurso=enCurso ? dias[enCurso] : "";
+  const crecimiento=(peso!=="" && pesoSiembra!=="" && dEnCurso!=="" && dEnCurso>0) ? _madBsR2(((peso-pesoSiembra)/dEnCurso)*7) : "";
+  const incremento=(peso!=="" && _madBsNum(x.pesoPrevio)!=="") ? _madBsR2(peso-_madBsNum(x.pesoPrevio)) : "";
+  const valores={
+    fechaCorte:corte, piscina:madBsNormPiscina(x.piscina),
+    area:area, fechaSiembra:madBsDiaReal(x.fechaSiembra), cantidad:cantidad, densidad:densidad,
+    pesoSiembra:pesoSiembra, plg:_madBsNum(x.plg), fase:fase,
+    peso:peso, fechaPeso:madBsDiaReal(x.fechaPeso), incremento:incremento, crecimiento:crecimiento,
+    sobrevivencia:_madBsNum(x.sobrevivencia),
+    dias1:dias.dias1, dias2:dias.dias2, dias3:dias.dias3, edad:edad,
+    piscinaOrigen:madBsNormPiscina(x.piscinaOrigen), camaronera:sanitizeStr(x.camaronera, 60),
+    codigo:madBsNormCodigo(x.codigo), observacion:sanitizeStr(x.observacion, 200)
+  };
+  return MAD_BS_COLUMNS.map(function(c){ return valores[c.k]===undefined ? "" : valores[c.k]; });
+}
+function buildMadBsRows(model){
+  const m=model||{}, corte=madBsDiaReal(m.fechaCorte);
+  if(!corte) return [];
+  return (m.piscinas||[]).filter(function(p){ return madBsNormPiscina((p||{}).piscina) && madBsTieneDatos(p); })
+    .map(function(p){ return madBsFila(p, corte); });
+}
+// Llave posicional (Fecha de corte · Piscina): volver a subir la MISMA semana CORRIGE sus filas en vez de duplicarlas.
+function buildMadBsPayload(model){
+  return { sheetName:MAD_BS_SHEET, headers:MAD_BS_HEADERS.slice(), rows:buildMadBsRows(model), replaceKey:true, keyCols:MAD_BS_KEY_COLS.slice() };
+}
+function madBsValidar(model){
+  const m=model||{}, errores=[], avisos=[], corte=madBsDiaReal(m.fechaCorte);
+  if(!corte) errores.push("La fecha de corte del archivo no es un día real: sin ella no se sabe de qué semana es la carga.");
+  const piscinas=m.piscinas||[];
+  if(!piscinas.length) errores.push("El archivo no trae ninguna piscina.");
+  const conDatos=piscinas.filter(function(p){ return madBsNormPiscina((p||{}).piscina) && madBsTieneDatos(p); });
+  const vacias=piscinas.filter(function(p){ return madBsNormPiscina((p||{}).piscina) && !madBsTieneDatos(p); });
+  if(!conDatos.length && piscinas.length) errores.push("Ninguna piscina del archivo trae datos que subir.");
+  if(vacias.length) avisos.push(vacias.length+" piscina(s) sin datos no se suben ("+vacias.map(function(p){ return madBsNormPiscina(p.piscina); }).join(", ")+"): cuando los tengan, se subirán.");
+  // ⚠⚠ La misma piscina dos veces es ERROR: la segunda pisaría a la primera sin un solo síntoma.
+  const vistas=new Set();
+  conDatos.forEach(function(p){
+    const id=madBsNormPiscina(p.piscina);
+    if(vistas.has(id)) errores.push("La piscina "+id+" aparece dos veces en el archivo: la segunda pisaría a la primera.");
+    vistas.add(id);
+  });
+  conDatos.forEach(function(p){
+    const id=madBsNormPiscina(p.piscina), cruda=sanitizeStr(p.fase, 60);
+    if(cruda && !madBsFaseCanonica(cruda)) avisos.push("La piscina "+id+" trae la fase «"+cruda+"», que no es ninguna de las tres ("+MAD_BS_FASES.join(", ")+"): se sube tal cual.");
+    if(sanitizeStr(p.fechaSiembra, 10) && !madBsDiaReal(p.fechaSiembra)) avisos.push("La piscina "+id+" trae una fecha de siembra que no es un día real: se sube vacía.");
+    const fp=madBsDiaReal(p.fechaPeso);
+    if(fp && corte && fp>corte) avisos.push("La piscina "+id+" tiene el peso fechado el "+fp+", DESPUÉS del corte ("+corte+"): revísalo en la hoja.");
+    if(fp && madBsDiaReal(p.fechaSiembra) && fp<madBsDiaReal(p.fechaSiembra)) avisos.push("La piscina "+id+" tiene el peso fechado ANTES de su siembra: revísalo en la hoja.");
+    const s=_madBsNum(p.sobrevivencia);
+    if(s!=="" && (s<0 || s>100)) avisos.push("La piscina "+id+" trae una sobrevivencia de "+s+": fuera de 0-100.");
+    else if(s!=="" && s>0 && s<1) avisos.push("La piscina "+id+" trae una sobrevivencia de "+s+": parece una fracción sin convertir (¿"+_madBsR2(s*100)+" %?).");
+  });
+  return { errores:errores, avisos:avisos };
+}
+/* EL LECTOR · de la hoja de SheetJS (`XLSX.read(datos, { cellNF:true })`, sin cellDates) al modelo. Se lee POR
+   CABECERA, no por posición: la plantilla de julio no tiene «Camaronera» y la de septiembre sí, y por posición el
+   código genético acabaría en «Camaronera» sin un solo error. Las fechas, del SERIAL de Excel (el día y nada más).
+   Ver el módulo para el porqué de cada regla. */
+const MAD_BS_CABECERAS = [
+  { k:"piscina", es:function(h){ return h==="piscina"; }, obligatoria:true },
+  { k:"area", es:function(h){ return h.startsWith("area"); }, obligatoria:true },
+  { k:"fechaSiembra", es:function(h){ return h==="fechasiembra"; }, obligatoria:true },
+  { k:"cantidad", es:function(h){ return h.startsWith("cantidad"); }, obligatoria:true },
+  { k:"densidad", es:function(h){ return h.startsWith("densidad"); }, calculada:true },
+  { k:"pesoSiembra", es:function(h){ return h.startsWith("pesodesiembra") || h.startsWith("pesosiembra"); }, obligatoria:true },
+  { k:"fase", es:function(h){ return h.startsWith("fase"); }, obligatoria:true },
+  { k:"pesos", es:function(h){ return h==="pesos"; }, obligatoria:true },
+  { k:"incremento", es:function(h){ return h.startsWith("inc"); }, calculada:true },
+  { k:"crecimiento", es:function(h){ return h.startsWith("crecimiento"); }, calculada:true },
+  { k:"sobrevivencia", es:function(h){ return h.startsWith("sobrev"); }, obligatoria:true },
+  { k:"dias1", es:function(h){ return h.startsWith("dias") && h.includes("fase1"); } },
+  { k:"dias2", es:function(h){ return h.startsWith("dias") && h.includes("fase2"); } },
+  { k:"dias3", es:function(h){ return h.startsWith("dias") && h.includes("fase3"); } },
+  { k:"edad", es:function(h){ return h.startsWith("edad"); }, calculada:true },
+  { k:"piscinaOrigen", es:function(h){ return h.startsWith("pscorig") || h.startsWith("piscinaorig"); } },
+  { k:"camaronera", es:function(h){ return h==="camaronera"; } },
+  { k:"codigo", es:function(h){ return h.startsWith("codigo"); }, obligatoria:true },
+  { k:"observacion", es:function(h){ return h.startsWith("observ"); } }
+];
+function _madBsPlanoCab(v){ return String(v===null || v===undefined ? "" : v).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, ""); }
+function madBsLetraCol(c){
+  let s="";
+  for(let n=c+1; n>0; n=Math.floor((n-1)/26)) s=String.fromCharCode(65+((n-1)%26))+s;
+  return s;
+}
+function _madBsLimites(ws){
+  const m=/:?([A-Z]+)(\d+)$/.exec(String((ws && ws["!ref"]) || ""));
+  if(!m) return { c:-1, r:0 };
+  return { c:m[1].split("").reduce(function(a, ch){ return a*26+ch.charCodeAt(0)-64; }, 0)-1, r:Number(m[2]) };
+}
+function _madBsCelda(ws, c, r){ return (ws && ws[madBsLetraCol(c)+r]) || null; }
+function _madBsVacia(x){ return !x || x.v===null || x.v===undefined || String(x.v).trim()===""; }
+function _madBsTexto(x){ return _madBsVacia(x) ? "" : String(x.v).trim(); }
+// ¿Formato de fecha? Lleva «d» o «y» FUERA de los literales entre comillas y de los corchetes ([Red], [$-409]).
+function _madBsEsFormatoFecha(z){
+  const sinTexto=String(z||"").split('"').filter(function(_, i){ return i%2===0; }).join("");
+  return /[dy]/i.test(sinTexto.replace(/\[[^\]]*\]/g, ""));
+}
+function madBsDiaDeCelda(x, f1904, seguro){
+  if(_madBsVacia(x)) return "";
+  const v=x.v;
+  if(v instanceof Date){
+    if(isNaN(v.getTime())) return "";
+    return madBsDiaReal(v.getFullYear()+"-"+String(v.getMonth()+1).padStart(2, "0")+"-"+String(v.getDate()).padStart(2, "0"));
+  }
+  if(typeof v==="number"){
+    if(!Number.isFinite(v) || v<1 || !(_madBsEsFormatoFecha(x.z) || seguro)) return "";
+    const d=new Date((Math.floor(v)-(f1904 ? 24107 : 25569))*86400000);
+    return madBsDiaReal(d.toISOString().slice(0, 10));
+  }
+  const s=String(v).trim();
+  let m=/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/.exec(s);
+  if(m) return madBsDiaReal((m[3].length===2 ? "20"+m[3] : m[3])+"-"+m[2].padStart(2, "0")+"-"+m[1].padStart(2, "0"));
+  m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  return m ? madBsDiaReal(m[1]+"-"+m[2]+"-"+m[3]) : "";
+}
+// La sobrevivencia viene en FRACCIÓN con formato de % (0,95 → «95%»): ahí se multiplica.
+function _madBsSobrevivencia(x){
+  if(_madBsVacia(x)) return "";
+  if(typeof x.v==="number") return (/%/.test(String(x.z||"")) || /%\s*$/.test(String(x.w||""))) ? Math.round(x.v*10000)/100 : x.v;
+  const m=/^(-?\d+(?:[.,]\d+)?)\s*%$/.exec(String(x.v).trim());
+  return m ? Number(m[1].replace(",", ".")) : String(x.v).trim();
+}
+const _MAD_BS_PLG = /^(\d+(?:[.,]\d+)?)\s*\.?\s*pl(?:\s*\/\s*g)?\.?$/i;
+function madBsLeerHoja(ws, opts){
+  const f1904=!!(opts && opts.fecha1904), errores=[], avisos=[], notas=[], lim=_madBsLimites(ws);
+  let fc=0;
+  for(let r=1; r<=Math.min(lim.r, 20) && !fc; r++) if(_madBsPlanoCab(_madBsTexto(_madBsCelda(ws, 0, r)))==="piscina") fc=r;
+  if(!fc) return { esBroodstock:false, fechaCorte:"", piscinas:[], notas:notas, avisos:avisos, errores:["No se encuentra la fila de cabecera («Piscina» en la columna A): no parece un Control Broodstock."] };
+  let fechaCorte="";
+  for(let r=1; r<fc && !fechaCorte; r++) fechaCorte=madBsDiaDeCelda(_madBsCelda(ws, 0, r), f1904, false);
+  if(!fechaCorte) errores.push("No se encuentra la fecha de corte (una fecha en la columna A, encima de la cabecera; en la plantilla, la A3).");
+  const pos={}, desconocidas=[], cabeceras=[];
+  for(let c=0; c<=lim.c; c++){
+    const h=_madBsPlanoCab(_madBsTexto(_madBsCelda(ws, c, fc)));
+    if(!h) continue;
+    cabeceras.push(c);
+    const def=MAD_BS_CABECERAS.find(function(d){ return d.es(h); });
+    if(!def){ desconocidas.push(madBsLetraCol(c)+" («"+_madBsTexto(_madBsCelda(ws, c, fc))+"»)"); continue; }
+    if(pos[def.k]!==undefined){ errores.push("Hay dos columnas que parecen «"+def.k+"» ("+madBsLetraCol(pos[def.k])+" y "+madBsLetraCol(c)+"): no se sabe cuál leer."); continue; }
+    pos[def.k]=c;
+  }
+  MAD_BS_CABECERAS.filter(function(d){ return d.obligatoria && pos[d.k]===undefined; })
+    .forEach(function(d){ errores.push("Falta la columna «"+d.k+"» en la cabecera (fila "+fc+"): no parece un Control Broodstock, o cambió la plantilla."); });
+  if(desconocidas.length) avisos.push("Columnas que no se reconocen y NO se suben: "+desconocidas.join(", ")+".");
+  if(pos.camaronera===undefined && !errores.length) avisos.push("El archivo no trae la columna «Camaronera» (plantilla anterior al 17-sep): se sube vacía.");
+  if(errores.length) return { esBroodstock:true, fechaCorte:fechaCorte, piscinas:[], notas:notas, avisos:avisos, errores:errores };
+  const fin=cabeceras.find(function(c){ return c>pos.pesos; }), bloque=[];
+  for(let c=pos.pesos; c<(fin===undefined ? lim.c+1 : fin); c++) bloque.push(c);
+  const fechas=bloque.map(function(c){ return madBsDiaDeCelda(_madBsCelda(ws, c, fc+1), f1904, true); });
+  if(fechaCorte){
+    bloque.forEach(function(c, i){
+      const esperada=new Date(Date.parse(fechaCorte+"T00:00:00Z")-(bloque.length-1-i)*7*86400000).toISOString().slice(0, 10);
+      const ref=madBsLetraCol(c)+(fc+1);
+      if(!fechas[i]) avisos.push("La fecha de la columna de pesos "+ref+" no es una fecha válida: los pesos de esa semana van sin fecha.");
+      else if(fechas[i]!==esperada){
+        avisos.push(i===bloque.length-1
+          ? "La última columna de pesos ("+ref+") dice "+fechas[i]+" y el corte es "+fechaCorte+": de ahí sale la fecha del peso de cada piscina. Revísala en la hoja."
+          : "La columna de pesos "+ref+" dice "+fechas[i]+" y, contando semanas hacia atrás desde el corte, debería ser "+esperada+". Revísala en la hoja.");
+      }
+    });
+  }
+  const piscinas=[];
+  for(let r=fc+2; r<=lim.r; r++){
+    const x=function(k){ return pos[k]===undefined ? null : _madBsCelda(ws, pos[k], r); };
+    // Sin piscina (o una columna A SIN NINGÚN DÍGITO, como «TOTAL»): no se sube. Si trae TEXTO, es una nota.
+    if(_madBsVacia(x("piscina")) || !/\d/.test(_madBsTexto(x("piscina")))){
+      const dice=[];
+      for(let c=0; c<=lim.c; c++){ const y=_madBsCelda(ws, c, r); if(!_madBsVacia(y) && typeof y.v==="string") dice.push(_madBsTexto(y)); }
+      if(dice.length) notas.push("Fila "+r+": "+dice.join(" · "));
+      continue;
+    }
+    const p={ piscina:_madBsTexto(x("piscina")), fila:r };
+    ["area","cantidad","dias1","dias2","dias3"].forEach(function(k){ p[k]=_madBsVacia(x(k)) ? "" : x(k).v; });
+    ["fase","piscinaOrigen","camaronera","codigo","observacion"].forEach(function(k){ p[k]=_madBsTexto(x(k)); });
+    p.fechaSiembra=madBsDiaDeCelda(x("fechaSiembra"), f1904, true) || _madBsTexto(x("fechaSiembra"));
+    const ps=x("pesoSiembra");
+    const plg=_madBsVacia(ps) || typeof ps.v==="number" ? null : _MAD_BS_PLG.exec(String(ps.v).trim());
+    if(plg){ p.pesoSiembra=""; p.plg=Number(plg[1].replace(",", ".")); }
+    else {
+      p.pesoSiembra=_madBsVacia(ps) ? "" : ps.v;
+      if(!_madBsVacia(ps) && _madBsNum(ps.v)==="") avisos.push("La piscina "+madBsNormPiscina(p.piscina)+" trae en «Peso de siembra» «"+_madBsTexto(ps)+"», que no es un peso ni unas Pl/g: se sube vacío.");
+    }
+    p.sobrevivencia=_madBsSobrevivencia(x("sobrevivencia"));
+    // El último peso con su fecha, y el de la columna de justo antes para el incremento de UNA semana (L − K).
+    const pesos=bloque.map(function(c){ const y=_madBsCelda(ws, c, r), n=_madBsVacia(y) ? "" : _madBsNum(y.v); return n!=="" && n>0 ? n : ""; });
+    let u=pesos.length-1;
+    while(u>=0 && pesos[u]==="") u--;
+    p.peso=u>=0 ? pesos[u] : "";
+    p.fechaPeso=u>=0 ? fechas[u] : "";
+    p.pesoPrevio=u>0 ? pesos[u-1] : "";
+    piscinas.push(p);
+  }
+  const conLetras=piscinas.filter(function(p){ return /[a-z]/i.test(p.piscinaOrigen) && /\d/.test(p.piscinaOrigen); });
+  if(conLetras.length) avisos.push(conLetras.length+" piscina(s) traen la piscina de origen con letras junto al número ("+conLetras.map(function(p){ return madBsNormPiscina(p.piscina)+": "+p.piscinaOrigen; }).join(", ")+"): se sube tal cual.");
+  return { esBroodstock:true, fechaCorte:fechaCorte, piscinas:piscinas, notas:notas, avisos:avisos, errores:errores };
+}
+function madBsLeerLibro(wb){
+  const libro=wb||{}, f1904=!!(libro.Workbook && libro.Workbook.WBProps && libro.Workbook.WBProps.date1904), hojas=[], ignoradas=[];
+  (libro.SheetNames||[]).forEach(function(nombre){
+    const l=madBsLeerHoja((libro.Sheets||{})[nombre], { fecha1904:f1904 });
+    if(l.esBroodstock) hojas.push(Object.assign({ nombre:nombre }, l));
+    else ignoradas.push(nombre);
+  });
+  return { hojas:hojas, ignoradas:ignoradas };
+}
+function madBsCortesRepetidos(hojas){
+  const vistos=new Set(), rep=new Set();
+  (hojas||[]).forEach(function(h){ const f=madBsDiaReal((h||{}).fechaCorte); if(!f) return; if(vistos.has(f)) rep.add(f); vistos.add(f); });
+  return Array.from(rep).sort();
+}
+/* ── La ficha: elegir el archivo, revisar, 💾 / ☁️ ──────────────────────────────────────────────────────────────
+   Un LIBRO puede traer varias semanas (una hoja por semana: el usuario las va añadiendo). Por defecto se marca SÓLO la
+   más reciente: volver a subir las anteriores pisaría lo que se hubiera corregido después en la hoja de Google. Las
+   demás se pueden marcar a mano (para cargar el histórico). No se teclea nada: para corregir, se corrige el Excel y se
+   vuelve a elegir —la MISMA semana subida otra vez reemplaza sus filas (Fecha de corte · Piscina)—. */
+let _madBs = null;   // { archivo, ignoradas, hojas:[{ lectura, elegida }] }
+const MAD_BS_LOG_KEY = "larv4_mad_bs_log";
+function madBsLogLeer(){
+  try{ const v=JSON.parse(localStorage.getItem(MAD_BS_LOG_KEY)||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; }
+}
+function madBsLogGuardar(list){
+  try{ localStorage.setItem(MAD_BS_LOG_KEY, JSON.stringify(list.slice(-40))); }catch(_){}
+}
+function madBsLogAnota(fecha, filas, estado, envioId){
+  const l=madBsLogLeer();
+  l.push({ id:envioId || _madLogEnvioId(), marca:!!envioId, ts:Date.now(), fecha:fecha, filas:filas, estado:estado });
+  madBsLogGuardar(l);
+}
+function madBsLogHTML(){
+  const l=madBsLogLeer();
+  if(!l.length) return "";
+  const enCola=(typeof syncQueueLen==="function") ? syncQueueLen() : 0;
+  const filas=l.slice().reverse().slice(0,10).map(function(e){
+    const st=_madLogEtiqueta(_madLogEstado("broodstock", e, !enCola));
+    const d=new Date(e.ts), cuando=("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+    return '<tr><td>'+escapeHtml(String(e.fecha||""))+'</td><td>'+cuando+'</td><td style="text-align:right">'+(e.filas||0)+'</td><td>'+st+'</td></tr>';
+  }).join("");
+  return '<div style="margin-top:18px"><h3 style="margin:0 0 4px;font-size:13px">Subido desde este dispositivo</h3>'
+    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Semana (corte)</th><th>Subido</th><th>Piscinas</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div></div>';
+}
+function renderMadBroodstock(){
+  const fp=document.getElementById("fp-broodstock"); if(!fp) return;
+  if(fp.querySelector("#mb-archivo")){ madBsPintar(); return; }
+  fp.innerHTML='<div class="fc">'
+    + '<div class="fc-h"><div class="fc-t">📈 Maduración · Control Broodstock</div></div>'
+    + '<div class="fc-b">'
+    +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
+    +     '<span style="font-size:16px">ℹ️</span><span>Carga <b>semanal</b> del Excel del área de Broodstock. Elige el archivo: se lee cada hoja (una por semana), se recalculan densidad, días, edad, incremento y crecimiento, y se enseña lo que se subiría con sus avisos. No se teclea nada: para corregir, corrige el Excel y vuelve a elegirlo — subir otra vez la <b>misma semana</b> reemplaza sus filas.</span>'
+    +   '</div>'
+    +   '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'
+    +     '<label class="btn" style="cursor:pointer;font-weight:700">📂 Elegir archivo<input type="file" id="mb-archivo" accept=".xlsx,.xlsm,.xls" style="display:none" onchange="madBsArchivo(this)"></label>'
+    +     '<span id="mb-nombre" style="font-size:12px;color:#64748b">Ningún archivo cargado.</span>'
+    +   '</div>'
+    +   '<div id="mb-hojas"></div>'
+    +   '<div id="mb-report" style="margin-top:8px"></div>'
+    +   '<div id="mb-prev"></div>'
+    +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
+    +     '<button class="btn" type="button" onclick="madBsGuardarLocal()" title="Guarda en este dispositivo, sin enviarlo a Google Sheets">💾 Guardar local</button>'
+    +     '<button class="btn" type="button" style="font-weight:700" onclick="madBsGuardar()">☁️ Guardar y sincronizar</button>'
+    +     '<button class="btn" type="button" onclick="madBsVaciar()">🧹 Vaciar</button>'
+    +   '</div>'
+    +   '<div id="mb-loc">'+_madLocHTML("broodstock")+'</div>'
+    +   '<div id="mb-log">'+madBsLogHTML()+'</div>'
+    + '</div></div>';
+  madBsPintar();
+}
+async function madBsArchivo(inp){
+  const f=inp && inp.files && inp.files[0];
+  if(!f) return;
+  try{
+    if(!window.XLSX || typeof window.XLSX.read!=="function"){ toast("No se puede leer el Excel: falta la librería SheetJS en esta página.","err",7000); return; }
+    let wb=null;
+    try{ wb=window.XLSX.read(await f.arrayBuffer(), { type:"array", cellNF:true }); }
+    catch(_){ toast("No se pudo abrir «"+String(f.name||"")+"»: no parece un Excel válido.","err",7000); return; }
+    madBsCargarLibro(wb, f.name);
+  }finally{
+    try{ inp.value=""; }catch(_){}   // para poder volver a elegir EL MISMO archivo ya corregido
+  }
+}
+function madBsCargarLibro(wb, nombre){
+  const l=madBsLeerLibro(wb);
+  let ultima=-1;
+  l.hojas.forEach(function(h, i){ if(h.fechaCorte && (ultima<0 || h.fechaCorte>l.hojas[ultima].fechaCorte)) ultima=i; });
+  _madBs={ archivo:String(nombre||"archivo"), ignoradas:l.ignoradas, hojas:l.hojas.map(function(h, i){ return { lectura:h, elegida:i===ultima }; }) };
+  madBsPintar();
+}
+function madBsElegir(i, on){
+  if(!_madBs || !_madBs.hojas[i]) return;
+  _madBs.hojas[i].elegida=!!on;
+  madBsPintar();
+}
+function _madBsElegidas(){ return _madBs ? _madBs.hojas.filter(function(h){ return h.elegida; }) : []; }
+/* Los errores y avisos de lo MARCADO, semana a semana, y los que cruzan semanas. */
+function _madBsRevision(){
+  const hs=_madBsElegidas(), errores=[], avisos=[];
+  if(!_madBs) return { errores:errores, avisos:avisos };
+  if(!_madBs.hojas.length) errores.push("El archivo no trae ninguna hoja con la forma del Control Broodstock («Piscina» en la columna A).");
+  else if(!hs.length) errores.push("Marca al menos una semana para subir.");
+  madBsCortesRepetidos(hs.map(function(h){ return h.lectura; })).forEach(function(f){
+    errores.push("Hay dos hojas marcadas con el mismo corte ("+f+"): la segunda pisaría a la primera. Deja marcada sólo una.");
+  });
+  hs.forEach(function(h){
+    const L=h.lectura, v=madBsValidar(L), et="«"+String(L.nombre).trim()+"» ("+(L.fechaCorte||"sin corte")+"): ";
+    L.errores.concat(v.errores).forEach(function(e){ errores.push(et+e); });
+    L.avisos.concat(v.avisos).forEach(function(a){ avisos.push(et+a); });
+  });
+  return { errores:errores, avisos:avisos };
+}
+function _madBsCaja(titulo, lista, bg, bd, fg){
+  if(!lista.length) return "";
+  return '<div style="background:'+bg+';border:1.5px solid '+bd+';border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:'+fg+'">'
+    + '<b>'+escapeHtml(titulo)+'</b><ul style="margin:4px 0 0 18px;padding:0">'+lista.map(function(x){ return '<li>'+escapeHtml(x)+'</li>'; }).join("")+'</ul></div>';
+}
+function madBsPintar(){
+  const nom=document.getElementById("mb-nombre"), hs=document.getElementById("mb-hojas"), rep=document.getElementById("mb-report"), prev=document.getElementById("mb-prev");
+  if(!nom || !hs || !rep || !prev) return;
+  if(!_madBs){ nom.textContent="Ningún archivo cargado."; hs.innerHTML=""; rep.innerHTML=""; prev.innerHTML=""; return; }
+  nom.textContent=_madBs.archivo+" · "+_madBs.hojas.length+" semana(s)"+(_madBs.ignoradas.length ? " · "+_madBs.ignoradas.length+" hoja(s) que no son de Broodstock" : "");
+  hs.innerHTML=_madBs.hojas.map(function(h, i){
+    const L=h.lectura, con=buildMadBsRows(L).length;
+    return '<label style="display:block;font-size:12px;margin:2px 0"><input type="checkbox" class="mb-hoja" data-i="'+i+'"'+(h.elegida ? " checked" : "")+' onchange="madBsElegir(Number(this.dataset.i), this.checked)"> '
+      + '<b>«'+escapeHtml(String(L.nombre).trim())+'»</b> · corte '+escapeHtml(L.fechaCorte||"—")+' · '+con+' piscina(s) con datos'
+      + (L.errores.length ? ' · <span style="color:#991b1b">⛔ '+L.errores.length+' error(es)</span>' : '')+'</label>';
+  }).join("");
+  const r=_madBsRevision(), notas=[];
+  _madBsElegidas().forEach(function(h){ h.lectura.notas.forEach(function(n){ notas.push("«"+String(h.lectura.nombre).trim()+"» · "+n); }); });
+  rep.innerHTML=_madBsCaja("⛔ No se puede subir así:", r.errores, "#fef2f2", "#fecaca", "#991b1b")
+    + _madBsCaja("⚠ Avisos (se puede subir; revísalos):", r.avisos, "#fffbeb", "#fde68a", "#92400e")
+    + (notas.length ? '<details style="font-size:12px;margin-bottom:8px"'+(notas.length<=3 ? " open" : "")+'><summary>📝 Texto fuera de la tabla, que NO se sube ('+notas.length+')</summary><ul style="margin:4px 0 0 18px;padding:0">'
+      + notas.map(function(n){ return '<li>'+escapeHtml(n)+'</li>'; }).join("")+'</ul></details>' : "");
+  // La vista previa enseña lo que decide una carga; las demás columnas van igual a la hoja.
+  const H=MAD_BS_HEADERS, cols=["Piscina","Fase actual","Fecha siembra","Cantidad sembrada","Densidad (cam/m²)","Pl/g","Peso actual (g)","Fecha del peso",
+    "Incremento última semana (g)","Crecimiento fase actual (g/sem)","Sobrevivencia estimada (%)","Edad total (días)","Código genético"];
+  prev.innerHTML=_madBsElegidas().map(function(h){
+    const filas=buildMadBsRows(h.lectura);
+    if(!filas.length) return "";
+    return '<h3 style="margin:10px 0 4px;font-size:13px">Semana del '+escapeHtml(h.lectura.fechaCorte)+' · '+filas.length+' piscina(s)</h3>'
+      + '<div class="tw"><table class="ft mb-prev" style="font-size:11px"><thead><tr>'+cols.map(function(c){ return '<th>'+escapeHtml(c)+'</th>'; }).join("")+'</tr></thead><tbody>'
+      + filas.map(function(f){ return '<tr>'+cols.map(function(c){ const v=f[H.indexOf(c)]; return '<td>'+escapeHtml(v===""||v===null||v===undefined ? "—" : String(v))+'</td>'; }).join("")+'</tr>'; }).join("")
+      + '</tbody></table></div>';
+  }).join("");
+}
+/* Lo que 💾 y ☁️ comparten: revisar lo marcado y construir un envío por semana. null si hay errores (ya se pintaron). */
+function _madBsPreparar(conGuardados){
+  if(!_madBs){
+    if(conGuardados) return { envios:[] };
+    toast("Elige primero el archivo del Control Broodstock.","warn",4000); return null;
+  }
+  const r=_madBsRevision();
+  if(r.errores.length){ madBsPintar(); toast("Corrige los errores antes de guardar.","err",4000); return null; }
+  const envios=_madBsElegidas().map(function(h){ return { corte:h.lectura.fechaCorte, hoja:String(h.lectura.nombre).trim(), payload:buildMadBsPayload(h.lectura) }; })
+    .filter(function(x){ return x.payload.rows.length; });
+  return { envios:envios };
+}
+function madBsGuardarLocal(){
+  const p=_madBsPreparar(); if(!p) return;
+  if(!p.envios.length){ toast("No hay piscinas con datos que guardar.","warn",4000); return; }
+  let n=0;
+  p.envios.forEach(function(x){ if(_madLocAnotar("broodstock", x.payload, x.corte, { hoja:x.hoja })) n++; });
+  if(!n) return;
+  _madBs=null; madBsPintar();
+  _madLocGuardado("broodstock");
+}
+async function madBsGuardar(){
+  const _loc=madLocLeer("broodstock").length;
+  const p=_madBsPreparar(_loc>0); if(!p) return;
+  if(!p.envios.length && !_loc){ toast("No hay piscinas con datos que subir.","warn",4000); return; }
+  /* Sólo al GAS DE ESTA APP (su sello): la ruta de Broodstock —reemplazo por Fecha de corte · Piscina— es de R1, y un
+     GAS anterior la escribiría por el camino genérico, en otra llave. */
+  const _gas=await _madIngGasAlDia();
+  if(_gas === false){
+    const aviso="No se subió: "+_madGasViejoMsg(MAD_BS_SHEET)+". Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a subir; lo cargado sigue aquí.";
+    const box=document.getElementById("mb-report");
+    if(box) box.innerHTML='<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:12px;color:#991b1b;margin-bottom:8px">'+escapeHtml(aviso)+'</div>'+box.innerHTML;
+    toast(aviso,"err",10000);
+    return;
+  }
+  if(_loc && (await _madLocEnviar("broodstock", _gas)).fallo) return;
+  if(!p.envios.length) return;
+  let ok=0, cola=0, malo=null;
+  for(let i=0; i<p.envios.length; i++){
+    const x=p.envios[i], _envio=_madLogEnvioId(), _t={ mark:_madLogMarca("broodstock", _envio), silencioso:i>0 };
+    toast("Subiendo la semana del "+x.corte+" · "+x.payload.rows.length+" piscina(s)…","info",2200);
+    const enviado=await _madPostConSello(x.payload, _gas, _t);
+    // ⚠ `postPayload` devuelve false TAMBIÉN cuando el envío quedó ENCOLADO (invariante H1): eso ya va en camino.
+    if(enviado || _t.outcome==="queued"){ madBsLogAnota(x.corte, x.payload.rows.length, enviado ? "ok" : "cola", _envio); if(enviado) ok++; else cola++; }
+    else { malo=_t; break; }
+  }
+  const lg=document.getElementById("mb-log"); if(lg) lg.innerHTML=madBsLogHTML();
+  if(malo){ _syncNotOkUI(malo.outcome, "No se pudo subir el Control Broodstock", null, malo.gasMessage); return; }
+  _madBs=null; madBsPintar();
+  if(ok && !cola) toast("✅ Control Broodstock subido · "+ok+" semana(s)","ok",5000);
+}
+function madBsVaciar(){
+  if(_madBs && !confirm("¿Quitar el archivo cargado?\nLo que no hayas subido ni guardado con 💾 se descarta (el Excel sigue en tu equipo).")) return;
+  _madBs=null; madBsPintar();
 }
 
 // ── Maduración · Registro reproductivo (desoves/mortalidades por lote de Trovan) ──
