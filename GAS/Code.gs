@@ -21,7 +21,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "442353dacc35";
+const GAS_VERSION = "05e04bbf9723";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -297,6 +297,11 @@ function doPost(e) {
                || payload.sheetName === "Maduración Tratamientos"
                || payload.sheetName === "Maduración Mortalidad Desove"
                || payload.sheetName === "Maduración Alimentación";
+    // Control Broodstock (R1, 2026-09-17): la carga SEMANAL es una FOTO del área, una fila por (Fecha de corte ·
+    // Piscina). Hasta este cambio la hoja estaba en ALLOWED y en la firma pero NINGUNA rama la enrutaba: caía al
+    // upsert de «Datos Larvicultura» (llave Fecha · Área · Fecha siembra, tope de 30 filas), que fundía dos
+    // piscinas de la misma área sembradas el mismo día. Ver su rama más abajo.
+    var isBrood = payload.sheetName === "Maduración Broodstock";
     // Columna Trovan ID (0-indexed) por hoja: se fuerza a formato TEXTO ("@") al
     // escribir, así Sheets NO reinterpreta el código como notación científica ni
     // le quita ceros a la izquierda (es un identificador, no un número).
@@ -313,6 +318,7 @@ function doPost(e) {
     var limits  = isAlgas  ? LIMITS.algas
                 : isMad    ? LIMITS.mad
                 : isMadId  ? LIMITS.mad
+                : isBrood  ? LIMITS.mad
                 : isBiomol ? LIMITS.biomol
                 : isAst    ? LIMITS.ast
                 : isTras   ? LIMITS.tras
@@ -443,6 +449,7 @@ function doPost(e) {
     //   • BIOMOL: APPEND puro — cada registro de diagnóstico es independiente.
     //   • Registro_Supervisión (AsT): UPSERT por columna ID estable — al editar
     //     y re-sincronizar un registro, su fila se REEMPLAZA (no se duplica).
+    //   • Maduración Broodstock: REEMPLAZO por (Fecha de corte · Piscina), con la llave fijada aquí.
     //   • Datos / Control: UPSERT estándar (Fecha+Módulo+Tanque[+Hora]).
     var result;
     if (isMad) {
@@ -492,6 +499,19 @@ function doPost(e) {
     // Las tres de Maduración van con MERGE (3.er argumento), al revés que AsT y
     // Traslado: ver la cabecera de upsertAstRows para el porqué.
     else if (isMadId)  result = upsertAstRows(ws, rows, true);
+    // Control Broodstock (R1, 2026-09-17): REEMPLAZO por (Fecha de corte · Piscina), no merge. La carga es la foto
+    // de la semana, así que volver a subirla CORRIGE cada piscina entera —también una celda que ahora va vacía, que
+    // un merge conservaría— y deja en paz las demás piscinas y las demás semanas.
+    // 🔑 La llave la fija ESTE servidor, [0,1]: el cliente manda la suya en payload.keyCols, pero una llave que
+    //   viene de fuera es justo lo que D9 enseñó a no creer.
+    // La Piscina (columna 2) va como TEXTO antes de escribir, por lo mismo que D2 en Desoves: Sheets convierte lo
+    // que parece un número, y una piscina «0553» guardada como 553 ya no casaría al re-subir la semana.
+    else if (isBrood) {
+      var _filasBs = lastRow(ws) + rows.length;
+      if (_filasBs > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasBs - ws.getMaxRows());
+      if (ws.getMaxRows() > 1) ws.getRange(2, 2, ws.getMaxRows() - 1, 1).setNumberFormat("@");
+      result = replaceByKeyRows(ws, rows, [0, 1]);
+    }
     // Registro_Desinfección: upsert por clave compuesta Fecha+Módulo+Tipo de
     // Registro+Categoría+Elemento → re-sincronizar no duplica; editar Estado /
     // Observaciones / Fecha Elemento actualiza la misma fila.

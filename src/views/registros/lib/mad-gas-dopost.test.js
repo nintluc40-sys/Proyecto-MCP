@@ -44,7 +44,7 @@ import { MAD_FIN_HEADERS, buildFinRows } from './ficha-maduracion-fin-ciclo.sche
 import { MAD_TRAT_HEADERS } from './ficha-maduracion-tratamientos.schema.js';
 import { MAD_MORT_HEADERS } from './ficha-maduracion-mortdesove.schema.js';
 import { MAD_ALIM_HEADERS } from './ficha-maduracion-alimentacion.schema.js';
-import { MAD_BS_HEADERS as BS_HEADERS } from './ficha-maduracion-broodstock.schema.js';
+import { MAD_BS_HEADERS as BS_HEADERS, buildBroodstockRows } from './ficha-maduracion-broodstock.schema.js';
 import { REPRO_MATRIZ_HEADERS, REPRO_EVENTO, REPRO_TRANSFER_TIPO, buildAltaBatch, buildEventBatch, buildTransferBatch, matrixIndexFromRows } from './reproductivo.data.js';
 
 const leer = (u) => readFileSync(new URL(u, import.meta.url), 'utf8').split('\r\n').join('\n');
@@ -889,6 +889,99 @@ describe('GAS · la llave de Desoves se guarda como TEXTO (D2, 2026-09-13)', () 
     const filas = buildDesoveRows({ fecha: '2026-09-07', desoves: ['0761', '0762', '0763'].map((cg) => ({ lote: 'BP', codigoGenetico: cg, desoves: '1' })) });
     expect(g.post({ sheetName: 'Maduración Lotes', headers: MAD_DESOVE_HEADERS, rows: filas }).status).toBe('ok');
     expect(hoja.filas.slice(1).map((f) => f[MAD_DESOVE_HEADERS.indexOf('Código genético')])).toEqual(['0761', '0762', '0763']);
+  });
+});
+
+describe('GAS · R1 · Broodstock va por SU llave (Fecha de corte · Piscina) y la carga REEMPLAZA la semana', () => {
+  /* 🔴 R1 (2026-09-17, noche). La hoja estaba en ALLOWED y en la firma, pero NINGUNA rama de doPost la
+     enrutaba: caía al upsert de «Datos Larvicultura», con su llave Fecha · columna 3 · columna 4 —aquí Fecha de
+     corte · Área · Fecha siembra— y su tope de 30 filas. La prueba de la firma no lo veía porque sólo miraba
+     `status: ok`. Éstas miran la HOJA: qué filas quedan y con qué valores. */
+  const HOJA_BS = 'Maduración Broodstock';
+  const carga = (fechaCorte, piscinas) => buildBroodstockRows({ fechaCorte, piscinas });
+  const psc = (piscina, extra) => Object.assign({ piscina, area: '0.24', fechaSiembra: '2026-06-19', cantidad: '2270',
+    pesoSiembra: '23', fase: 'Pre-reproductor', peso: '46', fechaPeso: '2026-07-19', pesoPrevio: '40', sobrevivencia: '83',
+    codigo: 'XPR6.F6', observacion: 'LÍNEA DE PRUEBA' }, extra);
+  const col = (h) => BS_HEADERS.indexOf(h);
+  const subir = (g, rows, extra) => g.post(Object.assign({ sheetName: HOJA_BS, headers: BS_HEADERS, rows }, extra));
+  const deLaPiscina = (hoja, p) => hoja.filas.slice(1).filter((f) => String(f[col('Piscina')]) === p);
+
+  it('🔴 dos piscinas de la MISMA área sembradas el MISMO día son dos filas (con la llave de «Datos» se fundían)', () => {
+    const hoja = hojaFalsa([BS_HEADERS]);
+    const g = gas({ [HOJA_BS]: hoja });
+    expect(subir(g, carga('2026-07-19', [psc('815'), psc('817')])).status).toBe('ok');
+    expect(hoja.filas.slice(1).map((f) => f[col('Piscina')])).toEqual(['815', '817']);
+  });
+
+  it('🔴 re-subir la MISMA semana REEMPLAZA la fila: lo corregido entra y lo que ahora va vacío queda vacío', () => {
+    const hoja = hojaFalsa([BS_HEADERS]);
+    const g = gas({ [HOJA_BS]: hoja });
+    subir(g, carga('2026-07-19', [psc('815')]));
+    expect(subir(g, carga('2026-07-19', [psc('815', { peso: '47', observacion: '' })])).status).toBe('ok');
+    const filas = deLaPiscina(hoja, '815');
+    expect(filas).toHaveLength(1);
+    expect(filas[0][col('Peso actual (g)')]).toBe(47);
+    expect(filas[0][col('Observación')]).toBe('');            // un MERGE habría conservado «LÍNEA DE PRUEBA»
+  });
+
+  it('🔴 re-subir UNA piscina de la semana no toca las demás: la llave es la pareja, no sólo la fecha', () => {
+    const hoja = hojaFalsa([BS_HEADERS]);
+    const g = gas({ [HOJA_BS]: hoja });
+    subir(g, carga('2026-07-19', [psc('815'), psc('817', { area: '0.27' })]));
+    subir(g, carga('2026-07-19', [psc('815', { peso: '47' })]));
+    expect(deLaPiscina(hoja, '817')).toHaveLength(1);
+    expect(deLaPiscina(hoja, '815')).toHaveLength(1);
+  });
+
+  it('🔴 la llave la pone el SERVIDOR: un keyCols del cliente que sólo mire la fecha no borra la piscina de al lado', () => {
+    const hoja = hojaFalsa([BS_HEADERS]);
+    const g = gas({ [HOJA_BS]: hoja });
+    subir(g, carga('2026-07-19', [psc('815'), psc('817')]));
+    subir(g, carga('2026-07-19', [psc('815', { peso: '47' })]), { replaceKey: true, keyCols: [0] });
+    expect(deLaPiscina(hoja, '817')).toHaveLength(1);
+  });
+
+  it('otra fecha de corte es otra fila: la serie semanal SON las filas', () => {
+    const hoja = hojaFalsa([BS_HEADERS]);
+    const g = gas({ [HOJA_BS]: hoja });
+    subir(g, carga('2026-07-12', [psc('815', { peso: '40', fechaPeso: '2026-07-12' })]));
+    subir(g, carga('2026-07-19', [psc('815')]));
+    expect(deLaPiscina(hoja, '815').map((f) => f[col('Fecha de corte')])).toEqual(['2026-07-12', '2026-07-19']);
+  });
+
+  it('🔴 una fecha de corte que Sheets ya guardó como FECHA sigue casando al re-subir', () => {
+    const hojas = {};
+    const g = gas(hojas);
+    hojas[HOJA_BS] = hojaFalsa([BS_HEADERS, conValores(BS_HEADERS, { 'Fecha de corte': g.fecha(19), Piscina: '815', 'Peso actual (g)': 46 })]);
+    expect(subir(g, carga('2026-09-19', [psc('815', { peso: '50', fechaPeso: '2026-09-19' })])).status).toBe('ok');
+    const filas = deLaPiscina(hojas[HOJA_BS], '815');
+    expect(filas).toHaveLength(1);
+    expect(filas[0][col('Peso actual (g)')]).toBe(50);
+  });
+
+  it('🔴 una carga de más de 30 piscinas entra: su tope es el de Maduración, no el de «Datos»', () => {
+    const hoja = hojaFalsa([BS_HEADERS]);
+    const g = gas({ [HOJA_BS]: hoja });
+    const r = subir(g, carga('2026-07-19', Array.from({ length: 31 }, (_, i) => psc(String(600 + i)))));
+    expect(r.status, r.message).toBe('ok');
+    expect(hoja.filas).toHaveLength(32);
+  });
+
+  it('🔴 la Piscina se guarda como TEXTO: «0553» no pierde el cero y re-subirla corrige su fila en vez de duplicarla', () => {
+    const hoja = hojaFalsa([BS_HEADERS], { comoSheets: true });
+    const g = gas({ [HOJA_BS]: hoja });
+    subir(g, carga('2026-07-19', [psc('0553')]));
+    subir(g, carga('2026-07-19', [psc('0553', { peso: '47' })]));
+    const filas = deLaPiscina(hoja, '0553');
+    expect(filas).toHaveLength(1);
+    expect(filas[0][col('Peso actual (g)')]).toBe(47);
+  });
+
+  it('si la hoja se queda corta, se amplía antes de formatear: el texto cubre todo lo que se escribe', () => {
+    const hoja = hojaFalsa([BS_HEADERS], { comoSheets: true, maxRows: 2 });
+    const g = gas({ [HOJA_BS]: hoja });
+    expect(subir(g, carga('2026-07-19', [psc('0553'), psc('0554'), psc('0555')])).status).toBe('ok');
+    expect(hoja.filas.slice(1).map((f) => f[col('Piscina')])).toEqual(['0553', '0554', '0555']);
   });
 });
 
