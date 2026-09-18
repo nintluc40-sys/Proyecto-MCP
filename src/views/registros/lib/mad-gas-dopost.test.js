@@ -1379,16 +1379,17 @@ describe('GAS · la MATRIZ admite varios individuos por chip, y nadie pierde su 
     expect(hoja.filas[1]).toEqual(fila(VIEJA));
   });
 
-  it('el fixture ejerce algo: si la identidad NO viajara, la hoja ganaría una fila', () => {
-    /* Control del riesgo de arriba: se manda la mortalidad a mano SIN la cuaterna, como la armaba
-       el cliente antes del 2026-09-16. Si esto no añadiera una fila, las dos pruebas anteriores no
-       estarían midiendo nada. */
+  it('el fixture ejerce algo: SIN la identidad, ese mismo envío ya no se escribe (V2: el chip lleva dos individuos)', () => {
+    /* Control del riesgo de arriba: se manda la mortalidad a mano SIN la cuaterna, como la armaba el cliente antes
+       del 2026-09-16. Hasta V2 añadía la fila suelta; desde V2 el GAS no la escribe: con DOS individuos en el chip no
+       sabe a cuál va y rechaza el envío. Por eso las dos pruebas de arriba, que exigen «ok», siguen distinguiendo si
+       la identidad viajó o no. */
     const hoja = hojaFalsa([CAB, fila(VIEJA), fila(NUEVA)]);
     const g = gas({ 'Maduración MATRIZ': hoja });
     const aMedias = { sheetName: 'Maduración MATRIZ', headers: CAB, keyCols: [1, 3, 4, 5],
       rows: [fila({ 'Trovan ID': CHIP, 'Estado': 'Muerto', 'Fecha muerte': '2026-09-12' })] };
-    expect(g.post(aMedias).status).toBe('ok');
-    expect(hoja.filas).toHaveLength(4);                    // la fila suelta que hay que evitar
+    expect(g.post(aMedias).status).toBe('error');
+    expect(hoja.filas).toHaveLength(3);                    // ni fila suelta ni nada tocado
   });
 
   /* 🔴 RD1 (2026-09-16) · CON GOOGLE CAÍDO SE TRABAJA CON LA COPIA LOCAL que dejó la última lectura buena
@@ -1436,13 +1437,14 @@ describe('GAS · la MATRIZ admite varios individuos por chip, y nadie pierde su 
     expect(alta.payload).toBeNull();
   });
 
-  it('el fixture ejerce algo: con la copia de ANTES (Trovan, Sala, Tanque y Estado), la mortalidad añade una fila y el alta no ve la repetida', () => {
+  it('el fixture ejerce algo: con la copia de ANTES (Trovan, Sala, Tanque y Estado), la mortalidad sale sin identidad y el alta no ve la repetida', () => {
     const deAntes = matrixIndexFromRows([VIEJA, NUEVA].map((o) => ({ 'Trovan ID': o['Trovan ID'], 'Sala actual': o['Sala actual'],
       'Tanque actual': o['Tanque actual'], 'Estado': o['Estado'] })));
     const hoja = hojaFalsa([CAB, fila(VIEJA), fila(NUEVA)]);
     const m = buildEventBatch({ ids: [CHIP], fecha: '2026-09-12', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: deAntes }).matriz;
-    expect(gas({ 'Maduración MATRIZ': hoja }).post(m).status).toBe('ok');
-    expect(hoja.filas).toHaveLength(4);
+    // Sin identidad y con DOS individuos en el chip: desde V2 el GAS la rechaza en vez de añadir una fila suelta.
+    expect(gas({ 'Maduración MATRIZ': hoja }).post(m).status).toBe('error');
+    expect(hoja.filas).toHaveLength(3);
     expect(altaRepetida(deAntes).report.existentes).toEqual([]);
   });
 
@@ -1452,6 +1454,60 @@ describe('GAS · la MATRIZ admite varios individuos por chip, y nadie pierde su 
     const g = gas({ 'Maduración MATRIZ': hoja });
     expect(g.post(alta('2026-07-20')).status).toBe('ok');
     expect(hoja.filas).toHaveLength(3);
+  });
+
+  /* 🔴 V2 (2026-09-18) · EL CLIENTE ANTERIOR A LA CUATERNA, contra el GAS nuevo (RD2). Lo que manda, medido en
+     origin/master: la mortalidad {Trovan, Estado, Fecha muerte} y el traslado {Trovan, Sala actual, Tanque actual},
+     con la llave vieja [1]. El GAS lo resuelve por el Trovan cuando sólo hay UNA fila, y lo rechaza entero cuando hay
+     varias. Hoy la MATRIZ de producción tiene 1665 filas y 1665 chips: el caso de UNA es el de todos. */
+  const deAntesDeLaCuaterna = (...filas) => ({ sheetName: 'Maduración MATRIZ', headers: CAB, keyCols: [1], rows: filas.map(fila) });
+  const muerte = (chip, f) => ({ 'Trovan ID': chip, 'Estado': 'Muerto', 'Fecha muerte': f });
+
+  it('🔴 V2 · la mortalidad de un cliente anterior va a la ÚNICA fila de su chip, sin añadir ninguna y sin tocar su identidad', () => {
+    const hoja = hojaFalsa([CAB, fila(NUEVA)]);
+    const r = gas({ 'Maduración MATRIZ': hoja }).post(deAntesDeLaCuaterna(muerte(CHIP, '2026-09-12')));
+    expect(r.status).toBe('ok');
+    expect(hoja.filas).toHaveLength(2);
+    expect([celda(hoja, 1, 'Estado'), celda(hoja, 1, 'Fecha muerte')]).toEqual(['Muerto', '2026-09-12']);
+    expect([celda(hoja, 1, 'Piscina'), celda(hoja, 1, 'Código genético'), celda(hoja, 1, 'Lote'), celda(hoja, 1, 'Número')]).toEqual(['P9', 'G07', 'L20', 31]);
+  });
+
+  it('🔴 V2 · el traslado de un cliente anterior, igual: mueve a la ÚNICA fila de su chip', () => {
+    const hoja = hojaFalsa([CAB, fila(NUEVA)]);
+    const r = gas({ 'Maduración MATRIZ': hoja }).post(deAntesDeLaCuaterna({ 'Trovan ID': CHIP, 'Sala actual': 'S9', 'Tanque actual': 'T9' }));
+    expect(r.status).toBe('ok');
+    expect(hoja.filas).toHaveLength(2);
+    expect([celda(hoja, 1, 'Sala actual'), celda(hoja, 1, 'Tanque actual'), celda(hoja, 1, 'Estado'), celda(hoja, 1, 'Lote')]).toEqual(['S9', 'T9', 'Vivo', 'L20']);
+  });
+
+  it('🔴 V2 · con VARIOS individuos en el chip se rechaza el envío ENTERO, y lo dice: tampoco sale la fila buena que venía con él', () => {
+    const OTRO = { 'Número': 40, 'Trovan ID': '000821AFF4', 'Piscina': 'P1', 'Código genético': 'G01', 'Lote': 'L01', 'Estado': 'Vivo' };
+    const hoja = hojaFalsa([CAB, fila(VIEJA), fila(NUEVA), fila(OTRO)]);
+    const r = gas({ 'Maduración MATRIZ': hoja }).post(deAntesDeLaCuaterna(muerte('000821AFF4', '2026-09-12'), muerte(CHIP, '2026-09-12')));
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('versión ANTERIOR');
+    expect(r.message).toContain('(' + CHIP + ')');
+    expect(r.message).toContain('actualiza la app');
+    expect(hoja.filas).toHaveLength(4);
+    expect(celda(hoja, 3, 'Estado'), 'la del otro chip tampoco se escribió: el rechazo es de todo el envío').toBe('Vivo');
+  });
+
+  it('V2 · un chip que NO está en la hoja sigue como antes: su fila se añade', () => {
+    const hoja = hojaFalsa([CAB, fila(NUEVA)]);
+    const r = gas({ 'Maduración MATRIZ': hoja }).post(deAntesDeLaCuaterna(muerte('000821AFF4', '2026-09-12')));
+    expect(r.status).toBe('ok');
+    expect(hoja.filas).toHaveLength(3);
+  });
+
+  it('🔴 V2 · la guarda no toca a este cliente: con la cuaterna, dos individuos en el chip y cada envío a SU fila', () => {
+    const hoja = hojaFalsa([CAB, fila(VIEJA), fila(NUEVA)]);
+    expect(gas({ 'Maduración MATRIZ': hoja }).post(mortalidad('2026-09-12', VIEJA, NUEVA)).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(3);
+    expect(celda(hoja, 2, 'Estado')).toBe('Muerto');
+    // Y con UNA identidad a medias (piscina sin lote) tampoco se resuelve por el Trovan: sólo si faltan LAS TRES.
+    const h2 = hojaFalsa([CAB, fila(NUEVA)]);
+    expect(gas({ 'Maduración MATRIZ': h2 }).post(deAntesDeLaCuaterna({ 'Trovan ID': CHIP, 'Piscina': 'P9', 'Estado': 'Muerto' })).status).toBe('ok');
+    expect(h2.filas).toHaveLength(3);
   });
 });
 

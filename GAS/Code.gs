@@ -21,7 +21,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "38ee03c8d6f1";
+const GAS_VERSION = "73be743c6da8";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -482,7 +482,9 @@ function doPost(e) {
       // decidía por fechas y muertes a qué hembra del chip iba cada envío, y que RECHAZABA el envío
       // entero cuando no encajaba. Con la identidad por cuaterna, la llave posicional normal ya
       // distingue a cada individuo, así que la MATRIZ pasa por el mismo camino que las demás.
-      result = upsertMadRows(ws, rows, madKeyCols, madTrovanCol, madNumCol, null);
+      // V2 (2026-09-18) · salvo las filas de un cliente ANTERIOR a la cuaterna: ver llaveMatrizCliente_.
+      result = upsertMadRows(ws, rows, madKeyCols, madTrovanCol, madNumCol,
+        payload.sheetName === "Maduración MATRIZ" ? llaveMatrizCliente_(rows, madKeyCols) : null);
       if (result.error) return respond({ status: "error", message: result.error });
     }
     else if (isAlgas)  result = upsertAlgasRows(ws, rows);
@@ -1392,6 +1394,48 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol, llave) {
     added = u.filas.length;
   }
   return { upserted: updated, appended: added };
+}
+// ── V2 (2026-09-18) · LA MATRIZ ANTE UN CLIENTE ANTERIOR A LA CUATERNA (RD2) ──
+// La llave de la MATRIZ es la cuaterna (Trovan · Piscina · Código genético · Lote). Un cliente ANTERIOR —una pestaña
+// abierta desde antes del despliegue, un Pages en caché, un envío que esperaba en la cola— manda la mortalidad y el
+// traslado con SÓLO el Trovan (medido en origin/master: {Trovan, Estado, Fecha muerte} y {Trovan, Sala, Tanque}). Su
+// llave sale «TROVAN|||», no casa con ninguna fila y el upsert AÑADIRÍA una fila suelta: un «Muerto» sin piscina,
+// mientras la hembra de verdad sigue «Vivo». Sin un solo síntoma.
+// Una fila así —Trovan, con Piscina, Código genético y Lote VACÍOS— se resuelve por su Trovan:
+//   · la hoja tiene UNA fila con ese Trovan → va a ésa (se toma su cuaterna, y el merge conserva su identidad);
+//   · NINGUNA → sigue como viene: una fila nueva, que es lo que hacía antes;
+//   · DOS o MÁS → no se sabe a cuál va: se RECHAZA el envío ENTERO, diciendo cuáles y qué hacer.
+// Las filas con la identidad (las de este cliente) no pasan por aquí: van por su cuaterna, como siempre.
+function llaveMatrizCliente_(rows, keyCols) {
+  var data = null, porTrovan = {};
+  var trovan = function (row) { return String(row[1] == null ? "" : row[1]).trim(); };
+  var sinIdentidad = function (row) {
+    return [3, 4, 5].every(function (c) { var v = row[c]; return v === "" || v === null || v === undefined || String(v).trim() === ""; });
+  };
+  return {
+    preparar: function (d) {
+      data = d;
+      for (var i = 1; i < d.length; i++) { var t = trovan(d[i]); if (t) (porTrovan[t] = porTrovan[t] || []).push(i); }
+      var dudosos = [];
+      for (var r = 0; r < rows.length; r++) {
+        var tr = trovan(rows[r]);
+        if (sinIdentidad(rows[r]) && (porTrovan[tr] || []).length > 1 && dudosos.indexOf(tr) === -1) dudosos.push(tr);
+      }
+      if (!dudosos.length) return "";
+      return "Envío de una versión ANTERIOR de la app (sin piscina, código genético ni lote) para " + dudosos.length +
+        " microchip(s) que llevan VARIOS individuos en la MATRIZ (" + dudosos.join(", ") + "): no se sabe a cuál va. " +
+        "No se ha escrito nada: actualiza la app (recarga la página) y vuelve a registrarlo.";
+    },
+    deHoja: function (i) { return madRowKey(data[i], keyCols); },
+    deEnvio: function (r) {
+      var nr = rows[r];
+      if (sinIdentidad(nr)) {
+        var filas = porTrovan[trovan(nr)] || [];
+        if (filas.length === 1) return madRowKey(data[filas[0]], keyCols);
+      }
+      return madInKey(nr, keyCols);
+    }
+  };
 }
 // P16 (2026-09-14) · fmtData pone formato de FECHA a la columna 1 de toda fila escrita, y en la MATRIZ
 // la columna 1 es «Número»: el 7 se veía «06/01/1900». Los formatos propios de la hoja (Trovan como
