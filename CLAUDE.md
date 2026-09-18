@@ -40,7 +40,7 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
      `querySelectorAll('canvas')`, `devicePixelRatio`.
    - `core/refresh.js` — detecta interacción del usuario para pausar el auto-refresco:
      escucha eventos en `document` y consulta `.modal-open`.
-   - `core/sheets.js` — usa `window.XLSX` (SheetJS por CDN) y `localStorage` (caché de gids).
+   - `core/sheets.js` — usa `window.XLSX` (SheetJS servido desde `public/vendor/` con su `integrity`, no por CDN) y `localStorage` (caché de gids).
 
    **Criterio para lo nuevo:** un módulo de `core/` solo puede tocar el navegador si es de
    esa misma naturaleza —un adaptador de una capacidad del entorno— y debe degradar sin

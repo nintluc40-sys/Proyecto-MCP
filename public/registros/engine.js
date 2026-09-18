@@ -21920,7 +21920,8 @@ function GAS(){
 // ════════════════════════════════════════════════════════
 //
 // SEGURIDAD:
-//  • Allowlist estricta de hojas (M01-M10 + CIO)
+//  • Allowlist estricta de hojas (ALLOWED: los módulos M01-M10 + CIO y las hojas propias de cada ficha —Maduración,
+//    Biomol, Microbiología, Registro_*…—; la lista viva es ALLOWED, no este comentario)
 //  • Sanitización de celdas (previene formula injection)
 //  • Validación de schema (límites de filas/columnas)
 //  • Rate limiting en memoria (30 req/min)
@@ -21936,7 +21937,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "73be743c6da8";
+const GAS_VERSION = "18a90026355d";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -22842,7 +22843,8 @@ var MAD_ESQUEMA_FIRMA = {
   // POSICIONES se actualizan EN EL MISMO CAMBIO, o la firma rechazaría a los clientes al día.
   "Maduración Movimientos": [[9, "Agua destino"], [12, "ID"]],
   /* 2026-09-17 (segunda tanda) · LAS CINCO QUE FALTABAN. Con esto, las doce hojas de Maduración que
-     admite ALLOWED tienen cerrojo. Dos motivos concretos, no preventivos en abstracto:
+     admitía ALLOWED ese día tienen cerrojo; la decimotercera, «Broodstock», nació después con el suyo
+     (ver abajo), así que hoy lo tienen las TRECE. Dos motivos concretos, no preventivos en abstracto:
        · «Transferencias» NO EXISTE todavía (0 filas): nace con el primer traslado, y no la cubría ni la
          guarda V3 —que necesita que la hoja tenga filas— ni la firma. Quien la creara primero le fijaba
          la cabecera para siempre.

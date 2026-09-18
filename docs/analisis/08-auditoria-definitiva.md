@@ -58,6 +58,17 @@
 
 ## Decisiones pendientes (propuestas · ninguna bloquea el desarrollo)
 
+> **Estado re-medido el 2026-09-18** (contra el código, no contra este documento):
+> - **2 · SRI/CDN — RESUELTO**, y por el «fix más robusto»: SheetJS y D3 se sirven desde `public/vendor/` con su
+>   `integrity` en `index.html`; ya no hay CDN.
+> - **3 · Escape — RESUELTO**: `src/ui/modalEscape.js`, un cierre con Escape uniforme para todas las vistas.
+> - **4 · `pathogenRecords` una sola vez — RESUELTO** (medido en la auditoría del 2026-09-17).
+> - **5 · `alert()` en los exports — RESUELTO**: no queda ningún `alert(` en `src/` fuera de las pruebas.
+> - **1 · Autenticación — SIGUE ABIERTA.** El token del GAS existe (`PropertiesService`) pero `SHARED_TOKEN` está
+>   vacío en producción: la escritura sigue siendo anónima. Es el pendiente «A4 · el token», del usuario.
+>
+> Lo de abajo se conserva tal como se escribió.
+
 ### 1. [MEDIO · Seguridad] Autenticación de Registros solo-cliente con PINs hardcodeados
 - **Evidencia:** `public/registros/engine.js:74-83` define `PINS` en texto plano (4 dígitos triviales: `1111`, `2222`, …) en un archivo **servido públicamente**. La verificación es solo cliente: `chkPin()` (`:1986`) y `enter()` (`:1996`) solo alternan clases CSS al validar. La URL del GAS está anclada (`:33`) y el token es **opcional** (`:1561-1563`).
 - **Impacto:** cualquiera con acceso al JS ve los PINs; si el GAS no exige token server-side, cualquiera con la URL puede escribir al Sheet. Para una herramienta **interna** puede ser aceptable, pero debe ser una decisión consciente.
