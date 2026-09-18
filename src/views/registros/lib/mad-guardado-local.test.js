@@ -157,13 +157,28 @@ describe('💾 Guardar local · guarda en el dispositivo y no toca la red', () =
   });
 
   it('🔴 si el navegador NO guarda, lo dice y la ficha NO se limpia (lo tecleado no se pierde)', () => {
-    // El arnés usa un sustituto de objeto plano (setItem propio) o el Storage de happy-dom (setItem en el prototipo).
-    const dueño = Object.prototype.hasOwnProperty.call(localStorage, 'setItem') ? localStorage : Object.getPrototypeOf(localStorage);
-    const original = dueño.setItem;
-    const espia = vi.spyOn(dueño, 'setItem').mockImplementation(function (k, v) {
-      if (String(k).indexOf(H.MAD_LOC_PRE) === 0) throw new Error('almacenamiento lleno');
-      return original.call(this, k, v);
-    });
+    /* ⚠ Dónde vive `setItem` depende del ENTORNO, y equivocarse no da error: el espía no intercepta y la prueba cree
+       que el navegador «no guardó». Con un sustituto de objeto plano es PROPIO; con un Storage normal, del PROTOTIPO;
+       y con el de happy-dom (la CI, en Node 20) es un Proxy que, la primera vez que se lee un método, lo ATA como
+       propiedad propia del objeto de detrás y la esconde: espiar el prototipo no intercepta nada. Pasó el 2026-09-18,
+       en el primer push de esta prueba: verde aquí (Node 26) y rojo en la CI. Por eso se COMPRUEBA que el espía
+       intercepta antes de fiarse de él; si en el prototipo no, se espía el propio objeto (tinyspy restaura
+       redefiniendo, y el Proxy lo admite). */
+    const sonda = H.MAD_LOC_PRE + '__sonda';
+    const intercepta = () => { try { localStorage.setItem(sonda, '1'); } catch (_) { return true; } localStorage.removeItem(sonda); return false; };
+    const dueños = Object.prototype.hasOwnProperty.call(localStorage, 'setItem') ? [localStorage] : [Object.getPrototypeOf(localStorage), localStorage];
+    let espia = null;
+    for (const dueño of dueños) {
+      const original = dueño.setItem;
+      espia = vi.spyOn(dueño, 'setItem').mockImplementation(function (k, v) {
+        if (String(k).indexOf(H.MAD_LOC_PRE) === 0) throw new Error('almacenamiento lleno');
+        return original.call(this, k, v);
+      });
+      if (intercepta()) break;
+      espia.mockRestore();
+      espia = null;
+    }
+    expect(espia, 'el arnés no consigue simular un navegador que no guarda: la prueba no probaría nada').not.toBe(null);
     try {
       llenarTrat('2026-09-15', 'LLENO');
       H.madTratGuardarLocal();
