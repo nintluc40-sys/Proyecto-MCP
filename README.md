@@ -130,6 +130,8 @@ En **🛢️ Tanques**, los pesos ♂ y ♀ **bajan por su columna**: al teclear
 de abajo que tengan animales vivos. Una fila corregida a mano ya no se pisa. Cada ronda de mortalidad
 del día es un **PARTE** con su número y su **hora**, que pone el sistema al abrirlo y es la misma para
 todos sus tanques: guardar otra vez el mismo parte no lo duplica, y el último del día se puede reabrir.
+Sólo el último, sin otro abierto y desde el dispositivo que lo registró: uno anterior se corrige en la
+hoja (decisión del usuario, 2026-09-18).
 La hora va en la llave del GAS, así que se guarda como TEXTO (Sheets convierte «08:30» en una hora).
 En **🏠 Salas**, la columna `RAS` dice **en qué porcentaje** usa el RAS esa sala (`No`, `10%` …
 `100%`); lo que falta hasta el 100 es agua de playa y no se anota.
