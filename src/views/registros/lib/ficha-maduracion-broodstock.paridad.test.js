@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { createContext, Script } from 'node:vm';
 import { sanitizeStr } from '../../../core/trovan.js';
 import {
-  MAD_BS_SHEET, MAD_BS_HEADERS, MAD_BS_KEY_COLS, MAD_BS_FASES, MAD_BS_COLUMNS, MAD_BS_CABECERAS,
+  MAD_BS_SHEET, MAD_BS_HEADERS, MAD_BS_KEY_COLS, MAD_BS_FASES, MAD_BS_COLUMNS, MAD_BS_CABECERAS, MAD_BS_SUFIJO_CAMARONERA,
   faseCanonica, normPiscina, normCodigo, diaReal, diasEntre, tieneDatos,
   buildBroodstockPayload, validarBroodstock, leerHojaBroodstock, leerLibroBroodstock, cortesRepetidos, diaDeCelda, letraCol,
 } from './ficha-maduracion-broodstock.schema.js';
@@ -25,7 +25,7 @@ const ctx = { String, Number, Object, Array, JSON, Math, Date, Set, Map, isNaN, 
 ctx.globalThis = ctx;
 createContext(ctx);
 new Script(bloque('const MAD_BS_SHEET = "Maduración Broodstock";', '  return Array.from(rep).sort();\n}')
-  + '\n;globalThis.__api = { MAD_BS_SHEET, MAD_BS_HEADERS, MAD_BS_KEY_COLS, MAD_BS_FASES, MAD_BS_COLUMNS, MAD_BS_CABECERAS,'
+  + '\n;globalThis.__api = { MAD_BS_SHEET, MAD_BS_HEADERS, MAD_BS_KEY_COLS, MAD_BS_FASES, MAD_BS_COLUMNS, MAD_BS_CABECERAS, MAD_BS_SUFIJO_CAMARONERA,'
   + ' madBsFaseCanonica, madBsNormPiscina, madBsNormCodigo, madBsDiaReal, madBsDiasEntre, madBsTieneDatos, buildMadBsPayload,'
   + ' madBsValidar, madBsLeerHoja, madBsLeerLibro, madBsCortesRepetidos, madBsDiaDeCelda, madBsLetraCol };').runInContext(ctx);
 const api = ctx.__api;
@@ -74,6 +74,17 @@ const HOJAS = {
     { ...R815, Piscina: N(813), 'Sobrev. Estim (%)': N(0.95) }, { ...R815, Piscina: N(814), 'Fecha siembra': S('31/02/2026') }, { ...R815, Piscina: N(816), 'Fecha siembra': S('20/03/26') }] }),
   'la misma piscina dos veces': hoja({ filas: [R815, R815] }),
   'fechas de pesos ilegibles': hoja({ fechas: [S('x'), 46110, 46117, 46124, 46131], filas: [R815] }),
+  'notas que nombran piscinas, con y sin datos (punto 8)': hoja({ filas: [R815, { Piscina: N(811), 'Area (ha)': N(0.30) }, {},
+    { C: S('PISCINAS 815 Y 811 RALEADAS') }, { C: S('REVISAR 8150') }, { C: S('PISCINA 815 RALEADA') }] }),
+  'origen con camaronera pegada, desconocida y en conflicto (punto 10)': hoja({ filas: [{ ...R815, 'Psc. Orig': S('902 ch'), Camaronera: S('') },
+    { ...R815, Piscina: N(816), 'Psc. Orig': S('903 xy') }, { ...R815, Piscina: N(817), 'Psc. Orig': S('904ch'), Camaronera: S('Taura') }] }),
+  'observación larga con su nota: pasa de 200 caracteres (punto 8)': hoja({ filas: [{ ...R815, OBSERVACION: S('OBSERVACIÓN LARGA '.repeat(9).trim()) }, {},
+    { C: S('PISCINA 815 RALEADA Y CON RECAMBIO DE AGUA AL 30 POR CIENTO') }] }),
+  'bloque auxiliar a la derecha de la tabla (punto 8)': (() => {
+    const ws = hoja({ filas: [R815, {}, { C: S('PISCINA 815 RALEADA'), AL: S('H') }, { AG: S('815 BLOQUE AUXILIAR') }] });
+    ws['!ref'] = 'A1:BP10';
+    return ws;
+  })(),
   'sin cabecera': { A1: S('Otra cosa'), A2: N(3), '!ref': 'A1:B2' },
   'vacía': {},
 };
@@ -85,6 +96,7 @@ describe('Broodstock · el monolito y el módulo dicen lo mismo', () => {
     expect(J(api.MAD_BS_KEY_COLS)).toEqual(MAD_BS_KEY_COLS);
     expect(J(api.MAD_BS_FASES)).toEqual(MAD_BS_FASES);
     expect(J(api.MAD_BS_COLUMNS)).toEqual(J(MAD_BS_COLUMNS));
+    expect(J(api.MAD_BS_SUFIJO_CAMARONERA)).toEqual(MAD_BS_SUFIJO_CAMARONERA);
     expect(J(api.MAD_BS_CABECERAS.map((d) => [d.k, !!d.obligatoria, !!d.calculada]))).toEqual(MAD_BS_CABECERAS.map((d) => [d.k, !!d.obligatoria, !!d.calculada]));
   });
 

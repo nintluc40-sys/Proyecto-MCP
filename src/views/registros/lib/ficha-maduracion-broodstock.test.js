@@ -398,10 +398,10 @@ describe('Broodstock · el LECTOR de la hoja (V1)', () => {
       .toEqual(['', '2026-04-19', '', '2026-04-19']);
   });
 
-  it('la piscina de origen con letras («902ch», plantilla de julio) se sube tal cual, y se dice una vez', () => {
-    const l = leer(hoja({ filas: [{ ...R815, 'Psc. Orig': S('902 ch') }, { ...R810, Piscina: N(811), 'Psc. Orig': S('903ch') }] }));
-    expect(l.avisos.filter((a) => a.includes('con letras'))).toEqual(['2 piscina(s) traen la piscina de origen con letras junto al número (815: 902 ch, 811: 903ch): se sube tal cual.']);
-    expect(unaFila(hoja({ filas: [{ ...R815, 'Psc. Orig': S('902 ch') }] }))[col('Piscina origen')]).toBe('902ch');
+  it('la piscina de origen con un sufijo DESCONOCIDO se sube tal cual, y se dice una vez', () => {
+    const l = leer(hoja({ filas: [{ ...R815, 'Psc. Orig': S('902 xy') }, { ...R810, Piscina: N(811), 'Psc. Orig': S('903zz') }] }));
+    expect(l.avisos.filter((a) => a.includes('con letras'))).toEqual(['2 piscina(s) traen la piscina de origen con letras junto al número (815: 902 xy, 811: 903zz): se sube tal cual.']);
+    expect(unaFila(hoja({ filas: [{ ...R815, 'Psc. Orig': S('902 xy') }] }))[col('Piscina origen')]).toBe('902xy');
   });
 
   it('cortesRepetidos: dos hojas elegidas con la misma fecha de corte se pisarían', () => {
@@ -411,5 +411,107 @@ describe('Broodstock · el LECTOR de la hoja (V1)', () => {
 
   it('letraCol: A, Z, AA, AD', () => {
     expect([0, 25, 26, 29].map(letraCol)).toEqual(['A', 'Z', 'AA', 'AD']);
+  });
+});
+
+/* ============================================================
+   PUNTOS 8 y 10 (2026-09-18, decisiones del usuario)
+   8  · «Las notas bajo la tabla van en observación de su piscina»: una nota que nombra piscinas de la tabla se añade a
+        su Observación. Las piscinas sin datos productivos no se suben, y su nota tampoco.
+   10 · «902 ch» (plantilla de julio, sin columna «Camaronera») es la piscina de origen 902 de la camaronera Chongón.
+   ============================================================ */
+describe('Broodstock · las NOTAS bajo la tabla van a la Observación de SU piscina (punto 8)', () => {
+  const NOTA = 'NOTA: PISCINAS 815 Y 810 FUERON RALEADAS EL 13 DE ABRIL 2026';
+  const obsDe = (l, id) => l.piscinas.find((p) => normPiscina(p.piscina) === id).observacion;
+
+  it('🔴 la nota que nombra piscinas CON datos va a la Observación de cada una, detrás de la que ya traen', () => {
+    const l = leer(hoja({ filas: [R815, R810, {}, { C: S(NOTA) }] }));
+    expect(obsDe(l, '815')).toBe('LÍNEA DE PRUEBA · ' + NOTA);
+    expect(obsDe(l, '810')).toBe('LÍNEA DE PRUEBA · ' + NOTA);
+    expect(l.notas, 'ya no está entre las que no se suben').toEqual([]);
+    expect(l.avisos.join(' ')).toContain('va a la Observación de la(s) piscina(s) 815, 810.');
+    const f = unaFila(hoja({ filas: [R815, {}, { C: S(NOTA) }] }));
+    expect(f[col('Observación')], 'y llega a la fila que se sube').toBe('LÍNEA DE PRUEBA · ' + NOTA);
+  });
+
+  it('🔴 sin Observación propia, la nota ES la Observación', () => {
+    const l = leer(hoja({ filas: [{ ...R815, OBSERVACION: S('') }, {}, { C: S('PISCINA 815 CON AIREADOR NUEVO') }] }));
+    expect(obsDe(l, '815')).toBe('PISCINA 815 CON AIREADOR NUEVO');
+  });
+
+  it('🔴 una piscina SIN datos no se sube, y su nota tampoco: se dice, y la nota queda entre las que no se suben', () => {
+    const l = leer(hoja({ filas: [R815, { Piscina: N(811), 'Area (ha)': N(0.30) }, {}, { C: S('PISCINA 811 EN SECADO') }] }));
+    expect(obsDe(l, '811')).toBe('');
+    expect(l.avisos.join(' ')).toContain('La nota de la fila 10 nombra la(s) piscina(s) 811, sin datos esta semana: ahí no se sube.');
+    expect(l.notas).toEqual(['Fila 10: PISCINA 811 EN SECADO']);
+    expect(buildBroodstockRows(l).map((r) => r[col('Piscina')])).toEqual(['815']);
+  });
+
+  it('🔴 se casa por PALABRA entera y sólo con piscinas de la tabla: «8150» no es la 815, y la 999 no está', () => {
+    const l = leer(hoja({ filas: [R815, {}, { C: S('REVISAR 8150 Y 999') }] }));
+    expect(obsDe(l, '815')).toBe('LÍNEA DE PRUEBA');
+    expect(l.notas).toEqual(['Fila 9: REVISAR 8150 Y 999']);
+  });
+
+  it('una nota que no nombra ninguna piscina, o una fila TOTAL, sólo se enseña', () => {
+    const l = leer(hoja({ filas: [R815, {}, { C: S('NOTA GENERAL SIN PISCINA') }, { Piscina: S('TOTAL'), 'Cantidad Sembrada ': N(9999) }] }));
+    expect(l.notas).toEqual(['Fila 9: NOTA GENERAL SIN PISCINA', 'Fila 10: TOTAL']);
+    expect(obsDe(l, '815')).toBe('LÍNEA DE PRUEBA');
+  });
+
+  it('no se repite: si la Observación ya trae el texto de la nota, no se añade otra vez', () => {
+    const l = leer(hoja({ filas: [{ ...R815, OBSERVACION: S('RALEADA · PISCINA 815 RALEADA') }, {}, { C: S('PISCINA 815 RALEADA') }] }));
+    expect(obsDe(l, '815')).toBe('RALEADA · PISCINA 815 RALEADA');
+  });
+
+  it('🔴 sólo se lee el ANCHO DE LA TABLA: los bloques auxiliares de la derecha no son notas (libros de julio)', () => {
+    const ws = hoja({ filas: [R815, {}, { C: S('PISCINA 815 RALEADA'), AL: S('H') }, { AG: S('815 BLOQUE AUXILIAR') }] });
+    ws['!ref'] = 'A1:BP10';   // como en los libros de julio: la hoja sigue mucho más allá de la tabla
+    const l = leer(ws);
+    expect(obsDe(l, '815')).toBe('LÍNEA DE PRUEBA · PISCINA 815 RALEADA');
+    expect(l.notas).toEqual([]);
+  });
+
+  it('dos notas para la misma piscina van las dos, en el orden de la hoja', () => {
+    const l = leer(hoja({ filas: [R815, {}, { C: S('PISCINA 815 RALEADA') }, { C: S('PISCINA 815 MUESTREADA') }] }));
+    expect(obsDe(l, '815')).toBe('LÍNEA DE PRUEBA · PISCINA 815 RALEADA · PISCINA 815 MUESTREADA');
+  });
+
+  it('🔴 la Observación con su nota no se recorta a 200 caracteres', () => {
+    const larga = 'OBSERVACIÓN LARGA '.repeat(9).trim();                      // 170 caracteres
+    const nota = 'PISCINA 815 RALEADA Y CON RECAMBIO DE AGUA AL 30 POR CIENTO';   // 59
+    const f = unaFila(hoja({ filas: [{ ...R815, OBSERVACION: S(larga) }, {}, { C: S(nota) }] }));
+    expect(f[col('Observación')]).toBe(larga + ' · ' + nota);
+  });
+});
+
+describe('Broodstock · el origen con la camaronera PEGADA («902 ch») se separa (punto 10)', () => {
+  it('🔴 plantilla de julio (sin «Camaronera»): «902 ch» y «903ch» → piscina de origen y camaronera Chongón', () => {
+    const l = leer(hoja({ cab: CAB_JUL, filas: [{ ...sin(R815, 'Camaronera'), 'Psc. Orig': S('902 ch') }, { ...sin(R810, 'Camaronera'), Piscina: N(811), 'Psc. Orig': S('903ch') }] }));
+    expect(l.piscinas.map((p) => [p.piscinaOrigen, p.camaronera])).toEqual([['902', 'Chongón'], ['903', 'Chongón']]);
+    expect(l.avisos.join(' ')).toContain('2 piscina(s) traían la camaronera pegada a la piscina de origen, y se separó (815: 902 ch → 902 · Chongón, 811: 903ch → 903 · Chongón).');
+    expect(l.avisos.join(' ')).not.toContain('con letras');
+    const f = buildBroodstockRows(l)[0];
+    expect([f[col('Piscina origen')], f[col('Camaronera')]]).toEqual(['902', 'Chongón']);
+  });
+
+  it('🔴 con la columna «Camaronera» vacía se rellena; con OTRA camaronera no se pisa, y se avisa', () => {
+    const vacia = leer(hoja({ filas: [{ ...R815, 'Psc. Orig': S('902 ch'), Camaronera: S('') }] }));
+    expect([vacia.piscinas[0].piscinaOrigen, vacia.piscinas[0].camaronera]).toEqual(['902', 'Chongón']);
+    const otra = leer(hoja({ filas: [{ ...R815, 'Psc. Orig': S('902 ch'), Camaronera: S('Taura') }] }));
+    expect([otra.piscinas[0].piscinaOrigen, otra.piscinas[0].camaronera]).toEqual(['902', 'Taura']);
+    expect(otra.avisos.join(' ')).toContain('La piscina 815 trae el origen «902 ch» (Chongón) y la columna «Camaronera» dice «Taura»: se deja la de la columna.');
+    const igual = leer(hoja({ filas: [{ ...R815, 'Psc. Orig': S('902 ch'), Camaronera: S('CHONGON') }] }));
+    expect(igual.avisos.join(' '), 'la misma camaronera escrita de otra forma no es un conflicto').not.toContain('se deja la de la columna');
+  });
+
+  it('🔴 un sufijo que no se conoce NO se adivina: la camaronera no se inventa', () => {
+    const l = leer(hoja({ cab: CAB_JUL, filas: [{ ...sin(R815, 'Camaronera'), 'Psc. Orig': S('902 xy') }] }));
+    expect([l.piscinas[0].piscinaOrigen, l.piscinas[0].camaronera]).toEqual(['902 xy', '']);
+  });
+
+  it('el aviso de la plantilla sin «Camaronera» dice de dónde sale ahora', () => {
+    const l = leer(hoja({ cab: CAB_JUL, filas: [sin(R815, 'Camaronera')] }));
+    expect(l.avisos.join(' ')).toContain('se toma del sufijo del origen cuando lo trae («ch» = Chongón); si no, va vacía.');
   });
 });

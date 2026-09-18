@@ -148,12 +148,23 @@ de septiembre sí: por posición, el código genético acabaría en «Camaronera
 corte es la de **A3** (no el nombre de la hoja); del bloque de pesos salen el ÚLTIMO peso con la fecha
 de su columna y el de la columna anterior, que da el incremento de **una** semana; la sobrevivencia en
 fracción pasa a %, y «130.pl» son **Pl/g**, no gramos. Densidad, días, edad, incremento y crecimiento
-se RECALCULAN. Un libro trae una hoja por semana: se marca sólo la más reciente. Subir otra vez la
-misma semana **reemplaza** sus filas.
+se RECALCULAN. Un libro trae una hoja por semana: se marca sólo la más reciente (el histórico de julio
+**no se carga**: decisión del usuario). Subir otra vez la misma semana **reemplaza** las filas de las
+piscinas que vienen con datos; las que no vienen, o vienen sin datos productivos, **ni se borran ni se
+suben**. Decisiones del usuario del 2026-09-18:
+- Las **notas de debajo de la tabla** van a la **Observación de las piscinas que nombran** (por número
+  entero y sólo piscinas de esa tabla; a una piscina sin datos, no). Se leen sólo en el ancho de la tabla:
+  los libros de julio traen a la derecha bloques auxiliares de cálculo que no son notas.
+- El origen de julio con la camaronera pegada («902 ch», «903ch») se separa en **piscina de origen** y
+  **camaronera** (`MAD_BS_SUFIJO_CAMARONERA`: «ch» = Chongón). No pisa una camaronera que venga en su
+  columna, y un sufijo que no esté en la tabla no se adivina. El área pedirá las dos columnas por separado.
+- Una última columna de pesos distinta del corte **se avisa**, no bloquea.
+- Sube el Excel **cualquiera que entre al módulo de Maduración**.
 
 **El Saldo estima la carga de cada tanque:** la **métrica en g/m²** —la biomasa (♀ + ♂ con sus últimos
 pesos) entre el ÁREA del tanque (`MAD_TANQUE_AREA_M2`: una por sala, y la Sala 5 tanque a tanque)— y la
 **volumétrica en kg/m³**, entre las toneladas de un tanque de su sala. Sin área o sin pesos, vacía.
+(La Sala 5 lleva 13 t en todos sus tanques, también en los de 27 m²: confirmado por el usuario el 2026-09-18.)
 
 **El libro mayor** (`src/views/registros/lib/mad-libro.js` + su gemelo inline) responde
 *«¿cuántos animales hay vivos ahora en cada tanque y en cada lote?»*. Nadie teclea un saldo:
@@ -516,9 +527,3 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
    número lo dice `verificar-3copias-v3` al correr («delegación __rgLib»).
 7. **La CI no vigila `index (8)`**: `deploy.yml` corre lint, vitest, auditorías y build, pero ninguno
    de los verificadores de copias, que viven fuera del repo. La paridad depende de correrlos a mano.
-8. **Control Broodstock · decisiones del usuario:** las notas de texto bajo la tabla ¿sólo se enseñan o
-   van a la Observación de la piscina que nombran?; re-subir una semana ¿debe borrar las piscinas que ya
-   no vienen?; una última columna de pesos distinta del corte ¿bloquea o avisa (hoy avisa)?; el origen
-   «902ch» de julio ¿se parte en piscina y camaronera?; ¿se carga el histórico de julio?
-9. **Carga volumétrica de la Sala 5:** usa 13 t para todos sus tanques, y los de 27 m² son más pequeños
-   que los de 40. Hace falta el volumen de cada tipo para no subestimarla en los pequeños.

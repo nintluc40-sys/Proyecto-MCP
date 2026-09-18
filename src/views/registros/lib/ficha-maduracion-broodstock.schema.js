@@ -180,7 +180,7 @@ export function filaDeBroodstock(p, fechaCorte) {
     piscinaOrigen: normPiscina(x.piscinaOrigen),
     camaronera: sanitizeStr(x.camaronera, 60),
     codigo: normCodigo(x.codigo),
-    observacion: sanitizeStr(x.observacion, 200),
+    observacion: sanitizeStr(x.observacion, 500),   // 500 y no 200: lleva también las notas de debajo de la tabla (punto 8)
   };
   return MAD_BS_COLUMNS.map((c) => (valores[c.k] === undefined ? '' : valores[c.k]));
 }
@@ -281,6 +281,13 @@ export function validarBroodstock(model) {
      «Inc. Ult. Sem» como L − K, así que si esa columna está vacía no hay incremento de UNA semana que dar.
    · Las fechas se leen del NÚMERO DE SERIE de Excel, no de un `Date`: el `Date` de SheetJS va en la zona horaria
      del equipo y el día se puede correr; el serial es el día y nada más. */
+
+/* ── La CAMARONERA PEGADA al origen («902 ch», «903ch») ──────────────────────────────────────────────────────────
+   Decisión del usuario (2026-09-18): en las hojas de julio —sin columna «Camaronera»— el área escribía el origen como
+   el número de la piscina con la camaronera pegada como sufijo, y se separa en piscina de origen y camaronera. Sólo los
+   sufijos de esta tabla, con la grafía del catálogo de camaroneras de la app (`DESTINO_OPTS`): uno que no esté aquí NO
+   se adivina (se sube tal cual y se avisa). El área va a pedir que la hoja traiga las dos columnas por separado. */
+export const MAD_BS_SUFIJO_CAMARONERA = { ch: 'Chongón' };
 
 /* Cada campo, con cómo se reconoce su rótulo (sin tildes, espacios ni signos) y si es OBLIGATORIO. Los calculados
    (densidad, incremento, crecimiento, edad) se reconocen para no avisar de ellos, pero NO se leen: se recalculan. */
@@ -387,7 +394,10 @@ export function leerHojaBroodstock(ws, opts) {
   MAD_BS_CABECERAS.filter((d) => d.obligatoria && pos[d.k] === undefined)
     .forEach((d) => errores.push('Falta la columna «' + d.k + '» en la cabecera (fila ' + fc + '): no parece un Control Broodstock, o cambió la plantilla.'));
   if (desconocidas.length) avisos.push('Columnas que no se reconocen y NO se suben: ' + desconocidas.join(', ') + '.');
-  if (pos.camaronera === undefined && !errores.length) avisos.push('El archivo no trae la columna «Camaronera» (plantilla anterior al 17-sep): se sube vacía.');
+  if (pos.camaronera === undefined && !errores.length) {
+    avisos.push('El archivo no trae la columna «Camaronera» (plantilla anterior al 17-sep): se toma del sufijo del origen cuando lo trae ('
+      + Object.keys(MAD_BS_SUFIJO_CAMARONERA).map((s) => '«' + s + '» = ' + MAD_BS_SUFIJO_CAMARONERA[s]).join(', ') + '); si no, va vacía.');
+  }
   if (errores.length) return { esBroodstock: true, fechaCorte, piscinas: [], notas, avisos, errores };
 
   /* El bloque de pesos y sus fechas. */
@@ -408,17 +418,20 @@ export function leerHojaBroodstock(ws, opts) {
     });
   }
 
-  const piscinas = [];
+  /* Las notas se leen SÓLO dentro del ancho de la tabla (hasta su última cabecera). Medido en los libros de julio: a la
+     derecha (AF…BP) hay bloques auxiliares de cálculo, y su texto se pegaba a la nota real y hasta pasaba por una. */
+  const finTabla = cabeceras.length ? cabeceras[cabeceras.length - 1] : lim.c;
+  const piscinas = [], crudas = [];
   for (let r = fc + 2; r <= lim.r; r++) {
     const x = (k) => (pos[k] === undefined ? null : celda(ws, pos[k], r));
-    /* Una fila sin piscina no se sube. Si trae TEXTO es una nota del área (la del ejemplo: «piscinas 836 y 837
-       fueron raleadas…») y se enseña; un número suelto es el resto de una fórmula, no una nota.
+    /* Una fila sin piscina no se sube. Si trae TEXTO es una nota del área («piscinas N y M fueron raleadas…»), que va
+       a la Observación de las piscinas que nombre (ver abajo); un número suelto es el resto de una fórmula, no una nota.
        ⚠ «Sin piscina» incluye una columna A SIN NINGÚN DÍGITO: una fila «TOTAL» o «PROMEDIO» con sus sumas se
        subiría si no, como si fuera una piscina más. Las de julio traían además bloques auxiliares debajo («h», «m»). */
     if (vacia(x('piscina')) || !/\d/.test(textoDe(x('piscina')))) {
       const dice = [];
-      for (let c = 0; c <= lim.c; c++) { const y = celda(ws, c, r); if (!vacia(y) && typeof y.v === 'string') dice.push(textoDe(y)); }
-      if (dice.length) notas.push('Fila ' + r + ': ' + dice.join(' · '));
+      for (let c = 0; c <= finTabla; c++) { const y = celda(ws, c, r); if (!vacia(y) && typeof y.v === 'string') dice.push(textoDe(y)); }
+      if (dice.length) crudas.push({ fila: r, texto: dice.join(' · ') });
       continue;
     }
     const p = { piscina: textoDe(x('piscina')), fila: r };
@@ -442,11 +455,48 @@ export function leerHojaBroodstock(ws, opts) {
     p.pesoPrevio = u > 0 ? pesos[u - 1] : '';
     piscinas.push(p);
   }
-  /* En las hojas de julio la piscina de origen venía con letras pegadas («902ch»): se sube tal cual, pero se dice. */
-  const conLetras = piscinas.filter((p) => /[a-z]/i.test(p.piscinaOrigen) && /\d/.test(p.piscinaOrigen));
+  /* ── El origen con la camaronera PEGADA («902 ch», plantilla de julio): se separa (usuario, 2026-09-18) ──
+     Con un sufijo de MAD_BS_SUFIJO_CAMARONERA se sube la piscina de origen (902) y la camaronera (Chongón). Una
+     camaronera que ya venga en su columna NO se pisa (si no coincide, se avisa); un sufijo desconocido no se adivina. */
+  const separadas = [], conLetras = [];
+  piscinas.forEach((p) => {
+    const m = /^(\d+)\s*([a-z]+)\.?$/i.exec(p.piscinaOrigen);
+    const cam = m ? MAD_BS_SUFIJO_CAMARONERA[m[2].toLowerCase()] || '' : '';
+    if (!cam) {
+      if (/[a-z]/i.test(p.piscinaOrigen) && /\d/.test(p.piscinaOrigen)) conLetras.push(p);
+      return;
+    }
+    const antes = p.piscinaOrigen;
+    p.piscinaOrigen = m[1];
+    if (!p.camaronera) p.camaronera = cam;
+    else if (planoCab(p.camaronera) !== planoCab(cam)) {
+      avisos.push('La piscina ' + normPiscina(p.piscina) + ' trae el origen «' + antes + '» (' + cam + ') y la columna «Camaronera» dice «' + p.camaronera + '»: se deja la de la columna.');
+    }
+    separadas.push(normPiscina(p.piscina) + ': ' + antes + ' → ' + m[1] + ' · ' + p.camaronera);
+  });
+  if (separadas.length) avisos.push(separadas.length + ' piscina(s) traían la camaronera pegada a la piscina de origen, y se separó (' + separadas.join(', ') + ').');
   if (conLetras.length) {
     avisos.push(conLetras.length + ' piscina(s) traen la piscina de origen con letras junto al número (' + conLetras.map((p) => normPiscina(p.piscina) + ': ' + p.piscinaOrigen).join(', ') + '): se sube tal cual.');
   }
+  /* ── Las NOTAS bajo la tabla van a la Observación de SU piscina (usuario, 2026-09-18) ──
+     Una nota que nombra piscinas de ESTA tabla se añade a la Observación de cada una, detrás de la que ya traiga y sin
+     repetirla. Se casa por PALABRA entera —«815» no casa con «8150»— y sólo con piscinas de la tabla. Una piscina SIN
+     datos productivos no se sube (la misma regla que la tabla), así que su nota tampoco: se dice. La nota que no va a
+     ninguna piscina con datos queda en `notas`, que es lo que la ficha enseña como «no se sube». */
+  const porId = new Map(piscinas.map((p) => [normPiscina(p.piscina), p]));
+  crudas.forEach((n) => {
+    const nombradas = [...new Set((n.texto.match(/[0-9a-z]+/gi) || []).map(normPiscina).filter((t) => porId.has(t)))];
+    const con = nombradas.filter((id) => tieneDatos(porId.get(id)));
+    const sin = nombradas.filter((id) => !tieneDatos(porId.get(id)));
+    con.forEach((id) => {
+      const p = porId.get(id);
+      if (!p.observacion.includes(n.texto)) p.observacion = p.observacion ? p.observacion + ' · ' + n.texto : n.texto;
+    });
+    const cita = '«' + (n.texto.length > 60 ? n.texto.slice(0, 60) + '…' : n.texto) + '»';
+    if (con.length) avisos.push('La nota de la fila ' + n.fila + ' ' + cita + ' va a la Observación de la(s) piscina(s) ' + con.join(', ') + '.');
+    if (sin.length) avisos.push('La nota de la fila ' + n.fila + ' nombra la(s) piscina(s) ' + sin.join(', ') + ', sin datos esta semana: ahí no se sube.');
+    if (!con.length) notas.push('Fila ' + n.fila + ': ' + n.texto);
+  });
   return { esBroodstock: true, fechaCorte, piscinas, notas, avisos, errores };
 }
 

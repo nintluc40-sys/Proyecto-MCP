@@ -205,6 +205,35 @@ describe('Control Broodstock · la ficha', () => {
     expect(texto('#mb-nombre')).toBe('HOJA BROODSTOCK.xlsx · 2 semana(s) · 1 hoja(s) que no son de Broodstock');
   });
 
+  it('🔴 la nota que nombra una piscina con datos llega a su Observación en el envío, y la vista previa la enseña (punto 8)', async () => {
+    const X = window.XLSX, wb = X.utils.book_new();
+    X.utils.book_append_sheet(wb, hojaXlsx(X, 46131, [46103, 46110, 46117, 46124, 46131],
+      [F815, F811, [], ['', '', 'NOTA: PISCINAS 815 Y 811 FUERON RALEADAS']]), '19 Abr. 26');
+    await H.madBsArchivo(archivo(X.write(wb, { type: 'array', bookType: 'xlsx' })));
+    expect(texto('#mb-prev')).toContain('LÍNEA DE PRUEBA · NOTA: PISCINAS 815 Y 811 FUERON RALEADAS');
+    expect(texto('#mb-report')).toContain('va a la Observación de la(s) piscina(s) 815.');
+    expect(texto('#mb-report')).toContain('nombra la(s) piscina(s) 811, sin datos esta semana: ahí no se sube.');
+    expect(texto('#mb-report'), 'ya no queda texto «que NO se sube»').not.toContain('que NO se sube');
+    await H.madBsGuardar();
+    expect(envios).toHaveLength(1);
+    expect(envios[0].rows).toHaveLength(1);
+    expect(valor(envios[0], 'Observación')).toBe('LÍNEA DE PRUEBA · NOTA: PISCINAS 815 Y 811 FUERON RALEADAS');
+  });
+
+  it('la vista previa enseña la piscina de origen y la camaronera separadas (punto 10)', async () => {
+    const X = window.XLSX, wb = X.utils.book_new();
+    const cabJul = CAB.filter((h) => h !== 'Camaronera');
+    const julio = F815.slice(0, 19).concat(['902 ch', 'XPR6.F6', 'LÍNEA DE PRUEBA']);   // A–S igual; T origen, U código, V obs.
+    const ws = hojaXlsx(X, 46131, [46103, 46110, 46117, 46124, 46131], [julio]);
+    cabJul.forEach((h, c) => { ws[X.utils.encode_cell({ r: 4, c })] = { t: 's', v: h }; });
+    delete ws[X.utils.encode_cell({ r: 4, c: 22 })];
+    X.utils.book_append_sheet(wb, ws, '19 Abr. 26');
+    await H.madBsArchivo(archivo(X.write(wb, { type: 'array', bookType: 'xlsx' })));
+    const fila = [...document.querySelectorAll('#fp-broodstock .mb-prev tbody tr')][0];
+    const celdas = [...fila.children].map((td) => td.textContent);
+    expect(celdas.slice(-3)).toEqual(['902', 'Chongón', 'LÍNEA DE PRUEBA']);
+  });
+
   it('sin SheetJS en la página no se lee nada, y se dice', async () => {
     const X = window.XLSX;
     try {

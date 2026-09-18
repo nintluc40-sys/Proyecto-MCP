@@ -11116,7 +11116,7 @@ function madBsFila(p, fechaCorte){
     sobrevivencia:_madBsNum(x.sobrevivencia),
     dias1:dias.dias1, dias2:dias.dias2, dias3:dias.dias3, edad:edad,
     piscinaOrigen:madBsNormPiscina(x.piscinaOrigen), camaronera:sanitizeStr(x.camaronera, 60),
-    codigo:madBsNormCodigo(x.codigo), observacion:sanitizeStr(x.observacion, 200)
+    codigo:madBsNormCodigo(x.codigo), observacion:sanitizeStr(x.observacion, 500)
   };
   return MAD_BS_COLUMNS.map(function(c){ return valores[c.k]===undefined ? "" : valores[c.k]; });
 }
@@ -11163,6 +11163,9 @@ function madBsValidar(model){
    CABECERA, no por posición: la plantilla de julio no tiene «Camaronera» y la de septiembre sí, y por posición el
    código genético acabaría en «Camaronera» sin un solo error. Las fechas, del SERIAL de Excel (el día y nada más).
    Ver el módulo para el porqué de cada regla. */
+/* La CAMARONERA PEGADA al origen («902 ch», plantilla de julio): se separa (usuario, 2026-09-18). Sólo estos sufijos,
+   con la grafía de DESTINO_OPTS; uno desconocido no se adivina. Gemelo de MAD_BS_SUFIJO_CAMARONERA del módulo. */
+const MAD_BS_SUFIJO_CAMARONERA = { ch:"Chongón" };
 const MAD_BS_CABECERAS = [
   { k:"piscina", es:function(h){ return h==="piscina"; }, obligatoria:true },
   { k:"area", es:function(h){ return h.startsWith("area"); }, obligatoria:true },
@@ -11250,7 +11253,10 @@ function madBsLeerHoja(ws, opts){
   MAD_BS_CABECERAS.filter(function(d){ return d.obligatoria && pos[d.k]===undefined; })
     .forEach(function(d){ errores.push("Falta la columna «"+d.k+"» en la cabecera (fila "+fc+"): no parece un Control Broodstock, o cambió la plantilla."); });
   if(desconocidas.length) avisos.push("Columnas que no se reconocen y NO se suben: "+desconocidas.join(", ")+".");
-  if(pos.camaronera===undefined && !errores.length) avisos.push("El archivo no trae la columna «Camaronera» (plantilla anterior al 17-sep): se sube vacía.");
+  if(pos.camaronera===undefined && !errores.length){
+    avisos.push("El archivo no trae la columna «Camaronera» (plantilla anterior al 17-sep): se toma del sufijo del origen cuando lo trae ("
+      + Object.keys(MAD_BS_SUFIJO_CAMARONERA).map(function(s){ return "«"+s+"» = "+MAD_BS_SUFIJO_CAMARONERA[s]; }).join(", ")+"); si no, va vacía.");
+  }
   if(errores.length) return { esBroodstock:true, fechaCorte:fechaCorte, piscinas:[], notas:notas, avisos:avisos, errores:errores };
   const fin=cabeceras.find(function(c){ return c>pos.pesos; }), bloque=[];
   for(let c=pos.pesos; c<(fin===undefined ? lim.c+1 : fin); c++) bloque.push(c);
@@ -11267,14 +11273,17 @@ function madBsLeerHoja(ws, opts){
       }
     });
   }
-  const piscinas=[];
+  // Las notas, SÓLO en el ancho de la tabla: a la derecha, los libros de julio traen bloques auxiliares de cálculo.
+  const finTabla=cabeceras.length ? cabeceras[cabeceras.length-1] : lim.c;
+  const piscinas=[], crudas=[];
   for(let r=fc+2; r<=lim.r; r++){
     const x=function(k){ return pos[k]===undefined ? null : _madBsCelda(ws, pos[k], r); };
-    // Sin piscina (o una columna A SIN NINGÚN DÍGITO, como «TOTAL»): no se sube. Si trae TEXTO, es una nota.
+    // Sin piscina (o una columna A SIN NINGÚN DÍGITO, como «TOTAL»): no se sube. Si trae TEXTO, es una nota, que va a la
+    // Observación de las piscinas que nombre (ver abajo).
     if(_madBsVacia(x("piscina")) || !/\d/.test(_madBsTexto(x("piscina")))){
       const dice=[];
-      for(let c=0; c<=lim.c; c++){ const y=_madBsCelda(ws, c, r); if(!_madBsVacia(y) && typeof y.v==="string") dice.push(_madBsTexto(y)); }
-      if(dice.length) notas.push("Fila "+r+": "+dice.join(" · "));
+      for(let c=0; c<=finTabla; c++){ const y=_madBsCelda(ws, c, r); if(!_madBsVacia(y) && typeof y.v==="string") dice.push(_madBsTexto(y)); }
+      if(dice.length) crudas.push({ fila:r, texto:dice.join(" · ") });
       continue;
     }
     const p={ piscina:_madBsTexto(x("piscina")), fila:r };
@@ -11298,8 +11307,41 @@ function madBsLeerHoja(ws, opts){
     p.pesoPrevio=u>0 ? pesos[u-1] : "";
     piscinas.push(p);
   }
-  const conLetras=piscinas.filter(function(p){ return /[a-z]/i.test(p.piscinaOrigen) && /\d/.test(p.piscinaOrigen); });
+  // El origen con la camaronera PEGADA («902 ch»): se separa si el sufijo es conocido; no pisa una camaronera de su columna.
+  const separadas=[], conLetras=[];
+  piscinas.forEach(function(p){
+    const m=/^(\d+)\s*([a-z]+)\.?$/i.exec(p.piscinaOrigen);
+    const cam=m ? MAD_BS_SUFIJO_CAMARONERA[m[2].toLowerCase()] || "" : "";
+    if(!cam){
+      if(/[a-z]/i.test(p.piscinaOrigen) && /\d/.test(p.piscinaOrigen)) conLetras.push(p);
+      return;
+    }
+    const antes=p.piscinaOrigen;
+    p.piscinaOrigen=m[1];
+    if(!p.camaronera) p.camaronera=cam;
+    else if(_madBsPlanoCab(p.camaronera)!==_madBsPlanoCab(cam)){
+      avisos.push("La piscina "+madBsNormPiscina(p.piscina)+" trae el origen «"+antes+"» ("+cam+") y la columna «Camaronera» dice «"+p.camaronera+"»: se deja la de la columna.");
+    }
+    separadas.push(madBsNormPiscina(p.piscina)+": "+antes+" → "+m[1]+" · "+p.camaronera);
+  });
+  if(separadas.length) avisos.push(separadas.length+" piscina(s) traían la camaronera pegada a la piscina de origen, y se separó ("+separadas.join(", ")+").");
   if(conLetras.length) avisos.push(conLetras.length+" piscina(s) traen la piscina de origen con letras junto al número ("+conLetras.map(function(p){ return madBsNormPiscina(p.piscina)+": "+p.piscinaOrigen; }).join(", ")+"): se sube tal cual.");
+  // Las NOTAS bajo la tabla van a la Observación de las piscinas que nombran (por PALABRA entera, sólo de esta tabla);
+  // a una piscina sin datos no (no se sube). La que no va a ninguna con datos queda en `notas`: «no se sube».
+  const porId=new Map(piscinas.map(function(p){ return [madBsNormPiscina(p.piscina), p]; }));
+  crudas.forEach(function(n){
+    const nombradas=Array.from(new Set((n.texto.match(/[0-9a-z]+/gi) || []).map(madBsNormPiscina).filter(function(t){ return porId.has(t); })));
+    const con=nombradas.filter(function(id){ return madBsTieneDatos(porId.get(id)); });
+    const sin=nombradas.filter(function(id){ return !madBsTieneDatos(porId.get(id)); });
+    con.forEach(function(id){
+      const p=porId.get(id);
+      if(p.observacion.indexOf(n.texto)===-1) p.observacion=p.observacion ? p.observacion+" · "+n.texto : n.texto;
+    });
+    const cita="«"+(n.texto.length>60 ? n.texto.slice(0, 60)+"…" : n.texto)+"»";
+    if(con.length) avisos.push("La nota de la fila "+n.fila+" "+cita+" va a la Observación de la(s) piscina(s) "+con.join(", ")+".");
+    if(sin.length) avisos.push("La nota de la fila "+n.fila+" nombra la(s) piscina(s) "+sin.join(", ")+", sin datos esta semana: ahí no se sube.");
+    if(!con.length) notas.push("Fila "+n.fila+": "+n.texto);
+  });
   return { esBroodstock:true, fechaCorte:fechaCorte, piscinas:piscinas, notas:notas, avisos:avisos, errores:errores };
 }
 function madBsLeerLibro(wb){
@@ -11438,7 +11480,8 @@ function madBsPintar(){
       + notas.map(function(n){ return '<li>'+escapeHtml(n)+'</li>'; }).join("")+'</ul></details>' : "");
   // La vista previa enseña lo que decide una carga; las demás columnas van igual a la hoja.
   const H=MAD_BS_HEADERS, cols=["Piscina","Fase actual","Fecha siembra","Cantidad sembrada","Densidad (cam/m²)","Pl/g","Peso actual (g)","Fecha del peso",
-    "Incremento última semana (g)","Crecimiento fase actual (g/sem)","Sobrevivencia estimada (%)","Edad total (días)","Código genético"];
+    "Incremento última semana (g)","Crecimiento fase actual (g/sem)","Sobrevivencia estimada (%)","Edad total (días)","Código genético",
+    "Piscina origen","Camaronera","Observación"];   // al FINAL: los puntos 8 y 10 cambian estas tres, y así no se mueve ninguna otra
   prev.innerHTML=_madBsElegidas().map(function(h){
     const filas=buildMadBsRows(h.lectura);
     if(!filas.length) return "";
