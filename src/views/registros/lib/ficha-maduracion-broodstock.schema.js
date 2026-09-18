@@ -20,8 +20,8 @@
    ── DECISIONES DEL USUARIO (2026-09-17) ───────────────────────────────────────
    · Las PISCINAS son fijas del área; los CÓDIGOS GENÉTICOS varían cada tanto. Así que la llave es
      (fecha de corte · piscina): una fila por piscina y semana, y el histórico son las semanas.
-   · Entra una columna nueva **Pl/g**, al lado de «Peso de siembra»: las postlarvas por gramo (ej. 130).
-     Nace porque en el Excel esa cifra venía DENTRO del peso de siembra como texto («130.pl») en las
+   · Entra una columna nueva **Pl/g**, al lado de «Peso de siembra»: las postlarvas por gramo (ej. 120).
+     Nace porque en el Excel esa cifra venía DENTRO del peso de siembra como texto («120.pl») en las
      piscinas de precría, mientras en las demás iba en gramos. Dos cosas distintas en una columna.
    · Las FASES son tres —Pre-reproductor, Precría y Engorde— y hay que canonizar la grafía: el archivo
      trae «PRECRIA» y «Pre-reproductor» a la vez. Mismo criterio que el analista (R7, 2026-09-16).
@@ -60,9 +60,9 @@ export const normPiscina = (v) => sanitizeStr(v, 20).replace(/\s+/g, '');
  *  al cruzarlo con la MATRIZ. Ver `normCodigoGenetico` en ficha-maduracion-desoves.schema.js. */
 export const normCodigo = (v) => sanitizeStr(v, 60).toUpperCase().replace(/\s+/g, '');
 
-/* ⚠⚠ EXIGE QUE TODO EL TEXTO SEA EL NÚMERO, y no es quisquillosería: `parseFloat('130.pl')` devuelve
-   **130**, y «130.pl» es literalmente lo que el archivo traía en el «Peso de siembra» de la precría. Con
-   un parseo tolerante, esas postlarvas por gramo entrarían en la hoja como 130 GRAMOS de peso — que es
+/* ⚠⚠ EXIGE QUE TODO EL TEXTO SEA EL NÚMERO, y no es quisquillosería: `parseFloat('120.pl')` devuelve
+   **120**, y un «120.pl» es literalmente lo que el archivo traía en el «Peso de siembra» de la precría. Con
+   un parseo tolerante, esas postlarvas por gramo entrarían en la hoja como 120 GRAMOS de peso — que es
    el error que la columna `Pl/g` viene a cerrar, colado por la puerta de atrás. */
 const num = (v) => {
   if (v === '' || v === null || v === undefined) return '';
@@ -362,7 +362,7 @@ function sobrevivenciaDe(x) {
   const m = /^(-?\d+(?:[.,]\d+)?)\s*%$/.exec(String(x.v).trim());
   return m ? Number(m[1].replace(',', '.')) : String(x.v).trim();
 }
-/* «130.pl», «130 pl», «130 pl/g»: son postlarvas por gramo, no un peso. Es lo que traía la precría. */
+/* «120.pl», «120 pl», «120 pl/g»: son postlarvas por gramo, no un peso. Es lo que traía la precría. */
 const PLG_TEXTO = /^(\d+(?:[.,]\d+)?)\s*\.?\s*pl(?:\s*\/\s*g)?\.?$/i;
 
 /** Lee UNA hoja: { esBroodstock, fechaCorte, piscinas, notas, errores, avisos }. `errores` impide subirla; `avisos`

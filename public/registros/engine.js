@@ -11040,8 +11040,8 @@ function madBsFaseCanonica(v){
 }
 function madBsNormPiscina(v){ return sanitizeStr(v, 20).replace(/\s+/g, ""); }
 function madBsNormCodigo(v){ return sanitizeStr(v, 60).toUpperCase().replace(/\s+/g, ""); }
-/* ⚠⚠ Todo el texto tiene que ser el número: parseFloat("130.pl") da 130, y así las Pl/g de la precría entrarían
-   como 130 GRAMOS de peso de siembra (ver el módulo). */
+/* ⚠⚠ Todo el texto tiene que ser el número: parseFloat("120.pl") da 120, y así las Pl/g de la precría entrarían
+   como 120 GRAMOS de peso de siembra (ver el módulo). */
 function _madBsNum(v){
   if(v===""||v===null||v===undefined) return "";
   if(typeof v==="number") return Number.isFinite(v) ? v : "";
@@ -21980,7 +21980,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "345c0e14a6ae";
+const GAS_VERSION = "55acbff1b746";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -22475,7 +22475,7 @@ function doPost(e) {
     // 🔑 La llave la fija ESTE servidor, [0,1]: el cliente manda la suya en payload.keyCols, pero una llave que
     //   viene de fuera es justo lo que D9 enseñó a no creer.
     // La Piscina (columna 2) va como TEXTO antes de escribir, por lo mismo que D2 en Desoves: Sheets convierte lo
-    // que parece un número, y una piscina «0553» guardada como 553 ya no casaría al re-subir la semana.
+    // que parece un número, y una piscina «0813» guardada como 813 ya no casaría al re-subir la semana.
     else if (isBrood) {
       var _filasBs = lastRow(ws) + rows.length;
       if (_filasBs > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasBs - ws.getMaxRows());

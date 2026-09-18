@@ -147,7 +147,7 @@ Como las demás, sólo envía al **GAS de esta app** (compara el sello): sin él
 de septiembre sí: por posición, el código genético acabaría en «Camaronera» sin un error—. La fecha de
 corte es la de **A3** (no el nombre de la hoja); del bloque de pesos salen el ÚLTIMO peso con la fecha
 de su columna y el de la columna anterior, que da el incremento de **una** semana; la sobrevivencia en
-fracción pasa a %, y «130.pl» son **Pl/g**, no gramos. Densidad, días, edad, incremento y crecimiento
+fracción pasa a %, y un «120.pl» son **Pl/g**, no gramos. Densidad, días, edad, incremento y crecimiento
 se RECALCULAN. Un libro trae una hoja por semana: se marca sólo la más reciente (el histórico de julio
 **no se carga**: decisión del usuario). Subir otra vez la misma semana **reemplaza** las filas de las
 piscinas que vienen con datos; las que no vienen, o vienen sin datos productivos, **ni se borran ni se
