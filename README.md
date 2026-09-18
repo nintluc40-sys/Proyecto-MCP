@@ -18,8 +18,10 @@ npm test           # Vitest (tests de la capa de datos)
 npm run lint       # ESLint
 ```
 
-> SheetJS (XLSX) y D3 se cargan por CDN desde `index.html` (las versiones de npm
-> están deprecadas/desactualizadas). Chart.js sí es dependencia de npm.
+> SheetJS (XLSX) y D3 se sirven desde `public/vendor/` —el mismo origen, con su `integrity` en
+> `index.html`—, no desde un CDN (las versiones de npm están deprecadas/desactualizadas). Chart.js sí
+> es dependencia de npm. El gemelo `index (8)` no tiene servidor del que pedirlo: lleva SheetJS
+> **incrustado**, byte a byte el de `public/vendor/` (lo vigila `verificar-xlsx-index8`).
 
 ## Vistas
 
@@ -114,16 +116,21 @@ del módulo se quede sin contraparte en el monolito.
 | 🏁 **Fin de Ciclo** | `Maduración Fin de Ciclo` | (fecha, lote, motivo, sala si es Parcial) · Registro y sus pesos |
 | 🧪 **Tratamientos** | `Maduración Tratamientos` | una fila por tarjeta: preventivo por lote o desinfección por área |
 | 🍤 **Alimentación** | `Maduración Alimentación` | (fecha, sala, tanque): agenda de tomas y ración calculada |
-| 🏠 **Salas** · 🛢️ **Tanques** | `Maduración Sala` · `Maduración Tanques` | la grilla diaria |
+| 📈 **Broodstock** | `Maduración Broodstock` | (fecha de corte, piscina): la carga SEMANAL del Excel del área |
+| 🏠 **Salas** · 🛢️ **Tanques** | `Maduración Sala` · `Maduración Tanques` | la grilla diaria; en Tanques, cada ronda de mortalidad es un **parte** con su hora |
 
 **Todas guardan un BORRADOR POR FECHA en el dispositivo (2026-09-15).** Salas y Tanques ya lo
 hacían por ser grillas —su lista local lleva la fecha dentro de cada fila—; desde esa fecha las
 siete fichas de formulario también: al cambiar el campo Fecha se guarda el día que se deja y se
 trae el que se elige, y lo mismo al cambiar de pestaña o volver atrás. Se guardan los últimos
-**30 días** por ficha. Es lo tecleado en ESE dispositivo, no lo que hay en la hoja.
+**30 días** por ficha. Es lo tecleado en ESE dispositivo, no lo que hay en la hoja. (📈 Broodstock
+no lleva borrador: no se teclea, se carga un archivo que sigue en el equipo de quien lo sube.)
 
 En **🛢️ Tanques**, los pesos ♂ y ♀ **bajan por su columna**: al teclear uno se copia a las filas
-de abajo que tengan animales vivos. Una fila corregida a mano ya no se pisa.
+de abajo que tengan animales vivos. Una fila corregida a mano ya no se pisa. Cada ronda de mortalidad
+del día es un **PARTE** con su número y su **hora**, que pone el sistema al abrirlo y es la misma para
+todos sus tanques: guardar otra vez el mismo parte no lo duplica, y el último del día se puede reabrir.
+La hora va en la llave del GAS, así que se guarda como TEXTO (Sheets convierte «08:30» en una hora).
 En **🏠 Salas**, la columna `RAS` dice **en qué porcentaje** usa el RAS esa sala (`No`, `10%` …
 `100%`); lo que falta hasta el 100 es agua de playa y no se anota.
 
@@ -133,7 +140,20 @@ sala se define una agenda de tomas (hora · alimento · % de biomasa) y la raci�
 Tanques del lote en ese tanque (si no hay, del Ingreso ponderado; y siempre se puede teclear
 a mano). La agenda se comparte por la columna `Tomas` de la última fila de la sala, así que
 un dispositivo que lee la hoja adopta la del resto salvo que tenga cambios sin guardar.
-Necesita que el GAS anuncie la capacidad **`mad-alimentacion`**: sin ella calcula pero no envía.
+Como las demás, sólo envía al **GAS de esta app** (compara el sello): sin él calcula pero no envía.
+
+**📈 Broodstock** es la única ficha de **carga masiva**: no se teclea, se elige el Excel semanal del
+área. El lector va **por cabecera, no por posición** —la plantilla de julio no tiene «Camaronera» y la
+de septiembre sí: por posición, el código genético acabaría en «Camaronera» sin un error—. La fecha de
+corte es la de **A3** (no el nombre de la hoja); del bloque de pesos salen el ÚLTIMO peso con la fecha
+de su columna y el de la columna anterior, que da el incremento de **una** semana; la sobrevivencia en
+fracción pasa a %, y «130.pl» son **Pl/g**, no gramos. Densidad, días, edad, incremento y crecimiento
+se RECALCULAN. Un libro trae una hoja por semana: se marca sólo la más reciente. Subir otra vez la
+misma semana **reemplaza** sus filas.
+
+**El Saldo estima la carga de cada tanque:** la **métrica en g/m²** —la biomasa (♀ + ♂ con sus últimos
+pesos) entre el ÁREA del tanque (`MAD_TANQUE_AREA_M2`: una por sala, y la Sala 5 tanque a tanque)— y la
+**volumétrica en kg/m³**, entre las toneladas de un tanque de su sala. Sin área o sin pesos, vacía.
 
 **El libro mayor** (`src/views/registros/lib/mad-libro.js` + su gemelo inline) responde
 *«¿cuántos animales hay vivos ahora en cada tanque y en cada lote?»*. Nadie teclea un saldo:
@@ -165,9 +185,11 @@ Salas, que propone —y al guardar escribe— el estado de la fecha elegida en l
   identificador por formulario): para no multiplicarlos, se leen una vez por Registro.
 
 ⚠ **Las llaves del GAS mandan sobre el diseño de estas hojas.** `Maduración Sala`,
-`Tanques` y `Lotes` se identifican por POSICIÓN (`[0,1]`, `[0,1,3]` y `[0,1,2]`), así que
-mover una columna de las primeras destruye datos en cada sincronización; `Ingreso`,
-`Movimientos` y `Fin de Ciclo` van por la columna `ID`, que el GAS localiza por su cabecera.
+`Tanques` y `Lotes` se identifican por POSICIÓN (`[0,1]`, `[0,1,3,16,17]` —Fecha, Sala, Tanque,
+Hora y Parte— y `[0,1,2]`), igual que `Broodstock` (`[0,1]`, Fecha de corte · Piscina, que además
+REEMPLAZA en vez de fundir), así que mover una columna de las primeras destruye datos en cada
+sincronización; `Ingreso`, `Movimientos` y `Fin de Ciclo` van por la columna `ID`, que el GAS
+localiza por su cabecera.
 Por eso `Maduración Tanques` conserva tres columnas **vacías a propósito** (`Lote` y las dos
 `Población inicial`): sólo se pueden limpiar en el mismo despliegue en que cambie
 `madKeyCols`.
@@ -228,8 +250,9 @@ src/
 public/
   registros/engine.js      Monolito heredado de las fichas (se estrangula gradualmente)
                            ⚠ ÚNICO sitio donde vive la INTERFAZ del registro operativo de
-                           Maduración (Ingreso · Saldo · Movimientos · Desoves · Fin de
-                           Ciclo · Salas · Tanques). Su cálculo sí tiene gemelo en src/
+                           Maduración (todas sus fichas: la lista viva es MAD_TABS). Su
+                           cálculo sí tiene gemelo en src/
+  vendor/                  SheetJS y D3, servidos desde aquí (no por CDN)
   sw.js                    Service worker: la app arranca y captura SIN CONEXIÓN
   manifest.webmanifest     PWA instalable (standalone) + icons/ 192 · 512 · maskable
 ```
@@ -293,7 +316,9 @@ el monolito gemelo *standalone* (misma app, mismo GAS, mismas claves `larv4_`), 
 versionado**. Lo que los mantiene juntos no es la disciplina sino los verificadores, y para portar
 hay herramienta: `portar-engine-a-index8.mjs` deriva los bloques del `git diff` de `engine.js` y los
 aplica al gemelo; `portar-code-gs-a-plantillas.mjs` hace lo propio con `GAS/Code.gs` y las dos
-plantillas `GAS()`. Copiar a mano es lo que los separa.
+plantillas `GAS()`. Copiar a mano es lo que los separa. ⚠ Con `--contexto` bajo, un bloque que INSERTA
+se ancla sólo en lo de alrededor: el portador se niega si la mitad de sus líneas ya están en el
+destino, porque una vez insertó un bloque dos veces.
 
 > ⚠ **Ninguna prueba del repo puede leer `index (8).html`.** En GitHub Actions el checkout no tiene
 > `Music\`, así que un `readFileSync` sobre él revienta el paso «Pruebas» y arrastra al deploy. La
@@ -312,10 +337,12 @@ falla y dice cuál poner. Vive en **tres copias** que tienen que rendir idéntic
 plantillas `GAS()` de `engine.js` e `index (8)`), porque lo que el usuario pega en Apps Script sale
 de la app.
 
-Antes de enviar, las seis fichas de Maduración preguntan a `?p=ver` y **comparan el sello** con el
-suyo. No basta con que el GAS conteste: eso sólo medía «está vivo».
+Antes de enviar, las fichas de Maduración que escriben por posición o en hojas nuevas preguntan a
+`?p=ver` y **comparan el sello** con el suyo (la lista viva es `_madHojaPideGasNuevo` en `engine.js`;
+no se copia aquí porque ya caducó una vez: decía «seis» y hoy son más, Tanques y Broodstock incluidas).
+No basta con que el GAS conteste: eso sólo medía «está vivo».
 
-> 🔒 **Es un fallo seguro, no un error.** Tocar `Code.gs` y no re-desplegar deja esas seis fichas
+> 🔒 **Es un fallo seguro, no un error.** Tocar `Code.gs` y no re-desplegar deja esas fichas
 > **sin enviar**: calculan, guardan en el dispositivo y lo avisan. Lo mismo si `?p=ver` no contesta.
 > Nada se pierde — pero **la cola descarta a las 24 h**, así que no conviene dejar pasar días entre
 > publicar el cliente y re-desplegar el GAS.
@@ -349,8 +376,8 @@ vacía o no exista**, que es justo cuando el daño se hace.
 > cerrojo puesto ANTES de necesitarlo — una firma añadida después del desfase llega tarde por
 > definición. Firma dos posiciones porque no hay ninguna columna «nueva» que delate al cliente
 > viejo: la 9 caza una inserción anterior y la 12 una posterior.
-> ⚠ **`Maduración Sala` y `Maduración Tanques` siguen sin firma.** Sólo las cubre la guarda V3, que
-> compara contra la cabecera de la HOJA y no actúa si la hoja está vacía.
+> ✅ **`Maduración Sala` y `Maduración Tanques` tienen firma** (la tabla de arriba), además de la guarda
+> V3, que compara contra la cabecera de la HOJA y no actúa si la hoja está vacía: la firma sí.
 
 ⚠⚠ **Si una columna firmada cambia de nombre o de sitio, `MAD_ESQUEMA_FIRMA` se actualiza EN EL
 MISMO CAMBIO**, o la firma rechazará a los clientes al día.
@@ -385,13 +412,18 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
 - 🔴 **Por eso TODO envío a la MATRIZ tiene que traer las cuatro columnas.** La mortalidad y el
   traslado sólo conocen el Trovan: copian el resto de lo que ya leyeron. Si una faltara, la fila no
   casaría con la suya y el upsert **añadiría una suelta** en vez de actualizar.
+- 🛡 **Y el GAS se defiende de un cliente ANTERIOR a la cuaterna** (V2), que manda la mortalidad y el
+  traslado con sólo el Trovan: una fila sin Piscina, Código ni Lote se resuelve por su Trovan si la hoja
+  tiene **una** fila con él; con **varias**, se rechaza el envío entero y se dice que se actualice la app.
 - **Sin la MATRIZ no se arma nada.** Ni eventos ni traslados: con Google caído se trabaja sobre la
   copia local, que guarda **la misma proyección que se le pide al GAS** y anota cuáles; una copia a
   la que le falte alguna de esas columnas no se usa.
-- **Un chip con DOS hembras vivas: no se elige, se rechaza.** El evento sólo trae el Trovan, así que
-  apuntarlo a una sería una convención — y como la lectura **no pide las columnas de fecha** (cuestan
-  10×), el desempate caería en «la de más abajo en la hoja». Una mortalidad así marcaría «Muerto» a la
-  hembra equivocada. Medido en producción el 2026-09-17: 1665 filas, 1665 chips, ninguno con más de una.
+- **Un chip con DOS hembras vivas: el SISTEMA no elige; elige el USUARIO** (D17, R5). El evento sólo
+  trae el Trovan, así que apuntarlo a una sería una convención — y como la lectura **no pide las
+  columnas de fecha** (cuestan 10×), el desempate caería en «la de más abajo en la hoja». Así que el
+  evento y el TRASLADO se rechazan y el informe ofrece las dos, por su cuaterna, para registrar con la
+  elegida (el traslado conserva su TR-ID). El alta ya avisa cuando el chip lo lleva una viva. Medido en
+  producción el 2026-09-17: 1665 filas, 1665 chips, ninguno con más de una.
 
 ### Cuarentena
 
@@ -458,9 +490,9 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
 
 1. 🔴 **La cadena, en este orden:** `git push` → re-desplegar `GAS/Code.gs` en Apps Script
    (publicando una **versión nueva**; guardar sin publicar no cambia lo que sirve el Web App) →
-   ⚙ Config → «🔗 Probar conexión». Mientras los dos primeros no estén hechos, **las seis fichas de
-   Maduración no envían**. ⚠ Copiar el `Code.gs` de la app al día o del repo: una copia antigua de la
-   app lleva un GAS viejo.
+   ⚙ Config → «🔗 Probar conexión». Mientras los dos primeros no estén hechos, **las fichas de
+   Maduración que comparan el sello no envían**. ⚠ Copiar el `Code.gs` de la app al día o del repo:
+   una copia antigua de la app lleva un GAS viejo.
 2. 🔴 **El token compartido.** `SHARED_TOKEN` está vacío: la escritura sobre las hojas de producción
    sigue siendo anónima. Se activa desde el panel de Apps Script (Propiedades del script), sin tocar
    código, pero el código que lo lee tiene que estar desplegado.
@@ -470,21 +502,25 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
 3. **Vaciado de las hojas de Maduración** salvo las del reproductivo: lo que hay son datos de prueba.
    Mientras no se haga, `Maduración Ingreso` y `Maduración Lotes` **rechazan** por su cabecera vieja,
    y eso es lo esperado, no un fallo. Es el momento de retirar las tres columnas vacías de
-   `Maduración Tanques`, cambiando `madKeyCols` **en el mismo despliegue**.
+   `Maduración Tanques`, cambiando `madKeyCols` **en el mismo despliegue** (la Hora y el Parte de la
+   llave se correrían de posición con ellas).
 
 **Abierto**
 
-4. **`Maduración Sala` y `Maduración Tanques` sin firma de esquema.** No es un defecto hoy —ninguna
-   ha cambiado de columnas— pero el cerrojo tiene que existir antes de que haga falta.
-5. **`Maduración Transferencias` sigue sin estrenar**: la ficha está escrita y probada; la hoja nace
+4. **`Maduración Transferencias` sigue sin estrenar**: la ficha está escrita y probada; la hoja nace
    con el primer traslado, y hasta entonces el panel se dibuja vacío, que es lo correcto.
-6. **Microbiología · Patología en fresco** espera a que los usuarios estrenen su hoja.
-7. **Paridad · las 31 funciones que sólo se comparan por NOMBRE** entre `engine.js` e `index (8)`
-   (el repo delega en `__rgLib`, el gemelo las lleva en línea). Es el único hueco de la paridad.
-8. **La CI no vigila `index (8)`**: `deploy.yml` corre lint, vitest, auditorías y build, pero ninguno
+5. **Microbiología · Patología en fresco** espera a que los usuarios estrenen su hoja.
+6. **Paridad · las funciones que sólo se comparan por NOMBRE** entre `engine.js` e `index (8)`
+   (el repo delega en `__rgLib`, el gemelo las lleva en línea). Es el único hueco de la paridad; su
+   número lo dice `verificar-3copias-v3` al correr («delegación __rgLib»).
+7. **La CI no vigila `index (8)`**: `deploy.yml` corre lint, vitest, auditorías y build, pero ninguno
    de los verificadores de copias, que viven fuera del repo. La paridad depende de correrlos a mano.
-9. **Código muerto:** `fechaLimite` se calcula en `registroVigente` y tiene prueba, pero no lo
-   consume ninguna funcionalidad desde que se retiró la sucesión por fechas.
+8. **Control Broodstock · decisiones del usuario:** las notas de texto bajo la tabla ¿sólo se enseñan o
+   van a la Observación de la piscina que nombran?; re-subir una semana ¿debe borrar las piscinas que ya
+   no vienen?; una última columna de pesos distinta del corte ¿bloquea o avisa (hoy avisa)?; el origen
+   «902ch» de julio ¿se parte en piscina y camaronera?; ¿se carga el histórico de julio?
+9. **Carga volumétrica de la Sala 5:** usa 13 t para todos sus tanques, y los de 27 m² son más pequeños
+   que los de 40. Hace falta el volumen de cada tipo para no subestimarla en los pequeños.
 
 **Una vez, a mano, en la hoja**
 
