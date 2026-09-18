@@ -5,13 +5,15 @@
    upsert para el sync del motor + un reporte de lo procesado/omitido.
 
    Arquitectura (decidida con el usuario, 2026-07-11):
-   · MATRIZ  → estado ACTUAL por individuo (clave upsert = Trovan ID).
+   · MATRIZ  → estado ACTUAL por individuo (clave upsert = la CUATERNA Trovan · Piscina · Código genético · Lote).
    · BITÁCORA → 1 fila por evento desove/mortalidad (clave = Trovan+Fecha+Tipo → idempotente).
    · TRANSFERENCIAS → 1 fila por (TR-ID × Trovan) movido (clave = TR-ID+Trovan).
    El GAS fusiona por columna (celda vacía = conserva lo existente), así que un evento
    marca solo sus columnas sin borrar los campos permanentes de la matriz.
-   ♻ Desde el 2026-09-14 el Trovan ID es del CHIP, no de la hembra: el de una hembra muerta
-   se recicla en otra, que entra con su propia fila (ver buildAltaBatch y core/trovan.js).
+   ♻ El Trovan ID es del CHIP, no del individuo: desde el 2026-09-16 un individuo es su CUATERNA, y el mismo chip
+   entra tantas veces como cuaternas distintas tenga, viva o muerta la anterior (ver buildAltaBatch y core/trovan.js).
+   La regla del 09-14 —«sólo el chip de una hembra MUERTA, y con un ingreso posterior a su muerte»— se retiró con ella.
+   Con DOS vivas en un chip, el evento y el traslado no eligen: elige el usuario (D17, R5).
    ============================================================ */
 import { sanitizeStr } from './security.js';
 import { normTrovan, fechaIso, vigenteDelChip, cadenaDelChip, individuoEnFecha, idsDeCadena, claveIndividuo } from '../../../core/trovan.js';

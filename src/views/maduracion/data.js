@@ -171,14 +171,14 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
   // HOY de cada hembra. Callarlo es el mismo fallo que este módulo ya evita con las
   // fechas imposibles y los Trovan repetidos.
   let derivedEvents = 0;
-  /* ♻ MICROCHIPS RECICLADOS (2026-09-14). El microchip de una hembra muerta se vuelve a usar en
-     otra, así que un Trovan ID es de un CHIP y la MATRIZ puede tener varias hembras suyas. Las filas
-     se agrupan por chip y se encadenan en orden de vida (core/trovan.js): cada eslabón es una hembra
-     aparte; la que lleva hoy el chip se llama como él y las anteriores, «chip·fecha de ingreso». Los
-     eventos y los traslados se reparten por fecha (`hembraDe`). Sólo lo que NO encaja en la cadena
-     —otra viva con el mismo chip, o un ingreso que no es posterior a la muerte de la anterior— es un
-     Trovan repetido: se avisa y no se cuenta. Antes se contaba la PRIMERA fila de cada Trovan, y con
-     un chip reciclado la nueva habría heredado los desoves, el lote y el código de la muerta. */
+  /* ♻ UN CHIP, VARIOS INDIVIDUOS. Un Trovan ID es de un CHIP y la MATRIZ puede tener varios individuos suyos: desde
+     el 2026-09-16 cada uno es su CUATERNA (Trovan · Piscina · Código genético · Lote), vivos o muertos, sin regla de
+     fechas —la del 09-14, «sólo si la anterior murió antes de que ingresara la siguiente», se retiró con ella—. Las
+     filas se agrupan por chip y se encadenan en orden de ingreso (core/trovan.js): cada eslabón es un individuo
+     aparte; el último se llama como el chip y los anteriores, «chip·fecha de ingreso». Los eventos y los traslados se
+     reparten por fecha (`hembraDe`). Sólo la MISMA cuaterna dos veces es un Trovan repetido: se avisa y la fila
+     sobrante no se cuenta. Antes se contaba la PRIMERA fila de cada Trovan, y con un chip reutilizado la nueva habría
+     heredado los desoves, el lote y el código de la anterior. */
   const todas = [];
   const filasPorChip = new Map();
   (matrizRows || []).forEach((o, pos) => {

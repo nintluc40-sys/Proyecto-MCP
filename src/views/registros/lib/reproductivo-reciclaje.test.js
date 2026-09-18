@@ -6,14 +6,16 @@
    con el microchip de una hembra que YA MURIÓ. El alta masiva lo rechazaba como «ya existente».
 
    Lo que se prueba aquí es el motor ENTERO sobre el shell real, con el GAS y la red simulados:
-     · el alta de un chip reciclado sólo SALE si el GAS publicado dice «matriz-reciclaje» en ?p=ver.
-       Un GAS anterior fundiría el alta sobre la fila de la hembra muerta, y el GAS vivo hoy es
-       anterior: sin esta salvaguarda, el primer reciclaje en campo corrompería su fila;
-     · la pregunta al GAS sólo se hace si hay algún chip reciclado en el lote;
-     · los informes dicen qué pasó con cada chip;
-     · la Consulta separa a las hembras de un mismo chip.
-   La regla en sí (qué es un reciclaje válido) la prueban reproductivo.data.test.js y, del lado
-   del servidor, mad-gas-dopost.test.js.
+     · el alta: desde el 2026-09-16 un individuo es su CUATERNA (Trovan · Piscina · Código genético ·
+       Lote), así que el mismo chip entra tantas veces como cuaternas distintas tenga —viva o muerta la
+       anterior, sin mirar fechas— y ya no se le pregunta nada al GAS. Lo único que no sale es repetir
+       la MISMA cuaterna. (Hasta ese día sólo salía con el chip de una MUERTA y si el GAS anunciaba
+       «matriz-reciclaje»: esa regla y esa pregunta se retiraron con la cuaterna.);
+     · lo anterior al ingreso de la hembra vigente no se registra;
+     · la Consulta separa a las hembras de un mismo chip;
+     · sin la MATRIZ no hay traslado (RD1), y con dos vivas en un chip elige el usuario (R5).
+   La regla en sí la prueban reproductivo.data.test.js y, del lado del servidor, mad-gas-dopost.test.js
+   (que desde V2 también defiende la MATRIZ de un cliente anterior a la cuaterna).
    ============================================================ */
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
