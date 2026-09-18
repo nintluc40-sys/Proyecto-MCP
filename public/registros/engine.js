@@ -128,6 +128,16 @@ function madSalaToneladasDef(sala){
   const v = MAD_SALA_TONELADAS[sala];
   return v == null ? "" : String(v);
 }
+/* ÁREA de cada tanque, en m² (usuario, 2026-09-18 · D16): el divisor de la CARGA MÉTRICA, que va en g/m². Va por
+   TANQUE porque la Sala 5 no es uniforme: sus dos primeros tanques (7 y 8) son de 40 m² y los otros tres (9, 10 y 11)
+   de 27 —es la única sala así—. Un tanque que no esté aquí NO tiene área: su carga métrica queda vacía, nunca
+   calculada con un área supuesta. Misma tabla que MAD_TANQUE_AREA_M2 del módulo (la paridad del resumen lo exige). */
+const MAD_TANQUE_AREA_M2 = { "Sala 1":13.14, "Sala 2":50, "Sala 3":50, "Sala 4":40, "Sala 5":{ 7:40, 8:40, 9:27, 10:27, 11:27 } };
+function madAreaTanqueM2(sala, tanque){
+  const a = MAD_TANQUE_AREA_M2[String(sala==null?"":sala).trim()];
+  const v = (a!==null && typeof a==="object") ? a[Number(tanque)] : a;
+  return typeof v==="number" ? v : "";
+}
 const MAD_TANQUES_POR_SALA = {
   "Sala 1":  Array.from({length:15},(_,i)=>i+1),
   "Sala 2":  Array.from({length:6},(_,i)=>i+16),
@@ -6491,19 +6501,24 @@ function _madResLotes(fuentes, libro, hoy){
       return { valor:_madResR2(del.reduce(function(a,b){ return a+b; },0)/del.length), fecha:d.fecha };
     };
     const pesoM=peso("Peso promedio machos (g)"), pesoH=peso("Peso promedio hembras (g)");
-    /* CARGA POR TANQUE (usuario, 2026-09-15). Las dos son ESTIMACIONES, y conviene saber de qué:
-         · CARGA MÉTRICA = la biomasa viva del tanque en kg: (♀ × peso♀ + ♂ × peso♂) ÷ 1000, con
-           los ÚLTIMOS pesos registrados del lote —los mismos que usa la ración de Alimentación—.
-           Sin ningún peso registrado queda VACÍA: un cero diría «el tanque no pesa nada», que es
-           falso, y con él la carga volumétrica saldría en cero sobre un tanque lleno.
-         · CARGA VOLUMÉTRICA PROMEDIO = esa biomasa ÷ el volumen medio de un tanque de su sala
-           (kg/m³). Es «promedio» porque las toneladas se registran POR SALA, no por tanque.
+    /* CARGA POR TANQUE (usuario, 2026-09-15). Las dos son ESTIMACIONES, y conviene saber de qué. Las dos parten de
+       la BIOMASA viva del tanque, (♀ × peso♀ + ♂ × peso♂) en gramos, con los ÚLTIMOS pesos registrados del lote —los
+       mismos que usa la ración de Alimentación—. Sin ningún peso registrado quedan VACÍAS: un cero diría «el tanque
+       no pesa nada», que es falso.
+         · CARGA MÉTRICA (D16, 2026-09-18) = esa biomasa ÷ el ÁREA del tanque, en g/m² (MAD_TANQUE_AREA_M2). Hasta
+           entonces era la biomasa en kg a secas. Se divide la biomasa EXACTA, no los kg ya redondeados: con 5129 g
+           en 13,14 m² son 390,33 g/m², y desde 5,13 kg saldrían 390,41. Sin área conocida, vacía.
+         · CARGA VOLUMÉTRICA PROMEDIO = la biomasa en kg ÷ el volumen de un tanque de su sala (kg/m³). Es «promedio»
+           porque las toneladas se registran POR SALA, no por tanque.
        Se calculan aquí, y no en la tarjeta, para que el PDF y la pantalla no puedan divergir. */
     tanques.forEach(function(t){
-      const kg=(pesoH.valor==="" && pesoM.valor==="") ? ""
-        : _madResR2((t.hembras*(pesoH.valor||0) + t.machos*(pesoM.valor||0))/1000);
+      const g=(pesoH.valor==="" && pesoM.valor==="") ? ""
+        : t.hembras*(pesoH.valor||0) + t.machos*(pesoM.valor||0);
+      const kg=g==="" ? "" : _madResR2(g/1000);
       const vol=_madResVolTanque(t.sala, _madResToneladasDe(tons, t.sala).valor);
-      t.cargaMetrica=kg;
+      const area=madAreaTanqueM2(t.sala, t.tanque);
+      t.cargaMetrica=(g==="" || !(area>0)) ? "" : _madResR2(g/area);
+      t.area=area;
       t.volumen=vol;
       t.cargaVolumetrica=(kg==="" || vol==="" || vol===0) ? "" : _madResR2(kg/vol);
     });
@@ -6800,7 +6815,7 @@ const MAD_RES_VARS = [
     ["sala-ocupacion","Tanques y animales en producción y en cuarentena"],["sala-trat","Desinfección y controles de la sala"]] },
   { grupo:"🦐 Lotes", vars:[["lote-poblacion","Población actual ♂ y ♀"],["lote-mortalidad","Mortalidad del día y acumulada (con su rango), tasas por sexo y total"],
     ["lote-dias","Días de cuarentena y de producción"],["lote-relacion","Relación H:M por tanque"],
-    ["lote-carga","Carga por tanque: métrica (kg) y volumétrica promedio (kg/m³)"],
+    ["lote-carga","Carga por tanque: métrica (g/m²) y volumétrica promedio (kg/m³)"],
     ["lote-pesos","Peso ♂ y ♀ (último registrado)"],
     ["lote-mudas","% Mudas y % Cópulas (último día)"],
     ["lote-obs","Observaciones sanitarias y operativas de sus tanques (último día)"]] },
@@ -6919,10 +6934,11 @@ function _madResLoteHTML(L, sel, conPdf){
     + _madResFila("Ingresados", L.ingresados.machos+"♂ · "+L.ingresados.hembras+"♀");
   if(sel["lote-dias"]) b+=_madResFila("Días", L.dias.length ? L.dias.map(function(d){ return escapeHtml(d.sala)+": cuarentena "+_madResCel(d.diasCuarentena)+" · producción "+_madResCel(d.diasProduccion); }).join("<br>") : "—");
   if(sel["lote-relacion"]) b+=_madResFila("Relación H:M por tanque", L.tanques.length ? L.tanques.map(function(t){ return escapeHtml(t.sala)+" t"+t.tanque+": "+_madResCel(t.relacion)+" ("+t.hembras+"♀/"+t.machos+"♂)"; }).join("<br>") : "—");
-  /* Se pinta junto a la relación H:M porque sale de las mismas dos cifras, y se enseña el
-     volumen usado: una carga sin decir entre cuántos m³ se dividió no se puede comprobar. */
+  /* Se pinta junto a la relación H:M porque sale de las mismas dos cifras, y se enseñan el ÁREA y el
+     volumen usados: una carga sin decir entre qué se dividió no se puede comprobar. */
   if(sel["lote-carga"]) b+=_madResFila("Carga por tanque", L.tanques.length ? L.tanques.map(function(t){
-    return escapeHtml(t.sala)+" t"+t.tanque+": "+_madResCel(t.cargaMetrica," kg")+" · "+_madResCel(t.cargaVolumetrica," kg/m³")+_madResGris(t.volumen==="" ? "" : t.volumen+" m³");
+    return escapeHtml(t.sala)+" t"+t.tanque+": "+_madResCel(t.cargaMetrica," g/m²")+" · "+_madResCel(t.cargaVolumetrica," kg/m³")
+      +_madResGris([t.area==="" ? "" : t.area+" m²", t.volumen==="" ? "" : t.volumen+" m³"].filter(Boolean).join(" · "));
   }).join("<br>") : "—");
   if(sel["lote-pesos"]) b+=_madResFila("Peso promedio", "♂ "+_madResCel(L.pesoMachos.valor," g")+_madResGris(L.pesoMachos.fecha)+" · ♀ "+_madResCel(L.pesoHembras.valor," g")+_madResGris(L.pesoHembras.fecha));
   if(sel["lote-mudas"]) b+=_madResFila("% Mudas · % Cópulas", _madResCel(L.pctMudas,"%")+" · "+_madResCel(L.pctCopulas,"%")+_madResGris(L.fechaDia));

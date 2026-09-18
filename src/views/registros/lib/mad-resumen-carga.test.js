@@ -7,9 +7,10 @@
    volumétrica promedio».
 
    LAS DOS CARGAS SON ESTIMACIONES, y estas pruebas fijan de qué:
-     · CARGA MÉTRICA = biomasa viva del tanque en kg = (♀ × peso♀ + ♂ × peso♂) ÷ 1000, con los
-       ÚLTIMOS pesos registrados del lote. Sin ningún peso queda VACÍA, nunca en cero.
-     · CARGA VOLUMÉTRICA PROMEDIO = esa biomasa ÷ el volumen de UN tanque de su sala (1 t de agua
+     · CARGA MÉTRICA = biomasa viva del tanque, (♀ × peso♀ + ♂ × peso♂) en gramos, con los ÚLTIMOS
+       pesos registrados del lote, ÷ el ÁREA del tanque: g/m² (D16, 2026-09-18; hasta entonces era la
+       biomasa en kg a secas). Sin ningún peso, o sin área conocida, queda VACÍA, nunca en cero.
+     · CARGA VOLUMÉTRICA PROMEDIO = esa biomasa, en kg, ÷ el volumen de UN tanque de su sala (1 t de agua
        = 1 m³). Las toneladas registradas YA SON las de un tanque, así que no se dividen entre
        nada: es «promedio» porque la cifra es la misma para todos los tanques de la sala —el
        volumen típico de uno—, no porque se reparta.
@@ -49,8 +50,9 @@ const H = {};
    🔑 La carga va sobre los animales VIVOS del libro, no sobre los ingresados: la hembra que muere
    en el tanque de desove (01-11) deja la Sala 1 t1 en 59♀, y por eso la cifra no es la del
    ingreso. Si alguien «simplificara» leyendo los ingresos, estas dos cuentas lo dirían:
-     → Sala 1 t1: (59×50 + 30×40) ÷ 1000 = 4,15 kg ÷ 5,5 m³ = 0,75 kg/m³
-     → Sala 2 t16: (20×50 + 10×40) ÷ 1000 = 1,4 kg ÷ 21 m³ = 0,07 kg/m³ */
+     → Sala 1 t1: 59×50 + 30×40 = 4150 g ÷ 13,14 m² = 315,83 g/m² · 4,15 kg ÷ 5,5 m³ = 0,75 kg/m³
+     → Sala 2 t16: 20×50 + 10×40 = 1400 g ÷ 50 m² = 28 g/m²       · 1,4 kg ÷ 21 m³ = 0,07 kg/m³
+   (D16, 2026-09-18: la carga MÉTRICA va en g/m², la biomasa entre el ÁREA del tanque.) */
 const HOJAS = {
   'Maduración Ingreso': [
     { Fecha: '2026-01-01', Lote: 'AB', 'Código genético': 'CG1', Sala: 'Sala 1', Tanque: 1, Machos: 30, Hembras: 60 },
@@ -145,22 +147,23 @@ describe('Saldo · el fixture llega entero (si no, lo de abajo no prueba nada)',
 });
 
 describe('Saldo · Carga métrica y Carga volumétrica promedio por tanque', () => {
-  it('🔴 cada tanque con su biomasa, su carga y el volumen con el que se dividió', () => {
+  it('🔴 cada tanque con su carga métrica (g/m²), su volumétrica y el área y el volumen con que se dividieron', () => {
     soloEstas(['lote-carga']);
     const t = texto();
-    expect(t).toContain('Sala 1 t1: 4.15 kg · 0.75 kg/m³ (5.5 m³)');
-    expect(t).toContain('Sala 2 t16: 1.4 kg · 0.07 kg/m³ (21 m³)');
+    expect(t).toContain('Sala 1 t1: 315.83 g/m² · 0.75 kg/m³ (13.14 m² · 5.5 m³)');
+    expect(t).toContain('Sala 2 t16: 28 g/m² · 0.07 kg/m³ (50 m² · 21 m³)');
   });
 
-  it('🔑 las dos salas NO dan lo mismo: el volumen sale de SU sala, no de una cualquiera', () => {
+  it('🔑 las dos salas NO dan lo mismo: el área y el volumen salen de SU sala, no de una cualquiera', () => {
     soloEstas(['lote-carga']);
-    // 5,5 m³ frente a 21 m³. Si se cruzaran, la prueba de arriba caería.
-    expect(texto()).not.toContain('Sala 1 t1: 4.15 kg · 0.2 kg/m³');
+    // 13,14 m² y 5,5 m³ frente a 50 m² y 21 m³. Si se cruzaran, la prueba de arriba caería.
+    expect(texto()).not.toContain('Sala 1 t1: 83 g/m²');
+    expect(texto()).not.toContain('Sala 1 t1: 315.83 g/m² · 0.2 kg/m³');
   });
 
-  it('se enseña el volumen usado: una carga que no se puede comprobar no sirve', () => {
+  it('se enseñan el área y el volumen usados: una carga que no se puede comprobar no sirve', () => {
     soloEstas(['lote-carga']);
-    expect(texto()).toMatch(/kg\/m³ \(5\.5 m³\)/);
+    expect(texto()).toMatch(/kg\/m³ \(13\.14 m² · 5\.5 m³\)/);
   });
 
   it('apagar la variable la quita del resumen', () => {

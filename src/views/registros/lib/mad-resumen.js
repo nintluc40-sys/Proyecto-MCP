@@ -18,7 +18,7 @@
    ============================================================ */
 
 import { construirLibro, sumarDias, ubicKey, CUARENTENA_DIAS, ESTADO_PRODUCCION, ESTADO_CUARENTENA, ESTADO_CERRADO } from './mad-libro.js';
-import { MAD_TANQUES_POR_SALA, MAD_SALA_TONELADAS } from './ficha-maduracion-ingreso.schema.js';
+import { MAD_TANQUES_POR_SALA, MAD_SALA_TONELADAS, areaTanqueM2 } from './ficha-maduracion-ingreso.schema.js';
 
 export const RESUMEN_TEMPS = ['Temperatura 2:00', 'Temperatura 4:00', 'Temperatura 6:00', 'Temperatura 8:00', 'Temperatura 10:00', 'Temperatura 12:00',
   'Temperatura 14:00', 'Temperatura 16:00', 'Temperatura 18:00', 'Temperatura 20:00', 'Temperatura 22:00', 'Temperatura 0:00'];
@@ -252,19 +252,24 @@ function resumenLotes(fuentes, libro, hoy) {
     };
     const pesoM = peso('Peso promedio machos (g)');
     const pesoH = peso('Peso promedio hembras (g)');
-    /* CARGA POR TANQUE (usuario, 2026-09-15). Las dos son ESTIMACIONES, y conviene saber de qué:
-         · CARGA MÉTRICA = la biomasa viva del tanque en kg: (♀ × peso♀ + ♂ × peso♂) ÷ 1000, con
-           los ÚLTIMOS pesos registrados del lote —los mismos que usa la ración de Alimentación—.
-           Sin ningún peso registrado queda VACÍA: un cero diría «el tanque no pesa nada», que es
-           falso, y con él la carga volumétrica saldría en cero sobre un tanque lleno.
-         · CARGA VOLUMÉTRICA PROMEDIO = esa biomasa ÷ el volumen medio de un tanque de su sala
-           (kg/m³). Es «promedio» porque las toneladas se registran POR SALA, no por tanque.
+    /* CARGA POR TANQUE (usuario, 2026-09-15). Las dos son ESTIMACIONES, y conviene saber de qué. Las dos parten de
+       la BIOMASA viva del tanque, (♀ × peso♀ + ♂ × peso♂) en gramos, con los ÚLTIMOS pesos registrados del lote —los
+       mismos que usa la ración de Alimentación—. Sin ningún peso registrado quedan VACÍAS: un cero diría «el tanque
+       no pesa nada», que es falso.
+         · CARGA MÉTRICA (D16, 2026-09-18) = esa biomasa ÷ el ÁREA del tanque, en g/m² (MAD_TANQUE_AREA_M2). Hasta
+           entonces era la biomasa en kg a secas. Se divide la biomasa EXACTA, no los kg ya redondeados: con 5129 g
+           en 13,14 m² son 390,33 g/m², y desde 5,13 kg saldrían 390,41. Sin área conocida, vacía.
+         · CARGA VOLUMÉTRICA PROMEDIO = la biomasa en kg ÷ el volumen de un tanque de su sala (kg/m³). Es «promedio»
+           porque las toneladas se registran POR SALA, no por tanque.
        Se calculan aquí, y no en la tarjeta, para que el PDF y la pantalla no puedan divergir. */
     tanques.forEach((t) => {
-      const kg = (pesoH.valor === '' && pesoM.valor === '') ? ''
-        : r2((t.hembras * (pesoH.valor || 0) + t.machos * (pesoM.valor || 0)) / 1000);
+      const g = (pesoH.valor === '' && pesoM.valor === '') ? ''
+        : t.hembras * (pesoH.valor || 0) + t.machos * (pesoM.valor || 0);
+      const kg = g === '' ? '' : r2(g / 1000);
       const vol = volumenTanque(t.sala, toneladasDe(tons, t.sala).valor);
-      t.cargaMetrica = kg;
+      const area = areaTanqueM2(t.sala, t.tanque);
+      t.cargaMetrica = (g === '' || !(area > 0)) ? '' : r2(g / area);
+      t.area = area;
       t.volumen = vol;
       t.cargaVolumetrica = (kg === '' || vol === '' || vol === 0) ? '' : r2(kg / vol);
     });

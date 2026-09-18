@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createContext, Script } from 'node:vm';
 import { resumenMaduracion, estadisticaDia, diasEntre, RESUMEN_TEMPS, RESUMEN_OXIGENOS } from './mad-resumen.js';
+import { areaTanqueM2 } from './ficha-maduracion-ingreso.schema.js';
 
 const ing = (Fecha, Lote, cg, Sala, Tanque, Machos, Hembras) => ({ Fecha, Lote, 'Código genético': cg, Sala, Tanque, Machos, Hembras });
 const tq = (Fecha, Sala, Tanque, extra = {}) => Object.assign({ Fecha, Sala, Tanque, 'Machos muertos': 0, 'Hembras muertas': 0,
@@ -57,17 +58,20 @@ const TANQUE_REUTILIZADO = () => ({
      · Sala 3 t22 SIN ningún peso           → la carga métrica queda vacía, nunca en cero;
      · Sala 4 t1 con SÓLO el peso de ♀      → sí se calcula, contando los ♂ como 0;
      · Sala 5 con 0 t registradas           → volumen 0, y la volumétrica NO se divide entre cero;
-     · Sala 9, que no está en NINGÚN catálogo, CON toneladas → vale lo registrado;
+     · Sala 9, que no está en NINGÚN catálogo, CON toneladas → vale lo registrado (y sin ÁREA, la métrica vacía);
      · Sala 4 con DOS registros de toneladas → manda el último;
-     · dos días de revisión de nauplios      → sólo el último, sin acumular. */
+     · dos días de revisión de nauplios      → sólo el último, sin acumular;
+     · D16 · Sala 5 t7 (WW) y t9 (VV) con la MISMA biomasa (80 g) → sólo el ÁREA los distingue: 40 m² frente a 27. */
 const CARGA_LIMITES = () => ({
   ingresos: [ing('2026-01-01', 'ZZ', 'CG1', 'Sala 3', 22, 10, 20), ing('2026-01-01', 'XX', 'CG2', 'Sala 4', 1, 4, 6),
-    ing('2026-01-01', 'WW', 'CG3', 'Sala 5', 7, 2, 3), ing('2026-01-01', 'YY', 'CG4', 'Sala 9', 99, 5, 5)],
+    ing('2026-01-01', 'WW', 'CG3', 'Sala 5', 7, 2, 3), ing('2026-01-01', 'YY', 'CG4', 'Sala 9', 99, 5, 5),
+    ing('2026-01-01', 'VV', 'CG5', 'Sala 5', 9, 2, 3)],
   tanques: [
     tq('2026-01-10', 'Sala 3', 22, {}),
     tq('2026-01-10', 'Sala 4', 1, { 'Peso promedio hembras (g)': 50 }),
     tq('2026-01-10', 'Sala 5', 7, { 'Peso promedio machos (g)': 10, 'Peso promedio hembras (g)': 20 }),
     tq('2026-01-10', 'Sala 9', 99, { 'Peso promedio machos (g)': 10, 'Peso promedio hembras (g)': 20 }),
+    tq('2026-01-10', 'Sala 5', 9, { 'Peso promedio machos (g)': 10, 'Peso promedio hembras (g)': 20 }),
   ],
   sala: [
     Object.assign(sala('2026-01-10', 'Sala 4', 'Producción', ''), { Toneladas: 5 }),
@@ -96,6 +100,16 @@ describe('Resumen · piezas', () => {
   it('días entre fechas, en UTC', () => {
     expect(diasEntre('2026-01-10', '2026-02-01')).toBe(22);
     expect(diasEntre('2026-01-01', 'x')).toBe('');
+  });
+  it('🔴 D16 · el ÁREA de cada tanque (m²): una por sala, y la Sala 5 tanque a tanque', () => {
+    expect([areaTanqueM2('Sala 1', 1), areaTanqueM2('Sala 1', 15), areaTanqueM2('Sala 2', 16), areaTanqueM2('Sala 3', 27), areaTanqueM2('Sala 4', 6)])
+      .toEqual([13.14, 13.14, 50, 50, 40]);
+    // La única sala con tanques distintos: los dos primeros (7 y 8) de 40, los otros tres de 27.
+    expect([7, 8, 9, 10, 11].map((t) => areaTanqueM2('Sala 5', t))).toEqual([40, 40, 27, 27, 27]);
+    // Lo que no está en la tabla NO tiene área (ni se supone la de la sala): un tanque 12 de la Sala 5 o una sala ajena.
+    expect([areaTanqueM2('Sala 5', 12), areaTanqueM2('Sala 9', 1), areaTanqueM2('', 1), areaTanqueM2(null, null)]).toEqual(['', '', '', '']);
+    // Como llegan de las hojas: con espacios y el tanque como texto.
+    expect([areaTanqueM2(' Sala 1 ', '3'), areaTanqueM2('Sala 5', '9')]).toEqual([13.14, 27]);
   });
 });
 
@@ -142,14 +156,15 @@ describe('Resumen · lotes', () => {
   });
   it('🔴 relación H:M de cada tanque y peso del último registro (promedio de sus tanques ese día)', () => {
     /* Las cargas van con la relación porque salen de las mismas dos cifras. A mano, con los pesos
-       del 01-30 (♂ 42 g · ♀ 59 g) y las toneladas de CADA tanque de su sala:
-         · Sala 1 t1 → (67×59 + 28×42) ÷ 1000 = 5,129 → 5,13 kg ÷ 5,5 m³ = 0,93 kg/m³
-         · Sala 2 t3 → (39×59 + 9×42) ÷ 1000 = 2,679 → 2,68 kg ÷ 21 m³ = 0,13 kg/m³
-       Las dos salas llevan volúmenes MUY distintos a propósito: con el mismo, tomar el de la sala
-       equivocada daría lo mismo y esta prueba no probaría nada. */
+       del 01-30 (♂ 42 g · ♀ 59 g), el ÁREA del tanque (D16) y las toneladas de CADA tanque de su sala:
+         · Sala 1 t1 → 67×59 + 28×42 = 5129 g ÷ 13,14 m² = 390,33 g/m² · 5,13 kg ÷ 5,5 m³ = 0,93 kg/m³
+         · Sala 2 t3 → 39×59 + 9×42 = 2679 g ÷ 50 m² = 53,58 g/m²    · 2,68 kg ÷ 21 m³ = 0,13 kg/m³
+       Las dos salas llevan áreas y volúmenes MUY distintos a propósito: con los mismos, tomar los de
+       la sala equivocada daría lo mismo y esta prueba no probaría nada. Y 390,33 —no 390,41— fija que
+       se divide la biomasa EXACTA, no los 5,13 kg ya redondeados. */
     expect(lote('AB').tanques).toEqual([
-      { sala: 'Sala 1', tanque: 1, machos: 28, hembras: 67, relacion: 2.39, cargaMetrica: 5.13, volumen: 5.5, cargaVolumetrica: 0.93 },
-      { sala: 'Sala 2', tanque: 3, machos: 9, hembras: 39, relacion: 4.33, cargaMetrica: 2.68, volumen: 21, cargaVolumetrica: 0.13 },
+      { sala: 'Sala 1', tanque: 1, machos: 28, hembras: 67, relacion: 2.39, cargaMetrica: 390.33, area: 13.14, volumen: 5.5, cargaVolumetrica: 0.93 },
+      { sala: 'Sala 2', tanque: 3, machos: 9, hembras: 39, relacion: 4.33, cargaMetrica: 53.58, area: 50, volumen: 21, cargaVolumetrica: 0.13 },
     ]);
     expect([lote('AB').pesoMachos, lote('AB').pesoHembras]).toEqual([{ valor: 42, fecha: '2026-01-30' }, { valor: 59, fecha: '2026-01-30' }]);
   });
@@ -162,6 +177,7 @@ describe('Resumen · lotes', () => {
     const t = resumenMaduracion(sinPeso, { hoy: '2026-02-01' }).lotes.find((x) => x.lote === 'AB').tanques[0];
     expect([t.cargaMetrica, t.cargaVolumetrica]).toEqual(['', '']);
     expect(t.volumen, 'el volumen no depende del peso').toBe(5.5);
+    expect(t.area, 'ni el área').toBe(13.14);
   });
 
   it('🔑 lo REGISTRADO en la ficha de Salas manda sobre el catálogo de toneladas', () => {
@@ -181,13 +197,16 @@ describe('Resumen · lotes', () => {
     const tq1 = (n) => X.lotes.find((l) => l.lote === n).tanques[0];
     // Sin ningún peso: vacía, NO cero. El volumen sí se sabe (21 t por tanque en la Sala 3).
     expect([tq1('ZZ').cargaMetrica, tq1('ZZ').cargaVolumetrica, tq1('ZZ').volumen]).toEqual(['', '', 21]);
-    // Con sólo el peso de ♀ sí se calcula, contando los ♂ como 0: (6 × 50) ÷ 1000 = 0,3 kg.
-    // Y la Sala 4 tiene DOS registros de toneladas: manda el último (12 m³).
-    expect([tq1('XX').cargaMetrica, tq1('XX').volumen, tq1('XX').cargaVolumetrica]).toEqual([0.3, 12, 0.03]);
-    // 0 t registradas: el volumen es 0 y la volumétrica NO se divide entre cero.
-    expect([tq1('WW').cargaMetrica, tq1('WW').volumen, tq1('WW').cargaVolumetrica]).toEqual([0.08, 0, '']);
-    // Sala 9 no está en ningún catálogo, pero SÍ registró toneladas: vale lo registrado.
-    expect([tq1('YY').cargaMetrica, tq1('YY').volumen, tq1('YY').cargaVolumetrica]).toEqual([0.15, 8, 0.02]);
+    // Con sólo el peso de ♀ sí se calcula, contando los ♂ como 0: 6 × 50 = 300 g ÷ 40 m² = 7,5 g/m² (y 0,3 kg).
+    // Y la Sala 4 tiene DOS registros de toneladas: manda el último (12 m³): 0,3 ÷ 12 = 0,03 kg/m³.
+    expect([tq1('XX').cargaMetrica, tq1('XX').volumen, tq1('XX').cargaVolumetrica]).toEqual([7.5, 12, 0.03]);
+    // 0 t registradas: el volumen es 0 y la volumétrica NO se divide entre cero. La métrica sí: 80 g ÷ 40 m² = 2.
+    expect([tq1('WW').cargaMetrica, tq1('WW').volumen, tq1('WW').cargaVolumetrica]).toEqual([2, 0, '']);
+    // D16 · la MISMA biomasa en el t9 de la Sala 5, que mide 27 m² y no 40: 80 ÷ 27 = 2,96 g/m².
+    expect([tq1('VV').cargaMetrica, tq1('VV').area]).toEqual([2.96, 27]);
+    // Sala 9 no está en ningún catálogo, pero SÍ registró toneladas: vale lo registrado (0,15 kg ÷ 8 = 0,02 kg/m³).
+    // Área no hay en ninguna parte —no se registra—, así que su carga métrica queda VACÍA, no con un área supuesta.
+    expect([tq1('YY').cargaMetrica, tq1('YY').area, tq1('YY').volumen, tq1('YY').cargaVolumetrica]).toEqual(['', '', 8, 0.02]);
     const s4 = X.salas.find((s) => s.sala === 'Sala 4');
     expect([s4.toneladas, s4.fechaToneladas, s4.volumenTanque]).toEqual([12, '2026-01-20', 12]);
   });
@@ -211,7 +230,8 @@ describe('Resumen · lotes', () => {
     };
     const t = resumenMaduracion(f, { hoy: '2026-01-05' }).lotes.find((l) => l.lote === 'EX').tanques[0];
     expect([t.hembras, t.machos]).toEqual([33, 59]);
-    expect(t.cargaMetrica).toBe(5.43);
+    // La métrica ya no es la biomasa en kg (D16): 5430 g ÷ 13,14 m² = 413,24 g/m². Los 5,43 kg siguen siendo el numerador de abajo.
+    expect(t.cargaMetrica).toBe(413.24);
     expect(t.volumen).toBe(4.65);
     expect(t.cargaVolumetrica).toBe(1.17);
   });
@@ -368,19 +388,25 @@ describe('Resumen · el monolito y el módulo dan lo mismo', () => {
   const ctx = { String, Number, Object, Array, JSON, Math, Date, parseInt, parseFloat, isFinite };
   ctx.globalThis = ctx;
   createContext(ctx);
-  /* ⚠ LOS DOS CATÁLOGOS SE EXTRAEN DEL MONOLITO, no se pasan por `ctx`. La carga por tanque sale
-     de las toneladas de la sala entre sus tanques: si uno de los dos se pasara desde el módulo, el
-     monolito podría llevar OTRAS cifras y esta prueba seguiría en verde sobre las del módulo. */
+  /* ⚠ LOS CATÁLOGOS SE EXTRAEN DEL MONOLITO, no se pasan por `ctx`: las toneladas, las ÁREAS (D16) y los
+     tanques de cada sala. La carga por tanque sale de ellos: si uno se pasara desde el módulo, el monolito
+     podría llevar OTRAS cifras y esta prueba seguiría en verde sobre las del módulo. */
   new Script(bloque('const MAD_SALA_TONELADAS = {', '"Sala 5":  Array.from({length:5},(_,i)=>i+7)\n};') + '\n'
     + bloque('const MAD_CUARENTENA_DIAS = 15;', '  return lotes.sort().join("+");\n}') + '\n'
     + bloque('const MAD_RES_TEMPS = [', 'rasAlcalinidad:{ dia:_madResDe(alc.dia, "RAS") || { valor:"", fecha:"" }, noche:_madResDe(alc.noche, "RAS") || { valor:"", fecha:"" } } };\n}')
-    + '\n;globalThis.__api = { madResumenMaduracion, madResEstadisticaDia, madResDiasEntre, MAD_RES_TEMPS, MAD_RES_OXIGENOS };').runInContext(ctx);
+    + '\n;globalThis.__api = { madResumenMaduracion, madResEstadisticaDia, madResDiasEntre, MAD_RES_TEMPS, MAD_RES_OXIGENOS, madAreaTanqueM2 };').runInContext(ctx);
   const api = ctx.__api;
 
   it('las mismas lecturas de la sala y las mismas piezas', () => {
     expect([api.MAD_RES_TEMPS, api.MAD_RES_OXIGENOS]).toEqual([RESUMEN_TEMPS, RESUMEN_OXIGENOS]);
     for (const v of [[28, '28.5', 29, '', null], [30], [], ['x'], [-1, 1], [0, 0]]) expect(api.madResEstadisticaDia(v)).toEqual(estadisticaDia(v));
     expect(api.madResDiasEntre('2026-01-10', '2026-02-01')).toBe(22);
+  });
+
+  it('🔴 D16 · la misma ÁREA para cada tanque de cada sala, también lo que no está en la tabla', () => {
+    const salas = ['Sala 1', 'Sala 2', 'Sala 3', 'Sala 4', 'Sala 5', 'Sala 9', ' Sala 5 ', '', null];
+    const tanques = [0, 1, 6, 7, 8, 9, 10, 11, 12, 15, 16, 22, 27, 99, '9', '', null];
+    for (const s of salas) for (const t of tanques) expect(api.madAreaTanqueM2(s, t), JSON.stringify([s, t])).toBe(areaTanqueM2(s, t));
   });
 
   it('🔴 el mismo resumen, cifra a cifra, en el caso completo y en variantes', () => {

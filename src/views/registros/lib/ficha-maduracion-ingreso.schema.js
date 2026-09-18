@@ -64,6 +64,21 @@ export const MAD_TANQUES_POR_SALA = {
  *  usuario puede pisarlo, y lo registrado manda siempre sobre esta tabla. */
 export const MAD_SALA_TONELADAS = { 'Sala 1': 5.5, 'Sala 2': 21, 'Sala 3': 21, 'Sala 4': 14, 'Sala 5': 13 };
 
+/** ÁREA de cada tanque, en m² (usuario, 2026-09-18 · D16): el divisor de la CARGA MÉTRICA, que va en g/m².
+ *  Va por TANQUE y no por sala porque la Sala 5 no es uniforme: sus dos primeros tanques (7 y 8) son de 40 m² y los
+ *  otros tres (9, 10 y 11) de 27 —es la única sala así—. En las demás, todos sus tanques miden lo mismo.
+ *  Un tanque que no esté aquí NO tiene área: su carga métrica queda vacía, nunca calculada con un área supuesta. */
+export const MAD_TANQUE_AREA_M2 = {
+  'Sala 1': 13.14, 'Sala 2': 50, 'Sala 3': 50, 'Sala 4': 40,
+  'Sala 5': { 7: 40, 8: 40, 9: 27, 10: 27, 11: 27 },
+};
+/** Área (m²) del tanque `tanque` de la sala `sala`, o '' si no se conoce. */
+export function areaTanqueM2(sala, tanque) {
+  const a = MAD_TANQUE_AREA_M2[String(sala == null ? '' : sala).trim()];
+  const v = (a !== null && typeof a === 'object') ? a[Number(tanque)] : a;
+  return typeof v === 'number' ? v : '';
+}
+
 /** Origen del agua de un TANQUE en su ingreso. Es una elección entre dos y puede cambiar por día.
  *  ⚠ NO confundir con la columna `RAS` de `Maduración Sala`, que es otra cosa desde el
  *  2026-09-15: allí no se dice «sí o no», se dice EN QUÉ PORCENTAJE usa el RAS esa sala
