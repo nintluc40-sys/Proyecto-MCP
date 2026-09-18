@@ -1268,6 +1268,7 @@ function _gasMotivo(gasMsg){
   else if(ml.indexOf("límite de columnas") !== -1)  pista = " · el GAS desplegado es anterior a esta app: vuelve a desplegarlo desde Apps Script";
   else if(ml.indexOf("no autorizado") !== -1)       pista = " · revisa el token compartido en la configuración";
   else if(ml.indexOf("esquema desactualizado") !== -1) pista = " · la app y la hoja no tienen las mismas columnas: recarga la app para actualizarla; si ya lo está, revisa la fila de cabecera de la hoja";
+  else if(ml.indexOf("no es el de esta app") !== -1) pista = " · actualiza el GAS (⚙ Config → Probar conexión); lo guardado sigue en este dispositivo";   // R2 · Tanques
   return " — " + m + pista;
 }
 function _syncNotOkUI(outcome, errLabel, indId, gasMsg){
@@ -2159,6 +2160,9 @@ async function syncAll(){
   }
 
   if(isMadMod(curMod)){
+    /* R2 (2026-09-17) · el portón del sello se pregunta UNA vez para toda la pulsación —Tanques y las siete fichas de
+       formulario—, por la misma lección de PE1.4 que se explica más abajo. Se declara aquí porque Tanques va primero. */
+    let _gasLoc;
     // ── Maduración: sincroniza pendientes ficha por ficha (Salas/Tanques/Lotes) ──
     for(const f of MAD_FICHAS){
       const pending = loadMad(f).filter(r => !r.synced);
@@ -2172,7 +2176,9 @@ async function syncAll(){
         // siempre y el usuario los reenviaba a mano. Es la única de las 16 rutas donde
         // hoy es posible: _reconcileMark tiene el kind "mad:*" y el modelo marca synced.
         const opts = { mark:{ kind:"mad:"+f, keys: pending.map(p=>p.id) } };
-        const sent = await postPayload(payload, url, opts);
+        /* R2 · Tanques pasa por el portón del sello (ver _madTanquesEnviar); Salas no ha cambiado de llave. */
+        if(f === "tanques" && _gasLoc === undefined) _gasLoc = await _madIngGasAlDia();
+        const sent = f === "tanques" ? await _madTanquesEnviar(payload, opts, _gasLoc) : await postPayload(payload, url, opts);
         if(sent){
           const list2 = loadMad(f);
           pending.forEach(p => {
@@ -2191,8 +2197,9 @@ async function syncAll(){
        preguntaba por su cuenta: SEIS viajes a ?p=ver en fila para una sola pulsación. Y no era sólo lento —medido, ?p=ver
        tarda de verdad y el portón corta a los 6 s—: cada espera agotada devuelve «sin confirmar», y lo que con UNA
        consulta buena se habría entregado acababa en la cola seis veces. Se pregunta perezosamente, sólo si alguna ficha
-       con envíos guardados pide sello; `_madIngGasAlDia` nunca devuelve undefined, así que sirve de «aún no preguntado». */
-    let _gasLoc;
+       con envíos guardados pide sello; `_madIngGasAlDia` nunca devuelve undefined, así que sirve de «aún no preguntado».
+       R2 (2026-09-17) · `_gasLoc` se declara ahora arriba, antes del bucle de las grillas: si Tanques ya lo preguntó,
+       aquí se reutiliza la misma respuesta. */
     for(const f of MAD_LOC_FICHAS){
       if(!madLocLeer(f).length) continue;
       total++;
@@ -7764,8 +7771,10 @@ async function _madIngGasAlDia(url){
    ⚠ 2026-09-15 · Alimentación se quedó fuera al nacer. No costaba datos —«Hoja no permitida» es
    rechazo de ENTORNO y la cola conserva el envío—, pero la cola salía a la red para volver con un
    error previsible y el aviso no era el mismo que el de sus cuatro hermanas. Al añadir una hoja
-   nueva, esta lista se toca en el mismo cambio. */
-function _madHojaPideGasNuevo(hoja){ return hoja === MAD_ING_SHEET || hoja === MAD_DESOVE_SHEET || hoja === MAD_FIN_SHEET || hoja === MAD_TRAT_SHEET || hoja === MAD_MORT_SHEET || hoja === MAD_ALIM_SHEET; }
+   nueva, esta lista se toca en el mismo cambio.
+   R2 (2026-09-17) · y TANQUES, que no es hoja nueva pero cambió de LLAVE con el parte de mortalidad: un GAS
+   anterior la llavea sin Hora ni Parte y funde las rondas del día (ver _madTanquesEnviar). */
+function _madHojaPideGasNuevo(hoja){ if(hoja === MAD_SHEET.tanques) return true; return hoja === MAD_ING_SHEET || hoja === MAD_DESOVE_SHEET || hoja === MAD_FIN_SHEET || hoja === MAD_TRAT_SHEET || hoja === MAD_MORT_SHEET || hoja === MAD_ALIM_SHEET; }
 /* ⚠ 2026-09-16 · el aviso ya no dice «es anterior»: desde que se compara el SELLO, el GAS
    desplegado puede ser anterior O posterior al de esta app, y las dos cosas son igual de malas
    para una hoja que se escribe por posición. Lo que importa —y lo que el técnico puede hacer— es
@@ -12260,8 +12269,9 @@ function renderMadTanques(){
       <div class="meta" style="margin-bottom:8px">${salaSel}${fechaInp}</div>
       <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#065f46;display:flex;align-items:center;gap:8px">
         <span style="font-size:16px">ℹ️</span>
-        <span>Completa los valores por tanque. El Lote se prellena con el último usado (editable). Puedes pegar bloques desde Excel.</span>
+        <span>Completa lo de ESTA ronda por tanque, no el acumulado del día. Al guardar (💾 o ☁️) el parte se cierra con su hora y la grilla queda limpia para la ronda siguiente. Puedes pegar bloques desde Excel.</span>
       </div>
+      ${_madTanquesPartesHTML(list, fecha, sala)}
       <div class="tw"><table class="ft" style="font-size:10.5px">
         <thead>
           <tr>
@@ -12650,6 +12660,61 @@ function _madHoraAhora(){
   const d = new Date();
   return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
 }
+/** La hora que se le puso al parte `parte` de (fecha, sala) al abrirlo. '' si ninguno de sus tanques la tiene. */
+function _madParteHora(list, fecha, sala, parte){
+  let h = "";
+  (list || []).forEach(function(r){
+    const d = r && r.data;
+    if(!h && d && d.fecha === fecha && d.sala === sala && String(d.parte || "") === String(parte) && d.hora) h = String(d.hora);
+  });
+  return h;
+}
+/* R2 (2026-09-17) · REABRIR EL ÚLTIMO PARTE. Un parte cerrado no se volvía a ver en la grilla —es lo que la deja
+   limpia para la ronda siguiente—, así que una cifra mal tecleada sólo se podía corregir en la hoja. Se reabre el
+   ÚLTIMO del día y sólo si no hay otro abierto: con dos abiertos la grilla pintaría el de número más alto y la
+   corrección caería en el parte equivocado. Al volver a guardarlo conserva su número y su HORA, así que en la hoja
+   corrige su fila en vez de añadir otra. */
+function madTanquesReabrirParte(){
+  const sala = _madTanquesSala;
+  const fechaEl = document.getElementById("mad-tanques-fecha");
+  const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
+  if(!sala) return;
+  _madCommitActive();
+  const list = loadMad("tanques");
+  if(_madParteAbierto(list, fecha, sala)){ toast("Ya hay un parte abierto: guárdalo antes de reabrir otro.","warn",4000); return; }
+  const ultimo = _madParteSiguiente(list, fecha, sala) - 1;
+  let n = 0;
+  list.forEach(function(r){
+    const d = r && r.data;
+    if(d && d.fecha === fecha && d.sala === sala && String(d.parte || "") === String(ultimo) && d.cerrado){ d.cerrado = 0; n++; }
+  });
+  if(!n){ toast("No hay ningún parte cerrado que reabrir en "+sala+" ("+fecha+").","info",3000); return; }
+  if(!saveMadList("tanques", list)) return;
+  renderMadTanques();
+  toast("✏️ Parte "+ultimo+" reabierto: corrígelo y vuelve a guardar.","info",4000);
+}
+/** Línea de los partes del día bajo la cabecera de la grilla: cuáles hay, a qué hora, y el botón para reabrir el
+ *  último cuando no queda ninguno abierto. */
+function _madTanquesPartesHTML(list, fecha, sala){
+  const partes = {};
+  (list || []).forEach(function(r){
+    const d = r && r.data;
+    if(!d || d.fecha !== fecha || d.sala !== sala) return;
+    const n = parseInt(d.parte, 10);
+    if(!Number.isFinite(n)) return;
+    const p = partes[n] || (partes[n] = { n: n, hora: "", abierto: false });
+    if(!p.hora && d.hora) p.hora = String(d.hora);
+    if(!d.cerrado) p.abierto = true;
+  });
+  const orden = Object.keys(partes).map(Number).sort(function(a, b){ return a - b; }).map(function(k){ return partes[k]; });
+  if(!orden.length) return "";
+  const abierto = orden.filter(function(p){ return p.abierto; }).pop();
+  const txt = orden.map(function(p){ return "Parte " + p.n + (p.hora ? " · " + escapeHtml(p.hora) : "") + (p.abierto ? " (abierto)" : " ✔"); }).join(" · ");
+  const btn = abierto ? ""
+    : ' <button class="btn" type="button" id="tq-reabrir-btn" onclick="madTanquesReabrirParte()" title="Vuelve a pintar el último parte para corregirlo">✏️ Reabrir el parte ' + orden[orden.length - 1].n + '</button>';
+  return '<div id="tq-partes" style="font-size:11px;color:#334155;margin:0 0 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+    + '<span>📋 Partes del ' + escapeHtml(fecha) + ' en ' + escapeHtml(sala) + ': ' + txt + '</span>' + btn + '</div>';
+}
 
 function saveMadTanquesGrid(opts){
   opts = opts || {};
@@ -12665,16 +12730,19 @@ function saveMadTanquesGrid(opts){
   const explicito = !silent;
   const fechaDeLaRonda = rows[0] && rows[0].fecha;
   const abiertoPrevio = _madParteAbierto(list, fechaDeLaRonda, sala);
-  const parte = explicito ? (abiertoPrevio || _madParteSiguiente(list, fechaDeLaRonda, sala))
-    : (abiertoPrevio || _madParteSiguiente(list, fechaDeLaRonda, sala));
-  const hora = _madHoraAhora();
+  const parte = abiertoPrevio || _madParteSiguiente(list, fechaDeLaRonda, sala);
+  /* R2 (2026-09-17) · LA HORA ES LA DE CUANDO SE ABRIÓ EL PARTE, y ya no se toca. Entra en la llave del GAS
+     (Fecha, Sala, Tanque, Hora, Parte), y reescribirla al cerrar —como se hacía— cambiaba la llave de un parte
+     que el «🔄 Sincronizar» global ya había mandado ABIERTO: la hoja ganaba una segunda fila del mismo parte y el
+     libro restaba esa mortalidad dos veces. Y es la MISMA para todos los tanques del parte, también para uno que
+     se teclee después de abrirlo: antes ése se quedaba sin hora. */
+  const hora = (abiertoPrevio && _madParteHora(list, fechaDeLaRonda, sala, abiertoPrevio)) || _madHoraAhora();
   let saved = 0;
   rows.forEach(data => {
     if(!isValidDate(data.fecha)) return;
     data.parte = parte;
-    // La hora es la del parte, no la de cada tanque: es UNA ronda, y así sus filas se reconocen juntas
-    // en la hoja. Un auto-guardado no la reescribe: el parte abierto conserva la suya.
-    if(explicito || !abiertoPrevio) data.hora = hora;
+    // La hora es la del parte, no la de cada tanque: es UNA ronda, y así sus filas se reconocen juntas en la hoja.
+    data.hora = hora;
     // Cerrar el parte al guardar explícitamente es lo que hace que la ronda siguiente empiece limpia.
     if(explicito) data.cerrado = 1;
     _madMergeRow(list, "tanques", data);
@@ -12693,6 +12761,20 @@ function saveMadTanquesGrid(opts){
   return saved;
 }
 
+/* R2 (2026-09-17) · TANQUES PASA POR EL PORTÓN DEL SELLO, como las seis fichas de formulario. Desde el parte de
+   mortalidad su llave en el GAS es (Fecha, Sala, Tanque, Hora, Parte), y un GAS anterior sigue llaveando por (Fecha,
+   Sala, Tanque): FUNDE los partes del día y la última ronda pisa a las anteriores, con respuesta «ok». Así que:
+     · el sello es el de esta app → se envía;
+     · es OTRO GAS (false) → no se envía, y el motivo viaja en gasMessage para el aviso de siempre;
+     · sin confirmar (null) → a la cola, que sólo lo entrega con el sello confirmado (_madHojaPideGasNuevo).
+   🔑 Aquí no se pierde nada aunque la cola caduque: los registros de la grilla viven en el dispositivo y sólo se marcan
+   como enviados cuando la entrega se reconcilia (marca «mad:tanques»), así que el siguiente «Sincronizar» los reintenta. */
+async function _madTanquesEnviar(payload, opts, gas){
+  const g = gas === undefined ? await _madIngGasAlDia() : gas;
+  if(g === false){ opts.gasMessage = _madGasViejoMsg(MAD_SHEET.tanques); return false; }
+  return _madPostConSello(payload, g, opts);
+}
+
 async function syncMadTanquesGrid(){
   if(saveMadTanquesGrid() === -1) return;
   const url = gasUrl();
@@ -12704,7 +12786,7 @@ async function syncMadTanquesGrid(){
   setSyncUI("pend","Enviando "+pending.length+" tanque(s)…");
   const payload = buildMadPayload("tanques", pending);
   const opts = { mark:{ kind:"mad:tanques", keys: pending.map(p=>p.id) } };   // F3
-  const sent = await postPayload(payload, url, opts);
+  const sent = await _madTanquesEnviar(payload, opts);   // R2 · con el portón del sello
   if(sent){
     const list2 = loadMad("tanques");
     pending.forEach(p => { const idx = list2.findIndex(x => x.id===p.id); if(idx>=0){ list2[idx].synced = true; list2[idx].syncedAt = Date.now(); } });
@@ -12743,7 +12825,7 @@ function downloadMadPDF(ficha){
     toast("Sin registros para imprimir en "+FICHA_LABELS[ficha],"warn",2500);
     return;
   }
-  if(ficha === 'tanques')      list.sort((a,b) => (parseInt((a.data||{}).tanque,10)||0) - (parseInt((b.data||{}).tanque,10)||0));
+  if(ficha === 'tanques')      list.sort((a,b) => ((parseInt((a.data||{}).tanque,10)||0) - (parseInt((b.data||{}).tanque,10)||0)) || ((parseInt((a.data||{}).parte,10)||0) - (parseInt((b.data||{}).parte,10)||0)));
 
   const ts    = new Date();
   const tsStr = ts.toLocaleString('es-EC',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
@@ -12792,7 +12874,9 @@ function downloadMadPDF(ficha){
   } else if(ficha === 'tanques'){
     titleIco = '🛢️'; titleText = 'Maduración · Tanques'; docCode = 'OMR-MAD-TAN';
     // ⚠ Cabecera y celda van JUNTAS: separarlas ya salió mal el 2026-09-08.
-    headers = ['#','Fecha','Sala','Tanque','Machos Muertos','Hembras Muertas','Machos Descarte','Hembras Descarte','Cópulas','Muda','Peso ♂','Peso ♀','Obs. sanitarias','Obs. operativas','Sync'];
+    /* R2 (2026-09-17) · entran «Parte» y «Hora»: con la mortalidad por rondas un tanque sale varias veces el mismo
+       día, y sin ellas el papel parecía traer filas repetidas. Van junto al tanque, en cabecera Y celda. */
+    headers = ['#','Fecha','Sala','Tanque','Parte','Hora','Machos Muertos','Hembras Muertas','Machos Descarte','Hembras Descarte','Cópulas','Muda','Peso ♂','Peso ♀','Obs. sanitarias','Obs. operativas','Sync'];
     rowsHtml = list.map((r, idx) => {
       const d = r.data || {};
       const st = r.synced ? '<b style="color:#166534">✔</b>' : '<b style="color:#92400e">⏳</b>';
@@ -12806,6 +12890,8 @@ function downloadMadPDF(ficha){
              error: sólo un papel con los números bajo la etiqueta equivocada. Si se toca
              una lista, se toca la otra. -->
         <td>${pdfVal(d.tanque)}</td>
+        <td>${pdfVal(d.parte)}</td>
+        <td>${escapeHtml(d.hora||'—')}</td>
         <td>${pdfVal(d.machos_muertos)}</td>
         <td>${pdfVal(d.hembras_muertas)}</td>
         <td>${pdfVal(d.machos_descarte)}</td>
@@ -21265,7 +21351,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "05e04bbf9723";
+const GAS_VERSION = "38ee03c8d6f1";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -21699,7 +21785,7 @@ function doPost(e) {
     if (isMad) {
       // Las hojas POSICIONALES del registro operativo usan upsert con su clave compuesta (las del reproductivo, en madKeyCols):
       //   Sala     → [0,1]   Fecha+Sala
-      //   Tanques  → [0,1,3] Fecha+Sala+Tanque («Lote» va vacía: sólo guarda la posición)
+      //   Tanques  → [0,1,3,16,17] Fecha+Sala+Tanque+Hora+Parte («Lote» va vacía: sólo guarda la posición)
       //   Lotes    → [0,1,2] Fecha+Lote+Código genético (la hoja de Desoves desde el 2026-09-08)
       // D2 (2026-09-13) · la llave de Desoves se guarda como TEXTO. Sheets convierte lo que
       // parece número o fecha: un código «0766» se guardaría como 766 y «3-5» como una fecha,
@@ -21712,6 +21798,15 @@ function doPost(e) {
         var _filasNecesarias = lastRow(ws) + rows.length;
         if (_filasNecesarias > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasNecesarias - ws.getMaxRows());
         if (ws.getMaxRows() > 1) ws.getRange(2, 2, ws.getMaxRows() - 1, 2).setNumberFormat("@");
+      }
+      // R2 (2026-09-17) · la «Hora» del parte de Tanques (columna 17) está en su LLAVE: se escribe como TEXTO por lo
+      // mismo que D2. Sin el formato, Sheets guarda «08:30» como una HORA, madRowKey la lee como una fecha de 1899 y
+      // ningún reenvío del mismo parte vuelve a casar: la hoja ganaría una fila por reenvío y el libro restaría la
+      // mortalidad dos veces. Sólo si la hoja ya llega a esa columna: un cliente anterior manda 16 y no la trae.
+      if (payload.sheetName === "Maduración Tanques") {
+        var _filasTq = lastRow(ws) + rows.length;
+        if (_filasTq > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasTq - ws.getMaxRows());
+        if (ws.getMaxRows() > 1 && ws.getMaxColumns() >= 17) ws.getRange(2, 17, ws.getMaxRows() - 1, 1).setNumberFormat("@");
       }
       // ⚠ 2026-09-16 · aquí se le pasaba llaveMatriz_(rows) a la MATRIZ: una llave a medida que
       // decidía por fechas y muertes a qué hembra del chip iba cada envío, y que RECHAZABA el envío
@@ -22553,7 +22648,7 @@ function algasInKey(row) {
 // ── Upsert genérico para hojas de Maduración ──
 // keyCols es un array de índices de columnas que forman la clave compuesta:
 //   • Maduración Sala     → [0,1]   (Fecha, Sala)
-//   • Maduración Tanques  → [0,1,3] (Fecha, Sala, Tanque) — «Lote» y las dos «Población inicial» van vacías
+//   • Maduración Tanques  → [0,1,3,16,17] (Fecha, Sala, Tanque, Hora, Parte) — «Lote» y las dos «Población inicial» van vacías
 //   • Maduración Lotes    → [0,1,2] (Fecha, Lote, Código genético) — la hoja de Desoves
 // Si la clave coincide con una fila existente: merge (los nuevos valores
 // no vacíos reemplazan al anterior; los vacíos preservan el dato actual).

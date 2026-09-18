@@ -116,6 +116,28 @@ describe('Maduración · PDF de Tanques', () => {
     const tanques = Array.from(doc.querySelectorAll('tbody tr')).map((tr) => tr.querySelectorAll('td')[iTanque].textContent);
     expect(tanques).toEqual(['1', '2', '3']);
   });
+
+  /* 🔴 R2 (2026-09-17, noche). Con la mortalidad por rondas un tanque sale varias veces el mismo día: sin el número
+     de PARTE y su HORA el papel parecía traer filas repetidas. Van junto al tanque, en cabecera Y en celda. */
+  it('🔴 lleva «Parte» y «Hora» junto al tanque, y ordena por tanque y después por parte', () => {
+    /* ⚠ Los `ts` son los de VERDAD: el parte 2 se guarda DESPUÉS que el 1. Importa, porque el filtro previo ordena del
+       más nuevo al más viejo, y con el parte 1 como el más nuevo —como estaba al escribir esta prueba— el orden salía
+       bien aunque nadie ordenara por parte: el banco lo cazó (P18 sobrevivía). */
+    sembrar('tanques', [
+      { id: 'a', ts: 2, synced: true, data: { fecha: '2026-09-17', sala: 'Sala 5', tanque: 8, parte: 2, hora: '11:30', machos_muertos: 1 } },
+      { id: 'b', ts: 3, synced: true, data: { fecha: '2026-09-17', sala: 'Sala 5', tanque: 7, parte: 2, hora: '11:30', machos_muertos: 2 } },
+      { id: 'c', ts: 1, synced: false, data: { fecha: '2026-09-17', sala: 'Sala 5', tanque: 7, parte: 1, hora: '08:00', machos_muertos: 3 } },
+    ]);
+    H.downloadMadPDF('tanques');
+    const doc = pdf();
+    const cab = Array.from(doc.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+    const i = cab.indexOf('Tanque');
+    expect(cab.slice(i, i + 3)).toEqual(['Tanque', 'Parte', 'Hora']);
+    expect(celdasPorFila(doc)).toEqual([cab.length, cab.length, cab.length]);
+    const filas = Array.from(doc.querySelectorAll('tbody tr'))
+      .map((tr) => Array.from(tr.querySelectorAll('td')).slice(i, i + 3).map((td) => td.textContent.trim()));
+    expect(filas).toEqual([['7', '1', '08:00'], ['7', '2', '11:30'], ['8', '2', '11:30']]);
+  });
 });
 
 describe('Maduración · la grilla de Lotes retirada no genera PDF', () => {

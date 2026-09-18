@@ -12,10 +12,11 @@
          que hace que dos tanques con lo mismo marcado produzcan la MISMA cadena, y sin eso
          volver a contar observaciones sería tan imposible como con el texto libre que sustituye;
      2 · que la columna nueva vaya AL FINAL. Esta hoja se escribe por posición (la llave del GAS
-         es [0,1,3]) y ya tiene filas: insertar en medio las corre todas;
+         es [0,1,3,16,17] desde el parte de mortalidad) y ya tiene filas: insertar en medio las corre todas;
      3 · que la bajada respete lo que el usuario tocó a mano, igual que la de los pesos.
+   Y, al final, el PARTE de la ronda (2026-09-17) con lo que le corrigió R2 esa misma noche.
    ============================================================ */
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -24,8 +25,13 @@ const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderMadTanques', 'madTanquesSalaChange', '_collectTanquesGrid', 'buildMadPayload',
   'madTqObsBaja', 'madTqObsLista', 'madTqObsTexto', 'MAD_TQ_OBS_SANITARIAS', 'MAD_TQ_OBS_OPERATIVAS',
   'MAD_TANQUES_POR_SALA', 'today',
-  'saveMadTanquesGrid', 'loadMad', 'saveMadList', '_madParteSiguiente', '_madParteAbierto'];   // parte de mortalidad
+  'saveMadTanquesGrid', 'loadMad', 'saveMadList', '_madParteSiguiente', '_madParteAbierto',   // parte de mortalidad
+  // R2 (2026-09-17) · el portón del sello y reabrir el último parte
+  'syncMadTanquesGrid', 'syncAll', 'flushSyncQueue', '_madHojaPideGasNuevo', 'madTanquesReabrirParte', '_gasVersionLocal', 'MAD_MOD'];
 const H = {};
+const envios = [];
+const avisos = [];
+let respuestaVer = null;
 
 beforeAll(async () => {
   if (typeof globalThis.localStorage === 'undefined') {
@@ -48,12 +54,25 @@ beforeAll(async () => {
 
   const epilogo = '\n;(function(){ var H = globalThis.__ENG;\n'
     + EXPORTAR.map((n) => 'try{ H[' + JSON.stringify(n) + '] = ' + n + '; }catch(_){}').join('\n')
-    + '\ntry{ H.setToast=function(f){toast=f;}; }catch(_){}\n})();';
+    + '\ntry{ H.setToast=function(f){toast=f;}; }catch(_){}'
+    + '\ntry{ H.setPostOnce=function(f){_postOnce=f;}; }catch(_){}'
+    + '\ntry{ H.setGasUrl=function(f){gasUrl=f;}; }catch(_){}'
+    + '\ntry{ H.setVista=function(m,t){ curMod=m; curTab=t; }; }catch(_){}\n})();';
   globalThis.__ENG = H;
   new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(
     window, document, globalThis.localStorage, globalThis,
   );
-  H.setToast(() => {});
+  H.setToast((msg, tipo) => { avisos.push({ msg: String(msg), tipo: tipo || 'info' }); });
+  /* R2 · el POST de UN intento se sustituye (la cañería real —cola, marca, reconciliación— se ejerce entera) y
+     ?p=ver contesta lo que diga cada prueba: el sello de esta app, otro sello, o nada. */
+  H.setPostOnce(async (body) => { envios.push(body); return 'ok'; });
+  H.setGasUrl(() => 'https://script.google.com/macros/s/AKfycbPRUEBA/exec');
+  globalThis.fetch = async (url) => {
+    if (String(url).indexOf('p=ver') === -1) throw new Error('fetch inesperado: ' + url);
+    if (respuestaVer === 'red') throw new Error('sin red');
+    const cuerpo = typeof respuestaVer === 'string' ? respuestaVer : JSON.stringify(respuestaVer);
+    return { ok: true, status: 200, text: async () => cuerpo };
+  };
 });
 
 const SALA = 'Sala 5';                      // tanques 7, 8, 9, 10 y 11
@@ -308,5 +327,185 @@ describe('Tanques · el parte se cuenta por SALA, no sólo por fecha', () => {
     const enSala1 = guardado().filter((r) => r.data.sala === 'Sala 1');
     expect(enSala1, 'el fixture ejerce algo: se guardó en la otra sala').toHaveLength(1);
     expect(enSala1[0].data.parte, 'heredó la numeración de la Sala 5').toBe(1);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   R2 (2026-09-17, noche) · lo que la auditoría encontró en el parte
+
+   La Hora entra en la llave del GAS (Fecha, Sala, Tanque, Hora, Parte), así que:
+     · tiene que ser ESTABLE: reescribirla al cerrar un parte ya enviado cambiaba su llave y la hoja ganaba otra fila;
+     · tiene que ser la MISMA para todos los tanques del parte: uno tecleado después de abrirlo se quedaba sin ella;
+     · y Tanques no puede escribir contra un GAS sin la llave nueva: allí los partes del día se funden.
+   Y un parte cerrado tiene que poder corregirse desde la app, no sólo en la hoja.
+   ══════════════════════════════════════════════════════════════ */
+const ponerTq = (tq, k, v) => {
+  const el = document.querySelector('#fp-tanques [name="tg_' + tq + '_' + k + '"]');
+  if (!el) throw new Error('sin celda ' + k + ' del tanque ' + tq);
+  el.value = String(v);
+};
+const guardadoTq = () => H.loadMad('tanques');
+const a = (h, m) => vi.setSystemTime(new Date(2026, 8, 17, h, m, 0));
+
+describe('R2 · la hora del parte es la de cuando se ABRIÓ, y la misma para todos sus tanques', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('🔴 cerrar el parte más tarde NO le cambia la hora: la hora está en la llave del GAS', () => {
+    a(8, 0);
+    ponerTq(7, 'machos_muertos', 3);
+    H.saveMadTanquesGrid({ silent: true, noRender: true });   // navegar abre el parte a las 08:00
+    a(8, 40);
+    H.saveMadTanquesGrid();                                     // 💾 lo cierra cuarenta minutos después
+    const d = guardadoTq().map((r) => r.data);
+    expect(d).toHaveLength(1);
+    expect(d[0].hora, 'la hora cambió al cerrar: su llave en el GAS cambiaría con ella').toBe('08:00');
+    expect(d[0].cerrado).toBe(1);
+  });
+
+  it('🔴 un tanque tecleado DESPUÉS de abrir el parte lleva la hora del parte, no se queda sin ella', () => {
+    a(8, 0);
+    ponerTq(7, 'machos_muertos', 3);
+    H.saveMadTanquesGrid({ silent: true, noRender: true });
+    a(8, 25);
+    ponerTq(8, 'hembras_muertas', 1);
+    H.saveMadTanquesGrid();
+    const horas = guardadoTq().map((r) => [r.data.tanque, r.data.hora]).sort((x, y) => x[0] - y[0]);
+    expect(horas).toEqual([[7, '08:00'], [8, '08:00']]);
+  });
+
+  it('🔴 la hora es la del parte de SU sala: el mismo número de parte en otra sala no le presta la suya', () => {
+    const irASala = (s) => { document.getElementById('mad-tanques-sala').value = s; H.madTanquesSalaChange(); };
+    irASala('Sala 1');
+    a(8, 0); ponerTq(1, 'machos_muertos', 2);
+    H.saveMadTanquesGrid({ silent: true, noRender: true });         // Sala 1 · parte 1 abierto a las 08:00
+    irASala('Sala 5');
+    a(9, 0); ponerTq(7, 'machos_muertos', 1); H.saveMadTanquesGrid(); // Sala 5 · parte 1 a las 09:00, cerrado
+    irASala('Sala 1');
+    a(9, 30); H.saveMadTanquesGrid();                                 // se cierra el parte 1 de la Sala 1
+    expect(guardadoTq().filter((r) => r.data.sala === 'Sala 1').map((r) => r.data.hora)).toEqual(['08:00']);
+  });
+
+  it('el fixture ejerce algo: el parte SIGUIENTE sí lleva su propia hora', () => {
+    a(8, 0); ponerTq(7, 'machos_muertos', 3); H.saveMadTanquesGrid();
+    a(11, 30); ponerTq(7, 'machos_muertos', 1); H.saveMadTanquesGrid();
+    const porParte = guardadoTq().map((r) => r.data).sort((x, y) => x.parte - y.parte).map((d) => [d.parte, d.hora]);
+    expect(porParte).toEqual([[1, '08:00'], [2, '11:30']]);
+  });
+});
+
+describe('R2 · se puede REABRIR el último parte para corregirlo', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); avisos.length = 0; });
+  afterEach(() => { vi.useRealTimers(); });
+  const celdaTq = (tq, k) => document.querySelector('#fp-tanques [name="tg_' + tq + '_' + k + '"]');
+
+  it('🔴 el parte reabierto vuelve a la grilla y, al guardarlo, conserva su número y su HORA', () => {
+    a(8, 0); ponerTq(7, 'machos_muertos', 3); H.saveMadTanquesGrid();
+    expect(celdaTq(7, 'machos_muertos').value, 'el parte cerrado deja la grilla limpia').toBe('');
+    H.madTanquesReabrirParte();
+    expect(celdaTq(7, 'machos_muertos').value, 'el parte reabierto vuelve a la grilla').toBe('3');
+    a(9, 15); ponerTq(7, 'machos_muertos', 4); H.saveMadTanquesGrid();
+    const d = guardadoTq().map((r) => r.data);
+    expect(d, 'corregir no puede abrir un parte nuevo').toHaveLength(1);
+    expect([d[0].parte, d[0].hora, d[0].machos_muertos, d[0].cerrado]).toEqual([1, '08:00', 4, 1]);
+  });
+
+  it('🔴 sólo se reabre el ÚLTIMO parte del día', () => {
+    a(8, 0); ponerTq(7, 'machos_muertos', 3); H.saveMadTanquesGrid();
+    a(11, 0); ponerTq(7, 'machos_muertos', 1); H.saveMadTanquesGrid();
+    H.madTanquesReabrirParte();
+    const abiertos = guardadoTq().filter((r) => !r.data.cerrado).map((r) => r.data.parte);
+    expect(abiertos).toEqual([2]);
+  });
+
+  it('🔴 con un parte ABIERTO no se reabre otro: la corrección caería en el equivocado', () => {
+    a(8, 0); ponerTq(7, 'machos_muertos', 3); H.saveMadTanquesGrid();          // parte 1, cerrado
+    a(10, 0); ponerTq(8, 'machos_muertos', 1);
+    H.saveMadTanquesGrid({ silent: true, noRender: true });                     // parte 2, abierto
+    H.madTanquesReabrirParte();
+    const p1 = guardadoTq().filter((r) => r.data.parte === 1).map((r) => r.data.cerrado);
+    expect(p1, 'reabrió el 1 con el 2 abierto').toEqual([1]);
+    expect(avisos.some((x) => x.tipo === 'warn' && x.msg.includes('abierto'))).toBe(true);
+  });
+
+  it('la línea de partes los enumera con su hora y ofrece reabrir sólo si no hay ninguno abierto', () => {
+    a(8, 0); ponerTq(7, 'machos_muertos', 3); H.saveMadTanquesGrid();
+    a(11, 30); ponerTq(7, 'machos_muertos', 1); H.saveMadTanquesGrid();
+    const linea = document.getElementById('tq-partes');
+    expect(linea.textContent).toContain('Parte 1 · 08:00 ✔');
+    expect(linea.textContent).toContain('Parte 2 · 11:30 ✔');
+    const btn = document.getElementById('tq-reabrir-btn');
+    expect(btn.textContent).toContain('Reabrir el parte 2');
+    expect(btn.getAttribute('onclick'), 'el botón tiene que estar CABLEADO a la función').toBe('madTanquesReabrirParte()');
+    a(13, 0); ponerTq(8, 'machos_muertos', 2);
+    H.saveMadTanquesGrid({ silent: true, noRender: true });
+    H.renderMadTanques();
+    expect(document.getElementById('tq-reabrir-btn'), 'con un parte abierto no se ofrece reabrir').toBeNull();
+    expect(document.getElementById('tq-partes').textContent).toContain('Parte 3 · 13:00 (abierto)');
+  });
+});
+
+describe('R2 · Tanques pasa por el PORTÓN DEL SELLO (un GAS anterior funde los partes del día)', () => {
+  const cola = () => JSON.parse(localStorage.getItem('larv4_syncqueue') || '[]');
+  const pendientes = () => H.loadMad('tanques').filter((r) => !r.synced);
+  /* Los temporizadores se falsean para que el vaciado de la cola que se programa a los 8 s no se cuele en otra prueba. */
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    envios.length = 0; avisos.length = 0;
+    respuestaVer = { ok: true, version: H._gasVersionLocal() };
+  });
+  afterEach(() => { vi.useRealTimers(); H.setVista(null, 'calidad'); });
+
+  it('la hoja de Tanques está entre las que la cola sólo entrega a EL GAS de esta app', () => {
+    expect(H._madHojaPideGasNuevo('Maduración Tanques')).toBe(true);
+    expect(H._madHojaPideGasNuevo('Maduración Sala'), 'Sala no cambió de llave').toBe(false);
+  });
+
+  it('el fixture ejerce algo: con el sello de ESTA app se envía y queda sincronizado', async () => {
+    ponerTq(7, 'machos_muertos', 3);
+    await H.syncMadTanquesGrid();
+    expect(envios.map((b) => b.sheetName)).toEqual(['Maduración Tanques']);
+    expect(pendientes()).toHaveLength(0);
+  });
+
+  it('🔴 con el GAS de OTRA versión no se envía, se dice por qué y lo guardado sigue pendiente', async () => {
+    respuestaVer = { ok: true, version: 'abcdefabcdef', caps: [] };
+    ponerTq(7, 'machos_muertos', 3);
+    await H.syncMadTanquesGrid();
+    expect(envios, 'se escribió contra un GAS que funde los partes').toHaveLength(0);
+    expect(pendientes()).toHaveLength(1);
+    expect(avisos.some((x) => x.tipo === 'err' && x.msg.includes('no es el de esta app'))).toBe(true);
+  });
+
+  it('🔴 sin confirmar el sello (no responde) va a la COLA, no a la hoja, y sigue pendiente', async () => {
+    respuestaVer = 'red';
+    ponerTq(7, 'machos_muertos', 3);
+    await H.syncMadTanquesGrid();
+    expect(envios).toHaveLength(0);
+    expect(cola().map((it) => it.payload && it.payload.sheetName)).toEqual(['Maduración Tanques']);
+    expect(pendientes()).toHaveLength(1);
+  });
+
+  it('🔴 la COLA tampoco lo entrega a un GAS que no es el suyo, y sí al suyo', async () => {
+    respuestaVer = 'red';
+    ponerTq(7, 'machos_muertos', 3);
+    await H.syncMadTanquesGrid();                               // a la cola, sin salir
+    respuestaVer = { ok: true, version: 'abcdefabcdef' };
+    await H.flushSyncQueue();
+    expect(envios, 'la cola lo entregó a otro GAS').toHaveLength(0);
+    respuestaVer = { ok: true, version: H._gasVersionLocal() };
+    await H.flushSyncQueue();
+    expect(envios.map((b) => b.sheetName)).toEqual(['Maduración Tanques']);
+    expect(pendientes(), 'al entregarse se reconcilia: deja de estar pendiente').toHaveLength(0);
+  });
+
+  it('🔴 el «🔄 Sincronizar» global también pasa por el portón', async () => {
+    respuestaVer = { ok: true, version: 'abcdefabcdef' };
+    ponerTq(7, 'machos_muertos', 3);
+    H.saveMadTanquesGrid();
+    H.setVista(H.MAD_MOD, 'tanques');
+    await H.syncAll();
+    expect(envios.filter((b) => b.sheetName === 'Maduración Tanques')).toHaveLength(0);
+    expect(pendientes()).toHaveLength(1);
   });
 });

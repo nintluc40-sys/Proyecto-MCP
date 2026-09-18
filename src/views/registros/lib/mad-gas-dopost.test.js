@@ -78,7 +78,10 @@ const SALA_SIN_FASE6 = SALA.slice(0, 20);
 /* ── Hoja de Google falsa: guarda filas y apunta cada escritura ──
    `opts.comoSheets` (D2, 2026-09-13) imita lo que Google Sheets hace con una celda SIN formato de
    texto: «0766» se guarda como el número 766 (se pierde el cero) y «3-5» como una fecha. Es
-   opcional para no cambiar lo que ya prueban los demás casos. `opts.maxRows` fija el alto. */
+   opcional para no cambiar lo que ya prueban los demás casos. `opts.maxRows` fija el alto.
+   R2 (2026-09-17) · y «08:30» como una HORA (una fecha de 1899), que es lo que le pasaba a la Hora del
+   parte de Tanques. `opts.maxCols` fija el ANCHO real: un rango que se salga revienta, como en Apps
+   Script, que es lo que le pasaría a un formato puesto en una columna que la hoja no tiene. */
 function hojaFalsa(filasIniciales, opts = {}) {
   const filas = filasIniciales.map((f) => f.slice());
   const escrituras = [];
@@ -91,6 +94,8 @@ function hojaFalsa(filasIniciales, opts = {}) {
     if (/^\d+$/.test(v)) return Number(v);
     const f = v.match(/^(\d{1,2})[-/](\d{1,2})$/);
     if (f) return new Date(Date.UTC(2026, Number(f[2]) - 1, Number(f[1])));
+    const hm = v.match(/^(\d{1,2}):(\d{2})$/);
+    if (hm) return new Date(Date.UTC(1899, 11, 30, Number(hm[1]), Number(hm[2])));
     return v;
   };
   const cadena = () => new Proxy({}, { get: (_t, k) => (k === 'then' ? undefined : () => cadena()) });
@@ -98,7 +103,7 @@ function hojaFalsa(filasIniciales, opts = {}) {
     filas, escrituras, texto, formatos,
     getLastRow: () => filas.length,
     getLastColumn: () => filas.reduce((m, f) => Math.max(m, f.length), 0),
-    getMaxColumns: () => 60,
+    getMaxColumns: () => opts.maxCols || 60,
     getMaxRows: () => maxRows,
     insertRowsAfter(_despues, n) { escrituras.push('insertRows+' + n); maxRows += n; },
     insertColumnsAfter() {},
@@ -107,6 +112,7 @@ function hojaFalsa(filasIniciales, opts = {}) {
     deleteRows(r, n) { escrituras.push('deleteRows@' + r + 'x' + n); filas.splice(r - 1, n); },
     getDataRange: () => ({ getValues: () => filas.map((f) => f.slice()) }),
     getRange(r, c, nR = 1, nC = 1) {
+      if (opts.maxCols && c + nC - 1 > opts.maxCols) throw new Error('rango fuera de la hoja: columna ' + (c + nC - 1));
       const rango = {
         getValues: () => {
           const out = [];
@@ -876,10 +882,14 @@ describe('GAS · la llave de Desoves se guarda como TEXTO (D2, 2026-09-13)', () 
     expect(hoja.filas[1][0]).toBe(766);
   });
 
-  it('las demás hojas no reciben ese formato: sólo la de Desoves tiene código en la llave', () => {
-    const hoja = hojaFalsa([TANQUES], { comoSheets: true });
-    const g = gas({ 'Maduración Tanques': hoja });
-    g.post({ sheetName: 'Maduración Tanques', headers: TANQUES, rows: [conValores(TANQUES, { Fecha: '2026-09-13', Sala: 'Sala 4', Tanque: 1, Muda: 1 })] });
+  /* ⚠ 2026-09-17 (R2) · aquí se probaba con Tanques y decía «sólo la de Desoves tiene código en la llave». Dejó de
+     ser verdad cuando la Hora del parte entró en la llave de Tanques: ahora esa columna TAMBIÉN va como texto (lo
+     prueba el bloque de R2). Lo que esta prueba vigila —que el texto de Desoves no se aplique a cualquier hoja— se
+     mira con Sala, que sigue sin nada que proteger. */
+  it('una hoja sin texto en la llave no recibe ese formato (Sala)', () => {
+    const hoja = hojaFalsa([SALA], { comoSheets: true });
+    const g = gas({ 'Maduración Sala': hoja });
+    g.post({ sheetName: 'Maduración Sala', headers: SALA, rows: [conValores(SALA, { Fecha: '2026-09-13', Sala: 'Sala 4', Estado: 'Producción' })] });
     expect(hoja.texto).toEqual([]);
   });
 
@@ -982,6 +992,85 @@ describe('GAS · R1 · Broodstock va por SU llave (Fecha de corte · Piscina) y 
     const g = gas({ [HOJA_BS]: hoja });
     expect(subir(g, carga('2026-07-19', [psc('0553'), psc('0554'), psc('0555')])).status).toBe('ok');
     expect(hoja.filas.slice(1).map((f) => f[col('Piscina')])).toEqual(['0553', '0554', '0555']);
+  });
+});
+
+describe('GAS · R2 · la HORA del parte de Tanques va en la llave, así que se guarda como TEXTO', () => {
+  /* 🔴 R2 (2026-09-17, noche). Desde el parte de mortalidad la llave de Tanques es (Fecha, Sala, Tanque, Hora,
+     Parte). Sheets guarda «08:30» como una HORA si la celda no es texto; madRowKey la lee entonces como una fecha
+     de 1899 y ya no casa con la «08:30» que llega: cada reenvío del mismo parte AÑADÍA una fila y el libro restaba
+     esa mortalidad dos veces. Se prueba con la hoja que imita la conversión. */
+  const TQ = 'Maduración Tanques';
+  const parte = (n, hora, extra) => conValores(TANQUES, Object.assign({ Fecha: '2026-09-17', Sala: 'Sala 5', Tanque: 7,
+    'Machos muertos': 3, Hora: hora, Parte: n }, extra));
+  const enviar = (g, filas, cab = TANQUES) => g.post({ sheetName: TQ, headers: cab, rows: filas });
+  const c = (h) => TANQUES.indexOf(h);
+
+  it('el fixture ejerce algo: la hoja imitada SÍ convierte «08:30» en una hora si la celda no es texto', () => {
+    const hoja = hojaFalsa([['A']], { comoSheets: true });
+    hoja.getRange(2, 1, 1, 1).setValues([['08:30']]);
+    expect(hoja.filas[1][0]).toBeInstanceOf(Date);
+  });
+
+  it('🔴 reenviar el MISMO parte corrige su fila en vez de añadir otra', () => {
+    const hoja = hojaFalsa([TANQUES], { comoSheets: true });
+    const g = gas({ [TQ]: hoja });
+    expect(enviar(g, [parte(1, '08:30')]).status).toBe('ok');
+    expect(enviar(g, [parte(1, '08:30', { 'Machos muertos': 4 })]).status).toBe('ok');
+    expect(hoja.filas, 'el reenvío duplicó el parte').toHaveLength(2);
+    expect(hoja.filas[1][c('Hora')]).toBe('08:30');
+    expect(hoja.filas[1][c('Machos muertos')]).toBe(4);
+  });
+
+  it('🔴 dos partes del mismo tanque y día son DOS filas: el día es la suma de sus rondas', () => {
+    const hoja = hojaFalsa([TANQUES], { comoSheets: true });
+    const g = gas({ [TQ]: hoja });
+    enviar(g, [parte(1, '08:30')]);
+    enviar(g, [parte(2, '11:00', { 'Machos muertos': 1 })]);
+    expect(hoja.filas.slice(1).map((f) => [f[c('Parte')], f[c('Hora')], f[c('Machos muertos')]]))
+      .toEqual([[1, '08:30', 3], [2, '11:00', 1]]);
+  });
+
+  /* 🔑 Las dos siguientes fijan POR QUÉ la llave lleva Hora Y Parte, y no sólo una de las dos: el número de parte lo
+     cuenta cada dispositivo por su cuenta, así que dos teléfonos en la misma sala pueden sacar los dos su «parte 1». */
+  it('🔴 dos dispositivos con su «parte 1» a distinta hora son dos filas (sin la Hora en la llave se fundirían)', () => {
+    const hoja = hojaFalsa([TANQUES], { comoSheets: true });
+    const g = gas({ [TQ]: hoja });
+    enviar(g, [parte(1, '08:30')]);
+    enviar(g, [parte(1, '09:10', { 'Machos muertos': 2 })]);
+    expect(hoja.filas.slice(1).map((f) => [f[c('Hora')], f[c('Machos muertos')]])).toEqual([['08:30', 3], ['09:10', 2]]);
+  });
+
+  it('🔴 dos rondas en el MISMO minuto siguen siendo dos filas (sin el Parte en la llave se fundirían)', () => {
+    const hoja = hojaFalsa([TANQUES], { comoSheets: true });
+    const g = gas({ [TQ]: hoja });
+    enviar(g, [parte(1, '08:30')]);
+    enviar(g, [parte(2, '08:30', { 'Machos muertos': 1 })]);
+    expect(hoja.filas.slice(1).map((f) => [f[c('Parte')], f[c('Machos muertos')]])).toEqual([[1, 3], [2, 1]]);
+  });
+
+  it('el texto va SÓLO en la columna de la Hora (la 17), no en el resto de la hoja', () => {
+    const hoja = hojaFalsa([TANQUES], { comoSheets: true });
+    const g = gas({ [TQ]: hoja });
+    enviar(g, [parte(1, '08:30')]);
+    expect(hoja.texto.length).toBeGreaterThan(0);
+    expect(hoja.texto.every(([, col, , nC]) => col === 17 && nC === 1)).toBe(true);
+  });
+
+  it('si la hoja se queda corta, se amplía antes de formatear: todas las horas llegan como texto', () => {
+    const hoja = hojaFalsa([TANQUES], { comoSheets: true, maxRows: 2 });
+    const g = gas({ [TQ]: hoja });
+    expect(enviar(g, [parte(1, '08:30'), parte(1, '08:30', { Tanque: 8 }), parte(1, '08:30', { Tanque: 9 })]).status).toBe('ok');
+    expect(hoja.filas.slice(1).map((f) => f[c('Hora')])).toEqual(['08:30', '08:30', '08:30']);
+  });
+
+  it('🔴 un cliente ANTERIOR (16 columnas, sin Hora ni Parte) sigue escribiendo en una hoja de 16 sin reventar', () => {
+    const VIEJA = TANQUES.slice(0, 16);
+    const hoja = hojaFalsa([VIEJA], { comoSheets: true, maxCols: 16 });
+    const g = gas({ [TQ]: hoja });
+    const r = enviar(g, [conValores(VIEJA, { Fecha: '2026-09-17', Sala: 'Sala 5', Tanque: 7, 'Machos muertos': 2 })], VIEJA);
+    expect(r.status, r.message).toBe('ok');
+    expect(hoja.filas).toHaveLength(2);
   });
 });
 

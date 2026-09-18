@@ -21,7 +21,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "05e04bbf9723";
+const GAS_VERSION = "38ee03c8d6f1";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -455,7 +455,7 @@ function doPost(e) {
     if (isMad) {
       // Las hojas POSICIONALES del registro operativo usan upsert con su clave compuesta (las del reproductivo, en madKeyCols):
       //   Sala     → [0,1]   Fecha+Sala
-      //   Tanques  → [0,1,3] Fecha+Sala+Tanque («Lote» va vacía: sólo guarda la posición)
+      //   Tanques  → [0,1,3,16,17] Fecha+Sala+Tanque+Hora+Parte («Lote» va vacía: sólo guarda la posición)
       //   Lotes    → [0,1,2] Fecha+Lote+Código genético (la hoja de Desoves desde el 2026-09-08)
       // D2 (2026-09-13) · la llave de Desoves se guarda como TEXTO. Sheets convierte lo que
       // parece número o fecha: un código «0766» se guardaría como 766 y «3-5» como una fecha,
@@ -468,6 +468,15 @@ function doPost(e) {
         var _filasNecesarias = lastRow(ws) + rows.length;
         if (_filasNecesarias > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasNecesarias - ws.getMaxRows());
         if (ws.getMaxRows() > 1) ws.getRange(2, 2, ws.getMaxRows() - 1, 2).setNumberFormat("@");
+      }
+      // R2 (2026-09-17) · la «Hora» del parte de Tanques (columna 17) está en su LLAVE: se escribe como TEXTO por lo
+      // mismo que D2. Sin el formato, Sheets guarda «08:30» como una HORA, madRowKey la lee como una fecha de 1899 y
+      // ningún reenvío del mismo parte vuelve a casar: la hoja ganaría una fila por reenvío y el libro restaría la
+      // mortalidad dos veces. Sólo si la hoja ya llega a esa columna: un cliente anterior manda 16 y no la trae.
+      if (payload.sheetName === "Maduración Tanques") {
+        var _filasTq = lastRow(ws) + rows.length;
+        if (_filasTq > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasTq - ws.getMaxRows());
+        if (ws.getMaxRows() > 1 && ws.getMaxColumns() >= 17) ws.getRange(2, 17, ws.getMaxRows() - 1, 1).setNumberFormat("@");
       }
       // ⚠ 2026-09-16 · aquí se le pasaba llaveMatriz_(rows) a la MATRIZ: una llave a medida que
       // decidía por fechas y muertes a qué hembra del chip iba cada envío, y que RECHAZABA el envío
@@ -1309,7 +1318,7 @@ function algasInKey(row) {
 // ── Upsert genérico para hojas de Maduración ──
 // keyCols es un array de índices de columnas que forman la clave compuesta:
 //   • Maduración Sala     → [0,1]   (Fecha, Sala)
-//   • Maduración Tanques  → [0,1,3] (Fecha, Sala, Tanque) — «Lote» y las dos «Población inicial» van vacías
+//   • Maduración Tanques  → [0,1,3,16,17] (Fecha, Sala, Tanque, Hora, Parte) — «Lote» y las dos «Población inicial» van vacías
 //   • Maduración Lotes    → [0,1,2] (Fecha, Lote, Código genético) — la hoja de Desoves
 // Si la clave coincide con una fila existente: merge (los nuevos valores
 // no vacíos reemplazan al anterior; los vacíos preservan el dato actual).
