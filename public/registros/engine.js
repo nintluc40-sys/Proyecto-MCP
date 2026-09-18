@@ -21937,7 +21937,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "18a90026355d";
+const GAS_VERSION = "345c0e14a6ae";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -22221,7 +22221,7 @@ function doPost(e) {
     // Columna Trovan ID (0-indexed) por hoja: se fuerza a formato TEXTO ("@") al
     // escribir, así Sheets NO reinterpreta el código como notación científica ni
     // le quita ceros a la izquierda (es un identificador, no un número).
-    // Los Trovan del lector son 10 hexadecimales CON ceros a la izquierda (0008218CCC):
+    // Los Trovan del lector son 10 hexadecimales CON ceros a la izquierda (0007218CCC, ficticio):
     // en formato numérico un código todo-dígitos perdería los ceros y rompería la clave
     // de upsert, así que esta columna NO puede ir en "Automático".
     var madTrovanCol = payload.sheetName === "Maduración MATRIZ" ? 1

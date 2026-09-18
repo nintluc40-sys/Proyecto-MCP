@@ -51,14 +51,15 @@ beforeAll(async () => {
   };
 });
 
-/* ── El Excel, generado con SheetJS con la forma de los del usuario ── */
+/* ── El Excel, generado con SheetJS con la FORMA de los del usuario y valores FICTICIOS (usuario, 2026-09-18:
+   las pruebas no llevan valores reales). ── */
 const CAB = ['Piscina', 'Area (ha)', 'Fecha siembra', 'Cantidad Sembrada ', 'Densidad (cam/m2)', 'Peso de siembra ', 'FASE ACTUAL', 'PESOS', '', '', '', '',
   'Inc. Ult. Sem', 'Crecimiento fase actual', 'Sobrev. Estim (%)', 'Dias Cultivos Fase 1 (precria)', 'Dias en fase 2 (engorde)',
   'Dias de cultivo fase 3 (prereproductor)', 'Edad total (dias)', 'Psc. Orig', 'Camaronera', 'Codigo', 'OBSERVACION'];
 //            A    B     C      D       E   F         G                 H   I   J   K   L     M   N   O     P  Q   R   S   T    U          V             W
-const F810 = [810, 0.38, 46215, 312000, '', '130.pl', 'PRECRIA',        '', '', '', '', 0.1,  '', '', 0.95, 7, '', '', '', '',  '',        'XPR1. F9',   'LÍNEA DE PRUEBA'];
-const F815 = [815, 0.24, 46192, 2270,   '', 23,       'Pre-reproductor', 23, 28, 34, 40, 46,   '', '', 0.83, 0, 95, 30, '', 810, 'Chongón', 'XPR6.F6',    'LÍNEA DE PRUEBA'];
-const F811 = [811, 0.24];
+const F810 = [810, 0.40, 46124, 333000, '', '120.pl', 'PRECRIA',        '', '', '', '', 0.12, '', '', 0.92, 7, '', '', '', '',  '',        'XPR1. F9',   'LÍNEA DE PRUEBA'];
+const F815 = [815, 0.30, 46101, 2900,   '', 21,       'Pre-reproductor', 21, 27, 32, 38, 45,   '', '', 0.86, 0, 90, 30, '', 810, 'Chongón', 'XPR6.F6',    'LÍNEA DE PRUEBA'];
+const F811 = [811, 0.30];
 function hojaXlsx(X, corte, fechas, filas) {
   const aoa = [['RESUMEN SEMANAL DE PISCINAS · PRUEBA'], [], [corte], ['BROODSTOCK - PRUEBA'], CAB,
     ['', '', '', '', '', '', ''].concat(fechas)].concat(filas);
@@ -71,12 +72,12 @@ function hojaXlsx(X, corte, fechas, filas) {
   });
   return ws;
 }
-/** Un .xlsx con dos semanas: la del 12-jul (la anterior) y la del 19-jul con la errata de K6 y una nota debajo. */
+/** Un .xlsx con dos semanas: la del 12-abr (la anterior) y la del 19-abr con la errata de K6 y una nota debajo. */
 function libro({ repetida = false, ajena = false } = {}) {
   const X = window.XLSX, wb = X.utils.book_new();
-  X.utils.book_append_sheet(wb, hojaXlsx(X, 46215, [46187, 46194, 46201, 46208, 46215], [[815, 0.24, 46192, 2270, '', 23, 'Pre-reproductor', 23, 28, 34, 40, '', '', '', 0.85, 0, 95, 23, '', 810, 'Chongón', 'XPR6.F6', '']]), '12 Jul. 26');
-  X.utils.book_append_sheet(wb, hojaXlsx(X, repetida ? 46215 : 46222, [46194, 46201, 46208, 46185, 46222],
-    [F810, F815, F811, [], ['', '', 'NOTA: PISCINAS 836 Y 837 FUERON RALEADAS EL 13 DE ABRIL 2026']]), '19 Jul. 26 ');
+  X.utils.book_append_sheet(wb, hojaXlsx(X, 46124, [46096, 46103, 46110, 46117, 46124], [[815, 0.30, 46101, 2900, '', 21, 'Pre-reproductor', 21, 27, 32, 38, '', '', '', 0.85, 0, 90, 23, '', 810, 'Chongón', 'XPR6.F6', '']]), '12 Abr. 26');
+  X.utils.book_append_sheet(wb, hojaXlsx(X, repetida ? 46124 : 46131, [46103, 46110, 46117, 46094, 46131],
+    [F810, F815, F811, [], ['', '', 'NOTA: PISCINAS 836 Y 837 FUERON RALEADAS EL 13 DE ABRIL 2026']]), '19 Abr. 26 ');
   if (ajena) X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([['Resumen de otra cosa'], [1, 2]]), 'Otra');
   return X.write(wb, { type: 'array', bookType: 'xlsx' });
 }
@@ -115,14 +116,14 @@ describe('Control Broodstock · la ficha', () => {
     const marcas = [...document.querySelectorAll('#fp-broodstock .mb-hoja')].map((c) => c.checked);
     expect(marcas).toEqual([false, true]);
     expect(texto('#mb-nombre')).toBe('HOJA BROODSTOCK.xlsx · 2 semana(s)');
-    expect(texto('#mb-prev')).toContain('Semana del 2026-07-19 · 2 piscina(s)');
-    expect(texto('#mb-prev')).not.toContain('2026-07-12 ·');
+    expect(texto('#mb-prev')).toContain('Semana del 2026-04-19 · 2 piscina(s)');
+    expect(texto('#mb-prev')).not.toContain('2026-04-12 ·');
     const filas = [...document.querySelectorAll('#fp-broodstock .mb-prev tbody tr')].map((tr) => [...tr.children].map((td) => td.textContent));
     expect(filas.map((f) => f[0])).toEqual(['810', '815']);
-    expect(filas[0][5], 'la precría: 130.pl son Pl/g').toBe('130');
-    expect(filas[1][10], 'la sobrevivencia en %').toBe('83');
+    expect(filas[0][5], 'la precría: 120.pl son Pl/g').toBe('120');
+    expect(filas[1][10], 'la sobrevivencia en %').toBe('86');
     const rep = texto('#mb-report');
-    expect(rep).toContain('La columna de pesos K6 dice 2026-06-12');
+    expect(rep).toContain('La columna de pesos K6 dice 2026-03-13');
     expect(rep).toContain('1 piscina(s) sin datos no se suben (811)');
     expect(rep).toContain('NOTA: PISCINAS 836 Y 837 FUERON RALEADAS');
     expect(rep).not.toContain('No se puede subir');
@@ -136,10 +137,10 @@ describe('Control Broodstock · la ficha', () => {
     expect([p.sheetName, p.headers, p.keyCols, p.replaceKey]).toEqual(['Maduración Broodstock', MAD_BS_HEADERS, [0, 1], true]);
     expect(p.rows).toHaveLength(2);
     expect([valor(p, 'Fecha de corte'), valor(p, 'Piscina'), valor(p, 'Peso de siembra (g)'), valor(p, 'Pl/g'), valor(p, 'Fase actual')])
-      .toEqual(['2026-07-19', '810', '', 130, 'Precría']);
+      .toEqual(['2026-04-19', '810', '', 120, 'Precría']);
     expect([valor(p, 'Peso actual (g)', 1), valor(p, 'Fecha del peso', 1), valor(p, 'Incremento última semana (g)', 1), valor(p, 'Sobrevivencia estimada (%)', 1), valor(p, 'Código genético', 1)])
-      .toEqual([46, '2026-07-19', 6, 83, 'XPR6.F6']);
-    expect(texto('#mb-log')).toContain('2026-07-19');
+      .toEqual([45, '2026-04-19', 7, 86, 'XPR6.F6']);
+    expect(texto('#mb-log')).toContain('2026-04-19');
     expect(texto('#mb-nombre'), 'subido, la ficha queda limpia').toBe('Ningún archivo cargado.');
   });
 
@@ -156,9 +157,9 @@ describe('Control Broodstock · la ficha', () => {
     await H.madBsArchivo(archivo(libro()));
     H.madBsElegir(0, true);
     await H.madBsGuardar();
-    expect(envios.map((p) => valor(p, 'Fecha de corte'))).toEqual(['2026-07-12', '2026-07-19']);
-    // La semana anterior no tiene peso en L: el último es K (40, con la fecha de K6 = 46208 = 2026-07-05) y el incremento, K − J.
-    expect([valor(envios[0], 'Peso actual (g)'), valor(envios[0], 'Fecha del peso'), valor(envios[0], 'Incremento última semana (g)')]).toEqual([40, '2026-07-05', 6]);
+    expect(envios.map((p) => valor(p, 'Fecha de corte'))).toEqual(['2026-04-12', '2026-04-19']);
+    // La semana anterior no tiene peso en L: el último es K (38, con la fecha de K6 = 46117 = 2026-04-05) y el incremento, K − J = 38 − 32.
+    expect([valor(envios[0], 'Peso actual (g)'), valor(envios[0], 'Fecha del peso'), valor(envios[0], 'Incremento última semana (g)')]).toEqual([38, '2026-04-05', 6]);
   });
 
   it('🔴 dos hojas marcadas con el MISMO corte no se suben: la segunda pisaría a la primera', async () => {
@@ -168,7 +169,7 @@ describe('Control Broodstock · la ficha', () => {
     H.madBsElegir(1, true);
     await H.madBsGuardar();
     expect(envios).toHaveLength(0);
-    expect(texto('#mb-report')).toContain('Hay dos hojas marcadas con el mismo corte (2026-07-12)');
+    expect(texto('#mb-report')).toContain('Hay dos hojas marcadas con el mismo corte (2026-04-12)');
   });
 
   it('sin ninguna semana marcada no se sube, y se dice', async () => {
@@ -183,12 +184,12 @@ describe('Control Broodstock · la ficha', () => {
     await H.madBsArchivo(archivo(libro()));
     H.madBsGuardarLocal();
     const guardados = H.madLocLeer('broodstock');
-    expect(guardados.map((e) => [e.fecha, e.filas, e.info.hoja])).toEqual([['2026-07-19', 2, '19 Jul. 26']]);
+    expect(guardados.map((e) => [e.fecha, e.filas, e.info.hoja])).toEqual([['2026-04-19', 2, '19 Abr. 26']]);
     expect(envios).toHaveLength(0);
     expect(texto('#mb-loc')).toContain('💾 Guardado en este dispositivo, sin enviar (1)');
     expect(texto('#mb-nombre')).toBe('Ningún archivo cargado.');
     await H.madBsGuardar();
-    expect(envios.map((p) => valor(p, 'Fecha de corte'))).toEqual(['2026-07-19']);
+    expect(envios.map((p) => valor(p, 'Fecha de corte'))).toEqual(['2026-04-19']);
     expect(H.madLocLeer('broodstock')).toHaveLength(0);
   });
 

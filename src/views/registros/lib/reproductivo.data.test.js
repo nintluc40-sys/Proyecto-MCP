@@ -10,9 +10,9 @@ import { claveIndividuo } from '../../../core/trovan.js';
 
 // Índice de matriz de prueba: 3 hembras (una muerta). Trovan = 10 hex (formato del lector).
 const idx = () => buildMatrixIndex([
-  { trovan: '0008218CCC', estado: 'Vivo', sala: 'S5', tanque: 'T1' },
-  { trovan: '000821B425', estado: 'Vivo', sala: 'S5', tanque: 'T1' },
-  { trovan: '000821B9E7', estado: 'Muerto', sala: 'S5', tanque: 'T1' },
+  { trovan: '0007218CCC', estado: 'Vivo', sala: 'S5', tanque: 'T1' },
+  { trovan: '000721B425', estado: 'Vivo', sala: 'S5', tanque: 'T1' },
+  { trovan: '000721B9E7', estado: 'Muerto', sala: 'S5', tanque: 'T1' },
 ]);
 const col = (headers, name) => headers.indexOf(name);
 
@@ -32,13 +32,13 @@ describe('esquema de hojas', () => {
 
 describe('normTrovan / parseTrovanList', () => {
   it('normaliza quitando espacios, saneando y en mayúsculas', () => {
-    expect(normTrovan(' 0008218ccc ')).toBe('0008218CCC'); // hex a mayúsculas (forma canónica)
+    expect(normTrovan(' 0007218ccc ')).toBe('0007218CCC'); // hex a mayúsculas (forma canónica)
     expect(normTrovan(' =98 56 ')).toBe('9856'); // quita el '=' inicial (anti-fórmula) y los espacios
   });
   it('parsea líneas/comas/espacios, deduplica y reporta duplicados', () => {
-    const { ids, duplicates } = parseTrovanList('0008218CCC\n000821B425, 0008218ccc\n\n 000821BC99 ');
-    expect(ids).toEqual(['0008218CCC', '000821B425', '000821BC99']); // el minúsculas se dedupe contra el mayúsculas
-    expect(duplicates).toEqual(['0008218CCC']);
+    const { ids, duplicates } = parseTrovanList('0007218CCC\n000721B425, 0007218ccc\n\n 000721BC99 ');
+    expect(ids).toEqual(['0007218CCC', '000721B425', '000721BC99']); // el minúsculas se dedupe contra el mayúsculas
+    expect(duplicates).toEqual(['0007218CCC']);
   });
   it('texto vacío → sin ids', () => {
     expect(parseTrovanList('').ids).toEqual([]);
@@ -48,14 +48,14 @@ describe('normTrovan / parseTrovanList', () => {
 
 describe('isValidTrovan (formato del lector: 10 hex)', () => {
   it('acepta exactamente 10 caracteres hexadecimales (tras normalizar)', () => {
-    expect(isValidTrovan('0008218CCC')).toBe(true);
-    expect(isValidTrovan('000821B9E7')).toBe(true);
-    expect(isValidTrovan(normTrovan('0008218ccc'))).toBe(true); // minúsculas normalizadas
+    expect(isValidTrovan('0007218CCC')).toBe(true);
+    expect(isValidTrovan('000721B9E7')).toBe(true);
+    expect(isValidTrovan(normTrovan('0007218ccc'))).toBe(true); // minúsculas normalizadas
   });
   it('rechaza notación científica, decimales, comas, texto y longitudes ≠ 10', () => {
     expect(isValidTrovan('8.21E+19')).toBe(false);   // notación científica de Excel
     expect(isValidTrovan('8218000')).toBe(false);    // perdió ceros a la izquierda (< 10)
-    expect(isValidTrovan('000821B4250')).toBe(false); // 11 caracteres
+    expect(isValidTrovan('000721B4250')).toBe(false); // 11 caracteres
     expect(isValidTrovan('000821G425')).toBe(false); // 'G' no es hex
     expect(isValidTrovan('123,456')).toBe(false);
     expect(isValidTrovan('')).toBe(false);
@@ -76,34 +76,34 @@ describe('buildMatrixIndex / matrixRecordFromSheet', () => {
 describe('Sección 1 · alta MASIVA (grilla)', () => {
   it('arma un solo payload con todas las filas válidas y omite vacías', () => {
     const r = buildAltaBatch([
-      { trovan: '000821BC99', numero: '1', sala: 'S6', tanque: 'T2' },
+      { trovan: '000721BC99', numero: '1', sala: 'S6', tanque: 'T2' },
       { trovan: '', numero: '', sala: '', tanque: '' },           // vacía → ignora
-      { trovan: '000821ADD7', piscina: 'P3' },
+      { trovan: '000721ADD7', piscina: 'P3' },
     ]);
     expect(r.payload.rows.length).toBe(2);
-    expect(r.report.created).toEqual(['000821BC99', '000821ADD7']);
+    expect(r.report.created).toEqual(['000721BC99', '000721ADD7']);
     expect(r.payload.rows[0][col(REPRO_MATRIZ_HEADERS, 'Estado')]).toBe(REPRO_ESTADO.VIVO);
   });
   it('reporta filas con datos pero sin Trovan, duplicados en el lote y existentes en la matriz', () => {
     const r = buildAltaBatch([
       { trovan: '', numero: '9' },              // datos sin Trovan
-      { trovan: '000821AC75' },
-      { trovan: '000821AC75' },                 // duplicado en el lote
-      { trovan: '0008218CCC' },                 // ya existe en la matriz de prueba
+      { trovan: '000721AC75' },
+      { trovan: '000721AC75' },                 // duplicado en el lote
+      { trovan: '0007218CCC' },                 // ya existe en la matriz de prueba
     ], idx());
     expect(r.report.sinTrovan).toBe(1);
-    expect(r.report.duplicados).toEqual(['000821AC75']);
-    expect(r.report.existentes).toEqual(['0008218CCC']);
-    expect(r.report.created).toEqual(['000821AC75']);
+    expect(r.report.duplicados).toEqual(['000721AC75']);
+    expect(r.report.existentes).toEqual(['0007218CCC']);
+    expect(r.report.created).toEqual(['000721AC75']);
     expect(r.payload.rows.length).toBe(1);
   });
   it('señala (invalidFormat) y NO registra los Trovan con formato corrupto', () => {
     const r = buildAltaBatch([
-      { trovan: '000821BB30', numero: '1' },    // válido
+      { trovan: '000721BB30', numero: '1' },    // válido
       { trovan: '8.21E+19', numero: '2' },      // notación científica → señalado
       { trovan: '8218000', numero: '3' },       // perdió ceros a la izquierda → señalado
     ]);
-    expect(r.report.created).toEqual(['000821BB30']);
+    expect(r.report.created).toEqual(['000721BB30']);
     expect(r.report.invalidFormat).toEqual(['8.21E+19', '8218000']);
     expect(r.payload.rows.length).toBe(1);
   });
@@ -114,16 +114,16 @@ describe('Sección 1 · alta MASIVA (grilla)', () => {
 
 describe('Sección 2 · desoves / mortalidades', () => {
   it('desove: añade a bitácora los vivos, omite el muerto y reporta no encontrados', () => {
-    const r = buildEventBatch({ ids: ['0008218CCC', '000821B9E7', '000821BB30'], fecha: '2026-07-12', tipo: REPRO_EVENTO.DESOVE, matrixIndex: idx() });
+    const r = buildEventBatch({ ids: ['0007218CCC', '000721B9E7', '000721BB30'], fecha: '2026-07-12', tipo: REPRO_EVENTO.DESOVE, matrixIndex: idx() });
     expect(r.matriz).toBeNull();                 // desove no toca la matriz
     expect(r.bitacora.rows.length).toBe(1);      // solo la viva
-    expect(r.bitacora.rows[0][col(REPRO_BITACORA_HEADERS, 'Trovan ID')]).toBe('0008218CCC');
+    expect(r.bitacora.rows[0][col(REPRO_BITACORA_HEADERS, 'Trovan ID')]).toBe('0007218CCC');
     expect(r.bitacora.rows[0][col(REPRO_BITACORA_HEADERS, 'Sala')]).toBe('S5'); // foto de ubicación
-    expect(r.report.alreadyDead).toEqual(['000821B9E7']);
-    expect(r.report.notFound).toEqual(['000821BB30']);
+    expect(r.report.alreadyDead).toEqual(['000721B9E7']);
+    expect(r.report.notFound).toEqual(['000721BB30']);
   });
   it('mortalidad: marca Estado=Muerto + Fecha muerte en la matriz y añade a bitácora', () => {
-    const r = buildEventBatch({ ids: ['0008218CCC'], fecha: '2026-07-12', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: idx() });
+    const r = buildEventBatch({ ids: ['0007218CCC'], fecha: '2026-07-12', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: idx() });
     expect(r.matriz.rows.length).toBe(1);
     const row = r.matriz.rows[0];
     expect(row[col(REPRO_MATRIZ_HEADERS, 'Estado')]).toBe(REPRO_ESTADO.MUERTO);
@@ -133,37 +133,37 @@ describe('Sección 2 · desoves / mortalidades', () => {
     expect(r.bitacora.rows.length).toBe(1);
   });
   it('SIN matriz rechaza el lote entero: la Sala/Tanque de la bitácora solo salen de la MATRIZ', () => {
-    const r = buildEventBatch({ ids: ['0008218CCC', '000821BB30'], fecha: '2026-07-12', tipo: REPRO_EVENTO.DESOVE });
+    const r = buildEventBatch({ ids: ['0007218CCC', '000721BB30'], fecha: '2026-07-12', tipo: REPRO_EVENTO.DESOVE });
     expect(r.error).toMatch(/MATRIZ/);
     expect(r.bitacora).toBeNull();
     expect(r.matriz).toBeNull();
   });
   it('rechaza el individuo que está en la MATRIZ pero sin Sala o Tanque (fila incompleta)', () => {
     const parcial = buildMatrixIndex([
-      { trovan: '0008218CCC', estado: 'Vivo', sala: 'S5', tanque: 'T1' },
-      { trovan: '000821B425', estado: 'Vivo', sala: 'S5', tanque: '' },   // sin tanque
-      { trovan: '000821BC99', estado: 'Vivo', sala: '', tanque: 'T3' },   // sin sala
+      { trovan: '0007218CCC', estado: 'Vivo', sala: 'S5', tanque: 'T1' },
+      { trovan: '000721B425', estado: 'Vivo', sala: 'S5', tanque: '' },   // sin tanque
+      { trovan: '000721BC99', estado: 'Vivo', sala: '', tanque: 'T3' },   // sin sala
     ]);
-    const r = buildEventBatch({ ids: ['0008218CCC', '000821B425', '000821BC99'], fecha: '2026-07-12', tipo: REPRO_EVENTO.DESOVE, matrixIndex: parcial });
+    const r = buildEventBatch({ ids: ['0007218CCC', '000721B425', '000721BC99'], fecha: '2026-07-12', tipo: REPRO_EVENTO.DESOVE, matrixIndex: parcial });
     expect(r.bitacora.rows.length).toBe(1);
-    expect(r.report.processed).toEqual(['0008218CCC']);
-    expect(r.report.sinUbicacion).toEqual(['000821B425', '000821BC99']);
+    expect(r.report.processed).toEqual(['0007218CCC']);
+    expect(r.report.sinUbicacion).toEqual(['000721B425', '000721BC99']);
   });
   it('la bitácora toma Sala y Tanque de la MATRIZ, no de lo que teclea el usuario', () => {
-    const r = buildEventBatch({ ids: ['0008218CCC'], fecha: '2026-07-12', tipo: REPRO_EVENTO.DESOVE, matrixIndex: idx() });
+    const r = buildEventBatch({ ids: ['0007218CCC'], fecha: '2026-07-12', tipo: REPRO_EVENTO.DESOVE, matrixIndex: idx() });
     const row = r.bitacora.rows[0];
     expect(row[col(REPRO_BITACORA_HEADERS, 'Sala')]).toBe('S5');
     expect(row[col(REPRO_BITACORA_HEADERS, 'Tanque')]).toBe('T1');
   });
   it('señala (invalidFormat) y NO registra los Trovan con formato corrupto', () => {
-    const r = buildEventBatch({ ids: ['0008218CCC', '8.21E+19', '821B425'], fecha: '2026-07-12', tipo: REPRO_EVENTO.DESOVE, matrixIndex: idx() });
+    const r = buildEventBatch({ ids: ['0007218CCC', '8.21E+19', '821B425'], fecha: '2026-07-12', tipo: REPRO_EVENTO.DESOVE, matrixIndex: idx() });
     expect(r.bitacora.rows.length).toBe(1);      // solo el válido
-    expect(r.report.processed).toEqual(['0008218CCC']);
+    expect(r.report.processed).toEqual(['0007218CCC']);
     expect(r.report.invalidFormat).toEqual(['8.21E+19', '821B425']);
   });
   it('rechaza sin fecha o con tipo inválido', () => {
-    expect(buildEventBatch({ ids: ['0008218CCC'], tipo: REPRO_EVENTO.DESOVE, matrixIndex: idx() }).error).toMatch(/fecha/i);
-    expect(buildEventBatch({ ids: ['0008218CCC'], fecha: '2026-07-12', tipo: 'X', matrixIndex: idx() }).error).toMatch(/inválido/i);
+    expect(buildEventBatch({ ids: ['0007218CCC'], tipo: REPRO_EVENTO.DESOVE, matrixIndex: idx() }).error).toMatch(/fecha/i);
+    expect(buildEventBatch({ ids: ['0007218CCC'], fecha: '2026-07-12', tipo: 'X', matrixIndex: idx() }).error).toMatch(/inválido/i);
   });
 });
 
@@ -176,24 +176,24 @@ describe('Sección 3 · transferencias', () => {
     const r = buildTransferBatch({
       fecha: '2026-07-12', tipo: REPRO_TRANSFER_TIPO.TRASLADO,
       origen: { sala: 'S5', tanque: 'T1' },
-      destinos: [{ sala: 'S6', tanque: 'T2', ids: ['0008218CCC', '000821B425'] }],
+      destinos: [{ sala: 'S6', tanque: 'T2', ids: ['0007218CCC', '000721B425'] }],
       matrixIndex: idx(), trId: 'TR-000125',
     });
     expect(r.matriz.rows.length).toBe(2);
     expect(r.matriz.rows[0][col(REPRO_MATRIZ_HEADERS, 'Sala actual')]).toBe('S6');
     expect(r.transfer.rows.length).toBe(2);
     expect(r.transfer.rows[0][col(REPRO_TRANSFER_HEADERS, 'TR-ID')]).toBe('TR-000125');
-    expect(r.report.moved).toEqual(['0008218CCC', '000821B425']);
+    expect(r.report.moved).toEqual(['0007218CCC', '000721B425']);
   });
   it('omite y reporta los individuos que NO están en el origen declarado', () => {
     const r = buildTransferBatch({
       fecha: '2026-07-12', tipo: REPRO_TRANSFER_TIPO.TRASLADO,
       origen: { sala: 'S9', tanque: 'T9' }, // ninguno está aquí
-      destinos: [{ sala: 'S6', tanque: 'T2', ids: ['0008218CCC'] }],
+      destinos: [{ sala: 'S6', tanque: 'T2', ids: ['0007218CCC'] }],
       matrixIndex: idx(), trId: 'TR-000126',
     });
     expect(r.matriz).toBeNull();
-    expect(r.report.wrongLocation).toEqual(['0008218CCC']);
+    expect(r.report.wrongLocation).toEqual(['0007218CCC']);
   });
   /* 🔴 RD1 (2026-09-16) · ERA «sin matriz mueve TODOS los Trovan de cada destino sin validar». Desde que
      la llave de la MATRIZ es la cuaterna, ese modo degradado ya no degrada: DAÑA. La fila de un traslado
@@ -205,7 +205,7 @@ describe('Sección 3 · transferencias', () => {
       const r = buildTransferBatch({
         fecha: '2026-07-12', tipo: REPRO_TRANSFER_TIPO.TRASLADO,
         origen: { sala: 'S5', tanque: 'T1' },
-        destinos: [{ sala: 'S6', tanque: 'T2', ids: ['0008218CCC', '000821AFA2'] }],
+        destinos: [{ sala: 'S6', tanque: 'T2', ids: ['0007218CCC', '000721AFA2'] }],
         matrixIndex, trId: 'TR-000200',
       });
       expect(r.error, caso).toMatch(/Maduración MATRIZ/);
@@ -218,17 +218,17 @@ describe('Sección 3 · transferencias', () => {
     const r = buildTransferBatch({
       fecha: '2026-07-12', tipo: REPRO_TRANSFER_TIPO.TRASLADO,
       origen: { sala: 'S5', tanque: 'T1' },
-      destinos: [{ sala: 'S6', tanque: 'T2', ids: ['0008218CCC', '8.21E+19'] }],
+      destinos: [{ sala: 'S6', tanque: 'T2', ids: ['0007218CCC', '8.21E+19'] }],
       matrixIndex: idx(), trId: 'TR-000201',   // RD1: sin la MATRIZ ya no se arma nada
     });
-    expect(r.report.moved).toEqual(['0008218CCC']);
+    expect(r.report.moved).toEqual(['0007218CCC']);
     expect(r.report.invalidFormat).toEqual(['8.21E+19']);
   });
   it('mezcla: registra la composición del destino', () => {
     const r = buildTransferBatch({
       fecha: '2026-07-12', tipo: REPRO_TRANSFER_TIPO.MEZCLA,
       origen: { sala: 'S5', tanque: 'T1' },
-      destinos: [{ sala: 'S6', tanque: 'T2', ids: ['0008218CCC'] }],
+      destinos: [{ sala: 'S6', tanque: 'T2', ids: ['0007218CCC'] }],
       composicion: { lotes: 'A+B', codigos: 'G01+G05', piscinas: 'P1+P2' },
       matrixIndex: idx(), trId: 'TR-000127',
     });
@@ -298,12 +298,12 @@ describe('Tanda 5 · Consulta / reportes', () => {
    Pedido del usuario: dar de alta hembras nuevas con el microchip de una que YA MURIÓ (otro lote,
    otra piscina, otro código genético). Antes el alta lo rechazaba como «ya existente» por la sola
    presencia del chip en la MATRIZ. Filas como las entrega la hoja (objetos con cabeceras). */
-const CHIP = '0008219380';
+const CHIP = '0007219380';
 const VIEJA = { 'Número': '7', 'Trovan ID': CHIP, 'Color anillo': 'Rojo', 'Piscina': 'P2', 'Código genético': 'G01', 'Lote': 'L12',
   'Sala actual': 'S1', 'Tanque actual': 'T1', 'Estado': 'Muerto', 'Fecha muerte': '2026-07-08', 'Fecha ingreso': '2026-01-05' };
 const NUEVA = { 'Número': '31', 'Trovan ID': CHIP, 'Color anillo': 'Azul', 'Piscina': 'P9', 'Código genético': 'G07', 'Lote': 'L20',
   'Sala actual': 'S3', 'Tanque actual': 'T4', 'Estado': 'Vivo', 'Fecha muerte': '', 'Fecha ingreso': '2026-08-01' };
-const OTRA_VIVA = { 'Trovan ID': '0008218CCC', 'Sala actual': 'S5', 'Tanque actual': 'T1', 'Estado': 'Vivo', 'Fecha ingreso': '2026-02-01' };
+const OTRA_VIVA = { 'Trovan ID': '0007218CCC', 'Sala actual': 'S5', 'Tanque actual': 'T1', 'Estado': 'Vivo', 'Fecha ingreso': '2026-02-01' };
 // La lectura de respaldo del GAS sólo trae 4 columnas: SIN fechas (ver _REPRO_MATRIZ_COLS en engine.js).
 const sinFechas = (o) => ({ 'Trovan ID': o['Trovan ID'], 'Sala actual': o['Sala actual'], 'Tanque actual': o['Tanque actual'], 'Estado': o['Estado'] });
 const altaDe = (fecha, extra) => [Object.assign({ trovan: CHIP, numero: '44', lote: 'L33', codigo: 'G09', piscina: 'P4', sala: 'S2', tanque: 'T8', fecha }, extra)];
@@ -327,7 +327,7 @@ describe('♻ reciclaje · el índice da la hembra VIGENTE de cada chip', () => 
     expect([r.individuos, r.vivos], 'y los dos que sí se usan siguen ahí').toEqual([2, 1]);
   });
   it('un chip con una sola fila sigue igual: 1 individuo', () => {
-    const r = matrixIndexFromRows([OTRA_VIVA]).get('0008218CCC');
+    const r = matrixIndexFromRows([OTRA_VIVA]).get('0007218CCC');
     expect(r.individuos).toBe(1);
     expect(r.sala).toBe('S5');
   });
@@ -501,9 +501,9 @@ describe('♻ reciclaje · alta de una hembra nueva con el chip de una muerta', 
 
     it('🔴 una elección que NO vale no elige por su cuenta: una muerta, la de otro chip, el Trovan a secas o basura', () => {
       const MUERTA = Object.assign({}, VIVA_B, { 'Estado': 'Muerto', 'Lote': 'L55', 'Fecha muerte': '2026-08-01' });
-      const OTRO = { 'Trovan ID': '000821AFF4', 'Piscina': 'P1', 'Código genético': 'G01', 'Lote': 'L01', 'Sala actual': 'S1', 'Tanque actual': 'T1', 'Estado': 'Vivo' };
+      const OTRO = { 'Trovan ID': '000721AFF4', 'Piscina': 'P1', 'Código genético': 'G01', 'Lote': 'L01', 'Sala actual': 'S1', 'Tanque actual': 'T1', 'Estado': 'Vivo' };
       const i = matrixIndexFromRows([VIVA_A, VIVA_B, MUERTA, OTRO]);
-      for (const mala of [claveIndividuo(CHIP, 'P3', 'G11', 'L55'), claveIndividuo('000821AFF4', 'P1', 'G01', 'L01'), CHIP, 'lo que sea']) {
+      for (const mala of [claveIndividuo(CHIP, 'P3', 'G11', 'L55'), claveIndividuo('000721AFF4', 'P1', 'G01', 'L01'), CHIP, 'lo que sea']) {
         const r = buildEventBatch({ ids: [CHIP], fecha: '2026-09-12', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: i, eleccion: { [CHIP]: mala } });
         expect(r.report.variasVivas, JSON.stringify(mala)).toEqual([CHIP]);
         expect(r.matriz).toBeNull();
@@ -543,8 +543,8 @@ describe('♻ reciclaje · alta de una hembra nueva con el chip de una muerta', 
       expect(buildAltaBatch(altaDe('2026-09-10'), matrixIndexFromRows([VIVA_A])).report.recicladosVivos).toEqual([CHIP]);
       const conMuerta = buildAltaBatch(altaDe('2026-09-10'), matrixIndexFromRows([VIEJA])).report;
       expect([conMuerta.reciclados, conMuerta.recicladosVivos]).toEqual([[CHIP], []]);
-      const base = { trovan: '000821BC99', piscina: 'P4', codigo: 'G09', lote: 'L33', fecha: '2026-09-11' };
-      expect(buildAltaBatch([base, Object.assign({}, base, { lote: 'L34' })], null).report.recicladosVivos).toEqual(['000821BC99']);
+      const base = { trovan: '000721BC99', piscina: 'P4', codigo: 'G09', lote: 'L33', fecha: '2026-09-11' };
+      expect(buildAltaBatch([base, Object.assign({}, base, { lote: 'L34' })], null).report.recicladosVivos).toEqual(['000721BC99']);
     });
   });
 
@@ -591,14 +591,14 @@ describe('♻ reciclaje · alta de una hembra nueva con el chip de una muerta', 
   });
   it('mezcla en un mismo lote: la nueva se registra y la del chip vivo no; nada más cambia', () => {
     const forms = [
-      { trovan: '000821BC99', sala: 'S6', tanque: 'T2', fecha: '2026-09-10' },   // chip nuevo
+      { trovan: '000721BC99', sala: 'S6', tanque: 'T2', fecha: '2026-09-10' },   // chip nuevo
       altaDe('2026-09-10')[0],                                                    // chip reciclado
-      { trovan: '0008218CCC', fecha: '2026-09-10' },                              // chip de una viva
+      { trovan: '0007218CCC', fecha: '2026-09-10' },                              // chip de una viva
     ];
     const r = buildAltaBatch(forms, matrixIndexFromRows([VIEJA, OTRA_VIVA]), { reciclaje: true });
-    expect(r.report.created).toEqual(['000821BC99', CHIP]);
+    expect(r.report.created).toEqual(['000721BC99', CHIP]);
     expect(r.report.reciclados).toEqual([CHIP]);
-    expect(r.report.existentes).toEqual(['0008218CCC']);
+    expect(r.report.existentes).toEqual(['0007218CCC']);
     expect(r.payload.rows).toHaveLength(2);
   });
 });
@@ -682,7 +682,7 @@ describe('♻ reciclaje · Consulta: matriz de desoves y trazabilidad por HEMBRA
     expect(t.anteriores).toHaveLength(1);
   });
   it('un chip de UNA sola hembra se traza como siempre', () => {
-    const t = trazaDelChip([OTRA_VIVA], [{ 'Trovan ID': '0008218CCC', 'Fecha': '2026-01-01', 'Tipo': 'Desove' }], [], '0008218ccc');
+    const t = trazaDelChip([OTRA_VIVA], [{ 'Trovan ID': '0007218CCC', 'Fecha': '2026-01-01', 'Tipo': 'Desove' }], [], '0007218ccc');
     expect(t.reciclado).toBe(false);
     expect(t.sinFechas).toBe(false);
     expect(t.anteriores).toEqual([]);

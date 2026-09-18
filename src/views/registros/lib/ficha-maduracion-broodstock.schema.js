@@ -11,7 +11,8 @@
    este Excel. Las reproductoras con Trovan que viven en la MATRIZ se cosechan de estas piscinas, y su
    «Código genético» es el `Codigo` de aquí. En una de ellas se comprobó: la MATRIZ guarda el código SIN
    espacios y el Excel CON ellos —el MISMO código con otro espaciado—, que `normCodigo` reconcilia igual que
-   hace el reproductivo con el suyo.
+   hace el reproductivo con el suyo. (Aquí se citaban las piscinas y el código reales; el usuario pidió el
+   2026-09-18 que el repo no lleve valores reales, y el razonamiento no los necesita.)
    ⚠ Y lo que NO hay que concluir: para las otras dos los códigos no casan con los de la MATRIZ, y no es un
    error. El Excel es la foto de lo que hay AHORA en la piscina; aquellas reproductoras salieron de una
    cosecha anterior. El par (piscina, código) cambia con el tiempo, y por eso la foto semanal vale.
@@ -274,7 +275,7 @@ export function validarBroodstock(model) {
    · La cabecera es la fila que dice «Piscina» en la columna A (la 5 en todos los medidos); debajo va la fila de
      FECHAS del bloque de pesos, y los datos empiezan en la siguiente.
    · La FECHA DE CORTE es la celda con fecha de la columna A por encima de la cabecera (la A3). El nombre de la hoja
-     NO manda: «19 Jul. 26 » es un rótulo, y se ha visto con espacios distintos.
+     NO manda: un nombre como «19 Abr. 26 » es un rótulo, y se ha visto con espacios distintos.
    · El bloque de PESOS va de «PESOS» a la columna antes de la cabecera siguiente, con la fecha de cada semana en la
      fila de fechas. De él salen el ÚLTIMO peso (con su fecha) y el de la columna ANTERIOR: el Excel calcula su
      «Inc. Ult. Sem» como L − K, así que si esa columna está vacía no hay incremento de UNA semana que dar.

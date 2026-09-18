@@ -79,12 +79,12 @@ beforeAll(async () => {
   };
 });
 
-const CHIP = '0008219380';
+const CHIP = '0007219380';
 const VIEJA = { 'Número': '7', 'Trovan ID': CHIP, 'Piscina': 'P2', 'Código genético': 'G01', 'Lote': 'L12', 'Sala actual': 'S1',
   'Tanque actual': 'T1', 'Estado': 'Muerto', 'Fecha muerte': '2026-07-08', 'Fecha ingreso': '2026-01-05' };
 const NUEVA = { 'Número': '31', 'Trovan ID': CHIP, 'Piscina': 'P9', 'Código genético': 'G07', 'Lote': 'L20', 'Sala actual': 'S3',
   'Tanque actual': 'T4', 'Estado': 'Vivo', 'Fecha muerte': '', 'Fecha ingreso': '2026-08-01' };
-const VIVA = { 'Trovan ID': '0008218CCC', 'Sala actual': 'S5', 'Tanque actual': 'T1', 'Estado': 'Vivo', 'Fecha ingreso': '2026-02-01' };
+const VIVA = { 'Trovan ID': '0007218CCC', 'Sala actual': 'S5', 'Tanque actual': 'T1', 'Estado': 'Vivo', 'Fecha ingreso': '2026-02-01' };
 /* 2026-09-16 · `SIN_CAPS` se retira con el portón que lo usaba: el alta ya no le pregunta al GAS
    por ninguna capacidad, así que un GAS «sin ella» dejó de ser un caso. `CON_CAPS` se queda porque
    sigue siendo la respuesta normal de ?p=ver para el resto del arnés. */
@@ -141,10 +141,10 @@ describe('alta masiva · el mismo Trovan entra tantas veces como cuaternas disti
   });
 
   it('🔴 con el chip de una VIVA también sale: antes era «ya existente»', async () => {
-    teclearAlta('2026-09-10', [['0008218CCC', 'P4', 'G09', 'L33', 'S2', 'T8']]);
+    teclearAlta('2026-09-10', [['0007218CCC', 'P4', 'G09', 'L33', 'S2', 'T8']]);
     await H.madReproAltaBatch();
     expect(envios).toHaveLength(1);
-    expect(trovanes()).toEqual(['0008218CCC']);
+    expect(trovanes()).toEqual(['0007218CCC']);
   });
 
   it('🔴 la FECHA ya no frena: el mismo día de la muerte de la anterior sale igual', async () => {
@@ -262,8 +262,8 @@ describe('♻ Consulta · cada hembra de un chip, por separado', () => {
   });
 
   it('un chip de una sola hembra se traza como siempre, sin avisos de reciclaje', () => {
-    H.setLecturas({ [S.matriz]: [VIVA], [S.bitacora]: [{ 'Trovan ID': '0008218CCC', 'Fecha': '2026-03-01', 'Tipo': 'Desove' }], [S.transfer]: [] });
-    const t = trazar('0008218CCC');
+    H.setLecturas({ [S.matriz]: [VIVA], [S.bitacora]: [{ 'Trovan ID': '0007218CCC', 'Fecha': '2026-03-01', 'Tipo': 'Desove' }], [S.transfer]: [] });
+    const t = trazar('0007218CCC');
     expect(t).toContain('2026-03-01');
     expect(t).not.toContain('reciclado');
   });

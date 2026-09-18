@@ -177,11 +177,11 @@ describe('core · individuoEnFecha / idsDeCadena', () => {
     expect(individuoEnFecha([], '2026-01-01')).toBeNull();
   });
   it('la última se llama como su chip; las anteriores, chip·fecha de ingreso (o chip·#n sin ella)', () => {
-    expect(idsDeCadena('0008219380', cadena)).toEqual(['0008219380·2026-01-05', '0008219380']);
-    expect(idsDeCadena('0008219380', [fila(0, '', '', true), nueva])).toEqual(['0008219380·#1', '0008219380']);
-    expect(idsDeCadena('0008219380', [nueva])).toEqual(['0008219380']);
+    expect(idsDeCadena('0007219380', cadena)).toEqual(['0007219380·2026-01-05', '0007219380']);
+    expect(idsDeCadena('0007219380', [fila(0, '', '', true), nueva])).toEqual(['0007219380·#1', '0007219380']);
+    expect(idsDeCadena('0007219380', [nueva])).toEqual(['0007219380']);
   });
   it('los nombres sobreviven a normTrovan: se pueden buscar con él', () => {
-    idsDeCadena('000821AFF4', cadena).forEach((id) => expect(normTrovan(id)).toBe(id));
+    idsDeCadena('000721AFF4', cadena).forEach((id) => expect(normTrovan(id)).toBe(id));
   });
 });

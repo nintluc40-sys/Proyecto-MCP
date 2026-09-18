@@ -160,7 +160,7 @@ describe('registros · lector del reproductivo · caché local de la MATRIZ', ()
      mortalidad y el traslado salían de ella SIN piscina, código ni lote, y con la llave de la MATRIZ por
      cuaterna la hoja ganaba una fila suelta en vez de actualizar la de la hembra. */
   it('🔴 RD1 · la copia guarda la IDENTIDAD: justo las columnas que se leen, y anota cuáles', async () => {
-    const fila = { 'Trovan ID': '0008219380', 'Piscina': 'P9', 'Código genético': 'G07', 'Lote': 'L20',
+    const fila = { 'Trovan ID': '0007219380', 'Piscina': 'P9', 'Código genético': 'G07', 'Lote': 'L20',
       'Sala actual': 'S3', 'Tanque actual': 'T4', 'Estado': 'Vivo', 'Observaciones': 'la manda un GAS que ignora «cols»' };
     const { api, store } = sandbox(code, [{ body: JSON.stringify({ ok: true, rows: [fila] }) }]);
     await api._reproEnsureMatrix();
@@ -228,7 +228,7 @@ describe('registros · lector del reproductivo · alcance y tolerancia', () => {
   });
 
   it('si el store del dashboard ya trae la MATRIZ, no se toca la red', async () => {
-    const storeRows = [{ 'Trovan ID': '000821AFF4', 'Sala actual': 'S1', 'Tanque actual': 'T1', 'Estado': 'Vivo' }];
+    const storeRows = [{ 'Trovan ID': '000721AFF4', 'Sala actual': 'S1', 'Tanque actual': 'T1', 'Estado': 'Vivo' }];
     // Guion con respuesta VÁLIDA a propósito: lo que se afirma es que no hubo NI UNA
     // llamada. Con el guion vacío el test pasaba por excepción, no por la regla.
     const { api, calls } = sandbox(code, [{ body: okBody(1) }], { storeRows });
@@ -242,7 +242,7 @@ describe('registros · lector del reproductivo · alcance y tolerancia', () => {
    se verificó por mutación antes de darlo por corregido. */
 describe('registros · lector del reproductivo · auditoría', () => {
   it('el origen se DERIVA: si el tablero carga después, el aviso deja de decir "copia local"', async () => {
-    const rows = [{ 'Trovan ID': '000821AFF4', 'Sala actual': 'S1', 'Tanque actual': 'T1', 'Estado': 'Vivo' }];
+    const rows = [{ 'Trovan ID': '000721AFF4', 'Sala actual': 'S1', 'Tanque actual': 'T1', 'Estado': 'Vivo' }];
     let storeListo = false;
     const { api, ctx } = sandbox(code, caido(), {
       localStorage: { 'larv4_mad_matriz': JSON.stringify({ ts: Date.now() - 3600e3, cols: colsDelMotor(), rows }) },

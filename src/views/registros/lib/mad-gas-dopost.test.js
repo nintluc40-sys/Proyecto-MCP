@@ -400,7 +400,7 @@ describe('GAS · lo que la guarda NO puede romper (V3)', () => {
     // y un envío con el esquema corrido ya NO pasa: lo para la firma, sin tocar la hoja
     const hoja = hojaFalsa([['Nº', 'Trovan', 'Sala']]);
     const r = gas({ 'Maduración MATRIZ': hoja }).post({
-      sheetName: 'Maduración MATRIZ', headers: ['Número', 'Trovan ID', 'Sala actual'], rows: [[1, '0008218CCC', 'Sala 1']] });
+      sheetName: 'Maduración MATRIZ', headers: ['Número', 'Trovan ID', 'Sala actual'], rows: [[1, '0007218CCC', 'Sala 1']] });
     expect(r.status).toBe('error');
     expect(r.message).toContain('columna 6');
     expect(r.message).toContain('«Lote»');
@@ -416,7 +416,7 @@ describe('GAS · lo que la guarda NO puede romper (V3)', () => {
       'Sala actual', 'Tanque actual', 'Estado', 'Fecha muerte', 'Fecha ingreso', 'Observaciones'];
     const hoja = hojaFalsa([['Nº', 'Trovan', 'Anillo', 'Pisc.', 'CG', 'Lt', 'Sala', 'Tq', 'Est.', 'F.M.', 'F.I.', 'Obs.']]);
     const r = gas({ 'Maduración MATRIZ': hoja }).post({ sheetName: 'Maduración MATRIZ', headers: CAB,
-      rows: [conValores(CAB, { 'Trovan ID': '0008218CCC', Piscina: 'P1', 'Código genético': 'G01', Lote: 'L1' })],
+      rows: [conValores(CAB, { 'Trovan ID': '0007218CCC', Piscina: 'P1', 'Código genético': 'G01', Lote: 'L1' })],
       replaceKey: true, keyCols: [1, 3, 4, 5] });
     expect(r.status).toBe('ok');
   });
@@ -456,7 +456,7 @@ describe('GAS · lo que la guarda NO puede romper (V3)', () => {
   it('🔴 Maduración Broodstock · está permitida y escribe con SUS cabeceras', () => {
     const hojas = {};
     const r = gas(hojas).post({ sheetName: 'Maduración Broodstock', headers: BS_HEADERS,
-      rows: [conValores(BS_HEADERS, { 'Fecha de corte': '2026-07-19', Piscina: '815' })],
+      rows: [conValores(BS_HEADERS, { 'Fecha de corte': '2026-04-19', Piscina: '815' })],
       replaceKey: true, keyCols: [0, 1] });
     expect(r.status, r.message).toBe('ok');
     expect(hojas['Maduración Broodstock']).toBeDefined();
@@ -468,7 +468,7 @@ describe('GAS · lo que la guarda NO puede romper (V3)', () => {
   ]) {
     it('🔴 Broodstock · rechaza ' + caso + ', y la hoja NO nace', () => {
       const hojas = {};
-      const r = gas(hojas).post({ sheetName: 'Maduración Broodstock', headers: cab, rows: [conValores(cab, { 'Fecha de corte': '2026-07-19' })] });
+      const r = gas(hojas).post({ sheetName: 'Maduración Broodstock', headers: cab, rows: [conValores(cab, { 'Fecha de corte': '2026-04-19' })] });
       expect(r.status).toBe('error');
       expect(r.message).toContain(col);
       expect(r.message).toContain(cabEsperada);
@@ -909,8 +909,8 @@ describe('GAS · R1 · Broodstock va por SU llave (Fecha de corte · Piscina) y 
      `status: ok`. Éstas miran la HOJA: qué filas quedan y con qué valores. */
   const HOJA_BS = 'Maduración Broodstock';
   const carga = (fechaCorte, piscinas) => buildBroodstockRows({ fechaCorte, piscinas });
-  const psc = (piscina, extra) => Object.assign({ piscina, area: '0.24', fechaSiembra: '2026-06-19', cantidad: '2270',
-    pesoSiembra: '23', fase: 'Pre-reproductor', peso: '46', fechaPeso: '2026-07-19', pesoPrevio: '40', sobrevivencia: '83',
+  const psc = (piscina, extra) => Object.assign({ piscina, area: '0.30', fechaSiembra: '2026-03-20', cantidad: '2900',
+    pesoSiembra: '21', fase: 'Pre-reproductor', peso: '45', fechaPeso: '2026-04-19', pesoPrevio: '38', sobrevivencia: '86',
     codigo: 'XPR6.F6', observacion: 'LÍNEA DE PRUEBA' }, extra);
   const col = (h) => BS_HEADERS.indexOf(h);
   const subir = (g, rows, extra) => g.post(Object.assign({ sheetName: HOJA_BS, headers: BS_HEADERS, rows }, extra));
@@ -919,15 +919,15 @@ describe('GAS · R1 · Broodstock va por SU llave (Fecha de corte · Piscina) y 
   it('🔴 dos piscinas de la MISMA área sembradas el MISMO día son dos filas (con la llave de «Datos» se fundían)', () => {
     const hoja = hojaFalsa([BS_HEADERS]);
     const g = gas({ [HOJA_BS]: hoja });
-    expect(subir(g, carga('2026-07-19', [psc('815'), psc('817')])).status).toBe('ok');
+    expect(subir(g, carga('2026-04-19', [psc('815'), psc('817')])).status).toBe('ok');
     expect(hoja.filas.slice(1).map((f) => f[col('Piscina')])).toEqual(['815', '817']);
   });
 
   it('🔴 re-subir la MISMA semana REEMPLAZA la fila: lo corregido entra y lo que ahora va vacío queda vacío', () => {
     const hoja = hojaFalsa([BS_HEADERS]);
     const g = gas({ [HOJA_BS]: hoja });
-    subir(g, carga('2026-07-19', [psc('815')]));
-    expect(subir(g, carga('2026-07-19', [psc('815', { peso: '47', observacion: '' })])).status).toBe('ok');
+    subir(g, carga('2026-04-19', [psc('815')]));
+    expect(subir(g, carga('2026-04-19', [psc('815', { peso: '47', observacion: '' })])).status).toBe('ok');
     const filas = deLaPiscina(hoja, '815');
     expect(filas).toHaveLength(1);
     expect(filas[0][col('Peso actual (g)')]).toBe(47);
@@ -937,8 +937,8 @@ describe('GAS · R1 · Broodstock va por SU llave (Fecha de corte · Piscina) y 
   it('🔴 re-subir UNA piscina de la semana no toca las demás: la llave es la pareja, no sólo la fecha', () => {
     const hoja = hojaFalsa([BS_HEADERS]);
     const g = gas({ [HOJA_BS]: hoja });
-    subir(g, carga('2026-07-19', [psc('815'), psc('817', { area: '0.27' })]));
-    subir(g, carga('2026-07-19', [psc('815', { peso: '47' })]));
+    subir(g, carga('2026-04-19', [psc('815'), psc('817', { area: '0.33' })]));
+    subir(g, carga('2026-04-19', [psc('815', { peso: '47' })]));
     expect(deLaPiscina(hoja, '817')).toHaveLength(1);
     expect(deLaPiscina(hoja, '815')).toHaveLength(1);
   });
@@ -946,23 +946,23 @@ describe('GAS · R1 · Broodstock va por SU llave (Fecha de corte · Piscina) y 
   it('🔴 la llave la pone el SERVIDOR: un keyCols del cliente que sólo mire la fecha no borra la piscina de al lado', () => {
     const hoja = hojaFalsa([BS_HEADERS]);
     const g = gas({ [HOJA_BS]: hoja });
-    subir(g, carga('2026-07-19', [psc('815'), psc('817')]));
-    subir(g, carga('2026-07-19', [psc('815', { peso: '47' })]), { replaceKey: true, keyCols: [0] });
+    subir(g, carga('2026-04-19', [psc('815'), psc('817')]));
+    subir(g, carga('2026-04-19', [psc('815', { peso: '47' })]), { replaceKey: true, keyCols: [0] });
     expect(deLaPiscina(hoja, '817')).toHaveLength(1);
   });
 
   it('otra fecha de corte es otra fila: la serie semanal SON las filas', () => {
     const hoja = hojaFalsa([BS_HEADERS]);
     const g = gas({ [HOJA_BS]: hoja });
-    subir(g, carga('2026-07-12', [psc('815', { peso: '40', fechaPeso: '2026-07-12' })]));
-    subir(g, carga('2026-07-19', [psc('815')]));
-    expect(deLaPiscina(hoja, '815').map((f) => f[col('Fecha de corte')])).toEqual(['2026-07-12', '2026-07-19']);
+    subir(g, carga('2026-04-12', [psc('815', { peso: '38', fechaPeso: '2026-04-12' })]));
+    subir(g, carga('2026-04-19', [psc('815')]));
+    expect(deLaPiscina(hoja, '815').map((f) => f[col('Fecha de corte')])).toEqual(['2026-04-12', '2026-04-19']);
   });
 
   it('🔴 una fecha de corte que Sheets ya guardó como FECHA sigue casando al re-subir', () => {
     const hojas = {};
     const g = gas(hojas);
-    hojas[HOJA_BS] = hojaFalsa([BS_HEADERS, conValores(BS_HEADERS, { 'Fecha de corte': g.fecha(19), Piscina: '815', 'Peso actual (g)': 46 })]);
+    hojas[HOJA_BS] = hojaFalsa([BS_HEADERS, conValores(BS_HEADERS, { 'Fecha de corte': g.fecha(19), Piscina: '815', 'Peso actual (g)': 45 })]);
     expect(subir(g, carga('2026-09-19', [psc('815', { peso: '50', fechaPeso: '2026-09-19' })])).status).toBe('ok');
     const filas = deLaPiscina(hojas[HOJA_BS], '815');
     expect(filas).toHaveLength(1);
@@ -972,7 +972,7 @@ describe('GAS · R1 · Broodstock va por SU llave (Fecha de corte · Piscina) y 
   it('🔴 una carga de más de 30 piscinas entra: su tope es el de Maduración, no el de «Datos»', () => {
     const hoja = hojaFalsa([BS_HEADERS]);
     const g = gas({ [HOJA_BS]: hoja });
-    const r = subir(g, carga('2026-07-19', Array.from({ length: 31 }, (_, i) => psc(String(600 + i)))));
+    const r = subir(g, carga('2026-04-19', Array.from({ length: 31 }, (_, i) => psc(String(600 + i)))));
     expect(r.status, r.message).toBe('ok');
     expect(hoja.filas).toHaveLength(32);
   });
@@ -980,8 +980,8 @@ describe('GAS · R1 · Broodstock va por SU llave (Fecha de corte · Piscina) y 
   it('🔴 la Piscina se guarda como TEXTO: «0553» no pierde el cero y re-subirla corrige su fila en vez de duplicarla', () => {
     const hoja = hojaFalsa([BS_HEADERS], { comoSheets: true });
     const g = gas({ [HOJA_BS]: hoja });
-    subir(g, carga('2026-07-19', [psc('0553')]));
-    subir(g, carga('2026-07-19', [psc('0553', { peso: '47' })]));
+    subir(g, carga('2026-04-19', [psc('0553')]));
+    subir(g, carga('2026-04-19', [psc('0553', { peso: '47' })]));
     const filas = deLaPiscina(hoja, '0553');
     expect(filas).toHaveLength(1);
     expect(filas[0][col('Peso actual (g)')]).toBe(47);
@@ -990,7 +990,7 @@ describe('GAS · R1 · Broodstock va por SU llave (Fecha de corte · Piscina) y 
   it('si la hoja se queda corta, se amplía antes de formatear: el texto cubre todo lo que se escribe', () => {
     const hoja = hojaFalsa([BS_HEADERS], { comoSheets: true, maxRows: 2 });
     const g = gas({ [HOJA_BS]: hoja });
-    expect(subir(g, carga('2026-07-19', [psc('0553'), psc('0554'), psc('0555')])).status).toBe('ok');
+    expect(subir(g, carga('2026-04-19', [psc('0553'), psc('0554'), psc('0555')])).status).toBe('ok');
     expect(hoja.filas.slice(1).map((f) => f[col('Piscina')])).toEqual(['0553', '0554', '0555']);
   });
 });
@@ -1285,7 +1285,7 @@ describe('GAS · Maduración Lotes (Desoves) con sus cambios: la hoja en uso no 
    copiada de lo que leyeron — y que la hoja no gana filas. */
 describe('GAS · la MATRIZ admite varios individuos por chip, y nadie pierde su fila', () => {
   const CAB = REPRO_MATRIZ_HEADERS;
-  const CHIP = '0008219380';
+  const CHIP = '0007219380';
   const fila = (o) => CAB.map((h) => (h in o ? o[h] : ''));
   const celda = (hoja, i, h) => hoja.filas[i][CAB.indexOf(h)];
   const VIEJA = { 'Número': 7, 'Trovan ID': CHIP, 'Piscina': 'P2', 'Código genético': 'G01', 'Lote': 'L12', 'Sala actual': 'S1',
@@ -1481,9 +1481,9 @@ describe('GAS · la MATRIZ admite varios individuos por chip, y nadie pierde su 
   });
 
   it('🔴 V2 · con VARIOS individuos en el chip se rechaza el envío ENTERO, y lo dice: tampoco sale la fila buena que venía con él', () => {
-    const OTRO = { 'Número': 40, 'Trovan ID': '000821AFF4', 'Piscina': 'P1', 'Código genético': 'G01', 'Lote': 'L01', 'Estado': 'Vivo' };
+    const OTRO = { 'Número': 40, 'Trovan ID': '000721AFF4', 'Piscina': 'P1', 'Código genético': 'G01', 'Lote': 'L01', 'Estado': 'Vivo' };
     const hoja = hojaFalsa([CAB, fila(VIEJA), fila(NUEVA), fila(OTRO)]);
-    const r = gas({ 'Maduración MATRIZ': hoja }).post(deAntesDeLaCuaterna(muerte('000821AFF4', '2026-09-12'), muerte(CHIP, '2026-09-12')));
+    const r = gas({ 'Maduración MATRIZ': hoja }).post(deAntesDeLaCuaterna(muerte('000721AFF4', '2026-09-12'), muerte(CHIP, '2026-09-12')));
     expect(r.status).toBe('error');
     expect(r.message).toContain('versión ANTERIOR');
     expect(r.message).toContain('(' + CHIP + ')');
@@ -1494,7 +1494,7 @@ describe('GAS · la MATRIZ admite varios individuos por chip, y nadie pierde su 
 
   it('V2 · un chip que NO está en la hoja sigue como antes: su fila se añade', () => {
     const hoja = hojaFalsa([CAB, fila(NUEVA)]);
-    const r = gas({ 'Maduración MATRIZ': hoja }).post(deAntesDeLaCuaterna(muerte('000821AFF4', '2026-09-12')));
+    const r = gas({ 'Maduración MATRIZ': hoja }).post(deAntesDeLaCuaterna(muerte('000721AFF4', '2026-09-12')));
     expect(r.status).toBe('ok');
     expect(hoja.filas).toHaveLength(3);
   });
@@ -1543,11 +1543,11 @@ describe('GAS · P15 las fechas se formatean una vez por fecha distinta · P16 �
   it('🔴 P16 · la columna «Número» de la MATRIZ termina en formato automático y el Trovan en texto, al añadir y al fusionar', () => {
     const hoja = hojaFalsa([REPRO_MATRIZ_HEADERS]);
     const g = gas({ 'Maduración MATRIZ': hoja });
-    const alta = buildAltaBatch([{ trovan: '000821BC99', numero: '7', sala: 'S1', tanque: 'T1', fecha: '2026-09-10' }], null).payload;
+    const alta = buildAltaBatch([{ trovan: '000721BC99', numero: '7', sala: 'S1', tanque: 'T1', fecha: '2026-09-10' }], null).payload;
     expect(g.post(alta).status).toBe('ok');
     expect(formatoFinal(hoja, 2, 1)).toBe('General');
     expect(formatoFinal(hoja, 2, 2)).toBe('@');
-    const muerte = { sheetName: 'Maduración MATRIZ', headers: REPRO_MATRIZ_HEADERS, rows: [REPRO_MATRIZ_HEADERS.map((h) => ({ 'Trovan ID': '000821BC99', Estado: 'Muerto', 'Fecha muerte': '2026-09-12' })[h] ?? '')] };
+    const muerte = { sheetName: 'Maduración MATRIZ', headers: REPRO_MATRIZ_HEADERS, rows: [REPRO_MATRIZ_HEADERS.map((h) => ({ 'Trovan ID': '000721BC99', Estado: 'Muerto', 'Fecha muerte': '2026-09-12' })[h] ?? '')] };
     expect(g.post(muerte).status).toBe('ok');
     expect(hoja.filas).toHaveLength(2);           // fusionó
     expect(formatoFinal(hoja, 2, 1)).toBe('General');

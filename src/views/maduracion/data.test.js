@@ -462,7 +462,7 @@ describe('maduracion.data · la fila «—» de eventos sin ubicación resoluble
    los desoves, el lote y el código de la anterior, y las dos contarían como una sola hembra.
    La hembra NUEVA va ARRIBA en la hoja a propósito: el orden de la hoja no puede decidir. */
 describe('maduracion.data · ♻ un chip reciclado son hembras distintas', () => {
-  const CHIP = '0008219380';
+  const CHIP = '0007219380';
   const VIEJA = { 'Trovan ID': CHIP, Lote: 'L12', 'Código genético': 'G01', 'Sala actual': 'S1', 'Tanque actual': 'T1',
     Estado: 'Muerto', 'Fecha ingreso': '2026-01-05', 'Fecha muerte': '2026-07-08' };
   const NUEVA = { 'Trovan ID': CHIP, Lote: 'L20', 'Código genético': 'G07', 'Sala actual': 'S3', 'Tanque actual': 'T4',
