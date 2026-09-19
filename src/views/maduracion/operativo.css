@@ -1,0 +1,97 @@
+/* ============================================================
+   MADURACIÓN · OPERATIVO — estilos del tablero (F1, 2026-09-19)
+   Se cargan con la vista (import diferido en entrada.js): no pesan en el bloque principal. Reutiliza las piezas de
+   Microchips (mc-kpi, mc-card, mc-seg, mc-table, mc-legend…) y añade las suyas con el prefijo mop-. Tema claro y
+   oscuro por los tokens de styles/tokens.css; el semáforo usa --c-bueno / --c-malo / --c-grave.
+   ============================================================ */
+
+/* Barra de filtros */
+.mop-filtros { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 16px; margin-bottom: 12px; }
+.mop-f-grupo { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mop-f-lbl { width: 100%; font-size: 10.5px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: var(--c-text-muted); }
+.mop-f-rango { font-size: 11.5px; color: var(--c-text-soft); }
+.mop-filtros .mc-seg { margin-left: 0; }
+.mop-fecha { background: var(--c-surface); border: 1px solid var(--c-border); color: var(--c-text); border-radius: 10px; padding: 6px 10px; font-size: 13px; font-family: inherit; }
+.mop-fecha:focus-visible { outline: 2px solid var(--c-brand); outline-offset: 1px; }
+.mop-filtros .mc-select:disabled { opacity: .5; cursor: default; }
+.mop-limpiar { border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); border-radius: 10px; padding: 7px 12px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.mop-limpiar:hover { border-color: var(--c-grave); color: var(--c-grave); }
+
+/* Semáforo y notas */
+.mop-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: middle; margin-left: 2px; background: var(--c-sin-dato); }
+.mop-dot.is-ok { background: var(--c-bueno); }
+.mop-dot.is-bajo, .mop-dot.is-alto, .mop-dot.is-fuera { background: var(--c-grave); }
+.mop-nota { font-size: 10.5px; color: var(--c-text-muted); font-style: italic; }
+
+/* Mapa de planta */
+.mop-mapa-card .mc-seg { margin-left: auto; }
+.mop-mapa { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px 18px; }
+.mop-sala { min-width: 0; }
+.mop-sala-h { display: flex; align-items: baseline; gap: 6px; margin-bottom: 5px; font-size: 12px; font-weight: 800; color: var(--c-text); }
+.mop-sala-oc { font-size: 11px; font-weight: 600; color: var(--c-text-muted); }
+.mop-tqs { display: flex; flex-wrap: wrap; gap: 4px; }
+.mop-tq { width: 34px; height: 30px; padding: 0; border-radius: 7px; border: 1px solid var(--c-border); background: var(--c-surface-2); color: var(--c-text);
+  font-size: 11px; font-weight: 700; font-family: inherit; cursor: pointer; transition: transform var(--t-fast), opacity var(--t-fast); }
+.mop-tq:hover, .mop-tq:focus-visible { transform: translateY(-1px); outline: 2px solid var(--c-brand-600); outline-offset: 1px; }
+.mop-tq.is-sel { outline: 3px solid var(--c-text); outline-offset: 1px; }
+.mop-tq.is-dim { opacity: .28; }
+.mop-tq.is-extra { border-style: dashed; border-width: 2px; }
+.mop-tq-info { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 20px; margin-top: 10px; font-size: 12px; color: var(--c-text-soft); }
+
+/* Colores del mapa: los tanques y sus muestras de la leyenda (.mop-sw) */
+.mop-tq.is-e-produccion, .mop-sw.is-e-produccion, .mop-tq.is-d-ok, .mop-sw.is-d-ok { background: color-mix(in srgb, var(--c-bueno) 75%, var(--c-surface)); color: #fff; border-color: transparent; }
+.mop-tq.is-e-cuarentena, .mop-sw.is-e-cuarentena, .mop-tq.is-d-bajo, .mop-sw.is-d-bajo { background: color-mix(in srgb, var(--c-malo) 85%, var(--c-surface)); color: #3a2c00; border-color: transparent; }
+.mop-tq.is-e-mixto, .mop-sw.is-e-mixto { background: color-mix(in srgb, #7e57c2 80%, var(--c-surface)); color: #fff; border-color: transparent; }
+.mop-tq.is-d-alto, .mop-sw.is-d-alto { background: color-mix(in srgb, var(--c-grave) 80%, var(--c-surface)); color: #fff; border-color: transparent; }
+.mop-tq.is-e-sin, .mop-sw.is-e-sin, .mop-tq.is-d-sin, .mop-sw.is-d-sin { background: var(--c-sin-dato); color: #37474f; }
+.mop-tq.is-e-vacio, .mop-tq.is-d-vacio, .mop-tq.is-v0 { background: transparent; border-style: dashed; color: var(--c-text-muted); }
+.mop-sw.is-e-vacio { background: transparent; border: 1px dashed var(--c-text-muted); box-sizing: border-box; }
+.mop-tq.is-v, .mop-sw.is-v { background: color-mix(in srgb, var(--c-brand-600) var(--mop-i, 50%), var(--c-surface)); color: #fff; border-color: transparent; }
+
+/* Listas de alertas y avisos */
+.mop-lista { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 12.5px; color: var(--c-text); }
+.mop-lista li { padding: 6px 8px; border-radius: 8px; background: var(--c-surface-2); line-height: 1.4; }
+.mop-lista-fila { flex-direction: row; flex-wrap: wrap; }
+.mop-ok { margin: 4px 0; font-size: 13px; font-weight: 700; color: var(--c-bueno); }
+.mop-det-avisos { margin-top: 8px; font-size: 12px; color: var(--c-text-soft); }
+.mop-det-avisos summary { cursor: pointer; font-weight: 700; margin-bottom: 6px; }
+.mop-atrasada td { color: var(--c-grave); font-weight: 700; }
+
+/* Tarjetas de sala */
+.mop-salas { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.mop-sala-card { display: flex; flex-direction: column; gap: 5px; padding: 12px 13px; border: 1px solid var(--c-border); border-radius: 14px; background: var(--c-surface);
+  cursor: pointer; transition: border-color var(--t-fast), box-shadow var(--t-fast); }
+.mop-sala-card:hover, .mop-sala-card:focus-visible { border-color: var(--c-brand-600); box-shadow: var(--sh-1); outline: none; }
+.mop-sala-card.is-on { border-color: var(--c-brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-brand) 35%, transparent); }
+.mop-sc-h { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 800; color: var(--c-text); }
+.mop-sc-fila { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--c-text); }
+.mop-sc-l { min-width: 78px; font-size: 10px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: var(--c-text-muted); }
+.mop-bar { flex: 1; min-width: 50px; max-width: 90px; height: 7px; overflow: hidden; border: 1px solid var(--c-border-soft); border-radius: 4px; background: var(--c-surface-2); }
+.mop-bar i { display: block; height: 100%; background: var(--c-brand-600); }
+.mop-dif { font-weight: 800; color: var(--c-grave); }
+.mop-igual { font-weight: 800; color: var(--c-bueno); }
+.mop-sc-lotes { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.mop-chip { padding: 2px 7px; border: 1px solid var(--c-border); border-radius: 999px; background: var(--c-surface-2); color: var(--c-text-soft); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.mop-chip.is-e-produccion { background: color-mix(in srgb, var(--c-bueno) 18%, transparent); border-color: color-mix(in srgb, var(--c-bueno) 45%, transparent); color: var(--c-text); }
+.mop-chip.is-e-cuarentena { background: color-mix(in srgb, var(--c-malo) 22%, transparent); border-color: color-mix(in srgb, var(--c-malo) 55%, transparent); color: var(--c-text); }
+.mop-chip.is-e-mixto { background: color-mix(in srgb, #7e57c2 18%, transparent); border-color: color-mix(in srgb, #7e57c2 45%, transparent); color: var(--c-text); }
+
+/* Detalle de una sala */
+.mop-det-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.mop-det-ancho { grid-column: 1 / -1; }
+.mop-det-h { margin: 0 0 8px; font-size: 12.5px; font-weight: 800; color: var(--c-text); }
+.mop-calor-wrap { max-height: 330px; overflow: auto; border: 1px solid var(--c-border-soft); border-radius: 8px; }
+.mop-calor { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+.mop-calor thead th { position: sticky; top: 0; z-index: 1; padding: 3px 4px; background: var(--c-surface); color: var(--c-text-muted); font-weight: 700; white-space: nowrap; }
+.mop-calor tbody th { position: sticky; left: 0; padding: 3px 6px; background: var(--c-surface); color: var(--c-text-soft); font-weight: 700; text-align: left; white-space: nowrap; }
+.mop-calor td { min-width: 30px; padding: 3px 2px; border: 1px solid var(--c-border-soft); text-align: center; color: var(--c-text); }
+.mop-calor td.is-ok { background: color-mix(in srgb, var(--c-bueno) 30%, transparent); }
+.mop-calor td.is-bajo { background: color-mix(in srgb, var(--c-excelente) 40%, transparent); }
+.mop-calor td.is-alto { background: color-mix(in srgb, var(--c-grave) 40%, transparent); }
+.mop-obs-s { font-weight: 600; color: var(--c-grave); }
+.mc-table tr.is-filtro td { background: color-mix(in srgb, var(--c-brand) 8%, transparent); }
+
+@media (max-width: 820px) {
+  .mop-det-grid { grid-template-columns: 1fr; }
+  .mop-mapa-card .mc-seg { margin-left: 0; }
+}

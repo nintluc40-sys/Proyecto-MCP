@@ -26,7 +26,8 @@ import { revisionesView } from './views/revisiones/index.js';
 import { visitanteView } from './views/visitante/index.js';
 import { algasView } from './views/algas/index.js';
 import { microbiologiaView } from './views/microbiologia/index.js';
-import { maduracionView } from './views/maduracion/index.js';
+// Maduración: la entrada elige familia (🐚 Operativo, diferido · 🧬 Microchips, la vista de index.js).
+import { maduracionEntrada } from './views/maduracion/entrada.js';
 // Biología Molecular: carga DIFERIDA. Es la vista más pesada (D3, ~1.5k líneas) y
 // no es de uso diario; se descarga solo al abrirla, aligerando el bundle inicial.
 
@@ -40,7 +41,7 @@ async function boot() {
   registerView('larvicultura', { label: 'Larvicultura', icon: '🦐', render: larviculturaView });
   registerView('revisiones', { label: 'Revisiones', icon: '🔍', render: revisionesView, usaBarraFecha: true });
 
-  registerView('maduracion', { label: 'Maduración', icon: '🥚', render: maduracionView });
+  registerView('maduracion', { label: 'Maduración', icon: '🥚', render: maduracionEntrada });
   registerView('microbiologia', { label: 'Microbiología', icon: '🧫', render: microbiologiaView });
   registerView('algas', { label: 'Algas', icon: '🌿', render: algasView });
   registerView('biomolecular', {
