@@ -17,6 +17,15 @@
        de fecha) y la de N2/N5 como `aaaa-mm-dd` (celda de texto). El libro ORDENA comparando la
        fecha como texto: con `dd/mm/aaaa` el 16/09 iría antes que el 29/08, y el reparto cronológico
        de bajas y movimientos saldría mal sin un solo error a la vista.
+
+   ⚠ Dos reglas de CLAUDE.md que en el tablero del operativo NO se aplican, a propósito:
+   · la 6 (acceso tolerante con `getField`): estas cabeceras las escribe el GAS desde los esquemas de las fichas, y los
+     motores del Saldo las leen por su nombre EXACTO. Tolerar variantes aquí haría que el tablero y el Saldo pudieran
+     leer columnas distintas del mismo dato. Este módulo y los que lo usan (`operativo.data.js`,
+     `operativo.indicadores.js`) leen por nombre exacto, como el libro y el resumen.
+   · la 7 (`parseAnyDate`): la forma de referencia es la de `?p=rows`, que deja como TEXTO lo que no es una celda de
+     fecha —un «45000», una fecha en inglés—, y `parseAnyDate` los convertiría en fechas. `fechaIso` convierte sólo las
+     dos formas que el export escribe para una fecha, y comprueba que el día exista, como `parseAnyDate`.
    ============================================================ */
 import { MAD_INGRESO_SHEET } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 import { MAD_MOV_SHEET } from '../registros/lib/ficha-maduracion-movimientos.schema.js';
@@ -83,20 +92,27 @@ export function fechaIso(v) {
 const RE_NUMERO = /^-?\d+(\.\d+)?$/;
 const RE_MILES = /^-?\d{1,3}(,\d{3})+(\.\d+)?$/;
 const RE_CERO_INICIAL = /^-?0\d/;
+const RE_PORCENTAJE = /^-?\d+(\.\d+)?%$/;
 
 /**
  * Una celda cualquiera: número si el export la escribió como NÚMERO, texto si no.
  * El export formatea los números con la convención de SheetJS —punto decimal y, si la columna lleva
  * formato de miles, comas de miles—, así que «6,500,000» son seis millones y medio (lo que `parseNum`
- * del núcleo leería como 6,5: por eso aquí no se usa). Se queda como TEXTO, igual que en `?p=rows`:
- *   · un entero con CERO a la izquierda («0766»): sólo puede ser una celda de texto, y el cero es
+ * del núcleo leería como 6,5: por eso aquí no se usa).
+ * Un PORCENTAJE («100%») es un número con formato de porcentaje, y `?p=rows` lo entrega como FRACCIÓN (1):
+ * medido el 2026-09-19 con el RAS de la Sala. La ficha escribe «100%» como texto, pero Google Sheets lo
+ * convierte al guardarlo. Así que aquí se entrega igual, como fracción: el valor es el mismo por los dos
+ * caminos, y el «100%» lo vuelve a escribir quien lo enseña.
+ * Se queda como TEXTO, igual que en `?p=rows`:
+ *   · un entero con CERO a la izquierda («0042»): sólo puede ser una celda de texto, y el cero es
  *     parte del código;
- *   · un porcentaje («10%»), una hora («08:30») o una coma decimal tecleada («7,5»): ninguno sale de
- *     una celda numérica del export, así que son texto también en la hoja.
+ *   · una hora («08:30») o una coma decimal tecleada («7,5»): ninguna sale de una celda numérica del
+ *     export, así que son texto también en la hoja.
  */
 export function numeroDeCelda(v) {
   if (typeof v === 'number') return v;
   const s = txt(v);
+  if (RE_PORCENTAJE.test(s)) return Number(s.slice(0, -1)) / 100;
   if (RE_MILES.test(s)) return Number(s.replace(/,/g, ''));
   if (RE_NUMERO.test(s) && !RE_CERO_INICIAL.test(s)) return Number(s);
   return s;

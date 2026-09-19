@@ -150,20 +150,25 @@ describe('Maduración · operativo · fechas y números con la forma de ?p=rows'
     expect(numeroDeCelda(7)).toBe(7);
   });
 
+  it('un porcentaje es la FRACCIÓN que entrega ?p=rows (Sheets convierte «100%» en el número 1)', () => {
+    expect(numeroDeCelda('100%')).toBe(1);
+    expect(numeroDeCelda('10%')).toBe(0.1);
+    expect(numeroDeCelda('12.5%')).toBe(0.125);
+  });
+
   it('lo que sólo puede ser una celda de TEXTO se queda como texto', () => {
-    expect(numeroDeCelda('0766')).toBe('0766');
-    expect(numeroDeCelda('10%')).toBe('10%');
+    expect(numeroDeCelda('0042')).toBe('0042');
     expect(numeroDeCelda('08:30')).toBe('08:30');
     expect(numeroDeCelda('7,5')).toBe('7,5');
-    expect(numeroDeCelda(' BP ')).toBe('BP');
+    expect(numeroDeCelda(' QA ')).toBe('QA');
     expect(numeroDeCelda('')).toBe('');
   });
 
   it('una fila: todas las columnas «Fecha…» a aaaa-mm-dd, el resto a número o texto, las marcas intactas', () => {
     const r = normalizarFila({ _SheetOrigin: MAD_OP_ORIGEN, Fecha: '16/09/2026', 'Fecha N2': '17/09/2026', 'Fecha N5': '2026-09-18',
-      'Fecha aplicación': '5/9/2026', Lote: '0766', Machos: '12', Observaciones: ' ok ' });
+      'Fecha aplicación': '5/9/2026', Lote: '0042', Machos: '12', Observaciones: ' ok ' });
     expect(r).toEqual({ _SheetOrigin: MAD_OP_ORIGEN, Fecha: '2026-09-16', 'Fecha N2': '2026-09-17', 'Fecha N5': '2026-09-18',
-      'Fecha aplicación': '2026-09-05', Lote: '0766', Machos: 12, Observaciones: 'ok' });
+      'Fecha aplicación': '2026-09-05', Lote: '0042', Machos: 12, Observaciones: 'ok' });
     // Una columna de fecha nunca se convierte en número, aunque lo parezca.
     expect(normalizarFila({ Fecha: '45000' }).Fecha).toBe('45000');
   });
@@ -224,6 +229,15 @@ describe('Maduración · operativo · las fuentes del store', () => {
     const crudo = { ingresos: STORE.filter((r) => 'Camaronera origen' in r), tanques: STORE.filter((r) => 'Machos muertos' in r) };
     const libro = construirLibro(crudo, { hoy: '2026-09-18' });
     expect(vivos(libro)).not.toEqual([['AA', 10, 12], ['BB', 10, 8]]);
+  });
+
+  it('🔑 el RAS en porcentaje del export llega al resumen igual que el que entrega ?p=rows (medido el 2026-09-19)', () => {
+    const P = { ...P_ROWS, sala: [{ Fecha: '2026-09-17', Sala: 'Sala 1', Estado: 'Producción', RAS: 1 }] };
+    const exportado = [...aExport(MAD_INGRESO_HEADERS, P_ROWS.ingresos), ...aExport(TANQUES_HEADERS, P_ROWS.tanques),
+      ...aExport(SALA_HEADERS, [{ Fecha: '2026-09-17', Sala: 'Sala 1', Estado: 'Producción', RAS: '100%' }])];
+    const porElGas = resumenMaduracion(P, { hoy: '2026-09-18' }).salas.find((s) => s.sala === 'Sala 1');
+    const porElExport = resumenMaduracion(fuentesDesdeFilas(exportado).fuentes, { hoy: '2026-09-18' }).salas.find((s) => s.sala === 'Sala 1');
+    expect(porElExport.ras).toBe(porElGas.ras);
   });
 
   it('🔑 el resumen de la sala lee su temperatura desde el export adaptado (sin adaptar, no la ve)', () => {

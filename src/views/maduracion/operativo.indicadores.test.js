@@ -72,20 +72,20 @@ describe('Maduración · indicadores · desoves', () => {
     Desoves: desoves, 'Total de huevos': huevos, 'Hembras no viables': noViables, N2: n2, N5: n5 });
 
   it('huevos y no viables POR DESOVE, por lote canónico y en el período', () => {
-    const filas = [D('2026-09-10', 'BP', 'X', 3, 600000, 1, '', ''), D('2026-09-11', ' bp ', 'Y', 2, 400000, 1, '', ''),
-      D('2026-08-01', 'BP', 'X', 9, 900000, 9, '', ''), D('2026-09-10', 'BK', 'Z', 0, 0, 0, '', '')];
+    const filas = [D('2026-09-10', 'QA', 'X', 3, 600000, 1, '', ''), D('2026-09-11', ' qa ', 'Y', 2, 400000, 1, '', ''),
+      D('2026-08-01', 'QA', 'X', 9, 900000, 9, '', ''), D('2026-09-10', 'QB', 'Z', 0, 0, 0, '', '')];
     const d = desovesPorLote(filas, '2026-09-01', '2026-09-30');
-    expect(d.BP).toEqual({ desoves: 5, huevos: 1000000, noViables: 2, huevosPorDesove: 200000, noViablesPorDesove: 0.4 });
-    expect(d.BK).toMatchObject({ desoves: 0, huevosPorDesove: '', noViablesPorDesove: '' });
+    expect(d.QA).toEqual({ desoves: 5, huevos: 1000000, noViables: 2, huevosPorDesove: 200000, noViablesPorDesove: 0.4 });
+    expect(d.QB).toMatchObject({ desoves: 0, huevosPorDesove: '', noViablesPorDesove: '' });
   });
 
   it('tasa de desove = desoves del día ÷ hembras vivas del lote AL CIERRE del día', () => {
-    const serie = [{ fecha: '2026-09-10', porLote: { BP: { machos: 40, hembras: 50 } } }, { fecha: '2026-09-11', porLote: { BP: { machos: 40, hembras: 40 } } }];
-    const filas = [D('2026-09-10', 'BP', 'X', 3), D('2026-09-10', 'bp', 'Y', 2), D('2026-09-11', 'BP', 'X', 4), D('2026-09-11', 'BK', 'Z', 1)];
+    const serie = [{ fecha: '2026-09-10', porLote: { QA: { machos: 40, hembras: 50 } } }, { fecha: '2026-09-11', porLote: { QA: { machos: 40, hembras: 40 } } }];
+    const filas = [D('2026-09-10', 'QA', 'X', 3), D('2026-09-10', 'qa', 'Y', 2), D('2026-09-11', 'QA', 'X', 4), D('2026-09-11', 'QB', 'Z', 1)];
     expect(tasaDeDesove(filas, serie)).toEqual([
-      { fecha: '2026-09-10', lote: 'BP', desoves: 5, hembras: 50, tasa: 10 },
-      { fecha: '2026-09-11', lote: 'BK', desoves: 1, hembras: 0, tasa: '' },
-      { fecha: '2026-09-11', lote: 'BP', desoves: 4, hembras: 40, tasa: 10 },
+      { fecha: '2026-09-10', lote: 'QA', desoves: 5, hembras: 50, tasa: 10 },
+      { fecha: '2026-09-11', lote: 'QA', desoves: 4, hembras: 40, tasa: 10 },
+      { fecha: '2026-09-11', lote: 'QB', desoves: 1, hembras: 0, tasa: '' },
     ]);
   });
 });
@@ -125,23 +125,23 @@ describe('Maduración · indicadores · ambiente, sanidad y alimento', () => {
 describe('Maduración · indicadores · desempeño por origen', () => {
   const ING = (lote, cg, piscina, m, h) => ({ Fecha: '2026-09-01', Lote: lote, 'Código genético': cg, 'Piscina Broodstock': piscina, Machos: m, Hembras: h });
   const fuentes = {
-    ingresos: [ING('BP', 'X', 558, 10, 20), ING('BP', 'Y', 553, 5, 5), ING('BK', 'X', 558, 4, 4), ING('BK', 'X', 553, 1, 1)],
+    ingresos: [ING('QA', 'X', 9101, 10, 20), ING('QA', 'Y', 9102, 5, 5), ING('QB', 'X', 9101, 4, 4), ING('QB', 'X', 9102, 1, 1)],
     desoves: [
-      { Fecha: '2026-09-10', Lote: 'BP', 'Código genético': 'X', 'Piscina Broodstock': 558, Desoves: 4, 'Total de huevos': 1000000, N2: 600000, N5: 400000 },
-      { Fecha: '2026-09-11', Lote: 'BP', 'Código genético': 'X', 'Piscina Broodstock': 558, Desoves: 2, 'Total de huevos': 500000, N2: '', N5: '' },
+      { Fecha: '2026-09-10', Lote: 'QA', 'Código genético': 'X', 'Piscina Broodstock': 9101, Desoves: 4, 'Total de huevos': 1000000, N2: 600000, N5: 400000 },
+      { Fecha: '2026-09-11', Lote: 'QA', 'Código genético': 'X', 'Piscina Broodstock': 9101, Desoves: 2, 'Total de huevos': 500000, N2: '', N5: '' },
       // El mismo código tecleado en minúsculas y con un espacio: tiene que casar con «X».
-      { Fecha: '2026-09-12', Lote: 'BP', 'Código genético': 'x ', 'Piscina Broodstock': 558, Desoves: 1, 'Total de huevos': 100000, N2: '', N5: '' },
+      { Fecha: '2026-09-12', Lote: 'QA', 'Código genético': 'x ', 'Piscina Broodstock': 9101, Desoves: 1, 'Total de huevos': 100000, N2: '', N5: '' },
     ],
   };
   const posiciones = [
-    { sala: 'Sala 1', tanque: 1, lote: 'BP', codigoGenetico: 'X', machos: 8, hembras: 18 },
-    { sala: 'Sala 1', tanque: 2, lote: 'BP', codigoGenetico: 'Y', machos: 5, hembras: 4 },
-    { sala: 'Sala 2', tanque: 16, lote: 'BK', codigoGenetico: 'X', machos: 3, hembras: 4 },
+    { sala: 'Sala 1', tanque: 1, lote: 'QA', codigoGenetico: 'X', machos: 8, hembras: 18 },
+    { sala: 'Sala 1', tanque: 2, lote: 'QA', codigoGenetico: 'Y', machos: 5, hembras: 4 },
+    { sala: 'Sala 2', tanque: 16, lote: 'QB', codigoGenetico: 'X', machos: 3, hembras: 4 },
   ];
 
   it('por código genético: vivos de sus posiciones, fertilidad y nauplios con la regla del Saldo', () => {
     const d = Object.fromEntries(desempenoPorOrigen(fuentes, posiciones, 'codigo').map((o) => [o.origen, o]));
-    expect(d.X).toMatchObject({ lotes: ['BK', 'BP'], ingresados: 40, vivos: 33, supervivencia: 82.5, desoves: 7, huevos: 1600000,
+    expect(d.X).toMatchObject({ lotes: ['QA', 'QB'], ingresados: 40, vivos: 33, supervivencia: 82.5, desoves: 7, huevos: 1600000,
       fertilidad: 60, naupliosPorHembra: 100000 });
     expect(Object.keys(d).sort()).toEqual(['X', 'Y']);
     expect(d.Y).toMatchObject({ ingresados: 10, vivos: 9, supervivencia: 90, desoves: 0, fertilidad: '', naupliosPorHembra: '' });
@@ -149,8 +149,8 @@ describe('Maduración · indicadores · desempeño por origen', () => {
 
   it('por piscina: un (lote, código) que entró desde dos piscinas cuenta sus vivos UNA vez, en la que más aportó', () => {
     const d = Object.fromEntries(desempenoPorOrigen(fuentes, posiciones, 'piscina').map((o) => [o.origen, o]));
-    expect(d['558']).toMatchObject({ ingresados: 38, vivos: 33 });   // BP/X (26) + BK/X (7): BK/X aportó 8 desde la 558 y 2 desde la 553
-    expect(d['553']).toMatchObject({ ingresados: 12, vivos: 9 });
+    expect(d['9101']).toMatchObject({ ingresados: 38, vivos: 33 });   // QA/X (26) + QB/X (7): QB/X aportó 8 desde la 9101 y 2 desde la 9102
+    expect(d['9102']).toMatchObject({ ingresados: 12, vivos: 9 });
     const vivos = Object.values(d).reduce((a, o) => a + o.vivos, 0);
     expect(vivos).toBe(8 + 18 + 5 + 4 + 3 + 4);
   });
