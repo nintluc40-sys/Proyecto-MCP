@@ -63,6 +63,17 @@ export function estadisticaDia(valores) {
   return { n: v.length, prom: r2(prom), ultima: r2(v[v.length - 1]), cv };
 }
 
+/* EL RAS COMO LO ELIGE LA FICHA (usuario, 2026-09-19: «corrige el tema del RAS»). La ficha de Salas envía «No» o un
+   porcentaje («10%»… «100%»), pero Google Sheets convierte el porcentaje en NÚMERO al guardarlo y `?p=rows` lo
+   devuelve como la FRACCIÓN: «100%» llega como 1 y «15%» como 0,15 (medido el 2026-09-19). El Saldo enseñaba «1».
+   Una fracción de 0 a 1 vuelve a su porcentaje (con dos decimales como mucho); lo demás se queda como está: «No», los
+   «SI»/«NO» de antes del 2026-09-15 y un número mayor que 1, que no es ninguna opción de la ficha —inventarle un
+   porcentaje sería peor que enseñarlo tal cual—. El monolito lleva su gemelo (`_madResRasTxt`) y la paridad los ata. */
+export function rasComoTexto(v) {
+  const t = txt(v);
+  return /^\d+(\.\d+)?$/.test(t) && Number(t) <= 1 ? Math.round(Number(t) * 10000) / 100 + '%' : t;
+}
+
 const recientes = (filas) => filas.slice().sort((a, b) => porNombre(fecha10(b.Fecha), fecha10(a.Fecha))).slice(0, RESUMEN_MAX_TRAT);
 
 /* «El ÚLTIMO registro que TRAE esa variable», que es la regla H2 de arriba, aplicada a una sola
@@ -152,7 +163,7 @@ function resumenSalas(filasSala, libro, filasTrat, tons, alc) {
     const alcalinidad = { dia: alc.dia.get(sala) || { valor: '', fecha: '' }, noche: alc.noche.get(sala) || { valor: '', fecha: '' } };
     return {
       sala, fecha: conEstado ? fecha10(conEstado.Fecha) : '', estado: conEstado ? txt(conEstado.Estado) : '',
-      ras: conRas ? txt(conRas.RAS) : '', fechaRas: conRas ? fecha10(conRas.Fecha) : '', lotes,
+      ras: conRas ? rasComoTexto(conRas.RAS) : '', fechaRas: conRas ? fecha10(conRas.Fecha) : '', lotes,
       toneladas: ton.valor, fechaToneladas: ton.fecha, volumenTanque: volumenTanque(sala, ton.valor),
       tanquesSala: (MAD_TANQUES_POR_SALA[sala] || []).length, alcalinidad,
       temp: variable(RESUMEN_TEMPS),

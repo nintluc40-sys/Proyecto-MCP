@@ -3,7 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createContext, Script } from 'node:vm';
-import { resumenMaduracion, estadisticaDia, diasEntre, RESUMEN_TEMPS, RESUMEN_OXIGENOS } from './mad-resumen.js';
+import { resumenMaduracion, estadisticaDia, diasEntre, rasComoTexto, RESUMEN_TEMPS, RESUMEN_OXIGENOS } from './mad-resumen.js';
 import { areaTanqueM2 } from './ficha-maduracion-ingreso.schema.js';
 
 const ing = (Fecha, Lote, cg, Sala, Tanque, Machos, Hembras) => ({ Fecha, Lote, 'Código genético': cg, Sala, Tanque, Machos, Hembras });
@@ -101,6 +101,12 @@ describe('Resumen · piezas', () => {
     expect(diasEntre('2026-01-10', '2026-02-01')).toBe(22);
     expect(diasEntre('2026-01-01', 'x')).toBe('');
   });
+  it('🔴 el RAS como lo eligió la ficha: Sheets guarda «100%» como la fracción 1 (medido el 2026-09-19)', () => {
+    // Fracción de 0 a 1 → su porcentaje, con dos decimales como mucho. Lo que no es una fracción, tal cual: «No», los
+    // «SI»/«NO» viejos, un texto que ya dice «100%» y un número mayor que 1, que no es ninguna opción de la ficha.
+    expect([1, '1', 0.15, '0.7', 0, 0.155, 'No', 'SI', '', null, '100%', 15, 1.5].map(rasComoTexto))
+      .toEqual(['100%', '100%', '15%', '70%', '0%', '15.5%', 'No', 'SI', '', '', '100%', '15', '1.5']);
+  });
   it('🔴 D16 · el ÁREA de cada tanque (m²): una por sala, y la Sala 5 tanque a tanque', () => {
     expect([areaTanqueM2('Sala 1', 1), areaTanqueM2('Sala 1', 15), areaTanqueM2('Sala 2', 16), areaTanqueM2('Sala 3', 27), areaTanqueM2('Sala 4', 6)])
       .toEqual([13.14, 13.14, 50, 50, 40]);
@@ -120,6 +126,12 @@ describe('Resumen · salas', () => {
       temp: { prom: 28.5, ultima: 29, cv: 1.75, delta: 1 }, ox: { prom: 5.5, ultima: 6, cv: 12.86, delta: 0.5 } });
     expect(deSala('Sala 2')).toMatchObject({ ras: 'NO', temp: { prom: 30, ultima: 30, cv: '', delta: '' }, ox: { prom: '', ultima: '', cv: '', delta: '' } });
     expect(R.salas.map((s) => s.sala)).toEqual(['Sala 1', 'Sala 2']);   // la fila sin fecha de la Sala 3 no cuenta
+  });
+  it('🔴 el RAS de la sala como lo eligió la ficha, no como la fracción que devuelve ?p=rows', () => {
+    const f = { sala: [sala('2026-01-10', 'Sala 1', 'Producción', 1, {}), sala('2026-01-10', 'Sala 2', 'Producción', 0.15, {}),
+      sala('2026-01-10', 'Sala 3', 'Producción', 'No', {})] };
+    expect(resumenMaduracion(f, { hoy: '2026-01-14' }).salas.map((s) => [s.sala, s.ras, s.fechaRas]))
+      .toEqual([['Sala 1', '100%', '2026-01-10'], ['Sala 2', '15%', '2026-01-10'], ['Sala 3', 'No', '2026-01-10']]);
   });
   it('🔴 H2: cada variable sale del último registro QUE LA TRAE (el de sólo estado no borra la T°)', () => {
     // Medido en producción (Sala 4, 2026-09-13): el registro de «Proponer estado» no trae lecturas. T°: la última con
@@ -394,13 +406,17 @@ describe('Resumen · el monolito y el módulo dan lo mismo', () => {
   new Script(bloque('const MAD_SALA_TONELADAS = {', '"Sala 5":  Array.from({length:5},(_,i)=>i+7)\n};') + '\n'
     + bloque('const MAD_CUARENTENA_DIAS = 15;', '  return lotes.sort().join("+");\n}') + '\n'
     + bloque('const MAD_RES_TEMPS = [', 'rasAlcalinidad:{ dia:_madResDe(alc.dia, "RAS") || { valor:"", fecha:"" }, noche:_madResDe(alc.noche, "RAS") || { valor:"", fecha:"" } } };\n}')
-    + '\n;globalThis.__api = { madResumenMaduracion, madResEstadisticaDia, madResDiasEntre, MAD_RES_TEMPS, MAD_RES_OXIGENOS, madAreaTanqueM2 };').runInContext(ctx);
+    + '\n;globalThis.__api = { madResumenMaduracion, madResEstadisticaDia, madResDiasEntre, MAD_RES_TEMPS, MAD_RES_OXIGENOS, madAreaTanqueM2, _madResRasTxt };').runInContext(ctx);
   const api = ctx.__api;
 
   it('las mismas lecturas de la sala y las mismas piezas', () => {
     expect([api.MAD_RES_TEMPS, api.MAD_RES_OXIGENOS]).toEqual([RESUMEN_TEMPS, RESUMEN_OXIGENOS]);
     for (const v of [[28, '28.5', 29, '', null], [30], [], ['x'], [-1, 1], [0, 0]]) expect(api.madResEstadisticaDia(v)).toEqual(estadisticaDia(v));
     expect(api.madResDiasEntre('2026-01-10', '2026-02-01')).toBe(22);
+    // 2026-09-19 · el RAS: el mismo texto para lo que devuelve ?p=rows y para lo que ya era texto.
+    for (const v of [1, '1', 0.15, '0.7', 0, 0.155, 'No', 'SI', '', null, undefined, '100%', 15, 1.5, ' 1 ']) {
+      expect(api._madResRasTxt(v), JSON.stringify(v)).toBe(rasComoTexto(v));
+    }
   });
 
   it('🔴 D16 · la misma ÁREA para cada tanque de cada sala, también lo que no está en la tabla', () => {
@@ -412,7 +428,9 @@ describe('Resumen · el monolito y el módulo dan lo mismo', () => {
   it('🔴 el mismo resumen, cifra a cifra, en el caso completo y en variantes', () => {
     const variantes = [FUENTES(), Object.assign(FUENTES(), { cierres: [{ Fecha: '2026-01-31', Lote: 'CD', Tipo: 'Total', Machos: 10, Hembras: 18, Sala: '' }] }),
       Object.assign(FUENTES(), { sala: [], desoves: [], tratamientos: [] }), {}, Object.assign(FUENTES(), { sala: FUENTES().sala.concat(SALA_PARCIAL()) }), TANQUE_REUTILIZADO(), CARGA_LIMITES(),
-      ALCALINIDAD_TURNOS()];
+      ALCALINIDAD_TURNOS(),
+      // 2026-09-19 · el RAS como lo devuelve ?p=rows: fracciones (el 100% es 1) y un número que no es fracción.
+      Object.assign(FUENTES(), { sala: FUENTES().sala.map((r, i) => ({ ...r, RAS: [0.7, 1, 1.5, 'No'][i] })) })];
     for (const f of variantes) {
       for (const hoy of ['2026-02-01', '2026-01-25']) expect(api.madResumenMaduracion(f, { hoy })).toEqual(resumenMaduracion(f, { hoy }));
     }

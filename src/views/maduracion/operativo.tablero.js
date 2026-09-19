@@ -472,14 +472,6 @@ export function evaluarLecturas(id, valores) {
   return bajo && alto ? 'fuera' : bajo ? 'bajo' : alto ? 'alto' : 'ok';
 }
 
-/** El RAS de la Sala como lo elige la ficha («No», «10%»… «100%»). La hoja lo guarda como FRACCIÓN (1 = «100%»,
- *  medido el 2026-09-19) y el resumen lo entrega como texto de esa fracción; lo que no es una fracción, tal cual. */
-export function rasComoTexto(v) {
-  const s = txt(v);
-  if (/^\d+(\.\d+)?$/.test(s) && Number(s) <= 1) return Math.round(Number(s) * 100) + ' %';
-  return s;
-}
-
 function variableDeSala(filasSala, sala, columnas, id, R, hasta) {
   const u = lecturasDelUltimoRegistro(filasSala, sala, columnas, hasta);
   const valores = u.lecturas.map((l) => l.valor).filter((v) => v !== null);
@@ -525,7 +517,8 @@ export function tarjetasDeSalas(M, F) {
         dia: { ...alc.dia, estado: evaluar('alcalinidad', alc.dia.valor) },
         noche: { ...alc.noche, estado: evaluar('alcalinidad', alc.noche.valor) },
       },
-      ras: R ? { texto: rasComoTexto(R.ras), fecha: R.fechaRas } : { texto: '', fecha: '' },
+      // El RAS ya viene como lo eligió la ficha («100%», no la fracción 1 que guarda la hoja): `rasComoTexto` del resumen.
+      ras: R ? { texto: R.ras, fecha: R.fechaRas } : { texto: '', fecha: '' },
       toneladas: R ? { valor: R.toneladas, fecha: R.fechaToneladas } : { valor: '', fecha: '' },
       desinfeccion: desinf[sala],
       lotes: [...porLote.values()].sort((a, b) => porNombre(a.lote, b.lote))

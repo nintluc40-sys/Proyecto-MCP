@@ -188,7 +188,7 @@ describe('Maduración · operativo · 🏠 Salas', () => {
     const tarjetas = root.querySelectorAll('.mop-sala-card');
     expect(tarjetas).toHaveLength(5);
     const s1 = root.querySelector('[data-mop-sala="Sala 1"]').textContent;
-    for (const t of ['Producción', 'Desinfección - Producción agrupada', '1/15 tanques', '100 %', 'hace 7 d', 'QA · Producción']) expect(s1).toContain(t);
+    for (const t of ['Producción', 'Desinfección - Producción agrupada', '1/15 tanques', 'RAS100%', 'hace 7 d', 'QA · Producción']) expect(s1).toContain(t);
     expect(root.querySelector('.mop-detalle')).toBeNull();
     makeChart.mockClear();
     click(root.querySelector('[data-mop-sala="Sala 1"]'));

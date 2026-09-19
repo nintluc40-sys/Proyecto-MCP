@@ -107,8 +107,11 @@ const MAD_SALA_OPTS = ["Sala 1","Sala 2","Sala 3","Sala 4","Sala 5"];
 /* Uso del RAS de una sala (usuario, 2026-09-15). Antes era SI/NO; ahora dice EN QUÉ PORCENTAJE:
    «No» es toda agua de playa, y un porcentaje es la parte que viene del RAS — lo que falta hasta
    el 100 es de playa y NO se anota, porque sería un segundo sitio donde equivocarse.
-   ⚠ La hoja guarda TEXTO y conserva filas viejas con «SI»/«NO»: el desplegable añade el valor
-   que traiga la fila si no está aquí, para no borrarlo al volver a guardar. */
+   ⚠ La ficha ENVÍA texto, pero Google Sheets convierte el porcentaje en NÚMERO al guardarlo: en la hoja
+   «100%» es la fracción 1, y así lo devuelve `?p=rows` (medido el 2026-09-19). Quien lo LEE de la hoja
+   lo vuelve a escribir como aquí (`_madResRasTxt`, el ⚖️ Saldo). «No» y los «SI»/«NO» de las filas
+   viejas sí se quedan como texto. El desplegable lee los registros guardados en el DISPOSITIVO, que
+   conservan el texto: si uno trae un valor que no está aquí, lo añade para no borrarlo al volver a guardar. */
 const MAD_RAS_OPTS = ["No","10%","15%","20%","25%","30%","40%","50%","60%","70%","100%"];   // 70% lo pidió el usuario el 2026-09-17
 /* TONELADAS de agua que lleva CADA tanque de la sala (usuario, 2026-09-15). Es el volumen con
    el que se estima la carga, así que vive aquí y no repartido por la interfaz.
@@ -6345,6 +6348,10 @@ function madResEstadisticaDia(valores){
   }
   return { n:v.length, prom:_madResR2(prom), ultima:_madResR2(v[v.length-1]), cv:cv };
 }
+/* EL RAS COMO LO ELIGE LA FICHA (usuario, 2026-09-19) · gemelo de `rasComoTexto` (mad-resumen.js). Google Sheets guarda
+   «100%» como la FRACCIÓN 1 y `?p=rows` la devuelve así: el Saldo enseñaba «RAS 1». Una fracción de 0 a 1 vuelve a su
+   porcentaje; «No», los «SI»/«NO» viejos y un número mayor que 1 (no es ninguna opción de la ficha), tal cual. */
+function _madResRasTxt(v){ const t=madLibroTxt(v); return (/^\d+(\.\d+)?$/.test(t) && Number(t)<=1) ? Math.round(Number(t)*10000)/100+"%" : t; }
 function _madResRecientes(filas){ return filas.slice().sort(function(a,b){ return _madResOrden(_madResF10(b.Fecha), _madResF10(a.Fecha)); }).slice(0, MAD_RES_MAX_TRAT); }
 /* Una lectura de un mapa por nombre de hoja SIN heredar del prototipo: con `m[k]` a secas, un
    área llamada «constructor» devolvería una función y se colaría como si fuera un registro. */
@@ -6426,7 +6433,7 @@ function _madResSalas(filasSala, libro, filasTrat, tons, alc){
     // PE1.5 · de día y de noche: cada turno con su última cifra y su fecha.
     const alcalinidad={ dia:_madResDe(alc.dia, sala) || { valor:"", fecha:"" }, noche:_madResDe(alc.noche, sala) || { valor:"", fecha:"" } };
     return { sala:sala, fecha:conEstado ? _madResF10(conEstado.Fecha) : "", estado:conEstado ? madLibroTxt(conEstado.Estado) : "",
-      ras:conRas ? madLibroTxt(conRas.RAS) : "", fechaRas:conRas ? _madResF10(conRas.Fecha) : "", lotes:lotes,
+      ras:conRas ? _madResRasTxt(conRas.RAS) : "", fechaRas:conRas ? _madResF10(conRas.Fecha) : "", lotes:lotes,
       toneladas:ton.valor, fechaToneladas:ton.fecha, volumenTanque:_madResVolTanque(sala, ton.valor),
       tanquesSala:(_madResDe(MAD_TANQUES_POR_SALA, sala)||[]).length, alcalinidad:alcalinidad,
       temp:variable(MAD_RES_TEMPS), ox:variable(MAD_RES_OXIGENOS),

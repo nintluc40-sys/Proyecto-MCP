@@ -103,6 +103,18 @@ describe('Saldo · resumen con filtro de variables y PDF', () => {
     expect(fila('Mortalidad acumulada').textContent, 'el acumulado no dice desde cuándo').toContain('→');
   });
 
+  it('🔴 «Uso del RAS» dice lo que eligió la ficha: la hoja guarda «100%» como la fracción 1 (2026-09-19)', async () => {
+    const antes = HOJAS['Maduración Sala'];
+    HOJAS['Maduración Sala'] = [{ ...antes[0], RAS: 1 }];   // así lo devuelve ?p=rows
+    try {
+      await H.madSaldoRefrescar();
+      const fila = [...cuerpo().querySelectorAll('tr')].find((tr) => tr.querySelector('th') && tr.querySelector('th').textContent === 'Uso del RAS');
+      expect(fila.querySelector('td').textContent).toBe('100% (2026-01-10)');
+    } finally {
+      HOJAS['Maduración Sala'] = antes;
+    }
+  });
+
   it('🔴 el filtro se guarda y oculta lo desmarcado; con el GAS viejo Tratamientos no se pide y se dice', async () => {
     respuestaVer = 'FichasLarv-OK';
     await H.madSaldoRefrescar();

@@ -102,7 +102,7 @@ const RE_PORCENTAJE = /^-?\d+(\.\d+)?%$/;
  * Un PORCENTAJE («100%») es un número con formato de porcentaje, y `?p=rows` lo entrega como FRACCIÓN (1):
  * medido el 2026-09-19 con el RAS de la Sala. La ficha escribe «100%» como texto, pero Google Sheets lo
  * convierte al guardarlo. Así que aquí se entrega igual, como fracción: el valor es el mismo por los dos
- * caminos, y el «100%» lo vuelve a escribir quien lo enseña.
+ * caminos, y el «100%» lo vuelve a escribir el resumen (`rasComoTexto`, mad-resumen.js), para el Saldo y el tablero.
  * Se queda como TEXTO, igual que en `?p=rows`:
  *   · un entero con CERO a la izquierda («0042»): sólo puede ser una celda de texto, y el cero es
  *     parte del código;

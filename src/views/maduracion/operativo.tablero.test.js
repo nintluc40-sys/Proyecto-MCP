@@ -18,7 +18,7 @@ import {
   PERIODOS, PERIODO_INICIAL, primeraFecha, periodoDe, normalizarFiltro, hayFiltro, posicionEnFiltro,
   kpiVivos, kpiLotes, kpiSalas, kpiOcupacion, kpiMortalidad, kpiReproduccion,
   mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, TIPOS_AVISO, ultimosRegistros, ETIQUETA_HOJA, ESPERA_DIAS,
-  finesDeCuarentena, AVISO_CUARENTENA_DIAS, lecturasDelUltimoRegistro, evaluarLecturas, rasComoTexto, tarjetasDeSalas, detalleDeSala,
+  finesDeCuarentena, AVISO_CUARENTENA_DIAS, lecturasDelUltimoRegistro, evaluarLecturas, tarjetasDeSalas, detalleDeSala,
 } from './operativo.tablero.js';
 import { modeloOperativo, serieDiaria, diasDeTanque, SALAS_VISIBLES } from './operativo.data.js';
 import { MAD_OP_HOJAS, MAD_OP_ORIGEN } from './operativo.fuentes.js';
@@ -346,7 +346,7 @@ describe('Maduración · tablero · las salas', () => {
     expect(s1.temp).toMatchObject({ prom: 28.5, fecha: '2026-09-18', min: 27.9, max: 29.1, estado: 'fuera' });
     expect(s1.ox).toMatchObject({ prom: 4.5, fecha: '2026-09-19', min: 4.5, max: 4.5, estado: 'ok' });
     expect(s1.alcalinidad).toEqual({ dia: { valor: 95, fecha: '2026-09-18', estado: 'bajo' }, noche: { valor: 120, fecha: '2026-09-18', estado: 'ok' } });
-    expect(s1.ras).toEqual({ texto: '100 %', fecha: '2026-09-18' });
+    expect(s1.ras).toEqual({ texto: '100%', fecha: '2026-09-18' });   // la hoja lo guarda como la fracción 1
     expect(s1.toneladas).toEqual({ valor: 5.5, fecha: '2026-09-18' });
     expect(s1.desinfeccion).toEqual({ fecha: '2026-09-12', dias: 7 });
     expect(T['Sala 3']).toMatchObject({ temp: { prom: '', estado: '' }, ras: { texto: '' }, desinfeccion: { fecha: '', dias: '' } });
@@ -364,13 +364,12 @@ describe('Maduración · tablero · las salas', () => {
     expect(lecturasDelUltimoRegistro(m2.fuentes.sala, 'Sala 1', RESUMEN_TEMPS, '2026-09-17')).toEqual({ fecha: '', lecturas: [] });
   });
 
-  it('evaluar lecturas y el RAS como lo elige la ficha', () => {
+  it('evaluar lecturas frente al umbral: dentro, por abajo, por arriba o por los dos lados', () => {
     expect(evaluarLecturas('temperatura', [28, 29])).toBe('ok');
     expect(evaluarLecturas('temperatura', [27.9, 28.5])).toBe('bajo');
     expect(evaluarLecturas('temperatura', [29.5])).toBe('alto');
     expect(evaluarLecturas('temperatura', [27, 30])).toBe('fuera');
     expect(evaluarLecturas('temperatura', [])).toBe('');
-    expect([1, '1', 0.15, '0.7', 0, 'No', '', '100%', 15].map(rasComoTexto)).toEqual(['100 %', '100 %', '15 %', '70 %', '0 %', 'No', '', '100%', '15']);
   });
 });
 
