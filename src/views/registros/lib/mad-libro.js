@@ -188,17 +188,26 @@ function flujo(fuentes) {
  *
  * @param {{ingresos?:object[], movimientos?:object[], tanques?:object[], cierres?:object[]}} fuentes filas tal como las devuelve
  *        `?p=rows` (objetos con las cabeceras por clave).
- * @param {{hoy?:string, hasta?:string}} [opts] `hoy`: fecha de referencia para el estado de
+ * @param {{hoy?:string, hasta?:string, alCerrarDia?:Function}} [opts] `hoy`: fecha de referencia para el estado de
  *        cuarentena. `hasta` (D4, 2026-09-14): si se da, sólo entran los eventos de esa fecha o
  *        anteriores —el libro «al cierre» de ese día—; sin ella, entran todos. La usa «🔄 Proponer
  *        estado» de Salas, que propone el estado de la fecha elegida en la ficha: con el libro de
  *        HOY, una fecha pasada heredaba qué lotes y cuántos tanques hay hoy.
+ *        `alCerrarDia` (2026-09-19, sólo el tablero): ver su comentario en el cuerpo.
  * @returns {{posiciones, tanques, lotes, avisos, hasta}}
  */
 export function construirLibro(fuentes, opts) {
   const f = fuentes || {};
   const hoy = txt((opts || {}).hoy) || null;
   const corte = txt((opts || {}).hasta) || null;
+  /* 2026-09-19 · el TABLERO de Maduración (src/views/maduracion) necesita la serie DIARIA del libro, y reconstruirlo
+     día a día cuesta un libro por día —medido: 30 días, 1,4 s con tres meses de datos y 7 s con un año de cinco
+     partes diarios—. Este gancho la da en UNA pasada: se llama al CERRAR cada día del recorrido (antes del primer
+     evento del día siguiente, y al final con el último) con las posiciones y los lotes VIVOS del libro, que quien lo
+     recibe no debe modificar. Es opcional y no toca el cálculo: sin él, el libro es exactamente el de siempre. Por
+     eso el gemelo del monolito no lo lleva —allí no hay tablero— y la paridad no cambia. */
+  const alCerrarDia = typeof (opts || {}).alCerrarDia === 'function' ? opts.alCerrarDia : null;
+  let diaAbierto = null;
 
   const pos = new Map();      // posKey → posición
   const lotes = new Map();    // lote   → { lote, ingreso, copulaDesde, cerrado, salas: Map sala → { sala, ingreso, copulaDesde } }
@@ -246,6 +255,10 @@ export function construirLibro(fuentes, opts) {
      baja es el que hay en ese instante del recorrido, ni antes ni después. */
   for (const { fecha, tipo, r } of flujo(f)) {
     if (corte && fecha > corte) continue;       // D4: lo posterior al corte todavía no ha pasado
+    if (alCerrarDia && fecha !== diaAbierto) {
+      if (diaAbierto !== null) alCerrarDia(diaAbierto, { posiciones: pos, lotes });
+      diaAbierto = fecha;
+    }
     if (fecha > hasta) hasta = fecha;
 
     if (tipo === 'ingreso') {
@@ -487,6 +500,8 @@ export function construirLibro(fuentes, opts) {
       }
     }
   }
+
+  if (alCerrarDia && diaAbierto !== null) alCerrarDia(diaAbierto, { posiciones: pos, lotes });
 
   /* ── 3 · Vistas derivadas ────────────────────────────────── */
   const porTanque = new Map();
