@@ -21,15 +21,25 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # ⚠ La imagen va FIJADA a propósito. GitHub avisa en cada ejecución de que `ubuntu-latest` pasa a
+    # Ubuntu 26 a partir del 2026-10-19: con la etiqueta flotante, el entorno de la puerta a producción
+    # cambiaría ese día sin que nadie lo hubiera probado. `ubuntu-24.04` es la imagen que servía
+    # `ubuntu-latest` hasta ahora. Subir a `ubuntu-26.04` (ya existe) es un cambio deliberado: en su
+    # propio commit, y mirando la primera ejecución.
+    runs-on: ubuntu-24.04
     steps:
+      # Las acciones van en versiones que corren en Node 24 (2026-09-19). Con las anteriores, GitHub
+      # avisaba en cada ejecución de que las forzaba a Node 24: da Node 20 por obsoleto en sus runners.
       - name: Descargar el código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Instalar Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
+          # El Node con el que corren las PRUEBAS. Node 24 es LTS hasta el 2028-04-30; aquí ponía 20,
+          # sin soporte desde el 2026-04-30. ⚠ happy-dom no se comporta igual en todas las versiones de
+          # Node: antes de un push, la suite con ESTE Node (README, «Testing y calidad»).
+          node-version: 24
           cache: npm
 
       - name: Instalar dependencias
@@ -77,18 +87,21 @@ jobs:
       - name: Compilar (genera /dist)
         run: npm run build
 
+      # v5: la primera que empaqueta con `upload-artifact` en Node 24 (la v4 aún usaba la de Node 20).
+      # ⚠ Desde la v4 deja FUERA los archivos ocultos (los que empiezan por punto). `dist/` no tiene
+      # ninguno (medido el 2026-09-19); si algún día hace falta uno: `include-hidden-files: true`.
       - name: Preparar artefacto de Pages
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # fijada por lo mismo que la de `build`
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Publicar en GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

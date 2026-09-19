@@ -159,7 +159,7 @@ describe('💾 Guardar local · guarda en el dispositivo y no toca la red', () =
   it('🔴 si el navegador NO guarda, lo dice y la ficha NO se limpia (lo tecleado no se pierde)', () => {
     /* ⚠ Dónde vive `setItem` depende del ENTORNO, y equivocarse no da error: el espía no intercepta y la prueba cree
        que el navegador «no guardó». Con un sustituto de objeto plano es PROPIO; con un Storage normal, del PROTOTIPO;
-       y con el de happy-dom (la CI, en Node 20) es un Proxy que, la primera vez que se lee un método, lo ATA como
+       y con el de happy-dom (en la CI, entonces con Node 20) es un Proxy que, la primera vez que se lee un método, lo ATA como
        propiedad propia del objeto de detrás y la esconde: espiar el prototipo no intercepta nada. Pasó el 2026-09-18,
        en el primer push de esta prueba: verde aquí (Node 26) y rojo en la CI. Por eso se COMPRUEBA que el espía
        intercepta antes de fiarse de él; si en el prototipo no, se espía el propio objeto (tinyspy restaura

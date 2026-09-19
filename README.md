@@ -308,10 +308,11 @@ Dos consecuencias que conviene tener presentes al desplegar:
 - **Vitest** (`npm test`): la capa de datos (`core/*`, `supervisor/stats`, `microbiologia/data`,
   las fichas de Registros…) y el monolito `public/registros/engine.js`, que se arranca entero en
   happy-dom sobre el shell real. **ESLint flat v9 + Prettier** (`npm run lint`).
-- ⚠ **La CI corre las pruebas con Node 20** (`deploy.yml`), no con el Node de tu equipo, y happy-dom no
-  se comporta igual en los dos: el 2026-09-18 una prueba en verde aquí tumbó la CI —y con ella el
-  despliegue— porque su simulación del `localStorage` no interceptaba en Node 20. Antes de un push, la
-  suite con Node 20 de verdad: `TZ=UTC npx -y -p node@20 -- node node_modules/vitest/vitest.mjs run`.
+- ⚠ **La CI corre las pruebas con Node 24** (`deploy.yml`; hasta el 2026-09-19, con Node 20), no con el
+  Node de tu equipo, y happy-dom no se comporta igual en todas las versiones: el 2026-09-18 una prueba en
+  verde aquí tumbó la CI —y con ella el despliegue— porque su simulación del `localStorage` no
+  interceptaba en Node 20. Antes de un push, la suite con el Node de la CI de verdad:
+  `TZ=UTC npx -y -p node@24 -- node node_modules/vitest/vitest.mjs run`.
 - **Bancos de mutación** (fuera del repo, en `Documents\_herramientas-traslado`). Una prueba en
   verde no dice que vigile nada: cada regla que importa tiene su banco, que reintroduce el defecto
   a propósito y exige que alguna prueba se ponga roja. Cada banco se corre con `node mutar-<tema>.mjs`.
