@@ -26,6 +26,15 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createContext, Script } from 'node:vm';
+/* ⚠ happy-dom se importa AQUÍ y no dentro de la prueba que lo usa («el collectAst REAL…»). Allí era un
+   `await import` que contaba contra los 5 s de `testTimeout`: aislada tarda medio segundo, pero con la suite
+   entera en paralelo la carga compite con los demás workers, y con Node 20 —el de la CI— expiró a los 5013 ms
+   (medido el 2026-09-18). Una prueba que cae por el reloj tumba la CI y, con ella, el despliegue. En el nivel
+   del módulo la carga es parte de la RECOLECCIÓN, que no tiene tope de tiempo. El archivo NO pasa al entorno
+   happy-dom a propósito: con él, `URL` es la de happy-dom y `readFileSync` la rechaza («The URL must be of scheme
+   file», medido) y el archivo entero cae al recolectarse. ⚠ Y no escribir aquí la directiva de entorno tal cual, ni
+   siquiera citada: Vitest la busca en CUALQUIER comentario del archivo y la aplicaría. */
+import { Window } from 'happy-dom';
 
 const ENGINE = new URL('../../../../public/registros/engine.js', import.meta.url);
 const GAS = new URL('../../../../GAS/Code.gs', import.meta.url);
@@ -121,8 +130,7 @@ describe('registros · AsT · captura del formulario', () => {
     });
   });
 
-  it('el collectAst REAL recoge los tres valores como números', async () => {
-    const { Window } = await import('happy-dom');
+  it('el collectAst REAL recoge los tres valores como números', () => {
     const win = new Window();
     const doc = win.document;
     doc.body.innerHTML = `
