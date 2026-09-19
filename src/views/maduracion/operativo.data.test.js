@@ -209,6 +209,19 @@ describe('Maduración · operativo · el modelo entero desde el store', () => {
     expect(m.filtros.lotes).toEqual(['AA']);
   });
 
+  it('🔑 el libro del modelo es el del CIERRE de la foto, y es el mismo con que se proponen los estados de sala', () => {
+    const fila = (o) => ({ _SheetOrigin: MAD_OP_ORIGEN, ...o });
+    const store = [
+      fila({ Fecha: '01/09/2026', Lote: 'AA', 'Código genético': 'C1', 'Camaronera origen': 'X', Sala: 'Sala 1', Tanque: '1', Machos: '10', Hembras: '10' }),
+      fila({ Fecha: '15/09/2026', Lote: 'DD', 'Código genético': 'C1', 'Camaronera origen': 'X', Sala: 'Sala 4', Tanque: '1', Machos: '5', Hembras: '5' }),
+    ];
+    const m = modeloOperativo(store, { hoy: '2026-09-20', fecha: '2026-09-12' });
+    expect([...m.libro.lotes.keys()]).toEqual(['AA']);                  // DD entra DESPUÉS de la foto
+    expect(m.libro.lotes.get('AA').estado).toBe('Cuarentena');           // 11 días en la foto; con los 19 de hoy, Producción
+    expect(m.salas.find((s) => s.sala === 'Sala 1').propuesto.estado).toBe('Cuarentena');
+    expect(m.salas.find((s) => s.sala === 'Sala 4').propuesto.estado).toBe('');
+  });
+
   it('con una foto en el pasado, el resumen es el de ESE día', () => {
     const fila = (o) => ({ _SheetOrigin: MAD_OP_ORIGEN, ...o });
     const store = [

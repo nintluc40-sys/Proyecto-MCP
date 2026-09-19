@@ -68,6 +68,12 @@ export function frescura(fuentes, hoy) {
   });
 }
 
+/** El libro AL CIERRE de `fecha`: sólo lo ocurrido hasta ese día, con los estados de ese día. Es el que usa
+ *  «🔄 Proponer estado» de la ficha de Salas, y el que pintan la portada y el mapa de planta del tablero. */
+export function libroAlCierre(fuentes, fecha) {
+  return construirLibro(fuentes || {}, { hoy: fecha, hasta: fecha });
+}
+
 /**
  * El estado de cada sala visible, DOBLE (decisión del usuario):
  *  · `registrado`: el último «Estado» tecleado en la hoja hasta `fecha`, con su día y su «Estado por lote»;
@@ -75,9 +81,10 @@ export function frescura(fuentes, hoy) {
  *    que «🔄 Proponer estado»—, con su desglose por lote y la ocupación. Vacío si el libro no conoce la sala:
  *    una sala sin ingresos no tiene estado deducible (y decir «Desinfección» de ella sería falso).
  * `coinciden` es null cuando falta alguno de los dos: no se puede comparar lo que no está.
+ * `libroDado`: el libro al cierre de `fecha` si ya se tiene (el modelo lo construye una vez para todo el tablero).
  */
-export function estadoDeSalas(fuentes, fecha) {
-  const libro = construirLibro(fuentes || {}, { hoy: fecha, hasta: fecha });
+export function estadoDeSalas(fuentes, fecha, libroDado) {
+  const libro = libroDado || libroAlCierre(fuentes, fecha);
   const filasSala = ((fuentes || {}).sala || [])
     .filter((r) => { const f = fechaDeFila('sala', r); return esIso(f) && f <= fecha && txt(r.Estado) !== ''; })
     .sort((a, b) => (fechaDeFila('sala', a) < fechaDeFila('sala', b) ? -1 : fechaDeFila('sala', a) > fechaDeFila('sala', b) ? 1 : 0));
@@ -228,20 +235,23 @@ export function opcionesDeFiltro(fuentes) {
 
 /**
  * El modelo del tablero a partir de TODAS las filas del store.
- * `hoy`: la fecha de cálculo. `fecha`: la de la FOTO (por defecto, hoy): el resumen y el estado de las salas son
- * los del cierre de ese día.
+ * `hoy`: la fecha de cálculo. `fecha`: la de la FOTO (por defecto, hoy): el libro, el resumen y el estado de las
+ * salas son los del cierre de ese día. El libro se construye UNA vez y lo comparten el estado de las salas y la
+ * vista (vivos, mapa de planta, cuarentenas): con un año de datos cada libro cuesta del orden de 0,2 s.
  */
 export function modeloOperativo(filas, opts) {
   const hoy = txt((opts || {}).hoy);
   const fecha = txt((opts || {}).fecha) || hoy;
   const { fuentes: todas, sinHoja } = fuentesDesdeFilas(filas);
   const { fuentes, excluidas } = soloSalasVisibles(todas);
+  const libro = libroAlCierre(fuentes, fecha);
   return {
     hoy, fecha, periodo: periodoPorDefecto(fecha),
     fuentes, sinHoja, salasExcluidas: excluidas,
     frescura: frescura(fuentes, hoy),
     resumen: resumenMaduracion(fuentesAlDia(fuentes, fecha), { hoy: fecha }),
-    salas: estadoDeSalas(fuentes, fecha),
+    libro,
+    salas: estadoDeSalas(fuentes, fecha, libro),
     filtros: opcionesDeFiltro(fuentes),
   };
 }
