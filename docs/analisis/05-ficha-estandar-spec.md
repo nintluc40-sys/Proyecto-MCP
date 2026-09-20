@@ -3,7 +3,7 @@
 >
 > Se conserva por TRAZABILIDAD: explica por qué el sistema es como es hoy.
 > **No usarlo como estado actual.** El estado vivo está en la memoria del proyecto
-> (`project_punto-guardado-*`) y, ante cualquier discrepancia, **manda el CÓDIGO**.
+> (`project_punto-guardado.md`, el que indexa `MEMORY.md`) y, ante cualquier discrepancia, **manda el CÓDIGO**.
 >
 > ⚠ Spec de reconstrucción ya EJECUTADA: las fichas viven hoy en
 >   `src/views/registros/fichas/`. Vale como mapa de intención, no de estado.

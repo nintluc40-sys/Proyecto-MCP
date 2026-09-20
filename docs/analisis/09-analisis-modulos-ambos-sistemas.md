@@ -3,7 +3,7 @@
 >
 > Se conserva por TRAZABILIDAD: explica por qué el sistema es como es hoy.
 > **No usarlo como estado actual.** El estado vivo está en la memoria del proyecto
-> (`project_punto-guardado-*`) y, ante cualquier discrepancia, **manda el CÓDIGO**.
+> (`project_punto-guardado.md`, el que indexa `MEMORY.md`) y, ante cualquier discrepancia, **manda el CÓDIGO**.
 >
 > ✅ **CONTUVO un segundo «PUNTO DE GUARDADO» (2026-08-03), RETIRADO el 2026-09-03.**
 >   Durante semanas la memoria afirmó tener el «único» punto de guardado mientras éste vivía

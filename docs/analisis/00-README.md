@@ -3,7 +3,7 @@
 >
 > Se conserva por TRAZABILIDAD: explica por qué el sistema es como es hoy.
 > **No usarlo como estado actual.** El estado vivo está en la memoria del proyecto
-> (`project_punto-guardado-*`) y, ante cualquier discrepancia, **manda el CÓDIGO**.
+> (`project_punto-guardado.md`, el que indexa `MEMORY.md`) y, ante cualquier discrepancia, **manda el CÓDIGO**.
 >
 > ⚠ Da un tamaño de `engine.js` en líneas que hoy es FALSO (el monolito ha crecido
 >   mucho desde junio): `wc -l public/registros/engine.js`.
