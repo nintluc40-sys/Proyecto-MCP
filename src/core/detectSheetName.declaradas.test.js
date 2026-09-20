@@ -1,12 +1,27 @@
 /* ============================================================
-   detectSheetName · las hojas DECLARADAS que todavía NO existen en producción
+   detectSheetName · las hojas del operativo cuya cabecera la declara el CÓDIGO, no una medición
 
    ── POR QUÉ ES UN ARCHIVO APARTE ───────────────────────────
-   `detectSheetName.test.js` se GENERA desde `cabeceras-produccion.json`: cubre las
-   35 pestañas que hoy existen, y añadirle filas a mano las perdería en la siguiente
-   regeneración. Las tres hojas del registro operativo de Maduración —Ingreso,
-   Movimientos y Fin de Ciclo— NO existen todavía: nacen con el re-despliegue del
-   GAS, así que ninguna medición de producción puede incluirlas.
+   `detectSheetName.test.js` nació generado desde `cabeceras-produccion.json`, o sea de una FOTO
+   de producción. Estas hojas no pueden salir de ahí: su cabecera la decide un módulo de esquema
+   de este repo, y la pestaña aparece cuando alguien envía por primera vez.
+   🔑 Y resultó ser la ÚNICA cobertura de dos de ellas: medido el 2026-09-20, el generador filtra
+   por una lista escrita a mano y dejaba `Maduración Ingreso` y `Maduración Movimientos` fuera del
+   fixture EN SILENCIO. Ahora las nombra como cubiertas aquí, y una hoja que no esté ni en un sitio
+   ni en el otro aborta la generación.
+
+   ⚠ TRES AFIRMACIONES DE ESTA CABECERA CADUCARON, y se corrigen (2026-09-20):
+     · «cubre las 35 pestañas que hoy existen» → 35 son las filas del FIXTURE, no las pestañas
+       vivas. Confundir las dos cosas es lo que hizo envejecer el número. Cuántas hay hoy en
+       producción lo dice `sonda-pestanas.mjs`; cuántas filas tiene el fixture, él mismo.
+     · «añadirle filas a mano las perdería en la siguiente regeneración» → YA NO: desde ese día el
+       generador se NIEGA a sobrescribir si el destino tiene contenido que él no reproduce.
+     · «NO existen todavía: nacen con el re-despliegue del GAS» → el re-despliegue ya ocurrió
+       (sello `55acbff1b746`) y además no es lo que las crea: nacen con su PRIMER ENVÍO. Tanto que
+       `Maduración Ingreso` existe ahora mismo y se está llenando.
+   🔑 Que existan o no en producción NO cambia NADA aquí, y ése es el punto de este archivo: sus
+   cabeceras se las pide a los módulos, no a la hoja. Por eso sobrevivió al vaciado del 09-20 sin
+   despeinarse, mientras la foto se quedaba describiendo pestañas que ya no están.
 
    🔑 Y aquí las cabeceras NO se teclean: se PIDEN a los módulos de esquema, que son
    los que las emiten. Una lista escrita al lado se desincroniza del constructor de
