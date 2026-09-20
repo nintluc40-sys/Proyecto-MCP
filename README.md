@@ -67,10 +67,16 @@ npm run lint       # ESLint
 - **Maduración** (🥚): una entrada con DOS familias (selector interno; abre en Operativo).
   - **🐚 Operativo** — el TABLERO del registro operativo, cargado DIFERIDO. Barra de filtros común
     (período · foto al día · sala → tanque · lote → código · estado · sexo · piscina · camaronera, con los
-    activos como etiquetas quitables) y tres sub-vistas: **📊 Estado actual** (siete indicadores, mapa de
-    planta, alertas, últimos registros y fines de cuarentena), **🏠 Salas** (tarjeta por sala y su detalle) y
+    activos como etiquetas quitables) y CINCO sub-vistas: **📊 Estado actual** (siete indicadores, mapa de
+    planta, alertas, últimos registros y fines de cuarentena), **🏠 Salas** (tarjeta por sala y su detalle),
     **🧬 Lotes** (tabla maestra, ficha de un lote —origen, CASCADA DEL CUADRE, curva de vivos y reproducción—
-    y comparativa por lote, código genético o piscina).
+    y comparativa por lote, código genético o piscina), **💀 Bajas** (muerte natural frente a descarte,
+    desglose cruzado por sala · tanque · lote, Pareto de motivos de cierre, distribución por hora, calor
+    sala × día y lotes cerrados) y **🔍 Revisiones** (nauplios en sus 4 etapas, alcalinidad por área día y
+    noche, mortalidad en desove y recuperación, y frecuencia de observaciones de tanque).
+    ⚠ **Lo que NO se juzga** se enseña tal cual, rotulado «sin criterio»: deformidad, actividad,
+    fototropismo y aireación. Sólo llevan veredicto salinidad > 60 ‰, temperatura > 40 °C, hongos
+    «Presente» y la alcalinidad — el resto no tiene fuente que lo respalde.
   - **🧬 Microchips** — seguimiento reproductivo por Trovan ID sobre
     las hojas `Maduración MATRIZ`/`Bitácora`/`Transferencias`.
     ⚠ **Es el REPRODUCTIVO. Hay otra «Maduración» distinta** —el registro OPERATIVO, por
@@ -532,18 +538,29 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
      tiene que llegar con su hora y su número. Cuáles existen ya, y con cuántas columnas, lo dice
      `estado-maduracion.mjs`, no esta lista.
    - En cada dispositivo, recargar la app y pasar ⚙ Config → «🔗 Probar conexión»: tiene que mostrar
-     ese sello. Una copia de `index (8)` anterior en otro equipo lleva otro sello y no envía las fichas
-     selladas: se sustituye por la actual.
+     ese sello. Una copia de `index (8)` con OTRO sello no envía las fichas selladas —calcula, guarda
+     en el dispositivo y lo dice— y se sustituye por la actual.
+     ⚠⚠ **Ese sello es necesario pero NO suficiente, y conviene saber por qué** (medido el 2026-09-20).
+     El sello es la huella de `GAS/Code.gs`, y `Code.gs` no se toca desde `ba7542f` (09-18): por eso
+     **todas** las copias de `index (8)` desde esa fecha muestran `55acbff1b746` y pasan «Probar
+     conexión» igual, aunque a una le falte código. Comprobado sobre los tres `index (8)` de Music: el
+     actual y sus dos respaldos llevan el mismo sello. Lo que prueba es que la app habla con ESTE GAS;
+     no prueba que sea la build de hoy. **La única identidad fiable de una copia es su sha1** —hoy
+     `2e806a50…`— y la app no la enseña por ningún sitio: se compara con `sha1sum` tras copiarla.
    - Lo tecleado en las fichas selladas entre el 16 y el 18-09 no se envió (los sellos no casaban) y
      sigue en el dispositivo: hay que volver a guardarlo.
 
 **Decidido, a la espera del usuario**
 
-3. **Vaciado de las hojas de Maduración** salvo las del reproductivo: lo que hay son datos de prueba.
-   Mientras no se haga, `Maduración Ingreso` y `Maduración Lotes` **rechazan** por su cabecera vieja,
-   y eso es lo esperado, no un fallo. Es el momento de retirar las tres columnas vacías de
-   `Maduración Tanques`, cambiando `madKeyCols` **en el mismo despliegue** (la Hora y el Parte de la
-   llave se correrían de posición con ellas).
+3. ✅ **El vaciado YA SE HIZO** (2026-09-20): se retiraron del documento todas las hojas de Maduración
+   salvo las del reproductivo —`MATRIZ` y `Bitácora` siguen ahí, con sus miles de filas— y el registro
+   se está estrenando en producción. `Maduración Ingreso` ya renació con la cabecera actual.
+   🔴 **Queda la OTRA MITAD, y tiene fecha de caducidad.** Era «el momento» de retirar las tres columnas
+   vacías de `Maduración Tanques` —`Lote` (índice 2) y las dos `Población inicial` (4 y 5)— cambiando
+   `madKeyCols` de `[0,1,3,16,17]` a `[0,1,2,13,14]` **en el mismo despliegue**, porque `Hora` y `Parte`
+   van al final y se correrían con ellas. Es gratis sólo mientras esa hoja tenga CERO filas; en cuanto
+   una ronda registre el primer parte, pasa a ser una migración.
+   🔑 Cuántas filas tiene hoy **no se lee de aquí**: lo dice `estado-maduracion.mjs`.
 
 **Abierto**
 
@@ -553,12 +570,22 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
 6. **Paridad · las funciones que sólo se comparan por NOMBRE** entre `engine.js` e `index (8)`
    (el repo delega en `__rgLib`, el gemelo las lleva en línea). Es el único hueco de la paridad; su
    número lo dice `verificar-3copias-v3` al correr («delegación __rgLib»).
-7. **El tablero de Maduración va por F2.** Están 📊 Estado actual, 🏠 Salas y 🧬 Lotes (con su cascada del
-   cuadre y la comparativa por lote, código genético o piscina), más los cuatro filtros nuevos, el período
-   «ciclo del lote», las etiquetas de filtros activos y el KPI de biomasa. Quedan F3 (Descarte, mortalidad,
-   salidas y Revisiones) a F7 (Reportería). ⚠ Con los datos de hoy hay UN solo lote y seis hojas sin crear:
-   de F3 en adelante se desarrolla con fixtures FICTICIOS, y se contrasta con `auditar-tablero-mad-real.mjs`
-   y `medir-tablero-mad-real.mjs` (utillaje), que desde F2 comprueban que la cascada de cada lote CUADRA con
-   los datos reales.
-8. **La CI no vigila `index (8)`**: `deploy.yml` corre lint, vitest, auditorías y build, pero ninguno
-   de los verificadores de copias, que viven fuera del repo. La paridad depende de correrlos a mano.
+7. **El tablero de Maduración va por F3.** Están las CINCO sub-vistas —📊 Estado actual, 🏠 Salas,
+   🧬 Lotes (con su cascada del cuadre y la comparativa por lote, código genético o piscina), 💀 Bajas y
+   🔍 Revisiones—, más los cuatro filtros nuevos, el período «ciclo del lote», las etiquetas de filtros
+   activos y el KPI de biomasa. Quedan **F4 (Tanques + Reproducción) a F7 (Reportería)**, cada una con
+   propuesta visual y aprobación antes de codear.
+   ⚠ Se desarrolla con fixtures FICTICIOS, y se contrasta con `auditar-tablero-mad-real.mjs` y
+   `medir-tablero-mad-real.mjs` (utillaje). 🔑 Desde el 2026-09-20 esas dos **cuentan cuántas
+   comprobaciones ejercitaron dato y cuántas salieron verdes EN VACÍO**, y nombran las hojas sin
+   ninguna fila: tras el vaciado daban «todo en ok» sobre cero, que es un verde que no prueba nada.
+   Cuánto cubre hoy el contraste **no se lee de aquí**: lo dicen ellas al correr.
+8. **La CI sigue sin poder vigilar `index (8)`** —`deploy.yml` corre lint, vitest, auditorías y build, y
+   ninguna de las cuatro ve un archivo que no está en el repo—, pero desde el 2026-09-20 **ya no depende
+   de acordarse**: un hook `pre-push` corre `node verificar-todo.mjs --copias` (las seis que comparan
+   repo ↔ `index (8)`: funciones, estilos, marcado, SheetJS, plantillas del GAS y sintaxis, ~1,8 s) y
+   **para el push** si divergen. Falla CERRADO: si falta el utillaje o falta `index (8)`, también para y
+   lo dice. Salida deliberada: `git push --no-verify`.
+   ⚠ El hook vive en `.git/hooks/`, que **no se versiona**: es local a esta máquina, igual que
+   `index (8)`. Quien clone el repo en otro sitio no lo tiene — y allí tampoco hay `index (8)` que
+   comparar. La lógica sí está versionada, en el utillaje.
