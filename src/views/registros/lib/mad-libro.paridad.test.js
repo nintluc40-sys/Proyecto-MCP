@@ -456,6 +456,47 @@ describe('Libro · el MISMO libro al cierre de un día (opción hasta)', () => {
   });
 });
 
+/* PV-5 (2026-09-20) · EL GANCHO `alCerrarDia` EXISTE SÓLO EN EL MÓDULO, y hasta hoy eso vivía
+   únicamente en un comentario. Lo añadió F1.1 para que el TABLERO saque la serie diaria en UNA
+   pasada —30 días con un año de datos: de 6,3 s a 0,3 s— y el gemelo del monolito no lo lleva
+   porque allí no hay tablero.
+   🔑 POR QUÉ HACE FALTA ESTO, y no lo cubre nada de lo de arriba: los `describe` de paridad NUNCA
+   pasan el gancho, así que seguirían verdes aunque el gancho perturbara el libro. Y `alCerrarDia`
+   recibe las posiciones y los lotes VIVOS del recorrido —las estructuras de trabajo, no copias—,
+   con el contrato «quien lo recibe no debe modificar» escrito en un comentario y exigido por nadie.
+   Si alguien lo rompe, el libro del TABLERO deja de ser el del ⚖️ Saldo y las dos pantallas enseñan
+   cifras distintas del mismo dato, sin un solo error a la vista: justo lo que este archivo existe
+   para impedir. Aquí el contrato pasa de frase a exigencia. */
+describe('Libro · el gancho alCerrarDia es sólo del módulo, y es INERTE', () => {
+  for (const [nombre, fuentes] of Object.entries(ESCENARIOS)) {
+    it('con gancho y sin él, el MISMO libro en «' + nombre + '»', () => {
+      expect(plano(construirLibro(fuentes, { hoy: HOY, alCerrarDia: () => {} })))
+        .toEqual(plano(construirLibro(fuentes, { hoy: HOY })));
+    });
+  }
+
+  it('y el gancho se llama DE VERDAD (si no, las igualdades de arriba no probarían nada)', () => {
+    const dias = [];
+    construirLibro(ESCENARIOS['tanque mezclado, reparto al saldo vivo'], { hoy: HOY, alCerrarDia: (f) => dias.push(f) });
+    expect(dias.length, 'el gancho no se llamó ni una vez').toBeGreaterThan(0);
+    // Un día se cierra UNA sola vez y en orden: es lo que permite acumular la serie en una pasada.
+    expect(new Set(dias).size, 'un día se cerró más de una vez').toBe(dias.length);
+    expect([...dias].sort()).toEqual(dias);
+  });
+
+  it('el gemelo del monolito NO lo lleva, a propósito, y por eso la paridad de arriba sigue valiendo', () => {
+    // Se mira el CUERPO de la función, no el archivo entero: un comentario que nombre el gancho
+    // en cualquier otro sitio de engine.js no es una divergencia de comportamiento.
+    const gemelo = bloque(src, 'function madConstruirLibro(fuentes, opts){', '\n}');
+    /* CONTROL POSITIVO · si la firma de la función cambiara, `bloque` devolvería '' y el
+       `not.toContain` de abajo pasaría SIN HABER MIRADO NADA. Primero se demuestra que el
+       trozo es el bueno; sólo entonces su silencio significa algo. */
+    expect(gemelo.length, 'no se recortó el gemelo: ¿cambió su firma?').toBeGreaterThan(5000);
+    expect(gemelo).toContain('madRepartirProporcional');
+    expect(gemelo).not.toContain('alCerrarDia');
+  });
+});
+
 describe('Libro · el mismo saldo, posición a posición', () => {
   for (const [nombre, fuentes] of Object.entries(ESCENARIOS)) {
     it('coincide con «' + nombre + '»', () => {
