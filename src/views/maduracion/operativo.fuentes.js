@@ -1,6 +1,15 @@
 /* ============================================================
    MADURACIÓN · OPERATIVO — las FUENTES del tablero (Fase 0.1, 2026-09-19)
 
+   ⚠ VOCABULARIO · «Fase» numera DOS cosas distintas, y las dos son de Maduración:
+     · TABLERO (2026-09-19, este módulo): Fase 0.1-0.4, F1.1-F1.3, F2 · Lotes…
+     · REGISTRO (2026-09-08, las fichas): Fase 2 = el LIBRO MAYOR del ⚖️ Saldo, Fase 3 =
+       Movimientos, 4A = Desoves, 4B = Fin de Ciclo…
+     Así que «Fase 2» A SECAS ES AMBIGUA —libro mayor para el registro, Lotes para el tablero—.
+     Se distinguen por la fecha y, en el tablero, por el punto. No se renumeró ninguna: las dos
+     viven en commits, en bancos y en comentarios, y renombrarlas sería reescribir historia por
+     cosmética (el mismo criterio que los DOS «ICL» de la app).
+
    Toma las filas que el dashboard ya descargó (`store.globalData`) y entrega las del registro
    OPERATIVO de Maduración separadas por hoja y con la MISMA forma que devuelve el GAS con
    `?p=rows`, que es la que esperan `construirLibro` y `resumenMaduracion` (registros/lib): el
