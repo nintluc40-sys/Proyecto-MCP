@@ -89,10 +89,20 @@ describe('Maduración · la grilla diaria de Tanques recoge lo que pinta', () =>
     expect(faltan).toEqual([]);
   });
 
-  /* ⚠⚠ LAS TRES COLUMNAS VACÍAS DE LA HOJA SON INTOCABLES mientras el GAS no se re-despliegue:
-     su llave para `Maduración Tanques` es POSICIONAL [0,1,3] (Fecha, Sala, Tanque). Quitar
-     `Lote` correría `Tanque` al índice 2 y la llave pasaría a apuntar a «Machos muertos»,
-     destruyendo datos en CADA sync. Esto lo fija aquí para que no se «limpien» de buena fe. */
+  /* ⚠⚠ LAS TRES COLUMNAS VACÍAS DE LA HOJA SIGUEN SIENDO INTOCABLES — pero el PORQUÉ cambió, y este
+     comentario decía dos cosas que ya eran falsas (corregido el 2026-09-20). Es el sexto de la familia
+     que arregló el punto 24: aquel corrigió cinco en `engine.js` y éste se escapó por vivir en una
+     prueba. La conclusión era correcta; el argumento, no.
+       · decía «mientras el GAS no se re-despliegue»  → el GAS SE RE-DESPLEGÓ (sello `55acbff1b746`).
+       · decía que la llave es POSICIONAL `[0,1,3]`   → es `[0,1,3,16,17]` desde el 2026-09-17:
+         Fecha, Sala, Tanque, Hora y Parte, con `Hora` y `Parte` AL FINAL de la cabecera.
+     Hoy el argumento es MÁS fuerte, no menos: quitar cualquier columna de en medio no sólo correría
+     `Tanque` al índice 2 —la llave pasaría a apuntar a «Machos muertos»—, sino que además sacaría
+     `Hora` y `Parte` de los índices 16 y 17. Destruiría datos en CADA sync.
+     🔑 Cambiarlas es posible, pero es una MIGRACIÓN coordinada —la cabecera del cliente y `madKeyCols`
+     del GAS, en el MISMO despliegue— y sólo sale gratis mientras la hoja tenga CERO filas. Cuántas
+     tiene hoy lo dice `estado-maduracion.mjs`, no este comentario.
+     Esto se fija aquí para que no se «limpien» de buena fe. */
   it('la hoja conserva las tres columnas vacías que exige la llave posicional', () => {
     const p = payload();
     expect(p).toContain('"Fecha","Sala","Lote","Tanque"');
