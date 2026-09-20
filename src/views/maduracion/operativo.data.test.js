@@ -270,15 +270,14 @@ describe('Maduración · operativo · DIMENSIONES es la conducta, no un comentar
    el resultado SÍ cambia al pasarles uno, y cambia porque están haciendo lo correcto. */
 const datos = (r) => { const { ignora, ...resto } = r || {}; void ignora; return JSON.stringify(resto); };
 
-/* 🔴 DISCREPANCIA MEDIDA el 2026-09-20, la primera vez que esta prueba corrió. Se deja DECLARADA, no
-   escondida: mientras esté aquí la prueba pasa, pero si alguien implementa el filtro o retira la
-   dimensión del catálogo, esto se pone rojo y obliga a quitarlo — que es justo cuando hay que hacerlo. */
-const DISCREPANCIAS = {
-  'cierres/sala': 'El catálogo declara `sala` para Fin de Ciclo y NINGÚN consumidor la aplica: '
-    + 'ni `motivosDeCierre` ni `lotesCerrados` miran F.sala, sólo F.lote. La hoja ganó su columna '
-    + '«Sala» el 2026-09-14 (D14, el cierre Parcial descuenta de esa sala) y el tablero nunca la usó '
-    + 'para filtrar. Falta decidir si se implementa o si sobra del catálogo.',
-};
+/* Discrepancias DECLARADAS: una dimensión que el catálogo anuncia y ningún consumidor aplica todavía.
+   Se dejan aquí, no escondidas — mientras estén, la prueba pasa; en cuanto alguien implemente el
+   filtro o retire la dimensión, esto se pone rojo y obliga a quitar la excepción.
+   🔑 HOY ESTÁ VACÍO, y eso es un resultado, no un descuido: la única que hubo —`cierres/sala`, que
+   esta prueba destapó en su primera corrida el 2026-09-20— se cerró retirando la dimensión del
+   catálogo (ver el comentario en `DIMENSIONES`). El mecanismo se conserva porque el hallazgo demostró
+   que estas cosas pasan, y la próxima merece salir declarada en vez de silenciada. */
+const DISCREPANCIAS = {};
 
 for (const [hoja, sonda] of Object.entries(SONDAS)) {
   const admite = DIMENSIONES[hoja];

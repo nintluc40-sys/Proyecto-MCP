@@ -209,7 +209,14 @@ export const DIMENSIONES = {
   movimientos: ['sala', 'tanque'],
   desoves: ['lote', 'codigo'],
   mortDesove: ['lote'],
-  cierres: ['lote', 'sala'],
+  /* 🔴 AQUÍ DECÍA ['lote', 'sala'] y era falso: ningún consumidor de esta hoja mira `F.sala` —ni
+     `motivosDeCierre` ni `lotesCerrados`, sólo `F.lote`—. Lo destapó la prueba de conducta de
+     `DIMENSIONES` en su primera corrida (D-3, 2026-09-20). La declaración venía de que la hoja ganó
+     su columna «Sala» el 09-14 (D14), pero eso es para que el cierre PARCIAL descuente de esa sala,
+     no para filtrar. Se RETIRA en vez de implementarse (decisión del usuario, 09-20): un cierre es de
+     un LOTE entero y sólo el Parcial lleva sala, así que filtrar 💀 Bajas por sala y ver desaparecer
+     los cierres TOTALES enseñaría una cifra incompleta con cara de completa. */
+  cierres: ['lote'],
   tratamientos: ['sala', 'lote'],
   alimentacion: ['sala', 'tanque', 'lote'],
   broodstock: ['codigo'],
