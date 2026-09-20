@@ -12,7 +12,7 @@
    · Las Salas 4A y 4B ya no se muestran: sólo las salas de la ficha (Sala 1 a Sala 5).
    ============================================================ */
 import { fuentesDesdeFilas, MAD_OP_HOJAS } from './operativo.fuentes.js';
-import { construirLibro, estadoDeSala, estadoPorLoteTexto, ocupacionDeSala, sumarDias } from '../registros/lib/mad-libro.js';
+import { construirLibro, estadoDeSala, estadoPorLoteTexto, ocupacionDeSala, sumarDias, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_CERRADO } from '../registros/lib/mad-libro.js';
 import { resumenMaduracion, diasEntre } from '../registros/lib/mad-resumen.js';
 import { MAD_SALA_OPTS, MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 
@@ -20,6 +20,10 @@ import { MAD_SALA_OPTS, MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-madu
 export const PERIODO_DIAS = 30;
 /** Las salas que se enseñan: las de la ficha. 4A y 4B, disueltas, ya no (decisión del usuario, 2026-09-19). */
 export const SALAS_VISIBLES = MAD_SALA_OPTS.slice();
+
+/* Los estados que puede tener un lote EN UNA SALA, que son los que devuelve `estadoDeLote` y contra los que
+   compara el filtro. «Mixto» NO entra: es del lote entero cuando sus salas difieren, nunca de una posición. */
+export const ESTADOS_LOTE = [ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_CERRADO];
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const esIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -225,11 +229,24 @@ export function opcionesDeFiltro(fuentes) {
     if (cg) codigos.get(lote).add(cg);
   }
   const lotes = [...codigos.keys()].sort(porNombre);
+  /* F2.3 · la piscina y la camaronera de origen salen SÓLO del Ingreso: son de la entrada del lote, no de un
+     desove. Un lote puede traer varias (entró en dos tandas), así que el filtro compara por pertenencia. */
+  const piscinas = new Set();
+  const camaroneras = new Set();
+  for (const r of ((fuentes || {}).ingresos || [])) {
+    const pi = txt(r['Piscina Broodstock']);
+    if (pi) piscinas.add(pi);
+    const ca = txt(r['Camaronera origen']);
+    if (ca) camaroneras.add(ca);
+  }
   return {
     salas: SALAS_VISIBLES.slice(),
     tanquesPorSala: Object.fromEntries(SALAS_VISIBLES.map((s) => [s, (MAD_TANQUES_POR_SALA[s] || []).slice()])),
     lotes,
     codigosPorLote: Object.fromEntries(lotes.map((l) => [l, [...codigos.get(l)].sort(porNombre)])),
+    estados: ESTADOS_LOTE.slice(),
+    piscinas: [...piscinas].sort(porNombre),
+    camaroneras: [...camaroneras].sort(porNombre),
   };
 }
 

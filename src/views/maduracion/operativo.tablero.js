@@ -51,6 +51,7 @@ export const PERIODOS = [
   { clave: '7d', etiqueta: '7 d' },
   { clave: '30d', etiqueta: '30 d' },
   { clave: 'mes', etiqueta: 'Mes' },
+  { clave: 'ciclo', etiqueta: 'Ciclo' },
   { clave: 'todo', etiqueta: 'Todo' },
 ];
 export const PERIODO_INICIAL = '30d';
@@ -70,7 +71,7 @@ export function primeraFecha(fuentes, hasta) {
 
 /** El período que TERMINA en la foto (`fecha`): hoy, 7 días, 30 días, el mes de la foto o todo lo registrado.
  *  Una clave desconocida es la de por defecto. `dias` cuenta los dos extremos. */
-export function periodoDe(clave, fecha, fuentes) {
+export function periodoDe(clave, fecha, fuentes, ciclo) {
   const hasta = txt(fecha);
   let c = clave;
   let desde;
@@ -78,21 +79,80 @@ export function periodoDe(clave, fecha, fuentes) {
   else if (c === '7d') desde = sumarDias(hasta, -6);
   else if (c === 'mes') desde = hasta.slice(0, 8) + '01';
   else if (c === 'todo') desde = primeraFecha(fuentes, hasta) || hasta;
-  else { c = PERIODO_INICIAL; desde = sumarDias(hasta, -(PERIODO_DIAS - 1)); }
+  else if (c === 'ciclo') {
+    /* El CICLO es el del lote del filtro. Sin lote elegido no hay ciclo que enseñar: se cae al período de por
+       defecto y SE DICE (`cicloSinLote`), en vez de fingir un rango que no significa nada. */
+    if (ciclo && esIso(ciclo.desde)) return { clave: 'ciclo', desde: ciclo.desde, hasta: ciclo.hasta, dias: diasEntre(ciclo.desde, ciclo.hasta) + 1 };
+    c = PERIODO_INICIAL;
+    desde = sumarDias(hasta, -(PERIODO_DIAS - 1));
+    return { clave: c, desde, hasta, dias: diasEntre(desde, hasta) + 1, cicloSinLote: true };
+  } else { c = PERIODO_INICIAL; desde = sumarDias(hasta, -(PERIODO_DIAS - 1)); }
   return { clave: c, desde, hasta, dias: diasEntre(desde, hasta) + 1 };
+}
+
+/** El CICLO de un lote: de su ingreso a su cierre, o a la foto si sigue abierto. `null` si no hay lote elegido,
+ *  si el libro no lo conoce o si no tiene fecha de ingreso. */
+export function cicloDelLote(libro, lote, fecha) {
+  const clave = normLote(lote || '');
+  if (!clave) return null;
+  for (const [k, L] of (libro && libro.lotes) || new Map()) {
+    if (normLote(k) !== clave) continue;
+    const desde = txt(L.ingreso);
+    if (!esIso(desde)) return null;
+    const fin = txt(L.cerrado);
+    return { desde, hasta: esIso(fin) && fin < txt(fecha) ? fin : txt(fecha) };
+  }
+  return null;
 }
 
 /* ── FILTROS ────────────────────────────────────────────────── */
 
 /** El filtro con la forma con que se compara: el tanque sólo con su sala (sin sala no identifica nada) y como
  *  número; el lote y el código, canónicos. */
-export function normalizarFiltro(f) {
+export function normalizarFiltro(f, indice) {
   const x = f || {};
   const sala = txt(x.sala);
   const t = sala && txt(x.tanque) !== '' ? Number(x.tanque) : NaN;
-  return { sala, tanque: Number.isFinite(t) ? t : null, lote: normLote(x.lote || ''), codigo: normCodigoGenetico(x.codigo || '') };
+  const F = { sala, tanque: Number.isFinite(t) ? t : null, lote: normLote(x.lote || ''), codigo: normCodigoGenetico(x.codigo || ''),
+    estado: txt(x.estado), sexo: x.sexo === 'machos' || x.sexo === 'hembras' ? x.sexo : '',
+    piscina: txt(x.piscina), camaronera: txt(x.camaronera) };
+  /* El ÍNDICE viaja dentro del filtro a propósito: el estado y el origen no están en una posición del libro, y
+     así `posicionEnFiltro` no cambia de firma en los nueve sitios que la llaman. Sin índice, esos dos filtros
+     no pueden aplicarse y se ignoran (es lo que pasa en las pruebas puras, que no lo necesitan). */
+  if (indice) F.indice = indice;
+  return F;
 }
-export const hayFiltro = (F) => !!(F && (F.sala || F.tanque !== null || F.lote || F.codigo));
+export const hayFiltro = (F) => !!(F && (F.sala || F.tanque !== null || F.lote || F.codigo || F.estado || F.sexo || F.piscina || F.camaronera));
+
+/** Lo que los filtros nuevos necesitan y una posición no lleva encima: el ESTADO del lote en cada sala (del
+ *  libro) y el ORIGEN con que entró (del Ingreso). Se construye UNA vez por pintada. */
+export function indiceDeFiltro(M) {
+  const origen = new Map();
+  for (const r of (((M && M.fuentes) || {}).ingresos || [])) {
+    const k = normLote(r.Lote);
+    if (!k) continue;
+    const o = origen.get(k) || { piscinas: new Set(), camaroneras: new Set() };
+    const pi = txt(r['Piscina Broodstock']);
+    if (pi) o.piscinas.add(pi);
+    const ca = txt(r['Camaronera origen']);
+    if (ca) o.camaroneras.add(ca);
+    origen.set(k, o);
+  }
+  return { origen, lotes: ((M && M.libro) || {}).lotes || new Map() };
+}
+
+/** Los filtros ACTIVOS, para enseñarlos como etiquetas quitables. El tanque cuenta aunque valga 0. */
+export const DIMENSIONES_FILTRO = [
+  { dim: 'sala', rotulo: 'Sala' }, { dim: 'tanque', rotulo: 'Tanque' }, { dim: 'lote', rotulo: 'Lote' },
+  { dim: 'codigo', rotulo: 'Código' }, { dim: 'estado', rotulo: 'Estado' }, { dim: 'sexo', rotulo: 'Sexo' },
+  { dim: 'piscina', rotulo: 'Piscina' }, { dim: 'camaronera', rotulo: 'Camaronera' },
+];
+const SEXO_ETIQUETA = { machos: '♂ Machos', hembras: '♀ Hembras' };
+export function etiquetasDeFiltro(F) {
+  return DIMENSIONES_FILTRO
+    .filter((d) => (d.dim === 'tanque' ? (F || {}).tanque !== null && (F || {}).tanque !== undefined : !!(F || {})[d.dim]))
+    .map((d) => ({ dim: d.dim, rotulo: d.rotulo, valor: d.dim === 'sexo' ? SEXO_ETIQUETA[F.sexo] : String(F[d.dim]) }));
+}
 
 /** ¿Pasa esta posición del libro (sala, tanque, lote, código genético) por el filtro? */
 export function posicionEnFiltro(p, F) {
@@ -100,13 +160,29 @@ export function posicionEnFiltro(p, F) {
   if (F.tanque !== null && Number(p.tanque) !== F.tanque) return false;
   if (F.lote && normLote(p.lote) !== F.lote) return false;
   if (F.codigo && normCodigoGenetico(p.codigoGenetico) !== F.codigo) return false;
+  /* SEXO: la posición que no tiene ninguno de ese sexo se va. Y lo que se CUENTA de las que se quedan es sólo ese
+     sexo (`sumarVivos`): filtrar por hembras y seguir sumando machos enseñaría una cifra que no es la pedida. */
+  if (F.sexo && ent(p[F.sexo]) <= 0) return false;
+  const ix = F.indice;
+  if (ix) {
+    if (F.estado && estadoEnSala(ix.lotes.get(p.lote), p.sala) !== F.estado) return false;
+    if (F.piscina || F.camaronera) {
+      const o = ix.origen.get(normLote(p.lote));
+      if (F.piscina && !(o && o.piscinas.has(F.piscina))) return false;
+      if (F.camaronera && !(o && o.camaroneras.has(F.camaronera))) return false;
+    }
+  }
   return true;
 }
 
-function sumarVivos(posiciones) {
+function sumarVivos(posiciones, F) {
+  const solo = (F || {}).sexo || '';
   let machos = 0;
   let hembras = 0;
-  for (const p of posiciones) { machos += ent(p.machos); hembras += ent(p.hembras); }
+  for (const p of posiciones) {
+    if (solo !== 'hembras') machos += ent(p.machos);
+    if (solo !== 'machos') hembras += ent(p.hembras);
+  }
   return { machos, hembras, total: machos + hembras };
 }
 
@@ -120,7 +196,7 @@ function estadoEnSala(L, sala) {
 
 /** Vivos al cierre de la foto, por sexo, y la proporción H:M con su semáforo. Admite los cuatro filtros. */
 export function kpiVivos(libro, F) {
-  const v = sumarVivos(libro.posiciones.filter((p) => posicionEnFiltro(p, F)));
+  const v = sumarVivos(libro.posiciones.filter((p) => posicionEnFiltro(p, F)), F);
   const hm = proporcionHM(v.hembras, v.machos);
   return { ...v, hm, hmEstado: evaluar('proporcionHM', hm) };
 }
@@ -162,6 +238,52 @@ export function kpiSalas(salas, F) {
   };
 }
 
+/**
+ * BIOMASA del alcance del filtro: los vivos por su peso promedio, en kg. El peso sale de la hoja de Tanques
+ * —los registros del período— PESADO por los animales que el libro tiene en cada tanque, que es el mismo criterio
+ * con que la ficha de un lote reparte los promedios de sus tanques.
+ * ⚠ Sin ningún peso registrado se devuelve VACÍO, no un cero: una biomasa inventada es peor que ninguna.
+ * `parcial` avisa de que sólo un sexo trae peso, para que la pantalla no lo presente como el total.
+ */
+export function kpiBiomasa(M, F, periodo) {
+  const libro = (M && M.libro) || { posiciones: [] };
+  const solo = (F || {}).sexo || '';
+  const porTanque = new Map();
+  for (const p of libro.posiciones || []) {
+    if (!vivo(p) || !posicionEnFiltro(p, F)) continue;
+    const uk = ubicKey(p.sala, p.tanque);
+    const c = porTanque.get(uk) || { machos: 0, hembras: 0 };
+    if (solo !== 'hembras') c.machos += ent(p.machos);
+    if (solo !== 'machos') c.hembras += ent(p.hembras);
+    porTanque.set(uk, c);
+  }
+  let pmNum = 0;
+  let pmDen = 0;
+  let phNum = 0;
+  let phDen = 0;
+  for (const r of ((M || {}).fuentes || {}).tanques || []) {
+    const c = porTanque.get(ubicKey(r.Sala, ent(r.Tanque)));
+    if (!c || !enPeriodo(fechaDeFila('tanques', r), periodo)) continue;
+    const pm = num(r['Peso promedio machos (g)']);
+    const ph = num(r['Peso promedio hembras (g)']);
+    if (pm !== null && c.machos > 0) { pmNum += pm * c.machos; pmDen += c.machos; }
+    if (ph !== null && c.hembras > 0) { phNum += ph * c.hembras; phDen += c.hembras; }
+  }
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const v = sumarVivos([...porTanque.values()]);
+  const pesoM = pmDen ? pmNum / pmDen : null;
+  const pesoH = phDen ? phNum / phDen : null;
+  const gM = pesoM === null ? null : v.machos * pesoM;
+  const gH = pesoH === null ? null : v.hembras * pesoH;
+  const kg = (g) => (g === null ? '' : r2(g / 1000));
+  return {
+    pesoMachos: pesoM === null ? '' : r2(pesoM), pesoHembras: pesoH === null ? '' : r2(pesoH),
+    machosKg: kg(gM), hembrasKg: kg(gH),
+    totalKg: gM === null && gH === null ? '' : r2(((gM || 0) + (gH || 0)) / 1000),
+    parcial: (gM === null) !== (gH === null),
+  };
+}
+
 /** Ocupación: tanques con animales vivos de los tanques físicos. Con un tanque elegido, si está ocupado; con lote o
  *  código, los tanques que tienen animales de ESE lote o código (de los de la sala, o de toda la planta). */
 export function kpiOcupacion(salas, libro, F) {
@@ -171,10 +293,13 @@ export function kpiOcupacion(salas, libro, F) {
     return { modo: 'tanque', ocupados: ocupado, total: 1, pct: ocupacion(ocupado, 1) };
   }
   const total = ss.reduce((a, s) => a + ent(s.propuesto.total), 0);
-  if (F.lote || F.codigo) {
+  /* F2.3 · CUALQUIER filtro que estreche las posiciones cuenta aquí, no sólo el lote y el código: con el de
+     sexo, el de estado o el de origen, la ocupación seguía enseñando la FÍSICA de la sala y contradecía a los
+     vivos de al lado («30 hembras, 2 tanques ocupados» con un solo tanque con hembras). */
+  if (F.lote || F.codigo || F.estado || F.sexo || F.piscina || F.camaronera) {
     const con = new Set();
     for (const p of libro.posiciones) if (vivo(p) && posicionEnFiltro(p, F)) con.add(ubicKey(p.sala, p.tanque));
-    return { modo: 'lote', ocupados: con.size, total, pct: ocupacion(con.size, total) };
+    return { modo: 'filtro', ocupados: con.size, total, pct: ocupacion(con.size, total) };
   }
   const ocupados = ss.reduce((a, s) => a + ent(s.propuesto.ocupados), 0);
   return { modo: 'salas', ocupados, total, pct: ocupacion(ocupados, total) };
@@ -498,7 +623,7 @@ export function tarjetasDeSalas(M, F) {
       || { registrado: { estado: '', fecha: '', porLote: '' }, propuesto: { estado: '', porLote: '', ocupados: 0, total: 0, conocida: false }, coinciden: null, desfaseDias: '' };
     const R = (M.resumen.salas || []).find((x) => x.sala === sala) || null;
     const pos = M.libro.posiciones.filter((p) => p.sala === sala && vivo(p) && posicionEnFiltro(p, F));
-    const v = sumarVivos(pos);
+    const v = sumarVivos(pos, F);
     const hm = proporcionHM(v.hembras, v.machos);
     const porLote = new Map();
     for (const p of pos) {

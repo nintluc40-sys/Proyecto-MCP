@@ -19,6 +19,7 @@ import {
   kpiVivos, kpiLotes, kpiSalas, kpiOcupacion, kpiMortalidad, kpiReproduccion,
   mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, TIPOS_AVISO, ultimosRegistros, ETIQUETA_HOJA, ESPERA_DIAS,
   finesDeCuarentena, AVISO_CUARENTENA_DIAS, lecturasDelUltimoRegistro, evaluarLecturas, tarjetasDeSalas, detalleDeSala,
+  indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, DIMENSIONES_FILTRO, kpiBiomasa,
 } from './operativo.tablero.js';
 import { modeloOperativo, serieDiaria, diasDeTanque, SALAS_VISIBLES } from './operativo.data.js';
 import { MAD_OP_HOJAS, MAD_OP_ORIGEN } from './operativo.fuentes.js';
@@ -62,12 +63,14 @@ const PLANTA = [
   FIN('2026-09-01', { Tipo: 'Parcial' }),                                        // un cierre sin lote
 ];
 const M = modeloOperativo(PLANTA, { hoy: FOTO, fecha: FOTO });
+/* F2.3 · el filtro ganó cuatro dimensiones; vacías, son la ausencia de filtro. */
+const SIN_DIM = { estado: '', sexo: '', piscina: '', camaronera: '' };
 const SIN = normalizarFiltro({});
 const F = (o) => normalizarFiltro(o);
 
 describe('Maduración · tablero · período y filtros', () => {
   it('el período termina en la foto: hoy, 7 d, 30 d (el de por defecto), el mes y una clave desconocida', () => {
-    expect(PERIODOS.map((p) => p.clave)).toEqual(['hoy', '7d', '30d', 'mes', 'todo']);
+    expect(PERIODOS.map((p) => p.clave)).toEqual(['hoy', '7d', '30d', 'mes', 'ciclo', 'todo']);
     expect(PERIODO_INICIAL).toBe('30d');
     expect(periodoDe('hoy', FOTO, {})).toEqual({ clave: 'hoy', desde: FOTO, hasta: FOTO, dias: 1 });
     expect(periodoDe('7d', FOTO, {})).toEqual({ clave: '7d', desde: '2026-09-13', hasta: FOTO, dias: 7 });
@@ -86,8 +89,8 @@ describe('Maduración · tablero · período y filtros', () => {
   });
 
   it('el filtro: el tanque sólo con su sala y como número; lote y código canónicos', () => {
-    expect(normalizarFiltro({ tanque: 3 })).toEqual({ sala: '', tanque: null, lote: '', codigo: '' });
-    expect(normalizarFiltro({ sala: 'Sala 4', tanque: '1', lote: ' qa ', codigo: 'c b' })).toEqual({ sala: 'Sala 4', tanque: 1, lote: 'QA', codigo: 'CB' });
+    expect(normalizarFiltro({ tanque: 3 })).toEqual({ sala: '', tanque: null, lote: '', codigo: '', ...SIN_DIM });
+    expect(normalizarFiltro({ sala: 'Sala 4', tanque: '1', lote: ' qa ', codigo: 'c b' })).toEqual({ sala: 'Sala 4', tanque: 1, lote: 'QA', codigo: 'CB', ...SIN_DIM });
     expect(hayFiltro(SIN)).toBe(false);
     expect(hayFiltro(F({ codigo: 'x' }))).toBe(true);
     const p = { sala: 'Sala 1', tanque: 1, lote: 'QA', codigoGenetico: 'CA' };
@@ -128,7 +131,7 @@ describe('Maduración · tablero · los seis indicadores de la portada', () => {
     expect(kpiOcupacion(M.salas, M.libro, F({ sala: 'Sala 1' }))).toEqual({ modo: 'salas', ocupados: 1, total: 15, pct: 6.67 });
     expect(kpiOcupacion(M.salas, M.libro, F({ sala: 'Sala 1', tanque: 2 }))).toEqual({ modo: 'tanque', ocupados: 0, total: 1, pct: 0 });
     expect(kpiOcupacion(M.salas, M.libro, F({ sala: 'Sala 1', tanque: 1 }))).toMatchObject({ ocupados: 1, pct: 100 });
-    expect(kpiOcupacion(M.salas, M.libro, F({ codigo: 'CA' }))).toEqual({ modo: 'lote', ocupados: 2, total: 38, pct: 5.26 });
+    expect(kpiOcupacion(M.salas, M.libro, F({ codigo: 'CA' }))).toEqual({ modo: 'filtro', ocupados: 2, total: 38, pct: 5.26 });
   });
 });
 
@@ -415,5 +418,124 @@ describe('Maduración · tablero · el detalle de una sala', () => {
     expect(t1.obs).toEqual({ fecha: '2026-09-18', sanitarias: [], operativas: ['En recambio'] });
     expect(d.tanques[1]).toMatchObject({ estado: 'Vacío', cargas: [], obs: { fecha: '' } });
     expect(d.tratamientos.map((x) => x.tipo)).toEqual(['Preventivo', 'Desinfección']);
+  });
+});
+
+/* ── F2.3 · los cuatro extras que aprobó el usuario ─────────── */
+const ING3 = (fecha, lote, sala, tanque, machos, hembras, cg, piscina, camaronera) => ({ _SheetOrigin: O,
+  'Camaronera origen': camaronera, Fecha: fecha, Lote: lote, 'Código genético': cg, 'Piscina Broodstock': piscina,
+  Sala: sala, Tanque: tanque, Machos: machos, Hembras: hembras });
+/* LA lleva en la Sala 1 desde agosto (produce) y LB entró el 15/09 (sigue en cuarentena el 19). Pesos en dos
+   tanques, para que la biomasa tenga que PESAR y no promediar a secas. */
+const PLANTA3 = [
+  ING3('2026-08-01', 'LA', 'Sala 1', 1, 20, 30, 'CA', 'P1', 'CX'),
+  ING3('2026-09-15', 'LB', 'Sala 1', 2, 10, 0, 'CB', 'P2', 'CY'),
+  TQ('2026-09-18', 'Sala 1', 1, { 'Peso promedio machos (g)': 30, 'Peso promedio hembras (g)': 40 }),
+  TQ('2026-09-18', 'Sala 1', 2, { 'Peso promedio machos (g)': 25 }),
+  /* LC entró el 01/09 y se CERRÓ el 10/09: su ciclo termina en el cierre, no en la foto. */
+  ING3('2026-09-01', 'LC', 'Sala 1', 3, 5, 5, 'CA', 'P1', 'CX'),
+  FIN('2026-09-10', { Lote: 'LC', Tipo: 'Total', Machos: 5, Hembras: 5 }),
+];
+const M3 = modeloOperativo(PLANTA3, { hoy: FOTO, fecha: FOTO });
+const IX = indiceDeFiltro(M3);
+const F3 = (o) => normalizarFiltro(o, IX);
+
+describe('Maduración · tablero · F2.3 · los filtros nuevos', () => {
+  it('el filtro vacío no filtra, y los cuatro nuevos cuentan como filtro', () => {
+    expect(hayFiltro(F3({}))).toBe(false);
+    for (const dim of ['estado', 'sexo', 'piscina', 'camaronera']) {
+      expect(hayFiltro(F3({ [dim]: dim === 'sexo' ? 'hembras' : 'X' }))).toBe(true);
+    }
+    // Un sexo que no existe no se cuela como filtro.
+    expect(normalizarFiltro({ sexo: 'otro' }).sexo).toBe('');
+  });
+
+  it('🔴 ESTADO: el del lote EN ESA SALA, que el libro ya dedujo', () => {
+    expect(kpiVivos(M3.libro, F3({ estado: 'Producción' }))).toMatchObject({ machos: 20, hembras: 30 });
+    expect(kpiVivos(M3.libro, F3({ estado: 'Cuarentena' }))).toMatchObject({ machos: 10, hembras: 0 });
+    expect(kpiVivos(M3.libro, F3({ estado: 'Cerrado' }))).toMatchObject({ total: 0 });
+    // Sin índice no puede saberse, y entonces NO filtra (en vez de dejarlo todo fuera en silencio).
+    expect(kpiVivos(M3.libro, normalizarFiltro({ estado: 'Cuarentena' }))).toMatchObject({ total: 60 });
+  });
+
+  it('🔴 SEXO: se van las posiciones sin ese sexo, y sólo se cuenta ese sexo', () => {
+    // LB no tiene hembras: su posición se va entera, y de LA sólo se cuentan las hembras.
+    expect(kpiVivos(M3.libro, F3({ sexo: 'hembras' }))).toMatchObject({ machos: 0, hembras: 30, total: 30 });
+    /* 🔑 Que el total salga igual no prueba que la posición se haya ido: contar sólo hembras ya da 30 con LB
+       dentro. Donde SÍ se ve es en lo que cuenta POSICIONES: LB (10♂, sin hembras) deja de ser un lote y su
+       tanque deja de estar ocupado. */
+    expect(kpiLotes(M3.libro, F3({ sexo: 'hembras' })).total).toBe(1);
+    expect(kpiLotes(M3.libro, F3({})).total).toBe(2);
+    expect(kpiOcupacion(M3.salas, M3.libro, F3({ sexo: 'hembras' })).ocupados).toBe(1);
+    expect(kpiOcupacion(M3.salas, M3.libro, F3({})).ocupados).toBe(2);
+    expect(kpiVivos(M3.libro, F3({ sexo: 'machos' }))).toMatchObject({ machos: 30, hembras: 0, total: 30 });
+    expect(kpiVivos(M3.libro, F3({}))).toMatchObject({ machos: 30, hembras: 30, total: 60 });
+  });
+
+  it('PISCINA y CAMARONERA salen del Ingreso, y son del lote', () => {
+    expect(M3.filtros.piscinas).toEqual(['P1', 'P2']);
+    expect(M3.filtros.camaroneras).toEqual(['CX', 'CY']);
+    expect(M3.filtros.estados).toEqual(['Cuarentena', 'Producción', 'Cerrado']);
+    expect(kpiVivos(M3.libro, F3({ piscina: 'P1' }))).toMatchObject({ total: 50 });
+    expect(kpiVivos(M3.libro, F3({ piscina: 'P2' }))).toMatchObject({ total: 10 });
+    expect(kpiVivos(M3.libro, F3({ camaronera: 'CY' }))).toMatchObject({ total: 10 });
+    expect(kpiVivos(M3.libro, F3({ piscina: 'P1', camaronera: 'CY' }))).toMatchObject({ total: 0 });
+  });
+});
+
+describe('Maduración · tablero · F2.3 · el período «ciclo del lote»', () => {
+  it('va del ingreso del lote a la foto, o a su cierre', () => {
+    expect(cicloDelLote(M3.libro, 'LA', FOTO)).toEqual({ desde: '2026-08-01', hasta: FOTO });
+    expect(cicloDelLote(M3.libro, ' la ', FOTO)).toEqual({ desde: '2026-08-01', hasta: FOTO });
+    expect(periodoDe('ciclo', FOTO, M3.fuentes, cicloDelLote(M3.libro, 'LA', FOTO)))
+      .toEqual({ clave: 'ciclo', desde: '2026-08-01', hasta: FOTO, dias: 50 });
+    /* 🔴 LC se cerró el 10/09: su ciclo NO llega a la foto. Sin mirar el cierre, daría hasta el 19 y 19 días. */
+    expect(cicloDelLote(M3.libro, 'LC', FOTO)).toEqual({ desde: '2026-09-01', hasta: '2026-09-10' });
+    expect(periodoDe('ciclo', FOTO, M3.fuentes, cicloDelLote(M3.libro, 'LC', FOTO)))
+      .toEqual({ clave: 'ciclo', desde: '2026-09-01', hasta: '2026-09-10', dias: 10 });
+  });
+
+  it('🔴 sin lote elegido NO hay ciclo: cae en el de por defecto y lo DICE', () => {
+    expect(cicloDelLote(M3.libro, '', FOTO)).toBe(null);
+    expect(cicloDelLote(M3.libro, 'NO-EXISTE', FOTO)).toBe(null);
+    const p = periodoDe('ciclo', FOTO, M3.fuentes, null);
+    expect(p).toMatchObject({ clave: '30d', desde: '2026-08-21', hasta: FOTO, cicloSinLote: true });
+    // Y los demás períodos NO llevan esa marca.
+    expect(periodoDe('hoy', FOTO, M3.fuentes).cicloSinLote).toBeUndefined();
+  });
+});
+
+describe('Maduración · tablero · F2.3 · las etiquetas y la biomasa', () => {
+  it('las etiquetas son los filtros ACTIVOS, en el orden del catálogo', () => {
+    expect(etiquetasDeFiltro(F3({}))).toEqual([]);
+    expect(etiquetasDeFiltro(F3({ sala: 'Sala 1', tanque: 1, sexo: 'hembras', piscina: 'P1' })).map((e) => [e.dim, e.valor]))
+      .toEqual([['sala', 'Sala 1'], ['tanque', '1'], ['sexo', '♀ Hembras'], ['piscina', 'P1']]);
+    expect(DIMENSIONES_FILTRO.map((d) => d.dim)).toEqual(['sala', 'tanque', 'lote', 'codigo', 'estado', 'sexo', 'piscina', 'camaronera']);
+    /* 🔑 El tanque 0 es un número válido y FALSY: si la etiqueta se preguntara «¿tiene valor?» en vez de
+       «¿no es null?», desaparecería de la barra y el usuario no vería por qué no sale nada. */
+    expect(etiquetasDeFiltro(F3({ sala: 'Sala 1', tanque: 0 })).map((e) => [e.dim, e.valor]))
+      .toEqual([['sala', 'Sala 1'], ['tanque', '0']]);
+  });
+
+  it('🔴 la BIOMASA pesa por los animales de cada tanque, no promedia los pesos a secas', () => {
+    const b = kpiBiomasa(M3, F3({}), periodoDe('30d', FOTO, M3.fuentes));
+    // ♂: (30 g × 20 + 25 g × 10) ÷ 30 = 28,33 g — el promedio simple daría 27,5.
+    expect(b.pesoMachos).toBe(28.33);
+    expect(b.pesoHembras).toBe(40);
+    expect(b.machosKg).toBe(0.85);      // 850 g
+    expect(b.hembrasKg).toBe(1.2);      // 1 200 g
+    expect(b.totalKg).toBe(2.05);
+    expect(b.parcial).toBe(false);
+  });
+
+  it('🔴 sin peso registrado la biomasa va VACÍA, no a cero; y avisa si sólo un sexo lo trae', () => {
+    const sinPeso = modeloOperativo([ING3('2026-08-01', 'LA', 'Sala 1', 1, 20, 30, 'CA', 'P1', 'CX')], { hoy: FOTO, fecha: FOTO });
+    const b = kpiBiomasa(sinPeso, normalizarFiltro({}), periodoDe('30d', FOTO, sinPeso.fuentes));
+    expect([b.pesoMachos, b.pesoHembras, b.totalKg]).toEqual(['', '', '']);
+    // Sólo el tanque 2 tiene peso, y sólo de machos: el total existe pero es PARCIAL.
+    const b2 = kpiBiomasa(M3, F3({ sala: 'Sala 1', tanque: 2 }), periodoDe('30d', FOTO, M3.fuentes));
+    expect(b2.pesoHembras).toBe('');
+    expect(b2.machosKg).toBe(0.25);
+    expect(b2.parcial).toBe(true);
   });
 });

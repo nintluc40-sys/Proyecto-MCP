@@ -22,15 +22,19 @@ import {
   PERIODOS, PERIODO_INICIAL, periodoDe, normalizarFiltro, hayFiltro, kpiVivos, kpiLotes, kpiSalas, kpiOcupacion,
   kpiMortalidad, kpiReproduccion, mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, ultimosRegistros,
   finesDeCuarentena, AVISO_CUARENTENA_DIAS, tarjetasDeSalas, detalleDeSala,
+  indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, kpiBiomasa,
 } from './operativo.tablero.js';
 import { INDICADORES } from './operativo.indicadores.js';
-import { FUENTES, umbralVigente } from './operativo.umbrales.js';
+import { FUENTES, umbralVigente, evaluar } from './operativo.umbrales.js';
+import { tablaDeLotes, fichaDeLote, DIMENSIONES_COMPARATIVA, comparativa } from './operativo.lotes.js';
 
 const SUBS = [
   { clave: 'estado', etiqueta: 'Estado actual', icono: '📊' },
   { clave: 'salas', etiqueta: 'Salas', icono: '🏠' },
+  { clave: 'lotes', etiqueta: 'Lotes', icono: '🧬' },
 ];
-const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', tanque: '', lote: '', codigo: '', color: 'estado', salaDetalle: '', tanqueSel: '' };
+const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', tanque: '', lote: '', codigo: '', color: 'estado', salaDetalle: '', tanqueSel: '', loteSel: '', agrupacion: 'lote',
+  estado: '', sexo: '', piscina: '', camaronera: '' };
 /* El estado de la vista vive lo que dura la sesión: al volver a Maduración, o al refrescarse los datos, se conserva. */
 const vOp = { ...INICIAL };
 
@@ -103,19 +107,22 @@ export function operativoView(root) {
     return;
   }
   depurarFiltros(M.filtros);
-  const F = normalizarFiltro(vOp);
-  const periodo = periodoDe(vOp.periodo, fecha, M.fuentes);
-  let h = cabeceraHTML(fecha) + filtrosHTML(M, hoy, fecha, periodo) + subnavHTML() + avisosDelDatoHTML(M);
+  const F = normalizarFiltro(vOp, indiceDeFiltro(M));
+  const periodo = periodoDe(vOp.periodo, fecha, M.fuentes, cicloDelLote(M.libro, vOp.lote, fecha));
+  let h = cabeceraHTML(fecha) + filtrosHTML(M, hoy, fecha, periodo) + etiquetasHTML(F) + subnavHTML() + avisosDelDatoHTML(M);
   let detalle = null;
   if (vOp.sub === 'salas') {
     const salaDet = F.sala || vOp.salaDetalle;
     detalle = salaDet ? detalleDeSala(M, salaDet, periodo, F, memo.partes) : null;
     h += salasHTML(M, F, detalle, periodo);
+  } else if (vOp.sub === 'lotes') {
+    h += lotesHTML(M, memo, periodo, F);
   } else {
     h += estadoHTML(M, memo, periodo, F);
   }
   root.innerHTML = h;
   if (detalle) dibujarDetalle(detalle);
+  if (vOp.sub === 'lotes') dibujarLote(_fichaLote);
   bind(root);
 }
 
@@ -125,6 +132,18 @@ function depurarFiltros(o) {
   if (!vOp.sala || !(o.tanquesPorSala[vOp.sala] || []).map(String).includes(String(vOp.tanque))) vOp.tanque = '';
   if (vOp.lote && !o.lotes.includes(vOp.lote)) vOp.lote = '';
   if (vOp.codigo && !codigosDe(o, vOp.lote).includes(vOp.codigo)) vOp.codigo = '';
+  if (vOp.estado && !(o.estados || []).includes(vOp.estado)) vOp.estado = '';
+  if (vOp.piscina && !(o.piscinas || []).includes(vOp.piscina)) vOp.piscina = '';
+  if (vOp.camaronera && !(o.camaroneras || []).includes(vOp.camaronera)) vOp.camaronera = '';
+}
+
+/** Los filtros ACTIVOS, como etiquetas quitables. Lo que se quita es SÓLO esa dimensión: «✕ Limpiar» sigue
+ *  estando para dejarlo todo como al abrir. */
+function etiquetasHTML(F) {
+  const es = etiquetasDeFiltro(F);
+  if (!es.length) return '';
+  return `<div class="mop-chips" role="group" aria-label="Filtros activos">${es.map((e) =>
+    `<button class="mop-chip-f" data-mop-quitar="${esc(e.dim)}" title="Quitar el filtro de ${esc(e.rotulo)}">${esc(e.rotulo)}: <b>${esc(e.valor)}</b> ✕</button>`).join('')}</div>`;
 }
 const codigosDe = (o, lote) => (lote ? o.codigosPorLote[lote] || [] : [...new Set(Object.values(o.codigosPorLote).flat())].sort(porNombre));
 
@@ -139,16 +158,21 @@ function filtrosHTML(M, hoy, fecha, p) {
   const o = M.filtros;
   const sel = (dim, valor, valores, rotulo, deshabilitado) => `<select class="mc-select" data-mop-filtro="${dim}" aria-label="${esc(rotulo)}"${deshabilitado ? ' disabled' : ''}>
       <option value="">${esc(rotulo)}</option>
-      ${valores.map((v) => `<option value="${esc(v)}"${String(valor) === String(v) ? ' selected' : ''}>${esc(v)}</option>`).join('')}
+      ${valores.map((x) => {
+        const v = x && x.v !== undefined ? x.v : x;
+        const t = x && x.t !== undefined ? x.t : x;
+        return `<option value="${esc(v)}"${String(valor) === String(v) ? ' selected' : ''}>${esc(t)}</option>`;
+      }).join('')}
     </select>`;
-  const cambiado = vOp.periodo !== INICIAL.periodo || vOp.fecha || vOp.sala || vOp.lote || vOp.codigo;
+  const cambiado = vOp.periodo !== INICIAL.periodo || vOp.fecha || vOp.sala || vOp.lote || vOp.codigo
+    || vOp.estado || vOp.sexo || vOp.piscina || vOp.camaronera;
   return `<div class="mop-filtros">
     <div class="mop-f-grupo"><span class="mop-f-lbl">Período</span>
       <div class="mc-seg mc-seg-sm" role="group" aria-label="Período">${PERIODOS.map((x) => {
         const on = x.clave === p.clave;
         return `<button class="mc-seg-b ${on ? 'is-on' : ''}" data-mop-periodo="${x.clave}" aria-pressed="${on}">${esc(x.etiqueta)}</button>`;
       }).join('')}</div>
-      <span class="mop-f-rango">${esc(dm(p.desde))} – ${esc(dm(p.hasta))} · ${nf(p.dias)} ${p.dias === 1 ? 'día' : 'días'}</span>
+      <span class="mop-f-rango">${esc(dm(p.desde))} – ${esc(dm(p.hasta))} · ${nf(p.dias)} ${p.dias === 1 ? 'día' : 'días'}${p.cicloSinLote ? ' · <span class="mop-nota">elige un lote para ver su ciclo</span>' : ''}</span>
     </div>
     <label class="mop-f-grupo"><span class="mop-f-lbl">Foto al día</span>
       <input type="date" class="mop-fecha" data-mop-fecha value="${esc(fecha)}" max="${esc(hoy)}"></label>
@@ -158,6 +182,12 @@ function filtrosHTML(M, hoy, fecha, p) {
     <div class="mop-f-grupo"><span class="mop-f-lbl">Lote → Código genético</span>
       ${sel('lote', vOp.lote, o.lotes, 'Todos los lotes')}
       ${sel('codigo', vOp.codigo, codigosDe(o, vOp.lote), 'Todos los códigos')}</div>
+    <div class="mop-f-grupo"><span class="mop-f-lbl">Estado · Sexo</span>
+      ${sel('estado', vOp.estado, o.estados || [], 'Todos los estados')}
+      ${sel('sexo', vOp.sexo, [{ v: 'hembras', t: '♀ Hembras' }, { v: 'machos', t: '♂ Machos' }], 'Los dos sexos')}</div>
+    <div class="mop-f-grupo"><span class="mop-f-lbl">Origen del lote</span>
+      ${sel('piscina', vOp.piscina, o.piscinas || [], 'Todas las piscinas')}
+      ${sel('camaronera', vOp.camaronera, o.camaroneras || [], 'Todas las camaroneras')}</div>
     ${cambiado ? '<button class="mop-limpiar" data-mop-limpiar>✕ Limpiar</button>' : ''}
   </div>`;
 }
@@ -207,6 +237,7 @@ function estadoHTML(M, memo, p, F) {
   const o = kpiOcupacion(M.salas, M.libro, F);
   const m = kpiMortalidad(serieDe(memo, p), p, F, memo.partes);
   const r = kpiReproduccion(M.fuentes.desoves, p, F);
+  const b = kpiBiomasa(M, F, p);
   _mapa = mapaDePlanta(M.libro, F);
 
   const partesSalas = [];
@@ -237,9 +268,13 @@ function estadoHTML(M, memo, p, F) {
     tile('Salas', s.difieren ? `${nf(s.difieren)} ⚠` : '✓', partesSalas.join(' · '), s.difieren ? 'is-mort' : 'is-fert',
       'El estado registrado en la hoja de Salas frente al que propone el libro al cierre de la foto (el de «🔄 Proponer estado»).'),
     tile('Ocupación', `${nf(o.ocupados)}/${nf(o.total)}`,
-      o.modo === 'tanque' ? (o.ocupados ? 'tanque ocupado' : 'tanque vacío') : `${pc(o.pct)}${o.modo === 'lote' ? ' · tanques con lo filtrado' : ''}`, '',
+      o.modo === 'tanque' ? (o.ocupados ? 'tanque ocupado' : 'tanque vacío') : `${pc(o.pct)}${o.modo === 'filtro' ? ' · tanques con lo filtrado' : ''}`, '',
       definicion('ocupacion')),
     mort, repro,
+    tile('Biomasa', b.totalKg === '' ? '—' : nf(b.totalKg, 2) + ' kg',
+      b.totalKg === '' ? 'sin pesos registrados en el período'
+        : `♀ ${nf(b.hembrasKg, 2)} · ♂ ${nf(b.machosKg, 2)} kg${b.parcial ? ' · <span class="mop-nota">sólo un sexo trae peso</span>' : ''}`, '',
+      'Vivos × su peso promedio, PESADO por los animales que el libro tiene en cada tanque. El peso sale de la hoja de Tanques, de los registros del período. Sin ningún peso se deja vacío: una biomasa inventada es peor que ninguna.'),
   ].join('');
 
   return `<div class="mc-body">
@@ -519,11 +554,185 @@ function dibujarDetalle(d) {
 /* ============================================================
    EVENTOS (delegados, una sola vez por contenedor)
    ============================================================ */
+/* ============================================================
+   🧬 LOTES (F2.1/F2.2, 2026-09-19)
+   Diseño aprobado por el usuario: TABLA MAESTRA arriba y, al pulsar una fila, la FICHA del lote debajo —origen,
+   cascada del cuadre en tabla con columnas ♂/♀, curva de vivos con sus eventos, reproducción y promedios—; y al
+   final la COMPARATIVA con su selector de agrupación (lote · código genético · piscina).
+   Las cifras salen de operativo.lotes.js, que es puro y tiene su banco de mutación: aquí sólo se pintan.
+   ============================================================ */
+let _fichaLote = null;
+
+function lotesHTML(M, memo, p, F) {
+  const filas = tablaDeLotes(M, F);
+  /* Un lote elegido que ya no está en la tabla (otro filtro, otra foto) deja de estarlo: la ficha no sobrevive a
+     su fila, igual que el detalle de una sala no sobrevive a su tarjeta. */
+  if (vOp.loteSel && !filas.some((f) => f.lote === vOp.loteSel)) vOp.loteSel = '';
+  _fichaLote = vOp.loteSel ? fichaDeLote(M, serieDe(memo, p), vOp.loteSel, p) : null;
+  const comp = comparativa(M, F, p, vOp.agrupacion);
+  return tablaLotesHTML(filas, F) + (_fichaLote ? fichaLoteHTML(_fichaLote, p) : '') + comparativaHTML(comp, p);
+}
+
+function tablaLotesHTML(filas, F) {
+  if (!filas.length) {
+    return `<div class="mc-card"><h4 class="mc-card-h">🧬 Lotes</h4>
+      <p class="muted" style="margin:4px 0">${hayFiltro(F) ? 'Ningún lote pasa el filtro.' : 'El libro no conoce ningún lote todavía.'}</p></div>`;
+  }
+  /* Con filtro de sexo se enseña ESA columna, no el total: si no, la tabla contradiría al KPI de Vivos. */
+  const col = (x) => (F.sexo ? x[F.sexo] : x.total);
+  const fila = (f) => {
+    const sel = f.lote === vOp.loteSel;
+    const cuadra = f.cuadra ? '' : ' <span class="mop-dif" title="La cascada del cuadre no cuadra: mírala en la ficha">⚠</span>';
+    return `<tr class="mop-lote-fila ${sel ? 'is-on' : ''}" role="button" tabindex="0" aria-pressed="${sel}" data-mop-lote="${esc(f.lote)}">
+      <td><b>${esc(f.lote)}</b>${cuadra}</td>
+      <td><span class="mop-chip is-e-${claseEstado(f.estado)}">${esc(f.estado || 'sin estado')}</span></td>
+      <td>${f.codigos.length ? f.codigos.map((c) => esc(c)).join(' · ') : '<span class="muted">—</span>'}</td>
+      <td>${f.salas.length ? f.salas.map((s) => esc(s)).join(' · ') : '<span class="muted">—</span>'}</td>
+      <td class="r">${nf(col(f.ingresados))}</td>
+      <td class="r">${nf(col(f.vivos))}</td>
+      <td class="r">${pc(col(f.supervivencia))}</td>
+      <td class="r">${pc(col(f.descarte))}</td>
+      <td class="r">${F.sexo ? '<span class="muted" title="La proporción sexual no significa nada con un solo sexo">—</span>' : nf(f.hm, 2)}</td>
+      <td class="r">${f.dias === '' ? '—' : nf(f.dias) + ' d'}${f.cerrado ? ' <span class="mop-nota" title="Cerrado el ' + esc(dma(f.cerrado)) + '">cerrado</span>' : ''}</td>
+    </tr>`;
+  };
+  const sx = F.sexo === 'hembras' ? '♀ ' : F.sexo === 'machos' ? '♂ ' : '';
+  return `<div class="mc-card mc-card-wide">
+    <h4 class="mc-card-h">🧬 Lotes <span class="mc-h-note">al cierre de la foto · pulsa una fila para su ficha${F.sexo ? ' · sólo ' + (F.sexo === 'hembras' ? 'hembras' : 'machos') : ''}</span></h4>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-lotes">
+      <thead><tr><th>Lote</th><th>Estado</th><th>Código</th><th>Salas</th><th class="r">${sx}Ingresados</th><th class="r">${sx}Vivos</th>
+        <th class="r" title="${esc(definicion('supervivencia'))}">Superv.</th>
+        <th class="r" title="${esc(definicion('tasaDescarte'))}">Descarte</th>
+        <th class="r" title="${esc(definicion('proporcionHM'))}">♀:♂</th><th class="r">Edad</th></tr></thead>
+      <tbody>${filas.map(fila).join('')}</tbody></table></div>
+    <p class="mc-note">La EDAD va del ingreso a la foto; en un lote cerrado, hasta su cierre. ⚠ en un lote = su cascada no cuadra.${F.sexo ? ' Con filtro de sexo estas cifras son de ese sexo; la CASCADA de la ficha sigue entera, porque es un cuadre y a medias no cuadraría.' : ''}</p>
+  </div>`;
+}
+
+function cuadreHTML(c) {
+  const dc = c.deLosCuales;
+  const cel = (v) => (v === 0 ? '<span class="muted">0</span>' : nf(v));
+  const fila = (f) => `<tr class="${f.id === 'vivos' ? 'mop-cuadre-tot' : ''}">
+      <td><span class="mop-cuadre-s">${f.signo}</span> ${esc(f.etiqueta)}</td>
+      <td class="r">${cel(f.machos)}</td><td class="r">${cel(f.hembras)}</td><td class="r"><b>${cel(f.total)}</b></td></tr>`;
+  /* «De los cuales» va DEBAJO de Muertos y sin signo: son un desglose de esa misma cifra, no otra baja. Restarlas
+     aparte descuadraría el lote — es el defecto que vigila L01 de su banco. */
+  const deLos = (dc.desove.muertas || dc.recuperacion.muertas)
+    ? `<tr class="mop-cuadre-sub"><td colspan="4">de los cuales, en tanques de
+        <b>desove</b> ${nf(dc.desove.muertas)} ♀${dc.desove.entran ? ' (de ' + nf(dc.desove.entran) + ' que entraron)' : ''} ·
+        <b>recuperación</b> ${nf(dc.recuperacion.muertas)} ♀${dc.recuperacion.entran ? ' (de ' + nf(dc.recuperacion.entran) + ')' : ''}
+        — ya contadas arriba</td></tr>` : '';
+  const filas = c.filas.map((f) => fila(f) + (f.id === 'muertos' ? deLos : '')).join('');
+  const veredicto = c.cuadra
+    ? '<span class="mop-igual">✓ cuadra</span>'
+    : `<span class="mop-dif">⚠ no cuadra: sobran ${nf(Math.abs(c.descuadre.total))} que la resta no explica</span>`;
+  const deficit = c.deficit.total
+    ? `<p class="mc-note">⚠ Un Fin de Ciclo pidió ${nf(c.deficit.total)} animales más de los que el libro tenía vivos: la salida
+        que se enseña es la EFECTIVA, y el libro lo anotó como déficit.</p>` : '';
+  return `<div class="mc-card">
+    <h4 class="mc-card-h">⚖️ Cuadre del lote <span class="mc-h-note">${veredicto}</span></h4>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-cuadre">
+      <thead><tr><th></th><th class="r">♂</th><th class="r">♀</th><th class="r">Total</th></tr></thead>
+      <tbody>${filas}</tbody></table></div>${deficit}
+  </div>`;
+}
+
+function fichaLoteHTML(f, p) {
+  const r = f.reproduccion;
+  const pr = f.promedios;
+  const origen = f.origen.length
+    ? `<ul class="mop-lista">${f.origen.map((o) => `<li>${esc(dma(o.fecha))} · <b>${esc(o.sala)}</b> tanque ${nf(o.tanque)} ·
+        ♀ ${nf(o.hembras)} ♂ ${nf(o.machos)} · código ${esc(o.codigo || '—')} ·
+        piscina ${esc(o.piscina || '—')} · camaronera ${esc(o.camaronera || '—')}</li>`).join('')}</ul>`
+    : '<p class="muted" style="margin:4px 0">Ningún Ingreso explica este lote.</p>';
+  const eventos = f.eventos.length
+    ? `<ul class="mop-lista mop-lista-fila">${f.eventos.map((e) => `<li>${esc(dm(e.fecha))} · ${esc(e.etiqueta)}${e.machos || e.hembras ? ` · ♀ ${nf(e.hembras)} ♂ ${nf(e.machos)}` : ''}</li>`).join('')}</ul>`
+    : `<p class="muted" style="margin:4px 0">Sin eventos en ${esc(etiquetaPeriodo(p))}.</p>`;
+  return `<div class="mop-det-grid" style="margin-bottom:12px">
+    <div class="mc-card mop-det-ancho">
+      <h4 class="mc-card-h">🧬 ${esc(f.lote)}
+        <span class="mc-h-note">${esc(f.estado || 'sin estado')} · ingreso ${esc(dma(f.ingreso))}${f.cerrado ? ' · cerrado ' + esc(dma(f.cerrado)) : ''} ·
+        ${nf(f.tanques)} tanque(s) en ${f.salas.map((s) => esc(s)).join(', ') || '—'}</span></h4>
+      <h5 class="mop-det-h">Origen</h5>${origen}
+    </div>
+    ${f.cuadre ? cuadreHTML(f.cuadre) : ''}
+    <div class="mc-card">
+      <h4 class="mc-card-h">🥚 Reproducción <span class="mc-h-note">${esc(etiquetaPeriodo(p))}</span></h4>
+      <div class="mop-sc-fila"><span class="mop-sc-l">Desoves</span><span>${nf(r.desoves)}</span></div>
+      <div class="mop-sc-fila"><span class="mop-sc-l">Huevos</span><span>${nf(r.huevos)} · ${nf(r.huevosPorDesove)} por desove</span></div>
+      <div class="mop-sc-fila"><span class="mop-sc-l">N2</span><span>${nf(r.n2)} · fertilidad ${pc(r.fertilidad)} ${dot(evaluar('fertilidad', r.fertilidad), refUmbral('fertilidad'))}</span></div>
+      <div class="mop-sc-fila"><span class="mop-sc-l">N5</span><span>${nf(r.n5)} · ${nf(r.n5PorDesove)} por desove</span></div>
+      <p class="mc-note">La fertilidad sale sólo de los desoves que TRAEN su N2; el N5 se cuenta aparte y NO se compara con el N2.</p>
+      <h5 class="mop-det-h">Promedios de sus tanques</h5>
+      <div class="mop-sc-fila"><span class="mop-sc-l">Peso</span><span>♂ ${nf(pr.pesoMachos, 2)} g · ♀ ${nf(pr.pesoHembras, 2)} g</span></div>
+      <div class="mop-sc-fila"><span class="mop-sc-l">Cópulas</span><span>${nf(pr.copulas)} · ${pc(pr.pctCopulas)} de sus hembras</span></div>
+      <div class="mop-sc-fila"><span class="mop-sc-l">Muda</span><span>${nf(pr.muda)} · ${pc(pr.pctMuda)} de sus hembras</span></div>
+      ${pr.compartido ? '<p class="mc-note">⚠ Comparte tanque con otro lote: la hoja de Tanques no dice de qué lote es cada cifra, así que las cópulas y las mudas van repartidas en proporción a sus animales (los pesos se promedian, no se parten).</p>' : ''}
+    </div>
+    <div class="mc-card mop-det-ancho">
+      <h4 class="mc-card-h">📈 Vivos del lote <span class="mc-h-note">${esc(etiquetaPeriodo(p))}</span></h4>
+      <div class="mc-chart" style="height:240px"><canvas id="mopLoteCurva"></canvas></div>
+      <h5 class="mop-det-h">Eventos del período</h5>${eventos}
+    </div>
+  </div>`;
+}
+
+function comparativaHTML(c, p) {
+  const pills = DIMENSIONES_COMPARATIVA.map((d) => `<button class="mc-pill ${c.dimension === d.clave ? 'is-on' : ''}" data-mop-agr="${d.clave}">${esc(d.etiqueta)}</button>`).join('');
+  const porLote = c.dimension === 'lote';
+  const cuerpo = c.filas.length
+    ? c.filas.map((f) => `<tr>
+        <td><b>${esc(f.origen)}</b>${porLote ? '' : ` <span class="mop-nota">${f.lotes.length} lote(s)</span>`}</td>
+        <td class="r">${nf(f.ingresados)}</td><td class="r">${nf(f.vivos)}</td><td class="r">${pc(f.supervivencia)}</td>
+        <td class="r">${nf(f.desoves)}</td><td class="r">${pc(f.fertilidad)}</td><td class="r">${nf(f.n5)}</td>
+        <td class="r">${f.dias === '' ? '—' : nf(f.dias) + ' d'}</td></tr>`).join('')
+    : '<tr><td colspan="8" class="muted">Nada que comparar con este filtro.</td></tr>';
+  const veredicto = c.mejor
+    ? `<p class="mc-note">Mejor supervivencia: <b>${esc(c.mejor)}</b> · peor: <b>${esc(c.peor)}</b>.</p>`
+    : '<p class="mc-note">Con una sola fila no hay comparación: compararse consigo mismo no dice nada.</p>';
+  return `<div class="mc-card mc-card-wide">
+    <h4 class="mc-card-h">📊 Comparativa <span class="mc-h-note">${esc(etiquetaPeriodo(p))}</span>
+      <span class="mc-seg mop-agr">${pills}</span></h4>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm">
+      <thead><tr><th>${esc((DIMENSIONES_COMPARATIVA.find((d) => d.clave === c.dimension) || {}).etiqueta || 'Lote')}</th>
+        <th class="r">Ingresados</th><th class="r">Vivos</th><th class="r">Superv.</th>
+        <th class="r">Desoves</th><th class="r">Fertilidad</th><th class="r">N5</th><th class="r">Edad</th></tr></thead>
+      <tbody>${cuerpo}</tbody></table></div>${veredicto}
+  </div>`;
+}
+
+/** La curva de vivos del lote. Los eventos van como puntos marcados sobre la misma línea, no como otra serie. */
+function dibujarLote(f) {
+  if (!f || !f.curva.length) return;
+  const conEvento = new Set(f.eventos.map((e) => e.fecha));
+  makeChart('mopLoteCurva', {
+    type: 'line',
+    data: {
+      labels: f.curva.map((d) => dm(d.fecha)),
+      datasets: [
+        { label: '♀ Hembras', data: f.curva.map((d) => d.hembras), borderColor: '#d81b60', backgroundColor: '#d81b60', tension: 0.25, borderWidth: 2,
+          pointRadius: f.curva.map((d) => (conEvento.has(d.fecha) ? 4 : 0)) },
+        { label: '♂ Machos', data: f.curva.map((d) => d.machos), borderColor: '#1e88e5', backgroundColor: '#1e88e5', tension: 0.25, borderWidth: 2,
+          pointRadius: f.curva.map((d) => (conEvento.has(d.fecha) ? 4 : 0)) },
+        { label: 'Total', data: f.curva.map((d) => d.total), borderColor: '#00838f', backgroundColor: '#00838f', tension: 0.25, borderWidth: 2, borderDash: [5, 4],
+          pointRadius: f.curva.map((d) => (conEvento.has(d.fecha) ? 4 : 0)) },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      scales: { x: { ticks: { ...EJE, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: EJE, grid: { color: REJILLA } } },
+      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 10 }, color: EJE.color } } },
+    },
+  });
+}
+
 function bind(root) {
   if (root._mopBound) return;
   root._mopBound = true;
   const repintar = () => operativoView(root);
   const abrirSala = (sala) => { vOp.salaDetalle = vOp.salaDetalle === sala ? '' : sala; repintar(); };
+  const abrirLote = (lote) => { vOp.loteSel = vOp.loteSel === lote ? '' : lote; repintar(); };
 
   root.addEventListener('click', (e) => {
     const t = e.target;
@@ -532,12 +741,27 @@ function bind(root) {
     const per = t.closest('[data-mop-periodo]');
     if (per) { vOp.periodo = per.dataset.mopPeriodo; repintar(); return; }
     if (t.closest('[data-mop-limpiar]')) {
-      Object.assign(vOp, { periodo: INICIAL.periodo, fecha: '', sala: '', tanque: '', lote: '', codigo: '', tanqueSel: '', salaDetalle: '' });
+      Object.assign(vOp, { periodo: INICIAL.periodo, fecha: '', sala: '', tanque: '', lote: '', codigo: '', tanqueSel: '', salaDetalle: '', loteSel: '', estado: '', sexo: '', piscina: '', camaronera: '' });
       repintar();
       return;
     }
     const col = t.closest('[data-mop-color]');
     if (col) { vOp.color = col.dataset.mopColor; repintar(); return; }
+    const qui = t.closest('[data-mop-quitar]');
+    if (qui) {
+      /* No hace falta soltar aquí el tanque: sin sala, `depurarFiltros` ya lo limpia en el pintado siguiente
+         (`!vOp.sala`). La línea que lo hacía era redundante —ningún banco podía distinguirla— y se retiró. ⚠ La
+         del CAMBIO de sala NO lo es: al pasar a otra sala que también tenga ese número, depurarFiltros lo da por
+         bueno y el tanque de la sala anterior se quedaría puesto (eso lo vigila V08). */
+      const dim = qui.dataset.mopQuitar;
+      vOp[dim] = '';
+      repintar();
+      return;
+    }
+    const lot = t.closest('[data-mop-lote]');
+    if (lot) { abrirLote(lot.dataset.mopLote); return; }
+    const agr = t.closest('[data-mop-agr]');
+    if (agr) { vOp.agrupacion = agr.dataset.mopAgr; repintar(); return; }
     const ftq = t.closest('[data-mop-filtrar-tq]');
     if (ftq) {
       const k = ftq.dataset.mopFiltrarTq;
@@ -564,7 +788,9 @@ function bind(root) {
   root.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     const sala = e.target.closest && e.target.closest('[data-mop-sala]');
-    if (sala && e.target === sala) { e.preventDefault(); abrirSala(sala.dataset.mopSala); }
+    if (sala && e.target === sala) { e.preventDefault(); abrirSala(sala.dataset.mopSala); return; }
+    const lote = e.target.closest && e.target.closest('[data-mop-lote]');
+    if (lote && e.target === lote) { e.preventDefault(); abrirLote(lote.dataset.mopLote); }
   });
 
   root.addEventListener('change', (e) => {

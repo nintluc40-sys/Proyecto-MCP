@@ -64,22 +64,29 @@ npm run lint       # ESLint
   Agua** (analizador multiparamétrico con WQI, doble lente Por parámetro/Por
   ubicación). Sub-vista **Patología en fresco** pendiente (a la espera de su
   hoja en el Google Sheet).
-- **Maduración · "Microchips"** (🥚): seguimiento reproductivo por Trovan ID sobre
-  las hojas `Maduración MATRIZ`/`Bitácora`/`Transferencias`.
-  ⚠ **Es el REPRODUCTIVO. Hay otra «Maduración» distinta** —el registro OPERATIVO, por
-  conteos— que no es una vista sino un grupo de fichas de captura: ver más abajo.
-  Tres sub-vistas —
-  **Panorama** (KPIs, distribución de estados activa/inactiva/transferida/fallecida,
-  tendencias de desoves/mortalidad/fertilidad, top salas y tanques), **Salas y
-  Tanques** (producción, fertilidad y eficiencia por ubicación + mortalidad) y
-  **Hembras** (ranking por desoves, buscador de Trovan, hembras que nunca han
-  desovado, distribución del intervalo de recuperación e historial completo por
-  individuo). Filtros de período (mes o todo) + Sala + Tanque.
-  ♻ **Un Trovan ID es de un CHIP, no de una hembra**, así que la MATRIZ puede tener varias suyas.
-  Lo que identifica a un individuo es la **cuaterna** (Trovan · Piscina · Código genético · Lote);
-  la regla vive en `src/core/trovan.js` y está detallada en «Reglas vigentes», más abajo.
-  *(Hasta el 2026-09-16 la regla era otra —una hembra «sucedía» a otra si la anterior había muerto
-  y la nueva ingresaba después—; se retiró entera, y con ella sus dos rechazos por fechas.)*
+- **Maduración** (🥚): una entrada con DOS familias (selector interno; abre en Operativo).
+  - **🐚 Operativo** — el TABLERO del registro operativo, cargado DIFERIDO. Barra de filtros común
+    (período · foto al día · sala → tanque · lote → código · estado · sexo · piscina · camaronera, con los
+    activos como etiquetas quitables) y tres sub-vistas: **📊 Estado actual** (siete indicadores, mapa de
+    planta, alertas, últimos registros y fines de cuarentena), **🏠 Salas** (tarjeta por sala y su detalle) y
+    **🧬 Lotes** (tabla maestra, ficha de un lote —origen, CASCADA DEL CUADRE, curva de vivos y reproducción—
+    y comparativa por lote, código genético o piscina).
+  - **🧬 Microchips** — seguimiento reproductivo por Trovan ID sobre
+    las hojas `Maduración MATRIZ`/`Bitácora`/`Transferencias`.
+    ⚠ **Es el REPRODUCTIVO. Hay otra «Maduración» distinta** —el registro OPERATIVO, por
+    conteos— que no es una vista sino un grupo de fichas de captura: ver más abajo.
+    Tres sub-vistas —
+    **Panorama** (KPIs, distribución de estados activa/inactiva/transferida/fallecida,
+    tendencias de desoves/mortalidad/fertilidad, top salas y tanques), **Salas y
+    Tanques** (producción, fertilidad y eficiencia por ubicación + mortalidad) y
+    **Hembras** (ranking por desoves, buscador de Trovan, hembras que nunca han
+    desovado, distribución del intervalo de recuperación e historial completo por
+    individuo). Filtros de período (mes o todo) + Sala + Tanque.
+    ♻ **Un Trovan ID es de un CHIP, no de una hembra**, así que la MATRIZ puede tener varias suyas.
+    Lo que identifica a un individuo es la **cuaterna** (Trovan · Piscina · Código genético · Lote);
+    la regla vive en `src/core/trovan.js` y está detallada en «Reglas vigentes», más abajo.
+    *(Hasta el 2026-09-16 la regla era otra —una hembra «sucedía» a otra si la anterior había muerto
+    y la nueva ingresaba después—; se retiró entera, y con ella sus dos rechazos por fechas.)*
 - **Registros**: fichas de captura (estrangulamiento gradual del monolito
   `public/registros/engine.js`) que escriben al Sheet vía Google Apps Script.
   Incluye el **registro operativo de Maduración**, que tiene su propia sección aquí abajo
@@ -546,5 +553,12 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
 6. **Paridad · las funciones que sólo se comparan por NOMBRE** entre `engine.js` e `index (8)`
    (el repo delega en `__rgLib`, el gemelo las lleva en línea). Es el único hueco de la paridad; su
    número lo dice `verificar-3copias-v3` al correr («delegación __rgLib»).
-7. **La CI no vigila `index (8)`**: `deploy.yml` corre lint, vitest, auditorías y build, pero ninguno
+7. **El tablero de Maduración va por F2.** Están 📊 Estado actual, 🏠 Salas y 🧬 Lotes (con su cascada del
+   cuadre y la comparativa por lote, código genético o piscina), más los cuatro filtros nuevos, el período
+   «ciclo del lote», las etiquetas de filtros activos y el KPI de biomasa. Quedan F3 (Descarte, mortalidad,
+   salidas y Revisiones) a F7 (Reportería). ⚠ Con los datos de hoy hay UN solo lote y seis hojas sin crear:
+   de F3 en adelante se desarrolla con fixtures FICTICIOS, y se contrasta con `auditar-tablero-mad-real.mjs`
+   y `medir-tablero-mad-real.mjs` (utillaje), que desde F2 comprueban que la cascada de cada lote CUADRA con
+   los datos reales.
+8. **La CI no vigila `index (8)`**: `deploy.yml` corre lint, vitest, auditorías y build, pero ninguno
    de los verificadores de copias, que viven fuera del repo. La paridad depende de correrlos a mano.
