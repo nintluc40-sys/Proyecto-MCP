@@ -18,6 +18,10 @@ import {
   diasDeTanque, serieDiaria, opcionesDeFiltro, modeloOperativo, DIMENSIONES,
 } from './operativo.data.js';
 import { MAD_OP_HOJAS, MAD_OP_ORIGEN } from './operativo.fuentes.js';
+/* D-3 · las sondas de `DIMENSIONES` viven al final del archivo; sus módulos son puros, como éste. */
+import * as T from './operativo.tablero.js';
+import * as BA from './operativo.bajas.js';
+import * as RV from './operativo.revisiones.js';
 import { construirLibro } from '../registros/lib/mad-libro.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 
@@ -186,11 +190,152 @@ describe('Maduración · operativo · filtros', () => {
   });
 });
 
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   D-3 (2026-09-20) · `DIMENSIONES` ES LA CONDUCTA, NO UN COMENTARIO LARGO.
+
+   El catálogo declara qué filtros admite cada hoja, y hasta hoy NADIE lo leía en tiempo de
+   ejecución: cada consumidor implementaba su regla por su cuenta —`kpiReproduccion` mira `F.lote` y
+   `F.codigo` y nada más, `bajasPorHora` mira `F.sala` y `F.tanque`— y la única prueba que tenía
+   comparaba el catálogo contra las claves de `MAD_OP_HOJAS`, o sea CONTRA SÍ MISMO. Describía bien lo
+   que pasaba, y podía dejar de describirlo sin que nada avisara.
+   Aquí se ata a lo que de verdad ocurre: para cada hoja con un consumidor filtrable, un filtro que el
+   catálogo NO declara no puede cambiar su resultado, y uno que SÍ declara tiene que poder cambiarlo.
+   La segunda mitad importa tanto como la primera: sin ella, un catálogo que declarara dimensiones de
+   adorno pasaría igual.
+
+   ⚠ NO TODAS SE PUEDEN PROBAR ASÍ, y se dice cuáles y por qué en vez de fingir cobertura. Cinco hojas
+   no tienen un consumidor que reciba el filtro: sus filas alimentan el LIBRO, y el filtrado ocurre
+   después sobre las posiciones que el libro produce. La guarda de abajo exige que cada hoja del
+   catálogo esté en UNO de los dos grupos: una hoja nueva que no entre en ninguno pone esto rojo, que
+   es cuando hay que decidir en cuál va — y no meses después.
+   ══════════════════════════════════════════════════════════════════════════════════════════════ */
+const DIMS = ['sala', 'tanque', 'lote', 'codigo'];
+
+/* Valores que EXISTEN en el fixture de abajo, para que un filtro pueda cambiar algo. */
+const VALOR = { sala: 'Sala 1', tanque: 1, lote: 'L1', codigo: 'C1' };
+
+const FIL = (d) => ({ sala: null, tanque: null, lote: null, codigo: null, ...(d || {}) });
+const P = { desde: '2026-09-01', hasta: '2026-09-30' };
+
+const FIXTURE = () => ({
+  ...vacias(),
+  desoves: [
+    { Fecha: '2026-09-10', Lote: 'L1', 'Código genético': 'C1', Desoves: 3, 'Total de huevos': 300, 'Hembras no viables': 1, N2: 200, N5: 150 },
+    { Fecha: '2026-09-11', Lote: 'L2', 'Código genético': 'C2', Desoves: 5, 'Total de huevos': 500, 'Hembras no viables': 0, N2: 400, N5: 320 },
+  ],
+  mortDesove: [
+    { Fecha: '2026-09-10', Lote: 'L1', 'Tipo de tanque': 'Desove', 'Hembras que entran': 20, 'Hembras muertas': 2 },
+    { Fecha: '2026-09-11', Lote: 'L2', 'Tipo de tanque': 'Recuperación', 'Hembras que entran': 30, 'Hembras muertas': 1 },
+  ],
+  cierres: [
+    { Fecha: '2026-09-12', Lote: 'L1', Sala: 'Sala 1', Tipo: 'Total', Motivo: 'Pedido', Machos: 5, Hembras: 7, Rojos: 0 },
+    { Fecha: '2026-09-13', Lote: 'L2', Sala: 'Sala 2', Tipo: 'Parcial', Motivo: 'Otro', Machos: 1, Hembras: 2, Rojos: 0 },
+  ],
+  tanques: [
+    TQ('2026-09-10', 'Sala 1', 1, { Hora: '06:00', 'Machos muertos': 2, 'Hembras muertas': 1 }),
+    TQ('2026-09-11', 'Sala 2', 4, { Hora: '18:00', 'Machos muertos': 3, 'Hembras muertas': 0 }),
+  ],
+});
+
+/* Hojas con un consumidor que RECIBE el filtro. La firma no es uniforme a propósito —cada una nació
+   con la suya— así que cada sonda la adapta aquí, junto a la aserción que la usa. */
+const SONDAS = {
+  desoves: (f, F) => T.kpiReproduccion(f.desoves, P, F),
+  mortDesove: (f, F) => RV.mortalidadEnDesove(f, F, P),
+  cierres: (f, F) => BA.motivosDeCierre(f, P, F),
+  tanques: (f, F) => BA.bajasPorHora(f, P, F),
+};
+
+/* Hojas SIN consumidor filtrable, con el motivo. No es una excusa: es lo que hay que cambiar el día
+   que alguien les dé uno. */
+const SIN_SONDA = {
+  ingresos: 'sus filas alimentan el LIBRO; el filtro actúa después, sobre las posiciones',
+  movimientos: 'ídem: el libro las consume y ninguna función las filtra por sí sola',
+  tratamientos: '`diasDesdeDesinfeccion(filasTrat, salas, hoy)` no recibe filtro',
+  alimentacion: '`alimentoPorMillonN5(filasAlim, filasDesoves, desde, hasta)` no recibe filtro',
+  broodstock: '`desempenoPorOrigen(fuentes, posiciones, dimension)` agrupa, no filtra',
+  sala: 'la filtra `tarjetasDeSalas(M, F)`, que necesita el modelo entero, no sus filas',
+};
+
+describe('Maduración · operativo · DIMENSIONES es la conducta, no un comentario', () => {
+  it('cada hoja del catálogo está sondada o declarada sin sonda, y ninguna en las dos', () => {
+    const sondadas = Object.keys(SONDAS);
+    const sinSonda = Object.keys(SIN_SONDA);
+    expect(sondadas.filter((h) => sinSonda.includes(h)), 'una hoja en los dos grupos').toEqual([]);
+    expect([...sondadas, ...sinSonda].sort()).toEqual(Object.keys(DIMENSIONES).sort());
+  });
+
+/* Lo que se compara son los DATOS, no el acuse de recibo. Varias sondas devuelven además `ignora`
+   con los filtros que no les aplican —«un desove no es de una sala: se ignora y se DICE»—, así que
+   el resultado SÍ cambia al pasarles uno, y cambia porque están haciendo lo correcto. */
+const datos = (r) => { const { ignora, ...resto } = r || {}; void ignora; return JSON.stringify(resto); };
+
+/* 🔴 DISCREPANCIA MEDIDA el 2026-09-20, la primera vez que esta prueba corrió. Se deja DECLARADA, no
+   escondida: mientras esté aquí la prueba pasa, pero si alguien implementa el filtro o retira la
+   dimensión del catálogo, esto se pone rojo y obliga a quitarlo — que es justo cuando hay que hacerlo. */
+const DISCREPANCIAS = {
+  'cierres/sala': 'El catálogo declara `sala` para Fin de Ciclo y NINGÚN consumidor la aplica: '
+    + 'ni `motivosDeCierre` ni `lotesCerrados` miran F.sala, sólo F.lote. La hoja ganó su columna '
+    + '«Sala» el 2026-09-14 (D14, el cierre Parcial descuenta de esa sala) y el tablero nunca la usó '
+    + 'para filtrar. Falta decidir si se implementa o si sobra del catálogo.',
+};
+
+for (const [hoja, sonda] of Object.entries(SONDAS)) {
+  const admite = DIMENSIONES[hoja];
+  const noAdmite = DIMS.filter((x) => !admite.includes(x));
+
+  describe(`DIMENSIONES · ${hoja} declara [${admite.join(', ')}]`, () => {
+    it(`los que NO declara (${noAdmite.join(', ')}) no cambian sus DATOS`, () => {
+      const f = FIXTURE();
+      const base = datos(sonda(f, FIL()));
+      for (const d of noAdmite) {
+        expect(datos(sonda(f, FIL({ [d]: VALOR[d] }))), hoja + ' cambió sus datos al filtrar por ' + d
+          + ', que su catálogo NO declara').toBe(base);
+      }
+    });
+
+    it(`los que SÍ declara (${admite.join(', ')}) cambian sus DATOS`, () => {
+      const f = FIXTURE();
+      const base = datos(sonda(f, FIL()));
+      for (const d of admite) {
+        const motivo = DISCREPANCIAS[hoja + '/' + d];
+        const cambia = datos(sonda(f, FIL({ [d]: VALOR[d] }))) !== base;
+        if (motivo) {
+          expect(cambia, 'la discrepancia declarada «' + hoja + '/' + d + '» YA NO EXISTE: quítala de '
+            + 'DISCREPANCIAS. ' + motivo).toBe(false);
+          continue;
+        }
+        expect(cambia, hoja + ' NO reaccionó a ' + d + ', que su catálogo declara: o la regla se '
+          + 'perdió, o el catálogo declara de adorno').toBe(true);
+      }
+    });
+  });
+}
+
+it('las discrepancias declaradas nombran una hoja y una dimensión que existen', () => {
+  // Una discrepancia que apunte a algo que ya no está sería una excepción que no excusa nada.
+  for (const clave of Object.keys(DISCREPANCIAS)) {
+    const [hoja, dim] = clave.split('/');
+    expect(SONDAS[hoja], clave + ': esa hoja no tiene sonda').toBeTypeOf('function');
+    expect(DIMENSIONES[hoja], clave + ': el catálogo ya no declara esa dimensión').toContain(dim);
+  }
+});
+
+  it('el fixture ejerce algo: sin filtro las cuatro sondas devuelven datos', () => {
+    // Comparar dos resultados VACÍOS es igual a comparar dos llenos, y pasaría siempre.
+    const f = FIXTURE();
+    expect(T.kpiReproduccion(f.desoves, P, FIL()).desoves).toBeGreaterThan(0);
+    expect(RV.mortalidadEnDesove(f, FIL(), P).entran).toBeGreaterThan(0);
+    expect(BA.motivosDeCierre(f, P, FIL()).filas.length).toBeGreaterThan(0);
+    expect(BA.bajasPorHora(f, P, FIL()).horas.length).toBeGreaterThan(0);
+  });
+});
+
 describe('Maduración · operativo · el modelo entero desde el store', () => {
   it('del export crudo al modelo: fuentes, 4A fuera, frescura, resumen y salas a la fecha de la foto', () => {
     const fila = (o) => ({ _SheetOrigin: MAD_OP_ORIGEN, ...o });
     const store = [
-      fila({ Fecha: '10/09/2026', Lote: 'AA', 'Código genético': 'C1', 'Camaronera origen': 'X', Sala: 'Sala 1', Tanque: '1', Machos: '10', Hembras: '10' }),
+      fila({ Fecha: '2026-09-10', Lote: 'AA', 'Código genético': 'C1', 'Camaronera origen': 'X', Sala: 'Sala 1', Tanque: '1', Machos: '10', Hembras: '10' }),
       fila({ Fecha: '17/09/2026', Sala: 'Sala 1', Estado: 'Producción', 'Temperatura 2:00': '27.5' }),
       fila({ Fecha: '17/09/2026', Sala: 'Sala 4A', Estado: 'Producción', 'Temperatura 2:00': '26' }),
       fila({ Fecha: '16/09/2026', Sala: 'Sala 1', Tanque: '1', 'Machos muertos': '1' }),
@@ -225,7 +370,7 @@ describe('Maduración · operativo · el modelo entero desde el store', () => {
   it('con una foto en el pasado, el resumen es el de ESE día', () => {
     const fila = (o) => ({ _SheetOrigin: MAD_OP_ORIGEN, ...o });
     const store = [
-      fila({ Fecha: '10/09/2026', Lote: 'AA', 'Código genético': 'C1', 'Camaronera origen': 'X', Sala: 'Sala 1', Tanque: '1', Machos: '10', Hembras: '10' }),
+      fila({ Fecha: '2026-09-10', Lote: 'AA', 'Código genético': 'C1', 'Camaronera origen': 'X', Sala: 'Sala 1', Tanque: '1', Machos: '10', Hembras: '10' }),
       fila({ Fecha: '16/09/2026', Sala: 'Sala 1', Tanque: '1', 'Machos muertos': '4' }),
     ];
     const antes = modeloOperativo(store, { hoy: '2026-09-18', fecha: '2026-09-12' });
