@@ -79,6 +79,19 @@ export function renderDespacho(ctx, mod) {
   const rendimiento = popInicialTotal > 0 ? Math.min(cosechadaTotal / popInicialTotal * 100, 100) : null;
   const fmtNum = (v, d = 0) => (v === null || v === undefined || isNaN(v)) ? '—' : Number(v).toLocaleString('es-EC', { minimumFractionDigits: d, maximumFractionDigits: d });
 
+  /* D-4 (2026-09-20) · CON «TODAS LAS CORRIDAS» ESTAS DOS CIFRAS MEZCLAN CORRIDAS, y hasta hoy no lo
+     decían. `lastPop` es la ÚLTIMA lectura de cada tanque: con varias corridas, la «Cantidad
+     cosechada» es la de la última de cada tanque y deja fuera las anteriores (medido: 300 frente a
+     1100). Y el «Rendimiento» la divide por `firstPop`, que es la siembra de la PRIMERA, así que
+     compara dos corridas distintas — con el `Math.min(…, 100)` de arriba TAPANDO el desajuste en vez
+     de enseñarlo, igual que ya disimuló el defecto de la población inicial en su día.
+     🔑 Decisión del usuario (2026-09-20): NO se cambia la cifra, se DICE. Cambiarla movería números
+     que la gente ya conoce; callarla deja leer como «de esta corrida» algo que no lo es. Quien
+     quiera leerlas sin mezcla elige una corrida, y ahora la pantalla se lo dice. */
+  const mezclaCorridas = !corrida && tanks.length > 0;
+  const subCosechada = mezclaCorridas ? 'la ÚLTIMA corrida de cada tanque' : '';
+  const subRendimiento = mezclaCorridas ? 'mezcla corridas: ÷ la siembra de la primera' : '';
+
   let html = breadcrumb(col.accent, [
     { label: '← Módulos', nav: 'modules' },
     { label: mod, nav: 'module', mod },
@@ -89,13 +102,13 @@ export function renderDespacho(ctx, mod) {
     <div class="sv-card-orb"></div>
     <div class="sv-card-tag">🚛 REGISTRO DE DESPACHO</div>
     <div class="sv-banner-name">${esc(mod)}</div>
-    <div class="sv-card-sub">🔄 ${corrida ? 'Corrida: ' + esc(corrida) : 'Todas las corridas'} · ${tanks.length} tanque(s)</div>
+    <div class="sv-card-sub">🔄 ${corrida ? 'Corrida: ' + esc(corrida) : 'Todas las corridas'} · ${tanks.length} tanque(s)${mezclaCorridas ? ' · ⚠ las cifras de cosecha mezclan corridas' : ''}</div>
     <div class="sv-kpi-grid sv-kpi-wide">
-      ${kpiGlass('📦', 'Cantidad cosechada', fmtPop(cosechadaTotal || null))}
+      ${kpiGlass('📦', 'Cantidad cosechada', fmtPop(cosechadaTotal || null), '', false, subCosechada)}
       ${kpiGlass('⚖️', 'Biomasa total', fmtNum(biomasaTotal || null, 1))}
       ${kpiGlass('🎣', 'PL/g promedio', fmtNum(plgProm, 1))}
       ${kpiGlass('🚛', 'Nº despachos', String(nDespachos), 'data-despx-open role="button" tabindex="0" title="Descargar en Excel el registro de despacho del mes"')}
-      ${kpiGlass('🎯', 'Rendimiento cosecha', rendimiento === null ? '—' : fmtNum(rendimiento, 1) + '%', `data-nav="traslado" data-mod="${esc(mod)}" role="button" tabindex="0" title="Ver el traslado en ruta de esta corrida"`)}
+      ${kpiGlass('🎯', 'Rendimiento cosecha', rendimiento === null ? '—' : fmtNum(rendimiento, 1) + '%', `data-nav="traslado" data-mod="${esc(mod)}" role="button" tabindex="0" title="Ver el traslado en ruta de esta corrida"`, false, subRendimiento)}
     </div>
   </div>`;
 
