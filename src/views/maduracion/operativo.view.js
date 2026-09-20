@@ -27,14 +27,20 @@ import {
 import { INDICADORES } from './operativo.indicadores.js';
 import { FUENTES, umbralVigente, evaluar } from './operativo.umbrales.js';
 import { tablaDeLotes, fichaDeLote, DIMENSIONES_COMPARATIVA, comparativa } from './operativo.lotes.js';
+import { DIMENSIONES_BAJAS, desgloseDeBajas, motivosDeCierre, bajasPorHora, calorSalaDia, lotesCerrados } from './operativo.bajas.js';
+import {
+  VARIABLES_REVISION, revisionesDeNauplios, alcalinidadPorArea, mortalidadEnDesove, frecuenciaDeObservaciones,
+} from './operativo.revisiones.js';
 
 const SUBS = [
   { clave: 'estado', etiqueta: 'Estado actual', icono: '📊' },
   { clave: 'salas', etiqueta: 'Salas', icono: '🏠' },
   { clave: 'lotes', etiqueta: 'Lotes', icono: '🧬' },
+  { clave: 'bajas', etiqueta: 'Bajas', icono: '💀' },
+  { clave: 'revisiones', etiqueta: 'Revisiones', icono: '🔍' },
 ];
 const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', tanque: '', lote: '', codigo: '', color: 'estado', salaDetalle: '', tanqueSel: '', loteSel: '', agrupacion: 'lote',
-  estado: '', sexo: '', piscina: '', camaronera: '' };
+  estado: '', sexo: '', piscina: '', camaronera: '', agrupacionBajas: 'sala' };
 /* El estado de la vista vive lo que dura la sesión: al volver a Maduración, o al refrescarse los datos, se conserva. */
 const vOp = { ...INICIAL };
 
@@ -117,6 +123,10 @@ export function operativoView(root) {
     h += salasHTML(M, F, detalle, periodo);
   } else if (vOp.sub === 'lotes') {
     h += lotesHTML(M, memo, periodo, F);
+  } else if (vOp.sub === 'bajas') {
+    h += bajasHTML(M, memo, periodo, F);
+  } else if (vOp.sub === 'revisiones') {
+    h += revisionesHTML(M, memo, periodo, F);
   } else {
     h += estadoHTML(M, memo, periodo, F);
   }
@@ -727,6 +737,275 @@ function dibujarLote(f) {
   });
 }
 
+/* ============================================================
+   💀 BAJAS y 🔍 REVISIONES (F3, 2026-09-20)
+   Diseño aprobado por el usuario: dos sub-vistas propias; el desglose de bajas en TABLA CRUZADA con selector de
+   agrupación; y las revisiones como SEMÁFORO por variable con su último valor y su historial debajo.
+   Las cifras salen de operativo.bajas.js y operativo.revisiones.js, que son puros y tienen su banco: aquí sólo
+   se pintan. Los gráficos van en HTML/CSS (barras y la rejilla de calor que ya existe), sin Chart.js: no hay
+   nada que destruir al cambiar de sub-vista.
+   ============================================================ */
+
+/** Una barra proporcional, con su parte rellena. `tono` la colorea como el resto del tablero. */
+function barra(valor, max, tono) {
+  const pct = max > 0 ? Math.max(2, Math.round((valor / max) * 100)) : 0;
+  return `<span class="mop-b3" aria-hidden="true"><i class="${tono || ''}" style="width:${pct}%"></i></span>`;
+}
+
+/** Lo que una pieza no ha podido filtrar, dicho en una línea. */
+function ignoraHTML(ignora, que) {
+  if (!ignora || !ignora.length) return '';
+  return `<p class="mc-note">⚠ ${esc(que)} no puede separarse por ${ignora.map((x) => esc(x)).join(' ni por ')}:
+    ese filtro no se ha aplicado aquí. ${ignora.includes('lote') ? 'Una fila de Tanques dice su sala y su tanque, pero no de qué lote era cada animal.' : ''}</p>`;
+}
+
+/* ── 💀 BAJAS ───────────────────────────────────────────────── */
+
+function bajasHTML(M, memo, p, F) {
+  const d = desgloseDeBajas(M, serieDe(memo, p), memo.partes, F, p, vOp.agrupacionBajas);
+  const mot = motivosDeCierre(M.fuentes, p, F);
+  const hor = bajasPorHora(M.fuentes, p, F);
+  const cal = calorSalaDia(memo.partes, F, p);
+  const cer = lotesCerrados(M, F, p);
+  return `<div class="mc-body">
+    ${desgloseHTML(d, p)}
+    <div class="mc-grid">
+      ${motivosHTML(mot, p)}
+      ${horasHTML(hor, p)}
+    </div>
+    ${calorHTML(cal, p)}
+    ${cerradosHTML(cer, p)}
+  </div>`;
+}
+
+function desgloseHTML(d, p) {
+  const pills = DIMENSIONES_BAJAS.map((x) => `<button class="mc-pill ${d.dimension === x.clave ? 'is-on' : ''}" data-mop-agrb="${x.clave}">${esc(x.etiqueta)}</button>`).join('');
+  const cab = (DIMENSIONES_BAJAS.find((x) => x.clave === d.dimension) || {}).etiqueta || 'Sala';
+  let cuerpo;
+  if (d.modo === 'sin-serie') {
+    cuerpo = `<tr><td colspan="9" class="muted">El período no alcanza a la víspera de su primer día: sin ella no se puede saber cuántas bajas son DE ESTE período y cuántas venían de antes.</td></tr>`;
+  } else if (!d.filas.length) {
+    cuerpo = `<tr><td colspan="9" class="muted">Ninguna baja registrada en ${esc(etiquetaPeriodo(p))}.</td></tr>`;
+  } else {
+    cuerpo = d.filas.map((f) => `<tr>
+      <td><b>${esc(f.clave)}</b>${f.desove ? ` <span class="mop-nota" title="De sus muertes, ${nf(f.desove)} fueron de hembras en tanques de desove o de recuperación, no en su tanque">${nf(f.desove)} en desove</span>` : ''}</td>
+      <td class="r">${nf(f.natural.machos)}</td><td class="r">${nf(f.natural.hembras)}</td><td class="r"><b>${nf(f.natural.total)}</b></td>
+      <td class="r">${nf(f.descarte.machos)}</td><td class="r">${nf(f.descarte.hembras)}</td><td class="r"><b>${nf(f.descarte.total)}</b></td>
+      <td class="r"><b>${nf(f.total)}</b></td><td class="r">${pc(f.pct)}</td></tr>`).join('')
+      + `<tr class="mop-cuadre-tot"><td>TOTAL</td>
+      <td class="r">${nf(d.totales.natural.machos)}</td><td class="r">${nf(d.totales.natural.hembras)}</td><td class="r">${nf(d.totales.natural.total)}</td>
+      <td class="r">${nf(d.totales.descarte.machos)}</td><td class="r">${nf(d.totales.descarte.hembras)}</td><td class="r">${nf(d.totales.descarte.total)}</td>
+      <td class="r">${nf(d.totales.total)}</td><td class="r">100 %</td></tr>`;
+  }
+  return `<div class="mc-card mc-card-wide">
+    <h4 class="mc-card-h">💀 Bajas del período <span class="mc-h-note">${esc(etiquetaPeriodo(p))} · ${d.modo === 'libro' ? 'repartidas por el libro' : 'las registradas en los partes'}</span>
+      <span class="mc-seg mop-agr">${pills}</span></h4>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-cruz">
+      <thead>
+        <tr><th rowspan="2">${esc(cab)}</th><th colspan="3" class="r">Muerte natural</th><th colspan="3" class="r">Descarte de selección</th><th rowspan="2" class="r">Total</th><th rowspan="2" class="r">% del total</th></tr>
+        <tr><th class="r">♂</th><th class="r">♀</th><th class="r">todos</th><th class="r">♂</th><th class="r">♀</th><th class="r">todos</th></tr>
+      </thead>
+      <tbody>${cuerpo}</tbody></table></div>
+    ${d.totales.total ? `<p class="mc-note">El descarte de selección es el <b>${pc(d.totales.pctDescarte)}</b> de las bajas del período. Las dos columnas son DISJUNTAS: la hoja las registra por separado y se suman.</p>` : ''}
+    <p class="mc-note">⚠ El «% del total» es la parte que le toca a cada fila de las bajas del período, <b>no</b> una tasa de mortalidad: la tasa es por lote y la da 📊 Estado actual con la regla del ⚖️ Saldo.</p>
+    ${ignoraHTML(d.ignora, 'El desglose por ' + cab.toLowerCase())}
+  </div>`;
+}
+
+function motivosHTML(m, p) {
+  if (!m.filas.length) {
+    return `<div class="mc-card"><h4 class="mc-card-h">📉 Motivos de Fin de Ciclo <span class="mc-h-note">${esc(etiquetaPeriodo(p))}</span></h4>
+      <p class="muted" style="margin:4px 0">Ningún lote se cerró en el período.</p>
+      <p class="mc-note">La hoja de Fin de Ciclo nace con su primer envío: mientras no haya cierres, esto se queda vacío y es lo correcto.</p></div>`;
+  }
+  const max = m.filas[0].total;
+  return `<div class="mc-card">
+    <h4 class="mc-card-h">📉 Motivos de Fin de Ciclo <span class="mc-h-note">${nf(m.cierres)} cierre(s) · ${esc(etiquetaPeriodo(p))}</span></h4>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm">
+      <thead><tr><th>Motivo</th><th></th><th class="r">Salieron</th><th class="r">Acum.</th><th class="r">Cierres</th><th class="r">Metabis.</th></tr></thead>
+      <tbody>${m.filas.map((f) => `<tr>
+        <td>${esc(f.motivo)}${f.enCatalogo ? '' : ' <span class="mop-nota" title="No está en el catálogo de la ficha">fuera del catálogo</span>'}</td>
+        <td style="width:34%">${barra(f.total, max)}</td>
+        <td class="r"><b>${nf(f.total)}</b></td><td class="r">${pc(f.acumulado)}</td>
+        <td class="r">${nf(f.cierres)}${f.totales ? ` <span class="mop-nota">${nf(f.totales)} total(es)</span>` : ''}</td>
+        <td class="r">${vacio(f.metabisulfito) || !f.metabisulfito ? '—' : nf(f.metabisulfito, 2) + ' kg'}</td></tr>`).join('')}</tbody></table></div>
+    <p class="mc-note">Ordenados de mayor a menor con su acumulado: el primero dice cuánto del total explica UN motivo.${m.metabisulfito ? ` Metabisulfito del período: <b>${nf(m.metabisulfito, 2)} kg</b>.` : ''}</p>
+  </div>`;
+}
+
+function horasHTML(h, p) {
+  if (!h.horas.length && !h.sinHora) {
+    return `<div class="mc-card"><h4 class="mc-card-h">🕒 Bajas por hora <span class="mc-h-note">${esc(etiquetaPeriodo(p))}</span></h4>
+      <p class="muted" style="margin:4px 0">Ninguna baja registrada en el período.</p></div>`;
+  }
+  return `<div class="mc-card">
+    <h4 class="mc-card-h">🕒 Bajas por hora <span class="mc-h-note">${nf(h.registros)} parte(s) con bajas · ${esc(etiquetaPeriodo(p))}</span></h4>
+    ${h.horas.length ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm">
+      <thead><tr><th>Hora</th><th></th><th class="r">Natural</th><th class="r">Descarte</th><th class="r">Total</th><th class="r">%</th></tr></thead>
+      <tbody>${h.horas.map((f) => `<tr class="${f.hora === h.pico ? 'mop-pico' : ''}">
+        <td><b>${esc(f.hora)}:00</b>${f.hora === h.pico ? ' <span class="mop-nota">pico</span>' : ''}</td>
+        <td style="width:34%">${barra(f.total, h.max)}</td>
+        <td class="r">${nf(f.natural.total)}</td><td class="r">${nf(f.descarte.total)}</td>
+        <td class="r"><b>${nf(f.total)}</b></td><td class="r">${pc(f.pct)}</td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="muted" style="margin:4px 0">Ningún parte del período trae su hora.</p>'}
+    ${h.sinHora ? `<p class="mc-note">⚠ <b>${nf(h.sinHora)}</b> baja(s) vienen de partes SIN hora: se cuentan aparte en vez de caer en una hora inventada.</p>` : ''}
+    <p class="mc-note">Se agrupa por la hora entera: cada parte es una ronda, no un instante.</p>
+    ${ignoraHTML(h.ignora, 'La distribución por hora')}
+  </div>`;
+}
+
+function calorHTML(c, p) {
+  if (!c.salas.length) return '';
+  const tono = (v) => {
+    if (v === null) return '';
+    if (!v) return 'is-cero';
+    const i = c.max > 0 ? v / c.max : 0;
+    return i > 0.66 ? 'is-alto' : i > 0.33 ? 'is-medio' : 'is-bajo';
+  };
+  return `<div class="mc-card mc-card-wide">
+    <h4 class="mc-card-h">🔥 Bajas por sala y día <span class="mc-h-note">${esc(etiquetaPeriodo(p))} · máximo ${nf(c.max)} en un día</span></h4>
+    <div class="mop-calor-wrap"><table class="mop-calor">
+      <thead><tr><th></th>${c.dias.map((d) => `<th>${esc(dm(d))}</th>`).join('')}</tr></thead>
+      <tbody>${c.salas.map((s) => `<tr><th>${esc(s.sala)}</th>${s.valores.map((v, i) => `<td class="${tono(v)}" title="${esc(s.sala + ' · ' + dma(c.dias[i]) + ' · ' + (v === null ? 'sin parte registrado' : v + ' bajas'))}">${v === null ? '' : nf(v)}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table></div>
+    <p class="mc-note">Una celda VACÍA es «no se registró ningún parte»; un <b>0</b> es «se registró y no murió ninguno». No son lo mismo.</p>
+  </div>`;
+}
+
+function cerradosHTML(c, p) {
+  if (!c.length) {
+    return `<div class="mc-card mc-card-wide"><h4 class="mc-card-h">🔚 Lotes cerrados <span class="mc-h-note">${esc(etiquetaPeriodo(p))}</span></h4>
+      <p class="muted" style="margin:4px 0">Ningún cierre en el período.</p></div>`;
+  }
+  return `<div class="mc-card mc-card-wide">
+    <h4 class="mc-card-h">🔚 Lotes cerrados <span class="mc-h-note">${nf(c.length)} cierre(s) · ${esc(etiquetaPeriodo(p))}</span></h4>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm">
+      <thead><tr><th>Fecha</th><th>Lote</th><th>Tipo</th><th>Motivo</th><th class="r">Salieron ♂/♀</th><th class="r">Rojos</th><th class="r">Diferencia</th><th class="r">Metabisulfito</th></tr></thead>
+      <tbody>${c.map((f) => `<tr>
+        <td>${esc(dma(f.fecha))}</td><td><b>${esc(f.lote)}</b>${f.sala ? ' <span class="mop-nota">' + esc(f.sala) + '</span>' : ''}</td>
+        <td>${esc(f.tipo || '—')}</td><td>${esc(f.motivo || '—')}</td>
+        <td class="r">${nf(f.salida.machos)} / ${nf(f.salida.hembras)}</td>
+        <td class="r">${f.rojos ? nf(f.rojos) : '—'}</td>
+        <td class="r">${f.diferencia.total ? `<span class="mop-dif" title="Lo que el libro contaba vivo y no salió: se anota y el lote queda a cero">${nf(f.diferencia.total)}</span>` : '—'}</td>
+        <td class="r">${f.metabisulfito === null ? '—' : nf(f.metabisulfito, 2) + ' kg'}${f.fechaMetabisulfito ? ' <span class="mop-nota">' + esc(dm(f.fechaMetabisulfito)) + '</span>' : ''}</td></tr>`).join('')}</tbody></table></div>
+    <p class="mc-note">La DIFERENCIA no se recalcula aquí: es la que el libro anotó al cerrar el lote, con su fecha y su lote.</p>
+  </div>`;
+}
+
+/* ── 🔍 REVISIONES ──────────────────────────────────────────── */
+
+function revisionesHTML(M, memo, p, F) {
+  const r = revisionesDeNauplios(M.fuentes, F, p);
+  const a = alcalinidadPorArea(M.fuentes, F, p);
+  const m = mortalidadEnDesove(M.fuentes, F, p);
+  const o = frecuenciaDeObservaciones(memo.partes, F, p);
+  return `<div class="mc-body">
+    ${semaforoHTML(r, p)}
+    <div class="mc-grid">
+      ${alcalinidadHTML(a, p)}
+      ${mortDesoveHTML(m, p)}
+    </div>
+    ${observacionesHTML(o, p)}
+    ${historialRevHTML(r, p)}
+  </div>`;
+}
+
+function semaforoHTML(r, p) {
+  const u = r.ultima;
+  if (!u) {
+    return `<div class="mc-card mc-card-wide"><h4 class="mc-card-h">🔍 Revisión de nauplios <span class="mc-h-note">${esc(etiquetaPeriodo(p))}</span></h4>
+      <p class="muted" style="margin:4px 0">Ninguna revisión registrada en el período.</p>
+      <p class="mc-note">Las revisiones viven en la hoja del Inf. Supervisor, que nace con su primer envío.</p>
+      ${ignoraHTML(r.ignora, 'La revisión de nauplios')}</div>`;
+  }
+  const celda = (v) => {
+    const val = u.valores[v.id] || '';
+    const malo = v.id === 'hongos' && u.hongos;
+    return `<div class="mop-sem ${malo ? 'is-malo' : ''}">
+      <span class="mop-sem-l">${esc(v.etiqueta)}</span>
+      <span class="mop-sem-v">${val ? esc(val) : '<span class="muted">—</span>'}${malo ? ' ⚠' : ''}</span>
+      ${v.veredicto ? '' : '<span class="mop-sem-n" title="No hay ninguna fuente que diga qué valor está bien: se enseña tal cual">sin criterio</span>'}
+    </div>`;
+  };
+  const lectura = (etq, x) => `<div class="mop-sem ${x.aviso ? 'is-malo' : ''}">
+    <span class="mop-sem-l">${esc(etq)}</span>
+    <span class="mop-sem-v">${x.valor === null ? '<span class="muted">—</span>' : nf(x.valor, 2) + ' ' + esc(x.unidad)}${x.aviso ? ' ⚠' : ''}</span>
+    <span class="mop-sem-n">avisa por encima de ${nf(x.max)} ${esc(x.unidad)}</span></div>`;
+  const etapas = r.porEtapa.map((e) => `<span class="mop-chip ${e.ultima ? '' : 'is-e-vacio'}" title="${esc(e.ultima ? 'Última: ' + dma(e.ultima.fecha) : 'Sin ninguna revisión de esta etapa en el período')}">${esc(e.etapa)}${e.ultima ? ' · ' + esc(dm(e.ultima.fecha)) : ''}</span>`).join('');
+  return `<div class="mc-card mc-card-wide">
+    <h4 class="mc-card-h">🔍 Revisión de nauplios
+      <span class="mc-h-note">última: ${esc(dma(u.fecha))} · ${esc(u.etapa)} · lote ${esc(u.lote || '—')}</span></h4>
+    <div class="mop-sems">${VARIABLES_REVISION.map(celda).join('')}${lectura('Salinidad', u.salinidad)}${lectura('Temperatura', u.temperatura)}</div>
+    <h5 class="mop-det-h">Última de cada etapa</h5>
+    <div class="mop-sc-lotes">${etapas}</div>
+    <p class="mc-note">⚠ Sólo llevan veredicto las reglas que EXISTEN: los dos topes de aviso que confirmó el usuario y la presencia de hongos. Deformidad, actividad, fototropismo y aireación se enseñan tal cual: no hay fuente que diga cuál de «Alta», «Media» o «Baja» está bien, y una escala inventada sería peor que ninguna.</p>
+    ${r.avisos.length ? `<p class="mc-note">🔴 <b>${nf(r.avisos.length)}</b> revisión(es) del período traen algún aviso.</p>` : ''}
+    ${ignoraHTML(r.ignora, 'La revisión de nauplios')}
+  </div>`;
+}
+
+function alcalinidadHTML(a, p) {
+  return `<div class="mc-card">
+    <h4 class="mc-card-h">🧪 Alcalinidad por área <span class="mc-h-note">${esc(etiquetaPeriodo(p))} · ${a.umbral ? '≥ ' + nf(a.umbral.min) + ' mg/L' : 'sin umbral'}</span></h4>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm">
+      <thead><tr><th>Área</th><th class="r">Día</th><th class="r">Noche</th></tr></thead>
+      <tbody>${a.areas.map((x) => `<tr>
+        <td>${esc(x.area)}${x.esRas ? ' <span class="mop-nota" title="El RAS no es una sala: es el circuito que las alimenta">circuito</span>' : ''}</td>
+        ${['dia', 'noche'].map((t) => `<td class="r">${x[t].valor === null ? '<span class="muted">—</span>'
+          : nf(x[t].valor, 1) + ' ' + dot(x[t].estado, refUmbral('alcalinidad')) + ' <span class="mop-nota">' + esc(dm(x[t].fecha)) + '</span>'}</td>`).join('')}
+      </tr>`).join('')}</tbody></table></div>
+    ${a.conDato ? '' : '<p class="muted" style="margin:4px 0">Ninguna lectura de alcalinidad en el período.</p>'}
+    <p class="mc-note">Cada turno guarda su última lectura por separado: anotar la de noche no borra la del día.</p>
+  </div>`;
+}
+
+function mortDesoveHTML(m, p) {
+  return `<div class="mc-card">
+    <h4 class="mc-card-h">🥚 Mortalidad en desove y recuperación <span class="mc-h-note">${esc(etiquetaPeriodo(p))}</span></h4>
+    ${m.entran ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm">
+      <thead><tr><th>Tipo de tanque</th><th class="r">♀ entran</th><th class="r">♀ mueren</th><th class="r">%</th><th class="r">Registros</th></tr></thead>
+      <tbody>${m.filas.map((t) => `<tr><td>${esc(t.tipo)}</td>
+        <td class="r">${nf(t.entran)}</td><td class="r">${nf(t.muertas)}</td>
+        <td class="r"><b>${pc(t.pct)}</b></td><td class="r">${nf(t.registros)}</td></tr>`).join('')}
+        <tr class="mop-cuadre-tot"><td>TOTAL</td><td class="r">${nf(m.entran)}</td><td class="r">${nf(m.muertas)}</td><td class="r">${pc(m.pct)}</td><td class="r"></td></tr>
+      </tbody></table></div>`
+    : '<p class="muted" style="margin:4px 0">Ninguna hembra entró a desovar ni a recuperarse en el período.</p>'}
+    <p class="mc-note">⚠ Estas muertes YA están dentro de las bajas del lote: aquí se abren por tipo de tanque, que es lo que el libro no dice. No se suman a 💀 Bajas.</p>
+  </div>`;
+}
+
+function observacionesHTML(o, p) {
+  const bloque = (titulo, filas) => {
+    if (!filas.length) return `<div><h5 class="mop-det-h">${esc(titulo)}</h5><p class="muted" style="margin:4px 0">Ninguna marcada.</p></div>`;
+    const max = filas[0].veces;
+    return `<div><h5 class="mop-det-h">${esc(titulo)}</h5>
+      <table class="mc-table mc-table-sm"><tbody>${filas.map((f) => `<tr>
+        <td>${esc(f.obs)}</td><td style="width:40%">${barra(f.veces, max)}</td>
+        <td class="r"><b>${nf(f.veces)}</b></td>
+        <td class="r"><span class="mop-nota">${nf(f.tanques)} tanque(s) · ${pc(f.pct)}</span></td></tr>`).join('')}</tbody></table></div>`;
+  };
+  return `<div class="mc-card mc-card-wide">
+    <h4 class="mc-card-h">📋 Observaciones de tanque <span class="mc-h-note">${nf(o.registros)} parte(s) · ${esc(etiquetaPeriodo(p))}</span></h4>
+    <div class="mop-det-grid">${bloque('Sanitarias', o.sanitarias)}${bloque('Operativas', o.operativas)}</div>
+    <p class="mc-note">Se cuenta una vez por día, sala y tanque. No se comparan con ningún catálogo: se cuenta lo que los partes traen.</p>
+    ${ignoraHTML(o.ignora, 'La frecuencia de observaciones')}
+  </div>`;
+}
+
+function historialRevHTML(r, p) {
+  if (!r.filas.length) return '';
+  return `<div class="mc-card mc-card-wide">
+    <h4 class="mc-card-h">🗓️ Historial de revisiones <span class="mc-h-note">${nf(r.filas.length)} en ${esc(etiquetaPeriodo(p))}</span></h4>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm">
+      <thead><tr><th>Fecha</th><th>Lote</th><th>Etapa</th>${VARIABLES_REVISION.map((v) => `<th>${esc(v.etiqueta)}</th>`).join('')}<th class="r">Salinidad</th><th class="r">Temp.</th></tr></thead>
+      <tbody>${r.filas.map((f) => `<tr class="${f.hongos || f.salinidad.aviso || f.temperatura.aviso ? 'mop-atrasada' : ''}">
+        <td>${esc(dma(f.fecha))}</td><td>${esc(f.lote || '—')}</td><td>${esc(f.etapa)}</td>
+        ${VARIABLES_REVISION.map((v) => `<td>${f.valores[v.id] ? esc(f.valores[v.id]) : '<span class="muted">—</span>'}</td>`).join('')}
+        <td class="r">${f.salinidad.valor === null ? '—' : nf(f.salinidad.valor, 2) + (f.salinidad.aviso ? ' ⚠' : '')}</td>
+        <td class="r">${f.temperatura.valor === null ? '—' : nf(f.temperatura.valor, 2) + (f.temperatura.aviso ? ' ⚠' : '')}</td></tr>`).join('')}</tbody></table></div>
+  </div>`;
+}
+
 function bind(root) {
   if (root._mopBound) return;
   root._mopBound = true;
@@ -762,6 +1041,8 @@ function bind(root) {
     if (lot) { abrirLote(lot.dataset.mopLote); return; }
     const agr = t.closest('[data-mop-agr]');
     if (agr) { vOp.agrupacion = agr.dataset.mopAgr; repintar(); return; }
+    const agb = t.closest('[data-mop-agrb]');
+    if (agb) { vOp.agrupacionBajas = agb.dataset.mopAgrb; repintar(); return; }
     const ftq = t.closest('[data-mop-filtrar-tq]');
     if (ftq) {
       const k = ftq.dataset.mopFiltrarTq;

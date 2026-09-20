@@ -109,3 +109,20 @@
 .mop-chip-f { padding: 3px 9px; border: 1px solid var(--c-brand-600); border-radius: 999px; background: color-mix(in srgb, var(--c-brand) 12%, transparent);
   color: var(--c-text); font-size: 11.5px; font-weight: 600; font-family: inherit; cursor: pointer; }
 .mop-chip-f:hover, .mop-chip-f:focus-visible { border-color: var(--c-grave); color: var(--c-grave); }
+
+/* 💀 Bajas y 🔍 Revisiones (F3) */
+.mop-b3 { display: block; width: 100%; height: 8px; overflow: hidden; border: 1px solid var(--c-border-soft); border-radius: 4px; background: var(--c-surface-2); }
+.mop-b3 i { display: block; height: 100%; background: var(--c-brand-600); }
+.mop-cruz thead th { text-align: center; }
+.mop-cruz thead th.r { text-align: right; }
+.mop-pico td { font-weight: 700; }
+.mop-calor td.is-cero { background: var(--c-surface-2); color: var(--c-text-muted); }
+.mop-calor td.is-bajo { background: color-mix(in srgb, var(--c-malo) 22%, transparent); }
+.mop-calor td.is-medio { background: color-mix(in srgb, var(--c-malo) 50%, transparent); }
+.mop-calor td.is-alto { background: color-mix(in srgb, var(--c-grave) 45%, transparent); }
+.mop-sems { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.mop-sem { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--c-border); border-radius: 10px; background: var(--c-surface-2); }
+.mop-sem.is-malo { border-color: var(--c-grave); background: color-mix(in srgb, var(--c-grave) 12%, transparent); }
+.mop-sem-l { font-size: 10px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: var(--c-text-muted); }
+.mop-sem-v { font-size: 14px; font-weight: 800; color: var(--c-text); }
+.mop-sem-n { font-size: 10px; font-style: italic; color: var(--c-text-muted); }

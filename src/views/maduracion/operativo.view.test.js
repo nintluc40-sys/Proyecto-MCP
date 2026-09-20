@@ -256,10 +256,10 @@ const abrirLotes = () => click(root.querySelector('[data-mop-sub="lotes"]'));
 const filaLote = (l) => root.querySelector(`[data-mop-lote="${l}"]`);
 
 describe('Maduración · operativo · 🧬 Lotes', () => {
-  it('la sub-nav trae las TRES sub-vistas y Lotes abre su tabla maestra, con los cerrados dentro', async () => {
+  it('la sub-nav trae las CINCO sub-vistas y Lotes abre su tabla maestra, con los cerrados dentro', async () => {
     await montar(PLANTA_L);
     expect([...root.querySelectorAll('[data-mop-sub]')].map((b) => b.textContent.trim()))
-      .toEqual(['📊 Estado actual', '🏠 Salas', '🧬 Lotes']);
+      .toEqual(['📊 Estado actual', '🏠 Salas', '🧬 Lotes', '💀 Bajas', '🔍 Revisiones']);
     abrirLotes();
     expect([...root.querySelectorAll('[data-mop-lote]')].map((t) => t.dataset.mopLote)).toEqual(['QA', 'QB', 'QC', 'QD']);
     // QC se cerró: sigue en la tabla, a cero y rotulado.
@@ -458,5 +458,167 @@ describe('Maduración · operativo · F2.3 · quitar la etiqueta de sala', () =>
     cambiar(filtro('sala'), 'Sala 4');
     expect(chips()).toEqual(['Sala: Sala 4 ✕']);
     expect(elegido('tanque')).toBe('');
+  });
+});
+
+/* ── F3 · 💀 Bajas y 🔍 Revisiones ──────────────────────────── */
+/* La hoja de Fin de Ciclo, cuya firma es «Metabisulfito (kg)». */
+const CIERRE3 = (fecha, extra) => ({ _SheetOrigin: O, 'Metabisulfito (kg)': '', Fecha: fecha, ...extra });
+const PLANTA_B = [
+  ING('01/09/2026', 'LA', 'Sala 1', 1, 100, 100),
+  TQ('10/09/2026', 'Sala 1', 1, { Hora: '06:00', Parte: 1, 'Machos muertos': 10, 'Hembras muertas': 6,
+    'Machos muertos por descarte de selección': 4, 'Hembras muertas por descarte de selección': 2,
+    'Observaciones operativas': 'En recambio' }),
+  TQ('11/09/2026', 'Sala 1', 1, { Hora: '18:30', Parte: 2, 'Machos muertos': 2, 'Hembras muertas': 1 }),
+  /* Las tres clases de fila del Inf. Supervisor, en la misma hoja. */
+  INF('18/09/2026', { 'Revisión': 'Postlavado', Lote: 'LA', Deformidad: 'Media', Actividad: 'Baja',
+    Hongos: 'Presente', Fototropismo: 'Baja', 'Aireación': 'Media', Salinidad: 65, Temperatura: 41 }),
+  INF('17/09/2026', { 'Tipo de tanque': 'Desove', Lote: 'LA', 'Hembras que entran': 30, 'Hembras muertas': 3 }),
+  INF('18/09/2026', { 'Área': 'Sala 1', 'Alcalinidad día': 95, 'Alcalinidad noche': 120 }),
+  CIERRE3('15/09/2026', { Lote: 'LA', Tipo: 'Parcial', Motivo: 'Pedido', Machos: 10, Hembras: 10, 'Metabisulfito (kg)': 2 }),
+];
+const abrir = (sub) => click(root.querySelector('[data-mop-sub="' + sub + '"]'));
+const card = (titulo) => [...root.querySelectorAll('.mc-card')]
+  .find((c) => (c.querySelector('.mc-card-h') || { textContent: '' }).textContent.includes(titulo));
+
+describe('Maduración · operativo · 💀 Bajas', () => {
+  it('🔴 la tabla cruzada separa muerte natural de descarte, y el total los SUMA', async () => {
+    await montar(PLANTA_B);
+    abrir('bajas');
+    const fila = [...root.querySelectorAll('.mop-cruz tbody tr')][0];
+    const c = [...fila.querySelectorAll('td')].map((t) => t.textContent.trim());
+    // Sala 1 · natural 12 ♂ / 7 ♀ = 19 · descarte 4 ♂ / 2 ♀ = 6 · total 25
+    expect(c.slice(0, 8)).toEqual(['Sala 1', '12', '7', '19', '4', '2', '6', '25']);
+    expect(root.querySelector('.mop-cruz thead').textContent).toContain('Muerte natural');
+    expect(root.querySelector('.mop-cruz thead').textContent).toContain('Descarte de selección');
+    expect(card('Bajas del período').textContent).toContain('DISJUNTAS');
+  });
+
+  it('el selector de agrupación cambia entre sala, tanque y lote', async () => {
+    await montar(PLANTA_B);
+    abrir('bajas');
+    expect([...root.querySelectorAll('[data-mop-agrb]')].map((b) => b.dataset.mopAgrb)).toEqual(['sala', 'tanque', 'lote']);
+    expect(root.querySelector('[data-mop-agrb="sala"]').classList.contains('is-on')).toBe(true);
+    click(root.querySelector('[data-mop-agrb="lote"]'));
+    const fila = [...root.querySelectorAll('.mop-cruz tbody tr')][0];
+    expect(fila.querySelector('td').textContent).toContain('LA');
+    // Por lote entran también las 3 hembras muertas desovando, y se dicen aparte.
+    expect(fila.textContent).toContain('3 en desove');
+    expect(card('Bajas del período').textContent).toContain('repartidas por el libro');
+  });
+
+  it('🔴 la distribución por hora agrupa por hora entera y marca el pico', async () => {
+    await montar(PLANTA_B);
+    abrir('bajas');
+    const h = card('Bajas por hora');
+    expect(h.textContent).toContain('06:00');
+    expect(h.textContent).toContain('18:00');
+    expect(h.querySelector('.mop-pico').textContent).toContain('06:00');   // 22 bajas frente a 3
+  });
+
+  it('el mapa de calor distingue el hueco del cero, y los motivos traen su metabisulfito', async () => {
+    await montar(PLANTA_B);
+    abrir('bajas');
+    const cal = card('Bajas por sala y día');
+    expect(cal.querySelectorAll('.mop-calor tbody tr')).toHaveLength(1);
+    const celdas = [...cal.querySelectorAll('.mop-calor tbody td')];
+    expect(celdas.filter((t) => t.textContent.trim() === '').length).toBeGreaterThan(20);  // los días sin parte
+    expect(cal.textContent).toContain('no se registró ningún parte');
+    const m = card('Motivos de Fin de Ciclo');
+    expect(m.textContent).toContain('Pedido');
+    expect(m.textContent).toContain('2 kg');
+  });
+
+  it('los lotes cerrados traen su cierre, y se dice que la diferencia no se recalcula', async () => {
+    await montar(PLANTA_B);
+    abrir('bajas');
+    const c = card('Lotes cerrados');
+    const fila = c.querySelector('tbody tr');
+    expect(fila.textContent).toContain('LA');
+    expect(fila.textContent).toContain('Parcial');
+    expect(c.textContent).toContain('no se recalcula');
+  });
+
+  it('sin bajas en el período lo dice y no revienta', async () => {
+    await montar([ING('01/09/2026', 'LA', 'Sala 1', 1, 100, 100)]);
+    abrir('bajas');
+    expect(root.textContent).toContain('Ninguna baja registrada');
+    expect(root.textContent).toContain('Ningún lote se cerró');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('Maduración · operativo · 🔍 Revisiones', () => {
+  it('🔴 el semáforo marca lo que tiene regla y DICE que lo demás no la tiene', async () => {
+    await montar(PLANTA_B);
+    abrir('revisiones');
+    const sems = [...root.querySelectorAll('.mop-sem')];
+    const de = (etq) => sems.find((x) => x.querySelector('.mop-sem-l').textContent === etq);
+    // Hongos «Presente», salinidad 65 (> 60) y temperatura 41 (> 40): los tres marcados.
+    expect(de('Hongos').classList.contains('is-malo')).toBe(true);
+    expect(de('Salinidad').classList.contains('is-malo')).toBe(true);
+    expect(de('Temperatura').classList.contains('is-malo')).toBe(true);
+    // Deformidad y las otras tres cualitativas: su valor, SIN veredicto.
+    expect(de('Deformidad').classList.contains('is-malo')).toBe(false);
+    expect(de('Deformidad').textContent).toContain('Media');
+    expect(de('Deformidad').textContent).toContain('sin criterio');
+    expect(de('Hongos').textContent).not.toContain('sin criterio');
+    expect(card('Revisión de nauplios').textContent).toContain('una escala inventada sería peor que ninguna');
+  });
+
+  it('las cuatro etapas se enseñan, y las que no tienen revisión se ven vacías', async () => {
+    await montar(PLANTA_B);
+    abrir('revisiones');
+    const chips = [...card('Revisión de nauplios').querySelectorAll('.mop-chip')];
+    expect(chips.map((c) => c.textContent.trim().split(' ·')[0])).toEqual(['Entrada', 'Lavado', 'Lavado 2', 'Postlavado']);
+    expect(chips[0].classList.contains('is-e-vacio')).toBe(true);        // sin Entrada
+    expect(chips[3].classList.contains('is-e-vacio')).toBe(false);       // con Postlavado
+  });
+
+  it('la alcalinidad enseña día y noche por área, y el RAS se rotula como circuito', async () => {
+    await montar(PLANTA_B);
+    abrir('revisiones');
+    const a = card('Alcalinidad por área');
+    expect(a.textContent).toContain('circuito');
+    const s1 = [...a.querySelectorAll('tbody tr')].find((t) => t.textContent.includes('Sala 1'));
+    expect(s1.textContent).toContain('95');
+    expect(s1.textContent).toContain('120');
+    expect(a.textContent).toContain('no borra la del día');
+  });
+
+  it('🔴 la mortalidad en desove se enseña y se DICE que no se suma a Bajas', async () => {
+    await montar(PLANTA_B);
+    abrir('revisiones');
+    const m = card('Mortalidad en desove y recuperación');
+    expect(m.textContent).toContain('Desove');
+    expect(m.textContent).toContain('Recuperación');
+    expect(m.textContent).toContain('No se suman a');
+    const des = [...m.querySelectorAll('tbody tr')].find((t) => t.textContent.includes('Desove'));
+    expect([...des.querySelectorAll('td')].map((t) => t.textContent.trim()).slice(0, 4)).toEqual(['Desove', '30', '3', '10 %']);
+  });
+
+  it('las observaciones se cuentan y el historial marca las revisiones con aviso', async () => {
+    await montar(PLANTA_B);
+    abrir('revisiones');
+    expect(card('Observaciones de tanque').textContent).toContain('En recambio');
+    const hist = card('Historial de revisiones');
+    expect(hist.querySelectorAll('tbody tr')).toHaveLength(1);
+    expect(hist.querySelector('tbody tr').classList.contains('mop-atrasada')).toBe(true);
+  });
+
+  it('sin revisiones lo dice', async () => {
+    await montar([ING('01/09/2026', 'LA', 'Sala 1', 1, 10, 10)]);
+    abrir('revisiones');
+    expect(root.textContent).toContain('Ninguna revisión registrada');
+  });
+
+  /* ⚠ Un `it` por montaje: `montar` reimporta el módulo, pero `root` es el mismo nodo y ya lleva
+     `_mopBound`, así que un segundo `bind` no engancha nada y los clics irían al estado ANTERIOR. */
+  it('lo que viene del Sheet sale escapado también aquí', async () => {
+    const malo = '<img src=x onerror=alert(1)>';
+    await montar([...PLANTA_B, INF('19/09/2026', { 'Revisión': 'Entrada', Lote: malo, Hongos: 'Ausente' })]);
+    abrir('revisiones');
+    expect(root.querySelector('img')).toBeNull();
+    expect(root.textContent).toContain(malo);
   });
 });
