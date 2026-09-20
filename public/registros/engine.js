@@ -157,7 +157,6 @@ const MAD_SHEET     = {
 // Muestras locales de Biomol (grilla del día). Cada fila expira a las BIO_TTL
 // ms (48 h) y se purga automáticamente vía pruneBio() al leer o al iniciar.
 const BIO_REC_KEY   = "larv4_biomol_records";
-const BIO_MAX       = 40;            // (legacy) ya no limita la grilla
 const BIO_TTL       = 48 * 60 * 60 * 1000;
 const BIO_SHEET     = "BIOMOL";
 // Recuperación de la grilla Biomol (autoguardado de lo NO guardado). TTL 1 h.
@@ -12715,7 +12714,7 @@ function clearMadSalasGrid(){
    en cada tanque. Tecleados aquí no los consumía NADIE —medido— y abrían una vía para que
    la grilla contradijera al libro sobre el mismo tanque sin que nada lo dijera.
    🔑 Sus COLUMNAS siguen en la hoja, y eso sí es obligatorio: el GAS escribe «Maduración
-   Tanques» con clave POSICIONAL [0,1,3] (Fecha, Sala, Tanque). Quitar «Lote» de la hoja
+   Tanques» con clave POSICIONAL [0,1,3,16,17] (Fecha, Sala, Tanque, Hora, Parte). Quitar «Lote»
    correría «Tanque» al índice 2 y la llave pasaría a apuntar a «Machos muertos»,
    destruyendo datos en cada sync. Se envían vacías, y el MERGE del GAS no pisa nada.
    ENTRARON tres: los dos pesos y la observación sanitaria (decisión del usuario). Van al
@@ -12725,8 +12724,11 @@ function clearMadSalasGrid(){
    derivado — y un dato derivado que se teclea es un dato que puede contradecir al que lo
    deriva. Se pudo quitar sin coste porque `Maduración Tanques` estaba a 0 filas (medido
    contra producción ese día, no supuesto).
-   ⚠ Quitarla NO toca la llave: la del GAS para esta hoja es POSICIONAL [0,1,3] —Fecha,
-   Sala, Tanque— y `H:M` vivía en el índice 4, detrás de las tres. Las columnas VACÍAS de
+   ⚠ Quitarla NO tocó la llave: la del GAS para esta hoja era ENTONCES [0,1,3] —Fecha,
+   Sala, Tanque— y `H:M` vivía en el índice 4, detrás de las tres.
+   🔴 ESE ARGUMENTO YA NO VALE para una columna nueva: desde el 2026-09-17 la llave es
+   [0,1,3,16,17] y `Hora` y `Parte` van al final, así que quitar CUALQUIER columna de
+   en medio se los corre y la llave pasa a apuntar a otra cosa. Las columnas VACÍAS de
    `Lote` y las dos `Población inicial` siguen siendo intocables por lo contrario: quitar
    `Lote` correría `Tanque` al índice 2 y la llave apuntaría a «Machos muertos». */
 /* OBSERVACIONES DE UN TANQUE (usuario, 2026-09-15) · dos columnas de MULTISELECCIÓN: un tanque
@@ -12825,7 +12827,7 @@ const _TANQ_GRID_COLS = [
   {k:"peso_machos",     type:"num", bajar:true},
   {k:"peso_hembras",    type:"num", bajar:true},
   {k:"obs_sanitarias",  type:"ms", opts:MAD_TQ_OBS_SANITARIAS},
-  /* ⚠ AL FINAL Y NO EN MEDIO: esta hoja se escribe POR POSICIÓN (la llave del GAS es [0,1,3])
+  /* ⚠ AL FINAL Y NO EN MEDIO: esta hoja se escribe POR POSICIÓN (la llave del GAS es [0,1,3,16,17])
      y ya tiene filas. Añadir al final no mueve ninguna columna; insertar sí. */
   {k:"obs_operativas",  type:"ms", opts:MAD_TQ_OBS_OPERATIVAS}
 ];
@@ -13663,11 +13665,11 @@ function buildMadPayload(ficha, records){
       sheetName: "Maduración Tanques",
       // ⚠ «Lote» y las dos poblaciones ya NO se teclean (las declara el Ingreso), pero sus
       // COLUMNAS se quedan y se envían VACÍAS: la llave del GAS para esta hoja es posicional
-      // [0,1,3] y quitar «Lote» correría «Tanque» fuera de su sitio. El merge no pisa nada
+      // [0,1,3,16,17] y quitar «Lote» correría «Tanque» fuera de su sitio. El merge no pisa nada
       // con un valor vacío, así que no borran lo que hubiera.
       /* ⚠⚠ LAS TRES COLUMNAS VACÍAS SE QUEDAN Y ES OBLIGATORIO: `Lote` y las dos
          `Población inicial` ya no se capturan —las declara el Ingreso— pero la llave del GAS
-         para esta hoja es POSICIONAL [0,1,3] y quitarlas correría `Tanque` fuera de su sitio,
+         para esta hoja es POSICIONAL [0,1,3,16,17] y quitarlas correría `Tanque` fuera de su sitio,
          destruyendo datos en cada sync. Sólo se pueden limpiar en el MISMO despliegue en que
          cambie `madKeyCols`.
          ⚠ «Relación H:M» sí se fue (2026-09-08, decisión del usuario: se calcula), y se pudo
@@ -13697,8 +13699,9 @@ function buildMadPayload(ficha, records){
 /* ══════════════════════════════════════════
    BIOMOL — módulo de diagnóstico molecular
    ──────────────────────────────────────────
-   • Almacenamiento: clave única BIO_REC_KEY → JSON array de hasta BIO_MAX
-     registros. Cada registro caduca a las BIO_TTL ms (7 días).
+   • Almacenamiento: clave única BIO_REC_KEY → JSON array de registros, sin tope de
+     cantidad aquí: el de la grilla lo fija su propio botón ➕, y el de la hoja,
+     LIMITS.biomol.maxRows en el GAS. Cada registro caduca a las BIO_TTL ms (48 h).
    • Flujo: formulario único + lista de historial inline. Cada registro
      tiene `synced` y se envía a la hoja "BIOMOL" en Google Sheets.
    • Hoja destino (append-only): Fecha, Código, Corrida, Lugar, Tanque,
