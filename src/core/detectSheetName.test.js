@@ -17,11 +17,18 @@
      · las 3 de Maduración y Marea caían en 'Hoja<N>'.
    Hoy las 35 aciertan.
 
-   ⚠ FIXTURE GENERADO, no tecleado: sale de `cabeceras-produccion.json` (las cabeceras
-     vivas de las 35 pestañas) por `_herramientas-traslado/generar-prueba-detect.mjs`.
-     Transcribir 35 hojas y hasta 81 columnas a mano produce erratas, y una errata aquí
-     convierte el fixture en degenerado sin que nada avise. Si las cabeceras de
-     producción cambian, se regenera y se revisa el diff.
+   ⚠ NACIÓ GENERADO Y HOY SE MANTIENE A MANO — y conviene saberlo antes de tocarlo. Salió de
+     `cabeceras-produccion.json` por `_herramientas-traslado/generar-prueba-detect.mjs`, porque
+     transcribir 35 hojas y hasta 81 columnas a mano produce erratas y una errata aquí convierte
+     el fixture en degenerado sin que nada avise. Pero desde entonces se le añadieron los
+     comentarios de abajo y varias filas se corrigieron AQUÍ antes que en la foto.
+     🔑 Medido el 2026-09-20: regenerar hoy borraría 15 líneas de comentario escritas a mano y
+     RETROCEDERÍA cinco filas —la foto es del 09-16 y trae, entre otras, el esquema VIEJO de
+     `Maduración Lotes`, anterior a la migración del 09-14—. Aquí decía «se regenera y se revisa
+     el diff», y eso ya no era cierto.
+     Por eso el generador dejó de sobrescribir a ciegas: se NIEGA y dice exactamente qué se
+     perdería (`--forzar` para hacerlo igualmente). Llevar un cambio de cabeceras a este archivo
+     es decidir, fila a fila, si manda la foto o manda esto.
    ============================================================ */
 import { describe, it, expect } from 'vitest';
 import { detectSheetName, classifyOrigin } from './sheets.js';
