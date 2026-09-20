@@ -209,7 +209,8 @@ describe('GAS · un cliente con el ESQUEMA VIEJO no puede escribir en Maduració
        lo para antes `firmaAusente_`, que corre ANTES de abrir la hoja. Lo vigilado —se rechaza y no se
        escribe nada— es lo mismo; lo que cambia es quién lo para, y ahora lo hace más pronto y diciendo
        lo correcto («actualiza la app»), porque con firma se SABE que el viejo es el cliente. */
-    expect(r.message).toContain('columna 15');
+    // P12 (2026-09-20): era la columna 15. Al retirar las tres vacías de delante, la firma bajó a la 12.
+    expect(r.message).toContain('columna 12');
     expect(r.message).toContain('Observaciones sanitarias');
     expect(r.message).toContain('Actualiza la app');
     expect(JSON.stringify(hoja.filas)).toBe(antes);
@@ -1049,12 +1050,20 @@ describe('GAS · R2 · la HORA del parte de Tanques va en la llave, así que se 
     expect(hoja.filas.slice(1).map((f) => [f[c('Parte')], f[c('Machos muertos')]])).toEqual([[1, 3], [2, 1]]);
   });
 
-  it('el texto va SÓLO en la columna de la Hora (la 17), no en el resto de la hoja', () => {
+  /* P12 (2026-09-20) · aquí ponía «la 17» y el 17 estaba TECLEADO. Al retirar las tres columnas
+     vacías, la Hora pasó a la 14 y el GAS seguía formateando la 17: la hora se guardaba como fecha
+     y cada reenvío añadía una fila. Esta prueba lo vio, pero habría pasado igual de no ser por sus
+     hermanas — así que ahora la columna se DERIVA de la cabecera del motor, como el resto del
+     archivo, y el número deja de poder quedarse viejo. */
+  it('el texto va SÓLO en la columna de la Hora, no en el resto de la hoja', () => {
     const hoja = hojaFalsa([TANQUES], { comoSheets: true });
     const g = gas({ [TQ]: hoja });
     enviar(g, [parte(1, '08:30')]);
+    const colHora = c('Hora') + 1;               // el GAS cuenta columnas desde 1
+    expect(colHora, 'la cabecera del motor ya no trae «Hora»').toBeGreaterThan(0);
     expect(hoja.texto.length).toBeGreaterThan(0);
-    expect(hoja.texto.every(([, col, , nC]) => col === 17 && nC === 1)).toBe(true);
+    expect(hoja.texto.every(([, col, , nC]) => col === colHora && nC === 1),
+      'se formateó como texto una columna que no es la de la Hora').toBe(true);
   });
 
   it('si la hoja se queda corta, se amplía antes de formatear: todas las horas llegan como texto', () => {
@@ -1064,9 +1073,15 @@ describe('GAS · R2 · la HORA del parte de Tanques va en la llave, así que se 
     expect(hoja.filas.slice(1).map((f) => f[c('Hora')])).toEqual(['08:30', '08:30', '08:30']);
   });
 
-  it('🔴 un cliente ANTERIOR (16 columnas, sin Hora ni Parte) sigue escribiendo en una hoja de 16 sin reventar', () => {
-    const VIEJA = TANQUES.slice(0, 16);
-    const hoja = hojaFalsa([VIEJA], { comoSheets: true, maxCols: 16 });
+  /* P12 (2026-09-20) · esto decía 16 columnas, y con el esquema nuevo dejó de ejercer nada: la guarda
+     compara contra la columna de la «Hora», que bajó de la 17 a la 14, y 16 ya no es «estrecha».
+     Se vio porque la mutación TQ-M3 —quitar la guarda de ancho— SOBREVIVIÓ al correr el banco. La
+     regla no era redundante: sigue protegiendo un getRange que reventaría en una hoja más corta que
+     la Hora. Lo que se quedó viejo era el umbral del fixture, así que se baja al que hoy distingue:
+     una hoja SIN «Hora» ni «Parte» son ahora 13 columnas. */
+  it('🔴 un cliente ANTERIOR (13 columnas, sin Hora ni Parte) sigue escribiendo en una hoja de 13 sin reventar', () => {
+    const VIEJA = TANQUES.slice(0, 13);
+    const hoja = hojaFalsa([VIEJA], { comoSheets: true, maxCols: 13 });
     const g = gas({ [TQ]: hoja });
     const r = enviar(g, [conValores(VIEJA, { Fecha: '2026-09-17', Sala: 'Sala 5', Tanque: 7, 'Machos muertos': 2 })], VIEJA);
     expect(r.status, r.message).toBe('ok');

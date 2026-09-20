@@ -89,23 +89,30 @@ describe('Maduración · la grilla diaria de Tanques recoge lo que pinta', () =>
     expect(faltan).toEqual([]);
   });
 
-  /* ⚠⚠ LAS TRES COLUMNAS VACÍAS DE LA HOJA SIGUEN SIENDO INTOCABLES — pero el PORQUÉ cambió, y este
-     comentario decía dos cosas que ya eran falsas (corregido el 2026-09-20). Es el sexto de la familia
-     que arregló el punto 24: aquel corrigió cinco en `engine.js` y éste se escapó por vivir en una
-     prueba. La conclusión era correcta; el argumento, no.
-       · decía «mientras el GAS no se re-despliegue»  → el GAS SE RE-DESPLEGÓ (sello `55acbff1b746`).
-       · decía que la llave es POSICIONAL `[0,1,3]`   → es `[0,1,3,16,17]` desde el 2026-09-17:
-         Fecha, Sala, Tanque, Hora y Parte, con `Hora` y `Parte` AL FINAL de la cabecera.
-     Hoy el argumento es MÁS fuerte, no menos: quitar cualquier columna de en medio no sólo correría
-     `Tanque` al índice 2 —la llave pasaría a apuntar a «Machos muertos»—, sino que además sacaría
-     `Hora` y `Parte` de los índices 16 y 17. Destruiría datos en CADA sync.
-     🔑 Cambiarlas es posible, pero es una MIGRACIÓN coordinada —la cabecera del cliente y `madKeyCols`
-     del GAS, en el MISMO despliegue— y sólo sale gratis mientras la hoja tenga CERO filas. Cuántas
-     tiene hoy lo dice `estado-maduracion.mjs`, no este comentario.
-     Esto se fija aquí para que no se «limpien» de buena fe. */
-  it('la hoja conserva las tres columnas vacías que exige la llave posicional', () => {
+  /* ✅ P12 (2026-09-20) · LAS TRES COLUMNAS VACÍAS SE RETIRARON, y esta prueba pasa a exigir lo
+     CONTRARIO de lo que exigía. Merece explicarse, porque una prueba que se da la vuelta suele ser
+     una prueba que se rindió, y ésta no.
+     Durante meses `Lote` y las dos `Población inicial` viajaban vacías —dejaron de capturarse cuando
+     el Ingreso pasó a declararlas— y esta prueba las FIJABA para que nadie las «limpiara» de buena
+     fe: la llave del GAS era POSICIONAL `[0,1,3,16,17]` y quitar `Lote` habría corrido `Tanque` al
+     índice 2, con la llave apuntando a «Machos muertos» y destruyendo datos en cada sync.
+     🔑 Lo que cambió no es el riesgo, es que se hizo la MIGRACIÓN COORDINADA que el propio comentario
+     pedía: cabecera del cliente, `madKeyCols` ([0,1,2,13,14]), `MAD_ESQUEMA_FIRMA` (de la 15 a la 12)
+     y el recorte a mano de la hoja, los cuatro en el mismo despliegue.
+     ⚠ Y ahora esta prueba vigila el otro lado: que no VUELVAN. Una cabecera que las reintrodujera
+     correría la llave otra vez, y el síntoma sería el mismo silencio de antes. */
+  it('🔴 las tres columnas retiradas NO vuelven, y la llave queda en sus índices nuevos', () => {
     const p = payload();
-    expect(p).toContain('"Fecha","Sala","Lote","Tanque"');
-    expect(p).toContain('"Población inicial hembras","Población inicial machos"');
+    expect(p).toContain('"Fecha","Sala","Tanque","Machos muertos"');
+    expect(p).not.toContain('"Población inicial hembras"');
+    expect(p).not.toContain('"Población inicial machos"');
+    // «Lote» no puede estar en la cabecera de ESTA hoja (sí aparece en otras fichas del archivo).
+    const cab = /headers:\s*\[([^\]]*)\]/.exec(p);
+    expect(cab, 'no se encontró la cabecera en el payload').toBeTruthy();
+    expect(cab[1]).not.toContain('"Lote"');
+    // Y las cinco de la llave, en el orden y los índices que declara el GAS: [0,1,2,13,14].
+    const cols = JSON.parse('[' + cab[1] + ']');
+    expect(cols).toHaveLength(15);
+    expect([0, 1, 2, 13, 14].map((i) => cols[i])).toEqual(['Fecha', 'Sala', 'Tanque', 'Hora', 'Parte']);
   });
 });

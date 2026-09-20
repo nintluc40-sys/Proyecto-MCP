@@ -401,7 +401,7 @@ vacía o no exista**, que es justo cuando el daño se hace.
 | Maduración Alimentación | 9 `Fuente del peso` |
 | Maduración Movimientos | 9 `Agua destino` · 12 `ID` |
 | Maduración Sala | 20 `RAS` |
-| Maduración Tanques | 15 `Observaciones sanitarias` |
+| Maduración Tanques | 12 `Observaciones sanitarias` |
 | Maduración MATRIZ | 6 `Lote` · 11 `Fecha ingreso` |
 | Maduración Bitácora | 3 `Tipo` · 5 `Tanque` |
 | Maduración Transferencias | 4 `Trovan ID` · 12 `Piscinas presentes` |

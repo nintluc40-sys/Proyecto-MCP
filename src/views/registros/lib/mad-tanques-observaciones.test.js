@@ -188,7 +188,10 @@ describe('Tanques · la columna nueva va AL FINAL de la hoja', () => {
      EXISTENTE se mueva de sitio— porque esta hoja se escribe POR POSICIÓN: insertar una en medio corre
      todas las de detrás y destruye datos en cada sync. */
   it('🔴 lo que ya existía no se mueve: una columna nueva sólo puede ir DETRÁS', () => {
-    const YA_EXISTÍAN = ['Fecha', 'Sala', 'Lote', 'Tanque', 'Población inicial hembras', 'Población inicial machos',
+    /* P12 (2026-09-20) · esta lista perdió sus tres primeras columnas vacías —«Lote» y las dos
+       «Población inicial»— en la migración coordinada que las retiró de la hoja. Lo que la prueba
+       exige NO cambia: que ninguna de las que quedan se mueva de sitio. */
+    const YA_EXISTÍAN = ['Fecha', 'Sala', 'Tanque',
       'Machos muertos', 'Hembras muertas', 'Machos muertos por descarte de selección',
       'Hembras muertas por descarte de selección', 'Cópulas', 'Muda', 'Peso promedio machos (g)',
       'Peso promedio hembras (g)', 'Observaciones sanitarias', 'Observaciones operativas'];
@@ -202,8 +205,9 @@ describe('Tanques · la columna nueva va AL FINAL de la hoja', () => {
     marcar(7, 'obs_sanitarias', 'Animales aclimatados');
     const p = H.buildMadPayload('tanques', H._collectTanquesGrid().map((d) => ({ data: d })));
     expect(p.headers.slice(-2)).toEqual(['Hora', 'Parte']);
-    // 16 y 17 en base 0: es lo que dice `madKeyCols = [0,1,3,16,17]` en el GAS para esta hoja.
-    expect([p.headers.indexOf('Hora'), p.headers.indexOf('Parte')]).toEqual([16, 17]);
+    // 13 y 14 en base 0: es lo que dice `madKeyCols = [0,1,2,13,14]` en el GAS para esta hoja.
+    // P12 (2026-09-20): eran la 16 y la 17; bajaron tres al retirarse las tres columnas vacías.
+    expect([p.headers.indexOf('Hora'), p.headers.indexOf('Parte')]).toEqual([13, 14]);
   });
 
   it('🔴 cada observación cae bajo SU cabecera, no corrida', () => {

@@ -12713,10 +12713,11 @@ function clearMadSalasGrid(){
    INICIALES los declara ahora la ficha de Ingreso, y el libro deduce de ella qué lote está
    en cada tanque. Tecleados aquí no los consumía NADIE —medido— y abrían una vía para que
    la grilla contradijera al libro sobre el mismo tanque sin que nada lo dijera.
-   🔑 Sus COLUMNAS siguen en la hoja, y eso sí es obligatorio: el GAS escribe «Maduración
-   Tanques» con clave POSICIONAL [0,1,3,16,17] (Fecha, Sala, Tanque, Hora, Parte). Quitar «Lote»
-   correría «Tanque» al índice 2 y la llave pasaría a apuntar a «Machos muertos»,
-   destruyendo datos en cada sync. Se envían vacías, y el MERGE del GAS no pisa nada.
+   ✅ Sus COLUMNAS ya NO están en la hoja: se retiraron en P12 (2026-09-20), en el mismo despliegue
+   que bajó `madKeyCols` de [0,1,3,16,17] a [0,1,2,13,14] y movió su firma de la 15 a la 12.
+   Hasta ese día eran intocables —quitar «Lote» habría corrido «Tanque» al índice 2 y la llave
+   habría apuntado a «Machos muertos», destruyendo datos en cada sync—, y por eso se enviaban
+   vacías apoyándose en que el MERGE del GAS no pisa nada con un valor vacío.
    ENTRARON tres: los dos pesos y la observación sanitaria (decisión del usuario). Van al
    FINAL de la hoja, que es lo único que `ensureHeaders` sabe añadir sin migrar. */
 /* ⚠⚠ AQUÍ ESTABA «Relación H:M», y la retiró el usuario el 2026-09-08: esa relación SE
@@ -12726,11 +12727,14 @@ function clearMadSalasGrid(){
    contra producción ese día, no supuesto).
    ⚠ Quitarla NO tocó la llave: la del GAS para esta hoja era ENTONCES [0,1,3] —Fecha,
    Sala, Tanque— y `H:M` vivía en el índice 4, detrás de las tres.
-   🔴 ESE ARGUMENTO YA NO VALE para una columna nueva: desde el 2026-09-17 la llave es
-   [0,1,3,16,17] y `Hora` y `Parte` van al final, así que quitar CUALQUIER columna de
-   en medio se los corre y la llave pasa a apuntar a otra cosa. Las columnas VACÍAS de
-   `Lote` y las dos `Población inicial` siguen siendo intocables por lo contrario: quitar
-   `Lote` correría `Tanque` al índice 2 y la llave apuntaría a «Machos muertos». */
+   🔴 ESE ARGUMENTO NO VALE para una columna nueva: `Hora` y `Parte` van al final y ENTRAN en la
+   llave (hoy [0,1,2,13,14]), así que quitar CUALQUIER columna de en medio se los corre y la llave
+   pasa a apuntar a otra cosa.
+   🔑 Las tres columnas VACÍAS que quedaban —`Lote` y las dos `Población inicial`— sí se retiraron,
+   en P12 (2026-09-20), y ahí está la lección: NO salió gratis como en septiembre. Hubo que
+   coordinar cuatro cosas en un despliegue —cabecera, `madKeyCols`, firma y el recorte a mano de la
+   hoja— porque para entonces ya tenía 30 filas. Con la hoja a cero, quitar una columna es una
+   edición; con una sola fila dentro, es una migración. */
 /* OBSERVACIONES DE UN TANQUE (usuario, 2026-09-15) · dos columnas de MULTISELECCIÓN: un tanque
    puede padecer por a o b motivo a la vez. En el orden en que las dio el usuario.
    🔑 No son texto libre a propósito: «animales estresados», «Estresados» y «estrés» son tres
@@ -12827,8 +12831,8 @@ const _TANQ_GRID_COLS = [
   {k:"peso_machos",     type:"num", bajar:true},
   {k:"peso_hembras",    type:"num", bajar:true},
   {k:"obs_sanitarias",  type:"ms", opts:MAD_TQ_OBS_SANITARIAS},
-  /* ⚠ AL FINAL Y NO EN MEDIO: esta hoja se escribe POR POSICIÓN (la llave del GAS es [0,1,3,16,17])
-     y ya tiene filas. Añadir al final no mueve ninguna columna; insertar sí. */
+  /* ⚠ AL FINAL Y NO EN MEDIO: esta hoja se escribe POR POSICIÓN (la llave del GAS es [0,1,2,13,14]
+     desde P12, 2026-09-20) y ya tiene filas. Añadir al final no mueve ninguna columna; insertar sí. */
   {k:"obs_operativas",  type:"ms", opts:MAD_TQ_OBS_OPERATIVAS}
 ];
 
@@ -13663,17 +13667,21 @@ function buildMadPayload(ficha, records){
   if(ficha === "tanques"){
     return {
       sheetName: "Maduración Tanques",
-      // ⚠ «Lote» y las dos poblaciones ya NO se teclean (las declara el Ingreso), pero sus
-      // COLUMNAS se quedan y se envían VACÍAS: la llave del GAS para esta hoja es posicional
-      // [0,1,3,16,17] y quitar «Lote» correría «Tanque» fuera de su sitio. El merge no pisa nada
-      // con un valor vacío, así que no borran lo que hubiera.
-      /* ⚠⚠ LAS TRES COLUMNAS VACÍAS SE QUEDAN Y ES OBLIGATORIO: `Lote` y las dos
-         `Población inicial` ya no se capturan —las declara el Ingreso— pero la llave del GAS
-         para esta hoja es POSICIONAL [0,1,3,16,17] y quitarlas correría `Tanque` fuera de su sitio,
-         destruyendo datos en cada sync. Sólo se pueden limpiar en el MISMO despliegue en que
-         cambie `madKeyCols`.
-         ⚠ «Relación H:M» sí se fue (2026-09-08, decisión del usuario: se calcula), y se pudo
-         porque vivía en el índice 4, DETRÁS de la llave, y la hoja estaba a 0 filas. */
+      /* ✅ P12 (2026-09-20) · LAS TRES COLUMNAS VACÍAS YA NO SE ENVÍAN. `Lote` y las dos
+         `Población inicial` dejaron de capturarse cuando el Ingreso pasó a declararlas, pero sus
+         COLUMNAS seguían aquí, vacías, sólo para no mover la llave posicional del GAS. Se retiran
+         junto con `madKeyCols`, que baja de [0,1,3,16,17] a [0,1,2,13,14]: las MISMAS cinco
+         columnas —Fecha, Sala, Tanque, Hora, Parte— en sus índices nuevos.
+         ⚠⚠ ESTO NO SE PUEDE DESPLEGAR SUELTO. Van los cuatro juntos: esta cabecera, `madKeyCols`,
+         `MAD_ESQUEMA_FIRMA` (su columna pasa de la 15 a la 12) y el RECORTE A MANO de las tres
+         columnas en la hoja de producción. Si no coinciden, el GAS rechaza el envío y NO escribe
+         nada —falla cerrado, y lo tecleado se queda en el dispositivo—: molesto, pero no destruye.
+         Lo que destruiría es una llave apuntando a otra columna, y eso es lo que esto evita.
+         🔑 Medido antes de tocarlo: la hoja tenía 30 filas y las tres columnas estaban VACÍAS en
+         las 30, así que el recorte no pierde un solo dato.
+         ⚠ «Relación H:M» se fue antes, el 2026-09-08 (el usuario: esa relación se CALCULA), y
+         entonces salió gratis porque vivía en el índice 4 —DETRÁS de la llave— y la hoja estaba a
+         cero filas. Esta vez no lo estaba: por eso hubo que coordinar los cuatro pasos. */
       /* ⚠⚠ «Hora» y «Parte» (2026-09-17, usuario) van LAS ÚLTIMAS y entran en la LLAVE. La mortalidad se
          recoge CINCO VECES AL DÍA y la llave era (Fecha, Sala, Tanque), así que el segundo registro del
          día PISABA al primero: lo que hacían era sumar a mano en un papel. Ahora cada ronda es su propia
@@ -13685,10 +13693,10 @@ function buildMadPayload(ficha, records){
          ⚠ Van al FINAL a propósito: añadir ahí no mueve ninguna columna existente. Lo que sí cambia es
          `madKeyCols` en el GAS, y eso va en el MISMO despliegue que P12 (retirar las 3 columnas vacías),
          o los índices de la llave se moverían dos veces. */
-      headers: ["Fecha","Sala","Lote","Tanque","Población inicial hembras","Población inicial machos","Machos muertos","Hembras muertas","Machos muertos por descarte de selección","Hembras muertas por descarte de selección","Cópulas","Muda","Peso promedio machos (g)","Peso promedio hembras (g)","Observaciones sanitarias","Observaciones operativas","Hora","Parte"],
+      headers: ["Fecha","Sala","Tanque","Machos muertos","Hembras muertas","Machos muertos por descarte de selección","Hembras muertas por descarte de selección","Cópulas","Muda","Peso promedio machos (g)","Peso promedio hembras (g)","Observaciones sanitarias","Observaciones operativas","Hora","Parte"],
       rows: records.map(r => {
         const d = r.data || {};
-        return [d.fecha, d.sala, "", int(d.tanque), "", "", int(d.machos_muertos), int(d.hembras_muertas), int(d.machos_descarte), int(d.hembras_descarte), int(d.copulas), int(d.muda), num(d.peso_machos), num(d.peso_hembras), d.obs_sanitarias || "", d.obs_operativas || "", d.hora || "", int(d.parte)];
+        return [d.fecha, d.sala, int(d.tanque), int(d.machos_muertos), int(d.hembras_muertas), int(d.machos_descarte), int(d.hembras_descarte), int(d.copulas), int(d.muda), num(d.peso_machos), num(d.peso_hembras), d.obs_sanitarias || "", d.obs_operativas || "", d.hora || "", int(d.parte)];
       })
     };
   }
@@ -21990,7 +21998,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "55acbff1b746";
+const GAS_VERSION = "adcb1ddab653";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -22242,7 +22250,17 @@ function doPost(e) {
        propia fila y el día es su SUMA, que es lo que el libro mayor ya hacía: resta fila por fila.
        🔑 Un cliente ANTERIOR no manda esas dos columnas: su llave sale con las dos partes vacías, todas
        sus filas del día comparten llave y se comportan como antes. No corrompe nada; sólo no gana nada. */
-    else if (payload.sheetName === "Maduración Tanques")  madKeyCols = [0,1,3,16,17]; // Fecha, Sala, Tanque, Hora, Parte («Lote», en la C, va vacía: sólo guarda la posición)
+    /* 🔑 P12 (2026-09-20) · ERA [0,1,3,16,17]. Esta hoja llevaba TRES columnas vacías —«Lote» y las dos
+       «Población inicial»— que ya no se capturan (las declara el Ingreso) y sólo seguían ahí para no
+       mover la llave posicional. Se retiran, y por eso la llave baja de golpe: mismas cinco columnas
+       —Fecha, Sala, Tanque, Hora, Parte— en sus índices nuevos.
+       ⚠⚠ ESTO Y LA CABECERA DEL CLIENTE VAN EN EL MISMO DESPLIEGUE, y la hoja de producción hay que
+       recortarla a mano: si los tres no coinciden, la guarda de esquema rechaza el envío y NO escribe
+       nada (falla cerrado, lo tecleado se queda en el dispositivo). Medido antes de tocarlo: las tres
+       columnas estaban vacías en las 30 filas que había, así que no se pierde ni un dato.
+       ⚠ Sin comillas invertidas en este comentario: viaja dentro de la plantilla GAS() de engine.js y
+       una sola la cerraría. Pasó al escribirlo, y lo cazó el comparador de copias. */
+    else if (payload.sheetName === "Maduración Tanques")  madKeyCols = [0,1,2,13,14]; // Fecha, Sala, Tanque, Hora, Parte
     else if (payload.sheetName === "Maduración Lotes")    madKeyCols = [0,1,2]; // Fecha, Lote, Código genético (la hoja de Desoves)
     // Registro reproductivo (upsert por clave, MERGE preserva campos permanentes vacíos):
     // 🔑 2026-09-16 · la MATRIZ va por la CUATERNA que identifica al individuo: Trovan, Piscina,
@@ -22424,7 +22442,8 @@ function doPost(e) {
     if (isMad) {
       // Las hojas POSICIONALES del registro operativo usan upsert con su clave compuesta (las del reproductivo, en madKeyCols):
       //   Sala     → [0,1]   Fecha+Sala
-      //   Tanques  → [0,1,3,16,17] Fecha+Sala+Tanque+Hora+Parte («Lote» va vacía: sólo guarda la posición)
+      //   Tanques  → [0,1,2,13,14] Fecha+Sala+Tanque+Hora+Parte (P12, 2026-09-20: era [0,1,3,16,17],
+      //              con tres columnas vacías delante que se retiraron)
       //   Lotes    → [0,1,2] Fecha+Lote+Código genético (la hoja de Desoves desde el 2026-09-08)
       // D2 (2026-09-13) · la llave de Desoves se guarda como TEXTO. Sheets convierte lo que
       // parece número o fecha: un código «0766» se guardaría como 766 y «3-5» como una fecha,
@@ -22438,14 +22457,18 @@ function doPost(e) {
         if (_filasNecesarias > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasNecesarias - ws.getMaxRows());
         if (ws.getMaxRows() > 1) ws.getRange(2, 2, ws.getMaxRows() - 1, 2).setNumberFormat("@");
       }
-      // R2 (2026-09-17) · la «Hora» del parte de Tanques (columna 17) está en su LLAVE: se escribe como TEXTO por lo
-      // mismo que D2. Sin el formato, Sheets guarda «08:30» como una HORA, madRowKey la lee como una fecha de 1899 y
-      // ningún reenvío del mismo parte vuelve a casar: la hoja ganaría una fila por reenvío y el libro restaría la
-      // mortalidad dos veces. Sólo si la hoja ya llega a esa columna: un cliente anterior manda 16 y no la trae.
+      // R2 (2026-09-17) · la «Hora» del parte de Tanques está en su LLAVE: se escribe como TEXTO por lo mismo que D2.
+      // Sin el formato, Sheets guarda «08:30» como una HORA, madRowKey la lee como una fecha de 1899 y ningún reenvío
+      // del mismo parte vuelve a casar: la hoja ganaría una fila por reenvío y el libro restaría la mortalidad dos
+      // veces. Sólo si la hoja ya llega a esa columna: un cliente anterior no la trae.
+      // ⚠⚠ P12 (2026-09-20) · ESE NÚMERO ES LA COLUMNA DE «Hora» Y SE MUEVE CON LA CABECERA. Era la 17; al retirar
+      // las tres columnas vacías de delante pasó a la 14. Lo destaparon las pruebas de R2, no una revisión: con el 17
+      // el formato caía sobre otra columna, la hora se guardaba como fecha y CADA reenvío añadía una fila. Es el mismo
+      // acople posicional que la llave, escondido en otro sitio. Si la cabecera cambia, esto cambia con ella.
       if (payload.sheetName === "Maduración Tanques") {
         var _filasTq = lastRow(ws) + rows.length;
         if (_filasTq > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasTq - ws.getMaxRows());
-        if (ws.getMaxRows() > 1 && ws.getMaxColumns() >= 17) ws.getRange(2, 17, ws.getMaxRows() - 1, 1).setNumberFormat("@");
+        if (ws.getMaxRows() > 1 && ws.getMaxColumns() >= 14) ws.getRange(2, 14, ws.getMaxRows() - 1, 1).setNumberFormat("@");
       }
       // ⚠ 2026-09-16 · aquí se le pasaba llaveMatriz_(rows) a la MATRIZ: una llave a medida que
       // decidía por fechas y muertes a qué hembra del chip iba cada envío, y que RECHAZABA el envío
@@ -22912,7 +22935,10 @@ var MAD_ESQUEMA_FIRMA = {
      (medido contra lo que sirve Pages), así que ahí sí se firma una columna de la LLAVE —si se corre, el
      upsert casa con la fila que no es— y otra del final. */
   "Maduración Sala":           [[20, "RAS"]],
-  "Maduración Tanques":        [[15, "Observaciones sanitarias"]],
+  // P12 (2026-09-20) · era la 15. Al retirar las TRES columnas vacías de delante —«Lote» y las dos
+  // «Población inicial»— «Observaciones sanitarias» pasa de la 15 a la 12. La firma se mueve CON ella,
+  // en el mismo despliegue: si no, un cliente al día sería rechazado y uno viejo aceptado, justo al revés.
+  "Maduración Tanques":        [[12, "Observaciones sanitarias"]],
   "Maduración MATRIZ":         [[6, "Lote"], [11, "Fecha ingreso"]],
   "Maduración Bitácora":       [[3, "Tipo"], [5, "Tanque"]],
   "Maduración Transferencias": [[4, "Trovan ID"], [12, "Piscinas presentes"]],
@@ -23290,7 +23316,9 @@ function algasInKey(row) {
 // ── Upsert genérico para hojas de Maduración ──
 // keyCols es un array de índices de columnas que forman la clave compuesta:
 //   • Maduración Sala     → [0,1]   (Fecha, Sala)
-//   • Maduración Tanques  → [0,1,3,16,17] (Fecha, Sala, Tanque, Hora, Parte) — «Lote» y las dos «Población inicial» van vacías
+//   • Maduración Tanques  → [0,1,2,13,14] (Fecha, Sala, Tanque, Hora, Parte). P12 (2026-09-20): era
+//     [0,1,3,16,17] y la hoja llevaba delante tres columnas VACÍAS —«Lote» y las dos «Población
+//     inicial»— que sólo existían para no mover la llave. Se retiraron; la llave son las mismas cinco.
 //   • Maduración Lotes    → [0,1,2] (Fecha, Lote, Código genético) — la hoja de Desoves
 // Si la clave coincide con una fila existente: merge (los nuevos valores
 // no vacíos reemplazan al anterior; los vacíos preservan el dato actual).
