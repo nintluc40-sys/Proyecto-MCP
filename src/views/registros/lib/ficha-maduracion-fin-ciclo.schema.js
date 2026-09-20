@@ -13,10 +13,16 @@
    reproductores a otra camaronera. **No ocurre: ningún reproductor vuelve a camaronera.**
    La columna pedía un dato que no existe, y un campo que no se puede rellenar con la verdad
    se acaba rellenando con cualquier cosa.
-   🔑 Se pudo quitar SIN COSTE porque la hoja aún NO EXISTE en producción —el GAS responde
-   «Hoja no permitida» hasta que se re-despliegue— y porque su llave es la columna `ID`,
-   que el GAS busca POR SU CABECERA y no por su posición. El día del re-despliegue esto deja
-   de ser gratis: entonces quitar o mover una columna es una migración.
+   🔑 Se pudo quitar SIN COSTE por dos razones, y una de ellas CADUCÓ (al día el 2026-09-20):
+     · ~~«el GAS responde “Hoja no permitida” hasta que se re-despliegue»~~ — **YA SE RE-DESPLEGÓ**
+       (sello `55acbff1b746`). Hoy el GAS SÍ conoce la hoja: está en `ALLOWED` y la crea con el primer
+       envío. Lo que sigue haciendo gratis el cambio no es eso, es que la hoja tiene CERO FILAS.
+       Cuántas tiene hoy lo dice `estado-maduracion.mjs`, no este comentario.
+     · su llave es la columna `ID`, que el GAS busca POR SU CABECERA y no por su posición
+       (`isMadId` en `doPost`) — **esto NO ha cambiado y es lo que más protege**: mover una columna
+       de sitio nunca rompe la llave aquí, al revés que en `Maduración Tanques`, que es posicional.
+   ⚠ Con filas dentro, quitar o RENOMBRAR una columna sigue siendo una migración: el dato de esa
+   columna se pierde y la cabecera del envío deja de casar con la de la hoja (guarda `esquemaIncompatible_`).
    ⚠ El motivo `Pedido` SE QUEDA (decisión del usuario): un pedido puede ir a un sitio que
    no sea camaronera. Lo que se retira es la exigencia de nombrar un destino.
 
