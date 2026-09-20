@@ -259,7 +259,10 @@ describe('Maduración · operativo · 🧬 Lotes', () => {
   it('la sub-nav trae las CINCO sub-vistas y Lotes abre su tabla maestra, con los cerrados dentro', async () => {
     await montar(PLANTA_L);
     expect([...root.querySelectorAll('[data-mop-sub]')].map((b) => b.textContent.trim()))
-      .toEqual(['📊 Estado actual', '🏠 Salas', '🧬 Lotes', '💀 Bajas', '🔍 Revisiones']);
+      /* D-8 (2026-09-20) · «Revisiones DEL SUPERVISOR», no «Revisiones» a secas: Larvicultura ya
+         tiene una vista «🔍 Revisiones», con el mismo icono y otro significado. Que este rótulo esté
+         fijado aquí es lo que impide que vuelva a colisionar sin que nadie lo note. */
+      .toEqual(['📊 Estado actual', '🏠 Salas', '🧬 Lotes', '💀 Bajas', '🔍 Revisiones del supervisor']);
     abrirLotes();
     expect([...root.querySelectorAll('[data-mop-lote]')].map((t) => t.dataset.mopLote)).toEqual(['QA', 'QB', 'QC', 'QD']);
     // QC se cerró: sigue en la tabla, a cero y rotulado.

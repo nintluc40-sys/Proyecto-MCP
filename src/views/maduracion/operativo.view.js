@@ -37,7 +37,16 @@ const SUBS = [
   { clave: 'salas', etiqueta: 'Salas', icono: '🏠' },
   { clave: 'lotes', etiqueta: 'Lotes', icono: '🧬' },
   { clave: 'bajas', etiqueta: 'Bajas', icono: '💀' },
-  { clave: 'revisiones', etiqueta: 'Revisiones', icono: '🔍' },
+  /* 🔑 «Revisiones DEL SUPERVISOR», no «Revisiones» a secas (D-8, 2026-09-20). Larvicultura ya tiene
+     una vista «🔍 Revisiones» —sobre `Registro_Supervisión`, con otro significado— y hasta con el
+     MISMO icono: era el tercer par de homónimos del proyecto, tras los dos «ICL» y las dos «Fase».
+     Con los dos primeros se decidió dejarlos y documentarlos; aquí se renombra porque esta sub-vista
+     es nueva y no hay costumbre que romper, que es justo lo que hacía caro renombrar las otras.
+     ⚠ Y NO es «Revisión de nauplios»: además de los nauplios en sus 4 etapas enseña la alcalinidad
+     por área, la mortalidad en desove y recuperación y la frecuencia de observaciones de tanque. El
+     nombre sigue a la DECISIÓN 6 del usuario —Inf. Supervisor + observaciones de tanque—, que es de
+     donde sale todo lo que hay aquí. */
+  { clave: 'revisiones', etiqueta: 'Revisiones del supervisor', icono: '🔍' },
 ];
 const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', tanque: '', lote: '', codigo: '', color: 'estado', salaDetalle: '', tanqueSel: '', loteSel: '', agrupacion: 'lote',
   estado: '', sexo: '', piscina: '', camaronera: '', agrupacionBajas: 'sala' };

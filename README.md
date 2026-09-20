@@ -39,6 +39,9 @@ npm run lint       # ESLint
 - **Larvicultura** (🦐): calidad larvaria — radar, evolución diaria, heatmap,
   ICL, ranking, población por tanque y modales Comparar/Historia/Decisión.
 - **Revisiones** (🔍): hoja `Registro_Supervisión` — calidad, morfología
+  ⚠ **No confundir con «🔍 Revisiones del supervisor»**, sub-vista del tablero de Maduración. Fue el
+  tercer par de homónimos del proyecto (tras los dos «ICL» y las dos «Fase»), y el único que se
+  deshizo: la de Maduración era nueva y no había costumbre que romper. Ésta se queda así.
   cuantitativa (% Atraso / Protusión / Deformidad / No viables), treemap,
   Sankey hallazgo→acción, cobertura por supervisor y mapa de cobertura
   módulo×día (cada día clicable abre los registros).
@@ -72,7 +75,7 @@ npm run lint       # ESLint
     **🧬 Lotes** (tabla maestra, ficha de un lote —origen, CASCADA DEL CUADRE, curva de vivos y reproducción—
     y comparativa por lote, código genético o piscina), **💀 Bajas** (muerte natural frente a descarte,
     desglose cruzado por sala · tanque · lote, Pareto de motivos de cierre, distribución por hora, calor
-    sala × día y lotes cerrados) y **🔍 Revisiones** (nauplios en sus 4 etapas, alcalinidad por área día y
+    sala × día y lotes cerrados) y **🔍 Revisiones del supervisor** (nauplios en sus 4 etapas, alcalinidad por área día y
     noche, mortalidad en desove y recuperación, y frecuencia de observaciones de tanque).
     ⚠ **Lo que NO se juzga** se enseña tal cual, rotulado «sin criterio»: deformidad, actividad,
     fototropismo y aireación. Sólo llevan veredicto salinidad > 60 ‰, temperatura > 40 °C, hongos
