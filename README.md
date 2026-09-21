@@ -583,6 +583,11 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
    comprobaciones ejercitaron dato y cuántas salieron verdes EN VACÍO**, y nombran las hojas sin
    ninguna fila: tras el vaciado daban «todo en ok» sobre cero, que es un verde que no prueba nada.
    Cuánto cubre hoy el contraste **no se lee de aquí**: lo dicen ellas al correr.
+   ✅ **Y que hoy salgan muchas EN VACÍO no es un defecto del tablero** (decisión del usuario,
+   2026-09-21): el registro se está estrenando en producción y ocho de sus diez hojas tienen cero
+   filas, así que no hay con qué contrastar. Cada pieza se contrasta **cuando su hoja reciba sus
+   primeras filas**, no antes — y el censo sigue diciéndolo en crudo a propósito, para que ese verde
+   sobre cero no se confunda nunca con una prueba.
 8. **La CI sigue sin poder vigilar `index (8)`** —`deploy.yml` corre lint, vitest, auditorías y build, y
    ninguna de las cuatro ve un archivo que no está en el repo—, pero desde el 2026-09-20 **ya no depende
    de acordarse**: un hook `pre-push` corre `node verificar-todo.mjs --copias` (las seis que comparan
