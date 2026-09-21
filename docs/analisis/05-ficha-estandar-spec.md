@@ -57,6 +57,13 @@ testeado que envuelve esos globales). Los módulos nativos NUNCA tocan `localSto
 directamente — pasan por el adaptador. Cuando esa capa se extraiga a módulos propios, solo cambia
 el interior del adaptador.
 
+> 🗑 **2026-09-21 · ESE ADAPTADOR YA NO EXISTE, y no porque se rompiera: nunca se usó.** Entró en el
+> commit inicial con sus seis pruebas y **ningún módulo lo importó jamás** (comprobado sobre toda la
+> historia del repo). La reconstrucción nativa tomó otro camino —el puente `window.__rgLib`, por el
+> que el monolito alcanza a los módulos que renderizan las 7 fichas, en vez de módulos nativos que
+> llamaran al motor—, y la capa de datos se quedó entera dentro de `engine.js`. Se retiró con su
+> prueba. Este apartado sigue describiendo el seam que se quería; no un archivo que esté ahí.
+
 > **Sync a GAS:** pendiente de mapear el flujo del botón Guardar (saveArea/localSave/localSync) en
 > una próxima rebanada; se añadirá al adaptador como passthrough cuando se construya el botón nativo.
 
