@@ -12,7 +12,7 @@
    · Las Salas 4A y 4B ya no se muestran: sólo las salas de la ficha (Sala 1 a Sala 5).
    ============================================================ */
 import { fuentesDesdeFilas, MAD_OP_HOJAS } from './operativo.fuentes.js';
-import { construirLibro, estadoDeSala, estadoPorLoteTexto, ocupacionDeSala, sumarDias, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_CERRADO } from '../registros/lib/mad-libro.js';
+import { construirLibro, estadoDeSala, estadoPorLoteTexto, ocupacionDeSala, sumarDias, ubicKey, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_CERRADO } from '../registros/lib/mad-libro.js';
 import { resumenMaduracion, diasEntre } from '../registros/lib/mad-resumen.js';
 import { MAD_SALA_OPTS, MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 
@@ -156,11 +156,17 @@ export function diasDeTanque(filasTanques) {
   return [...m.values()].map(({ pesosMachos, pesosHembras, ...d }) => ({ ...d, pesoMachos: prom(pesosMachos), pesoHembras: prom(pesosHembras) }));
 }
 
-/** Lo que interesa del libro al cerrar un día, COPIADO (el gancho entrega el libro vivo). */
+/** Lo que interesa del libro al cerrar un día, COPIADO (el gancho entrega el libro vivo).
+ *  🆕 F4.1 (2026-09-21) · también POR TANQUE, para la curva de vivos de 🛢 Tanques. Va aquí y no en
+ *  el módulo de la sub-vista por lo mismo que `porSala` y `porLote`: reconstruir el libro día a día
+ *  para dibujar una curva costaba 30 libros para 30 días (7 s con un año de datos), y este gancho ya
+ *  recorre las posiciones una vez. La clave es la misma `ubicKey` que usa el libro, para que
+ *  «Sala 1 · 1» sea el mismo tanque aquí y allí. */
 function fotoDelLibro(posiciones, lotes) {
   const total = { machos: 0, hembras: 0 };
   const porSala = {};
   const porLote = {};
+  const porTanque = {};
   for (const p of posiciones.values()) {
     total.machos += p.machos;
     total.hembras += p.hembras;
@@ -170,6 +176,10 @@ function fotoDelLibro(posiciones, lotes) {
     const L = porLote[p.lote] || (porLote[p.lote] = { machos: 0, hembras: 0 });
     L.machos += p.machos;
     L.hembras += p.hembras;
+    const uk = ubicKey(p.sala, p.tanque);
+    const T = porTanque[uk] || (porTanque[uk] = { sala: p.sala, tanque: p.tanque, machos: 0, hembras: 0 });
+    T.machos += p.machos;
+    T.hembras += p.hembras;
   }
   for (const L of lotes.values()) {
     const o = porLote[L.lote] || (porLote[L.lote] = { machos: 0, hembras: 0 });
@@ -177,9 +187,9 @@ function fotoDelLibro(posiciones, lotes) {
     o.muertos = { ...L.muertos };
     o.descartes = { ...L.descartes };
   }
-  return { total, porSala, porLote };
+  return { total, porSala, porLote, porTanque };
 }
-const FOTO_VACIA = () => ({ total: { machos: 0, hembras: 0 }, porSala: {}, porLote: {} });
+const FOTO_VACIA = () => ({ total: { machos: 0, hembras: 0 }, porSala: {}, porLote: {}, porTanque: {} });
 
 /**
  * La serie DIARIA del libro entre `desde` y `hasta`, en UNA pasada (gancho `alCerrarDia` de `construirLibro`).
