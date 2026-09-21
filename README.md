@@ -23,6 +23,27 @@ npm run lint       # ESLint
 > es dependencia de npm. El gemelo `index (8)` no tiene servidor del que pedirlo: lleva SheetJS
 > **incrustado**, byte a byte el de `public/vendor/` (lo vigila `verificar-xlsx-index8`).
 
+### `npm audit` avisa de 9, y se quedan · MEDIDO el 2026-09-21
+
+`npm audit` da **9 avisos (3 moderate, 5 high, 1 critical)**. Los nueve son de **desarrollo**:
+`dependencies` sólo lleva `chart.js` y `leaflet`, y ninguno de los paquetes señalados
+—vitest, vite, esbuild, postcss, nanoid, js-yaml, brace-expansion— entra en el bundle. **Exposición
+en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midió:
+
+- **`npm audit fix` (sin `--force`) NO cambia ni un paquete**: 0 añadidos, 0 quitados, 0 cambiados
+  sobre 142 auditados. ⚠ Y aun así npm imprime «fix available via `npm audit fix`» en cuatro de
+  ellos: **ese mensaje engaña**, y es lo que hace que esto se re-litigue cada pocas semanas.
+- Los **cinco** restantes sólo se cierran con saltos MAYORES —`vitest` 2.1.9 → 5.0.1 y `vite`
+  5.4.21 → 8.3.0—, que es exactamente lo que la decisión **D-6** descartó: tres versiones mayores
+  cada uno, con 4060 pruebas y la puerta a producción encima, a cambio de nada en producción.
+- La única vía que movería los otros cuatro es `npm update`, y **no es quirúrgica**: arrastra
+  `happy-dom` 20.10.3 → 20.14.5 —la versión contra la que está MEDIDO el comportamiento raro del
+  `<select>` pintado con `innerHTML`, del que dependen pruebas—, `@types/node` 25 → 26 y
+  `undici-types` 7 → 8.
+- ⚠ Trampa de medición, por si alguien la repite: **`npm ls <paquete>` no dice lo que hay
+  instalado** sino lo que npm resolvería hoy (dio `js-yaml@4.3.2` cuando el fichero y el lockfile
+  dicen `4.3.0`). Lo que instala la CI es el **lockfile**, y es contra él que audita `npm audit`.
+
 ## Vistas
 
 - **Supervisor** (👁️): Vista Ejecutiva (tarjetas por módulo/corrida) → Resumen
