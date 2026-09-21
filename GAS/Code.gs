@@ -22,7 +22,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "adcb1ddab653";
+const GAS_VERSION = "f170329aaddb";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -694,6 +694,7 @@ function upsertRows(ws, newRows, isCtrl) {
 
   var toAdd      = [];
   var updated    = 0;
+  var porEscribir = [];
   // Key columns by position — Corrida is NOT a key col (gets updated on re-sync)
   // Datos:   [0]Fecha [1]Corrida [2]Módulo [3]Tanque → keys: 0,2,3
   // Control: [0]Fecha [1]Hora [2]Corrida [3]Módulo [4]Tanque → keys: 0,1,3,4
@@ -722,9 +723,10 @@ function upsertRows(ws, newRows, isCtrl) {
           merged.push(nEmpty ? e : n);
         }
       }
-      if (isCtrl) ws.getRange(entry.row, 2, 1, 1).setNumberFormat("@");
-      ws.getRange(entry.row, 1, 1, merged.length).setValues([merged]);
-      fmtData(ws, entry.row, 1, merged.length, isCtrl);
+      // B1 (2026-09-21) · en bloque al final. El "@" de la Hora que aquí se ponía fila a fila lo
+      // aplica igual fmtData(..., isCtrl) sobre el tramo, que es de donde salía ya en el append.
+      // (Sin comillas invertidas: este bloque viaja dentro de la plantilla GAS() y una sola la cierra.)
+      porEscribir.push({ fila: entry.row, datos: merged });
       updated++;
 
     } else if (pendingMap[k2] !== undefined) {
@@ -744,6 +746,7 @@ function upsertRows(ws, newRows, isCtrl) {
     }
   }
 
+  escribirActualizadas_(ws, porEscribir, -1, -1, isCtrl);
   var added = 0;
   if (toAdd.length > 0) {
     var startRow = lastRow(ws) + 1;
@@ -1014,6 +1017,57 @@ function filasUniformes(filas) {
 }
 
 // ── Append simple (queda como utilidad genérica) ──
+/* ── B1 (2026-09-21) · LAS ACTUALIZACIONES SE ESCRIBEN EN BLOQUE ──────────────
+   LO QUE SE MIDIÓ, ejecutando este mismo archivo contra un Sheets instrumentado que cuenta
+   llamadas al servicio. El APPEND ya iba batcheado —40 filas nuevas de Tanques: 10 llamadas—,
+   pero la ACTUALIZACIÓN escribía fila a fila, y cada fila costaba:
+     setValues (1) + fmtData (5: fuente, familia, dos alineaciones y el formato de la Fecha)
+     + los formatos fijos de Trovan y Número (hasta 4 más)
+   O sea 6 llamadas por fila en Tanques, Sala, Lotes y las seis hojas por «ID»; 14 en la MATRIZ.
+   · re-enviar un parte de Tanques (40 filas) = 244 llamadas
+   · un lote de eventos de la MATRIZ de 200 Trovan = 2 801
+   · el tope del payload (1000 filas) = 14 001
+   🔑 Y ese lote no es teórico: los Trovan de una mortalidad SE PEGAN desde el lector, sin tope en
+   el cliente. A 10–40 ms por llamada, 2 801 son 28–112 s: por encima del tope de 40 s del POST y
+   del waitLock de 25 s que esperan los demás dispositivos. No se corrompe nada —el reqId y el
+   upsert por llave lo hacen idempotente— pero da timeouts y «Servidor ocupado» justo en la ronda
+   que más urge registrar.
+
+   QUÉ HACE ESTO. Los VALORES se escriben por tramos CONTIGUOS del mismo ancho: ni una fila que el
+   envío no traiga recibe un solo valor. Los FORMATOS se aplican UNA vez sobre el tramo que va de la
+   primera a la última fila tocada.
+   ⚠ Y ahí está la única diferencia de comportamiento, dicha en voz alta: si las filas tocadas no
+   son contiguas, las que quedan EN MEDIO reciben otra vez el mismo formato uniforme que esta
+   función ya le da a toda la hoja (Arial 10, centrado, la Fecha en dd/mm/yyyy y, donde toque, el
+   Trovan en texto). No se les escribe ningún VALOR. Es un no-op salvo que alguien hubiera puesto a
+   mano otro formato de número en una fila suelta, que aquí no ocurre: estas hojas las escribe este
+   GAS. Se acepta a cambio de bajar la MATRIZ de 14 llamadas por fila a una.
+   🔑 Ordena por número de fila: el orden de llegada del envío no tiene por qué ser el de la hoja. */
+function escribirActualizadas_(ws, pendientes, trovanCol, numCol, isCtrl) {
+  if (!pendientes || !pendientes.length) return;
+  pendientes.sort(function (a, b) { return a.fila - b.fila; });
+  var ancho = 0, i;
+  for (i = 0; i < pendientes.length; i++) {
+    if (pendientes[i].datos.length > ancho) ancho = pendientes[i].datos.length;
+  }
+  // Los VALORES, por tramos contiguos del mismo ancho.
+  var ini = 0;
+  for (i = 1; i <= pendientes.length; i++) {
+    var sigue = i < pendientes.length
+      && pendientes[i].fila === pendientes[i - 1].fila + 1
+      && pendientes[i].datos.length === pendientes[ini].datos.length;
+    if (sigue) continue;
+    var bloque = [];
+    for (var k = ini; k < i; k++) bloque.push(pendientes[k].datos);
+    ws.getRange(pendientes[ini].fila, 1, bloque.length, bloque[0].length).setValues(bloque);
+    ini = i;
+  }
+  // Los FORMATOS, una sola vez sobre el tramo tocado.
+  var primera = pendientes[0].fila, ultima = pendientes[pendientes.length - 1].fila;
+  fmtData(ws, primera, ultima - primera + 1, ancho, isCtrl);
+  madFormatosFijos_(ws, primera, ultima - primera + 1, ancho, trovanCol, numCol);
+}
+
 function appendRows(ws, newRows) {
   if (!newRows || !newRows.length) return { upserted: 0, appended: 0 };
   var startRow = lastRow(ws) + 1;
@@ -1181,7 +1235,7 @@ function upsertAstRows(ws, newRows, merge) {
     if (idv) map[idv] = { row: i + 1, idx: i };
   }
 
-  var toAdd = [], pending = {}, updated = 0;
+  var toAdd = [], pending = {}, updated = 0, porEscribir = [];
   for (var r = 0; r < newRows.length; r++) {
     var nr = newRows[r];
     while (nr.length < widest) nr.push("");      // normaliza ancho
@@ -1204,8 +1258,10 @@ function upsertAstRows(ws, newRows, merge) {
         }
         fila = merged;
       }
-      ws.getRange(ent.row, 1, 1, fila.length).setValues([fila]);
-      fmtData(ws, ent.row, 1, fila.length, false);
+      // B1 (2026-09-21) · se aparta y se escribe en bloque al final (ver escribirActualizadas_):
+      // eran 6 llamadas al servicio por fila, y esta ruta la comparten el AsT, el Traslado y las
+      // SEIS hojas de Maduración que van por columna «ID».
+      porEscribir.push({ fila: ent.row, datos: fila });
       // La foto de la hoja se actualiza con lo escrito. «data» se lee UNA vez al
       // entrar, así que sin esto una segunda fila del MISMO envío con el mismo ID se
       // fusionaría contra la versión VIEJA y borraría lo que aportó la primera —
@@ -1232,6 +1288,7 @@ function upsertAstRows(ws, newRows, merge) {
     }
   }
 
+  escribirActualizadas_(ws, porEscribir, -1, -1, false);
   var added = 0;
   if (toAdd.length > 0) {
     var startRow = lastRow(ws) + 1;
@@ -1267,7 +1324,7 @@ function upsertAlgasRows(ws, newRows) {
     if (sv) map[sv] = { row: i + 1, idx: i };
   }
 
-  var toAdd = [], pending = {}, updated = 0;
+  var toAdd = [], pending = {}, updated = 0, porEscribir = [];
   for (var r = 0; r < newRows.length; r++) {
     var nr = newRows[r];
     while (nr.length < widest) nr.push("");
@@ -1284,8 +1341,7 @@ function upsertAlgasRows(ws, newRows) {
         if (c === sidCol) merged.push((e === "" || e === null || e === undefined) ? n : e);
         else              merged.push(nEmpty ? e : n);
       }
-      ws.getRange(entry.row, 1, 1, merged.length).setValues([merged]);
-      fmtData(ws, entry.row, 1, merged.length, false);
+      porEscribir.push({ fila: entry.row, datos: merged });   // B1: en bloque al final
       updated++;
     } else if (sid && pending[sid] !== undefined) {
       // Misma Sesión repetida dentro del mismo lote → fusiona los no vacíos.
@@ -1299,6 +1355,7 @@ function upsertAlgasRows(ws, newRows) {
     }
   }
 
+  escribirActualizadas_(ws, porEscribir, -1, -1, false);
   var added = 0;
   if (toAdd.length > 0) {
     var startRow = lastRow(ws) + 1;
@@ -1364,6 +1421,7 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol, llave) {
   var toAdd = [];
   var updated = 0;
   var pendingMap = {};
+  var porEscribir = [];
   for (var r = 0; r < newRows.length; r++) {
     var nr    = newRows[r];
     var k2    = llave ? llave.deEnvio(r) : madInKey(nr, keyCols);
@@ -1382,14 +1440,9 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol, llave) {
           merged.push(nEmpty ? e : n);
         }
       }
-      // Trovan a TEXTO ("@") antes de escribir → preserva el código exacto (10 hex,
-      // ceros a la izquierda) y evita que Sheets lo vuelva número/notación científica.
-      if (trovanCol >= 0 && trovanCol < merged.length) ws.getRange(entry.row, trovanCol + 1, 1, 1).setNumberFormat("@");
-      // "Número" a NUMÉRICO AUTOMÁTICO ("General") → llega como número, no como texto.
-      if (numCol >= 0 && numCol < merged.length) ws.getRange(entry.row, numCol + 1, 1, 1).setNumberFormat("General");
-      ws.getRange(entry.row, 1, 1, merged.length).setValues([merged]);
-      fmtData(ws, entry.row, 1, merged.length, false);
-      madFormatosFijos_(ws, entry.row, 1, merged.length, trovanCol, numCol);
+      // B1 (2026-09-21) · la escritura se APARTA y se hace en bloque al final (ver escribirActualizadas_).
+      // El Trovan a TEXTO y el "Número" a General siguen aplicándose: ahora sobre el tramo, no fila a fila.
+      porEscribir.push({ fila: entry.row, datos: merged });
       updated++;
     } else if (pendingMap[k2] !== undefined) {
       var pi = pendingMap[k2];
@@ -1404,6 +1457,7 @@ function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol, llave) {
       map[k2] = { row: -1, idx: -1 };
     }
   }
+  escribirActualizadas_(ws, porEscribir, trovanCol, numCol, false);
   var added = 0;
   if (toAdd.length > 0) {
     var startRow = lastRow(ws) + 1;

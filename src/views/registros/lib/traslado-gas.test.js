@@ -42,6 +42,10 @@ function motorGas() {
     // fila en este ayudante compartido. Sin él, el upsert revienta con un
     // «filasUniformes is not defined» que no dice nada del contrato que se prueba.
     + '\n' + bloque(src, 'function filasUniformes(filas) {', '\n}')
+    // B1 (2026-09-21) · y desde hoy las filas ACTUALIZADAS tampoco se escriben una a una: el
+    // upsert las aparta y las entrega a este ayudante, que las escribe por tramos contiguos.
+    + '\n' + bloque(src, 'function madFormatosFijos_(', '\n}')
+    + '\n' + bloque(src, 'function escribirActualizadas_(ws, pendientes, trovanCol, numCol, isCtrl) {', '\n}')
     + '\n' + bloque(src, 'function upsertAstRows(ws, newRows, merge) {', '  return { upserted: updated, appended: added };\n}');
   // `fmtData` sólo pinta (fuentes, alineación, formato de fecha): no decide dónde
   // va ninguna fila, así que se stubea. Lo que se está probando es el EMPAREJADO.

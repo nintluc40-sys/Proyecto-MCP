@@ -55,6 +55,10 @@ function bloque(src, desde, hasta) {
 function motorGas() {
   const code = bloque(gasSrc, 'function lastRow(ws) {', '\n}')
     + '\n' + bloque(gasSrc, 'function filasUniformes(filas) {', '\n}')
+    // B1 (2026-09-21) · las filas ACTUALIZADAS ya no se escriben una a una dentro del bucle: el
+    // upsert las aparta y las entrega a `escribirActualizadas_`, que las escribe por tramos.
+    + '\n' + bloque(gasSrc, 'function madFormatosFijos_(', '\n}')
+    + '\n' + bloque(gasSrc, 'function escribirActualizadas_(ws, pendientes, trovanCol, numCol, isCtrl) {', '\n}')
     + '\n' + bloque(gasSrc, 'function upsertAstRows(ws, newRows, merge) {',
       '  return { upserted: updated, appended: added };\n}');
   // `fmtData` sólo pinta; no decide dónde va ninguna fila. Lo que se prueba es el

@@ -157,6 +157,9 @@ describe('GAS · ancho uniforme de fila', () => {
       bloque('function rowKey(row, isCtrl, horaStr) {', '\n}'),
       bloque('function inKey(row, isCtrl) {', '\n}'),
       bloque('function upsertRows(ws, newRows, isCtrl) {', '  return { upserted: updated, appended: added };\n}'),
+      // B1 (2026-09-21): también aquí las filas actualizadas se escriben en bloque al final.
+      bloque('function madFormatosFijos_(', '\n}'),
+      bloque('function escribirActualizadas_(ws, pendientes, trovanCol, numCol, isCtrl) {', '\n}'),
     ]);
 
     it('🔴 añade filas de anchos distintos sin romper la escritura', () => {
@@ -177,6 +180,9 @@ describe('GAS · ancho uniforme de fila', () => {
       bloque('function madInKey(row, keyCols) {', '\n}'),
       bloque('function upsertMadRows(ws, newRows, keyCols, trovanCol, numCol, llave) {', '  return { upserted: updated, appended: added };\n}'),
       bloque('function madFormatosFijos_(', '\n}'),   // P16: upsertMadRows la llama tras fmtData
+      // B1 (2026-09-21): las filas ACTUALIZADAS ya no se escriben una a una dentro del bucle —costaba
+      // 14 llamadas por fila en la MATRIZ—: se apartan y las escribe ésta en bloque al final.
+      bloque('function escribirActualizadas_(ws, pendientes, trovanCol, numCol, isCtrl) {', '\n}'),
     ]);
 
     it('🔴 añade filas de anchos distintos sin romper la escritura', () => {
