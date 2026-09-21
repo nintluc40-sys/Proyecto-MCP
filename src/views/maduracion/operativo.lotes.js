@@ -240,7 +240,9 @@ export function eventosDeLote(fuentes, lote, periodo) {
  *  llegaron a tener N2, como en el Saldo). ⚠ N5 NO se compara con N2: son recuentos de momentos distintos. */
 export function reproduccionDeLote(fuentes, lote, periodo) {
   const clave = normLote(lote);
-  const A = { desoves: 0, huevos: 0, n2: 0, n5: 0, huevosConN2: 0, desovesConN5: 0 };
+  // `noViables` entró con F4.2 (2026-09-21) para que 🥚 Reproducción no acumule lo mismo por su cuenta: dos
+  // acumuladores sobre las mismas filas es como dos pantallas acaban diciendo cifras distintas de lo mismo.
+  const A = { desoves: 0, huevos: 0, noViables: 0, n2: 0, n5: 0, huevosConN2: 0, desovesConN5: 0 };
   for (const r of (fuentes || {}).desoves || []) {
     if (normLote(r.Lote) !== clave) continue;
     if (!enPeriodo(fechaDeFila('desoves', r), periodo)) continue;
@@ -248,6 +250,7 @@ export function reproduccionDeLote(fuentes, lote, periodo) {
     const n5 = ent(r.N5);
     A.desoves += ent(r.Desoves);
     A.huevos += ent(r['Total de huevos']);
+    A.noViables += ent(r['Hembras no viables']);
     A.n2 += n2;
     A.n5 += n5;
     if (n2 > 0) A.huevosConN2 += ent(r['Total de huevos']);
