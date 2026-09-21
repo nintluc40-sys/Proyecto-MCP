@@ -33,7 +33,14 @@ export function diagSemaforo(last, vars) {
   return { level, detail };
 }
 
-/** Población: nivel según % de pérdida acumulada (umbrales estimados, ajustables). */
+/** Población: nivel según % de pérdida acumulada (> 40 % rojo · > 20 % ámbar).
+ *  ⚠ 2026-09-21 · AQUÍ PONÍA «umbrales estimados, ajustables», que se lee como un pendiente de
+ *  nadie. Lo preciso: estas dos cifras NO tienen fuente —ni documento del laboratorio ni
+ *  bibliografía—, vienen del sistema original y nunca las ha confirmado nadie. Es el MISMO hueco
+ *  que en Maduración, donde 13 de los 14 umbrales esperan el valor del laboratorio
+ *  (`views/maduracion/operativo.umbrales.js`); allí, sin fuente, NO se juzga, y aquí la cifra ya
+ *  existe y pinta un semáforo. Se quedan —quitarlas dejaría la vista sin criterio— pero cuando el
+ *  laboratorio dé los suyos, mandan ellos. Vale igual para los dos comentarios de abajo. */
 export function popSemaforo(pStats) {
   if (!pStats || !pStats.validTanks || !(pStats.totalInit > 0)) return { level: 'verde', detail: 'Sin población válida' };
   const loss = (pStats.totalInit - pStats.totalCurr) / pStats.totalInit * 100;
@@ -41,7 +48,8 @@ export function popSemaforo(pStats) {
   return { level, detail: `Pérdida acumulada ${loss.toFixed(1)}% · ${pStats.validTanks} tanque(s)` };
 }
 
-/** Manejo de agua: nivel según los últimos % Espuma / % Suciedad (umbral 10, ajustable). */
+/** Manejo de agua: nivel según los últimos % Espuma / % Suciedad (umbral 10; sin fuente, como los
+ *  de arriba: heredado del sistema original y sin confirmar por el laboratorio). */
 export function aguaSemaforo(mgmt) {
   const lastOf = (arr) => { for (let i = (arr || []).length - 1; i >= 0; i--) { if (arr[i] != null) return arr[i]; } return null; };
   const esp = lastOf(mgmt && mgmt.espuma), suc = lastOf(mgmt && mgmt.suciedad), rec = lastOf(mgmt && mgmt.recambio);
@@ -56,7 +64,10 @@ export function aguaSemaforo(mgmt) {
 /* ---- Edad de cultivo (DOC) + estadío esperado ----
    CRONOGRAMA real del laboratorio: UN estadío por día desde N5 = día 1
    (N5·Z1·Z2·Z3·M1·M2·M3 = días 1–7; PL1 = día 8, PLk = día 7+k).
-   Ajustable a los tiempos reales del laboratorio en la validación. */
+   ⚠ 2026-09-21 · decía «ajustable a los tiempos reales del laboratorio en la validación», y esa
+   validación no se ha hecho: este cronograma es el del sistema original, un estadío por día, y
+   nadie lo ha contrastado con los tiempos reales. Se usa para decir qué estadío se ESPERA, no para
+   corregir el observado, así que no falsea ningún dato; pero es un supuesto, no una medición. */
 const STAGE_RANK = { N: 0, Z1: 1, Z2: 2, Z3: 3, M1: 4, M2: 5, M3: 6 };
 const CRONO = [
   { upto: 1, stage: 'N5' }, { upto: 2, stage: 'Z1' }, { upto: 3, stage: 'Z2' },

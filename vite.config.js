@@ -53,11 +53,17 @@ export default defineConfig(({ command }) => ({
         // código de la app) y ~194 kB menos en el bundle principal. Eso sí ocurre.
         //
         // ⚠ Lo que NO hace —y este comentario lo afirmó hasta el 2026-08-30— es quitar
-        // el aviso "chunk > 500 kB": el chunk principal sigue en ~730 kB (230 kB gzip) y
-        // el aviso sale en cada compilación. No es culpa de ninguna librería: son las
-        // SIETE vistas que main.js importa de forma ESTÁTICA (supervisor, larvicultura,
-        // revisiones, visitante, algas, microbiología y maduración). Sólo Registros y
-        // Biología Molecular se cargan con import() diferido.
+        // el aviso "chunk > 500 kB": el chunk principal sigue MUY por encima y el aviso sale
+        // en cada compilación. No es culpa de ninguna librería: son las SIETE vistas que
+        // main.js importa de forma ESTÁTICA (supervisor, larvicultura, revisiones, visitante,
+        // algas, microbiología y la entrada de maduración). Con import() diferido van TRES:
+        // Registros, Biología Molecular y el tablero de Maduración (operativo.view.js).
+        //
+        // ⚠ EL TAMAÑO NO SE ESCRIBE AQUÍ: lo dice `npx vite build`. Aquí ponía «~730 kB» y
+        // el 2026-09-21 eran 743 539 B. Y al medirlo salió una trampa que conviene saber:
+        // vite imprime CARACTERES/1000, no bytes —ese día decía «737.72 kB» para un archivo
+        // de 743 539 B, y los 5 816 de diferencia son los acentos y los emoji en UTF-8—.
+        // El gzip real se mide aparte (`gzip -c … | wc -c`).
         //
         // El aviso se deja SONANDO a propósito. Subir chunkSizeWarningLimit lo callaría
         // sin quitar un solo kilobyte, y esta app se abre desde el móvil en el laboratorio

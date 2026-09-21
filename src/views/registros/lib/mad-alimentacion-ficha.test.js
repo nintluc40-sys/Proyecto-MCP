@@ -79,7 +79,11 @@ beforeEach(() => {
   avisos.length = 0;
   envios.length = 0;
   impreso = null;
-  respuestaVer = { ok: true, version: H._gasVersionLocal(), caps: ['matriz-reciclaje', 'mad-alimentacion'] };
+  // 2026-09-21 · era 'matriz-reciclaje', capacidad RETIRADA el 2026-09-16 y sustituida por
+  // 'matriz-cuaterna'. Aquí sólo decora —lo que se comprueba es el SELLO—, pero un fixture que cita
+  // una capacidad que el GAS ya no anuncia manda a buscar un nombre que no existe. Hoy
+  // GAS_CAPACIDADES es exactamente ["matriz-cuaterna", "mad-alimentacion"].
+  respuestaVer = { ok: true, version: H._gasVersionLocal(), caps: ['matriz-cuaterna', 'mad-alimentacion'] };
   localStorage.removeItem(H.MAD_ALIM_CFG_KEY);
   H.madAlimVaciar();   // olvida la lectura anterior y vuelve a pintar
 });
@@ -198,7 +202,8 @@ describe('Alimentación · la ficha', () => {
 
   it('🔴 un GAS que no es el de esta app (o el viejo) no recibe nada, se dice por qué y lo calculado se queda', async () => {
     await H.madAlimLeer();
-    for (const r of [{ ok: true, version: 'x', caps: ['matriz-reciclaje'] }, 'FichasLarv-OK']) {
+    // El sello 'x' es lo que lo hace fallar; las caps son decorado (ver el beforeEach).
+    for (const r of [{ ok: true, version: 'x', caps: ['matriz-cuaterna'] }, 'FichasLarv-OK']) {
       respuestaVer = r;
       await H.madAlimGuardar();
       expect(envios).toHaveLength(0);
