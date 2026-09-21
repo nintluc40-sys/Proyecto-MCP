@@ -1,12 +1,24 @@
 /* ============================================================
-   MADURACIÓN · OPERATIVO — la VISTA del tablero (F1, 2026-09-19)
+   MADURACIÓN · OPERATIVO — la VISTA del tablero (F1–F3, 2026-09-19 a 2026-09-20)
 
-   «🐚 Operativo» de la entrada de Maduración (entrada.js), con el diseño que aprobó el usuario el 2026-09-19:
-   barra de filtros (período · foto al día · sala → tanque · lote → código · limpiar) y dos sub-vistas:
-     📊 Estado actual — seis indicadores, el mapa de planta (por estado, vivos o densidad), las alertas, los últimos
-        registros y los lotes que salen de cuarentena en los próximos 7 días;
+   «🐚 Operativo» de la entrada de Maduración (entrada.js), con el diseño que aprobó el usuario en cada fase:
+   barra de filtros (período · foto al día · sala → tanque · lote → código · estado · sexo · piscina · camaronera,
+   con etiquetas de lo activo y «limpiar») y CINCO sub-vistas.
+   ⚠ La lista viva es `SUBS`, unas líneas más abajo, y los KPI son el array `kpis`: se leen de ahí, no de aquí.
+     Esta cabecera se quedó diciendo «dos sub-vistas» y «seis indicadores» mientras F2 y F3 añadían TRES sub-vistas
+     y un KPI, así que ahora dice dónde mirar además de qué hay. Hoy:
+     📊 Estado actual — los KPI (Vivos, Lotes, Salas, Ocupación, Mortalidad, Reproducción y Biomasa), el mapa de
+        planta (por estado, vivos o densidad), las alertas, los últimos registros y los lotes que salen de
+        cuarentena en los próximos 7 días;
      🏠 Salas — una tarjeta por sala y, al pulsarla, su detalle: la T° por hora, el O₂, ♀/♂ y densidad por tanque,
-        la tabla de tanques y los tratamientos recientes.
+        la tabla de tanques y los tratamientos recientes;
+     🧬 Lotes (F2) — tabla maestra con los cerrados dentro, ficha del lote con la CASCADA DEL CUADRE, y comparativa
+        por lote, código genético o piscina;
+     💀 Bajas (F3) — muerte natural frente a descarte de selección, desglose cruzado (sala · tanque · lote), Pareto
+        de motivos de cierre, distribución por hora y mapa de calor sala × día;
+     🔍 Revisiones del supervisor (F3) — nauplios en sus 4 etapas, alcalinidad por área, mortalidad en desove y
+        recuperación, y frecuencia de observaciones. Se llama así, y no «Revisiones», porque Larvicultura ya tiene
+        una con ese nombre y ese icono (D-8, 2026-09-20).
    Esta vista sólo PINTA: las cifras salen de operativo.tablero.js y operativo.data.js, que son puros y tienen sus
    pruebas y sus bancos de mutación. Se carga DIFERIDA (import() en entrada.js) junto con su CSS.
    ⚠ El período de este tablero es SUYO (termina en la foto): no lee el rango de la barra de fecha global. Si algún día
