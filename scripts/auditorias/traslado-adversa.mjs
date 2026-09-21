@@ -125,6 +125,10 @@ const gcode = bloque(gsrc, 'const ALLOWED = [', 'const RATE_MAX = 30, RATE_MS = 
      corrieron a mano. Se trae la REAL de Code.gs, nunca un stub: un arnés más
      benévolo que el producto no puede certificar al producto. */
   + '\n' + bloque(gsrc, 'function filasUniformes(filas) {', '  return { filas: out, ancho: ancho };\n}')
+  /* ⚠ B1 (2026-09-21) · ídem con `escribirActualizadas_`: las filas ACTUALIZADAS ya no se escriben
+     dentro del bucle, se apartan y se escriben en bloque al final. */
+  + '\n' + bloque(gsrc, 'function madFormatosFijos_(', '\n}')
+  + '\n' + bloque(gsrc, 'function escribirActualizadas_(ws, pendientes, trovanCol, numCol, isCtrl) {', '\n}')
   + '\n' + bloque(gsrc, 'function upsertAstRows(ws, newRows, merge) {',
     '  return { upserted: updated, appended: added };\n}');
 const gctx = { String, Number, Object, Array, JSON, Math, isFinite, Date, fmtData() {} };
