@@ -235,14 +235,17 @@ Salas, que propone —y al guardar escribe— el estado de la fecha elegida en l
   identificador por formulario): para no multiplicarlos, se leen una vez por Registro.
 
 ⚠ **Las llaves del GAS mandan sobre el diseño de estas hojas.** `Maduración Sala`,
-`Tanques` y `Lotes` se identifican por POSICIÓN (`[0,1]`, `[0,1,3,16,17]` —Fecha, Sala, Tanque,
+`Tanques` y `Lotes` se identifican por POSICIÓN (`[0,1]`, `[0,1,2,13,14]` —Fecha, Sala, Tanque,
 Hora y Parte— y `[0,1,2]`), igual que `Broodstock` (`[0,1]`, Fecha de corte · Piscina, que además
 REEMPLAZA en vez de fundir), así que mover una columna de las primeras destruye datos en cada
 sincronización; `Ingreso`, `Movimientos` y `Fin de Ciclo` van por la columna `ID`, que el GAS
 localiza por su cabecera.
-Por eso `Maduración Tanques` conserva tres columnas **vacías a propósito** (`Lote` y las dos
-`Población inicial`): sólo se pueden limpiar en el mismo despliegue en que cambie
-`madKeyCols`.
+✅ **P12 (2026-09-20): `Maduración Tanques` YA NO conserva las tres columnas vacías.** Durante meses
+llevó `Lote` y las dos `Población inicial` viajando en blanco porque quitarlas habría corrido la
+llave; se retiraron **en el mismo cambio** que bajó `madKeyCols` de `[0,1,3,16,17]` a `[0,1,2,13,14]`,
+movió la firma de la columna 15 a la 12 y el formato de la `Hora` de la 17 a la 14. El cliente y el
+`Code.gs` del repo ya emiten las **15**; lo que falta es desplegarlo y recortar la hoja (ver
+«Pendientes»). 🔑 La cifra de esta línea es la del código: `madKeyCols` en `GAS/Code.gs`.
 
 🛡 **Y como se escriben por posición, el GAS comprueba el esquema antes de escribir.** En las
 nueve hojas del registro operativo (`MAD_ESQUEMA_VIGILADO`), si una cabecera del envío no coincide con la de la hoja en
@@ -555,8 +558,11 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
 
 **Por validar en producción**
 
-2. **Estrenar lo desplegado el 2026-09-18** (repo, Pages y GAS con el sello `55acbff1b746`). La
-   cadena `push` → GAS → «🔗 Probar conexión» ya se hizo; falta que lo desplegado se use de verdad:
+2. **Estrenar lo desplegado.** ⚠ **El sello a exigir cambia con P12**: hoy Pages y `GAS/Code.gs`
+   llevan **`adcb1ddab653`** y el GAS desplegado sigue en `55acbff1b746`, así que hasta que se
+   re-despliegue (paso 2 de «Pendientes») las ocho hojas selladas NO envían desde una copia nueva.
+   🔑 El sello del día no se lee de aquí: lo dicen `?p=ver` y `estado-maduracion.mjs`. Falta que lo
+   desplegado se use de verdad:
    - Las hojas que nacen con su primer envío —Fin de Ciclo, Mortalidad Desove, Tratamientos,
      Alimentación y Broodstock— tienen que nacer con la cabecera actual, y el primer parte de Tanques
      tiene que llegar con su hora y su número. Cuáles existen ya, y con cuántas columnas, lo dice
@@ -565,12 +571,15 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
      ese sello. Una copia de `index (8)` con OTRO sello no envía las fichas selladas —calcula, guarda
      en el dispositivo y lo dice— y se sustituye por la actual.
      ⚠⚠ **Ese sello es necesario pero NO suficiente, y conviene saber por qué** (medido el 2026-09-20).
-     El sello es la huella de `GAS/Code.gs`, y `Code.gs` no se toca desde `ba7542f` (09-18): por eso
-     **todas** las copias de `index (8)` desde esa fecha muestran `55acbff1b746` y pasan «Probar
-     conexión» igual, aunque a una le falte código. Comprobado sobre los tres `index (8)` de Music: el
-     actual y sus dos respaldos llevan el mismo sello. Lo que prueba es que la app habla con ESTE GAS;
-     no prueba que sea la build de hoy. **La única identidad fiable de una copia es su sha1** —hoy
-     `2e806a50…`— y la app no la enseña por ningún sitio: se compara con `sha1sum` tras copiarla.
+     El sello es la huella de `GAS/Code.gs`, así que **todas** las copias hechas entre dos cambios de
+     `Code.gs` enseñan el mismo y pasan «Probar conexión» igual, aunque a una le falte código: así
+     estuvieron los tres `index (8)` de Music con `55acbff1b746` durante dos días. Lo que prueba es
+     que la app habla con ESTE GAS; no prueba que sea la build de hoy.
+     🔑 **La única identidad fiable de una copia es su sha1**, y la app no lo enseña por ningún sitio:
+     se compara con `sha1sum` tras copiarla. ⚠ **El sha1 del día NO se escribe aquí** —caducó una vez,
+     el 2026-09-20, cuando esta línea siguió diciendo `2e806a50…` después de que P12 dejara la copia
+     buena en otro sha1, y quien la siguiera habría dado por buena la build ANTERIOR—. Se pregunta:
+     `git -C "C:/Users/Usuario/Music" log --oneline -1` y `sha1sum "index (8).html"`.
    - Lo tecleado en las fichas selladas entre el 16 y el 18-09 no se envió (los sellos no casaban) y
      sigue en el dispositivo: hay que volver a guardarlo.
 
@@ -579,12 +588,20 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
 3. ✅ **El vaciado YA SE HIZO** (2026-09-20): se retiraron del documento todas las hojas de Maduración
    salvo las del reproductivo —`MATRIZ` y `Bitácora` siguen ahí, con sus miles de filas— y el registro
    se está estrenando en producción. `Maduración Ingreso` ya renació con la cabecera actual.
-   🔴 **Queda la OTRA MITAD, y tiene fecha de caducidad.** Era «el momento» de retirar las tres columnas
-   vacías de `Maduración Tanques` —`Lote` (índice 2) y las dos `Población inicial` (4 y 5)— cambiando
-   `madKeyCols` de `[0,1,3,16,17]` a `[0,1,2,13,14]` **en el mismo despliegue**, porque `Hora` y `Parte`
-   van al final y se correrían con ellas. Es gratis sólo mientras esa hoja tenga CERO filas; en cuanto
-   una ronda registre el primer parte, pasa a ser una migración.
-   🔑 Cuántas filas tiene hoy **no se lee de aquí**: lo dice `estado-maduracion.mjs`.
+   🔴 **Queda la OTRA MITAD: el CÓDIGO ya está hecho (P12, `1006532`) y la HOJA no.** El commit retiró
+   las tres columnas vacías de `Maduración Tanques` —`Lote` (índice 2) y las dos `Población inicial`
+   (4 y 5)— y bajó `madKeyCols` de `[0,1,3,16,17]` a `[0,1,2,13,14]`, porque `Hora` y `Parte` van al
+   final y se correrían con ellas. Faltan los dos pasos manuales, **en este orden y seguidos**:
+   re-desplegar `GAS/Code.gs` y borrar esas tres columnas de la hoja. Entre uno y otro, `Tanques` no
+   sincroniza desde ningún dispositivo —falla CERRADO: el GAS no escribe y lo tecleado se queda en el
+   dispositivo—, así que conviene hacerlos seguidos.
+   ⚠ **La ventana de «sale gratis» se cerró**: aquello valía mientras la hoja tuviera CERO filas y ya
+   no las tiene. Lo que mantiene el recorte sin coste es OTRA cosa, y es la que hay que volver a
+   comprobar antes de borrar: **que esas tres columnas sigan VACÍAS en todas las filas** (medido el
+   2026-09-21: 38 filas, las tres vacías en las 38).
+   🔑 Cuántas filas tiene hoy, y si la cabecera es la del código, **no se lee de aquí**: lo dice
+   `estado-maduracion.mjs`, que desde el 2026-09-21 sí mira `Tanques` y `Sala` (antes no miraba
+   ninguna de las dos).
 
 **Abierto**
 
