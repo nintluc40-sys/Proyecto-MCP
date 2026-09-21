@@ -7762,7 +7762,7 @@ function _gasVersionLocalCacheada(){
   return _gasVerLocalCache;
 }
 /* Cuánto se espera a ?p=ver. 🔴 2026-09-17 · ERA 6000, el presupuesto MÁS CORTO de toda la app, y es el de la
-   pregunta que decide si las seis fichas escriben en producción: más corto que «Probar conexión» (8000), que
+   pregunta que decide si las fichas selladas escriben en producción: más corto que «Probar conexión» (8000), que
    consulta ESTE MISMO ?p=ver, y que la verificación de la cola (12000). Medido hoy contra el GAS desplegado:
    2,5–4,9 s en caliente, pero 10,8 s en la PRIMERA llamada, que es el arranque en frío de Apps Script. O sea que
    la primera sincronización de cada sesión se pasaba de plazo, el sello quedaba «sin confirmar» y todo iba a la
@@ -7800,7 +7800,12 @@ async function _madIngGasAlDia(url){
    R2 (2026-09-17) · y TANQUES, que no es hoja nueva pero cambió de LLAVE con el parte de mortalidad: un GAS
    anterior la llavea sin Hora ni Parte y funde las rondas del día (ver _madTanquesEnviar).
    V1 (2026-09-18) · y BROODSTOCK, hoja nueva cuya ruta (reemplazo por Fecha de corte · Piscina) es de R1: un GAS anterior
-   la escribiría por el camino genérico, con otra llave. Va como guarda propia, fuera de la disyunción que anclan los bancos. */
+   la escribiría por el camino genérico, con otra llave. Va como guarda propia, fuera de la disyunción que anclan los bancos.
+   ⚠⚠ CUÁNTAS SON NO SE ESCRIBE EN NINGÚN COMENTARIO (2026-09-21). Son las de esta función y se cuentan
+   aquí. Tres sitios decían «las seis fichas» cuando ya eran OCHO —Tanques entró con R2 y Broodstock
+   con V1, cada uno en su línea, sin que nadie tocara la frase— y el README y el punto de guardado lo
+   copiaron. Importa porque es lo que deja de enviarse al re-desplegar el GAS: contar de menos hace
+   planificar un corte más pequeño que el real. Misma lección que la lista de fichas del README. */
 function _madHojaPideGasNuevo(hoja){ if(hoja === MAD_SHEET.tanques) return true; if(hoja === MAD_BS_SHEET) return true; return hoja === MAD_ING_SHEET || hoja === MAD_DESOVE_SHEET || hoja === MAD_FIN_SHEET || hoja === MAD_TRAT_SHEET || hoja === MAD_MORT_SHEET || hoja === MAD_ALIM_SHEET; }
 /* ⚠ 2026-09-16 · el aviso ya no dice «es anterior»: desde que se compara el SELLO, el GAS
    desplegado puede ser anterior O posterior al de esta app, y las dos cosas son igual de malas
@@ -7808,7 +7813,7 @@ function _madHojaPideGasNuevo(hoja){ if(hoja === MAD_SHEET.tanques) return true;
    que no es el suyo y que lo tecleado no se ha perdido. */
 function _madGasViejoMsg(hoja){ return "el GAS desplegado no es el de esta app y podría escribir «" + hoja + "» en columnas equivocadas"; }
 const MAD_ING_GAS_VIEJO = "el GAS desplegado no es el de esta app y podría escribir «Maduración Ingreso» (Crecimiento y Libras) en columnas equivocadas";
-/* PV3 (2026-09-16) · UN SELLO SIN CONFIRMAR NO ES «AL DÍA». Hasta hoy estas seis fichas sólo se frenaban ante un
+/* PV3 (2026-09-16) · UN SELLO SIN CONFIRMAR NO ES «AL DÍA». Hasta hoy estas fichas sólo se frenaban ante un
    «no» explícito: si ?p=ver no contestaba en 6 s, o Google devolvía su página 404 —pasa, está medido—, el portón
    daba null y el envío salía igual, así que el fallo seguro de R4 tenía una puerta trasera. Ahora, sin confirmar,
    NO se escribe en la hoja: el envío entra en la COLA sin salir, y la cola sólo lo entrega cuando ?p=ver confirma
@@ -13402,7 +13407,7 @@ function saveMadTanquesGrid(opts){
   return saved;
 }
 
-/* R2 (2026-09-17) · TANQUES PASA POR EL PORTÓN DEL SELLO, como las seis fichas de formulario. Desde el parte de
+/* R2 (2026-09-17) · TANQUES PASA POR EL PORTÓN DEL SELLO, como las fichas de formulario. Desde el parte de
    mortalidad su llave en el GAS es (Fecha, Sala, Tanque, Hora, Parte), y un GAS anterior sigue llaveando por (Fecha,
    Sala, Tanque): FUNDE los partes del día y la última ronda pisa a las anteriores, con respuesta «ok». Así que:
      · el sello es el de esta app → se envía;

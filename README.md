@@ -628,8 +628,10 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
    sobre cero no se confunda nunca con una prueba.
 8. **La CI sigue sin poder vigilar `index (8)`** —`deploy.yml` corre lint, vitest, auditorías y build, y
    ninguna de las cuatro ve un archivo que no está en el repo—, pero desde el 2026-09-20 **ya no depende
-   de acordarse**: un hook `pre-push` corre `node verificar-todo.mjs --copias` (las seis que comparan
-   repo ↔ `index (8)`: funciones, estilos, marcado, SheetJS, plantillas del GAS y sintaxis, ~1,8 s) y
+   de acordarse**: un hook `pre-push` corre `node verificar-todo.mjs --copias` (las que comparan
+   repo ↔ `index (8)` —funciones, constantes, estilos, marcado, SheetJS, plantillas del GAS, sintaxis
+   y que esté versionado—, ~1,8 s; **cuántas son lo dice ella al correr**: aquí ponía «seis» y eran
+   ocho desde que entraron `verificar-constantes` y `verificar-index8-git`) y
    **para el push** si divergen. Falla CERRADO: si falta el utillaje o falta `index (8)`, también para y
    lo dice. Salida deliberada: `git push --no-verify`.
    ⚠ El hook vive en `.git/hooks/`, que **no se versiona**: es local a esta máquina, igual que
