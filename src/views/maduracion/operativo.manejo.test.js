@@ -23,7 +23,9 @@ import {
 import { modeloOperativo } from './operativo.data.js';
 import { normalizarFiltro, periodoDe } from './operativo.tablero.js';
 import { MAD_OP_ORIGEN } from './operativo.fuentes.js';
-import { MAD_ALIM_TOMAS_ESTANDAR } from '../registros/lib/ficha-maduracion-alimentacion.schema.js';
+import {
+  MAD_ALIM_TOMAS_ESTANDAR, MAD_ALIM_PCT_MAX, alimTomasTexto,
+} from '../registros/lib/ficha-maduracion-alimentacion.schema.js';
 
 const O = MAD_OP_ORIGEN;
 const ING = (fecha, lote, sala, tanque, machos, hembras) => ({ _SheetOrigin: O, 'Camaronera origen': 'CX',
@@ -33,13 +35,13 @@ const MOV = (fecha, tipo, so, to, sd, td, machos, hembras, motivo, agua = 'RAS')
   Fecha: fecha, Tipo: tipo, 'Sala origen': so, 'Tanque origen': to, 'Sala destino': sd, 'Tanque destino': td,
   Machos: machos, Hembras: hembras, 'Agua destino': agua, Motivo: motivo, Observaciones: '',
   ID: fecha + so + to + sd + td });
-const ALIM = (fecha, sala, tanque, lotes, biomasa, kg, fuente = 'Biometría') => ({ _SheetOrigin: O,
+const ALIM = (fecha, sala, tanque, lotes, biomasa, kg, fuente = 'Biometría', tomas = '') => ({ _SheetOrigin: O,
   Fecha: fecha, Sala: sala, Tanque: tanque, Lotes: lotes, Hembras: 10, Machos: 10,
   'Peso hembras (g)': 70, 'Peso machos (g)': 50, 'Fuente del peso': fuente,
   'Biomasa hembras (kg)': biomasa / 2, 'Biomasa machos (kg)': biomasa / 2, 'Biomasa total (kg)': biomasa,
   'Poliqueto (kg/día)': kg.pol || '', 'Redy Mate (kg/día)': kg.redy || '', 'Calamar (kg/día)': kg.cal || '',
   'Mejillón (kg/día)': kg.mej || '', 'Krill (kg/día)': kg.kri || '', 'Vitallis (kg/día)': kg.vit || '',
-  'Total (kg/día)': Object.values(kg).reduce((a, b) => a + (b || 0), 0), Tomas: '', ID: fecha + sala + tanque });
+  'Total (kg/día)': Object.values(kg).reduce((a, b) => a + (b || 0), 0), Tomas: tomas, ID: fecha + sala + tanque });
 const FIN = (fecha, lote, tipo, machos, hembras) => ({ _SheetOrigin: O, 'Metabisulfito (kg)': '',
   Fecha: fecha, Lote: lote, Tipo: tipo, Machos: machos, Hembras: hembras });
 const TRAT = (fecha, sala, tipo, area, lotes, productos, ras = '') => ({ _SheetOrigin: O, Fecha: fecha,
@@ -162,7 +164,44 @@ describe('Maduración · operativo · 🔄 Manejo (F5.1)', () => {
       const mej = a.productos.find((p) => p.producto === 'Mejillón');
       expect(mej.kg).toBe(0);
       expect(mej.kgDia).toBe(0);
-      expect(mej.fueraDeRango).toBe(false);     // 0 no está «fuera de rango»: es que no se planificó
+      // Sin tomas en la fila no hay nada que juzgar: ni tomas, ni tomas fuera de rango.
+      expect([mej.tomas, mej.tomasFuera, mej.fuera]).toEqual([0, 0, []]);
+    });
+
+    /* 🔑🔑 EL RANGO DE LA FICHA (0,25–2 %) ES POR TOMA. La primera versión lo aplicaba al % DIARIO de cada producto,
+       y con la agenda estándar Calamar suma 7 % en cuatro tomas de 1,5–2 %: la ración correcta salía en rojo.
+       Este fixture DISTINGUE las dos reglas: Calamar supera el 2 % al DÍA (6 kg/día sobre 150 kg) con todas sus
+       tomas dentro del rango; dos tanques de la Sala 1 el MISMO día llevan la misma agenda (se cuenta una vez); y
+       la Sala 5 planifica una toma de Krill al 2,5 %, que es la única fuera. */
+    describe('el rango se juzga POR TOMA', () => {
+      const ESTANDAR = alimTomasTexto(MAD_ALIM_TOMAS_ESTANDAR);
+      const M2 = modeloOperativo([
+        ING('2026-09-01', 'SA', 'Sala 1', 1, 20, 20),
+        ING('2026-09-01', 'SB', 'Sala 5', 9, 10, 10),
+        ALIM('2026-09-18', 'Sala 1', 1, 'SA', 100, { cal: 6 }, 'Biometría', ESTANDAR),
+        ALIM('2026-09-18', 'Sala 1', 2, 'SA', 100, { cal: 6 }, 'Biometría', ESTANDAR),
+        ALIM('2026-09-19', 'Sala 5', 9, 'SB', 100, { kri: 1 }, 'Biometría', '07:00 Krill 2.5; 10:00 Poliqueto 1'),
+      ], { fecha: FOTO, hoy: FOTO });
+      const a = alimentacionPorProducto(M2.fuentes, periodoDe('30d', FOTO, M2.fuentes), normalizarFiltro({}, M2.indice));
+      const de = (p) => a.productos.find((x) => x.producto === p);
+
+      it('🔑 la agenda estándar no sale en rojo aunque Calamar supere el 2 % al día', () => {
+        expect(de('Calamar').pct).toBeGreaterThan(MAD_ALIM_PCT_MAX);   // el fixture distingue: juzgar el día la marcaría
+        expect(de('Calamar').tomasFuera).toBe(0);
+        expect(a.productos.filter((p) => p.producto !== 'Krill').every((p) => p.tomasFuera === 0)).toBe(true);
+      });
+
+      it('las tomas se cuentan UNA vez por sala y día, aunque dos tanques lleven la misma agenda', () => {
+        expect(de('Calamar').tomas).toBe(MAD_ALIM_TOMAS_ESTANDAR.filter((t) => t.producto === 'Calamar').length);
+        expect(de('Poliqueto').tomas).toBe(2);   // la de la Sala 1 el 18 y la de la Sala 5 el 19
+      });
+
+      it('la toma fuera de rango se cuenta y se dice cuál es: día, sala, hora y %', () => {
+        expect(de('Krill').tomasFuera).toBe(1);
+        expect(de('Krill').fuera).toEqual([{ fecha: '2026-09-19', sala: 'Sala 5', hora: '07:00', pct: 2.5 }]);
+        expect(a.tomasFuera).toBe(1);
+        expect(a.tomas).toBe(a.productos.reduce((x, p) => x + p.tomas, 0));
+      });
     });
 
     it('la proyección mensual es aritmética sobre el ritmo del período', () => {

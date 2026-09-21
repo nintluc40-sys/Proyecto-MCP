@@ -16,6 +16,10 @@
    🔑 EL % DE LA BIOMASA ES EL ÚNICO UMBRAL DE ESTE TABLERO CON FUENTE PROPIA: 0,25 a 2 % por toma, de la
    propia ficha de Alimentación (`MAD_ALIM_PCT_MIN`/`MAX`). Los demás esperan al laboratorio. Por eso aquí sí se
    juzga, y con esa fuente dicha.
+   🔑🔑 Y SE JUZGA POR TOMA, como en la ficha: cada toma que de verdad se planificó —la columna «Tomas» de la fila,
+   leída con el MISMO intérprete que la ficha—, una vez por sala y día. La primera versión (2026-09-21) lo aplicaba
+   al % DIARIO de cada producto, y con la agenda estándar Calamar (cuatro tomas de 1,5–2 %, 7 % al día) y Krill
+   (4,5 %) salían «fuera de rango» siguiendo la ración al pie de la letra: una alarma sobre lo correcto.
 
    ⚠ EL FILTRO NO LLEGA IGUAL A LOS TRES, y se dice en vez de callarlo:
      · Movimientos tiene DOS ubicaciones (origen y destino): una fila entra si CUALQUIERA de las dos pasa el
@@ -31,6 +35,7 @@
 import { MAD_MOV_MOTIVOS, MAD_MOV_TIPOS } from '../registros/lib/ficha-maduracion-movimientos.schema.js';
 import {
   MAD_ALIM_PRODUCTOS, MAD_ALIM_TOMAS_ESTANDAR, MAD_ALIM_PCT_MIN, MAD_ALIM_PCT_MAX,
+  alimTomasDesdeTexto, alimTomasActivas,
 } from '../registros/lib/ficha-maduracion-alimentacion.schema.js';
 import { MAD_TRAT_AREAS, MAD_TRAT_PREVENTIVOS } from '../registros/lib/ficha-maduracion-tratamientos.schema.js';
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
@@ -185,7 +190,8 @@ export function ignoraDeAlimentacion(F) {
 }
 
 /**
- * Los kg PLANIFICADOS de cada producto en el período y su % de la biomasa, contra la agenda estándar.
+ * Los kg PLANIFICADOS de cada producto en el período y su % de la biomasa, contra la agenda estándar; y sus
+ * TOMAS, cada una juzgada con el rango de la ficha (`tomas`, `tomasFuera` y el detalle en `fuera`).
  * 🔑 El % se calcula sobre la biomasa de LAS MISMAS filas que aportan los kg: dividir por una biomasa de otro
  * día —o por la del último— daría un porcentaje que no corresponde a ninguna ración.
  */
@@ -194,6 +200,10 @@ export function alimentacionPorProducto(fuentes, periodo, F) {
   let biomasa = 0;
   const dias = new Set();
   let filas = 0;
+  /* Las tomas planificadas, una vez por sala y día: todos los tanques de una sala llevan la MISMA agenda en su
+     columna «Tomas», y contarla por tanque la multiplicaría. Lo que se juzga es cada toma, con la regla de la ficha. */
+  const tomasVistas = new Set();
+  const tomasDe = new Map();   // producto → { tomas, fuera: [{ fecha, sala, hora, pct }] }
   for (const r of (fuentes || {}).alimentacion || []) {
     const fecha = fechaDeFila('alimentacion', r);
     if (!enPeriodo(fecha, periodo) || !alimEnFiltro(r, F)) continue;
@@ -205,6 +215,15 @@ export function alimentacionPorProducto(fuentes, periodo, F) {
       if (v === null) continue;
       kg.set(p, r3((kg.get(p) || 0) + v));
     }
+    for (const t of alimTomasActivas(alimTomasDesdeTexto(r.Tomas))) {
+      const k = fecha + '|' + txt(r.Sala) + '|' + t.hora + '|' + t.producto + '|' + t.pct;
+      if (tomasVistas.has(k)) continue;
+      tomasVistas.add(k);
+      const o = tomasDe.get(t.producto) || { tomas: 0, fuera: [] };
+      o.tomas++;
+      if (t.pct < MAD_ALIM_PCT_MIN || t.pct > MAD_ALIM_PCT_MAX) o.fuera.push({ fecha, sala: txt(r.Sala), hora: t.hora, pct: t.pct });
+      tomasDe.set(t.producto, o);
+    }
   }
   const A = agendaPorProducto();
   const agenda = A.productos;
@@ -215,17 +234,23 @@ export function alimentacionPorProducto(fuentes, periodo, F) {
     const porDia = r3(total / nDias);
     const pct = biomasaDia > 0 ? r3((porDia / biomasaDia) * 100) : '';
     const a = agenda.find((x) => x.producto === p) || { pct: 0, tomas: 0 };
+    const T = tomasDe.get(p) || { tomas: 0, fuera: [] };
     return {
       producto: p, kg: r3(total), kgDia: porDia, pct,
       agendaPct: a.pct, agendaTomas: a.tomas,
-      /* Sólo se juzga con biomasa y con agenda: sin una de las dos, la comparación no significa nada. */
+      /* Sólo se compara con biomasa y con agenda: sin una de las dos, la comparación no significa nada. El
+         desvío INFORMA; lo que se JUZGA con el rango de la ficha son las tomas, aquí debajo. */
       desvio: pct === '' || !a.pct ? '' : r2(pct - a.pct),
-      fueraDeRango: pct !== '' && pct > 0 && (pct < MAD_ALIM_PCT_MIN || pct > MAD_ALIM_PCT_MAX),
+      tomas: T.tomas,
+      tomasFuera: T.fuera.length,
+      fuera: T.fuera.sort((x, y) => porNombre(y.fecha, x.fecha) || porNombre(x.sala, y.sala) || porNombre(x.hora, y.hora)),
     };
   });
   const totalDia = r3(productos.reduce((a, p) => a + p.kgDia, 0));
   return {
     productos, filas, dias: dias.size,
+    tomas: productos.reduce((a, p) => a + p.tomas, 0),
+    tomasFuera: productos.reduce((a, p) => a + p.tomasFuera, 0),
     biomasa: r2(biomasa), biomasaDia, totalDia,
     pctTotal: biomasaDia > 0 ? r3((totalDia / biomasaDia) * 100) : '',
     /* La proyección es 30 días al ritmo del período. Es aritmética, no un pronóstico: se rotula así. */
