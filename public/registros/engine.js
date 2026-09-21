@@ -1605,7 +1605,18 @@ const _sleep = (ms) => new Promise(res => setTimeout(res, ms));
 // desaparecen al reintentar, y el reintento es idempotente (reqId). Se
 // distinguen de los rechazos PERMANENTES (hoja no permitida, no autorizado,
 // formato inválido, límite de filas…) que sí deben rendirse sin reintentar.
-const _BUSY_RE = /ocupad|reintenta|demasiadas solicitudes|too many|rate limit|try again/i;
+/* 🔴 B2 (2026-09-21) · FALTABA «Error interno», que es el catch final de doPost. Ahí es donde cae
+   un fallo TRANSITORIO de Google —el clásico "Service Spreadsheets failed while accessing
+   document"—, y este cliente lo clasificaba como rechazo permanente: el envío se DESCARTABA de la
+   cola y al usuario se le decía «revisa los datos», cuando el dato estaba perfecto y lo único que
+   hacía falta era volver a intentarlo. Lo tecleado no se perdía (el registro local no se marca
+   sincronizado), pero se perdía el reintento automático y había que darse cuenta a mano.
+   Va contra la regla que este proyecto ya tiene escrita: «Google falla a rachas — reintentar antes
+   de dar por roto nada». Y no estaba cubierto: gas-motivos.test.js clasificaba siete mensajes del
+   GAS y éste no estaba en ninguna de sus dos listas.
+   ⚠ Si alguna vez fuera un defecto de datos de verdad, tampoco se queda girando: la cola tiene TTL
+   de 24 h y tope de 50, y el envío sigue VISIBLE como «en cola» en vez de desaparecer. */
+const _BUSY_RE = /ocupad|reintenta|demasiadas solicitudes|too many|rate limit|try again|error interno/i;
 async function _postOnce(bodyPayload, finalUrl, info){
   const ctrl  = new AbortController();
   // F2a: el tope del cliente tiene que cubrir la PEOR espera del servidor entera:

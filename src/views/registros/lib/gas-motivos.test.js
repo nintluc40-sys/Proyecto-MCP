@@ -145,4 +145,41 @@ describe('GAS ↔ cliente · los motivos de rechazo', () => {
       expect(_gasMotivo(msg)).toContain(msg);
     });
   });
+
+  /* ── B2 (2026-09-21) · LA TERCERA LECTURA DEL MISMO MENSAJE, que no se probaba ──
+     Además de las dos de arriba, `_postOnce` lo lee con `_BUSY_RE` y decide algo distinto y
+     ANTERIOR: si el envío se reintenta (y se conserva) o si se da por rechazado. Un mensaje podía
+     pasar las dos comprobaciones de arriba y perderse aquí, que es lo que le ocurría al catch final
+     de `doPost`: un fallo TRANSITORIO de Google —«Service Spreadsheets failed…»— se descartaba de
+     la cola y se le decía al usuario «revisa los datos» con el dato perfecto.
+     🔑 Los mensajes se siguen EXTRAYENDO del GAS: si alguien reescribe uno, esto se pone rojo en
+     vez de dejar de reconocerlo en silencio. */
+  describe('_BUSY_RE · ¿el envío se REINTENTA o se da por rechazado?', () => {
+    const busy = (() => {
+      const m = /const _BUSY_RE = (\/[^\n]*\/[a-z]*);/.exec(engine);
+      if (!m) throw new Error('engine.js ya no declara _BUSY_RE');
+      return new Function('return ' + m[1])();
+    })();
+
+    const TRANSITORIOS = ['Servidor ocupado', 'Demasiadas solicitudes', 'Error interno'];
+    const PERMANENTES = ['Hoja no permitida', 'Formato inválido', 'Límite de filas', 'Error en datos'];
+
+    for (const frag of TRANSITORIOS) {
+      it(`«${frag}» → TRANSITORIO: se reintenta, no se descarta`, () => {
+        expect(busy.test(mensajeDelGas(frag))).toBe(true);
+      });
+    }
+
+    for (const frag of PERMANENTES) {
+      it(`«${frag}» → permanente: reintentar no serviría`, () => {
+        expect(busy.test(mensajeDelGas(frag))).toBe(false);
+      });
+    }
+
+    it('🔴 el catch final de doPost es lo que Google devuelve cuando falla a rachas', () => {
+      // Si alguien lo reescribiera sin «error interno», el envío volvería a descartarse de la cola.
+      expect(mensajeDelGas('Error interno').toLowerCase()).toContain('error interno');
+      expect(busy.test(mensajeDelGas('Error interno'))).toBe(true);
+    });
+  });
 });
