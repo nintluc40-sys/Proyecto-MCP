@@ -237,7 +237,11 @@ export function fichaDeTanque(M, serie, sala, tanque, periodo, F, dias) {
     cargaMetrica: c.cargaMetrica === undefined ? '' : c.cargaMetrica,
     cargaVolumetrica: c.cargaVolumetrica === undefined ? '' : c.cargaVolumetrica,
     curva: curvaDeTanque(serie, S, T),
-    hoy: partesDelDia((M || {}).fuentes, S, T, (M || {}).fecha),
+    /* ⚠ «Los partes de hoy» son los del día de la FOTO, y con el retraso normal del registro ese día suele
+       estar vacío. Por eso va también la fecha del ÚLTIMO parte: sin ella la sección sería un callejón que
+       dice «no hay» sin decir dónde mirar. */
+    hoy: { ...partesDelDia((M || {}).fuentes, S, T, (M || {}).fecha), fecha: txt((M || {}).fecha) },
+    ultimoParte: txt((actividadPorTanque(dias, periodo).get(ubicKey(S, T)) || {}).ultimoParte),
     observaciones: observacionesDeTanque(dias, S, T, periodo, F),
     movimientos: movimientosDeTanque((M || {}).fuentes, S, T, periodo),
   };

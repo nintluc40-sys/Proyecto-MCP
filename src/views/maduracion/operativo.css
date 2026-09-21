@@ -126,3 +126,19 @@
 .mop-sem-l { font-size: 10px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: var(--c-text-muted); }
 .mop-sem-v { font-size: 14px; font-weight: 800; color: var(--c-text); }
 .mop-sem-n { font-size: 10px; font-style: italic; color: var(--c-text-muted); }
+
+/* 🛢 Tanques y 🥚 Reproducción (F4) */
+.mop-tanques tbody tr.mop-tq-fila { cursor: pointer; }
+.mop-tq-fila:hover td, .mop-tq-fila:focus-visible td { background: color-mix(in srgb, var(--c-brand) 10%, transparent); }
+.mop-tq-fila:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: -2px; }
+.mop-tq-fila.is-on td { background: color-mix(in srgb, var(--c-brand) 16%, transparent); }
+/* Un lote que el filtro deja fuera SIGUE en el tanque: se atenúa, no se esconde. */
+.mop-ficha tr.mop-fuera td { opacity: .55; font-style: italic; }
+.mop-h5 { margin: 14px 0 6px; font-size: 12px; font-weight: 800; letter-spacing: .2px; color: var(--c-text); }
+.mop-h5:first-of-type { margin-top: 4px; }
+.mop-obs-g { margin-bottom: 10px; }
+.mop-obs-g > b { display: block; margin-bottom: 4px; font-size: 11px; color: var(--c-text-muted); }
+.mop-obs-f { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(60px, 2fr) 48px; align-items: center; gap: 8px; font-size: 11.5px; }
+.mop-obs-f .r { text-align: right; font-weight: 700; }
+/* Un desove al que ya se le pasó el día de contar su N5. */
+.mop-pend-tarde td { background: color-mix(in srgb, var(--c-malo) 14%, transparent); }

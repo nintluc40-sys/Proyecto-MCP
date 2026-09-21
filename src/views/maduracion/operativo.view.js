@@ -40,6 +40,8 @@ import { INDICADORES } from './operativo.indicadores.js';
 import { FUENTES, umbralVigente, evaluar } from './operativo.umbrales.js';
 import { tablaDeLotes, fichaDeLote, DIMENSIONES_COMPARATIVA, comparativa } from './operativo.lotes.js';
 import { DIMENSIONES_BAJAS, desgloseDeBajas, motivosDeCierre, bajasPorHora, calorSalaDia, lotesCerrados } from './operativo.bajas.js';
+import { tablaDeTanques, fichaDeTanque, avisosDeTanques } from './operativo.tanques.js';
+import { pendientesDeN5, tablaDeReproduccion, destinosDeDespacho, totalesDeReproduccion } from './operativo.reproduccion.js';
 import {
   VARIABLES_REVISION, revisionesDeNauplios, alcalinidadPorArea, mortalidadEnDesove, frecuenciaDeObservaciones,
 } from './operativo.revisiones.js';
@@ -59,9 +61,17 @@ const SUBS = [
      nombre sigue a la DECISIÓN 6 del usuario —Inf. Supervisor + observaciones de tanque—, que es de
      donde sale todo lo que hay aquí. */
   { clave: 'revisiones', etiqueta: 'Revisiones del supervisor', icono: '🔍' },
+  /* F4 (2026-09-21) · las dos últimas del plan, SEPARADAS por decisión del usuario: responden preguntas
+     distintas —«qué pasa en ESTE tanque» y «cuánto desova y qué sale»— y no comparten ni filtros ni unidad. */
+  { clave: 'tanques', etiqueta: 'Tanques', icono: '🛢' },
+  { clave: 'reproduccion', etiqueta: 'Reproducción', icono: '🥚' },
 ];
 const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', tanque: '', lote: '', codigo: '', color: 'estado', salaDetalle: '', tanqueSel: '', loteSel: '', agrupacion: 'lote',
-  estado: '', sexo: '', piscina: '', camaronera: '', agrupacionBajas: 'sala' };
+  estado: '', sexo: '', piscina: '', camaronera: '', agrupacionBajas: 'sala',
+  /* F4.1 · el tanque cuya FICHA está abierta en 🛢 Tanques. Es otro que `tanqueSel`, que es el del mapa de
+     📊 Estado: comparten idea pero no vida —el del mapa se apaga al repintar y éste sobrevive al filtro—, y
+     reusar uno para las dos cosas haría que abrir uno cerrara el otro sin que se viera por qué. */
+  tqFicha: '' };
 /* El estado de la vista vive lo que dura la sesión: al volver a Maduración, o al refrescarse los datos, se conserva. */
 const vOp = { ...INICIAL };
 
@@ -148,12 +158,17 @@ export function operativoView(root) {
     h += bajasHTML(M, memo, periodo, F);
   } else if (vOp.sub === 'revisiones') {
     h += revisionesHTML(M, memo, periodo, F);
+  } else if (vOp.sub === 'tanques') {
+    h += tanquesHTML(M, memo, periodo, F);
+  } else if (vOp.sub === 'reproduccion') {
+    h += reproduccionHTML(M, periodo, F);
   } else {
     h += estadoHTML(M, memo, periodo, F);
   }
   root.innerHTML = h;
   if (detalle) dibujarDetalle(detalle);
   if (vOp.sub === 'lotes') dibujarLote(_fichaLote);
+  if (vOp.sub === 'tanques') dibujarTanque(_fichaTanque);
   bind(root);
 }
 
@@ -1027,12 +1042,269 @@ function historialRevHTML(r, p) {
   </div>`;
 }
 
+/* ============================================================
+   🛢 TANQUES y 🥚 REPRODUCCIÓN (F4, 2026-09-21)
+   Diseño aprobado por el usuario: dos sub-vistas SEPARADAS; Tanques con tabla maestra + ficha debajo, como
+   🧬 Lotes; y Reproducción por LOTE, con los pendientes de N5 arriba, que es lo accionable.
+   Las cifras salen de operativo.tanques.js y operativo.reproduccion.js, puros y con su banco: aquí sólo se
+   pintan. La curva del tanque va con Chart.js, igual que la del lote —es el mismo gráfico y se dibuja igual—;
+   lo demás en HTML/CSS, como F3.
+   ============================================================ */
+let _fichaTanque = null;
+
+function tanquesHTML(M, memo, p, F) {
+  const filas = tablaDeTanques(M, p, F, memo.partes);
+  /* Un tanque elegido que ya no está en la tabla (otro filtro, otra foto) deja de estarlo: la ficha no
+     sobrevive a su fila, igual que la del lote y el detalle de la sala. */
+  if (vOp.tqFicha && !filas.some((f) => f.sala + '|' + f.tanque === vOp.tqFicha)) vOp.tqFicha = '';
+  const i = vOp.tqFicha.lastIndexOf('|');
+  _fichaTanque = vOp.tqFicha
+    ? fichaDeTanque(M, serieDe(memo, p), vOp.tqFicha.slice(0, i), vOp.tqFicha.slice(i + 1), p, F, memo.partes)
+    : null;
+  return tablaTanquesHTML(filas, F) + (_fichaTanque ? fichaTanqueHTML(_fichaTanque) : '');
+}
+
+function tablaTanquesHTML(filas, F) {
+  if (!filas.length) {
+    return `<div class="mc-card"><h4 class="mc-card-h">🛢 Tanques</h4>
+      <p class="muted" style="margin:4px 0">${hayFiltro(F) ? 'Ningún tanque ocupado pasa el filtro.' : 'El libro no tiene ningún tanque ocupado.'}</p></div>`;
+  }
+  const avisos = avisosDeTanques(F);
+  const fila = (f) => {
+    const k = f.sala + '|' + f.tanque;
+    const sel = k === vOp.tqFicha;
+    return `<tr class="mop-tq-fila ${sel ? 'is-on' : ''}" role="button" tabindex="0" aria-pressed="${sel}" data-mop-tqf="${esc(k)}">
+      <td>${esc(f.sala)}</td>
+      <td class="r"><b>${nf(f.tanque)}</b></td>
+      <td>${f.lotes.map((l) => esc(l)).join(' · ')}${f.compartido ? ' <span class="mop-nota" title="Este tanque tiene más de un lote">compartido</span>' : ''}${f.parcial ? ' <span class="mop-dif" title="El filtro deja fuera parte de lo que hay en el tanque; las cifras son las del tanque entero">⚠</span>' : ''}</td>
+      <td class="r">${nf(f.vivos.total)}</td>
+      <td class="r"><span class="mop-nota">♀ ${nf(f.vivos.hembras)} · ♂ ${nf(f.vivos.machos)}</span></td>
+      <td class="r" title="${esc(definicion('proporcionHM'))}">${nf(f.hm, 2)}</td>
+      <td class="r" title="${esc(definicion('densidadTanque'))}">${nf(f.densidad, 2)}</td>
+      <td class="r">${nf(f.cargaMetrica, 2)}</td>
+      <td class="r">${nf(f.pesoHembras, 1)} / ${nf(f.pesoMachos, 1)}</td>
+      <td class="r">${nf(f.rondas)}</td>
+      <td class="r">${f.ultimoParte ? esc(dm(f.ultimoParte)) : '<span class="muted">—</span>'}</td>
+    </tr>`;
+  };
+  return `<div class="mc-card mc-card-wide">
+    <h4 class="mc-card-h">🛢 Tanques <span class="mc-h-note">ocupados al cierre de la foto · pulsa una fila para su ficha</span></h4>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-tanques">
+      <thead><tr><th>Sala</th><th class="r">Tanque</th><th>Lote(s)</th><th class="r">Vivos</th><th class="r">♀ / ♂</th>
+        <th class="r" title="${esc(definicion('proporcionHM'))}">♀:♂</th>
+        <th class="r" title="${esc(definicion('densidadTanque'))}">Dens.</th>
+        <th class="r" title="Biomasa del tanque ÷ su área, en g/m²">Carga</th>
+        <th class="r">Peso ♀/♂ (g)</th><th class="r">Rondas</th><th class="r">Últ. parte</th></tr></thead>
+      <tbody>${filas.map(fila).join('')}</tbody></table></div>
+    <p class="mc-note">Los VIVOS y la CARGA son del tanque ENTERO —el área y el volumen son suyos, no del lote—, y los
+      PESOS son los del último parte, no el promedio del período.${avisos.length ? ' ⚠ ' + esc(avisos[0]) : ''}</p>
+  </div>`;
+}
+
+function partesHoyHTML(hoy, ultimo) {
+  /* ⚠ Con el retraso normal del registro, el día de la foto suele estar vacío. Decir sólo «no hay» dejaría la
+     sección en un callejón, así que se apunta a dónde SÍ hay. */
+  if (!hoy.partes.length) {
+    return `<p class="muted" style="margin:4px 0">Sin partes en la foto de este día.${ultimo
+      ? ' El último fue el <b>' + esc(dma(ultimo)) + '</b>: pon esa fecha en la foto para verlo.' : ''}</p>`;
+  }
+  const f = (x) => `<tr>
+      <td>${x.hora ? esc(x.hora) : '<span class="mop-nota" title="Este parte es anterior a la columna «Hora» (2026-09-17)">sin hora</span>'}</td>
+      <td class="r">${x.parte ? nf(x.parte) : '—'}</td>
+      <td class="r">${nf(x.machosMuertos)} / ${nf(x.hembrasMuertas)}</td>
+      <td class="r">${nf(x.machosDescarte)} / ${nf(x.hembrasDescarte)}</td>
+      <td class="r">${nf(x.copulas)}</td><td class="r">${nf(x.muda)}</td>
+      <td class="r">${nf(x.pesoHembras, 1)} / ${nf(x.pesoMachos, 1)}</td>
+      <td>${[...x.sanitarias, ...x.operativas].map((o) => esc(o)).join(', ') || '<span class="muted">—</span>'}</td>
+    </tr>`;
+  return `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-partes">
+      <thead><tr><th>Hora</th><th class="r">Parte</th><th class="r">Muertos ♂/♀</th><th class="r">Descarte ♂/♀</th>
+        <th class="r">Cóp.</th><th class="r">Muda</th><th class="r">Peso ♀/♂</th><th>Observaciones</th></tr></thead>
+      <tbody>${hoy.partes.map(f).join('')}</tbody></table></div>
+    ${hoy.sinHora ? '<p class="mc-note">⚠ ' + nf(hoy.sinHora) + ' parte(s) sin hora, al final: son anteriores a que existiera esa columna y no se les inventa un turno.</p>' : ''}`;
+}
+
+function obsFrecHTML(o) {
+  const lista = (arr, rotulo) => {
+    if (!arr.length) return '';
+    const max = arr[0].veces;
+    return `<div class="mop-obs-g"><b>${esc(rotulo)}</b>${arr.map((x) => `<div class="mop-obs-f">
+      <span>${esc(x.obs)}</span>${barra(x.veces, max)}<span class="r">${nf(x.veces)}</span></div>`).join('')}</div>`;
+  };
+  if (!o.sanitarias.length && !o.operativas.length) {
+    return '<p class="muted" style="margin:4px 0">Ninguna observación marcada en el período.</p>';
+  }
+  return lista(o.sanitarias, 'Sanitarias') + lista(o.operativas, 'Operativas')
+    + `<p class="mc-note">Sobre ${nf(o.registros)} día(s) con parte. Una observación marcada en varias rondas del mismo día cuenta UNA vez.</p>`;
+}
+
+function movsHTML(m) {
+  if (!m.length) return '<p class="muted" style="margin:4px 0">Sin movimientos en el período.</p>';
+  const flecha = { entra: '⭢', sale: '⭠', interno: '⟳' };
+  const f = (x) => `<tr>
+      <td>${esc(dm(x.fecha))}</td>
+      <td>${esc(flecha[x.sentido] || '')} ${esc(x.sentido)}</td>
+      <td>${esc(x.tipo)}</td>
+      <td>${esc(x.origen.sala)} · ${nf(x.origen.tanque)} → ${esc(x.destino.sala)} · ${nf(x.destino.tanque)}</td>
+      <td class="r">${nf(x.total)}</td>
+      <td>${esc(x.motivo)}</td></tr>`;
+  return `<div class="mc-tablewrap"><table class="mc-table mc-table-sm">
+    <thead><tr><th>Fecha</th><th>Sentido</th><th>Tipo</th><th>Origen → destino</th><th class="r">Animales</th><th>Motivo</th></tr></thead>
+    <tbody>${m.map(f).join('')}</tbody></table></div>`;
+}
+
+function fichaTanqueHTML(f) {
+  const comp = (c) => `<tr class="${c.enFiltro ? '' : 'mop-fuera'}">
+      <td><b>${esc(c.lote)}</b>${c.enFiltro ? '' : ' <span class="mop-nota" title="El filtro deja este lote fuera, pero sigue en el tanque">fuera del filtro</span>'}</td>
+      <td>${esc(c.codigoGenetico) || '<span class="muted">—</span>'}</td>
+      <td class="r">${nf(c.hembras)}</td><td class="r">${nf(c.machos)}</td><td class="r"><b>${nf(c.total)}</b></td></tr>`;
+  return `<div class="mc-card mc-card-wide mop-ficha">
+    <h4 class="mc-card-h">🛢 ${esc(f.sala)} · Tanque ${nf(f.tanque)}
+      <span class="mc-h-note">${nf(f.vivos.total)} vivos · ♀:♂ ${nf(f.hm, 2)} · densidad ${nf(f.densidad, 2)} /m²
+      · carga ${nf(f.cargaMetrica, 2)} g/m²${f.area === '' ? '' : ' · área ' + nf(f.area, 2) + ' m²'}</span></h4>
+
+    <h5 class="mop-h5">Composición${f.compartido ? ' <span class="mop-nota">tanque compartido</span>' : ''}</h5>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm">
+      <thead><tr><th>Lote</th><th>Código genético</th><th class="r">♀</th><th class="r">♂</th><th class="r">Total</th></tr></thead>
+      <tbody>${f.composicion.map(comp).join('')}</tbody></table></div>
+
+    <h5 class="mop-h5">Vivos en el período</h5>
+    <div class="mc-chart" style="height:200px"><canvas id="mopTanqueCurva"></canvas></div>
+
+    <h5 class="mop-h5">Partes de la foto (${esc(dma(f.hoy.fecha || ''))})</h5>
+    ${partesHoyHTML(f.hoy, f.ultimoParte)}
+
+    <h5 class="mop-h5">Observaciones del período</h5>
+    ${obsFrecHTML(f.observaciones)}
+
+    <h5 class="mop-h5">Movimientos del período</h5>
+    ${movsHTML(f.movimientos)}
+    <p class="mc-note">Los VIVOS salen del libro —que sabe de ingresos, movimientos y cierres—; los partes son lo que
+      se REGISTRÓ en cada ronda. Sumar partes para deducir vivos daría otra cifra, y la equivocada.</p>
+  </div>`;
+}
+
+function dibujarTanque(f) {
+  if (!f || !f.curva.length) return;
+  makeChart('mopTanqueCurva', {
+    type: 'line',
+    data: {
+      labels: f.curva.map((d) => dm(d.fecha)),
+      datasets: [
+        { label: '♀ Hembras', data: f.curva.map((d) => d.hembras), borderColor: '#d81b60', backgroundColor: '#d81b60', tension: 0.25, borderWidth: 2, pointRadius: 0 },
+        { label: '♂ Machos', data: f.curva.map((d) => d.machos), borderColor: '#1e88e5', backgroundColor: '#1e88e5', tension: 0.25, borderWidth: 2, pointRadius: 0 },
+        { label: 'Total', data: f.curva.map((d) => d.total), borderColor: '#00838f', backgroundColor: '#00838f', tension: 0.25, borderWidth: 2, borderDash: [4, 3], pointRadius: 0 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      scales: { x: { ticks: { ...EJE, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: EJE, grid: { color: REJILLA } } },
+      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 10 }, color: EJE.color } } },
+    },
+  });
+}
+
+/* ── 🥚 REPRODUCCIÓN ───────────────────────────────────────── */
+
+function reproduccionHTML(M, p, F) {
+  const T = totalesDeReproduccion(M, p, F);
+  const pend = pendientesDeN5(M.fuentes, p, F, M.fecha);
+  const filas = tablaDeReproduccion(M, p, F);
+  const dest = destinosDeDespacho(M.fuentes, p, F);
+  return totalesReproHTML(T, p) + pendientesHTML(pend) + tablaReproHTML(filas, F) + destinosHTML(dest);
+}
+
+function totalesReproHTML(T, p) {
+  return `<div class="mc-card"><h4 class="mc-card-h">🥚 Reproducción <span class="mc-h-note">${esc(p.etiqueta)}</span></h4>
+    <div class="mc-kpis">
+      ${tile('Desoves', nf(T.desoves), nf(T.huevos) + ' huevos', '')}
+      ${tile('N2', nf(T.n2), 'fertilidad ' + pc(T.fertilidad), '')}
+      ${tile('N5', nf(T.n5), T.naupliosPorHembra === '' ? 'sin desoves con N5' : nf(T.naupliosPorHembra) + ' por hembra', '')}
+      ${tile('No viables', nf(T.noViables), 'hembras', '')}
+      ${tile('Pendientes de N5', nf(T.pendientes), pc(T.pctPendiente) + ' de los desoves', T.pendientes ? 'is-mort' : 'is-ok')}
+    </div>
+    <p class="mc-note">La FERTILIDAD es N2 ÷ huevos de los desoves que YA tienen su N2, y los NAUPLIOS POR HEMBRA son
+      N5 ÷ los desoves que ya tienen su N5: uno pendiente no diluye la cifra. ⚠ N5 no se compara con N2 — se cuentan
+      días distintos y de poblaciones que no son la misma.</p>
+    ${ignoraHTML(T.ignora, 'La reproducción')}
+  </div>`;
+}
+
+function pendientesHTML(pend) {
+  if (!pend.total) {
+    return `<div class="mc-card"><h4 class="mc-card-h">⏳ Pendientes de N5</h4>
+      <p class="muted" style="margin:4px 0">Ninguno: todos los desoves del período tienen ya su cifra de N5.</p></div>`;
+  }
+  const f = (x) => `<tr class="${x.diasEsperando > 0 ? 'mop-pend-tarde' : ''}">
+      <td>${esc(dma(x.fecha))}</td><td><b>${esc(x.lote)}</b></td><td>${esc(x.codigoGenetico)}</td>
+      <td class="r">${nf(x.desoves)}</td><td class="r">${nf(x.huevos)}</td><td class="r">${x.n2 ? nf(x.n2) : '<span class="muted">—</span>'}</td>
+      <td class="r">${esc(dm(x.fechaN5Esperada))}</td>
+      <td class="r">${x.diasEsperando > 0 ? '<b>' + nf(x.diasEsperando) + ' d</b>' : '<span class="muted">al día</span>'}</td></tr>`;
+  return `<div class="mc-card mc-card-wide">
+    <h4 class="mc-card-h">⏳ Pendientes de N5 <span class="mc-h-note">${nf(pend.total)} desove(s) registrado(s) sin su cifra de N5</span></h4>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm">
+      <thead><tr><th>Fecha</th><th>Lote</th><th>Código</th><th class="r">Desoves</th><th class="r">Huevos</th><th class="r">N2</th>
+        <th class="r">N5 tocaba</th><th class="r">Esperando</th></tr></thead>
+      <tbody>${pend.filas.map(f).join('')}</tbody></table></div>
+    <p class="mc-note">Pendiente = SIN CIFRA de N5. Una fecha de N5 sola no completa —diría que se contó algo que no se
+      contó— y un N5 de CERO sí completa: cero es una medición. La espera se cuenta desde el día en que TOCABA
+      contarlo (el siguiente al desove), no desde el desove.</p>
+    ${ignoraHTML(pend.ignora, 'Lo pendiente')}
+  </div>`;
+}
+
+function tablaReproHTML(filas, F) {
+  if (!filas.length) {
+    return `<div class="mc-card"><h4 class="mc-card-h">Por lote</h4>
+      <p class="muted" style="margin:4px 0">${hayFiltro(F) ? 'Ningún lote con desoves pasa el filtro.' : 'Ningún desove registrado en el período.'}</p></div>`;
+  }
+  const f = (x) => `<tr>
+      <td><b>${esc(x.lote)}</b></td>
+      <td class="r">${nf(x.desoves)}${x.pendientes ? ' <span class="mop-dif" title="' + nf(x.desovesPendientes) + ' desove(s) sin su N5">⏳</span>' : ''}</td>
+      <td class="r">${nf(x.huevos)}</td>
+      <td class="r">${nf(x.huevosPorDesove)}</td>
+      <td class="r">${nf(x.noViables)}</td>
+      <td class="r">${nf(x.n2)}</td>
+      <td class="r">${pc(x.fertilidad)}</td>
+      <td class="r">${nf(x.n5)}</td>
+      <td class="r">${x.naupliosPorHembra === '' ? '<span class="muted" title="Ningún desove de este lote tiene su N5 todavía">—</span>' : nf(x.naupliosPorHembra)}</td>
+      <td>${x.destinos.length ? x.destinos.map((d) => esc(d)).join(' · ') : '<span class="muted">—</span>'}</td></tr>`;
+  return `<div class="mc-card mc-card-wide">
+    <h4 class="mc-card-h">Por lote <span class="mc-h-note">en el período</span></h4>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm">
+      <thead><tr><th>Lote</th><th class="r">Desoves</th><th class="r">Huevos</th><th class="r">Huevos/desove</th>
+        <th class="r">No viables</th><th class="r">N2</th><th class="r">Fertilidad</th><th class="r">N5</th>
+        <th class="r">Nauplios/hembra</th><th>Destinos</th></tr></thead>
+      <tbody>${filas.map(f).join('')}</tbody></table></div>
+  </div>`;
+}
+
+function destinosHTML(d) {
+  if (!d.filas.length) {
+    return `<div class="mc-card"><h4 class="mc-card-h">A dónde fueron</h4>
+      <p class="muted" style="margin:4px 0">Ningún desove del período tiene destino anotado${d.sinDestino ? ' (' + nf(d.sinDestino) + ' sin destino)' : ''}.</p></div>`;
+  }
+  const max = d.filas[0].n5;
+  const f = (x) => `<div class="mop-obs-f"><span>${esc(x.destino)}</span>${barra(x.n5, max)}
+    <span class="r">${nf(x.n5)}</span></div>
+    <div class="mc-note" style="margin:0 0 6px 0">${nf(x.desoves)} desove(s) · ${x.lotes.map((l) => esc(l)).join(' · ')}${x.variosDestinos ? ' · ' + nf(x.variosDestinos) + ' con varios destinos' : ''}</div>`;
+  return `<div class="mc-card mc-card-wide">
+    <h4 class="mc-card-h">A dónde fueron <span class="mc-h-note">${nf(d.conDestino)} desove(s) con destino${d.sinDestino ? ' · ' + nf(d.sinDestino) + ' sin anotar' : ''}</span></h4>
+    ${d.filas.map(f).join('')}
+    <p class="mc-note">⚠ Los nauplios NO se reparten entre los destinos de un desove: la hoja no dice cuántos fue a cada
+      uno, así que el desove cuenta ENTERO en cada destino al que fue.${d.compartidos ? ' Aquí hay ' + nf(d.compartidos) + ' así, de modo que estas columnas NO suman el total.' : ''}</p>
+    ${ignoraHTML(d.ignora, 'El despacho')}
+  </div>`;
+}
+
 function bind(root) {
   if (root._mopBound) return;
   root._mopBound = true;
   const repintar = () => operativoView(root);
   const abrirSala = (sala) => { vOp.salaDetalle = vOp.salaDetalle === sala ? '' : sala; repintar(); };
   const abrirLote = (lote) => { vOp.loteSel = vOp.loteSel === lote ? '' : lote; repintar(); };
+  const abrirTanque = (k) => { vOp.tqFicha = vOp.tqFicha === k ? '' : k; repintar(); };
 
   root.addEventListener('click', (e) => {
     const t = e.target;
@@ -1041,7 +1313,7 @@ function bind(root) {
     const per = t.closest('[data-mop-periodo]');
     if (per) { vOp.periodo = per.dataset.mopPeriodo; repintar(); return; }
     if (t.closest('[data-mop-limpiar]')) {
-      Object.assign(vOp, { periodo: INICIAL.periodo, fecha: '', sala: '', tanque: '', lote: '', codigo: '', tanqueSel: '', salaDetalle: '', loteSel: '', estado: '', sexo: '', piscina: '', camaronera: '' });
+      Object.assign(vOp, { periodo: INICIAL.periodo, fecha: '', sala: '', tanque: '', lote: '', codigo: '', tanqueSel: '', salaDetalle: '', loteSel: '', tqFicha: '', estado: '', sexo: '', piscina: '', camaronera: '' });
       repintar();
       return;
     }
@@ -1060,6 +1332,8 @@ function bind(root) {
     }
     const lot = t.closest('[data-mop-lote]');
     if (lot) { abrirLote(lot.dataset.mopLote); return; }
+    const tqf = t.closest('[data-mop-tqf]');
+    if (tqf) { abrirTanque(tqf.dataset.mopTqf); return; }
     const agr = t.closest('[data-mop-agr]');
     if (agr) { vOp.agrupacion = agr.dataset.mopAgr; repintar(); return; }
     const agb = t.closest('[data-mop-agrb]');
@@ -1092,7 +1366,9 @@ function bind(root) {
     const sala = e.target.closest && e.target.closest('[data-mop-sala]');
     if (sala && e.target === sala) { e.preventDefault(); abrirSala(sala.dataset.mopSala); return; }
     const lote = e.target.closest && e.target.closest('[data-mop-lote]');
-    if (lote && e.target === lote) { e.preventDefault(); abrirLote(lote.dataset.mopLote); }
+    if (lote && e.target === lote) { e.preventDefault(); abrirLote(lote.dataset.mopLote); return; }
+    const tqf = e.target.closest && e.target.closest('[data-mop-tqf]');
+    if (tqf && e.target === tqf) { e.preventDefault(); abrirTanque(tqf.dataset.mopTqf); }
   });
 
   root.addEventListener('change', (e) => {

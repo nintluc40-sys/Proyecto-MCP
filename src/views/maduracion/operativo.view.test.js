@@ -256,13 +256,15 @@ const abrirLotes = () => click(root.querySelector('[data-mop-sub="lotes"]'));
 const filaLote = (l) => root.querySelector(`[data-mop-lote="${l}"]`);
 
 describe('Maduración · operativo · 🧬 Lotes', () => {
-  it('la sub-nav trae las CINCO sub-vistas y Lotes abre su tabla maestra, con los cerrados dentro', async () => {
+  it('la sub-nav trae las SIETE sub-vistas y Lotes abre su tabla maestra, con los cerrados dentro', async () => {
     await montar(PLANTA_L);
     expect([...root.querySelectorAll('[data-mop-sub]')].map((b) => b.textContent.trim()))
       /* D-8 (2026-09-20) · «Revisiones DEL SUPERVISOR», no «Revisiones» a secas: Larvicultura ya
          tiene una vista «🔍 Revisiones», con el mismo icono y otro significado. Que este rótulo esté
-         fijado aquí es lo que impide que vuelva a colisionar sin que nadie lo note. */
-      .toEqual(['📊 Estado actual', '🏠 Salas', '🧬 Lotes', '💀 Bajas', '🔍 Revisiones del supervisor']);
+         fijado aquí es lo que impide que vuelva a colisionar sin que nadie lo note.
+         F4 (2026-09-21) · entran 🛢 Tanques y 🥚 Reproducción, SEPARADAS por decisión del usuario. */
+      .toEqual(['📊 Estado actual', '🏠 Salas', '🧬 Lotes', '💀 Bajas', '🔍 Revisiones del supervisor',
+        '🛢 Tanques', '🥚 Reproducción']);
     abrirLotes();
     expect([...root.querySelectorAll('[data-mop-lote]')].map((t) => t.dataset.mopLote)).toEqual(['QA', 'QB', 'QC', 'QD']);
     // QC se cerró: sigue en la tabla, a cero y rotulado.
@@ -623,5 +625,179 @@ describe('Maduración · operativo · 🔍 Revisiones', () => {
     abrir('revisiones');
     expect(root.querySelector('img')).toBeNull();
     expect(root.textContent).toContain(malo);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   F4 · 🛢 TANQUES y 🥚 REPRODUCCIÓN (2026-09-21)
+   Las CIFRAS las prueban operativo.tanques.test.js, operativo.reproduccion.test.js y sus bancos; aquí se exige
+   que lleguen a la pantalla, que los controles hagan lo que dicen y que lo del Sheet salga escapado.
+   ══════════════════════════════════════════════════════════════════════════════ */
+const DES = (fecha, lote, desoves, huevos, extra) => ({ _SheetOrigin: O, Fecha: fecha, Lote: lote,
+  'Código genético': 'CA', Desoves: desoves, 'Total de huevos': huevos, 'Hembras no viables': 0,
+  'Fecha N2': '', N2: '', 'Fecha N5': '', N5: '', Despacho: '', ...extra });
+const MOV = (fecha, so, to, sd, td, machos, hembras) => ({ _SheetOrigin: O, Fecha: fecha, Tipo: 'Transferencia',
+  'Sala origen': so, 'Tanque origen': to, 'Sala destino': sd, 'Tanque destino': td, Machos: machos,
+  Hembras: hembras, 'Agua destino': 'Playa', Motivo: 'Redistribución', ID: fecha + to + td });
+
+const PLANTA_F4 = [
+  ...PLANTA,
+  TQ('19/09/2026', 'Sala 1', 1, { 'Machos muertos': '2', Hora: '08:00', Parte: '1',
+    'Observaciones operativas': 'Aireación normal', 'Observaciones sanitarias': 'Animales maduros' }),
+  TQ('19/09/2026', 'Sala 1', 1, { 'Hembras muertas': '1', Hora: '14:40', Parte: '2',
+    'Observaciones operativas': 'Aireación normal' }),
+  TQ('19/09/2026', 'Sala 1', 1, { 'Cópulas': '3' }),
+  MOV('17/09/2026', 'Sala 1', '1', 'Sala 2', '16', 1, 0),
+  DES('12/09/2026', 'QA', 4, 400000, { 'Fecha N2': '12/09/2026', N2: 300000, 'Fecha N5': '13/09/2026',
+    N5: 200000, Despacho: 'Tabasca, Hisenor' }),
+  DES('16/09/2026', 'QA', 2, 200000, { 'Fecha N5': '17/09/2026' }),
+];
+const abrirTanques = () => click(root.querySelector('[data-mop-sub="tanques"]'));
+const filaTq = (k) => root.querySelector('[data-mop-tqf="' + k + '"]');
+
+describe('Maduración · operativo · 🛢 Tanques', () => {
+  it('abre su tabla maestra con los tanques OCUPADOS y sus cifras', async () => {
+    await montar(PLANTA_F4);
+    abrirTanques();
+    const filas = [...root.querySelectorAll('[data-mop-tqf]')].map((t) => t.dataset.mopTqf);
+    expect(filas).toContain('Sala 1|1');
+    expect(filas.length).toBeGreaterThan(0);
+    expect(filaTq('Sala 1|1').textContent).toContain('compartido');
+  });
+
+  it('pulsar una fila abre su ficha; volver a pulsarla la cierra', async () => {
+    await montar(PLANTA_F4);
+    abrirTanques();
+    expect(root.querySelector('.mop-ficha')).toBeNull();
+    click(filaTq('Sala 1|1'));
+    const f = root.querySelector('.mop-ficha');
+    expect(f).not.toBeNull();
+    expect(f.textContent).toContain('Tanque 1');
+    click(filaTq('Sala 1|1'));
+    expect(root.querySelector('.mop-ficha')).toBeNull();
+  });
+
+  it('🔑 la ficha enseña los partes CON SU HORA, y el que no la trae va al final y se rotula', async () => {
+    await montar(PLANTA_F4);
+    abrirTanques();
+    click(filaTq('Sala 1|1'));
+    const t = root.querySelector('.mop-ficha').textContent;
+    expect(t).toContain('08:00');
+    expect(t).toContain('14:40');
+    /* ⚠ La CELDA del parte sin hora, no el texto de toda la ficha: la nota al pie también dice «sin hora»,
+       así que buscarlo en el texto entero NO distinguía que la celda se quedara muda. Lo delató la mutación
+       V43 de su banco, que sobrevivía. */
+    const filas = [...root.querySelectorAll('.mop-partes tbody tr')];
+    expect(filas[0].cells[0].textContent.trim()).toBe('08:00');
+    expect(filas[2].cells[0].textContent.trim()).toBe('sin hora');
+    expect(t).toContain('no se les inventa');
+  });
+
+  it('la ficha trae composición, observaciones y movimientos', async () => {
+    await montar(PLANTA_F4);
+    abrirTanques();
+    click(filaTq('Sala 1|1'));
+    const t = root.querySelector('.mop-ficha').textContent;
+    expect(t).toContain('Composición');
+    expect(t).toContain('Aireación normal');
+    expect(t).toContain('Movimientos del período');
+    expect(t).toContain('Sala 2');
+  });
+
+  it('🔑 con filtro de lote la fila avisa y la composición que queda fuera se marca, sin esconderla', async () => {
+    await montar(PLANTA_F4);
+    abrirTanques();
+    cambiar(filtro('lote'), 'QA');
+    click(filaTq('Sala 1|1'));
+    const ficha = root.querySelector('.mop-ficha');
+    expect(ficha.textContent).toContain('QC');
+    expect(ficha.querySelector('tr.mop-fuera')).not.toBeNull();
+    expect(ficha.textContent).toContain('fuera del filtro');
+    expect(root.textContent).toContain('tanque ENTERO');
+  });
+
+  it('un tanque elegido que ya no pasa el filtro pierde su ficha', async () => {
+    await montar(PLANTA_F4);
+    abrirTanques();
+    click(filaTq('Sala 1|1'));
+    expect(root.querySelector('.mop-ficha')).not.toBeNull();
+    cambiar(filtro('sala'), 'Sala 4');
+    expect(root.querySelector('.mop-ficha')).toBeNull();
+  });
+
+  it('🔑 si la foto no tiene partes, apunta a dónde SÍ los hay', async () => {
+    await montar(PLANTA_F4);
+    abrirTanques();
+    cambiar(root.querySelector('[data-mop-fecha]'), '2026-09-18');
+    click(filaTq('Sala 1|1'));
+    const t = root.querySelector('.mop-ficha').textContent;
+    expect(t).toContain('Sin partes en la foto de este día');
+    /* El último parte que la foto del 18 VE es el del 16 — los del 19 son futuro y una foto nunca lo ve—,
+       y decirlo evita que la sección sea un callejón que dice «no hay» sin decir dónde mirar. */
+    expect(t).toContain('16/09/2026');
+    expect(t).not.toContain('19/09/2026');
+  });
+
+  it('lo que viene del Sheet sale ESCAPADO', async () => {
+    const malo = '<img src=x onerror=alert(1)>';
+    await montar([...PLANTA_F4, TQ('19/09/2026', 'Sala 1', 1, { Hora: '20:00', Parte: '3',
+      'Observaciones operativas': malo })]);
+    abrirTanques();
+    click(filaTq('Sala 1|1'));
+    expect(root.querySelector('img')).toBeNull();
+    expect(root.textContent).toContain(malo);
+  });
+});
+
+const abrirRepro = () => click(root.querySelector('[data-mop-sub="reproduccion"]'));
+
+describe('Maduración · operativo · 🥚 Reproducción', () => {
+  it('abre con sus totales, los PENDIENTES arriba y la tabla por lote', async () => {
+    await montar(PLANTA_F4);
+    abrirRepro();
+    expect(kpi('Desoves')).toBe('6');
+    expect(kpi('Pendientes de N5')).toBe('1');
+    const t = root.textContent;
+    expect(t).toContain('Pendientes de N5');
+    expect(t).toContain('Por lote');
+    // ⚠ «75 %», no «75,00 %»: nf() no pone decimales de más (regla ya anotada del proyecto).
+    expect(t).toContain('75 %');
+  });
+
+  it('🔑 dice que N5 no se compara con N2, y por qué', async () => {
+    await montar(PLANTA_F4);
+    abrirRepro();
+    expect(root.textContent).toContain('N5 no se compara con N2');
+  });
+
+  it('🔑 el pendiente sale con su espera y explica la regla', async () => {
+    await montar(PLANTA_F4);
+    abrirRepro();
+    const t = root.textContent;
+    expect(t).toContain('SIN CIFRA de N5');
+    expect(t).toContain('cero es una medición');
+    expect(root.querySelector('.mop-pend-tarde')).not.toBeNull();
+  });
+
+  it('🔑 un desove con DOS destinos cuenta en los dos, y se avisa de que no suman', async () => {
+    await montar(PLANTA_F4);
+    abrirRepro();
+    const t = root.textContent;
+    expect(t).toContain('Tabasca');
+    expect(t).toContain('Hisenor');
+    expect(t).toContain('NO suman el total');
+  });
+
+  it('sin pendientes, lo dice en vez de dejar la tarjeta vacía', async () => {
+    await montar([...PLANTA, DES('12/09/2026', 'QA', 4, 400000, { N2: 300000, N5: 200000 })]);
+    abrirRepro();
+    expect(root.textContent).toContain('todos los desoves del período tienen ya su cifra de N5');
+  });
+
+  it('el filtro de sala se ignora aquí, y se dice', async () => {
+    await montar(PLANTA_F4);
+    abrirRepro();
+    cambiar(filtro('sala'), 'Sala 1');
+    expect(root.textContent).toContain('no puede separarse por sala');
   });
 });
