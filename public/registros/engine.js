@@ -92,7 +92,8 @@ const MAD_PRE       = "larv4_mad_";
    VIEJO encima de la hoja nueva, corrompiéndola sin un solo error. Al salir de MAD_FICHAS
    y de MAD_TABS, su camino queda cortado. */
 const MAD_FICHAS    = ["salas","tanques"];
-/* PE1.4 (2026-09-16) · las siete fichas de FORMULARIO con 💾 Guardar local. NO entran en MAD_FICHAS, que es la lista
+/* PE1.4 (2026-09-16) · las fichas de FORMULARIO con 💾 Guardar local (la lista viva es MAD_LOC_FICHAS, justo debajo).
+   NO entran en MAD_FICHAS, que es la lista
    de las GRILLAS por día (su render, su commit al cambiar de pestaña): lo suyo vive en larv4_mad_loc_<ficha> (ver
    _madLocEnviar). Van aquí arriba porque updateDots y updateSyncUI las leen, y un const declarado más abajo aún no
    existiría si se llamaran antes. */
@@ -1905,7 +1906,7 @@ async function flushSyncQueue(){
     for(const it of q){
       const url = it.url || gasUrl();
       if(!url || !isValidGasUrl(url)){ remaining.push(it); continue; }
-      // Las seis hojas de Maduración que se escriben por posición sólo se entregan a EL GAS DE ESTA APP (ver _madIngGasAlDia).
+      // Las hojas selladas de Maduración (_madHojaPideGasNuevo) sólo se entregan a EL GAS DE ESTA APP (ver _madIngGasAlDia).
       // PV3 (2026-09-16) · y con el sello SIN CONFIRMAR (null) también esperan: antes sólo las frenaba un «no» explícito.
       // Se pregunta UNA vez por URL en cada vaciado: con diez envíos en cola eran diez esperas de hasta 6 s.
       if(it.payload && _madHojaPideGasNuevo(it.payload.sheetName)){
@@ -2183,8 +2184,8 @@ async function syncAll(){
   }
 
   if(isMadMod(curMod)){
-    /* R2 (2026-09-17) · el portón del sello se pregunta UNA vez para toda la pulsación —Tanques y las siete fichas de
-       formulario—, por la misma lección de PE1.4 que se explica más abajo. Se declara aquí porque Tanques va primero. */
+    /* R2 (2026-09-17) · el portón del sello se pregunta UNA vez para toda la pulsación —Tanques y las fichas de
+       formulario (MAD_LOC_FICHAS)—, por la misma lección de PE1.4 que se explica más abajo. Se declara aquí porque Tanques va primero. */
     let _gasLoc;
     // ── Maduración: sincroniza pendientes ficha por ficha (Salas/Tanques/Lotes) ──
     for(const f of MAD_FICHAS){
@@ -2214,9 +2215,9 @@ async function syncAll(){
         } else { const _b=_syncAllBucket(opts, MAD_SHEET[f]); if(_b==="queued") queued++; else if(_b==="fail") fail++; }
       }
     }
-    /* PE1.4 · y lo guardado con 💾 en las siete fichas de formulario, cada una por su camino (con el portón del sello en
+    /* PE1.4 · y lo guardado con 💾 en las fichas de formulario, cada una por su camino (con el portón del sello en
        las que lo piden). Sin esto, «sincronizar» diría «Todo sincronizado» con envíos guardados sin enviar.
-       🔴 2026-09-17 · EL PORTÓN SE PREGUNTA UNA SOLA VEZ PARA LAS SIETE. Antes iba `undefined` y cada ficha lo
+       🔴 2026-09-17 · EL PORTÓN SE PREGUNTA UNA SOLA VEZ PARA TODAS. Antes iba `undefined` y cada ficha lo
        preguntaba por su cuenta: SEIS viajes a ?p=ver en fila para una sola pulsación. Y no era sólo lento —medido, ?p=ver
        tarda de verdad y el portón corta a los 6 s—: cada espera agotada devuelve «sin confirmar», y lo que con UNA
        consulta buena se habría entregado acababa en la cola seis veces. Se pregunta perezosamente, sólo si alguna ficha
@@ -2730,7 +2731,7 @@ function updateDots(){
     el.className = "fdot " + (s==="synced"?"ok":s==="pending"?"pend":"mt");
     return;
   }
-  // PE1.4 · en Maduración también las siete fichas de formulario: su punto se enciende con lo guardado con 💾 sin enviar.
+  // PE1.4 · en Maduración también las fichas de formulario: su punto se enciende con lo guardado con 💾 sin enviar.
   const tabs = isLabMod(curMod) ? ["algas"] : isMadMod(curMod) ? MAD_FICHAS.concat(MAD_LOC_FICHAS) : STD_FICHAS_ALL;
   tabs.forEach(f=>{
     const el = document.getElementById("dot-"+f);
@@ -7657,7 +7658,7 @@ function madIngLogHTML(){
     + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Fecha</th><th>Lote</th><th>Filas</th><th>Estado</th></tr></thead><tbody>'+filas+'</tbody></table></div>'
     + '</div>';
 }
-/* ── «🔍 Revisar» de las cuatro fichas de Maduración · PARA QUÉ ES (auditado el 2026-09-14) ──
+/* ── «🔍 Revisar» de las fichas de Maduración · PARA QUÉ ES (auditado el 2026-09-14, cuando eran cuatro) ──
    Comprueba lo tecleado SIN ENVIAR NADA y adelanta lo que hará «☁️ Guardar y sincronizar»: los
    errores que lo impiden, los avisos que dejan guardar y cuántas filas escribirá en qué hoja.
    La auditoría (pedida por el usuario) encontró que no cumplía del todo ese papel:
@@ -7762,8 +7763,8 @@ function madIngRevisar(){
    uno recién publicado, y era justo el que podía crear una hoja nueva con la cabecera corrida.
    Ahora se compara contra `_gasVersionLocal()`, que no es una copia del sello sino el sello LEÍDO
    de la plantilla que lleva esta misma app — el mismo que ya usa ⚙ Config → Probar conexión.
-   🔑 El efecto buscado es de FALLO SEGURO: tocar `Code.gs` y no re-desplegar deja estas seis
-   fichas sin ENVIAR (calculan, guardan en el dispositivo y lo dicen), en vez de dejarlas escribir
+   🔑 El efecto buscado es de FALLO SEGURO: tocar `Code.gs` y no re-desplegar deja las fichas
+   selladas sin ENVIAR (calculan, guardan en el dispositivo y lo dicen), en vez de dejarlas escribir
    contra un servidor que no es el suyo. Lo tecleado no se pierde: la cola lo conserva.
    ⚠ Si el sello local no se pudiera leer, se vuelve al comportamiento anterior: un fallo interno
    del cliente no puede dejar a todo el mundo sin capturar. */
@@ -9544,7 +9545,7 @@ function madFinRevisar(){
   _madFinPinta(res, madFinBuildRows(model).length);
   return _madRevisarRemata("mf-report", res, MAD_FIN_SHEET);
 }
-// Registro local propio, por lo mismo que en las otras tres fichas: sin filas locales, un
+// Registro local propio, por lo mismo que en las demás fichas de formulario: sin filas locales, un
 // envío ENCOLADO no dejaría rastro en ningún sitio.
 const MAD_FIN_LOG_KEY = "larv4_mad_fin_log";
 function madFinLogLeer(){
@@ -9645,7 +9646,7 @@ function madFinVaciar(){
   _madBorrOlvidarPantalla("fin");
   madFinReiniciar();
 }
-// ⚠⚠ NO SE RE-PINTA SI YA ESTÁ MONTADO, como las otras tres fichas: `selTab` llama al render
+// ⚠⚠ NO SE RE-PINTA SI YA ESTÁ MONTADO, como las demás fichas de formulario: `selTab` llama al render
 // cada vez que se vuelve a la pestaña, y reescribir innerHTML borraría lo tecleado.
 function renderMadFinCiclo(){
   const fp=document.getElementById("fp-fin"); if(!fp) return;

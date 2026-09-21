@@ -444,7 +444,7 @@ describe('Lo guardado cuenta en el módulo: el punto, el contador y «Sincroniza
   });
 
   /* 🔴 2026-09-17 · EL PRESUPUESTO DEL PORTÓN. Era 6000: el MÁS CORTO de toda la app, y es el de la pregunta que
-     decide si las seis fichas escriben en producción. Más corto que «Probar conexión» (8000), que consulta ESTE
+     decide si las fichas selladas escriben en producción. Más corto que «Probar conexión» (8000), que consulta ESTE
      MISMO ?p=ver, y que la verificación de la cola (12000). Medido contra el GAS desplegado: 2,5–4,9 s en caliente
      y 10,8 s en la primera llamada (arranque en frío de Apps Script), así que la primera sincronización de cada
      sesión se pasaba de plazo y todo iba a la cola en vez de entregarse.
