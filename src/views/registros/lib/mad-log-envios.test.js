@@ -9,7 +9,8 @@
      · Y cuando la cola se vaciaba porque un envío CADUCÓ (24 h) o la hoja lo RECHAZÓ, se pintaba «✅ enviado»
        sin haber llegado nunca a la hoja. Ése es el peor de los dos: miente a favor.
    Ahora cada envío viaja con su MARCA y el registro deduce el estado de SU envío. Se ejerce con Tratamientos y
-   Movimientos arrancando el monolito entero; el cableado de las siete, con su fuente.
+   Movimientos arrancando el monolito entero; el cableado de cada ficha de formulario, con su fuente (la lista se
+   contrasta con MAD_LOC_FICHAS).
    ============================================================ */
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -187,7 +188,7 @@ describe('Registro de envíos · cada entrada dice el estado de SU envío', () =
   });
 });
 
-describe('Registro de envíos · las siete fichas están cableadas', () => {
+describe('Registro de envíos · cada ficha de formulario está cableada', () => {
   const src = readFileSync(ENGINE, 'utf8');
   const FICHAS = [['ingreso', 'Ing'], ['movimientos', 'Mov'], ['desoves', 'Des'], ['fin', 'Fin'], ['tratamientos', 'Trat'], ['mortdes', 'Mort'], ['alimentacion', 'Alim']];
   it.each(FICHAS)('%s manda su marca, reconcilia su lista y pinta el estado de SU envío', (ficha, pre) => {
@@ -195,6 +196,23 @@ describe('Registro de envíos · las siete fichas están cableadas', () => {
     expect(src).toContain('ficha==="' + ficha + '" ? [mad' + pre + 'LogLeer, mad' + pre + 'LogGuardar, mad' + pre + 'LogHTML,');
     expect(src).toContain('_madLogEstado("' + ficha + '", e');
     expect(src, 'anota sin el id de su envío').toMatch(new RegExp('mad' + pre + 'LogAnota\\([^;]*"ok"[^;]*_envio\\)'));
+  });
+  /* Broodstock (V1, 2026-09-18) es la carga MASIVA: un envío por semana de corte, y del segundo en adelante
+     silenciosos. Su marca no es la línea de las otras, así que la lista de arriba no la cubría y su cableado
+     estuvo sin vigilar desde que entró (lo destapó la revisión de D-b, 2026-09-21). */
+  it('broodstock manda su marca en cada corte, reconcilia su lista y pinta el estado de SU envío', () => {
+    expect(src).toContain('_t={ mark:_madLogMarca("broodstock", _envio), silencioso:i>0 }');
+    expect(src).toContain('ficha==="broodstock" ? [madBsLogLeer, madBsLogGuardar, madBsLogHTML,');
+    expect(src).toContain('_madLogEstado("broodstock", e');
+    expect(src, 'anota sin el id de su envío').toMatch(/madBsLogAnota\([^;]*"ok"[^;]*_envio\)/);
+  });
+  /* 🔑 Y las cubiertas se contrastan con la lista del MONOLITO: la de arriba se escribió a mano y no creció al
+     entrar Broodstock. Una ficha de formulario nueva deja esto en rojo hasta que su cableado se vigile aquí. */
+  it('ninguna ficha de formulario se queda fuera: son las de MAD_LOC_FICHAS', () => {
+    const m = /const MAD_LOC_FICHAS = \[([^\]]*)\];/.exec(src);
+    expect(m, 'MAD_LOC_FICHAS no aparece en engine.js').not.toBeNull();
+    const delMonolito = JSON.parse('[' + m[1] + ']').sort();
+    expect(FICHAS.map(([f]) => f).concat('broodstock').sort()).toEqual(delMonolito);
   });
   it('ningún registro vuelve a decidir por la cola global', () => {
     expect(src).not.toMatch(/const st=\(e\.estado==="cola" && enCola\)/);
