@@ -239,7 +239,9 @@ export function construirLibro(fuentes, opts) {
   const finDeCuarentena = (S) => S.copulaDesde || sumarDias(S.ingreso, CUARENTENA_DIAS);
   /* Lo que se MUEVE de sala lleva consigo su reloj: la sala destino, si el lote no estaba, lo
      hereda; si ya estaba, manda la cuarentena que termina MÁS TARDE —unos animales en cuarentena
-     no dejan de estarlo por llegar a una sala que produce, y a la inversa la sala sigue en la suya—. */
+     no dejan de estarlo por llegar a una sala que produce, y a la inversa la sala sigue en la suya—.
+     ✅ D15 · CONFIRMADA por el usuario el 2026-09-21 frente a «manda la sala destino» y «manda lo que
+     llega»: basta un grupo en cuarentena para que el lote lo esté en esa sala. No re-proponer. */
   const llevaReloj = (lote, desde, hacia) => {
     const L = lotes.get(lote);
     if (!L || desde === hacia) return;

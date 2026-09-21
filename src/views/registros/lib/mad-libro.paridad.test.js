@@ -391,8 +391,21 @@ const ESCENARIOS = {
     movimientos: [
       mov('2026-01-22', 'Sala 1', 1, 'Sala 2', 17, 20, 20),   // en cuarentena → a una sala que produce
       mov('2026-01-22', 'Sala 3', 22, 'Sala 4', 1, 10, 10),   // produciendo → a una sala donde BC no estaba
-      mov('2026-01-23', 'Sala 2', 16, 'Sala 1', 2, 5, 5),     // produciendo → a una sala en cuarentena
+      mov('2026-01-23', 'Sala 2', 16, 'Sala 1', 2, 5, 5),     // ⚠ NO distingue: el tramo del 01-22 ya dejó la Sala 2 en cuarentena (ver D15, abajo)
     ],
+  },
+  /* ⚠ D15 (confirmada por el usuario el 2026-09-21): «manda la cuarentena que termina MÁS TARDE» en el sentido que el
+     escenario de arriba NO ejerce. Su tercer tramo iba a llevar animales que producen a una sala en cuarentena, pero el
+     primero ya había dejado en cuarentena la sala de la que salen: los dos relojes coincidían, y un monolito con «manda
+     lo que llega» daba lo mismo que el módulo. Aquí la Sala 1 produce de verdad (cópula el 01-04) y la Sala 2 tiene el
+     lote desde el 01-20. */
+  'D15: llegan animales que ya PRODUCEN a una sala en cuarentena': {
+    ingresos: [
+      ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 50, 50),
+      ing('2026-01-20', 'AB', 'CG2', 'Sala 2', 16, 10, 10),
+    ],
+    tanques: [tq('2026-01-04', 'Sala 1', 1, { 'Cópulas': 2 })],
+    movimientos: [mov('2026-01-22', 'Sala 1', 1, 'Sala 2', 17, 20, 20)],
   },
   /* ⚠ Sin éste, un monolito que contara para el estado del lote una sala donde ya no le quedan
      animales daba lo mismo que el módulo (lo cazó P17 de probar-paridad-mad-libro): ningún escenario
@@ -539,6 +552,12 @@ describe('Libro · el mismo saldo, posición a posición', () => {
 
     expect(construirLibro(ESCENARIOS['déficit: más bajas que vivos'], { hoy: HOY }).avisos).toHaveLength(1);
     expect(construirLibro(ESCENARIOS['bajas sin ingreso que las explique'], { hoy: HOY }).avisos).toHaveLength(1);
+
+    /* D15: el escenario DISTINGUE «manda la más tardía» de «manda lo que llega». Con la regla confirmada la Sala 2
+       sigue en cuarentena; con la otra pasaría a Producción, y el libro de las dos copias ya no coincidiría. */
+    const d15 = construirLibro(ESCENARIOS['D15: llegan animales que ya PRODUCEN a una sala en cuarentena'], { hoy: HOY });
+    expect(estadoDeSala(d15, 'Sala 2', HOY)).toBe(modulo.ESTADO_CUARENTENA);
+    expect(estadoDeSala(d15, 'Sala 1', HOY)).toBe(modulo.ESTADO_PRODUCCION);   // los que llegan ya producían
   });
 });
 
