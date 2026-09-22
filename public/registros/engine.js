@@ -11753,12 +11753,33 @@ var _reproMatrixSrc   = "";      // "store" | "red" | "cache" | "" — procedenc
 var _reproMatrixTs    = 0;       // fecha (ms) de la copia en uso si vino de caché
 var _reproLoadPromise = null;    // carga COMPLETA (Consulta) en curso
 var _reproMatrixPromise = null;  // carga de SÓLO la matriz en curso
+/* 🔴 1a (2026-09-21) · LA MATRIZ EN USO PUEDE SER ANTERIOR AL ALTA DE UN CHIP RECICLADO. El store del tablero se recarga
+   cada minuto, pero NO mientras se teclea; lo leído antes en esta sesión y la copia local tampoco saben de un alta de
+   hace un rato. Con esa copia, el chip reciclado resolvía a la hembra ANTERIOR, muerta: el desove de la nueva salía
+   «ya muerta», y la mortalidad —peor— volvía a marcar muerta a la anterior, con su ubicación vieja, y dejaba viva a la
+   nueva sin un aviso. Decisión del usuario: antes de dar un chip por muerto o por desconocido, se CONFIRMA con una
+   lectura de la hoja (`_reproMatrizFresca`), y lo leído así manda sobre el store hasta que éste se recargue. */
+var _reproFresca = null;           // { ts, store } · la última lectura BUENA de la MATRIZ desde Google, y el store de entonces
+var _reproUltimaEscritura = 0;     // ms del último envío que cambió la MATRIZ (alta, mortalidad, traslado)
 
 function _reproStoreRows(sheet){ try{ const f=window.__rgLib.reproReadSheet; return f?(f(sheet)||[]):[]; }catch(_){ return []; } }
 function _reproReadRows(sheet){
-  const s=_reproStoreRows(sheet);              // el dashboard ya trae las hojas al store
-  if(s.length) return s;
-  return (_reproSheets && _reproSheets[sheet]) || [];   // respaldo: lectura GAS + caché
+  if(_reproUsaStore(sheet)) return _reproStoreRows(sheet);   // el dashboard ya trae las hojas al store
+  return (_reproSheets && _reproSheets[sheet]) || [];         // respaldo: lectura GAS + caché
+}
+/* La VERSIÓN del store del tablero: cambia cada vez que se recarga. Sin store (o sin la función, como en index (8)) es
+   null. ⚠ Va DESPUÉS de _reproReadRows y no junto a _reproStoreRows, a propósito: ésa es la única línea que difiere entre
+   engine.js y el monolito gemelo, y así lo nuevo se porta tal cual. */
+function _reproStoreVersion(){ try{ const f=window.__rgLib.reproStoreVersion; return f?f():null; }catch(_){ return null; } }
+/** ¿Manda la lectura de Google de la MATRIZ? Sí mientras el store no se haya recargado después de ella: hasta
+ *  entonces, lo leído de la hoja es más nuevo que lo que trae el store. */
+function _reproFrescaEnUso(){
+  return !!(_reproFresca && _reproSheets && (_reproSheets[_REPRO_SHEETS.matriz]||[]).length && _reproFresca.store===_reproStoreVersion());
+}
+/** ¿Sale esta hoja del store del dashboard? Lo trae entero y al instante; sólo cede la MATRIZ ante una lectura más nueva. */
+function _reproUsaStore(sheet){
+  if(sheet===_REPRO_SHEETS.matriz && _reproFrescaEnUso()) return false;
+  return _reproStoreRows(sheet).length>0;
 }
 function _reproMatrixIndex(){
   const rows=_reproReadRows(_REPRO_SHEETS.matriz);
@@ -11770,7 +11791,7 @@ function _reproMatrixIndex(){
    que el aviso —y el toast de "copia local"— MINTIERAN en cuanto el tablero terminaba
    de cargar después de un fallo de red. */
 function _reproMatrixOrigen(){
-  return _reproStoreRows(_REPRO_SHEETS.matriz).length ? "store" : _reproMatrixSrc;
+  return _reproUsaStore(_REPRO_SHEETS.matriz) ? "store" : _reproMatrixSrc;
 }
 function _reproPutRows(name, rows){ if(!_reproSheets) _reproSheets={}; _reproSheets[name]=rows||[]; }
 /* ⚠⚠ D11 (2026-09-13) · ¿LA HOJA EN USO ESTÁ A MEDIAS? `?p=rows` devuelve las PRIMERAS filas
@@ -11779,7 +11800,7 @@ function _reproPutRows(name, rows){ if(!_reproSheets) _reproSheets={}; _reproShe
    se usa es la lectura del GAS: el store del dashboard trae la hoja entera y, si la tiene,
    es la que gana en _reproReadRows. */
 function _reproRecortada(sheet){
-  return !!(_reproTrunc && _reproTrunc[sheet]) && !_reproStoreRows(sheet).length;
+  return !!(_reproTrunc && _reproTrunc[sheet]) && !_reproUsaStore(sheet);
 }
 
 /* Caché local de la MATRIZ: la MISMA proyección que se le pide al GAS (_REPRO_MATRIZ_COLS).
@@ -11871,6 +11892,7 @@ async function _reproEnsureMatrixRun(){
     const rows = await _reproFetchSheet(_REPRO_SHEETS.matriz, _REPRO_MATRIZ_COLS);
     _reproPutRows(_REPRO_SHEETS.matriz, rows);
     _reproMatrixSrc="red"; _reproMatrixTs=Date.now();
+    _reproFresca={ ts:_reproMatrixTs, store:_reproStoreVersion() };   // 1a: más nueva que el store de ahora
     _reproSheetsState="ready"; _reproSheetsErr="";
     _reproCacheSave(rows);
   }catch(x){
@@ -11880,6 +11902,42 @@ async function _reproEnsureMatrixRun(){
     else  { _reproMatrixSrc=""; _reproSheetsState="error"; }
   }
   _reproRenderIfConsulta();
+}
+
+/* ── 1a (2026-09-21) · CONFIRMAR CON LA HOJA ANTES DE DAR UN CHIP POR MUERTO O POR DESCONOCIDO ──────────────────────
+   Un evento o un traslado sólo traen el Trovan, y la hembra la pone la MATRIZ en uso. Si ésta es anterior al alta de un
+   chip reciclado, el chip resuelve a la hembra anterior (muerta) o a ninguna. Por eso, cuando la copia en uso da algún
+   chip por muerto, desconocido o fuera del origen, se relee la hoja UNA vez antes de registrar (decisión del usuario:
+   sólo cuando hay dudas; un lote sin dudas no paga ninguna lectura). La identidad sigue siendo la cuaterna: esto no
+   añade ningún rechazo, sólo busca a la hembra que lleva HOY el chip. */
+/** Relee la MATRIZ de Google AHORA, saltándose el store, lo leído antes y la copia local. true si llegó.
+ *  ⚠ Lo que ya vaya en vuelo se ESPERA antes de pedir: `_reproEnsureMatrix` se engancharía a ello, y la carga de la
+ *  Consulta, con el store del tablero cargado, ni siquiera pide la MATRIZ: la confirmación saldría fallida sin haber
+ *  preguntado a la hoja. */
+async function _reproMatrizFresca(){
+  const enVuelo=_reproMatrixPromise || _reproLoadPromise;
+  if(enVuelo){ try{ await enVuelo; }catch(_){} }
+  const desde=Date.now();
+  await _reproEnsureMatrix(true);
+  return _reproMatrixSrc==="red" && _reproMatrixTs>=desde;
+}
+/** ¿La MATRIZ en uso es una lectura de la hoja de hace menos de un minuto, posterior al último envío que la cambió?
+ *  Entonces releer no aporta: las dudas que queden son de verdad. */
+function _reproMatrizRecien(){
+  return _reproMatrixOrigen()==="red" && _reproMatrixTs>_reproUltimaEscritura && (Date.now()-_reproMatrixTs)<60000;
+}
+/** Chips de `ids` que la MATRIZ en uso da por DESCONOCIDOS, MUERTOS o —si se da `origen`— fuera de él: los que pueden
+ *  serlo sólo porque la copia es vieja. Los de formato inválido no: ninguna lectura los arregla. Y un chip con DOS
+ *  vivas tampoco: la ubicación de «la vigente» no dice nada de él, y se le pide al usuario que elija (R5). */
+function _reproChipsDudosos(ids, mIdx, origen){
+  return (ids||[]).filter(function(id){
+    if(!window.__rgLib.isValidTrovan(id)) return false;
+    const rec=mIdx ? mIdx.get(id) : null;
+    if(!rec) return true;
+    if(String(rec.estado==null?"":rec.estado).trim()==="Muerto") return true;
+    if(rec.vivos>1) return false;
+    return !!(origen && ((origen.sala && String(rec.sala)!==String(origen.sala)) || (origen.tanque && String(rec.tanque)!==String(origen.tanque))));
+  });
 }
 
 /* Carga puntual de UNA hoja suelta. La usa la transferencia, que necesita el ledger
@@ -11928,7 +11986,7 @@ async function _reproLoadSheetsRun(){
     try{
       const rows=await _reproFetchSheet(t.name, t.cols);
       _reproPutRows(t.name, rows);
-      if(t.name===_REPRO_SHEETS.matriz){ _reproMatrixSrc="red"; _reproMatrixTs=Date.now(); _reproCacheSave(rows); }
+      if(t.name===_REPRO_SHEETS.matriz){ _reproMatrixSrc="red"; _reproMatrixTs=Date.now(); _reproFresca={ ts:_reproMatrixTs, store:_reproStoreVersion() }; _reproCacheSave(rows); }
     }catch(x){
       fails.push(String(t.name).replace("Maduración ","")+" ("+((x&&x.message)||"error")+")");
       if(t.name===_REPRO_SHEETS.matriz){
@@ -12077,18 +12135,34 @@ async function madReproProcess(){
     await _reproEnsureMatrix();
     _reproPaintMatrixBanner();
   }
-  const mIdx = _reproMatrixIndex();
+  let mIdx = _reproMatrixIndex();
   if(!mIdx){
     toast("No se pudo leer «Maduración MATRIZ»: "+(_reproSheetsErr||"error")+". No es tu configuración ni el token — vuelve a intentarlo con 🔄.","err",8000);
     return;
+  }
+  /* 🔴 1a · un chip que la copia en uso da por muerto o no conoce puede ser un RECICLADO dado de alta después de ella:
+     se confirma con la hoja antes de registrar (ver `_reproMatrizFresca`). Si Google no responde, lo dudoso no se
+     registra —y una mortalidad, menos que nada: iría a la hembra anterior—, y se dice. */
+  const dudosos = _reproChipsDudosos(parsed.ids, mIdx);
+  let sinConfirmar = [];
+  if(dudosos.length && !_reproMatrizRecien()){
+    toast("Comprobando en «Maduración MATRIZ» "+dudosos.length+" microchip(s) que la copia en uso da por muertos o no conoce…","info",3500);
+    if(await _reproMatrizFresca()) mIdx = _reproMatrixIndex();
+    else sinConfirmar = dudosos.slice();
+    _reproPaintMatrixBanner();
   }
   // Respaldo en uso: se avisa SIEMPRE, porque una hembra movida después de esa copia
   // se registraría con su ubicación antigua.
   if(_reproMatrixOrigen()==="cache"){
     toast("⚠ Usando la copia local de la MATRIZ del "+_reproFmtTs(_reproMatrixTs)+" (Google no respondió). Comprueba que la Sala/Tanque sean los actuales.","warn",7000);
   }
-  const res = window.__rgLib.buildEventBatch({ ids: parsed.ids, fecha: fecha, tipo: tipo, matrixIndex: mIdx });
+  const _ids = (tipo==="Mortalidad" && sinConfirmar.length)
+    ? parsed.ids.filter(function(id){ return !(sinConfirmar.indexOf(id)!==-1 && mIdx.get(id)); })
+    : parsed.ids;
+  const res = window.__rgLib.buildEventBatch({ ids: _ids, fecha: fecha, tipo: tipo, matrixIndex: mIdx });
   if(res.error){ toast(res.error,"err",7000); return; }
+  res.report.sinConfirmar = sinConfirmar;
+  if(sinConfirmar.length) toast("No se pudo confirmar con la hoja ("+(_reproSheetsErr||"Google no respondió")+"): "+sinConfirmar.length+" microchip(s) no se registraron. Vuelve a procesarlos cuando Google responda.","warn",9000);
   // R5 · los chips con DOS vivas quedan pendientes de ELEGIR, con su contexto: luego se registran SÓLO ésos.
   _reproElegirPend = res.report.variasVivas.length ? { clase:"evento", fecha:fecha, tipo:tipo, chips:res.report.variasVivas.slice() } : null;
   // Ningún código superó la validación: se muestra el informe con el motivo y NO se
@@ -12103,6 +12177,7 @@ async function madReproProcess(){
   let okAll=true; const _o1={}, _o2={};
   if(res.bitacora){ okAll = (await postPayload(res.bitacora, url, _o1)) && okAll; }
   if(res.matriz){ okAll = (await postPayload(res.matriz, url, _o2)) && okAll; }
+  if(res.matriz) _reproUltimaEscritura=Date.now();   // 1a · la MATRIZ cambió: una lectura de antes ya no vale para confirmar
   _madReproShowReport(res.report, parsed.duplicates, tipo, okAll);
   if(okAll){
     toast("✅ "+res.report.processed.length+" "+(tipo==="Desove"?"desove(s)":"mortalidad(es)")+" registrado(s).","ok",4200);
@@ -12164,6 +12239,7 @@ async function madReproAltaBatch(){
   toast("Registrando "+res.report.created.length+" individuo(s)…","info",2000);
   const _oA={};
   const sent=await postPayload(res.payload, gasUrl(), _oA);
+  _reproUltimaEscritura=Date.now();   // 1a · hembras nuevas: la MATRIZ en uso ya no las conoce hasta releerla
   _madReproShowAltaReport(res.report, sent);
   if(sent){ toast("✅ "+res.report.created.length+" individuo(s) registrado(s).","ok",4200); }
   else { _madReproNotOk([_oA]); }
@@ -12233,6 +12309,20 @@ async function madReproTransfer(){
     toast("No se envió: no se pudo leer «Maduración MATRIZ» ("+(_reproSheetsErr||"error")+") y sin ella no se sabe qué individuo es cada Trovan. No es tu configuración ni el token — vuelve a intentarlo con 🔄; lo pegado sigue aquí.","err",8000);
     return;
   }
+  /* 🔴 1a · también el traslado: con una copia anterior al alta de un chip reciclado, el chip resolvía a la hembra
+     anterior —muerta, en otro sitio— y el traslado la «movía» a ella y dejaba quieta a la nueva. Se confirma con la hoja,
+     y sin confirmación no se mueve a una hembra que la copia da por MUERTA. */
+  const _dudT=_reproChipsDudosos([].concat.apply([], destinos.map(function(d){ return d.ids; })), _reproMatrixIndex(), origen);
+  let _scT=[];
+  if(_dudT.length && !_reproMatrizRecien()){
+    toast("Comprobando en «Maduración MATRIZ» "+_dudT.length+" microchip(s) que la copia en uso da por muertos, no conoce o sitúa fuera del origen…","info",3500);
+    if(!(await _reproMatrizFresca())) _scT=_dudT.slice();
+  }
+  const _mIdxT=_reproMatrixIndex();
+  const _muertasSC=_scT.filter(function(id){ const r=_mIdxT.get(id); return !!r && String(r.estado==null?"":r.estado).trim()==="Muerto"; });
+  const _destinos=_muertasSC.length
+    ? destinos.map(function(d){ return { sala:d.sala, tanque:d.tanque, ids:d.ids.filter(function(id){ return _muertasSC.indexOf(id)===-1; }) }; })
+    : destinos;
   await _reproEnsureSheet(_REPRO_SHEETS.transfer);
   _reproPaintMatrixBanner();
   /* ⚠⚠ D11 · CON EL LEDGER RECORTADO NO HAY TR-ID SEGURO, y aquí no basta con avisar. El máximo
@@ -12246,18 +12336,21 @@ async function madReproTransfer(){
   }
   const _trRows=_reproReadRows(_REPRO_SHEETS.transfer);
   const trId=_trRows.length?window.__rgLib.nextTrIdFromRows(_trRows):_reproNextTrId();
-  const res=window.__rgLib.buildTransferBatch({ fecha:fecha, tipo:tipo, origen:origen, destinos:destinos, composicion:composicion, matrixIndex:_reproMatrixIndex(), trId:trId });
+  const res=window.__rgLib.buildTransferBatch({ fecha:fecha, tipo:tipo, origen:origen, destinos:_destinos, composicion:composicion, matrixIndex:_reproMatrixIndex(), trId:trId });
   if(res.error){ toast(res.error,"err",3500); return; }
+  res.report.sinConfirmar=_scT;
+  if(_scT.length) toast("No se pudo confirmar con la hoja ("+(_reproSheetsErr||"Google no respondió")+"): "+_scT.length+" microchip(s) se quedan sin mover o señalados. Vuelve a procesarlos cuando Google responda.","warn",9000);
   /* R5 · los chips con DOS vivas quedan pendientes de ELEGIR con el contexto del traslado —origen, destino de cada
      uno y el MISMO TR-ID—, para moverlos después sin repetir los que ya salieron. */
   const _vv=res.report.variasVivas||[];
   _reproElegirPend = _vv.length ? { clase:"traslado", fecha:fecha, tipo:tipo, origen:origen, composicion:composicion, trId:trId, chips:_vv.slice(),
-    destinos:destinos.map(function(d){ return { sala:d.sala, tanque:d.tanque, ids:d.ids.filter(function(id){ return _vv.indexOf(id)!==-1; }) }; }).filter(function(d){ return d.ids.length; }) } : null;
+    destinos:_destinos.map(function(d){ return { sala:d.sala, tanque:d.tanque, ids:d.ids.filter(function(id){ return _vv.indexOf(id)!==-1; }) }; }).filter(function(d){ return d.ids.length; }) } : null;
   if(!res.transfer){ _madReproShowTransferReport(res.report, trId, false); toast("No hay individuos válidos para transferir.","warn",4000); return; }
   toast("Procesando transferencia "+trId+"…","info",2200);
   let okAll=true; const _t1={}, _t2={};
   if(res.matriz){ okAll=(await postPayload(res.matriz, gasUrl(), _t1)) && okAll; }
   if(res.transfer){ okAll=(await postPayload(res.transfer, gasUrl(), _t2)) && okAll; }
+  if(res.matriz) _reproUltimaEscritura=Date.now();   // 1a · la MATRIZ cambió: una lectura de antes ya no vale para confirmar
   _madReproShowTransferReport(res.report, trId, okAll);
   if(okAll){ toast("✅ "+res.report.moved.length+" individuo(s) transferido(s) — "+trId,"ok",4500); _reproBumpTrSeq(trId); }
   else { _madReproNotOk([_t1,_t2]); }
@@ -12267,18 +12360,24 @@ function _madReproShowTransferReport(rep, trId, okSent){
   const el=document.getElementById("repro-t-report"); if(!el) return;
   const chip=function(txt,bg,fg){ return '<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:'+bg+';color:'+fg+'">'+escapeHtml(txt)+'</span>'; };
   let h='<div style="font-size:12px;font-weight:700;margin-bottom:6px">'+(okSent?"✅ Enviado":"⚠️ Sin enviar")+' · '+escapeHtml(trId)+'</div><div style="display:flex;gap:6px;flex-wrap:wrap">';
+  /* 1a · lo que no se pudo confirmar con la hoja se dice APARTE: «no encontrado» o «fuera del origen» sería lo que
+     afirma una copia que puede ser anterior a su alta, no lo que es. */
+  const sc=rep.sinConfirmar||[], nosc=function(a){ return (a||[]).filter(function(id){ return sc.indexOf(id)===-1; }); };
+  const noEnc=nosc(rep.notFound), wl=nosc(rep.wrongLocation);
   h+=chip(rep.moved.length+" transferido(s)", "#dcfce7", "#166534");
+  if(sc.length) h+=chip("⚠ "+sc.length+" sin confirmar con la hoja", "#fef3c7", "#92400e");
   if(rep.invalidFormat && rep.invalidFormat.length) h+=chip(rep.invalidFormat.length+" con formato inválido (señalados)", "#ffedd5", "#9a3412");
-  if(rep.notFound && rep.notFound.length) h+=chip(rep.notFound.length+" no encontrado(s)", "#fee2e2", "#991b1b");
-  if(rep.wrongLocation && rep.wrongLocation.length) h+=chip(rep.wrongLocation.length+" fuera del origen", "#fef9c3", "#854d0e");
+  if(noEnc.length) h+=chip(noEnc.length+" no encontrado(s)", "#fee2e2", "#991b1b");
+  if(wl.length) h+=chip(wl.length+" fuera del origen", "#fef9c3", "#854d0e");
   if(rep.antesDelIngreso && rep.antesDelIngreso.length) h+=chip(rep.antesDelIngreso.length+" anterior(es) a su ingreso", "#fee2e2", "#991b1b");
   if(rep.variasVivas && rep.variasVivas.length) h+=chip(rep.variasVivas.length+" con DOS hembras vivas (elige abajo)", "#fee2e2", "#991b1b");   // R5
   h+='</div>';
   const lists=[];
   if(rep.variasVivas && rep.variasVivas.length) lists.push(["Ese microchip lo llevan DOS hembras vivas a la vez (no transferidos: elige abajo cuál se mueve)", rep.variasVivas]);
+  if(sc.length) lists.push(["Sin confirmar con «Maduración MATRIZ» (Google no respondió): la copia en uso los da por muertos, no los conoce o los sitúa fuera del origen, y puede ser de antes de su alta. No se movió ninguno que la copia dé por muerto; vuelve a procesarlos cuando Google responda", sc]);
   if(rep.invalidFormat && rep.invalidFormat.length) lists.push(["Formato inválido (no transferidos — revisa el código en el lector)", rep.invalidFormat]);
-  if(rep.notFound && rep.notFound.length) lists.push(["No encontrados", rep.notFound]);
-  if(rep.wrongLocation && rep.wrongLocation.length) lists.push(["Fuera del origen declarado", rep.wrongLocation]);
+  if(noEnc.length) lists.push(["No encontrados", noEnc]);
+  if(wl.length) lists.push(["Fuera del origen declarado", wl]);
   if(rep.antesDelIngreso && rep.antesDelIngreso.length) lists.push(["Anteriores al ingreso de la hembra que lleva hoy ese microchip reciclado (son de una hembra anterior: no transferidos)", rep.antesDelIngreso]);
   lists.forEach(function(pair){ h+='<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
   el.innerHTML=h+_reproElegirHTML("traslado");
@@ -12288,13 +12387,18 @@ function _madReproShowReport(rep, duplicates, tipo, okSent){
   const el=document.getElementById("repro-report"); if(!el) return;
   const chip=function(txt,bg,fg){ return '<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:'+bg+';color:'+fg+'">'+escapeHtml(txt)+'</span>'; };
   let h = '<div style="font-size:12px;font-weight:700;margin-bottom:6px">'+(okSent?"✅ Enviado":"⚠️ Procesado (sin enviar)")+' · '+escapeHtml(tipo)+'</div>';
+  /* 1a · lo que no se pudo confirmar con la hoja se dice APARTE: «ya muerta» o «no está en la MATRIZ» sería lo que
+     afirma una copia que puede ser anterior al alta de su chip reciclado, no lo que es. */
+  const sc=rep.sinConfirmar||[], nosc=function(a){ return (a||[]).filter(function(id){ return sc.indexOf(id)===-1; }); };
+  const noEnc=nosc(rep.notFound), yaM=nosc(rep.alreadyDead);
   h += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
   h += chip(rep.processed.length+" registrado(s)", "#dcfce7", "#166534");
+  if(sc.length) h += chip("⚠ "+sc.length+" sin confirmar con la hoja", "#fef3c7", "#92400e");
   if(duplicates && duplicates.length) h += chip(duplicates.length+" duplicado(s) omitido(s)", "#fef9c3", "#854d0e");
   if(rep.invalidFormat && rep.invalidFormat.length) h += chip(rep.invalidFormat.length+" con formato inválido (señalados)", "#ffedd5", "#9a3412");
-  if(rep.notFound && rep.notFound.length) h += chip(rep.notFound.length+" no está(n) en la MATRIZ", "#fee2e2", "#991b1b");
+  if(noEnc.length) h += chip(noEnc.length+" no está(n) en la MATRIZ", "#fee2e2", "#991b1b");
   if(rep.sinUbicacion && rep.sinUbicacion.length) h += chip(rep.sinUbicacion.length+" sin Sala/Tanque en la MATRIZ", "#fee2e2", "#991b1b");
-  if(rep.alreadyDead && rep.alreadyDead.length) h += chip(rep.alreadyDead.length+" ya muerta(s)", "#fef9c3", "#854d0e");
+  if(yaM.length) h += chip(yaM.length+" ya muerta(s)", "#fef9c3", "#854d0e");
   if(rep.antesDelIngreso && rep.antesDelIngreso.length) h += chip(rep.antesDelIngreso.length+" anterior(es) a su ingreso", "#fee2e2", "#991b1b");
   // D17 (2026-09-17): un chip con DOS hembras vivas. No se elige una: se rechaza y se dice. Ver el módulo.
   if(rep.variasVivas && rep.variasVivas.length) h += chip(rep.variasVivas.length+" con DOS hembras vivas", "#fee2e2", "#991b1b");
@@ -12303,11 +12407,12 @@ function _madReproShowReport(rep, duplicates, tipo, okSent){
   if(rep.sinFechaIngreso && rep.sinFechaIngreso.length) h += chip(rep.sinFechaIngreso.length+" sin comprobar la hembra", "#fef9c3", "#854d0e");
   h += '</div>';
   const lists=[];
+  if(sc.length) lists.push(["Sin confirmar con «Maduración MATRIZ» (Google no respondió): la copia en uso los da por muertos o no los conoce, y puede ser de antes del alta de su chip reciclado. No se registró nada de ellos; vuelve a procesarlos cuando Google responda", sc]);
   if(duplicates && duplicates.length) lists.push(["Duplicados", duplicates]);
   if(rep.invalidFormat && rep.invalidFormat.length) lists.push(["Formato inválido (no registrados — revisa el código en el lector)", rep.invalidFormat]);
-  if(rep.notFound && rep.notFound.length) lists.push(["No encontrados en Maduración MATRIZ (no registrados)", rep.notFound]);
+  if(noEnc.length) lists.push(["No encontrados en Maduración MATRIZ (no registrados)", noEnc]);
   if(rep.sinUbicacion && rep.sinUbicacion.length) lists.push(["Sin Sala/Tanque en Maduración MATRIZ (no registrados — completa su ubicación)", rep.sinUbicacion]);
-  if(rep.alreadyDead && rep.alreadyDead.length) lists.push(["Ya registradas como muertas", rep.alreadyDead]);
+  if(yaM.length) lists.push(["Ya registradas como muertas", yaM]);
   if(rep.antesDelIngreso && rep.antesDelIngreso.length) lists.push(["Anteriores al ingreso de la hembra que lleva hoy ese microchip reciclado (son de una hembra anterior: no registrados)", rep.antesDelIngreso]);
   if(rep.variasVivas && rep.variasVivas.length) lists.push(["Ese microchip lo llevan DOS hembras vivas a la vez y el evento no dice de cuál es (no registrados: elige abajo de cuál es cada uno)", rep.variasVivas]);
   if(rep.sinFechaIngreso && rep.sinFechaIngreso.length) lists.push(["SÍ se registraron, a la hembra que lleva hoy el chip. Pero ese chip ha llevado varias y esta lectura no trae la fecha de ingreso, así que no se pudo comprobar que el evento no fuera de una anterior: si lo registras con fecha atrasada, revísalo", rep.sinFechaIngreso]);
@@ -12374,6 +12479,7 @@ async function madReproRegistrarElegidas(seq){
     if(res.matriz)   ok = (await postPayload(res.matriz, url, _o1)) && ok;
     if(res.transfer) ok = (await postPayload(res.transfer, url, _o2)) && ok;
   }
+  if(res.matriz) _reproUltimaEscritura=Date.now();   // 1a · la MATRIZ cambió: una lectura de antes ya no vale para confirmar
   // Lo registrado sale de la lista; lo que quedó sin elegir sigue pendiente, con su contexto.
   p.chips = p.chips.filter(function(c){ return elegidos.indexOf(c) === -1; });
   if(p.destinos) p.destinos = p.destinos.map(function(d){ return { sala:d.sala, tanque:d.tanque, ids:d.ids.filter(function(id){ return elegidos.indexOf(id)===-1; }) }; }).filter(function(d){ return d.ids.length; });

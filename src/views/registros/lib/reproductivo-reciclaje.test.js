@@ -33,7 +33,8 @@ const EXPORTAR = ['_REPRO_SHEETS', '_reproAltaHTML', 'madReproAltaBatch', '_repr
      destapó el banco: dos mutaciones que recortaban esta lista SOBREVIVÍAN. */
   '_REPRO_MATRIZ_COLS',
   '_reproEnsureMatrix',    // RD1 (2026-09-16) · una lectura buena, que es la que deja la copia local
-  'madReproRegistrarElegidas'];   // R5 (2026-09-18) · con dos vivas elige el usuario
+  'madReproRegistrarElegidas',   // R5 (2026-09-18) · con dos vivas elige el usuario
+  '_reproLoadSheets'];           // 1a (2026-09-21) · la carga de la Consulta, para dejarla EN VUELO
 const H = {};
 const avisos = [];
 const envios = [];
@@ -62,7 +63,10 @@ beforeAll(async () => {
     + EXPORTAR.map((n) => `try{ H[${JSON.stringify(n)}] = ${n}; }catch(_){}`).join('\n')
     + '\ntry{ H.setToast=function(f){toast=f;}; }catch(_){}'
     + '\ntry{ H.setPost=function(f){postPayload=f;}; }catch(_){}'
-    + '\ntry{ H.setLecturas=function(hojas){ _reproSheets=hojas; _reproTrunc={}; _reproSheetsState="ready"; _reproSheetsErr=""; }; }catch(_){}'
+    /* 1a (2026-09-21) · unas lecturas «puestas a mano» no son una lectura de la hoja: se olvida de dónde y cuándo salió la
+       anterior, o una prueba heredaría de la de antes una «lectura recién hecha» y no confirmaría lo que debe. */
+    + '\ntry{ H.setLecturas=function(hojas){ _reproSheets=hojas; _reproTrunc={}; _reproSheetsState="ready"; _reproSheetsErr="";'
+    + ' _reproMatrixSrc=""; _reproMatrixTs=0; _reproFresca=null; _reproUltimaEscritura=0; }; }catch(_){}'
     + '\n})();';
   globalThis.__ENG = H;
   new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(
@@ -418,4 +422,180 @@ describe('🔴 R5 · con dos hembras vivas en un chip, elige el USUARIO', () => 
     expect(informeAlta()).toContain('con el chip de una hembra VIVA');          // el chip del resumen
     expect(informeAlta()).toContain('te pedirá elegir de cuál es');            // el renglón de detalle
   });
+});
+
+/* 🔴 1a (2026-09-21) · EL CHIP RECICLADO VA A LA HEMBRA NUEVA AUNQUE LA COPIA EN USO SEA DE ANTES DE SU ALTA.
+   Lo reportó el usuario: «si registro algún microchip reciclado para otro lote, piscina y código, no lo permite porque
+   ya da por muerto». Medido con la librería real: con una MATRIZ anterior al alta de la nueva, el desove salía «ya
+   muerta» y la mortalidad —peor— marcaba OTRA VEZ a la anterior, con su ubicación vieja, y dejaba viva a la nueva sin un
+   aviso. En producción la copia vieja es el store del tablero (se recarga cada minuto, pero no mientras se teclea), lo
+   leído antes en la sesión o la copia local. Decisión del usuario: confirmar con la hoja SÓLO cuando hay dudas. */
+describe('🔴 1a · el chip reciclado va a la hembra NUEVA aunque la copia en uso sea anterior a su alta', () => {
+  const FRESCA = [VIEJA, NUEVA];
+  const hoja = (filas) => (url) => ({ ok: true, status: 200, text: async () => JSON.stringify({ ok: true,
+    rows: decodeURIComponent(url).includes('MATRIZ') ? filas : [] }) });
+  const googleCaido = () => { throw new Error('Failed to fetch'); };
+  const lecturasMatriz = () => pedidas.filter((u) => u.includes('p=rows') && decodeURIComponent(u).includes('MATRIZ')).length;
+  const evento = async (tipo, fecha = '2026-09-10', codes = CHIP) => {
+    caja('rc-eventos').innerHTML = H._reproEventosHTML();
+    document.getElementById('repro-fecha').value = fecha;
+    document.getElementById('repro-tipo').value = tipo;
+    document.getElementById('repro-codes').value = codes;
+    await H.madReproProcess();
+    return document.getElementById('repro-report').textContent;
+  };
+  const traslado = async (oSala, oTanque) => {
+    caja('rc-transfer').innerHTML = H._reproTransferHTML();
+    document.getElementById('repro-t-fecha').value = '2026-09-12';
+    document.getElementById('repro-t-osala').value = oSala;
+    document.getElementById('repro-t-otanque').value = oTanque;
+    document.querySelector('#repro-t-dests .repro-dest-sala').value = 'S9';
+    document.querySelector('#repro-t-dests .repro-dest-tanque').value = 'T9';
+    document.querySelector('#repro-t-dests .repro-dest-codes').value = CHIP;
+    await H.madReproTransfer();
+    return document.getElementById('repro-t-report').textContent;
+  };
+  const bitacora = () => envios.find((p) => p.sheetName === S.bitacora);
+  const matriz = () => envios.find((p) => p.sheetName === S.matriz);
+  const celda = (p, h) => p.rows[0][p.headers.indexOf(h)];
+  beforeEach(() => {
+    localStorage.removeItem('larv4_mad_matriz');
+    window.__rgLib.reproStoreVersion = undefined;
+    H.setLecturas({ [S.matriz]: [VIEJA], [S.bitacora]: [], [S.transfer]: [] });   // la copia en uso NO sabe de la nueva
+  });
+
+  it('🔴 desove: se confirma con la hoja y va a la NUEVA, con su ubicación (antes: «ya muerta»)', async () => {
+    lecturaRows = hoja(FRESCA);
+    const inf = await evento('Desove');
+    expect(lecturasMatriz()).toBe(1);
+    expect(bitacora().rows.map((r) => [r[0], r[3], r[4]])).toEqual([[CHIP, 'S3', 'T4']]);
+    expect(inf).not.toContain('ya muerta');
+  });
+
+  it('🔴 mortalidad: marca muerta a la NUEVA, no otra vez a la anterior', async () => {
+    lecturaRows = hoja(FRESCA);
+    await evento('Mortalidad');
+    const m = matriz();
+    expect([celda(m, 'Piscina'), celda(m, 'Código genético'), celda(m, 'Lote'), celda(m, 'Estado')]).toEqual(['P9', 'G07', 'L20', 'Muerto']);
+    expect(celda(bitacora(), 'Sala')).toBe('S3');
+  });
+
+  it('🔴 un chip NUEVO (no reciclado) dado de alta después de la copia tampoco sale «no está en la MATRIZ»', async () => {
+    const OTRO = { 'Trovan ID': '000721BBB1', 'Piscina': 'P3', 'Código genético': 'G03', 'Lote': 'L30', 'Sala actual': 'S2',
+      'Tanque actual': 'T5', 'Estado': 'Vivo', 'Fecha ingreso': '2026-09-01' };
+    lecturaRows = hoja([VIEJA, OTRO]);
+    const inf = await evento('Desove', '2026-09-10', '000721BBB1');
+    expect(lecturasMatriz()).toBe(1);
+    expect(bitacora().rows[0][3]).toBe('S2');
+    expect(inf).not.toContain('no está(n) en la MATRIZ');
+  });
+
+  it('sin dudas no se relee nada: un lote que la copia ya resuelve no paga ninguna lectura', async () => {
+    H.setLecturas({ [S.matriz]: FRESCA, [S.bitacora]: [], [S.transfer]: [] });
+    lecturaRows = googleCaido;                     // si leyera, fallaría
+    const inf = await evento('Desove');
+    expect(lecturasMatriz()).toBe(0);
+    expect(bitacora().rows[0][3]).toBe('S3');
+    expect(inf).not.toContain('sin confirmar');
+  });
+
+  it('🔴 con Google caído no se confirma: el desove no sale, y el informe dice «sin confirmar», no «ya muerta»', async () => {
+    lecturaRows = googleCaido;
+    const inf = await evento('Desove');
+    expect(envios).toHaveLength(0);
+    /* Dos aserciones: la etiqueta del resumen y el renglón de detalle lo dicen los dos, y con una sola se podía apagar
+       cualquiera de ellos (la lección de E07/E10 de este mismo banco). */
+    expect(inf).toContain('sin confirmar con la hoja');
+    expect(inf).toContain('Sin confirmar con «Maduración MATRIZ»');
+    expect(inf).toContain('cuando Google responda: ' + CHIP);
+    expect(inf).not.toContain('ya muerta');
+  }, 15000);
+
+  it('🔴 con Google caído, una mortalidad NO se manda a la hembra muerta de la copia', async () => {
+    lecturaRows = googleCaido;
+    const inf = await evento('Mortalidad');
+    expect(envios).toHaveLength(0);                // antes: una fila para la anterior (L12) y su ubicación vieja
+    expect(inf).toContain('sin confirmar');
+  }, 15000);
+
+  it('una muerta DE VERDAD (la hoja lo confirma) sigue siendo «ya muerta», tras una sola lectura', async () => {
+    lecturaRows = hoja([VIEJA]);
+    const inf = await evento('Desove');
+    expect(lecturasMatriz()).toBe(1);
+    expect(envios).toHaveLength(0);
+    expect(inf).toContain('ya muerta');
+    expect(inf).not.toContain('sin confirmar');
+  });
+
+  it('lo confirmado hace nada no se vuelve a leer… salvo que la MATRIZ haya cambiado después', async () => {
+    lecturaRows = hoja([VIEJA]);
+    await evento('Desove');
+    await evento('Desove');
+    expect(lecturasMatriz()).toBe(1);             // la duda que queda es de verdad
+    teclearAlta('2026-09-11', [[CHIP, 'P5', 'G05', 'L55', 'S4', 'T2']]);
+    await H.madReproAltaBatch();                  // una hembra NUEVA con ese chip
+    lecturaRows = hoja([VIEJA, { ...NUEVA, 'Piscina': 'P5', 'Código genético': 'G05', 'Lote': 'L55', 'Sala actual': 'S4', 'Tanque actual': 'T2' }]);
+    envios.length = 0;
+    await evento('Desove', '2026-09-12');
+    expect(lecturasMatriz()).toBe(2);             // el alta invalida la lectura anterior
+    expect(bitacora().rows[0][3]).toBe('S4');
+  });
+
+  it('🔴 MCP: con el store del tablero anterior al alta, manda lo leído de la hoja… hasta que el tablero se recarga', async () => {
+    const V1 = { version: 1 }, V2 = { version: 2 };
+    let version = V1, delStore = [VIEJA];
+    window.__rgLib.reproReadSheet = (h) => (h === S.matriz ? delStore : []);
+    window.__rgLib.reproStoreVersion = () => version;
+    lecturaRows = hoja(FRESCA);
+    await evento('Desove');
+    expect(lecturasMatriz()).toBe(1);
+    expect(bitacora().rows[0][3]).toBe('S3');
+    envios.length = 0;
+    await evento('Desove', '2026-09-11');         // sin dudas ya: manda lo leído, no el store viejo
+    expect(lecturasMatriz()).toBe(1);
+    expect(bitacora().rows[0][3]).toBe('S3');
+    version = V2;                                 // el tablero se recarga, ya con la nueva (y movida)
+    delStore = [VIEJA, { ...NUEVA, 'Sala actual': 'S8' }];
+    envios.length = 0;
+    await evento('Desove', '2026-09-12');
+    expect(bitacora().rows[0][3]).toBe('S8');     // vuelve a mandar el store
+    expect(lecturasMatriz()).toBe(1);
+  });
+
+  it('la confirmación LEE aunque la Consulta esté cargando (y no pida la MATRIZ: el store del tablero ya la trae)', async () => {
+    window.__rgLib.reproReadSheet = (h) => (h === S.matriz ? [VIEJA] : []);
+    window.__rgLib.reproStoreVersion = () => 'v1';
+    lecturaRows = hoja(FRESCA);
+    const carga = H._reproLoadSheets(true);      // la Consulta, EN VUELO
+    await evento('Desove');
+    await carga;
+    expect(lecturasMatriz()).toBe(1);
+    expect(bitacora().rows[0][3]).toBe('S3');
+  });
+
+  it('🔴 traslado: la copia vieja no conoce a la nueva; se confirma y se mueve a la NUEVA', async () => {
+    lecturaRows = hoja(FRESCA);
+    await traslado('S3', 'T4');
+    const m = matriz();
+    expect([celda(m, 'Piscina'), celda(m, 'Código genético'), celda(m, 'Lote'), celda(m, 'Sala actual')]).toEqual(['P9', 'G07', 'L20', 'S9']);
+  });
+
+  it('un chip con DOS vivas no es una duda: no se relee ni sale «sin confirmar» (se le pide elegir, R5)', async () => {
+    const OTRA = { ...NUEVA, 'Piscina': 'P6', 'Código genético': 'G06', 'Lote': 'L66', 'Sala actual': 'S7', 'Tanque actual': 'T7' };
+    H.setLecturas({ [S.matriz]: [NUEVA, OTRA], [S.bitacora]: [], [S.transfer]: [] });
+    lecturaRows = googleCaido;                     // si leyera, fallaría y lo diría
+    const inf = await traslado('S3', 'T4');       // el origen de UNA de las dos: la «vigente» puede ser la otra
+    expect(lecturasMatriz()).toBe(0);
+    expect(inf).not.toContain('sin confirmar');
+    expect(inf).toContain('DOS hembras vivas');
+  });
+
+  it('🔴 traslado con Google caído: no se mueve a la hembra que la copia da por muerta', async () => {
+    lecturaRows = googleCaido;
+    const inf = await traslado('S1', 'T1');       // el origen de la ANTERIOR: sin el arreglo, la movía a ella
+    expect(envios).toHaveLength(0);
+    expect(inf).toContain('sin confirmar con la hoja');
+    expect(inf).toContain('Sin confirmar con «Maduración MATRIZ»');
+    expect(inf).toContain('cuando Google responda: ' + CHIP);
+  }, 15000);
 });

@@ -29,6 +29,10 @@ function reproReadSheet(sheetName) {
   try { return (store.globalData || []).filter((r) => r && r._SheetOrigin === sheetName); }
   catch (_e) { return []; }
 }
+// La VERSIÓN del store: el propio array de filas, que se sustituye entero en cada recarga del tablero. El motor la
+// anota al leer la MATRIZ de Google (1a, 2026-09-21): mientras no cambie, lo leído de la hoja es más nuevo que el store
+// y manda; en cuanto el tablero se recarga, vuelve a mandar el store.
+function reproStoreVersion() { return store.globalData; }
 import { renderCalidadFicha } from './fichas/calidad.render.js';
 import { renderPlgFicha } from './fichas/plg.render.js';
 import { renderParamsFicha } from './fichas/params.render.js';
@@ -53,6 +57,7 @@ const regLib = {
   ...regModules,
   ...regReproductivo,
   reproReadSheet,
+  reproStoreVersion,
   renderCalidadFicha,
   resolveCalidadData,
   renderPlgFicha,
