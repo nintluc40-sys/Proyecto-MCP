@@ -20,6 +20,8 @@ import { describe, it, expect } from 'vitest';
 import {
   parteDiario, parteDiarioHtml, parteDiarioDoc, parteDiarioHojas, nombreDelParte, alcanceDelParte,
   codigoDelParte, recortar, fechaLarga, REPORTES, TOPE_FILAS,
+  semanalPorLote, semanalPaginaHtml, semanalDoc, semanalHojas, nombreDelSemanal,
+  cierreDeLote, cierreHtml, cierreDoc, cierreHojas, nombreDelCierre, curvaSvg, extremosDeCurva,
 } from './operativo.reportes.js';
 import { modeloOperativo, serieDiaria, diasDeTanque } from './operativo.data.js';
 import { normalizarFiltro, periodoDe, kpiReproduccion } from './operativo.tablero.js';
@@ -300,8 +302,188 @@ describe('Maduración · F7 · el Excel lleva UNA HOJA POR BLOQUE y TODAS las fi
 });
 
 describe('Maduración · F7 · la lista de reportes', () => {
-  it('sólo se ofrece lo que existe: F7.1 trae el diario', () => {
-    expect(REPORTES.map((r) => r.clave)).toEqual(['diario']);
+  it('sólo se ofrece lo que existe: hoy el diario, el semanal y el cierre (el de Broodstock es F7.3)', () => {
+    expect(REPORTES.map((r) => r.clave)).toEqual(['diario', 'semanal', 'cierre']);
     expect(REPORTES[0]).toMatchObject({ etiqueta: 'Parte diario' });
+    /* `lote` marca los que se imprimen de UN lote: la sub-vista tiene que pedirlo. */
+    expect(REPORTES.filter((r) => r.lote).map((r) => r.clave)).toEqual(['cierre']);
+  });
+});
+
+/* ── F7.2 · SEMANAL POR LOTE y CIERRE DE LOTE (2026-09-22) ─────────────────────────────────────────────────────
+   Qué se exige, con el fixture montado para que la regla equivocada dé OTRO resultado:
+   · el semanal cubre los SIETE días que terminan en la foto (13–19), no la semana natural ni el día suelto: el
+     desove del 12 y las muertes del 12 quedan FUERA;
+   · una página por lote, y entran los lotes VIVOS más los que CERRARON dentro de la semana (QZ cerró el 17: si
+     sólo entraran los vivos, su última semana no se podría imprimir);
+   · las bajas del lote salen del LIBRO, no de los partes: el T1 lo comparten QA y QZ, y por tanque se le
+     atribuirían a cada lote las bajas del otro;
+   · el cierre cubre la VIDA del lote (de su ingreso a su cierre, o a la foto si sigue abierto) y lo ROTULA;
+   · la cascada del cuadre se imprime entera, en su orden, y dice si cuadra;
+   · un documento de varias páginas da a cada una su propio código verificador y su «Página i de N».
+   Datos FICTICIOS. */
+const CIERRE = (fecha, lote, machos, hembras, extra) => ({ _SheetOrigin: O, 'Metabisulfito (kg)': '', Fecha: fecha,
+  Lote: lote, Machos: machos, Hembras: hembras, ...extra });
+
+const PLANTA_L = [
+  ING('2026-09-10', 'QA', 'Sala 1', 1, 20, 20),
+  ING('2026-09-10', 'QZ', 'Sala 1', 1, 10, 10),     // comparte el T1 con QA
+  ING('2026-09-16', 'QB', 'Sala 2', 4, 5, 5),
+  TQ('2026-09-12', 'Sala 1', 1, { 'Machos muertos': 2 }),        // ANTES de la semana
+  TQ('2026-09-17', 'Sala 1', 1, { 'Machos muertos': 3, 'Hembras muertas por descarte de selección': 1 }),
+  TQ('2026-09-18', 'Sala 2', 4, { 'Hembras muertas': 1 }),
+  /* ⚠ Sólo cierra el lote un Fin de Ciclo con `Tipo: 'Total'` (el Parcial descuenta de su sala y no lo cierra);
+     salen 9♂ 9♀ de los 10+10, y el libro anota la diferencia de 1+1 que no salió. */
+  CIERRE('2026-09-17', 'QZ', 9, 9, { Tipo: 'Total', Motivo: 'Fin de ciclo' }),   // QZ se cierra DENTRO de la semana
+  DES('2026-09-12', 'QA', { desoves: 1, huevos: 900, n2: 700, n5: 400 }),   // fuera de la semana
+  DES('2026-09-18', 'QA', { desoves: 2, huevos: 2000, n2: 1600, n5: 1000 }),
+];
+const ML = modeloOperativo(PLANTA_L, { hoy: HOY, fecha: DIA });
+const P7 = periodoDe('7d', DIA, ML.fuentes);
+const SERIE7 = serieDiaria(ML.fuentes, sumarDias(P7.desde, -1), P7.hasta);
+const PARTES_L = diasDeTanque(ML.fuentes.tanques);
+const semanal = semanalPorLote(ML, SERIE7, PARTES_L, SIN, { ahora: '20/09/2026 08:30' });
+const pag = (lote) => semanal.paginas.find((p) => p.lote === lote);
+
+describe('Maduración · F7.2 · el semanal por lote', () => {
+  it('🔑 cubre los SIETE días que terminan en la foto', () => {
+    expect(semanal.periodo).toMatchObject({ clave: '7d', desde: '2026-09-13', hasta: DIA, dias: 7 });
+    expect(semanal.cabecera.diaLargo).toBe('13/09 – 19/09/2026');
+  });
+
+  it('🔑 una página por lote: los vivos MÁS los que cerraron dentro de la semana', () => {
+    expect(semanal.paginas.map((p) => p.lote)).toEqual(['QA', 'QB', 'QZ']);
+    expect(pag('QZ')).toMatchObject({ cerrado: '2026-09-17' });
+    expect(pag('QZ').vivos.total).toBe(0);      // un cierre Total deja el lote a cero y anota la diferencia
+  });
+
+  it('🔑 las bajas del lote salen del LIBRO, no del tanque compartido', () => {
+    const qa = pag('QA');
+    expect(qa.bajas.clave).toBe('QA');
+    expect(qa.bajasTotales.total).toBe(qa.bajas.natural.total + qa.bajas.descarte.total);
+    expect(pag('QB').bajasTotales.total).toBe(1);       // la única baja de la Sala 2
+  });
+
+  it('lo de ANTES de la semana no entra: ni el desove del 12 ni las muertes del 12', () => {
+    expect(pag('QA').reproduccion).toMatchObject({ desoves: 2, huevos: 2000, n5: 1000 });
+    expect(pag('QA').curva).toHaveLength(7);
+    expect(pag('QA').curva[0].fecha).toBe('2026-09-13');
+  });
+
+  it('el lote que ingresó DENTRO de la semana empieza su curva en cero', () => {
+    const qb = pag('QB');
+    expect(qb.curva[0].total).toBe(0);
+    expect(qb.curva[qb.curva.length - 1].total).toBe(9);   // 10 menos la baja del 18
+    expect(qb.eventos.some((e) => e.tipo === 'ingreso')).toBe(true);
+  });
+
+  it('la página se maqueta con sus bloques y la curva en SVG', () => {
+    const html = semanalPaginaHtml(pag('QA'));
+    expect(html).toContain('Maduración · Semanal por lote');
+    /* 🔑 La página dice de qué SEMANA es: una hoja suelta, sin la pantalla al lado, tiene que poder fecharse. */
+    expect(html).toContain('Lote QA · 13/09 – 19/09/2026');
+    for (const t of ['📈 Vivos, día a día', '💀 Bajas de la semana', '🗓 Eventos del lote', '🥚 Reproducción']) expect(html).toContain(t);
+    expect(html).toContain('<svg class="rp-curva"');
+    expect(html).toContain('Los movimientos no dicen el lote');
+  });
+
+  it('🔑 el documento lleva UNA PÁGINA POR LOTE, cada una con su código y su «Página i de N»', () => {
+    const doc = semanalDoc(semanal);
+    expect(doc.match(/class="rp-page"/g)).toHaveLength(3);
+    expect(doc).toContain('Página 1 de 3');
+    expect(doc).toContain('Página 3 de 3');
+    const codigos = [...doc.matchAll(/MAD-\d{8}-([0-9A-F]{6})/g)].map((m) => m[1]);
+    expect(new Set(codigos).size).toBe(3);               // tres lotes, tres códigos distintos
+    expect(nombreDelSemanal(semanal)).toBe('Semanal_2026-09-13_a_2026-09-19');
+  });
+
+  it('el Excel del semanal lleva la columna Lote en todas sus hojas', () => {
+    const hojas = semanalHojas(semanal);
+    expect(hojas.map((h) => h.nombre)).toEqual(['Resumen', 'Curva', 'Bajas', 'Eventos']);
+    expect(hojas[0].aoa[5][0]).toBe('Lote');
+    expect(hojas[0].aoa).toHaveLength(9);                // 5 de contexto + cabecera + 3 lotes
+    expect(hojas[1].aoa[0]).toEqual(['Lote', 'Fecha', 'Machos', 'Hembras', 'Total']);
+    expect(hojas[1].aoa).toHaveLength(1 + 3 * 7);        // tres lotes × siete días
+    // QB: la única baja de la semana es UNA HEMBRA por muerte natural (Sala 2, el 18).
+    expect(hojas[2].aoa.find((r) => r[0] === 'QB').slice(1, 7)).toEqual([0, 1, 0, 0, 0, 1]);
+  });
+});
+
+describe('Maduración · F7.2 · el cierre de lote', () => {
+  const SERIE_VIDA = serieDiaria(ML.fuentes, '2026-09-09', DIA);
+  const cerrado = cierreDeLote(ML, SERIE_VIDA, 'QZ', { ahora: '20/09/2026 08:30' });
+  const abierto = cierreDeLote(ML, SERIE_VIDA, 'QA', {});
+
+  it('🔑 cubre la VIDA del lote: del ingreso al cierre, o a la foto si sigue abierto', () => {
+    expect(cerrado.periodo).toMatchObject({ desde: '2026-09-10', hasta: '2026-09-17' });
+    expect(cerrado.abierto).toBe(false);
+    expect(abierto.periodo).toMatchObject({ desde: '2026-09-10', hasta: DIA });
+    expect(abierto.abierto).toBe(true);
+  });
+
+  it('🔑 el que sigue abierto lo DICE en la página', () => {
+    expect(cierreHtml(abierto)).toContain('EN CURSO — el lote sigue abierto');
+    expect(cierreHtml(cerrado)).not.toContain('EN CURSO');
+    expect(cierreHtml(cerrado)).toContain('Maduración · Cierre de lote');
+  });
+
+  it('la cascada del cuadre se imprime entera, en su orden, y dice si cuadra', () => {
+    expect(cerrado.ficha.cuadre.filas.map((f) => f.id)).toEqual(['ingresados', 'muertos', 'descartes', 'salidas', 'diferencia', 'vivos']);
+    const html = cierreHtml(cerrado);
+    expect(html).toContain('⚖ Cascada del cuadre');
+    expect(html).toContain('− Salidas (Fin de Ciclo)');
+    /* 🔑 La última fila es la que cierra la cuenta: sin «= Vivos» la cascada no demuestra nada. */
+    expect(html).toContain('= Vivos');
+    expect(html).toContain(cerrado.ficha.cuadre.cuadra ? 'La cascada <b>cuadra</b>' : 'No cuadra por');
+    expect(html).toContain('De los muertos: en desove');
+  });
+
+  it('un lote que el libro no conoce devuelve null en vez de una página vacía', () => {
+    expect(cierreDeLote(ML, SERIE7, 'NO-EXISTE', {})).toBeNull();
+  });
+
+  it('el documento y el Excel del cierre', () => {
+    const doc = cierreDoc(cerrado);
+    expect(doc.match(/class="rp-page"/g)).toHaveLength(1);
+    expect(doc).toContain('Página 1 de 1');
+    expect(doc).toContain('<title>Cierre_lote_QZ_2026-09-19</title>');
+    expect(nombreDelCierre(cerrado)).toBe('Cierre_lote_QZ_2026-09-19');
+    const hojas = cierreHojas(cerrado);
+    expect(hojas.map((h) => h.nombre)).toEqual(['Resumen', 'Cascada', 'Origen', 'Curva', 'Eventos', 'Reproducción']);
+    expect(hojas[1].aoa[1].slice(0, 2)).toEqual(['Ingresados', '+']);
+    expect(hojas[3].aoa).toHaveLength(1 + 8);            // del 10 al 17, ambos incluidos
+    expect(hojas[2].aoa.find((r) => r[1] === 'Sala 1')).toBeTruthy();
+  });
+});
+
+describe('Maduración · F7.2 · la curva en el papel', () => {
+  it('dibuja un SVG con un punto por día y su recorrido', () => {
+    const svg = curvaSvg([{ total: 10 }, { total: 20 }, { total: 15 }]);
+    expect(svg).toContain('<svg class="rp-curva"');
+    expect(svg.match(/[ML]\d+\.\d,\d+\.\d/g)).toHaveLength(3);
+  });
+
+  it('con menos de dos puntos no dibuja nada y lo dice', () => {
+    expect(curvaSvg([{ total: 3 }])).toContain('no llega a dos días');
+    expect(curvaSvg([])).toContain('no llega a dos días');
+  });
+
+  it('🔑 una curva PLANA se dibuja a media altura, no pegada al suelo', () => {
+    /* Escalándola como si el mínimo fuera el suelo, una semana sin cambios parecía el punto más bajo del lote. */
+    const svg = curvaSvg([{ total: 5 }, { total: 5 }, { total: 5 }], { w: 100, h: 40 });
+    const ys = [...svg.matchAll(/[ML][\d.]+,([\d.]+)/g)].map((m) => Number(m[1]));
+    expect(ys).toEqual([20, 20, 20]);
+    expect(curvaSvg([{ total: 5 }, { total: 5 }])).toContain('<path');
+  });
+
+  it('una curva con relieve usa todo el alto', () => {
+    const ys = [...curvaSvg([{ total: 0 }, { total: 10 }], { w: 100, h: 40 }).matchAll(/[ML][\d.]+,([\d.]+)/g)].map((m) => Number(m[1]));
+    expect(ys[0]).toBeGreaterThan(ys[1]);      // el 0 abajo, el 10 arriba (el eje y crece hacia abajo)
+    expect(ys[0] - ys[1]).toBeGreaterThan(20);
+  });
+
+  it('los extremos dicen inicio, fin, variación y máximo', () => {
+    expect(extremosDeCurva([{ total: 10 }, { total: 30 }, { total: 25 }])).toEqual({ inicio: 10, fin: 25, delta: 15, max: 30 });
+    expect(extremosDeCurva([])).toEqual({ inicio: '', fin: '', delta: '', max: '' });
   });
 });

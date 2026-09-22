@@ -1179,7 +1179,8 @@ describe('Maduración · operativo · 🖨 Reportes', () => {
   it('la pastilla abre el panel: el día es la FOTO, con sus acciones y la vista previa del documento', async () => {
     await montar(PLANTA);
     abrirReportes();
-    expect([...root.querySelectorAll('[data-mop-rep]')].map((b) => b.textContent.trim())).toEqual(['📄 Parte diario']);
+    expect([...root.querySelectorAll('[data-mop-rep]')].map((b) => b.textContent.trim()))
+      .toEqual(['📄 Parte diario', '🗓 Semanal por lote', '🏁 Cierre de lote']);
     const dia = root.querySelector('.mop-rep-dia [data-mop-fecha]');
     expect([dia.value, dia.getAttribute('max')]).toEqual(['2026-09-19', '2026-09-19']);
     expect(plano(root.querySelector('.mop-rep-dia'))).toContain('es la foto del tablero');
@@ -1244,5 +1245,66 @@ describe('Maduración · operativo · 🖨 Reportes', () => {
     click(root.querySelector('[data-mop-rep-xlsx]'));
     expect(ultimoToast()).toContain('SheetJS');
     expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  /* F7.2 · los otros dos reportes desde la misma barra. */
+  it('🗓 el semanal enseña UNA PÁGINA POR LOTE y su rango de siete días', async () => {
+    await montar(PLANTA);
+    abrirReportes();
+    click(root.querySelector('[data-mop-rep="semanal"]'));
+    const doc = root.querySelector('.mop-rep-prev').getAttribute('srcdoc');
+    expect(doc).toContain('Maduración · Semanal por lote');
+    expect(doc).toContain('13/09 – 19/09/2026');
+    /* 🔑 Y la CURVA empieza el 13, no la víspera de la foto: la vista tiene que armar el semanal con la serie de
+       la SEMANA. Mirando sólo la cabecera, una serie de un día pasaba desapercibida (lo cazó la mutación V102). */
+    expect(doc).toContain('rp-pie-b">13/09 <b>');
+    expect(doc.match(/class="rp-page"/g).length).toBeGreaterThan(1);   // QA, QB, QC y QD están vivos
+    expect(doc).toContain('Página 1 de');
+    expect(root.querySelector('[data-mop-rep-lote]')).toBeNull();      // el semanal no pide lote
+  });
+
+  it('🏁 el cierre pide el LOTE y lo cambia sin tocar el filtro del tablero', async () => {
+    await montar(PLANTA);
+    abrirReportes();
+    click(root.querySelector('[data-mop-rep="cierre"]'));
+    const sel = root.querySelector('[data-mop-rep-lote]');
+    expect([...sel.options].map((o) => o.value)).toEqual(['QA', 'QB', 'QC', 'QD']);
+    expect(root.querySelector('.mop-rep-prev').getAttribute('srcdoc')).toContain('Lote QA');
+    cambiar(sel, 'QB');
+    expect(root.querySelector('.mop-rep-prev').getAttribute('srcdoc')).toContain('Lote QB');
+    expect(elegido('lote')).toBe('');                                  // el filtro del tablero no se ha movido
+  });
+
+  it('🔑 el cierre de un lote ABIERTO lo dice, y su curva empieza en el ingreso, no en la víspera de la foto', async () => {
+    await montar(PLANTA);
+    abrirReportes();
+    click(root.querySelector('[data-mop-rep="cierre"]'));
+    const doc = root.querySelector('.mop-rep-prev').getAttribute('srcdoc');
+    expect(doc).toContain('EN CURSO — el lote sigue abierto');
+    expect(doc).toContain('⚖ Cascada del cuadre');
+    /* 🔑 El ciclo empieza en el ÚLTIMO ingreso del lote, no en el primero: QA entró el 01/08 en la Sala 1 y el
+       11/09 en la Sala 2, y el libro reinicia el reloj del lote con cada ingreso nuevo (mad-libro: al llegar un
+       ingreso posterior se rehace `ingreso` y se borra `cerrado`). El cierre usa esa misma definición, que es la
+       del período «Ciclo» del tablero: dos definiciones distintas de la vida de un lote es lo que hay que evitar. */
+    expect(doc).toContain('11/09/2026 → 19/09/2026');
+    /* 🔑 Y la CURVA arranca ahí, no en la víspera de la foto: la serie del cierre tiene que llegar al ingreso.
+       La cabecera sale del libro y no lo distinguía (lo cazó la mutación V100). */
+    expect(doc).toContain('rp-pie-b">11/09 <b>');
+  });
+
+  it('🔑 lo que se descarga es el reporte ELEGIDO, no siempre el diario', async () => {
+    await montar(PLANTA);
+    abrirReportes();
+    click(root.querySelector('[data-mop-rep="cierre"]'));
+    const hojas = [];
+    window.XLSX = {
+      utils: { book_new: () => ({}), aoa_to_sheet: (aoa) => aoa, book_append_sheet: (wb, ws, nombre) => hojas.push(nombre) },
+      writeFile: vi.fn(),
+    };
+    click(root.querySelector('[data-mop-rep-xlsx]'));
+    expect(hojas).toEqual(['Resumen', 'Cascada', 'Origen', 'Curva', 'Eventos', 'Reproducción']);
+    expect(window.XLSX.writeFile.mock.calls[0][1]).toBe('Cierre_lote_QA_2026-09-19.xlsx');
+    expect(ultimoToast()).toContain('cierre de lote');
+    delete window.XLSX;
   });
 });

@@ -641,7 +641,13 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
    completas, una hoja por bloque**; el PDF se imprime con la maquinaria del Supervisor (`printFichaDocs`:
    iframe oculto, sin pop-ups) y lleva **código verificador del CONTENIDO** —el sello de generación queda
    FUERA del hash, así que dos impresiones del mismo parte dan el mismo código—. La vista previa es ese mismo
-   documento, dentro de un iframe. Quedan **F7.2** (semanal por lote y cierre de lote) y **F7.3**
+   documento, dentro de un iframe.
+   🆕 **F7.2** añade dos reportes más en la misma barra: el **semanal por lote** —los siete días que terminan en la
+   foto (el período «7 d» del tablero, no la semana natural) con **una página por lote**: los que tienen vivos más
+   los que **cerraron dentro de la semana**— y el **cierre de lote**, que cubre la **vida** del lote
+   (`cicloDelLote`: de su ÚLTIMO ingreso a su cierre, o a la foto) con la **cascada del cuadre** y el rótulo
+   «EN CURSO» si sigue abierto. Las curvas se dibujan con un SVG en línea (un PDF se imprime en un iframe sin
+   librerías cargadas) y cada página del documento lleva **su propio** código verificador. Queda **F7.3**
    (Broodstock), con propuesta visual y aprobación antes de codear.
    ⚠ Se desarrolla con fixtures FICTICIOS, y se contrasta con `auditar-tablero-mad-real.mjs` y
    `medir-tablero-mad-real.mjs` (utillaje). 🔑 Desde el 2026-09-20 esas dos **cuentan cuántas

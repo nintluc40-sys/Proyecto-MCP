@@ -31,19 +31,24 @@
    ============================================================ */
 import {
   periodoDe, kpiVivos, kpiLotes, kpiSalas, kpiOcupacion, kpiMortalidad, kpiBiomasa, etiquetasDeFiltro, hayFiltro,
+  cicloDelLote,
 } from './operativo.tablero.js';
 import { desgloseDeBajas } from './operativo.bajas.js';
+import { tablaDeLotes, fichaDeLote } from './operativo.lotes.js';
 import { totalesDeReproduccion, tablaDeReproduccion } from './operativo.reproduccion.js';
 import { registroDeMovimientos, productosPorArea } from './operativo.manejo.js';
 import { coberturaDePartes, avisosDelLibro } from './operativo.calidad.js';
 import { esc } from '../../core/format.js';
+import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { fnv1a } from '../supervisor/fichaPdf.js';
 
-/** Los reportes disponibles, en su orden. F7.1 sólo trae el diario: una pastilla que no hace nada engaña
- *  más que una lista corta, así que el semanal, el cierre de lote y el de Broodstock se añaden AQUÍ cuando
- *  existan (F7.2 y F7.3), y la sub-vista se pinta desde esta lista. */
+/** Los reportes disponibles, en su orden. La sub-vista se pinta desde esta lista, y una pastilla que no hiciera
+ *  nada engaña más que una lista corta: el de Broodstock (F7.3) se añade AQUÍ cuando exista.
+ *  `lote` marca los que se imprimen de UN lote y necesitan elegirlo. */
 export const REPORTES = [
   { clave: 'diario', etiqueta: 'Parte diario', icono: '📄', descripcion: 'Lo que pasó en un día, en una página.' },
+  { clave: 'semanal', etiqueta: 'Semanal por lote', icono: '🗓', descripcion: 'Los siete días que terminan en la foto, un lote por página.' },
+  { clave: 'cierre', etiqueta: 'Cierre de lote', icono: '🏁', descripcion: 'La vida entera del lote, con la cascada del cuadre.', lote: true },
 ];
 
 /** Filas que cada tabla enseña EN EL PAPEL. El resto se resume en «+ N más»; el Excel las lleva todas. */
@@ -67,6 +72,10 @@ const nf = (v, dec = 0) => (v === '' || v === null || v === undefined || !Number
   ? '—' : Number(v).toLocaleString('es-EC', { minimumFractionDigits: 0, maximumFractionDigits: dec }));
 const pc = (v) => (v === '' || v === null || v === undefined || !Number.isFinite(Number(v)) ? '—' : nf(v, 1) + ' %');
 const ubic = (sala, tanque) => (txt(sala) ? txt(sala) + (tanque === null || tanque === undefined || tanque === '' ? '' : ' · T' + tanque) : '—');
+const dm = (iso) => (esIso(iso) ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '—');
+const dma = (iso) => (esIso(iso) ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '—');
+/** Días entre dos ISO, por UTC (la misma razón que `fechaLarga`: son días, no instantes). */
+const diasEntre = (a, b) => (esIso(a) && esIso(b) ? Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 864e5) : 0);
 
 /* ── EL MODELO DEL PARTE ────────────────────────────────────── */
 
@@ -301,31 +310,280 @@ export const REPORTE_CSS = `
   .rp-vacio { font-size: 7.5pt; color: #666; font-style: italic; padding: 1.5mm 0; }
   .rp-pie-b { font-size: 7pt; color: #333; margin-top: 1mm; }
   .rp-avisos .rp-tab td:not(:first-child) { text-align: left; }
+  .rp-curva { width: 100%; height: 12mm; display: block; margin-bottom: 1mm; }
+  .rp-cuadre .rp-tab td:first-child { font-weight: 600; }
+  .rp-cuadre .rp-tab tr.rp-cuadre-fin td { border-top: .6mm solid #333; font-weight: 800; }
   .rp-foot { border-top: .3mm solid #999; margin-top: 4mm; padding-top: 1.5mm; display: flex; justify-content: space-between; font-size: 7pt; color: #444; }
   .rp-firma { border-top: .3mm solid #666; width: 55mm; margin-top: 8mm; padding-top: 1mm; text-align: center; }
 `;
 
 /**
- * El DOCUMENTO imprimible (HTML completo con su CSS), listo para `printFichaDocs` de fichaPdf.js.
- * `autoPrint` se deja en false porque el padre controla la impresión desde el iframe, igual que las fichas.
+ * El DOCUMENTO imprimible (HTML completo con su CSS), listo para `printFichaDocs` de fichaPdf.js. Sirve a los tres
+ * reportes: `paginas` son los cuerpos ya maquetados, y CADA UNA lleva su pie con su propio código verificador —dos
+ * lotes distintos no pueden compartir código— y su «Página i de N».
+ * No lleva script de auto-impresión: el padre controla la impresión desde el iframe, igual que las fichas.
  */
-export function parteDiarioDoc(parte, opts = {}) {
-  const p = parte || {};
-  const cuerpo = parteDiarioHtml(p, opts);
-  const codigo = codigoDelParte(cuerpo, p.dia);
-  const generado = txt((p.cabecera || {}).generado);
-  const fileName = txt(opts.fileName) || nombreDelParte(p);
-  const pie = `<footer class="rp-foot">
+export function documentoDeReporte({ fileName, dia, paginas = [], generado = '' } = {}) {
+  const total = paginas.length || 1;
+  const cuerpo = paginas.map((pg, i) => {
+    const html = typeof pg === 'string' ? pg : pg.cuerpo;
+    const codigo = codigoDelParte(html, (pg && pg.dia) || dia);
+    return `<div class="rp-page">${html}<footer class="rp-foot">
       <div>Código verificador <b>${esc(codigo)}</b></div>
       <div>${generado ? 'Generado el ' + esc(generado) : ''}</div>
-      <div>Página 1 de 1</div>
+      <div>Página ${i + 1} de ${total}</div>
     </footer>
-    <div class="rp-firma">Responsable del turno</div>`;
+    <div class="rp-firma">Responsable del turno</div></div>`;
+  }).join('');
   return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
 <title>${esc(fileName)}</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>${REPORTE_CSS}</style>
-</head><body><div class="rp-page">${cuerpo}${pie}</div></body></html>`;
+</head><body>${cuerpo}</body></html>`;
+}
+
+/** El documento del parte diario: una sola página. */
+export function parteDiarioDoc(parte, opts = {}) {
+  const p = parte || {};
+  return documentoDeReporte({
+    fileName: txt(opts.fileName) || nombreDelParte(p),
+    dia: p.dia,
+    paginas: [parteDiarioHtml(p, opts)],
+    generado: txt((p.cabecera || {}).generado),
+  });
+}
+
+/* ── F7.2 · LA CURVA EN EL PAPEL ────────────────────────────
+   Un SVG en línea, sin librería: los PDF se imprimen en un iframe sin nada cargado, y un gráfico de Chart.js
+   necesitaría lienzo y tiempo. Con dos puntos o menos no se dibuja nada y se dice. */
+export function curvaSvg(puntos, { w = 260, h = 44 } = {}) {
+  const vals = (puntos || []).map((p) => (Number(p.total) || 0));
+  if (vals.length < 2) return '<div class="rp-vacio">Sin curva: el período no llega a dos días.</div>';
+  const max = Math.max(...vals);
+  const min = Math.min(...vals);
+  /* Una semana SIN cambios es una recta, y tiene que verse a media altura: escalándola como si el mínimo fuera el
+     suelo, la línea se pegaba al borde de abajo y parecía que el lote estaba en su punto más bajo. */
+  const plano = max === min;
+  const x = (i) => 1 + (i * (w - 2)) / (vals.length - 1);
+  const y = (v) => (plano ? h / 2 : h - 3 - ((v - min) * (h - 8)) / (max - min));
+  const d = vals.map((v, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ',' + y(v).toFixed(1)).join(' ');
+  return `<svg class="rp-curva" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Curva de vivos">
+    <path d="${d}" fill="none" stroke="#333" stroke-width="1.2"/>
+    <line x1="0" y1="${h - 1}" x2="${w}" y2="${h - 1}" stroke="#bbb" stroke-width=".5"/></svg>`;
+}
+
+/** La curva, sólo dentro del período (la serie llega desde la víspera y hasta donde se le pidió). */
+export function recortarCurva(curva, periodo) {
+  const p = periodo || {};
+  return (curva || []).filter((c) => (!esIso(p.desde) || c.fecha >= p.desde) && (!esIso(p.hasta) || c.fecha <= p.hasta));
+}
+
+/** El primero, el último y la variación de una curva; `''` cuando no hay puntos. */
+export function extremosDeCurva(puntos) {
+  const ps = Array.isArray(puntos) ? puntos : [];
+  if (!ps.length) return { inicio: '', fin: '', delta: '', max: '' };
+  const tot = (p) => Number(p.total) || 0;
+  return { inicio: tot(ps[0]), fin: tot(ps[ps.length - 1]), delta: tot(ps[ps.length - 1]) - tot(ps[0]), max: Math.max(...ps.map(tot)) };
+}
+
+/* ── F7.2 · EL SEMANAL POR LOTE ─────────────────────────────
+   Decisiones del usuario (2026-09-22): los SIETE DÍAS que terminan en la foto —el mismo período «7 d» del
+   tablero, no la semana natural— y UNA PÁGINA POR LOTE de los que pasan el filtro.
+   🔑 Qué lotes: los que tienen VIVOS a la foto, más los que CERRARON dentro de la semana. Si no, el lote que cerró
+   el martes se quedaría sin su última semana, que es justo la que interesa. */
+export function semanalPorLote(M, serie, partes, F, opts = {}) {
+  const modelo = M || {};
+  const filtro = F || {};
+  const periodo = periodoDe('7d', txt(modelo.fecha), modelo.fuentes);
+  const lotes = tablaDeLotes(modelo, filtro).filter((l) => (Number(l.vivos.total) || 0) > 0
+    || (esIso(l.cerrado) && l.cerrado >= periodo.desde && l.cerrado <= periodo.hasta));
+  return {
+    reporte: 'semanal',
+    dia: txt(modelo.fecha),
+    periodo,
+    cabecera: {
+      titulo: 'Maduración · Semanal por lote',
+      dia: txt(modelo.fecha),
+      diaLargo: dm(periodo.desde) + ' – ' + dma(periodo.hasta),
+      filtrado: hayFiltro(filtro),
+      etiquetas: etiquetasDeFiltro(filtro),
+      generado: txt(opts.ahora),
+    },
+    paginas: lotes.map((l) => paginaSemanal(modelo, serie, partes, filtro, periodo, l)),
+  };
+}
+
+function paginaSemanal(M, serie, partes, F, periodo, fila) {
+  const Flote = { ...F, lote: normLote(fila.lote) };
+  const ficha = fichaDeLote(M, serie, fila.lote, periodo) || {};
+  /* Las bajas del lote salen del LIBRO (agrupación «lote»), no de los partes: un tanque compartido atribuiría al
+     lote las bajas de otro. Es la misma razón por la que 💀 Bajas avisa de lo que una agrupación no puede honrar. */
+  const bajas = desgloseDeBajas(M, serie, partes, Flote, periodo, 'lote');
+  return {
+    lote: fila.lote,
+    dia: txt(M.fecha),
+    /* El RANGO viaja en cada página: una hoja suelta del semanal tiene que decir qué semana cubre, y la cabecera
+       del reporte no se imprime (cada lote es una página independiente). */
+    rango: dm(periodo.desde) + ' – ' + dma(periodo.hasta),
+    estado: fila.estado,
+    ingreso: fila.ingreso,
+    cerrado: fila.cerrado,
+    dias: fila.dias,
+    salas: ficha.salas || [],
+    codigos: ficha.codigos || [],
+    vivos: fila.vivos,
+    supervivencia: fila.supervivencia,
+    /* La curva se RECORTA al período: la serie viene desde la víspera (la necesita la mortalidad, que es una resta
+       entre dos cierres), y una curva con un día de más contradiría a la cabecera, que dice el rango. */
+    curva: recortarCurva(ficha.curva, periodo),
+    bajas: (bajas.filas || [])[0] || null,
+    bajasTotales: bajas.totales,
+    desove: bajas.desove,
+    eventos: ficha.eventos || [],
+    reproduccion: ficha.reproduccion || {},
+    promedios: ficha.promedios || {},
+    mortalidad: kpiMortalidad(serie, periodo, Flote, partes),
+  };
+}
+
+/* ── F7.2 · EL CIERRE DE LOTE ───────────────────────────────
+   Decisión del usuario: se ofrece para CUALQUIER lote y se rotula si sigue abierto («EN CURSO»), porque hoy no hay
+   ninguno cerrado y limitarlo a los cerrados lo dejaría sin estrenar. El período es la VIDA del lote: de su
+   ingreso a su cierre, o a la foto si sigue abierto (`cicloDelLote`). */
+export function cierreDeLote(M, serie, lote, opts = {}) {
+  const modelo = M || {};
+  const libro = modelo.libro || { lotes: new Map(), posiciones: [] };
+  const ciclo = cicloDelLote(libro, normLote(lote), txt(modelo.fecha));
+  const periodo = ciclo && esIso(ciclo.desde)
+    ? { clave: 'ciclo', desde: ciclo.desde, hasta: ciclo.hasta, dias: diasEntre(ciclo.desde, ciclo.hasta) + 1 }
+    : periodoDe('todo', txt(modelo.fecha), modelo.fuentes);
+  const ficha0 = fichaDeLote(modelo, serie, lote, periodo);
+  if (!ficha0) return null;
+  const ficha = { ...ficha0, curva: recortarCurva(ficha0.curva, periodo) };
+  return {
+    reporte: 'cierre',
+    dia: txt(modelo.fecha),
+    periodo,
+    lote: ficha.lote,
+    abierto: !esIso(ficha.cerrado),
+    cabecera: {
+      titulo: 'Maduración · Cierre de lote',
+      dia: txt(modelo.fecha),
+      diaLargo: dma(ficha.ingreso) + ' → ' + (esIso(ficha.cerrado) ? dma(ficha.cerrado) : dma(txt(modelo.fecha)))
+        + (periodo.dias ? ' · ' + periodo.dias + ' días' : ''),
+      filtrado: false,
+      etiquetas: [],
+      generado: txt(opts.ahora),
+    },
+    ficha,
+  };
+}
+
+/* ── F7.2 · LAS PÁGINAS ─────────────────────────────────────── */
+
+function kpisHtml(kpis) {
+  return `<section class="rp-kpis">${kpis.map(([lb, v, sub]) => `<div class="rp-kpi"><div class="rp-kpi-lb">${esc(lb)}</div><div class="rp-kpi-v">${esc(v)}</div><div class="rp-kpi-s">${esc(sub || '')}</div></div>`).join('')}</section>`;
+}
+
+function cabeceraHtml(titulo, sub, aviso) {
+  return `<header class="rp-head">
+      <div class="rp-h1">${esc(titulo)}</div>
+      <div class="rp-h2">${esc(sub)}</div>
+      ${aviso ? `<div class="rp-h3 is-filtrado">⚠ ${esc(aviso)}</div>` : ''}
+    </header>`;
+}
+
+function bloqueCurva(curva, titulo) {
+  const e = extremosDeCurva(curva);
+  if (e.inicio === '') return `<section class="rp-b"><h3>${esc(titulo)}</h3><div class="rp-vacio">Sin serie para este período.</div></section>`;
+  const signo = e.delta > 0 ? '+' : '';
+  return `<section class="rp-b"><h3>${esc(titulo)}</h3>${curvaSvg(curva)}
+    <div class="rp-pie-b">${dm(curva[0].fecha)} <b>${nf(e.inicio)}</b> → ${dm(curva[curva.length - 1].fecha)} <b>${nf(e.fin)}</b>
+      · variación <b>${esc(signo + nf(e.delta))}</b> · máximo ${nf(e.max)}</div></section>`;
+}
+
+/** Una página del semanal: un lote. */
+export function semanalPaginaHtml(pg, opts = {}) {
+  const p = pg || {};
+  const tope = opts.tope === undefined ? TOPE_FILAS : opts.tope;
+  const R = p.reproduccion || {};
+  const PR = p.promedios || {};
+  const B = p.bajas;
+  const mort = p.mortalidad || {};
+  const kpis = [
+    ['Vivos', nf((p.vivos || {}).total), `♀ ${nf((p.vivos || {}).hembras)} · ♂ ${nf((p.vivos || {}).machos)}`],
+    ['Supervivencia', pc((p.supervivencia || {}).total), p.dias === '' ? '' : `${nf(p.dias)} días de vida`],
+    ['Bajas de la semana', nf((p.bajasTotales || {}).total), `natural ${nf(((p.bajasTotales || {}).natural || {}).total)} · descarte ${nf(((p.bajasTotales || {}).descarte || {}).total)}`],
+    ['Mortalidad', mort.modo === 'tasa' ? pc((mort.periodo || {}).pct) : mort.modo === 'registradas' ? nf((mort.periodo || {}).muertos) + ' reg.' : '—', mort.modo === 'tasa' ? `${nf((mort.periodo || {}).muertos)} de ${nf((mort.periodo || {}).riesgo)}` : ''],
+    ['Desoves', nf(R.desoves), `huevos ${nf(R.huevos)} · N5 ${nf(R.n5)}`],
+    ['Peso ♀', PR.pesoHembras === '' || PR.pesoHembras === undefined ? '—' : nf(PR.pesoHembras, 2) + ' g', PR.pesoMachos === '' || PR.pesoMachos === undefined ? '' : '♂ ' + nf(PR.pesoMachos, 2) + ' g'],
+    ['Cópulas', pc(PR.pctCopulas), `muda ${pc(PR.pctMuda)}`],
+  ];
+  const filasEv = (p.eventos || []).map((e) => `<tr>${celdas([dm(e.fecha), esc(e.etiqueta), nf(e.machos + e.hembras)])}</tr>`);
+  const bajasHtml = B
+    ? `<table class="rp-tab"><thead><tr>${cabeceras(['', '♂', '♀', 'Total'])}</tr></thead><tbody>
+        <tr>${celdas(['Muerte natural', nf(B.natural.machos), nf(B.natural.hembras), `<b>${nf(B.natural.total)}</b>`])}</tr>
+        <tr>${celdas(['Descarte de selección', nf(B.descarte.machos), nf(B.descarte.hembras), `<b>${nf(B.descarte.total)}</b>`])}</tr>
+        ${p.desove ? `<tr>${celdas(['En desove (informativo)', '—', nf(p.desove), nf(p.desove)])}</tr>` : ''}
+      </tbody></table>`
+    : '<div class="rp-vacio">Sin bajas del lote en la semana.</div>';
+  const cerrado = esIso(p.cerrado) ? `cerrado el ${dma(p.cerrado)}` : '';
+  const sub = `Lote ${p.lote} · ${txt(p.rango)} · ${p.estado || 'sin estado'}${p.salas.length ? ' · ' + p.salas.join(' · ') : ''}${p.codigos.length ? ' · ' + p.codigos.join(' · ') : ''}`;
+  return cabeceraHtml('Maduración · Semanal por lote', sub, cerrado ? 'Lote ' + cerrado : '')
+    + kpisHtml(kpis)
+    + `<div class="rp-cols">${bloqueCurva(p.curva, '📈 Vivos, día a día')}
+      <section class="rp-b"><h3>💀 Bajas de la semana</h3>${bajasHtml}</section></div>
+    <div class="rp-cols">
+      <section class="rp-b"><h3>🗓 Eventos del lote</h3>${tabla(['Día', 'Evento', 'Animales'], filasEv, tope, 'Sin eventos del lote en la semana.', 'eventos')}
+        <div class="rp-pie-b">Los movimientos no dicen el lote (lo deduce el libro): no se listan aquí.</div></section>
+      <section class="rp-b"><h3>🥚 Reproducción</h3>
+        <table class="rp-tab"><thead><tr>${cabeceras(['Desoves', 'Huevos', 'N2', 'N5', 'Fertilidad'])}</tr></thead>
+        <tbody><tr>${celdas([nf(R.desoves), nf(R.huevos), nf(R.n2), nf(R.n5), pc(R.fertilidad)])}</tr></tbody></table>
+        <div class="rp-pie-b">${PR.compartido ? 'Los pesos y las cópulas se reparten: el lote comparte tanque.' : 'Pesos y cópulas de sus ' + nf(PR.tanques) + ' tanque(s).'}</div></section>
+    </div>`;
+}
+
+/** La página del cierre de lote. */
+export function cierreHtml(rep, opts = {}) {
+  const r = rep || {};
+  const f = r.ficha || {};
+  const tope = opts.tope === undefined ? TOPE_FILAS : opts.tope;
+  const C = f.cuadre || { filas: [], deLosCuales: {}, deficit: {}, descuadre: {} };
+  const R = f.reproduccion || {};
+  const PR = f.promedios || {};
+  const kpis = [
+    ['Ingresados', nf((C.ingresados || {}).total), `♀ ${nf((C.ingresados || {}).hembras)} · ♂ ${nf((C.ingresados || {}).machos)}`],
+    ['Vivos', nf((C.vivos || {}).total), r.abierto ? 'a la foto' : 'al cierre'],
+    ['Muertos', nf((C.muertos || {}).total), `descartes ${nf((C.descartes || {}).total)}`],
+    ['Salidas', nf((C.salidas || {}).total), `diferencia ${nf((C.diferencia || {}).total)}`],
+    ['Días', nf(r.periodo.dias), esIso(f.ingreso) ? 'desde ' + dma(f.ingreso) : ''],
+    ['Desoves', nf(R.desoves), `N5 ${nf(R.n5)} · fertilidad ${pc(R.fertilidad)}`],
+    ['Peso ♀', PR.pesoHembras === '' || PR.pesoHembras === undefined ? '—' : nf(PR.pesoHembras, 2) + ' g', PR.pesoMachos === '' || PR.pesoMachos === undefined ? '' : '♂ ' + nf(PR.pesoMachos, 2) + ' g'],
+  ];
+  const filasCuadre = (C.filas || []).map((fi) => `<tr class="${fi.id === 'vivos' ? 'rp-cuadre-fin' : ''}">${celdas([
+    esc(fi.signo + ' ' + fi.etiqueta), nf(fi.machos), nf(fi.hembras), `<b>${nf(fi.total)}</b>`,
+  ])}</tr>`);
+  const dlc = C.deLosCuales || {};
+  const notaCuadre = `<div class="rp-pie-b">
+      De los muertos: en desove ${nf((dlc.desove || {}).muertas)} de ${nf((dlc.desove || {}).entran)} que entraron ·
+      en recuperación ${nf((dlc.recuperacion || {}).muertas)} de ${nf((dlc.recuperacion || {}).entran)}.
+      ${C.cuadra ? 'La cascada <b>cuadra</b>.' : '<b>⚠ No cuadra por ' + nf(Math.abs((C.descuadre || {}).total)) + '</b>: la diferencia no está explicada por el libro.'}
+      ${(C.deficit || {}).total ? ' Déficit de cierre: ' + nf(C.deficit.total) + ' (se pidió más de lo que había).' : ''}</div>`;
+  const filasOrigen = (f.origen || []).map((o) => `<tr>${celdas([
+    dm(o.fecha), esc(ubic(o.sala, o.tanque)), esc(o.codigo || '—'), esc(o.piscina || '—'), nf(o.total),
+  ])}</tr>`);
+  const sub = `Lote ${f.lote} · ${f.estado || 'sin estado'} · ${r.cabecera.diaLargo}`;
+  return cabeceraHtml('Maduración · Cierre de lote', sub, r.abierto ? 'EN CURSO — el lote sigue abierto: las cifras son a la foto' : '')
+    + kpisHtml(kpis)
+    + `<section class="rp-b rp-cuadre"><h3>⚖ Cascada del cuadre</h3>
+        <table class="rp-tab"><thead><tr>${cabeceras(['', '♂', '♀', 'Total'])}</tr></thead><tbody>${filasCuadre.join('')}</tbody></table>${notaCuadre}</section>
+      <div class="rp-cols">${bloqueCurva(f.curva, '📈 Vivos a lo largo del ciclo')}
+        <section class="rp-b"><h3>🧬 Origen</h3>${tabla(['Día', 'Ubicación', 'Código', 'Piscina', 'Animales'], filasOrigen, tope, 'Sin filas de Ingreso para este lote.', 'ingresos')}
+          <div class="rp-pie-b">${(f.codigos || []).length ? 'Códigos: ' + (f.codigos || []).join(' · ') : ''}${(f.salas || []).length ? ' · Salas: ' + f.salas.join(' · ') : ''}</div></section></div>
+      <section class="rp-b"><h3>🥚 Reproducción del ciclo</h3>
+        <table class="rp-tab"><thead><tr>${cabeceras(['Desoves', 'Huevos', 'No viables', 'N2', 'N5', 'Fertilidad'])}</tr></thead>
+        <tbody><tr>${celdas([nf(R.desoves), nf(R.huevos), nf(R.noViables), nf(R.n2), nf(R.n5), pc(R.fertilidad)])}</tr></tbody></table>
+        <div class="rp-pie-b">Cópulas ${pc(PR.pctCopulas)} · muda ${pc(PR.pctMuda)}${PR.compartido ? ' · repartidos: el lote comparte tanque' : ''}</div></section>`;
 }
 
 /* ── EL EXCEL: UNA HOJA POR BLOQUE, CON TODAS LAS FILAS ─────── */
@@ -405,5 +663,154 @@ export function parteDiarioHojas(parte) {
     { nombre: 'Tratamientos', aoa: trat },
     { nombre: 'Registro', aoa: registro },
     { nombre: 'Avisos', aoa: avisos },
+  ];
+}
+
+/* ── F7.2 · DOCUMENTOS, NOMBRES Y EXCEL DE LOS DOS REPORTES NUEVOS ─────────── */
+
+/** Lo que puede ir en un nombre de archivo sin que el navegador lo cambie. */
+const limpioParaArchivo = (s) => txt(s).replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'sin-nombre';
+
+export function nombreDelSemanal(rep) {
+  const r = rep || {};
+  const p = r.periodo || {};
+  return `Semanal_${esIso(p.desde) ? p.desde : 'sin-fecha'}_a_${esIso(p.hasta) ? p.hasta : 'sin-fecha'}${(r.cabecera || {}).filtrado ? '_filtrado' : ''}`;
+}
+
+export function nombreDelCierre(rep) {
+  const r = rep || {};
+  return `Cierre_lote_${limpioParaArchivo(r.lote)}_${esIso(r.dia) ? r.dia : 'sin-fecha'}`;
+}
+
+/** El documento del semanal: UNA PÁGINA POR LOTE, encadenadas en un solo documento (decisión del usuario). */
+export function semanalDoc(rep, opts = {}) {
+  const r = rep || {};
+  return documentoDeReporte({
+    fileName: txt(opts.fileName) || nombreDelSemanal(r),
+    dia: r.dia,
+    paginas: (r.paginas || []).map((pg) => ({ cuerpo: semanalPaginaHtml(pg, opts), dia: r.dia })),
+    generado: txt((r.cabecera || {}).generado),
+  });
+}
+
+/** El documento del cierre: una página. */
+export function cierreDoc(rep, opts = {}) {
+  const r = rep || {};
+  return documentoDeReporte({
+    fileName: txt(opts.fileName) || nombreDelCierre(r),
+    dia: r.dia,
+    paginas: [cierreHtml(r, opts)],
+    generado: txt((r.cabecera || {}).generado),
+  });
+}
+
+/** El Excel del semanal: cada hoja lleva la columna LOTE, porque el libro abarca varios. */
+export function semanalHojas(rep) {
+  const r = rep || {};
+  const pgs = r.paginas || [];
+  const P = r.periodo || {};
+  const contexto = [
+    ['Maduración · Semanal por lote'],
+    ['Período', (P.desde || '') + ' a ' + (P.hasta || '')],
+    ['Alcance', alcanceDelParte(r.cabecera)],
+    ['Generado', txt((r.cabecera || {}).generado)],
+    [],
+  ];
+  const resumen = [
+    ...contexto,
+    ['Lote', 'Estado', 'Ingreso', 'Cerrado', 'Días', 'Vivos ♂', 'Vivos ♀', 'Vivos', 'Supervivencia %', 'Bajas natural',
+      'Bajas descarte', 'En desove', 'Desoves', 'Huevos', 'N2', 'N5', 'Fertilidad %', 'Peso ♂ (g)', 'Peso ♀ (g)', 'Cópulas %', 'Muda %'],
+    ...pgs.map((p) => [p.lote, p.estado, p.ingreso, p.cerrado, p.dias === '' ? '' : p.dias,
+      ent(p.vivos.machos), ent(p.vivos.hembras), ent(p.vivos.total),
+      (p.supervivencia || {}).total === '' ? '' : (p.supervivencia || {}).total,
+      ent(((p.bajasTotales || {}).natural || {}).total), ent(((p.bajasTotales || {}).descarte || {}).total), ent(p.desove),
+      ent(p.reproduccion.desoves), ent(p.reproduccion.huevos), ent(p.reproduccion.n2), ent(p.reproduccion.n5),
+      p.reproduccion.fertilidad === '' ? '' : p.reproduccion.fertilidad,
+      p.promedios.pesoMachos === '' ? '' : p.promedios.pesoMachos, p.promedios.pesoHembras === '' ? '' : p.promedios.pesoHembras,
+      p.promedios.pctCopulas === '' ? '' : p.promedios.pctCopulas, p.promedios.pctMuda === '' ? '' : p.promedios.pctMuda]),
+  ];
+  const curva = [
+    ['Lote', 'Fecha', 'Machos', 'Hembras', 'Total'],
+    ...pgs.flatMap((p) => (p.curva || []).map((c) => [p.lote, c.fecha, ent(c.machos), ent(c.hembras), ent(c.total)])),
+  ];
+  const bajas = [
+    ['Lote', 'Natural ♂', 'Natural ♀', 'Descarte ♂', 'Descarte ♀', 'En desove', 'Total'],
+    ...pgs.map((p) => [p.lote, ent((p.bajas || { natural: {} }).natural.machos), ent((p.bajas || { natural: {} }).natural.hembras),
+      ent((p.bajas || { descarte: {} }).descarte.machos), ent((p.bajas || { descarte: {} }).descarte.hembras),
+      ent(p.desove), ent((p.bajasTotales || {}).total)]),
+  ];
+  const eventos = [
+    ['Lote', 'Fecha', 'Tipo', 'Evento', 'Machos', 'Hembras'],
+    ...pgs.flatMap((p) => (p.eventos || []).map((e) => [p.lote, e.fecha, e.tipo, e.etiqueta, ent(e.machos), ent(e.hembras)])),
+  ];
+  return [
+    { nombre: 'Resumen', aoa: resumen },
+    { nombre: 'Curva', aoa: curva },
+    { nombre: 'Bajas', aoa: bajas },
+    { nombre: 'Eventos', aoa: eventos },
+  ];
+}
+
+/** El Excel del cierre de lote: la cascada entera, el origen, la curva completa y los eventos del ciclo. */
+export function cierreHojas(rep) {
+  const r = rep || {};
+  const f = r.ficha || {};
+  const C = f.cuadre || { filas: [], deLosCuales: {}, deficit: {}, descuadre: {} };
+  const R = f.reproduccion || {};
+  const PR = f.promedios || {};
+  const dlc = C.deLosCuales || {};
+  const resumen = [
+    ['Maduración · Cierre de lote'],
+    ['Lote', f.lote || ''],
+    ['Estado', f.estado || ''],
+    ['Ingreso', f.ingreso || ''],
+    ['Cierre', f.cerrado || (r.abierto ? '(sigue abierto)' : '')],
+    ['Días', (r.periodo || {}).dias || ''],
+    ['A la fecha', r.dia || ''],
+    ['Generado', txt((r.cabecera || {}).generado)],
+    [],
+    ['Indicador', 'Machos', 'Hembras', 'Total'],
+    ['Ingresados', ent((C.ingresados || {}).machos), ent((C.ingresados || {}).hembras), ent((C.ingresados || {}).total)],
+    ['Vivos', ent((C.vivos || {}).machos), ent((C.vivos || {}).hembras), ent((C.vivos || {}).total)],
+    ['Cópulas %', '', '', PR.pctCopulas === '' ? '' : PR.pctCopulas],
+    ['Muda %', '', '', PR.pctMuda === '' ? '' : PR.pctMuda],
+    ['Peso promedio (g)', PR.pesoMachos === '' ? '' : PR.pesoMachos, PR.pesoHembras === '' ? '' : PR.pesoHembras, ''],
+  ];
+  const cascada = [
+    ['Paso', 'Signo', 'Machos', 'Hembras', 'Total'],
+    ...(C.filas || []).map((fi) => [fi.etiqueta, fi.signo, ent(fi.machos), ent(fi.hembras), ent(fi.total)]),
+    [],
+    ['De los muertos: entraron', 'muertas'],
+    ['En desove', ent((dlc.desove || {}).entran), ent((dlc.desove || {}).muertas)],
+    ['En recuperación', ent((dlc.recuperacion || {}).entran), ent((dlc.recuperacion || {}).muertas)],
+    [],
+    ['¿Cuadra?', C.cuadra ? 'sí' : 'NO'],
+    ['Descuadre', ent((C.descuadre || {}).machos), ent((C.descuadre || {}).hembras), ent((C.descuadre || {}).total)],
+    ['Déficit de cierre', ent((C.deficit || {}).machos), ent((C.deficit || {}).hembras), ent((C.deficit || {}).total)],
+  ];
+  const origen = [
+    ['Fecha', 'Sala', 'Tanque', 'Código genético', 'Piscina', 'Camaronera', 'Machos', 'Hembras', 'Total'],
+    ...(f.origen || []).map((o) => [o.fecha, o.sala, o.tanque, o.codigo, o.piscina, o.camaronera, ent(o.machos), ent(o.hembras), ent(o.total)]),
+  ];
+  const curva = [
+    ['Fecha', 'Machos', 'Hembras', 'Total'],
+    ...(f.curva || []).map((c) => [c.fecha, ent(c.machos), ent(c.hembras), ent(c.total)]),
+  ];
+  const eventos = [
+    ['Fecha', 'Tipo', 'Evento', 'Machos', 'Hembras'],
+    ...(f.eventos || []).map((e) => [e.fecha, e.tipo, e.etiqueta, ent(e.machos), ent(e.hembras)]),
+  ];
+  const repro = [
+    ['Desoves', 'Huevos', 'No viables', 'N2', 'N5', 'Fertilidad %', 'Nauplios por desove'],
+    [ent(R.desoves), ent(R.huevos), ent(R.noViables), ent(R.n2), ent(R.n5),
+      R.fertilidad === '' ? '' : R.fertilidad, R.n5PorDesove === '' || R.n5PorDesove === undefined ? '' : R.n5PorDesove],
+  ];
+  return [
+    { nombre: 'Resumen', aoa: resumen },
+    { nombre: 'Cascada', aoa: cascada },
+    { nombre: 'Origen', aoa: origen },
+    { nombre: 'Curva', aoa: curva },
+    { nombre: 'Eventos', aoa: eventos },
+    { nombre: 'Reproducción', aoa: repro },
   ];
 }

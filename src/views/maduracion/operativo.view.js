@@ -61,7 +61,11 @@ import {
 import { tablaDePiscinas, fichaDePiscina } from './operativo.broodstock.js';
 import { estadoDeHojas, calendarioDeRegistros, coberturaDePartes, comparacionDeEstados, avisosDelLibro } from './operativo.calidad.js';
 import { cruceConMicrochips } from './operativo.cruce.js';
-import { REPORTES, parteDiario, parteDiarioDoc, parteDiarioHojas, nombreDelParte, alcanceDelParte } from './operativo.reportes.js';
+import {
+  REPORTES, parteDiario, parteDiarioDoc, parteDiarioHojas, nombreDelParte, alcanceDelParte,
+  semanalPorLote, semanalDoc, semanalHojas, nombreDelSemanal,
+  cierreDeLote, cierreDoc, cierreHojas, nombreDelCierre,
+} from './operativo.reportes.js';
 import { printFichaDocs } from '../supervisor/fichaPdf.js';
 import { toast } from '../../ui/toast.js';
 import { buildReproModel, MAD_MATRIZ_ORIGIN, MAD_BITACORA_ORIGIN, MAD_TRANSFER_ORIGIN } from './data.js';
@@ -106,9 +110,10 @@ const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', 
   /* F6 · la piscina cuya FICHA está abierta en 📈 Piscinas de origen (🧬 Lotes). No es el filtro `piscina`: aquél
      elige lotes por su origen, y ésta sólo abre una ficha. */
   piscinaSel: '',
-  /* F7 · el reporte elegido en 🖨 Reportes. El DÍA del parte no vive aquí: es la foto del tablero (`fecha`),
-     por decisión del usuario, para que el papel no pueda enseñar un día distinto del de la pantalla. */
-  rep: 'diario' };
+  /* F7 · el reporte elegido en 🖨 Reportes, y el lote del CIERRE (F7.2). El DÍA del reporte no vive aquí: es la
+     foto del tablero (`fecha`), por decisión del usuario, para que el papel no pueda enseñar un día distinto del
+     de la pantalla. `repLote` sí es propio: elige de qué lote es el cierre, no filtra el tablero. */
+  rep: 'diario', repLote: '' };
 /* El estado de la vista vive lo que dura la sesión: al volver a Maduración, o al refrescarse los datos, se conserva. */
 const vOp = { ...INICIAL };
 
@@ -1828,67 +1833,103 @@ function cruceHTML(c, p, F) {
   </div>`;
 }
 
-/* ── 🖨 REPORTES (F7.1, 2026-09-22) ─────────────────────────────
-   El parte del último pintado. Los botones de PDF y Excel exportan ESTO, lo mismo que se está viendo: si
-   volvieran a calcularlo por su cuenta podrían sacar otra cosa que la de la vista previa. */
-let _parte = null;
+/* ── 🖨 REPORTES (F7.1 y F7.2, 2026-09-22) ──────────────────────
+   El reporte del último pintado, con su clave. Los botones de PDF y Excel exportan ESTO, lo mismo que se está
+   viendo: si volvieran a calcularlo por su cuenta podrían sacar otra cosa que la de la vista previa. */
+let _reporte = null;
 
 /** El sello de generación, puesto en el MOMENTO de exportar. Fuera del pintado a propósito: así la vista previa
  *  —y el código verificador, que es del contenido— no cambian cada vez que se repinta la pantalla. */
 const selloAhora = () => new Date().toLocaleString('es-EC', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 const conSello = (parte) => ({ ...parte, cabecera: { ...parte.cabecera, generado: selloAhora() } });
 
+/** Lo que cada reporte sabe hacer con su modelo: nombrarse, imprimirse y volcarse a Excel. Así los dos botones
+ *  son UNO para los tres reportes, y añadir el de Broodstock (F7.3) es añadir una entrada aquí. */
+const ARMADO = {
+  diario: { doc: parteDiarioDoc, hojas: parteDiarioHojas, nombre: nombreDelParte, titulo: 'parte' },
+  semanal: { doc: semanalDoc, hojas: semanalHojas, nombre: nombreDelSemanal, titulo: 'semanal' },
+  cierre: { doc: cierreDoc, hojas: cierreHojas, nombre: nombreDelCierre, titulo: 'cierre de lote' },
+};
+
 function reportesHTML(M, memo, fecha, hoy, F) {
-  /* La serie del parte va de la VÍSPERA al día: es lo que pide `parteDiario` para poder restar los dos cierres.
-     La del tablero (`memo.serie`) es la del período elegido arriba, que no tiene por qué empezar ahí. */
+  const clave = REPORTES.some((r) => r.clave === vOp.rep) ? vOp.rep : REPORTES[0].clave;
+  vOp.rep = clave;
+  /* La serie va de la VÍSPERA al día: es lo que piden los reportes para poder restar dos cierres. La del tablero
+     (`memo.serie`) es la del período elegido arriba, que no tiene por qué empezar ahí. */
   const serie = serieDiaria(M.fuentes, sumarDias(fecha, -1), fecha);
-  _parte = parteDiario(M, serie, memo.partes, F, {});
-  const pastillas = REPORTES.map((r) => `<button class="mc-pill mop-rep-pill ${vOp.rep === r.clave ? 'is-on' : ''}" data-mop-rep="${esc(r.clave)}"
+  const lotes = tablaDeLotes(M, F).map((l) => l.lote);
+  let modelo = null;
+  let sinLote = '';
+  if (clave === 'semanal') {
+    const p7 = periodoDe('7d', fecha, M.fuentes);
+    modelo = semanalPorLote(M, serieDiaria(M.fuentes, sumarDias(p7.desde, -1), p7.hasta), memo.partes, F, {});
+  } else if (clave === 'cierre') {
+    if (!lotes.includes(vOp.repLote)) vOp.repLote = F.lote && lotes.includes(F.lote) ? F.lote : (lotes[0] || '');
+    /* La vida del lote empieza en su ingreso: la serie tiene que llegar hasta ahí, o la curva saldría recortada. */
+    const ciclo = vOp.repLote ? cicloDelLote(M.libro, vOp.repLote, fecha) : null;
+    const desde = ciclo && ciclo.desde ? sumarDias(ciclo.desde, -1) : sumarDias(fecha, -1);
+    modelo = vOp.repLote ? cierreDeLote(M, serieDiaria(M.fuentes, desde, fecha), vOp.repLote, {}) : null;
+    if (!modelo) sinLote = lotes.length ? 'No se pudo armar el cierre de ese lote.' : 'No hay ningún lote en el alcance del filtro.';
+  } else {
+    modelo = parteDiario(M, serie, memo.partes, F, {});
+  }
+  _reporte = modelo ? { clave, modelo } : null;
+  const A = ARMADO[clave];
+  const pastillas = REPORTES.map((r) => `<button class="mc-pill mop-rep-pill ${clave === r.clave ? 'is-on' : ''}" data-mop-rep="${esc(r.clave)}"
       title="${esc(r.descripcion || '')}">${r.icono} ${esc(r.etiqueta)}</button>`).join('');
-  const alcance = alcanceDelParte(_parte.cabecera);
-  const doc = parteDiarioDoc(_parte);
+  const selLote = REPORTES.find((r) => r.clave === clave).lote
+    ? `<label class="mop-rep-dia">Lote
+        <select class="mop-f-sel" data-mop-rep-lote>${lotes.map((l) => `<option value="${esc(l)}"${l === vOp.repLote ? ' selected' : ''}>${esc(l)}</option>`).join('') || '<option value="">(ninguno)</option>'}</select>
+        <span class="mc-note">la vida entera del lote, hasta la foto</span></label>` : '';
+  const cab = modelo ? modelo.cabecera : { filtrado: false, etiquetas: [] };
+  const alcance = alcanceDelParte(cab);
+  const doc = modelo ? A.doc(modelo) : '';
+  const cuerpo = modelo
+    ? `<div class="mop-rep-hoja"><iframe class="mop-rep-prev" title="Vista previa del ${esc(A.titulo)}" srcdoc="${esc(doc)}"></iframe></div>`
+    : `<p class="mc-note">${esc(sinLote || 'No hay nada que enseñar.')}</p>`;
   return `<div class="mc-card mc-card-wide mop-rep">
       <div class="mop-rep-barra">
         <div class="mop-rep-tipos">${pastillas}</div>
         <label class="mop-rep-dia">Día del parte
           <input type="date" class="mop-fecha" data-mop-fecha value="${esc(fecha)}" max="${esc(hoy)}">
           <span class="mc-note">es la foto del tablero: cambiarlo mueve todas las sub-vistas</span></label>
+        ${selLote}
         <div class="mop-rep-acc">
           <button class="mop-rep-btn" data-mop-rep-pdf>🖨 PDF</button>
           <button class="mop-rep-btn is-alt" data-mop-rep-xlsx>📗 Excel</button>
         </div>
       </div>
-      <p class="mc-note mop-rep-alcance${_parte.cabecera.filtrado ? ' is-filtrado' : ''}">
-        ${_parte.cabecera.filtrado ? '⚠ ' : ''}${esc(alcance)} · el PDF sale tal cual se ve aquí; el Excel lleva
-        ${REPORTES.length ? 'las filas completas de cada bloque, una hoja por bloque' : ''}.</p>
-      <div class="mop-rep-hoja">
-        <iframe class="mop-rep-prev" title="Vista previa del parte diario" srcdoc="${esc(doc)}"></iframe>
-      </div>
+      <p class="mc-note mop-rep-alcance${cab.filtrado ? ' is-filtrado' : ''}">
+        ${cab.filtrado ? '⚠ ' : ''}${esc(alcance)} · el PDF sale tal cual se ve aquí; el Excel lleva
+        las filas completas de cada bloque, una hoja por bloque.</p>
+      ${cuerpo}
     </div>`;
 }
 
-/** Imprime el parte que se está viendo (iframe oculto, sin pop-ups: la maquinaria de los PDF del Supervisor). */
+/** Imprime el reporte que se está viendo (iframe oculto, sin pop-ups: la maquinaria de los PDF del Supervisor). */
 function imprimirParte() {
-  if (!_parte) { toast('Todavía no hay parte que imprimir.', 'warn'); return; }
-  const parte = conSello(_parte);
-  const fileName = nombreDelParte(parte);
-  const ok = printFichaDocs([{ page: parteDiarioDoc(parte, { fileName }), fileName }], (n, total, f, done) => {
-    if (done) toast('🖨 Parte enviado a imprimir. Elige «Guardar como PDF» en el diálogo.', 'ok', 5000);
+  if (!_reporte) { toast('Todavía no hay reporte que imprimir.', 'warn'); return; }
+  const A = ARMADO[_reporte.clave];
+  const parte = conSello(_reporte.modelo);
+  const fileName = A.nombre(parte);
+  const ok = printFichaDocs([{ page: A.doc(parte, { fileName }), fileName }], (n, total, f, done) => {
+    if (done) toast('🖨 Reporte enviado a imprimir. Elige «Guardar como PDF» en el diálogo.', 'ok', 5000);
   });
   if (!ok) toast('No se pudo abrir la impresión en este navegador.', 'err');
 }
 
-/** Descarga el parte en Excel: una hoja por bloque, con las filas COMPLETAS (el papel recorta, el archivo no). */
+/** Descarga el reporte en Excel: una hoja por bloque, con las filas COMPLETAS (el papel recorta, el archivo no). */
 function descargarParte() {
-  if (!_parte) { toast('Todavía no hay parte que descargar.', 'warn'); return; }
+  if (!_reporte) { toast('Todavía no hay reporte que descargar.', 'warn'); return; }
   const XLSX = window.XLSX;
   if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa el <script> del CDN en index.html o tu conexión.', 'err'); return; }
-  const parte = conSello(_parte);
-  const hojas = parteDiarioHojas(parte);
+  const A = ARMADO[_reporte.clave];
+  const parte = conSello(_reporte.modelo);
+  const hojas = A.hojas(parte);
   const wb = XLSX.utils.book_new();
   for (const { nombre, aoa } of hojas) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), nombre);
-  XLSX.writeFile(wb, nombreDelParte(parte) + '.xlsx');
-  toast(`📗 Excel del parte descargado (${hojas.length} hojas).`, 'ok', 4000);
+  XLSX.writeFile(wb, A.nombre(parte) + '.xlsx');
+  toast(`📗 Excel del ${A.titulo} descargado (${hojas.length} hojas).`, 'ok', 4000);
 }
 
 function bind(root) {
@@ -1908,6 +1949,7 @@ function bind(root) {
     if (per) { vOp.periodo = per.dataset.mopPeriodo; repintar(); return; }
     const rep = t.closest('[data-mop-rep]');
     if (rep) { vOp.rep = rep.dataset.mopRep; repintar(); return; }
+    // El selector de lote del cierre es un <select>: su cambio va en el listener de abajo, no aquí.
     if (t.closest('[data-mop-rep-pdf]')) { imprimirParte(); return; }
     if (t.closest('[data-mop-rep-xlsx]')) { descargarParte(); return; }
     if (t.closest('[data-mop-limpiar]')) {
@@ -1983,6 +2025,7 @@ function bind(root) {
       repintar();
       return;
     }
+    if (e.target.matches('[data-mop-rep-lote]')) { vOp.repLote = e.target.value || ''; repintar(); return; }
     if (e.target.matches('[data-mop-fecha]')) { vOp.fecha = e.target.value || ''; repintar(); }
   });
 }
