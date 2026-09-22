@@ -474,8 +474,9 @@ export const TIPOS_AVISO = {
 };
 
 /** ¿Es este aviso del libro de lo filtrado? Un aviso dice su sala y tanque (o su origen y destino) o su lote; el
- *  que no dice la dimensión filtrada no se le puede atribuir, y queda fuera. */
-function avisoEnFiltro(a, F) {
+ *  que no dice la dimensión filtrada no se le puede atribuir, y queda fuera. Se exporta para 🩺 Calidad del dato
+ *  (F6.2), que lista los avisos con la MISMA regla que las alertas de la portada. */
+export function avisoEnFiltro(a, F) {
   if (F.sala) {
     const lugares = [[a.sala, a.tanque], [a.salaOrigen, a.tanqueOrigen], [a.salaDestino, a.tanqueDestino]];
     if (!lugares.some(([s, t]) => txt(s) === F.sala && (F.tanque === null || Number(t) === F.tanque))) return false;
