@@ -685,6 +685,41 @@ describe('♻ reciclaje · un evento anterior al ingreso de la hembra vigente es
   });
 });
 
+/* 🔴 2026-09-22 · EL CHIP NO PASA A LA NUEVA HASTA LA MUERTE DE LA ANTERIOR. El ingreso es el del LOTE, no el del chip: el
+   lote del 29-08 recibió chips de hembras que murieron del 06 al 10-09, y la regla «la de ingreso más reciente» les daba
+   esas muertes a las nuevas, vivas. Ningún fixture lo veía: en todos, la anterior moría ANTES del ingreso de la nueva.
+   Aquí la anterior (ingreso 01-05) muere el 10-08, DESPUÉS del ingreso de la nueva (01-08). */
+describe('🔴 el chip no pasa a la nueva hasta la muerte de la anterior (el ingreso es del lote)', () => {
+  const ANTERIOR = Object.assign({}, VIEJA, { 'Fecha muerte': '2026-08-10' });
+  const idx = () => matrixIndexFromRows([ANTERIOR, NUEVA]);
+  it('🔴 una mortalidad atrasada de la anterior (su día) no va a la nueva, viva: es de una hembra anterior', () => {
+    const r = buildEventBatch({ ids: [CHIP], fecha: '2026-08-10', tipo: REPRO_EVENTO.MORTALIDAD, matrixIndex: idx() });
+    expect(r.report.antesDelIngreso).toEqual([CHIP]);
+    expect(r.matriz).toBeNull();
+  });
+  it('desde el día siguiente a esa muerte, el evento es de la nueva: su Sala y su Tanque', () => {
+    const r = buildEventBatch({ ids: [CHIP], fecha: '2026-08-11', tipo: REPRO_EVENTO.DESOVE, matrixIndex: idx() });
+    expect(r.report.processed).toEqual([CHIP]);
+    expect(r.bitacora.rows[0][col(REPRO_BITACORA_HEADERS, 'Sala')]).toBe('S3');
+  });
+  it('un traslado de ese día tampoco mueve a la nueva', () => {
+    const r = buildTransferBatch({ fecha: '2026-08-10', tipo: REPRO_TRANSFER_TIPO.TRASLADO, origen: { sala: 'S3', tanque: 'T4' },
+      destinos: [{ sala: 'S6', tanque: 'T2', ids: [CHIP] }], matrixIndex: idx(), trId: 'TR-000301' });
+    expect(r.report.antesDelIngreso).toEqual([CHIP]);
+    expect(r.matriz).toBeNull();
+  });
+  it('la traza de la nueva empieza el día siguiente a esa muerte y no se queda lo de antes', () => {
+    const BIT = [{ 'Trovan ID': CHIP, 'Fecha': '2026-08-05', 'Tipo': 'Desove' }, { 'Trovan ID': CHIP, 'Fecha': '2026-08-12', 'Tipo': 'Desove' }];
+    const t = trazaDelChip([ANTERIOR, NUEVA], BIT, [], CHIP);
+    expect(t.desde).toBe('2026-08-11');
+    expect(t.desoves).toEqual(['2026-08-12']);
+  });
+  it('la matriz de desoves de la Consulta pone el desove de antes de esa muerte en la fila de la anterior', () => {
+    const BIT = [{ 'Trovan ID': CHIP, 'Fecha': '2026-08-05', 'Tipo': 'Desove' }, { 'Trovan ID': CHIP, 'Fecha': '2026-08-12', 'Tipo': 'Desove' }];
+    expect(pivotDesoves(BIT, [ANTERIOR, NUEVA]).rows.map((r) => [r.trovan, r.total])).toEqual([[CHIP, 1], [CHIP + '·2026-01-05', 1]]);
+  });
+});
+
 describe('♻ reciclaje · Consulta: matriz de desoves y trazabilidad por HEMBRA', () => {
   const BIT = [
     { 'Trovan ID': CHIP, 'Fecha': '2026-06-01', 'Tipo': 'Desove' },       // de la vieja

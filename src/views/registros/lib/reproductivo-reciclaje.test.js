@@ -264,6 +264,8 @@ describe('♻ Consulta · cada hembra de un chip, por separado', () => {
     expect(t).toContain('reciclado');
     expect(t).toContain('2026-01-05');                 // la hembra anterior: su ingreso
     expect(t).toContain('L12');                        // y su lote
+    // 2026-09-22 · «desde el», no «desde su ingreso el»: si la anterior murió después, el chip es suyo desde el día siguiente.
+    expect(t).toContain('esta hembra lo lleva desde el 2026-08-01');
   });
 
   it('sin fechas en la lectura no se puede partir, y lo dice', () => {

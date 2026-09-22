@@ -564,3 +564,23 @@ describe('maduracion.data · ♻ un chip reciclado son hembras distintas', () =>
     expect(r.females).toHaveLength(2);
   });
 });
+
+/* 🔴 2026-09-22 · EL CHIP NO PASA A LA NUEVA HASTA LA MUERTE DE LA ANTERIOR. La fecha de ingreso es la del LOTE: el lote
+   del 29-08 recibió chips de hembras que murieron del 06 al 10-09, y «la de ingreso más reciente» ponía esas muertes en
+   las nuevas, VIVAS (también en el cruce de 🩺 Calidad del dato). Arriba la anterior muere ANTES del ingreso de la
+   nueva, y ahí las dos reglas dan lo mismo: por eso no se veía. */
+describe('maduracion.data · ♻ el chip no pasa a la nueva hasta la muerte de la anterior', () => {
+  const CHIP = '0007219380';
+  const ANT = { 'Trovan ID': CHIP, Lote: 'L12', 'Código genético': 'G01', 'Sala actual': 'S1', 'Tanque actual': 'T13',
+    Estado: 'Muerto', 'Fecha ingreso': '2026-06-27', 'Fecha muerte': '2026-09-06' };
+  const NUEVA = { 'Trovan ID': CHIP, Lote: 'L20', 'Código genético': 'G07', 'Sala actual': 'S4', 'Tanque actual': 'T3',
+    Estado: 'Vivo', 'Fecha ingreso': '2026-08-29' };
+  const m = buildReproModel([ANT, NUEVA], [
+    { 'Trovan ID': CHIP, Fecha: '2026-09-06', Tipo: 'Mortalidad', Sala: 'S1', Tanque: 'T13' },
+    { 'Trovan ID': CHIP, Fecha: '2026-09-07', Tipo: 'Desove', Sala: 'S4', Tanque: 'T3' },
+  ], []);
+  it('🔴 la muerte de la anterior es suya aunque la nueva hubiera ingresado antes; lo del día siguiente, de la nueva', () => {
+    expect(m.mortalidades.map((e) => [e.trovan, e.lote])).toEqual([[CHIP + '·2026-06-27', 'L12']]);
+    expect(m.desoves.map((e) => [e.trovan, e.lote])).toEqual([[CHIP, 'L20']]);
+  });
+});

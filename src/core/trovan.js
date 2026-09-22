@@ -140,12 +140,20 @@ export function cadenaDelChip(filas) {
 }
 
 /** De qué individuo de la cadena es un evento del día ISO `dia`: de la última que había ingresado
- *  ese día o antes; si ninguna, de la primera; sin fecha, de la última. */
+ *  ese día o antes; si ninguna, de la primera; sin fecha, de la última.
+ *  🔴 2026-09-22 · Y EL CHIP NO PASA A LA SIGUIENTE MIENTRAS SIGUE PUESTO: si quien lo llevaba murió ese día o
+ *  después, el evento es suyo. La fecha de ingreso es la del LOTE, no la del chip: el lote del 29-08 recibió chips de
+ *  hembras que murieron del 06 al 10-09, y sus muertes se atribuían a las nuevas, que están vivas. Sin fecha de
+ *  muerte de quien lo llevaba (o con dos vivas), manda el ingreso, como antes. */
 export function individuoEnFecha(cadena, dia) {
   if (!cadena || !cadena.length) return null;
   if (!dia) return cadena[cadena.length - 1];
   let el = cadena[0];
-  cadena.forEach((f) => { if (f.ingreso && f.ingreso <= dia) el = f; });
+  cadena.forEach((f) => {
+    if (!f.ingreso || f.ingreso > dia) return;
+    if (f !== el && el.muerte && el.muerte >= dia) return;   // aún lo llevaba la anterior (murió ese día o después)
+    el = f;
+  });
   return el;
 }
 

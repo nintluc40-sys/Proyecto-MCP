@@ -176,6 +176,21 @@ describe('core · individuoEnFecha / idsDeCadena', () => {
     expect(individuoEnFecha(cadena, '')).toBe(nueva);
     expect(individuoEnFecha([], '2026-01-01')).toBeNull();
   });
+  /* 🔴 2026-09-22 · el caso real: el lote del 29-08 recibió chips de hembras que murieron del 06 al 10-09. El ingreso es
+     del LOTE, no del chip, así que la nueva «ingresó» antes de que la anterior soltara el chip. */
+  it('🔴 el chip no pasa a la nueva hasta la MUERTE de quien lo llevaba, aunque la nueva ingresara antes', () => {
+    const anterior = fila(0, '2026-06-27', '2026-09-06', true);
+    const siguiente = fila(1, '2026-08-29', '', false);
+    const c = [anterior, siguiente];
+    expect(individuoEnFecha(c, '2026-09-01')).toBe(anterior);   // la nueva ya había ingresado; el chip, no
+    expect(individuoEnFecha(c, '2026-09-06')).toBe(anterior);   // el día de su muerte, suyo (su mortalidad)
+    expect(individuoEnFecha(c, '2026-09-07')).toBe(siguiente);
+  });
+  it('sin la fecha de muerte de la anterior (o con las dos vivas) manda el ingreso, como antes', () => {
+    const viva = fila(0, '2026-06-27', '', false);
+    const otra = fila(1, '2026-08-29', '', false);
+    expect(individuoEnFecha([viva, otra], '2026-09-01')).toBe(otra);
+  });
   it('la última se llama como su chip; las anteriores, chip·fecha de ingreso (o chip·#n sin ella)', () => {
     expect(idsDeCadena('0007219380', cadena)).toEqual(['0007219380·2026-01-05', '0007219380']);
     expect(idsDeCadena('0007219380', [fila(0, '', '', true), nueva])).toEqual(['0007219380·#1', '0007219380']);

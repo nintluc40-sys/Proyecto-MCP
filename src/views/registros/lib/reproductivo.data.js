@@ -127,10 +127,18 @@ function filasPorChip(records) {
  *  USUARIO entre las `opciones`—. Medido el 2026-09-17 en producción: 1665 filas, 1665 chips, ninguno con
  *  más de una. */
 function registroVigente(filas) {
-  const r = Object.assign({}, vigenteDelChip(filas).rec, {
+  const vig = vigenteDelChip(filas);
+  const r = Object.assign({}, vig.rec, {
     individuos: filas.length,
     vivos: filas.filter((f) => !f.muerto).length,
   });
+  /* 🔴 2026-09-22 · la MUERTE de quien llevaba el chip justo antes que la vigente: hasta ese día, incluido, el chip era
+     suyo aunque la vigente hubiera ingresado antes —el ingreso es el del lote, no el del chip—. Es la regla de
+     `individuoEnFecha`, y la usa `antesDeSuIngreso` para que un evento atrasado no vaya a la nueva. Sólo si se conoce. */
+  if (filas.length > 1) {
+    const cadena = cadenaDelChip(filas).cadena, k = cadena.indexOf(vig);
+    if (k > 0 && cadena[k - 1].muerte) r.muerteAnterior = cadena[k - 1].muerte;
+  }
   /* R5 (2026-09-18) · con DOS o más vivas, el registro trae las `opciones`: una por hembra viva, con la cuaterna que
      la identifica (`ind`) y lo que el técnico necesita para reconocerla. Son las que se le ofrecen para ELEGIR de
      cuál es un evento o un traslado: el sistema sigue sin elegir (D17), pero ya no deja el chip sin salida. */
@@ -178,8 +186,12 @@ export function buildMatrixIndex(records) {
  *  Es una asimetría real entre los dos destinos, no un descuido: la lectura barata es la que permite
  *  trabajar en campo. */
 function antesDeSuIngreso(rec, dia) {
-  const ingreso = fechaIso(rec && rec.fechaIngreso);
-  return !!(rec && rec.individuos > 1 && dia && ingreso && dia < ingreso);
+  if (!(rec && rec.individuos > 1 && dia)) return false;
+  const ingreso = fechaIso(rec.fechaIngreso);
+  if (ingreso && dia < ingreso) return true;
+  /* 🔴 2026-09-22 · y hasta la muerte de la anterior, incluida: ese día el chip aún era suyo. Sin esto, una mortalidad
+     atrasada de la anterior iba a la vigente —viva— y la marcaba muerta (ver `registroVigente`). */
+  return !!(rec.muerteAnterior && dia <= rec.muerteAnterior);
 }
 /** El chip ha llevado VARIAS hembras y la lectura no trae su fecha de ingreso: la comprobación de
  *  arriba no puede hacerse, y el evento se apuntará a la vigente sin que nadie pueda saber si era de
@@ -519,16 +531,24 @@ export function individualTrace(transferRows, trovan) {
 
 /** Trazabilidad de un chip para la Consulta: la hembra que lo lleva hoy (`rec`, la vigente del
  *  índice), sus desoves y sus movimientos.
- *  ♻ Con el chip reciclado sólo son suyos los de su ingreso en adelante (`desde`), y las hembras
- *  anteriores van en `anteriores`. Si la lectura no trae las fechas de ingreso no se puede partir:
- *  `sinFechas` lo dice y se muestra todo lo del chip. */
+ *  ♻ Con el chip reciclado sólo son suyos los de desde que lleva el chip (`desde`: su ingreso, o el día
+ *  siguiente a la muerte de la anterior si murió después), y las hembras anteriores van en `anteriores`.
+ *  Si la lectura no trae las fechas de ingreso no se puede partir: `sinFechas` lo dice y se muestra
+ *  todo lo del chip. */
 export function trazaDelChip(matrixRows, bitacoraRows, transferRows, trovan) {
   const id = normTrovan(trovan);
   const filas = [];
   (matrixRows || []).forEach((o, pos) => { const r = matrixRecordFromSheet(o); if (r.trovan && r.trovan === id) filas.push(filaDeChip(r, pos)); });
   const reciclado = filas.length > 1;
   const vig = filas.length ? vigenteDelChip(filas) : null;
-  const desde = reciclado ? vig.ingreso : '';
+  const rec = filas.length ? registroVigente(filas) : null;
+  let desde = reciclado ? vig.ingreso : '';
+  /* 🔴 2026-09-22 · si quien llevaba antes el chip murió después de ese ingreso, el chip es suyo desde el día SIGUIENTE
+     a esa muerte (la regla de `individuoEnFecha`): lo de antes es de la anterior. */
+  if (desde && rec.muerteAnterior && rec.muerteAnterior >= desde) {
+    const p = rec.muerteAnterior.split('-').map(Number);
+    desde = new Date(Date.UTC(p[0], p[1] - 1, p[2] + 1)).toISOString().slice(0, 10);
+  }
   const enSuVida = (f) => !desde || fechaIso(f) >= desde;
   const desoves = (bitacoraRows || [])
     .filter((r) => normTrovan(r['Trovan ID']) === id && String(r['Tipo']) === REPRO_EVENTO.DESOVE && enSuVida(r['Fecha']))
@@ -539,7 +559,7 @@ export function trazaDelChip(matrixRows, bitacoraRows, transferRows, trovan) {
     .sort((a, b) => (a.ingreso < b.ingreso ? -1 : a.ingreso > b.ingreso ? 1 : a.pos - b.pos))
     .map((f) => ({ ingreso: f.ingreso, muerte: f.muerte, estado: f.rec.estado, lote: f.rec.lote, codigo: f.rec.codigo, sala: f.rec.sala, tanque: f.rec.tanque }));
   return {
-    trovan: id, rec: filas.length ? registroVigente(filas) : null,
+    trovan: id, rec,
     reciclado, desde, sinFechas: reciclado && !desde, anteriores,
     desoves, movimientos, current: last ? { sala: last.salaDestino, tanque: last.tanqueDestino } : null,
   };
