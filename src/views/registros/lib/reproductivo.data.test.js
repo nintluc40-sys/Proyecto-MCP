@@ -237,6 +237,47 @@ describe('Sección 3 · transferencias', () => {
     expect(row[col(REPRO_TRANSFER_HEADERS, 'Lotes presentes')]).toBe('A+B');
     expect(row[col(REPRO_TRANSFER_HEADERS, 'Códigos presentes')]).toBe('G01+G05');
   });
+
+  /* 🔴 1d (2026-09-22) · UNA HEMBRA MUERTA NO SE TRASLADA. Hasta hoy el traslado no miraba el Estado —el evento sí:
+     «ya muerta»— y la muerta del fixture, que está en el mismo origen que las vivas, se «movía»: fila en Transferencias
+     y Sala/Tanque nuevos en la MATRIZ, sin revivirla. Ninguna prueba la metía en un traslado, y nadie lo vio. */
+  const trasladar = (ids, origen = { sala: 'S5', tanque: 'T1' }, matrixIndex = idx()) => buildTransferBatch({
+    fecha: '2026-07-12', tipo: REPRO_TRANSFER_TIPO.TRASLADO, origen,
+    destinos: [{ sala: 'S6', tanque: 'T2', ids }], matrixIndex, trId: 'TR-000128',
+  });
+  it('🔴 1d · una hembra MUERTA en el origen no se traslada: sale como «ya muerta» y no se escribe nada de ella', () => {
+    const r = trasladar(['0007218CCC', '000721B9E7']);
+    expect(r.report.alreadyDead).toEqual(['000721B9E7']);
+    expect(r.report.moved).toEqual(['0007218CCC']);            // la viva de al lado sale igual
+    expect(r.matriz.rows.map((f) => f[col(REPRO_MATRIZ_HEADERS, 'Trovan ID')])).toEqual(['0007218CCC']);
+    expect(r.transfer.rows.map((f) => f[col(REPRO_TRANSFER_HEADERS, 'Trovan ID')])).toEqual(['0007218CCC']);
+  });
+  it('1d · sola, la muerta deja el traslado sin nada que escribir', () => {
+    const r = trasladar(['000721B9E7']);
+    expect(r.matriz).toBeNull();
+    expect(r.transfer).toBeNull();
+    expect(r.report.alreadyDead).toEqual(['000721B9E7']);
+  });
+  it('1d · «ya muerta» va antes que el origen: fuera de él, también se dice que está muerta', () => {
+    const r = trasladar(['000721B9E7'], { sala: 'S9', tanque: 'T9' });
+    expect(r.report.alreadyDead).toEqual(['000721B9E7']);
+    expect(r.report.wrongLocation).toEqual([]);
+  });
+  it('1d · el Estado se lee como en el recuento de vivas: « Muerto », con espacios, también es muerta', () => {
+    const r = trasladar(['000721B9E7'], undefined, buildMatrixIndex([{ trovan: '000721B9E7', estado: ' Muerto ', sala: 'S5', tanque: 'T1' }]));
+    expect(r.report.alreadyDead).toEqual(['000721B9E7']);
+    expect(r.report.moved).toEqual([]);
+  });
+  it('1d · un chip reciclado (la anterior muerta, la nueva viva) se traslada: va a la VIVA, con su cuaterna', () => {
+    const reciclado = matrixIndexFromRows([
+      { 'Trovan ID': '000721B9E7', 'Piscina': 'P2', 'Código genético': 'G01', 'Lote': 'L12', 'Sala actual': 'S1', 'Tanque actual': 'T1', 'Estado': 'Muerto' },
+      { 'Trovan ID': '000721B9E7', 'Piscina': 'P9', 'Código genético': 'G07', 'Lote': 'L20', 'Sala actual': 'S5', 'Tanque actual': 'T1', 'Estado': 'Vivo' },
+    ]);
+    const r = trasladar(['000721B9E7'], undefined, reciclado);
+    expect(r.report.alreadyDead).toEqual([]);
+    expect(r.report.moved).toEqual(['000721B9E7']);
+    expect(r.matriz.rows[0][col(REPRO_MATRIZ_HEADERS, 'Lote')]).toBe('L20');
+  });
 });
 
 // Filas "crudas" como las entrega el store/lectura (objetos con claves de cabecera).

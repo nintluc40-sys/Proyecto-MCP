@@ -12396,8 +12396,9 @@ function _madReproShowTransferReport(rep, trId, okSent){
   /* 1a · lo que no se pudo confirmar con la hoja se dice APARTE: «no encontrado» o «fuera del origen» sería lo que
      afirma una copia que puede ser anterior a su alta, no lo que es. */
   const sc=rep.sinConfirmar||[], nosc=function(a){ return (a||[]).filter(function(id){ return sc.indexOf(id)===-1; }); };
-  const noEnc=nosc(rep.notFound), wl=nosc(rep.wrongLocation);
+  const noEnc=nosc(rep.notFound), wl=nosc(rep.wrongLocation), yaM=nosc(rep.alreadyDead);   // 1d · una muerta no se traslada
   h+=chip(rep.moved.length+" transferido(s)", "#dcfce7", "#166534");
+  if(yaM.length) h+=chip(yaM.length+" ya muerta(s)", "#fef9c3", "#854d0e");
   if(sc.length) h+=chip("⚠ "+sc.length+" sin confirmar con la hoja", "#fef3c7", "#92400e");
   if(rep.invalidFormat && rep.invalidFormat.length) h+=chip(rep.invalidFormat.length+" con formato inválido (señalados)", "#ffedd5", "#9a3412");
   if(noEnc.length) h+=chip(noEnc.length+" no encontrado(s)", "#fee2e2", "#991b1b");
@@ -12410,6 +12411,7 @@ function _madReproShowTransferReport(rep, trId, okSent){
   if(sc.length) lists.push(["Sin confirmar con «Maduración MATRIZ» ("+_reproPorQue()+"): la copia en uso los da por muertos, no los conoce o los sitúa fuera del origen, y puede ser de antes de su alta. No se movió ninguno que la copia dé por muerto; vuelve a procesarlos "+_reproCuando(), sc]);
   if(rep.invalidFormat && rep.invalidFormat.length) lists.push(["Formato inválido (no transferidos — revisa el código en el lector)", rep.invalidFormat]);
   if(noEnc.length) lists.push(["No encontrados", noEnc]);
+  if(yaM.length) lists.push(["Ya registradas como muertas (no se trasladan)", yaM]);
   if(wl.length) lists.push(["Fuera del origen declarado", wl]);
   if(rep.antesDelIngreso && rep.antesDelIngreso.length) lists.push(["Anteriores al ingreso de la hembra que lleva hoy ese microchip reciclado (son de una hembra anterior: no transferidos)", rep.antesDelIngreso]);
   lists.forEach(function(pair){ h+='<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });

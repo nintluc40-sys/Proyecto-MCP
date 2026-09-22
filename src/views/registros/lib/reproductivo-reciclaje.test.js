@@ -609,6 +609,18 @@ describe('🔴 1a · el chip reciclado va a la hembra NUEVA aunque la copia en u
     expect(inf).toContain('cuando Google responda: ' + CHIP);
   }, 15000);
 
+  /* 🔴 1d (2026-09-22) · y si la hoja CONFIRMA que está muerta, el traslado no la mueve. Hasta hoy la movía: su origen
+     era el declarado y el traslado no miraba el Estado (el evento sí). */
+  it('🔴 1d · traslado de una muerta DE VERDAD (la hoja lo confirma): no se mueve, y el informe dice «ya muerta»', async () => {
+    lecturaRows = hoja([VIEJA]);                    // la hoja sólo conoce a la anterior, muerta
+    const inf = await traslado('S1', 'T1');         // desde su origen: antes de 1d, se movía
+    expect(lecturasMatriz()).toBe(1);               // se confirmó con la hoja (1a)
+    expect(envios).toHaveLength(0);
+    expect(inf).toContain('1 ya muerta');
+    expect(inf).toContain('Ya registradas como muertas (no se trasladan): ' + CHIP);
+    expect(inf).not.toContain('sin confirmar');
+  });
+
   /* 🔴 1c (2026-09-22) · SIN RED, NI EL INFORME NI LOS AVISOS CULPAN A GOOGLE. El mismo escenario de arriba (la copia en
      uso no conoce a la nueva) con el dispositivo sin red: se intenta UNA vez, y se dice «sin conexión a internet» y
      «cuando vuelva la conexión». Los reintentos, el tope y el aviso de la MATRIZ los prueba reproductivo.loader.test.js. */

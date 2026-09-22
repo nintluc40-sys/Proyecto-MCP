@@ -369,10 +369,11 @@ export function nextTrId(existingIds) {
  *  (notFound) y esté en el origen declarado (wrongLocation), omitiendo los que no, y —sobre todo—
  *  es la ÚNICA fuente de la cuaterna que identifica a cada individuo. Sin él no se arma nada.
  *  ♻ Con matriz, un traslado anterior al ingreso de la hembra que lleva hoy un chip reciclado se
- *  omite (`antesDelIngreso`): movería a la nueva por un traslado de otra. */
+ *  omite (`antesDelIngreso`): movería a la nueva por un traslado de otra.
+ *  1d (2026-09-22) · y una hembra MUERTA no se traslada (`alreadyDead`), igual que no desova. */
 export function buildTransferBatch({ fecha, tipo, origen, destinos, composicion, matrixIndex, trId, eleccion } = {}) {
   /* R5 (2026-09-18) · `variasVivas` y `elegidas` como en el evento: ver el bloque de D17 más abajo. */
-  const report = { variasVivas: [], elegidas: [], moved: [], notFound: [], wrongLocation: [], invalidFormat: [], antesDelIngreso: [] };
+  const report = { variasVivas: [], elegidas: [], moved: [], notFound: [], wrongLocation: [], invalidFormat: [], antesDelIngreso: [], alreadyDead: [] };
   if (!fecha) return { report, matriz: null, transfer: null, error: 'Falta la fecha.' };
   /* 🔴 RD1 (2026-09-16) · SIN LA MATRIZ NO SE ARMA NADA. Antes se movía «sin validar» con índice nulo:
      era un modo degradado inofensivo mientras la llave de la MATRIZ era sólo el Trovan. Desde que es la
@@ -407,6 +408,11 @@ export function buildTransferBatch({ fecha, tipo, origen, destinos, composicion,
         report.elegidas.push(id);
       }
       if (matrixIndex && antesDeSuIngreso(rec, dia)) { report.antesDelIngreso.push(id); return; } // de una hembra anterior del chip
+      /* 🔴 1d (2026-09-22) · UNA HEMBRA MUERTA NO SE TRASLADA, igual que no desova. Hasta hoy el traslado no miraba el
+         Estado, y una muerta que la MATRIZ situaba en el origen declarado se «movía»: fila en Transferencias y Sala/Tanque
+         nuevos en la MATRIZ, sin revivirla. Va antes que el origen: que esté muerta es lo que hay que decir. Un chip
+         reciclado con una hembra VIVA no llega aquí con la muerta: `get(chip)` da la vigente, que es la viva. */
+      if (rec && esMuerto(rec.estado)) { report.alreadyDead.push(id); return; }
       if (matrixIndex && rec && ((org.sala && String(rec.sala) !== org.sala) || (org.tanque && String(rec.tanque) !== org.tanque))) {
         report.wrongLocation.push(id); return; // no está en el origen declarado → se omite
       }
