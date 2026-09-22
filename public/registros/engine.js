@@ -13823,18 +13823,14 @@ const BIO_GRID_COLS = [
      Copias de AHPND/EMS) llegaban VACÍAS a la hoja sin dar ningún aviso. El repo lleva
      `maxCols: 32` desde el 2026-08-23 y el re-despliegue se hizo el 08-24.
 
-     ⚠ Ese último dato NO se puede re-medir: `maxCols` sólo se ejerce ESCRIBIENDO, así que
-     ninguna sonda de sólo lectura lo alcanza, y no hay ningún marcador observable por GET
-     que date el despliegue después del 08-23 (se buscó el 09-02).
-
-     🔑 LO QUE SÍ ESTÁ MEDIDO, y es lo que de verdad cierra el asunto: la hoja tiene sus 23
-     cabeceras con las 6 de qPCR ya creadas y CERO filas con cuantificación, frente a más de
-     mil con positivo. No ha habido dato que perder. El día que ese cero deje de serlo, el
-     umbral se cruzó y hay qPCR que cuidar. Se pregunta con `node sonda-hojas.mjs BIOMOL`,
-     que lo contesta con esas palabras.
-
-     🔴 Sigue pendiente un re-despliegue del GAS, pero por M4/M5/M9 (2026-08-30/31), que es
-     OTRA cosa: desde M5 un payload más ancho que su tope se RECHAZA en vez de recortarse. */
+     ✅ Y QUEDÓ MEDIDO CON EL ESTRENO (2026-09-05). Aquí decía que ese dato «no se puede
+     re-medir» y que la hoja tenía «CERO filas con cuantificación»: el qPCR se estrenó, ya hay
+     filas cuantificadas, y como desde M5 un envío más ancho que su tope se RECHAZA entero en
+     vez de recortarse, que entraran prueba que el GAS vivo lleva un `maxCols` de 23 o más.
+     🔴 Lo que importa desde ese día es la otra mitad: ya hay qPCR que cuidar, y migrar o
+     reordenar esta hoja destruiría mediciones que no se pueden repetir. Cuántas filas hay lo
+     dice `node sonda-hojas.mjs BIOMOL`, no este comentario. (Y el re-despliegue que aquí se
+     daba por pendiente, el de M4/M5/M9, entró hace tiempo: qué GAS está vivo lo dice ?p=ver.) */
   // Columna de METADATO: viaja a la hoja pero no es una celda de la grilla ni sale en
   // el PDF. Identifica a qué análisis del día pertenece la fila y es la clave con la
   // que el GAS reemplaza SÓLO las filas de ese análisis (ver buildBioPayload).

@@ -91,13 +91,19 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
 - **Maduración** (🥚): una entrada con DOS familias (selector interno; abre en Operativo).
   - **🐚 Operativo** — el TABLERO del registro operativo, cargado DIFERIDO. Barra de filtros común
     (período · foto al día · sala → tanque · lote → código · estado · sexo · piscina · camaronera, con los
-    activos como etiquetas quitables) y CINCO sub-vistas: **📊 Estado actual** (siete indicadores, mapa de
+    activos como etiquetas quitables) y sus sub-vistas (la lista viva es `SUBS`, en `operativo.view.js`):
+    **📊 Estado actual** (siete indicadores, mapa de
     planta, alertas, últimos registros y fines de cuarentena), **🏠 Salas** (tarjeta por sala y su detalle),
     **🧬 Lotes** (tabla maestra, ficha de un lote —origen, CASCADA DEL CUADRE, curva de vivos y reproducción—
     y comparativa por lote, código genético o piscina), **💀 Bajas** (muerte natural frente a descarte,
     desglose cruzado por sala · tanque · lote, Pareto de motivos de cierre, distribución por hora, calor
-    sala × día y lotes cerrados) y **🔍 Revisiones del supervisor** (nauplios en sus 4 etapas, alcalinidad por área día y
-    noche, mortalidad en desove y recuperación, y frecuencia de observaciones de tanque).
+    sala × día y lotes cerrados), **🔍 Revisiones del supervisor** (nauplios en sus 4 etapas, alcalinidad por área día y
+    noche, mortalidad en desove y recuperación, y frecuencia de observaciones de tanque), **🛢 Tanques** (tabla
+    maestra de los ocupados y, al pulsar una fila, su ficha: composición, curva de vivos, partes con su hora,
+    observaciones y movimientos), **🥚 Reproducción** (totales, los desoves pendientes de N5 arriba, la tabla
+    por lote y a dónde fueron) y **🔄 Manejo** (movimientos en matriz sala → sala con su registro debajo; la
+    alimentación PLANIFICADA por producto frente a la agenda estándar, con cada toma juzgada con el rango de
+    la ficha; y los tratamientos: calendario sala × día, productos por área y cobertura preventiva por lote).
     ⚠ **Lo que NO se juzga** se enseña tal cual, rotulado «sin criterio»: deformidad, actividad,
     fototropismo y aireación. Sólo llevan veredicto salinidad > 60 ‰, temperatura > 40 °C, hongos
     «Presente» y la alcalinidad — el resto no tiene fuente que lo respalde.
@@ -131,8 +137,11 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
 Fichas de captura más una vista derivada (Saldo), todas dentro del módulo Maduración
 de Registros. **Su interfaz vive ÚNICAMENTE en `public/registros/engine.js`** (y en su gemelo
 autónomo `Music\index (8).html`), porque ese monolito no tiene módulos ES.
-⚠ Ojo al buscarlo: **`src/views/maduracion/` NO es esto** —es la vista del reproductivo por
-Trovan— y no hay ninguna carpeta nativa para el operativo. Lo que sí tiene gemelo probado en
+⚠ Ojo al buscarlo: la CAPTURA de este registro no tiene carpeta nativa. En **`src/views/maduracion/`**
+están los dos TABLEROS de Maduración —el del reproductivo (🧬 Microchips) y, desde el 2026-09-19, el de
+este registro (🐚 Operativo, los `operativo.*.js`)—, que LEEN estas hojas y no escriben en ellas. *(Aquí
+decía que esa carpeta «NO es esto» y que no había carpeta nativa para el operativo: era cierto antes del
+tablero.)* Lo que sí tiene gemelo probado en
 `src/views/registros/lib/` es el CÁLCULO: los esquemas de cada ficha y el libro mayor, con
 una prueba de paridad que exige que las dos implementaciones coincidan y que ningún export
 del módulo se quede sin contraparte en el monolito.
@@ -244,8 +253,9 @@ localiza por su cabecera.
 llevó `Lote` y las dos `Población inicial` viajando en blanco porque quitarlas habría corrido la
 llave; se retiraron **en el mismo cambio** que bajó `madKeyCols` de `[0,1,3,16,17]` a `[0,1,2,13,14]`,
 movió la firma de la columna 15 a la 12 y el formato de la `Hora` de la 17 a la 14. El cliente y el
-`Code.gs` del repo ya emiten las **15**; lo que falta es desplegarlo y recortar la hoja (ver
-«Pendientes»). 🔑 La cifra de esta línea es la del código: `madKeyCols` en `GAS/Code.gs`.
+`Code.gs` emiten las **15**, y el 2026-09-21 se desplegó el GAS y se recortó la hoja: comprobado después,
+la cabecera es la del código, los datos no se corrieron y la `Hora` sigue siendo texto. Cómo está hoy
+lo dice `estado-maduracion.mjs`. 🔑 La cifra de esta línea es la del código: `madKeyCols` en `GAS/Code.gs`.
 
 🛡 **Y como se escriben por posición, el GAS comprueba el esquema antes de escribir.** En las
 nueve hojas del registro operativo (`MAD_ESQUEMA_VIGILADO`), si una cabecera del envío no coincide con la de la hoja en
@@ -558,15 +568,13 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
 
 **Por validar en producción**
 
-2. **Estrenar lo desplegado.** ⚠ **El sello a exigir cambia con P12**: hoy Pages y `GAS/Code.gs`
-   llevan **`adcb1ddab653`** y el GAS desplegado sigue en `55acbff1b746`, así que hasta que se
-   re-despliegue (paso 2 de «Pendientes») las ocho hojas selladas NO envían desde una copia nueva.
-   🔑 El sello del día no se lee de aquí: lo dicen `?p=ver` y `estado-maduracion.mjs`. Falta que lo
-   desplegado se use de verdad:
-   - Las hojas que nacen con su primer envío —Fin de Ciclo, Mortalidad Desove, Tratamientos,
-     Alimentación y Broodstock— tienen que nacer con la cabecera actual, y el primer parte de Tanques
-     tiene que llegar con su hora y su número. Cuáles existen ya, y con cuántas columnas, lo dice
-     `estado-maduracion.mjs`, no esta lista.
+2. **Estrenar lo desplegado.** El GAS desplegado es el del repo desde el 2026-09-21. 🔑 El sello del
+   día no se lee de aquí —esta línea citó dos sellos que caducaron el mismo día—: lo dicen `?p=ver` y
+   `estado-maduracion.mjs`. Falta que lo desplegado se use de verdad:
+   - Las hojas que aún no existen nacen con su primer envío y tienen que nacer con la cabecera actual.
+     Cuáles existen ya, y con cuántas columnas, lo dice `estado-maduracion.mjs`, no esta lista.
+   - Un parte de Tanques REENVIADO tiene que corregir su fila, no añadir otra: es la llave nueva de P12
+     (`[0,1,2,13,14]`), y todavía no se ha ejercido en producción.
    - En cada dispositivo, recargar la app y pasar ⚙ Config → «🔗 Probar conexión»: tiene que mostrar
      ese sello. Una copia de `index (8)` con OTRO sello no envía las fichas selladas —calcula, guarda
      en el dispositivo y lo dice— y se sustituye por la actual.
@@ -583,25 +591,17 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
    - Lo tecleado en las fichas selladas entre el 16 y el 18-09 no se envió (los sellos no casaban) y
      sigue en el dispositivo: hay que volver a guardarlo.
 
-**Decidido, a la espera del usuario**
+**Hecho, y comprobado**
 
-3. ✅ **El vaciado YA SE HIZO** (2026-09-20): se retiraron del documento todas las hojas de Maduración
-   salvo las del reproductivo —`MATRIZ` y `Bitácora` siguen ahí, con sus miles de filas— y el registro
-   se está estrenando en producción. `Maduración Ingreso` ya renació con la cabecera actual.
-   🔴 **Queda la OTRA MITAD: el CÓDIGO ya está hecho (P12, `1006532`) y la HOJA no.** El commit retiró
-   las tres columnas vacías de `Maduración Tanques` —`Lote` (índice 2) y las dos `Población inicial`
-   (4 y 5)— y bajó `madKeyCols` de `[0,1,3,16,17]` a `[0,1,2,13,14]`, porque `Hora` y `Parte` van al
-   final y se correrían con ellas. Faltan los dos pasos manuales, **en este orden y seguidos**:
-   re-desplegar `GAS/Code.gs` y borrar esas tres columnas de la hoja. Entre uno y otro, `Tanques` no
-   sincroniza desde ningún dispositivo —falla CERRADO: el GAS no escribe y lo tecleado se queda en el
-   dispositivo—, así que conviene hacerlos seguidos.
-   ⚠ **La ventana de «sale gratis» se cerró**: aquello valía mientras la hoja tuviera CERO filas y ya
-   no las tiene. Lo que mantiene el recorte sin coste es OTRA cosa, y es la que hay que volver a
-   comprobar antes de borrar: **que esas tres columnas sigan VACÍAS en todas las filas** (medido el
-   2026-09-21: 38 filas, las tres vacías en las 38).
-   🔑 Cuántas filas tiene hoy, y si la cabecera es la del código, **no se lee de aquí**: lo dice
-   `estado-maduracion.mjs`, que desde el 2026-09-21 sí mira `Tanques` y `Sala` (antes no miraba
-   ninguna de las dos).
+3. ✅ **El vaciado (2026-09-20) y P12 (2026-09-21).** Se retiraron del documento todas las hojas de
+   Maduración salvo las del reproductivo —`MATRIZ` y `Bitácora` siguen ahí, con sus miles de filas— y el
+   registro se está estrenando. Y `Maduración Tanques` quedó en sus 15 columnas: se re-desplegó
+   `GAS/Code.gs` (P12, `1006532`: `madKeyCols` de `[0,1,3,16,17]` a `[0,1,2,13,14]`) y se borraron de la
+   hoja `Lote` y las dos `Población inicial`, que estaban vacías en todas las filas. Comprobado después:
+   la cabecera es la del código, los datos no se corrieron y la `Hora` sigue siendo texto —si volviera a
+   ser una hora de Sheets, la llave dejaría de casar y cada reenvío duplicaría el parte—.
+   🔑 Cuántas filas tiene hoy, y si la cabecera sigue siendo la del código, **no se lee de aquí**: lo dice
+   `estado-maduracion.mjs`, que mira también `Tanques` y `Sala`.
 
 **Abierto**
 
@@ -611,11 +611,10 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
 6. **Paridad · las funciones que sólo se comparan por NOMBRE** entre `engine.js` e `index (8)`
    (el repo delega en `__rgLib`, el gemelo las lleva en línea). Es el único hueco de la paridad; su
    número lo dice `verificar-3copias-v3` al correr («delegación __rgLib»).
-7. **El tablero de Maduración va por F3.** Están las CINCO sub-vistas —📊 Estado actual, 🏠 Salas,
-   🧬 Lotes (con su cascada del cuadre y la comparativa por lote, código genético o piscina), 💀 Bajas y
-   🔍 Revisiones—, más los cuatro filtros nuevos, el período «ciclo del lote», las etiquetas de filtros
-   activos y el KPI de biomasa. Quedan **F4 (Tanques + Reproducción) a F7 (Reportería)**, cada una con
-   propuesta visual y aprobación antes de codear.
+7. **El tablero de Maduración: F1 a F5 hechas.** Están sus sub-vistas —de 📊 Estado actual a 🔄 Manejo;
+   la lista viva es `SUBS`—, con los filtros, el período «ciclo del lote», las etiquetas de filtros
+   activos y el KPI de biomasa. Quedan **F6 (Broodstock + Microchips + Calidad del dato) y F7
+   (Reportería)**, cada una con propuesta visual y aprobación antes de codear.
    ⚠ Se desarrolla con fixtures FICTICIOS, y se contrasta con `auditar-tablero-mad-real.mjs` y
    `medir-tablero-mad-real.mjs` (utillaje). 🔑 Desde el 2026-09-20 esas dos **cuentan cuántas
    comprobaciones ejercitaron dato y cuántas salieron verdes EN VACÍO**, y nombran las hojas sin
