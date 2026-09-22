@@ -10,6 +10,8 @@
    la vista dura la sesión) y fija el día en el 19/09/2026.
    ============================================================ */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+/* F6 · los tipos de aviso que el libro sabe anotar: la pantalla tiene que enseñarlos TODOS. Es una constante pura. */
+import { TIPOS_AVISO } from './operativo.tablero.js';
 
 vi.mock('../../core/charts.js', () => ({
   makeChart: vi.fn(),
@@ -263,9 +265,10 @@ describe('Maduración · operativo · 🧬 Lotes', () => {
          tiene una vista «🔍 Revisiones», con el mismo icono y otro significado. Que este rótulo esté
          fijado aquí es lo que impide que vuelva a colisionar sin que nadie lo note.
          F4 (2026-09-21) · entran 🛢 Tanques y 🥚 Reproducción, SEPARADAS por decisión del usuario.
-         F5 (2026-09-21) · entra 🔄 Manejo, UNA para los tres temas (decisión del usuario). */
+         F5 (2026-09-21) · entra 🔄 Manejo, UNA para los tres temas (decisión del usuario).
+         F6 (2026-09-21) · entra 🩺 Calidad del dato; Broodstock NO tiene pastilla, vive en 🧬 Lotes (decisión del usuario). */
       .toEqual(['📊 Estado actual', '🏠 Salas', '🧬 Lotes', '💀 Bajas', '🔍 Revisiones del supervisor',
-        '🛢 Tanques', '🥚 Reproducción', '🔄 Manejo']);
+        '🛢 Tanques', '🥚 Reproducción', '🔄 Manejo', '🩺 Calidad del dato']);
     abrirLotes();
     expect([...root.querySelectorAll('[data-mop-lote]')].map((t) => t.dataset.mopLote)).toEqual(['QA', 'QB', 'QC', 'QD']);
     // QC se cerró: sigue en la tabla, a cero y rotulado.
@@ -926,6 +929,230 @@ describe('Maduración · operativo · 🔄 Manejo', () => {
       { ...MOV('19/09/2026', 'Sala 1', '1', 'Sala 2', '16', 1, 0), Motivo: malo, Observaciones: malo },
       TRATX('19/09/2026', 'Sala 1', 'Preventivo', malo, 'QA', malo)]);
     abrirManejo();
+    expect(root.querySelector('img')).toBeNull();
+    expect(root.textContent).toContain(malo);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   F6 (2026-09-21) · 📈 PISCINAS DE ORIGEN (en 🧬 Lotes) y 🩺 CALIDAD DEL DATO
+   Lo que el usuario decidió y la pantalla tiene que DECIR: Broodstock vive DENTRO de Lotes, debajo de la
+   comparativa, como tabla del último corte con su ficha; Calidad del dato es UNA sub-vista con sus cinco bloques
+   en el orden aprobado, y el cruce con 🧬 Microchips marca sólo lo que no puede ser, con el libro de HOY.
+   ══════════════════════════════════════════════════════════════════════════════ */
+const BSV = (corte, piscina, extra) => ({ _SheetOrigin: O, 'Pl/g': '', 'Fecha de corte': corte, Piscina: piscina, ...extra });
+/* Sobre la planta de F4: QE entra de la piscina 9701 y QF de la PZ99, que ninguna carga nombra. Broodstock: la 9701
+   en los dos cortes (en el último con su sobrevivencia en FRACCIÓN), la 9702 sólo en el anterior y la 9703 sólo en
+   el último, con una fase que no es del catálogo. */
+const PLANTA_F6 = [
+  ...PLANTA_F4,
+  ING_P('05/09/2026', 'QE', 'Sala 3', 5, 6, 6, 'CE', '9701', 'CX'),
+  ING_P('06/09/2026', 'QF', 'Sala 3', 6, 2, 2, 'CF', 'PZ99', 'CX'),
+  BSV('12/09/2026', '9701', { 'Fase actual': 'Engorde', 'Peso actual (g)': '12', 'Código genético': 'CE', Camaronera: 'CX' }),
+  BSV('12/09/2026', '9702', { 'Fase actual': 'Engorde', 'Peso actual (g)': '10' }),
+  BSV('19/09/2026', '9701', { 'Fase actual': 'Pre-reproductor', 'Peso actual (g)': '15', 'Incremento última semana (g)': '3',
+    'Sobrevivencia estimada (%)': '0.9', 'Código genético': 'CE', Camaronera: 'CX', 'Observación': 'Cosecha parcial' }),
+  BSV('19/09/2026', '9703', { 'Fase actual': 'Maternidad', 'Peso actual (g)': '8' }),
+];
+const filaPiscina = (x) => root.querySelector(`[data-mop-piscina="${x}"]`);
+
+describe('Maduración · operativo · 📈 Piscinas de origen (en 🧬 Lotes)', () => {
+  it('va DEBAJO de la comparativa, con el último corte y una fila por piscina de ese corte', async () => {
+    await montar(PLANTA_F6);
+    abrirLotes();
+    const h = [...root.querySelectorAll('.mc-card-h')].map((x) => x.textContent);
+    const iComp = h.findIndex((t) => t.includes('📊 Comparativa'));
+    const iBs = h.findIndex((t) => t.includes('📈 Piscinas de origen'));
+    expect(iComp).toBeGreaterThan(-1);
+    expect(iBs).toBeGreaterThan(iComp);
+    expect(h[iBs]).toContain('último corte 19/09/2026');
+    expect([...root.querySelectorAll('[data-mop-piscina]')].map((r) => r.dataset.mopPiscina)).toEqual(['9701', '9703']);
+    expect(plano(filaPiscina('9701'))).toContain('QE');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('marca la sobrevivencia que no puede ser un porcentaje y la fase fuera del catálogo; lista las ausentes y las sin carga', async () => {
+    await montar(PLANTA_F6);
+    abrirLotes();
+    const dif = filaPiscina('9701').querySelector('.mop-dif');
+    expect(dif.textContent).toContain('⚠');
+    expect(dif.getAttribute('title')).toContain('fracción');
+    expect(plano(filaPiscina('9703'))).toContain('fuera del catálogo');
+    const t = plano(root.querySelector('.mop-piscinas'));
+    expect(t).toContain('No vinieron en el último corte');
+    expect(t).toContain('9702');
+    expect(t).toContain('PZ99');
+  });
+
+  it('pulsar una piscina abre su ficha con el peso por semana; volver a pulsarla la cierra; también con el teclado', async () => {
+    await montar(PLANTA_F6);
+    abrirLotes();
+    expect(root.querySelector('#mopPiscinaCurva')).toBeNull();
+    click(filaPiscina('9701'));
+    expect(filaPiscina('9701').classList.contains('is-on')).toBe(true);
+    expect(root.querySelector('#mopPiscinaCurva')).not.toBeNull();
+    const llamada = makeChart.mock.calls.find((c) => c[0] === 'mopPiscinaCurva');
+    expect(llamada[1].data.datasets[0].data).toEqual([12, 15]);
+    const ficha = plano(root.querySelector('.mop-bs-ficha'));
+    expect(ficha).toContain('Piscina 9701');
+    expect(ficha).toContain('Cosecha parcial');
+    expect(ficha).toContain('del lote ENTERO');
+    click(filaPiscina('9701'));
+    expect(root.querySelector('.mop-bs-ficha')).toBeNull();
+    filaPiscina('9701').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(root.querySelector('.mop-bs-ficha')).not.toBeNull();
+  });
+
+  it('la ficha no sobrevive a su fila; la sala no le aplica, se DICE, y «Limpiar» la cierra', async () => {
+    await montar(PLANTA_F6);
+    abrirLotes();
+    click(filaPiscina('9701'));
+    cambiar(filtro('lote'), 'QB');   // QB no entró de ninguna piscina: la tabla se vacía y la ficha con ella
+    expect(root.querySelector('.mop-bs-ficha')).toBeNull();
+    cambiar(filtro('lote'), '');
+    expect(root.querySelector('.mop-bs-ficha')).toBeNull();   // y no vuelve sola
+    click(filaPiscina('9701'));
+    cambiar(filtro('sala'), 'Sala 1');
+    expect(root.querySelector('.mop-bs-ficha')).not.toBeNull();
+    expect(plano(root.querySelector('.mop-piscinas'))).toContain('Una piscina de Broodstock no puede separarse por sala');
+    click(root.querySelector('[data-mop-limpiar]'));
+    expect(root.querySelector('.mop-bs-ficha')).toBeNull();
+  });
+
+  it('sin ninguna carga de Broodstock, lo DICE', async () => {
+    await montar(PLANTA_F4);
+    abrirLotes();
+    expect(plano(root.querySelector('.mop-piscinas'))).toContain('Todavía no hay ninguna carga de 📈 Broodstock');
+  });
+
+  it('lo que viene del Sheet sale ESCAPADO', async () => {
+    const malo = '<img src=x onerror=alert(1)>';
+    await montar([...PLANTA_F6, BSV('19/09/2026', 'PZ1', { 'Fase actual': malo, 'Observación': malo, Camaronera: malo })]);
+    abrirLotes();
+    click(filaPiscina('PZ1'));
+    expect(root.querySelector('img')).toBeNull();
+    expect(root.textContent).toContain(malo);
+  });
+});
+
+/* 🩺 · el registro reproductivo de las pruebas: tres hembras de QA con chip en su tanque (S1·1), una de QB donde el
+   libro no tiene a QB (S4·2), dos de un lote que el operativo no conoce, y un desove de la primera en la Sala 3. */
+const MTZ = (n, lote, sala, tanque, estado = 'Vivo') => ({ _SheetOrigin: 'Maduración MATRIZ', 'Trovan ID': 'FAKE' + String(n).padStart(6, '0'),
+  'Código genético': 'CA', Lote: lote, Piscina: 'PZ1', 'Sala actual': sala, 'Tanque actual': tanque, Estado: estado, 'Fecha ingreso': '01/08/2026' });
+const BIT = (n, fecha, tipo, sala, tanque) => ({ _SheetOrigin: 'Maduración Bitácora', 'Trovan ID': 'FAKE' + String(n).padStart(6, '0'),
+  Fecha: fecha, Tipo: tipo, Sala: sala, Tanque: tanque });
+const REPRO = [
+  MTZ(1, 'QA', 'Sala 1', 'Tanque 1'), MTZ(2, 'QA', 'Sala 1', 'Tanque 1'), MTZ(3, 'QA', 'Sala 1', 'Tanque 1'),
+  MTZ(4, 'QB', 'Sala 4', 'Tanque 2'), MTZ(5, 'QX', 'Sala 5', 'Tanque 1'), MTZ(6, 'QX', 'Sala 5', 'Tanque 1'),
+  BIT(1, '15/09/2026', 'Desove', 'Sala 3', 'Tanque 3'),
+];
+/* La Sala 4 dice «Producción» el 19/09 y el libro la propone en cuarentena (QB entró el 12/09). */
+const PLANTA_F6C = [...PLANTA_F4, SALA('19/09/2026', 'Sala 4', { Estado: 'Producción' }), ...REPRO];
+const abrirCalidad = () => click(root.querySelector('[data-mop-sub="calidad"]'));
+const filaDe = (sel, texto) => [...root.querySelectorAll(sel + ' tbody tr')].find((tr) => tr.cells[0].textContent.includes(texto));
+const celdaDelDia = (tabla, fila, dia) => {
+  const dias = [...root.querySelectorAll(tabla + ' thead th')].map((th) => th.textContent);
+  return filaDe(tabla, fila).cells[dias.indexOf(dia)];
+};
+
+describe('Maduración · operativo · 🩺 Calidad del dato', () => {
+  it('abre con sus cinco bloques, en el orden aprobado', async () => {
+    await montar(PLANTA_F6C);
+    abrirCalidad();
+    const h = [...root.querySelectorAll('.mc-card-h')].map((x) => x.textContent);
+    expect(h).toHaveLength(5);
+    expect(h[0]).toContain('📋 Las hojas y su calendario');
+    expect(h[1]).toContain('📝 Partes esperados frente a registrados');
+    expect(h[2]).toContain('🏠 Estado registrado frente al propuesto');
+    expect(h[3]).toContain('📒 Avisos del libro');
+    expect(h[4]).toContain('🔗 El cruce con 🧬 Microchips');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('🔑 las hojas cuentan las filas SIN FECHA; el calendario marca los huecos desde que la hoja empezó, y hoy va «en curso»', async () => {
+    await montar([...PLANTA_F6C, DES('31/02/2026', 'QA', 1, 1000)]);
+    abrirCalidad();
+    expect(plano(filaDe('.mop-hojas', 'Desoves').cells[4])).toBe('1');
+    // Tanques empezó el 16/09 y no tiene nada el 17 ni el 18: dos huecos. El 15 no lo es, y va vacío, nunca un cero.
+    expect(celdaDelDia('.mop-cal-hojas', 'Tanques', '17/09').classList.contains('is-hueco')).toBe(true);
+    expect(celdaDelDia('.mop-cal-hojas', 'Tanques', '16/09').classList.contains('is-reg')).toBe(true);
+    expect(celdaDelDia('.mop-cal-hojas', 'Tanques', '15/09').className).toBe('');
+    expect(celdaDelDia('.mop-cal-hojas', 'Tanques', '15/09').textContent).toBe('');
+    expect(plano(filaDe('.mop-cal-hojas', 'Tanques').cells[0])).toContain('2 hueco(s)');
+    const hoy = [...root.querySelectorAll('.mop-cal-hojas thead th')].find((th) => th.textContent === '19/09');
+    expect(hoy.classList.contains('is-curso')).toBe(true);
+  });
+
+  it('🔑 los partes: un tanque ocupado sin parte se ve en su día, con la sala sin registro marcada; hoy no se cuenta', async () => {
+    await montar(PLANTA_F6C);
+    abrirCalidad();
+    const s4 = celdaDelDia('.mop-cob-cal', 'Sala 4', '18/09');
+    expect(plano(s4)).toBe('0/1');
+    expect(s4.classList.contains('is-nada')).toBe(true);
+    expect(s4.classList.contains('is-sin-sala')).toBe(true);
+    expect(celdaDelDia('.mop-cob-cal', 'Sala 1', '19/09').classList.contains('is-curso')).toBe(true);
+    expect(plano(root)).toContain('18/09/2026 · Sala 4 · t1');
+  });
+
+  it('una sala cuyo estado registrado difiere del propuesto se MARCA', async () => {
+    await montar(PLANTA_F6C);
+    abrirCalidad();
+    const s4 = filaDe('.mop-estados', 'Sala 4');
+    expect(s4.classList.contains('mop-difieren')).toBe(true);
+    expect(plano(s4)).toContain('Difieren');
+    expect(root.querySelectorAll('.mop-estados tbody tr')).toHaveLength(5);
+  });
+
+  it('🔑 los avisos del libro: todos sus tipos aunque vayan a cero; con el código genético, no aplican', async () => {
+    await montar(PLANTA_F6C);
+    abrirCalidad();
+    expect(root.querySelectorAll('.mop-av-tipos tbody tr')).toHaveLength(Object.keys(TIPOS_AVISO).length);
+    cambiar(filtro('codigo'), 'CA');
+    expect(plano(root)).toContain('Los avisos del libro no dicen el código genético');
+    expect(root.querySelector('.mop-av-tipos')).toBeNull();
+  });
+
+  it('🔑 el cruce marca sólo lo que no puede ser: la de QB donde el libro no tiene a QB, y el desove fuera de su tanque (V6)', async () => {
+    await montar(PLANTA_F6C);
+    abrirCalidad();
+    const d = [...root.querySelectorAll('.mop-cruce-disc tbody tr')];
+    expect(d).toHaveLength(1);
+    expect(plano(d[0])).toContain('QB');
+    expect(plano(d[0])).toContain('donde el libro no tiene su lote');
+    const ev = [...root.querySelectorAll('.mop-cruce-ev tbody tr')];
+    expect(ev).toHaveLength(1);
+    expect(plano(ev[0])).toContain('FAKE000001');
+    expect(plano(ev[0])).toContain('Sala 3 · 3');
+    expect(plano(ev[0])).toContain('Sala 1 · 1');
+    const t = plano(root);
+    expect(t).toContain('no todas llevan chip');
+    expect(t).toContain('QX');
+  });
+
+  it('🔑 con la foto en otro día, el cruce usa el libro de HOY y lo DICE', async () => {
+    await montar(PLANTA_F6C);
+    abrirCalidad();
+    cambiar(root.querySelector('[data-mop-fecha]'), '2026-09-10');
+    const t = plano(root);
+    expect(t).toContain('el cruce usa el libro de hoy');
+    // El 10/09 el libro aún no conocía a QB; el de hoy sí: QB está en los dos registros, no «fuera».
+    expect(filaDe('.mop-cruce-lotes', 'QB')).toBeTruthy();
+  });
+
+  it('sin registro reproductivo, lo DICE', async () => {
+    await montar(PLANTA_F4);
+    abrirCalidad();
+    expect(plano(root)).toContain('no tiene ninguna hembra con chip');
+  });
+
+  /* En una prueba APARTE: montar dos veces sobre el mismo root deja puestos los manejadores del primer montaje, y
+     el clic pintaría con los datos de aquél. */
+  it('lo que viene del Sheet sale ESCAPADO', async () => {
+    /* El lote de la MATRIZ se lee en su forma canónica (mayúsculas, sin espacios): el valor malo ya la tiene, o la
+       prueba compararía otro texto y no probaría nada. */
+    const malo = '<IMG/SRC=X/ONERROR=ALERT(1)>';
+    await montar([...PLANTA_F6C, MTZ(9, malo, 'Sala 5', 'Tanque 1')]);
+    abrirCalidad();
     expect(root.querySelector('img')).toBeNull();
     expect(root.textContent).toContain(malo);
   });

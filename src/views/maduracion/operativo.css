@@ -153,3 +153,25 @@
 .mop-trat td.is-trat { background: color-mix(in srgb, var(--c-brand) 28%, transparent); font-weight: 700; }
 /* Un lote vivo sin ningún preventivo en el período. */
 .mop-cob-no td { background: color-mix(in srgb, var(--c-malo) 10%, transparent); }
+
+/* 📈 Piscinas de origen (F6, en 🧬 Lotes) */
+.mop-bs tbody tr.mop-bs-fila { cursor: pointer; }
+.mop-bs-fila:hover td, .mop-bs-fila:focus-visible td { background: color-mix(in srgb, var(--c-brand) 10%, transparent); }
+.mop-bs-fila:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: -2px; }
+.mop-bs-fila.is-on td { background: color-mix(in srgb, var(--c-brand) 16%, transparent); }
+.mop-bs-ficha .mop-sc-fila { gap: 6px 14px; }
+
+/* 🩺 Calidad del dato (F6) */
+/* Una hoja diaria atrasada, una sala cuyo estado registrado difiere del propuesto. */
+.mop-atrasada td, .mop-difieren td { background: color-mix(in srgb, var(--c-malo) 12%, transparent); }
+/* Un tipo de aviso que va a cero: se enseña, apagado. */
+.mop-av-tipos tr.is-cero td { color: var(--c-text-muted); }
+/* El calendario hoja × día: registrado, HUECO en una hoja diaria, y el día en curso. */
+.mop-cal-hojas td.is-reg { background: color-mix(in srgb, var(--c-brand) 22%, transparent); font-weight: 700; }
+.mop-cal-hojas td.is-hueco { background: color-mix(in srgb, var(--c-grave) 30%, transparent); }
+.mop-calor th.is-curso, .mop-calor td.is-curso { background: var(--c-surface-2); color: var(--c-text-muted); font-style: italic; }
+/* Los partes, sala × día: completos, a medias o ninguno; el borde, la sala sin su registro de Sala. */
+.mop-cob-cal td.is-completo { background: color-mix(in srgb, var(--c-bueno) 30%, transparent); }
+.mop-cob-cal td.is-parcial { background: color-mix(in srgb, var(--c-malo) 35%, transparent); font-weight: 700; }
+.mop-cob-cal td.is-nada { background: color-mix(in srgb, var(--c-grave) 40%, transparent); font-weight: 800; }
+.mop-cob-cal td.is-sin-sala { box-shadow: inset 0 0 0 2px var(--c-grave); }

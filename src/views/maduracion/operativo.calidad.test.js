@@ -126,6 +126,8 @@ describe('Maduración · calidad del dato · el calendario hoja × día', () => 
     expect(hoja(c, 'tanques').huecos).toBe(0);   // el 13 y el 14 la hoja aún no existía; el 19 es hoy
     expect(hoja(c, 'sala').huecos).toBe(1);      // el 14
     expect(hoja(c, 'ingresos').huecos).toBe(''); // una hoja de sucesos no tiene huecos
+    expect(hoja(c, 'sala').diasHueco).toEqual(['2026-09-14']);
+    expect(hoja(c, 'tanques').diasHueco).toEqual([]);
     expect(c.enCurso).toEqual(['2026-09-19']);
   });
 

@@ -98,10 +98,11 @@ export function calendarioDeRegistros(M, periodo, F) {
       total++;
     }
     const diaria = ESPERA_DIAS[clave] !== undefined;
-    const huecos = diaria && primera
-      ? dias.filter((d, i) => celdas[i] === null && d >= primera && !enCurso(d, hoy, clave)).length : '';
+    /* Los días del hueco, y no sólo cuántos: la vista los marca en el calendario sin repetir aquí la regla. */
+    const diasHueco = diaria && primera
+      ? dias.filter((d, i) => celdas[i] === null && d >= primera && !enCurso(d, hoy, clave)) : [];
     return { clave, hoja, etiqueta: ETIQUETA_HOJA[clave] || hoja, diaria, celdas, total,
-      diasConRegistro: celdas.filter((c) => c !== null).length, huecos };
+      diasConRegistro: celdas.filter((c) => c !== null).length, huecos: diaria && primera ? diasHueco.length : '', diasHueco };
   });
   return { dias, enCurso: dias.filter((d) => enCurso(d, hoy, 'tanques')), hojas, ignora: ignoraDeCalidad(F, []) };
 }

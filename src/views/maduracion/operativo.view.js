@@ -1,5 +1,5 @@
 /* ============================================================
-   MADURACIÓN · OPERATIVO — la VISTA del tablero (F1–F5, 2026-09-19 a 2026-09-21)
+   MADURACIÓN · OPERATIVO — la VISTA del tablero (F1–F6, 2026-09-19 a 2026-09-21)
 
    «🐚 Operativo» de la entrada de Maduración (entrada.js), con el diseño que aprobó el usuario en cada fase:
    barra de filtros (período · foto al día · sala → tanque · lote → código · estado · sexo · piscina · camaronera,
@@ -13,7 +13,8 @@
      🏠 Salas — una tarjeta por sala y, al pulsarla, su detalle: la T° por hora, el O₂, ♀/♂ y densidad por tanque,
         la tabla de tanques y los tratamientos recientes;
      🧬 Lotes (F2) — tabla maestra con los cerrados dentro, ficha del lote con la CASCADA DEL CUADRE, y comparativa
-        por lote, código genético o piscina;
+        por lote, código genético o piscina; y debajo (F6) 📈 Piscinas de origen, el Broodstock: el último corte de
+        cada piscina con los lotes que entraron de ella y, al pulsarla, su ficha con el peso por semana;
      💀 Bajas (F3) — muerte natural frente a descarte de selección, desglose cruzado (sala · tanque · lote), Pareto
         de motivos de cierre, distribución por hora y mapa de calor sala × día;
      🔍 Revisiones del supervisor (F3) — nauplios en sus 4 etapas, alcalinidad por área, mortalidad en desove y
@@ -24,7 +25,9 @@
      🥚 Reproducción (F4) — totales, los desoves pendientes de N5 arriba, la tabla por lote y a dónde fueron;
      🔄 Manejo (F5) — movimientos (matriz sala → sala con el registro debajo), la alimentación PLANIFICADA por
         producto contra la agenda estándar, con cada toma juzgada con el rango de la ficha, y los tratamientos
-        (calendario sala × día, productos por área y cobertura preventiva por lote).
+        (calendario sala × día, productos por área y cobertura preventiva por lote);
+     🩺 Calidad del dato (F6) — las hojas y su calendario, los partes esperados frente a los registrados, el estado
+        registrado de cada sala frente al propuesto, los avisos del libro y el cruce con 🧬 Microchips.
    Esta vista sólo PINTA: las cifras salen de los módulos puros operativo.*.js, que tienen sus pruebas y sus bancos
    de mutación. Se carga DIFERIDA (import() en entrada.js) junto con su CSS.
    ⚠ El período de este tablero es SUYO (termina en la foto): no lee el rango de la barra de fecha global. Si algún día
@@ -35,7 +38,7 @@ import { store } from '../../core/store.js';
 import { makeChart, destroyAllCharts } from '../../core/charts.js';
 import { esc } from '../../core/format.js';
 import { sumarDias, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO } from '../registros/lib/mad-libro.js';
-import { modeloOperativo, serieDiaria, diasDeTanque } from './operativo.data.js';
+import { modeloOperativo, serieDiaria, diasDeTanque, libroAlCierre } from './operativo.data.js';
 import {
   PERIODOS, PERIODO_INICIAL, periodoDe, normalizarFiltro, hayFiltro, kpiVivos, kpiLotes, kpiSalas, kpiOcupacion,
   kpiMortalidad, kpiReproduccion, mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, ultimosRegistros,
@@ -55,6 +58,10 @@ import {
   matrizDeMovimientos, registroDeMovimientos, alimentacionPorProducto, procedenciaDelPeso,
   calendarioDeTratamientos, productosPorArea, coberturaPreventiva,
 } from './operativo.manejo.js';
+import { tablaDePiscinas, fichaDePiscina } from './operativo.broodstock.js';
+import { estadoDeHojas, calendarioDeRegistros, coberturaDePartes, comparacionDeEstados, avisosDelLibro } from './operativo.calidad.js';
+import { cruceConMicrochips } from './operativo.cruce.js';
+import { buildReproModel, MAD_MATRIZ_ORIGIN, MAD_BITACORA_ORIGIN, MAD_TRANSFER_ORIGIN } from './data.js';
 
 const SUBS = [
   { clave: 'estado', etiqueta: 'Estado actual', icono: '📊' },
@@ -79,13 +86,20 @@ const SUBS = [
      tratamientos en UNA sola sub-vista con tres bloques y los mismos filtros. Decisión del usuario: con una
      pastilla por tema la sub-nav no cabía en un móvil. */
   { clave: 'manejo', etiqueta: 'Manejo', icono: '🔄' },
+  /* F6 (2026-09-21) · si lo que dice el tablero descansa sobre registros completos, y el cruce con 🧬 Microchips,
+     en UNA sub-vista nueva (decisión del usuario). Broodstock no tiene pastilla: vive en 🧬 Lotes, como el ORIGEN
+     de los lotes. */
+  { clave: 'calidad', etiqueta: 'Calidad del dato', icono: '🩺' },
 ];
 const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', tanque: '', lote: '', codigo: '', color: 'estado', salaDetalle: '', tanqueSel: '', loteSel: '', agrupacion: 'lote',
   estado: '', sexo: '', piscina: '', camaronera: '', agrupacionBajas: 'sala',
   /* F4.1 · el tanque cuya FICHA está abierta en 🛢 Tanques. Es otro que `tanqueSel`, que es el del mapa de
      📊 Estado: comparten idea pero no vida —el del mapa se apaga al repintar y éste sobrevive al filtro—, y
      reusar uno para las dos cosas haría que abrir uno cerrara el otro sin que se viera por qué. */
-  tqFicha: '' };
+  tqFicha: '',
+  /* F6 · la piscina cuya FICHA está abierta en 📈 Piscinas de origen (🧬 Lotes). No es el filtro `piscina`: aquél
+     elige lotes por su origen, y ésta sólo abre una ficha. */
+  piscinaSel: '' };
 /* El estado de la vista vive lo que dura la sesión: al volver a Maduración, o al refrescarse los datos, se conserva. */
 const vOp = { ...INICIAL };
 
@@ -118,13 +132,27 @@ const claseEstado = (e) => CLASE_ESTADO[e] || 'sin';
 const etiquetaPeriodo = (p) => (p.clave === 'hoy' ? 'hoy' : p.clave === 'mes' ? 'el mes' : p.clave === 'todo' ? 'todo el registro' : nf(p.dias) + ' d');
 
 // ── Modelo memoizado: por los datos, el día de hoy y la foto. La serie, además, por el período. ──
-let _memo = { src: null, hoy: '', fecha: '', M: null, partes: null, serieClave: '', serie: null };
+let _memo = { src: null, hoy: '', fecha: '', M: null, partes: null, serieClave: '', serie: null, repro: null, libroHoy: null };
 function memoModelo(hoy, fecha) {
   if (_memo.src !== store.globalData || _memo.hoy !== hoy || _memo.fecha !== fecha) {
     const M = modeloOperativo(store.globalData, { hoy, fecha });
-    _memo = { src: store.globalData, hoy, fecha, M, partes: diasDeTanque(M.fuentes.tanques), serieClave: '', serie: null };
+    _memo = { src: store.globalData, hoy, fecha, M, partes: diasDeTanque(M.fuentes.tanques), serieClave: '', serie: null, repro: null, libroHoy: null };
   }
   return _memo;
+}
+/** El cruce con 🧬 Microchips (F6.3). El registro reproductivo se modela como en su vista, y el libro es el de HOY:
+ *  la MATRIZ sólo sabe cómo están las hembras hoy, así que cruzarla con el libro de una foto pasada marcaría como
+ *  discrepancia lo que sólo es el paso del tiempo. Los dos se calculan una vez por datos y foto. */
+function cruceDe(memo, p, F) {
+  const M = memo.M;
+  if (!memo.repro) {
+    const filas = store.globalData;
+    memo.repro = buildReproModel(filas.filter((r) => r._SheetOrigin === MAD_MATRIZ_ORIGIN),
+      filas.filter((r) => r._SheetOrigin === MAD_BITACORA_ORIGIN), filas.filter((r) => r._SheetOrigin === MAD_TRANSFER_ORIGIN));
+  }
+  if (!memo.libroHoy) memo.libroHoy = M.fecha === M.hoy ? M.libro : libroAlCierre(M.fuentes, M.hoy);
+  return { ...cruceConMicrochips(memo.repro, memo.libroHoy, M.fuentes, p, F),
+    hembras: memo.repro.females.length, fotoDeHoy: M.fecha === M.hoy, hoy: M.hoy, fecha: M.fecha };
 }
 function serieDe(memo, p) {
   const k = p.desde + '|' + p.hasta;
@@ -178,12 +206,15 @@ export function operativoView(root) {
     h += reproduccionHTML(M, periodo, F);
   } else if (vOp.sub === 'manejo') {
     h += manejoHTML(M, periodo, F);
+  } else if (vOp.sub === 'calidad') {
+    h += calidadHTML(M, memo, periodo, F);
   } else {
     h += estadoHTML(M, memo, periodo, F);
   }
   root.innerHTML = h;
   if (detalle) dibujarDetalle(detalle);
   if (vOp.sub === 'lotes') dibujarLote(_fichaLote);
+  if (vOp.sub === 'lotes') dibujarPiscina(_fichaPiscina);
   if (vOp.sub === 'tanques') dibujarTanque(_fichaTanque);
   bind(root);
 }
@@ -622,8 +653,10 @@ function dibujarDetalle(d) {
    cascada del cuadre en tabla con columnas ♂/♀, curva de vivos con sus eventos, reproducción y promedios—; y al
    final la COMPARATIVA con su selector de agrupación (lote · código genético · piscina).
    Las cifras salen de operativo.lotes.js, que es puro y tiene su banco de mutación: aquí sólo se pintan.
+   F6 (2026-09-21) · debajo, 📈 Piscinas de origen (operativo.broodstock.js): el ORIGEN de los lotes.
    ============================================================ */
 let _fichaLote = null;
+let _fichaPiscina = null;
 
 function lotesHTML(M, memo, p, F) {
   const filas = tablaDeLotes(M, F);
@@ -632,7 +665,13 @@ function lotesHTML(M, memo, p, F) {
   if (vOp.loteSel && !filas.some((f) => f.lote === vOp.loteSel)) vOp.loteSel = '';
   _fichaLote = vOp.loteSel ? fichaDeLote(M, serieDe(memo, p), vOp.loteSel, p) : null;
   const comp = comparativa(M, F, p, vOp.agrupacion);
-  return tablaLotesHTML(filas, F) + (_fichaLote ? fichaLoteHTML(_fichaLote, p) : '') + comparativaHTML(comp, p);
+  /* F6 · 📈 Piscinas de origen, debajo de la comparativa (diseño aprobado): la tabla del último corte y, al pulsar
+     una piscina, su ficha. La ficha no sobrevive a su fila, igual que la del lote. */
+  const bs = tablaDePiscinas(M, F);
+  if (vOp.piscinaSel && !bs.piscinas.some((x) => x.piscina === vOp.piscinaSel)) vOp.piscinaSel = '';
+  _fichaPiscina = vOp.piscinaSel ? fichaDePiscina(M, vOp.piscinaSel, p) : null;
+  return tablaLotesHTML(filas, F) + (_fichaLote ? fichaLoteHTML(_fichaLote, p) : '') + comparativaHTML(comp, p)
+    + piscinasHTML(bs, F) + (_fichaPiscina ? fichaPiscinaHTML(_fichaPiscina, p) : '');
 }
 
 function tablaLotesHTML(filas, F) {
@@ -779,6 +818,121 @@ function dibujarLote(f) {
         { label: 'Total', data: f.curva.map((d) => d.total), borderColor: '#00838f', backgroundColor: '#00838f', tension: 0.25, borderWidth: 2, borderDash: [5, 4],
           pointRadius: f.curva.map((d) => (conEvento.has(d.fecha) ? 4 : 0)) },
       ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      scales: { x: { ticks: { ...EJE, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: EJE, grid: { color: REJILLA } } },
+      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 10 }, color: EJE.color } } },
+    },
+  });
+}
+
+/* ── 📈 PISCINAS DE ORIGEN (F6, 2026-09-21) ────────────────────
+   Diseño aprobado por el usuario: TABLA de piscinas con su último corte y los lotes que entraron de cada una, con
+   su desempeño; al pulsar una fila, su FICHA debajo —el peso por semana, los días por fase y sus lotes—. */
+
+/** Lo que la tabla de piscinas no puede filtrar, con SU motivo. */
+const PORQUE_BS = 'Es una piscina de engorde: no está en ninguna sala, no tiene sexo ni estado de sala, y a su lote sólo se llega por el Ingreso.';
+const SOBREV_DUDA = { fraccion: 'parece una fracción sin convertir', fuera: 'fuera de 0–100: no puede ser un porcentaje' };
+
+/** La sobrevivencia tal como vino, marcada si no puede ser un porcentaje (el mismo criterio que avisa al subir). */
+function sobrevivenciaHTML(x) {
+  if (vacio(x.sobrevivencia)) return '—';
+  const v = nf(x.sobrevivencia, 2) + ' %';
+  if (!x.sobrevivenciaDudosa) return v;
+  const quiza = x.sobrevivenciaDudosa === 'fraccion' ? ' (¿' + nf(x.sobrevivencia * 100, 2) + ' %?)' : '';
+  return `<span class="mop-dif" title="${esc(SOBREV_DUDA[x.sobrevivenciaDudosa] + quiza)}">${v} ⚠</span>`;
+}
+
+function piscinasHTML(bs, F) {
+  const cab = `<h4 class="mc-card-h">📈 Piscinas de origen <span class="mc-h-note">Broodstock${bs.corte ? ' · último corte ' + esc(dma(bs.corte)) : ''}${bs.piscinas.length ? ' · pulsa una fila para su ficha' : ''}</span></h4>`;
+  const sinCarga = bs.sinBroodstock.length
+    ? `<p class="mc-note">⚠ Hay lotes que entraron de piscinas que ninguna carga nombra: <b>${bs.sinBroodstock.map((x) => esc(x)).join(' · ')}</b>.
+        Su origen no se puede enseñar hasta que se suba su piscina.</p>` : '';
+  if (!bs.cortes) {
+    return `<div class="mc-card mc-card-wide mop-piscinas">${cab}
+      <p class="muted" style="margin:4px 0">Todavía no hay ninguna carga de 📈 Broodstock hasta la foto: el Excel semanal de las piscinas se sube en Registros → Maduración.</p>${sinCarga}</div>`;
+  }
+  const fila = (x) => {
+    const sel = x.piscina === vOp.piscinaSel;
+    const d = x.desempeno;
+    const inc = vacio(x.incremento) ? '—' : (x.incremento > 0 ? '+' : '') + nf(x.incremento, 2);
+    return `<tr class="mop-bs-fila ${sel ? 'is-on' : ''}" role="button" tabindex="0" aria-pressed="${sel}" data-mop-piscina="${esc(x.piscina)}">
+      <td><b>${esc(x.piscina)}</b></td>
+      <td>${esc(x.fase || '—')}${x.faseEnCatalogo ? '' : ' <span class="mop-nota" title="No es una de las fases del catálogo: se enseña como vino">fuera del catálogo</span>'}</td>
+      <td class="r">${nf(x.peso, 2)}</td><td class="r">${inc}</td><td class="r">${nf(x.crecimiento, 2)}</td>
+      <td class="r">${sobrevivenciaHTML(x)}</td><td class="r">${nf(x.densidad, 1)}</td>
+      <td class="r">${vacio(x.edad) ? '—' : nf(x.edad) + ' d'}</td>
+      <td>${x.lotes.length ? x.lotes.map((l) => esc(l)).join(' · ') : '<span class="muted">—</span>'}</td>
+      <td class="r">${d ? nf(d.vivos) + ' / ' + nf(d.ingresados) : '—'}</td>
+      <td class="r">${d ? pc(d.supervivencia) : '—'}</td><td class="r">${d ? nf(d.desoves) : '—'}</td>
+      <td class="r">${d ? pc(d.fertilidad) : '—'}</td>
+    </tr>`;
+  };
+  const tabla = bs.piscinas.length
+    ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-bs">
+        <thead><tr><th>Piscina</th><th>Fase</th><th class="r">Peso (g)</th><th class="r" title="Incremento de la última semana">Δ sem (g)</th>
+          <th class="r" title="Crecimiento en la fase actual">g/sem</th><th class="r" title="Sobrevivencia estimada de la piscina">Sobrev.</th>
+          <th class="r" title="Densidad de siembra, camarones por m²">Dens.</th><th class="r">Edad</th><th>Lotes</th>
+          <th class="r" title="Vivos hoy de los lotes que entraron de ella / los que entraron">Vivos / ingr.</th>
+          <th class="r" title="${esc(definicion('supervivencia'))}">Superv. lotes</th><th class="r">Desoves</th><th class="r">Fertilidad</th></tr></thead>
+        <tbody>${bs.piscinas.map(fila).join('')}</tbody></table></div>`
+    : `<p class="muted" style="margin:4px 0">${hayFiltro(F) ? 'Ninguna piscina del último corte pasa el filtro.' : 'El último corte no trae ninguna piscina.'}</p>`;
+  const ausentes = bs.ausentes.length
+    ? `<p class="mc-note">No vinieron en el último corte (sí en el del ${esc(dma(bs.previo))}): <b>${bs.ausentes.map((x) => esc(x)).join(' · ')}</b>.
+        Re-subir una semana no borra las piscinas que ya no vienen: se quedan en su semana y aquí no se enseñan como si fueran de ahora.</p>` : '';
+  return `<div class="mc-card mc-card-wide mop-piscinas">${cab}${tabla}
+    <p class="mc-note">Cada piscina con la fila del ÚLTIMO corte hasta la foto. El DESEMPEÑO es el de los lotes que entraron de ella, con la
+      fórmula de la comparativa de arriba; la piscina se lee en su forma canónica («P 12» y «P12» del Ingreso son la misma,
+      y la comparativa, que las lleva tal cual se teclearon, las enseña por separado).</p>
+    ${ausentes}${sinCarga}${ignoraHTML(bs.ignora, 'Una piscina de Broodstock', PORQUE_BS)}
+  </div>`;
+}
+
+function fichaPiscinaHTML(f, p) {
+  const u = f.ultimo;
+  const dias = (v) => (vacio(v) ? '—' : nf(v) + ' d');
+  const dato = (rotulo, v) => `<span class="mop-sc-l">${esc(rotulo)}</span><span>${v}</span>`;
+  const lotes = f.lotes.length
+    ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-bs-lotes">
+        <thead><tr><th>Lote</th><th class="r">Entraron de aquí ♀ / ♂</th><th>También entró de</th><th class="r">Vivos del lote</th>
+          <th class="r">Superv. del lote</th><th>Estado</th></tr></thead>
+        <tbody>${f.lotes.map((l) => `<tr><td><b>${esc(l.lote)}</b></td>
+          <td class="r">${nf(l.entraron.hembras)} / ${nf(l.entraron.machos)}</td>
+          <td>${l.otrasPiscinas.length ? l.otrasPiscinas.map((x) => esc(x)).join(' · ') : '<span class="muted">—</span>'}</td>
+          <td class="r">${l.vivos === null ? '—' : nf(l.vivos)}</td><td class="r">${pc(l.supervivencia)}</td>
+          <td>${l.estado ? `<span class="mop-chip is-e-${claseEstado(l.estado)}">${esc(l.estado)}</span>` : '<span class="muted">—</span>'}</td></tr>`).join('')}</tbody></table></div>
+      <p class="mc-note">Los VIVOS y la SUPERVIVENCIA son los del lote ENTERO, los de la tabla de lotes: nadie registra de qué piscina es cada
+        animal vivo, y repartirlos entre piscinas sería inventar un dato.</p>`
+    : '<p class="muted" style="margin:4px 0">Según el Ingreso, ningún lote entró de esta piscina hasta la foto.</p>';
+  const obs = f.observaciones.length
+    ? `<ul class="mop-lista">${f.observaciones.map((o) => `<li>${esc(dma(o.corte))} · ${esc(o.texto)}</li>`).join('')}</ul>`
+    : `<p class="muted" style="margin:4px 0">Sin observaciones en ${esc(etiquetaPeriodo(p))}.</p>`;
+  return `<div class="mc-card mc-card-wide mop-ficha mop-bs-ficha">
+    <h4 class="mc-card-h">📈 Piscina ${esc(f.piscina)}
+      <span class="mc-h-note">${esc(u.fase || 'sin fase')} · corte ${esc(dma(u.corte))}${u.camaronera ? ' · ' + esc(u.camaronera) : ''}${u.codigo ? ' · código ' + esc(u.codigo) : ''}</span></h4>
+    <h5 class="mop-h5">Peso por semana <span class="mop-nota">${esc(etiquetaPeriodo(p))}</span></h5>
+    ${f.serie.length ? '<div class="mc-chart" style="height:200px"><canvas id="mopPiscinaCurva"></canvas></div>'
+      : `<p class="muted" style="margin:4px 0">Ningún corte en ${esc(etiquetaPeriodo(p))}: el último es del ${esc(dma(u.corte))}.</p>`}
+    <h5 class="mop-h5">Días por fase</h5>
+    <div class="mop-sc-fila">${dato('Precría', dias(u.dias.precria))}${dato('Engorde', dias(u.dias.engorde))}${dato('Pre-reprod.', dias(u.dias.prerreproductor))}${dato('Edad', dias(u.edad))}</div>
+    <h5 class="mop-h5">Siembra</h5>
+    <div class="mop-sc-fila">${dato('Fecha', esc(dma(u.fechaSiembra)))}${dato('Sembrados', nf(u.sembrada))}${dato('Densidad', nf(u.densidad, 1) + ' /m²')}${dato('Peso', nf(u.pesoSiembra, 3) + ' g')}${dato('Pl/g', nf(u.plg, 1))}${dato('Área', nf(u.area, 2) + ' ha')}</div>
+    <h5 class="mop-h5">Lotes que entraron de ella</h5>${lotes}
+    <h5 class="mop-h5">Observaciones del período</h5>${obs}
+  </div>`;
+}
+
+/** El peso de la piscina, corte a corte. Un corte sin peso deja su hueco en la línea en vez de caer a cero. */
+function dibujarPiscina(f) {
+  if (!f || !f.serie.length) return;
+  makeChart('mopPiscinaCurva', {
+    type: 'line',
+    data: {
+      labels: f.serie.map((s) => dm(s.corte)),
+      datasets: [{ label: 'Peso (g)', data: f.serie.map((s) => (vacio(s.peso) ? null : s.peso)), borderColor: '#00838f', backgroundColor: '#00838f',
+        tension: 0.25, borderWidth: 2, pointRadius: 3 }],
     },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
@@ -1462,6 +1616,207 @@ function tratamientosHTML(c, areas, cob, p, F) {
   </div>`;
 }
 
+/* ============================================================
+   🩺 CALIDAD DEL DATO (F6, 2026-09-21)
+   Diseño aprobado por el usuario: UNA sub-vista con, en este orden, las hojas y su calendario, los partes esperados
+   frente a los registrados («uno por tanque ocupado»), el estado registrado de las salas frente al propuesto, los
+   avisos del libro y el cruce con 🧬 Microchips («sólo lo que no puede ser»). Las cifras salen de
+   operativo.calidad.js y operativo.cruce.js, que son puros y tienen su banco: aquí sólo se pintan.
+   ============================================================ */
+const PORQUE_HOJAS = 'Son de la planta entera: una fila de Desoves no es de una sala, ni una de Broodstock de un lote.';
+const PORQUE_PARTES = 'Un parte de Tanques dice su sala y su tanque, no de qué lote ni de qué sexo es cada animal.';
+const PORQUE_ESTADO = 'El estado es de la sala entera, no de uno de sus tanques.';
+const PORQUE_AVISOS = 'Un aviso del libro dice su tanque o su lote, nada más.';
+const PORQUE_CRUCE = 'La MATRIZ sólo lleva hembras y no dice el estado de la sala ni el origen del lote.';
+const CRUCE_TIPO = {
+  'mas-chips': 'Más hembras con chip vivas que hembras de su lote en el libro',
+  'lote-ausente': 'Hembras con chip vivas donde el libro no tiene su lote',
+};
+const listaCorta = (arr, max, fmt) => arr.slice(0, max).map(fmt).join(' · ') + (arr.length > max ? ` · <span class="mop-nota">y ${nf(arr.length - max)} más</span>` : '');
+
+function calidadHTML(M, memo, p, F) {
+  const hojas = estadoDeHojas(M);
+  const cal = calendarioDeRegistros(M, p, F);
+  const cob = coberturaDePartes(M, serieDe(memo, p), memo.partes, p, F);
+  const est = comparacionDeEstados(M, F);
+  const av = avisosDelLibro(M, p, F);
+  return hojasHTML(hojas, cal, p) + partesHTML(cob, p) + estadosHTML(est) + avisosLibroHTML(av, p) + cruceHTML(cruceDe(memo, p, F), p, F);
+}
+
+function hojasHTML(e, cal, p) {
+  const cero = '<span class="muted">0</span>';
+  const fila = (h) => `<tr class="${h.atrasada ? 'mop-atrasada' : ''}">
+      <td><b>${esc(h.etiqueta)}</b>${h.diaria ? ' <span class="mop-nota">diaria</span>' : ''}</td>
+      <td class="r">${nf(h.filas)}</td>
+      <td class="r">${h.ultima ? esc(dma(h.ultima)) : '<span class="muted">—</span>'}</td>
+      <td class="r">${h.ultima ? nf(h.dias) + ' d' : '—'}${h.atrasada ? ' <span class="mop-dif" title="Una hoja diaria sin registro desde hace más de un día">⚠ atrasada</span>' : ''}</td>
+      <td class="r">${h.sinFecha ? `<span class="mop-dif" title="Filas sin una fecha legible: ninguna pieza del tablero las cuenta">${nf(h.sinFecha)}</span>` : cero}</td>
+      <td class="r">${h.futuras ? `<span class="mop-dif" title="Con fecha posterior a hoy: suele ser un año mal tecleado">${nf(h.futuras)}</span>` : cero}</td></tr>`;
+  const curso = new Set(cal.enCurso);
+  const celda = (h, v, i) => {
+    const d = cal.dias[i];
+    const hueco = h.diasHueco.includes(d);
+    const clase = v !== null ? 'is-reg' : hueco ? 'is-hueco' : curso.has(d) && h.diaria ? 'is-curso' : '';
+    const t = h.etiqueta + ' · ' + dma(d) + ' · ' + (v !== null ? nf(v) + ' fila(s)' : hueco ? 'HUECO: ningún registro' : curso.has(d) && h.diaria ? 'en curso' : 'ningún registro');
+    return `<td class="${clase}" title="${esc(t)}">${v !== null ? nf(v) : ''}</td>`;
+  };
+  const calendario = `<div class="mop-calor-wrap"><table class="mop-calor mop-cal-hojas">
+      <thead><tr><th></th>${cal.dias.map((d) => `<th class="${curso.has(d) ? 'is-curso' : ''}">${esc(dm(d))}</th>`).join('')}</tr></thead>
+      <tbody>${cal.hojas.map((h) => `<tr><th>${esc(h.etiqueta)}${h.diaria && h.huecos ? ` <span class="mop-dif" title="Días sin ningún registro desde que la hoja empezó">${nf(h.huecos)} hueco(s)</span>` : ''}</th>${h.celdas.map((v, i) => celda(h, v, i)).join('')}</tr>`).join('')}</tbody>
+    </table></div>`;
+  return `<div class="mc-card mc-card-wide">
+    <h4 class="mc-card-h">📋 Las hojas y su calendario <span class="mc-h-note">el último registro, hasta hoy · el calendario, ${esc(etiquetaPeriodo(p))}</span></h4>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-hojas">
+      <thead><tr><th>Hoja</th><th class="r">Filas</th><th class="r">Último registro</th><th class="r">Hace</th>
+        <th class="r" title="Filas sin una fecha legible">Sin fecha</th><th class="r" title="Filas con fecha posterior a hoy">Futuras</th></tr></thead>
+      <tbody>${e.hojas.map(fila).join('')}</tbody></table></div>
+    ${e.salasExcluidas ? `<p class="mc-note">${nf(e.salasExcluidas)} registro(s) de Sala de las Salas 4A y 4B no se muestran (decisión del usuario).</p>` : ''}
+    <h5 class="mop-h5">Calendario hoja × día</h5>${calendario}
+    <p class="mc-note">Una celda VACÍA es «ningún registro ese día». En las hojas DIARIAS (Salas y Tanques) se marca como HUECO desde el
+      día en que la hoja empezó; el de hoy no, porque su registro puede no haber llegado. Las demás hojas registran sucesos: un día
+      sin ellos no es un hueco.</p>
+    ${ignoraHTML(cal.ignora, 'El estado de las hojas y su calendario', PORQUE_HOJAS)}
+  </div>`;
+}
+
+function partesHTML(c, p) {
+  const cab = `<h4 class="mc-card-h">📝 Partes esperados frente a registrados <span class="mc-h-note">${esc(etiquetaPeriodo(p))} · uno por tanque ocupado al cierre de cada día</span></h4>`;
+  if (!c.salas.length) {
+    return `<div class="mc-card mc-card-wide">${cab}
+      <p class="muted" style="margin:4px 0">El libro no tuvo ningún tanque ocupado en el período: no se esperaba ningún parte.</p>
+      ${ignoraHTML(c.ignora, 'Un parte de tanque', PORQUE_PARTES)}</div>`;
+  }
+  const cifra = (o) => (o.esperados ? `<b>${nf(o.registrados)}</b> de ${nf(o.esperados)} <span class="mop-nota">(${pc(o.pct)})</span>` : '<span class="muted">—</span>');
+  const curso = new Set(c.enCurso);
+  const celda = (s, x, i) => {
+    if (!x) return `<td title="${esc(s.sala + ' · ' + dma(c.dias[i]) + ' · sin animales: no se esperaba nada')}"></td>`;
+    const clase = x.enCurso ? 'is-curso'
+      : x.esperados && x.registrados === 0 ? 'is-nada'
+        : x.registrados < x.esperados || x.registroSala === false ? 'is-parcial' : 'is-completo';
+    const t = s.sala + ' · ' + dma(c.dias[i]) + (x.enCurso ? ' · EN CURSO: no se cuenta' : '')
+      + ' · ' + nf(x.registrados) + ' de ' + nf(x.esperados) + ' tanque(s) con parte'
+      + (x.faltan.length ? ' · falta(n) el ' + x.faltan.join(', ') : '')
+      + ' · registro de Sala: ' + (x.registroSala === null ? '—' : x.registroSala ? 'sí' : 'NO');
+    return `<td class="${clase}${x.registroSala === false ? ' is-sin-sala' : ''}" title="${esc(t)}">${x.esperados ? nf(x.registrados) + '/' + nf(x.esperados) : ''}</td>`;
+  };
+  const faltan = c.faltan.length
+    ? `<p class="mc-note"><b>Partes de Tanques que faltan</b> (el más reciente primero): ${listaCorta(c.faltan, 12, (x) => esc(dma(x.fecha) + ' · ' + x.sala + ' · t' + x.tanque))}</p>` : '';
+  const faltanReg = c.faltanRegistro.length
+    ? `<p class="mc-note"><b>Registros de Sala que faltan</b>: ${listaCorta(c.faltanRegistro, 12, (x) => esc(dma(x.fecha) + ' · ' + x.sala))}</p>` : '';
+  return `<div class="mc-card mc-card-wide">${cab}
+    <div class="mop-sc-fila"><span class="mop-sc-l">Tanques</span><span>${cifra(c.total.tanques)} partes esperados tienen su parte</span></div>
+    <div class="mop-sc-fila"><span class="mop-sc-l">Salas</span><span>${cifra(c.total.registro)} días de sala con animales tienen su registro</span></div>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-cob-salas">
+      <thead><tr><th>Sala</th><th class="r">Partes de Tanques</th><th class="r">Registros de Sala</th></tr></thead>
+      <tbody>${c.salas.map((s) => `<tr><td><b>${esc(s.sala)}</b></td><td class="r">${cifra(s.tanques)}</td><td class="r">${cifra(s.registro)}</td></tr>`).join('')}</tbody></table></div>
+    <h5 class="mop-h5">Sala × día</h5>
+    <div class="mop-calor-wrap"><table class="mop-calor mop-cob-cal">
+      <thead><tr><th></th>${c.dias.map((d) => `<th class="${curso.has(d) ? 'is-curso' : ''}">${esc(dm(d))}</th>`).join('')}</tr></thead>
+      <tbody>${c.salas.map((s) => `<tr><th>${esc(s.sala)}</th>${s.celdas.map((x, i) => celda(s, x, i)).join('')}</tr>`).join('')}</tbody>
+    </table></div>
+    ${faltan}${faltanReg}
+    <p class="mc-note">Cada celda dice cuántos tanques ocupados tuvieron su parte ese día, de cuántos lo esperaban (decisión del usuario:
+      uno por tanque ocupado al cierre del día); con el borde marcado, a la sala le faltó su registro de Sala. Una celda VACÍA es
+      que la sala no tenía animales. El día de HOY se enseña y no se cuenta: su parte puede no haber llegado.</p>
+    ${ignoraHTML(c.ignora, 'Un parte de tanque', PORQUE_PARTES)}
+  </div>`;
+}
+
+function estadosHTML(e) {
+  const chip = (x) => (x ? `<span class="mop-chip is-e-${claseEstado(x)}">${esc(x)}</span>` : '<span class="muted">—</span>');
+  const tono = { coinciden: 'mop-igual', difieren: 'mop-dif' };
+  const fila = (f) => `<tr class="${f.situacion === 'difieren' ? 'mop-difieren' : ''}">
+      <td><b>${esc(f.sala)}</b></td><td>${chip(f.registrado.estado)}</td>
+      <td class="r">${f.registrado.fecha ? esc(dma(f.registrado.fecha)) + (vacio(f.desfaseDias) ? '' : ` <span class="mop-nota">hace ${nf(f.desfaseDias)} d</span>`) : '<span class="muted">—</span>'}</td>
+      <td>${chip(f.propuesto.estado)}</td>
+      <td><span class="${tono[f.situacion] || 'muted'}">${esc(f.etiqueta)}</span></td></tr>`;
+  return `<div class="mc-card mc-card-wide">
+    <h4 class="mc-card-h">🏠 Estado registrado frente al propuesto <span class="mc-h-note">al cierre de la foto · ${nf(e.coinciden)} coinciden · ${nf(e.difieren)} difieren · ${nf(e.sinComparar)} sin comparar</span></h4>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-estados">
+      <thead><tr><th>Sala</th><th>Registrado</th><th class="r">Tecleado el</th><th>Propuesto por el libro</th><th>Situación</th></tr></thead>
+      <tbody>${e.filas.map(fila).join('')}</tbody></table></div>
+    <p class="mc-note">El PROPUESTO es el de «🔄 Proponer estado» de la ficha de Salas: el libro al cierre de la foto. Un estado tecleado hace
+      días puede coincidir por casualidad: mira cuándo se tecleó.</p>
+    ${ignoraHTML(e.ignora, 'El estado de una sala', PORQUE_ESTADO)}
+  </div>`;
+}
+
+function avisosLibroHTML(a, p) {
+  const cab = `<h4 class="mc-card-h">📒 Avisos del libro <span class="mc-h-note">${a.aplica ? nf(a.total) + ' en total · ' + nf(a.enPeriodo) + ' en ' + esc(etiquetaPeriodo(p)) : 'no aplican con este filtro'}</span></h4>`;
+  if (!a.aplica) {
+    return `<div class="mc-card mc-card-wide">${cab}
+      <p class="muted" style="margin:4px 0">Los avisos del libro no dicen el código genético: con ese filtro no se le pueden atribuir.</p>
+      ${ignoraHTML(a.ignora.filter((x) => x !== 'código genético'), 'Un aviso del libro', PORQUE_AVISOS)}</div>`;
+  }
+  const tipos = `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-av-tipos">
+      <thead><tr><th>Aviso</th><th class="r">En el período</th><th class="r">En total</th></tr></thead>
+      <tbody>${a.tipos.map((t) => `<tr class="${t.total ? '' : 'is-cero'}"><td>${esc(t.etiqueta)}${t.conocido ? '' : ' <span class="mop-nota" title="El libro lo anota y el tablero no tiene su rótulo">sin rótulo</span>'}</td>
+        <td class="r">${t.enPeriodo ? `<b>${nf(t.enPeriodo)}</b>` : '<span class="muted">0</span>'}</td><td class="r">${t.total ? nf(t.total) : '<span class="muted">0</span>'}</td></tr>`).join('')}</tbody></table></div>`;
+  const detalle = a.detalle.length
+    ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-av-detalle">
+        <thead><tr><th>Fecha</th><th>Aviso</th><th>Dónde</th><th>Lote</th><th>Qué dice</th></tr></thead>
+        <tbody>${a.detalle.map((d) => `<tr><td>${esc(dma(d.fecha))}</td><td>${esc(d.etiqueta)}</td><td>${esc(d.lugar) || '<span class="muted">—</span>'}</td>
+          <td>${esc(d.lote) || '<span class="muted">—</span>'}</td><td>${esc(d.texto)}</td></tr>`).join('')}</tbody></table></div>`
+    : `<p class="muted" style="margin:4px 0">Ningún aviso en ${esc(etiquetaPeriodo(p))}.</p>`;
+  return `<div class="mc-card mc-card-wide">${cab}${tipos}
+    <h5 class="mop-h5">Los del período, el más reciente primero</h5>${detalle}
+    <p class="mc-note">Son los avisos que anota el libro al reconstruir el saldo —los mismos que cuentan las alertas de 📊 Estado actual—.
+      Todos los tipos que sabe anotar van siempre, aunque estén a cero: «ninguno» también es un dato.</p>
+    ${ignoraHTML(a.ignora, 'Un aviso del libro', PORQUE_AVISOS)}
+  </div>`;
+}
+
+function cruceHTML(c, p, F) {
+  const cab = `<h4 class="mc-card-h">🔗 El cruce con 🧬 Microchips <span class="mc-h-note">la MATRIZ de hoy frente al libro de hoy · sólo se marca lo que no puede ser</span></h4>`;
+  const desfase = c.fotoDeHoy ? '' : `<p class="mc-note">⚠ La MATRIZ sólo sabe cómo están las hembras HOY: el cruce usa el libro de hoy
+      (${esc(dma(c.hoy))}), no el de la foto (${esc(dma(c.fecha))}). Los eventos y los desoves sí son los de ${esc(etiquetaPeriodo(p))}.</p>`;
+  if (!c.hembras) {
+    return `<div class="mc-card mc-card-wide">${cab}
+      <p class="muted" style="margin:4px 0">El registro reproductivo no tiene ninguna hembra con chip: no hay nada que cruzar.</p></div>`;
+  }
+  const disc = c.discrepancias.length
+    ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-cruce-disc">
+        <thead><tr><th>Sala</th><th class="r">Tanque</th><th>Lote</th><th class="r">♀ con chip</th><th class="r">♀ en el libro</th><th>Qué no puede ser</th></tr></thead>
+        <tbody>${c.discrepancias.map((d) => `<tr><td>${esc(d.sala)}</td><td class="r"><b>${nf(d.tanque)}</b></td><td><b>${esc(d.lote)}</b></td>
+          <td class="r">${nf(d.conChip)}</td><td class="r">${nf(d.enLibro)}</td><td><span class="mop-dif">${esc(CRUCE_TIPO[d.tipo] || d.tipo)}</span></td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="mop-igual" style="margin:4px 0">✓ Nada que no pueda ser: cada hembra con chip viva está donde el libro tiene su lote, y no hay más de las que el libro cuenta.</p>';
+  const ev = c.eventos;
+  const eventos = ev.sinExplicar.length
+    ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-cruce-ev">
+        <thead><tr><th>Fecha</th><th>Evento</th><th>Trovan</th><th>Lote</th><th>Ocurrió en</th><th>La hembra estaba en</th><th>Traslados</th></tr></thead>
+        <tbody>${ev.sinExplicar.map((e) => `<tr><td>${esc(dma(e.fecha))}</td><td>${esc(e.tipo)}</td><td><b>${esc(e.trovan)}</b></td><td>${esc(e.lote) || '—'}</td>
+          <td>${esc(e.evento.sala + ' · ' + (e.evento.tanque === null ? '?' : e.evento.tanque))}</td>
+          <td>${esc(e.hembra.sala + ' · ' + (e.hembra.tanque === null ? '?' : e.hembra.tanque))}</td>
+          <td>${e.conTraslados ? 'tiene, y ninguno lo explica' : '<span class="mop-nota">ninguno registrado</span>'}</td></tr>`).join('')}</tbody></table></div>`
+    : `<p class="mop-igual" style="margin:4px 0">✓ Los ${nf(ev.revisados)} evento(s) de ${esc(etiquetaPeriodo(p))} ocurrieron donde estaba su hembra.</p>`;
+  const sinMatriz = ev.sinMatriz ? `<p class="mc-note">${nf(ev.sinMatriz)} evento(s) de chips que la MATRIZ no tiene: no se pueden situar.</p>` : '';
+  const resumen = c.resumen.length
+    ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-cruce-lotes">
+        <thead><tr><th>Lote</th><th class="r">♀ en el libro</th><th class="r">♀ con chip</th><th>Tanques en el libro</th><th>Tanques en la MATRIZ</th><th class="r">En común</th></tr></thead>
+        <tbody>${c.resumen.map((r) => `<tr><td><b>${esc(r.lote)}</b></td><td class="r">${nf(r.hembrasLibro)}</td><td class="r">${nf(r.vivasConChip)}</td>
+          <td>${r.tanquesLibro.length ? r.tanquesLibro.map((t) => esc(t)).join(' · ') : '<span class="muted">ninguno</span>'}</td>
+          <td>${r.tanquesChip.map((t) => esc(t)).join(' · ')}</td><td class="r">${nf(r.enComun)}</td></tr>`).join('')}</tbody></table></div>`
+    : `<p class="muted" style="margin:4px 0">${hayFiltro(F) ? 'Ningún lote de los dos registros pasa el filtro.' : 'Ningún lote está a la vez en la MATRIZ y en el libro.'}</p>`;
+  const fuera = c.fuera.length
+    ? `<p class="mc-note">Lotes de la MATRIZ que el operativo no conoce (no se marcan): ${c.fuera.map((f) => '<b>' + esc(f.lote) + '</b> (' + nf(f.vivas) + ' viva(s) en ' + nf(f.tanques) + ' tanque(s))').join(' · ')}.</p>` : '';
+  const sueltas = c.sinLote || c.sinUbicacion
+    ? `<p class="mc-note">No se pueden cruzar: ${[c.sinLote ? nf(c.sinLote) + ' hembra(s) vivas sin lote en la MATRIZ' : '', c.sinUbicacion ? nf(c.sinUbicacion) + ' sin un tanque legible' : ''].filter(Boolean).join(' · ')}.</p>` : '';
+  const desoves = c.desoves.length
+    ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-cruce-desoves">
+        <thead><tr><th>Lote</th><th class="r">Desoves en la Bitácora</th><th class="r">Hembras que desovaron</th><th class="r">Desoves en la hoja de Desoves</th></tr></thead>
+        <tbody>${c.desoves.map((d) => `<tr><td><b>${esc(d.lote)}</b></td><td class="r">${nf(d.bitacora)}</td><td class="r">${nf(d.hembrasQueDesovaron)}</td><td class="r">${nf(d.operativo)}</td></tr>`).join('')}</tbody></table></div>
+      <p class="mc-note">Sólo para informar: la Bitácora cuenta un evento por hembra con chip, y la hoja de Desoves los desoves del lote entero.
+        No tienen por qué coincidir.</p>` : '';
+  return `<div class="mc-card mc-card-wide">${cab}${desfase}
+    <h5 class="mop-h5">Lo que no puede ser, tanque a tanque</h5>${disc}
+    <p class="mc-note">Que haya MENOS hembras con chip que hembras en el libro es lo normal: no todas llevan chip. Por eso no se marca.</p>
+    <h5 class="mop-h5">Eventos de la Bitácora en otra ubicación que la de su hembra</h5>${eventos}${sinMatriz}
+    <h5 class="mop-h5">Los lotes que están en los dos registros</h5>${resumen}${fuera}${sueltas}
+    ${desoves ? '<h5 class="mop-h5">Desoves, lado a lado</h5>' + desoves : ''}
+    ${ignoraHTML(c.ignora, 'El cruce', PORQUE_CRUCE)}
+  </div>`;
+}
+
 function bind(root) {
   if (root._mopBound) return;
   root._mopBound = true;
@@ -1469,6 +1824,7 @@ function bind(root) {
   const abrirSala = (sala) => { vOp.salaDetalle = vOp.salaDetalle === sala ? '' : sala; repintar(); };
   const abrirLote = (lote) => { vOp.loteSel = vOp.loteSel === lote ? '' : lote; repintar(); };
   const abrirTanque = (k) => { vOp.tqFicha = vOp.tqFicha === k ? '' : k; repintar(); };
+  const abrirPiscina = (x) => { vOp.piscinaSel = vOp.piscinaSel === x ? '' : x; repintar(); };
 
   root.addEventListener('click', (e) => {
     const t = e.target;
@@ -1477,7 +1833,7 @@ function bind(root) {
     const per = t.closest('[data-mop-periodo]');
     if (per) { vOp.periodo = per.dataset.mopPeriodo; repintar(); return; }
     if (t.closest('[data-mop-limpiar]')) {
-      Object.assign(vOp, { periodo: INICIAL.periodo, fecha: '', sala: '', tanque: '', lote: '', codigo: '', tanqueSel: '', salaDetalle: '', loteSel: '', tqFicha: '', estado: '', sexo: '', piscina: '', camaronera: '' });
+      Object.assign(vOp, { periodo: INICIAL.periodo, fecha: '', sala: '', tanque: '', lote: '', codigo: '', tanqueSel: '', salaDetalle: '', piscinaSel: '', loteSel: '', tqFicha: '', estado: '', sexo: '', piscina: '', camaronera: '' });
       repintar();
       return;
     }
@@ -1498,6 +1854,8 @@ function bind(root) {
     if (lot) { abrirLote(lot.dataset.mopLote); return; }
     const tqf = t.closest('[data-mop-tqf]');
     if (tqf) { abrirTanque(tqf.dataset.mopTqf); return; }
+    const pis = t.closest('[data-mop-piscina]');
+    if (pis) { abrirPiscina(pis.dataset.mopPiscina); return; }
     const agr = t.closest('[data-mop-agr]');
     if (agr) { vOp.agrupacion = agr.dataset.mopAgr; repintar(); return; }
     const agb = t.closest('[data-mop-agrb]');
@@ -1531,6 +1889,8 @@ function bind(root) {
     if (sala && e.target === sala) { e.preventDefault(); abrirSala(sala.dataset.mopSala); return; }
     const lote = e.target.closest && e.target.closest('[data-mop-lote]');
     if (lote && e.target === lote) { e.preventDefault(); abrirLote(lote.dataset.mopLote); return; }
+    const pis = e.target.closest && e.target.closest('[data-mop-piscina]');
+    if (pis && e.target === pis) { e.preventDefault(); abrirPiscina(pis.dataset.mopPiscina); return; }
     const tqf = e.target.closest && e.target.closest('[data-mop-tqf]');
     if (tqf && e.target === tqf) { e.preventDefault(); abrirTanque(tqf.dataset.mopTqf); }
   });
