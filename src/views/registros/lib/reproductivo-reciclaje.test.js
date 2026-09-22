@@ -17,7 +17,7 @@
    La regla en sí la prueban reproductivo.data.test.js y, del lado del servidor, mad-gas-dopost.test.js
    (que desde V2 también defiende la MATRIZ de un cliente anterior a la cuaterna).
    ============================================================ */
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -608,4 +608,67 @@ describe('🔴 1a · el chip reciclado va a la hembra NUEVA aunque la copia en u
     expect(inf).toContain('Sin confirmar con «Maduración MATRIZ»');
     expect(inf).toContain('cuando Google responda: ' + CHIP);
   }, 15000);
+
+  /* 🔴 1c (2026-09-22) · SIN RED, NI EL INFORME NI LOS AVISOS CULPAN A GOOGLE. El mismo escenario de arriba (la copia en
+     uso no conoce a la nueva) con el dispositivo sin red: se intenta UNA vez, y se dice «sin conexión a internet» y
+     «cuando vuelva la conexión». Los reintentos, el tope y el aviso de la MATRIZ los prueba reproductivo.loader.test.js. */
+  describe('1c · sin red', () => {
+    const sinRed = () => { throw new TypeError('Failed to fetch'); };   // lo que da fetch sin respuesta ninguna
+    const aviso = (inicio) => (avisos.find((a) => a.msg.startsWith(inicio)) || { msg: '' }).msg;
+    beforeEach(() => { Object.defineProperty(navigator, 'onLine', { value: false, configurable: true }); });
+    afterEach(() => { delete navigator.onLine; });
+
+    it('🔴 evento: el informe y el aviso dicen «sin conexión a internet», sin reintentar ni culpar a Google', async () => {
+      lecturaRows = sinRed;
+      const inf = await evento('Desove');
+      expect(envios).toHaveLength(0);
+      expect(lecturasMatriz()).toBe(1);             // sin red, un intento
+      expect(inf).toContain('Sin confirmar con «Maduración MATRIZ» (sin conexión a internet)');
+      expect(inf).toContain('cuando vuelva la conexión: ' + CHIP);
+      expect(inf).not.toContain('Google');
+      expect(aviso('No se pudo confirmar')).toContain('(sin conexión a internet)');
+      expect(aviso('No se pudo confirmar')).toContain('cuando vuelva la conexión');
+      expect(aviso('No se pudo confirmar')).not.toContain('Google');
+    });
+
+    it('🔴 traslado: lo mismo', async () => {
+      lecturaRows = sinRed;
+      const inf = await traslado('S1', 'T1');
+      expect(envios).toHaveLength(0);
+      expect(inf).toContain('Sin confirmar con «Maduración MATRIZ» (sin conexión a internet)');
+      expect(inf).toContain('cuando vuelva la conexión: ' + CHIP);
+      expect(inf).not.toContain('Google');
+      expect(aviso('No se pudo confirmar')).toContain('cuando vuelva la conexión');
+      expect(aviso('No se pudo confirmar')).not.toContain('Google');
+    });
+
+    it('🔴 con la copia local en uso, su aviso dice «sin conexión a internet»', async () => {
+      const COLS = H._REPRO_MATRIZ_COLS;
+      const fila = (o) => Object.fromEntries(COLS.map((c) => [c, o[c] ?? '']));
+      localStorage.setItem('larv4_mad_matriz', JSON.stringify({ ts: Date.now() - 3600e3, cols: COLS, rows: [fila(VIEJA), fila(NUEVA)] }));
+      H.setLecturas({});                            // nada leído aún: el evento tiene que ir a buscar la MATRIZ
+      lecturaRows = sinRed;
+      await evento('Desove');
+      expect(aviso('⚠ Usando la copia local')).toContain('(sin conexión a internet)');
+      expect(aviso('⚠ Usando la copia local')).not.toContain('Google');
+      expect(bitacora().rows[0][3]).toBe('S3');     // y la copia, que ya conoce a la nueva, deja salir el desove
+    });
+
+    it('🔴 la Consulta sin red y sin datos lo dice, y no culpa al servidor de Google', async () => {
+      H.setLecturas({});
+      lecturaRows = sinRed;
+      await H._reproLoadSheets(true);
+      const html = H._reproConsultaHTML();
+      expect(html).toContain('No se pudo leer el Sheet: sin conexión a internet');
+      expect(html).not.toContain('servidor de Google');
+    });
+
+    it('con red, lo sin confirmar sigue diciendo «Google no respondió» (el control de lo de arriba)', async () => {
+      delete navigator.onLine;
+      lecturaRows = () => { throw new Error('Failed to fetch'); };   // como en 1a: 2 intentos, 1,5 s
+      const inf = await evento('Desove');
+      expect(inf).toContain('Sin confirmar con «Maduración MATRIZ» (Google no respondió)');
+      expect(aviso('No se pudo confirmar')).toContain('cuando Google responda');
+    }, 15000);
+  });
 });

@@ -11737,6 +11737,18 @@ const _REPRO_SHEETS = { matriz:"Maduración MATRIZ", bitacora:"Maduración Bitá
 const _REPRO_MATRIZ_COLS = ["Trovan ID","Piscina","Código genético","Lote","Sala actual","Tanque actual","Estado"];
 const _REPRO_FETCH_MS  = 30000;                 // por intento
 const _REPRO_ATTEMPTS  = 2;
+/* 1c (2026-09-22) · UN CORTE DE CONEXIÓN SE REINTENTA MÁS. Lo reportó el usuario: la Consulta se quedaba en «Google no
+   respondió: MATRIZ (Failed to fetch) · Bitácora (Failed to fetch) · Transferencias (Failed to fetch)». «Failed to fetch»
+   es el TypeError de fetch cuando no llega respuesta ninguna: un corte de segundos, o una página de error de Google sin
+   permiso CORS (p. ej., demasiadas ejecuciones a la vez), y los dos se pasan esperando. Dos intentos a 1,5 s no bastaban.
+   Decisión del usuario: hasta 4, con esperas de 1,5 · 3 · 6 s. Lo demás sigue en 2: un timeout ya esperó 30 s en cada
+   intento, y un HTTP de error o una página en vez de datos no mejoran por insistir.
+   ⚠ Con TOPE (también decisión del usuario): pasados 30 s leyendo no se empieza otro intento. Un corte que tarda en
+   fallar —la conexión que el sistema da por perdida a los ~20 s— haría de cuatro intentos minuto y medio por hoja. */
+const _REPRO_ATTEMPTS_RED = 4;
+const _REPRO_RED_TOPE_MS  = 30000;
+/* 1c · y SIN RED no se culpa a Google: la lectura lo dice así, sin reintentar (ver `_reproSinRed`). */
+const _REPRO_SIN_RED = "sin conexión a internet";
 const _REPRO_CACHE_KEY = "larv4_mad_matriz";
 const _REPRO_CACHE_TTL = 15*24*60*60*1000;      // 15 días: más vieja no se usa
 
@@ -11838,6 +11850,16 @@ function _reproFmtTs(ts){
   }catch(_){ return "?"; }
 }
 
+/* 1c (2026-09-22) · ¿el dispositivo está SIN RED? `navigator.onLine` sólo es de fiar cuando dice false (true no garantiza
+   que haya internet), y aun así no se usa para NO intentar: una lectura se intenta siempre, y esto sólo decide, tras un
+   fallo, que reintentar no sirve y que la culpa no es de Google. */
+function _reproSinRed(){ return typeof navigator!=="undefined" && navigator.onLine===false; }
+/** 1c · ¿el último fallo de lectura fue por estar sin red? Lo dice el motivo que se anotó al fallar, no la red de ahora. */
+function _reproFalloSinRed(){ return String(_reproSheetsErr||"").indexOf(_REPRO_SIN_RED)!==-1; }
+/** 1c · por qué no se pudo leer, y hasta cuándo esperar, dicho sin culpar a Google cuando lo que falta es la red. */
+function _reproPorQue(){ return _reproFalloSinRed() ? _REPRO_SIN_RED : "Google no respondió"; }
+function _reproCuando(){ return _reproFalloSinRed() ? "cuando vuelva la conexión" : "cuando Google responda"; }
+
 async function _reproFetchSheet(name, cols){
   const base = gasUrl();
   if(!isValidGasUrl(base)) throw new Error("La URL del script no es válida (⚙ Config)");
@@ -11848,7 +11870,8 @@ async function _reproFetchSheet(name, cols){
   // sigue siendo correcto, sólo más lento. No hace falta re-desplegar para esto.
   if(cols && cols.length) u += "&cols=" + encodeURIComponent(cols.join(","));
   let lastErr = null;
-  for(let attempt=1; attempt<=_REPRO_ATTEMPTS; attempt++){
+  const t0 = Date.now();
+  for(let attempt=1; attempt<=_REPRO_ATTEMPTS_RED; attempt++){
     const ctrl = new AbortController();
     const timer = setTimeout(function(){ ctrl.abort(); }, _REPRO_FETCH_MS);
     let failed = null;
@@ -11870,7 +11893,12 @@ async function _reproFetchSheet(name, cols){
         : x;
     }finally{ clearTimeout(timer); }
     lastErr = failed;
-    if(attempt < _REPRO_ATTEMPTS) await _sleep(1500*attempt);
+    // 1c · sin red no se reintenta (ni se culpa a Google); un corte, hasta 4 intentos y 30 s; lo demás, 2.
+    if(_reproSinRed()){ lastErr = new Error(_REPRO_SIN_RED); break; }
+    const corte = !!failed && failed.name==="TypeError";
+    if(attempt >= (corte ? _REPRO_ATTEMPTS_RED : _REPRO_ATTEMPTS)) break;
+    if(corte && Date.now()-t0 >= _REPRO_RED_TOPE_MS) break;
+    await _sleep(1500*Math.pow(2, attempt-1));
   }
   throw lastErr || new Error("Error de lectura");
 }
@@ -12010,9 +12038,11 @@ function _reproMatrixBannerHTML(){
   const btn=' <button class="btn" type="button" onclick="_reproRefreshMatrix()" style="font-size:10px;padding:2px 8px;margin-left:4px">🔄 Reintentar lectura</button>';
   if(_reproSheetsState==="loading") return box("#f8fafc","#e2e8f0","#475569","⏳ Leyendo «Maduración MATRIZ»…");
   if(_reproMatrixOrigen()==="cache"){
-    return box("#fffbeb","#fde68a","#854d0e","⚠ MATRIZ leída de la <b>copia local del "+escapeHtml(_reproFmtTs(_reproMatrixTs))+"</b> (Google no respondió: "+escapeHtml(_reproSheetsErr||"sin detalle")+").<br>La Sala/Tanque podrían estar desactualizados."+btn);
+    return box("#fffbeb","#fde68a","#854d0e","⚠ MATRIZ leída de la <b>copia local del "+escapeHtml(_reproFmtTs(_reproMatrixTs))+"</b> ("+(_reproFalloSinRed() ? _REPRO_SIN_RED : "Google no respondió: "+escapeHtml(_reproSheetsErr||"sin detalle"))+").<br>La Sala/Tanque podrían estar desactualizados."+btn);
   }
   if(_reproSheetsState==="error"){
+    // 1c · sin red no es «el servidor de Google»: se dice lo que pasa y qué mirar.
+    if(_reproFalloSinRed()) return box("#fef2f2","#fecaca","#b91c1c","❌ No se pudo leer «Maduración MATRIZ»: "+_REPRO_SIN_RED+".<br>Comprueba la conexión del dispositivo y reintenta."+btn);
     return box("#fef2f2","#fecaca","#b91c1c","❌ No se pudo leer «Maduración MATRIZ»: "+escapeHtml(_reproSheetsErr||"error")+".<br><b>No es tu configuración ni el token</b>: es el servidor de Google, que a veces tarda o falla. Reintenta."+btn);
   }
   const n=_reproReadRows(_REPRO_SHEETS.matriz).length;
@@ -12051,6 +12081,8 @@ function _reproConsultaHTML(){
   const mrows=_reproReadRows("Maduración MATRIZ");
   const brows=_reproReadRows("Maduración Bitácora");
   if(_reproSheetsState==="error" && !mrows.length && !brows.length){
+    // 1c · sin red no es «el servidor de Google»: se dice lo que pasa y qué mirar.
+    if(_reproFalloSinRed()) return head + '<div style="padding:14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#b91c1c">No se pudo leer el Sheet: '+_REPRO_SIN_RED+'.<br>Comprueba la conexión del dispositivo y pulsa «Actualizar».</div>';
     return head + '<div style="padding:14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#b91c1c">No se pudo leer el Sheet: '+escapeHtml(_reproSheetsErr||"error desconocido")+'.<br><b>No es tu configuración ni el token</b>: el servidor de Google tarda o falla de forma intermitente. Pulsa «Actualizar» para reintentar.</div>';
   }
   if(!mrows.length && !brows.length){
@@ -12156,7 +12188,7 @@ async function madReproProcess(){
   // Respaldo en uso: se avisa SIEMPRE, porque una hembra movida después de esa copia
   // se registraría con su ubicación antigua.
   if(_reproMatrixOrigen()==="cache"){
-    toast("⚠ Usando la copia local de la MATRIZ del "+_reproFmtTs(_reproMatrixTs)+" (Google no respondió). Comprueba que la Sala/Tanque sean los actuales.","warn",7000);
+    toast("⚠ Usando la copia local de la MATRIZ del "+_reproFmtTs(_reproMatrixTs)+" ("+_reproPorQue()+"). Comprueba que la Sala/Tanque sean los actuales.","warn",7000);
   }
   const _ids = (tipo==="Mortalidad" && sinConfirmar.length)
     ? parsed.ids.filter(function(id){ return !(sinConfirmar.indexOf(id)!==-1 && mIdx.get(id)); })
@@ -12164,7 +12196,7 @@ async function madReproProcess(){
   const res = window.__rgLib.buildEventBatch({ ids: _ids, fecha: fecha, tipo: tipo, matrixIndex: mIdx });
   if(res.error){ toast(res.error,"err",7000); return; }
   res.report.sinConfirmar = sinConfirmar;
-  if(sinConfirmar.length) toast("No se pudo confirmar con la hoja ("+(_reproSheetsErr||"Google no respondió")+"): "+sinConfirmar.length+" microchip(s) no se registraron. Vuelve a procesarlos cuando Google responda.","warn",9000);
+  if(sinConfirmar.length) toast("No se pudo confirmar con la hoja ("+(_reproSheetsErr||"Google no respondió")+"): "+sinConfirmar.length+" microchip(s) no se registraron. Vuelve a procesarlos "+_reproCuando()+".","warn",9000);
   // R5 · los chips con DOS vivas quedan pendientes de ELEGIR, con su contexto: luego se registran SÓLO ésos.
   _reproElegirPend = res.report.variasVivas.length ? { clase:"evento", fecha:fecha, tipo:tipo, chips:res.report.variasVivas.slice() } : null;
   // Ningún código superó la validación: se muestra el informe con el motivo y NO se
@@ -12340,7 +12372,7 @@ async function madReproTransfer(){
   const res=window.__rgLib.buildTransferBatch({ fecha:fecha, tipo:tipo, origen:origen, destinos:_destinos, composicion:composicion, matrixIndex:_reproMatrixIndex(), trId:trId });
   if(res.error){ toast(res.error,"err",3500); return; }
   res.report.sinConfirmar=_scT;
-  if(_scT.length) toast("No se pudo confirmar con la hoja ("+(_reproSheetsErr||"Google no respondió")+"): "+_scT.length+" microchip(s) se quedan sin mover o señalados. Vuelve a procesarlos cuando Google responda.","warn",9000);
+  if(_scT.length) toast("No se pudo confirmar con la hoja ("+(_reproSheetsErr||"Google no respondió")+"): "+_scT.length+" microchip(s) se quedan sin mover o señalados. Vuelve a procesarlos "+_reproCuando()+".","warn",9000);
   /* R5 · los chips con DOS vivas quedan pendientes de ELEGIR con el contexto del traslado —origen, destino de cada
      uno y el MISMO TR-ID—, para moverlos después sin repetir los que ya salieron. */
   const _vv=res.report.variasVivas||[];
@@ -12375,7 +12407,7 @@ function _madReproShowTransferReport(rep, trId, okSent){
   h+='</div>';
   const lists=[];
   if(rep.variasVivas && rep.variasVivas.length) lists.push(["Ese microchip lo llevan DOS hembras vivas a la vez (no transferidos: elige abajo cuál se mueve)", rep.variasVivas]);
-  if(sc.length) lists.push(["Sin confirmar con «Maduración MATRIZ» (Google no respondió): la copia en uso los da por muertos, no los conoce o los sitúa fuera del origen, y puede ser de antes de su alta. No se movió ninguno que la copia dé por muerto; vuelve a procesarlos cuando Google responda", sc]);
+  if(sc.length) lists.push(["Sin confirmar con «Maduración MATRIZ» ("+_reproPorQue()+"): la copia en uso los da por muertos, no los conoce o los sitúa fuera del origen, y puede ser de antes de su alta. No se movió ninguno que la copia dé por muerto; vuelve a procesarlos "+_reproCuando(), sc]);
   if(rep.invalidFormat && rep.invalidFormat.length) lists.push(["Formato inválido (no transferidos — revisa el código en el lector)", rep.invalidFormat]);
   if(noEnc.length) lists.push(["No encontrados", noEnc]);
   if(wl.length) lists.push(["Fuera del origen declarado", wl]);
@@ -12408,7 +12440,7 @@ function _madReproShowReport(rep, duplicates, tipo, okSent){
   if(rep.sinFechaIngreso && rep.sinFechaIngreso.length) h += chip(rep.sinFechaIngreso.length+" sin comprobar la hembra", "#fef9c3", "#854d0e");
   h += '</div>';
   const lists=[];
-  if(sc.length) lists.push(["Sin confirmar con «Maduración MATRIZ» (Google no respondió): la copia en uso los da por muertos o no los conoce, y puede ser de antes del alta de su chip reciclado. No se registró nada de ellos; vuelve a procesarlos cuando Google responda", sc]);
+  if(sc.length) lists.push(["Sin confirmar con «Maduración MATRIZ» ("+_reproPorQue()+"): la copia en uso los da por muertos o no los conoce, y puede ser de antes del alta de su chip reciclado. No se registró nada de ellos; vuelve a procesarlos "+_reproCuando(), sc]);
   if(duplicates && duplicates.length) lists.push(["Duplicados", duplicates]);
   if(rep.invalidFormat && rep.invalidFormat.length) lists.push(["Formato inválido (no registrados — revisa el código en el lector)", rep.invalidFormat]);
   if(noEnc.length) lists.push(["No encontrados en Maduración MATRIZ (no registrados)", noEnc]);

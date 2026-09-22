@@ -41,14 +41,20 @@ const okBody = (n) => JSON.stringify({
   })),
 });
 
-/** Sandbox con red guionizada: cada fetch consume un paso de `net`. */
+/** Sandbox con red guionizada: cada fetch consume un paso de `net`.
+ *  1c (2026-09-22) · un paso `{ red: true }` es un CORTE (el TypeError «Failed to fetch» de fetch); `tarda` adelanta el
+ *  reloj de `opts.reloj` antes de contestar, y `sleeps` anota cada espera pedida entre intentos (que aquí no espera). */
 function sandbox(code, net, opts = {}) {
   const store = { ...(opts.localStorage || {}) };
   const calls = [];
+  const sleeps = [];
+  const reloj = opts.reloj;
+  const RelojDate = reloj ? class extends Date { static now() { return reloj.t; } } : Date;
   const ctx = {
     console, setTimeout, clearTimeout, AbortController,
-    Promise, JSON, Date, Math, String, Number, Object, Array, Error, RegExp, Boolean,
-    _sleep: () => new Promise((r) => setTimeout(r, 0)),
+    Promise, JSON, Date: RelojDate, Math, String, Number, Object, Array, Error, RegExp, Boolean,
+    ...(opts.navigator ? { navigator: opts.navigator } : {}),
+    _sleep: (ms) => { sleeps.push(ms); return new Promise((r) => setTimeout(r, 0)); },
     gasUrl: () => 'https://script.google.com/macros/s/AAA/exec',
     isValidGasUrl: () => true,
     gcfg: (_k, d) => d,
@@ -73,6 +79,8 @@ function sandbox(code, net, opts = {}) {
       const step = net.shift();
       if (!step) throw new Error('guion de red agotado: ' + url);
       calls.push(url);
+      if (step.tarda && reloj) reloj.t += step.tarda;
+      if (step.red) throw new TypeError('Failed to fetch');
       if (step.abort) {
         const e = new Error('aborted'); e.name = 'AbortError';
         return await new Promise((_res, rej) => setTimeout(() => rej(e), 0));
@@ -85,12 +93,12 @@ function sandbox(code, net, opts = {}) {
   new Script(code + `
     ;globalThis.__api = {
       _reproFetchSheet, _reproEnsureMatrix, _reproLoadSheets, _reproMatrixIndex, _reproReadRows,
-      _REPRO_SHEETS, _REPRO_MATRIZ_COLS,
+      _REPRO_SHEETS, _REPRO_MATRIZ_COLS, _reproMatrixBannerHTML,
       origen: _reproMatrixOrigen,
       get state(){ return _reproSheetsState; },
       get err(){ return _reproSheetsErr; },
     };`).runInContext(ctx);
-  return { api: ctx.__api, ctx, store, calls };
+  return { api: ctx.__api, ctx, store, calls, sleeps };
 }
 
 const caido = () => [{ ok: false, status: 404, body: HTML_404 }, { ok: false, status: 404, body: HTML_404 }];
@@ -276,5 +284,97 @@ describe('registros · lector del reproductivo · auditoría', () => {
     await api._reproLoadSheets();                                      // SIN force
     expect(api._reproReadRows('Maduración Bitácora')).toHaveLength(1); // reintentó
     expect(api.err).toBe('');
+  });
+});
+
+/* 🔴 1c (2026-09-22) · UN CORTE DE CONEXIÓN SE REINTENTA MÁS, Y SIN RED NO SE CULPA A GOOGLE. Lo reportó el usuario: la
+   Consulta se quedaba en «Google no respondió: MATRIZ (Failed to fetch) · Bitácora (Failed to fetch) · Transferencias
+   (Failed to fetch)». Decisiones del usuario: un corte, hasta 4 intentos con esperas de 1,5 · 3 · 6 s y un tope de 30 s;
+   lo demás, 2 como antes; y sin red, «sin conexión a internet». */
+describe('registros · lector del reproductivo · 1c · cortes de conexión y sin red', () => {
+  const corte = { red: true };
+  const sinRed = { onLine: false };
+
+  it('🔴 un corte («Failed to fetch») se reintenta hasta 4 veces, con esperas de 1,5 · 3 · 6 s', async () => {
+    const { api, calls, sleeps } = sandbox(code, [corte, corte, corte, { body: okBody(3) }]);
+    await expect(api._reproFetchSheet('M', null)).resolves.toHaveLength(3);
+    expect(calls).toHaveLength(4);
+    expect(sleeps).toEqual([1500, 3000, 6000]);
+  });
+
+  it('tras 4 cortes se rinde con el motivo del corte, y no pide un quinto', async () => {
+    // Guion holgado a propósito: con cuatro pasos justos, un quinto intento fallaría por agotamiento y parecería la regla.
+    const { api, calls } = sandbox(code, [corte, corte, corte, corte, { body: okBody(1) }]);
+    await expect(api._reproFetchSheet('M', null)).rejects.toThrow(/Failed to fetch/);
+    expect(calls).toHaveLength(4);
+  });
+
+  it('lo que no es un corte sigue con 2 intentos: un timeout ya esperó 30 s en cada uno', async () => {
+    const casos = [
+      ['timeout', [{ abort: true }, { abort: true }, { body: okBody(1) }], /no respondió/],
+      ['HTTP 404', [...caido(), { body: okBody(1) }], /HTTP 404/],
+    ];
+    for (const [caso, net, motivo] of casos) {
+      const { api, calls, sleeps } = sandbox(code, net);
+      await expect(api._reproFetchSheet('M', null), caso).rejects.toThrow(motivo);
+      expect(calls, caso).toHaveLength(2);
+      expect(sleeps, caso).toEqual([1500]);
+    }
+  });
+
+  it('🔴 con tope: pasados 30 s leyendo no se empieza otro intento (y por debajo, sí)', async () => {
+    const lento = sandbox(code, [{ red: true, tarda: 20000 }, { red: true, tarda: 15000 }, { body: okBody(1) }], { reloj: { t: 1e12 } });
+    await expect(lento.api._reproFetchSheet('M', null)).rejects.toThrow(/Failed to fetch/);
+    expect(lento.calls).toHaveLength(2);                      // 35 s leyendo: el tercero ya no sale
+    // el fixture ejerce algo: los mismos cortes, más rápidos, sí llegan al tercer intento
+    const rapido = sandbox(code, [{ red: true, tarda: 5000 }, { red: true, tarda: 5000 }, { body: okBody(1) }], { reloj: { t: 1e12 } });
+    await expect(rapido.api._reproFetchSheet('M', null)).resolves.toHaveLength(1);
+    expect(rapido.calls).toHaveLength(3);
+  });
+
+  it('🔴 sin red no se reintenta, y el motivo es «sin conexión a internet», no Google', async () => {
+    const { api, calls, sleeps } = sandbox(code, [corte, { body: okBody(1) }], { navigator: sinRed });
+    await expect(api._reproFetchSheet('M', null)).rejects.toThrow('sin conexión a internet');
+    expect(calls).toHaveLength(1);
+    expect(sleeps).toEqual([]);
+  });
+
+  it('sin red la lectura se INTENTA igual: `navigator.onLine` sólo decide no reintentar', async () => {
+    const { api, calls } = sandbox(code, [{ body: okBody(2) }], { navigator: sinRed });
+    await expect(api._reproFetchSheet('M', null)).resolves.toHaveLength(2);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('sin red, la Consulta no reintenta ninguna de sus tres hojas', async () => {
+    const { api, calls, sleeps } = sandbox(code, [corte, corte, corte, { body: okBody(1) }], { navigator: sinRed });
+    await api._reproLoadSheets();
+    expect(calls).toHaveLength(3);
+    expect(sleeps).toEqual([]);
+    expect(api.err).toContain('sin conexión a internet');
+  });
+
+  it('🔴 el aviso de la copia local dice «sin conexión a internet» sin red, y «Google no respondió» con ella', async () => {
+    const copia = { localStorage: { 'larv4_mad_matriz': cacheCon(3600e3) } };
+    const off = sandbox(code, [corte], { ...copia, navigator: sinRed });
+    await off.api._reproEnsureMatrix();
+    expect(off.api.origen()).toBe('cache');
+    expect(off.api._reproMatrixBannerHTML()).toContain('(sin conexión a internet)');
+    expect(off.api._reproMatrixBannerHTML()).not.toContain('Google');
+    const on = sandbox(code, [corte, corte, corte, corte], copia);   // con red, el que no contesta es Google
+    await on.api._reproEnsureMatrix();
+    expect(on.api.origen()).toBe('cache');
+    expect(on.api._reproMatrixBannerHTML()).toContain('(Google no respondió: Failed to fetch)');
+  });
+
+  it('🔴 sin red y sin copia, el aviso lo dice y no culpa al servidor de Google (con red, sí)', async () => {
+    const off = sandbox(code, [corte], { navigator: sinRed });
+    await off.api._reproEnsureMatrix();
+    expect(off.api.state).toBe('error');
+    expect(off.api._reproMatrixBannerHTML()).toContain('sin conexión a internet');
+    expect(off.api._reproMatrixBannerHTML()).toContain('Comprueba la conexión del dispositivo');
+    expect(off.api._reproMatrixBannerHTML()).not.toContain('servidor de Google');
+    const on = sandbox(code, [corte, corte, corte, corte]);
+    await on.api._reproEnsureMatrix();
+    expect(on.api._reproMatrixBannerHTML()).toContain('servidor de Google');
   });
 });
