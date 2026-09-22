@@ -22,6 +22,7 @@ import { MAD_OP_HOJAS, MAD_OP_ORIGEN } from './operativo.fuentes.js';
 import * as T from './operativo.tablero.js';
 import * as BA from './operativo.bajas.js';
 import * as RV from './operativo.revisiones.js';
+import * as MA from './operativo.manejo.js';
 import { construirLibro } from '../registros/lib/mad-libro.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 
@@ -203,9 +204,9 @@ describe('Maduración · operativo · filtros', () => {
    La segunda mitad importa tanto como la primera: sin ella, un catálogo que declarara dimensiones de
    adorno pasaría igual.
 
-   ⚠ NO TODAS SE PUEDEN PROBAR ASÍ, y se dice cuáles y por qué en vez de fingir cobertura. Cinco hojas
-   no tienen un consumidor que reciba el filtro: sus filas alimentan el LIBRO, y el filtrado ocurre
-   después sobre las posiciones que el libro produce. La guarda de abajo exige que cada hoja del
+   ⚠ NO TODAS SE PUEDEN PROBAR ASÍ, y se dice cuáles y por qué en vez de fingir cobertura. Las de
+   SIN_SONDA no tienen un consumidor que reciba el filtro: sus filas alimentan el LIBRO, y el filtrado
+   ocurre después sobre las posiciones que el libro produce. La guarda de abajo exige que cada hoja del
    catálogo esté en UNO de los dos grupos: una hoja nueva que no entre en ninguno pone esto rojo, que
    es cuando hay que decidir en cuál va — y no meses después.
    ══════════════════════════════════════════════════════════════════════════════════════════════ */
@@ -235,6 +236,18 @@ const FIXTURE = () => ({
     TQ('2026-09-10', 'Sala 1', 1, { Hora: '06:00', 'Machos muertos': 2, 'Hembras muertas': 1 }),
     TQ('2026-09-11', 'Sala 2', 4, { Hora: '18:00', 'Machos muertos': 3, 'Hembras muertas': 0 }),
   ],
+  movimientos: [
+    { Fecha: '2026-09-10', 'Sala origen': 'Sala 1', 'Tanque origen': 1, 'Sala destino': 'Sala 1', 'Tanque destino': 2, Machos: 5, Hembras: 5 },
+    { Fecha: '2026-09-11', 'Sala origen': 'Sala 2', 'Tanque origen': 4, 'Sala destino': 'Sala 2', 'Tanque destino': 5, Machos: 3, Hembras: 3 },
+  ],
+  alimentacion: [
+    { Fecha: '2026-09-10', Sala: 'Sala 1', Tanque: 1, Lotes: 'L1', 'Biomasa total (kg)': 10, 'Calamar (kg/día)': 0.5 },
+    { Fecha: '2026-09-11', Sala: 'Sala 2', Tanque: 4, Lotes: 'L2', 'Biomasa total (kg)': 20, 'Calamar (kg/día)': 1 },
+  ],
+  tratamientos: [
+    { Fecha: '2026-09-10', Sala: 'Sala 1', Lotes: 'L1', Tipo: 'Preventivo', Productos: 'PA' },
+    { Fecha: '2026-09-11', Sala: 'Sala 2', Lotes: 'L2', Tipo: 'Preventivo', Productos: 'PB' },
+  ],
 });
 
 /* Hojas con un consumidor que RECIBE el filtro. La firma no es uniforme a propósito —cada una nació
@@ -244,15 +257,17 @@ const SONDAS = {
   mortDesove: (f, F) => RV.mortalidadEnDesove(f, F, P),
   cierres: (f, F) => BA.motivosDeCierre(f, P, F),
   tanques: (f, F) => BA.bajasPorHora(f, P, F),
+  /* F5 (🔄 Manejo) les dio consumidor a las tres. Hasta el 2026-09-21 seguían abajo, en SIN_SONDA, con un motivo
+     que ya era falso («ninguna función las filtra por sí sola»): el catálogo acertaba, pero nadie lo comprobaba. */
+  movimientos: (f, F) => MA.matrizDeMovimientos(f, P, F),
+  alimentacion: (f, F) => MA.alimentacionPorProducto(f, P, F),
+  tratamientos: (f, F) => MA.calendarioDeTratamientos(f, P, F),
 };
 
 /* Hojas SIN consumidor filtrable, con el motivo. No es una excusa: es lo que hay que cambiar el día
    que alguien les dé uno. */
 const SIN_SONDA = {
   ingresos: 'sus filas alimentan el LIBRO; el filtro actúa después, sobre las posiciones',
-  movimientos: 'ídem: el libro las consume y ninguna función las filtra por sí sola',
-  tratamientos: '`diasDesdeDesinfeccion(filasTrat, salas, hoy)` no recibe filtro',
-  alimentacion: '`alimentoPorMillonN5(filasAlim, filasDesoves, desde, hasta)` no recibe filtro',
   broodstock: '`desempenoPorOrigen(fuentes, posiciones, dimension)` agrupa, no filtra',
   sala: 'la filtra `tarjetasDeSalas(M, F)`, que necesita el modelo entero, no sus filas',
 };
@@ -320,13 +335,16 @@ it('las discrepancias declaradas nombran una hoja y una dimensión que existen',
   }
 });
 
-  it('el fixture ejerce algo: sin filtro las cuatro sondas devuelven datos', () => {
+  it('el fixture ejerce algo: sin filtro las sondas devuelven datos', () => {
     // Comparar dos resultados VACÍOS es igual a comparar dos llenos, y pasaría siempre.
     const f = FIXTURE();
     expect(T.kpiReproduccion(f.desoves, P, FIL()).desoves).toBeGreaterThan(0);
     expect(RV.mortalidadEnDesove(f, FIL(), P).entran).toBeGreaterThan(0);
     expect(BA.motivosDeCierre(f, P, FIL()).filas.length).toBeGreaterThan(0);
     expect(BA.bajasPorHora(f, P, FIL()).horas.length).toBeGreaterThan(0);
+    expect(MA.matrizDeMovimientos(f, P, FIL()).total).toBeGreaterThan(0);
+    expect(MA.alimentacionPorProducto(f, P, FIL()).filas).toBeGreaterThan(0);
+    expect(MA.calendarioDeTratamientos(f, P, FIL()).total).toBeGreaterThan(0);
   });
 });
 
