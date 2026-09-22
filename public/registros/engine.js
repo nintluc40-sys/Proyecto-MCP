@@ -11650,7 +11650,9 @@ function _reproAltaHTML(){
   return ''
     + '<h3 style="margin:6px 0 2px;font-size:15px">➕ Alta masiva de individuos</h3>'
     + '<p style="margin:0 0 10px;font-size:12px;color:#64748b">Pega desde Excel en la grilla (copiar-pegar tipo hoja). Cada fila es una hembra nueva; se crean con Estado=Vivo y ubicación actual = la de ingreso. Todas comparten la fecha de ingreso de abajo.</p>'
-    + '<p style="margin:0 0 10px;font-size:12px;color:#64748b">♻ El microchip de una hembra <b>muerta</b> se puede volver a usar: la nueva entra con sus propios datos (lote, piscina, código…) y la anterior queda como estaba. Su fecha de ingreso tiene que ser <b>posterior</b> a la muerte de la anterior.</p>'
+    /* 1b (2026-09-22) · aquí había un «♻ El microchip de una hembra muerta se puede volver a usar… Su fecha de ingreso
+       tiene que ser posterior a la muerte de la anterior». Sus dos reglas se retiraron el 09-16 (la identidad es la
+       cuaterna), y el usuario lo quitó: reutilizar un chip es lo normal, y el único rechazo ya lo explica el informe. */
     + '<div id="repro-matrix-banner">' + _reproMatrixBannerHTML() + '</div>'
     + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px"><label style="'+_RLBL+'">📅 Fecha de ingreso<input type="date" id="repro-a-fecha" value="'+escapeHtml(todayStr)+'" style="'+_RINP+'"></label></div>'
     + '<div style="overflow:auto;max-height:360px;border:1px solid #e2e8f0;border-radius:8px"><table id="repro-a-grid" style="border-collapse:collapse"><thead><tr>'+th+'</tr></thead><tbody id="repro-a-tbody">'+rows+'</tbody></table></div>'
@@ -12217,14 +12219,12 @@ function _reproAltaCollect(fecha){
 async function madReproAltaBatch(){
   const fEl=document.getElementById("repro-a-fecha"); const fecha=fEl?fEl.value:"";
   if(!isValidDate(fecha)){ toast("Fecha de ingreso inválida.","err",3500); return; }
-  // Mejor esfuerzo: la MATRIZ aquí avisa de altas YA existentes y reconoce un microchip RECICLADO
-  // (su hembra murió); si no se puede leer NO se bloquea el alta (buildAltaBatch acepta índice
-  // nulo) y quien decide es el GAS al escribir.
+  // Mejor esfuerzo: la MATRIZ aquí avisa de altas YA existentes (la misma cuaterna) y de un chip que ya
+  // lleva una hembra VIVA; si no se puede leer NO se bloquea el alta (buildAltaBatch acepta índice
+  // nulo) y quien decide es el GAS al escribir. (Un chip reutilizado con otra cuaterna es lo normal: no se avisa.)
   if(!_reproMatrixIndex()) await _reproEnsureMatrix();
   _reproPaintMatrixBanner();
   const forms=_reproAltaCollect(fecha), mIdx=_reproMatrixIndex();
-  // ♻ Primero como si el GAS supiera reciclar: sólo si sale algún chip reciclado se le pregunta, y si
-  // no lo confirma se rehace el lote sin ellos.
   const res=window.__rgLib.buildAltaBatch(forms, mIdx);
   if(!res.payload){
     _madReproShowAltaReport(res.report, false);
@@ -12255,7 +12255,9 @@ function _madReproShowAltaReport(rep, okSent){
   h+=chip(rep.created.length+" registrado(s)", "#dcfce7", "#166534");
   if(rep.duplicados && rep.duplicados.length) h+=chip(rep.duplicados.length+" duplicado(s) en el lote", "#fef9c3", "#854d0e");
   if(rep.existentes && rep.existentes.length) h+=chip(rep.existentes.length+" ya existente(s)", "#fef9c3", "#854d0e");
-  if(rep.reciclados && rep.reciclados.length) h+=chip("♻ "+rep.reciclados.length+" con Trovan ya usado", "#e0f2fe", "#075985");
+  /* 1b (2026-09-22) · AQUÍ HABÍA UN «♻ N con Trovan ya usado», y el usuario lo retiró: reutilizar el chip de otro
+     individuo, con otra piscina, código o lote, es el proceso NORMAL, y avisarlo en cada alta era ruido. El módulo sigue
+     contándolo (`reciclados`); sólo deja de enseñarse. Lo que se queda es lo de abajo, que NO es normal. */
   // R5 (2026-09-18) · el chip ya lo lleva una hembra VIVA: entra, pero desde ahora cada evento de ese chip pedirá elegir.
   if(rep.recicladosVivos && rep.recicladosVivos.length) h+=chip("⚠ "+rep.recicladosVivos.length+" con el chip de una hembra VIVA", "#fef9c3", "#854d0e");
   if(rep.invalidFormat && rep.invalidFormat.length) h+=chip(rep.invalidFormat.length+" con formato inválido (señalados)", "#ffedd5", "#9a3412");
@@ -12264,7 +12266,6 @@ function _madReproShowAltaReport(rep, okSent){
   const lists=[];
   if(rep.duplicados && rep.duplicados.length) lists.push(["Duplicados en el lote", rep.duplicados]);
   if(rep.existentes && rep.existentes.length) lists.push(["Ya existentes en la matriz (mismo Trovan, piscina, código genético y lote)", rep.existentes]);
-  if(rep.reciclados && rep.reciclados.length) lists.push(["Trovan ya usado por otro individuo (entra igual: cambia la piscina, el código o el lote)", rep.reciclados]);
   if(rep.recicladosVivos && rep.recicladosVivos.length) lists.push(["Ese microchip lo lleva también una hembra VIVA: entra igual, pero desde ahora cada desove, mortalidad o traslado de ese chip te pedirá elegir de cuál es", rep.recicladosVivos]);
   if(rep.invalidFormat && rep.invalidFormat.length) lists.push(["Formato inválido (no registrados — revisa el código en el lector)", rep.invalidFormat]);
   lists.forEach(function(pair){ h+='<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });

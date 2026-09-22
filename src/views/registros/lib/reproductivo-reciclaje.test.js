@@ -175,15 +175,25 @@ describe('alta masiva · el mismo Trovan entra tantas veces como cuaternas disti
     expect(trovanes()).toEqual([CHIP]);
   });
 
-  it('el informe avisa de que ese Trovan ya lo usa otro individuo (informativo, no un freno)', async () => {
+  /* 1b (2026-09-22) · ESTA PRUEBA EXIGÍA LO CONTRARIO —que el informe avisara «♻ con Trovan ya usado»— y el usuario
+     retiró ese aviso: reutilizar el chip con otra piscina, código o lote es el proceso normal. El fixture es justo ese
+     caso (el chip era de VIEJA, que murió), así que si el aviso vuelve, por el chip del resumen o por el renglón de
+     detalle, esto se pone rojo. «1 registrado» es el control: sin él, un informe que no se pintara pasaría el `not`. */
+  it('el informe ya NO avisa del Trovan reutilizado con otra cuaterna (1b: es lo normal), y el alta sale', async () => {
     teclearAlta('2026-07-20', [[CHIP, 'P4', 'G09', 'L33', 'S2', 'T8']]);
     await H.madReproAltaBatch();
     expect(envios).toHaveLength(1);
-    /* Dos aserciones y no una: el chip de arriba y el renglón de detalle dicen los dos «ya usado»,
-       así que con un solo `toContain` se podía apagar cualquiera de los dos y la prueba seguía en
-       verde — lo destapó el banco, con E07 y E10 sobreviviendo. */
-    expect(informeAlta()).toContain('con Trovan ya usado');                  // el chip del resumen
-    expect(informeAlta()).toContain('Trovan ya usado por otro individuo');   // el renglón de detalle
+    expect(informeAlta()).toContain('1 registrado');
+    expect(informeAlta()).not.toContain('ya usado');   // ni el chip del resumen ni el renglón de detalle
+    expect(informeAlta()).not.toContain('♻');
+  });
+
+  it('1b · el formulario ya no enseña la regla vieja del chip reciclado («muerta», «posterior a la muerte»)', () => {
+    const html = H._reproAltaHTML();
+    expect(html).toContain('Alta masiva de individuos');   // control: el formulario se pinta
+    expect(html).not.toContain('se puede volver a usar');
+    expect(html).not.toContain('a la muerte de la anterior');
+    expect(html).not.toContain('♻');
   });
 
   it('🔴 a la MATRIZ se le piden las columnas de la IDENTIDAD, o la mortalidad rompería su fila', () => {
