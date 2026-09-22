@@ -500,7 +500,16 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
   columnas de fecha** (cuestan 10×), el desempate caería en «la de más abajo en la hoja». Así que el
   evento y el TRASLADO se rechazan y el informe ofrece las dos, por su cuaterna, para registrar con la
   elegida (el traslado conserva su TR-ID). El alta ya avisa cuando el chip lo lleva una viva. Medido en
-  producción el 2026-09-17: 1665 filas, 1665 chips, ninguno con más de una.
+  producción el 2026-09-17: 1665 filas, 1665 chips, ninguno con más de una. (El 2026-09-22 ya eran 67 chips
+  con dos hembras: los del lote del 29-08.)
+- 🔴 **Un chip reciclado es de la hembra que lo llevaba ESE día: la de ingreso más reciente, pero no antes
+  de que muera la anterior.** La fecha de ingreso es la del LOTE, no la del chip: el lote del 29-08 recibió
+  chips de hembras que murieron del 06 al 10-09. Un evento o traslado con fecha igual o anterior a esa
+  muerte es «de una hembra anterior»: no se envía y no toca a la nueva. Sin fechas (la lectura de
+  `index (8)` no las pide) no se puede comprobar: el evento va a la vigente con aviso, y la Consulta no
+  parte el chip en hembras.
+- **Ninguna fecha posterior a hoy** en el alta, el evento ni el traslado (2026-09-22: un alta grabada con
+  29-09 en vez de 29-08 dejó a 67 hembras sin poder registrar nada en el MCP).
 
 ### Cuarentena
 
@@ -612,9 +621,14 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
 4. **`Maduración Transferencias` sigue sin estrenar**: la ficha está escrita y probada; la hoja nace
    con el primer traslado, y hasta entonces el panel se dibuja vacío, que es lo correcto.
 5. **Microbiología · Patología en fresco** espera a que los usuarios estrenen su hoja.
-6. **Paridad · las funciones que sólo se comparan por NOMBRE** entre `engine.js` e `index (8)`
-   (el repo delega en `__rgLib`, el gemelo las lleva en línea). Es el único hueco de la paridad; su
-   número lo dice `verificar-3copias-v3` al correr («delegación __rgLib»).
+6. **Paridad · las funciones que sólo se comparan por NOMBRE** entre `engine.js` e `index (8)`. Desde el
+   2026-09-22, `verificar-3copias-v3` saca las funciones con un parser y compara las que delegan en `__rgLib`
+   TRADUCIENDO la llamada (`window.__rgLib.x` ↔ `_reproX`): tienen que salir iguales. Sólo quedan por nombre
+   las de su lista cerrada `SOLO_POR_NOMBRE` —las siete fichas (su maquetación es P10), utilidades de una
+   línea de `src/core` y la lectura del store—; cuántas son lo dice él al correr («sólo por nombre»).
+   (Hasta ese día toda función que delegara pasaba sin mirarla, y así divergió la Consulta del reproductivo.)
+   Las contrapartes EN LÍNEA de la librería del reproductivo no las compara él: las ejecuta
+   `paridad-repro-reciclaje`, sobre los mismos casos que el módulo.
 7. **El tablero de Maduración: F1 a F6 hechas.** Están sus sub-vistas —de 📊 Estado actual a 🩺 Calidad
    del dato; la lista viva es `SUBS`—, con los filtros, el período «ciclo del lote», las etiquetas de
    filtros activos y el KPI de biomasa, y el Broodstock dentro de 🧬 Lotes. Queda **F7 (Reportería)**,

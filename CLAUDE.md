@@ -56,9 +56,11 @@ migración del monolito `sistema F.html`. Este documento es la **fuente de está
      estándar. `engine.js` no es un módulo ES y no puede importarlos; `window` es el único
      canal que tienen en común. Se asigna una vez, es de sólo lectura para el monolito, y su
      retirada va atada a la del propio `engine.js`.
-   ⚠ **No es decorativa: la vigila una herramienta.** `verificar-3copias-v3.mjs` cuenta las
-   funciones que delegan a través de este puente y exige que las tres copias coincidan.
-   Romperlo deja las fichas sin render, no da error de compilación y la suite no lo ve.
+   ⚠ **No es decorativa: la vigila una herramienta.** `verificar-3copias-v3.mjs` (utillaje) compara
+   el motor con `index (8)` función a función, y las que delegan a través de este puente las compara
+   traduciendo la llamada a su contraparte en línea; sólo las de una lista cerrada (las fichas y
+   utilidades de `src/core`) se comparan por nombre. Romperlo deja las fichas sin render, no da
+   error de compilación y la suite no lo ve.
 
    **Criterio para lo nuevo:** que un módulo ES exponga algo en `window` sólo se acepta para
    hablar con código que **no puede importar** (hoy, únicamente el monolito heredado). Todo lo
