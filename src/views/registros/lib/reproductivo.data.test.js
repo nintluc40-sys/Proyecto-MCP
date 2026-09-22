@@ -345,8 +345,12 @@ const VIEJA = { 'Número': '7', 'Trovan ID': CHIP, 'Color anillo': 'Rojo', 'Pisc
 const NUEVA = { 'Número': '31', 'Trovan ID': CHIP, 'Color anillo': 'Azul', 'Piscina': 'P9', 'Código genético': 'G07', 'Lote': 'L20',
   'Sala actual': 'S3', 'Tanque actual': 'T4', 'Estado': 'Vivo', 'Fecha muerte': '', 'Fecha ingreso': '2026-08-01' };
 const OTRA_VIVA = { 'Trovan ID': '0007218CCC', 'Sala actual': 'S5', 'Tanque actual': 'T1', 'Estado': 'Vivo', 'Fecha ingreso': '2026-02-01' };
-// La lectura de respaldo del GAS sólo trae 4 columnas: SIN fechas (ver _REPRO_MATRIZ_COLS en engine.js).
-const sinFechas = (o) => ({ 'Trovan ID': o['Trovan ID'], 'Sala actual': o['Sala actual'], 'Tanque actual': o['Tanque actual'], 'Estado': o['Estado'] });
+// La lectura de respaldo del GAS NO trae fechas: pide sólo las 7 columnas de `_REPRO_MATRIZ_COLS` (engine.js).
+// ⚠ 2026-09-22 · aquí ponía «sólo trae 4 columnas», y desde la cuaterna (09-16) trae también piscina, código y lote.
+// Con 4, las dos hembras de un chip tenían la MISMA cuaterna, se fundían en una y el chip no se partía nunca: la rama
+// de la Consulta sin fechas, que daba los desoves de la vigente a la primera hembra («chip·#1»), no la veía nadie.
+const sinFechas = (o) => ({ 'Trovan ID': o['Trovan ID'], 'Piscina': o['Piscina'], 'Código genético': o['Código genético'], 'Lote': o['Lote'],
+  'Sala actual': o['Sala actual'], 'Tanque actual': o['Tanque actual'], 'Estado': o['Estado'] });
 const altaDe = (fecha, extra) => [Object.assign({ trovan: CHIP, numero: '44', lote: 'L33', codigo: 'G09', piscina: 'P4', sala: 'S2', tanque: 'T8', fecha }, extra)];
 
 describe('♻ reciclaje · el índice da la hembra VIGENTE de cada chip', () => {
@@ -694,6 +698,14 @@ describe('♻ reciclaje · Consulta: matriz de desoves y trazabilidad por HEMBRA
   });
   it('sin la MATRIZ sale como siempre: una fila por chip', () => {
     expect(pivotDesoves(BIT).rows.map((r) => [r.trovan, r.total])).toEqual([[CHIP, 3]]);
+  });
+  it('🔴 sin las fechas de ingreso (la lectura del GAS) sale UNA fila con el nombre del chip, no «chip·#1»', () => {
+    // Sin la regla, los tres desoves iban a la primera hembra de la hoja —la muerta—, también el de la vigente.
+    const p = pivotDesoves(BIT, [sinFechas(VIEJA), sinFechas(NUEVA)]);
+    expect(p.rows.map((r) => [r.trovan, r.total])).toEqual([[CHIP, 3]]);
+  });
+  it('con la fecha de UNA sola tampoco se parte: no se sabe si la otra es anterior o posterior', () => {
+    expect(pivotDesoves(BIT, [sinFechas(VIEJA), NUEVA]).rows.map((r) => [r.trovan, r.total])).toEqual([[CHIP, 3]]);
   });
   it('las fechas dd/mm/yyyy del store se ordenan como fechas (antes «01/08» iba delante de «20/06»)', () => {
     const p = pivotDesoves([

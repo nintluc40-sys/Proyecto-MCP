@@ -267,8 +267,15 @@ describe('♻ Consulta · cada hembra de un chip, por separado', () => {
   });
 
   it('sin fechas en la lectura no se puede partir, y lo dice', () => {
-    const sinF = (o) => ({ 'Trovan ID': o['Trovan ID'], 'Sala actual': o['Sala actual'], 'Tanque actual': o['Tanque actual'], 'Estado': o['Estado'] });
+    // Las 7 columnas de `_REPRO_MATRIZ_COLS`, como las pide la lectura del GAS (2026-09-22: aquí iban 4, sin la
+    // cuaterna, y las dos hembras se fundían en una, así que la matriz de desoves no se ejercía sin fechas).
+    const sinF = (o) => ({ 'Trovan ID': o['Trovan ID'], 'Piscina': o['Piscina'], 'Código genético': o['Código genético'], 'Lote': o['Lote'],
+      'Sala actual': o['Sala actual'], 'Tanque actual': o['Tanque actual'], 'Estado': o['Estado'] });
     H.setLecturas({ [S.matriz]: [sinF(VIEJA), sinF(NUEVA)], [S.bitacora]: BIT, [S.transfer]: [] });
+    // 🔴 La matriz de desoves no parte el chip: una fila con su nombre, no la de «chip·#1» (la primera hembra de la hoja).
+    const h = H._reproConsultaHTML();
+    expect(h).toContain('1 hembra(s)');
+    expect(h).not.toContain(CHIP + '·#1');
     const t = trazar(CHIP);
     expect(t).toContain('2026-06-01');
     expect(t).toContain('2026-08-10');

@@ -463,6 +463,11 @@ function nombradorDeHembras(matrixRows) {
     if (filas.length < 2) return;
     const cadena = cadenaDelChip(filas).cadena;
     if (cadena.length < 2) return;
+    /* 2026-09-22 · «y con fechas», que este comentario prometía y el código no hacía: sin la fecha de ingreso de
+       TODAS sus hembras no se sabe de cuál es cada desove, e `individuoEnFecha` se los daba a la primera de la hoja
+       (la fila «chip·#1», una hembra anterior) aunque fueran de la vigente. La lectura del GAS no pide fechas: era
+       lo que enseñaba SIEMPRE la Consulta de index (8). Sin ellas, una fila por chip, como dice la traza. */
+    if (cadena.some((f) => !f.ingreso)) return;
     const ids = idsDeCadena(chip, cadena);
     cadenas.set(chip, cadena.map((f, k) => Object.assign({}, f, { id: ids[k] })));
   });
