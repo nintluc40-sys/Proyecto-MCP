@@ -11999,7 +11999,10 @@ function _reproLoadSheets(force){
   // servía lo incompleto para siempre y no reintentaba nunca.
   if(!force && !_reproSheetsErr && _reproSheets && _reproSheets[_REPRO_SHEETS.bitacora]) return Promise.resolve();
   const done=function(){ _reproLoadPromise=null; };
-  _reproLoadPromise = _reproLoadSheetsRun().then(done, done);
+  /* 🔴 2026-09-22 · la carga queda «en vuelo» ANTES de empezar. `_reproLoadSheetsRun` pinta la Consulta al arrancar, y
+     pintarla llama aquí: con la promesa guardada DESPUÉS, cada repintado lanzaba otra carga —~1 770 lecturas de cada hoja
+     a la vez contra Google, hasta desbordar la pila—. En producción desde el 12-08; muy probablemente el «Failed to fetch». */
+  _reproLoadPromise = Promise.resolve().then(_reproLoadSheetsRun).then(done, done);
   return _reproLoadPromise;
 }
 async function _reproLoadSheetsRun(){

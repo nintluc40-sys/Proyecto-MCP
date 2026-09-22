@@ -34,7 +34,8 @@ const EXPORTAR = ['_REPRO_SHEETS', '_reproAltaHTML', 'madReproAltaBatch', '_repr
   '_REPRO_MATRIZ_COLS',
   '_reproEnsureMatrix',    // RD1 (2026-09-16) · una lectura buena, que es la que deja la copia local
   'madReproRegistrarElegidas',   // R5 (2026-09-18) · con dos vivas elige el usuario
-  '_reproLoadSheets'];           // 1a (2026-09-21) · la carga de la Consulta, para dejarla EN VUELO
+  '_reproLoadSheets',            // 1a (2026-09-21) · la carga de la Consulta, para dejarla EN VUELO
+  'madReproSub'];                // 2026-09-22 · abrir la Consulta como el usuario (la avalancha de lecturas)
 const H = {};
 const avisos = [];
 const envios = [];
@@ -692,6 +693,28 @@ describe('🔴 1a · el chip reciclado va a la hembra NUEVA aunque la copia en u
       expect(aviso('No se pudo confirmar')).toContain('cuando Google responda');
     }, 15000);
   });
+});
+
+/* 🔴 2026-09-22 · ABRIR LA CONSULTA LEE CADA HOJA UNA VEZ. Lo destapó la validación en navegador: la primera apertura en
+   una sesión lanzaba ~1 770 lecturas de CADA hoja a la vez contra Google. La carga pinta la Consulta al empezar, y
+   pintarla pide la carga; como la promesa «en vuelo» se guardaba DESPUÉS de arrancar, cada repintado lanzaba otra carga,
+   hasta desbordar la pila. En producción desde el 12-08: muy probablemente el «Failed to fetch» de 1c. Ninguna prueba lo
+   veía: todas partían con la Bitácora ya leída, que es lo único que cortaba la cadena. */
+describe('🔴 abrir la Consulta por primera vez lee cada hoja UNA vez', () => {
+  it('una lectura por hoja, no una avalancha', async () => {
+    H.setLecturas({});                                          // nada leído: la primera apertura de la sesión
+    lecturaRows = () => ({ ok: true, status: 200, text: async () => JSON.stringify({ ok: true, rows: [] }) });
+    try {
+      H.madReproSub('consulta');
+      await H._reproLoadSheets();                               // la carga en vuelo, la que haya
+      const lecturas = (hoja) => pedidas.filter((u) => u.includes('p=rows') && decodeURIComponent(u).includes(hoja)).length;
+      expect(lecturas('MATRIZ')).toBe(1);
+      expect(lecturas('Bitácora')).toBe(1);
+      expect(lecturas('Transferencias')).toBe(1);
+    } finally {
+      H.madReproSub('eventos');                                 // el resto de pruebas trabaja en Eventos
+    }
+  }, 30000);
 });
 
 /* 📊 2026-09-22 · LA CONSULTA NO TAPA LO QUE SÍ SE LEYÓ. Con la MATRIZ ilegible y sin copia local, pero la Bitácora
