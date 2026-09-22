@@ -633,6 +633,10 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
    ocho desde que entraron `verificar-constantes` y `verificar-index8-git`) y
    **para el push** si divergen. Falla CERRADO: si falta el utillaje o falta `index (8)`, también para y
    lo dice. Salida deliberada: `git push --no-verify`.
+   🔑 Y desde el 2026-09-21 hace una segunda pregunta, porque este repo es PÚBLICO: `verificar-sin-reales.mjs`
+   mira el rango EXACTO que se empuja —las líneas añadidas por cada commit y sus mensajes— y **para el push**
+   si se va a publicar un dato real (textos del Excel de Broodstock, sus variantes o Trovan de la MATRIZ). Lo
+   que ya estaba publicado avisa sin bloquear, y nunca imprime el valor.
    ⚠ El hook vive en `.git/hooks/`, que **no se versiona**: es local a esta máquina, igual que
    `index (8)`. Quien clone el repo en otro sitio no lo tiene — y allí tampoco hay `index (8)` que
    comparar. La lógica sí está versionada, en el utillaje.
