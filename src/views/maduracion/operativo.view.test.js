@@ -1180,7 +1180,7 @@ describe('Maduración · operativo · 🖨 Reportes', () => {
     await montar(PLANTA);
     abrirReportes();
     expect([...root.querySelectorAll('[data-mop-rep]')].map((b) => b.textContent.trim()))
-      .toEqual(['📄 Parte diario', '🗓 Semanal por lote', '🏁 Cierre de lote']);
+      .toEqual(['📄 Parte diario', '🗓 Semanal por lote', '🏁 Cierre de lote', '📈 Broodstock']);
     const dia = root.querySelector('.mop-rep-dia [data-mop-fecha]');
     expect([dia.value, dia.getAttribute('max')]).toEqual(['2026-09-19', '2026-09-19']);
     expect(plano(root.querySelector('.mop-rep-dia'))).toContain('es la foto del tablero');
@@ -1290,6 +1290,24 @@ describe('Maduración · operativo · 🖨 Reportes', () => {
     /* 🔑 Y la CURVA arranca ahí, no en la víspera de la foto: la serie del cierre tiene que llegar al ingreso.
        La cabecera sale del libro y no lo distinguía (lo cazó la mutación V100). */
     expect(doc).toContain('rp-pie-b">11/09 <b>');
+  });
+
+  /* F7.3 · el Broodstock, que lee el PERÍODO del tablero (los otros tres no). */
+  it('📈 el Broodstock: resumen + una página por piscina, y su serie sigue al período del tablero', async () => {
+    await montar(PLANTA_F6);
+    abrirReportes();
+    click(root.querySelector('[data-mop-rep="broodstock"]'));
+    const doc = root.querySelector('.mop-rep-prev').getAttribute('srcdoc');
+    expect(doc).toContain('Maduración · Broodstock');
+    expect(doc).toContain('último corte');
+    expect(doc.match(/class="rp-page"/g).length).toBeGreaterThan(1);   // resumen + al menos una piscina
+    expect(doc).toContain('📈 Las piscinas en el corte del');
+    expect(doc).toContain('⚠ Avisos del Broodstock');
+    /* 🔑 Con «Hoy» la serie se estrecha: el reporte sigue al período de arriba, no lleva uno propio. */
+    click(root.querySelector('[data-mop-periodo="hoy"]'));
+    click(root.querySelector('[data-mop-sub="reportes"]'));
+    const corto = root.querySelector('.mop-rep-prev').getAttribute('srcdoc');
+    expect(corto).toContain('serie 19/09 – 19/09/2026');
   });
 
   it('🔑 lo que se descarga es el reporte ELEGIDO, no siempre el diario', async () => {

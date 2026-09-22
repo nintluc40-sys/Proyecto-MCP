@@ -65,6 +65,7 @@ import {
   REPORTES, parteDiario, parteDiarioDoc, parteDiarioHojas, nombreDelParte, alcanceDelParte,
   semanalPorLote, semanalDoc, semanalHojas, nombreDelSemanal,
   cierreDeLote, cierreDoc, cierreHojas, nombreDelCierre,
+  reporteBroodstock, broodstockDoc, broodstockHojas, nombreDelBroodstock,
 } from './operativo.reportes.js';
 import { printFichaDocs } from '../supervisor/fichaPdf.js';
 import { toast } from '../../ui/toast.js';
@@ -223,7 +224,7 @@ export function operativoView(root) {
   } else if (vOp.sub === 'calidad') {
     h += calidadHTML(M, memo, periodo, F);
   } else if (vOp.sub === 'reportes') {
-    h += reportesHTML(M, memo, fecha, hoy, F);
+    h += reportesHTML(M, memo, fecha, hoy, F, periodo);
   } else {
     h += estadoHTML(M, memo, periodo, F);
   }
@@ -1849,9 +1850,10 @@ const ARMADO = {
   diario: { doc: parteDiarioDoc, hojas: parteDiarioHojas, nombre: nombreDelParte, titulo: 'parte' },
   semanal: { doc: semanalDoc, hojas: semanalHojas, nombre: nombreDelSemanal, titulo: 'semanal' },
   cierre: { doc: cierreDoc, hojas: cierreHojas, nombre: nombreDelCierre, titulo: 'cierre de lote' },
+  broodstock: { doc: broodstockDoc, hojas: broodstockHojas, nombre: nombreDelBroodstock, titulo: 'Broodstock' },
 };
 
-function reportesHTML(M, memo, fecha, hoy, F) {
+function reportesHTML(M, memo, fecha, hoy, F, periodo) {
   const clave = REPORTES.some((r) => r.clave === vOp.rep) ? vOp.rep : REPORTES[0].clave;
   vOp.rep = clave;
   /* La serie va de la VÍSPERA al día: es lo que piden los reportes para poder restar dos cierres. La del tablero
@@ -1863,6 +1865,10 @@ function reportesHTML(M, memo, fecha, hoy, F) {
   if (clave === 'semanal') {
     const p7 = periodoDe('7d', fecha, M.fuentes);
     modelo = semanalPorLote(M, serieDiaria(M.fuentes, sumarDias(p7.desde, -1), p7.hasta), memo.partes, F, {});
+  } else if (clave === 'broodstock') {
+    /* La serie de cada piscina cubre el PERÍODO del tablero (decisión del usuario): es lo que ve
+       📈 Piscinas de origen en pantalla, y para la historia entera basta con poner «Todo» arriba. */
+    modelo = reporteBroodstock(M, F, periodo, {});
   } else if (clave === 'cierre') {
     if (!lotes.includes(vOp.repLote)) vOp.repLote = F.lote && lotes.includes(F.lote) ? F.lote : (lotes[0] || '');
     /* La vida del lote empieza en su ingreso: la serie tiene que llegar hasta ahí, o la curva saldría recortada. */

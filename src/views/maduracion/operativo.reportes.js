@@ -35,6 +35,7 @@ import {
 } from './operativo.tablero.js';
 import { desgloseDeBajas } from './operativo.bajas.js';
 import { tablaDeLotes, fichaDeLote } from './operativo.lotes.js';
+import { tablaDePiscinas, fichaDePiscina } from './operativo.broodstock.js';
 import { totalesDeReproduccion, tablaDeReproduccion } from './operativo.reproduccion.js';
 import { registroDeMovimientos, productosPorArea } from './operativo.manejo.js';
 import { coberturaDePartes, avisosDelLibro } from './operativo.calidad.js';
@@ -49,6 +50,7 @@ export const REPORTES = [
   { clave: 'diario', etiqueta: 'Parte diario', icono: '📄', descripcion: 'Lo que pasó en un día, en una página.' },
   { clave: 'semanal', etiqueta: 'Semanal por lote', icono: '🗓', descripcion: 'Los siete días que terminan en la foto, un lote por página.' },
   { clave: 'cierre', etiqueta: 'Cierre de lote', icono: '🏁', descripcion: 'La vida entera del lote, con la cascada del cuadre.', lote: true },
+  { clave: 'broodstock', etiqueta: 'Broodstock', icono: '📈', descripcion: 'El último corte de las piscinas de origen, y una página por piscina.' },
 ];
 
 /** Filas que cada tabla enseña EN EL PAPEL. El resto se resume en «+ N más»; el Excel las lleva todas. */
@@ -311,6 +313,8 @@ export const REPORTE_CSS = `
   .rp-pie-b { font-size: 7pt; color: #333; margin-top: 1mm; }
   .rp-avisos .rp-tab td:not(:first-child) { text-align: left; }
   .rp-curva { width: 100%; height: 12mm; display: block; margin-bottom: 1mm; }
+  .rp-avisos-l { margin: 0; padding-left: 4mm; font-size: 7.5pt; }
+  .rp-avisos-l li { margin-bottom: .8mm; }
   .rp-cuadre .rp-tab td:first-child { font-weight: 600; }
   .rp-cuadre .rp-tab tr.rp-cuadre-fin td { border-top: .6mm solid #333; font-weight: 800; }
   .rp-foot { border-top: .3mm solid #999; margin-top: 4mm; padding-top: 1.5mm; display: flex; justify-content: space-between; font-size: 7pt; color: #444; }
@@ -479,6 +483,42 @@ export function cierreDeLote(M, serie, lote, opts = {}) {
   };
 }
 
+/* ── F7.3 · EL BROODSTOCK ───────────────────────────────────
+   Decisiones del usuario (2026-09-22): una página de RESUMEN con la tabla del ÚLTIMO corte y los avisos, y luego
+   UNA PÁGINA POR PISCINA con su serie, sus lotes y sus observaciones. La serie cubre el PERÍODO DEL TABLERO —el
+   mismo que ve 📈 Piscinas de origen en pantalla—, y la cabecera lo imprime.
+   🔑 Ni una cifra propia: `tablaDePiscinas` y `fichaDePiscina` son las de la sub-vista. */
+export function reporteBroodstock(M, F, periodo, opts = {}) {
+  const modelo = M || {};
+  const filtro = F || {};
+  const tabla = tablaDePiscinas(modelo, filtro);
+  const p = periodo || periodoDe('todo', txt(modelo.fecha), modelo.fuentes);
+  return {
+    reporte: 'broodstock',
+    dia: txt(modelo.fecha),
+    periodo: p,
+    cabecera: {
+      titulo: 'Maduración · Broodstock',
+      dia: txt(modelo.fecha),
+      diaLargo: (esIso(tabla.corte) ? 'último corte ' + dma(tabla.corte) : 'sin ningún corte registrado')
+        + ' · serie ' + dm(p.desde) + ' – ' + dma(p.hasta),
+      filtrado: hayFiltro(filtro),
+      etiquetas: etiquetasDeFiltro(filtro),
+      generado: txt(opts.ahora),
+    },
+    corte: tabla.corte,
+    previo: tabla.previo,
+    cortes: tabla.cortes,
+    piscinas: tabla.piscinas,
+    ausentes: tabla.ausentes,
+    sinBroodstock: tabla.sinBroodstock,
+    ignora: tabla.ignora,
+    /* Una ficha por piscina del último corte, en su orden. Con el filtro puesto, `tablaDePiscinas` ya deja sólo
+       las que pasan: las páginas salen de ahí y no hay una segunda regla de alcance que pueda discrepar. */
+    fichas: tabla.piscinas.map((x) => fichaDePiscina(modelo, x.piscina, p)).filter(Boolean),
+  };
+}
+
 /* ── F7.2 · LAS PÁGINAS ─────────────────────────────────────── */
 
 function kpisHtml(kpis) {
@@ -493,13 +533,13 @@ function cabeceraHtml(titulo, sub, aviso) {
     </header>`;
 }
 
-function bloqueCurva(curva, titulo) {
+function bloqueCurva(curva, titulo, dec = 0) {
   const e = extremosDeCurva(curva);
   if (e.inicio === '') return `<section class="rp-b"><h3>${esc(titulo)}</h3><div class="rp-vacio">Sin serie para este período.</div></section>`;
   const signo = e.delta > 0 ? '+' : '';
   return `<section class="rp-b"><h3>${esc(titulo)}</h3>${curvaSvg(curva)}
-    <div class="rp-pie-b">${dm(curva[0].fecha)} <b>${nf(e.inicio)}</b> → ${dm(curva[curva.length - 1].fecha)} <b>${nf(e.fin)}</b>
-      · variación <b>${esc(signo + nf(e.delta))}</b> · máximo ${nf(e.max)}</div></section>`;
+    <div class="rp-pie-b">${dm(curva[0].fecha)} <b>${nf(e.inicio, dec)}</b> → ${dm(curva[curva.length - 1].fecha)} <b>${nf(e.fin, dec)}</b>
+      · variación <b>${esc(signo + nf(e.delta, dec))}</b> · máximo ${nf(e.max, dec)}</div></section>`;
 }
 
 /** Una página del semanal: un lote. */
@@ -584,6 +624,78 @@ export function cierreHtml(rep, opts = {}) {
         <table class="rp-tab"><thead><tr>${cabeceras(['Desoves', 'Huevos', 'No viables', 'N2', 'N5', 'Fertilidad'])}</tr></thead>
         <tbody><tr>${celdas([nf(R.desoves), nf(R.huevos), nf(R.noViables), nf(R.n2), nf(R.n5), pc(R.fertilidad)])}</tr></tbody></table>
         <div class="rp-pie-b">Cópulas ${pc(PR.pctCopulas)} · muda ${pc(PR.pctMuda)}${PR.compartido ? ' · repartidos: el lote comparte tanque' : ''}</div></section>`;
+}
+
+/* ── F7.3 · LAS PÁGINAS DEL BROODSTOCK ──────────────────────── */
+
+/** Una sobrevivencia que no puede ser un porcentaje se enseña COMO VINO y marcada, igual que en pantalla. */
+function sobrevHtml(P) {
+  if (P.sobrevivencia === null || P.sobrevivencia === '' || P.sobrevivencia === undefined) return '—';
+  const v = nf(P.sobrevivencia, 1) + ' %';
+  return P.sobrevivenciaDudosa ? `<b>⚠ ${esc(v)}</b>` : esc(v);
+}
+
+/** La página 1: todas las piscinas del último corte, y los avisos. */
+export function broodstockResumenHtml(rep, opts = {}) {
+  const r = rep || {};
+  const tope = opts.tope === undefined ? TOPE_FILAS * 2 : opts.tope;   // la tabla es el cuerpo de la página: cabe más
+  const filas = (r.piscinas || []).map((P) => `<tr>${celdas([
+    `<b>${esc(P.piscina)}</b>`, esc(P.fase || '—') + (P.faseEnCatalogo === false ? ' ⚠' : ''),
+    nf(P.peso, 2), nf(P.incremento, 2), nf(P.crecimiento, 2), sobrevHtml(P), nf(P.densidad, 1), nf(P.edad),
+    (P.lotes || []).length ? esc(P.lotes.join(' · ')) : '<span style="color:#888">—</span>',
+  ])}</tr>`);
+  const avisos = [];
+  if ((r.ausentes || []).length) avisos.push(`Sin carga en este corte, y sí en el anterior (${esc(dma(r.previo))}): <b>${r.ausentes.map((x) => esc(x)).join(' · ')}</b>`);
+  if ((r.sinBroodstock || []).length) avisos.push(`Piscinas del Ingreso que NUNCA aparecen en Broodstock: <b>${r.sinBroodstock.map((x) => esc(x)).join(' · ')}</b>`);
+  const sub = `${nf((r.piscinas || []).length)} piscina(s) en el último corte · ${nf(r.cortes)} corte(s) registrados`;
+  return cabeceraHtml('Maduración · Broodstock', (r.cabecera || {}).diaLargo + ' · ' + sub,
+    (r.cabecera || {}).filtrado ? alcanceDelParte(r.cabecera) : '')
+    + `<section class="rp-b"><h3>📈 Las piscinas en el corte del ${esc(dma(r.corte))}</h3>
+      ${tabla(['Piscina', 'Fase', 'Peso (g)', 'Δ semana', 'Crec. (g/sem)', 'Sobrev.', 'Dens.', 'Edad (d)', 'Lotes que salieron'], filas, tope, 'No hay ninguna carga de Broodstock hasta esta fecha.', 'piscinas')}</section>
+    <section class="rp-b"><h3>⚠ Avisos del Broodstock</h3>${avisos.length
+    ? '<ul class="rp-avisos-l">' + avisos.map((a) => '<li>' + a + '</li>').join('') + '</ul>'
+    : '<div class="rp-vacio">Ninguno: todas las piscinas del corte anterior siguen, y todas las del Ingreso tienen carga.</div>'}</section>`;
+}
+
+/** Una página por piscina: su serie de cortes, los lotes que salieron de ella y sus observaciones. */
+export function broodstockPiscinaHtml(ficha, rep, opts = {}) {
+  const f = ficha || {};
+  const r = rep || {};
+  const tope = opts.tope === undefined ? TOPE_FILAS : opts.tope;
+  const U = f.ultimo || {};
+  const kpis = [
+    ['Peso actual', U.peso === null || U.peso === undefined ? '—' : nf(U.peso, 2) + ' g', U.fechaPeso ? 'pesado el ' + dm(U.fechaPeso) : ''],
+    ['Δ última semana', U.incremento === null || U.incremento === undefined ? '—' : nf(U.incremento, 2) + ' g', 'crec. ' + (U.crecimiento === null || U.crecimiento === undefined ? '—' : nf(U.crecimiento, 2) + ' g/sem')],
+    ['Fase', U.fase || '—', U.faseEnCatalogo === false ? '⚠ fuera del catálogo' : 'edad ' + (U.edad === null || U.edad === undefined ? '—' : nf(U.edad) + ' d')],
+    ['Sobrevivencia', U.sobrevivencia === null || U.sobrevivencia === undefined || U.sobrevivencia === '' ? '—' : nf(U.sobrevivencia, 1) + ' %', U.sobrevivenciaDudosa ? '⚠ no puede ser un porcentaje' : ''],
+    ['Densidad', U.densidad === null || U.densidad === undefined ? '—' : nf(U.densidad, 1), U.area === null || U.area === undefined ? '' : nf(U.area, 2) + ' ha'],
+    ['Sembrada', U.sembrada === null || U.sembrada === undefined ? '—' : nf(U.sembrada), U.fechaSiembra ? 'el ' + dm(U.fechaSiembra) : ''],
+    ['Código', U.codigo || '—', U.camaronera || ''],
+  ];
+  const curva = (f.serie || []).filter((s) => s.peso !== null && s.peso !== '' && s.peso !== undefined)
+    .map((s) => ({ fecha: s.corte, total: s.peso }));
+  const filasSerie = (f.serie || []).slice().reverse().map((s) => `<tr>${celdas([
+    dm(s.corte), esc(s.fase || '—'), nf(s.peso, 2), nf(s.incremento, 2), nf(s.crecimiento, 2),
+    s.sobrevivencia === null || s.sobrevivencia === '' || s.sobrevivencia === undefined ? '—' : nf(s.sobrevivencia, 1) + ' %',
+  ])}</tr>`);
+  const filasLotes = (f.lotes || []).map((l) => `<tr>${celdas([
+    `<b>${esc(l.lote)}</b>`, esc(l.estado || '—'), nf(l.entraron.total), l.vivos === null ? '—' : nf(l.vivos), pc(l.supervivencia),
+    (l.otrasPiscinas || []).length ? esc(l.otrasPiscinas.join(' · ')) : '—',
+  ])}</tr>`);
+  const filasObs = (f.observaciones || []).map((o) => `<tr>${celdas([dm(o.corte), esc(o.texto)])}</tr>`);
+  return cabeceraHtml('Maduración · Broodstock · piscina ' + (f.piscina || '—'),
+    (esIso(U.corte) ? 'último corte ' + dma(U.corte) : 'sin corte') + ' · serie ' + dm((r.periodo || {}).desde) + ' – ' + dma((r.periodo || {}).hasta),
+    (r.cabecera || {}).filtrado ? alcanceDelParte(r.cabecera) : '')
+    + kpisHtml(kpis)
+    + `<div class="rp-cols">${bloqueCurva(curva, '📈 Peso por corte', 2)}
+      <section class="rp-b"><h3>🗓 Cortes del período</h3>
+        ${tabla(['Corte', 'Fase', 'Peso', 'Δ', 'Crec.', 'Sobrev.'], filasSerie, tope, 'Sin cortes en el período elegido.', 'cortes')}</section></div>
+    <div class="rp-cols">
+      <section class="rp-b"><h3>🧬 Lotes que salieron de esta piscina</h3>
+        ${tabla(['Lote', 'Estado', 'Entraron', 'Vivos', 'Superv.', 'También de'], filasLotes, tope, 'Ningún lote del Ingreso nombra a esta piscina.', 'lotes')}</section>
+      <section class="rp-b"><h3>📝 Observaciones</h3>
+        ${tabla(['Corte', 'Observación'], filasObs, tope, 'Sin observaciones en los cortes del período.', 'observaciones')}</section>
+    </div>`;
 }
 
 /* ── EL EXCEL: UNA HOJA POR BLOQUE, CON TODAS LAS FILAS ─────── */
@@ -812,5 +924,72 @@ export function cierreHojas(rep) {
     { nombre: 'Curva', aoa: curva },
     { nombre: 'Eventos', aoa: eventos },
     { nombre: 'Reproducción', aoa: repro },
+  ];
+}
+
+/* ── F7.3 · DOCUMENTO, NOMBRE Y EXCEL DEL BROODSTOCK ────────── */
+
+export function nombreDelBroodstock(rep) {
+  const r = rep || {};
+  return `Broodstock_${esIso(r.corte) ? r.corte : (esIso(r.dia) ? r.dia : 'sin-fecha')}${(r.cabecera || {}).filtrado ? '_filtrado' : ''}`;
+}
+
+/** El documento: el resumen y, detrás, una página por piscina (decisión del usuario). */
+export function broodstockDoc(rep, opts = {}) {
+  const r = rep || {};
+  return documentoDeReporte({
+    fileName: txt(opts.fileName) || nombreDelBroodstock(r),
+    dia: r.dia,
+    paginas: [{ cuerpo: broodstockResumenHtml(r, opts), dia: r.dia }]
+      .concat((r.fichas || []).map((f) => ({ cuerpo: broodstockPiscinaHtml(f, r, opts), dia: r.dia }))),
+    generado: txt((r.cabecera || {}).generado),
+  });
+}
+
+/** El Excel del Broodstock: el corte, las series completas, los lotes por piscina, las observaciones y los avisos. */
+export function broodstockHojas(rep) {
+  const r = rep || {};
+  const contexto = [
+    ['Maduración · Broodstock'],
+    ['Último corte', r.corte || ''],
+    ['Serie', ((r.periodo || {}).desde || '') + ' a ' + ((r.periodo || {}).hasta || '')],
+    ['Alcance', alcanceDelParte(r.cabecera)],
+    ['Generado', txt((r.cabecera || {}).generado)],
+    [],
+  ];
+  const resumen = [
+    ...contexto,
+    ['Piscina', 'Fase', 'Fase en catálogo', 'Peso (g)', 'Δ semana (g)', 'Crecimiento (g/sem)', 'Sobrevivencia %',
+      'Sobrevivencia dudosa', 'Densidad (cam/m²)', 'Edad (días)', 'Área (ha)', 'Cantidad sembrada', 'Peso de siembra (g)',
+      'Pl/g', 'Código genético', 'Camaronera', 'Lotes que salieron'],
+    ...(r.piscinas || []).map((P) => [P.piscina, P.fase, P.faseEnCatalogo ? 'sí' : 'no', P.peso, P.incremento, P.crecimiento,
+      P.sobrevivencia, P.sobrevivenciaDudosa || '', P.densidad, P.edad, P.area, P.sembrada, P.pesoSiembra, P.plg,
+      P.codigo, P.camaronera, (P.lotes || []).join(' · ')]),
+  ];
+  const series = [
+    ['Piscina', 'Corte', 'Fase', 'Peso (g)', 'Δ semana (g)', 'Crecimiento (g/sem)', 'Sobrevivencia %'],
+    ...(r.fichas || []).flatMap((f) => (f.serie || []).map((s) => [f.piscina, s.corte, s.fase, s.peso, s.incremento, s.crecimiento, s.sobrevivencia])),
+  ];
+  const lotes = [
+    ['Piscina', 'Lote', 'Estado', 'Entraron ♂', 'Entraron ♀', 'Entraron', 'Vivos', 'Supervivencia %', 'También de'],
+    ...(r.fichas || []).flatMap((f) => (f.lotes || []).map((l) => [f.piscina, l.lote, l.estado, ent(l.entraron.machos),
+      ent(l.entraron.hembras), ent(l.entraron.total), l.vivos === null ? '' : ent(l.vivos), l.supervivencia,
+      (l.otrasPiscinas || []).join(' · ')])),
+  ];
+  const observaciones = [
+    ['Piscina', 'Corte', 'Observación'],
+    ...(r.fichas || []).flatMap((f) => (f.observaciones || []).map((o) => [f.piscina, o.corte, o.texto])),
+  ];
+  const avisos = [
+    ['Tipo', 'Piscina', 'Detalle'],
+    ...(r.ausentes || []).map((p) => ['Sin carga en el último corte', p, 'estaba en el corte del ' + (r.previo || '')]),
+    ...(r.sinBroodstock || []).map((p) => ['Del Ingreso, sin Broodstock', p, 'ningún corte la nombra']),
+  ];
+  return [
+    { nombre: 'Resumen', aoa: resumen },
+    { nombre: 'Series', aoa: series },
+    { nombre: 'Lotes', aoa: lotes },
+    { nombre: 'Observaciones', aoa: observaciones },
+    { nombre: 'Avisos', aoa: avisos },
   ];
 }

@@ -22,6 +22,7 @@ import {
   codigoDelParte, recortar, fechaLarga, REPORTES, TOPE_FILAS,
   semanalPorLote, semanalPaginaHtml, semanalDoc, semanalHojas, nombreDelSemanal,
   cierreDeLote, cierreHtml, cierreDoc, cierreHojas, nombreDelCierre, curvaSvg, extremosDeCurva,
+  reporteBroodstock, broodstockResumenHtml, broodstockPiscinaHtml, broodstockDoc, broodstockHojas, nombreDelBroodstock,
 } from './operativo.reportes.js';
 import { modeloOperativo, serieDiaria, diasDeTanque } from './operativo.data.js';
 import { normalizarFiltro, periodoDe, kpiReproduccion } from './operativo.tablero.js';
@@ -302,8 +303,8 @@ describe('Maduración · F7 · el Excel lleva UNA HOJA POR BLOQUE y TODAS las fi
 });
 
 describe('Maduración · F7 · la lista de reportes', () => {
-  it('sólo se ofrece lo que existe: hoy el diario, el semanal y el cierre (el de Broodstock es F7.3)', () => {
-    expect(REPORTES.map((r) => r.clave)).toEqual(['diario', 'semanal', 'cierre']);
+  it('sólo se ofrece lo que existe: los cuatro del plan', () => {
+    expect(REPORTES.map((r) => r.clave)).toEqual(['diario', 'semanal', 'cierre', 'broodstock']);
     expect(REPORTES[0]).toMatchObject({ etiqueta: 'Parte diario' });
     /* `lote` marca los que se imprimen de UN lote: la sub-vista tiene que pedirlo. */
     expect(REPORTES.filter((r) => r.lote).map((r) => r.clave)).toEqual(['cierre']);
@@ -485,5 +486,132 @@ describe('Maduración · F7.2 · la curva en el papel', () => {
   it('los extremos dicen inicio, fin, variación y máximo', () => {
     expect(extremosDeCurva([{ total: 10 }, { total: 30 }, { total: 25 }])).toEqual({ inicio: 10, fin: 25, delta: 15, max: 30 });
     expect(extremosDeCurva([])).toEqual({ inicio: '', fin: '', delta: '', max: '' });
+  });
+});
+
+/* ── F7.3 · BROODSTOCK (2026-09-22) ────────────────────────────────────────────────────────────────────────────
+   Qué se exige, con el fixture montado para que la regla equivocada dé OTRO resultado:
+   · el resumen es el ÚLTIMO corte (el del 20), no la suma de todos ni el del filtro;
+   · una página por piscina, en el orden de la tabla, y sólo de las del último corte: la 559 estuvo en el corte
+     anterior y ya no está, así que sale como AVISO, no como página;
+   · la piscina que el Ingreso nombra y Broodstock nunca ha tenido (561) sale como el otro aviso;
+   · la serie de cada piscina cubre el PERÍODO del tablero, no toda su historia;
+   · una sobrevivencia que no puede ser un porcentaje (0,88) se enseña COMO VINO y marcada;
+   · el Excel lleva las series y los lotes COMPLETOS, con la columna Piscina.
+   Datos FICTICIOS. */
+/* ⚠ La hoja de Broodstock NO se fecha con «Fecha», sino con «Fecha de corte» (`COLUMNA_FECHA` de operativo.data):
+   con la columna equivocada, la carga existe pero ningún corte es legible y el reporte sale vacío. */
+const BS = (corte, piscina, o) => ({ _SheetOrigin: O, 'Pl/g': o.plg === undefined ? 12 : o.plg, 'Fecha de corte': corte,
+  Piscina: piscina, 'Fase actual': o.fase || 'Engorde', 'Peso actual (g)': o.peso, 'Incremento última semana (g)': o.inc,
+  'Crecimiento fase actual (g/sem)': o.crec, 'Sobrevivencia estimada (%)': o.sobrev, 'Densidad (cam/m²)': o.dens,
+  'Edad total (días)': o.edad, 'Área (ha)': 5, 'Cantidad sembrada': 100000, 'Código genético': 'CA',
+  Camaronera: 'CX', Observación: o.obs || '' });
+
+const PLANTA_B = [
+  ING('2026-09-10', 'QA', 'Sala 1', 1, 20, 20),
+  ING('2026-09-16', 'QB', 'Sala 2', 4, 5, 5),
+  /* El Ingreso nombra tres piscinas: 555 y 557 tienen carga; la 561, nunca. */
+  { _SheetOrigin: O, 'Camaronera origen': 'CX', Fecha: '2026-09-10', Lote: 'QA', 'Código genético': 'CA',
+    'Piscina Broodstock': '555', Sala: 'Sala 1', Tanque: 1, Machos: 20, Hembras: 20 },
+  { _SheetOrigin: O, 'Camaronera origen': 'CX', Fecha: '2026-09-16', Lote: 'QB', 'Código genético': 'CA',
+    'Piscina Broodstock': '561', Sala: 'Sala 2', Tanque: 4, Machos: 5, Hembras: 5 },
+  /* Un corte SIN peso: se registró sin pesar. Está en la serie, pero no puede ser un punto de la curva. */
+  BS('2026-09-06', '555', { peso: '', inc: '', crec: '', sobrev: 90, dens: 7, edad: 200 }),   // FUERA del período de 7 d
+  BS('2026-09-13', '555', { peso: 10, inc: 0.5, crec: 0.5, sobrev: 91, dens: 7, edad: 207 }),
+  BS('2026-09-13', '557', { peso: 11, inc: 0.6, crec: 0.6, sobrev: 89, dens: 6.8, edad: 210 }),
+  BS('2026-09-13', '559', { peso: 8, inc: 0.3, crec: 0.4, sobrev: 85, dens: 7.2, edad: 190 }),  // desaparece en el corte del 18
+  BS('2026-09-18', '555', { peso: 11.8, inc: 0.8, crec: 0.55, sobrev: 92, dens: 7.1, edad: 214, obs: 'Recambio de agua' }),
+  BS('2026-09-18', '557', { peso: 12.4, inc: 0.7, crec: 0.61, sobrev: 0.88, dens: 6.8, edad: 217 }),   // sobrevivencia DUDOSA
+];
+const MB = modeloOperativo(PLANTA_B, { hoy: HOY, fecha: DIA });
+const PB = periodoDe('30d', DIA, MB.fuentes);
+const bs = reporteBroodstock(MB, SIN, PB, { ahora: '20/09/2026 08:30' });
+const pis = (p) => bs.piscinas.find((x) => x.piscina === p);
+const ficha = (p) => bs.fichas.find((x) => x.piscina === p);
+
+describe('Maduración · F7.3 · el reporte de Broodstock', () => {
+  it('🔑 el resumen es el ÚLTIMO corte, con sus piscinas', () => {
+    expect(bs.corte).toBe('2026-09-18');
+    expect(bs.previo).toBe('2026-09-13');
+    expect(bs.cortes).toBe(3);
+    expect(bs.piscinas.map((p) => p.piscina)).toEqual(['555', '557']);
+    expect(pis('555')).toMatchObject({ peso: 11.8, incremento: 0.8, fase: 'Engorde' });
+  });
+
+  it('🔑 los dos avisos: la piscina que ya no carga y la que el Ingreso nombra sin Broodstock', () => {
+    expect(bs.ausentes).toEqual(['559']);
+    /* PZ1 sale también: el ayudante ING la pone en todas sus filas y Broodstock nunca la nombra. */
+    expect(bs.sinBroodstock).toEqual(['561', 'PZ1']);
+    const html = broodstockResumenHtml(bs);
+    expect(html).toContain('Sin carga en este corte');
+    expect(html).toContain('559');
+    expect(html).toContain('NUNCA aparecen en Broodstock');
+    expect(html).toContain('561');
+  });
+
+  it('🔑 una página por piscina del último corte: la 559 es un aviso, no una página', () => {
+    expect(bs.fichas.map((f) => f.piscina)).toEqual(['555', '557']);
+    const doc = broodstockDoc(bs);
+    expect(doc.match(/class="rp-page"/g)).toHaveLength(3);      // resumen + dos piscinas
+    expect(doc).toContain('Página 1 de 3');
+    expect(doc).toContain('piscina 555');
+    expect(doc).toContain('piscina 557');
+    expect(doc).not.toContain('piscina 559');
+  });
+
+  it('🔑 la serie de cada piscina cubre el PERÍODO del tablero, no toda su historia', () => {
+    expect(PB.desde).toBe('2026-08-21');
+    expect(ficha('555').serie.map((s) => s.corte)).toEqual(['2026-09-06', '2026-09-13', '2026-09-18']);
+    const corto = reporteBroodstock(MB, SIN, periodoDe('7d', DIA, MB.fuentes), {});
+    expect(corto.fichas.find((f) => f.piscina === '555').serie.map((s) => s.corte)).toEqual(['2026-09-13', '2026-09-18']);
+    expect(corto.cabecera.diaLargo).toContain('13/09 – 19/09/2026');
+  });
+
+  it('🔑 una sobrevivencia que no puede ser un porcentaje se enseña como vino y MARCADA', () => {
+    expect(pis('557')).toMatchObject({ sobrevivencia: 0.88, sobrevivenciaDudosa: 'fraccion' });
+    const html = broodstockResumenHtml(bs);
+    expect(html).toContain('⚠ 0,9 %');            // como vino (redondeada a una cifra), no convertida a 88 %
+    expect(broodstockPiscinaHtml(ficha('557'), bs)).toContain('no puede ser un porcentaje');
+  });
+
+  it('la página de una piscina lleva sus KPI, su curva, sus cortes, sus lotes y sus observaciones', () => {
+    const html = broodstockPiscinaHtml(ficha('555'), bs);
+    expect(html).toContain('Maduración · Broodstock · piscina 555');
+    expect(html).toContain('último corte 18/09/2026');
+    expect(html).toContain('<svg class="rp-curva"');
+    for (const t of ['📈 Peso por corte', '🗓 Cortes del período', '🧬 Lotes que salieron de esta piscina', '📝 Observaciones']) expect(html).toContain(t);
+    expect(html).toContain('Recambio de agua');
+    expect(html).toContain('QA');                 // el lote que entró de esta piscina
+    /* 🔑 El corte del 06 se registró SIN peso: está en la tabla de cortes, pero NO es un punto de la curva.
+       Contarlo como cero hundiría la curva por un dato que no existe. */
+    expect(ficha('555').serie).toHaveLength(3);
+    expect(html.match(/[ML][\d.]+,[\d.]+/g)).toHaveLength(2);
+    expect(html).toContain('13/09 <b>10</b> → 18/09 <b>11,8</b>');   // empieza en el primer corte CON peso
+  });
+
+  it('una piscina sin lotes del Ingreso lo dice en vez de enseñar una tabla vacía', () => {
+    expect(broodstockPiscinaHtml(ficha('557'), bs)).toContain('Ningún lote del Ingreso nombra a esta piscina.');
+  });
+
+  it('sin ninguna carga de Broodstock, el reporte lo dice y no revienta', () => {
+    const vacio = reporteBroodstock(modeloOperativo([], { hoy: HOY, fecha: DIA }), SIN, PB, {});
+    expect(vacio.piscinas).toEqual([]);
+    expect(vacio.fichas).toEqual([]);
+    expect(broodstockResumenHtml(vacio)).toContain('No hay ninguna carga de Broodstock');
+    expect(broodstockDoc(vacio).match(/class="rp-page"/g)).toHaveLength(1);
+    expect(nombreDelBroodstock(vacio)).toBe('Broodstock_2026-09-19');
+  });
+
+  it('el Excel del Broodstock: cinco hojas, con la columna Piscina en todas', () => {
+    const hojas = broodstockHojas(bs);
+    expect(hojas.map((h) => h.nombre)).toEqual(['Resumen', 'Series', 'Lotes', 'Observaciones', 'Avisos']);
+    expect(hojas[0].aoa[6][0]).toBe('Piscina');
+    expect(hojas[0].aoa).toHaveLength(9);                       // 6 de contexto + cabecera + 2 piscinas
+    expect(hojas[1].aoa).toHaveLength(1 + 3 + 2);               // 555 con tres cortes, 557 con dos
+    expect(hojas[1].aoa[1].slice(0, 4)).toEqual(['555', '2026-09-06', 'Engorde', null]);
+    expect(hojas[2].aoa.find((r) => r[1] === 'QA').slice(0, 3)).toEqual(['555', 'QA', 'Cuarentena']);
+    expect(hojas[3].aoa[1]).toEqual(['555', '2026-09-18', 'Recambio de agua']);
+    expect(hojas[4].aoa.map((r) => r[1])).toEqual(['Piscina', '559', '561', 'PZ1']);
+    expect(nombreDelBroodstock(bs)).toBe('Broodstock_2026-09-18');
   });
 });

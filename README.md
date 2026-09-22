@@ -647,8 +647,12 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
    los que **cerraron dentro de la semana**— y el **cierre de lote**, que cubre la **vida** del lote
    (`cicloDelLote`: de su ÚLTIMO ingreso a su cierre, o a la foto) con la **cascada del cuadre** y el rótulo
    «EN CURSO» si sigue abierto. Las curvas se dibujan con un SVG en línea (un PDF se imprime en un iframe sin
-   librerías cargadas) y cada página del documento lleva **su propio** código verificador. Queda **F7.3**
-   (Broodstock), con propuesta visual y aprobación antes de codear.
+   librerías cargadas) y cada página del documento lleva **su propio** código verificador.
+   🆕 **F7.3 cierra F7** con el reporte de **Broodstock**: una página de resumen con la tabla del **último corte**
+   y sus dos avisos (la piscina que dejó de cargar y la que el Ingreso nombra sin Broodstock), y **una página por
+   piscina** con su curva de peso, sus cortes, los lotes que salieron de ella y sus observaciones. ⚠ Es el único
+   reporte que sigue el **período del tablero** (los otros tres llevan el suyo), y una **sobrevivencia que no puede
+   ser un porcentaje se imprime como vino y marcada**, igual que en pantalla.
    ⚠ Se desarrolla con fixtures FICTICIOS, y se contrasta con `auditar-tablero-mad-real.mjs` y
    `medir-tablero-mad-real.mjs` (utillaje). 🔑 Desde el 2026-09-20 esas dos **cuentan cuántas
    comprobaciones ejercitaron dato y cuántas salieron verdes EN VACÍO**, y nombran las hojas sin
