@@ -398,6 +398,18 @@ describe('Maduración · F7.2 · el semanal por lote', () => {
     expect(nombreDelSemanal(semanal)).toBe('Semanal_2026-09-13_a_2026-09-19');
   });
 
+  it('🔑 un semanal SIN lotes en el alcance no sale en BLANCO: lo dice en su página', () => {
+    /* Lo cazó la auditoría de robustez del 22-09: con un filtro que no casa con ningún lote, el documento se
+       quedaba sin ninguna página. Una hoja en blanco no se distingue de un fallo de impresión. */
+    const vacio = semanalPorLote(ML, SERIE7, PARTES_L, F({ sala: 'Sala 9' }), {});
+    expect(vacio.paginas).toEqual([]);
+    const doc = semanalDoc(vacio);
+    expect(doc.match(/class="rp-page"/g)).toHaveLength(1);
+    expect(doc).toContain('Ningún lote con animales vivos');
+    expect(doc).toContain('Página 1 de 1');
+    expect(doc).toContain('Maduración · Semanal por lote');
+  });
+
   it('el Excel del semanal lleva la columna Lote en todas sus hojas', () => {
     const hojas = semanalHojas(semanal);
     expect(hojas.map((h) => h.nombre)).toEqual(['Resumen', 'Curva', 'Bajas', 'Eventos']);

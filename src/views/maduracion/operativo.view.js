@@ -1881,11 +1881,11 @@ function reportesHTML(M, memo, fecha, hoy, F, periodo) {
   }
   _reporte = modelo ? { clave, modelo } : null;
   const A = ARMADO[clave];
-  const pastillas = REPORTES.map((r) => `<button class="mc-pill mop-rep-pill ${clave === r.clave ? 'is-on' : ''}" data-mop-rep="${esc(r.clave)}"
+  const pastillas = REPORTES.map((r) => `<button class="mc-pill ${clave === r.clave ? 'is-on' : ''}" data-mop-rep="${esc(r.clave)}"
       title="${esc(r.descripcion || '')}">${r.icono} ${esc(r.etiqueta)}</button>`).join('');
   const selLote = REPORTES.find((r) => r.clave === clave).lote
     ? `<label class="mop-rep-dia">Lote
-        <select class="mop-f-sel" data-mop-rep-lote>${lotes.map((l) => `<option value="${esc(l)}"${l === vOp.repLote ? ' selected' : ''}>${esc(l)}</option>`).join('') || '<option value="">(ninguno)</option>'}</select>
+        <select class="mc-select" data-mop-rep-lote aria-label="Lote del cierre">${lotes.map((l) => `<option value="${esc(l)}"${l === vOp.repLote ? ' selected' : ''}>${esc(l)}</option>`).join('') || '<option value="">(ninguno)</option>'}</select>
         <span class="mc-note">la vida entera del lote, hasta la foto</span></label>` : '';
   const cab = modelo ? modelo.cabecera : { filtrado: false, etiquetas: [] };
   const alcance = alcanceDelParte(cab);
@@ -1893,7 +1893,7 @@ function reportesHTML(M, memo, fecha, hoy, F, periodo) {
   const cuerpo = modelo
     ? `<div class="mop-rep-hoja"><iframe class="mop-rep-prev" title="Vista previa del ${esc(A.titulo)}" srcdoc="${esc(doc)}"></iframe></div>`
     : `<p class="mc-note">${esc(sinLote || 'No hay nada que enseñar.')}</p>`;
-  return `<div class="mc-card mc-card-wide mop-rep">
+  return `<div class="mc-card mc-card-wide">
       <div class="mop-rep-barra">
         <div class="mop-rep-tipos">${pastillas}</div>
         <label class="mop-rep-dia">Día del parte

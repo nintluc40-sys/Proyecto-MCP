@@ -629,10 +629,10 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
    (Hasta ese día toda función que delegara pasaba sin mirarla, y así divergió la Consulta del reproductivo.)
    Las contrapartes EN LÍNEA de la librería del reproductivo no las compara él: las ejecuta
    `paridad-repro-reciclaje`, sobre los mismos casos que el módulo.
-7. **El tablero de Maduración: F1 a F6 hechas, y F7.1 (el parte diario).** Están sus sub-vistas —de
+7. **El tablero de Maduración: COMPLETO (Fase 0 y F1–F7).** Están sus sub-vistas —de
    📊 Estado actual a 🖨 Reportes; la lista viva es `SUBS`—, con los filtros, el período «ciclo del lote»,
    las etiquetas de filtros activos y el KPI de biomasa, y el Broodstock dentro de 🧬 Lotes.
-   🖨 **Reportes** (F7.1, 2026-09-22) trae el **parte diario de UNA página**, en pantalla, en PDF y en Excel
+   🖨 **Reportes** (F7, 2026-09-22) trae los CUATRO del plan. **F7.1**, el **parte diario de UNA página**, en pantalla, en PDF y en Excel
    (`operativo.reportes.js`). 🔑 No calcula cifras propias: llama a las mismas funciones puras del tablero con
    un período de **un día**, para que el papel no pueda contradecir a la pantalla. Reglas cerradas con el
    usuario: el parte es el **día de la foto** y **hereda los filtros**, que se IMPRIMEN en la cabecera

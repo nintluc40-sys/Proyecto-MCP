@@ -794,13 +794,25 @@ export function nombreDelCierre(rep) {
   return `Cierre_lote_${limpioParaArchivo(r.lote)}_${esIso(r.dia) ? r.dia : 'sin-fecha'}`;
 }
 
+/** La página del semanal cuando NINGÚN lote entra en el alcance: un documento no puede salir en blanco. */
+export function semanalVacioHtml(rep) {
+  const r = rep || {};
+  const C = r.cabecera || {};
+  return cabeceraHtml('Maduración · Semanal por lote', txt(C.diaLargo), C.filtrado ? alcanceDelParte(C) : '')
+    + '<div class="rp-vacio">Ningún lote con animales vivos, ni cerrado dentro de la semana, en este alcance.</div>';
+}
+
 /** El documento del semanal: UNA PÁGINA POR LOTE, encadenadas en un solo documento (decisión del usuario). */
 export function semanalDoc(rep, opts = {}) {
   const r = rep || {};
+  const paginas = (r.paginas || []).map((pg) => ({ cuerpo: semanalPaginaHtml(pg, opts), dia: r.dia }));
   return documentoDeReporte({
     fileName: txt(opts.fileName) || nombreDelSemanal(r),
     dia: r.dia,
-    paginas: (r.paginas || []).map((pg) => ({ cuerpo: semanalPaginaHtml(pg, opts), dia: r.dia })),
+    /* 🔑 Sin lotes en el alcance —una sala sin nada, una semana sin lotes— el documento se quedaba SIN NINGUNA
+       PÁGINA: una hoja en blanco, que nadie distingue de un fallo de impresión. Lo cazó la auditoría de robustez
+       del 22-09 (144 de 600 combinaciones). Ahora sale una página que DICE por qué está vacía. */
+    paginas: paginas.length ? paginas : [{ cuerpo: semanalVacioHtml(r), dia: r.dia }],
     generado: txt((r.cabecera || {}).generado),
   });
 }

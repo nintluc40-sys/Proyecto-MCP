@@ -1292,6 +1292,22 @@ describe('Maduración · operativo · 🖨 Reportes', () => {
     expect(doc).toContain('rp-pie-b">11/09 <b>');
   });
 
+  it('🔑 todas las clases propias que pinta el panel están DEFINIDAS en su CSS', async () => {
+    /* La auditoría del 22-09 encontró el selector de lote con `mop-f-sel`, una clase que no existe en ninguna
+       hoja: se pintaba sin estilo y ninguna prueba lo veía. Esto vigila la FAMILIA, no ese caso. */
+    const { readFileSync } = await import('node:fs');
+    /* Las rutas van desde la raíz del repo: vitest corre con ella de cwd, y bajo Vite `import.meta.url` no es file://. */
+    const css = readFileSync('src/views/maduracion/operativo.css', 'utf8') + readFileSync('src/views/maduracion/maduracion.css', 'utf8');
+    await montar(PLANTA);
+    abrirReportes();
+    click(root.querySelector('[data-mop-rep="cierre"]'));        // así aparece también el selector de lote
+    const usadas = new Set();
+    root.querySelectorAll('[class]').forEach((el) => el.classList.forEach((c) => { if (c.startsWith('mop-')) usadas.add(c); }));
+    expect(usadas.size).toBeGreaterThan(4);
+    expect([...usadas].filter((c) => !new RegExp('\\.' + c + '(?![\\w-])').test(css))).toEqual([]);
+    expect(root.querySelector('[data-mop-rep-lote]').className).toBe('mc-select');   // igual que los otros filtros
+  });
+
   /* F7.3 · el Broodstock, que lee el PERÍODO del tablero (los otros tres no). */
   it('📈 el Broodstock: resumen + una página por piscina, y su serie sigue al período del tablero', async () => {
     await montar(PLANTA_F6);
