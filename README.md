@@ -94,8 +94,9 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     activos como etiquetas quitables) y sus sub-vistas (la lista viva es `SUBS`, en `operativo.view.js`):
     **📊 Estado actual** (siete indicadores, mapa de
     planta, alertas, últimos registros y fines de cuarentena), **🏠 Salas** (tarjeta por sala y su detalle),
-    **🧬 Lotes** (tabla maestra, ficha de un lote —origen, CASCADA DEL CUADRE, curva de vivos y reproducción—
-    y comparativa por lote, código genético o piscina), **💀 Bajas** (muerte natural frente a descarte,
+    **🧬 Lotes** (tabla maestra, ficha de un lote —origen, CASCADA DEL CUADRE, curva de vivos y reproducción—,
+    comparativa por lote, código genético o piscina y, debajo, **📈 Piscinas de origen**: el Broodstock del
+    último corte con los lotes que entraron de cada piscina y, al pulsarla, su ficha con el peso por semana), **💀 Bajas** (muerte natural frente a descarte,
     desglose cruzado por sala · tanque · lote, Pareto de motivos de cierre, distribución por hora, calor
     sala × día y lotes cerrados), **🔍 Revisiones del supervisor** (nauplios en sus 4 etapas, alcalinidad por área día y
     noche, mortalidad en desove y recuperación, y frecuencia de observaciones de tanque), **🛢 Tanques** (tabla
@@ -103,7 +104,10 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     observaciones y movimientos), **🥚 Reproducción** (totales, los desoves pendientes de N5 arriba, la tabla
     por lote y a dónde fueron) y **🔄 Manejo** (movimientos en matriz sala → sala con su registro debajo; la
     alimentación PLANIFICADA por producto frente a la agenda estándar, con cada toma juzgada con el rango de
-    la ficha; y los tratamientos: calendario sala × día, productos por área y cobertura preventiva por lote).
+    la ficha; y los tratamientos: calendario sala × día, productos por área y cobertura preventiva por lote)
+    y **🩺 Calidad del dato** (las hojas y su calendario, los partes esperados —uno por tanque ocupado— frente
+    a los registrados, el estado registrado de cada sala frente al propuesto, los avisos del libro y el cruce
+    con 🧬 Microchips, que marca sólo lo que no puede ser y se hace con el libro de HOY).
     ⚠ **Lo que NO se juzga** se enseña tal cual, rotulado «sin criterio»: deformidad, actividad,
     fototropismo y aireación. Sólo llevan veredicto salinidad > 60 ‰, temperatura > 40 °C, hongos
     «Presente» y la alcalinidad — el resto no tiene fuente que lo respalde.
@@ -611,10 +615,10 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
 6. **Paridad · las funciones que sólo se comparan por NOMBRE** entre `engine.js` e `index (8)`
    (el repo delega en `__rgLib`, el gemelo las lleva en línea). Es el único hueco de la paridad; su
    número lo dice `verificar-3copias-v3` al correr («delegación __rgLib»).
-7. **El tablero de Maduración: F1 a F5 hechas.** Están sus sub-vistas —de 📊 Estado actual a 🔄 Manejo;
-   la lista viva es `SUBS`—, con los filtros, el período «ciclo del lote», las etiquetas de filtros
-   activos y el KPI de biomasa. Quedan **F6 (Broodstock + Microchips + Calidad del dato) y F7
-   (Reportería)**, cada una con propuesta visual y aprobación antes de codear.
+7. **El tablero de Maduración: F1 a F6 hechas.** Están sus sub-vistas —de 📊 Estado actual a 🩺 Calidad
+   del dato; la lista viva es `SUBS`—, con los filtros, el período «ciclo del lote», las etiquetas de
+   filtros activos y el KPI de biomasa, y el Broodstock dentro de 🧬 Lotes. Queda **F7 (Reportería)**,
+   con propuesta visual y aprobación antes de codear.
    ⚠ Se desarrolla con fixtures FICTICIOS, y se contrasta con `auditar-tablero-mad-real.mjs` y
    `medir-tablero-mad-real.mjs` (utillaje). 🔑 Desde el 2026-09-20 esas dos **cuentan cuántas
    comprobaciones ejercitaron dato y cuántas salieron verdes EN VACÍO**, y nombran las hojas sin
