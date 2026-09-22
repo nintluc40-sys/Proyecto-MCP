@@ -121,8 +121,10 @@ const DAY_MS = 86400000;
    ⚠ Ese último respaldo es el frágil: sin filas de Transferencias, un evento antiguo
    hereda la posición de HOY, que es errónea para toda hembra que se haya movido. Hoy no
    afecta a nadie —las 1970 filas traen su propio snapshot— pero el modelo cuenta cuántos
-   eventos han tenido que derivarse (`derivedEvents`) para que deje de ser invisible. */
-function resolveEventLocation(trovan, date, byTrovan, movByTrovan) {
+   eventos han tenido que derivarse (`derivedEvents`) para que deje de ser invisible.
+   Se exporta para el cruce del tablero (F6.3, `operativo.cruce.js`): «dónde estaba la hembra ese día» tiene que
+   ser la MISMA regla aquí y allí, o el cruce marcaría como discrepancia lo que esta vista da por bueno. */
+export function resolveEventLocation(trovan, date, byTrovan, movByTrovan) {
   const movs = movByTrovan.get(trovan);
   if (movs && movs.length && date) {
     let loc = null;
