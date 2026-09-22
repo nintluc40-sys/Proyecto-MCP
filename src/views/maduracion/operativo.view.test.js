@@ -256,15 +256,16 @@ const abrirLotes = () => click(root.querySelector('[data-mop-sub="lotes"]'));
 const filaLote = (l) => root.querySelector(`[data-mop-lote="${l}"]`);
 
 describe('Maduración · operativo · 🧬 Lotes', () => {
-  it('la sub-nav trae las SIETE sub-vistas y Lotes abre su tabla maestra, con los cerrados dentro', async () => {
+  it('la sub-nav trae TODAS sus sub-vistas, fijadas aquí una a una, y Lotes abre su tabla maestra, con los cerrados dentro', async () => {
     await montar(PLANTA_L);
     expect([...root.querySelectorAll('[data-mop-sub]')].map((b) => b.textContent.trim()))
       /* D-8 (2026-09-20) · «Revisiones DEL SUPERVISOR», no «Revisiones» a secas: Larvicultura ya
          tiene una vista «🔍 Revisiones», con el mismo icono y otro significado. Que este rótulo esté
          fijado aquí es lo que impide que vuelva a colisionar sin que nadie lo note.
-         F4 (2026-09-21) · entran 🛢 Tanques y 🥚 Reproducción, SEPARADAS por decisión del usuario. */
+         F4 (2026-09-21) · entran 🛢 Tanques y 🥚 Reproducción, SEPARADAS por decisión del usuario.
+         F5 (2026-09-21) · entra 🔄 Manejo, UNA para los tres temas (decisión del usuario). */
       .toEqual(['📊 Estado actual', '🏠 Salas', '🧬 Lotes', '💀 Bajas', '🔍 Revisiones del supervisor',
-        '🛢 Tanques', '🥚 Reproducción']);
+        '🛢 Tanques', '🥚 Reproducción', '🔄 Manejo']);
     abrirLotes();
     expect([...root.querySelectorAll('[data-mop-lote]')].map((t) => t.dataset.mopLote)).toEqual(['QA', 'QB', 'QC', 'QD']);
     // QC se cerró: sigue en la tabla, a cero y rotulado.
@@ -799,5 +800,133 @@ describe('Maduración · operativo · 🥚 Reproducción', () => {
     abrirRepro();
     cambiar(filtro('sala'), 'Sala 1');
     expect(root.textContent).toContain('no puede separarse por sala');
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   F5 · 🔄 MANEJO (2026-09-21)
+   Las CIFRAS las prueban operativo.manejo.test.js y su banco; aquí se exige que lleguen a la pantalla con lo que
+   el usuario decidió —tres bloques; la matriz con animales y (movimientos); el registro entero debajo; la ración
+   rotulada PLANIFICADA y cada toma juzgada con el rango de la ficha—, que cada hoja diga lo que NO puede filtrar
+   con SU motivo, y que lo del Sheet salga escapado.
+   ══════════════════════════════════════════════════════════════════════════════ */
+const ALIMV = (fecha, sala, tanque, lotes, kg, tomas, fuente = 'Biometría') => ({ _SheetOrigin: O, 'Fuente del peso': fuente,
+  Fecha: fecha, Sala: sala, Tanque: tanque, Lotes: lotes, 'Biomasa total (kg)': '100', ...kg, Tomas: tomas });
+const TRATX = (fecha, sala, tipo, area, lotes, productos) => ({ _SheetOrigin: O, 'Productos RAS': '', Fecha: fecha,
+  Sala: sala, Tipo: tipo, 'Área': area, Lotes: lotes, Productos: productos });
+
+/* Sobre la planta de F4 (que ya trae S1·1 → S2·16 el 17/09 y la desinfección de la Sala 1 del 12/09):
+   · un movimiento DENTRO de la Sala 1 (su diagonal) y otro S2 → S4 con observaciones;
+   · dos raciones: el 18/09 con una toma de Krill al 2,5 % (fuera de 0,25–2) y Calamar justo en el 2 % (dentro);
+   · un preventivo a QA el 15/09. QB, QC y QD no reciben ninguno. */
+const PLANTA_F5 = [
+  ...PLANTA_F4,
+  MOV('18/09/2026', 'Sala 1', '1', 'Sala 1', '2', 2, 2),
+  { ...MOV('19/09/2026', 'Sala 2', '16', 'Sala 4', '1', 0, 3), Motivo: 'Anillado', Observaciones: 'Con red nueva' },
+  ALIMV('18/09/2026', 'Sala 1', 1, 'QA', { 'Calamar (kg/día)': '2', 'Krill (kg/día)': '1' }, '07:00 Krill 2.5; 08:30 Calamar 2'),
+  ALIMV('19/09/2026', 'Sala 1', 1, 'QA', { 'Calamar (kg/día)': '2' }, '08:30 Calamar 2', 'Ingreso'),
+  TRATX('15/09/2026', 'Sala 1', 'Preventivo', 'Salas y tanques', 'QA', 'Bacmil'),
+];
+const abrirManejo = () => click(root.querySelector('[data-mop-sub="manejo"]'));
+const plano = (el) => el.textContent.replace(/\s+/g, ' ').trim();
+
+describe('Maduración · operativo · 🔄 Manejo', () => {
+  it('abre con sus TRES bloques, en el orden aprobado', async () => {
+    await montar(PLANTA_F5);
+    abrirManejo();
+    const h = [...root.querySelectorAll('.mc-card-h')].map((x) => x.textContent);
+    expect(h).toHaveLength(3);
+    expect(h[0]).toContain('🔄 Movimientos');
+    expect(h[1]).toContain('🦐 Alimentación');
+    expect(h[2]).toContain('🧪 Tratamientos');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('🔑 la matriz: cada celda dice ANIMALES y (movimientos), y la diagonal es DENTRO de la sala', async () => {
+    await montar(PLANTA_F5);
+    abrirManejo();
+    const m = root.querySelector('.mop-matriz');
+    const cols = [...m.querySelectorAll('thead th')].map((th) => th.textContent);
+    const celda = (o, d) => [...m.querySelectorAll('tbody tr')].find((tr) => tr.cells[0].textContent === o).cells[cols.indexOf(d)];
+    expect(cols.slice(1)).toEqual(['Sala 1', 'Sala 2', 'Sala 4']);
+    expect(plano(celda('Sala 1', 'Sala 2'))).toBe('1 (1)');
+    expect(plano(celda('Sala 2', 'Sala 4'))).toBe('3 (1)');
+    expect(plano(celda('Sala 1', 'Sala 1'))).toBe('⟳ 4 (1)');
+    expect(plano(celda('Sala 4', 'Sala 1'))).toBe('—');
+    // El motivo que no está en el catálogo se MARCA en el reparto, no se disimula.
+    expect(root.querySelector('.mop-repartos').textContent).toContain('fuera del catálogo');
+  });
+
+  it('el registro va ENTERO debajo de la matriz, del más reciente al más antiguo', async () => {
+    await montar(PLANTA_F5);
+    abrirManejo();
+    const filas = [...root.querySelectorAll('.mop-registro tbody tr')];
+    expect(filas.map((tr) => tr.cells[0].textContent)).toEqual(['19/09/2026', '18/09/2026', '17/09/2026']);
+    expect(filas[0].textContent).toContain('Con red nueva');
+  });
+
+  it('🔑 la ración se rotula PLANIFICADA y se juzga cada TOMA: la de fuera se dice con su hora, y la del tope no', async () => {
+    await montar(PLANTA_F5);
+    abrirManejo();
+    expect(root.textContent).toContain('ración PLANIFICADA');
+    expect(kpi('Tomas fuera de rango')).toBe('1');
+    const d = plano(root.querySelector('.mop-tomas-fuera'));
+    expect(d).toContain('Krill al 2,5 % a las 07:00 del 18/09/2026 en Sala 1');
+    const fila = (p) => [...root.querySelectorAll('.mop-alim tbody tr')].find((tr) => tr.cells[0].textContent === p);
+    expect(fila('Krill').classList.contains('mop-fuera-rango')).toBe(true);
+    expect(fila('Calamar').classList.contains('mop-fuera-rango')).toBe(false);   // 2 % es el tope, no fuera
+  });
+
+  it('tratamientos: el día sin tratamiento va VACÍO, y un lote sin preventivo dice «ninguno» sin inventar días', async () => {
+    await montar(PLANTA_F5);
+    abrirManejo();
+    const s1 = [...root.querySelectorAll('.mop-trat tbody tr')].find((tr) => tr.cells[0].textContent === 'Sala 1');
+    const tds = [...s1.querySelectorAll('td')];
+    expect(tds.filter((td) => td.classList.contains('is-trat'))).toHaveLength(2);   // el 12 y el 15
+    expect(tds.some((td) => td.textContent === '0')).toBe(false);                   // vacío, nunca un cero
+    const cob = [...root.querySelectorAll('.mop-cob tbody tr')];
+    const lote = (l) => cob.find((tr) => tr.cells[0].textContent === l);
+    expect(plano(lote('QA').cells[2])).toBe('4 d');
+    expect(lote('QB').textContent).toContain('ninguno');
+    expect(plano(lote('QB').cells[2])).toBe('—');
+    expect(lote('QB').classList.contains('mop-cob-no')).toBe(true);
+  });
+
+  it('🔑 el filtro de TANQUE no llega a los tratamientos, y se dice con SU motivo', async () => {
+    await montar(PLANTA_F5);
+    abrirManejo();
+    cambiar(filtro('sala'), 'Sala 1');
+    cambiar(filtro('tanque'), '1');
+    const t = plano(root);
+    expect(t).toContain('Un tratamiento no puede separarse por tanque');
+    expect(t).toContain('se registra por sala y área');
+  });
+
+  it('🔑 el filtro de LOTE no llega a los movimientos, y se dice con SU motivo, no con el de Tanques', async () => {
+    await montar(PLANTA_F5);
+    abrirManejo();
+    cambiar(filtro('lote'), 'QA');
+    const t = plano(root);
+    expect(t).toContain('Un movimiento no puede separarse por lote');
+    expect(t).toContain('La hoja de Movimientos no registra el lote');
+    expect(t).not.toContain('Una fila de Tanques dice su sala');
+  });
+
+  it('sin movimientos ni raciones, cada bloque lo DICE en vez de quedarse en blanco', async () => {
+    await montar(PLANTA);
+    abrirManejo();
+    const t = plano(root);
+    expect(t).toContain('Ningún movimiento registrado en el período');
+    expect(t).toContain('Ninguna ración registrada en el período');
+  });
+
+  it('lo que viene del Sheet sale ESCAPADO', async () => {
+    const malo = '<img src=x onerror=alert(1)>';
+    await montar([...PLANTA_F5,
+      { ...MOV('19/09/2026', 'Sala 1', '1', 'Sala 2', '16', 1, 0), Motivo: malo, Observaciones: malo },
+      TRATX('19/09/2026', 'Sala 1', 'Preventivo', malo, 'QA', malo)]);
+    abrirManejo();
+    expect(root.querySelector('img')).toBeNull();
+    expect(root.textContent).toContain(malo);
   });
 });

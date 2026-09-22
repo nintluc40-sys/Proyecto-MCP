@@ -1,12 +1,12 @@
 /* ============================================================
-   MADURACIÓN · OPERATIVO — la VISTA del tablero (F1–F3, 2026-09-19 a 2026-09-20)
+   MADURACIÓN · OPERATIVO — la VISTA del tablero (F1–F5, 2026-09-19 a 2026-09-21)
 
    «🐚 Operativo» de la entrada de Maduración (entrada.js), con el diseño que aprobó el usuario en cada fase:
    barra de filtros (período · foto al día · sala → tanque · lote → código · estado · sexo · piscina · camaronera,
-   con etiquetas de lo activo y «limpiar») y CINCO sub-vistas.
+   con etiquetas de lo activo y «limpiar») y sus sub-vistas.
    ⚠ La lista viva es `SUBS`, unas líneas más abajo, y los KPI son el array `kpis`: se leen de ahí, no de aquí.
-     Esta cabecera se quedó diciendo «dos sub-vistas» y «seis indicadores» mientras F2 y F3 añadían TRES sub-vistas
-     y un KPI, así que ahora dice dónde mirar además de qué hay. Hoy:
+     Esta cabecera se quedó atrás DOS veces —«dos sub-vistas» con cinco, y luego «cinco» con siete—, así que ya no
+     lleva la cuenta: dice dónde mirar además de qué hay. Hoy:
      📊 Estado actual — los KPI (Vivos, Lotes, Salas, Ocupación, Mortalidad, Reproducción y Biomasa), el mapa de
         planta (por estado, vivos o densidad), las alertas, los últimos registros y los lotes que salen de
         cuarentena en los próximos 7 días;
@@ -18,9 +18,15 @@
         de motivos de cierre, distribución por hora y mapa de calor sala × día;
      🔍 Revisiones del supervisor (F3) — nauplios en sus 4 etapas, alcalinidad por área, mortalidad en desove y
         recuperación, y frecuencia de observaciones. Se llama así, y no «Revisiones», porque Larvicultura ya tiene
-        una con ese nombre y ese icono (D-8, 2026-09-20).
-   Esta vista sólo PINTA: las cifras salen de operativo.tablero.js y operativo.data.js, que son puros y tienen sus
-   pruebas y sus bancos de mutación. Se carga DIFERIDA (import() en entrada.js) junto con su CSS.
+        una con ese nombre y ese icono (D-8, 2026-09-20);
+     🛢 Tanques (F4) — tabla maestra de los tanques ocupados y, al pulsar una fila, su ficha: composición, curva de
+        vivos, partes del día con su hora, observaciones y movimientos;
+     🥚 Reproducción (F4) — totales, los desoves pendientes de N5 arriba, la tabla por lote y a dónde fueron;
+     🔄 Manejo (F5) — movimientos (matriz sala → sala con el registro debajo), la alimentación PLANIFICADA por
+        producto contra la agenda estándar, con cada toma juzgada con el rango de la ficha, y los tratamientos
+        (calendario sala × día, productos por área y cobertura preventiva por lote).
+   Esta vista sólo PINTA: las cifras salen de los módulos puros operativo.*.js, que tienen sus pruebas y sus bancos
+   de mutación. Se carga DIFERIDA (import() en entrada.js) junto con su CSS.
    ⚠ El período de este tablero es SUYO (termina en la foto): no lee el rango de la barra de fecha global. Si algún día
      lo leyera, main.js tendría que declararlo (lo vigila src/ui/dateBarVisibility.test.js).
    ============================================================ */
@@ -45,6 +51,10 @@ import { pendientesDeN5, tablaDeReproduccion, destinosDeDespacho, totalesDeRepro
 import {
   VARIABLES_REVISION, revisionesDeNauplios, alcalinidadPorArea, mortalidadEnDesove, frecuenciaDeObservaciones,
 } from './operativo.revisiones.js';
+import {
+  matrizDeMovimientos, registroDeMovimientos, alimentacionPorProducto, procedenciaDelPeso,
+  calendarioDeTratamientos, productosPorArea, coberturaPreventiva,
+} from './operativo.manejo.js';
 
 const SUBS = [
   { clave: 'estado', etiqueta: 'Estado actual', icono: '📊' },
@@ -65,6 +75,10 @@ const SUBS = [
      distintas —«qué pasa en ESTE tanque» y «cuánto desova y qué sale»— y no comparten ni filtros ni unidad. */
   { clave: 'tanques', etiqueta: 'Tanques', icono: '🛢' },
   { clave: 'reproduccion', etiqueta: 'Reproducción', icono: '🥚' },
+  /* F5 (2026-09-21) · lo que se le HACE a la planta, frente a lo que le pasa: movimientos, alimentación y
+     tratamientos en UNA sola sub-vista con tres bloques y los mismos filtros. Decisión del usuario: con una
+     pastilla por tema la sub-nav no cabía en un móvil. */
+  { clave: 'manejo', etiqueta: 'Manejo', icono: '🔄' },
 ];
 const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', tanque: '', lote: '', codigo: '', color: 'estado', salaDetalle: '', tanqueSel: '', loteSel: '', agrupacion: 'lote',
   estado: '', sexo: '', piscina: '', camaronera: '', agrupacionBajas: 'sala',
@@ -162,6 +176,8 @@ export function operativoView(root) {
     h += tanquesHTML(M, memo, periodo, F);
   } else if (vOp.sub === 'reproduccion') {
     h += reproduccionHTML(M, periodo, F);
+  } else if (vOp.sub === 'manejo') {
+    h += manejoHTML(M, periodo, F);
   } else {
     h += estadoHTML(M, memo, periodo, F);
   }
@@ -788,11 +804,14 @@ function barra(valor, max, tono) {
   return `<span class="mop-b3" aria-hidden="true"><i class="${tono || ''}" style="width:${pct}%"></i></span>`;
 }
 
-/** Lo que una pieza no ha podido filtrar, dicho en una línea. */
-function ignoraHTML(ignora, que) {
+/** Lo que una pieza no ha podido filtrar, dicho en una línea. `porque` es el motivo de SU hoja: el de Tanques
+ *  («no dice de qué lote era cada animal») es el de por defecto, y no vale para las hojas de 🔄 Manejo. */
+function ignoraHTML(ignora, que, porque) {
   if (!ignora || !ignora.length) return '';
+  const motivo = porque !== undefined ? porque
+    : ignora.includes('lote') ? 'Una fila de Tanques dice su sala y su tanque, pero no de qué lote era cada animal.' : '';
   return `<p class="mc-note">⚠ ${esc(que)} no puede separarse por ${ignora.map((x) => esc(x)).join(' ni por ')}:
-    ese filtro no se ha aplicado aquí. ${ignora.includes('lote') ? 'Una fila de Tanques dice su sala y su tanque, pero no de qué lote era cada animal.' : ''}</p>`;
+    ese filtro no se ha aplicado aquí. ${esc(motivo)}</p>`;
 }
 
 /* ── 💀 BAJAS ───────────────────────────────────────────────── */
@@ -1295,6 +1314,151 @@ function destinosHTML(d) {
     <p class="mc-note">⚠ Los nauplios NO se reparten entre los destinos de un desove: la hoja no dice cuántos fue a cada
       uno, así que el desove cuenta ENTERO en cada destino al que fue.${d.compartidos ? ' Aquí hay ' + nf(d.compartidos) + ' así, de modo que estas columnas NO suman el total.' : ''}</p>
     ${ignoraHTML(d.ignora, 'El despacho')}
+  </div>`;
+}
+
+/* ── 🔄 MANEJO (F5) ────────────────────────────────────────── */
+
+/* Lo que cada hoja no puede filtrar, con SU motivo: el de Tanques no vale aquí. */
+const PORQUE_MOV = 'La hoja de Movimientos no registra el lote: de qué lote era cada animal lo deduce el libro, repartiendo en proporción a los vivos del origen.';
+const PORQUE_ALIM = 'La hoja de Alimentación dice sus lotes, no sus códigos genéticos.';
+const PORQUE_TRAT = 'La hoja de Tratamientos se registra por sala y área, con sus lotes: no dice el tanque ni el código genético.';
+
+function manejoHTML(M, p, F) {
+  const mat = matrizDeMovimientos(M.fuentes, p, F, M.libro);
+  const reg = registroDeMovimientos(M.fuentes, p, F);
+  const al = alimentacionPorProducto(M.fuentes, p, F);
+  const peso = procedenciaDelPeso(M.fuentes, p, F);
+  const cal = calendarioDeTratamientos(M.fuentes, p, F);
+  const areas = productosPorArea(M.fuentes, p, F);
+  const cob = coberturaPreventiva(M.fuentes, M.libro, p, F, M.fecha);
+  return movimientosHTML(mat, reg, p, F) + alimentacionHTML(al, peso, p, F) + tratamientosHTML(cal, areas, cob, p, F);
+}
+
+/** Un reparto (motivo, tipo o agua) en barras; lo que está fuera del catálogo se MARCA, no se disimula. */
+function repartoHTML(arr, rotulo) {
+  if (!arr.length) return '';
+  const max = arr[0].movimientos;
+  return `<div class="mop-obs-g"><b>${esc(rotulo)}</b>${arr.map((x) => `<div class="mop-obs-f">
+    <span>${esc(x.clave)}${x.enCatalogo ? '' : ' <span class="mop-nota" title="No está en el catálogo de la ficha">fuera del catálogo</span>'}</span>${barra(x.movimientos, max)}
+    <span class="r" title="${esc(nf(x.animales) + ' animal(es)')}">${nf(x.movimientos)}</span></div>`).join('')}</div>`;
+}
+
+function registroHTML(reg) {
+  const f = (x) => `<tr>
+      <td>${esc(dma(x.fecha))}</td><td>${esc(x.tipo || '—')}</td>
+      <td>${esc(x.origen.sala)} · ${nf(x.origen.tanque)} → ${esc(x.destino.sala)} · ${nf(x.destino.tanque)}${x.circular ? ' <span class="mop-dif" title="Origen y destino son el MISMO tanque">mismo tanque</span>' : ''}</td>
+      <td class="r">${nf(x.machos)}</td><td class="r">${nf(x.hembras)}</td><td class="r"><b>${nf(x.total)}</b></td>
+      <td>${esc(x.motivo || '—')}</td><td>${esc(x.agua || '—')}</td>
+      <td>${x.observaciones ? esc(x.observaciones) : '<span class="muted">—</span>'}</td></tr>`;
+  return `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-registro">
+    <thead><tr><th>Fecha</th><th>Tipo</th><th>Origen → destino</th><th class="r">♂</th><th class="r">♀</th><th class="r">Total</th>
+      <th>Motivo</th><th>Agua</th><th>Observaciones</th></tr></thead>
+    <tbody>${reg.map(f).join('')}</tbody></table></div>`;
+}
+
+function movimientosHTML(m, reg, p, F) {
+  const cab = `<h4 class="mc-card-h">🔄 Movimientos <span class="mc-h-note">${m.total ? nf(m.total) + ' movimiento(s) · ' + nf(m.animales) + ' animales · ' : ''}${esc(etiquetaPeriodo(p))}</span></h4>`;
+  if (!m.total) {
+    return `<div class="mc-card mc-card-wide">${cab}
+      <p class="muted" style="margin:4px 0">${hayFiltro(F) ? 'Ningún movimiento del período pasa el filtro.' : 'Ningún movimiento registrado en el período.'}</p>
+      ${ignoraHTML(m.ignora, 'Un movimiento', PORQUE_MOV)}</div>`;
+  }
+  /* Cada celda, los ANIMALES y, entre paréntesis, en cuántos movimientos (decisión del usuario): las dos cifras,
+     sin un conmutador más. La diagonal es un movimiento DENTRO de la sala, entre sus tanques. */
+  const celda = (o, d) => {
+    const c = m.celdas.find((x) => x.origen === o && x.destino === d);
+    if (!c) return '<td class="r muted">—</td>';
+    const misma = o === d;
+    return `<td class="r${misma ? ' mop-misma' : ''}" title="${esc(o + ' → ' + d + ': ' + nf(c.animales) + ' animal(es) en ' + nf(c.movimientos) + ' movimiento(s)' + (misma ? ', entre tanques de la misma sala' : ''))}">`
+      + `${misma ? '⟳ ' : ''}<b>${nf(c.animales)}</b> <span class="mop-nota">(${nf(c.movimientos)})</span></td>`;
+  };
+  return `<div class="mc-card mc-card-wide">${cab}
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-matriz">
+      <thead><tr><th>origen ↓ · destino →</th>${m.salas.map((s) => `<th class="r">${esc(s)}</th>`).join('')}</tr></thead>
+      <tbody>${m.salas.map((o) => `<tr><th>${esc(o)}</th>${m.salas.map((d) => celda(o, d)).join('')}</tr>`).join('')}</tbody></table></div>
+    <p class="mc-note">Cada celda: los <b>animales</b> movidos y, entre paréntesis, en cuántos movimientos. ⟳ = entre tanques de la MISMA sala.</p>
+    <div class="mop-repartos">${repartoHTML(m.porMotivo, 'Por motivo')}${repartoHTML(m.porTipo, 'Por tipo')}${repartoHTML(m.porAgua, 'Agua de destino')}</div>
+    ${m.aTanqueCompartido ? `<p class="mc-note">⚠ <b>${nf(m.aTanqueCompartido)}</b> movimiento(s) llegaron a un tanque que HOY es compartido. «Hoy»: el libro sabe cómo está la planta al cierre de la foto, no cómo estaba el día del movimiento.</p>` : ''}
+    ${ignoraHTML(m.ignora, 'Un movimiento', PORQUE_MOV)}
+    <h5 class="mop-h5">Registro <span class="mop-nota">${nf(reg.length)} · el más reciente primero</span></h5>
+    ${registroHTML(reg)}
+  </div>`;
+}
+
+function alimentacionHTML(a, peso, p, F) {
+  const cab = `<h4 class="mc-card-h">🦐 Alimentación · ración PLANIFICADA <span class="mc-h-note">${a.filas ? nf(a.filas) + ' registro(s) · ' + nf(a.dias) + ' día(s) · ' : ''}${esc(etiquetaPeriodo(p))}</span></h4>`;
+  if (!a.filas) {
+    return `<div class="mc-card mc-card-wide">${cab}
+      <p class="muted" style="margin:4px 0">${hayFiltro(F) ? 'Ninguna ración del período pasa el filtro.' : 'Ninguna ración registrada en el período.'}</p>
+      ${ignoraHTML(a.ignora, 'La alimentación', PORQUE_ALIM)}</div>`;
+  }
+  const rango = nf(a.rango.min, 2) + '–' + nf(a.rango.max, 2) + ' %';
+  const kpis = [
+    tile('Ración', nf(a.totalDia, 2) + ' kg/día', 'la PLANIFICADA: nadie registra lo servido', ''),
+    tile('De la biomasa', pc(a.pctTotal), 'sobre ' + nf(a.biomasaDia, 2) + ' kg de biomasa al día', ''),
+    tile('Tomas fuera de rango', nf(a.tomasFuera), a.tomas ? 'de ' + nf(a.tomas) + ' · rango ' + esc(rango) + ' por toma' : 'ninguna toma en las filas del período', a.tomasFuera ? 'is-mort' : ''),
+    tile('A 30 días', nf(a.proyeccionMensual) + ' kg', 'al ritmo del período: aritmética, no un pronóstico', ''),
+  ].join('');
+  const fila = (x) => `<tr class="${x.tomasFuera ? 'mop-fuera-rango' : ''}">
+      <td><b>${esc(x.producto)}</b></td>
+      <td class="r">${nf(x.kg, 2)}</td><td class="r">${nf(x.kgDia, 2)}</td><td class="r">${pc(x.pct)}</td>
+      <td class="r">${x.agendaTomas ? nf(x.agendaTomas) + ' · ' + pc(x.agendaPct) : '<span class="muted">—</span>'}</td>
+      <td class="r">${x.desvio === '' ? '<span class="muted">—</span>' : (x.desvio > 0 ? '+' : '') + nf(x.desvio, 2)}</td>
+      <td class="r">${x.tomas ? (x.tomasFuera ? '<b>' + nf(x.tomasFuera) + '</b> ⚠' : '0') + ' de ' + nf(x.tomas) : '<span class="muted" title="Ninguna toma de este producto en las filas del período">—</span>'}</td></tr>`;
+  /* La toma fuera de rango se DICE con su día, su sala, su hora y su %: un recuento solo no deja ir a corregirla. */
+  const fuera = a.productos.flatMap((x) => x.fuera.map((t) => ({ ...t, producto: x.producto })))
+    .sort((x, y) => porNombre(y.fecha, x.fecha) || porNombre(x.sala, y.sala) || porNombre(x.hora, y.hora));
+  const VER = 5;
+  const detalle = fuera.length ? `<p class="mc-note mop-tomas-fuera">⚠ Tomas planificadas fuera de ${esc(rango)}: ${fuera.slice(0, VER).map((t) =>
+    `<b>${esc(t.producto)}</b> al ${nf(t.pct, 2)} % a las ${esc(t.hora)} del ${esc(dma(t.fecha))} en ${esc(t.sala)}`).join(' · ')}${fuera.length > VER ? ' · y ' + nf(fuera.length - VER) + ' más' : ''}.</p>` : '';
+  const pesoH = peso.length ? `<div class="mop-obs-g"><b>De dónde sale el peso de la ración</b>${peso.map((x) => `<div class="mop-obs-f">
+    <span>${esc(x.fuente)}</span>${barra(x.n, peso[0].n)}<span class="r">${pc(x.pct)}</span></div>`).join('')}</div>` : '';
+  return `<div class="mc-card mc-card-wide">${cab}
+    <div class="mc-kpis">${kpis}</div>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-alim">
+      <thead><tr><th>Producto</th><th class="r">kg en el período</th><th class="r">kg/día</th><th class="r">% biomasa</th>
+        <th class="r">Agenda (tomas · %)</th><th class="r" title="El % del período MENOS el de la agenda estándar">Δ agenda</th>
+        <th class="r" title="Cada toma planificada, juzgada con el rango de la ficha">Tomas fuera de ${esc(rango)}</th></tr></thead>
+      <tbody>${a.productos.map(fila).join('')}</tbody></table></div>
+    ${detalle}
+    <p class="mc-note">La agenda estándar tiene ${nf(a.agendaTomas)} tomas${a.agendaSinProducto ? ', ' + nf(a.agendaSinProducto) + ' de ellas SIN producto (se cuenta aparte, no se descarta)' : ''}.
+      El Δ INFORMA —el % del período menos el de la agenda—; lo que se JUZGA es cada toma, con el rango de la ficha de Alimentación.</p>
+    ${pesoH}
+    ${ignoraHTML(a.ignora, 'La alimentación', PORQUE_ALIM)}
+  </div>`;
+}
+
+function tratamientosHTML(c, areas, cob, p, F) {
+  const cab = `<h4 class="mc-card-h">🧪 Tratamientos <span class="mc-h-note">${c.total ? nf(c.total) + ' tratamiento(s) · ' : ''}${esc(etiquetaPeriodo(p))}</span></h4>`;
+  /* Una celda VACÍA es «no se trató» (`null`), nunca un cero: el mismo cuidado que el calor de 💀 Bajas. */
+  const calendario = c.total ? `<div class="mop-calor-wrap"><table class="mop-calor mop-trat">
+      <thead><tr><th></th>${c.dias.map((d) => `<th>${esc(dm(d))}</th>`).join('')}</tr></thead>
+      <tbody>${c.filas.map((s) => `<tr><th>${esc(s.sala)}</th>${s.celdas.map((v, i) => `<td class="${v ? 'is-trat' : ''}" title="${esc(s.sala + ' · ' + dma(c.dias[i]) + ' · '
+        + (v ? nf(v.tratamientos) + ' tratamiento(s) · ' + (v.tipos.join(', ') || 'sin tipo') + ' · ' + nf(v.productos) + ' producto(s)' : 'no se trató'))}">${v ? nf(v.tratamientos) : ''}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table></div>
+    <p class="mc-note">Una celda VACÍA es «no se trató»; el número, cuántos tratamientos se registraron ese día en esa sala (el tipo y los productos, al pasar por encima).</p>`
+    : `<p class="muted" style="margin:4px 0">${hayFiltro(F) ? 'Ningún tratamiento del período pasa el filtro.' : 'Ningún tratamiento registrado en el período.'}</p>`;
+  const areasH = areas.length ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm">
+      <thead><tr><th>Área</th><th class="r">Aplicaciones</th><th>Productos (veces)</th></tr></thead>
+      <tbody>${areas.map((x) => `<tr><td><b>${esc(x.area)}</b>${x.enCatalogo ? '' : ' <span class="mop-nota" title="No está en el catálogo de la ficha">fuera del catálogo</span>'}</td>
+        <td class="r">${nf(x.aplicaciones)}</td>
+        <td>${x.productos.length ? x.productos.map((q) => esc(q.producto) + (q.veces > 1 ? ' ×' + nf(q.veces) : '')).join(' · ') : '<span class="muted">—</span>'}</td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="muted" style="margin:4px 0">Ninguna aplicación en el período.</p>';
+  const cobH = cob.length ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-cob">
+      <thead><tr><th>Lote</th><th>Último preventivo</th><th class="r">Hace</th><th>Productos</th></tr></thead>
+      <tbody>${cob.map((x) => `<tr class="${x.cubierto ? '' : 'mop-cob-no'}">
+        <td><b>${esc(x.lote)}</b></td>
+        <td>${x.cubierto ? esc(dma(x.fecha)) : '<b>ninguno</b> en el período'}</td>
+        <td class="r">${x.dias === '' ? '<span class="muted">—</span>' : nf(x.dias) + ' d'}</td>
+        <td>${x.productos.length ? x.productos.map((q) => esc(q)).join(', ') : '<span class="muted">—</span>'}</td></tr>`).join('')}</tbody></table></div>
+    <p class="mc-note">Un lote sin ningún preventivo en el período sale «ninguno» y SIN días: cero diría «hoy mismo», que es lo contrario. Los lotes sin animales vivos no necesitan cobertura y no salen.</p>`
+    : '<p class="muted" style="margin:4px 0">Ningún lote vivo que pase el filtro.</p>';
+  return `<div class="mc-card mc-card-wide">${cab}
+    <h5 class="mop-h5">Calendario sala × día</h5>${calendario}
+    <h5 class="mop-h5">Productos por área</h5>${areasH}
+    <h5 class="mop-h5">Cobertura preventiva por lote</h5>${cobH}
+    ${ignoraHTML(c.ignora, 'Un tratamiento', PORQUE_TRAT)}
   </div>`;
 }
 

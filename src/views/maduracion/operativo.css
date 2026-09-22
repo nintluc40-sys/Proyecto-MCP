@@ -142,3 +142,14 @@
 .mop-obs-f .r { text-align: right; font-weight: 700; }
 /* Un desove al que ya se le pasó el día de contar su N5. */
 .mop-pend-tarde td { background: color-mix(in srgb, var(--c-malo) 14%, transparent); }
+
+/* 🔄 Manejo (F5) */
+.mop-matriz tbody th { text-align: left; white-space: nowrap; }
+/* La diagonal: un movimiento DENTRO de la sala, entre sus tanques. */
+.mop-matriz td.mop-misma { font-style: italic; }
+.mop-repartos { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 10px 0 4px; }
+/* Un producto con alguna toma planificada fuera del rango de la ficha. */
+.mop-fuera-rango td { background: color-mix(in srgb, var(--c-malo) 14%, transparent); }
+.mop-trat td.is-trat { background: color-mix(in srgb, var(--c-brand) 28%, transparent); font-weight: 700; }
+/* Un lote vivo sin ningún preventivo en el período. */
+.mop-cob-no td { background: color-mix(in srgb, var(--c-malo) 10%, transparent); }
