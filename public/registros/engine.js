@@ -12086,8 +12086,7 @@ function _reproConsultaHTML(){
     return head + '<div style="padding:14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#b91c1c">No se pudo leer el Sheet: '+escapeHtml(_reproSheetsErr||"error desconocido")+'.<br><b>No es tu configuración ni el token</b>: el servidor de Google tarda o falla de forma intermitente. Pulsa «Actualizar» para reintentar.</div>';
   }
   if(!mrows.length && !brows.length){
-    return head
-      + '<div style="padding:14px;background:#f8fafc;border-radius:8px;font-size:12px;color:#64748b">Aún no hay datos de Maduración cargados. Crea las hojas <b>Maduración MATRIZ</b>, <b>Maduración Bitácora</b> y <b>Maduración Transferencias</b> en el Sheet; cuando el panel principal las cargue, aquí verás el resumen del plantel, la matriz de desoves y la trazabilidad por individuo.</div>';
+    return head + '<div style="padding:14px;background:#f8fafc;border-radius:8px;font-size:12px;color:#64748b">Aún no hay registros en las hojas del reproductivo (MATRIZ / Bitácora). Registra altas, desoves o mortalidades y pulsa «Actualizar».</div>';
   }
   // Fallo PARCIAL: la MATRIZ se leyó (o salió de la copia local) pero alguna de las
   // otras hojas no. Antes esto tumbaba la sección entera; ahora se muestra lo que hay.

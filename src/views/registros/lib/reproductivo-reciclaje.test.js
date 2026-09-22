@@ -692,6 +692,41 @@ describe('🔴 1a · el chip reciclado va a la hembra NUEVA aunque la copia en u
   });
 });
 
+/* 📊 2026-09-22 · LA CONSULTA NO TAPA LO QUE SÍ SE LEYÓ. Con la MATRIZ ilegible y sin copia local, pero la Bitácora
+   leída, se enseña lo que hay con «Datos incompletos»; el error, sólo si no se leyó NADA. index (8) enseñaba el error
+   y nada más, y el texto de «sin datos» era otro: el usuario pidió igualar las dos copias (las compara el verificador
+   de paridad traduciendo la delegación). Aquí se fija lo que las dos tienen que hacer. */
+describe('📊 Consulta · un fallo de lectura no tapa lo que sí se leyó', () => {
+  const DESOVE = { 'Trovan ID': CHIP, 'Fecha': '2026-06-01', 'Tipo': 'Desove' };
+  const lectura = (porHoja) => (url) => {
+    const u = decodeURIComponent(url);
+    const k = Object.keys(porHoja).find((h) => u.includes(h));
+    if (k && porHoja[k] instanceof Error) throw porHoja[k];
+    return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, rows: k ? porHoja[k] : [] }) };
+  };
+  beforeEach(() => { localStorage.removeItem('larv4_mad_matriz'); H.setLecturas({}); });
+
+  it('🔴 con la MATRIZ ilegible pero la Bitácora leída, enseña lo leído con «Datos incompletos»', async () => {
+    lecturaRows = lectura({ MATRIZ: new Error('HTTP 500'), 'Bitácora': [DESOVE] });
+    await H._reproLoadSheets(true);
+    const html = H._reproConsultaHTML();
+    expect(html).toContain('⚠ Datos incompletos — MATRIZ (HTTP 500)');
+    expect(html).toContain('Matriz de desoves (1 hembra(s)');
+    expect(html).not.toContain('No se pudo leer el Sheet');
+  }, 15000);
+  it('si no se leyó NADA, el error', async () => {
+    lecturaRows = lectura({ MATRIZ: new Error('HTTP 500'), 'Bitácora': new Error('HTTP 500'), Transferencias: new Error('HTTP 500') });
+    await H._reproLoadSheets(true);
+    expect(H._reproConsultaHTML()).toContain('No se pudo leer el Sheet');
+  }, 15000);
+  it('con las hojas leídas y vacías, dice que aún no hay registros y qué hacer', () => {
+    H.setLecturas({ [S.matriz]: [], [S.bitacora]: [], [S.transfer]: [] });
+    const html = H._reproConsultaHTML();
+    expect(html).toContain('Aún no hay registros en las hojas del reproductivo (MATRIZ / Bitácora)');
+    expect(html).not.toContain('Crea las hojas');
+  });
+});
+
 /* 📅 2026-09-22 · UNA FECHA POSTERIOR A HOY NO SE ENVÍA en el alta, el evento ni el traslado (decisión del usuario, tras
    94 altas grabadas con ingreso 29-09 en vez de 29-08). «Hoy» se calcula con el reloj, como lo calcula el motor: una
    fecha fija caducaría. Cada rechazo se prueba junto a su límite —HOY sí sale—, o un «>=» pasaría por bueno. */
