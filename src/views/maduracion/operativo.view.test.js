@@ -19,6 +19,13 @@ vi.mock('../../core/charts.js', () => ({
   destroyAllCharts: () => {},
   Chart: class {},
 }));
+/* F7 · se sustituye la IMPRESIÓN, no el módulo entero: `operativo.reportes.js` toma de aquí `fnv1a`, que es el
+   código verificador del parte. Mockear el módulo completo lo dejaría sin él y la prueba pasaría por el motivo
+   equivocado. Imprimir de verdad no se puede: happy-dom no tiene diálogo de impresión. */
+vi.mock('../supervisor/fichaPdf.js', async (original) => {
+  const real = await original();
+  return { ...real, printFichaDocs: vi.fn(() => true) };
+});
 
 const O = 'Maduracion';
 const ING = (fecha, lote, sala, tanque, machos, hembras, cg = 'CA') => ({ _SheetOrigin: O, 'Camaronera origen': 'X', Fecha: fecha,
@@ -266,9 +273,10 @@ describe('Maduración · operativo · 🧬 Lotes', () => {
          fijado aquí es lo que impide que vuelva a colisionar sin que nadie lo note.
          F4 (2026-09-21) · entran 🛢 Tanques y 🥚 Reproducción, SEPARADAS por decisión del usuario.
          F5 (2026-09-21) · entra 🔄 Manejo, UNA para los tres temas (decisión del usuario).
-         F6 (2026-09-21) · entra 🩺 Calidad del dato; Broodstock NO tiene pastilla, vive en 🧬 Lotes (decisión del usuario). */
+         F6 (2026-09-21) · entra 🩺 Calidad del dato; Broodstock NO tiene pastilla, vive en 🧬 Lotes (decisión del usuario).
+         F7 (2026-09-22) · entra 🖨 Reportes, la décima (decisión del usuario; `.mc-subnav` envuelve en el móvil). */
       .toEqual(['📊 Estado actual', '🏠 Salas', '🧬 Lotes', '💀 Bajas', '🔍 Revisiones del supervisor',
-        '🛢 Tanques', '🥚 Reproducción', '🔄 Manejo', '🩺 Calidad del dato']);
+        '🛢 Tanques', '🥚 Reproducción', '🔄 Manejo', '🩺 Calidad del dato', '🖨 Reportes']);
     abrirLotes();
     expect([...root.querySelectorAll('[data-mop-lote]')].map((t) => t.dataset.mopLote)).toEqual(['QA', 'QB', 'QC', 'QD']);
     // QC se cerró: sigue en la tabla, a cero y rotulado.
@@ -1155,5 +1163,86 @@ describe('Maduración · operativo · 🩺 Calidad del dato', () => {
     abrirCalidad();
     expect(root.querySelector('img')).toBeNull();
     expect(root.textContent).toContain(malo);
+  });
+});
+
+/* ── 🖨 REPORTES (F7.1, 2026-09-22) ─────────────────────────────
+   Las CIFRAS del parte las prueban operativo.reportes.test.js y su banco; aquí se exige que llegue a la pantalla,
+   que la vista previa sea el documento que se imprime, que el día mueva la foto (decisión del usuario) y que los
+   dos botones exporten EXACTAMENTE lo que se está viendo. */
+const abrirReportes = () => click(root.querySelector('[data-mop-sub="reportes"]'));
+/* El ÚLTIMO aviso: los toasts viven en document.body, que NO se limpia entre pruebas (sólo se quita `root`).
+   Mirando el primero se leería el de la prueba anterior y ésta pasaría —o fallaría— por otra cosa. */
+const ultimoToast = () => [...document.querySelectorAll('.app-toast')].pop().textContent;
+
+describe('Maduración · operativo · 🖨 Reportes', () => {
+  it('la pastilla abre el panel: el día es la FOTO, con sus acciones y la vista previa del documento', async () => {
+    await montar(PLANTA);
+    abrirReportes();
+    expect([...root.querySelectorAll('[data-mop-rep]')].map((b) => b.textContent.trim())).toEqual(['📄 Parte diario']);
+    const dia = root.querySelector('.mop-rep-dia [data-mop-fecha]');
+    expect([dia.value, dia.getAttribute('max')]).toEqual(['2026-09-19', '2026-09-19']);
+    expect(plano(root.querySelector('.mop-rep-dia'))).toContain('es la foto del tablero');
+    expect(root.querySelector('[data-mop-rep-pdf]')).toBeTruthy();
+    expect(root.querySelector('[data-mop-rep-xlsx]')).toBeTruthy();
+    const doc = root.querySelector('.mop-rep-prev').getAttribute('srcdoc');
+    expect(doc).toContain('Maduración · Parte diario');
+    expect(doc).toContain('sábado, 19/09/2026');
+    expect(doc).toContain('@page { size: A4 portrait');
+    expect(doc).toContain('día en curso');            // la foto es HOY: el registro del día no está cerrado
+    /* 🔑 La vista tiene que pasarle la serie desde la VÍSPERA: la mortalidad del día es la resta de dos cierres.
+       Con la serie empezando en el propio día no habría cifra y el parte diría «sin serie» sin que nadie lo note. */
+    expect(doc).toContain('Mortalidad del día');
+    expect(doc).not.toContain('sin serie');
+  });
+
+  it('🔑 el día del parte MUEVE la foto del tablero (decisión del usuario: papel y pantalla, el mismo día)', async () => {
+    await montar(PLANTA);
+    abrirReportes();
+    cambiar(root.querySelector('.mop-rep-dia [data-mop-fecha]'), '2026-09-18');
+    expect(root.querySelector('.mop-rep-prev').getAttribute('srcdoc')).toContain('viernes, 18/09/2026');
+    click(root.querySelector('[data-mop-sub="estado"]'));
+    expect(root.querySelector('.mc-sub').textContent).toContain('18/09/2026');
+  });
+
+  it('🔑 lo que se exporta es lo que se VE: con filtro, el parte sale marcado como FILTRADO', async () => {
+    await montar(PLANTA);
+    cambiar(filtro('sala'), 'Sala 2');
+    abrirReportes();
+    const doc = root.querySelector('.mop-rep-prev').getAttribute('srcdoc');
+    expect(doc).toContain('PARTE FILTRADO — Sala 2');
+    expect(plano(root.querySelector('.mop-rep-alcance'))).toContain('PARTE FILTRADO — Sala 2');
+    click(root.querySelector('[data-mop-rep-pdf]'));
+    const { printFichaDocs } = await import('../supervisor/fichaPdf.js');
+    expect(printFichaDocs).toHaveBeenCalledTimes(1);
+    const [docs] = printFichaDocs.mock.calls[0];
+    expect(docs).toHaveLength(1);
+    expect(docs[0].fileName).toBe('Parte_diario_2026-09-19_filtrado');
+    expect(docs[0].page).toContain('PARTE FILTRADO — Sala 2');
+    expect(docs[0].page).toContain('Generado el');      // el sello se pone al EXPORTAR, no al pintar
+  });
+
+  it('el Excel baja una hoja por bloque, con el nombre del parte', async () => {
+    await montar(PLANTA);
+    abrirReportes();
+    const hojas = [];
+    window.XLSX = {
+      utils: { book_new: () => ({}), aoa_to_sheet: (aoa) => aoa, book_append_sheet: (wb, ws, nombre) => hojas.push(nombre) },
+      writeFile: vi.fn(),
+    };
+    click(root.querySelector('[data-mop-rep-xlsx]'));
+    expect(hojas).toEqual(['Resumen', 'Bajas', 'Reproducción', 'Movimientos', 'Tratamientos', 'Registro', 'Avisos']);
+    expect(window.XLSX.writeFile.mock.calls[0][1]).toBe('Parte_diario_2026-09-19.xlsx');
+    expect(ultimoToast()).toContain('7 hojas');
+    delete window.XLSX;
+  });
+
+  it('🔑 sin SheetJS no rompe: lo dice y no descarga nada', async () => {
+    await montar(PLANTA);
+    abrirReportes();
+    delete window.XLSX;
+    click(root.querySelector('[data-mop-rep-xlsx]'));
+    expect(ultimoToast()).toContain('SheetJS');
+    expect(errSpy).not.toHaveBeenCalled();
   });
 });

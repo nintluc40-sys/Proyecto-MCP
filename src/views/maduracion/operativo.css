@@ -175,3 +175,24 @@
 .mop-cob-cal td.is-parcial { background: color-mix(in srgb, var(--c-malo) 35%, transparent); font-weight: 700; }
 .mop-cob-cal td.is-nada { background: color-mix(in srgb, var(--c-grave) 40%, transparent); font-weight: 800; }
 .mop-cob-cal td.is-sin-sala { box-shadow: inset 0 0 0 2px var(--c-grave); }
+
+/* ── 🖨 REPORTES (F7.1) ─────────────────────────────────────────
+   La vista previa es el DOCUMENTO de verdad, dentro de un iframe: así lo que se ve es exactamente lo que se
+   imprime (su CSS es de impresión, en mm, y aislarlo evita que se cuele en la página). */
+.mop-rep-barra { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: flex-end; margin-bottom: 8px; }
+.mop-rep-tipos { display: flex; flex-wrap: wrap; gap: 6px; }
+.mop-rep-dia { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; font-weight: 700; color: var(--c-text-soft); }
+.mop-rep-dia .mc-note { font-weight: 400; margin: 0; }
+.mop-rep-acc { display: flex; gap: 8px; margin-left: auto; }
+.mop-rep-btn { border: 1px solid var(--c-brand); background: var(--c-brand); color: #fff; border-radius: 10px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.mop-rep-btn:hover { filter: brightness(1.08); }
+.mop-rep-btn.is-alt { background: var(--c-surface); color: var(--c-brand); }
+.mop-rep-alcance.is-filtrado { color: var(--c-grave); font-weight: 700; }
+.mop-rep-hoja { overflow: auto; background: var(--c-surface-2); padding: 12px; border-radius: 10px; }
+.mop-rep-prev { display: block; width: 210mm; height: 297mm; border: 0; background: #fff; box-shadow: 0 2px 12px rgba(0, 0, 0, .18); }
+/* En pantallas estrechas la hoja se reduce en vez de obligar a arrastrar: el parte se lee de un vistazo. */
+@media (max-width: 900px) {
+  .mop-rep-hoja { position: relative; height: 430px; }
+  .mop-rep-prev { position: absolute; top: 12px; left: 12px; transform: scale(.42); transform-origin: top left; }
+  .mop-rep-acc { margin-left: 0; }
+}

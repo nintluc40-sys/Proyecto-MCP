@@ -629,10 +629,20 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
    (Hasta ese día toda función que delegara pasaba sin mirarla, y así divergió la Consulta del reproductivo.)
    Las contrapartes EN LÍNEA de la librería del reproductivo no las compara él: las ejecuta
    `paridad-repro-reciclaje`, sobre los mismos casos que el módulo.
-7. **El tablero de Maduración: F1 a F6 hechas.** Están sus sub-vistas —de 📊 Estado actual a 🩺 Calidad
-   del dato; la lista viva es `SUBS`—, con los filtros, el período «ciclo del lote», las etiquetas de
-   filtros activos y el KPI de biomasa, y el Broodstock dentro de 🧬 Lotes. Queda **F7 (Reportería)**,
-   con propuesta visual y aprobación antes de codear.
+7. **El tablero de Maduración: F1 a F6 hechas, y F7.1 (el parte diario).** Están sus sub-vistas —de
+   📊 Estado actual a 🖨 Reportes; la lista viva es `SUBS`—, con los filtros, el período «ciclo del lote»,
+   las etiquetas de filtros activos y el KPI de biomasa, y el Broodstock dentro de 🧬 Lotes.
+   🖨 **Reportes** (F7.1, 2026-09-22) trae el **parte diario de UNA página**, en pantalla, en PDF y en Excel
+   (`operativo.reportes.js`). 🔑 No calcula cifras propias: llama a las mismas funciones puras del tablero con
+   un período de **un día**, para que el papel no pueda contradecir a la pantalla. Reglas cerradas con el
+   usuario: el parte es el **día de la foto** y **hereda los filtros**, que se IMPRIMEN en la cabecera
+   («⚠ PARTE FILTRADO — Sala 2»); el día se cambia desde el panel y **mueve la foto del tablero**; las tablas
+   caben en una hoja y dicen «**+ N más** (total N)» al recortar, mientras el **Excel lleva las filas
+   completas, una hoja por bloque**; el PDF se imprime con la maquinaria del Supervisor (`printFichaDocs`:
+   iframe oculto, sin pop-ups) y lleva **código verificador del CONTENIDO** —el sello de generación queda
+   FUERA del hash, así que dos impresiones del mismo parte dan el mismo código—. La vista previa es ese mismo
+   documento, dentro de un iframe. Quedan **F7.2** (semanal por lote y cierre de lote) y **F7.3**
+   (Broodstock), con propuesta visual y aprobación antes de codear.
    ⚠ Se desarrolla con fixtures FICTICIOS, y se contrasta con `auditar-tablero-mad-real.mjs` y
    `medir-tablero-mad-real.mjs` (utillaje). 🔑 Desde el 2026-09-20 esas dos **cuentan cuántas
    comprobaciones ejercitaron dato y cuántas salieron verdes EN VACÍO**, y nombran las hojas sin

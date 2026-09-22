@@ -61,6 +61,9 @@ import {
 import { tablaDePiscinas, fichaDePiscina } from './operativo.broodstock.js';
 import { estadoDeHojas, calendarioDeRegistros, coberturaDePartes, comparacionDeEstados, avisosDelLibro } from './operativo.calidad.js';
 import { cruceConMicrochips } from './operativo.cruce.js';
+import { REPORTES, parteDiario, parteDiarioDoc, parteDiarioHojas, nombreDelParte, alcanceDelParte } from './operativo.reportes.js';
+import { printFichaDocs } from '../supervisor/fichaPdf.js';
+import { toast } from '../../ui/toast.js';
 import { buildReproModel, MAD_MATRIZ_ORIGIN, MAD_BITACORA_ORIGIN, MAD_TRANSFER_ORIGIN } from './data.js';
 
 const SUBS = [
@@ -90,6 +93,9 @@ const SUBS = [
      en UNA sub-vista nueva (decisión del usuario). Broodstock no tiene pastilla: vive en 🧬 Lotes, como el ORIGEN
      de los lotes. */
   { clave: 'calidad', etiqueta: 'Calidad del dato', icono: '🩺' },
+  /* F7 (2026-09-22) · la reportería, con su propia pastilla (decisión del usuario). `.mc-subnav` es `flex-wrap`,
+     así que la décima envuelve en el móvil: no repite el problema de sitio que obligó a fusionar F5. */
+  { clave: 'reportes', etiqueta: 'Reportes', icono: '🖨' },
 ];
 const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', tanque: '', lote: '', codigo: '', color: 'estado', salaDetalle: '', tanqueSel: '', loteSel: '', agrupacion: 'lote',
   estado: '', sexo: '', piscina: '', camaronera: '', agrupacionBajas: 'sala',
@@ -99,7 +105,10 @@ const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', 
   tqFicha: '',
   /* F6 · la piscina cuya FICHA está abierta en 📈 Piscinas de origen (🧬 Lotes). No es el filtro `piscina`: aquél
      elige lotes por su origen, y ésta sólo abre una ficha. */
-  piscinaSel: '' };
+  piscinaSel: '',
+  /* F7 · el reporte elegido en 🖨 Reportes. El DÍA del parte no vive aquí: es la foto del tablero (`fecha`),
+     por decisión del usuario, para que el papel no pueda enseñar un día distinto del de la pantalla. */
+  rep: 'diario' };
 /* El estado de la vista vive lo que dura la sesión: al volver a Maduración, o al refrescarse los datos, se conserva. */
 const vOp = { ...INICIAL };
 
@@ -208,6 +217,8 @@ export function operativoView(root) {
     h += manejoHTML(M, periodo, F);
   } else if (vOp.sub === 'calidad') {
     h += calidadHTML(M, memo, periodo, F);
+  } else if (vOp.sub === 'reportes') {
+    h += reportesHTML(M, memo, fecha, hoy, F);
   } else {
     h += estadoHTML(M, memo, periodo, F);
   }
@@ -1817,6 +1828,69 @@ function cruceHTML(c, p, F) {
   </div>`;
 }
 
+/* ── 🖨 REPORTES (F7.1, 2026-09-22) ─────────────────────────────
+   El parte del último pintado. Los botones de PDF y Excel exportan ESTO, lo mismo que se está viendo: si
+   volvieran a calcularlo por su cuenta podrían sacar otra cosa que la de la vista previa. */
+let _parte = null;
+
+/** El sello de generación, puesto en el MOMENTO de exportar. Fuera del pintado a propósito: así la vista previa
+ *  —y el código verificador, que es del contenido— no cambian cada vez que se repinta la pantalla. */
+const selloAhora = () => new Date().toLocaleString('es-EC', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+const conSello = (parte) => ({ ...parte, cabecera: { ...parte.cabecera, generado: selloAhora() } });
+
+function reportesHTML(M, memo, fecha, hoy, F) {
+  /* La serie del parte va de la VÍSPERA al día: es lo que pide `parteDiario` para poder restar los dos cierres.
+     La del tablero (`memo.serie`) es la del período elegido arriba, que no tiene por qué empezar ahí. */
+  const serie = serieDiaria(M.fuentes, sumarDias(fecha, -1), fecha);
+  _parte = parteDiario(M, serie, memo.partes, F, {});
+  const pastillas = REPORTES.map((r) => `<button class="mc-pill mop-rep-pill ${vOp.rep === r.clave ? 'is-on' : ''}" data-mop-rep="${esc(r.clave)}"
+      title="${esc(r.descripcion || '')}">${r.icono} ${esc(r.etiqueta)}</button>`).join('');
+  const alcance = alcanceDelParte(_parte.cabecera);
+  const doc = parteDiarioDoc(_parte);
+  return `<div class="mc-card mc-card-wide mop-rep">
+      <div class="mop-rep-barra">
+        <div class="mop-rep-tipos">${pastillas}</div>
+        <label class="mop-rep-dia">Día del parte
+          <input type="date" class="mop-fecha" data-mop-fecha value="${esc(fecha)}" max="${esc(hoy)}">
+          <span class="mc-note">es la foto del tablero: cambiarlo mueve todas las sub-vistas</span></label>
+        <div class="mop-rep-acc">
+          <button class="mop-rep-btn" data-mop-rep-pdf>🖨 PDF</button>
+          <button class="mop-rep-btn is-alt" data-mop-rep-xlsx>📗 Excel</button>
+        </div>
+      </div>
+      <p class="mc-note mop-rep-alcance${_parte.cabecera.filtrado ? ' is-filtrado' : ''}">
+        ${_parte.cabecera.filtrado ? '⚠ ' : ''}${esc(alcance)} · el PDF sale tal cual se ve aquí; el Excel lleva
+        ${REPORTES.length ? 'las filas completas de cada bloque, una hoja por bloque' : ''}.</p>
+      <div class="mop-rep-hoja">
+        <iframe class="mop-rep-prev" title="Vista previa del parte diario" srcdoc="${esc(doc)}"></iframe>
+      </div>
+    </div>`;
+}
+
+/** Imprime el parte que se está viendo (iframe oculto, sin pop-ups: la maquinaria de los PDF del Supervisor). */
+function imprimirParte() {
+  if (!_parte) { toast('Todavía no hay parte que imprimir.', 'warn'); return; }
+  const parte = conSello(_parte);
+  const fileName = nombreDelParte(parte);
+  const ok = printFichaDocs([{ page: parteDiarioDoc(parte, { fileName }), fileName }], (n, total, f, done) => {
+    if (done) toast('🖨 Parte enviado a imprimir. Elige «Guardar como PDF» en el diálogo.', 'ok', 5000);
+  });
+  if (!ok) toast('No se pudo abrir la impresión en este navegador.', 'err');
+}
+
+/** Descarga el parte en Excel: una hoja por bloque, con las filas COMPLETAS (el papel recorta, el archivo no). */
+function descargarParte() {
+  if (!_parte) { toast('Todavía no hay parte que descargar.', 'warn'); return; }
+  const XLSX = window.XLSX;
+  if (!XLSX) { toast('Exportación no disponible: SheetJS (XLSX) no se cargó. Revisa el <script> del CDN en index.html o tu conexión.', 'err'); return; }
+  const parte = conSello(_parte);
+  const hojas = parteDiarioHojas(parte);
+  const wb = XLSX.utils.book_new();
+  for (const { nombre, aoa } of hojas) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), nombre);
+  XLSX.writeFile(wb, nombreDelParte(parte) + '.xlsx');
+  toast(`📗 Excel del parte descargado (${hojas.length} hojas).`, 'ok', 4000);
+}
+
 function bind(root) {
   if (root._mopBound) return;
   root._mopBound = true;
@@ -1832,6 +1906,10 @@ function bind(root) {
     if (sub) { vOp.sub = sub.dataset.mopSub; repintar(); return; }
     const per = t.closest('[data-mop-periodo]');
     if (per) { vOp.periodo = per.dataset.mopPeriodo; repintar(); return; }
+    const rep = t.closest('[data-mop-rep]');
+    if (rep) { vOp.rep = rep.dataset.mopRep; repintar(); return; }
+    if (t.closest('[data-mop-rep-pdf]')) { imprimirParte(); return; }
+    if (t.closest('[data-mop-rep-xlsx]')) { descargarParte(); return; }
     if (t.closest('[data-mop-limpiar]')) {
       Object.assign(vOp, { periodo: INICIAL.periodo, fecha: '', sala: '', tanque: '', lote: '', codigo: '', tanqueSel: '', salaDetalle: '', piscinaSel: '', loteSel: '', tqFicha: '', estado: '', sexo: '', piscina: '', camaronera: '' });
       repintar();
