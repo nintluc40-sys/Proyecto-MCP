@@ -229,7 +229,9 @@ export const DIMENSIONES = {
   cierres: ['lote'],
   tratamientos: ['sala', 'lote'],
   alimentacion: ['sala', 'tanque', 'lote'],
-  broodstock: ['codigo'],
+  /* F6.1 (2026-09-21): aquí decía sólo ['codigo'] porque la hoja no tenía consumidor. Con `tablaDePiscinas` el lote
+     también le llega —por su Ingreso: las piscinas de las que entró—; una piscina de engorde no está en ninguna sala. */
+  broodstock: ['lote', 'codigo'],
   sala: ['sala'],
   tanques: ['sala', 'tanque'],
 };

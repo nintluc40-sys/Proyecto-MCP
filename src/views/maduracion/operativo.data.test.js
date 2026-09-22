@@ -23,6 +23,7 @@ import * as T from './operativo.tablero.js';
 import * as BA from './operativo.bajas.js';
 import * as RV from './operativo.revisiones.js';
 import * as MA from './operativo.manejo.js';
+import * as BR from './operativo.broodstock.js';
 import { construirLibro } from '../registros/lib/mad-libro.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 
@@ -248,6 +249,16 @@ const FIXTURE = () => ({
     { Fecha: '2026-09-10', Sala: 'Sala 1', Lotes: 'L1', Tipo: 'Preventivo', Productos: 'PA' },
     { Fecha: '2026-09-11', Sala: 'Sala 2', Lotes: 'L2', Tipo: 'Preventivo', Productos: 'PB' },
   ],
+  /* Broodstock llega al lote por el Ingreso (las piscinas de las que entró): sin estas dos filas el filtro de lote
+     no tendría nada que elegir. Ninguna otra sonda lee `ingresos`. */
+  ingresos: [
+    { Fecha: '2026-09-01', Lote: 'L1', 'Código genético': 'C1', 'Piscina Broodstock': '9101', Sala: 'Sala 1', Tanque: 1, Machos: 1, Hembras: 1 },
+    { Fecha: '2026-09-02', Lote: 'L2', 'Código genético': 'C2', 'Piscina Broodstock': '9102', Sala: 'Sala 2', Tanque: 4, Machos: 1, Hembras: 1 },
+  ],
+  broodstock: [
+    { 'Fecha de corte': '2026-09-14', Piscina: '9101', 'Código genético': 'C1', 'Peso actual (g)': 10 },
+    { 'Fecha de corte': '2026-09-14', Piscina: '9102', 'Código genético': 'C2', 'Peso actual (g)': 12 },
+  ],
 });
 
 /* Hojas con un consumidor que RECIBE el filtro. La firma no es uniforme a propósito —cada una nació
@@ -262,13 +273,14 @@ const SONDAS = {
   movimientos: (f, F) => MA.matrizDeMovimientos(f, P, F),
   alimentacion: (f, F) => MA.alimentacionPorProducto(f, P, F),
   tratamientos: (f, F) => MA.calendarioDeTratamientos(f, P, F),
+  /* F6.1: `tablaDePiscinas` lee el modelo; su sonda le da sólo lo que usa (las hojas y el día de la foto). */
+  broodstock: (f, F) => BR.tablaDePiscinas({ fuentes: f, fecha: P.hasta }, F),
 };
 
 /* Hojas SIN consumidor filtrable, con el motivo. No es una excusa: es lo que hay que cambiar el día
    que alguien les dé uno. */
 const SIN_SONDA = {
   ingresos: 'sus filas alimentan el LIBRO; el filtro actúa después, sobre las posiciones',
-  broodstock: '`desempenoPorOrigen(fuentes, posiciones, dimension)` agrupa, no filtra',
   sala: 'la filtra `tarjetasDeSalas(M, F)`, que necesita el modelo entero, no sus filas',
 };
 
@@ -345,6 +357,7 @@ it('las discrepancias declaradas nombran una hoja y una dimensión que existen',
     expect(MA.matrizDeMovimientos(f, P, FIL()).total).toBeGreaterThan(0);
     expect(MA.alimentacionPorProducto(f, P, FIL()).filas).toBeGreaterThan(0);
     expect(MA.calendarioDeTratamientos(f, P, FIL()).total).toBeGreaterThan(0);
+    expect(BR.tablaDePiscinas({ fuentes: f, fecha: P.hasta }, FIL()).piscinas.length).toBeGreaterThan(1);
   });
 });
 
