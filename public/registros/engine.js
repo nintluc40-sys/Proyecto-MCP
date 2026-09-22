@@ -11612,7 +11612,7 @@ function _reproEventosHTML(){
     + '<p style="margin:0 0 12px;font-size:12px;color:#64748b">Pega los Trovan ID (uno por línea o separados por coma), elige la fecha y el tipo, y procesa. Cada evento se registra por su código.</p>'
     + '<div id="repro-matrix-banner">' + _reproMatrixBannerHTML() + '</div>'
     + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">'
-    +   '<label style="'+_RLBL+'">📅 Fecha<input type="date" id="repro-fecha" value="'+escapeHtml(todayStr)+'" style="'+_RINP+'"></label>'
+    +   '<label style="'+_RLBL+'">📅 Fecha<input type="date" id="repro-fecha" value="'+escapeHtml(todayStr)+'" max="'+escapeHtml(todayStr)+'" onfocus="this.max=today()" style="'+_RINP+'"></label>'
     +   '<label style="'+_RLBL+'">Tipo de evento<select id="repro-tipo" style="'+_RINP+'"><option value="Desove">Desove</option><option value="Mortalidad">Mortalidad</option></select></label>'
     + '</div>'
     + '<label style="display:block;font-size:11px;font-weight:600;color:#475569;margin-bottom:3px">Trovan ID</label>'
@@ -11654,7 +11654,7 @@ function _reproAltaHTML(){
        tiene que ser posterior a la muerte de la anterior». Sus dos reglas se retiraron el 09-16 (la identidad es la
        cuaterna), y el usuario lo quitó: reutilizar un chip es lo normal, y el único rechazo ya lo explica el informe. */
     + '<div id="repro-matrix-banner">' + _reproMatrixBannerHTML() + '</div>'
-    + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px"><label style="'+_RLBL+'">📅 Fecha de ingreso<input type="date" id="repro-a-fecha" value="'+escapeHtml(todayStr)+'" style="'+_RINP+'"></label></div>'
+    + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px"><label style="'+_RLBL+'">📅 Fecha de ingreso<input type="date" id="repro-a-fecha" value="'+escapeHtml(todayStr)+'" max="'+escapeHtml(todayStr)+'" onfocus="this.max=today()" style="'+_RINP+'"></label></div>'
     + '<div style="overflow:auto;max-height:360px;border:1px solid #e2e8f0;border-radius:8px"><table id="repro-a-grid" style="border-collapse:collapse"><thead><tr>'+th+'</tr></thead><tbody id="repro-a-tbody">'+rows+'</tbody></table></div>'
     + '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">'
     +   '<button class="btn" type="button" style="font-weight:700" onclick="madReproAltaBatch()">➕ Registrar todos</button>'
@@ -11681,7 +11681,7 @@ function _reproTransferHTML(){
     + '<p style="margin:0 0 12px;font-size:12px;color:#64748b">Mueve individuos por su ubicación de origen. Añade uno o varios destinos y pega en cada uno los Trovan ID que van ahí. En mezcla, indica la composición del tanque destino.</p>'
     + '<div id="repro-matrix-banner">' + _reproMatrixBannerHTML() + '</div>'
     + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">'
-    +   '<label style="'+_RLBL+'">📅 Fecha<input type="date" id="repro-t-fecha" value="'+escapeHtml(todayStr)+'" style="'+_RINP+'"></label>'
+    +   '<label style="'+_RLBL+'">📅 Fecha<input type="date" id="repro-t-fecha" value="'+escapeHtml(todayStr)+'" max="'+escapeHtml(todayStr)+'" onfocus="this.max=today()" style="'+_RINP+'"></label>'
     +   '<label style="'+_RLBL+'">Tipo<select id="repro-t-tipo" onchange="madReproMezclaToggle()" style="'+_RINP+'"><option value="Traslado">Traslado</option><option value="Mezcla">Mezcla</option></select></label>'
     + '</div>'
     + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding:10px;background:#f8fafc;border-radius:8px">'
@@ -12154,11 +12154,22 @@ function _reproTraceRecicladoHTML(t){
   return '<div style="font-size:11px;color:#075985;margin-top:4px">♻ Microchip reciclado: esta hembra lo lleva desde su ingreso el '+escapeHtml(t.desde)+', y lo de abajo es sólo suyo. '+(n>1?"Antes lo llevaron "+n+" hembras":"Antes lo llevó otra hembra")+': '+escapeHtml(quienes)+'.</div>';
 }
 
+/* 📅 2026-09-22 · UNA FECHA POSTERIOR A HOY NO SE ENVÍA en el alta, el evento ni el traslado (decisión del usuario).
+   Nació de 94 altas grabadas con ingreso 29-09 en vez de 29-08: el MCP, que lee las fechas, rechazaba cada evento de
+   esas hembras como «anterior a su ingreso» hasta ese día. El `max` del campo guía el calendario —y se renueva al
+   enfocarlo, porque la app pasa días abierta—, pero lo que manda es esto, al enviar. «Hoy» es el del dispositivo,
+   igual que la fecha que el formulario propone. Devuelve el mensaje, o "" si la fecha vale. */
+function _reproFechaFutura(fecha){
+  const dmy=function(s){ return String(s).split("-").reverse().join("/"); };
+  return fecha>today() ? "La fecha "+dmy(fecha)+" es posterior a hoy ("+dmy(today())+" en este dispositivo): no se envía nada." : "";
+}
+
 async function madReproProcess(){
   const fEl=document.getElementById("repro-fecha"), tEl=document.getElementById("repro-tipo"), cEl=document.getElementById("repro-codes");
   if(!fEl||!tEl||!cEl) return;
   const fecha=fEl.value, tipo=tEl.value;
   if(!isValidDate(fecha)){ toast("Fecha inválida.","err",3500); return; }
+  const _fut=_reproFechaFutura(fecha); if(_fut){ toast(_fut,"err",7000); return; }
   const parsed = window.__rgLib.parseTrovanList(cEl.value);
   if(!parsed.ids.length){ toast("Pega al menos un Trovan ID.","warn",3500); return; }
   // La Sala/Tanque de la Bitácora salen de la MATRIZ: hay que tenerla ANTES de armar
@@ -12251,6 +12262,7 @@ function _reproAltaCollect(fecha){
 async function madReproAltaBatch(){
   const fEl=document.getElementById("repro-a-fecha"); const fecha=fEl?fEl.value:"";
   if(!isValidDate(fecha)){ toast("Fecha de ingreso inválida.","err",3500); return; }
+  const _fut=_reproFechaFutura(fecha); if(_fut){ toast(_fut,"err",7000); return; }
   // Mejor esfuerzo: la MATRIZ aquí avisa de altas YA existentes (la misma cuaterna) y de un chip que ya
   // lleva una hembra VIVA; si no se puede leer NO se bloquea el alta (buildAltaBatch acepta índice
   // nulo) y quien decide es el GAS al escribir. (Un chip reutilizado con otra cuaterna es lo normal: no se avisa.)
@@ -12320,6 +12332,7 @@ async function madReproTransfer(){
   const g=function(id){ const e=document.getElementById(id); return e?e.value:""; };
   const fecha=g("repro-t-fecha"), tipo=g("repro-t-tipo");
   if(!isValidDate(fecha)){ toast("Fecha inválida.","err",3500); return; }
+  const _fut=_reproFechaFutura(fecha); if(_fut){ toast(_fut,"err",7000); return; }
   const origen={ sala:g("repro-t-osala"), tanque:g("repro-t-otanque") };
   const destinos=[]; let totalIds=0;
   document.querySelectorAll("#repro-t-dests .repro-dest").forEach(function(b){

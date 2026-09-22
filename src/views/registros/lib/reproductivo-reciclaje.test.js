@@ -691,3 +691,75 @@ describe('🔴 1a · el chip reciclado va a la hembra NUEVA aunque la copia en u
     }, 15000);
   });
 });
+
+/* 📅 2026-09-22 · UNA FECHA POSTERIOR A HOY NO SE ENVÍA en el alta, el evento ni el traslado (decisión del usuario, tras
+   94 altas grabadas con ingreso 29-09 en vez de 29-08). «Hoy» se calcula con el reloj, como lo calcula el motor: una
+   fecha fija caducaría. Cada rechazo se prueba junto a su límite —HOY sí sale—, o un «>=» pasaría por bueno. */
+describe('📅 alta, evento y traslado no admiten una fecha posterior a hoy', () => {
+  const iso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const hoy = () => iso(new Date());
+  const manana = () => { const d = new Date(); d.setDate(d.getDate() + 1); return iso(d); };
+  const avisoFuturo = () => avisos.find((a) => a.msg.includes('posterior a hoy'));
+  const evento = async (fecha) => {
+    caja('rc-eventos').innerHTML = H._reproEventosHTML();
+    document.getElementById('repro-fecha').value = fecha;
+    document.getElementById('repro-tipo').value = 'Desove';
+    document.getElementById('repro-codes').value = VIVA['Trovan ID'];
+    await H.madReproProcess();
+  };
+  const traslado = async (fecha) => {
+    caja('rc-transfer').innerHTML = H._reproTransferHTML();
+    document.getElementById('repro-t-fecha').value = fecha;
+    document.getElementById('repro-t-osala').value = 'S5';
+    document.getElementById('repro-t-otanque').value = 'T1';
+    document.querySelector('#repro-t-dests .repro-dest-sala').value = 'S6';
+    document.querySelector('#repro-t-dests .repro-dest-tanque').value = 'T2';
+    document.querySelector('#repro-t-dests .repro-dest-codes').value = VIVA['Trovan ID'];
+    await H.madReproTransfer();
+  };
+
+  it('🔴 un desove con fecha de mañana no se envía, y el aviso dice por qué', async () => {
+    await evento(manana());
+    expect(envios).toHaveLength(0);
+    expect(avisoFuturo().tipo).toBe('err');
+    expect(avisoFuturo().msg).toContain(manana().split('-').reverse().join('/'));
+  });
+  it('con la fecha de HOY el desove sí sale: el límite es hoy, incluido', async () => {
+    await evento(hoy());
+    expect(avisoFuturo()).toBeUndefined();
+    expect(envios.length).toBeGreaterThan(0);
+  });
+  it('🔴 un alta con ingreso de mañana no se envía', async () => {
+    teclearAlta(manana(), [[CHIP, 'P4', 'G09', 'L33', 'S2', 'T8']]);
+    await H.madReproAltaBatch();
+    expect(envios).toHaveLength(0);
+    expect(avisoFuturo().tipo).toBe('err');
+  });
+  it('un alta con ingreso de HOY sí sale', async () => {
+    teclearAlta(hoy(), [[CHIP, 'P4', 'G09', 'L33', 'S2', 'T8']]);
+    await H.madReproAltaBatch();
+    expect(avisoFuturo()).toBeUndefined();
+    expect(trovanes()).toEqual([CHIP]);
+  });
+  it('🔴 un traslado con fecha de mañana no se envía', async () => {
+    await traslado(manana());
+    expect(envios).toHaveLength(0);
+    expect(avisoFuturo().tipo).toBe('err');
+  });
+  it('un traslado con fecha de HOY sí sale', async () => {
+    await traslado(hoy());
+    expect(avisoFuturo()).toBeUndefined();
+    expect(envios.length).toBeGreaterThan(0);
+  });
+  it('los tres campos de fecha no ofrecen días posteriores a hoy, y el tope se renueva al enfocarlos', () => {
+    caja('rc-eventos').innerHTML = H._reproEventosHTML();
+    caja('rc-alta').innerHTML = H._reproAltaHTML();
+    caja('rc-transfer').innerHTML = H._reproTransferHTML();
+    for (const id of ['repro-fecha', 'repro-a-fecha', 'repro-t-fecha']) {
+      const el = document.getElementById(id);
+      expect(el.getAttribute('max'), id).toBe(hoy());
+      // La app pasa días abierta: un tope fijado al pintar bloquearía HOY pasada la medianoche.
+      expect(el.getAttribute('onfocus'), id).toBe('this.max=today()');
+    }
+  });
+});
