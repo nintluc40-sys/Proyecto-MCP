@@ -16,7 +16,8 @@ import { describe, it, expect } from 'vitest';
 import { buildReproModel, makeFilter, locationStats, locKey } from './data.js';
 
 const matriz = [
-  // Las dos están HOY en Sala 2 / Tanque 18 — como la hembra real 0007219648 de producción.
+  // Las dos están HOY en Sala 2 / Tanque 18 — como la hembra de la discrepancia V6 de producción (su Trovan
+  // no se escribe aquí: las pruebas no llevan valores reales).
   { 'Trovan ID': 'A1', 'Número': '1', 'Sala actual': 'Sala 2', 'Tanque actual': 'Tanque 18', Estado: 'Vivo', 'Fecha ingreso': '2026-05-01' },
   { 'Trovan ID': 'A2', 'Número': '2', 'Sala actual': 'Sala 2', 'Tanque actual': 'Tanque 18', Estado: 'Vivo', 'Fecha ingreso': '2026-05-01' },
 ];
