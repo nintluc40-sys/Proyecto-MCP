@@ -45,6 +45,7 @@ import { MAD_TRAT_HEADERS } from './ficha-maduracion-tratamientos.schema.js';
 import { MAD_MORT_HEADERS } from './ficha-maduracion-mortdesove.schema.js';
 import { MAD_ALIM_HEADERS } from './ficha-maduracion-alimentacion.schema.js';
 import { MAD_BS_HEADERS as BS_HEADERS, buildBroodstockRows } from './ficha-maduracion-broodstock.schema.js';
+import { TRASLADO_HEADERS } from './ficha-traslado.schema.js';
 import { REPRO_MATRIZ_HEADERS, REPRO_EVENTO, REPRO_TRANSFER_TIPO, buildAltaBatch, buildEventBatch, buildTransferBatch, matrixIndexFromRows } from './reproductivo.data.js';
 
 const leer = (u) => readFileSync(new URL(u, import.meta.url), 'utf8').split('\r\n').join('\n');
@@ -1572,5 +1573,68 @@ describe('GAS · P15 las fechas se formatean una vez por fecha distinta · P16 �
     const g = gas({ 'Maduración Tanques': hoja });
     expect(g.post({ sheetName: 'Maduración Tanques', headers: TANQUES, rows: [conValores(TANQUES, { Fecha: '2026-09-13', Sala: 'Sala 4', Tanque: 1, Muda: 1 })] }).status).toBe('ok');
     expect(formatoFinal(hoja, 2, 1)).toBe('dd/mm/yyyy');
+  });
+});
+
+/* ── Registro_Traslado · la «Ubicación» conserva su signo (2026-09-23) ─────────────────────────
+   Auditoría de LARC (40), 2026-09-22: 4 145 de 4 169 filas del Traslado tenían la latitud SIN su
+   «-», porque `cleanCell` quita el «-» inicial de todo texto. Vive aquí, y no en
+   `traslado-gas.test.js`, porque el saneado, el enrutado y el formato ocurren en `doPost`, y éste
+   es el archivo que lo ejecuta ENTERO; aquél carga piezas sueltas. */
+const TRAS = TRASLADO_HEADERS;
+const UBIC = TRAS.indexOf('Ubicación') + 1;               // columna de la hoja (desde 1)
+/* El texto EXACTO que escribe la app al sellar la ubicación, sacado de engine.js: si la app cambia de
+   formato, el patrón del GAS tiene que cambiar con ella, y esta prueba lo dice. */
+const ubicacionDeLaApp = (() => {
+  const m = engineSrc.match(/set\("ubicacion", (Number\(c\.latitude\)[^;]*)\);/);
+  if (!m) throw new Error('no encuentro en engine.js cómo se sella la Ubicación');
+  return (lat, lon) => new Function('c', 'return ' + m[1])({ latitude: lat, longitude: lon });
+})();
+const filaTras = (id, valores) => conValores(TRAS, Object.assign({ Fecha: '2026-09-21', Viaje: 'V1', 'Revisión': 1, Tina: 1, ID: id }, valores));
+const envioTras = (filas) => ({ sheetName: 'Registro_Traslado', headers: TRAS, rows: filas });
+
+describe('GAS · Registro_Traslado · la Ubicación conserva su signo (LARC 40)', () => {
+  it('🔴 la latitud NEGATIVA llega entera a la hoja, al añadir y al reescribir la fila', () => {
+    const u = ubicacionDeLaApp(-2.2135, -80.9791);
+    expect(u).toBe('-2.213500, -80.979100');
+    const hoja = hojaFalsa([TRAS]);
+    const g = gas({ Registro_Traslado: hoja });
+    expect(g.post(envioTras([filaTras('v1-c1-r1-t1', { 'Ubicación': u, Latitud: -2.2135, Longitud: -80.9791 })])).status).toBe('ok');
+    expect(hoja.filas[1][UBIC - 1]).toBe('-2.213500, -80.979100');
+    expect(g.post(envioTras([filaTras('v1-c1-r1-t1', { 'Ubicación': ubicacionDeLaApp(-2.3, -80.1) })])).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(2);                   // reescribió su fila, no añadió otra
+    expect(hoja.filas[1][UBIC - 1]).toBe('-2.300000, -80.100000');
+  });
+  it('🔴 la columna se pone como texto «@» ANTES de escribir, y cubre la fila escrita', () => {
+    const hoja = hojaFalsa([TRAS]);
+    const g = gas({ Registro_Traslado: hoja });
+    expect(g.post(envioTras([filaTras('v1-c1-r1-t1', { 'Ubicación': ubicacionDeLaApp(-2.2135, -80.9791) })])).status).toBe('ok');
+    const iTexto = hoja.escrituras.findIndex((e) => e.startsWith('texto@2,' + UBIC + 'x'));
+    const iValores = hoja.escrituras.findIndex((e) => e.startsWith('setValues@'));
+    expect(iTexto).toBeGreaterThanOrEqual(0);
+    expect(iTexto).toBeLessThan(iValores);
+    expect(formatoFinal(hoja, 2, UBIC)).toBe('@');
+  });
+  it('🔴 lo que NO es exactamente «número, número» se sigue saneando como siempre', () => {
+    const casos = [
+      ['=HYPERLINK("x")', 'HYPERLINK("x")'],
+      ['-2+3', '2+3'],
+      ['@-2.213500, -80.979100', '2.213500, -80.979100'],
+      ['-2.213500,-80.979100', '2.213500,-80.979100'],                // sin el espacio que pone la app
+      ['-2.213500, -80.979100, -1', '2.213500, -80.979100, -1'],
+      ['-2.213500, -80.979100\n=1+1', '2.213500, -80.979100\n=1+1'],
+      ['sin señal', 'sin señal'],
+    ];
+    const hoja = hojaFalsa([TRAS]);
+    const g = gas({ Registro_Traslado: hoja });
+    expect(g.post(envioTras(casos.map(([bruto], i) => filaTras('v1-c1-r' + i + '-t1', { 'Ubicación': bruto })))).status).toBe('ok');
+    expect(hoja.filas.slice(1).map((f) => f[UBIC - 1])).toEqual(casos.map(([, esperado]) => esperado));
+  });
+  it('🔴 sólo la Ubicación: las demás columnas de texto del Traslado se sanean igual que antes', () => {
+    const hoja = hojaFalsa([TRAS]);
+    const g = gas({ Registro_Traslado: hoja });
+    expect(g.post(envioTras([filaTras('v1-c1-r1-t1', { Lugar: '-2.213500, -80.979100', Observaciones: '-sin novedad' })])).status).toBe('ok');
+    expect(hoja.filas[1][TRAS.indexOf('Lugar')]).toBe('2.213500, -80.979100');
+    expect(hoja.filas[1][TRAS.indexOf('Observaciones')]).toBe('sin novedad');
   });
 });

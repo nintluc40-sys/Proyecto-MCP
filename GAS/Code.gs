@@ -22,7 +22,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "f170329aaddb";
+const GAS_VERSION = "9efceeac7cde";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -387,6 +387,20 @@ function doPost(e) {
     } catch(sanErr) {
       return respond({ status: "error", message: "Error en datos" });
     }
+    // Registro_Traslado · la Ubicación recupera el «-» que cleanCell le quitó (ver ubicacionConSigno_).
+    // Se localiza por CABECERA, no por posición.
+    var _ubicCol = -1;
+    if (isTras) {
+      var _cabTras = payload.headers || [];
+      for (var _uc = 0; _uc < _cabTras.length; _uc++) {
+        if (_cabeceraNorm_(_cabTras[_uc]) === _cabeceraNorm_("Ubicación")) { _ubicCol = _uc; break; }
+      }
+      if (_ubicCol >= 0) {
+        for (var _ur = 0; _ur < rows.length; _ur++) {
+          if (_ubicCol < rows[_ur].length) rows[_ur][_ubicCol] = ubicacionConSigno_(payload.rows[_ur][_ubicCol], rows[_ur][_ubicCol]);
+        }
+      }
+    }
 
     // A4 (2026-09-14) · un envío SIN la firma del esquema vigente no escribe, aunque la hoja esté
     // vacía o no exista: ver MAD_ESQUEMA_FIRMA. Va ANTES de abrir o crear la hoja porque fmtHeader
@@ -462,6 +476,14 @@ function doPost(e) {
     //     y re-sincronizar un registro, su fila se REEMPLAZA (no se duplica).
     //   • Maduración Broodstock: REEMPLAZO por (Fecha de corte · Piscina), con la llave fijada aquí.
     //   • Datos / Control: UPSERT estándar (Fecha+Módulo+Tanque[+Hora]).
+    // 2026-09-23 · la «Ubicación» del Traslado se escribe como TEXTO: sin el formato, Sheets interpretaría el
+    // «-2.2, -80.9» que ahora llega con su signo (ver ubicacionConSigno_). Si la hoja se queda corta se amplía
+    // primero, para que el formato cubra también las filas nuevas; las celdas ya escritas conservan su valor.
+    if (_ubicCol >= 0) {
+      var _filasTr = lastRow(ws) + rows.length;
+      if (_filasTr > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasTr - ws.getMaxRows());
+      if (ws.getMaxRows() > 1 && ws.getMaxColumns() > _ubicCol) ws.getRange(2, _ubicCol + 1, ws.getMaxRows() - 1, 1).setNumberFormat("@");
+    }
     var result;
     if (isMad) {
       // Las hojas POSICIONALES del registro operativo usan upsert con su clave compuesta (las del reproductivo, en madKeyCols):
@@ -522,6 +544,7 @@ function doPost(e) {
     // ID es además la última columna, que es su respaldo. La llave del cliente es
     // determinista (viaje-c<camión>-r<revisión>-t<tina>), así que el camión puede
     // sincronizar en cada parada sin duplicar una sola fila.
+    // (Su columna «Ubicación» ya va como texto: ver el formato justo antes de este enrutado.)
     else if (isTras)   result = upsertAstRows(ws, rows);
     // Las tres de Maduración van con MERGE (3.er argumento), al revés que AsT y
     // Traslado: ver la cabecera de upsertAstRows para el porqué.
@@ -606,6 +629,18 @@ function cleanCell(val) {
   }
   if (s.charAt(0) === "=") return "";
   return s;
+}
+// ── Registro_Traslado · la «Ubicación» conserva su signo (2026-09-23) ──
+// La app la escribe como «lat, lon» con seis decimales, y aquí las dos son NEGATIVAS. cleanCell quita el
+// «-» inicial de todo texto, así que la latitud perdía el signo: 4 145 de 4 169 filas (auditoría de
+// LARC (40), 2026-09-22). Latitud y Longitud viajan además como NÚMEROS, y ésas nunca se tocaron.
+// Sólo se devuelve el valor BRUTO si es exactamente «número, número»: nada que Sheets pueda tomar por
+// fórmula. La columna se escribe además como texto «@» (ver doPost), como la Hora de Tanques.
+// Sin barras invertidas en la expresión: colapsan dentro de la plantilla GAS() (ver _evDate).
+function ubicacionConSigno_(bruto, limpio) {
+  if (typeof bruto !== "string") return limpio;
+  var s = bruto.trim();
+  return /^-?[0-9]{1,3}[.][0-9]{1,8}, -?[0-9]{1,3}[.][0-9]{1,8}$/.test(s) ? s : limpio;
 }
 
 // ── Rate limiting (CacheService — persistente entre invocaciones) ──
