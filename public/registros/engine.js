@@ -8343,6 +8343,23 @@ function _madBorrAdaptar(ficha, fp, dia){
         else if(el.value!==def){ el.setAttribute("data-fijo","1"); el.style.background="#fef9c3"; }
       });
     });
+    /* · 2026-09-24 (punto 5): «📥 Cargar». Un borrador de antes no lo trae; y uno guardado con la lista abierta
+         la traería con las opciones de otro momento: se cierra y se vacía. Un desove que se completa (llave de
+         sólo lectura) no lo lleva. */
+    fp.querySelectorAll(".md-des").forEach(function(card){
+      const lote=card.querySelector(".md-lote");
+      if(!lote || lote.hasAttribute("readonly")) return;
+      if(!card.querySelector(".md-cargar-btn")){
+        const quitar=card.querySelector('button[onclick^="madDesDelCard"]');
+        if(quitar) quitar.insertAdjacentHTML("beforebegin", _MAD_DES_CARGAR_BTN);
+      }
+      if(!card.querySelector(".md-cargar")){
+        const fila=lote.closest("div");
+        if(fila) fila.insertAdjacentHTML("afterend", _MAD_DES_CARGAR_CAJA);
+      }
+      const caja=card.querySelector(".md-cargar");
+      if(caja){ caja.hidden=true; caja.innerHTML=""; }
+    });
   }
   /* · mortdes (2026-09-16, PE1.5): la alcalinidad tenía UN campo por área y ahora son dos (día y noche). La tabla
        vieja se cambia por la nueva y su valor pasa a «día», a la vista para corregirlo: tirarlo perdería lo tecleado. */
@@ -9067,6 +9084,11 @@ function madDesValidar(model){
 }
 
 // ── Maduración · Desoves · interfaz ──────────────────────────────────────────
+/* 📥 Cargar (punto 5, 2026-09-24; ver madDesComposiciones). No va en un desove que se está completando (✏️):
+   su lote y su código son la llave y no cambian. Van ANTES de _madDesCardHTML, que los usa. */
+const _MAD_DES_CARGAR_BTN = '<button class="btn md-cargar-btn" type="button" onclick="madDesCargar(this)" style="font-size:11px"'
+  + ' title="Carga lote, código genético y piscina de lo que está en producción">📥 Cargar</button>';
+const _MAD_DES_CARGAR_CAJA = '<div class="md-cargar" hidden style="border:1px solid #bfdbfe;background:#eff6ff;border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:12px"></div>';
 // `d` (opcional) rellena la tarjeta con un desove guardado; `bloq` fija su llave (lote y código) al completarlo.
 function _madDesCardHTML(d, bloq, fecha){
   const x=d||{};
@@ -9090,8 +9112,10 @@ function _madDesCardHTML(d, bloq, fecha){
     +   '<label style="'+_MAD_ING_LBL+'">Lote<input class="md-lote"'+llave("lote")+' style="'+_MAD_ING_INP+';width:100px;text-transform:uppercase'+gris+'"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Código genético<input class="md-cg"'+llave("codigoGenetico")+' style="'+_MAD_ING_INP+';width:120px'+gris+'"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Piscina Broodstock<input class="md-piscina"'+val("piscina")+' style="'+_MAD_ING_INP+';width:130px"></label>'
+    +   (bloq ? '' : _MAD_DES_CARGAR_BTN)
     +   '<button class="btn" type="button" onclick="madDesDelCard(this)" style="font-size:11px">✕ Quitar</button>'
     + '</div>'
+    + (bloq ? '' : _MAD_DES_CARGAR_CAJA)
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
     +   '<label style="'+_MAD_ING_LBL+'">Desoves<input class="md-desoves" type="number" min="0" step="1"'+val("desoves")+' style="'+_MAD_ING_INP+';width:88px"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Total de huevos (miles)<input class="md-huevos" type="number" min="0" step="1"'+val("huevos")+' style="'+_MAD_ING_INP+';width:130px"></label>'
@@ -9153,6 +9177,108 @@ function madDesDelCard(btn){
   const b=btn.closest(".md-des"), c=document.getElementById("md-cards");
   if(b && c && c.querySelectorAll(".md-des").length>1) b.remove();
   else toast("Debe quedar al menos un desove.","warn",2500);
+}
+/* ── 📥 CARGAR (usuario, 2026-09-24, punto 5) ─────────────────────────────────────────────────────
+   «Revisar los lotes - códigos genéticos - piscinas que están en producción, individualmente o en
+   pareja según su registro, para que el desove sea individual o en pareja según el ingreso», y
+   cargarlos en los tres campos de un golpe: «ahorrar que el técnico se equivoque».
+   · QUÉ SE OFRECE (decisión del usuario: sólo producción): cada composición del Ingreso —lote, código
+     genético, piscina— con animales VIVOS en una sala donde su lote está en PRODUCCIÓN a la fecha del
+     desove. Quién vive y en qué estado lo dice el libro; la piscina y el «Grupo», el Ingreso.
+   · PAREJA (decisión del usuario: según el ingreso): las composiciones de un lote que comparten «Grupo»
+     van JUNTAS, como UNA opción, con códigos y piscinas unidos por «/» en el orden del grupo —como ya se
+     escribían a mano, «CG1/CG2 · 101/102»—; sin grupo, cada una sola.
+   Devuelve [{ lote, codigoGenetico, piscina, pareja, texto }] ordenada por el texto. Pura: sin DOM. */
+function madDesComposiciones(libro, ingresos, fecha){
+  const enProd={};
+  ((libro&&libro.posiciones)||[]).forEach(function(p){
+    if(p.machos<=0 && p.hembras<=0) return;
+    if(madEstadoDeLoteEnSala((libro.lotes||{})[p.lote], p.sala, fecha)!==MAD_EST_PROD) return;
+    enProd[p.lote+"|"+p.codigoGenetico]=1;
+  });
+  // La piscina y el grupo de cada composición, con las MISMAS llaves que el libro (madLibroTxt), y el
+  // orden en que se registraron: es el de desempate cuando el rótulo del grupo no nombra a alguien.
+  const comp={}, orden=[];
+  (ingresos||[]).forEach(function(r){
+    const lote=madLibroTxt(r.Lote), cg=madLibroTxt(r["Código genético"]);
+    if(!lote || !cg) return;
+    const k=lote+"|"+cg;
+    if(!comp[k]){ comp[k]={ lote:lote, cg:cg, piscina:"", grupo:"" }; orden.push(k); }
+    if(!comp[k].piscina) comp[k].piscina=madLibroTxt(r["Piscina Broodstock"]);
+    if(!comp[k].grupo) comp[k].grupo=madLibroTxt(r.Grupo);
+  });
+  const opciones=[], vistos={};
+  orden.forEach(function(k){
+    const c=comp[k];
+    const miembros = c.grupo
+      ? orden.filter(function(j){ return comp[j].lote===c.lote && comp[j].grupo===c.grupo; }).map(function(j){ return comp[j]; })
+      : [c];
+    const gk=c.lote+"|"+(c.grupo || c.cg);
+    if(vistos[gk]) return;
+    vistos[gk]=1;
+    if(!miembros.some(function(m){ return enProd[m.lote+"|"+m.cg]; })) return;
+    const rot=c.grupo.split("/").map(function(s){ return s.trim(); });
+    const pos=function(m){ const i=rot.indexOf(m.cg); return i<0 ? rot.length : i; };
+    miembros.sort(function(a,b){ return pos(a)-pos(b); });
+    const cg=miembros.map(function(m){ return m.cg; }).join("/");
+    const piscina=miembros.map(function(m){ return m.piscina; }).filter(Boolean).join("/");
+    const pareja=miembros.length>1;
+    opciones.push({ lote:c.lote, codigoGenetico:cg, piscina:piscina, pareja:pareja,
+      texto:c.lote+" · "+cg+(piscina ? " · "+piscina : "")+(pareja ? " · pareja" : "") });
+  });
+  return opciones.sort(function(a,b){ return a.texto<b.texto ? -1 : a.texto>b.texto ? 1 : 0; });
+}
+/* La lista se TOCA, no se arrastra: arrastrar no funciona en pantallas táctiles, que es donde se registra.
+   Usa la última lectura del libro —la que deja cualquier 🔄—; sin ninguna, lee. */
+async function madDesCargar(btn){
+  const card = (btn && btn.closest) ? btn.closest(".md-des") : null;
+  const caja = card ? card.querySelector(".md-cargar") : null;
+  if(!caja) return;
+  if(!caja.hidden){ caja.hidden = true; return; }
+  caja.hidden = false;
+  if(_madLibro){ _madDesPintaCargar(caja); return; }
+  await madDesCargarReleer(caja);
+}
+async function madDesCargarReleer(el){
+  const caja = (el && el.closest) ? el.closest(".md-cargar") : null;
+  if(!caja) return;
+  caja.innerHTML = '<span style="color:#64748b">Leyendo las hojas… puede tardar unos segundos.</span>';
+  try{ await madSaldoCargar(true); }
+  catch(_){ caja.innerHTML = '<span style="color:#991b1b">No se pudieron leer las hojas. Reintenta con 📥.</span>'; return; }
+  _madDesPintaCargar(caja);
+}
+function _madDesPintaCargar(caja){
+  const f = document.getElementById("md-fecha");
+  const fecha = (f && isValidDate(f.value)) ? f.value : today();
+  const libro = _madLibroDeFicha(fecha) || _madLibro;
+  const ops = madDesComposiciones(libro, madLibroFuentes().ingresos, fecha);
+  // Con una hoja sin leer o recortada la lista puede quedarse corta, y se dice ANTES de enseñarla (A1).
+  const mal = madLibroIncompleto(_madLibro);
+  caja.innerHTML = (mal ? '<div style="color:#991b1b;margin-bottom:6px">⚠ '+escapeHtml(mal)+': la lista puede estar INCOMPLETA.</div>' : '')
+    + '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:6px;color:#1e40af">'
+    +   '<span>En producción el '+escapeHtml(fecha)+', según el Ingreso y el libro. Toca uno:</span>'
+    +   '<button class="btn" type="button" onclick="madDesCargarReleer(this)" style="font-size:11px" title="Vuelve a leer las hojas">🔄 Releer</button>'
+    + '</div>'
+    + (ops.length
+      ? '<div style="display:flex;flex-wrap:wrap;gap:6px">' + ops.map(function(o){
+          return '<button class="btn md-cargar-op" type="button" onclick="madDesCargarElige(this)" style="font-size:12px"'
+            + ' data-lote="'+escapeHtml(o.lote)+'" data-cg="'+escapeHtml(o.codigoGenetico)+'" data-piscina="'+escapeHtml(o.piscina)+'">'
+            + escapeHtml(o.texto)+'</button>';
+        }).join("") + '</div>'
+      : '<span style="color:#92400e">Ningún lote en producción ese día según el libro: escríbelo a mano.</span>');
+}
+/* Rellena los TRES campos de la tarjeta a la vez —lo que evita cruzar el código de una piscina con otra— y
+   avisa al borrador como si se hubiera tecleado: el valor puesto por programa no dispara `input`. */
+function madDesCargarElige(el){
+  const card = (el && el.closest) ? el.closest(".md-des") : null;
+  if(!card) return;
+  const pon = function(sel, v){ const e=card.querySelector(sel); if(e) e.value=v; return e; };
+  const lote = pon(".md-lote", el.getAttribute("data-lote") || "");
+  pon(".md-cg", el.getAttribute("data-cg") || "");
+  pon(".md-piscina", el.getAttribute("data-piscina") || "");
+  const caja = card.querySelector(".md-cargar");
+  if(caja) caja.hidden = true;
+  if(lote) lote.dispatchEvent(new Event("input", { bubbles:true }));
 }
 function madDesCollect(){
   const g=function(el,sel){ const e=el.querySelector(sel); return e?e.value:""; };

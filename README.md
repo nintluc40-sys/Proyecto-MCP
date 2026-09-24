@@ -571,6 +571,13 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
   Cada una se escribe **sólo junto a su cifra**, y el candado «N5 exige N2» mira la CIFRA, no la fecha
   —que viene puesta de oficio en todas—. Una fecha tecleada se valida como **día real**: `2026-02-31`
   pasa el patrón y no existe.
+- **Desoves · «📥 Cargar»** (usuario, 2026-09-24), al lado de «✕ Quitar»: lista lo que está en
+  **producción** a la fecha del desove —cada composición del Ingreso con vivos en una sala donde su
+  lote produce— y un toque rellena lote, código genético y piscina **a la vez**, para que no se
+  crucen. Una **pareja** del Ingreso (mismo «Grupo») es UNA opción, con códigos y piscinas unidos por
+  «/» en el orden del grupo, como ya se escribía a mano (`AB · CG1/CG2 · 101/102`). Se toca, no se
+  arrastra (arrastrar no funciona en pantallas táctiles). Usa la última lectura del libro, con
+  «🔄 Releer»; no sale al completar un desove, cuya llave no cambia.
 - **Fin de Ciclo · la fecha de aplicación** sale igual que la del registro y la sigue salvo que se
   cambie a mano. Mismo mecanismo `data-fijo`.
 - **Inf. Supervisor** (`Maduración Mortalidad Desove`) lleva TRES cosas en la misma hoja: mortalidad
