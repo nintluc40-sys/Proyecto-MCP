@@ -222,10 +222,12 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
   });
   todas.forEach((rec) => { if (cuentan.has(rec)) { byTrovan.set(rec.trovan, rec); females.push(rec); } });
   const duplicateTrovans = [...dupSet];
-  /** Nombre de la hembra que llevaba el chip `chip` el día `date` (con un solo individuo, el chip). */
-  const hembraDe = (chip, date) => {
+  /** Nombre de la hembra que llevaba el chip `chip` el día `date` (con un solo individuo, el chip).
+   *  7b (2026-09-24): el día en que murió quien lo llevaba, sólo su MORTALIDAD es suya (`esMortalidad`); un desove o
+   *  un traslado de ese día es de la siguiente. Ver `individuoEnFecha`. */
+  const hembraDe = (chip, date, esMortalidad) => {
     const cadena = cadenas.get(chip);
-    return cadena ? individuoEnFecha(cadena, date ? dayKey(date) : '').rec.trovan : chip;
+    return cadena ? individuoEnFecha(cadena, date ? dayKey(date) : '', esMortalidad).rec.trovan : chip;
   };
 
   // Movimientos (transferencias) — se parsean ANTES de la bitácora para poder
@@ -238,7 +240,7 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
     if (!chip) return;
     if (rawFecha && !date) noteBadDate('Transferencias', chip, rawFecha);
     movimientos.push({
-      trId: gv(o, H.trId), trovan: hembraDe(chip, date), fecha: gv(o, H.fecha), date, tipo: gv(o, H.tipo),
+      trId: gv(o, H.trId), trovan: hembraDe(chip, date, false), fecha: gv(o, H.fecha), date, tipo: gv(o, H.tipo),
       salaOrigen: gv(o, H.salaOrigen), tanqueOrigen: gv(o, H.tanqueOrigen),
       salaDestino: gv(o, H.salaDestino), tanqueDestino: gv(o, H.tanqueDestino),
     });
@@ -255,7 +257,7 @@ export function buildReproModel(matrizRows, bitacoraRows, transferRows) {
     const date = parseAnyDate(raw);
     if (!chip) return;
     if (!date) { noteBadDate('Bitácora', chip, raw); return; }
-    const trovan = hembraDe(chip, date);   // ♻ de qué hembra del chip es el evento
+    const trovan = hembraDe(chip, date, tipo === EVENTO_MORTALIDAD);   // ♻ de qué hembra del chip es el evento
     // Ubicación del evento: manda el snapshot de la propia fila; sólo si no viene se
     // deriva por Trovan (MATRIZ + transferencias).
     // ⚠ El comentario anterior decía que la Bitácora real no trae Sala/Tanque y que

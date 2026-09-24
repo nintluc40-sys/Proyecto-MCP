@@ -531,8 +531,11 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
   con dos hembras: los del lote del 29-08.)
 - 🔴 **Un chip reciclado es de la hembra que lo llevaba ESE día: la de ingreso más reciente, pero no antes
   de que muera la anterior.** La fecha de ingreso es la del LOTE, no la del chip: el lote del 29-08 recibió
-  chips de hembras que murieron del 06 al 10-09. Un evento o traslado con fecha igual o anterior a esa
-  muerte es «de una hembra anterior»: no se envía y no toca a la nueva. 🔴 Para eso la lectura **pide
+  chips de hembras que murieron del 06 al 10-09. Un evento o traslado con fecha ANTERIOR a esa muerte no es
+  de la nueva: no se envía y no la toca. **El DÍA de esa muerte sólo es de la que murió su mortalidad**; un
+  desove o un traslado de ese día es de la nueva, viva, si ya había ingresado (usuario, 2026-09-24: «el
+  sistema no debe atribuirle desoves a un organismo muerto»; caso real: un desove del 10-09, el día en que murió la anterior).
+  Cada llamada a `individuoEnFecha` dice si el evento es mortalidad. 🔴 Para eso la lectura **pide
   «Fecha ingreso» y «Fecha muerte»** desde el 2026-09-24: `index (8)`, sin el store del tablero, no las
   tenía, y una mortalidad atrasada de la anterior iba a la nueva —viva— y la marcaba muerta. (Dejaron de
   pedirse el 09-14 porque costaban 10×; P15 las abarató y, medido, cuestan lo mismo.) Una copia local sin

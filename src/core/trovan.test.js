@@ -183,8 +183,25 @@ describe('core · individuoEnFecha / idsDeCadena', () => {
     const siguiente = fila(1, '2026-08-29', '', false);
     const c = [anterior, siguiente];
     expect(individuoEnFecha(c, '2026-09-01')).toBe(anterior);   // la nueva ya había ingresado; el chip, no
-    expect(individuoEnFecha(c, '2026-09-06')).toBe(anterior);   // el día de su muerte, suyo (su mortalidad)
+    expect(individuoEnFecha(c, '2026-09-01', true)).toBe(anterior);
     expect(individuoEnFecha(c, '2026-09-07')).toBe(siguiente);
+    expect(individuoEnFecha(c, '2026-09-07', true)).toBe(siguiente);
+  });
+  /* 🔴 7b (usuario, 2026-09-24) · «el sistema no debe atribuirle desoves a un organismo muerto». El DÍA de la muerte sólo
+     es suya la MORTALIDAD; un desove o un traslado de ese día es de la siguiente, que ya había ingresado. */
+  it('🔴 7b · el día de esa muerte, su mortalidad es suya; un desove o un traslado, de la siguiente', () => {
+    const anterior = fila(0, '2026-06-27', '2026-09-06', true);
+    const siguiente = fila(1, '2026-08-29', '', false);
+    const c = [anterior, siguiente];
+    expect(individuoEnFecha(c, '2026-09-06', true)).toBe(anterior);    // su mortalidad
+    expect(individuoEnFecha(c, '2026-09-06', false)).toBe(siguiente);  // un desove o un traslado de ese día
+    expect(individuoEnFecha(c, '2026-09-06')).toBe(siguiente);         // sin decirlo, no es mortalidad
+  });
+  it('7b · si la siguiente aún no había ingresado, ese día no hay otra: sigue siendo de la anterior', () => {
+    // La atribución tiene que dar a alguien; al REGISTRAR, un evento así se rechaza (`antesDeSuIngreso`).
+    const anterior = fila(0, '2026-06-27', '2026-09-06', true);
+    const tardia = fila(1, '2026-09-10', '', false);
+    expect(individuoEnFecha([anterior, tardia], '2026-09-06')).toBe(anterior);
   });
   it('sin la fecha de muerte de la anterior (o con las dos vivas) manda el ingreso, como antes', () => {
     const viva = fila(0, '2026-06-27', '', false);

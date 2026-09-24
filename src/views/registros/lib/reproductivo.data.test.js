@@ -704,21 +704,39 @@ describe('🔴 el chip no pasa a la nueva hasta la muerte de la anterior (el ing
     expect(r.report.processed).toEqual([CHIP]);
     expect(r.bitacora.rows[0][col(REPRO_BITACORA_HEADERS, 'Sala')]).toBe('S3');
   });
-  it('un traslado de ese día tampoco mueve a la nueva', () => {
+  /* 🔴 7b (usuario, 2026-09-24) · el DÍA de esa muerte sólo es de la anterior su MORTALIDAD (arriba). Un desove o un
+     traslado de ese día es de la nueva, VIVA: «el sistema no debe atribuirle desoves a un organismo muerto». Hasta el
+     09-24 se rechazaban los dos. */
+  it('🔴 7b · un DESOVE del día de esa muerte es de la nueva: se registra, con su Sala y su Tanque', () => {
+    const r = buildEventBatch({ ids: [CHIP], fecha: '2026-08-10', tipo: REPRO_EVENTO.DESOVE, matrixIndex: idx() });
+    expect(r.report.antesDelIngreso).toEqual([]);
+    expect(r.report.processed).toEqual([CHIP]);
+    expect(r.bitacora.rows[0][col(REPRO_BITACORA_HEADERS, 'Sala')]).toBe('S3');
+  });
+  it('🔴 7b · un TRASLADO del día de esa muerte mueve a la nueva', () => {
     const r = buildTransferBatch({ fecha: '2026-08-10', tipo: REPRO_TRANSFER_TIPO.TRASLADO, origen: { sala: 'S3', tanque: 'T4' },
       destinos: [{ sala: 'S6', tanque: 'T2', ids: [CHIP] }], matrixIndex: idx(), trId: 'TR-000301' });
-    expect(r.report.antesDelIngreso).toEqual([CHIP]);
-    expect(r.matriz).toBeNull();
+    expect(r.report.antesDelIngreso).toEqual([]);
+    expect(r.report.moved).toEqual([CHIP]);
   });
-  it('la traza de la nueva empieza el día siguiente a esa muerte y no se queda lo de antes', () => {
-    const BIT = [{ 'Trovan ID': CHIP, 'Fecha': '2026-08-05', 'Tipo': 'Desove' }, { 'Trovan ID': CHIP, 'Fecha': '2026-08-12', 'Tipo': 'Desove' }];
+  it('un desove o un traslado de ANTES de esa muerte sigue sin ir a la nueva', () => {
+    const d = buildEventBatch({ ids: [CHIP], fecha: '2026-08-09', tipo: REPRO_EVENTO.DESOVE, matrixIndex: idx() });
+    expect(d.report.antesDelIngreso).toEqual([CHIP]);
+    const t = buildTransferBatch({ fecha: '2026-08-09', tipo: REPRO_TRANSFER_TIPO.TRASLADO, origen: { sala: 'S3', tanque: 'T4' },
+      destinos: [{ sala: 'S6', tanque: 'T2', ids: [CHIP] }], matrixIndex: idx(), trId: 'TR-000302' });
+    expect(t.report.antesDelIngreso).toEqual([CHIP]);
+  });
+  it('🔴 7b · la traza de la nueva empieza EL DÍA de esa muerte (su desove de ese día es suyo) y no se queda lo de antes', () => {
+    const BIT = [{ 'Trovan ID': CHIP, 'Fecha': '2026-08-05', 'Tipo': 'Desove' }, { 'Trovan ID': CHIP, 'Fecha': '2026-08-10', 'Tipo': 'Desove' },
+      { 'Trovan ID': CHIP, 'Fecha': '2026-08-12', 'Tipo': 'Desove' }];
     const t = trazaDelChip([ANTERIOR, NUEVA], BIT, [], CHIP);
-    expect(t.desde).toBe('2026-08-11');
-    expect(t.desoves).toEqual(['2026-08-12']);
+    expect(t.desde).toBe('2026-08-10');
+    expect(t.desoves).toEqual(['2026-08-10', '2026-08-12']);
   });
-  it('la matriz de desoves de la Consulta pone el desove de antes de esa muerte en la fila de la anterior', () => {
-    const BIT = [{ 'Trovan ID': CHIP, 'Fecha': '2026-08-05', 'Tipo': 'Desove' }, { 'Trovan ID': CHIP, 'Fecha': '2026-08-12', 'Tipo': 'Desove' }];
-    expect(pivotDesoves(BIT, [ANTERIOR, NUEVA]).rows.map((r) => [r.trovan, r.total])).toEqual([[CHIP, 1], [CHIP + '·2026-01-05', 1]]);
+  it('🔴 7b · la matriz de desoves de la Consulta pone el de ANTES de esa muerte en la fila de la anterior, y el de ESE día en la nueva', () => {
+    const BIT = [{ 'Trovan ID': CHIP, 'Fecha': '2026-08-05', 'Tipo': 'Desove' }, { 'Trovan ID': CHIP, 'Fecha': '2026-08-10', 'Tipo': 'Desove' },
+      { 'Trovan ID': CHIP, 'Fecha': '2026-08-12', 'Tipo': 'Desove' }];
+    expect(pivotDesoves(BIT, [ANTERIOR, NUEVA]).rows.map((r) => [r.trovan, r.total])).toEqual([[CHIP, 2], [CHIP + '·2026-01-05', 1]]);
   });
 });
 

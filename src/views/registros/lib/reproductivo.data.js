@@ -132,9 +132,10 @@ function registroVigente(filas) {
     individuos: filas.length,
     vivos: filas.filter((f) => !f.muerto).length,
   });
-  /* 🔴 2026-09-22 · la MUERTE de quien llevaba el chip justo antes que la vigente: hasta ese día, incluido, el chip era
-     suyo aunque la vigente hubiera ingresado antes —el ingreso es el del lote, no el del chip—. Es la regla de
-     `individuoEnFecha`, y la usa `antesDeSuIngreso` para que un evento atrasado no vaya a la nueva. Sólo si se conoce. */
+  /* 🔴 2026-09-22 · la MUERTE de quien llevaba el chip justo antes que la vigente: hasta ese día el chip era suyo aunque la
+     vigente hubiera ingresado antes —el ingreso es el del lote, no el del chip—. El DÍA de la muerte, sólo su mortalidad
+     (7b, 2026-09-24). Es la regla de `individuoEnFecha`, y la usa `antesDeSuIngreso` para que un evento atrasado no
+     vaya a la nueva. Sólo si se conoce. */
   if (filas.length > 1) {
     const cadena = cadenaDelChip(filas).cadena, k = cadena.indexOf(vig);
     if (k > 0 && cadena[k - 1].muerte) r.muerteAnterior = cadena[k - 1].muerte;
@@ -185,13 +186,16 @@ export function buildMatrixIndex(records) {
  *    pedía las de FECHA (costaban 10×) y aquí no podía comprobarse nada: una mortalidad atrasada de la
  *    anterior iba a la vigente, VIVA, y la marcaba muerta. Desde ese día las pide (P15, en el GAS, las
  *    abarató: medido, lo mismo con ellas que sin ellas) y la asimetría se cierra: ver `_REPRO_MATRIZ_COLS`. */
-function antesDeSuIngreso(rec, dia) {
+function antesDeSuIngreso(rec, dia, esMortalidad) {
   if (!(rec && rec.individuos > 1 && dia)) return false;
   const ingreso = fechaIso(rec.fechaIngreso);
   if (ingreso && dia < ingreso) return true;
-  /* 🔴 2026-09-22 · y hasta la muerte de la anterior, incluida: ese día el chip aún era suyo. Sin esto, una mortalidad
-     atrasada de la anterior iba a la vigente —viva— y la marcaba muerta (ver `registroVigente`). */
-  return !!(rec.muerteAnterior && dia <= rec.muerteAnterior);
+  /* 🔴 2026-09-22 · y hasta la muerte de la anterior: el chip aún era suyo. Sin esto, una mortalidad atrasada de la
+     anterior iba a la vigente —viva— y la marcaba muerta (ver `registroVigente`).
+     7b (usuario, 2026-09-24) · el DÍA de esa muerte sólo es suya la MORTALIDAD; un desove o un traslado de ese día es de
+     la vigente, viva: «el sistema no debe atribuirle desoves a un organismo muerto». */
+  if (!rec.muerteAnterior) return false;
+  return esMortalidad ? dia <= rec.muerteAnterior : dia < rec.muerteAnterior;
 }
 /** El chip ha llevado VARIAS hembras y la lectura no trae su fecha de ingreso: la comprobación de
  *  arriba no puede hacerse, y el evento se apuntará a la vigente sin que nadie pueda saber si era de
@@ -330,7 +334,7 @@ export function buildEventBatch({ ids, fecha, tipo, matrixIndex, eleccion } = {}
       rec = Object.assign({}, elegida, { individuos: rec.individuos, vivos: rec.vivos });
       report.elegidas.push(id);
     }
-    if (antesDeSuIngreso(rec, dia)) { report.antesDelIngreso.push(id); return; } // de una hembra anterior del chip
+    if (antesDeSuIngreso(rec, dia, tipo === REPRO_EVENTO.MORTALIDAD)) { report.antesDelIngreso.push(id); return; } // de una hembra anterior del chip
     /* No rechaza: sólo deja constancia de que la comprobación de «¿es de una hembra anterior?» no se pudo
        hacer con esta lectura. Va DESPUÉS de los rechazos, porque de un código rechazado no hay nada que
        avisar, y ANTES de registrar, porque se avisa del que SÍ se registra. */
@@ -419,7 +423,7 @@ export function buildTransferBatch({ fecha, tipo, origen, destinos, composicion,
         rec = Object.assign({}, elegida, { individuos: rec.individuos, vivos: rec.vivos });
         report.elegidas.push(id);
       }
-      if (matrixIndex && antesDeSuIngreso(rec, dia)) { report.antesDelIngreso.push(id); return; } // de una hembra anterior del chip
+      if (matrixIndex && antesDeSuIngreso(rec, dia, false)) { report.antesDelIngreso.push(id); return; } // de una hembra anterior del chip
       /* 🔴 1d (2026-09-22) · UNA HEMBRA MUERTA NO SE TRASLADA, igual que no desova. Hasta hoy el traslado no miraba el
          Estado, y una muerta que la MATRIZ situaba en el origen declarado se «movía»: fila en Transferencias y Sala/Tanque
          nuevos en la MATRIZ, sin revivirla. Va antes que el origen: que esté muerta es lo que hay que decir. Un chip
@@ -483,7 +487,8 @@ function nombradorDeHembras(matrixRows) {
     const ids = idsDeCadena(chip, cadena);
     cadenas.set(chip, cadena.map((f, k) => Object.assign({}, f, { id: ids[k] })));
   });
-  return (chip, dia) => { const c = cadenas.get(chip); return c ? individuoEnFecha(c, dia).id : chip; };
+  // Sólo nombra DESOVES (pivotDesoves): el día de la muerte de la anterior ya son de la siguiente (7b).
+  return (chip, dia) => { const c = cadenas.get(chip); return c ? individuoEnFecha(c, dia, false).id : chip; };
 }
 
 /** Pivota la BITÁCORA a la matriz ancha de DESOVES: filas = Trovan, columnas = fechas,
@@ -532,7 +537,8 @@ export function individualTrace(transferRows, trovan) {
 /** Trazabilidad de un chip para la Consulta: la hembra que lo lleva hoy (`rec`, la vigente del
  *  índice), sus desoves y sus movimientos.
  *  ♻ Con el chip reciclado sólo son suyos los de desde que lleva el chip (`desde`: su ingreso, o el día
- *  siguiente a la muerte de la anterior si murió después), y las hembras anteriores van en `anteriores`.
+ *  de la muerte de la anterior si murió después —7b: sus desoves y traslados de ese día ya son de ésta—), y las
+ *  hembras anteriores van en `anteriores`.
  *  Si la lectura no trae las fechas de ingreso no se puede partir: `sinFechas` lo dice y se muestra
  *  todo lo del chip. */
 export function trazaDelChip(matrixRows, bitacoraRows, transferRows, trovan) {
@@ -543,12 +549,10 @@ export function trazaDelChip(matrixRows, bitacoraRows, transferRows, trovan) {
   const vig = filas.length ? vigenteDelChip(filas) : null;
   const rec = filas.length ? registroVigente(filas) : null;
   let desde = reciclado ? vig.ingreso : '';
-  /* 🔴 2026-09-22 · si quien llevaba antes el chip murió después de ese ingreso, el chip es suyo desde el día SIGUIENTE
-     a esa muerte (la regla de `individuoEnFecha`): lo de antes es de la anterior. */
-  if (desde && rec.muerteAnterior && rec.muerteAnterior >= desde) {
-    const p = rec.muerteAnterior.split('-').map(Number);
-    desde = new Date(Date.UTC(p[0], p[1] - 1, p[2] + 1)).toISOString().slice(0, 10);
-  }
+  /* 🔴 2026-09-22 · si quien llevaba antes el chip murió después de ese ingreso, lo de antes de esa muerte es de la anterior.
+     7b (usuario, 2026-09-24) · y el DÍA de la muerte ya es de ésta: la traza sólo enseña desoves y traslados, y ésos, ese
+     día, son de la viva (la regla de `individuoEnFecha`). Hasta el 09-24 empezaba el día SIGUIENTE. */
+  if (desde && rec.muerteAnterior && rec.muerteAnterior > desde) desde = rec.muerteAnterior;
   const enSuVida = (f) => !desde || fechaIso(f) >= desde;
   const desoves = (bitacoraRows || [])
     .filter((r) => normTrovan(r['Trovan ID']) === id && String(r['Tipo']) === REPRO_EVENTO.DESOVE && enSuVida(r['Fecha']))

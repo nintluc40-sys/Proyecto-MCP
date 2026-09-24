@@ -144,14 +144,18 @@ export function cadenaDelChip(filas) {
  *  🔴 2026-09-22 · Y EL CHIP NO PASA A LA SIGUIENTE MIENTRAS SIGUE PUESTO: si quien lo llevaba murió ese día o
  *  después, el evento es suyo. La fecha de ingreso es la del LOTE, no la del chip: el lote del 29-08 recibió chips de
  *  hembras que murieron del 06 al 10-09, y sus muertes se atribuían a las nuevas, que están vivas. Sin fecha de
- *  muerte de quien lo llevaba (o con dos vivas), manda el ingreso, como antes. */
-export function individuoEnFecha(cadena, dia) {
+ *  muerte de quien lo llevaba (o con dos vivas), manda el ingreso, como antes.
+ *  🔴 2026-09-24 (usuario, punto 7b) · «el sistema no debe atribuirle desoves a un organismo muerto». El DÍA de esa
+ *  muerte sólo es suya la MORTALIDAD —es su muerte—; un desove o un traslado de ese día es de la siguiente, si ya
+ *  había ingresado (caso real: un desove del 10-09, el día en que murió la anterior). `esMortalidad` lo dice quien llama. */
+export function individuoEnFecha(cadena, dia, esMortalidad) {
   if (!cadena || !cadena.length) return null;
   if (!dia) return cadena[cadena.length - 1];
   let el = cadena[0];
   cadena.forEach((f) => {
     if (!f.ingreso || f.ingreso > dia) return;
-    if (f !== el && el.muerte && el.muerte >= dia) return;   // aún lo llevaba la anterior (murió ese día o después)
+    // aún lo llevaba la anterior: murió después, o ese mismo día si el evento es su mortalidad
+    if (f !== el && el.muerte && (esMortalidad ? el.muerte >= dia : el.muerte > dia)) return;
     el = f;
   });
   return el;

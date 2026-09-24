@@ -583,4 +583,20 @@ describe('maduracion.data · ♻ el chip no pasa a la nueva hasta la muerte de l
     expect(m.mortalidades.map((e) => [e.trovan, e.lote])).toEqual([[CHIP + '·2026-06-27', 'L12']]);
     expect(m.desoves.map((e) => [e.trovan, e.lote])).toEqual([[CHIP, 'L20']]);
   });
+
+  /* 🔴 7b (usuario, 2026-09-24) · «el sistema no debe atribuirle desoves a un organismo muerto». El DÍA de la muerte
+     sólo es suya la mortalidad; el desove y el traslado de ese día son de la nueva, viva. Es el caso real que la sonda
+     de transferencias tenía por conocido (desove de la nueva el 10-09, el día en que murió la anterior). */
+  const mismoDia = buildReproModel([ANT, NUEVA], [
+    { 'Trovan ID': CHIP, Fecha: '2026-09-06', Tipo: 'Mortalidad', Sala: 'S1', Tanque: 'T13' },
+    { 'Trovan ID': CHIP, Fecha: '2026-09-06', Tipo: 'Desove', Sala: 'S4', Tanque: 'T3' },
+  ], [
+    { 'TR-ID': 'TR-000501', Fecha: '2026-09-06', Tipo: 'Traslado', 'Trovan ID': CHIP, 'Sala origen': 'S4', 'Tanque origen': 'T3',
+      'Sala destino': 'S4', 'Tanque destino': 'T5' },
+  ]);
+  it('🔴 7b · el día de esa muerte: la mortalidad, de la anterior; el desove y el traslado, de la nueva', () => {
+    expect(mismoDia.mortalidades.map((e) => [e.trovan, e.lote])).toEqual([[CHIP + '·2026-06-27', 'L12']]);
+    expect(mismoDia.desoves.map((e) => [e.trovan, e.lote])).toEqual([[CHIP, 'L20']]);
+    expect(mismoDia.movimientos.map((e) => e.trovan)).toEqual([CHIP]);
+  });
 });
