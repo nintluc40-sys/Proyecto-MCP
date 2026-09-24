@@ -9629,6 +9629,8 @@ function madDesCorregir(id, k){
   const fp=document.getElementById("fp-desoves"); if(!fp) return;
   fp.innerHTML="";
   renderMadDesoves(d, { id:String(id), k:k, ts:h.e.ts });
+  // Se corrige UN desove: «✕ Quitar» no tiene nada que quitar (y así era el diseño aprobado).
+  const quitar=fp.querySelector('#md-cards button[onclick^="madDesDelCard"]'); if(quitar) quitar.remove();
   const b=document.getElementById("md-edit"); if(b && b.scrollIntoView) b.scrollIntoView({block:"start"});
 }
 /* El contexto de la corrección viaja EN el aviso (id, llave y lo guardado): así sobrevive al borrador de la ficha, que
@@ -9699,9 +9701,11 @@ function _madDesCorreccionAnota(id, k, desove, campos, estado){
   if(hecho) madDesLogGuardar(l);
   return hecho;
 }
-// Tras corregir: el desove queda en «pendientes» como lo ve ahora este dispositivo, y la ficha vuelve a estar limpia.
+/* Tras corregir, la ficha vuelve a estar limpia, y si el desove está en «pendientes» de este dispositivo se pone al día.
+   Si ya no está (salió al leer la hoja con su N5), NO se añade: la corrección lo resucitaría como pendiente sin serlo. */
 function _madDesCorreccionRemata(model, desove){
-  madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), { fecha:model.fecha, desoves:[desove] }, Date.now()));
+  const k=madDesLlave({ fecha:model.fecha, lote:desove.lote, codigoGenetico:desove.codigoGenetico }), locales=madDesLocalesLeer();
+  if(locales.some(function(l){ return madDesLlave(l)===k; })) madDesLocalesGuardar(madDesLocalesAnota(locales, { fecha:model.fecha, desoves:[desove] }, Date.now()));
   _madBorrOlvidarPantalla("desoves", model.fecha);
   madDesReiniciar();
 }
@@ -9762,7 +9766,8 @@ async function madDesCorregirGuardar(){
   if(ok || t.outcome==="queued"){
     _madDesCorreccionAnota(id, k, desove, van, ok ? "ok" : "cola");
     _madDesCorreccionRemata(model, desove);
-    if(ok) toast(perdido ? "✅ Desove enviado de nuevo, completo" : "✅ Corrección registrada ("+_madDesCamposTxt(van)+")","ok",5000);
+    // Sin «✅» delante: el aviso de tipo «ok» ya lo pone (saldría «✅ ✅»).
+    if(ok) toast(perdido ? "Desove enviado de nuevo, completo" : "Corrección registrada ("+_madDesCamposTxt(van)+")","ok",5000);
     // El informe con el aviso se va con la ficha al limpiarla: lo vaciado se dice también aquí.
     if(!perdido && cambios.vaciados.length) toast("Lo que dejaste vacío ("+_madDesCamposTxt(cambios.vaciados)+") sigue en la hoja: si sobra, corrígelo en «"+MAD_DESOVE_SHEET+"».","warn",8000);
     if(ok) return;

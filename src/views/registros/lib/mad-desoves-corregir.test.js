@@ -175,6 +175,7 @@ describe('Desoves · ✏️ abre el desove para corregirlo', () => {
     expect(fp.querySelector('[onclick="madDesGuardarLocal()"]')).toBeNull();
     expect(fp.querySelector('[onclick="madDesGuardar()"]')).toBeNull();
     expect(fp.querySelector('.md-cargar-btn')).toBeNull();
+    expect(fp.querySelector('button[onclick^="madDesDelCard"]'), 'con UN desove, «✕ Quitar» no tiene nada que quitar').toBeNull();
     expect(fp.querySelector('[onclick="madDesCorregirGuardar()"]').textContent).toContain('Guardar corrección');
     expect(fp.querySelector('[onclick="madDesCorregirCancelar()"]').textContent).toContain('Cancelar');
     expect(fp.querySelector('[onclick="madDesRevisar()"]')).not.toBeNull();
@@ -218,7 +219,22 @@ describe('Desoves · corregir lo que YA llegó a la hoja: sólo viaja lo que cam
     expect(document.getElementById('md-edit'), 'la ficha vuelve a estar limpia').toBeNull();
     expect(hist()[0].textContent).toContain('✏️ corregido');
     expect(hist()[0].textContent).toContain('6800');
-    expect(avisos.some((a) => a.tipo === 'ok' && a.msg.includes('Total de huevos'))).toBe(true);
+    const ok = avisos.find((a) => a.tipo === 'ok' && a.msg.includes('Total de huevos'));
+    expect(ok, 'el aviso dice qué se corrigió').toBeDefined();
+    expect(ok.msg.startsWith('✅'), 'el aviso «ok» ya pone su ✅: con otro saldría «✅ ✅»').toBe(false);
+  });
+
+  it('🔴 si el desove está en «pendientes» de este dispositivo se pone al día; si no está, no se añade', async () => {
+    localStorage.setItem(H.MAD_DES_PEND_KEY, JSON.stringify([{ fecha: FECHA, lote: 'ZA', codigoGenetico: 'TST.A1', huevos: '6500', ts: hace(2) }]));
+    sembrar([entrada('e1', 'ok', [DES_A, DES_B])]);
+    abrir(0);
+    q('.md-huevos').value = '6800';
+    await H.madDesCorregirGuardar();
+    abrir(1);
+    q('.md-desoves').value = '8';
+    await H.madDesCorregirGuardar();
+    const pend = JSON.parse(localStorage.getItem(H.MAD_DES_PEND_KEY));
+    expect(pend.map((p) => [p.lote, p.huevos])).toEqual([['ZA', '6800']]);   // ZB salió de la lista (o nunca estuvo): no vuelve
   });
 
   it('🔴 corregir el N2 lleva su fecha; corregir sólo la fecha de N2 lleva también su cifra', async () => {
@@ -412,6 +428,8 @@ describe('Desoves · lo que NO llegó (⚠) se envía completo', () => {
     expect(fila).toEqual(H.buildMadDesovePayload({ fecha: FECHA, desoves: [DES_A] }).rows[0]);
     expect(envios[0].opts.mark).toEqual({ kind: 'madlog:desoves', keys: ['e1'] });
     expect(log()[0].estado).toBe('ok');
+    const ok = avisos.find((a) => a.tipo === 'ok' && a.msg.includes('enviado de nuevo'));
+    expect(ok && !ok.msg.startsWith('✅')).toBe(true);
   });
 });
 
