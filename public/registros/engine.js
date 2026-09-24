@@ -1231,6 +1231,10 @@ function clearToasts(){
    SYNC UI
 ══════════════════════════════════════════ */
 function setSyncUI(st, lbl){
+  /* B (2026-09-24, usuario) · «Todo sincronizado» con envíos esperando en la cola era FALSO (las fichas de formulario de
+     Maduración y el reproductivo no tienen otro registro que los cuente). Lo decide la cola, no quien llama: son más de
+     veinte los sitios que lo ponen tras un envío. */
+  if(st === "idle"){ const _q = (typeof syncQueueLen === "function") ? syncQueueLen() : 0; if(_q){ st = "pend"; lbl = _q + " en cola"; } }
   document.getElementById("sdot").className = "sdot " + st;
   document.getElementById("slbl").textContent = lbl;
 }
@@ -1708,7 +1712,10 @@ async function _verifyReqId(reqId){
 ══════════════════════════════════════════ */
 const SYNCQ_KEY = "larv4_syncqueue";
 const SYNCQ_MAX = 50;
-const SYNCQ_TTL = 24 * 60 * 60 * 1000; // 24 h: descarta ítems demasiado viejos
+/* B (2026-09-24, usuario) · 7 DÍAS, no 24 h, y lo que caduque SE AVISA (_colaAvisaDescartes): a las 24 h se borraba en
+   silencio, y el reproductivo —sin copia en el dispositivo— lo perdía sin rastro. Contrapartida aceptada: un envío que
+   llega días después puede pisar una corrección hecha a mano en la hoja entre medias. */
+const SYNCQ_TTL = 7 * 24 * 60 * 60 * 1000;
 let _flushingQueue = false;
 
 function _loadSyncQueue(){
@@ -1762,8 +1769,24 @@ function _enqueueSync(payload, reqId, url, mark){
       Array.isArray(it.mark.keys) && it.mark.keys.length && it.mark.keys.every(k => supKeys.has(k))));
   }
   q.push({ payload, reqId: reqId || "", url: url || "", ts: Date.now(), mark: (mark && mark.kind) ? mark : null });
-  if(q.length > SYNCQ_MAX) q = q.slice(q.length - SYNCQ_MAX); // conserva los más recientes
+  if(q.length > SYNCQ_MAX){
+    const _fuera = q.slice(0, q.length - SYNCQ_MAX);
+    q = q.slice(q.length - SYNCQ_MAX); // conserva los más recientes
+    // B (2026-09-24) · y ya no en silencio: se dice qué se tiró.
+    try{ if(typeof _colaAvisaDescartes === "function") _colaAvisaDescartes(_fuera, "la cola llegó a su tope de " + SYNCQ_MAX); }catch(_){}
+  }
   _saveSyncQueue(q);
+  // B (2026-09-24) · con algo en la cola, el reintento automático tiene que estar en marcha, y el indicador contarlo.
+  try{ if(typeof _colaAsegura === "function") _colaAsegura(); }catch(_){}
+  try{ if(typeof updateSyncUI === "function") updateSyncUI(); }catch(_){}
+}
+/* Lo que sale de la cola SIN llegar a la hoja se AVISA: qué hoja y cuándo se guardó (B, 2026-09-24). */
+function _colaAvisaDescartes(items, motivo){
+  if(!items || !items.length) return;
+  const dia = function(ts){ const f=new Date(ts||0); return ("0"+f.getDate()).slice(-2)+"/"+("0"+(f.getMonth()+1)).slice(-2); };
+  const lista = items.slice(0, 3).map(function(it){ return "«"+((it && it.payload && it.payload.sheetName) || "¿hoja?")+"» guardado el "+dia(it && it.ts); }).join(", ")
+    + (items.length > 3 ? " y " + (items.length - 3) + " más" : "");
+  toast("⚠️ Se descartaron " + items.length + " envío(s) de la cola sin llegar a la hoja (" + motivo + "): " + lista + ". Revísalos y vuelve a enviarlos.", "err", 12000);
 }
 
 // F3: elimina de la cola los envíos previos de las mismas sesiones. Se llama
@@ -1890,11 +1913,15 @@ function _reconcileMark(mark){
 // la marca del ítem (los registros dejan de figurar pendientes y no se
 // reenvían). Un "rejected" (rechazo permanente) NO marca synced: el dato no se
 // escribió, se avisa y se retira de la cola para no bloquearla.
-async function flushSyncQueue(){
-  if(_flushingQueue) return;
-  if(typeof navigator !== "undefined" && navigator.onLine === false) return;
+async function flushSyncQueue(opts){
+  /* B (2026-09-24) · `opts.automatico`: lo lanza el reintento automático, que es SILENCIOSO con lo que sigue esperando
+     (lo dice el indicador de la cabecera). Devuelve { sent, rejected, enEspera }, o null si no llegó a vaciar, para que
+     ese reintento sepa si avanzó. */
+  const _auto = !!(opts && opts.automatico);
+  if(_flushingQueue) return null;
+  if(typeof navigator !== "undefined" && navigator.onLine === false) return null;
   let q = _loadSyncQueue();
-  if(q.length === 0) return;
+  if(q.length === 0) return null;
   _flushingQueue = true;
   try{
     const now = Date.now();
@@ -1947,7 +1974,7 @@ async function flushSyncQueue(){
       } else if(res === "rejected" && _esRechazoDeEntorno(_info.message)){
         // El dato está bien; lo que falta se arregla FUERA (re-desplegar el GAS, poner
         // el token). Se conserva para que el vaciado automático lo entregue solo. La
-        // cola no se atasca: tiene TTL de 24 h y tope de SYNCQ_MAX.
+        // cola no se atasca: tiene TTL de 7 días y tope de SYNCQ_MAX (los dos, avisados).
         remaining.push(it);
         enEspera++; msgEntorno = _info.message || msgEntorno;
       } else if(res === "rejected"){
@@ -1966,20 +1993,56 @@ async function flushSyncQueue(){
        también llegó, y su fila del registro no puede acabar en «⚠ no llegó». */
     const _resueltos = new Set(q.filter(it => remaining.indexOf(it) === -1).map(_claveCola));
     const _ahora = Date.now();
-    const _cola = _loadSyncQueue().filter(it => it && (_ahora - (it.ts || 0)) < SYNCQ_TTL);
+    const _leida = _loadSyncQueue().filter(it => it);
+    const _cola = _leida.filter(it => (_ahora - (it.ts || 0)) < SYNCQ_TTL);
+    // B (2026-09-24) · lo que caduca ya no sale en silencio.
+    _colaAvisaDescartes(_leida.filter(it => (_ahora - (it.ts || 0)) >= SYNCQ_TTL), "llevaban 7 días sin poder salir");
     _cola.forEach(it => { if(_entregados.has(_claveCola(it)) && _reconcileMark(it.mark)) reconciled = true; });
     _saveSyncQueue(_cola.filter(it => !_resueltos.has(_claveCola(it))));
     if(sent > 0 || rejected > 0 || enEspera > 0){
       if(sent > 0)     toast("✅ "+sent+" envío(s) pendiente(s) de la cola completados", "ok", 4000);
       // El de ENTORNO no dice «revisa los datos»: los datos están bien y siguen en cola.
-      if(enEspera > 0) toast("⏳ "+enEspera+" envío(s) esperando en la cola"+_gasMotivo(msgEntorno)
+      // B · el reintento automático no lo repite cada minuto: lo que espera lo dice el indicador.
+      if(enEspera > 0 && !_auto) toast("⏳ "+enEspera+" envío(s) esperando en la cola"+_gasMotivo(msgEntorno)
         +" — se entregarán solos en cuanto se arregle", "warn", 8000);
       if(rejected > 0) toast("⚠️ "+rejected+" envío(s) en cola rechazados"+_gasMotivo(msgDatos)+" — revisa los datos", "err", 6000);
       try{ updateDots(); updateSyncUI(); if(reconciled && typeof buildGrid === "function") buildGrid(); }catch(_){}
     }
+    try{ updateSyncUI(); }catch(_){}   // B · el indicador cuenta la cola: al día tras CADA vaciado
+    return { sent: sent, rejected: rejected, enEspera: enEspera };
   } finally {
     _flushingQueue = false;
+    // B · si sigue quedando algo, el reintento automático tiene que estar en marcha (también tras un vaciado a mano).
+    try{ _colaAsegura(); }catch(_){}
   }
+}
+/* ── B (2026-09-24, usuario) · LA COLA SE REINTENTA SOLA ─────────────────────────────────────────────────────────────
+   Hasta hoy sólo se vaciaba a los 8 s de encolar, al pulsar Sincronizar, al volver la red o al abrir la app, y el aviso
+   prometía «se entregarán solos». Decisión del usuario: cada 60 s mientras quede algo, ESPACIÁNDOSE (×2, hasta 5 min)
+   si un intento no entrega nada —no se le carga más trabajo a un GAS caído— y de vuelta a 60 s en cuanto algo llega.
+   Sólo con la app a la vista y con red. Es silencioso con lo que espera (flushSyncQueue({ automatico:true })). */
+const COLA_REINTENTO_MS = 60000;
+const COLA_REINTENTO_MAX_MS = 300000;
+let _colaTm = null;
+let _colaEspera = COLA_REINTENTO_MS;
+function _colaProgramar(ms){
+  clearTimeout(_colaTm); _colaTm = null;
+  if(!syncQueueLen()){ _colaEspera = COLA_REINTENTO_MS; return; }
+  _colaTm = setTimeout(_colaTick, ms === undefined ? _colaEspera : ms);
+}
+function _colaAsegura(){ if(!_colaTm) _colaProgramar(); }
+async function _colaTick(){
+  _colaTm = null;
+  if(!syncQueueLen()){ _colaEspera = COLA_REINTENTO_MS; return; }
+  const oculta = typeof document !== "undefined" && document.visibilityState === "hidden";
+  const sinRed = typeof navigator !== "undefined" && navigator.onLine === false;
+  if(!oculta && !sinRed){
+    let r = null;
+    try{ r = await flushSyncQueue({ automatico:true }); }catch(_){}
+    // null = no llegó a vaciar (otro vaciado en curso): ni avanza ni retrocede.
+    if(r) _colaEspera = (r.sent > 0 || r.rejected > 0) ? COLA_REINTENTO_MS : Math.min(_colaEspera * 2, COLA_REINTENTO_MAX_MS);
+  }
+  _colaProgramar();
 }
 
 // F2a/F5: postPayload comunica el RESULTADO real del envío en `opts.outcome`
@@ -2771,37 +2834,39 @@ function updateDots(){
     el.className = "fdot " + (s==="synced"?"ok":s==="pending"?"pend":"mt");
   });
 }
+/* B (2026-09-24) · lo pendiente del módulo, y además lo que espera en la cola. Sin nada pendiente, setSyncUI ya dice
+   «N en cola» si la cola tiene algo. */
+function _syncUIResumen(p, cosa){
+  const q = syncQueueLen();
+  if(!p){ setSyncUI("idle","Todo sincronizado"); return; }
+  setSyncUI("pend", p + " " + cosa + " pendiente(s)" + (q ? " · " + q + " en cola" : ""));
+}
 function updateSyncUI(){
   if(isMicMod(curMod)){
     const p = loadMic().filter(r=>!r.synced).length + (typeof _calRaw==="function"?_calRaw().filter(r=>!r.synced).length:0) + (typeof _patRaw==="function"?_patRaw().filter(r=>!r.synced).length:0);
-    if(!p) setSyncUI("idle","Todo sincronizado");
-    else   setSyncUI("pend", p + " muestra(s) pendiente(s)");
+    _syncUIResumen(p, "muestra(s)");
     return;
   }
   if(isBioMod(curMod)){
     const p = loadBio().filter(r => !r.synced).length;
-    if(!p) setSyncUI("idle","Todo sincronizado");
-    else   setSyncUI("pend", p + " registro(s) pendiente(s)");
+    _syncUIResumen(p, "registro(s)");
     return;
   }
   if(isAstMod(curMod)){
     const p = loadAst().filter(r => !r.synced).length;
-    if(!p) setSyncUI("idle","Todo sincronizado");
-    else   setSyncUI("pend", p + " registro(s) pendiente(s)");
+    _syncUIResumen(p, "registro(s)");
     return;
   }
   if(isMadMod(curMod)){
     let p = 0;
     MAD_FICHAS.forEach(f => { p += loadMad(f).filter(r => !r.synced).length; });
     p += madLocTotal();   // PE1.4 · lo guardado con 💾 en las fichas de formulario también está pendiente
-    if(!p) setSyncUI("idle","Todo sincronizado");
-    else   setSyncUI("pend", p + " registro(s) pendiente(s)");
+    _syncUIResumen(p, "registro(s)");
     return;
   }
   const tabs = isLabMod(curMod) ? ["algas"] : STD_FICHAS_ALL;
   const p = tabs.filter(f=>getStatus(curMod,f)==="pending").length;
-  if(!p) setSyncUI("idle","Todo sincronizado");
-  else   setSyncUI("pend", p + " ficha(s) pendiente(s)");
+  _syncUIResumen(p, "ficha(s)");
 }
 
 /* ══════════════════════════════════════════
@@ -26491,6 +26556,8 @@ try{
 }catch(_){}
 // S3: reintenta automáticamente la cola de sincronización al volver la conexión.
 try{ window.addEventListener("online", function(){ try{ flushSyncQueue(); }catch(_){} }); }catch(_){}
+// B (2026-09-24) · y al VOLVER a la app con algo en cola, el reintento se adelanta (el que corre no lo hace oculta).
+try{ document.addEventListener("visibilitychange", function(){ try{ if(document.visibilityState === "visible" && syncQueueLen()) _colaProgramar(3000); }catch(_){} }); }catch(_){}
 const _bootCleanup = () => {
   let _changed = false;
   try{ _changed = cleanup(); }catch(_){}

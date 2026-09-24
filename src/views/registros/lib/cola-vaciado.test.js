@@ -47,9 +47,14 @@ beforeAll(async () => {
     + '\ntry{ H.setPostOnce=function(f){_postOnce=f;}; }catch(_){}'
     + '\ntry{ H.setVerify=function(f){_verifyReqId=f;}; }catch(_){}\n})();';
   globalThis.__ENG = H;
+  /* ⚠ La limpieza de arranque del monolito VACÍA la cola por requestIdleCallback (hasta 2 s REALES): bajo carga caería en
+     mitad de una prueba. Aquí corre DURANTE el arranque (ver cola-reintento.test.js, donde se vio). */
+  const _ric = globalThis.requestIdleCallback;
+  globalThis.requestIdleCallback = (fn) => { fn(); return 1; };
   new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(
     window, document, globalThis.localStorage, globalThis,
   );
+  globalThis.requestIdleCallback = _ric;
   H.setToast(() => {});
   H.setGasUrl(() => 'https://script.google.com/macros/s/AKfycbPRUEBA/exec');
   globalThis.fetch = async (url) => { throw new Error('fetch inesperado: ' + url); };

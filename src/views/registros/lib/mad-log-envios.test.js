@@ -127,13 +127,31 @@ describe('Registro de envíos · cada entrada dice el estado de SU envío', () =
     expect(document.getElementById('mt-log').textContent).not.toContain('en cola');
   });
 
-  it('🔴 si CADUCA en la cola (24 h) dice «no llegó», NO «enviado» (antes mentía a favor)', async () => {
+  /* 🔄 2026-09-24 (usuario, punto 2a · B) · LA REGLA CAMBIÓ: el plazo de la cola pasa de 24 h a 7 DÍAS y lo que caduca se
+     AVISA. Esta prueba exigía la caducidad a las 25 h; ahora a las 25 h el envío sigue en la cola y se entrega. */
+  it('🔴 si CADUCA en la cola (7 días) dice «no llegó», NO «enviado» (antes mentía a favor), y se AVISA', async () => {
+    const avisos = [];
+    H.setToast((m, t) => avisos.push({ m: String(m), t }));
+    try {
+      await tratEnCola();
+      ponCola(cola().map((it) => ({ ...it, ts: Date.now() - 7 * 24 * 3600e3 - 3600e3 })));
+      await H.flushSyncQueue();
+      expect(cola()).toHaveLength(0);
+      expect(envios).toHaveLength(0);
+      expect(estados(H.madTratLogHTML())).toEqual(['⚠ no llegó']);
+      expect(avisos.some((a) => a.t === 'err' && a.m.includes(H.MAD_TRAT_SHEET) && a.m.includes('7 días')), 'ya no sale en silencio').toBe(true);
+    } finally {
+      H.setToast(() => {});
+    }
+  });
+
+  it('🔴 a las 25 h ya NO caduca: se entrega (hasta el 2026-09-24 se borraba en silencio)', async () => {
     await tratEnCola();
     ponCola(cola().map((it) => ({ ...it, ts: Date.now() - 25 * 3600e3 })));
     await H.flushSyncQueue();
     expect(cola()).toHaveLength(0);
-    expect(envios).toHaveLength(0);
-    expect(estados(H.madTratLogHTML())).toEqual(['⚠ no llegó']);
+    expect(envios).toHaveLength(1);
+    expect(estados(H.madTratLogHTML())).toEqual(['✅ enviado']);
   });
 
   it('🔴 si la hoja lo RECHAZA por los datos, «no llegó»', async () => {

@@ -444,8 +444,8 @@ No basta con que el GAS conteste: eso sólo medía «está vivo».
 
 > 🔒 **Es un fallo seguro, no un error.** Tocar `Code.gs` y no re-desplegar deja esas fichas
 > **sin enviar**: calculan, guardan en el dispositivo y lo avisan. Lo mismo si `?p=ver` no contesta.
-> Nada se pierde — pero **la cola descarta a las 24 h**, así que no conviene dejar pasar días entre
-> publicar el cliente y re-desplegar el GAS.
+> Nada se pierde — pero **la cola descarta a los 7 días** (avisando qué), así que no conviene dejar
+> pasar días entre publicar el cliente y re-desplegar el GAS.
 
 ⚙ Config → **«🔗 Probar conexión»** es quien dice si el sello entró, sin escribir nada.
 
@@ -504,7 +504,18 @@ una copia antigua de la app lleva dentro un GAS viejo.
 Un envío que no puede salir entra en la cola con su **marca** (`madlog:<ficha>` + su id). Al
 entregarse, la cola la reconcilia y el registro «Registrado desde este dispositivo» de esa ficha
 enseña **📶 en cola**, **✅ enviado** o **⚠ no llegó**. El estado es de cada envío, no de la cola
-entera. **A las 24 h, lo que siga en la cola se descarta.**
+entera.
+
+Desde el 2026-09-24 (punto 2a, correcciones A y B, decisiones del usuario):
+- **La cola se reintenta SOLA** mientras tenga algo: cada 60 s con la app a la vista y con red,
+  espaciándose ×2 hasta 5 min si no avanza, y de vuelta a 60 s en cuanto algo llega. Es silenciosa
+  con lo que espera: lo dice el indicador de la cabecera, que **cuenta la cola** («N en cola») y ya no
+  dice «Todo sincronizado» con envíos esperando.
+- **Nada sale sin avisar**: lo que lleva **7 días** sin poder salir (antes 24 h, en silencio) o lo que
+  la cola tira al llegar a su tope de 50 se avisa diciendo qué hoja y de cuándo. Contrapartida
+  aceptada: un envío que llega días después puede pisar una corrección hecha a mano entre medias.
+- **Vaciarla no pierde nada**: al terminar se relee la cola y sólo se quita lo que ese vaciado
+  resolvió; lo que se guardó, se purgó o se sustituyó mientras tanto se respeta.
 
 ## Reglas vigentes (lo que no es obvio leyendo el código)
 
