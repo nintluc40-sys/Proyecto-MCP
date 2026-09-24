@@ -496,8 +496,8 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
   copia local, que guarda **la misma proyección que se le pide al GAS** y anota cuáles; una copia a
   la que le falte alguna de esas columnas no se usa.
 - **Un chip con DOS hembras vivas: el SISTEMA no elige; elige el USUARIO** (D17, R5). El evento sólo
-  trae el Trovan, así que apuntarlo a una sería una convención — y como la lectura **no pide las
-  columnas de fecha** (cuestan 10×), el desempate caería en «la de más abajo en la hoja». Así que el
+  trae el Trovan, así que apuntarlo a una sería una convención — y sin las columnas de fecha (que la
+  lectura no pidió hasta el 2026-09-24) el desempate caería en «la de más abajo en la hoja». Así que el
   evento y el TRASLADO se rechazan y el informe ofrece las dos, por su cuaterna, para registrar con la
   elegida (el traslado conserva su TR-ID). El alta ya avisa cuando el chip lo lleva una viva. Medido en
   producción el 2026-09-17: 1665 filas, 1665 chips, ninguno con más de una. (El 2026-09-22 ya eran 67 chips
@@ -505,9 +505,12 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
 - 🔴 **Un chip reciclado es de la hembra que lo llevaba ESE día: la de ingreso más reciente, pero no antes
   de que muera la anterior.** La fecha de ingreso es la del LOTE, no la del chip: el lote del 29-08 recibió
   chips de hembras que murieron del 06 al 10-09. Un evento o traslado con fecha igual o anterior a esa
-  muerte es «de una hembra anterior»: no se envía y no toca a la nueva. Sin fechas (la lectura de
-  `index (8)` no las pide) no se puede comprobar: el evento va a la vigente con aviso, y la Consulta no
-  parte el chip en hembras.
+  muerte es «de una hembra anterior»: no se envía y no toca a la nueva. 🔴 Para eso la lectura **pide
+  «Fecha ingreso» y «Fecha muerte»** desde el 2026-09-24: `index (8)`, sin el store del tablero, no las
+  tenía, y una mortalidad atrasada de la anterior iba a la nueva —viva— y la marcaba muerta. (Dejaron de
+  pedirse el 09-14 porque costaban 10×; P15 las abarató y, medido, cuestan lo mismo.) Una copia local sin
+  ellas ya no se usa. Sólo con una fecha en BLANCO no se puede comprobar: el evento va a la vigente con
+  aviso, y la Consulta no parte el chip en hembras.
 - **Ninguna fecha posterior a hoy** en el alta, el evento ni el traslado (2026-09-22: un alta grabada con
   29-09 en vez de 29-08 dejó a 67 hembras sin poder registrar nada en el MCP).
 

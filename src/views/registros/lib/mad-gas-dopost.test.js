@@ -1312,11 +1312,12 @@ describe('GAS · la MATRIZ admite varios individuos por chip, y nadie pierde su 
     piscina: 'P4', sala: 'S2', tanque: 'T8', fecha }, extra)], null).payload;
   /* El índice se arma con las MISMAS columnas que pide el cliente a ?p=rows (_REPRO_MATRIZ_COLS),
      que desde el 2026-09-16 incluyen la cuaterna: sin ella, la mortalidad y el traslado mandarían
-     la llave a medias. Es justo lo que estas pruebas tienen que poder ver. */
-  const indiceComoElCliente = (...hembras) => matrixIndexFromRows(hembras.map((o) => ({
-    'Trovan ID': o['Trovan ID'], 'Piscina': o['Piscina'], 'Código genético': o['Código genético'], 'Lote': o['Lote'],
-    'Sala actual': o['Sala actual'], 'Tanque actual': o['Tanque actual'], 'Estado': o['Estado'],
-  })));
+     la llave a medias. Es justo lo que estas pruebas tienen que poder ver.
+     ⚠ 2026-09-24 · la lista se LEE del motor: aquí iba copiada a mano (las siete de entonces) y caducó el día que
+     entraron las dos fechas. Un ayudante que imita una lectura tiene que cambiar cuando la lectura cambia. */
+  const COLS_DEL_CLIENTE = JSON.parse(/const _REPRO_MATRIZ_COLS = (\[[^\]]*\]);/.exec(engineSrc)[1]);
+  const indiceComoElCliente = (...hembras) => matrixIndexFromRows(hembras.map((o) =>
+    Object.fromEntries(COLS_DEL_CLIENTE.map((c) => [c, o[c] ?? '']))));
   const mortalidad = (fecha, ...hembras) => buildEventBatch({ ids: [CHIP], fecha, tipo: REPRO_EVENTO.MORTALIDAD,
     matrixIndex: indiceComoElCliente(...hembras) }).matriz;
 

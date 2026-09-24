@@ -168,21 +168,28 @@ describe('registros · lector del reproductivo · caché local de la MATRIZ', ()
      mortalidad y el traslado salían de ella SIN piscina, código ni lote, y con la llave de la MATRIZ por
      cuaterna la hoja ganaba una fila suelta en vez de actualizar la de la hembra. */
   it('🔴 RD1 · la copia guarda la IDENTIDAD: justo las columnas que se leen, y anota cuáles', async () => {
+    /* 2026-09-24 · la fila trae las dos FECHAS, como las devuelve ya el GAS (con la muerte en blanco, que es como llega
+       la de una viva): desde ese día se piden, y la copia tiene que guardarlas o una copia de hoy nacería sin ellas. */
     const fila = { 'Trovan ID': '0007219380', 'Piscina': 'P9', 'Código genético': 'G07', 'Lote': 'L20',
-      'Sala actual': 'S3', 'Tanque actual': 'T4', 'Estado': 'Vivo', 'Observaciones': 'la manda un GAS que ignora «cols»' };
+      'Sala actual': 'S3', 'Tanque actual': 'T4', 'Estado': 'Vivo', 'Fecha ingreso': '2026-08-01', 'Fecha muerte': '',
+      'Observaciones': 'la manda un GAS que ignora «cols»' };
     const { api, store } = sandbox(code, [{ body: JSON.stringify({ ok: true, rows: [fila] }) }]);
     await api._reproEnsureMatrix();
     const copia = JSON.parse(store['larv4_mad_matriz']);
     expect(copia.cols).toEqual([...api._REPRO_MATRIZ_COLS]);
     expect(Object.keys(copia.rows[0]).sort()).toEqual([...api._REPRO_MATRIZ_COLS].sort());   // ni más (el peso) ni menos
     for (const c of ['Piscina', 'Código genético', 'Lote']) expect(copia.rows[0][c], c).toBe(fila[c]);
+    expect(copia.rows[0]['Fecha ingreso'], 'y la fecha que decide de qué hembra es un evento').toBe('2026-08-01');
   });
 
   it('🔴 RD1 · una copia SIN la identidad no se usa por reciente que sea: la de antes, o a la que le falte una columna', async () => {
     const deAntes = JSON.stringify({ ts: Date.now() - 3600e3,
       rows: [{ 'Trovan ID': '000821AFF0', 'Sala actual': 'S2', 'Tanque actual': 'T9', 'Estado': 'Vivo' }] });
     const sinLote = cacheCon(3600e3, 1, colsDelMotor().filter((c) => c !== 'Lote'));
-    for (const [caso, copia] of [['la de antes de RD1', deAntes], ['sin «Lote»', sinLote]]) {
+    /* 2026-09-24 · la que ya tienen los dispositivos al actualizar: sin las dos FECHAS. Decisión del usuario: no se usa,
+       o en una copia así volvería a pasar lo de index (8) —la mortalidad atrasada de la anterior, a la nueva—. */
+    const sinFechas = cacheCon(3600e3, 1, colsDelMotor().filter((c) => !c.startsWith('Fecha ')));
+    for (const [caso, copia] of [['la de antes de RD1', deAntes], ['sin «Lote»', sinLote], ['sin las FECHAS (la de antes del 24-09)', sinFechas]]) {
       const { api } = sandbox(code, caido(), { localStorage: { 'larv4_mad_matriz': copia } });
       await api._reproEnsureMatrix();
       expect(api.state, caso).toBe('error');

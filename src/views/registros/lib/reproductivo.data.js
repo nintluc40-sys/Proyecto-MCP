@@ -114,14 +114,14 @@ function filasPorChip(records) {
  *  chip). Lo usaba la regla de sucesión —un alta tenía que ingresar DESPUÉS de esa fecha— y esa regla
  *  se retiró el 09-16 con la cuaterna, pero el campo se quedó: se calculaba, tenía prueba propia y no
  *  lo leía NADIE. Y era además vacuo en producción, porque se deriva de `Fecha ingreso` y `Fecha
- *  muerte`, que la lectura no pide (cuestan 10×). Un campo con prueba que nadie usa invita a usarlo
- *  creyendo que significa algo vigente, así que se va entero.
+ *  muerte`, que la lectura no pedía entonces (costaban 10×; se piden desde el 2026-09-24). Un campo con
+ *  prueba que nadie usa invita a usarlo creyendo que significa algo vigente, así que se va entero.
  *
  *  🔑 `vivos` es de D17 (2026-09-17). Un evento de la Bitácora sólo trae el Trovan, así que si un chip
  *  llevara DOS hembras vivas a la vez —posible desde que la identidad es la cuaterna— habría que elegir
- *  una, y esa elección es una convención, no un hecho. Peor: la lectura NO pide las columnas de fecha
- *  (cuestan 10×, ver `_REPRO_MATRIZ_COLS`), así que el desempate «la de ingreso más reciente» de
- *  `vigenteDelChip` no tiene con qué desempatar y cae en «la de más abajo en la hoja». Una mortalidad
+ *  una, y esa elección es una convención, no un hecho. Peor: la lectura NO pedía entonces las columnas de
+ *  fecha (costaban 10×; desde el 2026-09-24 sí, ver `_REPRO_MATRIZ_COLS`), así que el desempate «la de ingreso
+ *  más reciente» de `vigenteDelChip` no tenía con qué desempatar y caía en «la de más abajo en la hoja». Una mortalidad
  *  mal atribuida marcaría «Muerto» en la fila equivocada. Por eso `buildEventBatch` NO elige: rechaza
  *  y lo dice —y desde R5 (2026-09-18), `buildTransferBatch` igual, y los dos registran a la que elija el
  *  USUARIO entre las `opciones`—. Medido el 2026-09-17 en producción: 1665 filas, 1665 chips, ninguno con
@@ -181,10 +181,10 @@ export function buildMatrixIndex(records) {
  *
  *  🔑 DE DÓNDE SALEN LAS FECHAS, que decide si esto puede funcionar:
  *  · repo / Pages → la MATRIZ sale del STORE del tablero (el libro entero) y trae todas las columnas;
- *  · `index (8)` → NO tiene store, así que siempre cae a la lectura del GAS, que no pide las de FECHA
- *    porque cuestan 10× (ver `_REPRO_MATRIZ_COLS`). Allí esta comprobación no puede hacerse.
- *  Es una asimetría real entre los dos destinos, no un descuido: la lectura barata es la que permite
- *  trabajar en campo. */
+ *  · `index (8)` → NO tiene store, así que siempre cae a la lectura del GAS. Hasta el 2026-09-24 ésa no
+ *    pedía las de FECHA (costaban 10×) y aquí no podía comprobarse nada: una mortalidad atrasada de la
+ *    anterior iba a la vigente, VIVA, y la marcaba muerta. Desde ese día las pide (P15, en el GAS, las
+ *    abarató: medido, lo mismo con ellas que sin ellas) y la asimetría se cierra: ver `_REPRO_MATRIZ_COLS`. */
 function antesDeSuIngreso(rec, dia) {
   if (!(rec && rec.individuos > 1 && dia)) return false;
   const ingreso = fechaIso(rec.fechaIngreso);
@@ -477,8 +477,8 @@ function nombradorDeHembras(matrixRows) {
     if (cadena.length < 2) return;
     /* 2026-09-22 · «y con fechas», que este comentario prometía y el código no hacía: sin la fecha de ingreso de
        TODAS sus hembras no se sabe de cuál es cada desove, e `individuoEnFecha` se los daba a la primera de la hoja
-       (la fila «chip·#1», una hembra anterior) aunque fueran de la vigente. La lectura del GAS no pide fechas: era
-       lo que enseñaba SIEMPRE la Consulta de index (8). Sin ellas, una fila por chip, como dice la traza. */
+       (la fila «chip·#1», una hembra anterior) aunque fueran de la vigente. La lectura del GAS no pedía fechas hasta
+       el 2026-09-24: era lo que enseñaba SIEMPRE la Consulta de index (8). Sin ellas, una fila por chip, como dice la traza. */
     if (cadena.some((f) => !f.ingreso)) return;
     const ids = idsDeCadena(chip, cadena);
     cadenas.set(chip, cadena.map((f, k) => Object.assign({}, f, { id: ids[k] })));

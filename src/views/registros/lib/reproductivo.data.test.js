@@ -345,7 +345,8 @@ const VIEJA = { 'Número': '7', 'Trovan ID': CHIP, 'Color anillo': 'Rojo', 'Pisc
 const NUEVA = { 'Número': '31', 'Trovan ID': CHIP, 'Color anillo': 'Azul', 'Piscina': 'P9', 'Código genético': 'G07', 'Lote': 'L20',
   'Sala actual': 'S3', 'Tanque actual': 'T4', 'Estado': 'Vivo', 'Fecha muerte': '', 'Fecha ingreso': '2026-08-01' };
 const OTRA_VIVA = { 'Trovan ID': '0007218CCC', 'Sala actual': 'S5', 'Tanque actual': 'T1', 'Estado': 'Vivo', 'Fecha ingreso': '2026-02-01' };
-// La lectura de respaldo del GAS NO trae fechas: pide sólo las 7 columnas de `_REPRO_MATRIZ_COLS` (engine.js).
+// Una lectura SIN fechas: la cuaterna y la ubicación. Hasta el 2026-09-24 era la de respaldo del GAS (`_REPRO_MATRIZ_COLS`
+// de engine.js no pedía las fechas); desde ese día las pide, y esto queda como una fila con las fechas en blanco.
 // ⚠ 2026-09-22 · aquí ponía «sólo trae 4 columnas», y desde la cuaterna (09-16) trae también piscina, código y lote.
 // Con 4, las dos hembras de un chip tenían la MISMA cuaterna, se fundían en una y el chip no se partía nunca: la rama
 // de la Consulta sin fechas, que daba los desoves de la vigente a la primera hembra («chip·#1»), no la veía nadie.
@@ -453,10 +454,11 @@ describe('♻ reciclaje · alta de una hembra nueva con el chip de una muerta', 
     /* 🔴 2026-09-17 · LA OTRA MITAD, la que D17 no cubre. Un chip con varias hembras donde SÓLO UNA vive:
        el evento va a ella, que es lo correcto… salvo que sea retroactivo y fuera de una anterior. Eso lo
        detecta `antesDeSuIngreso`, PERO sólo si la lectura trae la fecha de ingreso.
-       🔑 Y aquí está la asimetría real entre los dos destinos: en el repo/Pages la MATRIZ sale del STORE
-       del tablero y trae todas las columnas, mientras que en `index (8)` —que no tiene store— sale de la
-       lectura del GAS, que NO pide las de fecha porque cuestan 10×. Allí la comprobación no puede hacerse.
-       ⚠ Hasta hoy eso se dejaba pasar en silencio «porque el GAS frena la mortalidad», y ese freno se fue
+       🔑 Hasta el 2026-09-24 ésa era la asimetría entre los dos destinos: en el repo/Pages la MATRIZ sale del
+       STORE del tablero y trae todas las columnas, y en `index (8)` —que no tiene store— salía de la lectura del
+       GAS, que NO pedía las de fecha porque costaban 10×. Desde ese día las pide (P15 las abarató) y la asimetría
+       se cierra; lo que queda sin fechas es una fila con ellas en blanco, y eso es lo que se prueba aquí.
+       ⚠ Hasta el 09-17 eso se dejaba pasar en silencio «porque el GAS frena la mortalidad», y ese freno se fue
        con `llaveMatriz_` el 09-16. Ya no se calla: se registra igual y se DICE que no se pudo comprobar. */
     describe('🔴 chip con varias hembras y la lectura SIN fechas', () => {
       const SIN_FECHAS = (o) => ({ 'Trovan ID': o['Trovan ID'], 'Piscina': o['Piscina'], 'Código genético': o['Código genético'],

@@ -237,6 +237,60 @@ describe('♻ eventos y traslados · lo anterior al ingreso de la hembra vigente
   });
 });
 
+/* 🔴 b (2026-09-24) · INDEX (8) LEE LAS FECHAS, Y LA MORTALIDAD ATRASADA DE LA ANTERIOR YA NO VA A LA NUEVA. index (8) no
+   tiene el store del tablero: su MATRIZ es SIEMPRE la lectura de Google, y ésa no pedía «Fecha ingreso» ni «Fecha
+   muerte» (del 14-09 al 24-09, porque costaban 10×; P15 lo arregló en el GAS). Sin ellas, `antesDeSuIngreso` no tenía
+   qué mirar: el evento iba a la vigente —viva— y una mortalidad la marcaba muerta. Este bloque arranca el motor SIN
+   store, como index (8), y su GAS simulado PROYECTA como el de verdad: devuelve sólo las columnas pedidas en `cols`
+   (2026-09-22: un simulador que devolvía la fila entera le daba a la lectura fechas que en producción no tenía). */
+describe('🔴 b · sin store (index (8)), la lectura trae las FECHAS y la mortalidad atrasada de la anterior no va a la nueva', () => {
+  /* La anterior muere el 06-09, DESPUÉS del ingreso de la nueva (01-08): el ingreso es del lote, no del chip, y hasta
+     su muerte el chip es suyo. Es el único caso en el que «la vigente» y «la de ese día» no coinciden. */
+  const ANTERIOR = { ...VIEJA, 'Fecha muerte': '2026-09-06' };
+  const gasQueProyecta = (filas) => (url) => {
+    const cols = String(new URL(url).searchParams.get('cols') || '').split(',').map((c) => c.trim()).filter(Boolean);
+    const rows = (decodeURIComponent(url).includes('MATRIZ') ? filas : [])
+      .map((o) => (cols.length ? Object.fromEntries(cols.filter((c) => c in o).map((c) => [c, o[c]])) : o));
+    return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, rows }) };
+  };
+  const mortalidad = async (fecha) => {
+    caja('rc-eventos').innerHTML = H._reproEventosHTML();
+    document.getElementById('repro-fecha').value = fecha;
+    document.getElementById('repro-tipo').value = 'Mortalidad';
+    document.getElementById('repro-codes').value = CHIP;
+    await H.madReproProcess();
+    return document.getElementById('repro-report').textContent;
+  };
+  const matriz = () => envios.find((p) => p.sheetName === S.matriz);
+  beforeEach(() => {
+    localStorage.removeItem('larv4_mad_matriz');
+    H.setLecturas({});                                   // nada leído: la MATRIZ sale de Google, como en index (8)
+    lecturaRows = gasQueProyecta([ANTERIOR, NUEVA]);
+  });
+
+  it('🔴 la lectura de la MATRIZ pide «Fecha ingreso» y «Fecha muerte»', async () => {
+    await H._reproEnsureMatrix(true);
+    const url = pedidas.find((u) => u.includes('p=rows') && decodeURIComponent(u).includes('MATRIZ'));
+    const cols = new URL(url).searchParams.get('cols').split(',');
+    expect(cols).toContain('Fecha ingreso');
+    expect(cols).toContain('Fecha muerte');
+  });
+
+  it('🔴 la mortalidad del día en que murió la anterior NO marca muerta a la nueva: es de la anterior, y se dice', async () => {
+    const inf = await mortalidad('2026-09-06');
+    expect(matriz(), 'ninguna fila de la MATRIZ: la nueva sigue viva').toBeUndefined();
+    expect(envios).toHaveLength(0);
+    expect(inf).toContain('de una hembra anterior');
+    expect(inf).toContain(CHIP);
+  });
+
+  it('el fixture ejerce algo: la del día SIGUIENTE ya es de la nueva, y la marca muerta', async () => {
+    await mortalidad('2026-09-07');
+    const m = matriz();
+    expect([m.rows[0][m.headers.indexOf('Lote')], m.rows[0][m.headers.indexOf('Estado')]]).toEqual(['L20', 'Muerto']);
+  });
+});
+
 describe('♻ Consulta · cada hembra de un chip, por separado', () => {
   const BIT = [
     { 'Trovan ID': CHIP, 'Fecha': '2026-06-01', 'Tipo': 'Desove' },
@@ -270,8 +324,9 @@ describe('♻ Consulta · cada hembra de un chip, por separado', () => {
   });
 
   it('sin fechas en la lectura no se puede partir, y lo dice', () => {
-    // Las 7 columnas de `_REPRO_MATRIZ_COLS`, como las pide la lectura del GAS (2026-09-22: aquí iban 4, sin la
-    // cuaterna, y las dos hembras se fundían en una, así que la matriz de desoves no se ejercía sin fechas).
+    // Una lectura SIN las fechas: la cuaterna y la ubicación (hasta el 2026-09-24 era la del GAS; desde ese día las pide,
+    // y esto es una fila con las fechas en blanco). 2026-09-22: aquí iban 4, sin la cuaterna, y las dos hembras se
+    // fundían en una, así que la matriz de desoves no se ejercía sin fechas.
     const sinF = (o) => ({ 'Trovan ID': o['Trovan ID'], 'Piscina': o['Piscina'], 'Código genético': o['Código genético'], 'Lote': o['Lote'],
       'Sala actual': o['Sala actual'], 'Tanque actual': o['Tanque actual'], 'Estado': o['Estado'] });
     H.setLecturas({ [S.matriz]: [sinF(VIEJA), sinF(NUEVA)], [S.bitacora]: BIT, [S.transfer]: [] });

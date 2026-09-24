@@ -11729,12 +11729,16 @@ const _REPRO_SHEETS = { matriz:"Maduración MATRIZ", bitacora:"Maduración Bitá
 // parte de la LLAVE de escritura. Sin ellas, la mortalidad y el traslado —que sólo conocen el
 // Trovan y copian el resto de lo leído— mandarían la llave a medias y el upsert AÑADIRÍA una fila
 // suelta en vez de actualizar la de la hembra. Son texto, así que no pagan el coste de abajo.
-// ⚠⚠ Y LAS FECHAS NO SE PIDEN, A PROPÓSITO (2026-09-14). El GAS formatea cada celda de fecha con
-// dos llamadas de servicio: medido contra producción, la MATRIZ con «Fecha ingreso» y «Fecha
-// muerte» pasó de 3-6 s a 40-64 s, más que el tope de 30 s por intento. Sin ellas, esta lectura
-// no sabe las fechas de un chip con varios individuos, y la trazabilidad avisa de que no puede
-// separarlos. Ya no hace falta para ESCRIBIR: desde 2026-09-16 las fechas no deciden ningún alta.
-const _REPRO_MATRIZ_COLS = ["Trovan ID","Piscina","Código genético","Lote","Sala actual","Tanque actual","Estado"];
+// 🔴 2026-09-24 · Y DESDE ESE DÍA SE PIDEN TAMBIÉN LAS FECHAS, que van AL FINAL (los bancos anclan en el
+// principio de la lista). Del 2026-09-14 a ese día no se pedían: el GAS formateaba cada celda de fecha con
+// dos llamadas de servicio y la MATRIZ tardaba 40-64 s. P15 (Code.gs, `formatoCelda_`) lo arregló —la zona
+// una vez y cada fecha distinta una vez— y, medido contra el GAS desplegado, con las dos fechas tarda lo
+// mismo que sin ellas (2,7-3,4 s frente a 2,3-3,3 s; 356 KB frente a 263). Sin ellas, index (8) —que no
+// tiene el store del tablero— no podía aplicar la regla del chip reciclado (`antesDeSuIngreso`: hasta la
+// muerte de la anterior, el evento es suyo), y una mortalidad atrasada de la hembra ANTERIOR iba a la
+// vigente, VIVA, y la marcaba muerta. Lo mismo en el MCP justo después de confirmar con la hoja (1a).
+// ⚠ La copia local exige ya estas nueve (RD1): una de antes, sin fechas, no se usa (decisión del usuario).
+const _REPRO_MATRIZ_COLS = ["Trovan ID","Piscina","Código genético","Lote","Sala actual","Tanque actual","Estado","Fecha ingreso","Fecha muerte"];
 const _REPRO_FETCH_MS  = 30000;                 // por intento
 const _REPRO_ATTEMPTS  = 2;
 /* 1c (2026-09-22) · UN CORTE DE CONEXIÓN SE REINTENTA MÁS. Lo reportó el usuario: la Consulta se quedaba en «Google no
