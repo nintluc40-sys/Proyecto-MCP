@@ -12690,21 +12690,25 @@ function _madReproShowTransferReport(rep, trId, okSent){
   if(rep.invalidFormat && rep.invalidFormat.length) h+=chip(rep.invalidFormat.length+" con formato inválido (señalados)", "#ffedd5", "#9a3412");
   if(noEnc.length) h+=chip(noEnc.length+" no encontrado(s)", "#fee2e2", "#991b1b");
   if(wl.length) h+=chip(wl.length+" fuera del origen", "#fef9c3", "#854d0e");
-  if(rep.antesDelIngreso && rep.antesDelIngreso.length) h+=chip(rep.antesDelIngreso.length+" de una hembra anterior", "#fee2e2", "#991b1b");
+  if(rep.antesDelIngreso && rep.antesDelIngreso.length) h+=chip(rep.antesDelIngreso.length+" con una fecha que no es de la hembra de hoy", "#fee2e2", "#991b1b");
   if(rep.variasVivas && rep.variasVivas.length) h+=chip(rep.variasVivas.length+" con DOS hembras vivas (elige abajo)", "#fee2e2", "#991b1b");   // R5
   h+='</div>';
   const lists=[];
   if(rep.variasVivas && rep.variasVivas.length) lists.push(["Ese microchip lo llevan DOS hembras vivas a la vez (no transferidos: elige abajo cuál se mueve)", rep.variasVivas]);
-  if(sc.length) lists.push(["Sin confirmar con «Maduración MATRIZ» ("+_reproPorQue()+"): la copia en uso los da por muertos, no los conoce o los sitúa fuera del origen, y puede ser de antes de su alta. No se movió ninguno que la copia dé por muerto; vuelve a procesarlos "+_reproCuando(), sc]);
+  if(sc.length) lists.push(["Sin confirmar con «Maduración MATRIZ» ("+_reproPorQue()+"): la copia en uso los da por muertos, no los conoce o los sitúa fuera del origen, y puede no estar al día. No se movió ninguno que la copia dé por muerto; vuelve a procesarlos "+_reproCuando(), sc]);
   if(rep.invalidFormat && rep.invalidFormat.length) lists.push(["Formato inválido (no transferidos — revisa el código en el lector)", rep.invalidFormat]);
   if(noEnc.length) lists.push(["No encontrados", noEnc]);
   if(yaM.length) lists.push(["Ya registradas como muertas (no se trasladan)", yaM]);
   if(wl.length) lists.push(["Fuera del origen declarado", wl]);
-  if(rep.antesDelIngreso && rep.antesDelIngreso.length) lists.push(["De antes de que la hembra de hoy llevara ese microchip reciclado —antes de su ingreso, o hasta la muerte de la anterior— (son de una hembra anterior: no transferidos)", rep.antesDelIngreso]);
+  if(rep.antesDelIngreso && rep.antesDelIngreso.length) lists.push(["De un día en que ese microchip todavía no era de la hembra que lo lleva hoy (no transferidos: revisa la fecha)", rep.antesDelIngreso]);
   lists.forEach(function(pair){ h+='<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
   el.innerHTML=h+_reproElegirHTML("traslado");
 }
 
+/* 7a (usuario, 2026-09-24) · ESTOS INFORMES YA NO NOMBRAN EL «CHIP RECICLADO». «Esos códigos se van a repetir, pero con
+   distintos individuos»: reutilizar un Trovan es lo normal, y nombrarlo tras cada registro era ruido. Se sigue diciendo el
+   HECHO —qué no se registró y por qué: la fecha no es de la hembra que lleva hoy el chip—. La trazabilidad de la Consulta y el
+   aviso del alta («el chip de una hembra VIVA») no cambian. */
 function _madReproShowReport(rep, duplicates, tipo, okSent){
   const el=document.getElementById("repro-report"); if(!el) return;
   const chip=function(txt,bg,fg){ return '<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:'+bg+';color:'+fg+'">'+escapeHtml(txt)+'</span>'; };
@@ -12721,7 +12725,7 @@ function _madReproShowReport(rep, duplicates, tipo, okSent){
   if(noEnc.length) h += chip(noEnc.length+" no está(n) en la MATRIZ", "#fee2e2", "#991b1b");
   if(rep.sinUbicacion && rep.sinUbicacion.length) h += chip(rep.sinUbicacion.length+" sin Sala/Tanque en la MATRIZ", "#fee2e2", "#991b1b");
   if(yaM.length) h += chip(yaM.length+" ya muerta(s)", "#fef9c3", "#854d0e");
-  if(rep.antesDelIngreso && rep.antesDelIngreso.length) h += chip(rep.antesDelIngreso.length+" de una hembra anterior", "#fee2e2", "#991b1b");
+  if(rep.antesDelIngreso && rep.antesDelIngreso.length) h += chip(rep.antesDelIngreso.length+" con una fecha que no es de la hembra de hoy", "#fee2e2", "#991b1b");
   // D17 (2026-09-17): un chip con DOS hembras vivas. No se elige una: se rechaza y se dice. Ver el módulo.
   if(rep.variasVivas && rep.variasVivas.length) h += chip(rep.variasVivas.length+" con DOS hembras vivas", "#fee2e2", "#991b1b");
   // 2026-09-17 · AVISO, no rechazo (ámbar): el evento SÍ se registró, pero sin fechas no se pudo comprobar
@@ -12729,15 +12733,15 @@ function _madReproShowReport(rep, duplicates, tipo, okSent){
   if(rep.sinFechaIngreso && rep.sinFechaIngreso.length) h += chip(rep.sinFechaIngreso.length+" sin comprobar la hembra", "#fef9c3", "#854d0e");
   h += '</div>';
   const lists=[];
-  if(sc.length) lists.push(["Sin confirmar con «Maduración MATRIZ» ("+_reproPorQue()+"): la copia en uso los da por muertos o no los conoce, y puede ser de antes del alta de su chip reciclado. No se registró nada de ellos; vuelve a procesarlos "+_reproCuando(), sc]);
+  if(sc.length) lists.push(["Sin confirmar con «Maduración MATRIZ» ("+_reproPorQue()+"): la copia en uso los da por muertos o no los conoce, y puede no estar al día. No se registró nada de ellos; vuelve a procesarlos "+_reproCuando(), sc]);
   if(duplicates && duplicates.length) lists.push(["Duplicados", duplicates]);
   if(rep.invalidFormat && rep.invalidFormat.length) lists.push(["Formato inválido (no registrados — revisa el código en el lector)", rep.invalidFormat]);
   if(noEnc.length) lists.push(["No encontrados en Maduración MATRIZ (no registrados)", noEnc]);
   if(rep.sinUbicacion && rep.sinUbicacion.length) lists.push(["Sin Sala/Tanque en Maduración MATRIZ (no registrados — completa su ubicación)", rep.sinUbicacion]);
   if(yaM.length) lists.push(["Ya registradas como muertas", yaM]);
-  if(rep.antesDelIngreso && rep.antesDelIngreso.length) lists.push(["De antes de que la hembra de hoy llevara ese microchip reciclado —antes de su ingreso, o hasta la muerte de la anterior— (son de una hembra anterior: no registrados)", rep.antesDelIngreso]);
+  if(rep.antesDelIngreso && rep.antesDelIngreso.length) lists.push(["De un día en que ese microchip todavía no era de la hembra que lo lleva hoy (no registrados: revisa la fecha)", rep.antesDelIngreso]);
   if(rep.variasVivas && rep.variasVivas.length) lists.push(["Ese microchip lo llevan DOS hembras vivas a la vez y el evento no dice de cuál es (no registrados: elige abajo de cuál es cada uno)", rep.variasVivas]);
-  if(rep.sinFechaIngreso && rep.sinFechaIngreso.length) lists.push(["SÍ se registraron, a la hembra que lleva hoy el chip. Pero ese chip ha llevado varias y esta lectura no trae la fecha de ingreso, así que no se pudo comprobar que el evento no fuera de una anterior: si lo registras con fecha atrasada, revísalo", rep.sinFechaIngreso]);
+  if(rep.sinFechaIngreso && rep.sinFechaIngreso.length) lists.push(["SÍ se registraron, a la hembra que lleva hoy el chip, pero su fila de la MATRIZ no tiene fecha de ingreso y no se pudo comprobar que la fecha del evento fuera suya: si lo registras con fecha atrasada, revísalo", rep.sinFechaIngreso]);
   lists.forEach(function(pair){ h += '<div style="font-size:11px;color:#475569;margin-top:6px"><b>'+escapeHtml(pair[0])+':</b> '+escapeHtml(pair[1].join(", "))+'</div>'; });
   el.innerHTML = h + _reproElegirHTML("evento");
 }

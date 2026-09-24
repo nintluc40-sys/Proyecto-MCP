@@ -35,7 +35,8 @@ const EXPORTAR = ['_REPRO_SHEETS', '_reproAltaHTML', 'madReproAltaBatch', '_repr
   '_reproEnsureMatrix',    // RD1 (2026-09-16) · una lectura buena, que es la que deja la copia local
   'madReproRegistrarElegidas',   // R5 (2026-09-18) · con dos vivas elige el usuario
   '_reproLoadSheets',            // 1a (2026-09-21) · la carga de la Consulta, para dejarla EN VUELO
-  'madReproSub'];                // 2026-09-22 · abrir la Consulta como el usuario (la avalancha de lecturas)
+  'madReproSub',                 // 2026-09-22 · abrir la Consulta como el usuario (la avalancha de lecturas)
+  '_madReproShowReport', '_madReproShowTransferReport'];   // 7a (2026-09-24) · los informes, sin «reciclado»
 const H = {};
 const avisos = [];
 const envios = [];
@@ -217,7 +218,9 @@ describe('♻ eventos y traslados · lo anterior al ingreso de la hembra vigente
     expect(envios).toHaveLength(0);
     const inf = document.getElementById('repro-report').textContent;
     expect(inf).toContain(CHIP);
-    expect(inf).toContain('ingreso');
+    // 7a (2026-09-24): dice el HECHO —la fecha no es de la hembra de hoy— sin nombrar el chip reciclado.
+    expect(inf).toContain('todavía no era de la hembra que lo lleva hoy');
+    expect(inf).not.toMatch(/recicl/i);
   });
 
   it('🔴 un traslado anterior a su ingreso tampoco, y el informe lo nombra', async () => {
@@ -233,7 +236,9 @@ describe('♻ eventos y traslados · lo anterior al ingreso de la hembra vigente
     expect(envios).toHaveLength(0);
     const inf = document.getElementById('repro-t-report').textContent;
     expect(inf).toContain(CHIP);
-    expect(inf).toContain('ingreso');
+    // 7a (2026-09-24): dice el HECHO —la fecha no es de la hembra de hoy— sin nombrar el chip reciclado.
+    expect(inf).toContain('todavía no era de la hembra que lo lleva hoy');
+    expect(inf).not.toMatch(/recicl/i);
   });
 });
 
@@ -280,7 +285,8 @@ describe('🔴 b · sin store (index (8)), la lectura trae las FECHAS y la morta
     const inf = await mortalidad('2026-09-06');
     expect(matriz(), 'ninguna fila de la MATRIZ: la nueva sigue viva').toBeUndefined();
     expect(envios).toHaveLength(0);
-    expect(inf).toContain('de una hembra anterior');
+    expect(inf).toContain('todavía no era de la hembra que lo lleva hoy');   // 7a: sin «hembra anterior» ni «reciclado»
+    expect(inf).not.toMatch(/recicl/i);
     expect(inf).toContain(CHIP);
   });
 
@@ -876,5 +882,36 @@ describe('📅 alta, evento y traslado no admiten una fecha posterior a hoy', ()
       // La app pasa días abierta: un tope fijado al pintar bloquearía HOY pasada la medianoche.
       expect(el.getAttribute('onfocus'), id).toBe('this.max=today()');
     }
+  });
+});
+
+/* ── 7a (usuario, 2026-09-24) · LOS INFORMES TRAS CADA REGISTRO YA NO NOMBRAN EL CHIP RECICLADO ─────────────────
+   «Esos códigos se van a repetir, pero con distintos individuos»: reutilizar un Trovan es lo normal. Se prueban TODAS
+   las ramas que lo nombraban —fecha que no es de la hembra de hoy, sin confirmar con la hoja, sin fecha de ingreso—,
+   en los dos informes, y que el HECHO se sigue diciendo. */
+describe('7a · los informes de desoves, mortalidades y traslados no nombran el reciclaje', () => {
+  const TODO = { processed: [], moved: [], notFound: [], alreadyDead: [], wrongLocation: [], invalidFormat: [], sinUbicacion: [],
+    antesDelIngreso: ['CHIPA'], sinConfirmar: ['CHIPB'], sinFechaIngreso: ['CHIPC'], variasVivas: [] };
+
+  it('🔴 desoves y mortalidades: dicen qué no se registró y por qué, sin «reciclado» ni «hembra anterior»', () => {
+    caja('repro-report');
+    H._madReproShowReport(Object.assign({}, TODO), [], 'Desove', true);
+    const t = document.getElementById('repro-report').textContent;
+    expect(t).toContain('todavía no era de la hembra que lo lleva hoy');
+    expect(t).toContain('CHIPA');
+    expect(t).toContain('puede no estar al día');
+    expect(t).toContain('no tiene fecha de ingreso');
+    expect(t).not.toMatch(/recicl/i);
+    expect(t).not.toMatch(/hembra anterior|llevado varias/i);
+  });
+
+  it('🔴 traslados: lo mismo', () => {
+    caja('repro-t-report');
+    H._madReproShowTransferReport(Object.assign({}, TODO), 'TR-000009', true);
+    const t = document.getElementById('repro-t-report').textContent;
+    expect(t).toContain('todavía no era de la hembra que lo lleva hoy');
+    expect(t).toContain('puede no estar al día');
+    expect(t).not.toMatch(/recicl/i);
+    expect(t).not.toMatch(/hembra anterior/i);
   });
 });
