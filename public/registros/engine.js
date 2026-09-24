@@ -1724,6 +1724,8 @@ function _saveSyncQueue(q){
   }catch(_){}
 }
 function syncQueueLen(){ return _loadSyncQueue().length; }
+// Identidad de un envío de la cola: su huella y el momento en que entró (dos envíos idénticos no conviven: ver _enqueueSync).
+function _claveCola(it){ return (it && it.reqId || "") + "|" + (it && it.ts || 0); }
 
 // F3: `mark` (opcional) = { kind, keys[] } liga el envío a los registros locales
 // que representa (por clave de sesión), para que al entregarse desde la cola se
@@ -1898,6 +1900,7 @@ async function flushSyncQueue(){
     const now = Date.now();
     q = q.filter(it => it && (now - (it.ts || 0)) < SYNCQ_TTL); // purga vencidos
     const remaining = [];
+    const _entregados = new Set();   // A (2026-09-24) · los que este vaciado ENTREGÓ, por su identidad (ver el final)
     let sent = 0, rejected = 0, reconciled = false;
     // Los rechazos de ENTORNO se cuentan aparte: no son un error del usuario y su
     // envío sigue vivo en la cola. Se guarda un motivo de cada clase para el aviso.
@@ -1929,6 +1932,7 @@ async function flushSyncQueue(){
       // round-trip y no vuelve a tomar el lock.
       if(it.reqId && await _verifyReqId(it.reqId)){
         sent++;
+        _entregados.add(_claveCola(it));
         if(_reconcileMark(it.mark)) reconciled = true;
         continue;
       }
@@ -1938,6 +1942,7 @@ async function flushSyncQueue(){
       const res = await _postOnce(body, finalUrl, _info);
       if(res === "ok"){
         sent++;
+        _entregados.add(_claveCola(it));
         if(_reconcileMark(it.mark)) reconciled = true;   // F3: entregado → marca los registros locales
       } else if(res === "rejected" && _esRechazoDeEntorno(_info.message)){
         // El dato está bien; lo que falta se arregla FUERA (re-desplegar el GAS, poner
@@ -1953,7 +1958,17 @@ async function flushSyncQueue(){
         remaining.push(it); // sigue siendo transitorio: se conserva
       }
     }
-    _saveSyncQueue(remaining);
+    /* 🔴 A (2026-09-24) · LA COLA SE RELEE AL TERMINAR. Se escribía la foto del PRINCIPIO menos lo entregado, y con el GAS
+       lento un vaciado dura minutos: lo que se encolaba mientras tanto se PERDÍA, y lo que otro envío más nuevo había
+       purgado (_purgeQueueMark, _enqueueSync) RESUCITABA para pisar después los datos buenos con los viejos. Ahora sólo
+       se quita lo que ESTE vaciado resolvió —entregado o rechazado por sus datos— y lo caducado; lo demás, como esté.
+       Y lo entregado reconcilia la marca que tenga AHORA: un guardado idéntico que se sumó mientras tanto (_enqueueSync)
+       también llegó, y su fila del registro no puede acabar en «⚠ no llegó». */
+    const _resueltos = new Set(q.filter(it => remaining.indexOf(it) === -1).map(_claveCola));
+    const _ahora = Date.now();
+    const _cola = _loadSyncQueue().filter(it => it && (_ahora - (it.ts || 0)) < SYNCQ_TTL);
+    _cola.forEach(it => { if(_entregados.has(_claveCola(it)) && _reconcileMark(it.mark)) reconciled = true; });
+    _saveSyncQueue(_cola.filter(it => !_resueltos.has(_claveCola(it))));
     if(sent > 0 || rejected > 0 || enEspera > 0){
       if(sent > 0)     toast("✅ "+sent+" envío(s) pendiente(s) de la cola completados", "ok", 4000);
       // El de ENTORNO no dice «revisa los datos»: los datos están bien y siguen en cola.
