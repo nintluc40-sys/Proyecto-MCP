@@ -574,13 +574,15 @@ const MORT_8_PREVIO = ['Fecha', 'Lote', 'Tipo de tanque', 'Hembras que entran', 
   'Observaciones', 'ID'];
 
 describe('GAS · A4 · las tres hojas NUEVAS tampoco las fija una app vieja', () => {
-  it('🔴 Mortalidad Desove con las 14 columnas que sirve Pages: rechazo en la 11 y la hoja NO nace', () => {
+  /* 2026-09-24 (punto 6) · Código genético y Piscina Broodstock entraron detrás de «Lote» y corrieron la firma dos
+     puestos (11→13, 15→17, 16→18): los clientes viejos se paran ahora en la 13, la primera que miran. */
+  it('🔴 Mortalidad Desove con las 14 columnas que sirve Pages: rechazo en la 13 y la hoja NO nace', () => {
     const hojas = {};
     const g = gas(hojas);
     const r = g.post({ sheetName: 'Maduración Mortalidad Desove', headers: MORT_14_PAGES,
       rows: [conValores(MORT_14_PAGES, { Fecha: '2026-09-16', Lote: 'BP', ID: '2026-09-16-BP-DESOVE' })] });
     expect(r.status).toBe('error');
-    expect(r.message).toContain('columna 11');
+    expect(r.message).toContain('columna 13');
     expect(r.message).toContain('«Fototropismo»');
     expect(hojas['Maduración Mortalidad Desove']).toBeUndefined();
     expect(g.candado.soltado).toBe(g.candado.tomado);            // rechazar no deja el candado tomado
@@ -591,21 +593,53 @@ describe('GAS · A4 · las tres hojas NUEVAS tampoco las fija una app vieja', ()
     const g = gas({ 'Maduración Mortalidad Desove': hoja });
     const r = g.post({ sheetName: 'Maduración Mortalidad Desove', headers: MORT_8_PREVIO, rows: [filaVacia(MORT_8_PREVIO)] });
     expect(r.status).toBe('error');
-    expect(r.message).toContain('columna 11');
+    expect(r.message).toContain('columna 13');
     expect(hoja.filas).toEqual([]);
     expect(hoja.escrituras).toEqual([]);                          // ni siquiera la fila de cabeceras
   });
 
   /* PE1.5 (2026-09-16) · la alcalinidad pasó a ser de día y de noche: «Alcalinidad» → «Alcalinidad día» en la 16 y
      «Alcalinidad noche» en la 17. El cliente de 18 columnas de ANTES no puede crear la hoja con la cabecera vieja. */
-  it('🔴 Mortalidad Desove con las 18 columnas de ANTES de día/noche: rechazo en la 16 y la hoja NO nace', () => {
-    const MORT_18_ANTES = MAD_MORT_HEADERS.filter((h) => h !== 'Alcalinidad noche').map((h) => (h === 'Alcalinidad día' ? 'Alcalinidad' : h));
+  /* ⚠ 2026-09-24 · se paraba en la 16 («Alcalinidad día»). Con el código genético delante, la 13 lo para antes. */
+  const SIN_PUNTO_6 = MAD_MORT_HEADERS.filter((h) => h !== 'Código genético' && h !== 'Piscina Broodstock');
+  it('🔴 Mortalidad Desove con las 18 columnas de ANTES de día/noche: rechazo en la 13 y la hoja NO nace', () => {
+    const MORT_18_ANTES = SIN_PUNTO_6.filter((h) => h !== 'Alcalinidad noche').map((h) => (h === 'Alcalinidad día' ? 'Alcalinidad' : h));
     expect(MORT_18_ANTES).toHaveLength(18);
     const hojas = {};
     const r = gas(hojas).post({ sheetName: 'Maduración Mortalidad Desove', headers: MORT_18_ANTES,
       rows: [conValores(MORT_18_ANTES, { Fecha: '2026-09-16', 'Área': 'RAS', Alcalinidad: 120, ID: '2026-09-16-ALC-RAS' })] });
     expect(r.status).toBe('error');
-    expect(r.message).toContain('columna 16');
+    expect(r.message).toContain('columna 13');
+    expect(r.message).toContain('«Fototropismo»');
+    expect(hojas['Maduración Mortalidad Desove']).toBeUndefined();
+  });
+
+  /* 🔴 2026-09-24 (punto 6) · EL CLIENTE VIEJO QUE DE VERDAD EXISTE: el de 19 columnas —con día y noche, sin código
+     genético—, que es el que sirve Pages hasta el push. Lleva «Salinidad» en la 13: sin la firma movida crearía la hoja
+     CORRIDA dos puestos y desde ahí la guarda V3 rechazaría a todas las apps al día. */
+  it('🔴 Mortalidad Desove con las 19 columnas de ANTES del código genético: rechazo en la 13 y la hoja NO nace', () => {
+    expect(SIN_PUNTO_6).toHaveLength(19);
+    expect(SIN_PUNTO_6[12], 'el fixture ejerce algo: el cliente viejo lleva otra cosa en la 13').toBe('Salinidad');
+    const hojas = {};
+    const r = gas(hojas).post({ sheetName: 'Maduración Mortalidad Desove', headers: SIN_PUNTO_6,
+      rows: [conValores(SIN_PUNTO_6, { Fecha: '2026-09-24', Lote: 'BP', ID: '2026-09-24-BP-DESOVE' })] });
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('columna 13');
+    expect(r.message).toContain('«Fototropismo»');
+    expect(hojas['Maduración Mortalidad Desove']).toBeUndefined();
+  });
+
+  /* 2026-09-24 (punto 6) · LA 18 SIGUE FIRMADA, y hace falta decirlo aparte: con la 13 delante, todo cliente que
+     haya existido se para antes, así que ninguno de los casos de arriba distingue si la 18 está. Un cliente con el
+     código genético pero con la alcalinidad de antes (una sola «Alcalinidad») crearía la hoja con esa cabecera. */
+  it('🔴 la firma sigue exigiendo «Alcalinidad día» en la 18', () => {
+    const cab = MAD_MORT_HEADERS.map((h) => (h === 'Alcalinidad día' ? 'Alcalinidad' : h));
+    expect(cab[17], 'el fixture ejerce algo: lleva otra cosa en la 18').toBe('Alcalinidad');
+    const hojas = {};
+    const r = gas(hojas).post({ sheetName: 'Maduración Mortalidad Desove', headers: cab,
+      rows: [conValores(cab, { Fecha: '2026-09-24', ID: 'x1' })] });
+    expect(r.status).toBe('error');
+    expect(r.message).toContain('columna 18');
     expect(r.message).toContain('«Alcalinidad día»');
     expect(hojas['Maduración Mortalidad Desove']).toBeUndefined();
   });
@@ -700,15 +734,23 @@ describe('GAS · «Maduración Mortalidad Desove», la hoja nueva (2026-09-15)',
   it('🔴 se permite, nace con sus cabeceras, fusiona por ID y la guarda V3 la vigila', () => {
     const hojas = {};
     const g = gas(hojas);
-    const fila = (v) => conValores(MAD_MORT_HEADERS, v);
-    const id = '2026-09-15-BP-DESOVE';
+    /* 2026-09-24 (punto 6) · filas REALISTAS, con código y piscina como las manda la app. Hacía falta: con ellos en
+       las columnas 3 y 4, la llave POSICIONAL del camino alternativo —Fecha + columnas 3 y 4, la de «Datos»— es
+       (Fecha, Código, Piscina), y dos filas del mismo pool (Desove y Recuperación) se fundirían en una. Sólo el ID
+       las separa, y eso es lo que se exige aquí; con filas vacías en esas columnas, MD-M2 sobrevivía. */
+    const fila = (v) => conValores(MAD_MORT_HEADERS, Object.assign({ Fecha: '2026-09-15', Lote: 'BP', 'Código genético': 'CG1', 'Piscina Broodstock': '101' }, v));
+    const id = '2026-09-15-BP-CG1-DESOVE';
     expect(g.post({ sheetName: 'Maduración Mortalidad Desove', headers: MAD_MORT_HEADERS,
-      rows: [fila({ Fecha: '2026-09-15', Lote: 'BP', 'Tipo de tanque': 'Desove', 'Hembras que entran': 40, 'Hembras muertas': 3, ID: id })] }).status).toBe('ok');
+      rows: [fila({ 'Tipo de tanque': 'Desove', 'Hembras que entran': 40, 'Hembras muertas': 3, ID: id })] }).status).toBe('ok');
     const hoja = hojas['Maduración Mortalidad Desove'];
     expect(hoja.filas[0]).toEqual(MAD_MORT_HEADERS);
-    expect(g.post({ sheetName: 'Maduración Mortalidad Desove', headers: MAD_MORT_HEADERS, rows: [fila({ Fecha: '2026-09-15', Observaciones: 'revisado', ID: id })] }).status).toBe('ok');
+    expect(g.post({ sheetName: 'Maduración Mortalidad Desove', headers: MAD_MORT_HEADERS, rows: [fila({ Observaciones: 'revisado', ID: id })] }).status).toBe('ok');
     expect(hoja.filas).toHaveLength(2);
     expect([hoja.filas[1][MAD_MORT_HEADERS.indexOf('Hembras muertas')], hoja.filas[1][MAD_MORT_HEADERS.indexOf('Observaciones')]]).toEqual([3, 'revisado']);
+    // El mismo pool en los tanques de RECUPERACIÓN es OTRA fila: mismo día, lote, código y piscina, otro ID.
+    expect(g.post({ sheetName: 'Maduración Mortalidad Desove', headers: MAD_MORT_HEADERS,
+      rows: [fila({ 'Tipo de tanque': 'Recuperación', 'Hembras que entran': 37, 'Hembras muertas': 1, ID: '2026-09-15-BP-CG1-RECUPERACION' })] }).status).toBe('ok');
+    expect(hoja.filas.map((r) => r[MAD_MORT_HEADERS.indexOf('ID')])).toEqual(['ID', id, '2026-09-15-BP-CG1-RECUPERACION']);
     const cruzada = MAD_MORT_HEADERS.map((h) => (h === 'Hembras muertas' ? 'Hembras que entran' : h === 'Hembras que entran' ? 'Hembras muertas' : h));
     const r = gas({ 'Maduración Mortalidad Desove': hojaFalsa([MAD_MORT_HEADERS]) }).post({ sheetName: 'Maduración Mortalidad Desove', headers: cruzada, rows: [filaVacia(cruzada)] });
     expect(r.message).toContain('Esquema desactualizado');

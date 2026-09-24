@@ -119,8 +119,15 @@ describe('detectSheetName · las hojas de Maduración que aún no existen', () =
     expect(detectSheetName([filaDe(cab(['metabisulfito', 'sala']))], 0)).not.toBe('Maduracion');
   });
 
-  it('Mortalidad Desove se sostiene por «Tipo de tanque»: sin ella se cae', () => {
-    expect(detectSheetName([filaDe(MAD_MORT_HEADERS.filter((h) => h !== 'Tipo de tanque'))], 0)).not.toBe('Maduracion');
+  /* 2026-09-24 (punto 6) · con «Código genético» la hoja gana la SEGUNDA firma de Maduración —la de Lotes e Ingreso,
+     «código genético» + «machos|hembras»—, igual que Fin de Ciclo. Se fija que cada una la sostiene sola y que sin
+     las dos se cae. */
+  it('Mortalidad Desove se sostiene por «Tipo de tanque» y por «Código genético», cada una sola; sin las dos se cae', () => {
+    const sin = (fuera) => MAD_MORT_HEADERS.filter((h) => !fuera.includes(h));
+    expect(MAD_MORT_HEADERS).toContain('Código genético');
+    expect(detectSheetName([filaDe(sin(['Tipo de tanque']))], 0)).toBe('Maduracion');
+    expect(detectSheetName([filaDe(sin(['Código genético']))], 0)).toBe('Maduracion');
+    expect(detectSheetName([filaDe(sin(['Tipo de tanque', 'Código genético']))], 0)).not.toBe('Maduracion');
   });
 
   it('Alimentación (2026-09-15) se sostiene por «Sala» + «Hembras/Machos» (la regla general): sin «Sala» se cae', () => {

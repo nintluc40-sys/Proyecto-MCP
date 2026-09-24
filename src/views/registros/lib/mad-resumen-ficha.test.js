@@ -217,6 +217,8 @@ describe('Mortalidad de hembras · la ficha', () => {
   it('🔴 el % se ve al teclear y el payload lleva una fila por tipo con cifras', async () => {
     q('#mm-fecha').value = '2026-09-15';
     q('.mm-lote').value = 'bp';
+    q('.mm-cg').value = 'cg1';            // 2026-09-24 (punto 6): el código es parte de la llave
+    q('.mm-piscina').value = '101';
     q('.mm-desove-e').value = '40';
     q('.mm-desove-m').value = '3';
     q('.mm-recuperacion-e').value = '37';
@@ -229,9 +231,12 @@ describe('Mortalidad de hembras · la ficha', () => {
     const { sheetName, headers, rows } = envios[0];
     expect(sheetName).toBe('Maduración Mortalidad Desove');
     expect(headers).toEqual(MAD_MORT_HEADERS);
-    const id = MAD_MORT_HEADERS.indexOf('ID');
-    expect(rows.map((f) => [f[1], f[2], f[5], f[id]])).toEqual([['BP', 'Desove', 7.5, '2026-09-15-BP-DESOVE'], ['BP', 'Recuperación', 2.7, '2026-09-15-BP-RECUPERACION']]);
-    expect(q('.mm-lote').value).toBe('');
+    const c = (h) => MAD_MORT_HEADERS.indexOf(h);
+    expect(rows.map((f) => [f[c('Lote')], f[c('Código genético')], f[c('Piscina Broodstock')], f[c('Tipo de tanque')], f[c('% Mortalidad')], f[c('ID')]])).toEqual([
+      ['BP', 'CG1', '101', 'Desove', 7.5, '2026-09-15-BP-CG1-DESOVE'],
+      ['BP', 'CG1', '101', 'Recuperación', 2.7, '2026-09-15-BP-CG1-RECUPERACION'],
+    ]);
+    expect([q('.mm-lote').value, q('.mm-cg').value, q('.mm-piscina').value]).toEqual(['', '', '']);
   });
 
   it('🔴 Inf. Supervisor: título, y la revisión de nauplios de cada lote va en filas propias con lo elegido', async () => {
@@ -245,6 +250,7 @@ describe('Mortalidad de hembras · la ficha', () => {
     expect([...q('.mm-n-entrada-air').options].map((o) => o.value)).toEqual(['', 'Alta', 'Media', 'Baja']);
     q('#mm-fecha').value = '2026-09-15';
     q('.mm-lote').value = 'bp';
+    q('.mm-cg').value = 'CG1';
     q('.mm-n-lavado2-def').value = 'Baja';
     q('.mm-n-lavado2-act').value = 'Alta';
     q('.mm-n-lavado2-hon').value = 'Presente';
@@ -257,8 +263,8 @@ describe('Mortalidad de hembras · la ficha', () => {
     expect(envios).toHaveLength(1);
     const c = (h) => MAD_MORT_HEADERS.indexOf(h);
     expect(envios[0].rows.map((f) => [f[c('Lote')], f[c('Tipo de tanque')], f[c('Revisión')], f[c('Deformidad')], f[c('Actividad')], f[c('Hongos')], f[c('Fototropismo')], f[c('Aireación')], f[c('Salinidad')], f[c('Temperatura')], f[c('ID')]])).toEqual([
-      ['BP', '', 'Lavado 2', 'Baja', 'Alta', 'Presente', 'Media', 'Baja', 34.5, 29.1, '2026-09-15-BP-NAUP-LAVADO2'],
-      ['BP', '', 'Postlavado', 'Ausente', '', '', '', '', '', '', '2026-09-15-BP-NAUP-POSTLAVADO'],
+      ['BP', '', 'Lavado 2', 'Baja', 'Alta', 'Presente', 'Media', 'Baja', 34.5, 29.1, '2026-09-15-BP-CG1-NAUP-LAVADO2'],
+      ['BP', '', 'Postlavado', 'Ausente', '', '', '', '', '', '', '2026-09-15-BP-CG1-NAUP-POSTLAVADO'],
     ]);
     expect(avisos.some((a) => a.msg.includes('Inf. Supervisor registrado'))).toBe(true);
   });
@@ -315,6 +321,51 @@ describe('Mortalidad de hembras · la ficha', () => {
     localStorage.removeItem(H.MAD_BORR_PRE + 'mortdes');
   });
 
+  /* 2026-09-24 (usuario, punto 6) · «añadir los campos de Código genético y Piscina Broodstock para identificar
+     dichos individuos», detrás del lote, con el código en la llave y el mismo 📥 Cargar de Desoves. */
+  it('🔴 (punto 6) la tarjeta trae Código genético y Piscina detrás del Lote, y «📥 Cargar» junto a «✕ Quitar»', () => {
+    const fila = q('.mm-lote').closest('div');
+    const rotulos = [...fila.querySelectorAll('label')].map((l) => l.firstChild.textContent);
+    expect(rotulos).toEqual(['Lote', 'Código genético', 'Piscina Broodstock']);
+    const cargar = fila.querySelector('.md-cargar-btn');
+    expect(cargar, 'no hay 📥 Cargar').toBeTruthy();
+    expect(cargar.nextElementSibling.textContent).toContain('Quitar');
+    expect(q('.mm-card .md-cargar').hidden).toBe(true);
+  });
+
+  it('🔴 (punto 6) sin código genético NO se guarda: lo dice, y no envía', async () => {
+    q('#mm-fecha').value = '2026-09-15';
+    q('.mm-lote').value = 'BP';
+    q('.mm-desove-e').value = '10';
+    q('.mm-desove-m').value = '1';
+    await H.madMortGuardar();
+    expect(envios).toHaveLength(0);
+    expect(document.getElementById('fp-mortdes').textContent).toContain('Falta el código genético del lote BP');
+  });
+
+  it('🔴 (punto 6) un BORRADOR de antes gana los dos campos y el botón, y su lote se conserva', () => {
+    const panel = document.getElementById('fp-mortdes');
+    const card = panel.querySelector('.mm-card');
+    // La tarjeta de antes: sin código, sin piscina y sin Cargar.
+    card.querySelector('.mm-cg').closest('label').remove();
+    card.querySelector('.mm-piscina').closest('label').remove();
+    card.querySelector('.md-cargar-btn').remove();
+    card.querySelector('.md-cargar').remove();
+    q('.mm-lote').value = 'BP';
+    H._madBorrFijarValores(panel);
+    localStorage.setItem(H.MAD_BORR_PRE + 'mortdes', JSON.stringify({ '2026-09-10': panel.innerHTML }));
+    H.madMortReiniciar();
+
+    q('#mm-fecha').value = '2026-09-10';
+    H.madBorrFechaChange('mortdes');
+    expect(q('.mm-lote').value, 'se perdió lo tecleado').toBe('BP');
+    expect(q('.mm-cg'), 'el borrador de antes se quedó sin código genético').toBeTruthy();
+    expect(q('.mm-piscina')).toBeTruthy();
+    expect(q('.mm-card .md-cargar-btn').nextElementSibling.textContent).toContain('Quitar');
+    expect(q('.mm-card .md-cargar').hidden).toBe(true);
+    localStorage.removeItem(H.MAD_BORR_PRE + 'mortdes');
+  });
+
   it('🔴 Inf. Supervisor: salinidad y temperatura BAJAN, y una corregida a mano no se pisa', () => {
     const cifra = (rev, k) => document.querySelector('#fp-mortdes .mm-n-' + rev + '-' + k);
     const columna = (k) => ['entrada', 'lavado', 'lavado2', 'postlavado'].map((r) => cifra(r, k).value);
@@ -336,6 +387,7 @@ describe('Mortalidad de hembras · la ficha', () => {
 
   it('🔴 con el GAS VIEJO no se envía y lo tecleado se queda', async () => {
     q('.mm-lote').value = 'BP';
+    q('.mm-cg').value = 'CG1';
     q('.mm-desove-e').value = '10';
     q('.mm-desove-m').value = '1';
     respuestaVer = 'FichasLarv-OK';
@@ -343,12 +395,14 @@ describe('Mortalidad de hembras · la ficha', () => {
     expect(envios).toHaveLength(0);
     expect((avisos.find((a) => a.tipo === 'err') || {}).msg).toMatch(/Mortalidad Desove/);
     expect(q('.mm-lote').value).toBe('BP');
+    expect(q('.mm-cg').value).toBe('CG1');
   });
 
   /* PV3 (2026-09-16) · sin respuesta de ?p=ver no se sabe a qué GAS se escribiría: a la cola, sin salir. */
   it('🔴 PV3 · sin respuesta del GAS no se envía: queda en la cola sin salir', async () => {
     localStorage.removeItem('larv4_syncqueue');
     q('.mm-lote').value = 'BP';
+    q('.mm-cg').value = 'CG1';
     q('.mm-desove-e').value = '10';
     q('.mm-desove-m').value = '1';
     respuestaVer = 'red';

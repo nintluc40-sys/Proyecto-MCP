@@ -22,7 +22,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "9efceeac7cde";
+const GAS_VERSION = "6624d3de478c";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -968,7 +968,9 @@ var MAD_ESQUEMA_FIRMA = {
   "Maduración Fin de Ciclo": [[5, "Sala"], [10, "Rojos"]],
   // 11 y 15 son justo las dos inserciones: el cliente de 14 columnas lleva «Salinidad» en la 11.
   // 16 (PE1.5, 2026-09-16): la alcalinidad pasó a ser de día y de noche; el cliente de 18 columnas lleva ahí «Alcalinidad».
-  "Maduración Mortalidad Desove": [[11, "Fototropismo"], [15, "Área"], [16, "Alcalinidad día"]],
+  // +2 (2026-09-24, punto 6): «Código genético» y «Piscina Broodstock» entran detrás de «Lote» y corren todo lo que va
+  // detrás: 13, 17 y 18. Un cliente de 19 columnas lleva «Salinidad» en la 13, así que tampoco puede crearla corrida.
+  "Maduración Mortalidad Desove": [[13, "Fototropismo"], [17, "Área"], [18, "Alcalinidad día"]],
   "Maduración Tratamientos": [[8, "Productos RAS"]],
   // 9 va ANTES del bloque de alimentos, que es la parte del esquema que puede crecer.
   "Maduración Alimentación": [[9, "Fuente del peso"]],

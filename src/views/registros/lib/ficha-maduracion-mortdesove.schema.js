@@ -10,10 +10,13 @@
        de tanque» vacío: el libro se salta estas filas.
    Modelo PURO; el monolito lleva su copia. Hoja por «ID» con MERGE: reenviar corrige; un texto no se vacía reenviándolo
    en blanco. ⚠ El ID va el ÚLTIMO: el GAS lo busca por cabecera y, si la cabecera faltara, cae a la última columna.
+   2026-09-24 (usuario, punto 6) · CÓDIGO GENÉTICO y PISCINA BROODSTOCK, «para identificar dichos individuos». El
+   código entra en la LLAVE, como en Desoves —un pool es lote + código—: el mismo lote con otro código es otro registro,
+   y sin código no hay fila. La piscina es dato.
    ============================================================ */
 
 import { sanitizeStr } from '../../../core/trovan.js';
-import { normLote } from './ficha-maduracion-desoves.schema.js';
+import { normLote, normCodigoGenetico } from './ficha-maduracion-desoves.schema.js';
 // La alcalinidad es por ÁREA, y las áreas son el RAS más las salas del catálogo del Ingreso.
 import { MAD_SALA_OPTS, salaTag } from './ficha-maduracion-ingreso.schema.js';
 
@@ -53,6 +56,11 @@ export const MAD_NAUP_SAL_MAX = 60;
 export const MAD_MORT_COLUMNS = [
   { h: 'Fecha', k: 'fecha' },
   { h: 'Lote', k: 'lote' },
+  /* 2026-09-24 (punto 6) · DETRÁS DEL LOTE, como en Ingreso y Desoves (decisión del usuario). Se pudo porque la hoja
+     no existía en producción (medido ese día): no hay filas que correr. La firma A4 del GAS se movió con ellas, en el
+     mismo cambio: Fototropismo 11→13, Área 15→17, Alcalinidad día 16→18. */
+  { h: 'Código genético', k: 'codigoGenetico' },
+  { h: 'Piscina Broodstock', k: 'piscina' },
   { h: 'Tipo de tanque', k: 'tipo' },
   { h: 'Hembras que entran', k: 'entran' },
   { h: 'Hembras muertas', k: 'muertas' },
@@ -69,8 +77,8 @@ export const MAD_MORT_COLUMNS = [
      revisión de nauplios y «Tipo de tanque» sólo las de mortalidad.
      ⚠ 2026-09-16 (PE1.5) · «Alcalinidad» pasa a «Alcalinidad día» y entra «Alcalinidad noche» detrás,
      ANTES de Observaciones e ID (el ID va el último). La hoja no existía en producción (medido), así
-     que no hay nada que migrar; y la firma A4 del GAS exige ya «Alcalinidad día» en la 16, para que
-     una app anterior no pueda crearla con la cabecera vieja. */
+     que no hay nada que migrar; y la firma A4 del GAS exige «Alcalinidad día» —en la 18 desde el
+     2026-09-24—, para que una app anterior no pueda crearla con la cabecera vieja. */
   { h: 'Área', k: 'area' },
   { h: 'Alcalinidad día', k: 'alcalinidadDia' },
   { h: 'Alcalinidad noche', k: 'alcalinidadNoche' },
@@ -104,8 +112,11 @@ export function pctMortalidad(entran, muertas) {
   return e === '' || e === 0 || m === '' ? '' : Math.round((m / e) * 10000) / 100;
 }
 
-export const mortRowId = (fecha, lote, tipo) => sanitizeStr(fecha, 10) + '-' + normLote(lote) + '-' + (TAG[tipo] || 'OTRO');
-export const nauplioRowId = (fecha, lote, revision) => sanitizeStr(fecha, 10) + '-' + normLote(lote) + '-NAUP-' + (REV_TAG[revision] || 'OTRA');
+// El código genético va en la llave desde el 2026-09-24 (punto 6): sin él, dos pools del mismo lote se pisarían.
+export const mortRowId = (fecha, lote, cg, tipo) =>
+  sanitizeStr(fecha, 10) + '-' + normLote(lote) + '-' + normCodigoGenetico(cg) + '-' + (TAG[tipo] || 'OTRO');
+export const nauplioRowId = (fecha, lote, cg, revision) =>
+  sanitizeStr(fecha, 10) + '-' + normLote(lote) + '-' + normCodigoGenetico(cg) + '-NAUP-' + (REV_TAG[revision] || 'OTRA');
 
 const CAMPOS_NAUP = [['deformidad', 'Deformidad'], ['actividad', 'Actividad'], ['hongos', 'Hongos'],
   ['fototropismo', 'Fototropismo'], ['aireacion', 'Aireación'], ['salinidad', 'Salinidad'], ['temperatura', 'Temperatura']];
@@ -121,24 +132,26 @@ export function buildMortRows(model) {
   (m.lotes || []).forEach((c) => {
     const x = c || {};
     const lote = normLote(x.lote);
-    if (!lote) return;
+    const codigoGenetico = normCodigoGenetico(x.codigoGenetico);
+    if (!lote || !codigoGenetico) return;   // sin llave completa no hay fila que escribir (como en Desoves)
+    const piscina = sanitizeStr(x.piscina, 60);
     MAD_MORT_TIPOS.forEach((tipo) => {
       const t = x[CLAVE[tipo]] || {};
       const entran = int(t.entran);
       const muertas = int(t.muertas);
       if (entran === '' && muertas === '') return;
-      fila({ fecha, lote, tipo, entran, muertas, pct: pctMortalidad(entran, muertas),
-        observaciones: sanitizeStr(x.observaciones, 300), id: mortRowId(fecha, lote, tipo) });
+      fila({ fecha, lote, codigoGenetico, piscina, tipo, entran, muertas, pct: pctMortalidad(entran, muertas),
+        observaciones: sanitizeStr(x.observaciones, 300), id: mortRowId(fecha, lote, codigoGenetico, tipo) });
     });
     MAD_NAUP_REVISIONES.forEach((revision) => {
       const r = revisionDe(x, revision);
       if (!revisionConDato(r)) return;
-      fila({ fecha, lote, revision, deformidad: opcionNauplios(MAD_NAUP_DEFORMIDAD, r.deformidad), actividad: opcionNauplios(MAD_NAUP_ACTIVIDAD, r.actividad),
+      fila({ fecha, lote, codigoGenetico, piscina, revision, deformidad: opcionNauplios(MAD_NAUP_DEFORMIDAD, r.deformidad), actividad: opcionNauplios(MAD_NAUP_ACTIVIDAD, r.actividad),
         hongos: opcionNauplios(MAD_NAUP_HONGOS, r.hongos),
         fototropismo: opcionNauplios(MAD_NAUP_FOTOTROPISMO, r.fototropismo), aireacion: opcionNauplios(MAD_NAUP_AIREACION, r.aireacion),
         salinidad: dec(r.salinidad), temperatura: dec(r.temperatura),
         // I1 (auditoría 2026-09-15): las observaciones son del LOTE y van también aquí; con sólo la revisión se perdían.
-        observaciones: sanitizeStr(x.observaciones, 300), id: nauplioRowId(fecha, lote, revision) });
+        observaciones: sanitizeStr(x.observaciones, 300), id: nauplioRowId(fecha, lote, codigoGenetico, revision) });
     });
   });
   /* Una fila por ÁREA con algún valor, de día o de noche. Va fuera del bucle de lotes porque no es de
@@ -157,7 +170,7 @@ export function buildMortPayload(model) {
   return { sheetName: MAD_MORT_SHEET, headers: MAD_MORT_HEADERS.slice(), rows: buildMortRows(model) };
 }
 
-/** ERROR: sin fecha, lote repetido, datos sin lote, muertas sin las que entran, más muertas que las que entran, un valor
+/** ERROR: sin fecha, lote y código repetidos, datos sin lote, lote sin código genético (2026-09-24), muertas sin las que entran, más muertas que las que entran, un valor
     fuera de su lista o una cifra que no es cifra. AVISO: muertas sin anotar, revisión a medias, T° o salinidad altas. */
 export function validarMort(model) {
   const m = model || {};
@@ -169,6 +182,7 @@ export function validarMort(model) {
   (m.lotes || []).forEach((c, i) => {
     const x = c || {};
     const lote = normLote(x.lote);
+    const cg = normCodigoGenetico(x.codigoGenetico);
     const conCifras = MAD_MORT_TIPOS.filter((tipo) => {
       const t = x[CLAVE[tipo]] || {};
       return int(t.entran) !== '' || int(t.muertas) !== '';
@@ -177,21 +191,24 @@ export function validarMort(model) {
     if (!lote && !conCifras.length && !conRevision.length) return;
     if (!lote) { errores.push('Falta el lote del registro ' + (i + 1) + '.'); return; }
     if (!conCifras.length && !conRevision.length) { errores.push('El lote ' + lote + ' no trae ninguna cifra ni revisión de nauplios.'); return; }
-    if (vistos.has(lote)) errores.push('El lote ' + lote + ' aparece dos veces en esta fecha: escribiría las mismas filas. Súmalos.');
-    vistos.add(lote);
+    // 2026-09-24 (punto 6): el código es parte de la llave. Sin él no hay fila; repetido con el MISMO lote, se pisaría.
+    if (!cg) { errores.push('Falta el código genético del lote ' + lote + ' (registro ' + (i + 1) + ').'); return; }
+    if (vistos.has(lote + '|' + cg)) errores.push('El lote ' + lote + ' con código ' + cg + ' aparece dos veces en esta fecha: escribiría las mismas filas. Súmalos.');
+    vistos.add(lote + '|' + cg);
+    const quien = lote + ' · ' + cg;   // en los mensajes: el mismo lote puede traer dos códigos
     conCifras.forEach((tipo) => {
       const t = x[CLAVE[tipo]] || {};
       const e = int(t.entran);
       const mu = int(t.muertas);
       const donde = tipo === 'Desove' ? 'desove' : 'recuperación';
-      if ((e === '' || e === 0) && mu !== '' && mu > 0) errores.push('En ' + lote + ' (tanques de ' + donde + ') hay muertas pero no las hembras que entran: sin ellas no hay porcentaje.');
-      else if (e !== '' && mu !== '' && mu > e) errores.push('En ' + lote + ' (tanques de ' + donde + ') mueren más hembras (' + mu + ') de las que entran (' + e + ').');
-      if (mu === '') avisos.push('En ' + lote + ' (tanques de ' + donde + ') no se anotaron muertas: se guarda como 0 % sólo si escribes 0.');
+      if ((e === '' || e === 0) && mu !== '' && mu > 0) errores.push('En ' + quien + ' (tanques de ' + donde + ') hay muertas pero no las hembras que entran: sin ellas no hay porcentaje.');
+      else if (e !== '' && mu !== '' && mu > e) errores.push('En ' + quien + ' (tanques de ' + donde + ') mueren más hembras (' + mu + ') de las que entran (' + e + ').');
+      if (mu === '') avisos.push('En ' + quien + ' (tanques de ' + donde + ') no se anotaron muertas: se guarda como 0 % sólo si escribes 0.');
       filas++;
     });
     conRevision.forEach((rev) => {
       const r = revisionDe(x, rev);
-      const et = 'En ' + lote + ' (nauplios · ' + rev + ')';
+      const et = 'En ' + quien + ' (nauplios · ' + rev + ')';
       [['deformidad', 'Deformidad', MAD_NAUP_DEFORMIDAD], ['actividad', 'Actividad', MAD_NAUP_ACTIVIDAD], ['hongos', 'Hongos', MAD_NAUP_HONGOS],
         ['fototropismo', 'Fototropismo', MAD_NAUP_FOTOTROPISMO], ['aireacion', 'Aireación', MAD_NAUP_AIREACION]].forEach(([k, nombre, lista]) => {
         if (crudo(r[k]) !== '' && !opcionNauplios(lista, r[k])) errores.push(et + ' «' + crudo(r[k]) + '» no es un valor de ' + nombre + ' (' + lista.join(', ') + ').');

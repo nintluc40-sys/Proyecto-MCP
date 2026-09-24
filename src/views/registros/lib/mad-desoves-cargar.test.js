@@ -23,7 +23,8 @@ import { join } from 'node:path';
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['madDesComposiciones', 'madConstruirLibro', 'madDesReiniciar', 'madDesAddCard', 'madDesCargar',
-  'madDesCargarElige', 'madDesCargarReleer', 'madDesCollect', 'MAD_LIBRO_SHEETS', '_madDesCardHTML', '_madBorrAdaptar'];
+  'madDesCargarElige', 'madDesCargarReleer', 'madDesCollect', 'MAD_LIBRO_SHEETS', '_madDesCardHTML', '_madBorrAdaptar',
+  'madMortReiniciar', 'madMortCollect'];   // punto 6: el mismo 📥 Cargar en Inf. Supervisor
 const H = {};
 
 beforeAll(async () => {
@@ -248,5 +249,33 @@ describe('Desoves · 📥 Cargar · en la ficha', () => {
     expect(tarjeta(0).querySelector('.md-cargar').hidden).toBe(true);
     expect(abierta.hidden).toBe(true);
     expect(abierta.innerHTML).toBe('');
+  });
+});
+
+/* ── 2026-09-24 (usuario, punto 6) · el MISMO 📥 Cargar en Inf. Supervisor ─────────────────────────────────
+   Rellena lote, código genético y piscina de SU tarjeta, y la lista es la de la fecha de SU ficha (#mm-fecha), no la
+   de Desoves: con dos fichas abiertas en fechas distintas, tomar la otra ofrecería lo que producía otro día. */
+describe('Inf. Supervisor · 📥 Cargar (punto 6)', () => {
+  const card = () => document.querySelector('#mm-cards .mm-card');
+  beforeEach(() => {
+    H.madMortReiniciar();
+    document.getElementById('mm-fecha').value = FECHA;
+    document.getElementById('md-fecha').value = '2026-01-10';   // en Desoves, un día sin nada en producción
+  });
+
+  it('🔴 la tarjeta lleva el botón, y la lista es la de la fecha de SU ficha', async () => {
+    const caja = await abrir(card());
+    expect([...caja.querySelectorAll('.md-cargar-op')].map((b) => b.textContent)).toContain('XB · CG-3 · 903');
+    expect(caja.textContent).toContain(FECHA);
+  });
+
+  it('🔴 tocar una opción rellena lote, código y piscina de la tarjeta de Inf. Supervisor, y es lo que se recoge', async () => {
+    const caja = await abrir(card());
+    H.madDesCargarElige(opcion(caja, 'XA · CG-1/CG-2 · 901/902 · pareja'));
+    expect([card().querySelector('.mm-lote').value, card().querySelector('.mm-cg').value, card().querySelector('.mm-piscina').value])
+      .toEqual(['XA', 'CG-1/CG-2', '901/902']);
+    const l = H.madMortCollect().lotes[0];
+    expect([l.lote, l.codigoGenetico, l.piscina]).toEqual(['XA', 'CG-1/CG-2', '901/902']);
+    expect(caja.hidden).toBe(true);
   });
 });

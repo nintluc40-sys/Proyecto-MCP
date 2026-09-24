@@ -162,7 +162,7 @@ del módulo se quede sin contraparte en el monolito.
 | ⚖️ **Saldo** | *(derivada)* | vista del libro mayor y resumen por sala y lote, no escribe |
 | 🔄 **Movimientos** | `Maduración Movimientos` | el **tramo** origen → destino |
 | 🥚 **Desoves** | `Maduración Lotes` | (fecha, lote, código genético) |
-| 📋 **Inf. Supervisor** | `Maduración Mortalidad Desove` | (fecha, lote): mortalidad ♀ + una fila por revisión de nauplios |
+| 📋 **Inf. Supervisor** | `Maduración Mortalidad Desove` | (fecha, lote, código genético): mortalidad ♀ + una fila por revisión de nauplios |
 | 🏁 **Fin de Ciclo** | `Maduración Fin de Ciclo` | (fecha, lote, motivo, sala si es Parcial) · Registro y sus pesos |
 | 🧪 **Tratamientos** | `Maduración Tratamientos` | una fila por tarjeta: preventivo por lote o desinfección por área |
 | 🍤 **Alimentación** | `Maduración Alimentación` | (fecha, sala, tanque): agenda de tomas y ración calculada |
@@ -461,7 +461,7 @@ vacía o no exista**, que es justo cuando el daño se hace.
 | Maduración Ingreso | 14 `Crecimiento semanal promedio` |
 | Maduración Lotes (Desoves) | 7 `Hembras no viables` |
 | Maduración Fin de Ciclo | 5 `Sala` · 10 `Rojos` |
-| Maduración Mortalidad Desove | 11 `Fototropismo` · 15 `Área` · 16 `Alcalinidad día` |
+| Maduración Mortalidad Desove | 13 `Fototropismo` · 17 `Área` · 18 `Alcalinidad día` |
 | Maduración Tratamientos | 8 `Productos RAS` |
 | Maduración Alimentación | 9 `Fuente del peso` |
 | Maduración Movimientos | 9 `Agua destino` · 12 `ID` |
@@ -489,9 +489,9 @@ MISMO CAMBIO**, o la firma rechazará a los clientes al día.
 Añadir **al final** es inocuo: `ensureHeaders` alarga la cabecera que falte y «el envío trae menos
 columnas» no cuenta como desfase. Por eso da igual quién cree `Maduración Sala` o `Maduración Tanques`.
 
-`Maduración Mortalidad Desove` es el caso contrario: pasó de 14 a 19 columnas **insertando**
-(Fototropismo/Aireación en la 11-12, Área/Alcalinidad en la 15-16, y la alcalinidad partida en día 16
-y noche 17). Si el GAS entra **antes** que el push, un dispositivo con la app anterior crea esa hoja
+`Maduración Mortalidad Desove` es el caso contrario: pasó de 14 a 21 columnas **insertando**
+(Fototropismo/Aireación en la 11-12, Área/Alcalinidad en la 15-16, la alcalinidad partida en día 16
+y noche 17, y el 2026-09-24 Código genético/Piscina Broodstock en la 3-4, que corren todo dos puestos). Si el GAS entra **antes** que el push, un dispositivo con la app anterior crea esa hoja
 con su cabecera de 14 y desde ese momento el GAS rechaza a TODOS los clientes al día; sólo se sale
 vaciando la hoja **con su fila 1**.
 
@@ -585,6 +585,9 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
   noche** — en la MISMA fila del área, así que anotar la de noche horas después no pisa la de día.
   ⚠ Fototropismo y Aireación llevan su PROPIA lista de valores aunque hoy coincida con la de
   Actividad: compartir el array haría que retocar una cambiara las otras dos en silencio.
+  Cada registro lleva **Código genético y Piscina Broodstock** detrás del lote (usuario, 2026-09-24),
+  con el mismo «📥 Cargar» de Desoves. El código es parte de la **llave**, como en Desoves —un pool es
+  lote + código—: el mismo lote con otro código es otro registro, y sin código no se guarda.
 - **Tanques · las observaciones son de multiselección** y llegan a la hoja **en el orden del
   catálogo**, no en el de marcado: si no, contarlas después sería imposible.
 - **Salas · «Toneladas»** son las de CADA tanque, y el valor por defecto **se pre-rellena, no se

@@ -13,26 +13,28 @@ import {
 } from './ficha-maduracion-mortdesove.schema.js';
 
 const col = (h) => MAD_MORT_HEADERS.indexOf(h);
+/* 2026-09-24 (punto 6) · cada lote trae su CÓDIGO GENÉTICO —es parte de la llave— y, a veces, su piscina. Valores
+   inventados; «cg1» en minúsculas a propósito: se normaliza como el lote. */
 const base = () => ({ fecha: '2026-09-15', lotes: [
-  { lote: 'bp', desove: { entran: '40', muertas: '3' }, recuperacion: { entran: 37, muertas: 1 }, observaciones: 'ok' },
-  { lote: 'BC', desove: { entran: '', muertas: '' }, recuperacion: { entran: 20, muertas: 0 } },
+  { lote: 'bp', codigoGenetico: 'cg1', piscina: '101', desove: { entran: '40', muertas: '3' }, recuperacion: { entran: 37, muertas: 1 }, observaciones: 'ok' },
+  { lote: 'BC', codigoGenetico: 'CG2', desove: { entran: '', muertas: '' }, recuperacion: { entran: 20, muertas: 0 } },
 ] });
 /* 2026-09-15 · Fototropismo y Aireación van AL FINAL de la firma a propósito: así los casos que
    no los nombran siguen valiendo y se ve, caso por caso, cuáles los ejercen de verdad. */
 const rev = (deformidad, actividad, hongos, salinidad, temperatura, fototropismo, aireacion) =>
   ({ deformidad, actividad, hongos, salinidad, temperatura, fototropismo, aireacion });
 const conNauplios = () => ({ fecha: '2026-09-15', lotes: [
-  { lote: 'bp', desove: { entran: 40, muertas: 3 }, observaciones: 'ok',
+  { lote: 'bp', codigoGenetico: 'CG1', desove: { entran: 40, muertas: 3 }, observaciones: 'ok',
     nauplios: { entrada: rev('baja', 'Alta', 'Ausente', '34.5', '29', 'Alta', 'Media'), lavado: rev('', '', '', '', ''),
       lavado2: rev('Ausente', 'media', 'Ausente', 34, 28.8, 'baja', 'ALTA'), postlavado: {} } },
   // I1: BC sólo trae revisión; sus observaciones no pueden perderse.
-  { lote: 'BC', nauplios: { postlavado: rev('Media', 'Baja', 'Presente', '', '30') }, observaciones: 'sin hongos al inicio' },
+  { lote: 'BC', codigoGenetico: 'CG2', nauplios: { postlavado: rev('Media', 'Baja', 'Presente', '', '30') }, observaciones: 'sin hongos al inicio' },
 ] });
 
 describe('Inf. Supervisor · la hoja', () => {
   it('la misma hoja: mortalidad, después la revisión de nauplios, y el ID al final', () => {
     expect(MAD_MORT_SHEET).toBe('Maduración Mortalidad Desove');
-    expect(MAD_MORT_HEADERS).toEqual(['Fecha', 'Lote', 'Tipo de tanque', 'Hembras que entran', 'Hembras muertas', '% Mortalidad',
+    expect(MAD_MORT_HEADERS).toEqual(['Fecha', 'Lote', 'Código genético', 'Piscina Broodstock', 'Tipo de tanque', 'Hembras que entran', 'Hembras muertas', '% Mortalidad',
       'Revisión', 'Deformidad', 'Actividad', 'Hongos', 'Fototropismo', 'Aireación', 'Salinidad', 'Temperatura',
       'Área', 'Alcalinidad día', 'Alcalinidad noche', 'Observaciones', 'ID']);
     expect(MAD_MORT_TIPOS).toEqual(['Desove', 'Recuperación']);
@@ -52,36 +54,36 @@ describe('Inf. Supervisor · la hoja', () => {
     const ver = (f) => [f[col('Lote')], f[col('Tipo de tanque')], f[col('% Mortalidad')], f[col('Revisión')], f[col('Deformidad')], f[col('Actividad')],
       f[col('Hongos')], f[col('Fototropismo')], f[col('Aireación')], f[col('Salinidad')], f[col('Temperatura')], f[col('Observaciones')], f[col('ID')]];
     expect(filas.map(ver)).toEqual([
-      ['BP', 'Desove', 7.5, '', '', '', '', '', '', '', '', 'ok', '2026-09-15-BP-DESOVE'],
-      ['BP', '', '', 'Entrada', 'Baja', 'Alta', 'Ausente', 'Alta', 'Media', 34.5, 29, 'ok', '2026-09-15-BP-NAUP-ENTRADA'],
+      ['BP', 'Desove', 7.5, '', '', '', '', '', '', '', '', 'ok', '2026-09-15-BP-CG1-DESOVE'],
+      ['BP', '', '', 'Entrada', 'Baja', 'Alta', 'Ausente', 'Alta', 'Media', 34.5, 29, 'ok', '2026-09-15-BP-CG1-NAUP-ENTRADA'],
       // «baja» y «ALTA» entran con la grafía de la lista, igual que los otros tres campos.
-      ['BP', '', '', 'Lavado 2', 'Ausente', 'Media', 'Ausente', 'Baja', 'Alta', 34, 28.8, 'ok', '2026-09-15-BP-NAUP-LAVADO2'],
-      ['BC', '', '', 'Postlavado', 'Media', 'Baja', 'Presente', '', '', '', 30, 'sin hongos al inicio', '2026-09-15-BC-NAUP-POSTLAVADO'],
+      ['BP', '', '', 'Lavado 2', 'Ausente', 'Media', 'Ausente', 'Baja', 'Alta', 34, 28.8, 'ok', '2026-09-15-BP-CG1-NAUP-LAVADO2'],
+      ['BC', '', '', 'Postlavado', 'Media', 'Baja', 'Presente', '', '', '', 30, 'sin hongos al inicio', '2026-09-15-BC-CG2-NAUP-POSTLAVADO'],
     ]);
     expect(filas.every((f) => f.length === MAD_MORT_HEADERS.length)).toBe(true);
-    expect(nauplioRowId('2026-09-15', ' b p ', 'Lavado 2')).toBe('2026-09-15-BP-NAUP-LAVADO2');
+    expect(nauplioRowId('2026-09-15', ' b p ', ' cg 1 ', 'Lavado 2')).toBe('2026-09-15-BP-CG1-NAUP-LAVADO2');
     expect([opcionNauplios(MAD_NAUP_HONGOS, ' presente '), opcionNauplios(MAD_NAUP_ACTIVIDAD, 'Ausente')]).toEqual(['Presente', '']);
     // Un lote con sólo la revisión es un registro válido; la revisión a medias avisa de lo que falta.
     // BC sólo trae tres de los siete campos: el aviso los nombra en el orden de la ficha.
-    expect(validarMort(conNauplios())).toEqual({ errores: [], avisos: ['En BC (nauplios · Postlavado) faltan: Fototropismo, Aireación, Salinidad.'] });
+    expect(validarMort(conNauplios())).toEqual({ errores: [], avisos: ['En BC · CG2 (nauplios · Postlavado) faltan: Fototropismo, Aireación, Salinidad.'] });
   });
 
   it('🔴 revisión: ERROR si un valor no es de su lista o una cifra no es cifra; AVISO si T° o salinidad pasan del tope', () => {
-    const m = { fecha: '2026-09-15', lotes: [{ lote: 'BP', nauplios: {
+    const m = { fecha: '2026-09-15', lotes: [{ lote: 'BP', codigoGenetico: 'CG1', nauplios: {
       entrada: rev('Mucha', 'Alta', 'Si', '35', '29', 'Altísima', 'Baja'),
       lavado: rev('Baja', 'Alta', 'Ausente', 'x', '41', 'Alta', 'Media'),
       postlavado: rev('Baja', 'Alta', 'Ausente', '61', '28', 'Alta', 'Media') } }] };
     const r = validarMort(m);
     expect(r.errores).toEqual([
-      'En BP (nauplios · Entrada) «Mucha» no es un valor de Deformidad (Alta, Media, Baja, Ausente).',
-      'En BP (nauplios · Entrada) «Si» no es un valor de Hongos (Ausente, Presente).',
+      'En BP · CG1 (nauplios · Entrada) «Mucha» no es un valor de Deformidad (Alta, Media, Baja, Ausente).',
+      'En BP · CG1 (nauplios · Entrada) «Si» no es un valor de Hongos (Ausente, Presente).',
       // Los dos campos nuevos se validan igual que los otros tres, y no al final: en su sitio.
-      'En BP (nauplios · Entrada) «Altísima» no es un valor de Fototropismo (Alta, Media, Baja).',
-      'En BP (nauplios · Lavado) la salinidad no es una cifra válida.',
+      'En BP · CG1 (nauplios · Entrada) «Altísima» no es un valor de Fototropismo (Alta, Media, Baja).',
+      'En BP · CG1 (nauplios · Lavado) la salinidad no es una cifra válida.',
     ]);
     expect(r.avisos).toEqual([
-      'En BP (nauplios · Lavado) la temperatura (41) pasa de 40: revisa que esté bien escrita.',
-      'En BP (nauplios · Postlavado) la salinidad (61) pasa de 60: revisa que esté bien escrita.',
+      'En BP · CG1 (nauplios · Lavado) la temperatura (41) pasa de 40: revisa que esté bien escrita.',
+      'En BP · CG1 (nauplios · Postlavado) la salinidad (61) pasa de 60: revisa que esté bien escrita.',
     ]);
     // Sin lote pero con revisión: falta el lote.
     expect(validarMort({ fecha: '2026-09-15', lotes: [{ lote: '', nauplios: { entrada: rev('Baja') } }] }).errores).toEqual(['Falta el lote del registro 1.']);
@@ -98,38 +100,86 @@ describe('Inf. Supervisor · la hoja', () => {
   it('🔴 una fila por lote y tipo con alguna cifra, con su ID', () => {
     const filas = buildMortRows(base());
     expect(filas.map((f) => [f[col('Lote')], f[col('Tipo de tanque')], f[col('Hembras que entran')], f[col('Hembras muertas')], f[col('% Mortalidad')], f[col('ID')]])).toEqual([
-      ['BP', 'Desove', 40, 3, 7.5, '2026-09-15-BP-DESOVE'],
-      ['BP', 'Recuperación', 37, 1, 2.7, '2026-09-15-BP-RECUPERACION'],
-      ['BC', 'Recuperación', 20, 0, 0, '2026-09-15-BC-RECUPERACION'],
+      ['BP', 'Desove', 40, 3, 7.5, '2026-09-15-BP-CG1-DESOVE'],
+      ['BP', 'Recuperación', 37, 1, 2.7, '2026-09-15-BP-CG1-RECUPERACION'],
+      ['BC', 'Recuperación', 20, 0, 0, '2026-09-15-BC-CG2-RECUPERACION'],
     ]);
-    expect(mortRowId('2026-09-15', ' b p ', 'Desove')).toBe('2026-09-15-BP-DESOVE');
+    expect(mortRowId('2026-09-15', ' b p ', ' cg 1 ', 'Desove')).toBe('2026-09-15-BP-CG1-DESOVE');
     expect(buildMortPayload(base())).toMatchObject({ sheetName: MAD_MORT_SHEET, headers: MAD_MORT_HEADERS });
     expect(validarMort(base())).toEqual({ errores: [], avisos: [] });
   });
 
   it('🔴 ERROR: muertas sin las que entran, más muertas que las que entran, lote repetido, cifras sin lote', () => {
     const m = { fecha: '2026-09-15', lotes: [
-      { lote: 'BP', desove: { muertas: 2 } },
-      { lote: 'BC', recuperacion: { entran: 3, muertas: 5 } },
-      { lote: 'bc', desove: { entran: 1, muertas: 0 } },
+      { lote: 'BP', codigoGenetico: 'CG1', desove: { muertas: 2 } },
+      { lote: 'BC', codigoGenetico: 'CG2', recuperacion: { entran: 3, muertas: 5 } },
+      { lote: 'bc', codigoGenetico: 'cg2', desove: { entran: 1, muertas: 0 } },
       { lote: '', desove: { entran: 1 } },
       { lote: 'DD' },
       {},
     ] };
     expect(validarMort(m).errores).toEqual([
-      'En BP (tanques de desove) hay muertas pero no las hembras que entran: sin ellas no hay porcentaje.',
-      'En BC (tanques de recuperación) mueren más hembras (5) de las que entran (3).',
-      'El lote BC aparece dos veces en esta fecha: escribiría las mismas filas. Súmalos.',
+      'En BP · CG1 (tanques de desove) hay muertas pero no las hembras que entran: sin ellas no hay porcentaje.',
+      'En BC · CG2 (tanques de recuperación) mueren más hembras (5) de las que entran (3).',
+      'El lote BC con código CG2 aparece dos veces en esta fecha: escribiría las mismas filas. Súmalos.',
       'Falta el lote del registro 4.',
       'El lote DD no trae ninguna cifra ni revisión de nauplios.',
     ]);
   });
 
   it('AVISO si faltan las muertas; ERROR si no hay nada o la fecha no vale', () => {
-    expect(validarMort({ fecha: '2026-09-15', lotes: [{ lote: 'BP', desove: { entran: 10 } }] }).avisos)
-      .toEqual(['En BP (tanques de desove) no se anotaron muertas: se guarda como 0 % sólo si escribes 0.']);
+    expect(validarMort({ fecha: '2026-09-15', lotes: [{ lote: 'BP', codigoGenetico: 'CG1', desove: { entran: 10 } }] }).avisos)
+      .toEqual(['En BP · CG1 (tanques de desove) no se anotaron muertas: se guarda como 0 % sólo si escribes 0.']);
     expect(validarMort({ fecha: '2026-09-15', lotes: [{}] }).errores).toEqual(['No hay ningún registro que guardar.']);
     expect(validarMort({ fecha: 'x', lotes: base().lotes }).errores).toEqual(['La fecha no es válida.']);
+  });
+});
+
+/* ── 2026-09-24 (usuario, punto 6) · CÓDIGO GENÉTICO Y PISCINA BROODSTOCK ─────────────────────────────
+   «Añadir los campos de Código genético y Piscina Broodstock para identificar dichos individuos». Decisiones del
+   usuario: el código es parte de la LLAVE, como en Desoves (un pool es lote + código), y las dos columnas van
+   DETRÁS DEL LOTE. La piscina es dato. */
+describe('Inf. Supervisor · el código genético en la llave (punto 6)', () => {
+  const dos = (cg2) => ({ fecha: '2026-09-15', lotes: [
+    { lote: 'BP', codigoGenetico: 'CG1', piscina: '101', desove: { entran: 10, muertas: 1 } },
+    { lote: 'bp', codigoGenetico: cg2, piscina: '102', desove: { entran: 8, muertas: 0 } },
+  ] });
+
+  it('🔴 las dos columnas van DETRÁS del lote, y el ID sigue el último', () => {
+    expect(MAD_MORT_HEADERS.slice(0, 5)).toEqual(['Fecha', 'Lote', 'Código genético', 'Piscina Broodstock', 'Tipo de tanque']);
+    expect(MAD_MORT_HEADERS[MAD_MORT_HEADERS.length - 1]).toBe('ID');
+  });
+
+  it('🔴 el mismo lote con OTRO código es otro registro: dos filas, dos IDs, cada una con su código y su piscina', () => {
+    const filas = buildMortRows(dos('CG2'));
+    expect(filas.map((f) => [f[col('Lote')], f[col('Código genético')], f[col('Piscina Broodstock')], f[col('ID')]])).toEqual([
+      ['BP', 'CG1', '101', '2026-09-15-BP-CG1-DESOVE'],
+      ['BP', 'CG2', '102', '2026-09-15-BP-CG2-DESOVE'],
+    ]);
+    expect(validarMort(dos('CG2'))).toEqual({ errores: [], avisos: [] });
+  });
+
+  it('🔴 el mismo lote con el MISMO código es ERROR: escribirían la misma fila', () => {
+    expect(validarMort(dos(' cg1 ')).errores).toEqual(['El lote BP con código CG1 aparece dos veces en esta fecha: escribiría las mismas filas. Súmalos.']);
+  });
+
+  it('🔴 sin código genético: ERROR, y no se escribe fila (sin llave completa no hay fila, como en Desoves)', () => {
+    const m = { fecha: '2026-09-15', lotes: [{ lote: 'BP', desove: { entran: 10, muertas: 1 }, nauplios: { entrada: rev('Baja') } }] };
+    expect(validarMort(m).errores).toEqual(['Falta el código genético del lote BP (registro 1).']);
+    expect(buildMortRows(m)).toEqual([]);
+  });
+
+  it('la piscina es DATO: va en su columna, no cambia el ID y puede faltar', () => {
+    const [con] = buildMortRows(dos('CG2'));
+    const [sin] = buildMortRows({ fecha: '2026-09-15', lotes: [{ lote: 'BP', codigoGenetico: 'CG1', desove: { entran: 10, muertas: 1 } }] });
+    expect([con[col('Piscina Broodstock')], sin[col('Piscina Broodstock')]]).toEqual(['101', '']);
+    expect(con[col('ID')]).toBe(sin[col('ID')]);
+  });
+
+  it('la revisión de nauplios también lleva el código y la piscina, y su ID el código', () => {
+    const f = buildMortRows({ fecha: '2026-09-15', lotes: [{ lote: 'BP', codigoGenetico: 'CG1', piscina: '101', nauplios: { entrada: rev('Baja') } }] })[0];
+    expect([f[col('Código genético')], f[col('Piscina Broodstock')], f[col('Revisión')], f[col('ID')]])
+      .toEqual(['CG1', '101', 'Entrada', '2026-09-15-BP-CG1-NAUP-ENTRADA']);
   });
 });
 
@@ -159,9 +209,12 @@ const api = (() => {
 
 describe('Inf. Supervisor · el monolito y el módulo dicen lo mismo', () => {
   const MODELOS = [base(), { fecha: 'x', lotes: [{ lote: 'BP', desove: { muertas: 2 } }, { lote: 'BC', recuperacion: { entran: 3, muertas: 5 } }, { lote: 'bc', desove: { entran: 1 } }, { lote: '', desove: { entran: 1 } }, { lote: 'DD' }, null] }, { fecha: '2026-09-15', lotes: [] },
-    conNauplios(), { fecha: '2026-09-15', lotes: [{ lote: 'BP', nauplios: { entrada: rev('Mucha', 'Alta', 'Si', '35', '29'), lavado: rev('Baja', 'x', 'Ausente', 'x', '41'), postlavado: rev('', '', '', '61', '-3') } }, { lote: '', nauplios: { lavado2: rev('Baja') } }] },
+    conNauplios(), { fecha: '2026-09-15', lotes: [{ lote: 'BP', codigoGenetico: 'CG1', nauplios: { entrada: rev('Mucha', 'Alta', 'Si', '35', '29'), lavado: rev('Baja', 'x', 'Ausente', 'x', '41'), postlavado: rev('', '', '', '61', '-3') } }, { lote: '', nauplios: { lavado2: rev('Baja') } }] },
     // PE1.5 · alcalinidad de día y de noche: sólo día, sólo noche, las dos, una que no es cifra y un área que no existe.
-    { fecha: '2026-09-15', lotes: [], alcalinidad: { RAS: { dia: '120', noche: 'x' }, 'Sala 2': { noche: 88 }, 'Sala 3': { dia: 95.5, noche: '101' }, 'Sala 9': { dia: 1 } } }];
+    { fecha: '2026-09-15', lotes: [], alcalinidad: { RAS: { dia: '120', noche: 'x' }, 'Sala 2': { noche: 88 }, 'Sala 3': { dia: 95.5, noche: '101' }, 'Sala 9': { dia: 1 } } },
+    // 2026-09-24 (punto 6) · el código en la llave: el mismo lote con dos códigos, y uno sin código.
+    { fecha: '2026-09-15', lotes: [{ lote: 'BP', codigoGenetico: 'CG1', piscina: '101', desove: { entran: 10, muertas: 1 } }, { lote: 'bp', codigoGenetico: 'CG2', desove: { entran: 8, muertas: 0 } }] },
+    { fecha: '2026-09-15', lotes: [{ lote: 'BP', desove: { entran: 10, muertas: 1 } }] }];
   it('la misma hoja, columnas, tipos y listas de la revisión', () => {
     expect([api.MAD_MORT_SHEET, api.MAD_MORT_HEADERS, api.MAD_MORT_TIPOS]).toEqual([MAD_MORT_SHEET, MAD_MORT_HEADERS, MAD_MORT_TIPOS]);
     expect(api.MAD_MORT_COLUMNS.map((c) => c.k)).toEqual(MAD_MORT_COLUMNS.map((c) => c.k));
@@ -169,8 +222,8 @@ describe('Inf. Supervisor · el monolito y el módulo dicen lo mismo', () => {
   });
   it('el mismo %, el mismo ID, el mismo payload y el mismo veredicto', () => {
     for (const [e, m] of [[40, 3], ['37', '1'], [0, 1], ['', 1], [10, ''], [3, 1], [-2, 1]]) expect(api.madMortPct(e, m)).toBe(pctMortalidad(e, m));
-    for (const t of ['Desove', 'Recuperación', 'Otro']) expect(api.madMortRowId('2026-09-15', 'b p', t)).toBe(mortRowId('2026-09-15', 'b p', t));
-    for (const t of [...MAD_NAUP_REVISIONES, 'Otra']) expect(api.madNaupRowId('2026-09-15', 'b p', t)).toBe(nauplioRowId('2026-09-15', 'b p', t));
+    for (const t of ['Desove', 'Recuperación', 'Otro']) expect(api.madMortRowId('2026-09-15', 'b p', 'cg 1', t)).toBe(mortRowId('2026-09-15', 'b p', 'cg 1', t));
+    for (const t of [...MAD_NAUP_REVISIONES, 'Otra']) expect(api.madNaupRowId('2026-09-15', 'b p', 'cg 1', t)).toBe(nauplioRowId('2026-09-15', 'b p', 'cg 1', t));
     for (const v of ['presente', ' Alta ', 'x', '', null]) expect(api.madNaupOpcion(MAD_NAUP_HONGOS, v)).toBe(opcionNauplios(MAD_NAUP_HONGOS, v));
     for (const m of MODELOS) {
       expect(api.buildMadMortPayload(m)).toEqual(buildMortPayload(m));

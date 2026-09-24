@@ -8373,6 +8373,26 @@ function _madBorrAdaptar(ficha, fp, dia){
       caja.remove();
       fp.querySelectorAll(".mm-alc-dia").forEach(function(el){ const v=valores[el.getAttribute("data-area")]; if(v) el.value=v; });
     }
+    /* · 2026-09-24 (punto 6): Código genético y Piscina Broodstock detrás del Lote, y «📥 Cargar». Un borrador de antes
+         no los trae —y sin el código el registro ya no se guarda—; una lista que quedó abierta se cierra y se vacía. */
+    fp.querySelectorAll(".mm-card").forEach(function(card){
+      const lote=card.querySelector(".mm-lote"), rot=lote ? lote.closest("label") : null;
+      if(rot && !card.querySelector(".mm-cg")){
+        rot.insertAdjacentHTML("afterend",
+          '<label style="'+_MAD_ING_LBL+'">Código genético<input class="mm-cg" style="'+_MAD_ING_INP+';width:120px"></label>'
+          + '<label style="'+_MAD_ING_LBL+'">Piscina Broodstock<input class="mm-piscina" style="'+_MAD_ING_INP+';width:130px"></label>');
+      }
+      if(!card.querySelector(".md-cargar-btn")){
+        const quitar=card.querySelector('button[onclick^="madMortDelCard"]');
+        if(quitar) quitar.insertAdjacentHTML("beforebegin", _MAD_DES_CARGAR_BTN);
+      }
+      if(!card.querySelector(".md-cargar") && rot){
+        const fila=rot.closest("div");
+        if(fila) fila.insertAdjacentHTML("afterend", _MAD_DES_CARGAR_CAJA);
+      }
+      const lista=card.querySelector(".md-cargar");
+      if(lista){ lista.hidden=true; lista.innerHTML=""; }
+    });
   }
   /* · fin (2026-09-16, PE1.6): la fecha de aplicación sigue a la del registro salvo que esté FIJADA a mano. Un borrador
        de antes no trae la marca: una fecha distinta de la del registro la tecleó alguien, y se fija para no pisarla. */
@@ -9231,7 +9251,7 @@ function madDesComposiciones(libro, ingresos, fecha){
 /* La lista se TOCA, no se arrastra: arrastrar no funciona en pantallas táctiles, que es donde se registra.
    Usa la última lectura del libro —la que deja cualquier 🔄—; sin ninguna, lee. */
 async function madDesCargar(btn){
-  const card = (btn && btn.closest) ? btn.closest(".md-des") : null;
+  const card = (btn && btn.closest) ? btn.closest(".md-des, .mm-card") : null;
   const caja = card ? card.querySelector(".md-cargar") : null;
   if(!caja) return;
   if(!caja.hidden){ caja.hidden = true; return; }
@@ -9248,7 +9268,8 @@ async function madDesCargarReleer(el){
   _madDesPintaCargar(caja);
 }
 function _madDesPintaCargar(caja){
-  const f = document.getElementById("md-fecha");
+  // La fecha es la de la ficha de la tarjeta: Desoves o, desde el punto 6, Inf. Supervisor.
+  const f = document.getElementById(caja.closest(".mm-card") ? "mm-fecha" : "md-fecha");
   const fecha = (f && isValidDate(f.value)) ? f.value : today();
   const libro = _madLibroDeFicha(fecha) || _madLibro;
   const ops = madDesComposiciones(libro, madLibroFuentes().ingresos, fecha);
@@ -9270,12 +9291,13 @@ function _madDesPintaCargar(caja){
 /* Rellena los TRES campos de la tarjeta a la vez —lo que evita cruzar el código de una piscina con otra— y
    avisa al borrador como si se hubiera tecleado: el valor puesto por programa no dispara `input`. */
 function madDesCargarElige(el){
-  const card = (el && el.closest) ? el.closest(".md-des") : null;
+  const card = (el && el.closest) ? el.closest(".md-des, .mm-card") : null;
   if(!card) return;
+  const p = card.classList.contains("mm-card") ? ".mm-" : ".md-";   // Inf. Supervisor (punto 6) o Desoves
   const pon = function(sel, v){ const e=card.querySelector(sel); if(e) e.value=v; return e; };
-  const lote = pon(".md-lote", el.getAttribute("data-lote") || "");
-  pon(".md-cg", el.getAttribute("data-cg") || "");
-  pon(".md-piscina", el.getAttribute("data-piscina") || "");
+  const lote = pon(p+"lote", el.getAttribute("data-lote") || "");
+  pon(p+"cg", el.getAttribute("data-cg") || "");
+  pon(p+"piscina", el.getAttribute("data-piscina") || "");
   const caja = card.querySelector(".md-cargar");
   if(caja) caja.hidden = true;
   if(lote) lote.dispatchEvent(new Event("input", { bubbles:true }));
@@ -10267,13 +10289,16 @@ const MAD_NAUP_AIREACION = ["Alta","Media","Baja"];
 const MAD_NAUP_TEMP_MAX = 40;
 const MAD_NAUP_SAL_MAX = 60;
 const MAD_MORT_COLUMNS = [
-  { h:"Fecha", k:"fecha" }, { h:"Lote", k:"lote" }, { h:"Tipo de tanque", k:"tipo" }, { h:"Hembras que entran", k:"entran" },
+  { h:"Fecha", k:"fecha" }, { h:"Lote", k:"lote" },
+  // 2026-09-24 (punto 6): detrás del lote, y el código en la llave. La firma A4 del GAS se movió con ellas. Ver el módulo.
+  { h:"Código genético", k:"codigoGenetico" }, { h:"Piscina Broodstock", k:"piscina" },
+  { h:"Tipo de tanque", k:"tipo" }, { h:"Hembras que entran", k:"entran" },
   { h:"Hembras muertas", k:"muertas" }, { h:"% Mortalidad", k:"pct" },
   { h:"Revisión", k:"revision" }, { h:"Deformidad", k:"deformidad" }, { h:"Actividad", k:"actividad" }, { h:"Hongos", k:"hongos" },
   { h:"Fototropismo", k:"fototropismo" }, { h:"Aireación", k:"aireacion" },
   { h:"Salinidad", k:"salinidad" }, { h:"Temperatura", k:"temperatura" },
   /* Sólo las llevan las filas de alcalinidad, como «Revisión» sólo las de nauplios. PE1.5 (2026-09-16): de DÍA y de
-     NOCHE, una columna por turno antes de Observaciones e ID; la firma A4 del GAS exige «Alcalinidad día». Ver el módulo. */
+     NOCHE, una columna por turno antes de Observaciones e ID; la firma A4 del GAS exige «Alcalinidad día» (en la 18). Ver el módulo. */
   { h:"Área", k:"area" }, { h:"Alcalinidad día", k:"alcalinidadDia" }, { h:"Alcalinidad noche", k:"alcalinidadNoche" },
   { h:"Observaciones", k:"observaciones" }, { h:"ID", k:"id" }   // ⚠ el ID, el ÚLTIMO
 ];
@@ -10286,8 +10311,8 @@ function madMortPct(entran, muertas){
   const e=madIngInt(entran), m=madIngInt(muertas);
   return (e===""||e===0||m==="") ? "" : Math.round((m/e)*10000)/100;
 }
-function madMortRowId(fecha, lote, tipo){ return sanitizeStr(fecha,10)+"-"+madDesNormLote(lote)+"-"+(_MAD_MORT_TAG[tipo]||"OTRO"); }
-function madNaupRowId(fecha, lote, revision){ return sanitizeStr(fecha,10)+"-"+madDesNormLote(lote)+"-NAUP-"+(_MAD_NAUP_TAG[revision]||"OTRA"); }
+function madMortRowId(fecha, lote, cg, tipo){ return sanitizeStr(fecha,10)+"-"+madDesNormLote(lote)+"-"+madDesNormCG(cg)+"-"+(_MAD_MORT_TAG[tipo]||"OTRO"); }
+function madNaupRowId(fecha, lote, cg, revision){ return sanitizeStr(fecha,10)+"-"+madDesNormLote(lote)+"-"+madDesNormCG(cg)+"-NAUP-"+(_MAD_NAUP_TAG[revision]||"OTRA"); }
 const _MAD_NAUP_CAMPOS = [["deformidad","Deformidad"],["actividad","Actividad"],["hongos","Hongos"],
   ["fototropismo","Fototropismo"],["aireacion","Aireación"],["salinidad","Salinidad"],["temperatura","Temperatura"]];
 function _madNaupRevision(x, rev){ return (x.nauplios && x.nauplios[_MAD_NAUP_CLAVE[rev]]) || {}; }
@@ -10296,21 +10321,22 @@ function madMortBuildRows(model){
   const m=model||{}, fecha=sanitizeStr(m.fecha,10), filas=[];
   const fila=function(v){ filas.push(MAD_MORT_COLUMNS.map(function(col){ return v[col.k]===undefined ? "" : v[col.k]; })); };
   (m.lotes||[]).forEach(function(c){
-    const x=c||{}, lote=madDesNormLote(x.lote);
-    if(!lote) return;
+    const x=c||{}, lote=madDesNormLote(x.lote), cg=madDesNormCG(x.codigoGenetico);
+    if(!lote || !cg) return;   // sin llave completa no hay fila (2026-09-24, punto 6)
+    const piscina=sanitizeStr(x.piscina,60);
     MAD_MORT_TIPOS.forEach(function(tipo){
       const t=x[_MAD_MORT_CLAVE[tipo]]||{}, entran=madIngInt(t.entran), muertas=madIngInt(t.muertas);
       if(entran==="" && muertas==="") return;
-      fila({ fecha:fecha, lote:lote, tipo:tipo, entran:entran, muertas:muertas, pct:madMortPct(entran, muertas), observaciones:sanitizeStr(x.observaciones,300), id:madMortRowId(fecha, lote, tipo) });
+      fila({ fecha:fecha, lote:lote, codigoGenetico:cg, piscina:piscina, tipo:tipo, entran:entran, muertas:muertas, pct:madMortPct(entran, muertas), observaciones:sanitizeStr(x.observaciones,300), id:madMortRowId(fecha, lote, cg, tipo) });
     });
     MAD_NAUP_REVISIONES.forEach(function(revision){
       const r=_madNaupRevision(x, revision);
       if(!_madNaupConDato(r)) return;
-      fila({ fecha:fecha, lote:lote, revision:revision, deformidad:madNaupOpcion(MAD_NAUP_DEFORMIDAD, r.deformidad), actividad:madNaupOpcion(MAD_NAUP_ACTIVIDAD, r.actividad),
+      fila({ fecha:fecha, lote:lote, codigoGenetico:cg, piscina:piscina, revision:revision, deformidad:madNaupOpcion(MAD_NAUP_DEFORMIDAD, r.deformidad), actividad:madNaupOpcion(MAD_NAUP_ACTIVIDAD, r.actividad),
         hongos:madNaupOpcion(MAD_NAUP_HONGOS, r.hongos),
         fototropismo:madNaupOpcion(MAD_NAUP_FOTOTROPISMO, r.fototropismo), aireacion:madNaupOpcion(MAD_NAUP_AIREACION, r.aireacion),
         salinidad:_madNaupDec(r.salinidad), temperatura:_madNaupDec(r.temperatura),
-        observaciones:sanitizeStr(x.observaciones,300), id:madNaupRowId(fecha, lote, revision) });   // I1: las observaciones del lote también aquí
+        observaciones:sanitizeStr(x.observaciones,300), id:madNaupRowId(fecha, lote, cg, revision) });   // I1: las observaciones del lote también aquí
     });
   });
   /* Una fila por ÁREA con algún turno: es del DÍA, no de un lote. Sin valor no se escribe fila, y con el MERGE del GAS
@@ -10330,23 +10356,26 @@ function madMortValidar(model){
   const vistos={};
   let filas=0;
   (m.lotes||[]).forEach(function(c, i){
-    const x=c||{}, lote=madDesNormLote(x.lote);
+    const x=c||{}, lote=madDesNormLote(x.lote), cg=madDesNormCG(x.codigoGenetico);
     const conCifras=MAD_MORT_TIPOS.filter(function(tipo){ const t=x[_MAD_MORT_CLAVE[tipo]]||{}; return madIngInt(t.entran)!=="" || madIngInt(t.muertas)!==""; });
     const conRevision=MAD_NAUP_REVISIONES.filter(function(rev){ return _madNaupConDato(_madNaupRevision(x, rev)); });
     if(!lote && !conCifras.length && !conRevision.length) return;
     if(!lote){ errores.push("Falta el lote del registro "+(i+1)+"."); return; }
     if(!conCifras.length && !conRevision.length){ errores.push("El lote "+lote+" no trae ninguna cifra ni revisión de nauplios."); return; }
-    if(vistos[lote]===1) errores.push("El lote "+lote+" aparece dos veces en esta fecha: escribiría las mismas filas. Súmalos.");
-    vistos[lote]=1;
+    // 2026-09-24 (punto 6): el código es parte de la llave. Ver el módulo.
+    if(!cg){ errores.push("Falta el código genético del lote "+lote+" (registro "+(i+1)+")."); return; }
+    if(vistos[lote+"|"+cg]===1) errores.push("El lote "+lote+" con código "+cg+" aparece dos veces en esta fecha: escribiría las mismas filas. Súmalos.");
+    vistos[lote+"|"+cg]=1;
+    const quien=lote+" · "+cg;
     conCifras.forEach(function(tipo){
       const t=x[_MAD_MORT_CLAVE[tipo]]||{}, e=madIngInt(t.entran), mu=madIngInt(t.muertas), donde=tipo==="Desove" ? "desove" : "recuperación";
-      if((e===""||e===0) && mu!=="" && mu>0) errores.push("En "+lote+" (tanques de "+donde+") hay muertas pero no las hembras que entran: sin ellas no hay porcentaje.");
-      else if(e!=="" && mu!=="" && mu>e) errores.push("En "+lote+" (tanques de "+donde+") mueren más hembras ("+mu+") de las que entran ("+e+").");
-      if(mu==="") avisos.push("En "+lote+" (tanques de "+donde+") no se anotaron muertas: se guarda como 0 % sólo si escribes 0.");
+      if((e===""||e===0) && mu!=="" && mu>0) errores.push("En "+quien+" (tanques de "+donde+") hay muertas pero no las hembras que entran: sin ellas no hay porcentaje.");
+      else if(e!=="" && mu!=="" && mu>e) errores.push("En "+quien+" (tanques de "+donde+") mueren más hembras ("+mu+") de las que entran ("+e+").");
+      if(mu==="") avisos.push("En "+quien+" (tanques de "+donde+") no se anotaron muertas: se guarda como 0 % sólo si escribes 0.");
       filas++;
     });
     conRevision.forEach(function(rev){
-      const r=_madNaupRevision(x, rev), et="En "+lote+" (nauplios · "+rev+")";
+      const r=_madNaupRevision(x, rev), et="En "+quien+" (nauplios · "+rev+")";
       [["deformidad","Deformidad",MAD_NAUP_DEFORMIDAD],["actividad","Actividad",MAD_NAUP_ACTIVIDAD],["hongos","Hongos",MAD_NAUP_HONGOS],
        ["fototropismo","Fototropismo",MAD_NAUP_FOTOTROPISMO],["aireacion","Aireación",MAD_NAUP_AIREACION]].forEach(function(p){
         if(_madNaupCrudo(r[p[0]])!=="" && !madNaupOpcion(p[2], r[p[0]])) errores.push(et+" «"+_madNaupCrudo(r[p[0]])+"» no es un valor de "+p[1]+" ("+p[2].join(", ")+").");
@@ -10435,8 +10464,13 @@ function _madMortCardHTML(){
   return '<div class="mm-card" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px;background:#fff">'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
     +   '<label style="'+_MAD_ING_LBL+'">Lote<input class="mm-lote" style="'+_MAD_ING_INP+';width:110px;text-transform:uppercase"></label>'
+    /* 2026-09-24 (punto 6) · «para identificar dichos individuos», y con el mismo 📥 Cargar de Desoves. */
+    +   '<label style="'+_MAD_ING_LBL+'">Código genético<input class="mm-cg" style="'+_MAD_ING_INP+';width:120px"></label>'
+    +   '<label style="'+_MAD_ING_LBL+'">Piscina Broodstock<input class="mm-piscina" style="'+_MAD_ING_INP+';width:130px"></label>'
+    +   _MAD_DES_CARGAR_BTN
     +   '<button class="btn" type="button" onclick="madMortDelCard(this)" style="font-size:11px">✕ Quitar</button>'
     + '</div>'
+    + _MAD_DES_CARGAR_CAJA
     + '<div style="font-size:12px;font-weight:700;margin:2px 0 6px;color:#334155">📉 Mortalidad de hembras</div>'
     + _madMortTipoHTML("Desove") + _madMortTipoHTML("Recuperación")
     + '<div style="font-size:12px;font-weight:700;margin:8px 0 6px;color:#334155">🔬 Revisión de nauplios</div>'
@@ -10468,7 +10502,7 @@ function madMortCollect(){
       nauplios[_MAD_NAUP_CLAVE[rev]]={ deformidad:g(c,k+"-def"), actividad:g(c,k+"-act"), hongos:g(c,k+"-hon"),
         fototropismo:g(c,k+"-fot"), aireacion:g(c,k+"-air"), salinidad:g(c,k+"-sal"), temperatura:g(c,k+"-tem") };
     });
-    lotes.push({ lote:g(c,".mm-lote"), desove:{ entran:g(c,".mm-desove-e"), muertas:g(c,".mm-desove-m") },
+    lotes.push({ lote:g(c,".mm-lote"), codigoGenetico:g(c,".mm-cg"), piscina:g(c,".mm-piscina"), desove:{ entran:g(c,".mm-desove-e"), muertas:g(c,".mm-desove-m") },
       recuperacion:{ entran:g(c,".mm-recuperacion-e"), muertas:g(c,".mm-recuperacion-m") }, nauplios:nauplios, observaciones:g(c,".mm-obs") });
   });
   const alcalinidad={};
@@ -22501,7 +22535,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "9efceeac7cde";
+const GAS_VERSION = "6624d3de478c";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -23447,7 +23481,9 @@ var MAD_ESQUEMA_FIRMA = {
   "Maduración Fin de Ciclo": [[5, "Sala"], [10, "Rojos"]],
   // 11 y 15 son justo las dos inserciones: el cliente de 14 columnas lleva «Salinidad» en la 11.
   // 16 (PE1.5, 2026-09-16): la alcalinidad pasó a ser de día y de noche; el cliente de 18 columnas lleva ahí «Alcalinidad».
-  "Maduración Mortalidad Desove": [[11, "Fototropismo"], [15, "Área"], [16, "Alcalinidad día"]],
+  // +2 (2026-09-24, punto 6): «Código genético» y «Piscina Broodstock» entran detrás de «Lote» y corren todo lo que va
+  // detrás: 13, 17 y 18. Un cliente de 19 columnas lleva «Salinidad» en la 13, así que tampoco puede crearla corrida.
+  "Maduración Mortalidad Desove": [[13, "Fototropismo"], [17, "Área"], [18, "Alcalinidad día"]],
   "Maduración Tratamientos": [[8, "Productos RAS"]],
   // 9 va ANTES del bloque de alimentos, que es la parte del esquema que puede crecer.
   "Maduración Alimentación": [[9, "Fuente del peso"]],
