@@ -16,6 +16,13 @@
    solo error. Por eso los casos escriben en un `input`, en un `select` y en una casilla, y
    comprueban los tres al volver: un fixture que sólo mirara «¿hay tarjetas?» daría verde con
    el formulario vacío.
+
+   🔴 2026-09-24 · «SI SE REGISTRA ALGO EN UNA FICHA Y SE CAMBIA LA FECHA, SE BORRA TODO» (punto 1 del usuario). Lo
+   tecleado se escondía bajo la fecha anterior (R2), y el borrador sólo se guardaba al cambiar la fecha y no volvía al
+   abrir la ficha, así que recargar la app lo perdía (R1). La regla nueva, decidida por él: lo tecleado se guarda AL
+   TECLEAR y vuelve al abrir; al cambiar la fecha se LLEVA al día elegido si es trabajo nuevo y ese día no tiene nada,
+   y si no se pregunta; sin teclear nada, la fecha enseña lo guardado de cada día. ⚠ Por eso aquí se teclea DE VERDAD
+   (`teclear`, con su evento): un `value` puesto a mano no es teclear, y la ficha lo trata como no tocada.
    ============================================================ */
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -25,7 +32,8 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['MAD_BORR_FICHAS', 'MAD_BORR_MAX', 'MAD_BORR_PRE', 'madBorrTodo', 'madBorrGuardar',
   'madBorrLeer', 'madBorrOlvidar', 'madBorrFechaChange', 'madBorrMontada', '_madBorrFijarValores',
-  'renderMadTratamientos', 'renderMadFinCiclo', 'renderMadIngreso', '_madCommitActive', 'today'];
+  'renderMadTratamientos', 'renderMadFinCiclo', 'renderMadIngreso', '_madCommitActive', 'today',
+  'selTab', 'madBorrGuardarYa', 'MAD_BORR_ESPERA_MS', 'goBack'];
 const H = {};
 
 beforeAll(async () => {
@@ -72,43 +80,73 @@ const irA = (ficha, fecha) => { campoFecha(ficha).value = fecha; H.madBorrFechaC
 const dosis = () => panel('tratamientos').querySelector('.mt-dosis');
 const salaSel = () => document.getElementById('mt-sala');
 const prod = () => panel('tratamientos').querySelector('.mt-prod');
+/** Teclea como el usuario: el valor y su evento (un `value` a mano no es teclear: la ficha no se da por tocada). */
+const teclear = (el, v) => {
+  if (el.type === 'checkbox') el.checked = v; else el.value = v;
+  el.dispatchEvent(new Event(el.tagName === 'SELECT' || el.type === 'checkbox' ? 'change' : 'input', { bubbles: true }));
+  return el;
+};
+const MAD = 12;
+/** Vuelve a abrir la ficha como tras recargar la app: panel vacío y se entra en su pestaña (`selTab` la monta). */
+const reabrir = () => {
+  panel('tratamientos').innerHTML = '';
+  H.setVista(MAD, 'movimientos');
+  H.selTab('tratamientos');
+};
+/** Un borrador en AYER hecho como lo hace el uso: se teclea hoy, se lleva a AYER cambiando la fecha y se vuelve a abrir
+ *  la ficha (en hoy, que queda sin nada). */
+const conAyer = (texto) => { teclear(dosis(), texto); irA('tratamientos', AYER); reabrir(); };
+/** La respuesta a la pregunta de la fecha (Aceptar = llevar), y lo que se preguntó. Sin llamar a esto, preguntar es un fallo. */
+const preguntas = [];
+const responder = (si) => { globalThis.confirm = window.confirm = (m) => { preguntas.push(String(m)); return si; }; };
 
 beforeEach(() => {
   localStorage.clear();
+  preguntas.length = 0;
+  globalThis.confirm = window.confirm = () => { throw new Error('esta prueba no esperaba una pregunta'); };
   ['tratamientos', 'fin', 'ingreso'].forEach((f) => { const p = panel(f); if (p) p.innerHTML = ''; });
   H.renderMadTratamientos();
 });
 
-describe('Maduración · el borrador por fecha guarda LO TECLEADO', () => {
+describe('Maduración · la FECHA de una ficha con algo tecleado (punto 1, 2026-09-24)', () => {
   it('el fixture ejerce algo: la ficha se monta con la fecha de hoy', () => {
     expect(campoFecha('tratamientos').value).toBe(H.today());
     expect(H.getFechas().tratamientos).toBe(H.today());
   });
 
-  it('🔴 al cambiar a un día anterior la ficha sale LIMPIA, no con lo de hoy', () => {
+  it('🔴 R2 · lo tecleado se LLEVA al día elegido: corregir la fecha ya no deja la ficha vacía', () => {
     expect(dosis(), 'la ficha debería traer al menos una tarjeta').toBeTruthy();
-    dosis().value = 'formol 20 ppm';
-
+    teclear(dosis(), 'formol 20 ppm');
     irA('tratamientos', AYER);
     expect(campoFecha('tratamientos').value, 'la fecha elegida manda sobre el today() del montaje').toBe(AYER);
-    expect(dosis().value, 'arrastró a ayer lo tecleado hoy').toBe('');
+    expect(dosis().value, 'se borró lo tecleado al cambiar la fecha').toBe('formol 20 ppm');
+    expect(H.madBorrLeer('tratamientos', AYER), 'lo llevado no quedó guardado en su día').toContain('formol 20 ppm');
+    expect(H.madBorrLeer('tratamientos', H.today()), 'el día que se deja se quedó con una copia').toBe('');
   });
 
-  it('🔴 y al volver a hoy vuelve lo tecleado: el valor VIVO, no el atributo', () => {
-    // Es el caso que distingue este arreglo de uno que guarde el formulario en blanco.
-    dosis().value = 'formol 20 ppm';
+  it('sin teclear nada, cambiar la fecha enseña lo de ese día: un día sin borrador sale LIMPIO, y no se guarda nada', () => {
+    dosis().value = 'puesto a mano, sin teclear';   // no es teclear: la ficha sigue sin tocar
     irA('tratamientos', AYER);
-    irA('tratamientos', H.today());
+    expect(campoFecha('tratamientos').value, 'la fecha elegida manda sobre el today() del montaje').toBe(AYER);
+    expect(dosis().value).toBe('');
+    expect(H.madBorrTodo('tratamientos'), 'una ficha sin tocar se guardó').toEqual({});
+  });
+
+  it('🔴 el borrador guarda el valor VIVO, no el atributo, y vuelve al abrir la ficha', () => {
+    // Es el caso que distingue este arreglo de uno que guarde el formulario en blanco.
+    teclear(dosis(), 'formol 20 ppm');
+    H.madBorrGuardarYa('tratamientos');
+    expect(H.madBorrLeer('tratamientos', H.today())).toContain('formol 20 ppm');
+    reabrir();
     expect(dosis().value).toBe('formol 20 ppm');
   });
 
   it('🔴 también vuelve la casilla marcada, y la opción elegida se guarda con `selected`', () => {
     expect(salaSel() && prod(), 'la ficha debería traer el select de sala y casillas').toBeTruthy();
     const elegida = salaSel().options[salaSel().options.length - 1].value;
-    salaSel().value = elegida;
-    prod().checked = true;
-
-    irA('tratamientos', AYER);
+    teclear(salaSel(), elegida);
+    teclear(prod(), true);
+    H.madBorrGuardarYa('tratamientos');
     /* ⚠ EL SELECT SE COMPRUEBA EN LO GUARDADO, NO TRAS REPARSEAR, y no es una rebaja: es que
        happy-dom NO honra el atributo `selected` al parsear `innerHTML` (medido: con B marcada
        devuelve A). Un navegador sí lo honra, así que aquí se exige lo único que este código
@@ -116,28 +154,81 @@ describe('Maduración · el borrador por fecha guarda LO TECLEADO', () => {
        que sólo prueba el parser del entorno de pruebas. La casilla y el input sí van y vuelven. */
     expect(H.madBorrLeer('tratamientos', H.today()))
       .toContain('value="' + elegida + '" selected="selected"');
-
-    irA('tratamientos', H.today());
+    reabrir();
     expect(prod().checked, 'la casilla marcada no volvió').toBe(true);
   });
 
-  it('cada día guarda el SUYO: ida y vuelta no mezcla los dos', () => {
-    dosis().value = 'lo de hoy';
-    irA('tratamientos', AYER);
-    dosis().value = 'lo de ayer';
-    irA('tratamientos', H.today());
-    expect(dosis().value).toBe('lo de hoy');
+  it('cada día guarda el SUYO: sin teclear, ir y volver enseña lo de cada uno', () => {
+    conAyer('lo de ayer');
+    teclear(dosis(), 'lo de hoy');
+    H.madBorrGuardarYa('tratamientos');
+    reabrir();                                   // ya sin tocar: sólo se mira
     irA('tratamientos', AYER);
     expect(dosis().value).toBe('lo de ayer');
+    irA('tratamientos', H.today());
+    expect(dosis().value).toBe('lo de hoy');
+  });
+
+  it('🔴 si el día elegido YA tiene borrador, se pregunta; Aceptar lo lleva y sustituye el de ese día', () => {
+    conAyer('lo de ayer');
+    teclear(dosis(), 'lo nuevo');
+    responder(true);
+    irA('tratamientos', AYER);
+    expect(preguntas, 'no preguntó').toHaveLength(1);
+    expect(preguntas[0]).toContain('ya tiene datos');
+    expect(dosis().value).toBe('lo nuevo');
+    expect(H.madBorrLeer('tratamientos', AYER)).toContain('lo nuevo');
+    expect(H.madBorrLeer('tratamientos', AYER)).not.toContain('lo de ayer');
+  });
+
+  it('🔴 …y Cancelar lo deja en su día y enseña lo del elegido', () => {
+    conAyer('lo de ayer');
+    teclear(dosis(), 'lo de hoy');
+    responder(false);
+    irA('tratamientos', AYER);
+    expect(preguntas).toHaveLength(1);
+    expect(dosis().value).toBe('lo de ayer');
+    expect(H.madBorrLeer('tratamientos', H.today()), 'lo tecleado se perdió al cancelar').toContain('lo de hoy');
+    // Lo traído del elegido está SIN tocar: volver no pregunta, y enseña lo de hoy.
+    irA('tratamientos', H.today());
+    expect(preguntas, 'preguntó sin haber tecleado nada').toHaveLength(1);
+    expect(dosis().value).toBe('lo de hoy');
+  });
+
+  it('🔴 corregir un día que YA tenía borrador también se pregunta: Cancelar lo deja en su día; Aceptar lo lleva', () => {
+    conAyer('lo de ayer');
+    irA('tratamientos', AYER);                    // sólo mirar: no pregunta
+    teclear(dosis(), 'corregido');
+    responder(false);
+    irA('tratamientos', H.today());
+    expect(preguntas[0]).toContain('lo guardado del ' + AYER);
+    expect(H.madBorrLeer('tratamientos', AYER)).toContain('corregido');
+    expect(dosis().value).toBe('');
+
+    irA('tratamientos', AYER);
+    teclear(dosis(), 'corregido otra vez');
+    responder(true);
+    irA('tratamientos', H.today());
+    expect(dosis().value).toBe('corregido otra vez');
+    expect(H.madBorrLeer('tratamientos', H.today())).toContain('corregido otra vez');
+    expect(H.madBorrLeer('tratamientos', AYER), 'el día que se dejó conservó una copia').toBe('');
+  });
+
+  it('🔴 tras ir a un día SIN nada, lo tecleado allí es trabajo nuevo: se lleva sin preguntar', () => {
+    irA('tratamientos', AYER);                    // sólo mirar: sale limpio
+    teclear(dosis(), 'tecleado en ayer');
+    irA('tratamientos', '2026-09-13');            // no pregunta (preguntar aquí sería un fallo)
+    expect(dosis().value).toBe('tecleado en ayer');
+    expect(H.madBorrLeer('tratamientos', '2026-09-13')).toContain('tecleado en ayer');
   });
 
   it('una fecha ilegible no guarda ni borra nada: el borrador del día sigue intacto', () => {
-    dosis().value = 'lo de hoy';
-    irA('tratamientos', AYER);            // guarda hoy
-    expect(H.madBorrLeer('tratamientos', H.today())).toContain('lo de hoy');
+    teclear(dosis(), 'lo de hoy');
+    H.madBorrGuardarYa('tratamientos');
     campoFecha('tratamientos').value = '';
     H.madBorrFechaChange('tratamientos');
     expect(H.madBorrLeer('tratamientos', H.today()), 'una fecha vacía se llevó el borrador').toContain('lo de hoy');
+    expect(dosis().value).toBe('lo de hoy');
   });
 
   /* 🔴 LO ENCONTRÓ EL BANCO, no el uso: teclear la fecha A MANO pasa por estados incompletos
@@ -145,14 +236,15 @@ describe('Maduración · el borrador por fecha guarda LO TECLEADO', () => {
      —o se olvidara cuál era el último día válido— se perdería el día que se está llenando, y el
      usuario no tendría forma de saber que pasó. */
   it('🔴 una fecha a medio teclear no vacía la ficha ni pierde el día en curso', () => {
-    dosis().value = 'lo de hoy';
+    teclear(dosis(), 'lo de hoy');
     campoFecha('tratamientos').value = '';
     H.madBorrFechaChange('tratamientos');
     expect(dosis().value, 'se llevó lo que había en pantalla').toBe('lo de hoy');
+    expect(H.getFechas().tratamientos, 'olvidó el último día válido').toBe(H.today());
 
-    irA('tratamientos', AYER);            // ya con una fecha entera
-    irA('tratamientos', H.today());
+    irA('tratamientos', AYER);                    // ya con una fecha entera: se lleva
     expect(dosis().value, 'perdió el día que se estaba llenando').toBe('lo de hoy');
+    expect(H.madBorrLeer('tratamientos', AYER)).toContain('lo de hoy');
   });
 
   it('sin una fecha entera no se guarda: una clave «» no la barrería nadie', () => {
@@ -163,18 +255,49 @@ describe('Maduración · el borrador por fecha guarda LO TECLEADO', () => {
   });
 });
 
-describe('Maduración · el borrador se guarda en el mismo momento que las grillas', () => {
-  it('🔴 cambiar de pestaña o volver atrás lo persiste, sin tocar la fecha', () => {
-    // `_madCommitActive` es el asa que ya usaban Salas y Tanques; las siete fichas de
-    // formulario NO están en MAD_FICHAS, así que su rama va ANTES de ese `return`.
-    dosis().value = 'sin cambiar de día';
-    H.setVista(12, 'tratamientos');
+describe('Maduración · el borrador se guarda al TECLEAR y vuelve al abrir la ficha (R1, 2026-09-24)', () => {
+  it('🔴 lo tecleado queda guardado solo, sin cambiar de pestaña ni de fecha', async () => {
+    teclear(dosis(), 'sin tocar nada más');
+    expect(H.madBorrLeer('tratamientos', H.today()), 'control: todavía no, se guarda al poco').toBe('');
+    await new Promise((r) => setTimeout(r, H.MAD_BORR_ESPERA_MS + 150));
+    expect(H.madBorrLeer('tratamientos', H.today())).toContain('sin tocar nada más');
+  });
+
+  it('🔴 cambiar de pestaña lo guarda YA (hasta el 2026-09-24 sólo lo hacía con las grillas)', () => {
+    H.setVista(MAD, 'tratamientos');
+    teclear(dosis(), 'antes de salir');
+    H.selTab('movimientos');
+    expect(H.madBorrLeer('tratamientos', H.today())).toContain('antes de salir');
+  });
+
+  it('🔴 volver atrás (salir del módulo) también lo guarda YA', () => {
+    H.setVista(MAD, 'tratamientos');
+    teclear(dosis(), 'antes de volver');
+    H.goBack();
+    expect(H.madBorrLeer('tratamientos', H.today())).toContain('antes de volver');
+  });
+
+  it('🔴 R1 · tras recargar la app, la ficha trae su borrador, y el siguiente cambio de pestaña no lo pisa', () => {
+    H.setVista(MAD, 'tratamientos');
+    teclear(dosis(), 'antes de recargar');
+    H.selTab('movimientos');
+    reabrir();
+    expect(dosis().value, 'la ficha se abrió en blanco').toBe('antes de recargar');
+    H.selTab('movimientos');
+    expect(H.madBorrLeer('tratamientos', H.today()), 'el cambio de pestaña pisó el borrador').toContain('antes de recargar');
+  });
+
+  it('🔴 una ficha SIN TOCAR no se guarda nunca: no pisa el borrador de su día', () => {
+    teclear(dosis(), 'lo de hoy');
+    H.madBorrGuardarYa('tratamientos');
+    panel('tratamientos').innerHTML = ''; H.renderMadTratamientos();   // montada en blanco, sin traer nada
+    H.setVista(MAD, 'tratamientos');
     H._madCommitActive();
-    expect(H.madBorrLeer('tratamientos', H.today())).toContain('sin cambiar de día');
+    expect(H.madBorrLeer('tratamientos', H.today()), 'la ficha en blanco pisó el borrador').toContain('lo de hoy');
   });
 
   it('fuera del módulo de Maduración no guarda nada', () => {
-    dosis().value = 'no es de aquí';
+    teclear(dosis(), 'no es de aquí');
     H.setVista(1, 'tratamientos');
     H._madCommitActive();
     expect(H.madBorrLeer('tratamientos', H.today())).toBe('');

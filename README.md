@@ -171,10 +171,23 @@ del módulo se quede sin contraparte en el monolito.
 
 **Todas guardan un BORRADOR POR FECHA en el dispositivo (2026-09-15).** Salas y Tanques ya lo
 hacían por ser grillas —su lista local lleva la fecha dentro de cada fila—; desde esa fecha las
-siete fichas de formulario también: al cambiar el campo Fecha se guarda el día que se deja y se
-trae el que se elige, y lo mismo al cambiar de pestaña o volver atrás. Se guardan los últimos
-**30 días** por ficha. Es lo tecleado en ESE dispositivo, no lo que hay en la hoja. (📈 Broodstock
-no lleva borrador: no se teclea, se carga un archivo que sigue en el equipo de quien lo sube.)
+siete fichas de formulario también. Se guardan los últimos **30 días** por ficha. Es lo tecleado en
+ESE dispositivo, no lo que hay en la hoja. (📈 Broodstock no lleva borrador: no se teclea, se carga
+un archivo que sigue en el equipo de quien lo sube.)
+
+🔴 **Y la FECHA con algo tecleado (2026-09-24, decisión del usuario).** Cambiar la fecha escondía lo
+tecleado bajo la anterior —«se borra todo»—, y en las siete fichas el borrador sólo se guardaba al
+cambiar la fecha (no al cambiar de pestaña, como aquí se decía) y no volvía al abrirlas: recargar la
+app lo perdía. Desde ese día, en las siete fichas y en las grillas de Salas y Tanques:
+- lo tecleado se guarda **al teclear** y vuelve **al abrir** la ficha; una ficha sin tocar no se
+  guarda nunca (pisaría el borrador de su día);
+- al cambiar la fecha, si lo de pantalla es **trabajo nuevo** (su día no tenía nada guardado al
+  abrirlo) y el día elegido tampoco tiene nada, **se lleva** al elegido; si no, **se pregunta**
+  (Aceptar lo lleva; Cancelar lo deja en su día y enseña el elegido); sin teclear nada, la fecha
+  enseña lo guardado de cada día, como antes;
+- en las grillas, lo **ya enviado no se mueve** (la hoja lo tiene con su fecha); en Tanques la ronda
+  llevada es un **parte de ese día** —los partes cerrados son otras rondas y no cuentan como
+  conflicto— y conserva la hora con que se abrió.
 
 En **🛢️ Tanques**, los pesos ♂ y ♀ **bajan por su columna**: al teclear uno se copia a las filas
 de abajo que tengan animales vivos. Una fila corregida a mano ya no se pisa. Cada ronda de mortalidad
@@ -527,9 +540,10 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
 
 ### Las fichas de Maduración
 
-- **Cada ficha guarda un borrador POR FECHA** (30 días): al cambiar la fecha se guarda el día que se
-  deja y se trae el elegido. Se guarda el panel, no un modelo, así que una ficha que cambia después
-  deja borradores con campos que ya no existen: `_madBorrAdaptar` los adapta al traerlos.
+- **Cada ficha guarda un borrador POR FECHA** (30 días), al teclear, y lo trae al abrirse. Al cambiar
+  la fecha con algo tecleado, lo tecleado **se lleva** al día elegido o se pregunta (2026-09-24: ver
+  «La FECHA con algo tecleado», arriba). Se guarda el panel, no un modelo, así que una ficha que cambia
+  después deja borradores con campos que ya no existen: `_madBorrAdaptar` los adapta al traerlos.
 - **💾 Guardar local, separado de ☁️.** 💾 guarda el envío **ya construido** en el dispositivo sin
   tocar la red (no lo tecleado: reconstruirlo podría dar otras filas). ☁️ envía primero lo guardado
   —lo más viejo antes— y después lo de pantalla; si lo guardado falla de verdad se para ahí.

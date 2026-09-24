@@ -2541,6 +2541,8 @@ function goBack(){
   try{ if(isAstMod(curMod)) saveAstRecovery(); }catch(_){}
   try{ if(isAstMod(curMod)) saveTrasRecovery(); }catch(_){}
   try{ if(isMadMod(curMod)) saveMadRecovery(); }catch(_){}
+  // 2026-09-24 · y el borrador de una ficha de formulario, si quedaba algo tecleado por guardar.
+  try{ if(isMadMod(curMod) && MAD_BORR_FICHAS[curTab]) madBorrGuardarYa(curTab); }catch(_){}
   if(_recTimer){ clearInterval(_recTimer); _recTimer = null; }
   _algEditingId = null;  // limpia modo edición Lab. Algas al salir del módulo
   _blancoState = null;   // limpia sandbox Blanco
@@ -2661,6 +2663,8 @@ function selTab(t){
   // Al salir de una grilla de Maduración, persiste lo tecleado/pegado de la grilla
   // activa antes de cambiar de pestaña (anti-pérdida; curTab aún es la pestaña vieja).
   if(isMadMod(curMod) && MAD_FICHAS.includes(curTab)){ try{ _madCommitActive(); }catch(_){} }
+  // 2026-09-24 · y al salir de una ficha de FORMULARIO, lo tecleado pendiente se guarda ya (hasta hoy no se guardaba aquí).
+  if(isMadMod(curMod) && MAD_BORR_FICHAS[curTab]){ try{ madBorrGuardarYa(curTab); }catch(_){} }
   // Grilla de Mareas: vuelca lo tecleado/pegado antes de cambiar de pestaña.
   if(curTab === "marea"){ try{ clearTimeout(_mareaDirtyTm); saveMareaDraftObj({ rows:_collectMareaGrid() }); }catch(_){} }
   curTab = t;
@@ -2674,6 +2678,7 @@ function selTab(t){
   if(t==="blanco") renderBlanco();
   if(t==="bitacora") renderBitacora();
   if(MAD_FICHAS.includes(t)) renderMad(t);
+  const _montajes = _madBorrMontajes;
   if(t==="ingreso") renderMadIngreso();
   if(t==="saldo") renderMadSaldo();
   if(t==="movimientos") renderMadMovimientos();
@@ -2682,6 +2687,8 @@ function selTab(t){
   if(t==="fin") renderMadFinCiclo();
   if(t==="tratamientos") renderMadTratamientos();
   if(t==="alimentacion") renderMadAlimentacion();
+  // R1 (2026-09-24) · si la ficha se acaba de MONTAR (al entrar o tras recargar la app), trae el borrador de su día.
+  if(MAD_BORR_FICHAS[t] && _madBorrMontajes !== _montajes){ try{ madBorrTraerDelDia(t); }catch(_){} }
   if(t==="broodstock") renderMadBroodstock();
   if(t==="reproductivo") renderMadReproductivo();
   if(t==="biomol") renderBiomol();
@@ -5763,8 +5770,21 @@ function _madAfterRender(ficha){
   const fechaEl = document.getElementById("mad-"+ficha+"-fecha");
   const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
   const sala = ficha==="salas" ? "" : _madTanquesSala;
-  _madRendered[ficha] = { sala, fecha };
+  /* 2026-09-24 · `conDatos`: si el día ya tenía filas cuando se pintó. Es lo que distingue, al cambiar la fecha, el
+     trabajo NUEVO (se lleva al día elegido) de corregir un día que ya tenía datos (se pregunta). Ver _madGridLlevar. */
+  _madRendered[ficha] = { sala, fecha, conDatos: loadMad(ficha).some(_madGridDelDia(ficha, fecha, sala)) };
   _madGridDirty = false;   // la grilla recién renderizada refleja lo persistido (limpio)
+}
+/** Las filas que la grilla PINTA para (fecha, sala): en Salas, las del día de las salas del selector; en Tanques, las
+ *  del parte abierto de esa sala (las cerradas no se pintan: ver renderMadTanques). */
+function _madGridDelDia(ficha, fecha, sala){
+  return function(x){
+    const d = x && x.data;
+    if(!d || d.fecha !== fecha) return false;
+    if(ficha === "salas") return MAD_SALA_OPTS.indexOf(d.sala) !== -1;
+    return d.sala === sala && !d.cerrado && d.tanque != null && d.tanque !== ""
+      && (MAD_TANQUES_POR_SALA[sala] || []).some(function(t){ return String(t) === String(d.tanque); });
+  };
 }
 // Merge de una fila recolectada en la lista persistida (clave por ficha).
 function _madMergeRow(list, ficha, data){
@@ -5792,8 +5812,9 @@ function _madCommitActive(){
      momento que las grillas —cambiar de pestaña, volver atrás—, que es cuando se sabe que el
      usuario ha terminado de teclear. Va antes del `return` de abajo porque esas fichas no
      están en MAD_FICHAS: aquélla es la lista de las GRILLAS. */
+  /* 2026-09-24 · SÓLO si se tecleó (`madBorrGuardarYa`): guardar una ficha sin tocar pisaba el borrador de su día (R1). */
   if(MAD_BORR_FICHAS[curTab]){
-    try{ madBorrGuardar(curTab, (document.getElementById(MAD_BORR_FICHAS[curTab].fecha) || {}).value); }catch(_){}
+    try{ madBorrGuardarYa(curTab); }catch(_){}
   }
   if(!MAD_FICHAS.includes(curTab)) return;
   const r = _madRendered[curTab]; if(!r) return;
@@ -8062,6 +8083,7 @@ function madLocDescartar(ficha, id){
    guardar dos veces—. Es la razón de madBorrOlvidar, que hasta PE1.4 no llamaba nadie. Se olvida la fecha del envío y
    la del panel en pantalla, que son la misma salvo una fecha tecleada sin confirmar. */
 function _madBorrOlvidarPantalla(ficha, fecha){
+  clearTimeout(_madBorrTm[ficha]); _madBorrTm[ficha] = null;   // 2026-09-24 · un guardado pendiente lo resucitaría
   [fecha, _madBorrFecha[ficha]].forEach(function(d){ if(isValidDate(d)) madBorrOlvidar(ficha, d); });
 }
 /* PE1.4 · lo que 💾 y ☁️ comparten: recoger, revisar y construir. null si hay errores (ya los pintó y avisó). */
@@ -8164,6 +8186,21 @@ const MAD_BORR_FICHAS = {
 /* La fecha que la ficha tenía ANTES del cambio: es bajo la que hay que guardar lo que se deja.
    No se puede deducir del input, que para cuando salta el `onchange` ya lleva la nueva. */
 let _madBorrFecha = {};
+/* 🔴 2026-09-24 · «CUANDO SE REGISTRA ALGO EN UNA FICHA Y SE CAMBIA LA FECHA, SE BORRA TODO» (punto 1 del usuario).
+   Eran dos defectos:
+     · R2 · al cambiar la fecha, lo tecleado se guardaba bajo la fecha ANTERIOR y la pantalla pasaba al día elegido:
+       quien tecleó con la fecha equivocada y la corrigió veía la ficha VACÍA (lo suyo, escondido en el otro día).
+     · R1 · y el borrador sólo se guardaba al cambiar la fecha —`selTab` sólo guarda las GRILLAS— y al montarse la
+       ficha no se traía: recargar la app la dejaba en blanco, y el siguiente guardado PISABA el borrador. Pérdida real.
+   Decisión del usuario (2026-09-24): lo tecleado se guarda AL TECLEAR y vuelve al abrir la ficha; una ficha sin tocar
+   no se guarda nunca (pisaría un borrador con datos); y al cambiar la fecha, lo TECLEADO SE LLEVA al día elegido si es
+   trabajo nuevo —el día no tenía nada guardado al abrirlo— y el elegido tampoco tiene nada. Si no, se PREGUNTA. Sin
+   nada tecleado, cambiar la fecha enseña lo guardado de ese día, como se pidió el 2026-09-15. */
+const _madBorrTocado = {};     // ficha → se tecleó algo desde que se montó o se trajo el panel
+const _madBorrOrigen = {};     // ficha → "borrador" si lo de pantalla salió de un borrador ya guardado; si no, "limpio"
+const _madBorrTm = {};         // ficha → el guardado pendiente tras teclear
+let _madBorrMontajes = 0;      // montajes de fichas: `selTab` sabe así si acaba de montar la suya y tiene que traer su borrador
+const MAD_BORR_ESPERA_MS = 600;
 
 function _madBorrKey(ficha){ return MAD_BORR_PRE + ficha; }
 function madBorrTodo(ficha){
@@ -8216,6 +8253,42 @@ function madBorrOlvidar(ficha, fecha){
   if(!Object.prototype.hasOwnProperty.call(todo, fecha)) return;
   delete todo[fecha];
   _lsSet(_madBorrKey(ficha), JSON.stringify(todo));
+}
+/** Guarda YA lo pendiente tras teclear (al salir de la pestaña, al volver atrás). SÓLO si se tecleó: una ficha sin
+ *  tocar no se guarda nunca, porque pisaría el borrador que tuviera su día (R1, 2026-09-24). */
+function madBorrGuardarYa(ficha){
+  if(!MAD_BORR_FICHAS[ficha]) return;
+  clearTimeout(_madBorrTm[ficha]); _madBorrTm[ficha] = null;
+  if(_madBorrTocado[ficha]) madBorrGuardar(ficha, _madBorrFecha[ficha]);
+}
+/* El panel se escucha UNA vez: el listener va en el contenedor, que sobrevive a los `innerHTML`. Cada cambio que no sea
+   el de la fecha marca la ficha como tocada y programa su guardado; la fecha tiene su propia asa (madBorrFechaChange). */
+function _madBorrEscuchar(ficha){
+  const cfg = MAD_BORR_FICHAS[ficha], fp = cfg ? document.getElementById(cfg.panel) : null;
+  if(!fp || fp._madBorrEscucha) return;
+  fp._madBorrEscucha = true;
+  const alTeclear = function(ev){
+    if(ev && ev.target && ev.target.id === cfg.fecha) return;
+    _madBorrTocado[ficha] = true;
+    clearTimeout(_madBorrTm[ficha]);
+    _madBorrTm[ficha] = setTimeout(function(){ _madBorrTm[ficha] = null; madBorrGuardar(ficha, _madBorrFecha[ficha]); }, MAD_BORR_ESPERA_MS);
+  };
+  fp.addEventListener("input", alTeclear);
+  fp.addEventListener("change", alTeclear);
+}
+/** R1 · la ficha se acaba de montar (con la fecha de hoy): si ese día tiene borrador, se trae. Sin esto, recargar la
+ *  app la dejaba en blanco y lo tecleado sólo volvía cambiando de fecha y regresando. */
+function madBorrTraerDelDia(ficha){
+  const cfg = MAD_BORR_FICHAS[ficha];
+  if(!cfg) return;
+  const dia = _madBorrFecha[ficha], html = madBorrLeer(ficha, dia), fp = document.getElementById(cfg.panel);
+  if(!html || !fp) return;
+  fp.innerHTML = html;
+  _madBorrAdaptar(ficha, fp, dia);
+  const f = document.getElementById(cfg.fecha);
+  if(f) f.value = dia;
+  _madBorrOrigen[ficha] = "borrador";
+  _madBorrTocado[ficha] = false;
 }
 /* Cada ficha se nombra, en vez de un `window[nombre]`: el monolito se arranca en las pruebas
    con `new Function`, donde nada cuelga de `window`, y ahí un despacho por nombre se caería
@@ -8281,7 +8354,8 @@ function _madBorrAdaptar(ficha, fp, dia){
     fp.querySelectorAll(".mf-mbsf").forEach(function(el){ if(el.value && el.value!==reg && el.getAttribute("data-fijo")!=="1"){ el.setAttribute("data-fijo","1"); el.style.background="#fef9c3"; } });
   }
 }
-/** Asa del campo Fecha: guarda el día que se deja y trae el que se elige. */
+/** Asa del campo Fecha. Sin nada tecleado, guarda el día que se deja y trae el que se elige (2026-09-15). Con algo
+ *  tecleado, lo LLEVA al día elegido si es trabajo nuevo y ese día no tiene nada; si no, pregunta (2026-09-24). */
 function madBorrFechaChange(ficha){
   const cfg = MAD_BORR_FICHAS[ficha];
   if(!cfg) return;
@@ -8289,16 +8363,37 @@ function madBorrFechaChange(ficha){
   if(!f) return;
   const nueva = f.value;
   const previa = _madBorrFecha[ficha];
-  if(previa && previa !== nueva) madBorrGuardar(ficha, previa);
   /* Una fecha A MEDIO TECLEAR llega aquí vacía. Ni se guarda ni se trae, y sobre todo NO se
      toca `_madBorrFecha`: perder el último día válido haría que la siguiente fecha entera ya no
      supiera bajo qué día guardar lo que hay en pantalla, y se perdería el día en curso. */
-  if(!isValidDate(nueva)) return;
+  if(!isValidDate(nueva) || previa === nueva) return;
   const fp = document.getElementById(cfg.panel);
   if(!fp) return;
+  clearTimeout(_madBorrTm[ficha]); _madBorrTm[ficha] = null;
   const html = madBorrLeer(ficha, nueva);
-  /* Sin borrador de ese día, la ficha se monta LIMPIA: arrastrar lo de ayer a un día en el
-     que no se tecleó nada es justo lo que esta función viene a arreglar. */
+  if(_madBorrTocado[ficha]){
+    /* Lo de pantalla es trabajo NUEVO si la ficha se abrió en blanco (no salió de un borrador ya guardado). */
+    const nuevo = _madBorrOrigen[ficha] !== "borrador";
+    const llevar = (nuevo && !html) || confirm(html
+      ? "El " + nueva + " ya tiene datos guardados en este dispositivo.\n\nAceptar: llevar lo de pantalla al " + nueva
+        + " (sustituye lo que había).\nCancelar: dejarlo en el " + previa + " y ver lo del " + nueva + "."
+      : "Lo de pantalla es lo guardado del " + previa + ", con cambios.\n\nAceptar: llevarlo al " + nueva
+        + ".\nCancelar: dejarlo en el " + previa + " y ver el " + nueva + ".");
+    if(llevar){
+      /* Se LLEVA: la pantalla no se toca y lo suyo pasa al día elegido; el día que se deja pierde su borrador, que
+         era esto mismo con la fecha equivocada. Se guarda YA —no se puede perder entre un día y otro— y otra vez
+         tras el cambio: el `onchange` sigue después (las fechas de N2/N5 o la de aplicación siguen a la nueva). */
+      if(isValidDate(previa)) madBorrOlvidar(ficha, previa);
+      _madBorrFecha[ficha] = nueva;
+      madBorrGuardar(ficha, nueva);
+      _madBorrTm[ficha] = setTimeout(function(){ _madBorrTm[ficha] = null; madBorrGuardar(ficha, _madBorrFecha[ficha]); }, MAD_BORR_ESPERA_MS);
+      return;
+    }
+    if(isValidDate(previa)) madBorrGuardar(ficha, previa);
+  }
+  /* Se trae el día elegido. Sin borrador, la ficha se monta LIMPIA: arrastrar lo de ayer a un día en el que no se
+     tecleó nada es lo que pedía el 2026-09-15. Sin tocar, lo que se deja no se guarda: ya estaba guardado, o no
+     había nada (y guardar una ficha en blanco pisaría el borrador de ese día). */
   fp.innerHTML = html;
   if(html) _madBorrAdaptar(ficha, fp, nueva);
   else _madBorrRender(ficha);
@@ -8307,10 +8402,18 @@ function madBorrFechaChange(ficha){
   const f2 = document.getElementById(cfg.fecha);
   if(f2) f2.value = nueva;
   _madBorrFecha[ficha] = nueva;
+  _madBorrOrigen[ficha] = html ? "borrador" : "limpio";
+  _madBorrTocado[ficha] = false;
 }
-/** La ficha acaba de montarse con la fecha de hoy: desde aquí se sabe bajo qué día guardar. */
+/** La ficha acaba de montarse con la fecha de hoy: desde aquí se sabe bajo qué día guardar, y empieza SIN tocar. */
 function madBorrMontada(ficha){
-  if(MAD_BORR_FICHAS[ficha]) _madBorrFecha[ficha] = today();
+  if(!MAD_BORR_FICHAS[ficha]) return;
+  _madBorrFecha[ficha] = today();
+  _madBorrTocado[ficha] = false;
+  _madBorrOrigen[ficha] = "limpio";
+  clearTimeout(_madBorrTm[ficha]); _madBorrTm[ficha] = null;
+  _madBorrMontajes++;
+  _madBorrEscuchar(ficha);
 }
 
 function renderMadIngreso(){
@@ -13282,8 +13385,48 @@ function madTanquesSalaChange(){
   renderMadTanques();
 }
 // Cambio de fecha en las grillas: commit anti-pérdida del día anterior antes de re-render.
-function madSalasFechaChange(){   _madCommitActive(); renderMadSalas();   }
-function madTanquesFechaChange(){ _madCommitActive(); renderMadTanques(); }
+// 2026-09-24 · salvo que lo tecleado se LLEVE a la fecha elegida (_madGridLlevar): entonces se guarda allí, no aquí.
+function madSalasFechaChange(){   _madGridFechaChange("salas", renderMadSalas); }
+function madTanquesFechaChange(){ _madGridFechaChange("tanques", renderMadTanques); }
+function _madGridFechaChange(ficha, pintar){
+  const llevado = _madGridLlevar(ficha);
+  if(!llevado) _madCommitActive();
+  pintar();
+  /* Lo llevado sigue siendo lo que se tecleó: si la fecha elegida también era otra, se vuelve a llevar, igual que en
+     las fichas de formulario. El render lo daría por «ya guardado y sin tocar». */
+  if(llevado && _madRendered[ficha]){ _madGridDirty = true; _madRendered[ficha].conDatos = !llevado.nuevo; }
+}
+/** 2026-09-24 · LA REGLA DE LA FECHA EN LAS GRILLAS (punto 1 del usuario; la misma que madBorrFechaChange). Con la
+ *  grilla tecleada, lo de pantalla se LLEVA a la fecha elegida si es trabajo nuevo —al pintarla, su día no tenía filas;
+ *  en Tanques, ningún parte abierto de esa sala— y la elegida tampoco tiene; si no, se pregunta. Devuelve { nuevo } si
+ *  lo llevó (y entonces NO se guarda bajo la fecha anterior), o null para seguir como hasta hoy.
+ *  ⚠ Lo ya ENVIADO no se mueve: la hoja lo tiene con su fecha, y moverlo aquí dejaría las dos filas. Se queda en su
+ *  día, y se dice. En Tanques la ronda llevada es un parte de ese día: el siguiente número, y conserva su hora. */
+function _madGridLlevar(ficha){
+  const r = _madRendered[ficha];
+  const el = document.getElementById("mad-" + ficha + "-fecha");
+  const nueva = el ? el.value : "";
+  if(!_madGridDirty || !r || !isValidDate(nueva) || nueva === r.fecha) return null;
+  const list = loadMad(ficha);
+  const deOrigen = list.filter(_madGridDelDia(ficha, r.fecha, r.sala));
+  if(deOrigen.some(function(x){ return x.synced; })){
+    toast("Lo del " + r.fecha + " ya se envió a la hoja: se queda en ese día (corrígelo en la hoja si la fecha era otra).", "warn", 7000);
+    return null;
+  }
+  const nuevo = !r.conDatos, hayEnDestino = list.some(_madGridDelDia(ficha, nueva, r.sala));
+  const llevar = (nuevo && !hayEnDestino) || confirm(hayEnDestino
+    ? "El " + nueva + " ya tiene " + (ficha === "salas" ? "datos de Salas" : "un parte abierto de " + r.sala) + " en este dispositivo.\n\nAceptar: llevar lo de pantalla al " + nueva
+      + " (lo tecleado reemplaza esas celdas).\nCancelar: dejarlo en el " + r.fecha + " y ver el " + nueva + "."
+    : "Lo de pantalla es lo guardado del " + r.fecha + ", con cambios.\n\nAceptar: llevarlo al " + nueva
+      + ".\nCancelar: dejarlo en el " + r.fecha + " y ver el " + nueva + ".");
+  if(!llevar) return null;
+  // La hora del parte que se deja, antes de quitarlo: la ronda la conserva (Tanques).
+  const hora = ficha === "tanques" ? _madParteHora(list, r.fecha, r.sala, _madParteAbierto(list, r.fecha, r.sala)) : "";
+  if(deOrigen.length && !saveMadList(ficha, list.filter(function(x){ return deOrigen.indexOf(x) === -1; }))) return null;
+  if(ficha === "salas") saveMadSalasGrid({ fechaOverride: nueva, silent: true, noRender: true });
+  else saveMadTanquesGrid({ salaOverride: r.sala, fechaOverride: nueva, horaOverride: hora, silent: true, noRender: true });
+  return { nuevo: nuevo };
+}
 function madGridPaste(ev, ficha){
   const cd = ev.clipboardData || window.clipboardData;
   if(!cd) return;
@@ -13554,7 +13697,9 @@ function saveMadTanquesGrid(opts){
      que el «🔄 Sincronizar» global ya había mandado ABIERTO: la hoja ganaba una segunda fila del mismo parte y el
      libro restaba esa mortalidad dos veces. Y es la MISMA para todos los tanques del parte, también para uno que
      se teclee después de abrirlo: antes ése se quedaba sin hora. */
-  const hora = (abiertoPrevio && _madParteHora(list, fechaDeLaRonda, sala, abiertoPrevio)) || _madHoraAhora();
+  /* 2026-09-24 · `horaOverride`: una ronda LLEVADA a otra fecha (_madGridLlevar) conserva la hora con que se abrió.
+     El parte abierto de ese día, si lo hay, sigue mandando: su hora está en la llave de todas sus filas. */
+  const hora = (abiertoPrevio && _madParteHora(list, fechaDeLaRonda, sala, abiertoPrevio)) || opts.horaOverride || _madHoraAhora();
   let saved = 0;
   rows.forEach(data => {
     if(!isValidDate(data.fecha)) return;

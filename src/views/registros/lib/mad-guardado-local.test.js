@@ -25,6 +25,7 @@ const EXPORTAR = ['madTratReiniciar', 'madTratGuardar', 'madTratGuardarLocal', '
   'madMovReiniciar', 'madMovGuardar', 'madMovGuardarLocal', 'madMovSalaChange', 'madMovLogLeer', 'MAD_MOV_LOG_KEY',
   'madLocLeer', 'madLocTotal', 'madLocDescartar', '_madLocEnviar', '_madLocCfg', 'MAD_LOC_FICHAS', 'MAD_LOC_PRE', 'MAD_LOC_MAX',
   'madBorrFechaChange', 'MAD_BORR_PRE', 'syncAll', 'updateDots', 'updateSyncUI', 'buildGrid',
+  'madBorrGuardarYa', 'renderMadTratamientos',
   'madAlimCfgLeer', 'madAlimCfgGuardar', 'madAlimLogLeer', 'MAD_ALIM_LOG_KEY', 'MAD_ALIM_SHEET',
   'madDesLocalesLeer', 'MAD_DES_PEND_KEY', 'madDesLogLeer', 'MAD_DES_LOG_KEY', 'MAD_DESOVE_SHEET'];
 const H = {};
@@ -346,8 +347,16 @@ describe('Lo propio de cada ficha al salir lo guardado', () => {
 describe('El borrador por fecha ya no resucita lo guardado, enviado o vaciado', () => {
   const D = '2026-09-10', E = '2026-09-11';
   const irA = (fecha) => { pon(q('#mt-fecha'), fecha); H.madBorrFechaChange('tratamientos'); };
-  /* El borrador de un día se escribe al DEJARLO: por eso se va a E y se vuelve a D, que es cuando existe. */
-  const conBorradorEnD = () => { irA(D); llenarTrat(D, 'BORRADOR'); irA(E); irA(D); };
+  /* El borrador de D se escribe como lo escribe el uso desde el 2026-09-24: se TECLEA (el guardado al teclear lo
+     guarda; aquí, ya) y la ficha se vuelve a abrir —recargar la app—, que abre en HOY; volver a D lo trae. Hasta ese día
+     se escribía al DEJAR el día, y dejarlo con algo tecleado ahora lo LLEVA al elegido (ver mad-borrador-fecha.test.js). */
+  const conBorradorEnD = () => {
+    irA(D); llenarTrat(D, 'BORRADOR');
+    q('#mt-prevs .mt-lotes').dispatchEvent(new Event('input', { bubbles: true }));
+    H.madBorrGuardarYa('tratamientos');
+    document.getElementById('fp-tratamientos').innerHTML = ''; H.renderMadTratamientos();
+    irA(D);
+  };
 
   it('el fixture ejerce algo: volver a D trae lo tecleado', () => {
     conBorradorEnD();
