@@ -133,6 +133,54 @@ describe('Salas · «Proponer estado» con la desinfección', () => {
   });
 });
 
+/* ── 2026-09-24 (punto 3 del usuario) · LA COLUMNA «Estado por lote» CON LA DESINFECCIÓN ────────
+   «Si no hay animales en una sala, está en estado desinfección y en estado por lote solo deja el
+   término sin ingreso - Desinfección», y en la agrupada «estado por lote: Desinfección - Producción
+   agrupada». Hasta hoy la vacía la dejaba en blanco y la agrupada decía «AB: Producción».
+   🔴 Y un defecto que salió al analizarlo: una sala que el libro NO conoce se «dejaba como estaba»
+   según la nota, pero su «Estado por lote» se VACIABA — y lo vaciado se guardaba en la hoja. */
+describe('Salas · «Proponer estado» rellena «Estado por lote» (punto 3)', () => {
+  const texto = (sala) => document.querySelector(`[name="sg_${H.MAD_SALA_OPTS.indexOf(sala)}_estado_lote"]`);
+
+  it('🔴 la sala que se vació → Desinfección, y por lote SÓLO «sin ingreso - Desinfección»', () => {
+    H._madSalasPintaEstado(libro());
+    expect(sel('Sala 3').value).toBe('Desinfección');
+    expect(texto('Sala 3').value).toBe('sin ingreso - Desinfección');
+  });
+
+  it('🔴 la agrupada (2 de 15 tanques) → por lote SÓLO «Desinfección - Producción agrupada»', () => {
+    H._madSalasPintaEstado(libro());
+    expect(sel('Sala 1').value).toBe('Desinfección - Producción agrupada');
+    expect(texto('Sala 1').value).toBe('Desinfección - Producción agrupada');
+  });
+
+  it('🔴 con la sala llena (8 de 15) sigue el desglose por lote de siempre', () => {
+    const l = libro();
+    for (let t = 3; t <= 8; t++) l.tanques['Sala 1|' + t] = tanque('Sala 1', t, 10);
+    H._madSalasPintaEstado(l);
+    expect(texto('Sala 1').value).toBe('AB: Producción');
+  });
+
+  it('🔴🔴 una sala que el libro NO conoce conserva lo que el operario escribió en «Estado por lote»', () => {
+    sel('Sala 5').value = 'Producción';
+    texto('Sala 5').value = 'XY: Producción';                // lo que el operario ya tenía
+    H._madSalasPintaEstado(libro());
+    expect(texto('Sala 5').value).toBe('XY: Producción');
+    expect(sel('Sala 5').value).toBe('Producción');
+    expect(nota().textContent).toMatch(/se dejan como estaban[^]*Sala 5/);
+  });
+
+  it('🔴 lo propuesto en «Estado por lote» es lo que se GUARDA, y lo conservado también', () => {
+    texto('Sala 5').value = 'XY: Producción';
+    H._madSalasPintaEstado(libro());
+    const filas = H._collectSalasGrid();
+    const de = (s) => (filas.find((r) => r.sala === s) || {}).estado_lote;
+    expect(de('Sala 3')).toBe('sin ingreso - Desinfección');
+    expect(de('Sala 1')).toBe('Desinfección - Producción agrupada');
+    expect(de('Sala 5')).toBe('XY: Producción');
+  });
+});
+
 
 /* ── 2026-09-15 (usuario) · EL RAS DE UNA SALA SE MARCA EN PORCENTAJE, NO EN SÍ/NO ──────────
    «La idea es que el usuario marque si dicha sala tiene RAS y en qué porcentaje. El sistema

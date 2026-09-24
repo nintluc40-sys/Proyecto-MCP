@@ -149,10 +149,13 @@ describe('Salas · «Proponer estado» con un lote repartido en dos salas', () =
     expect(filas.find((r) => r.sala === 'Sala 1').estado_lote).toBe('BP: Producción · CD: Cuarentena');
   });
 
+  /* 2026-09-24 · BP ocupa 1 de los 15 tanques: la sala es «agrupada», y desde el punto 3 del usuario su
+     «Estado por lote» dice SÓLO ese término (antes, «BP: Producción»). Sigue probando que BP produce:
+     sólo una sala en PRODUCCIÓN se declara agrupada; en cuarentena diría «Cuarentena». */
   it('el fixture ejerce algo: ANTES del segundo ingreso, la Sala 1 sólo tiene BP y produce', async () => {
     escenarioSalas();
     await proponerAl('2026-09-05');
-    expect(texto('Sala 1')).toBe('BP: Producción');
-    expect(sel('Sala 1').value).not.toBe('');
+    expect(sel('Sala 1').value).toBe('Desinfección - Producción agrupada');
+    expect(texto('Sala 1')).toBe('Desinfección - Producción agrupada');
   });
 });

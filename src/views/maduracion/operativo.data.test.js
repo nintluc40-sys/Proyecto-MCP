@@ -114,6 +114,10 @@ describe('Maduración · operativo · el estado de cada sala, registrado y propu
     expect(porSala['Sala 5'].propuesto).toMatchObject({ estado: 'Desinfección - Producción agrupada', ocupados: 1, total: 5 });
   });
 
+  it('🔴 el «Estado por lote» propuesto es el que escribe la ficha: en la agrupada, sólo el término (2026-09-24)', () => {
+    expect(porSala['Sala 5'].propuesto.porLote).toBe('Desinfección - Producción agrupada');   // antes «CC: Producción»
+  });
+
   it('si falta uno de los dos, no se compara (null), y un registro sin Estado no pisa el anterior', () => {
     expect(porSala['Sala 3'].registrado.estado).toBe('Producción');
     expect(porSala['Sala 3'].propuesto.estado).toBe('');

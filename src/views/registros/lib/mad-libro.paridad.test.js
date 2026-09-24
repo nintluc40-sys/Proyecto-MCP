@@ -27,6 +27,7 @@ import {
   estadoDeLote,
   estadoDeLoteEnSala,
   estadoPorLoteTexto,
+  estadoPorLoteDeSala,
   CUARENTENA_DIAS,
   ESTADO_MIXTO,
   ESTADO_DESINFECCION,
@@ -69,7 +70,7 @@ function motorLibro() {
   createContext(ctx);
   new Script(
     code + '\n;globalThis.__api = { madConstruirLibro, madEstadoDeSala, madNombreComposicion,'
-    + ' madSumarDias, madRepartirProporcional, madEstadoDeLote, madEstadoDeLoteEnSala, madEstadoPorLoteTexto,'
+    + ' madSumarDias, madRepartirProporcional, madEstadoDeLote, madEstadoDeLoteEnSala, madEstadoPorLoteTexto, madEstadoPorLoteDeSala,'
     + ' MAD_CUARENTENA_DIAS, MAD_EST_MIXTO, MAD_LIBRO_SHEETS,'
     + ' madOcupacionDeSala, MAD_EST_DESINF, MAD_EST_DESINF_AGRUP, MAD_AGRUPADA_MAX_FRACCION,'
     + ' madLotesVivosEnTanque, madAvisosIngresoCompartido, madAvisosTransferenciaCompartida };',
@@ -108,6 +109,7 @@ const GEMELO = {
   estadoDeLoteEnSala: 'madEstadoDeLoteEnSala',
   estadoDeSala: 'madEstadoDeSala',
   estadoPorLoteTexto: 'madEstadoPorLoteTexto',
+  estadoPorLoteDeSala: 'madEstadoPorLoteDeSala',
   nombreComposicion: 'madNombreComposicion',
   repartirProporcional: 'madRepartirProporcional',
   sumarDias: 'madSumarDias',
@@ -663,6 +665,25 @@ describe('Libro · las mismas funciones puras', () => {
     expect(vistos.has(ESTADO_DESINFECCION_AGRUPADA)).toBe(true);
     expect(api.MAD_EST_DESINF).toBe(ESTADO_DESINFECCION);
     expect(api.MAD_EST_DESINF_AGRUP).toBe(ESTADO_DESINFECCION_AGRUPADA);
+  });
+
+  /* 2026-09-24 (punto 3 del usuario) · lo que «🔄 Proponer estado» ESCRIBE en «Estado por lote», igual
+     en los dos, en TODOS los escenarios y TODAS las salas. El fixture prueba algo: se exigen las cuatro
+     clases de respuesta —sólo el término de la sala vacía, sólo el de la agrupada, un desglose y el
+     vacío de la sala que el libro no conoce—; con una sola, dos reglas distintas podrían coincidir. */
+  it('el mismo «Estado por lote» propuesto: el término de la desinfección, el desglose o nada', () => {
+    const mitad = { ingresos: [16, 17, 18].map((t) => ing('2026-01-01', 'AB', 'CG1', 'Sala 2', t, 10, 10)) };
+    const clases = new Set();
+    for (const f of [...Object.values(ESCENARIOS), mitad]) {
+      const a = api.madConstruirLibro(f, { hoy: HOY });
+      const b = construirLibro(f, { hoy: HOY });
+      for (const [s, lista] of Object.entries(MAD_TANQUES_POR_SALA)) {
+        const t = estadoPorLoteDeSala(b, s, HOY, lista);
+        clases.add(t === '' || t === 'sin ingreso - Desinfección' || t === 'Desinfección - Producción agrupada' ? t : 'desglose');
+        expect(api.madEstadoPorLoteDeSala(a, s, HOY, lista), s).toBe(t);
+      }
+    }
+    expect([...clases].sort()).toEqual(['', 'Desinfección - Producción agrupada', 'desglose', 'sin ingreso - Desinfección']);
   });
 
   /* ⚠⚠ EL DESGLOSE ES LA MITAD ÚTIL DE «Mixto», y hasta el 2026-09-08 no tenía gemelo: la

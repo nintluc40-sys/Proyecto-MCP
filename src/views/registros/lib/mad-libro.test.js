@@ -6,6 +6,7 @@ import {
   estadoDeLoteEnSala,
   estadoDeSala,
   estadoPorLoteTexto,
+  estadoPorLoteDeSala,
   nombreComposicion,
   sumarDias,
   ubicKey,
@@ -855,6 +856,53 @@ describe('Libro · Desinfección de sala (2026-09-14)', () => {
   it('una sala con animales pero sin estado deducible sigue sin estado (no es Desinfección)', () => {
     const l = construirLibro({ ingresos: enTanques('Sala 2', [16]) }, { hoy: HOY });
     expect(estadoDeSala(l, 'Sala 2', '', S2)).toBe('');
+  });
+});
+
+/* 2026-09-24 (punto 3 del usuario) · lo que «🔄 Proponer estado» escribe en «Estado por lote».
+   «Si no hay animales en una sala, está en estado desinfección y en estado por lote solo deja el
+   término sin ingreso - Desinfección», y en la agrupada «estado por lote: Desinfección - Producción
+   agrupada». El Estado de la SALA no cambia: ya lo proponía así desde el 09-14. */
+describe('Libro · el «Estado por lote» propuesto de una sala (2026-09-24)', () => {
+  const HOY = '2026-02-10';                    // AB entró el 01-01: 40 días, en Producción
+  const S2 = MAD_TANQUES_POR_SALA['Sala 2'];   // 16..21 (6 tanques)
+  const enTanques = (sala, tanques, fecha = '2026-01-01', lote = 'AB') =>
+    tanques.map((t) => ing(fecha, lote, 'CG1', sala, t, 10, 10));
+
+  it('🔴 sala SIN animales → sólo «sin ingreso - Desinfección», con las palabras del usuario', () => {
+    const l = construirLibro({
+      ingresos: enTanques('Sala 2', [16, 17]),
+      cierres: [fin('2026-02-01', 'AB', 'Total', 20, 20)],
+    }, { hoy: HOY });
+    expect(estadoDeSala(l, 'Sala 2', HOY, S2)).toBe(ESTADO_DESINFECCION);   // el fixture ejerce la vacía
+    expect(estadoPorLoteDeSala(l, 'Sala 2', HOY, S2)).toBe('sin ingreso - Desinfección');
+  });
+
+  it('🔴 animales AGRUPADOS → sólo el término de la sala, sin el desglose por lote', () => {
+    const l = construirLibro({ ingresos: enTanques('Sala 2', [16, 17, 18]) }, { hoy: HOY });
+    expect(estadoPorLoteTexto(l, 'Sala 2', HOY)).toBe('AB: Producción');   // lo que decía antes
+    expect(estadoPorLoteDeSala(l, 'Sala 2', HOY, S2)).toBe('Desinfección - Producción agrupada');
+  });
+
+  it('🔴 sin la lista física no hay agrupada que decir: el desglose de siempre', () => {
+    const l = construirLibro({ ingresos: enTanques('Sala 2', [16, 17, 18]) }, { hoy: HOY });
+    expect(estadoPorLoteDeSala(l, 'Sala 2', HOY)).toBe('AB: Producción');
+  });
+
+  it('🔴 en producción con la sala llena, en cuarentena o mixta, el desglose de siempre', () => {
+    const llena = construirLibro({ ingresos: enTanques('Sala 2', [16, 17, 18, 19]) }, { hoy: HOY });
+    expect(estadoPorLoteDeSala(llena, 'Sala 2', HOY, S2)).toBe('AB: Producción');
+    const cuar = construirLibro({ ingresos: enTanques('Sala 2', [16], '2026-02-05') }, { hoy: HOY });
+    expect(estadoPorLoteDeSala(cuar, 'Sala 2', HOY, S2)).toBe('AB: Cuarentena');
+    const mixto = construirLibro({
+      ingresos: [...enTanques('Sala 2', [16]), ...enTanques('Sala 2', [17], '2026-02-05', 'BC')],
+    }, { hoy: HOY });
+    expect(estadoPorLoteDeSala(mixto, 'Sala 2', HOY, S2)).toBe('AB: Producción · BC: Cuarentena');
+  });
+
+  it('🔴🔴 una sala que el libro NUNCA ha visto no propone nada: vacío, no «sin ingreso»', () => {
+    const l = construirLibro({ ingresos: enTanques('Sala 4', [1, 2, 3, 4, 5, 6]) }, { hoy: HOY });
+    expect(estadoPorLoteDeSala(l, 'Sala 1', HOY, MAD_TANQUES_POR_SALA['Sala 1'])).toBe('');
   });
 });
 

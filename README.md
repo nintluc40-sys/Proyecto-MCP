@@ -237,6 +237,11 @@ se DEDUCE de `+ ingreso − bajas ± movimientos − fin de ciclo`. El objetivo 
 cifra cuadre siempre, sino que **cuando no cuadre se vea el mismo día**. Con la opción
 `hasta`, el libro se construye **al cierre de un día**: es lo que usa «🔄 Proponer estado» de
 Salas, que propone —y al guardar escribe— el estado de la fecha elegida en la ficha.
+Una sala **sin animales** es `Desinfección`, y en «Estado por lote» dice sólo
+`sin ingreso - Desinfección`; una en producción con los animales **agrupados** en la mitad de sus
+tanques o menos es `Desinfección - Producción agrupada` en las dos columnas; si no, el desglose
+por lote (usuario, 2026-09-14 y 2026-09-24). Son estados de la SALA, nunca de un lote. Una sala que
+el libro **no conoce** no se toca: sus dos columnas se quedan como estaban.
 «🔄 Ver saldo de los orígenes» de Movimientos y «🔄 Ver vivos» de Tanques dicen lo mismo de cada
 tanque —una sola función escribe las dos celdas—: **el lote o lotes que lo ocupan, delante de las
 cifras** —`AB · 12♂ 34♀ · 46`; mezclado, `BA+BC · …`, el nombre de la columna «Lote(s)» del

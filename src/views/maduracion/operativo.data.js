@@ -12,7 +12,7 @@
    · Las Salas 4A y 4B ya no se muestran: sólo las salas de la ficha (Sala 1 a Sala 5).
    ============================================================ */
 import { fuentesDesdeFilas, MAD_OP_HOJAS } from './operativo.fuentes.js';
-import { construirLibro, estadoDeSala, estadoPorLoteTexto, ocupacionDeSala, sumarDias, ubicKey, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_CERRADO } from '../registros/lib/mad-libro.js';
+import { construirLibro, estadoDeSala, estadoPorLoteDeSala, ocupacionDeSala, sumarDias, ubicKey, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_CERRADO } from '../registros/lib/mad-libro.js';
 import { resumenMaduracion, diasEntre } from '../registros/lib/mad-resumen.js';
 import { MAD_SALA_OPTS, MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 
@@ -82,7 +82,8 @@ export function libroAlCierre(fuentes, fecha) {
  * El estado de cada sala visible, DOBLE (decisión del usuario):
  *  · `registrado`: el último «Estado» tecleado en la hoja hasta `fecha`, con su día y su «Estado por lote»;
  *  · `propuesto`: el que deduce el libro AL CIERRE de `fecha` —el mismo cálculo y los mismos tanques físicos
- *    que «🔄 Proponer estado»—, con su desglose por lote y la ocupación. Vacío si el libro no conoce la sala:
+ *    que «🔄 Proponer estado»—, con lo que ésta escribe en «Estado por lote» (`estadoPorLoteDeSala`: el desglose,
+ *    o sólo el término si la sala se desinfecta) y la ocupación. Vacío si el libro no conoce la sala:
  *    una sala sin ingresos no tiene estado deducible (y decir «Desinfección» de ella sería falso).
  * `coinciden` es null cuando falta alguno de los dos: no se puede comparar lo que no está.
  * `libroDado`: el libro al cierre de `fecha` si ya se tiene (el modelo lo construye una vez para todo el tablero).
@@ -100,7 +101,7 @@ export function estadoDeSalas(fuentes, fecha, libroDado) {
     const tanques = MAD_TANQUES_POR_SALA[sala] || [];
     const oc = ocupacionDeSala(libro, sala, tanques);
     const propuesto = {
-      estado: estadoDeSala(libro, sala, fecha, tanques), porLote: estadoPorLoteTexto(libro, sala, fecha),
+      estado: estadoDeSala(libro, sala, fecha, tanques), porLote: estadoPorLoteDeSala(libro, sala, fecha, tanques),
       ocupados: oc.ocupados, total: oc.total, conocida: oc.conocida,
     };
     const coinciden = registrado.estado && propuesto.estado ? registrado.estado === propuesto.estado : null;

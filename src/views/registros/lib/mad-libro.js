@@ -58,6 +58,9 @@ export const ESTADO_DESINFECCION_AGRUPADA = 'Desinfección - Producción agrupad
  *  mitad o menos ocupada → la otra mitad o más, vacía). CONFIRMADO por el usuario el 2026-09-14
  *  (D3): no es un valor provisional. Lo propuesto lo revisa el operario antes de guardar. */
 export const AGRUPADA_MAX_FRACCION = 0.5;
+/** 2026-09-24 (usuario): lo que dice la columna «Estado por lote» de una sala sin animales. Sólo
+ *  este término: no hay lote que desglosar. */
+const POR_LOTE_SIN_INGRESO = 'sin ingreso - ' + ESTADO_DESINFECCION;
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const ent = (v) => {
@@ -663,6 +666,19 @@ export function estadoPorLoteTexto(libro, sala, fecha) {
     }
   }
   return partes.sort().join(' · ');
+}
+
+/** Lo que «🔄 Proponer estado» escribe en la columna «Estado por lote» de una sala (usuario,
+ *  2026-09-24). Con los estados de la desinfección, SÓLO el término: sin animales,
+ *  `sin ingreso - Desinfección`; con los animales agrupados, `Desinfección - Producción agrupada`,
+ *  el mismo de la sala. Si no, el desglose de `estadoPorLoteTexto`.
+ *  Vacío cuando no hay nada que proponer (el libro no conoce la sala): quien lo pinta deja la
+ *  casilla como estaba, que no es lo mismo que vaciarla. */
+export function estadoPorLoteDeSala(libro, sala, fecha, tanquesDeSala) {
+  const estado = estadoDeSala(libro, sala, fecha, tanquesDeSala);
+  if (estado === ESTADO_DESINFECCION) return POR_LOTE_SIN_INGRESO;
+  if (estado === ESTADO_DESINFECCION_AGRUPADA) return ESTADO_DESINFECCION_AGRUPADA;
+  return estadoPorLoteTexto(libro, sala, fecha);
 }
 
 /** Nombre visible de un tanque mezclado: `AB+BC`. Lo PROPONE el sistema para que nadie

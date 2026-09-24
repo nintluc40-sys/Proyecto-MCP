@@ -5939,6 +5939,8 @@ const MAD_EST_CERRADO = "Cerrado";
 const MAD_EST_DESINF = "Desinfección";
 const MAD_EST_DESINF_AGRUP = "Desinfección - Producción agrupada";
 const MAD_AGRUPADA_MAX_FRACCION = 0.5;
+// 2026-09-24 (usuario): la columna «Estado por lote» de una sala sin animales dice sólo esto. Ver el módulo.
+const MAD_POR_LOTE_SIN_INGRESO = "sin ingreso - " + MAD_EST_DESINF;
 const MAD_LIBRO_SHEETS = { ingreso: "Maduración Ingreso", movimientos: "Maduración Movimientos", tanques: "Maduración Tanques", cierres: "Maduración Fin de Ciclo", mortDesove: "Maduración Mortalidad Desove" };
 function madLibroTxt(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
 function madLibroEnt(v){ const n=parseInt(v,10); return (isFinite(n)&&n>0)?n:0; }
@@ -6306,6 +6308,14 @@ function madEstadoPorLoteTexto(libro, sala, fecha){
     });
   });
   return partes.sort().join(" · ");
+}
+// Lo que «🔄 Proponer estado» escribe en «Estado por lote» (usuario, 2026-09-24): con los estados de la
+// desinfección SÓLO el término; si no, el desglose. Vacío = nada que proponer: la casilla se deja como estaba.
+function madEstadoPorLoteDeSala(libro, sala, fecha, tanquesDeSala){
+  const est=madEstadoDeSala(libro, sala, fecha, tanquesDeSala);
+  if(est===MAD_EST_DESINF) return MAD_POR_LOTE_SIN_INGRESO;
+  if(est===MAD_EST_DESINF_AGRUP) return MAD_EST_DESINF_AGRUP;
+  return madEstadoPorLoteTexto(libro, sala, fecha);
 }
 // ── D13 (2026-09-14) · dos lotes en un tanque, sólo por mezcla o agrupación: se AVISA. Ver el módulo.
 function madLotesVivosEnTanque(libro, sala, tanque){
@@ -12830,7 +12840,7 @@ function _madSalasPintaEstado(libro){
     if(est === MAD_EST_DESINF) desinf.push(sala);
     if(est === MAD_EST_DESINF_AGRUP){ const oc = madOcupacionDeSala(libro, sala, MAD_TANQUES_POR_SALA[sala]); agrup.push(sala + " (" + oc.ocupados + " de " + oc.total + " tanques con animales)"); }
     if(!est && !madOcupacionDeSala(libro, sala).conocida) sinLibro.push(sala);
-    const det = madEstadoPorLoteTexto(libro, sala, fecha);
+    const det = madEstadoPorLoteDeSala(libro, sala, fecha, MAD_TANQUES_POR_SALA[sala]);
     const selEl = fp.querySelector('[name="sg_' + si + '_estado"]');
     const txtEl = fp.querySelector('[name="sg_' + si + '_estado_lote"]');
     /* ⚠⚠ SÓLO SE ASIGNA UN VALOR QUE EL DESPLEGABLE TENGA, y no es paranoia: asignarle a un
@@ -12844,7 +12854,10 @@ function _madSalasPintaEstado(libro){
     const hayOpcion = !!(est && selEl && Array.prototype.some.call(selEl.options, function(o){ return o.value === est; }));
     if(hayOpcion){ selEl.value = est; n++; }
     else if(est && selEl) sinOpcion.push(sala + ": " + est);
-    if(txtEl) txtEl.value = det;
+    /* Sin nada que proponer —una sala que el libro no conoce— la casilla se deja como estaba, igual
+       que el desplegable. Hasta el 2026-09-24 se vaciaba aunque la nota dijera «se dejan como
+       estaban», y lo que el operario había escrito se guardaba en blanco. */
+    if(txtEl && det) txtEl.value = det;
   });
   if(nota){
     const aviso = sinOpcion.length
