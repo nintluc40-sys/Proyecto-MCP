@@ -581,6 +581,16 @@ entera. **A las 24 h, lo que siga en la cola se descarta.**
   «/» en el orden del grupo, como ya se escribía a mano (`AB · CG1/CG2 · 101/102`). Se toca, no se
   arrastra (arrastrar no funciona en pantallas táctiles). Usa la última lectura del libro, con
   «🔄 Releer»; no sale al completar un desove, cuya llave no cambia.
+- **Desoves · ✏️ en el historial de 36 h** (usuario, 2026-09-24): a la izquierda de cada desove, lo
+  abre para **corregirlo**, con la llave (fecha, lote, código) fija, como ✏️ Completar. Si ya llegó a la
+  hoja **sólo viaja lo que cambió** —lo demás va vacío y el MERGE conserva lo que la hoja tenga, también lo
+  que otro dispositivo completara después—, así que **vaciar un campo no lo borra** de la hoja (se
+  avisa); si sigue **en cola**, se corrige **el envío pendiente en su sitio**, con huella nueva (con la
+  vieja el GAS lo daría por escrito); si **no llegó**, se envía completo. La fila dice «✏️ corregido
+  hh:mm» y conserva su hora. Una llave equivocada se corrige borrando esa fila en la hoja y registrando
+  el desove de nuevo: la app no borra filas.
+  ⚠ Y la fecha de un desove que se completa o se corrige es su **llave**: traer su borrador no la mueve
+  al día en que se tecleó (hasta el 2026-09-24 la movía, y el guardado iba a una fila nueva de hoy).
 - **Fin de Ciclo · la fecha de aplicación** sale igual que la del registro y la sigue salvo que se
   cambie a mano. Mismo mecanismo `data-fijo`.
 - **Inf. Supervisor** (`Maduración Mortalidad Desove`) lleva TRES cosas en la misma hoja: mortalidad

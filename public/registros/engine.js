@@ -8296,7 +8296,10 @@ function madBorrTraerDelDia(ficha){
   fp.innerHTML = html;
   _madBorrAdaptar(ficha, fp, dia);
   const f = document.getElementById(cfg.fecha);
-  if(f) f.value = dia;
+  /* 🔴 2026-09-24 (punto 1) · una fecha de SÓLO LECTURA es la llave de lo que se completa o se corrige (✏️ Completar,
+     ✏️ del historial): su borrador se guarda bajo el día en que se tecleó, no bajo la suya. Ponerle ese día la movía
+     a HOY, y el guardado escribía el N5 —o la corrección— en una fila NUEVA con la fecha de hoy. */
+  if(f && !f.hasAttribute("readonly")) f.value = dia;
   _madBorrOrigen[ficha] = "borrador";
   _madBorrTocado[ficha] = false;
 }
@@ -8322,8 +8325,10 @@ function _madBorrRender(ficha){
 function _madBorrAdaptar(ficha, fp, dia){
   if(ficha === "desoves"){
     /* ⚠ La referencia es `dia` —la fecha ELEGIDA—, no el `#md-fecha` que trae el borrador dentro: aquí
-       todavía lleva el de cuando se guardó, porque quien lo pone al día es la línea de después del render. */
-    const f=fp.querySelector("#md-fecha"), fn=madDesFechasNauplios(isValidDate(dia) ? dia : (f ? f.value : ""));
+       todavía lleva el de cuando se guardó, porque quien lo pone al día es la línea de después del render.
+       Salvo si es de SÓLO LECTURA (✏️ Completar, ✏️ del historial): ésa es la del desove y no se mueve. */
+    const f=fp.querySelector("#md-fecha"), llave=(f && f.hasAttribute("readonly") && isValidDate(f.value)) ? f.value : "";
+    const fn=madDesFechasNauplios(llave || (isValidDate(dia) ? dia : (f ? f.value : "")));
     fp.querySelectorAll(".md-des").forEach(function(card){
       [["md-fn2","Fecha N2",fn.n2,".md-n2","Sale la del desove; si la cambias, se queda la tuya"],
        ["md-fn5","Fecha N5",fn.n5,".md-n5","Sale la del día siguiente al desove; si la cambias, se queda la tuya"]]
@@ -9356,13 +9361,19 @@ function madDesLogGuardar(list){
 }
 function madDesLogAnota(model, filas, estado, envioId){
   const m=model||{}, l=madDesLogLeer();
+  // 2026-09-24 (punto 1) · también la piscina y las observaciones: ✏️ Corregir abre el desove con TODO lo que se envió.
   const desoves=(m.desoves||[]).filter(function(x){ return x && madDesNormLote(x.lote)!=="" && madDesNormCG(x.codigoGenetico)!==""; }).map(function(x){
-    return { lote:madDesNormLote(x.lote), codigoGenetico:madDesNormCG(x.codigoGenetico), desoves:_madDesTxt(x.desoves), huevos:_madDesTxt(x.huevos),
+    return { lote:madDesNormLote(x.lote), codigoGenetico:madDesNormCG(x.codigoGenetico), piscina:_madDesTxt(x.piscina), desoves:_madDesTxt(x.desoves), huevos:_madDesTxt(x.huevos),
       hembrasNoViables:_madDesTxt(x.hembrasNoViables), fechaN2:_madDesTxt(x.fechaN2), n2:_madDesTxt(x.n2),
-      fechaN5:_madDesTxt(x.fechaN5), n5:_madDesTxt(x.n5), despacho:madDesDespachoTexto(x.despacho) };
+      fechaN5:_madDesTxt(x.fechaN5), n5:_madDesTxt(x.n5), despacho:madDesDespachoTexto(x.despacho), observaciones:_madDesTxt(x.observaciones) };
   });
   l.push({ id:envioId || _madLogEnvioId(), marca:!!envioId, ts:Date.now(), fecha:sanitizeStr(m.fecha,10), filas:filas, estado:estado, desoves:desoves });
   madDesLogGuardar(l);
+}
+// «dd/mm hh:mm» de una marca de tiempo: la hora del guardado y la de la corrección se escriben igual.
+function _madDesCuando(ts){
+  const d=new Date(ts);
+  return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
 }
 function madDesLogHTML(){
   const l=madDesLogLeer();
@@ -9378,17 +9389,21 @@ function madDesLogHTML(){
   const filas=[];
   l.slice().reverse().forEach(function(e){
     const st = _madLogEtiqueta(_madLogEstado("desoves", e, enCola===0));
-    const d=new Date(e.ts), cuando=("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+    const cuando=_madDesCuando(e.ts);
     ((e.desoves && e.desoves.length) ? e.desoves : [{}]).forEach(function(x){
-      filas.push('<tr class="md-hist"><td style="white-space:nowrap">'+cuando+'</td><td style="white-space:nowrap">'+cel(e.fecha)+'</td><td>'+cel(x.lote)+'</td><td>'+cel(x.codigoGenetico)+'</td>'
+      // ✏️ (punto 1, 2026-09-24): a la izquierda de cada desove con llave; lo abre en la ficha para corregirlo.
+      const k = (e.id && x.lote && x.codigoGenetico) ? madDesLlave({ fecha:e.fecha, lote:x.lote, codigoGenetico:x.codigoGenetico }) : "";
+      const ed = k ? '<button class="btn md-hist-ed" type="button" style="font-size:11px;padding:2px 6px" data-id="'+escapeHtml(String(e.id))+'" data-k="'+escapeHtml(k)+'" onclick="madDesCorregir(this.dataset.id, this.dataset.k)" title="Corregir este desove">✏️</button>' : '';
+      const corr = x.corregido ? '<div class="md-hist-corr" style="font-size:10px;color:#713f12;white-space:nowrap;margin-top:2px">✏️ corregido '+_madDesCuando(x.corregido)+'</div>' : '';
+      filas.push('<tr class="md-hist"><td>'+ed+'</td><td style="white-space:nowrap">'+cuando+'</td><td style="white-space:nowrap">'+cel(e.fecha)+'</td><td>'+cel(x.lote)+'</td><td>'+cel(x.codigoGenetico)+'</td>'
         + '<td style="text-align:right">'+cel(x.desoves)+'</td><td style="text-align:right">'+cel(x.huevos)+'</td>'
-        + '<td style="text-align:right">'+cel(x.n2)+'</td><td style="text-align:right">'+cel(x.n5)+'</td><td>'+cel(x.despacho)+'</td><td>'+st+'</td></tr>');
+        + '<td style="text-align:right">'+cel(x.n2)+'</td><td style="text-align:right">'+cel(x.n5)+'</td><td>'+cel(x.despacho)+'</td><td>'+st+corr+'</td></tr>');
     });
   });
   return '<div style="margin-top:18px">'
     + '<h3 style="margin:0 0 4px;font-size:13px">🕘 Historial de este dispositivo (últimas 36 h)</h3>'
     + (propios ? '<div style="font-size:11px;color:#92400e;margin-bottom:5px">📶 '+propios+' envío(s) de esta ficha en cola. Se entregan y se verifican solos.</div>' : '')
-    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Guardado</th><th>Desove</th><th>Lote</th><th>Código</th><th>Desoves</th><th>Huevos (mil)</th><th>N2 (mil)</th><th>N5 (mil)</th><th>Despacho</th><th>Estado</th></tr></thead><tbody>'+filas.join("")+'</tbody></table></div>'
+    + '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th></th><th>Guardado</th><th>Desove</th><th>Lote</th><th>Código</th><th>Desoves</th><th>Huevos (mil)</th><th>N2 (mil)</th><th>N5 (mil)</th><th>Despacho</th><th>Estado</th></tr></thead><tbody>'+filas.join("")+'</tbody></table></div>'
     + '</div>';
 }
 /* PE1.4 · lo que 💾 y ☁️ comparten: recoger, revisar y construir. null si hay errores (ya los pintó y avisó). */
@@ -9523,11 +9538,243 @@ function madDesEditar(k){
   renderMadDesoves(d);
   const e=document.getElementById("md-edit"); if(e && e.scrollIntoView) e.scrollIntoView({block:"start"});
 }
+/* ── ✏️ CORREGIR DESDE EL HISTORIAL (usuario, 2026-09-24, punto 1) ─────────────────────────────────────────────────────
+   «En el historial del dispositivo (últimas 36 h) de Desoves, un botón a la izquierda para editar la información en caso
+   de que se haya escrito algo mal. Como dura 36 horas, es momentáneo.» Decisiones del usuario (las cuatro recomendadas):
+   · SE CORRIGE TODO MENOS LA LLAVE (fecha, lote, código genético), como en ✏️ Completar: cambiarla no corrige nada —
+     crearía otra fila y la mala seguiría en la hoja, que la app no puede borrar—. Una llave mal se borra en la hoja y el
+     desove se registra de nuevo.
+   · SI YA LLEGÓ A LA HOJA, SÓLO VIAJA LO QUE CAMBIÓ (con la llave): lo demás va vacío y el MERGE del GAS conserva lo que
+     la hoja tenga, también lo que otro dispositivo haya completado después (N2, N5). Por eso vaciar un campo NO lo borra
+     de la hoja, y se avisa.
+   · SI SIGUE EN LA COLA, SE CORRIGE EL ENVÍO PENDIENTE en su sitio: si saliera otro aparte, el viejo podría llegar después
+     y deshacerlo. Mientras la cola se está vaciando no se toca: al terminar reescribe la cola entera.
+   · SI NO LLEGÓ (⚠), se envía el desove COMPLETO: es registrarlo de nuevo.
+   · El historial conserva la MISMA fila, con lo corregido y «✏️ corregido hh:mm»; su hora —y sus 36 h— no cambian.
+   La corrección viaja con la MARCA de la entrada original (madlog:desoves + su id): así su fila sabe si está en cola, si
+   llegó o si no llegó, como la de cualquier envío. */
+const _MAD_DES_CAMPO_ROT = { piscina:"Piscina Broodstock", desoves:"Desoves", huevos:"Total de huevos", hembrasNoViables:"Hembras no viables",
+  fechaN2:"Fecha N2", n2:"N2", fechaN5:"Fecha N5", n5:"N5", despacho:"Despacho", observaciones:"Observaciones" };
+// En este orden a propósito: la lista de madDesValidar, que empieza por «desoves», es el ancla de dos bancos.
+const _MAD_DES_CORR_NUM = ["n2","n5","desoves","huevos","hembrasNoViables"];
+/* Qué cambió entre lo guardado (`orig`, del historial) y lo corregido (`nuevo`, de la ficha). Pura. Los números se comparan
+   como número, las fechas como día real y el despacho como su texto de lista.
+   { campos: los que cambiaron a un valor, vaciados: los que tenían valor y quedaron vacíos }. */
+function madDesCorreccionCambios(orig, nuevo){
+  const o=orig||{}, n=nuevo||{};
+  const norma=function(c, v){
+    if(c==="despacho") return madDesDespachoTexto(v);
+    if(_MAD_DES_CORR_NUM.indexOf(c)!==-1) return String(madIngInt(v));
+    if(c==="fechaN2" || c==="fechaN5") return madDesDiaReal(v);
+    return sanitizeStr(v, c==="observaciones" ? 300 : 60);
+  };
+  const campos=[], vaciados=[];
+  MAD_DES_CAMPOS_DATO.forEach(function(c){
+    const a=norma(c, o[c]), b=norma(c, n[c]);
+    if(a===b) return;
+    if(b==="") vaciados.push(c); else campos.push(c);
+  });
+  return { campos:campos, vaciados:vaciados };
+}
+// La fecha de N2/N5 sólo se escribe junto a su cifra (madDesBuildRows): si cambia una de las dos, viajan las dos.
+function _madDesConPareja(lista){
+  const r=lista.slice();
+  [["n2","fechaN2"],["n5","fechaN5"]].forEach(function(p){
+    if(r.indexOf(p[0])!==-1 || r.indexOf(p[1])!==-1) p.forEach(function(c){ if(r.indexOf(c)===-1) r.push(c); });
+  });
+  return r;
+}
+function _madDesCamposTxt(lista){ return lista.map(function(c){ return _MAD_DES_CAMPO_ROT[c]||c; }).join(", "); }
+// La entrada del historial y su desove, o null si ya no está (pasaron las 36 h).
+function _madDesEntradaLog(id, k){
+  const e=madDesLogLeer().filter(function(x){ return x && String(x.id)===String(id); })[0];
+  const x=e ? (e.desoves||[]).filter(function(dd){ return dd && madDesLlave({ fecha:e.fecha, lote:dd.lote, codigoGenetico:dd.codigoGenetico })===k; })[0] : null;
+  return x ? { e:e, x:x } : null;
+}
+// Posición en la cola del envío que lleva la marca de esa entrada, o -1.
+function _madDesEnvioEnCola(q, id){
+  for(let i=0;i<q.length;i++){
+    const it=q[i];
+    if(it && it.mark && it.mark.kind==="madlog:desoves" && Array.isArray(it.mark.keys) && it.mark.keys.indexOf(String(id))!==-1) return i;
+  }
+  return -1;
+}
+// La fila de un desove dentro de un envío (su payload), leída como la ficha lee la hoja; null si no está.
+function _madDesFilaDelEnvio(payload, k){
+  const p=payload||{};
+  if(!Array.isArray(p.rows) || !Array.isArray(p.headers)) return null;
+  for(let i=0;i<p.rows.length;i++){
+    const o={};
+    p.headers.forEach(function(h, j){ o[h]=(p.rows[i]||[])[j]; });
+    const d=madDesDesdeHoja(o);
+    if(madDesLlave(d)===k) return { i:i, d:d };
+  }
+  return null;
+}
+function madDesCorregir(id, k){
+  const h=_madDesEntradaLog(id, k);
+  if(!h){
+    toast("Ese desove ya no está en el historial de este dispositivo (se guarda 36 h).","warn",4500);
+    const box=document.getElementById("md-log"); if(box) box.innerHTML=madDesLogHTML();
+    return;
+  }
+  if(_madDesHayTecleado() && !confirm("Se reemplazará lo tecleado por el desove "+h.x.lote+" · "+h.x.codigoGenetico+" del "+h.e.fecha+", para corregirlo. ¿Continuar?")) return;
+  const d={ fecha:sanitizeStr(h.e.fecha,10), lote:madDesNormLote(h.x.lote), codigoGenetico:madDesNormCG(h.x.codigoGenetico) };
+  MAD_DES_CAMPOS_DATO.forEach(function(c){ d[c] = c==="despacho" ? madDesDespachoLista(h.x.despacho) : _madDesTxt(h.x[c]); });
+  // Guardado antes de que el historial llevara piscina y observaciones: si el envío sigue en la cola, las trae él.
+  if(h.x.piscina===undefined || h.x.observaciones===undefined){
+    const q=_loadSyncQueue(), i=_madDesEnvioEnCola(q, id), f=i<0 ? null : _madDesFilaDelEnvio(q[i].payload, k);
+    if(f){ if(h.x.piscina===undefined) d.piscina=f.d.piscina; if(h.x.observaciones===undefined) d.observaciones=f.d.observaciones; }
+  }
+  const fp=document.getElementById("fp-desoves"); if(!fp) return;
+  fp.innerHTML="";
+  renderMadDesoves(d, { id:String(id), k:k, ts:h.e.ts });
+  const b=document.getElementById("md-edit"); if(b && b.scrollIntoView) b.scrollIntoView({block:"start"});
+}
+/* El contexto de la corrección viaja EN el aviso (id, llave y lo guardado): así sobrevive al borrador de la ficha, que
+   guarda el panel tal cual, y ☁️ sabe qué se está corrigiendo aunque la app se haya recargado entre medias. */
+function _madDesCorrBannerHTML(d, c){
+  return '<div id="md-edit" data-corrige="'+escapeHtml(c.id)+'" data-k="'+escapeHtml(c.k)+'" data-orig="'+escapeHtml(JSON.stringify(d))+'"'
+    + ' style="background:#fef9c3;border:1.5px solid #fde047;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:12px;color:#713f12">'
+    + '✏️ Corrigiendo el desove del <b>'+escapeHtml(d.fecha)+'</b> · <b>'+escapeHtml(d.lote)+'</b> · <b>'+escapeHtml(d.codigoGenetico)+'</b>'
+    + (c.ts ? ' (guardado el '+escapeHtml(_madDesCuando(c.ts))+')' : '')+'. Cambia lo que esté mal y pulsa <b>☁️ Guardar corrección</b>; <b>🧹 Cancelar</b> sale sin guardar.'
+    + '<div style="margin-top:4px;font-size:11px">La fecha, el lote y el código no se cambian aquí: si uno está mal, borra esa fila en la hoja y registra el desove de nuevo. '
+    + 'Si ya llegó a la hoja, sólo viaja lo que cambies (dejar un campo vacío no lo borra de ella); si sigue en cola, se corrige el envío pendiente; si no llegó, se envía completo.</div>'
+    + '</div>';
+}
+function madDesCorregirCancelar(){
+  if(!confirm("¿Salir de la corrección sin guardar?\nEl desove se queda como estaba.")) return;
+  _madBorrOlvidarPantalla("desoves");
+  madDesReiniciar();
+}
+// Espera a que termine un vaciado de la cola en curso (hasta 90 s). false si sigue.
+async function _madDesEsperaCola(){
+  if(!_flushingQueue) return true;
+  toast("Esperando a que termine el envío de la cola…","info",3000);
+  const hasta=Date.now()+90000;
+  while(_flushingQueue && Date.now()<hasta) await _sleep(300);
+  return !_flushingQueue;
+}
+/* Corrige EN SU SITIO el envío que espera en la cola: la fila del desove toma los campos cambiados —también los vaciados:
+   lo que aún no ha llegado se puede quitar— y el envío cambia de huella: con la vieja, el GAS lo daría por ya escrito y
+   no escribiría la corrección. En su sitio y no al final: la cola es FIFO, y un envío posterior del mismo desove (un
+   ✏️ Completar) tiene que seguir llegando DESPUÉS. Devuelve «hecho», «no-esta» o «desfase». */
+function _madDesCorregirEnCola(id, k, desove, fecha, campos){
+  const q=_loadSyncQueue(), i=_madDesEnvioEnCola(q, id);
+  if(i<0) return "no-esta";
+  const it=q[i], p=it.payload||{};
+  if(!Array.isArray(p.rows) || !Array.isArray(p.headers) || p.headers.length!==MAD_DESOVE_HEADERS.length || _madLocDesfase(p.headers, MAD_DESOVE_HEADERS)) return "desfase";
+  const completa=madDesBuildRows({ fecha:fecha, desoves:[desove] })[0];
+  if(!completa) return "desfase";
+  const claves=MAD_DESOVE_COLUMNS.map(function(col){ return col.k; });
+  const cols=campos.map(function(c){ return claves.indexOf(c); }).filter(function(j){ return j>=0; });
+  const filas=p.rows.map(function(r){ return (r||[]).slice(); });
+  const f=_madDesFilaDelEnvio(p, k);
+  if(f) cols.forEach(function(j){ filas[f.i][j]=completa[j]; });
+  else {
+    const nueva=completa.map(function(v, j){ return j<MAD_DESOVE_KEY_COLS.length ? v : ""; });
+    cols.forEach(function(j){ nueva[j]=completa[j]; });
+    filas.push(nueva);
+  }
+  const nuevo=Object.assign({}, p, { rows:filas });
+  q[i]=Object.assign({}, it, { payload:nuevo, reqId:_payloadFingerprint(nuevo) || "" });
+  _saveSyncQueue(q);
+  return "hecho";
+}
+/* La fila del historial pasa a decir lo que se ENVIÓ (`campos`; en la cola, también los vaciados); lo demás se queda como
+   estaba, y su hora de guardado —y sus 36 h— no cambian. */
+function _madDesCorreccionAnota(id, k, desove, campos, estado){
+  const l=madDesLogLeer();
+  let hecho=false;
+  l.forEach(function(e){
+    if(!e || String(e.id)!==String(id)) return;
+    (e.desoves||[]).forEach(function(x){
+      if(!x || madDesLlave({ fecha:e.fecha, lote:x.lote, codigoGenetico:x.codigoGenetico })!==k) return;
+      campos.forEach(function(c){ x[c] = c==="despacho" ? madDesDespachoTexto(desove.despacho) : _madDesTxt(desove[c]); });
+      x.corregido=Date.now();
+      hecho=true;
+    });
+    if(hecho && estado){ e.estado=estado; e.marca=true; }
+  });
+  if(hecho) madDesLogGuardar(l);
+  return hecho;
+}
+// Tras corregir: el desove queda en «pendientes» como lo ve ahora este dispositivo, y la ficha vuelve a estar limpia.
+function _madDesCorreccionRemata(model, desove){
+  madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), { fecha:model.fecha, desoves:[desove] }, Date.now()));
+  _madBorrOlvidarPantalla("desoves", model.fecha);
+  madDesReiniciar();
+}
+async function madDesCorregirGuardar(){
+  const b=document.getElementById("md-edit");
+  const id=b ? (b.getAttribute("data-corrige")||"") : "", k=b ? (b.getAttribute("data-k")||"") : "";
+  if(!id || !k){ toast("No hay ninguna corrección abierta.","warn",3500); return; }
+  let orig={};
+  try{ orig=JSON.parse(b.getAttribute("data-orig")||"{}")||{}; }catch(_){ orig={}; }
+  const model=madDesCollect();
+  const desove=(model.desoves||[])[0]||{};
+  const res=madDesValidar(model);
+  if(res.errores.length){ _madDesPinta(res, 1); toast("Corrige los errores antes de guardar.","err",4000); return; }
+  if(!(await _madDesEsperaCola())){ toast("La cola sigue enviándose: vuelve a pulsar ☁️ Guardar corrección en unos segundos.","warn",6000); return; }
+  const h=_madDesEntradaLog(id, k);
+  if(!h){ toast("Ese desove ya salió del historial (36 h): corrígelo en la hoja o regístralo de nuevo.","warn",6000); return; }
+  const cambios=madDesCorreccionCambios(orig, desove);
+  // Desde aquí hasta tocar la cola no hay ninguna espera: lo que dice la fila es lo que hay en la cola.
+  const estado=_madLogEstado("desoves", h.e, syncQueueLen()===0);
+  if(estado==="cola"){
+    const enCola=_madDesConPareja(cambios.campos.concat(cambios.vaciados));
+    if(!enCola.length){ _madDesPinta(res, 0); toast("No cambiaste nada: no hay nada que enviar.","info",4500); return; }
+    const r=_madDesCorregirEnCola(id, k, desove, model.fecha, enCola);
+    if(r!=="hecho"){
+      toast(r==="desfase" ? "El envío pendiente se hizo con otra versión de la app: espera a que se entregue y corrígelo entonces."
+        : "El envío ya no está en la cola: vuelve a pulsar ☁️ Guardar corrección.","err",8000);
+      return;
+    }
+    _madDesCorreccionAnota(id, k, desove, enCola, "cola");
+    _madDesCorreccionRemata(model, desove);
+    toast("✏️ Corregido en el envío que espera en la cola: saldrá ya corregido ("+_madDesCamposTxt(enCola)+").","ok",6000);
+    setTimeout(function(){ try{ flushSyncQueue(); }catch(_){} }, 1500);
+    return;
+  }
+  const perdido = estado==="perdido";
+  const van = perdido ? MAD_DES_CAMPOS_DATO.slice() : _madDesConPareja(cambios.campos);
+  if(!perdido) cambios.vaciados.forEach(function(c){ res.avisos.push("Dejaste vacío «"+_MAD_DES_CAMPO_ROT[c]+"»: eso no lo borra de la hoja. Si sobra, corrígelo en «"+MAD_DESOVE_SHEET+"»."); });
+  if(!perdido && !cambios.campos.length){
+    _madDesPinta(res, 0);
+    toast(cambios.vaciados.length ? "No hay nada que enviar: vaciar un campo no lo borra de la hoja." : "No cambiaste nada: no hay nada que enviar.","info",5000);
+    return;
+  }
+  _madDesPinta(res, 1);
+  const gas=await _madIngGasAlDia();
+  if(gas === false){
+    const aviso = "No se envió: " + _madGasViejoMsg(MAD_DESOVE_SHEET) + ". Actualiza el GAS (⚙ Config → Probar conexión) y vuelve a guardar; lo tecleado sigue aquí.";
+    const box=document.getElementById("md-report");
+    if(box) box.innerHTML='<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:12px;color:#991b1b">'+escapeHtml(aviso)+'</div>';
+    toast(aviso,"err",10000);
+    return;
+  }
+  const enviar={ lote:desove.lote, codigoGenetico:desove.codigoGenetico };
+  van.forEach(function(c){ enviar[c]=desove[c]; });
+  const payload=buildMadDesovePayload({ fecha:model.fecha, desoves:[enviar] });
+  toast(perdido ? "Enviando de nuevo el desove completo…" : "Enviando la corrección…","info",2200);
+  const t={ mark:_madLogMarca("desoves", id) };
+  const ok=await _madPostConSello(payload, gas, t);
+  if(ok || t.outcome==="queued"){
+    _madDesCorreccionAnota(id, k, desove, van, ok ? "ok" : "cola");
+    _madDesCorreccionRemata(model, desove);
+    if(ok) toast(perdido ? "✅ Desove enviado de nuevo, completo" : "✅ Corrección registrada ("+_madDesCamposTxt(van)+")","ok",5000);
+    // El informe con el aviso se va con la ficha al limpiarla: lo vaciado se dice también aquí.
+    if(!perdido && cambios.vaciados.length) toast("Lo que dejaste vacío ("+_madDesCamposTxt(cambios.vaciados)+") sigue en la hoja: si sobra, corrígelo en «"+MAD_DESOVE_SHEET+"».","warn",8000);
+    if(ok) return;
+  }
+  _syncNotOkUI(t.outcome, "No se pudo enviar la corrección", null, t.gasMessage);
+}
 // ⚠⚠ NO SE RE-PINTA SI YA ESTÁ MONTADO, por lo mismo que Ingreso y Movimientos: `selTab`
 // llama a este render cada vez que se vuelve a la pestaña, y reescribir innerHTML borraría
 // lo tecleado sin aviso. Para empezar de cero está 🧹 Vaciar.
 // `d` (opcional, desde ✏️ Completar): abre ese desove guardado, con su fecha y su llave fijas.
-function renderMadDesoves(d){
+// `corr` (opcional, desde ✏️ del historial: { id, k, ts }): lo mismo, para CORREGIRLO (ver madDesCorregir).
+function renderMadDesoves(d, corr){
   const fp=document.getElementById("fp-desoves"); if(!fp) return;
   if(fp.querySelector("#md-cards")) return;
   const todayStr=today();
@@ -9538,17 +9785,22 @@ function renderMadDesoves(d){
     +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
     +     '<span style="font-size:16px">ℹ️</span><span>La producción se registra por <b>lote y código genético</b>, no por tanque: las copuladas de varios tanques se juntan en un pool y al devolverlas nadie identifica cuáles eran.<br>Los conteos grandes van <b>en miles</b> (escribe <b>6500</b> para 6.500.000). <b>N2 y N5 se completan después</b>: en <b>📋 Desoves pendientes</b> pulsa <b>✏️ Completar</b>, rellena lo nuevo y guarda. Con el N5 guardado, el desove sale de la lista. Sus fechas <b>vienen puestas</b> —N2 la del desove y N5 la del día siguiente— y <b>puedes cambiarlas</b> si el conteo se hizo otro día: la que toques se queda en amarillo y deja de seguir a la del desove.</span>'
     +   '</div>'
-    +   (d ? '<div id="md-edit" style="background:#fef9c3;border:1.5px solid #fde047;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:12px;color:#713f12">✏️ Completando el desove del <b>'+escapeHtml(d.fecha)+'</b> · <b>'+escapeHtml(d.lote)+'</b> · <b>'+escapeHtml(d.codigoGenetico)+'</b>. Rellena lo nuevo y guarda; 🧹 Vaciar sale sin guardar.</div>' : '')
+    +   (corr ? _madDesCorrBannerHTML(d, corr) : d ? '<div id="md-edit" style="background:#fef9c3;border:1.5px solid #fde047;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:12px;color:#713f12">✏️ Completando el desove del <b>'+escapeHtml(d.fecha)+'</b> · <b>'+escapeHtml(d.lote)+'</b> · <b>'+escapeHtml(d.codigoGenetico)+'</b>. Rellena lo nuevo y guarda; 🧹 Vaciar sale sin guardar.</div>' : '')
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
     +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha del desove<input type="date" id="md-fecha" value="'+escapeHtml(d ? d.fecha : todayStr)+'"'+(d ? ' readonly' : ' onchange="madBorrFechaChange(&quot;desoves&quot;);madDesFechasNSiguen()"')+' style="'+_MAD_ING_INP+(d ? ';background:#f1f5f9' : '')+'"></label>'
     +   '</div>'
     +   '<div id="md-cards">'+_madDesCardHTML(d, !!d, d ? d.fecha : todayStr)+'</div>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
-    +     '<button class="btn" type="button" onclick="madDesAddCard()">➕ Desove</button>'
+    +     (corr
+          // Corregir es UN desove y sale sólo por ☁️: un 💾 lo guardaría como envío nuevo, sin saber que corrige a otro.
+          ? '<button class="btn" type="button" onclick="madDesRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
+          +   '<button class="btn" type="button" style="font-weight:700" onclick="madDesCorregirGuardar()">☁️ Guardar corrección</button>'
+          +   '<button class="btn" type="button" onclick="madDesCorregirCancelar()">🧹 Cancelar</button>'
+          : '<button class="btn" type="button" onclick="madDesAddCard()">➕ Desove</button>'
     +     '<button class="btn" type="button" onclick="madDesRevisar()" title="'+MAD_REVISAR_TITLE+'">🔍 Revisar</button>'
     +     '<button class="btn" type="button" onclick="madDesGuardarLocal()" title="Guarda en este dispositivo, sin enviarlo a Google Sheets">💾 Guardar local</button>'
     +     '<button class="btn" type="button" style="font-weight:700" onclick="madDesGuardar()">☁️ Guardar y sincronizar</button>'
-    +     '<button class="btn" type="button" onclick="madDesVaciar()">🧹 Vaciar</button>'
+    +     '<button class="btn" type="button" onclick="madDesVaciar()">🧹 Vaciar</button>')
     +   '</div>'
     +   '<div id="md-report" style="margin-top:12px"></div>'
     +   '<div style="margin-top:18px">'
