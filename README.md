@@ -237,6 +237,10 @@ se DEDUCE de `+ ingreso − bajas ± movimientos − fin de ciclo`. El objetivo 
 cifra cuadre siempre, sino que **cuando no cuadre se vea el mismo día**. Con la opción
 `hasta`, el libro se construye **al cierre de un día**: es lo que usa «🔄 Proponer estado» de
 Salas, que propone —y al guardar escribe— el estado de la fecha elegida en la ficha.
+«🔄 Ver saldo de los orígenes» de Movimientos y «🔄 Ver vivos» de Tanques dicen lo mismo de cada
+tanque —una sola función escribe las dos celdas—: **el lote o lotes que lo ocupan, delante de las
+cifras** —`AB · 12♂ 34♀ · 46`; mezclado, `BA+BC · …`, el nombre de la columna «Lote(s)» del
+Saldo— (usuario, 2026-09-24). Un tanque vaciado no lo ocupa nadie: `0♂ 0♀ · 0`.
 
 🔑 Dos reglas que explican casi todo el diseño y no se deducen del código:
 

@@ -119,3 +119,66 @@ describe('Maduración · Movimientos · el saldo del origen lleva TOTAL (D6)', (
     expect(c.textContent).toBe('?');
   });
 });
+
+/* ============================================================
+   EL LOTE O LOTES QUE OCUPAN EL TANQUE, delante de las cifras (usuario, 2026-09-24, punto 2)
+
+   «Cuando se presiona el Ver saldo de los orígenes, que salga también el lote o lotes que ocupan
+   dicho tanque». Y lo mismo en «🔄 Ver vivos» de Tanques (primera mitad del punto 4): por D6 las
+   dos celdas dicen EXACTAMENTE lo mismo del mismo tanque, así que el lote va en las dos a la vez.
+   El nombre es el de la columna «Lote(s)» de la vista Saldo: ordenado y con «+» si es mezclado.
+   ============================================================ */
+/* Valores INVENTADOS (regla del usuario, 2026-09-18: las pruebas no llevan valores reales). */
+const comp = (lote, machos, hembras, codigoGenetico = 'COD-1') => ({ lote, codigoGenetico, machos, hembras });
+const tanque = (tq, composicion) => ({
+  sala: 'Sala 1', tanque: tq, composicion,
+  machos: composicion.reduce((s, c) => s + c.machos, 0),
+  hembras: composicion.reduce((s, c) => s + c.hembras, 0),
+});
+/* Cada tanque es un caso distinto, y el texto esperado va al lado. */
+const CASOS = [
+  [1, [comp('AB', 12, 34)], 'AB · 12♂ 34♀ · 46'],
+  // Mezclado, y a propósito DESORDENADO en la composición: el nombre sale ordenado, como en Saldo.
+  [2, [comp('BC', 10, 20), comp('BA', 20, 30)], 'BA+BC · 30♂ 50♀ · 80'],
+  // Un lote con DOS códigos genéticos en el mismo tanque (se da en producción) se nombra UNA vez.
+  [3, [comp('AC', 40, 50, 'COD-1'), comp('AC', 41, 52, 'COD-2')], 'AC · 81♂ 102♀ · 183'],
+  // Vaciado: el libro lo conoce, pero no lo ocupa nadie.
+  [4, [comp('AB', 0, 0)], '0♂ 0♀ · 0'],
+  // Sólo nombra los lotes con animales VIVOS: AD salió del tanque y ya no lo ocupa.
+  [5, [comp('AD', 0, 0), comp('AE', 5, 7)], 'AE · 5♂ 7♀ · 12'],
+];
+const libroLotes = (extra) => libroCon(Object.assign({
+  tanques: Object.fromEntries(CASOS.map(([tq, c]) => ['Sala 1|' + tq, tanque(tq, c)])),
+}, extra || {}));
+
+describe('Maduración · Movimientos y Tanques · el LOTE del tanque, delante (punto 2)', () => {
+  it.each(CASOS)('🔴 Movimientos · tanque %i', (tq, _c, esperado) => {
+    const c = celdaOrigen('Sala 1', tq);
+    H._madMovPintaSaldo(libroLotes());
+    expect(c.textContent).toBe(esperado);
+  });
+
+  it.each(CASOS)('🔴 Tanques («Ver vivos») · tanque %i', (tq, _c, esperado) => {
+    const c = celdaVivos('Sala 1', tq);
+    H._madTanquesPintaVivos(libroLotes());
+    expect(c.textContent).toBe(esperado);
+  });
+
+  it('🔑 Movimientos y Tanques escriben EXACTAMENTE lo mismo, tanque a tanque, también con el lote', () => {
+    for (const [tq] of CASOS) {
+      const mov = celdaOrigen('Sala 1', tq);
+      H._madMovPintaSaldo(libroLotes());
+      const tqc = celdaVivos('Sala 1', tq);
+      H._madTanquesPintaVivos(libroLotes());
+      expect(mov.textContent, 'tanque ' + tq).toBe(tqc.textContent);
+    }
+  });
+
+  it('el lote no cambia cómo se dice un tanque que el libro no conoce', () => {
+    const c = celdaOrigen('Sala 1', 9);
+    H._madMovPintaSaldo(libroLotes());
+    expect(c.textContent).toBe('sin ingreso');
+    H._madMovPintaSaldo(libroLotes({ fallos: ['Maduración Ingreso'] }));
+    expect(c.textContent).toBe('?');
+  });
+});

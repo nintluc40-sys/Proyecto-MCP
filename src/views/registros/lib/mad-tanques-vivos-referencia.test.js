@@ -93,7 +93,8 @@ describe('Tanques · los vivos quedan como referencia local', () => {
     H._madTanquesPintaVivos(libroCon());
     const g = JSON.parse(localStorage.getItem(H.MAD_TQ_VIVOS_KEY));
     expect(g && g.ts).toBeGreaterThan(0);
-    expect(g.tanques['Sala 1|1']).toEqual({ machos: 12, hembras: 34 });
+    // `lotes` vacío: este fixture no trae composición (el lote se prueba en su bloque, abajo).
+    expect(g.tanques['Sala 1|1']).toEqual({ machos: 12, hembras: 34, lotes: '' });
   });
 
   it('🔴 la referencia cubre TODAS las salas, no sólo la que estaba en pantalla', () => {
@@ -151,5 +152,53 @@ describe('Tanques · los vivos quedan como referencia local', () => {
     localStorage.setItem(H.MAD_TQ_VIVOS_KEY, '{no es json');
     abrirSala('Sala 1');
     expect(celda(1).textContent).toBe('—');
+  });
+});
+
+/* ── EL LOTE TAMBIÉN VA EN LA REFERENCIA (usuario, 2026-09-24, punto 2) ──────────────────────
+   La celda enseña delante el lote o lotes que ocupan el tanque. Si la referencia guardada no lo
+   llevara, la misma celda diría una cosa recién leída y otra al repintarse, que es justo lo que
+   la referencia existe para evitar. */
+const libroConLotes = () => libroCon({
+  tanques: {
+    'Sala 1|1': { sala: 'Sala 1', tanque: 1, machos: 12, hembras: 34,
+      composicion: [{ lote: 'AB', codigoGenetico: 'COD-1', machos: 12, hembras: 34 }] },
+    'Sala 1|2': { sala: 'Sala 1', tanque: 2, machos: 30, hembras: 50,
+      composicion: [{ lote: 'BC', codigoGenetico: 'X', machos: 10, hembras: 20 }, { lote: 'BA', codigoGenetico: 'Y', machos: 20, hembras: 30 }] },
+  },
+});
+const guardarReferencia = (tanques) => localStorage.setItem(H.MAD_TQ_VIVOS_KEY,
+  JSON.stringify({ ts: Date.now(), hoy: H.today(), tanques }));
+
+describe('Tanques · la referencia guarda también el LOTE (punto 2)', () => {
+  it('🔴 recién leído y repintado desde la referencia dicen lo MISMO, lote incluido', () => {
+    abrirSala('Sala 1');
+    H._madTanquesPintaVivos(libroConLotes());
+    expect(celda(1).textContent).toBe('AB · 12♂ 34♀ · 46');
+    expect(celda(2).textContent).toBe('BA+BC · 30♂ 50♀ · 80');
+    abrirSala('Sala 4');
+    abrirSala('Sala 1');                                   // repintado completo, desde la referencia
+    expect(celda(1).textContent).toBe('AB · 12♂ 34♀ · 46');
+    expect(celda(2).textContent).toBe('BA+BC · 30♂ 50♀ · 80');
+  });
+
+  it('🔴 lo guardado lleva el lote con el mismo nombre que enseña la celda', () => {
+    abrirSala('Sala 1');
+    H._madTanquesPintaVivos(libroConLotes());
+    const g = JSON.parse(localStorage.getItem(H.MAD_TQ_VIVOS_KEY));
+    expect(g.tanques['Sala 1|1']).toEqual({ machos: 12, hembras: 34, lotes: 'AB' });
+    expect(g.tanques['Sala 1|2'].lotes).toBe('BA+BC');
+  });
+
+  it('una referencia guardada ANTES del lote sigue valiendo: las cifras solas, sin «undefined»', () => {
+    guardarReferencia({ 'Sala 1|1': { machos: 12, hembras: 34 } });
+    abrirSala('Sala 1');
+    expect(celda(1).textContent).toBe('12♂ 34♀ · 46');
+  });
+
+  it('un lote ilegible en la referencia no se inventa un nombre', () => {
+    guardarReferencia({ 'Sala 1|1': { machos: 12, hembras: 34, lotes: 7 } });
+    abrirSala('Sala 1');
+    expect(celda(1).textContent).toBe('12♂ 34♀ · 46');
   });
 });

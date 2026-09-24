@@ -8635,19 +8635,14 @@ function _madMovPintaSaldo(libro){
     const s = tr.querySelector(".mv-so"), t = tr.querySelector(".mv-to");
     const sala = s ? s.value : "", tq = t ? t.value : "";
     if(!sala || !tq){ c.textContent = "—"; c.style.color = "#94a3b8"; return; }
-    const T = libro.tanques[madUbicKey(sala, tq)];
-    if(!T){
-      // Ningún ingreso explica ese tanque: no es «cero vivos», es «el libro no lo conoce».
-      c.textContent = roto ? "?" : "sin ingreso";
-      c.style.color = "#92400e";
-      return;
-    }
     /* El TOTAL lo pidió el usuario el 2026-09-12 (punto D6), para que esta cifra se lea IGUAL
        que los vivos de Tanques: es la misma clase de dato —el saldo vivo de un tanque— y dos
-       pantallas con formatos distintos invitan a leerlas distinto. La prueba
-       mad-saldo-origen-total.test.js exige que las dos escriban exactamente lo mismo. */
-    c.textContent = T.machos + "♂ " + T.hembras + "♀ · " + (T.machos + T.hembras);
-    c.style.color = (T.machos + T.hembras) > 0 ? "#0369a1" : "#92400e";
+       pantallas con formatos distintos invitan a leerlas distinto. El LOTE (usuario, 2026-09-24,
+       punto 2) va en las dos por lo mismo, y desde entonces las escribe UNA sola función: dos
+       copias del formato habrían divergido en el siguiente cambio. La prueba
+       mad-saldo-origen-total.test.js exige que las dos escriban exactamente lo mismo.
+       Un tanque que ningún ingreso explica no es «cero vivos»: es «el libro no lo conoce». */
+    _madTqVivosCelda(c, libro.tanques[madUbicKey(sala, tq)], roto ? "?" : "sin ingreso");
   });
 }
 function madMovCollect(){
@@ -13255,12 +13250,13 @@ function _madTqVivosGuardar(libro){
   const tanques = {};
   Object.keys(libro.tanques || {}).forEach(function(k){
     const T = libro.tanques[k];
-    if(T) tanques[k] = { machos: Number(T.machos) || 0, hembras: Number(T.hembras) || 0 };
+    if(T) tanques[k] = { machos: Number(T.machos) || 0, hembras: Number(T.hembras) || 0, lotes: madNombreComposicion(T) };
   });
   return safeSetItem(MAD_TQ_VIVOS_KEY, JSON.stringify({ ts: Date.now(), hoy: today(), tanques: tanques }), { silent: true });
 }
 /* Una celda de vivos, escrita IGUAL venga del libro recién leído o de la referencia guardada:
-   Movimientos y Tanques tienen que decir exactamente lo mismo del mismo tanque. */
+   Movimientos y Tanques tienen que decir exactamente lo mismo del mismo tanque, y por eso
+   las dos la escriben con esta función. */
 function _madTqVivosCelda(c, T, desconocido){
   /* `data-vivos` (2026-09-15) no es decoración: es lo que lee la bajada de los pesos para saber
      a qué filas toca. Vacío = «no se sabe», que NO es lo mismo que cero. */
@@ -13274,8 +13270,13 @@ function _madTqVivosCelda(c, T, desconocido){
   c.setAttribute("data-vivos", String(T.machos + T.hembras));
   /* El TOTAL lo pidió el usuario el 2026-09-08. Es la cifra que se compara con la capacidad
      del tanque, y sumar dos números de cabeza delante de una grilla de veinte filas se hace
-     mal más veces de las que parece. */
-  c.textContent = T.machos + "♂ " + T.hembras + "♀ · " + (T.machos + T.hembras);
+     mal más veces de las que parece.
+     El LOTE o lotes, delante (usuario, 2026-09-24, punto 2), con el nombre que la vista Saldo
+     pone en «Lote(s)»: `BA+BC` en un tanque mezclado. Sólo los que tienen animales VIVOS: un
+     tanque vaciado no lo ocupa nadie. Del libro sale de la composición; la referencia guardada
+     ya lo trae, y una guardada antes de esto no: enseña las cifras solas hasta el próximo 🔄. */
+  const lotes = T.composicion ? madNombreComposicion(T) : (typeof T.lotes === "string" ? T.lotes : "");
+  c.textContent = (lotes ? lotes + " · " : "") + T.machos + "♂ " + T.hembras + "♀ · " + (T.machos + T.hembras);
   c.style.color = (T.machos + T.hembras) > 0 ? "#0369a1" : "#92400e";
 }
 function _madTqVivosNotaRef(g){
