@@ -94,6 +94,7 @@ const tratEnCola = async () => {
 };
 
 beforeEach(() => {
+  localStorage.removeItem('larv4_gas_sello_ok');   // C (2026-09-24) · el «sí» del GAS, recordado 30 min, no pasa de una prueba a otra
   envios.length = 0;
   respuestaPost = () => 'ok';
   localStorage.removeItem('larv4_syncqueue');

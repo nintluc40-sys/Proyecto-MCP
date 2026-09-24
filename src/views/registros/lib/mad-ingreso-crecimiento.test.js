@@ -88,6 +88,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  localStorage.removeItem('larv4_gas_sello_ok');   // C (2026-09-24) · el «sí» del GAS, recordado 30 min, no pasa de una prueba a otra
   avisos.length = 0;
   envios.length = 0;
   preguntasVer = 0;
@@ -151,6 +152,9 @@ describe('Ingreso · no se escribe contra el GAS viejo (hoja por posición)', ()
 
     respuestaVer = { ok: true, version: sello };
     expect(await H._madIngGasAlDia(), 'el sello de esta app').toBe(true);
+    /* C (2026-09-24, usuario) · ese «sí» se recuerda 30 min y la siguiente pregunta no llegaría al GAS: para oír cómo se lee
+       CADA respuesta, se olvida. Lo recordado lo prueba gas-sello-recordado.test.js. */
+    localStorage.removeItem('larv4_gas_sello_ok');
     respuestaVer = { ok: true, version: 'abc123def456' };
     expect(await H._madIngGasAlDia(), 'contesta, pero es OTRO GAS').toBe(false);
     respuestaVer = 'FichasLarv-OK';

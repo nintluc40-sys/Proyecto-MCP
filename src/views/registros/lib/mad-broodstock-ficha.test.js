@@ -87,6 +87,7 @@ const texto = (s) => (q(s) ? q(s).textContent.replace(/\s+/g, ' ') : '');
 const valor = (p, h, i = 0) => p.rows[i][p.headers.indexOf(h)];
 
 beforeEach(() => {
+  localStorage.removeItem('larv4_gas_sello_ok');   // C (2026-09-24) · el «sí» del GAS, recordado 30 min, no pasa de una prueba a otra
   avisos.length = 0;
   envios.length = 0;
   respuestaVer = { ok: true, version: H._gasVersionLocal() };

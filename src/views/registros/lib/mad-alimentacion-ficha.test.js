@@ -76,6 +76,7 @@ const sala = (n) => document.querySelector('#fp-alimentacion .ma-sala[data-sala=
 const cfg = () => JSON.parse(localStorage.getItem(H.MAD_ALIM_CFG_KEY) || '{}');
 
 beforeEach(() => {
+  localStorage.removeItem('larv4_gas_sello_ok');   // C (2026-09-24) · el «sí» del GAS, recordado 30 min, no pasa de una prueba a otra
   avisos.length = 0;
   envios.length = 0;
   impreso = null;
@@ -202,6 +203,9 @@ describe('Alimentación · la ficha', () => {
 
   it('🔴 un GAS que no es el de esta app (o el viejo) no recibe nada, se dice por qué y lo calculado se queda', async () => {
     await H.madAlimLeer();
+    /* C (2026-09-24, usuario) · leer confirmó el GAS bueno y ese «sí» se recuerda 30 min: un GAS que CAMBIA entre medias se
+       descubre al vencer o al rechazar la firma, no al instante. Para probar el portón ante OTRO GAS, se olvida. */
+    localStorage.removeItem('larv4_gas_sello_ok');
     // El sello 'x' es lo que lo hace fallar; las caps son decorado (ver el beforeEach).
     for (const r of [{ ok: true, version: 'x', caps: ['matriz-cuaterna'] }, 'FichasLarv-OK']) {
       respuestaVer = r;
@@ -218,6 +222,7 @@ describe('Alimentación · la ficha', () => {
      hoja recibía el envío. El fixture lo distingue a propósito: la capacidad está, el sello no. */
   it('🔴 PV3 · un GAS de OTRA versión que SÍ anuncia «mad-alimentacion» tampoco recibe nada', async () => {
     await H.madAlimLeer();
+    localStorage.removeItem('larv4_gas_sello_ok');   // C · ver la prueba de arriba
     respuestaVer = { ok: true, version: 'abc123def456', caps: ['matriz-cuaterna', 'mad-alimentacion'] };
     await H.madAlimGuardar();
     expect(envios).toHaveLength(0);
@@ -227,6 +232,7 @@ describe('Alimentación · la ficha', () => {
   it('🔴 PV3 · sin respuesta del GAS no se envía: queda en la cola sin salir', async () => {
     localStorage.removeItem('larv4_syncqueue');
     await H.madAlimLeer();
+    localStorage.removeItem('larv4_gas_sello_ok');   // C · sin un «sí» recordado, se pregunta: y no contesta
     respuestaVer = 'red';
     await H.madAlimGuardar();
     expect(envios).toHaveLength(0);

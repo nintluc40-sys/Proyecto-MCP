@@ -1664,6 +1664,9 @@ async function _postOnce(bodyPayload, finalUrl, info){
     // no rendirse. Se honra también una bandera `retriable` por si un GAS futuro
     // la envía explícitamente. El resto de errores son permanentes → "rejected".
     if(j && (j.retriable === true || (j.status === "error" && _BUSY_RE.test(String(j.message || ""))))) return "retry";
+    // C (2026-09-24) · un rechazo de ENTORNO (esquema, hoja no permitida, límite de columnas…) dice que el GAS cambió:
+    // lo recordado de ?p=ver deja de valer y la siguiente vez se pregunta.
+    try{ if(typeof _madGasOkOlvidar === "function" && _esRechazoDeEntorno(j && j.message)) _madGasOkOlvidar(); }catch(_){}
     return "rejected";
   }catch(x){
     clearTimeout(timer);
@@ -7893,9 +7896,28 @@ function _gasVersionLocalCacheada(){
    para el caso más común. Con 12000 no se espera más en la práctica (en caliente contesta mucho antes), y donde
    antes se tardaba 6 s + 8 s de cola, ahora se entrega directo. Sigue MUY por debajo del POST (40000 > waitLock). */
 const MAD_GAS_VER_MS = 12000;
+/* ── C (2026-09-24, usuario) · EL «SÍ» DEL GAS SE RECUERDA 30 MIN, también al recargar ─────────────────────────────────
+   Dieciséis sitios preguntaban ?p=ver antes de actuar —cada guardado sellado, la cola, Recalcular, Revisar…— y con el GAS
+   de producción medido el 09-24 (3–45 s, 7 de 11 fallos) casi nunca contestaba a tiempo: el envío iba a la cola «sin
+   enviar», y cada pregunta era más carga para un GAS saturado. Decisión del usuario: cuando el GAS CONFIRMA que es el de
+   esta app, se recuerda 30 min (en el dispositivo, con su hora, para ESE GAS y ESTA versión de la app) y se envía directo.
+   Sólo se recuerda el «sí»: un «no» o un silencio se vuelven a preguntar. Se olvida en cuanto un envío vuelve rechazado
+   por su ENTORNO (_postOnce): es la señal de que el GAS cambió. Y es seguro porque, si entre medias se re-despliega otro
+   GAS, la FIRMA de esquema de las trece hojas de Maduración sigue rechazando lo incompatible sin escribir nada. */
+const MAD_GAS_OK_KEY = "larv4_gas_sello_ok";
+const MAD_GAS_OK_MS = 30 * 60 * 1000;
+function _madGasOkLeer(base){
+  try{
+    const o = JSON.parse(localStorage.getItem(MAD_GAS_OK_KEY) || "null");
+    return !!(o && o.url === base && o.sello === _gasVersionLocalCacheada() && (Date.now() - (o.ts || 0)) < MAD_GAS_OK_MS);
+  }catch(_){ return false; }
+}
+function _madGasOkGuardar(base){ try{ localStorage.setItem(MAD_GAS_OK_KEY, JSON.stringify({ url:base, sello:_gasVersionLocalCacheada(), ts:Date.now() })); }catch(_){} }
+function _madGasOkOlvidar(){ try{ localStorage.removeItem(MAD_GAS_OK_KEY); }catch(_){} }
 async function _madIngGasAlDia(url){
   const base = url || gasUrl();
   if(!base || !isValidGasUrl(base)) return null;
+  if(_madGasOkLeer(base)) return true;   // C · confirmado hace menos de 30 min: no se pregunta
   try{
     const ctrl = new AbortController();
     const t = setTimeout(function(){ ctrl.abort(); }, MAD_GAS_VER_MS);
@@ -7906,7 +7928,10 @@ async function _madIngGasAlDia(url){
       const j = JSON.parse(txt);
       if(j && j.ok && typeof j.version === "string"){
         const local = _gasVersionLocalCacheada();
-        return local ? (j.version === local) : true;
+        const casa = local ? (j.version === local) : true;
+        // Sólo se pregunta cuando no hay un «sí» vigente: un «no» no tiene nada que borrar.
+        if(casa) _madGasOkGuardar(base);
+        return casa;
       }
     }catch(_){}
     return txt.indexOf("FichasLarv-OK") !== -1 ? false : null;

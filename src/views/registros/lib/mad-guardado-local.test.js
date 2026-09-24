@@ -102,6 +102,7 @@ const sembrar = (ficha, e) => localStorage.setItem(H.MAD_LOC_PRE + ficha, JSON.s
 const deError = () => avisos.filter((a) => a.tipo === 'err').map((a) => a.msg);
 
 beforeEach(() => {
+  localStorage.removeItem('larv4_gas_sello_ok');   // C (2026-09-24) · el «sí» del GAS, recordado 30 min, no pasa de una prueba a otra
   envios.length = 0;
   avisos.length = 0;
   pideVer = 0;

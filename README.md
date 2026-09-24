@@ -441,6 +441,10 @@ Antes de enviar, las fichas de Maduración que escriben por posición o en hojas
 `?p=ver` y **comparan el sello** con el suyo (la lista viva es `_madHojaPideGasNuevo` en `engine.js`;
 no se copia aquí porque ya caducó una vez: decía «seis» y hoy son más, Tanques y Broodstock incluidas).
 No basta con que el GAS conteste: eso sólo medía «está vivo».
+Desde el 2026-09-24 (punto 2a · C, decisión del usuario) **el «sí» se recuerda 30 min** en el dispositivo,
+también al recargar, para ESE GAS y ESTA versión de la app: con el GAS de producción tardando 3–45 s en
+contestar, preguntar en cada envío mandaba casi todo a la cola. Sólo se recuerda el «sí», y un envío
+rechazado por su entorno (esquema, hoja no permitida…) lo olvida; entre medias protege la firma.
 
 > 🔒 **Es un fallo seguro, no un error.** Tocar `Code.gs` y no re-desplegar deja esas fichas
 > **sin enviar**: calculan, guardan en el dispositivo y lo avisan. Lo mismo si `?p=ver` no contesta.
