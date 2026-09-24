@@ -121,8 +121,18 @@ describe('Tanques · el peso baja por su columna', () => {
   });
 
   it('🔴 baja hacia ABAJO: teclear en medio no reescribe lo de arriba', () => {
+    /* ⚠ 2026-09-24 · aquí se exigía ['54','54','','61','61']: que el 61 del tanque 10 bajara al 11
+       por encima de su 54. Es justo lo que el usuario pidió corregir (punto 4): el 10 tenía el 54
+       COPIADO, así que teclearlo es corregir esa fila sola. Lo de arriba sigue sin tocarse. */
     teclear(7, 'peso_machos', '54');
     teclear(10, 'peso_machos', '61');
+    expect(columna('peso_machos')).toEqual(['54', '54', '', '61', '54']);
+  });
+
+  it('teclear en medio de una columna VACÍA sí baja, a las vacías de abajo', () => {
+    teclear(10, 'peso_machos', '61');
+    expect(columna('peso_machos')).toEqual(['', '', '', '61', '61']);
+    teclear(7, 'peso_machos', '54');                     // la de arriba no pisa lo que bajó el 10
     expect(columna('peso_machos')).toEqual(['54', '54', '', '61', '61']);
   });
 
@@ -152,6 +162,93 @@ describe('Tanques · el peso baja por su columna', () => {
     abrir();
     H._madTanquesPintaVivos(libro());
     expect(cel(11, 'peso_machos').getAttribute('data-fijo')).toBeNull();
+    expect(cel(11, 'peso_machos').getAttribute('data-corr')).toBeNull();
+    expect(cel(11, 'peso_machos').style.background, 'el amarillo sobrevivió al repintado').toBe('');
+  });
+});
+
+/* ── 2026-09-24 · PUNTO 4 DEL USUARIO: CAMBIAR UNA FILA DEL CONJUNTO NO PISA LAS DE ABAJO ──────
+   «De 5 filas, en la primera coloco un número y se desplaza a las demás 4, pero si modifico algo
+   en la fila 3 de ese conjunto, el sistema modifica los valores debajo de la fila 3; no debería:
+   solo debería marcarse dicha fila que modifique y las otras se conservan con el primer valor.»
+   Cada copia recuerda de qué fila vino; teclear sobre una copia es CORREGIR esa fila: se marca en
+   amarillo y no baja. */
+describe('Tanques · cambiar una fila del conjunto sólo cambia esa fila (punto 4)', () => {
+  const amarilla = (tq) => cel(tq, 'peso_machos').style.background.includes('fef9c3');
+
+  it('🔴 la fila cambiada se MARCA y las de abajo conservan el primer valor', () => {
+    teclear(7, 'peso_machos', '54');
+    teclear(8, 'peso_machos', '60');
+    expect(columna('peso_machos')).toEqual(['54', '60', '', '54', '54']);
+    expect(amarilla(8), 'la corregida no se marca').toBe(true);
+    expect(amarilla(10), 'se marcó una copia').toBe(false);
+    expect(amarilla(7), 'se marcó el origen').toBe(false);
+  });
+
+  it('🔴 corregir la PRIMERA: sus copias la siguen, la corregida no', () => {
+    teclear(7, 'peso_machos', '54');
+    teclear(10, 'peso_machos', '61');
+    teclear(7, 'peso_machos', '55');
+    expect(columna('peso_machos')).toEqual(['55', '55', '', '61', '55']);
+  });
+
+  it('🔴 borrar la primera vacía sus copias, no la corregida', () => {
+    teclear(7, 'peso_machos', '54');
+    teclear(10, 'peso_machos', '61');
+    teclear(7, 'peso_machos', '');
+    expect(columna('peso_machos')).toEqual(['', '', '', '61', '']);
+  });
+
+  it('🔴 teclear tecla a tecla sobre una copia no la convierte en origen a la segunda tecla', () => {
+    teclear(7, 'peso_machos', '54');
+    teclear(8, 'peso_machos', '6');
+    teclear(8, 'peso_machos', '61');
+    expect(columna('peso_machos')).toEqual(['54', '61', '', '54', '54']);
+  });
+
+  it('🔴 vaciar una copia la deja vacía a propósito: la de arriba ya no se la devuelve', () => {
+    teclear(7, 'peso_machos', '54');
+    teclear(10, 'peso_machos', '');
+    expect(amarilla(10), 'vacía no se pinta').toBe(false);
+    teclear(7, 'peso_machos', '55');
+    expect(columna('peso_machos')).toEqual(['55', '55', '', '', '55']);
+  });
+
+  it('vaciar una corregida le quita el amarillo', () => {
+    teclear(7, 'peso_machos', '54');
+    teclear(10, 'peso_machos', '61');
+    expect(amarilla(10)).toBe(true);
+    teclear(10, 'peso_machos', '');
+    expect(amarilla(10)).toBe(false);
+  });
+
+  it('🔴 lo que ya estaba —guardado, pegado o de antes de repintar— no se pisa', () => {
+    cel(11, 'peso_machos').value = '70';                // sin teclear: como llega de la hoja o del pegado
+    teclear(7, 'peso_machos', '54');
+    expect(columna('peso_machos')).toEqual(['54', '54', '', '54', '70']);
+  });
+
+  it('tras borrar la primera, la columna vuelve a empezar: otra fila baja de nuevo', () => {
+    teclear(7, 'peso_machos', '54');
+    teclear(7, 'peso_machos', '');
+    teclear(8, 'peso_machos', '60');
+    expect(columna('peso_machos')).toEqual(['', '60', '', '60', '60']);
+  });
+
+  it('una fila que vaciaste se queda vacía: una bajada de más arriba no la rellena', () => {
+    teclear(10, 'peso_machos', '61');
+    teclear(10, 'peso_machos', '');
+    teclear(7, 'peso_machos', '54');
+    expect(columna('peso_machos')).toEqual(['54', '54', '', '', '54']);
+  });
+
+  it('🔴 una corregida no baja NUNCA, ni a una fila que acaba de ganar vivos', () => {
+    teclear(7, 'peso_machos', '54');                    // el 9 no tenía vivos: se saltó
+    const l = libro();
+    l.tanques['Sala 5|9'] = { sala: SALA, tanque: 9, machos: 2, hembras: 2, composicion: [] };
+    H._madTanquesPintaVivos(l);                         // «🔄 Ver vivos» otra vez: ahora sí tiene
+    teclear(8, 'peso_machos', '60');                    // corrección de una copia
+    expect(columna('peso_machos')).toEqual(['54', '60', '', '54', '54']);
   });
 });
 

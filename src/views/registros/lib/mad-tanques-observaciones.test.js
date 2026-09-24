@@ -179,6 +179,39 @@ describe('Tanques · las observaciones BAJAN por su columna', () => {
     marcar(7, 'obs_sanitarias', 'Animales estresados', false);
     expect(columna('obs_sanitarias')).toEqual(['', '', '', '', '']);
   });
+
+  /* ── 2026-09-24 · punto 4 del usuario: cambiar una fila del conjunto sólo cambia ESA fila, se marca, y
+     las de abajo conservan el primer valor. Antes la fila tocada pasaba a bajar y pisaba las de abajo. */
+  const amarilla = (tq, k) => celda(tq, k).querySelector('details').style.background.includes('fef9c3');
+
+  it('🔴 (punto 4) marcar en una fila COPIADA sólo cambia esa fila, y se marca', () => {
+    marcar(7, 'obs_operativas', 'Recambio realizado');
+    marcar(10, 'obs_operativas', 'Falta de recambio');
+    expect(columna('obs_operativas')).toEqual([
+      'Recambio realizado', 'Recambio realizado', 'Recambio realizado',
+      'Recambio realizado, Falta de recambio', 'Recambio realizado',   // el 11 conserva el primer valor
+    ]);
+    expect(amarilla(10, 'obs_operativas'), 'la corregida no se marca').toBe(true);
+    expect(amarilla(11, 'obs_operativas'), 'se marcó una copia').toBe(false);
+  });
+
+  it('🔴 (punto 4) desmarcar lo único de una copia la deja vacía a propósito: la de arriba no se lo devuelve', () => {
+    marcar(7, 'obs_operativas', 'Recambio realizado');
+    marcar(10, 'obs_operativas', 'Recambio realizado', false);     // ese tanque no tuvo recambio
+    marcar(7, 'obs_operativas', 'Aireación normal');
+    expect(columna('obs_operativas')).toEqual([
+      'Recambio realizado, Aireación normal', 'Recambio realizado, Aireación normal',
+      'Recambio realizado, Aireación normal', '', 'Recambio realizado, Aireación normal',
+    ]);
+    expect(amarilla(10, 'obs_operativas'), 'vacía no se pinta').toBe(false);
+  });
+
+  it('🔴 (punto 4) lo que ya estaba marcado sin tocarlo (guardado o de antes de repintar) no se pisa', () => {
+    casilla(11, 'obs_sanitarias', 'Animales en muda').checked = true;   // como llega de la hoja: sin asa
+    marcar(7, 'obs_sanitarias', 'Animales estresados');
+    expect(columna('obs_sanitarias')).toEqual(['Animales estresados', 'Animales estresados', 'Animales estresados',
+      'Animales estresados', 'Animales en muda']);
+  });
 });
 
 describe('Tanques · la columna nueva va AL FINAL de la hoja', () => {

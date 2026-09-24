@@ -328,6 +328,8 @@ describe('Mortalidad de hembras · la ficha', () => {
     expect(columna('tem'), 'la salinidad se metió en la temperatura').toEqual(['', '', '', '']);
 
     teclear('lavado2', 'sal', '35');                 // corrección a mano de una fila
+    // 2026-09-24 (punto 4 del usuario): la corregida no baja; «Post lavado» conserva el primer valor.
+    expect(columna('sal')).toEqual(['34', '34', '35', '34']);
     teclear('entrada', 'sal', '33');                 // y se retoca la de arriba
     expect(columna('sal')).toEqual(['33', '33', '35', '33']);
   });

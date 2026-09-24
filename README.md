@@ -190,7 +190,12 @@ app lo perdía. Desde ese día, en las siete fichas y en las grillas de Salas y 
   conflicto— y conserva la hora con que se abrió.
 
 En **🛢️ Tanques**, los pesos ♂ y ♀ **bajan por su columna**: al teclear uno se copia a las filas
-de abajo que tengan animales vivos. Una fila corregida a mano ya no se pisa. Cada ronda de mortalidad
+de abajo que tengan animales vivos. Las observaciones sanitarias y operativas bajan igual (a todas
+las filas), y la salinidad y la temperatura de la Revisión de nauplios de Inf. Supervisor también.
+**Cambiar una fila que tenía el valor copiado sólo cambia ESA fila**: se marca en amarillo, no baja,
+y las de abajo conservan el primer valor; corregir la primera arrastra sus copias, no las marcadas
+(usuario, 2026-09-24). Lo que ya estaba —guardado, pegado o de antes de repintar— no se pisa nunca:
+la bajada sólo rellena filas vacías o copias. Cada ronda de mortalidad
 del día es un **PARTE** con su número y su **hora**, que pone el sistema al abrirlo y es la misma para
 todos sus tanques: guardar otra vez el mismo parte no lo duplica, y el último del día se puede reabrir.
 Sólo el último, sin otro abierto y desde el dispositivo que lo registró: uno anterior se corrige en la

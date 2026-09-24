@@ -13085,24 +13085,25 @@ function _madTqMsHTML(tank, col, ri, ci, valor){
     +   '<div style="padding:4px 8px;border-top:1px solid #e2e8f0;min-width:230px">' + ops + '</div>'
     + '</details></div>';
 }
-/** Lo marcado BAJA a las celdas de abajo de su columna que nadie haya tocado a mano.
- *  Misma regla que los pesos y mismo significado de `data-fijo`; lo que cambia es que aquí se
- *  copia un juego de casillas y no un valor, así que no puede pasar por `_madBajarColumna`. */
+/** Lo marcado BAJA a las celdas de abajo de su columna, con la misma regla que los pesos
+ *  (_madBajaTeclea y compañía: una corrección sobre una copia no baja y se marca). Lo que cambia es
+ *  que aquí se copia un juego de casillas y no un valor, así que no puede pasar por `_madBajarColumna`. */
 function madTqObsBaja(el){
   const celda = (el && el.closest) ? el.closest(".tg-ms") : null;
   if(!celda) return;
   _madTqMsSync(celda);
-  celda.setAttribute("data-fijo", "1");
   const cuerpo = celda.closest("tbody");
   const fila = Number(celda.getAttribute("data-r"));
   const k = celda.getAttribute("data-k");
   if(!cuerpo || !isFinite(fila)) return;
   const marcados = _madTqMsValores(celda);
+  if(!_madBajaTeclea(celda, !marcados.length)) return;   // una corrección no baja
   cuerpo.querySelectorAll('.tg-ms[data-k="' + k + '"]').forEach(function(o){
     if(o === celda || Number(o.getAttribute("data-r")) <= fila) return;
-    if(o.getAttribute("data-fijo")) return;
+    if(!_madBajaRecibe(o, fila, !_madTqMsValores(o).length)) return;
     o.querySelectorAll(".tg-ms-op").forEach(function(c){ c.checked = marcados.indexOf(c.value) !== -1; });
     _madTqMsSync(o);
+    _madBajaCopia(o, fila, !marcados.length);
   });
 }
 
@@ -13358,27 +13359,71 @@ function _madTqFilaConVivos(input){
   return !!c && Number(c.getAttribute("data-vivos") || 0) > 0;
 }
 /** La BAJADA de una columna, para las grillas de Maduración que la tienen.
- *  El valor tecleado se copia a las celdas de ABAJO de SU misma columna. `puede(o)` es el
- *  filtro de cada ficha: en Tanques, «esa fila tiene animales vivos»; en Inf. Supervisor no hay.
+ *  El valor tecleado se copia a las celdas de ABAJO de SU misma columna que estén vacías o sean
+ *  copia suya; tecleado sobre una copia, es una corrección de esa fila sola (ver _madBajaTeclea).
+ *  `puede(o)` es el filtro de cada ficha: en Tanques, «esa fila tiene animales vivos»; en Inf.
+ *  Supervisor no hay.
  *  🔑 VIVE UNA VEZ. Copiarla para la segunda ficha habría dejado dos versiones divergiendo justo
  *  en la parte delicada —a qué filas se salta—, y las dos darían resultados plausibles. */
 function _madBajarColumna(el, puede){
   if(!el) return;
-  /* La celda tecleada queda FIJA: una bajada posterior desde más arriba no la pisa. Es lo que
-     hace que «si deseo modificar un número de alguna de esas filas lo puedo hacer» siga siendo
-     cierto después de corregir el de arriba. Mismo idioma que «⚖️ Repartir» del Ingreso. */
-  el.setAttribute("data-fijo", "1");
   const fila = Number(el.getAttribute("data-r"));
   const col = el.getAttribute("data-c");
   const cuerpo = el.closest("tbody");
   if(!cuerpo || col == null || !isFinite(fila)) return;
-  const v = el.value;
+  const v = el.value, vacia = String(v).trim() === "";
+  if(!_madBajaTeclea(el, vacia)) return;   // una corrección no baja
   cuerpo.querySelectorAll('input[data-c="' + col + '"]').forEach(function(o){
     if(o === el || Number(o.getAttribute("data-r")) <= fila) return;
-    if(o.getAttribute("data-fijo")) return;
+    if(!_madBajaRecibe(o, fila, String(o.value).trim() === "")) return;
     if(puede && !puede(o)) return;
     o.value = v;
+    _madBajaCopia(o, fila, vacia);
   });
+}
+/* ── QUIÉN PUEDE ESCRIBIR EN QUIÉN AL BAJAR (usuario, 2026-09-15 y 2026-09-24) ──────────────
+   Lo usan las dos bajadas —la de un valor (_madBajarColumna) y la de las casillas de las
+   observaciones (madTqObsBaja)—, y por eso vive aquí una vez. Cada celda está en uno de cuatro
+   estados, y ése es TODO el modelo:
+     · suelta    — nadie la tocó: recibe la bajada sólo si está VACÍA. Lo que ya estaba —guardado,
+                   pegado, o de antes de repintar la grilla— no se pisa nunca;
+     · copia     — `data-de` = la fila de la que vino su valor: sólo esa fila la vuelve a escribir;
+     · origen    — `data-fijo`, tecleada sobre una suelta: baja a las sueltas vacías y a SUS copias;
+     · corregida — `data-fijo` + `data-corr`, tecleada sobre una COPIA: no baja, se marca en amarillo
+                   y ninguna bajada la pisa. Punto 4 del usuario: «si modifico la fila 3 de ese
+                   conjunto, solo debería marcarse dicha fila y las otras se conservan con el primer
+                   valor»; hasta el 2026-09-24 la fila 3 pasaba a ser origen y pisaba las de abajo.
+   Vaciar una corregida le quita el amarillo y la deja corregida (vacía a propósito: la de arriba no
+   se la devuelve); vaciar un origen vacía sus copias. Las marcas viven en el DOM: un repintado las
+   olvida y todo vuelve a «suelta», que no se pisa. */
+function _madBajaTeclea(c, vacia){
+  // true = es ORIGEN y baja; false = es una corrección y no baja.
+  if(c.hasAttribute("data-de") || c.getAttribute("data-corr") === "1"){
+    c.removeAttribute("data-de");
+    c.setAttribute("data-fijo", "1");
+    c.setAttribute("data-corr", "1");
+    _madBajaMarca(c, !vacia);
+    return false;
+  }
+  c.setAttribute("data-fijo", "1");
+  return true;
+}
+function _madBajaRecibe(o, fila, vacia){
+  if(o.getAttribute("data-fijo")) return false;
+  const de = o.getAttribute("data-de");
+  return de !== null ? Number(de) === fila : vacia;
+}
+function _madBajaCopia(o, fila, vacia){
+  if(vacia) o.removeAttribute("data-de");
+  else o.setAttribute("data-de", String(fila));
+}
+/* El amarillo de «tecleado a mano», el mismo del reparto de Ingreso y las fechas de Fin de Ciclo y
+   Desoves. En una celda de casillas se pinta su <details>, que es lo que se ve. */
+function _madBajaMarca(c, on){
+  const m = c.querySelector("details") || c;
+  m.style.background = on ? "#fef9c3" : (m === c ? "" : "#fff");
+  if(on) c.title = "Corregida a mano: no baja, y la de arriba no la pisa";
+  else c.removeAttribute("title");
 }
 /** Peso tecleado: baja por su columna a las filas de ABAJO con animales vivos (usuario). */
 function madTqPesoBaja(el){
