@@ -35,7 +35,7 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   ellos: **ese mensaje engaña**, y es lo que hace que esto se re-litigue cada pocas semanas.
 - Los **cinco** restantes sólo se cierran con saltos MAYORES —`vitest` 2.1.9 → 5.0.1 y `vite`
   5.4.21 → 8.3.0—, que es exactamente lo que la decisión **D-6** descartó: tres versiones mayores
-  cada uno, con 4060 pruebas y la puerta a producción encima, a cambio de nada en producción.
+  cada uno, con miles de pruebas y la puerta a producción encima, a cambio de nada en producción.
 - La única vía que movería los otros cuatro es `npm update`, y **no es quirúrgica**: arrastra
   `happy-dom` 20.10.3 → 20.14.5 —la versión contra la que está MEDIDO el comportamiento raro del
   `<select>` pintado con `innerHTML`, del que dependen pruebas—, `@types/node` 25 → 26 y
@@ -92,8 +92,9 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   - **🐚 Operativo** — el TABLERO del registro operativo, cargado DIFERIDO. Barra de filtros común
     (período · foto al día · sala → tanque · lote → código · estado · sexo · piscina · camaronera, con los
     activos como etiquetas quitables) y sus sub-vistas (la lista viva es `SUBS`, en `operativo.view.js`):
-    **📊 Estado actual** (siete indicadores, mapa de
-    planta, alertas, últimos registros y fines de cuarentena), **🏠 Salas** (tarjeta por sala y su detalle),
+    **📊 Estado actual** (siete indicadores; el mapa de planta, que se colorea por el lote, por el tanque o por
+    sus partes —los modos viven en `MODOS_MAPA`— y abre bajo él el LIENZO del tanque pulsado; las alertas, con
+    📉 Tendencias y ⏳ Permanencia; últimos registros y fines de cuarentena), **🏠 Salas** (tarjeta por sala y su detalle),
     **🧬 Lotes** (tabla maestra, ficha de un lote —origen, CASCADA DEL CUADRE, curva de vivos y reproducción—,
     comparativa por lote, código genético o piscina y, debajo, **📈 Piscinas de origen**: el Broodstock del
     último corte con los lotes que entraron de cada piscina y, al pulsarla, su ficha con el peso por semana), **💀 Bajas** (muerte natural frente a descarte,
@@ -111,6 +112,14 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     ⚠ **Lo que NO se juzga** se enseña tal cual, rotulado «sin criterio»: deformidad, actividad,
     fototropismo y aireación. Sólo llevan veredicto salinidad > 60 ‰, temperatura > 40 °C, hongos
     «Presente» y la alcalinidad — el resto no tiene fuente que lo respalde.
+    🔑 **Las reglas del mapa y de las alertas nuevas** (0f · 2b y 3, decididas por el usuario el 2026-09-25):
+    📉 Tendencias compara el período elegido con el anterior de igual duración y avisa desde un cambio del
+    20 % con 3 registros (umbrales editables, «fuente: usuario»); ⏳ Permanencia, más de 60 días en
+    producción contados desde el fin de la cuarentena. En el mapa, la mortalidad es POR DÍA DE PARTE y las
+    cópulas se dividen entre las hembras del tanque ESE día (la regla del Saldo); dos lotes en un tanque van
+    rayados, y dos códigos son su propia categoría (la pareja). Un dato IMPOSIBLE de los partes —más cópulas
+    que hembras, o cópulas un día sin hembras en el libro— se enseña MARCADO: no se esconde ni se corrige.
+    En tema claro el número de cada tanque va oscuro (≥ 4,5:1); en tema oscuro, blanco.
   - **🧬 Microchips** — seguimiento reproductivo por Trovan ID sobre
     las hojas `Maduración MATRIZ`/`Bitácora`/`Transferencias`.
     ⚠ **Es el REPRODUCTIVO. Hay otra «Maduración» distinta** —el registro OPERATIVO, por
@@ -486,18 +495,27 @@ vacía o no exista**, que es justo cuando el daño se hace.
 ⚠⚠ **Si una columna firmada cambia de nombre o de sitio, `MAD_ESQUEMA_FIRMA` se actualiza EN EL
 MISMO CAMBIO**, o la firma rechazará a los clientes al día.
 
-### 3 · El ORDEN: `push` → GAS → Probar conexión
+### 3 · El ORDEN: GAS → `push` → repartir `index (8)` → Probar conexión
 
-**Y lo decide UNA pregunta: ¿alguna hoja ganó una columna EN MEDIO?**
+*(Hasta el 2026-09-25 este título decía «`push` → GAS», que era el orden de ANTES del sello y de la firma.)*
 
-Añadir **al final** es inocuo: `ensureHeaders` alarga la cabecera que falte y «el envío trae menos
-columnas» no cuenta como desfase. Por eso da igual quién cree `Maduración Sala` o `Maduración Tanques`.
+**Lo deciden el SELLO y la FIRMA, y los dos protegen en ESE orden.** Con el GAS nuevo desplegado, una
+copia anterior de la app —Pages antes del push, o un `index (8)` sin repartir— ve un sello que no es el
+suyo y NO escribe las fichas selladas (`_madHojaPideGasNuevo`): calcula, lo guarda en el dispositivo y
+lo dice. Y si lo intentara, la firma del GAS nuevo rechaza a un cliente con el esquema viejo, también con
+la hoja vacía o sin crear. Al revés —push antes que GAS— no se protege nada: la copia nueva espera en la
+cola, pero las viejas y el GAS viejo siguen casando y escribiendo con el esquema anterior.
 
-`Maduración Mortalidad Desove` es el caso contrario: pasó de 14 a 21 columnas **insertando**
+El caso que lo hace urgente: `Maduración Mortalidad Desove` pasó de 14 a 21 columnas **insertando**
 (Fototropismo/Aireación en la 11-12, Área/Alcalinidad en la 15-16, la alcalinidad partida en día 16
-y noche 17, y el 2026-09-24 Código genético/Piscina Broodstock en la 3-4, que corren todo dos puestos). Si el GAS entra **antes** que el push, un dispositivo con la app anterior crea esa hoja
-con su cabecera de 14 y desde ese momento el GAS rechaza a TODOS los clientes al día; sólo se sale
-vaciando la hoja **con su fila 1**.
+y noche 17, y el 2026-09-24 Código genético/Piscina Broodstock en la 3-4, que corren todo dos puestos).
+Mientras siga desplegado el GAS anterior, una copia vieja que envíe Inf. Supervisor crea esa hoja con su
+cabecera antigua, y el GAS nuevo rechazará después a TODOS los clientes al día hasta vaciarla **con su
+fila 1**. Por eso, justo antes de publicar, `estado-maduracion.mjs` tiene que decir que esa hoja sigue
+sin existir; si existiera, se vacía con su fila 1 antes de desplegar.
+
+Añadir **al final**, en cambio, es inocuo: `ensureHeaders` alarga la cabecera que falte y «el envío trae
+menos columnas» no cuenta como desfase. Por eso da igual quién cree `Maduración Sala` o `Maduración Tanques`.
 
 Y al re-desplegar, dos detalles: en Apps Script hay que publicar una **versión nueva** del Web App
 (guardar sin publicar no cambia lo que sirve), y el `Code.gs` se copia del repo o de una app AL DÍA:
@@ -679,8 +697,9 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
 
 **Por validar en producción**
 
-2. **Estrenar lo desplegado.** El GAS desplegado es el del repo desde el 2026-09-21. 🔑 El sello del
-   día no se lee de aquí —esta línea citó dos sellos que caducaron el mismo día—: lo dicen `?p=ver` y
+2. **Estrenar lo desplegado.** Si el GAS desplegado es el del repo NO se lee de aquí: esta línea lo afirmó
+   «desde el 2026-09-21» y caducó el 24, cuando la firma nueva cambió el sello. 🔑 El sello del
+   día tampoco —esta línea citó dos sellos que caducaron el mismo día—: lo dicen `?p=ver` y
    `estado-maduracion.mjs`. Falta que lo desplegado se use de verdad:
    - Las hojas que aún no existen nacen con su primer envío y tienen que nacer con la cabecera actual.
      Cuáles existen ya, y con cuántas columnas, lo dice `estado-maduracion.mjs`, no esta lista.
@@ -757,8 +776,8 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
    ninguna fila: tras el vaciado daban «todo en ok» sobre cero, que es un verde que no prueba nada.
    Cuánto cubre hoy el contraste **no se lee de aquí**: lo dicen ellas al correr.
    ✅ **Y que hoy salgan muchas EN VACÍO no es un defecto del tablero** (decisión del usuario,
-   2026-09-21): el registro se está estrenando en producción y ocho de sus diez hojas tienen cero
-   filas, así que no hay con qué contrastar. Cada pieza se contrasta **cuando su hoja reciba sus
+   2026-09-21): el registro se está estrenando en producción y varias de sus diez hojas siguen sin
+   filas (cuántas, lo dice `estado-maduracion.mjs`), así que no hay con qué contrastar. Cada pieza se contrasta **cuando su hoja reciba sus
    primeras filas**, no antes — y el censo sigue diciéndolo en crudo a propósito, para que ese verde
    sobre cero no se confunda nunca con una prueba.
 8. **La CI sigue sin poder vigilar `index (8)`** —`deploy.yml` corre lint, vitest, auditorías y build, y
