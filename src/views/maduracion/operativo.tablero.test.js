@@ -210,7 +210,9 @@ describe('Maduración · tablero · el mapa de planta', () => {
     expect(mapa.salas.map((s) => s.sala)).toEqual(SALAS_VISIBLES);
     for (const s of mapa.salas) expect(s.tanques.map((t) => t.tanque)).toEqual(MAD_TANQUES_POR_SALA[s.sala]);
     expect(mapa.salas.reduce((a, s) => a + s.tanques.length, 0)).toBe(38);
-    expect(MODOS_MAPA.map((x) => x.clave)).toEqual(['estado', 'vivos', 'densidad']);
+    // 0f · 3 (2026-09-25): a Estado, Vivos y Densidad se suman los ocho colores que aprobó el usuario, en tres grupos.
+    expect(MODOS_MAPA.map((x) => x.clave)).toEqual(['estado', 'lote', 'codigo', 'dias', 'vivos', 'densidad', 'hm', 'carga', 'mortalidad', 'copulas', 'parte']);
+    expect([...new Set(MODOS_MAPA.map((x) => x.grupo))]).toEqual(['lote', 'tanque', 'partes']);
   });
 
   it('el estado de un tanque es el de sus lotes EN ESA SALA; Mixto si no coinciden; vacío sin animales', () => {

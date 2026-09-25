@@ -181,9 +181,10 @@ describe('Maduración · operativo · 📊 Estado actual', () => {
     click(b);
     expect(b.isConnected).toBe(true);
     expect(b.classList.contains('is-sel')).toBe(true);
-    const info = root.querySelector('.mop-tq-info').textContent;
+    const info = root.querySelector('.mop-tq-info').textContent.replace(/\s+/g, ' ');
     expect(info).toContain('Sala 1 · tanque 1');
-    expect(info).toContain('QA (Producción, CA)');
+    // 0f · 3: la línea de texto pasó a ser el LIENZO del tanque (sus lotes con código y estado, y lo demás).
+    expect(info).toContain('QA · CA · Producción');
     click(root.querySelector('[data-mop-filtrar-tq]'));
     expect([elegido('sala'), elegido('tanque')]).toEqual(['Sala 1', '1']);
     expect(kpi('Vivos')).toBe('34');
@@ -1431,5 +1432,127 @@ describe('Maduración · operativo · 0f · 2b · 📉 Tendencias y ⏳ Permanen
     expect(t.querySelector('img')).toBeNull();
     expect(t.querySelector('.mop-permanencia li').textContent).toContain('<img src=x onerror=alert(1)> lleva 61 días');
     expect(t.querySelector('.mop-tendencias').textContent).toContain('<img src=x onerror=alert(1)>: huevos por desove');
+  });
+});
+
+/* 0f · 3 (2026-09-25) · el mapa de planta: once colores en tres grupos y el LIENZO del tanque pulsado. Las cifras las
+   prueba operativo.mapa.test.js (con su banco); aquí, que llegan a la pantalla, que el lienzo se abre y se cierra SIN
+   repintar, que «🛢 Abrir en Tanques» lleva a la ficha y que lo del Sheet sale escapado. La misma planta pequeña que
+   la prueba pura, con fechas como las del export. */
+describe('Maduración · operativo · 0f · 3 · el mapa de planta: colores y lienzo', () => {
+  const dmy = (iso) => iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4);
+  const ingM = (fecha, lote, sala, tanque, machos, hembras, cg) => ({ _SheetOrigin: O, 'Camaronera origen': 'CX', Fecha: dmy(fecha),
+    Lote: lote, 'Código genético': cg, 'Piscina Broodstock': 'P1', Sala: sala, Tanque: tanque, Machos: machos, Hembras: hembras });
+  const tqM = (fecha, sala, tanque, extra) => ({ _SheetOrigin: O, 'Machos muertos': '', Fecha: dmy(fecha), Sala: sala, Tanque: tanque, ...extra });
+  const PLANTA_M = (lote = 'MA') => [
+    ingM('2026-07-01', lote, 'Sala 1', 1, 10, 20, 'CA'),
+    ingM('2026-08-20', 'MB', 'Sala 1', 2, 10, 10, 'CB'),
+    ingM('2026-09-12', 'MD', 'Sala 4', 2, 4, 4, 'CA'),
+    ingM('2026-07-01', 'ME', 'Sala 4', 2, 2, 2, 'CB'),
+    ...['2026-09-13', '2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17', '2026-09-18'].map((f) => tqM(f, 'Sala 1', 1, { 'Machos muertos': 1, 'Cópulas': 4 })),
+    tqM('2026-09-14', 'Sala 1', 2, { 'Machos muertos': 2, 'Cópulas': 3 }),
+    tqM('2026-09-15', 'Sala 1', 2, { 'Machos muertos': 2, 'Cópulas': 3 }),
+    tqM('2026-09-19', 'Sala 4', 2, {}),
+  ];
+  const lienzo = () => root.querySelector('.mop-tq-info .mop-lienzo');
+  const texto = (el) => el.textContent.replace(/\s+/g, ' ');
+
+  it('once colores en tres grupos; los nuevos pintan el tanque, su globo y su leyenda', async () => {
+    await montar(PLANTA_M());
+    expect([...root.querySelectorAll('.mop-colores-g')].map((g) => g.querySelector('.mop-nota').textContent)).toEqual(['Del lote', 'Del tanque', 'De los partes']);
+    expect(root.querySelectorAll('[data-mop-color]')).toHaveLength(11);
+    click(root.querySelector('[data-mop-color="lote"]'));
+    expect(tq('Sala 1', 1).classList.contains('is-cat')).toBe(true);
+    expect(tq('Sala 1', 1).getAttribute('style')).toMatch(/^--mop-c:#/);
+    expect(tq('Sala 4', 2).classList.contains('is-varios')).toBe(true);
+    expect(texto(root.querySelector('.mop-mapa-card .mc-legend'))).toContain('Varios lotes 1');
+    click(root.querySelector('[data-mop-color="mortalidad"]'));
+    expect(tq('Sala 1', 2).getAttribute('style')).toBe('--mop-i:100%');
+    expect(tq('Sala 1', 2).getAttribute('title')).toContain('· 2 bajas por día de parte');
+    click(root.querySelector('[data-mop-color="parte"]'));
+    expect(tq('Sala 4', 2).classList.contains('is-p-hoy')).toBe(true);
+    expect(tq('Sala 1', 2).classList.contains('is-p-semana')).toBe(true);
+    click(root.querySelector('[data-mop-color="dias"]'));
+    expect(tq('Sala 1', 1).classList.contains('is-pr60')).toBe(true);
+    expect(root.querySelector('[data-mop-color="dias"]').getAttribute('aria-pressed')).toBe('true');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('pulsar un tanque abre su LIENZO bajo el mapa sin repintar; ✕ lo cierra', async () => {
+    await montar(PLANTA_M());
+    const b = tq('Sala 1', 1);
+    click(b);
+    expect(b.isConnected).toBe(true);
+    const l = lienzo();
+    expect(texto(l)).toContain('Sala 1 · tanque 1');
+    expect(texto(l)).toContain('MA · CA · Producción 65 d');
+    expect(texto(l)).toContain('H:M 5');
+    expect(texto(l)).toContain('6 bajas · 0 descartes · 24 cópulas (20 %) · 6 día(s) con parte · último parte 18/09/2026');
+    expect(l.querySelector('svg.mop-curva polyline')).not.toBeNull();
+    expect(l.querySelector('[data-mop-filtrar-tq="Sala 1|1"]')).not.toBeNull();
+    expect(l.querySelector('[data-mop-abrir-tq="Sala 1|1"]')).not.toBeNull();
+    click(l.querySelector('[data-mop-tq-cerrar]'));
+    expect(lienzo()).toBeNull();
+    expect(root.querySelector('.mop-tq.is-sel')).toBeNull();
+    expect(root.querySelector('.mop-tq-info').textContent).toContain('Pulsa un tanque');
+    expect(b.isConnected).toBe(true);
+  });
+
+  it('«🛢 Abrir en Tanques» lleva a la ficha completa de ese tanque', async () => {
+    await montar(PLANTA_M());
+    click(tq('Sala 1', 2));
+    click(lienzo().querySelector('[data-mop-abrir-tq]'));
+    expect(root.querySelector('[data-mop-sub="tanques"]').classList.contains('is-on')).toBe(true);
+    expect(texto(root.querySelector('.mop-ficha .mc-card-h'))).toContain('🛢 Sala 1 · Tanque 2');
+  });
+
+  it('un tanque vacío: el lienzo lo dice y no ofrece abrirlo', async () => {
+    await montar(PLANTA_M());
+    click(tq('Sala 1', 3));
+    expect(texto(lienzo())).toContain('Vacío al cierre del 19/09/2026');
+    expect(lienzo().querySelector('[data-mop-abrir-tq]')).toBeNull();
+    expect(lienzo().querySelector('svg')).toBeNull();
+  });
+
+  it('lo que viene del Sheet sale ESCAPADO en el lienzo, el globo y la leyenda', async () => {
+    await montar(PLANTA_M('<img src=x onerror=alert(1)>'));
+    click(root.querySelector('[data-mop-color="lote"]'));
+    click(tq('Sala 1', 1));
+    const card = root.querySelector('.mop-mapa-card');
+    expect(card.querySelector('img')).toBeNull();
+    expect(texto(lienzo())).toContain('<img src=x onerror=alert(1)> · CA');
+    expect(texto(card.querySelector('.mc-legend'))).toContain('<img src=x onerror=alert(1)> 1');
+  });
+
+  it('los datos IMPOSIBLES de los partes se DICEN (decisión del usuario, 2026-09-25): más cópulas que hembras y cópulas sin hembras', async () => {
+    // MB (10 ♀) suma 40 cópulas más el 16/09 → 46 ÷ 30 hembras-día > 100 %; el tanque 3 de la Sala 1 está VACÍO y tiene un parte con 2.
+    await montar([...PLANTA_M(), tqM('2026-09-16', 'Sala 1', 2, { 'Cópulas': 40 }), tqM('2026-09-17', 'Sala 1', 3, { 'Cópulas': 2 })]);
+    click(root.querySelector('[data-mop-color="copulas"]'));
+    expect(tq('Sala 1', 2).classList.contains('is-imposible')).toBe(true);
+    expect(tq('Sala 1', 2).getAttribute('title')).toContain('⚠ más cópulas que hembras');
+    expect(texto(root.querySelector('.mop-mapa-card .mc-legend'))).toContain('Más cópulas que hembras 1');
+    click(tq('Sala 1', 2));
+    expect(texto(lienzo())).toMatch(/46 cópulas \([\d,]+ % ⚠ más cópulas que hembras\)/);
+    click(tq('Sala 1', 3));
+    expect(texto(lienzo())).toContain('Vacío al cierre');
+    expect(texto(lienzo())).toContain('· ⚠ 2 cópulas en días sin hembras en el libro');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('🔑 CONTRASTE (decisión del usuario, 2026-09-25): en tema claro ningún tanque lleva el número BLANCO salvo la paleta oscura, y las escalas van TOPADAS', async () => {
+    /* Medido en Chrome: con el número blanco, 20 de los 26 tanques ocupados de «Estado» quedaban bajo 3:1. La regla vive
+       en operativo.css (`--mop-num` y los topes); esto vigila que nadie la deshaga al añadir un color. El contraste real
+       lo mide la revisión en Chrome (`validar-p3.mjs`). */
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/views/maduracion/operativo.css', 'utf8');
+    const reglas = [...css.matchAll(/([^{}]*\.mop-tq[^{}]*)\{([^}]*)\}/g)].map((m) => ({ sel: m[1].trim().split('\n').pop().trim(), dec: m[2] }));
+    expect(reglas.length).toBeGreaterThan(20);   // miró de verdad
+    const blancas = reglas.filter((r) => /color:\s*#fff\b/.test(r.dec) && !/data-theme="dark"/.test(r.sel)).map((r) => r.sel);
+    expect(blancas).toEqual(['.mop-tq.is-cat.is-tx-cla']);
+    const escalas = reglas.filter((r) => /var\(--mop-i\b/.test(r.dec) && /color:\s*var\(--mop-num\)/.test(r.dec));
+    expect(escalas.length).toBeGreaterThanOrEqual(5);
+    for (const r of escalas) expect(/min\(var\(--mop-i[^)]*\), var\(--mop-tope-|var\(--c-bueno\)/.test(r.dec), r.sel).toBe(true);
+    expect(css).toMatch(/\.mop-mapa-card \{ --mop-num: var\(--c-text\);/);
+    expect(css).toMatch(/\[data-theme="dark"\] \.mop-mapa-card \{ --mop-num: #fff;/);
   });
 });

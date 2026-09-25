@@ -38,15 +38,22 @@
 .mop-tq.is-extra { border-style: dashed; border-width: 2px; }
 .mop-tq-info { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 20px; margin-top: 10px; font-size: 12px; color: var(--c-text-soft); }
 
-/* Colores del mapa: los tanques y sus muestras de la leyenda (.mop-sw) */
-.mop-tq.is-e-produccion, .mop-sw.is-e-produccion, .mop-tq.is-d-ok, .mop-sw.is-d-ok { background: color-mix(in srgb, var(--c-bueno) 75%, var(--c-surface)); color: #fff; border-color: transparent; }
+/* Colores del mapa: los tanques y sus muestras de la leyenda (.mop-sw)
+   0f · 3 · CONTRASTE (decisión del usuario, 2026-09-25): en tema CLARO el número de cada tanque va OSCURO (`--mop-num`)
+   —en blanco, 20 de los 26 tanques ocupados de «Estado» quedaban por debajo de 3:1, medido en Chrome— y las escalas se
+   TOPAN donde el número oscuro aún llega a 4,5:1 (rojo 85 %, turquesa 75 %, morado 70 %; el verde y el ámbar llegan
+   siempre). En tema OSCURO todo sigue como estaba: número blanco y la escala entera. Sobre los colores oscuros de la
+   paleta el número va blanco (`is-tx-cla`, lo decide operativo.mapa.js). */
+.mop-mapa-card { --mop-num: var(--c-text); --mop-tope-rojo: 85%; --mop-tope-turq: 75%; --mop-tope-mor: 70%; }
+[data-theme="dark"] .mop-mapa-card { --mop-num: #fff; --mop-tope-rojo: 100%; --mop-tope-turq: 100%; --mop-tope-mor: 100%; }
+.mop-tq.is-e-produccion, .mop-sw.is-e-produccion, .mop-tq.is-d-ok, .mop-sw.is-d-ok { background: color-mix(in srgb, var(--c-bueno) 75%, var(--c-surface)); color: var(--mop-num); border-color: transparent; }
 .mop-tq.is-e-cuarentena, .mop-sw.is-e-cuarentena, .mop-tq.is-d-bajo, .mop-sw.is-d-bajo { background: color-mix(in srgb, var(--c-malo) 85%, var(--c-surface)); color: #3a2c00; border-color: transparent; }
-.mop-tq.is-e-mixto, .mop-sw.is-e-mixto { background: color-mix(in srgb, #7e57c2 80%, var(--c-surface)); color: #fff; border-color: transparent; }
-.mop-tq.is-d-alto, .mop-sw.is-d-alto { background: color-mix(in srgb, var(--c-grave) 80%, var(--c-surface)); color: #fff; border-color: transparent; }
+.mop-tq.is-e-mixto, .mop-sw.is-e-mixto { background: color-mix(in srgb, #7e57c2 min(80%, var(--mop-tope-mor)), var(--c-surface)); color: var(--mop-num); border-color: transparent; }
+.mop-tq.is-d-alto, .mop-sw.is-d-alto { background: color-mix(in srgb, var(--c-grave) min(80%, var(--mop-tope-rojo)), var(--c-surface)); color: var(--mop-num); border-color: transparent; }
 .mop-tq.is-e-sin, .mop-sw.is-e-sin, .mop-tq.is-d-sin, .mop-sw.is-d-sin { background: var(--c-sin-dato); color: #37474f; }
 .mop-tq.is-e-vacio, .mop-tq.is-d-vacio, .mop-tq.is-v0 { background: transparent; border-style: dashed; color: var(--c-text-muted); }
 .mop-sw.is-e-vacio { background: transparent; border: 1px dashed var(--c-text-muted); box-sizing: border-box; }
-.mop-tq.is-v, .mop-sw.is-v { background: color-mix(in srgb, var(--c-brand-600) var(--mop-i, 50%), var(--c-surface)); color: #fff; border-color: transparent; }
+.mop-tq.is-v, .mop-sw.is-v { background: color-mix(in srgb, var(--c-brand-600) min(var(--mop-i, 50%), var(--mop-tope-turq)), var(--c-surface)); color: var(--mop-num); border-color: transparent; }
 
 /* Listas de alertas y avisos */
 .mop-lista { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 12.5px; color: var(--c-text); }
@@ -95,6 +102,40 @@
   .mop-det-grid { grid-template-columns: 1fr; }
   .mop-mapa-card .mc-seg { margin-left: 0; }
 }
+
+/* 0f · 3 (2026-09-25) · el mapa colorea de once maneras, en tres grupos, y el tanque pulsado abre su LIENZO.
+   Los colores nuevos los decide operativo.mapa.js (`colorDeTanque`); aquí sólo se pintan. */
+.mop-colores { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 0 0 10px; }
+.mop-colores .mc-seg, .mop-mapa-card .mop-colores .mc-seg { margin-left: 0; }
+.mop-colores-g { display: inline-flex; align-items: center; gap: 6px; }
+.mop-tq.is-cat, .mop-sw.is-cat { background: color-mix(in srgb, var(--mop-c) 85%, var(--c-surface)); color: var(--mop-num); border-color: transparent; }
+.mop-tq.is-cat.is-tx-cla { color: #fff; }
+.mop-tq.is-varios, .mop-sw.is-varios { background: repeating-linear-gradient(135deg, var(--c-sin-dato) 0 5px, var(--c-surface) 5px 10px); color: var(--c-text); }
+.mop-tq.is-q, .mop-sw.is-q { background: color-mix(in srgb, var(--c-malo) var(--mop-i, 60%), var(--c-surface)); color: #3a2c00; border-color: transparent; }
+.mop-tq.is-pr, .mop-sw.is-pr { background: color-mix(in srgb, var(--c-bueno) var(--mop-i, 60%), var(--c-surface)); color: var(--mop-num); border-color: transparent; }
+.mop-tq.is-pr60, .mop-sw.is-pr60 { background: color-mix(in srgb, var(--c-grave) min(85%, var(--mop-tope-rojo)), var(--c-surface)); color: var(--mop-num); border-color: transparent; }
+.mop-tq.is-ik, .mop-sw.is-ik { background: color-mix(in srgb, var(--c-brand-600) min(var(--mop-i, 60%), var(--mop-tope-turq)), var(--c-surface)); color: var(--mop-num); border-color: transparent; }
+.mop-tq.is-im, .mop-sw.is-im { background: color-mix(in srgb, var(--c-grave) min(var(--mop-i, 60%), var(--mop-tope-rojo)), var(--c-surface)); color: var(--mop-num); border-color: transparent; }
+.mop-tq.is-ic, .mop-sw.is-ic { background: color-mix(in srgb, #7e57c2 min(var(--mop-i, 60%), var(--mop-tope-mor)), var(--c-surface)); color: var(--mop-num); border-color: transparent; }
+/* Cópulas IMPOSIBLES (más que hembras): rayado rojo con borde, para que no se confunda con ningún tramo de la escala. */
+.mop-tq.is-imposible, .mop-sw.is-imposible { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--c-grave) 35%, var(--c-surface)) 0 5px, var(--c-surface) 5px 10px); color: var(--c-text); }
+.mop-tq.is-imposible { border: 2px solid var(--c-grave); }
+.mop-tq.is-sd, .mop-sw.is-sd, .mop-tq.is-p-sin, .mop-sw.is-p-sin { background: var(--c-sin-dato); color: #37474f; }
+.mop-tq.is-p-hoy, .mop-sw.is-p-hoy { background: color-mix(in srgb, var(--c-bueno) 85%, var(--c-surface)); color: var(--mop-num); border-color: transparent; }
+.mop-tq.is-p-ayer, .mop-sw.is-p-ayer { background: color-mix(in srgb, var(--c-bueno) 40%, var(--c-surface)); color: var(--c-text); border-color: transparent; }
+.mop-tq.is-p-semana, .mop-sw.is-p-semana { background: color-mix(in srgb, var(--c-malo) 80%, var(--c-surface)); color: #3a2c00; border-color: transparent; }
+.mop-tq.is-p-antiguo, .mop-sw.is-p-antiguo { background: color-mix(in srgb, var(--c-grave) min(80%, var(--mop-tope-rojo)), var(--c-surface)); color: var(--mop-num); border-color: transparent; }
+.mop-sw.is-varios, .mop-sw.is-cat, .mop-sw.is-imposible { border: 0; }
+.mop-sw.is-imposible { outline: 1.5px solid var(--c-grave); outline-offset: -1.5px; }
+.mop-lienzo { flex: 1 1 100%; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--c-border); border-radius: 12px;
+  background: var(--c-surface-2); color: var(--c-text); font-size: 12.5px; }
+.mop-lienzo-h { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.mop-lienzo-x { margin-left: auto; }
+.mop-lienzo-lotes { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.mop-lienzo-p { margin: 0; line-height: 1.45; }
+.mop-lienzo-curva { display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--c-text-soft); }
+.mop-curva { color: var(--c-brand-600); overflow: visible; }
+.mop-lienzo-b { display: flex; flex-wrap: wrap; gap: 6px; }
 
 /* 🧬 Lotes (F2.2): la tabla maestra, la cascada del cuadre y el selector de agrupación */
 .mop-lotes tbody tr.mop-lote-fila { cursor: pointer; }

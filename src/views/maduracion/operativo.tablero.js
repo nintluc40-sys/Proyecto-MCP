@@ -387,11 +387,21 @@ export function kpiReproduccion(filasDesoves, periodo, F) {
 
 export const ESTADO_VACIO = 'Vacío';
 export const ESTADO_SIN = 'Sin estado';
-/** Por qué se colorea el mapa. «Estado» es el de por defecto (decisión del usuario, 2026-09-19). */
+/** Por qué se colorea el mapa. «Estado» es el de por defecto (decisión del usuario, 2026-09-19). 0f · 3
+ *  (2026-09-25): ocho más, aprobados por el usuario, en tres grupos (`GRUPOS_MAPA` de operativo.mapa.js). Estado,
+ *  Vivos y Densidad los pinta la vista como siempre; los nuevos, `colorDeTanque` (operativo.mapa.js). */
 export const MODOS_MAPA = [
-  { clave: 'estado', etiqueta: 'Estado' },
-  { clave: 'vivos', etiqueta: 'Vivos' },
-  { clave: 'densidad', etiqueta: 'Densidad' },
+  { clave: 'estado', etiqueta: 'Estado', grupo: 'lote' },
+  { clave: 'lote', etiqueta: 'Lote', grupo: 'lote' },
+  { clave: 'codigo', etiqueta: 'Código', grupo: 'lote' },
+  { clave: 'dias', etiqueta: 'Días', grupo: 'lote' },
+  { clave: 'vivos', etiqueta: 'Vivos', grupo: 'tanque' },
+  { clave: 'densidad', etiqueta: 'Densidad', grupo: 'tanque' },
+  { clave: 'hm', etiqueta: 'H:M', grupo: 'tanque' },
+  { clave: 'carga', etiqueta: 'Carga', grupo: 'tanque' },
+  { clave: 'mortalidad', etiqueta: 'Mortalidad', grupo: 'partes' },
+  { clave: 'copulas', etiqueta: 'Cópulas', grupo: 'partes' },
+  { clave: 'parte', etiqueta: 'Último parte', grupo: 'partes' },
 ];
 
 function celdaDeTanque(libro, sala, tanque, fueraDeCatalogo, F) {

@@ -8,7 +8,8 @@
      Esta cabecera se quedó atrás DOS veces —«dos sub-vistas» con cinco, y luego «cinco» con siete—, así que ya no
      lleva la cuenta: dice dónde mirar además de qué hay. Hoy:
      📊 Estado actual — los KPI (Vivos, Lotes, Salas, Ocupación, Mortalidad, Reproducción y Biomasa), el mapa de
-        planta (por estado, vivos o densidad), las alertas (con 📉 Tendencias frente al período anterior y
+        planta (los colores, en tres grupos, y el LIENZO del tanque pulsado, 0f · 3: operativo.mapa.js; los modos
+        viven en `MODOS_MAPA`), las alertas (con 📉 Tendencias frente al período anterior y
         ⏳ Permanencia, 0f · 2b: operativo.tendencias.js), los últimos registros y los lotes que salen de
         cuarentena en los próximos 7 días;
      🏠 Salas — una tarjeta por sala y, al pulsarla, su detalle: la T° por hora, el O₂, ♀/♂ y densidad por tanque,
@@ -49,6 +50,7 @@ import {
 import { INDICADORES } from './operativo.indicadores.js';
 import { FUENTES, umbralVigente, evaluar, UMBRALES_DE_AVISO } from './operativo.umbrales.js';
 import { periodoAnterior, presenciaDiaria, tendencias, permanencia, PARAMETROS_REPRODUCCION } from './operativo.tendencias.js';
+import { GRUPOS_MAPA, capasDelMapa, contextoDelMapa, colorDeTanque, leyendaDelMapa, resumenDeTanque } from './operativo.mapa.js';
 import { tablaDeLotes, fichaDeLote, DIMENSIONES_COMPARATIVA, comparativa } from './operativo.lotes.js';
 import { DIMENSIONES_BAJAS, desgloseDeBajas, motivosDeCierre, bajasPorHora, calorSalaDia, lotesCerrados } from './operativo.bajas.js';
 import { tablaDeTanques, fichaDeTanque, avisosDeTanques } from './operativo.tanques.js';
@@ -192,6 +194,7 @@ function tendenciasDe(memo, p, F) {
   return tendencias(memo.M, p, F, memo.partes, memo.presencia);
 }
 let _mapa = null;   // el último mapa pintado: la ficha del tanque pulsado se rellena sin repintar la vista
+let _ctxMapa = null;   // 0f · 3 · y lo que su lienzo necesita (capas, serie, partes y período de esa pintada)
 
 /* ============================================================
    VISTA
@@ -363,6 +366,9 @@ function estadoHTML(M, memo, p, F) {
   const r = kpiReproduccion(M.fuentes.desoves, p, F);
   const b = kpiBiomasa(M, F, p);
   _mapa = mapaDePlanta(M.libro, F);
+  /* 0f · 3 · lo que necesitan los colores nuevos del mapa y el lienzo de un tanque, que se abre SIN repintar. */
+  const serie = serieDe(memo, p);
+  _ctxMapa = { ctx: contextoDelMapa(_mapa, capasDelMapa(M, serie, memo.partes, p), M.fecha), serie, partes: memo.partes, p };
 
   const partesSalas = [];
   if (s.difieren) partesSalas.push('hoja ≠ libro');
@@ -420,31 +426,79 @@ function textoTanque(t) {
   return `${base} — ${lotes} · ♀ ${nf(t.hembras)} ♂ ${nf(t.machos)} · H:M ${nf(t.hm, 2)} · ${t.densidad === '' ? 'densidad: sin área conocida' : 'densidad ' + nf(t.densidad, 2) + ' /m²'}`;
 }
 
+/** 0f · 3 · la curva de vivos del lienzo: una línea en SVG, sin Chart.js (es un vistazo, no un gráfico que leer). */
+function curvaSVG(curva) {
+  const v = (curva || []).map((d) => d.total);
+  if (v.length < 2) return '';
+  const max = Math.max(...v);
+  const min = Math.min(...v);
+  const W = 160;
+  const H = 30;
+  const x = (i) => 1 + (i * (W - 2)) / (v.length - 1);
+  const y = (n) => (max === min ? H / 2 : H - 2 - ((n - min) * (H - 4)) / (max - min));
+  const puntos = v.map((n, i) => x(i).toFixed(1) + ',' + y(n).toFixed(1)).join(' ');
+  return `<span class="mop-lienzo-curva">vivos ${nf(v[0])} → ${nf(v[v.length - 1])}
+    <svg class="mop-curva" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Vivos del tanque en el período: de ${nf(v[0])} a ${nf(v[v.length - 1])}">
+      <polyline points="${puntos}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>`;
+}
+
+/** 0f · 3 · el LIENZO del tanque pulsado (diseño aprobado: un panel bajo el mapa, sin repintar la vista). */
+function lienzoHTML(r, t) {
+  const k = r.sala + '|' + r.tanque;
+  const p = _ctxMapa.p;
+  const cabecera = `<div class="mop-lienzo-h"><b>${esc(r.sala)} · tanque ${esc(r.tanque)}</b>${r.fueraDeCatalogo ? ' <span class="mop-nota">fuera del catálogo de la sala</span>' : ''}
+    <button class="mc-mini mop-lienzo-x" data-mop-tq-cerrar aria-label="Cerrar el resumen del tanque">✕</button></div>`;
+  const lotes = r.vacio ? `<p class="muted mop-lienzo-p">Vacío al cierre del ${esc(dma(_mapaFecha()))}.</p>`
+    : `<ul class="mop-lienzo-lotes">${r.lotes.map((l) => `<li><b>${esc(l.lote)}</b> · ${esc(l.codigos.join('/') || 'sin código')}
+        · <span class="mop-chip is-e-${claseEstado(l.estado)}">${esc(l.estado || 'sin estado')}${l.dias === '' ? '' : ' ' + nf(l.dias) + ' d'}</span>
+        · ♀ ${nf(l.hembras)} ♂ ${nf(l.machos)}</li>`).join('')}</ul>
+      <p class="mop-lienzo-p">♀ ${nf(r.vivos.hembras)} · ♂ ${nf(r.vivos.machos)} · H:M ${nf(r.hm, 2)} ${dot(r.hmEstado, refUmbral('proporcionHM'))}
+        · ${r.densidad === '' ? 'densidad: sin área conocida' : 'densidad ' + nf(r.densidad, 2) + ' /m² ' + dot(r.densidadEstado, refUmbral('densidad'))}
+        · ${r.cargaMetrica === '' ? 'carga: sin peso registrado' : 'carga ' + nf(r.cargaMetrica, 2) + ' g/m²'}</p>`;
+  const a = r.periodo;
+  /* Los dos datos IMPOSIBLES de los partes se DICEN, no se esconden ni se corrigen (decisión del usuario, 2026-09-25). */
+  const imposible = typeof a.pctCopulas === 'number' && a.pctCopulas > 100 ? ' ⚠ más cópulas que hembras' : '';
+  const sinHembras = a.copulasSinHembras ? ` · ⚠ ${nf(a.copulasSinHembras)} cópulas en días sin hembras en el libro` : '';
+  const partes = `<p class="mop-lienzo-p"><b>${esc(etiquetaPeriodo(p))}:</b> ${a.diasConParte ? `${nf(a.bajas)} bajas · ${nf(a.descartes)} descartes · ${nf(a.copulas)} cópulas${a.pctCopulas === '' ? '' : ' (' + pc(a.pctCopulas) + imposible + ')'}${sinHembras} · ${nf(a.diasConParte)} día(s) con parte`
+    : 'sin partes en el período'} · último parte ${r.ultimoParte ? esc(dma(r.ultimoParte)) : '—'}</p>`;
+  const botones = `<div class="mop-lienzo-b"><button class="mc-mini" data-mop-filtrar-tq="${esc(k)}">Filtrar por este tanque</button>${!r.vacio && t.enFiltro
+    ? ` <button class="mc-mini" data-mop-abrir-tq="${esc(k)}">🛢 Abrir en Tanques</button>` : ''}</div>`;
+  return `<div class="mop-lienzo" role="region" aria-label="${esc('Resumen del tanque ' + r.tanque + ' de ' + r.sala)}">
+    ${cabecera}${lotes}${partes}${r.vacio ? '' : curvaSVG(r.curva)}${botones}</div>`;
+}
+const _mapaFecha = () => (_ctxMapa && _ctxMapa.ctx.fecha) || '';
+
 function infoTanqueHTML(mapa) {
-  if (!vOp.tanqueSel || !mapa) return '<span class="muted">Pulsa un tanque para ver sus lotes, ♀/♂ y densidad.</span>';
+  if (!vOp.tanqueSel || !mapa) return '<span class="muted">Pulsa un tanque para ver su resumen: lotes, ♀/♂, densidad, sus partes y su curva de vivos.</span>';
   const i = vOp.tanqueSel.lastIndexOf('|');
   const sala = vOp.tanqueSel.slice(0, i);
   const n = vOp.tanqueSel.slice(i + 1);
   const t = ((mapa.salas.find((s) => s.sala === sala) || {}).tanques || []).find((x) => String(x.tanque) === n);
   if (!t) return '';
-  return `<b>${esc(textoTanque(t))}</b> <button class="mc-mini" data-mop-filtrar-tq="${esc(vOp.tanqueSel)}">Filtrar por este tanque</button>`;
+  if (!_ctxMapa) return `<b>${esc(textoTanque(t))}</b> <button class="mc-mini" data-mop-filtrar-tq="${esc(vOp.tanqueSel)}">Filtrar por este tanque</button>`;
+  return lienzoHTML(resumenDeTanque(t, _ctxMapa.ctx, _ctxMapa.serie, _ctxMapa.partes, _ctxMapa.p), t);
 }
 
 function mapaHTML(mapa, M, F) {
   const modo = MODOS_MAPA.some((x) => x.clave === vOp.color) ? vOp.color : 'estado';
   const filtrado = hayFiltro(F);
   const ocup = new Map((M.salas || []).map((s) => [s.sala, s.propuesto]));
+  /* 0f · 3 · los ocho colores nuevos los decide operativo.mapa.js; los tres de siempre, aquí como siempre. */
+  const nuevo = !['estado', 'densidad', 'vivos'].includes(modo) && _ctxMapa ? (t) => colorDeTanque(t, modo, _ctxMapa.ctx) : null;
   const celda = (t) => {
     const k = t.sala + '|' + t.tanque;
     const cls = ['mop-tq'];
+    const c = nuevo ? nuevo(t) : null;
     if (modo === 'estado') cls.push('is-e-' + claseEstado(t.estado));
     else if (modo === 'densidad') cls.push('is-d-' + (!t.vivos ? 'vacio' : t.densidadEstado || 'sin'));
+    else if (c) cls.push(c.clase);
     else cls.push(t.vivos ? 'is-v' : 'is-v0');
     if (filtrado && !t.enFiltro) cls.push('is-dim');
     if (t.fueraDeCatalogo) cls.push('is-extra');
     if (vOp.tanqueSel === k) cls.push('is-sel');
-    const intensidad = modo === 'vivos' && t.vivos ? ` style="--mop-i:${Math.round(15 + (85 * t.vivos) / Math.max(1, mapa.maxVivos))}%"` : '';
-    const texto = textoTanque(t);
+    const intensidad = c ? (c.estilo ? ` style="${esc(c.estilo)}"` : '')
+      : modo === 'vivos' && t.vivos ? ` style="--mop-i:${Math.round(15 + (85 * t.vivos) / Math.max(1, mapa.maxVivos))}%"` : '';
+    const texto = textoTanque(t) + (c && t.vivos && c.texto ? ' · ' + c.texto : '');
     return `<button class="${cls.join(' ')}" data-mop-tq="${esc(k)}" title="${esc(texto)}" aria-label="${esc(texto)}"${intensidad}>${esc(t.tanque)}</button>`;
   };
   const salas = mapa.salas.map((s) => {
@@ -462,14 +516,19 @@ function mapaHTML(mapa, M, F) {
       <span class="mc-lg"><i class="mop-sw is-d-bajo"></i>Por debajo <b>${nf(d.bajo)}</b></span>
       <span class="mc-lg"><i class="mop-sw is-d-alto"></i>Por encima <b>${nf(d.alto)}</b></span>
       <span class="mc-lg"><i class="mop-sw is-d-sin"></i>Sin área conocida <b>${nf(d.sinDato)}</b></span>`;
+  } else if (nuevo) {
+    leyenda = leyendaDelMapa(mapa, modo, _ctxMapa.ctx).map((x) => `<span class="mc-lg"><i class="mop-sw ${x.clase}"${x.estilo ? ` style="${esc(x.estilo)}"` : ''}></i>${esc(x.etiqueta)}${x.n === '' ? '' : ` <b>${nf(x.n)}</b>`}</span>`).join('');
   } else {
     leyenda = `<span class="mc-lg"><i class="mop-sw is-v" style="--mop-i:20%"></i>pocos</span>
       <span class="mc-lg"><i class="mop-sw is-v" style="--mop-i:100%"></i>el más poblado: <b>${nf(mapa.maxVivos)}</b> vivos</span>`;
   }
-  const botones = MODOS_MAPA.map((x) => `<button class="mc-seg-b ${x.clave === modo ? 'is-on' : ''}" data-mop-color="${x.clave}" aria-pressed="${x.clave === modo}">${esc(x.etiqueta)}</button>`).join('');
+  /* 0f · 3 · once colores en tres grupos (del lote, del tanque, de los partes), en su propia fila bajo el título. */
+  const boton = (x) => `<button class="mc-seg-b ${x.clave === modo ? 'is-on' : ''}" data-mop-color="${x.clave}" aria-pressed="${x.clave === modo}">${esc(x.etiqueta)}</button>`;
+  const botones = GRUPOS_MAPA.map((g) => `<span class="mop-colores-g"><span class="mop-nota">${esc(g.etiqueta)}</span>
+      <span class="mc-seg mc-seg-sm" role="group" aria-label="${esc('Color del mapa · ' + g.etiqueta)}">${MODOS_MAPA.filter((x) => x.grupo === g.grupo).map(boton).join('')}</span></span>`).join('');
   return `<div class="mc-card mc-card-wide mop-mapa-card">
-    <h4 class="mc-card-h">🗺️ Mapa de planta <span class="mc-h-note">al cierre del ${esc(dma(M.fecha))}${filtrado ? ' · resaltado lo filtrado' : ''}</span>
-      <span class="mc-seg mc-seg-sm" role="group" aria-label="Color del mapa">${botones}</span></h4>
+    <h4 class="mc-card-h">🗺️ Mapa de planta <span class="mc-h-note">al cierre del ${esc(dma(M.fecha))}${filtrado ? ' · resaltado lo filtrado' : ''}</span></h4>
+    <div class="mop-colores">${botones}</div>
     <div class="mop-mapa">${salas}</div>
     <div class="mc-legend">${leyenda}</div>
     <div class="mop-tq-info" aria-live="polite">${infoTanqueHTML(mapa)}</div>
@@ -2058,6 +2117,16 @@ function bind(root) {
       vOp.sala = k.slice(0, i);
       vOp.tanque = k.slice(i + 1);
       repintar();
+      return;
+    }
+    /* 0f · 3 · el lienzo del tanque: «🛢 Abrir en Tanques» lleva a su ficha completa; ✕ lo cierra sin repintar. */
+    const abr = t.closest('[data-mop-abrir-tq]');
+    if (abr) { vOp.sub = 'tanques'; vOp.tqFicha = abr.dataset.mopAbrirTq; repintar(); return; }
+    if (t.closest('[data-mop-tq-cerrar]')) {
+      vOp.tanqueSel = '';
+      root.querySelectorAll('.mop-tq.is-sel').forEach((b) => b.classList.remove('is-sel'));
+      const info = root.querySelector('.mop-tq-info');
+      if (info) info.innerHTML = infoTanqueHTML(_mapa);
       return;
     }
     // Un tanque del mapa: su ficha se abre SIN repintar la vista (el foco se queda en el tanque).
