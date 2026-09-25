@@ -277,4 +277,18 @@ describe('Ingreso · la cola tampoco entrega un ingreso al GAS viejo', () => {
     expect(envios).toHaveLength(3);
     expect(preguntasVer).toBe(1);
   });
+
+  /* 🔑 Desde la C (2026-09-24) el «sí» se RECUERDA 30 min, así que con un GAS que contesta, preguntar por cada envío ya no
+     sale a la red y la prueba de arriba no lo distingue: la mutación S11 sobrevivía (auditoría del 2026-09-25). El caso que
+     esta regla protege es el GAS MUDO: ahí no hay nada que recordar, y cada pregunta de más sería otra espera de hasta 12 s. */
+  it('PV3 · con el GAS SIN RESPONDER, la cola también pregunta UNA sola vez por vaciado (y no entrega nada)', async () => {
+    const url = 'https://script.google.com/macros/s/AKfycbPRUEBA/exec';
+    localStorage.setItem('larv4_syncqueue', JSON.stringify(['Maduración Ingreso', 'Maduración Lotes', 'Maduración Fin de Ciclo']
+      .map((sheetName, i) => ({ ts: Date.now(), url, payload: { sheetName, headers: ['A'], rows: [['x' + i]] } }))));
+    respuestaVer = 'red';
+    await H.flushSyncQueue();
+    expect(envios).toHaveLength(0);
+    expect(cola()).toHaveLength(3);
+    expect(preguntasVer).toBe(1);
+  });
 });

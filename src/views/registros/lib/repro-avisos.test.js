@@ -208,6 +208,18 @@ describe('E · eventos', () => {
     expect(unAviso('err')).toMatch(/^No se registró nada: ningún Trovan superó la validación/);
     lineaVacia('repro-paso');
   });
+
+  /* F3 (auditoría del 2026-09-25, usuario) · con DOS vivas en el chip no se registra nada HASTA ELEGIR: eso no es «nada
+     válido», y el rojo decía justo lo contrario de lo que pedía el informe. */
+  it('🔴 F3 · con DOS hembras vivas en el chip: UN aviso NARANJA que dice qué hacer, no el rojo de «nada válido»', async () => {
+    const A = hembra({}), B = hembra({ 'Número': '2', 'Piscina': 'P2', 'Código genético': 'GEN2.B', 'Lote': 'XB', 'Sala actual': 'S2', 'Tanque actual': 'T2' });
+    H.setLecturas({ [S.matriz]: [A, B], [S.bitacora]: [], [S.transfer]: [] });
+    await evento('Mortalidad');
+    expect(posts).toHaveLength(0);
+    expect(unAviso('warn')).toBe('1 microchip(s) los llevan DOS hembras vivas: elige abajo de cuál es cada uno.');
+    expect(document.querySelector('#repro-report .repro-elegir'), 'y abajo está dónde elegir').not.toBeNull();
+    lineaVacia('repro-paso');
+  });
 });
 
 describe('E · alta, traslado y elegir hembra', () => {
@@ -226,6 +238,15 @@ describe('E · alta, traslado y elegir hembra', () => {
   it('🔴 traslado: UN aviso verde con su número de traslado (sin «TR-ID»)', async () => {
     await traslado();
     expect(unAviso('ok')).toMatch(/^1 individuo\(s\) transferido\(s\) en el traslado TR-\d+\.$/);
+    lineaVacia('repro-t-paso');
+  });
+
+  it('🔴 F3 · traslado con DOS hembras vivas en el chip: UN aviso NARANJA para elegir, no «no hay individuos válidos»', async () => {
+    const A = hembra({}), B = hembra({ 'Número': '2', 'Piscina': 'P2', 'Código genético': 'GEN2.B', 'Lote': 'XB' });
+    H.setLecturas({ [S.matriz]: [A, B], [S.bitacora]: [], [S.transfer]: [] });
+    await traslado();
+    expect(posts).toHaveLength(0);
+    expect(unAviso('warn')).toBe('1 microchip(s) los llevan DOS hembras vivas: elige abajo de cuál es cada uno.');
     lineaVacia('repro-t-paso');
   });
 

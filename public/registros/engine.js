@@ -1198,6 +1198,9 @@ function recoverFicha(fid){
 /* ══════════════════════════════════════════
    TOAST
 ══════════════════════════════════════════ */
+/* F2 (auditoría del 2026-09-25, usuario) · ¿El mensaje ya empieza por su PROPIO emoji (✅, ⚠️, 📶, ⏳, ✏️…)? Entonces el
+   aviso no le antepone el del tipo: salía «✅ ✅ …» o «❌ ⚠️ …» en una treintena de avisos. Lo decide el mensaje. */
+function _avisoTraeIcono(msg){ return /^\s*\p{Extended_Pictographic}/u.test(String(msg)); }
 function toast(msg, type="info", dur=3500){
   const a = document.getElementById("toasts");
   if(!a) return;
@@ -1205,7 +1208,7 @@ function toast(msg, type="info", dur=3500){
   const t = VALID_TYPES.has(type) ? type : "info";
   const el = document.createElement("div");
   el.className = "toast " + t;
-  el.textContent = (t==="ok"?"✅":t==="err"?"❌":t==="warn"?"⚠️":"ℹ️") + " " + msg;
+  el.textContent = (_avisoTraeIcono(msg) ? "" : (t==="ok"?"✅":t==="err"?"❌":t==="warn"?"⚠️":"ℹ️") + " ") + msg;
   a.appendChild(el);
   // Guarda referencias a los timers en el propio elemento para poder
   // cancelarlos si el toast se desmonta antes (cambio de módulo, navegación)
@@ -9658,7 +9661,8 @@ function madDesEditar(k){
      la hoja tenga, también lo que otro dispositivo haya completado después (N2, N5). Por eso vaciar un campo NO lo borra
      de la hoja, y se avisa.
    · SI SIGUE EN LA COLA, SE CORRIGE EL ENVÍO PENDIENTE en su sitio: si saliera otro aparte, el viejo podría llegar después
-     y deshacerlo. Mientras la cola se está vaciando no se toca: al terminar reescribe la cola entera.
+     y deshacerlo. Mientras la cola se está vaciando no se toca: ese envío podría estar saliendo, y no se sabría si llegó.
+     (Aquí decía «al terminar reescribe la cola entera»: dejó de ser así con la A del 2026-09-24.)
    · SI NO LLEGÓ (⚠), se envía el desove COMPLETO: es registrarlo de nuevo.
    · El historial conserva la MISMA fila, con lo corregido y «✏️ corregido hh:mm»; su hora —y sus 36 h— no cambian.
    La corrección viaja con la MARCA de la entrada original (madlog:desoves + su id): así su fila sabe si está en cola, si
@@ -13026,6 +13030,14 @@ function _reproAvisoFinal(id, ok, hecho, envios, atencion){
 }
 /** Una acción que termina SIN registrar nada: rojo, y la línea de progreso borrada. */
 function _reproNada(id, msg, dur){ _reproPaso(id, ""); toast(msg, "err", dur || 6000); }
+/* F3 (auditoría del 2026-09-25, usuario) · Con microchips que llevan DOS hembras vivas no se registra nada hasta que se
+   ELIGE de cuál es cada uno, y eso no es «nada válido»: el aviso es NARANJA y dice qué hacer. El rojo queda para cuando de
+   verdad no hay nada que registrar. `vivas` = cuántos esperan esa elección; `rojo` = el texto de siempre. */
+function _reproNadaOElegir(id, vivas, rojo, atencion, dur){
+  const extra = (atencion && atencion.length) ? " " + atencion.join(" ") : "";
+  if(vivas){ _reproPaso(id, ""); toast(vivas + " microchip(s) los llevan DOS hembras vivas: elige abajo de cuál es cada uno." + extra, "warn", 9000); return; }
+  _reproNada(id, rojo + extra, extra ? 9000 : dur);
+}
 
 async function madReproProcess(){
   const fEl=document.getElementById("repro-fecha"), tEl=document.getElementById("repro-tipo"), cEl=document.getElementById("repro-codes");
@@ -13078,7 +13090,7 @@ async function madReproProcess(){
   // limpia el cuadro de texto (antes decía "✅ 0 registrado(s)" y borraba lo pegado).
   if(!res.bitacora && !res.matriz){
     _madReproShowReport(res.report, parsed.duplicates, tipo, false);
-    _reproNada("repro-paso", "No se registró nada: ningún Trovan superó la validación (revisa el detalle)."+(atencion.length ? " "+atencion.join(" ") : ""), atencion.length ? 9000 : 6000);
+    _reproNadaOElegir("repro-paso", res.report.variasVivas.length, "No se registró nada: ningún Trovan superó la validación (revisa el detalle).", atencion, 6000);
     return;
   }
   const url = gasUrl();
@@ -13256,7 +13268,7 @@ async function madReproTransfer(){
   const _vv=res.report.variasVivas||[];
   _reproElegirPend = _vv.length ? { clase:"traslado", fecha:fecha, tipo:tipo, origen:origen, composicion:composicion, trId:trId, chips:_vv.slice(),
     destinos:_destinos.map(function(d){ return { sala:d.sala, tanque:d.tanque, ids:d.ids.filter(function(id){ return _vv.indexOf(id)!==-1; }) }; }).filter(function(d){ return d.ids.length; }) } : null;
-  if(!res.transfer){ _madReproShowTransferReport(res.report, trId, false); _reproNada("repro-t-paso", "No hay individuos válidos para transferir."+(atencion.length ? " "+atencion.join(" ") : ""), atencion.length ? 9000 : 4000); return; }
+  if(!res.transfer){ _madReproShowTransferReport(res.report, trId, false); _reproNadaOElegir("repro-t-paso", _vv.length, "No hay individuos válidos para transferir.", atencion, 4000); return; }
   _reproPaso("repro-t-paso", "Enviando el traslado "+trId+"…");
   let okAll=true; const _t1={ sinAvisos:true }, _t2={ sinAvisos:true };
   if(res.matriz){ okAll=(await postPayload(res.matriz, gasUrl(), _t1)) && okAll; }
