@@ -376,7 +376,7 @@ describe('🔴 RD1 · sin la MATRIZ no hay traslado, y la copia local lleva la i
     await H.madReproTransfer();
     expect(envios).toHaveLength(0);
     const err = avisos.filter((a) => a.tipo === 'err').map((a) => a.msg).join(' | ');
-    expect(err).toContain('Maduración MATRIZ');
+    expect(err).toContain('no se pudo leer la MATRIZ');                        // E (09-24): sin «Maduración» ni «token»
     expect(err).toContain('Google no respondió en 30 s');                    // el motivo REAL
     // y no se sigue: pedir el historial con Google caído serían otros dos intentos de espera para nada
     expect(pedidas.filter((u) => decodeURIComponent(u).includes('Transferencias'))).toEqual([]);
@@ -697,7 +697,9 @@ describe('🔴 1a · el chip reciclado va a la hembra NUEVA aunque la copia en u
      «cuando vuelva la conexión». Los reintentos, el tope y el aviso de la MATRIZ los prueba reproductivo.loader.test.js. */
   describe('1c · sin red', () => {
     const sinRed = () => { throw new TypeError('Failed to fetch'); };   // lo que da fetch sin respuesta ninguna
-    const aviso = (inicio) => (avisos.find((a) => a.msg.startsWith(inicio)) || { msg: '' }).msg;
+    /* E (2026-09-24, usuario) · lo que requiere atención —lo sin confirmar, la MATRIZ guardada en el equipo— ya no es un
+       aviso aparte: va DENTRO del único aviso final de la acción. Se busca ahí, con las mismas exigencias. */
+    const aviso = (texto) => (avisos.find((a) => a.msg.includes(texto)) || { msg: '' }).msg;
     beforeEach(() => { Object.defineProperty(navigator, 'onLine', { value: false, configurable: true }); });
     afterEach(() => { delete navigator.onLine; });
 
@@ -709,9 +711,9 @@ describe('🔴 1a · el chip reciclado va a la hembra NUEVA aunque la copia en u
       expect(inf).toContain('Sin confirmar con «Maduración MATRIZ» (sin conexión a internet)');
       expect(inf).toContain('cuando vuelva la conexión: ' + CHIP);
       expect(inf).not.toContain('Google');
-      expect(aviso('No se pudo confirmar')).toContain('(sin conexión a internet)');
-      expect(aviso('No se pudo confirmar')).toContain('cuando vuelva la conexión');
-      expect(aviso('No se pudo confirmar')).not.toContain('Google');
+      expect(aviso('no se pudieron comprobar')).toContain('(sin conexión a internet)');
+      expect(aviso('no se pudieron comprobar')).toContain('cuando vuelva la conexión');
+      expect(aviso('no se pudieron comprobar')).not.toContain('Google');
     });
 
     it('🔴 traslado: lo mismo', async () => {
@@ -721,8 +723,8 @@ describe('🔴 1a · el chip reciclado va a la hembra NUEVA aunque la copia en u
       expect(inf).toContain('Sin confirmar con «Maduración MATRIZ» (sin conexión a internet)');
       expect(inf).toContain('cuando vuelva la conexión: ' + CHIP);
       expect(inf).not.toContain('Google');
-      expect(aviso('No se pudo confirmar')).toContain('cuando vuelva la conexión');
-      expect(aviso('No se pudo confirmar')).not.toContain('Google');
+      expect(aviso('no se pudieron comprobar')).toContain('cuando vuelva la conexión');
+      expect(aviso('no se pudieron comprobar')).not.toContain('Google');
     });
 
     it('🔴 con la copia local en uso, su aviso dice «sin conexión a internet»', async () => {
@@ -732,8 +734,8 @@ describe('🔴 1a · el chip reciclado va a la hembra NUEVA aunque la copia en u
       H.setLecturas({});                            // nada leído aún: el evento tiene que ir a buscar la MATRIZ
       lecturaRows = sinRed;
       await evento('Desove');
-      expect(aviso('⚠ Usando la copia local')).toContain('(sin conexión a internet)');
-      expect(aviso('⚠ Usando la copia local')).not.toContain('Google');
+      expect(aviso('Se usó la MATRIZ guardada')).toContain('(sin conexión a internet)');
+      expect(aviso('Se usó la MATRIZ guardada')).not.toContain('Google');
       expect(bitacora().rows[0][3]).toBe('S3');     // y la copia, que ya conoce a la nueva, deja salir el desove
     });
 
@@ -751,7 +753,7 @@ describe('🔴 1a · el chip reciclado va a la hembra NUEVA aunque la copia en u
       lecturaRows = () => { throw new Error('Failed to fetch'); };   // como en 1a: 2 intentos, 1,5 s
       const inf = await evento('Desove');
       expect(inf).toContain('Sin confirmar con «Maduración MATRIZ» (Google no respondió)');
-      expect(aviso('No se pudo confirmar')).toContain('cuando Google responda');
+      expect(aviso('no se pudieron comprobar')).toContain('cuando Google responda');
     }, 15000);
   });
 });

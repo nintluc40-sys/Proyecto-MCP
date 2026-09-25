@@ -200,8 +200,9 @@ describe('D11 · con el ledger recortado la transferencia NO sale', () => {
     await H.madReproTransfer();
     expect(envios).toHaveLength(0);
     const err = avisos.find((a) => a.tipo === 'err');
-    expect(err && err.msg).toContain('RECORTADA');
-    expect(err.msg).toContain('TR-ID');
+    // E (2026-09-24, usuario) · el porqué, en palabras llanas: sin «RECORTADA», «tope del servidor» ni «TR-ID».
+    expect(err && err.msg).toContain('Google devolvió incompleta la lista de traslados');
+    expect(err.msg).toContain('el número del próximo traslado podría repetir uno que ya existe');
     expect(document.querySelector('#repro-t-dests .repro-dest-codes').value).toBe(TROVAN);
   });
 

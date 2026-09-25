@@ -2058,11 +2058,13 @@ async function _colaTick(){
 //   "inflight" → ya había un envío en curso para esa hoja (postPayload ya avisó).
 // El valor de retorno booleano se mantiene (true solo en "ok") por compatibilidad
 // con los ~20 llamadores existentes.
+// E (2026-09-24, usuario) · `opts.sinAvisos`: quien llama da él UN aviso por la acción entera (los cuatro flujos del
+// reproductivo), así que aquí se callan los tres propios —en curso, idéntico y en cola— y sólo queda `opts.outcome`.
 async function postPayload(payload, url, opts){
   const _setOut = (v)=>{ if(opts) opts.outcome = v; };
   const flightKey = (payload && payload.sheetName) ? payload.sheetName : "_default";
   if(_syncInFlight.has(flightKey)){
-    toast("⏳ Sincronización en curso para " + flightKey + " — espera a que termine","warn",3500);
+    if(!(opts && opts.sinAvisos)) toast("⏳ Sincronización en curso para " + flightKey + " — espera a que termine","warn",3500);
     _setOut("inflight");
     return false;
   }
@@ -2073,7 +2075,7 @@ async function postPayload(payload, url, opts){
   if(_fp){
     const last = _lastSyncFingerprint.get(flightKey);
     if(last && last.hash === _fp && (Date.now() - last.ts) < _SYNC_DUP_WINDOW_MS){
-      toast("ℹ️ Payload idéntico al envío exitoso de hace "+Math.round((Date.now()-last.ts)/1000)+"s — operación omitida (datos ya en Sheets)","info",5000);
+      if(!(opts && opts.sinAvisos)) toast("ℹ️ Payload idéntico al envío exitoso de hace "+Math.round((Date.now()-last.ts)/1000)+"s — operación omitida (datos ya en Sheets)","info",5000);
       _setOut("ok");
       return true; // los datos YA están sincronizados; tratar como éxito
     }
@@ -2140,7 +2142,7 @@ async function postPayload(payload, url, opts){
     // se entregará y verificará solo (F3), así que NO es un error para el usuario.
     _enqueueSync(payload, _fp, url, opts && opts.mark);
     _setOut("queued");
-    toast("📶 Conexión inestable — guardado en cola; se sincronizará y verificará automáticamente","warn",5500);
+    if(!(opts && opts.sinAvisos)) toast("📶 Conexión inestable — guardado en cola; se sincronizará y verificará automáticamente","warn",5500);
     // F2: intento de auto-resolución. A los 8s (margen para que un envío lento
     // termine en el servidor) se vacía la cola: _verifyReqId confirmará por
     // lectura si el dato SÍ llegó y reconciliará "En verificación" → sincronizado,
@@ -2170,14 +2172,17 @@ function _syncAllBucket(opts, etiqueta){
 }
 /* H1 · mismo criterio para las rutas del Registro reproductivo, que mandan DOS payloads
    (MATRIZ + Bitácora/Transferencias) y comparten un único mensaje final. */
-function _madReproNotOk(lista){
+function _madReproNotOk(lista, extra){
   const l = (lista||[]).filter(o=> o && o.outcome);
+  const mas = extra ? " " + extra : "";   // E · lo que requiere atención va dentro de este mismo aviso
   if(l.length && l.every(o=> o.outcome === "queued" || o.outcome === "ok")){
-    toast("📤 Sin conexión confirmada: el registro quedó EN COLA y se enviará solo al reconectar. NO lo repitas.","info",6500);
+    toast("Sin conexión confirmada: el registro quedó EN COLA y se enviará solo al reconectar. NO lo repitas."+mas,"info",6500);
     return;
   }
+  // E · con `sinAvisos`, postPayload ya no dice que había otro envío de esa hoja en curso: se dice aquí.
+  if(l.some(o=> o.outcome === "inflight")){ toast("Todavía se está enviando el registro anterior: espera a que termine y vuelve a procesarlo."+mas,"warn",6000); return; }
   const rej = l.find(o=> o.gasMessage);
-  toast("No se pudo enviar a Google Sheets"+_gasMotivo(rej && rej.gasMessage)+". Reintenta.","err",6000);
+  toast("No se pudo enviar a Google Sheets"+_gasMotivo(rej && rej.gasMessage)+". Reintenta."+mas,"err",6000);
 }
 async function syncAll(){
   // Atajo: Microbiología delega en syncMic / syncCal (reemplazo por sesión a sus hojas).
@@ -12250,6 +12255,7 @@ function _reproEventosHTML(){
     + '<div style="display:flex;gap:8px;align-items:center;margin-top:10px">'
     +   '<button class="btn" type="button" style="font-weight:700" onclick="madReproProcess()">📋 Procesar registro</button>'
     +   '<button class="btn" type="button" onclick="madReproClear()">Limpiar</button>'
+    +   '<span id="repro-paso" aria-live="polite" style="font-size:12px;color:#475569"></span>'
     + '</div>'
     + '<div id="repro-report" style="margin-top:14px"></div>';
 }
@@ -12290,6 +12296,7 @@ function _reproAltaHTML(){
     +   '<button class="btn" type="button" style="font-weight:700" onclick="madReproAltaBatch()">➕ Registrar todos</button>'
     +   '<button class="btn" type="button" onclick="madReproAltaAddRows()">➕ 50 filas</button>'
     +   '<button class="btn" type="button" onclick="madReproAltaClear()">Limpiar</button>'
+    +   '<span id="repro-a-paso" aria-live="polite" style="font-size:12px;color:#475569"></span>'
     + '</div>'
     + '<div id="repro-a-report" style="margin-top:12px"></div>';
 }
@@ -12332,6 +12339,7 @@ function _reproTransferHTML(){
     + '</div>'
     + '<div style="display:flex;gap:8px;align-items:center;margin-top:12px">'
     +   '<button class="btn" type="button" style="font-weight:700" onclick="madReproTransfer()">🔄 Procesar transferencia</button>'
+    +   '<span id="repro-t-paso" aria-live="polite" style="font-size:12px;color:#475569"></span>'
     + '</div>'
     + '<div id="repro-t-report" style="margin-top:12px"></div>';
 }
@@ -12999,6 +13007,26 @@ function _reproFechaFutura(fecha){
   return fecha>today() ? "La fecha "+dmy(fecha)+" es posterior a hoy ("+dmy(today())+" en este dispositivo): no se envía nada." : "";
 }
 
+/* ── E (2026-09-24, usuario) · UN AVISO POR ACCIÓN, SIN JERGA ────────────────────────────────────────────────────────
+   Un registro del reproductivo llegaba a lanzar hasta seis avisos propios —leyendo, comprobando, copia local, sin
+   confirmar, procesando y el resultado— más los de cada uno de sus dos envíos, de 2 a 9 s cada uno: se apilaban y
+   tapaban la pantalla del móvil, y varios hablaban la lengua de la app («copia en uso», «token», «TR-ID», «tope del
+   servidor»). Decisiones del usuario: lo que va PASANDO se lee en una línea junto al botón, que se borra al terminar; al
+   final, UN aviso con el resultado y, detrás, lo que requiere atención (naranja; rojo si no se registró nada); el
+   detalle sigue en el informe de la ficha. Sólo estos cuatro flujos (eventos, alta, traslado y elegir hembra): sus
+   envíos van con `sinAvisos`, y el resto de fichas avisa como siempre. */
+function _reproPaso(id, txt){ const el=document.getElementById(id); if(el) el.textContent = txt ? "⏳ " + txt : ""; }
+/** El aviso final: `ok` (lo que dijeron sus envíos), `hecho` («12 desove(s) registrado(s)»), sus envíos (los `opts` de
+ *  postPayload: en cola, en curso o rechazado, y por qué) y lo que requiere atención, que va dentro del mismo aviso. */
+function _reproAvisoFinal(id, ok, hecho, envios, atencion){
+  _reproPaso(id, "");
+  const extra = (atencion || []).filter(Boolean).join(" ");
+  if(ok) toast(hecho + "." + (extra ? " " + extra : ""), extra ? "warn" : "ok", extra ? 9000 : 4200);
+  else _madReproNotOk(envios, extra);
+}
+/** Una acción que termina SIN registrar nada: rojo, y la línea de progreso borrada. */
+function _reproNada(id, msg, dur){ _reproPaso(id, ""); toast(msg, "err", dur || 6000); }
+
 async function madReproProcess(){
   const fEl=document.getElementById("repro-fecha"), tEl=document.getElementById("repro-tipo"), cEl=document.getElementById("repro-codes");
   if(!fEl||!tEl||!cEl) return;
@@ -13011,13 +13039,13 @@ async function madReproProcess(){
   // el lote. Con el store del dashboard cargado esto es instantáneo; si no, cae al
   // respaldo por GAS (y a la copia local si Google no responde).
   if(!_reproMatrixIndex()){
-    toast("Leyendo «Maduración MATRIZ»…","info",2500);
+    _reproPaso("repro-paso", "Leyendo la MATRIZ…");
     await _reproEnsureMatrix();
     _reproPaintMatrixBanner();
   }
   let mIdx = _reproMatrixIndex();
   if(!mIdx){
-    toast("No se pudo leer «Maduración MATRIZ»: "+(_reproSheetsErr||"error")+". No es tu configuración ni el token — vuelve a intentarlo con 🔄.","err",8000);
+    _reproNada("repro-paso", "No se pudo leer la MATRIZ ("+(_reproSheetsErr||"error")+"): no se registró nada. Vuelve a intentarlo con 🔄.", 8000);
     return;
   }
   /* 🔴 1a · un chip que la copia en uso da por muerto o no conoce puede ser un RECICLADO dado de alta después de ella:
@@ -13026,44 +13054,45 @@ async function madReproProcess(){
   const dudosos = _reproChipsDudosos(parsed.ids, mIdx);
   let sinConfirmar = [];
   if(dudosos.length && !_reproMatrizRecien()){
-    toast("Comprobando en «Maduración MATRIZ» "+dudosos.length+" microchip(s) que la copia en uso da por muertos o no conoce…","info",3500);
+    _reproPaso("repro-paso", "Comprobando "+dudosos.length+" microchip(s) en la MATRIZ…");
     if(await _reproMatrizFresca()) mIdx = _reproMatrixIndex();
     else sinConfirmar = dudosos.slice();
     _reproPaintMatrixBanner();
   }
   // Respaldo en uso: se avisa SIEMPRE, porque una hembra movida después de esa copia
   // se registraría con su ubicación antigua.
+  const atencion = [];   // E · lo que requiere atención va DENTRO del aviso final
   if(_reproMatrixOrigen()==="cache"){
-    toast("⚠ Usando la copia local de la MATRIZ del "+_reproFmtTs(_reproMatrixTs)+" ("+_reproPorQue()+"). Comprueba que la Sala/Tanque sean los actuales.","warn",7000);
+    atencion.push("Se usó la MATRIZ guardada en este equipo el "+_reproFmtTs(_reproMatrixTs)+" ("+_reproPorQue()+"): comprueba que la sala y el tanque sean los actuales.");
   }
   const _ids = (tipo==="Mortalidad" && sinConfirmar.length)
     ? parsed.ids.filter(function(id){ return !(sinConfirmar.indexOf(id)!==-1 && mIdx.get(id)); })
     : parsed.ids;
   const res = window.__rgLib.buildEventBatch({ ids: _ids, fecha: fecha, tipo: tipo, matrixIndex: mIdx });
-  if(res.error){ toast(res.error,"err",7000); return; }
+  if(res.error){ _reproNada("repro-paso", res.error, 7000); return; }
   res.report.sinConfirmar = sinConfirmar;
-  if(sinConfirmar.length) toast("No se pudo confirmar con la hoja ("+(_reproSheetsErr||"Google no respondió")+"): "+sinConfirmar.length+" microchip(s) no se registraron. Vuelve a procesarlos "+_reproCuando()+".","warn",9000);
+  if(sinConfirmar.length) atencion.push(sinConfirmar.length+" microchip(s) no se pudieron comprobar ("+(_reproSheetsErr||"Google no respondió")+") y no se registraron: vuelve a procesarlos "+_reproCuando()+".");
   // R5 · los chips con DOS vivas quedan pendientes de ELEGIR, con su contexto: luego se registran SÓLO ésos.
   _reproElegirPend = res.report.variasVivas.length ? { clase:"evento", fecha:fecha, tipo:tipo, chips:res.report.variasVivas.slice() } : null;
   // Ningún código superó la validación: se muestra el informe con el motivo y NO se
   // limpia el cuadro de texto (antes decía "✅ 0 registrado(s)" y borraba lo pegado).
   if(!res.bitacora && !res.matriz){
     _madReproShowReport(res.report, parsed.duplicates, tipo, false);
-    toast("Ningún Trovan superó la validación: no se registró nada. Revisa el detalle.","warn",6000);
+    _reproNada("repro-paso", "No se registró nada: ningún Trovan superó la validación (revisa el detalle)."+(atencion.length ? " "+atencion.join(" ") : ""), atencion.length ? 9000 : 6000);
     return;
   }
   const url = gasUrl();
-  toast("Procesando "+res.report.processed.length+" código(s) válido(s)…","info",2200);
-  let okAll=true; const _o1={}, _o2={};
+  _reproPaso("repro-paso", "Enviando "+res.report.processed.length+" "+(tipo==="Desove"?"desove(s)":"mortalidad(es)")+"…");
+  let okAll=true; const _o1={ sinAvisos:true }, _o2={ sinAvisos:true };
   if(res.bitacora){ okAll = (await postPayload(res.bitacora, url, _o1)) && okAll; }
   if(res.matriz){ okAll = (await postPayload(res.matriz, url, _o2)) && okAll; }
   if(res.matriz) _reproUltimaEscritura=Date.now();   // 1a · la MATRIZ cambió: una lectura de antes ya no vale para confirmar
   _madReproShowReport(res.report, parsed.duplicates, tipo, okAll);
   if(okAll){
-    toast("✅ "+res.report.processed.length+" "+(tipo==="Desove"?"desove(s)":"mortalidad(es)")+" registrado(s).","ok",4200);
+    _reproAvisoFinal("repro-paso", true, res.report.processed.length+" "+(tipo==="Desove"?"desove(s) registrado(s)":"mortalidad(es) registrada(s)"), [_o1,_o2], atencion);
     cEl.value="";
   } else {
-    _madReproNotOk([_o1,_o2]);
+    _reproAvisoFinal("repro-paso", false, "", [_o1,_o2], atencion);
   }
 }
 
@@ -13101,7 +13130,7 @@ async function madReproAltaBatch(){
   // Mejor esfuerzo: la MATRIZ aquí avisa de altas YA existentes (la misma cuaterna) y de un chip que ya
   // lleva una hembra VIVA; si no se puede leer NO se bloquea el alta (buildAltaBatch acepta índice
   // nulo) y quien decide es el GAS al escribir. (Un chip reutilizado con otra cuaterna es lo normal: no se avisa.)
-  if(!_reproMatrixIndex()) await _reproEnsureMatrix();
+  if(!_reproMatrixIndex()){ _reproPaso("repro-a-paso", "Leyendo la MATRIZ…"); await _reproEnsureMatrix(); }
   _reproPaintMatrixBanner();
   const forms=_reproAltaCollect(fecha), mIdx=_reproMatrixIndex();
   const res=window.__rgLib.buildAltaBatch(forms, mIdx);
@@ -13111,17 +13140,16 @@ async function madReproAltaBatch(){
     // «actualiza el GAS» y el de «la fecha tiene que ser posterior a la muerte de la anterior».
     // Con la identidad por cuaterna no queda ningún motivo de rechazo que dependa del servidor
     // ni de las fechas: o falta el Trovan, o esa cuaterna ya existe.
-    if(res.report.existentes.length) toast("No se envió nada: ya hay un individuo con ese Trovan, piscina, código genético y lote (ver el detalle).","warn",7000);
-    else toast("No hay filas válidas para registrar (¿falta el Trovan ID?).","warn",4200);
+    if(res.report.existentes.length) _reproNada("repro-a-paso", "No se envió nada: ya hay un individuo con ese Trovan, piscina, código genético y lote (ver el detalle).", 7000);
+    else _reproNada("repro-a-paso", "No hay filas válidas para registrar (¿falta el Trovan ID?).", 4200);
     return;
   }
-  toast("Registrando "+res.report.created.length+" individuo(s)…","info",2000);
-  const _oA={};
+  _reproPaso("repro-a-paso", "Enviando "+res.report.created.length+" individuo(s)…");
+  const _oA={ sinAvisos:true };
   const sent=await postPayload(res.payload, gasUrl(), _oA);
   _reproUltimaEscritura=Date.now();   // 1a · hembras nuevas: la MATRIZ en uso ya no las conoce hasta releerla
   _madReproShowAltaReport(res.report, sent);
-  if(sent){ toast("✅ "+res.report.created.length+" individuo(s) registrado(s).","ok",4200); }
-  else { _madReproNotOk([_oA]); }
+  _reproAvisoFinal("repro-a-paso", sent, res.report.created.length+" individuo(s) registrado(s)", [_oA], []);
 }
 function madReproAltaClear(){
   const tb=document.getElementById("repro-a-tbody"); if(tb) tb.querySelectorAll("input").forEach(function(i){ i.value=""; });
@@ -13180,14 +13208,14 @@ async function madReproTransfer(){
   const composicion=(tipo==="Mezcla")?{ lotes:g("repro-t-lotes"), codigos:g("repro-t-codigos"), piscinas:g("repro-t-piscinas") }:{};
   // La MATRIZ valida origen/existencia y da la cuaterna de cada individuo. El ledger de
   // Transferencias hace falta para que el TR-ID salga del máximo REAL.
-  if(!_reproMatrixIndex()) await _reproEnsureMatrix();
+  if(!_reproMatrixIndex()){ _reproPaso("repro-t-paso", "Leyendo la MATRIZ…"); await _reproEnsureMatrix(); }
   /* 🔴 RD1 (2026-09-16) · SIN LA MATRIZ NO HAY TRASLADO. Antes se movía «sin validar»; desde que la llave
      de la MATRIZ es la cuaterna eso ya no degrada sino que DAÑA: sin la piscina, el código y el lote de cada
      individuo su fila no casa con la suya y el upsert AÑADE una fila suelta. Como el registro de eventos:
      se dice por qué, lo pegado se queda, y no se sigue leyendo el historial con Google caído. */
   if(!_reproMatrixIndex()){
     _reproPaintMatrixBanner();
-    toast("No se envió: no se pudo leer «Maduración MATRIZ» ("+(_reproSheetsErr||"error")+") y sin ella no se sabe qué individuo es cada Trovan. No es tu configuración ni el token — vuelve a intentarlo con 🔄; lo pegado sigue aquí.","err",8000);
+    _reproNada("repro-t-paso", "No se envió: no se pudo leer la MATRIZ ("+(_reproSheetsErr||"error")+"), y sin ella no se sabe qué individuo es cada Trovan. Vuelve a intentarlo con 🔄; lo pegado sigue aquí.", 8000);
     return;
   }
   /* 🔴 1a · también el traslado: con una copia anterior al alta de un chip reciclado, el chip resolvía a la hembra
@@ -13196,7 +13224,7 @@ async function madReproTransfer(){
   const _dudT=_reproChipsDudosos([].concat.apply([], destinos.map(function(d){ return d.ids; })), _reproMatrixIndex(), origen);
   let _scT=[];
   if(_dudT.length && !_reproMatrizRecien()){
-    toast("Comprobando en «Maduración MATRIZ» "+_dudT.length+" microchip(s) que la copia en uso da por muertos, no conoce o sitúa fuera del origen…","info",3500);
+    _reproPaso("repro-t-paso", "Comprobando "+_dudT.length+" microchip(s) en la MATRIZ…");
     if(!(await _reproMatrizFresca())) _scT=_dudT.slice();
   }
   const _mIdxT=_reproMatrixIndex();
@@ -13204,6 +13232,7 @@ async function madReproTransfer(){
   const _destinos=_muertasSC.length
     ? destinos.map(function(d){ return { sala:d.sala, tanque:d.tanque, ids:d.ids.filter(function(id){ return _muertasSC.indexOf(id)===-1; }) }; })
     : destinos;
+  _reproPaso("repro-t-paso", "Leyendo los traslados…");
   await _reproEnsureSheet(_REPRO_SHEETS.transfer);
   _reproPaintMatrixBanner();
   /* ⚠⚠ D11 · CON EL LEDGER RECORTADO NO HAY TR-ID SEGURO, y aquí no basta con avisar. El máximo
@@ -13212,29 +13241,30 @@ async function madReproTransfer(){
      historial de quien repitiera. No es el caso del ledger ilegible (ahí se sigue con la
      secuencia local, como siempre): esto se sabe EQUIVOCADO. No se envía nada y lo pegado queda. */
   if(_reproRecortada(_REPRO_SHEETS.transfer)){
-    toast("No se envió: «Maduración Transferencias» llegó RECORTADA por el tope del servidor, así que el próximo TR-ID repetiría uno que ya existe. Hay que ampliar el tope de lectura del GAS; lo pegado sigue aquí.","err",9000);
+    _reproNada("repro-t-paso", "No se envió: Google devolvió incompleta la lista de traslados, y el número del próximo traslado podría repetir uno que ya existe. Hay que ampliar el límite de lectura del GAS; lo pegado sigue aquí.", 9000);
     return;
   }
   const _trRows=_reproReadRows(_REPRO_SHEETS.transfer);
   const trId=_trRows.length?window.__rgLib.nextTrIdFromRows(_trRows):_reproNextTrId();
   const res=window.__rgLib.buildTransferBatch({ fecha:fecha, tipo:tipo, origen:origen, destinos:_destinos, composicion:composicion, matrixIndex:_reproMatrixIndex(), trId:trId });
-  if(res.error){ toast(res.error,"err",3500); return; }
+  if(res.error){ _reproNada("repro-t-paso", res.error, 3500); return; }
   res.report.sinConfirmar=_scT;
-  if(_scT.length) toast("No se pudo confirmar con la hoja ("+(_reproSheetsErr||"Google no respondió")+"): "+_scT.length+" microchip(s) se quedan sin mover o señalados. Vuelve a procesarlos "+_reproCuando()+".","warn",9000);
+  const atencion=[];   // E · lo que requiere atención va DENTRO del aviso final
+  if(_scT.length) atencion.push(_scT.length+" microchip(s) no se pudieron comprobar ("+(_reproSheetsErr||"Google no respondió")+") y se quedan sin mover o señalados: vuelve a procesarlos "+_reproCuando()+".");
   /* R5 · los chips con DOS vivas quedan pendientes de ELEGIR con el contexto del traslado —origen, destino de cada
      uno y el MISMO TR-ID—, para moverlos después sin repetir los que ya salieron. */
   const _vv=res.report.variasVivas||[];
   _reproElegirPend = _vv.length ? { clase:"traslado", fecha:fecha, tipo:tipo, origen:origen, composicion:composicion, trId:trId, chips:_vv.slice(),
     destinos:_destinos.map(function(d){ return { sala:d.sala, tanque:d.tanque, ids:d.ids.filter(function(id){ return _vv.indexOf(id)!==-1; }) }; }).filter(function(d){ return d.ids.length; }) } : null;
-  if(!res.transfer){ _madReproShowTransferReport(res.report, trId, false); toast("No hay individuos válidos para transferir.","warn",4000); return; }
-  toast("Procesando transferencia "+trId+"…","info",2200);
-  let okAll=true; const _t1={}, _t2={};
+  if(!res.transfer){ _madReproShowTransferReport(res.report, trId, false); _reproNada("repro-t-paso", "No hay individuos válidos para transferir."+(atencion.length ? " "+atencion.join(" ") : ""), atencion.length ? 9000 : 4000); return; }
+  _reproPaso("repro-t-paso", "Enviando el traslado "+trId+"…");
+  let okAll=true; const _t1={ sinAvisos:true }, _t2={ sinAvisos:true };
   if(res.matriz){ okAll=(await postPayload(res.matriz, gasUrl(), _t1)) && okAll; }
   if(res.transfer){ okAll=(await postPayload(res.transfer, gasUrl(), _t2)) && okAll; }
   if(res.matriz) _reproUltimaEscritura=Date.now();   // 1a · la MATRIZ cambió: una lectura de antes ya no vale para confirmar
   _madReproShowTransferReport(res.report, trId, okAll);
-  if(okAll){ toast("✅ "+res.report.moved.length+" individuo(s) transferido(s) — "+trId,"ok",4500); _reproBumpTrSeq(trId); }
-  else { _madReproNotOk([_t1,_t2]); }
+  _reproAvisoFinal("repro-t-paso", okAll, res.report.moved.length+" individuo(s) transferido(s) en el traslado "+trId, [_t1,_t2], atencion);
+  if(okAll) _reproBumpTrSeq(trId);
 }
 
 function _madReproShowTransferReport(rep, trId, okSent){
@@ -13341,7 +13371,7 @@ function _reproElegirHTML(clase){
 async function madReproRegistrarElegidas(seq){
   const p = _reproElegirPend, mIdx = _reproMatrixIndex();
   if(!p || p.seq !== seq){ toast("Ese aviso ya no está vigente: vuelve a procesar el registro.","warn",5000); return; }
-  if(!mIdx){ toast("No se pudo leer «Maduración MATRIZ»: vuelve a intentarlo con 🔄.","err",6000); return; }
+  if(!mIdx){ toast("No se pudo leer la MATRIZ: vuelve a intentarlo con 🔄.","err",6000); return; }
   const eleccion = {}, elegidos = [];
   p.chips.forEach(function(chip){
     const r = document.querySelector('input[name="repro-eleg-'+chip+'"]:checked');
@@ -13349,11 +13379,13 @@ async function madReproRegistrarElegidas(seq){
     if(ind){ eleccion[chip] = ind; elegidos.push(chip); }
   });
   if(!elegidos.length){ toast("Marca de qué hembra es cada microchip antes de registrar.","warn",4000); return; }
-  const url = gasUrl(); const _o1 = {}, _o2 = {};
+  const url = gasUrl(); const _o1 = { sinAvisos:true }, _o2 = { sinAvisos:true };
   let res, ok = true, hubo, n;
+  const _paso = p.clase === "evento" ? "repro-paso" : "repro-t-paso";   // E · la línea del flujo del que viene
+  _reproPaso(_paso, "Enviando "+elegidos.length+" registro(s)…");
   if(p.clase === "evento"){
     res = window.__rgLib.buildEventBatch({ ids:elegidos, fecha:p.fecha, tipo:p.tipo, matrixIndex:mIdx, eleccion:eleccion });
-    if(res.error){ toast(res.error,"err",7000); return; }
+    if(res.error){ _reproNada(_paso, res.error, 7000); return; }
     hubo = !!(res.bitacora || res.matriz); n = res.report.processed.length;
     if(res.bitacora) ok = (await postPayload(res.bitacora, url, _o1)) && ok;
     if(res.matriz)   ok = (await postPayload(res.matriz, url, _o2)) && ok;
@@ -13361,7 +13393,7 @@ async function madReproRegistrarElegidas(seq){
     const destinos = p.destinos.map(function(d){ return { sala:d.sala, tanque:d.tanque, ids:d.ids.filter(function(id){ return elegidos.indexOf(id)!==-1; }) }; })
       .filter(function(d){ return d.ids.length; });
     res = window.__rgLib.buildTransferBatch({ fecha:p.fecha, tipo:p.tipo, origen:p.origen, destinos:destinos, composicion:p.composicion, matrixIndex:mIdx, trId:p.trId, eleccion:eleccion });
-    if(res.error){ toast(res.error,"err",7000); return; }
+    if(res.error){ _reproNada(_paso, res.error, 7000); return; }
     hubo = !!res.transfer; n = res.report.moved.length;
     if(res.matriz)   ok = (await postPayload(res.matriz, url, _o1)) && ok;
     if(res.transfer) ok = (await postPayload(res.transfer, url, _o2)) && ok;
@@ -13373,9 +13405,9 @@ async function madReproRegistrarElegidas(seq){
   if(!p.chips.length) _reproElegirPend = null;
   if(p.clase === "evento") _madReproShowReport(res.report, [], p.tipo, ok && hubo);
   else _madReproShowTransferReport(res.report, p.trId, ok && hubo);
-  if(!hubo){ toast("La hembra elegida no superó la validación: revisa el detalle.","warn",5000); return; }
-  if(ok){ toast("✅ "+n+" registrado(s) con la hembra elegida.","ok",4200); if(p.clase === "traslado") _reproBumpTrSeq(p.trId); }
-  else _madReproNotOk([_o1,_o2]);
+  if(!hubo){ _reproNada(_paso, "La hembra elegida no superó la validación: revisa el detalle.", 5000); return; }
+  _reproAvisoFinal(_paso, ok, n+" registrado(s) con la hembra elegida", [_o1,_o2], []);
+  if(ok && p.clase === "traslado") _reproBumpTrSeq(p.trId);
 }
 
 // ── Render Salas — GRILLA tipo Parámetros ─────────────

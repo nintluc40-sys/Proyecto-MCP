@@ -521,6 +521,12 @@ Desde el 2026-09-24 (punto 2a, correcciones A y B, decisiones del usuario):
 - **Vaciarla no pierde nada**: al terminar se relee la cola y sólo se quita lo que ese vaciado
   resolvió; lo que se guardó, se purgó o se sustituyó mientras tanto se respeta.
 
+Y en el **registro reproductivo** (punto 2a · E, decisiones del usuario) cada acción —un desove o una
+mortalidad, un alta, un traslado, elegir la hembra— da **un solo aviso** al terminar: el resultado y, detrás,
+lo que requiere atención (naranja; rojo si no se registró nada). Lo que va pasando se lee en la línea junto a
+su botón, que se borra al terminar, y sus dos envíos (MATRIZ y Bitácora o Transferencias) no avisan por su
+cuenta (`postPayload` con `sinAvisos`): se resumen en ese aviso. El resto de fichas avisa como siempre.
+
 ### 5 · La LECTURA de Registros: por la exportación de Google, con el GAS de respaldo
 
 Desde el 2026-09-24 (punto 2a · D, decisiones del usuario) todo lo que Registros lee de una hoja —el

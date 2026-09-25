@@ -48,6 +48,8 @@ describe('A · toda ruta que envía CONSULTA el resultado', () => {
      enseñar sin mirar `outcome`. Da igual cómo lo mire —`_syncNotOkUI`, el clasificador
      `_syncAllBucket`, `_madReproNotOk` o el propio `.outcome`—; lo que no vale es
      tratar el `false` como error a secas, porque «encolado» también devuelve `false`.
+     E (2026-09-24) · los cuatro flujos del reproductivo lo miran a través de `_reproAvisoFinal`, su aviso único, que
+     para todo lo que no es «ok» delega en `_madReproNotOk`; la prueba de abajo exige que siga delegando.
 
      ⚠ Fijarse sólo en `setSyncUI("err", …)` no sirve: lo usan legítimamente la propia
      `_syncNotOkUI` y los RESÚMENES agregados de `syncAll` y `syncAllPendingTras`, que
@@ -93,9 +95,16 @@ describe('A · toda ruta que envía CONSULTA el resultado', () => {
   it('todas consultan el resultado, salvo las excepciones anotadas', () => {
     const ciegas = [...rutas.entries()]
       .filter(([n, cuerpo]) => !EXCEPCIONES.includes(n)
-        && !/_syncNotOkUI|_syncAllBucket|_madReproNotOk|\.outcome/.test(cuerpo))
+        && !/_syncNotOkUI|_syncAllBucket|_madReproNotOk|_reproAvisoFinal|\.outcome/.test(cuerpo))
       .map(([n]) => n);
     expect(ciegas, 'rutas que tratan un envío encolado como error:\n' + ciegas.join('\n')).toHaveLength(0);
+  });
+
+  it('E · `_reproAvisoFinal` sólo cuenta como consulta porque delega en `_madReproNotOk` lo que no es «ok»', () => {
+    const i = engine.indexOf('function _reproAvisoFinal(');
+    const cuerpo = engine.slice(i, engine.indexOf('\n}\n', i));
+    expect(i, 'existe').toBeGreaterThan(-1);
+    expect(cuerpo).toMatch(/else _madReproNotOk\(envios, extra\)/);
   });
 
   it('las excepciones anotadas siguen existiendo (si no, sobra la anotación)', () => {
