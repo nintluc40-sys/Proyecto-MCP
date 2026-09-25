@@ -1342,3 +1342,94 @@ describe('Maduración · operativo · 🖨 Reportes', () => {
     delete window.XLSX;
   });
 });
+
+/* 0f · 2b (2026-09-25) · 📉 Tendencias y ⏳ Permanencia DENTRO de la tarjeta de Alertas. Las cifras las prueba
+   operativo.tendencias.test.js (con su banco); aquí, que llegan a la pantalla, que el total de la tarjeta las cuenta,
+   que lo que viene del Sheet sale escapado y que «✓ Sin alertas» sigue saliendo cuando no hay nada. Una planta
+   pequeña, con fechas como las del export: TA produce desde su cópula del 20/07 (61 días al 19/09) y, con «7 d», su
+   sala produce menos, muere más por tanque y día, y sus huevos por desove caen. */
+describe('Maduración · operativo · 0f · 2b · 📉 Tendencias y ⏳ Permanencia en la tarjeta de Alertas', () => {
+  const dmy = (iso) => iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4);
+  const ingT = (fecha, lote, sala, tanque, machos, hembras, cg, piscina) => ({ _SheetOrigin: O, 'Camaronera origen': 'CX', Fecha: dmy(fecha),
+    Lote: lote, 'Código genético': cg, 'Piscina Broodstock': piscina, Sala: sala, Tanque: tanque, Machos: machos, Hembras: hembras });
+  const tqT = (fecha, sala, tanque, extra) => ({ _SheetOrigin: O, 'Machos muertos': '', Fecha: dmy(fecha), Sala: sala, Tanque: tanque, ...extra });
+  const desT = (fecha, lote, desoves, huevos, n2, n5) => ({ _SheetOrigin: O, Fecha: dmy(fecha), Lote: lote, 'Código genético': 'CA',
+    Desoves: desoves, 'Total de huevos': huevos, N2: n2, N5: n5 });
+  const PLANTA_T = (lote = 'TA') => [
+    ingT('2026-07-16', lote, 'Sala 1', 1, 10, 20, 'CA', 'P1'),
+    ingT('2026-07-16', lote, 'Sala 1', 2, 10, 20, 'CA', 'P1'),
+    ingT('2026-09-10', 'TC', 'Sala 4', 1, 20, 8, 'CA', 'P3'),
+    tqT('2026-07-20', 'Sala 1', 1, { 'Cópulas': 1 }),
+    ...['2026-09-10', '2026-09-11', '2026-09-12'].flatMap((f) => [1, 2].map((t) => tqT(f, 'Sala 1', t, { 'Machos muertos': 1, 'Cópulas': 3 }))),
+    tqT('2026-09-13', 'Sala 1', 1, { 'Machos muertos': 2, 'Cópulas': 3 }),
+    tqT('2026-09-14', 'Sala 1', 1, { 'Machos muertos': 2, 'Cópulas': 3 }),
+    tqT('2026-09-13', 'Sala 1', 2, { 'Machos muertos': 2, 'Cópulas': 3 }),
+    ...['2026-09-07', '2026-09-09', '2026-09-11'].map((f) => desT(f, lote, 2, 200000, 160000, 300000)),
+    desT('2026-09-14', lote, 2, 140000, 126000, 200000),
+    desT('2026-09-17', lote, 2, 140000, 126000, ''),
+  ];
+  const tarjeta = () => root.querySelector('.mop-alertas');
+  const cabecera = () => tarjeta().querySelector('.mc-h-note').textContent;
+
+  it('con «7 d»: los dos bloques, sus líneas, y el total de la tarjeta los cuenta', async () => {
+    await montar(PLANTA_T());
+    click(root.querySelector('[data-mop-periodo="7d"]'));
+    const t = tarjeta();
+    const tend = [...t.querySelectorAll('.mop-tendencias li')].map((li) => li.textContent);
+    expect(t.textContent).toContain('📉 Tendencias');
+    expect(t.textContent).toContain('7 d frente a los 7 días anteriores (06/09 – 12/09)');
+    expect(tend).toEqual([
+      '🦐 N5 por desove: 150.000 → 100.000 (−33 %) · bajan TA (−33 %).',
+      '🥚 Sala 1 produce menos: 6 → 4 desoves (−33 %).',
+      '💀 Más mortalidad en Sala 1: 1 → 2 bajas por tanque y día (+100 %).',
+      '🧬 TA: huevos por desove 100.000 → 70.000 (−30 %).',
+    ]);
+    const perm = [...t.querySelectorAll('.mop-permanencia li')].map((li) => li.textContent);
+    expect(perm).toEqual(['⏳ TA lleva 61 días en producción en Sala 1 · piscina P1 · código CA.']);
+    expect(t.textContent).toContain('más de 60 días en producción');
+    expect(cabecera()).toBe('7 d · 5');
+    expect(t.querySelector('.mop-ok')).toBeNull();
+    expect(t.querySelector('.mc-note').textContent).toContain('con un cambio del 20 % o más y al menos 3 registros');
+    expect(t.querySelector('.mc-note').getAttribute('title')).toContain('Usuario: decisión del 2026-09-25');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('si el N5 del conjunto NO baja pero el de un lote sí, la línea dice ese lote con sus cifras', async () => {
+    /* TF (sin ingreso) sube de 100 000 a 300 000 por desove: el conjunto pasa de 133.333 a 200.000 (+50 %). */
+    const TF = [...['2026-09-06', '2026-09-08', '2026-09-10'].map((f) => desT(f, 'TF', 1, 100000, 80000, 100000)),
+      ...['2026-09-15', '2026-09-16'].map((f) => desT(f, 'TF', 1, 100000, 80000, 300000))];
+    await montar([...PLANTA_T(), ...TF]);
+    click(root.querySelector('[data-mop-periodo="7d"]'));
+    const n5 = [...tarjeta().querySelectorAll('.mop-tendencias li')].find((li) => li.textContent.includes('N5'));
+    expect(n5.textContent).toBe('🦐 N5 por desove: baja en TA 150.000 → 100.000 (−33 %).');
+  });
+
+  it('con «30 d» el anterior no tiene datos: no hay Tendencias, pero la Permanencia sigue; la nota dice con qué compara', async () => {
+    await montar(PLANTA_T());
+    const t = tarjeta();
+    expect(t.querySelector('.mop-tendencias')).toBeNull();
+    expect(t.querySelectorAll('.mop-permanencia li')).toHaveLength(1);
+    expect(cabecera()).toBe('30 d · 1');
+    expect(t.querySelector('.mc-note').textContent).toContain('frente a los 30 días anteriores (22/07 – 20/08)');
+  });
+
+  it('con un lote sin nada que avisar (TC, en cuarentena), «✓ Sin alertas en el período»', async () => {
+    await montar(PLANTA_T());
+    click(root.querySelector('[data-mop-periodo="7d"]'));
+    cambiar(filtro('lote'), 'TC');
+    const t = tarjeta();
+    expect(t.querySelector('.mop-tendencias')).toBeNull();
+    expect(t.querySelector('.mop-permanencia')).toBeNull();
+    expect(t.querySelector('.mop-ok').textContent).toBe('✓ Sin alertas en el período.');
+    expect(cabecera()).toBe('7 d · 0');
+  });
+
+  it('lo que viene del Sheet sale ESCAPADO: un lote con marcado es texto, no HTML', async () => {
+    await montar(PLANTA_T('<img src=x onerror=alert(1)>'));
+    click(root.querySelector('[data-mop-periodo="7d"]'));
+    const t = tarjeta();
+    expect(t.querySelector('img')).toBeNull();
+    expect(t.querySelector('.mop-permanencia li').textContent).toContain('<img src=x onerror=alert(1)> lleva 61 días');
+    expect(t.querySelector('.mop-tendencias').textContent).toContain('<img src=x onerror=alert(1)>: huevos por desove');
+  });
+});

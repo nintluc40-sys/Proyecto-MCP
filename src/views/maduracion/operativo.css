@@ -136,6 +136,9 @@
 .mop-ficha tr.mop-fuera td { opacity: .55; font-style: italic; }
 .mop-h5 { margin: 14px 0 6px; font-size: 12px; font-weight: 800; letter-spacing: .2px; color: var(--c-text); }
 .mop-h5:first-of-type { margin-top: 4px; }
+/* 0f · 2b · en la tarjeta de Alertas, 📉 Tendencias y ⏳ Permanencia van DEBAJO de la lista de siempre: el primero
+   no es el primero de la tarjeta y necesita su aire (va después de la regla de arriba, con la misma especificidad). */
+.mop-alertas .mop-h5 { margin-top: 12px; }
 .mop-obs-g { margin-bottom: 10px; }
 .mop-obs-g > b { display: block; margin-bottom: 4px; font-size: 11px; color: var(--c-text-muted); }
 .mop-obs-f { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(60px, 2fr) 48px; align-items: center; gap: 8px; font-size: 11.5px; }

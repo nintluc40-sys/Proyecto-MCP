@@ -8,7 +8,8 @@
      Esta cabecera se quedó atrás DOS veces —«dos sub-vistas» con cinco, y luego «cinco» con siete—, así que ya no
      lleva la cuenta: dice dónde mirar además de qué hay. Hoy:
      📊 Estado actual — los KPI (Vivos, Lotes, Salas, Ocupación, Mortalidad, Reproducción y Biomasa), el mapa de
-        planta (por estado, vivos o densidad), las alertas, los últimos registros y los lotes que salen de
+        planta (por estado, vivos o densidad), las alertas (con 📉 Tendencias frente al período anterior y
+        ⏳ Permanencia, 0f · 2b: operativo.tendencias.js), los últimos registros y los lotes que salen de
         cuarentena en los próximos 7 días;
      🏠 Salas — una tarjeta por sala y, al pulsarla, su detalle: la T° por hora, el O₂, ♀/♂ y densidad por tanque,
         la tabla de tanques y los tratamientos recientes;
@@ -46,7 +47,8 @@ import {
   indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, kpiBiomasa,
 } from './operativo.tablero.js';
 import { INDICADORES } from './operativo.indicadores.js';
-import { FUENTES, umbralVigente, evaluar } from './operativo.umbrales.js';
+import { FUENTES, umbralVigente, evaluar, UMBRALES_DE_AVISO } from './operativo.umbrales.js';
+import { periodoAnterior, presenciaDiaria, tendencias, permanencia, PARAMETROS_REPRODUCCION } from './operativo.tendencias.js';
 import { tablaDeLotes, fichaDeLote, DIMENSIONES_COMPARATIVA, comparativa } from './operativo.lotes.js';
 import { DIMENSIONES_BAJAS, desgloseDeBajas, motivosDeCierre, bajasPorHora, calorSalaDia, lotesCerrados } from './operativo.bajas.js';
 import { tablaDeTanques, fichaDeTanque, avisosDeTanques } from './operativo.tanques.js';
@@ -146,12 +148,13 @@ const CLASE_ESTADO = { [ESTADO_PRODUCCION]: 'produccion', [ESTADO_CUARENTENA]: '
 const claseEstado = (e) => CLASE_ESTADO[e] || 'sin';
 const etiquetaPeriodo = (p) => (p.clave === 'hoy' ? 'hoy' : p.clave === 'mes' ? 'el mes' : p.clave === 'todo' ? 'todo el registro' : nf(p.dias) + ' d');
 
-// ── Modelo memoizado: por los datos, el día de hoy y la foto. La serie, además, por el período. ──
-let _memo = { src: null, hoy: '', fecha: '', M: null, partes: null, serieClave: '', serie: null, repro: null, libroHoy: null };
+// ── Modelo memoizado: por los datos, el día de hoy y la foto. La serie y la presencia, además, por el período. ──
+let _memo = { src: null, hoy: '', fecha: '', M: null, partes: null, serieClave: '', serie: null, repro: null, libroHoy: null, presenciaClave: '', presencia: null };
 function memoModelo(hoy, fecha) {
   if (_memo.src !== store.globalData || _memo.hoy !== hoy || _memo.fecha !== fecha) {
     const M = modeloOperativo(store.globalData, { hoy, fecha });
-    _memo = { src: store.globalData, hoy, fecha, M, partes: diasDeTanque(M.fuentes.tanques), serieClave: '', serie: null, repro: null, libroHoy: null };
+    _memo = { src: store.globalData, hoy, fecha, M, partes: diasDeTanque(M.fuentes.tanques), serieClave: '', serie: null, repro: null, libroHoy: null,
+      presenciaClave: '', presencia: null };
   }
   return _memo;
 }
@@ -176,6 +179,17 @@ function serieDe(memo, p) {
     memo.serieClave = k;
   }
   return memo.serie;
+}
+/** 📉 Tendencias (0f · 2b): la presencia día a día del libro, desde la víspera del período ANTERIOR hasta el final
+ *  del elegido, se calcula una vez por datos, foto y período —como la serie—; lo filtrado no la cambia. */
+function tendenciasDe(memo, p, F) {
+  const pa = periodoAnterior(p);
+  const k = pa ? pa.desde + '|' + p.hasta : '';
+  if (memo.presenciaClave !== k || !memo.presencia) {
+    memo.presencia = pa ? presenciaDiaria(memo.M.fuentes, sumarDias(pa.desde, -1), p.hasta) : new Map();
+    memo.presenciaClave = k;
+  }
+  return tendencias(memo.M, p, F, memo.partes, memo.presencia);
 }
 let _mapa = null;   // el último mapa pintado: la ficha del tanque pulsado se rellena sin repintar la vista
 
@@ -391,7 +405,7 @@ function estadoHTML(M, memo, p, F) {
     <div class="mc-kpis">${kpis}</div>
     ${mapaHTML(_mapa, M, F)}
     <div class="mc-grid">
-      ${alertasHTML(alertas(M, p, F), p)}
+      ${alertasHTML(alertas(M, p, F), p, tendenciasDe(memo, p, F), permanencia(M, F))}
       ${ultimosHTML(ultimosRegistros(M.frescura))}
       ${finesHTML(finesDeCuarentena(M.libro, M.fecha, F))}
     </div>
@@ -462,7 +476,45 @@ function mapaHTML(mapa, M, F) {
   </div>`;
 }
 
-function alertasHTML(a, p) {
+/* 📉 ⏳ 0f · 2b (2026-09-25) · un cambio se enseña con su signo, el menos tipográfico y sin decimales («−33 %»);
+   cada parámetro de reproducción, con su formato. */
+const cambioTxt = (c) => (c > 0 ? '+' : '−') + nf(Math.abs(c)) + ' %';
+const ETIQUETA_PARAMETRO = Object.fromEntries(PARAMETROS_REPRODUCCION.map((x) => [x.id, x.etiqueta]));
+const valorParametro = (id, v) => (id === 'huevosPorDesove' ? nf(v) : pc(v));
+const frenteA = (pa) => (pa.dias === 1 ? `la víspera (${dm(pa.desde)})` : `los ${nf(pa.dias)} días anteriores (${dm(pa.desde)} – ${dm(pa.hasta)})`);
+
+function tendenciasItems(t) {
+  const items = [];
+  const n = t.nauplios;
+  if (n) {
+    /* Si baja el conjunto, los lotes que bajan van con su % (como en el diseño aprobado: «… (−33 %) · XA, XB»); si
+       sólo bajan algunos lotes, con sus cifras, que son lo único que se enseña. */
+    items.push(n.cambio !== null
+      ? `<li>🦐 <b>N5 por desove</b>: ${nf(n.antes)} → ${nf(n.ahora)} (${cambioTxt(n.cambio)})${n.lotes.length
+        ? ' · bajan ' + n.lotes.map((l) => `${esc(l.lote)} (${cambioTxt(l.cambio)})`).join(', ') : ''}.</li>`
+      : `<li>🦐 <b>N5 por desove</b>: baja en ${n.lotes.map((l) => `${esc(l.lote)} ${nf(l.antes)} → ${nf(l.ahora)} (${cambioTxt(l.cambio)})`).join(' · ')}.</li>`);
+  }
+  for (const s of t.produccion) items.push(`<li>🥚 <b>${esc(s.sala)}</b> produce menos: ${nf(s.antes)} → ${nf(s.ahora)} desoves (${cambioTxt(s.cambio)}).</li>`);
+  for (const s of t.mortalidad) {
+    items.push(`<li>💀 Más mortalidad en <b>${esc(s.sala)}</b>: ${nf(s.antes, 2)} → ${nf(s.ahora, 2)} bajas por tanque y día (${cambioTxt(s.cambio)}).</li>`);
+  }
+  for (const l of t.reproduccion) {
+    const ps = l.parametros.map((x) => `${esc(ETIQUETA_PARAMETRO[x.id])} ${valorParametro(x.id, x.antes)} → ${valorParametro(x.id, x.ahora)} (${cambioTxt(x.cambio)})`);
+    items.push(`<li>🧬 <b>${esc(l.lote)}</b>: ${ps.join(' · ')}.</li>`);
+  }
+  return items;
+}
+
+function permanenciaItems(perm) {
+  return perm.map((l) => {
+    const donde = l.salas.length === 1 ? esc(l.salas[0].sala) : l.salas.map((s) => `${esc(s.sala)} (${nf(s.dias)} d)`).join(', ');
+    const origen = [l.piscinas.length ? 'piscina ' + l.piscinas.map(esc).join(', ') : 'sin piscina en su Ingreso',
+      l.codigos.length ? 'código ' + l.codigos.map(esc).join(', ') : ''].filter(Boolean).join(' · ');
+    return `<li>⏳ <b>${esc(l.lote)}</b> lleva ${nf(l.dias)} días en producción en ${donde} · ${origen}.</li>`;
+  });
+}
+
+function alertasHTML(a, p, t, perm) {
   const items = [];
   for (const e of a.estados) {
     items.push(`<li>🏠 <b>${esc(e.sala)}</b>: la hoja dice «${esc(e.registrado.estado)}» (${esc(dm(e.registrado.fecha))}) y el libro propone «${esc(e.propuesto.estado)}».</li>`);
@@ -476,10 +528,23 @@ function alertasHTML(a, p) {
       <ul class="mop-lista">${a.avisos.recientes.map((x) => `<li><b>${esc(dm(x.fecha))}</b> · ${esc(x.texto)}</li>`).join('')}</ul></details>` : '';
   const notas = [`Umbrales: T° ${esc(refUmbral('temperatura'))} · O₂ ${esc(refUmbral('oxigeno'))}.`];
   if (!a.avisos.aplica) notas.push('Los avisos del libro no dicen el código genético: con ese filtro no se muestran.');
+  const U = UMBRALES_DE_AVISO;
+  if (t.anterior) {
+    notas.push(`Tendencias: frente a ${esc(frenteA(t.anterior))}, con un cambio del ${nf(U.cambio.valor)} % o más y al menos ${nf(U.registros.valor)} registros; las bajas, por tanque y día de parte.`);
+  }
+  notas.push(`Permanencia: más de ${nf(U.produccion.valor)} días en producción, desde el fin de la cuarentena.`);
   const titulo = Object.values(FUENTES).join('\n');
+  const tend = tendenciasItems(t);
+  const perms = permanenciaItems(perm);
+  const total = a.total + t.total + perm.length;
   return `<div class="mc-card mop-alertas">
-    <h4 class="mc-card-h">⚠️ Alertas <span class="mc-h-note">${esc(etiquetaPeriodo(p))} · ${nf(a.total)}</span></h4>
-    ${items.length ? `<ul class="mop-lista">${items.join('')}</ul>` : '<p class="mop-ok">✓ Sin alertas en el período.</p>'}
+    <h4 class="mc-card-h">⚠️ Alertas <span class="mc-h-note">${esc(etiquetaPeriodo(p))} · ${nf(total)}</span></h4>
+    ${items.length ? `<ul class="mop-lista">${items.join('')}</ul>` : ''}
+    ${tend.length ? `<h5 class="mop-h5">📉 Tendencias <span class="mop-nota">${esc(etiquetaPeriodo(p))} frente a ${esc(frenteA(t.anterior))}</span></h5>
+    <ul class="mop-lista mop-tendencias">${tend.join('')}</ul>` : ''}
+    ${perms.length ? `<h5 class="mop-h5">⏳ Permanencia <span class="mop-nota">más de ${nf(U.produccion.valor)} días en producción</span></h5>
+    <ul class="mop-lista mop-permanencia">${perms.join('')}</ul>` : ''}
+    ${items.length || tend.length || perms.length ? '' : '<p class="mop-ok">✓ Sin alertas en el período.</p>'}
     ${recientes}
     <p class="mc-note" title="${esc(titulo)}">${notas.join(' ')}</p>
   </div>`;

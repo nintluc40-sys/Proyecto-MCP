@@ -143,8 +143,9 @@ function contextoDeLote(libro, clave) {
 }
 
 /** ¿Alguna posición de este lote pasa el filtro? (Sin mirar si está viva: un lote cerrado sigue siendo del filtro
- *  de su sala.) Con el filtro vacío pasan todos. */
-function loteEnFiltro(libro, clave, F) {
+ *  de su sala.) Con el filtro vacío pasan todos. Se exporta para 📉 Tendencias (operativo.tendencias.js, 0f · 2b):
+ *  «los lotes de lo filtrado» son los mismos que enseña la tabla de Lotes. */
+export function loteEnFiltro(libro, clave, F) {
   const suyas = ((libro && libro.posiciones) || []).filter((p) => normLote(p.lote) === clave);
   if (!suyas.length) return !F.sala && F.tanque === null && !F.codigo && (!F.lote || F.lote === clave);
   return suyas.some((p) => posicionEnFiltro(p, F));

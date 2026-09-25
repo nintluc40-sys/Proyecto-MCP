@@ -19,6 +19,7 @@ export const FUENTES = {
   FAO_FICHA: 'FAO. Cultured Aquatic Species Information Programme — Penaeus vannamei (Boone, 1931). FAO Fisheries and Aquaculture Department.',
   REN2020: 'Ren, S., Mather, P. B., Tang, B. y Hurwood, D. A. (2020). Comparison of reproductive performance of domesticated Litopenaeus vannamei females reared in recirculating tanks and earthen ponds. Frontiers in Marine Science 7: 560.',
   FICHA_ALIMENTACION: 'Laboratorio: rango de la ficha 🍤 Alimentación del registro (MAD_ALIM_PCT_MIN / MAD_ALIM_PCT_MAX).',
+  USUARIO: 'Usuario: decisión del 2026-09-25 para las alertas de 📉 Tendencias y ⏳ Permanencia del tablero (UMBRALES_DE_AVISO).',
 };
 
 const PENDIENTE = 'Sin fuente bibliográfica fiable: pendiente del valor del laboratorio.';
@@ -72,3 +73,18 @@ export function evaluar(id, valor, laboratorio) {
   if (u.max !== null && v > u.max) return 'alto';
   return 'ok';
 }
+
+/* Los umbrales de las ALERTAS NUEVAS de la portada (0f · 2b, 2026-09-25): 📉 Tendencias y ⏳ Permanencia
+   (operativo.tendencias.js). No son el rango de una variable —por eso no van en UMBRALES, que `evaluar` lee como
+   mínimo y máximo—, sino cuánto tiene que cambiar algo frente al período anterior para avisar, con cuántos
+   registros, y cuántos días en producción son muchos. Los fijó el USUARIO («20 % y datos suficientes»; «más de 60
+   días en producción»), no un libro ni el laboratorio: se cambian AQUÍ, y la prueba exige que la referencia que se
+   enseña siga diciendo la cifra que se usa. */
+export const UMBRALES_DE_AVISO = {
+  cambio: { nombre: 'Cambio frente al período anterior', unidad: '%', valor: 20,
+    referencia: 'un cambio del 20 % o más', fuente: ['USUARIO'] },
+  registros: { nombre: 'Registros mínimos para comparar', unidad: 'registros', valor: 3,
+    referencia: 'al menos 3 registros (desoves o partes)', fuente: ['USUARIO'] },
+  produccion: { nombre: 'Permanencia en producción', unidad: 'días', valor: 60,
+    referencia: 'más de 60 días desde el fin de la cuarentena', fuente: ['USUARIO'] },
+};

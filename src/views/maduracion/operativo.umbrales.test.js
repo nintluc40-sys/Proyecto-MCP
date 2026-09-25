@@ -10,7 +10,7 @@
    · No se contradicen con las validaciones de captura (que son «esto no puede ser un dato»).
    ============================================================ */
 import { describe, it, expect } from 'vitest';
-import { FUENTES, UMBRALES, umbralVigente, evaluar } from './operativo.umbrales.js';
+import { FUENTES, UMBRALES, UMBRALES_DE_AVISO, umbralVigente, evaluar } from './operativo.umbrales.js';
 import { fueraDeRango } from './operativo.indicadores.js';
 import { MAD_ALIM_PCT_MIN, MAD_ALIM_PCT_MAX } from '../registros/lib/ficha-maduracion-alimentacion.schema.js';
 import { MAD_NAUP_SAL_MAX, MAD_NAUP_TEMP_MAX } from '../registros/lib/ficha-maduracion-mortdesove.schema.js';
@@ -48,6 +48,19 @@ describe('Maduración · umbrales · de dónde sale cada cifra', () => {
   it('ningún umbral pasa de las validaciones de captura (40 °C, 60 ‰)', () => {
     expect(UMBRALES.temperatura.bibliografia.max).toBeLessThan(MAD_NAUP_TEMP_MAX);
     expect(UMBRALES.salinidad.bibliografia.max).toBeLessThan(MAD_NAUP_SAL_MAX);
+  });
+
+  it('0f · 2b · los umbrales de 📉 Tendencias y ⏳ Permanencia son del USUARIO, y su referencia dice la cifra que se usa', () => {
+    for (const [id, U] of Object.entries(UMBRALES_DE_AVISO)) {
+      expect(U.nombre && U.unidad, id).toBeTruthy();
+      expect(U.fuente, id).toEqual(['USUARIO']);
+      expect(FUENTES.USUARIO, id).toMatch(/^Usuario: decisión del 2026-09-25/);
+      expect(Number.isFinite(U.valor) && U.valor > 0, id).toBe(true);
+      expect(digitos(U.referencia), id).toContain(digitos(U.valor));
+    }
+    expect(Object.keys(UMBRALES_DE_AVISO)).toEqual(['cambio', 'registros', 'produccion']);
+    // no son rangos de una variable: `umbralVigente` no los conoce
+    for (const id of Object.keys(UMBRALES_DE_AVISO)) expect(umbralVigente(id), id).toBe(null);
   });
 });
 

@@ -486,8 +486,9 @@ export function avisoEnFiltro(a, F) {
 }
 
 /** Las salas a las que se refieren las alertas de ambiente: la del filtro; con lote o código, las que tienen
- *  animales de ese lote o código (el ambiente de una sala que no los tiene no es de lo filtrado); si no, todas. */
-function salasEnAlcance(libro, F) {
+ *  animales de ese lote o código (el ambiente de una sala que no los tiene no es de lo filtrado); si no, todas.
+ *  Se exporta para 📉 Tendencias (operativo.tendencias.js, 0f · 2b), que avisa por sala con la MISMA regla. */
+export function salasEnAlcance(libro, F) {
   if (F.sala) return [F.sala];
   if (!F.lote && !F.codigo) return SALAS_VISIBLES.slice();
   const con = new Set();
