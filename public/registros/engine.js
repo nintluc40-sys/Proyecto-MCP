@@ -12494,7 +12494,204 @@ function _reproFalloSinRed(){ return String(_reproSheetsErr||"").indexOf(_REPRO_
 function _reproPorQue(){ return _reproFalloSinRed() ? _REPRO_SIN_RED : "Google no respondió"; }
 function _reproCuando(){ return _reproFalloSinRed() ? "cuando vuelva la conexión" : "cuando Google responda"; }
 
-async function _reproFetchSheet(name, cols){
+/* ── D (2026-09-24, usuario) · SE LEE POR LA EXPORTACIÓN DE GOOGLE, Y EL GAS QUEDA DE RESPALDO ─────────────────────────
+   Medido ese día contra producción (sólo lectura): el GAS tardaba de 17 a 140 s por hoja y fallaba la mitad de las veces;
+   la exportación directa del libro, de 0,4 a 5 s. Pero gviz SOLO pierde datos en silencio: en una columna que mezcla
+   números y texto devuelve VACÍAS las celdas del tipo minoritario —17 de las 50 «Piscina Broodstock» de Maduración Lotes,
+   las «NNN/NNN»; en la MATRIZ la Piscina es numérica, y una con texto rompería la cuaterna—, y con una hoja que no existe
+   devuelve OTRA sin avisar. Decisión del usuario: las DOS exportaciones combinadas. gviz da cada valor con su tipo (fechas
+   y números como el GAS) y el CSV de la hoja, el texto tal cual, que rellena lo que gviz deja en blanco. Medido: idénticas
+   al GAS celda a celda en las seis hojas que existían (5 479 filas). Todas las lecturas pasan por aquí, también justo
+   después de guardar (Google la sirve del documento vivo). Lo que no cuadra se lee por el GAS, como antes: una cabecera
+   distinta, una fila desplazada, una hoja que no está en la lista, un tipo que no se traduce igual, un fallo o 20 s sin
+   respuesta. La confirmación de un chip dudoso (1a) sigue por el GAS, como se decidió en el 7c.
+   🔑 Sólo con el GAS de producción (el libro que escribe es éste) y desde una página https: abierta como archivo, Google
+   no deja leer la exportación (sin CORS para el origen null, medido). En index (8) la CSP ya permite los dos dominios. */
+const MAD_LIBRO_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
+const _EXPORT_BASE = "https://docs.google.com/spreadsheets/d/" + MAD_LIBRO_ID;
+const _EXPORT_MS = 20000;                 // por petición; pasado, al GAS
+const _EXPORT_PAUSA_MS = 2 * 60 * 1000;   // si la lista de hojas no llega, 2 min sin intentarlo (cada lectura pagaría la espera)
+const _EXPORT_NO_EXISTE = "·ninguna hoja se llama así·";
+var _reproVia = {};                // { "<hoja>": "export" | "gas" } · por dónde llegó la última lectura buena
+let _exportMapaCache = null;       // { ts, gids } · la lista de hojas del libro, una vez por sesión
+let _exportMapaEnVuelo = null;     // la petición en curso: 🔄 Recalcular lee cinco hojas a la vez y piden UNA lista
+let _exportMapaFallo = 0;          // ms del último fallo al pedirla
+let _exportDefecto = null;         // (promesa) lo que responde gviz por una hoja que no existe, una vez por sesión
+
+function _exportPuede(){ return gasUrl() === DEFAULT_GAS_URL && location.protocol === "https:"; }
+async function _exportTexto(url){
+  const ctrl = new AbortController();
+  const t = setTimeout(function(){ ctrl.abort(); }, _EXPORT_MS);
+  try{
+    const r = await fetch(url, { signal: ctrl.signal, cache: "no-store" });
+    if(!r.ok) throw new Error("HTTP " + r.status);
+    return await r.text();
+  }finally{ clearTimeout(t); }
+}
+/** La lista de hojas del libro con su gid, de la página /htmlview (~57 KB). Se guarda la sesión; `renovar` la vuelve a
+ *  pedir si la guardada tiene más de un minuto. null si no llegó o no se reconoce: entonces se lee por el GAS. */
+function _exportMapa(renovar){
+  const c = _exportMapaCache;
+  if(c && (!renovar || Date.now() - c.ts < 60000)) return Promise.resolve(c.gids);
+  if(!c && Date.now() - _exportMapaFallo < _EXPORT_PAUSA_MS) return Promise.resolve(null);
+  if(!_exportMapaEnVuelo) _exportMapaEnVuelo = _exportMapaPedir().then(function(g){ _exportMapaEnVuelo = null; return g; });
+  return _exportMapaEnVuelo;
+}
+async function _exportMapaPedir(){
+  try{
+    const html = await _exportTexto(_EXPORT_BASE + "/htmlview");
+    const gids = Object.create(null), re = /items\.push\(\{name:\s*"((?:[^"\\]|\\.)*)"[^}]*?gid:\s*"(\d+)"/g;
+    let m, n = 0;
+    while((m = re.exec(html))){
+      // El nombre es un literal de JavaScript: una letra con tilde va como «\u» y cuatro cifras, y «&» como «\x26», que
+      // JSON no admite y se pasa a la forma «\u00» + sus dos cifras.
+      let nombre = m[1];
+      try{ nombre = JSON.parse('"' + m[1].replace(/\\(?:x([0-9a-fA-F]{2})|([\s\S]))/g, function(_, hx, ch){ return hx ? "\\u00" + hx : "\\" + ch; }) + '"'); }catch(_){}
+      gids[nombre] = m[2]; n++;
+    }
+    if(!n) throw new Error("lista de hojas irreconocible");
+    _exportMapaCache = { ts: Date.now(), gids: gids };
+    return gids;
+  }catch(_){
+    _exportMapaFallo = Date.now();
+    return _exportMapaCache ? _exportMapaCache.gids : null;
+  }
+}
+function _exportGviz(txt){
+  const i = txt.indexOf("setResponse("), j = txt.lastIndexOf(")");
+  if(i === -1 || j <= i) return null;
+  try{
+    const o = JSON.parse(txt.slice(i + 12, j));
+    return (o && o.status === "ok" && o.table && Array.isArray(o.table.cols) && Array.isArray(o.table.rows)) ? o.table : null;
+  }catch(_){ return null; }
+}
+/** CSV (RFC 4180): comillas dobles escapadas, y comas y saltos de línea dentro de un campo entrecomillado. Un BOM al
+ *  principio no estorba: sólo toca la primera cabecera, y las cabeceras se recortan (trim lo quita). */
+function _exportCsv(t){
+  const filas = [];
+  let f = [], c = "", q = false;
+  for(let i = 0; i < t.length; i++){
+    const ch = t[i];
+    if(q){ if(ch === '"'){ if(t[i+1] === '"'){ c += '"'; i++; } else q = false; } else c += ch; }
+    else if(ch === '"') q = true;
+    else if(ch === ","){ f.push(c); c = ""; }
+    else if(ch === "\n"){ f.push(c); filas.push(f); f = []; c = ""; }
+    else if(ch !== "\r") c += ch;
+  }
+  if(c !== "" || f.length){ f.push(c); filas.push(f); }
+  return filas;
+}
+/** «Date(2026,7,25)» (el mes de gviz empieza en 0) → «2026-08-25», como `_rowsCell` del GAS. null si no lo es. */
+function _exportFecha(v){
+  const m = /^Date\((\d+),(\d+),(\d+)/.exec(String(v));
+  return m ? m[1].padStart(4, "0") + "-" + String(+m[2] + 1).padStart(2, "0") + "-" + m[3].padStart(2, "0") : null;
+}
+/** Columna de gviz («A», «AB»…) → posición en el CSV. */
+function _exportPos(id){
+  let n = 0;
+  const s = String(id || "");
+  for(let i = 0; i < s.length; i++){
+    const k = s.charCodeAt(i) - 64;
+    if(k < 1 || k > 26) return -1;
+    n = n * 26 + k;
+  }
+  return s ? n - 1 : -1;
+}
+/** Las filas como las da ?p=rows (ver sheetRows en el GAS): cabeceras recortadas, fechas «yyyy-MM-dd», números y
+ *  booleanos con su tipo, lo vacío como "", sin filas vacías —juzgadas sobre las columnas devueltas— y, con `cols`, sólo
+ *  esas (si ninguna existe, todas). null si algo no cuadra entre las dos exportaciones: entonces se lee por el GAS. */
+function _exportCombinar(tabla, csv, cols){
+  const cab = (csv[0] || []).map(function(h){ return String(h).trim(); });
+  const cuerpo = csv.slice(1), col = [], cubiertas = {};
+  for(let k = 0; k < tabla.cols.length; k++){
+    const d = tabla.cols[k], h = String(d.label == null ? "" : d.label).trim(), pos = _exportPos(d.id);
+    cubiertas[pos] = true;
+    if((cab[pos] || "") !== h) return null;        // otra hoja, u otro orden de columnas (o un id que no es columna)
+    if(!h) continue;
+    if(d.type === "timeofday") return null;        // una hora: el GAS la devuelve como fecha; no se imita
+    col.push({ h: h, k: k, tipo: d.type, pos: pos });
+  }
+  for(let p = 0; p < cab.length; p++) if(cab[p] && !cubiertas[p]) return null;   // una columna que gviz no trae
+  let usar = col;
+  if(cols && cols.length){
+    const w = {};
+    cols.forEach(function(c){ const k = String(c).trim(); if(k) w[k] = true; });
+    const f = col.filter(function(x){ return w[x.h]; });
+    if(f.length) usar = f;
+  }
+  const filas = [], n = Math.max(tabla.rows.length, cuerpo.length);
+  for(let i = 0; i < n; i++){
+    const r = tabla.rows[i], t = cuerpo[i] || [], celdas = (r && r.c) || [];
+    // Una fila que sólo trae el CSV (¿añadida entre las dos peticiones?) no se arma con su texto: no se sabe su tipo.
+    if(!r){ if(t.some(function(v){ return v !== ""; })) return null; continue; }
+    const texto = function(x){ return t[x.pos] == null ? "" : t[x.pos]; };
+    // Las dos tienen que hablar de la MISMA fila: lo que gviz trae, el CSV lo trae en su sitio (y un texto, idéntico).
+    for(let a = 0; a < col.length; a++){
+      const x = col[a], c = celdas[x.k];
+      if(!c || c.v == null || c.v === "") continue;
+      if(texto(x) === "" || (x.tipo === "string" && String(c.v) !== texto(x))) return null;
+    }
+    const o = {};
+    let alguna = false;
+    for(let a = 0; a < usar.length; a++){
+      const x = usar[a], c = celdas[x.k];
+      let v;
+      if(c && c.v != null){
+        if(x.tipo === "date" || x.tipo === "datetime"){ v = _exportFecha(c.v); if(v === null) return null; }
+        else v = c.v;
+      } else v = texto(x);                          // vacía, o del tipo minoritario que gviz deja en blanco
+      if(v !== "") alguna = true;
+      o[x.h] = v;
+    }
+    if(alguna) filas.push(o);
+  }
+  return filas;
+}
+/** Una hoja listada: gviz (con tipos) y su CSV (por gid) a la vez, y combinadas. null si algo falla o no cuadra. */
+async function _exportUna(name, gid, cols){
+  try{
+    const par = await Promise.all([
+      _exportTexto(_EXPORT_BASE + "/gviz/tq?tqx=out:json&headers=1&sheet=" + encodeURIComponent(name)),
+      _exportTexto(_EXPORT_BASE + "/export?format=csv&gid=" + encodeURIComponent(gid))
+    ]);
+    const tabla = _exportGviz(par[0]);
+    // Una página (de error o de acceso) en vez del CSV no pasa de la cabecera, que nunca es la de gviz.
+    return tabla ? _exportCombinar(tabla, _exportCsv(par[1]), cols) : null;
+  }catch(_){ return null; }
+}
+/** La primera fila (y las cabeceras) que gviz da por ese nombre de hoja, como texto para comparar; null si no llega. */
+async function _exportPrimera(n){
+  try{
+    const t = _exportGviz(await _exportTexto(_EXPORT_BASE + "/gviz/tq?tqx=out:json&headers=1&tq=" + encodeURIComponent("limit 1") + "&sheet=" + encodeURIComponent(n)));
+    return t ? JSON.stringify(t) : null;
+  }catch(_){ return null; }
+}
+/** ¿La hoja no existe? Con un nombre que no existe, gviz responde con la hoja por defecto SIN avisar (medido). Se pide la
+ *  primera fila por ese nombre y por uno que ninguna hoja lleva: si responden lo mismo, no existe. */
+async function _exportNoExiste(name){
+  if(!_exportDefecto) _exportDefecto = _exportPrimera(_EXPORT_NO_EXISTE).then(function(d){ if(d === null) _exportDefecto = null; return d; });
+  const par = await Promise.all([_exportDefecto, _exportPrimera(name)]);
+  return par[0] !== null && par[0] === par[1];
+}
+/** D · una hoja por la exportación. Sus filas; [] si la hoja no existe (como el GAS); null si hay que leerla por el GAS. */
+async function _exportLeerHoja(name, cols){
+  const tiene = function(g){ return !!g && Object.prototype.hasOwnProperty.call(g, name); };
+  let gids = await _exportMapa(false);
+  if(gids && !tiene(gids)) gids = await _exportMapa(true);   // ¿una hoja creada después de pedir la lista?
+  if(!gids) return null;
+  if(!tiene(gids)) return (await _exportNoExiste(name)) ? [] : null;
+  const filas = await _exportUna(name, gids[name], cols);
+  if(filas) return filas;
+  const nuevos = await _exportMapa(true);                     // ¿se borró y se volvió a crear (gid nuevo)?
+  return (tiene(nuevos) && nuevos[name] !== gids[name]) ? _exportUna(name, nuevos[name], cols) : null;
+}
+
+async function _reproFetchSheet(name, cols, opts){
+  // D · primero la exportación (ver _exportLeerHoja); si no cuadra o falla, el GAS, como siempre.
+  if(!(opts && opts.soloGas) && _exportPuede()){
+    const filas = await _exportLeerHoja(name, cols);
+    if(filas){ _reproTrunc[name] = false; _reproVia[name] = "export"; return filas; }
+  }
   const base = gasUrl();
   if(!isValidGasUrl(base)) throw new Error("La URL del script no es válida (⚙ Config)");
   const tok = gcfg("gas-token","");
@@ -12520,6 +12717,7 @@ async function _reproFetchSheet(name, cols){
       // Un GAS anterior al 2026-09-09 no manda «truncated»: undefined → false, y el
       // comportamiento es exactamente el de antes. Retrocompatible a propósito.
       _reproTrunc[name] = !!j.truncated;
+      _reproVia[name] = "gas";
       return j.rows || [];
     }catch(x){
       failed = (x && x.name==="AbortError")
@@ -12539,7 +12737,7 @@ async function _reproFetchSheet(name, cols){
 
 /* SÓLO la MATRIZ: es lo único que necesitan el registro de eventos, el alta y las
    transferencias. No-op inmediato si el store del dashboard ya la tiene. */
-function _reproEnsureMatrix(force){
+function _reproEnsureMatrix(force, opts){
   if(!force && _reproStoreRows(_REPRO_SHEETS.matriz).length) return Promise.resolve();
   if(_reproMatrixPromise) return _reproMatrixPromise;
   // Si la carga COMPLETA ya va en vuelo, esperarla: también trae la MATRIZ. Sin esto,
@@ -12547,13 +12745,13 @@ function _reproEnsureMatrix(force){
   if(_reproLoadPromise) return _reproLoadPromise;
   if(!force && _reproSheets && (_reproSheets[_REPRO_SHEETS.matriz]||[]).length) return Promise.resolve();
   const done=function(){ _reproMatrixPromise=null; };
-  _reproMatrixPromise = _reproEnsureMatrixRun().then(done, done);
+  _reproMatrixPromise = _reproEnsureMatrixRun(opts).then(done, done);
   return _reproMatrixPromise;
 }
-async function _reproEnsureMatrixRun(){
+async function _reproEnsureMatrixRun(opts){
   _reproSheetsState="loading"; _reproSheetsErr=""; _reproRenderIfConsulta();
   try{
-    const rows = await _reproFetchSheet(_REPRO_SHEETS.matriz, _REPRO_MATRIZ_COLS);
+    const rows = await _reproFetchSheet(_REPRO_SHEETS.matriz, _REPRO_MATRIZ_COLS, opts);
     _reproPutRows(_REPRO_SHEETS.matriz, rows);
     _reproMatrixSrc="red"; _reproMatrixTs=Date.now();
     _reproFresca={ ts:_reproMatrixTs, store:_reproStoreVersion() };   // 1a: más nueva que el store de ahora
@@ -12582,8 +12780,9 @@ async function _reproMatrizFresca(){
   const enVuelo=_reproMatrixPromise || _reproLoadPromise;
   if(enVuelo){ try{ await enVuelo; }catch(_){} }
   const desde=Date.now();
-  await _reproEnsureMatrix(true);
-  return _reproMatrixSrc==="red" && _reproMatrixTs>=desde;
+  // D · la confirmación va por el GAS (7c): sólo cuenta una lectura del GAS posterior a la pregunta.
+  await _reproEnsureMatrix(true, { soloGas:true });
+  return _reproMatrixSrc==="red" && _reproMatrixTs>=desde && _reproVia[_REPRO_SHEETS.matriz]==="gas";
 }
 /** ¿La MATRIZ en uso es una lectura de la hoja de hace menos de un minuto, posterior al último envío que la cambió?
  *  Entonces releer no aporta: las dudas que queden son de verdad. */

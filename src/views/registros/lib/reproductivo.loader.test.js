@@ -56,6 +56,11 @@ function sandbox(code, net, opts = {}) {
     ...(opts.navigator ? { navigator: opts.navigator } : {}),
     _sleep: (ms) => { sleeps.push(ms); return new Promise((r) => setTimeout(r, 0)); },
     gasUrl: () => 'https://script.google.com/macros/s/AAA/exec',
+    // D (2026-09-24) · el lector prueba antes la exportación de Google, pero sólo con el GAS de producción y desde una
+    // página https (`_exportPuede`). Éstas son las pruebas del camino del GAS: página http, como las de happy-dom. La
+    // exportación la cubre lectura-exportacion.test.js.
+    DEFAULT_GAS_URL: 'https://script.google.com/macros/s/AAA/exec',
+    location: { protocol: 'http:' },
     isValidGasUrl: () => true,
     gcfg: (_k, d) => d,
     safeSetItem: (k, v) => { store[k] = v; },

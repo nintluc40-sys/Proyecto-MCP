@@ -425,7 +425,7 @@ destino, porque una vez insertó un bloque dos veces.
 > la máquina donde ese archivo existe. Si una prueba necesita mirarlo —lo hace `analistaGrafia.test.js`—,
 > lo lee con `try/catch` y se SALTA visiblemente (`it.skip`) cuando no está.
 
-## El contrato con Google Sheets: sello, firma y cola
+## El contrato con Google Sheets: sello, firma, cola y lectura
 
 Escribir en las hojas de Maduración no es un `POST` cualquiera. Hay tres cerrojos, y conviene
 entender qué protege cada uno antes de tocarlos.
@@ -520,6 +520,29 @@ Desde el 2026-09-24 (punto 2a, correcciones A y B, decisiones del usuario):
   aceptada: un envío que llega días después puede pisar una corrección hecha a mano entre medias.
 - **Vaciarla no pierde nada**: al terminar se relee la cola y sólo se quita lo que ese vaciado
   resolvió; lo que se guardó, se purgó o se sustituyó mientras tanto se respeta.
+
+### 5 · La LECTURA de Registros: por la exportación de Google, con el GAS de respaldo
+
+Desde el 2026-09-24 (punto 2a · D, decisiones del usuario) todo lo que Registros lee de una hoja —el
+registro reproductivo y los botones de Maduración (🔄 Recalcular, Ver saldo, Ver vivos, Proponer estado,
+📥 Cargar…)— pasa primero por la **exportación directa del libro** (`_reproFetchSheet` → `_exportLeerHoja`
+en `engine.js`), también justo después de guardar, y el GAS (`?p=rows`) queda de **respaldo**. Medido ese
+día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menudo; la exportación, de 0,4 a 5 s.
+
+- **Dos exportaciones combinadas, porque ninguna basta sola.** gviz (JSON) da cada valor con su tipo, como
+  el GAS, pero **deja en blanco las celdas del tipo minoritario** de una columna que mezcla números y texto
+  (una pareja de piscinas «NNN/NNN» en una columna numérica) y, **por una hoja que no existe, devuelve otra**
+  sin avisar. El CSV de la hoja (por su `gid`, que da `/htmlview`) trae el texto tal cual y rellena lo que
+  gviz deja en blanco.
+- **Lo que no cuadra se lee por el GAS, como antes**: una cabecera distinta, una fila desplazada o cambiada
+  entre las dos peticiones, una hoja que no está en la lista, una columna de horas, una fecha que no llega
+  como fecha, un error o 20 s sin respuesta. Una hoja que no existe se da por vacía, como la da el GAS.
+- **Sólo con el GAS de producción y desde una página https**: el libro que se exporta es el que escribe ese
+  GAS, y Google no deja leer la exportación a una página abierta como archivo. En `index (8)`, además, su
+  CSP tiene que permitir `https://docs.google.com` y `https://*.googleusercontent.com`.
+- **La confirmación de un chip dudoso** (1a) sigue leyendo por el GAS.
+- ⚠ **Depende de que el libro siga compartido «cualquiera con el enlace»**, como el tablero: si se
+  restringe, todo vuelve a leerse por el GAS, con la espera de antes.
 
 ## Reglas vigentes (lo que no es obvio leyendo el código)
 
