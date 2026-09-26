@@ -12254,8 +12254,8 @@ function _reproEventosHTML(){
     +   '<label style="'+_RLBL+'">📅 Fecha<input type="date" id="repro-fecha" value="'+escapeHtml(todayStr)+'" max="'+escapeHtml(todayStr)+'" onfocus="this.max=today()" style="'+_RINP+'"></label>'
     +   '<label style="'+_RLBL+'">Tipo de evento<select id="repro-tipo" style="'+_RINP+'"><option value="Desove">Desove</option><option value="Mortalidad">Mortalidad</option></select></label>'
     + '</div>'
-    + '<label style="display:block;font-size:11px;font-weight:600;color:#475569;margin-bottom:3px">Trovan ID</label>'
-    + '<textarea id="repro-codes" rows="10" placeholder="9856321&#10;9856330&#10;9856342" style="width:100%;box-sizing:border-box;padding:8px;font-size:13px;font-family:monospace;border:1px solid #cbd5e1;border-radius:6px;resize:vertical"></textarea>'
+    + '<label style="display:block;font-size:11px;font-weight:600;color:#475569;margin-bottom:3px">Trovan ID · 10 caracteres (0-9 y A-F)</label>'
+    + '<textarea id="repro-codes" rows="10" placeholder="000A1B2C3D&#10;000A1B2C3E&#10;000A1B2C4F" style="width:100%;box-sizing:border-box;padding:8px;font-size:13px;font-family:monospace;border:1px solid #cbd5e1;border-radius:6px;resize:vertical"></textarea>'
     + '<div style="display:flex;gap:8px;align-items:center;margin-top:10px">'
     +   '<button class="btn" type="button" style="font-weight:700" onclick="madReproProcess()">📋 Procesar registro</button>'
     +   '<button class="btn" type="button" onclick="madReproClear()">Limpiar</button>'
@@ -12311,8 +12311,8 @@ function _reproDestBlockHTML(){
     +   '<label style="'+_RLBL+'">Tanque destino<input class="repro-dest-tanque" style="'+_RINP+'"></label>'
     +   '<button class="btn" type="button" onclick="madReproDelDest(this)" style="font-size:11px">✕ Quitar</button>'
     + '</div>'
-    + '<label style="display:block;font-size:11px;font-weight:600;color:#475569;margin:8px 0 3px">Trovan ID de este destino</label>'
-    + '<textarea class="repro-dest-codes" rows="4" placeholder="9856321&#10;9856330" style="width:100%;box-sizing:border-box;padding:8px;font-size:13px;font-family:monospace;border:1px solid #cbd5e1;border-radius:6px;resize:vertical"></textarea>'
+    + '<label style="display:block;font-size:11px;font-weight:600;color:#475569;margin:8px 0 3px">Trovan ID de este destino · 10 caracteres (0-9 y A-F)</label>'
+    + '<textarea class="repro-dest-codes" rows="4" placeholder="000A1B2C3D&#10;000A1B2C3E" style="width:100%;box-sizing:border-box;padding:8px;font-size:13px;font-family:monospace;border:1px solid #cbd5e1;border-radius:6px;resize:vertical"></textarea>'
     + '</div>';
 }
 function _reproTransferHTML(){

@@ -803,3 +803,17 @@ describe('♻ reciclaje · Consulta: matriz de desoves y trazabilidad por HEMBRA
     expect(t.reciclado).toBe(false);
   });
 });
+
+/* Punto 8 del plan (2026-09-26, usuario) · el EJEMPLO de los dos campos de Trovan (Desoves/Mortalidades y el destino
+   de una transferencia) era «9856321…», de 7 cifras: quien lo copiaba veía su código rechazado por formato. El ejemplo
+   tiene que ser un Trovan VÁLIDO, y el rótulo decir la regla. */
+describe('Trovan · el ejemplo de los campos de captura es un Trovan válido', () => {
+  it('🔴 cada código de los dos placeholders cumple TROVAN_RE, y el rótulo dice «10 caracteres»', async () => {
+    const { readFileSync } = await import('node:fs');
+    const engine = readFileSync('public/registros/engine.js', 'utf8');
+    const ejemplos = [...engine.matchAll(/<textarea (?:id="repro-codes"|class="repro-dest-codes")[^>]*placeholder="([^"]*)"/g)].map((m) => m[1]);
+    expect(ejemplos.length, 'los dos campos').toBe(2);
+    for (const e of ejemplos) for (const c of e.split('&#10;')) expect(isValidTrovan(c), c).toBe(true);
+    expect((engine.match(/Trovan ID(?: de este destino)? · 10 caracteres \(0-9 y A-F\)/g) || []).length).toBe(2);
+  });
+});
