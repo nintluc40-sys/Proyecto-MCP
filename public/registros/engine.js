@@ -13006,6 +13006,19 @@ function _reproTraceRecicladoHTML(t){
    esas hembras como «anterior a su ingreso» hasta ese día. El `max` del campo guía el calendario —y se renueva al
    enfocarlo, porque la app pasa días abierta—, pero lo que manda es esto, al enviar. «Hoy» es el del dispositivo,
    igual que la fecha que el formulario propone. Devuelve el mensaje, o "" si la fecha vale. */
+/* 📅 2026-09-26 · Punto 9 del plan (usuario) · la MISMA regla en las tres fichas de laboratorio —Bacteriología, Calidad
+   de Agua y Patología—: una fecha de muestreo o de resultados POSTERIOR a hoy no se guarda, y los resultados no pueden
+   ser ANTERIORES al muestreo (medido ese día en producción: 40 filas de Microbiología y 6 de Calidad de Agua lo eran).
+   El `max`/`min` de los calendarios guían; lo que manda es esto, al guardar. «Hoy» es el del dispositivo. Devuelve el
+   mensaje, o "" si las fechas valen. */
+function _labFechasError(fm, fr){
+  const dmy=function(x){ return String(x).split("-").reverse().join("/"); };
+  const hoy=today();
+  if(fm && fm>hoy) return "La fecha de muestreo "+dmy(fm)+" es posterior a hoy ("+dmy(hoy)+" en este dispositivo): no se guarda.";
+  if(fr && fr>hoy) return "La fecha de resultados "+dmy(fr)+" es posterior a hoy ("+dmy(hoy)+" en este dispositivo): no se guarda.";
+  if(fm && fr && fr<fm) return "Los resultados ("+dmy(fr)+") no pueden ser anteriores al muestreo ("+dmy(fm)+"): no se guarda.";
+  return "";
+}
 function _reproFechaFutura(fecha){
   const dmy=function(s){ return String(s).split("-").reverse().join("/"); };
   return fecha>today() ? "La fecha "+dmy(fecha)+" es posterior a hoy ("+dmy(today())+" en este dispositivo): no se envía nada." : "";
@@ -20829,8 +20842,8 @@ function renderMicNuevo(){
       <span class="ssp ssp-mt">${escapeHtml(meta.fechaMuestreo||today())}</span></div>
     <div class="fc-b">
       <div class="meta">
-        <div class="mf"><label>Fecha muestreo</label><input type="date" id="mic-fm" value="${escapeHtml(meta.fechaMuestreo||today())}" oninput="micDraftTouch()"></div>
-        <div class="mf"><label>Fecha resultados</label><input type="date" id="mic-fr" value="${escapeHtml(meta.fechaResultados||"")}" oninput="micDraftTouch()"></div>
+        <div class="mf"><label>Fecha muestreo</label><input type="date" id="mic-fm" value="${escapeHtml(meta.fechaMuestreo||today())}" max="${today()}" onfocus="this.max=today()" oninput="micDraftTouch()"></div>
+        <div class="mf"><label>Fecha resultados</label><input type="date" id="mic-fr" value="${escapeHtml(meta.fechaResultados||"")}" max="${today()}" onfocus="this.max=today();this.min=(document.getElementById('mic-fm')||{}).value||''" oninput="micDraftTouch()"></div>
         <div class="mf"><label>N° Corrida</label><input id="mic-corr" value="${escapeHtml(meta.corrida||"")}" placeholder="Ej. 562" oninput="micDraftTouch()" onchange="micCorridaChange()"></div>
         <div class="mf"><label>Responsable <span style="color:#dc2626" title="Analista obligatorio para guardar y sincronizar">*</span></label><input id="mic-resp" list="mic-analistas" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="micDraftTouch()">${_analistaDL("mic-analistas")}</div>
         <div class="mf"><label>Formato</label><select id="mic-fmt-sel" onchange="micFmtChange(this.value)" style="font-weight:600">${fmtOpts}</select></div>
@@ -20955,6 +20968,7 @@ function recoverMicGrid(){
 function saveMicLocal(){
   const draft = collectMicDraft(); saveMicDraft(draft);
   if(!isValidDate(draft.meta.fechaMuestreo)){ toast("⚠️ Ingresa una Fecha de muestreo válida","warn",3500); return -1; }
+  { const _fe=_labFechasError(draft.meta.fechaMuestreo, draft.meta.fechaResultados); if(_fe){ toast(_fe,"err",7000); return -1; } }   // punto 9
   // Corrida requerida SOLO si el formato ACTIVO es de Larvicultura · Muestra y
   // tiene datos (Maduración y Otras no usan corrida). Como solo se guarda el
   // formato activo, la validación también mira solo ese formato.
@@ -22172,8 +22186,8 @@ function renderCalNuevo(){
       <span class="ssp ssp-mt">${escapeHtml(meta.fechaMuestreo||today())}</span></div>
     <div class="fc-b">
       <div class="meta">
-        <div class="mf"><label>Fecha muestreo</label><input type="date" id="cal-fm" value="${escapeHtml(meta.fechaMuestreo||today())}" oninput="calDraftTouch()"></div>
-        <div class="mf"><label>Fecha resultados</label><input type="date" id="cal-fr" value="${escapeHtml(meta.fechaResultados||"")}" oninput="calDraftTouch()"></div>
+        <div class="mf"><label>Fecha muestreo</label><input type="date" id="cal-fm" value="${escapeHtml(meta.fechaMuestreo||today())}" max="${today()}" onfocus="this.max=today()" oninput="calDraftTouch()"></div>
+        <div class="mf"><label>Fecha resultados</label><input type="date" id="cal-fr" value="${escapeHtml(meta.fechaResultados||"")}" max="${today()}" onfocus="this.max=today();this.min=(document.getElementById('cal-fm')||{}).value||''" oninput="calDraftTouch()"></div>
         <div class="mf"><label>N° Corrida (opcional)</label><input id="cal-corr" value="${escapeHtml(meta.corrida||"")}" placeholder="Opcional" oninput="calDraftTouch()" onchange="calCorridaChange()"></div>
         <div class="mf"><label>Responsable <span style="color:#dc2626" title="Analista obligatorio para guardar y sincronizar">*</span></label><input id="cal-resp" list="cal-analistas" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="calDraftTouch()">${_analistaDL("cal-analistas")}</div>
         <div class="mf"><label>Formato</label><select id="cal-fmt-sel" onchange="calFmtChange(this.value)" style="font-weight:600">${fmtOpts}</select></div>
@@ -22222,6 +22236,7 @@ function calNuevoReset(){
 function saveCalLocal(){
   const draft=collectCalDraft(); saveCalDraft(draft);
   if(!isValidDate(draft.meta.fechaMuestreo)){ toast("⚠️ Ingresa una Fecha de muestreo válida","warn",3500); return -1; }
+  { const _fe=_labFechasError(draft.meta.fechaMuestreo, draft.meta.fechaResultados); if(_fe){ toast(_fe,"err",7000); return -1; } }   // punto 9
   // Identidad de sesión: cada "Nuevo análisis" tiene un sid estable (ver Bacteriología).
   // Analista obligatorio para CREAR el registro (mismo motivo que en Bacteriología: si no,
   // el registro queda con una clave de sesión que el formulario ya no puede alcanzar).
@@ -22820,8 +22835,8 @@ function renderPatNuevo(){
       <span class="ssp ssp-mt">${escapeHtml(meta.fechaMuestreo||today())}</span></div>
     <div class="fc-b">
       <div class="meta">
-        <div class="mf"><label>Fecha muestreo</label><input type="date" id="pat-fm" value="${escapeHtml(meta.fechaMuestreo||today())}" oninput="patDraftTouch()"></div>
-        <div class="mf"><label>Fecha resultados</label><input type="date" id="pat-fr" value="${escapeHtml(meta.fechaResultados||"")}" oninput="patDraftTouch()"></div>
+        <div class="mf"><label>Fecha muestreo</label><input type="date" id="pat-fm" value="${escapeHtml(meta.fechaMuestreo||today())}" max="${today()}" onfocus="this.max=today()" oninput="patDraftTouch()"></div>
+        <div class="mf"><label>Fecha resultados</label><input type="date" id="pat-fr" value="${escapeHtml(meta.fechaResultados||"")}" max="${today()}" onfocus="this.max=today();this.min=(document.getElementById('pat-fm')||{}).value||''" oninput="patDraftTouch()"></div>
         <div class="mf"><label>N° Corrida (opcional)</label><input id="pat-corr" value="${escapeHtml(meta.corrida||"")}" placeholder="Opcional" oninput="patDraftTouch()" onchange="patCorridaChange()"></div>
         <div class="mf"><label>Responsable <span style="color:#dc2626" title="Analista obligatorio para guardar y sincronizar">*</span></label><input id="pat-resp" list="pat-analistas" value="${escapeHtml(meta.responsable||"")}" placeholder="Analista" oninput="patDraftTouch()">${_analistaDL("pat-analistas")}</div>
         <div class="mf" style="flex-basis:100%"><label>Encabezado <span style="font-weight:500;text-transform:none;color:#64748b">— opcional, sale en el PDF</span></label>
@@ -22891,6 +22906,7 @@ function _patLastSavedText(meta){
 function savePatLocal(){
   const draft=collectPatDraft(); savePatDraft(draft);
   if(!isValidDate(draft.meta.fechaMuestreo)){ toast("⚠️ Ingresa una Fecha de muestreo válida","warn",3500); return -1; }
+  { const _fe=_labFechasError(draft.meta.fechaMuestreo, draft.meta.fechaResultados); if(_fe){ toast(_fe,"err",7000); return -1; } }   // punto 9
   // Identidad de sesión: cada "Nuevo análisis" tiene un sid estable (ver Bacteriología).
   // Analista obligatorio para CREAR el registro (mismo motivo que en Bacteriología).
   const _hayFilasPat = (draft.rows||[]).some(patRowHasData);
