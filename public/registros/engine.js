@@ -14235,7 +14235,10 @@ function _madGridFechaChange(ficha, pintar){
  *  en Tanques, ningún parte abierto de esa sala— y la elegida tampoco tiene; si no, se pregunta. Devuelve { nuevo } si
  *  lo llevó (y entonces NO se guarda bajo la fecha anterior), o null para seguir como hasta hoy.
  *  ⚠ Lo ya ENVIADO no se mueve: la hoja lo tiene con su fecha, y moverlo aquí dejaría las dos filas. Se queda en su
- *  día, y se dice. En Tanques la ronda llevada es un parte de ese día: el siguiente número, y conserva su hora. */
+ *  día, y se dice. En Tanques la ronda llevada es un parte de ese día: el siguiente número, y conserva su hora.
+ *  🔴 2026-09-25 (usuario, revisión en Chrome de 0d) · «enviado» es haber llegado ALGUNA VEZ a la hoja (`syncedAt`), no
+ *  `synced`: la fusión al guardar la grilla (salir de la pestaña, elegir el mismo día) le quita `synced` aunque nada
+ *  cambie, y tras salir y volver una fila enviada se movía de día. */
 function _madGridLlevar(ficha){
   const r = _madRendered[ficha];
   const el = document.getElementById("mad-" + ficha + "-fecha");
@@ -14243,7 +14246,7 @@ function _madGridLlevar(ficha){
   if(!_madGridDirty || !r || !isValidDate(nueva) || nueva === r.fecha) return null;
   const list = loadMad(ficha);
   const deOrigen = list.filter(_madGridDelDia(ficha, r.fecha, r.sala));
-  if(deOrigen.some(function(x){ return x.synced; })){
+  if(deOrigen.some(function(x){ return x.synced || x.syncedAt; })){
     toast("Lo del " + r.fecha + " ya se envió a la hoja: se queda en ese día (corrígelo en la hoja si la fecha era otra).", "warn", 7000);
     return null;
   }

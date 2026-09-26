@@ -1866,10 +1866,13 @@ function partesHTML(c, p) {
 function estadosHTML(e) {
   const chip = (x) => (x ? `<span class="mop-chip is-e-${claseEstado(x)}">${esc(x)}</span>` : '<span class="muted">—</span>');
   const tono = { coinciden: 'mop-igual', difieren: 'mop-dif' };
+  /* 2026-09-25 (usuario, revisión en navegador de 0d) · el «Estado por lote» de cada lado, debajo de su estado: el
+     propuesto (el de «🔄 Proponer estado», punto 3 de 0d) se calculaba y no se enseñaba en ninguna parte. */
+  const porLote = (x) => (x ? `<div class="mop-nota">${esc(x)}</div>` : '');
   const fila = (f) => `<tr class="${f.situacion === 'difieren' ? 'mop-difieren' : ''}">
-      <td><b>${esc(f.sala)}</b></td><td>${chip(f.registrado.estado)}</td>
+      <td><b>${esc(f.sala)}</b></td><td>${chip(f.registrado.estado)}${porLote(f.registrado.porLote)}</td>
       <td class="r">${f.registrado.fecha ? esc(dma(f.registrado.fecha)) + (vacio(f.desfaseDias) ? '' : ` <span class="mop-nota">hace ${nf(f.desfaseDias)} d</span>`) : '<span class="muted">—</span>'}</td>
-      <td>${chip(f.propuesto.estado)}</td>
+      <td>${chip(f.propuesto.estado)}${porLote(f.propuesto.porLote)}</td>
       <td><span class="${tono[f.situacion] || 'muted'}">${esc(f.etiqueta)}</span></td></tr>`;
   return `<div class="mc-card mc-card-wide">
     <h4 class="mc-card-h">🏠 Estado registrado frente al propuesto <span class="mc-h-note">al cierre de la foto · ${nf(e.coinciden)} coinciden · ${nf(e.difieren)} difieren · ${nf(e.sinComparar)} sin comparar</span></h4>
@@ -1877,7 +1880,7 @@ function estadosHTML(e) {
       <thead><tr><th>Sala</th><th>Registrado</th><th class="r">Tecleado el</th><th>Propuesto por el libro</th><th>Situación</th></tr></thead>
       <tbody>${e.filas.map(fila).join('')}</tbody></table></div>
     <p class="mc-note">El PROPUESTO es el de «🔄 Proponer estado» de la ficha de Salas: el libro al cierre de la foto. Un estado tecleado hace
-      días puede coincidir por casualidad: mira cuándo se tecleó.</p>
+      días puede coincidir por casualidad: mira cuándo se tecleó. Debajo de cada estado va su «Estado por lote»; la situación compara sólo el estado.</p>
     ${ignoraHTML(e.ignora, 'El estado de una sala', PORQUE_ESTADO)}
   </div>`;
 }

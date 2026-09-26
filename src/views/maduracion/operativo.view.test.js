@@ -1112,6 +1112,20 @@ describe('Maduración · operativo · 🩺 Calidad del dato', () => {
     expect(root.querySelectorAll('.mop-estados tbody tr')).toHaveLength(5);
   });
 
+  /* Revisión en navegador de la tanda 0d (2026-09-25, usuario) · el «Estado por lote» PROPUESTO se calculaba desde el
+     punto 3 de 0d (el de «🔄 Proponer estado» de Salas) y no se enseñaba en ninguna parte: va debajo del estado de cada
+     lado, el registrado (lo tecleado en la hoja) y el propuesto por el libro. */
+  it('🔴 debajo de cada estado va su «Estado por lote»: el registrado y el propuesto por el libro', async () => {
+    const PLANTA = [...PLANTA_F4, SALA('19/09/2026', 'Sala 4', { Estado: 'Producción', 'Estado por lote': 'QB: Producción' }), ...REPRO];
+    await montar(PLANTA);
+    abrirCalidad();
+    const s4 = filaDe('.mop-estados', 'Sala 4');
+    expect(plano(s4.cells[1]), 'el registrado').toContain('QB: Producción');
+    expect(plano(s4.cells[3]), 'el propuesto (QB entró el 12/09: en cuarentena)').toContain('QB: Cuarentena');
+    const s1 = filaDe('.mop-estados', 'Sala 1');
+    expect(plano(s1.cells[1]), 'sin «Estado por lote» registrado no se inventa nada').not.toMatch(/:/);
+  });
+
   it('🔑 los avisos del libro: todos sus tipos aunque vayan a cero; con el código genético, no aplican', async () => {
     await montar(PLANTA_F6C);
     abrirCalidad();

@@ -141,6 +141,31 @@ describe('🔴 Salas · la fecha con algo tecleado', () => {
     expect(filasS(AYER)).toHaveLength(0);
     expect(filasS(H.today()).map((r) => r.data.temp_10)).toEqual([27]);
   });
+
+  /* 🔴 Revisión en Chrome de la tanda 0d (2026-09-25, usuario) · la guarda miraba `synced`, y esa marca la QUITA la
+     fusión al guardar la grilla (salir de la pestaña, o elegir en el calendario el mismo día) aunque nada cambie. Tras
+     salir y volver, corregir y cambiar la fecha preguntaba como si fuera un borrador y, al Aceptar, movía la fila ya
+     enviada a otro día. Lo que cuenta es si llegó ALGUNA VEZ a la hoja: `syncedAt`, que la fusión conserva. */
+  it('🔴 lo que se envió ALGUNA VEZ tampoco se mueve, aunque ya no esté marcado como enviado', () => {
+    H.saveMadList('salas', [fila({ fecha: H.today(), sala: H.MAD_SALA_OPTS[0], temp_08: 26 }, { synced: false, syncedAt: 1 })]);
+    abrirS();
+    teclearS(0, 'temp_10', '27');
+    fechaS(AYER);                                  // no pregunta: no hay nada que decidir
+    expect(avisos.some((a) => a.includes('ya se envió')), 'no avisó').toBe(true);
+    expect(filasS(AYER)).toHaveLength(0);
+    expect(filasS(H.today()).map((r) => r.data.temp_10)).toEqual([27]);
+  });
+
+  it('🔴 el camino real: elegir el MISMO día en el calendario guarda la grilla (y la desmarca); la fila enviada sigue sin moverse', () => {
+    H.saveMadList('salas', [fila({ fecha: H.today(), sala: H.MAD_SALA_OPTS[0], temp_08: 26 }, { synced: true, syncedAt: 1 })]);
+    abrirS();
+    fechaS(H.today());                             // sin teclear: guarda la grilla y la fusión le quita `synced`
+    expect(filasS(H.today())[0].synced, 'control: la fusión la desmarca (es lo que la guarda no puede usar)').toBe(false);
+    teclearS(0, 'temp_10', '27');
+    fechaS(AYER);                                  // sin la guarda por `syncedAt` preguntaría (y la prueba revienta)
+    expect(avisos.some((a) => a.includes('ya se envió')), 'no avisó').toBe(true);
+    expect(filasS(AYER)).toHaveLength(0);
+  });
 });
 
 /* ── TANQUES ───────────────────────────────────────────────────────────────────────────────────────────────────────── */
