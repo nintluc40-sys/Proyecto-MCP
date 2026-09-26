@@ -13030,12 +13030,16 @@ function _reproAvisoFinal(id, ok, hecho, envios, atencion){
 }
 /** Una acción que termina SIN registrar nada: rojo, y la línea de progreso borrada. */
 function _reproNada(id, msg, dur){ _reproPaso(id, ""); toast(msg, "err", dur || 6000); }
+/* Revisión en Chrome de F2/F3 (2026-09-25, usuario) · el MISMO texto sirve cuando no hay nada más que registrar
+   (`_reproNadaOElegir`) y cuando se registra lo demás: entonces va en lo que requiere atención, dentro del aviso final y
+   en naranja (antes ese aviso salía verde y sólo lo decía el bloque de abajo). */
+function _reproElegirTxt(n){ return n + " microchip(s) los llevan DOS hembras vivas: elige abajo de cuál es cada uno."; }
 /* F3 (auditoría del 2026-09-25, usuario) · Con microchips que llevan DOS hembras vivas no se registra nada hasta que se
    ELIGE de cuál es cada uno, y eso no es «nada válido»: el aviso es NARANJA y dice qué hacer. El rojo queda para cuando de
    verdad no hay nada que registrar. `vivas` = cuántos esperan esa elección; `rojo` = el texto de siempre. */
 function _reproNadaOElegir(id, vivas, rojo, atencion, dur){
   const extra = (atencion && atencion.length) ? " " + atencion.join(" ") : "";
-  if(vivas){ _reproPaso(id, ""); toast(vivas + " microchip(s) los llevan DOS hembras vivas: elige abajo de cuál es cada uno." + extra, "warn", 9000); return; }
+  if(vivas){ _reproPaso(id, ""); toast(_reproElegirTxt(vivas) + extra, "warn", 9000); return; }
   _reproNada(id, rojo + extra, extra ? 9000 : dur);
 }
 
@@ -13093,6 +13097,7 @@ async function madReproProcess(){
     _reproNadaOElegir("repro-paso", res.report.variasVivas.length, "No se registró nada: ningún Trovan superó la validación (revisa el detalle).", atencion, 6000);
     return;
   }
+  if(res.report.variasVivas.length) atencion.push(_reproElegirTxt(res.report.variasVivas.length));   // lo demás sale; ésos esperan
   const url = gasUrl();
   _reproPaso("repro-paso", "Enviando "+res.report.processed.length+" "+(tipo==="Desove"?"desove(s)":"mortalidad(es)")+"…");
   let okAll=true; const _o1={ sinAvisos:true }, _o2={ sinAvisos:true };
@@ -13269,6 +13274,7 @@ async function madReproTransfer(){
   _reproElegirPend = _vv.length ? { clase:"traslado", fecha:fecha, tipo:tipo, origen:origen, composicion:composicion, trId:trId, chips:_vv.slice(),
     destinos:_destinos.map(function(d){ return { sala:d.sala, tanque:d.tanque, ids:d.ids.filter(function(id){ return _vv.indexOf(id)!==-1; }) }; }).filter(function(d){ return d.ids.length; }) } : null;
   if(!res.transfer){ _madReproShowTransferReport(res.report, trId, false); _reproNadaOElegir("repro-t-paso", _vv.length, "No hay individuos válidos para transferir.", atencion, 4000); return; }
+  if(_vv.length) atencion.push(_reproElegirTxt(_vv.length));   // lo demás se mueve; ésos esperan
   _reproPaso("repro-t-paso", "Enviando el traslado "+trId+"…");
   let okAll=true; const _t1={ sinAvisos:true }, _t2={ sinAvisos:true };
   if(res.matriz){ okAll=(await postPayload(res.matriz, gasUrl(), _t1)) && okAll; }
@@ -13418,7 +13424,7 @@ async function madReproRegistrarElegidas(seq){
   if(p.clase === "evento") _madReproShowReport(res.report, [], p.tipo, ok && hubo);
   else _madReproShowTransferReport(res.report, p.trId, ok && hubo);
   if(!hubo){ _reproNada(_paso, "La hembra elegida no superó la validación: revisa el detalle.", 5000); return; }
-  _reproAvisoFinal(_paso, ok, n+" registrado(s) con la hembra elegida", [_o1,_o2], []);
+  _reproAvisoFinal(_paso, ok, n+" registrado(s) con la hembra elegida", [_o1,_o2], p.chips.length ? [_reproElegirTxt(p.chips.length)] : []);   // los que quedan, dichos
   if(ok && p.clase === "traslado") _reproBumpTrSeq(p.trId);
 }
 

@@ -114,14 +114,14 @@ const evento = async (tipo, codes = CHIP) => {
   document.getElementById('repro-codes').value = codes;
   await H.madReproProcess();
 };
-const traslado = async () => {
+const traslado = async (codes = CHIP) => {
   caja('ra-transfer').innerHTML = H._reproTransferHTML();
   document.getElementById('repro-t-fecha').value = '2026-09-12';
   document.getElementById('repro-t-osala').value = 'S1';
   document.getElementById('repro-t-otanque').value = 'T1';
   document.querySelector('#repro-t-dests .repro-dest-sala').value = 'S2';
   document.querySelector('#repro-t-dests .repro-dest-tanque').value = 'T2';
-  document.querySelector('#repro-t-dests .repro-dest-codes').value = CHIP;
+  document.querySelector('#repro-t-dests .repro-dest-codes').value = codes;
   await H.madReproTransfer();
 };
 const alta = async (fila) => {
@@ -220,6 +220,21 @@ describe('E · eventos', () => {
     expect(document.querySelector('#repro-report .repro-elegir'), 'y abajo está dónde elegir').not.toBeNull();
     lineaVacia('repro-paso');
   });
+
+  /* Revisión en Chrome de F2/F3 (2026-09-25, usuario) · con un chip normal JUNTO a uno de dos vivas, lo normal se
+     registra y el otro espera elección: el aviso salía VERDE y lo callaba (sólo lo decía el bloque de abajo). Lo que
+     requiere atención va DENTRO del aviso, en naranja (regla de E). */
+  it('🔴 mezcla: lo registrado y, en el MISMO aviso naranja, que queda un microchip por elegir', async () => {
+    const OTRO = '000E00AA02';
+    const A = hembra({ 'Número': '2', 'Trovan ID': OTRO });
+    const B = hembra({ 'Número': '3', 'Trovan ID': OTRO, 'Piscina': 'P2', 'Código genético': 'GEN2.B', 'Lote': 'XB' });
+    H.setLecturas({ [S.matriz]: [VIVA, A, B], [S.bitacora]: [], [S.transfer]: [] });
+    await evento('Desove', CHIP + '\n' + OTRO);
+    expect(posts.length, 'lo normal sí se envía').toBeGreaterThan(0);
+    expect(unAviso('warn')).toBe('1 desove(s) registrado(s). 1 microchip(s) los llevan DOS hembras vivas: elige abajo de cuál es cada uno.');
+    expect(document.querySelector('#repro-report .repro-elegir'), 'y abajo está dónde elegir').not.toBeNull();
+    lineaVacia('repro-paso');
+  });
 });
 
 describe('E · alta, traslado y elegir hembra', () => {
@@ -250,6 +265,18 @@ describe('E · alta, traslado y elegir hembra', () => {
     lineaVacia('repro-t-paso');
   });
 
+  it('🔴 mezcla en el traslado: lo transferido y, en el MISMO aviso naranja, que queda un microchip por elegir', async () => {
+    const OTRO = '000E00AA02';
+    const A = hembra({ 'Número': '2', 'Trovan ID': OTRO });
+    const B = hembra({ 'Número': '3', 'Trovan ID': OTRO, 'Piscina': 'P2', 'Código genético': 'GEN2.B', 'Lote': 'XB' });
+    H.setLecturas({ [S.matriz]: [VIVA, A, B], [S.bitacora]: [], [S.transfer]: [] });
+    await traslado(CHIP + '\n' + OTRO);
+    expect(posts.length, 'lo normal sí se envía').toBeGreaterThan(0);
+    expect(unAviso('warn')).toMatch(/^1 individuo\(s\) transferido\(s\) en el traslado TR-\d+\. 1 microchip\(s\) los llevan DOS hembras vivas: elige abajo de cuál es cada uno\.$/);
+    expect(document.querySelector('#repro-t-report .repro-elegir'), 'y abajo está dónde elegir').not.toBeNull();
+    lineaVacia('repro-t-paso');
+  });
+
   it('🔴 traslado sin MATRIZ: UN aviso rojo que dice por qué, sin «token» ni el nombre de la hoja', async () => {
     H.setLecturas({});
     lecturaRows = () => { throw new Error('Google no respondió en 30 s'); };
@@ -271,6 +298,24 @@ describe('E · alta, traslado y elegir hembra', () => {
     const seq = Number(/\((\d+)\)/.exec(document.querySelector('#repro-report .repro-elegir button').getAttribute('onclick'))[1]);
     await H.madReproRegistrarElegidas(seq);
     expect(unAviso('ok')).toBe('1 registrado(s) con la hembra elegida.');
+    lineaVacia('repro-paso');
+  });
+
+  /* Revisión en Chrome de F2/F3 (2026-09-25, usuario) · con DOS chips por elegir y sólo UNO marcado, lo marcado se
+     registra y el otro sigue esperando: el aviso salía verde y lo callaba. Va dentro, en naranja (regla de E). */
+  it('🔴 elegir sólo ALGUNOS: lo registrado y, en el MISMO aviso naranja, los que siguen por elegir', async () => {
+    const OTRO = '000E00AA02';
+    const A = hembra({}), B = hembra({ 'Número': '2', 'Piscina': 'P2', 'Código genético': 'GEN2.B', 'Lote': 'XB' });
+    const C2 = hembra({ 'Número': '3', 'Trovan ID': OTRO }), D2 = hembra({ 'Número': '4', 'Trovan ID': OTRO, 'Piscina': 'P2', 'Código genético': 'GEN2.B', 'Lote': 'XB' });
+    H.setLecturas({ [S.matriz]: [A, B, C2, D2], [S.bitacora]: [], [S.transfer]: [] });
+    await evento('Mortalidad', CHIP + '\n' + OTRO);
+    expect(posts, 'con dos vivas no se registra solo').toHaveLength(0);
+    avisos.length = 0;
+    document.querySelector(`#repro-report .repro-elegir input[name="repro-eleg-${CHIP}"]`).checked = true;   // sólo el primero
+    const seq = Number(/\((\d+)\)/.exec(document.querySelector('#repro-report .repro-elegir button').getAttribute('onclick'))[1]);
+    await H.madReproRegistrarElegidas(seq);
+    expect(unAviso('warn')).toBe('1 registrado(s) con la hembra elegida. 1 microchip(s) los llevan DOS hembras vivas: elige abajo de cuál es cada uno.');
+    expect(document.querySelector(`#repro-report .repro-elegir input[name="repro-eleg-${OTRO}"]`), 'el que falta sigue abajo').not.toBeNull();
     lineaVacia('repro-paso');
   });
 });
