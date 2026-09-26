@@ -264,6 +264,62 @@ describe('Maduración · operativo · 0f · 4 · ⏳ la cuarentena por lote y sa
   });
 });
 
+/* 0f · 6 (2026-09-25, usuario) · en cada tarjeta de 🏠 Salas, un bloque por lote con lo del Saldo al recalcular: ♀/♂,
+   días, mortalidad acumulada · del día, cargas volumétrica y métrica (promedio de sus tanques en la sala) y biomasa. En
+   PLANTA, QB (Sala 4, 8♂ 8♀) pesa aquí 30 g ♂ y 40 g ♀; QA está en las Salas 1 y 2 y no tiene pesos. */
+describe('Maduración · operativo · 0f · 6 · 🏠 Salas con lo del Saldo por lote', () => {
+  const PLANTA_S = [...PLANTA, TQ('18/09/2026', 'Sala 4', 1, { 'Peso promedio machos (g)': 30, 'Peso promedio hembras (g)': 40 })];
+  const abrirSalas = () => click(root.querySelector('[data-mop-sub="salas"]'));
+  /* Cada lote es un bloque (no una tabla: con las cinco tarjetas en fila, la tabla escondía columnas); `data-v` nombra
+     cada cifra. */
+  const bloque = (sala, lote) => root.querySelector(`[data-mop-sala="${sala}"] [data-mop-sc-lote="${lote}"]`);
+  const v = (sala, lote, k) => bloque(sala, lote).querySelector(`[data-v="${k}"]`).textContent;
+
+  it('🔴 cada tarjeta lleva un bloque por lote, con todo lo del pedido', async () => {
+    await montar(PLANTA_S);
+    abrirSalas();
+    expect([...root.querySelectorAll('[data-mop-sala="Sala 1"] [data-mop-sc-lote]')].map((b) => b.dataset.mopScLote)).toEqual(['QA', 'QC']);
+    expect([...bloque('Sala 4', 'QB').querySelectorAll('[data-v]')].map((x) => x.dataset.v)).toEqual(['vivos', 'dias', 'mort', 'cvol', 'cmet', 'bio']);
+    expect(bloque('Sala 4', 'QB').textContent).toContain('Mort.');
+    expect(bloque('Sala 4', 'QB').textContent).toContain('Biomasa');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('🔴 con pesos: biomasa y cargas con su unidad; sin pesos, «—» (no un cero)', async () => {
+    await montar(PLANTA_S);
+    abrirSalas();
+    expect(v('Sala 4', 'QB', 'vivos')).toBe('8 ♀ / 8 ♂');
+    expect(v('Sala 4', 'QB', 'bio')).toBe('0,56 kg');                          // (8 × 40 + 8 × 30) g
+    expect(v('Sala 4', 'QB', 'cmet')).toMatch(/ g\/m²$/);
+    expect(v('Sala 4', 'QB', 'cvol')).toMatch(/ kg\/m³$/);
+    // Cada carga en SU sitio: la métrica va en g/m² y la volumétrica en kg/m³, así que la primera sale muy por encima.
+    const n = (t) => Number(t.split(' ')[0].replace(/\./g, '').replace(',', '.'));
+    expect(n(v('Sala 4', 'QB', 'cmet')) > 10 * n(v('Sala 4', 'QB', 'cvol')), `${v('Sala 4', 'QB', 'cmet')} frente a ${v('Sala 4', 'QB', 'cvol')}`).toBe(true);
+    // QD (Sala 2) no tiene ningún peso registrado. (QA sí: los machos de su tanque de la Sala 1 pesan 32 g.)
+    expect([v('Sala 2', 'QD', 'cvol'), v('Sala 2', 'QD', 'cmet'), v('Sala 2', 'QD', 'bio')]).toEqual(['—', '—', '—']);
+  });
+
+  it('🔴 un lote en dos salas lleva su asterisco y la nota dice que la mortalidad es del lote entero', async () => {
+    await montar(PLANTA_S);
+    abrirSalas();
+    expect(v('Sala 1', 'QA', 'mort')).toContain('*');
+    expect(root.querySelector('[data-mop-sala="Sala 1"]').textContent).toContain('Mortalidad del lote entero');
+    expect(v('Sala 4', 'QB', 'mort')).not.toContain('*');
+    expect(root.querySelector('[data-mop-sala="Sala 4"]').textContent).not.toContain('Mortalidad del lote entero');
+  });
+
+  it('🔑 las clases propias de los bloques están DEFINIDAS en su CSS', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/views/maduracion/operativo.css', 'utf8') + readFileSync('src/views/maduracion/maduracion.css', 'utf8');
+    await montar(PLANTA_S);
+    abrirSalas();
+    const usadas = new Set();
+    root.querySelectorAll('.mop-sc-saldo, .mop-sc-saldo [class]').forEach((el) => el.classList.forEach((c) => { if (c.startsWith('mop-')) usadas.add(c); }));
+    expect(usadas.has('mop-sc-saldo') && usadas.has('mop-sc-lote'), 'control').toBe(true);
+    expect([...usadas].filter((c) => !new RegExp('\\.' + c + '(?![\\w-])').test(css))).toEqual([]);
+  });
+});
+
 describe('Maduración · operativo · 🏠 Salas', () => {
   it('cinco tarjetas; al pulsar una, su detalle: calor por hora, O₂, ♀/♂ por tanque y la tabla; otra vez, se cierra', async () => {
     await montar(PLANTA);

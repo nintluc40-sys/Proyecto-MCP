@@ -416,7 +416,8 @@ describe('Maduración · tablero · las salas', () => {
     expect(T['Sala 1']).toMatchObject({ registrado: { estado: 'Producción', fecha: '2026-09-18' },
       propuesto: { estado: 'Desinfección - Producción agrupada' }, coinciden: false, ocupacion: { ocupados: 1, total: 15, pct: 6.67 },
       vivos: { machos: 12, hembras: 22, hm: 1.83, hmEstado: 'ok' } });
-    expect(T['Sala 1'].lotes).toEqual([
+    // 0f · 6 (2026-09-25) · cada lote trae además `saldo` (mortalidad, cargas y biomasa del Saldo), probado aparte abajo.
+    expect(T['Sala 1'].lotes.map(({ saldo: _saldo, ...l }) => l)).toEqual([
       { lote: 'QA', estado: 'Producción', machos: 10, hembras: 20, dias: { sala: 'Sala 1', estado: 'Producción', diasCuarentena: 15, diasProduccion: 34 } },
       { lote: 'QC', estado: 'Producción', machos: 2, hembras: 2, dias: { sala: 'Sala 1', estado: 'Producción', diasCuarentena: 15, diasProduccion: 34 } }]);
     expect(T['Sala 2'].lotes.map((l) => [l.lote, l.estado, l.dias.diasCuarentena])).toEqual([['QA', 'Cuarentena', 8], ['QD', 'Producción', 15]]);
@@ -453,6 +454,60 @@ describe('Maduración · tablero · las salas', () => {
     expect(evaluarLecturas('temperatura', [29.5])).toBe('alto');
     expect(evaluarLecturas('temperatura', [27, 30])).toBe('fuera');
     expect(evaluarLecturas('temperatura', [])).toBe('');
+  });
+});
+
+/* 0f · 6 (2026-09-25, usuario) · en cada tarjeta de sala, por lote, lo del Saldo al recalcular: mortalidad acumulada y del
+   último día (del LOTE entero, la del Saldo; si está en más de una sala, se dice), las cargas de SUS tanques en ESA sala
+   (promedio con su rango; las del Saldo por tanque) y la biomasa de sus animales en la sala (sus vivos × sus últimos
+   pesos). Todo sale de `M.resumen` (el mismo resumen que el Saldo): la tarjeta no recalcula nada. */
+describe('Maduración · tablero · las salas con lo del Saldo, por lote (0f · 6)', () => {
+  /* QB (Sala 4, t1, 8♂ 8♀) pesa 30 g ♂ y 40 g ♀ · QX: dos tanques en la Sala 1 (10+10 y 20+20; una hembra muerta en el
+     t2 el 18/09) y uno en la Sala 5 (5+5), pesos 20 g ♂ y 30 g ♀. QA sigue sin pesos. */
+  const PS = [...PLANTA,
+    TQ('2026-09-18', 'Sala 4', 1, { 'Peso promedio machos (g)': 30, 'Peso promedio hembras (g)': 40 }),
+    ING('2026-08-01', 'QX', 'Sala 1', 2, 10, 10), ING('2026-08-01', 'QX', 'Sala 1', 3, 20, 20), ING('2026-08-01', 'QX', 'Sala 5', 7, 5, 5),
+    // Dos machos muertos ANTES (10/09, Sala 5): así la mortalidad acumulada y la del último día no coinciden.
+    TQ('2026-09-10', 'Sala 5', 7, { 'Machos muertos': 2 }),
+    TQ('2026-09-18', 'Sala 1', 2, { 'Peso promedio machos (g)': 20, 'Peso promedio hembras (g)': 30, 'Hembras muertas': 1 }),
+    TQ('2026-09-18', 'Sala 1', 3, { 'Peso promedio machos (g)': 20, 'Peso promedio hembras (g)': 30 }),
+  ];
+  const MS = modeloOperativo(PS, { hoy: FOTO, fecha: FOTO });
+  const TS = Object.fromEntries(tarjetasDeSalas(MS, SIN).map((t) => [t.sala, t]));
+  const loteEn = (sala, lote) => TS[sala].lotes.find((l) => l.lote === lote);
+  const delSaldo = (lote) => MS.resumen.lotes.find((L) => L.lote === lote);
+
+  it('🔴 la biomasa es la de SUS animales en esa sala por sus últimos pesos', () => {
+    expect(loteEn('Sala 4', 'QB').saldo.biomasa).toBe(0.56);                   // (8 × 40 + 8 × 30) g
+    expect(loteEn('Sala 1', 'QX').saldo.biomasa, 'sólo los de la Sala 1, con la muerta descontada').toBe(1.47);   // (29 × 30 + 30 × 20) g
+    expect(loteEn('Sala 5', 'QX').saldo.biomasa).toBe(0.21);                   // (5 × 30 + 3 × 20) g: dos machos murieron
+  });
+
+  it('🔴 las cargas: el PROMEDIO de sus tanques en ESA sala, con el mínimo y el máximo (las del Saldo por tanque)', () => {
+    const t = delSaldo('QX').tanques.filter((x) => x.sala === 'Sala 1');
+    expect(t).toHaveLength(2);
+    const prom = (k) => Math.round((t.reduce((s, x) => s + x[k], 0) / t.length) * 100) / 100;
+    const s = loteEn('Sala 1', 'QX').saldo;
+    expect(s.cargaMetrica).toEqual({ prom: prom('cargaMetrica'), min: Math.min(...t.map((x) => x.cargaMetrica)), max: Math.max(...t.map((x) => x.cargaMetrica)), n: 2 });
+    expect(s.cargaVolumetrica).toEqual({ prom: prom('cargaVolumetrica'), min: Math.min(...t.map((x) => x.cargaVolumetrica)), max: Math.max(...t.map((x) => x.cargaVolumetrica)), n: 2 });
+    expect(s.cargaMetrica.min < s.cargaMetrica.max, 'control: los dos tanques cargan distinto').toBe(true);
+    expect(loteEn('Sala 5', 'QX').saldo.cargaMetrica.n, 'la Sala 5 cuenta sólo su tanque').toBe(1);
+  });
+
+  it('🔴 la mortalidad es la del Saldo (acumulada y del último día), y se dice si el lote está en más de una sala', () => {
+    const s = loteEn('Sala 1', 'QX').saldo;
+    expect([s.mortAcum, s.mortDia, s.fechaDia]).toEqual([delSaldo('QX').tasaMortalidad.total, delSaldo('QX').tasaMortalidadDia.total, delSaldo('QX').fechaDia]);
+    expect(s.mortDia > 0, 'control: la muerta del 18/09 está en el último día').toBe(true);
+    expect(s.mortAcum !== s.mortDia, 'control: la acumulada lleva además los dos machos del 10/09').toBe(true);
+    expect(s.variasSalas).toBe(true);                                            // Sala 1 y Sala 5
+    expect(loteEn('Sala 4', 'QB').saldo.variasSalas).toBe(false);
+  });
+
+  it('sin ningún peso, biomasa y cargas quedan VACÍAS (un cero diría que no pesa nada)', () => {
+    const s = loteEn('Sala 1', 'QA').saldo;
+    expect(s.biomasa).toBe('');
+    expect(s.cargaMetrica).toEqual({ prom: '', min: '', max: '', n: 0 });
+    expect(s.cargaVolumetrica).toEqual({ prom: '', min: '', max: '', n: 0 });
   });
 });
 

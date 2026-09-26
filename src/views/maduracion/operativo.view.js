@@ -735,7 +735,29 @@ function tarjetaHTML(t, abierta) {
     <div class="mop-sc-fila"><span class="mop-sc-l">RAS</span><span>${esc(t.ras.texto || '—')} · ${vacio(t.toneladas.valor) ? '—' : nf(t.toneladas.valor, 2) + ' t por tanque'}</span></div>
     <div class="mop-sc-fila"><span class="mop-sc-l">Desinfección</span><span>${t.desinfeccion.fecha ? `hace ${nf(t.desinfeccion.dias)} d · ${esc(dm(t.desinfeccion.fecha))}` : 'sin registro'}</span></div>
     <div class="mop-sc-lotes">${lotes}</div>
+    ${saldoLotesHTML(t.lotes)}
   </div>`;
+}
+
+/* 0f · 6 (2026-09-25, usuario) · en cada tarjeta, por lote, lo del Saldo al recalcular (del mismo resumen: nada se
+   recalcula). Las cargas son de SUS tanques en esta sala: el promedio y, con más de uno, el rango; la mortalidad es la
+   del lote entero, y con un asterisco si el lote está también en otra sala. Cada lote en un bloque de tres líneas y no
+   en una tabla (decisión del usuario, 2026-09-25): con las cinco tarjetas en fila, una tabla de siete columnas sólo
+   enseñaba cuatro y escondía cargas y biomasa tras un desplazamiento. `data-v` nombra cada cifra (para las pruebas). */
+function saldoLotesHTML(lotes) {
+  if (!lotes.length) return '';
+  const carga = (c, unidad) => (vacio(c.prom) ? '—'
+    : nf(c.prom, 2) + ' ' + unidad + (c.n > 1 ? `<span class="mop-nota"> (${nf(c.min, 2)}–${nf(c.max, 2)})</span>` : ''));
+  const bloques = lotes.map((l) => {
+    const s = l.saldo;
+    return `<li class="mop-sc-lote" data-mop-sc-lote="${esc(l.lote)}">
+      <div class="mop-sc-lote-h"><b>${esc(l.lote)}</b> · <span data-v="vivos">${nf(l.hembras)} ♀ / ${nf(l.machos)} ♂</span> · <span data-v="dias">${(diasTxt(l).trim()) || '—'}</span></div>
+      <div title="${esc(s.fechaDia ? 'último día con parte: ' + dm(s.fechaDia) : 'sin partes')}">Mort. <span data-v="mort">${pc(s.mortAcum)} · día ${pc(s.mortDia)}${s.variasSalas ? ' *' : ''}</span></div>
+      <div>Carga <span data-v="cvol">${carga(s.cargaVolumetrica, 'kg/m³')}</span> · <span data-v="cmet">${carga(s.cargaMetrica, 'g/m²')}</span>
+        · Biomasa <span data-v="bio">${vacio(s.biomasa) ? '—' : nf(s.biomasa, 2) + ' kg'}</span></div></li>`;
+  }).join('');
+  const nota = lotes.some((l) => l.saldo.variasSalas) ? '<p class="mop-nota">* Mortalidad del lote entero: también está en otra sala (el libro la lleva por lote).</p>' : '';
+  return `<ul class="mop-sc-saldo">${bloques}</ul>${nota}`;
 }
 
 function salasHTML(M, F, d, p) {

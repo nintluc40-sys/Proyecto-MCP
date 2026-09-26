@@ -649,6 +649,31 @@ function variableDeSala(filasSala, sala, columnas, id, R, hasta) {
   };
 }
 
+/** 0f · 6 (2026-09-25, usuario) · Lo del Saldo al recalcular para UN lote en UNA sala, de su fila del resumen (`L`, el
+ *  mismo que el Saldo: aquí no se recalcula nada) y de sus vivos en la sala (`l`): la mortalidad acumulada y la del
+ *  último día (las del LOTE entero —el libro no las lleva por sala—; `variasSalas` lo avisa), las cargas de SUS tanques
+ *  en ESA sala (promedio con mínimo y máximo) y la biomasa de sus animales en la sala por sus últimos pesos (la de los
+ *  tanques contaría dos veces un tanque que comparte con otro lote). Sin ningún peso, biomasa y cargas vacías. */
+function saldoDeLoteEnSala(L, sala, l) {
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const resume = (vals) => {
+    const v = vals.filter((x) => x !== '' && x !== null && x !== undefined && isFinite(x));
+    return v.length ? { prom: r2(v.reduce((s, x) => s + x, 0) / v.length), min: Math.min(...v), max: Math.max(...v), n: v.length }
+      : { prom: '', min: '', max: '', n: 0 };
+  };
+  if (!L) return { mortAcum: '', mortDia: '', fechaDia: '', variasSalas: false, cargaMetrica: resume([]), cargaVolumetrica: resume([]), biomasa: '' };
+  const tanques = (L.tanques || []).filter((t) => t.sala === sala);
+  const pH = (L.pesoHembras || {}).valor;
+  const pM = (L.pesoMachos || {}).valor;
+  return {
+    mortAcum: (L.tasaMortalidad || {}).total, mortDia: (L.tasaMortalidadDia || {}).total, fechaDia: L.fechaDia || '',
+    variasSalas: (L.dias || []).length > 1,
+    cargaMetrica: resume(tanques.map((t) => t.cargaMetrica)),
+    cargaVolumetrica: resume(tanques.map((t) => t.cargaVolumetrica)),
+    biomasa: (pH === '' || pH === undefined) && (pM === '' || pM === undefined) ? '' : r2((l.hembras * (pH || 0) + l.machos * (pM || 0)) / 1000),
+  };
+}
+
 /**
  * Una tarjeta por sala visible (sólo la del filtro, si lo hay): el estado registrado y el propuesto, la ocupación,
  * los vivos del filtro con su H:M, la T° y el O₂ del último registro (promedio del Saldo y extremos de ese mismo
@@ -659,6 +684,7 @@ export function tarjetasDeSalas(M, F) {
   const salas = SALAS_VISIBLES.filter((s) => !F.sala || s === F.sala);
   const desinf = diasDesdeDesinfeccion(M.fuentes.tratamientos, salas, M.fecha);
   const diasDeLote = new Map((M.resumen.lotes || []).map((L) => [L.lote, L.dias || []]));
+  const saldoDe = new Map((M.resumen.lotes || []).map((L) => [L.lote, L]));   // 0f · 6
   const vacioVF = { valor: '', fecha: '' };
   return salas.map((sala) => {
     const E = (M.salas || []).find((x) => x.sala === sala)
@@ -689,7 +715,8 @@ export function tarjetasDeSalas(M, F) {
       toneladas: R ? { valor: R.toneladas, fecha: R.fechaToneladas } : { valor: '', fecha: '' },
       desinfeccion: desinf[sala],
       lotes: [...porLote.values()].sort((a, b) => porNombre(a.lote, b.lote))
-        .map((l) => ({ ...l, dias: (diasDeLote.get(l.lote) || []).find((d) => d.sala === sala) || null })),
+        .map((l) => ({ ...l, dias: (diasDeLote.get(l.lote) || []).find((d) => d.sala === sala) || null,
+          saldo: saldoDeLoteEnSala(saldoDe.get(l.lote), sala, l) })),
       tratamientos: R ? R.tratamientos : [],
     };
   });
