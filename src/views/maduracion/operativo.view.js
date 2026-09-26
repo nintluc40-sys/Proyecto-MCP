@@ -47,6 +47,7 @@ import {
   cuarentenasDeLotes, curvaDeCuarentena, AVISO_CUARENTENA_DIAS, tarjetasDeSalas, detalleDeSala,
   indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, kpiBiomasa,
 } from './operativo.tablero.js';
+import { KPIS_CON_GRAFICO, graficoDeKpi } from './operativo.kpis.js';
 import { INDICADORES } from './operativo.indicadores.js';
 import { FUENTES, umbralVigente, evaluar, UMBRALES_DE_AVISO } from './operativo.umbrales.js';
 import { periodoAnterior, presenciaDiaria, tendencias, permanencia, PARAMETROS_REPRODUCCION } from './operativo.tendencias.js';
@@ -120,7 +121,9 @@ const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', 
      de la pantalla. `repLote` sí es propio: elige de qué lote es el cierre, no filtra el tablero. */
   rep: 'diario', repLote: '',
   /* 0f · 4 · el par «lote|sala» cuya cuarentena está abierta en ⏳ (📊 Estado actual). No sobrevive a su barra. */
-  cuarSel: '' };
+  cuarSel: '',
+  /* 0f · 5 · la tarjeta de KPI cuyo gráfico está abierto debajo de las tarjetas (📊 Estado actual). */
+  kpiSel: '' };
 /* El estado de la vista vive lo que dura la sesión: al volver a Maduración, o al refrescarse los datos, se conserva. */
 const vOp = { ...INICIAL };
 
@@ -266,6 +269,7 @@ export function operativoView(root) {
   if (vOp.sub === 'lotes') dibujarPiscina(_fichaPiscina);
   if (vOp.sub === 'tanques') dibujarTanque(_fichaTanque);
   dibujarCuarentena(_cuarCurva);   // 0f · 4 · sólo si su lienzo está en pantalla (📊 Estado actual, con un par abierto)
+  dibujarKpi(_kpiGraf);            // 0f · 5 · ídem, con una tarjeta de KPI abierta
   bind(root);
 }
 
@@ -368,8 +372,11 @@ function vacioHTML() {
 /* ============================================================
    📊 ESTADO ACTUAL
    ============================================================ */
-function tile(rotulo, valor, sub, tono, titulo) {
-  return `<div class="mc-kpi ${tono || ''}"${titulo ? ` title="${esc(titulo)}"` : ''}><div class="mc-kpi-lb">${esc(rotulo)}</div>
+/** Una tarjeta de KPI. Con `clave` (0f · 5) se pulsa: abre su gráfico debajo de las tarjetas. */
+function tile(rotulo, valor, sub, tono, titulo, clave) {
+  const on = !!clave && vOp.kpiSel === clave;
+  const clic = clave ? ` role="button" tabindex="0" aria-pressed="${on}" data-mop-kpi="${esc(clave)}"` : '';
+  return `<div class="mc-kpi ${tono || ''}${clave ? ' is-clic' : ''}${on ? ' is-on' : ''}"${titulo ? ` title="${esc(titulo)}"` : ''}${clic}><div class="mc-kpi-lb">${esc(rotulo)}</div>
     <div class="mc-kpi-v">${valor}</div><div class="mc-kpi-sub">${sub || ''}</div></div>`;
 }
 
@@ -394,37 +401,38 @@ function estadoHTML(M, memo, p, F) {
   let mort;
   if (m.modo === 'tasa') {
     mort = tile('Mortalidad', `día ${pc(m.dia.pct)}`, `${nf(m.dia.muertos)} de ${nf(m.dia.riesgo)} · ${esc(etiquetaPeriodo(p))}: ${pc(m.periodo.pct)}`, 'is-mort',
-      'Muertos ÷ animales en riesgo (vivos de la víspera + los que ingresaron), la regla del ⚖️ Saldo; el período cuenta desde la víspera de su primer día. Los descartes de selección no son muertes.');
+      'Muertos ÷ animales en riesgo (vivos de la víspera + los que ingresaron), la regla del ⚖️ Saldo; el período cuenta desde la víspera de su primer día. Los descartes de selección no son muertes.', 'mortalidad');
   } else if (m.modo === 'registradas') {
     mort = tile('Mortalidad', `${nf(m.dia.muertos)} muertes`, `registradas el ${esc(dm(p.hasta))} · ${nf(m.periodo.muertos)} en ${esc(etiquetaPeriodo(p))}`, 'is-mort',
-      'Con sala o tanque: las muertes registradas en la hoja Tanques, de todos sus lotes. La tasa es por lote, porque el libro lleva las bajas por lote.');
+      'Con sala o tanque: las muertes registradas en la hoja Tanques, de todos sus lotes. La tasa es por lote, porque el libro lleva las bajas por lote.', 'mortalidad');
   } else {
     mort = tile('Mortalidad', '—', m.modo === 'no-aplica' ? 'por lote: no aplica al código genético' : 'sin datos del período', 'is-mort',
-      'El libro lleva las bajas por lote, no por código genético.');
+      'El libro lleva las bajas por lote, no por código genético.', 'mortalidad');
   }
   const repro = tile('Reproducción', `${nf(r.desoves)} desoves`,
     `N5 ${r.n5 ? nf(r.n5 / 1e6, 2) + ' M' : '—'} · fert. ${pc(r.fertilidad)}${r.ignora.length ? ' · <span class="mop-nota">sin filtro de sala</span>' : ''}`, 'is-desove',
-    'Desoves del período, por su fecha. Fertilidad = N2 ÷ huevos, sólo de los desoves que ya tienen su N2 (regla del ⚖️ Saldo). Un desove es de su lote y código genético, no de una sala.');
+    'Desoves del período, por su fecha. Fertilidad = N2 ÷ huevos, sólo de los desoves que ya tienen su N2 (regla del ⚖️ Saldo). Un desove es de su lote y código genético, no de una sala.', 'reproduccion');
 
   const kpis = [
     tile('Vivos', nf(v.total), `♀ ${nf(v.hembras)} · ♂ ${nf(v.machos)} · H:M ${nf(v.hm, 2)} ${dot(v.hmEstado, refUmbral('proporcionHM'))}`, '',
-      'Animales vivos al cierre de la foto, según el libro mayor. ' + definicion('proporcionHM')),
+      'Animales vivos al cierre de la foto, según el libro mayor. ' + definicion('proporcionHM'), 'vivos'),
     tile('Lotes', nf(l.total), `${nf(l.produccion)} Prod. · ${nf(l.cuarentena)} Cuar. · ${nf(l.mixto)} Mixto${l.otros ? ' · ' + nf(l.otros) + ' sin estado' : ''}`, '',
-      'Lotes con animales vivos en lo filtrado. El estado es el de la sala donde están; Mixto si sus salas no coinciden.'),
+      'Lotes con animales vivos en lo filtrado. El estado es el de la sala donde están; Mixto si sus salas no coinciden.', 'lotes'),
     tile('Salas', s.difieren ? `${nf(s.difieren)} ⚠` : '✓', partesSalas.join(' · '), s.difieren ? 'is-mort' : 'is-fert',
-      'El estado registrado en la hoja de Salas frente al que propone el libro al cierre de la foto (el de «🔄 Proponer estado»).'),
+      'El estado registrado en la hoja de Salas frente al que propone el libro al cierre de la foto (el de «🔄 Proponer estado»).', 'salas'),
     tile('Ocupación', `${nf(o.ocupados)}/${nf(o.total)}`,
       o.modo === 'tanque' ? (o.ocupados ? 'tanque ocupado' : 'tanque vacío') : `${pc(o.pct)}${o.modo === 'filtro' ? ' · tanques con lo filtrado' : ''}`, '',
-      definicion('ocupacion')),
+      definicion('ocupacion'), 'ocupacion'),
     mort, repro,
     tile('Biomasa', b.totalKg === '' ? '—' : nf(b.totalKg, 2) + ' kg',
       b.totalKg === '' ? 'sin pesos registrados en el período'
         : `♀ ${nf(b.hembrasKg, 2)} · ♂ ${nf(b.machosKg, 2)} kg${b.parcial ? ' · <span class="mop-nota">sólo un sexo trae peso</span>' : ''}`, '',
-      'Vivos × su peso promedio, PESADO por los animales que el libro tiene en cada tanque. El peso sale de la hoja de Tanques, de los registros del período. Sin ningún peso se deja vacío: una biomasa inventada es peor que ninguna.'),
+      'Vivos × su peso promedio, PESADO por los animales que el libro tiene en cada tanque. El peso sale de la hoja de Tanques, de los registros del período. Sin ningún peso se deja vacío: una biomasa inventada es peor que ninguna.', 'biomasa'),
   ].join('');
 
   return `<div class="mc-body">
     <div class="mc-kpis">${kpis}</div>
+    ${kpiPanelHTML(M, memo, p, F)}
     ${mapaHTML(_mapa, M, F)}
     <div class="mc-grid">
       ${alertasHTML(alertas(M, p, F), p, tendenciasDe(memo, p, F), permanencia(M, F))}
@@ -432,6 +440,86 @@ function estadoHTML(M, memo, p, F) {
       ${cuarentenaHTML(cuarentenaDe(M, memo, p, F), p)}
     </div>
   </div>`;
+}
+
+/* 0f · 5 (2026-09-25, usuario) · el gráfico de la tarjeta de KPI abierta, DEBAJO de las tarjetas. Sale de
+   operativo.kpis.js con las mismas reglas que la cifra de la tarjeta (su último punto es esa cifra); Salas no es una
+   curva sino la tabla registrado/propuesto. `_kpiGraf` guarda lo que se dibuja tras pintar, como `_cuarCurva`. */
+let _kpiGraf = null;
+function kpiPanelHTML(M, memo, p, F) {
+  _kpiGraf = null;
+  const k = KPIS_CON_GRAFICO.find((x) => x.clave === vOp.kpiSel);
+  if (!k) { vOp.kpiSel = ''; return ''; }
+  const g = graficoDeKpi(k.clave, { M, serie: serieDe(memo, p), partes: memo.partes, periodo: p, F });
+  const cuando = k.clave === 'salas' || k.clave === 'ocupacion' ? 'al cierre de la foto ' + dma(M.fecha)
+    : k.clave === 'biomasa' ? 'vivos de la foto · pesos de ' + etiquetaPeriodo(p) : etiquetaPeriodo(p);
+  let cuerpo;
+  if (!g.aplica) cuerpo = `<p class="muted" style="margin:4px 0">${esc(g.nota)}</p>`;
+  else if (g.tipo === 'tabla') cuerpo = salasKpiHTML(g.filas);
+  else {
+    _kpiGraf = g;
+    cuerpo = '<div class="mc-chart" style="height:240px"><canvas id="mopKpiCurva"></canvas></div>';
+  }
+  const notas = [];
+  if (g.aplica && k.clave === 'mortalidad') {
+    notas.push(g.unidad === '%' ? 'Tasa del día = muertos ÷ animales en riesgo (la regla del ⚖️ Saldo); la acumulada cuenta desde la víspera del período.'
+      : 'Con sala o tanque: las muertes REGISTRADAS en la hoja Tanques, de todos sus lotes.');
+  }
+  if (g.aplica && g.ignora && g.ignora.length) notas.push('Un desove es de su lote y código genético, no de una sala: el filtro de sala no se aplica.');
+  return `<div class="mop-lienzo mop-kpi-lienzo">
+    <div class="mop-lienzo-h"><b>${esc(k.titulo)}</b> <span class="mop-nota">${esc(cuando)}</span>
+      <button type="button" class="mc-pill mop-lienzo-x" data-mop-kpi-cerrar aria-label="Cerrar el gráfico">✕</button></div>
+    ${cuerpo}${notas.map((n) => `<p class="mc-note">${esc(n)}</p>`).join('')}
+  </div>`;
+}
+/** 0f · 5 · Salas: sala por sala, lo registrado en la hoja frente a lo que propone el libro. */
+function salasKpiHTML(filas) {
+  const sit = { coinciden: '<span class="mop-igual">✓</span> coinciden', difieren: '<span class="mop-dif">⚠</span> difieren',
+    'sin-registro': '<span class="muted">sin registro en la hoja</span>', 'sin-propuesta': '<span class="muted">sin propuesta</span>' };
+  return `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-kpi-salas">
+    <thead><tr><th>Sala</th><th>Registrado</th><th>Propuesto</th><th></th></tr></thead>
+    <tbody>${filas.map((f) => `<tr class="${f.situacion === 'difieren' ? 'mop-difieren' : ''}" data-situacion="${esc(f.situacion)}">
+      <td>${esc(f.sala)}</td><td>${f.registrado ? esc(f.registrado) : '—'}</td><td>${f.propuesto ? esc(f.propuesto) : '—'}</td><td>${sit[f.situacion] || ''}</td></tr>`).join('')}</tbody>
+  </table></div>`;
+}
+const COLOR_KPI = { hembras: '#d81b60', machos: '#1e88e5', total: '#455a64', cuarentena: '#f9a825', produccion: '#43a047', mixto: '#8e24aa',
+  otros: '#b0bec5', ocupados: '#00897b', libres: 'rgba(144,164,174,.35)', dia: 'rgba(224,83,59,.6)', acumulada: '#b71c1c',
+  desoves: 'rgba(15,124,154,.6)', n5: '#3949ab' };
+/** 0f · 5 · dibuja el gráfico de la tarjeta abierta: líneas, barras apiladas, o barras con una línea en su propio eje. */
+function dibujarKpi(g) {
+  if (!g || !g.etiquetas.length || !document.getElementById('mopKpiCurva')) return;
+  const labels = g.etiquetas.map((e) => (esIso(e) ? dm(e) : e));
+  const col = (s) => COLOR_KPI[s.clave] || '#546e7a';
+  const titulo = (text) => ({ display: true, text, color: EJE.color, font: { size: 10 } });
+  const x = { ticks: { ...EJE, maxRotation: 0, autoSkip: true }, grid: { display: false } };
+  let datasets;
+  let scales;
+  if (g.tipo === 'lineas') {
+    datasets = g.series.map((s) => ({ type: 'line', label: s.etiqueta, data: s.datos, borderColor: col(s), backgroundColor: col(s),
+      tension: 0.25, borderWidth: s.clave === 'total' ? 2.5 : 2, pointRadius: 0 }));
+    scales = { x, y: { beginAtZero: true, ticks: EJE, grid: { color: REJILLA } } };
+  } else if (g.tipo === 'barrasApiladas') {
+    datasets = g.series.map((s) => ({ type: 'bar', label: s.etiqueta, data: s.datos, backgroundColor: col(s), stack: 'kpi' }));
+    scales = { x: { ...x, stacked: true },
+      y: { stacked: true, beginAtZero: true, ticks: g.unidad === 'kg' ? EJE : { ...EJE, precision: 0 }, grid: { color: REJILLA }, ...(g.unidad ? { title: titulo(g.unidad) } : {}) } };
+  } else {
+    const [b, l] = g.series;
+    datasets = [
+      { type: 'bar', label: b.etiqueta, data: b.datos, backgroundColor: col(b), yAxisID: 'y' },
+      // Recta (sin suavizar): son cifras de CADA día y una curva suavizada inventaría valores entre ellos, bajo el cero incluso.
+      { type: 'line', label: l.etiqueta, data: l.datos, borderColor: col(l), backgroundColor: col(l), tension: 0, borderWidth: 2, pointRadius: 0, spanGaps: true, yAxisID: 'y2' },
+    ];
+    scales = { x, y: { beginAtZero: true, ticks: EJE, grid: { color: REJILLA }, title: titulo(b.etiqueta) },
+      y2: { beginAtZero: true, position: 'right', ticks: EJE, grid: { display: false }, title: titulo(l.etiqueta) } };
+  }
+  makeChart('mopKpiCurva', {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales,
+      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 10 }, color: EJE.color } } },
+    },
+  });
 }
 
 /* 0f · 4 · la curva de la cuarentena abierta, para dibujarla tras pintar (el lienzo tiene que estar en el DOM). */
@@ -2173,6 +2261,7 @@ function bind(root) {
   const abrirTanque = (k) => { vOp.tqFicha = vOp.tqFicha === k ? '' : k; repintar(); };
   const abrirPiscina = (x) => { vOp.piscinaSel = vOp.piscinaSel === x ? '' : x; repintar(); };
   const abrirCuarentena = (k) => { vOp.cuarSel = vOp.cuarSel === k ? '' : k; repintar(); };   // 0f · 4
+  const abrirKpi = (k) => { vOp.kpiSel = vOp.kpiSel === k ? '' : k; repintar(); };            // 0f · 5
 
   root.addEventListener('click', (e) => {
     const t = e.target;
@@ -2203,6 +2292,9 @@ function bind(root) {
       repintar();
       return;
     }
+    if (t.closest('[data-mop-kpi-cerrar]')) { vOp.kpiSel = ''; repintar(); return; }
+    const kpi = t.closest('[data-mop-kpi]');
+    if (kpi) { abrirKpi(kpi.dataset.mopKpi); return; }
     if (t.closest('[data-mop-cuar-cerrar]')) { vOp.cuarSel = ''; repintar(); return; }
     const cua = t.closest('[data-mop-cuar]');
     if (cua) { abrirCuarentena(cua.dataset.mopCuar); return; }
@@ -2255,6 +2347,8 @@ function bind(root) {
     if (sala && e.target === sala) { e.preventDefault(); abrirSala(sala.dataset.mopSala); return; }
     const lote = e.target.closest && e.target.closest('[data-mop-lote]');
     if (lote && e.target === lote) { e.preventDefault(); abrirLote(lote.dataset.mopLote); return; }
+    const kpi = e.target.closest && e.target.closest('[data-mop-kpi]');
+    if (kpi && e.target === kpi) { e.preventDefault(); abrirKpi(kpi.dataset.mopKpi); return; }
     const cua = e.target.closest && e.target.closest('[data-mop-cuar]');
     if (cua && e.target === cua) { e.preventDefault(); abrirCuarentena(cua.dataset.mopCuar); return; }
     const pis = e.target.closest && e.target.closest('[data-mop-piscina]');

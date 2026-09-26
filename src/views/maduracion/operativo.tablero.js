@@ -308,8 +308,9 @@ export function kpiOcupacion(salas, libro, F) {
 /* La mortalidad entre dos cierres de la serie, con la regla del ⚖️ Saldo para la del día (mad-resumen.js ·
    «MORTALIDAD DEL DÍA»): los muertos que el libro sumó entre los dos cierres ÷ los animales EN RIESGO —los vivos al
    primer cierre más los que ingresaron entre los dos—. Para un lote y un día es exactamente la del Saldo; para varios
-   lotes se suman numeradores y denominadores; para un período, el primer cierre es la víspera de su primer día. */
-function tasaEntre(a, b, lote) {
+   lotes se suman numeradores y denominadores; para un período, el primer cierre es la víspera de su primer día.
+   Se exporta (0f · 5): el gráfico de la mortalidad la usa día a día, con la misma regla que la cifra de su tarjeta. */
+export function tasaEntre(a, b, lote) {
   const A0 = a.porLote || {};
   const B0 = b.porLote || {};
   let muertos = 0;

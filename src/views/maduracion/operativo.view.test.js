@@ -1736,3 +1736,97 @@ describe('Maduración · operativo · 0f · 3 · el mapa de planta: colores y li
     expect(css).toMatch(/\[data-theme="dark"\] \.mop-mapa-card \{ --mop-num: #fff;/);
   });
 });
+
+/* 0f · 5 (2026-09-25, usuario) · cada tarjeta de KPI se pulsa y su gráfico se abre DEBAJO de las tarjetas (Salas, como
+   tabla). Las cifras de cada gráfico las ata operativo.kpis.test.js a las de su tarjeta; aquí, que lleguen a la pantalla:
+   el lienzo correcto, su último punto igual a la tarjeta que se ve, y que se cierre, se abra con el teclado y siga
+   abierto al cambiar un filtro. */
+describe('Maduración · operativo · 0f · 5 · el gráfico de cada KPI', () => {
+  const tarjeta = (clave) => root.querySelector(`[data-mop-kpi="${clave}"]`);
+  const panel = () => root.querySelector('.mop-kpi-lienzo');
+  const ultimoGrafico = () => { const l = makeChart.mock.calls.filter(([id]) => id === 'mopKpiCurva'); return l.length ? l[l.length - 1][1] : null; };
+  const numero = (s) => Number(String(s).replace(/[^0-9]/g, ''));
+
+  it('🔴 las siete tarjetas se pulsan, en su orden; ninguna abierta al llegar', async () => {
+    await montar(PLANTA);
+    expect([...root.querySelectorAll('.mc-kpis [data-mop-kpi]')].map((x) => x.dataset.mopKpi))
+      .toEqual(['vivos', 'lotes', 'salas', 'ocupacion', 'mortalidad', 'reproduccion', 'biomasa']);
+    expect(tarjeta('vivos').getAttribute('role')).toBe('button');
+    expect(tarjeta('vivos').getAttribute('aria-pressed')).toBe('false');
+    expect(panel()).toBeNull();
+  });
+
+  it('🔴 Vivos: su curva debajo de las tarjetas, y el total del último día ES la cifra de la tarjeta; volver a pulsar la cierra', async () => {
+    await montar(PLANTA);
+    click(tarjeta('vivos'));
+    expect(tarjeta('vivos').classList.contains('is-on')).toBe(true);
+    expect(tarjeta('vivos').getAttribute('aria-pressed')).toBe('true');
+    expect(root.querySelector('.mc-kpis').nextElementSibling, 'justo debajo de las tarjetas').toBe(panel());
+    expect(panel().querySelector('#mopKpiCurva')).not.toBeNull();
+    const cfg = ultimoGrafico();
+    expect(cfg.data.datasets.map((d) => d.label)).toEqual(['♀ Hembras', '♂ Machos', 'Total']);
+    expect(cfg.data.labels.at(-1)).toBe('19/09');
+    expect(cfg.data.datasets[2].data.at(-1)).toBe(numero(kpi('Vivos')));
+    click(tarjeta('vivos'));
+    expect(panel()).toBeNull();
+  });
+
+  it('🔴 Lotes: las barras del último día suman los lotes de la tarjeta; se abre OTRA tarjeta y cambia el gráfico', async () => {
+    await montar(PLANTA);
+    click(tarjeta('vivos'));
+    click(tarjeta('lotes'));
+    expect(tarjeta('vivos').classList.contains('is-on')).toBe(false);
+    const cfg = ultimoGrafico();
+    expect(cfg.data.datasets.map((d) => d.label)).toEqual(['Cuarentena', 'Producción', 'Mixto', 'Sin estado']);
+    expect(cfg.options.scales.y.stacked).toBe(true);
+    expect(cfg.data.datasets.reduce((a, d) => a + d.data.at(-1), 0)).toBe(numero(kpi('Lotes')));
+  });
+
+  it('🔴 Salas: una TABLA registrado/propuesto, sin lienzo', async () => {
+    await montar(PLANTA);
+    click(tarjeta('salas'));
+    expect(panel().querySelector('canvas')).toBeNull();
+    const fila = [...panel().querySelectorAll('tbody tr')].find((tr) => tr.cells[0].textContent === 'Sala 2');
+    expect(fila.cells[1].textContent).toBe('Mixto');
+    expect(panel().querySelector('[data-situacion="sin-registro"]'), 'la Sala 3 no tiene registro').not.toBeNull();
+  });
+
+  it('🔑 el estado registrado viene del Sheet: sale ESCAPADO', async () => {
+    await montar([...PLANTA, SALA('19/09/2026', 'Sala 3', { Estado: '<img src=x onerror=alert(1)>' })]);
+    click(tarjeta('salas'));
+    expect(panel().querySelector('img')).toBeNull();
+    expect(panel().textContent).toContain('<img src=x');
+  });
+
+  it('🔴 sigue abierto al cambiar un filtro, y lo dice: con sala, la mortalidad son muertes REGISTRADAS; con código, los vivos no aplican', async () => {
+    await montar(PLANTA);
+    click(tarjeta('mortalidad'));
+    expect(ultimoGrafico().data.datasets[0].label).toBe('Tasa del día (%)');
+    cambiar(filtro('sala'), 'Sala 1');
+    expect(tarjeta('mortalidad').classList.contains('is-on')).toBe(true);
+    expect(ultimoGrafico().data.datasets[0].label).toBe('Muertes del día (registradas)');
+    expect(panel().textContent).toContain('REGISTRADAS en la hoja Tanques');
+    cambiar(filtro('sala'), '');
+    click(tarjeta('vivos'));
+    cambiar(filtro('codigo'), 'CA');
+    expect(panel().querySelector('canvas')).toBeNull();
+    expect(panel().textContent).toContain('no guarda los vivos día a día');
+  });
+
+  it('con el teclado también se abre (Intro), y ✕ lo cierra', async () => {
+    await montar(PLANTA);
+    tarjeta('reproduccion').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(ultimoGrafico().data.datasets.map((d) => d.label)).toEqual(['Desoves', 'N5']);
+    expect(ultimoGrafico().data.datasets.map((d) => d.yAxisID), 'N5 en su propio eje: son cientos de miles donde los desoves son unidades').toEqual(['y', 'y2']);
+    expect(ultimoGrafico().data.datasets[1].tension, 'cifras de cada día: línea recta, sin inventar valores entre días').toBe(0);
+    click(root.querySelector('[data-mop-kpi-cerrar]'));
+    expect(panel()).toBeNull();
+    expect(tarjeta('reproduccion').classList.contains('is-on')).toBe(false);
+  });
+
+  it('🔑 sus clases están DEFINIDAS en el CSS', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/views/maduracion/operativo.css', 'utf8');
+    for (const sel of ['.mc-kpi.is-clic', '.mc-kpi.is-on', '.mop-kpi-lienzo']) expect(css.includes(sel + ' '), sel).toBe(true);
+  });
+});

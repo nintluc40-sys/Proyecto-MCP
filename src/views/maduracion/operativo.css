@@ -153,6 +153,11 @@
 .mop-cuar-n { white-space: nowrap; }
 .mop-cuar-t { line-height: 1.4; }
 .mop-cuar-lienzo { margin-top: 8px; }
+/* 0f · 5 · las tarjetas de KPI de 📊 Estado actual se pulsan: su gráfico se abre debajo */
+.mc-kpi.is-clic { cursor: pointer; }
+.mc-kpi.is-clic:hover, .mc-kpi.is-clic:focus-visible { border-color: var(--c-brand-600); outline: none; }
+.mc-kpi.is-on { background: var(--c-surface-2); box-shadow: inset 0 0 0 1px var(--c-brand-600); }
+.mop-kpi-lienzo { margin: 0 0 12px; }
 .mop-lienzo-curva { display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--c-text-soft); }
 .mop-curva { color: var(--c-brand-600); overflow: visible; }
 .mop-lienzo-b { display: flex; flex-wrap: wrap; gap: 6px; }

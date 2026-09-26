@@ -186,6 +186,19 @@ describe('Maduración · operativo · la serie diaria del libro', () => {
     expect(s[3].porLoteSala).toEqual({ 'AA|Sala 1': { machos: 10, hembras: 20 }, 'AA|Sala 2': { machos: 3, hembras: 3 } });
     expect(s[3].porLote.AA).toMatchObject({ machos: 13, hembras: 23 });   // control: el lote entero sigue sumando las dos
   });
+
+  /* 0f · 5 (2026-09-25, usuario) · el gráfico del KPI «Lotes» cuenta los lotes por estado DÍA A DÍA: cada cierre lleva el
+     estado de cada par lote·sala CON animales, con el reloj de esa sala al cierre de ESE día (la regla de estadoDeLote). */
+  it('🔴 0f · 5 · cada día, el estado de cada lote EN cada sala con animales, con su reloj de ese día', () => {
+    const g = { ...vacias(), ingresos: [ING('2026-09-01', 'AA', 'Sala 1', 1, 10, 20), ING('2026-09-10', 'AA', 'Sala 2', 16, 3, 4)] };
+    const s = serieDiaria(g, '2026-08-31', '2026-09-20');
+    const dia = (f) => s.find((d) => d.fecha === f).estadoLoteSala;
+    expect(dia('2026-08-31')).toEqual({});
+    expect(dia('2026-09-10')).toEqual({ 'AA|Sala 1': 'Cuarentena', 'AA|Sala 2': 'Cuarentena' });
+    // El 16/09 la Sala 1 cumple sus 15 días (desde el 01/09) y la Sala 2, que entró el 10/09, sigue en cuarentena.
+    expect(dia('2026-09-16')).toEqual({ 'AA|Sala 1': 'Producción', 'AA|Sala 2': 'Cuarentena' });
+    expect(dia('2026-09-20')).toEqual({ 'AA|Sala 1': 'Producción', 'AA|Sala 2': 'Cuarentena' });
+  });
 });
 
 describe('Maduración · operativo · filtros', () => {

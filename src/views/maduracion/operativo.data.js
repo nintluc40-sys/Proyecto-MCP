@@ -12,7 +12,7 @@
    · Las Salas 4A y 4B ya no se muestran: sólo las salas de la ficha (Sala 1 a Sala 5).
    ============================================================ */
 import { fuentesDesdeFilas, MAD_OP_HOJAS } from './operativo.fuentes.js';
-import { construirLibro, estadoDeSala, estadoPorLoteDeSala, ocupacionDeSala, sumarDias, ubicKey, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_CERRADO } from '../registros/lib/mad-libro.js';
+import { construirLibro, estadoDeSala, estadoPorLoteDeSala, ocupacionDeSala, sumarDias, ubicKey, estadoDeLote, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_CERRADO } from '../registros/lib/mad-libro.js';
 import { resumenMaduracion, diasEntre } from '../registros/lib/mad-resumen.js';
 import { MAD_SALA_OPTS, MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 
@@ -164,13 +164,16 @@ export function diasDeTanque(filasTanques) {
  *  recorre las posiciones una vez. La clave es la misma `ubicKey` que usa el libro, para que
  *  «Sala 1 · 1» sea el mismo tanque aquí y allí.
  *  🆕 0f · 4 (2026-09-25) · y POR LOTE Y SALA («lote|sala»): la cuarentena es de cada sala, y su curva son los vivos
- *  del lote EN esa sala, no los del lote entero. */
+ *  del lote EN esa sala, no los del lote entero.
+ *  🆕 0f · 5 (2026-09-25) · y el RELOJ de cada par lote·sala con animales (su ingreso ahí, su cópula ahí y el cierre del
+ *  lote), para el estado de cada día: ver `serieDiaria`. */
 function fotoDelLibro(posiciones, lotes) {
   const total = { machos: 0, hembras: 0 };
   const porSala = {};
   const porLote = {};
   const porTanque = {};
   const porLoteSala = {};
+  const relojLoteSala = {};
   for (const p of posiciones.values()) {
     total.machos += p.machos;
     total.hembras += p.hembras;
@@ -188,6 +191,11 @@ function fotoDelLibro(posiciones, lotes) {
     const LS = porLoteSala[ls] || (porLoteSala[ls] = { machos: 0, hembras: 0 });
     LS.machos += p.machos;
     LS.hembras += p.hembras;
+    if ((p.machos > 0 || p.hembras > 0) && !relojLoteSala[ls]) {
+      const Lo = lotes.get(p.lote);
+      const S = Lo && Lo.salas && Lo.salas.get(p.sala);
+      if (S) relojLoteSala[ls] = { ingreso: S.ingreso, copulaDesde: S.copulaDesde, cerrado: Lo.cerrado || null };
+    }
   }
   for (const L of lotes.values()) {
     const o = porLote[L.lote] || (porLote[L.lote] = { machos: 0, hembras: 0 });
@@ -195,9 +203,16 @@ function fotoDelLibro(posiciones, lotes) {
     o.muertos = { ...L.muertos };
     o.descartes = { ...L.descartes };
   }
-  return { total, porSala, porLote, porTanque, porLoteSala };
+  return { total, porSala, porLote, porTanque, porLoteSala, relojLoteSala };
 }
-const FOTO_VACIA = () => ({ total: { machos: 0, hembras: 0 }, porSala: {}, porLote: {}, porTanque: {}, porLoteSala: {} });
+const FOTO_VACIA = () => ({ total: { machos: 0, hembras: 0 }, porSala: {}, porLote: {}, porTanque: {}, porLoteSala: {}, relojLoteSala: {} });
+/** 0f · 5 · El estado de cada par lote·sala con animales EL DÍA `d`, con su reloj (la regla de `estadoDeLote`). Va por
+ *  día y no por cierre: un día sin sucesos repite el cierre anterior, pero la cuarentena se cumple igual con el tiempo. */
+function estadosDelDia(relojes, d) {
+  const out = {};
+  for (const [k, r] of Object.entries(relojes || {})) out[k] = estadoDeLote(r, d);
+  return out;
+}
 
 /**
  * La serie DIARIA del libro entre `desde` y `hasta`, en UNA pasada (gancho `alCerrarDia` de `construirLibro`).
@@ -215,7 +230,7 @@ export function serieDiaria(fuentes, desde, hasta) {
   let foto = FOTO_VACIA();
   for (let d = desde; d && d <= hasta; d = sumarDias(d, 1)) {
     while (i < cierres.length && cierres[i][0] <= d) foto = cierres[i++][1];
-    out.push({ fecha: d, ...foto });
+    out.push({ fecha: d, ...foto, estadoLoteSala: estadosDelDia(foto.relojLoteSala, d) });
   }
   return out;
 }
