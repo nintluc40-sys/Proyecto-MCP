@@ -174,6 +174,18 @@ describe('Maduración · operativo · la serie diaria del libro', () => {
     const s = serieDiaria(f, '2026-09-01', '2026-09-04');
     expect(s[s.length - 1].porLote.BB).toBeUndefined();
   });
+
+  /* 0f · 4 (2026-09-25, usuario) · la cuarentena es de cada SALA: su curva necesita los vivos del lote EN esa sala, no
+     del lote entero. Clave «lote|sala». */
+  it('🔴 0f · 4 · también por LOTE Y SALA: el mismo lote en dos salas son dos entradas', () => {
+    const g = { ...vacias(), ingresos: [ING('2026-09-01', 'AA', 'Sala 1', 1, 10, 20), ING('2026-09-02', 'AA', 'Sala 2', 16, 3, 4)],
+      tanques: [TQ('2026-09-03', 'Sala 2', 16, { 'Hembras muertas': 1 })] };
+    const s = serieDiaria(g, '2026-08-31', '2026-09-03');
+    expect(s[0].porLoteSala).toEqual({});
+    expect(s[1].porLoteSala).toEqual({ 'AA|Sala 1': { machos: 10, hembras: 20 } });
+    expect(s[3].porLoteSala).toEqual({ 'AA|Sala 1': { machos: 10, hembras: 20 }, 'AA|Sala 2': { machos: 3, hembras: 3 } });
+    expect(s[3].porLote.AA).toMatchObject({ machos: 13, hembras: 23 });   // control: el lote entero sigue sumando las dos
+  });
 });
 
 describe('Maduración · operativo · filtros', () => {

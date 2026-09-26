@@ -18,7 +18,8 @@ import {
   PERIODOS, PERIODO_INICIAL, primeraFecha, periodoDe, normalizarFiltro, hayFiltro, posicionEnFiltro,
   kpiVivos, kpiLotes, kpiSalas, kpiOcupacion, kpiMortalidad, kpiReproduccion,
   mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, TIPOS_AVISO, ultimosRegistros, ETIQUETA_HOJA, ESPERA_DIAS,
-  finesDeCuarentena, AVISO_CUARENTENA_DIAS, lecturasDelUltimoRegistro, evaluarLecturas, tarjetasDeSalas, detalleDeSala,
+  AVISO_CUARENTENA_DIAS, cuarentenasDeLotes, curvaDeCuarentena,
+  lecturasDelUltimoRegistro, evaluarLecturas, tarjetasDeSalas, detalleDeSala,
   indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, DIMENSIONES_FILTRO, kpiBiomasa,
 } from './operativo.tablero.js';
 import { modeloOperativo, serieDiaria, diasDeTanque, SALAS_VISIBLES } from './operativo.data.js';
@@ -308,21 +309,98 @@ describe('Maduración · tablero · últimos registros y fines de cuarentena', (
     expect(u.alimentacion.atrasada).toBe(false);
   });
 
-  it('salen de cuarentena en los próximos 7 días: el ingreso EN ESA SALA + 15, con el día 7 dentro y el 8 fuera', () => {
-    expect(AVISO_CUARENTENA_DIAS).toBe(7);
-    expect(finesDeCuarentena(M.libro, FOTO, SIN)).toEqual([
-      { lote: 'QA', sala: 'Sala 2', machos: 5, hembras: 5, ingreso: '2026-09-11', fin: '2026-09-26', enDias: 7 }]);
-    expect(finesDeCuarentena(M.libro, FOTO, SIN, 8).map((x) => [x.lote, x.sala, x.fin])).toEqual([
-      ['QA', 'Sala 2', '2026-09-26'], ['QB', 'Sala 4', '2026-09-27']]);
-    expect(finesDeCuarentena(M.libro, FOTO, F({ sala: 'Sala 4' }), 8).map((x) => x.lote)).toEqual(['QB']);
-  });
-
+  /* 0f · 4 · aquí vivían las pruebas de `finesDeCuarentena` (la lista «sale en 7 días»), retirada con la decisión del
+     usuario. Su regla del día 7 DENTRO y el 8 fuera la prueba ahora `cuarentenasDeLotes` (su campo `aviso`: QA sale en
+     7 días y avisa, QB en 8 y no); la del reloj de la SALA sigue aquí, sobre la función nueva. */
   it('una cópula la termina antes; y el reloj es el de la sala, no el del último ingreso del lote', () => {
+    expect(AVISO_CUARENTENA_DIAS).toBe(7);
     const m2 = modeloOperativo([
       ING('2026-09-12', 'QB', 'Sala 4', 1, 8, 8), TQ('2026-09-15', 'Sala 4', 1, { 'Cópulas': 1 }),
       ING('2026-09-10', 'QH', 'Sala 3', 22, 4, 4), ING('2026-09-18', 'QH', 'Sala 5', 7, 4, 4),
     ], { hoy: FOTO, fecha: FOTO });
-    expect(finesDeCuarentena(m2.libro, FOTO, SIN).map((x) => [x.lote, x.sala, x.fin, x.enDias])).toEqual([['QH', 'Sala 3', '2026-09-25', 6]]);
+    const c = cuarentenasDeLotes(m2.libro, FOTO, periodoDe('30d', FOTO, m2.fuentes), SIN);
+    // QH: cada sala con SU reloj (Sala 3 desde el 10/09; Sala 5 desde el 18/09, el último ingreso del lote).
+    expect(c.filter((x) => !x.terminada).map((x) => [x.lote, x.sala, x.fin, x.enDias, x.aviso])).toEqual([
+      ['QH', 'Sala 3', '2026-09-25', 6, true], ['QH', 'Sala 5', '2026-10-03', 14, false]]);
+    // QB: su cópula del 15/09 la terminó antes de los 15 días.
+    expect(c.filter((x) => x.terminada).map((x) => [x.lote, x.sala, x.fin, x.porCopula])).toEqual([['QB', 'Sala 4', '2026-09-15', true]]);
+  });
+});
+
+/* 0f · 4 (2026-09-25, usuario) · LA CUARENTENA POR LOTE Y SALA en línea de tiempo: los pares que están EN cuarentena a la
+   foto y los que la TERMINARON dentro del período; al pulsar uno, sus vivos ♀/♂ en esa sala y sus bajas por día. El reloj
+   es el de la sala (su ingreso ahí; una cópula ahí la termina antes: la regla de `estadoDeLote`). */
+describe('Maduración · tablero · la cuarentena por lote y sala (0f · 4)', () => {
+  const P30 = periodoDe('30d', FOTO, M.fuentes);
+  /* · QE · Sala 3: entró el 25/08 y la terminó a los 15 días (09/09), dentro del período; bajas el 28/08.
+     · QF · Sala 5: entró el 01/09 y la terminó con una CÓPULA el 05/09.
+     · QG · Sala 3: la terminó el 16/08, antes del período de 30 d (desde el 21/08): no sale.
+     · QH · Sala 5: se CERRÓ el 10/09, antes de su fin (16/09): no terminó la cuarentena, no sale.
+     · QI · Sala 1 y QJ · Sala 2: en cuarentena a la foto (salen el 27/09 y el 03/10). */
+  const PC = [
+    ING('2026-08-25', 'QE', 'Sala 3', 22, 10, 10), TQ('2026-08-28', 'Sala 3', 22, { 'Machos muertos': 2, 'Hembras muertas': 1 }),
+    ING('2026-09-01', 'QF', 'Sala 5', 7, 6, 6), TQ('2026-09-05', 'Sala 5', 7, { 'Cópulas': 2 }),
+    ING('2026-08-01', 'QG', 'Sala 3', 23, 4, 4),
+    ING('2026-09-01', 'QH', 'Sala 5', 8, 4, 4), FIN('2026-09-10', { Lote: 'QH', Tipo: 'Total', Machos: 4, Hembras: 4 }),
+    ING('2026-09-12', 'QI', 'Sala 1', 2, 8, 8), ING('2026-09-18', 'QJ', 'Sala 2', 17, 3, 3),
+    // · QK · Sala 1: en cuarentena según su reloj, pero se murió ENTERA el 16/09: sin animales no hay cuarentena que seguir.
+    ING('2026-09-15', 'QK', 'Sala 1', 3, 2, 2), TQ('2026-09-16', 'Sala 1', 3, { 'Machos muertos': 2, 'Hembras muertas': 2 }),
+  ];
+  const MC = modeloOperativo(PC, { hoy: FOTO, fecha: FOTO });
+  const PC30 = periodoDe('30d', FOTO, MC.fuentes);
+
+  it('🔴 los que están EN cuarentena: su día de 15, su paso a Producción y, si sale en ≤ 7 días, el aviso', () => {
+    expect(cuarentenasDeLotes(M.libro, FOTO, P30, SIN)).toEqual([
+      { lote: 'QA', sala: 'Sala 2', ingreso: '2026-09-11', fin: '2026-09-26', porCopula: false, terminada: false,
+        dia: 9, total: 15, enDias: 7, aviso: true, machos: 5, hembras: 5, hasta: FOTO },
+      { lote: 'QB', sala: 'Sala 4', ingreso: '2026-09-12', fin: '2026-09-27', porCopula: false, terminada: false,
+        dia: 8, total: 15, enDias: 8, aviso: false, machos: 8, hembras: 8, hasta: FOTO },
+    ]);
+  });
+
+  it('🔴 y los que la TERMINARON dentro del período (por sus 15 días o por una cópula); los de antes y los cerrados, no', () => {
+    const c = cuarentenasDeLotes(MC.libro, FOTO, PC30, SIN);
+    expect(c.map((x) => [x.lote, x.sala, x.terminada, x.fin])).toEqual([
+      ['QI', 'Sala 1', false, '2026-09-27'], ['QJ', 'Sala 2', false, '2026-10-03'],   // en cuarentena: la que antes sale, primero
+      ['QE', 'Sala 3', true, '2026-09-09'], ['QF', 'Sala 5', true, '2026-09-05'],    // terminadas: la más reciente, primero
+    ]);
+    const qe = c.find((x) => x.lote === 'QE');
+    expect(qe).toMatchObject({ porCopula: false, dia: 15, enDias: '', aviso: false, hasta: '2026-09-09' });
+    const qf = c.find((x) => x.lote === 'QF');
+    expect(qf).toMatchObject({ porCopula: true, dia: 4, hasta: '2026-09-05' });
+  });
+
+  it('🔴 un par en cuarentena que se quedó SIN animales no sale (su reloj sigue, pero no hay nada que seguir)', () => {
+    const qk = [...MC.libro.lotes.values()].find((L) => L.lote === 'QK');
+    expect(qk.salas[0], 'control: su reloj dice cuarentena y no le quedan vivos').toMatchObject({ estado: 'Cuarentena', machos: 0, hembras: 0 });
+    expect(cuarentenasDeLotes(MC.libro, FOTO, PC30, SIN).map((x) => x.lote)).not.toContain('QK');
+  });
+
+  it('con «7 d» las terminadas antes del período ya no salen', () => {
+    const P7 = periodoDe('7d', FOTO, MC.fuentes);
+    expect(cuarentenasDeLotes(MC.libro, FOTO, P7, SIN).map((x) => x.lote)).toEqual(['QI', 'QJ']);
+  });
+
+  it('el filtro elige pares: por sala y por lote', () => {
+    expect(cuarentenasDeLotes(MC.libro, FOTO, PC30, F({ sala: 'Sala 3' })).map((x) => x.lote)).toEqual(['QE']);
+    expect(cuarentenasDeLotes(MC.libro, FOTO, PC30, F({ lote: 'QF' })).map((x) => x.lote)).toEqual(['QF']);
+  });
+
+  it('🔴 la curva: los vivos del lote EN ESA SALA día a día, desde su ingreso, y las bajas del día', () => {
+    const serie = serieDiaria(MC.fuentes, '2026-08-24', FOTO);
+    const c = curvaDeCuarentena(serie, 'QE', 'Sala 3', '2026-08-25', '2026-09-09');
+    expect(c.dias[0]).toEqual({ fecha: '2026-08-25', machos: 10, hembras: 10, bajas: 0 });
+    expect(c.dias.find((d) => d.fecha === '2026-08-28')).toEqual({ fecha: '2026-08-28', machos: 8, hembras: 9, bajas: 3 });
+    expect(c.dias.at(-1).fecha).toBe('2026-09-09');
+    expect(c.dias.reduce((s, d) => s + d.bajas, 0)).toBe(3);
+    expect(c.variasSalas).toBe(false);
+  });
+
+  it('🔴 si el lote está en MÁS DE UNA SALA, las bajas son del lote entero y la curva lo dice', () => {
+    const serie = serieDiaria(M.fuentes, '2026-09-10', FOTO);
+    const c = curvaDeCuarentena(serie, 'QA', 'Sala 2', '2026-09-11', FOTO);
+    expect(c.variasSalas).toBe(true);
+    expect(c.dias[0]).toMatchObject({ fecha: '2026-09-11', machos: 5, hembras: 5 });   // los vivos, en cambio, sí son de ESA sala
   });
 });
 

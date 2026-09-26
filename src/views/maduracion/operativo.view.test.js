@@ -191,6 +191,79 @@ describe('Maduración · operativo · 📊 Estado actual', () => {
   });
 });
 
+/* 0f · 4 (2026-09-25, usuario) · la tarjeta ⏳ pasa a ser «⏳ Cuarentena por lote y sala»: una barra por par lote·sala EN
+   cuarentena y por cada uno que la TERMINÓ en el período; los que salen en ≤ 7 días, resaltados (el aviso de antes); al
+   pulsar una, sus curvas —vivos ♀/♂ en esa sala y bajas por día—. En PLANTA, QA·Sala 2 (entró el 11/09, sale el 26/09:
+   aviso) y QB·Sala 4 (12/09 → 27/09); QE·Sala 3, añadida aquí, la terminó el 09/09. */
+describe('Maduración · operativo · 0f · 4 · ⏳ la cuarentena por lote y sala', () => {
+  const PLANTA_Q = [...PLANTA, ING('25/08/2026', 'QE', 'Sala 3', 22, 3, 6, 'CA')];   // ♂ ≠ ♀: si una serie tomara la otra, se ve
+  const tarjeta = () => [...root.querySelectorAll('.mc-card')].find((c) => c.textContent.includes('⏳ Cuarentena por lote y sala'));
+  const par = (k) => root.querySelector(`[data-mop-cuar="${k}"]`);
+
+  it('🔴 una barra por par, en su orden: en cuarentena (la que antes sale, arriba) y las terminadas; el aviso resaltado', async () => {
+    await montar(PLANTA_Q);
+    expect(tarjeta(), 'la tarjeta ⏳ nueva').toBeTruthy();
+    expect([...tarjeta().querySelectorAll('[data-mop-cuar]')].map((x) => x.dataset.mopCuar)).toEqual(['QA|Sala 2', 'QB|Sala 4', 'QE|Sala 3']);
+    expect(par('QA|Sala 2').classList.contains('is-aviso'), 'sale en ≤ 7 días').toBe(true);
+    expect(par('QB|Sala 4').classList.contains('is-aviso')).toBe(false);
+    expect(par('QA|Sala 2').textContent).toContain('día 9 de 15');
+    expect(par('QA|Sala 2').textContent).toContain('pasa a Producción el 26/09');
+    expect(par('QA|Sala 2').querySelector('.mop-bar i').style.width).toBe('60%');          // 9 de 15
+    expect(par('QE|Sala 3').classList.contains('is-term')).toBe(true);
+    expect(par('QE|Sala 3').textContent).toContain('✓ terminada el 09/09');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('🔴 pulsar una barra abre sus curvas: vivos ♀/♂ en esa sala desde el ingreso y las bajas del día; volver a pulsar la cierra', async () => {
+    await montar(PLANTA_Q);
+    expect(root.querySelector('#mopCuarCurva')).toBeNull();
+    click(par('QA|Sala 2'));
+    expect(par('QA|Sala 2').classList.contains('is-on')).toBe(true);
+    expect(root.querySelector('#mopCuarCurva')).not.toBeNull();
+    const l = makeChart.mock.calls.filter(([id]) => id === 'mopCuarCurva');
+    const cfg = l[l.length - 1][1];
+    expect(cfg.data.labels[0]).toBe('11/09');
+    expect(cfg.data.labels.at(-1)).toBe('19/09');
+    expect(cfg.data.datasets.map((d) => d.label)).toEqual(['♀ Hembras', '♂ Machos', 'Bajas del día']);
+    expect(cfg.data.datasets[0].data[0], 'las hembras de QA en la Sala 2, no las del lote entero').toBe(5);
+    // QA también está en la Sala 1: sus bajas son del lote entero, y se dice.
+    expect(tarjeta().textContent).toContain('del lote entero');
+    click(par('QA|Sala 2'));
+    expect(root.querySelector('#mopCuarCurva')).toBeNull();
+    // Una TERMINADA también abre sus curvas, del ingreso a su fin; y cada serie es la de su sexo.
+    click(par('QE|Sala 3'));
+    const lq = makeChart.mock.calls.filter(([id]) => id === 'mopCuarCurva');
+    const cq = lq[lq.length - 1][1];
+    expect([cq.data.labels[0], cq.data.labels.at(-1)]).toEqual(['25/08', '09/09']);
+    expect([cq.data.datasets[0].data[0], cq.data.datasets[1].data[0]], '♀ y ♂ de QE').toEqual([6, 3]);
+  });
+
+  it('con el teclado también se abre (Intro), y ✕ la cierra', async () => {
+    await montar(PLANTA_Q);
+    par('QB|Sala 4').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(root.querySelector('#mopCuarCurva')).not.toBeNull();
+    expect(tarjeta().textContent).not.toContain('del lote entero');                         // QB sólo está en la Sala 4
+    click(root.querySelector('[data-mop-cuar-cerrar]'));
+    expect(root.querySelector('#mopCuarCurva')).toBeNull();
+  });
+
+  it('🔑 las clases propias que pinta la tarjeta ⏳ (con un par abierto) están DEFINIDAS en su CSS', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/views/maduracion/operativo.css', 'utf8') + readFileSync('src/views/maduracion/maduracion.css', 'utf8');
+    await montar(PLANTA_Q);
+    click(par('QA|Sala 2'));
+    const usadas = new Set();
+    tarjeta().querySelectorAll('[class]').forEach((el) => el.classList.forEach((c) => { if (c.startsWith('mop-')) usadas.add(c); }));
+    expect(usadas.has('mop-cuar-fila') && usadas.has('mop-cuar-lienzo'), 'control: la tarjeta pinta sus clases').toBe(true);
+    expect([...usadas].filter((c) => !new RegExp('\\.' + c + '(?![\\w-])').test(css))).toEqual([]);
+  });
+
+  it('sin ningún par, la tarjeta lo dice', async () => {
+    await montar(PLANTA.filter((r) => !(r.Lote === 'QA' && r.Sala === 'Sala 2') && r.Lote !== 'QB'));
+    expect(tarjeta().textContent).toContain('Ningún lote en cuarentena ni que la haya terminado');
+  });
+});
+
 describe('Maduración · operativo · 🏠 Salas', () => {
   it('cinco tarjetas; al pulsar una, su detalle: calor por hora, O₂, ♀/♂ por tanque y la tabla; otra vez, se cierra', async () => {
     await montar(PLANTA);

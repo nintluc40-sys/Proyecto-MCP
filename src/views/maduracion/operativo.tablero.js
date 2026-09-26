@@ -563,28 +563,58 @@ export function ultimosRegistros(frescura) {
 /** Días hacia delante en que se avisa de un fin de cuarentena (diseño aprobado: «Fin de cuarentena en 7 días»). */
 export const AVISO_CUARENTENA_DIAS = 7;
 
-/** Los lotes que SALEN de cuarentena en los próximos días, por sala (la cuarentena es de cada sala, con su reloj):
- *  `fin` es el primer día en Producción —el ingreso en esa sala más CUARENTENA_DIAS—, la regla de `estadoDeLote`. */
-export function finesDeCuarentena(libro, fecha, F, dias = AVISO_CUARENTENA_DIAS) {
+/** 0f · 4 (2026-09-25, usuario) · LA CUARENTENA POR LOTE Y SALA, para su línea de tiempo: cada par (lote, sala) que está
+ *  EN cuarentena a la foto —con animales— y cada uno que la TERMINÓ dentro del período. Sustituye a `finesDeCuarentena`
+ *  (la lista «sale en 7 días», retirada con la decisión del usuario: su regla es aquí el campo `aviso`). El reloj es el de la sala: su
+ *  ingreso ahí, y una cópula ahí la termina antes (la regla de `estadoDeLote`); un lote cerrado ANTES de su fin no la
+ *  terminó y no sale. `dia` = días cumplidos (el del ingreso es el 1; en una terminada, los que duró); `aviso` = sale en
+ *  los próximos `dias` (lo que decía «⏳ Fin de cuarentena en 7 días»); `hasta` = hasta dónde llega su curva. El filtro
+ *  elige pares por sus posiciones, también las ya vaciadas (una terminada puede haberse ido de la sala). En cuarentena
+ *  primero, la que antes sale arriba; luego las terminadas, la más reciente arriba. */
+export function cuarentenasDeLotes(libro, fecha, periodo, F, dias = AVISO_CUARENTENA_DIAS) {
   const limite = sumarDias(fecha, dias);
-  const pares = new Map();
-  for (const p of libro.posiciones) {
-    if (!vivo(p) || !posicionEnFiltro(p, F)) continue;
-    const k = p.lote + '|' + p.sala;
-    if (!pares.has(k)) pares.set(k, { lote: p.lote, sala: p.sala, machos: 0, hembras: 0 });
-    pares.get(k).machos += p.machos;
-    pares.get(k).hembras += p.hembras;
+  const enFiltro = new Set(libro.posiciones.filter((p) => posicionEnFiltro(p, F)).map((p) => p.lote + '|' + p.sala));
+  const enCuar = [];
+  const terminadas = [];
+  for (const L of libro.lotes.values()) {
+    for (const S of L.salas || []) {
+      if (!esIso(S.ingreso) || !enFiltro.has(L.lote + '|' + S.sala)) continue;
+      const plazo = sumarDias(S.ingreso, CUARENTENA_DIAS);
+      const porCopula = esIso(S.copulaDesde) && S.copulaDesde >= S.ingreso && S.copulaDesde < plazo;
+      const fin = porCopula ? S.copulaDesde : plazo;
+      const base = { lote: L.lote, sala: S.sala, ingreso: S.ingreso, fin, porCopula, total: CUARENTENA_DIAS, machos: S.machos, hembras: S.hembras };
+      if (S.estado === ESTADO_CUARENTENA) {
+        if (!vivo(S)) continue;
+        enCuar.push({ ...base, terminada: false, dia: diasEntre(S.ingreso, fecha) + 1, enDias: diasEntre(fecha, fin), aviso: fin <= limite, hasta: fecha });
+      } else if (fin <= fecha && fin >= periodo.desde && !(L.cerrado && L.cerrado < fin)) {
+        terminadas.push({ ...base, terminada: true, dia: diasEntre(S.ingreso, fin), enDias: '', aviso: false, hasta: fin });
+      }
+    }
   }
-  const out = [];
-  for (const x of pares.values()) {
-    const L = libro.lotes.get(x.lote);
-    const S = ((L && L.salas) || []).find((s) => s.sala === x.sala);
-    if (!S || S.estado !== ESTADO_CUARENTENA) continue;
-    const fin = sumarDias(S.ingreso, CUARENTENA_DIAS);
-    if (!fin || fin > limite) continue;
-    out.push({ ...x, ingreso: S.ingreso, fin, enDias: diasEntre(fecha, fin) });
+  const orden = (a, b) => porNombre(a.lote, b.lote) || porNombre(a.sala, b.sala);
+  return [...enCuar.sort((a, b) => cmp(a.fin, b.fin) || orden(a, b)), ...terminadas.sort((a, b) => cmp(b.fin, a.fin) || orden(a, b))];
+}
+
+/** 0f · 4 · La curva de UNA cuarentena: por día, de `desde` (su ingreso) a `hasta`, los vivos del lote EN ESA SALA
+ *  (`porLoteSala` de la serie) y sus bajas del día (muertos + descartes, ♂ + ♀). El libro lleva las bajas por LOTE, no por
+ *  sala: si ese lote tuvo animales en OTRA sala esos días, `variasSalas` lo dice y las bajas son del lote entero. La serie
+ *  tiene que empezar la víspera de `desde`: sin ella, la baja del primer día no se puede calcular y va en cero. */
+export function curvaDeCuarentena(serie, lote, sala, desde, hasta) {
+  const clave = lote + '|' + sala;
+  const suma = (o) => ent((o || {}).machos) + ent((o || {}).hembras);
+  const acumuladas = (d) => { const L = ((d && d.porLote) || {})[lote]; return L ? suma(L.muertos) + suma(L.descartes) : 0; };
+  const dias = [];
+  let variasSalas = false;
+  let previo = null;
+  for (const d of serie || []) {
+    if (d.fecha > hasta) break;
+    if (d.fecha < desde) { previo = d; continue; }
+    const v = (d.porLoteSala || {})[clave] || { machos: 0, hembras: 0 };
+    if (Object.entries(d.porLoteSala || {}).some(([k, x]) => k !== clave && k.startsWith(lote + '|') && vivo(x))) variasSalas = true;
+    dias.push({ fecha: d.fecha, machos: v.machos, hembras: v.hembras, bajas: previo ? Math.max(0, acumuladas(d) - acumuladas(previo)) : 0 });
+    previo = d;
   }
-  return out.sort((a, b) => cmp(a.fin, b.fin) || porNombre(a.lote, b.lote) || porNombre(a.sala, b.sala));
+  return { dias, variasSalas };
 }
 
 /* ── LAS SALAS ──────────────────────────────────────────────── */

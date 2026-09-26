@@ -162,12 +162,15 @@ export function diasDeTanque(filasTanques) {
  *  el módulo de la sub-vista por lo mismo que `porSala` y `porLote`: reconstruir el libro día a día
  *  para dibujar una curva costaba 30 libros para 30 días (7 s con un año de datos), y este gancho ya
  *  recorre las posiciones una vez. La clave es la misma `ubicKey` que usa el libro, para que
- *  «Sala 1 · 1» sea el mismo tanque aquí y allí. */
+ *  «Sala 1 · 1» sea el mismo tanque aquí y allí.
+ *  🆕 0f · 4 (2026-09-25) · y POR LOTE Y SALA («lote|sala»): la cuarentena es de cada sala, y su curva son los vivos
+ *  del lote EN esa sala, no los del lote entero. */
 function fotoDelLibro(posiciones, lotes) {
   const total = { machos: 0, hembras: 0 };
   const porSala = {};
   const porLote = {};
   const porTanque = {};
+  const porLoteSala = {};
   for (const p of posiciones.values()) {
     total.machos += p.machos;
     total.hembras += p.hembras;
@@ -181,6 +184,10 @@ function fotoDelLibro(posiciones, lotes) {
     const T = porTanque[uk] || (porTanque[uk] = { sala: p.sala, tanque: p.tanque, machos: 0, hembras: 0 });
     T.machos += p.machos;
     T.hembras += p.hembras;
+    const ls = p.lote + '|' + p.sala;
+    const LS = porLoteSala[ls] || (porLoteSala[ls] = { machos: 0, hembras: 0 });
+    LS.machos += p.machos;
+    LS.hembras += p.hembras;
   }
   for (const L of lotes.values()) {
     const o = porLote[L.lote] || (porLote[L.lote] = { machos: 0, hembras: 0 });
@@ -188,9 +195,9 @@ function fotoDelLibro(posiciones, lotes) {
     o.muertos = { ...L.muertos };
     o.descartes = { ...L.descartes };
   }
-  return { total, porSala, porLote, porTanque };
+  return { total, porSala, porLote, porTanque, porLoteSala };
 }
-const FOTO_VACIA = () => ({ total: { machos: 0, hembras: 0 }, porSala: {}, porLote: {}, porTanque: {} });
+const FOTO_VACIA = () => ({ total: { machos: 0, hembras: 0 }, porSala: {}, porLote: {}, porTanque: {}, porLoteSala: {} });
 
 /**
  * La serie DIARIA del libro entre `desde` y `hasta`, en UNA pasada (gancho `alCerrarDia` de `construirLibro`).

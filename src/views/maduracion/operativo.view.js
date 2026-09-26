@@ -44,7 +44,7 @@ import { modeloOperativo, serieDiaria, diasDeTanque, libroAlCierre } from './ope
 import {
   PERIODOS, PERIODO_INICIAL, periodoDe, normalizarFiltro, hayFiltro, kpiVivos, kpiLotes, kpiSalas, kpiOcupacion,
   kpiMortalidad, kpiReproduccion, mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, ultimosRegistros,
-  finesDeCuarentena, AVISO_CUARENTENA_DIAS, tarjetasDeSalas, detalleDeSala,
+  cuarentenasDeLotes, curvaDeCuarentena, AVISO_CUARENTENA_DIAS, tarjetasDeSalas, detalleDeSala,
   indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, kpiBiomasa,
 } from './operativo.tablero.js';
 import { INDICADORES } from './operativo.indicadores.js';
@@ -118,7 +118,9 @@ const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', 
   /* F7 · el reporte elegido en 🖨 Reportes, y el lote del CIERRE (F7.2). El DÍA del reporte no vive aquí: es la
      foto del tablero (`fecha`), por decisión del usuario, para que el papel no pueda enseñar un día distinto del
      de la pantalla. `repLote` sí es propio: elige de qué lote es el cierre, no filtra el tablero. */
-  rep: 'diario', repLote: '' };
+  rep: 'diario', repLote: '',
+  /* 0f · 4 · el par «lote|sala» cuya cuarentena está abierta en ⏳ (📊 Estado actual). No sobrevive a su barra. */
+  cuarSel: '' };
 /* El estado de la vista vive lo que dura la sesión: al volver a Maduración, o al refrescarse los datos, se conserva. */
 const vOp = { ...INICIAL };
 
@@ -184,7 +186,9 @@ function serieDe(memo, p) {
   return memo.serie;
 }
 /** 0f · 7 · la serie del CICLO de un lote (su último ingreso → su cierre o la foto): la curva de su ficha la cubre
- *  entera, sea más larga o más corta que el período. Una por lote a la vez, mientras no cambie. */
+ *  entera, sea más larga o más corta que el período. Una por lote a la vez, mientras no cambie.
+ *  0f · 4 · la usa también la curva de una CUARENTENA ({ desde: su ingreso, hasta }): son sub-vistas distintas y sólo
+ *  una está a la vista, así que compartir el hueco no recalcula de más. Empieza la víspera: la baja del primer día. */
 function serieDelCiclo(memo, c) {
   const k = c.desde + '|' + c.hasta;
   if (memo.serieCicloClave !== k) {
@@ -261,6 +265,7 @@ export function operativoView(root) {
   if (vOp.sub === 'lotes') dibujarLote(_fichaLote);
   if (vOp.sub === 'lotes') dibujarPiscina(_fichaPiscina);
   if (vOp.sub === 'tanques') dibujarTanque(_fichaTanque);
+  dibujarCuarentena(_cuarCurva);   // 0f · 4 · sólo si su lienzo está en pantalla (📊 Estado actual, con un par abierto)
   bind(root);
 }
 
@@ -424,9 +429,21 @@ function estadoHTML(M, memo, p, F) {
     <div class="mc-grid">
       ${alertasHTML(alertas(M, p, F), p, tendenciasDe(memo, p, F), permanencia(M, F))}
       ${ultimosHTML(ultimosRegistros(M.frescura))}
-      ${finesHTML(finesDeCuarentena(M.libro, M.fecha, F))}
+      ${cuarentenaHTML(cuarentenaDe(M, memo, p, F), p)}
     </div>
   </div>`;
+}
+
+/* 0f · 4 · la curva de la cuarentena abierta, para dibujarla tras pintar (el lienzo tiene que estar en el DOM). */
+let _cuarCurva = null;
+/** 0f · 4 · los pares lote·sala de ⏳ y, si hay uno abierto, su curva. Un par que ya no está (otro filtro, otra foto)
+ *  suelta su selección, como la ficha de un lote. */
+function cuarentenaDe(M, memo, p, F) {
+  const lista = cuarentenasDeLotes(M.libro, M.fecha, p, F);
+  if (vOp.cuarSel && !lista.some((x) => x.lote + '|' + x.sala === vOp.cuarSel)) vOp.cuarSel = '';
+  const sel = lista.find((x) => x.lote + '|' + x.sala === vOp.cuarSel) || null;
+  _cuarCurva = sel ? { par: sel, ...curvaDeCuarentena(serieDelCiclo(memo, { desde: sel.ingreso, hasta: sel.hasta }), sel.lote, sel.sala, sel.ingreso, sel.hasta) } : null;
+  return { lista, sel };
 }
 
 /** La ficha de un tanque en palabras: la usan el globo del ratón y el panel que se abre al pulsarlo. */
@@ -635,13 +652,55 @@ function ultimosHTML(u) {
   </div>`;
 }
 
-function finesHTML(fines) {
+/* 0f · 4 (2026-09-25, usuario) · «⏳ Cuarentena por lote y sala» sustituye a la lista «⏳ Fin de cuarentena en 7 días»:
+   una barra por par EN cuarentena (día X de 15 y su paso a Producción) y por cada uno que la TERMINÓ en el período; los
+   que salen en los próximos días van resaltados —el aviso de antes—. Al pulsar una barra, debajo, sus curvas. */
+function cuarentenaHTML({ lista, sel }, p) {
+  const k = (x) => x.lote + '|' + x.sala;
+  const texto = (x) => (x.terminada
+    ? `✓ terminada el ${esc(dm(x.fin))}${x.porCopula ? ' (por una cópula)' : ''} · duró ${nf(x.dia)} d`
+    : `día ${nf(x.dia)} de ${nf(x.total)} · pasa a Producción el ${esc(dm(x.fin))} (en ${nf(x.enDias)} d) · ♀ ${nf(x.hembras)} ♂ ${nf(x.machos)}`);
+  const filas = lista.map((x) => `<li class="mop-cuar-fila${x.aviso ? ' is-aviso' : ''}${x.terminada ? ' is-term' : ''}${sel && k(sel) === k(x) ? ' is-on' : ''}"
+      role="button" tabindex="0" aria-pressed="${!!(sel && k(sel) === k(x))}" data-mop-cuar="${esc(k(x))}">
+      <span class="mop-cuar-n"><b>${esc(x.lote)}</b> · ${esc(x.sala)}</span>
+      <span class="mop-bar" aria-hidden="true"><i style="width:${Math.round((Math.min(x.dia, x.total) / x.total) * 100)}%"></i></span>
+      <span class="mop-cuar-t">${texto(x)}${x.aviso ? ' ⏳' : ''}</span></li>`).join('');
+  const lienzo = sel && _cuarCurva ? `<div class="mop-lienzo mop-cuar-lienzo">
+      <div class="mop-lienzo-h"><b>${esc(sel.lote)} · ${esc(sel.sala)}</b>
+        <span class="mop-nota">del ingreso ${esc(dma(sel.ingreso))} ${sel.terminada ? 'a su fin ' + esc(dma(sel.fin)) : 'a la foto'}</span>
+        <button type="button" class="mc-pill mop-lienzo-x" data-mop-cuar-cerrar aria-label="Cerrar">✕</button></div>
+      <div class="mc-chart" style="height:220px"><canvas id="mopCuarCurva"></canvas></div>
+      ${_cuarCurva.variasSalas ? '<p class="mc-note">⚠ Este lote también tenía animales en otra sala: el libro lleva las bajas por lote, así que las barras son las del lote entero; los vivos sí son los de esta sala.</p>' : ''}
+    </div>` : '';
   return `<div class="mc-card mc-card-wide">
-    <h4 class="mc-card-h">⏳ Fin de cuarentena en ${nf(AVISO_CUARENTENA_DIAS)} días <span class="mc-h-note">la cuarentena es de cada sala</span></h4>
-    ${fines.length ? `<ul class="mop-lista mop-lista-fila">${fines.map((x) => `<li><b>${esc(x.lote)}</b> · ${esc(x.sala)} · pasa a Producción el <b>${esc(dm(x.fin))}</b>
-        (en ${nf(x.enDias)} d) · ♀ ${nf(x.hembras)} ♂ ${nf(x.machos)}</li>`).join('')}</ul>`
-    : `<p class="muted" style="margin:4px 0">Ningún lote sale de cuarentena en los próximos ${nf(AVISO_CUARENTENA_DIAS)} días.</p>`}
+    <h4 class="mc-card-h">⏳ Cuarentena por lote y sala <span class="mc-h-note">la cuarentena es de cada sala · resaltados: salen en ${nf(AVISO_CUARENTENA_DIAS)} días o menos</span></h4>
+    ${lista.length ? `<ul class="mop-cuar">${filas}</ul>${lienzo}`
+    : `<p class="muted" style="margin:4px 0">Ningún lote en cuarentena ni que la haya terminado en ${esc(etiquetaPeriodo(p))}.</p>`}
   </div>`;
+}
+
+/** 0f · 4 · las curvas de una cuarentena: vivos ♀ y ♂ de ese lote en esa sala (líneas) y las bajas del día (barras, eje
+ *  propio a la derecha: son decenas donde los vivos son cientos). */
+function dibujarCuarentena(c) {
+  if (!c || !c.dias.length || !document.getElementById('mopCuarCurva')) return;
+  makeChart('mopCuarCurva', {
+    type: 'bar',
+    data: {
+      labels: c.dias.map((d) => dm(d.fecha)),
+      datasets: [
+        { type: 'line', label: '♀ Hembras', data: c.dias.map((d) => d.hembras), borderColor: '#d81b60', backgroundColor: '#d81b60', tension: 0.25, borderWidth: 2, pointRadius: 0, yAxisID: 'y' },
+        { type: 'line', label: '♂ Machos', data: c.dias.map((d) => d.machos), borderColor: '#1e88e5', backgroundColor: '#1e88e5', tension: 0.25, borderWidth: 2, pointRadius: 0, yAxisID: 'y' },
+        { type: 'bar', label: 'Bajas del día', data: c.dias.map((d) => d.bajas), backgroundColor: 'rgba(120,144,156,.55)', yAxisID: 'y2' },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      scales: { x: { ticks: { ...EJE, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: EJE, grid: { color: REJILLA }, title: { display: true, text: 'vivos', color: EJE.color, font: { size: 10 } } },
+        y2: { beginAtZero: true, position: 'right', ticks: { ...EJE, precision: 0 }, grid: { display: false }, title: { display: true, text: 'bajas', color: EJE.color, font: { size: 10 } } } },
+      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 10 }, color: EJE.color } } },
+    },
+  });
 }
 
 /* ============================================================
@@ -2091,6 +2150,7 @@ function bind(root) {
   const abrirLote = (lote) => { vOp.loteSel = vOp.loteSel === lote ? '' : lote; repintar(); };
   const abrirTanque = (k) => { vOp.tqFicha = vOp.tqFicha === k ? '' : k; repintar(); };
   const abrirPiscina = (x) => { vOp.piscinaSel = vOp.piscinaSel === x ? '' : x; repintar(); };
+  const abrirCuarentena = (k) => { vOp.cuarSel = vOp.cuarSel === k ? '' : k; repintar(); };   // 0f · 4
 
   root.addEventListener('click', (e) => {
     const t = e.target;
@@ -2121,6 +2181,9 @@ function bind(root) {
       repintar();
       return;
     }
+    if (t.closest('[data-mop-cuar-cerrar]')) { vOp.cuarSel = ''; repintar(); return; }
+    const cua = t.closest('[data-mop-cuar]');
+    if (cua) { abrirCuarentena(cua.dataset.mopCuar); return; }
     const lot = t.closest('[data-mop-lote]');
     if (lot) { abrirLote(lot.dataset.mopLote); return; }
     const tqf = t.closest('[data-mop-tqf]');
@@ -2170,6 +2233,8 @@ function bind(root) {
     if (sala && e.target === sala) { e.preventDefault(); abrirSala(sala.dataset.mopSala); return; }
     const lote = e.target.closest && e.target.closest('[data-mop-lote]');
     if (lote && e.target === lote) { e.preventDefault(); abrirLote(lote.dataset.mopLote); return; }
+    const cua = e.target.closest && e.target.closest('[data-mop-cuar]');
+    if (cua && e.target === cua) { e.preventDefault(); abrirCuarentena(cua.dataset.mopCuar); return; }
     const pis = e.target.closest && e.target.closest('[data-mop-piscina]');
     if (pis && e.target === pis) { e.preventDefault(); abrirPiscina(pis.dataset.mopPiscina); return; }
     const tqf = e.target.closest && e.target.closest('[data-mop-tqf]');
