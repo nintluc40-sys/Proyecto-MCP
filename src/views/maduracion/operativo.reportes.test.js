@@ -627,3 +627,20 @@ describe('Maduración · F7.3 · el reporte de Broodstock', () => {
     expect(nombreDelBroodstock(bs)).toBe('Broodstock_2026-09-18');
   });
 });
+
+/* «De paso» (2026-09-26, usuario) · el % de cópulas y muda de los reportes (semanal y cierre) es el de la ficha del lote:
+   POR DÍA, con la regla del ⚖️ Saldo. Antes dividía las cópulas de todo el período entre las hembras de la foto. */
+describe('Maduración · «de paso» · el % de cópulas y muda de los reportes es POR DÍA', () => {
+  const PC = [ING('2026-09-14', 'QC', 'Sala 3', 22, 10, 20),
+    TQ('2026-09-15', 'Sala 3', 22, { 'Cópulas': 4 }), TQ('2026-09-16', 'Sala 3', 22, { 'Cópulas': 2, Muda: 2 })];
+  const MC = modeloOperativo(PC, { hoy: HOY, fecha: DIA });
+  const PS = periodoDe('7d', DIA, MC.fuentes);
+  const SC = serieDiaria(MC.fuentes, sumarDias(PS.desde, -1), PS.hasta);
+
+  it('🔴 semanal y cierre: (4 + 2) ÷ (20 + 20) hembras-día = 15 %, no 6 ÷ 20 = 30 %', () => {
+    const pg = semanalPorLote(MC, SC, diasDeTanque(MC.fuentes.tanques), SIN, {}).paginas[0];
+    expect([pg.lote, pg.promedios.pctCopulas, pg.promedios.pctMuda]).toEqual(['QC', 15, 5]);
+    const c = cierreDeLote(MC, serieDiaria(MC.fuentes, '2026-09-13', DIA), 'QC', {});
+    expect([c.ficha.promedios.pctCopulas, c.ficha.promedios.pctMuda]).toEqual([15, 5]);
+  });
+});

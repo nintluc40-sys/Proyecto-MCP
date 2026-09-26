@@ -25,8 +25,8 @@
 import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { estadoDeLote, ESTADO_MIXTO, ubicKey } from '../registros/lib/mad-libro.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
-import { fechaDeFila } from './operativo.data.js';
-import { cociente, proporcionHM, supervivencia, tasaDescarte, desempenoPorOrigen } from './operativo.indicadores.js';
+import { fechaDeFila, diasDeTanque } from './operativo.data.js';
+import { cociente, proporcionHM, supervivencia, tasaDescarte, desempenoPorOrigen, tasaEnPartesDelLote } from './operativo.indicadores.js';
 import { posicionEnFiltro } from './operativo.tablero.js';
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
@@ -208,16 +208,27 @@ export function curvaDeLote(serie, lote) {
 }
 
 /** Los EVENTOS del lote dentro del período, para marcarlos sobre la curva. Un movimiento no dice de qué lote es
- *  (lo deduce el libro), así que sólo entran los que nombran al lote: ingresos, cierres y mortalidad en desove. */
+ *  (lo deduce el libro), así que sólo entran los que nombran al lote: ingresos, cierres y mortalidad en desove.
+ *  🆕 2026-09-26 (usuario) · UNO por día y tipo: un ingreso llega en varias filas —una por tanque— y la lista repetía
+ *  «Ingreso» por cada una. Se suman sus animales y se dice de cuántas filas (y tanques) sale: `registros`, `tanques`. */
 export function eventosDeLote(fuentes, lote, periodo) {
   const clave = normLote(lote);
-  const out = [];
+  const grupos = new Map();
+  const suma = (fecha, tipo, etiqueta, machos, hembras, r) => {
+    const k = fecha + '|' + tipo + '|' + etiqueta;
+    const e = grupos.get(k) || { fecha, tipo, etiqueta, machos: 0, hembras: 0, registros: 0, _tq: new Set() };
+    e.machos += machos;
+    e.hembras += hembras;
+    e.registros++;
+    if (txt(r.Tanque)) e._tq.add(txt(r.Sala) + '|' + txt(r.Tanque));
+    grupos.set(k, e);
+  };
   const mete = (clave2, tipo, etiqueta) => {
     for (const r of (fuentes || {})[clave2] || []) {
       if (normLote(r.Lote) !== clave) continue;
       const f = fechaDeFila(clave2, r);
       if (!enPeriodo(f, periodo)) continue;
-      out.push({ fecha: f, tipo, etiqueta, machos: ent(r.Machos), hembras: ent(r.Hembras) });
+      suma(f, tipo, etiqueta, ent(r.Machos), ent(r.Hembras), r);
     }
   };
   mete('ingresos', 'ingreso', 'Ingreso');
@@ -226,15 +237,15 @@ export function eventosDeLote(fuentes, lote, periodo) {
     if (normLote(r.Lote) !== clave) continue;
     const f = fechaDeFila('mortDesove', r);
     if (!enPeriodo(f, periodo)) continue;
-    out.push({ fecha: f, tipo: 'mortdes', etiqueta: 'Mortalidad en ' + (txt(r['Tipo de tanque']) || 'desove'), machos: 0, hembras: ent(r['Hembras muertas']) });
+    suma(f, 'mortdes', 'Mortalidad en ' + (txt(r['Tipo de tanque']) || 'desove'), 0, ent(r['Hembras muertas']), r);
   }
   for (const r of (fuentes || {}).desoves || []) {
     if (normLote(r.Lote) !== clave) continue;
     const f = fechaDeFila('desoves', r);
     if (!enPeriodo(f, periodo)) continue;
-    out.push({ fecha: f, tipo: 'desove', etiqueta: 'Desove', machos: 0, hembras: 0 });
+    suma(f, 'desove', 'Desove', 0, 0, r);
   }
-  return out.sort((a, b) => porNombre(a.fecha, b.fecha));
+  return [...grupos.values()].map(({ _tq, ...e }) => ({ ...e, tanques: _tq.size })).sort((a, b) => porNombre(a.fecha, b.fecha));
 }
 
 /** La REPRODUCCIÓN del lote en el período: desoves, huevos, N2, N5 y fertilidad (eclosión sobre los huevos que
@@ -272,7 +283,7 @@ export function reproduccionDeLote(fuentes, lote, periodo) {
  * Los pesos se PROMEDIAN pesando por los animales del lote (un peso es una media, no una cantidad que se parta);
  * las cópulas y las mudas se PARTEN, porque son cuentas. Se devuelve `compartido` para poder decirlo en pantalla.
  */
-export function promediosDeLote(M, lote, periodo) {
+export function promediosDeLote(M, lote, periodo, presencia = null) {
   const clave = normLote(lote);
   const libro = (M && M.libro) || { posiciones: [] };
   const cuota = new Map();
@@ -321,11 +332,15 @@ export function promediosDeLote(M, lote, periodo) {
     muda += ent(r.Muda) * c.parte;
   }
   const r2 = (n) => Math.round(n * 100) / 100;
-  const hembras = ent((loteDelLibro(libro, clave) || {}).hembras);
+  /* 🆕 2026-09-26 (usuario) · el % es POR DÍA, con la regla del ⚖️ Saldo (`tasaEnPartesDelLote`): antes se dividían las
+     cópulas de TODO el período entre las hembras de la foto (327 % con datos reales). Sin la presencia diaria del
+     libro no hay % que dar: vacío, no uno inventado. */
+  const partes = presencia ? diasDeTanque((M.fuentes || {}).tanques) : [];
+  const pct = (campo) => (presencia ? tasaEnPartesDelLote(partes, presencia, clave, periodo, campo).valor : '');
   return {
     pesoMachos: pmDen ? r2(pmNum / pmDen) : '', pesoHembras: phDen ? r2(phNum / phDen) : '',
     copulas: Math.round(copulas), muda: Math.round(muda),
-    pctCopulas: cociente(Math.round(copulas), hembras, 100), pctMuda: cociente(Math.round(muda), hembras, 100),
+    pctCopulas: pct('copulas'), pctMuda: pct('muda'),
     compartido, tanques: cuota.size,
   };
 }
@@ -335,7 +350,7 @@ export function promediosDeLote(M, lote, periodo) {
  *  `cicloDelLote`), la CURVA y los EVENTOS marcados sobre ella cubren esa vida —«desde la fecha del ingreso, no un mes
  *  antes»—; la serie tiene que cubrirla (la trae la vista). Reproducción y promedios siguen el PERÍODO. Sin ciclo, todo
  *  el período, como hasta ese día. */
-export function fichaDeLote(M, serie, lote, periodo, ciclo = null) {
+export function fichaDeLote(M, serie, lote, periodo, ciclo = null, presencia = null) {
   const libro = (M && M.libro) || { lotes: new Map() };
   const L = loteDelLibro(libro, lote);
   if (!L) return null;
@@ -349,7 +364,7 @@ export function fichaDeLote(M, serie, lote, periodo, ciclo = null) {
     eventos: eventosDeLote(M.fuentes, lote, ciclo || periodo),
     ciclo: ciclo || null,
     reproduccion: reproduccionDeLote(M.fuentes, lote, periodo),
-    promedios: promediosDeLote(M, lote, periodo),
+    promedios: promediosDeLote(M, lote, periodo, presencia),
   };
 }
 

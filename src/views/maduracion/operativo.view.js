@@ -201,6 +201,16 @@ function serieDe(memo, p) {
  *  entera, sea más larga o más corta que el período. Una por lote a la vez, mientras no cambie.
  *  0f · 4 · la usa también la curva de una CUARENTENA ({ desde: su ingreso, hasta }): son sub-vistas distintas y sólo
  *  una está a la vista, así que compartir el hueco no recalcula de más. Empieza la víspera: la baja del primer día. */
+/** «De paso» (2026-09-26) · la presencia diaria del libro EN el período, para el % de cópulas y muda de la ficha de un
+ *  lote (regla del Saldo). Aparte de la de 📉 Tendencias, que empieza un período antes. Sólo con un lote abierto. */
+function presenciaDe(memo, p) {
+  const k = p.desde + '|' + p.hasta;
+  if (memo.presFichaClave !== k) {
+    memo.presFicha = presenciaDiaria(memo.M.fuentes, sumarDias(p.desde, -1), p.hasta);
+    memo.presFichaClave = k;
+  }
+  return memo.presFicha;
+}
 function serieDelCiclo(memo, c) {
   const k = c.desde + '|' + c.hasta;
   if (memo.serieCicloClave !== k) {
@@ -1157,7 +1167,7 @@ function lotesHTML(M, memo, p, F) {
   /* 0f · 7 (usuario, 2026-09-25) · la curva «📈 Vivos del lote» y sus eventos cubren el CICLO del lote, «desde la fecha del
      ingreso, no un mes antes»; Reproducción y promedios siguen el período. Sin fecha de ingreso, todo el período. */
   const ciclo = vOp.loteSel ? cicloDelLote(M.libro, vOp.loteSel, M.fecha) : null;
-  _fichaLote = vOp.loteSel ? fichaDeLote(M, ciclo ? serieDelCiclo(memo, ciclo) : serieDe(memo, p), vOp.loteSel, p, ciclo) : null;
+  _fichaLote = vOp.loteSel ? fichaDeLote(M, ciclo ? serieDelCiclo(memo, ciclo) : serieDe(memo, p), vOp.loteSel, p, ciclo, presenciaDe(memo, p)) : null;
   const comp = comparativa(M, F, p, vOp.agrupacion);
   /* F6 · 📈 Piscinas de origen, debajo de la comparativa (diseño aprobado): la tabla del último corte y, al pulsar
      una piscina, su ficha. La ficha no sobrevive a su fila, igual que la del lote. */
@@ -1241,7 +1251,7 @@ function fichaLoteHTML(f, p) {
         piscina ${esc(o.piscina || '—')} · camaronera ${esc(o.camaronera || '—')}</li>`).join('')}</ul>`
     : '<p class="muted" style="margin:4px 0">Ningún Ingreso explica este lote.</p>';
   const eventos = f.eventos.length
-    ? `<ul class="mop-lista mop-lista-fila">${f.eventos.map((e) => `<li>${esc(dm(e.fecha))} · ${esc(e.etiqueta)}${e.machos || e.hembras ? ` · ♀ ${nf(e.hembras)} ♂ ${nf(e.machos)}` : ''}</li>`).join('')}</ul>`
+    ? `<ul class="mop-lista mop-lista-fila">${f.eventos.map((e) => `<li>${esc(dm(e.fecha))} · ${esc(e.etiqueta)}${e.tanques > 1 ? ` · ${nf(e.tanques)} tanques` : e.registros > 1 ? ` · ${nf(e.registros)} registros` : ''}${e.machos || e.hembras ? ` · ♀ ${nf(e.hembras)} ♂ ${nf(e.machos)}` : ''}</li>`).join('')}</ul>`
     : `<p class="muted" style="margin:4px 0">Sin eventos en ${f.ciclo ? 'su ciclo' : esc(etiquetaPeriodo(p))}.</p>`;
   // 0f · 7 · el rótulo de la curva dice de dónde a dónde va: desde el ingreso (y hasta el cierre, si lo tuvo).
   const rotuloCurva = f.ciclo
@@ -1264,8 +1274,9 @@ function fichaLoteHTML(f, p) {
       <p class="mc-note">La fertilidad sale sólo de los desoves que TRAEN su N2; el N5 se cuenta aparte y NO se compara con el N2.</p>
       <h5 class="mop-det-h">Promedios de sus tanques</h5>
       <div class="mop-sc-fila"><span class="mop-sc-l">Peso</span><span>♂ ${nf(pr.pesoMachos, 2)} g · ♀ ${nf(pr.pesoHembras, 2)} g</span></div>
-      <div class="mop-sc-fila"><span class="mop-sc-l">Cópulas</span><span>${nf(pr.copulas)} · ${pc(pr.pctCopulas)} de sus hembras</span></div>
-      <div class="mop-sc-fila"><span class="mop-sc-l">Muda</span><span>${nf(pr.muda)} · ${pc(pr.pctMuda)} de sus hembras</span></div>
+      <div class="mop-sc-fila"><span class="mop-sc-l">Cópulas</span><span>${nf(pr.copulas)} en el período · ${pc(pr.pctCopulas)} de sus hembras por día</span></div>
+      <div class="mop-sc-fila"><span class="mop-sc-l">Muda</span><span>${nf(pr.muda)} en el período · ${pc(pr.pctMuda)} de sus hembras por día</span></div>
+      <p class="mc-note">El % es POR DÍA de parte, con la regla del ⚖️ Saldo: cópulas (o mudas) ÷ hembras de los tanques que tenían el lote ese día.</p>
       ${pr.compartido ? '<p class="mc-note">⚠ Comparte tanque con otro lote: la hoja de Tanques no dice de qué lote es cada cifra, así que las cópulas y las mudas van repartidas en proporción a sus animales (los pesos se promedian, no se parten).</p>' : ''}
     </div>
     <div class="mc-card mop-det-ancho">

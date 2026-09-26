@@ -16,6 +16,7 @@
 import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { areaTanqueM2 } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
+import { ubicKey } from '../registros/lib/mad-libro.js';
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const r2 = (n) => Math.round(n * 100) / 100;
@@ -33,6 +34,28 @@ const enPeriodo = (f, desde, hasta) => /^\d{4}-\d{2}-\d{2}$/.test(f) && (!desde 
 export const cociente = (a, b, escala = 1) =>
   (Number.isFinite(a) && Number.isFinite(b) && b > 0 ? r2((a / b) * escala) : '');
 
+/** % de un campo de los partes de Tanques (`copulas`, `muda`) sobre las hembras de los tanques de un lote, con la
+ *  regla del ⚖️ Saldo (H1 de mad-resumen.js): un parte es del lote si ESE día el tanque lo tenía según el libro al
+ *  cierre de ese día (`presencia`, de `presenciaDiaria`), y el % es Σ campo ÷ Σ hembras de esos tanques ese día —un
+ *  % POR DÍA de parte—. Un día sin parte no cuenta ni arriba ni abajo. 🔑 Una sola regla para 📉 Tendencias y los
+ *  promedios de la ficha del lote (2026-09-26): la ficha dividía las cópulas de TODO el período entre las hembras de la
+ *  foto y, con datos reales, daba 327 %. `clave` es el lote ya normalizado. */
+export function tasaEnPartesDelLote(partes, presencia, clave, periodo, campo = 'copulas') {
+  let suma = 0;
+  let hembras = 0;
+  let registros = 0;
+  for (const d of partes || []) {
+    if (!enPeriodo(d.fecha, periodo.desde, periodo.hasta)) continue;
+    const foto = presencia && presencia.get(d.fecha);
+    const Tq = foto && foto.tanques.get(ubicKey(d.sala, d.tanque));
+    if (!Tq || !Tq.lotes.has(clave) || !(Tq.hembras > 0)) continue;
+    suma += ent(d[campo]);
+    hembras += Tq.hembras;
+    registros++;
+  }
+  return { total: suma, valor: cociente(suma, hembras, 100), registros };
+}
+
 /** El catálogo: qué es cada indicador, en palabras. Lo enseña la vista; lo exige la prueba (uno por función). */
 export const INDICADORES = [
   { id: 'supervivencia', nombre: 'Supervivencia del lote', unidad: '%', definicion: 'Animales vivos ÷ animales ingresados al lote × 100, por sexo y total.' },
@@ -45,6 +68,7 @@ export const INDICADORES = [
   { id: 'fueraDeRango', nombre: 'Lecturas fuera de rango', unidad: '%', definicion: 'Lecturas del período fuera del rango de referencia ÷ lecturas del período × 100, por sala. Los extremos del rango cuentan como dentro.' },
   { id: 'diasDesdeDesinfeccion', nombre: 'Días desde la última desinfección', unidad: 'días', definicion: 'Días entre la última desinfección registrada en Tratamientos para esa sala y la fecha de cálculo.' },
   { id: 'alimentoPorMillonN5', nombre: 'Alimento planificado por millón de N5', unidad: 'kg por millón', definicion: 'Kg de alimento PLANIFICADO en el período (hoja de Alimentación) ÷ millones de N5 de los desoves del período.' },
+  { id: 'tasaEnPartesDelLote', nombre: 'Cópulas y muda del lote, por día', unidad: '% por día', definicion: 'Cópulas (o mudas) de los partes de Tanques de los tanques que tenían el lote ESE día ÷ hembras de esos tanques ese día × 100, sumado sobre los partes del período (regla del Saldo). Un día sin parte no cuenta.' },
   { id: 'desempenoPorOrigen', nombre: 'Desempeño por origen', unidad: 'varias', definicion: 'Por código genético o por piscina de broodstock: ingresados, vivos, supervivencia, desoves, fertilidad y nauplios por hembra (estas dos con la regla del Saldo).' },
 ];
 

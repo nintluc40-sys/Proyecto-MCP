@@ -1947,3 +1947,29 @@ describe('Maduración · operativo · 0f · 8 · 🦠 / 🧬 lo del laboratorio'
     expect([...usadas].filter((c) => !new RegExp('\\.' + c + '(?![\\w-])').test(css))).toEqual([]);
   });
 });
+
+/* «De paso» (2026-09-26, usuario) · en la ficha del lote: un ingreso en varios tanques es UN evento, con sus tanques; y
+   el % de cópulas y muda es POR DÍA (regla del Saldo), y lo dice. */
+describe('Maduración · operativo · «de paso» · la ficha del lote', () => {
+  const PLANTA_K = [...PLANTA, ING('13/09/2026', 'QK', 'Sala 3', 22, 5, 5), ING('13/09/2026', 'QK', 'Sala 3', 23, 4, 6),
+    TQ('15/09/2026', 'Sala 3', 22, { 'Cópulas': 2 }), TQ('16/09/2026', 'Sala 3', 22, { 'Cópulas': 1 })];
+
+  it('🔴 el ingreso en dos tanques sale UNA vez, con los tanques y los animales sumados', async () => {
+    await montar(PLANTA_K);
+    abrirLotes();
+    click(filaLote('QK'));
+    const card = [...root.querySelectorAll('.mc-card')].find((c) => c.textContent.includes('📈 Vivos del lote'));
+    const ingresos = [...card.querySelectorAll('li')].filter((li) => li.textContent.includes('Ingreso'));
+    expect(ingresos.map((li) => li.textContent)).toEqual(['13/09 · Ingreso · 2 tanques · ♀ 11 ♂ 9']);
+  });
+
+  it('🔴 cópulas: las del período y el % POR DÍA de sus hembras —(2 + 1) ÷ (5 + 5) = 30 %, no 3 ÷ 11—', async () => {
+    await montar(PLANTA_K);
+    abrirLotes();
+    click(filaLote('QK'));
+    const repro = [...root.querySelectorAll('.mc-card')].find((c) => c.textContent.includes('🥚 Reproducción'));
+    const fila = [...repro.querySelectorAll('.mop-sc-fila')].find((f) => f.textContent.startsWith('Cópulas'));
+    expect(fila.textContent).toBe('Cópulas3 en el período · 30 % de sus hembras por día');
+    expect(repro.textContent).toContain('El % es POR DÍA de parte');
+  });
+});

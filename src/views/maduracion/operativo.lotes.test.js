@@ -23,7 +23,8 @@ import {
 import { modeloOperativo, serieDiaria } from './operativo.data.js';
 import { normalizarFiltro, periodoDe, cicloDelLote } from './operativo.tablero.js';
 import { MAD_OP_ORIGEN } from './operativo.fuentes.js';
-import { ESTADO_CERRADO } from '../registros/lib/mad-libro.js';
+import { ESTADO_CERRADO, sumarDias } from '../registros/lib/mad-libro.js';
+import { presenciaDiaria } from './operativo.tendencias.js';
 
 const O = MAD_OP_ORIGEN;
 const ING = (fecha, lote, sala, tanque, machos, hembras, cg = 'CA', piscina = 'P1') => ({ _SheetOrigin: O,
@@ -63,6 +64,7 @@ const PLANTA = [
 
   ING('2026-09-04', 'QH', 'Sala 3', 4, 20, 20, 'CA', 'P1'),
   ING('2026-09-04', 'QI', 'Sala 3', 4, 20, 20, 'CA', 'P3'),
+  TQ('2026-09-17', 'Sala 3', 4, { 'Cópulas': 6 }),
   TQ('2026-09-18', 'Sala 3', 4, { 'Cópulas': 10, Muda: 8, 'Peso promedio machos (g)': 30, 'Peso promedio hembras (g)': 40 }),
 
   ING('2026-09-04', 'QJ', 'Sala 3', 5, 10, 10, 'CA', 'P1'),
@@ -74,6 +76,7 @@ const M = modeloOperativo(PLANTA, { hoy: FOTO, fecha: FOTO });
 const P30 = periodoDe('30d', FOTO, M.fuentes);
 const SERIE = serieDiaria(M.fuentes, P30.desde, P30.hasta);
 const SIN = normalizarFiltro({});
+const PRES = presenciaDiaria(M.fuentes, sumarDias(P30.desde, -1), P30.hasta);
 const F = (o) => normalizarFiltro(o);
 
 describe('Maduración · lotes · la cascada del cuadre', () => {
@@ -195,6 +198,17 @@ describe('Maduración · lotes · la ficha', () => {
     expect(curvaDeLote(SERIE, 'QJ').at(-1).total).toBe(40);                        // 10+10 ♂ y 10+10 ♀
   });
 
+  it('🔴 «de paso» (2026-09-26) · un evento por día y tipo: el ingreso en dos tanques es UNO, con sus animales sumados', () => {
+    // Un ingreso llega en VARIAS filas, una por tanque (modelo propio: QK no entra en las cuentas de las demás pruebas).
+    const MK = modeloOperativo([ING('2026-09-06', 'QK', 'Sala 3', 6, 5, 5, 'CA', 'P1'), ING('2026-09-06', 'QK', 'Sala 3', 7, 4, 6, 'CA', 'P1')], { hoy: FOTO, fecha: FOTO });
+    expect(eventosDeLote(MK.fuentes, 'QK', P30)).toEqual([
+      { fecha: '2026-09-06', tipo: 'ingreso', etiqueta: 'Ingreso', machos: 9, hembras: 11, registros: 2, tanques: 2 },
+    ]);
+    const qe = eventosDeLote(M.fuentes, 'QE', P30);
+    expect(qe.find((e) => e.tipo === 'ingreso')).toMatchObject({ registros: 1, tanques: 1 });
+    expect(qe.find((e) => e.tipo === 'desove'), 'un desove no es de un tanque').toMatchObject({ registros: 1, tanques: 0 });
+  });
+
   it('los EVENTOS son los que NOMBRAN al lote, dentro del período y en orden', () => {
     expect(eventosDeLote(M.fuentes, 'QE', P30).map((e) => [e.fecha, e.tipo])).toEqual([
       ['2026-09-01', 'ingreso'], ['2026-09-10', 'mortdes'], ['2026-09-12', 'desove'],
@@ -213,19 +227,30 @@ describe('Maduración · lotes · la ficha', () => {
   });
 
   it('🔴 los promedios del tanque se reparten: a medias si está COMPARTIDO, enteros si el lote lo ocupa con dos códigos', () => {
-    const qh = promediosDeLote(M, 'QH', P30);
+    const qh = promediosDeLote(M, 'QH', P30, PRES);
     expect(qh.compartido).toBe(true);
-    expect(qh.copulas).toBe(5);           // 10 × ½
+    expect(qh.copulas).toBe(8);           // (6 + 10) × ½
     expect(qh.muda).toBe(4);              // 8 × ½
     expect(qh.pesoMachos).toBe(30);       // un promedio NO se parte
     expect(qh.pesoHembras).toBe(40);
-    expect(qh.pctCopulas).toBe(25);       // 5 ÷ 20 hembras vivas
     // QJ está solo en su tanque, con DOS códigos: acumulando mal daría parte ½ y 6 cópulas.
     const qj = promediosDeLote(M, 'QJ', P30);
     expect(qj.compartido).toBe(false);
     expect(qj.copulas).toBe(12);
     expect(qj.muda).toBe(6);
     expect(qj.tanques).toBe(1);
+  });
+
+  it('🔴 «de paso» (2026-09-26) · el % de cópulas y de muda es POR DÍA, con la regla del Saldo (no el período ÷ la foto)', () => {
+    const qh = promediosDeLote(M, 'QH', P30, PRES);
+    // Dos partes del tanque 4 (40 hembras, de QH y QI): (6 + 10) cópulas ÷ (40 + 40) hembras-día. Dividiendo las
+    // cópulas del período entre las hembras de la foto daría 8 ÷ 20 = 40 %.
+    expect(qh.pctCopulas).toBe(20);
+    expect(qh.pctMuda).toBe(10);          // 8 ÷ 80
+    expect(promediosDeLote(M, 'QJ', P30, PRES).pctCopulas).toBe(60);   // 12 ÷ 20, un solo parte
+    const sin = promediosDeLote(M, 'QH', P30);
+    expect([sin.pctCopulas, sin.pctMuda, sin.copulas], 'sin la presencia diaria no hay %: vacío, no uno inventado').toEqual(['', '', 8]);
+    expect(fichaDeLote(M, SERIE, 'QH', P30, null, PRES).promedios).toEqual(qh);
   });
 
   it('la ficha entera se arma, y un lote desconocido da null', () => {

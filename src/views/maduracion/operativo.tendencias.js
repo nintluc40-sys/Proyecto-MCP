@@ -40,7 +40,7 @@
 import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { construirLibro, sumarDias, ubicKey, ESTADO_PRODUCCION } from '../registros/lib/mad-libro.js';
 import { fechaDeFila } from './operativo.data.js';
-import { cociente } from './operativo.indicadores.js';
+import { cociente, tasaEnPartesDelLote } from './operativo.indicadores.js';
 import { posicionEnFiltro, salasEnAlcance } from './operativo.tablero.js';
 import { loteEnFiltro, origenDeLote } from './operativo.lotes.js';
 import { UMBRALES_DE_AVISO } from './operativo.umbrales.js';
@@ -279,19 +279,8 @@ export function tendencias(M, periodo, F, partes, presencia) {
   /* 🧬 REPRODUCCIÓN DE CADA LOTE · % de cópulas (regla del Saldo, sobre los partes del lote), huevos por desove y
      fertilidad. Entran los lotes de lo filtrado que tienen desoves o partes en alguno de los dos períodos. */
   const copulasDe = (clave, p) => {
-    let copulas = 0;
-    let hembras = 0;
-    let n = 0;
-    for (const d of partes || []) {
-      if (!enPeriodo(d.fecha, p)) continue;
-      const foto = pres.get(d.fecha);
-      const Tq = foto && foto.tanques.get(ubicKey(d.sala, d.tanque));
-      if (!Tq || !Tq.lotes.has(clave) || !(Tq.hembras > 0)) continue;
-      copulas += ent(d.copulas);
-      hembras += Tq.hembras;
-      n++;
-    }
-    return { valor: cociente(copulas, hembras, 100), registros: n };
+    const x = tasaEnPartesDelLote(partes, pres, clave, p);   // la regla, en operativo.indicadores.js
+    return { valor: x.valor, registros: x.registros };
   };
   const candidatos = new Set(lotesDesove);
   if (!F.codigo) {

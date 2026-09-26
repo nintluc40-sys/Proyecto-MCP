@@ -34,6 +34,8 @@ import {
   cicloDelLote,
 } from './operativo.tablero.js';
 import { desgloseDeBajas } from './operativo.bajas.js';
+import { presenciaDiaria } from './operativo.tendencias.js';
+import { sumarDias } from '../registros/lib/mad-libro.js';
 import { tablaDeLotes, fichaDeLote } from './operativo.lotes.js';
 import { tablaDePiscinas, fichaDePiscina } from './operativo.broodstock.js';
 import { totalesDeReproduccion, tablaDeReproduccion } from './operativo.reproduccion.js';
@@ -413,13 +415,17 @@ export function semanalPorLote(M, serie, partes, F, opts = {}) {
       etiquetas: etiquetasDeFiltro(filtro),
       generado: txt(opts.ahora),
     },
-    paginas: lotes.map((l) => paginaSemanal(modelo, serie, partes, filtro, periodo, l)),
+    paginas: (() => {
+      /* La presencia diaria del libro en la semana, UNA vez para todas las páginas: el % de cópulas y muda del lote. */
+      const presencia = lotes.length ? presenciaDiaria(modelo.fuentes, sumarDias(periodo.desde, -1), periodo.hasta) : null;
+      return lotes.map((l) => paginaSemanal(modelo, serie, partes, filtro, periodo, l, presencia));
+    })(),
   };
 }
 
-function paginaSemanal(M, serie, partes, F, periodo, fila) {
+function paginaSemanal(M, serie, partes, F, periodo, fila, presencia) {
   const Flote = { ...F, lote: normLote(fila.lote) };
-  const ficha = fichaDeLote(M, serie, fila.lote, periodo) || {};
+  const ficha = fichaDeLote(M, serie, fila.lote, periodo, null, presencia) || {};
   /* Las bajas del lote salen del LIBRO (agrupación «lote»), no de los partes: un tanque compartido atribuiría al
      lote las bajas de otro. Es la misma razón por la que 💀 Bajas avisa de lo que una agrupación no puede honrar. */
   const bajas = desgloseDeBajas(M, serie, partes, Flote, periodo, 'lote');
@@ -461,7 +467,7 @@ export function cierreDeLote(M, serie, lote, opts = {}) {
   const periodo = ciclo && esIso(ciclo.desde)
     ? { clave: 'ciclo', desde: ciclo.desde, hasta: ciclo.hasta, dias: diasEntre(ciclo.desde, ciclo.hasta) + 1 }
     : periodoDe('todo', txt(modelo.fecha), modelo.fuentes);
-  const ficha0 = fichaDeLote(modelo, serie, lote, periodo);
+  const ficha0 = fichaDeLote(modelo, serie, lote, periodo, null, presenciaDiaria(modelo.fuentes, sumarDias(periodo.desde, -1), periodo.hasta));
   if (!ficha0) return null;
   const ficha = { ...ficha0, curva: recortarCurva(ficha0.curva, periodo) };
   return {
