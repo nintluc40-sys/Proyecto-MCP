@@ -265,3 +265,27 @@
   .mop-rep-prev { position: absolute; top: 12px; left: 12px; transform: scale(.42); transform-origin: top left; }
   .mop-rep-acc { margin-left: 0; }
 }
+
+/* 0f · 8 (2026-09-26, usuario) · 🦠 / 🧬 lo del laboratorio: dos botones junto a la sub-nav y su modal. */
+.mop-lab { padding: 16px 12px; }   /* menos margen que el modal genérico: sus tablas necesitan el ancho */
+.mop-lab-b { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.mop-lab-btn { border-style: dashed; }
+.mop-lab-card { width: min(980px, 100%); }
+.mop-lab-per { margin: 0 0 10px; font-size: 12px; color: var(--c-text-soft); }
+.mop-lab-bloque { margin: 0 0 16px; padding: 0 0 12px; border-bottom: 1px solid var(--c-border-soft); }
+.mop-lab-bloque:last-of-type { border-bottom: 0; }
+.mop-lab-kpi { margin: 4px 0 8px; font-size: 13px; }
+.mop-lab-h5 { margin: 12px 0 4px; font-size: 12px; font-weight: 800; color: var(--c-text-soft); text-transform: uppercase; letter-spacing: .4px; }
+.mop-lab-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+.mop-lab-dot { display: inline-block; width: 9px; height: 9px; margin-right: 5px; border-radius: 50%; vertical-align: middle; }
+.mop-lab-pat td:last-child, .mop-lab-prev td:last-child { width: 30%; }
+.mop-lab-pat .mop-bar, .mop-lab-prev .mop-bar { display: block; max-width: none; }
+.mop-lab-ult td, .mop-lab-posit td, .mop-lab-des td, .mop-lab-cal td:last-child { white-space: nowrap; }
+.mop-lab-agua td:first-child, .mop-lab-cal td:first-child, .mop-lab-bio td:first-child { min-width: 120px; }
+.mop-lab-pos { font-weight: 800; color: var(--c-grave); }
+.mop-lab-fuera td { color: var(--c-text-muted); }
+.mop-lab-pie { display: flex; justify-content: flex-end; }
+@media (max-width: 700px) {
+  .mop-lab-b { margin-left: 0; }
+  .mop-lab-2 { grid-template-columns: 1fr; }
+}

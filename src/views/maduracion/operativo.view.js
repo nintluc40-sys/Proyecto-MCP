@@ -48,6 +48,13 @@ import {
   indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, kpiBiomasa,
 } from './operativo.tablero.js';
 import { KPIS_CON_GRAFICO, graficoDeKpi } from './operativo.kpis.js';
+import { resumenMicro, resumenBiomol, BIOMOL_PATOGENOS } from './operativo.laboratorio.js';
+import { NIVEL_COLOR } from '../microbiologia/data.js';
+import { loadCalRanges } from '../microbiologia/calagua.data.js';
+import { microPreseleccion } from '../microbiologia/index.js';
+import { makeAccessibleDialog } from '../../ui/modal.js';
+import { registerModalEscape } from '../../ui/modalEscape.js';
+import { changeView } from '../../ui/router.js';
 import { INDICADORES } from './operativo.indicadores.js';
 import { FUENTES, umbralVigente, evaluar, UMBRALES_DE_AVISO } from './operativo.umbrales.js';
 import { periodoAnterior, presenciaDiaria, tendencias, permanencia, PARAMETROS_REPRODUCCION } from './operativo.tendencias.js';
@@ -123,7 +130,9 @@ const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', 
   /* 0f · 4 · el par «lote|sala» cuya cuarentena está abierta en ⏳ (📊 Estado actual). No sobrevive a su barra. */
   cuarSel: '',
   /* 0f · 5 · la tarjeta de KPI cuyo gráfico está abierto debajo de las tarjetas (📊 Estado actual). */
-  kpiSel: '' };
+  kpiSel: '',
+  /* 0f · 8 · el modal del laboratorio abierto: 'micro' | 'biomol' | ''. Vive la sesión, como lo demás: un refresco de datos no lo cierra. */
+  lab: '' };
 /* El estado de la vista vive lo que dura la sesión: al volver a Maduración, o al refrescarse los datos, se conserva. */
 const vOp = { ...INICIAL };
 
@@ -263,6 +272,7 @@ export function operativoView(root) {
   } else {
     h += estadoHTML(M, memo, periodo, F);
   }
+  h += labModalHTML(periodo, F);   // 0f · 8 · encima de cualquier sub-vista
   root.innerHTML = h;
   if (detalle) dibujarDetalle(detalle);
   if (vOp.sub === 'lotes') dibujarLote(_fichaLote);
@@ -270,6 +280,7 @@ export function operativoView(root) {
   if (vOp.sub === 'tanques') dibujarTanque(_fichaTanque);
   dibujarCuarentena(_cuarCurva);   // 0f · 4 · sólo si su lienzo está en pantalla (📊 Estado actual, con un par abierto)
   dibujarKpi(_kpiGraf);            // 0f · 5 · ídem, con una tarjeta de KPI abierta
+  trasPintarLab(root);             // 0f · 8 · el modal del laboratorio: foco, fondo quieto y su gráfico
   bind(root);
 }
 
@@ -340,7 +351,7 @@ function filtrosHTML(M, hoy, fecha, p) {
 }
 
 function subnavHTML() {
-  return `<div class="mc-subnav">${SUBS.map((s) => `<button class="mc-pill ${vOp.sub === s.clave ? 'is-on' : ''}" data-mop-sub="${s.clave}">${s.icono} ${esc(s.etiqueta)}</button>`).join('')}</div>`;
+  return `<div class="mc-subnav">${SUBS.map((s) => `<button class="mc-pill ${vOp.sub === s.clave ? 'is-on' : ''}" data-mop-sub="${s.clave}">${s.icono} ${esc(s.etiqueta)}</button>`).join('')}${labBotonesHTML()}</div>`;
 }
 
 /** Avisos de calidad del dato: filas que ya no casan con ninguna hoja, y fechas posteriores a hoy. */
@@ -440,6 +451,165 @@ function estadoHTML(M, memo, p, F) {
       ${cuarentenaHTML(cuarentenaDe(M, memo, p, F), p)}
     </div>
   </div>`;
+}
+
+/* ============================================================
+   🦠 / 🧬 LO DEL LABORATORIO (0f · 8, 2026-09-26, usuario)
+   Dos botones junto a la barra de sub-vistas abren, como modal y desde cualquier sub-vista, lo que el laboratorio mide
+   de Maduración: Microbiología y calidad de agua, y Biomol de los reproductores. Siguen los filtros del tablero (las
+   cuentas, en operativo.laboratorio.js). Biomol se carga al abrirlo: su vista es la más pesada de la app y va en su
+   propio paquete (main.js); traerla al del tablero lo cargaría en cada arranque.
+   ============================================================ */
+const LAB = { micro: { titulo: '🦠 Microbiología y agua · Maduración' }, biomol: { titulo: '🧬 Biomol · reproductores' } };
+let _labRoot = null;          // la vista, para repintar cuando llega Biomol
+let _labAbierto = false;      // para mover el foco sólo al ABRIR (cada repintado rehace el modal)
+let _labTend = null;          // la tendencia de Biomol, para dibujarla tras pintar
+let _bio = { src: null, filas: null, cargando: false, error: '' };
+
+function labBotonesHTML() {
+  return `<span class="mop-lab-b">${Object.entries(LAB).map(([k, x]) =>
+    `<button type="button" class="mc-pill mop-lab-btn${vOp.lab === k ? ' is-on' : ''}" data-mop-lab="${k}" aria-haspopup="dialog">${esc(x.titulo.split(' · ')[0])}</button>`).join('')}</span>`;
+}
+
+/** Las filas de Biomol, normalizadas por SU vista. Se piden una vez por carga de datos; mientras llegan, «Cargando…». */
+function filasBiomol() {
+  if (_bio.src === store.globalData && _bio.filas) return _bio.filas;
+  if (!_bio.cargando) {
+    const src = store.globalData;
+    _bio = { src: null, filas: null, cargando: true, error: '' };
+    import('../biomolecular/index.js')
+      .then((m) => { _bio = { src, filas: m.normalizeRows(src.filter((r) => r._SheetOrigin === 'Biomol')), cargando: false, error: '' }; })
+      .catch((e) => { _bio = { src: null, filas: null, cargando: false, error: String((e && e.message) || e) }; })
+      .then(() => { if (vOp.lab === 'biomol' && _labRoot && _labRoot.isConnected) operativoView(_labRoot); });
+  }
+  return null;
+}
+
+const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : '');
+const pctTxt = (a, b) => (b ? nf(pct(a, b), 1) + ' %' : '—');
+const DIM_TXT = { sala: 'sala', tanque: 'tanque', sexo: 'sexo', lote: 'lote' };
+/** Lo que un bloque NO pudo filtrar y lo que dejó fuera por no decirlo: siempre a la vista, para no leer de más. */
+function labNotas({ ignora = [], sinDato = {} }) {
+  const n = [];
+  if (ignora.length) n.push(`No se aplica aquí: ${esc(ignora.map((d) => DIM_TXT[d] || d).join(', '))} (estas muestras no lo registran).`);
+  for (const [d, k] of Object.entries(sinDato)) n.push(`${nf(k)} muestra(s) no dicen su ${esc(DIM_TXT[d] || d)}: no entran con ese filtro.`);
+  return n.map((x) => `<p class="mc-note">${x}</p>`).join('');
+}
+const nivelDot = (n) => (n ? `<span class="mop-lab-dot" style="background:${NIVEL_COLOR[n] || '#90a4ae'}"></span>${esc(n)}` : '—');
+const barraPct = (v) => `<span class="mop-bar" aria-hidden="true"><i style="width:${Math.max(0, Math.min(100, Number(v) || 0))}%"></i></span>`;
+
+function labMicroHTML(p, F) {
+  const r = resumenMicro(store.globalData, p, F, loadCalRanges());
+  const R = r.reproductores;
+  const rep = R.muestras ? `
+    <p class="mop-lab-kpi"><b>${nf(R.muestras)}</b> muestras · <b>${nf(R.alerta)}</b> en alerta (${pctTxt(R.alerta, R.muestras)}) <span class="mop-nota">alerta = algún patógeno en Moderado o Elevado</span></p>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-lab-pat"><thead><tr><th>Patógeno</th><th class="r">Analizadas</th><th class="r">En alerta</th><th></th></tr></thead>
+      <tbody>${R.porPatogeno.map((x) => `<tr><td>${esc(x.etiqueta)}</td><td class="r">${nf(x.analizadas)}</td><td class="r">${nf(x.alerta)} · ${pctTxt(x.alerta, x.analizadas)}</td><td>${barraPct(pct(x.alerta, x.analizadas))}</td></tr>`).join('')}</tbody></table></div>
+    <div class="mop-lab-2">${[['Por sala', R.porSala], ['Por sexo', R.porSexo]].map(([t, g]) => `<div class="mc-tablewrap"><table class="mc-table mc-table-sm">
+      <thead><tr><th>${t}</th><th class="r">Muestras</th><th class="r">En alerta</th></tr></thead>
+      <tbody>${g.map((x) => `<tr${x.fueraDeSalas ? ' class="mop-lab-fuera"' : ''}><td>${esc(x.clave)}${x.fueraDeSalas ? ' <span class="mop-nota">fuera de las salas</span>' : ''}</td><td class="r">${nf(x.muestras)}</td><td class="r">${nf(x.alerta)} · ${pctTxt(x.alerta, x.muestras)}</td></tr>`).join('')}</tbody></table></div>`).join('')}</div>
+    <h5 class="mop-lab-h5">Últimas muestras</h5>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-lab-ult"><thead><tr><th>Fecha</th><th>Lugar · TQ</th><th>Sexo</th><th>Peor nivel</th><th>En alerta</th></tr></thead>
+      <tbody>${R.ultimas.map((u) => `<tr><td>${esc(dma(u.fecha))}</td><td>${esc([u.lugar, u.tanque && 'TQ ' + u.tanque].filter(Boolean).join(' · ') || '—')}</td><td>${esc(u.sexo || '—')}</td>
+        <td>${nivelDot(u.peor)}</td><td>${esc(u.enAlerta.join(', ') || '—')}</td></tr>`).join('')}</tbody></table></div>`
+    : `<p class="muted">Sin muestras de hepatopáncreas en ${esc(etiquetaPeriodo(p))}.</p>`;
+  const D = r.desinfeccion;
+  const celda = (x) => (x.muestras ? `${nf(x.muestras)} · ${nf(x.alerta)} en alerta (${pctTxt(x.alerta, x.muestras)})` : '—');
+  const des = D.muestras ? `
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-lab-des"><thead><tr><th>Etapa</th><th>Muestra</th><th>Antes de desinfectar</th><th>Después</th></tr></thead>
+      <tbody>${D.filas.map((x) => `<tr><td>${esc(x.etapa)}</td><td>${esc(x.matriz === 'Agua' ? 'Agua' : 'Animal')}</td><td>${celda(x.antes)}</td><td>${celda(x.despues)}</td></tr>`).join('')}</tbody></table></div>
+    ${D.sinTipo ? `<p class="mc-note">${nf(D.sinTipo)} muestra(s) de despacho sin etapa o momento reconocibles en su «Tipo de muestra»: no entran en la tabla.</p>` : ''}`
+    : `<p class="muted">Sin muestras de despacho en ${esc(etiquetaPeriodo(p))}.</p>`;
+  const A = r.agua;
+  const C = A.calidad;
+  const agua = `
+    ${A.micro.length ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-lab-agua"><thead><tr><th>Microbiología · formato</th><th class="r">Muestras</th><th class="r">En alerta</th></tr></thead>
+      <tbody>${A.micro.map((x) => `<tr><td>${esc(x.clave)}</td><td class="r">${nf(x.muestras)}</td><td class="r">${nf(x.alerta)} · ${pctTxt(x.alerta, x.muestras)}</td></tr>`).join('')}</tbody></table></div>` : `<p class="muted">Sin microbiología de agua o RAS en ${esc(etiquetaPeriodo(p))}.</p>`}
+    ${labNotas(A)}
+    ${C.muestras ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-lab-cal"><thead><tr><th>Calidad de agua · componente</th><th class="r">Muestras</th><th class="r" title="Índice de calidad (0–100), mediana de las muestras">Índice</th><th class="r">Fuera de rango</th><th>Más veces fuera</th><th>Última</th></tr></thead>
+      <tbody>${C.porGrupo.map((g) => `<tr><td>${esc(g.grupo)}</td><td class="r">${nf(g.muestras)}</td><td class="r">${g.wqi === null ? '—' : nf(g.wqi)}</td><td class="r">${nf(g.fuera)}</td>
+        <td>${esc(g.peores.map((x) => x.label + ' (' + x.n + ')').join(', ') || '—')}</td><td>${esc(dm(g.ultima))}</td></tr>`).join('')}</tbody></table></div>` : `<p class="muted">Sin calidad de agua en ${esc(etiquetaPeriodo(p))}.</p>`}
+    ${labNotas(C)}`;
+  return `
+    <section class="mop-lab-bloque"><h4 class="mc-card-h">① Reproductores · hepatopáncreas <span class="mc-h-note">formato «Maduración · Principal»</span></h4>${rep}${labNotas(R)}</section>
+    <section class="mop-lab-bloque"><h4 class="mc-card-h">② Desinfección de huevo y nauplio <span class="mc-h-note">formato «Maduración · Despacho»</span></h4>${des}${labNotas(D)}</section>
+    <section class="mop-lab-bloque"><h4 class="mc-card-h">③ Agua y RAS</h4>${agua}</section>
+    <div class="mop-lab-pie"><button type="button" class="mc-mini" data-mop-lab-abrir-micro>Abrir en 🦠 Microbiología</button></div>`;
+}
+
+function labBiomolHTML(p, F) {
+  _labTend = null;
+  const filas = filasBiomol();
+  if (!filas) return _bio.error ? `<p class="mc-warn">No se pudo cargar Biología Molecular: ${esc(_bio.error)}</p>` : '<p class="muted">Cargando Biología Molecular…</p>';
+  const b = resumenBiomol(filas, p, F);
+  if (!b.muestras) return `<p class="muted">Sin muestras de reproductores en ${esc(etiquetaPeriodo(p))}.</p>${labNotas(b)}`;
+  const pats = BIOMOL_PATOGENOS.filter(({ key }) => b.total[key].analizadas);
+  const celdas = (c) => pats.map(({ key }) => { const x = c[key]; return `<td class="r${x.positivos ? ' mop-lab-pos' : ''}">${x.analizadas ? nf(x.positivos) + '/' + nf(x.analizadas) : '—'}</td>`; }).join('');
+  const tabla = (titulo, grupos, fuera) => `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-lab-bio">
+    <thead><tr><th>${titulo}</th><th class="r">Muestras</th>${pats.map((x) => `<th class="r">${esc(x.etiqueta)}</th>`).join('')}</tr></thead>
+    <tbody>${grupos.map((g) => `<tr${fuera && g.fueraDeSalas ? ' class="mop-lab-fuera"' : ''}><td>${esc(g.clave)}${fuera && g.fueraDeSalas ? ' <span class="mop-nota">fuera de las salas</span>' : ''}</td>
+      <td class="r">${nf(g.muestras)}</td>${celdas(g.patogenos)}</tr>`).join('')}</tbody></table></div>`;
+  if (b.tendencia.series.length) _labTend = b.tendencia;
+  return `
+    <p class="mop-lab-kpi"><b>${nf(b.muestras)}</b> muestras de reproductores en ${esc(etiquetaPeriodo(p))} <span class="mop-nota">positivos ÷ analizados</span></p>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-lab-prev"><thead><tr><th>Patógeno</th><th class="r">Analizadas</th><th class="r">Positivos</th><th class="r">Prevalencia</th><th></th></tr></thead>
+      <tbody>${pats.map(({ key, etiqueta }) => { const x = b.total[key]; return `<tr><td>${esc(etiqueta)}</td><td class="r">${nf(x.analizadas)}</td><td class="r">${nf(x.positivos)}</td>
+        <td class="r">${pctTxt(x.positivos, x.analizadas)}</td><td>${barraPct(pct(x.positivos, x.analizadas))}</td></tr>`; }).join('')}</tbody></table></div>
+    ${labNotas(b)}
+    <h5 class="mop-lab-h5">Por sala</h5>${tabla('Sala', b.porSala, true)}
+    <h5 class="mop-lab-h5">Por piscina de origen</h5>${tabla('Piscina', b.porPiscina, false)}
+    <h5 class="mop-lab-h5">Por sexo</h5>${tabla('Sexo', b.porSexo, false)}
+    ${_labTend ? '<h5 class="mop-lab-h5">Tendencia semanal · % de positivos</h5><div class="mc-chart" style="height:220px"><canvas id="mopLabTend"></canvas></div>' : ''}
+    <h5 class="mop-lab-h5">Positivos${b.positivos.length === 20 ? ' · los 20 últimos' : ''}</h5>
+    ${b.positivos.length ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-lab-posit"><thead><tr><th>Fecha</th><th>Lugar · tanque</th><th>Piscina</th><th>Sexo</th><th>Positivo a</th></tr></thead>
+      <tbody>${b.positivos.map((x) => `<tr><td>${esc(dma(x.fecha))}</td><td>${esc([x.lugar, x.tanque].filter(Boolean).join(' · '))}</td><td>${esc(x.piscina || '—')}</td><td>${esc(x.sexo || '—')}</td><td>${esc(x.patogenos.join(', '))}</td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="muted">Ningún positivo en el período.</p>'}`;
+}
+
+/** El modal abierto (o nada). Va al final de la vista: tapa cualquier sub-vista. */
+function labModalHTML(p, F) {
+  if (!LAB[vOp.lab]) { vOp.lab = ''; _labTend = null; return ''; }
+  const cuerpo = vOp.lab === 'micro' ? labMicroHTML(p, F) : labBiomolHTML(p, F);
+  return `<div class="sv-modal sv-open mop-lab" data-mop-lab-overlay>
+    <div class="sv-modal-card mop-lab-card">
+      <div class="sv-modal-head"><span class="sv-modal-title">${esc(LAB[vOp.lab].titulo)}</span>
+        <button type="button" class="sv-modal-x" data-mop-lab-cerrar aria-label="Cerrar">✕</button></div>
+      <div class="sv-modal-body">
+        <p class="mop-lab-per">${esc(etiquetaPeriodo(p))} · del ${esc(dma(p.desde))} al ${esc(dma(p.hasta))} · con los filtros del tablero</p>
+        ${cuerpo}
+      </div>
+    </div>
+  </div>`;
+}
+const COLOR_BIOMOL = { IHHNV: '#ef4444', WSSV: '#f59e0b', BP: '#a78bfa', AHPND: '#38bdf8', NHPB: '#14b8a6', EHP: '#ec4899' };   // los de su vista
+function dibujarLab() {
+  if (!_labTend || !document.getElementById('mopLabTend')) return;
+  makeChart('mopLabTend', {
+    type: 'line',
+    data: { labels: _labTend.etiquetas.map(dm), datasets: _labTend.series.map((s) => ({ label: s.etiqueta, data: s.datos, borderColor: COLOR_BIOMOL[s.clave],
+      backgroundColor: COLOR_BIOMOL[s.clave], tension: 0, borderWidth: 2, pointRadius: 3, spanGaps: false })) },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      scales: { x: { ticks: { ...EJE, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+        y: { beginAtZero: true, suggestedMax: 100, ticks: EJE, grid: { color: REJILLA }, title: { display: true, text: '% positivos', color: EJE.color, font: { size: 10 } } } },
+      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 10 }, color: EJE.color } } },
+    },
+  });
+}
+/** Tras pintar: el foco entra al ABRIR (no en cada repintado) y el cuerpo no se desplaza detrás del modal. */
+function trasPintarLab(root) {
+  _labRoot = root;
+  const ov = root.querySelector('[data-mop-lab-overlay]');
+  if (ov) {
+    document.body.classList.add('modal-open');
+    const dlg = makeAccessibleDialog(ov);
+    if (!_labAbierto && dlg) dlg.focusFirst();
+    _labAbierto = true;
+    dibujarLab();
+  } else if (_labAbierto) {
+    document.body.classList.remove('modal-open');
+    _labAbierto = false;
+  }
 }
 
 /* 0f · 5 (2026-09-25, usuario) · el gráfico de la tarjeta de KPI abierta, DEBAJO de las tarjetas. Sale de
@@ -2255,6 +2425,7 @@ function descargarParte() {
 function bind(root) {
   if (root._mopBound) return;
   root._mopBound = true;
+  registerModalEscape('.mop-lab.sv-open');   // 0f · 8
   const repintar = () => operativoView(root);
   const abrirSala = (sala) => { vOp.salaDetalle = vOp.salaDetalle === sala ? '' : sala; repintar(); };
   const abrirLote = (lote) => { vOp.loteSel = vOp.loteSel === lote ? '' : lote; repintar(); };
@@ -2290,6 +2461,17 @@ function bind(root) {
       const dim = qui.dataset.mopQuitar;
       vOp[dim] = '';
       repintar();
+      return;
+    }
+    /* 0f · 8 · los modales del laboratorio: abrir, ✕, el velo (y Escape, que pulsa el velo) y el enlace a Microbiología. */
+    const lab = t.closest('[data-mop-lab]');
+    if (lab) { vOp.lab = lab.dataset.mopLab; repintar(); return; }
+    if (t.closest('[data-mop-lab-cerrar]') || (t.matches && t.matches('[data-mop-lab-overlay]'))) { vOp.lab = ''; repintar(); return; }
+    if (t.closest('[data-mop-lab-abrir-micro]')) {
+      vOp.lab = '';
+      repintar();
+      microPreseleccion({ sub: 'bacteriologia', depto: 'Maduración' });
+      changeView('microbiologia');
       return;
     }
     if (t.closest('[data-mop-kpi-cerrar]')) { vOp.kpiSel = ''; repintar(); return; }

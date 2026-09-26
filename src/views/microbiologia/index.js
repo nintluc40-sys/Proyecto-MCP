@@ -63,6 +63,15 @@ const vState = {
   calCmpView: 'paralelas', // comparador de tanques: 'paralelas' | 'multiples' (small multiples)
 };
 
+/** 0f · 8 (2026-09-26) · Para abrir esta vista YA filtrada desde otra (el modal «🦠 Micro y agua» del tablero de
+ *  Maduración): la sub-vista y el departamento, en Bacteriología y en Calidad de Agua. El formato y los filtros de
+ *  contexto se sueltan, como al elegir un departamento a mano. */
+export function microPreseleccion({ sub = 'bacteriologia', depto = null } = {}) {
+  vState.sub = sub;
+  vState.depto = depto; vState.formato = null; vState.dims = {};
+  vState.calDepto = depto; vState.calFormato = null; vState.calDims = {};
+}
+
 // Dimensiones de filtro de contexto. Cada una se muestra (en cascada) SOLO si tiene
 // ≥2 valores distintos en los datos vigentes → la barra se adapta a cada formato
 // (Larvicultura: Módulo/TQ/Estadío/Tipo · Maduración: Sala/Sexo/TQ/Componente/… · Otros: Punto/Laboratorio/…).

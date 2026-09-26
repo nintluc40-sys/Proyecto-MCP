@@ -26,6 +26,15 @@ vi.mock('../supervisor/fichaPdf.js', async (original) => {
   const real = await original();
   return { ...real, printFichaDocs: vi.fn(() => true) };
 });
+/* 0f · 8 · «Abrir en 🦠 Microbiología» cambia de vista: aquí no hay vistas registradas, así que se vigila la LLAMADA. */
+vi.mock('../../ui/router.js', async (original) => {
+  const real = await original();
+  return { ...real, changeView: vi.fn() };
+});
+vi.mock('../microbiologia/index.js', async (original) => {
+  const real = await original();
+  return { ...real, microPreseleccion: vi.fn() };
+});
 
 const O = 'Maduracion';
 const ING = (fecha, lote, sala, tanque, machos, hembras, cg = 'CA') => ({ _SheetOrigin: O, 'Camaronera origen': 'X', Fecha: fecha,
@@ -1828,5 +1837,113 @@ describe('Maduración · operativo · 0f · 5 · el gráfico de cada KPI', () =>
     const { readFileSync } = await import('node:fs');
     const css = readFileSync('src/views/maduracion/operativo.css', 'utf8');
     for (const sel of ['.mc-kpi.is-clic', '.mc-kpi.is-on', '.mop-kpi-lienzo']) expect(css.includes(sel + ' '), sel).toBe(true);
+  });
+});
+
+/* 0f · 8 (2026-09-26, usuario) · dos botones junto a la sub-nav abren, como modal y desde cualquier sub-vista, lo que el
+   laboratorio mide de Maduración. Las CUENTAS las vigila operativo.laboratorio.test.js; aquí, que lleguen: los tres
+   bloques, Biomol cargado al abrirlo, ✕ / velo / Escape, los filtros del tablero, el enlace y el escapado. */
+describe('Maduración · operativo · 0f · 8 · 🦠 / 🧬 lo del laboratorio', () => {
+  const MIC = (fecha, formato, extra = {}) => ({ _SheetOrigin: 'Microbiología', 'Fecha muestreo': fecha, Departamento: 'Maduración', Formato: formato, ...extra });
+  const LAB = [
+    MIC('15/09/2026', 'Maduración · Principal', { 'Tipo de muestra': 'Hepatopáncreas', 'Módulo/Sala': 'Sala 1', 'TQ/N°': '1', Sexo: 'Hembras', 'V.Totales UFC': '20000' }),
+    MIC('16/09/2026', 'Maduración · Principal', { 'Tipo de muestra': 'Hepatopáncreas', 'Módulo/Sala': 'Sala 2', 'TQ/N°': '16', Sexo: 'Machos', 'V.Totales UFC': '500' }),
+    MIC('14/09/2026', 'Maduración · Principal', { 'Tipo de muestra': 'Hepatopáncreas', 'TQ/N°': 'Piscina 556', Sexo: 'Hembras', 'V.Totales UFC': '500' }),
+    MIC('16/09/2026', 'Maduración · Despacho', { 'Tipo de muestra': 'Huevo antes desinfección', 'V.Totales UFC': '600' }),
+    MIC('17/09/2026', 'Maduración · RAS', { Componente: '<img src=x onerror=alert(1)>', 'V.Totales Nivel': 'Elevado' }),
+    { _SheetOrigin: 'Calidad de Agua', 'Fecha muestreo': '17/09/2026', Departamento: 'Maduración', Formato: 'Maduración · RAS', Componente: 'Colector', pH: '9' },
+    { _SheetOrigin: 'Biomol', Fecha: '15/09/2026', Lugar: 'Sala 1', Tanque: 'Tq 1', Piscina: 'P557', 'Estadío': 'Reproductores', Sexo: 'Hembra', IHHNV: 'Positivo', WSSV: 'Negativo' },
+    { _SheetOrigin: 'Biomol', Fecha: '16/09/2026', Lugar: 'Chongón', Piscina: 'P553', 'Estadío': 'Reproductores', Sexo: 'Macho', IHHNV: 'Negativo' },
+  ];
+  const modal = () => root.querySelector('.mop-lab.sv-open');
+  const boton = (k) => root.querySelector(`[data-mop-lab="${k}"]`);
+
+  it('🔴 los dos botones, junto a la sub-nav y en cualquier sub-vista; ningún modal al llegar', async () => {
+    await montar([...PLANTA, ...LAB]);
+    expect(root.querySelector('.mc-subnav [data-mop-lab="micro"]')).not.toBeNull();
+    expect(root.querySelector('.mc-subnav [data-mop-lab="biomol"]')).not.toBeNull();
+    expect(modal()).toBeNull();
+    click(root.querySelector('[data-mop-sub="tanques"]'));
+    click(boton('micro'));
+    expect(modal(), 'desde 🛢 Tanques también').not.toBeNull();
+  });
+
+  it('🔴 Micro y agua: los tres bloques con sus cifras; el fondo no se desplaza; ✕ lo cierra', async () => {
+    await montar([...PLANTA, ...LAB]);
+    click(boton('micro'));
+    expect([...modal().querySelectorAll('.mop-lab-bloque h4')].map((h) => h.textContent.slice(0, 2))).toEqual(['① ', '② ', '③ ']);
+    expect(modal().querySelector('.mop-lab-kpi').textContent).toContain('3 muestras · 1 en alerta');
+    expect(modal().querySelector('.mop-lab-2 .mop-lab-fuera').textContent, 'la piscina de origen, aparte').toContain('Piscina 556 fuera de las salas');
+    expect(modal().querySelector('.mop-lab-ult').textContent, 'un lugar, no «TQ Piscina»').not.toContain('TQ Piscina');
+    expect(modal().querySelector('.mop-lab-des tbody tr').textContent).toContain('1 · 1 en alerta');
+    expect(modal().querySelector('.mop-lab-cal tbody tr').textContent).toContain('Colector');
+    expect(modal().querySelector('[role="dialog"]'), 'semántica de diálogo').not.toBeNull();
+    expect(document.body.classList.contains('modal-open')).toBe(true);
+    click(root.querySelector('[data-mop-lab-cerrar]'));
+    expect(modal()).toBeNull();
+    expect(document.body.classList.contains('modal-open')).toBe(false);
+  });
+
+  it('se cierra también pulsando el velo, y con Escape', async () => {
+    await montar([...PLANTA, ...LAB]);
+    click(boton('micro'));
+    click(modal());
+    expect(modal()).toBeNull();
+    click(boton('micro'));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(modal()).toBeNull();
+  });
+
+  it('🔴 sigue los filtros del tablero y dice el que no puede aplicar', async () => {
+    await montar([...PLANTA, ...LAB]);
+    cambiar(filtro('sala'), 'Sala 2');
+    click(boton('micro'));
+    expect(modal().querySelector('.mop-lab-kpi').textContent).toContain('1 muestras · 0 en alerta');
+    const des = modal().querySelectorAll('.mop-lab-bloque')[1];
+    expect(des.textContent).toContain('No se aplica aquí: sala');
+  });
+
+  it('🔴 Biomol: se carga al abrirlo, y enseña la prevalencia, las salas (lo de fuera, aparte) y los positivos', async () => {
+    await montar([...PLANTA, ...LAB]);
+    click(boton('biomol'));
+    expect(modal().textContent).toContain('Cargando Biología Molecular');
+    await vi.waitFor(() => expect(root.querySelector('.mop-lab-prev')).not.toBeNull());
+    expect(modal().querySelector('.mop-lab-prev tbody tr').textContent).toContain('IHHNV');
+    expect(modal().querySelector('.mop-lab-fuera').textContent).toContain('Chongón');
+    expect(modal().querySelector('.mop-lab-posit tbody tr').textContent).toContain('Sala 1 · Tq 1');
+    expect(makeChart.mock.calls.some(([id]) => id === 'mopLabTend'), 'la tendencia semanal').toBe(true);
+  });
+
+  it('🔴 «Abrir en 🦠 Microbiología» cierra el modal y cambia de vista', async () => {
+    await montar([...PLANTA, ...LAB]);
+    const { changeView } = await import('../../ui/router.js');
+    click(boton('micro'));
+    click(root.querySelector('[data-mop-lab-abrir-micro]'));
+    expect(modal()).toBeNull();
+    expect(changeView).toHaveBeenLastCalledWith('microbiologia');
+    const { microPreseleccion } = await import('../microbiologia/index.js');
+    expect(microPreseleccion, 'llega con Maduración elegido').toHaveBeenLastCalledWith({ sub: 'bacteriologia', depto: 'Maduración' });
+  });
+
+  it('🔑 lo que viene del Sheet sale ESCAPADO', async () => {
+    await montar([...PLANTA, ...LAB]);
+    click(boton('micro'));
+    expect(modal().querySelector('img')).toBeNull();
+    expect(modal().textContent).toContain('<img src=x');
+  });
+
+  it('🔑 las clases propias del modal están DEFINIDAS en su CSS', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/views/maduracion/operativo.css', 'utf8') + readFileSync('src/views/maduracion/maduracion.css', 'utf8');
+    await montar([...PLANTA, ...LAB]);
+    const usadas = new Set();
+    const junta = () => root.querySelectorAll('[class]').forEach((el) => el.classList.forEach((c) => { if (c.startsWith('mop-lab')) usadas.add(c); }));
+    click(boton('micro')); junta();
+    click(root.querySelector('[data-mop-lab-cerrar]'));
+    click(boton('biomol'));
+    await vi.waitFor(() => expect(root.querySelector('.mop-lab-prev')).not.toBeNull());
+    junta();
+    expect(usadas.size > 10, 'control: el modal pinta sus clases').toBe(true);
+    expect([...usadas].filter((c) => !new RegExp('\\.' + c + '(?![\\w-])').test(css))).toEqual([]);
   });
 });
