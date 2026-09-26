@@ -298,6 +298,43 @@ describe('Maduración · operativo · 🧬 Lotes', () => {
     expect(root.querySelector('#mopLoteCurva')).toBeNull();
   });
 
+  /* 0f · 7 (2026-09-25, usuario) · «la curva de Vivos del lote, desde la fecha del ingreso, no un mes antes». QB entró el
+     12/09 y el período por defecto es de 30 d (desde el 21/08): antes, la curva traía 22 días a cero delante. */
+  it('🔴 0f · 7 · la curva «Vivos del lote» empieza en el INGRESO del lote y lo dice; sus eventos son los del ciclo', async () => {
+    await montar(PLANTA_L);
+    abrirLotes();
+    click(filaLote('QB'));
+    const llamadas = makeChart.mock.calls.filter(([id]) => id === 'mopLoteCurva');
+    const cfg = llamadas[llamadas.length - 1][1];
+    expect(cfg.data.labels[0], 'la curva debería empezar el día del ingreso').toBe('12/09');
+    expect(cfg.data.labels.at(-1)).toBe('19/09');
+    expect(cfg.data.datasets[2].data.every((v) => v > 0), 'ningún día a cero antes de existir').toBe(true);
+    const card = [...root.querySelectorAll('.mc-card')].find((c) => c.textContent.includes('📈 Vivos del lote'));
+    expect(card.querySelector('.mc-h-note').textContent).toBe('desde el ingreso 12/09/2026');
+    expect(card.textContent).toContain('Eventos del ciclo');
+    expect(card.textContent).toContain('12/09 · Ingreso');
+    const repro = [...root.querySelectorAll('.mc-card')].find((c) => c.textContent.includes('🥚 Reproducción'));
+    expect(repro.querySelector('.mc-h-note').textContent, 'Reproducción sigue el período').toBe('30 d');
+  });
+
+  it('🔴 0f · 7 · un lote que entró ANTES del período: la curva llega hasta su ingreso (la serie es la de su ciclo, no la del período)', async () => {
+    await montar(PLANTA_L);
+    abrirLotes();
+    click(filaLote('QD'));                                   // QD entró el 01/08; el período de 30 d empieza el 21/08
+    const llamadas = makeChart.mock.calls.filter(([id]) => id === 'mopLoteCurva');
+    expect(llamadas[llamadas.length - 1][1].data.labels[0]).toBe('01/08');
+  });
+
+  it('🔴 0f · 7 · abrir OTRO lote en la misma pantalla pinta SU curva, no la del anterior (la serie del ciclo se renueva)', async () => {
+    await montar(PLANTA_L);
+    abrirLotes();
+    const primera = () => { const l = makeChart.mock.calls.filter(([id]) => id === 'mopLoteCurva'); return l[l.length - 1][1].data.labels[0]; };
+    click(filaLote('QB'));
+    expect(primera()).toBe('12/09');
+    click(filaLote('QD'));
+    expect(primera(), 'la curva de QD salió con la serie de QB').toBe('01/08');
+  });
+
   it('🔴 la cascada CUADRA y la mortalidad en desove va como «de los cuales», no como una resta', async () => {
     await montar(PLANTA_L);
     abrirLotes();

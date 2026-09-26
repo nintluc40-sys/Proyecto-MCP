@@ -151,12 +151,13 @@ const claseEstado = (e) => CLASE_ESTADO[e] || 'sin';
 const etiquetaPeriodo = (p) => (p.clave === 'hoy' ? 'hoy' : p.clave === 'mes' ? 'el mes' : p.clave === 'todo' ? 'todo el registro' : nf(p.dias) + ' d');
 
 // ── Modelo memoizado: por los datos, el día de hoy y la foto. La serie y la presencia, además, por el período. ──
-let _memo = { src: null, hoy: '', fecha: '', M: null, partes: null, serieClave: '', serie: null, repro: null, libroHoy: null, presenciaClave: '', presencia: null };
+let _memo = { src: null, hoy: '', fecha: '', M: null, partes: null, serieClave: '', serie: null, repro: null, libroHoy: null, presenciaClave: '', presencia: null,
+  serieCicloClave: '', serieCiclo: null };
 function memoModelo(hoy, fecha) {
   if (_memo.src !== store.globalData || _memo.hoy !== hoy || _memo.fecha !== fecha) {
     const M = modeloOperativo(store.globalData, { hoy, fecha });
     _memo = { src: store.globalData, hoy, fecha, M, partes: diasDeTanque(M.fuentes.tanques), serieClave: '', serie: null, repro: null, libroHoy: null,
-      presenciaClave: '', presencia: null };
+      presenciaClave: '', presencia: null, serieCicloClave: '', serieCiclo: null };
   }
   return _memo;
 }
@@ -181,6 +182,16 @@ function serieDe(memo, p) {
     memo.serieClave = k;
   }
   return memo.serie;
+}
+/** 0f · 7 · la serie del CICLO de un lote (su último ingreso → su cierre o la foto): la curva de su ficha la cubre
+ *  entera, sea más larga o más corta que el período. Una por lote a la vez, mientras no cambie. */
+function serieDelCiclo(memo, c) {
+  const k = c.desde + '|' + c.hasta;
+  if (memo.serieCicloClave !== k) {
+    memo.serieCiclo = serieDiaria(memo.M.fuentes, sumarDias(c.desde, -1), c.hasta);
+    memo.serieCicloClave = k;
+  }
+  return memo.serieCiclo;
 }
 /** 📉 Tendencias (0f · 2b): la presencia día a día del libro, desde la víspera del período ANTERIOR hasta el final
  *  del elegido, se calcula una vez por datos, foto y período —como la serie—; lo filtrado no la cambia. */
@@ -804,7 +815,10 @@ function lotesHTML(M, memo, p, F) {
   /* Un lote elegido que ya no está en la tabla (otro filtro, otra foto) deja de estarlo: la ficha no sobrevive a
      su fila, igual que el detalle de una sala no sobrevive a su tarjeta. */
   if (vOp.loteSel && !filas.some((f) => f.lote === vOp.loteSel)) vOp.loteSel = '';
-  _fichaLote = vOp.loteSel ? fichaDeLote(M, serieDe(memo, p), vOp.loteSel, p) : null;
+  /* 0f · 7 (usuario, 2026-09-25) · la curva «📈 Vivos del lote» y sus eventos cubren el CICLO del lote, «desde la fecha del
+     ingreso, no un mes antes»; Reproducción y promedios siguen el período. Sin fecha de ingreso, todo el período. */
+  const ciclo = vOp.loteSel ? cicloDelLote(M.libro, vOp.loteSel, M.fecha) : null;
+  _fichaLote = vOp.loteSel ? fichaDeLote(M, ciclo ? serieDelCiclo(memo, ciclo) : serieDe(memo, p), vOp.loteSel, p, ciclo) : null;
   const comp = comparativa(M, F, p, vOp.agrupacion);
   /* F6 · 📈 Piscinas de origen, debajo de la comparativa (diseño aprobado): la tabla del último corte y, al pulsar
      una piscina, su ficha. La ficha no sobrevive a su fila, igual que la del lote. */
@@ -889,7 +903,11 @@ function fichaLoteHTML(f, p) {
     : '<p class="muted" style="margin:4px 0">Ningún Ingreso explica este lote.</p>';
   const eventos = f.eventos.length
     ? `<ul class="mop-lista mop-lista-fila">${f.eventos.map((e) => `<li>${esc(dm(e.fecha))} · ${esc(e.etiqueta)}${e.machos || e.hembras ? ` · ♀ ${nf(e.hembras)} ♂ ${nf(e.machos)}` : ''}</li>`).join('')}</ul>`
-    : `<p class="muted" style="margin:4px 0">Sin eventos en ${esc(etiquetaPeriodo(p))}.</p>`;
+    : `<p class="muted" style="margin:4px 0">Sin eventos en ${f.ciclo ? 'su ciclo' : esc(etiquetaPeriodo(p))}.</p>`;
+  // 0f · 7 · el rótulo de la curva dice de dónde a dónde va: desde el ingreso (y hasta el cierre, si lo tuvo).
+  const rotuloCurva = f.ciclo
+    ? 'desde el ingreso ' + dma(f.ciclo.desde) + (f.cerrado && f.ciclo.hasta === f.cerrado ? ' hasta el cierre ' + dma(f.cerrado) : '')
+    : etiquetaPeriodo(p);
   return `<div class="mop-det-grid" style="margin-bottom:12px">
     <div class="mc-card mop-det-ancho">
       <h4 class="mc-card-h">🧬 ${esc(f.lote)}
@@ -912,9 +930,9 @@ function fichaLoteHTML(f, p) {
       ${pr.compartido ? '<p class="mc-note">⚠ Comparte tanque con otro lote: la hoja de Tanques no dice de qué lote es cada cifra, así que las cópulas y las mudas van repartidas en proporción a sus animales (los pesos se promedian, no se parten).</p>' : ''}
     </div>
     <div class="mc-card mop-det-ancho">
-      <h4 class="mc-card-h">📈 Vivos del lote <span class="mc-h-note">${esc(etiquetaPeriodo(p))}</span></h4>
+      <h4 class="mc-card-h">📈 Vivos del lote <span class="mc-h-note">${esc(rotuloCurva)}</span></h4>
       <div class="mc-chart" style="height:240px"><canvas id="mopLoteCurva"></canvas></div>
-      <h5 class="mop-det-h">Eventos del período</h5>${eventos}
+      <h5 class="mop-det-h">Eventos del ${f.ciclo ? 'ciclo' : 'período'}</h5>${eventos}
     </div>
   </div>`;
 }

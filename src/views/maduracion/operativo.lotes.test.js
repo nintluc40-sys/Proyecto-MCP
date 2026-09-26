@@ -21,7 +21,7 @@ import {
   DIMENSIONES_COMPARATIVA, comparativa,
 } from './operativo.lotes.js';
 import { modeloOperativo, serieDiaria } from './operativo.data.js';
-import { normalizarFiltro, periodoDe } from './operativo.tablero.js';
+import { normalizarFiltro, periodoDe, cicloDelLote } from './operativo.tablero.js';
 import { MAD_OP_ORIGEN } from './operativo.fuentes.js';
 import { ESTADO_CERRADO } from '../registros/lib/mad-libro.js';
 
@@ -237,6 +237,66 @@ describe('Maduración · lotes · la ficha', () => {
     expect(f.reproduccion.desoves).toBe(6);
     expect(f.promedios.tanques).toBe(1);
     expect(fichaDeLote(M, SERIE, 'NO-EXISTE', P30)).toBe(null);
+  });
+});
+
+/* 0f · 7 (2026-09-25, usuario) · «la curva de Vivos del lote debe empezar en la fecha del ingreso, no un mes antes».
+   Con el CICLO del lote (su último ingreso → su cierre, o la foto si sigue abierto; la regla de `cicloDelLote`, la del
+   🏁 Cierre de lote) la curva y los eventos marcados sobre ella cubren esa vida; Reproducción y los promedios siguen el
+   PERÍODO del tablero (decisión del usuario). El período de estas pruebas es «7 d»: deja FUERA el ingreso de QE (01/09). */
+describe('Maduración · lotes · la ficha con el CICLO del lote (0f · 7)', () => {
+  const P7 = periodoDe('7d', FOTO, M.fuentes);
+  const serieDelCiclo = (c) => serieDiaria(M.fuentes, c.desde, c.hasta);
+
+  it('el fixture ejerce algo: el período de 7 d empieza DESPUÉS del ingreso de QE', () => {
+    expect(P7.desde > '2026-09-01').toBe(true);
+    expect(cicloDelLote(M.libro, 'QE', FOTO)).toEqual({ desde: '2026-09-01', hasta: FOTO });
+  });
+
+  it('🔴 la curva empieza el día del INGRESO (ni ceros de antes ni recortada) y llega a la foto', () => {
+    const c = cicloDelLote(M.libro, 'QE', FOTO);
+    const f = fichaDeLote(M, serieDelCiclo(c), 'QE', P7, c);
+    expect(f.curva[0]).toEqual({ fecha: '2026-09-01', machos: 100, hembras: 100, total: 200 });
+    expect(f.curva.at(-1)).toEqual({ fecha: FOTO, machos: 66, hembras: 67, total: 133 });
+    expect(f.ciclo).toEqual(c);
+  });
+
+  it('🔴 aunque la serie traiga días de antes del ingreso, la curva no los enseña', () => {
+    const c = cicloDelLote(M.libro, 'QE', FOTO);
+    const f = fichaDeLote(M, serieDiaria(M.fuentes, '2026-08-20', FOTO), 'QE', P7, c);
+    expect(f.curva[0].fecha).toBe('2026-09-01');
+    expect(f.curva.some((d) => d.total === 0)).toBe(false);
+  });
+
+  it('🔴 los EVENTOS marcados son los del ciclo (el ingreso del 01/09 entra aunque el período empiece después)', () => {
+    const c = cicloDelLote(M.libro, 'QE', FOTO);
+    const f = fichaDeLote(M, serieDelCiclo(c), 'QE', P7, c);
+    expect(f.eventos.map((e) => [e.fecha, e.tipo])).toEqual([
+      ['2026-09-01', 'ingreso'], ['2026-09-10', 'mortdes'], ['2026-09-12', 'desove'],
+      ['2026-09-14', 'desove'], ['2026-09-15', 'cierre'],
+    ]);
+  });
+
+  it('🔴 Reproducción y los promedios siguen el PERÍODO, no el ciclo', () => {
+    const c = cicloDelLote(M.libro, 'QE', FOTO);
+    const f = fichaDeLote(M, serieDelCiclo(c), 'QE', P7, c);
+    expect(f.reproduccion.desoves, 'en 7 d sólo entra el del 14/09 (2 desoves); en el ciclo serían 6').toBe(2);
+    expect(f.reproduccion).toEqual(reproduccionDeLote(M.fuentes, 'QE', P7));
+    expect(f.promedios).toEqual(promediosDeLote(M, 'QE', P7));
+  });
+
+  it('un lote CERRADO: la curva termina en su cierre', () => {
+    const c = cicloDelLote(M.libro, 'QG', FOTO);
+    expect(c).toEqual({ desde: '2026-09-03', hasta: '2026-09-17' });
+    const f = fichaDeLote(M, serieDiaria(M.fuentes, c.desde, FOTO), 'QG', P7, c);
+    expect(f.curva[0].fecha).toBe('2026-09-03');
+    expect(f.curva.at(-1).fecha).toBe('2026-09-17');
+  });
+
+  it('sin ciclo (lote sin fecha de ingreso) la ficha sigue como antes: la serie y los eventos del período', () => {
+    const f = fichaDeLote(M, SERIE, 'QE', P30, null);
+    expect(f.curva[0]).toEqual({ fecha: P30.desde, machos: 0, hembras: 0, total: 0 });
+    expect(f.ciclo).toBe(null);
   });
 });
 

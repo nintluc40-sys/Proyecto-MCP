@@ -330,8 +330,12 @@ export function promediosDeLote(M, lote, periodo) {
   };
 }
 
-/** La ficha entera de un lote. Devuelve `null` si el libro no lo conoce. */
-export function fichaDeLote(M, serie, lote, periodo) {
+/** La ficha entera de un lote. Devuelve `null` si el libro no lo conoce.
+ *  0f · 7 (2026-09-25, usuario) · con `ciclo` ({ desde, hasta }: su último ingreso → su cierre o la foto, la regla de
+ *  `cicloDelLote`), la CURVA y los EVENTOS marcados sobre ella cubren esa vida —«desde la fecha del ingreso, no un mes
+ *  antes»—; la serie tiene que cubrirla (la trae la vista). Reproducción y promedios siguen el PERÍODO. Sin ciclo, todo
+ *  el período, como hasta ese día. */
+export function fichaDeLote(M, serie, lote, periodo, ciclo = null) {
   const libro = (M && M.libro) || { lotes: new Map() };
   const L = loteDelLibro(libro, lote);
   if (!L) return null;
@@ -341,8 +345,9 @@ export function fichaDeLote(M, serie, lote, periodo) {
     ...ctx,
     origen: origenDeLote(M.fuentes, lote),
     cuadre: cuadreDeLote(libro, M.fuentes, lote),
-    curva: curvaDeLote(serie, lote),
-    eventos: eventosDeLote(M.fuentes, lote, periodo),
+    curva: ciclo ? curvaDeLote(serie, lote).filter((d) => enPeriodo(d.fecha, ciclo)) : curvaDeLote(serie, lote),
+    eventos: eventosDeLote(M.fuentes, lote, ciclo || periodo),
+    ciclo: ciclo || null,
     reproduccion: reproduccionDeLote(M.fuentes, lote, periodo),
     promedios: promediosDeLote(M, lote, periodo),
   };
