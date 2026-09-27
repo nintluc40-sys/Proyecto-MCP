@@ -26,7 +26,7 @@ import { revisionesView } from './views/revisiones/index.js';
 import { visitanteView } from './views/visitante/index.js';
 import { algasView } from './views/algas/index.js';
 import { microbiologiaView } from './views/microbiologia/index.js';
-// Maduración: la entrada elige familia (🐚 Operativo, diferido · 🧬 Microchips, la vista de index.js).
+// Maduración: la entrada elige familia (📋 Operativo, diferido · 🧬 Microchips, la vista de index.js).
 import { maduracionEntrada } from './views/maduracion/entrada.js';
 // Biología Molecular: carga DIFERIDA. Es la vista más pesada (D3, ~1.5k líneas) y
 // no es de uso diario; se descarga solo al abrirla, aligerando el bundle inicial.

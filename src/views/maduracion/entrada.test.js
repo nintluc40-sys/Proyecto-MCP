@@ -49,13 +49,18 @@ afterEach(() => {
   vi.doUnmock('./operativo.view.js');
 });
 
-describe('Maduración · la entrada: 🐚 Operativo | 🧬 Microchips', () => {
+describe('Maduración · la entrada: 📋 Operativo | 🧬 Microchips', () => {
   it('abre en Operativo: el selector con las dos familias y el tablero, que llega DIFERIDO', async () => {
     await cargar();
     const listo = maduracionEntrada(root);
     expect(root.querySelector('.mad-cuerpo').textContent).toContain('Cargando el tablero del operativo');
+    expect(root.querySelector('.mad-cuerpo').textContent).toContain('📋');   // el marcador de carga, con el emoji de Operativo
     await listo;
-    expect([...root.querySelectorAll('[data-mad-fam]')].map((b) => b.textContent.trim())).toEqual(['🐚 Operativo', '🧬 Microchips']);
+    /* 2026-09-27 (usuario) · el emoji de Operativo pasa de 🐚 a 📋 (el parte diario): en el selector, en la cabecera del
+       tablero, en su estado vacío y en su marcador de carga. */
+    expect([...root.querySelectorAll('[data-mad-fam]')].map((b) => b.textContent.trim())).toEqual(['📋 Operativo', '🧬 Microchips']);
+    expect(root.querySelector('.mad-cuerpo .mc-head-ic').textContent).toBe('📋');
+    expect(root.innerHTML.includes('🐚')).toBe(false);
     expect(boton(root, 'operativo').classList.contains('is-on')).toBe(true);
     expect(boton(root, 'operativo').getAttribute('aria-pressed')).toBe('true');
     expect(boton(root, 'microchips').getAttribute('aria-pressed')).toBe('false');

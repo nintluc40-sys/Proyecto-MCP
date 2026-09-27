@@ -1,7 +1,7 @@
 /* ============================================================
    MADURACIÓN · OPERATIVO — la VISTA del tablero (F1–F6, 2026-09-19 a 2026-09-21)
 
-   «🐚 Operativo» de la entrada de Maduración (entrada.js), con el diseño que aprobó el usuario en cada fase:
+   «📋 Operativo» de la entrada de Maduración (entrada.js), con el diseño que aprobó el usuario en cada fase:
    barra de filtros (período · foto al día · sala → tanque · lote → código · estado · sexo · piscina · camaronera,
    con etiquetas de lo activo y «limpiar») y sus sub-vistas.
    ⚠ La lista viva es `SUBS`, unas líneas más abajo, y los KPI son el array `kpis`: se leen de ahí, no de aquí.
@@ -316,7 +316,7 @@ function etiquetasHTML(F) {
 const codigosDe = (o, lote) => (lote ? o.codigosPorLote[lote] || [] : [...new Set(Object.values(o.codigosPorLote).flat())].sort(porNombre));
 
 function cabeceraHTML(fecha) {
-  return `<div class="mc-head"><div class="mc-head-t"><span class="mc-head-ic">🐚</span><div>
+  return `<div class="mc-head"><div class="mc-head-t"><span class="mc-head-ic">📋</span><div>
       <h2 class="mc-title">Operativo</h2>
       <p class="mc-sub">Salas, tanques y lotes del registro operativo · con el libro mayor del ⚖️ Saldo, al cierre del ${esc(dma(fecha))}</p>
     </div></div></div>`;
@@ -382,7 +382,7 @@ function avisosDelDatoHTML(M) {
 
 function vacioHTML() {
   return `<div class="empty-state" style="padding:48px 20px">
-    <div style="font-size:40px">🐚</div>
+    <div style="font-size:40px">📋</div>
     <h3 style="margin:10px 0 6px;color:var(--c-brand)">Sin datos del registro operativo</h3>
     <p class="muted">No hay filas en las hojas del operativo de Maduración: Ingreso, Movimientos, Desoves, Inf. Supervisor,
       Fin de Ciclo, Tratamientos, Alimentación, Broodstock, Salas y Tanques.</p>

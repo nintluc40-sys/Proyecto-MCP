@@ -391,6 +391,7 @@ describe('Maduración · operativo · bordes', () => {
   it('sin filas del operativo, lo dice; sin datos todavía, «Conectando»', async () => {
     await montar([{ _SheetOrigin: 'Larvicultura', Fecha: '18/09/2026' }]);
     expect(root.textContent).toContain('Sin datos del registro operativo');
+    expect(root.querySelector('.empty-state').textContent).toContain('📋');   // 2026-09-27 · el emoji de Operativo (antes 🐚)
     await montar([]);
     expect(root.textContent).toContain('Conectando');
   });

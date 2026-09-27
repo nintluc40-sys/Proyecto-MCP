@@ -3,7 +3,7 @@
 
    Una sola entrada «🥚 Maduración» con dos familias, como decidió el usuario el 2026-09-19 («selector interno, abre
    en Operativo»):
-     🐚 Operativo  — el tablero del registro operativo (salas, tanques y lotes). Es la que abre.
+     📋 Operativo  — el tablero del registro operativo (salas, tanques y lotes). Es la que abre.
      🧬 Microchips — el seguimiento reproductivo por Trovan (index.js), exactamente como estaba.
    El tablero del operativo se carga DIFERIDO, con `import()`, igual que Registros y Biología Molecular: el bloque
    principal ya pasa de los 700 kB y esta app se abre desde el móvil. Aquí sólo viven el selector y el reparto.
@@ -14,7 +14,7 @@ import { esc } from '../../core/format.js';
 import { maduracionView as microchipsView } from './index.js';
 
 export const FAMILIAS = [
-  { clave: 'operativo', etiqueta: 'Operativo', icono: '🐚' },
+  { clave: 'operativo', etiqueta: 'Operativo', icono: '📋' },
   { clave: 'microchips', etiqueta: 'Microchips', icono: '🧬' },
 ];
 const estado = { familia: 'operativo' };
@@ -36,7 +36,7 @@ export function maduracionEntrada(root) {
     microchipsView(cuerpo);
     return Promise.resolve();
   }
-  cuerpo.innerHTML = '<div class="empty-state" style="padding:64px 20px"><div style="font-size:40px">🐚</div><p class="muted">Cargando el tablero del operativo…</p></div>';
+  cuerpo.innerHTML = '<div class="empty-state" style="padding:64px 20px"><div style="font-size:40px">📋</div><p class="muted">Cargando el tablero del operativo…</p></div>';
   return import('./operativo.view.js')
     .then((m) => { if (cuerpo.isConnected) m.operativoView(cuerpo); })
     .catch((e) => {
