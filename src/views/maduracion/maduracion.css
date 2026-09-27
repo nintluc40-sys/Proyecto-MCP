@@ -242,3 +242,9 @@
 /* T3 (2026-09-27, usuario) · supervivencia por familia */
 .mc-surv-card .mc-seg { margin-left: auto; }
 .mc-surv-card .mc-table { margin-top: 10px; }
+
+/* T5 (2026-09-27, usuario) · alerta de reemplazo (agrupada por tanque, con aviso de hueco del registro) */
+.mc-reemp-card .mc-seg { margin-left: auto; }
+.mc-alerta-grupo th { padding-top: 12px; text-align: left; text-transform: none; letter-spacing: 0; font-size: 12.5px; color: var(--c-text); background: var(--c-surface-2, #f1f4f6); }
+.mc-hueco { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #7a4d00; background: #fdebc2; }
+.mc-alerta-mas td { font-size: 11.5px; color: var(--c-text-soft); font-style: italic; }

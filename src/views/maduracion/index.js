@@ -10,7 +10,7 @@ import { fmtShort } from '../../core/dates.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import {
   MAD_MATRIZ_ORIGIN, MAD_BITACORA_ORIGIN, MAD_TRANSFER_ORIGIN,
-  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves, lineaDeVida, productividadPorFamilia, bandaTasa, supervivenciaPorFamilia,
+  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves, lineaDeVida, productividadPorFamilia, bandaTasa, supervivenciaPorFamilia, alertaReemplazo,
   buildReproModel, makeFilter, monthLabel, kpis, locationStats, femaleRanking,
   femaleHistory, neverSpawned, recoveryDistribution, stateDistribution,
   mortalityBreakdown, trends, salasOf, tanquesOf, lotesOf, codigosOf, locKey,
@@ -60,7 +60,9 @@ const vState = { sub: 'panorama', month: null, sala: null, tanque: null, lote: n
   /* T1 (2026-09-27, usuario) · la agrupación de «Productividad por familia»: 'codigo' | 'lote'. */
   familia: 'codigo',
   /* T2 (2026-09-27, usuario) · el gráfico de mortalidad: 'tasa' (% diario, por defecto) | 'muertes'. */
-  mortModo: 'tasa' };
+  mortModo: 'tasa',
+  /* T5 (2026-09-27, usuario) · el umbral de la alerta de reemplazo, en días (10 | 14 | 21 | 30). */
+  umbral: 21 };
 
 // Modelo memoizado por identidad de store.globalData.
 let _cache = { src: null, model: null };
@@ -662,7 +664,7 @@ function renderHembras(model, f) {
     : vacioHTML('Todas las hembras vivas han desovado al menos una vez', { icono: '🎉', conFiltros: false })}
   </div>`;
 
-  return `<div class="mc-body">${searchBar}<div class="mc-grid">${rankTable}${recCard}${neverCard}</div></div>`;
+  return `<div class="mc-body">${searchBar}<div class="mc-grid">${reemplazoHTML(model, f)}${rankTable}${recCard}${neverCard}</div></div>`;
 }
 
 /* 2026-09-27 (usuario) · líneas verticales de referencia en un histograma POR DÍA (el promedio y la mediana del
@@ -747,6 +749,31 @@ function supervivenciaHTML(model, f) {
     <p class="mc-note">Kaplan–Meier: días desde el ingreso hasta la muerte; las vivas cuentan hasta el último dato. Cada curva termina donde termina su seguimiento (no se extrapola). Sigue sala, tanque, lote y código, no el mes.${s.sinFecha ? ` ${n0(s.sinFecha)} muerta(s) sin fecha de muerte quedan fuera.` : ''}</p>`
     : vacioHTML('Sin hembras en este filtro');
   return `<div class="mc-card mc-card-wide mc-surv-card"><h4 class="mc-card-h">🫀 Supervivencia por familia ${seg}</h4>${cuerpo}</div>`;
+}
+
+/* T5 (2026-09-27, usuario) · la alerta de reemplazo: las vivas que no desovan hace más de N días, agrupadas por tanque,
+   con el aviso «¿hueco del registro?» donde nadie desovó en esos días. */
+const UMBRALES = [10, 14, 21, 30];
+function reemplazoHTML(model, f) {
+  const u = UMBRALES.includes(vState.umbral) ? vState.umbral : 21;
+  const a = alertaReemplazo(model, f, u);
+  const seg = `<div class="mc-seg">${UMBRALES.map((d) => `<button type="button" class="mc-seg-b${d === u ? ' is-on' : ''}" data-mc-umbral="${d}" aria-pressed="${d === u}">${d} d</button>`).join('')}</div>`;
+  /* Cada tanque sale SIEMPRE con su cabecera y su aviso (el de hueco es lo que más importa); de sus hembras, las
+     `POR_TANQUE` que más llevan sin desovar y «+N más». Un tope global cortaba los últimos tanques enteros (medido). */
+  const POR_TANQUE = 25;
+  const cuerpo = a.total ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm"><thead><tr><th>Hembra</th><th>Lote</th><th class="r">En sala</th>
+      <th class="r">Último desove</th><th class="r">Sin desovar</th><th class="r">Desoves</th></tr></thead><tbody>${a.grupos.map((g) => {
+      const hs = g.hembras.slice(0, POR_TANQUE), resto = g.hembras.length - hs.length;
+      return `<tr class="mc-alerta-grupo"><th colspan="6">${esc(g.key)} <span class="mc-h-note">${n0(g.hembras.length)} hembra${g.hembras.length === 1 ? '' : 's'}</span>`
+        + (g.sinRegistros ? ` <span class="mc-hueco">⚠ ningún desove registrado en el tanque en ${u} días: ¿hueco del registro?</span>` : '') + '</th></tr>'
+        + hs.map((h) => `<tr><td>${chipAnillo(h.color)}<button class="mc-trovan" data-mc-female="${esc(h.trovan)}">${esc(h.chip)}</button></td><td>${txt(h.lote)}</td>`
+          + `<td class="r">${h.enSala == null ? '—' : n0(h.enSala) + ' d'}</td><td class="r">${h.ultimo ? diaMes(h.ultimo) : '<span class="muted">nunca</span>'}</td>`
+          + `<td class="r"><b>${n0(h.diasSin)} d</b></td><td class="r">${n0(h.desoves)}</td></tr>`).join('')
+        + (resto > 0 ? `<tr class="mc-alerta-mas"><td colspan="6">+${n0(resto)} más en este tanque (filtra por él para verlas todas)</td></tr>` : '');
+    }).join('')}</tbody></table></div>
+    <p class="mc-note">Contado al último dato. Una hembra que nunca desovó cuenta desde su ingreso. Un tanque donde nadie desovó en esos días suele ser un hueco del registro: míralo en el calendario de desoves (Salas y Tanques).</p>`
+    : vacioHTML(`Ninguna hembra viva lleva más de ${u} días sin desovar`, { icono: '✅' });
+  return `<div class="mc-card mc-card-wide mc-reemp-card"><h4 class="mc-card-h">⚠ Alerta de reemplazo <span class="mc-h-note">${n0(a.total)} hembra${a.total === 1 ? '' : 's'} sin desovar hace más de ${u} días</span> ${seg}</h4>${cuerpo}</div>`;
 }
 
 /* V9 (2026-09-27, usuario) · la silueta de la vista mientras cargan los datos (cabecera, 7 KPI y 2 tarjetas, con un
@@ -945,6 +972,9 @@ function bind(root) {
     if (pill) { vState.sub = pill.dataset.mcSub; maduracionView(root); return; }
 
     // Stepper de período (al cambiar de mes, el toggle de granularidad vuelve a "auto")
+    // T5 · el umbral de la alerta de reemplazo
+    const um = e.target.closest('[data-mc-umbral]');
+    if (um) { vState.umbral = Number(um.dataset.mcUmbral); maduracionView(root); return; }
     // T2 · el selector del gráfico de mortalidad
     const mm = e.target.closest('[data-mc-mortmodo]');
     if (mm) { vState.mortModo = mm.dataset.mcMortmodo; maduracionView(root); return; }

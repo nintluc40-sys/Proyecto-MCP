@@ -687,6 +687,36 @@ export function lineaDeVida(model, trovan) {
   };
 }
 
+/* ── T5 · Alerta de reemplazo (2026-09-27, usuario) ── */
+/** Las hembras VIVAS del filtro (`passFem`: su ubicación actual, lote y código) que no desovan hace más de `umbral`
+ *  días, o que nunca desovaron y llevan más de `umbral` días en sala; contado al último dato de la granja. Agrupadas por
+ *  tanque (el que más tiene, primero; dentro, la que más lleva). `sinRegistros`: en ese tanque NADIE desovó en esos días
+ *  (lo más probable, un hueco del registro, no un tanque entero sin desovar). */
+export function alertaReemplazo(model, f, umbral = 21) {
+  const ref = model.dataMaxDate;
+  if (!ref) return { umbral, total: 0, grupos: [] };
+  const hoy = dia0(ref), dias = (d) => Math.round((hoy - dia0(d)) / 864e5);
+  const desde = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - umbral);
+  const grupos = new Map();
+  model.females.filter((r) => r.estado !== ESTADO_MUERTO && passFem(r, f)).forEach((r) => {
+    const ds = model.desovesByTrovan.get(r.trovan) || [];
+    const ultimo = ds.reduce((m, e) => (!m || e.date > m ? e.date : m), null);
+    const enSala = r._ingreso ? dias(r._ingreso) : null;
+    const diasSin = ultimo ? dias(ultimo) : enSala;
+    if (diasSin == null || diasSin <= umbral) return;
+    const key = locKey(r.sala, r.tanque);
+    if (!grupos.has(key)) grupos.set(key, { key, sala: r.sala, tanque: r.tanque, hembras: [] });
+    grupos.get(key).hembras.push({ trovan: r.trovan, chip: r.chip || r.trovan, color: r.color || '', lote: r.lote || '',
+      enSala, ultimo: ultimo ? dia0(ultimo) : null, diasSin, desoves: ds.length });
+  });
+  const lista = [...grupos.values()].map((g) => {
+    g.hembras.sort((a, b) => b.diasSin - a.diasSin || _ordenEs(String(a.trovan), String(b.trovan)));
+    g.sinRegistros = !model.desoves.some((e) => locKey(e.sala, e.tanque) === g.key && dia0(e.date) > desde);
+    return g;
+  }).sort((a, b) => b.hembras.length - a.hembras.length || _ordenEs(a.key, b.key));
+  return { umbral, total: lista.reduce((s, g) => s + g.hembras.length, 0), grupos: lista };
+}
+
 /* ── Hembras que NUNCA han desovado (all-time; vivas, filtrable por ubicación) ── */
 export function neverSpawned(model, f = {}) {
   const everSpawned = new Set(model.desoves.map((e) => e.trovan));
