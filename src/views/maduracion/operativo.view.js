@@ -595,7 +595,7 @@ const COLOR_BIOMOL = { IHHNV: '#ef4444', WSSV: '#f59e0b', BP: '#a78bfa', AHPND: 
 function dibujarLab() {
   const E = ejesOp();
   if (!_labTend || !document.getElementById('mopLabTend')) return;
-  makeChart('mopLabTend', {
+  graficoOp('mopLabTend', {
     type: 'line',
     data: { labels: _labTend.etiquetas.map(dm), datasets: _labTend.series.map((s) => ({ label: s.etiqueta, data: s.datos, borderColor: COLOR_BIOMOL[s.clave],
       backgroundColor: COLOR_BIOMOL[s.clave], tension: 0, borderWidth: 2, pointRadius: 3, spanGaps: false })) },
@@ -694,7 +694,7 @@ function dibujarKpi(g) {
     scales = { x, y: { beginAtZero: true, ticks: E.tick, grid: { color: E.grid }, title: titulo(b.etiqueta) },
       y2: { beginAtZero: true, position: 'right', ticks: E.tick, grid: { display: false }, title: titulo(l.etiqueta) } };
   }
-  makeChart('mopKpiCurva', {
+  graficoOp('mopKpiCurva', {
     type: 'bar',
     data: { labels, datasets },
     options: {
@@ -954,7 +954,7 @@ function cuarentenaHTML({ lista, sel }, p) {
 function dibujarCuarentena(c) {
   const E = ejesOp();
   if (!c || !c.dias.length || !document.getElementById('mopCuarCurva')) return;
-  makeChart('mopCuarCurva', {
+  graficoOp('mopCuarCurva', {
     type: 'bar',
     data: {
       labels: c.dias.map((d) => dm(d.fecha)),
@@ -1116,6 +1116,46 @@ function ejesOp() {
     leyenda: { usePointStyle: true, boxWidth: 10, font: { size: 12 }, color: texto },
   };
 }
+/* 0q·2 (2026-09-27, usuario) · «al pasar por desoves o N5 se buggea». Medido en Chrome: el globo iba a la altura MEDIA de
+   los elementos del día, saltaba ~100 px de un día al siguiente, cambiaba de lado su pico, tapaba el día leído y cada salto
+   se animaba 400 ms, siempre detrás del ratón; el punto y el globo anteriores tardaban 400 ms en borrarse; cada filtro
+   hacía crecer el gráfico desde cero durante 1 s; y `order` (0q·1) había dado la vuelta a la leyenda y al globo.
+   Ahora, en los OCHO gráficos: una raya marca el día y el globo va arriba, a su lado («arribaJunto», core/charts.js); el
+   resaltado al pasar es inmediato; el globo se desliza en 120 ms; el dibujo, 400 ms; con «reducir movimiento», nada; y
+   leyenda y globo en el orden de los DATOS. */
+const GUIA_DIA = {
+  id: 'mopGuiaDia',
+  afterDatasetsDraw(chart) {
+    const activos = chart.tooltip && chart.tooltip.getActiveElements();
+    if (!activos || !activos.length) return;
+    const { ctx, chartArea } = chart;
+    const x = activos[0].element.x;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(84,110,122,.6)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(x, chartArea.top);
+    ctx.lineTo(x, chartArea.bottom);
+    ctx.stroke();
+    ctx.restore();
+  },
+};
+const enOrdenDeDatos = (a, b) => a.datasetIndex - b.datasetIndex;
+/** Dibuja un gráfico de Operativo con el movimiento de 0q·2 (lo único que añade a `makeChart`). */
+function graficoOp(id, cfg) {
+  const quieto = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const o = cfg.options;
+  const ley = (o.plugins && o.plugins.legend) || {};
+  o.interaction = { mode: 'index', intersect: false };
+  o.animation = quieto ? false : { duration: 400 };
+  o.transitions = { active: { animation: { duration: 0 } } };
+  o.plugins = { ...o.plugins,
+    legend: { ...ley, labels: { ...ley.labels, sort: enOrdenDeDatos } },
+    tooltip: { position: 'arribaJunto', caretSize: 0, caretPadding: 8, itemSort: enOrdenDeDatos, animation: { duration: 120 } } };
+  cfg.plugins = [...(cfg.plugins || []), GUIA_DIA];
+  return makeChart(id, cfg);
+}
 const COLORES_OX = ['#00838f', '#1e88e5', '#7e57c2', '#e67e22'];
 
 function dibujarDetalle(d) {
@@ -1127,7 +1167,7 @@ function dibujarDetalle(d) {
     if (u && u.min !== null) {
       datasets.push({ label: `Mínimo ${nf(u.min, 1)} mg/L`, data: d.oxigeno.fechas.map(() => u.min), borderColor: '#e0533b', borderDash: [5, 4], pointRadius: 0, borderWidth: 1.5 });
     }
-    makeChart('mopOx', {
+    graficoOp('mopOx', {
       type: 'line',
       data: { labels: d.oxigeno.fechas.map(dm), datasets },
       options: {
@@ -1148,7 +1188,7 @@ function dibujarDetalle(d) {
   ];
   if (u && u.min !== null) datasets.push({ type: 'line', label: `Densidad mínima ${nf(u.min)}`, data: t.map(() => u.min), borderColor: '#2e9e5b', borderDash: [4, 4], pointRadius: 0, borderWidth: 1.5, yAxisID: 'y1', order: 0 });
   if (u && u.max !== null) datasets.push({ type: 'line', label: `Densidad máxima ${nf(u.max)}`, data: t.map(() => u.max), borderColor: '#e0533b', borderDash: [4, 4], pointRadius: 0, borderWidth: 1.5, yAxisID: 'y1', order: 0 });
-  makeChart('mopTq', {
+  graficoOp('mopTq', {
     data: { labels: t.map((x) => 'T' + x.tanque), datasets },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
@@ -1333,7 +1373,7 @@ function dibujarLote(f) {
   const E = ejesOp();
   if (!f || !f.curva.length) return;
   const conEvento = new Set(f.eventos.map((e) => e.fecha));
-  makeChart('mopLoteCurva', {
+  graficoOp('mopLoteCurva', {
     type: 'line',
     data: {
       labels: f.curva.map((d) => dm(d.fecha)),
@@ -1455,7 +1495,7 @@ function fichaPiscinaHTML(f, p) {
 function dibujarPiscina(f) {
   const E = ejesOp();
   if (!f || !f.serie.length) return;
-  makeChart('mopPiscinaCurva', {
+  graficoOp('mopPiscinaCurva', {
     type: 'line',
     data: {
       labels: f.serie.map((s) => dm(s.corte)),
@@ -1888,7 +1928,7 @@ function fichaTanqueHTML(f) {
 function dibujarTanque(f) {
   const E = ejesOp();
   if (!f || !f.curva.length) return;
-  makeChart('mopTanqueCurva', {
+  graficoOp('mopTanqueCurva', {
     type: 'line',
     data: {
       labels: f.curva.map((d) => dm(d.fecha)),

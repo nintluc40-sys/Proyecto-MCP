@@ -22,6 +22,19 @@ Chart.defaults.color = '#546e7a';
 // Render a ≥2x aunque la pantalla sea 1x → texto y líneas nítidas (sin desenfoque).
 Chart.defaults.devicePixelRatio = Math.max(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
 
+/* 0q·2 (2026-09-27, usuario) · «arribaJunto»: el globo de un gráfico en modo «index», ARRIBA del área de datos y al LADO
+   del día (a su derecha si cabe; si no, a su izquierda), centrado en su propia altura: sólo se mueve de lado. El lugar
+   por defecto («average») toma la altura MEDIA de los elementos del día, que cambia mucho de un día a otro: el globo
+   saltaba arriba y abajo y tapaba lo que se leía. Con yAlign 'center', Chart.js lo aparta del día caretSize + caretPadding
+   (el 8 de abajo es ese hueco). La primera vez aún no tiene medidas: supone 60 px de alto para no salirse por arriba. */
+Tooltip.positioners.arribaJunto = function arribaJunto(items) {
+  if (!items.length) return false;
+  const area = this.chart.chartArea;
+  const x = items[0].element.x;
+  const ancho = this.width || 0, alto = this.height || 60;
+  return { x, y: area.top + alto / 2, xAlign: x + 8 + ancho <= area.right ? 'left' : 'right', yAlign: 'center' };
+};
+
 const registry = new Set();
 
 /** Crea un chart y lo registra para destrucción centralizada. */

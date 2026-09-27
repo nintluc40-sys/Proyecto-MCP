@@ -2048,3 +2048,68 @@ describe('Maduración · operativo · los gráficos se leen', () => {
     } finally { document.documentElement.style.removeProperty('--c-text'); }
   });
 });
+
+/* ============================================================
+   0q·2 (2026-09-27, usuario) · el MOVIMIENTO de los gráficos de Operativo
+
+   «El gráfico del KPI de reproducción, al pasar por desoves o N5, se buggea». Medido en Chrome con datos reales: en modo
+   «index» el globo se colocaba en la altura MEDIA de la barra y del punto, que cambia mucho de un día al siguiente (07/09:
+   134 desoves y 40 M de N5; 08/09: 0 y 0): saltaba ~100 px arriba y abajo, cambiaba de lado su pico y cada salto se animaba
+   400 ms, siempre detrás del ratón y TAPANDO el día leído; el punto y el globo anteriores tardaban 400 ms en borrarse; y
+   cada filtro volvía a hacer crecer el gráfico desde cero durante 1 s. Además (defecto de 0q·1): `order: 1` en las barras
+   dio la vuelta a la leyenda y al globo («N5 · Desoves»). Decisión del usuario, para los OCHO gráficos: una raya vertical
+   marca el día y el globo va ARRIBA, a su lado (sólo se mueve de lado); el resaltado al pasar es inmediato; el globo se
+   desliza en 120 ms; el dibujo al abrir o filtrar, 400 ms; y nada con «reducir movimiento».
+   ============================================================ */
+describe('Maduración · operativo · los gráficos se mueven bien', () => {
+  it('🔴 los ocho: globo arriba junto a la raya del día, sin transición al pasar, globo en ≤ 150 ms, dibujo en ≤ 400 ms', () => {
+    const ids = [...new Set(GRAFICOS.map((g) => g.id))].sort();
+    expect(ids).toEqual(['mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopOx', 'mopPiscinaCurva', 'mopTanqueCurva', 'mopTq']);
+    for (const { id, cfg } of GRAFICOS) {
+      const o = cfg.options;
+      expect(o.interaction, id).toEqual({ mode: 'index', intersect: false });
+      expect(o.plugins.tooltip.position, id).toBe('arribaJunto');
+      expect(o.plugins.tooltip.caretSize, id).toBe(0);
+      expect(o.plugins.tooltip.animation.duration, id).toBeLessThanOrEqual(150);
+      expect(o.transitions.active.animation.duration, id).toBe(0);
+      expect(o.animation.duration, id).toBeGreaterThan(0);
+      expect(o.animation.duration, id).toBeLessThanOrEqual(400);
+      expect((cfg.plugins || []).map((p) => p.id), id).toContain('mopGuiaDia');
+    }
+  });
+
+  it('🔴 la leyenda y el globo, en el orden de los DATOS (no en el de dibujo, que `order` cambia)', () => {
+    expect(GRAFICOS.length).toBeGreaterThan(7);
+    for (const { id, cfg } of GRAFICOS) {
+      const { legend, tooltip } = cfg.options.plugins;
+      const items = () => [{ datasetIndex: 1 }, { datasetIndex: 0 }, { datasetIndex: 2 }];
+      expect(items().sort(legend.labels.sort).map((i) => i.datasetIndex), id + ' leyenda').toEqual([0, 1, 2]);
+      expect(items().sort(tooltip.itemSort).map((i) => i.datasetIndex), id + ' globo').toEqual([0, 1, 2]);
+    }
+  });
+
+  it('🔴 la raya del día: en la x del día activo, de arriba abajo del área de datos; sin día activo, nada', () => {
+    const guia = GRAFICOS[0].cfg.plugins.find((p) => p.id === 'mopGuiaDia');
+    const ctx = { save: vi.fn(), restore: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), setLineDash: vi.fn() };
+    const chart = (activos) => ({ ctx, chartArea: { top: 12, bottom: 210, left: 40, right: 600 }, tooltip: { getActiveElements: () => activos } });
+    guia.afterDatasetsDraw(chart([{ element: { x: 123 } }, { element: { x: 123 } }]));
+    expect(ctx.moveTo).toHaveBeenCalledWith(123, 12);
+    expect(ctx.lineTo).toHaveBeenCalledWith(123, 210);
+    expect(ctx.stroke).toHaveBeenCalledTimes(1);
+    expect(ctx.save).toHaveBeenCalledTimes(1);
+    expect(ctx.restore).toHaveBeenCalledTimes(1);
+    guia.afterDatasetsDraw(chart([]));
+    guia.afterDatasetsDraw({ ctx, chartArea: { top: 0, bottom: 1 }, tooltip: null });
+    expect(ctx.stroke).toHaveBeenCalledTimes(1);
+  });
+
+  it('🔑 con «reducir movimiento» en el sistema, ni dibujo animado ni globo animado', async () => {
+    const mm = vi.spyOn(window, 'matchMedia').mockImplementation((q) => ({ matches: /reduce/.test(q), media: q, addEventListener() {}, removeEventListener() {} }));
+    try {
+      await montar(PLANTA);
+      click(root.querySelector('[data-mop-kpi="vivos"]'));
+      const l = makeChart.mock.calls.filter(([id]) => id === 'mopKpiCurva');
+      expect(l[l.length - 1][1].options.animation).toBe(false);
+    } finally { mm.mockRestore(); }
+  });
+});
