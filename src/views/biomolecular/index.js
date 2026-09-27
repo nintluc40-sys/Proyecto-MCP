@@ -17,6 +17,7 @@ import { store } from '../../core/store.js';
 import { esc as escH } from '../../core/format.js'; // output-encoding único (antes había un escH local duplicado)
 import { toast } from '../../ui/toast.js';
 import { setDateBarHidden } from '../../ui/shell.js'; // esta vista usa su PROPIA filterbar
+import { matrizTejidos, franjaTejidos } from './tejidos.js'; // 2026-09-26 · el tipo de muestra (tejido)
 
 // ── Constantes (idénticas a BIOMOL.html) ──
 const DIAGS  = ['IHHNV', 'WSSV', 'BP', 'AHPND', 'NHPB', 'EHP'];
@@ -1363,6 +1364,84 @@ function drawCargaNivel(svg, W, H, rows, vacio, foco = QPCR_TODOS) {
 }
 
 // ── DONUT ──
+// ── TIPO DE MUESTRA · tejido × diagnóstico + franja semanal (2026-09-26, usuario; datos: tejidos.js) ──
+function drawTejidos() {
+  const data = filtered(); const svg = d3.select('#tejidos'); svg.selectAll('*').remove();
+  const el = $('tejidos'); if (!el) return;
+  const wrapper = el.parentElement;
+  let cardEl = wrapper; while (cardEl && !cardEl.classList.contains('card')) cardEl = cardEl.parentElement;
+  const isFS = cardEl && cardEl.classList.contains('is-fs');
+  const W = Math.max((wrapper && wrapper.clientWidth) || 640, 340);
+  const DA = DIAGS.filter((d) => activeDiags.has(d));
+  const M = matrizTejidos(data, DA);
+  const F = franjaTejidos(data, DA);
+  const hay = M.some((t) => t.muestras);
+  const sub = $('tejidos-sub');
+  if (sub) sub.textContent = hay ? `${M.reduce((a, t) => a + t.muestras, 0)} muestras de tejido en lo filtrado` : '';
+  const mL = 92, rowH = isFS ? 40 : 30, headH = 26, gap = 34, stripRowH = isFS ? 30 : 22;
+  const Hm = headH + rowH * M.length, Hs = F.semanas.length ? headH + stripRowH * F.filas.length : 0;
+  const H = Hm + (Hs ? gap + Hs : 0) + 8;
+  svg.attr('width', '100%').attr('height', H).attr('viewBox', `0 0 ${W} ${H}`);
+  if (!hay || !DA.length) {
+    svg.attr('height', 120).attr('viewBox', `0 0 ${W} 120`);
+    svg.append('text').attr('x', W / 2).attr('y', 60).attr('fill', TH.muted).attr('text-anchor', 'middle')
+      .text(DA.length ? 'Aún no hay muestras de Heces, Branquias, Pleópodo, Agua ni Hisopado en lo filtrado' : 'Sin diagnósticos activos');
+    return;
+  }
+  // ① la matriz
+  const cW = Math.max(46, Math.min(isFS ? 130 : 96, (W - mL - 8) / DA.length));
+  const g = svg.append('g').attr('class', 'tj-matriz').attr('transform', `translate(${mL},0)`);
+  DA.forEach((d, ci) => g.append('text').attr('class', 'hm-label').attr('x', ci * cW + cW / 2).attr('y', 16).attr('text-anchor', 'middle')
+    .attr('fill', DCOLOR[d]).attr('font-weight', '700').text(DLABEL[d]));
+  M.forEach((t, ri) => {
+    const y = headH + ri * rowH;
+    svg.append('text').attr('class', 'hm-label').attr('x', mL - 8).attr('y', y + rowH / 2).attr('text-anchor', 'end').attr('dominant-baseline', 'middle')
+      .attr('font-weight', '700').text(`${t.etiqueta} (${t.muestras})`);
+    if (!t.muestras) {
+      g.append('text').attr('class', 'tj-vacio').attr('x', 6).attr('y', y + rowH / 2).attr('dominant-baseline', 'middle').attr('fill', TH.muted)
+        .attr('font-size', 11).attr('font-style', 'italic').text('sin muestras aún');
+      return;
+    }
+    t.celdas.forEach((c, ci) => {
+      const cell = g.append('rect').attr('class', 'tj-celda').attr('data-tipo', t.clave).attr('data-diag', c.diag)
+        .attr('x', ci * cW + 1).attr('y', y + 1).attr('width', cW - 2).attr('height', rowH - 2).attr('rx', 4)
+        .attr('fill', c.analizadas ? pctColor(c.pct) : TH.grid).attr('opacity', c.analizadas ? 1 : 0.45).attr('cursor', 'default');
+      g.append('text').attr('class', 'hm-val').attr('x', ci * cW + cW / 2).attr('y', y + rowH / 2)
+        .text(c.analizadas ? `${c.pct}% · ${c.analizadas}` : '·');
+      cell.on('mouseenter', (e) => showTip(`<div class="tt-title">${escH(t.etiqueta)} · ${DLABEL[c.diag]}</div>`
+        + (c.analizadas ? `<div class="tt-row"><span class="tt-key">Positivos</span><span class="tt-val pos-tag">${c.positivos}</span></div><div class="tt-row"><span class="tt-key">Analizadas</span><span class="tt-val">${c.analizadas}</span></div><div class="tt-row"><span class="tt-key">% positivos</span><span class="tt-val">${c.pct}%</span></div>`
+          : '<div class="tt-row"><span class="tt-key">No se analizó este diagnóstico en este tejido</span></div>'), e))
+        .on('mousemove', moveTip).on('mouseleave', hideTip);
+    });
+  });
+  if (!Hs) return;
+  // ② la franja semanal: el tamaño del número es cuántas muestras; el rojo, cuántas salieron positivas a algo
+  const y0 = Hm + gap;
+  svg.append('text').attr('class', 'hm-label').attr('x', 4).attr('y', y0 - 12).attr('fill', TH.muted).attr('font-size', 10)
+    .text('Por semana · muestras (positivas a algún diagnóstico activo)');
+  const sW = Math.max(40, Math.min(isFS ? 110 : 80, (W - mL - 8) / F.semanas.length));
+  const s = svg.append('g').attr('class', 'tj-franja').attr('transform', `translate(${mL},${y0})`);
+  F.semanas.forEach((lun, ci) => s.append('text').attr('class', 'hm-label').attr('x', ci * sW + sW / 2).attr('y', 14).attr('text-anchor', 'middle')
+    .attr('font-size', 9).text(weekLabel(getWeekKey(lun))));
+  const max = Math.max(1, ...F.filas.flatMap((f) => f.porSemana.map((x) => x.muestras)));
+  F.filas.forEach((f, ri) => {
+    const y = headH + ri * stripRowH;
+    svg.append('text').attr('class', 'hm-label').attr('x', mL - 8).attr('y', y0 + y + stripRowH / 2).attr('text-anchor', 'end').attr('dominant-baseline', 'middle')
+      .attr('font-size', 10).text(f.etiqueta);
+    f.porSemana.forEach((x, ci) => {
+      if (!x.muestras) return;
+      const r = s.append('rect').attr('class', 'tj-semana').attr('data-tipo', f.clave).attr('data-semana', F.semanas[ci])
+        .attr('x', ci * sW + 2).attr('y', y + 2).attr('width', sW - 4).attr('height', stripRowH - 4).attr('rx', 3)
+        .attr('fill', x.positivas ? '#ef4444' : '#22c55e').attr('opacity', 0.25 + 0.6 * (x.muestras / max));
+      // Texto con el color del tema, no el blanco de la matriz: aquí el fondo es tenue y el blanco no se leería.
+      s.append('text').attr('class', 'hm-val').attr('x', ci * sW + sW / 2).attr('y', y + stripRowH / 2).attr('font-size', 10).style('fill', TH.text)
+        .text(x.positivas ? `${x.muestras} (${x.positivas}+)` : String(x.muestras));
+      r.on('mouseenter', (e) => showTip(`<div class="tt-title">${escH(f.etiqueta)} · semana del ${fmtD(F.semanas[ci])}</div><div class="tt-row"><span class="tt-key">Muestras</span><span class="tt-val">${x.muestras}</span></div><div class="tt-row"><span class="tt-key">Positivas a algo</span><span class="tt-val pos-tag">${x.positivas}</span></div>`, e))
+        .on('mousemove', moveTip).on('mouseleave', hideTip);
+    });
+  });
+}
+
 function drawDonut() {
   const data = filtered(); const svg = d3.select('#donut'); svg.selectAll('*').remove();
   if (!$('donut')) return; const { W, H } = svgDims('donut', 420, 300);
@@ -2057,7 +2136,7 @@ function drawContamination() {
 
 function drawReportSections() { drawLineComp(); drawCoinfection(); drawEstadioPos(); drawContamination(); }
 
-function renderCharts() { hideTip(); refreshTheme(); drawHeatmap(); drawCalendar(); drawTreemap(); drawSwarm(); drawSankey(); drawTrend(); drawDonut(); drawCarga(); }
+function renderCharts() { hideTip(); refreshTheme(); drawHeatmap(); drawCalendar(); drawTreemap(); drawSwarm(); drawSankey(); drawTrend(); drawDonut(); drawCarga(); drawTejidos(); }
 
 // ── HTML del shell ──
 function shellHTML() {
@@ -2224,6 +2303,13 @@ function shellHTML() {
       <div class="card" id="c-donut">
         <div class="card-header"><div class="card-title-text"><span class="dot" style="background:#a78bfa"></span>Positividad por Diagnóstico</div><button type="button" class="fs-btn" data-target="c-donut" title="Pantalla completa">⛶</button></div>
         <svg id="donut" width="100%" height="300"></svg>
+      </div>
+    </div>
+    <div class="grid-full">
+      <div class="card" id="c-tejidos">
+        <div class="card-header"><div class="card-title-text"><span class="dot" style="background:#14b8a6"></span>Tipo de Muestra · Tejido × Diagnóstico <span class="tj-sub" id="tejidos-sub"></span></div><button type="button" class="fs-btn" data-target="c-tejidos" title="Pantalla completa">⛶</button></div>
+        <div class="chart-scroll"><svg id="tejidos" width="100%" height="260"></svg></div>
+        <div class="legend"><div class="leg-item">Celda: % de positivos · n analizadas (gris: no se analizó)</div><div class="leg-item"><div class="leg-rect" style="background:#22c55e"></div>semana sin positivos</div><div class="leg-item"><div class="leg-rect" style="background:#ef4444"></div>semana con positivos</div></div>
       </div>
     </div>
     <div class="grid-full">
