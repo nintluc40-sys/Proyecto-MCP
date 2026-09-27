@@ -10,7 +10,7 @@ import { fmtShort } from '../../core/dates.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import {
   MAD_MATRIZ_ORIGIN, MAD_BITACORA_ORIGIN, MAD_TRANSFER_ORIGIN,
-  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves, lineaDeVida, productividadPorFamilia, bandaTasa, supervivenciaPorFamilia, alertaReemplazo, ventanaDeDesove, mortalidadPostDesove, mareaPorDia, desovesYMarea,
+  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves, lineaDeVida, productividadPorFamilia, bandaTasa, supervivenciaPorFamilia, alertaReemplazo, ventanaDeDesove, mortalidadPostDesove, mareaPorDia, desovesYMarea, calidadDelRegistro,
   buildReproModel, makeFilter, monthLabel, kpis, locationStats, femaleRanking,
   femaleHistory, neverSpawned, recoveryDistribution, stateDistribution,
   mortalityBreakdown, trends, salasOf, tanquesOf, lotesOf, codigosOf, locKey,
@@ -52,6 +52,7 @@ const SUBS = [
   { key: 'panorama', label: 'Panorama', icon: '📊' },
   { key: 'operativo', label: 'Salas y Tanques', icon: '🏠' },
   { key: 'hembras', label: 'Hembras', icon: '🦐' },
+  { key: 'calidad', label: 'Calidad', icon: '🩺' },   // T10 (2026-09-27, usuario)
 ];
 
 const vState = { sub: 'panorama', month: null, sala: null, tanque: null, lote: null, codigo: null, locLevel: 'tanque', femSearch: '', femSel: null, trendGran: null, trendMetric: 'todas',
@@ -152,12 +153,14 @@ export function maduracionView(root) {
       ${sel('codigo', vState.codigo, codigos, 'Todos los códigos genéticos')}
     </div>`;
 
-  h += `<div class="mc-subnav">${SUBS.map((s) => `<button class="mc-pill ${vState.sub === s.key ? 'is-on' : ''}" data-mc-sub="${s.key}">${s.icon} ${esc(s.label)}</button>`).join('')}</div>`;
+  const calidad = calidadDelRegistro(model);   // T10 · la pestaña lleva el número de problemas abiertos
+  h += `<div class="mc-subnav">${SUBS.map((s) => `<button class="mc-pill ${vState.sub === s.key ? 'is-on' : ''}" data-mc-sub="${s.key}">${s.icon} ${esc(s.label)}${s.key === 'calidad' && calidad.total ? ` <span class="mc-pill-n">${n0(calidad.total)}</span>` : ''}</button>`).join('')}</div>`;
 
   h += dataWarnings(model);
 
   if (vState.sub === 'panorama') h += renderPanorama(model, f);
   else if (vState.sub === 'operativo') h += renderOperativo(model, f);
+  else if (vState.sub === 'calidad') h += renderCalidad(calidad);
   else h += renderHembras(model, f);
 
   // Modal de historial de hembra (vacío; se rellena al abrir).
@@ -176,7 +179,7 @@ export function maduracionView(root) {
   // Dibujo de gráficos (tras insertar el DOM).
   if (vState.sub === 'panorama') drawPanorama(model, f);
   else if (vState.sub === 'operativo') drawOperativo(model, f);
-  else drawHembras(model, f);
+  else if (vState.sub !== 'calidad') drawHembras(model, f);
 
   bind(root);
 }
@@ -846,6 +849,26 @@ function mareaHTML(model, f) {
     <table class="mc-table mc-table-sm mc-marea-dia"><tbody><tr>${d.dia.map((x) => `<td><b>${x.k}</b> ${p1(x.tasa)}</td>`).join('')}</tr></tbody></table>
     <p class="mc-note">Sólo las noches con desoves registrados (una noche sin ninguno suele ser un hueco del registro). Tasa = desoves ÷ hembras vivas esa noche. La marea es la de la hoja «Marea» (INOCAR). Con pocas noches por fase, las diferencias entre fases son sobre todo ruido; se afina con cada noche nueva. Si un día de la semana cae siempre, mira el registro de ese día.</p>
   </div>`;
+}
+
+/* T10 (2026-09-27, usuario) · la sub-vista «🩺 Calidad»: las comprobaciones con problemas primero (las graves antes),
+   desplegables con su lista y qué corregir; las limpias, con ✓. El Trovan abre su historial si la hembra existe. */
+function renderCalidad(q) {
+  const con = q.checks.filter((c) => c.cuenta > 0);   // el orden es el del modelo: las graves ya van primero
+  const dma = (d) => (d ? `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}` : '—');
+  const TOPE = 200;
+  const lista = (c) => (c.items.length ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm"><thead><tr><th>Trovan</th><th>Fecha</th><th>Hoja</th><th>Qué pasa</th></tr></thead><tbody>${c.items.slice(0, TOPE).map((i) => `<tr>`
+    + `<td>${i.abrible ? `<button class="mc-trovan" data-mc-female="${esc(i.trovan)}">${esc(i.trovan)}</button>` : esc(i.trovan || '—')}</td><td>${dma(i.fecha)}</td><td>${esc(i.hoja)}</td><td>${esc(i.detalle)}</td></tr>`).join('')}</tbody></table></div>`
+    + (c.items.length > TOPE ? `<p class="mc-note">Mostrando ${TOPE} de ${n0(c.items.length)}.</p>` : '') : '');
+  const bloques = con.map((c) => `<details class="mc-chk is-${c.sev}"><summary><span class="mc-chk-t">${esc(c.titulo)}</span> <span class="mc-chk-n">${n0(c.cuenta)}</span></summary>`
+    + `${lista(c)}<p class="mc-chk-corr">Qué hacer en el Sheet: ${esc(c.corregir)}</p></details>`).join('');
+  const limpias = q.checks.filter((c) => !c.cuenta).map((c) => `<div class="mc-chk-ok">✓ ${esc(c.titulo)}</div>`).join('');
+  return `<div class="mc-body"><div class="mc-grid"><div class="mc-card mc-card-wide">
+    <h4 class="mc-card-h">🩺 Calidad del registro reproductivo <span class="mc-h-note">${n0(q.total)} problema${q.total === 1 ? '' : 's'} abierto${q.total === 1 ? '' : 's'} · no depende de los filtros</span></h4>
+    ${bloques || vacioHTML('El registro reproductivo no tiene problemas detectados', { icono: '✅', conFiltros: false })}
+    <div class="mc-chk-oks">${limpias}</div>
+    <p class="mc-note">MATRIZ ↔ Bitácora: lo que no puede ser. Se corrige en el Sheet (Registros → Maduración → Reproductivo); al recargar, la cuenta baja.</p>
+  </div></div></div>`;
 }
 
 /* V9 (2026-09-27, usuario) · la silueta de la vista mientras cargan los datos (cabecera, 7 KPI y 2 tarjetas, con un

@@ -885,6 +885,56 @@ export function desovesYMarea(model, marea, f) {
   };
 }
 
+/* ── T10 · La calidad del registro reproductivo (2026-09-27, usuario) ── */
+const TROVAN_OK = /^[0-9A-F]{10}$/;
+const chipDe = (t) => String(t || '').split('·')[0];
+const dmaFecha = (d) => (d ? `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}` : '');
+/** Las comprobaciones del registro contra sí mismo (MATRIZ ↔ Bitácora), las graves primero, y los cuatro avisos que ya
+ *  existían (fechas futuras, imposibles, individuos repetidos, eventos sin ubicación). Cada una: su cuenta, su lista
+ *  (Trovan, fecha, hoja, qué pasa; `abrible` si la hembra está en la MATRIZ) y qué corregir en el Sheet. NO depende de
+ *  los filtros de la vista. Un Trovan con formato inválido NO se cuenta además como «huérfano»: es el mismo evento. */
+export function calidadDelRegistro(model) {
+  const K = (d) => (d ? dayKey(d) : '');
+  const fem = (e) => model.byTrovan.get(e.trovan);
+  const evs = model.desoves.map((e) => ({ ...e, tipo: EVENTO_DESOVE })).concat(model.mortalidades.map((e) => ({ ...e, tipo: EVENTO_MORTALIDAD })))
+    .sort((a, b) => a.date - b.date);
+  const it = (e, detalle, hoja = 'Bitácora') => ({ trovan: e.trovan, fecha: e.date || null, hoja, detalle, abrible: model.byTrovan.has(e.trovan) });
+  const mortDe = new Map();
+  model.mortalidades.forEach((e) => { if (!mortDe.has(e.trovan)) mortDe.set(e.trovan, []); mortDe.get(e.trovan).push(e); });
+  const vistos = new Map();
+  const repetidos = evs.filter((e) => { const k = e.trovan + '|' + K(e.date) + '|' + e.tipo; const n = vistos.get(k) || 0; vistos.set(k, n + 1); return n > 0; });
+  const sinTraslados = !(model.transferRowCount > 0);
+  const checks = [
+    { clave: 'trovan-formato', titulo: 'Trovan con formato inválido', sev: 'alta', corregir: 'Reescribir el código leído del chip (10 caracteres 0-9 A-F); suele ser una fecha pegada en la columna del Trovan',
+      items: evs.filter((e) => !TROVAN_OK.test(chipDe(e.trovan))).map((e) => it(e, `«${e.trovan}» no es un Trovan de 10 caracteres (0-9 A-F)`)) },
+    { clave: 'huerfano', titulo: 'Eventos de un Trovan que no está en la MATRIZ', sev: 'alta', corregir: 'Verificar el código o dar de alta la hembra en la MATRIZ',
+      items: evs.filter((e) => TROVAN_OK.test(chipDe(e.trovan)) && !fem(e)).map((e) => it(e, `${e.tipo} de un chip sin hembra en la MATRIZ`)) },
+    { clave: 'desove-tras-muerte', titulo: 'Desoves posteriores a la muerte', sev: 'alta', corregir: 'Verificar la fecha del desove, el chip o la «Fecha muerte» de la MATRIZ',
+      items: evs.filter((e) => e.tipo === EVENTO_DESOVE && fem(e) && fem(e)._muerte && K(e.date) > K(fem(e)._muerte)).map((e) => it(e, `Murió el ${dmaFecha(fem(e)._muerte)}`)) },
+    { clave: 'mort-viva', titulo: 'Mortalidad con la hembra viva en la MATRIZ', sev: 'alta', corregir: 'Poner Estado = Muerto y su fecha en la MATRIZ, o anular la mortalidad',
+      items: evs.filter((e) => e.tipo === EVENTO_MORTALIDAD && fem(e) && fem(e).estado !== ESTADO_MUERTO).map((e) => it(e, 'La MATRIZ la tiene «Vivo»')) },
+    { clave: 'dos-mort', titulo: 'Dos mortalidades de la misma hembra', sev: 'alta', corregir: 'Eliminar la mortalidad repetida o revisar el chip',
+      items: [...mortDe.values()].filter((a) => a.length > 1).flatMap((a) => a.slice().sort((x, y) => x.date - y.date).slice(1)).map((e) => it(e, 'Otra mortalidad de la misma hembra')) },
+    { clave: 'futuros', titulo: 'Eventos con fecha futura', sev: 'alta', corregir: 'Corregir el año tecleado',
+      items: (model.futureEvents || []).map((e) => ({ trovan: e.trovan || '', fecha: e.date || null, hoja: 'salaOrigen' in e ? 'Transferencias' : 'Bitácora', detalle: `Fecha futura: ${e.fecha}`, abrible: model.byTrovan.has(e.trovan) })) },
+    { clave: 'fechas-imposibles', titulo: 'Fechas imposibles', sev: 'alta', corregir: 'Corregir la fecha (día 32, 31 de febrero, mes 13…): esas filas no se cuentan',
+      items: (model.invalidDates || []).map((b) => ({ trovan: b.trovan || '', fecha: null, hoja: b.hoja, detalle: `Fecha imposible «${b.fecha}»`, abrible: model.byTrovan.has(b.trovan) })) },
+    { clave: 'antes-ingreso', titulo: 'Eventos anteriores al ingreso', sev: 'media', corregir: 'Verificar la fecha del evento o la «Fecha ingreso» de la MATRIZ',
+      items: evs.filter((e) => fem(e) && fem(e)._ingreso && K(e.date) < K(fem(e)._ingreso)).map((e) => it(e, `Ingresó el ${dmaFecha(fem(e)._ingreso)}`)) },
+    { clave: 'mort-fecha', titulo: 'Mortalidad en fecha distinta de la «Fecha muerte»', sev: 'media', corregir: 'Igualar la fecha de la mortalidad y la «Fecha muerte» de la MATRIZ',
+      items: evs.filter((e) => e.tipo === EVENTO_MORTALIDAD && fem(e) && fem(e).estado === ESTADO_MUERTO && fem(e)._muerte && K(e.date) !== K(fem(e)._muerte)).map((e) => it(e, `La MATRIZ dice ${dmaFecha(fem(e)._muerte)}`)) },
+    { clave: 'sin-mort', titulo: 'Muerta sin su mortalidad en la Bitácora', sev: 'media', corregir: 'Registrar la mortalidad en la Bitácora (o revisar el Estado de la MATRIZ)',
+      items: model.females.filter((r) => r.estado === ESTADO_MUERTO && !mortDe.has(r.trovan)).map((r) => ({ trovan: r.trovan, fecha: r._muerte || null, hoja: 'MATRIZ', detalle: 'Muerta en la MATRIZ sin mortalidad en la Bitácora', abrible: true })) },
+    { clave: 'duplicado', titulo: 'Eventos repetidos el mismo día', sev: 'media', corregir: 'Eliminar la fila repetida de la Bitácora',
+      items: repetidos.map((e) => it(e, `${e.tipo} repetido el mismo día`)) },
+    { clave: 'chips-repetidos', titulo: 'Individuos repetidos en la MATRIZ', sev: 'media', corregir: 'Eliminar la fila sobrante (misma piscina, código genético y lote)',
+      items: (model.duplicateTrovans || []).map((t) => ({ trovan: t, fecha: null, hoja: 'MATRIZ', detalle: 'La misma cuaterna dos veces: la fila sobrante no se cuenta', abrible: model.byTrovan.has(t) })) },
+    { clave: 'derivados', titulo: 'Eventos sin Sala/Tanque ni traslados para situarlos', sev: 'media', corregir: 'Registrar los traslados en Registros → Maduración → Reproductivo',
+      items: [], cuenta: model.derivedEvents > 0 && sinTraslados ? model.derivedEvents : 0 },
+  ].map((c) => ({ ...c, cuenta: c.cuenta ?? c.items.length }));
+  return { checks, total: checks.reduce((s, c) => s + c.cuenta, 0) };
+}
+
 /* ── Clasificación de hembras (activa/inactiva/transferida/fallecida) ── */
 export function classifyFemale(rec, model, ref) {
   if (!rec) return 'inactiva';
