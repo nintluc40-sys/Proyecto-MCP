@@ -18,7 +18,7 @@
      · Salinidad > MAD_NAUP_SAL_MAX (60 ‰) y Temperatura > MAD_NAUP_TEMP_MAX (40 °C) — topes de aviso
        CONFIRMADOS por el usuario el 2026-09-15; avisan y no bloquean.
      · Hongos «Presente» — el único valor binario cuyo significado no admite lectura: lo normal es «Ausente».
-     · Alcalinidad — con el umbral vigente de `operativo.umbrales.js` (hoy el bibliográfico, ≥ 100).
+     · Alcalinidad — con el umbral vigente de `operativo.umbrales.js` (desde el 2026-09-26 el del laboratorio, 120–150).
    Deformidad, Actividad, Fototropismo y Aireación se enseñan TAL CUAL, sin veredicto: no hay ninguna fuente
    que diga cuál de «Alta», «Media» o «Baja» está bien, y aquí una escala inventada sería peor que ninguna.
    Es el mismo criterio con el que la mortalidad del día y las cargas se quedaron sin cifra (Fase 0.4).

@@ -155,11 +155,11 @@ describe('Maduración · revisiones · la alcalinidad por área', () => {
     expect(s1.dia).toMatchObject({ valor: 95, fecha: '2026-09-18', estado: 'bajo' });
     expect(s1.noche).toMatchObject({ valor: 130, fecha: '2026-09-19', estado: 'ok' });
     const s2 = a.areas.find((x) => x.area === 'Sala 2');
-    expect(s2.dia).toMatchObject({ valor: 105, estado: 'ok' });
+    expect(s2.dia).toMatchObject({ valor: 105, estado: 'bajo' });   // < 120, el rango del laboratorio (2026-09-26)
     expect(s2.noche).toMatchObject({ valor: null, estado: '' });      // sin lectura: sin veredicto
     expect(a.areas.find((x) => x.area === 'Sala 3').dia.valor).toBe(null);
     expect(a.conDato).toBe(3);
-    expect(a.umbral).toMatchObject({ min: 100 });
+    expect(a.umbral).toMatchObject({ min: 120, max: 150, origen: 'laboratorio' });
   });
 
   it('🔴 el RAS no es una sala: pasa el filtro de sala, porque alimenta a todas', () => {

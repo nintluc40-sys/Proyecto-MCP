@@ -1664,7 +1664,7 @@ function semaforoHTML(r, p) {
 
 function alcalinidadHTML(a, p) {
   return `<div class="mc-card">
-    <h4 class="mc-card-h">🧪 Alcalinidad por área <span class="mc-h-note">${esc(etiquetaPeriodo(p))} · ${a.umbral ? '≥ ' + nf(a.umbral.min) + ' mg/L' : 'sin umbral'}</span></h4>
+    <h4 class="mc-card-h">🧪 Alcalinidad por área <span class="mc-h-note">${esc(etiquetaPeriodo(p))} · ${a.umbral ? esc(a.umbral.referencia) + (a.umbral.origen === 'laboratorio' ? ' · laboratorio' : '') : 'sin umbral'}</span></h4>
     <div class="mc-tablewrap"><table class="mc-table mc-table-sm">
       <thead><tr><th>Área</th><th class="r">Día</th><th class="r">Noche</th></tr></thead>
       <tbody>${a.areas.map((x) => `<tr>

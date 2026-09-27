@@ -19,6 +19,7 @@ export const FUENTES = {
   FAO_FICHA: 'FAO. Cultured Aquatic Species Information Programme — Penaeus vannamei (Boone, 1931). FAO Fisheries and Aquaculture Department.',
   REN2020: 'Ren, S., Mather, P. B., Tang, B. y Hurwood, D. A. (2020). Comparison of reproductive performance of domesticated Litopenaeus vannamei females reared in recirculating tanks and earthen ponds. Frontiers in Marine Science 7: 560.',
   FICHA_ALIMENTACION: 'Laboratorio: rango de la ficha 🍤 Alimentación del registro (MAD_ALIM_PCT_MIN / MAD_ALIM_PCT_MAX).',
+  LAB_ALCALINIDAD: 'Laboratorio: rango de alcalinidad indicado por el usuario el 2026-09-26 (120–150 mg/L CaCO₃), el mismo que usa 🧫 Calidad de Agua.',
   USUARIO: 'Usuario: decisión del 2026-09-25 para las alertas de 📉 Tendencias y ⏳ Permanencia del tablero (UMBRALES_DE_AVISO).',
 };
 
@@ -31,7 +32,9 @@ export const UMBRALES = {
   oxigeno: { nombre: 'Oxígeno disuelto', unidad: 'mg/L',
     bibliografia: { min: 4, max: null, referencia: '≥ 4 mg/L', fuente: ['FAO2003', 'ALBALAT2022'] }, laboratorio: null },
   alcalinidad: { nombre: 'Alcalinidad', unidad: 'mg/L CaCO₃',
-    bibliografia: { min: 100, max: null, referencia: '≥ 100 mg/L CaCO₃', fuente: ['FAO2003', 'ALBALAT2022'] }, laboratorio: null },
+    bibliografia: { min: 100, max: null, referencia: '≥ 100 mg/L CaCO₃', fuente: ['FAO2003', 'ALBALAT2022'] },
+    /* 2026-09-26 (usuario): «el rango de alcalinidad se maneja de 120-150». Manda sobre el bibliográfico. */
+    laboratorio: { min: 120, max: 150, referencia: '120–150 mg/L CaCO₃', fuente: ['LAB_ALCALINIDAD'] } },
   salinidad: { nombre: 'Salinidad', unidad: '‰',
     bibliografia: { min: 30, max: 35, referencia: '30–35 ‰', fuente: ['FAO2003', 'ALBALAT2022'] }, laboratorio: null },
   densidad: { nombre: 'Densidad del tanque', unidad: 'animales/m²',

@@ -777,6 +777,7 @@ describe('Maduración · operativo · 🔍 Revisiones', () => {
     expect(s1.textContent).toContain('95');
     expect(s1.textContent).toContain('120');
     expect(a.textContent).toContain('no borra la del día');
+    expect(a.querySelector('.mc-h-note').textContent, 'el rótulo dice el rango y de dónde sale').toContain('120–150 mg/L CaCO₃ · laboratorio');
   });
 
   it('🔴 la mortalidad en desove se enseña y se DICE que no se suma a Bajas', async () => {

@@ -68,7 +68,8 @@ describe('Maduración · umbrales · el veredicto', () => {
   it('los valores publicados: 28–29 °C, ≥ 4 mg/L, ≥ 100 mg/L, 30–35 ‰, 6–15 /m², 1–2 hembras por macho', () => {
     expect(umbralVigente('temperatura')).toMatchObject({ min: 28, max: 29, origen: 'bibliografía' });
     expect(umbralVigente('oxigeno')).toMatchObject({ min: 4, max: null });
-    expect(umbralVigente('alcalinidad')).toMatchObject({ min: 100, max: null });
+    // La alcalinidad publicada sigue siendo ≥ 100; desde el 2026-09-26 MANDA la del laboratorio (120–150, prueba de abajo).
+    expect(UMBRALES.alcalinidad.bibliografia).toMatchObject({ min: 100, max: null });
     expect(umbralVigente('salinidad')).toMatchObject({ min: 30, max: 35 });
     expect(umbralVigente('densidad')).toMatchObject({ min: 6, max: 15 });
     expect(umbralVigente('proporcionHM')).toMatchObject({ min: 1, max: 2 });
@@ -99,6 +100,11 @@ describe('Maduración · umbrales · el veredicto', () => {
     expect(evaluar('temperatura', 27.5, lab)).toBe('ok');
     expect(umbralVigente('temperatura', lab)).toMatchObject({ min: 27, max: 30, origen: 'laboratorio' });
     expect(umbralVigente('oxigeno', lab).origen).toBe('bibliografía');
+  });
+
+  it('🔴 alcalinidad (2026-09-26, usuario): manda el rango del laboratorio, 120–150, con los extremos dentro', () => {
+    expect(umbralVigente('alcalinidad')).toMatchObject({ min: 120, max: 150, origen: 'laboratorio', referencia: '120–150 mg/L CaCO₃' });
+    expect([119.9, 120, 150, 150.1].map((v) => evaluar('alcalinidad', v))).toEqual(['bajo', 'ok', 'ok', 'alto']);
   });
 
   it('encaja con las lecturas fuera de rango del tablero', () => {
