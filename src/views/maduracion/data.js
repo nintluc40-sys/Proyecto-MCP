@@ -500,6 +500,31 @@ export function mapaDeSalas(model, f) {
   }));
 }
 
+/* ── V2 · Calendario de desoves (2026-09-27, usuario) ── */
+/** Matriz tanque × día: los días del período (el mes elegido hasta el último dato, o todo el histórico), una fila por
+ *  tanque con hembras con chip (los del filtro completo, en orden de sala y número) y la fila «Granja». La Granja y los
+ *  HUECOS (días sin ningún desove) son de toda la granja: no dependen de la sala/tanque elegidos, o un tanque con
+ *  noches sin desovar pintaría huecos del registro que no lo son. */
+export function calendarioDesoves(model, f) {
+  const v = ventana(model, f);
+  const vacio = { dias: [], granja: [], filas: [], huecos: [], max: 0, maxGranja: 0 };
+  if (!v) return vacio;
+  const dias = [];
+  for (let d = dia0(v.a); d <= dia0(v.b); d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) dias.push(dayKey(d));
+  const pos = new Map(dias.map((k, i) => [k, i]));
+  const granja = dias.map(() => 0);
+  desovesIn(model, { ...f, sala: null, tanque: null }).forEach((e) => { const i = pos.get(dayKey(e.date)); if (i != null) granja[i]++; });
+  const porTanque = new Map();
+  locationStats(model, f, 'tanque').filter((x) => x.key !== '—').forEach((x) => porTanque.set(x.key, { key: x.key, sala: x.sala, tanque: x.tanque, n: dias.map(() => 0), total: 0 }));
+  desovesIn(model, f).forEach((e) => {
+    const r = porTanque.get(locKey(e.sala, e.tanque)); const i = pos.get(dayKey(e.date));
+    if (r && i != null) { r.n[i]++; r.total++; }
+  });
+  const filas = [...porTanque.values()].sort((a, b) => String(a.sala).localeCompare(String(b.sala), 'es', { numeric: true }) || (numTanque(a.tanque) ?? 0) - (numTanque(b.tanque) ?? 0));
+  return { dias, granja, filas, huecos: granja.map((n) => n === 0),
+    max: filas.reduce((m, r) => Math.max(m, ...r.n), 0), maxGranja: Math.max(0, ...granja) };
+}
+
 /* ── Ranking de hembras por nº de desoves ── */
 export function femaleRanking(model, f) {
   const map = new Map();

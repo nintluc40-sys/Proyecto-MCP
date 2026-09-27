@@ -10,7 +10,7 @@ import { fmtShort } from '../../core/dates.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import {
   MAD_MATRIZ_ORIGIN, MAD_BITACORA_ORIGIN, MAD_TRANSFER_ORIGIN,
-  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas,
+  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves,
   buildReproModel, makeFilter, monthLabel, kpis, locationStats, femaleRanking,
   femaleHistory, neverSpawned, recoveryDistribution, stateDistribution,
   mortalityBreakdown, trends, salasOf, tanquesOf, lotesOf, codigosOf, locKey,
@@ -448,7 +448,33 @@ function renderOperativo(model, f) {
     : '<div class="empty-state" style="padding:20px">Sin mortalidades en el período.</div>'}
   </div>`;
 
-  return `<div class="mc-body"><div class="mc-grid">${mapaSalasHTML(model, f)}${rankTable}${prodChart}${mortChart}</div></div>`;
+  return `<div class="mc-body"><div class="mc-grid">${mapaSalasHTML(model, f)}${calendarioHTML(model, f)}${rankTable}${prodChart}${mortChart}</div></div>`;
+}
+
+/* V2 (2026-09-27, usuario) · el calendario de desoves: tanque × día, con la intensidad del Nº de desoves de cada noche
+   (`--mc-cal-a`, de 0 a 1 sobre el máximo de su fila de referencia) y los días sin NINGÚN desove en la granja rayados.
+   Con un mes, la cifra va dentro de la celda; en todo el histórico sólo el color (la cifra, al pasar el ratón). */
+function calendarioHTML(model, f) {
+  const c = calendarioDesoves(model, f);
+  if (!c.dias.length) return '';
+  const conCifra = c.dias.length <= 31;
+  const dma = (k) => k.slice(8, 10) + '/' + k.slice(5, 7) + '/' + k.slice(0, 4);
+  const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const hueco = (i) => (c.huecos[i] ? ' is-hueco' : '');
+  const celda = (quien, n, i, max) => {
+    const a = n && max ? Math.round((0.18 + 0.82 * (n / max)) * 100) / 100 : 0;
+    return `<td class="${n ? '' : 'is-0'}${hueco(i)}${a >= 0.6 ? ' is-alto' : ''}"${n ? ` style="--mc-cal-a:${a}"` : ''} title="${esc(quien)} · ${dma(c.dias[i])}: ${n} desove${n === 1 ? '' : 's'}">${conCifra && n ? n : ''}</td>`;
+  };
+  const cab = c.dias.map((k, i) => { const d = +k.slice(8, 10); return `<th class="mc-cal-d${hueco(i)}" title="${dma(k)}">${d === 1 || i === 0 ? `<span class="mc-cal-m">${MES[+k.slice(5, 7) - 1]}</span>` : ''}${d}</th>`; }).join('');
+  const fila = (quien, ns, max, cls) => `<tr${cls ? ` class="${cls}"` : ''}><th>${esc(quien)}</th>${ns.map((n, i) => celda(quien, n, i, max)).join('')}</tr>`;
+  const nH = c.huecos.filter(Boolean).length;
+  return `<div class="mc-card mc-card-wide mc-cal-card">
+    <h4 class="mc-card-h">📅 Calendario de desoves <span class="mc-h-note">Nº de desoves por noche y tanque</span></h4>
+    <div class="mc-cal-wrap"><table class="mc-cal${conCifra ? '' : ' is-compacto'}"><thead><tr><th></th>${cab}</tr></thead><tbody>
+      ${fila('Granja', c.granja, c.maxGranja, 'mc-cal-granja')}${c.filas.map((r) => fila(r.key, r.n, c.max)).join('')}
+    </tbody></table></div>
+    <p class="mc-note mc-cal-nota">${nH ? `<b>${n0(nH)} de ${n0(c.dias.length)} días sin ningún desove en la granja</b> (rayados): huecos del registro o noches sin desoves. ` : ''}La fila Granja es el total de todos los tanques; la intensidad de cada fila se mide contra el máximo de los tanques.</p>
+  </div>`;
 }
 
 /* V1 (2026-09-27, usuario) · el mapa de salas: cada tanque FÍSICO en su banda de tasa por noche (4 bandas con la
