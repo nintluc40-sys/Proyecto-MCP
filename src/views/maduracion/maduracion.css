@@ -238,3 +238,7 @@
 .mc-tasa-b.is-b-baja { background: #f2b33d; color: #3a2a00; }
 .mc-tasa-b.is-b-rango { background: #2e9e5b; color: #fff; }
 .mc-tasa-b.is-b-alta { background: #3f7fd0; color: #fff; }
+
+/* T3 (2026-09-27, usuario) · supervivencia por familia */
+.mc-surv-card .mc-seg { margin-left: auto; }
+.mc-surv-card .mc-table { margin-top: 10px; }

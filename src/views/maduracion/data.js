@@ -457,6 +457,46 @@ export function productividadPorFamilia(model, f, campo = 'codigo') {
   }).sort((a, b) => (b.tasa ?? -1) - (a.tasa ?? -1) || b.desoves - a.desoves);
 }
 
+/* ── T3 · Supervivencia Kaplan–Meier por familia (2026-09-27, usuario) ── */
+/** Días desde el ingreso hasta la muerte; las vivas cuentan hasta el último dato de la granja (censuradas).
+ *  S(t) = Π (1 − dᵢ/nᵢ) en cada día con muertes. Por familia (código genético o lote), con la población del filtro
+ *  (`passFem`: sala/tanque/lote/código) y SIN el mes: se mide desde el ingreso. Cada curva termina en su seguimiento
+ *  máximo (no se extrapola): `s15`/`s30` son null si ninguna hembra de la familia llegó a ese día. Una muerta sin fecha
+ *  de muerte no se puede situar: se cuenta aparte (`sinFecha`). */
+export function supervivenciaPorFamilia(model, f, campo = 'codigo') {
+  const clave = campo === 'lote' ? 'lote' : 'codigo';
+  const fin = model.dataMaxDate;
+  const grupos = new Map();
+  let sinFecha = 0;
+  model.females.filter((r) => passFem(r, f) && r._ingreso).forEach((r) => {
+    const muerta = r.estado === ESTADO_MUERTO;
+    if (muerta && !r._muerte) { sinFecha++; return; }
+    const hasta = muerta ? r._muerte : fin; if (!hasta) return;
+    const t = Math.max(0, Math.round((dia0(hasta) - dia0(r._ingreso)) / 864e5));
+    const k = dash(r[clave]); if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push({ t, muere: muerta });
+  });
+  const r1 = (v) => Math.round(v * 1000) / 10;
+  return {
+    sinFecha,
+    grupos: [...grupos.entries()].sort((a, b) => _ordenEs(a[0], b[0])).map(([familia, arr]) => {
+      const seguimiento = Math.max(...arr.map((x) => x.t));
+      const dias = [...new Set(arr.filter((x) => x.muere).map((x) => x.t))].sort((a, b) => a - b);
+      let S = 1, mediana = null;
+      const puntos = [[0, 100]];
+      for (const t of dias) {
+        const n = arr.filter((x) => x.t >= t).length, d = arr.filter((x) => x.t === t && x.muere).length;
+        S *= 1 - d / n;
+        if (t === 0) puntos[0] = [0, r1(S)]; else puntos.push([t, r1(S)]);
+        if (mediana == null && S <= 0.5) mediana = t;
+      }
+      if (puntos[puntos.length - 1][0] < seguimiento) puntos.push([seguimiento, puntos[puntos.length - 1][1]]);
+      const en = (dia) => (seguimiento < dia ? null : puntos.reduce((v, [t, y]) => (t <= dia ? y : v), 100));
+      return { familia, n: arr.length, muertes: arr.filter((x) => x.muere).length, seguimiento, puntos, mediana, s15: en(15), s30: en(30) };
+    }),
+  };
+}
+
 /* ── Producción / fertilidad por ubicación (tanque o sala) ── */
 /** @param {'sala'|'tanque'|'loc'} level  agrupación: sala, tanque o Sala·Tanque. */
 export function locationStats(model, f, level = 'tanque') {

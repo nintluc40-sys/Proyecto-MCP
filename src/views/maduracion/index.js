@@ -10,7 +10,7 @@ import { fmtShort } from '../../core/dates.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import {
   MAD_MATRIZ_ORIGIN, MAD_BITACORA_ORIGIN, MAD_TRANSFER_ORIGIN,
-  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves, lineaDeVida, productividadPorFamilia, bandaTasa,
+  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves, lineaDeVida, productividadPorFamilia, bandaTasa, supervivenciaPorFamilia,
   buildReproModel, makeFilter, monthLabel, kpis, locationStats, femaleRanking,
   femaleHistory, neverSpawned, recoveryDistribution, stateDistribution,
   mortalityBreakdown, trends, salasOf, tanquesOf, lotesOf, codigosOf, locKey,
@@ -341,6 +341,7 @@ function renderPanorama(model, f) {
       ${topCard('🏆 Top tanques por desoves', topT, 'tanque')}
       ${topCard('🏆 Top salas por desoves', topS, 'sala')}
       ${familiasHTML(model, f)}
+      ${supervivenciaHTML(model, f)}
     </div>
   </div>`;
 }
@@ -360,6 +361,39 @@ function drawPanorama(model, f) {
     },
   });
   drawTrend(model);
+  drawSupervivencia(model, f);
+}
+
+/* T3 (2026-09-27, usuario) · la referencia del 50 % (la mediana es el día en que cada curva la cruza). */
+const MITAD = {
+  id: 'mcMitad',
+  afterDatasetsDraw(ch) {
+    const c = ch.ctx, y = ch.scales.y.getPixelForValue(50), a = ch.chartArea;
+    c.save(); c.strokeStyle = 'rgba(120,144,156,.8)'; c.lineWidth = 1.5; c.setLineDash([6, 4]);
+    c.beginPath(); c.moveTo(a.left, y); c.lineTo(a.right, y); c.stroke();
+    c.setLineDash([]); c.fillStyle = 'rgba(96,125,139,1)'; c.font = '600 11px system-ui, sans-serif'; c.fillText('50 %', a.left + 4, y - 4); c.restore();
+  },
+};
+const PALETA_FAM = ['#0f7c9a', '#e0533b', '#2e9e5b', '#3f7fd0', '#8a5cc2', '#d99a00'];
+function drawSupervivencia(model, f) {
+  const s = supervivenciaPorFamilia(model, f, vState.familia === 'lote' ? 'lote' : 'codigo');
+  if (!s.grupos.length || !document.getElementById('mcSurv')) return;
+  const E = ejes();
+  makeChart('mcSurv', {
+    type: 'line',
+    data: { datasets: s.grupos.map((g, i) => ({ label: g.familia, data: g.puntos.map(([x, y]) => ({ x, y })), stepped: 'after',
+      borderColor: PALETA_FAM[i % PALETA_FAM.length], backgroundColor: PALETA_FAM[i % PALETA_FAM.length], borderWidth: 2.5, pointRadius: 0, pointHitRadius: 6 })) },
+    plugins: [MITAD],
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'nearest', intersect: false },
+      scales: {
+        x: { type: 'linear', min: 0, ticks: { ...E.tick, precision: 0 }, grid: { color: E.grid }, title: E.titulo('días en sala (desde el ingreso)') },
+        y: { min: 0, max: 100, ticks: { ...E.tick, callback: (v) => v + '%' }, grid: { color: E.grid }, title: E.titulo('% vivas') },
+      },
+      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 12 }, color: E.texto } },
+        tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${n1(c.parsed.y)} % vivas al día ${c.parsed.x}` } } },
+    },
+  });
 }
 
 /** Dibuja SOLO el gráfico de Tendencias (#mcTrend) según trendCtx. Separado para el
@@ -695,6 +729,24 @@ function familiasHTML(model, f) {
     <p class="mc-note">Tasa/noche = desoves ÷ noches que sus hembras estuvieron vivas en el período (ref. ${TASA_DESOVE_REF.referencia}). Las familias no tienen por qué haber coincidido en el tiempo: compara la tasa mirando también su período.</p>`
     : vacioHTML('Sin hembras en este filtro');
   return `<div class="mc-card mc-card-wide mc-fam-card"><h4 class="mc-card-h">🧬 Productividad por familia ${seg}</h4>${cuerpo}</div>`;
+}
+
+/* T3 (2026-09-27, usuario) · la supervivencia por familia: el gráfico Kaplan–Meier y su tabla (n, muertes, seguimiento,
+   % vivas a 15 y 30 días —«—» si no se ha llegado— y la mediana). Con el MISMO selector que Productividad. */
+function supervivenciaHTML(model, f) {
+  const campo = vState.familia !== 'lote' ? 'codigo' : 'lote';
+  const s = supervivenciaPorFamilia(model, f, campo);
+  const seg = `<div class="mc-seg">${[['codigo', 'Código genético'], ['lote', 'Lote']].map(([k, l]) =>
+    `<button type="button" class="mc-seg-b${campo === k ? ' is-on' : ''}" data-mc-familia="${k}" aria-pressed="${campo === k}">${l}</button>`).join('')}</div>`;
+  const pc = (v) => (v == null ? '—' : n1(v) + ' %');
+  const cuerpo = s.grupos.length ? `<div class="mc-chart" style="height:250px"><canvas id="mcSurv"></canvas></div>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm"><thead><tr><th>${campo === 'lote' ? 'Lote' : 'Código genético'}</th><th class="r">Hembras</th><th class="r">Muertes</th>
+      <th class="r" title="días de la que más tiempo lleva en sala">Seguimiento</th><th class="r">Vivas a 15 d</th><th class="r">Vivas a 30 d</th><th class="r" title="día en que quedan la mitad">Mediana</th></tr></thead>
+      <tbody>${s.grupos.map((g) => `<tr><td><b>${esc(g.familia)}</b></td><td class="r">${n0(g.n)}</td><td class="r">${n0(g.muertes)}</td><td class="r">${n0(g.seguimiento)} d</td>
+        <td class="r">${pc(g.s15)}</td><td class="r">${pc(g.s30)}</td><td class="r">${g.mediana == null ? '<span class="muted">no alcanzada</span>' : n0(g.mediana) + ' d'}</td></tr>`).join('')}</tbody></table></div>
+    <p class="mc-note">Kaplan–Meier: días desde el ingreso hasta la muerte; las vivas cuentan hasta el último dato. Cada curva termina donde termina su seguimiento (no se extrapola). Sigue sala, tanque, lote y código, no el mes.${s.sinFecha ? ` ${n0(s.sinFecha)} muerta(s) sin fecha de muerte quedan fuera.` : ''}</p>`
+    : vacioHTML('Sin hembras en este filtro');
+  return `<div class="mc-card mc-card-wide mc-surv-card"><h4 class="mc-card-h">🫀 Supervivencia por familia ${seg}</h4>${cuerpo}</div>`;
 }
 
 /* V9 (2026-09-27, usuario) · la silueta de la vista mientras cargan los datos (cabecera, 7 KPI y 2 tarjetas, con un
