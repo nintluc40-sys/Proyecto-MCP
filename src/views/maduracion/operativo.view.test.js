@@ -123,7 +123,10 @@ describe('Maduración · operativo · 📊 Estado actual', () => {
     expect(filas.find((f) => f.textContent.includes('Tanques')).classList.contains('mop-atrasada')).toBe(true);
     expect(root.textContent).toContain('pasa a Producción el 26/09');
     expect(errSpy).not.toHaveBeenCalled();
-  });
+  /* 2026-09-27 · tope propio: es el PRIMER test del archivo y paga la carga en frío de operativo.view.js y de lo que importa
+     (entre ello, data.js de Microchips, que crece). Solo tarda ~1,3 s; como primero de un shard con carga llegó a 4,25 s y
+     falló varias veces por el tope de 5 s de vitest. No cambia lo que comprueba. */
+  }, 20000);
 
   it('filtros: sala → tanque en cascada (el 1 de la Sala 1 no es el de la Sala 4), lote → código, y ✕ Limpiar', async () => {
     await montar(PLANTA);
