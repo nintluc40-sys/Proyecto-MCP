@@ -89,7 +89,7 @@ const diaMes = (d) => String(d.getDate()).padStart(2, '0') + '/' + String(d.getM
    ============================================================ */
 export function maduracionView(root) {
   if (!store.globalData.length) {
-    root.innerHTML = `<div class="empty-state">📡 Conectando… cargando datos del sistema.</div>`;
+    root.innerHTML = esqueletoHTML();   // V9 · la silueta de la vista mientras cargan los datos
     return;
   }
   destroyAllCharts();
@@ -325,7 +325,7 @@ function renderPanorama(model, f) {
     <h4 class="mc-card-h">${esc(title)}</h4>
     ${arr.length ? `<table class="mc-table mc-table-sm"><thead><tr><th>${level === 'sala' ? 'Sala' : 'Tanque'}</th><th class="r">Desoves</th><th class="r" title="% de sus hembras que desovaron en el período">Fertilidad</th><th class="r" title="% de sus hembras que desovan cada noche">Tasa/noche</th></tr></thead>
       <tbody>${arr.map((x) => `<tr><td>${txt(level === 'sala' ? x.sala || x.key : x.key)}</td><td class="r">${barra(x.desoves, maxDe(arr, 'desoves'))}</td><td class="r">${pct(x.fertilidad)}</td><td class="r">${tasaBadge(x.tasaDesove)}</td></tr>`).join('')}</tbody></table>`
-    : '<div class="empty-state" style="padding:16px">Sin datos en el período.</div>'}</div>`;
+    : vacioHTML('Sin desoves en este filtro')}</div>`;
 
   return `<div class="mc-body">
     ${kpisHtml}
@@ -432,7 +432,7 @@ function renderOperativo(model, f) {
         <td class="r">${n1(x.eficiencia)}</td>
         <td class="r">${barra(x.mortalidad, maxDe(stats, 'mortalidad'), ' is-mort')}</td>
       </tr>`).join('')}</tbody></table></div>`
-    : '<div class="empty-state" style="padding:20px">Sin datos en el período.</div>'}
+    : vacioHTML('Sin datos de producción en este filtro')}
     <p class="mc-note">Fertilidad = % de las hembras observadas (con evento o vivas en la ubicación) que desovaron en el período: a lo largo de meses tiende al 100 %. Tasa/noche = desoves ÷ noches que sus hembras estuvieron vivas en el período (ref. ${TASA_DESOVE_REF.referencia}). Eficiencia = desoves ÷ hembras. Un tanque es sala + número.</p>
   </div>`;
 
@@ -445,7 +445,7 @@ function renderOperativo(model, f) {
   const mortChart = `<div class="mc-card">
     <h4 class="mc-card-h">Mortalidad por ${level === 'sala' ? 'sala' : 'tanque'} <span class="mc-h-note">${n0(mort.total)} total</span></h4>
     ${mortArr.length ? `<div class="mc-chart" style="height:${Math.max(180, Math.min(mortArr.length, 12) * 26 + 40)}px"><canvas id="mcMortBars"></canvas></div>`
-    : '<div class="empty-state" style="padding:20px">Sin mortalidades en el período.</div>'}
+    : vacioHTML('Sin mortalidades en este filtro', { icono: '✅' })}
   </div>`;
 
   return `<div class="mc-body"><div class="mc-grid">${mapaSalasHTML(model, f)}${calendarioHTML(model, f)}${rankTable}${prodChart}${mortChart}</div></div>`;
@@ -585,7 +585,8 @@ function renderHembras(model, f) {
         <td class="r"><button class="mc-mini" data-mc-female="${esc(r.trovan)}">Historial ›</button></td>
       </tr>`).join('')}</tbody></table></div>
       ${shown.length > 200 ? `<p class="mc-note">Mostrando 200 de ${n0(shown.length)}. Afina con el buscador o los filtros.</p>` : ''}`
-    : `<div class="empty-state" style="padding:20px">${vState.rankEstado === 'todas' ? 'Ninguna hembra con desoves para el filtro actual.' : 'Ninguna hembra ' + (vState.rankEstado === 'vivas' ? 'viva' : 'muerta') + ' con desoves para el filtro actual.'}</div>`}
+    : vacioHTML(vState.rankEstado === 'todas' ? 'Ninguna hembra con desoves en este filtro' : 'Ninguna hembra ' + (vState.rankEstado === 'vivas' ? 'viva' : 'muerta') + ' con desoves en este filtro',
+      { extra: vState.rankEstado === 'todas' ? [] : [vState.rankEstado === 'vivas' ? 'Vivas' : 'Muertas'] })}
   </div>`;
 
   const recCard = `<div class="mc-card">
@@ -594,14 +595,14 @@ function renderHembras(model, f) {
       <p class="mc-rec-sub">mediana ${n1(rec.mediana)} · la mitad entre ${n1(rec.p25)} y ${n1(rec.p75)} días</p>
       <div class="mc-chart" style="height:220px"><canvas id="mcInterval"></canvas></div>
       <p class="mc-note">${n0(rec.intervals.length)} intervalo(s) de ${n0(rec.hembrasConIntervalo)} hembra(s) con ≥2 desoves.</p>`
-    : '<div class="empty-state" style="padding:20px">Aún no hay hembras con dos o más desoves en el período.</div>'}
+    : vacioHTML('Aún no hay hembras con dos o más desoves', { icono: '⏳' })}
   </div>`;
 
   const neverCard = `<div class="mc-card">
     <h4 class="mc-card-h">Nunca han desovado <span class="mc-h-note">${n0(never.length)} hembra(s) vivas</span></h4>
     ${never.length ? `<div class="mc-chips">${never.slice(0, 60).map((r) => `<button class="mc-chip" data-mc-female="${esc(r.trovan)}" title="${esc(locKey(r.sala, r.tanque))}">${chipAnillo(r.color)}${esc(r.trovan)}</button>`).join('')}</div>
       ${never.length > 60 ? `<p class="mc-note">+${n0(never.length - 60)} más.</p>` : ''}`
-    : '<div class="empty-state" style="padding:20px">Todas las hembras vivas han desovado al menos una vez. 🎉</div>'}
+    : vacioHTML('Todas las hembras vivas han desovado al menos una vez', { icono: '🎉', conFiltros: false })}
   </div>`;
 
   return `<div class="mc-body">${searchBar}<div class="mc-grid">${rankTable}${recCard}${neverCard}</div></div>`;
@@ -647,6 +648,28 @@ function drawHembras(model, f) {
       },
     });
   }
+}
+
+/* V9 (2026-09-27, usuario) · la silueta de la vista mientras cargan los datos (cabecera, 7 KPI y 2 tarjetas, con un
+   brillo que se apaga con «menos movimiento»); el texto, para lectores de pantalla. */
+function esqueletoHTML() {
+  const kpi = '<div class="mc-sk-kpi"><i></i><i></i></div>';
+  return `<div class="mc-sk" aria-busy="true"><span class="mc-sr">Cargando datos del Registro Reproductivo…</span>
+    <div class="mc-sk-head"><i></i><i></i></div><div class="mc-sk-kpis">${kpi.repeat(7)}</div>
+    <div class="mc-sk-card"><i></i><i></i><i></i></div><div class="mc-sk-card"><i></i><i></i></div></div>`;
+}
+/* V9 · los filtros activos, en palabras: el PORQUÉ de un estado vacío. */
+function filtrosActivos() {
+  return [vState.month ? monthLabel(vState.month) : '', vState.sala || '', vState.tanque || '',
+    vState.lote ? 'Lote ' + vState.lote : '', vState.codigo ? 'Código ' + vState.codigo : ''].filter(Boolean);
+}
+/* V9 · un estado vacío: icono, qué falta, por qué (los filtros activos y `extra`) y, si hay filtros, «Quitar filtros».
+   `conFiltros: false` para lo que no depende de un filtro (el historial de una hembra, un logro). */
+function vacioHTML(que, { icono = '🔍', conFiltros = true, extra = [] } = {}) {
+  const porque = conFiltros ? [...filtrosActivos(), ...extra] : [];
+  return `<div class="mc-vacio"><div class="mc-vacio-i" aria-hidden="true">${icono}</div><p class="mc-vacio-t">${esc(que)}</p>`
+    + (porque.length ? `<p class="mc-vacio-f">${esc(porque.join(' · '))}</p><button type="button" class="mc-mini" data-mc-limpiar>Quitar filtros</button>` : '')
+    + '</div>';
 }
 
 /* V5 (2026-09-27, usuario) · la línea de vida: una franja del ingreso a la muerte (o al último dato), en tramos por
@@ -726,12 +749,12 @@ function openFemale(root, trovan) {
     const prev = i > 0 ? Math.round((e.date - hist.desoves[i - 1].date) / 86400000) : null;
     return `<div class="mc-tl-item"><span class="mc-tl-d">${esc(fmtShort(e.date))}</span><span class="mc-tl-loc">${txt(locKey(e.sala, e.tanque))}</span>${prev != null ? `<span class="mc-tl-gap">+${prev} d</span>` : '<span class="mc-tl-gap">—</span>'}</div>`;
   }).join('')}</div>
-  </div>` : '<div class="mc-fem-col"><h4 class="mc-card-h">Desoves</h4><div class="empty-state" style="padding:16px">Sin desoves registrados.</div></div>';
+  </div>` : `<div class="mc-fem-col"><h4 class="mc-card-h">Desoves</h4>${vacioHTML('Sin desoves registrados', { icono: '📭', conFiltros: false })}</div>`;
 
   const movList = `<div class="mc-fem-col">
     <h4 class="mc-card-h">Movimientos (${n0(hist.movimientos.length)})</h4>
     ${hist.movimientos.length ? `<div class="mc-timeline">${hist.movimientos.map((m) => `<div class="mc-tl-item"><span class="mc-tl-d">${dCell(m.date)}</span><span class="mc-tl-loc">${txt(locKey(m.salaOrigen, m.tanqueOrigen))} → ${txt(locKey(m.salaDestino, m.tanqueDestino))}</span><span class="mc-tl-gap">${esc(m.tipo || '')}</span></div>`).join('')}</div>`
-    : '<div class="empty-state" style="padding:16px">Sin transferencias.</div>'}
+    : vacioHTML('Sin transferencias', { icono: '📭', conFiltros: false })}
     ${hist.mortalidad.length ? `<div class="mc-fem-death">☠️ Mortalidad registrada: ${hist.mortalidad.map((e) => esc(fmtShort(e.date))).join(', ')}</div>` : ''}
   </div>`;
 
@@ -821,6 +844,12 @@ function bind(root) {
     if (pill) { vState.sub = pill.dataset.mcSub; maduracionView(root); return; }
 
     // Stepper de período (al cambiar de mes, el toggle de granularidad vuelve a "auto")
+    // V9 · «Quitar filtros»: todo el histórico, sin sala/tanque/lote/código (y el ranking con todas).
+    if (e.target.closest('[data-mc-limpiar]')) {
+      Object.assign(vState, { month: null, sala: null, tanque: null, lote: null, codigo: null, rankEstado: 'todas', trendGran: null });
+      maduracionView(root);
+      return;
+    }
     // V1 · un clic en un tanque del mapa lo pone en los filtros de la vista; otro clic en el mismo los quita.
     const mTq = e.target.closest('[data-mc-mapa]');
     if (mTq && !mTq.disabled) {
