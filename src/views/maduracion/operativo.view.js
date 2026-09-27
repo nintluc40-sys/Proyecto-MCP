@@ -593,6 +593,7 @@ function labModalHTML(p, F) {
 }
 const COLOR_BIOMOL = { IHHNV: '#ef4444', WSSV: '#f59e0b', BP: '#a78bfa', AHPND: '#38bdf8', NHPB: '#14b8a6', EHP: '#ec4899' };   // los de su vista
 function dibujarLab() {
+  const E = ejesOp();
   if (!_labTend || !document.getElementById('mopLabTend')) return;
   makeChart('mopLabTend', {
     type: 'line',
@@ -600,9 +601,9 @@ function dibujarLab() {
       backgroundColor: COLOR_BIOMOL[s.clave], tension: 0, borderWidth: 2, pointRadius: 3, spanGaps: false })) },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      scales: { x: { ticks: { ...EJE, maxRotation: 0, autoSkip: true }, grid: { display: false } },
-        y: { beginAtZero: true, suggestedMax: 100, ticks: EJE, grid: { color: REJILLA }, title: { display: true, text: '% positivos', color: EJE.color, font: { size: 10 } } } },
-      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 10 }, color: EJE.color } } },
+      scales: { x: { ticks: { ...E.tick, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+        y: { beginAtZero: true, suggestedMax: 100, ticks: E.tick, grid: { color: E.grid }, title: E.titulo('% positivos') } },
+      plugins: { legend: { labels: E.leyenda } },
     },
   });
 }
@@ -663,41 +664,42 @@ function salasKpiHTML(filas) {
   </table></div>`;
 }
 const COLOR_KPI = { hembras: '#d81b60', machos: '#1e88e5', total: '#455a64', cuarentena: '#f9a825', produccion: '#43a047', mixto: '#8e24aa',
-  otros: '#b0bec5', ocupados: '#00897b', libres: 'rgba(144,164,174,.35)', dia: 'rgba(224,83,59,.6)', acumulada: '#b71c1c',
-  desoves: 'rgba(15,124,154,.6)', n5: '#3949ab' };
+  otros: '#b0bec5', ocupados: '#00897b', libres: '#cfd8dc', dia: '#e0533b', acumulada: '#b71c1c',
+  desoves: '#0f7c9a', n5: '#3949ab' };
 /** 0f · 5 · dibuja el gráfico de la tarjeta abierta: líneas, barras apiladas, o barras con una línea en su propio eje. */
 function dibujarKpi(g) {
+  const E = ejesOp();
   if (!g || !g.etiquetas.length || !document.getElementById('mopKpiCurva')) return;
   const labels = g.etiquetas.map((e) => (esIso(e) ? dm(e) : e));
   const col = (s) => COLOR_KPI[s.clave] || '#546e7a';
-  const titulo = (text) => ({ display: true, text, color: EJE.color, font: { size: 10 } });
-  const x = { ticks: { ...EJE, maxRotation: 0, autoSkip: true }, grid: { display: false } };
+  const titulo = E.titulo;
+  const x = { ticks: { ...E.tick, maxRotation: 0, autoSkip: true }, grid: { display: false } };
   let datasets;
   let scales;
   if (g.tipo === 'lineas') {
     datasets = g.series.map((s) => ({ type: 'line', label: s.etiqueta, data: s.datos, borderColor: col(s), backgroundColor: col(s),
-      tension: 0.25, borderWidth: s.clave === 'total' ? 2.5 : 2, pointRadius: 0 }));
-    scales = { x, y: { beginAtZero: true, ticks: EJE, grid: { color: REJILLA } } };
+      tension: 0, borderWidth: s.clave === 'total' ? 2.5 : 2, pointRadius: 0 }));
+    scales = { x, y: { beginAtZero: true, ticks: E.tick, grid: { color: E.grid } } };
   } else if (g.tipo === 'barrasApiladas') {
     datasets = g.series.map((s) => ({ type: 'bar', label: s.etiqueta, data: s.datos, backgroundColor: col(s), stack: 'kpi' }));
     scales = { x: { ...x, stacked: true },
-      y: { stacked: true, beginAtZero: true, ticks: g.unidad === 'kg' ? EJE : { ...EJE, precision: 0 }, grid: { color: REJILLA }, ...(g.unidad ? { title: titulo(g.unidad) } : {}) } };
+      y: { stacked: true, beginAtZero: true, ticks: g.unidad === 'kg' ? E.tick : { ...E.tick, precision: 0 }, grid: { color: E.grid }, ...(g.unidad ? { title: titulo(g.unidad) } : {}) } };
   } else {
     const [b, l] = g.series;
     datasets = [
-      { type: 'bar', label: b.etiqueta, data: b.datos, backgroundColor: col(b), yAxisID: 'y' },
+      { type: 'bar', label: b.etiqueta, data: b.datos, backgroundColor: col(b), yAxisID: 'y', order: 1 },   // 0q·1 · sólida: la línea va encima
       // Recta (sin suavizar): son cifras de CADA día y una curva suavizada inventaría valores entre ellos, bajo el cero incluso.
       { type: 'line', label: l.etiqueta, data: l.datos, borderColor: col(l), backgroundColor: col(l), tension: 0, borderWidth: 2, pointRadius: 0, spanGaps: true, yAxisID: 'y2' },
     ];
-    scales = { x, y: { beginAtZero: true, ticks: EJE, grid: { color: REJILLA }, title: titulo(b.etiqueta) },
-      y2: { beginAtZero: true, position: 'right', ticks: EJE, grid: { display: false }, title: titulo(l.etiqueta) } };
+    scales = { x, y: { beginAtZero: true, ticks: E.tick, grid: { color: E.grid }, title: titulo(b.etiqueta) },
+      y2: { beginAtZero: true, position: 'right', ticks: E.tick, grid: { display: false }, title: titulo(l.etiqueta) } };
   }
   makeChart('mopKpiCurva', {
     type: 'bar',
     data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales,
-      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 10 }, color: EJE.color } } },
+      plugins: { legend: { labels: E.leyenda } },
     },
   });
 }
@@ -950,23 +952,24 @@ function cuarentenaHTML({ lista, sel }, p) {
 /** 0f · 4 · las curvas de una cuarentena: vivos ♀ y ♂ de ese lote en esa sala (líneas) y las bajas del día (barras, eje
  *  propio a la derecha: son decenas donde los vivos son cientos). */
 function dibujarCuarentena(c) {
+  const E = ejesOp();
   if (!c || !c.dias.length || !document.getElementById('mopCuarCurva')) return;
   makeChart('mopCuarCurva', {
     type: 'bar',
     data: {
       labels: c.dias.map((d) => dm(d.fecha)),
       datasets: [
-        { type: 'line', label: '♀ Hembras', data: c.dias.map((d) => d.hembras), borderColor: '#d81b60', backgroundColor: '#d81b60', tension: 0.25, borderWidth: 2, pointRadius: 0, yAxisID: 'y' },
-        { type: 'line', label: '♂ Machos', data: c.dias.map((d) => d.machos), borderColor: '#1e88e5', backgroundColor: '#1e88e5', tension: 0.25, borderWidth: 2, pointRadius: 0, yAxisID: 'y' },
-        { type: 'bar', label: 'Bajas del día', data: c.dias.map((d) => d.bajas), backgroundColor: 'rgba(120,144,156,.55)', yAxisID: 'y2' },
+        { type: 'line', label: '♀ Hembras', data: c.dias.map((d) => d.hembras), borderColor: '#d81b60', backgroundColor: '#d81b60', tension: 0, borderWidth: 2, pointRadius: 0, yAxisID: 'y' },
+        { type: 'line', label: '♂ Machos', data: c.dias.map((d) => d.machos), borderColor: '#1e88e5', backgroundColor: '#1e88e5', tension: 0, borderWidth: 2, pointRadius: 0, yAxisID: 'y' },
+        { type: 'bar', label: 'Bajas del día', data: c.dias.map((d) => d.bajas), backgroundColor: '#90a4ae', yAxisID: 'y2', order: 1 },   // las líneas, encima
       ],
     },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      scales: { x: { ticks: { ...EJE, maxRotation: 0, autoSkip: true }, grid: { display: false } },
-        y: { beginAtZero: true, ticks: EJE, grid: { color: REJILLA }, title: { display: true, text: 'vivos', color: EJE.color, font: { size: 10 } } },
-        y2: { beginAtZero: true, position: 'right', ticks: { ...EJE, precision: 0 }, grid: { display: false }, title: { display: true, text: 'bajas', color: EJE.color, font: { size: 10 } } } },
-      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 10 }, color: EJE.color } } },
+      scales: { x: { ticks: { ...E.tick, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: E.tick, grid: { color: E.grid }, title: E.titulo('vivos') },
+        y2: { beginAtZero: true, position: 'right', ticks: { ...E.tick, precision: 0 }, grid: { display: false }, title: E.titulo('bajas') } },
+      plugins: { legend: { labels: E.leyenda } },
     },
   });
 }
@@ -1098,15 +1101,29 @@ function detalleHTML(d, p, F) {
   </div>`;
 }
 
-const EJE = { color: '#78909c', font: { size: 10 } };
-const REJILLA = 'rgba(120,144,156,.16)';
+/* 0q·1 (2026-09-27, usuario) · «borrosos, transparentosos, no se aprecian las cantidades de los ejes» (como en Microchips).
+   Medido en Chrome: ejes, títulos y leyendas a 10 px en gris claro, rejilla al 16 %, barras al 55–60 % y curvas que
+   inventaban valores entre días. Ahora: ejes a 12 px en el color de TEXTO del tema (se lee de --c-text al dibujar: claro u
+   oscuro), títulos de eje a 11 px, leyendas a 12 px, rejilla al 30 %, barras sólidas y líneas rectas. */
+function ejesOp() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (n, d) => cs.getPropertyValue(n).trim() || d;
+  const texto = v('--c-text', '#1f2a30'), suave = v('--c-text-soft', '#546e7a');
+  return {
+    texto, tick: { color: texto, font: { size: 12 } },
+    titulo: (text) => ({ display: true, text, color: suave, font: { size: 11, weight: '600' } }),
+    grid: 'rgba(120,144,156,.3)',
+    leyenda: { usePointStyle: true, boxWidth: 10, font: { size: 12 }, color: texto },
+  };
+}
 const COLORES_OX = ['#00838f', '#1e88e5', '#7e57c2', '#e67e22'];
 
 function dibujarDetalle(d) {
+  const E = ejesOp();
   if (d.oxigeno.lecturas) {
     const u = d.oxigeno.umbral;
     const datasets = d.oxigeno.series.map((s, i) => ({ label: s.hora, data: s.valores, borderColor: COLORES_OX[i], backgroundColor: COLORES_OX[i],
-      tension: 0.25, pointRadius: 2.5, borderWidth: 2, spanGaps: true }));
+      tension: 0, pointRadius: 2.5, borderWidth: 2, spanGaps: true }));
     if (u && u.min !== null) {
       datasets.push({ label: `Mínimo ${nf(u.min, 1)} mg/L`, data: d.oxigeno.fechas.map(() => u.min), borderColor: '#e0533b', borderDash: [5, 4], pointRadius: 0, borderWidth: 1.5 });
     }
@@ -1115,17 +1132,17 @@ function dibujarDetalle(d) {
       data: { labels: d.oxigeno.fechas.map(dm), datasets },
       options: {
         responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-        scales: { x: { ticks: { ...EJE, maxRotation: 0, autoSkip: true }, grid: { display: false } },
-          y: { ticks: EJE, grid: { color: REJILLA }, title: { display: true, text: 'mg/L', color: EJE.color, font: { size: 10 } } } },
-        plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 10 }, color: EJE.color } } },
+        scales: { x: { ticks: { ...E.tick, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+          y: { ticks: E.tick, grid: { color: E.grid }, title: E.titulo('mg/L') } },
+        plugins: { legend: { labels: E.leyenda } },
       },
     });
   }
   const u = d.densidad;
   const t = d.tanques;
   const datasets = [
-    { type: 'bar', label: '♀ Hembras', data: t.map((x) => x.hembras), backgroundColor: '#d81b60cc', borderColor: '#d81b60', borderWidth: 1, yAxisID: 'y', order: 3, maxBarThickness: 22 },
-    { type: 'bar', label: '♂ Machos', data: t.map((x) => x.machos), backgroundColor: '#1e88e5cc', borderColor: '#1e88e5', borderWidth: 1, yAxisID: 'y', order: 3, maxBarThickness: 22 },
+    { type: 'bar', label: '♀ Hembras', data: t.map((x) => x.hembras), backgroundColor: '#d81b60', borderWidth: 0, yAxisID: 'y', order: 3, maxBarThickness: 22 },
+    { type: 'bar', label: '♂ Machos', data: t.map((x) => x.machos), backgroundColor: '#1e88e5', borderWidth: 0, yAxisID: 'y', order: 3, maxBarThickness: 22 },
     { type: 'line', label: 'Densidad (/m²)', data: t.map((x) => (x.densidad === '' ? null : x.densidad)), borderColor: '#00838f', backgroundColor: '#00838f',
       yAxisID: 'y1', order: 1, pointRadius: 3, borderWidth: 2, spanGaps: false },
   ];
@@ -1136,11 +1153,11 @@ function dibujarDetalle(d) {
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       scales: {
-        x: { ticks: { ...EJE, maxRotation: 0, autoSkip: false }, grid: { display: false } },
-        y: { beginAtZero: true, position: 'left', ticks: { ...EJE, precision: 0 }, grid: { color: REJILLA }, title: { display: true, text: 'animales', color: EJE.color, font: { size: 10 } } },
-        y1: { beginAtZero: true, position: 'right', ticks: EJE, grid: { drawOnChartArea: false }, title: { display: true, text: 'animales/m²', color: EJE.color, font: { size: 10 } } },
+        x: { ticks: { ...E.tick, maxRotation: 0, autoSkip: false }, grid: { display: false } },
+        y: { beginAtZero: true, position: 'left', ticks: { ...E.tick, precision: 0 }, grid: { color: E.grid }, title: E.titulo('animales') },
+        y1: { beginAtZero: true, position: 'right', ticks: E.tick, grid: { drawOnChartArea: false }, title: E.titulo('animales/m²') },
       },
-      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 10 }, color: EJE.color } } },
+      plugins: { legend: { labels: E.leyenda } },
     },
   });
 }
@@ -1313,6 +1330,7 @@ function comparativaHTML(c, p) {
 
 /** La curva de vivos del lote. Los eventos van como puntos marcados sobre la misma línea, no como otra serie. */
 function dibujarLote(f) {
+  const E = ejesOp();
   if (!f || !f.curva.length) return;
   const conEvento = new Set(f.eventos.map((e) => e.fecha));
   makeChart('mopLoteCurva', {
@@ -1320,19 +1338,19 @@ function dibujarLote(f) {
     data: {
       labels: f.curva.map((d) => dm(d.fecha)),
       datasets: [
-        { label: '♀ Hembras', data: f.curva.map((d) => d.hembras), borderColor: '#d81b60', backgroundColor: '#d81b60', tension: 0.25, borderWidth: 2,
+        { label: '♀ Hembras', data: f.curva.map((d) => d.hembras), borderColor: '#d81b60', backgroundColor: '#d81b60', tension: 0, borderWidth: 2,
           pointRadius: f.curva.map((d) => (conEvento.has(d.fecha) ? 4 : 0)) },
-        { label: '♂ Machos', data: f.curva.map((d) => d.machos), borderColor: '#1e88e5', backgroundColor: '#1e88e5', tension: 0.25, borderWidth: 2,
+        { label: '♂ Machos', data: f.curva.map((d) => d.machos), borderColor: '#1e88e5', backgroundColor: '#1e88e5', tension: 0, borderWidth: 2,
           pointRadius: f.curva.map((d) => (conEvento.has(d.fecha) ? 4 : 0)) },
-        { label: 'Total', data: f.curva.map((d) => d.total), borderColor: '#00838f', backgroundColor: '#00838f', tension: 0.25, borderWidth: 2, borderDash: [5, 4],
+        { label: 'Total', data: f.curva.map((d) => d.total), borderColor: '#00838f', backgroundColor: '#00838f', tension: 0, borderWidth: 2, borderDash: [5, 4],
           pointRadius: f.curva.map((d) => (conEvento.has(d.fecha) ? 4 : 0)) },
       ],
     },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      scales: { x: { ticks: { ...EJE, maxRotation: 0, autoSkip: true }, grid: { display: false } },
-        y: { beginAtZero: true, ticks: EJE, grid: { color: REJILLA } } },
-      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 10 }, color: EJE.color } } },
+      scales: { x: { ticks: { ...E.tick, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: E.tick, grid: { color: E.grid } } },
+      plugins: { legend: { labels: E.leyenda } },
     },
   });
 }
@@ -1435,19 +1453,20 @@ function fichaPiscinaHTML(f, p) {
 
 /** El peso de la piscina, corte a corte. Un corte sin peso deja su hueco en la línea en vez de caer a cero. */
 function dibujarPiscina(f) {
+  const E = ejesOp();
   if (!f || !f.serie.length) return;
   makeChart('mopPiscinaCurva', {
     type: 'line',
     data: {
       labels: f.serie.map((s) => dm(s.corte)),
       datasets: [{ label: 'Peso (g)', data: f.serie.map((s) => (vacio(s.peso) ? null : s.peso)), borderColor: '#00838f', backgroundColor: '#00838f',
-        tension: 0.25, borderWidth: 2, pointRadius: 3 }],
+        tension: 0, borderWidth: 2, pointRadius: 3 }],
     },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      scales: { x: { ticks: { ...EJE, maxRotation: 0, autoSkip: true }, grid: { display: false } },
-        y: { beginAtZero: true, ticks: EJE, grid: { color: REJILLA } } },
-      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 10 }, color: EJE.color } } },
+      scales: { x: { ticks: { ...E.tick, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: E.tick, grid: { color: E.grid } } },
+      plugins: { legend: { labels: E.leyenda } },
     },
   });
 }
@@ -1867,22 +1886,23 @@ function fichaTanqueHTML(f) {
 }
 
 function dibujarTanque(f) {
+  const E = ejesOp();
   if (!f || !f.curva.length) return;
   makeChart('mopTanqueCurva', {
     type: 'line',
     data: {
       labels: f.curva.map((d) => dm(d.fecha)),
       datasets: [
-        { label: '♀ Hembras', data: f.curva.map((d) => d.hembras), borderColor: '#d81b60', backgroundColor: '#d81b60', tension: 0.25, borderWidth: 2, pointRadius: 0 },
-        { label: '♂ Machos', data: f.curva.map((d) => d.machos), borderColor: '#1e88e5', backgroundColor: '#1e88e5', tension: 0.25, borderWidth: 2, pointRadius: 0 },
-        { label: 'Total', data: f.curva.map((d) => d.total), borderColor: '#00838f', backgroundColor: '#00838f', tension: 0.25, borderWidth: 2, borderDash: [4, 3], pointRadius: 0 },
+        { label: '♀ Hembras', data: f.curva.map((d) => d.hembras), borderColor: '#d81b60', backgroundColor: '#d81b60', tension: 0, borderWidth: 2, pointRadius: 0 },
+        { label: '♂ Machos', data: f.curva.map((d) => d.machos), borderColor: '#1e88e5', backgroundColor: '#1e88e5', tension: 0, borderWidth: 2, pointRadius: 0 },
+        { label: 'Total', data: f.curva.map((d) => d.total), borderColor: '#00838f', backgroundColor: '#00838f', tension: 0, borderWidth: 2, borderDash: [4, 3], pointRadius: 0 },
       ],
     },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      scales: { x: { ticks: { ...EJE, maxRotation: 0, autoSkip: true }, grid: { display: false } },
-        y: { beginAtZero: true, ticks: EJE, grid: { color: REJILLA } } },
-      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 10 }, color: EJE.color } } },
+      scales: { x: { ticks: { ...E.tick, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: E.tick, grid: { color: E.grid } } },
+      plugins: { legend: { labels: E.leyenda } },
     },
   });
 }

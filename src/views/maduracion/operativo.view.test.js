@@ -92,7 +92,10 @@ beforeEach(() => {
   document.body.appendChild(root);
   errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 });
+/* 0q·1 (2026-09-27, usuario) · TODOS los gráficos que dibuja este archivo se guardan para revisar su legibilidad al final. */
+const GRAFICOS = [];
 afterEach(() => {
+  if (makeChart && makeChart.mock) GRAFICOS.push(...makeChart.mock.calls.map(([id, cfg]) => ({ id, cfg })));
   root.remove();
   errSpy.mockRestore();
   vi.useRealTimers();
@@ -1976,5 +1979,72 @@ describe('Maduración · operativo · «de paso» · la ficha del lote', () => {
     const fila = [...repro.querySelectorAll('.mop-sc-fila')].find((f) => f.textContent.startsWith('Cópulas'));
     expect(fila.textContent).toBe('Cópulas3 en el período · 30 % de sus hembras por día');
     expect(repro.textContent).toContain('El % es POR DÍA de parte');
+  });
+});
+
+/* ============================================================
+   0q·1 (2026-09-27, usuario) · la legibilidad de TODOS los gráficos de Operativo
+
+   «Se ven borrosos, transparentosos, y no se aprecian las cantidades de los ejes», como en Microchips. Medido en Chrome:
+   ejes, títulos y leyendas a 10 px en gris claro #78909c, rejilla al 16 %, barras al 55–60 % (desoves, mortalidad del
+   día, bajas, ♀/♂ por tanque, libres) y curvas (tension .25) que inventan valores entre días (la de Vivos, una caída antes
+   del 13/09 que no está en los datos). Decisión del usuario: ejes 12 px en el color de texto del tema, títulos 11 px,
+   leyendas 12 px, rejilla al 30 %, barras sólidas, líneas rectas. Esta prueba barre la configuración de TODOS los
+   gráficos que dibuja este archivo (y abre la ficha del tanque, que ninguna otra prueba dibuja).
+   ============================================================ */
+describe('Maduración · operativo · los gráficos se leen', () => {
+  it('la ficha del tanque dibuja su curva', async () => {
+    await montar(PLANTA);
+    click(root.querySelector('[data-mop-sub="tanques"]'));
+    click(root.querySelector('[data-mop-tqf="Sala 1|1"]'));
+    expect(makeChart.mock.calls.some(([id]) => id === 'mopTanqueCurva')).toBe(true);
+  });
+
+  it('se abren los siete KPI (cada uno dibuja su gráfico)', async () => {
+    await montar(PLANTA);
+    const claves = [...root.querySelectorAll('[data-mop-kpi]')].map((x) => x.dataset.mopKpi);
+    expect(claves.length).toBe(7);
+    for (const k of claves) click(root.querySelector(`[data-mop-kpi="${k}"]`));
+    expect(makeChart.mock.calls.filter(([id]) => id === 'mopKpiCurva').length).toBeGreaterThanOrEqual(7);
+  });
+
+  it('🔴 los ocho gráficos, y todos con ejes a 12 px en un color que no es el gris claro; títulos a 11 px; leyenda a 12 px', () => {
+    const ids = [...new Set(GRAFICOS.map((g) => g.id))].sort();
+    expect(ids).toEqual(['mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopOx', 'mopPiscinaCurva', 'mopTanqueCurva', 'mopTq']);
+    for (const { id, cfg } of GRAFICOS) {
+      for (const [eje, sc] of Object.entries(cfg.options.scales || {})) {
+        expect(sc.ticks.font.size, `${id}.${eje}`).toBeGreaterThanOrEqual(12);
+        expect(String(sc.ticks.color).toLowerCase(), `${id}.${eje}`).not.toBe('#78909c');
+        if (sc.title && sc.title.display) expect(sc.title.font.size, `${id}.${eje} título`).toBeGreaterThanOrEqual(11);
+      }
+      const ley = cfg.options.plugins && cfg.options.plugins.legend;
+      if (ley && ley.labels) expect(ley.labels.font.size, `${id} leyenda`).toBeGreaterThanOrEqual(12);
+    }
+  });
+
+  it('🔴 rejilla al 30 %, barras SÓLIDAS y líneas RECTAS', () => {
+    const alfa = (c) => { const m = /rgba\([^)]*,\s*([\d.]+)\)/.exec(String(c)); if (m) return Number(m[1]); return /^#[0-9a-f]{8}$/i.test(String(c)) ? parseInt(String(c).slice(7), 16) / 255 : 1; };
+    for (const { id, cfg } of GRAFICOS) {
+      for (const [eje, sc] of Object.entries(cfg.options.scales || {})) if (sc.grid && sc.grid.color) expect(alfa(sc.grid.color), `${id}.${eje} rejilla`).toBeGreaterThanOrEqual(0.3);
+      for (const d of cfg.data.datasets) {
+        const esBarra = d.type === 'bar' || (!d.type && cfg.type === 'bar');
+        if (esBarra) for (const c of [].concat(d.backgroundColor)) expect(alfa(c), `${id} · ${d.label}`).toBe(1);
+        else expect(d.tension || 0, `${id} · ${d.label}`).toBe(0);
+      }
+      /* Con barras sólidas, una línea DETRÁS de ellas desaparece (medido: la de N5 en Reproducción): en un gráfico mixto,
+         las líneas se dibujan encima (en Chart.js, menor `order` = encima). */
+      const barras = cfg.data.datasets.filter((d) => d.type === 'bar' || (!d.type && cfg.type === 'bar')), lineas = cfg.data.datasets.filter((d) => d.type === 'line');
+      if (barras.length && lineas.length) expect(Math.max(...lineas.map((d) => d.order || 0)), `${id}: las líneas encima de las barras`).toBeLessThan(Math.min(...barras.map((d) => d.order || 0)));
+    }
+  });
+
+  it('🔑 el color de los ejes sigue al TEMA (lo lee de --c-text al dibujar)', async () => {
+    document.documentElement.style.setProperty('--c-text', '#abcdef');
+    try {
+      await montar(PLANTA);
+      click(root.querySelector('[data-mop-kpi="vivos"]'));
+      const l = makeChart.mock.calls.filter(([id]) => id === 'mopKpiCurva');
+      expect(l[l.length - 1][1].options.scales.x.ticks.color).toBe('#abcdef');
+    } finally { document.documentElement.style.removeProperty('--c-text'); }
   });
 });
