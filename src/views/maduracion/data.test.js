@@ -90,14 +90,14 @@ describe('maduracion.data · KPIs', () => {
 describe('maduracion.data · producción por ubicación', () => {
   it('agrupa por tanque con fertilidad y eficiencia', () => {
     const stats = locationStats(model, all, 'tanque');
-    const t1 = stats.find((s) => s.key === 'T1');
+    const t1 = stats.find((s) => s.key === 'S1 · T1');
     expect(t1.desoves).toBe(4);          // A1×3 + A2×1
     expect(t1.spawners).toBe(2);         // A1, A2
     expect(t1.hembras).toBe(2);          // ocupantes vivas T1 = A1,A2
     expect(Math.round(t1.fertilidad)).toBe(100);
     expect(t1.eficiencia).toBe(2);       // 4 desoves / 2 hembras
     // Ordenado por desoves desc → T1 primero.
-    expect(stats[0].key).toBe('T1');
+    expect(stats[0].key).toBe('S1 · T1');
   });
 
   it('agrupa por sala', () => {
@@ -287,7 +287,7 @@ describe('maduracion.data · derivación de ubicación por Trovan (Bitácora sin
     expect(m.desoves[0].sala).toBe('S9');
     expect(m.desoves[0].tanque).toBe('T9');
     const stats = locationStats(m, makeFilter({}), 'tanque');
-    expect(stats[0].key).toBe('T9');
+    expect(stats[0].key).toBe('S9 · T9');
     expect(stats[0].desoves).toBe(1);
   });
 
@@ -443,7 +443,7 @@ describe('maduracion.data · la fila «—» de eventos sin ubicación resoluble
   });
 
   it('un tanque real no cambia: la corrección no se derrama sobre el resto', () => {
-    const fila = locationStats(buildReproModel(mtz, bit, []), makeFilter({}), 'tanque').find((r) => r.key === 'T1');
+    const fila = locationStats(buildReproModel(mtz, bit, []), makeFilter({}), 'tanque').find((r) => r.key === 'S1 · T1');
     expect(fila.hembras).toBe(1);
     expect(fila.fertilidad).toBe(100);
   });
@@ -452,7 +452,7 @@ describe('maduracion.data · la fila «—» de eventos sin ubicación resoluble
     // Las mismas hembras sin tanque, pero ya sin el evento huérfano: el guard debe seguir
     // evitando la fila fantasma, que era su propósito original.
     const stats = locationStats(buildReproModel(mtz, [bit[0]], []), makeFilter({}), 'tanque');
-    expect(stats.map((r) => r.key)).toEqual(['T1']);
+    expect(stats.map((r) => r.key)).toEqual(['S1 · T1']);
   });
 });
 

@@ -97,9 +97,9 @@ describe('Maduración · filtro de Lote y Código genético · datos', () => {
   });
 
   it('🔴 producción por ubicación', () => {
-    const t1 = locationStats(model, L2, 'tanque').find((r) => r.key === 'T1');
+    const t1 = locationStats(model, L2, 'tanque').find((r) => r.key === 'S1 · T1');
     expect(t1).toMatchObject({ desoves: 3, hembras: 1, spawners: 1 });
-    expect(locationStats(model, L1, 'tanque').map((r) => r.key)).toEqual(['T1']);
+    expect(locationStats(model, L1, 'tanque').map((r) => r.key)).toEqual(['S1 · T1']);
   });
 
   it('🔴 ranking de hembras', () => {

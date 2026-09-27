@@ -10,7 +10,7 @@ import { fmtShort } from '../../core/dates.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import {
   MAD_MATRIZ_ORIGIN, MAD_BITACORA_ORIGIN, MAD_TRANSFER_ORIGIN,
-  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS,
+  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF,
   buildReproModel, makeFilter, monthLabel, kpis, locationStats, femaleRanking,
   femaleHistory, neverSpawned, recoveryDistribution, stateDistribution,
   mortalityBreakdown, trends, salasOf, tanquesOf, lotesOf, codigosOf, locKey,
@@ -276,7 +276,8 @@ function renderPanorama(model, f) {
     ${kpiTile('Hembras', n0(k.totalHembras), `${n0(k.vivas)} vivas · ${n0(k.muertas)} fallecidas`)}
     ${kpiTile('Desoves', n0(k.desoves), `${n0(k.spawners)} hembras distintas`, 'is-desove')}
     ${kpiTile('Mortalidad', n0(k.mortalidad), 'eventos en el período', 'is-mort')}
-    ${kpiTile('Fertilidad', pct(k.fertilidadGlobal), '% de vivas que han desovado', 'is-fert')}
+    ${kpiTile('Fertilidad', pct(k.fertilidadGlobal), f.from ? '% de las vivas del mes que desovaron' : '% de vivas que han desovado', 'is-fert')}
+    ${kpiTile('Tasa de desove', tasaBadge(k.tasaDesove), `% de hembras por noche · ref. ${TASA_DESOVE_REF.referencia}`, 'is-desove')}
     ${kpiTile('Desoves / hembra', n1(k.desovesPorHembraViva), 'productividad media', '')}
     ${kpiTile('Activas', n0(sd.activa), `en últimos ${ACTIVITY_WINDOW_DAYS} días`, 'is-fert')}
   </div>`;
@@ -294,8 +295,8 @@ function renderPanorama(model, f) {
 
   const topCard = (title, arr, level) => `<div class="mc-card">
     <h4 class="mc-card-h">${esc(title)}</h4>
-    ${arr.length ? `<table class="mc-table mc-table-sm"><thead><tr><th>${level === 'sala' ? 'Sala' : 'Tanque'}</th><th class="r">Desoves</th><th class="r">Fertilidad</th></tr></thead>
-      <tbody>${arr.map((x) => `<tr><td>${txt(level === 'sala' ? x.sala || x.key : x.key)}</td><td class="r"><b>${n0(x.desoves)}</b></td><td class="r">${pct(x.fertilidad)}</td></tr>`).join('')}</tbody></table>`
+    ${arr.length ? `<table class="mc-table mc-table-sm"><thead><tr><th>${level === 'sala' ? 'Sala' : 'Tanque'}</th><th class="r">Desoves</th><th class="r" title="% de sus hembras que desovaron en el período">Fertilidad</th><th class="r" title="% de sus hembras que desovan cada noche">Tasa/noche</th></tr></thead>
+      <tbody>${arr.map((x) => `<tr><td>${txt(level === 'sala' ? x.sala || x.key : x.key)}</td><td class="r"><b>${n0(x.desoves)}</b></td><td class="r">${pct(x.fertilidad)}</td><td class="r">${tasaBadge(x.tasaDesove)}</td></tr>`).join('')}</tbody></table>`
     : '<div class="empty-state" style="padding:16px">Sin datos en el período.</div>'}</div>`;
 
   return `<div class="mc-body">
@@ -388,7 +389,7 @@ function renderOperativo(model, f) {
       <thead><tr>
         <th>#</th><th>${level === 'sala' ? 'Sala' : 'Tanque'}</th>
         <th class="r">Desoves</th><th class="r">Hembras</th><th class="r">Desovaron</th>
-        <th class="r">Fertilidad</th><th class="r">Eficiencia</th><th class="r">Mortalidad</th>
+        <th class="r" title="% de sus hembras que desovaron en el período">Fertilidad</th><th class="r" title="% de sus hembras que desovan cada noche">Tasa/noche</th><th class="r">Eficiencia</th><th class="r">Mortalidad</th>
       </tr></thead>
       <tbody>${stats.map((x, i) => `<tr>
         <td class="mc-rk">${i + 1}</td>
@@ -397,11 +398,12 @@ function renderOperativo(model, f) {
         <td class="r">${n0(x.hembras)}</td>
         <td class="r">${n0(x.spawners)}</td>
         <td class="r">${fertBadge(x.fertilidad)}</td>
+        <td class="r">${tasaBadge(x.tasaDesove)}</td>
         <td class="r">${n1(x.eficiencia)}</td>
         <td class="r">${n0(x.mortalidad)}</td>
       </tr>`).join('')}</tbody></table></div>`
     : '<div class="empty-state" style="padding:20px">Sin datos en el período.</div>'}
-    <p class="mc-note">Fertilidad = hembras que desovaron ÷ hembras observadas (con evento o vivas en la ubicación). Eficiencia = desoves ÷ hembras.</p>
+    <p class="mc-note">Fertilidad = % de las hembras observadas (con evento o vivas en la ubicación) que desovaron en el período: a lo largo de meses tiende al 100 %. Tasa/noche = desoves ÷ noches que sus hembras estuvieron vivas en el período (ref. ${TASA_DESOVE_REF.referencia}). Eficiencia = desoves ÷ hembras. Un tanque es sala + número.</p>
   </div>`;
 
   const prodChart = `<div class="mc-card">
@@ -417,6 +419,13 @@ function renderOperativo(model, f) {
   </div>`;
 
   return `<div class="mc-body"><div class="mc-grid">${rankTable}${prodChart}${mortChart}</div></div>`;
+}
+
+/** La tasa de desove por noche con su semáforo contra la referencia (5–15 %): baja, dentro o por encima. */
+function tasaBadge(v) {
+  if (v == null || isNaN(v)) return '<span class="muted">—</span>';
+  const cls = v < TASA_DESOVE_REF.min ? 'is-low' : v > TASA_DESOVE_REF.max ? 'is-mid' : 'is-good';
+  return `<span class="mc-fert ${cls}" title="ref. ${TASA_DESOVE_REF.referencia}">${pct(v)}</span>`;
 }
 
 function fertBadge(v) {

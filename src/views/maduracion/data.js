@@ -33,6 +33,12 @@
    · Fertilidad % de un tanque/sala = hembras distintas que desovaron allí ÷ hembras
      observadas allí (con algún evento en el período ∪ ocupantes vivas actuales), ×100.
    · Eficiencia reproductiva = desoves ÷ hembras observadas (desoves por hembra).
+   · 🆕 2026-09-26 (usuario) · TASA DE DESOVE = desoves ÷ hembras-noche × 100: el % de las hembras que desovan cada
+     noche (referencia 5–15 %, FAO; la misma del tablero de Maduración). Hembras-noche = las noches que cada hembra
+     estuvo VIVA dentro del período (de su ingreso a su muerte o al último dato). No satura como la fertilidad, que a lo
+     largo de meses tiende al 100 % porque casi todas acaban desovando alguna vez.
+   · 🆕 2026-09-26 · un TANQUE es sala + número: los números se repiten entre salas (Sala 1 tiene 1–15; Sala 4, 1–6) y
+     agrupar sólo por número sumaba tanques distintos (medido: «Tanque 1» mezclaba 333 desoves de la Sala 4 con 38 de la 1).
    · Ventana de actividad = ACTIVITY_WINDOW_DAYS días hacia atrás desde la fecha más
      reciente de los datos; clasifica hembra Activa/Inactiva/Transferida (reciente).
    · Fertilidad en TENDENCIAS = hembras que desovaron en el bucket ÷ hembras VIVAS
@@ -354,6 +360,30 @@ export function makeFilter({ sala = null, tanque = null, lote = null, codigo = n
 const desovesIn = (model, f) => model.desoves.filter((e) => passLoc(e, f));
 const mortsIn = (model, f) => model.mortalidades.filter((e) => passLoc(e, f));
 
+/* ── Tasa de desove (2026-09-26) ── */
+/** La referencia de la tasa de desove, en % de las hembras por noche (la del tablero: `tasaDeDesove`, FAO). */
+export const TASA_DESOVE_REF = { min: 5, max: 15, referencia: '5–15 % por noche' };
+/** El período del filtro como [a, b] con fechas: su mes, o de la primera a la última fecha con eventos; el final nunca
+ *  pasa del último dato (un mes en curso cuenta hasta hoy de los datos, no hasta su día 31). null si no hay eventos. */
+function ventana(model, f) {
+  const evs = model.desoves.concat(model.mortalidades);
+  if (!evs.length) return null;
+  let min = evs[0].date, max = evs[0].date;
+  evs.forEach((e) => { if (e.date < min) min = e.date; if (e.date > max) max = e.date; });
+  const a = f.from || min;
+  const b = f.to && f.to < max ? f.to : max;
+  return b >= a ? { a, b } : null;
+}
+const dia0 = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+/** Noches que una hembra estuvo VIVA dentro de la ventana: de su ingreso (o el inicio) a su muerte (o el final). */
+function nochesViva(rec, v) {
+  if (!v) return 0;
+  const ini = rec._ingreso && rec._ingreso > v.a ? rec._ingreso : v.a;
+  const fin = rec._muerte && rec._muerte < v.b ? rec._muerte : v.b;
+  return fin < ini ? 0 : Math.round((dia0(fin) - dia0(ini)) / 864e5) + 1;
+}
+const tasa = (desoves, noches) => (noches ? (desoves / noches) * 100 : null);
+
 /* ── KPIs globales ── */
 export function kpis(model, f) {
   const des = desovesIn(model, f);
@@ -371,19 +401,30 @@ export function kpis(model, f) {
   // numerador son las vivas de la ubicación que constan como desovadoras → acotado 0–100.
   const everSpawnedAnywhere = new Set(model.desoves.map((e) => e.trovan));
   const vivasQueDesovaron = pop.filter((r) => r.estado !== ESTADO_MUERTO && everSpawnedAnywhere.has(r.trovan)).length;
-  const fertilidadGlobal = vivas ? (vivasQueDesovaron / vivas) * 100 : 0;
+  let fertilidadGlobal = vivas ? (vivasQueDesovaron / vivas) * 100 : 0;
+  /* 2026-09-26 (usuario) · con un MES elegido, la fertilidad es la de ESE mes —la regla de Tendencias—: de las hembras
+     vivas durante el mes, cuántas desovaron en él. Antes seguía siendo «alguna vez» y no cambiaba con el mes. */
+  if (f.from) {
+    const vivasMes = pop.filter((r) => aliveDuring(r, f.from, f.to));
+    fertilidadGlobal = vivasMes.length ? (vivasMes.filter((r) => spawners.has(r.trovan)).length / vivasMes.length) * 100 : 0;
+  }
+  const v = ventana(model, f);
+  const hembrasNoche = pop.reduce((acc, r) => acc + nochesViva(r, v), 0);
   return {
     totalHembras: pop.length, vivas, muertas,
     desoves: des.length, mortalidad: mor.length,
     spawners: spawners.size, fertilidadGlobal,
     desovesPorHembraViva: vivas ? des.length / vivas : 0,
+    hembrasNoche, tasaDesove: tasa(des.length, hembrasNoche),
   };
 }
 
 /* ── Producción / fertilidad por ubicación (tanque o sala) ── */
 /** @param {'sala'|'tanque'|'loc'} level  agrupación: sala, tanque o Sala·Tanque. */
 export function locationStats(model, f, level = 'tanque') {
-  const keyOf = (o) => level === 'sala' ? dash(o.sala) : level === 'loc' ? locKey(o.sala, o.tanque) : dash(o.tanque);
+  // 2026-09-26 · el tanque es sala + número (`locKey`): sólo por número se sumaban tanques de salas distintas.
+  // Sin tanque, la fila «—» de siempre (eventos cuya ubicación no se pudo resolver).
+  const keyOf = (o) => level === 'sala' ? dash(o.sala) : (String(o.tanque ?? '').trim() ? locKey(o.sala, o.tanque) : '—');
   const map = new Map();
   const ensure = (k, sample) => {
     if (!map.has(k)) map.set(k, { key: k, sala: sample.sala || '', tanque: sample.tanque || '', desoves: 0, mortalidad: 0, hembras: new Set(), spawners: new Set() });
@@ -395,7 +436,7 @@ export function locationStats(model, f, level = 'tanque') {
   model.females.forEach((r) => {
     if (r.estado === ESTADO_MUERTO) return;
     if (!passFem(r, f)) return;
-    const k = level === 'sala' ? dash(r.sala) : level === 'loc' ? locKey(r.sala, r.tanque) : dash(r.tanque);
+    const k = keyOf(r);
     // Sin tanque asignado NO se crea una fila fantasma... pero si la fila «—» ya existe
     // —la creó un evento cuya ubicación no se pudo resolver— hay que sumarle también estas
     // hembras. Dejarlas fuera hacía que su denominador contase solo a las que desovaron allí,
@@ -404,13 +445,18 @@ export function locationStats(model, f, level = 'tanque') {
     if (level !== 'sala' && k === '—' && !map.has(k)) return;
     ensure(k, r).hembras.add(r.trovan);
   });
+  const v = ventana(model, f);
+  const porTrovan = new Map(model.females.map((r) => [r.trovan, r]));
   return [...map.values()].map((g) => {
     const hembras = g.hembras.size, spawners = g.spawners.size;
+    // Hembras-noche del grupo: cada hembra UNA vez (medido: ninguna tiene eventos en dos tanques).
+    let noches = 0; g.hembras.forEach((t) => { const r = porTrovan.get(t); if (r) noches += nochesViva(r, v); });
     return {
       key: g.key, sala: g.sala, tanque: g.tanque,
       desoves: g.desoves, mortalidad: g.mortalidad, hembras, spawners,
       fertilidad: hembras ? (spawners / hembras) * 100 : 0,
       eficiencia: hembras ? g.desoves / hembras : 0,
+      hembrasNoche: noches, tasaDesove: tasa(g.desoves, noches),
     };
   }).sort((a, b) => b.desoves - a.desoves || b.fertilidad - a.fertilidad);
 }
