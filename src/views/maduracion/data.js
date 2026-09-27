@@ -834,6 +834,57 @@ export function mortalidadPostDesove(model, f, V = 2) {
   };
 }
 
+/* ── T9 · Desoves y marea (2026-09-27, usuario) ── */
+/** Las fases en el orden del ciclo lunar (los nombres de la hoja «Marea», INOCAR). */
+export const FASES_CICLO = ['Luna nueva', 'Creciente', 'Cuarto creciente', 'Gibosa creciente', 'Luna llena', 'Gibosa menguante', 'Cuarto menguante', 'Menguante'];
+const DIAS_SEMANA = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+const numMarea = (v) => { if (v === '' || v == null) return null; const n = parseFloat(String(v).replace('%', '').replace(',', '.')); return isNaN(n) ? null : n; };
+/** La hoja «Marea» por día: fase, % de iluminación, tipo (Viva/Muerta, tolerando mayúsculas) y amplitud (m). */
+export function mareaPorDia(rows) {
+  const m = new Map();
+  (rows || []).forEach((r) => {
+    const d = parseAnyDate(r['Fecha']); if (!d) return;
+    const t = String(r['Tipo de Marea'] || '').trim().toLowerCase();
+    m.set(dayKey(d), { fase: String(r['Fase Lunar'] || '').trim(), ilum: numMarea(r['%Iluminación']),
+      tipo: t.startsWith('viv') ? 'Viva' : t.startsWith('muer') ? 'Muerta' : '', amplitud: numMarea(r['Amplitud (m)']) });
+  });
+  return m;
+}
+function pearsonR(xs, ys) {
+  const n = xs.length; if (n < 2) return null;
+  const mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+  let s = 0, sx = 0, sy = 0;
+  for (let i = 0; i < n; i++) { s += (xs[i] - mx) * (ys[i] - my); sx += (xs[i] - mx) ** 2; sy += (ys[i] - my) ** 2; }
+  return sx && sy ? s / Math.sqrt(sx * sy) : null;
+}
+/** Sólo las noches CON desoves del filtro (una noche sin ninguno es, casi siempre, un hueco del registro). La tasa de
+ *  cada noche = desoves ÷ hembras del filtro vivas esa noche × 100; por grupo, Σ desoves ÷ Σ vivas. Por tipo de marea,
+ *  por fase (en el orden del ciclo, también las que no tienen noches) y por día de la semana; la correlación de la tasa
+ *  con la iluminación y la amplitud, y `rCrit` = 2/√n (con |r| menor, no se distingue del azar). */
+export function desovesYMarea(model, marea, f) {
+  const porDia = new Map();
+  desovesIn(model, f).forEach((e) => { const k = dayKey(e.date); porDia.set(k, (porDia.get(k) || 0) + 1); });
+  const pop = model.females.filter((r) => passFem(r, f));
+  const noches = [...porDia.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, des]) => {
+    const a = new Date(+k.slice(0, 4), +k.slice(5, 7) - 1, +k.slice(8, 10)), b = new Date(a.getFullYear(), a.getMonth(), a.getDate(), 23, 59, 59);
+    return { k, d: a, des, vivas: pop.filter((r) => aliveDuring(r, a, b)).length, m: marea.get(k) || null };
+  }).filter((n) => n.vivas > 0);
+  const agrupa = (claves, claveDe, soloConMarea) => claves.map((k) => {
+    const ns = noches.filter((n) => (!soloConMarea || n.m) && claveDe(n) === k);
+    const des = ns.reduce((s, n) => s + n.des, 0), viv = ns.reduce((s, n) => s + n.vivas, 0);
+    return { k, noches: ns.length, des, tasa: viv ? (des / viv) * 100 : null };
+  });
+  const conM = noches.filter((n) => n.m);
+  const par = (campo) => { const ns = conM.filter((n) => n.m[campo] != null); return pearsonR(ns.map((n) => n.m[campo]), ns.map((n) => (n.des / n.vivas) * 100)); };
+  return {
+    noches: noches.length, conMarea: conM.length,
+    tipo: agrupa(['Viva', 'Muerta'], (n) => n.m.tipo, true),
+    fase: agrupa(FASES_CICLO, (n) => n.m.fase, true),
+    dia: agrupa(DIAS_SEMANA, (n) => DIAS_SEMANA[(n.d.getDay() + 6) % 7], false),
+    r: { ilum: par('ilum'), amp: par('amplitud') }, rCrit: conM.length ? 2 / Math.sqrt(conM.length) : null,
+  };
+}
+
 /* ── Clasificación de hembras (activa/inactiva/transferida/fallecida) ── */
 export function classifyFemale(rec, model, ref) {
   if (!rec) return 'inactiva';

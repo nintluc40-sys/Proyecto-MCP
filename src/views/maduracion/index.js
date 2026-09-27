@@ -10,7 +10,7 @@ import { fmtShort } from '../../core/dates.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import {
   MAD_MATRIZ_ORIGIN, MAD_BITACORA_ORIGIN, MAD_TRANSFER_ORIGIN,
-  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves, lineaDeVida, productividadPorFamilia, bandaTasa, supervivenciaPorFamilia, alertaReemplazo, ventanaDeDesove, mortalidadPostDesove,
+  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves, lineaDeVida, productividadPorFamilia, bandaTasa, supervivenciaPorFamilia, alertaReemplazo, ventanaDeDesove, mortalidadPostDesove, mareaPorDia, desovesYMarea,
   buildReproModel, makeFilter, monthLabel, kpis, locationStats, femaleRanking,
   femaleHistory, neverSpawned, recoveryDistribution, stateDistribution,
   mortalityBreakdown, trends, salasOf, tanquesOf, lotesOf, codigosOf, locKey,
@@ -346,6 +346,7 @@ function renderPanorama(model, f) {
       ${topCard('🏆 Top salas por desoves', topS, 'sala')}
       ${familiasHTML(model, f)}
       ${supervivenciaHTML(model, f)}
+      ${mareaHTML(model, f)}
     </div>
   </div>`;
 }
@@ -822,6 +823,31 @@ function postDesoveHTML(model, f) {
   return `<div class="mc-card mc-post-card"><h4 class="mc-card-h">🩺 Mortalidad tras el desove ${seg}</h4>${cuerpo}</div>`;
 }
 
+/* T9 (2026-09-27, usuario) · desoves y marea: la tasa por noche según la marea (viva/muerta), la fase lunar y el día de la
+   semana, y la correlación con la iluminación y la amplitud LEÍDA con su umbral (2/√n). Honesta: hoy no hay señal. */
+function mareaHTML(model, f) {
+  const d = desovesYMarea(model, mareaPorDia(store.globalData.filter((r) => r._SheetOrigin === 'Marea')), f);
+  const p1 = (v) => (v == null ? '—' : n1(v) + ' %');
+  const r2s = (v) => (v == null ? '—' : v.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace('-', '−'));
+  const noches = (n) => `${n0(n)} noche${n === 1 ? '' : 's'}`;
+  const cab = `<h4 class="mc-card-h">🌊 Desoves y marea <span class="mc-h-note">${noches(d.conMarea)} con registro</span></h4>`;
+  if (!d.conMarea) return `<div class="mc-card mc-card-wide mc-marea-card">${cab}${vacioHTML('Sin datos de marea para las noches con desoves', { icono: '🌊', conFiltros: false })}</div>`;
+  const sig = (r) => r != null && Math.abs(r) >= d.rCrit;
+  const dice = (r, que) => `${r > 0 ? 'más' : 'menos'} desoves con más ${que}`;
+  const lectura = sig(d.r.ilum) || sig(d.r.amp)
+    ? `relación más allá del azar (|r| ≥ ${r2s(d.rCrit)}): ${[sig(d.r.ilum) ? dice(d.r.ilum, 'iluminación') : '', sig(d.r.amp) ? dice(d.r.amp, 'amplitud') : ''].filter(Boolean).join(' · ')}`
+    : `con ${noches(d.conMarea)}, |r| < ${r2s(d.rCrit)} no se distingue del azar: sin relación demostrable`;
+  const maxF = Math.max(0, ...d.fase.map((x) => x.tasa || 0));
+  return `<div class="mc-card mc-card-wide mc-marea-card">${cab}
+    <div class="mc-marea-tipos">${d.tipo.map((x) => `<span class="mc-marea-tipo"><b>${x.k}</b> ${p1(x.tasa)} <span class="mc-h-note">${noches(x.noches)}</span></span>`).join('')}</div>
+    <p class="mc-marea-r">Correlación con la iluminación <b>${r2s(d.r.ilum)}</b> · con la amplitud <b>${r2s(d.r.amp)}</b> → ${lectura}</p>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm mc-marea-fase"><thead><tr><th>Fase lunar</th><th class="r">Noches</th><th class="r">Tasa por noche</th></tr></thead>
+      <tbody>${d.fase.map((x) => `<tr><td>${esc(x.k)}</td><td class="r">${n0(x.noches)}</td><td class="r">${x.tasa == null ? '<span class="muted">—</span>' : barra(x.tasa, maxF, '', p1(x.tasa))}</td></tr>`).join('')}</tbody></table></div>
+    <table class="mc-table mc-table-sm mc-marea-dia"><tbody><tr>${d.dia.map((x) => `<td><b>${x.k}</b> ${p1(x.tasa)}</td>`).join('')}</tr></tbody></table>
+    <p class="mc-note">Sólo las noches con desoves registrados (una noche sin ninguno suele ser un hueco del registro). Tasa = desoves ÷ hembras vivas esa noche. La marea es la de la hoja «Marea» (INOCAR). Con pocas noches por fase, las diferencias entre fases son sobre todo ruido; se afina con cada noche nueva. Si un día de la semana cae siempre, mira el registro de ese día.</p>
+  </div>`;
+}
+
 /* V9 (2026-09-27, usuario) · la silueta de la vista mientras cargan los datos (cabecera, 7 KPI y 2 tarjetas, con un
    brillo que se apaga con «menos movimiento»); el texto, para lectores de pantalla. */
 function esqueletoHTML() {
@@ -956,9 +982,9 @@ function infoCell(label, v, antes = '') {
 const maxDe = (arr, k) => arr.reduce((m, x) => Math.max(m, x[k] || 0), 0);
 /* T2 · un porcentaje con 2 decimales (la mortalidad diaria es pequeña: 0,05 %). */
 const pct2 = (v) => (v == null || isNaN(v) ? '—' : v.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' %');
-function barra(v, max, cls = '') {
+function barra(v, max, cls = '', texto = null) {   // T9 · `texto`: lo que se escribe en vez del entero (una tasa)
   const w = max > 0 && v > 0 ? Math.round((v / max) * 1000) / 10 : 0;
-  return `<span class="mc-bar${cls}"><i style="width:${w}%"></i><b>${n0(v)}</b></span>`;
+  return `<span class="mc-bar${cls}"><i style="width:${w}%"></i><b>${texto ?? n0(v)}</b></span>`;
 }
 /* V6 · el chip del color del anillo. Los colores medidos en la MATRIZ (Transparente, Verde, Amarillo, Azul, Rojo) y
    algunos habituales; Transparente es un aro hueco; uno fuera de la lista, gris con «?»; sin color, nada. */
