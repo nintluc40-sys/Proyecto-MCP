@@ -248,3 +248,9 @@
 .mc-alerta-grupo th { padding-top: 12px; text-align: left; text-transform: none; letter-spacing: 0; font-size: 12.5px; color: var(--c-text); background: var(--c-surface-2, #f1f4f6); }
 .mc-hueco { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #7a4d00; background: #fdebc2; }
 .mc-alerta-mas td { font-size: 11.5px; color: var(--c-text-soft); font-style: italic; }
+
+/* T6 (2026-09-27, usuario) · el estado de cada hembra para la próxima noche */
+.mc-vent { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.mc-vent.is-ventana { background: rgba(46, 158, 91, .16); color: #1e7a44; }
+.mc-vent.is-aun { background: var(--c-surface-2, #f1f4f6); color: var(--c-text-soft); }
+.mc-vent.is-pasada { background: rgba(217, 154, 0, .16); color: #8a6200; }

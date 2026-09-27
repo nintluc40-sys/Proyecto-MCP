@@ -10,7 +10,7 @@ import { fmtShort } from '../../core/dates.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import {
   MAD_MATRIZ_ORIGIN, MAD_BITACORA_ORIGIN, MAD_TRANSFER_ORIGIN,
-  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves, lineaDeVida, productividadPorFamilia, bandaTasa, supervivenciaPorFamilia, alertaReemplazo,
+  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves, lineaDeVida, productividadPorFamilia, bandaTasa, supervivenciaPorFamilia, alertaReemplazo, ventanaDeDesove,
   buildReproModel, makeFilter, monthLabel, kpis, locationStats, femaleRanking,
   femaleHistory, neverSpawned, recoveryDistribution, stateDistribution,
   mortalityBreakdown, trends, salasOf, tanquesOf, lotesOf, codigosOf, locKey,
@@ -493,7 +493,7 @@ function renderOperativo(model, f) {
     : vacioHTML('Sin mortalidades en este filtro', { icono: '✅' })}
   </div>`;
 
-  return `<div class="mc-body"><div class="mc-grid">${mapaSalasHTML(model, f)}${calendarioHTML(model, f)}${rankTable}${prodChart}${mortChart}</div></div>`;
+  return `<div class="mc-body"><div class="mc-grid">${mapaSalasHTML(model, f)}${calendarioHTML(model, f)}${ventanaHTML(model, f)}${rankTable}${prodChart}${mortChart}</div></div>`;
 }
 
 /* V2 (2026-09-27, usuario) · el calendario de desoves: tanque × día, con la intensidad del Nº de desoves de cada noche
@@ -613,6 +613,7 @@ function barOpts(unit) {
    ============================================================ */
 function renderHembras(model, f) {
   const ranking = femaleRanking(model, f);
+  const vent = ventanaDeDesove(model, f);   // T6 · su estado para la próxima noche
   const q = vState.femSearch.trim().toUpperCase().replace(/\s+/g, '');
   const buscadas = q ? ranking.filter((r) => r.trovan.toUpperCase().includes(q)) : ranking;
   /* 2026-09-27 (usuario) · las muertas, a primera vista: su fila atenuada, «✝ muerta dd/mm» junto al Trovan, y este filtro. */
@@ -633,7 +634,7 @@ function renderHembras(model, f) {
   const rankTable = `<div class="mc-card mc-card-wide">
     <h4 class="mc-card-h">Ranking de hembras por desoves ${rankNote()} ${segEstado}</h4>
     ${shown.length ? `<div class="mc-tablewrap"><table class="mc-table">
-      <thead><tr><th>#</th><th>Trovan ID</th><th>Ubicación actual</th><th class="r">Desoves</th><th class="r">Últ. desove</th><th class="r">Interv. prom.</th><th></th></tr></thead>
+      <thead><tr><th>#</th><th>Trovan ID</th><th>Ubicación actual</th><th class="r">Desoves</th><th class="r">Últ. desove</th><th class="r">Interv. prom.</th><th class="r" title="según la ventana de desove de la granja">Próxima noche</th><th></th></tr></thead>
       <tbody>${shown.slice(0, 200).map((r, i) => `<tr${esMuerta(r) ? ' class="mc-rank-muerta"' : ''}>
         <td class="mc-rk">${i + 1}</td>
         <td>${chipAnillo(r.color)}<button class="mc-trovan" data-mc-female="${esc(r.trovan)}">${esc(r.trovan)}</button>${esMuerta(r) ? ` <span class="mc-muerta" title="Murió el ${esc(r.muerte ? fmtShort(r.muerte) : 'día sin registrar')}">✝ muerta${r.muerte ? ' ' + diaMes(r.muerte) : ''}</span>` : ''}</td>
@@ -641,6 +642,7 @@ function renderHembras(model, f) {
         <td class="r">${barra(r.desoves, maxDe(shown.slice(0, 200), 'desoves'))}</td>
         <td class="r">${dCell(r.ultimoDesove)}</td>
         <td class="r">${r.intervaloPromedio != null ? n1(r.intervaloPromedio) + ' d' : '—'}</td>
+        <td class="r">${ventCelda(vent.porTrovan.get(r.trovan))}</td>
         <td class="r"><button class="mc-mini" data-mc-female="${esc(r.trovan)}">Historial ›</button></td>
       </tr>`).join('')}</tbody></table></div>
       ${shown.length > 200 ? `<p class="mc-note">Mostrando 200 de ${n0(shown.length)}. Afina con el buscador o los filtros.</p>` : ''}`
@@ -774,6 +776,21 @@ function reemplazoHTML(model, f) {
     <p class="mc-note">Contado al último dato. Una hembra que nunca desovó cuenta desde su ingreso. Un tanque donde nadie desovó en esos días suele ser un hueco del registro: míralo en el calendario de desoves (Salas y Tanques).</p>`
     : vacioHTML(`Ninguna hembra viva lleva más de ${u} días sin desovar`, { icono: '✅' });
   return `<div class="mc-card mc-card-wide mc-reemp-card"><h4 class="mc-card-h">⚠ Alerta de reemplazo <span class="mc-h-note">${n0(a.total)} hembra${a.total === 1 ? '' : 's'} sin desovar hace más de ${u} días</span> ${seg}</h4>${cuerpo}</div>`;
+}
+
+/* T6 (2026-09-27, usuario) · esperadas la próxima noche: por tanque, cuántas hembras están en la ventana de desove, cuántas
+   aún no y cuántas ya la pasaron; con la ventana y su precisión escritas (no es una fecha: ±1 d acierta sólo el 41 %). */
+const VENT_TXT = { aun: 'aún no', ventana: 'en ventana', pasada: 'pasada' };
+const ventCelda = (x) => (x ? `<span class="mc-vent is-${x.estado}">${VENT_TXT[x.estado]} · ${n0(x.dias)} d</span>` : '<span class="muted">—</span>');
+function ventanaHTML(model, f) {
+  const v = ventanaDeDesove(model, f);
+  const nota = v.desde != null ? `ventana ${v.desde}–${v.hasta} d desde el último desove · la mediana (${v.mediana} d) acierta ±2 d el ${n1(v.acierto2)} %` : '';
+  const cuerpo = v.desde == null ? vacioHTML('Aún no hay intervalos para calcular la ventana', { icono: '⏳', conFiltros: false })
+    : v.porTanque.length ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm"><thead><tr><th>Tanque</th><th class="r">En ventana</th><th class="r">Aún no</th><th class="r">Pasadas</th></tr></thead>
+      <tbody>${v.porTanque.map((t) => `<tr><td><b>${esc(t.key)}</b></td><td class="r">${barra(t.ventana, maxDe(v.porTanque, 'ventana'))}</td><td class="r">${n0(t.aun)}</td><td class="r">${n0(t.pasadas)}</td></tr>`).join('')}</tbody></table></div>
+      <p class="mc-note">Cuenta a la próxima noche (la siguiente al último dato) las hembras vivas que ya desovaron alguna vez; las que nunca lo hicieron están en la Alerta de reemplazo. La ventana es la mitad central de los intervalos reales de la granja: no es una fecha exacta.</p>`
+      : vacioHTML('Ninguna hembra viva con desoves en este filtro');
+  return `<div class="mc-card mc-card-wide mc-ventana-card"><h4 class="mc-card-h">🔮 Esperadas la próxima noche <span class="mc-h-note">${nota}</span></h4>${cuerpo}</div>`;
 }
 
 /* V9 (2026-09-27, usuario) · la silueta de la vista mientras cargan los datos (cabecera, 7 KPI y 2 tarjetas, con un

@@ -766,6 +766,38 @@ export function recoveryDistribution(model, f) {
     hembrasConIntervalo: promedios.length };
 }
 
+/* ── T6 · La ventana de desove (2026-09-27, usuario) ── */
+/** Retroprueba con los datos reales: «último desove + mediana» acierta el día ±1 sólo el 41 % (la mediana PROPIA de cada
+ *  hembra no es mejor), así que no se da una fecha sino una VENTANA: la mitad central de los intervalos reales de TODA la
+ *  granja (cuartiles, redondeados). Cada hembra VIVA del filtro con algún desove, a la PRÓXIMA noche (la siguiente al
+ *  último dato): «aun» si lleva menos días que la ventana, «ventana» si está dentro, «pasada» si más. `acierto2` = % de
+ *  los intervalos reales a ±2 días de la mediana (la precisión que se escribe en la tarjeta). */
+export function ventanaDeDesove(model, f) {
+  const rd = recoveryDistribution(model, makeFilter({}));
+  const red = (v) => (v == null ? null : Math.round(v));
+  const desde = red(rd.p25), hasta = red(rd.p75), mediana = red(rd.mediana);
+  const acierto2 = rd.intervals.length && mediana != null
+    ? Math.round((rd.intervals.filter((i) => Math.abs(i - mediana) <= 2).length / rd.intervals.length) * 1000) / 10 : null;
+  const ref = model.dataMaxDate, porTrovan = new Map(), tanques = new Map();
+  if (ref && desde != null) {
+    const noche = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() + 1);
+    model.females.filter((r) => r.estado !== ESTADO_MUERTO && passFem(r, f)).forEach((r) => {
+      const ds = model.desovesByTrovan.get(r.trovan) || []; if (!ds.length) return;
+      const ult = ds.reduce((m, e) => (!m || e.date > m ? e.date : m), null);
+      const dias = Math.round((noche - dia0(ult)) / 864e5);
+      const estado = dias < desde ? 'aun' : dias <= hasta ? 'ventana' : 'pasada';
+      porTrovan.set(r.trovan, { estado, dias });
+      const key = locKey(r.sala, r.tanque);
+      if (!tanques.has(key)) tanques.set(key, { key, ventana: 0, aun: 0, pasadas: 0 });
+      const t = tanques.get(key);
+      if (estado === 'ventana') t.ventana++; else if (estado === 'aun') t.aun++; else t.pasadas++;
+    });
+  }
+  const tot = (t) => t.ventana + t.aun + t.pasadas;
+  return { desde, hasta, mediana, acierto2, porTrovan,
+    porTanque: [...tanques.values()].sort((a, b) => b.ventana - a.ventana || tot(b) - tot(a) || _ordenEs(a.key, b.key)) };
+}
+
 /* ── Clasificación de hembras (activa/inactiva/transferida/fallecida) ── */
 export function classifyFemale(rec, model, ref) {
   if (!rec) return 'inactiva';
