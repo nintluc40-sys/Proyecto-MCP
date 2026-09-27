@@ -10,7 +10,7 @@ import { fmtShort } from '../../core/dates.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import {
   MAD_MATRIZ_ORIGIN, MAD_BITACORA_ORIGIN, MAD_TRANSFER_ORIGIN,
-  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves, lineaDeVida,
+  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves, lineaDeVida, productividadPorFamilia, bandaTasa,
   buildReproModel, makeFilter, monthLabel, kpis, locationStats, femaleRanking,
   femaleHistory, neverSpawned, recoveryDistribution, stateDistribution,
   mortalityBreakdown, trends, salasOf, tanquesOf, lotesOf, codigosOf, locKey,
@@ -54,7 +54,9 @@ const SUBS = [
 
 const vState = { sub: 'panorama', month: null, sala: null, tanque: null, lote: null, codigo: null, locLevel: 'tanque', femSearch: '', femSel: null, trendGran: null, trendMetric: 'todas',
   /* 2026-09-27 (usuario) · el filtro rápido del ranking de hembras: 'todas' | 'vivas' | 'muertas'. */
-  rankEstado: 'todas' };
+  rankEstado: 'todas',
+  /* T1 (2026-09-27, usuario) · la agrupación de «Productividad por familia»: 'codigo' | 'lote'. */
+  familia: 'codigo' };
 
 // Modelo memoizado por identidad de store.globalData.
 let _cache = { src: null, model: null };
@@ -334,6 +336,7 @@ function renderPanorama(model, f) {
       ${stateCard}
       ${topCard('🏆 Top tanques por desoves', topT, 'tanque')}
       ${topCard('🏆 Top salas por desoves', topS, 'sala')}
+      ${familiasHTML(model, f)}
     </div>
   </div>`;
 }
@@ -650,6 +653,29 @@ function drawHembras(model, f) {
   }
 }
 
+/* T1 (2026-09-27, usuario) · productividad por familia: una fila por código genético (o lote), ordenada por tasa por
+   noche (con las bandas de V1), con sus «otros» (lotes del código o códigos del lote) y el PERÍODO en que desovó. */
+function familiasHTML(model, f) {
+  const campo = vState.familia === 'lote' ? 'lote' : 'codigo';
+  const t = productividadPorFamilia(model, f, campo);
+  const seg = `<div class="mc-seg">${[['codigo', 'Código genético'], ['lote', 'Lote']].map(([k, l]) =>
+    `<button type="button" class="mc-seg-b${campo === k ? ' is-on' : ''}" data-mc-familia="${k}" aria-pressed="${campo === k}">${l}</button>`).join('')}</div>`;
+  const dm = (d) => (d ? diaMes(d) : '');
+  const cuerpo = t.length ? `<div class="mc-tablewrap"><table class="mc-table"><thead><tr>
+      <th>${campo === 'lote' ? 'Lote' : 'Código genético'}</th><th class="r">Hembras</th><th class="r">Muertas</th><th class="r" title="% de sus hembras que desovaron">Fertilidad</th>
+      <th class="r">Desoves</th><th class="r">Des./hembra</th><th class="r" title="noches que sus hembras estuvieron vivas en el período">Hembras-noche</th><th class="r" title="ref. ${TASA_DESOVE_REF.referencia}">Tasa/noche</th><th class="r">Período</th>
+    </tr></thead><tbody>${t.map((x) => `<tr>
+      <td><b>${esc(x.familia)}</b>${x.otros.length ? ` <span class="mc-fam-otros">· ${esc(x.otros.join(', '))}</span>` : ''}</td>
+      <td class="r">${n0(x.hembras)}</td><td class="r">${n0(x.muertas)}</td><td class="r">${fertBadge(x.fertilidad)}</td>
+      <td class="r">${barra(x.desoves, maxDe(t, 'desoves'))}</td><td class="r">${n1(x.desovesPorHembra)}</td><td class="r">${n0(x.hembrasNoche)}</td>
+      <td class="r">${x.tasa == null ? '<span class="muted">—</span>' : `<span class="mc-tasa-b is-b-${bandaTasa(x.tasa)}">${n1(x.tasa)} %</span>`}</td>
+      <td class="r">${x.desde ? `${dm(x.desde)}–${dm(x.hasta)}` : '—'}</td>
+    </tr>`).join('')}</tbody></table></div>
+    <p class="mc-note">Tasa/noche = desoves ÷ noches que sus hembras estuvieron vivas en el período (ref. ${TASA_DESOVE_REF.referencia}). Las familias no tienen por qué haber coincidido en el tiempo: compara la tasa mirando también su período.</p>`
+    : vacioHTML('Sin hembras en este filtro');
+  return `<div class="mc-card mc-card-wide mc-fam-card"><h4 class="mc-card-h">🧬 Productividad por familia ${seg}</h4>${cuerpo}</div>`;
+}
+
 /* V9 (2026-09-27, usuario) · la silueta de la vista mientras cargan los datos (cabecera, 7 KPI y 2 tarjetas, con un
    brillo que se apaga con «menos movimiento»); el texto, para lectores de pantalla. */
 function esqueletoHTML() {
@@ -844,6 +870,9 @@ function bind(root) {
     if (pill) { vState.sub = pill.dataset.mcSub; maduracionView(root); return; }
 
     // Stepper de período (al cambiar de mes, el toggle de granularidad vuelve a "auto")
+    // T1 · el selector de «Productividad por familia»
+    const fam = e.target.closest('[data-mc-familia]');
+    if (fam) { vState.familia = fam.dataset.mcFamilia; maduracionView(root); return; }
     // V9 · «Quitar filtros»: todo el histórico, sin sala/tanque/lote/código (y el ranking con todas).
     if (e.target.closest('[data-mc-limpiar]')) {
       Object.assign(vState, { month: null, sala: null, tanque: null, lote: null, codigo: null, rankEstado: 'todas', trendGran: null });

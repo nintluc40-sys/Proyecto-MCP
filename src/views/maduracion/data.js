@@ -420,6 +420,39 @@ export function kpis(model, f) {
   };
 }
 
+/* ── T1 · Productividad por familia (2026-09-27, usuario) ── */
+/** Una fila por familia (código genético o lote) con las MISMAS reglas que `kpis`: la población es la del filtro
+ *  (`passFem`), la fertilidad la de siempre (con mes, la del mes), las hembras-noche y la tasa por noche de la ventana;
+ *  más los desoves/hembra, los «otros» (los lotes de un código, o los códigos de un lote) y el PERÍODO en que desovó:
+ *  las familias no tienen por qué ser contemporáneas. Ordenada por tasa. */
+export function productividadPorFamilia(model, f, campo = 'codigo') {
+  const clave = campo === 'lote' ? 'lote' : 'codigo', otro = clave === 'lote' ? 'codigo' : 'lote';
+  const pop = model.females.filter((r) => passFem(r, f));
+  const v = ventana(model, f), des = desovesIn(model, f);
+  const alguna = new Set(model.desoves.map((e) => e.trovan)), enPeriodo = new Set(des.map((e) => e.trovan));
+  const grupos = new Map();
+  const g = (k) => { if (!grupos.has(k)) grupos.set(k, { familia: k, pop: [], otros: new Set(), desoves: 0, desde: null, hasta: null }); return grupos.get(k); };
+  pop.forEach((r) => { const x = g(dash(r[clave])); x.pop.push(r); if (String(r[otro] ?? '').trim()) x.otros.add(String(r[otro]).trim()); });
+  const porTrovan = new Map(pop.map((r) => [r.trovan, r]));
+  des.forEach((e) => {
+    const r = porTrovan.get(e.trovan); if (!r) return;
+    const x = g(dash(r[clave])); x.desoves++;
+    if (!x.desde || e.date < x.desde) x.desde = e.date;
+    if (!x.hasta || e.date > x.hasta) x.hasta = e.date;
+  });
+  return [...grupos.values()].map((x) => {
+    const vivas = x.pop.filter((r) => r.estado !== ESTADO_MUERTO);
+    let fertilidad = vivas.length ? (vivas.filter((r) => alguna.has(r.trovan)).length / vivas.length) * 100 : 0;
+    if (f.from) { const vm = x.pop.filter((r) => aliveDuring(r, f.from, f.to)); fertilidad = vm.length ? (vm.filter((r) => enPeriodo.has(r.trovan)).length / vm.length) * 100 : 0; }
+    const noches = x.pop.reduce((a, r) => a + nochesViva(r, v), 0);
+    return {
+      familia: x.familia, otros: [...x.otros].sort(_ordenEs), hembras: x.pop.length, muertas: x.pop.length - vivas.length, fertilidad,
+      desoves: x.desoves, desovesPorHembra: x.pop.length ? x.desoves / x.pop.length : 0, hembrasNoche: noches, tasa: tasa(x.desoves, noches),
+      desde: x.desde ? dia0(x.desde) : null, hasta: x.hasta ? dia0(x.hasta) : null,
+    };
+  }).sort((a, b) => (b.tasa ?? -1) - (a.tasa ?? -1) || b.desoves - a.desoves);
+}
+
 /* ── Producción / fertilidad por ubicación (tanque o sala) ── */
 /** @param {'sala'|'tanque'|'loc'} level  agrupación: sala, tanque o Sala·Tanque. */
 export function locationStats(model, f, level = 'tanque') {

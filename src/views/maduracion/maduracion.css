@@ -229,3 +229,12 @@
 .mc-vacio-i { font-size: 26px; line-height: 1; }
 .mc-vacio-t { margin: 4px 0 0; font-size: 13.5px; font-weight: 700; color: var(--c-text-soft); }
 .mc-vacio-f { margin: 0 0 6px; font-size: 12px; color: var(--c-brand); font-weight: 600; }
+
+/* T1 (2026-09-27, usuario) · productividad por familia: la tasa en las bandas de V1 y los «otros» de cada familia */
+.mc-fam-card .mc-seg { margin-left: auto; }
+.mc-fam-otros { font-size: 11.5px; font-weight: 600; color: var(--c-text-soft); }
+.mc-tasa-b { display: inline-block; min-width: 52px; padding: 2px 8px; border-radius: 999px; font-weight: 800; font-size: 12px; text-align: center; }
+.mc-tasa-b.is-b-critica { background: #d8432d; color: #fff; }
+.mc-tasa-b.is-b-baja { background: #f2b33d; color: #3a2a00; }
+.mc-tasa-b.is-b-rango { background: #2e9e5b; color: #fff; }
+.mc-tasa-b.is-b-alta { background: #3f7fd0; color: #fff; }
