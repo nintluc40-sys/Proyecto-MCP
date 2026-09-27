@@ -10,7 +10,7 @@ import { fmtShort } from '../../core/dates.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import {
   MAD_MATRIZ_ORIGIN, MAD_BITACORA_ORIGIN, MAD_TRANSFER_ORIGIN,
-  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO,
+  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas,
   buildReproModel, makeFilter, monthLabel, kpis, locationStats, femaleRanking,
   femaleHistory, neverSpawned, recoveryDistribution, stateDistribution,
   mortalityBreakdown, trends, salasOf, tanquesOf, lotesOf, codigosOf, locKey,
@@ -448,7 +448,30 @@ function renderOperativo(model, f) {
     : '<div class="empty-state" style="padding:20px">Sin mortalidades en el período.</div>'}
   </div>`;
 
-  return `<div class="mc-body"><div class="mc-grid">${rankTable}${prodChart}${mortChart}</div></div>`;
+  return `<div class="mc-body"><div class="mc-grid">${mapaSalasHTML(model, f)}${rankTable}${prodChart}${mortChart}</div></div>`;
+}
+
+/* V1 (2026-09-27, usuario) · el mapa de salas: cada tanque FÍSICO en su banda de tasa por noche (4 bandas con la
+   referencia 5–15 % y gris sin hembras con chip). Sigue el mes, el lote y el código; un clic filtra la vista por ese
+   tanque y otro clic en el mismo lo quita. Los grises no se pulsan: el filtro no tendría nada que enseñar. */
+function mapaSalasHTML(model, f) {
+  const mapa = mapaDeSalas(model, f);
+  const tile = (s, t) => {
+    const sel = !!t.filtro && vState.sala === t.filtro.sala && vState.tanque === t.filtro.tanque;
+    const tit = t.filtro ? `${s.sala} · Tanque ${t.num}: ${n1(t.tasa)} % por noche (${n0(t.desoves)} desoves en ${n0(t.hembrasNoche)} hembras-noche)`
+      : `${s.sala} · Tanque ${t.num}: sin hembras con chip en el período`;
+    return `<button type="button" class="mc-mapa-tq is-b-${t.banda}${sel ? ' is-sel' : ''}${t.fueraDeCatalogo ? ' is-extra' : ''}" data-mc-mapa="${esc(s.sala + '|' + t.num)}"`
+      + `${t.filtro ? '' : ' disabled'} aria-pressed="${sel}" title="${esc(tit + (t.fueraDeCatalogo ? ' · fuera del catálogo de tanques' : ''))}">`
+      + `<span class="mc-mapa-n">T${t.num}</span> <span class="mc-mapa-v">${t.filtro ? n1(t.tasa) + ' %' : '—'}</span></button>`;
+  };
+  const salas = mapa.map((s) => `<div class="mc-mapa-sala"><div class="mc-mapa-sala-h">${esc(s.sala)}</div>
+    <div class="mc-mapa-tqs">${s.tanques.map((t) => tile(s, t)).join('')}</div></div>`).join('');
+  const leyenda = BANDAS_TASA.map((b) => `<span class="mc-mapa-lg"><i class="mc-mapa-sw is-b-${b.clave}"></i>${esc(b.etiqueta)}</span>`).join('');
+  return `<div class="mc-card mc-card-wide mc-mapa-card">
+    <h4 class="mc-card-h">🗺 Mapa de salas · tasa de desove por noche <span class="mc-h-note">pulsa un tanque para filtrar la vista</span></h4>
+    <div class="mc-mapa">${salas}</div>
+    <div class="mc-mapa-ley">${leyenda}</div>
+  </div>`;
 }
 
 /** La tasa de desove por noche con su semáforo contra la referencia (5–15 %): baja, dentro o por encima. */
@@ -719,6 +742,18 @@ function bind(root) {
     if (pill) { vState.sub = pill.dataset.mcSub; maduracionView(root); return; }
 
     // Stepper de período (al cambiar de mes, el toggle de granularidad vuelve a "auto")
+    // V1 · un clic en un tanque del mapa lo pone en los filtros de la vista; otro clic en el mismo los quita.
+    const mTq = e.target.closest('[data-mc-mapa]');
+    if (mTq && !mTq.disabled) {
+      const [sala, num] = mTq.dataset.mcMapa.split('|');
+      const t = (mapaDeSalas(reproModel(), makeFilter({ month: vState.month, lote: vState.lote, codigo: vState.codigo })).find((s) => s.sala === sala) || { tanques: [] }).tanques.find((x) => String(x.num) === num);
+      if (t && t.filtro) {
+        const mismo = vState.sala === t.filtro.sala && vState.tanque === t.filtro.tanque;
+        vState.sala = mismo ? null : t.filtro.sala; vState.tanque = mismo ? null : t.filtro.tanque;
+        maduracionView(root);
+      }
+      return;
+    }
     const rkE = e.target.closest('[data-mc-rankestado]');
     if (rkE) { vState.rankEstado = rkE.dataset.mcRankestado; maduracionView(root); return; }
     const mnav = e.target.closest('[data-mc-monthnav]');

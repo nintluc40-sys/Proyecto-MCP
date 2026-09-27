@@ -46,6 +46,7 @@
    ============================================================ */
 import { parseAnyDate, yearMonthKey } from '../../core/dates.js';
 import { normTrovan, cadenaDelChip, individuoEnFecha, idsDeCadena, claveIndividuo } from '../../core/trovan.js';
+import { MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 
 export const MAD_MATRIZ_ORIGIN = 'Maduración MATRIZ';
 export const MAD_BITACORA_ORIGIN = 'Maduración Bitácora';
@@ -459,6 +460,44 @@ export function locationStats(model, f, level = 'tanque') {
       hembrasNoche: noches, tasaDesove: tasa(g.desoves, noches),
     };
   }).sort((a, b) => b.desoves - a.desoves || b.fertilidad - a.fertilidad);
+}
+
+/* ── V1 · Mapa de salas por tasa de desove (2026-09-27, usuario) ── */
+/** Las 4 bandas de la tasa por noche con la referencia 5–15 % (y «sin» = no hay hembras-noche en el período). */
+export const BANDAS_TASA = [
+  { clave: 'critica', etiqueta: '< 2,5 %' }, { clave: 'baja', etiqueta: '2,5–5 %' },
+  { clave: 'rango', etiqueta: '5–15 % (ref.)' }, { clave: 'alta', etiqueta: '> 15 %' }, { clave: 'sin', etiqueta: 'sin hembras con chip' },
+];
+export function bandaTasa(v) {
+  if (v == null || isNaN(v)) return 'sin';
+  if (v < TASA_DESOVE_REF.min / 2) return 'critica';
+  if (v < TASA_DESOVE_REF.min) return 'baja';
+  return v <= TASA_DESOVE_REF.max ? 'rango' : 'alta';
+}
+const numTanque = (s) => { const m = /(\d+)\s*$/.exec(String(s ?? '').trim()); return m ? +m[1] : null; };
+/** La planta entera: los tanques FÍSICOS de cada sala (MAD_TANQUES_POR_SALA), más los que los datos traigan fuera del
+ *  catálogo, cada uno con su tasa por noche y su banda. Sigue el mes, el lote y el código del filtro pero NO la
+ *  sala/tanque: el mapa es el que elige el tanque. `filtro` es el valor EXACTO de los datos que el clic pone en los
+ *  filtros de la vista (null en un tanque sin hembras con chip: no hay nada que filtrar). */
+export function mapaDeSalas(model, f) {
+  const st = locationStats(model, { ...f, sala: null, tanque: null }, 'tanque').filter((x) => x.key !== '—');
+  const porClave = new Map(st.map((x) => [String(x.sala).trim() + '|' + numTanque(x.tanque), x]));
+  const salas = new Map(Object.entries(MAD_TANQUES_POR_SALA).map(([s, ts]) => [s, ts.map((n) => ({ num: n, fueraDeCatalogo: false }))]));
+  for (const x of st) {
+    const s = String(x.sala).trim(), n = numTanque(x.tanque); if (!s || n == null) continue;
+    if (!salas.has(s)) salas.set(s, []);
+    if (!salas.get(s).some((t) => t.num === n)) salas.get(s).push({ num: n, fueraDeCatalogo: true });
+  }
+  return [...salas.entries()].map(([sala, ts]) => ({
+    sala,
+    tanques: ts.sort((a, b) => a.num - b.num).map((t) => {
+      const x = porClave.get(sala + '|' + t.num);
+      const tasaV = x && x.hembrasNoche ? x.tasaDesove : null;
+      return { num: t.num, fueraDeCatalogo: t.fueraDeCatalogo, desoves: x ? x.desoves : 0, hembras: x ? x.hembras : 0,
+        hembrasNoche: x ? x.hembrasNoche : 0, tasa: tasaV, banda: bandaTasa(tasaV),
+        filtro: x && x.hembrasNoche ? { sala: x.sala, tanque: x.tanque } : null };
+    }),
+  }));
 }
 
 /* ── Ranking de hembras por nº de desoves ── */

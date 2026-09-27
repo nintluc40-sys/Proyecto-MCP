@@ -141,3 +141,24 @@
 .mc-rec-hl { margin: 2px 0 0; font-size: 13px; color: var(--c-text-soft); }
 .mc-rec-v { font-size: 22px; font-weight: 800; color: var(--c-brand); }
 .mc-rec-sub { margin: 0 0 6px; font-size: 11.5px; color: var(--c-text-muted); }
+
+/* V1 (2026-09-27, usuario) · mapa de salas por tasa de desove por noche (4 bandas con la referencia 5–15 %) */
+.mc-mapa { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 18px; }
+.mc-mapa-sala-h { font-size: 12px; font-weight: 700; color: var(--c-text-soft); margin-bottom: 6px; }
+.mc-mapa-tqs { display: flex; flex-wrap: wrap; gap: 6px; }
+.mc-mapa-tq { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 58px; height: 44px; padding: 0;
+  border-radius: 8px; border: 1px solid transparent; font: inherit; line-height: 1.15; cursor: pointer; transition: transform .12s; }
+.mc-mapa-tq:hover:not(:disabled), .mc-mapa-tq:focus-visible { transform: translateY(-1px); outline: 2px solid var(--c-brand); outline-offset: 1px; }
+.mc-mapa-n { font-size: 11px; font-weight: 600; opacity: .9; }
+.mc-mapa-v { font-size: 13px; font-weight: 800; }
+.mc-mapa-tq.is-b-critica, .mc-mapa-sw.is-b-critica { background: #d8432d; color: #fff; }
+.mc-mapa-tq.is-b-baja, .mc-mapa-sw.is-b-baja { background: #f2b33d; color: #3a2a00; }
+.mc-mapa-tq.is-b-rango, .mc-mapa-sw.is-b-rango { background: #2e9e5b; color: #fff; }
+.mc-mapa-tq.is-b-alta, .mc-mapa-sw.is-b-alta { background: #3f7fd0; color: #fff; }
+.mc-mapa-tq.is-b-sin, .mc-mapa-sw.is-b-sin { background: var(--c-surface-2, #eef1f3); color: var(--c-text-muted); border-color: var(--c-border); }
+.mc-mapa-tq.is-b-sin { cursor: default; }
+.mc-mapa-tq.is-sel { outline: 3px solid var(--c-text); outline-offset: 2px; }
+.mc-mapa-tq.is-extra { border: 2px dashed var(--c-text-soft); }
+.mc-mapa-ley { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; font-size: 12px; color: var(--c-text-soft); }
+.mc-mapa-lg { display: inline-flex; align-items: center; gap: 6px; }
+.mc-mapa-sw { display: inline-block; width: 14px; height: 14px; border-radius: 4px; border: 1px solid transparent; }
