@@ -49,7 +49,10 @@ afterEach(() => {
   vi.doUnmock('./operativo.view.js');
 });
 
-describe('Maduración · la entrada: 📋 Operativo | 🧬 Microchips', () => {
+/* 2026-09-27 · tope propio de 20 s: cada prueba carga en frío el tablero DIFERIDO (operativo.view.js y lo que importa) y
+   Microchips, que han crecido. La primera tarda ~3,1 s sola (antes 1,8 s) y, con el shard cargado, pasaba del tope de 5 s de
+   vitest (medido: 5,18 s). No cambia lo que comprueban. */
+describe('Maduración · la entrada: 📋 Operativo | 🧬 Microchips', { timeout: 20000 }, () => {
   it('abre en Operativo: el selector con las dos familias y el tablero, que llega DIFERIDO', async () => {
     await cargar();
     const listo = maduracionEntrada(root);
