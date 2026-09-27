@@ -10,7 +10,7 @@ import { fmtShort } from '../../core/dates.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import {
   MAD_MATRIZ_ORIGIN, MAD_BITACORA_ORIGIN, MAD_TRANSFER_ORIGIN,
-  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF,
+  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO,
   buildReproModel, makeFilter, monthLabel, kpis, locationStats, femaleRanking,
   femaleHistory, neverSpawned, recoveryDistribution, stateDistribution,
   mortalityBreakdown, trends, salasOf, tanquesOf, lotesOf, codigosOf, locKey,
@@ -27,7 +27,9 @@ const SUBS = [
   { key: 'hembras', label: 'Hembras', icon: '🦐' },
 ];
 
-const vState = { sub: 'panorama', month: null, sala: null, tanque: null, lote: null, codigo: null, locLevel: 'tanque', femSearch: '', femSel: null, trendGran: null, trendMetric: 'todas' };
+const vState = { sub: 'panorama', month: null, sala: null, tanque: null, lote: null, codigo: null, locLevel: 'tanque', femSearch: '', femSel: null, trendGran: null, trendMetric: 'todas',
+  /* 2026-09-27 (usuario) · el filtro rápido del ranking de hembras: 'todas' | 'vivas' | 'muertas'. */
+  rankEstado: 'todas' };
 
 // Modelo memoizado por identidad de store.globalData.
 let _cache = { src: null, model: null };
@@ -55,6 +57,7 @@ const n1 = (v) => (v == null || isNaN(v)) ? '—' : (Math.round(v * 10) / 10).to
 const pct = (v) => (v == null || isNaN(v)) ? '—' : (Math.round(v * 10) / 10) + '%';
 const dCell = (d) => (d ? esc(fmtShort(d)) : '<span class="muted">—</span>');
 const txt = (v) => (v === '' || v == null) ? '<span class="muted">—</span>' : esc(String(v));
+const diaMes = (d) => String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
 
 /* ============================================================
    VISTA
@@ -472,7 +475,13 @@ function barOpts(unit) {
 function renderHembras(model, f) {
   const ranking = femaleRanking(model, f);
   const q = vState.femSearch.trim().toUpperCase().replace(/\s+/g, '');
-  const shown = q ? ranking.filter((r) => r.trovan.toUpperCase().includes(q)) : ranking;
+  const buscadas = q ? ranking.filter((r) => r.trovan.toUpperCase().includes(q)) : ranking;
+  /* 2026-09-27 (usuario) · las muertas, a primera vista: su fila atenuada, «✝ muerta dd/mm» junto al Trovan, y este filtro. */
+  const esMuerta = (r) => r.estado === ESTADO_MUERTO;
+  const cuentaEstado = { todas: buscadas.length, vivas: buscadas.filter((r) => !esMuerta(r)).length, muertas: buscadas.filter(esMuerta).length };
+  if (!(vState.rankEstado in cuentaEstado)) vState.rankEstado = 'todas';
+  const shown = vState.rankEstado === 'vivas' ? buscadas.filter((r) => !esMuerta(r)) : vState.rankEstado === 'muertas' ? buscadas.filter(esMuerta) : buscadas;
+  const segEstado = `<div class="mc-seg mc-rank-seg">${[['todas', 'Todas'], ['vivas', 'Vivas'], ['muertas', '✝ Muertas']].map(([k, l]) => `<button class="mc-seg-b ${vState.rankEstado === k ? 'is-on' : ''}" data-mc-rankestado="${k}" aria-pressed="${vState.rankEstado === k}">${l} <b>${n0(cuentaEstado[k])}</b></button>`).join('')}</div>`;
   const never = neverSpawned(model, f);
   const rec = recoveryDistribution(model, f);
 
@@ -483,12 +492,12 @@ function renderHembras(model, f) {
   </div>`;
 
   const rankTable = `<div class="mc-card mc-card-wide">
-    <h4 class="mc-card-h">Ranking de hembras por desoves ${rankNote()}</h4>
+    <h4 class="mc-card-h">Ranking de hembras por desoves ${rankNote()} ${segEstado}</h4>
     ${shown.length ? `<div class="mc-tablewrap"><table class="mc-table">
       <thead><tr><th>#</th><th>Trovan ID</th><th>Ubicación actual</th><th class="r">Desoves</th><th class="r">Últ. desove</th><th class="r">Interv. prom.</th><th></th></tr></thead>
-      <tbody>${shown.slice(0, 200).map((r, i) => `<tr>
+      <tbody>${shown.slice(0, 200).map((r, i) => `<tr${esMuerta(r) ? ' class="mc-rank-muerta"' : ''}>
         <td class="mc-rk">${i + 1}</td>
-        <td><button class="mc-trovan" data-mc-female="${esc(r.trovan)}">${esc(r.trovan)}</button></td>
+        <td><button class="mc-trovan" data-mc-female="${esc(r.trovan)}">${esc(r.trovan)}</button>${esMuerta(r) ? ` <span class="mc-muerta" title="Murió el ${esc(r.muerte ? fmtShort(r.muerte) : 'día sin registrar')}">✝ muerta${r.muerte ? ' ' + diaMes(r.muerte) : ''}</span>` : ''}</td>
         <td>${txt(locKey(r.sala, r.tanque))}</td>
         <td class="r"><b>${n0(r.desoves)}</b></td>
         <td class="r">${dCell(r.ultimoDesove)}</td>
@@ -496,7 +505,7 @@ function renderHembras(model, f) {
         <td class="r"><button class="mc-mini" data-mc-female="${esc(r.trovan)}">Historial ›</button></td>
       </tr>`).join('')}</tbody></table></div>
       ${shown.length > 200 ? `<p class="mc-note">Mostrando 200 de ${n0(shown.length)}. Afina con el buscador o los filtros.</p>` : ''}`
-    : '<div class="empty-state" style="padding:20px">Ninguna hembra con desoves para el filtro actual.</div>'}
+    : `<div class="empty-state" style="padding:20px">${vState.rankEstado === 'todas' ? 'Ninguna hembra con desoves para el filtro actual.' : 'Ninguna hembra ' + (vState.rankEstado === 'vivas' ? 'viva' : 'muerta') + ' con desoves para el filtro actual.'}</div>`}
   </div>`;
 
   const recCard = `<div class="mc-card">
@@ -652,6 +661,8 @@ function bind(root) {
     if (pill) { vState.sub = pill.dataset.mcSub; maduracionView(root); return; }
 
     // Stepper de período (al cambiar de mes, el toggle de granularidad vuelve a "auto")
+    const rkE = e.target.closest('[data-mc-rankestado]');
+    if (rkE) { vState.rankEstado = rkE.dataset.mcRankestado; maduracionView(root); return; }
     const mnav = e.target.closest('[data-mc-monthnav]');
     if (mnav && !mnav.disabled) {
       const idx = periodIdx() + Number(mnav.dataset.mcMonthnav);
