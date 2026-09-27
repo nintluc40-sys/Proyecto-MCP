@@ -10,7 +10,7 @@ import { fmtShort } from '../../core/dates.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import {
   MAD_MATRIZ_ORIGIN, MAD_BITACORA_ORIGIN, MAD_TRANSFER_ORIGIN,
-  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves,
+  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves, lineaDeVida,
   buildReproModel, makeFilter, monthLabel, kpis, locationStats, femaleRanking,
   femaleHistory, neverSpawned, recoveryDistribution, stateDistribution,
   mortalityBreakdown, trends, salasOf, tanquesOf, lotesOf, codigosOf, locKey,
@@ -649,6 +649,41 @@ function drawHembras(model, f) {
   }
 }
 
+/* V5 (2026-09-27, usuario) · la línea de vida: una franja del ingreso a la muerte (o al último dato), en tramos por
+   ubicación, con un punto por desove, ⇄ en cada traslado, ✝ al morir y los meses debajo (el título de cada marca da su
+   fecha). HTML con posiciones en % (no SVG: estirado a lo ancho deformaba textos y puntos en pantallas estrechas). El
+   período cuenta días ENTEROS: el último día tiene ancho y cada desove cae en el centro de su día. */
+function lineaVidaHTML(lv) {
+  if (!lv) return '';
+  const DIA = 864e5, fin1 = new Date(lv.fin.getFullYear(), lv.fin.getMonth(), lv.fin.getDate() + 1), span = fin1 - lv.inicio;
+  const p = (d) => Math.round(((d - lv.inicio) / span) * 100000) / 1000;   // % del período, 3 decimales
+  const medioDia = Math.round((DIA / span) * 50000) / 1000;
+  const dm = diaMes;
+  const dma = (d) => dm(d) + '/' + d.getFullYear();
+  const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const ult = lv.tramos.length - 1;
+  const tramos = lv.tramos.map((t, i) => {
+    const x0 = p(t.desde), w = Math.round((p(i === ult ? fin1 : t.hasta) - x0) * 1000) / 1000;
+    return `<div class="mc-lv-tramo ${i % 2 ? 'is-b' : 'is-a'}" data-etiqueta="${esc(t.etiqueta)}" data-x="${x0}" data-w="${w}" style="left:${x0}%;width:${w}%"`
+      + ` title="${esc(t.etiqueta)}: ${dma(t.desde)} → ${dma(t.hasta)}"><span>${esc(t.etiqueta)}</span></div>`;
+  }).join('');
+  const desoves = lv.desoves.map((e) => { const x = Math.round((p(dia0Local(e.date)) + medioDia) * 1000) / 1000;
+    return `<i class="mc-lv-desove" data-x="${x}" style="left:${x}%" title="Desove ${dma(e.date)} · ${esc(locKey(e.sala, e.tanque))}"></i>`; }).join('');
+  const lado = (x) => (x > 88 ? ' is-der' : x < 12 ? ' is-izq' : '');
+  const traslados = lv.traslados.map((t) => { const x = p(t.date);
+    return `<span class="mc-lv-traslado${lado(x)}" data-x="${x}" style="left:${x}%" title="Traslado ${dma(t.date)}: ${esc(t.de)} → ${esc(t.a)}"><b>⇄ ${dm(t.date)}</b></span>`; }).join('');
+  const muerte = lv.muerte ? `<span class="mc-lv-muerte" style="left:100%" title="Muerte ${dma(lv.muerte)}">✝</span>` : '';
+  const meses = [];
+  for (let d = new Date(lv.inicio.getFullYear(), lv.inicio.getMonth() + 1, 1); d <= lv.fin; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
+    meses.push(`<span class="mc-lv-mes" style="left:${p(d)}%">${MES[d.getMonth()]}</span>`);
+  }
+  return `<div class="mc-lv"><div class="mc-lv-h">Línea de vida <span class="mc-h-note">${n0(lv.dias)} días · ${n0(lv.desoves.length)} desoves · ${n0(lv.traslados.length)} traslado(s)</span></div>
+    <div class="mc-lv-ext"><span>▶ ${dm(lv.inicio)}</span><span>${lv.vive ? 'último dato ' + dm(lv.fin) : '✝ ' + dm(lv.fin)}</span></div>
+    <div class="mc-lv-pista">${traslados}<div class="mc-lv-franja">${tramos}${desoves}${muerte}</div>${meses.join('')}</div>
+    <div class="mc-lv-ley"><span><i class="mc-lv-sw is-desove"></i>desove</span><span>⇄ traslado</span><span>✝ muerte</span><span><i class="mc-lv-sw is-a"></i><i class="mc-lv-sw is-b"></i>un tramo por tanque</span></div></div>`;
+}
+const dia0Local = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
 /* ── Modal · historial completo de una hembra (all-time) ── */
 function openFemale(root, trovan) {
   const hist = femaleHistory(_model, trovan);
@@ -700,7 +735,7 @@ function openFemale(root, trovan) {
     ${hist.mortalidad.length ? `<div class="mc-fem-death">☠️ Mortalidad registrada: ${hist.mortalidad.map((e) => esc(fmtShort(e.date))).join(', ')}</div>` : ''}
   </div>`;
 
-  bodyEl.innerHTML = info + kpisHtml + chart + `<div class="mc-fem-cols">${desoveList}${movList}</div>`;
+  bodyEl.innerHTML = info + lineaVidaHTML(lineaDeVida(_model, trovan)) + kpisHtml + chart + `<div class="mc-fem-cols">${desoveList}${movList}</div>`;
 
   const modal = root.querySelector('#mcFemaleModal');
   if (modal) { modal.classList.add('sv-open'); document.body.classList.add('modal-open'); }

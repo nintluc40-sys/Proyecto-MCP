@@ -579,6 +579,35 @@ export function femaleHistory(model, trovan) {
   };
 }
 
+/* ── V5 · La línea de vida de una hembra (2026-09-27, usuario) ── */
+/** Del ingreso a la muerte (o al último dato de la granja si vive), en TRAMOS por ubicación: antes del primer traslado,
+ *  su origen; después de cada uno, su destino; sin traslados, su ubicación de la MATRIZ (la regla de
+ *  `resolveEventLocation`). Con sus desoves, sus traslados y su muerte. null si no está en la MATRIZ. */
+export function lineaDeVida(model, trovan) {
+  const h = femaleHistory(model, trovan);
+  const r = h.rec; if (!r) return null;
+  const corto = (s, t) => { const a = numTanque(s), b = numTanque(t); return (a != null ? 'S' + a : dash(s)) + '·' + (b != null ? 'T' + b : dash(t)); };
+  const inicio = r._ingreso ? dia0(r._ingreso) : (h.desoves.length ? dia0(h.desoves[0].date) : null);
+  if (!inicio) return null;
+  const vive = r.estado !== ESTADO_MUERTO;
+  const base = !vive && r._muerte ? r._muerte : (model.dataMaxDate || inicio);
+  const fin = dia0(base < inicio ? inicio : base);
+  const movs = h.movimientos.filter((m) => m.date && dia0(m.date) >= inicio && dia0(m.date) <= fin);
+  const tramos = [];
+  let desde = inicio, loc = movs.length ? [movs[0].salaOrigen, movs[0].tanqueOrigen] : [r.sala, r.tanque];
+  for (const m of movs) {
+    const d = dia0(m.date);
+    tramos.push({ desde, hasta: d, sala: loc[0], tanque: loc[1], etiqueta: corto(loc[0], loc[1]) });
+    desde = d; loc = [m.salaDestino, m.tanqueDestino];
+  }
+  tramos.push({ desde, hasta: fin, sala: loc[0], tanque: loc[1], etiqueta: corto(loc[0], loc[1]) });
+  return {
+    trovan: h.trovan, inicio, fin, vive, dias: Math.round((fin - inicio) / 864e5) + 1, tramos, desoves: h.desoves,
+    traslados: movs.map((m) => ({ date: dia0(m.date), de: corto(m.salaOrigen, m.tanqueOrigen), a: corto(m.salaDestino, m.tanqueDestino) })),
+    muerte: vive || !r._muerte ? null : dia0(r._muerte),
+  };
+}
+
 /* ── Hembras que NUNCA han desovado (all-time; vivas, filtrable por ubicación) ── */
 export function neverSpawned(model, f = {}) {
   const everSpawned = new Set(model.desoves.map((e) => e.trovan));

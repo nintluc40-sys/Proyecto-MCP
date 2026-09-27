@@ -179,3 +179,24 @@
 .mc-cal-granja th { font-weight: 800; }
 .mc-cal.is-compacto td, .mc-cal.is-compacto .mc-cal-d { min-width: 12px; height: 16px; font-size: 0; }
 .mc-cal.is-compacto .mc-cal-d { font-size: 8px; }
+
+/* V5 (2026-09-27, usuario) · la línea de vida de la hembra (HTML con posiciones en %: no se deforma en pantallas estrechas) */
+.mc-lv { margin: 4px 0 14px; padding: 10px 14px 8px; border: 1px solid var(--c-border); border-radius: 12px; background: var(--c-surface); }
+.mc-lv-h { font-size: 13px; font-weight: 700; color: var(--c-text); margin-bottom: 4px; }
+.mc-lv-ext { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; color: var(--c-text-soft); }
+.mc-lv-pista { position: relative; height: 66px; margin: 0 6px; }
+.mc-lv-franja { position: absolute; left: 0; right: 0; top: 18px; height: 24px; }
+.mc-lv-tramo { position: absolute; top: 0; height: 24px; border-radius: 6px; box-shadow: inset -1px 0 0 var(--c-surface); overflow: hidden;
+  display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: var(--c-text-soft); white-space: nowrap; }
+.mc-lv-tramo.is-a, .mc-lv-sw.is-a { background: rgba(0, 131, 143, .22); }
+.mc-lv-tramo.is-b, .mc-lv-sw.is-b { background: rgba(63, 127, 208, .24); }
+.mc-lv-desove { position: absolute; top: 7px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: #0f7c9a; box-shadow: 0 0 0 2px var(--c-surface); }
+.mc-lv-sw.is-desove { background: #0f7c9a; border-radius: 50%; }
+.mc-lv-traslado { position: absolute; top: 0; bottom: 20px; width: 0; border-left: 2px dashed #3f7fd0; }
+.mc-lv-traslado b { position: absolute; top: -2px; left: 4px; font-size: 10px; color: #3f7fd0; white-space: nowrap; }
+.mc-lv-traslado.is-der b { left: auto; right: 4px; }
+.mc-lv-muerte { position: absolute; top: -19px; margin-left: -12px; font-size: 18px; font-weight: 800; color: #e0533b; line-height: 1; }
+.mc-lv-mes { position: absolute; bottom: 0; transform: translateX(-50%); font-size: 10px; text-transform: uppercase; color: var(--c-text-soft); border-left: 1px solid var(--c-text-muted); padding-left: 3px; }
+.mc-lv-ley { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: var(--c-text-soft); }
+.mc-lv-ley span { display: inline-flex; align-items: center; gap: 4px; }
+.mc-lv-sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
