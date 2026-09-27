@@ -254,3 +254,11 @@
 .mc-vent.is-ventana { background: rgba(46, 158, 91, .16); color: #1e7a44; }
 .mc-vent.is-aun { background: var(--c-surface-2, #f1f4f6); color: var(--c-text-soft); }
 .mc-vent.is-pasada { background: rgba(217, 154, 0, .16); color: #8a6200; }
+
+/* T7 (2026-09-27, usuario) · la mortalidad tras el desove */
+.mc-post-card .mc-seg { margin-left: auto; }
+.mc-post-res td { padding: 6px 8px; font-size: 12.5px; }
+.mc-post-res td.r { white-space: nowrap; }
+.mc-post-rr { font-weight: 700; color: var(--c-text-soft); }
+.mc-post-rr.is-menos { color: #1e7a44; }
+.mc-post-rr.is-mas { color: #c0392b; }

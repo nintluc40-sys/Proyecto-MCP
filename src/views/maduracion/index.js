@@ -10,7 +10,7 @@ import { fmtShort } from '../../core/dates.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import {
   MAD_MATRIZ_ORIGIN, MAD_BITACORA_ORIGIN, MAD_TRANSFER_ORIGIN,
-  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves, lineaDeVida, productividadPorFamilia, bandaTasa, supervivenciaPorFamilia, alertaReemplazo, ventanaDeDesove,
+  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves, lineaDeVida, productividadPorFamilia, bandaTasa, supervivenciaPorFamilia, alertaReemplazo, ventanaDeDesove, mortalidadPostDesove,
   buildReproModel, makeFilter, monthLabel, kpis, locationStats, femaleRanking,
   femaleHistory, neverSpawned, recoveryDistribution, stateDistribution,
   mortalityBreakdown, trends, salasOf, tanquesOf, lotesOf, codigosOf, locKey,
@@ -62,7 +62,9 @@ const vState = { sub: 'panorama', month: null, sala: null, tanque: null, lote: n
   /* T2 (2026-09-27, usuario) · el gráfico de mortalidad: 'tasa' (% diario, por defecto) | 'muertes'. */
   mortModo: 'tasa',
   /* T5 (2026-09-27, usuario) · el umbral de la alerta de reemplazo, en días (10 | 14 | 21 | 30). */
-  umbral: 21 };
+  umbral: 21,
+  /* T7 (2026-09-27, usuario) · los días tras el desove que cuentan como «después» (1 | 2 | 3). */
+  postV: 2 };
 
 // Modelo memoizado por identidad de store.globalData.
 let _cache = { src: null, model: null };
@@ -493,7 +495,7 @@ function renderOperativo(model, f) {
     : vacioHTML('Sin mortalidades en este filtro', { icono: '✅' })}
   </div>`;
 
-  return `<div class="mc-body"><div class="mc-grid">${mapaSalasHTML(model, f)}${calendarioHTML(model, f)}${ventanaHTML(model, f)}${rankTable}${prodChart}${mortChart}</div></div>`;
+  return `<div class="mc-body"><div class="mc-grid">${mapaSalasHTML(model, f)}${calendarioHTML(model, f)}${ventanaHTML(model, f)}${rankTable}${prodChart}${mortChart}${postDesoveHTML(model, f)}</div></div>`;
 }
 
 /* V2 (2026-09-27, usuario) · el calendario de desoves: tanque × día, con la intensidad del Nº de desoves de cada noche
@@ -793,6 +795,33 @@ function ventanaHTML(model, f) {
   return `<div class="mc-card mc-card-wide mc-ventana-card"><h4 class="mc-card-h">🔮 Esperadas la próxima noche <span class="mc-h-note">${nota}</span></h4>${cuerpo}</div>`;
 }
 
+/* T7 (2026-09-27, usuario) · la mortalidad tras el desove: la tasa diaria en los 0–N días tras desovar frente al resto,
+   el riesgo relativo leído en palabras y las muertes por tanque. Sirve de vigilancia: si pasa de 1, se ve. */
+function lecturaRR(rr) {
+  if (rr == null) return '<span class="muted">sin datos para compararlo</span>';
+  if (rr < 0.8) return '<span class="mc-post-rr is-menos">mueren MENOS tras desovar: sin señal de estrés post-desove</span>';
+  if (rr > 1.25) return '<span class="mc-post-rr is-mas">mueren MÁS tras desovar: posible estrés post-desove</span>';
+  return '<span class="mc-post-rr">igual que el resto del tiempo</span>';
+}
+function postDesoveHTML(model, f) {
+  const V = [1, 2, 3].includes(vState.postV) ? vState.postV : 2;
+  const p = mortalidadPostDesove(model, f, V);
+  const seg = `<div class="mc-seg">${[1, 2, 3].map((d) => `<button type="button" class="mc-seg-b${d === V ? ' is-on' : ''}" data-mc-postv="${d}" aria-pressed="${d === V}">${d} d</button>`).join('')}</div>`;
+  const muertes = (m, d) => `${n0(m)} muerte${m === 1 ? '' : 's'} en ${n0(d)} hembra-días`;
+  const dosDec = (v) => v.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const cuerpo = p.dentro.dias + p.fuera.dias ? `<table class="mc-table mc-table-sm mc-post-res"><tbody>
+      <tr><td>En los 0–${V} días tras desovar</td><td class="r"><b>${pct2(p.dentro.tasa)}/día</b></td><td>${muertes(p.dentro.muertes, p.dentro.dias)}</td></tr>
+      <tr><td>El resto del tiempo</td><td class="r"><b>${pct2(p.fuera.tasa)}/día</b></td><td>${muertes(p.fuera.muertes, p.fuera.dias)}</td></tr>
+      <tr><td>Riesgo relativo</td><td class="r"><b>${p.rr == null ? '—' : dosDec(p.rr)}</b></td><td>${lecturaRR(p.rr)}</td></tr>
+      <tr><td>Muertas que nunca desovaron</td><td class="r"><b>${n0(p.nuncaDesovaron)}</b></td><td></td></tr>
+    </tbody></table>
+    ${p.porTanque.length ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm"><thead><tr><th>Tanque</th><th class="r">Muertes tras desovar</th><th class="r">El resto</th></tr></thead>
+      <tbody>${p.porTanque.map((t) => `<tr><td><b>${esc(t.key)}</b></td><td class="r">${n0(t.dentro)}</td><td class="r">${n0(t.fuera)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    <p class="mc-note">Cuenta desde el primer desove de cada hembra hasta su muerte o el último dato; su muerte cae «tras desovar» si fue a ≤ ${V} días de su último desove. Los huecos del registro de desoves (míralos en el calendario) cargan días al «resto» y pueden exagerar la diferencia. Sigue sala, tanque, lote y código, no el mes.</p>`
+    : vacioHTML('Ninguna hembra con desoves en este filtro');
+  return `<div class="mc-card mc-post-card"><h4 class="mc-card-h">🩺 Mortalidad tras el desove ${seg}</h4>${cuerpo}</div>`;
+}
+
 /* V9 (2026-09-27, usuario) · la silueta de la vista mientras cargan los datos (cabecera, 7 KPI y 2 tarjetas, con un
    brillo que se apaga con «menos movimiento»); el texto, para lectores de pantalla. */
 function esqueletoHTML() {
@@ -989,6 +1018,9 @@ function bind(root) {
     if (pill) { vState.sub = pill.dataset.mcSub; maduracionView(root); return; }
 
     // Stepper de período (al cambiar de mes, el toggle de granularidad vuelve a "auto")
+    // T7 · los días de «tras el desove»
+    const pv = e.target.closest('[data-mc-postv]');
+    if (pv) { vState.postV = Number(pv.dataset.mcPostv); maduracionView(root); return; }
     // T5 · el umbral de la alerta de reemplazo
     const um = e.target.closest('[data-mc-umbral]');
     if (um) { vState.umbral = Number(um.dataset.mcUmbral); maduracionView(root); return; }

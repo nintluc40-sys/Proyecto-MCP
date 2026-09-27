@@ -798,6 +798,42 @@ export function ventanaDeDesove(model, f) {
     porTanque: [...tanques.values()].sort((a, b) => b.ventana - a.ventana || tot(b) - tot(a) || _ordenEs(a.key, b.key)) };
 }
 
+/* ── T7 · La mortalidad tras el desove (2026-09-27, usuario) ── */
+/** ¿Mueren más en los 0–`V` días tras un desove? Para cada hembra del filtro (`passFem`) que desovó alguna vez, sus días
+ *  desde el PRIMER desove hasta su muerte (o el último dato) se reparten en DENTRO (a ≤ `V` días de su último desove) y
+ *  FUERA; su muerte cae en uno de los dos. Tasa diaria de cada parte y el riesgo relativo (dentro ÷ fuera). Medido con los
+ *  datos reales: 0,42 con 2 días (mueren MENOS tras desovar). `nuncaDesovaron` = muertas sin ningún desove. */
+export function mortalidadPostDesove(model, f, V = 2) {
+  const fin = model.dataMaxDate;
+  const nd = (d) => Math.round(dia0(d).getTime() / 864e5);   // el día como número entero
+  let dd = 0, md = 0, df = 0, mf = 0, nunca = 0;
+  const tq = new Map();
+  if (fin) model.females.filter((r) => passFem(r, f)).forEach((r) => {
+    const muerta = r.estado === ESTADO_MUERTO && !!r._muerte;
+    const ds = [...new Set((model.desovesByTrovan.get(r.trovan) || []).map((e) => nd(e.date)))].sort((a, b) => a - b);
+    if (!ds.length) { if (r.estado === ESTADO_MUERTO) nunca++; return; }
+    const ultimo = muerta ? nd(r._muerte) : nd(fin);
+    let k = 0;
+    for (let t = ds[0]; t <= ultimo; t++) {
+      while (k + 1 < ds.length && ds[k + 1] <= t) k++;
+      const dentro = t - ds[k] <= V;
+      if (dentro) dd++; else df++;
+      if (muerta && t === ultimo) {
+        if (dentro) md++; else mf++;
+        const key = locKey(r.sala, r.tanque);
+        if (!tq.has(key)) tq.set(key, { key, dentro: 0, fuera: 0 });
+        tq.get(key)[dentro ? 'dentro' : 'fuera']++;
+      }
+    }
+  });
+  const td = tasa(md, dd), tf = tasa(mf, df);
+  return {
+    V, dentro: { dias: dd, muertes: md, tasa: td }, fuera: { dias: df, muertes: mf, tasa: tf },
+    rr: td != null && tf ? td / tf : null, nuncaDesovaron: nunca,
+    porTanque: [...tq.values()].sort((a, b) => b.dentro - a.dentro || b.fuera - a.fuera || _ordenEs(a.key, b.key)),
+  };
+}
+
 /* ── Clasificación de hembras (activa/inactiva/transferida/fallecida) ── */
 export function classifyFemale(rec, model, ref) {
   if (!rec) return 'inactiva';
