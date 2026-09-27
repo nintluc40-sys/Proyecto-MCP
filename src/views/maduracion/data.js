@@ -430,6 +430,8 @@ export function productividadPorFamilia(model, f, campo = 'codigo') {
   const pop = model.females.filter((r) => passFem(r, f));
   const v = ventana(model, f), des = desovesIn(model, f);
   const alguna = new Set(model.desoves.map((e) => e.trovan)), enPeriodo = new Set(des.map((e) => e.trovan));
+  const muertesDe = new Map();   // T2 · las mortalidades del período de cada hembra
+  mortsIn(model, f).forEach((e) => muertesDe.set(e.trovan, (muertesDe.get(e.trovan) || 0) + 1));
   const grupos = new Map();
   const g = (k) => { if (!grupos.has(k)) grupos.set(k, { familia: k, pop: [], otros: new Set(), desoves: 0, desde: null, hasta: null }); return grupos.get(k); };
   pop.forEach((r) => { const x = g(dash(r[clave])); x.pop.push(r); if (String(r[otro] ?? '').trim()) x.otros.add(String(r[otro]).trim()); });
@@ -445,9 +447,11 @@ export function productividadPorFamilia(model, f, campo = 'codigo') {
     let fertilidad = vivas.length ? (vivas.filter((r) => alguna.has(r.trovan)).length / vivas.length) * 100 : 0;
     if (f.from) { const vm = x.pop.filter((r) => aliveDuring(r, f.from, f.to)); fertilidad = vm.length ? (vm.filter((r) => enPeriodo.has(r.trovan)).length / vm.length) * 100 : 0; }
     const noches = x.pop.reduce((a, r) => a + nochesViva(r, v), 0);
+    const mortalidad = x.pop.reduce((a, r) => a + (muertesDe.get(r.trovan) || 0), 0);
     return {
       familia: x.familia, otros: [...x.otros].sort(_ordenEs), hembras: x.pop.length, muertas: x.pop.length - vivas.length, fertilidad,
       desoves: x.desoves, desovesPorHembra: x.pop.length ? x.desoves / x.pop.length : 0, hembrasNoche: noches, tasa: tasa(x.desoves, noches),
+      mortalidad, tasaMortalidad: tasa(mortalidad, noches),
       desde: x.desde ? dia0(x.desde) : null, hasta: x.hasta ? dia0(x.hasta) : null,
     };
   }).sort((a, b) => (b.tasa ?? -1) - (a.tasa ?? -1) || b.desoves - a.desoves);
@@ -491,6 +495,7 @@ export function locationStats(model, f, level = 'tanque') {
       fertilidad: hembras ? (spawners / hembras) * 100 : 0,
       eficiencia: hembras ? g.desoves / hembras : 0,
       hembrasNoche: noches, tasaDesove: tasa(g.desoves, noches),
+      tasaMortalidad: tasa(g.mortalidad, noches),   // T2 (2026-09-27) · % diario: muertes ÷ hembras-noche × 100
     };
   }).sort((a, b) => b.desoves - a.desoves || b.fertilidad - a.fertilidad);
 }

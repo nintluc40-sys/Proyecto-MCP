@@ -41,7 +41,9 @@ const CIFRAS = {
   afterDatasetsDraw(ch, _args, opts) {
     const c = ch.ctx, datos = ch.data.datasets[0].data;
     c.save(); c.fillStyle = opts.color; c.font = '600 12px "Segoe UI", system-ui, sans-serif'; c.textAlign = 'left'; c.textBaseline = 'middle';
-    ch.getDatasetMeta(0).data.forEach((barra, i) => { if (datos[i] != null) c.fillText(n0(datos[i]), barra.x + 6, barra.y); });
+    // T2 · con `decimales` (y `sufijo`), la cifra de una tasa: «2,53 %»; sin ellos, el entero de siempre.
+    const txt = (v) => (opts.decimales != null ? v.toLocaleString('es-EC', { minimumFractionDigits: opts.decimales, maximumFractionDigits: opts.decimales }) + (opts.sufijo || '') : n0(v));
+    ch.getDatasetMeta(0).data.forEach((barra, i) => { if (datos[i] != null) c.fillText(txt(datos[i]), barra.x + 6, barra.y); });
     c.restore();
   },
 };
@@ -56,7 +58,9 @@ const vState = { sub: 'panorama', month: null, sala: null, tanque: null, lote: n
   /* 2026-09-27 (usuario) · el filtro rápido del ranking de hembras: 'todas' | 'vivas' | 'muertas'. */
   rankEstado: 'todas',
   /* T1 (2026-09-27, usuario) · la agrupación de «Productividad por familia»: 'codigo' | 'lote'. */
-  familia: 'codigo' };
+  familia: 'codigo',
+  /* T2 (2026-09-27, usuario) · el gráfico de mortalidad: 'tasa' (% diario, por defecto) | 'muertes'. */
+  mortModo: 'tasa' };
 
 // Modelo memoizado por identidad de store.globalData.
 let _cache = { src: null, model: null };
@@ -422,7 +426,7 @@ function renderOperativo(model, f) {
       <thead><tr>
         <th>#</th><th>${level === 'sala' ? 'Sala' : 'Tanque'}</th>
         <th class="r">Desoves</th><th class="r">Hembras</th><th class="r">Desovaron</th>
-        <th class="r" title="% de sus hembras que desovaron en el período">Fertilidad</th><th class="r" title="% de sus hembras que desovan cada noche">Tasa/noche</th><th class="r">Eficiencia</th><th class="r">Mortalidad</th>
+        <th class="r" title="% de sus hembras que desovaron en el período">Fertilidad</th><th class="r" title="% de sus hembras que desovan cada noche">Tasa/noche</th><th class="r">Eficiencia</th><th class="r">Mortalidad</th><th class="r" title="muertes ÷ hembras-noche × 100">Mort./día</th>
       </tr></thead>
       <tbody>${stats.map((x, i) => `<tr>
         <td class="mc-rk">${i + 1}</td>
@@ -434,6 +438,7 @@ function renderOperativo(model, f) {
         <td class="r">${tasaBadge(x.tasaDesove)}</td>
         <td class="r">${n1(x.eficiencia)}</td>
         <td class="r">${barra(x.mortalidad, maxDe(stats, 'mortalidad'), ' is-mort')}</td>
+        <td class="r">${pct2(x.tasaMortalidad)}</td>
       </tr>`).join('')}</tbody></table></div>`
     : vacioHTML('Sin datos de producción en este filtro')}
     <p class="mc-note">Fertilidad = % de las hembras observadas (con evento o vivas en la ubicación) que desovaron en el período: a lo largo de meses tiende al 100 %. Tasa/noche = desoves ÷ noches que sus hembras estuvieron vivas en el período (ref. ${TASA_DESOVE_REF.referencia}). Eficiencia = desoves ÷ hembras. Un tanque es sala + número.</p>
@@ -446,7 +451,8 @@ function renderOperativo(model, f) {
 
   const mortArr = level === 'sala' ? mort.porSala : mort.porTanque;
   const mortChart = `<div class="mc-card">
-    <h4 class="mc-card-h">Mortalidad por ${level === 'sala' ? 'sala' : 'tanque'} <span class="mc-h-note">${n0(mort.total)} total</span></h4>
+    <h4 class="mc-card-h">Mortalidad por ${level === 'sala' ? 'sala' : 'tanque'} <span class="mc-h-note">${n0(mort.total)} muertes${vState.mortModo === 'muertes' ? '' : ' · % diario = muertes ÷ hembras-noche'}</span>
+      <span class="mc-seg">${[['tasa', '% diario'], ['muertes', 'Muertes']].map(([k, l]) => `<button type="button" class="mc-seg-b${(vState.mortModo === 'muertes' ? 'muertes' : 'tasa') === k ? ' is-on' : ''}" data-mc-mortmodo="${k}" aria-pressed="${(vState.mortModo === 'muertes' ? 'muertes' : 'tasa') === k}">${l}</button>`).join('')}</span></h4>
     ${mortArr.length ? `<div class="mc-chart" style="height:${Math.max(180, Math.min(mortArr.length, 12) * 26 + 40)}px"><canvas id="mcMortBars"></canvas></div>`
     : vacioHTML('Sin mortalidades en este filtro', { icono: '✅' })}
   </div>`;
@@ -529,12 +535,26 @@ function drawOperativo(model, f) {
   }
   const mort = mortalityBreakdown(model, f);
   const mortArr = (level === 'sala' ? mort.porSala : mort.porTanque).slice(0, 12);
-  if (mortArr.length) {
+  if (mortArr.length && vState.mortModo === 'muertes') {
     makeChart('mcMortBars', {
       type: 'bar',
       data: { labels: mortArr.map((x) => x.key), datasets: [{ label: 'Mortalidad', data: mortArr.map((x) => x.n), backgroundColor: C.mort, borderWidth: 0, borderRadius: 4, maxBarThickness: 20 }] },
       plugins: [CIFRAS],
       options: barOpts('muertes'),
+    });
+  } else if (mortArr.length) {
+    /* T2 · % diario: muertes ÷ hembras-noche × 100, ordenado por esa tasa (un tanque grande ya no parece peor sólo por
+       tener más hembras); muertes y hembras-noche al pasar el ratón. */
+    const filas = locationStats(model, f, level).filter((x) => x.key !== '—' && x.hembrasNoche > 0)
+      .sort((a, b) => b.tasaMortalidad - a.tasaMortalidad || b.mortalidad - a.mortalidad).slice(0, 12);
+    const o = barOpts('% de las hembras que mueren por día');
+    o.plugins.mcCifras = { ...o.plugins.mcCifras, decimales: 2, sufijo: ' %' };
+    o.plugins.tooltip = { callbacks: { label: (c) => { const x = filas[c.dataIndex]; return ` ${pct2(x.tasaMortalidad)} por día · ${n0(x.mortalidad)} muerte${x.mortalidad === 1 ? '' : 's'} en ${n0(x.hembrasNoche)} hembras-noche`; } } };
+    makeChart('mcMortBars', {
+      type: 'bar',
+      data: { labels: filas.map((x) => (level === 'sala' ? x.sala || x.key : x.key)), datasets: [{ label: '% diario', data: filas.map((x) => x.tasaMortalidad), backgroundColor: C.mort, borderWidth: 0, borderRadius: 4, maxBarThickness: 20 }] },
+      plugins: [CIFRAS],
+      options: o,
     });
   }
 }
@@ -663,12 +683,13 @@ function familiasHTML(model, f) {
   const dm = (d) => (d ? diaMes(d) : '');
   const cuerpo = t.length ? `<div class="mc-tablewrap"><table class="mc-table"><thead><tr>
       <th>${campo === 'lote' ? 'Lote' : 'Código genético'}</th><th class="r">Hembras</th><th class="r">Muertas</th><th class="r" title="% de sus hembras que desovaron">Fertilidad</th>
-      <th class="r">Desoves</th><th class="r">Des./hembra</th><th class="r" title="noches que sus hembras estuvieron vivas en el período">Hembras-noche</th><th class="r" title="ref. ${TASA_DESOVE_REF.referencia}">Tasa/noche</th><th class="r">Período</th>
+      <th class="r">Desoves</th><th class="r">Des./hembra</th><th class="r" title="noches que sus hembras estuvieron vivas en el período">Hembras-noche</th><th class="r" title="ref. ${TASA_DESOVE_REF.referencia}">Tasa/noche</th><th class="r" title="muertes del período ÷ hembras-noche × 100">Mort./día</th><th class="r">Período</th>
     </tr></thead><tbody>${t.map((x) => `<tr>
       <td><b>${esc(x.familia)}</b>${x.otros.length ? ` <span class="mc-fam-otros">· ${esc(x.otros.join(', '))}</span>` : ''}</td>
       <td class="r">${n0(x.hembras)}</td><td class="r">${n0(x.muertas)}</td><td class="r">${fertBadge(x.fertilidad)}</td>
       <td class="r">${barra(x.desoves, maxDe(t, 'desoves'))}</td><td class="r">${n1(x.desovesPorHembra)}</td><td class="r">${n0(x.hembrasNoche)}</td>
       <td class="r">${x.tasa == null ? '<span class="muted">—</span>' : `<span class="mc-tasa-b is-b-${bandaTasa(x.tasa)}">${n1(x.tasa)} %</span>`}</td>
+      <td class="r">${pct2(x.tasaMortalidad)}</td>
       <td class="r">${x.desde ? `${dm(x.desde)}–${dm(x.hasta)}` : '—'}</td>
     </tr>`).join('')}</tbody></table></div>
     <p class="mc-note">Tasa/noche = desoves ÷ noches que sus hembras estuvieron vivas en el período (ref. ${TASA_DESOVE_REF.referencia}). Las familias no tienen por qué haber coincidido en el tiempo: compara la tasa mirando también su período.</p>`
@@ -808,6 +829,8 @@ function infoCell(label, v, antes = '') {
 
 /* V6 (2026-09-27, usuario) · la barra en la celda: la cifra con una barra detrás, proporcional al máximo de su tabla. */
 const maxDe = (arr, k) => arr.reduce((m, x) => Math.max(m, x[k] || 0), 0);
+/* T2 · un porcentaje con 2 decimales (la mortalidad diaria es pequeña: 0,05 %). */
+const pct2 = (v) => (v == null || isNaN(v) ? '—' : v.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' %');
 function barra(v, max, cls = '') {
   const w = max > 0 && v > 0 ? Math.round((v / max) * 1000) / 10 : 0;
   return `<span class="mc-bar${cls}"><i style="width:${w}%"></i><b>${n0(v)}</b></span>`;
@@ -870,6 +893,9 @@ function bind(root) {
     if (pill) { vState.sub = pill.dataset.mcSub; maduracionView(root); return; }
 
     // Stepper de período (al cambiar de mes, el toggle de granularidad vuelve a "auto")
+    // T2 · el selector del gráfico de mortalidad
+    const mm = e.target.closest('[data-mc-mortmodo]');
+    if (mm) { vState.mortModo = mm.dataset.mcMortmodo; maduracionView(root); return; }
     // T1 · el selector de «Productividad por familia»
     const fam = e.target.closest('[data-mc-familia]');
     if (fam) { vState.familia = fam.dataset.mcFamilia; maduracionView(root); return; }

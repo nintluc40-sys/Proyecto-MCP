@@ -93,7 +93,10 @@ describe('Microchips · los seis gráficos se leen', () => {
       const datos = c.data.datasets[0].data;
       const chart = { ctx, data: c.data, getDatasetMeta: () => ({ data: datos.map((_, i) => ({ x: 100 + i, y: 10 * i })) }) };
       c.plugins[0].afterDatasetsDraw(chart, {}, c.options.plugins.mcCifras);
-      expect(escritos, id).toEqual(datos.map((v, i) => [v.toLocaleString('es-EC'), 100 + i + 6, 10 * i]));
+      /* T2 (2026-09-27, usuario) · Mortalidad va por defecto en «% diario»: la cifra de una tasa, con 2 decimales y «%». */
+      const o = c.options.plugins.mcCifras;
+      const fmt = (v) => (o.decimales != null ? v.toLocaleString('es-EC', { minimumFractionDigits: o.decimales, maximumFractionDigits: o.decimales }) + o.sufijo : v.toLocaleString('es-EC'));
+      expect(escritos, id).toEqual(datos.map((v, i) => [fmt(v), 100 + i + 6, 10 * i]));
     }
     const c = cfg('mcLocBars'), escritos = [];
     c.plugins[0].afterDatasetsDraw({ ctx: { save() {}, restore() {}, fillText: (t) => escritos.push(t) }, data: { datasets: [{ data: [1234] }] },

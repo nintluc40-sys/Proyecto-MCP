@@ -72,7 +72,7 @@ describe('Microchips · T1 · la tarjeta en Panorama', () => {
     expect(root.querySelector('[data-mc-familia="codigo"]').getAttribute('aria-pressed')).toBe('true');
     const f = filas();
     expect(f.map((r) => r[0])).toEqual(['C2 · L2', 'C1 · L1, L3']);
-    expect(f[1]).toEqual(['C1 · L1, L3', '3', '0', '33.3%', '3', '1', '30', '10 %', '01/06–05/06']);
+    expect(f[1]).toEqual(['C1 · L1, L3', '3', '0', '33.3%', '3', '1', '30', '10 %', '3,33 %', '01/06–05/06']);   // T2 · + «Mort./día» (la de B, el 10/06)
     expect(card().querySelector('tbody tr .mc-tasa-b').className).toBe('mc-tasa-b is-b-alta');
     expect(errSpy).not.toHaveBeenCalled();
   });
