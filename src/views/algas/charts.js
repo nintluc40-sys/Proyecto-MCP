@@ -230,19 +230,7 @@ export function drawModuloBiomasa(canvasId, labels, values) {
   });
 }
 
-/** % por categoría (barras verticales) — usado por Tasa de descarte. Color por severidad. */
-export function drawCatPct(canvasId, labels, values) {
-  const colors = values.map((v) => (v >= 20 ? '#CA6378' : v >= 10 ? '#A06B27' : '#186447'));
-  return makeChart(canvasId, {
-    type: 'bar',
-    data: { labels, datasets: [{ label: '%', data: values, backgroundColor: colors.map((c) => c + 'cc'), borderColor: colors, borderWidth: 1, borderRadius: 4, maxBarThickness: 48 }] },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      scales: { y: { beginAtZero: true, ticks: { callback: (v) => v + '%', color: AXIS_TICK.color, font: AXIS_TICK.font }, title: { display: true, text: '% descarte', color: AXIS_TITLE.color, font: AXIS_TITLE.font } }, x: { grid: { display: false }, ticks: { color: AXIS_TICK.color, font: AXIS_TICK.font } } },
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ' ' + c.parsed.y.toFixed(1) + '%' } } },
-    },
-  });
-}
+/* (2026-09-26) `drawCatPct` —el % por categoría de un solo color— lo sustituye `drawDescClases`, apilado por clase. */
 
 /** Barras HORIZONTALES por patógeno (Control sanitario): % de análisis en alerta.
  *  `colors` = color por barra (el del peor nivel del patógeno), para cuadrar con la
@@ -256,6 +244,23 @@ export function drawSanitBars(canvasId, labels, values, colors) {
       responsive: true, maintainAspectRatio: false, indexAxis: 'y',
       scales: { x: { beginAtZero: true, max: 100, ticks: { callback: (v) => v + '%', color: AXIS_TICK.color, font: AXIS_TICK.font }, title: { display: true, text: '% de análisis en alerta', color: AXIS_TITLE.color, font: AXIS_TITLE.font } }, y: { grid: { display: false }, ticks: { color: AXIS_TICK.color, font: AXIS_TICK.font } } },
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ' ' + c.parsed.x.toFixed(1) + '% en alerta' } } },
+    },
+  });
+}
+
+/** 2026-09-26 (usuario) · Tasa de descarte por CLASE (por bueno · por no uso · por calidad), en barras APILADAS:
+ *  la altura de cada barra es la tasa de siempre y cada tramo, lo que aporta su clase. `series` = { clave: [% …] }
+ *  alineado a `labels`; `clases` = DESCARTE_CLASES (clave, etiqueta, color). `fechas` = el eje son días. */
+export function drawDescClases(canvasId, labels, series, clases, fechas = false) {
+  return makeChart(canvasId, {
+    type: 'bar',
+    data: { labels, datasets: clases.map((c) => ({ label: c.etiqueta, data: series[c.clave], backgroundColor: c.color + 'cc', borderColor: c.color, borderWidth: 1, maxBarThickness: 46, stack: 'desc' })) },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      scales: { y: { stacked: true, beginAtZero: true, ticks: { callback: (v) => v + '%', color: AXIS_TICK.color, font: AXIS_TICK.font }, title: { display: true, text: '% descarte', color: AXIS_TITLE.color, font: AXIS_TITLE.font } },
+        x: fechas ? { ...dateAxis(labels), stacked: true } : { stacked: true, ticks: { color: AXIS_TICK.color, font: AXIS_TICK.font } } },
+      plugins: { legend: { display: true, labels: { usePointStyle: true, boxWidth: 10, font: { size: 10 } } },
+        tooltip: { callbacks: { label: (c) => ' ' + c.dataset.label + ': ' + c.parsed.y.toFixed(1) + '%' } } },
     },
   });
 }
