@@ -18,8 +18,33 @@ import {
 
 // ── Paleta (coherente en tema claro/oscuro; muted + grid como el resto de vistas) ──
 const C = { desove: '#0f7c9a', mort: '#e0533b', fert: '#2e9e5b', brand: '#00838f', bar: '#0f7c9a' };
-const AXIS = { color: '#78909c', font: { size: 10 } };
-const GRID = 'rgba(120,144,156,.16)';
+/* 2026-09-27 (usuario) · «los gráficos se ven borrosos, transparentosos, y no se aprecian las cantidades de los ejes».
+   Medido en Chrome: los lienzos ya salen a 2x (no eran los píxeles); era el ESTILO — ejes a 10 px en gris claro, barras
+   al 80 % de opacidad, cuadrícula al 16 %. Ahora: ejes a 12 px en el color de TEXTO del tema (se lee de --c-text al
+   dibujar: claro u oscuro), títulos de eje a 11 px, cuadrícula al 30 % y barras sólidas (ver cada gráfico). */
+function ejes() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (n, d) => cs.getPropertyValue(n).trim() || d;
+  const texto = v('--c-text', '#1f2a30'), suave = v('--c-text-soft', '#546e7a');
+  return {
+    texto, suave, fondo: v('--c-surface', '#ffffff'),
+    tick: { color: texto, font: { size: 12 } },
+    titulo: (text) => ({ display: true, text, color: suave, font: { size: 11, weight: '600' } }),
+    grid: 'rgba(120,144,156,.3)',
+  };
+}
+
+/* La cifra al final de cada barra horizontal (Desoves / Mortalidad por tanque), con el formato de la vista. Plugin en
+   línea, sin librería nueva; `layout.padding.right` le deja sitio a la de la barra más larga. */
+const CIFRAS = {
+  id: 'mcCifras',
+  afterDatasetsDraw(ch, _args, opts) {
+    const c = ch.ctx, datos = ch.data.datasets[0].data;
+    c.save(); c.fillStyle = opts.color; c.font = '600 12px "Segoe UI", system-ui, sans-serif'; c.textAlign = 'left'; c.textBaseline = 'middle';
+    ch.getDatasetMeta(0).data.forEach((barra, i) => { if (datos[i] != null) c.fillText(n0(datos[i]), barra.x + 6, barra.y); });
+    c.restore();
+  },
+};
 
 const SUBS = [
   { key: 'panorama', label: 'Panorama', icon: '📊' },
@@ -315,11 +340,12 @@ function renderPanorama(model, f) {
 
 function drawPanorama(model, f) {
   const sd = stateDistribution(model, f);
+  const E = ejes();
   makeChart('mcStateDonut', {
     type: 'doughnut',
     data: {
       labels: FEMALE_STATES.map((s) => FEMALE_STATE_META[s].label),
-      datasets: [{ data: FEMALE_STATES.map((s) => sd[s]), backgroundColor: FEMALE_STATES.map((s) => FEMALE_STATE_META[s].color), borderWidth: 2, borderColor: 'rgba(255,255,255,.4)' }],
+      datasets: [{ data: FEMALE_STATES.map((s) => sd[s]), backgroundColor: FEMALE_STATES.map((s) => FEMALE_STATE_META[s].color), borderWidth: 2, borderColor: E.fondo }],
     },
     options: {
       responsive: true, maintainAspectRatio: false, cutout: '58%',
@@ -338,23 +364,24 @@ function drawTrend(model) {
   const showDes = m === 'todas' || m === 'desoves';
   const showMor = m === 'todas' || m === 'mortalidad';
   const showFer = m === 'todas' || m === 'fertilidad';
+  const E = ejes();
   const datasets = [];
-  if (showDes) datasets.push({ type: 'bar', label: 'Desoves', data: tr.desoves, backgroundColor: C.desove + 'cc', borderColor: C.desove, borderWidth: 1, yAxisID: 'y', order: 3, maxBarThickness: 34 });
-  if (showMor) datasets.push({ type: 'line', label: 'Mortalidad', data: tr.mortalidad, borderColor: C.mort, backgroundColor: C.mort, tension: .3, pointRadius: 2, borderWidth: 2, yAxisID: 'y', order: 1 });
-  if (showFer) datasets.push({ type: 'line', label: 'Fertilidad %', data: tr.fertilidad, borderColor: C.fert, backgroundColor: C.fert + '22', tension: .3, pointRadius: 2, borderWidth: 2, yAxisID: 'y1', order: 0, fill: false });
+  if (showDes) datasets.push({ type: 'bar', label: 'Desoves', data: tr.desoves, backgroundColor: C.desove, borderWidth: 0, yAxisID: 'y', order: 3, maxBarThickness: 34 });
+  if (showMor) datasets.push({ type: 'line', label: 'Mortalidad', data: tr.mortalidad, borderColor: C.mort, backgroundColor: C.mort, tension: 0, pointRadius: 3.5, borderWidth: 2.5, yAxisID: 'y', order: 1 });
+  if (showFer) datasets.push({ type: 'line', label: 'Fertilidad %', data: tr.fertilidad, borderColor: C.fert, backgroundColor: C.fert, tension: 0, pointRadius: 3.5, borderWidth: 2.5, yAxisID: 'y1', order: 0, fill: false });
   makeChart('mcTrend', {
     data: { labels: tr.labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       scales: {
-        x: { ticks: { ...AXIS, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+        x: { ticks: { ...E.tick, maxRotation: 0, autoSkip: true }, grid: { display: false } },
         // El eje "eventos" solo aparece si hay una serie de eventos (Desoves/Mortalidad);
         // el de fertilidad solo con la línea de Fertilidad — así aislar una métrica no
         // deja un eje huérfano sin datos.
-        y: { display: showDes || showMor, beginAtZero: true, position: 'left', ticks: { ...AXIS, precision: 0 }, grid: { color: GRID }, title: { display: true, text: 'eventos', color: AXIS.color, font: { size: 10 } } },
-        y1: { display: showFer, beginAtZero: true, max: 100, position: 'right', ticks: { ...AXIS, callback: (v) => v + '%' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'fertilidad', color: AXIS.color, font: { size: 10 } } },
+        y: { display: showDes || showMor, beginAtZero: true, position: 'left', ticks: { ...E.tick, precision: 0 }, grid: { color: E.grid }, title: E.titulo('eventos') },
+        y1: { display: showFer, beginAtZero: true, max: 100, position: 'right', ticks: { ...E.tick, callback: (v) => v + '%' }, grid: { drawOnChartArea: false }, title: E.titulo('fertilidad') },
       },
-      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 10 }, color: AXIS.color } } },
+      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 10, font: { size: 12 }, color: E.texto } } },
     },
   });
 }
@@ -443,7 +470,8 @@ function drawOperativo(model, f) {
   if (stats.length) {
     makeChart('mcLocBars', {
       type: 'bar',
-      data: { labels: stats.map(labelOf), datasets: [{ label: 'Desoves', data: stats.map((x) => x.desoves), backgroundColor: C.desove + 'cc', borderColor: C.desove, borderWidth: 1, borderRadius: 4, maxBarThickness: 20 }] },
+      data: { labels: stats.map(labelOf), datasets: [{ label: 'Desoves', data: stats.map((x) => x.desoves), backgroundColor: C.desove, borderWidth: 0, borderRadius: 4, maxBarThickness: 20 }] },
+      plugins: [CIFRAS],
       options: barOpts('desoves'),
     });
   }
@@ -452,20 +480,23 @@ function drawOperativo(model, f) {
   if (mortArr.length) {
     makeChart('mcMortBars', {
       type: 'bar',
-      data: { labels: mortArr.map((x) => x.key), datasets: [{ label: 'Mortalidad', data: mortArr.map((x) => x.n), backgroundColor: C.mort + 'cc', borderColor: C.mort, borderWidth: 1, borderRadius: 4, maxBarThickness: 20 }] },
+      data: { labels: mortArr.map((x) => x.key), datasets: [{ label: 'Mortalidad', data: mortArr.map((x) => x.n), backgroundColor: C.mort, borderWidth: 0, borderRadius: 4, maxBarThickness: 20 }] },
+      plugins: [CIFRAS],
       options: barOpts('muertes'),
     });
   }
 }
 
 function barOpts(unit) {
+  const E = ejes();
   return {
     indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+    layout: { padding: { right: 40 } },
     scales: {
-      x: { beginAtZero: true, ticks: { ...AXIS, precision: 0 }, grid: { color: GRID }, title: { display: true, text: unit, color: AXIS.color, font: { size: 10 } } },
-      y: { ticks: { ...AXIS, font: { size: 10 } }, grid: { display: false } },
+      x: { beginAtZero: true, ticks: { ...E.tick, precision: 0 }, grid: { color: E.grid }, title: E.titulo(unit) },
+      y: { ticks: E.tick, grid: { display: false } },
     },
-    plugins: { legend: { display: false } },
+    plugins: { legend: { display: false }, mcCifras: { color: E.texto } },
   };
 }
 
@@ -542,24 +573,25 @@ const LINEAS_REF = {
       c.beginPath(); c.moveTo(px, y.top); c.lineTo(px, y.bottom); c.stroke();
       // El rótulo, AL LADO de su línea y no encima (la línea lo tachaba): el primero a la derecha, el segundo a la izquierda.
       const izq = k % 2 === 1;
-      c.setLineDash([]); c.fillStyle = l.color; c.font = '700 10px system-ui, sans-serif'; c.textAlign = izq ? 'right' : 'left';
-      c.fillText(l.etiqueta + ' ' + n1(l.valor), px + (izq ? -4 : 4), y.top + 10); c.restore();
+      c.setLineDash([]); c.fillStyle = l.color; c.font = '700 11px system-ui, sans-serif'; c.textAlign = izq ? 'right' : 'left';
+      c.fillText(l.etiqueta + ' ' + n1(l.valor), px + (izq ? -4 : 4), y.top + 11); c.restore();
     });
   },
 };
 
 function drawHembras(model, f) {
   const rec = recoveryDistribution(model, f);
+  const E = ejes();
   if (rec.intervals.length) {
     makeChart('mcInterval', {
       type: 'bar',
-      data: { labels: rec.porDia.map((b) => b.label), datasets: [{ label: 'Intervalos', data: rec.porDia.map((b) => b.n), backgroundColor: C.brand + 'cc', borderColor: C.brand, borderWidth: 1, borderRadius: 4, maxBarThickness: 44 }] },
+      data: { labels: rec.porDia.map((b) => b.label), datasets: [{ label: 'Intervalos', data: rec.porDia.map((b) => b.n), backgroundColor: C.brand, borderWidth: 0, borderRadius: 4, maxBarThickness: 44 }] },
       plugins: [LINEAS_REF],
       options: {
         responsive: true, maintainAspectRatio: false,
         scales: {
-          x: { ticks: AXIS, grid: { display: false }, title: { display: true, text: 'días hasta el siguiente desove', color: AXIS.color, font: { size: 10 } } },
-          y: { beginAtZero: true, ticks: { ...AXIS, precision: 0 }, grid: { color: GRID }, title: { display: true, text: 'nº intervalos', color: AXIS.color, font: { size: 10 } } },
+          x: { ticks: E.tick, grid: { display: false }, title: E.titulo('días hasta el siguiente desove') },
+          y: { beginAtZero: true, ticks: { ...E.tick, precision: 0 }, grid: { color: E.grid }, title: E.titulo('nº intervalos') },
         },
         plugins: { legend: { display: false },
           mcLineasRef: { lineas: [{ valor: rec.promedioGlobal, etiqueta: 'prom.', color: C.brand }, { valor: rec.mediana, etiqueta: 'mediana', color: C.mort }] } },
@@ -625,12 +657,13 @@ function openFemale(root, trovan) {
   if (modal) { modal.classList.add('sv-open'); document.body.classList.add('modal-open'); }
 
   if (hist.intervals.length) {
+    const E = ejes();
     makeChart('mcFemChart', {
       type: 'bar',
-      data: { labels: hist.intervals.map((_, i) => `#${i + 1}→${i + 2}`), datasets: [{ label: 'días', data: hist.intervals, backgroundColor: C.desove + 'cc', borderColor: C.desove, borderWidth: 1, borderRadius: 3, maxBarThickness: 26 }] },
+      data: { labels: hist.intervals.map((_, i) => `#${i + 1}→${i + 2}`), datasets: [{ label: 'días', data: hist.intervals, backgroundColor: C.desove, borderWidth: 0, borderRadius: 3, maxBarThickness: 26 }] },
       options: {
         responsive: true, maintainAspectRatio: false,
-        scales: { x: { ticks: AXIS, grid: { display: false } }, y: { beginAtZero: true, ticks: { ...AXIS, precision: 0 }, grid: { color: GRID }, title: { display: true, text: 'días', color: AXIS.color, font: { size: 10 } } } },
+        scales: { x: { ticks: E.tick, grid: { display: false } }, y: { beginAtZero: true, ticks: { ...E.tick, precision: 0 }, grid: { color: E.grid }, title: E.titulo('días') } },
         plugins: { legend: { display: false }, tooltip: { callbacks: { title: () => '', label: (c) => ` ${c.parsed.y} días de recuperación` } } },
       },
     });
