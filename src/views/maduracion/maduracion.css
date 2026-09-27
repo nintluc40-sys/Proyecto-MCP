@@ -200,3 +200,13 @@
 .mc-lv-ley { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: var(--c-text-soft); }
 .mc-lv-ley span { display: inline-flex; align-items: center; gap: 4px; }
 .mc-lv-sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+
+/* V6 (2026-09-27, usuario) · barra en la celda (Desoves/Mortalidad) y chip del color del anillo */
+.mc-bar { position: relative; display: inline-flex; justify-content: flex-end; align-items: center; min-width: 96px; height: 20px; padding: 0 6px; border-radius: 5px; background: var(--c-surface-2, #f1f4f6); overflow: hidden; }
+.mc-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(15, 124, 154, .28); border-radius: 5px; }
+.mc-bar.is-mort i { background: rgba(224, 83, 59, .3); }
+.mc-bar b { position: relative; font-weight: 800; color: var(--c-text); }
+.mc-anillo { display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px;
+  border-radius: 50%; background: var(--mc-anillo, #b0bec5); box-shadow: 0 0 0 1px rgba(0, 0, 0, .18); font-style: normal; }
+.mc-anillo.is-transparente { background: transparent; box-shadow: inset 0 0 0 2.5px var(--c-text-muted); }
+.mc-anillo.is-otro { background: #b0bec5; color: #fff; font-size: 9px; font-weight: 800; }

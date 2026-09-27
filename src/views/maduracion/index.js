@@ -324,7 +324,7 @@ function renderPanorama(model, f) {
   const topCard = (title, arr, level) => `<div class="mc-card">
     <h4 class="mc-card-h">${esc(title)}</h4>
     ${arr.length ? `<table class="mc-table mc-table-sm"><thead><tr><th>${level === 'sala' ? 'Sala' : 'Tanque'}</th><th class="r">Desoves</th><th class="r" title="% de sus hembras que desovaron en el período">Fertilidad</th><th class="r" title="% de sus hembras que desovan cada noche">Tasa/noche</th></tr></thead>
-      <tbody>${arr.map((x) => `<tr><td>${txt(level === 'sala' ? x.sala || x.key : x.key)}</td><td class="r"><b>${n0(x.desoves)}</b></td><td class="r">${pct(x.fertilidad)}</td><td class="r">${tasaBadge(x.tasaDesove)}</td></tr>`).join('')}</tbody></table>`
+      <tbody>${arr.map((x) => `<tr><td>${txt(level === 'sala' ? x.sala || x.key : x.key)}</td><td class="r">${barra(x.desoves, maxDe(arr, 'desoves'))}</td><td class="r">${pct(x.fertilidad)}</td><td class="r">${tasaBadge(x.tasaDesove)}</td></tr>`).join('')}</tbody></table>`
     : '<div class="empty-state" style="padding:16px">Sin datos en el período.</div>'}</div>`;
 
   return `<div class="mc-body">
@@ -424,13 +424,13 @@ function renderOperativo(model, f) {
       <tbody>${stats.map((x, i) => `<tr>
         <td class="mc-rk">${i + 1}</td>
         <td><b>${txt(level === 'sala' ? x.sala || x.key : x.key)}</b></td>
-        <td class="r"><b>${n0(x.desoves)}</b></td>
+        <td class="r">${barra(x.desoves, maxDe(stats, 'desoves'))}</td>
         <td class="r">${n0(x.hembras)}</td>
         <td class="r">${n0(x.spawners)}</td>
         <td class="r">${fertBadge(x.fertilidad)}</td>
         <td class="r">${tasaBadge(x.tasaDesove)}</td>
         <td class="r">${n1(x.eficiencia)}</td>
-        <td class="r">${n0(x.mortalidad)}</td>
+        <td class="r">${barra(x.mortalidad, maxDe(stats, 'mortalidad'), ' is-mort')}</td>
       </tr>`).join('')}</tbody></table></div>`
     : '<div class="empty-state" style="padding:20px">Sin datos en el período.</div>'}
     <p class="mc-note">Fertilidad = % de las hembras observadas (con evento o vivas en la ubicación) que desovaron en el período: a lo largo de meses tiende al 100 %. Tasa/noche = desoves ÷ noches que sus hembras estuvieron vivas en el período (ref. ${TASA_DESOVE_REF.referencia}). Eficiencia = desoves ÷ hembras. Un tanque es sala + número.</p>
@@ -577,9 +577,9 @@ function renderHembras(model, f) {
       <thead><tr><th>#</th><th>Trovan ID</th><th>Ubicación actual</th><th class="r">Desoves</th><th class="r">Últ. desove</th><th class="r">Interv. prom.</th><th></th></tr></thead>
       <tbody>${shown.slice(0, 200).map((r, i) => `<tr${esMuerta(r) ? ' class="mc-rank-muerta"' : ''}>
         <td class="mc-rk">${i + 1}</td>
-        <td><button class="mc-trovan" data-mc-female="${esc(r.trovan)}">${esc(r.trovan)}</button>${esMuerta(r) ? ` <span class="mc-muerta" title="Murió el ${esc(r.muerte ? fmtShort(r.muerte) : 'día sin registrar')}">✝ muerta${r.muerte ? ' ' + diaMes(r.muerte) : ''}</span>` : ''}</td>
+        <td>${chipAnillo(r.color)}<button class="mc-trovan" data-mc-female="${esc(r.trovan)}">${esc(r.trovan)}</button>${esMuerta(r) ? ` <span class="mc-muerta" title="Murió el ${esc(r.muerte ? fmtShort(r.muerte) : 'día sin registrar')}">✝ muerta${r.muerte ? ' ' + diaMes(r.muerte) : ''}</span>` : ''}</td>
         <td>${txt(locKey(r.sala, r.tanque))}</td>
-        <td class="r"><b>${n0(r.desoves)}</b></td>
+        <td class="r">${barra(r.desoves, maxDe(shown.slice(0, 200), 'desoves'))}</td>
         <td class="r">${dCell(r.ultimoDesove)}</td>
         <td class="r">${r.intervaloPromedio != null ? n1(r.intervaloPromedio) + ' d' : '—'}</td>
         <td class="r"><button class="mc-mini" data-mc-female="${esc(r.trovan)}">Historial ›</button></td>
@@ -599,7 +599,7 @@ function renderHembras(model, f) {
 
   const neverCard = `<div class="mc-card">
     <h4 class="mc-card-h">Nunca han desovado <span class="mc-h-note">${n0(never.length)} hembra(s) vivas</span></h4>
-    ${never.length ? `<div class="mc-chips">${never.slice(0, 60).map((r) => `<button class="mc-chip" data-mc-female="${esc(r.trovan)}" title="${esc(locKey(r.sala, r.tanque))}">${esc(r.trovan)}</button>`).join('')}</div>
+    ${never.length ? `<div class="mc-chips">${never.slice(0, 60).map((r) => `<button class="mc-chip" data-mc-female="${esc(r.trovan)}" title="${esc(locKey(r.sala, r.tanque))}">${chipAnillo(r.color)}${esc(r.trovan)}</button>`).join('')}</div>
       ${never.length > 60 ? `<p class="mc-note">+${n0(never.length - 60)} más.</p>` : ''}`
     : '<div class="empty-state" style="padding:20px">Todas las hembras vivas han desovado al menos una vez. 🎉</div>'}
   </div>`;
@@ -700,7 +700,7 @@ function openFemale(root, trovan) {
     ${infoCell('Estado', rec.estado)}
     ${infoCell('Ubicación', locKey(rec.sala, rec.tanque))}
     ${infoCell('Número', rec.numero)}
-    ${infoCell('Color anillo', rec.color)}
+    ${infoCell('Color anillo', rec.color, chipAnillo(rec.color))}
     ${infoCell('Lote', rec.lote)}
     ${infoCell('Código gen.', rec.codigo)}
     ${infoCell('Piscina', rec.piscina)}
@@ -753,8 +753,26 @@ function openFemale(root, trovan) {
     });
   }
 }
-function infoCell(label, v) {
-  return `<div class="mc-fem-f"><span class="mc-fem-l">${esc(label)}</span><span class="mc-fem-v">${txt(v)}</span></div>`;
+function infoCell(label, v, antes = '') {
+  return `<div class="mc-fem-f"><span class="mc-fem-l">${esc(label)}</span><span class="mc-fem-v">${antes}${txt(v)}</span></div>`;
+}
+
+/* V6 (2026-09-27, usuario) · la barra en la celda: la cifra con una barra detrás, proporcional al máximo de su tabla. */
+const maxDe = (arr, k) => arr.reduce((m, x) => Math.max(m, x[k] || 0), 0);
+function barra(v, max, cls = '') {
+  const w = max > 0 && v > 0 ? Math.round((v / max) * 1000) / 10 : 0;
+  return `<span class="mc-bar${cls}"><i style="width:${w}%"></i><b>${n0(v)}</b></span>`;
+}
+/* V6 · el chip del color del anillo. Los colores medidos en la MATRIZ (Transparente, Verde, Amarillo, Azul, Rojo) y
+   algunos habituales; Transparente es un aro hueco; uno fuera de la lista, gris con «?»; sin color, nada. */
+const ANILLOS = { transparente: '', verde: '#2e9e5b', amarillo: '#f2c230', azul: '#3f7fd0', rojo: '#d8432d', naranja: '#f08a24', blanco: '#f4f6f7', negro: '#37474f', rosado: '#e57fb0', morado: '#8a5cc2' };
+function chipAnillo(color) {
+  const c = String(color || '').trim(); if (!c) return '';
+  const k = c.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const tit = ` title="Anillo ${esc(c)}"`;
+  if (k === 'transparente') return `<i class="mc-anillo is-transparente"${tit}></i>`;
+  if (Object.prototype.hasOwnProperty.call(ANILLOS, k)) return `<i class="mc-anillo is-${k}" style="--mc-anillo:${ANILLOS[k]}"${tit}></i>`;
+  return `<i class="mc-anillo is-otro"${tit}>?</i>`;
 }
 function closeFemale(root) {
   destroyChart('mcFemChart');

@@ -542,6 +542,7 @@ export function femaleRanking(model, f) {
       trovan: g.trovan, desoves: g.desoves, ultimoDesove: g.last, primerDesove: g.first,
       sala: rec.sala || '', tanque: rec.tanque || '', estado: rec.estado || '',
       muerte: rec._muerte || null,   // 2026-09-27 · para marcarla en el ranking con su fecha
+      color: rec.color || '',   // V6 (2026-09-27) · el chip del color del anillo
       intervaloPromedio: avgInterval(arr),
     };
   }).sort((a, b) => b.desoves - a.desoves || (b.ultimoDesove || 0) - (a.ultimoDesove || 0));
