@@ -533,6 +533,17 @@ export const INTERVAL_BINS = [
   { label: '29–35 d', lo: 29, hi: 35 },
   { label: '≥ 36 d', lo: 36, hi: Infinity },
 ];
+/** 2026-09-27 (usuario) · el histograma va POR DÍA: con los tramos semanales de arriba el 78 % de los intervalos reales
+ *  caía en «≤ 7 d» (medido: promedio 5,7 d, mediana 5, la mitad entre 3 y 7) y el gráfico no decía nada. Barras «≤ 1»,
+ *  2 … 14 y «≥ 15». */
+export const DIAS_HISTOGRAMA = 15;
+/** Cuantil `p` (0–1) de una lista ORDENADA, interpolando entre vecinos: la mediana de un número par de valores es la
+ *  media de los dos centrales. null si la lista está vacía. */
+export function cuantil(ordenados, p) {
+  if (!ordenados.length) return null;
+  const pos = (ordenados.length - 1) * p, lo = Math.floor(pos), hi = Math.ceil(pos);
+  return ordenados[lo] + (ordenados[hi] - ordenados[lo]) * (pos - lo);
+}
 /** Todos los intervalos entre desoves (por hembra) del universo filtrado + histograma. */
 export function recoveryDistribution(model, f) {
   const perFemale = new Map();
@@ -545,7 +556,12 @@ export function recoveryDistribution(model, f) {
   });
   const bins = INTERVAL_BINS.map((b) => ({ label: b.label, n: all.filter((v) => v >= b.lo && v <= b.hi).length }));
   const promedioGlobal = all.length ? all.reduce((a, b) => a + b, 0) / all.length : null;
-  return { intervals: all, bins, promedioGlobal, hembrasConIntervalo: promedios.length };
+  const orden = all.slice().sort((a, b) => a - b);
+  const porDia = Array.from({ length: DIAS_HISTOGRAMA }, (_, i) => ({
+    label: i === 0 ? '≤ 1' : i === DIAS_HISTOGRAMA - 1 ? '≥ ' + DIAS_HISTOGRAMA : String(i + 1), n: 0 }));
+  all.forEach((v) => { porDia[Math.min(DIAS_HISTOGRAMA - 1, Math.max(0, Math.round(v) - 1))].n++; });
+  return { intervals: all, bins, porDia, promedioGlobal, mediana: cuantil(orden, 0.5), p25: cuantil(orden, 0.25), p75: cuantil(orden, 0.75),
+    hembrasConIntervalo: promedios.length };
 }
 
 /* ── Clasificación de hembras (activa/inactiva/transferida/fallecida) ── */

@@ -509,8 +509,10 @@ function renderHembras(model, f) {
   </div>`;
 
   const recCard = `<div class="mc-card">
-    <h4 class="mc-card-h">Intervalo de recuperación entre desoves <span class="mc-h-note">prom. ${rec.promedioGlobal != null ? n1(rec.promedioGlobal) + ' d' : '—'}</span></h4>
-    ${rec.intervals.length ? `<div class="mc-chart" style="height:220px"><canvas id="mcInterval"></canvas></div>
+    <h4 class="mc-card-h">Intervalo de recuperación entre desoves</h4>
+    ${rec.intervals.length ? `<div class="mc-rec-hl">Vuelven a desovar en <b class="mc-rec-v">${n1(rec.promedioGlobal)} días</b> de promedio</div>
+      <p class="mc-rec-sub">mediana ${n1(rec.mediana)} · la mitad entre ${n1(rec.p25)} y ${n1(rec.p75)} días</p>
+      <div class="mc-chart" style="height:220px"><canvas id="mcInterval"></canvas></div>
       <p class="mc-note">${n0(rec.intervals.length)} intervalo(s) de ${n0(rec.hembrasConIntervalo)} hembra(s) con ≥2 desoves.</p>`
     : '<div class="empty-state" style="padding:20px">Aún no hay hembras con dos o más desoves en el período.</div>'}
   </div>`;
@@ -525,19 +527,42 @@ function renderHembras(model, f) {
   return `<div class="mc-body">${searchBar}<div class="mc-grid">${rankTable}${recCard}${neverCard}</div></div>`;
 }
 
+/* 2026-09-27 (usuario) · líneas verticales de referencia en un histograma POR DÍA (el promedio y la mediana del
+   intervalo). La barra i es el día i+1 (la primera, «≤ 1»; la última, «≥ 15»), así que el valor v cae en la posición
+   v − 1 del eje, entre dos barras si no es entero. Sin dependencias: un plugin de Chart.js en línea. */
+const LINEAS_REF = {
+  id: 'mcLineasRef',
+  afterDatasetsDraw(ch, _args, opts) {
+    const x = ch.scales.x, y = ch.scales.y, c = ch.ctx, ult = ch.data.labels.length - 1;
+    (opts.lineas || []).forEach((l, k) => {
+      if (l.valor == null) return;
+      const i = Math.min(ult, Math.max(0, l.valor - 1)), lo = Math.floor(i), hi = Math.min(lo + 1, ult);
+      const px = x.getPixelForValue(lo) + (x.getPixelForValue(hi) - x.getPixelForValue(lo)) * (i - lo);
+      c.save(); c.strokeStyle = l.color; c.lineWidth = 2; c.setLineDash([5, 4]);
+      c.beginPath(); c.moveTo(px, y.top); c.lineTo(px, y.bottom); c.stroke();
+      // El rótulo, AL LADO de su línea y no encima (la línea lo tachaba): el primero a la derecha, el segundo a la izquierda.
+      const izq = k % 2 === 1;
+      c.setLineDash([]); c.fillStyle = l.color; c.font = '700 10px system-ui, sans-serif'; c.textAlign = izq ? 'right' : 'left';
+      c.fillText(l.etiqueta + ' ' + n1(l.valor), px + (izq ? -4 : 4), y.top + 10); c.restore();
+    });
+  },
+};
+
 function drawHembras(model, f) {
   const rec = recoveryDistribution(model, f);
   if (rec.intervals.length) {
     makeChart('mcInterval', {
       type: 'bar',
-      data: { labels: rec.bins.map((b) => b.label), datasets: [{ label: 'Intervalos', data: rec.bins.map((b) => b.n), backgroundColor: C.brand + 'cc', borderColor: C.brand, borderWidth: 1, borderRadius: 4, maxBarThickness: 44 }] },
+      data: { labels: rec.porDia.map((b) => b.label), datasets: [{ label: 'Intervalos', data: rec.porDia.map((b) => b.n), backgroundColor: C.brand + 'cc', borderColor: C.brand, borderWidth: 1, borderRadius: 4, maxBarThickness: 44 }] },
+      plugins: [LINEAS_REF],
       options: {
         responsive: true, maintainAspectRatio: false,
         scales: {
-          x: { ticks: AXIS, grid: { display: false } },
+          x: { ticks: AXIS, grid: { display: false }, title: { display: true, text: 'días hasta el siguiente desove', color: AXIS.color, font: { size: 10 } } },
           y: { beginAtZero: true, ticks: { ...AXIS, precision: 0 }, grid: { color: GRID }, title: { display: true, text: 'nº intervalos', color: AXIS.color, font: { size: 10 } } },
         },
-        plugins: { legend: { display: false } },
+        plugins: { legend: { display: false },
+          mcLineasRef: { lineas: [{ valor: rec.promedioGlobal, etiqueta: 'prom.', color: C.brand }, { valor: rec.mediana, etiqueta: 'mediana', color: C.mort }] } },
       },
     });
   }
