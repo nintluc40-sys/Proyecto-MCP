@@ -101,7 +101,7 @@ export function maduracionView(root) {
   const hasData = model.females.length || model.desoves.length || model.mortalidades.length;
   if (!hasData) {
     root.innerHTML = headHTML() + `<div class="empty-state" style="padding:48px 20px">
-      <div style="font-size:40px">🥚</div>
+      <div style="font-size:40px">🧬</div>
       <h3 style="margin:10px 0 6px;color:var(--c-brand)">Sin datos del Registro Reproductivo</h3>
       <p class="muted">No se encontraron filas en las hojas <b>Maduración MATRIZ</b>, <b>Maduración Bitácora</b> ni <b>Maduración Transferencias</b> del Google Sheet.</p>
       <p class="muted">Registra altas, desoves, mortalidades y transferencias en <b>Registros → Maduración → Reproductivo</b> para poblar esta vista.</p>
@@ -225,7 +225,7 @@ function dataWarnings(model) {
 
 function headHTML() {
   return `<div class="mc-head">
-    <div class="mc-head-t"><span class="mc-head-ic">🥚</span><div>
+    <div class="mc-head-t"><span class="mc-head-ic">🧬</span><div>
       <h2 class="mc-title">Microchips</h2>
       <p class="mc-sub">Seguimiento reproductivo por Trovan ID — desoves, mortalidades, altas y transferencias</p>
     </div></div>
