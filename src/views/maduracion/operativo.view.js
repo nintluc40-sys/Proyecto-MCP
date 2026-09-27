@@ -63,6 +63,7 @@ import { tablaDeLotes, fichaDeLote, DIMENSIONES_COMPARATIVA, comparativa } from 
 import { DIMENSIONES_BAJAS, desgloseDeBajas, motivosDeCierre, bajasPorHora, calorSalaDia, lotesCerrados } from './operativo.bajas.js';
 import { tablaDeTanques, fichaDeTanque, avisosDeTanques } from './operativo.tanques.js';
 import { pendientesDeN5, tablaDeReproduccion, destinosDeDespacho, totalesDeReproduccion } from './operativo.reproduccion.js';
+import { repartoDeLotePorDestino } from './operativo.reproduccion.js';   // 0q·3
 import {
   VARIABLES_REVISION, revisionesDeNauplios, alcalinidadPorArea, mortalidadEnDesove, frecuenciaDeObservaciones,
 } from './operativo.revisiones.js';
@@ -131,6 +132,10 @@ const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', 
   cuarSel: '',
   /* 0f · 5 · la tarjeta de KPI cuyo gráfico está abierto debajo de las tarjetas (📊 Estado actual). */
   kpiSel: '',
+  /* 0q·3 · si «A dónde fueron» (🥚 Reproducción) está desplegada. Empieza plegada: eran 13 destinos y 573 px. */
+  destAbierto: false,
+  /* 0q·3 · el lote de «Por lote» (🥚 Reproducción) cuyo reparto por destino está desplegado. */
+  reproLote: '',
   /* 0f · 8 · el modal del laboratorio abierto: 'micro' | 'biomol' | ''. Vive la sesión, como lo demás: un refresco de datos no lo cierra. */
   lab: '' };
 /* El estado de la vista vive lo que dura la sesión: al volver a Maduración, o al refrescarse los datos, se conserva. */
@@ -288,6 +293,7 @@ export function operativoView(root) {
   if (vOp.sub === 'lotes') dibujarLote(_fichaLote);
   if (vOp.sub === 'lotes') dibujarPiscina(_fichaPiscina);
   if (vOp.sub === 'tanques') dibujarTanque(_fichaTanque);
+  if (vOp.sub === 'reproduccion') dibujarReparto(_reparto);   // 0q·3
   dibujarCuarentena(_cuarCurva);   // 0f · 4 · sólo si su lienzo está en pantalla (📊 Estado actual, con un par abierto)
   dibujarKpi(_kpiGraf);            // 0f · 5 · ídem, con una tarjeta de KPI abierta
   trasPintarLab(root);             // 0f · 8 · el modal del laboratorio: foco, fondo quieto y su gráfico
@@ -1954,8 +1960,13 @@ function reproduccionHTML(M, p, F) {
   const pend = pendientesDeN5(M.fuentes, p, F, M.fecha);
   const filas = tablaDeReproduccion(M, p, F);
   const dest = destinosDeDespacho(M.fuentes, p, F);
-  return totalesReproHTML(T, p) + pendientesHTML(pend) + tablaReproHTML(filas, F) + destinosHTML(dest);
+  // 0q·3 · el lote desplegado; si el filtro o el período lo quitan de la tabla, se suelta (como la ficha de un lote).
+  if (vOp.reproLote && !filas.some((x) => x.lote === vOp.reproLote)) vOp.reproLote = '';
+  _reparto = vOp.reproLote ? repartoDeLotePorDestino(M.fuentes, vOp.reproLote, p) : null;
+  return totalesReproHTML(T, p) + pendientesHTML(pend) + tablaReproHTML(filas, F, _reparto) + destinosHTML(dest);
 }
+/* 0q·3 · el reparto del lote desplegado, para dibujarlo tras pintar (el lienzo tiene que estar en el DOM). */
+let _reparto = null;
 
 function totalesReproHTML(T, p) {
   return `<div class="mc-card"><h4 class="mc-card-h">🥚 Reproducción <span class="mc-h-note">${esc(p.etiqueta)}</span></h4>
@@ -1996,13 +2007,14 @@ function pendientesHTML(pend) {
   </div>`;
 }
 
-function tablaReproHTML(filas, F) {
+function tablaReproHTML(filas, F, rep) {
   if (!filas.length) {
     return `<div class="mc-card"><h4 class="mc-card-h">Por lote</h4>
       <p class="muted" style="margin:4px 0">${hayFiltro(F) ? 'Ningún lote con desoves pasa el filtro.' : 'Ningún desove registrado en el período.'}</p></div>`;
   }
-  const f = (x) => `<tr>
-      <td><b>${esc(x.lote)}</b></td>
+  const abierto = (x) => !!rep && rep.lote === x.lote;
+  const f = (x) => `<tr class="mop-rlote${abierto(x) ? ' is-on' : ''}" role="button" tabindex="0" aria-expanded="${abierto(x)}" data-mop-rlote="${esc(x.lote)}">
+      <td><span class="mop-rlote-ic" aria-hidden="true">${abierto(x) ? '▾' : '▸'}</span> <b>${esc(x.lote)}</b></td>
       <td class="r">${nf(x.desoves)}${x.pendientes ? ' <span class="mop-dif" title="' + nf(x.desovesPendientes) + ' desove(s) sin su N5">⏳</span>' : ''}</td>
       <td class="r">${nf(x.huevos)}</td>
       <td class="r">${nf(x.huevosPorDesove)}</td>
@@ -2011,15 +2023,51 @@ function tablaReproHTML(filas, F) {
       <td class="r">${pc(x.fertilidad)}</td>
       <td class="r">${nf(x.n5)}</td>
       <td class="r">${x.naupliosPorHembra === '' ? '<span class="muted" title="Ningún desove de este lote tiene su N5 todavía">—</span>' : nf(x.naupliosPorHembra)}</td>
-      <td>${x.destinos.length ? x.destinos.map((d) => esc(d)).join(' · ') : '<span class="muted">—</span>'}</td></tr>`;
+      <td>${x.destinos.length ? x.destinos.map((d) => esc(d)).join(' · ') : '<span class="muted">—</span>'}</td></tr>${abierto(x) ? `<tr class="mop-rlote-det"><td colspan="10">${repartoLoteHTML(rep)}</td></tr>` : ''}`;
   return `<div class="mc-card mc-card-wide">
-    <h4 class="mc-card-h">Por lote <span class="mc-h-note">en el período</span></h4>
-    <div class="mc-tablewrap"><table class="mc-table mc-table-sm">
+    <h4 class="mc-card-h">Por lote <span class="mc-h-note">en el período · pulsa un lote para ver sus N2 y N5 por destino</span></h4>
+    <div class="mc-tablewrap mop-rlote-wrap"><table class="mc-table mc-table-sm">
       <thead><tr><th>Lote</th><th class="r">Desoves</th><th class="r">Huevos</th><th class="r">Huevos/desove</th>
         <th class="r">No viables</th><th class="r">N2</th><th class="r">Fertilidad</th><th class="r">N5</th>
         <th class="r">Nauplios/hembra</th><th>Destinos</th></tr></thead>
       <tbody>${filas.map(f).join('')}</tbody></table></div>
   </div>`;
+}
+
+/** 0q·3 · lo que se despliega bajo un lote de «Por lote»: sus N2 y N5 por destino. */
+function repartoLoteHTML(rep) {
+  const sin = rep.sinDestino ? `<p class="mc-note">${nf(rep.sinDestino)} registro(s) de desove sin destino anotado${rep.n5SinDestino ? ' (' + nf(rep.n5SinDestino) + ' N5)' : ''}: no están en ninguna barra.</p>` : '';
+  if (!rep.filas.length) return `<div class="mop-rlote-in"><p class="muted" style="margin:4px 0">Ningún desove de este lote tiene destino anotado en el período.</p>${sin}</div>`;
+  // La caja se ancla al ancho VISIBLE de la tabla (que en el móvil se desplaza de lado): ver .mop-rlote-in en el CSS.
+  return `<div class="mop-rlote-in"><h5 class="mop-det-h">${esc(rep.lote)} · N2 y N5 por destino <span class="mc-h-note">de más a menos N5</span></h5>
+    <div class="mc-chart" style="height:240px"><canvas id="mopReproDest"></canvas></div>
+    ${rep.compartidos ? `<p class="mc-note">⚠ ${nf(rep.compartidos)} registro(s) de desove fueron a varios destinos y cuentan ENTEROS en cada uno (la hoja no dice cuánto fue a cada uno): las barras NO suman el total del lote. El globo dice cuánto de cada barra es así.</p>` : ''}
+    ${sin}</div>`;
+}
+/** 0q·3 · N2 y N5 una al lado de otra, por destino; el globo añade cuánto de la barra es de desoves compartidos. */
+function dibujarReparto(rep) {
+  const E = ejesOp();
+  if (!rep || !rep.filas.length || !document.getElementById('mopReproDest')) return;
+  const compartido = (clave) => ({ callbacks: { afterLabel: (c) => {
+    const v = rep.filas[c.dataIndex][clave];
+    return v ? 'de ellos, ' + nf(v) + ' de desoves con varios destinos' : '';
+  } } });
+  graficoOp('mopReproDest', {
+    type: 'bar',
+    data: {
+      labels: rep.filas.map((x) => x.destino),
+      datasets: [
+        { label: 'N2', data: rep.filas.map((x) => x.n2), backgroundColor: '#26a69a', tooltip: compartido('n2Compartido') },
+        { label: 'N5', data: rep.filas.map((x) => x.n5), backgroundColor: COLOR_KPI.n5, tooltip: compartido('n5Compartido') },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: { x: { ticks: { ...E.tick, autoSkip: false, maxRotation: 45 }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: E.tick, grid: { color: E.grid }, title: E.titulo('nauplios') } },
+      plugins: { legend: { labels: E.leyenda } },
+    },
+  });
 }
 
 function destinosHTML(d) {
@@ -2028,16 +2076,23 @@ function destinosHTML(d) {
       <p class="muted" style="margin:4px 0">Ningún desove del período tiene destino anotado${d.sinDestino ? ' (' + nf(d.sinDestino) + ' sin destino)' : ''}.</p></div>`;
   }
   const max = d.filas[0].n5;
+  /* 0q·3 · plegada, la tarjeta se resume en una línea: los tres destinos con más N5, en cifra corta. */
+  const corta = (v) => (Number(v) >= 1e6 ? nf(v / 1e6, 1) + ' M' : nf(v));
+  const nD = d.filas.length;
+  const top = d.filas.slice(0, 3).map((x) => esc(x.destino) + ' ' + corta(x.n5)).join(' · ') + (nD > 3 ? ' …' : '');
   const f = (x) => `<div class="mop-obs-f"><span>${esc(x.destino)}</span>${barra(x.n5, max)}
     <span class="r">${nf(x.n5)}</span></div>
     <div class="mc-note" style="margin:0 0 6px 0">${nf(x.desoves)} desove(s) · ${x.lotes.map((l) => esc(l)).join(' · ')}${x.variosDestinos ? ' · ' + nf(x.variosDestinos) + ' con varios destinos' : ''}</div>`;
-  return `<div class="mc-card mc-card-wide">
-    <h4 class="mc-card-h">A dónde fueron <span class="mc-h-note">${nf(d.conDestino)} desove(s) con destino${d.sinDestino ? ' · ' + nf(d.sinDestino) + ' sin anotar' : ''}</span></h4>
+  return `<details class="mc-card mc-card-wide mop-dest" data-mop-dest${vOp.destAbierto ? ' open' : ''}>
+    <summary class="mop-dest-sum" data-mop-dest-sum>
+      <h4 class="mc-card-h">A dónde fueron <span class="mc-h-note">${nf(d.conDestino)} desove(s) con destino${d.sinDestino ? ' · ' + nf(d.sinDestino) + ' sin anotar' : ''} · ${nf(nD)} destino${nD === 1 ? '' : 's'}</span></h4>
+      <span class="mop-dest-top">${top}</span>
+    </summary>
     ${d.filas.map(f).join('')}
     <p class="mc-note">⚠ Los nauplios NO se reparten entre los destinos de un desove: la hoja no dice cuántos fue a cada
       uno, así que el desove cuenta ENTERO en cada destino al que fue.${d.compartidos ? ' Aquí hay ' + nf(d.compartidos) + ' así, de modo que estas columnas NO suman el total.' : ''}</p>
     ${ignoraHTML(d.ignora, 'El despacho')}
-  </div>`;
+  </details>`;
 }
 
 /* ── 🔄 MANEJO (F5) ────────────────────────────────────────── */
@@ -2504,6 +2559,7 @@ function bind(root) {
   const abrirPiscina = (x) => { vOp.piscinaSel = vOp.piscinaSel === x ? '' : x; repintar(); };
   const abrirCuarentena = (k) => { vOp.cuarSel = vOp.cuarSel === k ? '' : k; repintar(); };   // 0f · 4
   const abrirKpi = (k) => { vOp.kpiSel = vOp.kpiSel === k ? '' : k; repintar(); };            // 0f · 5
+  const abrirReparto = (l) => { vOp.reproLote = vOp.reproLote === l ? '' : l; repintar(); };    // 0q·3
 
   root.addEventListener('click', (e) => {
     const t = e.target;
@@ -2545,12 +2601,17 @@ function bind(root) {
       changeView('microbiologia');
       return;
     }
+    /* 0q·3 · el título de «A dónde fueron» la pliega y despliega sin repintar; el estado se recuerda en la sesión. */
+    const dsum = t.closest('[data-mop-dest-sum]');
+    if (dsum) { e.preventDefault(); vOp.destAbierto = !vOp.destAbierto; dsum.parentElement.open = vOp.destAbierto; return; }
     if (t.closest('[data-mop-kpi-cerrar]')) { vOp.kpiSel = ''; repintar(); return; }
     const kpi = t.closest('[data-mop-kpi]');
     if (kpi) { abrirKpi(kpi.dataset.mopKpi); return; }
     if (t.closest('[data-mop-cuar-cerrar]')) { vOp.cuarSel = ''; repintar(); return; }
     const cua = t.closest('[data-mop-cuar]');
     if (cua) { abrirCuarentena(cua.dataset.mopCuar); return; }
+    const rl = t.closest('[data-mop-rlote]');
+    if (rl) { abrirReparto(rl.dataset.mopRlote); return; }
     const lot = t.closest('[data-mop-lote]');
     if (lot) { abrirLote(lot.dataset.mopLote); return; }
     const tqf = t.closest('[data-mop-tqf]');
@@ -2598,6 +2659,8 @@ function bind(root) {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     const sala = e.target.closest && e.target.closest('[data-mop-sala]');
     if (sala && e.target === sala) { e.preventDefault(); abrirSala(sala.dataset.mopSala); return; }
+    const rl = e.target.closest && e.target.closest('[data-mop-rlote]');
+    if (rl && e.target === rl) { e.preventDefault(); abrirReparto(rl.dataset.mopRlote); return; }
     const lote = e.target.closest && e.target.closest('[data-mop-lote]');
     if (lote && e.target === lote) { e.preventDefault(); abrirLote(lote.dataset.mopLote); return; }
     const kpi = e.target.closest && e.target.closest('[data-mop-kpi]');

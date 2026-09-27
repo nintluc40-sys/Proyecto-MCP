@@ -19,7 +19,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   esPendiente, pendientesDeN5, tablaDeReproduccion, destinosDeDespacho, totalesDeReproduccion,
-  ignoraDeReproduccion,
+  ignoraDeReproduccion, repartoDeLotePorDestino,
 } from './operativo.reproduccion.js';
 import { modeloOperativo } from './operativo.data.js';
 import { normalizarFiltro, periodoDe } from './operativo.tablero.js';
@@ -186,5 +186,62 @@ describe('Maduración · operativo · 🥚 Reproducción (F4.2)', () => {
     it('con filtro de sala dice que lo ignora', () => {
       expect(totalesDeReproduccion(M, P30, F({ sala: 'Sala 3' })).ignora).toContain('sala');
     });
+  });
+});
+
+/* ============================================================
+   0q·3 (2026-09-27, usuario) · los N2 y N5 de UN lote por destino (el gráfico que se despliega en «Por lote»)
+
+   Los MISMOS desoves que su fila de la tabla (el lote y el período, como `reproduccionDeLote`), de más a menos N5.
+   Regla del usuario: un desove con varios destinos cuenta ENTERO en cada uno (la de «A dónde fueron»), y se dice cuánto
+   de cada barra viene de desoves así. El fixture DISTINGUE: otro lote y un desove fuera del período con cifras enormes
+   (si se colaran, cambian las barras); un desempate en N5 = 0 que por N2 y por catálogo da órdenes DISTINTOS; y un
+   desove sin destino, que no va a ninguna barra pero se cuenta.
+   ============================================================ */
+describe('Maduración · operativo · 🥚 el reparto de un lote por destino (0q·3)', () => {
+  const PL = [
+    ING('2026-06-01', 'RD', 'Sala 3', 1, 20, 40),
+    ING('2026-06-01', 'RE', 'Sala 3', 2, 10, 20),
+    DES('2026-09-02', 'RD', 1, 1000, { N2: 100, N5: 80, Despacho: 'Mar Bravo M01' }),
+    DES('2026-09-05', 'RD', 2, 2000, { N2: 500, N5: 400, Despacho: 'Mar Bravo M01, Tabasca' }),
+    DES('2026-09-08', 'RD', 3, 3000, { N2: 900, N5: 700, Despacho: 'Tabasca' }),
+    DES('2026-09-09', 'RD', 1, 1000, { N2: 50, N5: 30 }),
+    DES('2026-09-11', 'RD', 1, 1000, { N2: 700, N5: 0, Despacho: 'Hisenor' }),
+    DES('2026-09-12', 'RD', 1, 1000, { N2: 300, N5: 0, Despacho: 'Punta Carnero' }),
+    DES('2026-09-10', 'RE', 5, 5000, { N2: 9999, N5: 8888, Despacho: 'Tabasca' }),
+    DES('2026-07-01', 'RD', 5, 5000, { N2: 7777, N5: 5000, Despacho: 'SanLab' }),
+  ];
+  const MM = modeloOperativo(PL, { fecha: FOTO, hoy: FOTO });
+  const PP = periodoDe('30d', FOTO, MM.fuentes);
+  const R = () => repartoDeLotePorDestino(MM.fuentes, 'rd', PP);
+
+  it('🔴 de más a menos N5; en el empate, más N2 primero (no el orden del catálogo)', () => {
+    expect(R().filas.map((f) => f.destino)).toEqual(['Tabasca', 'Mar Bravo M01', 'Hisenor', 'Punta Carnero']);
+  });
+  it('🔴 sólo el lote y el período: ni RE ni el desove de julio entran', () => {
+    const t = R().filas.find((f) => f.destino === 'Tabasca');
+    expect([t.n2, t.n5, t.desoves]).toEqual([1400, 1100, 5]);
+    expect(R().filas.some((f) => f.destino === 'SanLab')).toBe(false);
+    expect(R().lote).toBe('RD');
+  });
+  it('🔴 un desove con dos destinos cuenta ENTERO en los dos, y se dice cuánto de cada barra es compartido', () => {
+    const r = R();
+    const t = r.filas.find((f) => f.destino === 'Tabasca');
+    const m = r.filas.find((f) => f.destino === 'Mar Bravo M01');
+    expect([m.n2, m.n5, m.desoves]).toEqual([600, 480, 3]);
+    expect([t.n2Compartido, t.n5Compartido]).toEqual([500, 400]);
+    expect([m.n2Compartido, m.n5Compartido]).toEqual([500, 400]);
+    expect(r.filas.find((f) => f.destino === 'Hisenor').n5Compartido).toBe(0);
+    expect(r.compartidos).toBe(1);
+  });
+  it('🔑 el desove sin destino no va a ninguna barra, pero se cuenta con su N5', () => {
+    const r = R();
+    expect(r.sinDestino).toBe(1);
+    expect(r.n5SinDestino).toBe(30);
+  });
+  it('🔑 un lote sin desoves en el período: nada', () => {
+    const r = repartoDeLotePorDestino(MM.fuentes, 'ZZ', PP);
+    expect(r.filas).toEqual([]);
+    expect([r.compartidos, r.sinDestino, r.n5SinDestino]).toEqual([0, 0, 0]);
   });
 });

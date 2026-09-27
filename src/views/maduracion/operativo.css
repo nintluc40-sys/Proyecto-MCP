@@ -209,6 +209,25 @@
 .mop-obs-g > b { display: block; margin-bottom: 4px; font-size: 11px; color: var(--c-text-muted); }
 .mop-obs-f { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(60px, 2fr) 48px; align-items: center; gap: 8px; font-size: 11.5px; }
 .mop-obs-f .r { text-align: right; font-weight: 700; }
+/* 0q·3 · «A dónde fueron» plegable: el título hace de botón (▸ plegada, ▾ desplegada) y, plegada, una línea resume. */
+.mop-dest > summary { list-style: none; cursor: pointer; }
+.mop-dest > summary::-webkit-details-marker { display: none; }
+.mop-dest > summary .mc-card-h::before { content: '▸ '; color: var(--c-text-muted); }
+.mop-dest[open] > summary .mc-card-h::before { content: '▾ '; }
+.mop-dest-top { display: block; font-size: 12px; color: var(--c-text-soft); margin-top: 2px; }
+.mop-dest[open] .mop-dest-top { display: none; }
+.mop-dest[open] > summary { margin-bottom: 6px; }
+/* 0q·3 · las filas de «Por lote» se despliegan: como las de 🧬 Lotes, y su reparto va en una fila debajo. */
+.mop-rlote { cursor: pointer; }
+.mop-rlote:hover td, .mop-rlote:focus-visible td { background: color-mix(in srgb, var(--c-brand) 10%, transparent); }
+.mop-rlote:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: -2px; }
+.mop-rlote.is-on td { background: color-mix(in srgb, var(--c-brand) 16%, transparent); }
+.mop-rlote-ic { color: var(--c-text-muted); font-size: 10px; }
+.mop-rlote-det > td { padding: 10px 12px 12px; }
+/* En el móvil la tabla (10 columnas) se desplaza de lado y la fila desplegada mide lo que la TABLA: el reparto se ancla
+   al ancho VISIBLE de su caja (contenedor de consultas: 100cqw) y se queda a la izquierda al desplazar. */
+.mop-rlote-wrap { container-type: inline-size; }
+.mop-rlote-in { position: sticky; left: 12px; width: calc(100cqw - 24px); }
 /* Un desove al que ya se le pasó el día de contar su N5. */
 .mop-pend-tarde td { background: color-mix(in srgb, var(--c-malo) 14%, transparent); }
 

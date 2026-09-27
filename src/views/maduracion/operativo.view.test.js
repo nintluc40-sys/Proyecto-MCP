@@ -2000,6 +2000,13 @@ describe('Maduración · operativo · los gráficos se leen', () => {
     expect(makeChart.mock.calls.some(([id]) => id === 'mopTanqueCurva')).toBe(true);
   });
 
+  it('0q·3 · el reparto de un lote por destino dibuja su gráfico', async () => {
+    await montar(PLANTA_Q3);
+    abrirRepro();
+    click(root.querySelector('[data-mop-rlote="QA"]'));
+    expect(makeChart.mock.calls.some(([id]) => id === 'mopReproDest')).toBe(true);
+  });
+
   it('se abren los siete KPI (cada uno dibuja su gráfico)', async () => {
     await montar(PLANTA);
     const claves = [...root.querySelectorAll('[data-mop-kpi]')].map((x) => x.dataset.mopKpi);
@@ -2008,9 +2015,9 @@ describe('Maduración · operativo · los gráficos se leen', () => {
     expect(makeChart.mock.calls.filter(([id]) => id === 'mopKpiCurva').length).toBeGreaterThanOrEqual(7);
   });
 
-  it('🔴 los ocho gráficos, y todos con ejes a 12 px en un color que no es el gris claro; títulos a 11 px; leyenda a 12 px', () => {
+  it('🔴 los nueve gráficos, y todos con ejes a 12 px en un color que no es el gris claro; títulos a 11 px; leyenda a 12 px', () => {
     const ids = [...new Set(GRAFICOS.map((g) => g.id))].sort();
-    expect(ids).toEqual(['mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopOx', 'mopPiscinaCurva', 'mopTanqueCurva', 'mopTq']);
+    expect(ids).toEqual(['mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
     for (const { id, cfg } of GRAFICOS) {
       for (const [eje, sc] of Object.entries(cfg.options.scales || {})) {
         expect(sc.ticks.font.size, `${id}.${eje}`).toBeGreaterThanOrEqual(12);
@@ -2062,9 +2069,9 @@ describe('Maduración · operativo · los gráficos se leen', () => {
    desliza en 120 ms; el dibujo al abrir o filtrar, 400 ms; y nada con «reducir movimiento».
    ============================================================ */
 describe('Maduración · operativo · los gráficos se mueven bien', () => {
-  it('🔴 los ocho: globo arriba junto a la raya del día, sin transición al pasar, globo en ≤ 150 ms, dibujo en ≤ 400 ms', () => {
+  it('🔴 los nueve: globo arriba junto a la raya del día, sin transición al pasar, globo en ≤ 150 ms, dibujo en ≤ 400 ms', () => {
     const ids = [...new Set(GRAFICOS.map((g) => g.id))].sort();
-    expect(ids).toEqual(['mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopOx', 'mopPiscinaCurva', 'mopTanqueCurva', 'mopTq']);
+    expect(ids).toEqual(['mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
     for (const { id, cfg } of GRAFICOS) {
       const o = cfg.options;
       expect(o.interaction, id).toEqual({ mode: 'index', intersect: false });
@@ -2111,5 +2118,177 @@ describe('Maduración · operativo · los gráficos se mueven bien', () => {
       const l = makeChart.mock.calls.filter(([id]) => id === 'mopKpiCurva');
       expect(l[l.length - 1][1].options.animation).toBe(false);
     } finally { mm.mockRestore(); }
+  });
+});
+
+/* ============================================================
+   0q·3 (2026-09-27, usuario) · 🥚 Reproducción: «A dónde fueron» PLEGABLE, y por lote, sus N2 y N5 por destino
+
+   (a) «A dónde fueron» como lista desplegable. Medido en Chrome: 13 destinos, 573 px de alto. Decisión del usuario: la
+   tarjeta empieza PLEGADA con su título y una línea (cuántos destinos y los tres primeros); pulsar el título la despliega
+   con la lista de siempre; y recuerda cómo se dejó (la sesión, como el resto del estado de la vista).
+   ============================================================ */
+const PLANTA_Q3 = [...PLANTA_F4,
+  DES('14/09/2026', 'QA', 3, 300000, { 'Fecha N2': '14/09/2026', N2: 1200000, 'Fecha N5': '15/09/2026', N5: 1500000, Despacho: 'Mar Bravo M07' }),
+  DES('15/09/2026', 'QA', 1, 100000, { 'Fecha N2': '15/09/2026', N2: 90000, 'Fecha N5': '16/09/2026', N5: 50000, Despacho: 'SanLab' }),
+];
+const destinos = () => root.querySelector('details[data-mop-dest]');
+describe('Maduración · operativo · 🥚 A dónde fueron, plegable', () => {
+  it('🔴 empieza PLEGADA y su resumen dice cuántos destinos y los tres primeros', async () => {
+    await montar(PLANTA_Q3);
+    abrirRepro();
+    const d = destinos();
+    expect(d).not.toBeNull();
+    expect(d.open).toBe(false);
+    const s = d.querySelector('summary').textContent.replace(/\s+/g, ' ');
+    expect(s).toContain('A dónde fueron');
+    expect(s).toContain('4 destinos');
+    expect(s).toContain('Mar Bravo M07 1,5 M');
+    expect(s).toContain('Tabasca 200.000');
+    expect(s).toContain('Hisenor 200.000');
+    expect(s).not.toContain('SanLab');
+    expect(s).toContain('…');
+    // la lista de siempre sigue dentro
+    expect(d.querySelectorAll('.mop-obs-f').length).toBe(4);
+    expect(d.textContent).toContain('NO suman el total');
+  });
+
+  it('🔴 pulsar el título la despliega, lo RECUERDA al repintar, y volver a pulsar la pliega', async () => {
+    await montar(PLANTA_Q3);
+    abrirRepro();
+    click(destinos().querySelector('summary'));
+    expect(destinos().open).toBe(true);
+    cambiar(filtro('sala'), 'Sala 1');           // repinta la vista entera
+    expect(destinos().open).toBe(true);
+    click(destinos().querySelector('summary'));
+    expect(destinos().open).toBe(false);
+    cambiar(filtro('sala'), '');
+    expect(destinos().open).toBe(false);
+  });
+
+  it('🔑 con tres destinos o menos, el resumen no pone «…»', async () => {
+    await montar(PLANTA_F4);
+    abrirRepro();
+    const s = destinos().querySelector('summary').textContent;
+    expect(s).toContain('2 destinos');
+    expect(s).not.toContain('…');
+  });
+
+  it('🔑 sin ningún destino anotado, la tarjeta lo dice y no hay nada que plegar', async () => {
+    await montar([...PLANTA, DES('12/09/2026', 'QA', 4, 400000, { N2: 300000, N5: 200000 })]);
+    abrirRepro();
+    expect(destinos()).toBeNull();
+    expect(root.textContent).toContain('Ningún desove del período tiene destino anotado');
+  });
+});
+
+/* ============================================================
+   0q·3 (b) · «Por lote»: pulsar una fila despliega, debajo, un gráfico de N2 y N5 por destino, de más a menos N5.
+   Decisión del usuario: barras VERTICALES N2 y N5 una al lado de otra (el estilo y el movimiento de los demás); un
+   desove con varios destinos cuenta ENTERO en cada uno y el globo dice cuánto de la barra es compartido. Las cifras las
+   prueba operativo.reproduccion.test.js; aquí, que lleguen a la pantalla y que la fila se abra y cierre.
+   ============================================================ */
+const filaRepro = (l) => root.querySelector(`[data-mop-rlote="${l}"]`);
+const reparto = () => makeChart.mock.calls.filter(([id]) => id === 'mopReproDest');
+describe('Maduración · operativo · 🥚 Por lote: el reparto por destino', () => {
+  it('🔴 las filas se pueden pulsar y empiezan cerradas, sin gráfico', async () => {
+    await montar(PLANTA_Q3);
+    makeChart.mockClear();   // el mock guarda las llamadas de las pruebas anteriores
+    abrirRepro();
+    const f = filaRepro('QA');
+    expect(f).not.toBeNull();
+    expect(f.getAttribute('role')).toBe('button');
+    expect(f.getAttribute('tabindex')).toBe('0');
+    expect(f.getAttribute('aria-expanded')).toBe('false');
+    expect(root.querySelector('.mop-rlote-det')).toBeNull();
+    expect(reparto().length).toBe(0);
+  });
+
+  it('🔴 al pulsarla, debajo, N2 y N5 por destino de más a menos N5, y el globo dice lo compartido', async () => {
+    await montar(PLANTA_Q3);
+    abrirRepro();
+    click(filaRepro('QA'));
+    expect(filaRepro('QA').getAttribute('aria-expanded')).toBe('true');
+    const det = root.querySelector('.mop-rlote-det');
+    expect(det).not.toBeNull();
+    expect(det.previousElementSibling).toBe(filaRepro('QA'));
+    expect(det.querySelector('canvas#mopReproDest')).not.toBeNull();
+    const l = reparto();
+    const cfg = l[l.length - 1][1];
+    expect(cfg.data.labels).toEqual(['Mar Bravo M07', 'Tabasca', 'Hisenor', 'SanLab']);
+    const [n2, n5] = cfg.data.datasets;
+    expect(n2.label).toBe('N2');
+    expect(n5.label).toBe('N5');
+    expect(n2.data).toEqual([1200000, 300000, 300000, 90000]);
+    expect(n5.data).toEqual([1500000, 200000, 200000, 50000]);
+    const pie = (d, i) => d.tooltip.callbacks.afterLabel({ dataIndex: i });
+    expect(pie(n5, 1)).toBe('de ellos, 200.000 de desoves con varios destinos');
+    expect(pie(n2, 2)).toBe('de ellos, 300.000 de desoves con varios destinos');
+    expect(pie(n5, 0)).toBe('');
+    const t = det.textContent;
+    expect(t).toContain('QA');
+    expect(t).toContain('NO suman');
+    expect(t).toContain('1 registro(s) de desove sin destino');
+  });
+
+  it('🔴 volver a pulsarla la cierra; y con el teclado (Enter) se abre', async () => {
+    await montar(PLANTA_Q3);
+    abrirRepro();
+    click(filaRepro('QA'));
+    click(filaRepro('QA'));
+    expect(root.querySelector('.mop-rlote-det')).toBeNull();
+    expect(filaRepro('QA').getAttribute('aria-expanded')).toBe('false');
+    const f = filaRepro('QA');
+    f.focus();
+    f.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(root.querySelector('.mop-rlote-det')).not.toBeNull();
+  });
+
+  it('🔑 un lote cuyo único desove no tiene destino lo dice en vez de dibujar un gráfico vacío', async () => {
+    await montar([...PLANTA, DES('12/09/2026', 'QA', 4, 400000, { N2: 300000, N5: 200000 })]);
+    makeChart.mockClear();
+    abrirRepro();
+    click(filaRepro('QA'));
+    expect(root.querySelector('.mop-rlote-det').textContent).toContain('Ningún desove de este lote tiene destino anotado');
+    expect(reparto().length).toBe(0);
+  });
+});
+
+describe('Maduración · operativo · 🥚 el reparto de un lote cabe en el móvil', () => {
+  /* Medido en Chrome a 390 px: la fila desplegada vive DENTRO del desplazamiento horizontal de la tabla (10 columnas,
+     ~800 px), así que el gráfico tomaba el ancho de la TABLA y se veía cortado. Se ancla al ancho VISIBLE de su caja:
+     la caja es un contenedor de consultas y el reparto, pegajoso a la izquierda, mide 100cqw menos el relleno. */
+  it('🔴 el reparto va en su caja anclada, dentro de una tabla que es contenedor', async () => {
+    await montar(PLANTA_Q3);
+    abrirRepro();
+    click(filaRepro('QA'));
+    expect(root.querySelector('.mc-tablewrap.mop-rlote-wrap .mop-rlote-det .mop-rlote-in canvas#mopReproDest')).not.toBeNull();
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/views/maduracion/operativo.css', 'utf8');
+    expect(css).toContain('.mop-rlote-wrap { container-type: inline-size; }');
+    expect(css).toContain('.mop-rlote-in { position: sticky; left: 12px; width: calc(100cqw - 24px); }');
+  });
+});
+
+describe('Maduración · operativo · 🥚 Reproducción: lo que el navegador haría por su cuenta', () => {
+  it('🔴 el clic en el título de «A dónde fueron» anula el plegado NATIVO (si no, el navegador lo daría la vuelta otra vez)', async () => {
+    await montar(PLANTA_Q3);
+    abrirRepro();
+    const ev = new MouseEvent('click', { bubbles: true, cancelable: true });
+    destinos().querySelector('summary').dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    expect(destinos().open).toBe(true);
+  });
+
+  it('🔴 un lote desplegado que el filtro quita de la tabla se SUELTA: al quitar el filtro vuelve cerrado', async () => {
+    await montar(PLANTA_Q3);
+    abrirRepro();
+    click(filaRepro('QA'));
+    expect([...filtro('lote').options].some((o) => o.value === 'QB')).toBe(true);
+    cambiar(filtro('lote'), 'QB');
+    expect(filaRepro('QA')).toBeNull();
+    cambiar(filtro('lote'), '');
+    expect(filaRepro('QA').getAttribute('aria-expanded')).toBe('false');
+    expect(root.querySelector('.mop-rlote-det')).toBeNull();
   });
 });

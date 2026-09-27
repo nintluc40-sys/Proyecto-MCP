@@ -192,6 +192,37 @@ export function destinosDeDespacho(fuentes, periodo, F) {
   return { filas, compartidos, sinDestino, conDestino, ignora: ignoraDeReproduccion(F) };
 }
 
+/**
+ * 0q·3 (2026-09-27, usuario) · los N2 y N5 de UN lote por destino, para el gráfico que se despliega en «Por lote».
+ * Los MISMOS desoves que su fila de la tabla —el lote y el período, como `reproduccionDeLote`: sin el filtro—, de más a
+ * menos N5 (en el empate, más N2; luego el catálogo). ⚠ Un desove con varios destinos cuenta ENTERO en cada uno —la regla
+ * de «A dónde fueron»: la hoja no dice cuánto fue a cada uno—, y `n2Compartido`/`n5Compartido` dicen cuánto de cada
+ * barra viene de desoves así. Los que no tienen destino no van a ninguna barra: se cuentan aparte, con su N5.
+ */
+export function repartoDeLotePorDestino(fuentes, lote, periodo) {
+  const clave = normLote(lote);
+  const m = new Map();
+  let compartidos = 0;
+  let sinDestino = 0;
+  let n5SinDestino = 0;
+  for (const r of (fuentes || {}).desoves || []) {
+    if (normLote(r.Lote) !== clave || !enPeriodo(fechaDeFila('desoves', r), periodo)) continue;
+    const destinos = despachoLista(r.Despacho);
+    if (!destinos.length) { sinDestino++; n5SinDestino += ent(r.N5); continue; }
+    const varios = destinos.length > 1;
+    if (varios) compartidos++;
+    for (const d of destinos) {
+      const o = m.get(d) || { destino: d, desoves: 0, n2: 0, n5: 0, n2Compartido: 0, n5Compartido: 0 };
+      o.desoves += ent(r.Desoves);
+      o.n2 += ent(r.N2); o.n5 += ent(r.N5);
+      if (varios) { o.n2Compartido += ent(r.N2); o.n5Compartido += ent(r.N5); }
+      m.set(d, o);
+    }
+  }
+  const filas = [...m.values()].sort((a, b) => b.n5 - a.n5 || b.n2 - a.n2 || porCatalogo(a.destino, b.destino));
+  return { lote: clave, filas, compartidos, sinDestino, n5SinDestino };
+}
+
 /* ── LOS TOTALES DE LA CABECERA ────────────────────────────── */
 
 /** Los totales del período. Es `kpiReproduccion`, el MISMO que pinta el KPI de 📊 Estado: no se recalcula. */
