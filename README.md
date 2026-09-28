@@ -89,7 +89,7 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   ubicación). Sub-vista **Patología en fresco** pendiente (a la espera de su
   hoja en el Google Sheet).
 - **Maduración** (🥚): una entrada con DOS familias (selector interno; abre en Operativo).
-  - **🐚 Operativo** — el TABLERO del registro operativo, cargado DIFERIDO. Barra de filtros común
+  - **📋 Operativo** — el TABLERO del registro operativo, cargado DIFERIDO. Barra de filtros común
     (período · foto al día · sala → tanque · lote → código · estado · sexo · piscina · camaronera, con los
     activos como etiquetas quitables) y sus sub-vistas (la lista viva es `SUBS`, en `operativo.view.js`):
     **📊 Estado actual** (siete indicadores; el mapa de planta, que se colorea por el lote, por el tanque o por
@@ -103,11 +103,13 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     noche, mortalidad en desove y recuperación, y frecuencia de observaciones de tanque), **🛢 Tanques** (tabla
     maestra de los ocupados y, al pulsar una fila, su ficha: composición, curva de vivos, partes con su hora,
     observaciones y movimientos), **🥚 Reproducción** (totales, los desoves pendientes de N5 arriba, la tabla
-    por lote y a dónde fueron) y **🔄 Manejo** (movimientos en matriz sala → sala con su registro debajo; la
+    por lote —al pulsar un lote, sus N2 y N5 por destino, de más a menos N5— y «A dónde fueron», plegada con
+    los tres primeros destinos) y **🔄 Manejo** (movimientos en matriz sala → sala con su registro debajo; la
     alimentación PLANIFICADA por producto frente a la agenda estándar, con cada toma juzgada con el rango de
     la ficha; y los tratamientos: calendario sala × día, productos por área y cobertura preventiva por lote)
     y **🩺 Calidad del dato** (las hojas y su calendario, los partes esperados —uno por tanque ocupado— frente
-    a los registrados, el estado registrado de cada sala frente al propuesto, los avisos del libro y el cruce
+    a los registrados —cada fecha y cada celda abren la ventana de ESE día: cobertura por sala, los partes tanque a
+    tanque y los de tanques que el libro tenía vacíos, marcados «no esperado»—, el estado registrado de cada sala frente al propuesto, los avisos del libro y el cruce
     con 🧬 Microchips, que marca sólo lo que no puede ser y se hace con el libro de HOY).
     ⚠ **Lo que NO se juzga** se enseña tal cual, rotulado «sin criterio»: deformidad, actividad,
     fototropismo y aireación. Sólo llevan veredicto salinidad > 60 ‰, temperatura > 40 °C, hongos
@@ -120,17 +122,36 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     rayados, y dos códigos son su propia categoría (la pareja). Un dato IMPOSIBLE de los partes —más cópulas
     que hembras, o cópulas un día sin hembras en el libro— se enseña MARCADO: no se esconde ni se corrige.
     En tema claro el número de cada tanque va oscuro (≥ 4,5:1); en tema oscuro, blanco.
+    📈 **Los gráficos** (0q, 2026-09-27): ejes de 12 px en el color de texto del tema, barras sólidas, líneas
+    rectas; en los de días, una raya marca el día y el globo va arriba a su lado (`arribaJunto`, en
+    `core/charts.js`), y con «reducir movimiento» no se animan. Todos pasan por `graficoOp` (o
+    `graficoDispersionOp`, los de puntos) en `operativo.view.js`.
+    🦠 / 🧬 **Los dos botones del laboratorio** (junto a la sub-nav) abren ventanas con **sus propios filtros**
+    —Mes · Lote · Sala · Piscina · Sexo, sobre TODO el registro; empiezan con la sala, el sexo y el lote del
+    tablero—: **🦠 Microbiología y agua** (① reproductores: al escoger un patógeno, sus UFC muestra a muestra en
+    escala logarítmica, la mediana semanal y los umbrales Moderado/Elevado; ② desinfección; ③ agua y RAS por
+    formato —cada uno con sus umbrales— y la calidad de agua por parámetro con su rango) y **🧬 Biomol ·
+    reproductores** (prevalencia, tabla lote × patógeno sombreada, la tendencia semanal del patógeno escogido
+    con sus muestras analizadas, y Maduración por tipo de muestra —Heces, Branquias, Pleópodo, Agua,
+    Hisopado, de la columna «Otros»—). La piscina de una muestra es la que dice o, en Microbiología, la de su
+    lote en Ingresos; una combinada («P554/556») cuenta en las dos. Las cuentas, en `operativo.laboratorio.js`.
   - **🧬 Microchips** — seguimiento reproductivo por Trovan ID sobre
     las hojas `Maduración MATRIZ`/`Bitácora`/`Transferencias`.
     ⚠ **Es el REPRODUCTIVO. Hay otra «Maduración» distinta** —el registro OPERATIVO, por
     conteos— que no es una vista sino un grupo de fichas de captura: ver más abajo.
-    Tres sub-vistas —
+    Cuatro sub-vistas —
     **Panorama** (KPIs, distribución de estados activa/inactiva/transferida/fallecida,
     tendencias de desoves/mortalidad/fertilidad, top salas y tanques), **Salas y
-    Tanques** (producción, fertilidad y eficiencia por ubicación + mortalidad) y
+    Tanques** (producción, fertilidad y eficiencia por ubicación + mortalidad),
     **Hembras** (ranking por desoves, buscador de Trovan, hembras que nunca han
     desovado, distribución del intervalo de recuperación e historial completo por
-    individuo). Filtros de período (mes o todo) + Sala + Tanque.
+    individuo) y **🩺 Calidad** (comprobaciones del registro, con su contador en la pastilla).
+    Filtros de período (mes o todo) + Sala + Tanque.
+    *(0o y 0p, 2026-09-27: mapa de salas por bandas de tasa que filtra al pulsarlo, calendario de desoves
+    tanque × día, línea de vida de cada hembra, familias, supervivencia por familia, alerta de reemplazo por
+    tanque, la VENTANA de desove —no una fecha: acertar la fecha salía un 41 %—, la mortalidad tras el desove
+    con su riesgo relativo y una tarjeta honesta sobre la marea, que no muestra efecto. Las reglas, en
+    `src/views/maduracion/data.js`.)*
     ♻ **Un Trovan ID es de un CHIP, no de una hembra**, así que la MATRIZ puede tener varias suyas.
     Lo que identifica a un individuo es la **cuaterna** (Trovan · Piscina · Código genético · Lote);
     la regla vive en `src/core/trovan.js` y está detallada en «Reglas vigentes», más abajo.
@@ -152,7 +173,7 @@ de Registros. **Su interfaz vive ÚNICAMENTE en `public/registros/engine.js`** (
 autónomo `Music\index (8).html`), porque ese monolito no tiene módulos ES.
 ⚠ Ojo al buscarlo: la CAPTURA de este registro no tiene carpeta nativa. En **`src/views/maduracion/`**
 están los dos TABLEROS de Maduración —el del reproductivo (🧬 Microchips) y, desde el 2026-09-19, el de
-este registro (🐚 Operativo, los `operativo.*.js`)—, que LEEN estas hojas y no escriben en ellas. *(Aquí
+este registro (📋 Operativo, los `operativo.*.js`)—, que LEEN estas hojas y no escriben en ellas. *(Aquí
 decía que esa carpeta «NO es esto» y que no había carpeta nativa para el operativo: era cierto antes del
 tablero.)* Lo que sí tiene gemelo probado en
 `src/views/registros/lib/` es el CÁLCULO: los esquemas de cada ficha y el libro mayor, con
