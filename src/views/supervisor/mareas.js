@@ -383,9 +383,10 @@ let _ticker = null;
 // Sin `export`: sus únicos llamantes están en este módulo (cleanupMareas y el propio
 // ticker, que se auto-detiene si el host se desconecta o el modal se cierra).
 function stopMareaTicker() { if (_ticker) { clearInterval(_ticker); _ticker = null; } }
+let _lienzosExtra = [];   // 0r·2 · los lienzos de las vistas extra del último render (se sueltan con los demás)
 export function cleanupMareas() {
   stopMareaTicker();
-  ['mareaTrendChart', 'mareaDonutChart', 'mareaCorrChart', 'mareaFsCanvas'].forEach(destroyChart);
+  ['mareaTrendChart', 'mareaDonutChart', 'mareaCorrChart', 'mareaFsCanvas', ..._lienzosExtra].forEach(destroyChart);
   // Referencias al DOM/datos del render anterior: se sueltan para no dibujar un gráfico
   // ampliado con el mes que ya no está en pantalla. `renderMareas` las repuebla.
   _mes = null; _corr = null;
@@ -593,9 +594,12 @@ function drawCorrScatter(state) {
   });
 }
 
-/** Render principal del modal de Mareas dentro de `host`. `state` = { mode, key, month }. */
-export function renderMareas(host, state) {
+/** Render principal del modal de Mareas dentro de `host`. `state` = { mode, key, month }.
+ *  0r·2 · `extras`: las vistas que añade quien abre el modal (Maduración: «🦐 Cópulas»), por su modo →
+ *  { html(state), dibujar?(host, state), lienzos?: [ids] }. En una vista extra los meses de arriba no aplican. */
+export function renderMareas(host, state, extras = {}) {
   if (!host) return;
+  _lienzosExtra = Object.values(extras).flatMap((x) => x.lienzos || []);
   cleanupMareas();
   const days = mareaDays();
   const note = '<div class="sv-marea-inocar">Predicción de mareas de Anconcito · fuente INOCAR</div>';
@@ -623,13 +627,16 @@ export function renderMareas(host, state) {
   const nowMin = (state.mode === 'dia' && isTodayD(curDay.d)) ? (new Date().getHours() * 60 + new Date().getMinutes()) : null;
   let content;
   const curMonthLabel = (months.find((m) => m.key === curMkey) || {}).label || '';
-  if (state.mode === 'corr') content = corrHTML(curMkey, state);
+  const extra = extras[state.mode];
+  if (extra) content = extra.html(state);
+  else if (state.mode === 'corr') content = corrHTML(curMkey, state);
   else if (state.mode === 'mes') content = mesHTML(monthDays, curMonthLabel);
   else content = diaHTML(curDay, nowMin);
-  const monthInert = state.mode === 'corr' && state.corrPeriod === 'all';
+  const monthInert = (state.mode === 'corr' && state.corrPeriod === 'all') || !!extra;
   host.innerHTML = selBar(months, curMkey, monthDays, curKey, state.mode, monthInert) + content + note;
 
-  if (state.mode === 'corr') drawCorrScatter(state);
+  if (extra) { if (extra.dibujar) extra.dibujar(host, state); }
+  else if (state.mode === 'corr') drawCorrScatter(state);
   else if (state.mode === 'mes') { _mes = { monthDays }; drawMareaTrend(monthDays); drawMareaDonut(monthDays); }
   else if (nowMin != null) startTicker(host, state);
 }
@@ -641,7 +648,7 @@ export function renderMareas(host, state) {
 export const mareasEstadoInicial = () => ({ mode: 'dia', key: null, month: null, corrKind: 'micro', corrPeriod: 'month', corrCell: null });
 
 /** El overlay del modal, cerrado. Lo abre cualquier `[data-mareas-open]` del `root` que se le pase a `cablearMareas`. */
-export function mareasModalHTML() {
+export function mareasModalHTML({ extras = [] } = {}) {   // 0r·2 · `extras`: [{ modo, etiqueta }], tras «Correlación»
   return `<div class="sv-modal" id="svMareasModal" data-mareasmodal>
     <div class="sv-modal-card lv-fs-card">
       <div class="sv-modal-head">
@@ -653,7 +660,8 @@ export function mareasModalHTML() {
           <span class="sv-bm-mode-label">Vista:</span>
           <button class="sv-bm-mode-btn is-active" data-mareamode="dia">📅 Día</button>
           <button class="sv-bm-mode-btn" data-mareamode="mes">📈 Mes</button>
-          <button class="sv-bm-mode-btn" data-mareamode="corr">🔗 Correlación</button>
+          <button class="sv-bm-mode-btn" data-mareamode="corr">🔗 Correlación</button>${extras.map((x) => `
+          <button class="sv-bm-mode-btn" data-mareamode="${esc(x.modo)}">${esc(x.etiqueta)}</button>`).join('')}
         </div>
         <div id="svMareaBody"></div>
       </div>
@@ -670,12 +678,14 @@ export function mareasModalHTML() {
  * @param {object} [opts.state]       el estado a usar (y a MUTAR): una vista que se repinta entera lo guarda entre pintadas
  * @param {Function} [opts.alAbrir]   tras abrir
  * @param {Function} [opts.alCerrar]  tras cerrar
+ * @param {object} [opts.extras]    0r·2 · las vistas que añade quien lo abre (ver `renderMareas`), con `cambio(target, state)`
+ *                                    (true = repintar) e `inicial` (su estado al abrir)
  * @returns {{state: object, reabrir: Function}|null}  `reabrir` lo abre SIN volver al estado inicial (tras un repintado)
  */
-export function cablearMareas(root, overlay, { state = mareasEstadoInicial(), alAbrir, alCerrar } = {}) {
+export function cablearMareas(root, overlay, { state = mareasEstadoInicial(), alAbrir, alCerrar, extras = {} } = {}) {
   if (!overlay) return null;
   const mareaBody = overlay.querySelector('#svMareaBody');
-  const renderMareaBody = () => renderMareas(mareaBody, state);
+  const renderMareaBody = () => renderMareas(mareaBody, state, extras);
   const marcarModo = () => overlay.querySelectorAll('[data-mareamode]').forEach((x) => x.classList.toggle('is-active', x.dataset.mareamode === state.mode));
   // Barra de modo (Día/Mes) estática en el markup del modal (como Biomol/Micro).
   overlay.querySelectorAll('[data-mareamode]').forEach((b) => b.addEventListener('click', () => {
@@ -705,6 +715,8 @@ export function cablearMareas(root, overlay, { state = mareasEstadoInicial(), al
     if (cc) { state.corrCell = cc.dataset.corrCell; renderMareaBody(); return; }
   });
   mareaBody.addEventListener('change', (e) => {
+    const x = extras[state.mode];   // 0r·2 · lo de una vista extra, primero
+    if (x && x.cambio && x.cambio(e.target, state)) { renderMareaBody(); return; }
     const ds = e.target.closest('[data-marea-daysel]');
     if (ds) { state.key = ds.value; renderMareaBody(); }
   });
@@ -722,6 +734,7 @@ export function cablearMareas(root, overlay, { state = mareasEstadoInicial(), al
     openSel: '[data-mareas-open]', closeSel: '[data-mareas-close]',
     onOpen: () => {
       Object.assign(state, mareasEstadoInicial());
+      Object.values(extras).forEach((x) => Object.assign(state, x.inicial || {}));
       marcarModo();
       renderMareaBody();
       if (alAbrir) alAbrir();

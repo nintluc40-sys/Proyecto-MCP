@@ -15,7 +15,7 @@ import { TIPOS_AVISO } from './operativo.tablero.js';
 
 vi.mock('../../core/charts.js', () => ({
   makeChart: vi.fn(),
-  destroyChart: () => {},
+  destroyChart: vi.fn(),   // 0r·2 · se vigila que la pestaña «🦐 Cópulas» suelte su gráfico al cerrar
   destroyAllCharts: () => {},
   Chart: class {},
 }));
@@ -2008,6 +2008,13 @@ describe('Maduración · operativo · los gráficos se leen', () => {
     expect(makeChart.mock.calls.some(([id]) => id === 'mopCalPar')).toBe(true);
   });
 
+  it('0r·2 · la pestaña 🦐 Cópulas del modal de Mareas dibuja su gráfico', async () => {
+    await montar([...PLANTA, ...COP_MAREA]);
+    click(root.querySelector('[data-mareas-open]'));
+    click(root.querySelector('#svMareasModal [data-mareamode="copulas"]'));
+    expect(makeChart.mock.calls.some(([id]) => id === 'mopMarCop')).toBe(true);
+  });
+
   it('0q·3 · el reparto de un lote por destino dibuja su gráfico', async () => {
     await montar(PLANTA_Q3);
     abrirRepro();
@@ -2023,9 +2030,9 @@ describe('Maduración · operativo · los gráficos se leen', () => {
     expect(makeChart.mock.calls.filter(([id]) => id === 'mopKpiCurva').length).toBeGreaterThanOrEqual(7);
   });
 
-  it('🔴 los doce gráficos, y todos con ejes a 12 px en un color que no es el gris claro; títulos a 11 px; leyenda a 12 px', () => {
+  it('🔴 los trece gráficos, y todos con ejes a 12 px en un color que no es el gris claro; títulos a 11 px; leyenda a 12 px', () => {
     const ids = [...new Set(GRAFICOS.map((g) => g.id))].sort();
-    expect(ids).toEqual(['mopAguaPat', 'mopCalPar', 'mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMicPat', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
+    expect(ids).toEqual(['mopAguaPat', 'mopCalPar', 'mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMarCop', 'mopMicPat', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
     for (const { id, cfg } of GRAFICOS) {
       for (const [eje, sc] of Object.entries(cfg.options.scales || {})) {
         expect(sc.ticks.font.size, `${id}.${eje}`).toBeGreaterThanOrEqual(12);
@@ -2077,9 +2084,9 @@ describe('Maduración · operativo · los gráficos se leen', () => {
    desliza en 120 ms; el dibujo al abrir o filtrar, 400 ms; y nada con «reducir movimiento».
    ============================================================ */
 describe('Maduración · operativo · los gráficos se mueven bien', () => {
-  it('🔴 los doce: globo arriba junto a la raya del día (menos los de dispersión), sin transición al pasar, globo en ≤ 150 ms, dibujo en ≤ 400 ms', () => {
+  it('🔴 los trece: globo arriba junto a la raya del día (menos los de dispersión), sin transición al pasar, globo en ≤ 150 ms, dibujo en ≤ 400 ms', () => {
     const ids = [...new Set(GRAFICOS.map((g) => g.id))].sort();
-    expect(ids).toEqual(['mopAguaPat', 'mopCalPar', 'mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMicPat', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
+    expect(ids).toEqual(['mopAguaPat', 'mopCalPar', 'mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMarCop', 'mopMicPat', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
     for (const { id, cfg } of GRAFICOS) {
       const o = cfg.options;
       if (id === 'mopMicPat' || id === 'mopAguaPat' || id === 'mopCalPar') {   // 0q·5a/5b/5c · dispersión: el punto más cercano, sin raya ni globo arriba (su eje no es de días)
@@ -2842,7 +2849,8 @@ describe('Maduración · operativo · 🌊 Mareas, como en Larvicultura (0r·1)'
     await montar([...PLANTA, ...MAREA]);
     click(boton());
     expect(document.body.classList.contains('modal-open')).toBe(true);
-    expect([...modal().querySelectorAll('[data-mareamode]')].map((b) => b.dataset.mareamode)).toEqual(['dia', 'mes', 'corr']);
+    /* Las tres de Larvicultura; 0r·2 añadió aquí la cuarta, «🦐 Cópulas» (sus pruebas, más abajo). */
+    expect([...modal().querySelectorAll('[data-mareamode]')].map((b) => b.dataset.mareamode)).toEqual(['dia', 'mes', 'corr', 'copulas']);
     expect(modo('dia').classList.contains('is-active')).toBe(true);
     expect(modal().querySelector('.sv-marea-grid .sv-marea-wave')).not.toBeNull();
     expect(modal().querySelectorAll('.sv-marea-table tbody tr')).toHaveLength(4);
@@ -2899,6 +2907,127 @@ describe('Maduración · operativo · 🌊 Mareas, como en Larvicultura (0r·1)'
     await montar(PLANTA);
     click(boton());
     expect(abierto()).toBe(true);
+    expect(modal().textContent).toContain('No hay datos de mareas cargados');
+  });
+});
+
+/* 0r·2 (2026-09-28, usuario) · la pestaña «🦐 Cópulas» del modal de Mareas: las cópulas de los partes de Tanques frente a la
+   marea y la fase lunar, con la regla del Saldo (Σ cópulas ÷ Σ hembras del libro al cierre del día), TODO el registro y sus
+   filtros propios (sala y «sólo en producción»). Las cifras las prueba operativo.mareas.test.js; aquí, que lleguen.
+   · 15/09 (Viva, Luna nueva): Sala 1 · 1 (22 ♀) 2 cópulas; Sala 2 · 16 (8 ♀: QA llegó el 11/09, en cuarentena) 0.
+   · 16/09 (Viva, Creciente): Sala 1 · 1 el parte de PLANTA, sin cópulas; Sala 4 · 1 (8 ♀ de QB, en cuarentena) 1.
+   · 17/09 (Muerta, Creciente): Sala 1 · 1, 3 cópulas.
+   · 18/09 (Muerta): el parte de Sala 1 · 1 SIN cópulas y ninguno más: hueco del registro, fuera (y se dice). */
+const MAR_COP = (fecha, fase, ilum, tipo, amp) => ({ _SheetOrigin: 'Marea', Fecha: fecha, 'Fase Lunar': fase, '%Iluminación': ilum,
+  'Tipo de Marea': tipo, 'Amplitud (m)': amp, 'Pleamar 1': '03:10', 'Altura P1 (m)': '2.1', 'Bajamar 1': '09:20', 'Altura B1 (m)': '0.3' });
+const COP_MAREA = [
+  TQ('15/09/2026', 'Sala 1', 1, { 'Cópulas': '2' }),
+  TQ('15/09/2026', 'Sala 2', 16, { 'Cópulas': '0' }),
+  TQ('16/09/2026', 'Sala 4', 1, { 'Cópulas': '1' }),
+  TQ('17/09/2026', 'Sala 1', 1, { 'Cópulas': '3' }),
+  TQ('18/09/2026', 'Sala 1', 1, { 'Cópulas': '' }),
+  MAR_COP('15/09/2026', 'Luna nueva', '2', 'Viva', '2.0'),
+  MAR_COP('16/09/2026', 'Creciente', '8', 'Viva', '1.9'),
+  MAR_COP('17/09/2026', 'Creciente', '15', 'Muerta', '1.2'),
+  MAR_COP('18/09/2026', 'Cuarto creciente', '22', 'Muerta', '1.1'),
+];
+describe('Maduración · operativo · 🦐 cópulas × marea × luna, en el modal de Mareas (0r·2)', () => {
+  const modal = () => root.querySelector('#svMareasModal');
+  const abrirCop = () => {
+    click(root.querySelector('.mc-subnav [data-mareas-open]'));
+    click(modal().querySelector('[data-mareamode="copulas"]'));
+  };
+  const chips = () => [...modal().querySelectorAll('.mop-marcop-cifras .sv-marea-stat')].map((c) =>
+    [c.querySelector('.sv-marea-stat-l').textContent, c.querySelector('.sv-marea-stat-v').textContent, (c.querySelector('.sv-marea-stat-s') || { textContent: '' }).textContent]);
+  const prod = () => modal().querySelector('[data-mop-marcop="prod"]');
+  const sala = () => modal().querySelector('[data-mop-marcop="sala"]');
+  const nota = () => modal().querySelector('.mop-marcop-nota').textContent;
+  const marcar = (v) => { prod().checked = v; prod().dispatchEvent(new Event('change', { bubbles: true })); };
+
+  it('🔴 la pestaña va tras «Correlación» y sólo en Maduración (Larvicultura no la tiene)', async () => {
+    await montar([...PLANTA, ...COP_MAREA]);
+    expect([...modal().querySelectorAll('[data-mareamode]')].map((b) => b.dataset.mareamode)).toEqual(['dia', 'mes', 'corr', 'copulas']);
+    expect(modal().querySelector('[data-mareamode="copulas"]').textContent).toBe('🦐 Cópulas');
+    const { mareasModalHTML } = await import('../supervisor/mareas.js');
+    expect(mareasModalHTML()).not.toContain('copulas');
+  });
+
+  it('🔴 toda la granja: Viva y Muerta (Σ ÷ Σ), las r con su umbral y la lectura; los meses de arriba no aplican', async () => {
+    await montar([...PLANTA, ...COP_MAREA]);
+    abrirCop();
+    expect(modal().querySelector('[data-mareamode="copulas"]').classList.contains('is-active')).toBe(true);
+    expect(chips()[0], '(2 + 0 + 0 + 1) ÷ (22 + 8 + 22 + 8)').toEqual(['Marea viva', '5,0 %', '2 días']);
+    expect(chips()[1], 'el 18/09, hueco, no cuenta').toEqual(['Marea muerta', '13,6 %', '1 día']);
+    expect(nota()).toContain('1 día sin ninguna cópula registrada en la granja (hueco del registro), fuera');
+    expect([chips()[2][0], chips()[2][2]]).toEqual(['r con la amplitud', 'umbral ±1,15']);
+    expect([chips()[3][0], chips()[3][2]]).toEqual(['r con la iluminación', 'umbral ±1,15']);
+    expect(modal().querySelector('.mop-marcop-lectura').textContent).toContain('Pocos días');
+    expect([...modal().querySelectorAll('[data-marea-month]')].every((b) => b.disabled), 'los meses, inertes').toBe(true);
+    expect(modal().querySelector('.mop-marcop .mop-lab-per').textContent).toContain('3 días');
+    const fases = [...modal().querySelectorAll('.mop-marcop-fases tbody tr')];
+    expect(fases.map((tr) => tr.cells[0].textContent)).toEqual(['Luna nueva', 'Creciente', 'Cuarto creciente', 'Gibosa creciente', 'Luna llena', 'Gibosa menguante', 'Cuarto menguante', 'Menguante']);
+    expect([fases[0].cells[1].textContent, fases[0].cells[2].textContent]).toEqual(['1', '6,7 %']);
+    expect([fases[1].cells[1].textContent, fases[1].cells[2].textContent]).toEqual(['2', '7,7 %']);
+    expect(fases[2].cells[2].textContent, 'el Cuarto creciente sólo tenía el hueco').toBe('—');
+    const g = makeChart.mock.calls.filter(([id]) => id === 'mopMarCop').pop()[1];
+    expect(g.data.labels).toEqual(['15/09', '16/09', '17/09']);
+    expect(g.data.datasets[0].data.map((v) => Math.round(v * 100) / 100)).toEqual([6.67, 3.33, 13.64]);
+    expect(g.data.datasets[1].data).toEqual([2, 1.9, 1.2]);
+    expect(g.data.datasets[0].backgroundColor, 'oscuras con marea viva, claras con muerta').toEqual(['#00838f', '#00838f', '#80cbc4']);
+  });
+
+  it('🔴 con datos nuevos (otra pintada del tablero con otro libro), la pestaña cuenta de nuevo; al cerrar suelta su gráfico', async () => {
+    await montar([...PLANTA, ...COP_MAREA]);
+    abrirCop();
+    expect(chips()[1][1]).toBe('13,6 %');
+    store.globalData = [...PLANTA, ...COP_MAREA, TQ('17/09/2026', 'Sala 4', 1, { 'Cópulas': '5' })];
+    operativoView(root);
+    expect(chips()[1], 'el 17/09: (3 + 5) ÷ (22 + 8)').toEqual(['Marea muerta', '26,7 %', '1 día']);
+    const { destroyChart } = await import('../../core/charts.js');
+    destroyChart.mockClear();
+    click(modal().querySelector('[data-mareas-close]'));
+    expect(destroyChart.mock.calls.map(([id]) => id)).toContain('mopMarCop');
+  });
+
+  it('🔴 sus filtros: «sólo en producción» y la sala; lo que dejan fuera se dice; siguen tras un repintado', async () => {
+    await montar([...PLANTA, ...COP_MAREA]);
+    abrirCop();
+    marcar(true);
+    /* Fuera la Sala 2 el 15/09 (QA, en cuarentena en esa sala). La Sala 4 el 16/09 SÍ cuenta: la cópula de QB ese día termina su
+       cuarentena (regla del libro: la primera cópula). (2 + 0 + 1) ÷ (22 + 22 + 8). */
+    expect(chips()[0]).toEqual(['Marea viva', '5,8 %', '2 días']);
+    expect(nota()).toContain('1 parte de un tanque con algún lote fuera de producción, fuera');
+    expect(prod().hasAttribute('checked')).toBe(true);
+    operativoView(root);
+    expect(modal().querySelector('[data-mareamode="copulas"]').classList.contains('is-active'), 'el repintado no la cambia').toBe(true);
+    expect([prod().hasAttribute('checked'), chips()[0][1]]).toEqual([true, '5,8 %']);
+    marcar(false);
+    expect([...sala().options].map((o) => o.value)).toEqual(['', 'Sala 1', 'Sala 2', 'Sala 4']);
+    cambiar(sala(), 'Sala 2');
+    expect(sala().querySelector('option[selected]').value).toBe('Sala 2');
+    expect(chips()[0]).toEqual(['Marea viva', '0,0 %', '1 día']);
+    expect(chips()[1]).toEqual(['Marea muerta', '—', '0 días']);
+  });
+
+  it('🔑 al volver a abrir el modal: en Día y sin los filtros de la pestaña', async () => {
+    await montar([...PLANTA, ...COP_MAREA]);
+    abrirCop();
+    cambiar(sala(), 'Sala 1');
+    marcar(true);
+    click(modal().querySelector('[data-mareas-close]'));
+    click(root.querySelector('.mc-subnav [data-mareas-open]'));
+    expect(modal().querySelector('[data-mareamode="dia"]').classList.contains('is-active')).toBe(true);
+    click(modal().querySelector('[data-mareamode="copulas"]'));
+    expect([prod().hasAttribute('checked'), (sala().querySelector('option[selected]') || sala().options[0]).value]).toEqual([false, '']);
+  });
+
+  it('🔑 sin partes con hembras, lo dice; sin hoja Marea, el aviso del modal', async () => {
+    await montar([...PLANTA.filter((r) => !('Machos muertos' in r)), ...COP_MAREA.filter((r) => r._SheetOrigin === 'Marea')]);
+    abrirCop();
+    expect(modal().querySelector('.mop-marcop-lectura').textContent).toContain('Sin días con partes de Tanques y marea');
+    expect(modal().querySelector('#mopMarCop')).toBeNull();
+    await montar([...PLANTA, ...COP_MAREA.filter((r) => r._SheetOrigin !== 'Marea')]);
+    abrirCop();
     expect(modal().textContent).toContain('No hay datos de mareas cargados');
   });
 });
