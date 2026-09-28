@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { store } from '../../core/store.js';
-import { isMareaRow, mareaDays, pearson, spearman, corrCandidate, monthStats } from './mareas.js';
+import { isMareaRow, mareaDays, pearson, spearman, corrCandidate, monthStats, mareaMoonSVG } from './mareas.js';
 
 afterEach(() => { store.globalData = []; });
 
@@ -241,5 +241,50 @@ describe('monthStats · días que alcanzan el extremo de amplitud', () => {
     expect(s.ampMax).toBeNull();
     expect(s.ampMaxDias).toEqual([]);
     expect(s.dias).toBe(0);
+  });
+});
+
+/* 0r (2026-09-28, usuario) · la luna tiene que dibujar la fase que dice la hoja. Medido en Chrome: sólo 0, 50 y 100 % salían
+   bien; en las demás la sombra iba INVERTIDA («Gibosa menguante 95 %» salía toda oscura). Se mide la GEOMETRÍA del trazado de
+   la sombra —el semicírculo del lado oscuro y la semielipse de vuelta—, no cómo se escribe: la fracción OSCURA del disco tiene
+   que ser 1 − iluminación, y la luz, del lado de su fase (creciente a la izquierda, menguante a la derecha: la convención que
+   ya tenía el dibujo, la del cielo de Anconcito, al sur del ecuador). */
+describe('mareas · la luna dibuja la fase que dice la hoja', () => {
+  const R = 46;
+  /** ¿El punto (u, v) —desde el centro— cae en la sombra que traza el SVG? null = el SVG no tiene sombra que medir. */
+  const oscuroEn = (svg) => {
+    const conLuz = svg.includes('url(#mMoonG)');
+    const m = /d="M [\d.]+ [\d.]+ A [\d.]+ [\d.]+ 0 [01] ([01]) [\d.]+ [\d.]+ A ([\d.]+) [\d.]+ 0 [01] ([01]) /.exec(svg);
+    if (!m) return () => !conLuz;
+    const lado1 = m[1] === '1' ? 1 : -1;   // de arriba abajo en sentido horario = por la DERECHA
+    const ex = Number(m[2]);
+    const lado2 = m[3] === '1' ? -1 : 1;   // de abajo arriba en sentido horario = por la IZQUIERDA
+    return (u, v) => {
+      if (!conLuz) return true;   // sin el disco iluminado debajo, todo es sombra
+      const w = Math.sqrt(R * R - v * v), we = ex * Math.sqrt(1 - (v * v) / (R * R)), x = lado1 * u;
+      return lado1 === lado2 ? x >= we && x <= w : x >= -we && x <= w;
+    };
+  };
+  const fraccionOscura = (osc) => {
+    let n = 0, o = 0;
+    for (let i = -R + 0.25; i < R; i += 0.5) for (let j = -R + 0.25; j < R; j += 0.5) {
+      if (i * i + j * j > R * R) continue;
+      n++; if (osc(i, j)) o++;
+    }
+    return o / n;
+  };
+  it.each([
+    ['Creciente', 25, 'izq'], ['Cuarto creciente', 50, 'izq'], ['Gibosa creciente', 75, 'izq'], ['Gibosa creciente', 90, 'izq'],
+    ['Menguante', 25, 'der'], ['Cuarto menguante', 50, 'der'], ['Gibosa menguante', 75, 'der'], ['Gibosa menguante', 95, 'der'],
+  ])('%s %i %%: la sombra cubre 1 − iluminación y la luz queda a la %s', (fase, il, luz) => {
+    const osc = oscuroEn(mareaMoonSVG(fase, il));
+    expect(fraccionOscura(osc)).toBeCloseTo(1 - il / 100, 1);
+    const s = luz === 'izq' ? -1 : 1;
+    expect(osc(s * 0.9 * R, 0), 'el borde del lado iluminado').toBe(false);
+    expect(osc(-s * 0.97 * R, 0), 'el borde del otro lado').toBe(true);
+  });
+  it('luna nueva: toda oscura; llena: toda iluminada', () => {
+    expect(fraccionOscura(oscuroEn(mareaMoonSVG('Luna nueva', 0)))).toBe(1);
+    expect(fraccionOscura(oscuroEn(mareaMoonSVG('Luna llena', 100)))).toBe(0);
   });
 });

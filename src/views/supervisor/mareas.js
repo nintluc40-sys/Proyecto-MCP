@@ -119,15 +119,19 @@ function interpWave(events, minuteOfDay) {
 }
 
 // ---------- SVG: luna (greyscale, neutro en ambos temas) ----------
-function mareaMoonSVG(fase, illum) {
+// La SOMBRA = el semicírculo del lado oscuro (creciente: la luz a la izquierda; menguante: a la derecha) y, de vuelta, la
+// semielipse del terminador. 0r (2026-09-28, usuario): su semieje es r·|1 − 2f| (así el área iluminada ES el % de la hoja;
+// con r·|cos πf| no lo era) y se curva hacia la LUZ en la media luna menor (f < ½) y hacia la sombra en la gibosa. Antes iba
+// al revés: sólo 0, 50 y 100 % salían bien («Gibosa menguante 95 %» se veía toda oscura). Exportada para su prueba.
+export function mareaMoonSVG(fase, illum) {
   const cx = 60, cy = 60, r = 46;
   const frac = Math.max(0, Math.min(1, (illum == null ? 0 : illum) / 100));
   const waning = /menguante/i.test(fase || '');
   let term = '';
   if (frac > 0.02 && frac < 0.97) {
-    const ex = r * Math.abs(Math.cos(Math.PI * frac));
+    const ex = r * Math.abs(1 - 2 * frac);
     const largeArc = frac > 0.5 ? 1 : 0;
-    const sweepDir = waning ? (frac < 0.5 ? 1 : 0) : (frac < 0.5 ? 0 : 1);
+    const sweepDir = waning ? (frac < 0.5 ? 0 : 1) : (frac < 0.5 ? 1 : 0);
     term = `<path d="M ${cx} ${cy - r} A ${r} ${r} 0 ${largeArc} ${waning ? 0 : 1} ${cx} ${cy + r} A ${ex.toFixed(2)} ${r} 0 ${largeArc} ${sweepDir} ${cx} ${cy - r} Z" fill="#232a35" filter="url(#mMoonSoft)"/>`;
   }
   const litFull = frac > 0.02 ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#mMoonG)"/>` : '';
