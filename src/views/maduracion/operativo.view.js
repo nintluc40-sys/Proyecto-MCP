@@ -827,7 +827,7 @@ function labBiomolHTML() {
   labFNormalizado(op);
   const b = resumenBiomolDeLaVentana(filas, vOp.labF);
   const barra = labFiltrosHTML(op, 'la piscina, la de la muestra: una combinada («P554/556») cuenta en las dos');
-  if (!b.muestras) return `${barra}<p class="muted">Sin muestras de reproductores en ${esc(cuandoLab())}.</p>${labNotas(b)}`;
+  if (!b.muestras) return `${barra}<p class="muted">Sin muestras de reproductores en ${esc(cuandoLab())}.</p>${labNotas(b)}${tejidosBiomolHTML(b.tejidos)}`;
   const pats = BIOMOL_PATOGENOS.filter(({ key }) => b.total[key].analizadas);
   const celdas = (c) => pats.map(({ key }) => { const x = c[key]; return `<td class="r${x.positivos ? ' mop-lab-pos' : ''}">${x.analizadas ? nf(x.positivos) + '/' + nf(x.analizadas) : '—'}</td>`; }).join('');
   const tabla = (titulo, grupos, fuera) => `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-lab-bio">
@@ -848,6 +848,7 @@ function labBiomolHTML() {
         <td class="r">${pctTxt(x.positivos, x.analizadas)}</td><td>${barraPct(pct(x.positivos, x.analizadas))}</td></tr>`; }).join('')}</tbody></table></div>
     ${labNotas(b)}
     <h5 class="mop-lab-h5">Por lote <span class="mop-nota">el color, del % de positivos</span></h5>${tablaLotesBiomol(b.porLote, pats)}
+    ${tejidosBiomolHTML(b.tejidos)}
     <h5 class="mop-lab-h5">Por sala</h5>${tabla('Sala', b.porSala, true)}
     <h5 class="mop-lab-h5">Por piscina de origen</h5>${tabla('Piscina', b.porPiscina, false)}
     <h5 class="mop-lab-h5">Por sexo</h5>${tabla('Sexo', b.porSexo, false)}
@@ -878,6 +879,28 @@ const COLOR_BIOMOL = { IHHNV: '#ef4444', WSSV: '#f59e0b', BP: '#a78bfa', AHPND: 
 /** Una semana con menos muestras que esto se marca: su % se mueve mucho con una sola. */
 const POCAS_MUESTRAS = 5;
 const tonoPct = (p) => (p === '' ? '' : p === 0 ? 'mop-bio-p0' : p < 10 ? 'mop-bio-p1' : p < 25 ? 'mop-bio-p2' : p < 50 ? 'mop-bio-p3' : 'mop-bio-p4');
+/* 0q·7 (2026-09-27, usuario) · Maduración POR TIPO DE MUESTRA: la tabla tipo × patógeno (los cinco tipos; el que aún no
+   tiene muestras, dicho) y la franja semanal de los tipos con muestras. Los datos, de biomolecular/tejidos.js. */
+function tejidosBiomolHTML(t) {
+  const cab = '<h5 class="mop-lab-h5">Por tipo de muestra <span class="mop-nota">Maduración · el tipo, de «Otros»</span></h5>';
+  if (!t || !t.matriz.some((x) => x.muestras)) return `${cab}<p class="muted">Aún no hay muestras de Heces, Branquias, Pleópodo, Agua ni Hisopado con estos filtros.</p>`;
+  const diag = (x, key) => x.celdas.find((c) => c.diag === key);
+  const pats = BIOMOL_PATOGENOS.filter(({ key }) => t.matriz.some((x) => diag(x, key).analizadas));
+  const celda = (c) => (c.analizadas ? `<td class="r ${tonoPct(pct(c.positivos, c.analizadas))}" title="${nf(c.positivos)} de ${nf(c.analizadas)} (${pctTxt(c.positivos, c.analizadas)})">${nf(c.positivos)}/${nf(c.analizadas)}</td>` : '<td class="r"><span class="muted">—</span></td>');
+  const fila = (x) => (x.muestras
+    ? `<tr><td>${esc(x.etiqueta)}</td><td class="r">${nf(x.muestras)}</td>${pats.map(({ key }) => celda(diag(x, key))).join('')}</tr>`
+    : `<tr class="mop-bio-vacio"><td>${esc(x.etiqueta)}</td><td class="r"><span class="muted">—</span></td><td colspan="${pats.length}"><span class="muted">aún sin muestras</span></td></tr>`);
+  const tipos = t.franja.filas.filter((f) => f.porSemana.some((w) => w.muestras));
+  const semana = (w) => (w.muestras ? nf(w.muestras) + (w.positivas ? ` · <b>${nf(w.positivas)} +</b>` : '') : '<span class="muted">—</span>');
+  return `${cab}<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-bio-tejidos">
+    <thead><tr><th>Tipo de muestra</th><th class="r">Muestras</th>${pats.map((x) => `<th class="r">${esc(x.etiqueta)}</th>`).join('')}</tr></thead>
+    <tbody>${t.matriz.map(fila).join('')}</tbody></table></div>
+    <p class="mc-note">Positivos ÷ analizados de cada tejido; el color, su %. Aquí cuenta también la muestra de Maduración que no está marcada «Reproductores» (el agua o un hisopado de una sala).</p>
+    <h5 class="mop-lab-h5">Tipo de muestra · por semana <span class="mop-nota">muestras · positivas a algún patógeno</span></h5>
+    <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-bio-franja">
+      <thead><tr><th>Semana</th>${tipos.map((f) => `<th class="r">${esc(f.etiqueta)}</th>`).join('')}</tr></thead>
+      <tbody>${t.franja.semanas.map((s, i) => `<tr><td>${esc(dm(s))}</td>${tipos.map((f) => `<td class="r">${semana(f.porSemana[i])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
 function tablaLotesBiomol(lotes, pats) {
   const celda = (x) => (x.analizadas ? `<td class="r ${tonoPct(pct(x.positivos, x.analizadas))}" title="${nf(x.positivos)} de ${nf(x.analizadas)} (${pctTxt(x.positivos, x.analizadas)})">${nf(x.positivos)}/${nf(x.analizadas)}</td>` : '<td class="r"><span class="muted">—</span></td>');
   return `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-bio-lotes">

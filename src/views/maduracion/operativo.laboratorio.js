@@ -20,6 +20,7 @@ import { loadMicThresholds, PATHOGEN_BY_KEY } from '../microbiologia/data.js';  
 import { areaForFormat } from '../microbiologia/data.js';   // 0q·5b
 import { isCalAguaRow, calCtx, calMeasured, calWQI } from '../microbiologia/calagua.data.js';
 import { calRangeText } from '../microbiologia/calagua.data.js';   // 0q·5c
+import { tipoDeMuestra, matrizTejidos, franjaTejidos } from '../biomolecular/tejidos.js';   // 0q·7 · las reglas de su vista
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 
 const txt = (v) => (v == null ? '' : String(v).trim());
@@ -494,7 +495,8 @@ export function resumenBiomolDeLaVentana(filasNorm, fi) {
   const filtro = filtroDelTablero({ ...F, lote: '' }, periodo, ['sala', 'tanque', 'sexo']);
   const fuera = {};
   const cuentaFuera = (d) => { fuera[d] = (fuera[d] || 0) + 1; };
-  const filas = (filasNorm || []).filter(esReproductor).filter((r) => {
+  // 0q·7 · el filtro de la ventana, con nombre: lo usan los reproductores y, en «por tipo de muestra», las demás de Maduración.
+  const pasaVentana = (r) => {
     if (!filtro.pasa({ fecha: r.f, sala: esSala(r.lugar) ? r.lugar : '', tanque: r.tq === '—' ? '' : r.tq, sexo: r.sexo })) return false;
     if (F.lote) {
       const l = loteBiomol(r);
@@ -507,7 +509,8 @@ export function resumenBiomolDeLaVentana(filasNorm, fi) {
       if (!ps.includes(piscina)) return false;
     }
     return true;
-  });
+  };
+  const filas = (filasNorm || []).filter(esReproductor).filter(pasaVentana);
   const fechas = filas.map((r) => r.f).sort();
   const acotado = fechas.length ? { desde: fechas[0], hasta: fechas[fechas.length - 1] }
     : periodo.desde > '1000' ? periodo : { desde: '1970-01-05', hasta: '1970-01-05' };
@@ -515,8 +518,14 @@ export function resumenBiomolDeLaVentana(filasNorm, fi) {
   const r = resumenBiomol(filas, acotado, neutro);
   const porLote = new Map();
   for (const x of filas) { const k = loteBiomol(x) || '(sin lote)'; if (!porLote.has(k)) porLote.set(k, []); porLote.get(k).push(x); }
+  /* 0q·7 · por TIPO DE MUESTRA («Otros»: Heces, Branquias, Pleópodo, Agua, Hisopado; un alimento no es un tejido). Aquí
+     cuenta también la muestra de Maduración que no está marcada «Reproductores» (el agua o un hisopado de una sala). */
+  const otrasDeMaduracion = (filasNorm || []).filter((x) => !esReproductor(x) && tejidoDeMaduracion(x) && pasaVentana(x));
+  const tejidos = [...filas.filter((x) => tipoDeMuestra(x.otros)), ...otrasDeMaduracion];
+  const claves = BIOMOL_PATOGENOS.map((p) => p.key);
   return {
     ...r, ignora: filtro.ignora, sinDato: { ...filtro.sinDato, ...fuera }, filas,
+    tejidos: { matriz: matrizTejidos(tejidos, claves), franja: franjaTejidos(tejidos, claves) },
     porLote: [...porLote].sort(([a], [b]) => (a === '(sin lote)') - (b === '(sin lote)') || porNombre(a, b))
       .map(([clave, rs]) => ({ clave, muestras: rs.length, patogenos: cuentaBiomol(rs) })),
   };
@@ -535,10 +544,13 @@ export function tendenciaDePatogeno(filas, key) {
   }
   return out;
 }
-/** Lo que se puede elegir en cada filtro de la ventana de Biomol: lo que traen sus reproductores. */
+/** 0q·7 · una muestra de un TIPO («Otros») de Maduración: de una sala o de «Maduración», aunque no diga «Reproductores». */
+const tejidoDeMaduracion = (x) => !!tipoDeMuestra(x.otros) && (esSala(x.lugar) || /madur/i.test(txt(x.lugar)));
+/** Lo que se puede elegir en cada filtro de la ventana de Biomol: lo que traen sus reproductores y (0q·7) las demás muestras
+ *  de un tipo de Maduración, que también filtra. */
 export function opcionesBiomol(filasNorm) {
   const meses = new Set(); const lotes = new Set(); const salas = new Set(); const piscinas = new Set(); const sexos = new Set();
-  for (const r of (filasNorm || []).filter(esReproductor)) {
+  for (const r of (filasNorm || []).filter((x) => esReproductor(x) || tejidoDeMaduracion(x))) {
     if (r.f) meses.add(r.f.slice(0, 7));
     const l = loteBiomol(r);
     if (l) lotes.add(l);

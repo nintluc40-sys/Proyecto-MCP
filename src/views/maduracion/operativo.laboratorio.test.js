@@ -433,3 +433,55 @@ describe('Maduración · laboratorio · 0q·6 · 🧬 la ventana de Biomol', () 
     expect(o.sexos).toEqual(['Hembra', 'Macho']);
   });
 });
+
+/* ============================================================
+   0q·7 (2026-09-27, usuario) · 🧬 Biomol: Maduración POR TIPO DE MUESTRA (Heces, Branquias, Pleópodo, Agua, Hisopado)
+
+   El tipo de muestra lo escribe la ficha en «Otros»; las reglas son las de la vista de Biomol (biomolecular/tejidos.js:
+   `tipoDeMuestra`, `matrizTejidos`, `franjaTejidos`), que no se repiten. Decisiones del usuario: una tabla tipo ×
+   patógeno y una franja semanal, con los filtros de la ventana; y en ESTA sección cuenta también la muestra de un tipo que
+   no está marcada «Reproductores» si es de Maduración (una sala o «Maduración»: el agua o un hisopado de una sala).
+   ============================================================ */
+describe('Maduración · laboratorio · 0q·7 · 🧬 Biomol por tipo de muestra', () => {
+  const T = normalizeRows([
+    BIO('15/09/2026', 'Sala 3', { 'Código': 'Lote BN', Otros: 'Branquias', IHHNV: 'Positivo' }),
+    BIO('22/09/2026', 'Sala 4', { 'Estadío': '', Otros: 'Heces', BP: 'Positivo', EHP: 'Negativo' }),       // de una sala, sin estadío
+    BIO('22/09/2026', 'Chongón', { Otros: 'Pleópodo', IHHNV: 'Negativo' }),
+    BIO('22/09/2026', 'Sala 3', { Otros: 'Calamar (Funda en uso)', IHHNV: 'Negativo' }),                  // un alimento: no es un tejido
+    BIO('22/09/2026', 'Módulo 1', { 'Estadío': 'PL10', Otros: 'Agua', IHHNV: 'Negativo' }),               // de larvicultura: no es de Maduración
+  ]);
+  const V = (fi) => resumenBiomolDeLaVentana(T, fi);
+  const fila = (r, clave) => r.tejidos.matriz.find((x) => x.clave === clave);
+
+  it('🔴 la tabla tipo × patógeno: los cinco tipos, con sus muestras; el alimento y la larva no entran', () => {
+    const r = V({});
+    expect(r.tejidos.matriz.map((x) => [x.clave, x.muestras])).toEqual([['heces', 1], ['branquias', 1], ['pleopodo', 1], ['agua', 0], ['hisopado', 0]]);
+    expect(fila(r, 'heces').celdas.find((c) => c.diag === 'BP')).toMatchObject({ analizadas: 1, positivos: 1 });
+    expect(fila(r, 'branquias').celdas.find((c) => c.diag === 'IHHNV')).toMatchObject({ analizadas: 1, positivos: 1 });
+  });
+
+  it('🔴 la muestra de Maduración sin «Reproductores» cuenta AQUÍ, pero no en el resto de la ventana', () => {
+    const r = V({});
+    expect(fila(r, 'heces').muestras).toBe(1);
+    expect(r.muestras).toBe(3);   // branquias, pleópodo y el alimento: los reproductores
+  });
+
+  it('🔴 las opciones de los filtros incluyen lo que cuenta aquí (la Sala 4 de las heces), no la larva', () => {
+    expect(opcionesBiomol(T).salas).toEqual(['Sala 3', 'Sala 4']);
+  });
+
+  it('🔴 sigue los filtros de la ventana', () => {
+    expect(V({ sala: 'Sala 4' }).tejidos.matriz.map((x) => x.muestras)).toEqual([1, 0, 0, 0, 0]);
+    expect(V({ mes: '2026-08' }).tejidos.matriz.every((x) => x.muestras === 0)).toBe(true);
+    expect(V({ lote: 'BN' }).tejidos.matriz.map((x) => x.muestras)).toEqual([0, 1, 0, 0, 0]);
+  });
+
+  it('🔴 la franja semanal: por tipo y semana, las muestras y las positivas a algún patógeno', () => {
+    const f = V({}).tejidos.franja;
+    expect(f.semanas).toEqual(['2026-09-14', '2026-09-21']);
+    const porClave = (k) => f.filas.find((x) => x.clave === k).porSemana;
+    expect(porClave('branquias')).toEqual([{ muestras: 1, positivas: 1 }, { muestras: 0, positivas: 0 }]);
+    expect(porClave('heces')).toEqual([{ muestras: 0, positivas: 0 }, { muestras: 1, positivas: 1 }]);
+    expect(porClave('pleopodo')).toEqual([{ muestras: 0, positivas: 0 }, { muestras: 1, positivas: 0 }]);
+  });
+});

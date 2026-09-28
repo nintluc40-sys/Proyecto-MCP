@@ -2754,3 +2754,61 @@ describe('Maduración · operativo · 🧬 Biomol: sus filtros, por lote y la te
     expect(modalLab().querySelector('[data-mop-biopat="IHHNV"]').getAttribute('aria-pressed')).toBe('true');
   });
 });
+
+/* ============================================================
+   0q·7 (2026-09-27, usuario) · 🧬 Biomol: Maduración POR TIPO DE MUESTRA
+
+   En la ventana de Biomol, una tabla tipo × patógeno (Heces, Branquias, Pleópodo, Agua, Hisopado; los que aún no tienen
+   muestras, dichos) y una franja semanal con las muestras de cada tipo y cuántas salieron positivas; con los filtros de la
+   ventana. Las cuentas, en operativo.laboratorio.test.js (y las reglas del tejido, en biomolecular/tejidos.test.js).
+   ============================================================ */
+const BIO7 = [
+  BIOR('15/09/2026', 'Sala 3', { 'Código': 'Lote BN', Otros: 'Branquias', IHHNV: 'Positivo' }),
+  BIOR('22/09/2026', 'Sala 4', { 'Estadío': '', Otros: 'Heces', BP: 'Positivo', EHP: 'Negativo' }),
+  BIOR('22/09/2026', 'Chongón', { Otros: 'Pleópodo', IHHNV: 'Negativo' }),
+  BIOR('22/09/2026', 'Sala 3', { Otros: 'Calamar (Funda en uso)', IHHNV: 'Negativo' }),
+];
+const tejidos = () => modalLab().querySelector('.mop-bio-tejidos');
+const franja = () => modalLab().querySelector('.mop-bio-franja');
+describe('Maduración · operativo · 🧬 Biomol por tipo de muestra (0q·7)', () => {
+  it('🔴 la tabla tipo × patógeno: los cinco tipos; el que no tiene muestras lo dice; las celdas, sombreadas', async () => {
+    await montar([...PLANTA, ...BIO7]);
+    await abrirBiomol();
+    const filas = [...tejidos().querySelectorAll('tbody tr')];
+    expect(filas.map((tr) => tr.cells[0].textContent)).toEqual(['Heces', 'Branquias', 'Pleópodo', 'Agua', 'Hisopado']);
+    const cols = [...tejidos().querySelectorAll('thead th')].map((th) => th.textContent);
+    expect(cols).toEqual(['Tipo de muestra', 'Muestras', 'IHHNV', 'BP', 'EHP']);
+    expect(filas[0].cells[1].textContent).toBe('1');
+    expect(filas[0].cells[cols.indexOf('BP')].textContent).toBe('1/1');
+    expect(filas[0].cells[cols.indexOf('BP')].classList.contains('mop-bio-p4')).toBe(true);
+    expect(filas[1].cells[cols.indexOf('IHHNV')].textContent).toBe('1/1');
+    expect(filas[3].textContent).toContain('aún sin muestras');
+  });
+
+  it('🔴 la franja semanal: las semanas, los tipos con muestras, y «muestras · positivas»', async () => {
+    await montar([...PLANTA, ...BIO7]);
+    await abrirBiomol();
+    expect([...franja().querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['Semana', 'Heces', 'Branquias', 'Pleópodo']);
+    const filas = [...franja().querySelectorAll('tbody tr')];
+    expect(filas.map((tr) => tr.cells[0].textContent)).toEqual(['14/09', '21/09']);
+    expect(filas[1].cells[1].textContent.replace(/\s+/g, ' ').trim()).toBe('1 · 1 +');
+    expect(filas[1].cells[3].textContent.trim()).toBe('1');
+    expect(filas[0].cells[1].textContent.trim()).toBe('—');
+  });
+
+  it('🔴 sigue los filtros de la ventana: con la Sala 4, sólo las heces', async () => {
+    await montar([...PLANTA, ...BIO7]);
+    await abrirBiomol();
+    cambiar(selLab('sala'), 'Sala 4');
+    const filas = [...tejidos().querySelectorAll('tbody tr')];
+    expect(filas[0].cells[1].textContent).toBe('1');
+    expect(filas[1].textContent).toContain('aún sin muestras');
+  });
+
+  it('🔑 sin ninguna muestra de tejido, lo dice', async () => {
+    await montar([...PLANTA, ...BIO6]);
+    await abrirBiomol();
+    expect(tejidos()).toBeNull();
+    expect(modalLab().textContent).toContain('Aún no hay muestras de Heces, Branquias, Pleópodo, Agua ni Hisopado');
+  });
+});
