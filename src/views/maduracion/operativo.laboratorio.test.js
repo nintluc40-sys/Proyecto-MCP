@@ -6,7 +6,12 @@
    de las hojas: el nivel de cada medición sale de la regla de la vista de Microbiología (umbrales por área; o el Nivel
    de la hoja, sin UFC), el rango de calidad de agua de la suya, y el resultado de Biomol de `normalizeRows`.
    ============================================================ */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+/* 0r·3a · espías que dejan pasar: se CUENTA cuántas veces se funden las mediciones de una muestra (lo caro). */
+vi.mock('../microbiologia/data.js', async (original) => { const real = await original(); return { ...real, meltRow: vi.fn(real.meltRow) }; });
+vi.mock('../microbiologia/calagua.data.js', async (original) => { const real = await original(); return { ...real, calMeasured: vi.fn(real.calMeasured) }; });
+import { meltRow } from '../microbiologia/data.js';
+import { calMeasured } from '../microbiologia/calagua.data.js';
 import { resumenMicro, resumenBiomol, tipoDeDespacho, filtroDelTablero, esReproductor, BIOMOL_PATOGENOS } from './operativo.laboratorio.js';
 import { nombrePiscina, piscinasDeLotes, filtroDeLaVentana, resumenMicroDeLaVentana, serieDePatogeno, umbralDe, opcionesDeLaVentana } from './operativo.laboratorio.js';   // 0q·5
 import { formatosDelAgua, patogenosDeMedidas, umbralDelFormato } from './operativo.laboratorio.js';   // 0q·5b
@@ -483,5 +488,36 @@ describe('Maduración · laboratorio · 0q·7 · 🧬 Biomol por tipo de muestra
     expect(porClave('branquias')).toEqual([{ muestras: 1, positivas: 1 }, { muestras: 0, positivas: 0 }]);
     expect(porClave('heces')).toEqual([{ muestras: 0, positivas: 0 }, { muestras: 1, positivas: 1 }]);
     expect(porClave('pleopodo')).toEqual([{ muestras: 0, positivas: 0 }, { muestras: 1, positivas: 0 }]);
+  });
+});
+
+/* 0r·3a (2026-09-28, usuario) · «la ventana de Microbiología congela»: lo caro —fundir las mediciones de cada muestra— se
+   hace UNA vez por carga de datos (el array del store es la clave) y SÓLO con las de Maduración; cada pintada, filtro o
+   patógeno sólo filtra y cuenta. Medido antes: 1,0–1,5 s por clic en un PC y 6,6–7,4 s en un equipo de campo. */
+describe('Maduración · laboratorio · 0r·3a · preparar una vez por carga', () => {
+  it('🔴 cada muestra de Maduración se funde UNA vez por carga, por muchas pintadas y filtros; la de otro departamento, nunca', () => {
+    const filas = [...FILAS];   // una carga nueva
+    meltRow.mockClear();
+    resumenMicroDeLaVentana(filas, {}, CAL_RANGE_BASE, new Map());
+    opcionesDeLaVentana(filas, new Map());
+    resumenMicroDeLaVentana(filas, { mes: '2026-09', sala: 'Sala 2' }, CAL_RANGE_BASE, new Map());
+    resumenMicroDeLaVentana(filas, { piscina: 'Piscina 556' }, CAL_RANGE_BASE, new Map());
+    resumenMicro(filas, P, F(), CAL_RANGE_BASE);
+    expect(meltRow, 'las 13 de Maduración, una vez').toHaveBeenCalledTimes(13);
+    expect(meltRow.mock.calls.some(([r]) => r.Departamento === 'Larvicultura')).toBe(false);
+    resumenMicroDeLaVentana([...filas], {}, CAL_RANGE_BASE, new Map());   // datos refrescados: llega otro array
+    expect(meltRow, 'con datos nuevos, otra vez').toHaveBeenCalledTimes(26);
+  });
+
+  it('🔴 calidad de agua: una vez por muestra y por rangos; con otros rangos se recalcula (y al volver, vuelve)', () => {
+    const filas = [...FILAS];
+    calMeasured.mockClear();
+    const colector = (r) => r.agua.calidad.porGrupo.find((g) => g.grupo === 'Colector');
+    expect(colector(resumenMicroDeLaVentana(filas, {}, CAL_RANGE_BASE, new Map())).fuera).toBe(1);
+    resumenMicroDeLaVentana(filas, { sala: 'Sala 2' }, CAL_RANGE_BASE, new Map());
+    expect(calMeasured, 'las 3 de Maduración, una vez').toHaveBeenCalledTimes(3);
+    const estricto = { ...CAL_RANGE_BASE, ph: { min: 7.5, max: 7.9 } };
+    expect(colector(resumenMicroDeLaVentana(filas, {}, estricto, new Map())).fuera, 'el pH 8 sale fuera con el rango nuevo').toBe(2);
+    expect(colector(resumenMicroDeLaVentana(filas, {}, { ...CAL_RANGE_BASE }, new Map())).fuera, 'otros rangos iguales: como al principio').toBe(1);
   });
 });

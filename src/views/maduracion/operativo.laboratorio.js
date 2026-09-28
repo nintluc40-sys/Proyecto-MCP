@@ -75,8 +75,7 @@ export function filtroDelTablero(F, periodo, tiene) {
 /* ── 🦠 MICROBIOLOGÍA Y CALIDAD DE AGUA ──────────────────────────────────────────────────────────────────────── */
 /** Una fila de Microbiología como MUESTRA: su contexto, sus mediciones con nivel (la regla de la vista de
  *  Microbiología: umbrales por área) y su PEOR nivel. */
-function muestraMicro(row) {
-  const ctx = rowContext(row);
+function muestraMicro(row, ctx = rowContext(row)) {
   const med = meltRow(row);
   const peor = med.reduce((a, m) => (m.nivel && (a === '' || NIVEL_RANK[m.nivel] > NIVEL_RANK[a]) ? m.nivel : a), '');
   /* «TQ/N°» no siempre es un tanque: en el hepatopáncreas trae a veces la PISCINA de origen («Piscina 556», medido el
@@ -98,6 +97,40 @@ export function tipoDeDespacho(raw) {
   return { etapa, matriz, momento };
 }
 const ETAPAS = ['Huevo', 'Nauplio 2', 'Nauplio 5'];
+
+/* ── 0r·3a (2026-09-28, usuario) · «la ventana de Microbiología congela» · PREPARAR UNA VEZ ─────────────────────────────
+   Medido en Chrome con datos reales: en CADA pintada de la ventana, las opciones y el resumen recorrían TODO el store y
+   `muestraMicro` (rowContext + meltRow, lo caro) se hacía sobre las muestras de TODA la granja antes de quedarse con las de
+   Maduración: 1,0–1,5 s por clic en un PC, 6,6–7,4 s en un equipo de campo (CPU ×4). Ahora las muestras de Maduración se
+   PREPARAN una vez por carga de datos —el array del store es la clave: al refrescar llega otro— y la de otro departamento
+   se descarta ANTES de fundir sus mediciones; cada filtro, patógeno o parámetro sólo filtra y cuenta lo preparado. */
+const _preparadas = new WeakMap();
+/** Las muestras de Maduración de `filas`: las de Microbiología como `muestraMicro` y las de Calidad de Agua con su contexto. */
+function preparadas(filas) {
+  const clave = filas || [];
+  const hecho = _preparadas.get(clave);
+  if (hecho) return hecho;
+  const micro = [];
+  const cal = [];
+  for (const row of clave) {
+    if (isMicroRow(row)) {
+      const ctx = rowContext(row);
+      if (esMaduracion(ctx.departamento, ctx.formatoKey)) micro.push(muestraMicro(row, ctx));
+    } else if (isCalAguaRow(row)) {
+      const c = calCtx(row);
+      if (esMaduracion(c.depto, '')) cal.push({ row, c, fecha: isoDe(c.fecha), sala: c.sala, tanque: c.tq });
+    }
+  }
+  const p = { micro, cal };
+  _preparadas.set(clave, p);
+  return p;
+}
+/** Las mediciones de una muestra de Calidad de Agua con esos rangos y su índice, guardadas en la muestra mientras los
+ *  rangos (`rk`, su JSON: cada navegador tiene los suyos y se pueden editar) no cambien. */
+function conMedidas(m, rangosCal, rk) {
+  if (m._rk !== rk) { m._med = calMeasured(m.row, rangosCal); m._wqi = calWQI(m._med, rangosCal).wqi; m._rk = rk; }
+  return m;
+}
 /** Lo que una muestra de Microbiología PUEDE decir de sí misma. */
 const DIM_MICRO = ['sala', 'tanque', 'sexo', 'lote'];
 /** El filtro del tablero sobre un BLOQUE (muestras del período). Una dimensión se aplica si alguna muestra del bloque
@@ -117,8 +150,11 @@ function filtrarBloque(lista, F, periodo, dims) {
  * @param {object} rangosCal     los rangos de Calidad de Agua (loadCalRanges de su vista)
  */
 export function resumenMicro(filas, periodo, F, rangosCal) {
-  const todas = (filas || []).filter(isMicroRow).map(muestraMicro)
-    .filter((m) => esMaduracion(m.ctx.departamento, m.ctx.formatoKey) && enPeriodo(m.fecha, periodo));
+  return resumenDe(preparadas(filas), periodo, F, rangosCal);
+}
+/** `resumenMicro` sobre lo ya preparado (`preparadas`, o un recorte suyo: el de la piscina de la ventana). */
+function resumenDe(prep, periodo, F, rangosCal) {
+  const todas = prep.micro.filter((m) => enPeriodo(m.fecha, periodo));
   const bloqueRep = filtrarBloque(todas.filter((m) => m.ctx.formatoKey === 'mad-principal'), F, periodo, DIM_MICRO);
   const bloqueDes = filtrarBloque(todas.filter((m) => m.ctx.formatoKey === 'mad-desinf'), F, periodo, DIM_MICRO);
   const bloqueAgua = filtrarBloque(todas.filter((m) => m.ctx.formatoKey !== 'mad-principal' && m.ctx.formatoKey !== 'mad-desinf'), F, periodo, DIM_MICRO);
@@ -185,18 +221,18 @@ export function resumenMicro(filas, periodo, F, rangosCal) {
   const micro = agrupa(aguaMic, (m) => [FORMATO_LABEL[m.ctx.formatoKey] || m.ctx.formato || '(sin formato)', m.ctx.componente].filter(Boolean).join(' · '));
   // …y la hoja de Calidad de Agua de Maduración, por componente (o sala, o tipo): muestras, índice de calidad
   // (mediana de las muestras) y los parámetros que más veces salieron de rango.
-  const bloqueCal = filtrarBloque((filas || []).filter(isCalAguaRow).map((row) => { const c = calCtx(row); return { row, c, fecha: isoDe(c.fecha), sala: c.sala, tanque: c.tq }; })
-    .filter((m) => esMaduracion(m.c.depto, '') && enPeriodo(m.fecha, periodo)), F, periodo, ['sala', 'tanque']);
+  const bloqueCal = filtrarBloque(prep.cal.filter((m) => enPeriodo(m.fecha, periodo)), F, periodo, ['sala', 'tanque']);
+  const rk = JSON.stringify(rangosCal || null);
   const cal = bloqueCal.muestras;
   const grupos = new Map();
   const medidasCal = [];   // 0q·5c · las mediciones de cada muestra, con su grupo, para el gráfico de un parámetro
   for (const m of cal) {
     const k = txt(m.c.componente) || txt(m.c.sala) || txt(m.c.formato).replace(/^Maduraci[oó]n\s*·\s*/i, '') || '(sin componente)';
-    const med = calMeasured(m.row, rangosCal);
+    const med = conMedidas(m, rangosCal, rk)._med;
     medidasCal.push({ fecha: m.fecha, grupo: k, med });
     const g = grupos.get(k) || { grupo: k, muestras: 0, wqis: [], fuera: 0, porParam: new Map(), ultima: '' };
     g.muestras++;
-    g.wqis.push(calWQI(med, rangosCal).wqi);
+    g.wqis.push(m._wqi);
     for (const x of med) if (x.estado === 'fuera') { g.fuera++; g.porParam.set(x.label, (g.porParam.get(x.label) || 0) + 1); }
     if (m.fecha > g.ultima) g.ultima = m.fecha;
     grupos.set(k, g);
@@ -256,15 +292,14 @@ export function resumenMicroDeLaVentana(filas, fi, rangosCal, mapa) {
   const piscina = nombrePiscina((fi || {}).piscina);
   let sinPiscina = 0;
   const deReproductores = (m) => m.ctx.formatoKey === 'mad-principal' && esMaduracion(m.ctx.departamento, m.ctx.formatoKey);
-  const filasP = !piscina ? filas || [] : (filas || []).filter((row) => {
-    if (!isMicroRow(row)) return true;
-    const m = muestraMicro(row);
+  const prep = preparadas(filas);
+  const micro = !piscina ? prep.micro : prep.micro.filter((m) => {
     if (!deReproductores(m)) return true;
     const ps = piscinasDeMuestra(m, mapa);
     if (!ps.length) { if (enPeriodo(m.fecha, periodo)) sinPiscina++; return false; }
     return ps.includes(piscina);
   });
-  const r = resumenMicro(filasP, periodo, F, rangosCal);
+  const r = resumenDe({ ...prep, micro }, periodo, F, rangosCal);
   if (piscina) {
     if (sinPiscina) r.reproductores.sinDato = { ...r.reproductores.sinDato, piscina: sinPiscina };
     for (const b of [r.desinfeccion, r.agua, r.agua.calidad]) b.ignora = [...b.ignora, 'piscina'];
@@ -274,22 +309,17 @@ export function resumenMicroDeLaVentana(filas, fi, rangosCal, mapa) {
 /** Lo que se puede elegir en cada filtro de la ventana: lo que traen las muestras de Maduración (y su calidad de agua). */
 export function opcionesDeLaVentana(filas, mapa) {
   const meses = new Set(); const salas = new Set(); const lotes = new Set(); const sexos = new Set(); const piscinas = new Set();
-  for (const row of filas || []) {
-    if (isMicroRow(row)) {
-      const m = muestraMicro(row);
-      if (!esMaduracion(m.ctx.departamento, m.ctx.formatoKey)) continue;
-      if (m.fecha) meses.add(m.fecha.slice(0, 7));
-      if (txt(m.sala)) salas.add(txt(m.sala));
-      if (txt(m.lote)) lotes.add(normLote(m.lote));
-      if (txt(m.sexo)) sexos.add(txt(m.sexo));
-      if (m.ctx.formatoKey === 'mad-principal') for (const p of piscinasDeMuestra(m, mapa)) piscinas.add(p);
-    } else if (isCalAguaRow(row)) {
-      const c = calCtx(row);
-      if (!esMaduracion(c.depto, '')) continue;
-      const f = isoDe(c.fecha);
-      if (f) meses.add(f.slice(0, 7));
-      if (txt(c.sala)) salas.add(txt(c.sala));
-    }
+  const prep = preparadas(filas);   // 0r·3a · sólo las de Maduración: la de otro departamento no llega aquí
+  for (const m of prep.micro) {
+    if (m.fecha) meses.add(m.fecha.slice(0, 7));
+    if (txt(m.sala)) salas.add(txt(m.sala));
+    if (txt(m.lote)) lotes.add(normLote(m.lote));
+    if (txt(m.sexo)) sexos.add(txt(m.sexo));
+    if (m.ctx.formatoKey === 'mad-principal') for (const p of piscinasDeMuestra(m, mapa)) piscinas.add(p);
+  }
+  for (const m of prep.cal) {
+    if (m.fecha) meses.add(m.fecha.slice(0, 7));
+    if (txt(m.sala)) salas.add(txt(m.sala));
   }
   const orden = (xs) => [...xs].sort(porNombre);
   return { meses: [...meses].sort(), salas: orden(salas), lotes: orden(lotes), sexos: orden(sexos), piscinas: orden(piscinas) };
