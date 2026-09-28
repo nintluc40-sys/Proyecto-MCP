@@ -2669,3 +2669,88 @@ describe('Maduración · operativo · 🦠 ③ calidad de agua por parámetro (0
     expect(calPar().querySelector('[data-mop-calpar="alc"]').getAttribute('aria-pressed')).toBe('true');
   });
 });
+
+/* ============================================================
+   0q·6 (2026-09-27, usuario) · 🧬 Biomol · reproductores: sus PROPIOS filtros, la prevalencia POR LOTE y la tendencia de
+   UN patógeno con sus muestras
+
+   La misma barra que Microbiología sobre todo el registro; una tabla lote × patógeno sombreada por su %; y la tendencia
+   semanal del patógeno escogido en la tabla de prevalencia (por defecto el más prevalente): barras de muestras analizadas
+   y la línea del % de positivos, con las semanas de menos de 5 muestras en hueco («pocas muestras»).
+   ============================================================ */
+const BIOR = (fecha, lugar, extra = {}) => ({ _SheetOrigin: 'Biomol', Fecha: fecha, Lugar: lugar, 'Estadío': 'Reproductores', Piscina: 'P557', Sexo: 'Hembra', Tanque: 'Tq 1', ...extra });
+const BIO6 = [
+  BIOR('01/09/2026', 'Sala 3', { 'Código': 'Lote BN', Piscina: 'P554/556', IHHNV: 'Positivo', WSSV: 'Negativo' }),
+  BIOR('02/09/2026', 'Sala 3', { 'Código': 'Lote BN', Sexo: 'Macho', IHHNV: 'Negativo' }),
+  BIOR('09/09/2026', 'Sala 1', { 'Código': 'Lote BO', Piscina: 'P553', IHHNV: 'Negativo', EHP: 'Positivo' }),
+  BIOR('10/09/2026', 'Sala 1', { 'Código': 'Lote BO', Piscina: 'P553', IHHNV: 'Negativo' }),
+  BIOR('16/09/2026', 'Chongón', { Piscina: '', IHHNV: 'Positivo' }),
+  BIOR('05/07/2026', 'Sala 3', { 'Código': 'Lote BN', IHHNV: 'Positivo' }),
+];
+const abrirBiomol = async () => {
+  click(root.querySelector('[data-mop-lab="biomol"]'));
+  await vi.waitFor(() => expect(root.querySelector('.mop-lab.sv-open [data-mop-labf]')).not.toBeNull());
+};
+const tendBio = () => { const l = makeChart.mock.calls.filter(([id]) => id === 'mopLabTend'); return l.length ? l[l.length - 1][1] : null; };
+describe('Maduración · operativo · 🧬 Biomol: sus filtros, por lote y la tendencia de un patógeno (0q·6)', () => {
+  it('🔴 la barra de filtros de la ventana, sobre TODO el registro (la de julio entra)', async () => {
+    await montar([...PLANTA, ...BIO6]);
+    await abrirBiomol();
+    expect([...modalLab().querySelectorAll('[data-mop-labf]')].map((s) => s.dataset.mopLabf)).toEqual(['mes', 'lote', 'sala', 'piscina', 'sexo']);
+    expect(kpiRep()).toContain('6 muestras');
+    expect([...selLab('mes').options].map((o) => o.textContent)).toEqual(['Todo el registro', 'julio 2026', 'septiembre 2026']);
+    expect(modalLab().querySelector('.mop-lab-per').textContent).toContain('combinada');
+    expect(modalLab().textContent).not.toContain('con los filtros del tablero');
+  });
+
+  it('🔴 empieza con la sala del tablero; la piscina combinada cuenta en las dos', async () => {
+    await montar([...PLANTA, ...BIO6]);
+    cambiar(filtro('sala'), 'Sala 1');
+    await abrirBiomol();
+    expect(selLab('sala').querySelector('option[selected]').value).toBe('Sala 1');
+    expect(kpiRep()).toContain('2 muestras');
+    cambiar(selLab('sala'), '');
+    cambiar(selLab('piscina'), 'Piscina 556');
+    expect(kpiRep()).toContain('1 muestras');
+  });
+
+  it('🔴 la prevalencia por lote: lote × patógeno, cada celda sombreada por su %; la muestra sin lote, aparte', async () => {
+    await montar([...PLANTA, ...BIO6]);
+    await abrirBiomol();
+    const filas = [...modalLab().querySelectorAll('.mop-bio-lotes tbody tr')];
+    expect(filas.map((tr) => [tr.cells[0].textContent, tr.cells[1].textContent])).toEqual([['BN', '3'], ['BO', '2'], ['(sin lote)', '1']]);
+    const ihhnv = [...modalLab().querySelectorAll('.mop-bio-lotes thead th')].findIndex((th) => th.textContent === 'IHHNV');
+    expect(filas[0].cells[ihhnv].textContent).toBe('2/3');
+    expect(filas[0].cells[ihhnv].classList.contains('mop-bio-p4')).toBe(true);
+    expect(filas[1].cells[ihhnv].textContent).toBe('0/2');
+    expect(filas[1].cells[ihhnv].classList.contains('mop-bio-p0')).toBe(true);
+  });
+
+  it('🔴 la tendencia es de UN patógeno (por defecto el más prevalente): barras de muestras y la línea del %, con «pocas muestras» en hueco', async () => {
+    await montar([...PLANTA, ...BIO6]);
+    await abrirBiomol();
+    expect(modalLab().querySelector('[data-mop-biopat="EHP"]').getAttribute('aria-pressed')).toBe('true');
+    click(modalLab().querySelector('[data-mop-biopat="IHHNV"]'));
+    expect(document.activeElement).toBe(modalLab().querySelector('[data-mop-biopat="IHHNV"]'));
+    expect(modalLab().textContent).toContain('Tendencia semanal · IHHNV');
+    const cfg = tendBio();
+    expect(cfg.data.datasets.map((d) => d.label)).toEqual(['Muestras analizadas', '% positivos']);
+    expect(cfg.data.labels[0]).toBe('29/06');
+    expect(cfg.data.labels.at(-1)).toBe('14/09');
+    const [n, p] = cfg.data.datasets;
+    const i = cfg.data.labels.indexOf('31/08');
+    expect([n.data[i], p.data[i]]).toEqual([2, 50]);
+    expect(p.pointBackgroundColor[i]).toBe('transparent');
+    expect(p.data[cfg.data.labels.indexOf('06/07')]).toBe(null);
+    expect(p.tooltip.callbacks.label({ dataIndex: i, raw: 50 })).toBe('% positivos: 50 % (1 de 2) · pocas muestras');
+    expect(cfg.options.scales.y2.position).toBe('right');
+    expect([n.yAxisID, p.yAxisID], 'las muestras en su eje (derecha); el %, de 0 a 100').toEqual(['y2', 'y']);
+  });
+
+  it('🔴 con el teclado (Intro) también se escoge el patógeno', async () => {
+    await montar([...PLANTA, ...BIO6]);
+    await abrirBiomol();
+    modalLab().querySelector('[data-mop-biopat="IHHNV"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(modalLab().querySelector('[data-mop-biopat="IHHNV"]').getAttribute('aria-pressed')).toBe('true');
+  });
+});

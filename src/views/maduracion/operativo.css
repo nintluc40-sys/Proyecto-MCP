@@ -330,6 +330,12 @@
 .mop-agua-comp { max-width: 280px; margin: 0 0 8px; }
 /* 0q·5c · ③ calidad de agua por parámetro. */
 .mop-cal-par { margin: 12px 0 6px; }
+/* 0q·6 · la prevalencia por lote de Biomol: cada celda, del color de su % de positivos (0 · <10 · <25 · <50 · ≥50). */
+.mop-bio-lotes td.mop-bio-p0 { color: var(--c-text-soft); }
+.mop-bio-lotes td.mop-bio-p1 { background: color-mix(in srgb, var(--c-malo) 12%, transparent); }
+.mop-bio-lotes td.mop-bio-p2 { background: color-mix(in srgb, var(--c-malo) 26%, transparent); }
+.mop-bio-lotes td.mop-bio-p3 { background: color-mix(in srgb, var(--c-malo) 42%, transparent); font-weight: 700; }
+.mop-bio-lotes td.mop-bio-p4 { background: color-mix(in srgb, var(--c-grave) 50%, transparent); font-weight: 800; }
 @media (max-width: 700px) {
   .mop-lab-b { margin-left: 0; }
   .mop-lab-2 { grid-template-columns: 1fr; }

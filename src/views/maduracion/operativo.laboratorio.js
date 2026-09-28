@@ -467,3 +467,85 @@ export function resumenBiomol(filasNorm, periodo, F) {
     tendencia, positivos,
   };
 }
+
+/* ── 0q·6 (2026-09-27, usuario) · 🧬 LA VENTANA DE BIOMOL: sus filtros, la prevalencia POR LOTE y la tendencia de UN
+   patógeno ──────────────────────────────────────────────────────────────────────────────────────────────────────
+   La misma barra que Microbiología —Mes, Lote, Sala, Piscina, Sexo— sobre TODO el registro. El lote de una muestra es su
+   «Código» («Lote BN» → BN); la piscina, la suya, y una combinada («P554/556») cuenta en las dos. ⚠ Con «todo el
+   registro» el período va de 0000 a 9999, y `resumenBiomol` recorre las semanas desde el principio del período: aquí se
+   ACOTA a las fechas de las muestras. */
+/** El lote de una muestra de Biomol: su Código sin la palabra «Lote», normalizado («Lote BN» → BN); '' si no lo dice. */
+export const loteBiomol = (r) => normLote(txt(r && r.cod).replace(/^lote\s*/i, ''));
+/** Las piscinas de una muestra de Biomol: todas las que nombra («P554/556» → Piscina 554 y Piscina 556). */
+export const piscinasBiomol = (r) => (txt(r && r.piscina).match(/\d+/g) || []).map((n) => 'Piscina ' + Number(n));
+/** Positivos ÷ analizados de cada patógeno, en unas filas. */
+function cuentaBiomol(rs) {
+  return Object.fromEntries(BIOMOL_PATOGENOS.map(({ key }) => {
+    let analizadas = 0;
+    let positivos = 0;
+    for (const r of rs) { if (r[key] === 'Positivo' || r[key] === 'Negativo') analizadas++; if (r[key] === 'Positivo') positivos++; }
+    return [key, { analizadas, positivos }];
+  }));
+}
+/** Lo de `resumenBiomol` con los filtros de la ventana, y además la prevalencia por lote y las filas (para la tendencia). */
+export function resumenBiomolDeLaVentana(filasNorm, fi) {
+  const { periodo, F } = filtroDeLaVentana(fi);
+  const piscina = nombrePiscina((fi || {}).piscina);
+  const filtro = filtroDelTablero({ ...F, lote: '' }, periodo, ['sala', 'tanque', 'sexo']);
+  const fuera = {};
+  const cuentaFuera = (d) => { fuera[d] = (fuera[d] || 0) + 1; };
+  const filas = (filasNorm || []).filter(esReproductor).filter((r) => {
+    if (!filtro.pasa({ fecha: r.f, sala: esSala(r.lugar) ? r.lugar : '', tanque: r.tq === '—' ? '' : r.tq, sexo: r.sexo })) return false;
+    if (F.lote) {
+      const l = loteBiomol(r);
+      if (!l) { cuentaFuera('lote'); return false; }
+      if (l !== F.lote) return false;
+    }
+    if (piscina) {
+      const ps = piscinasBiomol(r);
+      if (!ps.length) { cuentaFuera('piscina'); return false; }
+      if (!ps.includes(piscina)) return false;
+    }
+    return true;
+  });
+  const fechas = filas.map((r) => r.f).sort();
+  const acotado = fechas.length ? { desde: fechas[0], hasta: fechas[fechas.length - 1] }
+    : periodo.desde > '1000' ? periodo : { desde: '1970-01-05', hasta: '1970-01-05' };
+  const neutro = { sala: '', tanque: null, sexo: '', lote: '', codigo: '', estado: '', piscina: '', camaronera: '' };
+  const r = resumenBiomol(filas, acotado, neutro);
+  const porLote = new Map();
+  for (const x of filas) { const k = loteBiomol(x) || '(sin lote)'; if (!porLote.has(k)) porLote.set(k, []); porLote.get(k).push(x); }
+  return {
+    ...r, ignora: filtro.ignora, sinDato: { ...filtro.sinDato, ...fuera }, filas,
+    porLote: [...porLote].sort(([a], [b]) => (a === '(sin lote)') - (b === '(sin lote)') || porNombre(a, b))
+      .map(([clave, rs]) => ({ clave, muestras: rs.length, patogenos: cuentaBiomol(rs) })),
+  };
+}
+/** La tendencia de UN patógeno: por semana (de la primera a la última con muestras), las analizadas, las positivas y su
+ *  % (null la semana sin ninguna analizada). */
+export function tendenciaDePatogeno(filas, key) {
+  const con = (filas || []).filter((r) => r[key] === 'Positivo' || r[key] === 'Negativo');
+  if (!con.length) return [];
+  const lunes = con.map((r) => lunesDe(r.f)).sort();
+  const out = [];
+  for (let d = lunes[0]; d <= lunes[lunes.length - 1]; d = new Date(Date.parse(d + 'T12:00:00Z') + 7 * 864e5).toISOString().slice(0, 10)) {
+    const w = con.filter((r) => lunesDe(r.f) === d);
+    const pos = w.filter((r) => r[key] === 'Positivo').length;
+    out.push({ lunes: d, analizadas: w.length, positivos: pos, pct: w.length ? Math.round((pos / w.length) * 1000) / 10 : null });
+  }
+  return out;
+}
+/** Lo que se puede elegir en cada filtro de la ventana de Biomol: lo que traen sus reproductores. */
+export function opcionesBiomol(filasNorm) {
+  const meses = new Set(); const lotes = new Set(); const salas = new Set(); const piscinas = new Set(); const sexos = new Set();
+  for (const r of (filasNorm || []).filter(esReproductor)) {
+    if (r.f) meses.add(r.f.slice(0, 7));
+    const l = loteBiomol(r);
+    if (l) lotes.add(l);
+    if (esSala(r.lugar)) salas.add(txt(r.lugar));
+    for (const p of piscinasBiomol(r)) piscinas.add(p);
+    if (txt(r.sexo)) sexos.add(txt(r.sexo));
+  }
+  const orden = (xs) => [...xs].sort(porNombre);
+  return { meses: [...meses].sort(), lotes: orden(lotes), salas: orden(salas), piscinas: orden(piscinas), sexos: orden(sexos) };
+}

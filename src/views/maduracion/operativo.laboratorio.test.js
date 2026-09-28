@@ -11,6 +11,7 @@ import { resumenMicro, resumenBiomol, tipoDeDespacho, filtroDelTablero, esReprod
 import { nombrePiscina, piscinasDeLotes, filtroDeLaVentana, resumenMicroDeLaVentana, serieDePatogeno, umbralDe, opcionesDeLaVentana } from './operativo.laboratorio.js';   // 0q·5
 import { formatosDelAgua, patogenosDeMedidas, umbralDelFormato } from './operativo.laboratorio.js';   // 0q·5b
 import { parametrosDeMedidas, serieDeParametro, rangoDe } from './operativo.laboratorio.js';   // 0q·5c
+import { loteBiomol, piscinasBiomol, resumenBiomolDeLaVentana, tendenciaDePatogeno, opcionesBiomol } from './operativo.laboratorio.js';   // 0q·6
 import { normalizarFiltro } from './operativo.tablero.js';
 import { CAL_RANGE_BASE } from '../microbiologia/calagua.data.js';
 import { normalizeRows } from '../biomolecular/index.js';
@@ -352,5 +353,83 @@ describe('Maduración · laboratorio · 0q·5c · ③ calidad de agua por parám
     expect(rangoDe('ph', CAL_RANGE_BASE)).toEqual({ min: 7.5, max: 8.5 });
     expect(rangoDe('nitrito', CAL_RANGE_BASE)).toEqual({ min: null, max: 0.2 });
     expect(rangoDe('sal', CAL_RANGE_BASE)).toBeNull();
+  });
+});
+
+/* ============================================================
+   0q·6 (2026-09-27, usuario) · 🧬 Biomol · reproductores: sus PROPIOS filtros, la prevalencia POR LOTE y la tendencia de
+   UN patógeno con sus muestras
+
+   Decisiones del usuario: la barra de Microbiología (Mes, Lote, Sala, Piscina, Sexo) sobre TODO el registro; el lote de
+   una muestra es su «Código» («Lote BN» → BN); la piscina, la de la muestra, y una combinada («P554/556») cuenta en las
+   dos; la prevalencia por lote en una tabla lote × patógeno; y la tendencia semanal de UN patógeno: sus muestras
+   analizadas por semana y el % de positivos.
+   ⚠ Con «todo el registro» el período va de 0000 a 9999: la tendencia de `resumenBiomol` recorre sus semanas desde el
+   principio del período, así que la ventana lo ACOTA a las fechas de sus muestras.
+   ============================================================ */
+describe('Maduración · laboratorio · 0q·6 · 🧬 la ventana de Biomol', () => {
+  const B = normalizeRows([
+    BIO('01/09/2026', 'Sala 3', { 'Código': 'Lote BN', Piscina: 'P554/556', IHHNV: 'Positivo', WSSV: 'Negativo' }),
+    BIO('02/09/2026', 'Sala 3', { 'Código': 'lote bn', Piscina: 'P557', IHHNV: 'Negativo', Sexo: 'Macho' }),
+    BIO('09/09/2026', 'Sala 1', { 'Código': 'Lote BO', Piscina: 'P553', IHHNV: 'Negativo', EHP: 'Positivo' }),
+    BIO('16/09/2026', 'Chongón', { Piscina: '', IHHNV: 'Positivo' }),
+    BIO('05/07/2026', 'Sala 3', { 'Código': 'Lote BN', IHHNV: 'Positivo' }),
+    BIO('11/09/2026', 'Módulo 1', { 'Estadío': 'PL10', 'Código': 'Lote ZZ', IHHNV: 'Positivo' }),   // larva: no es reproductor
+  ]);
+  const V = (fi) => resumenBiomolDeLaVentana(B, fi);
+
+  it('🔴 el lote de una muestra es su Código sin «Lote»; la piscina combinada, las dos', () => {
+    expect(B.map(loteBiomol)).toEqual(['BN', 'BN', 'BO', '', 'BN', 'ZZ']);
+    expect(piscinasBiomol(B[0])).toEqual(['Piscina 554', 'Piscina 556']);
+    expect(piscinasBiomol(B[3])).toEqual([]);
+  });
+
+  it('🔴 sin filtros, TODO el registro (la de julio entra), y la tendencia ACOTADA a sus fechas', () => {
+    const r = V({});
+    expect(r.muestras).toBe(5);
+    expect(r.tendencia.etiquetas[0]).toBe('2026-06-29');
+    expect(r.tendencia.etiquetas.at(-1)).toBe('2026-09-14');
+  });
+
+  it('🔴 el mes, el lote y la piscina recortan; la muestra que no dice su lote o su piscina queda fuera y se cuenta', () => {
+    expect(V({ mes: '2026-09' }).muestras).toBe(4);
+    expect(V({ lote: 'bn' }).muestras).toBe(3);
+    expect(V({ lote: 'BN' }).sinDato.lote).toBe(1);
+    expect(V({ piscina: 'Piscina 556' }).muestras).toBe(1);
+    expect(V({ piscina: 'Piscina 557' }).muestras).toBe(2);   // la del 02/09 y la de julio (P557 del fixture base)
+    expect(V({ piscina: 'Piscina 553' }).sinDato.piscina).toBe(1);
+    expect(V({ sexo: 'Macho' }).muestras).toBe(1);
+  });
+
+  it('🔴 un mes sin muestras: nada, y sin recorrer siglos', () => {
+    const r = V({ mes: '2025-01' });
+    expect(r.muestras).toBe(0);
+    expect(r.tendencia.etiquetas.length).toBeLessThan(10);
+  });
+
+  it('🔴 la prevalencia por lote: positivos ÷ analizados de cada patógeno; la muestra sin lote, aparte y al final', () => {
+    const r = V({});
+    expect(r.porLote.map((x) => [x.clave, x.muestras])).toEqual([['BN', 3], ['BO', 1], ['(sin lote)', 1]]);
+    expect(r.porLote[0].patogenos.IHHNV).toEqual({ analizadas: 3, positivos: 2 });
+    expect(r.porLote[1].patogenos.EHP).toEqual({ analizadas: 1, positivos: 1 });
+  });
+
+  it('🔴 la tendencia de UN patógeno: por semana, las analizadas, las positivas y su % (null sin muestras)', () => {
+    const t = tendenciaDePatogeno(V({}).filas, 'IHHNV');
+    expect(t[0]).toEqual({ lunes: '2026-06-29', analizadas: 1, positivos: 1, pct: 100 });
+    expect(t.find((w) => w.lunes === '2026-07-06')).toEqual({ lunes: '2026-07-06', analizadas: 0, positivos: 0, pct: null });
+    expect(t.find((w) => w.lunes === '2026-08-31')).toEqual({ lunes: '2026-08-31', analizadas: 2, positivos: 1, pct: 50 });
+    expect(t.at(-1)).toEqual({ lunes: '2026-09-14', analizadas: 1, positivos: 1, pct: 100 });
+    // Sólo cuentan las muestras analizadas PARA ESE patógeno: EHP sólo lo tiene la del 09/09.
+    expect(tendenciaDePatogeno(V({}).filas, 'EHP')).toEqual([{ lunes: '2026-09-07', analizadas: 1, positivos: 1, pct: 100 }]);
+  });
+
+  it('🔴 las opciones de cada filtro salen de los reproductores (no de las larvas)', () => {
+    const o = opcionesBiomol(B);
+    expect(o.meses).toEqual(['2026-07', '2026-09']);
+    expect(o.lotes).toEqual(['BN', 'BO']);
+    expect(o.salas).toEqual(['Sala 1', 'Sala 3']);
+    expect(o.piscinas).toEqual(['Piscina 553', 'Piscina 554', 'Piscina 556', 'Piscina 557']);
+    expect(o.sexos).toEqual(['Hembra', 'Macho']);
   });
 });
