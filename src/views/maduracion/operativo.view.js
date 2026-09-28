@@ -73,6 +73,7 @@ import {
 } from './operativo.manejo.js';
 import { tablaDePiscinas, fichaDePiscina } from './operativo.broodstock.js';
 import { estadoDeHojas, calendarioDeRegistros, coberturaDePartes, comparacionDeEstados, avisosDelLibro } from './operativo.calidad.js';
+import { partesDelDia } from './operativo.calidad.js';   // 0q·4
 import { cruceConMicrochips } from './operativo.cruce.js';
 import {
   REPORTES, parteDiario, parteDiarioDoc, parteDiarioHojas, nombreDelParte, alcanceDelParte,
@@ -136,6 +137,9 @@ const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', 
   destAbierto: false,
   /* 0q·3 · el lote de «Por lote» (🥚 Reproducción) cuyo reparto por destino está desplegado. */
   reproLote: '',
+  /* 0q·4 · el día del calendario de partes (🩺 Calidad del dato) cuya ventana está abierta, y la sala en la que se centra
+     (la de la celda pulsada; vacía desde una fecha del encabezado). */
+  diaParte: '', diaSala: '',
   /* 0f · 8 · el modal del laboratorio abierto: 'micro' | 'biomol' | ''. Vive la sesión, como lo demás: un refresco de datos no lo cierra. */
   lab: '' };
 /* El estado de la vista vive lo que dura la sesión: al volver a Maduración, o al refrescarse los datos, se conserva. */
@@ -297,6 +301,7 @@ export function operativoView(root) {
   dibujarCuarentena(_cuarCurva);   // 0f · 4 · sólo si su lienzo está en pantalla (📊 Estado actual, con un par abierto)
   dibujarKpi(_kpiGraf);            // 0f · 5 · ídem, con una tarjeta de KPI abierta
   trasPintarLab(root);             // 0f · 8 · el modal del laboratorio: foco, fondo quieto y su gráfico
+  trasPintarDia(root);             // 0q·4 · la ventana de un día del calendario de partes
   bind(root);
 }
 
@@ -2264,7 +2269,76 @@ function calidadHTML(M, memo, p, F) {
   const cob = coberturaDePartes(M, serieDe(memo, p), memo.partes, p, F);
   const est = comparacionDeEstados(M, F);
   const av = avisosDelLibro(M, p, F);
-  return hojasHTML(hojas, cal, p) + partesHTML(cob, p) + estadosHTML(est) + avisosLibroHTML(av, p) + cruceHTML(cruceDe(memo, p, F), p, F);
+  return hojasHTML(hojas, cal, p) + partesHTML(cob, p) + estadosHTML(est) + avisosLibroHTML(av, p) + cruceHTML(cruceDe(memo, p, F), p, F)
+    + diaModalHTML(diaDe(cob, memo, p, F));   // 0q·4
+}
+
+/* ── 0q·4 (2026-09-27, usuario) · LA VENTANA DE UN DÍA del calendario de partes ─────────────────────
+   Al pulsar una fecha del encabezado (todas las salas) o una celda (centrada en su sala): la cobertura de cada sala
+   —la misma celda del calendario— y sus partes tanque a tanque; ◀ ▶ recorren el período sin cerrar; cada tanque lleva
+   a su ficha en 🛢 Tanques. Es el modal del laboratorio (sv-modal): foco al abrir, fondo quieto y Escape. */
+function diaDe(cob, memo, p, F) {
+  if (!vOp.diaParte) return null;
+  const d = partesDelDia(cob, serieDe(memo, p), memo.partes, vOp.diaParte, vOp.diaSala, F);
+  if (!d) { vOp.diaParte = ''; vOp.diaSala = ''; }
+  return d;
+}
+function diaModalHTML(d) {
+  if (!d) return '';
+  const reg = (v) => (v === null || v === undefined ? '<span class="muted">—</span>' : v ? '<span class="mop-igual">✓</span> sí' : '<span class="mop-dif">✗</span> NO');
+  const peso = (x) => (x === '' || x === null || x === undefined ? '—' : nf(x, 2));
+  const fila = (s) => (x) => `<tr class="${x.esperado ? '' : 'mop-dia-noesp'}">
+      <td><b>t${esc(x.tanque)}</b>${x.esperado ? '' : ' <span class="mop-dif" title="El libro tenía este tanque vacío al cierre del día: su parte no cubre nada">no esperado</span>'}</td>
+      <td class="r">${nf(x.partes)}</td><td class="r">${nf(x.hembrasMuertas)}</td><td class="r">${nf(x.machosMuertos)}</td>
+      <td class="r">${nf(x.hembrasDescarte)} / ${nf(x.machosDescarte)}</td>
+      <td class="r">${nf(x.copulas)}</td><td class="r">${nf(x.muda)}</td>
+      <td class="r">${peso(x.pesoHembras)} / ${peso(x.pesoMachos)}</td>
+      <td>${[...x.obsSanitarias, ...x.obsOperativas].map((o) => esc(o)).join(' · ') || '<span class="muted">—</span>'}</td>
+      <td><button type="button" class="mc-mini" data-mop-dia-tq="${esc(s.sala + '|' + x.tanque)}" title="Abrir su ficha en 🛢 Tanques" aria-label="Abrir el t${esc(x.tanque)} en Tanques">🛢 Ficha</button></td></tr>`;
+  const sec = (s) => {
+    const c = s.celda;
+    const cab = c ? `${nf(c.registrados)} de ${nf(c.esperados)} tanque(s) con parte · registro de Sala: ${reg(c.registroSala)}`
+      : 'sin animales al cierre: no se esperaba ningún parte';
+    const faltan = c && c.faltan.length
+      ? `<p class="mop-dia-faltan"><span class="mop-dif">⚠</span> ${c.faltan.length > 1 ? 'Faltan los partes del ' : 'Falta el parte del '}${c.faltan.map((t) => 't' + esc(t)).join(', ')}</p>` : '';
+    const tabla = s.filas.length
+      ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-dia-tabla">
+        <thead><tr><th>Tanque</th><th class="r">Partes</th><th class="r">♀ muertas</th><th class="r">♂ muertos</th><th class="r">Descarte ♀ / ♂</th>
+          <th class="r">Cópulas</th><th class="r">Muda</th><th class="r">Peso ♀ / ♂ (g)</th><th>Observaciones</th><th></th></tr></thead>
+        <tbody>${s.filas.map(fila(s)).join('')}</tbody></table></div>`
+      : '<p class="muted" style="margin:4px 0">Ningún parte registrado ese día.</p>';
+    return `<section class="mop-dia-sala" data-mop-dia-sala="${esc(s.sala)}">
+      <h5 class="mop-det-h">${esc(s.sala)} <span class="mc-h-note">${cab}</span></h5>${faltan}${tabla}</section>`;
+  };
+  const nav = (dir, iso, txt, rot) => `<button type="button" class="mc-mini" data-mop-dia-dir="${dir}" data-mop-dia-ir="${esc(iso)}"${iso ? '' : ' disabled'} aria-label="${rot}">${txt}</button>`;
+  return `<div class="sv-modal sv-open mop-dia" data-mop-dia-overlay>
+    <div class="sv-modal-card mop-dia-card">
+      <div class="sv-modal-head"><span class="sv-modal-title">📝 Partes del ${esc(dma(d.dia))}</span>
+        <span class="mop-dia-nav">${nav('ant', d.anterior, '◀', 'Día anterior')}${nav('sig', d.siguiente, '▶', 'Día siguiente')}</span>
+        <button type="button" class="sv-modal-x" data-mop-dia-cerrar aria-label="Cerrar">✕</button></div>
+      <div class="sv-modal-body">
+        <p class="mop-lab-per">${d.enCurso ? '<b>EN CURSO</b>: el día de hoy se enseña y no se cuenta, su parte puede no haber llegado · ' : ''}uno por tanque ocupado al cierre del día · con los filtros del tablero${vOp.diaSala ? ` · sólo la ${esc(vOp.diaSala)} <button type="button" class="mc-mini" data-mop-dia-todas>Todas las salas</button>` : ''}</p>
+        ${d.salas.length ? d.salas.map(sec).join('') : '<p class="muted">Ese día ninguna sala tenía animales ni partes.</p>'}
+      </div>
+    </div>
+  </div>`;
+}
+let _diaAbierto = false;   // para mover el foco sólo al ABRIR (cada repintado rehace la ventana)
+let _diaFoco = '';         // ◀ ▶ repintan: el foco vuelve a la flecha pulsada
+function trasPintarDia(root) {
+  const ov = root.querySelector('[data-mop-dia-overlay]');
+  if (ov) {
+    const dlg = makeAccessibleDialog(ov);
+    document.body.classList.add('modal-open');
+    const f = _diaFoco ? ov.querySelector(_diaFoco) : null;
+    if (f && !f.disabled) f.focus();
+    else if ((f || !_diaAbierto) && dlg) dlg.focusFirst();
+    _diaFoco = '';
+    _diaAbierto = true;
+  } else if (_diaAbierto) {
+    document.body.classList.remove('modal-open');
+    _diaAbierto = false;
+  }
 }
 
 function hojasHTML(e, cal, p) {
@@ -2321,7 +2395,7 @@ function partesHTML(c, p) {
       + ' · ' + nf(x.registrados) + ' de ' + nf(x.esperados) + ' tanque(s) con parte'
       + (x.faltan.length ? ' · falta(n) el ' + x.faltan.join(', ') : '')
       + ' · registro de Sala: ' + (x.registroSala === null ? '—' : x.registroSala ? 'sí' : 'NO');
-    return `<td class="${clase}${x.registroSala === false ? ' is-sin-sala' : ''}" title="${esc(t)}">${x.esperados ? nf(x.registrados) + '/' + nf(x.esperados) : ''}</td>`;
+    return `<td class="${clase}${x.registroSala === false ? ' is-sin-sala' : ''}" title="${esc(t)}" data-mop-dia="${esc(c.dias[i])}" data-mop-dia-sala="${esc(s.sala)}">${x.esperados ? nf(x.registrados) + '/' + nf(x.esperados) : ''}</td>`;
   };
   const faltan = c.faltan.length
     ? `<p class="mc-note"><b>Partes de Tanques que faltan</b> (el más reciente primero): ${listaCorta(c.faltan, 12, (x) => esc(dma(x.fecha) + ' · ' + x.sala + ' · t' + x.tanque))}</p>` : '';
@@ -2335,7 +2409,7 @@ function partesHTML(c, p) {
       <tbody>${c.salas.map((s) => `<tr><td><b>${esc(s.sala)}</b></td><td class="r">${cifra(s.tanques)}</td><td class="r">${cifra(s.registro)}</td></tr>`).join('')}</tbody></table></div>
     <h5 class="mop-h5">Sala × día</h5>
     <div class="mop-calor-wrap"><table class="mop-calor mop-cob-cal">
-      <thead><tr><th></th>${c.dias.map((d) => `<th class="${curso.has(d) ? 'is-curso' : ''}">${esc(dm(d))}</th>`).join('')}</tr></thead>
+      <thead><tr><th></th>${c.dias.map((d) => `<th class="${curso.has(d) ? 'is-curso' : ''}"><button type="button" class="mop-cob-dia" data-mop-dia="${esc(d)}" title="Ver los partes del ${esc(dma(d))}">${esc(dm(d))}</button></th>`).join('')}</tr></thead>
       <tbody>${c.salas.map((s) => `<tr><th>${esc(s.sala)}</th>${s.celdas.map((x, i) => celda(s, x, i)).join('')}</tr>`).join('')}</tbody>
     </table></div>
     ${faltan}${faltanReg}
@@ -2552,6 +2626,7 @@ function bind(root) {
   if (root._mopBound) return;
   root._mopBound = true;
   registerModalEscape('.mop-lab.sv-open');   // 0f · 8
+  registerModalEscape('.mop-dia.sv-open');   // 0q·4
   const repintar = () => operativoView(root);
   const abrirSala = (sala) => { vOp.salaDetalle = vOp.salaDetalle === sala ? '' : sala; repintar(); };
   const abrirLote = (lote) => { vOp.loteSel = vOp.loteSel === lote ? '' : lote; repintar(); };
@@ -2590,6 +2665,19 @@ function bind(root) {
       repintar();
       return;
     }
+    /* 0q·4 · la ventana de un día del calendario de partes: ◀ ▶, «Todas las salas», un tanque, cerrar (✕, velo, Escape)
+       y abrirla (una fecha del encabezado o una celda, que la centra en su sala). */
+    const ir = t.closest('[data-mop-dia-ir]');
+    if (ir) {
+      if (!ir.disabled && ir.dataset.mopDiaIr) { vOp.diaParte = ir.dataset.mopDiaIr; _diaFoco = `[data-mop-dia-dir="${ir.dataset.mopDiaDir}"]`; repintar(); }
+      return;
+    }
+    if (t.closest('[data-mop-dia-todas]')) { vOp.diaSala = ''; repintar(); return; }
+    const dtq = t.closest('[data-mop-dia-tq]');
+    if (dtq) { vOp.sub = 'tanques'; vOp.tqFicha = dtq.dataset.mopDiaTq; vOp.diaParte = ''; vOp.diaSala = ''; repintar(); return; }
+    if (t.closest('[data-mop-dia-cerrar]') || (t.matches && t.matches('[data-mop-dia-overlay]'))) { vOp.diaParte = ''; vOp.diaSala = ''; repintar(); return; }
+    const dia = t.closest('[data-mop-dia]');
+    if (dia) { vOp.diaParte = dia.dataset.mopDia; vOp.diaSala = dia.dataset.mopDiaSala || ''; repintar(); return; }
     /* 0f · 8 · los modales del laboratorio: abrir, ✕, el velo (y Escape, que pulsa el velo) y el enlace a Microbiología. */
     const lab = t.closest('[data-mop-lab]');
     if (lab) { vOp.lab = lab.dataset.mopLab; repintar(); return; }

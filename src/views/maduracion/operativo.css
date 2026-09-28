@@ -263,6 +263,18 @@
 .mop-cob-cal td.is-parcial { background: color-mix(in srgb, var(--c-malo) 35%, transparent); font-weight: 700; }
 .mop-cob-cal td.is-nada { background: color-mix(in srgb, var(--c-grave) 40%, transparent); font-weight: 800; }
 .mop-cob-cal td.is-sin-sala { box-shadow: inset 0 0 0 2px var(--c-grave); }
+/* 0q·4 · cada fecha y cada celda abren la ventana de su día. */
+.mop-cob-dia { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted; }
+.mop-cob-dia:hover { color: var(--c-brand-600); }
+.mop-cob-dia:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: 1px; border-radius: 3px; }
+.mop-cob-cal td[data-mop-dia] { cursor: pointer; }
+.mop-cob-cal td[data-mop-dia]:hover { outline: 2px solid var(--c-brand-600); outline-offset: -2px; }
+.mop-dia { padding: 16px 12px; }
+.mop-dia-card { width: min(980px, 100%); }
+.mop-dia-nav { display: inline-flex; gap: 4px; margin: 0 8px 0 auto; }
+.mop-dia-sala { margin-top: 14px; }
+.mop-dia-faltan { font-size: 12px; margin: 0 0 6px; }
+.mop-dia-noesp td { color: var(--c-text-soft); }
 
 /* ── 🖨 REPORTES (F7.1) ─────────────────────────────────────────
    La vista previa es el DOCUMENTO de verdad, dentro de un iframe: así lo que se ve es exactamente lo que se

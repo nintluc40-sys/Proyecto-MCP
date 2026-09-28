@@ -2292,3 +2292,101 @@ describe('Maduración · operativo · 🥚 Reproducción: lo que el navegador ha
     expect(root.querySelector('.mop-rlote-det')).toBeNull();
   });
 });
+
+/* ============================================================
+   0q·4 (2026-09-27, usuario) · 🩺 «Partes esperados frente a registrados»: pulsar una FECHA (o una celda) abre una
+   ventana con ese día. Decisión del usuario: el encabezado de cada fecha y cada celda sala × día la abren (la celda, ya
+   centrada en su sala); dentro, la cobertura de cada sala y sus partes tanque a tanque; ◀ ▶ para el día anterior y el
+   siguiente sin cerrar; y cada tanque lleva a su ficha en 🛢 Tanques. Las cifras las prueba operativo.calidad.test.js.
+   ============================================================ */
+const MALO_Q4 = '<img src=x onerror=alert(1)>';
+const PLANTA_Q4 = [...PLANTA_F6C,
+  TQ('18/09/2026', 'Sala 1', 1, { 'Hembras muertas': '2', 'Machos muertos': '1', 'Cópulas': '4', 'Observaciones sanitarias': MALO_Q4 }),
+  TQ('18/09/2026', 'Sala 1', 5)];   // el t5 está vacío en el libro: su parte no se esperaba
+const ventanaDia = () => root.querySelector('.mop-dia.sv-open');
+const botonDia = (iso) => root.querySelector(`.mop-cob-cal thead [data-mop-dia="${iso}"]`);
+const seccion = (s) => [...ventanaDia().querySelectorAll('[data-mop-dia-sala]')].find((x) => x.dataset.mopDiaSala === s);
+describe('Maduración · operativo · 🩺 la ventana de un día del calendario de partes', () => {
+  it('🔴 cada fecha del encabezado es un BOTÓN; pulsarla abre la ventana del día con cada sala y sus partes', async () => {
+    await montar(PLANTA_Q4);
+    abrirCalidad();
+    expect(ventanaDia()).toBeNull();
+    const b = botonDia('2026-09-18');
+    expect(b.tagName).toBe('BUTTON');
+    click(b);
+    const v = ventanaDia();
+    expect(v).not.toBeNull();
+    expect(v.querySelector('.sv-modal-title').textContent).toContain('18/09/2026');
+    expect(v.contains(document.activeElement)).toBe(true);
+    const s1 = plano(seccion('Sala 1'));
+    expect(s1).toContain('1 de 1 tanque(s) con parte');
+    const t1 = seccion('Sala 1').querySelector('tbody tr');
+    expect(plano(t1.cells[0])).toContain('1');
+    expect([plano(t1.cells[2]), plano(t1.cells[3]), plano(t1.cells[5])]).toEqual(['2', '1', '4']);
+    expect(s1).toContain('registro de Sala: ✓ sí');
+    const t5 = [...seccion('Sala 1').querySelectorAll('tbody tr')].find((tr) => plano(tr.cells[0]).startsWith('t5'));
+    expect(plano(t5.cells[0])).toBe('t5 no esperado');
+    expect(plano(t1.cells[0])).toBe('t1');
+    expect(plano(seccion('Sala 4'))).toContain('registro de Sala: ✗ NO');
+    expect(plano(seccion('Sala 4'))).toContain('0 de 1 tanque(s) con parte');
+    expect(plano(seccion('Sala 4'))).toContain('Falta el parte del t1');
+    expect(plano(seccion('Sala 4'))).toContain('Ningún parte registrado');
+  });
+
+  it('🔴 lo del Sheet sale ESCAPADO dentro de la ventana', async () => {
+    await montar(PLANTA_Q4);
+    abrirCalidad();
+    click(botonDia('2026-09-18'));
+    expect(ventanaDia().querySelector('img')).toBeNull();
+    expect(ventanaDia().textContent).toContain(MALO_Q4);
+  });
+
+  it('🔴 una CELDA abre el día centrado en su sala, y «Todas las salas» enseña las demás', async () => {
+    await montar(PLANTA_Q4);
+    abrirCalidad();
+    click(celdaDelDia('.mop-cob-cal', 'Sala 4', '18/09'));
+    expect([...ventanaDia().querySelectorAll('[data-mop-dia-sala]')].map((x) => x.dataset.mopDiaSala)).toEqual(['Sala 4']);
+    click(ventanaDia().querySelector('[data-mop-dia-todas]'));
+    expect(ventanaDia().querySelectorAll('[data-mop-dia-sala]').length).toBeGreaterThan(1);
+  });
+
+  it('🔴 ◀ ▶ recorren los días sin cerrar; en el último, ▶ no hace nada', async () => {
+    await montar(PLANTA_Q4);
+    abrirCalidad();
+    click(botonDia('2026-09-18'));
+    click(ventanaDia().querySelector('[data-mop-dia-dir="ant"]'));
+    expect(ventanaDia().querySelector('.sv-modal-title').textContent).toContain('17/09/2026');
+    expect(document.activeElement).toBe(ventanaDia().querySelector('[data-mop-dia-dir="ant"]'));
+    click(ventanaDia().querySelector('[data-mop-dia-dir="sig"]'));
+    click(ventanaDia().querySelector('[data-mop-dia-dir="sig"]'));
+    expect(ventanaDia().querySelector('.sv-modal-title').textContent).toContain('19/09/2026');
+    expect(plano(ventanaDia())).toContain('EN CURSO');
+    expect(ventanaDia().querySelector('[data-mop-dia-dir="sig"]').disabled).toBe(true);
+  });
+
+  it('🔴 se cierra con ✕, con el velo y con Escape', async () => {
+    await montar(PLANTA_Q4);
+    abrirCalidad();
+    click(botonDia('2026-09-18'));
+    click(ventanaDia().querySelector('[data-mop-dia-cerrar]'));
+    expect(ventanaDia()).toBeNull();
+    click(botonDia('2026-09-18'));
+    click(ventanaDia());
+    expect(ventanaDia()).toBeNull();
+    click(botonDia('2026-09-18'));
+    expect(document.body.classList.contains('modal-open')).toBe(true);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(ventanaDia()).toBeNull();
+    expect(document.body.classList.contains('modal-open')).toBe(false);
+  });
+
+  it('🔴 un tanque de la ventana lleva a su ficha en 🛢 Tanques', async () => {
+    await montar(PLANTA_Q4);
+    abrirCalidad();
+    click(botonDia('2026-09-18'));
+    click(ventanaDia().querySelector('[data-mop-dia-tq="Sala 1|1"]'));
+    expect(ventanaDia()).toBeNull();
+    expect(root.querySelector('[data-mop-sub="tanques"]').classList.contains('is-on')).toBe(true);
+    expect(root.querySelector('[data-mop-tqf="Sala 1|1"]').getAttribute('aria-pressed')).toBe('true');
+  });
+});

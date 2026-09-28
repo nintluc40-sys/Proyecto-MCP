@@ -19,7 +19,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ignoraDeCalidad, estadoDeHojas, calendarioDeRegistros, coberturaDePartes, SITUACIONES_ESTADO, comparacionDeEstados,
-  avisosDelLibro,
+  avisosDelLibro, partesDelDia,
 } from './operativo.calidad.js';
 import { modeloOperativo, serieDiaria, diasDeTanque } from './operativo.data.js';
 import { normalizarFiltro, periodoDe, alertas, TIPOS_AVISO } from './operativo.tablero.js';
@@ -284,5 +284,61 @@ describe('Maduración · calidad del dato · lo que no se puede filtrar', () => 
     expect(ignoraDeCalidad(SIN, [])).toEqual([]);
     expect(ignoraDeCalidad(F({ sala: 'Sala 1', tanque: 0 }), ['sala'])).toEqual(['tanque']);
     expect(ignoraDeCalidad(F({ piscina: 'PZ1', camaronera: 'CX' }), ['sala'])).toEqual(['piscina', 'camaronera']);
+  });
+});
+
+/* ============================================================
+   0q·4 (2026-09-27, usuario) · la VENTANA de un día del calendario sala × día («Partes esperados frente a registrados»)
+
+   Al pulsar una fecha (o una celda), la cobertura de cada sala ese día —la MISMA celda que pinta el calendario— y sus
+   partes de Tanques tanque a tanque. Un parte de un tanque que el libro no esperaba (vacío al cierre) sale MARCADO: lo
+   escribió alguien y no cubre nada. El fixture lo distingue: el 18/09 la Sala 1 tiene partes del t1, t2 y t3 y el libro
+   sólo espera el t1 y el t2; el 17/09 el t4 de la Sala 2 cerró vacío y el que espera es el t5.
+   ============================================================ */
+describe('Maduración · calidad del dato · la ventana de un día (0q·4)', () => {
+  const C = coberturaDePartes(M, SERIE, PARTES, P7, SIN);
+  const D = (dia, salaF, f) => partesDelDia(f ? coberturaDePartes(M, SERIE, PARTES, P7, f) : C, SERIE, PARTES, dia, salaF, f || SIN);
+
+  it('🔴 cada sala con la celda del calendario y sus partes, tanque a tanque; la que no tenía animales ni partes no sale', () => {
+    const d = D('2026-09-15');
+    expect(d.salas.map((s) => s.sala)).toEqual(['Sala 1']);
+    const s1 = d.salas[0];
+    expect(s1.celda).toEqual(sala(C, 'Sala 1').celdas[iDe('2026-09-15')]);
+    expect(s1.filas.map((f) => [f.tanque, f.partes, f.esperado])).toEqual([[1, 2, true]]);
+  });
+
+  it('🔴 un parte de un tanque que el libro no esperaba sale MARCADO', () => {
+    const s1 = D('2026-09-18').salas.find((s) => s.sala === 'Sala 1');
+    expect(s1.filas.map((f) => [f.tanque, f.esperado, f.machosMuertos])).toEqual([[1, true, 0], [2, true, 0], [3, false, 1]]);
+    const s2 = D('2026-09-17').salas.find((s) => s.sala === 'Sala 2');
+    expect(s2.filas.map((f) => [f.tanque, f.esperado])).toEqual([[4, false]]);
+    expect(s2.celda.faltan).toEqual([5]);
+  });
+
+  it('🔴 los tanques en su orden, lleguen como lleguen los partes', () => {
+    const d = partesDelDia(C, SERIE, [...PARTES].reverse(), '2026-09-18', '', SIN);
+    expect(d.salas.find((s) => s.sala === 'Sala 1').filas.map((f) => f.tanque)).toEqual([1, 2, 3]);
+  });
+
+  it('🔴 con una sala elegida, sólo esa', () => {
+    expect(D('2026-09-18', 'Sala 2').salas.map((s) => s.sala)).toEqual(['Sala 2']);
+  });
+
+  it('🔴 el día anterior y el siguiente, dentro del período; en los bordes, vacío', () => {
+    expect([D('2026-09-15').anterior, D('2026-09-15').siguiente]).toEqual(['2026-09-14', '2026-09-16']);
+    expect(D(P7.desde).anterior).toBe('');
+    expect(D(P7.hasta).siguiente).toBe('');
+  });
+
+  it('🔑 hoy va «en curso»; un día fuera del período no tiene ventana', () => {
+    expect(D('2026-09-19').enCurso).toBe(true);
+    expect(D('2026-09-18').enCurso).toBe(false);
+    expect(D('2026-08-01')).toBeNull();
+  });
+
+  it('🔑 los filtros de sala y tanque, como el calendario', () => {
+    const d = D('2026-09-18', '', F({ sala: 'Sala 1', tanque: 2 }));
+    expect(d.salas.map((s) => s.sala)).toEqual(['Sala 1']);
+    expect(d.salas[0].filas.map((f) => f.tanque)).toEqual([2]);
   });
 });

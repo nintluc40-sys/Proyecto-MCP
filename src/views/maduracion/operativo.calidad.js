@@ -190,6 +190,34 @@ export function coberturaDePartes(M, serie, partes, periodo, F) {
   };
 }
 
+/**
+ * 0q·4 (2026-09-27, usuario) · lo de UN día del calendario sala × día, para la ventana que se abre al pulsarlo: la
+ * cobertura de cada sala —la MISMA celda que pinta el calendario: `cob` es `coberturaDePartes`, con sus filtros— y sus
+ * partes de Tanques de ese día, tanque a tanque (`partes` es `diasDeTanque`). Con `sala`, sólo esa. Un parte de un
+ * tanque que el libro tenía VACÍO al cierre sale marcado (`esperado: false`): alguien lo escribió y no cubre nada. Una
+ * sala sin animales ni partes ese día no sale. `null` si el día no es del período.
+ */
+export function partesDelDia(cob, serie, partes, dia, sala, F) {
+  const i = cob && cob.dias ? cob.dias.indexOf(dia) : -1;
+  if (i < 0) return null;
+  const foto = (serie || []).find((x) => x.fecha === dia);
+  const esperado = new Set();
+  for (const T of Object.values((foto && foto.porTanque) || {})) if (vivo(T)) esperado.add(ubicKey(T.sala, T.tanque));
+  const conTanque = !!F && F.tanque !== null && F.tanque !== undefined;
+  const salas = [];
+  for (const S of cob.salas) {
+    if (sala && S.sala !== sala) continue;
+    const filas = (partes || [])
+      .filter((p) => txt(p.fecha) === dia && txt(p.sala) === S.sala && (!conTanque || Number(p.tanque) === F.tanque))
+      .map((p) => ({ ...p, esperado: esperado.has(ubicKey(p.sala, p.tanque)) }))
+      .sort((a, b) => (Number(a.tanque) || 0) - (Number(b.tanque) || 0));
+    const celda = S.celdas[i];
+    if (!celda && !filas.length) continue;
+    salas.push({ sala: S.sala, celda, filas });
+  }
+  return { dia, anterior: cob.dias[i - 1] || '', siguiente: cob.dias[i + 1] || '', enCurso: cob.enCurso.includes(dia), salas };
+}
+
 /* ── EL ESTADO REGISTRADO FRENTE AL PROPUESTO ───────────────── */
 
 /** Cómo está cada sala: sus dos estados coinciden, difieren, o falta alguno y no se pueden comparar. */
