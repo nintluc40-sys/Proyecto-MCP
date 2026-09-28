@@ -2812,3 +2812,93 @@ describe('Maduración · operativo · 🧬 Biomol por tipo de muestra (0q·7)', 
     expect(modalLab().textContent).toContain('Aún no hay muestras de Heces, Branquias, Pleópodo, Agua ni Hisopado');
   });
 });
+
+/* 0r·1 (2026-09-28, usuario) · el modal 🌊 Mareas de Larvicultura, en el tablero: junto a 🦠 y 🧬, con sus tres vistas y
+   el MISMO código (supervisor/mareas.js). El tablero se repinta entero en cada clic: el modal no debe perder lo elegido. */
+describe('Maduración · operativo · 🌊 Mareas, como en Larvicultura (0r·1)', () => {
+  const MAR = (fecha, fase, ilum, tipo) => ({ _SheetOrigin: 'Marea', Fecha: fecha, 'Fase Lunar': fase, '%Iluminación': ilum, 'Tipo de Marea': tipo,
+    'Pleamar 1': '03:10', 'Altura P1 (m)': '2.1', 'Bajamar 1': '09:20', 'Altura B1 (m)': '0.3',
+    'Pleamar 2': '15:30', 'Altura P2 (m)': '2.0', 'Bajamar 2': '21:40', 'Altura B2 (m)': '0.4' });
+  /* Dos días ANTES de hoy (19/09): el modal abre en el último, y sin el reloj en marcha del día de hoy. */
+  const MAREA = [MAR('17/09/2026', 'Cuarto creciente', '48', 'Muerta'), MAR('18/09/2026', '<img src=x onerror=alert(1)>', '58', 'Muerta')];
+  const modal = () => root.querySelector('#svMareasModal');
+  const abierto = () => !!modal() && modal().classList.contains('sv-open');
+  const boton = () => root.querySelector('.mc-subnav [data-mareas-open]');
+  const modo = (m) => modal().querySelector(`[data-mareamode="${m}"]`);
+  const dia = () => modal().querySelector('[data-marea-daysel] option[selected]').value;
+
+  it('🔴 el botón 🌊 Mareas va junto a 🦠 y 🧬, en cualquier sub-vista; el modal, cerrado al llegar', async () => {
+    await montar([...PLANTA, ...MAREA]);
+    expect([...root.querySelectorAll('.mc-subnav .mop-lab-b button')].map((b) => b.textContent.trim()))
+      .toEqual(['🦠 Microbiología y agua', '🧬 Biomol', '🌊 Mareas']);
+    expect(boton().getAttribute('aria-haspopup')).toBe('dialog');
+    expect(abierto()).toBe(false);
+    click(root.querySelector('[data-mop-sub="tanques"]'));
+    click(boton());
+    expect(abierto(), 'desde 🛢 Tanques también').toBe(true);
+  });
+
+  it('🔴 abre en Día (el último día con marea: ola, luna y lecturas); Mes y Correlación cambian el cuerpo; lo del Sheet, escapado', async () => {
+    await montar([...PLANTA, ...MAREA]);
+    click(boton());
+    expect(document.body.classList.contains('modal-open')).toBe(true);
+    expect([...modal().querySelectorAll('[data-mareamode]')].map((b) => b.dataset.mareamode)).toEqual(['dia', 'mes', 'corr']);
+    expect(modo('dia').classList.contains('is-active')).toBe(true);
+    expect(modal().querySelector('.sv-marea-grid .sv-marea-wave')).not.toBeNull();
+    expect(modal().querySelectorAll('.sv-marea-table tbody tr')).toHaveLength(4);
+    expect(dia()).toBe('2026-09-18');
+    expect(modal().querySelector('img')).toBeNull();
+    expect(modal().querySelector('.sv-marea-moon-name').textContent).toBe('<img src=x onerror=alert(1)>');
+    click(modo('mes'));
+    expect(modal().querySelectorAll('.sv-marea-stat')).toHaveLength(6);
+    expect(makeChart.mock.calls.map(([id]) => id)).toEqual(expect.arrayContaining(['mareaTrendChart', 'mareaDonutChart']));
+    click(modo('corr'));
+    expect(modal().querySelector('.sv-marea-corr-bar')).not.toBeNull();
+    expect(modo('corr').classList.contains('is-active')).toBe(true);
+  });
+
+  it('🔴 lo elegido sigue ahí aunque el tablero se repinte (otra pintada de la vista, como la de un dato nuevo)', async () => {
+    await montar([...PLANTA, ...MAREA]);
+    click(boton());
+    click(modal().querySelector('[data-marea-day="2026-09-17"]'));
+    expect(dia()).toBe('2026-09-17');
+    operativoView(root);
+    expect(abierto(), 'el repintado no lo cierra').toBe(true);
+    expect(dia(), 'ni le cambia el día').toBe('2026-09-17');
+    click(modo('mes'));
+    /* Como el router al volver a pintar la vista (renderCurrentView): quita `modal-open` del cuerpo antes de pintar.
+       Reabierto, el modal tiene que volver a ponerla, o el fondo se desplaza detrás y el auto-refresco lo repinta. */
+    document.body.classList.remove('modal-open');
+    operativoView(root);
+    expect(modo('mes').classList.contains('is-active')).toBe(true);
+    expect(modal().querySelectorAll('.sv-marea-stat')).toHaveLength(6);
+    expect(document.body.classList.contains('modal-open')).toBe(true);
+  });
+
+  it('🔴 ✕, el velo y Escape lo cierran y el fondo vuelve a moverse; al volver a abrir empieza en Día', async () => {
+    await montar([...PLANTA, ...MAREA]);
+    click(boton());
+    click(modo('mes'));
+    click(modal().querySelector('[data-mareas-close]'));
+    expect(abierto()).toBe(false);
+    expect(document.body.classList.contains('modal-open')).toBe(false);
+    click(boton());
+    expect(modo('dia').classList.contains('is-active')).toBe(true);
+    expect(modal().querySelector('.sv-marea-grid')).not.toBeNull();
+    click(modal());
+    expect(abierto(), 'el velo').toBe(false);
+    click(boton());
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(abierto(), 'Escape').toBe(false);
+    expect(document.body.classList.contains('modal-open')).toBe(false);
+    operativoView(root);
+    expect(abierto(), 'cerrado, un repintado no lo reabre').toBe(false);
+  });
+
+  it('🔑 sin la hoja Marea, lo dice (y no se rompe)', async () => {
+    await montar(PLANTA);
+    click(boton());
+    expect(abierto()).toBe(true);
+    expect(modal().textContent).toContain('No hay datos de mareas cargados');
+  });
+});

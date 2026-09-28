@@ -6,12 +6,14 @@
    "Mes" (tendencia mensual + distribución de fases lunares).
    Capa de datos PURA (mareaDays, testeable) + render con SVG (luna/ola) y
    Chart.js gestionado (tendencia/donut). Tema del proyecto (claro/oscuro).
+   El modal ENTERO (marcado y cableado, al final) lo abren Supervisor y Maduración · Operativo (0r·1, 2026-09-28).
    ============================================================ */
 import { store } from '../../core/store.js';
 import { makeChart, destroyChart } from '../../core/charts.js';
 import { esc } from '../../core/format.js';
 import { parseAnyDate, fmtShort, yearMonthKey } from '../../core/dates.js';
 import { pearson } from '../../core/util.js';
+import { bindModal, makeAccessibleDialog } from '../../ui/modal.js';
 // Capas de datos PURAS de laboratorio (ya en el bundle base vía la vista Microbiología) para
 // la vista de Correlación marea↔laboratorio.
 import { meltRow as micMelt, rowContext as micCtx, isMicroRow } from '../microbiologia/data.js';
@@ -626,4 +628,108 @@ export function renderMareas(host, state) {
   if (state.mode === 'corr') drawCorrScatter(state);
   else if (state.mode === 'mes') { _mes = { monthDays }; drawMareaTrend(monthDays); drawMareaDonut(monthDays); }
   else if (nowMin != null) startTicker(host, state);
+}
+
+/* ---------- el MODAL entero: su marcado y su cableado ----------
+   0r·1 (2026-09-28, usuario) · lo comparten Supervisor (Larvicultura) y Maduración · Operativo: vivían en
+   supervisor/module.js y se mudaron aquí sin cambiar nada, para que las dos pantallas no puedan divergir. */
+/** Lo que enseña el modal al ABRIRSE: la vista Día, en el día de hoy (o el último con marea). */
+export const mareasEstadoInicial = () => ({ mode: 'dia', key: null, month: null, corrKind: 'micro', corrPeriod: 'month', corrCell: null });
+
+/** El overlay del modal, cerrado. Lo abre cualquier `[data-mareas-open]` del `root` que se le pase a `cablearMareas`. */
+export function mareasModalHTML() {
+  return `<div class="sv-modal" id="svMareasModal" data-mareasmodal>
+    <div class="sv-modal-card lv-fs-card">
+      <div class="sv-modal-head">
+        <span class="sv-modal-title">🌊 Mareas · Anconcito <span class="muted">· INOCAR</span></span>
+        <button class="sv-modal-x" data-mareas-close aria-label="Cerrar">✕</button>
+      </div>
+      <div class="sv-modal-body">
+        <div class="sv-bm-modebar">
+          <span class="sv-bm-mode-label">Vista:</span>
+          <button class="sv-bm-mode-btn is-active" data-mareamode="dia">📅 Día</button>
+          <button class="sv-bm-mode-btn" data-mareamode="mes">📈 Mes</button>
+          <button class="sv-bm-mode-btn" data-mareamode="corr">🔗 Correlación</button>
+        </div>
+        <div id="svMareaBody"></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/**
+ * Cablea el modal ya pintado: los triggers de `root`, la barra de vistas, la navegación del cuerpo y el teclado de la
+ * Correlación; el cierre (✕, velo, Escape) lo pone `bindModal`. Abrir SIEMPRE empieza en `mareasEstadoInicial`.
+ * @param {Element} root      donde viven los `[data-mareas-open]`
+ * @param {Element} overlay   el `#svMareasModal` (null = no-op)
+ * @param {object} [opts]
+ * @param {object} [opts.state]       el estado a usar (y a MUTAR): una vista que se repinta entera lo guarda entre pintadas
+ * @param {Function} [opts.alAbrir]   tras abrir
+ * @param {Function} [opts.alCerrar]  tras cerrar
+ * @returns {{state: object, reabrir: Function}|null}  `reabrir` lo abre SIN volver al estado inicial (tras un repintado)
+ */
+export function cablearMareas(root, overlay, { state = mareasEstadoInicial(), alAbrir, alCerrar } = {}) {
+  if (!overlay) return null;
+  const mareaBody = overlay.querySelector('#svMareaBody');
+  const renderMareaBody = () => renderMareas(mareaBody, state);
+  const marcarModo = () => overlay.querySelectorAll('[data-mareamode]').forEach((x) => x.classList.toggle('is-active', x.dataset.mareamode === state.mode));
+  // Barra de modo (Día/Mes) estática en el markup del modal (como Biomol/Micro).
+  overlay.querySelectorAll('[data-mareamode]').forEach((b) => b.addEventListener('click', () => {
+    state.mode = b.dataset.mareamode;
+    marcarModo();
+    renderMareaBody();
+  }));
+  // Navegación interna (meses / día) + ampliación de la ola, delegadas en el cuerpo.
+  mareaBody.addEventListener('click', (e) => {
+    if (e.target.closest('[data-marea-wave-fs]')) { mareaBody.querySelector('#mareaWaveFs')?.classList.add('is-open'); return; }
+    if (e.target.closest('[data-marea-wave-fsclose]') || e.target.matches('[data-marea-wave-fsbg]')) { mareaBody.querySelector('#mareaWaveFs')?.classList.remove('is-open'); return; }
+    // Ampliación (fullscreen) de los gráficos del Mes (tendencia / donut).
+    const chFs = e.target.closest('[data-marea-chart-fs]');
+    if (chFs) { openChartFs(mareaBody, chFs.dataset.mareaChartFs); return; }
+    if (e.target.closest('[data-marea-chart-fsclose]') || e.target.matches('[data-marea-chart-fsbg]')) { closeChartFs(mareaBody); return; }
+    const dn = e.target.closest('[data-marea-day]');
+    if (dn && !dn.disabled && dn.dataset.mareaDay) { state.key = dn.dataset.mareaDay; renderMareaBody(); return; }
+    const mo = e.target.closest('[data-marea-month]');
+    if (mo) { state.month = mo.dataset.mareaMonth; state.key = null; renderMareaBody(); return; }
+    // Correlación: fuente (Micro/Calidad) + selección de celda → scatter.
+    const ck = e.target.closest('[data-corr-kind]');
+    if (ck) { state.corrKind = ck.dataset.corrKind; state.corrCell = null; renderMareaBody(); return; }
+    // Periodo del cribado: este mes ⇄ todo el periodo (la celda elegida deja de ser válida).
+    const cp = e.target.closest('[data-corr-period]');
+    if (cp) { state.corrPeriod = cp.dataset.corrPeriod; state.corrCell = null; renderMareaBody(); return; }
+    const cc = e.target.closest('[data-corr-cell]');
+    if (cc) { state.corrCell = cc.dataset.corrCell; renderMareaBody(); return; }
+  });
+  mareaBody.addEventListener('change', (e) => {
+    const ds = e.target.closest('[data-marea-daysel]');
+    if (ds) { state.key = ds.value; renderMareaBody(); }
+  });
+  // Las celdas de la matriz de correlación son role="button" tabindex="0": sin esto
+  // se anuncian como pulsables pero no responden a Enter/Espacio (solo al ratón).
+  mareaBody.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const cc = e.target.closest('[data-corr-cell]');
+    if (!cc) return;
+    e.preventDefault();
+    state.corrCell = cc.dataset.corrCell;
+    renderMareaBody();
+  });
+  bindModal(root, overlay, {
+    openSel: '[data-mareas-open]', closeSel: '[data-mareas-close]',
+    onOpen: () => {
+      Object.assign(state, mareasEstadoInicial());
+      marcarModo();
+      renderMareaBody();
+      if (alAbrir) alAbrir();
+    },
+    onClose: () => { cleanupMareas(); if (alCerrar) alCerrar(); },
+  });
+  const reabrir = () => {
+    overlay.classList.add('sv-open');
+    document.body.classList.add('modal-open');
+    marcarModo();
+    renderMareaBody();
+    makeAccessibleDialog(overlay).focusFirst();
+  };
+  return { state, reabrir };
 }

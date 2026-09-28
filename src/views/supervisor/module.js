@@ -51,7 +51,7 @@ import {
   NIVEL_RANK as MIC_NIVEL_RANK, AGGREGATE_KEYS as MIC_AGG, FORMATO_LABEL as MIC_FMT_LABEL, PATHOGEN_AGAR,
 } from '../microbiologia/data.js';
 import { petriSVG } from '../microbiologia/petri.js';
-import { renderMareas, cleanupMareas, openChartFs, closeChartFs } from './mareas.js';
+import { mareasModalHTML, cablearMareas } from './mareas.js';
 import {
   isCalAguaRow, calCtx, calMeasured, loadCalRanges, CAL_PARAMS, CAL_SEV,
   calDiagnosis, calGroupTree, CAL_RISK, calRangeText,
@@ -1491,24 +1491,9 @@ export function renderModule(ctx, mod) {
   }
 
   // Modal de Mareas · referencia de SITIO (Anconcito · INOCAR), igual para todos los
-  // módulos. Lee la hoja "Marea" del store; render en views/supervisor/mareas.js.
-  h += `<div class="sv-modal" id="svMareasModal" data-mareasmodal>
-    <div class="sv-modal-card lv-fs-card">
-      <div class="sv-modal-head">
-        <span class="sv-modal-title">🌊 Mareas · Anconcito <span class="muted">· INOCAR</span></span>
-        <button class="sv-modal-x" data-mareas-close aria-label="Cerrar">✕</button>
-      </div>
-      <div class="sv-modal-body">
-        <div class="sv-bm-modebar">
-          <span class="sv-bm-mode-label">Vista:</span>
-          <button class="sv-bm-mode-btn is-active" data-mareamode="dia">📅 Día</button>
-          <button class="sv-bm-mode-btn" data-mareamode="mes">📈 Mes</button>
-          <button class="sv-bm-mode-btn" data-mareamode="corr">🔗 Correlación</button>
-        </div>
-        <div id="svMareaBody"></div>
-      </div>
-    </div>
-  </div>`;
+  // módulos. Lee la hoja "Marea" del store; render en views/supervisor/mareas.js (0r·1: el marcado también, porque
+  // Maduración · Operativo abre el MISMO modal).
+  h += mareasModalHTML();
 
   // #5 · Modal de gráfico por métrica (SV/Población = tendencia · OD/Temp = perfil 12 tomas)
   h += `<div class="sv-modal" id="svModMetricModal" data-modmetricmodal>
@@ -1713,64 +1698,9 @@ export function renderModule(ctx, mod) {
     });
 
     // Modal de Mareas (Día: ola+KPIs+luna+tipo+tabla · Mes: tendencia+donut). Datos: hoja "Marea".
-    const mareaOverlay = root.querySelector('#svMareasModal');
-    if (mareaOverlay) {
-      const mareaBody = mareaOverlay.querySelector('#svMareaBody');
-      // Modal de SITIO (Anconcito): la Correlación usa siempre todos los módulos.
-      const mareaState = { mode: 'dia', key: null, month: null, corrKind: 'micro', corrPeriod: 'month', corrCell: null };
-      const renderMareaBody = () => renderMareas(mareaBody, mareaState);
-      // Barra de modo (Día/Mes) estática en el markup del modal (como Biomol/Micro).
-      mareaOverlay.querySelectorAll('[data-mareamode]').forEach((b) => b.addEventListener('click', () => {
-        mareaState.mode = b.dataset.mareamode;
-        mareaOverlay.querySelectorAll('[data-mareamode]').forEach((x) => x.classList.toggle('is-active', x === b));
-        renderMareaBody();
-      }));
-      // Navegación interna (meses / día) + ampliación de la ola, delegadas en el cuerpo.
-      mareaBody.addEventListener('click', (e) => {
-        if (e.target.closest('[data-marea-wave-fs]')) { mareaBody.querySelector('#mareaWaveFs')?.classList.add('is-open'); return; }
-        if (e.target.closest('[data-marea-wave-fsclose]') || e.target.matches('[data-marea-wave-fsbg]')) { mareaBody.querySelector('#mareaWaveFs')?.classList.remove('is-open'); return; }
-        // Ampliación (fullscreen) de los gráficos del Mes (tendencia / donut).
-        const chFs = e.target.closest('[data-marea-chart-fs]');
-        if (chFs) { openChartFs(mareaBody, chFs.dataset.mareaChartFs); return; }
-        if (e.target.closest('[data-marea-chart-fsclose]') || e.target.matches('[data-marea-chart-fsbg]')) { closeChartFs(mareaBody); return; }
-        const dn = e.target.closest('[data-marea-day]');
-        if (dn && !dn.disabled && dn.dataset.mareaDay) { mareaState.key = dn.dataset.mareaDay; renderMareaBody(); return; }
-        const mo = e.target.closest('[data-marea-month]');
-        if (mo) { mareaState.month = mo.dataset.mareaMonth; mareaState.key = null; renderMareaBody(); return; }
-        // Correlación: fuente (Micro/Calidad) + selección de celda → scatter.
-        const ck = e.target.closest('[data-corr-kind]');
-        if (ck) { mareaState.corrKind = ck.dataset.corrKind; mareaState.corrCell = null; renderMareaBody(); return; }
-        // Periodo del cribado: este mes ⇄ todo el periodo (la celda elegida deja de ser válida).
-        const cp = e.target.closest('[data-corr-period]');
-        if (cp) { mareaState.corrPeriod = cp.dataset.corrPeriod; mareaState.corrCell = null; renderMareaBody(); return; }
-        const cc = e.target.closest('[data-corr-cell]');
-        if (cc) { mareaState.corrCell = cc.dataset.corrCell; renderMareaBody(); return; }
-      });
-      mareaBody.addEventListener('change', (e) => {
-        const ds = e.target.closest('[data-marea-daysel]');
-        if (ds) { mareaState.key = ds.value; renderMareaBody(); }
-      });
-      // Las celdas de la matriz de correlación son role="button" tabindex="0": sin esto
-      // se anuncian como pulsables pero no responden a Enter/Espacio (solo al ratón).
-      mareaBody.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return;
-        const cc = e.target.closest('[data-corr-cell]');
-        if (!cc) return;
-        e.preventDefault();
-        mareaState.corrCell = cc.dataset.corrCell;
-        renderMareaBody();
-      });
-      bindModal(root, mareaOverlay, {
-        openSel: '[data-mareas-open]', closeSel: '[data-mareas-close]',
-        onOpen: () => {
-          mareaState.mode = 'dia'; mareaState.key = null; mareaState.month = null;
-          mareaState.corrKind = 'micro'; mareaState.corrPeriod = 'month'; mareaState.corrCell = null;
-          mareaOverlay.querySelectorAll('[data-mareamode]').forEach((x) => x.classList.toggle('is-active', x.dataset.mareamode === 'dia'));
-          renderMareaBody();
-        },
-        onClose: () => cleanupMareas(),
-      });
-    }
+    // Modal de SITIO (Anconcito): la Correlación usa siempre todos los módulos. 0r·1: su cableado vive en mareas.js,
+    // con el marcado, porque Maduración · Operativo abre el MISMO modal.
+    cablearMareas(root, root.querySelector('#svMareasModal'));
 
     // #5 · Modal de gráfico por métrica (SV/Pob = tendencia · OD/Temp = perfil 12 tomas)
     const mmOverlay = root.querySelector('#svModMetricModal');

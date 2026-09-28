@@ -58,6 +58,7 @@ import { NIVEL_COLOR } from '../microbiologia/data.js';
 import { loadCalRanges } from '../microbiologia/calagua.data.js';
 import { microPreseleccion } from '../microbiologia/index.js';
 import { makeAccessibleDialog } from '../../ui/modal.js';
+import { mareasModalHTML, cablearMareas } from '../supervisor/mareas.js';   // 0r·1 · el modal 🌊 Mareas de Larvicultura
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import { changeView } from '../../ui/router.js';
 import { INDICADORES } from './operativo.indicadores.js';
@@ -307,6 +308,7 @@ export function operativoView(root) {
   }
   _labIngresos = M.fuentes.ingresos || [];   // 0q·5a · de dónde viene cada lote (su piscina)
   h += labModalHTML(periodo, F);   // 0f · 8 · encima de cualquier sub-vista
+  h += mareasModalHTML();          // 0r·1 · cerrado: lo abre 🌊 Mareas
   root.innerHTML = h;
   if (detalle) dibujarDetalle(detalle);
   if (vOp.sub === 'lotes') dibujarLote(_fichaLote);
@@ -318,6 +320,7 @@ export function operativoView(root) {
   trasPintarLab(root);             // 0f · 8 · el modal del laboratorio: foco, fondo quieto y su gráfico
   trasPintarDia(root);             // 0q·4 · la ventana de un día del calendario de partes
   dibujarMicPat();                 // 0q·5a · las cantidades del patógeno elegido, en la ventana de Microbiología
+  trasPintarMareas(root);          // 0r·1 · el modal 🌊 Mareas: cablearlo y, si estaba abierto, reabrirlo con lo mismo
   bind(root);
 }
 
@@ -505,7 +508,23 @@ let _bio = { src: null, filas: null, cargando: false, error: '' };
 
 function labBotonesHTML() {
   return `<span class="mop-lab-b">${Object.entries(LAB).map(([k, x]) =>
-    `<button type="button" class="mc-pill mop-lab-btn${vOp.lab === k ? ' is-on' : ''}" data-mop-lab="${k}" aria-haspopup="dialog">${esc(x.titulo.split(' · ')[0])}</button>`).join('')}</span>`;
+    `<button type="button" class="mc-pill mop-lab-btn${vOp.lab === k ? ' is-on' : ''}" data-mop-lab="${k}" aria-haspopup="dialog">${esc(x.titulo.split(' · ')[0])}</button>`).join('')}${MAREAS_BOTON}</span>`;
+}
+
+/* 0r·1 (2026-09-28, usuario) · 🌊 Mareas junto a 🦠 y 🧬: el MISMO modal de Larvicultura (supervisor/mareas.js, que lo
+   pinta y lo cablea). La vista se repinta entera en cada clic: lo abierto y lo elegido se guardan aquí y, tras cada
+   pintada, se cablea de nuevo y, si estaba abierto, se reabre con lo mismo. Abrirlo con el botón empieza en «Día». */
+const MAREAS_BOTON = '<button type="button" class="mc-pill mop-lab-btn" data-mareas-open aria-haspopup="dialog">🌊 Mareas</button>';
+const _mareas = { abierto: false, estado: undefined };
+function trasPintarMareas(root) {
+  const ctl = cablearMareas(root, root.querySelector('#svMareasModal'), {
+    state: _mareas.estado,
+    alAbrir: () => { _mareas.abierto = true; },
+    alCerrar: () => { _mareas.abierto = false; },
+  });
+  if (!ctl) return;
+  _mareas.estado = ctl.state;
+  if (_mareas.abierto) ctl.reabrir();
 }
 
 /** Las filas de Biomol, normalizadas por SU vista. Se piden una vez por carga de datos; mientras llegan, «Cargando…». */
