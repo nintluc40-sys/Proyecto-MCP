@@ -2000,10 +2000,11 @@ describe('Maduración · operativo · los gráficos se leen', () => {
     expect(makeChart.mock.calls.some(([id]) => id === 'mopTanqueCurva')).toBe(true);
   });
 
-  it('0q·5a · la ventana de Microbiología dibuja las cantidades del patógeno', async () => {
-    await montar([...PLANTA, ...LAB5]);
+  it('0q·5a/5b · la ventana de Microbiología dibuja las cantidades del patógeno (① y ③)', async () => {
+    await montar([...PLANTA, ...LAB5, ...AGUA5]);
     click(root.querySelector('[data-mop-lab="micro"]'));
     expect(makeChart.mock.calls.some(([id]) => id === 'mopMicPat')).toBe(true);
+    expect(makeChart.mock.calls.some(([id]) => id === 'mopAguaPat')).toBe(true);
   });
 
   it('0q·3 · el reparto de un lote por destino dibuja su gráfico', async () => {
@@ -2021,9 +2022,9 @@ describe('Maduración · operativo · los gráficos se leen', () => {
     expect(makeChart.mock.calls.filter(([id]) => id === 'mopKpiCurva').length).toBeGreaterThanOrEqual(7);
   });
 
-  it('🔴 los diez gráficos, y todos con ejes a 12 px en un color que no es el gris claro; títulos a 11 px; leyenda a 12 px', () => {
+  it('🔴 los once gráficos, y todos con ejes a 12 px en un color que no es el gris claro; títulos a 11 px; leyenda a 12 px', () => {
     const ids = [...new Set(GRAFICOS.map((g) => g.id))].sort();
-    expect(ids).toEqual(['mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMicPat', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
+    expect(ids).toEqual(['mopAguaPat', 'mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMicPat', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
     for (const { id, cfg } of GRAFICOS) {
       for (const [eje, sc] of Object.entries(cfg.options.scales || {})) {
         expect(sc.ticks.font.size, `${id}.${eje}`).toBeGreaterThanOrEqual(12);
@@ -2075,12 +2076,12 @@ describe('Maduración · operativo · los gráficos se leen', () => {
    desliza en 120 ms; el dibujo al abrir o filtrar, 400 ms; y nada con «reducir movimiento».
    ============================================================ */
 describe('Maduración · operativo · los gráficos se mueven bien', () => {
-  it('🔴 los diez: globo arriba junto a la raya del día (menos el de dispersión), sin transición al pasar, globo en ≤ 150 ms, dibujo en ≤ 400 ms', () => {
+  it('🔴 los once: globo arriba junto a la raya del día (menos los de dispersión), sin transición al pasar, globo en ≤ 150 ms, dibujo en ≤ 400 ms', () => {
     const ids = [...new Set(GRAFICOS.map((g) => g.id))].sort();
-    expect(ids).toEqual(['mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMicPat', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
+    expect(ids).toEqual(['mopAguaPat', 'mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMicPat', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
     for (const { id, cfg } of GRAFICOS) {
       const o = cfg.options;
-      if (id === 'mopMicPat') {   // 0q·5a · dispersión: el punto más cercano, sin raya ni globo arriba (su eje no es de días)
+      if (id === 'mopMicPat' || id === 'mopAguaPat') {   // 0q·5a/5b · dispersión: el punto más cercano, sin raya ni globo arriba (su eje no es de días)
         expect(o.interaction, id).toEqual({ mode: 'nearest', intersect: true });
         expect(o.transitions.active.animation.duration, id).toBe(0);
         expect(o.animation.duration, id).toBeLessThanOrEqual(400);
@@ -2523,5 +2524,77 @@ describe('Maduración · operativo · 🦠 la ventana de Microbiología con sus 
       abrirMicro();
       expect(micPat().options.animation).toBe(false);
     } finally { mm.mockRestore(); }
+  });
+});
+
+/* ============================================================
+   0q·5b (2026-09-27, usuario) · 🦠 ③ Agua y RAS: las CANTIDADES por formato
+
+   Los formatos de agua tienen umbrales DISTINTOS: pastillas de formato (el Hisopado, uno más), un filtro de Componente
+   cuando el formato los tiene (RAS) y, como en ①, la tabla de patógenos que se escoge y su gráfico con los umbrales de
+   ESE formato. Las cuentas, en operativo.laboratorio.test.js.
+   ============================================================ */
+const MICA5 = (fecha, formato, extra = {}) => ({ _SheetOrigin: 'Microbiología', 'Fecha muestreo': fecha, Departamento: 'Maduración', Formato: formato, ...extra });
+const AGUA5 = [
+  MICA5('10/09/2026', 'Maduración · RAS', { Componente: 'Colector', 'V.Totales UFC': '800' }),
+  MICA5('11/09/2026', 'Maduración · RAS', { Componente: 'Salida UV', 'V.Totales UFC': '50', 'Aeromonas UFC': '10' }),
+  MICA5('12/09/2026', 'Maduración · RAS', { Componente: 'Colector', 'V.Totales UFC': '1200' }),
+  MICA5('12/09/2026', 'Maduración · Agua', { 'Aeromonas UFC': '20000' }),
+  MICA5('13/09/2026', 'Maduración · Hisopado', { 'V.Totales UFC': '100' }),
+];
+const cantAgua = () => modalLab().querySelector('.mop-agua-cant');
+const aguaPat = () => { const l = makeChart.mock.calls.filter(([id]) => id === 'mopAguaPat'); return l.length ? l[l.length - 1][1] : null; };
+const umbralesDe = (cfg) => cfg.data.datasets.filter((d) => d.label === 'Moderado' || d.label === 'Elevado').map((d) => d.data[0].y);
+describe('Maduración · operativo · 🦠 ③ Agua y RAS: las cantidades por formato (0q·5b)', () => {
+  it('🔴 pastillas de formato (con sus muestras), el primero elegido; Componente en RAS; su tabla y su gráfico con los umbrales de RAS', async () => {
+    await montar([...PLANTA, ...AGUA5]);
+    abrirMicro();
+    const p = [...cantAgua().querySelectorAll('[data-mop-aguafmt]')];
+    expect(p.map((b) => [b.dataset.mopAguafmt, b.textContent.replace(/\s+/g, ' ').trim(), b.getAttribute('aria-pressed')])).toEqual([
+      ['ras', 'RAS 3', 'true'], ['mad-agua', 'Agua 1', 'false'], ['mad-hisopado', 'Hisopado 1', 'false']]);
+    expect([...cantAgua().querySelector('[data-mop-aguacomp]').options].map((o) => o.value)).toEqual(['', 'Colector', 'Salida UV']);
+    expect([...cantAgua().querySelectorAll('[data-mop-aguapat]')].map((r) => r.dataset.mopAguapat)).toEqual(['totales', 'aero']);
+    expect(cantAgua().querySelector('.mop-lab-kpi').textContent).toContain('3 muestras con cifra');
+    expect(umbralesDe(aguaPat())).toEqual([500, 1000]);
+    expect(cantAgua().textContent).toContain('umbrales de Maduración · RAS');
+  });
+
+  it('🔴 otro formato: sin Componente si no los tiene, y los umbrales de SU área; el foco se queda en su pastilla', async () => {
+    await montar([...PLANTA, ...AGUA5]);
+    abrirMicro();
+    click(cantAgua().querySelector('[data-mop-aguafmt="mad-agua"]'));
+    expect(cantAgua().querySelector('[data-mop-aguafmt="mad-agua"]').getAttribute('aria-pressed')).toBe('true');
+    expect(document.activeElement).toBe(cantAgua().querySelector('[data-mop-aguafmt="mad-agua"]'));
+    expect(cantAgua().querySelector('[data-mop-aguacomp]')).toBeNull();
+    expect([...cantAgua().querySelectorAll('[data-mop-aguapat]')].map((r) => r.dataset.mopAguapat)).toEqual(['aero']);
+    expect(umbralesDe(aguaPat())).toEqual([5000, 10000]);
+  });
+
+  it('🔴 el Componente recorta la tabla y el gráfico, y el foco se queda en su select', async () => {
+    await montar([...PLANTA, ...AGUA5]);
+    abrirMicro();
+    cambiar(cantAgua().querySelector('[data-mop-aguacomp]'), 'Colector');
+    expect([...cantAgua().querySelectorAll('[data-mop-aguapat]')].map((r) => r.dataset.mopAguapat)).toEqual(['totales']);
+    expect(cantAgua().querySelector('.mop-lab-kpi').textContent).toContain('2 muestras con cifra');
+    expect(document.activeElement).toBe(cantAgua().querySelector('[data-mop-aguacomp]'));
+  });
+
+  it('🔴 un patógeno se escoge con el ratón o con Intro, y el foco se queda en su fila', async () => {
+    await montar([...PLANTA, ...AGUA5]);
+    abrirMicro();
+    click(cantAgua().querySelector('[data-mop-aguapat="aero"]'));
+    expect(cantAgua().querySelector('[data-mop-aguapat="aero"]').getAttribute('aria-pressed')).toBe('true');
+    expect(document.activeElement).toBe(cantAgua().querySelector('[data-mop-aguapat="aero"]'));
+    expect(cantAgua().querySelector('.mop-micpat-graf h5').textContent).toContain('Aeromonas');
+    cantAgua().querySelector('[data-mop-aguapat="totales"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(cantAgua().querySelector('[data-mop-aguapat="totales"]').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('🔑 los filtros de la ventana también valen aquí: un mes sin agua deja el bloque sin cantidades', async () => {
+    await montar([...PLANTA, ...AGUA5, ...LAB5]);
+    abrirMicro();
+    cambiar(selLab('mes'), '2026-07');
+    expect(cantAgua()).toBeNull();
+    expect(makeChart.mock.calls.filter(([id]) => id === 'mopAguaPat').length).toBeGreaterThan(0);   // (antes, con septiembre, sí se dibujó)
   });
 });

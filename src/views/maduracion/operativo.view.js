@@ -51,6 +51,7 @@ import { KPIS_CON_GRAFICO, graficoDeKpi } from './operativo.kpis.js';
 import { resumenBiomol, BIOMOL_PATOGENOS } from './operativo.laboratorio.js';
 import { piscinasDeLotes, resumenMicroDeLaVentana, opcionesDeLaVentana, serieDePatogeno, umbralDe } from './operativo.laboratorio.js';   // 0q·5a
 import { areaForFormat } from '../microbiologia/data.js';   // 0q·5a
+import { formatosDelAgua, patogenosDeMedidas, umbralDelFormato } from './operativo.laboratorio.js';   // 0q·5b
 import { NIVEL_COLOR } from '../microbiologia/data.js';
 import { loadCalRanges } from '../microbiologia/calagua.data.js';
 import { microPreseleccion } from '../microbiologia/index.js';
@@ -145,6 +146,8 @@ const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', 
   /* 0q·5a · los filtros PROPIOS de la ventana de Microbiología (empiezan con la sala, el sexo y el lote del tablero al
      abrirla) y el patógeno cuyas cantidades se dibujan. */
   labF: { mes: '', lote: '', sala: '', piscina: '', sexo: '' }, labPat: '',
+  /* 0q·5b · en ③ Agua y RAS: el formato, el componente y el patógeno de su gráfico de cantidades. */
+  aguaFmt: '', aguaComp: '', aguaPat: '',
   /* 0f · 8 · el modal del laboratorio abierto: 'micro' | 'biomol' | ''. Vive la sesión, como lo demás: un refresco de datos no lo cierra. */
   lab: '' };
 /* El estado de la vista vive lo que dura la sesión: al volver a Maduración, o al refrescarse los datos, se conserva. */
@@ -562,6 +565,7 @@ function labMicroHTML() {
     ${A.micro.length ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-lab-agua"><thead><tr><th>Microbiología · formato</th><th class="r">Muestras</th><th class="r">En alerta</th></tr></thead>
       <tbody>${A.micro.map((x) => `<tr><td>${esc(x.clave)}</td><td class="r">${nf(x.muestras)}</td><td class="r">${nf(x.alerta)} · ${pctTxt(x.alerta, x.muestras)}</td></tr>`).join('')}</tbody></table></div>` : `<p class="muted">Sin microbiología de agua o RAS en ${esc(cuandoLab())}.</p>`}
     ${labNotas(A)}
+    ${aguaCantHTML(A)}
     ${C.muestras ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-lab-cal"><thead><tr><th>Calidad de agua · componente</th><th class="r">Muestras</th><th class="r" title="Índice de calidad (0–100), mediana de las muestras">Índice</th><th class="r">Fuera de rango</th><th>Más veces fuera</th><th>Última</th></tr></thead>
       <tbody>${C.porGrupo.map((g) => `<tr><td>${esc(g.grupo)}</td><td class="r">${nf(g.muestras)}</td><td class="r">${g.wqi === null ? '—' : nf(g.wqi)}</td><td class="r">${nf(g.fuera)}</td>
         <td>${esc(g.peores.map((x) => x.label + ' (' + x.n + ')').join(', ') || '—')}</td><td>${esc(dm(g.ultima))}</td></tr>`).join('')}</tbody></table></div>` : `<p class="muted">Sin calidad de agua en ${esc(cuandoLab())}.</p>`}
@@ -606,18 +610,21 @@ function labFiltrosHTML(op) {
       ${hay ? '<button type="button" class="mc-mini" data-mop-labf-limpiar>Quitar filtros</button>' : ''}</div>
     <p class="mop-lab-per">${fi.mes ? esc(mesTxt(fi.mes)) : 'Todo el registro'} · con los filtros de esta ventana, no los del tablero · la piscina, sólo en ①: la de la muestra o, si no, la de su lote en Ingresos</p>`;
 }
-/** El bloque del patógeno escogido: su resumen y el lienzo de sus cantidades. */
-function micPatHTML() {
-  if (!_micPat) return '';
-  const s = _micPat.serie;
-  const u = _micPat.umbral;
-  const cab = `<h5 class="mop-lab-h5">${esc(_micPat.etiqueta)} · UFC de cada muestra y mediana semanal</h5>`;
-  if (!s.muestras) return `<div class="mop-micpat-graf">${cab}<p class="muted">Ninguna muestra trae su cifra de UFC de ${esc(_micPat.etiqueta)} con estos filtros${s.sinCifra ? ` (${nf(s.sinCifra)} sólo con su nivel)` : ''}.</p></div>`;
+/** El bloque del patógeno escogido de ①: su resumen y el lienzo de sus cantidades. */
+function micPatHTML() { return cantidadesHTML(_micPat, 'mopMicPat', 'los reproductores'); }
+/** 0q·5b · el resumen y el lienzo de las cantidades de un patógeno `d` ({ etiqueta, serie, umbral }); `deQuien`, de quién
+ *  son los umbrales (cada formato tiene los suyos). */
+function cantidadesHTML(d, id, deQuien) {
+  if (!d) return '';
+  const s = d.serie;
+  const u = d.umbral;
+  const cab = `<h5 class="mop-lab-h5">${esc(d.etiqueta)} · UFC de cada muestra y mediana semanal</h5>`;
+  if (!s.muestras) return `<div class="mop-micpat-graf">${cab}<p class="muted">Ninguna muestra trae su cifra de UFC de ${esc(d.etiqueta)} con estos filtros${s.sinCifra ? ` (${nf(s.sinCifra)} sólo con su nivel)` : ''}.</p></div>`;
   return `<div class="mop-micpat-graf">${cab}
     <p class="mop-lab-kpi"><b>${nf(s.muestras)}</b> muestras con cifra · mediana <b>${nf(s.mediana)}</b> · máximo <b>${nf(s.maximo)}</b> · <b>${nf(s.alerta)}</b> en alerta (${pctTxt(s.alerta, s.muestras)})${s.sinCifra ? ` · ${nf(s.sinCifra)} sin cifra (sólo su nivel)` : ''}</p>
-    <div class="mc-chart" style="height:260px"><canvas id="mopMicPat"></canvas></div>
+    <div class="mc-chart" style="height:260px"><canvas id="${id}"></canvas></div>
     <p class="mc-note">Escala logarítmica (cada raya, ×10): 200 y 800 000 se leen en el mismo gráfico. Las muestras sin crecimiento (0 UFC) van en
-      la raya «0» de abajo. Cada punto lleva el color de su nivel${u ? `; las líneas discontinuas son los umbrales de los reproductores: Moderado desde ${nf(u.m)} y Elevado desde ${nf(u.e)} (alerta = Moderado o Elevado)` : ''}.</p>
+      la raya «0» de abajo. Cada punto lleva el color de su nivel${u ? `; las líneas discontinuas son los umbrales de ${esc(deQuien)}: Moderado desde ${nf(u.m)} y Elevado desde ${nf(u.e)} (alerta = Moderado o Elevado)` : ''}.</p>
   </div>`;
 }
 /** La escala logarítmica no tiene cero: las muestras de 0 UFC se dibujan en esta raya, rotulada «0». */
@@ -639,10 +646,15 @@ function graficoDispersionOp(id, cfg) {
 const leyendaMicPat = (chart, color) => chart.data.datasets.map((d, i) => ({
   text: i === 0 ? d.label + ' (color de su nivel)' : d.label, fillStyle: d.backgroundColor,
   strokeStyle: d.borderColor, lineWidth: 1, pointStyle: 'circle', hidden: !chart.isDatasetVisible(i), datasetIndex: i, fontColor: color }));   // fontColor: si falta, el texto no sigue al tema
+/** Las cantidades de ① (reproductores) y de ③ (agua y RAS), si su lienzo está en pantalla. */
 function dibujarMicPat() {
-  if (!_micPat || !_micPat.serie.muestras || !document.getElementById('mopMicPat')) return;
+  dibujarCantidades('mopMicPat', _micPat);
+  dibujarCantidades('mopAguaPat', _aguaPat);   // 0q·5b
+}
+function dibujarCantidades(id, cant) {
+  if (!cant || !cant.serie.muestras || !document.getElementById(id)) return;
   const E = ejesOp();
-  const s = _micPat.serie;
+  const s = cant.serie;
   const dia = (iso) => Math.round(Date.parse(iso + 'T12:00:00Z') / 864e5);
   const isoDia = (d) => new Date(d * 864e5).toISOString().slice(0, 10);
   const xs = s.puntos.map((p) => dia(p.fecha));
@@ -651,7 +663,7 @@ function dibujarMicPat() {
   const y = (v) => Math.max(Number(v) || 0, SUELO_UFC);
   const umbral = (label, v, color) => ({ label, data: [{ x: x0, y: v }, { x: x1, y: v }], showLine: true, borderColor: color, backgroundColor: color,
     borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 0 });
-  const u = _micPat.umbral;
+  const u = cant.umbral;
   const datasets = [
     { label: 'Muestras', data: s.puntos.map((p) => ({ x: dia(p.fecha), y: y(p.ufc), ufc: p.ufc, fecha: p.fecha, nivel: p.nivel })),
       backgroundColor: '#90a4ae', borderColor: '#546e7a', pointBackgroundColor: s.puntos.map((p) => NIVEL_COLOR[p.nivel] || '#90a4ae'), pointRadius: 3.5, borderWidth: 1 },
@@ -665,7 +677,7 @@ function dibujarMicPat() {
     if (c.dataset.label === 'Mediana semanal') return 'mediana ' + nf(d.ufc) + ' UFC · ' + nf(d.n) + ' muestra(s)';
     return c.dataset.label + ' desde ' + nf(d.y) + ' UFC';
   };
-  graficoDispersionOp('mopMicPat', {
+  graficoDispersionOp(id, {
     type: 'scatter',
     data: { datasets },
     options: {
@@ -678,6 +690,34 @@ function dibujarMicPat() {
         label: etiqueta } } },
     },
   });
+}
+
+/* ── 0q·5b (2026-09-27, usuario) · ③ Agua y RAS: las CANTIDADES por formato ─────────────────────────────────────
+   RAS, Agua, Hisopado y Agua limpia y mar tienen umbrales distintos: pastillas de formato, un Componente cuando lo
+   hay (RAS), y como en ① la tabla de patógenos que se escoge y su gráfico, con los umbrales de ESE formato. */
+let _aguaPat = null;
+const formatoCorto = (etq) => String(etq).replace(/^Maduraci[oó]n\s*·\s*/i, '');
+function aguaCantHTML(A) {
+  _aguaPat = null;
+  const fmts = formatosDelAgua(A.medidas);
+  if (!fmts.length) return '';
+  const fmt = fmts.find((f) => f.key === vOp.aguaFmt) || fmts[0];
+  const comp = fmt.componentes.includes(vOp.aguaComp) ? vOp.aguaComp : '';
+  const med = A.medidas.filter((m) => m.formato === fmt.key && (!comp || m.componente === comp));
+  const pats = patogenosDeMedidas(med);
+  const patSel = (pats.find((p) => p.key === vOp.aguaPat) || pats[0] || {}).key || '';
+  const pat = pats.find((p) => p.key === patSel);
+  _aguaPat = pat ? { etiqueta: pat.etiqueta, serie: serieDePatogeno(med, pat.key), umbral: umbralDelFormato(fmt.key, pat.key) } : null;
+  const pastillas = fmts.map((f) => `<button type="button" class="mc-pill${f.key === fmt.key ? ' is-on' : ''}" data-mop-aguafmt="${esc(f.key)}" aria-pressed="${f.key === fmt.key}">
+    ${esc(formatoCorto(f.etiqueta))} <span class="mop-nota">${nf(f.muestras)}</span></button>`).join('');
+  const compSel = fmt.componentes.length ? `<label class="mop-labf-c mop-agua-comp">Componente<select class="mc-select" data-mop-aguacomp><option value="">Todos</option>${fmt.componentes.map((c) =>
+    `<option value="${esc(c)}"${c === comp ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></label>` : '';
+  const tabla = pats.length ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-lab-pat"><thead><tr><th>Patógeno</th><th class="r">Analizadas</th><th class="r">En alerta</th><th></th></tr></thead>
+      <tbody>${pats.map((x) => `<tr class="mop-micpat${x.key === patSel ? ' is-on' : ''}" role="button" tabindex="0" aria-pressed="${x.key === patSel}" data-mop-aguapat="${esc(x.key)}"><td>${esc(x.etiqueta)}</td>
+        <td class="r">${nf(x.analizadas)}</td><td class="r">${nf(x.alerta)} · ${pctTxt(x.alerta, x.analizadas)}</td><td>${barraPct(pct(x.alerta, x.analizadas))}</td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="muted">Ninguna medición con nivel en este formato con estos filtros.</p>';
+  return `<div class="mop-agua-cant"><h5 class="mop-lab-h5">Cantidades por formato <span class="mop-nota">cada formato con sus umbrales</span></h5>
+    <div class="mop-agua-fmts" role="group" aria-label="Formato">${pastillas}</div>${compSel}${tabla}${cantidadesHTML(_aguaPat, 'mopAguaPat', fmt.etiqueta)}</div>`;
 }
 
 function labBiomolHTML(p, F) {
@@ -2756,6 +2796,12 @@ function bind(root) {
   const abrirPiscina = (x) => { vOp.piscinaSel = vOp.piscinaSel === x ? '' : x; repintar(); };
   const abrirCuarentena = (k) => { vOp.cuarSel = vOp.cuarSel === k ? '' : k; repintar(); };   // 0f · 4
   const abrirKpi = (k) => { vOp.kpiSel = vOp.kpiSel === k ? '' : k; repintar(); };            // 0f · 5
+  /** 0q·5b · repinta y devuelve el foco al control que se usó (la ventana se rehace entera). */
+  const repintarYEnfocar = (sel) => {
+    repintar();
+    const f = root.querySelector(sel);
+    if (f) f.focus();
+  };
   const elegirPatogeno = (k) => {                                                              // 0q·5a
     vOp.labPat = k;
     repintar();
@@ -2814,6 +2860,10 @@ function bind(root) {
     if (t.closest('[data-mop-labf-limpiar]')) { vOp.labF = { ...LABF_VACIO }; repintar(); return; }
     const mp = t.closest('[data-mop-micpat]');
     if (mp) { elegirPatogeno(mp.dataset.mopMicpat); return; }
+    const af = t.closest('[data-mop-aguafmt]');   // 0q·5b
+    if (af) { vOp.aguaFmt = af.dataset.mopAguafmt; vOp.aguaComp = ''; vOp.aguaPat = ''; repintarYEnfocar(`[data-mop-aguafmt="${af.dataset.mopAguafmt}"]`); return; }
+    const ap = t.closest('[data-mop-aguapat]');
+    if (ap) { vOp.aguaPat = ap.dataset.mopAguapat; repintarYEnfocar(`[data-mop-aguapat="${ap.dataset.mopAguapat}"]`); return; }
     if (t.closest('[data-mop-lab-cerrar]') || (t.matches && t.matches('[data-mop-lab-overlay]'))) { vOp.lab = ''; repintar(); return; }
     if (t.closest('[data-mop-lab-abrir-micro]')) {
       vOp.lab = '';
@@ -2880,6 +2930,8 @@ function bind(root) {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     const mp = e.target.closest && e.target.closest('[data-mop-micpat]');   // 0q·5a
     if (mp && e.target === mp) { e.preventDefault(); elegirPatogeno(mp.dataset.mopMicpat); return; }
+    const ap = e.target.closest && e.target.closest('[data-mop-aguapat]');   // 0q·5b
+    if (ap && e.target === ap) { e.preventDefault(); vOp.aguaPat = ap.dataset.mopAguapat; repintarYEnfocar(`[data-mop-aguapat="${ap.dataset.mopAguapat}"]`); return; }
     const sala = e.target.closest && e.target.closest('[data-mop-sala]');
     if (sala && e.target === sala) { e.preventDefault(); abrirSala(sala.dataset.mopSala); return; }
     const rl = e.target.closest && e.target.closest('[data-mop-rlote]');
@@ -2898,6 +2950,11 @@ function bind(root) {
 
   root.addEventListener('change', (e) => {
     /* 0q·5a · un filtro de la ventana de Microbiología: se repinta y el foco se queda en su select. */
+    if (e.target.matches && e.target.matches('[data-mop-aguacomp]')) {   // 0q·5b · el componente de ③
+      vOp.aguaComp = e.target.value || '';
+      repintarYEnfocar('[data-mop-aguacomp]');
+      return;
+    }
     const lf = e.target.closest && e.target.closest('[data-mop-labf]');
     if (lf) {
       const d = lf.dataset.mopLabf;

@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import { resumenMicro, resumenBiomol, tipoDeDespacho, filtroDelTablero, esReproductor, BIOMOL_PATOGENOS } from './operativo.laboratorio.js';
 import { nombrePiscina, piscinasDeLotes, filtroDeLaVentana, resumenMicroDeLaVentana, serieDePatogeno, umbralDe, opcionesDeLaVentana } from './operativo.laboratorio.js';   // 0q·5
+import { formatosDelAgua, patogenosDeMedidas, umbralDelFormato } from './operativo.laboratorio.js';   // 0q·5b
 import { normalizarFiltro } from './operativo.tablero.js';
 import { CAL_RANGE_BASE } from '../microbiologia/calagua.data.js';
 import { normalizeRows } from '../biomolecular/index.js';
@@ -264,5 +265,54 @@ describe('Maduración · laboratorio · 0q·5a · la ventana y las cantidades', 
     expect(o.lotes).toEqual(['QA']);
     expect(o.sexos).toEqual(['Hembras', 'Machos']);
     expect(o.piscinas).toEqual(['Piscina 555', 'Piscina 556', 'Piscina 557']);
+  });
+});
+
+/* ============================================================
+   0q·5b (2026-09-27, usuario) · 🦠 ③ Agua y RAS: las CANTIDADES por formato
+
+   Los formatos de agua tienen UMBRALES DISTINTOS (RAS, Agua, Hisopado, Agua limpia y mar: cuatro áreas), así que un
+   gráfico que los mezclara no podría dibujar los suyos. Decisión del usuario: pastillas de formato (el Hisopado, como
+   uno más), un filtro de Componente (RAS: Colector, Salida UV…) y, como en ①, la tabla de patógenos que se escoge.
+   ============================================================ */
+describe('Maduración · laboratorio · 0q·5b · ③ agua y RAS por formato', () => {
+  const MICA = (fecha, formato, extra = {}) => ({ _SheetOrigin: 'Microbiología', 'Fecha muestreo': fecha, Departamento: 'Maduración', Formato: formato, ...extra });
+  const AGUA = [
+    MICA('10/09/2026', 'Maduración · RAS', { Componente: 'Colector', 'V.Totales UFC': '800' }),            // RAS: Moderado desde 500
+    // «Bacterias Rojas» no tiene niveles: su medición no entra en la tabla de patógenos (sin nivel no hay alerta que contar).
+    MICA('11/09/2026', 'Maduración · RAS', { Componente: 'Salida UV', 'V.Totales UFC': '50', 'Aeromonas UFC': '10', 'Bacterias Rojas UFC': '5' }),
+    MICA('12/09/2026', 'Maduración · RAS', { Componente: 'Colector', 'V.Totales UFC': '1200' }),           // Elevado desde 1 000
+    MICA('12/09/2026', 'Maduración · Agua', { 'Aeromonas UFC': '20000' }),                                 // Agua: Elevado desde 10 000
+    MICA('13/09/2026', 'Maduración · Hisopado', { 'V.Totales UFC': '100' }),
+    MICA('14/09/2026', 'Maduración · Agua', { 'Aeromonas UFC': '300' }),
+  ];
+  const r = resumenMicroDeLaVentana(AGUA, {}, CAL_RANGE_BASE, new Map());
+
+  it('🔴 cada muestra de agua deja sus mediciones, con su formato y su componente', () => {
+    expect(r.agua.medidas).toHaveLength(6);
+    expect(r.agua.medidas[0]).toMatchObject({ fecha: '2026-09-10', formato: 'ras', componente: 'Colector' });
+  });
+
+  it('🔴 los formatos presentes, de más a menos muestras, con sus componentes', () => {
+    expect(formatosDelAgua(r.agua.medidas)).toEqual([
+      { key: 'ras', etiqueta: 'Maduración · RAS', muestras: 3, componentes: ['Colector', 'Salida UV'] },
+      { key: 'mad-agua', etiqueta: 'Maduración · Agua', muestras: 2, componentes: [] },
+      { key: 'mad-hisopado', etiqueta: 'Maduración · Hisopado', muestras: 1, componentes: [] },
+    ]);
+  });
+
+  it('🔴 la tabla de patógenos de un grupo: analizadas y en alerta con los umbrales de SU formato, la de más alertas primero', () => {
+    const ras = r.agua.medidas.filter((m) => m.formato === 'ras');
+    expect(patogenosDeMedidas(ras).map((p) => [p.key, p.analizadas, p.alerta])).toEqual([['totales', 3, 2], ['aero', 1, 0]]);
+    const colector = ras.filter((m) => m.componente === 'Colector');
+    expect(patogenosDeMedidas(colector).map((p) => [p.key, p.analizadas, p.alerta])).toEqual([['totales', 2, 2]]);
+    const agua = r.agua.medidas.filter((m) => m.formato === 'mad-agua');
+    expect(patogenosDeMedidas(agua).map((p) => [p.key, p.analizadas, p.alerta, p.etiqueta])).toEqual([['aero', 2, 1, 'Aeromonas']]);
+  });
+
+  it('🔴 los umbrales de cada formato son los de su área', () => {
+    expect(umbralDelFormato('ras', 'totales')).toMatchObject({ m: 500, e: 1000 });
+    expect(umbralDelFormato('mad-agua', 'aero')).toMatchObject({ m: 5000, e: 10000 });
+    expect(umbralDelFormato('mad-hisopado', 'totales')).toMatchObject({ m: 500, e: 5000 });
   });
 });

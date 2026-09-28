@@ -17,6 +17,7 @@
    ============================================================ */
 import { rowContext, meltRow, isMicroRow, isAlerta, NIVEL_RANK, NIVELES, deptoOfFormato, FORMATO_LABEL } from '../microbiologia/data.js';
 import { loadMicThresholds, PATHOGEN_BY_KEY } from '../microbiologia/data.js';   // 0q·5a
+import { areaForFormat } from '../microbiologia/data.js';   // 0q·5b
 import { isCalAguaRow, calCtx, calMeasured, calWQI } from '../microbiologia/calagua.data.js';
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 
@@ -203,7 +204,10 @@ export function resumenMicro(filas, periodo, F, rangosCal) {
       peores: [...g.porParam].sort((a, b) => b[1] - a[1] || porNombre(a[0], b[0])).slice(0, 3).map(([label, n]) => ({ label, n })) }))
       .sort((a, b) => porNombre(a.grupo, b.grupo)),
   };
-  return { reproductores, desinfeccion, agua: { ignora: bloqueAgua.ignora, sinDato: bloqueAgua.sinDato, micro, calidad } };
+  // 0q·5b · las mediciones de cada muestra de agua, con su formato y su componente: el gráfico de cantidades es por FORMATO
+  // (cada uno tiene sus umbrales).
+  const medidasAgua = aguaMic.map((m) => ({ fecha: m.fecha, formato: m.ctx.formatoKey, componente: txt(m.ctx.componente), med: m.med }));
+  return { reproductores, desinfeccion, agua: { ignora: bloqueAgua.ignora, sinDato: bloqueAgua.sinDato, micro, calidad, medidas: medidasAgua } };
 }
 
 /* ── 0q·5a (2026-09-27, usuario) · LA VENTANA CON SUS PROPIOS FILTROS y LAS CANTIDADES DE CADA PATÓGENO ───────────
@@ -311,6 +315,38 @@ export function serieDePatogeno(medidas, key) {
     alerta: puntos.filter((p) => isAlerta(p.nivel)).length,
   };
 }
+/* 0q·5b (2026-09-27, usuario) · ③ Agua y RAS POR FORMATO: RAS, Agua, Hisopado y Agua limpia y mar tienen umbrales
+   distintos (cuatro áreas), así que su gráfico de cantidades es de UN formato, y de un componente si se elige. */
+/** Los formatos de agua presentes en `medidas`, de más a menos muestras, con sus componentes. */
+export function formatosDelAgua(medidas) {
+  const m = new Map();
+  for (const x of medidas || []) {
+    const o = m.get(x.formato) || { key: x.formato, etiqueta: FORMATO_LABEL[x.formato] || x.formato || '(sin formato)', muestras: 0, componentes: new Set() };
+    o.muestras++;
+    if (x.componente) o.componentes.add(x.componente);
+    m.set(x.formato, o);
+  }
+  return [...m.values()].map((o) => ({ ...o, componentes: [...o.componentes].sort(porNombre) }))
+    .sort((a, b) => b.muestras - a.muestras || porNombre(a.etiqueta, b.etiqueta));
+}
+/** Por patógeno: cuántas mediciones con nivel y cuántas en alerta (el nivel ya viene con los umbrales de su formato); la de
+ *  más alertas primero, como en ① reproductores. */
+export function patogenosDeMedidas(medidas) {
+  const m = new Map();
+  for (const x of medidas || []) {
+    for (const y of x.med || []) {
+      if (!y.nivel) continue;
+      const p = m.get(y.key) || { key: y.key, etiqueta: y.label, analizadas: 0, alerta: 0 };
+      p.analizadas++;
+      if (isAlerta(y.nivel)) p.alerta++;
+      m.set(y.key, p);
+    }
+  }
+  const tasa = (p) => p.alerta / p.analizadas;
+  return [...m.values()].sort((a, b) => tasa(b) - tasa(a) || porNombre(a.etiqueta, b.etiqueta));
+}
+/** Los umbrales de un patógeno en un FORMATO (el área que le toca a ese formato). */
+export const umbralDelFormato = (formato, key) => umbralDe(areaForFormat(formato, ''), key);
 /** Los umbrales { l, m, e } (desde Leve, Moderado y Elevado) de un patógeno en un área: los de la vista de Microbiología. */
 export function umbralDe(area, key) {
   const p = PATHOGEN_BY_KEY[key];

@@ -324,6 +324,10 @@
 .mop-micpat:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: -2px; }
 .mop-micpat.is-on td { background: color-mix(in srgb, var(--c-brand) 16%, transparent); font-weight: 700; }
 .mop-micpat-graf { margin: 10px 0 4px; }
+/* 0q·5b · ③: las pastillas de formato y su componente. */
+.mop-agua-cant { margin: 12px 0 6px; }
+.mop-agua-fmts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.mop-agua-comp { max-width: 280px; margin: 0 0 8px; }
 @media (max-width: 700px) {
   .mop-lab-b { margin-left: 0; }
   .mop-lab-2 { grid-template-columns: 1fr; }
