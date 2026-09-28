@@ -8,7 +8,7 @@
    ============================================================ */
 import { describe, it, expect } from 'vitest';
 import { Tooltip } from 'chart.js';
-import './charts.js';
+import { Chart } from './charts.js';
 
 const pos = (yo, x) => Tooltip.positioners.arribaJunto.call(yo, x == null ? [] : [{ element: { x } }, { element: { x, y: 999 } }]);
 const AREA = { top: 30, bottom: 230, left: 40, right: 600 };
@@ -33,6 +33,10 @@ describe('Chart.js · el globo arribaJunto', () => {
     const r = pos({ chart: { chartArea: AREA }, width: 0, height: 0 }, 100);
     expect(r.y).toBeGreaterThanOrEqual(AREA.top + 30);
   });
+  it('🔑 0q·5a · la escala LOGARÍTMICA está registrada (las UFC de Microbiología)', () => {
+    expect(Chart.registry.getScale('logarithmic')).toBeTruthy();
+  });
+
   it('🔑 sin día activo, nada', () => {
     expect(pos({ chart: { chartArea: AREA }, width: 150, height: 64 })).toBe(false);
   });

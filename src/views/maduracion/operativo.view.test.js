@@ -2000,6 +2000,12 @@ describe('Maduración · operativo · los gráficos se leen', () => {
     expect(makeChart.mock.calls.some(([id]) => id === 'mopTanqueCurva')).toBe(true);
   });
 
+  it('0q·5a · la ventana de Microbiología dibuja las cantidades del patógeno', async () => {
+    await montar([...PLANTA, ...LAB5]);
+    click(root.querySelector('[data-mop-lab="micro"]'));
+    expect(makeChart.mock.calls.some(([id]) => id === 'mopMicPat')).toBe(true);
+  });
+
   it('0q·3 · el reparto de un lote por destino dibuja su gráfico', async () => {
     await montar(PLANTA_Q3);
     abrirRepro();
@@ -2015,9 +2021,9 @@ describe('Maduración · operativo · los gráficos se leen', () => {
     expect(makeChart.mock.calls.filter(([id]) => id === 'mopKpiCurva').length).toBeGreaterThanOrEqual(7);
   });
 
-  it('🔴 los nueve gráficos, y todos con ejes a 12 px en un color que no es el gris claro; títulos a 11 px; leyenda a 12 px', () => {
+  it('🔴 los diez gráficos, y todos con ejes a 12 px en un color que no es el gris claro; títulos a 11 px; leyenda a 12 px', () => {
     const ids = [...new Set(GRAFICOS.map((g) => g.id))].sort();
-    expect(ids).toEqual(['mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
+    expect(ids).toEqual(['mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMicPat', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
     for (const { id, cfg } of GRAFICOS) {
       for (const [eje, sc] of Object.entries(cfg.options.scales || {})) {
         expect(sc.ticks.font.size, `${id}.${eje}`).toBeGreaterThanOrEqual(12);
@@ -2069,11 +2075,18 @@ describe('Maduración · operativo · los gráficos se leen', () => {
    desliza en 120 ms; el dibujo al abrir o filtrar, 400 ms; y nada con «reducir movimiento».
    ============================================================ */
 describe('Maduración · operativo · los gráficos se mueven bien', () => {
-  it('🔴 los nueve: globo arriba junto a la raya del día, sin transición al pasar, globo en ≤ 150 ms, dibujo en ≤ 400 ms', () => {
+  it('🔴 los diez: globo arriba junto a la raya del día (menos el de dispersión), sin transición al pasar, globo en ≤ 150 ms, dibujo en ≤ 400 ms', () => {
     const ids = [...new Set(GRAFICOS.map((g) => g.id))].sort();
-    expect(ids).toEqual(['mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
+    expect(ids).toEqual(['mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMicPat', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
     for (const { id, cfg } of GRAFICOS) {
       const o = cfg.options;
+      if (id === 'mopMicPat') {   // 0q·5a · dispersión: el punto más cercano, sin raya ni globo arriba (su eje no es de días)
+        expect(o.interaction, id).toEqual({ mode: 'nearest', intersect: true });
+        expect(o.transitions.active.animation.duration, id).toBe(0);
+        expect(o.animation.duration, id).toBeLessThanOrEqual(400);
+        expect((cfg.plugins || []).map((p) => p.id), id).not.toContain('mopGuiaDia');
+        continue;
+      }
       expect(o.interaction, id).toEqual({ mode: 'index', intersect: false });
       expect(o.plugins.tooltip.position, id).toBe('arribaJunto');
       expect(o.plugins.tooltip.caretSize, id).toBe(0);
@@ -2388,5 +2401,127 @@ describe('Maduración · operativo · 🩺 la ventana de un día del calendario 
     expect(ventanaDia()).toBeNull();
     expect(root.querySelector('[data-mop-sub="tanques"]').classList.contains('is-on')).toBe(true);
     expect(root.querySelector('[data-mop-tqf="Sala 1|1"]').getAttribute('aria-pressed')).toBe('true');
+  });
+});
+
+/* ============================================================
+   0q·5a (2026-09-27, usuario) · 🦠 la ventana de Microbiología: sus PROPIOS filtros y las CANTIDADES del patógeno elegido
+
+   Decisiones del usuario: la ventana tiene su barra —Mes, Lote, Sala, Piscina, Sexo— sobre TODO el registro, y empieza
+   con la sala, el sexo y el lote del tablero; la piscina es la de la muestra o, si no, la de su lote (Ingresos); y al
+   escoger un patógeno (su fila), sus UFC muestra a muestra, la mediana semanal y los umbrales Moderado y Elevado, en
+   escala logarítmica con las muestras de 0 UFC en la raya «0». Las cuentas, en operativo.laboratorio.test.js.
+   ============================================================ */
+const MIC5 = (fecha, extra = {}) => ({ _SheetOrigin: 'Microbiología', 'Fecha muestreo': fecha, Departamento: 'Maduración', Formato: 'Maduración · Principal',
+  'Tipo de muestra': 'Hepatopáncreas', ...extra });
+const MALO_Q5 = '"><img src=x onerror=alert(1)>';
+const LAB5 = [
+  MIC5('15/09/2026', { 'Módulo/Sala': 'Sala 1', 'TQ/N°': '1', Sexo: 'Hembras', Lote: 'QA', 'V.Totales UFC': '20000', 'V.alginolyticus UFC': '8000' }),
+  MIC5('16/09/2026', { 'Módulo/Sala': 'Sala 2', 'TQ/N°': '16', Sexo: 'Machos', 'V.Totales UFC': '500', 'V.alginolyticus UFC': '0' }),
+  MIC5('14/09/2026', { 'TQ/N°': 'Piscina 556', Sexo: 'Hembras', 'V.Totales UFC': '500' }),
+  MIC5('10/07/2026', { 'Módulo/Sala': 'Sala 1', Sexo: 'Hembras', Lote: MALO_Q5, 'V.Totales UFC': '200000' }),
+  { ...ING('01/08/2026', 'QA', 'Sala 3', 30, 1, 1), 'Piscina Broodstock': '557' },
+];
+const modalLab = () => root.querySelector('.mop-lab.sv-open');
+const abrirMicro = () => click(root.querySelector('[data-mop-lab="micro"]'));
+const selLab = (d) => modalLab().querySelector(`[data-mop-labf="${d}"]`);
+const kpiRep = () => modalLab().querySelector('.mop-lab-kpi').textContent;
+const micPat = () => { const l = makeChart.mock.calls.filter(([id]) => id === 'mopMicPat'); return l.length ? l[l.length - 1][1] : null; };
+describe('Maduración · operativo · 🦠 la ventana de Microbiología con sus filtros y sus cantidades (0q·5a)', () => {
+  it('🔴 su barra de filtros —Mes, Lote, Sala, Piscina, Sexo— y TODO el registro: la muestra de julio cuenta', async () => {
+    await montar([...PLANTA, ...LAB5]);
+    abrirMicro();
+    expect([...modalLab().querySelectorAll('[data-mop-labf]')].map((s) => s.dataset.mopLabf)).toEqual(['mes', 'lote', 'sala', 'piscina', 'sexo']);
+    expect(kpiRep()).toContain('4 muestras');
+    expect([...selLab('mes').options].map((o) => o.textContent)).toEqual(['Todo el registro', 'julio 2026', 'septiembre 2026']);
+    expect(modalLab().querySelector('.mop-lab-per').textContent).toContain('no los del tablero');
+  });
+
+  it('🔴 empieza con la sala y el sexo del tablero', async () => {
+    await montar([...PLANTA, ...LAB5]);
+    cambiar(filtro('sala'), 'Sala 2');
+    abrirMicro();
+    // ⚠ happy-dom lee mal el `value` de un <select> pintado con innerHTML: se lee la opción marcada.
+    expect(selLab('sala').querySelector('option[selected]').value).toBe('Sala 2');
+    expect(kpiRep()).toContain('1 muestras');
+  });
+
+  it('🔴 el mes recorta, y el foco se queda en su select; «Quitar filtros» vuelve a todo', async () => {
+    await montar([...PLANTA, ...LAB5]);
+    abrirMicro();
+    cambiar(selLab('mes'), '2026-07');
+    expect(kpiRep()).toContain('1 muestras');
+    expect(document.activeElement).toBe(selLab('mes'));
+    click(modalLab().querySelector('[data-mop-labf-limpiar]'));
+    expect(kpiRep()).toContain('4 muestras');
+  });
+
+  it('🔴 la piscina: la de la muestra o la de su lote; en el despacho y el agua no se aplica, y se dice', async () => {
+    await montar([...PLANTA, ...LAB5]);
+    abrirMicro();
+    expect([...selLab('piscina').options].map((o) => o.value)).toEqual(['', 'Piscina 556', 'Piscina 557']);
+    cambiar(selLab('piscina'), 'Piscina 557');
+    expect(kpiRep()).toContain('1 muestras');          // la de QA, por su ingreso
+    expect(modalLab().querySelectorAll('.mop-lab-bloque')[1].textContent).toContain('No se aplica aquí: piscina');
+    expect(modalLab().querySelectorAll('.mop-lab-bloque')[0].textContent).toContain('no dicen su piscina');
+  });
+
+  it('🔴 un patógeno se ESCOGE (su fila) y dibuja sus cantidades: log, mediana semanal, umbrales y el «0»', async () => {
+    await montar([...PLANTA, ...LAB5]);
+    abrirMicro();
+    const fila = modalLab().querySelector('[data-mop-micpat="algino"]');
+    expect(fila.getAttribute('role')).toBe('button');
+    click(fila);
+    expect(modalLab().querySelector('[data-mop-micpat="algino"]').getAttribute('aria-pressed')).toBe('true');
+    expect(document.activeElement).toBe(modalLab().querySelector('[data-mop-micpat="algino"]'));
+    expect(modalLab().querySelector('.mop-micpat-graf h5').textContent).toContain('V. alginolyticus');
+    const cfg = micPat();
+    expect(cfg.type).toBe('scatter');
+    expect(cfg.options.scales.y.type).toBe('logarithmic');
+    expect(cfg.data.datasets.map((d) => d.label)).toEqual(['Muestras', 'Mediana semanal', 'Moderado', 'Elevado']);
+    const [mu, me, mo, el] = cfg.data.datasets;
+    expect(mu.data.map((p) => [p.ufc, p.y])).toEqual([[8000, 8000], [0, 1]]);
+    expect(cfg.options.scales.y.ticks.callback(1)).toBe('0');
+    expect(cfg.options.scales.y.ticks.callback(1000)).toBe('1.000');
+    expect(cfg.options.scales.y.ticks.callback(2000)).toBe('');
+    expect(me.data).toHaveLength(1);
+    expect([mo.data[0].y, el.data[0].y]).toEqual([3000, 5000]);
+    const lab = cfg.options.plugins.tooltip.callbacks.label;
+    expect(lab({ dataset: mu, raw: mu.data[1] })).toBe('0 UFC · Mínimo');
+    expect(lab({ dataset: me, raw: me.data[0] })).toBe('mediana 4.000 UFC · 2 muestra(s)');
+    // La leyenda de «Muestras» en gris neutro (sus puntos van del color de su nivel: el primero no la representa).
+    const ley = cfg.options.plugins.legend.labels.generateLabels({ data: cfg.data, isDatasetVisible: (i) => i !== 3 });
+    expect(ley.map((x) => [x.text, x.fillStyle, x.hidden, x.datasetIndex])).toEqual([
+      ['Muestras (color de su nivel)', '#90a4ae', false, 0], ['Mediana semanal', me.backgroundColor, false, 1], ['Moderado', mo.backgroundColor, false, 2], ['Elevado', el.backgroundColor, true, 3]]);
+    expect(ley.every((x) => x.fontColor === cfg.options.plugins.legend.labels.color), 'el texto de la leyenda sigue al tema (visto en Chrome, oscuro)').toBe(true);
+  });
+
+  it('🔴 con el teclado (Intro) también se escoge; y por defecto va el primero de la tabla', async () => {
+    await montar([...PLANTA, ...LAB5]);
+    abrirMicro();
+    const primero = modalLab().querySelector('.mop-lab-pat tbody tr');
+    expect(primero.getAttribute('aria-pressed')).toBe('true');
+    const otro = [...modalLab().querySelectorAll('[data-mop-micpat]')].find((r) => r !== primero);
+    otro.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(modalLab().querySelector(`[data-mop-micpat="${otro.dataset.mopMicpat}"]`).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('🔑 lo que viene del Sheet sale ESCAPADO también en los filtros', async () => {
+    await montar([...PLANTA, ...LAB5]);
+    abrirMicro();
+    expect(modalLab().querySelector('img')).toBeNull();
+    // El lote llega normalizado (sin espacios, en mayúsculas): su valor tiene que llegar ENTERO a la opción.
+    const malo = MALO_Q5.toUpperCase().replace(/\s+/g, '');
+    expect([...selLab('lote').options].map((o) => o.value)).toContain(malo);
+    expect([...selLab('lote').options].map((o) => o.textContent)).toContain(malo);
+  });
+
+  it('🔑 con «reducir movimiento», el gráfico de cantidades no se anima', async () => {
+    const mm = vi.spyOn(window, 'matchMedia').mockImplementation((q) => ({ matches: /reduce/.test(q), media: q, addEventListener() {}, removeEventListener() {} }));
+    try {
+      await montar([...PLANTA, ...LAB5]);
+      abrirMicro();
+      expect(micPat().options.animation).toBe(false);
+    } finally { mm.mockRestore(); }
   });
 });

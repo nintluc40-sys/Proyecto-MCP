@@ -8,6 +8,7 @@
    ============================================================ */
 import { describe, it, expect } from 'vitest';
 import { resumenMicro, resumenBiomol, tipoDeDespacho, filtroDelTablero, esReproductor, BIOMOL_PATOGENOS } from './operativo.laboratorio.js';
+import { nombrePiscina, piscinasDeLotes, filtroDeLaVentana, resumenMicroDeLaVentana, serieDePatogeno, umbralDe, opcionesDeLaVentana } from './operativo.laboratorio.js';   // 0q·5
 import { normalizarFiltro } from './operativo.tablero.js';
 import { CAL_RANGE_BASE } from '../microbiologia/calagua.data.js';
 import { normalizeRows } from '../biomolecular/index.js';
@@ -178,5 +179,90 @@ describe('Maduración · laboratorio · 🧬 Biomol · reproductores', () => {
     expect(resumenBiomol(FILAS_BIO, P, F({ sala: 'Sala 3', tanque: '23' })).muestras).toBe(1);
     expect(resumenBiomol(FILAS_BIO, P, F({ sexo: 'machos' })).muestras).toBe(1);
     expect(resumenBiomol(FILAS_BIO, P, F({ lote: 'QA' })).ignora).toEqual(['lote']);
+  });
+});
+
+/* ============================================================
+   0q·5a (2026-09-27, usuario) · 🦠 la ventana con sus PROPIOS filtros y las CANTIDADES de cada patógeno
+
+   Decisiones del usuario: la ventana tiene sus filtros —Mes, Lote, Sala, Piscina y Sexo— sobre TODO el registro (ya no el
+   período del tablero); la PISCINA de una muestra es la que dice («Piscina 556» en TQ/N°) o, si no, la de su lote en la
+   hoja de Ingresos; y al escoger un patógeno, sus UFC muestra a muestra, la mediana semanal y los umbrales de su área.
+   ============================================================ */
+describe('Maduración · laboratorio · 0q·5a · la ventana y las cantidades', () => {
+  const MAPA = piscinasDeLotes([{ Lote: 'qa', 'Piscina Broodstock': '557' }, { Lote: 'QA', 'Piscina Broodstock': 'P555' }, { Lote: 'QB', 'Piscina Broodstock': '' }]);
+  const ventana = (fi) => resumenMicroDeLaVentana(FILAS, fi, CAL_RANGE_BASE, MAPA);
+
+  it('🔴 el nombre de una piscina, escriba como se escriba', () => {
+    expect(['Piscina 557', '557', 'P557', ' piscina  0557 '].map(nombrePiscina)).toEqual(['Piscina 557', 'Piscina 557', 'Piscina 557', 'Piscina 557']);
+    expect(nombrePiscina('')).toBe('');
+    expect(nombrePiscina('Chongón')).toBe('');
+  });
+
+  it('🔴 las piscinas de cada lote, de Ingresos (un lote puede venir de varias)', () => {
+    expect([...MAPA.get('QA')].sort()).toEqual(['Piscina 555', 'Piscina 557']);
+    expect(MAPA.has('QB')).toBe(false);
+  });
+
+  it('🔴 el mes da el período; sin mes, todo el registro; el lote se normaliza', () => {
+    expect(filtroDeLaVentana({ mes: '2026-09' }).periodo).toEqual({ desde: '2026-09-01', hasta: '2026-09-30' });
+    expect(filtroDeLaVentana({ mes: '2026-02' }).periodo.hasta).toBe('2026-02-28');
+    const t = filtroDeLaVentana({}).periodo;
+    expect(t.desde <= '1900-01-01' && t.hasta >= '2999-12-31').toBe(true);
+    expect(filtroDeLaVentana({ lote: ' qa ', sala: 'Sala 2', sexo: 'Hembras' }).F).toMatchObject({ lote: 'QA', sala: 'Sala 2', sexo: 'Hembras', tanque: null });
+  });
+
+  it('🔴 sin filtros, TODO el registro: la muestra de julio entra', () => {
+    expect(ventana({}).reproductores.muestras).toBe(6);
+    expect(ventana({ mes: '2026-09' }).reproductores.muestras).toBe(5);
+    expect(ventana({ mes: '2026-07' }).reproductores.muestras).toBe(1);
+  });
+
+  it('🔴 la piscina: la que dice la muestra, o la de su lote; la que no tiene ninguna queda fuera y se cuenta', () => {
+    expect(ventana({ piscina: 'Piscina 556' }).reproductores.muestras).toBe(1);    // la del TQ/N° «Piscina 556»
+    expect(ventana({ piscina: 'Piscina 557' }).reproductores.muestras).toBe(1);    // la de QA, por Ingresos
+    expect(ventana({ piscina: 'Piscina 555' }).reproductores.muestras).toBe(1);    // QA viene de dos: cuenta en las dos
+    expect(ventana({ piscina: 'Piscina 557' }).reproductores.sinDato.piscina).toBe(4);
+    const r = ventana({ piscina: 'Piscina 557' });
+    expect(r.desinfeccion.ignora).toContain('piscina');
+    expect(r.agua.ignora).toContain('piscina');
+    expect(r.agua.calidad.ignora).toContain('piscina');
+    expect(r.desinfeccion.muestras, 'la piscina no se aplica al despacho: no lo recorta').toBe(ventana({}).desinfeccion.muestras);
+  });
+
+  it('🔴 cada muestra de reproductores deja sus mediciones para el gráfico', () => {
+    const r = ventana({});
+    expect(r.reproductores.medidas).toHaveLength(6);
+    expect(r.reproductores.medidas.find((m) => m.fecha === '2026-09-15').med.find((x) => x.key === 'totales').ufc).toBe(20000);
+  });
+
+  it('🔴 la serie de un patógeno: los puntos por fecha, la MEDIANA de cada semana, el máximo, las alertas y lo que no trae cifra', () => {
+    const medidas = [
+      { fecha: '2026-09-15', med: [{ key: 'k', ufc: 20000, nivel: 'Moderado' }] },
+      { fecha: '2026-09-16', med: [{ key: 'k', ufc: 500, nivel: 'Mínimo' }] },
+      { fecha: '2026-09-08', med: [{ key: 'k', ufc: 0, nivel: 'Mínimo' }, { key: 'j', ufc: 7, nivel: 'Mínimo' }] },
+      { fecha: '2026-09-17', med: [{ key: 'k', ufc: null, nivel: 'Elevado' }] },
+      { fecha: '2026-09-18', med: [{ key: 'k', ufc: 900, nivel: 'Mínimo' }] },
+    ];
+    const s = serieDePatogeno(medidas, 'k');
+    expect(s.puntos.map((p) => [p.fecha, p.ufc])).toEqual([['2026-09-08', 0], ['2026-09-15', 20000], ['2026-09-16', 500], ['2026-09-18', 900]]);
+    expect(s.semanas).toEqual([{ lunes: '2026-09-07', mediana: 0, n: 1 }, { lunes: '2026-09-14', mediana: 900, n: 3 }]);
+    expect([s.muestras, s.mediana, s.maximo, s.alerta, s.sinCifra]).toEqual([4, 700, 20000, 1, 1]);
+  });
+
+  it('🔴 los umbrales del área (los de la vista de Microbiología)', () => {
+    expect(umbralDe('mad-reprod', 'totales')).toMatchObject({ m: 10000, e: 100000 });
+    expect(umbralDe('mad-reprod', 'noexiste')).toBeNull();
+  });
+
+  it('🔴 las opciones de cada filtro salen de los datos de Maduración (no de otro departamento)', () => {
+    // Una muestra de Larvicultura con SU mes, sala, lote y sexo: si se colara, saldrían en las opciones.
+    const larv = { ...MIC('05/05/2026', 'Larvicultura · Muestra', { 'Módulo/Sala': 'Sala 9', Lote: 'ZZ', Sexo: 'Otro', 'V.Totales UFC': '5' }), Departamento: 'Larvicultura' };
+    const o = opcionesDeLaVentana([...FILAS, larv], MAPA);
+    expect(o.meses).toEqual(['2026-07', '2026-09']);
+    expect(o.salas).toEqual(['Sala 2', 'Sala 3']);
+    expect(o.lotes).toEqual(['QA']);
+    expect(o.sexos).toEqual(['Hembras', 'Machos']);
+    expect(o.piscinas).toEqual(['Piscina 555', 'Piscina 556', 'Piscina 557']);
   });
 });

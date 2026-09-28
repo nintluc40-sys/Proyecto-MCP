@@ -16,6 +16,7 @@
    `normalizeRows`). Módulo puro: la vista le da las filas y los rangos.
    ============================================================ */
 import { rowContext, meltRow, isMicroRow, isAlerta, NIVEL_RANK, NIVELES, deptoOfFormato, FORMATO_LABEL } from '../microbiologia/data.js';
+import { loadMicThresholds, PATHOGEN_BY_KEY } from '../microbiologia/data.js';   // 0q·5a
 import { isCalAguaRow, calCtx, calMeasured, calWQI } from '../microbiologia/calagua.data.js';
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 
@@ -151,6 +152,8 @@ export function resumenMicro(filas, periodo, F, rangosCal) {
     porSala: agrupa(rep, (m) => m.lugar).map((x) => ({ ...x, fueraDeSalas: !esSala(x.clave) && x.clave !== '(sin dato)' }))
       .sort((a, b) => (esSala(b.clave) - esSala(a.clave)) || ((a.clave === '(sin dato)') - (b.clave === '(sin dato)')) || porNombre(a.clave, b.clave)),
     porSexo: agrupa(rep, (m) => m.sexo),
+    // 0q·5a · las mediciones de cada muestra, para el gráfico de CANTIDADES del patógeno elegido.
+    medidas: rep.map((m) => ({ fecha: m.fecha, med: m.med })),
     ultimas: recientes(rep, 10).map((m) => ({ fecha: m.fecha, lugar: m.lugar, tanque: m.tanque, sexo: m.sexo, peor: m.peor,
       enAlerta: m.med.filter((x) => isAlerta(x.nivel)).map((x) => x.label) })),
   };
@@ -201,6 +204,118 @@ export function resumenMicro(filas, periodo, F, rangosCal) {
       .sort((a, b) => porNombre(a.grupo, b.grupo)),
   };
   return { reproductores, desinfeccion, agua: { ignora: bloqueAgua.ignora, sinDato: bloqueAgua.sinDato, micro, calidad } };
+}
+
+/* ── 0q·5a (2026-09-27, usuario) · LA VENTANA CON SUS PROPIOS FILTROS y LAS CANTIDADES DE CADA PATÓGENO ───────────
+   La ventana de Microbiología deja de seguir al tablero: tiene sus filtros —Mes, Lote, Sala, Piscina, Sexo— sobre TODO el
+   registro. La PISCINA de una muestra es la que dice («Piscina 556» en TQ/N°: tomada antes del ingreso) o, si no, la de
+   su lote en la hoja de Ingresos («Piscina Broodstock»; un lote de varias piscinas cuenta en cada una). Sólo la tienen
+   los reproductores: en el despacho y en el agua no se aplica, y se dice. */
+/** «Piscina 557», «557», «P557» → «Piscina 557»; lo que no tiene número (un lugar como «Chongón»), vacío. */
+export const nombrePiscina = (v) => { const m = /(\d+)/.exec(txt(v)); return m ? 'Piscina ' + Number(m[1]) : ''; };
+/** Lote (normalizado) → sus piscinas de origen, de las filas de Ingresos. */
+export function piscinasDeLotes(ingresos) {
+  const m = new Map();
+  for (const r of ingresos || []) {
+    const l = normLote(r.Lote);
+    const p = nombrePiscina(r['Piscina Broodstock']);
+    if (!l || !p) continue;
+    if (!m.has(l)) m.set(l, new Set());
+    m.get(l).add(p);
+  }
+  return m;
+}
+/** Las piscinas de una muestra: la que dice, o las de su lote. */
+function piscinasDeMuestra(m, mapa) {
+  const propia = /piscina/i.test(txt(m.ctx.tq)) ? nombrePiscina(m.ctx.tq) : '';
+  if (propia) return [propia];
+  return [...((mapa && mapa.get(normLote(m.lote))) || [])];
+}
+/** El período y el filtro que `resumenMicro` entiende, desde los filtros de la ventana `fi` ({ mes, lote, sala, piscina, sexo }). */
+export function filtroDeLaVentana(fi) {
+  const f = fi || {};
+  const mes = /^\d{4}-\d{2}$/.test(txt(f.mes)) ? txt(f.mes) : '';
+  const periodo = mes
+    ? { desde: mes + '-01', hasta: mes + '-' + pad2(new Date(Date.UTC(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0)).getUTCDate()) }
+    : { desde: '0000-01-01', hasta: '9999-12-31' };
+  const F = { sala: txt(f.sala), tanque: null, sexo: txt(f.sexo), lote: txt(f.lote) ? normLote(f.lote) : '', codigo: '', estado: '', piscina: '', camaronera: '' };
+  return { periodo, F };
+}
+/** Los tres bloques de la ventana (`resumenMicro`) con SUS filtros; la piscina, sólo en ① reproductores. */
+export function resumenMicroDeLaVentana(filas, fi, rangosCal, mapa) {
+  const { periodo, F } = filtroDeLaVentana(fi);
+  const piscina = nombrePiscina((fi || {}).piscina);
+  let sinPiscina = 0;
+  const deReproductores = (m) => m.ctx.formatoKey === 'mad-principal' && esMaduracion(m.ctx.departamento, m.ctx.formatoKey);
+  const filasP = !piscina ? filas || [] : (filas || []).filter((row) => {
+    if (!isMicroRow(row)) return true;
+    const m = muestraMicro(row);
+    if (!deReproductores(m)) return true;
+    const ps = piscinasDeMuestra(m, mapa);
+    if (!ps.length) { if (enPeriodo(m.fecha, periodo)) sinPiscina++; return false; }
+    return ps.includes(piscina);
+  });
+  const r = resumenMicro(filasP, periodo, F, rangosCal);
+  if (piscina) {
+    if (sinPiscina) r.reproductores.sinDato = { ...r.reproductores.sinDato, piscina: sinPiscina };
+    for (const b of [r.desinfeccion, r.agua, r.agua.calidad]) b.ignora = [...b.ignora, 'piscina'];
+  }
+  return r;
+}
+/** Lo que se puede elegir en cada filtro de la ventana: lo que traen las muestras de Maduración (y su calidad de agua). */
+export function opcionesDeLaVentana(filas, mapa) {
+  const meses = new Set(); const salas = new Set(); const lotes = new Set(); const sexos = new Set(); const piscinas = new Set();
+  for (const row of filas || []) {
+    if (isMicroRow(row)) {
+      const m = muestraMicro(row);
+      if (!esMaduracion(m.ctx.departamento, m.ctx.formatoKey)) continue;
+      if (m.fecha) meses.add(m.fecha.slice(0, 7));
+      if (txt(m.sala)) salas.add(txt(m.sala));
+      if (txt(m.lote)) lotes.add(normLote(m.lote));
+      if (txt(m.sexo)) sexos.add(txt(m.sexo));
+      if (m.ctx.formatoKey === 'mad-principal') for (const p of piscinasDeMuestra(m, mapa)) piscinas.add(p);
+    } else if (isCalAguaRow(row)) {
+      const c = calCtx(row);
+      if (!esMaduracion(c.depto, '')) continue;
+      const f = isoDe(c.fecha);
+      if (f) meses.add(f.slice(0, 7));
+      if (txt(c.sala)) salas.add(txt(c.sala));
+    }
+  }
+  const orden = (xs) => [...xs].sort(porNombre);
+  return { meses: [...meses].sort(), salas: orden(salas), lotes: orden(lotes), sexos: orden(sexos), piscinas: orden(piscinas) };
+}
+/**
+ * Las CANTIDADES de un patógeno en las muestras `medidas` ({ fecha, med }): cada UFC con su fecha, la MEDIANA de cada
+ * semana (lunes a domingo), y la mediana, el máximo y las alertas de todas. Una medición sin cifra de UFC (sólo el nivel
+ * que escribió la hoja) no se puede dibujar: se cuenta en `sinCifra`.
+ */
+export function serieDePatogeno(medidas, key) {
+  const puntos = [];
+  let sinCifra = 0;
+  for (const m of medidas || []) {
+    for (const x of m.med || []) {
+      if (x.key !== key) continue;
+      if (x.ufc === null || x.ufc === undefined) { sinCifra++; continue; }
+      puntos.push({ fecha: m.fecha, ufc: x.ufc, nivel: x.nivel || '' });
+    }
+  }
+  puntos.sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
+  const porSemana = new Map();
+  for (const p of puntos) { const s = lunesDe(p.fecha); if (!porSemana.has(s)) porSemana.set(s, []); porSemana.get(s).push(p.ufc); }
+  const semanas = [...porSemana].map(([lunes, v]) => ({ lunes, mediana: mediana(v), n: v.length }));
+  const ufcs = puntos.map((p) => p.ufc);
+  return {
+    key, puntos, semanas, sinCifra,
+    muestras: puntos.length, mediana: mediana(ufcs), maximo: ufcs.length ? Math.max(...ufcs) : null,
+    alerta: puntos.filter((p) => isAlerta(p.nivel)).length,
+  };
+}
+/** Los umbrales { l, m, e } (desde Leve, Moderado y Elevado) de un patógeno en un área: los de la vista de Microbiología. */
+export function umbralDe(area, key) {
+  const p = PATHOGEN_BY_KEY[key];
+  const u = p && (loadMicThresholds()[area] || {})[p.fkey];
+  return u ? { ...u } : null;
 }
 
 /* ── 🧬 BIOMOL · REPRODUCTORES ────────────────────────────────────────────────────────────────────────────────── */

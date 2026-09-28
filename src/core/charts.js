@@ -8,6 +8,7 @@ import {
   DoughnutController, ArcElement,
   Tooltip, Legend, Filler,
 } from 'chart.js';
+import { LogarithmicScale } from 'chart.js';   // 0q·5a
 
 Chart.register(
   LineController, LineElement, PointElement, BarController, BarElement,
@@ -34,6 +35,9 @@ Tooltip.positioners.arribaJunto = function arribaJunto(items) {
   const ancho = this.width || 0, alto = this.height || 60;
   return { x, y: area.top + alto / 2, xAlign: x + 8 + ancho <= area.right ? 'left' : 'right', yAlign: 'center' };
 };
+
+/* 0q·5a (2026-09-27, usuario) · la escala LOGARÍTMICA, para las UFC de Microbiología (de 0 a cientos de miles). */
+Chart.register(LogarithmicScale);
 
 const registry = new Set();
 
