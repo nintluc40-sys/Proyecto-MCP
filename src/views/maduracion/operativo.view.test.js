@@ -2000,11 +2000,12 @@ describe('Maduración · operativo · los gráficos se leen', () => {
     expect(makeChart.mock.calls.some(([id]) => id === 'mopTanqueCurva')).toBe(true);
   });
 
-  it('0q·5a/5b · la ventana de Microbiología dibuja las cantidades del patógeno (① y ③)', async () => {
-    await montar([...PLANTA, ...LAB5, ...AGUA5]);
+  it('0q·5a/5b/5c · la ventana de Microbiología dibuja sus tres gráficos (①, ③ micro y ③ calidad)', async () => {
+    await montar([...PLANTA, ...LAB5, ...AGUA5, ...CAL5]);
     click(root.querySelector('[data-mop-lab="micro"]'));
     expect(makeChart.mock.calls.some(([id]) => id === 'mopMicPat')).toBe(true);
     expect(makeChart.mock.calls.some(([id]) => id === 'mopAguaPat')).toBe(true);
+    expect(makeChart.mock.calls.some(([id]) => id === 'mopCalPar')).toBe(true);
   });
 
   it('0q·3 · el reparto de un lote por destino dibuja su gráfico', async () => {
@@ -2022,9 +2023,9 @@ describe('Maduración · operativo · los gráficos se leen', () => {
     expect(makeChart.mock.calls.filter(([id]) => id === 'mopKpiCurva').length).toBeGreaterThanOrEqual(7);
   });
 
-  it('🔴 los once gráficos, y todos con ejes a 12 px en un color que no es el gris claro; títulos a 11 px; leyenda a 12 px', () => {
+  it('🔴 los doce gráficos, y todos con ejes a 12 px en un color que no es el gris claro; títulos a 11 px; leyenda a 12 px', () => {
     const ids = [...new Set(GRAFICOS.map((g) => g.id))].sort();
-    expect(ids).toEqual(['mopAguaPat', 'mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMicPat', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
+    expect(ids).toEqual(['mopAguaPat', 'mopCalPar', 'mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMicPat', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
     for (const { id, cfg } of GRAFICOS) {
       for (const [eje, sc] of Object.entries(cfg.options.scales || {})) {
         expect(sc.ticks.font.size, `${id}.${eje}`).toBeGreaterThanOrEqual(12);
@@ -2076,12 +2077,12 @@ describe('Maduración · operativo · los gráficos se leen', () => {
    desliza en 120 ms; el dibujo al abrir o filtrar, 400 ms; y nada con «reducir movimiento».
    ============================================================ */
 describe('Maduración · operativo · los gráficos se mueven bien', () => {
-  it('🔴 los once: globo arriba junto a la raya del día (menos los de dispersión), sin transición al pasar, globo en ≤ 150 ms, dibujo en ≤ 400 ms', () => {
+  it('🔴 los doce: globo arriba junto a la raya del día (menos los de dispersión), sin transición al pasar, globo en ≤ 150 ms, dibujo en ≤ 400 ms', () => {
     const ids = [...new Set(GRAFICOS.map((g) => g.id))].sort();
-    expect(ids).toEqual(['mopAguaPat', 'mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMicPat', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
+    expect(ids).toEqual(['mopAguaPat', 'mopCalPar', 'mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMicPat', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
     for (const { id, cfg } of GRAFICOS) {
       const o = cfg.options;
-      if (id === 'mopMicPat' || id === 'mopAguaPat') {   // 0q·5a/5b · dispersión: el punto más cercano, sin raya ni globo arriba (su eje no es de días)
+      if (id === 'mopMicPat' || id === 'mopAguaPat' || id === 'mopCalPar') {   // 0q·5a/5b/5c · dispersión: el punto más cercano, sin raya ni globo arriba (su eje no es de días)
         expect(o.interaction, id).toEqual({ mode: 'nearest', intersect: true });
         expect(o.transitions.active.animation.duration, id).toBe(0);
         expect(o.animation.duration, id).toBeLessThanOrEqual(400);
@@ -2596,5 +2597,75 @@ describe('Maduración · operativo · 🦠 ③ Agua y RAS: las cantidades por fo
     cambiar(selLab('mes'), '2026-07');
     expect(cantAgua()).toBeNull();
     expect(makeChart.mock.calls.filter(([id]) => id === 'mopAguaPat').length).toBeGreaterThan(0);   // (antes, con septiembre, sí se dibujó)
+  });
+});
+
+/* ============================================================
+   0q·5c (2026-09-27, usuario) · 🦠 ③ Calidad de agua: los VALORES de un parámetro, su rango y su tendencia semanal
+
+   Al escoger un parámetro (su fila; primero el que más sale de rango), sus valores (verde dentro, rojo fuera, gris sin
+   rango), la mediana semanal y las rayas del mínimo y el máximo; y un Grupo, «Todos» por defecto (el rango es el mismo
+   para todos). Las cuentas, en operativo.laboratorio.test.js.
+   ============================================================ */
+const CALQ = (fecha, extra) => ({ _SheetOrigin: 'Calidad de Agua', 'Fecha muestreo': fecha, Departamento: 'Maduración', ...extra });
+const CAL5 = [
+  CALQ('10/09/2026', { Formato: 'Maduración · RAS', Componente: 'Colector', pH: '9', Alcalinidad: '130' }),
+  CALQ('12/09/2026', { Formato: 'Maduración · RAS', Componente: 'Colector', pH: '8', Alcalinidad: '135', Nitrito: '0.1' }),
+  CALQ('14/09/2026', { Formato: 'Maduración · Agua', Sala: 'Sala 2', pH: '7', Alcalinidad: '100' }),
+  CALQ('15/09/2026', { Formato: 'Maduración · RAS', Componente: 'Salida UV', Alcalinidad: '140', 'S‰': '32', Nitrito: '0' }),
+];
+const calPar = () => modalLab().querySelector('.mop-cal-par');
+const grafCal = () => { const l = makeChart.mock.calls.filter(([id]) => id === 'mopCalPar'); return l.length ? l[l.length - 1][1] : null; };
+const etiquetas = (cfg) => cfg.data.datasets.map((d) => d.label);
+describe('Maduración · operativo · 🦠 ③ calidad de agua por parámetro (0q·5c)', () => {
+  it('🔴 la tabla de parámetros (el que más sale de rango primero) y su gráfico: valores, mediana semanal y las dos rayas del rango', async () => {
+    await montar([...PLANTA, ...CAL5]);
+    abrirMicro();
+    expect([...calPar().querySelectorAll('[data-mop-calpar]')].map((r) => r.dataset.mopCalpar)).toEqual(['ph', 'alc', 'nitrito', 'sal']);
+    expect(calPar().querySelector('[data-mop-calpar="ph"]').getAttribute('aria-pressed')).toBe('true');
+    expect(calPar().querySelector('[data-mop-calpar="sal"]').textContent).toContain('sin rango');
+    expect(calPar().querySelector('.mop-lab-kpi').textContent.replace(/\s+/g, ' ')).toContain('3 muestras · mediana 8 · de 7 a 9 · 2 fuera de rango');
+    const cfg = grafCal();
+    expect(cfg.options.scales.y.type || 'linear').toBe('linear');
+    expect(etiquetas(cfg)).toEqual(['Muestras', 'Mediana semanal', 'Mínimo', 'Máximo']);
+    const [mu, , mi, ma] = cfg.data.datasets;
+    expect([mi.data[0].y, ma.data[0].y]).toEqual([7.5, 8.5]);
+    // El eje abarca los valores y el rango, con un 5 % de margen: de 7 a 9 → 6,9 a 9,1.
+    expect([cfg.options.scales.y.min, cfg.options.scales.y.max].map((v) => Math.round(v * 100) / 100)).toEqual([6.9, 9.1]);
+    expect(mu.data.map((p) => p.y)).toEqual([9, 8, 7]);
+    expect(mu.pointBackgroundColor).toEqual(['#e8303e', '#1ec86a', '#e8303e']);
+    expect(cfg.options.plugins.tooltip.callbacks.label({ dataset: mu, raw: mu.data[0] })).toBe('9 · FUERA del rango');
+  });
+
+  it('🔴 un parámetro con un solo límite dibuja sólo esa raya; y el foco se queda en su fila', async () => {
+    await montar([...PLANTA, ...CAL5]);
+    abrirMicro();
+    click(calPar().querySelector('[data-mop-calpar="nitrito"]'));
+    expect(document.activeElement).toBe(calPar().querySelector('[data-mop-calpar="nitrito"]'));
+    expect(etiquetas(grafCal())).toEqual(['Muestras', 'Mediana semanal', 'Máximo']);
+    // Visto en Chrome (TAN): el margen del eje no baja de 0 si ningún valor es negativo.
+    expect(grafCal().options.scales.y.min).toBe(0);
+  });
+
+  it('🔴 sin rango: puntos grises, sin rayas, y la leyenda lo dice', async () => {
+    await montar([...PLANTA, ...CAL5]);
+    abrirMicro();
+    click(calPar().querySelector('[data-mop-calpar="sal"]'));
+    const cfg = grafCal();
+    expect(etiquetas(cfg)).toEqual(['Muestras', 'Mediana semanal']);
+    expect(cfg.data.datasets[0].pointBackgroundColor).toEqual(['#90a4ae']);
+    const ley = cfg.options.plugins.legend.labels.generateLabels({ data: cfg.data, isDatasetVisible: () => true });
+    expect(ley[0].text).toBe('Muestras (sin rango)');
+  });
+
+  it('🔴 el Grupo recorta la tabla y el gráfico, y el foco se queda en su select; con el teclado también se escoge', async () => {
+    await montar([...PLANTA, ...CAL5]);
+    abrirMicro();
+    expect([...calPar().querySelector('[data-mop-calgrupo]').options].map((o) => o.value)).toEqual(['', 'Colector', 'Sala 2', 'Salida UV']);
+    cambiar(calPar().querySelector('[data-mop-calgrupo]'), 'Colector');
+    expect(document.activeElement).toBe(calPar().querySelector('[data-mop-calgrupo]'));
+    expect(calPar().querySelector('[data-mop-calpar="ph"]').cells[1].textContent).toBe('2');
+    calPar().querySelector('[data-mop-calpar="alc"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(calPar().querySelector('[data-mop-calpar="alc"]').getAttribute('aria-pressed')).toBe('true');
   });
 });

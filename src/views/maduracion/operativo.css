@@ -328,6 +328,8 @@
 .mop-agua-cant { margin: 12px 0 6px; }
 .mop-agua-fmts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
 .mop-agua-comp { max-width: 280px; margin: 0 0 8px; }
+/* 0q·5c · ③ calidad de agua por parámetro. */
+.mop-cal-par { margin: 12px 0 6px; }
 @media (max-width: 700px) {
   .mop-lab-b { margin-left: 0; }
   .mop-lab-2 { grid-template-columns: 1fr; }

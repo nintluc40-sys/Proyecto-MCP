@@ -52,6 +52,7 @@ import { resumenBiomol, BIOMOL_PATOGENOS } from './operativo.laboratorio.js';
 import { piscinasDeLotes, resumenMicroDeLaVentana, opcionesDeLaVentana, serieDePatogeno, umbralDe } from './operativo.laboratorio.js';   // 0q·5a
 import { areaForFormat } from '../microbiologia/data.js';   // 0q·5a
 import { formatosDelAgua, patogenosDeMedidas, umbralDelFormato } from './operativo.laboratorio.js';   // 0q·5b
+import { parametrosDeMedidas, serieDeParametro, rangoDe } from './operativo.laboratorio.js';   // 0q·5c
 import { NIVEL_COLOR } from '../microbiologia/data.js';
 import { loadCalRanges } from '../microbiologia/calagua.data.js';
 import { microPreseleccion } from '../microbiologia/index.js';
@@ -148,6 +149,8 @@ const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', 
   labF: { mes: '', lote: '', sala: '', piscina: '', sexo: '' }, labPat: '',
   /* 0q·5b · en ③ Agua y RAS: el formato, el componente y el patógeno de su gráfico de cantidades. */
   aguaFmt: '', aguaComp: '', aguaPat: '',
+  /* 0q·5c · en ③ Calidad de agua: el grupo (vacío = todos) y el parámetro de su gráfico. */
+  calGrupo: '', calPar: '',
   /* 0f · 8 · el modal del laboratorio abierto: 'micro' | 'biomol' | ''. Vive la sesión, como lo demás: un refresco de datos no lo cierra. */
   lab: '' };
 /* El estado de la vista vive lo que dura la sesión: al volver a Maduración, o al refrescarse los datos, se conserva. */
@@ -569,7 +572,8 @@ function labMicroHTML() {
     ${C.muestras ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-lab-cal"><thead><tr><th>Calidad de agua · componente</th><th class="r">Muestras</th><th class="r" title="Índice de calidad (0–100), mediana de las muestras">Índice</th><th class="r">Fuera de rango</th><th>Más veces fuera</th><th>Última</th></tr></thead>
       <tbody>${C.porGrupo.map((g) => `<tr><td>${esc(g.grupo)}</td><td class="r">${nf(g.muestras)}</td><td class="r">${g.wqi === null ? '—' : nf(g.wqi)}</td><td class="r">${nf(g.fuera)}</td>
         <td>${esc(g.peores.map((x) => x.label + ' (' + x.n + ')').join(', ') || '—')}</td><td>${esc(dm(g.ultima))}</td></tr>`).join('')}</tbody></table></div>` : `<p class="muted">Sin calidad de agua en ${esc(cuandoLab())}.</p>`}
-    ${labNotas(C)}`;
+    ${labNotas(C)}
+    ${calParHTML(C)}`;
   return `${labFiltrosHTML(op)}
     <section class="mop-lab-bloque"><h4 class="mc-card-h">① Reproductores · hepatopáncreas <span class="mc-h-note">formato «Maduración · Principal»</span></h4>${rep}${labNotas(R)}</section>
     <section class="mop-lab-bloque"><h4 class="mc-card-h">② Desinfección de huevo y nauplio <span class="mc-h-note">formato «Maduración · Despacho»</span></h4>${des}${labNotas(D)}</section>
@@ -643,13 +647,14 @@ function graficoDispersionOp(id, cfg) {
 }
 /** La leyenda del gráfico de cantidades, PROPIA: la de Chart.js pinta cada serie con el color de su PRIMER punto, y los de
  *  «Muestras» van del color de su nivel (salía roja). Aquí, el color de la serie (gris para «Muestras»). */
-const leyendaMicPat = (chart, color) => chart.data.datasets.map((d, i) => ({
-  text: i === 0 ? d.label + ' (color de su nivel)' : d.label, fillStyle: d.backgroundColor,
+const leyendaMicPat = (chart, color, nota = 'color de su nivel') => chart.data.datasets.map((d, i) => ({
+  text: i === 0 ? d.label + ' (' + nota + ')' : d.label, fillStyle: d.backgroundColor,
   strokeStyle: d.borderColor, lineWidth: 1, pointStyle: 'circle', hidden: !chart.isDatasetVisible(i), datasetIndex: i, fontColor: color }));   // fontColor: si falta, el texto no sigue al tema
 /** Las cantidades de ① (reproductores) y de ③ (agua y RAS), si su lienzo está en pantalla. */
 function dibujarMicPat() {
   dibujarCantidades('mopMicPat', _micPat);
   dibujarCantidades('mopAguaPat', _aguaPat);   // 0q·5b
+  dibujarParametro();                            // 0q·5c
 }
 function dibujarCantidades(id, cant) {
   if (!cant || !cant.serie.muestras || !document.getElementById(id)) return;
@@ -718,6 +723,96 @@ function aguaCantHTML(A) {
     : '<p class="muted">Ninguna medición con nivel en este formato con estos filtros.</p>';
   return `<div class="mop-agua-cant"><h5 class="mop-lab-h5">Cantidades por formato <span class="mop-nota">cada formato con sus umbrales</span></h5>
     <div class="mop-agua-fmts" role="group" aria-label="Formato">${pastillas}</div>${compSel}${tabla}${cantidadesHTML(_aguaPat, 'mopAguaPat', fmt.etiqueta)}</div>`;
+}
+
+/* ── 0q·5c (2026-09-27, usuario) · ③ Calidad de agua: los VALORES de un parámetro ─────────────────────────────────
+   Una tabla de parámetros que se escoge (primero el que más sale de rango), un Grupo («Todos» por defecto: el rango
+   es el mismo en todos) y su gráfico: los valores (verde dentro, rojo fuera, gris sin rango), la mediana semanal y
+   las rayas del mínimo y el máximo. Escala lineal, en la unidad del parámetro. */
+let _calPar = null;
+const COLOR_ESTADO_CAL = { dentro: '#1ec86a', fuera: '#e8303e', 'sin-rango': '#90a4ae' };
+const ESTADO_CAL_TXT = { dentro: 'dentro del rango', fuera: 'FUERA del rango', 'sin-rango': 'sin rango' };
+function calParHTML(C) {
+  _calPar = null;
+  if (!C.medidas || !C.medidas.length) return '';
+  const rangos = loadCalRanges();
+  const grupos = [...new Set(C.medidas.map((m) => m.grupo))].sort(porNombre);
+  const grupo = grupos.includes(vOp.calGrupo) ? vOp.calGrupo : '';
+  const med = grupo ? C.medidas.filter((m) => m.grupo === grupo) : C.medidas;
+  const pars = parametrosDeMedidas(med, rangos);
+  const parSel = (pars.find((x) => x.key === vOp.calPar) || pars[0] || {}).key || '';
+  const par = pars.find((x) => x.key === parSel);
+  _calPar = par ? { etiqueta: par.etiqueta, unidad: par.unidad, serie: serieDeParametro(med, par.key), rango: rangoDe(par.key, rangos), rangoTxt: par.rango } : null;
+  const selG = `<label class="mop-labf-c mop-agua-comp">Grupo<select class="mc-select" data-mop-calgrupo><option value="">Todos</option>${grupos.map((g) =>
+    `<option value="${esc(g)}"${g === grupo ? ' selected' : ''}>${esc(g)}</option>`).join('')}</select></label>`;
+  const fila = (x) => `<tr class="mop-micpat${x.key === parSel ? ' is-on' : ''}" role="button" tabindex="0" aria-pressed="${x.key === parSel}" data-mop-calpar="${esc(x.key)}">
+    <td>${esc(x.etiqueta)}${x.unidad ? ` <span class="mop-nota">${esc(x.unidad)}</span>` : ''}</td><td class="r">${nf(x.muestras)}</td>
+    <td class="r">${x.rango ? nf(x.fuera) + ' · ' + pctTxt(x.fuera, x.muestras) : '<span class="muted">sin rango</span>'}</td><td class="r">${esc(x.rango || '—')}</td>
+    <td>${x.rango ? barraPct(pct(x.fuera, x.muestras)) : ''}</td></tr>`;
+  const tabla = `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-lab-pat"><thead><tr><th>Parámetro</th><th class="r">Muestras</th>
+    <th class="r">Fuera de rango</th><th class="r">Rango</th><th></th></tr></thead><tbody>${pars.map(fila).join('')}</tbody></table></div>`;
+  return `<div class="mop-cal-par"><h5 class="mop-lab-h5">Valores por parámetro <span class="mop-nota">el rango es el mismo en todos los grupos</span></h5>
+    ${selG}${tabla}${parametroHTML(_calPar)}</div>`;
+}
+/** El resumen y el lienzo del parámetro escogido. */
+function parametroHTML(d) {
+  if (!d) return '';
+  const s = d.serie;
+  const u = d.unidad ? ' ' + d.unidad : '';
+  const nota = d.rango ? `las líneas discontinuas son el rango (${esc(d.rangoTxt)}${esc(u)}): verde dentro, rojo fuera` : 'este parámetro no tiene rango: sus puntos van en gris';
+  return `<div class="mop-micpat-graf"><h5 class="mop-lab-h5">${esc(d.etiqueta)} · valor de cada muestra y mediana semanal</h5>
+    <p class="mop-lab-kpi"><b>${nf(s.muestras)}</b> muestras · mediana <b>${nf(s.mediana, 2)}</b>${esc(u)} · de <b>${nf(s.minimo, 2)}</b> a <b>${nf(s.maximo, 2)}</b>${d.rango ? ` · <b>${nf(s.fuera)}</b> fuera de rango (${pctTxt(s.fuera, s.muestras)})` : ''}</p>
+    <div class="mc-chart" style="height:260px"><canvas id="mopCalPar"></canvas></div>
+    <p class="mc-note">Cada punto es una muestra; la línea, la mediana de su semana; ${nota}.</p></div>`;
+}
+const diaNum = (iso) => Math.round(Date.parse(iso + 'T12:00:00Z') / 864e5);
+const isoDeDia = (n) => new Date(n * 864e5).toISOString().slice(0, 10);
+function dibujarParametro() {
+  const d = _calPar;
+  if (!d || !d.serie.muestras || !document.getElementById('mopCalPar')) return;
+  const E = ejesOp();
+  const s = d.serie;
+  const u = d.unidad ? ' ' + d.unidad : '';
+  const xs = s.puntos.map((p) => diaNum(p.fecha));
+  const desde = Math.min(...xs) - 1;
+  const hasta = Math.max(...xs) + 1;
+  const raya = (label, v) => ({ label, data: [{ x: desde, y: v }, { x: hasta, y: v }], showLine: true, borderColor: '#e8303e', backgroundColor: '#e8303e',
+    borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 0 });
+  const rg = d.rango;
+  // El eje abarca los valores y el rango con un 5 % de margen, y no baja de 0 si nada es negativo (visto en Chrome: el TAN
+  // llegaba a −5; una concentración no es negativa).
+  const extremos = [...s.puntos.map((p) => p.valor), ...(rg ? [rg.min, rg.max].filter((v) => v !== null) : [])];
+  const bajo = Math.min(...extremos);
+  const alto = Math.max(...extremos);
+  const margen = (alto - bajo) * 0.05 || 1;
+  const yMin = bajo >= 0 && bajo - margen < 0 ? 0 : bajo - margen;
+  const datasets = [
+    { label: 'Muestras', data: s.puntos.map((p) => ({ x: diaNum(p.fecha), y: p.valor, fecha: p.fecha, estado: p.estado })), backgroundColor: '#90a4ae',
+      borderColor: '#546e7a', pointBackgroundColor: s.puntos.map((p) => COLOR_ESTADO_CAL[p.estado] || '#90a4ae'), pointRadius: 3.5, borderWidth: 1 },
+    { label: 'Mediana semanal', data: s.semanas.map((w) => ({ x: diaNum(w.lunes) + 3, y: w.mediana, lunes: w.lunes, n: w.n })), showLine: true, tension: 0,
+      borderColor: E.texto, backgroundColor: E.texto, borderWidth: 2, pointRadius: 3 },
+    ...(rg && rg.min !== null ? [raya('Mínimo', rg.min)] : []),
+    ...(rg && rg.max !== null ? [raya('Máximo', rg.max)] : []),
+  ];
+  const globo = (c) => {
+    const p = c.raw || {};
+    if (c.dataset.label === 'Muestras') return nf(p.y, 2) + u + ' · ' + (ESTADO_CAL_TXT[p.estado] || '');
+    if (c.dataset.label === 'Mediana semanal') return 'mediana ' + nf(p.y, 2) + u + ' · ' + nf(p.n) + ' muestra(s)';
+    return c.dataset.label + ' ' + nf(p.y, 2) + u;
+  };
+  const nota = rg ? 'verde dentro del rango, rojo fuera' : 'sin rango';
+  graficoDispersionOp('mopCalPar', {
+    type: 'scatter',
+    data: { datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: { x: { type: 'linear', min: desde, max: hasta, ticks: { ...E.tick, maxRotation: 0, callback: (v) => dm(isoDeDia(v)) }, grid: { display: false } },
+        y: { min: yMin, max: alto + margen, ticks: E.tick, grid: { color: E.grid }, title: E.titulo(d.etiqueta + (d.unidad ? ' (' + d.unidad + ')' : '')) } },
+      plugins: { legend: { labels: { ...E.leyenda, generateLabels: (chart) => leyendaMicPat(chart, E.texto, nota) } }, tooltip: { callbacks: {
+        title: (items) => { const p = (items[0] && items[0].raw) || {}; return p.fecha ? dma(p.fecha) : p.lunes ? 'Semana del ' + dm(p.lunes) : ''; },
+        label: globo } } },
+    },
+  });
 }
 
 function labBiomolHTML(p, F) {
@@ -2864,6 +2959,8 @@ function bind(root) {
     if (af) { vOp.aguaFmt = af.dataset.mopAguafmt; vOp.aguaComp = ''; vOp.aguaPat = ''; repintarYEnfocar(`[data-mop-aguafmt="${af.dataset.mopAguafmt}"]`); return; }
     const ap = t.closest('[data-mop-aguapat]');
     if (ap) { vOp.aguaPat = ap.dataset.mopAguapat; repintarYEnfocar(`[data-mop-aguapat="${ap.dataset.mopAguapat}"]`); return; }
+    const cp = t.closest('[data-mop-calpar]');   // 0q·5c
+    if (cp) { vOp.calPar = cp.dataset.mopCalpar; repintarYEnfocar(`[data-mop-calpar="${cp.dataset.mopCalpar}"]`); return; }
     if (t.closest('[data-mop-lab-cerrar]') || (t.matches && t.matches('[data-mop-lab-overlay]'))) { vOp.lab = ''; repintar(); return; }
     if (t.closest('[data-mop-lab-abrir-micro]')) {
       vOp.lab = '';
@@ -2932,6 +3029,8 @@ function bind(root) {
     if (mp && e.target === mp) { e.preventDefault(); elegirPatogeno(mp.dataset.mopMicpat); return; }
     const ap = e.target.closest && e.target.closest('[data-mop-aguapat]');   // 0q·5b
     if (ap && e.target === ap) { e.preventDefault(); vOp.aguaPat = ap.dataset.mopAguapat; repintarYEnfocar(`[data-mop-aguapat="${ap.dataset.mopAguapat}"]`); return; }
+    const cp = e.target.closest && e.target.closest('[data-mop-calpar]');   // 0q·5c
+    if (cp && e.target === cp) { e.preventDefault(); vOp.calPar = cp.dataset.mopCalpar; repintarYEnfocar(`[data-mop-calpar="${cp.dataset.mopCalpar}"]`); return; }
     const sala = e.target.closest && e.target.closest('[data-mop-sala]');
     if (sala && e.target === sala) { e.preventDefault(); abrirSala(sala.dataset.mopSala); return; }
     const rl = e.target.closest && e.target.closest('[data-mop-rlote]');
@@ -2950,6 +3049,11 @@ function bind(root) {
 
   root.addEventListener('change', (e) => {
     /* 0q·5a · un filtro de la ventana de Microbiología: se repinta y el foco se queda en su select. */
+    if (e.target.matches && e.target.matches('[data-mop-calgrupo]')) {   // 0q·5c · el grupo de la calidad de agua
+      vOp.calGrupo = e.target.value || '';
+      repintarYEnfocar('[data-mop-calgrupo]');
+      return;
+    }
     if (e.target.matches && e.target.matches('[data-mop-aguacomp]')) {   // 0q·5b · el componente de ③
       vOp.aguaComp = e.target.value || '';
       repintarYEnfocar('[data-mop-aguacomp]');

@@ -19,6 +19,7 @@ import { rowContext, meltRow, isMicroRow, isAlerta, NIVEL_RANK, NIVELES, deptoOf
 import { loadMicThresholds, PATHOGEN_BY_KEY } from '../microbiologia/data.js';   // 0q·5a
 import { areaForFormat } from '../microbiologia/data.js';   // 0q·5b
 import { isCalAguaRow, calCtx, calMeasured, calWQI } from '../microbiologia/calagua.data.js';
+import { calRangeText } from '../microbiologia/calagua.data.js';   // 0q·5c
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 
 const txt = (v) => (v == null ? '' : String(v).trim());
@@ -187,9 +188,11 @@ export function resumenMicro(filas, periodo, F, rangosCal) {
     .filter((m) => esMaduracion(m.c.depto, '') && enPeriodo(m.fecha, periodo)), F, periodo, ['sala', 'tanque']);
   const cal = bloqueCal.muestras;
   const grupos = new Map();
+  const medidasCal = [];   // 0q·5c · las mediciones de cada muestra, con su grupo, para el gráfico de un parámetro
   for (const m of cal) {
     const k = txt(m.c.componente) || txt(m.c.sala) || txt(m.c.formato).replace(/^Maduraci[oó]n\s*·\s*/i, '') || '(sin componente)';
     const med = calMeasured(m.row, rangosCal);
+    medidasCal.push({ fecha: m.fecha, grupo: k, med });
     const g = grupos.get(k) || { grupo: k, muestras: 0, wqis: [], fuera: 0, porParam: new Map(), ultima: '' };
     g.muestras++;
     g.wqis.push(calWQI(med, rangosCal).wqi);
@@ -200,6 +203,7 @@ export function resumenMicro(filas, periodo, F, rangosCal) {
   const calidad = {
     ignora: bloqueCal.ignora, sinDato: bloqueCal.sinDato,
     muestras: cal.length,
+    medidas: medidasCal,
     porGrupo: [...grupos.values()].map((g) => ({ grupo: g.grupo, muestras: g.muestras, wqi: mediana(g.wqis), fuera: g.fuera, ultima: g.ultima,
       peores: [...g.porParam].sort((a, b) => b[1] - a[1] || porNombre(a[0], b[0])).slice(0, 3).map(([label, n]) => ({ label, n })) }))
       .sort((a, b) => porNombre(a.grupo, b.grupo)),
@@ -344,6 +348,52 @@ export function patogenosDeMedidas(medidas) {
   }
   const tasa = (p) => p.alerta / p.analizadas;
   return [...m.values()].sort((a, b) => tasa(b) - tasa(a) || porNombre(a.etiqueta, b.etiqueta));
+}
+/* 0q·5c (2026-09-27, usuario) · ③ CALIDAD DE AGUA POR PARÁMETRO: sus valores, su rango y su tendencia semanal. El rango
+   de un parámetro es el mismo en todos los grupos (componente o sala), así que «Todos» se puede dibujar junto. */
+/** La mediana SIN redondear (un pH de 8,5 no es 9). */
+function medianaExacta(xs) {
+  const v = xs.filter((x) => typeof x === 'number' && isFinite(x)).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const m = Math.floor(v.length / 2);
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+}
+/** El rango de un parámetro ({ min, max }: el que falte, null), o null si no tiene. */
+export function rangoDe(key, rangos) {
+  const x = (rangos || {})[key];
+  if (!x || (x.min == null && x.max == null)) return null;
+  return { min: x.min == null ? null : x.min, max: x.max == null ? null : x.max };
+}
+/** Por parámetro: cuántas muestras y cuántas fuera de rango, y su rango en texto. Primero los que más salen de rango;
+ *  los que no tienen rango (no pueden salir), al final. */
+export function parametrosDeMedidas(medidas, rangos) {
+  const m = new Map();
+  for (const x of medidas || []) {
+    for (const y of x.med || []) {
+      const p = m.get(y.key) || { key: y.key, etiqueta: y.label, unidad: y.unit || '', muestras: 0, fuera: 0, rango: calRangeText(y.key, rangos) };
+      p.muestras++;
+      if (y.estado === 'fuera') p.fuera++;
+      m.set(y.key, p);
+    }
+  }
+  const parte = (p) => (p.rango ? p.fuera / p.muestras : -1);
+  return [...m.values()].sort((a, b) => parte(b) - parte(a) || porNombre(a.etiqueta, b.etiqueta));
+}
+/** Los VALORES de un parámetro en `medidas`: cada uno con su fecha y su estado (dentro, fuera, sin-rango), la mediana de
+ *  cada semana y la mediana, el mínimo, el máximo y cuántos fuera de todos. */
+export function serieDeParametro(medidas, key) {
+  const puntos = [];
+  for (const x of medidas || []) for (const y of x.med || []) if (y.key === key) puntos.push({ fecha: x.fecha, valor: y.value, estado: y.estado });
+  puntos.sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const porSemana = new Map();
+  for (const p of puntos) { const w = lunesDe(p.fecha); if (!porSemana.has(w)) porSemana.set(w, []); porSemana.get(w).push(p.valor); }
+  const valores = puntos.map((p) => p.valor);
+  return {
+    key, puntos, semanas: [...porSemana].map(([lunes, v]) => ({ lunes, mediana: medianaExacta(v), n: v.length })),
+    muestras: puntos.length, mediana: medianaExacta(valores),
+    minimo: valores.length ? Math.min(...valores) : null, maximo: valores.length ? Math.max(...valores) : null,
+    fuera: puntos.filter((p) => p.estado === 'fuera').length,
+  };
 }
 /** Los umbrales de un patógeno en un FORMATO (el área que le toca a ese formato). */
 export const umbralDelFormato = (formato, key) => umbralDe(areaForFormat(formato, ''), key);

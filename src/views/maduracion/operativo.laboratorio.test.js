@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import { resumenMicro, resumenBiomol, tipoDeDespacho, filtroDelTablero, esReproductor, BIOMOL_PATOGENOS } from './operativo.laboratorio.js';
 import { nombrePiscina, piscinasDeLotes, filtroDeLaVentana, resumenMicroDeLaVentana, serieDePatogeno, umbralDe, opcionesDeLaVentana } from './operativo.laboratorio.js';   // 0q·5
 import { formatosDelAgua, patogenosDeMedidas, umbralDelFormato } from './operativo.laboratorio.js';   // 0q·5b
+import { parametrosDeMedidas, serieDeParametro, rangoDe } from './operativo.laboratorio.js';   // 0q·5c
 import { normalizarFiltro } from './operativo.tablero.js';
 import { CAL_RANGE_BASE } from '../microbiologia/calagua.data.js';
 import { normalizeRows } from '../biomolecular/index.js';
@@ -314,5 +315,42 @@ describe('Maduración · laboratorio · 0q·5b · ③ agua y RAS por formato', (
     expect(umbralDelFormato('ras', 'totales')).toMatchObject({ m: 500, e: 1000 });
     expect(umbralDelFormato('mad-agua', 'aero')).toMatchObject({ m: 5000, e: 10000 });
     expect(umbralDelFormato('mad-hisopado', 'totales')).toMatchObject({ m: 500, e: 5000 });
+  });
+});
+
+/* ============================================================
+   0q·5c (2026-09-27, usuario) · 🦠 ③ Calidad de agua: los VALORES de un parámetro, su rango y su tendencia semanal
+
+   Decisión del usuario: al escoger un parámetro (su fila), sus valores muestra a muestra (verde dentro del rango, rojo
+   fuera, gris si no tiene rango), la mediana semanal y las rayas del mínimo y el máximo del rango; un Grupo («Todos» por
+   defecto: el rango es el mismo para todos los grupos); y primero el parámetro que más veces sale de rango.
+   ⚠ La mediana de los parámetros NO se redondea (la de las UFC sí): un pH de 8,5 no es 9.
+   ============================================================ */
+describe('Maduración · laboratorio · 0q·5c · ③ calidad de agua por parámetro', () => {
+  const r = resumenMicroDeLaVentana(FILAS, {}, CAL_RANGE_BASE, new Map());
+
+  it('🔴 cada muestra de calidad de agua deja sus mediciones y su grupo', () => {
+    expect(r.agua.calidad.medidas.map((m) => [m.fecha, m.grupo])).toEqual([['2026-09-10', 'Colector'], ['2026-09-12', 'Colector'], ['2026-09-14', 'Sala 2']]);
+    expect(r.agua.calidad.medidas[0].med.find((x) => x.key === 'ph').value).toBe(9);
+  });
+
+  it('🔴 los parámetros: muestras, fuera de rango y su rango; primero los que más salen, los sin rango al final', () => {
+    expect(parametrosDeMedidas(r.agua.calidad.medidas, CAL_RANGE_BASE).map((p) => [p.key, p.etiqueta, p.muestras, p.fuera, p.rango])).toEqual([
+      ['ph', 'pH', 3, 2, '7.5–8.5'], ['alc', 'Alcalinidad', 3, 1, '120–150'], ['sal', 'Salinidad', 1, 0, '']]);
+  });
+
+  it('🔴 la serie de un parámetro: los valores por fecha con su estado, la mediana semanal SIN redondear, mínimo y máximo', () => {
+    const s = serieDeParametro(r.agua.calidad.medidas, 'ph');
+    expect(s.puntos.map((p) => [p.fecha, p.valor, p.estado])).toEqual([['2026-09-10', 9, 'fuera'], ['2026-09-12', 8, 'dentro'], ['2026-09-14', 7, 'fuera']]);
+    expect(s.semanas).toEqual([{ lunes: '2026-09-07', mediana: 8.5, n: 2 }, { lunes: '2026-09-14', mediana: 7, n: 1 }]);
+    expect([s.muestras, s.mediana, s.minimo, s.maximo, s.fuera]).toEqual([3, 8, 7, 9, 2]);
+    // En su orden, lleguen como lleguen las muestras (el fixture ya venía ordenado: sin esto, no ordenar pasaba).
+    expect(serieDeParametro([...r.agua.calidad.medidas].reverse(), 'ph').puntos.map((p) => p.fecha)).toEqual(['2026-09-10', '2026-09-12', '2026-09-14']);
+  });
+
+  it('🔴 el rango de un parámetro: los dos límites, uno solo, o ninguno', () => {
+    expect(rangoDe('ph', CAL_RANGE_BASE)).toEqual({ min: 7.5, max: 8.5 });
+    expect(rangoDe('nitrito', CAL_RANGE_BASE)).toEqual({ min: null, max: 0.2 });
+    expect(rangoDe('sal', CAL_RANGE_BASE)).toBeNull();
   });
 });
