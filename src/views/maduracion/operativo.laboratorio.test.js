@@ -509,6 +509,14 @@ describe('Maduración · laboratorio · 0r·3a · preparar una vez por carga', (
     expect(meltRow, 'con datos nuevos, otra vez').toHaveBeenCalledTimes(26);
   });
 
+  it('🔴 las opciones de mes y sala también traen las que sólo dice la calidad de agua de Maduración', () => {
+    const soloCal = CAL('05/08/2026', { Formato: 'Maduración · Agua', Sala: 'Sala 5', pH: '8' });
+    const o = opcionesDeLaVentana([...FILAS, soloCal], new Map());
+    expect(o.meses).toContain('2026-08');
+    expect(o.salas).toContain('Sala 5');
+    expect(o.lotes, 'la calidad de agua no dice lote').not.toContain(undefined);
+  });
+
   it('🔴 calidad de agua: una vez por muestra y por rangos; con otros rangos se recalcula (y al volver, vuelve)', () => {
     const filas = [...FILAS];
     calMeasured.mockClear();
@@ -519,5 +527,16 @@ describe('Maduración · laboratorio · 0r·3a · preparar una vez por carga', (
     const estricto = { ...CAL_RANGE_BASE, ph: { min: 7.5, max: 7.9 } };
     expect(colector(resumenMicroDeLaVentana(filas, {}, estricto, new Map())).fuera, 'el pH 8 sale fuera con el rango nuevo').toBe(2);
     expect(colector(resumenMicroDeLaVentana(filas, {}, { ...CAL_RANGE_BASE }, new Map())).fuera, 'otros rangos iguales: como al principio').toBe(1);
+  });
+});
+
+/* 0r·3c · las opciones de la ventana de 🧬 se calculan una vez por carga (las filas normalizadas son la clave). */
+describe('Maduración · laboratorio · 0r·3c · 🧬 las opciones, una vez por carga', () => {
+  it('🔴 las mismas filas dan el MISMO objeto; otras filas, otro', () => {
+    const filas = normalizeRows([{ _SheetOrigin: 'Biomol', Fecha: '15/09/2026', Lugar: 'Sala 1', 'Estadío': 'Reproductores', IHHNV: 'Positivo' }]);
+    const a = opcionesBiomol(filas);
+    expect(opcionesBiomol(filas)).toBe(a);
+    expect(a.salas).toEqual(['Sala 1']);
+    expect(opcionesBiomol([...filas])).not.toBe(a);
   });
 });

@@ -578,7 +578,15 @@ export function tendenciaDePatogeno(filas, key) {
 const tejidoDeMaduracion = (x) => !!tipoDeMuestra(x.otros) && (esSala(x.lugar) || /madur/i.test(txt(x.lugar)));
 /** Lo que se puede elegir en cada filtro de la ventana de Biomol: lo que traen sus reproductores y (0q·7) las demás muestras
  *  de un tipo de Maduración, que también filtra. */
+/* 0r·3c (2026-09-28, usuario) · una vez por carga: las filas normalizadas (las guarda la vista mientras no llegan datos
+   nuevos) son la clave. Quien las use no debe modificarlas. */
+const _opcionesBiomol = new WeakMap();
 export function opcionesBiomol(filasNorm) {
+  const clave = filasNorm || [];
+  if (!_opcionesBiomol.has(clave)) _opcionesBiomol.set(clave, opcionesBiomolDe(clave));
+  return _opcionesBiomol.get(clave);
+}
+function opcionesBiomolDe(filasNorm) {
   const meses = new Set(); const lotes = new Set(); const salas = new Set(); const piscinas = new Set(); const sexos = new Set();
   for (const r of (filasNorm || []).filter((x) => esReproductor(x) || tejidoDeMaduracion(x))) {
     if (r.f) meses.add(r.f.slice(0, 7));

@@ -31,6 +31,11 @@ vi.mock('../../ui/router.js', async (original) => {
   const real = await original();
   return { ...real, changeView: vi.fn() };
 });
+/* 0r·3c · se CUENTA cuántas veces se normaliza Biomol (la precarga en reposo lo hace una vez por carga). */
+vi.mock('../biomolecular/index.js', async (original) => {
+  const real = await original();
+  return { ...real, normalizeRows: vi.fn(real.normalizeRows) };
+});
 vi.mock('../microbiologia/index.js', async (original) => {
   const real = await original();
   return { ...real, microPreseleccion: vi.fn() };
@@ -3084,5 +3089,55 @@ describe('Maduración · operativo · 🦠 🧬 un clic en la ventana rehace só
     expect(modalLab()).toBeNull();
     expect(root.querySelector('[data-mop-lab="micro"]').classList.contains('is-on')).toBe(false);
     expect(document.body.classList.contains('modal-open')).toBe(false);
+  });
+});
+
+/* 0r·3c (2026-09-28, usuario) · 🧬 se prepara en REPOSO: cuando el tablero queda quieto (requestIdleCallback) se trae su
+   paquete y se normalizan sus filas, una vez por carga de datos; así la primera apertura no espera (medido: 1,3 s en un
+   equipo de campo). Donde no hay requestIdleCallback (Safari, y este entorno de pruebas) se carga al abrir, como antes. */
+describe('Maduración · operativo · 🧬 se prepara en reposo (0r·3c)', () => {
+  it('🔴 con el tablero quieto se normaliza UNA vez por carga, y la ventana abre ya con los datos (sin «Cargando»)', async () => {
+    const ric = vi.fn((cb) => { setTimeout(cb, 0); return 1; });
+    window.requestIdleCallback = ric;
+    try {
+      await montar([...PLANTA, ...BIO6]);
+      const { normalizeRows } = await import('../biomolecular/index.js');
+      normalizeRows.mockClear();   // el espía arrastra las llamadas de las pruebas anteriores
+      expect(ric).toHaveBeenCalledTimes(1);
+      operativoView(root);
+      expect(ric, 'otra pintada con la misma carga: no se vuelve a programar').toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(normalizeRows).toHaveBeenCalledTimes(1));
+      click(root.querySelector('[data-mop-lab="biomol"]'));
+      expect(modalLab().textContent).not.toContain('Cargando');
+      expect(modalLab().querySelector('[data-mop-labf]')).not.toBeNull();
+      expect(normalizeRows, 'abrirla no vuelve a normalizar').toHaveBeenCalledTimes(1);
+    } finally { delete window.requestIdleCallback; }
+  });
+
+  it('🔑 con datos nuevos se vuelve a preparar; si la vista ya no está, la precarga no hace nada', async () => {
+    const pendientes = [];
+    window.requestIdleCallback = vi.fn((cb) => { pendientes.push(cb); return 1; });
+    try {
+      await montar([...PLANTA, ...BIO6]);
+      const { normalizeRows } = await import('../biomolecular/index.js');
+      normalizeRows.mockClear();   // el espía arrastra las llamadas de las pruebas anteriores
+      store.globalData = [...PLANTA, ...BIO6];
+      operativoView(root);
+      expect(window.requestIdleCallback, 'otra carga, otra precarga').toHaveBeenCalledTimes(2);
+      root.remove();
+      pendientes.forEach((cb) => cb());
+      await new Promise((r) => setTimeout(r, 30));
+      expect(normalizeRows, 'la vista se fue: nada').not.toHaveBeenCalled();
+    } finally { delete window.requestIdleCallback; }
+  });
+
+  it('🔑 sin requestIdleCallback, nada en reposo: se carga al abrirla, como antes', async () => {
+    await montar([...PLANTA, ...BIO6]);
+    const { normalizeRows } = await import('../biomolecular/index.js');
+    normalizeRows.mockClear();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(normalizeRows).not.toHaveBeenCalled();
+    click(root.querySelector('[data-mop-lab="biomol"]'));
+    expect(modalLab().textContent).toContain('Cargando');
   });
 });

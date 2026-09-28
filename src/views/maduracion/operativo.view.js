@@ -325,6 +325,7 @@ export function operativoView(root) {
   trasPintarDia(root);             // 0q·4 · la ventana de un día del calendario de partes
   dibujarMicPat();                 // 0q·5a · las cantidades del patógeno elegido, en la ventana de Microbiología
   trasPintarMareas(root);          // 0r·1 · el modal 🌊 Mareas: cablearlo y, si estaba abierto, reabrirlo con lo mismo
+  precargarBiomol(root);           // 0r·3c · 🧬 se prepara en reposo
   bind(root);
 }
 
@@ -651,6 +652,17 @@ function dibujarCopulasMarea() {
   });
 }
 
+/* 0r·3c (2026-09-28, usuario) · 🧬 se prepara en REPOSO: cuando el tablero queda quieto (requestIdleCallback) se trae su
+   paquete y se normalizan sus filas (`filasBiomol`), una vez por carga de datos, para que la primera apertura no espere
+   (medido: 1,3 s en un equipo de campo). Sin requestIdleCallback (Safari) se carga al abrirla, como antes. Si la vista ya
+   no está o llegaron otros datos cuando le toca, no hace nada. */
+let _bioPrecarga = null;
+function precargarBiomol(root) {
+  if (typeof window.requestIdleCallback !== 'function' || _bioPrecarga === store.globalData) return;
+  const carga = store.globalData;
+  _bioPrecarga = carga;
+  window.requestIdleCallback(() => { if (root.isConnected && store.globalData === carga) filasBiomol(); }, { timeout: 10000 });
+}
 /** Las filas de Biomol, normalizadas por SU vista. Se piden una vez por carga de datos; mientras llegan, «Cargando…». */
 function filasBiomol() {
   if (_bio.src === store.globalData && _bio.filas) return _bio.filas;
