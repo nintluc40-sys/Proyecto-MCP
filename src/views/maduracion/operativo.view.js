@@ -61,6 +61,7 @@ import { makeAccessibleDialog } from '../../ui/modal.js';
 import { mareasModalHTML, cablearMareas } from '../supervisor/mareas.js';   // 0r·1 · el modal 🌊 Mareas de Larvicultura
 import { partesConHembras, copulasYMarea } from './operativo.mareas.js';   // 0r·2 · su pestaña «🦐 Cópulas»
 import { mareaPorDia } from './data.js';                                    // 0r·2 · la hoja «Marea» por día (la de T9)
+import { destroyChart } from '../../core/charts.js';                         // 0r·3b · soltar los gráficos de la ventana al rehacerla
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import { changeView } from '../../ui/router.js';
 import { INDICADORES } from './operativo.indicadores.js';
@@ -1006,7 +1007,7 @@ function labBiomolHTML() {
 function labModalHTML(_p, _F) {   // 0q·6 · las dos ventanas tienen sus filtros: ya no usan los del tablero
   if (!LAB[vOp.lab]) { vOp.lab = ''; _labTend = null; return ''; }
   const cuerpo = vOp.lab === 'micro' ? labMicroHTML() : labBiomolHTML();
-  return `<div class="sv-modal sv-open mop-lab" data-mop-lab-overlay>
+  return `<div class="sv-modal sv-open mop-lab" data-mop-lab-overlay data-mop-lab-tipo="${esc(vOp.lab)}">
     <div class="sv-modal-card mop-lab-card">
       <div class="sv-modal-head"><span class="sv-modal-title">${esc(LAB[vOp.lab].titulo)}</span>
         <button type="button" class="sv-modal-x" data-mop-lab-cerrar aria-label="Cerrar">✕</button></div>
@@ -1083,6 +1084,24 @@ function dibujarLab() {
   });
 }
 /** Tras pintar: el foco entra al ABRIR (no en cada repintado) y el cuerpo no se desplaza detrás del modal. */
+/* 0r·3b (2026-09-28, usuario) · «la ventana congela»: con la ventana del laboratorio abierta, lo que se pulsa es DE la
+   ventana (su velo tapa el tablero). Se rehace SÓLO su cuerpo —ni el tablero de detrás ni el overlay, que se quedan con su
+   foco y su desplazamiento—, soltando antes sus gráficos y dibujándolos otra vez. Si no hay ventana abierta, o es la
+   OTRA (abrir, cerrar, cambiar), false: la vista entera. Medido: rehacer el tablero con la ventana costaba 60–100 ms más
+   por clic en un equipo de campo. */
+const LIENZOS_LAB = ['mopLabTend', 'mopMicPat', 'mopAguaPat', 'mopCalPar'];
+function repintarVentanaLab(root) {
+  const ov = root.querySelector('[data-mop-lab-overlay]');
+  const cuerpo = ov && ov.querySelector('.sv-modal-body');
+  if (!cuerpo || !LAB[vOp.lab] || ov.dataset.mopLabTipo !== vOp.lab) return false;
+  LIENZOS_LAB.forEach((id) => destroyChart(id));
+  const nuevo = document.createElement('div');
+  nuevo.innerHTML = labModalHTML();
+  cuerpo.innerHTML = nuevo.querySelector('.sv-modal-body').innerHTML;
+  trasPintarLab(root);   // ya abierta: no mueve el foco; dibuja la tendencia de Biomol
+  dibujarMicPat();       // y las cantidades, el agua y el parámetro de 🦠
+  return true;
+}
 function trasPintarLab(root) {
   _labRoot = root;
   const ov = root.querySelector('[data-mop-lab-overlay]');
@@ -3091,7 +3110,7 @@ function bind(root) {
   root._mopBound = true;
   registerModalEscape('.mop-lab.sv-open');   // 0f · 8
   registerModalEscape('.mop-dia.sv-open');   // 0q·4
-  const repintar = () => operativoView(root);
+  const repintar = () => repintarVentanaLab(root) || operativoView(root);   // 0r·3b · con la ventana abierta, sólo ella
   const abrirSala = (sala) => { vOp.salaDetalle = vOp.salaDetalle === sala ? '' : sala; repintar(); };
   const abrirLote = (lote) => { vOp.loteSel = vOp.loteSel === lote ? '' : lote; repintar(); };
   const abrirTanque = (k) => { vOp.tqFicha = vOp.tqFicha === k ? '' : k; repintar(); };

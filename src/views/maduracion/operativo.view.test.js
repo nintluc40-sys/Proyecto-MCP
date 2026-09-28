@@ -3031,3 +3031,58 @@ describe('Maduración · operativo · 🦐 cópulas × marea × luna, en el moda
     expect(modal().textContent).toContain('No hay datos de mareas cargados');
   });
 });
+
+/* 0r·3b (2026-09-28, usuario) · «la ventana congela»: con la ventana del laboratorio abierta, lo que se pulsa es DE la
+   ventana (su velo tapa el tablero). Se rehace SÓLO su cuerpo: el tablero de detrás y el propio overlay se quedan (y con
+   ellos el foco y el desplazamiento); sus gráficos se sueltan y se vuelven a dibujar. Abrirla y cerrarla rehacen todo. */
+describe('Maduración · operativo · 🦠 🧬 un clic en la ventana rehace sólo la ventana (0r·3b)', () => {
+  it('🔴 filtros, patógeno, formato, parámetro y «Quitar filtros» de 🦠: el tablero y el overlay son los MISMOS; el cuerpo, nuevo', async () => {
+    await montar([...PLANTA, ...LAB5, ...AGUA5, ...CAL5]);
+    abrirMicro();
+    const nav = root.querySelector('.mc-subnav'), ov = modalLab();
+    const mismo = (etq) => { expect(root.querySelector('.mc-subnav'), etq + ' · el tablero').toBe(nav); expect(modalLab(), etq + ' · el overlay').toBe(ov); };
+    cambiar(selLab('sala'), 'Sala 1');
+    mismo('filtro');
+    expect(kpiRep(), 'y el cuerpo sí cambió: de 4 muestras a las 2 de la Sala 1').toContain('2 muestras');
+    expect(document.activeElement, 'el foco, en su select').toBe(selLab('sala'));
+    click(modalLab().querySelector('[data-mop-labf-limpiar]'));
+    mismo('quitar filtros');
+    click(modalLab().querySelectorAll('[data-mop-micpat]')[1]);
+    mismo('patógeno');
+    const fmt = modalLab().querySelectorAll('[data-mop-aguafmt]')[1];
+    if (fmt) { click(fmt); mismo('formato de agua'); }
+    const par = modalLab().querySelectorAll('[data-mop-calpar]')[1];
+    if (par) { click(par); mismo('parámetro de calidad'); }
+  });
+
+  it('🔴 al rehacer la ventana suelta sus gráficos antes de dibujarlos otra vez', async () => {
+    await montar([...PLANTA, ...LAB5, ...AGUA5, ...CAL5]);
+    abrirMicro();
+    const { destroyChart } = await import('../../core/charts.js');
+    destroyChart.mockClear();
+    const antes = makeChart.mock.calls.length;
+    cambiar(selLab('sala'), 'Sala 1');
+    expect(destroyChart.mock.calls.map(([id]) => id)).toEqual(expect.arrayContaining(['mopMicPat', 'mopAguaPat', 'mopCalPar', 'mopLabTend']));
+    expect(makeChart.mock.calls.slice(antes).map(([id]) => id)).toContain('mopMicPat');
+  });
+
+  it('🔴 también en 🧬: su filtro y su patógeno no rehacen el tablero', async () => {
+    await montar([...PLANTA, ...BIO6]);
+    await abrirBiomol();
+    const nav = root.querySelector('.mc-subnav'), ov = modalLab();
+    cambiar(selLab('sala'), 'Sala 1');
+    expect([root.querySelector('.mc-subnav'), modalLab()]).toEqual([nav, ov]);
+    click(modalLab().querySelectorAll('[data-mop-biopat]')[0]);
+    expect([root.querySelector('.mc-subnav') === nav, modalLab() === ov]).toEqual([true, true]);
+  });
+
+  it('🔑 abrir, cerrar y cambiar de ventana sí rehacen la vista (el botón marcado, el fondo suelto)', async () => {
+    await montar([...PLANTA, ...LAB5]);
+    abrirMicro();
+    expect(root.querySelector('[data-mop-lab="micro"]').classList.contains('is-on')).toBe(true);
+    click(modalLab().querySelector('[data-mop-lab-cerrar]'));
+    expect(modalLab()).toBeNull();
+    expect(root.querySelector('[data-mop-lab="micro"]').classList.contains('is-on')).toBe(false);
+    expect(document.body.classList.contains('modal-open')).toBe(false);
+  });
+});
