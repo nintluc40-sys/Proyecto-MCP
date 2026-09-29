@@ -16,7 +16,7 @@ import { TIPOS_AVISO } from './operativo.tablero.js';
 vi.mock('../../core/charts.js', () => ({
   makeChart: vi.fn(),
   destroyChart: vi.fn(),   // 0r·2 · se vigila que la pestaña «🦐 Cópulas» suelte su gráfico al cerrar
-  destroyAllCharts: () => {},
+  destroyAllCharts: vi.fn(),   // 2 · se vigila que salir de 🌊 Mareas suelte sus gráficos
   Chart: class {},
 }));
 /* F7 · se sustituye la IMPRESIÓN, no el módulo entero: `operativo.reportes.js` toma de aquí `fnv1a`, que es el
@@ -428,9 +428,11 @@ describe('Maduración · operativo · 🧬 Lotes', () => {
          F4 (2026-09-21) · entran 🛢 Tanques y 🥚 Reproducción, SEPARADAS por decisión del usuario.
          F5 (2026-09-21) · entra 🔄 Manejo, UNA para los tres temas (decisión del usuario).
          F6 (2026-09-21) · entra 🩺 Calidad del dato; Broodstock NO tiene pastilla, vive en 🧬 Lotes (decisión del usuario).
-         F7 (2026-09-22) · entra 🖨 Reportes, la décima (decisión del usuario; `.mc-subnav` envuelve en el móvil). */
+         F7 (2026-09-22) · entra 🖨 Reportes, la décima (decisión del usuario; `.mc-subnav` envuelve en el móvil).
+         2 (2026-09-29) · 🦠, 🧬 y 🌊, que eran ventanas, entran al final como sub-vistas (decisión del usuario). */
       .toEqual(['📊 Estado actual', '🏠 Salas', '🧬 Lotes', '💀 Bajas', '🔍 Revisiones del supervisor',
-        '🛢 Tanques', '🥚 Reproducción', '🔄 Manejo', '🩺 Calidad del dato', '🖨 Reportes']);
+        '🛢 Tanques', '🥚 Reproducción', '🔄 Manejo', '🩺 Calidad del dato', '🖨 Reportes',
+        '🦠 Microbiología y agua', '🧬 Biomol', '🌊 Mareas']);
     abrirLotes();
     expect([...root.querySelectorAll('[data-mop-lote]')].map((t) => t.dataset.mopLote)).toEqual(['QA', 'QB', 'QC', 'QD']);
     // QC se cerró: sigue en la tabla, a cero y rotulado.
@@ -1891,9 +1893,10 @@ describe('Maduración · operativo · 0f · 5 · el gráfico de cada KPI', () =>
   });
 });
 
-/* 0f · 8 (2026-09-26, usuario) · dos botones junto a la sub-nav abren, como modal y desde cualquier sub-vista, lo que el
-   laboratorio mide de Maduración. Las CUENTAS las vigila operativo.laboratorio.test.js; aquí, que lleguen: los tres
-   bloques, Biomol cargado al abrirlo, ✕ / velo / Escape, los filtros del tablero, el enlace y el escapado. */
+/* 0f · 8 (2026-09-26, usuario) · lo que el laboratorio mide de Maduración. Las CUENTAS las vigila
+   operativo.laboratorio.test.js; aquí, que lleguen: los tres bloques, Biomol cargado al abrirlo, los filtros del tablero
+   al entrar, el enlace y el escapado. 2 (2026-09-29, usuario) · eran dos ventanas; son dos sub-vistas más, sin la barra
+   de filtros del tablero (traen la suya). */
 describe('Maduración · operativo · 0f · 8 · 🦠 / 🧬 lo del laboratorio', () => {
   const MIC = (fecha, formato, extra = {}) => ({ _SheetOrigin: 'Microbiología', 'Fecha muestreo': fecha, Departamento: 'Maduración', Formato: formato, ...extra });
   const LAB = [
@@ -1906,20 +1909,40 @@ describe('Maduración · operativo · 0f · 8 · 🦠 / 🧬 lo del laboratorio'
     { _SheetOrigin: 'Biomol', Fecha: '15/09/2026', Lugar: 'Sala 1', Tanque: 'Tq 1', Piscina: 'P557', 'Estadío': 'Reproductores', Sexo: 'Hembra', IHHNV: 'Positivo', WSSV: 'Negativo' },
     { _SheetOrigin: 'Biomol', Fecha: '16/09/2026', Lugar: 'Chongón', Piscina: 'P553', 'Estadío': 'Reproductores', Sexo: 'Macho', IHHNV: 'Negativo' },
   ];
-  const modal = () => root.querySelector('.mop-lab.sv-open');
-  const boton = (k) => root.querySelector(`[data-mop-lab="${k}"]`);
+  const modal = () => root.querySelector('[data-mop-lab-panel]');
+  const boton = (k) => root.querySelector(`.mc-subnav [data-mop-sub="${k}"]`);
 
-  it('🔴 los dos botones, junto a la sub-nav y en cualquier sub-vista; ningún modal al llegar', async () => {
+  it('🔴 2 · dos pastillas más de la sub-nav, tras 🖨 Reportes; ni botones de ventana ni ventana', async () => {
     await montar([...PLANTA, ...LAB]);
-    expect(root.querySelector('.mc-subnav [data-mop-lab="micro"]')).not.toBeNull();
-    expect(root.querySelector('.mc-subnav [data-mop-lab="biomol"]')).not.toBeNull();
+    expect([...root.querySelectorAll('.mc-subnav [data-mop-sub]')].slice(-4).map((b) => b.textContent))
+      .toEqual(['🖨 Reportes', '🦠 Microbiología y agua', '🧬 Biomol', '🌊 Mareas']);
+    expect(root.querySelector('[data-mop-lab], [data-mareas-open], [aria-haspopup="dialog"]'), 'los botones de antes').toBeNull();
     expect(modal()).toBeNull();
-    click(root.querySelector('[data-mop-sub="tanques"]'));
     click(boton('micro'));
-    expect(modal(), 'desde 🛢 Tanques también').not.toBeNull();
+    expect(modal().dataset.mopLabTipo).toBe('micro');
+    expect(boton('micro').classList.contains('is-on')).toBe(true);
+    expect([root.querySelector('.sv-modal, [role="dialog"]'), document.body.classList.contains('modal-open')], 'sin velo ni fondo quieto').toEqual([null, false]);
+    operativoView(root);
+    expect(modal().dataset.mopLabTipo, 'otra pintada (un dato nuevo) la deja a la vista').toBe('micro');
+    click(boton('biomol'));
+    expect(modal().dataset.mopLabTipo).toBe('biomol');
+    click(boton('tanques'));
+    expect(modal(), 'otra sub-vista').toBeNull();
   });
 
-  it('🔴 Micro y agua: los tres bloques con sus cifras; el fondo no se desplaza; ✕ lo cierra', async () => {
+  it('🔴 2 · 🦠, 🧬 y 🌊 no enseñan la barra de filtros del tablero ni sus etiquetas: traen las suyas', async () => {
+    await montar([...PLANTA, ...LAB]);
+    cambiar(filtro('sala'), 'Sala 2');
+    expect([!!root.querySelector('.mop-filtros'), !!root.querySelector('.mop-chips')], 'control: en 📊 están').toEqual([true, true]);
+    for (const k of ['micro', 'biomol', 'mareas']) {
+      click(boton(k));
+      expect([root.querySelector('.mop-filtros'), root.querySelector('.mop-chips')], k).toEqual([null, null]);
+    }
+    click(boton('bajas'));
+    expect([!!root.querySelector('.mop-filtros'), elegido('sala')], 'vuelve, con lo elegido').toEqual([true, 'Sala 2']);
+  });
+
+  it('🔴 Micro y agua: los tres bloques con sus cifras, en una tarjeta como las demás sub-vistas', async () => {
     await montar([...PLANTA, ...LAB]);
     click(boton('micro'));
     expect([...modal().querySelectorAll('.mop-lab-bloque h4')].map((h) => h.textContent.slice(0, 2))).toEqual(['① ', '② ', '③ ']);
@@ -1928,21 +1951,8 @@ describe('Maduración · operativo · 0f · 8 · 🦠 / 🧬 lo del laboratorio'
     expect(modal().querySelector('.mop-lab-ult').textContent, 'un lugar, no «TQ Piscina»').not.toContain('TQ Piscina');
     expect(modal().querySelector('.mop-lab-des tbody tr').textContent).toContain('1 · 1 en alerta');
     expect(modal().querySelector('.mop-lab-cal tbody tr').textContent).toContain('Colector');
-    expect(modal().querySelector('[role="dialog"]'), 'semántica de diálogo').not.toBeNull();
-    expect(document.body.classList.contains('modal-open')).toBe(true);
-    click(root.querySelector('[data-mop-lab-cerrar]'));
-    expect(modal()).toBeNull();
-    expect(document.body.classList.contains('modal-open')).toBe(false);
-  });
-
-  it('se cierra también pulsando el velo, y con Escape', async () => {
-    await montar([...PLANTA, ...LAB]);
-    click(boton('micro'));
-    click(modal());
-    expect(modal()).toBeNull();
-    click(boton('micro'));
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    expect(modal()).toBeNull();
+    expect(modal().matches('.mc-body > .mc-card')).toBe(true);
+    expect(modal().querySelector('.mop-labf').getAttribute('aria-label')).toBe('Filtros de esta vista');
   });
 
   it('🔴 sigue los filtros del tablero y dice el que no puede aplicar', async () => {
@@ -1965,13 +1975,14 @@ describe('Maduración · operativo · 0f · 8 · 🦠 / 🧬 lo del laboratorio'
     expect(makeChart.mock.calls.some(([id]) => id === 'mopLabTend'), 'la tendencia semanal').toBe(true);
   });
 
-  it('🔴 «Abrir en 🦠 Microbiología» cierra el modal y cambia de vista', async () => {
+  it('🔴 «Abrir en 🦠 Microbiología» cambia de vista; al volver, 🦠 sigue a la vista', async () => {
     await montar([...PLANTA, ...LAB]);
     const { changeView } = await import('../../ui/router.js');
     click(boton('micro'));
     click(root.querySelector('[data-mop-lab-abrir-micro]'));
-    expect(modal()).toBeNull();
     expect(changeView).toHaveBeenLastCalledWith('microbiologia');
+    operativoView(root);
+    expect(modal().dataset.mopLabTipo).toBe('micro');
     const { microPreseleccion } = await import('../microbiologia/index.js');
     expect(microPreseleccion, 'llega con Maduración elegido').toHaveBeenLastCalledWith({ sub: 'bacteriologia', depto: 'Maduración' });
   });
@@ -1983,18 +1994,17 @@ describe('Maduración · operativo · 0f · 8 · 🦠 / 🧬 lo del laboratorio'
     expect(modal().textContent).toContain('<img src=x');
   });
 
-  it('🔑 las clases propias del modal están DEFINIDAS en su CSS', async () => {
+  it('🔑 las clases propias de 🦠 y 🧬 están DEFINIDAS en su CSS', async () => {
     const { readFileSync } = await import('node:fs');
     const css = readFileSync('src/views/maduracion/operativo.css', 'utf8') + readFileSync('src/views/maduracion/maduracion.css', 'utf8');
     await montar([...PLANTA, ...LAB]);
     const usadas = new Set();
     const junta = () => root.querySelectorAll('[class]').forEach((el) => el.classList.forEach((c) => { if (c.startsWith('mop-lab')) usadas.add(c); }));
     click(boton('micro')); junta();
-    click(root.querySelector('[data-mop-lab-cerrar]'));
     click(boton('biomol'));
     await vi.waitFor(() => expect(root.querySelector('.mop-lab-prev')).not.toBeNull());
     junta();
-    expect(usadas.size > 10, 'control: el modal pinta sus clases').toBe(true);
+    expect(usadas.size > 10, 'control: las sub-vistas pintan sus clases').toBe(true);
     expect([...usadas].filter((c) => !new RegExp('\\.' + c + '(?![\\w-])').test(css))).toEqual([]);
   });
 });
@@ -2045,7 +2055,7 @@ describe('Maduración · operativo · los gráficos se leen', () => {
 
   it('0q·5a/5b/5c · la ventana de Microbiología dibuja sus tres gráficos (①, ③ micro y ③ calidad)', async () => {
     await montar([...PLANTA, ...LAB5, ...AGUA5, ...CAL5]);
-    click(root.querySelector('[data-mop-lab="micro"]'));
+    click(root.querySelector('[data-mop-sub="micro"]'));
     expect(makeChart.mock.calls.some(([id]) => id === 'mopMicPat')).toBe(true);
     expect(makeChart.mock.calls.some(([id]) => id === 'mopAguaPat')).toBe(true);
     expect(makeChart.mock.calls.some(([id]) => id === 'mopCalPar')).toBe(true);
@@ -2053,8 +2063,8 @@ describe('Maduración · operativo · los gráficos se leen', () => {
 
   it('0r·2 · la pestaña 🦐 Cópulas del modal de Mareas dibuja su gráfico', async () => {
     await montar([...PLANTA, ...COP_MAREA]);
-    click(root.querySelector('[data-mareas-open]'));
-    click(root.querySelector('#svMareasModal [data-mareamode="copulas"]'));
+    click(root.querySelector('[data-mop-sub="mareas"]'));
+    click(root.querySelector('[data-mareas-panel] [data-mareamode="copulas"]'));
     expect(makeChart.mock.calls.some(([id]) => id === 'mopMarCop')).toBe(true);
   });
 
@@ -2474,19 +2484,19 @@ const LAB5 = [
   MIC5('10/07/2026', { 'Módulo/Sala': 'Sala 1', Sexo: 'Hembras', Lote: MALO_Q5, 'V.Totales UFC': '200000' }),
   { ...ING('01/08/2026', 'QA', 'Sala 3', 30, 1, 1), 'Piscina Broodstock': '557' },
 ];
-const modalLab = () => root.querySelector('.mop-lab.sv-open');
-const abrirMicro = () => click(root.querySelector('[data-mop-lab="micro"]'));
-const selLab = (d) => modalLab().querySelector(`[data-mop-labf="${d}"]`);
-const kpiRep = () => modalLab().querySelector('.mop-lab-kpi').textContent;
+const vistaLab = () => root.querySelector('[data-mop-lab-panel]');
+const abrirMicro = () => click(root.querySelector('[data-mop-sub="micro"]'));
+const selLab = (d) => vistaLab().querySelector(`[data-mop-labf="${d}"]`);
+const kpiRep = () => vistaLab().querySelector('.mop-lab-kpi').textContent;
 const micPat = () => { const l = makeChart.mock.calls.filter(([id]) => id === 'mopMicPat'); return l.length ? l[l.length - 1][1] : null; };
 describe('Maduración · operativo · 🦠 la ventana de Microbiología con sus filtros y sus cantidades (0q·5a)', () => {
   it('🔴 su barra de filtros —Mes, Lote, Sala, Piscina, Sexo— y TODO el registro: la muestra de julio cuenta', async () => {
     await montar([...PLANTA, ...LAB5]);
     abrirMicro();
-    expect([...modalLab().querySelectorAll('[data-mop-labf]')].map((s) => s.dataset.mopLabf)).toEqual(['mes', 'lote', 'sala', 'piscina', 'sexo']);
+    expect([...vistaLab().querySelectorAll('[data-mop-labf]')].map((s) => s.dataset.mopLabf)).toEqual(['mes', 'lote', 'sala', 'piscina', 'sexo']);
     expect(kpiRep()).toContain('4 muestras');
     expect([...selLab('mes').options].map((o) => o.textContent)).toEqual(['Todo el registro', 'julio 2026', 'septiembre 2026']);
-    expect(modalLab().querySelector('.mop-lab-per').textContent).toContain('no los del tablero');
+    expect(vistaLab().querySelector('.mop-lab-per').textContent).toContain('no los del tablero');
   });
 
   it('🔴 empieza con la sala y el sexo del tablero', async () => {
@@ -2498,13 +2508,24 @@ describe('Maduración · operativo · 🦠 la ventana de Microbiología con sus 
     expect(kpiRep()).toContain('1 muestras');
   });
 
+  it('🔑 2 · pulsar 🦠 estando en 🦠 no borra sus filtros; salir y volver a entrar, sí (empieza con el tablero)', async () => {
+    await montar([...PLANTA, ...LAB5]);
+    abrirMicro();
+    cambiar(selLab('sala'), 'Sala 1');
+    abrirMicro();
+    expect(selLab('sala').querySelector('option[selected]').value).toBe('Sala 1');
+    click(root.querySelector('[data-mop-sub="estado"]'));
+    abrirMicro();
+    expect(selLab('sala').querySelector('option[selected]'), 'el tablero no tiene sala').toBeNull();
+  });
+
   it('🔴 el mes recorta, y el foco se queda en su select; «Quitar filtros» vuelve a todo', async () => {
     await montar([...PLANTA, ...LAB5]);
     abrirMicro();
     cambiar(selLab('mes'), '2026-07');
     expect(kpiRep()).toContain('1 muestras');
     expect(document.activeElement).toBe(selLab('mes'));
-    click(modalLab().querySelector('[data-mop-labf-limpiar]'));
+    click(vistaLab().querySelector('[data-mop-labf-limpiar]'));
     expect(kpiRep()).toContain('4 muestras');
   });
 
@@ -2514,19 +2535,19 @@ describe('Maduración · operativo · 🦠 la ventana de Microbiología con sus 
     expect([...selLab('piscina').options].map((o) => o.value)).toEqual(['', 'Piscina 556', 'Piscina 557']);
     cambiar(selLab('piscina'), 'Piscina 557');
     expect(kpiRep()).toContain('1 muestras');          // la de QA, por su ingreso
-    expect(modalLab().querySelectorAll('.mop-lab-bloque')[1].textContent).toContain('No se aplica aquí: piscina');
-    expect(modalLab().querySelectorAll('.mop-lab-bloque')[0].textContent).toContain('no dicen su piscina');
+    expect(vistaLab().querySelectorAll('.mop-lab-bloque')[1].textContent).toContain('No se aplica aquí: piscina');
+    expect(vistaLab().querySelectorAll('.mop-lab-bloque')[0].textContent).toContain('no dicen su piscina');
   });
 
   it('🔴 un patógeno se ESCOGE (su fila) y dibuja sus cantidades: log, mediana semanal, umbrales y el «0»', async () => {
     await montar([...PLANTA, ...LAB5]);
     abrirMicro();
-    const fila = modalLab().querySelector('[data-mop-micpat="algino"]');
+    const fila = vistaLab().querySelector('[data-mop-micpat="algino"]');
     expect(fila.getAttribute('role')).toBe('button');
     click(fila);
-    expect(modalLab().querySelector('[data-mop-micpat="algino"]').getAttribute('aria-pressed')).toBe('true');
-    expect(document.activeElement).toBe(modalLab().querySelector('[data-mop-micpat="algino"]'));
-    expect(modalLab().querySelector('.mop-micpat-graf h5').textContent).toContain('V. alginolyticus');
+    expect(vistaLab().querySelector('[data-mop-micpat="algino"]').getAttribute('aria-pressed')).toBe('true');
+    expect(document.activeElement).toBe(vistaLab().querySelector('[data-mop-micpat="algino"]'));
+    expect(vistaLab().querySelector('.mop-micpat-graf h5').textContent).toContain('V. alginolyticus');
     const cfg = micPat();
     expect(cfg.type).toBe('scatter');
     expect(cfg.options.scales.y.type).toBe('logarithmic');
@@ -2551,17 +2572,17 @@ describe('Maduración · operativo · 🦠 la ventana de Microbiología con sus 
   it('🔴 con el teclado (Intro) también se escoge; y por defecto va el primero de la tabla', async () => {
     await montar([...PLANTA, ...LAB5]);
     abrirMicro();
-    const primero = modalLab().querySelector('.mop-lab-pat tbody tr');
+    const primero = vistaLab().querySelector('.mop-lab-pat tbody tr');
     expect(primero.getAttribute('aria-pressed')).toBe('true');
-    const otro = [...modalLab().querySelectorAll('[data-mop-micpat]')].find((r) => r !== primero);
+    const otro = [...vistaLab().querySelectorAll('[data-mop-micpat]')].find((r) => r !== primero);
     otro.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    expect(modalLab().querySelector(`[data-mop-micpat="${otro.dataset.mopMicpat}"]`).getAttribute('aria-pressed')).toBe('true');
+    expect(vistaLab().querySelector(`[data-mop-micpat="${otro.dataset.mopMicpat}"]`).getAttribute('aria-pressed')).toBe('true');
   });
 
   it('🔑 lo que viene del Sheet sale ESCAPADO también en los filtros', async () => {
     await montar([...PLANTA, ...LAB5]);
     abrirMicro();
-    expect(modalLab().querySelector('img')).toBeNull();
+    expect(vistaLab().querySelector('img')).toBeNull();
     // El lote llega normalizado (sin espacios, en mayúsculas): su valor tiene que llegar ENTERO a la opción.
     const malo = MALO_Q5.toUpperCase().replace(/\s+/g, '');
     expect([...selLab('lote').options].map((o) => o.value)).toContain(malo);
@@ -2593,7 +2614,7 @@ const AGUA5 = [
   MICA5('12/09/2026', 'Maduración · Agua', { 'Aeromonas UFC': '20000' }),
   MICA5('13/09/2026', 'Maduración · Hisopado', { 'V.Totales UFC': '100' }),
 ];
-const cantAgua = () => modalLab().querySelector('.mop-agua-cant');
+const cantAgua = () => vistaLab().querySelector('.mop-agua-cant');
 const aguaPat = () => { const l = makeChart.mock.calls.filter(([id]) => id === 'mopAguaPat'); return l.length ? l[l.length - 1][1] : null; };
 const umbralesDe = (cfg) => cfg.data.datasets.filter((d) => d.label === 'Moderado' || d.label === 'Elevado').map((d) => d.data[0].y);
 describe('Maduración · operativo · 🦠 ③ Agua y RAS: las cantidades por formato (0q·5b)', () => {
@@ -2664,7 +2685,7 @@ const CAL5 = [
   CALQ('14/09/2026', { Formato: 'Maduración · Agua', Sala: 'Sala 2', pH: '7', Alcalinidad: '100' }),
   CALQ('15/09/2026', { Formato: 'Maduración · RAS', Componente: 'Salida UV', Alcalinidad: '140', 'S‰': '32', Nitrito: '0' }),
 ];
-const calPar = () => modalLab().querySelector('.mop-cal-par');
+const calPar = () => vistaLab().querySelector('.mop-cal-par');
 const grafCal = () => { const l = makeChart.mock.calls.filter(([id]) => id === 'mopCalPar'); return l.length ? l[l.length - 1][1] : null; };
 const etiquetas = (cfg) => cfg.data.datasets.map((d) => d.label);
 describe('Maduración · operativo · 🦠 ③ calidad de agua por parámetro (0q·5c)', () => {
@@ -2738,19 +2759,19 @@ const BIO6 = [
   BIOR('05/07/2026', 'Sala 3', { 'Código': 'Lote BN', IHHNV: 'Positivo' }),
 ];
 const abrirBiomol = async () => {
-  click(root.querySelector('[data-mop-lab="biomol"]'));
-  await vi.waitFor(() => expect(root.querySelector('.mop-lab.sv-open [data-mop-labf]')).not.toBeNull());
+  click(root.querySelector('[data-mop-sub="biomol"]'));
+  await vi.waitFor(() => expect(root.querySelector('[data-mop-lab-panel] [data-mop-labf]')).not.toBeNull());
 };
 const tendBio = () => { const l = makeChart.mock.calls.filter(([id]) => id === 'mopLabTend'); return l.length ? l[l.length - 1][1] : null; };
 describe('Maduración · operativo · 🧬 Biomol: sus filtros, por lote y la tendencia de un patógeno (0q·6)', () => {
   it('🔴 la barra de filtros de la ventana, sobre TODO el registro (la de julio entra)', async () => {
     await montar([...PLANTA, ...BIO6]);
     await abrirBiomol();
-    expect([...modalLab().querySelectorAll('[data-mop-labf]')].map((s) => s.dataset.mopLabf)).toEqual(['mes', 'lote', 'sala', 'piscina', 'sexo']);
+    expect([...vistaLab().querySelectorAll('[data-mop-labf]')].map((s) => s.dataset.mopLabf)).toEqual(['mes', 'lote', 'sala', 'piscina', 'sexo']);
     expect(kpiRep()).toContain('6 muestras');
     expect([...selLab('mes').options].map((o) => o.textContent)).toEqual(['Todo el registro', 'julio 2026', 'septiembre 2026']);
-    expect(modalLab().querySelector('.mop-lab-per').textContent).toContain('combinada');
-    expect(modalLab().textContent).not.toContain('con los filtros del tablero');
+    expect(vistaLab().querySelector('.mop-lab-per').textContent).toContain('combinada');
+    expect(vistaLab().textContent).not.toContain('con los filtros del tablero');
   });
 
   it('🔴 empieza con la sala del tablero; la piscina combinada cuenta en las dos', async () => {
@@ -2767,9 +2788,9 @@ describe('Maduración · operativo · 🧬 Biomol: sus filtros, por lote y la te
   it('🔴 la prevalencia por lote: lote × patógeno, cada celda sombreada por su %; la muestra sin lote, aparte', async () => {
     await montar([...PLANTA, ...BIO6]);
     await abrirBiomol();
-    const filas = [...modalLab().querySelectorAll('.mop-bio-lotes tbody tr')];
+    const filas = [...vistaLab().querySelectorAll('.mop-bio-lotes tbody tr')];
     expect(filas.map((tr) => [tr.cells[0].textContent, tr.cells[1].textContent])).toEqual([['BN', '3'], ['BO', '2'], ['(sin lote)', '1']]);
-    const ihhnv = [...modalLab().querySelectorAll('.mop-bio-lotes thead th')].findIndex((th) => th.textContent === 'IHHNV');
+    const ihhnv = [...vistaLab().querySelectorAll('.mop-bio-lotes thead th')].findIndex((th) => th.textContent === 'IHHNV');
     expect(filas[0].cells[ihhnv].textContent).toBe('2/3');
     expect(filas[0].cells[ihhnv].classList.contains('mop-bio-p4')).toBe(true);
     expect(filas[1].cells[ihhnv].textContent).toBe('0/2');
@@ -2779,10 +2800,10 @@ describe('Maduración · operativo · 🧬 Biomol: sus filtros, por lote y la te
   it('🔴 la tendencia es de UN patógeno (por defecto el más prevalente): barras de muestras y la línea del %, con «pocas muestras» en hueco', async () => {
     await montar([...PLANTA, ...BIO6]);
     await abrirBiomol();
-    expect(modalLab().querySelector('[data-mop-biopat="EHP"]').getAttribute('aria-pressed')).toBe('true');
-    click(modalLab().querySelector('[data-mop-biopat="IHHNV"]'));
-    expect(document.activeElement).toBe(modalLab().querySelector('[data-mop-biopat="IHHNV"]'));
-    expect(modalLab().textContent).toContain('Tendencia semanal · IHHNV');
+    expect(vistaLab().querySelector('[data-mop-biopat="EHP"]').getAttribute('aria-pressed')).toBe('true');
+    click(vistaLab().querySelector('[data-mop-biopat="IHHNV"]'));
+    expect(document.activeElement).toBe(vistaLab().querySelector('[data-mop-biopat="IHHNV"]'));
+    expect(vistaLab().textContent).toContain('Tendencia semanal · IHHNV');
     const cfg = tendBio();
     expect(cfg.data.datasets.map((d) => d.label)).toEqual(['Muestras analizadas', '% positivos']);
     expect(cfg.data.labels[0]).toBe('29/06');
@@ -2800,8 +2821,8 @@ describe('Maduración · operativo · 🧬 Biomol: sus filtros, por lote y la te
   it('🔴 con el teclado (Intro) también se escoge el patógeno', async () => {
     await montar([...PLANTA, ...BIO6]);
     await abrirBiomol();
-    modalLab().querySelector('[data-mop-biopat="IHHNV"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    expect(modalLab().querySelector('[data-mop-biopat="IHHNV"]').getAttribute('aria-pressed')).toBe('true');
+    vistaLab().querySelector('[data-mop-biopat="IHHNV"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(vistaLab().querySelector('[data-mop-biopat="IHHNV"]').getAttribute('aria-pressed')).toBe('true');
   });
 });
 
@@ -2818,8 +2839,8 @@ const BIO7 = [
   BIOR('22/09/2026', 'Chongón', { Otros: 'Pleópodo', IHHNV: 'Negativo' }),
   BIOR('22/09/2026', 'Sala 3', { Otros: 'Calamar (Funda en uso)', IHHNV: 'Negativo' }),
 ];
-const tejidos = () => modalLab().querySelector('.mop-bio-tejidos');
-const franja = () => modalLab().querySelector('.mop-bio-franja');
+const tejidos = () => vistaLab().querySelector('.mop-bio-tejidos');
+const franja = () => vistaLab().querySelector('.mop-bio-franja');
 describe('Maduración · operativo · 🧬 Biomol por tipo de muestra (0q·7)', () => {
   it('🔴 la tabla tipo × patógeno: los cinco tipos; el que no tiene muestras lo dice; las celdas, sombreadas', async () => {
     await montar([...PLANTA, ...BIO7]);
@@ -2859,39 +2880,39 @@ describe('Maduración · operativo · 🧬 Biomol por tipo de muestra (0q·7)', 
     await montar([...PLANTA, ...BIO6]);
     await abrirBiomol();
     expect(tejidos()).toBeNull();
-    expect(modalLab().textContent).toContain('Aún no hay muestras de Heces, Branquias, Pleópodo, Agua ni Hisopado');
+    expect(vistaLab().textContent).toContain('Aún no hay muestras de Heces, Branquias, Pleópodo, Agua ni Hisopado');
   });
 });
 
-/* 0r·1 (2026-09-28, usuario) · el modal 🌊 Mareas de Larvicultura, en el tablero: junto a 🦠 y 🧬, con sus tres vistas y
-   el MISMO código (supervisor/mareas.js). El tablero se repinta entero en cada clic: el modal no debe perder lo elegido. */
+/* 0r·1 (2026-09-28, usuario) · 🌊 Mareas de Larvicultura, en el tablero: junto a 🦠 y 🧬, con sus vistas y el MISMO código
+   (supervisor/mareas.js). El tablero se repinta entero en cada clic: no debe perder lo elegido. 2 (2026-09-29, usuario) ·
+   era un modal; es una sub-vista más. */
 describe('Maduración · operativo · 🌊 Mareas, como en Larvicultura (0r·1)', () => {
   const MAR = (fecha, fase, ilum, tipo) => ({ _SheetOrigin: 'Marea', Fecha: fecha, 'Fase Lunar': fase, '%Iluminación': ilum, 'Tipo de Marea': tipo,
     'Pleamar 1': '03:10', 'Altura P1 (m)': '2.1', 'Bajamar 1': '09:20', 'Altura B1 (m)': '0.3',
     'Pleamar 2': '15:30', 'Altura P2 (m)': '2.0', 'Bajamar 2': '21:40', 'Altura B2 (m)': '0.4' });
-  /* Dos días ANTES de hoy (19/09): el modal abre en el último, y sin el reloj en marcha del día de hoy. */
+  /* Dos días ANTES de hoy (19/09): entra en el último, y sin el reloj en marcha del día de hoy. */
   const MAREA = [MAR('17/09/2026', 'Cuarto creciente', '48', 'Muerta'), MAR('18/09/2026', '<img src=x onerror=alert(1)>', '58', 'Muerta')];
-  const modal = () => root.querySelector('#svMareasModal');
-  const abierto = () => !!modal() && modal().classList.contains('sv-open');
-  const boton = () => root.querySelector('.mc-subnav [data-mareas-open]');
+  const modal = () => root.querySelector('[data-mareas-panel]');
+  const boton = () => root.querySelector('.mc-subnav [data-mop-sub="mareas"]');
   const modo = (m) => modal().querySelector(`[data-mareamode="${m}"]`);
   const dia = () => modal().querySelector('[data-marea-daysel] option[selected]').value;
 
-  it('🔴 el botón 🌊 Mareas va junto a 🦠 y 🧬, en cualquier sub-vista; el modal, cerrado al llegar', async () => {
+  it('🔴 2 · 🌊 Mareas es la última pastilla de la sub-nav; su contenido, en el sitio (sin ventana) y sólo en ella', async () => {
     await montar([...PLANTA, ...MAREA]);
-    expect([...root.querySelectorAll('.mc-subnav .mop-lab-b button')].map((b) => b.textContent.trim()))
-      .toEqual(['🦠 Microbiología y agua', '🧬 Biomol', '🌊 Mareas']);
-    expect(boton().getAttribute('aria-haspopup')).toBe('dialog');
-    expect(abierto()).toBe(false);
-    click(root.querySelector('[data-mop-sub="tanques"]'));
+    expect([...root.querySelectorAll('.mc-subnav [data-mop-sub]')].pop()).toBe(boton());
+    expect(modal()).toBeNull();
     click(boton());
-    expect(abierto(), 'desde 🛢 Tanques también').toBe(true);
+    expect(boton().classList.contains('is-on')).toBe(true);
+    expect(modal().closest('.mc-body > .mc-card'), 'en una tarjeta, como las demás sub-vistas').not.toBeNull();
+    expect([root.querySelector('#svMareasModal, .sv-modal, [data-mareas-close]'), document.body.classList.contains('modal-open')]).toEqual([null, false]);
+    click(root.querySelector('[data-mop-sub="tanques"]'));
+    expect(modal()).toBeNull();
   });
 
-  it('🔴 abre en Día (el último día con marea: ola, luna y lecturas); Mes cambia el cuerpo; SIN Correlación; lo del Sheet, escapado', async () => {
+  it('🔴 entra en Día (el último día con marea: ola, luna y lecturas); Mes cambia el cuerpo; SIN Correlación; lo del Sheet, escapado', async () => {
     await montar([...PLANTA, ...MAREA]);
     click(boton());
-    expect(document.body.classList.contains('modal-open')).toBe(true);
     /* Día y Mes, de Larvicultura; 0r·2 añadió «🦐 Cópulas» (sus pruebas, más abajo). 1-A (2026-09-28, usuario): «Correlación»
        se quita en Maduración («eso lo veo más para Larvicultura»); Larvicultura la conserva. */
     expect([...modal().querySelectorAll('[data-mareamode]')].map((b) => b.dataset.mareamode)).toEqual(['dia', 'mes', 'copulas']);
@@ -2915,43 +2936,46 @@ describe('Maduración · operativo · 🌊 Mareas, como en Larvicultura (0r·1)'
     click(modal().querySelector('[data-marea-day="2026-09-17"]'));
     expect(dia()).toBe('2026-09-17');
     operativoView(root);
-    expect(abierto(), 'el repintado no lo cierra').toBe(true);
-    expect(dia(), 'ni le cambia el día').toBe('2026-09-17');
+    expect(dia(), 'el repintado no le cambia el día').toBe('2026-09-17');
     click(modo('mes'));
-    /* Como el router al volver a pintar la vista (renderCurrentView): quita `modal-open` del cuerpo antes de pintar.
-       Reabierto, el modal tiene que volver a ponerla, o el fondo se desplaza detrás y el auto-refresco lo repinta. */
-    document.body.classList.remove('modal-open');
     operativoView(root);
     expect(modo('mes').classList.contains('is-active')).toBe(true);
     expect(modal().querySelectorAll('.sv-marea-stat')).toHaveLength(6);
-    expect(document.body.classList.contains('modal-open')).toBe(true);
+    click(boton());
+    expect(modo('mes').classList.contains('is-active'), 'pulsar la pastilla en la que ya se está no lo borra').toBe(true);
   });
 
-  it('🔴 ✕, el velo y Escape lo cierran y el fondo vuelve a moverse; al volver a abrir empieza en Día', async () => {
+  it('🔴 2 · salir suelta sus gráficos; al volver a entrar empieza en Día', async () => {
     await montar([...PLANTA, ...MAREA]);
     click(boton());
     click(modo('mes'));
-    click(modal().querySelector('[data-mareas-close]'));
-    expect(abierto()).toBe(false);
-    expect(document.body.classList.contains('modal-open')).toBe(false);
+    const { destroyAllCharts } = await import('../../core/charts.js');
+    destroyAllCharts.mockClear();
+    click(root.querySelector('[data-mop-sub="bajas"]'));
+    expect(destroyAllCharts).toHaveBeenCalled();
     click(boton());
     expect(modo('dia').classList.contains('is-active')).toBe(true);
     expect(modal().querySelector('.sv-marea-grid')).not.toBeNull();
-    click(modal());
-    expect(abierto(), 'el velo').toBe(false);
-    click(boton());
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    expect(abierto(), 'Escape').toBe(false);
-    expect(document.body.classList.contains('modal-open')).toBe(false);
-    operativoView(root);
-    expect(abierto(), 'cerrado, un repintado no lo reabre').toBe(false);
+    expect(dia()).toBe('2026-09-18');
   });
 
   it('🔑 sin la hoja Marea, lo dice (y no se rompe)', async () => {
     await montar(PLANTA);
     click(boton());
-    expect(abierto()).toBe(true);
     expect(modal().textContent).toContain('No hay datos de mareas cargados');
+  });
+
+  it('🔑 2 · con el día de HOY, el reloj de la ola sigue en marcha también fuera de una ventana', async () => {
+    vi.useRealTimers();   // el reloj de beforeEach sólo finge la fecha: se rehace con los intervalos
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(new Date(2026, 8, 19, 10, 0, 0));
+    await montar([...PLANTA, ...MAREA, MAR('19/09/2026', 'Cuarto creciente', '60', 'Muerta')]);
+    click(boton());
+    expect(dia()).toBe('2026-09-19');
+    const ola = () => modal().querySelector('#mareaWaveHost');
+    ola().innerHTML = 'X';
+    vi.advanceTimersByTime(60000);
+    expect(ola().innerHTML, 'al minuto, la ola se vuelve a dibujar').not.toBe('X');
   });
 });
 
@@ -2975,10 +2999,11 @@ const COP_MAREA = [
   MAR_COP('17/09/2026', 'Creciente', '15', 'Muerta', '1.2'),
   MAR_COP('18/09/2026', 'Cuarto creciente', '22', 'Muerta', '1.1'),
 ];
-describe('Maduración · operativo · 🦐 cópulas × marea × luna, en el modal de Mareas (0r·2)', () => {
-  const modal = () => root.querySelector('#svMareasModal');
+describe('Maduración · operativo · 🦐 cópulas × marea × luna, en 🌊 Mareas (0r·2)', () => {
+  const modal = () => root.querySelector('[data-mareas-panel]');
+  const entrar = () => click(root.querySelector('.mc-subnav [data-mop-sub="mareas"]'));
   const abrirCop = () => {
-    click(root.querySelector('.mc-subnav [data-mareas-open]'));
+    entrar();
     click(modal().querySelector('[data-mareamode="copulas"]'));
   };
   const chips = () => [...modal().querySelectorAll('.mop-marcop-cifras .sv-marea-stat')].map((c) =>
@@ -2992,6 +3017,7 @@ describe('Maduración · operativo · 🦐 cópulas × marea × luna, en el moda
 
   it('🔴 la pestaña va tras «Mes» y sólo en Maduración (Larvicultura no la tiene; 1-A · Maduración, sin «Correlación»)', async () => {
     await montar([...PLANTA, ...COP_MAREA]);
+    entrar();
     expect([...modal().querySelectorAll('[data-mareamode]')].map((b) => b.dataset.mareamode)).toEqual(['dia', 'mes', 'copulas']);
     expect(modal().querySelector('[data-mareamode="copulas"]').textContent).toBe('🦐 Cópulas');
     const { mareasModalHTML } = await import('../supervisor/mareas.js');
@@ -3025,7 +3051,7 @@ describe('Maduración · operativo · 🦐 cópulas × marea × luna, en el moda
     expect(g.data.datasets[0].backgroundColor, 'oscuras con marea viva, claras con muerta').toEqual(['#00838f', '#00838f', '#80cbc4']);
   });
 
-  it('🔴 con datos nuevos (otra pintada del tablero con otro libro), la pestaña cuenta de nuevo; al cerrar suelta su gráfico', async () => {
+  it('🔴 con datos nuevos (otra pintada del tablero con otro libro), la pestaña cuenta de nuevo; al pasar a «Día» suelta su gráfico', async () => {
     await montar([...PLANTA, ...COP_MAREA]);
     abrirCop();
     expect(chips()[1][1]).toBe('13,6 %');
@@ -3034,7 +3060,7 @@ describe('Maduración · operativo · 🦐 cópulas × marea × luna, en el moda
     expect(chips()[1], 'el 17/09: (3 + 5) ÷ (22 + 8)').toEqual(['Marea muerta', '26,7 %', '1 día']);
     const { destroyChart } = await import('../../core/charts.js');
     destroyChart.mockClear();
-    click(modal().querySelector('[data-mareas-close]'));
+    click(modal().querySelector('[data-mareamode="dia"]'));
     expect(destroyChart.mock.calls.map(([id]) => id)).toContain('mopMarCop');
   });
 
@@ -3058,23 +3084,28 @@ describe('Maduración · operativo · 🦐 cópulas × marea × luna, en el moda
     expect(chips()[1]).toEqual(['Marea muerta', '—', '0 días']);
   });
 
-  it('🔑 al volver a abrir el modal: en Día y sin los filtros de la pestaña', async () => {
+  it('🔑 al volver a entrar en 🌊: en Día y sin los filtros de la pestaña', async () => {
     await montar([...PLANTA, ...COP_MAREA]);
     abrirCop();
     cambiar(sala(), 'Sala 1');
     marcar(true);
-    click(modal().querySelector('[data-mareas-close]'));
-    click(root.querySelector('.mc-subnav [data-mareas-open]'));
+    click(root.querySelector('.mc-subnav [data-mop-sub="estado"]'));
+    entrar();
     expect(modal().querySelector('[data-mareamode="dia"]').classList.contains('is-active')).toBe(true);
     click(modal().querySelector('[data-mareamode="copulas"]'));
     expect([prod().hasAttribute('checked'), (sala().querySelector('option[selected]') || sala().options[0]).value]).toEqual([false, '']);
   });
 
-  it('🔑 sin partes con hembras, lo dice; sin hoja Marea, el aviso del modal', async () => {
+  /* 2 · en dos pruebas: la sub-nav la cablea la PRIMERA vista montada en un `root`, así que un segundo `montar` en el mismo
+     `root` seguiría pulsando la del módulo anterior (con sus datos). */
+  it('🔑 sin partes con hembras, lo dice', async () => {
     await montar([...PLANTA.filter((r) => !('Machos muertos' in r)), ...COP_MAREA.filter((r) => r._SheetOrigin === 'Marea')]);
     abrirCop();
     expect(modal().querySelector('.mop-marcop-vacio').textContent).toBe('Sin días con cópulas y marea con estos filtros.');
     expect(modal().querySelector('#mopMarCop')).toBeNull();
+  });
+
+  it('🔑 sin hoja Marea, el aviso de 🌊', async () => {
     await montar([...PLANTA, ...COP_MAREA.filter((r) => r._SheetOrigin !== 'Marea')]);
     abrirCop();
     expect(modal().textContent).toContain('No hay datos de mareas cargados');
@@ -3117,30 +3148,30 @@ describe('Maduración · operativo · 🦐 cópulas × marea × luna, en el moda
   });
 });
 
-/* 0r·3b (2026-09-28, usuario) · «la ventana congela»: con la ventana del laboratorio abierta, lo que se pulsa es DE la
-   ventana (su velo tapa el tablero). Se rehace SÓLO su cuerpo: el tablero de detrás y el propio overlay se quedan (y con
-   ellos el foco y el desplazamiento); sus gráficos se sueltan y se vuelven a dibujar. Abrirla y cerrarla rehacen todo. */
-describe('Maduración · operativo · 🦠 🧬 un clic en la ventana rehace sólo la ventana (0r·3b)', () => {
-  it('🔴 filtros, patógeno, formato, parámetro y «Quitar filtros» de 🦠: el tablero y el overlay son los MISMOS; el cuerpo, nuevo', async () => {
+/* 0r·3b (2026-09-28, usuario) · «la ventana congela»: con 🦠 o 🧬 a la vista, lo que se pulsa en ellas es SUYO. Se rehace
+   SÓLO su contenido: la sub-nav y su propia tarjeta se quedan (y con ellas el foco y el desplazamiento); sus gráficos se
+   sueltan y se vuelven a dibujar. Entrar y salir rehacen todo. 2 (2026-09-29) · antes, la ventana y su overlay. */
+describe('Maduración · operativo · 🦠 🧬 un clic en su sub-vista rehace sólo su contenido (0r·3b)', () => {
+  it('🔴 filtros, patógeno, formato, parámetro y «Quitar filtros» de 🦠: la sub-nav y la tarjeta son las MISMAS; el contenido, nuevo', async () => {
     await montar([...PLANTA, ...LAB5, ...AGUA5, ...CAL5]);
     abrirMicro();
-    const nav = root.querySelector('.mc-subnav'), ov = modalLab();
-    const mismo = (etq) => { expect(root.querySelector('.mc-subnav'), etq + ' · el tablero').toBe(nav); expect(modalLab(), etq + ' · el overlay').toBe(ov); };
+    const nav = root.querySelector('.mc-subnav'), ov = vistaLab();
+    const mismo = (etq) => { expect(root.querySelector('.mc-subnav'), etq + ' · la sub-nav').toBe(nav); expect(vistaLab(), etq + ' · la tarjeta').toBe(ov); };
     cambiar(selLab('sala'), 'Sala 1');
     mismo('filtro');
     expect(kpiRep(), 'y el cuerpo sí cambió: de 4 muestras a las 2 de la Sala 1').toContain('2 muestras');
     expect(document.activeElement, 'el foco, en su select').toBe(selLab('sala'));
-    click(modalLab().querySelector('[data-mop-labf-limpiar]'));
+    click(vistaLab().querySelector('[data-mop-labf-limpiar]'));
     mismo('quitar filtros');
-    click(modalLab().querySelectorAll('[data-mop-micpat]')[1]);
+    click(vistaLab().querySelectorAll('[data-mop-micpat]')[1]);
     mismo('patógeno');
-    const fmt = modalLab().querySelectorAll('[data-mop-aguafmt]')[1];
+    const fmt = vistaLab().querySelectorAll('[data-mop-aguafmt]')[1];
     if (fmt) { click(fmt); mismo('formato de agua'); }
-    const par = modalLab().querySelectorAll('[data-mop-calpar]')[1];
+    const par = vistaLab().querySelectorAll('[data-mop-calpar]')[1];
     if (par) { click(par); mismo('parámetro de calidad'); }
   });
 
-  it('🔴 al rehacer la ventana suelta sus gráficos antes de dibujarlos otra vez', async () => {
+  it('🔴 al rehacer su contenido suelta sus gráficos antes de dibujarlos otra vez', async () => {
     await montar([...PLANTA, ...LAB5, ...AGUA5, ...CAL5]);
     abrirMicro();
     const { destroyChart } = await import('../../core/charts.js');
@@ -3154,21 +3185,25 @@ describe('Maduración · operativo · 🦠 🧬 un clic en la ventana rehace só
   it('🔴 también en 🧬: su filtro y su patógeno no rehacen el tablero', async () => {
     await montar([...PLANTA, ...BIO6]);
     await abrirBiomol();
-    const nav = root.querySelector('.mc-subnav'), ov = modalLab();
+    const nav = root.querySelector('.mc-subnav'), ov = vistaLab();
     cambiar(selLab('sala'), 'Sala 1');
-    expect([root.querySelector('.mc-subnav'), modalLab()]).toEqual([nav, ov]);
-    click(modalLab().querySelectorAll('[data-mop-biopat]')[0]);
-    expect([root.querySelector('.mc-subnav') === nav, modalLab() === ov]).toEqual([true, true]);
+    expect([root.querySelector('.mc-subnav'), vistaLab()]).toEqual([nav, ov]);
+    click(vistaLab().querySelectorAll('[data-mop-biopat]')[0]);
+    expect([root.querySelector('.mc-subnav') === nav, vistaLab() === ov]).toEqual([true, true]);
   });
 
-  it('🔑 abrir, cerrar y cambiar de ventana sí rehacen la vista (el botón marcado, el fondo suelto)', async () => {
+  it('🔑 entrar, salir y pasar de 🦠 a 🧬 sí rehacen la vista (la pastilla marcada)', async () => {
     await montar([...PLANTA, ...LAB5]);
+    const pastilla = (k) => root.querySelector(`.mc-subnav [data-mop-sub="${k}"]`);
     abrirMicro();
-    expect(root.querySelector('[data-mop-lab="micro"]').classList.contains('is-on')).toBe(true);
-    click(modalLab().querySelector('[data-mop-lab-cerrar]'));
-    expect(modalLab()).toBeNull();
-    expect(root.querySelector('[data-mop-lab="micro"]').classList.contains('is-on')).toBe(false);
-    expect(document.body.classList.contains('modal-open')).toBe(false);
+    const nav = root.querySelector('.mc-subnav');
+    expect(pastilla('micro').classList.contains('is-on')).toBe(true);
+    click(pastilla('biomol'));
+    expect([root.querySelector('.mc-subnav') === nav, vistaLab().dataset.mopLabTipo]).toEqual([false, 'biomol']);
+    expect([pastilla('micro').classList.contains('is-on'), pastilla('biomol').classList.contains('is-on')]).toEqual([false, true]);
+    click(pastilla('estado'));
+    expect(vistaLab()).toBeNull();
+    expect(pastilla('biomol').classList.contains('is-on')).toBe(false);
   });
 });
 
@@ -3188,9 +3223,9 @@ describe('Maduración · operativo · 🧬 se prepara en reposo (0r·3c)', () =>
       operativoView(root);
       expect(ric, 'otra pintada con la misma carga: no se vuelve a programar').toHaveBeenCalledTimes(2);
       await vi.waitFor(() => expect(normalizeRows).toHaveBeenCalledTimes(1));
-      click(root.querySelector('[data-mop-lab="biomol"]'));
-      expect(modalLab().textContent).not.toContain('Cargando');
-      expect(modalLab().querySelector('[data-mop-labf]')).not.toBeNull();
+      click(root.querySelector('[data-mop-sub="biomol"]'));
+      expect(vistaLab().textContent).not.toContain('Cargando');
+      expect(vistaLab().querySelector('[data-mop-labf]')).not.toBeNull();
       expect(normalizeRows, 'abrirla no vuelve a normalizar').toHaveBeenCalledTimes(1);
     } finally { delete window.requestIdleCallback; }
   });
@@ -3218,8 +3253,8 @@ describe('Maduración · operativo · 🧬 se prepara en reposo (0r·3c)', () =>
     normalizeRows.mockClear();
     await new Promise((r) => setTimeout(r, 30));
     expect(normalizeRows).not.toHaveBeenCalled();
-    click(root.querySelector('[data-mop-lab="biomol"]'));
-    expect(modalLab().textContent).toContain('Cargando');
+    click(root.querySelector('[data-mop-sub="biomol"]'));
+    expect(vistaLab().textContent).toContain('Cargando');
   });
 });
 
@@ -3245,7 +3280,7 @@ describe('Maduración · operativo · 🦠 se prepara en reposo (0r·3d)', () =>
       expect(fundidas, 'se funden en reposo').toBeGreaterThan(0);
       expect(medidas, 'y se mide su calidad de agua').toBeGreaterThan(0);
       abrirMicro();
-      expect(modalLab().querySelector('.mop-lab-kpi')).not.toBeNull();
+      expect(vistaLab().querySelector('.mop-lab-kpi')).not.toBeNull();
       expect(meltRow, 'abrir 🦠 no funde nada').toHaveBeenCalledTimes(fundidas);
       expect(calMeasured, 'ni mide nada').toHaveBeenCalledTimes(medidas);
     } finally { delete window.requestIdleCallback; }

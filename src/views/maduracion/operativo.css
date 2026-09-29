@@ -297,11 +297,7 @@
   .mop-rep-acc { margin-left: 0; }
 }
 
-/* 0f · 8 (2026-09-26, usuario) · 🦠 / 🧬 lo del laboratorio: dos botones junto a la sub-nav y su modal. */
-.mop-lab { padding: 16px 12px; }   /* menos margen que el modal genérico: sus tablas necesitan el ancho */
-.mop-lab-b { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
-.mop-lab-btn { border-style: dashed; }
-.mop-lab-card { width: min(980px, 100%); }
+/* 0f · 8 (2026-09-26, usuario) · 🦠 / 🧬 lo del laboratorio (2 · 2026-09-29: sub-vistas en una tarjeta, ya no un modal). */
 .mop-lab-per { margin: 0 0 10px; font-size: 12px; color: var(--c-text-soft); }
 .mop-lab-bloque { margin: 0 0 16px; padding: 0 0 12px; border-bottom: 1px solid var(--c-border-soft); }
 .mop-lab-bloque:last-of-type { border-bottom: 0; }
@@ -343,6 +339,5 @@
 .mop-bio-lotes td.mop-bio-p3, .mop-bio-tejidos td.mop-bio-p3 { background: color-mix(in srgb, var(--c-malo) 42%, transparent); font-weight: 700; }
 .mop-bio-lotes td.mop-bio-p4, .mop-bio-tejidos td.mop-bio-p4 { background: color-mix(in srgb, var(--c-grave) 50%, transparent); font-weight: 800; }
 @media (max-width: 700px) {
-  .mop-lab-b { margin-left: 0; }
   .mop-lab-2 { grid-template-columns: 1fr; }
 }

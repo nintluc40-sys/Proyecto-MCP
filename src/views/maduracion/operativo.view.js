@@ -59,12 +59,12 @@ import { NIVEL_COLOR } from '../microbiologia/data.js';
 import { loadCalRanges } from '../microbiologia/calagua.data.js';
 import { microPreseleccion } from '../microbiologia/index.js';
 import { makeAccessibleDialog } from '../../ui/modal.js';
-import { mareasModalHTML, cablearMareas } from '../supervisor/mareas.js';   // 0r·1 · el modal 🌊 Mareas de Larvicultura
+import { mareasPanelHTML, cablearPanelMareas } from '../supervisor/mareas.js';   // 0r·1 · 🌊 Mareas de Larvicultura (2 · sin ventana)
 import { partesConHembras, copulasYMarea } from './operativo.mareas.js';   // 0r·2 · su pestaña «🦐 Cópulas»
 import { mareaPorDia } from './data.js';                                    // 0r·2 · la hoja «Marea» por día (la de T9)
 import { desovesDiarios, desovesYMarea } from './operativo.mareas.js';     // 1-A · y los desoves por fase lunar
 import { FASES_CICLO } from './data.js';                                    // 1-A · el filtro de fase lunar
-import { destroyChart } from '../../core/charts.js';                         // 0r·3b · soltar los gráficos de la ventana al rehacerla
+import { destroyChart } from '../../core/charts.js';                         // 0r·3b · soltar los gráficos de 🦠 / 🧬 al rehacerlas
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import { changeView } from '../../ui/router.js';
 import { INDICADORES } from './operativo.indicadores.js';
@@ -127,7 +127,14 @@ const SUBS = [
   /* F7 (2026-09-22) · la reportería, con su propia pastilla (decisión del usuario). `.mc-subnav` es `flex-wrap`,
      así que la décima envuelve en el móvil: no repite el problema de sitio que obligó a fusionar F5. */
   { clave: 'reportes', etiqueta: 'Reportes', icono: '🖨' },
+  /* 2 (2026-09-29, usuario) · lo del laboratorio y las mareas, que eran ventanas, son sub-vistas como las demás: «que no se
+     genere una ventana extra sino que de ahí mismo». Las tres traen SUS filtros y ocultan la barra del tablero (`PROPIOS`). */
+  { clave: 'micro', etiqueta: 'Microbiología y agua', icono: '🦠' },
+  { clave: 'biomol', etiqueta: 'Biomol', icono: '🧬' },
+  { clave: 'mareas', etiqueta: 'Mareas', icono: '🌊' },
 ];
+/** 2 · las sub-vistas con sus propios filtros: sin la barra ni las etiquetas del tablero, que no les aplican. */
+const PROPIOS = new Set(['micro', 'biomol', 'mareas']);
 const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', tanque: '', lote: '', codigo: '', color: 'estado', salaDetalle: '', tanqueSel: '', loteSel: '', agrupacion: 'lote',
   estado: '', sexo: '', piscina: '', camaronera: '', agrupacionBajas: 'sala',
   /* F4.1 · el tanque cuya FICHA está abierta en 🛢 Tanques. Es otro que `tanqueSel`, que es el del mapa de
@@ -152,17 +159,15 @@ const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', 
   /* 0q·4 · el día del calendario de partes (🩺 Calidad del dato) cuya ventana está abierta, y la sala en la que se centra
      (la de la celda pulsada; vacía desde una fecha del encabezado). */
   diaParte: '', diaSala: '',
-  /* 0q·5a · los filtros PROPIOS de la ventana de Microbiología (empiezan con la sala, el sexo y el lote del tablero al
-     abrirla) y el patógeno cuyas cantidades se dibujan. */
+  /* 0q·5a · los filtros PROPIOS de 🦠 Microbiología y 🧬 Biomol (empiezan con la sala, el sexo y el lote del tablero al
+     entrar) y el patógeno cuyas cantidades se dibujan. */
   labF: { mes: '', lote: '', sala: '', piscina: '', sexo: '' }, labPat: '',
   /* 0q·5b · en ③ Agua y RAS: el formato, el componente y el patógeno de su gráfico de cantidades. */
   aguaFmt: '', aguaComp: '', aguaPat: '',
   /* 0q·5c · en ③ Calidad de agua: el grupo (vacío = todos) y el parámetro de su gráfico. */
   calGrupo: '', calPar: '',
-  /* 0q·6 · en 🧬 Biomol: el patógeno de la tendencia semanal. Sus filtros son los de la ventana (`labF`). */
-  bioPat: '',
-  /* 0f · 8 · el modal del laboratorio abierto: 'micro' | 'biomol' | ''. Vive la sesión, como lo demás: un refresco de datos no lo cierra. */
-  lab: '' };
+  /* 0q·6 · en 🧬 Biomol: el patógeno de la tendencia semanal. Sus filtros son los de su sub-vista (`labF`). */
+  bioPat: '' };
 /* El estado de la vista vive lo que dura la sesión: al volver a Maduración, o al refrescarse los datos, se conserva. */
 const vOp = { ...INICIAL };
 
@@ -287,7 +292,8 @@ export function operativoView(root) {
   depurarFiltros(M.filtros);
   const F = normalizarFiltro(vOp, indiceDeFiltro(M));
   const periodo = periodoDe(vOp.periodo, fecha, M.fuentes, cicloDelLote(M.libro, vOp.lote, fecha));
-  let h = cabeceraHTML(fecha) + filtrosHTML(M, hoy, fecha, periodo) + etiquetasHTML(F) + subnavHTML() + avisosDelDatoHTML(M);
+  const barra = PROPIOS.has(vOp.sub) ? '' : filtrosHTML(M, hoy, fecha, periodo) + etiquetasHTML(F);   // 2 · las tres con SUS filtros
+  let h = cabeceraHTML(fecha) + barra + subnavHTML() + avisosDelDatoHTML(M);
   let detalle = null;
   if (vOp.sub === 'salas') {
     const salaDet = F.sala || vOp.salaDetalle;
@@ -309,13 +315,15 @@ export function operativoView(root) {
     h += calidadHTML(M, memo, periodo, F);
   } else if (vOp.sub === 'reportes') {
     h += reportesHTML(M, memo, fecha, hoy, F, periodo);
+  } else if (LAB[vOp.sub]) {
+    _labIngresos = M.fuentes.ingresos || [];   // 0q·5a · de dónde viene cada lote (su piscina)
+    h += labPanelHTML();                       // 0f · 8 · 🦠 / 🧬 (2 · sub-vistas, ya no ventanas)
+  } else if (vOp.sub === 'mareas') {
+    _marCop.fuentes = M.fuentes;     // 0r·2 · la pestaña «🦐 Cópulas» cuenta sobre las fuentes de esta pintada
+    h += `<div class="mc-body"><div class="mc-card">${mareasPanelHTML({ extras: MAREAS_EXTRAS_BOTONES, sinCorrelacion: true })}</div></div>`;   // 0r·1 · 🌊 Mareas (0r·2 · con «🦐 Cópulas»; 1-A · sin «Correlación»)
   } else {
     h += estadoHTML(M, memo, periodo, F);
   }
-  _labIngresos = M.fuentes.ingresos || [];   // 0q·5a · de dónde viene cada lote (su piscina)
-  h += labModalHTML(periodo, F);   // 0f · 8 · encima de cualquier sub-vista
-  _marCop.fuentes = M.fuentes;     // 0r·2 · la pestaña «🦐 Cópulas» cuenta sobre las fuentes de esta pintada
-  h += mareasModalHTML({ extras: MAREAS_EXTRAS_BOTONES, sinCorrelacion: true });   // 0r·1 · lo abre 🌊 Mareas (0r·2 · con «🦐 Cópulas»; 1-A · sin «Correlación»)
   root.innerHTML = h;
   if (detalle) dibujarDetalle(detalle);
   if (vOp.sub === 'lotes') dibujarLote(_fichaLote);
@@ -324,10 +332,10 @@ export function operativoView(root) {
   if (vOp.sub === 'reproduccion') dibujarReparto(_reparto);   // 0q·3
   dibujarCuarentena(_cuarCurva);   // 0f · 4 · sólo si su lienzo está en pantalla (📊 Estado actual, con un par abierto)
   dibujarKpi(_kpiGraf);            // 0f · 5 · ídem, con una tarjeta de KPI abierta
-  trasPintarLab(root);             // 0f · 8 · el modal del laboratorio: foco, fondo quieto y su gráfico
+  trasPintarLab(root);             // 0f · 8 · el gráfico de 🧬 (2 · sub-vista)
   trasPintarDia(root);             // 0q·4 · la ventana de un día del calendario de partes
-  dibujarMicPat();                 // 0q·5a · las cantidades del patógeno elegido, en la ventana de Microbiología
-  trasPintarMareas(root);          // 0r·1 · el modal 🌊 Mareas: cablearlo y, si estaba abierto, reabrirlo con lo mismo
+  dibujarMicPat();                 // 0q·5a · las cantidades del patógeno elegido, en 🦠 Microbiología
+  trasPintarMareas(root);          // 0r·1 · la sub-vista 🌊 Mareas (2): cablearla y pintarla con lo elegido
   precargarBiomol(root);           // 0r·3c · 🧬 se prepara en reposo
   precargarMicro(root);            // 0r·3d · y 🦠, en una tarea en reposo aparte
   bind(root);
@@ -400,7 +408,7 @@ function filtrosHTML(M, hoy, fecha, p) {
 }
 
 function subnavHTML() {
-  return `<div class="mc-subnav">${SUBS.map((s) => `<button class="mc-pill ${vOp.sub === s.clave ? 'is-on' : ''}" data-mop-sub="${s.clave}">${s.icono} ${esc(s.etiqueta)}</button>`).join('')}${labBotonesHTML()}</div>`;
+  return `<div class="mc-subnav">${SUBS.map((s) => `<button class="mc-pill ${vOp.sub === s.clave ? 'is-on' : ''}" data-mop-sub="${s.clave}">${s.icono} ${esc(s.etiqueta)}</button>`).join('')}</div>`;
 }
 
 /** Avisos de calidad del dato: filas que ya no casan con ninguna hoja, y fechas posteriores a hoy. */
@@ -504,37 +512,23 @@ function estadoHTML(M, memo, p, F) {
 
 /* ============================================================
    🦠 / 🧬 LO DEL LABORATORIO (0f · 8, 2026-09-26, usuario)
-   Dos botones junto a la barra de sub-vistas abren, como modal y desde cualquier sub-vista, lo que el laboratorio mide
-   de Maduración: Microbiología y calidad de agua, y Biomol de los reproductores. Siguen los filtros del tablero (las
-   cuentas, en operativo.laboratorio.js). Biomol se carga al abrirlo: su vista es la más pesada de la app y va en su
-   propio paquete (main.js); traerla al del tablero lo cargaría en cada arranque.
+   Lo que el laboratorio mide de Maduración: Microbiología y calidad de agua, y Biomol de los reproductores (las cuentas,
+   en operativo.laboratorio.js). Biomol se carga al abrirlo: su vista es la más pesada de la app y va en su propio
+   paquete (main.js); traerla al del tablero lo cargaría en cada arranque.
+   2 (2026-09-29, usuario) · eran dos ventanas abiertas con dos botones junto a la sub-nav; son dos sub-vistas más.
    ============================================================ */
-const LAB = { micro: { titulo: '🦠 Microbiología y agua · Maduración' }, biomol: { titulo: '🧬 Biomol · reproductores' } };
+const LAB = { micro: () => labMicroHTML(), biomol: () => labBiomolHTML() };   // la sub-vista → su cuerpo
 let _labRoot = null;          // la vista, para repintar cuando llega Biomol
-let _labAbierto = false;      // para mover el foco sólo al ABRIR (cada repintado rehace el modal)
 let _labTend = null;          // la tendencia de Biomol, para dibujarla tras pintar
 let _bio = { src: null, filas: null, cargando: false, error: '' };
 
-function labBotonesHTML() {
-  return `<span class="mop-lab-b">${Object.entries(LAB).map(([k, x]) =>
-    `<button type="button" class="mc-pill mop-lab-btn${vOp.lab === k ? ' is-on' : ''}" data-mop-lab="${k}" aria-haspopup="dialog">${esc(x.titulo.split(' · ')[0])}</button>`).join('')}${MAREAS_BOTON}</span>`;
-}
-
-/* 0r·1 (2026-09-28, usuario) · 🌊 Mareas junto a 🦠 y 🧬: el MISMO modal de Larvicultura (supervisor/mareas.js, que lo
-   pinta y lo cablea). La vista se repinta entera en cada clic: lo abierto y lo elegido se guardan aquí y, tras cada
-   pintada, se cablea de nuevo y, si estaba abierto, se reabre con lo mismo. Abrirlo con el botón empieza en «Día». */
-const MAREAS_BOTON = '<button type="button" class="mc-pill mop-lab-btn" data-mareas-open aria-haspopup="dialog">🌊 Mareas</button>';
-const _mareas = { abierto: false, estado: undefined };
+/* 0r·1 (2026-09-28, usuario) · 🌊 Mareas junto a 🦠 y 🧬: lo MISMO que Larvicultura (supervisor/mareas.js, que lo pinta y
+   lo cablea). La vista se repinta entera en cada clic: lo elegido se guarda aquí y, tras cada pintada, se cablea de nuevo
+   con lo mismo. 2 (2026-09-29, usuario) · ya no es una ventana sino una sub-vista: entrar en ella empieza en «Día». */
+const _mareas = { estado: undefined };
 function trasPintarMareas(root) {
-  const ctl = cablearMareas(root, root.querySelector('#svMareasModal'), {
-    state: _mareas.estado,
-    alAbrir: () => { _mareas.abierto = true; },
-    alCerrar: () => { _mareas.abierto = false; },
-    extras: MAREAS_EXTRAS,
-  });
-  if (!ctl) return;
-  _mareas.estado = ctl.state;
-  if (_mareas.abierto) ctl.reabrir();
+  const ctl = cablearPanelMareas(root.querySelector('[data-mareas-panel]'), { state: _mareas.estado, extras: MAREAS_EXTRAS });
+  if (ctl) _mareas.estado = ctl.state;
 }
 
 /* 0r·2 (2026-09-28, usuario) · la pestaña «🦐 Cópulas» del modal: ¿se copula más con la marea viva, con una fase de la luna o
@@ -724,7 +718,7 @@ function filasBiomol() {
     import('../biomolecular/index.js')
       .then((m) => { _bio = { src, filas: m.normalizeRows(src.filter((r) => r._SheetOrigin === 'Biomol')), cargando: false, error: '' }; })
       .catch((e) => { _bio = { src: null, filas: null, cargando: false, error: String((e && e.message) || e) }; })
-      .then(() => { if (vOp.lab === 'biomol' && _labRoot && _labRoot.isConnected) operativoView(_labRoot); });
+      .then(() => { if (vOp.sub === 'biomol' && _labRoot && _labRoot.isConnected) operativoView(_labRoot); });
   }
   return null;
 }
@@ -800,7 +794,7 @@ let _micPat = null;
 const MESES_TXT = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const mesTxt = (ym) => MESES_TXT[Number(ym.slice(5, 7)) - 1] + ' ' + ym.slice(0, 4);
 const LABF_VACIO = { mes: '', lote: '', sala: '', piscina: '', sexo: '' };
-/** El «cuándo» de la ventana en palabras: el mes elegido o todo el registro. */
+/** El «cuándo» de 🦠 / 🧬 en palabras: el mes elegido o todo el registro. */
 const cuandoLab = () => (vOp.labF.mes ? mesTxt(vOp.labF.mes) : 'todo el registro');
 /** El sexo del tablero («hembras») a la grafía de las muestras («Hembras»), para que su select lo enseñe. */
 function labFNormalizado(op) {
@@ -818,11 +812,11 @@ function labFiltrosHTML(op, notaPiscina = 'la piscina, sólo en ①: la de la mu
       `<option value="${esc(v)}"${v === fi[dim] ? ' selected' : ''}>${esc(fmt(v))}</option>`).join('')}</select></label>`;
   };
   const hay = Object.values(fi).some((v) => v);
-  return `<div class="mop-labf" role="group" aria-label="Filtros de esta ventana">
+  return `<div class="mop-labf" role="group" aria-label="Filtros de esta vista">
       ${sel('mes', 'Mes', op.meses, 'Todo el registro', mesTxt)}${sel('lote', 'Lote', op.lotes, 'Todos')}${sel('sala', 'Sala', op.salas, 'Todas')}
       ${sel('piscina', 'Piscina', op.piscinas, 'Todas')}${sel('sexo', 'Sexo', op.sexos, 'Los dos')}
       ${hay ? '<button type="button" class="mc-mini" data-mop-labf-limpiar>Quitar filtros</button>' : ''}</div>
-    <p class="mop-lab-per">${fi.mes ? esc(mesTxt(fi.mes)) : 'Todo el registro'} · con los filtros de esta ventana, no los del tablero · ${esc(notaPiscina)}</p>`;
+    <p class="mop-lab-per">${fi.mes ? esc(mesTxt(fi.mes)) : 'Todo el registro'} · con los filtros de esta vista, no los del tablero · ${esc(notaPiscina)}</p>`;
 }
 /** El bloque del patógeno escogido de ①: su resumen y el lienzo de sus cantidades. */
 function micPatHTML() { return cantidadesHTML(_micPat, 'mopMicPat', 'los reproductores'); }
@@ -1029,7 +1023,7 @@ function labBiomolHTML() {
   _labTend = null;
   const filas = filasBiomol();
   if (!filas) return _bio.error ? `<p class="mc-warn">No se pudo cargar Biología Molecular: ${esc(_bio.error)}</p>` : '<p class="muted">Cargando Biología Molecular…</p>';
-  // 0q·6 · con los filtros de la ventana, sobre todo el registro.
+  // 0q·6 · con los filtros de su sub-vista, sobre todo el registro.
   const op = opcionesBiomol(filas);
   labFNormalizado(op);
   const b = resumenBiomolDeLaVentana(filas, vOp.labF);
@@ -1067,19 +1061,11 @@ function labBiomolHTML() {
     : '<p class="muted">Ningún positivo con estos filtros.</p>'}`;
 }
 
-/** El modal abierto (o nada). Va al final de la vista: tapa cualquier sub-vista. */
-function labModalHTML(_p, _F) {   // 0q·6 · las dos ventanas tienen sus filtros: ya no usan los del tablero
-  if (!LAB[vOp.lab]) { vOp.lab = ''; _labTend = null; return ''; }
-  const cuerpo = vOp.lab === 'micro' ? labMicroHTML() : labBiomolHTML();
-  return `<div class="sv-modal sv-open mop-lab" data-mop-lab-overlay data-mop-lab-tipo="${esc(vOp.lab)}">
-    <div class="sv-modal-card mop-lab-card">
-      <div class="sv-modal-head"><span class="sv-modal-title">${esc(LAB[vOp.lab].titulo)}</span>
-        <button type="button" class="sv-modal-x" data-mop-lab-cerrar aria-label="Cerrar">✕</button></div>
-      <div class="sv-modal-body">
-        ${cuerpo}
-      </div>
-    </div>
-  </div>`;
+/** La sub-vista 🦠 o 🧬 (2 · antes, un modal encima de cualquier sub-vista). 0q·6 · con sus filtros, no los del tablero. */
+function labPanelHTML() {
+  return `<div class="mc-body"><div class="mc-card" data-mop-lab-panel data-mop-lab-tipo="${esc(vOp.sub)}">
+    ${LAB[vOp.sub]()}
+  </div></div>`;
 }
 const COLOR_BIOMOL = { IHHNV: '#ef4444', WSSV: '#f59e0b', BP: '#a78bfa', AHPND: '#38bdf8', NHPB: '#14b8a6', EHP: '#ec4899' };   // los de su vista
 /* 0q·6 · la prevalencia POR LOTE: lote × patógeno, cada celda sombreada por su % (clases mop-bio-p0…p4). */
@@ -1147,38 +1133,25 @@ function dibujarLab() {
     },
   });
 }
-/** Tras pintar: el foco entra al ABRIR (no en cada repintado) y el cuerpo no se desplaza detrás del modal. */
-/* 0r·3b (2026-09-28, usuario) · «la ventana congela»: con la ventana del laboratorio abierta, lo que se pulsa es DE la
-   ventana (su velo tapa el tablero). Se rehace SÓLO su cuerpo —ni el tablero de detrás ni el overlay, que se quedan con su
-   foco y su desplazamiento—, soltando antes sus gráficos y dibujándolos otra vez. Si no hay ventana abierta, o es la
-   OTRA (abrir, cerrar, cambiar), false: la vista entera. Medido: rehacer el tablero con la ventana costaba 60–100 ms más
-   por clic en un equipo de campo. */
+/* 0r·3b (2026-09-28, usuario) · «la ventana congela»: con 🦠 o 🧬 a la vista, lo que se pulsa en ellas es SUYO. Se rehace
+   SÓLO su contenido —ni la cabecera ni la sub-nav, que se quedan con su foco y su desplazamiento—, soltando antes sus
+   gráficos y dibujándolos otra vez. Si no está a la vista, o se pasa a OTRA sub-vista, false: la vista entera. Medido:
+   rehacer el tablero entero costaba 60–100 ms más por clic en un equipo de campo. 2 (2026-09-29) · ya no es una ventana
+   sino su sub-vista: sin barra del tablero (`PROPIOS`), nada de fuera cambia con lo que se pulsa dentro. */
 const LIENZOS_LAB = ['mopLabTend', 'mopMicPat', 'mopAguaPat', 'mopCalPar'];
-function repintarVentanaLab(root) {
-  const ov = root.querySelector('[data-mop-lab-overlay]');
-  const cuerpo = ov && ov.querySelector('.sv-modal-body');
-  if (!cuerpo || !LAB[vOp.lab] || ov.dataset.mopLabTipo !== vOp.lab) return false;
+function repintarPanelLab(root) {
+  const panel = root.querySelector('[data-mop-lab-panel]');
+  if (!panel || !LAB[vOp.sub] || panel.dataset.mopLabTipo !== vOp.sub) return false;
   LIENZOS_LAB.forEach((id) => destroyChart(id));
-  const nuevo = document.createElement('div');
-  nuevo.innerHTML = labModalHTML();
-  cuerpo.innerHTML = nuevo.querySelector('.sv-modal-body').innerHTML;
-  trasPintarLab(root);   // ya abierta: no mueve el foco; dibuja la tendencia de Biomol
+  panel.innerHTML = LAB[vOp.sub]();
+  trasPintarLab(root);   // la tendencia de Biomol
   dibujarMicPat();       // y las cantidades, el agua y el parámetro de 🦠
   return true;
 }
+/** Tras pintar: la tendencia de 🧬, si está a la vista, y la vista que repintar cuando llegue Biomol. */
 function trasPintarLab(root) {
   _labRoot = root;
-  const ov = root.querySelector('[data-mop-lab-overlay]');
-  if (ov) {
-    document.body.classList.add('modal-open');
-    const dlg = makeAccessibleDialog(ov);
-    if (!_labAbierto && dlg) dlg.focusFirst();
-    _labAbierto = true;
-    dibujarLab();
-  } else if (_labAbierto) {
-    document.body.classList.remove('modal-open');
-    _labAbierto = false;
-  }
+  dibujarLab();
 }
 
 /* 0f · 5 (2026-09-25, usuario) · el gráfico de la tarjeta de KPI abierta, DEBAJO de las tarjetas. Sale de
@@ -3184,16 +3157,15 @@ function descargarParte() {
 function bind(root) {
   if (root._mopBound) return;
   root._mopBound = true;
-  registerModalEscape('.mop-lab.sv-open');   // 0f · 8
   registerModalEscape('.mop-dia.sv-open');   // 0q·4
-  const repintar = () => repintarVentanaLab(root) || operativoView(root);   // 0r·3b · con la ventana abierta, sólo ella
+  const repintar = () => repintarPanelLab(root) || operativoView(root);   // 0r·3b · con 🦠 o 🧬 a la vista, sólo su contenido
   const abrirSala = (sala) => { vOp.salaDetalle = vOp.salaDetalle === sala ? '' : sala; repintar(); };
   const abrirLote = (lote) => { vOp.loteSel = vOp.loteSel === lote ? '' : lote; repintar(); };
   const abrirTanque = (k) => { vOp.tqFicha = vOp.tqFicha === k ? '' : k; repintar(); };
   const abrirPiscina = (x) => { vOp.piscinaSel = vOp.piscinaSel === x ? '' : x; repintar(); };
   const abrirCuarentena = (k) => { vOp.cuarSel = vOp.cuarSel === k ? '' : k; repintar(); };   // 0f · 4
   const abrirKpi = (k) => { vOp.kpiSel = vOp.kpiSel === k ? '' : k; repintar(); };            // 0f · 5
-  /** 0q·5b · repinta y devuelve el foco al control que se usó (la ventana se rehace entera). */
+  /** 0q·5b · repinta y devuelve el foco al control que se usó (🦠 / 🧬 se rehacen enteras). */
   const repintarYEnfocar = (sel) => {
     repintar();
     const f = root.querySelector(sel);
@@ -3210,7 +3182,16 @@ function bind(root) {
   root.addEventListener('click', (e) => {
     const t = e.target;
     const sub = t.closest('[data-mop-sub]');
-    if (sub) { vOp.sub = sub.dataset.mopSub; repintar(); return; }
+    if (sub) {
+      const nueva = sub.dataset.mopSub;
+      /* 2 · entrar en 🦠 o 🧬 empieza con la sala, el sexo y el lote del tablero (0q·5a), y en 🌊, en «Día» (0r·1): como
+         al abrir sus ventanas. Pulsar la que ya está a la vista no borra lo elegido. */
+      if (LAB[nueva] && nueva !== vOp.sub) vOp.labF = { ...LABF_VACIO, lote: vOp.lote || '', sala: vOp.sala || '', sexo: vOp.sexo || '' };
+      if (nueva === 'mareas' && vOp.sub !== 'mareas') _mareas.estado = undefined;
+      vOp.sub = nueva;
+      repintar();
+      return;
+    }
     const per = t.closest('[data-mop-periodo]');
     if (per) { vOp.periodo = per.dataset.mopPeriodo; repintar(); return; }
     const rep = t.closest('[data-mop-rep]');
@@ -3249,11 +3230,7 @@ function bind(root) {
     if (t.closest('[data-mop-dia-cerrar]') || (t.matches && t.matches('[data-mop-dia-overlay]'))) { vOp.diaParte = ''; vOp.diaSala = ''; repintar(); return; }
     const dia = t.closest('[data-mop-dia]');
     if (dia) { vOp.diaParte = dia.dataset.mopDia; vOp.diaSala = dia.dataset.mopDiaSala || ''; repintar(); return; }
-    /* 0f · 8 · los modales del laboratorio: abrir, ✕, el velo (y Escape, que pulsa el velo) y el enlace a Microbiología. */
-    const lab = t.closest('[data-mop-lab]');
-    if (lab && lab.dataset.mopLab !== vOp.lab) vOp.labF = { ...LABF_VACIO, lote: vOp.lote || '', sala: vOp.sala || '', sexo: vOp.sexo || '' };   // 0q·5a
-    if (lab) { vOp.lab = lab.dataset.mopLab; repintar(); return; }
-    /* 0q·5a · en la ventana de Microbiología: «Quitar filtros» y escoger un patógeno (el foco se queda en su fila). */
+    /* 0q·5a · en 🦠 Microbiología: «Quitar filtros» y escoger un patógeno (el foco se queda en su fila). */
     if (t.closest('[data-mop-labf-limpiar]')) { vOp.labF = { ...LABF_VACIO }; repintar(); return; }
     const mp = t.closest('[data-mop-micpat]');
     if (mp) { elegirPatogeno(mp.dataset.mopMicpat); return; }
@@ -3265,10 +3242,7 @@ function bind(root) {
     if (bp) { vOp.bioPat = bp.dataset.mopBiopat; repintarYEnfocar(`[data-mop-biopat="${bp.dataset.mopBiopat}"]`); return; }
     const cp = t.closest('[data-mop-calpar]');   // 0q·5c
     if (cp) { vOp.calPar = cp.dataset.mopCalpar; repintarYEnfocar(`[data-mop-calpar="${cp.dataset.mopCalpar}"]`); return; }
-    if (t.closest('[data-mop-lab-cerrar]') || (t.matches && t.matches('[data-mop-lab-overlay]'))) { vOp.lab = ''; repintar(); return; }
-    if (t.closest('[data-mop-lab-abrir-micro]')) {
-      vOp.lab = '';
-      repintar();
+    if (t.closest('[data-mop-lab-abrir-micro]')) {   // 0f · 8 · el enlace a Microbiología (al volver, 🦠 sigue a la vista)
       microPreseleccion({ sub: 'bacteriologia', depto: 'Maduración' });
       changeView('microbiologia');
       return;
@@ -3354,7 +3328,7 @@ function bind(root) {
   });
 
   root.addEventListener('change', (e) => {
-    /* 0q·5a · un filtro de la ventana de Microbiología: se repinta y el foco se queda en su select. */
+    /* 0q·5a · un filtro de 🦠 Microbiología o 🧬 Biomol: se repinta y el foco se queda en su select. */
     if (e.target.matches && e.target.matches('[data-mop-calgrupo]')) {   // 0q·5c · el grupo de la calidad de agua
       vOp.calGrupo = e.target.value || '';
       repintarYEnfocar('[data-mop-calgrupo]');
