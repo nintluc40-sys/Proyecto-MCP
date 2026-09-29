@@ -25,9 +25,10 @@
      🛢 Tanques (F4) — tabla maestra de los tanques ocupados y, al pulsar una fila, su ficha: composición, curva de
         vivos, partes del día con su hora, observaciones y movimientos;
      🥚 Reproducción (F4) — totales, los desoves pendientes de N5 arriba, la tabla por lote y a dónde fueron;
-     🔄 Manejo (F5) — movimientos (matriz sala → sala con el registro debajo), la alimentación PLANIFICADA por
-        producto contra la agenda estándar, con cada toma juzgada con el rango de la ficha, y los tratamientos
-        (calendario sala × día, productos por área y cobertura preventiva por lote);
+     🔄 Manejo (F5) — movimientos (matriz sala → sala con el registro debajo) y los tratamientos (calendario
+        sala × día, productos por área y cobertura preventiva por lote);
+     🦐 Alimentación (6, 2026-09-29; antes, el 2.º bloque de Manejo) — la alimentación PLANIFICADA por producto
+        contra la agenda estándar, con cada toma juzgada con el rango de la ficha;
      🩺 Calidad del dato (F6) — las hojas y su calendario, los partes esperados frente a los registrados, el estado
         registrado de cada sala frente al propuesto, los avisos del libro y el cruce con 🧬 Microchips.
    Esta vista sólo PINTA: las cifras salen de los módulos puros operativo.*.js, que tienen sus pruebas y sus bancos
@@ -118,8 +119,12 @@ const SUBS = [
   { clave: 'reproduccion', etiqueta: 'Reproducción', icono: '🥚' },
   /* F5 (2026-09-21) · lo que se le HACE a la planta, frente a lo que le pasa: movimientos, alimentación y
      tratamientos en UNA sola sub-vista con tres bloques y los mismos filtros. Decisión del usuario: con una
-     pastilla por tema la sub-nav no cabía en un móvil. */
+     pastilla por tema la sub-nav no cabía en un móvil. 6 (2026-09-29) · la alimentación sale a su pastilla (abajo): la
+     sub-nav ya envuelve, y Manejo se queda con los movimientos y los tratamientos. */
   { clave: 'manejo', etiqueta: 'Manejo', icono: '🔄' },
+  /* 6 (2026-09-29, usuario) · «Alimentación · ración PLANIFICADA» como sub-vista propia, tras Manejo: el MISMO bloque que
+     vivía dentro de él (nada se recalcula), con la barra y los filtros del tablero. */
+  { clave: 'alimentacion', etiqueta: 'Alimentación', icono: '🦐' },
   /* F6 (2026-09-21) · si lo que dice el tablero descansa sobre registros completos, y el cruce con 🧬 Microchips,
      en UNA sub-vista nueva (decisión del usuario). Broodstock no tiene pastilla: vive en 🧬 Lotes, como el ORIGEN
      de los lotes. */
@@ -316,6 +321,8 @@ export function operativoView(root) {
     h += reproduccionHTML(M, periodo, F);
   } else if (vOp.sub === 'manejo') {
     h += manejoHTML(M, periodo, F);
+  } else if (vOp.sub === 'alimentacion') {   // 6 · antes, el 2.º bloque de Manejo
+    h += alimentacionHTML(alimentacionPorProducto(M.fuentes, periodo, F), procedenciaDelPeso(M.fuentes, periodo, F), periodo, F);
   } else if (vOp.sub === 'calidad') {
     h += calidadHTML(M, memo, periodo, F);
   } else if (vOp.sub === 'reportes') {
@@ -2745,12 +2752,10 @@ const PORQUE_TRAT = 'La hoja de Tratamientos se registra por sala y área, con s
 function manejoHTML(M, p, F) {
   const mat = matrizDeMovimientos(M.fuentes, p, F, M.libro);
   const reg = registroDeMovimientos(M.fuentes, p, F);
-  const al = alimentacionPorProducto(M.fuentes, p, F);
-  const peso = procedenciaDelPeso(M.fuentes, p, F);
   const cal = calendarioDeTratamientos(M.fuentes, p, F);
   const areas = productosPorArea(M.fuentes, p, F);
   const cob = coberturaPreventiva(M.fuentes, M.libro, p, F, M.fecha);
-  return movimientosHTML(mat, reg, p, F) + alimentacionHTML(al, peso, p, F) + tratamientosHTML(cal, areas, cob, p, F);
+  return movimientosHTML(mat, reg, p, F) + tratamientosHTML(cal, areas, cob, p, F);   // 6 · la alimentación, en su sub-vista
 }
 
 /** Un reparto (motivo, tipo o agua) en barras; lo que está fuera del catálogo se MARCA, no se disimula. */

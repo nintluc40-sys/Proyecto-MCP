@@ -546,9 +546,10 @@ describe('Maduración · operativo · 🧬 Lotes', () => {
          F5 (2026-09-21) · entra 🔄 Manejo, UNA para los tres temas (decisión del usuario).
          F6 (2026-09-21) · entra 🩺 Calidad del dato; Broodstock NO tiene pastilla, vive en 🧬 Lotes (decisión del usuario).
          F7 (2026-09-22) · entra 🖨 Reportes, la décima (decisión del usuario; `.mc-subnav` envuelve en el móvil).
-         2 (2026-09-29) · 🦠, 🧬 y 🌊, que eran ventanas, entran al final como sub-vistas (decisión del usuario). */
+         2 (2026-09-29) · 🦠, 🧬 y 🌊, que eran ventanas, entran al final como sub-vistas (decisión del usuario).
+         6 (2026-09-29) · 🦐 Alimentación sale de 🔄 Manejo y va tras ella, con su propia pastilla (decisión del usuario). */
       .toEqual(['📊 Estado actual', '🏠 Salas', '🧬 Lotes', '💀 Bajas', '🔍 Revisiones del supervisor',
-        '🛢 Tanques', '🥚 Reproducción', '🔄 Manejo', '🩺 Calidad del dato', '🖨 Reportes',
+        '🛢 Tanques', '🥚 Reproducción', '🔄 Manejo', '🦐 Alimentación', '🩺 Calidad del dato', '🖨 Reportes',
         '🦠 Microbiología y agua', '🧬 Biomol', '🌊 Mareas']);
     abrirLotes();
     expect([...root.querySelectorAll('[data-mop-lote]')].map((t) => t.dataset.mopLote)).toEqual(['QA', 'QB', 'QC', 'QD']);
@@ -1215,17 +1216,35 @@ const PLANTA_F5 = [
   TRATX('15/09/2026', 'Sala 1', 'Preventivo', 'Salas y tanques', 'QA', 'Bacmil'),
 ];
 const abrirManejo = () => click(root.querySelector('[data-mop-sub="manejo"]'));
+const abrirAlimentacion = () => click(root.querySelector('[data-mop-sub="alimentacion"]'));   // 6 (2026-09-29)
 const plano = (el) => el.textContent.replace(/\s+/g, ' ').trim();
 
 describe('Maduración · operativo · 🔄 Manejo', () => {
-  it('abre con sus TRES bloques, en el orden aprobado', async () => {
+  /* 6 (2026-09-29, usuario) · la alimentación tiene su sub-vista: Manejo se queda con DOS bloques (eran tres). */
+  it('🔴 abre con sus DOS bloques, en el orden aprobado (la alimentación, en 🦐 Alimentación)', async () => {
     await montar(PLANTA_F5);
     abrirManejo();
     const h = [...root.querySelectorAll('.mc-card-h')].map((x) => x.textContent);
-    expect(h).toHaveLength(3);
+    expect(h).toHaveLength(2);
     expect(h[0]).toContain('🔄 Movimientos');
-    expect(h[1]).toContain('🦐 Alimentación');
-    expect(h[2]).toContain('🧪 Tratamientos');
+    expect(h[1]).toContain('🧪 Tratamientos');
+    expect(root.textContent).not.toContain('ración PLANIFICADA');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('🔴 6 · 🦐 Alimentación, tras 🔄 Manejo: su bloque y sólo él, con la barra del tablero', async () => {
+    await montar(PLANTA_F5);
+    const subs = [...root.querySelectorAll('.mc-subnav [data-mop-sub]')].map((b) => b.dataset.mopSub);
+    expect(subs.slice(subs.indexOf('manejo'), subs.indexOf('manejo') + 2)).toEqual(['manejo', 'alimentacion']);
+    abrirAlimentacion();
+    expect(root.querySelector('[data-mop-sub="alimentacion"]').classList.contains('is-on')).toBe(true);
+    const h = [...root.querySelectorAll('.mc-card-h')].map((x) => x.textContent);
+    expect(h).toHaveLength(1);
+    expect(h[0]).toContain('🦐 Alimentación · ración PLANIFICADA');
+    expect(filtro('lote'), 'sigue los filtros del tablero').not.toBeNull();
+    // …y los recibe: con un código genético, dice que su hoja no lo registra (como hacía dentro de Manejo).
+    cambiar(filtro('codigo'), 'CA');
+    expect(plano(root)).toContain('La hoja de Alimentación dice sus lotes, no sus códigos genéticos.');
     expect(errSpy).not.toHaveBeenCalled();
   });
 
@@ -1254,7 +1273,7 @@ describe('Maduración · operativo · 🔄 Manejo', () => {
 
   it('🔑 la ración se rotula PLANIFICADA y se juzga cada TOMA: la de fuera se dice con su hora, y la del tope no', async () => {
     await montar(PLANTA_F5);
-    abrirManejo();
+    abrirAlimentacion();   // 6 · antes, dentro de 🔄 Manejo
     expect(root.textContent).toContain('ración PLANIFICADA');
     expect(kpi('Tomas fuera de rango')).toBe('1');
     const d = plano(root.querySelector('.mop-tomas-fuera'));
@@ -1299,12 +1318,12 @@ describe('Maduración · operativo · 🔄 Manejo', () => {
     expect(t).not.toContain('Una fila de Tanques dice su sala');
   });
 
-  it('sin movimientos ni raciones, cada bloque lo DICE en vez de quedarse en blanco', async () => {
+  it('sin movimientos ni raciones, cada bloque lo DICE en vez de quedarse en blanco (6 · las raciones, en su sub-vista)', async () => {
     await montar(PLANTA);
     abrirManejo();
-    const t = plano(root);
-    expect(t).toContain('Ningún movimiento registrado en el período');
-    expect(t).toContain('Ninguna ración registrada en el período');
+    expect(plano(root)).toContain('Ningún movimiento registrado en el período');
+    abrirAlimentacion();
+    expect(plano(root)).toContain('Ninguna ración registrada en el período');
   });
 
   it('lo que viene del Sheet sale ESCAPADO', async () => {

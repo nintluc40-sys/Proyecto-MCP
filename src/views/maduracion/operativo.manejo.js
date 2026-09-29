@@ -9,6 +9,9 @@
      🦐 ALIMENTACIÓN  los kg de cada producto y su % de la biomasa, CONTRA la agenda estándar de 14 tomas.
      🧪 TRATAMIENTOS  el calendario sala × día, los productos por área y la cobertura preventiva por lote.
 
+   6 (2026-09-29, usuario) · la vista enseña la ALIMENTACIÓN en su propia sub-vista «🦐 Alimentación», tras Manejo;
+   este módulo sigue calculando los tres bloques, con los mismos filtros.
+
    🔑🔑 LA ALIMENTACIÓN ES LA RACIÓN PLANIFICADA, NO LO SERVIDO, y todo lo que salga de aquí va rotulado así.
    La ficha calcula la ración del día a partir de la biomasa y unos porcentajes; nadie registra lo que el animal
    comió. Llamarla «consumo» —o compararla con un crecimiento— sería inventar una medición que no existe.
