@@ -99,7 +99,10 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     entero —«Período»: el mapa de calor y las líneas por día—),
     **🧬 Lotes** (tabla maestra —con el peso ♀ y ♂ de cada lote, el del ⚖️ Saldo al cierre de la foto—,
     ficha de un lote —origen, CASCADA DEL CUADRE, curva de vivos y reproducción—,
-    comparativa por lote, código genético o piscina y, debajo, **📈 Piscinas de origen**: el Broodstock del
+    comparativa por lote, código genético o piscina —por código y por piscina, cada lote con el origen de su Ingreso:
+    sus parejas «juntas» (la fila «A/B», por defecto) o «separadas» (los desoves de la pareja, enteros en cada uno y con
+    «*»)— y, debajo, **📈 Piscinas de origen** (su desempeño es esa misma comparativa, «separadas», de todo el registro):
+    el Broodstock del
     último corte con los lotes que entraron de cada piscina y, al pulsarla, su ficha con el peso por semana), **💀 Bajas** (muerte natural frente a descarte,
     desglose cruzado por sala · tanque · lote, Pareto de motivos de cierre, distribución por hora, calor
     sala × día y lotes cerrados), **🔍 Revisiones del supervisor** (nauplios en sus 4 etapas, alcalinidad por área día y
