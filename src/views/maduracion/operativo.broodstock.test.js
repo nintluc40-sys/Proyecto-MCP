@@ -147,23 +147,35 @@ describe('Maduración · broodstock · el enlace con los lotes', () => {
     expect(de(tablaDePiscinas(M, SIN), '9701').lotes).toEqual(['QA', 'QB']);
   });
 
-  it('🔑 con una sola grafía, el desempeño es EL MISMO que el de la comparativa por piscina', () => {
+  /* 5 (2026-09-29, usuario) · UNA SOLA REGLA: el desempeño de cada piscina ES la comparativa por piscina en «separadas»
+     sobre TODO el registro hasta la foto (sus animales; los desoves con su LOTE). Hasta ese día era «con una sola
+     grafía, el mismo que la comparativa»: las dos usaban `desempenoPorOrigen`, que repartía por el texto de cada fila. */
+  it('🔑 el desempeño es EL MISMO que el de la comparativa por piscina «separadas», sobre todo el registro', () => {
     const d = de(tablaDePiscinas(M, SIN), '9701').desempeno;
-    const c = comparativa(M, SIN, P30, 'piscina').filas.find((f) => f.origen === '9701');
+    const c = comparativa(M, SIN, periodoDe('todo', FOTO, M.fuentes), 'piscina', 'separadas').filas.find((f) => f.origen === '9701');
     expect(d).toEqual({ ingresados: c.ingresados, vivos: c.vivos, supervivencia: c.supervivencia, desoves: c.desoves,
-      fertilidad: c.fertilidad, naupliosPorHembra: c.naupliosPorHembra });
+      fertilidad: c.fertilidad, naupliosPorHembra: c.naupliosPorHembra, compartido: c.compartido });
     // Y no son dos cifras igual de equivocadas: 100 de QA + 20 de QB; 90 + 20 vivos; 240 000 de 300 000 huevos.
     expect(d).toMatchObject({ ingresados: 120, vivos: 110, desoves: 3, fertilidad: 80, naupliosPorHembra: '' });
   });
 
-  it('🔑 «PZ 12» y «PZ12» son la misma piscina: su desempeño suma las dos grafías', () => {
+  it('🔑 «PZ 12» y «PZ12» son la misma piscina: su desempeño suma las dos grafías (y la comparativa también, 5)', () => {
     const p12 = de(tablaDePiscinas(M, SIN), 'PZ12');
     expect(p12.lotes).toEqual(['QB', 'QD']);
     expect(p12.desempeno).toMatchObject({ ingresados: 50, vivos: 50, supervivencia: 100 });
-    // La comparativa, que lleva la piscina tal cual se tecleó, la parte en dos filas: es lo que se dice arriba.
-    const c = comparativa(M, SIN, P30, 'piscina').filas;
-    expect(c.find((f) => f.origen === 'PZ 12').ingresados).toBe(40);
-    expect(c.find((f) => f.origen === 'PZ12').ingresados).toBe(10);
+    // 5 · la comparativa lee la piscina CANÓNICA, como aquí (hasta el 2026-09-29 la partía en «PZ 12» 40 y «PZ12» 10).
+    const c = comparativa(M, SIN, P30, 'piscina', 'separadas').filas;
+    expect(c.find((f) => f.origen === 'PZ 12')).toBeUndefined();
+    expect(c.find((f) => f.origen === 'PZ12').ingresados).toBe(50);
+  });
+
+  it('🔴 5 · los desoves de un lote de DOS piscinas van con su lote, ENTEROS en cada una y marcados (no por el texto de su fila)', () => {
+    // QB entró de 9701 y de PZ 12. Su desove del 16/09 trae la pareja escrita («9701/PZ 12»): por el texto no casaba con
+    // ninguna piscina y se PERDÍA. Por su lote, cuenta entero en las dos.
+    const M3 = modeloOperativo([...PLANTA, DES('2026-09-16', 'QB', 'CB', '9701/PZ 12', 2, 200000, 0, 0)], { hoy: FOTO, fecha: FOTO });
+    const t = tablaDePiscinas(M3, SIN);
+    expect(de(t, '9701').desempeno).toMatchObject({ desoves: 5, compartido: true });   // 3 de QA + 2 de QB
+    expect(de(t, 'PZ12').desempeno).toMatchObject({ desoves: 2, compartido: true });
   });
 
   it('una piscina sin Ingreso no tiene lotes ni desempeño, y no se le inventan', () => {

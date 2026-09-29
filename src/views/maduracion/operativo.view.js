@@ -71,7 +71,7 @@ import { INDICADORES } from './operativo.indicadores.js';
 import { FUENTES, umbralVigente, evaluar, UMBRALES_DE_AVISO } from './operativo.umbrales.js';
 import { periodoAnterior, presenciaDiaria, tendencias, permanencia, PARAMETROS_REPRODUCCION } from './operativo.tendencias.js';
 import { GRUPOS_MAPA, capasDelMapa, contextoDelMapa, colorDeTanque, leyendaDelMapa, resumenDeTanque } from './operativo.mapa.js';
-import { tablaDeLotes, fichaDeLote, DIMENSIONES_COMPARATIVA, comparativa } from './operativo.lotes.js';
+import { tablaDeLotes, fichaDeLote, DIMENSIONES_COMPARATIVA, comparativa, PAREJAS } from './operativo.lotes.js';
 import { DIMENSIONES_BAJAS, desgloseDeBajas, motivosDeCierre, bajasPorHora, calorSalaDia, lotesCerrados } from './operativo.bajas.js';
 import { tablaDeTanques, fichaDeTanque, avisosDeTanques } from './operativo.tanques.js';
 import { pendientesDeN5, tablaDeReproduccion, destinosDeDespacho, totalesDeReproduccion } from './operativo.reproduccion.js';
@@ -137,6 +137,8 @@ const SUBS = [
 const PROPIOS = new Set(['micro', 'biomol', 'mareas']);
 const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', tanque: '', lote: '', codigo: '', color: 'estado', salaDetalle: '', tanqueSel: '', loteSel: '', agrupacion: 'lote',
   estado: '', sexo: '', piscina: '', camaronera: '', agrupacionBajas: 'sala',
+  /* 5 (2026-09-29, usuario) · la comparativa por código o por piscina: las parejas 'juntas' (por defecto) o 'separadas'. */
+  parejas: 'juntas',
   /* F4.1 · el tanque cuya FICHA está abierta en 🛢 Tanques. Es otro que `tanqueSel`, que es el del mapa de
      📊 Estado: comparten idea pero no vida —el del mapa se apaga al repintar y éste sobrevive al filtro—, y
      reusar uno para las dos cosas haría que abrir uno cerrara el otro sin que se viera por qué. */
@@ -1841,7 +1843,7 @@ function lotesHTML(M, memo, p, F) {
      ingreso, no un mes antes»; Reproducción y promedios siguen el período. Sin fecha de ingreso, todo el período. */
   const ciclo = vOp.loteSel ? cicloDelLote(M.libro, vOp.loteSel, M.fecha) : null;
   _fichaLote = vOp.loteSel ? fichaDeLote(M, ciclo ? serieDelCiclo(memo, ciclo) : serieDe(memo, p), vOp.loteSel, p, ciclo, presenciaDe(memo, p)) : null;
-  const comp = comparativa(M, F, p, vOp.agrupacion);
+  const comp = comparativa(M, F, p, vOp.agrupacion, vOp.parejas);
   /* F6 · 📈 Piscinas de origen, debajo de la comparativa (diseño aprobado): la tabla del último corte y, al pulsar
      una piscina, su ficha. La ficha no sobrevive a su fila, igual que la del lote. */
   const bs = tablaDePiscinas(M, F);
@@ -1969,24 +1971,33 @@ function fichaLoteHTML(f, p) {
 function comparativaHTML(c, p) {
   const pills = DIMENSIONES_COMPARATIVA.map((d) => `<button class="mc-pill ${c.dimension === d.clave ? 'is-on' : ''}" data-mop-agr="${d.clave}">${esc(d.etiqueta)}</button>`).join('');
   const porLote = c.dimension === 'lote';
+  /* 5 (2026-09-29, usuario) · por código o por piscina, las PAREJAS juntas (cada lote en la fila de su combinación) o
+     separadas (los desoves y el N5 de un lote de dos orígenes, ENTEROS en cada uno y marcados «*»: no suman). */
+  const marca = (f) => (f.compartido ? '<span class="mop-nota" title="Compartidos con el otro origen de su lote: no suman">*</span>' : '');
   const cuerpo = c.filas.length
     ? c.filas.map((f) => `<tr>
         <td><b>${esc(f.origen)}</b>${porLote ? '' : ` <span class="mop-nota">${f.lotes.length} lote(s)</span>`}</td>
         <td class="r">${nf(f.ingresados)}</td><td class="r">${nf(f.vivos)}</td><td class="r">${pc(f.supervivencia)}</td>
-        <td class="r">${nf(f.desoves)}</td><td class="r">${pc(f.fertilidad)}</td><td class="r">${nf(f.n5)}</td>
+        <td class="r">${nf(f.desoves)}${marca(f)}</td><td class="r">${pc(f.fertilidad)}</td><td class="r">${nf(f.n5)}${marca(f)}</td>
         <td class="r">${f.dias === '' ? '—' : nf(f.dias) + ' d'}</td></tr>`).join('')
     : '<tr><td colspan="8" class="muted">Nada que comparar con este filtro.</td></tr>';
   const veredicto = c.mejor
     ? `<p class="mc-note">Mejor supervivencia: <b>${esc(c.mejor)}</b> · peor: <b>${esc(c.peor)}</b>.</p>`
     : '<p class="mc-note">Con una sola fila no hay comparación: compararse consigo mismo no dice nada.</p>';
+  const origen = c.dimension === 'codigo' ? 'código' : 'piscina';
+  const parejas = porLote ? '' : `<span class="mc-seg mop-parejas" role="group" aria-label="Parejas"><span class="mop-nota">Parejas</span>${PAREJAS.map((m) =>
+    `<button type="button" class="mc-pill ${c.parejas === m ? 'is-on' : ''}" data-mop-parejas="${m}" aria-pressed="${c.parejas === m}">${m}</button>`).join('')}</span>`;
+  const notaParejas = porLote ? '' : c.parejas === 'juntas'
+    ? `<p class="mc-note">Cada lote va entero a la fila de su combinación según su Ingreso («A/B» si entró con dos): las cifras suman.</p>`
+    : `<p class="mc-note">Cada ${origen} con SUS animales (los de su Ingreso y sus posiciones).${c.filas.some((f) => f.compartido) ? ` * Desoves y N5 de lotes con más de un ${origen}: cuentan enteros en cada uno, así que esas columnas no suman (como el despacho en cada destino).` : ''}</p>`;
   return `<div class="mc-card mc-card-wide">
     <h4 class="mc-card-h">📊 Comparativa <span class="mc-h-note">${esc(etiquetaPeriodo(p))}</span>
-      <span class="mc-seg mop-agr">${pills}</span></h4>
+      ${parejas}<span class="mc-seg mop-agr">${pills}</span></h4>
     <div class="mc-tablewrap"><table class="mc-table mc-table-sm">
       <thead><tr><th>${esc((DIMENSIONES_COMPARATIVA.find((d) => d.clave === c.dimension) || {}).etiqueta || 'Lote')}</th>
         <th class="r">Ingresados</th><th class="r">Vivos</th><th class="r">Superv.</th>
         <th class="r">Desoves</th><th class="r">Fertilidad</th><th class="r">N5</th><th class="r">Edad</th></tr></thead>
-      <tbody>${cuerpo}</tbody></table></div>${veredicto}
+      <tbody>${cuerpo}</tbody></table></div>${notaParejas}${veredicto}
   </div>`;
 }
 
@@ -2055,10 +2066,11 @@ function piscinasHTML(bs, F) {
       <td class="r">${vacio(x.edad) ? '—' : nf(x.edad) + ' d'}</td>
       <td>${x.lotes.length ? x.lotes.map((l) => esc(l)).join(' · ') : '<span class="muted">—</span>'}</td>
       <td class="r">${d ? nf(d.vivos) + ' / ' + nf(d.ingresados) : '—'}</td>
-      <td class="r">${d ? pc(d.supervivencia) : '—'}</td><td class="r">${d ? nf(d.desoves) : '—'}</td>
+      <td class="r">${d ? pc(d.supervivencia) : '—'}</td><td class="r">${d ? nf(d.desoves) + (d.compartido ? '<span class="mop-nota" title="Con desoves de un lote que entró también de otra piscina: no suman">*</span>' : '') : '—'}</td>
       <td class="r">${d ? pc(d.fertilidad) : '—'}</td>
     </tr>`;
   };
+  const compartidos = bs.piscinas.some((x) => x.desempeno && x.desempeno.compartido);
   const tabla = bs.piscinas.length
     ? `<div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-bs">
         <thead><tr><th>Piscina</th><th>Fase</th><th class="r">Peso (g)</th><th class="r" title="Incremento de la última semana">Δ sem (g)</th>
@@ -2073,8 +2085,8 @@ function piscinasHTML(bs, F) {
         Re-subir una semana no borra las piscinas que ya no vienen: se quedan en su semana y aquí no se enseñan como si fueran de ahora.</p>` : '';
   return `<div class="mc-card mc-card-wide mop-piscinas">${cab}${tabla}
     <p class="mc-note">Cada piscina con la fila del ÚLTIMO corte hasta la foto. El DESEMPEÑO es el de los lotes que entraron de ella, con la
-      fórmula de la comparativa de arriba; la piscina se lee en su forma canónica («P 12» y «P12» del Ingreso son la misma,
-      y la comparativa, que las lleva tal cual se teclearon, las enseña por separado).</p>
+      regla de la comparativa de arriba por piscina con las parejas «separadas», sobre todo el registro hasta la foto; la piscina,
+      en su forma canónica («P 12» y «P12» del Ingreso son la misma).${compartidos ? ' * Desoves de un lote que entró de más de una piscina: cuentan enteros en cada una, así que esa columna no suma.' : ''}</p>
     ${ausentes}${sinCarga}${ignoraHTML(bs.ignora, 'Una piscina de Broodstock', PORQUE_BS)}
   </div>`;
 }
@@ -3372,6 +3384,8 @@ function bind(root) {
     if (pis) { abrirPiscina(pis.dataset.mopPiscina); return; }
     const agr = t.closest('[data-mop-agr]');
     if (agr) { vOp.agrupacion = agr.dataset.mopAgr; repintar(); return; }
+    const pj = t.closest('[data-mop-parejas]');   // 5 · las parejas de la comparativa, juntas o separadas
+    if (pj) { vOp.parejas = pj.dataset.mopParejas; repintarYEnfocar(`[data-mop-parejas="${pj.dataset.mopParejas}"]`); return; }
     const agb = t.closest('[data-mop-agrb]');
     if (agb) { vOp.agrupacionBajas = agb.dataset.mopAgrb; repintar(); return; }
     const ftq = t.closest('[data-mop-filtrar-tq]');

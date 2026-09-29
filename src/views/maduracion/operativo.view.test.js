@@ -633,7 +633,31 @@ describe('Maduración · operativo · 🧬 Lotes', () => {
     const tablas = root.querySelectorAll('.mc-table');
     const comp = tablas[tablas.length - 1];
     expect(comp.querySelector('thead').textContent).toContain('Código genético');
-    expect([...comp.querySelectorAll('tbody tr')].map((t) => t.querySelector('td').textContent.trim().split(' ')[0])).toEqual(['CA', 'CB']);
+    /* 5 (2026-09-29) · QA entró como CA y como CB: con las parejas «juntas» (por defecto) es la fila «CA/CB», entera.
+       (Hasta ese día esperaba ['CA', 'CB']: lo que hoy da «separadas».) */
+    expect([...comp.querySelectorAll('tbody tr')].map((t) => t.querySelector('td').textContent.trim().split(' ')[0])).toEqual(['CA', 'CA/CB', 'CB']);
+  });
+
+  it('🔴 5 · por código y por piscina, «Parejas: juntas | separadas»; separadas marca los desoves compartidos y lo dice', async () => {
+    // QA (CA y CB) desova el 18/09: 4 desoves.
+    await montar([...PLANTA_L, DES('18/09/2026', 'QA', 4, 400000)]);
+    abrirLotes();
+    const comp = () => { const t = root.querySelectorAll('.mc-table'); return t[t.length - 1]; };
+    const filas = () => [...comp().querySelectorAll('tbody tr')].map((t) => [...t.querySelectorAll('td')].map((d) => d.textContent.trim()));
+    expect(root.querySelector('[data-mop-parejas]'), 'por lote no hay parejas').toBeNull();
+    click(root.querySelector('[data-mop-agr="codigo"]'));
+    expect([...root.querySelectorAll('[data-mop-parejas]')].map((b) => [b.dataset.mopParejas, b.classList.contains('is-on')]))
+      .toEqual([['juntas', true], ['separadas', false]]);
+    expect(filas().map((f) => [f[0].split(' ')[0], f[4]])).toEqual([['CA', '0'], ['CA/CB', '4'], ['CB', '0']]);
+    click(root.querySelector('[data-mop-parejas="separadas"]'));
+    expect(root.querySelector('[data-mop-parejas="separadas"]').classList.contains('is-on')).toBe(true);
+    expect(document.activeElement, 'el foco se queda en el selector').toBe(root.querySelector('[data-mop-parejas="separadas"]'));
+    expect(filas().map((f) => [f[0].split(' ')[0], f[4]])).toEqual([['CA', '4*'], ['CB', '4*']]);
+    expect(comp().closest('.mc-card').textContent).toContain('* Desoves y N5 de lotes con más de un código');
+    // Se queda al cambiar de agrupación y volver.
+    click(root.querySelector('[data-mop-agr="lote"]'));
+    click(root.querySelector('[data-mop-agr="codigo"]'));
+    expect(root.querySelector('[data-mop-parejas="separadas"]').classList.contains('is-on')).toBe(true);
   });
 
   it('el filtro acota la tabla, y un lote que se sale del filtro suelta su ficha', async () => {
@@ -1305,6 +1329,17 @@ const PLANTA_F6 = [
 const filaPiscina = (x) => root.querySelector(`[data-mop-piscina="${x}"]`);
 
 describe('Maduración · operativo · 📈 Piscinas de origen (en 🧬 Lotes)', () => {
+  it('🔴 5 · un lote de DOS piscinas: sus desoves, enteros en cada una y marcados «*», y la nota lo dice', async () => {
+    // QE entra también de la 9703 y desova 2 el 15/09: por su LOTE, cuentan en las dos (la columna ya no suma).
+    await montar([...PLANTA_F6, ING_P('07/09/2026', 'QE', 'Sala 3', 5, 1, 1, 'CE', '9703', 'CX'), DES('15/09/2026', 'QE', 2, 200000)]);
+    abrirLotes();
+    const desovesDe = (x) => filaPiscina(x).querySelectorAll('td')[11].textContent.trim();
+    expect([desovesDe('9701'), desovesDe('9703')]).toEqual(['2*', '2*']);
+    const nota = plano(root.querySelector('.mop-piscinas'));
+    expect(nota).toContain('enteros en cada una');
+    expect(nota).not.toContain('las enseña por separado');   // la comparativa ya une «P 12» y «P12»
+  });
+
   it('va DEBAJO de la comparativa, con el último corte y una fila por piscina de ese corte', async () => {
     await montar(PLANTA_F6);
     abrirLotes();

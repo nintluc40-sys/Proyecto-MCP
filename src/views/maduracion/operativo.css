@@ -175,6 +175,9 @@
 .mop-cuadre tr.mop-cuadre-tot td { border-top: 2px solid var(--c-border); font-weight: 800; }
 .mop-cuadre tr.mop-cuadre-sub td { padding-left: 24px; font-size: 11px; font-style: italic; color: var(--c-text-muted); }
 .mop-agr { margin-left: auto; }
+/* 5 (2026-09-29, usuario) · «Parejas: juntas | separadas», delante de la agrupación (sólo por código o por piscina). */
+.mop-parejas { margin-left: auto; align-items: center; }
+.mop-parejas + .mop-agr { margin-left: 8px; }
 .mop-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 12px; }
 .mop-chip-f { padding: 3px 9px; border: 1px solid var(--c-brand-600); border-radius: 999px; background: color-mix(in srgb, var(--c-brand) 12%, transparent);
   color: var(--c-text); font-size: 11.5px; font-weight: 600; font-family: inherit; cursor: pointer; }

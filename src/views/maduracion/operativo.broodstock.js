@@ -16,10 +16,11 @@
 
    🔑 EL ENLACE CON LOS LOTES es la «Piscina Broodstock» del Ingreso en su forma CANÓNICA (`normPiscina`, la que usa
    la carga: el Excel trae la piscina unas veces como número y otras como texto, y el Ingreso la guarda como se
-   tecleó). Y el DESEMPEÑO de cada piscina no se recalcula con otra fórmula: es `desempenoPorOrigen(…, 'piscina')`,
-   la de la comparativa de 🧬 Lotes, sobre las hojas hasta el día elegido. Mientras cada piscina se escriba de una
-   sola forma en el Ingreso, las dos dan las mismas cifras; si se escribe de dos, la comparativa la parte en dos
-   filas y aquí es una.
+   tecleó). Y el DESEMPEÑO de cada piscina no se recalcula con otra fórmula: es `desempenoPorPiscina` (lotes.js), la
+   comparativa de 🧬 Lotes por piscina en «separadas» sobre todo el registro hasta el día elegido: sus animales, y los
+   desoves con su LOTE —los de un lote de dos piscinas, ENTEROS en cada una y marcados `compartido`—.
+   5 (2026-09-29, usuario) · hasta ese día era `desempenoPorOrigen`, que repartía los desoves por el TEXTO de su fila
+   (un «555/557» no casaba con ninguna piscina y se perdía) y dejaba a la comparativa partir «P 12» y «P12» en dos.
 
    ⚠ EL FILTRO ELIGE PISCINAS; cada piscina se enseña ENTERA (todos sus lotes y todo su desempeño):
      · piscina, camaronera y código genético: los de la FILA de Broodstock;
@@ -31,8 +32,8 @@
    vacío hasta la primera carga; el censo de `medir-tablero-mad-real` lo dirá en crudo.
    ============================================================ */
 import { fechaDeFila } from './operativo.data.js';
-import { desempenoPorOrigen, supervivencia } from './operativo.indicadores.js';
-import { loteDelLibro, estadoDeLoteEntero } from './operativo.lotes.js';
+import { supervivencia } from './operativo.indicadores.js';
+import { loteDelLibro, estadoDeLoteEntero, desempenoPorPiscina } from './operativo.lotes.js';
 import { codigoEnFiltro } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
 import { normPiscina, faseCanonica } from '../registros/lib/ficha-maduracion-broodstock.schema.js';
 import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
@@ -141,7 +142,8 @@ function piscinaDeFila(r) {
 /**
  * La TABLA de piscinas al cierre del día elegido (`M.fecha`): cada piscina del ÚLTIMO corte con su fila de ese
  * corte, los lotes que entraron de ella y su desempeño como origen (ingresados, vivos, supervivencia, desoves,
- * fertilidad y nauplios por hembra, de `desempenoPorOrigen`). Y aparte:
+ * fertilidad y nauplios por hembra, de `desempenoPorPiscina`; `compartido` si lleva desoves de un lote de dos
+ * piscinas). Y aparte:
  *  · `ausentes`: las del corte anterior que no vinieron en éste;
  *  · `sinBroodstock`: las piscinas del Ingreso que ninguna carga nombra —un lote que entró de ahí tiene un origen
  *    que no se puede enseñar—.
@@ -157,8 +159,7 @@ export function tablaDePiscinas(M, F) {
   const enCorte = new Set(todas.filter((r) => corteDe(r) === corte).map((r) => normPiscina(r.Piscina)));
   const pasa = (r) => filaEnFiltro(r, F, deLote);
 
-  const desempeno = new Map(desempenoPorOrigen({ ...H, ingresos, desoves: canonica(H.desoves) }, ((M && M.libro) || {}).posiciones || [], 'piscina')
-    .map((o) => [o.origen, o]));
+  const desempeno = desempenoPorPiscina(M);
   const piscinas = todas.filter((r) => corteDe(r) === corte && pasa(r)).map((r) => {
     const P = piscinaDeFila(r);
     const d = desempeno.get(P.piscina);
@@ -166,7 +167,7 @@ export function tablaDePiscinas(M, F) {
       ...P,
       lotes: d ? d.lotes : [],
       desempeno: d ? { ingresados: d.ingresados, vivos: d.vivos, supervivencia: d.supervivencia, desoves: d.desoves,
-        fertilidad: d.fertilidad, naupliosPorHembra: d.naupliosPorHembra } : null,
+        fertilidad: d.fertilidad, naupliosPorHembra: d.naupliosPorHembra, compartido: d.compartido } : null,
     };
   }).sort((a, b) => porNombre(a.piscina, b.piscina));
 

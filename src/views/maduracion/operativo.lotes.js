@@ -26,8 +26,9 @@ import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-
 import { estadoDeLote, ESTADO_MIXTO, ubicKey } from '../registros/lib/mad-libro.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { fechaDeFila, diasDeTanque } from './operativo.data.js';
-import { cociente, proporcionHM, supervivencia, tasaDescarte, desempenoPorOrigen, tasaEnPartesDelLote } from './operativo.indicadores.js';
-import { posicionEnFiltro } from './operativo.tablero.js';
+import { cociente, proporcionHM, supervivencia, tasaDescarte, tasaEnPartesDelLote } from './operativo.indicadores.js';
+import { posicionEnFiltro, codigoEnFiltro, normalizarFiltro } from './operativo.tablero.js';
+import { normPiscina } from '../registros/lib/ficha-maduracion-broodstock.schema.js';   // 5 · la piscina canónica
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const esIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -383,13 +384,25 @@ export const DIMENSIONES_COMPARATIVA = [
   { clave: 'piscina', etiqueta: 'Piscina de origen' },
 ];
 
+/** 5 (2026-09-29, usuario) · cómo van las PAREJAS (un lote con dos códigos o dos piscinas) por código y por piscina. */
+export const PAREJAS = ['juntas', 'separadas'];
+
 /**
- * La comparativa. Por LOTE sale de la tabla maestra (para que las dos digan lo mismo); por código genético y por
- * piscina, de `desempenoPorOrigen` (Fase 0.3), que ya sabe repartir un lote entre varios orígenes.
+ * La comparativa. Por LOTE sale de la tabla maestra (para que las dos digan lo mismo).
+ * 5 (2026-09-29, usuario) · por código genético y por piscina, de los MISMOS lotes y con las MISMAS reglas que por lote
+ * (la tabla maestra con los filtros del tablero; ingresados y vivos al cierre de la foto; desoves, fertilidad y N5 del
+ * período). Antes salía de `desempenoPorOrigen` sobre TODO el registro, sin filtros, y repartía cada fila por el texto
+ * de su columna: el Ingreso trae los códigos sueltos y los Desoves la pareja («C1/C2», y no siempre igual), así que un
+ * lote se partía en dos filas (medido: dos «A/B» con 0 animales y TODOS los desoves de sus lotes). Ahora cada dato va
+ * con su LOTE, y el origen de un lote es el de su INGRESO. `parejas`: 'juntas' (por defecto) = cada lote ENTERO en la
+ * fila de su combinación («A/B» si entró con dos): las cifras suman · 'separadas' = cada código o piscina con SUS
+ * animales (los del Ingreso y los de sus posiciones) y los desoves del lote ENTEROS en cada uno, con `compartido`: esa
+ * columna ya no suma (la regla de 0r·4 · H2, como el despacho en cada destino).
  * `mejor` y `peor` son por supervivencia, y sólo se dicen si hay al menos dos filas con la cifra.
  */
-export function comparativa(M, F, periodo, dimension) {
+export function comparativa(M, F, periodo, dimension, parejas = 'juntas') {
   const dim = DIMENSIONES_COMPARATIVA.some((d) => d.clave === dimension) ? dimension : 'lote';
+  const modo = PAREJAS.includes(parejas) ? parejas : 'juntas';
   let filas;
   if (dim === 'lote') {
     filas = tablaDeLotes(M, F).map((f) => ({
@@ -398,15 +411,101 @@ export function comparativa(M, F, periodo, dimension) {
       ...reproduccionDeLote(M.fuentes, f.lote, periodo),
     }));
   } else {
-    const alDia = {};
-    for (const [k, v] of Object.entries(M.fuentes || {})) alDia[k] = (v || []).filter((r) => !(fechaDeFila(k, r) > txt(M.fecha)));
-    filas = desempenoPorOrigen(alDia, (M.libro || {}).posiciones || [], dim).map((o) => ({ ...o, dias: '' }));
+    filas = comparativaPorOrigen(M, F, periodo, dim, modo);
   }
   const conCifra = filas.filter((f) => f.supervivencia !== '' && f.supervivencia !== null);
   const orden = [...conCifra].sort((a, b) => b.supervivencia - a.supervivencia);
   return {
-    dimension: dim, filas,
+    dimension: dim, parejas: modo, filas,
     mejor: orden.length > 1 ? orden[0].origen : '',
     peor: orden.length > 1 ? orden[orden.length - 1].origen : '',
   };
+}
+
+/** Los orígenes (códigos o piscinas) de cada lote según su INGRESO hasta la foto, con los animales de cada uno; y,
+ *  por piscina, la piscina de cada código del lote (la que más animales aportó: sus posiciones no dicen piscina).
+ *  La piscina, en su forma CANÓNICA (`normPiscina`, la de 📈 Piscinas de origen): «P 12» y «P12» son una. */
+function origenesDeLotes(M, dim) {
+  const foto = txt(M.fecha);
+  const esCodigo = dim === 'codigo';
+  const partes = (v) => (esCodigo ? normCodigoGenetico(v) : normPiscina(v)).split('/').map((s) => s.trim()).filter(Boolean);
+  const out = new Map();
+  const de = (l) => out.get(l) || (out.set(l, { origenes: new Set(), animales: new Map(), repartido: false, porCodigo: new Map() }), out.get(l));
+  for (const r of ((M.fuentes || {}).ingresos || [])) {
+    if (fechaDeFila('ingresos', r) > foto) continue;
+    const l = normLote(r.Lote);
+    if (!l) continue;
+    const L = de(l);
+    const n = ent(r.Machos) + ent(r.Hembras);
+    const os = partes(esCodigo ? r['Código genético'] : r['Piscina Broodstock']);
+    if (os.length > 1) L.repartido = true;   // una fila del Ingreso con dos orígenes: sus animales, en cada uno
+    for (const o of os) { L.origenes.add(o); L.animales.set(o, (L.animales.get(o) || 0) + n); }
+    if (!esCodigo) {
+      const cg = normCodigoGenetico(r['Código genético']);
+      const m = L.porCodigo.get(cg) || new Map();
+      for (const o of os) m.set(o, (m.get(o) || 0) + n);
+      L.porCodigo.set(cg, m);
+    }
+  }
+  const mayor = (m) => [...(m || new Map()).entries()].sort((a, b) => b[1] - a[1] || porNombre(a[0], b[0])).map(([o]) => o)[0] || '';
+  return { lotes: out, partes, piscinaDe: (L, cg) => mayor(L.porCodigo.get(normCodigoGenetico(cg))) || mayor(L.animales) };
+}
+
+function comparativaPorOrigen(M, F, periodo, dim, modo) {
+  const O = origenesDeLotes(M, dim);
+  const sinDato = dim === 'codigo' ? '(sin código)' : '(sin piscina)';
+  const enFiltro = (o) => (dim === 'codigo' ? codigoEnFiltro(o, F) : !(F && F.piscina) || o === normPiscina(F.piscina));
+  const acc = new Map();
+  const de = (o) => acc.get(o) || (acc.set(o, { origen: o, lotes: new Set(), ingresados: 0, vivos: 0, desoves: 0, huevos: 0,
+    n2: 0, n5: 0, huevosConN2: 0, desovesConN5: 0, compartido: false }), acc.get(o));
+  const sumarReproduccion = (A, R) => { for (const k of ['desoves', 'huevos', 'n2', 'n5', 'huevosConN2', 'desovesConN5']) A[k] += R[k]; };
+  for (const f of tablaDeLotes(M, F)) {
+    const clave = normLote(f.lote);
+    const L = O.lotes.get(clave);
+    const origenes = L && L.origenes.size ? [...L.origenes].sort(porNombre) : [];
+    const R = reproduccionDeLote(M.fuentes, f.lote, periodo);
+    if (modo === 'juntas' || !origenes.length) {
+      const A = de(origenes.length ? origenes.join('/') : sinDato);
+      A.lotes.add(f.lote);
+      A.ingresados += f.ingresados.total;
+      A.vivos += f.vivos.total;
+      sumarReproduccion(A, R);
+      continue;
+    }
+    // «separadas»: SUS animales en cada origen; los vivos, por las posiciones del lote.
+    const vivos = new Map();
+    for (const p of ((M.libro || {}).posiciones || [])) {
+      if (normLote(p.lote) !== clave) continue;
+      const v = ent(p.machos) + ent(p.hembras);
+      const os = dim === 'codigo' ? O.partes(p.codigoGenetico) : [O.piscinaDe(L, p.codigoGenetico)];
+      for (const o of os) if (o) vivos.set(o, (vivos.get(o) || 0) + v);
+    }
+    for (const o of origenes) {
+      if (!enFiltro(o)) continue;
+      const A = de(o);
+      A.lotes.add(f.lote);
+      A.ingresados += L.animales.get(o) || 0;
+      A.vivos += vivos.get(o) || 0;
+      sumarReproduccion(A, R);
+      if (origenes.length > 1 || L.repartido) A.compartido = true;
+    }
+  }
+  // (G, de «grupo»: con `A` la línea de la fertilidad copiaba la de `reproduccionDeLote`, ancla de un banco.)
+  return [...acc.values()].sort((a, b) => porNombre(a.origen, b.origen)).map((G) => ({
+    origen: G.origen, lotes: [...G.lotes].sort(porNombre), ingresados: G.ingresados, vivos: G.vivos,
+    supervivencia: cociente(G.vivos, G.ingresados, 100), desoves: G.desoves, huevos: G.huevos, n2: G.n2, n5: G.n5,
+    fertilidad: cociente(G.n2, G.huevosConN2, 100), naupliosPorHembra: G.desovesConN5 > 0 ? Math.round(G.n5 / G.desovesConN5) : '',
+    compartido: G.compartido, dias: '',
+  }));
+}
+
+/**
+ * 5 (2026-09-29, usuario) · el DESEMPEÑO de cada piscina como origen, para 📈 Piscinas de origen: la comparativa por
+ * piscina en «separadas» sobre TODO el registro hasta la foto y sin filtros (la piscina se enseña ENTERA). Una sola
+ * regla para las dos pantallas. Map piscina canónica → fila de la comparativa.
+ */
+export function desempenoPorPiscina(M) {
+  if (!M) return new Map();   // sin modelo (sin datos), nada: como `desempenoPorOrigen` antes
+  const todo = { desde: '0000-01-01', hasta: txt(M.fecha) || '9999-12-31' };
+  return new Map(comparativaPorOrigen(M, normalizarFiltro({}), todo, 'piscina', 'separadas').map((f) => [f.origen, f]));
 }

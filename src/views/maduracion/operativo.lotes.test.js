@@ -18,10 +18,10 @@ import { describe, it, expect } from 'vitest';
 import {
   CUADRE_FILAS, loteDelLibro, cuadreDeLote, estadoDeLoteEntero, tablaDeLotes, origenDeLote,
   curvaDeLote, eventosDeLote, reproduccionDeLote, promediosDeLote, fichaDeLote,
-  DIMENSIONES_COMPARATIVA, comparativa,
+  DIMENSIONES_COMPARATIVA, comparativa, desempenoPorPiscina,
 } from './operativo.lotes.js';
 import { modeloOperativo, serieDiaria } from './operativo.data.js';
-import { normalizarFiltro, periodoDe, cicloDelLote } from './operativo.tablero.js';
+import { normalizarFiltro, periodoDe, cicloDelLote, indiceDeFiltro } from './operativo.tablero.js';
 import { MAD_OP_ORIGEN } from './operativo.fuentes.js';
 import { ESTADO_CERRADO, sumarDias } from '../registros/lib/mad-libro.js';
 import { presenciaDiaria } from './operativo.tendencias.js';
@@ -362,14 +362,94 @@ describe('Maduración · lotes · la comparativa', () => {
     expect(c.peor).toBe('');
   });
 
-  it('por CÓDIGO y por PISCINA agrupa, y un lote repartido entre orígenes no se cuenta dos veces', () => {
+  /* 5 (2026-09-29, usuario) · «con filtro de código/piscina salen valores AGRUPADOS … el mismo lote a veces con uno, a
+     veces con los dos, y la tabla no deja agrupar/desagrupar». Antes, cada fila iba por el TEXTO de su columna: el Ingreso
+     trae los códigos sueltos y los Desoves la pareja («C1/C2»), así que un lote se partía en dos filas (medido: dos filas
+     «A/B» con 0 animales y TODOS los desoves de sus lotes). Ahora cada dato va con su LOTE y el origen del lote es el de
+     su INGRESO. Aquí QJ entró como CA y como CB: su pareja. (Hasta el 2026-09-29 esta prueba esperaba ['CA', 'CB'] con
+     CA 300: es lo que hoy da «separadas».) */
+  it('🔴 5 · «juntas» (por defecto): cada lote ENTERO en la fila de su combinación según el Ingreso; las cifras suman', () => {
     const cg = comparativa(M, SIN, P30, 'codigo');
-    expect(cg.filas.map((f) => f.origen)).toEqual(['CA', 'CB']);
-    // CA: QE 200 + QH 40 + QI 40 + QJ(CA) 20 = 300. CB: QF 20 + QG 60 + QJ(CB) 20 = 100.
-    expect(cg.filas.find((f) => f.origen === 'CA').ingresados).toBe(300);
-    expect(cg.filas.find((f) => f.origen === 'CB').ingresados).toBe(100);
+    expect(cg.parejas).toBe('juntas');
+    expect(cg.filas.map((f) => f.origen)).toEqual(['CA', 'CA/CB', 'CB']);
+    // CA: QE 200 + QH 40 + QI 40 = 280 · CA/CB: QJ 40 · CB: QF 20 + QG 60 = 80 — los 400 de la tabla, sin repetir.
+    expect(cg.filas.map((f) => f.ingresados)).toEqual([280, 40, 80]);
+    expect(cg.filas.find((f) => f.origen === 'CA/CB')).toMatchObject({ lotes: ['QJ'], vivos: 40, supervivencia: 100, compartido: false });
+    expect(cg.filas.find((f) => f.origen === 'CA').desoves).toBe(6);   // los de QE, con su lote
     const pis = comparativa(M, SIN, P30, 'piscina');
     expect(pis.filas.map((f) => f.origen)).toEqual(['P1', 'P2', 'P3']);
     expect(pis.filas.find((f) => f.origen === 'P3').lotes).toEqual(['QI']);
+  });
+
+  it('🔴 5 · los desoves van con su LOTE, no con el código que escriba su fila; «separadas»: los del lote, ENTEROS en cada uno', () => {
+    // QJ desova el 18/09 y su fila dice sólo «CA» (DES pone CA): es de la pareja CA/CB igual. Y QK entra PRIMERO como CB
+    // y luego como CA: su pareja es la MISMA fila «CA/CB» (el nombre no depende del orden de las filas del Ingreso).
+    const M2 = modeloOperativo([...PLANTA, DES('2026-09-18', 'QJ', 3, 300000, 0, 0),
+      ING('2026-09-06', 'QK', 'Sala 3', 6, 5, 5, 'CB', 'P1'), ING('2026-09-06', 'QK', 'Sala 3', 6, 5, 5, 'CA', 'P1')], { hoy: FOTO, fecha: FOTO });
+    const P = periodoDe('30d', FOTO, M2.fuentes);
+    const junt = comparativa(M2, SIN, P, 'codigo');
+    expect(junt.filas.map((f) => [f.origen, f.desoves, f.compartido])).toEqual([['CA', 6, false], ['CA/CB', 3, false], ['CB', 0, false]]);
+    expect(junt.filas.find((f) => f.origen === 'CA/CB')).toMatchObject({ lotes: ['QJ', 'QK'], ingresados: 60 });
+    const sep = comparativa(M2, SIN, P, 'codigo', 'separadas');
+    expect(sep.parejas).toBe('separadas');
+    expect(sep.filas.map((f) => f.origen)).toEqual(['CA', 'CB']);
+    // SUS animales: CA = QE 200 + QH 40 + QI 40 + QJ(CA) 20 + QK(CA) 10 = 310 · CB = QF 20 + QG 60 + QJ(CB) 20 + QK(CB) 10
+    // = 110: un lote repartido no se cuenta dos veces. Vivos: CA = 133 + 40 + 40 + 20 + 10 · CB = 10 + 0 + 20 + 10.
+    expect(sep.filas.map((f) => [f.ingresados, f.vivos])).toEqual([[310, 243], [110, 40]]);
+    // Los 3 desoves de QJ, ENTEROS en cada uno, y marcados: la columna ya no suma (6 + 3 y 3, de 9).
+    expect(sep.filas.map((f) => [f.desoves, f.n5, f.compartido])).toEqual([[9, 180000, true], [3, 0, true]]);
+    // Un origen al que no llega ningún lote de dos orígenes no se marca.
+    const pis = comparativa(M2, SIN, P, 'piscina', 'separadas');
+    expect(pis.filas.every((f) => f.compartido === false)).toBe(true);
+    // Un valor desconocido cae en «juntas».
+    expect(comparativa(M2, SIN, P, 'codigo', 'otra').parejas).toBe('juntas');
+  });
+
+  it('🔴 5 · por código y por piscina sigue los FILTROS y el PERÍODO del tablero, como por lote', () => {
+    // Código CB: sus lotes (QF, QG y QJ). Juntas: CA/CB y CB. Separadas: sólo CB (lo de CA de QJ no es del filtro).
+    expect(comparativa(M, F({ codigo: 'CB' }), P30, 'codigo').filas.map((f) => f.origen)).toEqual(['CA/CB', 'CB']);
+    expect(comparativa(M, F({ codigo: 'CB' }), P30, 'codigo', 'separadas').filas.map((f) => [f.origen, f.ingresados])).toEqual([['CB', 100]]);
+    // Piscina P3 (filtro con su índice, como en la vista): sólo QI.
+    const FP = normalizarFiltro({ piscina: 'P3' }, indiceDeFiltro(M));
+    expect(comparativa(M, FP, P30, 'piscina', 'separadas').filas.map((f) => [f.origen, f.lotes])).toEqual([['P3', ['QI']]]);
+    expect(comparativa(M, F({ lote: 'QE' }), P30, 'codigo').filas.map((f) => f.origen)).toEqual(['CA']);
+    // El período: con «Hoy» (el 19/09) no entra ningún desove de QE (12 y 14/09).
+    expect(comparativa(M, SIN, periodoDe('hoy', FOTO, M.fuentes), 'codigo').filas.find((f) => f.origen === 'CA').desoves).toBe(0);
+  });
+
+  it('🔴 5 · la piscina, en su forma CANÓNICA (la de 📈 Piscinas de origen): «P 3» y «P3» del Ingreso son la misma fila', () => {
+    const M4 = modeloOperativo([...PLANTA, ING('2026-09-06', 'QK', 'Sala 3', 6, 5, 5, 'CA', 'P 3')], { hoy: FOTO, fecha: FOTO });
+    for (const modo of ['juntas', 'separadas']) {
+      const pis = comparativa(M4, SIN, P30, 'piscina', modo);
+      expect(pis.filas.map((f) => f.origen), modo).toEqual(['P1', 'P2', 'P3']);
+      expect(pis.filas.find((f) => f.origen === 'P3'), modo).toMatchObject({ lotes: ['QI', 'QK'], ingresados: 50 });
+    }
+    // El filtro trae la piscina como se tecleó («P 3», la del índice del Ingreso): su fila canónica casa igual.
+    const FP = normalizarFiltro({ piscina: 'P 3' }, indiceDeFiltro(M4));
+    expect(comparativa(M4, FP, P30, 'piscina', 'separadas').filas.map((f) => [f.origen, f.lotes])).toEqual([['P3', ['QK']]]);
+  });
+
+  /* 5 · las reglas que la comparativa HEREDÓ de `desempenoPorOrigen` (retirado el 2026-09-29: se quedó sin uso), que
+     vigilaban I19–I22 del banco de indicadores. */
+  it('🔑 5 · un (lote, código) de DOS piscinas cuenta sus vivos UNA vez, en la que más aportó; el código, canónico; la regla del Saldo', () => {
+    // QM (código «cb », que es CB) entró 8 desde la P7 y 2 desde la P8, al mismo tanque: sus 10 vivos van a la P7.
+    const M5 = modeloOperativo([...PLANTA, ING('2026-09-06', 'QM', 'Sala 3', 7, 4, 4, 'cb ', 'P7'),
+      ING('2026-09-06', 'QM', 'Sala 3', 7, 1, 1, 'cb ', 'P8')], { hoy: FOTO, fecha: FOTO });
+    const pis = comparativa(M5, SIN, P30, 'piscina', 'separadas').filas;
+    expect(pis.filter((f) => ['P7', 'P8'].includes(f.origen)).map((f) => [f.origen, f.ingresados, f.vivos])).toEqual([['P7', 8, 10], ['P8', 2, 0]]);
+    expect(comparativa(M5, SIN, P30, 'codigo', 'separadas').filas.find((f) => f.origen === 'CB').lotes).toContain('QM');   // «cb » es CB
+    // Fertilidad sobre los huevos que YA tienen N2 (340 000 de 400 000), no sobre todos (600 000); nauplios, sobre los
+    // desoves que ya tienen N5 (180 000 en 2), no sobre los 6.
+    expect(comparativa(M, SIN, P30, 'codigo', 'separadas').filas.find((f) => f.origen === 'CA')).toMatchObject({ fertilidad: 85, naupliosPorHembra: 90000 });
+  });
+
+  it('🔴 5 · `desempenoPorPiscina` (📈 Piscinas de origen) ES la comparativa por piscina «separadas» de todo el registro', () => {
+    const d = desempenoPorPiscina(M);
+    const todo = comparativa(M, SIN, periodoDe('todo', FOTO, M.fuentes), 'piscina', 'separadas').filas;
+    expect([...d.keys()]).toEqual(todo.map((f) => f.origen));
+    expect(d.get('P1')).toEqual(todo.find((f) => f.origen === 'P1'));
+    // Con los nauplios por hembra: los 180 000 N5 de los 2 desoves de QE que ya los tienen.
+    expect(d.get('P1')).toMatchObject({ lotes: ['QE', 'QH', 'QJ'], naupliosPorHembra: 90000 });
+    expect(desempenoPorPiscina(null)).toEqual(new Map());   // sin modelo, nada
   });
 });

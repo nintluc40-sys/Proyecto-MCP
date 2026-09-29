@@ -12,7 +12,7 @@ import * as I from './operativo.indicadores.js';
 
 const {
   INDICADORES, cociente, supervivencia, tasaDescarte, proporcionHM, densidadTanque, ocupacion, desovesPorLote,
-  tasaDeDesove, fueraDeRango, diasDesdeDesinfeccion, alimentoPorMillonN5, desempenoPorOrigen,
+  tasaDeDesove, fueraDeRango, diasDesdeDesinfeccion, alimentoPorMillonN5,
 } = I;
 
 describe('Maduración · indicadores · el catálogo', () => {
@@ -122,36 +122,6 @@ describe('Maduración · indicadores · ambiente, sanidad y alimento', () => {
   });
 });
 
-describe('Maduración · indicadores · desempeño por origen', () => {
-  const ING = (lote, cg, piscina, m, h) => ({ Fecha: '2026-09-01', Lote: lote, 'Código genético': cg, 'Piscina Broodstock': piscina, Machos: m, Hembras: h });
-  const fuentes = {
-    ingresos: [ING('QA', 'X', 9101, 10, 20), ING('QA', 'Y', 9102, 5, 5), ING('QB', 'X', 9101, 4, 4), ING('QB', 'X', 9102, 1, 1)],
-    desoves: [
-      { Fecha: '2026-09-10', Lote: 'QA', 'Código genético': 'X', 'Piscina Broodstock': 9101, Desoves: 4, 'Total de huevos': 1000000, N2: 600000, N5: 400000 },
-      { Fecha: '2026-09-11', Lote: 'QA', 'Código genético': 'X', 'Piscina Broodstock': 9101, Desoves: 2, 'Total de huevos': 500000, N2: '', N5: '' },
-      // El mismo código tecleado en minúsculas y con un espacio: tiene que casar con «X».
-      { Fecha: '2026-09-12', Lote: 'QA', 'Código genético': 'x ', 'Piscina Broodstock': 9101, Desoves: 1, 'Total de huevos': 100000, N2: '', N5: '' },
-    ],
-  };
-  const posiciones = [
-    { sala: 'Sala 1', tanque: 1, lote: 'QA', codigoGenetico: 'X', machos: 8, hembras: 18 },
-    { sala: 'Sala 1', tanque: 2, lote: 'QA', codigoGenetico: 'Y', machos: 5, hembras: 4 },
-    { sala: 'Sala 2', tanque: 16, lote: 'QB', codigoGenetico: 'X', machos: 3, hembras: 4 },
-  ];
-
-  it('por código genético: vivos de sus posiciones, fertilidad y nauplios con la regla del Saldo', () => {
-    const d = Object.fromEntries(desempenoPorOrigen(fuentes, posiciones, 'codigo').map((o) => [o.origen, o]));
-    expect(d.X).toMatchObject({ lotes: ['QA', 'QB'], ingresados: 40, vivos: 33, supervivencia: 82.5, desoves: 7, huevos: 1600000,
-      fertilidad: 60, naupliosPorHembra: 100000 });
-    expect(Object.keys(d).sort()).toEqual(['X', 'Y']);
-    expect(d.Y).toMatchObject({ ingresados: 10, vivos: 9, supervivencia: 90, desoves: 0, fertilidad: '', naupliosPorHembra: '' });
-  });
-
-  it('por piscina: un (lote, código) que entró desde dos piscinas cuenta sus vivos UNA vez, en la que más aportó', () => {
-    const d = Object.fromEntries(desempenoPorOrigen(fuentes, posiciones, 'piscina').map((o) => [o.origen, o]));
-    expect(d['9101']).toMatchObject({ ingresados: 38, vivos: 33 });   // QA/X (26) + QB/X (7): QB/X aportó 8 desde la 9101 y 2 desde la 9102
-    expect(d['9102']).toMatchObject({ ingresados: 12, vivos: 9 });
-    const vivos = Object.values(d).reduce((a, o) => a + o.vivos, 0);
-    expect(vivos).toBe(8 + 18 + 5 + 4 + 3 + 4);
-  });
-});
+/* 5 (2026-09-29, usuario) · «desempeño por origen» (`desempenoPorOrigen`) se RETIRÓ: se quedó sin uso. Sus dos pruebas (el
+   par de dos piscinas cuenta sus vivos UNA vez, en la que más aportó; el código canónico; la fertilidad y los nauplios con
+   la regla del Saldo) viven hoy en operativo.lotes.test.js, sobre `comparativa` / `desempenoPorPiscina`. */

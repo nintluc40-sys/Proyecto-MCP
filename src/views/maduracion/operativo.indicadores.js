@@ -10,10 +10,10 @@
    · Un cociente sin denominador es VACÍO (''), nunca 0: «0 % de supervivencia» de un lote sin ingresos es falso.
    · N5 y N2 NO se comparan entre sí (decisión del usuario, 2026-09-08): aquí no hay ningún N5 ÷ N2.
    · La hoja de Alimentación registra la ración PLANIFICADA, no la consumida: su indicador lo dice en el nombre.
-   · Los lotes y los códigos casan entre hojas por su forma CANÓNICA (`normLote`, `normCodigoGenetico`: mayúsculas
-     y sin espacios), la misma con que los guardan las fichas.
+   · Los lotes casan entre hojas por su forma CANÓNICA (`normLote`: mayúsculas y sin espacios), la misma con que los
+     guardan las fichas. (Los códigos genéticos, con `desempenoPorOrigen`, se fueron a operativo.lotes.js el 2026-09-29.)
    ============================================================ */
-import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
+import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { areaTanqueM2 } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { ubicKey } from '../registros/lib/mad-libro.js';
@@ -69,7 +69,6 @@ export const INDICADORES = [
   { id: 'diasDesdeDesinfeccion', nombre: 'Días desde la última desinfección', unidad: 'días', definicion: 'Días entre la última desinfección registrada en Tratamientos para esa sala y la fecha de cálculo.' },
   { id: 'alimentoPorMillonN5', nombre: 'Alimento planificado por millón de N5', unidad: 'kg por millón', definicion: 'Kg de alimento PLANIFICADO en el período (hoja de Alimentación) ÷ millones de N5 de los desoves del período.' },
   { id: 'tasaEnPartesDelLote', nombre: 'Cópulas y muda del lote, por día', unidad: '% por día', definicion: 'Cópulas (o mudas) de los partes de Tanques de los tanques que tenían el lote ESE día ÷ hembras de esos tanques ese día × 100, sumado sobre los partes del período (regla del Saldo). Un día sin parte no cuenta.' },
-  { id: 'desempenoPorOrigen', nombre: 'Desempeño por origen', unidad: 'varias', definicion: 'Por código genético o por piscina de broodstock: ingresados, vivos, supervivencia, desoves, fertilidad y nauplios por hembra (estas dos con la regla del Saldo).' },
 ];
 
 /** Supervivencia de un lote (%): vivos ÷ ingresados, por sexo y total. `L` es un lote del libro o del resumen. */
@@ -184,59 +183,8 @@ export function alimentoPorMillonN5(filasAlim, filasDesoves, desde, hasta) {
   return { kg: r2(kg), n5, kgPorMillon: cociente(kg, n5 / 1e6) };
 }
 
-/**
- * El desempeño por ORIGEN: por código genético (`dimension = 'codigo'`) o por piscina de broodstock ('piscina').
- * `posiciones` son las del libro (`construirLibro(...).posiciones`): los vivos de cada (lote, código genético).
- *  · ingresados: los del Ingreso de ese origen;
- *  · vivos: los de las posiciones de ese origen. Para la PISCINA, cada (lote, código) va a la piscina de su
- *    Ingreso; si ese par entró desde varias, a la que más animales aportó (así ningún vivo se cuenta dos veces);
- *  · desoves, huevos, N2 y N5: los de los Desoves de ese origen, y la fertilidad y los nauplios por hembra con la
- *    regla del Saldo: sólo sobre los desoves que ya tienen su N2 / su N5.
- */
-export function desempenoPorOrigen(fuentes, posiciones, dimension) {
-  const porPiscina = dimension === 'piscina';
-  const origenDe = (r) => (porPiscina ? txt(r['Piscina Broodstock']) : normCodigoGenetico(r['Código genético']));
-  const par = (lote, cg) => normLote(lote) + '|' + normCodigoGenetico(cg);
-  const aportes = new Map();   // par → Map origen → animales
-  const out = new Map();
-  const de = (o) => out.get(o) || (out.set(o, { origen: o, lotes: new Set(), ingresados: 0, vivos: 0, desoves: 0, huevos: 0,
-    n2: 0, n5: 0, huevosConN2: 0, desovesConN5: 0 }), out.get(o));
-  for (const r of ((fuentes || {}).ingresos || [])) {
-    const o = origenDe(r);
-    if (!o) continue;
-    const A = de(o);
-    const n = ent(r.Machos) + ent(r.Hembras);
-    A.ingresados += n;
-    A.lotes.add(normLote(r.Lote));
-    const k = par(r.Lote, r['Código genético']);
-    if (!aportes.has(k)) aportes.set(k, new Map());
-    aportes.get(k).set(o, (aportes.get(k).get(o) || 0) + n);
-  }
-  const origenDelPar = (k) => {
-    const m = aportes.get(k);
-    if (!m) return '';
-    return [...m.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0][0];
-  };
-  for (const p of posiciones || []) {
-    const o = porPiscina ? origenDelPar(par(p.lote, p.codigoGenetico)) : normCodigoGenetico(p.codigoGenetico);
-    if (o) de(o).vivos += ent(p.machos) + ent(p.hembras);
-  }
-  for (const r of ((fuentes || {}).desoves || [])) {
-    const o = origenDe(r);
-    if (!o) continue;
-    const A = de(o);
-    const n2 = ent(r.N2), n5 = ent(r.N5);
-    A.desoves += ent(r.Desoves);
-    A.huevos += ent(r['Total de huevos']);
-    A.n2 += n2;
-    A.n5 += n5;
-    if (n2 > 0) A.huevosConN2 += ent(r['Total de huevos']);
-    if (n5 > 0) A.desovesConN5 += ent(r.Desoves);
-  }
-  return [...out.values()].sort((a, b) => a.origen.localeCompare(b.origen, 'es', { numeric: true })).map((A) => ({
-    origen: A.origen, lotes: [...A.lotes].filter(Boolean).sort(), ingresados: A.ingresados, vivos: A.vivos,
-    supervivencia: cociente(A.vivos, A.ingresados, 100), desoves: A.desoves, huevos: A.huevos, n2: A.n2, n5: A.n5,
-    fertilidad: cociente(A.n2, A.huevosConN2, 100),
-    naupliosPorHembra: A.desovesConN5 > 0 ? Math.round(A.n5 / A.desovesConN5) : '',
-  }));
-}
+/* 5 (2026-09-29, usuario) · `desempenoPorOrigen` RETIRADO: se quedó sin uso. Repartía cada fila por el TEXTO de su columna
+   (el Ingreso trae los códigos y piscinas sueltos; los Desoves, la pareja «C1/C2», «555/557», y no siempre igual), y un
+   lote se partía en dos filas. El desempeño por código genético y por piscina es hoy `comparativa` / `desempenoPorPiscina`
+   (operativo.lotes.js): por LOTE, con el origen de su Ingreso; sus reglas (los vivos de un par que entró desde dos
+   piscinas, UNA vez, en la que más aportó; la fertilidad y los nauplios con la regla del Saldo) siguen allí. */
