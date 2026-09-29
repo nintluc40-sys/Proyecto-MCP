@@ -280,6 +280,11 @@ describe('Maduración · tendencias · lo filtrado', () => {
     expect(t.produccion).toEqual([]);
   });
 
+  it('🔴 0r·4 · H2 · la pareja «CB/CZ» (CZ no está en ninguna fila) dice lo mismo que CB: cuenta como sus dos códigos', () => {
+    const conCB = tendencias(M, P7, normalizarFiltro({ codigo: 'CB' }), PARTES);
+    expect(tendencias(M, P7, normalizarFiltro({ codigo: 'CB/CZ' }), PARTES).nauplios).toEqual(conCB.nauplios);
+  });
+
   it('con el lote TI (tres filas antes, sólo dos con N5 y N2): ni su N5 ni su fertilidad llegan al mínimo', () => {
     const t = tendencias(M, P7, normalizarFiltro({ lote: 'TI' }), PARTES);
     expect([t.nauplios, t.reproduccion, t.total]).toEqual([null, [], 0]);

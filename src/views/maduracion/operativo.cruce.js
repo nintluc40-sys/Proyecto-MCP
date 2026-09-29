@@ -23,9 +23,10 @@
    2026-09-21: las 1665 filas de la MATRIZ y las 2227 de la Bitácora dicen «Sala N» y «Tanque N». Se comparan por su
    forma canónica (`salaCanonica`, `tanqueCanonico`).
    ============================================================ */
-import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
+import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { ESTADO_MUERTO, resolveEventLocation } from './data.js';
 import { fechaDeFila } from './operativo.data.js';
+import { codigoEnFiltro } from './operativo.tablero.js';   // 0r·4 · H2 · la pareja de códigos cuenta como sus dos
 
 const txt = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const esIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -57,7 +58,7 @@ export function ignoraDeCruce(F) {
 const enLugar = (F, sala, tanque) => (!F || !F.sala || salaCanonica(sala) === F.sala)
   && (!F || F.tanque === null || F.tanque === undefined || tanqueCanonico(tanque) === F.tanque);
 const enOrigen = (F, lote, codigo) => (!F || !F.lote || normLote(lote) === F.lote)
-  && (!F || !F.codigo || normCodigoGenetico(codigo) === F.codigo);
+  && codigoEnFiltro(codigo, F);
 
 /**
  * El cruce. `repro` es el modelo de 🧬 Microchips (`buildReproModel`), `libro` el del operativo AL CIERRE DE HOY,

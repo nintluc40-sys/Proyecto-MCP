@@ -37,11 +37,11 @@
      la de las alertas de ambiente (`salasEnAlcance`). Un desove no es de un tanque: con tanque elegido, la producción
      es la de su sala. Los partes no dicen el código genético: con ese filtro, las cópulas no se comparan.
    ============================================================ */
-import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
+import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { construirLibro, sumarDias, ubicKey, ESTADO_PRODUCCION } from '../registros/lib/mad-libro.js';
 import { fechaDeFila } from './operativo.data.js';
 import { cociente, tasaEnPartesDelLote } from './operativo.indicadores.js';
-import { posicionEnFiltro, salasEnAlcance } from './operativo.tablero.js';
+import { posicionEnFiltro, salasEnAlcance, codigoEnFiltro } from './operativo.tablero.js';
 import { loteEnFiltro, origenDeLote } from './operativo.lotes.js';
 import { UMBRALES_DE_AVISO } from './operativo.umbrales.js';
 
@@ -172,7 +172,7 @@ function desovesDelPeriodo(M, F, p, enAlcance) {
     if (!enPeriodo(fechaDesove(r), p)) return false;
     const clave = normLote(r.Lote);
     if (!clave || !enAlcance(clave)) return false;
-    return !F.codigo || normCodigoGenetico(r['Código genético']) === F.codigo;
+    return codigoEnFiltro(r['Código genético'], F);
   });
 }
 

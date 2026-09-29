@@ -154,12 +154,24 @@ export function etiquetasDeFiltro(F) {
     .map((d) => ({ dim: d.dim, rotulo: d.rotulo, valor: d.dim === 'sexo' ? SEXO_ETIQUETA[F.sexo] : String(F[d.dim]) }));
 }
 
+/** 0r·4 · H2 (2026-09-28, usuario) · ¿Casa este código genético con el del filtro? Una PAREJA —«C1/C2», como la
+ *  escriben los Desoves— cuenta como SUS DOS códigos, y casan si comparten alguno: con «C1/C2» entra lo de C1, lo de
+ *  C2 y lo de la pareja; con «C1», también el desove de la pareja (cuenta ENTERO en cada uno de sus códigos, como el
+ *  despacho en cada destino). Antes, elegir la pareja dejaba el tablero a cero: el libro lleva los códigos sueltos.
+ *  Todos los sitios que filtran por código pasan por aquí. Sin código en el filtro, todo casa. */
+const partesDelCodigo = (c) => normCodigoGenetico(c).split('/').filter(Boolean);
+export function codigoEnFiltro(codigo, F) {
+  if (!F || !F.codigo) return true;
+  const delFiltro = partesDelCodigo(F.codigo);
+  return partesDelCodigo(codigo).some((c) => delFiltro.includes(c));
+}
+
 /** ¿Pasa esta posición del libro (sala, tanque, lote, código genético) por el filtro? */
 export function posicionEnFiltro(p, F) {
   if (F.sala && p.sala !== F.sala) return false;
   if (F.tanque !== null && Number(p.tanque) !== F.tanque) return false;
   if (F.lote && normLote(p.lote) !== F.lote) return false;
-  if (F.codigo && normCodigoGenetico(p.codigoGenetico) !== F.codigo) return false;
+  if (!codigoEnFiltro(p.codigoGenetico, F)) return false;
   /* SEXO: la posición que no tiene ninguno de ese sexo se va. Y lo que se CUENTA de las que se quedan es sólo ese
      sexo (`sumarVivos`): filtrar por hembras y seguir sumando machos enseñaría una cifra que no es la pedida. */
   if (F.sexo && ent(p[F.sexo]) <= 0) return false;
@@ -365,7 +377,7 @@ export function kpiReproduccion(filasDesoves, periodo, F) {
   for (const r of filasDesoves || []) {
     if (!enPeriodo(fecha10(r.Fecha), periodo)) continue;
     if (F.lote && normLote(r.Lote) !== F.lote) continue;
-    if (F.codigo && normCodigoGenetico(r['Código genético']) !== F.codigo) continue;
+    if (!codigoEnFiltro(r['Código genético'], F)) continue;
     const n2 = ent(r.N2);
     const n5 = ent(r.N5);
     a.desoves += ent(r.Desoves);
@@ -427,7 +439,7 @@ function celdaDeTanque(libro, sala, tanque, fueraDeCatalogo, F) {
   const hm = proporcionHM(hembras, machos);
   const enFiltro = (!F.sala || F.sala === sala) && (F.tanque === null || F.tanque === tanque)
     && (!F.lote || comp.some((c) => normLote(c.lote) === F.lote))
-    && (!F.codigo || comp.some((c) => normCodigoGenetico(c.codigoGenetico) === F.codigo));
+    && (!F.codigo || comp.some((c) => codigoEnFiltro(c.codigoGenetico, F)));
   return {
     sala, tanque, fueraDeCatalogo, machos, hembras, vivos: machos + hembras, hm, hmEstado: evaluar('proporcionHM', hm),
     lotes, estado, densidad, densidadEstado: evaluar('densidad', densidad), enFiltro,

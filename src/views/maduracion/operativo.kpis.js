@@ -14,10 +14,10 @@
    (por ejemplo, el código genético en los vivos) el gráfico no se inventa: dice que no aplica.
    Módulo puro: devuelve lo que se dibuja; la vista lo dibuja.
    ============================================================ */
-import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
+import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO, sumarDias, ubicKey } from '../registros/lib/mad-libro.js';
 import { SALAS_VISIBLES } from './operativo.data.js';
-import { tasaEntre, kpiBiomasa, posicionEnFiltro } from './operativo.tablero.js';
+import { tasaEntre, kpiBiomasa, posicionEnFiltro, codigoEnFiltro } from './operativo.tablero.js';
 
 /** Las siete tarjetas que tienen gráfico, en su orden, con su título. */
 export const KPIS_CON_GRAFICO = [
@@ -192,7 +192,7 @@ export function graficoReproduccion(filasDesoves, periodo, F) {
     const f = fecha10(r.Fecha);
     if (!enPeriodo(f, periodo)) continue;
     if (F.lote && normLote(r.Lote) !== F.lote) continue;
-    if (F.codigo && normCodigoGenetico(r['Código genético']) !== F.codigo) continue;
+    if (!codigoEnFiltro(r['Código genético'], F)) continue;
     des.set(f, (des.get(f) || 0) + ent(r.Desoves));
     n5.set(f, (n5.get(f) || 0) + ent(r.N5));
   }

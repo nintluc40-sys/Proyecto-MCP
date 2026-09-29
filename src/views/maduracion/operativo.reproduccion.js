@@ -38,7 +38,7 @@ import {
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { fechaDeFila } from './operativo.data.js';
 import { cociente } from './operativo.indicadores.js';
-import { kpiReproduccion } from './operativo.tablero.js';
+import { kpiReproduccion, codigoEnFiltro } from './operativo.tablero.js';
 import { reproduccionDeLote } from './operativo.lotes.js';
 
 const txt = (v) => String(v == null ? '' : v).trim();
@@ -72,7 +72,7 @@ export function esPendiente(filaHoja) {
 function enFiltro(r, F) {
   if (!F) return true;
   if (F.lote && normLote(r.Lote) !== F.lote) return false;
-  if (F.codigo && normCodigoGenetico(r['Código genético']) !== F.codigo) return false;
+  if (!codigoEnFiltro(r['Código genético'], F)) return false;
   if (F.indice && (F.piscina || F.camaronera)) {
     const o = F.indice.origen.get(normLote(r.Lote));
     if (F.piscina && !(o && o.piscinas.has(F.piscina))) return false;
