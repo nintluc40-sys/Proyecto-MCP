@@ -213,7 +213,11 @@ function bloqueBajas(B, tope) {
   ])}</tr>`);
   const T = B.totales || { natural: {}, descarte: {}, total: 0 };
   const pie = `<div class="rp-pie-b">Natural ${nf(T.natural.total)} · descarte ${nf(T.descarte.total)} · <b>total ${nf(T.total)}</b>${B.desove ? ` · en desove ${nf(B.desove)}` : ''}</div>`;
-  return tabla(['Ubicación', 'Natural', 'Descarte', 'Total', '%'], filas, tope, 'Sin bajas registradas en el día.', 'tanques') + pie;
+  /* 0r·4 · H1 (2026-09-28, usuario) · van por TANQUE (F7.1): lo que esa agrupación no puede honrar —el lote, el código
+     genético— se DICE, como en 💀 Bajas y en los avisos. Callarlo dejaba un «PARTE FILTRADO — Lote X» con bajas de
+     tanques de otros lotes (visto con datos reales). */
+  const nota = (B.ignora || []).length ? `<div class="rp-vacio">Van por tanque: no se filtran por ${esc(B.ignora.join(' ni por '))}.</div>` : '';
+  return nota + tabla(['Ubicación', 'Natural', 'Descarte', 'Total', '%'], filas, tope, 'Sin bajas registradas en el día.', 'tanques') + pie;
 }
 
 function bloqueReproduccion(parte, tope) {

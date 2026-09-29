@@ -174,6 +174,17 @@ describe('Maduración · F7 · el filtro del tablero se hereda Y se dice', () =>
     expect(nombreDelParte(parte)).toBe('Parte_diario_2026-09-19');
     expect(nombreDelParte(soloS2)).toBe('Parte_diario_2026-09-19_filtrado');
   });
+
+  it('🔴 las bajas van por TANQUE: con lote o código, el papel DICE que no los aplica (0r·4 · H1)', () => {
+    // Visto con datos reales: un «PARTE FILTRADO — Lote X» listaba bajas de tanques de otros lotes sin avisar.
+    const porLote = parteDiario(M, SERIE, PARTES, F({ lote: 'QA' }), {});
+    expect(porLote.bajas.ignora).toEqual(['lote']);
+    expect(parteDiarioHtml(porLote)).toContain('Van por tanque: no se filtran por lote.');
+    const conCodigo = parteDiario(M, SERIE, PARTES, F({ lote: 'QA', codigo: 'CA' }), {});
+    expect(parteDiarioHtml(conCodigo)).toContain('Van por tanque: no se filtran por lote ni por código genético.');
+    expect(parteDiarioHtml(soloS2), 'la sala sí la aplican: no hay nada que decir').not.toContain('Van por tanque');
+    expect(parteDiarioHtml(parte)).not.toContain('Van por tanque');
+  });
 });
 
 describe('Maduración · F7 · el contrato de la serie y el día en curso', () => {
