@@ -1749,7 +1749,8 @@ function dibujarAmbiente(d, E) {
   const opciones = (unidad) => ({
     responsive: true, maintainAspectRatio: false,
     scales: { x: { ticks: { ...E.tick, maxRotation: 0, autoSkip: true }, grid: { display: false } },
-      y: { ticks: E.tick, grid: { color: E.grid }, title: E.titulo(unidad) } },
+      /* 0u · H2 · con margen: un punto en el borde (29,0 °C sobre su raya, 4,30 mg/L arriba del todo) quedaba en el marco. */
+      y: { grace: '5%', ticks: E.tick, grid: { color: E.grid }, title: E.titulo(unidad) } },
     plugins: { legend: { labels: E.leyenda } },
   });
   if (A.temp.some((v) => v !== null)) {
@@ -2880,7 +2881,8 @@ function calidadHTML(M, memo, p, F) {
 /* ── 0q·4 (2026-09-27, usuario) · LA VENTANA DE UN DÍA del calendario de partes ─────────────────────
    Al pulsar una fecha del encabezado (todas las salas) o una celda (centrada en su sala): la cobertura de cada sala
    —la misma celda del calendario— y sus partes tanque a tanque; ◀ ▶ recorren el período sin cerrar; cada tanque lleva
-   a su ficha en 🛢 Tanques. Es el modal del laboratorio (sv-modal): foco al abrir, fondo quieto y Escape. */
+   a su ficha en 🛢 Tanques. Es un sv-modal: foco al abrir, fondo quieto y Escape. (0u · decía «el modal del laboratorio»,
+   su modelo: desde el 2 del 2026-09-29 🦠 y 🧬 son sub-vistas y ésta es la única ventana del tablero.) */
 function diaDe(cob, memo, p, F) {
   if (!vOp.diaParte) return null;
   const d = partesDelDia(cob, serieDe(memo, p), memo.partes, vOp.diaParte, vOp.diaSala, F);

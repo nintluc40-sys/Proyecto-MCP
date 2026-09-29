@@ -462,6 +462,14 @@ describe('Maduración · operativo · 🏠 Salas · la temperatura y el oxígeno
     expect(vacioDe(0).querySelector('[data-mop-amb-ir]')).toBeNull();
   });
 
+  it('🔑 0u · H2 · los dos gráficos del día dejan margen en su eje: un punto en el borde no queda pegado al marco', async () => {
+    /* Visto en Chrome con datos reales: 29,0 °C sobre la raya del máximo y 4,30 mg/L arriba del todo, en el marco. */
+    await montar(PLANTA);
+    abrirSala1();
+    click(vacioDe(0).querySelector('[data-mop-amb-ir]'));   // el 18: temperatura y oxígeno
+    expect([ultimo('mopTempDia').options.scales.y.grace, ultimo('mopOxDia').options.scales.y.grace]).toEqual(['5%', '5%']);
+  });
+
   it('🔑 sus clases están DEFINIDAS en su CSS', async () => {
     const { readFileSync } = await import('node:fs');
     const css = readFileSync('src/views/maduracion/operativo.css', 'utf8') + readFileSync('src/views/maduracion/maduracion.css', 'utf8');
@@ -471,6 +479,20 @@ describe('Maduración · operativo · 🏠 Salas · la temperatura y el oxígeno
     root.querySelectorAll('.mop-amb-ctl, .mop-amb-ctl [class]').forEach((el) => el.classList.forEach((c) => { if (c.startsWith('mop-')) usadas.add(c); }));
     expect(usadas.has('mop-amb-ctl') && usadas.has('mop-amb-dia'), 'control').toBe(true);
     expect([...usadas].filter((c) => !new RegExp('\\.' + c + '(?![\\w-])').test(css))).toEqual([]);
+  });
+});
+
+describe('Maduración · operativo · 🏠 el detalle de una sala en el móvil (0u · H1)', () => {
+  /* 0u · H1 (2026-09-29, auditoría) · en el móvil el detalle de una sala desbordaba la PÁGINA: su columna era `1fr`, cuyo
+     mínimo es el de su contenido, y la tabla de tanques y los lienzos la ensanchaban (649 px en una pantalla de 390, medido
+     en Chrome, en «Día» y en «Período»). Con `minmax(0, 1fr)` la columna se ajusta a la pantalla y cada tabla se desplaza
+     DENTRO de su caja. happy-dom no maqueta: se vigila la regla en su CSS. */
+  it('🔑 cada pista de su rejilla es minmax(0, 1fr), en escritorio y en el móvil (ninguna `1fr` suelta)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/views/maduracion/operativo.css', 'utf8');
+    const reglas = [...css.matchAll(/\.mop-det-grid\s*\{([^}]*)\}/g)].map((m) => (m[1].match(/grid-template-columns:\s*([^;]+)/) || [])[1]).filter(Boolean);
+    expect(reglas, 'la de escritorio y la del @media').toHaveLength(2);
+    for (const r of reglas) expect(r.replace(/minmax\(0,\s*1fr\)/g, '').includes('1fr'), r).toBe(false);
   });
 });
 

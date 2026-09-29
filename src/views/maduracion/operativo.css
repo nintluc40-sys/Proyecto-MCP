@@ -108,7 +108,7 @@
 .mc-table tr.is-filtro td { background: color-mix(in srgb, var(--c-brand) 8%, transparent); }
 
 @media (max-width: 820px) {
-  .mop-det-grid { grid-template-columns: 1fr; }
+  .mop-det-grid { grid-template-columns: minmax(0, 1fr); }   /* 0u · H1 · con `1fr` la ensanchaban su tabla y sus lienzos */
   .mop-cuar-fila { grid-template-columns: 1fr; gap: 4px; }   /* 0f · 4 · en el móvil, nombre, barra y texto uno bajo otro */
   .mop-mapa-card .mc-seg { margin-left: 0; }
 }
