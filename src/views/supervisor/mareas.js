@@ -648,7 +648,8 @@ export function renderMareas(host, state, extras = {}) {
 export const mareasEstadoInicial = () => ({ mode: 'dia', key: null, month: null, corrKind: 'micro', corrPeriod: 'month', corrCell: null });
 
 /** El overlay del modal, cerrado. Lo abre cualquier `[data-mareas-open]` del `root` que se le pase a `cablearMareas`. */
-export function mareasModalHTML({ extras = [] } = {}) {   // 0r·2 · `extras`: [{ modo, etiqueta }], tras «Correlación»
+/*  1-A (2026-09-28, usuario) · `sinCorrelacion`: Maduración no la lleva («eso lo veo más para Larvicultura»). */
+export function mareasModalHTML({ extras = [], sinCorrelacion = false } = {}) {   // 0r·2 · `extras`: [{ modo, etiqueta }], tras «Correlación»
   return `<div class="sv-modal" id="svMareasModal" data-mareasmodal>
     <div class="sv-modal-card lv-fs-card">
       <div class="sv-modal-head">
@@ -660,7 +661,7 @@ export function mareasModalHTML({ extras = [] } = {}) {   // 0r·2 · `extras`: 
           <span class="sv-bm-mode-label">Vista:</span>
           <button class="sv-bm-mode-btn is-active" data-mareamode="dia">📅 Día</button>
           <button class="sv-bm-mode-btn" data-mareamode="mes">📈 Mes</button>
-          <button class="sv-bm-mode-btn" data-mareamode="corr">🔗 Correlación</button>${extras.map((x) => `
+          ${sinCorrelacion ? '' : '<button class="sv-bm-mode-btn" data-mareamode="corr">🔗 Correlación</button>'}${extras.map((x) => `
           <button class="sv-bm-mode-btn" data-mareamode="${esc(x.modo)}">${esc(x.etiqueta)}</button>`).join('')}
         </div>
         <div id="svMareaBody"></div>

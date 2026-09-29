@@ -62,6 +62,8 @@ import { makeAccessibleDialog } from '../../ui/modal.js';
 import { mareasModalHTML, cablearMareas } from '../supervisor/mareas.js';   // 0r·1 · el modal 🌊 Mareas de Larvicultura
 import { partesConHembras, copulasYMarea } from './operativo.mareas.js';   // 0r·2 · su pestaña «🦐 Cópulas»
 import { mareaPorDia } from './data.js';                                    // 0r·2 · la hoja «Marea» por día (la de T9)
+import { desovesDiarios, desovesYMarea } from './operativo.mareas.js';     // 1-A · y los desoves por fase lunar
+import { FASES_CICLO } from './data.js';                                    // 1-A · el filtro de fase lunar
 import { destroyChart } from '../../core/charts.js';                         // 0r·3b · soltar los gráficos de la ventana al rehacerla
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import { changeView } from '../../ui/router.js';
@@ -313,7 +315,7 @@ export function operativoView(root) {
   _labIngresos = M.fuentes.ingresos || [];   // 0q·5a · de dónde viene cada lote (su piscina)
   h += labModalHTML(periodo, F);   // 0f · 8 · encima de cualquier sub-vista
   _marCop.fuentes = M.fuentes;     // 0r·2 · la pestaña «🦐 Cópulas» cuenta sobre las fuentes de esta pintada
-  h += mareasModalHTML({ extras: MAREAS_EXTRAS_BOTONES });   // 0r·1 · cerrado: lo abre 🌊 Mareas (0r·2 · con «🦐 Cópulas»)
+  h += mareasModalHTML({ extras: MAREAS_EXTRAS_BOTONES, sinCorrelacion: true });   // 0r·1 · lo abre 🌊 Mareas (0r·2 · con «🦐 Cópulas»; 1-A · sin «Correlación»)
   root.innerHTML = h;
   if (detalle) dibujarDetalle(detalle);
   if (vOp.sub === 'lotes') dibujarLote(_fichaLote);
@@ -539,11 +541,14 @@ function trasPintarMareas(root) {
    con más amplitud? Decisiones del usuario: cifras (Viva frente a Muerta, r con la amplitud y la iluminación con su umbral,
    una lectura honesta) + la serie diaria del % con la amplitud + el % por fase lunar; TODO el registro (los meses del modal
    no aplican: se dice); filtros PROPIOS, sala y «sólo en producción». Las cuentas, en operativo.mareas.js (regla del Saldo).
-   Los partes con sus hembras salen de UNA pasada del libro y se guardan mientras no cambien las fuentes del tablero. */
+   Los partes con sus hembras salen de UNA pasada del libro y se guardan mientras no cambien las fuentes del tablero.
+   1-A (2026-09-28, usuario) · SIN lecturas ni notas de conclusión —las cifras se recalculan con cada parte, y una frase fija
+   daba a entender que todo estaba estimado y quedaba estático—: las definiciones van en un ⓘ. Filtros de mes, lote, código
+   genético y fase lunar (ésta RESALTA sus días y su fila), la cantidad en la tabla por fase, y «Ver»: cópulas o desoves. */
 const MAREAS_EXTRAS = {
   copulas: {
     etiqueta: '🦐 Cópulas',
-    inicial: { copSala: '', copProd: false },
+    inicial: { copSala: '', copProd: false, copMes: '', copLote: '', copCodigo: '', copFase: '', copVar: 'copulas' },
     lienzos: ['mopMarCop'],
     html: (state) => copulasMareaHTML(state),
     dibujar: () => dibujarCopulasMarea(),
@@ -551,13 +556,25 @@ const MAREAS_EXTRAS = {
       const c = t.closest && t.closest('[data-mop-marcop]');
       if (!c) return false;
       if (c.dataset.mopMarcop === 'sala') state.copSala = c.value || '';
+      else if (COP_CAMPOS[c.dataset.mopMarcop]) state[COP_CAMPOS[c.dataset.mopMarcop]] = c.value || '';
       else state.copProd = !!c.checked;
       return true;
     },
   },
 };
 const MAREAS_EXTRAS_BOTONES = Object.entries(MAREAS_EXTRAS).map(([modo, x]) => ({ modo, etiqueta: x.etiqueta }));
-const _marCop = { fuentes: null, deFuentes: null, base: [], deStore: null, marea: new Map(), dias: null };
+/* 1-A · los filtros de la pestaña que se guardan tal cual (la sala y la casilla tienen su línea). */
+const COP_CAMPOS = { mes: 'copMes', lote: 'copLote', codigo: 'copCodigo', fase: 'copFase', var: 'copVar' };
+const _marCop = { fuentes: null, deFuentes: null, base: [], deStore: null, marea: new Map(), dias: null, deFuentesD: null, diarios: [] };
+/** 1-A · los desoves de cada día con lo que el libro tenía: UNA pasada más del libro, sólo si se piden y mientras no cambien
+ *  las fuentes. */
+function diariosDeDesoves() {
+  if (_marCop.deFuentesD !== _marCop.fuentes) {
+    _marCop.diarios = _marCop.fuentes ? desovesDiarios(_marCop.fuentes) : [];
+    _marCop.deFuentesD = _marCop.fuentes;
+  }
+  return _marCop.diarios;
+}
 function datosCopulasMarea() {
   if (_marCop.deFuentes !== _marCop.fuentes) {
     _marCop.base = _marCop.fuentes ? partesConHembras(_marCop.fuentes, diasDeTanque(_marCop.fuentes.tanques)) : [];
@@ -573,70 +590,90 @@ const pct1 = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleS
 const r2txt = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace('-', '−'));
 const diasCop = (n) => `${nf(n)} día${n === 1 ? '' : 's'}`;
 const partesDe = (n) => (n === 1 ? '1 parte de un tanque' : `${nf(n)} partes de tanques`);
-const QUE_R = { amplitud: 'amplitud', ilum: 'iluminación' };
-function lecturaCopulas(x) {
-  const L = x.lectura;
-  if (L.clave === 'sin-datos') return 'Sin días con partes de Tanques y marea con estos filtros.';
-  if (L.clave === 'pocos') return `Pocos días para leer una relación: ${nf(x.conMarea)} con marea (hacen falta 10 o más).`;
-  if (L.clave === 'sin-senal') return `Con ${diasCop(x.conMarea)}, ninguna |r| llega a ${r2txt(x.rCrit)}: no se distingue del azar.`;
-  const dice = (s) => (s.que === 'tipo'
-    ? `más cópulas con marea ${s.r > 0 ? 'viva' : 'muerta'} (r ${r2txt(s.r)})`
-    : `${s.r > 0 ? 'más' : 'menos'} cópulas con más ${QUE_R[s.que]} (r ${r2txt(s.r)})`);
-  return `⚠ Posible relación: ${L.señales.map(dice).join(' · ')}. Son ${diasCop(x.conMarea)} (≈ ${nf(x.ciclos, 1)} ciclos lunares): `
-    + 'confírmalo con más semanas; un lote que entra o sale puede coincidir con las mareas.';
-}
+const por100 = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
+/* 1-A · lo que cambia entre «Ver cópulas» y «Ver desoves»: el campo, su formato y sus rótulos. */
+const VER_COP = {
+  copulas: { campo: 'copulas', que: 'cópulas', fmt: pct1, eje: '% de cópulas', col: 'Cópulas', tasa: '% de cópulas',
+    serie: '% de cópulas por día', fases: '% de cópulas por fase lunar',
+    def: '% del día = Σ cópulas de los partes de Tanques ÷ Σ hembras que el libro tenía en esos tanques al cierre (la regla del ⚖️ Saldo); por grupo, Σ ÷ Σ. Un día en que nadie en la granja registró cópulas no cuenta: la hoja no lleva ceros.' },
+  desoves: { campo: 'desoves', que: 'desoves', fmt: por100, eje: 'desoves por 100 ♀', col: 'Desoves', tasa: 'Desoves por 100 ♀',
+    serie: 'Desoves por 100 ♀ por día', fases: 'Desoves por 100 ♀ por fase lunar',
+    def: 'Desoves por 100 ♀ del día = Σ desoves de la hoja de Desoves ÷ Σ hembras del libro al cierre × 100; por grupo, Σ ÷ Σ. Un día sin ningún desove registrado en la granja no cuenta. Un desove no es de una sala: con sala o «sólo en producción», cuentan enteros los lotes que tenían animales ahí.' },
+};
 function copulasMareaHTML(state) {
+  const ver = state.copVar === 'desoves' ? 'desoves' : 'copulas';
+  const V = VER_COP[ver];
   const { base, marea } = datosCopulasMarea();
-  const x = copulasYMarea(base, marea, { sala: state.copSala || '', soloProduccion: !!state.copProd });
+  const f = { sala: state.copSala || '', soloProduccion: !!state.copProd, mes: state.copMes || '', lote: state.copLote || '', codigo: state.copCodigo || '' };
+  const x = ver === 'desoves' ? desovesYMarea(diariosDeDesoves(), marea, f) : copulasYMarea(base, marea, f);
   const salas = state.copSala && !x.salas.includes(state.copSala) ? [state.copSala, ...x.salas] : x.salas;
+  /* Un select de la pestaña: lo elegido se queda en la lista aunque ya no traiga datos (como la sala). */
+  const sel = (k, rotulo, valor, opciones, todas, et = (o) => o) => {
+    const ops = valor && !opciones.includes(valor) ? [valor, ...opciones] : opciones;
+    return `<label class="mop-labf-c">${rotulo}<select class="mc-select" data-mop-marcop="${k}">${todas ? `<option value="">${todas}</option>` : ''}${ops.map((o) =>
+      `<option value="${esc(o)}"${o === valor ? ' selected' : ''}>${esc(et(o))}</option>`).join('')}</select></label>`;
+  };
   const filtros = `<div class="mop-labf" role="group" aria-label="Filtros de esta pestaña">
+      ${sel('var', 'Ver', ver, ['copulas', 'desoves'], '', (o) => (o === 'copulas' ? 'Cópulas' : 'Desoves'))}
+      ${sel('mes', 'Mes', state.copMes || '', x.meses, 'Todo el registro', mesTxt)}
       <label class="mop-labf-c">Sala<select class="mc-select" data-mop-marcop="sala"><option value="">Todas</option>${salas.map((s) =>
         `<option value="${esc(s)}"${s === state.copSala ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select></label>
+      ${sel('lote', 'Lote', state.copLote || '', x.lotes, 'Todos')}
+      ${sel('codigo', 'Código genético', state.copCodigo || '', x.codigos, 'Todos')}
+      ${sel('fase', 'Fase lunar', state.copFase || '', FASES_CICLO, 'Todas')}
       <label class="mop-labf-c mop-marcop-prod"><span><input type="checkbox" data-mop-marcop="prod"${state.copProd ? ' checked' : ''}> Sólo tanques en producción</span></label>
     </div>
-    <p class="mop-lab-per">Todo el registro${x.conMarea ? ` · ${diasCop(x.conMarea)} con partes y marea (${dm(x.desde)} – ${dm(x.hasta)}, ≈ ${nf(x.ciclos, 1)} ciclos lunares)` : ''} · los meses de arriba no aplican aquí</p>`;
+    <p class="mop-lab-per">${state.copMes ? esc(mesTxt(state.copMes).replace(/^./, (c) => c.toUpperCase())) : 'Todo el registro'}${x.conMarea ? ` · ${diasCop(x.conMarea)} con datos y marea (${dm(x.desde)} – ${dm(x.hasta)}, ≈ ${nf(x.ciclos, 1)} ciclos lunares)` : ''} · los meses de arriba no aplican aquí</p>`;
   const cuenta = [
     x.sinRegistro ? `${diasCop(x.sinRegistro)} sin ninguna cópula registrada en la granja (hueco del registro), fuera` : '',
-    x.sinHembras ? `${partesDe(x.sinHembras)} sin hembras en el libro no cuenta${x.sinHembras === 1 ? '' : 'n'}` : '',
+    x.sinHembras && ver === 'copulas' ? `${partesDe(x.sinHembras)} sin hembras en el libro no cuenta${x.sinHembras === 1 ? '' : 'n'}` : '',
+    x.sinHembras && ver === 'desoves' ? `${diasCop(x.sinHembras)} con desoves y sin hembras en este alcance, fuera` : '',
     x.fueraDeProduccion ? `${partesDe(x.fueraDeProduccion)} con algún lote fuera de producción, fuera` : '',
-    x.sinMarea ? `${diasCop(x.sinMarea)} con partes y sin marea en la hoja` : '',
+    x.sinMarea ? `${diasCop(x.sinMarea)} con datos y sin marea en la hoja` : '',
   ].filter(Boolean);
-  const nota = `<p class="mc-note mop-marcop-nota">% del día = cópulas de los partes de Tanques ÷ hembras que el libro tenía en esos tanques al cierre (la regla del ⚖️ Saldo); por grupo, Σ cópulas ÷ Σ hembras. Marea y luna: hoja «Marea» (INOCAR). Un día en que nadie en la granja registró cópulas es un hueco del registro (la hoja no lleva ceros), no un día sin cópulas. r = correlación de Pearson del % diario (marea viva = 1, muerta = 0); con |r| por debajo del umbral (2/√días) no se distingue del azar. No es una prueba de significancia: «Sólo tanques en producción» quita la cuarentena, que casi no copula.${cuenta.length ? ' ' + cuenta.join(' · ') + '.' : ''}</p>`;
-  const lectura = `<p class="mop-marcop-lectura is-${x.lectura.clave}">${esc(lecturaCopulas(x))}</p>`;
+  /* 1-A · las definiciones, en un ⓘ: nada de conclusiones en la pestaña (las cifras se recalculan con cada parte). */
+  const info = `<details class="mop-marcop-info"><summary title="Qué se cuenta aquí" aria-label="Qué se cuenta aquí">ⓘ</summary>
+      <p class="mc-note">${esc(V.def)} Marea y luna: hoja «Marea» (INOCAR). r = correlación de Pearson del valor diario con cada variable (marea viva = 1, muerta = 0); umbral = 2/√días.${cuenta.length ? ' ' + esc(cuenta.join(' · ')) + '.' : ''}</p></details>`;
   _marCop.dias = x.conMarea ? x.dias : null;
-  if (!x.conMarea) return `<div class="mop-marcop">${filtros}${lectura}${nota}</div>`;
+  _marCop.ver = ver;
+  _marCop.fase = state.copFase || '';
+  if (!x.conMarea) return `<div class="mop-marcop">${filtros}${info}<p class="muted mop-marcop-vacio">Sin días con ${V.que} y marea con estos filtros.</p></div>`;
   const tipo = (k) => x.tipo.find((t) => t.k === k);
   const chip = (l, v, s) => `<div class="sv-marea-stat"><div class="sv-marea-stat-l">${esc(l)}</div><div class="sv-marea-stat-v">${v}</div><div class="sv-marea-stat-s">${esc(s)}</div></div>`;
   const cifras = `<div class="sv-marea-stats mop-marcop-cifras">
-      ${chip('Marea viva', pct1(tipo('Viva').tasa), diasCop(tipo('Viva').dias))}
-      ${chip('Marea muerta', pct1(tipo('Muerta').tasa), diasCop(tipo('Muerta').dias))}
+      ${chip('Marea viva', V.fmt(tipo('Viva').tasa), diasCop(tipo('Viva').dias))}
+      ${chip('Marea muerta', V.fmt(tipo('Muerta').tasa), diasCop(tipo('Muerta').dias))}
       ${chip('r con la amplitud', r2txt(x.r.amplitud), `umbral ±${r2txt(x.rCrit)}`)}
       ${chip('r con la iluminación', r2txt(x.r.ilum), `umbral ±${r2txt(x.rCrit)}`)}
     </div>`;
-  const maxF = Math.max(0, ...x.fase.map((f) => f.tasa || 0));
-  const barraF = (v) => `<span class="mc-bar"><i style="width:${maxF > 0 && v > 0 ? Math.round((v / maxF) * 1000) / 10 : 0}%"></i><b>${pct1(v)}</b></span>`;
-  const fases = `<div class="sv-marea-panel"><div class="sv-marea-ptitle">% de cópulas por fase lunar <span class="muted">· con pocos días por fase, las diferencias son sobre todo ruido</span></div>
-      <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-marcop-fases"><thead><tr><th>Fase lunar</th><th class="r">Días</th><th class="r">% de cópulas</th></tr></thead>
-      <tbody>${x.fase.map((f) => `<tr><td>${esc(f.k)}</td><td class="r">${nf(f.dias)}</td><td class="r">${f.tasa === null ? '<span class="muted">—</span>' : barraF(f.tasa)}</td></tr>`).join('')}</tbody></table></div></div>`;
-  const serie = `<div class="sv-marea-panel"><div class="sv-marea-ptitle">% de cópulas por día <span class="muted">· barras oscuras, marea viva; claras, muerta · la línea, la amplitud</span></div>
+  const maxF = Math.max(0, ...x.fase.map((g) => g.tasa || 0));
+  const barraF = (v) => `<span class="mc-bar"><i style="width:${maxF > 0 && v > 0 ? Math.round((v / maxF) * 1000) / 10 : 0}%"></i><b>${V.fmt(v)}</b></span>`;
+  const fases = `<div class="sv-marea-panel"><div class="sv-marea-ptitle">${V.fases}</div>
+      <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-marcop-fases"><thead><tr><th>Fase lunar</th><th class="r">Días</th><th class="r">${V.col}</th><th class="r">${V.tasa}</th></tr></thead>
+      <tbody>${x.fase.map((g) => `<tr${g.k === state.copFase ? ' class="mop-marcop-fase-on"' : ''}><td>${esc(g.k)}</td><td class="r">${nf(g.dias)}</td><td class="r">${nf(g[V.campo])}</td><td class="r">${g.tasa === null ? '<span class="muted">—</span>' : barraF(g.tasa)}</td></tr>`).join('')}</tbody></table></div></div>`;
+  const serie = `<div class="sv-marea-panel"><div class="sv-marea-ptitle">${V.serie} <span class="muted">· barras oscuras, marea viva; claras, muerta · la línea, la amplitud${state.copFase ? ` · en color, los días de ${esc(state.copFase)}` : ''}</span></div>
       <div class="sv-marea-charthost"><canvas id="mopMarCop"></canvas></div></div>`;
-  return `<div class="mop-marcop">${filtros}${cifras}${lectura}${serie}${fases}${nota}</div>`;
+  return `<div class="mop-marcop">${filtros}${info}${cifras}${serie}${fases}</div>`;
 }
 const COLOR_MAREA = { Viva: '#00838f', Muerta: '#80cbc4' };
+/* 1-A · con una fase lunar elegida, sus días van en su color y los demás, apagados. */
+const COLOR_APAGADO = '#dfe5e8';
 function dibujarCopulasMarea() {
   const d = _marCop.dias;
   if (!d || !document.getElementById('mopMarCop')) return;
   const E = ejesOp();
+  const V = VER_COP[_marCop.ver] || VER_COP.copulas;
+  const apagado = (x) => !!_marCop.fase && (!x.marea || x.marea.fase !== _marCop.fase);
   graficoOp('mopMarCop', {
     type: 'bar',
     data: {
       labels: d.map((x) => dm(x.fecha)),
       datasets: [
-        { type: 'bar', label: '% de cópulas', data: d.map((x) => x.tasa), yAxisID: 'y', order: 1,
-          backgroundColor: d.map((x) => (x.marea && COLOR_MAREA[x.marea.tipo]) || '#b0bec5'),
+        { type: 'bar', label: V.eje.charAt(0).toUpperCase() + V.eje.slice(1), data: d.map((x) => x.tasa), yAxisID: 'y', order: 1,
+          backgroundColor: d.map((x) => (apagado(x) ? COLOR_APAGADO : (x.marea && COLOR_MAREA[x.marea.tipo]) || '#b0bec5')),
           tooltip: { callbacks: { label: (c) => {
             const x = d[c.dataIndex];
-            return `% de cópulas: ${pct1(x.tasa)} (${nf(x.copulas)} de ${nf(x.hembras)} ♀) · `
+            return `${V.tasa}: ${V.fmt(x.tasa)} (${nf(x[V.campo])} de ${nf(x.hembras)} ♀) · `
               + (x.marea ? `marea ${(x.marea.tipo || '—').toLowerCase()} · ${x.marea.fase || '—'}` : 'sin marea en la hoja');
           } } } },
         { type: 'line', label: 'Amplitud (m)', data: d.map((x) => (x.marea ? x.marea.amplitud : null)), yAxisID: 'y2', order: 0,
@@ -647,7 +684,7 @@ function dibujarCopulasMarea() {
     options: {
       responsive: true, maintainAspectRatio: false,
       scales: { x: { ticks: { ...E.tick, maxRotation: 0, autoSkip: true }, grid: { display: false } },
-        y: { beginAtZero: true, ticks: E.tick, grid: { color: E.grid }, title: E.titulo('% de cópulas') },
+        y: { beginAtZero: true, ticks: E.tick, grid: { color: E.grid }, title: E.titulo(V.eje) },
         y2: { beginAtZero: true, position: 'right', ticks: E.tick, grid: { display: false }, title: E.titulo('amplitud (m)') } },
       plugins: { legend: { labels: E.leyenda } },
     },

@@ -11,25 +11,36 @@
      casilla se deja vacía), no un día sin cópulas: fuera, y se cuenta (decisión del usuario). El 18/09 no trae ninguna.
      Con un filtro, el 0 de un día en que la granja sí registró sigue siendo un 0 (la Sala 2 el 10/09).
    · Por grupo, Σ cópulas ÷ Σ hembras (no la media de las tasas diarias); las ocho fases, en el orden del ciclo.
-   · La lectura: con menos de 10 días con marea no se lee nada; con más, una correlación cuenta si |r| ≥ 2/√n.
+   · r de Pearson y su umbral 2/√n: CIFRAS que se recalculan con cada parte; la vista ya no las «lee» (1-A, 2026-09-28,
+     usuario: una frase de conclusión daba a entender que todo estaba estimado y quedaba estático).
+   · Filtros de la pestaña (1-A): mes, lote y código genético (la pareja cuenta como sus dos: `codigoEnFiltro`).
+   · DESOVES por fase (1-A): Σ desoves de la hoja de Desoves ÷ Σ hembras del libro al cierre × 100 («por 100 ♀»); un día
+     sin NINGÚN desove registrado en la granja no cuenta. Un desove no es de una sala: con sala o «sólo en producción»,
+     cuentan los lotes que tenían animales en ese alcance.
    Datos FICTICIOS.
    ============================================================ */
 import { describe, it, expect } from 'vitest';
-import { partesConHembras, copulasYMarea, MIN_DIAS_LECTURA, CICLO_LUNAR_DIAS } from './operativo.mareas.js';
+import { partesConHembras, copulasYMarea, desovesDiarios, desovesYMarea, CICLO_LUNAR_DIAS } from './operativo.mareas.js';
 import { modeloOperativo, diasDeTanque } from './operativo.data.js';
 import { MAD_OP_ORIGEN } from './operativo.fuentes.js';
 import { FASES_CICLO } from './data.js';
 import { pearson } from '../../core/util.js';
 
 const O = MAD_OP_ORIGEN;
-const ING = (fecha, lote, sala, tanque, machos, hembras) => ({ _SheetOrigin: O, 'Camaronera origen': 'CX', Fecha: fecha, Lote: lote,
-  'Código genético': 'CG', 'Piscina Broodstock': 'P9', Sala: sala, Tanque: tanque, Machos: machos, Hembras: hembras });
+const ING = (fecha, lote, sala, tanque, machos, hembras, cg = 'CG') => ({ _SheetOrigin: O, 'Camaronera origen': 'CX', Fecha: fecha, Lote: lote,
+  'Código genético': cg, 'Piscina Broodstock': 'P9', Sala: sala, Tanque: tanque, Machos: machos, Hembras: hembras });
+const DES = (fecha, lote, cg, desoves) => ({ _SheetOrigin: O, Fecha: fecha, Lote: lote, 'Código genético': cg, Desoves: desoves,
+  'Total de huevos': 1000 * desoves, N2: '', N5: '', 'Hembras no viables': '' });
 const TQ = (fecha, sala, tanque, extra) => ({ _SheetOrigin: O, 'Machos muertos': '', Fecha: fecha, Sala: sala, Tanque: tanque, ...extra });
-/* QM — Sala 1, tanque 1 (10♂ 20♀), ingreso 01/08: produce desde el 16/08. El 11/09 mueren 10 hembras.
-   QN — Sala 2, tanque 16 (10♂ 10♀), ingreso 05/09: en cuarentena hasta el 20/09. El tanque 2 de la Sala 1, vacío. */
+/* QM — Sala 1, tanque 1 (10♂ 20♀), código CG, ingreso 01/08: produce desde el 16/08. El 11/09 mueren 10 hembras.
+   QN — Sala 2, tanque 16 (10♂ 10♀), código CH, ingreso 05/09: en cuarentena hasta el 20/09. El tanque 2 de la Sala 1, vacío.
+   Desoves: QM 3 el 10/09, 2 el 11/09 y 1 el 12/09 (sin marea) y el 21/09; QN 2 el 21/09. Ninguno el 17 ni el 18. */
 const PLANTA = [
   ING('2026-08-01', 'QM', 'Sala 1', 1, 10, 20),
-  ING('2026-09-05', 'QN', 'Sala 2', 16, 10, 10),
+  ING('2026-09-05', 'QN', 'Sala 2', 16, 10, 10, 'CH'),
+  DES('2026-09-10', 'QM', 'CG', 3), DES('2026-09-11', 'QM', 'CG', 2), DES('2026-09-12', 'QM', 'CG', 1),
+  DES('2026-09-21', 'QM', 'CG', 1), DES('2026-09-21', 'QN', 'CH', 2),
+  DES('2026-09-17', 'QM', 'CG', 0),   // una fila con 0 desoves no hace «día con desoves»
   TQ('2026-09-10', 'Sala 1', 1, { 'Cópulas': 4 }),
   TQ('2026-09-10', 'Sala 2', 16, { 'Cópulas': 0 }),
   TQ('2026-09-10', 'Sala 1', 2, { 'Cópulas': 3 }),
@@ -66,10 +77,18 @@ describe('Maduración · operativo · 🦐 cópulas × marea · cada parte con l
     expect(b.map((x) => x.fecha)).toEqual([...b.map((x) => x.fecha)].sort());
   });
 
+  it('🔴 1-A · cada parte lleva los lotes y los códigos que su tanque tenía ese día', () => {
+    const b = base();
+    const de = (f, sala, tq) => b.find((x) => x.fecha === f && x.sala === sala && x.tanque === tq);
+    expect(de('2026-09-10', 'Sala 1', 1)).toMatchObject({ lotes: ['QM'], codigos: ['CG'] });
+    expect(de('2026-09-10', 'Sala 2', 16)).toMatchObject({ lotes: ['QN'], codigos: ['CH'] });
+    expect(de('2026-09-10', 'Sala 1', 2)).toMatchObject({ lotes: [], codigos: [] });
+  });
+
   it('🔑 sin partes, nada; sin libro, los partes sin hembras', () => {
     expect(partesConHembras({}, [])).toEqual([]);
     expect(partesConHembras({}, [{ fecha: '2026-09-10', sala: 'Sala 1', tanque: 1, copulas: 2 }])).toEqual([
-      { fecha: '2026-09-10', sala: 'Sala 1', tanque: 1, copulas: 2, hembras: 0, produccion: false }]);
+      { fecha: '2026-09-10', sala: 'Sala 1', tanque: 1, copulas: 2, hembras: 0, produccion: false, lotes: [], codigos: [] }]);
   });
 });
 
@@ -118,17 +137,71 @@ describe('Maduración · operativo · 🦐 cópulas × marea · la relación', (
     expect(x.sinRegistro, 'el hueco es de la GRANJA: el filtro no lo cambia').toBe(1);
   });
 
-  it('🔑 con menos de 10 días con marea no se lee nada, aunque haya r', () => {
+  it('🔑 1-A · no se «lee» nada: sólo cifras, que salen con los días que haya (r incluida)', () => {
     const x = copulasYMarea(base(), MAREA);
-    expect(x.conMarea).toBeLessThan(MIN_DIAS_LECTURA);
+    expect(x.lectura).toBeUndefined();
     expect(x.r.amplitud).not.toBeNull();
-    expect(x.lectura).toEqual({ clave: 'pocos', señales: [] });
-    expect(copulasYMarea([], MAREA).lectura.clave).toBe('sin-datos');
-    expect(copulasYMarea(base(), new Map()).lectura.clave).toBe('sin-datos');
+    expect(copulasYMarea([], MAREA)).toMatchObject({ conMarea: 0, rCrit: null });
+    expect(copulasYMarea(base(), new Map()).conMarea).toBe(0);
+  });
+
+  it('🔴 1-A · el mes, el lote y el código genético filtran los partes; las opciones no dependen del filtro', () => {
+    const porLote = copulasYMarea(base(), MAREA, { lote: 'QN' });
+    expect(porLote.dias.map((d) => d.fecha)).toEqual(['2026-09-10', '2026-09-17', '2026-09-21']);
+    expect(dia(porLote, '2026-09-21')).toMatchObject({ copulas: 1, hembras: 10 });
+    const porCodigo = copulasYMarea(base(), MAREA, { codigo: 'CG' });
+    expect(porCodigo.dias.map((d) => d.fecha)).toEqual(['2026-09-10', '2026-09-11', '2026-09-12', '2026-09-17']);
+    expect(dia(porCodigo, '2026-09-10')).toMatchObject({ copulas: 4, hembras: 20 });
+    expect(copulasYMarea(base(), MAREA, { codigo: 'CG/CH' }).dias.length, 'la pareja cuenta como sus dos').toBe(5);
+    expect(copulasYMarea(base(), MAREA, { mes: '2026-08' }).dias).toEqual([]);
+    expect(copulasYMarea(base(), MAREA, { mes: '2026-09' }).dias.length).toBe(5);
+    expect([porLote.meses, porLote.lotes, porLote.codigos]).toEqual([['2026-09'], ['QM', 'QN'], ['CG', 'CH']]);
   });
 });
 
-describe('Maduración · operativo · 🦐 cópulas × marea · la lectura con días suficientes', () => {
+describe('Maduración · operativo · 🥚 desoves × marea (1-A)', () => {
+  const diarios = () => desovesDiarios(modeloOperativo(PLANTA, { hoy: '2026-09-28' }).fuentes);
+
+  it('🔴 por día, Σ desoves ÷ Σ hembras del libro al cierre × 100; sin desoves en la granja, el día no está', () => {
+    const x = desovesYMarea(diarios(), MAREA);
+    expect(x.dias.map((d) => d.fecha)).toEqual(['2026-09-10', '2026-09-11', '2026-09-12', '2026-09-21']);
+    expect(dia(x, '2026-09-10')).toMatchObject({ desoves: 3, hembras: 30 });
+    expect(dia(x, '2026-09-10').tasa).toBeCloseTo(10, 9);
+    expect(dia(x, '2026-09-11').tasa, 'con las hembras del cierre (murieron 10)').toBeCloseTo(10, 9);
+    expect(dia(x, '2026-09-21')).toMatchObject({ desoves: 3, hembras: 20 });
+    expect([x.conMarea, x.sinMarea]).toEqual([3, 1]);
+    const viva = x.tipo.find((t) => t.k === 'Viva');
+    expect(viva).toMatchObject({ dias: 3, desoves: 8, hembras: 70 });
+    expect(x.fase.find((f) => f.k === 'Luna llena')).toMatchObject({ dias: 1, desoves: 3, hembras: 30 });
+    expect(x.fase.map((f) => f.k)).toEqual(FASES_CICLO);
+  });
+
+  it('🔴 el lote, el código y la sala: los desoves del alcance sobre sus hembras (el 0 de un día con desoves es un 0)', () => {
+    const porLote = desovesYMarea(diarios(), MAREA, { lote: 'QN' });
+    expect(porLote.dias.map((d) => [d.fecha, d.desoves, d.hembras])).toEqual([
+      ['2026-09-10', 0, 10], ['2026-09-11', 0, 10], ['2026-09-12', 0, 10], ['2026-09-21', 2, 10]]);
+    expect(desovesYMarea(diarios(), MAREA, { codigo: 'CH' }).dias.map((d) => d.desoves)).toEqual([0, 0, 0, 2]);
+    const sala1 = desovesYMarea(diarios(), MAREA, { sala: 'Sala 1' });
+    expect(sala1.dias.map((d) => [d.fecha, d.desoves, d.hembras])).toEqual([
+      ['2026-09-10', 3, 20], ['2026-09-11', 2, 10], ['2026-09-12', 1, 10], ['2026-09-21', 1, 10]]);
+    expect(desovesYMarea(diarios(), MAREA, { mes: '2026-08' }).dias).toEqual([]);
+    expect([sala1.meses, sala1.lotes, sala1.codigos]).toEqual([['2026-09'], ['QM', 'QN'], ['CG', 'CH']]);
+    expect(desovesYMarea(diarios(), MAREA, { lote: 'QZ' }), 'sin hembras en el alcance, el día no cuenta').toMatchObject({ dias: [], sinHembras: 4 });
+  });
+
+  it('🔴 «sólo en producción»: QN en cuarentena no cuenta ni sus hembras ni sus desoves hasta el 21/09', () => {
+    const x = desovesYMarea(diarios(), MAREA, { soloProduccion: true });
+    expect(dia(x, '2026-09-10')).toMatchObject({ desoves: 3, hembras: 20 });
+    expect(dia(x, '2026-09-21')).toMatchObject({ desoves: 3, hembras: 20 });
+  });
+
+  it('🔑 sin desoves, nada', () => {
+    expect(desovesDiarios({})).toEqual([]);
+    expect(desovesYMarea([], MAREA)).toMatchObject({ dias: [], conMarea: 0 });
+  });
+});
+
+describe('Maduración · operativo · 🦐 cópulas × marea · la correlación con días suficientes', () => {
   /* Doce días: la tasa sube con la amplitud; la iluminación va a su aire; Viva los de más amplitud. */
   const AMP = [0.6, 0.9, 1.2, 1.5, 1.8, 2.1, 0.7, 1.0, 1.3, 1.6, 1.9, 2.2];
   const ILU = [10, 90, 40, 60, 20, 80, 50, 30, 70, 0, 100, 45];
@@ -136,22 +209,17 @@ describe('Maduración · operativo · 🦐 cópulas × marea · la lectura con d
   const b = fechas.map((f, i) => ({ fecha: f, sala: 'Sala 1', tanque: 1, copulas: Math.round(AMP[i] * 10), hembras: 100, produccion: true }));
   const mar = new Map(fechas.map((f, i) => [f, { fase: FASES_CICLO[i % 8], ilum: ILU[i], tipo: AMP[i] >= 1.5 ? 'Viva' : 'Muerta', amplitud: AMP[i] }]));
 
-  it('🔴 r de Pearson de la tasa diaria con cada variable, y rCrit = 2/√n; cuenta la que llega a |r| ≥ rCrit', () => {
+  it('🔴 r de Pearson de la tasa diaria con cada variable, y rCrit = 2/√n', () => {
     const x = copulasYMarea(b, mar);
     const tasas = b.map((d) => d.copulas);
     expect(x.rCrit).toBeCloseTo(2 / Math.sqrt(12), 12);
     expect(x.r.amplitud).toBeCloseTo(pearson(tasas.map((t, i) => [t, AMP[i]])), 12);
     expect(x.r.ilum).toBeCloseTo(pearson(tasas.map((t, i) => [t, ILU[i]])), 12);
     expect(x.r.tipo).toBeCloseTo(pearson(tasas.map((t, i) => [t, AMP[i] >= 1.5 ? 1 : 0])), 12);
-    expect(Math.abs(x.r.ilum)).toBeLessThan(x.rCrit);
-    expect(x.lectura.clave).toBe('posible');
-    expect(x.lectura.señales.map((s) => s.que)).toEqual(['amplitud', 'tipo']);
   });
 
-  it('🔴 sin variación en la tasa no hay r, y la lectura es «sin señal»', () => {
+  it('🔴 sin variación en la tasa no hay r', () => {
     const plano = b.map((d) => ({ ...d, copulas: 5 }));
-    const x = copulasYMarea(plano, mar);
-    expect(x.r).toEqual({ amplitud: null, ilum: null, tipo: null });
-    expect(x.lectura).toEqual({ clave: 'sin-senal', señales: [] });
+    expect(copulasYMarea(plano, mar).r).toEqual({ amplitud: null, ilum: null, tipo: null });
   });
 });

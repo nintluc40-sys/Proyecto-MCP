@@ -319,6 +319,12 @@
 /* 0q·5a · la barra de filtros de la ventana de Microbiología, y los patógenos que se escogen (como las filas de Lotes). */
 .mop-labf { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-end; margin: 0 0 6px; }
 .mop-labf-c { display: flex; flex-direction: column; gap: 2px; font-size: 11px; font-weight: 700; color: var(--c-text-soft); }
+/* 1-A · 🦐 Cópulas de Mareas: las definiciones en un ⓘ (se abre al tocarlo) y la fase lunar elegida, resaltada en su tabla. */
+.mop-marcop-info { margin: 0 0 8px; }
+.mop-marcop-info > summary { display: inline-block; cursor: pointer; list-style: none; font-weight: 800; color: var(--c-text-soft); }
+.mop-marcop-info > summary::-webkit-details-marker { display: none; }
+.mop-marcop-info > .mc-note { max-width: 80ch; margin: 4px 0 0; }
+.mop-marcop-fases tr.mop-marcop-fase-on td { background: color-mix(in srgb, var(--c-brand) 12%, transparent); font-weight: 700; }
 .mop-micpat { cursor: pointer; }
 .mop-micpat:hover td, .mop-micpat:focus-visible td { background: color-mix(in srgb, var(--c-brand) 10%, transparent); }
 .mop-micpat:focus-visible { outline: 2px solid var(--c-brand-600); outline-offset: -2px; }

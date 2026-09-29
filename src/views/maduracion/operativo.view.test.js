@@ -2888,12 +2888,13 @@ describe('Maduración · operativo · 🌊 Mareas, como en Larvicultura (0r·1)'
     expect(abierto(), 'desde 🛢 Tanques también').toBe(true);
   });
 
-  it('🔴 abre en Día (el último día con marea: ola, luna y lecturas); Mes y Correlación cambian el cuerpo; lo del Sheet, escapado', async () => {
+  it('🔴 abre en Día (el último día con marea: ola, luna y lecturas); Mes cambia el cuerpo; SIN Correlación; lo del Sheet, escapado', async () => {
     await montar([...PLANTA, ...MAREA]);
     click(boton());
     expect(document.body.classList.contains('modal-open')).toBe(true);
-    /* Las tres de Larvicultura; 0r·2 añadió aquí la cuarta, «🦐 Cópulas» (sus pruebas, más abajo). */
-    expect([...modal().querySelectorAll('[data-mareamode]')].map((b) => b.dataset.mareamode)).toEqual(['dia', 'mes', 'corr', 'copulas']);
+    /* Día y Mes, de Larvicultura; 0r·2 añadió «🦐 Cópulas» (sus pruebas, más abajo). 1-A (2026-09-28, usuario): «Correlación»
+       se quita en Maduración («eso lo veo más para Larvicultura»); Larvicultura la conserva. */
+    expect([...modal().querySelectorAll('[data-mareamode]')].map((b) => b.dataset.mareamode)).toEqual(['dia', 'mes', 'copulas']);
     expect(modo('dia').classList.contains('is-active')).toBe(true);
     expect(modal().querySelector('.sv-marea-grid .sv-marea-wave')).not.toBeNull();
     expect(modal().querySelectorAll('.sv-marea-table tbody tr')).toHaveLength(4);
@@ -2903,9 +2904,9 @@ describe('Maduración · operativo · 🌊 Mareas, como en Larvicultura (0r·1)'
     click(modo('mes'));
     expect(modal().querySelectorAll('.sv-marea-stat')).toHaveLength(6);
     expect(makeChart.mock.calls.map(([id]) => id)).toEqual(expect.arrayContaining(['mareaTrendChart', 'mareaDonutChart']));
-    click(modo('corr'));
-    expect(modal().querySelector('.sv-marea-corr-bar')).not.toBeNull();
-    expect(modo('corr').classList.contains('is-active')).toBe(true);
+    expect(modo('corr'), 'Maduración no lleva «Correlación»').toBeNull();
+    const { mareasModalHTML } = await import('../supervisor/mareas.js');
+    expect(mareasModalHTML(), 'Larvicultura sí').toContain('data-mareamode="corr"');
   });
 
   it('🔴 lo elegido sigue ahí aunque el tablero se repinte (otra pintada de la vista, como la de un dato nuevo)', async () => {
@@ -2984,34 +2985,39 @@ describe('Maduración · operativo · 🦐 cópulas × marea × luna, en el moda
     [c.querySelector('.sv-marea-stat-l').textContent, c.querySelector('.sv-marea-stat-v').textContent, (c.querySelector('.sv-marea-stat-s') || { textContent: '' }).textContent]);
   const prod = () => modal().querySelector('[data-mop-marcop="prod"]');
   const sala = () => modal().querySelector('[data-mop-marcop="sala"]');
-  const nota = () => modal().querySelector('.mop-marcop-nota').textContent;
+  const selCop = (k) => modal().querySelector(`[data-mop-marcop="${k}"]`);
+  /* 1-A · lo que antes decía la nota (definiciones y lo que se deja fuera) va ahora en el ⓘ. */
+  const info = () => modal().querySelector('.mop-marcop-info').textContent;
   const marcar = (v) => { prod().checked = v; prod().dispatchEvent(new Event('change', { bubbles: true })); };
 
-  it('🔴 la pestaña va tras «Correlación» y sólo en Maduración (Larvicultura no la tiene)', async () => {
+  it('🔴 la pestaña va tras «Mes» y sólo en Maduración (Larvicultura no la tiene; 1-A · Maduración, sin «Correlación»)', async () => {
     await montar([...PLANTA, ...COP_MAREA]);
-    expect([...modal().querySelectorAll('[data-mareamode]')].map((b) => b.dataset.mareamode)).toEqual(['dia', 'mes', 'corr', 'copulas']);
+    expect([...modal().querySelectorAll('[data-mareamode]')].map((b) => b.dataset.mareamode)).toEqual(['dia', 'mes', 'copulas']);
     expect(modal().querySelector('[data-mareamode="copulas"]').textContent).toBe('🦐 Cópulas');
     const { mareasModalHTML } = await import('../supervisor/mareas.js');
     expect(mareasModalHTML()).not.toContain('copulas');
   });
 
-  it('🔴 toda la granja: Viva y Muerta (Σ ÷ Σ), las r con su umbral y la lectura; los meses de arriba no aplican', async () => {
+  it('🔴 toda la granja: Viva y Muerta (Σ ÷ Σ), las r con su umbral; los meses de arriba no aplican', async () => {
     await montar([...PLANTA, ...COP_MAREA]);
     abrirCop();
     expect(modal().querySelector('[data-mareamode="copulas"]').classList.contains('is-active')).toBe(true);
     expect(chips()[0], '(2 + 0 + 0 + 1) ÷ (22 + 8 + 22 + 8)').toEqual(['Marea viva', '5,0 %', '2 días']);
     expect(chips()[1], 'el 18/09, hueco, no cuenta').toEqual(['Marea muerta', '13,6 %', '1 día']);
-    expect(nota()).toContain('1 día sin ninguna cópula registrada en la granja (hueco del registro), fuera');
+    expect(info()).toContain('1 día sin ninguna cópula registrada en la granja (hueco del registro), fuera');
     expect([chips()[2][0], chips()[2][2]]).toEqual(['r con la amplitud', 'umbral ±1,15']);
     expect([chips()[3][0], chips()[3][2]]).toEqual(['r con la iluminación', 'umbral ±1,15']);
-    expect(modal().querySelector('.mop-marcop-lectura').textContent).toContain('Pocos días');
+    /* 1-A (2026-09-28, usuario) · ninguna frase de conclusión: las cifras se recalculan con cada parte. */
+    expect([modal().querySelector('.mop-marcop-lectura'), modal().querySelector('.mop-marcop-nota')]).toEqual([null, null]);
+    expect(modal().querySelector('.mop-marcop').textContent).not.toMatch(/Posible relación|ruido|confírmalo|Pocos días/);
     expect([...modal().querySelectorAll('[data-marea-month]')].every((b) => b.disabled), 'los meses, inertes').toBe(true);
     expect(modal().querySelector('.mop-marcop .mop-lab-per').textContent).toContain('3 días');
     const fases = [...modal().querySelectorAll('.mop-marcop-fases tbody tr')];
+    expect([...modal().querySelectorAll('.mop-marcop-fases thead th')].map((th) => th.textContent)).toEqual(['Fase lunar', 'Días', 'Cópulas', '% de cópulas']);
     expect(fases.map((tr) => tr.cells[0].textContent)).toEqual(['Luna nueva', 'Creciente', 'Cuarto creciente', 'Gibosa creciente', 'Luna llena', 'Gibosa menguante', 'Cuarto menguante', 'Menguante']);
-    expect([fases[0].cells[1].textContent, fases[0].cells[2].textContent]).toEqual(['1', '6,7 %']);
-    expect([fases[1].cells[1].textContent, fases[1].cells[2].textContent]).toEqual(['2', '7,7 %']);
-    expect(fases[2].cells[2].textContent, 'el Cuarto creciente sólo tenía el hueco').toBe('—');
+    expect([...fases[0].cells].slice(1).map((c) => c.textContent)).toEqual(['1', '2', '6,7 %']);
+    expect([...fases[1].cells].slice(1).map((c) => c.textContent), '1-A · la cantidad antes del %').toEqual(['2', '4', '7,7 %']);
+    expect(fases[2].cells[3].textContent, 'el Cuarto creciente sólo tenía el hueco').toBe('—');
     const g = makeChart.mock.calls.filter(([id]) => id === 'mopMarCop').pop()[1];
     expect(g.data.labels).toEqual(['15/09', '16/09', '17/09']);
     expect(g.data.datasets[0].data.map((v) => Math.round(v * 100) / 100)).toEqual([6.67, 3.33, 13.64]);
@@ -3039,7 +3045,7 @@ describe('Maduración · operativo · 🦐 cópulas × marea × luna, en el moda
     /* Fuera la Sala 2 el 15/09 (QA, en cuarentena en esa sala). La Sala 4 el 16/09 SÍ cuenta: la cópula de QB ese día termina su
        cuarentena (regla del libro: la primera cópula). (2 + 0 + 1) ÷ (22 + 22 + 8). */
     expect(chips()[0]).toEqual(['Marea viva', '5,8 %', '2 días']);
-    expect(nota()).toContain('1 parte de un tanque con algún lote fuera de producción, fuera');
+    expect(info()).toContain('1 parte de un tanque con algún lote fuera de producción, fuera');
     expect(prod().hasAttribute('checked')).toBe(true);
     operativoView(root);
     expect(modal().querySelector('[data-mareamode="copulas"]').classList.contains('is-active'), 'el repintado no la cambia').toBe(true);
@@ -3067,11 +3073,47 @@ describe('Maduración · operativo · 🦐 cópulas × marea × luna, en el moda
   it('🔑 sin partes con hembras, lo dice; sin hoja Marea, el aviso del modal', async () => {
     await montar([...PLANTA.filter((r) => !('Machos muertos' in r)), ...COP_MAREA.filter((r) => r._SheetOrigin === 'Marea')]);
     abrirCop();
-    expect(modal().querySelector('.mop-marcop-lectura').textContent).toContain('Sin días con partes de Tanques y marea');
+    expect(modal().querySelector('.mop-marcop-vacio').textContent).toBe('Sin días con cópulas y marea con estos filtros.');
     expect(modal().querySelector('#mopMarCop')).toBeNull();
     await montar([...PLANTA, ...COP_MAREA.filter((r) => r._SheetOrigin !== 'Marea')]);
     abrirCop();
     expect(modal().textContent).toContain('No hay datos de mareas cargados');
+  });
+
+  it('🔴 1-A · Mes, Lote, Código genético y Fase lunar filtran; la fase RESALTA sus días y su fila', async () => {
+    await montar([...PLANTA, ...COP_MAREA]);
+    abrirCop();
+    expect([...selCop('mes').options].map((o) => o.value)).toEqual(['', '2026-09']);
+    expect([...selCop('lote').options].map((o) => o.value)).toEqual(['', 'QA', 'QB', 'QC', 'QD']);
+    expect([...selCop('codigo').options].map((o) => o.value)).toEqual(['', 'CA', 'CB']);
+    cambiar(selCop('lote'), 'QB');
+    expect(chips()[0], 'sólo la Sala 4 el 16/09: 1 ÷ 8').toEqual(['Marea viva', '12,5 %', '1 día']);
+    expect(chips()[1]).toEqual(['Marea muerta', '—', '0 días']);
+    cambiar(selCop('lote'), '');
+    cambiar(selCop('codigo'), 'CA');
+    expect(chips()[0], 'los tanques con CA: (2 + 0 + 1) ÷ (22 + 22 + 8)').toEqual(['Marea viva', '5,8 %', '2 días']);
+    expect(selCop('codigo').querySelector('option[selected]').value).toBe('CA');
+    cambiar(selCop('codigo'), '');
+    cambiar(selCop('fase'), 'Creciente');
+    expect(modal().querySelector('.mop-marcop-fase-on').cells[0].textContent).toBe('Creciente');
+    const g = makeChart.mock.calls.filter(([id]) => id === 'mopMarCop').pop()[1];
+    expect(g.data.datasets[0].backgroundColor, 'la Luna nueva del 15/09, apagada').toEqual(['#dfe5e8', '#00838f', '#80cbc4']);
+    cambiar(selCop('mes'), '2026-09');
+    expect(modal().querySelector('.mop-marcop .mop-lab-per').textContent).toMatch(/^Septiembre 2026 · 3 días/);
+  });
+
+  it('🔴 1-A · «Ver: Desoves»: los desoves por 100 ♀ por fase, con los mismos filtros', async () => {
+    await montar([...PLANTA, ...COP_MAREA, DES('16/09/2026', 'QB', 1, 1000)]);
+    abrirCop();
+    cambiar(selCop('var'), 'desoves');
+    expect([...modal().querySelectorAll('.mop-marcop-fases thead th')].map((th) => th.textContent)).toEqual(['Fase lunar', 'Días', 'Desoves', 'Desoves por 100 ♀']);
+    expect(chips()[0], 'el 16/09: 1 ÷ (22 + 8 + 8) × 100').toEqual(['Marea viva', '2,6', '1 día']);
+    cambiar(selCop('lote'), 'QB');
+    const creciente = [...modal().querySelectorAll('.mop-marcop-fases tbody tr')].find((tr) => tr.cells[0].textContent === 'Creciente');
+    expect([...creciente.cells].slice(1).map((c) => c.textContent), '1 ÷ 8 × 100').toEqual(['1', '1', '12,5']);
+    const g = makeChart.mock.calls.filter(([id]) => id === 'mopMarCop').pop()[1];
+    expect(g.data.datasets[0].label).toBe('Desoves por 100 ♀');
+    expect(info()).toContain('Desoves por 100 ♀ del día');
   });
 });
 
