@@ -154,9 +154,14 @@ export function loteEnFiltro(libro, clave, F) {
 /**
  * La tabla maestra: una fila por lote que el libro conozca —vivos Y cerrados—, con sus cifras al cierre de la foto.
  * `dias` es la edad del lote: de su ingreso a la foto, o a su cierre si ya está cerrado.
+ * 4 (2026-09-29, usuario) · `peso` { hembras, machos }, cada uno { valor, fecha }: el del ⚖️ Saldo al cierre de la foto
+ * (`M.resumen` es `resumenMaduracion` a la fecha de la foto): el promedio de los tanques del lote en la última fecha con
+ * peso. No se recalcula. Un lote sin ningún peso, o que el Saldo no lista (cerrado y a cero), va vacío.
  */
 export function tablaDeLotes(M, F) {
   const libro = (M && M.libro) || { lotes: new Map(), posiciones: [], avisos: [] };
+  const delSaldo = new Map(((M && M.resumen && M.resumen.lotes) || []).map((R) => [normLote(R.lote), R]));
+  const pesoDe = (R, sexo) => (R && R[sexo] ? { valor: R[sexo].valor, fecha: R[sexo].fecha } : { valor: '', fecha: '' });
   const filas = [];
   for (const [k, L] of libro.lotes) {
     const clave = normLote(k);
@@ -173,6 +178,7 @@ export function tablaDeLotes(M, F) {
       ingresados, vivos,
       supervivencia: supervivencia(L), descarte: tasaDescarte(L),
       hm: proporcionHM(vivos.hembras, vivos.machos),
+      peso: { hembras: pesoDe(delSaldo.get(clave), 'pesoHembras'), machos: pesoDe(delSaldo.get(clave), 'pesoMachos') },
       cuadra: cuadre ? cuadre.cuadra : true,
     });
   }

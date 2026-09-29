@@ -772,6 +772,35 @@ describe('Maduración · operativo · F2.3 · el sexo también manda en la tabla
   });
 });
 
+describe('Maduración · operativo · 🧬 Lotes · el peso de cada lote (4)', () => {
+  /* 4 (2026-09-29, usuario) · «peso promedio ♂ y ♀ junto a ♀:♂ y edad»: el del ⚖️ Saldo (el último peso de sus tanques,
+     hasta la foto), en dos columnas, con su fecha en el globo; con filtro de sexo, sólo el de ese sexo. En PLANTA_F3, LA
+     pesó ♀40 ♂30 el 18/09 y LB sólo ♂25. */
+  const cab = () => [...root.querySelectorAll('.mop-lotes thead th')].map((t) => t.textContent.trim());
+  const celdas = (l) => [...filaLote(l).querySelectorAll('td')];
+  const txt = (l) => celdas(l).map((t) => t.textContent.trim());
+
+  it('🔴 dos columnas, Peso ♀ y Peso ♂, entre ♀:♂ y Edad; en gramos, con la fecha del peso en el globo; «—» sin peso', async () => {
+    await montar(PLANTA_F3);
+    click(root.querySelector('[data-mop-sub="lotes"]'));
+    expect(cab().slice(8)).toEqual(['♀:♂', 'Peso ♀', 'Peso ♂', 'Edad']);
+    expect(txt('LA').slice(9, 11)).toEqual(['40 g', '30 g']);
+    expect(celdas('LA')[9].getAttribute('title')).toBe('último peso: 18/09/2026');
+    expect(txt('LB').slice(9, 11), 'LB sólo pesó machos').toEqual(['—', '25 g']);
+    expect(celdas('LB')[9].getAttribute('title')).toBeNull();
+    expect(root.querySelector('.mop-lotes').closest('.mc-card').querySelector('.mc-note').textContent).toContain('el del ⚖️ Saldo');
+  });
+
+  it('🔴 con filtro de sexo, sólo el peso de ese sexo (como ♀:♂, la tabla habla de ese sexo)', async () => {
+    await montar(PLANTA_F3);
+    click(root.querySelector('[data-mop-sub="lotes"]'));
+    cambiar(filtro('sexo'), 'hembras');
+    expect(txt('LA').slice(9, 11)).toEqual(['40 g', '—']);
+    cambiar(filtro('sexo'), 'machos');
+    expect(txt('LA').slice(9, 11)).toEqual(['—', '30 g']);
+  });
+});
+
 describe('Maduración · operativo · F2.3 · quitar la etiqueta de sala', () => {
   it('🔴 suelta también su TANQUE: si no, el 1 de la Sala 1 reaparecería como el 1 de la Sala 4', async () => {
     await montar(PLANTA);

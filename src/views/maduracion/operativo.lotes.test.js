@@ -169,6 +169,22 @@ describe('Maduración · lotes · la tabla maestra', () => {
     expect(tablaDeLotes(M, SIN).find((f) => f.lote === 'QJ').codigos).toEqual(['CA', 'CB']);
   });
 
+  it('🔴 4 (2026-09-29, usuario) · el PESO de cada lote es el del ⚖️ Saldo al cierre de la foto: valor y fecha, por sexo', () => {
+    const peso = (m, l) => tablaDeLotes(m, SIN).find((f) => f.lote === l).peso;
+    // El 18/09 pesaron t4 (QH y QI, compartido: ♂30 ♀40) y t5 (QJ: ♂20 ♀50). Cada lote, el suyo; cada sexo, el suyo.
+    expect(peso(M, 'QJ')).toEqual({ hembras: { valor: 50, fecha: '2026-09-18' }, machos: { valor: 20, fecha: '2026-09-18' } });
+    expect(peso(M, 'QH')).toEqual({ hembras: { valor: 40, fecha: '2026-09-18' }, machos: { valor: 30, fecha: '2026-09-18' } });
+    // Es EL del Saldo, no otro cálculo.
+    const R = M.resumen.lotes.find((x) => x.lote === 'QJ');
+    expect(peso(M, 'QJ')).toEqual({ hembras: R.pesoHembras, machos: R.pesoMachos });
+    // Sin ningún parte con peso, vacío (un cero diría «no pesa nada»); y el cerrado a cero, que el Saldo no lista, también.
+    const vacio = { hembras: { valor: '', fecha: '' }, machos: { valor: '', fecha: '' } };
+    expect(peso(M, 'QE')).toEqual(vacio);
+    expect(peso(M, 'QG')).toEqual(vacio);
+    // AL CIERRE DE LA FOTO: con la foto del 17, el peso del 18 todavía no existe.
+    expect(peso(modeloOperativo(PLANTA, { hoy: FOTO, fecha: '2026-09-17' }), 'QJ')).toEqual(vacio);
+  });
+
   it('el filtro se aplica por las posiciones del lote: por tanque, por código y por lote', () => {
     expect(tablaDeLotes(M, F({ sala: 'Sala 3', tanque: 4 })).map((f) => f.lote)).toEqual(['QH', 'QI']);
     expect(tablaDeLotes(M, F({ codigo: 'CB' })).map((f) => f.lote)).toEqual(['QF', 'QG', 'QJ']);

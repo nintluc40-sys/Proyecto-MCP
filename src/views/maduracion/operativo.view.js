@@ -1858,6 +1858,11 @@ function tablaLotesHTML(filas, F) {
   }
   /* Con filtro de sexo se enseña ESA columna, no el total: si no, la tabla contradiría al KPI de Vivos. */
   const col = (x) => (F.sexo ? x[F.sexo] : x.total);
+  /* 4 (2026-09-29, usuario) · el peso del ⚖️ Saldo, con su fecha en el globo; con filtro de sexo, sólo el de ese sexo. */
+  const pesoCelda = (x, sexo) => {
+    if (F.sexo && F.sexo !== sexo) return '<td class="r"><span class="muted" title="Con filtro de sexo, sólo el peso de ese sexo">—</span></td>';
+    return vacio(x.valor) ? '<td class="r">—</td>' : `<td class="r" title="último peso: ${esc(dma(x.fecha))}">${nf(x.valor, 1)} g</td>`;
+  };
   const fila = (f) => {
     const sel = f.lote === vOp.loteSel;
     const cuadra = f.cuadra ? '' : ' <span class="mop-dif" title="La cascada del cuadre no cuadra: mírala en la ficha">⚠</span>';
@@ -1871,6 +1876,7 @@ function tablaLotesHTML(filas, F) {
       <td class="r">${pc(col(f.supervivencia))}</td>
       <td class="r">${pc(col(f.descarte))}</td>
       <td class="r">${F.sexo ? '<span class="muted" title="La proporción sexual no significa nada con un solo sexo">—</span>' : nf(f.hm, 2)}</td>
+      ${pesoCelda(f.peso.hembras, 'hembras')}${pesoCelda(f.peso.machos, 'machos')}
       <td class="r">${f.dias === '' ? '—' : nf(f.dias) + ' d'}${f.cerrado ? ' <span class="mop-nota" title="Cerrado el ' + esc(dma(f.cerrado)) + '">cerrado</span>' : ''}</td>
     </tr>`;
   };
@@ -1881,9 +1887,9 @@ function tablaLotesHTML(filas, F) {
       <thead><tr><th>Lote</th><th>Estado</th><th>Código</th><th>Salas</th><th class="r">${sx}Ingresados</th><th class="r">${sx}Vivos</th>
         <th class="r" title="${esc(definicion('supervivencia'))}">Superv.</th>
         <th class="r" title="${esc(definicion('tasaDescarte'))}">Descarte</th>
-        <th class="r" title="${esc(definicion('proporcionHM'))}">♀:♂</th><th class="r">Edad</th></tr></thead>
+        <th class="r" title="${esc(definicion('proporcionHM'))}">♀:♂</th><th class="r">Peso ♀</th><th class="r">Peso ♂</th><th class="r">Edad</th></tr></thead>
       <tbody>${filas.map(fila).join('')}</tbody></table></div>
-    <p class="mc-note">La EDAD va del ingreso a la foto; en un lote cerrado, hasta su cierre. ⚠ en un lote = su cascada no cuadra.${F.sexo ? ' Con filtro de sexo estas cifras son de ese sexo; la CASCADA de la ficha sigue entera, porque es un cuadre y a medias no cuadraría.' : ''}</p>
+    <p class="mc-note">La EDAD va del ingreso a la foto; en un lote cerrado, hasta su cierre. El PESO es el del ⚖️ Saldo: el promedio de sus tanques en la última fecha con peso, hasta la foto (su fecha, en el globo). ⚠ en un lote = su cascada no cuadra.${F.sexo ? ' Con filtro de sexo estas cifras son de ese sexo; la CASCADA de la ficha sigue entera, porque es un cuadre y a medias no cuadraría.' : ''}</p>
   </div>`;
 }
 
