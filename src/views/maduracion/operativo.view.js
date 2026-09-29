@@ -3081,6 +3081,17 @@ function reportesHTML(M, memo, fecha, hoy, F, periodo) {
     ? `<label class="mop-rep-dia">Lote
         <select class="mc-select" data-mop-rep-lote aria-label="Lote del cierre">${lotes.map((l) => `<option value="${esc(l)}"${l === vOp.repLote ? ' selected' : ''}>${esc(l)}</option>`).join('') || '<option value="">(ninguno)</option>'}</select>
         <span class="mc-note">la vida entera del lote, hasta la foto</span></label>` : '';
+  /* 0r·4 (2026-09-28, usuario) · el diario y el semanal llevan en SU barra el «Lote → Código genético» del tablero. Son
+     los MISMOS selectores (`data-mop-filtro`: el mismo estado y el mismo manejador), como el «Día del parte» mueve la
+     foto (F7.1·8): el reporte hereda los filtros (F7.1·6) y no puede haber dos que discrepen. */
+  const o = M.filtros;
+  const opciones = (valores, elegido) => valores.map((x) => `<option value="${esc(x)}"${String(elegido) === String(x) ? ' selected' : ''}>${esc(x)}</option>`).join('');
+  const selFiltros = REPORTES.find((r) => r.clave === clave).filtros
+    ? `<label class="mop-rep-dia">Lote
+        <select class="mc-select" data-mop-filtro="lote" aria-label="Lote (filtro del tablero)"><option value="">Todos los lotes</option>${opciones(o.lotes, vOp.lote)}</select></label>
+      <label class="mop-rep-dia">Código genético
+        <select class="mc-select" data-mop-filtro="codigo" aria-label="Código genético (filtro del tablero)"><option value="">Todos los códigos</option>${opciones(codigosDe(o, vOp.lote), vOp.codigo)}</select>
+        <span class="mc-note">son los filtros del tablero: cambian también las demás sub-vistas</span></label>` : '';
   const cab = modelo ? modelo.cabecera : { filtrado: false, etiquetas: [] };
   const alcance = alcanceDelParte(cab);
   const doc = modelo ? A.doc(modelo) : '';
@@ -3094,6 +3105,7 @@ function reportesHTML(M, memo, fecha, hoy, F, periodo) {
           <input type="date" class="mop-fecha" data-mop-fecha value="${esc(fecha)}" max="${esc(hoy)}">
           <span class="mc-note">es la foto del tablero: cambiarlo mueve todas las sub-vistas</span></label>
         ${selLote}
+        ${selFiltros}
         <div class="mop-rep-acc">
           <button class="mop-rep-btn" data-mop-rep-pdf>🖨 PDF</button>
           <button class="mop-rep-btn is-alt" data-mop-rep-xlsx>📗 Excel</button>

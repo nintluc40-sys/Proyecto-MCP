@@ -47,10 +47,11 @@ import { fnv1a } from '../supervisor/fichaPdf.js';
 
 /** Los reportes disponibles, en su orden. La sub-vista se pinta desde esta lista, y una pastilla que no hiciera
  *  nada engaña más que una lista corta: el de Broodstock (F7.3) se añade AQUÍ cuando exista.
- *  `lote` marca los que se imprimen de UN lote y necesitan elegirlo. */
+ *  `lote` marca los que se imprimen de UN lote y necesitan elegirlo. `filtros` (0r·4, 2026-09-28) marca los que llevan
+ *  en su barra el «Lote → Código genético» del tablero: los MISMOS filtros, no unos propios (F7.1·6 y ·8). */
 export const REPORTES = [
-  { clave: 'diario', etiqueta: 'Parte diario', icono: '📄', descripcion: 'Lo que pasó en un día, en una página.' },
-  { clave: 'semanal', etiqueta: 'Semanal por lote', icono: '🗓', descripcion: 'Los siete días que terminan en la foto, un lote por página.' },
+  { clave: 'diario', etiqueta: 'Parte diario', icono: '📄', descripcion: 'Lo que pasó en un día, en una página.', filtros: true },
+  { clave: 'semanal', etiqueta: 'Semanal por lote', icono: '🗓', descripcion: 'Los siete días que terminan en la foto, un lote por página.', filtros: true },
   { clave: 'cierre', etiqueta: 'Cierre de lote', icono: '🏁', descripcion: 'La vida entera del lote, con la cascada del cuadre.', lote: true },
   { clave: 'broodstock', etiqueta: 'Broodstock', icono: '📈', descripcion: 'El último corte de las piscinas de origen, y una página por piscina.' },
 ];

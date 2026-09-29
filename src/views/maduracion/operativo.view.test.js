@@ -1481,6 +1481,41 @@ describe('Maduración · operativo · 🖨 Reportes', () => {
     expect(elegido('lote')).toBe('');                                  // el filtro del tablero no se ha movido
   });
 
+  /* 0r·4 (2026-09-28, usuario) · el diario y el semanal ofrecen en SU barra el «Lote → Código genético» del tablero.
+     Son los MISMOS filtros —el mismo estado y el mismo manejador—, como el día del parte mueve la foto (F7.1·8): el
+     reporte hereda los filtros (F7.1·6) y no puede haber dos que discrepen. */
+  it('🔴 el diario y el semanal llevan Lote y Código genético en su barra, y SON los filtros del tablero', async () => {
+    await montar(PLANTA);
+    abrirReportes();
+    const barra = () => root.querySelector('.mop-rep-barra');
+    const selR = (d) => barra().querySelector(`[data-mop-filtro="${d}"]`);
+    expect([...selR('lote').options].map((o) => o.value)).toEqual(['', 'QA', 'QB', 'QC', 'QD']);
+    expect(plano(barra())).toContain('son los filtros del tablero');
+    cambiar(selR('lote'), 'QB');
+    expect([...selR('codigo').options].map((o) => o.value), 'el código, en cascada: QB sólo lleva CA').toEqual(['', 'CA']);
+    cambiar(selR('lote'), 'QA');
+    expect(elegido('lote'), 'el tablero se mueve con él').toBe('QA');
+    expect(root.querySelector('.mop-rep-prev').getAttribute('srcdoc')).toContain('PARTE FILTRADO — Lote QA');
+    expect([...selR('codigo').options].map((o) => o.value), 'el código, en cascada del lote').toEqual(['', 'CA', 'CB']);
+    cambiar(selR('codigo'), 'CB');
+    expect(elegido('codigo')).toBe('CB');
+    expect(plano(root.querySelector('.mop-rep-alcance'))).toContain('CB');
+    click(root.querySelector('[data-mop-rep="semanal"]'));
+    expect(selR('lote').querySelector('option[selected]').value, 'el semanal enseña el mismo filtro').toBe('QA');
+    const doc = root.querySelector('.mop-rep-prev').getAttribute('srcdoc');
+    expect(doc.match(/class="rp-page"/g), 'el semanal: sólo la página de QA').toHaveLength(1);
+    expect(doc).toContain('Lote QA');
+  });
+
+  it('🔑 el cierre (con su propio lote) y el Broodstock no los llevan', async () => {
+    await montar(PLANTA);
+    abrirReportes();
+    click(root.querySelector('[data-mop-rep="cierre"]'));
+    expect(root.querySelector('.mop-rep-barra [data-mop-filtro]')).toBeNull();
+    click(root.querySelector('[data-mop-rep="broodstock"]'));
+    expect(root.querySelector('.mop-rep-barra [data-mop-filtro]')).toBeNull();
+  });
+
   it('🔑 el cierre de un lote ABIERTO lo dice, y su curva empieza en el ingreso, no en la víspera de la foto', async () => {
     await montar(PLANTA);
     abrirReportes();
