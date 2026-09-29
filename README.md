@@ -135,13 +135,15 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     con sus muestras analizadas, y Maduración por tipo de muestra —Heces, Branquias, Pleópodo, Agua,
     Hisopado, de la columna «Otros»—). La piscina de una muestra es la que dice o, en Microbiología, la de su
     lote en Ingresos; una combinada («P554/556») cuenta en las dos. Las cuentas, en `operativo.laboratorio.js`.
-    🌊 **Mareas** (0r, 2026-09-28), junto a 🦠 y 🧬: el MISMO modal de Larvicultura —Día · Mes · Correlación; su
-    marcado y su cableado viven una sola vez en `supervisor/mareas.js`, y leen la hoja «Marea»— con una pestaña
-    propia, **🦐 Cópulas**: el % de cópulas de cada día (la regla del Saldo: cópulas ÷ hembras de los tanques ESE
-    día) frente a la amplitud de la marea y la luz de la luna, con la r de Pearson, su umbral (2/√n) y una lectura
-    sólo desde 10 días; filtros propios (sala y «sólo en producción»). En la hoja nadie escribe 0 cópulas, así que
-    un día sin NINGUNA en toda la granja es un hueco del registro: queda fuera, y se dice. La luna se dibuja con la
-    fase que dice la hoja.
+    🌊 **Mareas** (0r, 2026-09-28), junto a 🦠 y 🧬: el MISMO modal de Larvicultura —Día y Mes (la Correlación se
+    queda en Larvicultura); su marcado y su cableado viven una sola vez en `supervisor/mareas.js`, y leen la hoja
+    «Marea»— con una pestaña propia, **🦐 Cópulas**: «Ver» cópulas o desoves, cada día (cópulas ÷ hembras de los
+    tanques ESE día, la regla del Saldo; o desoves por 100 ♀) frente a la amplitud de la marea y la luz de la luna,
+    con la r de Pearson y su umbral (2/√n), y una tabla por fase lunar con la cantidad y el %; filtros propios (mes,
+    sala, lote, código genético, fase lunar —resalta sus días— y «sólo en producción»). Sin frases de conclusión:
+    las cifras se recalculan con cada parte, y las definiciones van en un ⓘ. Un día sin NINGUNA cópula (o desove)
+    registrado en toda la granja es un hueco del registro: queda fuera, y se dice. La luna se dibuja con la fase que
+    dice la hoja.
     ⚡ **Las dos ventanas del laboratorio** preparan sus muestras UNA vez por carga de datos —en reposo
     (`requestIdleCallback`), así que la primera apertura ya no espera; sin él (Safari), al abrirlas— y un clic
     dentro rehace SÓLO la ventana, no el tablero de detrás.
