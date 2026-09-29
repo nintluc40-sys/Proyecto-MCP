@@ -97,7 +97,8 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     📉 Tendencias y ⏳ Permanencia; últimos registros y fines de cuarentena), **🏠 Salas** (tarjeta por sala y su detalle,
     con la temperatura y el oxígeno por hora de UN día —«Día», por defecto el de la foto, con ◀ ▶— o del período
     entero —«Período»: el mapa de calor y las líneas por día—),
-    **🧬 Lotes** (tabla maestra, ficha de un lote —origen, CASCADA DEL CUADRE, curva de vivos y reproducción—,
+    **🧬 Lotes** (tabla maestra —con el peso ♀ y ♂ de cada lote, el del ⚖️ Saldo al cierre de la foto—,
+    ficha de un lote —origen, CASCADA DEL CUADRE, curva de vivos y reproducción—,
     comparativa por lote, código genético o piscina y, debajo, **📈 Piscinas de origen**: el Broodstock del
     último corte con los lotes que entraron de cada piscina y, al pulsarla, su ficha con el peso por semana), **💀 Bajas** (muerte natural frente a descarte,
     desglose cruzado por sala · tanque · lote, Pareto de motivos de cierre, distribución por hora, calor
