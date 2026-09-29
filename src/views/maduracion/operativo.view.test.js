@@ -40,6 +40,9 @@ vi.mock('../microbiologia/index.js', async (original) => {
   const real = await original();
   return { ...real, microPreseleccion: vi.fn() };
 });
+/* 0r·3d · y cuántas veces se funden y se miden las muestras de 🦠 (su precarga en reposo lo hace una vez por carga). */
+vi.mock('../microbiologia/data.js', async (original) => { const real = await original(); return { ...real, meltRow: vi.fn(real.meltRow) }; });
+vi.mock('../microbiologia/calagua.data.js', async (original) => { const real = await original(); return { ...real, calMeasured: vi.fn(real.calMeasured) }; });
 
 const O = 'Maduracion';
 const ING = (fecha, lote, sala, tanque, machos, hembras, cg = 'CA') => ({ _SheetOrigin: O, 'Camaronera origen': 'X', Fecha: fecha,
@@ -3103,9 +3106,10 @@ describe('Maduración · operativo · 🧬 se prepara en reposo (0r·3c)', () =>
       await montar([...PLANTA, ...BIO6]);
       const { normalizeRows } = await import('../biomolecular/index.js');
       normalizeRows.mockClear();   // el espía arrastra las llamadas de las pruebas anteriores
-      expect(ric).toHaveBeenCalledTimes(1);
+      // Dos tareas en reposo por carga: la de 🦠 (0r·3d) y ésta.
+      expect(ric).toHaveBeenCalledTimes(2);
       operativoView(root);
-      expect(ric, 'otra pintada con la misma carga: no se vuelve a programar').toHaveBeenCalledTimes(1);
+      expect(ric, 'otra pintada con la misma carga: no se vuelve a programar').toHaveBeenCalledTimes(2);
       await vi.waitFor(() => expect(normalizeRows).toHaveBeenCalledTimes(1));
       click(root.querySelector('[data-mop-lab="biomol"]'));
       expect(modalLab().textContent).not.toContain('Cargando');
@@ -3123,7 +3127,7 @@ describe('Maduración · operativo · 🧬 se prepara en reposo (0r·3c)', () =>
       normalizeRows.mockClear();   // el espía arrastra las llamadas de las pruebas anteriores
       store.globalData = [...PLANTA, ...BIO6];
       operativoView(root);
-      expect(window.requestIdleCallback, 'otra carga, otra precarga').toHaveBeenCalledTimes(2);
+      expect(window.requestIdleCallback, 'otra carga, otra precarga (la de 🦠 y ésta, en cada una)').toHaveBeenCalledTimes(4);
       root.remove();
       pendientes.forEach((cb) => cb());
       await new Promise((r) => setTimeout(r, 30));
@@ -3139,5 +3143,68 @@ describe('Maduración · operativo · 🧬 se prepara en reposo (0r·3c)', () =>
     expect(normalizeRows).not.toHaveBeenCalled();
     click(root.querySelector('[data-mop-lab="biomol"]'));
     expect(modalLab().textContent).toContain('Cargando');
+  });
+});
+
+/* 0r·3d (2026-09-28, usuario) · 🦠 también se prepara en REPOSO, como 🧬: con el tablero quieto se funden sus muestras y
+   se mide su calidad de agua con los rangos de este equipo, una vez por carga de datos; así su primera apertura sólo
+   maqueta (medido antes: 0,49 s en un PC y 2,5–3,6 s en un equipo de campo). Es una tarea en reposo APARTE de la de 🧬. */
+describe('Maduración · operativo · 🦠 se prepara en reposo (0r·3d)', () => {
+  it('🔴 en reposo se prepara UNA vez por carga, y abrir 🦠 ya no funde ni mide nada', async () => {
+    const pendientes = [];
+    window.requestIdleCallback = vi.fn((cb) => { pendientes.push(cb); return 1; });
+    try {
+      await montar([...PLANTA, ...LAB5, ...AGUA5, ...CAL5]);
+      const { meltRow } = await import('../microbiologia/data.js');
+      const { calMeasured } = await import('../microbiologia/calagua.data.js');
+      meltRow.mockClear();   // los espías arrastran las llamadas de las pruebas anteriores
+      calMeasured.mockClear();
+      operativoView(root);
+      expect(window.requestIdleCallback, 'otra pintada con la misma carga: no se vuelve a programar (🦠 y 🧬)').toHaveBeenCalledTimes(2);
+      pendientes.splice(0).forEach((cb) => cb());
+      await new Promise((r) => setTimeout(r, 30));
+      const fundidas = meltRow.mock.calls.length;
+      const medidas = calMeasured.mock.calls.length;
+      expect(fundidas, 'se funden en reposo').toBeGreaterThan(0);
+      expect(medidas, 'y se mide su calidad de agua').toBeGreaterThan(0);
+      abrirMicro();
+      expect(modalLab().querySelector('.mop-lab-kpi')).not.toBeNull();
+      expect(meltRow, 'abrir 🦠 no funde nada').toHaveBeenCalledTimes(fundidas);
+      expect(calMeasured, 'ni mide nada').toHaveBeenCalledTimes(medidas);
+    } finally { delete window.requestIdleCallback; }
+  });
+
+  it('🔑 con datos nuevos se prepara la carga NUEVA (la vieja, no); si la vista ya no está, nada', async () => {
+    const pendientes = [];
+    window.requestIdleCallback = vi.fn((cb) => { pendientes.push(cb); return 1; });
+    try {
+      await montar([...PLANTA, ...LAB5]);
+      const { meltRow } = await import('../microbiologia/data.js');
+      meltRow.mockClear();
+      const nueva = [...PLANTA, ...LAB5.map((r) => ({ ...r }))];   // filas nuevas: se distinguen de las de la carga vieja
+      store.globalData = nueva;
+      operativoView(root);
+      pendientes.splice(0).forEach((cb) => cb());
+      await new Promise((r) => setTimeout(r, 30));
+      expect(meltRow).toHaveBeenCalled();
+      expect(meltRow.mock.calls.every(([r]) => nueva.includes(r)), 'sólo las de la carga nueva').toBe(true);
+      meltRow.mockClear();
+      store.globalData = [...nueva];
+      operativoView(root);
+      root.remove();
+      pendientes.splice(0).forEach((cb) => cb());
+      await new Promise((r) => setTimeout(r, 30));
+      expect(meltRow, 'la vista se fue: nada').not.toHaveBeenCalled();
+    } finally { delete window.requestIdleCallback; }
+  });
+
+  it('🔑 sin requestIdleCallback, nada en reposo: se prepara al abrirla, como antes', async () => {
+    await montar([...PLANTA, ...LAB5]);
+    const { meltRow } = await import('../microbiologia/data.js');
+    meltRow.mockClear();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(meltRow).not.toHaveBeenCalled();
+    abrirMicro();
+    expect(meltRow).toHaveBeenCalled();
   });
 });

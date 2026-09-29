@@ -17,6 +17,7 @@ import { nombrePiscina, piscinasDeLotes, filtroDeLaVentana, resumenMicroDeLaVent
 import { formatosDelAgua, patogenosDeMedidas, umbralDelFormato } from './operativo.laboratorio.js';   // 0q·5b
 import { parametrosDeMedidas, serieDeParametro, rangoDe } from './operativo.laboratorio.js';   // 0q·5c
 import { loteBiomol, piscinasBiomol, resumenBiomolDeLaVentana, tendenciaDePatogeno, opcionesBiomol } from './operativo.laboratorio.js';   // 0q·6
+import { prepararMicro } from './operativo.laboratorio.js';   // 0r·3d
 import { normalizarFiltro } from './operativo.tablero.js';
 import { CAL_RANGE_BASE } from '../microbiologia/calagua.data.js';
 import { normalizeRows } from '../biomolecular/index.js';
@@ -527,6 +528,24 @@ describe('Maduración · laboratorio · 0r·3a · preparar una vez por carga', (
     const estricto = { ...CAL_RANGE_BASE, ph: { min: 7.5, max: 7.9 } };
     expect(colector(resumenMicroDeLaVentana(filas, {}, estricto, new Map())).fuera, 'el pH 8 sale fuera con el rango nuevo').toBe(2);
     expect(colector(resumenMicroDeLaVentana(filas, {}, { ...CAL_RANGE_BASE }, new Map())).fuera, 'otros rangos iguales: como al principio').toBe(1);
+  });
+});
+
+/* 0r·3d (2026-09-28, usuario) · 🦠 también se prepara en REPOSO: `prepararMicro` hace de antemano lo que haría la primera
+   apertura —fundir las muestras de Maduración y medir su calidad de agua con los rangos de este equipo—, así que abrir la
+   ventana después ya no funde ni mide nada. */
+describe('Maduración · laboratorio · 0r·3d · 🦠 preparada de antemano', () => {
+  it('🔴 tras prepararMicro, la ventana (opciones y resumen) no funde ni mide nada con esos rangos', () => {
+    const filas = [...FILAS];   // una carga nueva
+    meltRow.mockClear();
+    calMeasured.mockClear();
+    prepararMicro(filas, CAL_RANGE_BASE);
+    expect(meltRow, 'las 13 de Maduración').toHaveBeenCalledTimes(13);
+    expect(calMeasured, 'las 3 de calidad de agua de Maduración').toHaveBeenCalledTimes(3);
+    opcionesDeLaVentana(filas, new Map());
+    resumenMicroDeLaVentana(filas, {}, { ...CAL_RANGE_BASE }, new Map());   // los mismos rangos, leídos otra vez
+    expect(meltRow, 'abrir la ventana no funde nada').toHaveBeenCalledTimes(13);
+    expect(calMeasured, 'ni mide nada').toHaveBeenCalledTimes(3);
   });
 });
 

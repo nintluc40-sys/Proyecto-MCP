@@ -54,6 +54,7 @@ import { piscinasDeLotes, resumenMicroDeLaVentana, opcionesDeLaVentana, serieDeP
 import { areaForFormat } from '../microbiologia/data.js';   // 0q·5a
 import { formatosDelAgua, patogenosDeMedidas, umbralDelFormato } from './operativo.laboratorio.js';   // 0q·5b
 import { parametrosDeMedidas, serieDeParametro, rangoDe } from './operativo.laboratorio.js';   // 0q·5c
+import { prepararMicro } from './operativo.laboratorio.js';   // 0r·3d
 import { NIVEL_COLOR } from '../microbiologia/data.js';
 import { loadCalRanges } from '../microbiologia/calagua.data.js';
 import { microPreseleccion } from '../microbiologia/index.js';
@@ -326,6 +327,7 @@ export function operativoView(root) {
   dibujarMicPat();                 // 0q·5a · las cantidades del patógeno elegido, en la ventana de Microbiología
   trasPintarMareas(root);          // 0r·1 · el modal 🌊 Mareas: cablearlo y, si estaba abierto, reabrirlo con lo mismo
   precargarBiomol(root);           // 0r·3c · 🧬 se prepara en reposo
+  precargarMicro(root);            // 0r·3d · y 🦠, en una tarea en reposo aparte
   bind(root);
 }
 
@@ -650,6 +652,19 @@ function dibujarCopulasMarea() {
       plugins: { legend: { labels: E.leyenda } },
     },
   });
+}
+
+/* 0r·3d (2026-09-28, usuario) · 🦠 también se prepara en REPOSO, como 🧬: con el tablero quieto se funden sus muestras de
+   Maduración y se mide su calidad de agua con los rangos de este equipo (`prepararMicro`), una vez por carga de datos; así
+   su primera apertura sólo maqueta (medido antes: 0,49 s en un PC y 2,5–3,6 s en un equipo de campo). Es una tarea en
+   reposo APARTE de la de 🧬: entre las dos, el equipo puede atender un toque. Sin requestIdleCallback (Safari), como
+   antes: se prepara al abrirla. Si la vista ya no está o llegaron otros datos cuando le toca, no hace nada. */
+let _micPrecarga = null;
+function precargarMicro(root) {
+  if (typeof window.requestIdleCallback !== 'function' || _micPrecarga === store.globalData) return;
+  const carga = store.globalData;
+  _micPrecarga = carga;
+  window.requestIdleCallback(() => { if (root.isConnected && store.globalData === carga) prepararMicro(carga, loadCalRanges()); }, { timeout: 10000 });
 }
 
 /* 0r·3c (2026-09-28, usuario) · 🧬 se prepara en REPOSO: cuando el tablero queda quieto (requestIdleCallback) se trae su

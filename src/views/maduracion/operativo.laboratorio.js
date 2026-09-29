@@ -131,6 +131,15 @@ function conMedidas(m, rangosCal, rk) {
   if (m._rk !== rk) { m._med = calMeasured(m.row, rangosCal); m._wqi = calWQI(m._med, rangosCal).wqi; m._rk = rk; }
   return m;
 }
+/** 0r·3d (2026-09-28, usuario) · Lo que haría la PRIMERA apertura de 🦠, hecho de antemano (la vista lo llama en reposo):
+ *  las muestras de Maduración (`preparadas`) y las mediciones de TODA su calidad de agua con estos rangos, con la misma
+ *  clave que `resumenDe`. Después, abrir la ventana sólo filtra y cuenta. */
+export function prepararMicro(filas, rangosCal) {
+  const prep = preparadas(filas);
+  const rk = JSON.stringify(rangosCal || null);
+  for (const m of prep.cal) conMedidas(m, rangosCal, rk);
+  return prep;
+}
 /** Lo que una muestra de Microbiología PUEDE decir de sí misma. */
 const DIM_MICRO = ['sala', 'tanque', 'sexo', 'lote'];
 /** El filtro del tablero sobre un BLOQUE (muestras del período). Una dimensión se aplica si alguna muestra del bloque
