@@ -94,7 +94,9 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     activos como etiquetas quitables) y sus sub-vistas (la lista viva es `SUBS`, en `operativo.view.js`):
     **📊 Estado actual** (siete indicadores; el mapa de planta, que se colorea por el lote, por el tanque o por
     sus partes —los modos viven en `MODOS_MAPA`— y abre bajo él el LIENZO del tanque pulsado; las alertas, con
-    📉 Tendencias y ⏳ Permanencia; últimos registros y fines de cuarentena), **🏠 Salas** (tarjeta por sala y su detalle),
+    📉 Tendencias y ⏳ Permanencia; últimos registros y fines de cuarentena), **🏠 Salas** (tarjeta por sala y su detalle,
+    con la temperatura y el oxígeno por hora de UN día —«Día», por defecto el de la foto, con ◀ ▶— o del período
+    entero —«Período»: el mapa de calor y las líneas por día—),
     **🧬 Lotes** (tabla maestra, ficha de un lote —origen, CASCADA DEL CUADRE, curva de vivos y reproducción—,
     comparativa por lote, código genético o piscina y, debajo, **📈 Piscinas de origen**: el Broodstock del
     último corte con los lotes que entraron de cada piscina y, al pulsarla, su ficha con el peso por semana), **💀 Bajas** (muerte natural frente a descarte,
