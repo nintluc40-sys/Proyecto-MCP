@@ -135,6 +135,19 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     con sus muestras analizadas, y Maduración por tipo de muestra —Heces, Branquias, Pleópodo, Agua,
     Hisopado, de la columna «Otros»—). La piscina de una muestra es la que dice o, en Microbiología, la de su
     lote en Ingresos; una combinada («P554/556») cuenta en las dos. Las cuentas, en `operativo.laboratorio.js`.
+    🌊 **Mareas** (0r, 2026-09-28), junto a 🦠 y 🧬: el MISMO modal de Larvicultura —Día · Mes · Correlación; su
+    marcado y su cableado viven una sola vez en `supervisor/mareas.js`, y leen la hoja «Marea»— con una pestaña
+    propia, **🦐 Cópulas**: el % de cópulas de cada día (la regla del Saldo: cópulas ÷ hembras de los tanques ESE
+    día) frente a la amplitud de la marea y la luz de la luna, con la r de Pearson, su umbral (2/√n) y una lectura
+    sólo desde 10 días; filtros propios (sala y «sólo en producción»). En la hoja nadie escribe 0 cópulas, así que
+    un día sin NINGUNA en toda la granja es un hueco del registro: queda fuera, y se dice. La luna se dibuja con la
+    fase que dice la hoja.
+    ⚡ **Las dos ventanas del laboratorio** preparan sus muestras UNA vez por carga de datos —en reposo
+    (`requestIdleCallback`), así que la primera apertura ya no espera; sin él (Safari), al abrirlas— y un clic
+    dentro rehace SÓLO la ventana, no el tablero de detrás.
+    🔑 **Una PAREJA de códigos** («C1/C2», como la escriben los Desoves) **cuenta como sus dos** en el filtro de
+    código de todo el tablero: casan si comparten alguno (`codigoEnFiltro`, en `operativo.tablero.js`). «C1» trae
+    también el desove de la pareja, que cuenta ENTERO en cada uno de sus códigos, como el despacho en cada destino.
   - **🧬 Microchips** — seguimiento reproductivo por Trovan ID sobre
     las hojas `Maduración MATRIZ`/`Bitácora`/`Transferencias`.
     ⚠ **Es el REPRODUCTIVO. Hay otra «Maduración» distinta** —el registro OPERATIVO, por
@@ -702,6 +715,12 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   desigualdad, no el valor.
 - **Un tope de espera a `?p=ver` tiene que contar con el arranque en frío de Apps Script.** Medido:
   2,5–4,9 s en caliente, 10,8 s la primera llamada.
+- **Traslado · la Ubicación lleva su «-».** El saneado anti-fórmulas del texto (`sanitizeStr` en el cliente,
+  `cleanCell` en el GAS) quita el «-» inicial, y la latitud de Ecuador es negativa. Las coordenadas van por su
+  vía numérica, y la Ubicación «lat, lon» por la suya: tal cual SÓLO si es exactamente «número, número» —el
+  mismo patrón en el cliente (`trasUbicacion` / `celdaUbicacion`) y en el GAS (`ubicacionConSigno_`)—. Arreglar
+  sólo el GAS no bastó: el cliente la saneaba en DOS sitios (al enviar y al pasar la pantalla al registro), y el
+  segundo sólo lo vio un navegador real.
 
 ## Pendiente
 
@@ -756,8 +775,8 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
 
 **Abierto**
 
-4. **`Maduración Transferencias` sigue sin estrenar**: la ficha está escrita y probada; la hoja nace
-   con el primer traslado, y hasta entonces el panel se dibuja vacío, que es lo correcto.
+4. **`Maduración Transferencias` se estrenó el 2026-09-26** (primer traslado): queda contrastar su panel con
+   dato real (`auditar-tablero-mad-real.mjs`); cuántas filas tiene, lo dice `estado-maduracion.mjs`.
 5. **Microbiología · Patología en fresco** espera a que los usuarios estrenen su hoja.
 6. **Paridad · las funciones que sólo se comparan por NOMBRE** entre `engine.js` e `index (8)`. Desde el
    2026-09-22, `verificar-3copias-v3` saca las funciones con un parser y compara las que delegan en `__rgLib`
@@ -791,6 +810,9 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
    piscina** con su curva de peso, sus cortes, los lotes que salieron de ella y sus observaciones. ⚠ Es el único
    reporte que sigue el **período del tablero** (los otros tres llevan el suyo), y una **sobrevivencia que no puede
    ser un porcentaje se imprime como vino y marcada**, igual que en pantalla.
+   🆕 **0r·4** (2026-09-28): el diario y el semanal llevan en SU barra el «Lote → Código genético» del tablero —los
+   MISMOS filtros, como el día del parte: no puede haber dos que discrepen—, y en el parte diario las bajas, que van
+   por tanque, **dicen** que no se filtran por lote ni por código genético.
    ⚠ Se desarrolla con fixtures FICTICIOS, y se contrasta con `auditar-tablero-mad-real.mjs` y
    `medir-tablero-mad-real.mjs` (utillaje). 🔑 Desde el 2026-09-20 esas dos **cuentan cuántas
    comprobaciones ejercitaron dato y cuántas salieron verdes EN VACÍO**, y nombran las hojas sin
