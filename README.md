@@ -110,10 +110,10 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     maestra de los ocupados y, al pulsar una fila, su ficha: composición, curva de vivos, partes con su hora,
     observaciones y movimientos), **🥚 Reproducción** (totales, los desoves pendientes de N5 arriba, la tabla
     por lote —al pulsar un lote, sus N2 y N5 por destino, de más a menos N5— y «A dónde fueron», plegada con
-    los tres primeros destinos) y **🔄 Manejo** (movimientos en matriz sala → sala con su registro debajo; la
-    alimentación PLANIFICADA por producto frente a la agenda estándar, con cada toma juzgada con el rango de
-    la ficha; y los tratamientos: calendario sala × día, productos por área y cobertura preventiva por lote)
-    y **🩺 Calidad del dato** (las hojas y su calendario, los partes esperados —uno por tanque ocupado— frente
+    los tres primeros destinos), **🔄 Manejo** (movimientos en matriz sala → sala con su registro debajo, y los
+    tratamientos: calendario sala × día, productos por área y cobertura preventiva por lote), **🦐 Alimentación**
+    (la ración PLANIFICADA por producto frente a la agenda estándar, con cada toma juzgada con el rango de la
+    ficha, y de dónde sale el peso de la ración) y **🩺 Calidad del dato** (las hojas y su calendario, los partes esperados —uno por tanque ocupado— frente
     a los registrados —cada fecha y cada celda abren la ventana de ESE día: cobertura por sala, los partes tanque a
     tanque y los de tanques que el libro tenía vacíos, marcados «no esperado»—, el estado registrado de cada sala frente al propuesto, los avisos del libro y el cruce
     con 🧬 Microchips, que marca sólo lo que no puede ser y se hace con el libro de HOY).
