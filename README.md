@@ -126,17 +126,19 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     rectas; en los de días, una raya marca el día y el globo va arriba a su lado (`arribaJunto`, en
     `core/charts.js`), y con «reducir movimiento» no se animan. Todos pasan por `graficoOp` (o
     `graficoDispersionOp`, los de puntos) en `operativo.view.js`.
-    🦠 / 🧬 **Los dos botones del laboratorio** (junto a la sub-nav) abren ventanas con **sus propios filtros**
-    —Mes · Lote · Sala · Piscina · Sexo, sobre TODO el registro; empiezan con la sala, el sexo y el lote del
-    tablero—: **🦠 Microbiología y agua** (① reproductores: al escoger un patógeno, sus UFC muestra a muestra en
+    🦠 / 🧬 **Las dos sub-vistas del laboratorio** (pastillas de la sub-nav tras 🖨 Reportes; hasta el 2026-09-29,
+    ventanas) traen **sus propios filtros** —Mes · Lote · Sala · Piscina · Sexo, sobre TODO el registro; al entrar
+    empiezan con la sala, el sexo y el lote del tablero, cuya barra no enseñan porque no les aplica—:
+    **🦠 Microbiología y agua** (① reproductores: al escoger un patógeno, sus UFC muestra a muestra en
     escala logarítmica, la mediana semanal y los umbrales Moderado/Elevado; ② desinfección; ③ agua y RAS por
     formato —cada uno con sus umbrales— y la calidad de agua por parámetro con su rango) y **🧬 Biomol ·
     reproductores** (prevalencia, tabla lote × patógeno sombreada, la tendencia semanal del patógeno escogido
     con sus muestras analizadas, y Maduración por tipo de muestra —Heces, Branquias, Pleópodo, Agua,
     Hisopado, de la columna «Otros»—). La piscina de una muestra es la que dice o, en Microbiología, la de su
     lote en Ingresos; una combinada («P554/556») cuenta en las dos. Las cuentas, en `operativo.laboratorio.js`.
-    🌊 **Mareas** (0r, 2026-09-28), junto a 🦠 y 🧬: el MISMO modal de Larvicultura —Día y Mes (la Correlación se
-    queda en Larvicultura); su marcado y su cableado viven una sola vez en `supervisor/mareas.js`, y leen la hoja
+    🌊 **Mareas** (0r, 2026-09-28), la sub-vista que sigue a 🦠 y 🧬: lo MISMO que el modal de Larvicultura, en el sitio
+    —Día y Mes (la Correlación se queda en Larvicultura); su marcado y su cableado viven una sola vez en
+    `supervisor/mareas.js` (el modal, `cablearMareas`; la sub-vista, `cablearPanelMareas`), y leen la hoja
     «Marea»— con una pestaña propia, **🦐 Cópulas**: «Ver» cópulas o desoves, cada día (cópulas ÷ hembras de los
     tanques ESE día, la regla del Saldo; o desoves por 100 ♀) frente a la amplitud de la marea y la luz de la luna,
     con la r de Pearson y su umbral (2/√n), y una tabla por fase lunar con la cantidad y el %; filtros propios (mes,
@@ -144,9 +146,9 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     las cifras se recalculan con cada parte, y las definiciones van en un ⓘ. Un día sin NINGUNA cópula (o desove)
     registrado en toda la granja es un hueco del registro: queda fuera, y se dice. La luna se dibuja con la fase que
     dice la hoja.
-    ⚡ **Las dos ventanas del laboratorio** preparan sus muestras UNA vez por carga de datos —en reposo
-    (`requestIdleCallback`), así que la primera apertura ya no espera; sin él (Safari), al abrirlas— y un clic
-    dentro rehace SÓLO la ventana, no el tablero de detrás.
+    ⚡ **🦠 y 🧬** preparan sus muestras UNA vez por carga de datos —en reposo (`requestIdleCallback`), así que
+    la primera entrada ya no espera; sin él (Safari), al entrar— y un clic dentro rehace SÓLO su contenido, no
+    el tablero entero.
     🔑 **Una PAREJA de códigos** («C1/C2», como la escriben los Desoves) **cuenta como sus dos** en el filtro de
     código de todo el tablero: casan si comparten alguno (`codigoEnFiltro`, en `operativo.tablero.js`). «C1» trae
     también el desove de la pareja, que cuenta ENTERO en cada uno de sus códigos, como el despacho en cada destino.
