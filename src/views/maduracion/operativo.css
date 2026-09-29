@@ -92,6 +92,10 @@
 .mop-det-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .mop-det-ancho { grid-column: 1 / -1; }
 .mop-det-h { margin: 0 0 8px; font-size: 12.5px; font-weight: 800; color: var(--c-text); }
+/* 3 (2026-09-29, usuario) · encima de la temperatura y el oxígeno: Día | Período y ◀ día ▶. */
+.mop-amb-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.mop-amb-dia { display: inline-flex; align-items: center; gap: 4px; }
+.mop-amb-dia .mc-select { width: auto; }
 .mop-calor-wrap { max-height: 330px; overflow: auto; border: 1px solid var(--c-border-soft); border-radius: 8px; }
 .mop-calor { width: 100%; border-collapse: collapse; font-size: 10.5px; }
 .mop-calor thead th { position: sticky; top: 0; z-index: 1; padding: 3px 4px; background: var(--c-surface); color: var(--c-text-muted); font-weight: 700; white-space: nowrap; }

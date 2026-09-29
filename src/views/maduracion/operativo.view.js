@@ -44,7 +44,7 @@ import { modeloOperativo, serieDiaria, diasDeTanque, libroAlCierre } from './ope
 import {
   PERIODOS, PERIODO_INICIAL, periodoDe, normalizarFiltro, hayFiltro, kpiVivos, kpiLotes, kpiSalas, kpiOcupacion,
   kpiMortalidad, kpiReproduccion, mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, ultimosRegistros,
-  cuarentenasDeLotes, curvaDeCuarentena, AVISO_CUARENTENA_DIAS, tarjetasDeSalas, detalleDeSala,
+  cuarentenasDeLotes, curvaDeCuarentena, AVISO_CUARENTENA_DIAS, tarjetasDeSalas, detalleDeSala, ambienteDelDia,
   indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, kpiBiomasa,
 } from './operativo.tablero.js';
 import { KPIS_CON_GRAFICO, graficoDeKpi } from './operativo.kpis.js';
@@ -167,7 +167,10 @@ const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', 
   /* 0q·5c · en ③ Calidad de agua: el grupo (vacío = todos) y el parámetro de su gráfico. */
   calGrupo: '', calPar: '',
   /* 0q·6 · en 🧬 Biomol: el patógeno de la tendencia semanal. Sus filtros son los de su sub-vista (`labF`). */
-  bioPat: '' };
+  bioPat: '',
+  /* 3 (2026-09-29, usuario) · 🏠 Salas → detalle: la temperatura y el oxígeno por hora de UN día ('dia', por defecto) o de
+     todo el período ('periodo'); y el día elegido (vacío = el de la foto; uno que ya no está en el período, también). */
+  ambModo: 'dia', ambDia: '' };
 /* El estado de la vista vive lo que dura la sesión: al volver a Maduración, o al refrescarse los datos, se conserva. */
 const vOp = { ...INICIAL };
 
@@ -1584,8 +1587,48 @@ function obsTxt(o) {
   return `<span class="mop-nota">${esc(dm(o.fecha))}</span> ${todas.length ? todas.join(', ') : '<span class="muted">sin observaciones</span>'}`;
 }
 
+/* 3 (2026-09-29, usuario) · «en los gráficos de Temperatura por hora y oxígeno por hora, marcar un filtro para ambos para
+   que siempre muestren la información del día»: el mapa de calor de 30 días salía con su barra de desplazamiento. Encima de
+   los dos, Día | Período y ◀ día ▶ (por defecto, el de la foto). En «Día», la temperatura del día —cada toma del color de
+   su estado, como el mapa— y su oxígeno, sobre el mismo eje de horas; sin lecturas ese día, se dice y cuál fue la última.
+   «Período» es lo de antes. `_ambiente`, lo que dibuja `dibujarDetalle` (null en «Período»). */
+let _ambiente = null;
+function ambienteHTML(d, p) {
+  const modoDia = vOp.ambModo !== 'periodo';
+  const dias = d.calor.filas.map((f) => f.fecha);   // los del período, el más reciente primero
+  if (!dias.includes(vOp.ambDia)) vOp.ambDia = '';
+  const dia = vOp.ambDia || p.hasta;
+  _ambiente = modoDia ? ambienteDelDia(d, dia) : null;
+  const k = dias.indexOf(dia);
+  const nav = (dir, iso, t, rot) => `<button type="button" class="mc-mini" data-mop-amb-dir="${dir}" data-mop-amb-ir="${esc(iso)}"${iso ? '' : ' disabled'} aria-label="${rot}">${t}</button>`;
+  const ctl = `<div class="mop-det-ancho mop-amb-ctl">
+      <div class="mc-seg mc-seg-sm" role="group" aria-label="Temperatura y oxígeno">${[['dia', 'Día'], ['periodo', 'Período']].map(([m, t]) => {
+        const on = (m === 'dia') === modoDia;
+        return `<button type="button" class="mc-seg-b ${on ? 'is-on' : ''}" data-mop-amb-modo="${m}" aria-pressed="${on}">${t}</button>`;
+      }).join('')}</div>
+      ${modoDia ? `<span class="mop-amb-dia">${nav('ant', dias[k + 1] || '', '◀', 'Día anterior')}<select class="mc-select" data-mop-amb-dia aria-label="Día">${dias.map((f) =>
+        `<option value="${esc(f)}"${f === dia ? ' selected' : ''}>${esc(dma(f))}</option>`).join('')}</select>${nav('sig', k > 0 ? dias[k - 1] : '', '▶', 'Día siguiente')}</span>`
+        : `<span class="mop-f-rango">${esc(dm(p.desde))} – ${esc(dm(p.hasta))} · ${nf(dias.length)} ${dias.length === 1 ? 'día' : 'días'}</span>`}
+    </div>`;
+  if (!_ambiente) return { ctl, dia: null };
+  const A = _ambiente;
+  const sin = (que, ultima) => `<div class="empty-state" style="padding:16px">Sin lecturas de ${que} el ${esc(dma(dia))}.${ultima
+    ? ` La última, el ${esc(dma(ultima))}.${dias.includes(ultima) ? ` <button type="button" class="mc-mini" data-mop-amb-ir="${esc(ultima)}">Ver ese día</button>` : ''}` : ''}</div>`;
+  return {
+    ctl,
+    dia: {
+      temp: A.temp.some((v) => v !== null)
+        ? `<div class="mc-chart" style="height:230px"><canvas id="mopTempDia"></canvas></div>
+          <p class="mc-note">Cada toma, en verde dentro de ${esc(refUmbral('temperatura'))}; azul por debajo; rojo por encima.</p>`
+        : sin('temperatura', A.ultimaTemp),
+      ox: A.ox.some((v) => v !== null) ? '<div class="mc-chart" style="height:230px"><canvas id="mopOxDia"></canvas></div>' : sin('oxígeno', A.ultimaOx),
+    },
+  };
+}
+
 function detalleHTML(d, p, F) {
   const filtrado = hayFiltro(F);
+  const amb = ambienteHTML(d, p);   // 3 · Día (por defecto) | Período
   const calor = d.calor.lecturas
     ? `<div class="mop-calor-wrap"><table class="mop-calor">
         <thead><tr><th>Día</th>${d.calor.horas.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
@@ -1622,8 +1665,9 @@ function detalleHTML(d, p, F) {
   return `<div class="mc-card mc-card-wide mop-detalle">
     <h4 class="mc-card-h">▼ Detalle de ${esc(d.sala)} <span class="mc-h-note">${esc(dm(p.desde))} – ${esc(dm(p.hasta))} · el ambiente es de la sala: no depende del filtro de lote ni de tanque</span></h4>
     <div class="mop-det-grid">
-      <div><h5 class="mop-det-h">🌡️ Temperatura por hora</h5>${calor}</div>
-      <div><h5 class="mop-det-h">💧 Oxígeno disuelto (4 lecturas al día)</h5>${ox}</div>
+      ${amb.ctl}
+      <div><h5 class="mop-det-h">🌡️ Temperatura por hora</h5>${amb.dia ? amb.dia.temp : calor}</div>
+      <div><h5 class="mop-det-h">${amb.dia ? '💧 Oxígeno disuelto por hora' : '💧 Oxígeno disuelto (4 lecturas al día)'}</h5>${amb.dia ? amb.dia.ox : ox}</div>
       <div class="mop-det-ancho"><h5 class="mop-det-h">♀/♂ por tanque y densidad</h5><div class="mc-chart" style="height:250px"><canvas id="mopTq"></canvas></div></div>
       <div class="mop-det-ancho"><h5 class="mop-det-h">Tanques con animales</h5>${tabla}
         ${vacios.length ? `<p class="mc-note">Vacíos: ${vacios.map((n) => esc(n)).join(', ')}.</p>` : ''}</div>
@@ -1689,9 +1733,49 @@ function graficoOp(id, cfg) {
 }
 const COLORES_OX = ['#00838f', '#1e88e5', '#7e57c2', '#e67e22'];
 
+/* 3 (2026-09-29, usuario) · el ambiente de UN día: la temperatura, cada toma del color de su estado (los del mapa de calor:
+   verde dentro, azul por debajo, rojo por encima) y su rango en rayas; el oxígeno, sus lecturas y el mínimo. El mismo eje
+   de horas en los dos. */
+function dibujarAmbiente(d, E) {
+  const A = _ambiente;
+  const cs = getComputedStyle(document.documentElement);
+  const tono = (n, x) => cs.getPropertyValue(n).trim() || x;
+  const COLOR = { ok: tono('--c-bueno', '#2e9e5b'), bajo: tono('--c-excelente', '#1e88e5'), alto: tono('--c-grave', '#e0533b') };
+  COLOR.fuera = COLOR.alto;
+  const linea = (label, data, color, unidad) => ({ type: 'line', label, data, borderColor: color, backgroundColor: color, tension: 0, borderWidth: 2,
+    spanGaps: true, pointRadius: 4, tooltip: { callbacks: { label: (c) => `${label}: ${c.raw === null ? '—' : nf(c.raw, 1) + ' ' + unidad}` } } });
+  const raya = (label, v, color) => ({ type: 'line', label, data: A.horas.map(() => v), borderColor: color, backgroundColor: color, borderDash: [5, 4],
+    pointRadius: 0, borderWidth: 1.5, tension: 0 });
+  const opciones = (unidad) => ({
+    responsive: true, maintainAspectRatio: false,
+    scales: { x: { ticks: { ...E.tick, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+      y: { ticks: E.tick, grid: { color: E.grid }, title: E.titulo(unidad) } },
+    plugins: { legend: { labels: E.leyenda } },
+  });
+  if (A.temp.some((v) => v !== null)) {
+    const t = linea('Temperatura', A.temp, tono('--c-text-soft', '#546e7a'), '°C');
+    t.pointBackgroundColor = A.estados.map((s) => COLOR[s] || COLOR.ok);
+    t.pointBorderColor = t.pointBackgroundColor;
+    const u = d.calor.umbral;
+    const ds = [t];
+    if (u && u.min !== null) ds.push(raya(`Mínimo ${nf(u.min, 1)} °C`, u.min, COLOR.bajo));
+    if (u && u.max !== null) ds.push(raya(`Máximo ${nf(u.max, 1)} °C`, u.max, COLOR.alto));
+    const o = opciones('°C');
+    o.plugins.legend.labels = { ...E.leyenda, generateLabels: (chart) => leyendaMicPat(chart, E.texto, 'color de su estado') };   // la de Chart.js: el color del PRIMER punto
+    graficoOp('mopTempDia', { type: 'line', data: { labels: A.horas, datasets: ds }, options: o });
+  }
+  if (A.ox.some((v) => v !== null)) {
+    const u = d.oxigeno.umbral;
+    const ds = [linea('Oxígeno', A.ox, COLORES_OX[0], 'mg/L')];
+    if (u && u.min !== null) ds.push(raya(`Mínimo ${nf(u.min, 1)} mg/L`, u.min, '#e0533b'));
+    graficoOp('mopOxDia', { type: 'line', data: { labels: A.horas, datasets: ds }, options: opciones('mg/L') });
+  }
+}
+
 function dibujarDetalle(d) {
   const E = ejesOp();
-  if (d.oxigeno.lecturas) {
+  if (_ambiente) dibujarAmbiente(d, E);   // 3 · el día
+  else if (d.oxigeno.lecturas) {
     const u = d.oxigeno.umbral;
     const datasets = d.oxigeno.series.map((s, i) => ({ label: s.hora, data: s.valores, borderColor: COLORES_OX[i], backgroundColor: COLORES_OX[i],
       tension: 0, pointRadius: 2.5, borderWidth: 2, spanGaps: true }));
@@ -3194,6 +3278,20 @@ function bind(root) {
     }
     const per = t.closest('[data-mop-periodo]');
     if (per) { vOp.periodo = per.dataset.mopPeriodo; repintar(); return; }
+    /* 3 · el ambiente de la sala: Día | Período, y ◀ ▶ o «Ver ese día» (el foco se queda en el control; si ◀ ▶ quedó
+       deshabilitado —el primer o el último día—, pasa al selector del día). */
+    const am = t.closest('[data-mop-amb-modo]');
+    if (am) { vOp.ambModo = am.dataset.mopAmbModo; repintarYEnfocar(`[data-mop-amb-modo="${am.dataset.mopAmbModo}"]`); return; }
+    const ai = t.closest('[data-mop-amb-ir]');
+    if (ai) {
+      if (ai.disabled || !ai.dataset.mopAmbIr) return;
+      vOp.ambDia = ai.dataset.mopAmbIr;
+      repintar();
+      const b = ai.dataset.mopAmbDir && root.querySelector(`[data-mop-amb-dir="${ai.dataset.mopAmbDir}"]`);
+      const f = b && !b.disabled ? b : root.querySelector('[data-mop-amb-dia]');
+      if (f) f.focus();
+      return;
+    }
     const rep = t.closest('[data-mop-rep]');
     if (rep) { vOp.rep = rep.dataset.mopRep; repintar(); return; }
     // El selector de lote del cierre es un <select>: su cambio va en el listener de abajo, no aquí.
@@ -3337,6 +3435,11 @@ function bind(root) {
     if (e.target.matches && e.target.matches('[data-mop-aguacomp]')) {   // 0q·5b · el componente de ③
       vOp.aguaComp = e.target.value || '';
       repintarYEnfocar('[data-mop-aguacomp]');
+      return;
+    }
+    if (e.target.matches && e.target.matches('[data-mop-amb-dia]')) {   // 3 · el día del ambiente de la sala
+      vOp.ambDia = e.target.value || '';
+      repintarYEnfocar('[data-mop-amb-dia]');
       return;
     }
     const lf = e.target.closest && e.target.closest('[data-mop-labf]');

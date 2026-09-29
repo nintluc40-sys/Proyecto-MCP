@@ -784,10 +784,15 @@ export function detalleDeSala(M, sala, periodo, F, partes) {
   };
   const mapa = mapaDePlanta(M.libro, F).salas.find((s) => s.sala === sala) || { tanques: [] };
   const R = (M.resumen.salas || []).find((x) => x.sala === sala) || null;
+  /* 3 · los días de TODO el registro con alguna lectura de cada variable, en orden: `ambienteDelDia` dice el último cuando
+     el día elegido no tiene ninguna. */
+  const conLectura = (cols) => [...porDia.keys()].filter((f) => esIso(f) && cols.some((c) => valorDelDia(f, c) !== null)).sort(cmp);
   return {
     sala,
-    calor: { horas: RESUMEN_TEMPS.map(horaDe), filas: filasCalor, umbral: umbralVigente('temperatura'), lecturas: contar(filasCalor.map((x) => x.valores)) },
-    oxigeno: { fechas: asc, series, umbral: umbralVigente('oxigeno'), lecturas: contar(series.map((x) => x.valores)) },
+    calor: { horas: RESUMEN_TEMPS.map(horaDe), filas: filasCalor, umbral: umbralVigente('temperatura'), lecturas: contar(filasCalor.map((x) => x.valores)),
+      diasConLectura: conLectura(RESUMEN_TEMPS) },
+    oxigeno: { fechas: asc, series, umbral: umbralVigente('oxigeno'), lecturas: contar(series.map((x) => x.valores)),
+      diasConLectura: conLectura(RESUMEN_OXIGENOS) },
     densidad: umbralVigente('densidad'),
     tanques: mapa.tanques.map((c) => {
       const ultimo = partesSala.filter((x) => x.tanque === c.tanque).pop() || null;
@@ -799,5 +804,35 @@ export function detalleDeSala(M, sala, periodo, F, partes) {
       };
     }),
     tratamientos: R ? R.tratamientos : [],
+  };
+}
+
+/** Los minutos del día de una hora «H:MM» o «HH:MM» (el «0:00» de la temperatura y el «00:00» del oxígeno son la misma). */
+const minutosDe = (h) => { const [a, b] = String(h).split(':').map(Number); return a * 60 + (b || 0); };
+/**
+ * 3 (2026-09-29, usuario) · el ambiente de UN día en el detalle de una sala («que siempre muestren la información del día»):
+ * sus 12 tomas de temperatura con su estado y sus 4 lecturas de oxígeno, sobre el MISMO eje de horas —el de la
+ * temperatura, 2:00 … 0:00; el oxígeno cae en 6:00, 12:00, 18:00 y 0:00—. Un día fuera del período del detalle, vacío.
+ * `ultimaTemp` / `ultimaOx`: el último día ANTERIOR con alguna lectura de cada una (en todo el registro de la sala), para
+ * decirlo cuando éste no tiene ninguna.
+ * @param {object} d      lo de `detalleDeSala`
+ * @param {string} fecha  AAAA-MM-DD
+ */
+export function ambienteDelDia(d, fecha) {
+  const horas = d.calor.horas;
+  const fila = d.calor.filas.find((f) => f.fecha === fecha);
+  const i = d.oxigeno.fechas.indexOf(fecha);
+  const ox = horas.map(() => null);
+  for (const s of d.oxigeno.series) {
+    const k = horas.findIndex((h) => minutosDe(h) === minutosDe(s.hora));
+    if (k >= 0 && i >= 0) ox[k] = s.valores[i];
+  }
+  const anterior = (dias) => (dias || []).filter((f) => f < fecha).pop() || '';
+  return {
+    fecha, horas, ox,
+    temp: fila ? fila.valores : horas.map(() => null),
+    estados: fila ? fila.estados : horas.map(() => ''),
+    ultimaTemp: anterior(d.calor.diasConLectura),
+    ultimaOx: anterior(d.oxigeno.diasConLectura),
   };
 }

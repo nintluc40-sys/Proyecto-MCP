@@ -19,7 +19,7 @@ import {
   kpiVivos, kpiLotes, kpiSalas, kpiOcupacion, kpiMortalidad, kpiReproduccion,
   mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, TIPOS_AVISO, ultimosRegistros, ETIQUETA_HOJA, ESPERA_DIAS,
   AVISO_CUARENTENA_DIAS, cuarentenasDeLotes, curvaDeCuarentena,
-  lecturasDelUltimoRegistro, evaluarLecturas, tarjetasDeSalas, detalleDeSala,
+  lecturasDelUltimoRegistro, evaluarLecturas, tarjetasDeSalas, detalleDeSala, ambienteDelDia,
   indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, DIMENSIONES_FILTRO, kpiBiomasa,
 } from './operativo.tablero.js';
 import { modeloOperativo, serieDiaria, diasDeTanque, SALAS_VISIBLES } from './operativo.data.js';
@@ -553,6 +553,37 @@ describe('Maduración · tablero · el detalle de una sala', () => {
     expect(t1.obs).toEqual({ fecha: '2026-09-18', sanitarias: [], operativas: ['En recambio'] });
     expect(d.tanques[1]).toMatchObject({ estado: 'Vacío', cargas: [], obs: { fecha: '' } });
     expect(d.tratamientos.map((x) => x.tipo)).toEqual(['Preventivo', 'Desinfección']);
+  });
+
+  /* 3 (2026-09-29, usuario) · «que siempre muestren la información del día»: un día, sus 12 tomas de temperatura y sus 4 de
+     oxígeno sobre el MISMO eje de horas; y el último día anterior con lecturas, en TODO el registro (el 05/09 cae fuera). */
+  it('3 · los días con lecturas de cada variable, en todo el registro de la sala', () => {
+    expect(d.calor.diasConLectura).toEqual(['2026-09-05', '2026-09-18']);
+    expect(d.oxigeno.diasConLectura).toEqual(['2026-09-18', '2026-09-19']);
+  });
+
+  it('3 · ambienteDelDia: el 18, sus tomas con su estado y el oxígeno en SUS horas del eje de la temperatura', () => {
+    const a = ambienteDelDia(d, '2026-09-18');
+    expect(a.horas).toEqual(d.calor.horas);
+    expect(a.temp).toEqual([28.4, 29, 27.9, 29.1, null, 27.5, null, null, null, null, null, null]);
+    expect(a.estados.slice(0, 6)).toEqual(['ok', 'ok', 'bajo', 'alto', '', 'bajo']);
+    expect(a.ox, '06:00 → 6:00 y 12:00 → 12:00').toEqual([null, null, 3.9, null, null, 4, null, null, null, null, null, null]);
+    expect([a.ultimaTemp, a.ultimaOx], 'la T° anterior, fuera del período; O₂ antes, ninguno').toEqual(['2026-09-05', '']);
+  });
+
+  it('3 · ambienteDelDia: el 19 sólo tiene O₂ (18:00); el 00:00 del oxígeno cae en el 0:00 del final', () => {
+    const a = ambienteDelDia(d, '2026-09-19');
+    expect(a.temp.every((v) => v === null)).toBe(true);
+    expect(a.ox[8]).toBe(4.5);
+    expect(a.ox.filter((v) => v !== null)).toEqual([4.5]);
+    expect([a.ultimaTemp, a.ultimaOx]).toEqual(['2026-09-18', '2026-09-18']);
+    const d2 = { ...d, oxigeno: { ...d.oxigeno, series: d.oxigeno.series.map((s) => ({ ...s, valores: s.valores.map(() => (s.hora === '00:00' ? 5.1 : null)) })) } };
+    expect(ambienteDelDia(d2, '2026-09-19').ox, 'el 00:00, en la última hora').toEqual([...Array(11).fill(null), 5.1]);
+  });
+
+  it('3 · ambienteDelDia: un día fuera del período, vacío', () => {
+    const a = ambienteDelDia(d, '2026-09-01');
+    expect([a.temp.every((v) => v === null), a.ox.every((v) => v === null), a.ultimaTemp, a.ultimaOx]).toEqual([true, true, '', '']);
   });
 });
 

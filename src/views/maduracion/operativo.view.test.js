@@ -355,8 +355,11 @@ describe('Maduración · operativo · 🏠 Salas', () => {
     makeChart.mockClear();
     click(root.querySelector('[data-mop-sala="Sala 1"]'));
     expect(root.querySelector('.mop-detalle')).toBeTruthy();
+    /* 3 (2026-09-29) · arranca en «Día» (el de la foto, 19/09: sólo O₂); el mapa de calor del período, en «Período». */
+    expect(makeChart.mock.calls.map((c) => c[0]).sort()).toEqual(['mopOxDia', 'mopTq']);
+    click(root.querySelector('[data-mop-amb-modo="periodo"]'));
     expect(root.querySelectorAll('.mop-calor tbody tr')).toHaveLength(30);
-    expect(makeChart.mock.calls.map((c) => c[0]).sort()).toEqual(['mopOx', 'mopTq']);
+    expect(makeChart.mock.calls.map((c) => c[0])).toContain('mopOx');
     const tq1 = makeChart.mock.calls.find((c) => c[0] === 'mopTq')[1];
     expect(tq1.data.labels).toHaveLength(15);
     expect(tq1.data.datasets.map((d) => d.label)).toContain('Densidad máxima 15');
@@ -376,6 +379,98 @@ describe('Maduración · operativo · 🏠 Salas', () => {
     click(root.querySelector('[data-mop-sub="salas"]'));
     expect([...root.querySelectorAll('.mop-sala-card')].map((c) => c.dataset.mopSala)).toEqual(['Sala 2']);
     expect(root.querySelector('.mop-detalle .mc-card-h').textContent).toContain('Sala 2');
+  });
+});
+
+/* 3 (2026-09-29, usuario) · «en los gráficos de Temperatura por hora y oxígeno por hora, marcar un filtro para ambos para
+   que siempre muestren la información del día»: Día | Período y ◀ día ▶ encima de los dos; por defecto, el día de la foto.
+   PLANTA · Sala 1: el 18/09, temperatura de 2:00 a 8:00 (28 · 29 · 27,9 · 29,1) y O₂ a las 06:00 (3,9) y 12:00 (4); el
+   19/09 (la foto), sólo O₂ a las 18:00 (4,5). */
+describe('Maduración · operativo · 🏠 Salas · la temperatura y el oxígeno de UN día (3)', () => {
+  const abrirSala1 = () => { click(root.querySelector('[data-mop-sub="salas"]')); click(root.querySelector('[data-mop-sala="Sala 1"]')); };
+  const ultimo = (id) => makeChart.mock.calls.filter(([x]) => x === id).pop()[1];
+  const selDia = () => root.querySelector('[data-mop-amb-dia]');
+  const diaElegido = () => (selDia().querySelector('option[selected]') || selDia().options[0]).value;
+  const vacioDe = (i) => root.querySelectorAll('.mop-det-grid > div')[i + 1].querySelector('.empty-state');
+
+  it('🔴 arranca en «Día», el de la foto; sin su temperatura, lo dice con la última y «Ver ese día»; su O₂, en su hora', async () => {
+    await montar(PLANTA);
+    abrirSala1();
+    expect(root.querySelector('[data-mop-amb-modo="dia"]').getAttribute('aria-pressed')).toBe('true');
+    expect(root.querySelector('.mop-calor'), 'sin el mapa de calor del período').toBeNull();
+    expect(diaElegido()).toBe('2026-09-19');
+    expect(selDia().options).toHaveLength(30);
+    expect(vacioDe(0).textContent).toBe('Sin lecturas de temperatura el 19/09/2026. La última, el 18/09/2026. Ver ese día');
+    const ox = ultimo('mopOxDia');
+    expect(ox.data.labels).toEqual(['2:00', '4:00', '6:00', '8:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00', '0:00']);
+    expect(ox.data.datasets[0].data.filter((v) => v !== null)).toEqual([4.5]);
+    expect(ox.data.datasets[0].data[8], 'a las 18:00').toBe(4.5);
+    expect(ox.data.datasets.map((d) => d.label)).toContain('Mínimo 4 mg/L');
+    expect(root.querySelectorAll('.mop-det-h')[1].textContent).toBe('💧 Oxígeno disuelto por hora');
+  });
+
+  it('🔴 «Ver ese día» y ◀ ▶ mueven el día: el 18, su temperatura toma a toma con el color de su estado', async () => {
+    await montar(PLANTA);
+    abrirSala1();
+    click(vacioDe(0).querySelector('[data-mop-amb-ir]'));
+    expect(diaElegido()).toBe('2026-09-18');
+    expect(document.activeElement, 'el foco, en el selector del día').toBe(selDia());
+    const t = ultimo('mopTempDia');
+    expect(t.data.datasets[0].data.slice(0, 5)).toEqual([28, 29, 27.9, 29.1, null]);
+    const c = t.data.datasets[0].pointBackgroundColor;
+    expect([c[0] === c[1], c[2] === c[0], c[3] === c[0], c[2] === c[3]], 'dos dentro, uno por debajo, uno por encima').toEqual([true, false, false, false]);
+    expect(t.data.datasets.map((d) => d.label).slice(1), 'el rango vigente, 28–29 °C').toEqual(['Mínimo 28 °C', 'Máximo 29 °C']);
+    const ley = t.options.plugins.legend.labels.generateLabels({ data: t.data, isDatasetVisible: () => true });
+    expect([ley[0].text, ley[0].fillStyle], 'la leyenda, del color de la LÍNEA (no del primer punto)').toEqual(['Temperatura (color de su estado)', t.data.datasets[0].backgroundColor]);
+    expect(ultimo('mopOxDia').data.datasets[0].data.filter((v) => v !== null)).toEqual([3.9, 4]);
+    click(root.querySelector('[data-mop-amb-dir="sig"]'));
+    expect(diaElegido()).toBe('2026-09-19');
+    expect(root.querySelector('[data-mop-amb-dir="sig"]').disabled, 'el día de la foto es el último').toBe(true);
+    expect(document.activeElement, 'deshabilitado ▶, el foco va al selector').toBe(selDia());
+    click(root.querySelector('[data-mop-amb-dir="ant"]'));
+    click(root.querySelector('[data-mop-amb-dir="ant"]'));
+    expect(diaElegido()).toBe('2026-09-17');
+    expect(document.activeElement).toBe(root.querySelector('[data-mop-amb-dir="ant"]'));
+    expect(vacioDe(1).textContent, 'O₂: nada antes del 17').toBe('Sin lecturas de oxígeno el 17/09/2026.');
+  });
+
+  it('🔴 el selector elige el día; el día se queda al cambiar de sala; «Período» vuelve al mapa y a las líneas', async () => {
+    await montar(PLANTA);
+    abrirSala1();
+    cambiar(selDia(), '2026-09-18');
+    expect(diaElegido()).toBe('2026-09-18');
+    click(root.querySelector('[data-mop-sala="Sala 2"]'));
+    expect(root.querySelector('.mop-detalle .mc-card-h').textContent).toContain('Sala 2');
+    expect(diaElegido()).toBe('2026-09-18');
+    click(root.querySelector('[data-mop-amb-modo="periodo"]'));
+    expect(root.querySelector('[data-mop-amb-dia]')).toBeNull();
+    expect(root.querySelector('.mop-amb-ctl').textContent).toContain('30 días');
+    expect(root.querySelectorAll('.mop-det-h')[1].textContent).toBe('💧 Oxígeno disuelto (4 lecturas al día)');
+    click(root.querySelector('[data-mop-amb-modo="dia"]'));
+    expect(diaElegido(), 'y vuelve con el mismo día').toBe('2026-09-18');
+  });
+
+  it('🔑 un día fuera del período nuevo vuelve al de la foto; la última lectura fuera del período se dice, sin «Ver ese día»', async () => {
+    await montar(PLANTA);
+    abrirSala1();
+    cambiar(selDia(), '2026-09-18');
+    click(root.querySelector('[data-mop-periodo="hoy"]'));
+    expect(diaElegido()).toBe('2026-09-19');
+    expect(selDia().options).toHaveLength(1);
+    expect([root.querySelector('[data-mop-amb-dir="ant"]').disabled, root.querySelector('[data-mop-amb-dir="sig"]').disabled]).toEqual([true, true]);
+    expect(vacioDe(0).textContent).toBe('Sin lecturas de temperatura el 19/09/2026. La última, el 18/09/2026.');
+    expect(vacioDe(0).querySelector('[data-mop-amb-ir]')).toBeNull();
+  });
+
+  it('🔑 sus clases están DEFINIDAS en su CSS', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/views/maduracion/operativo.css', 'utf8') + readFileSync('src/views/maduracion/maduracion.css', 'utf8');
+    await montar(PLANTA);
+    abrirSala1();
+    const usadas = new Set();
+    root.querySelectorAll('.mop-amb-ctl, .mop-amb-ctl [class]').forEach((el) => el.classList.forEach((c) => { if (c.startsWith('mop-')) usadas.add(c); }));
+    expect(usadas.has('mop-amb-ctl') && usadas.has('mop-amb-dia'), 'control').toBe(true);
+    expect([...usadas].filter((c) => !new RegExp('\\.' + c + '(?![\\w-])').test(css))).toEqual([]);
   });
 });
 
@@ -2083,9 +2178,9 @@ describe('Maduración · operativo · los gráficos se leen', () => {
     expect(makeChart.mock.calls.filter(([id]) => id === 'mopKpiCurva').length).toBeGreaterThanOrEqual(7);
   });
 
-  it('🔴 los trece gráficos, y todos con ejes a 12 px en un color que no es el gris claro; títulos a 11 px; leyenda a 12 px', () => {
+  it('🔴 los quince gráficos (3 · y los dos del día de una sala), y todos con ejes a 12 px en un color que no es el gris claro; títulos a 11 px; leyenda a 12 px', () => {
     const ids = [...new Set(GRAFICOS.map((g) => g.id))].sort();
-    expect(ids).toEqual(['mopAguaPat', 'mopCalPar', 'mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMarCop', 'mopMicPat', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
+    expect(ids).toEqual(['mopAguaPat', 'mopCalPar', 'mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMarCop', 'mopMicPat', 'mopOx', 'mopOxDia', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTempDia', 'mopTq']);
     for (const { id, cfg } of GRAFICOS) {
       for (const [eje, sc] of Object.entries(cfg.options.scales || {})) {
         expect(sc.ticks.font.size, `${id}.${eje}`).toBeGreaterThanOrEqual(12);
@@ -2137,9 +2232,9 @@ describe('Maduración · operativo · los gráficos se leen', () => {
    desliza en 120 ms; el dibujo al abrir o filtrar, 400 ms; y nada con «reducir movimiento».
    ============================================================ */
 describe('Maduración · operativo · los gráficos se mueven bien', () => {
-  it('🔴 los trece: globo arriba junto a la raya del día (menos los de dispersión), sin transición al pasar, globo en ≤ 150 ms, dibujo en ≤ 400 ms', () => {
+  it('🔴 los quince: globo arriba junto a la raya del día (menos los de dispersión), sin transición al pasar, globo en ≤ 150 ms, dibujo en ≤ 400 ms', () => {
     const ids = [...new Set(GRAFICOS.map((g) => g.id))].sort();
-    expect(ids).toEqual(['mopAguaPat', 'mopCalPar', 'mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMarCop', 'mopMicPat', 'mopOx', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTq']);
+    expect(ids).toEqual(['mopAguaPat', 'mopCalPar', 'mopCuarCurva', 'mopKpiCurva', 'mopLabTend', 'mopLoteCurva', 'mopMarCop', 'mopMicPat', 'mopOx', 'mopOxDia', 'mopPiscinaCurva', 'mopReproDest', 'mopTanqueCurva', 'mopTempDia', 'mopTq']);
     for (const { id, cfg } of GRAFICOS) {
       const o = cfg.options;
       if (id === 'mopMicPat' || id === 'mopAguaPat' || id === 'mopCalPar') {   // 0q·5a/5b/5c · dispersión: el punto más cercano, sin raya ni globo arriba (su eje no es de días)
