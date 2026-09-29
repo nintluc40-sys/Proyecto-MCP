@@ -128,9 +128,29 @@ function desovePorLote(fuentes, periodo, F) {
   return m;
 }
 
+/** 0u · H6 (2026-09-29) · las bajas del período que el libro NO pudo dar a ningún lote: las de un parte de un tanque donde
+ *  no había ninguno (su aviso `sin-ingreso`). «Por sala» las cuenta —están registradas— y «por lote» no puede: se DICEN
+ *  (visto con datos reales: por lote salía 1 menos que por sala + desove, sin explicación). Con un lote en el filtro no
+ *  son de él: ninguna. */
+function sinLoteDelPeriodo(M, periodo, F) {
+  const out = { machos: 0, hembras: 0, total: 0, sitios: [] };
+  if (F && F.lote) return out;
+  for (const a of (((M || {}).libro || {}).avisos || [])) {
+    if (a.tipo !== 'sin-ingreso' || !enPeriodo(a.fecha, periodo)) continue;
+    const m = ent(a.machos);
+    const h = ent(a.hembras);
+    out.machos += m;
+    out.hembras += h;
+    out.total += m + h;
+    out.sitios.push({ fecha: a.fecha, sala: txt(a.sala), tanque: a.tanque, total: m + h });
+  }
+  return out;
+}
+
 /**
  * El desglose cruzado del período: muerte natural frente a descarte de selección, por sexo, en la agrupación
  * elegida. `modo` dice de dónde salen las cifras y `ignora`, qué filtros no ha podido honrar esa agrupación.
+ * `sinLote` (0u · H6, sólo por lote): las bajas registradas que el libro no pudo dar a ningún lote.
  */
 export function desgloseDeBajas(M, serie, partes, F, periodo, dimension) {
   const dim = DIMENSIONES_BAJAS.some((d) => d.clave === dimension) ? dimension : 'sala';
@@ -139,7 +159,7 @@ export function desgloseDeBajas(M, serie, partes, F, periodo, dimension) {
   const modo = dim === 'lote' ? 'libro' : 'registradas';
   if (dim === 'lote') {
     filas = porLoteEnSerie(serie, F, periodo);
-    if (filas === null) return { dimension: dim, filas: [], totales: par(0, 0), modo: 'sin-serie', ignora, desove: 0 };
+    if (filas === null) return { dimension: dim, filas: [], totales: par(0, 0), modo: 'sin-serie', ignora, desove: 0, sinLote: null };
     const des = desovePorLote((M || {}).fuentes, periodo, F);
     filas.forEach((f) => { f.desove = des.get(f.clave) || 0; });
   } else {
@@ -154,6 +174,7 @@ export function desgloseDeBajas(M, serie, partes, F, periodo, dimension) {
     dimension: dim, filas, modo, ignora,
     totales: { natural, descarte, total, pctDescarte: cociente(descarte.total, total, 100) },
     desove: dim === 'lote' ? filas.reduce((a, f) => a + ent(f.desove), 0) : 0,
+    sinLote: dim === 'lote' ? sinLoteDelPeriodo(M, periodo, F) : null,
   };
 }
 

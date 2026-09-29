@@ -2189,6 +2189,17 @@ function bajasHTML(M, memo, p, F) {
   </div>`;
 }
 
+/* 0u · H6 (2026-09-29) · por lote, las bajas registradas en un tanque donde el libro no tenía ningún lote: faltan aquí y
+   «por sala» sí salen. Se dicen, con el sitio y el día, para que se pueda revisar el parte. */
+function sinLoteHTML(s) {
+  if (!s || !s.total) return '';
+  const uno = s.total === 1;
+  const donde = s.sitios.map((x) => `${esc(x.sala)} · tanque ${nf(x.tanque)} el ${esc(dm(x.fecha))}`).join('; ');
+  return `<p class="mc-note">⚠ ${nf(s.total)} ${uno ? 'baja registrada en un tanque' : 'bajas registradas en tanques'} donde el libro no tenía ningún lote
+    (${donde}): no ${uno ? 'se atribuye' : 'se atribuyen'} a ningún lote, así que aquí ${uno ? 'falta' : 'faltan'} y «por sala» sí ${uno ? 'la' : 'las'} cuenta.
+    Revisa ese parte (¿el tanque?, ¿un movimiento sin registrar?); el aviso está también en 🩺 Calidad del dato.</p>`;
+}
+
 function desgloseHTML(d, p) {
   const pills = DIMENSIONES_BAJAS.map((x) => `<button class="mc-pill ${d.dimension === x.clave ? 'is-on' : ''}" data-mop-agrb="${x.clave}">${esc(x.etiqueta)}</button>`).join('');
   const cab = (DIMENSIONES_BAJAS.find((x) => x.clave === d.dimension) || {}).etiqueta || 'Sala';
@@ -2219,6 +2230,7 @@ function desgloseHTML(d, p) {
       <tbody>${cuerpo}</tbody></table></div>
     ${d.totales.total ? `<p class="mc-note">El descarte de selección es el <b>${pc(d.totales.pctDescarte)}</b> de las bajas del período. Las dos columnas son DISJUNTAS: la hoja las registra por separado y se suman.</p>` : ''}
     <p class="mc-note">⚠ El «% del total» es la parte que le toca a cada fila de las bajas del período, <b>no</b> una tasa de mortalidad: la tasa es por lote y la da 📊 Estado actual con la regla del ⚖️ Saldo.</p>
+    ${sinLoteHTML(d.sinLote)}
     ${ignoraHTML(d.ignora, 'El desglose por ' + cab.toLowerCase())}
   </div>`;
 }

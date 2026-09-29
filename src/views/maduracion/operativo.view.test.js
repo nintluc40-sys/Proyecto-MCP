@@ -862,6 +862,18 @@ const card = (titulo) => [...root.querySelectorAll('.mc-card')]
   .find((c) => (c.querySelector('.mc-card-h') || { textContent: '' }).textContent.includes(titulo));
 
 describe('Maduración · operativo · 💀 Bajas', () => {
+  it('🔴 0u · H6 · por lote DICE las bajas de un tanque sin lote en el libro (por eso faltan ahí y por sala no)', async () => {
+    // Un parte en Sala 1 · t9, donde nunca entró nadie: 1 hembra muerta que el libro no puede dar a ningún lote.
+    await montar([...PLANTA_B, TQ('16/09/2026', 'Sala 1', 9, { Hora: '06:30', Parte: 1, 'Hembras muertas': 1 })]);
+    abrir('bajas');
+    const tarjeta = () => [...root.querySelectorAll('.mc-card')].find((c) => c.textContent.includes('💀 Bajas del período'));
+    expect(tarjeta().textContent, 'por sala no aplica').not.toContain('ningún lote');
+    click(root.querySelector('[data-mop-agrb="lote"]'));
+    const t = tarjeta().textContent.replace(/\s+/g, ' ');
+    expect(t).toContain('1 baja registrada en un tanque donde el libro no tenía ningún lote');
+    expect(t).toContain('Sala 1 · tanque 9 el 16/09');
+  });
+
   it('🔴 la tabla cruzada separa muerte natural de descarte, y el total los SUMA', async () => {
     await montar(PLANTA_B);
     abrir('bajas');

@@ -123,6 +123,25 @@ describe('Maduración · bajas · el desglose cruzado', () => {
     expect(des('sala', SIN, p7).filas).toEqual([]);
   });
 
+  it('🔴 0u · H6 · por lote DICE las bajas que el libro no pudo atribuir (un parte de un tanque sin lote): por eso faltan aquí', () => {
+    /* Visto con datos reales el 2026-09-29: 1 hembra muerta en un parte de un tanque donde el libro no tenía ningún lote.
+       «Por sala» la cuenta (está registrada) y «por lote» no puede (no es de nadie): sin decirlo, por lote salía 1 menos
+       que por sala + desove. Aquí, un parte del 16/09 en Sala 4 · t5, donde nunca entró nadie. */
+    const M2 = modeloOperativo([...PLANTA, TQ('2026-09-16', 'Sala 4', 5, '06:30', 1, 0, 1, 0, 0)], { hoy: FOTO, fecha: FOTO });
+    const serie = serieDiaria(M2.fuentes, sumarDias(P30.desde, -1), P30.hasta);
+    const partes = diasDeTanque(M2.fuentes.tanques);
+    const lote = desgloseDeBajas(M2, serie, partes, SIN, P30, 'lote');
+    const sala = desgloseDeBajas(M2, serie, partes, SIN, P30, 'sala');
+    expect(lote.sinLote).toEqual({ machos: 0, hembras: 1, total: 1, sitios: [{ fecha: '2026-09-16', sala: 'Sala 4', tanque: 5, total: 1 }] });
+    // El contraste cuadra contándolas: por lote = por sala + desove − las que no son de ningún lote.
+    expect(lote.totales.total).toBe(sala.totales.total + lote.desove - lote.sinLote.total);
+    expect(sala.sinLote).toBe(null);                                                                   // por sala, no aplica
+    expect(desgloseDeBajas(M2, serie, partes, F({ lote: 'LA' }), P30, 'lote').sinLote.total).toBe(0);  // no son de ese lote
+    const pHoy = periodoDe('hoy', FOTO, M2.fuentes);                                                   // fuera del período
+    expect(desgloseDeBajas(M2, serieDiaria(M2.fuentes, sumarDias(pHoy.desde, -1), pHoy.hasta), partes, SIN, pHoy, 'lote').sinLote.total).toBe(0);
+    expect(des('lote').sinLote.total).toBe(0);                                                         // sin ese parte, nada
+  });
+
   it('sin la víspera en la serie, por lote no inventa cifras: lo dice', () => {
     const corta = serieDiaria(M.fuentes, P30.desde, P30.hasta);   // empieza en el primer día, sin víspera
     expect(desgloseDeBajas(M, corta, PARTES, SIN, P30, 'lote').modo).toBe('sin-serie');
