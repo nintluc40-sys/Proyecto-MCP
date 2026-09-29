@@ -317,6 +317,32 @@ describe('Traslado · payload', () => {
     });
   });
 
+  it('🔴 la UBICACIÓN conserva el «-» de la latitud (2026-09-28)', () => {
+    // La misma trampa en el TEXTO «lat, lon»: sanitizeStr le quitaba el «-» ANTES de enviarlo, y el GAS
+    // (ubicacionConSigno_) sólo puede conservar el signo que le llega. Medido en producción: desde el 27-09,
+    // 0 de 236 filas con signo.
+    const { rows } = buildTrasladoPayload(dosCamiones());
+    rows.forEach((r) => expect(r[col('Ubicación')]).toBe('-2.213500, -80.979100'));
+  });
+
+  it('🔴 en la Ubicación, lo que NO es exactamente «número, número» se sigue saneando', () => {
+    const casos = [
+      ['=HYPERLINK("x")', 'HYPERLINK("x")'],
+      ['=-2.213500, -80.979100', '2.213500, -80.979100'],             // una fórmula que ACABA en «número, número»
+      ['@-2.213500, -80.979100', '2.213500, -80.979100'],
+      ['-2.213500,-80.979100', '2.213500,-80.979100'],                // sin el espacio que pone la app
+      ['-2.213500, -80.979100\n=1+1', '2.213500, -80.979100\n=1+1'],
+      ['sin señal', 'sin señal'],
+      ['  -2.213500, -80.979100  ', '-2.213500, -80.979100'],           // el GAS también recorta
+    ];
+    for (const [bruto, esperado] of casos) {
+      const v = unCamion();
+      v.data.revisiones.forEach((r) => { r.ubicacion = bruto; });
+      const { rows } = buildTrasladoPayload(v);
+      expect(rows[0][col('Ubicación')], bruto).toBe(esperado);
+    }
+  });
+
   it('las coordenadas viajan como NÚMERO, no como texto', () => {
     const { rows } = buildTrasladoPayload(unCamion());
     expect(typeof rows[0][col('Longitud')]).toBe('number');

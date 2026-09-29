@@ -17689,6 +17689,14 @@ function trasNum(v){
   const n = parseFloat(v);
   return isFinite(n) ? n : "";
 }
+/* 2026-09-28 · la UBICACIÓN («lat, lon» de «🕒 Sellar hora y ubicación») tiene la misma trampa en TEXTO: el saneado
+   le quitaba el «-» de la latitud ANTES de enviarla, y el GAS (ubicacionConSigno_) sólo conserva el signo que le
+   llega. Sólo lo que es EXACTAMENTE «número, número» —el MISMO patrón del GAS: ninguna fórmula cabe— va tal cual;
+   lo demás («sin señal»…) se sanea como siempre. */
+function trasUbicacion(v){
+  const s = String(v == null ? "" : v).trim();
+  return /^-?[0-9]{1,3}[.][0-9]{1,8}, -?[0-9]{1,3}[.][0-9]{1,8}$/.test(s) ? s : trasTxt(s);
+}
 function trasLista(v){
   const arr = Array.isArray(v) ? v : String(v == null ? "" : v).split(",");
   const out = [];
@@ -18019,7 +18027,7 @@ function buildTrasPayload(records, opts){
             viaje.camaronera, trasTxt(cam && cam.placa),
             viaje.salinidad, viaje.horaSalida, viaje.horaLlegada,
             nRev, trasTxt(r.hora), trasTxt(r.lugar),
-            trasNum(r.lat), trasNum(r.lon), trasNum(r.precision), trasTxt(r.ubicacion),
+            trasNum(r.lat), trasNum(r.lon), trasNum(r.precision), trasUbicacion(r.ubicacion),
             t, trasNum(m.o2), trasNum(m.temp), trasTxt(m.act), trasTxt(m.alim),
             trasTxt(r.obs, 500),
             viaje.insumos, viaje.check,
@@ -19380,6 +19388,8 @@ function trasCommitActivo(){
     // ⚠ lat/lon/precision NO pasan por sanitizeStr: borraría el signo menos de
     // la longitud (Ecuador es negativo) y colocaría el camión en el otro hemisferio.
     if(k === "lat" || k === "lon" || k === "precision") r[k] = el.value === "" ? "" : el.value;
+    // 2026-09-28 · y la Ubicación «lat, lon» tampoco: la misma vía que el envío (trasUbicacion).
+    else if(k === "ubicacion") r[k] = trasUbicacion(el.value);
     else r[k] = sanitizeStr(el.value, k === "obs" ? 500 : 200);
   });
   box.querySelectorAll('.tras-cam-grid').forEach(grid => {

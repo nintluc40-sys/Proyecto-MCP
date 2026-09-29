@@ -216,6 +216,14 @@ const celdaNum = (v) => {
   return Number.isFinite(n) ? n : '';
 };
 
+/** La UBICACIÓN «lat, lon» con su signo (2026-09-28): el saneado le quitaba el «-» de la latitud ANTES de enviarla.
+ *  Sólo lo que es EXACTAMENTE «número, número» —el mismo patrón del GAS (`ubicacionConSigno_`): ninguna fórmula
+ *  cabe— va tal cual; lo demás («sin señal»…) se sanea como siempre. Gemela de `trasUbicacion` (engine.js). */
+const celdaUbicacion = (v) => {
+  const s = String(v == null ? '' : v).trim();
+  return /^-?[0-9]{1,3}[.][0-9]{1,8}, -?[0-9]{1,3}[.][0-9]{1,8}$/.test(s) ? s : celdaTxt(s);
+};
+
 /** Lista → CSV saneado, sin vacíos ni duplicados, conservando el orden. */
 const celdaLista = (v) => {
   const arr = Array.isArray(v) ? v : String(v == null ? '' : v).split(',');
@@ -418,7 +426,7 @@ export function buildTrasladoPayload(registro, opts) {
       lat: celdaNum(r.lat),
       lon: celdaNum(r.lon),
       precision: celdaNum(r.precision),
-      ubicacion: celdaTxt(r.ubicacion),
+      ubicacion: celdaUbicacion(r.ubicacion),
       obs: celdaTxt(r.obs, 500),
       horaRegistro: celdaTxt(r.horaRegistro),
     };

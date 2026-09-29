@@ -19,6 +19,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createContext, Script } from 'node:vm';
 import { TRASLADO_HEADERS, TRASLADO_SHEET } from './ficha-traslado.schema.js';
+import { sanitizeStr } from '../../../core/trovan.js';
 
 const ENGINE = new URL('../../../../public/registros/engine.js', import.meta.url);
 const GAS = new URL('../../../../GAS/Code.gs', import.meta.url);
@@ -67,9 +68,9 @@ function motorCliente() {
   const ctx = {
     String, Number, Object, Array, JSON, Math, Date, parseFloat, isFinite, Set,
     RPRE: 'larv4_recov_',
-    // El saneado real vive en core/trovan.js; aquí sólo hace falta que NO toque
-    // los números, que es la propiedad que se está probando.
-    sanitizeStr: (s, max) => String(s == null ? '' : s).trim().slice(0, max || 200),
+    // El saneado REAL (core/trovan.js). 2026-09-28 · aquí había un doble que sólo recortaba —«basta con que NO toque
+    // los números»— y por eso esta costura no vio que el cliente le quitaba el «-» a la Ubicación.
+    sanitizeStr,
   };
   ctx.globalThis = ctx;
   createContext(ctx);

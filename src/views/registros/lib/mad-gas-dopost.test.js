@@ -47,6 +47,7 @@ import { MAD_ALIM_HEADERS } from './ficha-maduracion-alimentacion.schema.js';
 import { MAD_BS_HEADERS as BS_HEADERS, buildBroodstockRows } from './ficha-maduracion-broodstock.schema.js';
 import { TRASLADO_HEADERS } from './ficha-traslado.schema.js';
 import { REPRO_MATRIZ_HEADERS, REPRO_EVENTO, REPRO_TRANSFER_TIPO, buildAltaBatch, buildEventBatch, buildTransferBatch, matrixIndexFromRows } from './reproductivo.data.js';
+import { sanitizeStr } from '../../../core/trovan.js';   // 2026-09-28 · el saneado REAL del cliente (Traslado, de extremo a extremo)
 
 const leer = (u) => readFileSync(new URL(u, import.meta.url), 'utf8').split('\r\n').join('\n');
 const gasSrc = leer('../../../../GAS/Code.gs');
@@ -1679,5 +1680,26 @@ describe('GAS · Registro_Traslado · la Ubicación conserva su signo (LARC 40)'
     expect(g.post(envioTras([filaTras('v1-c1-r1-t1', { Lugar: '-2.213500, -80.979100', Observaciones: '-sin novedad' })])).status).toBe('ok');
     expect(hoja.filas[1][TRAS.indexOf('Lugar')]).toBe('2.213500, -80.979100');
     expect(hoja.filas[1][TRAS.indexOf('Observaciones')]).toBe('sin novedad');
+  });
+  it('🔴 de extremo a extremo: el payload REAL del cliente (engine.js, saneado real) llega a la hoja con su «-»', () => {
+    // 2026-09-28 · lo que faltaba: las pruebas de arriba le dan al GAS el texto de la app SIN pasar por el
+    // constructor del cliente, y éste le quitaba el «-» (sanitizeStr) antes de enviarlo: 0 de 236 filas con
+    // signo en producción desde el 27-09.
+    const ini = engineSrc.indexOf('const TRAS_REC_KEY   = "larv4_tras_records";');
+    const fin = '  return { sheetName: TRAS_SHEET, headers: TRAS_HEADERS.slice(), rows: rows };\n}';
+    const ctx = { String, Number, Object, Array, JSON, Math, Date, parseFloat, isFinite, Set, RPRE: 'larv4_recov_', sanitizeStr };
+    ctx.globalThis = ctx;
+    createContext(ctx);
+    new Script(engineSrc.slice(ini, engineSrc.indexOf(fin, ini) + fin.length) + '\n;globalThis.__tras = buildTrasPayload;').runInContext(ctx);
+    const viaje = { id: 'tvextremo01', data: { fecha: '2026-09-28', corrida: '600', modulo: 'M01', camaronera: 'Puná 1',
+      salinidad: '', horaSalida: '20:30', horaLlegada: '06:00', insumos: [], check: [], controlador: '', chequeador: '', recepcion: '',
+      camiones: [{ placa: 'GSA-1147', tinasOff: [] }],
+      revisiones: [{ hora: '20:30', lugar: 'Peaje 1', lat: -2.2135, lon: -80.9791, precision: 12, ubicacion: ubicacionDeLaApp(-2.2135, -80.9791),
+        horaRegistro: '2026-09-28T20:30:07', obs: '', camiones: [{ tinas: { 1: { o2: 7.5, temp: 26, act: 'Normal', alim: 'Artemia' } } }] }] } };
+    const hoja = hojaFalsa([TRAS]);
+    expect(gas({ Registro_Traslado: hoja }).post(ctx.__tras([viaje])).status).toBe('ok');
+    const escritas = hoja.filas.slice(1).map((f) => f[UBIC - 1]);
+    expect(escritas.length).toBeGreaterThan(0);
+    escritas.forEach((x) => expect(x).toBe('-2.213500, -80.979100'));
   });
 });

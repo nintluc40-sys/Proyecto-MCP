@@ -524,6 +524,24 @@ describe('Traslado · hora y ubicación', () => {
     expect(ultimoAviso()).toContain('Hora sellada');
   });
 
+  it('🔴 la ubicación sellada conserva su «-» de la pantalla al registro y al envío (2026-09-28)', () => {
+    // Visto en un navegador REAL (geolocalización simulada): la pantalla decía «-2.213500, -80.979100» y el envío
+    // salía SIN el «-», porque el paso de la pantalla al registro (trasCommitActivo) también la saneaba. El campo es
+    // de sólo lectura: aquí se escribe lo que escribe «🕒 Sellar».
+    viajeCompleto(1);
+    rev(0, 'ubicacion', '-2.213500, -80.979100');
+    rev(1, 'ubicacion', '=HYPERLINK("x")');     // lo que no es «número, número» se sanea como siempre
+    expect(H.trasGuardarLocal({ callado: true })).toBe(true);
+    const guardado = H._trasRaw()[0];
+    expect(guardado.data.revisiones[0].ubicacion).toBe('-2.213500, -80.979100');
+    expect(guardado.data.revisiones[1].ubicacion).toBe('HYPERLINK("x")');
+    expect(leerRev(0, 'ubicacion'), 'y la pantalla la sigue enseñando con su signo').toBe('-2.213500, -80.979100');
+    const { headers, rows } = H.buildTrasPayload([guardado]);
+    const u = new Set(rows.map((f) => f[headers.indexOf('Ubicación')]));
+    expect(u.has('-2.213500, -80.979100')).toBe(true);
+    expect(u.has('2.213500, -80.979100')).toBe(false);
+  });
+
   it('avisa en pantalla de que esta versión no puede tomar la ubicación', () => {
     conCamion();
     expect(panel().textContent).toContain('no puede tomar la ubicación');

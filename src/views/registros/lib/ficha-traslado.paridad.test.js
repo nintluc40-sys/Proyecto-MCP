@@ -197,6 +197,19 @@ describe('Traslado · el monolito y el módulo ES coinciden', () => {
     expect(m.trasTxt('=HYPERLINK("x")').startsWith('=')).toBe(false);
   });
 
+  it('🔴 los dos conservan el «-» de la UBICACIÓN y sanean IGUAL lo que no es «número, número» (2026-09-28)', () => {
+    const m = motorTraslado();
+    const reg = viajePrueba();
+    const ubic = (filas) => [...new Set(filas.map((f) => f[col('Ubicación')]))];
+    expect(ubic(m.buildTrasPayload([reg]).rows)).toEqual(['-2.213500, -80.979100', '-2.300000, -80.100000', 'sin señal', '-2.750000, -79.900000']);
+    // Los bordes del patrón, en los DOS: el módulo los prueba uno a uno (ficha-traslado.schema.test.js).
+    for (const u of ['=HYPERLINK("x")', '=-2.213500, -80.979100', '@-2.213500, -80.979100', '-2.213500,-80.979100',
+      '-2.213500, -80.979100\n=1+1', '  -2.213500, -80.979100  ', 'sin señal']) {
+      reg.data.revisiones[1].ubicacion = u;
+      expect(ubic(m.buildTrasPayload([reg]).rows), JSON.stringify(u)).toEqual(ubic(buildTrasladoPayload(reg).rows));
+    }
+  });
+
   it('🔴 los dos envuelven la medianoche igual', () => {
     expect(motorTraslado().trasMinutosEntre('23:40', '02:50')).toBe(190);
   });
