@@ -174,7 +174,8 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     individuo) y **🩺 Calidad** (comprobaciones del registro, con su contador en la pastilla).
     Filtros de período (mes o todo) + Sala + Tanque.
     *(0o y 0p, 2026-09-27: mapa de salas por bandas de tasa que filtra al pulsarlo, calendario de desoves
-    tanque × día, línea de vida de cada hembra, familias, supervivencia por familia, alerta de reemplazo por
+    tanque × día —sustituido el 2026-09-29 por «Hembras por su último desove»: las vivas de cada tanque en
+    ≤ 7 · 8–21 · > 21 días desde su último desove, o que nunca desovaron—, línea de vida de cada hembra, familias, supervivencia por familia, alerta de reemplazo por
     tanque, la VENTANA de desove —no una fecha: acertar la fecha salía un 41 %—, la mortalidad tras el desove
     con su riesgo relativo y una tarjeta honesta sobre la marea, que no muestra efecto. Las reglas, en
     `src/views/maduracion/data.js`.)*
