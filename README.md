@@ -294,7 +294,9 @@ pesos) entre el ÁREA del tanque (`MAD_TANQUE_AREA_M2`: una por sala, y la Sala 
 
 **El libro mayor** (`src/views/registros/lib/mad-libro.js` + su gemelo inline) responde
 *«¿cuántos animales hay vivos ahora en cada tanque y en cada lote?»*. Nadie teclea un saldo:
-se DEDUCE de `+ ingreso − bajas ± movimientos − fin de ciclo`. El objetivo no es que la
+se DEDUCE de `+ ingreso − bajas ± movimientos − la diferencia de un cierre Total`: lo que declara
+🏁 Fin de Ciclo es sólo registro, porque esos animales ya salen por las bajas (muertos y descartes)
+de los partes de 🛢 Tanques. El objetivo no es que la
 cifra cuadre siempre, sino que **cuando no cuadre se vea el mismo día**. Con la opción
 `hasta`, el libro se construye **al cierre de un día**: es lo que usa «🔄 Proponer estado» de
 Salas, que propone —y al guardar escribe— el estado de la fecha elegida en la ficha.
@@ -325,8 +327,10 @@ Saldo— (usuario, 2026-09-24). Un tanque vaciado no lo ocupa nadie: `0♂ 0♀ 
   el libro leído, Ingreso marca en ámbar los tanques con otro lote vivo y Revisar/Guardar lo avisan,
   igual que Movimientos con un tramo de tipo Transferencia hacia un tanque con otro lote (aviso, no error;
   al corregir una Transferencia ya guardada no cuenta la fila que el envío reemplaza).
-  **Un cierre Parcial puede indicar la sala (D14)** y descuenta sólo de ella; un Total es siempre
-  del lote entero. Los **pesos** (promedio y total de machos y hembras) son del registro entero —se
+  **Un cierre Parcial puede indicar la sala (D14)**, que queda como dato de dónde salieron; un Total
+  es siempre del lote entero. **Ningún cierre resta lo que declara**: el Total cierra el lote y anota
+  como **diferencia** lo que el libro aún tenga tras los partes del día, y el cuadre de 🧬 Lotes lo
+  enseña aparte («Registrado en Fin de Ciclo», fuera de la resta). Los **pesos** (promedio y total de machos y hembras) son del registro entero —se
   pesan juntos todos los lotes— y se escriben iguales en cada fila con el mismo **«Registro»** (un
   identificador por formulario): para no multiplicarlos, se leen una vez por Registro.
 
