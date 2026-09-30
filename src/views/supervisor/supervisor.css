@@ -519,6 +519,55 @@ th.sv-sie-proy { white-space: nowrap; }
 .sv-marea-corr-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--c-text-muted); margin: 8px 0; flex-wrap: wrap; }
 .sv-marea-corr-lg { display: inline-block; width: 22px; height: 10px; border-radius: 2px; }
 .sv-marea-corr-scatter { margin-top: 10px; }
+/* 0v·1 (2026-09-29, usuario) · 🗓 Calendario lunar (sólo lo enciende Maduración): el mes de lunes a domingo, cada día con
+   su luna, su % y su marea en el fondo (viva, más oscuro; muerta, claro); sin fila en la hoja, gris rayado «sin dato»; hoy,
+   con un recuadro discontinuo; el pulsado, con borde. Su panel va debajo. Columnas `minmax(0, 1fr)`: en 390 px no ensancha
+   la página (la lección de 0u · H1). */
+.sv-marea-calp { margin-bottom: 14px; }
+.sv-marea-cal-nota { font-size: 11.5px; color: var(--c-text-muted); margin: 0 0 8px; }
+.sv-marea-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.sv-marea-cal-sem { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--c-text-muted); text-align: center; padding: 2px 0 4px; }
+.sv-marea-cal-d, .sv-marea-cal-v { min-height: 80px; border-radius: var(--r-sm); min-width: 0; }
+.sv-marea-cal-d { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 4px 2px 5px; border: 1px solid var(--c-border-soft, var(--c-border)); background: var(--c-surface); color: var(--c-text); font: inherit; }
+button.sv-marea-cal-d { cursor: pointer; }
+button.sv-marea-cal-d:hover { border-color: var(--c-brand); }
+button.sv-marea-cal-d:focus-visible { outline: 2px solid var(--c-brand); outline-offset: 1px; }
+.sv-marea-cal-d.is-viva, .sv-marea-cal-ley > .is-viva::before { background: color-mix(in srgb, #00838f 22%, var(--c-surface)); }
+.sv-marea-cal-d.is-muerta, .sv-marea-cal-ley > .is-muerta::before { background: color-mix(in srgb, #80cbc4 12%, var(--c-surface)); }
+.sv-marea-cal-d.is-sin, .sv-marea-cal-ley > .is-sin::before { background: repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in srgb, var(--c-text-muted) 14%, transparent) 5px 7px), color-mix(in srgb, var(--c-text-muted) 6%, var(--c-surface)); }
+.sv-marea-cal-d.is-sin { color: var(--c-text-muted); }
+.sv-marea-cal-d.is-hoy, .sv-marea-cal-ley > .is-hoy::before { outline: 2px dashed var(--c-brand); outline-offset: -4px; }
+.sv-marea-cal-d.is-sel { border-color: var(--c-brand); box-shadow: 0 0 0 2px var(--c-brand); }
+.sv-marea-cal-n { align-self: flex-start; padding-left: 3px; font-size: 11.5px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.sv-marea-cal-d .sv-marea-moon { margin: 1px 0 0; flex: none; }
+.sv-marea-cal-p { font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sv-marea-cal-f { font-size: 9.5px; font-weight: 700; line-height: 1.1; text-align: center; }
+.sv-marea-cal-sin { margin: auto 0; font-size: 9.5px; }
+.sv-marea-cal-ley { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; font-size: 11px; color: var(--c-text-muted); }
+.sv-marea-cal-ley > span::before { content: ''; display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: -2px; border: 1px solid var(--c-border); border-radius: 3px; background: var(--c-surface); }
+.sv-marea-caldet-h { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 10px; }
+.sv-marea-caldet-t { font-size: 13.5px; font-weight: 800; color: var(--c-text); }
+.sv-marea-caldet-ir { margin-left: auto; padding: 3px 10px; border-radius: var(--r-sm); border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-soft); font: inherit; font-size: 12px; cursor: pointer; }
+.sv-marea-caldet-ir:hover { border-color: var(--c-brand); color: var(--c-brand); }
+.sv-marea-caldet-g { display: grid; grid-template-columns: 120px minmax(0, 210px) minmax(0, 1fr); gap: 14px; align-items: center; }
+.sv-marea-caldet-luna { display: flex; justify-content: center; }
+.sv-marea-caldet-ev { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 3px; font-size: 12.5px; color: var(--c-text); font-variant-numeric: tabular-nums; }
+.sv-marea-caldet-ic.is-p { color: #2b7bd6; }
+.sv-marea-caldet-ic.is-b { color: #e8912b; }
+.sv-marea-caldet-amp { font-size: 12.5px; font-weight: 700; color: var(--c-text); }
+.sv-marea-caldet-granja { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--c-border-soft, var(--c-border)); }
+.sv-marea-caldet-granja ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 12.5px; color: var(--c-text); }
+@media (max-width: 620px) {
+  .sv-marea-cal { gap: 2px; }
+  .sv-marea-cal-d, .sv-marea-cal-v { min-height: 64px; }
+  .sv-marea-cal-d { padding: 3px 1px 4px; }
+  .sv-marea-cal-d .sv-marea-moon { width: 22px; height: 22px; }
+  .sv-marea-cal-p { font-size: 9.5px; }
+  .sv-marea-cal-f { font-size: 8.5px; }
+  .sv-marea-cal-f[data-corto] { font-size: 0; }
+  .sv-marea-cal-f[data-corto]::after { content: attr(data-corto); font-size: 8.5px; }
+  .sv-marea-caldet-g { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+}
 /* E.D.T. · gel digital (fondo oscuro, bandas fluorescentes) */
 .sv-bm-gel-host { width: 100%; overflow: auto; border-radius: var(--r-sm); background: #1B0A33; box-shadow: inset 0 0 0 1px rgba(215,123,255,.18), 0 4px 18px rgba(0,0,0,.3); }
 .sv-bm-gel-svg { display: block; }

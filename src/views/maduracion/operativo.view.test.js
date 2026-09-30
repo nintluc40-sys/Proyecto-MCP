@@ -3126,8 +3126,9 @@ describe('Maduración · operativo · 🌊 Mareas, como en Larvicultura (0r·1)'
     await montar([...PLANTA, ...MAREA]);
     click(boton());
     /* Día y Mes, de Larvicultura; 0r·2 añadió «🦐 Cópulas» (sus pruebas, más abajo). 1-A (2026-09-28, usuario): «Correlación»
-       se quita en Maduración («eso lo veo más para Larvicultura»); Larvicultura la conserva. */
-    expect([...modal().querySelectorAll('[data-mareamode]')].map((b) => b.dataset.mareamode)).toEqual(['dia', 'mes', 'copulas']);
+       se quita en Maduración («eso lo veo más para Larvicultura»); Larvicultura la conserva. 0v·1 (2026-09-29, usuario):
+       «🗓 Calendario» entre Mes y Cópulas (sus pruebas, más abajo). */
+    expect([...modal().querySelectorAll('[data-mareamode]')].map((b) => b.dataset.mareamode)).toEqual(['dia', 'mes', 'cal', 'copulas']);
     expect(modo('dia').classList.contains('is-active')).toBe(true);
     expect(modal().querySelector('.sv-marea-grid .sv-marea-wave')).not.toBeNull();
     expect(modal().querySelectorAll('.sv-marea-table tbody tr')).toHaveLength(4);
@@ -3230,7 +3231,8 @@ describe('Maduración · operativo · 🦐 cópulas × marea × luna, en 🌊 Ma
   it('🔴 la pestaña va tras «Mes» y sólo en Maduración (Larvicultura no la tiene; 1-A · Maduración, sin «Correlación»)', async () => {
     await montar([...PLANTA, ...COP_MAREA]);
     entrar();
-    expect([...modal().querySelectorAll('[data-mareamode]')].map((b) => b.dataset.mareamode)).toEqual(['dia', 'mes', 'copulas']);
+    /* 0v·1 · «🗓 Calendario» va entre Mes y Cópulas. */
+    expect([...modal().querySelectorAll('[data-mareamode]')].map((b) => b.dataset.mareamode)).toEqual(['dia', 'mes', 'cal', 'copulas']);
     expect(modal().querySelector('[data-mareamode="copulas"]').textContent).toBe('🦐 Cópulas');
     const { mareasModalHTML } = await import('../supervisor/mareas.js');
     expect(mareasModalHTML()).not.toContain('copulas');
@@ -3357,6 +3359,135 @@ describe('Maduración · operativo · 🦐 cópulas × marea × luna, en 🌊 Ma
     const g = makeChart.mock.calls.filter(([id]) => id === 'mopMarCop').pop()[1];
     expect(g.data.datasets[0].label).toBe('Desoves por 100 ♀');
     expect(info()).toContain('Desoves por 100 ♀ del día');
+  });
+});
+
+/* 0v·1 (2026-09-29, usuario) · 🗓 el CALENDARIO lunar de 🌊 Mareas (sólo Maduración, entre «📈 Mes» y «🦐 Cópulas», con los
+   meses de arriba): el mes de lunes a domingo, cada día con su luna dibujada, su % y su marea (viva/muerta); sin fila en
+   «Marea», gris «sin dato» (nada calculado); al pulsar un día, su panel DEBAJO (sin ventana): luna grande, lecturas,
+   amplitud, la ola y la granja ese día (cópulas y desoves, con las reglas de 🦐 Cópulas), y «Ver en 📅 Día». Las cifras
+   de la granja las prueba operativo.mareas.test.js; aquí, que lleguen. COP_MAREA: marea del 15 al 18/09; hoy, el 19. */
+describe('Maduración · operativo · 🗓 el calendario lunar de 🌊 Mareas (0v·1)', () => {
+  const panel = () => root.querySelector('[data-mareas-panel]');
+  const entrar = () => click(root.querySelector('.mc-subnav [data-mop-sub="mareas"]'));
+  const abrirCal = () => { entrar(); click(panel().querySelector('[data-mareamode="cal"]')); };
+  const celda = (key) => panel().querySelector(`[data-marea-cal-dia="${key}"]`);
+  const det = () => panel().querySelector('.sv-marea-caldet');
+  const elegida = () => [...panel().querySelectorAll('[data-marea-cal-dia][aria-pressed="true"]')].map((b) => b.dataset.mareaCalDia);
+
+  it('🔴 la pestaña va entre «📈 Mes» y «🦐 Cópulas», sólo en Maduración; los meses de arriba mandan', async () => {
+    await montar([...PLANTA, ...COP_MAREA]);
+    entrar();
+    expect(panel().querySelector('[data-mareamode="cal"]').textContent).toBe('🗓 Calendario');
+    const { mareasModalHTML } = await import('../supervisor/mareas.js');
+    expect(mareasModalHTML(), 'Larvicultura no la tiene').not.toContain('data-mareamode="cal"');
+    click(panel().querySelector('[data-mareamode="cal"]'));
+    expect(panel().querySelector('[data-mareamode="cal"]').classList.contains('is-active')).toBe(true);
+    expect(panel().querySelector('.sv-marea-cal')).not.toBeNull();
+    expect(panel().querySelector('.sv-marea-mbtn.is-on').disabled, 'el mes no está inerte').toBe(false);
+  });
+
+  it('🔴 el mes de lunes a domingo: cada día con su luna, su % y su marea; sin fila, gris «sin dato»; hoy, marcado', async () => {
+    await montar([...PLANTA, ...COP_MAREA]);
+    abrirCal();
+    expect([...panel().querySelectorAll('.sv-marea-cal-sem')].map((x) => x.textContent)).toEqual(['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']);
+    const cuadros = [...panel().querySelectorAll('.sv-marea-cal > :not(.sv-marea-cal-sem)')];
+    expect(cuadros).toHaveLength(35);
+    expect(cuadros[0].classList.contains('sv-marea-cal-v'), 'el lunes 31/08 es de otro mes').toBe(true);
+    expect(cuadros[1].querySelector('.sv-marea-cal-n').textContent).toBe('1');
+    expect(panel().querySelectorAll('[data-marea-cal-dia]')).toHaveLength(4);
+    expect(panel().querySelectorAll('.sv-marea-cal-d.is-sin')).toHaveLength(26);
+    const d15 = celda('2026-09-15');
+    expect([d15.tagName, d15.getAttribute('type')]).toEqual(['BUTTON', 'button']);
+    expect(d15.classList.contains('is-viva')).toBe(true);
+    expect(celda('2026-09-17').classList.contains('is-muerta')).toBe(true);
+    expect(d15.querySelector('.sv-marea-cal-n').textContent).toBe('15');
+    expect(d15.querySelector('svg.sv-marea-moon').getAttribute('width')).toBe('30');
+    expect(d15.querySelector('.sv-marea-cal-p').textContent).toBe('2 %');
+    expect(d15.querySelector('.sv-marea-cal-f').textContent).toBe('Nueva');
+    /* Visto en Chrome (390 px): «C. creciente» y «C. menguante» no caben en una celda de ~39 px y pisaban la de al lado; en
+       el móvil el CSS enseña su forma corta (`data-corto`). «Nueva» y «Llena» caben: no la llevan. */
+    const f18 = celda('2026-09-18').querySelector('.sv-marea-cal-f');
+    expect([f18.textContent, f18.dataset.corto]).toEqual(['C. creciente', 'C. crec.']);
+    expect(d15.querySelector('.sv-marea-cal-f').hasAttribute('data-corto')).toBe(false);
+    expect(celda('2026-09-16').querySelector('.sv-marea-cal-f'), 'Creciente no es una fase principal').toBeNull();
+    expect(d15.getAttribute('aria-label')).toBe('15 de septiembre de 2026: Luna nueva, 2 % de iluminación, marea viva');
+    const hoy = panel().querySelector('.sv-marea-cal-d.is-hoy');
+    expect([hoy.classList.contains('is-sin'), hoy.querySelector('.sv-marea-cal-n').textContent]).toEqual([true, '19']);
+    expect(hoy.textContent).toContain('sin dato');
+    expect(hoy.querySelector('svg'), 'sin fila, ninguna luna (nada calculado)').toBeNull();
+    const ids = [...panel().querySelectorAll('svg [id]')].map((x) => x.id);
+    expect(new Set(ids).size, 'ningún id repetido entre las lunas').toBe(ids.length);
+    expect(panel().querySelector('.sv-marea-cal-nota').textContent)
+      .toBe('La hoja «Marea» llega hasta el 18/09/2026: los días siguientes salen en gris hasta que se carguen en ella.');
+    expect([...panel().querySelectorAll('.sv-marea-cal-ley > span')].map((x) => x.textContent))
+      .toEqual(['Marea viva', 'Marea muerta', 'Sin dato en la hoja', 'Hoy']);
+  });
+
+  it('🔴 pulsar un día abre su panel debajo: luna, lecturas, amplitud, ola y la granja ese día; «Ver en 📅 Día» va a ese día', async () => {
+    /* + un parte del 15/09 en un tanque que el libro tiene VACÍO (Sala 3 · 22): sus cópulas no cuentan, y se dice. */
+    await montar([...PLANTA, ...COP_MAREA, DES('15/09/2026', 'QA', 3, 3000), TQ('15/09/2026', 'Sala 3', 22, { 'Cópulas': '1' })]);
+    abrirCal();
+    expect(elegida(), 'entra en el último día con marea (hoy no tiene)').toEqual(['2026-09-18']);
+    expect(det().querySelector('.sv-marea-caldet-granja').textContent, 'el 18/09 nadie registró cópulas').toContain('hueco del registro');
+    click(celda('2026-09-15'));
+    expect(elegida()).toEqual(['2026-09-15']);
+    expect(document.activeElement, 'el foco se queda en el día pulsado').toBe(celda('2026-09-15'));
+    expect(det().querySelector('.sv-marea-caldet-t').textContent).toBe('15/09/2026 · Luna nueva · 2 % · Marea viva');
+    expect(det().querySelector('svg.sv-marea-moon').getAttribute('width')).toBe('108');
+    expect([...det().querySelectorAll('.sv-marea-caldet-ev li')].map((li) => li.textContent))
+      .toEqual(['▲ Pleamar 03:10 · 2,10 m', '▼ Bajamar 09:20 · 0,30 m']);
+    expect(det().querySelector('.sv-marea-caldet-amp').textContent).toBe('Amplitud 2,00 m');
+    expect(det().querySelector('.sv-marea-wave')).not.toBeNull();
+    const granja = det().querySelector('.sv-marea-caldet-granja').textContent;
+    expect(granja, '3 ÷ (22 + 8 + 8) × 100').toContain('Desoves: 3 (7,9 por 100 ♀)');
+    expect(granja, '2 ÷ (22 + 8)').toContain('Cópulas: 6,7 % (2 de 30 ♀ · 2 partes) · 1 parte sin hembras en el libro no cuenta');
+    expect(det().closest('.sv-modal, [role="dialog"]'), 'sin ventana').toBeNull();
+    click(det().querySelector('[data-marea-ver-dia]'));
+    expect(panel().querySelector('[data-mareamode="dia"]').classList.contains('is-active')).toBe(true);
+    expect(panel().querySelector('[data-marea-daysel] option[selected]').value).toBe('2026-09-15');
+  });
+
+  it('🔴 otro mes de arriba, su calendario; el día elegido pasa a ese mes', async () => {
+    await montar([...PLANTA, ...COP_MAREA, MAR_COP('30/08/2026', 'Luna llena', '100', 'Viva', '2.1')]);
+    abrirCal();
+    click(panel().querySelector('[data-marea-month="2026-08"]'));
+    expect(panel().querySelectorAll('.sv-marea-cal > .sv-marea-cal-v'), 'agosto empieza en sábado y acaba en lunes').toHaveLength(5 + 6);
+    expect(panel().querySelectorAll('[data-marea-cal-dia]')).toHaveLength(1);
+    expect(elegida()).toEqual(['2026-08-30']);
+    expect(det().querySelector('.sv-marea-caldet-t').textContent).toBe('30/08/2026 · Luna llena · 100 % · Marea viva');
+    expect(celda('2026-08-30').querySelector('.sv-marea-cal-f').textContent).toBe('Llena');
+  });
+
+  it('🔴 lo elegido sigue ahí aunque el tablero se repinte', async () => {
+    await montar([...PLANTA, ...COP_MAREA]);
+    abrirCal();
+    click(celda('2026-09-16'));
+    operativoView(root);
+    expect(panel().querySelector('[data-mareamode="cal"]').classList.contains('is-active')).toBe(true);
+    expect(elegida()).toEqual(['2026-09-16']);
+  });
+
+  it('🔑 lo del Sheet, escapado (la fase va en el rótulo y el título del día y en su panel; con comillas, no se sale del atributo)', async () => {
+    const MALO = '"><img src=x onerror=alert(1)>';
+    await montar([...PLANTA, MAR_COP('18/09/2026', MALO, '58', 'Muerta', '1.1')]);
+    abrirCal();
+    expect(panel().querySelector('img')).toBeNull();
+    expect(celda('2026-09-18').getAttribute('aria-label')).toContain(MALO);
+    expect(celda('2026-09-18').getAttribute('title')).toContain(MALO);
+    expect(det().querySelector('.sv-marea-caldet-t').textContent).toContain(MALO);
+  });
+
+  it('🔑 en el móvil no ensancha la página: las siete columnas del mes son minmax(0, 1fr) (la lección de 0u · H1)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/views/supervisor/supervisor.css', 'utf8');   // desde la raíz del repo, como las demás
+    expect(css).toMatch(/\.sv-marea-cal \{[^}]*grid-template-columns: repeat\(7, minmax\(0, 1fr\)\)/);
+    expect(css).toMatch(/\.sv-marea-caldet-g \{ grid-template-columns: minmax\(0, 1fr\);/);
+    /* el bloque @media del calendario (de su primera regla a la llave que lo cierra): el nombre corto de la fase */
+    const desde = css.slice(css.indexOf('.sv-marea-cal-d, .sv-marea-cal-v { min-height: 64px; }'));
+    const movil = desde.slice(0, desde.indexOf('\n}'));
+    expect(movil).toContain('.sv-marea-cal-f[data-corto] { font-size: 0; }');
+    expect(movil).toContain('.sv-marea-cal-f[data-corto]::after { content: attr(data-corto);');
   });
 });
 

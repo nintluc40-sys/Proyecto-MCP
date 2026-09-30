@@ -19,6 +19,7 @@
      fase: Σ desoves de la hoja de Desoves ÷ Σ hembras del libro al cierre × 100 («por 100 ♀»), sólo los días en que la
      granja registró alguno (como las noches de T9). Un desove no es de una sala: con sala o «sólo en producción», cuentan
      los lotes que tenían animales en ese alcance, enteros.
+   · 0v·1 (2026-09-29, usuario) · `granjaDelDia`: la granja el día pulsado en el 🗓 Calendario lunar, con estas reglas.
    ============================================================ */
 import { construirLibro, ubicKey, estadoDeLote, ESTADO_PRODUCCION } from '../registros/lib/mad-libro.js';
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
@@ -213,4 +214,32 @@ export function desovesYMarea(diarios, marea, { sala = '', soloProduccion = fals
     codigos: unicos(todas.flatMap((d) => d.filas.map((f) => f.codigo))),
     sinHembras, ...relacionConMarea(porDia, marea, 'desoves'),
   };
+}
+
+/**
+ * 0v·1 (2026-09-29, usuario) · La GRANJA un día, para el panel del 🗓 Calendario lunar de 🌊 Mareas: las MISMAS reglas que
+ * esta pestaña sin sus filtros. Cópulas: Σ de los partes del día ÷ Σ hembras del libro al cierre (el parte de un tanque sin
+ * hembras no cuenta y se cuenta); un día con partes y ninguna cópula es un HUECO del registro, no un 0. Desoves: Σ de la
+ * hoja de Desoves ÷ Σ hembras del libro al cierre × 100.
+ * @param {Array} base     `partesConHembras`
+ * @param {Array} diarios  `desovesDiarios`
+ * @param {string} fecha   'AAAA-MM-DD'
+ * @returns {{ copulas: {estado: 'sin-partes'|'hueco'|'sin-hembras'|'ok', partes, sinHembras, copulas, hembras, tasa},
+ *   desoves: {estado: 'ninguno'|'sin-hembras'|'ok', desoves, hembras, tasa} }}  `tasa` null si no la hay; `copulas`, las
+ *   que cuentan (con 'sin-hembras', las registradas, que no cuentan)
+ */
+export function granjaDelDia(base, diarios, fecha) {
+  const ps = (base || []).filter((b) => b.fecha === fecha);
+  const con = ps.filter((b) => b.hembras > 0);
+  const registradas = ps.reduce((s, b) => s + b.copulas, 0);   // también las de un tanque sin hembras: el día NO es un hueco
+  const cuentan = con.reduce((s, b) => s + b.copulas, 0);
+  const hembrasC = con.reduce((s, b) => s + b.hembras, 0);
+  const estadoC = !ps.length ? 'sin-partes' : !(registradas > 0) ? 'hueco' : !(hembrasC > 0) ? 'sin-hembras' : 'ok';
+  const copulas = { estado: estadoC, partes: ps.length, sinHembras: ps.length - con.length,
+    copulas: estadoC === 'ok' ? cuentan : registradas, hembras: hembrasC, tasa: estadoC === 'ok' ? (cuentan / hembrasC) * 100 : null };
+  const d = (diarios || []).find((x) => x.fecha === fecha);
+  const desoves = d ? d.filas.reduce((s, f) => s + f.desoves, 0) : 0;
+  const hembras = d ? d.posiciones.reduce((s, p) => s + p.hembras, 0) : 0;
+  const estado = !(desoves > 0) ? 'ninguno' : !(hembras > 0) ? 'sin-hembras' : 'ok';
+  return { copulas, desoves: { estado, desoves, hembras, tasa: estado === 'ok' ? (desoves / hembras) * 100 : null } };
 }

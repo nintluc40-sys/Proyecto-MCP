@@ -65,6 +65,7 @@ import { partesConHembras, copulasYMarea } from './operativo.mareas.js';   // 0r
 import { mareaPorDia } from './data.js';                                    // 0r·2 · la hoja «Marea» por día (la de T9)
 import { desovesDiarios, desovesYMarea } from './operativo.mareas.js';     // 1-A · y los desoves por fase lunar
 import { FASES_CICLO } from './data.js';                                    // 1-A · el filtro de fase lunar
+import { granjaDelDia } from './operativo.mareas.js';                       // 0v·1 · el día pulsado del 🗓 Calendario
 import { destroyChart } from '../../core/charts.js';                         // 0r·3b · soltar los gráficos de 🦠 / 🧬 al rehacerlas
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import { changeView } from '../../ui/router.js';
@@ -332,7 +333,7 @@ export function operativoView(root) {
     h += labPanelHTML();                       // 0f · 8 · 🦠 / 🧬 (2 · sub-vistas, ya no ventanas)
   } else if (vOp.sub === 'mareas') {
     _marCop.fuentes = M.fuentes;     // 0r·2 · la pestaña «🦐 Cópulas» cuenta sobre las fuentes de esta pintada
-    h += `<div class="mc-body"><div class="mc-card">${mareasPanelHTML({ extras: MAREAS_EXTRAS_BOTONES, sinCorrelacion: true })}</div></div>`;   // 0r·1 · 🌊 Mareas (0r·2 · con «🦐 Cópulas»; 1-A · sin «Correlación»)
+    h += `<div class="mc-body"><div class="mc-card">${mareasPanelHTML({ extras: MAREAS_EXTRAS_BOTONES, sinCorrelacion: true, calendario: true })}</div></div>`;   // 0r·1 · 🌊 Mareas (0r·2 · con «🦐 Cópulas»; 1-A · sin «Correlación»; 0v·1 · con «🗓 Calendario»)
   } else {
     h += estadoHTML(M, memo, periodo, F);
   }
@@ -539,8 +540,34 @@ let _bio = { src: null, filas: null, cargando: false, error: '' };
    con lo mismo. 2 (2026-09-29, usuario) · ya no es una ventana sino una sub-vista: entrar en ella empieza en «Día». */
 const _mareas = { estado: undefined };
 function trasPintarMareas(root) {
-  const ctl = cablearPanelMareas(root.querySelector('[data-mareas-panel]'), { state: _mareas.estado, extras: MAREAS_EXTRAS });
+  const ctl = cablearPanelMareas(root.querySelector('[data-mareas-panel]'), { state: _mareas.estado, extras: MAREAS_EXTRAS, delDia: granjaDelDiaHTML });
   if (ctl) _mareas.estado = ctl.state;
+}
+
+/* 0v·1 (2026-09-29, usuario) · 🗓 el Calendario lunar (supervisor/mareas.js lo pinta) y, en el panel del día pulsado, la
+   GRANJA ese día: sus cópulas y sus desoves con las reglas de «🦐 Cópulas» y sin sus filtros (las cuentas, en
+   operativo.mareas.js, sobre las mismas pasadas del libro que esa pestaña). */
+function granjaDelDiaHTML(fecha) {
+  const g = granjaDelDia(datosCopulasMarea().base, diariosDeDesoves(), fecha);
+  const c = g.copulas;
+  const d = g.desoves;
+  const partes = (n) => `${nf(n)} parte${n === 1 ? '' : 's'}`;
+  const cop = {
+    ok: () => `Cópulas: ${pct1(c.tasa)} (${nf(c.copulas)} de ${nf(c.hembras)} ♀ · ${partes(c.partes - c.sinHembras)})`,
+    hueco: () => 'Cópulas: ningún parte las registró ese día (hueco del registro)',
+    'sin-hembras': () => `Cópulas: ${nf(c.copulas)}, en partes de tanques sin hembras en el libro (sin tasa)`,
+    'sin-partes': () => 'Cópulas: sin partes de Tanques ese día',
+  }[c.estado]();
+  const sinH = c.estado === 'ok' && c.sinHembras ? ` · ${partes(c.sinHembras)} sin hembras en el libro no cuenta${c.sinHembras === 1 ? '' : 'n'}` : '';
+  const des = {
+    ok: () => `Desoves: ${nf(d.desoves)} (${por100(d.tasa)} por 100 ♀)`,
+    'sin-hembras': () => `Desoves: ${nf(d.desoves)} (sin hembras en el libro ese día)`,
+    ninguno: () => 'Desoves: ninguno registrado ese día',
+  }[d.estado]();
+  return `<div class="sv-marea-caldet-granja">
+      <div class="sv-marea-ptitle" title="Cópulas: Σ de los partes de Tanques ÷ Σ hembras del libro al cierre del día (la regla del ⚖️ Saldo). Desoves: los de la hoja de Desoves por 100 ♀ del libro. Las reglas de «🦐 Cópulas», sin sus filtros.">La granja ese día</div>
+      <ul><li>🥚 ${esc(des)}</li><li>🦐 ${esc(cop + sinH)}</li></ul>
+    </div>`;
 }
 
 /* 0r·2 (2026-09-28, usuario) · la pestaña «🦐 Cópulas» del modal: ¿se copula más con la marea viva, con una fase de la luna o

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { store } from '../../core/store.js';
-import { isMareaRow, mareaDays, pearson, spearman, corrCandidate, monthStats, mareaMoonSVG } from './mareas.js';
+import { isMareaRow, mareaDays, pearson, spearman, corrCandidate, monthStats, mareaMoonSVG, calendarioDelMes } from './mareas.js';
 
 afterEach(() => { store.globalData = []; });
 
@@ -286,5 +286,85 @@ describe('mareas · la luna dibuja la fase que dice la hoja', () => {
   it('luna nueva: toda oscura; llena: toda iluminada', () => {
     expect(fraccionOscura(oscuroEn(mareaMoonSVG('Luna nueva', 0)))).toBe(1);
     expect(fraccionOscura(oscuroEn(mareaMoonSVG('Luna llena', 100)))).toBe(0);
+  });
+  /* 0v·1 (2026-09-29, usuario) · el 🗓 Calendario pinta una luna por día: con los ids de siempre, 30 lunas repetirían
+     «mMoonG» en la página. La pequeña lleva los suyos y la MISMA geometría; la de siempre no cambia. */
+  it('🔴 0v·1 · la luna pequeña del calendario: su tamaño, sus propios ids y la misma geometría; la de siempre, igual', () => {
+    const grande = mareaMoonSVG('Gibosa creciente', 75);
+    const chica = mareaMoonSVG('Gibosa creciente', 75, { px: 30, id: 'mMoonC26' });
+    expect(grande).toContain('width="108" height="108"');
+    expect(grande).toContain('id="mMoonG"');
+    expect(grande).toContain('clip-path="url(#mMoonClip)"');
+    expect(chica).toContain('width="30" height="30"');
+    for (const id of ['mMoonC26G', 'mMoonC26Clip', 'mMoonC26Soft']) {
+      expect(chica).toContain(`id="${id}"`);
+      expect(chica).toContain(`url(#${id})`);
+    }
+    expect(chica).not.toMatch(/"mMoon(G|Clip|Soft)"|#mMoon(G|Clip|Soft)\)/);
+    const trazo = (svg) => /<path d="([^"]+)"/.exec(svg)[1];
+    expect(trazo(chica), 'la misma sombra').toBe(trazo(grande));
+  });
+});
+
+/* 0v·1 (2026-09-29, usuario) · 🗓 el calendario lunar de un mes (pestaña de 🌊 Mareas en Maduración): semanas de LUNES a
+   domingo con TODOS los días del mes; cada día con lo que trae la hoja «Marea» o sin dato (nada se calcula: una sola
+   fuente, INOCAR). Septiembre de 2026 empieza en martes, junio en lunes y noviembre en DOMINGO. */
+describe('mareas · 🗓 el calendario de un mes (0v·1)', () => {
+  const dias = () => {
+    store.globalData = [
+      M({ Fecha: '15/09/2026', 'Fase Lunar': 'Luna nueva', '%Iluminación': '1', 'Tipo de Marea': 'Viva' }),
+      M({ Fecha: '16/09/2026', 'Fase Lunar': 'Creciente', '%Iluminación': '8', 'Tipo de Marea': 'Viva' }),
+      M({ Fecha: '18/09/2026', 'Fase Lunar': 'Cuarto creciente', '%Iluminación': '45', 'Tipo de Marea': 'Muerta' }),
+      M({ Fecha: '25/09/2026', 'Fase Lunar': 'Luna llena', '%Iluminación': '99', 'Tipo de Marea': 'Viva' }),
+      M({ Fecha: '30/09/2026', 'Fase Lunar': 'Gibosa menguante', '%Iluminación': '83', 'Tipo de Marea': 'Muerta' }),
+      M({ Fecha: '04/09/2026', 'Fase Lunar': 'Cuarto menguante', '%Iluminación': '47', 'Tipo de Marea': 'Muerta' }),
+      M({ Fecha: '31/08/2026', 'Fase Lunar': 'Menguante', '%Iluminación': '90', 'Tipo de Marea': 'Viva' }),
+    ];
+    return mareaDays();
+  };
+
+  it('🔴 todos los días del mes, en semanas de lunes a domingo; lo de fuera del mes, vacío', () => {
+    const c = calendarioDelMes(dias(), '2026-09', '2026-09-29');
+    expect(c.semanas).toHaveLength(5);
+    expect(c.semanas.every((s) => s.length === 7)).toBe(true);
+    const celdas = c.semanas.flat();
+    expect(celdas[0], 'el lunes 31/08 es de otro mes').toBeNull();
+    expect(celdas[1].key).toBe('2026-09-01');
+    expect(celdas.filter(Boolean).map((x) => x.dia)).toEqual(Array.from({ length: 30 }, (_, i) => i + 1));
+    expect(celdas.slice(31).every((x) => x === null), 'el resto de la última semana').toBe(true);
+    expect([c.conDato, c.sinDato]).toEqual([6, 24]);
+  });
+
+  it('🔴 cada día con su fase, su % y su marea; sin fila, sin dato (nada calculado); hoy, marcado', () => {
+    const c = calendarioDelMes(dias(), '2026-09', '2026-09-29');
+    const de = (d) => c.semanas.flat().find((x) => x && x.dia === d);
+    expect(de(15)).toMatchObject({ key: '2026-09-15', conDato: true, fase: 'Luna nueva', illum: 1, tipo: 'Viva', hoy: false });
+    expect(de(18)).toMatchObject({ conDato: true, fase: 'Cuarto creciente', illum: 45, tipo: 'Muerta' });
+    expect(de(17)).toMatchObject({ key: '2026-09-17', conDato: false, fase: '', illum: null, tipo: '' });
+    expect(de(29)).toMatchObject({ conDato: false, hoy: true });
+    expect(c.semanas.flat().filter((x) => x && x.hoy)).toHaveLength(1);
+  });
+
+  it('🔴 las cuatro fases principales llevan su nombre corto; las demás, ninguno', () => {
+    const c = calendarioDelMes(dias(), '2026-09', '2026-09-29');
+    const corto = (d) => c.semanas.flat().find((x) => x && x.dia === d).principal;
+    expect([corto(15), corto(18), corto(25), corto(4)]).toEqual(['Nueva', 'C. creciente', 'Llena', 'C. menguante']);
+    expect([corto(16), corto(30), corto(17)]).toEqual(['', '', '']);
+  });
+
+  it('🔴 un mes que empieza en lunes no deja hueco; uno que empieza en domingo deja seis', () => {
+    const junio = calendarioDelMes(dias(), '2026-06', '2026-09-29');
+    expect(junio.semanas[0][0].key).toBe('2026-06-01');
+    expect(junio.semanas).toHaveLength(5);
+    expect([junio.conDato, junio.sinDato]).toEqual([0, 30]);
+    const nov = calendarioDelMes(dias(), '2026-11', '2026-09-29');
+    expect(nov.semanas[0].slice(0, 6)).toEqual([null, null, null, null, null, null]);
+    expect(nov.semanas[0][6].key).toBe('2026-11-01');
+    expect(nov.semanas).toHaveLength(6);
+  });
+
+  it('🔑 sólo los días de ESE mes (el 31/08 no entra en septiembre)', () => {
+    const c = calendarioDelMes(dias(), '2026-08', '2026-09-29');
+    expect(c.semanas.flat().filter((x) => x && x.conDato).map((x) => x.key)).toEqual(['2026-08-31']);
   });
 });

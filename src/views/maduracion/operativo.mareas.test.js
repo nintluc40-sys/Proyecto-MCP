@@ -20,7 +20,7 @@
    Datos FICTICIOS.
    ============================================================ */
 import { describe, it, expect } from 'vitest';
-import { partesConHembras, copulasYMarea, desovesDiarios, desovesYMarea, CICLO_LUNAR_DIAS } from './operativo.mareas.js';
+import { partesConHembras, copulasYMarea, desovesDiarios, desovesYMarea, CICLO_LUNAR_DIAS, granjaDelDia } from './operativo.mareas.js';
 import { modeloOperativo, diasDeTanque } from './operativo.data.js';
 import { MAD_OP_ORIGEN } from './operativo.fuentes.js';
 import { FASES_CICLO } from './data.js';
@@ -198,6 +198,49 @@ describe('Maduración · operativo · 🥚 desoves × marea (1-A)', () => {
   it('🔑 sin desoves, nada', () => {
     expect(desovesDiarios({})).toEqual([]);
     expect(desovesYMarea([], MAREA)).toMatchObject({ dias: [], conMarea: 0 });
+  });
+});
+
+/* 0v·1 (2026-09-29, usuario) · el panel del 🗓 Calendario lunar: la GRANJA el día pulsado, con las MISMAS reglas que la
+   pestaña 🦐 Cópulas (sin sus filtros): las cópulas, Σ ÷ Σ hembras del libro al cierre (el tanque sin hembras no cuenta; un
+   día sin ninguna cópula registrada es un HUECO, no un 0) y los desoves de la hoja por 100 ♀. */
+describe('Maduración · operativo · 🗓 la granja un día (0v·1)', () => {
+  const M = () => modeloOperativo(PLANTA, { hoy: '2026-09-28' });
+  const g = (f) => { const m = M(); return granjaDelDia(partesConHembras(m.fuentes, diasDeTanque(m.fuentes.tanques)), desovesDiarios(m.fuentes), f); };
+
+  it('🔴 las cópulas del día: Σ ÷ Σ hembras, sin el tanque vacío (y lo cuenta); la MISMA tasa que la pestaña', () => {
+    const x = g('2026-09-10');
+    expect(x.copulas).toMatchObject({ estado: 'ok', copulas: 4, hembras: 30, partes: 3, sinHembras: 1 });
+    expect(x.copulas.tasa).toBeCloseTo(40 / 3, 9);
+    expect(g('2026-09-11').copulas.tasa, 'con las hembras del cierre (murieron 10)').toBeCloseTo(20, 9);
+    for (const f of ['2026-09-10', '2026-09-11', '2026-09-12', '2026-09-17', '2026-09-21']) {
+      expect(g(f).copulas.tasa, f).toBeCloseTo(dia(copulasYMarea(base(), MAREA), f).tasa, 9);
+    }
+  });
+
+  it('🔴 un día sin ninguna cópula registrada es un HUECO (no un 0); un día sin partes, «sin partes»', () => {
+    expect(g('2026-09-18').copulas).toMatchObject({ estado: 'hueco', partes: 2, tasa: null });
+    expect(g('2026-09-15').copulas).toMatchObject({ estado: 'sin-partes', partes: 0, tasa: null });
+    expect(g('2026-09-17').copulas).toMatchObject({ estado: 'ok', copulas: 1, hembras: 20 });
+  });
+
+  it('🔴 los desoves del día: Σ de la hoja por 100 ♀ del libro, la MISMA tasa que la pestaña; una fila con 0, ninguno', () => {
+    expect(g('2026-09-10').desoves).toMatchObject({ estado: 'ok', desoves: 3, hembras: 30 });
+    expect(g('2026-09-21').desoves).toMatchObject({ estado: 'ok', desoves: 3, hembras: 20 });
+    const d = desovesDiarios(M().fuentes);
+    for (const f of ['2026-09-10', '2026-09-11', '2026-09-12', '2026-09-21']) {
+      expect(g(f).desoves.tasa, f).toBeCloseTo(dia(desovesYMarea(d, MAREA), f).tasa, 9);
+    }
+    expect(g('2026-09-17').desoves).toMatchObject({ estado: 'ninguno', desoves: 0, tasa: null });
+    expect(g('2026-09-18').desoves).toMatchObject({ estado: 'ninguno', desoves: 0, tasa: null });
+  });
+
+  it('🔑 con cópulas o desoves y SIN hembras en el libro no hay tasa, y se dice', () => {
+    const x = granjaDelDia([{ fecha: '2026-09-30', copulas: 3, hembras: 0 }],
+      [{ fecha: '2026-09-30', filas: [{ lote: 'QZ', codigo: '', desoves: 2 }], posiciones: [] }], '2026-09-30');
+    expect(x.copulas).toMatchObject({ estado: 'sin-hembras', copulas: 3, hembras: 0, sinHembras: 1, tasa: null });
+    expect(x.desoves).toMatchObject({ estado: 'sin-hembras', desoves: 2, hembras: 0, tasa: null });
+    expect(granjaDelDia(null, null, '2026-09-30')).toMatchObject({ copulas: { estado: 'sin-partes' }, desoves: { estado: 'ninguno' } });
   });
 });
 

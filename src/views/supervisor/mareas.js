@@ -7,6 +7,8 @@
    Capa de datos PURA (mareaDays, testeable) + render con SVG (luna/ola) y
    Chart.js gestionado (tendencia/donut). Tema del proyecto (claro/oscuro).
    El modal ENTERO (marcado y cableado, al final) lo abren Supervisor y Maduración · Operativo (0r·1, 2026-09-28).
+   0v·1 (2026-09-29) · «🗓 Calendario» (el calendario lunar del mes y el panel del día), sólo si lo pide quien lo pinta
+   (`calendario`): hoy, la sub-vista 🌊 de Maduración.
    ============================================================ */
 import { store } from '../../core/store.js';
 import { makeChart, destroyChart } from '../../core/charts.js';
@@ -123,7 +125,9 @@ function interpWave(events, minuteOfDay) {
 // semielipse del terminador. 0r (2026-09-28, usuario): su semieje es r·|1 − 2f| (así el área iluminada ES el % de la hoja;
 // con r·|cos πf| no lo era) y se curva hacia la LUZ en la media luna menor (f < ½) y hacia la sombra en la gibosa. Antes iba
 // al revés: sólo 0, 50 y 100 % salían bien («Gibosa menguante 95 %» se veía toda oscura). Exportada para su prueba.
-export function mareaMoonSVG(fase, illum) {
+// 0v·1 (2026-09-29, usuario) · `px` y `id`: el 🗓 Calendario pinta una luna por día y, con los ids de siempre, repetiría
+// «mMoonG» en la página; cada una lleva los suyos (la misma geometría). Sin opciones, la de siempre, igual.
+export function mareaMoonSVG(fase, illum, { px = 108, id = 'mMoon' } = {}) {
   const cx = 60, cy = 60, r = 46;
   const frac = Math.max(0, Math.min(1, (illum == null ? 0 : illum) / 100));
   const waning = /menguante/i.test(fase || '');
@@ -132,18 +136,18 @@ export function mareaMoonSVG(fase, illum) {
     const ex = r * Math.abs(1 - 2 * frac);
     const largeArc = frac > 0.5 ? 1 : 0;
     const sweepDir = waning ? (frac < 0.5 ? 0 : 1) : (frac < 0.5 ? 1 : 0);
-    term = `<path d="M ${cx} ${cy - r} A ${r} ${r} 0 ${largeArc} ${waning ? 0 : 1} ${cx} ${cy + r} A ${ex.toFixed(2)} ${r} 0 ${largeArc} ${sweepDir} ${cx} ${cy - r} Z" fill="#232a35" filter="url(#mMoonSoft)"/>`;
+    term = `<path d="M ${cx} ${cy - r} A ${r} ${r} 0 ${largeArc} ${waning ? 0 : 1} ${cx} ${cy + r} A ${ex.toFixed(2)} ${r} 0 ${largeArc} ${sweepDir} ${cx} ${cy - r} Z" fill="#232a35" filter="url(#${id}Soft)"/>`;
   }
-  const litFull = frac > 0.02 ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#mMoonG)"/>` : '';
+  const litFull = frac > 0.02 ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#${id}G)"/>` : '';
   const craters = frac >= 0.1 ? [[cx + 14, cy - 9, 4], [cx - 11, cy + 12, 6], [cx + 4, cy + 17, 3.5], [cx - 16, cy - 5, 2.6], [cx + 18, cy + 7, 2.6]].map(([x, y, rr]) => `<ellipse cx="${x}" cy="${y}" rx="${rr}" ry="${(rr * 0.7).toFixed(1)}" fill="rgba(40,40,40,.16)"/>`).join('') : '';
-  return `<svg viewBox="0 0 120 120" width="108" height="108" class="sv-marea-moon" aria-hidden="true">
+  return `<svg viewBox="0 0 120 120" width="${px}" height="${px}" class="sv-marea-moon" aria-hidden="true">
       <defs>
-        <radialGradient id="mMoonG" cx="38%" cy="32%" r="70%"><stop offset="0%" stop-color="#ECECEC"/><stop offset="45%" stop-color="#BFBFBF"/><stop offset="100%" stop-color="#6E6E6E"/></radialGradient>
-        <clipPath id="mMoonClip"><circle cx="${cx}" cy="${cy}" r="${r}"/></clipPath>
-        <filter id="mMoonSoft"><feGaussianBlur stdDeviation="0.7"/></filter>
+        <radialGradient id="${id}G" cx="38%" cy="32%" r="70%"><stop offset="0%" stop-color="#ECECEC"/><stop offset="45%" stop-color="#BFBFBF"/><stop offset="100%" stop-color="#6E6E6E"/></radialGradient>
+        <clipPath id="${id}Clip"><circle cx="${cx}" cy="${cy}" r="${r}"/></clipPath>
+        <filter id="${id}Soft"><feGaussianBlur stdDeviation="0.7"/></filter>
       </defs>
       <circle cx="${cx}" cy="${cy}" r="${r}" fill="#232a35" stroke="var(--c-border)" stroke-width="1"/>
-      <g clip-path="url(#mMoonClip)">${litFull}${term}${craters}</g>
+      <g clip-path="url(#${id}Clip)">${litFull}${term}${craters}</g>
     </svg>`;
 }
 
@@ -354,6 +358,92 @@ function drawMareaDonut(monthDays, canvasId = 'mareaDonutChart') {
     data: { labels, datasets: [{ data, backgroundColor: labels.map((_, i) => PHASE_PALETTE[i % PHASE_PALETTE.length]), borderColor: 'rgba(128,128,128,.28)', borderWidth: 1 }] },
     options: { responsive: true, maintainAspectRatio: false, cutout: '58%', plugins: { legend: { display: true, position: 'right', labels: { boxWidth: 12, font: { size: 10 } } } } },
   });
+}
+
+// ---------- vista «🗓 Calendario» (0v·1, 2026-09-29, usuario; sólo la enciende Maduración) ----------
+// El mes de LUNES a domingo con TODOS sus días: cada uno con su luna dibujada, su % y su marea (viva/muerta, en el fondo);
+// un día sin fila en la hoja sale en gris, «sin dato» (nada se calcula: una sola fuente, INOCAR). Al pulsar un día, su
+// panel DEBAJO (sin ventana): luna grande, lecturas, amplitud, la ola y lo que ponga quien la abre (`delDia`: Maduración,
+// la granja ese día); «Ver en 📅 Día» lleva a ese día. El día elegido es el de 📅 Día (`state.key`); los meses, los de arriba.
+const DIAS_SEM = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+/** Las cuatro fases principales llevan su nombre corto en la celda (por el nombre de la hoja, sin mayúsculas). */
+const FASE_CORTA = { 'luna nueva': 'Nueva', 'cuarto creciente': 'C. creciente', 'luna llena': 'Llena', 'cuarto menguante': 'C. menguante' };
+/* Visto en Chrome (390 px): «C. creciente» y «C. menguante» no caben en una celda de ~39 px y pisaban la de al lado; en el
+   móvil el CSS enseña ésta (el rótulo del botón sigue diciendo la fase entera). */
+const FASE_MOVIL = { 'C. creciente': 'C. crec.', 'C. menguante': 'C. meng.' };
+const decEs =(v, dec) => Number(v).toLocaleString('es-EC', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+const pctIl = (v) => Number(v).toLocaleString('es-EC', { maximumFractionDigits: 1 }) + ' %';
+const dmyDe = (key) => key.slice(8, 10) + '/' + key.slice(5, 7) + '/' + key.slice(0, 4);
+
+/**
+ * El calendario de un mes: semanas de lunes a domingo con todos sus días (`null` = de otro mes); cada día con lo que trae
+ * la hoja «Marea» o `conDato: false`, y el de hoy marcado.
+ * @param {Array} days    `mareaDays()`
+ * @param {string} mkey   'AAAA-MM'
+ * @param {string} [hoyKey] 'AAAA-MM-DD'
+ * @returns {{ semanas: Array<Array<null|{key, dia, hoy, conDato, fase, illum, tipo, principal}>>, conDato: number, sinDato: number }}
+ */
+export function calendarioDelMes(days, mkey, hoyKey = dayKey(new Date())) {
+  const [y, m] = String(mkey).split('-').map(Number);
+  const porDia = new Map((days || []).filter((d) => d.mkey === mkey).map((d) => [d.key, d]));
+  const n = new Date(y, m, 0).getDate();
+  const celdas = Array((new Date(y, m - 1, 1).getDay() + 6) % 7).fill(null);   // los días de otro mes hasta el lunes
+  for (let i = 1; i <= n; i++) {
+    const key = mkey + '-' + String(i).padStart(2, '0');
+    const d = porDia.get(key);
+    celdas.push({ key, dia: i, hoy: key === hoyKey, conDato: !!d, fase: d ? d.fase : '', illum: d ? d.illum : null,
+      tipo: d ? d.tipo : '', principal: d ? FASE_CORTA[d.fase.toLowerCase()] || '' : '' });
+  }
+  while (celdas.length % 7) celdas.push(null);
+  const semanas = [];
+  for (let i = 0; i < celdas.length; i += 7) semanas.push(celdas.slice(i, i + 7));
+  return { semanas, conDato: porDia.size, sinDato: n - porDia.size };
+}
+/** Lo que se lee de un día: el rótulo de su celda (`largo`, «de iluminación») y el título de su panel. */
+const partesDelDia = (c, largo = false) => [c.fase || 'fase sin registrar',
+  c.illum == null ? null : pctIl(c.illum) + (largo ? ' de iluminación' : ''),
+  c.tipo ? 'marea ' + c.tipo.toLowerCase() : 'tipo de marea sin registrar'].filter(Boolean);
+function celdaCalHTML(c, curKey) {
+  if (!c) return '<div class="sv-marea-cal-v" aria-hidden="true"></div>';
+  const hoy = c.hoy ? ' is-hoy' : '';
+  if (!c.conDato) return `<div class="sv-marea-cal-d is-sin${hoy}" title="Sin dato en la hoja «Marea»"><span class="sv-marea-cal-n">${c.dia}</span><span class="sv-marea-cal-sin">sin dato</span></div>`;
+  const tipo = c.tipo === 'Viva' ? ' is-viva' : c.tipo === 'Muerta' ? ' is-muerta' : '';
+  const sel = c.key === curKey;
+  const rot = `${c.dia} de ${MESES[+c.key.slice(5, 7) - 1]} de ${c.key.slice(0, 4)}: ${partesDelDia(c, true).join(', ')}`;
+  return `<button type="button" class="sv-marea-cal-d${tipo}${hoy}${sel ? ' is-sel' : ''}" data-marea-cal-dia="${c.key}" aria-pressed="${sel}" aria-label="${esc(rot)}" title="${esc(rot)}">`
+    + `<span class="sv-marea-cal-n">${c.dia}</span>${mareaMoonSVG(c.fase, c.illum, { px: 30, id: 'mMoonC' + c.dia })}`
+    + `<span class="sv-marea-cal-p">${c.illum == null ? '—' : pctIl(c.illum)}</span>`
+    + (c.principal ? `<span class="sv-marea-cal-f"${FASE_MOVIL[c.principal] ? ` data-corto="${FASE_MOVIL[c.principal]}"` : ''}>${esc(c.principal)}</span>` : '') + '</button>';
+}
+/** El panel del día elegido (debajo del calendario). */
+function calDetHTML(day, delDia) {
+  const titulo = [dmyDe(day.key), ...partesDelDia(day).map((p) => p.replace(/^marea /, 'Marea '))].join(' · ');
+  const ev = day.events.length
+    ? `<ul class="sv-marea-caldet-ev">${day.events.map((e) => `<li><span class="sv-marea-caldet-ic is-${e.type === 'P' ? 'p' : 'b'}">${e.type === 'P' ? '▲' : '▼'}</span> ${e.type === 'P' ? 'Pleamar' : 'Bajamar'} ${esc(e.label)} · ${decEs(e.h, 2)} m</li>`).join('')}</ul>`
+    : '<p class="muted sv-marea-caldet-sin">Sin lecturas de marea ese día.</p>';
+  return `<div class="sv-marea-panel sv-marea-caldet">
+      <div class="sv-marea-caldet-h"><span class="sv-marea-caldet-t">${esc(titulo)}</span><button type="button" class="sv-marea-caldet-ir" data-marea-ver-dia>Ver en 📅 Día</button></div>
+      <div class="sv-marea-caldet-g">
+        <div class="sv-marea-caldet-luna">${mareaMoonSVG(day.fase, day.illum)}</div>
+        <div class="sv-marea-caldet-lec">${ev}<div class="sv-marea-caldet-amp">Amplitud ${day.amp == null ? '—' : decEs(day.amp, 2) + ' m'}</div></div>
+        <div class="sv-marea-caldet-ola">${mareaWaveSVG(day, null)}</div>
+      </div>
+      ${delDia ? delDia(day.key) : ''}
+    </div>`;
+}
+/** La vista entera: el calendario del mes de `curDay` (con `curDay` elegido) y su panel. */
+function calendarioHTML(days, curDay, monthLabel, delDia) {
+  const c = calendarioDelMes(days, curDay.mkey);
+  const ultimo = days[days.length - 1].key;
+  const nota = dayKey(new Date()) > ultimo
+    ? `<p class="sv-marea-cal-nota">La hoja «Marea» llega hasta el ${dmyDe(ultimo)}: los días siguientes salen en gris hasta que se carguen en ella.</p>` : '';
+  return `<div class="sv-marea-panel sv-marea-calp">
+      <div class="sv-marea-ptitle">Calendario lunar${monthLabel ? ` <span class="muted">· ${esc(monthLabel)}</span>` : ''}</div>
+      ${nota}
+      <div class="sv-marea-cal">${DIAS_SEM.map((d) => `<div class="sv-marea-cal-sem">${d}</div>`).join('')}${c.semanas.flat().map((x) => celdaCalHTML(x, curDay.key)).join('')}</div>
+      <div class="sv-marea-cal-ley"><span class="is-viva">Marea viva</span><span class="is-muerta">Marea muerta</span><span class="is-sin">Sin dato en la hoja</span><span class="is-hoy">Hoy</span></div>
+    </div>
+    ${calDetHTML(curDay, delDia)}`;
 }
 
 // ---------- barra selectora (meses + navegador de día) ----------
@@ -597,8 +687,9 @@ function drawCorrScatter(state) {
 
 /** Render principal del modal de Mareas dentro de `host`. `state` = { mode, key, month }.
  *  0r·2 · `extras`: las vistas que añade quien abre el modal (Maduración: «🦐 Cópulas»), por su modo →
- *  { html(state), dibujar?(host, state), lienzos?: [ids] }. En una vista extra los meses de arriba no aplican. */
-export function renderMareas(host, state, extras = {}) {
+ *  { html(state), dibujar?(host, state), lienzos?: [ids] }. En una vista extra los meses de arriba no aplican.
+ *  0v·1 · `delDia(key)`: lo que añade quien la abre al panel del día del 🗓 Calendario (Maduración: la granja ese día). */
+export function renderMareas(host, state, extras = {}, { delDia } = {}) {
   if (!host) return;
   _lienzosExtra = Object.values(extras).flatMap((x) => x.lienzos || []);
   cleanupMareas();
@@ -632,6 +723,7 @@ export function renderMareas(host, state, extras = {}) {
   if (extra) content = extra.html(state);
   else if (state.mode === 'corr') content = corrHTML(curMkey, state);
   else if (state.mode === 'mes') content = mesHTML(monthDays, curMonthLabel);
+  else if (state.mode === 'cal') content = calendarioHTML(days, curDay, curMonthLabel, delDia);   // 0v·1
   else content = diaHTML(curDay, nowMin);
   const monthInert = (state.mode === 'corr' && state.corrPeriod === 'all') || !!extra;
   host.innerHTML = selBar(months, curMkey, monthDays, curKey, state.mode, monthInert) + content + note;
@@ -649,12 +741,14 @@ export function renderMareas(host, state, extras = {}) {
 export const mareasEstadoInicial = () => ({ mode: 'dia', key: null, month: null, corrKind: 'micro', corrPeriod: 'month', corrCell: null });
 
 /** La barra de vistas y el cuerpo, sin marco: lo de dentro del modal y, en Maduración, de su sub-vista 🌊 Mareas. */
-/*  1-A (2026-09-28, usuario) · `sinCorrelacion`: Maduración no la lleva («eso lo veo más para Larvicultura»). */
-function mareasCuerpoHTML({ extras = [], sinCorrelacion = false } = {}) {   // 0r·2 · `extras`: [{ modo, etiqueta }], tras «Correlación»
+/*  1-A (2026-09-28, usuario) · `sinCorrelacion`: Maduración no la lleva («eso lo veo más para Larvicultura»).
+    0v·1 (2026-09-29, usuario) · `calendario`: «🗓 Calendario», tras «Mes»; sólo lo enciende Maduración. */
+function mareasCuerpoHTML({ extras = [], calendario = false, sinCorrelacion = false } = {}) {   // 0r·2 · `extras`: [{ modo, etiqueta }], tras «Correlación»
   return `<div class="sv-bm-modebar">
           <span class="sv-bm-mode-label">Vista:</span>
           <button class="sv-bm-mode-btn is-active" data-mareamode="dia">📅 Día</button>
           <button class="sv-bm-mode-btn" data-mareamode="mes">📈 Mes</button>
+          ${calendario ? '<button class="sv-bm-mode-btn" data-mareamode="cal">🗓 Calendario</button>' : ''}
           ${sinCorrelacion ? '' : '<button class="sv-bm-mode-btn" data-mareamode="corr">🔗 Correlación</button>'}${extras.map((x) => `
           <button class="sv-bm-mode-btn" data-mareamode="${esc(x.modo)}">${esc(x.etiqueta)}</button>`).join('')}
         </div>
@@ -712,12 +806,13 @@ export function cablearMareas(root, overlay, { state = mareasEstadoInicial(), ex
 
 /**
  * 2 (2026-09-29) · cablea la sub-vista de `mareasPanelHTML` y la pinta. Sin `state`, empieza como el modal al abrirse.
+ * 0v·1 · `delDia(key)`: lo que añade al panel del día del 🗓 Calendario (ver `renderMareas`).
  * @returns {{state: object}|null}  el estado a guardar para la próxima pintada (null = no hay sub-vista)
  */
-export function cablearPanelMareas(panel, { state, extras = {} } = {}) {
+export function cablearPanelMareas(panel, { state, extras = {}, delDia } = {}) {
   if (!panel) return null;
   if (!state) { state = {}; aplicarInicial(state, extras); }
-  const { renderMareaBody, marcarModo } = cablearCuerpo(panel, state, extras);
+  const { renderMareaBody, marcarModo } = cablearCuerpo(panel, state, extras, { delDia });
   marcarModo();
   renderMareaBody();
   return { state };
@@ -730,9 +825,9 @@ function aplicarInicial(state, extras) {
 }
 
 /** La barra de vistas, la navegación del cuerpo y el teclado de la Correlación de `cont` (el modal o la sub-vista). */
-function cablearCuerpo(cont, state, extras) {
+function cablearCuerpo(cont, state, extras, opciones = {}) {
   const mareaBody = cont.querySelector('#svMareaBody');
-  const renderMareaBody = () => renderMareas(mareaBody, state, extras);
+  const renderMareaBody = () => renderMareas(mareaBody, state, extras, opciones);
   const marcarModo = () => cont.querySelectorAll('[data-mareamode]').forEach((x) => x.classList.toggle('is-active', x.dataset.mareamode === state.mode));
   // Barra de modo (Día/Mes) estática en el markup del modal (como Biomol/Micro).
   cont.querySelectorAll('[data-mareamode]').forEach((b) => b.addEventListener('click', () => {
@@ -748,6 +843,10 @@ function cablearCuerpo(cont, state, extras) {
     const chFs = e.target.closest('[data-marea-chart-fs]');
     if (chFs) { openChartFs(mareaBody, chFs.dataset.mareaChartFs); return; }
     if (e.target.closest('[data-marea-chart-fsclose]') || e.target.matches('[data-marea-chart-fsbg]')) { closeChartFs(mareaBody); return; }
+    // 0v·1 · 🗓 Calendario: un día abre su panel (el foco se queda en él); «Ver en 📅 Día» lleva a ese día.
+    const cd = e.target.closest('[data-marea-cal-dia]');
+    if (cd) { state.key = cd.dataset.mareaCalDia; renderMareaBody(); mareaBody.querySelector(`[data-marea-cal-dia="${state.key}"]`)?.focus(); return; }
+    if (e.target.closest('[data-marea-ver-dia]')) { state.mode = 'dia'; marcarModo(); renderMareaBody(); return; }
     const dn = e.target.closest('[data-marea-day]');
     if (dn && !dn.disabled && dn.dataset.mareaDay) { state.key = dn.dataset.mareaDay; renderMareaBody(); return; }
     const mo = e.target.closest('[data-marea-month]');
