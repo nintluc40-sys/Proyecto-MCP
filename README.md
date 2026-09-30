@@ -604,14 +604,18 @@ registro reproductivo y los botones de Maduración (🔄 Recalcular, Ver saldo, 
 en `engine.js`), también justo después de guardar, y el GAS (`?p=rows`) queda de **respaldo**. Medido ese
 día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menudo; la exportación, de 0,4 a 5 s.
 
-- **Dos exportaciones combinadas, porque ninguna basta sola.** gviz (JSON) da cada valor con su tipo, como
-  el GAS, pero **deja en blanco las celdas del tipo minoritario** de una columna que mezcla números y texto
-  (una pareja de piscinas «NNN/NNN» en una columna numérica) y, **por una hoja que no existe, devuelve otra**
-  sin avisar. El CSV de la hoja (por su `gid`, que da `/htmlview`) trae el texto tal cual y rellena lo que
-  gviz deja en blanco.
-- **Lo que no cuadra se lee por el GAS, como antes**: una cabecera distinta, una fila desplazada o cambiada
-  entre las dos peticiones, una hoja que no está en la lista, una columna de horas, una fecha que no llega
-  como fecha, un error o 20 s sin respuesta. Una hoja que no existe se da por vacía, como la da el GAS.
+- **El XLSX de la hoja** (desde el 2026-09-29, 0v·2): `export?format=xlsx&gid=` —el `gid` lo da `/htmlview`—
+  trae UNA hoja con todas sus filas y el tipo de cada celda, y se lee con el SheetJS de la página, como la da el
+  GAS (fechas «yyyy-MM-dd», números y booleanos con su tipo, el texto tal cual, sin filas vacías). Hasta ese día
+  eran dos exportaciones combinadas —gviz, con tipos pero que deja en blanco lo minoritario de una columna que
+  mezcla números y texto, y el CSV—, y 🔴 **con un filtro puesto en la hoja gviz sólo da las filas visibles**: el
+  emparejamiento se descuadraba y todo caía al GAS (pasó con MATRIZ, Bitácora y Tanques). Medido ese día: 11
+  hojas y 7 336 filas iguales al GAS celda a celda, en 0,5–1,8 s. gviz queda sólo para saber si existe una hoja
+  que no está en la lista (por un nombre que no existe devuelve otra hoja sin avisar).
+- **Lo que no se sabe imitar, o no es la hoja, se lee por el GAS, como antes**: un libro que no es de UNA hoja
+  con ese nombre desde A1, una hora sola o una fecha anterior al 1-3-1900, un error (#N/A), una cabecera que es
+  fecha, una página sin SheetJS, un fallo o 20 s sin respuesta. Una hoja que no existe se da por vacía, como la
+  da el GAS.
 - **Sólo con el GAS de producción y desde una página https**: el libro que se exporta es el que escribe ese
   GAS, y Google no deja leer la exportación a una página abierta como archivo. En `index (8)`, además, su
   CSP tiene que permitir `https://docs.google.com` y `https://*.googleusercontent.com`.
