@@ -258,6 +258,13 @@ todos sus tanques: guardar otra vez el mismo parte no lo duplica, y el último d
 Sólo el último, sin otro abierto y desde el dispositivo que lo registró: uno anterior se corrige en la
 hoja (decisión del usuario, 2026-09-18).
 La hora va en la llave del GAS, así que se guarda como TEXTO (Sheets convierte «08:30» en una hora).
+*(2026-09-30, usuarios: «partes duplicados en la hoja».)* El número de parte lo cuenta **cada dispositivo**
+(y la app de Pages y `index (8)` como archivo son dos), así que la misma ronda dada desde dos llega con
+dos partes. Antes de enviar Tanques (☁️ o 🔄), la app lee la hoja fresca y, si el mismo tanque ya tiene
+las mismas bajas —o las mismas cópulas y muda— en **otro** parte de la última hora, **pregunta**;
+«Cancelar» lo deja pendiente sin borrar nada. «↩ Recuperar» ya no reinyecta lo guardado, y una fila
+enviada no vuelve a pendiente si no cambió. En `index (8)` como archivo sólo se puede leer por el GAS,
+que tarda ~35 s: con el tope de 15 s el aviso no llega a salir y se envía como antes.
 En **🏠 Salas**, la columna `RAS` dice **en qué porcentaje** usa el RAS esa sala (`No`, `10%` …
 `100%`); lo que falta hasta el 100 es agua de playa y no se anota.
 
