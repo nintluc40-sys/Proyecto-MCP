@@ -216,7 +216,7 @@ del módulo se quede sin contraparte en el monolito.
 | Ficha | Hoja | Grano |
 |---|---|---|
 | 📥 **Ingreso** | `Maduración Ingreso` | (lote, composición, sala, tanque) |
-| ⚖️ **Saldo** | *(derivada)* | vista del libro mayor y resumen por sala y lote, no escribe |
+| ⚖️ **Saldo** | *(derivada)* | vista del libro mayor y resumen por sala y lote, y «🖨 Último parte»: el PDF del último parte de mortalidad registrado en cada sala (la ronda de hora más tardía de la fecha, con todos sus tanques y los vivos del libro); no escribe |
 | 🔄 **Movimientos** | `Maduración Movimientos` | el **tramo** origen → destino |
 | 🥚 **Desoves** | `Maduración Lotes` | (fecha, lote, código genético) |
 | 📋 **Inf. Supervisor** | `Maduración Mortalidad Desove` | (fecha, lote, código genético): mortalidad ♀ + una fila por revisión de nauplios |
