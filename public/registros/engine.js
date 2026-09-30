@@ -2243,6 +2243,7 @@ async function syncAll(){
 
   setSyncUI("pend","Sincronizando...");
   let ok=0, fail=0, queued=0, total=0;
+  let _tqRetenido = false;   // 2026-09-30 · Tanques no se envió porque, ante «¿ronda repetida?», se contestó que no
 
   // Block sync without corrida/técnico for M01-M10 and CIO (no aplica a Lab. Algas ni Maduración).
   // La Corrida puede provenir de cualquier ficha estándar O de Desinfección.
@@ -2280,6 +2281,7 @@ async function syncAll(){
     for(const f of MAD_FICHAS){
       const pending = loadMad(f).filter(r => !r.synced);
       if(pending.length === 0) continue;
+      if(f === "tanques" && !(await _madTqConfirmarRepetidas(pending))){ _tqRetenido = true; _madTqNoEnviado(); continue; }   // 2026-09-30 · ¿ronda repetida?
       total++;
       toast("Enviando "+MAD_SHEET[f]+" — "+pending.length+" registro(s)…","info",2200);
       const payload = buildMadPayload(f, pending);
@@ -2438,11 +2440,15 @@ async function syncAll(){
     }
   }
 
+  /* 2026-09-30 · con Tanques retenido ante «¿ronda repetida?», «Sin datos nuevos» y «Todo sincronizado» serían FALSOS:
+     queda Tanques pendiente, y se dice. */
+  const _tqPend = "Tanques pendiente (¿ronda repetida?)";
+  if(!total && _tqRetenido){ setSyncUI("pend", _tqPend); updateDots(); return; }
   if(!total){ setSyncUI("idle","Sin datos nuevos"); toast("No hay datos pendientes","info",2000); updateDots(); return; }
   if(!fail && !queued){
     setSyncUI("ok", ok+" hoja(s) sincronizada(s) ✔");
     toast("¡Datos registrados en Google Sheets!","ok");
-    setTimeout(()=>{ setSyncUI("idle","Todo sincronizado"); }, 4000);
+    setTimeout(()=>{ if(_tqRetenido) setSyncUI("pend", _tqPend); else setSyncUI("idle","Todo sincronizado"); }, 4000);
   } else if(!fail){
     // Nada falló: lo que no se confirmó quedó EN COLA. Decirlo así evita el "error"
     // que hacía reenviar a mano un dato que el sistema ya tenía a salvo.
@@ -5890,7 +5896,14 @@ function _madMergeRow(list, ficha, data){
   if(ex){
     const merged = Object.assign({}, ex.data);
     Object.keys(data).forEach(k=>{ if(data[k]!==""&&data[k]!=null) merged[k]=data[k]; });
-    ex.data = merged; ex.synced=false; ex.ts=Date.now();
+    /* 2026-09-30 (usuarios: «más pendientes de los de la sala que acabo de dar») · vuelve a PENDIENTE sólo si CAMBIA algo.
+       El autoguardado de la navegación guarda otra vez el parte ABIERTO tal cual está, y si el «🔄 Sincronizar» ya lo había
+       enviado, marcarlo pendiente sin cambios lo volvía a contar y a mandar en el ☁️ de la sala siguiente. Se compara por
+       VALOR (52.5 y "52.5" son lo mismo: lo recogido y lo guardado no siempre tienen el mismo tipo). `cerrado` no cuenta:
+       es del dispositivo y no viaja a la hoja. */
+    const cambia = Object.keys(data).some(k=> k!=="cerrado" && data[k]!=="" && data[k]!=null && String(data[k])!==String(ex.data[k]==null ? "" : ex.data[k]));
+    ex.data = merged;
+    if(cambia){ ex.synced=false; ex.ts=Date.now(); }
   } else {
     list.unshift({ id: Date.now().toString(36)+Math.random().toString(36).slice(2,6), ts:Date.now(), synced:false, syncedAt:null, data });
   }
@@ -5941,6 +5954,38 @@ function loadMadRecovery(){
     return e;
   }catch(_){ return null; }
 }
+/* 2026-09-30 (usuarios: partes de Tanques DUPLICADOS en la hoja) · el autoguardado es la copia de «lo NO guardado». Tras
+   guardar esa sala y esa fecha ya no lo es, y seguir ofreciéndolo una hora —el botón sale en CUALQUIER sala y vuelve a
+   la de entonces— era ofrecer reenviar lo ya enviado. Lo llama el guardado de la grilla de Tanques. */
+function _madRecDescartar(ficha, sala, fecha){
+  const rec = loadMadRecovery();
+  if(rec && rec.ficha === ficha && (rec.sala || "") === (sala || "") && rec.fecha === fecha){ try{ localStorage.removeItem(MAD_RECOV_KEY); }catch(_){} }
+}
+/* 2026-09-30 (ídem) · LO RECUPERADO DE TANQUES ENTRA COMO LA RONDA ABIERTA. El autoguardado recoge la grilla sin parte ni
+   hora, y fundirlo tal cual dejaba filas SIN parte que no casan con ninguna: se quedaban abiertas y pendientes, la grilla
+   las volvía a pintar tras cada guardado y cada 💾/☁️ las mandaba otra vez como parte NUEVO (y ellas mismas iban con Hora
+   y Parte vacíos). Ahora van al parte abierto de (fecha, sala) —o a uno nuevo con la hora del autoguardado—, como un
+   auto-guardado. Y una fila cuyas cifras ya están guardadas en ese tanque (un autoguardado viejo de algo ya enviado)
+   no se vuelve a meter. Devuelve cuántas entraron. */
+function _madRecTanques(list, rec){
+  const yaEsta = function(d, x){
+    return Object.keys(d).every(function(k){ return d[k] === "" || d[k] == null || String(d[k]) === String(x[k] == null ? "" : x[k]); });
+  };
+  const nuevas = rec.rows.filter(function(d){
+    return d && isValidDate(d.fecha) && !list.some(function(r){
+      const x = r && r.data;
+      return !!x && x.fecha === d.fecha && x.sala === d.sala && String(x.tanque) === String(d.tanque) && yaEsta(d, x);
+    });
+  });
+  if(!nuevas.length) return 0;
+  const fecha = nuevas[0].fecha, sala = nuevas[0].sala;
+  const abierto = _madParteAbierto(list, fecha, sala);
+  const parte = abierto || _madParteSiguiente(list, fecha, sala);
+  const t = new Date(rec.ts);
+  const hora = (abierto && _madParteHora(list, fecha, sala, abierto)) || (("0" + t.getHours()).slice(-2) + ":" + ("0" + t.getMinutes()).slice(-2));
+  nuevas.forEach(function(d){ _madMergeRow(list, "tanques", Object.assign({}, d, { parte: parte, hora: hora })); });
+  return nuevas.length;
+}
 function recoverMadGrid(){
   const rec = loadMadRecovery();
   if(!rec){ toast("No hay datos de recuperación disponibles","warn"); return; }
@@ -5948,7 +5993,9 @@ function recoverMadGrid(){
   if(!confirm("¿Recuperar las "+rec.rows.length+" fila(s) autoguardadas el "+ts+"?\nSe combinarán con la grilla guardada.")) return;
   if(rec.ficha==="tanques") _madTanquesSala = rec.sala;
   const list = loadMad(rec.ficha);
-  rec.rows.forEach(data=>{
+  let entraron = rec.rows.length;
+  if(rec.ficha==="tanques") entraron = _madRecTanques(list, rec);   // 2026-09-30 · a la ronda abierta, y lo ya guardado no
+  else rec.rows.forEach(data=>{
     _madMergeRow(list, rec.ficha, data);
   });
   saveMadList(rec.ficha, list);
@@ -5957,6 +6004,7 @@ function recoverMadGrid(){
   renderMad(rec.ficha);
   const fEl = document.getElementById("mad-"+rec.ficha+"-fecha");
   if(fEl && isValidDate(rec.fecha)){ fEl.value = rec.fecha; renderMad(rec.ficha); }
+  if(!entraron){ toast("Lo del autoguardado ya estaba guardado con esas cifras: no se ha vuelto a meter.","info",5000); return; }
   toast("✅ Filas recuperadas del autoguardado","ok",4000);
 }
 
@@ -14669,6 +14717,7 @@ function saveMadTanquesGrid(opts){
   });
   const _ok = saveMadList("tanques", list);
   if(_ok) _madGridDirty = false;
+  if(_ok && saved) _madRecDescartar("tanques", sala, fechaDeLaRonda);   // 2026-09-30 · lo guardado ya no es «lo no guardado»
   /* 🔑 La grilla queda LIMPIA sola: al cerrarse el parte, el render ya no encuentra ninguno abierto para
      estos tanques y los pinta vacíos. No hace falta borrar celdas a mano —y hacerlo sería peor, porque el
      render de después las repintaría—. Vaciar no es estética: la grilla se auto-guarda al navegar, así que
@@ -14694,6 +14743,97 @@ async function _madTanquesEnviar(payload, opts, gas){
   return _madPostConSello(payload, g, opts);
 }
 
+/* 2026-09-30 (usuarios: partes de Tanques DUPLICADOS en la hoja) · ¿LA MISMA RONDA YA ESTÁ EN LA HOJA COMO OTRO PARTE?
+   Medido en la hoja de producción (736 filas): ninguna llave repetida y ninguna fila sin Hora ni Parte. El duplicado es la
+   misma ronda dada DOS veces desde dos dispositivos —o dos apps: index (8) y el MCP guardan en sitios distintos—, cada uno
+   con su propio número de parte: el 29/09, Sala 5, «21:22 P1» y «21:24 P3» con las mismas 3 ♀ muertas en T7, que el libro
+   resta dos veces. El GAS no puede saber cuál es la buena (una ronda real puede repetir cifras) y numerar por la hoja no es
+   posible al guardar (sin red), así que se PREGUNTA antes de enviar. La regla:
+     · la hoja FRESCA, del mismo (Fecha, Sala, Tanque);
+     · sólo filas de OTRA llave (otra Hora u otro Parte): la misma llave es el mismo parte, y reenviarlo lo ACTUALIZA;
+     · a 60 minutos o menos de la hora del parte (las rondas reales van a horas: ~06:30, ~16:00, ~21:00);
+     · «la misma ronda» = las cuatro muertes iguales (vacío = 0) y no todas a 0, o las seis cifras —muertes, cópulas y
+       muda— iguales y no todas a 0. Todo a 0 no pregunta: dos rondas sin bajas son lo normal.
+   Sólo en los envíos por CLIC (☁️ de la grilla y 🔄 global): la cola que se vacía sola no pregunta. Si la hoja no se puede
+   leer, se envía como hoy. «Cancelar» no borra nada: Tanques se queda pendiente en el dispositivo. */
+const _MAD_TQ_RONDA_MIN = 60;
+const _MAD_TQ_CIFRAS = [
+  ["machos_muertos", "Machos muertos"], ["hembras_muertas", "Hembras muertas"],
+  ["machos_descarte", "Machos muertos por descarte de selección"], ["hembras_descarte", "Hembras muertas por descarte de selección"],
+  ["copulas", "Cópulas"], ["muda", "Muda"]];   // las cuatro primeras, las MUERTES
+function _madTqMinutos(h){
+  const m = /^\s*(\d{1,2}):(\d{2})/.exec(String(h == null ? "" : h));
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+/** Las filas pendientes que la hoja ya parece tener como OTRO parte: [{ d: la del dispositivo, h: la de la hoja }]. */
+function _madTqRondasRepetidas(pendientes, hoja){
+  const num = function(v){ const x = parseFloat(v); return Number.isFinite(x) ? x : 0; };
+  const iguales = function(d, h, n){   // las n primeras cifras iguales, y alguna distinta de 0
+    let alguna = false;
+    for(let i = 0; i < n; i++){
+      const a = num(d[_MAD_TQ_CIFRAS[i][0]]), b = num(h[_MAD_TQ_CIFRAS[i][1]]);
+      if(a !== b) return false;
+      if(a) alguna = true;
+    }
+    return alguna;
+  };
+  const out = [];
+  (pendientes || []).forEach(function(r){
+    const d = r && r.data;
+    if(!d) return;
+    const md = _madTqMinutos(d.hora);
+    const h = (hoja || []).find(function(x){
+      if(!x || String(x.Fecha == null ? "" : x.Fecha).slice(0, 10) !== d.fecha || String(x.Sala == null ? "" : x.Sala).trim() !== String(d.sala)
+        || String(x.Tanque) !== String(d.tanque)) return false;
+      if(String(x.Hora == null ? "" : x.Hora).trim() === String(d.hora || "") && String(x.Parte) === String(d.parte || "")) return false;   // su propio parte
+      const mh = _madTqMinutos(x.Hora);
+      if(md == null || mh == null || Math.abs(md - mh) > _MAD_TQ_RONDA_MIN) return false;
+      return iguales(d, x, 4) || iguales(d, x, 6);
+    });
+    if(h) out.push({ d: d, h: h });
+  });
+  return out;
+}
+/** La hoja de Tanques FRESCA para esa pregunta: su exportación (D) si se puede y, si no, el GAS en UN intento con tope —la
+ *  lectura del libro reintenta hasta cuatro veces, y aquí esperaría minutos quien sólo quiere enviar—. null si no llega. */
+async function _madTqHojaFresca(){
+  if(_exportPuede()){
+    try{ const f = await _exportLeerHoja(MAD_SHEET.tanques, null); if(f) return f; }catch(_){}
+  }
+  const base = gasUrl();
+  if(!isValidGasUrl(base)) return null;
+  const tok = gcfg("gas-token","");
+  let u = base + (base.indexOf("?") === -1 ? "?" : "&") + "p=rows&sheet=" + encodeURIComponent(MAD_SHEET.tanques);
+  if(tok) u += "&t=" + encodeURIComponent(tok);
+  const ctrl = new AbortController();
+  const t = setTimeout(function(){ ctrl.abort(); }, 15000);
+  try{
+    const r = await fetch(u, { signal: ctrl.signal, cache: "no-store" });
+    const j = JSON.parse(await r.text());
+    return (r.ok && j && j.ok && Array.isArray(j.rows)) ? j.rows : null;
+  }catch(_){ return null; }
+  finally{ clearTimeout(t); }
+}
+/** ☁️ y 🔄 · true = enviar; false = quien sincroniza dijo que no (Tanques se queda pendiente). */
+async function _madTqConfirmarRepetidas(pendientes){
+  setSyncUI("pend","Comprobando la hoja de Tanques…");   // leerla puede tardar: que no parezca colgado
+  const hoja = await _madTqHojaFresca();
+  setSyncUI("pend","Sincronizando...");
+  if(!hoja) return true;
+  const rep = _madTqRondasRepetidas(pendientes, hoja);
+  if(!rep.length) return true;
+  const lineas = rep.map(function(x){
+    return "· " + x.d.sala + " · T" + x.d.tanque + ": la hoja ya tiene el parte de las " + String(x.h.Hora).trim()
+      + " con las mismas cifras (el de este dispositivo es el parte " + x.d.parte + " de las " + x.d.hora + ")";
+  });
+  return confirm("⚠ ¿Ronda REPETIDA? Esto ya está en la hoja como OTRO parte, a menos de una hora:\n" + lineas.join("\n")
+    + "\n\nAceptar = es OTRA ronda: enviar igualmente."
+    + "\nCancelar = no enviar Tanques ahora; se queda pendiente en este dispositivo.");
+}
+function _madTqNoEnviado(){
+  toast("Tanques NO enviado: se queda pendiente en este dispositivo. Si era la misma ronda, no hace falta enviarla (🗑 Borrar sala la descarta del dispositivo; lo ya enviado sigue en la hoja).","warn",9000);
+}
+
 async function syncMadTanquesGrid(){
   if(saveMadTanquesGrid() === -1) return;
   const url = gasUrl();
@@ -14702,6 +14842,7 @@ async function syncMadTanquesGrid(){
   if(!syncRateOk()) return;
   const pending = loadMad("tanques").filter(r => !r.synced);
   if(pending.length === 0){ toast("Sin pendientes","info"); return; }
+  if(!(await _madTqConfirmarRepetidas(pending))){ _madTqNoEnviado(); renderMadTanques(); updateDots(); updateSyncUI(); return; }   // 2026-09-30 · ¿ronda repetida?
   setSyncUI("pend","Enviando "+pending.length+" tanque(s)…");
   const payload = buildMadPayload("tanques", pending);
   const opts = { mark:{ kind:"mad:tanques", keys: pending.map(p=>p.id) } };   // F3
