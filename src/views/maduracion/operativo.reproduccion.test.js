@@ -171,6 +171,18 @@ describe('Maduración · operativo · 🥚 Reproducción (F4.2)', () => {
       expect(d.sinDestino).toBe(2);         // el del 09-12 y el de RE
       expect(d.conDestino).toBe(2);
     });
+
+    it('🔴 0t·11 · «Macrolab» es un destino: cuenta, y en el empate va por el CATÁLOGO (al final)', () => {
+      /* La celda se lee con el catálogo (`despachoLista`): antes del 2026-09-29 un «Macrolab» en la hoja se perdía
+         sin aviso. Mismo N5 en los dos para que decida el orden del catálogo, no la cifra. */
+      const Mm = modeloOperativo([
+        ING('2026-09-01', 'RM', 'Sala 3', 1, 10, 10),
+        DES('2026-09-10', 'RM', 1, 100000, { 'Fecha N5': '2026-09-11', N5: 50000, Despacho: 'Macrolab, Tabasca' }),
+      ], { fecha: FOTO, hoy: FOTO });
+      const d = destinosDeDespacho(Mm.fuentes, P30, SIN);
+      expect(d.filas.map((f) => [f.destino, f.n5])).toEqual([['Tabasca', 50000], ['Macrolab', 50000]]);
+      expect(d.sinDestino).toBe(0);
+    });
   });
 
   describe('los totales', () => {

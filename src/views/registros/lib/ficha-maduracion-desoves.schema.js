@@ -141,12 +141,14 @@ export const normCodigoGenetico = (s) => sanitizeStr(s, 60).toUpperCase().replac
 /* ── Despacho: a dónde van los N5 (2026-09-14, usuario) ──
    Deja de ser texto libre: se ELIGEN uno o varios destinos de esta lista. La celda guarda los elegidos
    separados por «, » y SIEMPRE en el orden de la lista, así que la misma elección escribe el mismo
-   texto. Lo que no está en la lista no se escribe; sin destino va vacío y el MERGE conserva la celda. */
+   texto. Lo que no está en la lista no se escribe; sin destino va vacío y el MERGE conserva la celda.
+   0t·11 (2026-09-29, usuario): + «Macrolab», AL FINAL (respeta el orden de los demás). Tres copias: ésta, engine.js e
+   index (8) (la paridad y verificar-constantes las vigilan). */
 export const MAD_DESOVE_DESPACHO_OPTS = [
   'Fuentes del Mar',
   'Mar Bravo M01', 'Mar Bravo M02', 'Mar Bravo M03', 'Mar Bravo M04', 'Mar Bravo M05',
   'Mar Bravo M06', 'Mar Bravo M07', 'Mar Bravo M08', 'Mar Bravo M09', 'Mar Bravo M10', 'Mar Bravo CIO',
-  'Punta Carnero', 'Tabasca', 'Hisenor', 'Incamar', 'Megalatina', 'SanLab', 'SanLab Eva',
+  'Punta Carnero', 'Tabasca', 'Hisenor', 'Incamar', 'Megalatina', 'SanLab', 'SanLab Eva', 'Macrolab',
 ];
 const despNorm = (s) => String(s == null ? '' : s).trim().replace(/\s+/g, ' ').toLowerCase();
 

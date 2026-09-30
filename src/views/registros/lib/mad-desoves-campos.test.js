@@ -299,12 +299,14 @@ describe('Desoves · no se escribe contra el GAS viejo (hoja por posición)', ()
 });
 
 describe('Desoves · Despacho es un desplegable de selección múltiple (2026-09-14)', () => {
-  it('🔴 ya no hay campo de texto: hay 19 casillas en el orden del usuario', () => {
+  it('🔴 ya no hay campo de texto: hay 20 casillas en el orden del usuario', () => {
+    // 0t·11 (2026-09-29): 19 → 20, con «Macrolab» al final.
     expect(q('input.md-desp')).toBeNull();
     const ops = [...document.querySelectorAll('#fp-desoves .md-desp .md-desp-op')].map((c) => c.value);
-    expect(ops).toHaveLength(19);
+    expect(ops).toHaveLength(20);
     expect(ops[0]).toBe('Fuentes del Mar');
     expect(ops[18]).toBe('SanLab Eva');
+    expect(ops[19]).toBe('Macrolab');
     expect(q('.md-desp-res').textContent).toBe('Elige uno o varios destinos');
   });
 

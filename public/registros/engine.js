@@ -9086,11 +9086,11 @@ function buildMadDesovePayload(model){
   return { sheetName: MAD_DESOVE_SHEET, headers: MAD_DESOVE_HEADERS.slice(), rows: madDesBuildRows(model) };
 }
 // 2026-09-14 (usuario): Despacho deja de ser texto libre; se eligen destinos de esta lista y la celda los
-// guarda separados por «, » en este orden. Ver el módulo.
+// guarda separados por «, » en este orden. Ver el módulo. 0t·11 (2026-09-29): + «Macrolab», al final.
 const MAD_DESOVE_DESPACHO_OPTS = ["Fuentes del Mar",
   "Mar Bravo M01","Mar Bravo M02","Mar Bravo M03","Mar Bravo M04","Mar Bravo M05",
   "Mar Bravo M06","Mar Bravo M07","Mar Bravo M08","Mar Bravo M09","Mar Bravo M10","Mar Bravo CIO",
-  "Punta Carnero","Tabasca","Hisenor","Incamar","Megalatina","SanLab","SanLab Eva"];
+  "Punta Carnero","Tabasca","Hisenor","Incamar","Megalatina","SanLab","SanLab Eva","Macrolab"];
 function _madDesDespNorm(s){ return String(s==null?"":s).trim().replace(/\s+/g," ").toLowerCase(); }
 function madDesDespachoLista(v){
   const pedidos={};

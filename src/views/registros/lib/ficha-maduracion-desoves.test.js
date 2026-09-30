@@ -350,10 +350,18 @@ describe('Desoves · validación', () => {
 });
 
 describe('Desoves · Despacho es una lista cerrada de destinos (2026-09-14, usuario)', () => {
-  it('las 19 opciones del usuario, en su orden', () => {
+  it('las 20 opciones del usuario, en su orden', () => {
+    // 0t·11 (2026-09-29, usuario): + «Macrolab», AL FINAL (respeta el orden que dio para los demás).
     expect(MAD_DESOVE_DESPACHO_OPTS).toEqual(['Fuentes del Mar', 'Mar Bravo M01', 'Mar Bravo M02', 'Mar Bravo M03',
       'Mar Bravo M04', 'Mar Bravo M05', 'Mar Bravo M06', 'Mar Bravo M07', 'Mar Bravo M08', 'Mar Bravo M09', 'Mar Bravo M10',
-      'Mar Bravo CIO', 'Punta Carnero', 'Tabasca', 'Hisenor', 'Incamar', 'Megalatina', 'SanLab', 'SanLab Eva']);
+      'Mar Bravo CIO', 'Punta Carnero', 'Tabasca', 'Hisenor', 'Incamar', 'Megalatina', 'SanLab', 'SanLab Eva', 'Macrolab']);
+  });
+
+  it('🔴 0t·11 · «Macrolab» se elige, se escribe al final de la celda y se vuelve a leer', () => {
+    expect(despachoTexto(['Macrolab', 'Tabasca'])).toBe('Tabasca, Macrolab');
+    expect(despachoLista('macrolab, Tabasca')).toEqual(['Tabasca', 'Macrolab']);
+    const filas = buildDesoveRows({ fecha: '2026-09-29', desoves: [{ lote: 'BP', codigoGenetico: 'CG1', n5: 900, fechaN5: '2026-09-30', despacho: ['Macrolab', 'SanLab Eva'] }] });
+    expect(filas[0][MAD_DESOVE_HEADERS.indexOf('Despacho')]).toBe('SanLab Eva, Macrolab');
   });
 
   it('🔴 la celda sale en el ORDEN DE LA LISTA, sin repetir, sin lo desconocido y sin mirar mayúsculas', () => {
