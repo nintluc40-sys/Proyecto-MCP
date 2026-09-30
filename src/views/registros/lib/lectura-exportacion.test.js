@@ -3,14 +3,20 @@
    D · SE LEE POR LA EXPORTACIÓN DE GOOGLE, CON EL GAS DE RESPALDO (punto 2a · corrección D, 2026-09-24)
 
    Medido ese día contra producción (sólo lectura): el GAS tardaba de 17 a 140 s por hoja y fallaba la mitad de las
-   veces; la exportación, de 0,4 a 5 s. Pero gviz SOLO devuelve VACÍAS las celdas del tipo minoritario de una columna
-   que mezcla números y texto (17 de las 50 «NNN/NNN» de Maduración Lotes) y, con una hoja que no existe, OTRA hoja sin
-   avisar. Decisiones del usuario (las tres recomendadas): las DOS exportaciones combinadas —gviz con tipos y el CSV de
-   la hoja—, para TODAS las lecturas, también justo después de guardar; el GAS de respaldo, y la confirmación de un chip
-   dudoso (1a) por el GAS. Lo que se lee así tiene que ser EXACTAMENTE lo que daría ?p=rows.
+   veces; la exportación, de 0,4 a 5 s. Decisiones del usuario (las tres recomendadas): TODAS las lecturas, también justo
+   después de guardar; el GAS de respaldo, y la confirmación de un chip dudoso (1a) por el GAS. Lo que se lee así tiene
+   que ser EXACTAMENTE lo que daría ?p=rows.
 
-   El Google de estas pruebas se porta como el medido: gviz deja en blanco lo minoritario y, por un nombre que no existe,
-   responde con la hoja por defecto; el CSV trae el texto tal cual se ve.
+   0v·2 (2026-09-29, usuario) · EL XLSX DE LA HOJA, no gviz + CSV. Con un FILTRO puesto en la hoja (el laboratorio los
+   deja: MATRIZ, Bitácora y Tanques ese día) gviz sólo da las filas visibles —por nombre, por gid, con `range` o con
+   `select *`, medido— y el emparejamiento con el CSV se descuadraba: todo iba al GAS. El XLSX de UNA hoja
+   (`export?format=xlsx&gid=`) trae todas sus filas con el tipo de cada celda: medido, 11 hojas y 7 336 filas IDÉNTICAS
+   al GAS celda a celda, en 0,5–1,8 s. Decisión del usuario: sustituir gviz + CSV por él; lo que no se sabe imitar va al
+   GAS. gviz sigue sólo para saber si una hoja que no está en la lista existe.
+
+   El Google de estas pruebas se porta como el medido: el XLSX de una hoja es un libro de UNA hoja con su nombre, que
+   empieza en A1, con cada celda de su tipo (y los formatos de fecha); gviz, por un nombre que no existe, responde con la
+   hoja por defecto. Los XLSX se escriben con el SheetJS del proyecto, el mismo que lee la página.
    ============================================================ */
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -18,72 +24,83 @@ import { join } from 'node:path';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
-const EXPORTAR = ['_reproFetchSheet', '_reproMatrizFresca', 'madSaldoCargar', 'DEFAULT_GAS_URL', 'MAD_LIBRO_ID', '_EXPORT_MS', '_exportPos', '_exportFecha'];
+const VENDOR = join(process.cwd(), 'public/vendor/xlsx.full.min.js');
+const EXPORTAR = ['_reproFetchSheet', '_reproMatrizFresca', 'madSaldoCargar', 'DEFAULT_GAS_URL', 'MAD_LIBRO_ID', '_EXPORT_MS'];
 const H = {};
 const PAGINA = 'https://nintluc40-sys.github.io/Proyecto-MCP/';
 const LOTES = 'Maduración Lotes';
 const MATRIZ = 'Maduración MATRIZ';
 
-/* ── La hoja de desoves tal como la ve Google ─────────────────────────────────────────────────────────────────────── */
-const TABLA_LOTES = {
-  cols: [
-    { id: 'A', label: 'Fecha', type: 'date', pattern: 'dd/MM/yyyy' },
-    { id: 'B', label: 'Lote', type: 'string' },
-    { id: 'C', label: 'Código genético', type: 'string' },
-    { id: 'D', label: 'Piscina Broodstock', type: 'number', pattern: 'General' },
-    { id: 'E', label: 'Desoves', type: 'number', pattern: 'General' },
-    { id: 'F', label: 'Fecha N2', type: 'datetime' },
-    { id: 'G', label: ' Observaciones ', type: 'string' },
-    { id: 'H', label: '', type: 'string' },
-  ],
-  rows: [
-    // una pareja de piscinas («NNN/NNN») en una columna de números: gviz la deja en blanco (medido en producción)
-    // (un texto VACÍO de gviz —p. ej. una fórmula que da ""— no es un valor que el CSV deba traer)
-    { c: [{ v: 'Date(2026,7,25)', f: '25/08/2026' }, { v: 'XA' }, { v: 'GEN1.A/GEN2.B' }, null, { v: 85, f: '85' }, { v: 'Date(2026,7,25,10,30,0)', f: '25/08/2026 10:30:00' }, { v: '' }, null] },
-    { c: [{ v: 'Date(2026,7,30)', f: '30/08/2026' }, { v: 'XB' }, { v: 'GEN1.A' }, { v: 904, f: '904' }, { v: 0, f: '0' }, null, { v: '  con espacios ' }, null] },
-    { c: [null, null, null, null, null, null, null, null] },
-    // «n/d» en otra columna de números; y un texto con coma, comillas y salto de línea
-    { c: [{ v: 'Date(2026,8,2)', f: '02/09/2026' }, { v: 'XB' }, { v: 'X' }, { v: 905, f: '905' }, null, null, { v: 'a, "b"\nsegunda línea' }, null] },
-    { c: [{ v: 'Date(2026,8,3)', f: '03/09/2026' }, null, null, null, { v: 5, f: '5' }, null, null, null] },
-  ],
-  parsedNumHeaders: 1,
+/* ── Celdas del XLSX como las escribe Google ──────────────────────────────────────────────────────────────────────── */
+/** El número de serie de una fecha (días desde el 30-12-1899), sin zona horaria. */
+const serie = (y, m, d) => Math.round((Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 864e5);
+const F = (y, m, d, fraccion = 0, z = 'dd/mm/yyyy') => ({ t: 'n', v: serie(y, m, d) + fraccion, z });
+const HORA = (fraccion) => ({ t: 'n', v: fraccion, z: 'h:mm' });
+const NA = { t: 'e', v: 0x2A };   // #N/A
+/** Un XLSX de UNA hoja (o de varias) con estas filas: null es una celda vacía; un objeto con `t`, la celda tal cual. */
+const xlsxDe = (hojas, opciones = {}) => {
+  const X = window.XLSX;
+  const wb = X.utils.book_new();
+  if (opciones.fecha1904) wb.Workbook = { WBProps: { date1904: true } };
+  for (const [nombre, aoa] of Object.entries(hojas)) {
+    const ws = {};
+    const desde = opciones.desde || { r: 0, c: 0 };
+    let ultimaC = 0;
+    aoa.forEach((fila, r) => fila.forEach((v, c) => {
+      ultimaC = Math.max(ultimaC, c);
+      if (v === null || v === undefined) return;
+      const celda = typeof v === 'object' ? v : typeof v === 'number' ? { t: 'n', v } : typeof v === 'boolean' ? { t: 'b', v } : { t: 's', v: String(v) };
+      ws[X.utils.encode_cell({ r: r + desde.r, c: c + desde.c })] = celda;
+    }));
+    if (aoa.length) ws['!ref'] = X.utils.encode_range({ s: desde, e: { r: desde.r + aoa.length - 1, c: desde.c + ultimaC } });
+    X.utils.book_append_sheet(wb, ws, nombre);
+  }
+  return X.write(wb, { type: 'array', bookType: 'xlsx' });
 };
-const CSV_LOTES = [
-  'Fecha,Lote,Código genético,Piscina Broodstock,Desoves,Fecha N2, Observaciones ,',
-  '25/08/2026,XA,GEN1.A/GEN2.B,901/903,85,25/08/2026 10:30:00,,',
-  '30/08/2026,XB,GEN1.A,904,0,,  con espacios ,',
-  ',,,,,,,',
-  '02/09/2026,XB,X,905,n/d,,"a, ""b""\nsegunda línea",',
-  '03/09/2026,,,,5,,,',
-].join('\r\n');
+
+/* ── La hoja de desoves tal como la guarda Google ─────────────────────────────────────────────────────────────────── */
+const CAB_LOTES = ['Fecha', 'Lote', 'Código genético', 'Piscina Broodstock', 'Desoves', 'Fecha N2', ' Observaciones ', ''];
+const AOA_LOTES = [
+  CAB_LOTES,
+  // una pareja de piscinas («NNN/NNN») en una columna de números: gviz la dejaba en blanco (17 de 50, medido); una fecha
+  // con hora; un texto VACÍO; y algo escrito en la columna SIN cabecera, que el GAS no devuelve
+  [F(2026, 8, 25), 'XA', 'GEN1.A/GEN2.B', '901/903', 85, F(2026, 8, 25, 0.4375, 'dd/mm/yyyy hh:mm'), '', 'suelto'],
+  // un cero; espacios que se conservan; y una fecha a las 23:59:59,6 (su día, no el siguiente)
+  [F(2026, 8, 30), 'XB', 'GEN1.A', 904, 0, F(2026, 8, 30, 0.999995, 'dd/mm/yyyy hh:mm:ss'), '  con espacios ', null],
+  // una fila vacía en lo que se devuelve (sólo la columna sin cabecera): el GAS no la da
+  [null, null, null, null, null, null, null, 'sólo aquí'],
+  // «n/d» en otra columna de números; y un texto con coma, comillas y salto de línea
+  [F(2026, 9, 2), 'XB', 'X', 905, 'n/d', null, 'a, "b"\nsegunda línea', null],
+  [F(2026, 9, 3), null, null, null, 5, null, null, null],
+];
 // Lo que devuelve ?p=rows de esa hoja (ver sheetRows en el GAS): cabeceras recortadas, sin la columna sin cabecera,
-// fechas «yyyy-MM-dd», números con su tipo, lo minoritario como texto y sin la fila vacía.
+// fechas «yyyy-MM-dd» (sin la hora), números con su tipo, el texto tal cual, lo vacío como "" y sin la fila vacía.
 const FILAS_LOTES = [
   { Fecha: '2026-08-25', Lote: 'XA', 'Código genético': 'GEN1.A/GEN2.B', 'Piscina Broodstock': '901/903', Desoves: 85, 'Fecha N2': '2026-08-25', Observaciones: '' },
-  { Fecha: '2026-08-30', Lote: 'XB', 'Código genético': 'GEN1.A', 'Piscina Broodstock': 904, Desoves: 0, 'Fecha N2': '', Observaciones: '  con espacios ' },
+  { Fecha: '2026-08-30', Lote: 'XB', 'Código genético': 'GEN1.A', 'Piscina Broodstock': 904, Desoves: 0, 'Fecha N2': '2026-08-30', Observaciones: '  con espacios ' },
   { Fecha: '2026-09-02', Lote: 'XB', 'Código genético': 'X', 'Piscina Broodstock': 905, Desoves: 'n/d', 'Fecha N2': '', Observaciones: 'a, "b"\nsegunda línea' },
   { Fecha: '2026-09-03', Lote: '', 'Código genético': '', 'Piscina Broodstock': '', Desoves: 5, 'Fecha N2': '', Observaciones: '' },
 ];
+/** La hoja de desoves con una celda cambiada (fila y columna del AOA). */
+const lotesCon = (r, c, v) => AOA_LOTES.map((f, i) => (i === r ? f.map((x, j) => (j === c ? v : x)) : f));
 
-const vacia = (gid, cab) => ({ gid, tabla: { cols: cab.map((h, i) => ({ id: String.fromCharCode(65 + i), label: h, type: 'string' })), rows: [], parsedNumHeaders: 1 }, csv: cab.join(',') });
+/** Una hoja con sólo su cabecera (y lo que gviz diría de ella, para las que se preguntan por nombre). */
+const vacia = (gid, cab) => ({ gid, aoa: [cab], tabla: { cols: cab.map((h, i) => ({ id: String.fromCharCode(65 + i), label: h, type: 'string' })), rows: [], parsedNumHeaders: 1 } });
 const HOJAS = {
-  [LOTES]: { gid: '111', tabla: TABLA_LOTES, csv: CSV_LOTES },
+  [LOTES]: { gid: '111', aoa: AOA_LOTES },
   'Maduración Ingreso': vacia('222', ['Fecha', 'Lote', 'Sala', 'Tanque', 'Machos', 'Hembras']),
   'Maduración Movimientos': vacia('333', ['Fecha', 'Tipo', 'Sala origen', 'Tanque origen']),
   'Maduración Tanques': vacia('444', ['Fecha', 'Sala', 'Tanque', 'Hembras muertas']),
-  // (su última columna es de texto y su CSV acaba cada línea en \r\n: el \r no puede quedarse pegado al texto)
-  'Calidad & Agua': {
-    gid: '777',
-    tabla: { cols: [{ id: 'A', label: 'Fecha', type: 'date' }, { id: 'B', label: 'Sala', type: 'string' }], rows: [{ c: [{ v: 'Date(2026,8,1)' }, { v: 'Sala 2' }] }], parsedNumHeaders: 1 },
-    csv: 'Fecha,Sala\r\n01/09/2026,Sala 2\r\n',
-  },
+  // un nombre con «&» (Google lo escribe «\x26» en la lista) y una columna de VERDADERO/FALSO
+  'Calidad & Agua': { gid: '777', aoa: [['Fecha', 'Sala', 'Revisado'], [F(2026, 9, 1), 'Sala 2', true], [F(2026, 9, 2), 'Sala 3', false]] },
+  // dos columnas con la MISMA cabecera: en el GAS manda la de más a la derecha
+  'Maduración Repetida': { gid: '888', aoa: [['Lote', 'Sala', 'Lote'], ['QA', 'Sala 1', 'QB']] },
   [MATRIZ]: vacia('666', ['Trovan ID', 'Piscina', 'Código genético', 'Lote', 'Sala actual', 'Tanque actual', 'Estado', 'Fecha ingreso', 'Fecha muerte']),
 };
 // La hoja por defecto: la que gviz devuelve, sin avisar, por un nombre que no existe.
 const DEFECTO = {
   gid: '0',
   tabla: { cols: [{ id: 'A', label: 'Fecha', type: 'date' }, { id: 'B', label: 'Supervisor', type: 'string' }], rows: [{ c: [{ v: 'Date(2026,8,1)' }, { v: 'Ana' }] }, { c: [{ v: 'Date(2026,8,2)' }, { v: 'Luis' }] }], parsedNumHeaders: 1 },
-  csv: 'Fecha,Supervisor\r\n01/09/2026,Ana\r\n02/09/2026,Luis',
 };
 // Google escribe los nombres como literales de JavaScript: una letra con tilde, «\u» y cuatro cifras; «&», \x26.
 const jsLit = (s) => s.replace(/[^\x20-\x7e]/g, (ch) => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0')).replace(/&/g, '\\x26');
@@ -91,14 +108,15 @@ const htmlview = (listadas) => '<html><body><script>var items = [];'
   + Object.entries(listadas).map(([n, g]) => 'items.push({name: "' + jsLit(n) + '", pageUrl: "https:\\/\\/docs.google.com\\/spreadsheets\\/d\\/' + 'X' + '\\/htmlview\\/sheet?headers\\x3dtrue\\x26gid\\x3d' + g + '", gid: "' + g + '",initialSheet: ' + (g === '0') + '});').join('\n')
   + '</script></body></html>';
 const gvizTexto = (tabla) => '/*O_o*/\ngoogle.visualization.Query.setResponse(' + JSON.stringify({ version: '0.6', reqId: '0', status: 'ok', sig: '1', table: tabla }) + ');';
-const responder = (body, status = 200) => ({ ok: status < 400, status, text: async () => body });
+const responder = (body, status = 200) => ({ ok: status < 400, status, text: async () => body, arrayBuffer: async () => new TextEncoder().encode(body).buffer });
+const responderXlsx = (bytes) => ({ ok: true, status: 200, arrayBuffer: async () => bytes, text: async () => { throw new Error('un XLSX no se lee como texto'); } });
 const colgar = (opts) => new Promise((_, rej) => opts.signal.addEventListener('abort', () => rej(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }))));
 
 let listadas;       // lo que dice /htmlview: nombre → gid
 let peticiones;     // todas las URL pedidas, en orden
 let gasFilas;       // lo que responde ?p=rows por hoja
 let gasRespuesta;   // si se da, lo que responde el GAS (texto) en vez de las filas
-let rotas;          // ganchos por prueba: htmlview(), gviz(hoja, url, opts), csv(gid, opts)
+let rotas;          // ganchos por prueba: htmlview(), gviz(hoja, url, opts), xlsx(gid, opts)
 const alGas = () => peticiones.filter((u) => u.includes('script.google.com'));
 const aGoogle = () => peticiones.filter((u) => u.includes('docs.google.com'));
 const deHtmlview = () => peticiones.filter((u) => u.endsWith('/htmlview'));
@@ -112,6 +130,7 @@ beforeAll(async () => {
       key: (i) => Array.from(m.keys())[i] ?? null, get length() { return m.size; },
     };
   }
+  new Function(readFileSync(VENDOR, 'utf8'))();          // su cola UMD deja window.XLSX, como el <script> de index.html
   const seguridad = await import('./security.js');
   const modulos = await import('./modules.js');
   const repro = await import('./reproductivo.data.js');
@@ -153,18 +172,19 @@ beforeAll(async () => {
       const hoja = u.searchParams.get('sheet');
       const r = rotas.gviz && rotas.gviz(hoja, s, opts);
       if (r) return r;
-      const h = HOJAS[hoja] || DEFECTO;
+      const h = (HOJAS[hoja] && HOJAS[hoja].tabla) ? HOJAS[hoja] : DEFECTO;
       const tabla = u.searchParams.get('tq') === 'limit 1' ? { ...h.tabla, rows: h.tabla.rows.slice(0, 1) } : h.tabla;
       return responder(gvizTexto(tabla));
     }
-    if (u.pathname.endsWith('/export') && u.searchParams.get('format') === 'csv') {
+    if (u.pathname.endsWith('/export') && u.searchParams.get('format') === 'xlsx') {
       const gid = u.searchParams.get('gid');
-      const r = rotas.csv && rotas.csv(gid, opts);
+      const r = rotas.xlsx && rotas.xlsx(gid, opts);
       if (r) return r;
-      const h = Object.values(HOJAS).find((x) => x.gid === gid) || DEFECTO;
-      return responder(h.csv);
+      const e = Object.entries(HOJAS).find(([, x]) => x.gid === gid);
+      if (!e) return responder('<html>404</html>', 404);
+      return responderXlsx(xlsxDe({ [e[0]]: e[1].aoa }));
     }
-    throw new Error('fetch inesperado: ' + s);
+    throw new Error('fetch inesperado: ' + s);   // 0v·2 · ni CSV ni gviz para una hoja que está en la lista
   };
 });
 
@@ -189,9 +209,25 @@ describe('D · se lee por la exportación, y da lo MISMO que el GAS', () => {
     expect(filas).toEqual(FILAS_LOTES);
   });
 
-  it('🔴 lo que gviz deja en blanco (una columna que mezcla números y texto) llega del CSV: la «901/903» y la «n/d»', async () => {
+  it('🔴 0v·2 · con un FILTRO puesto en la hoja (gviz sólo daría las filas visibles) llegan TODAS, por la exportación', async () => {
+    rotas.gviz = (hoja) => (hoja === LOTES ? responder(gvizTexto({ cols: [], rows: [], parsedNumHeaders: 1 })) : null);
     const filas = await H._reproFetchSheet(LOTES, null);
-    expect(filas[0]['Piscina Broodstock'], 'gviz sola la perdía (17 de 50, medido)').toBe('901/903');
+    expect(filas).toEqual(FILAS_LOTES);
+    expect(H.via()[LOTES]).toBe('export');
+    expect(alGas()).toEqual([]);
+  });
+
+  it('🔴 0v·2 · UNA petición por hoja: su XLSX, por su gid (ni gviz ni CSV)', async () => {
+    await H._reproFetchSheet(LOTES, null);
+    const deLaHoja = aGoogle().filter((u) => !u.endsWith('/htmlview'));
+    expect(deLaHoja).toHaveLength(1);
+    expect(deLaHoja[0]).toContain('/export?format=xlsx&gid=111');
+  });
+
+  it('🔴 una columna que mezcla números y texto llega ENTERA (gviz dejaba en blanco lo minoritario): la «901/903» y la «n/d»', async () => {
+    const filas = await H._reproFetchSheet(LOTES, null);
+    expect(filas[0]['Piscina Broodstock']).toBe('901/903');
+    expect(filas[1]['Piscina Broodstock']).toBe(904);
     expect(filas[2].Desoves).toBe('n/d');
   });
 
@@ -202,10 +238,16 @@ describe('D · se lee por la exportación, y da lo MISMO que el GAS', () => {
     expect(porExportacion).toEqual(porGas);
   });
 
-  it('las fechas (también con hora) salen «yyyy-MM-dd» con el mes de gviz corrido (empieza en 0)', async () => {
+  it('las fechas (también con hora, y a las 23:59:59) salen «yyyy-MM-dd» de SU día, como el GAS', async () => {
     const filas = await H._reproFetchSheet(LOTES, null);
     expect(filas.map((f) => f.Fecha)).toEqual(['2026-08-25', '2026-08-30', '2026-09-02', '2026-09-03']);
-    expect(filas[0]['Fecha N2']).toBe('2026-08-25');
+    expect(filas.map((f) => f['Fecha N2'])).toEqual(['2026-08-25', '2026-08-30', '', '']);
+  });
+
+  it('la columna sin cabecera no se devuelve, y una fila con algo SÓLO ahí es una fila vacía (como el GAS)', async () => {
+    const filas = await H._reproFetchSheet(LOTES, null);
+    expect(filas).toHaveLength(4);
+    expect(filas.every((f) => !('' in f))).toBe(true);
   });
 
   it('con `cols` devuelve sólo esas columnas y quita las filas que quedan vacías (como el GAS); si ninguna existe, todas', async () => {
@@ -218,6 +260,19 @@ describe('D · se lee por la exportación, y da lo MISMO que el GAS', () => {
     expect(await H._reproFetchSheet(LOTES, ['No existe'])).toEqual(FILAS_LOTES);
   });
 
+  it('los booleanos llegan con su tipo; dos columnas con la MISMA cabecera, la de más a la derecha (como el GAS)', async () => {
+    expect(await H._reproFetchSheet('Calidad & Agua', null)).toEqual([
+      { Fecha: '2026-09-01', Sala: 'Sala 2', Revisado: true }, { Fecha: '2026-09-02', Sala: 'Sala 3', Revisado: false }]);
+    expect(await H._reproFetchSheet('Maduración Repetida', null)).toEqual([{ Lote: 'QB', Sala: 'Sala 1' }]);
+  });
+
+  it('una hoja que existe pero no tiene NADA (ni cabecera) llega vacía, como el GAS, sin preguntarle', async () => {
+    rotas.xlsx = (gid) => (gid === '222' ? responderXlsx(xlsxDe({ 'Maduración Ingreso': [] })) : null);
+    expect(await H._reproFetchSheet('Maduración Ingreso', null)).toEqual([]);
+    expect(H.via()['Maduración Ingreso']).toBe('export');
+    expect(alGas()).toEqual([]);
+  });
+
   it('la exportación no recorta: la lectura deja de decir «recortada» aunque la anterior del GAS lo dijera', async () => {
     gasRespuesta = JSON.stringify({ ok: true, rows: FILAS_LOTES, truncated: true, limit: 20000 });
     await H._reproFetchSheet(LOTES, null, { soloGas: true });
@@ -227,16 +282,10 @@ describe('D · se lee por la exportación, y da lo MISMO que el GAS', () => {
     expect(H.trunc()[LOTES]).toBe(false);
   });
 
-  it('un nombre de hoja con «&» (Google lo escribe «\\x26») se reconoce en la lista, y un CSV con \\r\\n se lee limpio', async () => {
-    expect(await H._reproFetchSheet('Calidad & Agua', null)).toEqual([{ Fecha: '2026-09-01', Sala: 'Sala 2' }]);
+  it('un nombre de hoja con «&» (Google lo escribe «\\x26») se reconoce en la lista y se lee por SU gid', async () => {
+    expect(await H._reproFetchSheet('Calidad & Agua', null)).toHaveLength(2);
     expect(alGas()).toEqual([]);
     expect(peticiones.some((u) => u.includes('gid=777')), 'se leyó por SU gid').toBe(true);
-  });
-
-  it('fechas de gviz → «yyyy-MM-dd» como el GAS (año con cuatro cifras, mes y día con dos); lo que no es Date(…), null', () => {
-    expect(H._exportFecha('Date(2026,11,31,23,59,59)')).toBe('2026-12-31');
-    expect(H._exportFecha('Date(202,0,5)')).toBe('0202-01-05');
-    expect(H._exportFecha('25/08/2026')).toBe(null);
   });
 });
 
@@ -263,6 +312,13 @@ describe('D · una hoja que NO existe', () => {
     expect(H.via()['Maduración Oculta']).toBe('gas');
   });
 
+  it('🔴 una respuesta de gviz con estado de ERROR no se toma por la hoja por defecto: GAS', async () => {
+    const error = (tabla) => responder(gvizTexto(tabla).replace('"status":"ok"', '"status":"error"'));
+    rotas.gviz = (hoja) => (hoja !== LOTES ? error(DEFECTO.tabla) : null);
+    await H._reproFetchSheet('Maduración Transferencias', null);
+    expect(H.via()['Maduración Transferencias']).toBe('gas');
+  });
+
   it('si la hoja por defecto no se puede leer, no se concluye nada: GAS', async () => {
     rotas.gviz = (hoja) => (hoja !== LOTES ? responder('', 500) : null);
     await H._reproFetchSheet('Maduración Transferencias', null);
@@ -281,76 +337,86 @@ describe('D · una hoja que NO existe', () => {
   });
 });
 
-describe('D · lo que no cuadra se lee por el GAS', () => {
-  const porGas = async (etiqueta) => {
-    const filas = await H._reproFetchSheet(LOTES, null);
+describe('D · lo que no se sabe imitar, o no es la hoja, se lee por el GAS', () => {
+  const porGas = async (etiqueta, cols = null) => {
+    const filas = await H._reproFetchSheet(LOTES, cols);
     expect(H.via()[LOTES], etiqueta).toBe('gas');
     expect(alGas().length, etiqueta).toBeGreaterThan(0);
-    expect(filas).toEqual(FILAS_LOTES);
+    expect(filas).toEqual(cols ? expect.any(Array) : FILAS_LOTES);
   };
+  const conLotes = (aoa, opciones) => { rotas.xlsx = (gid) => (gid === '111' ? responderXlsx(xlsxDe({ [LOTES]: aoa }, opciones)) : null); };
 
-  it('🔴 una cabecera del CSV distinta de la de gviz (otra hoja u otro orden)', async () => {
-    rotas.csv = (gid) => (gid === '111' ? responder(CSV_LOTES.replace('Lote,', 'Lote nuevo,')) : null);
-    await porGas('cabecera distinta');
+  it('🔴 un XLSX de OTRA hoja (otro nombre) no se toma por ésta', async () => {
+    rotas.xlsx = (gid) => (gid === '111' ? responderXlsx(xlsxDe({ 'Maduración Ingreso': AOA_LOTES })) : null);
+    await porGas('otro nombre');
   });
 
-  it('🔴 una columna con cabecera que gviz no trae', async () => {
-    rotas.csv = (gid) => (gid === '111' ? responder(CSV_LOTES.replace(' Observaciones ,', ' Observaciones ,,Extra')) : null);
-    await porGas('columna de más');
+  it('🔴 un XLSX con MÁS de una hoja (no es el de una hoja)', async () => {
+    rotas.xlsx = (gid) => (gid === '111' ? responderXlsx(xlsxDe({ [LOTES]: AOA_LOTES, Otra: [['A'], [1]] })) : null);
+    await porGas('dos hojas');
   });
 
-  it('🔴 las filas desplazadas: un texto de gviz que el CSV no dice igual en su sitio', async () => {
-    rotas.csv = (gid) => (gid === '111' ? responder(CSV_LOTES.replace('\r\n25/08/2026', '\r\n01/01/2026,ZZ,Q,1,1,,,\r\n25/08/2026')) : null);
-    await porGas('fila de más arriba');
+  it('🔴 una HORA sola en una columna que se devuelve (el GAS la da como fecha de 1899: no se imita); en otra, no estorba', async () => {
+    conLotes(lotesCon(1, 5, HORA(0.4375)));
+    await porGas('hora sola');
+    H.reiniciar(); peticiones = [];
+    conLotes(lotesCon(1, 5, HORA(0.4375)));
+    expect(await H._reproFetchSheet(LOTES, ['Lote'])).toEqual([{ Lote: 'XA' }, { Lote: 'XB' }, { Lote: 'XB' }]);
+    expect(H.via()[LOTES], 'la hora no estaba en lo pedido').toBe('export');
   });
 
-  // La fila de más arriba de la prueba anterior la delata también un hueco (su «Fecha N2» vacía donde gviz trae una);
-  // aquí los huecos son los MISMOS y sólo difiere un texto: una fila que cambió entre las dos peticiones.
-  it('🔴 los mismos huecos en las mismas celdas pero OTRO texto en su sitio (la fila cambió entre las dos peticiones)', async () => {
-    rotas.csv = (gid) => (gid === '111' ? responder(CSV_LOTES.replace('30/08/2026,XB,', '30/08/2026,XZ,')) : null);
-    await porGas('otro texto, mismos huecos');
+  it('🔴 una fecha anterior al 1-3-1900 (Excel cuenta un 29-2-1900 que no existió) se lee por el GAS; el 1-3-1900, no', async () => {
+    conLotes(lotesCon(1, 0, { t: 'n', v: 60, z: 'dd/mm/yyyy' }));
+    await porGas('serie 60');
+    H.reiniciar(); peticiones = [];
+    conLotes(lotesCon(1, 0, { t: 'n', v: 61, z: 'dd/mm/yyyy' }));
+    const filas = await H._reproFetchSheet(LOTES, null);
+    expect(H.via()[LOTES]).toBe('export');
+    expect(filas[0].Fecha).toBe('1900-03-01');
   });
 
-  it('🔴 un valor que gviz trae y el CSV deja en blanco (desplazada sin textos que comparar)', async () => {
-    rotas.csv = (gid) => (gid === '111' ? responder(CSV_LOTES.replace(',901/903,85,', ',901/903,,')) : null);
-    await porGas('número sin texto');
+  it('🔴 un error de la hoja (#N/A) en lo que se devuelve', async () => {
+    conLotes(lotesCon(2, 4, NA));
+    await porGas('#N/A');
   });
 
-  it('una fila del CSV que gviz no trae', async () => {
-    rotas.csv = (gid) => (gid === '111' ? responder(CSV_LOTES + '\r\n04/09/2026,BZ,Y,1,1,,,') : null);
-    await porGas('fila de menos en gviz');
+  it('🔴 una cabecera que es una FECHA (el GAS la escribe a su manera: no se imita)', async () => {
+    conLotes(AOA_LOTES.map((f, i) => (i === 0 ? f.map((x, j) => (j === 1 ? F(2026, 1, 1) : x)) : f)));
+    await porGas('cabecera fecha');
   });
 
-  it('una columna de HORAS (el GAS la da como fecha de 1899: no se imita)', async () => {
-    const t = JSON.parse(JSON.stringify(TABLA_LOTES));
-    t.cols[5].type = 'timeofday';
-    rotas.gviz = (hoja) => (hoja === LOTES ? responder(gvizTexto(t)) : null);
-    await porGas('timeofday');
+  it('🔴 una hoja que no empieza en A1 (la cabecera del GAS es la fila 1)', async () => {
+    conLotes(AOA_LOTES, { desde: { r: 1, c: 0 } });
+    await porGas('empieza en la fila 2');
   });
 
-  it('una fecha que gviz no escribe como Date(…)', async () => {
-    const t = JSON.parse(JSON.stringify(TABLA_LOTES));
-    t.rows[0].c[0].v = '25/08/2026';
-    rotas.gviz = (hoja) => (hoja === LOTES ? responder(gvizTexto(t)) : null);
-    await porGas('fecha rara');
+  it('🔴 un libro con el sistema de fechas de 1904 (las series serían otras)', async () => {
+    conLotes(AOA_LOTES, { fecha1904: true });
+    await porGas('1904');
+  });
+
+  it('🔴 sin SheetJS en la página, la exportación no se puede leer: GAS', async () => {
+    const X = window.XLSX;
+    try {
+      delete window.XLSX;
+      await porGas('sin SheetJS');
+    } finally { window.XLSX = X; }
   });
 
   it('una página en vez de datos, un error de Google o un corte de red', async () => {
-    rotas.csv = (gid) => (gid === '111' ? responder('<!DOCTYPE html><html>Inicia sesión</html>') : null);
-    await porGas('CSV que es una página');
-    H.reiniciar(); rotas = { gviz: (hoja) => (hoja === LOTES ? responder('<html>error</html>') : null) };
-    await porGas('gviz que es una página');
-    H.reiniciar(); rotas = { gviz: (hoja) => (hoja === LOTES ? responder(gvizTexto(TABLA_LOTES).replace('"status":"ok"', '"status":"error"')) : null) };
-    await porGas('gviz con status error');
-    H.reiniciar(); rotas = { csv: () => responder('', 500) };
+    rotas.xlsx = (gid) => (gid === '111' ? responder('<!DOCTYPE html><html>Inicia sesión</html>') : null);
+    await porGas('una página');
+    H.reiniciar(); peticiones = []; rotas = { xlsx: (gid) => (gid === '111' ? responder('Fecha,Lote\n01/01/2026,X') : null) };
+    await porGas('un CSV (SheetJS lo abriría como «Sheet1»)');
+    H.reiniciar(); peticiones = []; rotas = { xlsx: () => responder('', 500) };
     await porGas('HTTP 500');
-    H.reiniciar(); rotas = { csv: () => { throw new TypeError('Failed to fetch'); } };
+    H.reiniciar(); peticiones = []; rotas = { xlsx: () => { throw new TypeError('Failed to fetch'); } };
     await porGas('corte de red');
   });
 
   it('🔴 a los 20 s sin respuesta se deja la exportación y se pregunta al GAS (y no antes)', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    rotas.gviz = (hoja, url, opts) => (hoja === LOTES ? colgar(opts) : null);
+    rotas.xlsx = (gid, opts) => (gid === '111' ? colgar(opts) : null);
     const lectura = H._reproFetchSheet(LOTES, null);
     await vi.advanceTimersByTimeAsync(H._EXPORT_MS - 1000);
     expect(alGas(), 'a los 19 s aún se espera a Google').toEqual([]);
@@ -396,10 +462,6 @@ describe('D · la lista de hojas', () => {
     await H._reproFetchSheet(LOTES, null);
     expect(deHtmlview()).toHaveLength(2);
     expect(H.via()[LOTES]).toBe('export');
-  });
-
-  it('columnas de gviz a partir de la Z: AA es la 27.ª del CSV', () => {
-    expect(['A', 'Z', 'AA', 'AZ', 'BA', '', 'a', 'A1'].map(H._exportPos)).toEqual([0, 25, 26, 51, 52, -1, -1, -1]);
   });
 });
 

@@ -12517,6 +12517,14 @@ function _reproCuando(){ return _reproFalloSinRed() ? "cuando vuelva la conexió
    después de guardar (Google la sirve del documento vivo). Lo que no cuadra se lee por el GAS, como antes: una cabecera
    distinta, una fila desplazada, una hoja que no está en la lista, un tipo que no se traduce igual, un fallo o 20 s sin
    respuesta. La confirmación de un chip dudoso (1a) sigue por el GAS, como se decidió en el 7c.
+   0v·2 (2026-09-29, usuario) · EL XLSX DE LA HOJA, YA NO gviz + CSV. Con un FILTRO puesto en la hoja (el laboratorio los
+   deja: MATRIZ, Bitácora y Tanques ese día) gviz sólo da las filas VISIBLES —por nombre, por gid, con `range` o con
+   `select *`, medido— y el emparejamiento con el CSV se descuadraba: todo iba al GAS. La exportación XLSX de UNA hoja
+   (`export?format=xlsx&gid=`) trae todas sus filas con el tipo de cada celda (tampoco pierde el tipo minoritario), en una
+   sola petición: medido ese día, 11 hojas y 7 336 filas IDÉNTICAS al GAS celda a celda, en 0,5–1,8 s. La lee el SheetJS
+   de la página (`window.XLSX`, el del lector de Broodstock). Lo que no se sabe imitar —una hora sola, una fecha anterior
+   al 1-3-1900, un error (#N/A), una cabecera que es fecha—, otra hoja o una página sin SheetJS, al GAS. gviz queda sólo
+   para saber si una hoja que no está en la lista existe.
    🔑 Sólo con el GAS de producción (el libro que escribe es éste) y desde una página https: abierta como archivo, Google
    no deja leer la exportación (sin CORS para el origen null, medido). En index (8) la CSP ya permite los dos dominios. */
 const MAD_LIBRO_ID = "1Rrpff6bD1pOQFsi2Lsagan3ttjncxJzXoXLPgtHM0Gs";
@@ -12531,13 +12539,14 @@ let _exportMapaFallo = 0;          // ms del último fallo al pedirla
 let _exportDefecto = null;         // (promesa) lo que responde gviz por una hoja que no existe, una vez por sesión
 
 function _exportPuede(){ return gasUrl() === DEFAULT_GAS_URL && location.protocol === "https:"; }
-async function _exportTexto(url){
+/** `url` con tope de tiempo: su texto o, con `binario` (0v·2, el XLSX de una hoja), sus bytes. */
+async function _exportTexto(url, binario){
   const ctrl = new AbortController();
   const t = setTimeout(function(){ ctrl.abort(); }, _EXPORT_MS);
   try{
     const r = await fetch(url, { signal: ctrl.signal, cache: "no-store" });
     if(!r.ok) throw new Error("HTTP " + r.status);
-    return await r.text();
+    return binario ? await r.arrayBuffer() : await r.text();
   }finally{ clearTimeout(t); }
 }
 /** La lista de hojas del libro con su gid, de la página /htmlview (~57 KB). Se guarda la sesión; `renovar` la vuelve a
@@ -12577,99 +12586,65 @@ function _exportGviz(txt){
     return (o && o.status === "ok" && o.table && Array.isArray(o.table.cols) && Array.isArray(o.table.rows)) ? o.table : null;
   }catch(_){ return null; }
 }
-/** CSV (RFC 4180): comillas dobles escapadas, y comas y saltos de línea dentro de un campo entrecomillado. Un BOM al
- *  principio no estorba: sólo toca la primera cabecera, y las cabeceras se recortan (trim lo quita). */
-function _exportCsv(t){
+/** 0v·2 · Una celda del XLSX como la da `_rowsCell` del GAS: la fecha «yyyy-MM-dd» de SU día (sin la hora), el número y el
+ *  booleano con su tipo, el texto tal cual y lo vacío como "". `undefined` si no se sabe imitar: una hora sola o una fecha
+ *  anterior al 1-3-1900 (el GAS da una de 1899, y Excel cuenta un 29-2-1900 que no existió) o un error (#N/A…). */
+function _exportCeldaXlsx(X, x){
+  if(!x || x.v == null || x.t === "z") return "";
+  if(x.t === "e") return undefined;
+  if(x.t === "n" && x.z && X.SSF.is_date(x.z)){
+    if(!(x.v >= 61)) return undefined;
+    const d = X.SSF.parse_date_code(x.v);   // su día: SheetJS sólo pasa al siguiente en la última décima de milisegundo
+    return String(d.y).padStart(4, "0") + "-" + String(d.m).padStart(2, "0") + "-" + String(d.d).padStart(2, "0");
+  }
+  if(x.t === "n" || x.t === "b") return x.v;
+  return String(x.v);
+}
+/** 0v·2 · Las filas de una hoja desde su XLSX, como `sheetRows` del GAS: la fila 1, cabeceras (recortadas; sin cabecera la
+ *  columna no se devuelve; con dos iguales, la de más a la derecha); con `cols`, sólo esas (si ninguna existe, todas); sin
+ *  filas vacías —juzgadas sobre las columnas devueltas—. null si no es un libro de UNA hoja con ese nombre que empiece en A1
+ *  y cuente las fechas desde 1900, o si algo de lo devuelto no se sabe imitar. Sin SheetJS en la página, o si no es un XLSX
+ *  (una página de Google), `X.read` lanza: `_exportUna` lo da al GAS. */
+function _exportFilasXlsx(datos, name, cols){
+  const X = window.XLSX;
+  const wb = X.read(new Uint8Array(datos), { type: "array", cellNF: true });
+  if(wb.SheetNames.length !== 1 || wb.SheetNames[0] !== name) return null;
+  if(wb.Workbook && wb.Workbook.WBProps && wb.Workbook.WBProps.date1904) return null;
+  const ws = wb.Sheets[wb.SheetNames[0]];   // la única hoja del libro: la de arriba dice que es ÉSTA
+  if(!ws["!ref"]) return [];
+  const rg = X.utils.decode_range(ws["!ref"]);
+  if(rg.s.r !== 0 || rg.s.c !== 0) return null;
+  const celda = function(r, c){ return ws[X.utils.encode_cell({ r: r, c: c })]; };
+  const cab = [];
+  for(let c = 0; c <= rg.e.c; c++){
+    const x = celda(0, c);
+    if(x && (x.t === "e" || (x.t === "n" && x.z && X.SSF.is_date(x.z)))) return null;
+    cab.push(x && x.v != null ? String(x.v).trim() : "");
+  }
+  const w = {};
+  (cols || []).forEach(function(c){ const k = String(c).trim(); if(k) w[k] = true; });
+  const pide = Object.keys(w).length > 0;
+  const usar = [];
+  for(let c = 0; c < cab.length; c++) if(cab[c] && (!pide || w[cab[c]])) usar.push(c);
+  if(!usar.length) for(let c = 0; c < cab.length; c++) if(cab[c]) usar.push(c);
   const filas = [];
-  let f = [], c = "", q = false;
-  for(let i = 0; i < t.length; i++){
-    const ch = t[i];
-    if(q){ if(ch === '"'){ if(t[i+1] === '"'){ c += '"'; i++; } else q = false; } else c += ch; }
-    else if(ch === '"') q = true;
-    else if(ch === ","){ f.push(c); c = ""; }
-    else if(ch === "\n"){ f.push(c); filas.push(f); f = []; c = ""; }
-    else if(ch !== "\r") c += ch;
-  }
-  if(c !== "" || f.length){ f.push(c); filas.push(f); }
-  return filas;
-}
-/** «Date(2026,7,25)» (el mes de gviz empieza en 0) → «2026-08-25», como `_rowsCell` del GAS. null si no lo es. */
-function _exportFecha(v){
-  const m = /^Date\((\d+),(\d+),(\d+)/.exec(String(v));
-  return m ? m[1].padStart(4, "0") + "-" + String(+m[2] + 1).padStart(2, "0") + "-" + m[3].padStart(2, "0") : null;
-}
-/** Columna de gviz («A», «AB»…) → posición en el CSV. */
-function _exportPos(id){
-  let n = 0;
-  const s = String(id || "");
-  for(let i = 0; i < s.length; i++){
-    const k = s.charCodeAt(i) - 64;
-    if(k < 1 || k > 26) return -1;
-    n = n * 26 + k;
-  }
-  return s ? n - 1 : -1;
-}
-/** Las filas como las da ?p=rows (ver sheetRows en el GAS): cabeceras recortadas, fechas «yyyy-MM-dd», números y
- *  booleanos con su tipo, lo vacío como "", sin filas vacías —juzgadas sobre las columnas devueltas— y, con `cols`, sólo
- *  esas (si ninguna existe, todas). null si algo no cuadra entre las dos exportaciones: entonces se lee por el GAS. */
-function _exportCombinar(tabla, csv, cols){
-  const cab = (csv[0] || []).map(function(h){ return String(h).trim(); });
-  const cuerpo = csv.slice(1), col = [], cubiertas = {};
-  for(let k = 0; k < tabla.cols.length; k++){
-    const d = tabla.cols[k], h = String(d.label == null ? "" : d.label).trim(), pos = _exportPos(d.id);
-    cubiertas[pos] = true;
-    if((cab[pos] || "") !== h) return null;        // otra hoja, u otro orden de columnas (o un id que no es columna)
-    if(!h) continue;
-    if(d.type === "timeofday") return null;        // una hora: el GAS la devuelve como fecha; no se imita
-    col.push({ h: h, k: k, tipo: d.type, pos: pos });
-  }
-  for(let p = 0; p < cab.length; p++) if(cab[p] && !cubiertas[p]) return null;   // una columna que gviz no trae
-  let usar = col;
-  if(cols && cols.length){
-    const w = {};
-    cols.forEach(function(c){ const k = String(c).trim(); if(k) w[k] = true; });
-    const f = col.filter(function(x){ return w[x.h]; });
-    if(f.length) usar = f;
-  }
-  const filas = [], n = Math.max(tabla.rows.length, cuerpo.length);
-  for(let i = 0; i < n; i++){
-    const r = tabla.rows[i], t = cuerpo[i] || [], celdas = (r && r.c) || [];
-    // Una fila que sólo trae el CSV (¿añadida entre las dos peticiones?) no se arma con su texto: no se sabe su tipo.
-    if(!r){ if(t.some(function(v){ return v !== ""; })) return null; continue; }
-    const texto = function(x){ return t[x.pos] == null ? "" : t[x.pos]; };
-    // Las dos tienen que hablar de la MISMA fila: lo que gviz trae, el CSV lo trae en su sitio (y un texto, idéntico).
-    for(let a = 0; a < col.length; a++){
-      const x = col[a], c = celdas[x.k];
-      if(!c || c.v == null || c.v === "") continue;
-      if(texto(x) === "" || (x.tipo === "string" && String(c.v) !== texto(x))) return null;
-    }
+  for(let r = 1; r <= rg.e.r; r++){
     const o = {};
     let alguna = false;
-    for(let a = 0; a < usar.length; a++){
-      const x = usar[a], c = celdas[x.k];
-      let v;
-      if(c && c.v != null){
-        if(x.tipo === "date" || x.tipo === "datetime"){ v = _exportFecha(c.v); if(v === null) return null; }
-        else v = c.v;
-      } else v = texto(x);                          // vacía, o del tipo minoritario que gviz deja en blanco
+    for(let k = 0; k < usar.length; k++){
+      const v = _exportCeldaXlsx(X, celda(r, usar[k]));
+      if(v === undefined) return null;
       if(v !== "") alguna = true;
-      o[x.h] = v;
+      o[cab[usar[k]]] = v;
     }
     if(alguna) filas.push(o);
   }
   return filas;
 }
-/** Una hoja listada: gviz (con tipos) y su CSV (por gid) a la vez, y combinadas. null si algo falla o no cuadra. */
+/** Una hoja listada: su XLSX (por gid; 0v·2, antes gviz + CSV). null si algo falla o no cuadra: entonces, el GAS. */
 async function _exportUna(name, gid, cols){
-  try{
-    const par = await Promise.all([
-      _exportTexto(_EXPORT_BASE + "/gviz/tq?tqx=out:json&headers=1&sheet=" + encodeURIComponent(name)),
-      _exportTexto(_EXPORT_BASE + "/export?format=csv&gid=" + encodeURIComponent(gid))
-    ]);
-    const tabla = _exportGviz(par[0]);
-    // Una página (de error o de acceso) en vez del CSV no pasa de la cabecera, que nunca es la de gviz.
-    return tabla ? _exportCombinar(tabla, _exportCsv(par[1]), cols) : null;
-  }catch(_){ return null; }
+  try{ return _exportFilasXlsx(await _exportTexto(_EXPORT_BASE + "/export?format=xlsx&gid=" + encodeURIComponent(gid), true), name, cols); }
+  catch(_){ return null; }
 }
 /** La primera fila (y las cabeceras) que gviz da por ese nombre de hoja, como texto para comparar; null si no llega. */
 async function _exportPrimera(n){
