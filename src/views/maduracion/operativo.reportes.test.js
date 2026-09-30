@@ -344,9 +344,11 @@ const PLANTA_L = [
   TQ('2026-09-12', 'Sala 1', 1, { 'Machos muertos': 2 }),        // ANTES de la semana
   TQ('2026-09-17', 'Sala 1', 1, { 'Machos muertos': 3, 'Hembras muertas por descarte de selección': 1 }),
   TQ('2026-09-18', 'Sala 2', 4, { 'Hembras muertas': 1 }),
-  /* ⚠ Sólo cierra el lote un Fin de Ciclo con `Tipo: 'Total'` (el Parcial descuenta de su sala y no lo cierra);
-     salen 9♂ 9♀ de los 10+10, y el libro anota la diferencia de 1+1 que no salió. */
-  CIERRE('2026-09-17', 'QZ', 9, 9, { Tipo: 'Total', Motivo: 'Fin de ciclo' }),   // QZ se cierra DENTRO de la semana
+  /* ⚠ Sólo cierra el lote un Fin de Ciclo con `Tipo: 'Total'` (el Parcial no lo cierra); registra 9♂ 9♀ y, desde
+     0t·9, NO los resta: el libro anota como diferencia lo que QZ aún tiene tras los partes del día. */
+  /* 0t·9: registra 7♂ 9♀ (16) a propósito: su diferencia es 18 y el KPI tiene que decir 16 (con 9/9 las dos cifras coincidían y el
+     KPI podía enseñar la diferencia sin que nadie lo viera: RP43 sobrevivía). */
+  CIERRE('2026-09-17', 'QZ', 7, 9, { Tipo: 'Total', Motivo: 'Fin de ciclo' }),   // QZ se cierra DENTRO de la semana
   DES('2026-09-12', 'QA', { desoves: 1, huevos: 900, n2: 700, n5: 400 }),   // fuera de la semana
   DES('2026-09-18', 'QA', { desoves: 2, huevos: 2000, n2: 1600, n5: 1000 }),
 ];
@@ -452,10 +454,17 @@ describe('Maduración · F7.2 · el cierre de lote', () => {
   });
 
   it('la cascada del cuadre se imprime entera, en su orden, y dice si cuadra', () => {
-    expect(cerrado.ficha.cuadre.filas.map((f) => f.id)).toEqual(['ingresados', 'muertos', 'descartes', 'salidas', 'diferencia', 'vivos']);
+    // 0t·9: «Salidas (Fin de Ciclo)» ya no es un paso de la resta; lo registrado va en su nota, sin signo.
+    expect(cerrado.ficha.cuadre.filas.map((f) => f.id)).toEqual(['ingresados', 'muertos', 'descartes', 'diferencia', 'vivos']);
     const html = cierreHtml(cerrado);
     expect(html).toContain('⚖ Cascada del cuadre');
-    expect(html).toContain('− Salidas (Fin de Ciclo)');
+    expect(html).not.toContain('Salidas (Fin de Ciclo)');
+    expect(html).toContain('Registrado en Fin de Ciclo: 16 (7 ♂ · 9 ♀), no se resta');
+    expect(html).not.toContain('Déficit de cierre');
+    // El KPI dice lo registrado (no la diferencia), que no se resta, y la diferencia al lado.
+    const dif = String(cerrado.ficha.cuadre.diferencia.total);
+    expect(html).toContain('<div class="rp-kpi-lb">Fin de Ciclo</div><div class="rp-kpi-v">16</div>'
+      + '<div class="rp-kpi-s">registrado, no se resta · diferencia ' + dif + '</div>');
     /* 🔑 La última fila es la que cierra la cuenta: sin «= Vivos» la cascada no demuestra nada. */
     expect(html).toContain('= Vivos');
     expect(html).toContain(cerrado.ficha.cuadre.cuadra ? 'La cascada <b>cuadra</b>' : 'No cuadra por');
@@ -475,6 +484,9 @@ describe('Maduración · F7.2 · el cierre de lote', () => {
     const hojas = cierreHojas(cerrado);
     expect(hojas.map((h) => h.nombre)).toEqual(['Resumen', 'Cascada', 'Origen', 'Curva', 'Eventos', 'Reproducción']);
     expect(hojas[1].aoa[1].slice(0, 2)).toEqual(['Ingresados', '+']);
+    // 0t·9: el Excel dice lo registrado en Fin de Ciclo, fuera de la resta, en vez del «Déficit de cierre».
+    expect(hojas[1].aoa.find((r) => r[0] === 'Registrado en Fin de Ciclo (no se resta)')).toEqual(['Registrado en Fin de Ciclo (no se resta)', 7, 9, 16]);
+    expect(hojas[1].aoa.find((r) => r[0] === 'Déficit de cierre')).toBeUndefined();
     expect(hojas[3].aoa).toHaveLength(1 + 8);            // del 10 al 17, ambos incluidos
     expect(hojas[2].aoa.find((r) => r[1] === 'Sala 1')).toBeTruthy();
   });

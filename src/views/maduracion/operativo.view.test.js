@@ -930,6 +930,22 @@ describe('Maduración · operativo · 💀 Bajas', () => {
     expect(fila.textContent).toContain('LA');
     expect(fila.textContent).toContain('Parcial');
     expect(c.textContent).toContain('no se recalcula');
+    // 0t·9: lo que salió es lo REGISTRADO, y la tarjeta lo dice: no se resta del libro.
+    expect(c.textContent.replace(/\s+/g, ' ')).toContain('«Salieron» es lo registrado en Fin de Ciclo: no se resta del libro');
+  });
+
+  it('🔴 0t·9 · la ficha del lote NO resta lo registrado en Fin de Ciclo: lo dice aparte, y la cascada cuadra', async () => {
+    await montar(PLANTA_B);
+    abrir('lotes');
+    click(filaLote('LA'));
+    const cuadre = root.querySelector('.mop-cuadre');
+    const filas = [...cuadre.querySelectorAll('tbody tr')].map((t) => t.textContent.replace(/\s+/g, ' ').trim());
+    expect(filas.some((t) => t.includes('Salidas'))).toBe(false);
+    const tarjeta = cuadre.closest('.mc-card').textContent.replace(/\s+/g, ' ');
+    expect(tarjeta).toContain('Registrado en Fin de Ciclo: 20 (10 ♂ · 10 ♀) en 1 cierre');
+    expect(tarjeta).toContain('no se resta');
+    expect(tarjeta).not.toContain('pidió');
+    expect(root.querySelector('.mop-igual').textContent).toContain('cuadra');
   });
 
   it('sin bajas en el período lo dice y no revienta', async () => {

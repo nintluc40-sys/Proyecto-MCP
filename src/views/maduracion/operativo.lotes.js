@@ -11,9 +11,10 @@
    de tanque, no una baja aparte (mad-libro.js, «MORTALIDAD EN TANQUES DE DESOVE Y DE RECUPERACIÓN»). Restarla otra
    vez descuadraría todo lote que haya desovado, así que va como «de los cuales» debajo de Muertos.
 
-   🔑 Las SALIDAS tampoco se leen de la hoja a secas: un Fin de Ciclo puede pedir más animales de los que el libro
-   tenía vivos, y entonces el libro se lleva sólo los que había y anota `deficit-cierre`. La salida EFECTIVA es lo
-   pedido MENOS ese déficit; con lo pedido, el cuadre saldría rojo por algo que el libro ya contó bien.
+   🔴🔴 LO QUE DECLARA FIN DE CICLO NO ES UN TÉRMINO DE LA RESTA (0t·9, 2026-09-29, usuario): esos animales salen del
+   libro por los partes de Tanques (muertos y descartes de selección), así que restarlos otra vez los contaría dos
+   veces. Se enseña APARTE como `registradoFin` (lo declarado tal cual, con cuántos cierres). Hasta ese día la cascada
+   tenía «Salidas (Fin de Ciclo)» con lo pedido menos el `deficit-cierre` del libro, aviso que ya no existe.
 
    ⚠ Y `cuadra` no es una resta derivada —eso sería un fixture que no prueba nada—: cada término viene de su propia
    fuente (los acumuladores del libro, la hoja de cierres, los avisos) y al final se COMPARAN. El día que no cuadre,
@@ -46,12 +47,12 @@ const par = (machos, hembras) => ({ machos: ent(machos), hembras: ent(hembras), 
 
 /* ── LA CASCADA DEL CUADRE ──────────────────────────────────── */
 
-/** Las filas de la cascada, en su orden y con su signo. `vivos` es el resultado, no una resta. */
+/** Las filas de la cascada, en su orden y con su signo. `vivos` es el resultado, no una resta.
+ *  0t·9 (2026-09-29, usuario): sin «Salidas (Fin de Ciclo)»: lo que declara un cierre no se resta (ver la cabecera). */
 export const CUADRE_FILAS = [
   { id: 'ingresados', etiqueta: 'Ingresados', signo: '+' },
   { id: 'muertos', etiqueta: 'Muertos', signo: '−' },
   { id: 'descartes', etiqueta: 'Descartes de selección', signo: '−' },
-  { id: 'salidas', etiqueta: 'Salidas (Fin de Ciclo)', signo: '−' },
   { id: 'diferencia', etiqueta: 'Diferencia de cierre', signo: '−' },
   { id: 'vivos', etiqueta: 'Vivos', signo: '=' },
 ];
@@ -76,9 +77,10 @@ function avisosPorSexo(libro, clave, tipo) {
 }
 
 /**
- * La cascada del cuadre de un lote: ingresados − muertos − descartes − salidas − diferencia = vivos.
+ * La cascada del cuadre de un lote: ingresados − muertos − descartes − diferencia = vivos.
  * Devuelve `null` si el libro no conoce el lote. `cuadra` compara los dos lados; `descuadre` dice de cuánto es la
  * diferencia cuando no cuadran (positivo: el libro tiene MENOS vivos de los que la resta explica).
+ * `registradoFin`: lo que declaran sus cierres de Fin de Ciclo, fuera de la resta (0t·9, ver la cabecera).
  */
 export function cuadreDeLote(libro, fuentes, lote) {
   const clave = normLote(lote);
@@ -87,21 +89,22 @@ export function cuadreDeLote(libro, fuentes, lote) {
   const ingresados = par(L.ingresados.machos, L.ingresados.hembras);
   const muertos = par(L.muertos.machos, L.muertos.hembras);
   const descartes = par(L.descartes.machos, L.descartes.hembras);
-  /* Salidas EFECTIVAS: lo que pidió Fin de Ciclo menos lo que el libro no pudo darle (ver la cabecera). */
-  let pedidoM = 0;
-  let pedidoH = 0;
+  /* Lo REGISTRADO en Fin de Ciclo, tal cual lo declaran sus cierres: informa, no resta (ver la cabecera). */
+  let regM = 0;
+  let regH = 0;
+  let cierres = 0;
   for (const r of (fuentes || {}).cierres || []) {
     if (normLote(r.Lote) !== clave) continue;
-    pedidoM += ent(r.Machos);
-    pedidoH += ent(r.Hembras);
+    regM += ent(r.Machos);
+    regH += ent(r.Hembras);
+    cierres++;
   }
-  const falta = avisosPorSexo(libro, clave, 'deficit-cierre');
-  const salidas = par(Math.max(0, pedidoM - falta.machos), Math.max(0, pedidoH - falta.hembras));
+  const registradoFin = { ...par(regM, regH), cierres };
   const d = avisosPorSexo(libro, clave, 'diferencia-cierre');
   const diferencia = par(d.machos, d.hembras);
   const vivos = par(L.machos, L.hembras);
-  const valores = { ingresados, muertos, descartes, salidas, diferencia, vivos };
-  const resta = (s) => ingresados[s] - muertos[s] - descartes[s] - salidas[s] - diferencia[s];
+  const valores = { ingresados, muertos, descartes, diferencia, vivos };
+  const resta = (s) => ingresados[s] - muertos[s] - descartes[s] - diferencia[s];
   const descuadre = { machos: resta('machos') - vivos.machos, hembras: resta('hembras') - vivos.hembras };
   descuadre.total = descuadre.machos + descuadre.hembras;
   return {
@@ -111,7 +114,7 @@ export function cuadreDeLote(libro, fuentes, lote) {
       desove: { entran: ent(L.mortDesove.entran), muertas: ent(L.mortDesove.muertas) },
       recuperacion: { entran: ent(L.mortRecuperacion.entran), muertas: ent(L.mortRecuperacion.muertas) },
     },
-    deficit: { ...falta, total: falta.machos + falta.hembras },
+    registradoFin,
     cuadra: descuadre.total === 0 && descuadre.machos === 0 && descuadre.hembras === 0,
     descuadre,
   };

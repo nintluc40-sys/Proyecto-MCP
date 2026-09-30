@@ -318,7 +318,10 @@ const ESCENARIOS = {
      que no se ejerza aquí es una divergencia que puede vivir meses sin síntoma. Ya pasó
      dos veces el mismo día —el GRUPO del Ingreso y el tramo a medias de Movimientos—, las
      dos cazadas por el banco y no por la paridad. */
-  'cierre PARCIAL repartido entre dos tanques': {
+  /* 🔴 0t·9 (2026-09-29, usuario): lo que declara un cierre es SÓLO REGISTRO y no se descuenta (los animales salen por
+     los partes de Tanques); un Total sigue anotando como diferencia lo que el libro aún tiene y cierra el lote. Hasta
+     ese día el Parcial descontaba y había aviso de déficit: los escenarios dicen ahora lo que ejercen. */
+  'cierre PARCIAL (sólo registro: no descuenta)': {
     ingresos: [
       ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 150, 0),
       ing('2026-01-01', 'AB', 'CG1', 'Sala 2', 16, 50, 0),
@@ -326,12 +329,12 @@ const ESCENARIOS = {
     cierres: [fin('2026-01-05', 'AB', 'Parcial', 60, 0)],
     tanques: [],
   },
-  'cierre TOTAL con diferencia, y el lote queda cerrado': {
+  'cierre TOTAL con diferencia tras el descarte del día, y el lote queda cerrado': {
     ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 40)],
     cierres: [fin('2026-01-05', 'AB', 'Total', 90, 40)],
-    tanques: [],
+    tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Machos muertos por descarte de selección': 90, 'Hembras muertas por descarte de selección': 40 })],
   },
-  'cierre con déficit y otro de un lote que no existe': {
+  'cierre que declara más de lo vivo (sin déficit) y otro de un lote que no existe': {
     ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 0)],
     cierres: [
       fin('2026-01-05', 'AB', 'Parcial', 25, 0),
@@ -339,7 +342,7 @@ const ESCENARIOS = {
     ],
     tanques: [],
   },
-  /* D14 (2026-09-14): Parcial con sala (descuenta sólo allí, con déficit en esa sala), Parcial en una
+  /* D14 (2026-09-14): Parcial con sala (desde 0t·9 es sólo dato: no descuenta de ella), Parcial en una
      sala donde el lote no está, y un Total con sala escrita, que la ignora. */
   'D14: cierres por SALA': {
     ingresos: [
@@ -534,17 +537,23 @@ describe('Libro · el mismo saldo, posición a posición', () => {
     const agr = construirLibro(ESCENARIOS['agrupación: dos orígenes a un mismo destino, y baja el mismo día'], { hoy: HOY });
     expect(agr.tanques.get('Sala 2|16').machos).toBe(40);   // 30 + 15 − 5 muertos
 
-    /* Fase 4B: sin esto, comparar dos libros que no cerraron nada pasaría siempre. */
-    const parc = construirLibro(ESCENARIOS['cierre PARCIAL repartido entre dos tanques'], { hoy: HOY });
-    expect(parc.tanques.get('Sala 1|1').machos).toBe(105);
-    const tot = construirLibro(ESCENARIOS['cierre TOTAL con diferencia, y el lote queda cerrado'], { hoy: HOY });
-    expect(tot.avisos.filter((a) => a.tipo === 'diferencia-cierre')).toHaveLength(1);
+    /* Fase 4B: sin esto, comparar dos libros que no cerraron nada pasaría siempre.
+       0t·9: un Parcial deja el saldo como estaba (no descuenta) y el Total anota como diferencia lo que el libro
+       aún tiene tras las bajas del día; con la regla vieja, estas cifras eran 105, 10 y un déficit. */
+    const parc = construirLibro(ESCENARIOS['cierre PARCIAL (sólo registro: no descuenta)'], { hoy: HOY });
+    expect(parc.tanques.get('Sala 1|1').machos).toBe(150);
+    expect(parc.avisos).toEqual([]);
+    const tot = construirLibro(ESCENARIOS['cierre TOTAL con diferencia tras el descarte del día, y el lote queda cerrado'], { hoy: HOY });
+    expect(tot.avisos.filter((a) => a.tipo === 'diferencia-cierre').map((a) => [a.sexo, a.cantidad])).toEqual([['machos', 10]]);
     expect(tot.tanques.get('Sala 1|1').machos).toBe(0);
-    expect(construirLibro(ESCENARIOS['cierre con déficit y otro de un lote que no existe'], { hoy: HOY }).avisos).toHaveLength(2);
+    const mas = construirLibro(ESCENARIOS['cierre que declara más de lo vivo (sin déficit) y otro de un lote que no existe'], { hoy: HOY });
+    expect(mas.avisos.map((a) => a.tipo)).toEqual(['cierre-sin-lote']);
+    expect(mas.tanques.get('Sala 1|1').machos).toBe(10);
     const d14 = construirLibro(ESCENARIOS['D14: cierres por SALA'], { hoy: HOY });
     expect(d14.tanques.get('Sala 1|1').machos).toBe(150);
+    expect(d14.tanques.get('Sala 2|16').machos).toBe(50);
     expect(d14.tanques.get('Sala 3|22').machos).toBe(0);
-    expect(d14.avisos.map((a) => a.tipo)).toEqual(['deficit-cierre', 'cierre-sin-lote', 'diferencia-cierre']);
+    expect(d14.avisos.map((a) => a.tipo)).toEqual(['cierre-sin-lote', 'diferencia-cierre', 'diferencia-cierre']);
 
     /* 2026-09-09: sin esto, el escenario del re-ingreso podría compararse en verde con las
        DOS copias dejando el lote cerrado, que es justo el defecto que vino a fijar. */

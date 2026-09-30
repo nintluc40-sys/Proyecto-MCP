@@ -288,7 +288,7 @@ describe('Maduración · tablero · alertas', () => {
   it('cada tipo de aviso que el libro sabe anotar tiene su rótulo', () => {
     const libro = readFileSync(new URL('../registros/lib/mad-libro.js', import.meta.url), 'utf8');
     const tipos = [...new Set([...libro.matchAll(/anota\(fecha, '([a-z-]+)'/g)].map((x) => x[1]))];
-    expect(tipos.length).toBe(14);
+    expect(tipos.length).toBe(13);   // 0t·9: se fue «deficit-cierre» (un cierre ya no descuenta)
     expect(Object.keys(TIPOS_AVISO).sort()).toEqual(tipos.sort());
   });
 });

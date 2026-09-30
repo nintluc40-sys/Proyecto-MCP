@@ -11,7 +11,9 @@
        − Mortalidad        (Maduración Tanques)
        − Descarte          (Maduración Tanques)
        ± Movimientos       (Maduración Movimientos · Fase 3, 2026-09-08) ✔
-       − Fin de ciclo      (Maduración Fin de Ciclo · Fase 4B, 2026-09-08) ✔
+       − Diferencia de un cierre TOTAL (Maduración Fin de Ciclo · Fase 4B, 2026-09-08) ✔
+                           — lo que el cierre DECLARA no se resta: esos animales salen por
+                           la mortalidad y el descarte de los partes (0t·9, 2026-09-29)
        − Hembras muertas en tanques de desove y de recuperación
                            (Maduración Mortalidad Desove · 2026-09-15) ✔
 
@@ -365,12 +367,18 @@ export function construirLibro(fuentes, opts) {
     }
 
     /* ── FIN DE CICLO (Fase 4B) ───────────────────────────────
-       Se cierra un LOTE, no un tanque (decisión del usuario): lo que sale se descuenta de
-       cada tanque donde el lote esté, en proporción a lo que tenga vivo ese día. El
-       operario no enumera tanques, igual que no los enumera al desovar.
-       🔑🔑 Y en un cierre TOTAL, lo que el libro creía que quedaba y NO salió es LA
-       DIFERENCIA: se anota con su fecha y el lote se pone a cero. No se esconde ni se
-       bloquea — «la diferencia ES el producto», que es la regla del módulo entero. */
+       Se cierra un LOTE, no un tanque (decisión del usuario). El operario no enumera
+       tanques, igual que no los enumera al desovar.
+       🔴🔴 0t·9 (2026-09-29, usuario): los ♂/♀ que declara un cierre son SÓLO REGISTRO y
+       NO se descuentan: esos animales ya salieron del libro por los partes de Tanques
+       (muertos y «muertos por descarte de selección»), y restarlos aquí los contaba dos
+       veces. Hasta ese día un Parcial descontaba (del lote entero o de su sala, D14) y un
+       Total descontaba lo declarado; con eso se fue el aviso `deficit-cierre`.
+       🔑🔑 Un cierre TOTAL sigue CERRANDO el lote: lo que el libro aún tiene vivo tras las
+       bajas del día es LA DIFERENCIA, se anota con su fecha y el lote se pone a cero. No se
+       esconde ni se bloquea — «la diferencia ES el producto», que es la regla del módulo
+       entero. La sala de un Parcial es un dato del registro: sólo se comprueba que el
+       lote esté allí. */
     if (tipo === 'fin') {
       const lote = txt(r.Lote);
       const esTotal = txt(r.Tipo) === 'Total';
@@ -379,8 +387,8 @@ export function construirLibro(fuentes, opts) {
         anota(fecha, 'cierre-incompleto', 'Un cierre sin lote no entra en el libro.');
         continue;
       }
-      /* D14 (2026-09-14): un cierre PARCIAL que dice su sala descuenta sólo de los tanques del lote
-         en esa sala. Un Total es siempre del lote entero: su sala, si la hubiera, no cuenta. */
+      /* D14 (2026-09-14): un cierre PARCIAL puede decir su sala; desde 0t·9 es un dato (de dónde salieron) y
+         sólo se comprueba que el lote esté allí. Un Total es siempre del lote entero: su sala, si la hubiera, no cuenta. */
       const salaCierre = esTotal ? '' : txt(r.Sala);
       const enSala = salaCierre ? { sala: salaCierre } : {};
       const posLote = [...pos.values()].filter((p) => p.lote === lote && (!salaCierre || p.sala === salaCierre));
@@ -391,15 +399,6 @@ export function construirLibro(fuentes, opts) {
             : 'Se cerró el lote ' + lote + ' y ningún ingreso explica dónde estaba.',
           { lote, ...enSala, machos: pedido.machos, hembras: pedido.hembras });
         continue;
-      }
-      for (const sexo of ['machos', 'hembras']) {
-        const { sobra } = tomarDe(posLote, sexo, pedido[sexo]);
-        if (sobra > 0) {
-          anota(fecha, 'deficit-cierre',
-            'Del lote ' + lote + ' salieron ' + sobra + ' ' + sexo + ' de más de los que el libro tenía vivos' +
-            (salaCierre ? ' en ' + salaCierre : '') + '.',
-            { lote, ...enSala, sexo, cantidad: sobra });
-        }
       }
       if (esTotal) {
         for (const sexo of ['machos', 'hembras']) {
@@ -420,8 +419,8 @@ export function construirLibro(fuentes, opts) {
 
     /* ── MORTALIDAD EN TANQUES DE DESOVE Y DE RECUPERACIÓN (2026-09-15, usuario) ──
        Las hembras salen de sus tanques a desovar y a recuperarse; las que mueren allí no vuelven, así que se
-       descuentan del LOTE entero, repartidas entre sus tanques en proporción a sus hembras vivas (como un
-       cierre parcial sin sala). Cuentan como MUERTAS del lote y se acumulan por tipo de tanque. */
+       descuentan del LOTE entero, repartidas entre sus tanques en proporción a sus hembras vivas (como descontaba
+       un cierre parcial sin sala hasta 0t·9). Cuentan como MUERTAS del lote y se acumulan por tipo de tanque. */
     if (tipo === 'mortdes') {
       const lote = txt(r.Lote);
       const clase = txt(r['Tipo de tanque']);

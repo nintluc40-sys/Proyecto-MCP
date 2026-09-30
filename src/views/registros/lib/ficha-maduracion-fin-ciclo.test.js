@@ -32,10 +32,10 @@ describe('Fin de Ciclo · la hoja y sus columnas', () => {
   });
 
   it('NO lleva tanque: se cierra el LOTE (y un Parcial puede decir su SALA · D14)', () => {
-    /* Decisión del usuario: el cierre es del lote y el libro descuenta de cada tanque donde
-       esté, en proporción. Pedir el tanque obligaría a enumerar dónde está, que es justo lo
-       que el libro ya sabe. D14 (2026-09-14): un lote vive en varias salas, y un Parcial
-       puede acotar a una; vacía = el lote entero. */
+    /* Decisión del usuario: el cierre es del lote. Pedir el tanque obligaría a enumerar dónde
+       está, que es justo lo que el libro ya sabe. D14 (2026-09-14): un lote vive en varias
+       salas, y un Parcial puede decir de cuál salen; vacía = el lote entero. (Desde 0t·9 lo
+       declarado es sólo registro: el libro ya no lo descuenta.) */
     expect(MAD_FIN_HEADERS).toContain('Sala');
     expect(MAD_FIN_HEADERS).not.toContain('Tanque');
     expect(MAD_FIN_HEADERS).toContain('Lote');
@@ -106,7 +106,7 @@ describe('Fin de Ciclo · la hoja y sus columnas', () => {
 describe('Fin de Ciclo · la llave', () => {
   it('🔴 el MOTIVO va en la llave: un pedido y un descarte del mismo día conviven', () => {
     /* Sin el motivo, los dos compartirían ID y el segundo borraría al primero — y con él,
-       su descuento del saldo. */
+       su registro. */
     const a = finRowId('2026-09-08', 'AB', 'Pedido');
     const b = finRowId('2026-09-08', 'AB', 'Descarte parcial');
     expect(a).not.toBe(b);
@@ -261,10 +261,11 @@ describe('Fin de Ciclo · validación', () => {
   });
 
   it('ERROR si un cierre PARCIAL no saca ningún animal', () => {
-    // No descuenta nada: es una fila que no dice nada.
+    // No registra nada: es una fila que no dice nada. (0t·9: un cierre ya no descuenta del libro; antes decía
+    // «no descuenta nada».)
     const m = base();
     m.cierres[0].machos = 0; m.cierres[0].hembras = 0;
-    expect(validarFinCiclo(m).errores.some((e) => /Parcial.*no descuenta nada/.test(e))).toBe(true);
+    expect(validarFinCiclo(m).errores.some((e) => /Parcial.*no registra ninguna salida/.test(e))).toBe(true);
   });
 
   it('pero un cierre TOTAL sin cifras es legítimo: todo será diferencia', () => {
@@ -276,6 +277,8 @@ describe('Fin de Ciclo · validación', () => {
     const { errores, avisos } = validarFinCiclo(m);
     expect(errores).toEqual([]);
     expect(avisos.some((a) => /se anotará como diferencia/.test(a))).toBe(true);
+    // 0t·9: lo declarado ya no cambia la diferencia; lo que falta en el registro es la constancia de lo que salió.
+    expect(avisos.some((a) => /sin constancia de cuántos salieron/.test(a))).toBe(true);
   });
 
   /* ⚠⚠ EL METABISULFITO SON DOS DATOS QUE SÓLO VALEN JUNTOS. Medio registro es peor que

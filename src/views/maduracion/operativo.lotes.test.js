@@ -5,8 +5,10 @@
    roja: cada una está montada para que el valor equivocado dé OTRO número, no el mismo):
    · La cascada CUADRA en un lote que ha desovado. QE tiene 5 hembras muertas en tanques de desove, y ésas YA están
      dentro de `muertos`: restarlas otra vez daría 128 en vez de 133 y la prueba se pondría roja.
-   · Las SALIDAS son las efectivas. A QF le pidieron 15 machos y sólo tenía 10: con lo pedido el cuadre daría 5 y no
-     10. El déficit se enseña aparte.
+   · 🔴 0t·9 (2026-09-29, usuario): lo que declara Fin de Ciclo es SÓLO REGISTRO y NO se resta: los animales salen
+     por los partes de Tanques (aquí, el descarte de selección del mismo día). Restarlo daría el doble: QE quedaría en
+     113 y no en 133. Lo registrado se enseña aparte (`registradoFin`), fuera de la cascada. A QF le registraron 15
+     machos y sólo tenía 10: ya no hay «déficit» que decir; lo registrado se enseña tal cual.
    · Un cierre TOTAL deja su DIFERENCIA y el lote sigue en la tabla, cerrado y a cero (QG).
    · El reparto de un tanque COMPARTIDO es proporcional (QH y QI, mitad y mitad), y un lote con DOS códigos
      genéticos en un tanque suyo se queda el tanque ENTERO (QJ): acumulando mal, su parte sería 0,5 y sus cópulas
@@ -42,9 +44,11 @@ const FOTO = '2026-09-19';
 
 /* La planta de las pruebas, toda en la Sala 3, al cierre del 19/09:
    · t1 QE  — 100♂ 100♀ el 01/09. Muertes y descartes el 05/09, 5 hembras muertas desovando el 10/09
-              y un cierre PARCIAL de 20/20 el 15/09.  → 66♂ 67♀
-   · t2 QF  —  10♂  10♀ el 02/09 y un cierre PARCIAL que pide 15 machos: sólo había 10 (déficit de 5). → 0♂ 10♀
-   · t3 QG  —  30♂  30♀ el 03/09 y un cierre TOTAL de 20/20 el 17/09: quedan 10/10 de DIFERENCIA. → cerrado, a cero
+              y, el 15/09, un descarte de 20/20 en el parte y su cierre PARCIAL de 20/20 (sólo registro).  → 66♂ 67♀
+   · t2 QF  —  10♂  10♀ el 02/09; el 16/09 el parte descarta sus 10 machos y el cierre PARCIAL registra 15. → 0♂ 10♀
+   · t3 QG  —  30♂  30♀ el 03/09; el 17/09 el parte descarta 20/20 y un cierre TOTAL cierra el lote: quedan 10/10
+              de DIFERENCIA. → cerrado, a cero
+   (0t·9: hasta el 2026-09-29 los cierres DESCONTABAN y la planta no tenía esos tres partes de descarte.)
    · t4 QH y QI — 20♂ 20♀ cada uno el 04/09: se reparten el tanque a medias.
    · t5 QJ  — el MISMO lote con dos códigos genéticos (10♂ 10♀ cada uno): el tanque es suyo entero. */
 const PLANTA = [
@@ -52,14 +56,17 @@ const PLANTA = [
   TQ('2026-09-05', 'Sala 3', 1, { 'Machos muertos': 10, 'Hembras muertas': 6,
     'Machos muertos por descarte de selección': 4, 'Hembras muertas por descarte de selección': 2 }),
   MORT('2026-09-10', 'QE', 'Desove', 30, 5),
+  TQ('2026-09-15', 'Sala 3', 1, { 'Machos muertos por descarte de selección': 20, 'Hembras muertas por descarte de selección': 20 }),
   FIN('2026-09-15', 'QE', 'Parcial', 20, 20),
   DES('2026-09-12', 'QE', 4, 400000, 340000, 0),
   DES('2026-09-14', 'QE', 2, 200000, 0, 180000),
 
   ING('2026-09-02', 'QF', 'Sala 3', 2, 10, 10, 'CB', 'P2'),
+  TQ('2026-09-16', 'Sala 3', 2, { 'Machos muertos por descarte de selección': 10 }),
   FIN('2026-09-16', 'QF', 'Parcial', 15, 0),
 
   ING('2026-09-03', 'QG', 'Sala 3', 3, 30, 30, 'CB', 'P2'),
+  TQ('2026-09-17', 'Sala 3', 3, { 'Machos muertos por descarte de selección': 20, 'Hembras muertas por descarte de selección': 20 }),
   FIN('2026-09-17', 'QG', 'Total', 20, 20),
 
   ING('2026-09-04', 'QH', 'Sala 3', 4, 20, 20, 'CA', 'P1'),
@@ -81,8 +88,9 @@ const F = (o) => normalizarFiltro(o);
 
 describe('Maduración · lotes · la cascada del cuadre', () => {
   it('las filas van en su orden, con su signo, y «vivos» es el resultado', () => {
-    expect(CUADRE_FILAS.map((f) => f.id)).toEqual(['ingresados', 'muertos', 'descartes', 'salidas', 'diferencia', 'vivos']);
-    expect(CUADRE_FILAS.map((f) => f.signo)).toEqual(['+', '−', '−', '−', '−', '=']);
+    // 0t·9: «Salidas (Fin de Ciclo)» ya no es un término de la resta: lo registrado se enseña aparte.
+    expect(CUADRE_FILAS.map((f) => f.id)).toEqual(['ingresados', 'muertos', 'descartes', 'diferencia', 'vivos']);
+    expect(CUADRE_FILAS.map((f) => f.signo)).toEqual(['+', '−', '−', '−', '=']);
   });
 
   it('🔴 un lote que DESOVÓ cuadra: la mortalidad en desove ya está dentro de «muertos» y no se resta otra vez', () => {
@@ -90,32 +98,52 @@ describe('Maduración · lotes · la cascada del cuadre', () => {
     expect(c.ingresados).toEqual({ machos: 100, hembras: 100, total: 200 });
     // 10 machos y 6 hembras de las bajas del tanque, MÁS las 5 hembras que murieron desovando.
     expect(c.muertos).toEqual({ machos: 10, hembras: 11, total: 21 });
-    expect(c.descartes).toEqual({ machos: 4, hembras: 2, total: 6 });
-    expect(c.salidas).toEqual({ machos: 20, hembras: 20, total: 40 });
+    // 4/2 de las bajas del 05/09 y 20/20 del parte del 15/09 (lo que salió con el cierre Parcial).
+    expect(c.descartes).toEqual({ machos: 24, hembras: 22, total: 46 });
     expect(c.diferencia).toEqual({ machos: 0, hembras: 0, total: 0 });
     expect(c.vivos).toEqual({ machos: 66, hembras: 67, total: 133 });
-    // 200 − 21 − 6 − 40 = 133. Restando las 5 de desove otra vez darían 128 y esto se pondría rojo.
+    // 200 − 21 − 46 = 133. Restando las 5 de desove otra vez darían 128, y restando también lo registrado en Fin de
+    // Ciclo, 93: las dos se pondrían rojas.
     expect(c.cuadra).toBe(true);
     expect(c.descuadre).toEqual({ machos: 0, hembras: 0, total: 0 });
     // Y se enseñan como «de los cuales», con las que entraron a desovar.
     expect(c.deLosCuales.desove).toEqual({ entran: 30, muertas: 5 });
     expect(c.deLosCuales.recuperacion).toEqual({ entran: 0, muertas: 0 });
+    // Lo registrado en Fin de Ciclo va APARTE: informa, no resta.
+    expect(c.registradoFin).toEqual({ machos: 20, hembras: 20, total: 40, cierres: 1 });
+    expect(c).not.toHaveProperty('salidas');
+    expect(c).not.toHaveProperty('deficit');
   });
 
-  it('🔴 las SALIDAS son las EFECTIVAS: lo pedido menos lo que el libro no pudo dar, y el déficit se dice', () => {
+  it('🔴 0t·9 · lo REGISTRADO en Fin de Ciclo no se resta: aunque diga más de lo que había, el lote cuadra con sus partes', () => {
     const c = cuadreDeLote(M.libro, M.fuentes, 'QF');
-    // El cierre pidió 15 machos y sólo había 10: con los 15 pedidos el cuadre daría 5 vivos, no 10.
-    expect(c.salidas).toEqual({ machos: 10, hembras: 0, total: 10 });
-    expect(c.deficit).toEqual({ machos: 5, hembras: 0, total: 5 });
+    // El cierre registró 15 machos y el parte descartó los 10 que había: el libro no resta los 15 (antes, «déficit 5»).
+    expect(c.registradoFin).toEqual({ machos: 15, hembras: 0, total: 15, cierres: 1 });
+    expect(c.descartes).toEqual({ machos: 10, hembras: 0, total: 10 });
     expect(c.vivos).toEqual({ machos: 0, hembras: 10, total: 10 });
+    expect(c.cuadra).toBe(true);
+  });
+
+  it('🔴 sólo los avisos de DIFERENCIA de cierre son diferencia: un déficit de mortalidad en desove no lo es', () => {
+    /* 0t·9: hasta ese día esta regla la ejercía el `deficit-cierre` de QF; sin él, ningún aviso con lote de la planta la
+       distinguía (L21 sobrevivía). Aquí murieron 8 hembras desovando de 5 que había: el libro anota `deficit-mortdes` de 3
+       con el lote, y contarlo como diferencia descuadraría un lote que cuadra. */
+    const mini = modeloOperativo([
+      ING('2026-09-01', 'QT', 'Sala 3', 6, 0, 5),
+      MORT('2026-09-10', 'QT', 'Desove', 8, 8),
+    ], { hoy: FOTO, fecha: FOTO });
+    expect(mini.libro.avisos.map((a) => [a.tipo, a.lote, a.cantidad])).toEqual([['deficit-mortdes', 'QT', 3]]);
+    const c = cuadreDeLote(mini.libro, mini.fuentes, 'QT');
+    expect(c.diferencia).toEqual({ machos: 0, hembras: 0, total: 0 });
     expect(c.cuadra).toBe(true);
   });
 
   it('un cierre TOTAL deja su diferencia, y con ella el lote cuadra a cero', () => {
     const c = cuadreDeLote(M.libro, M.fuentes, 'QG');
     expect(c.ingresados.total).toBe(60);
-    expect(c.salidas).toEqual({ machos: 20, hembras: 20, total: 40 });
+    expect(c.descartes).toEqual({ machos: 20, hembras: 20, total: 40 });
     expect(c.diferencia).toEqual({ machos: 10, hembras: 10, total: 20 });
+    expect(c.registradoFin).toEqual({ machos: 20, hembras: 20, total: 40, cierres: 1 });
     expect(c.vivos.total).toBe(0);
     expect(c.cuadra).toBe(true);
   });
@@ -138,7 +166,7 @@ describe('Maduración · lotes · la cascada del cuadre', () => {
        hallaría igual, pero sus CIERRES y sus AVISOS se comparan contra la clave y se quedarían a cero en silencio.
        Por eso se exige la cascada ENTERA, no sólo el nombre. */
     expect(cuadreDeLote(M.libro, M.fuentes, ' qe ')).toEqual(cuadreDeLote(M.libro, M.fuentes, 'QE'));
-    expect(cuadreDeLote(M.libro, M.fuentes, ' qf ').salidas).toEqual({ machos: 10, hembras: 0, total: 10 });
+    expect(cuadreDeLote(M.libro, M.fuentes, ' qf ').registradoFin).toEqual({ machos: 15, hembras: 0, total: 15, cierres: 1 });
     expect(cuadreDeLote(M.libro, M.fuentes, ' qg ').diferencia).toEqual({ machos: 10, hembras: 10, total: 20 });
     expect(cuadreDeLote(M.libro, M.fuentes, 'NO-EXISTE')).toBe(null);
     expect(loteDelLibro(M.libro, 'NO-EXISTE')).toBe(null);
@@ -153,7 +181,8 @@ describe('Maduración · lotes · la tabla maestra', () => {
     expect(qe.ingresados.total).toBe(200);
     expect(qe.vivos).toEqual({ machos: 66, hembras: 67, total: 133 });
     expect(qe.supervivencia).toEqual({ machos: 66, hembras: 67, total: 66.5 });
-    expect(qe.descarte).toEqual({ machos: 4, hembras: 2, total: 3 });
+    // 0t·9: 4/2 de las bajas del 05/09 + los 20/20 que el parte descartó el 15/09 (lo que registró su cierre Parcial).
+    expect(qe.descarte).toEqual({ machos: 24, hembras: 22, total: 23 });
     expect(qe.dias).toBe(18);                    // del 01/09 a la foto
     expect(qe.salas).toEqual(['Sala 3']);
     expect(qe.cuadra).toBe(true);

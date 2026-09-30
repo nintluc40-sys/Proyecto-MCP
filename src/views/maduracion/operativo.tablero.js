@@ -487,7 +487,7 @@ export const TIPOS_AVISO = {
   'deficit-movimiento': 'Se movieron más animales de los que quedaban vivos',
   'cierre-incompleto': 'Cierre sin lote',
   'cierre-sin-lote': 'Cierre de un lote que el libro no tiene ahí',
-  'deficit-cierre': 'Salieron más animales de los que quedaban vivos',
+  /* 0t·9 (2026-09-29): sin «deficit-cierre» — un cierre ya no descuenta, así que no puede salir «de más». */
   'diferencia-cierre': 'Diferencia de cierre',
   'mortdes-tipo': 'Tipo de tanque desconocido (mortalidad en desove)',
   'mortdes-sin-lote': 'Mortalidad en desove que ningún ingreso explica',

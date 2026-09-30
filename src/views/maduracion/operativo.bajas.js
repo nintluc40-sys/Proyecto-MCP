@@ -291,9 +291,10 @@ export function calorSalaDia(partes, F, periodo) {
 /* ── LOS LOTES CERRADOS ─────────────────────────────────────── */
 
 /**
- * Los cierres del período, uno por fila, con lo que salió y la DIFERENCIA que el libro anotó al cerrarlos (lo
- * que contaba vivo y no salió). La diferencia NO se recalcula: se leen los avisos `diferencia-cierre` del
- * libro, que es donde vive, con su misma fecha y su mismo lote.
+ * Los cierres del período, uno por fila, con lo que registraron como salida y la DIFERENCIA que el libro anotó al
+ * cerrarlos (lo que aún contaba vivo). La diferencia NO se recalcula: se leen los avisos `diferencia-cierre` del
+ * libro, que es donde vive, con su misma fecha y su mismo lote. 0t·9 (2026-09-29): la salida es sólo REGISTRO; el
+ * libro no la resta (esos animales salen como muertos o descartes en los partes).
  */
 export function lotesCerrados(M, F, periodo) {
   const libro = (M && M.libro) || { avisos: [] };

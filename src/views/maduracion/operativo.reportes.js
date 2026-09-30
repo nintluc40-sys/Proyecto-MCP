@@ -599,14 +599,16 @@ export function cierreHtml(rep, opts = {}) {
   const r = rep || {};
   const f = r.ficha || {};
   const tope = opts.tope === undefined ? TOPE_FILAS : opts.tope;
-  const C = f.cuadre || { filas: [], deLosCuales: {}, deficit: {}, descuadre: {} };
+  const C = f.cuadre || { filas: [], deLosCuales: {}, registradoFin: {}, descuadre: {} };
   const R = f.reproduccion || {};
   const PR = f.promedios || {};
+  /* 0t·9 (2026-09-29, usuario): lo que declara Fin de Ciclo es sólo registro y no se resta (ver cuadreDeLote). */
+  const RF = C.registradoFin || {};
   const kpis = [
     ['Ingresados', nf((C.ingresados || {}).total), `♀ ${nf((C.ingresados || {}).hembras)} · ♂ ${nf((C.ingresados || {}).machos)}`],
     ['Vivos', nf((C.vivos || {}).total), r.abierto ? 'a la foto' : 'al cierre'],
     ['Muertos', nf((C.muertos || {}).total), `descartes ${nf((C.descartes || {}).total)}`],
-    ['Salidas', nf((C.salidas || {}).total), `diferencia ${nf((C.diferencia || {}).total)}`],
+    ['Fin de Ciclo', nf(RF.total), `registrado, no se resta · diferencia ${nf((C.diferencia || {}).total)}`],
     ['Días', nf(r.periodo.dias), esIso(f.ingreso) ? 'desde ' + dma(f.ingreso) : ''],
     ['Desoves', nf(R.desoves), `N5 ${nf(R.n5)} · fertilidad ${pc(R.fertilidad)}`],
     ['Peso ♀', PR.pesoHembras === '' || PR.pesoHembras === undefined ? '—' : nf(PR.pesoHembras, 2) + ' g', PR.pesoMachos === '' || PR.pesoMachos === undefined ? '' : '♂ ' + nf(PR.pesoMachos, 2) + ' g'],
@@ -619,7 +621,7 @@ export function cierreHtml(rep, opts = {}) {
       De los muertos: en desove ${nf((dlc.desove || {}).muertas)} de ${nf((dlc.desove || {}).entran)} que entraron ·
       en recuperación ${nf((dlc.recuperacion || {}).muertas)} de ${nf((dlc.recuperacion || {}).entran)}.
       ${C.cuadra ? 'La cascada <b>cuadra</b>.' : '<b>⚠ No cuadra por ' + nf(Math.abs((C.descuadre || {}).total)) + '</b>: la diferencia no está explicada por el libro.'}
-      ${(C.deficit || {}).total ? ' Déficit de cierre: ' + nf(C.deficit.total) + ' (se pidió más de lo que había).' : ''}</div>`;
+      ${RF.cierres ? ' Registrado en Fin de Ciclo: ' + nf(RF.total) + ' (' + nf(RF.machos) + ' ♂ · ' + nf(RF.hembras) + ' ♀), no se resta: salen como muertos o descartes.' : ''}</div>`;
   const filasOrigen = (f.origen || []).map((o) => `<tr>${celdas([
     dm(o.fecha), esc(ubic(o.sala, o.tanque)), esc(o.codigo || '—'), esc(o.piscina || '—'), nf(o.total),
   ])}</tr>`);
@@ -890,10 +892,11 @@ export function semanalHojas(rep) {
 export function cierreHojas(rep) {
   const r = rep || {};
   const f = r.ficha || {};
-  const C = f.cuadre || { filas: [], deLosCuales: {}, deficit: {}, descuadre: {} };
+  const C = f.cuadre || { filas: [], deLosCuales: {}, registradoFin: {}, descuadre: {} };
   const R = f.reproduccion || {};
   const PR = f.promedios || {};
   const dlc = C.deLosCuales || {};
+  const RF = C.registradoFin || {};
   const resumen = [
     ['Maduración · Cierre de lote'],
     ['Lote', f.lote || ''],
@@ -921,7 +924,8 @@ export function cierreHojas(rep) {
     [],
     ['¿Cuadra?', C.cuadra ? 'sí' : 'NO'],
     ['Descuadre', ent((C.descuadre || {}).machos), ent((C.descuadre || {}).hembras), ent((C.descuadre || {}).total)],
-    ['Déficit de cierre', ent((C.deficit || {}).machos), ent((C.deficit || {}).hembras), ent((C.deficit || {}).total)],
+    /* 0t·9: lo que declaró Fin de Ciclo, fuera de la resta (antes, el «Déficit de cierre», que ya no existe). */
+    ['Registrado en Fin de Ciclo (no se resta)', ent(RF.machos), ent(RF.hembras), ent(RF.total)],
   ];
   const origen = [
     ['Fecha', 'Sala', 'Tanque', 'Código genético', 'Piscina', 'Camaronera', 'Machos', 'Hembras', 'Total'],

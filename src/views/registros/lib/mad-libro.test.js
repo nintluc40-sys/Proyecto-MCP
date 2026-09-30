@@ -505,9 +505,12 @@ describe('Libro · los MOVIMIENTOS (Fase 3)', () => {
 });
 
 describe('Libro · el FIN DE CICLO (Fase 4B)', () => {
-  it('un cierre PARCIAL descuenta del lote entero, repartido entre sus tanques', () => {
-    /* Se cierra el LOTE, no un tanque (decisión del usuario). 60 de 200 vivos repartidos
-       150/50 entre dos tanques salen como 45 y 15. */
+  /* 🔴🔴 0t·9 (2026-09-29, usuario): lo que declara Fin de Ciclo es SÓLO REGISTRO y NO se resta del libro. Los animales
+     que salen ya salieron por los partes de Tanques (muertos y «muertos por descarte de selección»): restarlos otra vez
+     los contaba dos veces. El Total sigue CERRANDO el lote: lo que el libro aún tenga vivo tras las bajas del día es la
+     DIFERENCIA, se anota y el lote queda a cero. Hasta ese día un Parcial descontaba (del lote entero o de su sala, D14)
+     y un Total descontaba lo declarado antes de anotar la diferencia. */
+  it('🔴 0t·9 · un cierre PARCIAL NO descuenta: es sólo registro', () => {
     const l = construirLibro({
       ingresos: [
         ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 150, 0),
@@ -516,34 +519,46 @@ describe('Libro · el FIN DE CICLO (Fase 4B)', () => {
       cierres: [fin('2026-01-05', 'AB', 'Parcial', 60, 0)],
       tanques: [],
     }, { hoy: '2026-01-10' });
-    expect(saldo(l, 'Sala 1', 1).machos).toBe(105);
-    expect(saldo(l, 'Sala 2', 16).machos).toBe(35);
-    expect(dePos(l, 'AB').machos).toBe(140);
+    expect(saldo(l, 'Sala 1', 1).machos).toBe(150);   // antes: 105 (le restaba su parte de los 60)
+    expect(saldo(l, 'Sala 2', 16).machos).toBe(50);   // antes: 35
+    expect(dePos(l, 'AB').machos).toBe(200);
     expect(l.avisos).toEqual([]);
     // Un cierre parcial NO cierra el lote.
     expect(dePos(l, 'AB').estado).not.toBe(ESTADO_CERRADO);
   });
 
-  /* D14 (2026-09-14, usuario): un lote vive en varias salas y un Parcial puede decir de cuál salen. */
+  it('🔴 0t·9 · lo que el parte ya sacó como descarte NO se resta otra vez al registrarlo en Fin de Ciclo', () => {
+    /* El caso real: el día del pedido, el parte de Tanques anota los 60 machos como descarte de selección y Fin de
+       Ciclo registra esos MISMOS 60. Con la regla vieja salían dos veces: el tanque quedaba a 0 con 20 de «déficit». */
+    const l = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 0)],
+      tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Machos muertos por descarte de selección': 60 })],
+      cierres: [fin('2026-01-05', 'AB', 'Parcial', 60, 0, 'Descarte parcial')],
+    }, { hoy: '2026-01-10' });
+    expect(saldo(l, 'Sala 1', 1).machos).toBe(40);
+    expect(dePos(l, 'AB').descartes.machos).toBe(60);
+    expect(l.avisos).toEqual([]);   // antes: deficit-cierre de 20
+  });
+
+  /* D14 (2026-09-14, usuario): un lote vive en varias salas y un Parcial puede decir de cuál salen. Desde 0t·9 la
+     sala es un DATO del registro (de dónde salieron): el Parcial ya no descuenta de ella ni de ninguna. */
   const dosSalas = () => [
     ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 150, 0),
     ing('2026-01-01', 'AB', 'CG1', 'Sala 2', 16, 50, 0),
   ];
 
-  it('🔴 D14 · un Parcial con SALA descuenta sólo de esa sala', () => {
+  it('🔴 0t·9 · un Parcial con SALA tampoco descuenta: la sala es sólo dato', () => {
     const l = construirLibro({ ingresos: dosSalas(), cierres: [fin('2026-01-05', 'AB', 'Parcial', 30, 0, 'Pedido', 'Sala 2')], tanques: [] }, { hoy: '2026-01-10' });
     expect(saldo(l, 'Sala 1', 1).machos).toBe(150);
-    expect(saldo(l, 'Sala 2', 16).machos).toBe(20);
+    expect(saldo(l, 'Sala 2', 16).machos).toBe(50);   // antes: 20
     expect(l.avisos).toEqual([]);
   });
 
-  it('D14 · sacar de una sala más de lo que hay en ELLA avisa con la sala, aunque en otra sobren', () => {
+  it('🔴 0t·9 · declarar en una sala más de lo que hay en ELLA no es un déficit: el cierre no resta nada', () => {
     const l = construirLibro({ ingresos: dosSalas(), cierres: [fin('2026-01-05', 'AB', 'Parcial', 80, 0, 'Pedido', 'Sala 2')], tanques: [] }, { hoy: '2026-01-10' });
     expect(saldo(l, 'Sala 1', 1).machos).toBe(150);
-    expect(saldo(l, 'Sala 2', 16).machos).toBe(0);
-    expect(l.avisos).toEqual([{ fecha: '2026-01-05', tipo: 'deficit-cierre',
-      texto: 'Del lote AB salieron 30 machos de más de los que el libro tenía vivos en Sala 2.',
-      lote: 'AB', sala: 'Sala 2', sexo: 'machos', cantidad: 30 }]);
+    expect(saldo(l, 'Sala 2', 16).machos).toBe(50);
+    expect(l.avisos).toEqual([]);   // antes: deficit-cierre de 30 en Sala 2
   });
 
   it('D14 · un Parcial en una sala donde el lote no está se AVISA y no toca las otras', () => {
@@ -555,20 +570,24 @@ describe('Libro · el FIN DE CICLO (Fase 4B)', () => {
   });
 
   it('D14 · un TOTAL ignora la sala (si alguien la escribe en la hoja): cierra el lote entero', () => {
+    /* 0t·9: lo declarado (200) no se resta; lo que el libro tiene en las DOS salas es la diferencia y el lote queda a
+       cero en las dos. */
     const l = construirLibro({ ingresos: dosSalas(), cierres: [fin('2026-01-05', 'AB', 'Total', 200, 0, 'Pedido', 'Sala 2')], tanques: [] }, { hoy: '2026-01-10' });
     expect(saldo(l, 'Sala 1', 1).machos).toBe(0);
     expect(saldo(l, 'Sala 2', 16).machos).toBe(0);
-    expect(l.avisos).toEqual([]);
+    expect(l.avisos.map((a) => [a.tipo, a.sexo, a.cantidad])).toEqual([['diferencia-cierre', 'machos', 200]]);
     expect(dePos(l, 'AB').estado).toBe(ESTADO_CERRADO);
   });
 
   it('🔴 un cierre TOTAL anota LA DIFERENCIA y deja el lote a cero', () => {
     /* El corazón de la Fase 4B: lo que el libro creía que quedaba y no salió no se
-       esconde ni bloquea — se anota. «La diferencia ES el producto». */
+       esconde ni bloquea — se anota. «La diferencia ES el producto».
+       0t·9: lo que sale lo sacan los partes (aquí, 90 ♂ y 40 ♀ de descarte ese día); la diferencia es lo que el libro
+       aún tiene al cerrar, DESPUÉS de las bajas del día. */
     const l = construirLibro({
       ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 40)],
       cierres: [fin('2026-01-05', 'AB', 'Total', 90, 40)],
-      tanques: [],
+      tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Machos muertos por descarte de selección': 90, 'Hembras muertas por descarte de selección': 40 })],
     }, { hoy: '2026-01-10' });
     expect(saldo(l, 'Sala 1', 1)).toMatchObject({ machos: 0, hembras: 0 });
     const dif = l.avisos.filter((a) => a.tipo === 'diferencia-cierre');
@@ -578,11 +597,31 @@ describe('Libro · el FIN DE CICLO (Fase 4B)', () => {
     expect(dePos(l, 'AB').estado).toBe(ESTADO_CERRADO);
   });
 
+  it('🔴 0t·9 · la DIFERENCIA de un Total no depende de lo que declara: es lo que el libro aún tiene', () => {
+    /* Con la regla vieja, declarar 90/40 dejaba 10/0 de diferencia y declarar 0/0 dejaba 100/40: la cifra dependía de lo
+       tecleado en el cierre. Ahora las dos dan lo mismo, porque lo declarado no se resta. */
+    const conCifras = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 40)],
+      cierres: [fin('2026-01-05', 'AB', 'Total', 90, 40)],
+      tanques: [],
+    }, { hoy: '2026-01-10' });
+    const sinCifras = construirLibro({
+      ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 40)],
+      cierres: [fin('2026-01-05', 'AB', 'Total', 0, 0)],
+      tanques: [],
+    }, { hoy: '2026-01-10' });
+    const dif = (l) => l.avisos.filter((a) => a.tipo === 'diferencia-cierre').map((a) => [a.sexo, a.cantidad]);
+    expect(dif(conCifras)).toEqual([['machos', 100], ['hembras', 40]]);   // antes: [['machos', 10]]
+    expect(dif(sinCifras)).toEqual(dif(conCifras));
+    expect(conCifras.avisos.some((a) => a.tipo === 'deficit-cierre')).toBe(false);
+  });
+
   it('un cierre TOTAL que cuadra no inventa ninguna diferencia', () => {
+    /* 0t·9: cuadra cuando los partes del día ya dejaron el lote a cero (descarte de todo lo que salió). */
     const l = construirLibro({
       ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 40)],
       cierres: [fin('2026-01-05', 'AB', 'Total', 100, 40)],
-      tanques: [],
+      tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Machos muertos por descarte de selección': 100, 'Hembras muertas por descarte de selección': 40 })],
     }, { hoy: '2026-01-10' });
     expect(l.avisos).toEqual([]);
     expect(dePos(l, 'AB').estado).toBe(ESTADO_CERRADO);
@@ -598,16 +637,16 @@ describe('Libro · el FIN DE CICLO (Fase 4B)', () => {
     expect(l.avisos.filter((a) => a.tipo === 'diferencia-cierre')).toHaveLength(2);   // ♂ y ♀
   });
 
-  it('sacar MÁS de los que hay avisa, y no deja el saldo negativo', () => {
+  it('🔴 0t·9 · declarar MÁS de los que hay no avisa de déficit ni toca el saldo: el cierre no resta', () => {
+    /* Hasta 0t·9: «sacar MÁS de los que hay avisa (deficit-cierre de 15) y no deja el saldo negativo». Sin resta, ese
+       aviso ya no puede darse. */
     const l = construirLibro({
       ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 10, 0)],
       cierres: [fin('2026-01-05', 'AB', 'Parcial', 25, 0)],
       tanques: [],
     }, { hoy: '2026-01-10' });
-    expect(saldo(l, 'Sala 1', 1).machos).toBe(0);
-    const d = l.avisos.filter((a) => a.tipo === 'deficit-cierre');
-    expect(d).toHaveLength(1);
-    expect(d[0].cantidad).toBe(15);
+    expect(saldo(l, 'Sala 1', 1).machos).toBe(10);
+    expect(l.avisos.filter((a) => a.tipo === 'deficit-cierre')).toEqual([]);
   });
 
   it('cerrar un lote que el libro no conoce se AVISA, no se inventa', () => {
@@ -623,13 +662,15 @@ describe('Libro · el FIN DE CICLO (Fase 4B)', () => {
     /* Fija la prioridad: ingreso → movimiento → baja → cierre. Si el cierre fuera antes,
        la mortalidad de hoy se repartiría sobre animales que ya se habían ido, y el cierre
        total anotaría una diferencia que en realidad eran los muertos de la mañana. */
+    /* 0t·9: los 95 que salen los saca el parte (descarte) y el cierre ya no resta: si fuera ANTES de las bajas, el
+       Total anotaría 100 de diferencia y luego las bajas saldrían «de más». */
     const l = construirLibro({
       ingresos: [ing('2026-01-01', 'AB', 'CG1', 'Sala 1', 1, 100, 0)],
       cierres: [fin('2026-01-05', 'AB', 'Total', 95, 0)],
-      tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Machos muertos': 5 })],
+      tanques: [tq('2026-01-05', 'Sala 1', 1, { 'Machos muertos': 5, 'Machos muertos por descarte de selección': 95 })],
     }, { hoy: '2026-01-10' });
-    // 100 − 5 muertos = 95, y salen 95: cuadra exacto, sin diferencia.
-    expect(l.avisos.filter((a) => a.tipo === 'diferencia-cierre')).toEqual([]);
+    // 100 − 5 muertos − 95 descartes = 0: cuadra exacto, sin diferencia.
+    expect(l.avisos).toEqual([]);
     expect(saldo(l, 'Sala 1', 1).machos).toBe(0);
   });
 

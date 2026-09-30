@@ -4,9 +4,12 @@
    Registra que unos reproductores SALEN del departamento: un pedido, un descarte, el fin
    de su vida útil. Modelo PURO — sin DOM, sin localStorage, sin red.
 
-   ── ES LA ÚNICA SALIDA DEL SISTEMA ─────────────────────────
-   Un MOVIMIENTO siempre aterriza en otro tanque; lo que se va de Maduración sale por esta
-   ficha y por ninguna otra.
+   ── ES EL REGISTRO DE LAS SALIDAS DEL SISTEMA ──────────────
+   Un MOVIMIENTO siempre aterriza en otro tanque; lo que se va de Maduración se REGISTRA en
+   esta ficha y en ninguna otra.
+   🔴🔴 0t·9 (2026-09-29, usuario): los ♂/♀ que declara son SÓLO REGISTRO y el libro NO los
+   descuenta: esos animales salen del saldo por los partes de Tanques (mortalidad y descarte
+   de selección), y descontarlos también aquí los contaba dos veces.
 
    ⚠⚠ FUERA `Destino` · corrección del usuario, 2026-09-08.
    Esta ficha nació con una columna `Destino` porque se creyó que un cierre podía mandar
@@ -33,14 +36,14 @@
 
    ── EL CIERRE ES DEL LOTE, NO DE UN TANQUE ─────────────────
    También decisión del usuario, y por la misma razón que el desove no es de un tanque: se
-   cierra un lote y el libro descuenta de CADA tanque donde esté, en proporción a lo que
-   tenga vivo ese día. El operario no enumera tanques — igual que no los enumera al desovar.
+   cierra un lote. El operario no enumera tanques — igual que no los enumera al desovar.
+   (Hasta 0t·9 el libro descontaba lo declarado de CADA tanque donde estuviera el lote.)
 
    ── TOTAL vs PARCIAL, Y LA DIFERENCIA ──────────────────────
-   🔑🔑 En un cierre TOTAL, lo que el libro creía que quedaba y NO salió es LA DIFERENCIA:
-   se anota como discrepancia con su fecha y el lote se pone a cero. No se esconde ni se
-   bloquea — «la diferencia ES el producto», que es la regla que el usuario fijó para todo
-   este módulo. Un cierre PARCIAL sólo descuenta lo que salió y el lote sigue vivo.
+   🔑🔑 Un cierre TOTAL CIERRA el lote: lo que el libro aún tiene vivo tras las bajas del día
+   es LA DIFERENCIA, se anota como discrepancia con su fecha y el lote se pone a cero. No se
+   esconde ni se bloquea — «la diferencia ES el producto», que es la regla que el usuario
+   fijó para todo este módulo. Un cierre PARCIAL sólo registra lo que salió y el lote sigue vivo.
 
    ── LLAVE ──────────────────────────────────────────────────
    `ID = <fecha>-<lote>-<motivo>`, determinista y en la ÚLTIMA columna; el GAS hace UPSERT
@@ -76,8 +79,8 @@ export const MAD_FIN_COLUMNS = [
   { h: 'Tipo', k: 'tipo', grain: 'evento' },
   { h: 'Motivo', k: 'motivo', grain: 'evento' },
   /* D14 (2026-09-14, usuario): un lote puede estar en varias salas, y un cierre PARCIAL puede decir de
-     cuál salen los animales: el libro descuenta sólo de esa sala. Vacía = el lote entero, como hasta
-     ahora. Un cierre Total es siempre del lote entero. Va en la llave cuando se dice. */
+     cuál salen los animales. Vacía = el lote entero. Un cierre Total es siempre del lote entero. Va en la
+     llave cuando se dice. 0t·9 (2026-09-29): es un DATO del registro; el libro ya no descuenta de esa sala. */
   { h: 'Sala', k: 'sala', grain: 'evento' },
   /* ⚠ El orden es libre: la llave la da la columna `ID`, que el GAS localiza POR SU
      CABECERA. Lo que NO es libre es el nombre de esa columna. */
@@ -184,7 +187,7 @@ export function validarFinCiclo(model) {
 
   /* ⚠⚠ ERROR y no aviso: dos cierres con el mismo (fecha, lote, motivo) generan el MISMO
      ID y el upsert escribe el segundo ENCIMA del primero. Los animales del primero
-     desaparecen de la hoja sin síntoma, y con ellos el descuento del saldo. */
+     desaparecen de la hoja sin síntoma, y con ellos su registro. */
   const vistos = new Set();
 
   cierres.forEach((c, i) => {
@@ -216,10 +219,11 @@ export function validarFinCiclo(model) {
     const mach = int(x.machos);
     const hemb = int(x.hembras);
     if ((mach === '' || mach === 0) && (hemb === '' || hemb === 0)) {
-      /* Un cierre TOTAL sin cifras es legítimo: significa «no salió nada y el resto es
-         diferencia». Uno PARCIAL sin cifras no dice nada y no descuenta nada. */
-      if (tipo === 'Parcial') errores.push('Un cierre Parcial de ' + lote + ' sin animales no descuenta nada.');
-      else avisos.push('El cierre total de ' + lote + ' no declara animales: TODO lo que el libro tenga se anotará como diferencia.');
+      /* Un cierre TOTAL sin cifras es legítimo: cierra el lote igual y lo que el libro aún tenga es
+         diferencia; sólo falta la constancia de lo que salió. Uno PARCIAL sin cifras no registra
+         nada. (0t·9: lo declarado ya no se descuenta; antes decía «no descuenta nada».) */
+      if (tipo === 'Parcial') errores.push('Un cierre Parcial de ' + lote + ' sin animales no registra ninguna salida.');
+      else avisos.push('El cierre total de ' + lote + ' no declara animales: quedará sin constancia de cuántos salieron (lo que el libro aún tenga se anotará como diferencia).');
     }
 
     /* ⚠ El metabisulfito son DOS datos que sólo valen juntos: una dosis sin fecha no dice

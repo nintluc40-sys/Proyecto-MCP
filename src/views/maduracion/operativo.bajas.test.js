@@ -224,9 +224,10 @@ describe('Maduración · bajas · los lotes cerrados', () => {
     const l = lotesCerrados(M, SIN, P30);
     expect(l.map((x) => [x.fecha, x.lote, x.tipo])).toEqual([['2026-09-15', 'LB', 'Total'], ['2026-09-14', 'LC', 'Parcial']]);
     const lb = l[0];
-    // LB tenía 44/44 al cerrarse (50 − 5 muertos − 1 descarte por sexo) y salieron 20/20: sobran 24 y 24.
+    // LB tenía 44/44 al cerrarse (50 − 5 muertos − 1 descarte por sexo) y el cierre REGISTRÓ 20/20. Desde 0t·9 lo
+    // registrado no se resta: la diferencia es lo que el libro aún tenía, 44 y 44 (antes, 24 y 24).
     expect(lb.salida).toEqual({ machos: 20, hembras: 20, total: 40 });
-    expect(lb.diferencia).toEqual({ machos: 24, hembras: 24, total: 48 });
+    expect(lb.diferencia).toEqual({ machos: 44, hembras: 44, total: 88 });
     expect(lb).toMatchObject({ motivo: 'Fin de vida útil', rojos: 3, metabisulfito: 5 });
     // Un cierre PARCIAL no deja diferencia: el libro sólo la anota al cerrar del todo.
     expect(l[1].diferencia).toEqual({ machos: 0, hembras: 0, total: 0 });

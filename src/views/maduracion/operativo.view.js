@@ -1946,14 +1946,16 @@ function cuadreHTML(c) {
   const veredicto = c.cuadra
     ? '<span class="mop-igual">✓ cuadra</span>'
     : `<span class="mop-dif">⚠ no cuadra: sobran ${nf(Math.abs(c.descuadre.total))} que la resta no explica</span>`;
-  const deficit = c.deficit.total
-    ? `<p class="mc-note">⚠ Un Fin de Ciclo pidió ${nf(c.deficit.total)} animales más de los que el libro tenía vivos: la salida
-        que se enseña es la EFECTIVA, y el libro lo anotó como déficit.</p>` : '';
+  /* 0t·9 (2026-09-29, usuario): lo que declara Fin de Ciclo es SÓLO REGISTRO: va aquí, fuera de la resta. */
+  const rf = c.registradoFin || {};
+  const registrado = rf.cierres
+    ? `<p class="mc-note">ℹ Registrado en Fin de Ciclo: ${nf(rf.total)} (${nf(rf.machos)} ♂ · ${nf(rf.hembras)} ♀) en ${nf(rf.cierres)}
+        cierre${rf.cierres === 1 ? '' : 's'} — no se resta: esos animales salen del libro como muertos o descartes en los partes.</p>` : '';
   return `<div class="mc-card">
     <h4 class="mc-card-h">⚖️ Cuadre del lote <span class="mc-h-note">${veredicto}</span></h4>
     <div class="mc-tablewrap"><table class="mc-table mc-table-sm mop-cuadre">
       <thead><tr><th></th><th class="r">♂</th><th class="r">♀</th><th class="r">Total</th></tr></thead>
-      <tbody>${filas}</tbody></table></div>${deficit}
+      <tbody>${filas}</tbody></table></div>${registrado}
   </div>`;
 }
 
@@ -2343,9 +2345,10 @@ function cerradosHTML(c, p) {
         <td>${esc(f.tipo || '—')}</td><td>${esc(f.motivo || '—')}</td>
         <td class="r">${nf(f.salida.machos)} / ${nf(f.salida.hembras)}</td>
         <td class="r">${f.rojos ? nf(f.rojos) : '—'}</td>
-        <td class="r">${f.diferencia.total ? `<span class="mop-dif" title="Lo que el libro contaba vivo y no salió: se anota y el lote queda a cero">${nf(f.diferencia.total)}</span>` : '—'}</td>
+        <td class="r">${f.diferencia.total ? `<span class="mop-dif" title="Lo que el libro aún contaba vivo al cerrar, tras los partes del día: se anota y el lote queda a cero">${nf(f.diferencia.total)}</span>` : '—'}</td>
         <td class="r">${f.metabisulfito === null ? '—' : nf(f.metabisulfito, 2) + ' kg'}${f.fechaMetabisulfito ? ' <span class="mop-nota">' + esc(dm(f.fechaMetabisulfito)) + '</span>' : ''}</td></tr>`).join('')}</tbody></table></div>
-    <p class="mc-note">La DIFERENCIA no se recalcula aquí: es la que el libro anotó al cerrar el lote, con su fecha y su lote.</p>
+    <p class="mc-note">La DIFERENCIA no se recalcula aquí: es la que el libro anotó al cerrar el lote, con su fecha y su lote.
+      «Salieron» es lo registrado en Fin de Ciclo: no se resta del libro (esos animales salen como muertos o descartes en los partes).</p>
   </div>`;
 }
 

@@ -6006,7 +6006,8 @@ function renderMad(ficha){
 // Responde una sola pregunta: ¿cuántos animales hay VIVOS ahora en cada tanque y lote?
 //
 // Nadie teclea un saldo. El saldo es la suma de los eventos: + ingreso, − mortalidad,
-// − descarte, y más adelante ± movimientos y − fin de ciclo. Un saldo tecleado se
+// − descarte, ± movimientos y − la diferencia de un cierre Total (lo que declara Fin de
+// Ciclo es sólo registro desde 0t·9: ver el módulo). Un saldo tecleado se
 // equivoca y nadie se entera; uno deducido no puede mentir sin que la resta lo cante.
 // El objetivo no es que cuadre siempre: es que CUANDO NO CUADRE se vea el mismo día.
 //
@@ -6217,16 +6218,17 @@ function madConstruirLibro(fuentes, opts){
       });
       return;
     }
-    // FIN DE CICLO (Fase 4B). Se cierra un LOTE, no un tanque: lo que sale se descuenta de
-    // cada tanque donde el lote esté, en proporción a lo que tenga vivo ese día.
-    // 🔑🔑 En un cierre TOTAL, lo que el libro creía que quedaba y NO salió es LA DIFERENCIA:
-    // se anota con su fecha y el lote se pone a cero. «La diferencia ES el producto».
+    // FIN DE CICLO (Fase 4B). Se cierra un LOTE, no un tanque.
+    // 🔴🔴 0t·9 (2026-09-29, usuario): los ♂/♀ que declara son SÓLO REGISTRO y NO se descuentan:
+    // ya salieron por los partes de Tanques (muertos y descartes). Ver el módulo.
+    // 🔑🔑 Un cierre TOTAL sigue cerrando el lote: lo que el libro aún tiene vivo tras las bajas
+    // del día es LA DIFERENCIA, se anota con su fecha y el lote se pone a cero. «La diferencia ES el producto».
     if(ev.tipo==="fin"){
       const lote=madLibroTxt(r.Lote);
       const esTotal=madLibroTxt(r.Tipo)==="Total";
       const pedido={ machos: madLibroEnt(r.Machos), hembras: madLibroEnt(r.Hembras) };
       if(!lote){ anota(fecha,"cierre-incompleto","Un cierre sin lote no entra en el libro."); return; }
-      // D14: un Parcial con sala descuenta sólo de esa sala; un Total, del lote entero. Ver el módulo.
+      // D14: la sala de un Parcial es un dato (0t·9: ya no descuenta de ella); un Total es del lote entero. Ver el módulo.
       const salaCierre=esTotal ? "" : madLibroTxt(r.Sala);
       const enSala=function(o){ if(salaCierre) o.sala=salaCierre; return o; };
       const posLote=Object.keys(pos).map(function(k){ return pos[k]; }).filter(function(p){ return p.lote===lote && (!salaCierre || p.sala===salaCierre); });
@@ -6234,10 +6236,6 @@ function madConstruirLibro(fuentes, opts){
         anota(fecha,"cierre-sin-lote",salaCierre ? "Se cerró el lote "+lote+" en "+salaCierre+" y ningún ingreso explica que estuviera allí." : "Se cerró el lote "+lote+" y ningún ingreso explica dónde estaba.",enSala({ lote:lote, machos:pedido.machos, hembras:pedido.hembras }));
         return;
       }
-      ["machos","hembras"].forEach(function(sexo){
-        const res=madTomarDe(posLote, sexo, pedido[sexo]);
-        if(res.sobra>0) anota(fecha,"deficit-cierre","Del lote "+lote+" salieron "+res.sobra+" "+sexo+" de más de los que el libro tenía vivos"+(salaCierre ? " en "+salaCierre : "")+".",enSala({ lote:lote, sexo:sexo, cantidad:res.sobra }));
-      });
       if(esTotal){
         ["machos","hembras"].forEach(function(sexo){
           const resto=posLote.reduce(function(a,p){ return a+p[sexo]; },0);
@@ -9937,14 +9935,16 @@ function renderMadDesoves(d, corr){
 // Copia inline de `ficha-maduracion-fin-ciclo.schema.js`. La costura la cierra la prueba
 // de paridad, que extrae ESTE bloque y exige el mismo payload y el mismo veredicto.
 //
-// 🔑 ES LA ÚNICA SALIDA DEL SISTEMA (decisión del usuario, 2026-09-08): un MOVIMIENTO
-// siempre aterriza en otro tanque; lo que se va de Maduración —un pedido a otra camaronera,
-// un descarte— sale por esta ficha y por ninguna otra. Por eso lleva Destino.
+// 🔑 ES EL REGISTRO DE LAS SALIDAS DEL SISTEMA (decisión del usuario, 2026-09-08): un
+// MOVIMIENTO siempre aterriza en otro tanque; lo que se va de Maduración —un pedido a otra
+// camaronera, un descarte— se registra en esta ficha y en ninguna otra. (Ya sin Destino:
+// ver el módulo.)
 //
-// 🔑🔑 EL CIERRE ES DEL LOTE, NO DE UN TANQUE, por la misma razón que el desove: el libro
-// descuenta de CADA tanque donde el lote esté, en proporción a lo que tenga vivo ese día.
-// Y en un cierre TOTAL, lo que el libro creía que quedaba y NO salió es LA DIFERENCIA: se
-// anota y el lote va a cero. No se esconde ni se bloquea.
+// 🔑🔑 EL CIERRE ES DEL LOTE, NO DE UN TANQUE, por la misma razón que el desove.
+// 🔴🔴 0t·9 (2026-09-29, usuario): los ♂/♀ que declara son SÓLO REGISTRO y el libro NO los
+// descuenta (salen por la mortalidad y el descarte de Tanques). Un cierre TOTAL cierra el
+// lote: lo que el libro aún tiene vivo es LA DIFERENCIA, se anota y el lote va a cero. No se
+// esconde ni se bloquea. Ver el módulo.
 const MAD_FIN_SHEET = "Maduración Fin de Ciclo";
 const MAD_FIN_TIPOS = ["Total","Parcial"];
 const MAD_FIN_MOTIVOS = ["Pedido","Descarte parcial","Fin de vida útil","Descarte sanitario","Otro"];
@@ -9973,7 +9973,7 @@ const MAD_FIN_COLUMNS = [
 ];
 const MAD_FIN_HEADERS = MAD_FIN_COLUMNS.map(function(c){ return c.h; });
 // El motivo, compacto, para la llave. Sin él un pedido y un descarte del mismo lote el
-// mismo día compartirían ID y el segundo borraría al primero — y con él su descuento.
+// mismo día compartirían ID y el segundo borraría al primero — y con él su registro.
 function madFinMotivoTag(s){ return sanitizeStr(s,60).toUpperCase().replace(/[^A-ZÁÉÍÓÚÑ0-9]+/g,""); }
 // La sala entra en la llave SÓLO si se dice: sin ella el ID es el de siempre.
 function madFinRowId(fecha, lote, motivo, sala){
@@ -10025,7 +10025,7 @@ function madFinValidar(model){
   if(!cierres.length) errores.push("No hay ningún cierre que registrar.");
   // ⚠⚠ ERROR y no aviso: dos cierres con el mismo (fecha, lote, motivo) generan el MISMO ID
   // y el upsert escribe el segundo ENCIMA del primero. Los animales del primero desaparecen
-  // de la hoja sin síntoma, y con ellos su descuento del saldo.
+  // de la hoja sin síntoma, y con ellos su registro.
   const vistos = {};
   cierres.forEach(function(c, i){
     const x = c||{};
@@ -10045,10 +10045,10 @@ function madFinValidar(model){
     vistos[llave]=1;
     const mach = madIngInt(x.machos), hemb = madIngInt(x.hembras);
     if((mach===""||mach===0) && (hemb===""||hemb===0)){
-      // Un cierre TOTAL sin cifras es legítimo: «no salió nada y el resto es diferencia», y
-      // además es el registro que MÁS información da. Uno PARCIAL sin cifras no dice nada.
-      if(tipo==="Parcial") errores.push("Un cierre Parcial de "+lote+" sin animales no descuenta nada.");
-      else avisos.push("El cierre total de "+lote+" no declara animales: TODO lo que el libro tenga se anotará como diferencia.");
+      // Un cierre TOTAL sin cifras es legítimo: cierra el lote igual; sólo falta la constancia de lo que
+      // salió. Uno PARCIAL sin cifras no registra nada. 0t·9: lo declarado ya no se descuenta. Ver el módulo.
+      if(tipo==="Parcial") errores.push("Un cierre Parcial de "+lote+" sin animales no registra ninguna salida.");
+      else avisos.push("El cierre total de "+lote+" no declara animales: quedará sin constancia de cuántos salieron (lo que el libro aún tenga se anotará como diferencia).");
     }
     // El metabisulfito son DOS datos que sólo valen juntos: medio registro parece completo. PE1.6: la fecha sale por
     // defecto igual que la del registro; una dosis sin fecha toma ésa, y una fecha sin dosis sólo avisa si no es ésa.
@@ -10089,7 +10089,7 @@ function _madFinCardHTML(fecha){
     +   '<label style="'+_MAD_ING_LBL+'">Lote<input class="mf-lote" style="'+_MAD_ING_INP+';width:100px;text-transform:uppercase"></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Tipo<select class="mf-tipo" onchange="madFinTipoChange(this)" style="'+_MAD_ING_INP+';width:120px">'+madFinTipoOpts("Parcial")+'</select></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Motivo<select class="mf-motivo" style="'+_MAD_ING_INP+';width:190px">'+madFinMotivoOpts("")+'</select></label>'
-    +   '<label style="'+_MAD_ING_LBL+'" title="Sólo en un cierre Parcial: el libro descuenta de esa sala. Vacía = de todas las salas donde esté el lote.">Sala (sólo Parcial)<select class="mf-sala" style="'+_MAD_ING_INP+';width:120px">'+madIngSalaOpts("")+'</select></label>'
+    +   '<label style="'+_MAD_ING_LBL+'" title="Sólo en un cierre Parcial: de qué sala salen. Es un dato del registro: el libro no lo descuenta. Vacía = de todas las salas donde esté el lote.">Sala (sólo Parcial)<select class="mf-sala" style="'+_MAD_ING_INP+';width:120px">'+madIngSalaOpts("")+'</select></label>'
     +   '<label style="'+_MAD_ING_LBL+'">Metabisulfito (kg)<input class="mf-mbs" type="number" min="0" step="0.01" inputmode="decimal" style="'+_MAD_ING_INP+';width:130px"></label>'
     +   '<label style="'+_MAD_ING_LBL+'" title="Por defecto, la fecha del registro; si la cambias, se queda la tuya">Fecha aplicación<input class="mf-mbsf" type="date"'+(isValidDate(fecha) ? ' value="'+escapeHtml(fecha)+'"' : '')+' oninput="madFinFechaAplFija(this)" style="'+_MAD_ING_INP+';width:145px"></label>'
     +   '<button class="btn" type="button" onclick="madFinDelCard(this)" style="font-size:11px">✕ Quitar</button>'
@@ -10114,8 +10114,8 @@ function madFinTipoChange(sel){
   if(s){ s.disabled = sel.value==="Total"; if(s.disabled) s.value=""; }
   const n = c.querySelector(".mf-nota"); if(!n) return;
   n.innerHTML = sel.value==="Total"
-    ? '<b>Total:</b> lo que el libro crea que queda y no salga se anotará como <b>diferencia</b>, y el lote quedará cerrado en todas sus salas.'
-    : (sel.value==="Parcial" ? '<b>Parcial:</b> sólo descuenta lo que sale —de la sala indicada, o de todas si la dejas vacía—. El lote sigue vivo.' : '');
+    ? '<b>Total:</b> el lote quedará cerrado en todas sus salas; lo que el libro aún tenga vivo tras los partes del día se anotará como <b>diferencia</b>. Los animales que declares se registran, no se restan.'
+    : (sel.value==="Parcial" ? '<b>Parcial:</b> registra lo que sale —y de qué sala, si la indicas—; no se resta del libro. El lote sigue vivo.' : '');
 }
 function madFinAddCard(){
   const c=document.getElementById("mf-cards");
@@ -10285,7 +10285,7 @@ function renderMadFinCiclo(){
     + '<div class="fc-h"><div class="fc-t">🏁 Maduración · Fin de Ciclo</div><span class="ssp ssp-mt">'+escapeHtml(todayStr)+'</span></div>'
     + '<div class="fc-b">'
     +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:flex-start;gap:8px">'
-    +     '<span style="font-size:16px">ℹ️</span><span>Es la <b>única salida</b> del departamento: un pedido a otra camaronera, un descarte, el fin de la vida útil. Los movimientos entre tanques van en 🔄 Movimientos.<br>Se cierra el <b>lote entero</b> — el libro descuenta de cada tanque donde esté, en proporción; un cierre <b>Parcial</b> puede indicar la <b>sala</b> y entonces descuenta sólo de ella. Y en un cierre <b>Total</b>, lo que el libro creía que quedaba y no salió se anota como <b>diferencia</b>: no se esconde.</span>'
+    +     '<span style="font-size:16px">ℹ️</span><span>Registra las <b>salidas</b> del departamento: un pedido a otra camaronera, un descarte, el fin de la vida útil. Los movimientos entre tanques van en 🔄 Movimientos.<br>Los animales que declaras aquí <b>no se restan</b> del libro: salen por la mortalidad y el descarte de 🛢 Tanques. Se cierra el <b>lote entero</b>; un cierre <b>Parcial</b> puede indicar de qué <b>sala</b> salen. Y un cierre <b>Total</b> cierra el lote: lo que el libro aún tenga vivo se anota como <b>diferencia</b>: no se esconde.</span>'
     +   '</div>'
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
     +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha<input type="date" id="mf-fecha" value="'+escapeHtml(todayStr)+'" onchange="madBorrFechaChange(&quot;fin&quot;);madFinFechaAplSigue()" style="'+_MAD_ING_INP+'"></label>'
