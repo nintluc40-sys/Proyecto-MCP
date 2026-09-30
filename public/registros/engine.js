@@ -7167,6 +7167,9 @@ async function madSaldoRefrescar(){
     _madResumen=madResumenMaduracion(f, { hoy: today() });
     _madResumen.libro=libro;
     _madResumen.faltan=extra.faltan;
+    // 0t·12: «🖨 Último parte» apunta al último registro llenado de lo que se acaba de leer.
+    const _up=document.getElementById("ms-up-fecha");
+    if(_up) _up.value=madUltimoParteFechaDefecto(f.tanques, _madResumen.hoy);
     madResPintar();
   }catch(x){
     if(c) c.innerHTML='<div style="padding:14px;color:#991b1b;font-size:12px">No se pudieron leer las hojas. Reintenta con 🔄.</div>';
@@ -7188,6 +7191,128 @@ function madResumenPdf(alcance){
   w.document.write(page);
   w.document.close();
 }
+// ── Saldo · «🖨 Último parte» (plan 0t · 12, 2026-09-29, usuario) ─────────────────────────
+/* Un PDF del REGISTRO MÁS RECIENTE llenado —una ronda de mortalidad de 🛢 Tanques; al día hay 5 o 6— con TODAS las
+   salas y sus tanques en una tabla. NO es un resumen del día: cada parte trae LO DE SU RONDA, no el acumulado (ver
+   «Hora» y «Parte» en los encabezados de Tanques), así que el informe dice lo de esa ronda.
+   🔑 El parte de cada sala es su ronda de HORA más tardía en la fecha; una ronda = las filas de la sala con la misma hora.
+   El NÚMERO de parte no decide: medido el 2026-09-29, la Sala 1 tenía el P2 a las 16:01 y el P1 a las 17:20, y la Sala 3
+   tres rondas distintas numeradas «P1». Y la hora se compara en MINUTOS: como texto, «9:05» sería mayor que «15:53».
+   Una fila por TANQUE con sus lotes (lo que trae el parte es del tanque: nada se reparte). Los VIVOS son los del libro al
+   cierre de la fecha, con todos sus partes. Un tanque con animales que no está en esa ronda, o una sala con animales y
+   sin partes ese día, salen igual, sin dato. Decisiones del usuario del 2026-09-29: no re-preguntar. */
+function _madUpMin(h){ const m=/(\d{1,2}):(\d{2})/.exec(madLibroTxt(h)); return m ? (+m[1])*60+(+m[2]) : -1; }
+function _madUpHora(h){ const n=_madUpMin(h); return n<0 ? "" : ("0"+Math.floor(n/60)).slice(-2)+":"+("0"+(n%60)).slice(-2); }
+function _madUpNum(v){ const s=madLibroTxt(v).replace(",","."); if(s==="") return ""; const n=Number(s); return isFinite(n) ? n : ""; }
+function _madUpDMY(iso){ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(madLibroTxt(iso)); return m ? m[3]+"/"+m[2]+"/"+m[1] : madLibroTxt(iso); }
+/** La fecha del último registro llenado hasta `hoy` (un parte con fecha futura no cuenta); sin ninguno, `hoy`. */
+function madUltimoParteFechaDefecto(tanques, hoy){
+  let f="";
+  (tanques||[]).forEach(function(r){ const d=madLibroTxt(r.Fecha); if(/^\d{4}-\d{2}-\d{2}$/.test(d) && d<=hoy && d>f) f=d; });
+  return f || hoy;
+}
+function madUltimoParteModelo(fuentes, fecha){
+  const F=fuentes||{};
+  const libro=madConstruirLibro(F, { hoy:fecha, hasta:fecha });
+  const salas={};
+  const sala=function(n){ return salas[n] || (salas[n]={ sala:n, hora:"", parte:"", sinPartes:true, filas:{}, uso:{} }); };
+  Object.keys(libro.tanques).forEach(function(uk){
+    const T=libro.tanques[uk];
+    if(T.machos+T.hembras>0) sala(T.sala).uso[T.tanque]=true;
+  });
+  const delDia=(F.tanques||[]).filter(function(r){ return madLibroTxt(r.Fecha)===fecha && madLibroTxt(r.Sala) && madLibroEnt(r.Tanque); });
+  // La ronda de una fila es su HORA en minutos (no su número de parte, ni la hora como texto): ver la cabecera.
+  const ronda=function(r){ return _madUpMin(r.Hora); };
+  const tarde={};
+  delDia.forEach(function(r){ const s=madLibroTxt(r.Sala), m=ronda(r); if(!(s in tarde) || m>tarde[s]) tarde[s]=m; });
+  delDia.forEach(function(r){
+    const s=madLibroTxt(r.Sala);
+    if(ronda(r)!==tarde[s]) return;
+    const S=sala(s), t=madLibroEnt(r.Tanque), p=madLibroTxt(r.Parte);
+    S.sinPartes=false; S.hora=_madUpHora(r.Hora);
+    if(p && S.parte.split(", ").indexOf(p)===-1) S.parte = S.parte ? S.parte+", "+p : p;
+    S.uso[t]=true;
+    (S.filas[t]=S.filas[t]||[]).push(r);
+  });
+  const ent=function(fs, col){ return fs.reduce(function(a,r){ return a+madLibroEnt(r[col]); },0); };
+  const opc=function(fs, col){ let v=""; fs.forEach(function(r){ const n=_madUpNum(r[col]); if(n!=="") v=(v===""?0:v)+n; }); return v; };
+  const peso=function(fs, col){ let v=""; fs.forEach(function(r){ const n=_madUpNum(r[col]); if(n!=="" && n>0) v=n; }); return v; };
+  const suma=function(a, b){ return a==="" ? b : (b==="" ? a : a+b); };
+  const vacio=function(){ return { vivos:{ machos:0, hembras:0 }, muertos:{ machos:0, hembras:0 }, descarte:{ machos:0, hembras:0 }, copulas:"", muda:"" }; };
+  const acumula=function(tot, x){
+    tot.vivos.machos+=x.vivos.machos; tot.vivos.hembras+=x.vivos.hembras;
+    if(!x.dato) return;
+    ["muertos","descarte"].forEach(function(k){ tot[k].machos+=x.dato[k].machos; tot[k].hembras+=x.dato[k].hembras; });
+    tot.copulas=suma(tot.copulas, x.dato.copulas); tot.muda=suma(tot.muda, x.dato.muda);
+  };
+  const total=vacio();
+  const lista=Object.keys(salas).sort(function(a,b){ return a.localeCompare(b, undefined, { numeric:true }); }).map(function(n){
+    const S=salas[n], tot=vacio();
+    const tanques=Object.keys(S.uso).map(Number).sort(function(a,b){ return a-b; }).map(function(t){
+      const T=libro.tanques[madUbicKey(n, t)], fs=S.filas[t];
+      const obs=[];
+      (fs||[]).forEach(function(r){ [r["Observaciones sanitarias"], r["Observaciones operativas"]].forEach(function(o){ o=madLibroTxt(o); if(o && obs.indexOf(o)===-1) obs.push(o); }); });
+      const x={ tanque:t, lotes:madNombreComposicion(T) || "—", vivos:{ machos:T ? T.machos : 0, hembras:T ? T.hembras : 0 },
+        dato: fs ? { muertos:{ machos:ent(fs,"Machos muertos"), hembras:ent(fs,"Hembras muertas") },
+          descarte:{ machos:ent(fs,"Machos muertos por descarte de selección"), hembras:ent(fs,"Hembras muertas por descarte de selección") },
+          copulas:opc(fs,"Cópulas"), muda:opc(fs,"Muda"),
+          peso:{ machos:peso(fs,"Peso promedio machos (g)"), hembras:peso(fs,"Peso promedio hembras (g)") },
+          obs:obs.join(" · ") } : null };
+      acumula(tot, x); acumula(total, x);
+      return x;
+    });
+    return { sala:n, hora:S.hora, parte:S.parte, sinPartes:S.sinPartes, tanques:tanques, total:tot };
+  });
+  return { fecha:fecha, salas:lista, total:total };
+}
+function madUltimoParteDoc(M){
+  const c=function(v){ return (v===""||v===null||v===undefined) ? "—" : escapeHtml(String(v)); };
+  const cab='<tr><th>Tanque</th><th>Lote(s)</th><th>Vivos ♂</th><th>Vivos ♀</th><th>Muertos ♂</th><th>Muertos ♀</th><th>Desc. ♂</th><th>Desc. ♀</th><th>Cópulas</th><th>Muda</th><th>Peso ♂ (g)</th><th>Peso ♀ (g)</th><th>Observaciones</th></tr>';
+  const cifras=function(x){
+    return '<td class="r">'+x.vivos.machos+'</td><td class="r">'+x.vivos.hembras+'</td>'
+      + '<td class="r">'+x.muertos.machos+'</td><td class="r">'+x.muertos.hembras+'</td>'
+      + '<td class="r">'+x.descarte.machos+'</td><td class="r">'+x.descarte.hembras+'</td>'
+      + '<td class="r">'+c(x.copulas)+'</td><td class="r">'+c(x.muda)+'</td>';
+  };
+  const fila=function(t){
+    const d=t.dato;
+    return '<tr><td class="r">'+t.tanque+'</td><td>'+escapeHtml(t.lotes)+'</td>'
+      + (d ? cifras({ vivos:t.vivos, muertos:d.muertos, descarte:d.descarte, copulas:d.copulas, muda:d.muda })
+             + '<td class="r">'+c(d.peso.machos)+'</td><td class="r">'+c(d.peso.hembras)+'</td><td>'+c(d.obs)+'</td>'
+           : '<td class="r">'+t.vivos.machos+'</td><td class="r">'+t.vivos.hembras+'</td>'
+             + '<td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td>'
+             + '<td class="sd">sin dato en este parte</td>')
+      + '</tr>';
+  };
+  const totFila=function(rot, x){ return '<tr class="tot"><td colspan="2">'+rot+'</td>'+cifras(x)+'<td></td><td></td><td></td></tr>'; };
+  const cuerpo=M.salas.length ? M.salas.map(function(s){
+    return '<h2>'+escapeHtml(s.sala)+' · '+(s.sinPartes ? 'sin partes en esta fecha' : 'parte de las '+escapeHtml(s.hora)+(s.parte ? ' (P'+escapeHtml(s.parte)+')' : ''))+'</h2>'
+      + '<table>'+cab+s.tanques.map(fila).join("")+totFila('Total '+escapeHtml(s.sala), s.total)+'</table>';
+  }).join("") + '<table class="gr">'+cab+totFila('TOTAL GRANJA (últimos partes)', M.total)+'</table>'
+    : '<p>Sin tanques con animales ni partes en esta fecha.</p>';
+  const titulo='Maduración · Último parte registrado · '+_madUpDMY(M.fecha);
+  return '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+escapeHtml(titulo)+'</title>'
+    + '<style>body{font-family:Arial,Helvetica,sans-serif;margin:16px;color:#0f172a}h1{font-size:16px;margin:0 0 4px}h2{font-size:13px;margin:14px 0 4px}'
+    + 'table{border-collapse:collapse;width:100%;font-size:11px;page-break-inside:avoid}th,td{border:1px solid #cbd5e1;padding:2px 5px}th{background:#f1f5f9}'
+    + 'td.r{text-align:right;font-variant-numeric:tabular-nums}td.sd{color:#94a3b8;font-style:italic}tr.tot td{font-weight:700;background:#f8fafc}table.gr{margin-top:14px}</style></head><body>'
+    + '<h1>'+escapeHtml(titulo)+'</h1>'
+    + '<div style="font-size:11px;color:#64748b;margin-bottom:6px">Mortalidad, descarte, cópulas, muda, pesos y observaciones son los del <b>último parte</b> de cada sala (una ronda), no las del día entero. Los vivos son los del libro con todos los partes registrados hasta el '+escapeHtml(_madUpDMY(M.fecha))+'.</div>'
+    + cuerpo
+    + '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},300);});<\/script></body></html>';
+}
+// El botón: con lo leído por 🔄 Recalcular y la fecha del campo (por defecto, la del último registro llenado).
+function madUltimoPartePdf(){
+  // Escrita distinta de la guarda de madResumenPdf a propósito: aquella línea es ancla (única) del banco del resumen.
+  if(_madResumen===null) return void toast("Pulsa 🔄 Recalcular antes de imprimir.","warn",3500);
+  const f=madLibroFuentes();
+  const inp=document.getElementById("ms-up-fecha");
+  const fecha=(inp && /^\d{4}-\d{2}-\d{2}$/.test(inp.value)) ? inp.value : madUltimoParteFechaDefecto(f.tanques, madLibroTxt(_madResumen.hoy) || today());
+  if(inp && !inp.value) inp.value=fecha;
+  const w=window.open("","_blank","width=1100,height=760");
+  if(!w){ toast("El navegador bloqueó la ventana emergente. Permite pop-ups para este sitio.","warn",6000); return; }
+  w.document.write(madUltimoParteDoc(madUltimoParteModelo(f, fecha)));
+  w.document.close();
+}
 function renderMadSaldo(){
   const fp=document.getElementById("fp-saldo"); if(!fp) return;
   // Igual que el Ingreso: volver a la pestaña no debe tirar lo ya calculado. Aquí además
@@ -7197,12 +7322,15 @@ function renderMadSaldo(){
     + '<div class="fc-h"><div class="fc-t">⚖️ Maduración · Saldo y resumen</div><span class="ssp ssp-mt">'+escapeHtml(today())+'</span></div>'
     + '<div class="fc-b">'
     +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:center;gap:8px">'
-    +     '<span style="font-size:16px">ℹ️</span><span>Resumen de lo que hay hoy en Maduración, deducido de todas las fichas. Elige qué ver en <b>⚙️ Variables</b>; imprime una sala o un lote con su <b>🖨 PDF</b>, o todo con <b>🖨 PDF de todo</b>. Nadie teclea el saldo: si no cuadra, falta o sobra un registro, y se ve en el detalle.</span>'
+    +     '<span style="font-size:16px">ℹ️</span><span>Resumen de lo que hay hoy en Maduración, deducido de todas las fichas. Elige qué ver en <b>⚙️ Variables</b>; imprime una sala o un lote con su <b>🖨 PDF</b>, o todo con <b>🖨 PDF de todo</b>; y el último parte registrado de todas las salas con <b>🖨 Último parte</b>. Nadie teclea el saldo: si no cuadra, falta o sobra un registro, y se ve en el detalle.</span>'
     +   '</div>'
     +   '<div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap">'
     +     '<button class="btn" type="button" onclick="madSaldoRefrescar()">🔄 Recalcular</button>'
     +     '<button class="btn" type="button" onclick="madResVarsAbrir()">⚙️ Variables</button>'
     +     '<button class="btn" type="button" data-a="todo" onclick="madResumenPdf(this.dataset.a)">🖨 PDF de todo</button>'
+    // 0t·12 (2026-09-29): el último parte registrado de todas las salas; la fecha la pone 🔄 Recalcular (la del último registro).
+    +     '<span style="display:inline-flex;gap:4px;align-items:center"><input type="date" id="ms-up-fecha" title="Fecha del parte: por defecto, la del último registro llenado" style="font-size:12px;padding:3px 6px">'
+    +     '<button class="btn" type="button" onclick="madUltimoPartePdf()">🖨 Último parte</button></span>'
     +   '</div>'
     +   '<div id="ms-body"><div style="padding:14px;color:#64748b;font-size:12px">Pulsa 🔄 Recalcular para leer las hojas.</div></div>'
     + '</div></div>';
