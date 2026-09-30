@@ -7,7 +7,8 @@
    se ve mal es el ESTILO: ejes a 10 px en gris claro #78909c, barras al 80 % de opacidad, cuadrícula al 16 %, y líneas de
    Tendencias curvas que inventan valores entre meses. Decisión del usuario: ejes 12 px oscuros y según el tema, títulos
    de eje 11 px, leyenda 12 px, barras SÓLIDAS, cuadrícula más marcada, líneas rectas, y la CIFRA al final de cada barra
-   en Desoves/Mortalidad por tanque. Esta prueba barre la configuración de los seis gráficos de la vista. Datos ficticios.
+   en Desoves/Mortalidad por tanque. Esta prueba barre la configuración de los seis gráficos de la vista (0v·4, 2026-09-29:
+   y el séptimo, «Hembras por su último desove», que sustituyó al calendario de desoves). Datos ficticios.
    ============================================================ */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -28,7 +29,7 @@ const O = (hoja) => (o) => ({ _SheetOrigin: hoja, ...o });
 const click = (el) => el.dispatchEvent(new Event('click', { bubbles: true }));
 const cfg = (id) => { const l = makeChart.mock.calls.filter(([i]) => i === id); return l.length ? l[l.length - 1][1] : null; };
 
-describe('Microchips · los seis gráficos se leen', () => {
+describe('Microchips · los siete gráficos se leen', () => {
   let root, errSpy;
   beforeEach(() => {
     store.globalData = [...MATRIZ.map(O('Maduración MATRIZ')), ...BITACORA.map(O('Maduración Bitácora'))];
@@ -36,15 +37,15 @@ describe('Microchips · los seis gráficos se leen', () => {
     errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     makeChart.mockClear();
     maduracionView(root);                                                   // Panorama: mcTrend + mcStateDonut
-    click(root.querySelector('[data-mc-sub="operativo"]'));                 // mcLocBars + mcMortBars
+    click(root.querySelector('[data-mc-sub="operativo"]'));                 // mcLocBars + mcMortBars + mcUltDesove (0v·4)
     click(root.querySelector('[data-mc-sub="hembras"]'));                   // mcInterval
     click(root.querySelector('[data-mc-female="A"]'));                      // mcFemChart
   });
   afterEach(() => { click(root.querySelector('[data-mc-sub="panorama"]')); root.remove(); errSpy.mockRestore(); document.documentElement.style.removeProperty('--c-text'); });
 
-  const IDS = ['mcTrend', 'mcStateDonut', 'mcLocBars', 'mcMortBars', 'mcInterval', 'mcFemChart'];
+  const IDS = ['mcTrend', 'mcStateDonut', 'mcLocBars', 'mcMortBars', 'mcInterval', 'mcFemChart', 'mcUltDesove'];
 
-  it('se dibujan los seis', () => {
+  it('se dibujan los siete', () => {
     expect(IDS.filter((id) => !cfg(id))).toEqual([]);
     expect(errSpy).not.toHaveBeenCalled();
   });

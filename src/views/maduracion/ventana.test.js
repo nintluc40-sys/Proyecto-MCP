@@ -61,10 +61,11 @@ describe('Microchips · T6 · la vista', () => {
   });
   afterEach(() => { click(root.querySelector('[data-mc-sub="panorama"]')); root.remove(); errSpy.mockRestore(); });
 
-  it('🔴 «Salas y Tanques»: la tarjeta bajo el calendario, con la ventana y su precisión, por tanque', () => {
+  /* 0v·4 (2026-09-29) · el calendario de desoves se retiró: en su sitio, «Hembras por su último desove»; la ventana sigue debajo. */
+  it('🔴 «Salas y Tanques»: la tarjeta bajo la de las hembras por su último desove, con la ventana y su precisión, por tanque', () => {
     click(root.querySelector('[data-mc-sub="operativo"]'));
     const card = root.querySelector('.mc-ventana-card');
-    expect(root.querySelector('.mc-cal-card').nextElementSibling).toBe(card);
+    expect(root.querySelector('.mc-ultdes-card').nextElementSibling).toBe(card);
     expect(card.querySelector('.mc-card-h').textContent.replace(/\s+/g, ' ')).toContain('ventana 3–7 d desde el último desove · la mediana (5 d) acierta ±2 d el 100 %');
     const filas = [...card.querySelectorAll('tbody tr')].map((tr) => [...tr.cells].map((td) => td.textContent.replace(/\s+/g, ' ').trim()));
     expect(filas).toEqual([['Sala 4 · Tanque 2', '2', '0', '1'], ['Sala 4 · Tanque 1', '1', '1', '0']]);

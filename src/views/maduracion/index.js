@@ -10,7 +10,7 @@ import { fmtShort } from '../../core/dates.js';
 import { registerModalEscape } from '../../ui/modalEscape.js';
 import {
   MAD_MATRIZ_ORIGIN, MAD_BITACORA_ORIGIN, MAD_TRANSFER_ORIGIN,
-  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, calendarioDesoves, lineaDeVida, productividadPorFamilia, bandaTasa, supervivenciaPorFamilia, alertaReemplazo, ventanaDeDesove, mortalidadPostDesove, mareaPorDia, desovesYMarea, calidadDelRegistro,
+  FEMALE_STATES, FEMALE_STATE_META, ACTIVITY_WINDOW_DAYS, TASA_DESOVE_REF, ESTADO_MUERTO, BANDAS_TASA, mapaDeSalas, hembrasPorUltimoDesove, TRAMOS_ULTIMO_DESOVE, lineaDeVida, productividadPorFamilia, bandaTasa, supervivenciaPorFamilia, alertaReemplazo, ventanaDeDesove, mortalidadPostDesove, mareaPorDia, desovesYMarea, calidadDelRegistro,
   buildReproModel, makeFilter, monthLabel, kpis, locationStats, femaleRanking,
   femaleHistory, neverSpawned, recoveryDistribution, stateDistribution,
   mortalityBreakdown, trends, salasOf, tanquesOf, lotesOf, codigosOf, locKey,
@@ -499,33 +499,59 @@ function renderOperativo(model, f) {
     : vacioHTML('Sin mortalidades en este filtro', { icono: '✅' })}
   </div>`;
 
-  return `<div class="mc-body"><div class="mc-grid">${mapaSalasHTML(model, f)}${calendarioHTML(model, f)}${ventanaHTML(model, f)}${rankTable}${prodChart}${mortChart}${postDesoveHTML(model, f)}</div></div>`;
+  return `<div class="mc-body"><div class="mc-grid">${mapaSalasHTML(model, f)}${ultimoDesoveHTML(model, f)}${ventanaHTML(model, f)}${rankTable}${prodChart}${mortChart}${postDesoveHTML(model, f)}</div></div>`;
 }
 
-/* V2 (2026-09-27, usuario) · el calendario de desoves: tanque × día, con la intensidad del Nº de desoves de cada noche
-   (`--mc-cal-a`, de 0 a 1 sobre el máximo de su fila de referencia) y los días sin NINGÚN desove en la granja rayados.
-   Con un mes, la cifra va dentro de la celda; en todo el histórico sólo el color (la cifra, al pasar el ratón). */
-function calendarioHTML(model, f) {
-  const c = calendarioDesoves(model, f);
-  if (!c.dias.length) return '';
-  const conCifra = c.dias.length <= 31;
-  const dma = (k) => k.slice(8, 10) + '/' + k.slice(5, 7) + '/' + k.slice(0, 4);
-  const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-  const hueco = (i) => (c.huecos[i] ? ' is-hueco' : '');
-  const celda = (quien, n, i, max) => {
-    const a = n && max ? Math.round((0.18 + 0.82 * (n / max)) * 100) / 100 : 0;
-    return `<td class="${n ? '' : 'is-0'}${hueco(i)}${a >= 0.6 ? ' is-alto' : ''}"${n ? ` style="--mc-cal-a:${a}"` : ''} title="${esc(quien)} · ${dma(c.dias[i])}: ${n} desove${n === 1 ? '' : 's'}">${conCifra && n ? n : ''}</td>`;
-  };
-  const cab = c.dias.map((k, i) => { const d = +k.slice(8, 10); return `<th class="mc-cal-d${hueco(i)}" title="${dma(k)}">${d === 1 || i === 0 ? `<span class="mc-cal-m">${MES[+k.slice(5, 7) - 1]}</span>` : ''}${d}</th>`; }).join('');
-  const fila = (quien, ns, max, cls) => `<tr${cls ? ` class="${cls}"` : ''}><th>${esc(quien)}</th>${ns.map((n, i) => celda(quien, n, i, max)).join('')}</tr>`;
-  const nH = c.huecos.filter(Boolean).length;
-  return `<div class="mc-card mc-card-wide mc-cal-card">
-    <h4 class="mc-card-h">📅 Calendario de desoves <span class="mc-h-note">Nº de desoves por noche y tanque</span></h4>
-    <div class="mc-cal-wrap"><table class="mc-cal${conCifra ? '' : ' is-compacto'}"><thead><tr><th></th>${cab}</tr></thead><tbody>
-      ${fila('Granja', c.granja, c.maxGranja, 'mc-cal-granja')}${c.filas.map((r) => fila(r.key, r.n, c.max)).join('')}
-    </tbody></table></div>
-    <p class="mc-note mc-cal-nota">${nH ? `<b>${n0(nH)} de ${n0(c.dias.length)} días sin ningún desove en la granja</b> (rayados): huecos del registro o noches sin desoves. ` : ''}La fila Granja es el total de todos los tanques; la intensidad de cada fila se mide contra el máximo de los tanques.</p>
+/* 0v·4 (2026-09-29, usuario; punto 8 del plan 0t) · «Hembras por su último desove», donde estaba el calendario de desoves
+   (V2, retirado por decisión del usuario): por tanque, sus vivas según los días desde su último desove (barras apiladas,
+   en `drawOperativo`). Las cuentas, en `hembrasPorUltimoDesove` (data.js). */
+const COLOR_ULTIMO_DESOVE = { reciente: '#2e9e5b', medio: '#e0a82b', antiguo: '#e0533b', nunca: '#90a4ae' };
+const dmaDe = (d) => String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+function ultimoDesoveHTML(model, f) {
+  const x = hembrasPorUltimoDesove(model, f);
+  const cab = `<h4 class="mc-card-h">🦐 Hembras por su último desove${x.ref ? ` <span class="mc-h-note">${n0(x.total)} vivas al ${dmaDe(x.ref)}</span>` : ''}</h4>`;
+  if (!x.tanques.length) return `<div class="mc-card mc-card-wide mc-ultdes-card">${cab}${vacioHTML('Sin hembras vivas con chip en este filtro')}</div>`;
+  return `<div class="mc-card mc-card-wide mc-ultdes-card">${cab}
+    <div class="mc-chart" style="height:${Math.max(180, x.tanques.length * 26 + 70)}px"><canvas id="mcUltDesove"></canvas></div>
+    <p class="mc-note">Cada hembra viva en su tanque de hoy, según los días desde su último desove al último dato de la granja (${dmaDe(x.ref)}). Hasta 7 días es lo normal: la mitad de los intervalos reales entre desoves dura de 3 a 7. Pasados 21, la alerta de reemplazo. No sigue el mes: son las vivas de hoy.${x.sinUbicacion ? ` ${n0(x.sinUbicacion)} viva${x.sinUbicacion === 1 ? '' : 's'} sin sala o sin tanque en la MATRIZ no sale${x.sinUbicacion === 1 ? '' : 'n'}.` : ''}</p>
   </div>`;
+}
+/* El total del tanque al final de cada barra apilada: tras la ÚLTIMA serie, que es la punta de la pila. Plugin en línea
+   (como `mcCifras`), sin librería nueva. */
+const TOTALES = {
+  id: 'mcTotales',
+  afterDatasetsDraw(ch, _args, opts) {
+    const c = ch.ctx;
+    c.save(); c.fillStyle = opts.color; c.font = '600 12px "Segoe UI", system-ui, sans-serif'; c.textAlign = 'left'; c.textBaseline = 'middle';
+    const punta = ch.getDatasetMeta(ch.data.datasets.length - 1).data;
+    opts.totales.forEach((n, i) => { if (punta[i]) c.fillText(n0(n), 6 + punta[i].x, punta[i].y); });
+    c.restore();
+  },
+};
+function drawUltimoDesove(model, f) {
+  const x = hembrasPorUltimoDesove(model, f);
+  if (!x.tanques.length) return;
+  const pct = (n, t) => (t ? Math.round((n / t) * 100) : 0);
+  /* Las opciones de las otras barras horizontales de la vista (ejes, cuadrícula, sitio para la cifra), apiladas y con leyenda. */
+  const o = barOpts('hembras vivas');
+  const E = ejes();
+  o.scales.x.stacked = true;
+  o.scales.y.stacked = true;
+  o.plugins = {
+    legend: { display: true, position: 'top', labels: { color: E.texto, font: { size: 12 } } },
+    tooltip: { callbacks: { label: (c) => { const t = x.tanques[c.dataIndex].total; return ` ${c.dataset.label}: ${n0(c.raw)} de ${n0(t)} (${pct(c.raw, t)} %)`; } } },
+    mcTotales: { color: E.texto, totales: x.tanques.map((t) => t.total) },
+  };
+  makeChart('mcUltDesove', {
+    type: 'bar',
+    data: {
+      labels: x.tanques.map((t) => t.key),
+      datasets: TRAMOS_ULTIMO_DESOVE.map((tr) => ({ label: tr.etiqueta, data: x.tanques.map((t) => t[tr.k]),
+        backgroundColor: COLOR_ULTIMO_DESOVE[tr.k], borderWidth: 0, maxBarThickness: 20 })),
+    },
+    plugins: [TOTALES],
+    options: o,
+  });
 }
 
 /* V1 (2026-09-27, usuario) · el mapa de salas: cada tanque FÍSICO en su banda de tasa por noche (4 bandas con la
@@ -564,6 +590,7 @@ function fertBadge(v) {
 }
 
 function drawOperativo(model, f) {
+  drawUltimoDesove(model, f);   // 0v·4 · la tarjeta que sustituyó al calendario de desoves
   const level = vState.locLevel;
   const stats = locationStats(model, f, level).slice(0, 12);
   const labelOf = (x) => level === 'sala' ? (x.sala || x.key) : x.key;

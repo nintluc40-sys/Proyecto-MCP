@@ -578,29 +578,36 @@ export function mapaDeSalas(model, f) {
   }));
 }
 
-/* ── V2 · Calendario de desoves (2026-09-27, usuario) ── */
-/** Matriz tanque × día: los días del período (el mes elegido hasta el último dato, o todo el histórico), una fila por
- *  tanque con hembras con chip (los del filtro completo, en orden de sala y número) y la fila «Granja». La Granja y los
- *  HUECOS (días sin ningún desove) son de toda la granja: no dependen de la sala/tanque elegidos, o un tanque con
- *  noches sin desovar pintaría huecos del registro que no lo son. */
-export function calendarioDesoves(model, f) {
-  const v = ventana(model, f);
-  const vacio = { dias: [], granja: [], filas: [], huecos: [], max: 0, maxGranja: 0 };
-  if (!v) return vacio;
-  const dias = [];
-  for (let d = dia0(v.a); d <= dia0(v.b); d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) dias.push(dayKey(d));
-  const pos = new Map(dias.map((k, i) => [k, i]));
-  const granja = dias.map(() => 0);
-  desovesIn(model, { ...f, sala: null, tanque: null }).forEach((e) => { const i = pos.get(dayKey(e.date)); if (i != null) granja[i]++; });
+/* ── 0v·4 (2026-09-29, usuario; punto 8 del plan 0t) · las hembras por su ÚLTIMO desove ── */
+/* Sustituye al calendario de desoves (V2, 2026-09-27: tanque × día con el Nº de cada noche), retirado por decisión del
+   usuario. Los tramos, con reglas ya medidas: la mitad central de los intervalos reales entre desoves dura de 3 a 7 días
+   (T6) y la alerta de reemplazo salta pasados 21 (T5, su umbral por defecto). Los cortes, en `hembrasPorUltimoDesove`. */
+export const TRAMOS_ULTIMO_DESOVE = [
+  { k: 'reciente', etiqueta: '≤ 7 días' }, { k: 'medio', etiqueta: '8–21 días' },
+  { k: 'antiguo', etiqueta: '> 21 días' }, { k: 'nunca', etiqueta: 'Nunca desovó' },
+];
+/** Las hembras VIVAS del filtro (`passFem`: su ubicación de HOY, lote y código; el mes NO: son las vivas de hoy), por su
+ *  tanque, según los días desde su ÚLTIMO desove al último dato de la granja (como T5): ≤ 7 · 8–21 · > 21 · nunca desovó.
+ *  Tanques en orden de sala y número; una viva sin sala o sin tanque no hace barra: se cuenta en `sinUbicacion`. */
+export function hembrasPorUltimoDesove(model, f) {
+  const ref = model.dataMaxDate;
+  if (!ref) return { ref: null, total: 0, sinUbicacion: 0, tanques: [] };
+  const hoy = dia0(ref);
   const porTanque = new Map();
-  locationStats(model, f, 'tanque').filter((x) => x.key !== '—').forEach((x) => porTanque.set(x.key, { key: x.key, sala: x.sala, tanque: x.tanque, n: dias.map(() => 0), total: 0 }));
-  desovesIn(model, f).forEach((e) => {
-    const r = porTanque.get(locKey(e.sala, e.tanque)); const i = pos.get(dayKey(e.date));
-    if (r && i != null) { r.n[i]++; r.total++; }
+  let sinUbicacion = 0;
+  model.females.filter((r) => r.estado !== ESTADO_MUERTO && passFem(r, f)).forEach((r) => {
+    if (!String(r.sala || '').trim() || !String(r.tanque || '').trim()) { sinUbicacion++; return; }
+    const ds = model.desovesByTrovan.get(r.trovan) || [];
+    const ultimo = ds.reduce((m, e) => (!m || e.date > m ? e.date : m), null);
+    const dias = ultimo ? Math.round((hoy - dia0(ultimo)) / 864e5) : null;
+    const key = locKey(r.sala, r.tanque);
+    if (!porTanque.has(key)) porTanque.set(key, { key, sala: r.sala, tanque: r.tanque, reciente: 0, medio: 0, antiguo: 0, nunca: 0, total: 0 });
+    const t = porTanque.get(key);
+    t[dias == null ? 'nunca' : dias <= 7 ? 'reciente' : dias <= 21 ? 'medio' : 'antiguo']++;
+    t.total++;
   });
-  const filas = [...porTanque.values()].sort((a, b) => String(a.sala).localeCompare(String(b.sala), 'es', { numeric: true }) || (numTanque(a.tanque) ?? 0) - (numTanque(b.tanque) ?? 0));
-  return { dias, granja, filas, huecos: granja.map((n) => n === 0),
-    max: filas.reduce((m, r) => Math.max(m, ...r.n), 0), maxGranja: Math.max(0, ...granja) };
+  const tanques = [...porTanque.values()].sort((a, b) => String(a.sala).localeCompare(String(b.sala), 'es', { numeric: true }) || (numTanque(a.tanque) ?? 0) - (numTanque(b.tanque) ?? 0));
+  return { ref: hoy, total: tanques.reduce((s, t) => s + t.total, 0), sinUbicacion, tanques };   // `total`: las de las barras
 }
 
 /* ── Ranking de hembras por nº de desoves ── */
