@@ -13790,7 +13790,9 @@ function clearMadSalasGrid(){
    puede padecer por a o b motivo a la vez. En el orden en que las dio el usuario.
    🔑 No son texto libre a propósito: «animales estresados», «Estresados» y «estrés» son tres
    cosas distintas para cualquier recuento posterior, y con catálogo dos tanques con lo mismo
-   marcado dan LA MISMA cadena. */
+   marcado dan LA MISMA cadena.
+   0t·10 (2026-09-29, usuario): + «Animal con letargia/enfermo (evidencia de descarte)», tras «Animales en muda» (con las
+   del estado de los animales). ⚠ Ninguna opción lleva COMA: la celda las separa por comas. */
 const MAD_TQ_OBS_SANITARIAS = [
   "Animales maduros — Nivel bajo",
   "Animales maduros — Nivel medio",
@@ -13799,6 +13801,7 @@ const MAD_TQ_OBS_SANITARIAS = [
   "Animales estresados",
   "Animales con baja asimilación",
   "Animales en muda",
+  "Animal con letargia/enfermo (evidencia de descarte)",
   "Presencia de colonia de Pseudomonas"
 ];
 const MAD_TQ_OBS_OPERATIVAS = [

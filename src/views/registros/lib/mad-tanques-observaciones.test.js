@@ -93,13 +93,30 @@ beforeEach(() => {
 
 describe('Tanques · las observaciones son de catálogo, no texto libre', () => {
   it('el fixture ejerce algo: las dos columnas existen con sus opciones', () => {
-    expect(H.MAD_TQ_OBS_SANITARIAS).toHaveLength(8);
+    // 0t·10 (2026-09-29): las sanitarias pasan de 8 a 9 (la de letargia/enfermo).
+    expect(H.MAD_TQ_OBS_SANITARIAS).toHaveLength(9);
     expect(H.MAD_TQ_OBS_OPERATIVAS).toHaveLength(11);
     expect(H.MAD_TQ_OBS_SANITARIAS[0]).toBe('Animales maduros — Nivel bajo');
     expect(H.MAD_TQ_OBS_OPERATIVAS[0]).toBe('Residuales de alimento — Nivel bajo');
     expect(celda(7, 'obs_sanitarias'), 'la celda debería ser multiselección').toBeTruthy();
     expect(celda(7, 'obs_operativas')).toBeTruthy();
-    expect(celda(7, 'obs_sanitarias').querySelectorAll('.tg-ms-op')).toHaveLength(8);
+    expect(celda(7, 'obs_sanitarias').querySelectorAll('.tg-ms-op')).toHaveLength(9);
+  });
+
+  it('🔴 0t·10 · «Animal con letargia/enfermo (evidencia de descarte)» va tras «Animales en muda», y a la hoja en su orden', () => {
+    /* Decisión del usuario (2026-09-29): con las demás del estado de los animales, antes de la de Pseudomonas, que es
+       del tanque. Lleva «/» y paréntesis pero ninguna coma: la celda separa por comas y una coma la partiría en dos. */
+    const NUEVA = 'Animal con letargia/enfermo (evidencia de descarte)';
+    expect(H.MAD_TQ_OBS_SANITARIAS.slice(6)).toEqual(['Animales en muda', NUEVA, 'Presencia de colonia de Pseudomonas']);
+    expect(NUEVA).not.toContain(',');
+    marcar(7, 'obs_sanitarias', 'Presencia de colonia de Pseudomonas');
+    marcar(7, 'obs_sanitarias', NUEVA);
+    marcar(7, 'obs_sanitarias', 'Animales en muda');
+    const texto = 'Animales en muda, ' + NUEVA + ', Presencia de colonia de Pseudomonas';
+    expect(fila(7).obs_sanitarias).toBe(texto);
+    expect(rotulo(7, 'obs_sanitarias')).toBe(texto);
+    // Y se vuelve a leer tal cual: la celda guardada la devuelve marcada.
+    expect(H.madTqObsLista(H.MAD_TQ_OBS_SANITARIAS, texto)).toEqual(['Animales en muda', NUEVA, 'Presencia de colonia de Pseudomonas']);
   });
 
   it('🔴 varias a la vez: un tanque puede padecer por a o b motivo', () => {
