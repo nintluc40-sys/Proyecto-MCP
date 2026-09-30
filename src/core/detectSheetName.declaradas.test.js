@@ -79,7 +79,11 @@ const SIN_ID = [MAD_BS_SHEET];
 /** Una fila con esas cabeceras y valores vacíos: detectSheetName sólo mira las CLAVES. */
 const filaDe = (cabeceras) => Object.fromEntries(cabeceras.map((c) => [c, '']));
 
-describe('detectSheetName · las hojas de Maduración que aún no existen', () => {
+/* 2026-09-30 (plan 0v · 5) · este bloque se titulaba «las hojas de Maduración que aún no existen», y ya no era cierto:
+   medido sobre la foto del 09-29, existen 5 de las 7 —Ingreso, Movimientos, Tratamientos, Mortalidad Desove y
+   Alimentación—, todas con su cabecera viva IGUAL a la declarada; Fin de Ciclo y Broodstock, aún no. Lo que las reúne
+   aquí no es que falten, sino que su cabecera la DECLARA un módulo (ver la cabecera del archivo). */
+describe('detectSheetName · las hojas de Maduración cuya cabecera declara el código', () => {
   it('el fixture viene de los módulos y no está vacío', () => {
     expect(DECLARADAS).toHaveLength(7);
     for (const [n, cab] of DECLARADAS) {
@@ -97,7 +101,7 @@ describe('detectSheetName · las hojas de Maduración que aún no existen', () =
 
   /* La invariante, dicha una vez y con el diagnóstico dentro: si vuelve a romperse,
      el mensaje dice QUÉ dio cada camino, que es lo que costó descubrir la primera vez. */
-  it('el camino por COLUMNAS coincide con el camino por NOMBRE en las tres', () => {
+  it('el camino por COLUMNAS coincide con el camino por NOMBRE en todas las declaradas', () => {
     const divergen = DECLARADAS
       .filter(([n, cab]) => detectSheetName([filaDe(cab)], 0) !== classifyOrigin(n))
       .map(([n, cab]) => `${n}: columnas=${detectSheetName([filaDe(cab)], 0)} vs nombre=${classifyOrigin(n)}`);

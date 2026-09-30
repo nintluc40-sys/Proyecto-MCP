@@ -1,5 +1,5 @@
 /* ============================================================
-   detectSheetName · el respaldo POR COLUMNAS, contra las 35 pestañas REALES
+   detectSheetName · el respaldo POR COLUMNAS, contra las 39 pestañas REALES
 
    Cuándo se recorre: `extractSheetTabs` tiene un respaldo que recoge gids sueltos del
    HTML SIN título; esos gids van a `detectSheetName`, que adivina la hoja por sus
@@ -15,30 +15,24 @@
      · 11 «Datos Larvicultura» salían 'Morfologia' (regla `intestino` retirada);
      · Traslado, Calidad de Agua y Desinfección caían en 'Larvicultura' (sin firma propia);
      · las 3 de Maduración y Marea caían en 'Hoja<N>'.
-   Hoy las 35 aciertan.
+   Hoy las 39 aciertan.
 
-   ⚠ NACIÓ GENERADO Y HOY SE MANTIENE A MANO — y conviene saberlo antes de tocarlo. Salió de
-     `cabeceras-produccion.json` por `_herramientas-traslado/generar-prueba-detect.mjs`, porque
-     transcribir 35 hojas y hasta 81 columnas a mano produce erratas y una errata aquí convierte
-     el fixture en degenerado sin que nada avise. Pero desde entonces se le añadieron los
-     comentarios de abajo y varias filas se corrigieron AQUÍ antes que en la foto.
-     🔑 Medido el 2026-09-20: regenerar hoy borraría 15 líneas de comentario escritas a mano y
-     RETROCEDERÍA cinco filas —la foto es del 09-16 y trae, entre otras, el esquema VIEJO de
-     `Maduración Lotes`, anterior a la migración del 09-14—. Aquí decía «se regenera y se revisa
-     el diff», y eso ya no era cierto.
-     Por eso el generador dejó de sobrescribir a ciegas: se NIEGA y dice exactamente qué se
-     perdería (`--forzar` para hacerlo igualmente). Llevar un cambio de cabeceras a este archivo
-     es decidir, fila a fila, si manda la foto o manda esto.
-     🆕 2026-09-21 · SE DECIDIÓ FILA A FILA, y cuatro estaban desfasadas: «Calidad de Agua» (le
-     faltaba «Sulfato»), «Datos Larvicultura - M06» (guardaba un esquema sin «Fecha» delante;
-     hoy es idéntica a M01), «Datos Larvicultura - CIO» (37 columnas frente a 49) y «Maduración
-     Tanques» (ver su comentario). Las cuatro se tomaron del dato VIVO, no a mano.
-     ⚠ Y DOS de estas 35 filas describen pestañas que YA NO ESTÁN en el documento —«Maduración
-     Sala» y «Maduración Lotes (esquema Desoves)», borradas en el vaciado del 2026-09-20—. Se
-     quedan A PROPÓSITO, por lo mismo que las conserva la foto de producción: que una pestaña no
-     exista hoy no borra la regla que la clasificaba, y esa regla sigue viva en `sheets.js`.
-     («Maduración Ingreso» y «Maduración Movimientos» no están aquí y tampoco es un hueco: las
-     cubre `detectSheetName.declaradas.test.js`, que le pide la cabecera a su módulo de esquema.)
+   ⚠ SE GENERA: NO SE EDITA A MANO — y conviene saberlo antes de tocarlo.
+     Sale de `cabeceras-produccion.json` (las cabeceras vivas de las pestañas; la refresca
+     `auditar-clasificacion.mjs --refrescar`) por `_herramientas-traslado/generar-prueba-detect.mjs`,
+     porque transcribir 39 hojas y hasta 81 columnas a mano produce erratas y una errata aquí
+     convierte el fixture en degenerado sin que nada avise. Las NOTAS de dentro de `HOJAS` también
+     las escribe el generador (su mapa `NOTAS`): una nota nueva se pone allí.
+     🔑 Del 2026-09-20 al 09-30 se mantuvo a mano —había ganado notas y filas corregidas AQUÍ antes
+     que en la foto, y regenerar las habría borrado o retrocedido en silencio—; por eso el generador
+     NO sobrescribe a ciegas: si el destino tiene líneas que él no reproduce, o filas que cambiarían
+     o desaparecerían, se niega y lo dice (`--forzar` para hacerlo igualmente, tras revisarlo).
+     2026-09-30 (plan 0v · 5) · regenerado desde la foto del 09-29: entran Alimentación, Mortalidad
+     Desove, Tratamientos y Transferencias; CIO (hoy idéntica a M01), Desinfección («Fecha Elemento»)
+     y Sala («Toneladas») se ponen al día; «Biomol» es «BIOMOL», su nombre real; y las dos que se
+     daban por borradas existen: «Maduración Sala» y la de Desoves, que ES «Maduración Lotes».
+     («Maduración Ingreso» y «Maduración Movimientos» no están aquí y tampoco es un hueco: las cubre
+     `detectSheetName.declaradas.test.js`, que le pide la cabecera a su módulo de esquema.)
    ============================================================ */
 import { describe, it, expect } from 'vitest';
 import { detectSheetName, classifyOrigin } from './sheets.js';
@@ -46,12 +40,16 @@ import { detectSheetName, classifyOrigin } from './sheets.js';
 /** [nombre real de la pestaña, origen esperado, cabeceras REALES] */
 const HOJAS = [
   ['Registro_Supervisión', 'Registro_Supervision', ['Fecha', 'Supervisor', 'Módulo', 'Siembra', 'Corrida', 'Estadío_observado', 'Tipo_revisión', 'Deformidad_%', '% Atraso', '% Protusión', 'Protusión', 'Opacidad', 'Asimilación', 'Semillenas (%)', 'Vacías (%)', 'Intestino', 'Actividad', 'Condición_biológica', '% No viables', 'Observaciones', 'Acción', 'Comentario (matutino)', 'Comentario (vespertino)', 'Flacidez', 'Necrosis', 'Disparidad', 'ID']],
-  ['Registro_Traslado', 'Registro_Traslado', ['Fecha', 'Viaje', 'Corrida', 'Módulo', 'Camaronera', 'Placa', 'Salinidad', 'Hora salida', 'Hora llegada', 'Revisión', 'Hora', 'Lugar', 'Latitud', 'Longitud', 'Precisión (m)', 'Ubicación', 'Tina', 'Oxígeno (mg/L)', 'Temperatura (°C)', 'Actividad', 'Alimentación', 'Observaciones', 'Insumos', 'Check materiales', 'Controlador despacho', 'Chequeador entrega', 'Responsable recepción', 'Hora registro', 'ID']],
-  ['Maduración Bitácora', 'Maduración Bitácora', ['Trovan ID', 'Fecha', 'Tipo', 'Sala', 'Tanque', 'Observaciones']],
-  ['Maduración MATRIZ', 'Maduración MATRIZ', ['Número', 'Trovan ID', 'Color anillo', 'Piscina', 'Código genético', 'Lote', 'Sala actual', 'Tanque actual', 'Estado', 'Fecha muerte', 'Fecha ingreso', 'Observaciones']],
-  ['Calidad de Agua', 'Calidad de Agua', ['Fecha muestreo', 'Fecha resultados', 'Corrida', 'Responsable', 'Departamento', 'Formato', 'Tipo de muestra', 'Módulo', 'Estadío', 'TQ/N°', 'Sala', 'Estado', 'Componente', 'Muestras', 'S‰', 'pH', 'Alcalinidad', 'Temperatura', 'Nitrito', 'TAN', 'Am.Tóxico', 'Nitrato', 'Amonio', 'Nitrógeno total', 'Calcio', 'Magnesio', 'Potasio', 'Dureza total', 'Hierro', 'Fósforo', 'Cobre', 'Manganeso', 'S‰ antes', 'S‰ después', 'pH antes', 'pH después', 'Calcio antes', 'Calcio después', 'Magnesio antes', 'Magnesio después', 'Potasio antes', 'Potasio después', 'Cloro libre (mg/L)', 'Cloro total (mg/L)', 'Cloro combinado (mg/L)', 'Sesión', 'Lote', 'Sulfato']],
-  ['Microbiología', 'Microbiología', ['Fecha muestreo', 'Fecha resultados', 'Corrida', 'Responsable', 'Departamento', 'Formato', 'Tipo de muestra', 'Módulo/Sala', 'Sexo', 'Estadío', 'TQ/N°', 'V.Amarillos (crudo)', 'V.Amarillos UFC', 'V.Amarillos Nivel', 'V.Verdes (crudo)', 'V.Verdes UFC', 'V.Verdes Nivel', 'V.Totales (crudo)', 'V.Totales UFC', 'V.Totales Nivel', 'V.alginolyticus (crudo)', 'V.alginolyticus UFC', 'V.alginolyticus Nivel', 'V.parahaemolyticus (crudo)', 'V.parahaemolyticus UFC', 'V.parahaemolyticus Nivel', 'V.vulnificus (crudo)', 'V.vulnificus UFC', 'V.vulnificus Nivel', 'Pseudomonas (crudo)', 'Pseudomonas UFC', 'Pseudomonas Nivel', 'Aeromonas (crudo)', 'Aeromonas UFC', 'Aeromonas Nivel', 'Bact.Totales (crudo)', 'Bact.Totales UFC', 'Bact.Totales Nivel', 'Bact.Naranjas (crudo)', 'Bact.Naranjas UFC', 'Bact.Naranjas Nivel', 'Hongos (crudo)', 'Hongos UFC', 'Hongos Nivel', 'V.Luminiscentes', 'Enterobact. (crudo)', 'Enterobact. UFC', 'Levaduras (crudo)', 'Levaduras UFC', 'Observaciones', 'Origen/Tipo', 'Etapa', 'Componente', 'Laboratorio', 'Raceways', 'Tanques', 'Tanque/Reservorio', 'Punto de muestreo', 'Pseudomonas GSP (crudo)', 'Pseudomonas GSP UFC', 'Pseudomonas GSP Nivel', 'Aeromonas GSP (crudo)', 'Aeromonas GSP UFC', 'Aeromonas GSP Nivel', 'Lugar', 'Variedad', 'Días', 'Especie', 'Siembra', 'Muestras', 'Bacterias Rojas (crudo)', 'Bacterias Rojas UFC', 'Carro', 'Tina', 'Sesión', 'Lote', 'pH', 'Conteo BA (crudo)', 'Conteo BA UFC', 'Conteo Lev. (crudo)', 'Conteo Lev. UFC']],
-  ['Biomol', 'Biomol', ['Fecha', 'Código', 'Corrida', 'Piscina', 'Lugar', 'Tanque', 'Otros', 'Muestra', 'Estadío', 'Sexo', 'IHHNV', 'WSSV', 'BP', 'AHPND/EMS', 'NHPB', 'EHP', 'Sesión', 'Ciclo de amplificación WSSV', 'Copias/μl WSSV', 'Ciclo de amplificación IHHNV', 'Copias/μl IHHNV', 'Ciclo de amplificación AHPND/EMS', 'Copias/μl AHPND/EMS']],
+  ['Maduración Mortalidad Desove', 'Maduracion', ['Fecha', 'Lote', 'Código genético', 'Piscina Broodstock', 'Tipo de tanque', 'Hembras que entran', 'Hembras muertas', '% Mortalidad', 'Revisión', 'Deformidad', 'Actividad', 'Hongos', 'Fototropismo', 'Aireación', 'Salinidad', 'Temperatura', 'Área', 'Alcalinidad día', 'Alcalinidad noche', 'Observaciones', 'ID']],
+  /* Del 2026-09-20 al 09-29 se dio por borrada (en el vaciado del 09-20); existe —lo midió la
+     auditoría 0u— y su cabecera ganó «Toneladas». Se detecta por «RAS», por igualdad exacta. */
+  ['Maduración Sala', 'Maduracion', ['Fecha', 'Sala', 'Estado', 'Temperatura 2:00', 'Temperatura 4:00', 'Temperatura 6:00', 'Temperatura 8:00', 'Temperatura 10:00', 'Temperatura 12:00', 'Temperatura 14:00', 'Temperatura 16:00', 'Temperatura 18:00', 'Temperatura 20:00', 'Temperatura 22:00', 'Temperatura 0:00', 'Oxígeno 06:00', 'Oxígeno 12:00', 'Oxígeno 18:00', 'Oxígeno 00:00', 'RAS', 'Estado por lote', 'Toneladas']],
+  ['Maduración Tratamientos', 'Maduracion', ['Fecha', 'Sala', 'Estado de la sala', 'Tipo', 'Área', 'Lotes', 'Productos', 'Productos RAS', 'Dosis y observaciones', 'ID']],
+  ['Maduración Alimentación', 'Maduracion', ['Fecha', 'Sala', 'Tanque', 'Lotes', 'Hembras', 'Machos', 'Peso hembras (g)', 'Peso machos (g)', 'Fuente del peso', 'Biomasa hembras (kg)', 'Biomasa machos (kg)', 'Biomasa total (kg)', 'Poliqueto (kg/día)', 'Redy Mate (kg/día)', 'Calamar (kg/día)', 'Mejillón (kg/día)', 'Krill (kg/día)', 'Vitallis (kg/día)', 'Total (kg/día)', 'Tomas', 'ID']],
+  /* 2026-09-30 (plan 0v · 5) · hasta hoy NINGUNA prueba vigilaba la rama «tr-id» de detectSheetName:
+     quitarla daba verde (medido), y Transferencias se habría clasificado como Bitácora —las dos llevan
+     «Trovan ID»—. Esta fila la vigila, y el banco `mutar-detect-sheet` comprueba que muere. */
+  ['Maduración Transferencias', 'Maduración Transferencias', ['TR-ID', 'Fecha', 'Tipo', 'Trovan ID', 'Sala origen', 'Tanque origen', 'Sala destino', 'Tanque destino', 'Mezcla', 'Lotes presentes', 'Códigos presentes', 'Piscinas presentes', 'Observaciones']],
   /* ⚠⚠ ESTA FILA CAZÓ UN DEFECTO REAL el 2026-09-08. La hoja se rediseñó a evento de DESOVE
      (Fase 4A) y perdió su columna «Sala» —un desove es de (lote, código genético), nunca de un
      tanque ni de una sala—. Con la firma que había, dejaba de reconocerse y caía a «Hoja<N>»,
@@ -63,22 +61,24 @@ const HOJAS = [
   /* 🔴 2026-09-14: la hoja pierde «Total de nauplios» y «No viables» pasa a «Hembras no viables»
      (migración obligatoria ANTES del push, en el README). Por la lección de arriba el fixture
      describe la hoja tal como queda: ya no hay ninguna cabecera con «nauplio», y la firma
-     la da SÓLO «Hembras no viables». */
-  ['Maduración Lotes (esquema Desoves)', 'Maduracion', ['Fecha', 'Lote', 'Código genético', 'Piscina Broodstock', 'Desoves', 'Total de huevos', 'Hembras no viables', 'Fecha N2', 'N2', 'Fecha N5', 'N5', 'Despacho', 'Observaciones']],
+     la da SÓLO «Hembras no viables».
+     (Del 2026-09-20 al 09-30 esta fila se llamó «Maduración Lotes (esquema Desoves)» y se daba por
+     borrada: es la hoja viva «Maduración Lotes», columna por columna —la de los DESOVES—.) */
+  ['Maduración Lotes', 'Maduracion', ['Fecha', 'Lote', 'Código genético', 'Piscina Broodstock', 'Desoves', 'Total de huevos', 'Hembras no viables', 'Fecha N2', 'N2', 'Fecha N5', 'N5', 'Despacho', 'Observaciones']],
   /* ⚠ «Relación H:M» se retiró el 2026-09-08 (el usuario: esa relación se CALCULA). La
      detección no se resiente —casa por «sala» MÁS una columna de población— pero el fixture
      tiene que decir la verdad sobre la hoja, o deja de servir para saber qué hay ahí.
-     🔴 2026-09-21 (P12) · ESTA FILA DESCRIBE LA HOJA TAL COMO QUEDA, no como está esta mañana.
-     La hoja viva todavía tiene 18 columnas; el cliente que sirve Pages ya emite estas 15 —se
-     retiraron «Lote» y las dos «Población inicial», vacías, y la llave del GAS bajó con ellas— y
-     el recorte de la hoja es el paso manual que falta. Mismo criterio que la fila de Desoves del
-     2026-09-14, por la misma razón: ante una migración obligatoria y preparada, el fixture que
-     describe el esquema ANTERIOR es el que engaña. Comprobado antes de escribirla: estas 15 se
-     clasifican «Maduracion» por COLUMNAS y por NOMBRE.
-     🔑 La cabecera viva de hoy no se queda sin vigilar: la mide `auditar-clasificacion.mjs`
-     contra producción, y su foto lleva las 18. */
-  ['Maduración Tanques', 'Maduracion',['Fecha', 'Sala', 'Tanque', 'Machos muertos', 'Hembras muertas', 'Machos muertos por descarte de selección', 'Hembras muertas por descarte de selección', 'Cópulas', 'Muda', 'Peso promedio machos (g)', 'Peso promedio hembras (g)', 'Observaciones sanitarias', 'Observaciones operativas', 'Hora', 'Parte']],
-  ['Maduración Sala', 'Maduracion', ['Fecha', 'Sala', 'Estado', 'Temperatura 2:00', 'Temperatura 4:00', 'Temperatura 6:00', 'Temperatura 8:00', 'Temperatura 10:00', 'Temperatura 12:00', 'Temperatura 14:00', 'Temperatura 16:00', 'Temperatura 18:00', 'Temperatura 20:00', 'Temperatura 22:00', 'Temperatura 0:00', 'Oxígeno 06:00', 'Oxígeno 12:00', 'Oxígeno 18:00', 'Oxígeno 00:00', 'RAS', 'Estado por lote']],
+     🔴 2026-09-21 (P12) · se retiraron «Lote» y las dos «Población inicial», vacías (la llave del
+     GAS bajó con ellas), y esta fila se escribió a mano tal como QUEDARÍA la hoja: ante una
+     migración obligatoria y preparada, el fixture que describe el esquema anterior es el que engaña.
+     ✅ La foto del 2026-09-29 ya trae esas 15: la hoja se recortó, y la fila vuelve a salir de ella. */
+  ['Maduración Tanques', 'Maduracion', ['Fecha', 'Sala', 'Tanque', 'Machos muertos', 'Hembras muertas', 'Machos muertos por descarte de selección', 'Hembras muertas por descarte de selección', 'Cópulas', 'Muda', 'Peso promedio machos (g)', 'Peso promedio hembras (g)', 'Observaciones sanitarias', 'Observaciones operativas', 'Hora', 'Parte']],
+  ['Maduración Bitácora', 'Maduración Bitácora', ['Trovan ID', 'Fecha', 'Tipo', 'Sala', 'Tanque', 'Observaciones']],
+  ['Maduración MATRIZ', 'Maduración MATRIZ', ['Número', 'Trovan ID', 'Color anillo', 'Piscina', 'Código genético', 'Lote', 'Sala actual', 'Tanque actual', 'Estado', 'Fecha muerte', 'Fecha ingreso', 'Observaciones']],
+  ['Registro_Traslado', 'Registro_Traslado', ['Fecha', 'Viaje', 'Corrida', 'Módulo', 'Camaronera', 'Placa', 'Salinidad', 'Hora salida', 'Hora llegada', 'Revisión', 'Hora', 'Lugar', 'Latitud', 'Longitud', 'Precisión (m)', 'Ubicación', 'Tina', 'Oxígeno (mg/L)', 'Temperatura (°C)', 'Actividad', 'Alimentación', 'Observaciones', 'Insumos', 'Check materiales', 'Controlador despacho', 'Chequeador entrega', 'Responsable recepción', 'Hora registro', 'ID']],
+  ['Calidad de Agua', 'Calidad de Agua', ['Fecha muestreo', 'Fecha resultados', 'Corrida', 'Responsable', 'Departamento', 'Formato', 'Tipo de muestra', 'Módulo', 'Estadío', 'TQ/N°', 'Sala', 'Estado', 'Componente', 'Muestras', 'S‰', 'pH', 'Alcalinidad', 'Temperatura', 'Nitrito', 'TAN', 'Am.Tóxico', 'Nitrato', 'Amonio', 'Nitrógeno total', 'Calcio', 'Magnesio', 'Potasio', 'Dureza total', 'Hierro', 'Fósforo', 'Cobre', 'Manganeso', 'S‰ antes', 'S‰ después', 'pH antes', 'pH después', 'Calcio antes', 'Calcio después', 'Magnesio antes', 'Magnesio después', 'Potasio antes', 'Potasio después', 'Cloro libre (mg/L)', 'Cloro total (mg/L)', 'Cloro combinado (mg/L)', 'Sesión', 'Lote', 'Sulfato']],
+  ['Microbiología', 'Microbiología', ['Fecha muestreo', 'Fecha resultados', 'Corrida', 'Responsable', 'Departamento', 'Formato', 'Tipo de muestra', 'Módulo/Sala', 'Sexo', 'Estadío', 'TQ/N°', 'V.Amarillos (crudo)', 'V.Amarillos UFC', 'V.Amarillos Nivel', 'V.Verdes (crudo)', 'V.Verdes UFC', 'V.Verdes Nivel', 'V.Totales (crudo)', 'V.Totales UFC', 'V.Totales Nivel', 'V.alginolyticus (crudo)', 'V.alginolyticus UFC', 'V.alginolyticus Nivel', 'V.parahaemolyticus (crudo)', 'V.parahaemolyticus UFC', 'V.parahaemolyticus Nivel', 'V.vulnificus (crudo)', 'V.vulnificus UFC', 'V.vulnificus Nivel', 'Pseudomonas (crudo)', 'Pseudomonas UFC', 'Pseudomonas Nivel', 'Aeromonas (crudo)', 'Aeromonas UFC', 'Aeromonas Nivel', 'Bact.Totales (crudo)', 'Bact.Totales UFC', 'Bact.Totales Nivel', 'Bact.Naranjas (crudo)', 'Bact.Naranjas UFC', 'Bact.Naranjas Nivel', 'Hongos (crudo)', 'Hongos UFC', 'Hongos Nivel', 'V.Luminiscentes', 'Enterobact. (crudo)', 'Enterobact. UFC', 'Levaduras (crudo)', 'Levaduras UFC', 'Observaciones', 'Origen/Tipo', 'Etapa', 'Componente', 'Laboratorio', 'Raceways', 'Tanques', 'Tanque/Reservorio', 'Punto de muestreo', 'Pseudomonas GSP (crudo)', 'Pseudomonas GSP UFC', 'Pseudomonas GSP Nivel', 'Aeromonas GSP (crudo)', 'Aeromonas GSP UFC', 'Aeromonas GSP Nivel', 'Lugar', 'Variedad', 'Días', 'Especie', 'Siembra', 'Muestras', 'Bacterias Rojas (crudo)', 'Bacterias Rojas UFC', 'Carro', 'Tina', 'Sesión', 'Lote', 'pH', 'Conteo BA (crudo)', 'Conteo BA UFC', 'Conteo Lev. (crudo)', 'Conteo Lev. UFC']],
+  ['BIOMOL', 'Biomol', ['Fecha', 'Código', 'Corrida', 'Piscina', 'Lugar', 'Tanque', 'Otros', 'Muestra', 'Estadío', 'Sexo', 'IHHNV', 'WSSV', 'BP', 'AHPND/EMS', 'NHPB', 'EHP', 'Sesión', 'Ciclo de amplificación WSSV', 'Copias/μl WSSV', 'Ciclo de amplificación IHHNV', 'Copias/μl IHHNV', 'Ciclo de amplificación AHPND/EMS', 'Copias/μl AHPND/EMS']],
   ['Datos Larvicultura - M01', 'Larvicultura', ['Fecha', 'Corrida', 'Módulo', 'Tanque', 'Supervivencia', 'Mortalidad', 'Población', 'Lote', 'Estadío', 'Intestino_Lleno', 'Intestino_Semilleno', 'Intestino_Vacio', 'Deformidad', 'Retraso', '% Mortalidad', 'Hongos', '% No_viables', '% Opacidad', 'Lípidos', 'Flácidez', 'Necrosis', 'Canibalismo', 'Parásitos', '% Actividad', 'Plg', 'Plg (manual)', 'Estrés', 'Salinidad', 'Técnico', 'ID de Análisis', 'Peso promedio (mg)', 'Longitud promedio (mm)', 'Uniformidad de peso', 'Uniformidad de longitud', 'CV de peso', 'CV de longitud', 'Pigmentación', 'Densidad cosechada', 'Biomasa', 'Cajas/Tinas', 'Destino', 'Piscina', 'Cel/ml', 'Color', '% Espuma', '% Suciedad', '% Recambio', 'Observaciones', 'Toneladas']],
   ['Control_Tanque M01', 'Control_Tanque', ['Fecha', 'Hora', 'Corrida', 'Módulo', 'Tanque', 'OD', 'Temperatura', 'Observacion']],
   ['Datos Larvicultura - M02', 'Larvicultura', ['Fecha', 'Corrida', 'Módulo', 'Tanque', 'Supervivencia', 'Mortalidad', 'Población', 'Lote', 'Estadío', 'Intestino_Lleno', 'Intestino_Semilleno', 'Intestino_Vacio', 'Deformidad', 'Retraso', '% Mortalidad', 'Hongos', '% No_viables', '% Opacidad', 'Lípidos', 'Flácidez', 'Necrosis', 'Canibalismo', 'Parásitos', '% Actividad', 'Plg', 'Plg (manual)', 'Estrés', 'Salinidad', 'Técnico', 'ID de Análisis', 'Peso promedio (mg)', 'Longitud promedio (mm)', 'Uniformidad de peso', 'Uniformidad de longitud', 'CV de peso', 'CV de longitud', 'Pigmentación', 'Densidad cosechada', 'Biomasa', 'Cajas/Tinas', 'Destino', 'Piscina', 'Cel/ml', 'Color', '% Espuma', '% Suciedad', '% Recambio', 'Observaciones', 'Toneladas']],
@@ -99,19 +99,19 @@ const HOJAS = [
   ['Control_Tanque M09', 'Control_Tanque', ['Fecha', 'Hora', 'Corrida', 'Módulo', 'Tanque', 'OD', 'Temperatura', 'Observacion']],
   ['Datos Larvicultura - M10', 'Larvicultura', ['Fecha', 'Corrida', 'Módulo', 'Tanque', 'Supervivencia', 'Mortalidad', 'Población', 'Lote', 'Estadío', 'Intestino_Lleno', 'Intestino_Semilleno', 'Intestino_Vacio', 'Deformidad', 'Retraso', '% Mortalidad', 'Hongos', '% No_viables', '% Opacidad', 'Lípidos', 'Flácidez', 'Necrosis', 'Canibalismo', 'Parásitos', '% Actividad', 'Plg', 'Plg (manual)', 'Estrés', 'Salinidad', 'Técnico', 'ID de Análisis', 'Peso promedio (mg)', 'Longitud promedio (mm)', 'Uniformidad de peso', 'Uniformidad de longitud', 'CV de peso', 'CV de longitud', 'Pigmentación', 'Densidad cosechada', 'Biomasa', 'Cajas/Tinas', 'Destino', 'Piscina', 'Cel/ml', 'Color', '% Espuma', '% Suciedad', '% Recambio', 'Observaciones', 'Toneladas']],
   ['Control_Tanque M10', 'Control_Tanque', ['Fecha', 'Hora', 'Corrida', 'Módulo', 'Tanque', 'OD', 'Temperatura', 'Observacion']],
-  ['Datos Larvicultura - CIO', 'Larvicultura', ['Fecha', 'Corrida', 'Módulo', 'Tanque', 'Supervivencia', 'Mortalidad', 'Población', 'Lote', 'Estadío', 'Intestino_Lleno', 'Intestino_Semilleno', 'Intestino_Vacio', 'Deformidad', 'Retraso', '% Mortalidad', 'Hongos', '% No_viables', '% Opacidad', 'Lípidos', 'Flácidez', 'Necrosis', 'Canibalismo', 'Parásitos', '% Actividad', 'Plg', 'Talla', 'Estrés', 'Salinidad', 'Técnico', 'ID de Análisis', 'Peso promedio (mg)', 'Longitud promedio (mm)', 'Uniformidad de peso', 'Uniformidad de longitud', 'CV de peso', 'CV de longitud', 'Pigmentación', 'Densidad cosechada', 'Biomasa', 'Cajas/Tinas', 'Destino', 'Piscina', 'Cel/ml', 'Color', '% Espuma', '% Suciedad', '% Recambio', 'Observaciones', 'Toneladas']],
+  ['Datos Larvicultura - CIO', 'Larvicultura', ['Fecha', 'Corrida', 'Módulo', 'Tanque', 'Supervivencia', 'Mortalidad', 'Población', 'Lote', 'Estadío', 'Intestino_Lleno', 'Intestino_Semilleno', 'Intestino_Vacio', 'Deformidad', 'Retraso', '% Mortalidad', 'Hongos', '% No_viables', '% Opacidad', 'Lípidos', 'Flácidez', 'Necrosis', 'Canibalismo', 'Parásitos', '% Actividad', 'Plg', 'Plg (manual)', 'Estrés', 'Salinidad', 'Técnico', 'ID de Análisis', 'Peso promedio (mg)', 'Longitud promedio (mm)', 'Uniformidad de peso', 'Uniformidad de longitud', 'CV de peso', 'CV de longitud', 'Pigmentación', 'Densidad cosechada', 'Biomasa', 'Cajas/Tinas', 'Destino', 'Piscina', 'Cel/ml', 'Color', '% Espuma', '% Suciedad', '% Recambio', 'Observaciones', 'Toneladas']],
   ['Control_Tanque CIO', 'Control_Tanque', ['Fecha', 'Hora', 'Corrida', 'Módulo', 'Tanque', 'OD', 'Temperatura', 'Observacion']],
   ['Lab_Algas', 'Lab_Algas', ['Fecha', 'Corrida_Larv', 'Modulo_Larv', 'Área_Algas', 'Sistema', 'Lote', 'Dia_Proceso', 'Cel_ml', 'Protozoarios', 'Especie', 'Salinidad_ppt', 'pH', 'Temperatura_C', 'Intensidad_Luz_%', 'Descartado', 'Observaciones', 'Ciliados', 'Filamentosos', 'Técnico', 'Células Vacías', 'Células Semillenas', 'Células Alargadas', 'Células muertas', 'Volumen de Despacho', 'Sesión']],
-  ['Registro_Desinfección', 'Registro_Desinfección', ['Fecha', 'Módulo', 'Corrida', 'Tipo de Registro', 'Categoría', 'Elemento', 'Estado', 'Observaciones', 'Código']],
+  ['Registro_Desinfección', 'Registro_Desinfección', ['Fecha', 'Módulo', 'Corrida', 'Tipo de Registro', 'Categoría', 'Elemento', 'Estado', 'Observaciones', 'Fecha Elemento']],
   ['Marea', 'Marea', ['Fecha', 'Día', 'Mes', 'Día Semana', 'Fase Lunar', '%Iluminación', 'Tipo de Marea', 'Pleamar 1', 'Altura P1 (m)', 'Bajamar 1', 'Altura B1 (m)', 'Pleamar 2', 'Altura P2 (m)', 'Bajamar 2', 'Altura B2 (m)', 'Amplitud (m)']],
 ];
 
 /** Una fila con esas cabeceras y valores vacíos: detectSheetName sólo mira las CLAVES. */
 const filaDe = (cabeceras) => Object.fromEntries(cabeceras.map((c) => [c, '']));
 
-describe('detectSheetName · las 35 pestañas reales, con el gid SIN título', () => {
+describe('detectSheetName · las 39 pestañas reales, con el gid SIN título', () => {
   it('el fixture no se ha quedado vacío ni a medias', () => {
-    expect(HOJAS.length).toBe(35);
+    expect(HOJAS.length).toBe(39);
     for (const [n, , cab] of HOJAS) expect(cab.length, n + ' sin cabeceras').toBeGreaterThan(0);
   });
 
@@ -123,7 +123,7 @@ describe('detectSheetName · las 35 pestañas reales, con el gid SIN título', (
 
   /* La invariante de verdad, dicha una sola vez: los DOS caminos tienen que coincidir.
      Es lo que impide que el mismo dato se clasifique distinto según cómo se cargó. */
-  it('el camino por COLUMNAS coincide con el camino por NOMBRE en las 35', () => {
+  it('el camino por COLUMNAS coincide con el camino por NOMBRE en las 39', () => {
     const divergen = HOJAS
       .filter(([n, , cab]) => detectSheetName([filaDe(cab)], 0) !== classifyOrigin(n))
       .map(([n]) => `${n}: columnas=${detectSheetName([filaDe(HOJAS.find((h) => h[0] === n)[2])], 0)} vs nombre=${classifyOrigin(n)}`);
@@ -149,8 +149,8 @@ describe('detectSheetName · las 35 pestañas reales, con el gid SIN título', (
   });
 
   /* El mismo invariante dicho sobre el VOCABULARIO, no sobre las hojas: así queda cubierto
-     también un origen que hoy ninguna pestaña produce (Patología en Fresco, Maduración
-     Transferencias) pero que detectSheetName sí puede devolver. */
+     también un origen que hoy ninguna pestaña produce (Patología en Fresco; Maduración
+     Transferencias lo fue hasta que existió su hoja) pero que detectSheetName sí puede devolver. */
   it('cada origen que detectSheetName puede devolver es PUNTO FIJO de classifyOrigin', () => {
     const SALIDAS = [
       'Control_Tanque', 'Lab_Algas', 'Biomol', 'Microbiología',
@@ -186,7 +186,7 @@ describe('detectSheetName · las 35 pestañas reales, con el gid SIN título', (
      Un título que YA es canónico —'Biomol', 'Marea', 'Lab_Algas', 'Microbiología'— sale
      de classifyOrigin igual que entró, y por tanto es indistinguible de uno que no se
      reconoció: se cae al respaldo por columnas.
-     Hoy NO hace daño, y precisamente por el arreglo del 2026-09-01: como las 35 pestañas
+     Hoy NO hace daño, y precisamente por el arreglo del 2026-09-01: como las 39 pestañas
      aciertan también por columnas (es lo que garantiza la prueba de coincidencia de más
      arriba), los dos caminos dan lo mismo. Antes de ese arreglo, un título canónico caía
      en una adivinanza que fallaba 18 veces de 35.
