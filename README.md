@@ -151,7 +151,10 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     sala, lote, código genético, fase lunar —resalta sus días— y «sólo en producción»). Sin frases de conclusión:
     las cifras se recalculan con cada parte, y las definiciones van en un ⓘ. Un día sin NINGUNA cópula (o desove)
     registrado en toda la granja es un hueco del registro: queda fuera, y se dice. La luna se dibuja con la fase que
-    dice la hoja.
+    dice la hoja. 🗓 **Calendario** (0v, 2026-09-29), entre Mes y Cópulas y sólo en Maduración: el mes de lunes a
+    domingo, cada día con su luna dibujada, su % y su marea (viva o muerta) —un día que la hoja no trae sale en gris,
+    «sin dato»: nada se calcula—; al pulsar un día, su panel debajo (lecturas, amplitud, la ola y la granja ese día:
+    cópulas y desoves con las reglas de 🦐 Cópulas) y «Ver en 📅 Día».
     ⚡ **🦠 y 🧬** preparan sus muestras UNA vez por carga de datos —en reposo (`requestIdleCallback`), así que
     la primera entrada ya no espera; sin él (Safari), al entrar— y un clic dentro rehace SÓLO su contenido, no
     el tablero entero.
