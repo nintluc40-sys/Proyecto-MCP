@@ -177,3 +177,38 @@ describe('Tanques · un parte ABIERTO ya enviado no vuelve a pendiente si nadie 
     expect(pendientes('Sala 5')).toHaveLength(0);
   });
 });
+
+/* 2026-10-01 (usuario, auditoría de Maduración) · EL PARTE QUE SE PINTA YA ESTÁ EN LA HOJA. Tras un 🔄 el parte sigue
+   abierto y la grilla lo pinta con sus cifras: teclear encima la ronda SIGUIENTE sin pulsar 💾 antes lo sobrescribiría en
+   la hoja (misma llave). Decisión del usuario: AVISARLO en la grilla, sin bloquear (corregir es legítimo). */
+describe('Tanques · la grilla avisa cuando el parte que pinta ya está en la hoja', () => {
+  const aviso = () => { const el = document.getElementById('tq-parte-enviado'); return el ? el.textContent : null; };
+
+  it('🔴 el parte abierto ya enviado (🔄) se pinta con el aviso: lo tecleado lo CORRIGE; una ronda nueva, 💾 primero', async () => {
+    await darAbiertoYSincronizar('Sala 5', () => poner(7, 'machos_muertos', 7));
+    irASala('Sala 5');
+    const hora = H.loadMad('tanques').find((r) => r.data.sala === 'Sala 5').data.hora;
+    expect(aviso(), 'no avisa').toContain('ya se envió');
+    expect(aviso()).toContain('parte 1 de las ' + hora);
+    expect(aviso()).toContain('💾');
+  });
+
+  it('un parte abierto SIN enviar no lleva el aviso (ni una sala sin parte)', () => {
+    irASala('Sala 5');
+    poner(8, 'machos_muertos', 2);
+    irASala('Sala 2');
+    expect(aviso()).toBeNull();
+    irASala('Sala 5');
+    expect(aviso(), 'avisa de un parte que la hoja no tiene').toBeNull();
+  });
+
+  it('💾 cierra el parte enviado SIN reenviarlo: el aviso se va y la grilla queda limpia para la ronda nueva', async () => {
+    await darAbiertoYSincronizar('Sala 5', () => poner(9, 'hembras_muertas', 3));
+    irASala('Sala 5');
+    expect(aviso(), 'el fixture ejerce algo').toContain('ya se envió');
+    H.saveMadTanquesGrid();
+    expect(aviso()).toBeNull();
+    expect(valor(9, 'hembras_muertas')).toBe('');
+    expect(pendientes('Sala 5'), 'cerrar un parte ya enviado lo volvió a pendiente').toHaveLength(0);
+  });
+});

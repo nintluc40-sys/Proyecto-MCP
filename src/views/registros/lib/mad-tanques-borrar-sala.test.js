@@ -19,8 +19,12 @@ import { join } from 'node:path';
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderMadTanques', 'madTanquesSalaChange', 'madTanquesFechaChange', 'saveMadTanquesGrid',
-  'syncMadTanquesGrid', 'syncAll', 'loadMad', 'saveMadList', '_gasVersionLocal', 'MAD_MOD', 'today', 'clearMadTanquesGrid'];
+  'syncMadTanquesGrid', 'syncAll', 'loadMad', 'saveMadList', '_gasVersionLocal', 'MAD_MOD', 'today', 'clearMadTanquesGrid',
+  '_madGridDiaDeLaApp'];
 const H = {};
+/* El día en que la app ABRE la grilla (antes de las 02:00, el que termina): con H.today() la prueba fallaría si corre entre
+   las 00:00 y las 02:00 (en la CI, que va en UTC, un push de las 19:00 a las 21:00 de Ecuador). */
+const HOY = () => H._madGridDiaDeLaApp();
 const envios = [];
 const avisos = [];
 
@@ -82,7 +86,7 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); });
 
-const delDia = (sala) => H.loadMad('tanques').filter((r) => r.data.sala === sala && r.data.fecha === H.today())
+const delDia = (sala) => H.loadMad('tanques').filter((r) => r.data.sala === sala && r.data.fecha === HOY())
   .map((r) => ['T' + r.data.tanque, 'P' + r.data.parte, r.data.cerrado ? 'cerrado' : 'abierto', r.synced || r.syncedAt ? 'enviado' : 'sin enviar'])
   .sort((a, b) => (a[1] + a[0]).localeCompare(b[1] + b[0]));
 

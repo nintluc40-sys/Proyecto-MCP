@@ -13943,6 +13943,46 @@ function _collectSalasGrid(fechaOverride){
   return result;
 }
 
+/* 2026-10-01 (usuario, auditoría de Maduración) · UNA LECTURA BORRADA EN SALAS SE GUARDA BORRADA (como en Tanques, punto
+   5 · A). La fusión (_madMergeRow) no deja que una celda vacía pise lo guardado: tras un autoguardado, borrar una lectura
+   mal tecleada no la quitaba y se enviaba igual. Sólo en la grilla PINTADA para ese día —llevar lo tecleado a otro día
+   (_madGridLlevar) no vacía nada— y sólo celdas VACÍAS de verdad en pantalla: una temperatura fuera de rango no se guarda,
+   pero no borra la anterior. «Toneladas» no entra: vacía, la grilla la rellena con el catálogo. Si la fila ya se envió,
+   la hoja conserva el valor (el GAS no vacía celdas con un envío vacío): se AVISA para borrarlo allí. Devuelve cuántas
+   celdas vació. */
+function _madSalasVaciar(fechaOverride){
+  const r = _madRendered.salas;
+  const fp = document.getElementById("fp-salas");
+  const fechaEl = document.getElementById("mad-salas-fecha");
+  const fecha = isValidDate(fechaOverride) ? fechaOverride : ((fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today());
+  if(!r || !fp || r.fecha !== fecha) return 0;
+  const claves = ["estado", "estado_lote", "ras"].concat(_SALA_TEMP_KEYS, _SALA_OX_KEYS);
+  const list = loadMad("salas");
+  let n = 0;
+  const enHoja = [];
+  MAD_SALA_OPTS.forEach(function(sala, si){
+    const x = list.find(function(y){ return y && y.data && y.data.fecha === fecha && y.data.sala === sala; });
+    if(!x) return;
+    const borradas = claves.filter(function(k){
+      const el = fp.querySelector('[name="sg_' + si + '_' + k + '"]');
+      const g = x.data[k];
+      if(!el || String(el.value) !== "" || g === "" || g == null) return false;
+      // Un desplegable sólo pudo BORRARSE si lo guardado era una de sus opciones: un Estado viejo fuera del catálogo se pinta
+      // como «—» sin que nadie lo toque, y no puede tomarse por borrado.
+      return el.tagName !== "SELECT" || Array.prototype.some.call(el.options, function(o){ return o.value === String(g); });
+    });
+    if(!borradas.length) return;
+    borradas.forEach(function(k){ x.data[k] = ""; });
+    // No se marca pendiente: lo nunca enviado ya lo está, y reenviar lo enviado no vaciaría la hoja (sólo se avisa).
+    if(x.synced || x.syncedAt) enHoja.push(sala);
+    n += borradas.length;
+  });
+  if(!n) return 0;
+  saveMadList("salas", list);
+  if(enHoja.length) toast("⚠️ Borraste lecturas que ya estaban en la hoja (" + enHoja.join(", ") + " · " + fecha + "): la hoja no vacía celdas, "
+    + "así que allí SIGUEN. Bórralas también en «Maduración Sala».", "warn", 8000);
+  return n;
+}
 function saveMadSalasGrid(opts){
   opts = opts || {};
   const silent = !!opts.silent;
@@ -13960,6 +14000,13 @@ function saveMadSalasGrid(opts){
       + (_fuera.length > 1 ? " Y " + (_fuera.length - 1) + " celda(s) más." : "");
     if(!silent){ toast(_msg + " Corrige el dato antes de guardar.", "err", 6500); return -1; }
     toast(_msg + " Esa celda NO se guardó; el resto sí.", "warn", 6500);
+  }
+  const _vaciadas = _madSalasVaciar(opts.fechaOverride);   // 2026-10-01 · lecturas BORRADAS (ver la función)
+  if(rows.length === 0 && _vaciadas){
+    if(!opts.noRender) renderMadSalas();
+    updateDots(); updateSyncUI();
+    if(!silent) toast("💾 Lecturas borradas guardadas","ok",2500);
+    return _vaciadas;
   }
   if(rows.length === 0){ if(!silent) toast("No hay datos para guardar","warn"); return 0; }
   // Carga la lista UNA vez, mergea en memoria y persiste UNA vez (O(n)).
@@ -14229,6 +14276,7 @@ function renderMadTanques(){
         <span>Completa lo de ESTA ronda por tanque, no el acumulado del día. Al guardar (💾 o ☁️) el parte se cierra con su hora y la grilla queda limpia para la ronda siguiente. Puedes pegar bloques desde Excel.</span>
       </div>
       ${_madTanquesPartesHTML(list, fecha, sala)}
+      ${_madTqParteEnviadoHTML(list, fecha, sala)}
       <div class="tw"><table class="ft" style="font-size:10.5px">
         <thead>
           <tr>
@@ -14745,6 +14793,23 @@ function madTanquesReabrirParte(){
   if(!saveMadList("tanques", list)) return;
   renderMadTanques();
   toast("✏️ Parte "+ultimo+" reabierto: corrígelo y vuelve a guardar.","info",4000);
+}
+/* 2026-10-01 (usuario, auditoría de Maduración) · EL PARTE QUE SE PINTA YA ESTÁ EN LA HOJA. El 🔄 global envía el parte
+   abierto sin cerrarlo, así que la grilla lo sigue pintando con sus cifras; teclear encima la ronda SIGUIENTE sin pulsar 💾
+   antes lo sobrescribe en la hoja con su misma llave. Se AVISA, sin bloquear: corregir un parte enviado es legítimo. Con 💾
+   el parte se cierra (sin reenviarse: `cerrado` no cuenta como cambio) y la grilla queda limpia. */
+function _madTqParteEnviadoHTML(list, fecha, sala){
+  const abierto = _madParteAbierto(list, fecha, sala);
+  if(!abierto) return "";
+  const enviado = (list || []).some(function(r){
+    const d = r && r.data;
+    return !!d && d.fecha === fecha && d.sala === sala && !d.cerrado && String(d.parte || "") === String(abierto) && !!(r.synced || r.syncedAt);
+  });
+  if(!enviado) return "";
+  const hora = _madParteHora(list, fecha, sala, abierto);
+  return '<div id="tq-parte-enviado" style="font-size:11px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:6px 10px;margin:0 0 8px">'
+    + '📨 El parte ' + escapeHtml(String(abierto)) + (hora ? ' de las ' + escapeHtml(hora) : '') + ' ya se envió a la hoja: lo que teclees aquí lo CORRIGE. '
+    + 'Para una ronda nueva, pulsa 💾 primero (cierra este parte y deja la grilla limpia).</div>';
 }
 /** Línea de los partes del día bajo la cabecera de la grilla: cuáles hay, a qué hora, y el botón para reabrir el
  *  último cuando no queda ninguno abierto. */
