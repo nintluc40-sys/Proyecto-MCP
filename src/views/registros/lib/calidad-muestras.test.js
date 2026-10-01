@@ -148,9 +148,10 @@ describe('Calidad de Agua · Algas · muestras, química y Sulfato', () => {
     });
   });
 
-  it('🔴🔴 Sulfato va AL FINAL de la hoja: Sesión y Lote no se mueven de sitio', () => {
+  it('🔴🔴 Sulfato va DETRÁS de Lote (col. 48): Sesión y Lote no se mueven de sitio', () => {
+    /* Hasta el 2026-10-01 Sulfato era la ÚLTIMA; desde entonces lo es «Sulfuros» (col. 49), que va detrás. */
     const h = H.CAL_SHEET_HEADERS;
-    expect(h[h.length - 1]).toBe('Sulfato');
+    expect(h.indexOf('Sulfato')).toBe(47);
     expect(h.indexOf('Sesión')).toBe(45);   // medido en la hoja de producción el 2026-09-13
     expect(h.indexOf('Lote')).toBe(46);
     expect(H.CAL_SID_COL).toBe(45);
@@ -207,6 +208,71 @@ describe('Calidad de Agua · Algas · muestras, química y Sulfato', () => {
     H.renderCalRangos();
     expect(fp.textContent).toContain('Sulfato');
     expect(fp.querySelector('[onchange*="calRangeSet(\'sulfato\'"]')).toBeTruthy();
+  });
+});
+
+/* 2026-10-01 (usuario) · SULFATO Y SULFUROS en «Larvicultura», «Maduración» y los TRES formatos de agua de Maduración
+   (Agua, RAS y Agua de mar, que comparten EXACTAMENTE su lista: decisión del usuario mantenerlos alineados). Sulfato es la
+   columna que ya existía (la 48, de Algas: la misma medición, una sola columna); «Sulfuros» es NUEVA y va AL FINAL de la
+   hoja (col. 49): la hoja se escribe por POSICIÓN y el GAS añade la cabecera solo (`ensureHeaders`). En la ficha van tras
+   Manganeso (en los de agua de Maduración, antes de los cloros, como en Algas). mg/L; sin rango por defecto. */
+describe('Calidad de Agua · Sulfato y Sulfuros en Larvicultura, Maduración y los de agua de Maduración', () => {
+  it('🔴 Larvicultura y Maduración llevan Sulfato y Sulfuros, tras Manganeso', () => {
+    ['larv', 'mad'].forEach((f) => {
+      const p = H.CAL_FORMATS[f].params;
+      expect(p.slice(-3), f).toEqual(['manganeso', 'sulfato', 'sulfuro']);
+    });
+  });
+
+  it('🔴 los tres de agua de Maduración los llevan antes de los cloros, y siguen con la MISMA lista', () => {
+    expect(H.CAL_PARAMS_MAD_AGUA.slice(-6)).toEqual(['manganeso', 'sulfato', 'sulfuro', 'cl_libre', 'cl_total', 'cl_comb']);
+    ['mad-agua', 'mad-ras', 'mad-mar'].forEach((f) => expect(H.CAL_FORMATS[f].params, f).toBe(H.CAL_PARAMS_MAD_AGUA));
+  });
+
+  it('el Ensayo y Algas no ganan Sulfuros', () => {
+    expect(H.CAL_FORMATS['mad-ensayo'].params).not.toContain('sulfuro');
+    expect(H.CAL_FORMATS.algas.params).not.toContain('sulfuro');
+  });
+
+  it('🔴 Sulfuros es un parámetro con su etiqueta EXACTA y su unidad', () => {
+    expect(H.CAL_PARAMS.sulfuro && H.CAL_PARAMS.sulfuro.l).toBe('Sulfuros');
+    expect(H._calHeadLabel('sulfuro')).toBe('Sulfuros (mg/L)');
+  });
+
+  it('🔴🔴 Sulfuros va AL FINAL de la hoja (col. 49), detrás de Sulfato: nada se mueve de sitio', () => {
+    const h = H.CAL_SHEET_HEADERS;
+    expect(h).toHaveLength(49);
+    expect(h[h.length - 1]).toBe('Sulfuros');
+    expect([h.indexOf('Sesión'), h.indexOf('Lote'), h.indexOf('Sulfato')]).toEqual([45, 46, 47]);
+    expect(h.filter((x) => x === 'Sulfuros')).toHaveLength(1);
+  });
+
+  it('🔴 el viaje: lo tecleado en Larvicultura y en Maduración · Agua llega a Sulfato y a Sulfuros', () => {
+    [['larv', '1200', '0.05'], ['mad-agua', '2600', '0.12']].forEach(([f, sulfato, sulfuros]) => {
+      pintar(f);
+      celda(f, 1, 'ph').value = '8';
+      celda(f, 1, 'sulfato').value = sulfato;
+      celda(f, 1, 'sulfuro').value = sulfuros;
+      const fila = H.collectCalDraft().sections[f].rows[0];
+      const p = H.buildCalPayload([{ data: Object.assign({ formato: f, fechaMuestreo: '2026-10-01', sid: 's1' }, fila) }]);
+      const r = p.rows[0];
+      expect(r, f).toHaveLength(p.headers.length);
+      expect([r[col('Sulfato')], r[col('Sulfuros')]], f).toEqual([Number(sulfato), Number(sulfuros)]);
+      expect(r[col('Sesión')], f).toBe('s1');
+    });
+  });
+
+  it('una fila SIN sulfuros manda la celda vacía, no un cero', () => {
+    const p = H.buildCalPayload([{ data: { formato: 'larv', fechaMuestreo: '2026-10-01', ph: '8' } }]);
+    expect(p.rows[0][col('Sulfuros')]).toBe('');
+  });
+
+  it('🔴 en ⚙️ Rangos se le puede poner rango a Sulfuros, y Sulfato sale UNA vez', () => {
+    let fp = document.getElementById('fp-micfact');
+    if (!fp) { fp = document.createElement('div'); fp.id = 'fp-micfact'; document.body.appendChild(fp); }
+    H.renderCalRangos();
+    expect(fp.querySelector('[onchange*="calRangeSet(\'sulfuro\',\'min\'"]'), 'Sulfuros sin rango editable').toBeTruthy();
+    expect(fp.querySelectorAll('[onchange*="calRangeSet(\'sulfato\',\'min\'"]'), 'Sulfato repetido en Rangos').toHaveLength(1);
   });
 });
 

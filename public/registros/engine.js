@@ -21902,6 +21902,9 @@ const CAL_PARAMS = {
   // 2026-09-13 (usuario, formato Algas). NO está en CAL_PARAM_ORDER: su columna va al FINAL
   // de la hoja, detrás de «Lote» (ver CAL_SHEET_HEADERS y buildCalPayload).
   sulfato:{l:"Sulfato"},
+  // 2026-10-01 (usuario, Larvicultura, Maduración y los de agua de Maduración). Tampoco va en CAL_PARAM_ORDER: su
+  // columna es la 49, la ÚLTIMA de la hoja, detrás de «Sulfato» (ver CAL_SHEET_HEADERS y buildCalPayload).
+  sulfuro:{l:"Sulfuros"},
   sal_a:{l:"S‰ antes"}, sal_d:{l:"S‰ después"}, ph_a:{l:"pH antes"}, ph_d:{l:"pH después"},
   calcio_a:{l:"Calcio antes"}, calcio_d:{l:"Calcio después"},
   magnesio_a:{l:"Magnesio antes"}, magnesio_d:{l:"Magnesio después"},
@@ -21911,6 +21914,10 @@ const CAL_PARAMS = {
 // Orden estable de columnas de parámetros en la hoja ancha.
 const CAL_PARAM_ORDER = ["sal","ph","alc","temp","nitrito","tan","amtox","nitrato","amonio","ntot","calcio","magnesio","potasio","dureza","hierro","fosforo","cobre","manganeso","sal_a","sal_d","ph_a","ph_d","calcio_a","calcio_d","magnesio_a","magnesio_d","potasio_a","potasio_d","cl_libre","cl_total","cl_comb"];
 const CAL_PARAMS_FULL = ["sal","ph","alc","temp","nitrato","nitrito","tan","amtox","amonio","ntot","calcio","magnesio","potasio","dureza","hierro","fosforo","cobre","manganeso"];
+// 2026-10-01 (usuario) · Sulfato (la columna que ya existía, la de Algas: la misma medición) y Sulfuros (nueva) en
+// Larvicultura y Maduración, detrás de Manganeso. Aparte de CAL_PARAMS_FULL porque ésa es también el grupo general de
+// ⚙️ Rangos, donde Sulfato ya tiene su sitio (saldría dos veces).
+const CAL_PARAMS_AZUFRE = ["sulfato","sulfuro"];
 const CAL_ALGAS_MUESTRA = ["Funda producción","Funda matriz","Reservorio PBR","Agua Ultrafiltrada"];
 // Sugerencias de la columna "Muestra" de Maduración · Agua de mar (admite escribir otra).
 // 2026-09-13 (usuario): + «Afluente» y «Efluente», detrás de «Agua de mar». Son valores de
@@ -21919,10 +21926,11 @@ const CAL_MAR_MUESTRA = ["Agua de mar","Afluente","Efluente"];
 // Juego de parámetros común a los TRES formatos de agua de Maduración (Agua, RAS y
 // Agua de mar). Desde que «Maduración · Agua» ganó Temperatura —2026-08-26, para que
 // pudiera calcular el Amonio Tóxico— los tres comparten EXACTAMENTE esta lista, así
-// que los tres la usan de aquí y ninguno la repite tecleada.
+// que los tres la usan de aquí y ninguno la repite tecleada. 2026-10-01 (usuario): + Sulfato y Sulfuros, antes de
+// los cloros (como en Algas), en los TRES: el usuario pidió «Maduración · Agua» y decidió mantenerlos alineados.
 const CAL_PARAMS_MAD_AGUA = ["alc","ph","sal","temp","calcio","magnesio","potasio","nitrato",
   "nitrito","tan","amtox","amonio","ntot","dureza","hierro","fosforo","cobre","manganeso",
-  "cl_libre","cl_total","cl_comb"];
+  "sulfato","sulfuro","cl_libre","cl_total","cl_comb"];
 const CAL_PDF_LEGEND = '<div class="miclegend"><b>Rangos:</b><span><span class="micbox" style="background:#bbf7d0;border-color:#4ade80"></span>Dentro</span><span><span class="micbox" style="background:#fecaca;border-color:#f87171"></span>Fuera de rango</span><span><span class="micbox" style="background:#fff;border-color:#cbd5e1"></span>Sin rango</span><span style="color:#64748b">· bajo cada columna: rango objetivo y unidad</span></div>';
 
 const CAL_FORMATS = {
@@ -21935,7 +21943,7 @@ const CAL_FORMATS = {
       { k:"tq",          l:"TQ/N°",           type:"sel", opts:MIC_TQS_LARV, w:56 },
       { k:"lote",        l:"Lote",            type:"txt", w:80 }
     ],
-    params: CAL_PARAMS_FULL
+    params: CAL_PARAMS_FULL.concat(CAL_PARAMS_AZUFRE)
   },
   "mad": {
     depto:"Maduración", label:"Maduración",
@@ -21945,7 +21953,7 @@ const CAL_FORMATS = {
       { k:"tq",     l:"TQ/N°",  type:"txt", w:56 },
       { k:"lote",   l:"Lote",   type:"txt", w:80 }
     ],
-    params: CAL_PARAMS_FULL
+    params: CAL_PARAMS_FULL.concat(CAL_PARAMS_AZUFRE)
   },
   "mad-agua": {
     depto:"Maduración", label:"Maduración · Agua",
@@ -22793,6 +22801,7 @@ const CAL_SHEET_HEADERS = (function(){
   h.push("Sesión");   // id único por análisis (clave de upsert; vacío en filas heredadas)
   h.push("Lote");     // añadida al FINAL (el GAS escribe por posición; no desalinea lo existente)
   h.push("Sulfato");  // 2026-09-13 · col. 48, también al FINAL por lo mismo: la hoja tenía 47 (medido)
+  h.push("Sulfuros"); // 2026-10-01 · col. 49, AL FINAL igual: la hoja tenía 48 (medido); el GAS añade la cabecera solo
   return h;
 })();
 const CAL_SID_COL = CAL_SHEET_HEADERS.indexOf("Sesión");
@@ -22811,6 +22820,7 @@ function buildCalPayload(records){
     row.push(sanitizeStr(d.sid||""));   // Sesión
     row.push(sanitizeStr(d.lote||""));  // Lote
     { const v=parseFloat(d.sulfato); row.push(isFinite(v)?v:""); }   // Sulfato (última columna)
+    { const v=parseFloat(d.sulfuro); row.push(isFinite(v)?v:""); }   // Sulfuros (2026-10-01: col. 49, ahora la última)
     return row;
   });
   return { sheetName:CAL_SHEET, headers:CAL_SHEET_HEADERS, rows, replaceKey:true, keyCols:[0,2,4,5,CAL_SID_COL] };
@@ -22894,7 +22904,7 @@ function renderCalRangos(){
   const groupDefs=[
     { t:"Parámetros generales (Larvicultura / Maduración / RAS / Agua / Algas)", keys:CAL_PARAMS_FULL },
     { t:"Ensayo (antes / después)", keys:["sal_a","sal_d","ph_a","ph_d","calcio_a","calcio_d","magnesio_a","magnesio_d","potasio_a","potasio_d"] },
-    { t:"Algas · Sulfato y Cloro", keys:["sulfato","cl_libre","cl_total","cl_comb"] }
+    { t:"Sulfato, Sulfuros y Cloro", keys:["sulfato","sulfuro","cl_libre","cl_total","cl_comb"] }
   ];
   const inp=(pk,field,w)=>{ const r=R[pk]||{}; return `<input type="number" class="pinp" value="${r[field]!=null?r[field]:""}" onchange="calRangeSet('${pk}','${field}',this.value)" step="any" placeholder="—" style="width:${w}px">`; };
   const blocks=groupDefs.map(g=>{
@@ -23004,7 +23014,7 @@ function renderCalReporte(){
 // Unidad por parámetro (los pares antes/después heredan la del parámetro base).
 const CAL_UNITS = { sal:"‰", temp:"°C", alc:"mg/L", nitrito:"mg/L", tan:"mg/L", amtox:"mg/L",
   nitrato:"mg/L", amonio:"mg/L", ntot:"mg/L", calcio:"mg/L", magnesio:"mg/L", potasio:"mg/L",
-  dureza:"mg/L", hierro:"mg/L", fosforo:"mg/L", cobre:"mg/L", manganeso:"mg/L", sulfato:"mg/L" };
+  dureza:"mg/L", hierro:"mg/L", fosforo:"mg/L", cobre:"mg/L", manganeso:"mg/L", sulfuro:"mg/L", sulfato:"mg/L" };
 function calUnit(pk){ return CAL_UNITS[pk.replace(/_(a|d)$/,"")] || ""; }
 function _calHeadLabel(pk){
   const l = CAL_PARAMS[pk] ? CAL_PARAMS[pk].l : pk;

@@ -46,6 +46,8 @@ export const CAL_PARAMS = [
   // 2026-09-13: la escribe el formato Algas de la ficha, en la columna 48 (detrás de «Lote»).
   // Aquí se lee por cabecera, así que su sitio en este catálogo es sólo el de presentación.
   P('sulfato', 'Sulfato', 'Sulfato', 'mg/L', 'iones'),
+  // 2026-10-01: la escriben Larvicultura, Maduración y los de agua de Maduración, en la columna 49 (detrás de «Sulfato»).
+  P('sulfuro', 'Sulfuros', 'Sulfuros', 'mg/L', 'iones'),
   P('dureza', 'Dureza total', 'Dureza total', 'mg/L', 'iones'),
   P('hierro', 'Hierro', 'Hierro', 'mg/L', 'metales'),
   P('fosforo', 'Fósforo', 'Fósforo', 'mg/L', 'metales', ['Fosforo']),

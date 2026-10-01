@@ -1151,11 +1151,14 @@ function cabecerasCalidad() {
 describe('GAS · Calidad de Agua recibe la columna nueva «Sulfato» sin desalinear nada', () => {
   const CAL = cabecerasCalidad();
   const CAL_47 = CAL.slice(0, CAL.indexOf('Sulfato'));
+  /* El motor de ENTONCES (2026-09-13) mandaba 48: hasta «Sulfato». Desde el 2026-10-01 manda 49 (+ «Sulfuros»): ese
+     paso lo prueba el bloque siguiente. */
+  const CAL_48 = CAL.slice(0, CAL.indexOf('Sulfato') + 1);
   const KEYS = [0, 2, 4, 5, CAL.indexOf('Sesión')];
   const filaCal = (cab, v) => cab.map((h) => (h in v ? v[h] : ''));
 
-  it('el fixture ejerce algo: el motor manda 48 y la hoja de producción tiene 47', () => {
-    expect(CAL).toHaveLength(48);
+  it('el fixture ejerce algo: el motor de Sulfato mandaba 48 y la hoja de producción tenía 47', () => {
+    expect(CAL_48).toHaveLength(48);
     expect(CAL_47).toHaveLength(47);
     expect(CAL_47[46]).toBe('Lote');
   });
@@ -1165,8 +1168,8 @@ describe('GAS · Calidad de Agua recibe la columna nueva «Sulfato» sin desalin
       'Cloro libre (mg/L)': 0.3, Sesión: 's-vieja', Lote: 'L1' });
     const hoja = hojaFalsa([CAL_47.slice(), vieja.slice()]);
     const g = gas({ 'Calidad de Agua': hoja });
-    const r = g.post({ sheetName: 'Calidad de Agua', headers: CAL, replaceKey: true, keyCols: KEYS,
-      rows: [filaCal(CAL, { 'Fecha muestreo': '2026-09-13', Departamento: 'Algas', Formato: 'Algas',
+    const r = g.post({ sheetName: 'Calidad de Agua', headers: CAL_48, replaceKey: true, keyCols: KEYS,
+      rows: [filaCal(CAL_48, { 'Fecha muestreo': '2026-09-13', Departamento: 'Algas', Formato: 'Algas',
         Muestras: 'Agua Ultrafiltrada', pH: 7.9, Magnesio: 1300, Sesión: 's-nueva', Lote: 'L7', Sulfato: 2400 })] });
     expect(r.status).toBe('ok');
     expect(hoja.filas[0]).toHaveLength(48);
@@ -1174,10 +1177,10 @@ describe('GAS · Calidad de Agua recibe la columna nueva «Sulfato» sin desalin
     expect(hoja.filas[0].slice(0, 47)).toEqual(CAL_47);              // la cabecera vieja, intacta
     expect(hoja.filas[1]).toEqual(vieja);                             // la fila vieja, intacta
     const nueva = hoja.filas[2];
-    expect(nueva[CAL.indexOf('Sulfato')]).toBe(2400);
-    expect(nueva[CAL.indexOf('Lote')]).toBe('L7');
-    expect(nueva[CAL.indexOf('Sesión')]).toBe('s-nueva');
-    expect(nueva[CAL.indexOf('pH')]).toBe(7.9);
+    expect(nueva[CAL_48.indexOf('Sulfato')]).toBe(2400);
+    expect(nueva[CAL_48.indexOf('Lote')]).toBe('L7');
+    expect(nueva[CAL_48.indexOf('Sesión')]).toBe('s-nueva');
+    expect(nueva[CAL_48.indexOf('pH')]).toBe(7.9);
   });
 
   it('un cliente que aún manda 47 columnas sigue escribiendo bien sobre la hoja ya ensanchada', () => {
@@ -1200,6 +1203,52 @@ describe('GAS · Calidad de Agua recibe la columna nueva «Sulfato» sin desalin
     expect(envio(250).status).toBe('ok');
     expect(hoja.filas).toHaveLength(2);
     expect(hoja.filas[1][CAL.indexOf('Sulfato')]).toBe(250);
+  });
+});
+
+/* 2026-10-01 (usuario) · «Sulfuros», col. 49: la hoja de producción tiene 48 (medida ese día, la última «Sulfato») y el
+   motor manda 49. El GAS no cambia: `ensureHeaders` añade la cabecera y cada dato cae bajo la suya; lo escrito no se mueve;
+   y una copia de la app SIN actualizar, que sigue mandando 48, escribe bien sobre la hoja ya ensanchada. */
+describe('GAS · Calidad de Agua recibe la columna nueva «Sulfuros» (col. 49) sin desalinear nada', () => {
+  const CAL = cabecerasCalidad();
+  const CAL_48 = CAL.slice(0, CAL.indexOf('Sulfuros'));
+  const KEYS = [0, 2, 4, 5, CAL.indexOf('Sesión')];
+  const filaCal = (cab, v) => cab.map((h) => (h in v ? v[h] : ''));
+
+  it('el fixture ejerce algo: el motor manda 49 y la hoja de producción tiene 48, la última «Sulfato»', () => {
+    expect(CAL).toHaveLength(49);
+    expect(CAL[48]).toBe('Sulfuros');
+    expect(CAL_48).toHaveLength(48);
+    expect(CAL_48[47]).toBe('Sulfato');
+  });
+
+  it('🔴 un envío de 49 añade «Sulfuros» como columna 49 y cada dato cae bajo su cabecera', () => {
+    const vieja = filaCal(CAL_48, { 'Fecha muestreo': '2026-09-20', Departamento: 'Algas', Formato: 'Algas',
+      Sesión: 's-vieja', Lote: 'L1', Sulfato: 2300 });
+    const hoja = hojaFalsa([CAL_48.slice(), vieja.slice()]);
+    const g = gas({ 'Calidad de Agua': hoja });
+    const r = g.post({ sheetName: 'Calidad de Agua', headers: CAL, replaceKey: true, keyCols: KEYS,
+      rows: [filaCal(CAL, { 'Fecha muestreo': '2026-10-01', Departamento: 'Larvicultura', Formato: 'Larvicultura',
+        pH: 8.1, Sesión: 's-nueva', Lote: 'L9', Sulfato: 1200, Sulfuros: 0.05 })] });
+    expect(r.status).toBe('ok');
+    expect(hoja.filas[0]).toHaveLength(49);
+    expect(hoja.filas[0][48]).toBe('Sulfuros');
+    expect(hoja.filas[0].slice(0, 48)).toEqual(CAL_48);              // la cabecera vieja, intacta
+    expect(hoja.filas[1]).toEqual(vieja);                             // la fila vieja, intacta (su Sulfato incluido)
+    const nueva = hoja.filas[2];
+    expect([nueva[CAL.indexOf('Sulfato')], nueva[CAL.indexOf('Sulfuros')]]).toEqual([1200, 0.05]);
+    expect([nueva[CAL.indexOf('Sesión')], nueva[CAL.indexOf('Lote')], nueva[CAL.indexOf('pH')]]).toEqual(['s-nueva', 'L9', 8.1]);
+  });
+
+  it('una copia SIN actualizar (48 columnas) sigue escribiendo bien sobre la hoja ya ensanchada', () => {
+    const hoja = hojaFalsa([CAL.slice()]);
+    const g = gas({ 'Calidad de Agua': hoja });
+    const r = g.post({ sheetName: 'Calidad de Agua', headers: CAL_48, replaceKey: true, keyCols: KEYS,
+      rows: [filaCal(CAL_48, { 'Fecha muestreo': '2026-10-01', Formato: 'Maduración · Agua', Sesión: 's2', Lote: 'L2', Sulfato: 2600 })] });
+    expect(r.status).toBe('ok');
+    expect(hoja.filas[0]).toEqual(CAL);                               // no encoge ni reescribe la cabecera
+    expect(hoja.filas[1][CAL.indexOf('Sulfato')]).toBe(2600);
+    expect(hoja.filas[1][CAL.indexOf('Sulfuros')] ?? '').toBe('');
   });
 });
 

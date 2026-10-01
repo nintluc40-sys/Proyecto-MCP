@@ -166,13 +166,16 @@ describe('calEnsayoData', () => {
 });
 
 describe('CAL_PARAMS', () => {
-  it('los 22 parámetros generales tienen encabezado exacto como primer alias', () => {
+  it('los 23 parámetros generales tienen encabezado exacto como primer alias', () => {
     // 22 desde el 2026-09-13: «Sulfato» (formato Algas de la ficha, columna 48 de la hoja).
-    expect(CAL_PARAMS.length).toBe(22);
+    // 23 desde el 2026-10-01: «Sulfuros» (Larvicultura, Maduración y los de agua de Maduración; columna 49).
+    expect(CAL_PARAMS.length).toBe(23);
     expect(ph.alias[0]).toBe('pH');
     expect(CAL_PARAM_BY_KEY.sal.alias[0]).toBe('S‰');
     expect(CAL_PARAM_BY_KEY.sulfato.alias[0]).toBe('Sulfato');
     expect(CAL_PARAM_BY_KEY.sulfato.unit).toBe('mg/L');
+    expect(CAL_PARAM_BY_KEY.sulfuro.alias[0]).toBe('Sulfuros');
+    expect(CAL_PARAM_BY_KEY.sulfuro.unit).toBe('mg/L');
   });
 });
 
