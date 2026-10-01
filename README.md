@@ -283,6 +283,10 @@ está pintando, una celda vaciada se guarda vaciada —las de conteo (muertes, d
 enviado, la hoja conserva el valor anterior: se corrige allí)—; antes, tras un autoguardado, la cifra
 borrada se seguía enviando. Y **«🗑 Borrar sala» borra sólo lo NO enviado**: lo enviado se conserva y su
 parte, si seguía abierto, se cierra; la numeración sigue, y para corregirlo está «✏️ Reabrir el parte».
+*(2026-10-01, auditoría de Maduración.)* Si el parte que pinta la grilla **ya se envió** (el 🔄 lo envía sin
+cerrarlo), la grilla lo **avisa**: lo que se teclee lo corrige; para una ronda nueva, 💾 primero. Y en
+**🏠 Salas**, borrar una lectura también la corrige; si esa fila ya estaba en la hoja, la app avisa de que
+allí sigue (el GAS no vacía celdas) para borrarla a mano.
 En **🏠 Salas**, la columna `RAS` dice **en qué porcentaje** usa el RAS esa sala (`No`, `10%` …
 `100%`); lo que falta hasta el 100 es agua de playa y no se anota.
 
