@@ -16,7 +16,7 @@
        shell (es lo que hace que la app abra en modo avión);
      · que un 404 NUNCA se guarde en caché.
    ============================================================ */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createContext, Script } from 'node:vm';
@@ -52,6 +52,7 @@ function montarSW({ red }) {
   const manejadores = {};
   const cachesFalso = hacerCaches();
   const llamadasRed = [];
+  const modosRed = [];   // el `cache` de cada petición (no-cache, reload…): lo que decide si se repiten los bytes
 
   const self = {
     location: new URL(BASE + 'sw.js'),
@@ -59,10 +60,12 @@ function montarSW({ red }) {
     addEventListener: (tipo, fn) => { manejadores[tipo] = fn; },
   };
 
-  const fetchFalso = (req) => {
+  // `init` llega hasta la red falsa: lleva la `signal` con la que la instalación corta lo que se colgó.
+  const fetchFalso = (req, init) => {
     const url = typeof req === 'string' ? req : req.url;
     llamadasRed.push(url);
-    return red(url);
+    modosRed.push(typeof req === 'string' ? init && init.cache : req.cache);
+    return red(url, init);
   };
 
   /* ⚠ `Request` de Node (undici) EXIGE una URL absoluta y rechaza `mode:'navigate'`.
@@ -75,19 +78,21 @@ function montarSW({ red }) {
       url: typeof input === 'string' ? new URL(input, BASE).href : input.url,
       method: (init && init.method) || 'GET',
       mode: (init && init.mode) || 'cors',
+      cache: (init && init.cache) || 'default',
     };
   }
 
+  /* `setTimeout`/`clearTimeout` se leen AQUÍ: una prueba con relojes falsos tiene que activarlos ANTES de montar. */
   const ctx = {
     self, caches: cachesFalso.api, fetch: fetchFalso,
-    Request: RequestFalso, Response, URL, Promise, Error, Map, Set,
+    Request: RequestFalso, Response, URL, Promise, Error, Map, Set, AbortController,
     setTimeout, clearTimeout, console,
   };
   ctx.globalThis = ctx;
   createContext(ctx);
   new Script(readFileSync(SW, 'utf8')).runInContext(ctx);
 
-  return { manejadores, cachesFalso, llamadasRed, self };
+  return { manejadores, cachesFalso, llamadasRed, modosRed, self };
 }
 
 /** Dispara el manejador de `fetch` y devuelve lo que respondió (o null si NO se
@@ -346,6 +351,52 @@ describe('Service worker · instalar y activar', () => {
   });
 });
 
+describe('Service worker · instalar con señal PÉSIMA (2026-10-01)', () => {
+  /* Medido en la app publicada, con la red del equipo a ~50 KB/s: el service worker se quedó «installing» 3,5 min con
+     7 archivos y el registro DESAPARECIÓ. El navegador da por fallida una instalación que pasa de 5 min y la borra —y
+     con ella el modo sin conexión—; ninguna descarga tenía tope, y cada intento volvía a bajarlo todo entero. */
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('🔴🔴 con una descarga COLGADA, la instalación termina igual antes de los 5 min y guarda lo demás', async () => {
+    vi.useFakeTimers();   // ANTES de montar: el service worker lee `setTimeout` al cargarse
+    let cortada = false;
+    sw = montarSW({
+      red: (url, init) => {
+        if (!url.includes('registros/engine.js')) return Promise.resolve(ok());
+        return new Promise((_, rechazar) => {   // no responde nunca… salvo que la corten
+          const senal = init && init.signal;
+          if (senal) senal.addEventListener('abort', () => { cortada = true; rechazar(new Error('cortada')); });
+        });
+      },
+    });
+    let esperar;
+    sw.manejadores.install({ waitUntil: (p) => { esperar = p; } });
+    let terminada = false;
+    esperar.then(() => { terminada = true; });
+
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(terminada, 'se rindió enseguida: no esperó a las descargas').toBe(false);
+    await vi.advanceTimersByTimeAsync(260000);   // 4 min 30 s en total
+    expect(terminada, 'sigue colgada: el navegador la mata a los 5 min y BORRA el registro').toBe(true);
+    expect(cortada, 'la descarga colgada sigue viva tras el tope').toBe(true);
+    const guardadas = await (await sw.cachesFalso.api.open('mcp-v1')).keys();
+    expect(guardadas.some((k) => k.endsWith('/index.html')), 'lo que sí llegó no se guardó').toBe(true);
+    expect(guardadas.some((k) => k.endsWith('/registros/engine.js'))).toBe(false);
+  });
+
+  it('🔴 la instalación REVALIDA lo que el navegador ya tiene (no-cache), no lo vuelve a bajar entero (reload)', async () => {
+    /* La primera visita ya bajó index.html, SheetJS (952 KB) y el bundle; con `reload` la instalación los bajaba otra
+       vez enteros. Con `no-cache` el navegador pregunta con su ETag y GitHub Pages contesta 304 si no cambiaron:
+       igual de fresco —nunca sirve una copia sin preguntar—, sin repetir los bytes. */
+    sw = montarSW({ red: async (url) => (url.endsWith('precache-assets.json') ? new Response('["./assets/x-1.js"]', { status: 200 }) : ok()) });
+    let esperar;
+    sw.manejadores.install({ waitUntil: (p) => { esperar = p; } });
+    await esperar;
+    expect(sw.llamadasRed.some((u) => u.endsWith('precache-assets.json')), 'no llegó a pedir la lista del build').toBe(true);
+    expect(sw.modosRed.filter((m) => m !== 'no-cache'), 'alguna petición de la instalación no revalida').toEqual([]);
+  });
+});
+
 describe('Service worker · el shell arranca sin conexión a la PRIMERA', () => {
   /* El defecto que esto vigila: en la primera visita el navegador ya había pedido el
      bundle antes de que el service worker tomara el control, así que no quedaba en
@@ -407,6 +458,18 @@ describe('Service worker · el shell arranca sin conexión a la PRIMERA', () => 
     // Y se sirven sin red.
     const r = await pedir(sw, BASE + 'assets/registros-AbCd1234.js');
     expect(r.res).toBeTruthy();
+  });
+
+  it('🔴 lo del shell que YA estaba guardado (de una instalación cortada) no se vuelve a pedir', async () => {
+    /* Tras una instalación fallida la caché conserva lo que llegó a guardar. Un asset con hash es inmutable: al
+       reintentar, volver a pedirlo es gastar la señal que no hay (2026-10-01). */
+    sw = montarSW({ red: redConShell() });
+    await (await sw.cachesFalso.api.open('mcp-v1')).put('./assets/index-Bqe2E3Zz.js', ok('de antes'));
+    let esperar;
+    sw.manejadores.install({ waitUntil: (p) => { esperar = p; } });
+    await esperar;
+    expect(sw.llamadasRed.some((u) => u.indexOf('index-Bqe2E3Zz.js') !== -1), 'volvió a pedir un asset que ya tenía').toBe(false);
+    expect(sw.llamadasRed.some((u) => u.indexOf('index-BcMdhwcH.css') !== -1), 'y lo que faltaba sí se pide').toBe(true);
   });
 
   it('sin lista del build (404 o una versión vieja), la instalación sigue', async () => {

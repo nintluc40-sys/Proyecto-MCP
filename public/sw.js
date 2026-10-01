@@ -71,6 +71,16 @@ const PRECACHE = [
    tarda medio minuto deja la app en blanco teniendo la copia al lado. */
 const TIMEOUT_RED = 4000;
 
+/* Tope de la INSTALACIÓN entera (2026-10-01). El navegador da por FALLIDA una instalación que pasa de 5 min y borra
+   el registro: el equipo se queda sin service worker —sin modo sin conexión— y al volver lo intenta otra vez desde
+   cero. Medido en la app publicada con la red a ~50 KB/s: «installing» 3,5 min con 7 archivos y el registro
+   desapareció; reproducido en local con UNA descarga colgada: sin registro a los 306 s. Ninguna descarga tenía tope.
+   Al cumplirse éste se cortan las que sigan en vuelo (`AbortController`: lo tiene todo navegador que corre el
+   bundle, `es2019`) y la instalación
+   termina con lo que haya guardado: lo que falte lo recoge el `fetch` la primera vez que se pida con red
+   (`networkFirst` y `cacheFirst` guardan lo que sirven). 3 min: 2 de margen bajo el corte del navegador. */
+const TOPE_INSTALACION = 180000;
+
 /* Los `assets/` de Vite llevan HASH en el nombre, así que no se pueden escribir a
    mano en PRECACHE: cambian en cada despliegue. Se leen del `index.html` que se acaba
    de guardar, que es la única lista que no puede quedarse vieja.
@@ -92,7 +102,10 @@ async function assetsDelShell(cache) {
   while ((m = re.exec(html)) !== null) {
     if (m[1].indexOf('assets/') !== -1) urls.add(m[1]);
   }
-  return [...urls];
+  /* Lo que ya está guardado —de una instalación anterior que se cortó— no se vuelve a pedir: con hash en el nombre,
+     es exactamente lo mismo, y en carretera cada byte repetido es señal que no hay (2026-10-01). */
+  const yaGuardados = await Promise.all([...urls].map((u) => cache.match(u)));
+  return [...urls].filter((_, i) => !yaGuardados[i]);
 }
 
 /* Y TODO lo demás que emitió el build: la lista la escribe vite.config.js (listaDePrecache).
@@ -101,7 +114,7 @@ async function assetsDelShell(cache) {
    un despliegue, un equipo que no los abriera con red no podía abrirlos sin señal (P3,
    2026-10-01). Sólo se devuelve lo que aún NO está guardado: lo del shell no se pide dos veces. */
 async function assetsDelBuild(cache) {
-  const res = await fetch(new Request('./precache-assets.json', { cache: 'reload' }));
+  const res = await fetch(new Request('./precache-assets.json', { cache: 'no-cache' }));
   if (!res || !res.ok) return [];
   const lista = await res.json();
   if (!Array.isArray(lista)) return [];
@@ -114,14 +127,22 @@ async function assetsDelBuild(cache) {
 }
 
 self.addEventListener('install', (e) => {
-  e.waitUntil((async () => {
+  /* La instalación termina con lo que haya llegado a guardar o al cumplirse TOPE_INSTALACION, lo que pase antes; al
+     cumplirse, `corte` aborta las descargas que sigan en vuelo (también las que aún no empezaron). */
+  const corte = new AbortController();
+  let reloj;
+  const tope = new Promise((resolve) => { reloj = setTimeout(() => { corte.abort(); resolve(); }, TOPE_INSTALACION); });
+  e.waitUntil(Promise.race([tope, (async () => {
     const cache = await caches.open(CACHE);
     /* ⚠ `allSettled` y NO `cache.addAll`. `addAll` es atómico: un solo 404 —un icono
        que se renombró, un despliegue a medias— aborta la instalación entera y deja
        al usuario sin service worker ninguno. Aquí se guarda lo que se pueda y lo que
-       falte lo recogerá el `fetch` la primera vez que haga falta. */
+       falte lo recogerá el `fetch` la primera vez que haga falta.
+       `no-cache` y NO `reload` (2026-10-01): el navegador PREGUNTA con su ETag y, si no cambió, Pages contesta 304 y
+       no se repiten los bytes —la primera visita acaba de bajar index.html, SheetJS y el bundle—. Igual de fresco:
+       `no-cache` nunca sirve una copia sin preguntar al servidor. */
     const guardar = async (url) => {
-      const res = await fetch(new Request(url, { cache: 'reload' }));
+      const res = await fetch(new Request(url, { cache: 'no-cache' }), { signal: corte.signal });
       if (res && res.ok) await cache.put(url, res);
     };
     await Promise.allSettled(PRECACHE.map(guardar));
@@ -138,7 +159,8 @@ self.addEventListener('install', (e) => {
     try {
       await Promise.allSettled((await assetsDelBuild(cache)).map(guardar));
     } catch (_) { /* la instalación no se aborta por esto */ }
-  })());
+    clearTimeout(reloj);
+  })()]));
 });
 
 self.addEventListener('activate', (e) => {
