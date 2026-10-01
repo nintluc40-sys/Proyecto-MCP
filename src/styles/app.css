@@ -82,9 +82,18 @@
 .drawer-logout:hover { border-color: var(--c-brand-600); color: var(--c-brand-600); }
 
 /* ---- Pantalla de ingreso por rol ---- */
-.entry-screen { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; padding: 24px;
+/* Las capas a pantalla completa de la shell (entrada, fondo del menú, loader) usan
+   top/left + width/height 100% y no `inset`: el build apunta a es2019 y `inset` no existe
+   antes de Chrome 87 / Safari 14.1; sin él la entrada quedaba como una caja arriba a la
+   izquierda y dejaba ver la pestaña ☰ y el tablero. Tampoco sirve top/right/bottom/left a 0:
+   el minificador del build (esbuild) los vuelve a juntar en `inset:0`
+   (src/ui/entryScreen.test.js lo comprueba sobre su salida). */
+.entry-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 200; display: flex; align-items: center; justify-content: center; padding: 24px;
   background: radial-gradient(120% 120% at 50% 0%, #00838f 0%, #00697a 45%, #00343d 100%); }
 .entry-screen.is-hidden { display: none; }
+/* Mientras se ve la entrada no hay menú de vistas: el rol aún no está elegido. No basta
+   con que la entrada lo tape por capas (ver arriba): se quita (shell.js · showEntry). */
+.app.is-entry .nav-toggle, .app.is-entry .side-drawer, .app.is-entry .drawer-backdrop { display: none; }
 .entry-card { width: min(700px, 100%); text-align: center; color: #fff; animation: fadeInUp .35s ease; }
 .entry-logo { width: 74px; height: 74px; margin: 0 auto 18px; border-radius: 20px; background: #fff; display: grid; place-items: center; font-size: 40px; box-shadow: var(--sh-3); }
 .entry-logo-img { width: 88%; height: 88%; object-fit: contain; display: block; }
@@ -115,7 +124,7 @@
   border-radius: var(--r-pill); padding: 2px 7px;
 }
 .drawer-backdrop {
-  position: fixed; inset: 0; z-index: 70; background: rgba(15, 23, 30, .4);
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 70; background: rgba(15, 23, 30, .4);
   opacity: 0; pointer-events: none; transition: opacity .25s ease;
 }
 .drawer-backdrop.is-open { opacity: 1; pointer-events: auto; }
@@ -166,7 +175,7 @@
 
 /* ---- Overlay de carga ---- */
 .loader {
-  position: fixed; inset: 0;
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
   background: rgba(255,255,255,.72);
   backdrop-filter: blur(2px);
   display: none; place-items: center;

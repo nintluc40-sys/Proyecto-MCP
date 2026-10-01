@@ -65,6 +65,7 @@ export function mountShell(appEl) {
     </div>`;
 
   els = {
+    app: appEl.querySelector('.app'),
     drawer: appEl.querySelector('#sideDrawer'),
     drawerNav: appEl.querySelector('#drawerNav'),
     drawerRole: appEl.querySelector('#drawerRole'),
@@ -171,8 +172,9 @@ function selectRole(key) {
   else { destroyAllCharts(); els.content.innerHTML = '<div class="empty-state" style="padding:64px 20px">🔒 Tu rol aún no tiene vistas asignadas.</div>'; }
 }
 
-function showEntry() { els.entry.classList.remove('is-hidden'); }
-function hideEntry() { els.entry.classList.add('is-hidden'); }
+// `is-entry` en .app quita la pestaña ☰ y el menú mientras se ve la entrada (app.css).
+function showEntry() { els.entry.classList.remove('is-hidden'); els.app.classList.add('is-entry'); }
+function hideEntry() { els.entry.classList.add('is-hidden'); els.app.classList.remove('is-entry'); }
 
 function openDrawer() { els.drawer.classList.add('is-open'); els.backdrop.classList.add('is-open'); }
 function closeDrawer() { els.drawer.classList.remove('is-open'); els.backdrop.classList.remove('is-open'); }
