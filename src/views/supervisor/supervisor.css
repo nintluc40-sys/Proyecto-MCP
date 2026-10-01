@@ -959,13 +959,17 @@ body.sv-tmap-full-on{overflow:hidden}
    se quedaba arriba y sobraba media tarjeta en blanco debajo. */
 #sv-tras-modal .sv-modal-body{ overflow:auto; min-height:min(55vh,520px);
   display:flex; flex-direction:column; }
-/* El ÚLTIMO bloque se queda el alto que sobre y se lo pasa a su tabla, que así
+/* Un bloque SOLO se queda el alto que sobre y se lo pasa a su tabla, que así
    llega al fondo. `min-height:0` es lo que permite que un hijo de flex se encoja
    por debajo de su contenido: sin él, una tabla larga desbordaría la tarjeta en
-   vez de desplazarse dentro. */
-#sv-tras-modal .sv-tras-blk:last-of-type{ flex:1 1 auto; min-height:0;
+   vez de desplazarse dentro.
+   ⚠ 2026-09-30 (usuario): era `:last-of-type`, y con VARIOS camiones ese mismo
+   `min-height:0` dejaba que el último se encogiera hasta desaparecer (medido en
+   Chrome: con 3 camiones el tercero medía 0 px y el cuerpo no tenía nada que
+   desplazar). Con varios, cada bloque conserva su alto y se desplaza el cuerpo. */
+#sv-tras-modal .sv-tras-blk:only-of-type{ flex:1 1 auto; min-height:0;
   display:flex; flex-direction:column; margin-bottom:0; }
-#sv-tras-modal .sv-tras-blk:last-of-type .sv-sie-wrap{ flex:1 1 auto; min-height:0; }
+#sv-tras-modal .sv-tras-blk:only-of-type .sv-sie-wrap{ flex:1 1 auto; min-height:0; }
 /* La tabla LLENA el ancho disponible y crece más allá si sus columnas lo piden:
    `min-width:100%` es el suelo y `width:auto` deja que se pase. Cuando se pasa, la
    que se desplaza es la envoltura (`overflow-x:auto` de `.sv-sie-wrap`), no la
@@ -975,6 +979,11 @@ body.sv-tmap-full-on{overflow:hidden}
 #sv-tras-modal .sv-sie-wrap{ display:block; max-width:100%; }
 /* Y los bloques por camión ocupan la tarjeta entera, no su contenido. */
 #sv-tras-modal .sv-tras-blk{ width:100%; }
+/* La barra vertical del cuerpo, a la IZQUIERDA (2026-09-30, usuario), en los cinco
+   desgloses: en un contenedor `rtl` el navegador la pone a ese lado; su contenido
+   vuelve a `ltr`, así que textos y tablas se leen como siempre. */
+#sv-tras-modal .sv-modal-body{ direction:rtl; }
+#sv-tras-modal .sv-modal-body > *{ direction:ltr; }
 
 /* ── El KPI de tiempo y su desglose ───────────────────────── */
 /* Segunda línea del KPI (`kpiGlass(..., sub)`): la lectura de apoyo, más pequeña

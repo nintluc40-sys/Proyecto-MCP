@@ -442,6 +442,24 @@ describe('Traslado · el modal usa las clases REALES del proyecto', () => {
       .toContain('width:min(');
   });
 
+  it('🔴 con VARIOS camiones ninguno se aplasta, y la barra vertical va a la IZQUIERDA (2026-09-30, usuario)', () => {
+    // Medido en Chrome (validacion-2026-09-30/traslado-scroll-3): el relleno «hasta el fondo» iba en el ÚLTIMO bloque
+    // (`:last-of-type` + `min-height:0`) y con 3 camiones el tercero medía 0 px: no había nada que desplazar para verlo.
+    // happy-dom no calcula diseño: se fija la DECISIÓN de CSS y que el DOM real la active sólo con un bloque.
+    expect(CSS, 'volvió el relleno en el último bloque: con varios camiones se aplasta').not.toMatch(/\.sv-tras-blk:last-of-type/);
+    expect(CSS).toMatch(/#sv-tras-modal \.sv-tras-blk:only-of-type\{[^}]*min-height:0/);
+    expect(CSS).toMatch(/#sv-tras-modal \.sv-modal-body\{ direction:rtl; \}/);
+    expect(CSS, 'sin devolver el contenido a ltr, las tablas se leerían al revés').toMatch(/#sv-tras-modal \.sv-modal-body > \*\{ direction:ltr; \}/);
+    const solos = (n) => {
+      const root = montar(ctxCon(aFilas(buildTrasladoPayload(viaje(n)))));
+      root.querySelector('[data-tras-modal="o2"]').click();
+      const cuerpo = root.querySelector('#sv-tras-modal-b');
+      return [cuerpo.querySelectorAll(':scope > .sv-tras-blk').length, cuerpo.querySelectorAll(':scope > .sv-tras-blk:only-of-type').length];
+    };
+    expect(solos(1), 'un camión: su bloque rellena el alto').toEqual([1, 1]);
+    expect(solos(2), 'dos camiones: ninguno rellena (cada uno con su alto)').toEqual([2, 0]);
+  });
+
   it('🔴 la tarjeta del modal tiene fondo propio, no transparente', () => {
     const root = montar(ctxCon(aFilas(buildTrasladoPayload(viaje(1)))));
     expect(root.querySelector('#sv-tras-modal .sv-modal-card')).toBeTruthy();
