@@ -470,9 +470,14 @@ Dos consecuencias que conviene tener presentes al desplegar:
    un código, nunca de un tanque.
 3. Se aplanan a `store.globalData` y se emite `EV.DATA`; las vistas se
    re-renderizan reactivamente.
-4. `startAutoRefresh()` repite cada 60 s comparando un *fingerprint* (no
-   re-renderiza si no hubo cambios) y se pausa mientras el usuario interactúa
-   (modales abiertos, dropdowns).
+4. `startAutoRefresh()` comprueba cada **5 min** (`REFRESH_INTERVAL_S`) comparando un
+   *fingerprint* (no re-renderiza si no hubo cambios). Con la pestaña oculta no descarga; al
+   volver comprueba si ya tocaba. No descarga mientras el usuario interactúa (modales
+   abiertos, dropdowns) y los datos nuevos se **aplican sólo en reposo**: sin interacción
+   reciente, sin modal y sin un campo de texto con el foco; hasta entonces quedan pendientes
+   («datos nuevos en espera» en la píldora). Registros no se repinta nunca por un refresco
+   (`repintaConDatos: false`). ⟳ y la píldora refrescan a mano y nunca lanzan dos descargas
+   a la vez (`refrescoManual`).
 
 ## Testing y calidad
 

@@ -17,8 +17,10 @@ export const FETCH_TIMEOUT_MS = 20000;
 // camino XLSX usa su PROPIO timeout, más generoso que una petición normal.
 export const XLSX_TIMEOUT_MS = 45000;
 
-// Intervalo de auto-refresco silencioso (segundos).
-export const REFRESH_INTERVAL_S = 60;
+// Intervalo de auto-refresco silencioso (segundos). 5 min (decisión del usuario, 2026-09-24):
+// cada ciclo descarga el libro entero (10–12 MB) y leerlo congela la pantalla; con 60 s eran
+// ~470 MB/h por equipo. Además comprueba al volver a la pestaña y con ⟳ (core/refresh.js).
+export const REFRESH_INTERVAL_S = 300;
 
 // Umbrales de semáforo (Vista Supervisor) — extraídos fielmente del original.
 export const THRESHOLDS = {

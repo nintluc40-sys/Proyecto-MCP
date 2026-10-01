@@ -18,6 +18,15 @@ export function viewUsesDateBar(id) {
   return !!(def && def.usaBarraFecha);
 }
 
+/** ¿Se repinta la vista cuando llegan datos nuevos (EV.DATA)? Sí, salvo que DECLARE
+ *  `repintaConDatos: false` al registrarse. Registros lo declara (2026-09-24): es captura,
+ *  repintarla se llevaba el foco y lo que se estaba tecleando, y lee el store cuando lo
+ *  necesita. Lo vigila src/ui/repintaConDatos.test.js. */
+export function viewRepaintsOnData(id) {
+  const def = views.get(id);
+  return !def || def.repintaConDatos !== false;
+}
+
 let container = null;
 export function setContainer(el) { container = el; }
 

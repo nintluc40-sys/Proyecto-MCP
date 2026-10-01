@@ -58,9 +58,10 @@ async function boot() {
   registerView('visitante', { label: 'Visitante', icon: '🚪', render: visitanteView });
 
   // Registros (captura) — carga DIFERIDA: la migración de Fichas es pesada y solo
-  // se descarga cuando el usuario entra a la vista.
+  // se descarga cuando el usuario entra a la vista. `repintaConDatos: false`: un refresco
+  // NO la repinta (se llevaba el foco y lo que se estaba tecleando; ver router.js).
   registerView('registros', {
-    label: 'Registros', icon: '📝',
+    label: 'Registros', icon: '📝', repintaConDatos: false,
     render: (root) => {
       root.innerHTML = '<div class="empty-state" style="padding:64px 20px"><div style="font-size:40px">📝</div><p class="muted">Cargando Registros…</p></div>';
       import('./views/registros/index.js')

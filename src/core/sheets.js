@@ -476,14 +476,18 @@ function commit(sheets, firstLoad) {
   // fallback CSV y sólo trae 1 hoja). En la primera carga no hay con qué comparar.
   if (!firstLoad && isDegraded(sheets)) return false;
 
-  // applySheets no muta el store si viene vacío → un set vacío conserva los datos
-  // previos y aquí se reporta como error (la reconexión manual no pierde lo cargado).
-  if (!applySheets(sheets)) throw new Error('Sin datos en las hojas.');
-
   // Cachea la huella del set recién comprometido para sembrar el auto-refresco SIN
   // re-descargar el workbook completo en el arranque (antes boot() hacía una 2ª
   // descarga íntegra sólo para calcular el fingerprint inicial).
-  _lastFingerprint = dataFingerprint(sheets);
+  // Se calcula ANTES de applySheets: autoCalcMortalidad añade «Mortalidad» a las filas, y
+  // el auto-refresco calcula la suya sobre filas recién descargadas, sin ella. Calculada
+  // después, el primer refresco tras abrir nunca decía «sin cambios» y repintaba en balde.
+  const fp = dataFingerprint(sheets);
+
+  // applySheets no muta el store si viene vacío → un set vacío conserva los datos
+  // previos y aquí se reporta como error (la reconexión manual no pierde lo cargado).
+  if (!applySheets(sheets)) throw new Error('Sin datos en las hojas.');
+  _lastFingerprint = fp;
 
   store.connected = true;
   emit(EV.DATA, { firstLoad });

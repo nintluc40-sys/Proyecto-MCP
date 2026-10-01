@@ -2,8 +2,8 @@
    SHELL — cabecera, menú lateral (drawer), conexión y filtro de fecha
    ============================================================ */
 import { store, on, EV } from '../core/store.js';
-import { connectSheets } from '../core/sheets.js';
-import { changeView, setContainer, renderCurrentView, viewUsesDateBar } from './router.js';
+import { refrescoManual } from '../core/refresh.js';
+import { changeView, setContainer, renderCurrentView, viewUsesDateBar, viewRepaintsOnData } from './router.js';
 import { destroyAllCharts } from '../core/charts.js';
 import { fmtShort, parseAnyDate } from '../core/dates.js';
 import { getField, F } from '../core/fields.js';
@@ -104,7 +104,9 @@ export function mountShell(appEl) {
   // se veía sin filtrar nada. EV.VIEW se emite ANTES de renderizar la nueva vista, así que la
   // vista todavía puede ocultarla en sus sub-vistas (el Supervisor lo hace).
   on(EV.VIEW, (id) => setDateBarHidden(!viewUsesDateBar(id)));
-  on(EV.DATA, () => { renderDateBar(); renderCurrentView(); });
+  // Con datos nuevos se repinta la vista, salvo la que declare `repintaConDatos: false`
+  // (Registros: repintarla se llevaba el foco y lo tecleado). Ver viewRepaintsOnData.
+  on(EV.DATA, () => { renderDateBar(); if (viewRepaintsOnData(store.currentView)) renderCurrentView(); });
 }
 
 // Vistas principales del sistema. Las NUEVE están desarrolladas: aquí ya no queda ninguna
@@ -233,8 +235,14 @@ function bindEvents(appEl) {
     if (btn) selectRole(btn.dataset.role);
   });
   appEl.querySelector('#changeRole').addEventListener('click', () => { closeDrawer(); showEntry(); });
-  els.pill.addEventListener('click', async () => { showLoader(true); await connectSheets(); showLoader(false); });
-  appEl.querySelector('#refreshBtn').addEventListener('click', async () => { showLoader(true); await connectSheets(); showLoader(false); });
+  // ⟳ y la píldora: refresco a mano. Si ya hay una descarga en curso no lanza otra.
+  const manual = async () => {
+    if (store.refreshing) return;
+    showLoader(true);
+    try { await refrescoManual(); } finally { showLoader(false); }
+  };
+  els.pill.addEventListener('click', manual);
+  appEl.querySelector('#refreshBtn').addEventListener('click', manual);
   els.dark.addEventListener('click', () => {
     const dark = document.documentElement.getAttribute('data-theme') === 'dark';
     applyTheme(!dark);
@@ -250,10 +258,10 @@ function bindEvents(appEl) {
 
 /* ---- Filtro de fecha global (presets por mes/año + rango) ---- */
 function renderDateBar() {
-  const dates = store.globalData
-    .map((r) => parseAnyDate(getField(r, F.fecha)))
-    .filter((d) => d && !isNaN(d));
-  if (!dates.length) { els.dateBar.innerHTML = ''; return; }
+  // Sólo importa si HAY alguna fecha: `.some()` para en la primera en vez de parsear las
+  // ~200 000 filas en cada carga y cada refresco.
+  const hayFechas = store.globalData.some((r) => { const d = parseAnyDate(getField(r, F.fecha)); return d && !isNaN(d); });
+  if (!hayFechas) { els.dateBar.innerHTML = ''; return; }
 
   const presets = [
     { id: 'all', label: 'Todo' },
