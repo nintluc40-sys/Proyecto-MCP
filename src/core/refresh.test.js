@@ -26,7 +26,7 @@ import {
   descargarLibro, connectSheets, lecturaEnSegundoPlano, aplicarDescarga, huellasPorHoja, dataFingerprint,
   getLastFingerprint,
 } from './sheets.js';
-import { startAutoRefresh, stopAutoRefresh, refrescoManual } from './refresh.js';
+import { startAutoRefresh, stopAutoRefresh, refrescoManual, asegurarLibro } from './refresh.js';
 import { store, on, EV } from './store.js';
 import { REFRESH_INTERVAL_S } from '../config.js';
 
@@ -281,6 +281,27 @@ describe('auto-refresco · aplicar sólo en reposo', () => {
     expect(datos).toBe(0);
     expect(valor()).toBe(1);
     expect(getLastFingerprint()).toBe(huella);
+  });
+});
+
+describe('asegurarLibro (P3: la primera descarga, al entrar en una vista que lo necesita)', () => {
+  it('con el libro ya cargado no hace nada', async () => {
+    expect(asegurarLibro()).toBeNull();
+    expect(connectSheets).not.toHaveBeenCalled();
+  });
+
+  it('sin libro lo pide UNA vez aunque se entre en varias vistas mientras baja', async () => {
+    store.connected = false;
+    let terminar;
+    connectSheets.mockImplementation(() => new Promise((r) => { terminar = r; }));
+    const p = asegurarLibro();
+    expect(p).not.toBeNull();
+    expect(asegurarLibro()).toBeNull();
+    expect(await refrescoManual()).toBeNull(); // ⟳ tampoco lanza otra
+    expect(connectSheets).toHaveBeenCalledTimes(1);
+    terminar(true);
+    expect(await p).toBe(true);
+    expect(store.refreshing).toBe(false);
   });
 });
 

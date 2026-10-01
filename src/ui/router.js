@@ -1,7 +1,7 @@
 /* ============================================================
    ROUTER de vistas — registro simple y conmutación
    ============================================================ */
-import { store, emit, EV } from '../core/store.js';
+import { store, on, emit, EV } from '../core/store.js';
 import { destroyAllCharts } from '../core/charts.js';
 import { esc } from '../core/format.js';
 
@@ -27,8 +27,42 @@ export function viewRepaintsOnData(id) {
   return !def || def.repintaConDatos !== false;
 }
 
+/** ¿La vista necesita el LIBRO (los datos de Google Sheets de store.globalData)? Sí, salvo que
+ *  DECLARE `necesitaLibro: false` al registrarse (Registros: lee lo suyo por el GAS). P3 del plan
+ *  de carga y refresco (2026-10-01): mientras el libro no ha llegado, la vista que lo necesita
+ *  enseña un aviso de carga en vez de pintarse vacía, y lo PIDE (setPedirLibro). Lo vigila
+ *  src/ui/arranque.test.js. */
+export function viewNeedsBook(id) {
+  const def = views.get(id);
+  return !def || def.necesitaLibro !== false;
+}
+
 let container = null;
 export function setContainer(el) { container = el; }
+
+// Quién pide el libro (main.js registra asegurarLibro, que no lanza otra descarga si ya hay una).
+// Se llama cada vez que se enseña el aviso de carga: así lo pide CUALQUIER camino que muestre una
+// vista sin datos —elegir rol aunque se aterrice en la vista que ya era la actual, «Cambiar
+// rol», el menú—, y tras un fallo, volver a la vista lo reintenta.
+let pedirLibro = null;
+export function setPedirLibro(fn) { pedirLibro = fn; }
+
+// Último estado de la conexión: el aviso de carga dice si el libro sigue bajando o si falló.
+let conexion = { state: 'connecting', label: '' };
+function avisoCarga() {
+  const fallo = conexion.state === 'error';
+  return '<div class="empty-state" data-cargando-libro style="padding:64px 20px">'
+    + `<div style="font-size:40px">${fallo ? '⚠️' : '📡'}</div>`
+    + (fallo
+      ? `<p>No se pudieron cargar los datos de producción.</p><p class="muted"><small class="mono">${esc(conexion.label || '')}</small><br>Pulsa ⟳ arriba para reintentar.</p>`
+      : '<p class="muted">Cargando los datos de producción…</p>')
+    + '</div>';
+}
+on(EV.CONN, (e) => {
+  if (e) conexion = e;
+  // Si se está viendo el aviso, se pone al día (de «cargando» a «falló», o al revés al reintentar).
+  if (!store.connected && container && container.querySelector('[data-cargando-libro]')) container.innerHTML = avisoCarga();
+});
 
 /** Renderiza la vista actual en el contenedor. */
 export function renderCurrentView() {
@@ -40,6 +74,13 @@ export function renderCurrentView() {
   // que hay interacción activa y CONGELARÍA el auto-refresco de toda la app.
   document.body.classList.remove('modal-open');
   destroyAllCharts();
+  // Sin el libro todavía, la vista que lo necesita enseña el aviso de carga; cuando llega
+  // (EV.DATA), el shell vuelve a llamar aquí y se pinta de verdad.
+  if (!store.connected && viewNeedsBook(store.currentView)) {
+    container.innerHTML = avisoCarga();
+    if (pedirLibro) pedirLibro();
+    return;
+  }
   container.innerHTML = '';
   const root = document.createElement('div');
   root.className = 'fade-in';

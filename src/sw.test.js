@@ -383,11 +383,64 @@ describe('Service worker · el shell arranca sin conexión a la PRIMERA', () => 
     expect(r.res).toBeTruthy();
   });
 
+  it('🔴 los bloques DIFERIDOS (precache-assets.json) también se guardan, sin repetir los del shell', async () => {
+    /* P3 (2026-10-01): Registros, Biología Molecular, el tablero de Maduración y el Worker de
+       lectura no salen en index.html. Sin la lista que emite el build, un equipo que no los
+       abriera con red tras un despliegue no podía abrirlos sin señal. */
+    const LISTA = ['./assets/index-Bqe2E3Zz.js', './assets/registros-AbCd1234.js', './assets/sheets.worker-ZZ99.js', './favicon.png'];
+    sw = montarSW({
+      red: async (url) => {
+        if (url.endsWith('precache-assets.json')) return new Response(JSON.stringify(LISTA), { status: 200 });
+        return url.indexOf('index.html') !== -1 || url.endsWith('/') ? ok(HTML) : ok('x');
+      },
+    });
+    let esperar;
+    sw.manejadores.install({ waitUntil: (p) => { esperar = p; } });
+    await esperar;
+    const claves = [...[...sw.cachesFalso.almacenes.values()][0].keys()];
+    for (const a of ['registros-AbCd1234.js', 'sheets.worker-ZZ99.js']) {
+      expect(claves.some((k) => k.indexOf(a) !== -1), 'sin ' + a + ' en caché no abre sin conexión').toBe(true);
+    }
+    expect(claves.some((k) => k.endsWith('favicon.png')), 'sólo lo de assets/').toBe(false);
+    const pedidasBundle = sw.llamadasRed.filter((u) => u.indexOf('index-Bqe2E3Zz.js') !== -1).length;
+    expect(pedidasBundle, 'el bundle del shell se pidió dos veces').toBe(1);
+    // Y se sirven sin red.
+    const r = await pedir(sw, BASE + 'assets/registros-AbCd1234.js');
+    expect(r.res).toBeTruthy();
+  });
+
+  it('sin lista del build (404 o una versión vieja), la instalación sigue', async () => {
+    sw = montarSW({ red: async (url) => (url.endsWith('precache-assets.json') ? new Response('', { status: 404 }) : ok(HTML)) });
+    let esperar;
+    sw.manejadores.install({ waitUntil: (p) => { esperar = p; } });
+    await expect(esperar).resolves.not.toThrow();
+  });
+
   it('un shell sin assets no rompe la instalación', async () => {
     // Un index.html inesperado no puede dejar al usuario sin service worker.
     sw = montarSW({ red: () => async () => ok('<html></html>') });
     let esperar;
     sw.manejadores.install({ waitUntil: (p) => { esperar = p; } });
     await expect(esperar).resolves.not.toThrow();
+  });
+});
+
+/* ═══════════════════════════════════════════════════════
+   LA LISTA DEL BUILD (vite.config.js · listaDePrecache), P3 2026-10-01
+   ═══════════════════════════════════════════════════════ */
+describe('Build · precache-assets.json, la lista que lee el service worker', () => {
+  it('🔴 el build la escribe con TODO lo de assets/ (y nada más), y el plugin está registrado', async () => {
+    const { default: config } = await import('../vite.config.js');
+    const cfg = typeof config === 'function' ? config({ command: 'build', mode: 'production' }) : config;
+    const plugin = (cfg.plugins || []).find((p) => p && p.name === 'mcp-precache-assets');
+    expect(plugin, 'el plugin no está en vite.config.js · plugins').toBeTruthy();
+    const emitidos = [];
+    plugin.generateBundle.call({ emitFile: (f) => emitidos.push(f) }, {}, {
+      'assets/index-AAA.js': {}, 'assets/sheets.worker-BBB.js': {}, 'assets/registros-CCC.css': {},
+      'index.html': {}, 'sw.js': {},
+    });
+    expect(emitidos).toHaveLength(1);
+    expect(emitidos[0].fileName).toBe('precache-assets.json');
+    expect(JSON.parse(emitidos[0].source)).toEqual(['./assets/index-AAA.js', './assets/registros-CCC.css', './assets/sheets.worker-BBB.js']);
   });
 });

@@ -1,5 +1,21 @@
 import { defineConfig } from 'vite';
 
+/* Lista de TODO lo que el build emite bajo assets/ (P3 del plan de carga y refresco, 2026-10-01),
+   en `precache-assets.json`, para que el service worker lo guarde al INSTALARSE. Los bloques
+   diferidos —Registros, Biología Molecular, el tablero de Maduración, el Worker de lectura del
+   libro— no salen en index.html: sin esta lista, tras un despliegue, un equipo que no los abriera
+   con red no podía abrirlos sin señal. La lee public/sw.js (assetsDelBuild). */
+function listaDePrecache() {
+  return {
+    name: 'mcp-precache-assets',
+    apply: 'build',
+    generateBundle(_, bundle) {
+      const lista = Object.keys(bundle).filter((f) => f.startsWith('assets/')).sort().map((f) => './' + f);
+      this.emitFile({ type: 'asset', fileName: 'precache-assets.json', source: JSON.stringify(lista) });
+    },
+  };
+}
+
 // Configuración mínima y limpia. El build genera assets optimizados en /dist.
 export default defineConfig(({ command }) => ({
   // `base` DEBE depender del comando:
@@ -10,6 +26,7 @@ export default defineConfig(({ command }) => ({
   //     "Failed to fetch dynamically imported module" — justo las vistas de carga
   //     diferida (Registros y Biología Molecular). Es un footgun conocido de Vite.
   base: command === 'build' ? './' : '/',
+  plugins: [listaDePrecache()],
   server: {
     port: 5173,
     open: true,

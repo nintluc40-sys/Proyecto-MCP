@@ -41,11 +41,13 @@ beforeEach(() => {
 afterEach(() => { delete globalThis.Worker; vi.useRealTimers(); });
 
 describe('lector del libro · registro en main.js', () => {
-  it('main.js registra el lector del Worker ANTES de la conexión inicial', () => {
+  it('main.js registra el lector del Worker ANTES de enganchar la primera descarga', () => {
+    // P3: la primera descarga la pide el router (setPedirLibro(asegurarLibro)) al enseñar una vista sin datos.
     const main = readFileSync(join(process.cwd(), 'src/main.js'), 'utf8').replace(/\/\/.*$/gm, '');
     const registro = main.indexOf('setLectorLibro(lectorWorker)');
     expect(registro).toBeGreaterThan(-1);
-    expect(registro).toBeLessThan(main.indexOf('await connectSheets()'));
+    expect(main.indexOf('setPedirLibro(asegurarLibro)')).toBeGreaterThan(-1);
+    expect(registro).toBeLessThan(main.indexOf('setPedirLibro(asegurarLibro)'));
   });
 });
 

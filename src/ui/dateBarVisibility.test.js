@@ -50,6 +50,9 @@ const oculta = () => barra().classList.contains('is-datebar-hidden');
 let hideDesdeRender = null;
 
 beforeAll(() => {
+  // Con el libro ya cargado: sin él, las vistas que lo necesitan enseñan el aviso de carga en
+  // vez de pintarse (P3, 2026-10-01; src/ui/arranque.test.js).
+  store.connected = true;
   const app = document.createElement('div');
   document.body.appendChild(app);
   for (const v of MAIN_VIEWS) {

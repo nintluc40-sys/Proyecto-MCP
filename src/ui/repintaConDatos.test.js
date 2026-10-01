@@ -32,6 +32,9 @@ const bloques = main.split(/(?=registerView\(')/).slice(1)
 
 const pintadas = {};
 beforeAll(() => {
+  // Con el libro ya cargado: sin él, las vistas que lo necesitan enseñan el aviso de carga en
+  // vez de pintarse (P3, 2026-10-01; src/ui/arranque.test.js).
+  store.connected = true;
   const host = document.createElement('div');
   document.body.appendChild(host);
   for (const v of MAIN_VIEWS) {

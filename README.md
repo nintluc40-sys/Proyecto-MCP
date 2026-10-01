@@ -454,9 +454,19 @@ Dos consecuencias que conviene tener presentes al desplegar:
 - Los `assets/` de Vite llevan hash, así que no pueden escribirse a mano en el precache:
   el worker los deduce leyendo el `index.html` que acaba de guardar (`assetsDelShell`).
   Gracias a eso la app arranca sin conexión **a la primera carga, no a la segunda**.
+- Los bloques **diferidos** (Registros, Biología Molecular, el tablero de Maduración, el Worker
+  de lectura del libro) no salen en `index.html`: el build escribe la lista de TODO `assets/`
+  en `precache-assets.json` (`vite.config.js · listaDePrecache`) y el worker los guarda también
+  al instalarse (`assetsDelBuild`, 2026-10-01). Sin eso, tras un despliegue, un equipo que no
+  abriera Registros con red no podía abrirlo sin señal.
 
 ## Flujo de datos (Google Sheets)
 
+0. **Arranque sin espera** (2026-10-01): la pantalla de roles responde al instante; el libro se
+   pide al entrar en la PRIMERA vista que lo necesita (todas salvo Registros, que declara
+   `necesitaLibro: false` y lee lo suyo por el GAS) y, mientras llega, esa vista enseña un aviso
+   de carga —o el fallo, con ⟳— (`router.js · viewNeedsBook`, `refresh.js · asegurarLibro`).
+   SheetJS va con `defer` y D3 se carga al abrir Biología Molecular (`main.js · cargarD3`).
 1. `connectSheets()` descarga el libro **completo** vía `export?format=xlsx`
    (1 petición, todas las hojas). Si falla, cae a **CSV por `gid`** con
    descubrimiento por scraping del HTML publicado, con reintento y backoff.

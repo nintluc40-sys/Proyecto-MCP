@@ -14,11 +14,11 @@ import './views/microbiologia/microbiologia.css';
 import './views/maduracion/maduracion.css';
 
 
-import { mountShell, showLoader } from './ui/shell.js';
-import { registerView } from './ui/router.js';
-import { connectSheets, setLectorLibro } from './core/sheets.js';
+import { mountShell } from './ui/shell.js';
+import { registerView, setPedirLibro } from './ui/router.js';
+import { setLectorLibro } from './core/sheets.js';
 import { lectorWorker } from './core/sheets.lector.js';
-import { startAutoRefresh } from './core/refresh.js';
+import { startAutoRefresh, asegurarLibro } from './core/refresh.js';
 import { esc } from './core/format.js';
 
 import { supervisorView } from './views/supervisor/index.js';
@@ -32,7 +32,32 @@ import { maduracionEntrada } from './views/maduracion/entrada.js';
 // Biología Molecular: carga DIFERIDA. Es la vista más pesada (D3, ~1.5k líneas) y
 // no es de uso diario; se descarga solo al abrirla, aligerando el bundle inicial.
 
-async function boot() {
+/* D3 (sólo lo usa Biología Molecular) se carga AL ABRIRLA, no en el <head>: era un script que
+   bloqueaba el primer pintado de toda la app (P3, 2026-10-01). Mismo archivo de public/vendor y
+   mismo `integrity` que llevaba la etiqueta de index.html. ⚠ Si se sube de versión hay que
+   RECALCULARLO (src/ui/arranque.test.js lo compara con el archivo):
+     node -e "const{createHash}=require('crypto');console.log('sha384-'+createHash('sha384').update(require('fs').readFileSync(process.argv[1])).digest('base64'))" public/vendor/d3.min.js */
+const D3_SRC = 'vendor/d3.min.js';
+const D3_INTEGRITY = 'sha384-su5kReKyYlIFrI62mbQRKXHzFobMa7BHp1cK6julLPbnYcCW9NIZKJiTODjLPeDh';
+let d3Cargando = null;
+function cargarD3() {
+  if (window.d3) return Promise.resolve();
+  if (!d3Cargando) {
+    d3Cargando = new Promise((resolve) => {
+      const s = document.createElement('script');
+      s.src = new URL(D3_SRC, document.baseURI).href;
+      s.integrity = D3_INTEGRITY;
+      // Si no carga, se resuelve igual: la vista enseña su propio aviso («No se pudo cargar D3»)
+      // y la próxima vez que se abra se vuelve a intentar.
+      s.onload = () => resolve();
+      s.onerror = () => { d3Cargando = null; s.remove(); resolve(); };
+      document.head.appendChild(s);
+    });
+  }
+  return d3Cargando;
+}
+
+function boot() {
   const app = document.getElementById('app');
 
   // Vistas desarrolladas
@@ -51,7 +76,8 @@ async function boot() {
       // Placeholder mientras resuelve el import diferido (evita el pantallazo en
       // blanco entre que el router vacía el contenedor y el chunk carga/parsea).
       root.innerHTML = '<div class="empty-state" style="padding:64px 20px"><div style="font-size:40px">🧬</div><p class="muted">Cargando Biología Molecular…</p></div>';
-      import('./views/biomolecular/index.js')
+      cargarD3()
+        .then(() => import('./views/biomolecular/index.js'))
         .then((m) => m.biomolecularView(root))
         .catch((e) => { root.innerHTML = `<div class="empty-state" style="padding:48px">Error al cargar Biología Molecular.<br><small class="mono">${esc(e.message)}</small></div>`; });
     },
@@ -61,8 +87,9 @@ async function boot() {
   // Registros (captura) — carga DIFERIDA: la migración de Fichas es pesada y solo
   // se descarga cuando el usuario entra a la vista. `repintaConDatos: false`: un refresco
   // NO la repinta (se llevaba el foco y lo que se estaba tecleando; ver router.js).
+  // `necesitaLibro: false`: abrirla no descarga el libro de Google (P3): lee lo suyo por el GAS.
   registerView('registros', {
-    label: 'Registros', icon: '📝', repintaConDatos: false,
+    label: 'Registros', icon: '📝', repintaConDatos: false, necesitaLibro: false,
     render: (root) => {
       root.innerHTML = '<div class="empty-state" style="padding:64px 20px"><div style="font-size:40px">📝</div><p class="muted">Cargando Registros…</p></div>';
       import('./views/registros/index.js')
@@ -77,16 +104,17 @@ async function boot() {
   // Sin Worker, o si no arranca, se lee aquí como siempre (core/sheets.lector.js).
   setLectorLibro(lectorWorker);
 
-  // Conexión inicial
-  showLoader(true);
-  await connectSheets();
-  showLoader(false);
+  // Conexión inicial SIN ESPERA (P3, 2026-10-01). Antes se esperaba aquí al libro con el
+  // loader tapándolo todo —también la elección de rol— durante 25–35 s. Ahora la entrada
+  // responde al instante y el libro se pide cuando se enseña la PRIMERA vista que lo necesita
+  // (todas salvo Registros): el router pinta su aviso de carga y llama a asegurarLibro, que no
+  // lanza otra descarga si ya hay una o ya está cargado.
+  setPedirLibro(asegurarLibro);
 
-  // Auto-refresco SIEMPRE activo. Si la conexión inicial falla, el loop queda en
-  // espera (tick() sale temprano mientras !store.connected) y se reanuda solo en
-  // cuanto una reconexión manual marque store.connected = true. Antes vivía dentro
-  // de `if (ok)`, así que un fallo inicial lo deshabilitaba TODA la sesión aunque
-  // el usuario reconectara con el botón.
+  // Auto-refresco SIEMPRE activo. Mientras no hay libro, el loop queda en espera (tick()
+  // sale temprano mientras !store.connected) y se reanuda solo en cuanto una conexión
+  // marque store.connected = true. Antes vivía dentro de `if (ok)`, así que un fallo
+  // inicial lo deshabilitaba TODA la sesión aunque el usuario reconectara con el botón.
   // La huella inicial (y la de cada reconexión manual) la cachea commit() en
   // sheets.js; el loop la lee de ahí — única fuente de verdad.
   startAutoRefresh();

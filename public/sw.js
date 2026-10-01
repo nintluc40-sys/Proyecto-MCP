@@ -95,6 +95,24 @@ async function assetsDelShell(cache) {
   return [...urls];
 }
 
+/* Y TODO lo demás que emitió el build: la lista la escribe vite.config.js (listaDePrecache).
+   Los bloques diferidos —Registros, Biología Molecular, el tablero de Maduración, el Worker de
+   lectura del libro— no salen en index.html, así que `assetsDelShell` no los ve; sin esto, tras
+   un despliegue, un equipo que no los abriera con red no podía abrirlos sin señal (P3,
+   2026-10-01). Sólo se devuelve lo que aún NO está guardado: lo del shell no se pide dos veces. */
+async function assetsDelBuild(cache) {
+  const res = await fetch(new Request('./precache-assets.json', { cache: 'reload' }));
+  if (!res || !res.ok) return [];
+  const lista = await res.json();
+  if (!Array.isArray(lista)) return [];
+  const faltan = [];
+  for (const url of lista) {
+    if (typeof url !== 'string' || url.indexOf('assets/') === -1) continue;
+    if (!(await cache.match(url))) faltan.push(url);
+  }
+  return faltan;
+}
+
 self.addEventListener('install', (e) => {
   e.waitUntil((async () => {
     const cache = await caches.open(CACHE);
@@ -114,6 +132,11 @@ self.addEventListener('install', (e) => {
        es peor que quedarse sin precache. */
     try {
       await Promise.allSettled((await assetsDelShell(cache)).map(guardar));
+    } catch (_) { /* la instalación no se aborta por esto */ }
+    /* Y el resto del build (bloques diferidos), en una tercera tanda: también puede faltar
+       —una versión vieja sin lista, la red cortada— sin abortar la instalación. */
+    try {
+      await Promise.allSettled((await assetsDelBuild(cache)).map(guardar));
     } catch (_) { /* la instalación no se aborta por esto */ }
   })());
 });

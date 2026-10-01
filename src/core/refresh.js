@@ -155,6 +155,14 @@ export async function refrescoManual() {
   }
 }
 
+/** Primera descarga del libro (P3, 2026-10-01): la pide main.js al entrar en la primera vista que
+ *  lo necesita. No hace nada si ya está cargado o si hay una descarga en curso; pasa por
+ *  refrescoManual para que ⟳ no pueda lanzar otra a la vez. */
+export function asegurarLibro() {
+  if (store.connected || store.refreshing) return null;
+  return refrescoManual();
+}
+
 /** Arranca el loop. La huella inicial vive en sheets.js (la siembra commit()
  *  en la carga inicial), así que aquí no hay estado que sembrar. */
 export function startAutoRefresh() {
