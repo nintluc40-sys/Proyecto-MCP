@@ -26,6 +26,10 @@
 .mic-month-nav:hover:not(:disabled) { background: var(--c-brand); color: #fff; }
 .mic-month-nav:disabled { opacity: .35; cursor: default; }
 .mic-month-lbl { font-size: 13px; font-weight: 700; color: var(--c-text); min-width: 84px; text-align: center; }
+/* 2026-10-01 (usuario) · las muestras sin corrida se ubican por su fecha: la barra lo dice, porque es aproximado. */
+.mic-month-nota { font-size: 10.5px; font-weight: 600; color: var(--c-text-soft); padding: 0 6px 0 2px; white-space: nowrap; }
+/* En pantallas estrechas la nota se parte en dos líneas en vez de empujar la etiqueta del mes (medido a 360 px). */
+@media (max-width: 400px) { .mic-month-nota { white-space: normal; max-width: 112px; line-height: 1.15; } }
 .mic-select {
   background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-sm);
   color: var(--c-text); padding: 6px 10px; font-size: 12.5px; font-family: inherit; cursor: pointer;

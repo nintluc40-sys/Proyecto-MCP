@@ -23,7 +23,7 @@ const micDlgClose = (m) => { m.classList.remove('is-open'); makeAccessibleDialog
 import { esc, wqiBand } from '../../core/format.js';
 import { fmtShort, dayNum, rangeLabel, parseAnyDate } from '../../core/dates.js';
 import { natCmp } from '../../core/util.js';
-import { monthIndexOfCorrida, monthLabelAt } from '../../core/prodCalendar.js';
+import { monthIndexOfCorrida, monthIndexOfDate, monthLabelAt } from '../../core/prodCalendar.js';
 import { toast } from '../../ui/toast.js';
 import {
   isMicroRow, isPatRow, patFecha, pathogenRecords, rowContext, meltRow, PATHOGENS, PATHOGEN_COLOR,
@@ -143,15 +143,52 @@ function microRows() {
 const fmtNum = (v) => (v === null || v === undefined || isNaN(v)) ? '—' : Math.round(v).toLocaleString('es-EC');
 const PAT_LABEL = Object.fromEntries(PATHOGENS.map((p) => [p.key, p.label]));
 
-/** Índices de mes (calendario de producción) presentes en una lista de filas. */
+/* 2026-10-01 (usuario: «englobar todos los resultados de cada departamento»). La barra de mes de General, Bacteriología
+   y Calidad de Agua era obligatoria (medido: con el mes por defecto, 7 resultados de Larvicultura de 4 663) y la fila
+   SIN corrida —Maduración, Algas y Otras: 1 401 en Microbiología y 495 en Calidad de Agua— se colaba en TODOS los meses
+   (hallazgo H-001 de la auditoría de esta vista). Ahora: tras el último mes hay una parada más, «📅 Todo el registro»,
+   y una fila sin corrida va al mes de su FECHA de muestreo (`monthIndexOfDate`; aproximado: el mes de producción
+   arranca ~2 semanas antes que el de calendario). Por defecto se sigue abriendo en el último mes. */
+const TODO_REGISTRO = 'todo';
+// La corrida manda; si no da un mes del calendario (vacía, o un rango como «593-594», que se lee por su primer número:
+// 12 muestras de Maduración · Despacho no salían en NINGÚN mes), la fecha de muestreo.
+const mesDeFila = (c) => {
+  const n = parseInt(c.corrida, 10);
+  const m = Number.isNaN(n) ? -1 : monthIndexOfCorrida(n);
+  return m >= 0 ? m : monthIndexOfDate(c.fecha);
+};
+const enMes = (sel, c) => sel === TODO_REGISTRO || mesDeFila(c) === sel;
+
+/** Índices de mes (calendario de producción) presentes en una lista de filas: los de sus corridas y, en las filas
+ *  sin corrida, los de su fecha de muestreo. */
 function monthsOfRows(rows, ctxFn) {
-  return [...new Set(rows.map((r) => ctxFn(r).corrida).filter(Boolean).map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
+  return [...new Set(rows.map((r) => mesDeFila(ctxFn(r))).filter((i) => i >= 0))].sort((a, b) => a - b);
+}
+/** ◀ ▶ recorren los meses y, tras el último, «Todo el registro». null si no hay a dónde ir. */
+function pasoDeMes(actual, months, paso) {
+  const seq = [...months, TODO_REGISTRO];
+  const i = seq.indexOf(actual) + paso;
+  return i >= 0 && i < seq.length ? seq[i] : null;
+}
+/** La barra de mes, igual en las tres sub-vistas (`attr` es su data-*). `porFecha`: hay filas sin corrida, que se
+ *  ubican por su fecha de muestreo — se dice, porque es una aproximación. */
+function barraDeMes(attr, actual, months, porFecha) {
+  const seq = [...months, TODO_REGISTRO];
+  const i = seq.indexOf(actual);
+  const todo = actual === TODO_REGISTRO;
+  const aTodo = i === seq.length - 2;
+  return `<div class="mic-monthbar">
+      <button class="mic-month-nav" ${attr}="-1" ${i <= 0 ? 'disabled' : ''} aria-label="Mes anterior">◀</button>
+      <span class="mic-month-lbl">📅 ${esc(todo ? 'Todo el registro' : monthLabelAt(actual))}</span>
+      <button class="mic-month-nav" ${attr}="1" ${i >= seq.length - 1 ? 'disabled' : ''} aria-label="${aTodo ? 'Todo el registro' : 'Mes siguiente'}"${aTodo ? ' title="Siguiente: todo el registro (todos los meses)"' : ''}>▶</button>
+      ${porFecha && !todo ? '<span class="mic-month-nota" title="Las muestras sin corrida (Maduración, Algas, Otras) se ubican en el mes de su fecha de muestreo">sin corrida: por fecha de muestreo</span>' : ''}
+    </div>`;
 }
 /** Mes más cercano disponible en `months` al índice `target` (para arrastrar el mes del
  *  panorama General a una sub-vista cuyo set de meses puede no incluirlo). Devuelve
- *  `target` si ya está o si el set es vacío. */
+ *  `target` si ya está, si es «Todo el registro» o si el set es vacío. */
 function nearestMonth(target, months) {
-  if (!months.length || months.includes(target)) return target;
+  if (target === TODO_REGISTRO || !months.length || months.includes(target)) return target;
   return months.reduce((best, m) => Math.abs(m - target) < Math.abs(best - target) ? m : best, months[0]);
 }
 
@@ -263,11 +300,11 @@ function renderGeneral() {
   const calCtxCache = new Map();
   const cCtx = (r) => { if (!calCtxCache.has(r)) calCtxCache.set(r, calCtx(r)); return calCtxCache.get(r); };
 
-  // ── Barra de mes COMPARTIDA (corrida → mes; ambas fuentes usan el mismo calendario) ──
-  const corridas = [...micAll.map((r) => mCtx(r).corrida), ...calAll.map((r) => cCtx(r).corrida)].filter(Boolean);
-  const months = [...new Set(corridas.map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
-  if (vState.genMonth == null || (months.length && !months.includes(vState.genMonth))) vState.genMonth = months.length ? months[months.length - 1] : 0;
-  const inMonth = (ctxFn) => (r) => { const c = ctxFn(r).corrida; return !c || !months.length || monthIndexOfCorrida(+c) === vState.genMonth; };
+  // ── Barra de mes COMPARTIDA (corrida → mes; sin corrida, la fecha; ambas fuentes, el mismo calendario) ──
+  const months = [...new Set([...monthsOfRows(micAll, mCtx), ...monthsOfRows(calAll, cCtx)])].sort((a, b) => a - b);
+  if (vState.genMonth !== TODO_REGISTRO && (vState.genMonth == null || (months.length && !months.includes(vState.genMonth)))) vState.genMonth = months.length ? months[months.length - 1] : 0;
+  const inMonth = (ctxFn) => (r) => !months.length || enMes(vState.genMonth, ctxFn(r));
+  const porFecha = micAll.some((r) => !mCtx(r).corrida) || calAll.some((r) => !cCtx(r).corrida);
   const micRows = micAll.filter(inMonth(mCtx));
   const calRows = calAll.filter(inMonth(cCtx));
 
@@ -307,11 +344,7 @@ function renderGeneral() {
   const areas = genAreaStats(summaries, samples, ranges);
 
   // ── HTML ──
-  const monthBar = months.length ? `<div class="mic-monthbar">
-      <button class="mic-month-nav" data-gen-month="-1" ${months.indexOf(vState.genMonth) <= 0 ? 'disabled' : ''} aria-label="Mes anterior">◀</button>
-      <span class="mic-month-lbl">📅 ${esc(monthLabelAt(vState.genMonth))}</span>
-      <button class="mic-month-nav" data-gen-month="1" ${months.indexOf(vState.genMonth) >= months.length - 1 ? 'disabled' : ''} aria-label="Mes siguiente">▶</button>
-    </div>` : '';
+  const monthBar = months.length ? barraDeMes('data-gen-month', vState.genMonth, months, porFecha) : '';
 
   let h = `<div class="mic-general">`;
   h += `<div class="mic-filters">${monthBar}<span class="gen-hint muted">Panorama del módulo · un vistazo del mes</span></div>`;
@@ -787,11 +820,10 @@ function renderCalidadAgua() {
   const ctxCache = new Map();
   const ctxOf = (r) => { if (!ctxCache.has(r)) ctxCache.set(r, calCtx(r)); return ctxCache.get(r); };
 
-  // Barra de mes (corrida → mes; las filas sin corrida pasan en cualquier mes).
-  const corridas = [...new Set(all.map((r) => ctxOf(r).corrida).filter(Boolean))];
-  const months = [...new Set(corridas.map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
-  if (vState.calMonth == null || (months.length && !months.includes(vState.calMonth))) vState.calMonth = months.length ? months[months.length - 1] : 0;
-  const inMonth = (r) => { const c = ctxOf(r).corrida; return !c || !months.length || monthIndexOfCorrida(+c) === vState.calMonth; };
+  // Barra de mes (corrida → mes; las filas sin corrida, por su fecha de muestreo; tras el último, «Todo el registro»).
+  const months = monthsOfRows(all, ctxOf);
+  if (vState.calMonth !== TODO_REGISTRO && (vState.calMonth == null || (months.length && !months.includes(vState.calMonth)))) vState.calMonth = months.length ? months[months.length - 1] : 0;
+  const inMonth = (r) => !months.length || enMes(vState.calMonth, ctxOf(r));
 
   // Filtros en CASCADA: departamento → formato → dimensiones de contexto dinámicas.
   let pool = all.filter(inMonth);
@@ -842,11 +874,7 @@ function renderCalidadAgua() {
   // inflar el % a un falso 100 %). Definición única compartida con el panorama General.
   const { pct: pctOk, fullOk, evalCount } = calSampleCompliance(samples);
 
-  const monthBar = months.length ? `<div class="mic-monthbar">
-      <button class="mic-month-nav" data-cal-month="-1" ${months.indexOf(vState.calMonth) <= 0 ? 'disabled' : ''} aria-label="Mes anterior">◀</button>
-      <span class="mic-month-lbl">📅 ${esc(monthLabelAt(vState.calMonth))}</span>
-      <button class="mic-month-nav" data-cal-month="1" ${months.indexOf(vState.calMonth) >= months.length - 1 ? 'disabled' : ''} aria-label="Mes siguiente">▶</button>
-    </div>` : '';
+  const monthBar = months.length ? barraDeMes('data-cal-month', vState.calMonth, months, all.some((r) => !ctxOf(r).corrida)) : '';
 
   let h = `<div class="mic-calagua">`;
   h += `<div class="mic-filters">
@@ -1863,19 +1891,17 @@ function renderBacteriologia() {
   const all = microRows();
   if (!all.length) return `<div class="empty-state">No se encontraron registros en la hoja <b>Microbiología</b> del Google Sheet.</div>`;
 
-  // ── Barra de mes (corrida → mes) ──
-  const allCorridas = [...new Set(all.map((r) => rowContext(r).corrida).filter(Boolean))];
-  const months = [...new Set(allCorridas.map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
-  if (vState.month == null || !months.includes(vState.month)) vState.month = months.length ? months[months.length - 1] : 0;
-  const inMonth = (r) => { const c = rowContext(r).corrida; return !c || monthIndexOfCorrida(+c) === vState.month; };
-  const monthRows = all.filter(inMonth);
-
   // ── Filtros en CASCADA PROGRESIVA ──
   // Cada filtro solo ofrece los valores DISPONIBLES dado lo ya elegido en los filtros
   // anteriores (depto → formato → corrida → módulo → ubicación → estadío → tipo). Así,
   // si en el módulo 3 solo hay tanques 1/3/4, el filtro de tanque no ofrece los demás.
   const _ctxCache = new Map();
   const ctxOf = (r) => { if (!_ctxCache.has(r)) _ctxCache.set(r, rowContext(r)); return _ctxCache.get(r); };
+
+  // ── Barra de mes (corrida → mes; sin corrida, la fecha de muestreo; tras el último, «Todo el registro») ──
+  const months = monthsOfRows(all, ctxOf);
+  if (vState.month !== TODO_REGISTRO && (vState.month == null || !months.includes(vState.month))) vState.month = months.length ? months[months.length - 1] : 0;
+  const monthRows = all.filter((r) => !months.length || enMes(vState.month, ctxOf(r)));
   let pool = monthRows;
 
   // Departamento: columna REAL del sheet (con respaldo al derivado del formato). Solo los
@@ -1923,11 +1949,7 @@ function renderBacteriologia() {
 
   // ── HTML: filtros + KPIs + apartados ──
   let h = `<div class="mic-filters">
-      <div class="mic-monthbar">
-        <button class="mic-month-nav" data-mic-month="-1" ${months.indexOf(vState.month) <= 0 ? 'disabled' : ''} aria-label="Mes anterior">◀</button>
-        <span class="mic-month-lbl">📅 ${esc(monthLabelAt(vState.month))}</span>
-        <button class="mic-month-nav" data-mic-month="1" ${months.indexOf(vState.month) >= months.length - 1 ? 'disabled' : ''} aria-label="Mes siguiente">▶</button>
-      </div>
+      ${barraDeMes('data-mic-month', vState.month, months, all.some((r) => !ctxOf(r).corrida))}
       ${optDepto.length ? micSelect('depto', vState.depto, optDepto, 'Todos los deptos.') : ''}
       ${vState.depto && optFormato.length ? micSelect('formato', vState.formato, optFormato, 'Todos los formatos') : ''}
       ${dimFilters.map(({ dim, options }) => micDimSelect(dim, vState.dims[dim.key], options)).join('')}
@@ -2876,10 +2898,9 @@ function bind(root) {
     // Barra de mes del panorama General (compartida por Bacteriología + Calidad de Agua).
     const gnav = e.target.closest('[data-gen-month]');
     if (gnav && !gnav.disabled) {
-      const cs = [...microRows().map((r) => rowContext(r).corrida), ...calAguaRows().map((r) => calCtx(r).corrida)].filter(Boolean);
-      const gms = [...new Set(cs.map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
-      const gi = gms.indexOf(vState.genMonth) + Number(gnav.dataset.genMonth);
-      if (gi >= 0 && gi < gms.length) { vState.genMonth = gms[gi]; microbiologiaView(root); }
+      const gms = [...new Set([...monthsOfRows(microRows(), rowContext), ...monthsOfRows(calAguaRows(), calCtx)])].sort((a, b) => a - b);
+      const nx = pasoDeMes(vState.genMonth, gms, Number(gnav.dataset.genMonth));
+      if (nx !== null) { vState.genMonth = nx; microbiologiaView(root); }
       return;
     }
 
@@ -2978,19 +2999,16 @@ function bind(root) {
     // Barra de mes de Calidad de Agua (independiente de Bacteriología).
     const cnav = e.target.closest('[data-cal-month]');
     if (cnav && !cnav.disabled) {
-      const cms = [...new Set(calAguaRows().map((r) => calCtx(r).corrida).filter(Boolean).map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
-      const ci = cms.indexOf(vState.calMonth) + Number(cnav.dataset.calMonth);
-      if (ci >= 0 && ci < cms.length) { vState.calMonth = cms[ci]; microbiologiaView(root); }
+      const nx = pasoDeMes(vState.calMonth, monthsOfRows(calAguaRows(), calCtx), Number(cnav.dataset.calMonth));
+      if (nx !== null) { vState.calMonth = nx; microbiologiaView(root); }
       return;
     }
 
     const nav = e.target.closest('[data-mic-month]');
     if (!nav || nav.disabled) return;
-    const all = microRows();
-    const ms = [...new Set(all.map((r) => rowContext(r).corrida).filter(Boolean).map((c) => monthIndexOfCorrida(+c)).filter((i) => i >= 0))].sort((a, b) => a - b);
-    const ni = ms.indexOf(vState.month) + Number(nav.dataset.micMonth);
-    if (ni >= 0 && ni < ms.length) {
-      vState.month = ms[ni];
+    const nx = pasoDeMes(vState.month, monthsOfRows(microRows(), rowContext), Number(nav.dataset.micMonth));
+    if (nx !== null) {
+      vState.month = nx;
       vState.depto = null; vState.formato = null; vState.dims = {};
       vState.petriDay = null;
       microbiologiaView(root);

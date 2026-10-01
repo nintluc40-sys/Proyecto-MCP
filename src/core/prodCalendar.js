@@ -51,10 +51,10 @@ const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
 // `.filter().sort()`, `modulesOfCorrida` hace `distinct(...).sort()`); si alguien pierde
 // ese `.filter()` intermedio, un `.sort()` reordenaría el array de las 6 vistas a la vez.
 // El test-guardián de prodCalendar.test.js congela esa invariante.
-let _memo = { src: null, larv: null, stats: new Map(), disp: new Map(), years: new Map(), mods: new Map() };
+let _memo = { src: null, larv: null, stats: new Map(), disp: new Map(), years: new Map(), mods: new Map(), y0: undefined };
 function memoRoot() {
   if (_memo.src !== store.globalData) {
-    _memo = { src: store.globalData, larv: null, stats: new Map(), disp: new Map(), years: new Map(), mods: new Map() };
+    _memo = { src: store.globalData, larv: null, stats: new Map(), disp: new Map(), years: new Map(), mods: new Map(), y0: undefined };
   }
   return _memo;
 }
@@ -169,6 +169,45 @@ function yearOfMonth(mIdx) {
   counts.forEach((n, y) => { if (n > bestN) { bestN = n; best = y; } });
   m.years.set(mIdx, best);
   return best;
+}
+
+/** Año de calendario del mes interno 0 (el «Enero» de MESES_PROD), votado por las fechas de las filas CON corrida:
+ *  cada una dice «mi año − los ciclos de 12 meses de mi mes». Primero Larvicultura, la fuente del calendario; sin
+ *  ella, cualquier hoja con corrida y fecha (Microbiología, Calidad de Agua). null si no hay ninguna.
+ *  Memoizado por identidad de store.globalData. */
+function anioBase() {
+  const m = memoRoot();
+  if (m.y0 !== undefined) return m.y0;
+  const votar = (filas, fecha) => {
+    const votos = new Map();
+    filas.forEach((r) => {
+      const i = monthIndexOfCorrida(+getField(r, F.corrida));
+      if (i < 0) return;
+      const d = parseAnyDate(getField(r, fecha));
+      if (!d || isNaN(d)) return;
+      const y = d.getFullYear() - Math.floor(i / 12);
+      votos.set(y, (votos.get(y) || 0) + 1);
+    });
+    let best = null, bestN = 0;
+    votos.forEach((n, y) => { if (n > bestN) { bestN = n; best = y; } });
+    return best;
+  };
+  m.y0 = votar(larvRows(), F.fecha);
+  if (m.y0 === null) m.y0 = votar(store.globalData, ['Fecha muestreo', 'Fecha de muestreo', 'Fecha']);
+  return m.y0;
+}
+
+/** Mes interno de una FECHA de calendario (2026-10-01, usuario): para lo que NO tiene corrida —Maduración, Algas y
+ *  Otras en Microbiología y Calidad de Agua—, el mes de su muestreo, con el mismo índice que `monthIndexOfCorrida`
+ *  (el nombre de un mes interno es el de su índice % 12). -1 si la fecha no es legible o no hay año base.
+ *  ⚠ Aproximado: el mes de PRODUCCIÓN de Larvicultura arranca ~2 semanas antes que el de calendario (medido el
+ *  2026-10-01: «Septiembre» = muestras del 14-ago al 29-sep). */
+export function monthIndexOfDate(d) {
+  if (!d || isNaN(d)) return -1;
+  const y0 = anioBase();
+  if (y0 === null) return -1;
+  const i = (d.getFullYear() - y0) * 12 + d.getMonth();
+  return i >= 0 ? i : -1;
 }
 
 /** Nombre del mes sin desambiguar (secuencia Enero…Diciembre, cíclica). */
