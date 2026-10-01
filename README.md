@@ -277,6 +277,12 @@ las mismas bajas —o las mismas cópulas y muda— en **otro** parte de la últ
 «Cancelar» lo deja pendiente sin borrar nada. «↩ Recuperar» ya no reinyecta lo guardado, y una fila
 enviada no vuelve a pendiente si no cambió. En `index (8)` como archivo sólo se puede leer por el GAS,
 que tarda ~35 s: con el tope de 15 s el aviso no llega a salir y se envía como antes.
+*(2026-09-30, noche, decisión del usuario.)* En la grilla, **borrar una cifra la corrige**: en el parte que se
+está pintando, una celda vaciada se guarda vaciada —las de conteo (muertes, descartes, cópulas, muda) como
+**0**, que corrige también en la hoja un parte ya enviado; pesos y observaciones, vacíos (en un parte ya
+enviado, la hoja conserva el valor anterior: se corrige allí)—; antes, tras un autoguardado, la cifra
+borrada se seguía enviando. Y **«🗑 Borrar sala» borra sólo lo NO enviado**: lo enviado se conserva y su
+parte, si seguía abierto, se cierra; la numeración sigue, y para corregirlo está «✏️ Reabrir el parte».
 En **🏠 Salas**, la columna `RAS` dice **en qué porcentaje** usa el RAS esa sala (`No`, `10%` …
 `100%`); lo que falta hasta el 100 es agua de playa y no se anota.
 
