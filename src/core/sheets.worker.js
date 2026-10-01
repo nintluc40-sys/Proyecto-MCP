@@ -11,17 +11,25 @@
    navegadores sin workers de módulo. La descarga, los reintentos y la lectura son los de
    sheets.js (fetchXlsxSheets): una sola implementación.
 
+   P4 (2026-10-01): después de contestar, guarda el libro leído en IndexedDB (libroGuardado.js)
+   para que la próxima vez el MCP abra al instante con él. Lo hace aquí para que ni la copia ni
+   la escritura le cuesten nada a la pantalla; si falla, no pasa nada (se reintenta en la próxima
+   lectura).
+
    Protocolo (cliente: sheets.lector.js):
      → { id, realId, xlsxUrl, previas }
      ← { vivo: true }                                   al arrancar
      ← { id, ok: true, orden, huellas, cambiadas }
      ← { id, ok: false, motivo: 'sin-xlsx' | 'xlsx', error }
    ============================================================ */
-import { fetchXlsxSheets, planDelta } from './sheets.js';
+import { fetchXlsxSheets, planDelta, huellaDe } from './sheets.js';
+import { guardarLibro, almacenIDB } from './libroGuardado.js';
 
 /** Atiende una petición. `entorno` da cómo cargar SheetJS y cómo obtenerlo (en el Worker:
- *  importScripts y self.XLSX); separado para poder probarlo fuera de un Worker. */
-export async function atenderLectura(m, { cargarXLSX, obtenerXLSX }) {
+ *  importScripts y self.XLSX) y, si lo trae, cómo GUARDAR el libro leído (sin esperar: la
+ *  respuesta no se retrasa por guardar); separado para poder probarlo fuera de un Worker. */
+export async function atenderLectura(m, entorno) {
+  const { cargarXLSX, obtenerXLSX } = entorno;
   const id = m && m.id;
   try {
     if (!obtenerXLSX()) cargarXLSX(m.xlsxUrl);
@@ -32,7 +40,12 @@ export async function atenderLectura(m, { cargarXLSX, obtenerXLSX }) {
   try {
     const sheets = await fetchXlsxSheets({ type: 'real', realId: m.realId }, obtenerXLSX);
     if (!sheets) return { id, ok: false, motivo: 'xlsx', error: 'El export XLSX no se pudo leer.' };
-    return { id, ok: true, ...planDelta(m.previas || {}, sheets) };
+    const d = planDelta(m.previas || {}, sheets);
+    if (entorno.guardar) {
+      const libro = { sheets, huellas: d.huellas, orden: d.orden, fp: huellaDe(d.huellas, d.orden), t: Date.now() };
+      Promise.resolve().then(() => entorno.guardar(libro)).catch(() => { /* se reintenta en la próxima lectura */ });
+    }
+    return { id, ok: true, ...d };
   } catch (err) {
     return { id, ok: false, motivo: 'xlsx', error: String((err && err.message) || err) };
   }
@@ -40,7 +53,12 @@ export async function atenderLectura(m, { cargarXLSX, obtenerXLSX }) {
 
 /* global WorkerGlobalScope, importScripts */
 if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope) {
-  const entorno = { cargarXLSX: (url) => importScripts(url), obtenerXLSX: () => self.XLSX };
+  const almacen = almacenIDB();
+  const entorno = {
+    cargarXLSX: (url) => importScripts(url),
+    obtenerXLSX: () => self.XLSX,
+    guardar: (libro) => guardarLibro(libro, almacen),
+  };
   self.onmessage = async (e) => { self.postMessage(await atenderLectura(e.data || {}, entorno)); };
   self.postMessage({ vivo: true });
 }

@@ -18,7 +18,8 @@ import { mountShell } from './ui/shell.js';
 import { registerView, setPedirLibro } from './ui/router.js';
 import { setLectorLibro } from './core/sheets.js';
 import { lectorWorker } from './core/sheets.lector.js';
-import { startAutoRefresh, asegurarLibro } from './core/refresh.js';
+import { startAutoRefresh, asegurarLibro, setLibroGuardado } from './core/refresh.js';
+import { cargarLibroGuardado, almacenIDB } from './core/libroGuardado.js';
 import { esc } from './core/format.js';
 
 import { supervisorView } from './views/supervisor/index.js';
@@ -110,6 +111,11 @@ function boot() {
   // (todas salvo Registros): el router pinta su aviso de carga y llama a asegurarLibro, que no
   // lanza otra descarga si ya hay una o ya está cargado.
   setPedirLibro(asegurarLibro);
+
+  // P4 (2026-10-01): si el equipo guarda un libro de menos de 7 días, la primera vista que lo
+  // necesita lo enseña AL INSTANTE —también sin señal— y se revalida por detrás. Lo escribe el
+  // Worker de lectura (core/libroGuardado.js). Sin IndexedDB, como antes: se descarga.
+  setLibroGuardado(() => (typeof indexedDB === 'undefined' ? Promise.resolve(null) : cargarLibroGuardado(almacenIDB())));
 
   // Auto-refresco SIEMPRE activo. Mientras no hay libro, el loop queda en espera (tick()
   // sale temprano mientras !store.connected) y se reanuda solo en cuanto una conexión

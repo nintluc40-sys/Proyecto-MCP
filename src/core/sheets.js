@@ -641,6 +641,16 @@ export function aplicarDescarga(d) {
   return n;
 }
 
+/** P4 (2026-10-01): aplica el libro GUARDADO en este equipo (libroGuardado.js) como la carga
+ *  inicial: la app arranca al instante con él y el auto-refresco lo revalida por detrás. Se registra
+ *  como lo aplicado (hojas y huellas), así que esa revalidación sólo trae lo que cambió. */
+export function aplicarLibroGuardado(g) {
+  if (!aplicarDescarga(g)) return false;
+  store.connected = true;
+  emit(EV.DATA, { firstLoad: true, guardado: true });
+  return true;
+}
+
 /** El libro por el export XLSX: { name: rows } o null si hay que ir al CSV. Lo usan
  *  fetchAllSheets (aquí) y el Worker de lectura (sheets.worker.js): UNA sola implementación
  *  de la descarga, los reintentos y la lectura. `obtenerXLSX` da SheetJS. */

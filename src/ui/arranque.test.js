@@ -36,6 +36,10 @@ describe('arranque · main.js', () => {
     expect(mainCodigo).toMatch(/setPedirLibro\(asegurarLibro\);/);
   });
 
+  it('P4: main.js registra el libro GUARDADO en el equipo (IndexedDB), y sin IndexedDB no hay nada guardado', () => {
+    expect(mainCodigo).toMatch(/setLibroGuardado\(\(\)\s*=>\s*\(typeof indexedDB === 'undefined' \? Promise\.resolve\(null\) : cargarLibroGuardado\(almacenIDB\(\)\)\)\);/);
+  });
+
   it('SÓLO Registros declara necesitaLibro: false', () => {
     const bloques = mainCodigo.split(/(?=registerView\(')/).slice(1).map((b) => [b.match(/^registerView\('([a-z]+)'/)[1], b]);
     expect(bloques.filter(([, b]) => /necesitaLibro:\s*false/.test(b)).map(([id]) => id)).toEqual(['registros']);

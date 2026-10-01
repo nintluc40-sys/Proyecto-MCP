@@ -467,6 +467,12 @@ Dos consecuencias que conviene tener presentes al desplegar:
    `necesitaLibro: false` y lee lo suyo por el GAS) y, mientras llega, esa vista enseña un aviso
    de carga —o el fallo, con ⟳— (`router.js · viewNeedsBook`, `refresh.js · asegurarLibro`).
    SheetJS va con `defer` y D3 se carga al abrir Biología Molecular (`main.js · cargarD3`).
+   **Libro guardado en el equipo** (P4, 2026-10-01): el Worker deja el último libro leído en
+   IndexedDB (`core/libroGuardado.js`: sólo las hojas que cambiaron, meta en la misma
+   transacción) y la primera vista que lo necesita lo enseña AL INSTANTE —medido: 0,6 s en vez de
+   23 s, también sin señal— con «datos de las hh:mm · actualizando…», y se revalida en el acto
+   (aplica en reposo). **Caduca a los 7 días** (decisión del usuario): más viejo, no se usa y se
+   borra. Una descarga que llega vacía (sin señal) cuenta como fallo: se conservan los datos.
 1. `connectSheets()` descarga el libro **completo** vía `export?format=xlsx`
    (1 petición, todas las hojas). Si falla, cae a **CSV por `gid`** con
    descubrimiento por scraping del HTML publicado, con reintento y backoff.

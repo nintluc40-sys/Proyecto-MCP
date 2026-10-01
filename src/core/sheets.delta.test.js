@@ -206,6 +206,29 @@ describe('Worker · atenderLectura', () => {
     expect(r2.orden).toEqual(r1.orden);
   });
 
+  it('P4: después de leer, GUARDA el libro ENTERO (aunque no viaje ninguna hoja) con su huella y su fecha', async () => {
+    const e = entorno();
+    const r1 = await atenderLectura({ id: 6, realId: 'X', previas: {} }, e);
+    e.guardar = vi.fn(async () => {});
+    const antes = Date.now();
+    const r2 = await atenderLectura({ id: 7, realId: 'X', previas: r1.huellas }, e);
+    expect(Object.keys(r2.cambiadas)).toEqual([]); // no viajó nada…
+    await new Promise((r) => setTimeout(r, 0));
+    expect(e.guardar).toHaveBeenCalledTimes(1); // …pero se guarda el libro entero
+    const l = e.guardar.mock.calls[0][0];
+    expect(Object.keys(l.sheets)).toEqual(['Larvicultura M01', 'Control_Tanque M01']);
+    expect(l.orden).toEqual(r2.orden);
+    expect(l.huellas).toEqual(r2.huellas);
+    expect(l.fp).toBe(huellaDe(r2.huellas, r2.orden));
+    expect(l.t).toBeGreaterThanOrEqual(antes);
+  });
+
+  it('P4: si guardar falla, la lectura contesta igual', async () => {
+    const e = entorno();
+    e.guardar = () => Promise.reject(new Error('cuota'));
+    expect(await atenderLectura({ id: 8, realId: 'X', previas: {} }, e)).toMatchObject({ id: 8, ok: true });
+  });
+
   it('la huella del Worker es la misma que la del hilo principal con los mismos bytes', async () => {
     const r = await atenderLectura({ id: 3, realId: 'X', previas: {} }, entorno());
     const aqui = await descargarLibro();

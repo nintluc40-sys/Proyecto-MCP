@@ -26,7 +26,7 @@ import {
   descargarLibro, connectSheets, lecturaEnSegundoPlano, aplicarDescarga, huellasPorHoja, dataFingerprint,
   getLastFingerprint,
 } from './sheets.js';
-import { startAutoRefresh, stopAutoRefresh, refrescoManual, asegurarLibro } from './refresh.js';
+import { startAutoRefresh, stopAutoRefresh, refrescoManual, asegurarLibro, setLibroGuardado } from './refresh.js';
 import { store, on, EV } from './store.js';
 import { REFRESH_INTERVAL_S } from '../config.js';
 
@@ -74,6 +74,7 @@ beforeEach(() => {
 
 afterEach(() => {
   stopAutoRefresh();
+  setLibroGuardado(null);
   offs.forEach((f) => f());
   document.body.innerHTML = '';
   vi.useRealTimers();
@@ -266,12 +267,16 @@ describe('auto-refresco · aplicar sólo en reposo', () => {
     expect(valor()).toBe(1);
   });
 
-  it('un libro vacío no aplica nada ni deja la píldora diciendo «en espera»', async () => {
+  it('un libro vacío (sin señal: ni XLSX ni CSV traen nada) es un FALLO: no aplica y la píldora dice «sin actualizar»', async () => {
+    const el = campo(); // con trabajo en curso, antes quedaba «en espera» para siempre (Chrome, 01-10)
     descargarLibro.mockResolvedValue(descarga({}));
     await vi.advanceTimersByTimeAsync(5 * MIN);
+    el.blur();
+    await vi.advanceTimersByTimeAsync(10 * 1000);
     expect(datos).toBe(0);
     expect(valor()).toBe(1);
     expect(etiquetas.some((e) => /en espera/.test(e))).toBe(false);
+    expect(etiquetas.at(-1)).toMatch(/sin actualizar/);
   });
 
   it('una descarga degradada (menos hojas) no aplica ni toca la huella', async () => {
@@ -281,6 +286,82 @@ describe('auto-refresco · aplicar sólo en reposo', () => {
     expect(datos).toBe(0);
     expect(valor()).toBe(1);
     expect(getLastFingerprint()).toBe(huella);
+  });
+});
+
+describe('asegurarLibro · con un libro GUARDADO en el equipo (P4)', () => {
+  const guardado = (v, t = Date.now()) => ({ ...descarga(set(v)), t });
+  beforeEach(() => { store.connected = false; store.sheetNames = []; });
+
+  it('lo enseña YA («datos de las hh:mm · actualizando…») y lo revalida en el acto', async () => {
+    setLibroGuardado(async () => guardado(5));
+    let entregar;
+    descargarLibro.mockImplementation(() => new Promise((r) => { entregar = r; }));
+    await asegurarLibro();
+    expect(store.connected).toBe(true);
+    expect(valor()).toBe(5);
+    expect(datos).toBe(1);
+    expect(etiquetas.at(-1)).toMatch(/datos de las \d\d:\d\d[^·]* · actualizando…$/);
+    expect(descargarLibro).toHaveBeenCalledTimes(1);
+    expect(connectSheets).not.toHaveBeenCalled();
+    entregar(descarga(set(5)));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(etiquetas.at(-1)).toMatch(/sin cambios/);
+    expect(datos).toBe(1);
+    // Confirmado que lo guardado era lo último, el siguiente ciclo ya no dice «datos de…».
+    descargarLibro.mockResolvedValue(descarga(set(5)));
+    etiquetas = [];
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(etiquetas[0]).toBe('Actualizando…');
+  });
+
+  it('si la hoja cambió desde que se guardó, lo nuevo se aplica EN REPOSO (regla de P2)', async () => {
+    setLibroGuardado(async () => guardado(5));
+    descargarLibro.mockResolvedValue(descarga(set(6)));
+    const el = campo();
+    await asegurarLibro();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(valor()).toBe(5);
+    expect(etiquetas.at(-1)).toMatch(/datos nuevos en espera/);
+    el.blur();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(valor()).toBe(6);
+    expect(datos).toBe(2);
+    // Aplicado lo nuevo, la píldora deja de decir «datos de…» también en el ciclo siguiente.
+    etiquetas = [];
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(etiquetas[0]).toBe('Actualizando…');
+  });
+
+  it('si la revalidación falla, se sigue viendo lo guardado y la píldora dice de cuándo es', async () => {
+    setLibroGuardado(async () => guardado(5, new Date(2026, 7, 28, 9, 30).getTime()));
+    descargarLibro.mockRejectedValue(new Error('sin señal'));
+    await asegurarLibro();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(valor()).toBe(5);
+    expect(etiquetas.at(-1)).toMatch(/datos del 28\/08 09:30[^·]* · sin actualizar/);
+  });
+
+  it('sin nada guardado (o si leerlo falla), se descarga como siempre', async () => {
+    connectSheets.mockResolvedValue(true);
+    setLibroGuardado(async () => null);
+    await asegurarLibro();
+    expect(connectSheets).toHaveBeenCalledTimes(1);
+    connectSheets.mockClear();
+    setLibroGuardado(async () => { throw new Error('IndexedDB'); });
+    await asegurarLibro();
+    expect(connectSheets).toHaveBeenCalledTimes(1);
+  });
+
+  it('mientras se lee lo guardado, otra petición no lanza nada', async () => {
+    let soltar;
+    setLibroGuardado(() => new Promise((r) => { soltar = r; }));
+    const p = asegurarLibro();
+    expect(asegurarLibro()).toBeNull();
+    soltar(null);
+    connectSheets.mockResolvedValue(true);
+    await p;
+    expect(connectSheets).toHaveBeenCalledTimes(1);
   });
 });
 

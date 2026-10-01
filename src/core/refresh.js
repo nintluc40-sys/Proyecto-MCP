@@ -11,13 +11,16 @@
      un campo de texto con el foco). Hasta entonces quedan PENDIENTES —uno solo: el más
      nuevo sustituye al anterior— y se reintenta cada APPLY_RETRY_MS.
    - ⟳ y la píldora usan refrescoManual(): nunca dos descargas a la vez.
+   - P4: la primera vez que hace falta el libro, si hay uno GUARDADO en el equipo (y no caducó),
+     se enseña YA («datos de las hh:mm · actualizando…») y se revalida en el acto.
    Portado de silentRefresh + _markInteracting del original; política de refresco del
    2026-09-24 (P2 del plan de carga y refresco).
    ============================================================ */
 import { REFRESH_INTERVAL_S } from '../config.js';
 import { store, emit, EV } from './store.js';
 import {
-  descargarLibro, aplicarDescarga, lecturaEnSegundoPlano, connectSheets, isDegraded, getLastFingerprint,
+  descargarLibro, aplicarDescarga, aplicarLibroGuardado, lecturaEnSegundoPlano, connectSheets, isDegraded,
+  getLastFingerprint,
 } from './sheets.js';
 
 const INTERVAL_MS = REFRESH_INTERVAL_S * 1000;
@@ -28,6 +31,8 @@ let applyTimer = null;
 let interactingUntil = 0;
 let pending = null;  // { d, ts }: descarga nueva (d = { sheets, huellas, fp }) que espera al reposo
 let started = false;
+// P4: mientras lo que se ve es el libro GUARDADO y aún no se ha confirmado: «de las hh:mm» / «del dd/mm hh:mm».
+let datosDe = '';
 
 /** Marca interacción del usuario por `ms` (pausa el refresco). */
 function markInteracting(ms = 12000) { interactingUntil = Date.now() + ms; }
@@ -59,6 +64,13 @@ const onMouseMove = () => {
 const INTERACTION_EVENTS = ['click', 'scroll', 'keydown', 'touchstart'];
 
 const hora = () => new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
+/** «de las 14:05» si es de hoy; «del 28/09 14:05» si no. */
+function cuando(t) {
+  const d = new Date(t);
+  const hm = d.toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === new Date().toDateString()) return 'de las ' + hm;
+  return `del ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${hm}`;
+}
 const etiqueta = (ts, extra = '') => `${store.sheetNames.length} hojas · ${ts}${extra}`;
 
 /** Aplica el set pendiente si hay reposo. Devuelve true si lo aplicó. */
@@ -77,6 +89,7 @@ function tryApply() {
   // compara con lo que de verdad está en pantalla, no con un pendiente que quizá nunca llegó
   // a aplicarse.
   if (!aplicarDescarga(d)) return false;
+  datosDe = '';
   emit(EV.DATA, { firstLoad: false });
   emit(EV.CONN, { state: 'connected', label: etiqueta(ts) });
   return true;
@@ -84,10 +97,14 @@ function tryApply() {
 
 async function check() {
   store.refreshing = true;
-  emit(EV.CONN, { state: 'refreshing', label: 'Actualizando…' });
+  emit(EV.CONN, { state: 'refreshing', label: datosDe ? etiqueta('datos ' + datosDe, ' · actualizando…') : 'Actualizando…' });
   try {
     const d = await descargarLibro();
     const ts = hora();
+    // Un libro sin ninguna hoja con filas es una descarga FALLIDA —sin señal, el XLSX y el CSV de
+    // respaldo no traen nada—: se conservan los datos y se dice, como cualquier otro fallo (antes
+    // entraba como «datos nuevos en espera» y la píldora se quedaba diciéndolo; medido el 01-10).
+    if (!Object.keys(d.huellas || {}).length) throw new Error('El libro llegó vacío.');
     // Descarga degradada (menos hojas que el set bueno ya cargado): conserva los
     // datos previos y NO actualiza la huella, para reintentar el set completo en el
     // próximo ciclo. Sin esto, un refresco transitorio dejaba la UI en 1 sola hoja
@@ -100,15 +117,15 @@ async function check() {
       pending = null; // lo que está en pantalla ya es lo último: un pendiente anterior sobra
       clearTimeout(applyTimer);
       applyTimer = null;
+      datosDe = ''; // lo guardado ERA lo último
       emit(EV.CONN, { state: 'connected', label: etiqueta(ts, ' · sin cambios') });
     } else {
       pending = { d, ts };
-      // (Un set vacío no se aplica ni queda pendiente: tryApply lo suelta y no hay nada «en espera».)
-      if (!tryApply() && pending) emit(EV.CONN, { state: 'connected', label: etiqueta(ts, ' · datos nuevos en espera') });
+      if (!tryApply()) emit(EV.CONN, { state: 'connected', label: etiqueta(ts, ' · datos nuevos en espera') });
     }
   } catch (_) {
     // Conserva los datos previos y lo dice (antes la píldora se quedaba en «Actualizando…»).
-    emit(EV.CONN, { state: 'connected', label: `${store.sheetNames.length} hojas · sin actualizar (se reintenta)` });
+    emit(EV.CONN, { state: 'connected', label: `${store.sheetNames.length} hojas · ${datosDe ? 'datos ' + datosDe + ' · ' : ''}sin actualizar (se reintenta)` });
   } finally {
     store.refreshing = false;
     schedule();
@@ -148,19 +165,42 @@ export async function refrescoManual() {
   clearTimeout(timer);
   timer = null;
   try {
-    return await connectSheets();
+    const ok = await connectSheets();
+    if (ok) datosDe = '';
+    return ok;
   } finally {
     store.refreshing = false;
     if (started) schedule();
   }
 }
 
-/** Primera descarga del libro (P3, 2026-10-01): la pide main.js al entrar en la primera vista que
- *  lo necesita. No hace nada si ya está cargado o si hay una descarga en curso; pasa por
- *  refrescoManual para que ⟳ no pueda lanzar otra a la vez. */
+// P4: de dónde sale el libro guardado en el equipo (main.js registra libroGuardado.js); sin él,
+// la primera vez siempre se descarga.
+let _guardado = null;
+export function setLibroGuardado(fn) { _guardado = fn; }
+let asegurando = false;
+
+/** Primera carga del libro (P3, 2026-10-01): la pide el router cuando enseña una vista sin datos.
+ *  No hace nada si ya está cargado, si hay una descarga en curso o si ya se está buscando lo
+ *  guardado. P4: si hay un libro GUARDADO en el equipo y no caducó, se aplica YA y se revalida
+ *  en el acto (aplica en reposo, como cualquier refresco); si no, se descarga (refrescoManual,
+ *  para que ⟳ no pueda lanzar otra a la vez). */
 export function asegurarLibro() {
-  if (store.connected || store.refreshing) return null;
-  return refrescoManual();
+  if (store.connected || store.refreshing || asegurando) return null;
+  if (!_guardado) return refrescoManual();
+  asegurando = true;
+  return (async () => {
+    let g = null;
+    try { g = await _guardado(); } catch (_) { g = null; }
+    asegurando = false;
+    if (store.connected || store.refreshing) return null;
+    if (g && aplicarLibroGuardado(g)) {
+      datosDe = cuando(g.t);
+      check();
+      return true;
+    }
+    return refrescoManual();
+  })();
 }
 
 /** Arranca el loop. La huella inicial vive en sheets.js (la siembra commit()
@@ -183,6 +223,8 @@ export function stopAutoRefresh() {
   timer = applyTimer = mm = null;
   pending = null;
   interactingUntil = 0;
+  datosDe = '';
+  asegurando = false;
   INTERACTION_EVENTS.forEach((ev) => document.removeEventListener(ev, onInteraction, true));
   document.removeEventListener('mousemove', onMouseMove, true);
   document.removeEventListener('visibilitychange', onVisible);
