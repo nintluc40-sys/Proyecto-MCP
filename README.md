@@ -459,6 +459,14 @@ Dos consecuencias que conviene tener presentes al desplegar:
   en `precache-assets.json` (`vite.config.js · listaDePrecache`) y el worker los guarda también
   al instalarse (`assetsDelBuild`, 2026-10-01). Sin eso, tras un despliegue, un equipo que no
   abriera Registros con red no podía abrirlo sin señal.
+- **La instalación tiene tope: 3 min** (`TOPE_INSTALACION`, 2026-10-01). El navegador da por
+  fallida una instalación que pasa de 5 min y BORRA el registro: con señal pésima el equipo se
+  quedaba sin modo sin conexión (medido en la app publicada; reproducido en local con una descarga
+  colgada: sin registro a los 306 s). Al cumplirse, se cortan las descargas en vuelo y se instala
+  con lo guardado; lo que falte lo guarda el `fetch` cuando se pida con red. Además pide con
+  `cache: 'no-cache'`: revalida con el ETag (304) lo que la página acaba de bajar en vez de
+  repetirlo (medido a 40 KB/s: 2,9 MB en vez de 5,2), y no vuelve a pedir los `assets/` que ya
+  guardó un intento anterior.
 
 ## Flujo de datos (Google Sheets)
 
