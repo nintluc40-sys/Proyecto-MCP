@@ -11,18 +11,20 @@
    sin modal, sin un campo de texto con el foco) y hasta entonces quedan pendientes —el más nuevo
    sustituye al anterior— · ⟳ nunca lanza dos descargas, descarta el pendiente y aplica ya.
 
-   La descarga se simula (fetchAllSheets / connectSheets); el resto de sheets.js —huella, guarda de
-   degradado, applySheets— es el REAL. Datos ficticios.
+   La descarga se simula (descargarLibro / connectSheets / lecturaEnSegundoPlano); el resto de
+   sheets.js —huellas, guarda de degradado, aplicarDescarga— es el REAL. Datos ficticios.
+   P1 (2026-10-01): con el libro leído en un Worker, el ciclo descarga aunque se esté trabajando.
    ============================================================ */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 vi.mock('./sheets.js', async (importOriginal) => {
   const real = await importOriginal();
-  return { ...real, fetchAllSheets: vi.fn(), connectSheets: vi.fn() };
+  return { ...real, descargarLibro: vi.fn(), connectSheets: vi.fn(), lecturaEnSegundoPlano: vi.fn(() => false) };
 });
 
 import {
-  fetchAllSheets, connectSheets, applySheets, dataFingerprint, setLastFingerprint, getLastFingerprint,
+  descargarLibro, connectSheets, lecturaEnSegundoPlano, aplicarDescarga, huellasPorHoja, dataFingerprint,
+  getLastFingerprint,
 } from './sheets.js';
 import { startAutoRefresh, stopAutoRefresh, refrescoManual } from './refresh.js';
 import { store, on, EV } from './store.js';
@@ -34,6 +36,8 @@ const set = (v) => ({
   'Larvicultura M01': [{ Fecha: '01/09/2026', Tanque: 'T1', Valor: v }],
   'Larvicultura M02': [{ Fecha: '01/09/2026', Tanque: 'T2', Valor: 1 }],
 });
+/** Lo que devuelve descargarLibro para un set leído entero. */
+const descarga = (sheets) => ({ sheets, huellas: huellasPorHoja(sheets), fp: dataFingerprint(sheets) });
 const valor = () => (store.globalData.find((r) => r.Tanque === 'T1') || {}).Valor;
 
 let oculto = false;
@@ -54,13 +58,14 @@ beforeEach(() => {
   vi.setSystemTime(new Date(2026, 8, 1, 10, 0, 0));
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => oculto });
   oculto = false;
-  fetchAllSheets.mockReset();
+  descargarLibro.mockReset();
   connectSheets.mockReset();
+  lecturaEnSegundoPlano.mockReset();
+  lecturaEnSegundoPlano.mockReturnValue(false);
   // Lo que deja la carga inicial: el set 1 aplicado y su huella (sobre filas recién descargadas).
   store.connected = true;
   store.refreshing = false;
-  setLastFingerprint(dataFingerprint(set(1)));
-  applySheets(set(1));
+  aplicarDescarga(descarga(set(1)));
   datos = 0;
   etiquetas = [];
   offs = [on(EV.DATA, () => { datos++; }), on(EV.CONN, (e) => etiquetas.push(e.label))];
@@ -77,24 +82,24 @@ afterEach(() => {
 describe('auto-refresco · intervalo', () => {
   it('comprueba cada 5 minutos, no cada 60 s', async () => {
     expect(REFRESH_INTERVAL_S).toBe(300);
-    fetchAllSheets.mockResolvedValue(set(1));
+    descargarLibro.mockResolvedValue(descarga(set(1)));
     await vi.advanceTimersByTimeAsync(5 * MIN - 1000);
-    expect(fetchAllSheets).not.toHaveBeenCalled();
+    expect(descargarLibro).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1000);
-    expect(fetchAllSheets).toHaveBeenCalledTimes(1);
+    expect(descargarLibro).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(5 * MIN);
-    expect(fetchAllSheets).toHaveBeenCalledTimes(2);
+    expect(descargarLibro).toHaveBeenCalledTimes(2);
   });
 
   it('sin cambios no emite EV.DATA y la píldora lo dice', async () => {
-    fetchAllSheets.mockResolvedValue(set(1));
+    descargarLibro.mockResolvedValue(descarga(set(1)));
     await vi.advanceTimersByTimeAsync(5 * MIN);
     expect(datos).toBe(0);
     expect(etiquetas.at(-1)).toMatch(/sin cambios/);
   });
 
   it('con cambios y en reposo los aplica UNA vez y fija la huella de lo aplicado', async () => {
-    fetchAllSheets.mockResolvedValue(set(2));
+    descargarLibro.mockResolvedValue(descarga(set(2)));
     await vi.advanceTimersByTimeAsync(5 * MIN);
     expect(datos).toBe(1);
     expect(valor()).toBe(2);
@@ -103,43 +108,71 @@ describe('auto-refresco · intervalo', () => {
     expect(datos).toBe(1);
   });
 
-  it('si el usuario está trabajando al tocar, salta el ciclo (la lectura aún congela)', async () => {
-    fetchAllSheets.mockResolvedValue(set(1));
+  it('SIN Worker, si el usuario está trabajando al tocar, salta el ciclo (leer aquí congela)', async () => {
+    descargarLibro.mockResolvedValue(descarga(set(1)));
     await vi.advanceTimersByTimeAsync(5 * MIN - 1000);
     document.dispatchEvent(new Event('keydown'));
     await vi.advanceTimersByTimeAsync(1000);
-    expect(fetchAllSheets).not.toHaveBeenCalled();
+    expect(descargarLibro).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(5 * MIN);
-    expect(fetchAllSheets).toHaveBeenCalledTimes(1);
+    expect(descargarLibro).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('auto-refresco · con el libro leído en un Worker (P1)', () => {
+  it('descarga aunque el usuario esté trabajando, y aplica al quedar en reposo', async () => {
+    lecturaEnSegundoPlano.mockReturnValue(true);
+    descargarLibro.mockResolvedValue(descarga(set(2)));
+    await vi.advanceTimersByTimeAsync(5 * MIN - 1000);
+    document.dispatchEvent(new Event('keydown'));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(descargarLibro).toHaveBeenCalledTimes(1);
+    expect(datos).toBe(0);
+    expect(etiquetas.at(-1)).toMatch(/datos nuevos en espera/);
+    await vi.advanceTimersByTimeAsync(12 * 1000);
+    expect(datos).toBe(1);
+    expect(valor()).toBe(2);
+  });
+
+  it('si la descarga falla, conserva los datos y la píldora lo dice', async () => {
+    descargarLibro.mockRejectedValue(new Error('No se pudo leer el libro en segundo plano.'));
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(datos).toBe(0);
+    expect(valor()).toBe(1);
+    expect(etiquetas.at(-1)).toMatch(/sin actualizar/);
+    expect(store.refreshing).toBe(false);
+    descargarLibro.mockResolvedValue(descarga(set(3)));
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(datos).toBe(1); // se reintenta en el siguiente ciclo
   });
 });
 
 describe('auto-refresco · pestaña oculta', () => {
   it('oculta no descarga; al volver tras ≥ 5 min comprueba en ese momento', async () => {
-    fetchAllSheets.mockResolvedValue(set(1));
+    descargarLibro.mockResolvedValue(descarga(set(1)));
     visibilidad(true);
     await vi.advanceTimersByTimeAsync(20 * MIN);
-    expect(fetchAllSheets).not.toHaveBeenCalled();
+    expect(descargarLibro).not.toHaveBeenCalled();
     visibilidad(false);
     await vi.advanceTimersByTimeAsync(0);
-    expect(fetchAllSheets).toHaveBeenCalledTimes(1);
+    expect(descargarLibro).toHaveBeenCalledTimes(1);
   });
 
   it('al volver ANTES de que toque no adelanta la comprobación', async () => {
-    fetchAllSheets.mockResolvedValue(set(1));
+    descargarLibro.mockResolvedValue(descarga(set(1)));
     await vi.advanceTimersByTimeAsync(1 * MIN);
     visibilidad(true);
     await vi.advanceTimersByTimeAsync(1 * MIN);
     visibilidad(false);
     await vi.advanceTimersByTimeAsync(0);
-    expect(fetchAllSheets).not.toHaveBeenCalled();
+    expect(descargarLibro).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(3 * MIN);
-    expect(fetchAllSheets).toHaveBeenCalledTimes(1);
+    expect(descargarLibro).toHaveBeenCalledTimes(1);
   });
 
   it('lo pendiente no se aplica con la pestaña oculta, sino al volver', async () => {
     const el = campo();
-    fetchAllSheets.mockResolvedValue(set(2));
+    descargarLibro.mockResolvedValue(descarga(set(2)));
     await vi.advanceTimersByTimeAsync(5 * MIN);
     expect(datos).toBe(0);
     visibilidad(true);
@@ -155,11 +188,11 @@ describe('auto-refresco · pestaña oculta', () => {
 describe('auto-refresco · aplicar sólo en reposo', () => {
   it('si el usuario trabaja DURANTE la descarga, queda pendiente y se aplica al quedar en reposo (un solo EV.DATA)', async () => {
     let entregar;
-    fetchAllSheets.mockImplementation(() => new Promise((r) => { entregar = r; }));
+    descargarLibro.mockImplementation(() => new Promise((r) => { entregar = r; }));
     await vi.advanceTimersByTimeAsync(5 * MIN);
-    expect(fetchAllSheets).toHaveBeenCalledTimes(1);
+    expect(descargarLibro).toHaveBeenCalledTimes(1);
     document.dispatchEvent(new Event('click'));
-    entregar(set(2));
+    entregar(descarga(set(2)));
     await vi.advanceTimersByTimeAsync(0);
     expect(datos).toBe(0);
     expect(etiquetas.at(-1)).toMatch(/datos nuevos en espera/);
@@ -174,7 +207,7 @@ describe('auto-refresco · aplicar sólo en reposo', () => {
 
   it('un campo de texto con el foco lo retiene; al soltarlo se aplica', async () => {
     const el = campo('text');
-    fetchAllSheets.mockResolvedValue(set(2));
+    descargarLibro.mockResolvedValue(descarga(set(2)));
     await vi.advanceTimersByTimeAsync(5 * MIN);
     await vi.advanceTimersByTimeAsync(1 * MIN);
     expect(datos).toBe(0);
@@ -185,7 +218,7 @@ describe('auto-refresco · aplicar sólo en reposo', () => {
   });
 
   it('también retienen un textarea y un campo numérico; un desplegable NO (conserva el foco tras elegir)', async () => {
-    fetchAllSheets.mockResolvedValueOnce(set(2)).mockResolvedValueOnce(set(3)).mockResolvedValueOnce(set(4));
+    descargarLibro.mockResolvedValueOnce(descarga(set(2))).mockResolvedValueOnce(descarga(set(3))).mockResolvedValueOnce(descarga(set(4)));
     const ta = campo('textarea');
     await vi.advanceTimersByTimeAsync(5 * MIN + 10 * 1000); // ciclo de las 5:00 → pendiente
     expect(datos).toBe(0);
@@ -194,24 +227,24 @@ describe('auto-refresco · aplicar sólo en reposo', () => {
     expect(datos).toBe(1);
     const num = campo('number');
     await vi.advanceTimersByTimeAsync(5 * MIN); // ciclo de las 10:00 → pendiente
-    expect(fetchAllSheets).toHaveBeenCalledTimes(2);
+    expect(descargarLibro).toHaveBeenCalledTimes(2);
     expect(datos).toBe(1);
     num.blur();
     await vi.advanceTimersByTimeAsync(2000);
     expect(datos).toBe(2);
     campo('select');
     await vi.advanceTimersByTimeAsync(5 * MIN); // ciclo de las 15:00 → se aplica con el desplegable enfocado
-    expect(fetchAllSheets).toHaveBeenCalledTimes(3);
+    expect(descargarLibro).toHaveBeenCalledTimes(3);
     expect(datos).toBe(3);
     expect(valor()).toBe(4);
   });
 
   it('un pendiente más nuevo sustituye al anterior: se aplica sólo el último', async () => {
     const el = campo();
-    fetchAllSheets.mockResolvedValueOnce(set(2)).mockResolvedValueOnce(set(3));
+    descargarLibro.mockResolvedValueOnce(descarga(set(2))).mockResolvedValueOnce(descarga(set(3)));
     await vi.advanceTimersByTimeAsync(5 * MIN);
     await vi.advanceTimersByTimeAsync(5 * MIN);
-    expect(fetchAllSheets).toHaveBeenCalledTimes(2);
+    expect(descargarLibro).toHaveBeenCalledTimes(2);
     expect(datos).toBe(0);
     el.blur();
     await vi.advanceTimersByTimeAsync(2000);
@@ -221,7 +254,7 @@ describe('auto-refresco · aplicar sólo en reposo', () => {
 
   it('si la hoja vuelve a lo que ya está aplicado, el pendiente se descarta', async () => {
     const el = campo();
-    fetchAllSheets.mockResolvedValueOnce(set(2)).mockResolvedValueOnce(set(1));
+    descargarLibro.mockResolvedValueOnce(descarga(set(2))).mockResolvedValueOnce(descarga(set(1)));
     await vi.advanceTimersByTimeAsync(10 * MIN);
     expect(etiquetas.at(-1)).toMatch(/sin cambios/);
     el.blur();
@@ -234,7 +267,7 @@ describe('auto-refresco · aplicar sólo en reposo', () => {
   });
 
   it('un libro vacío no aplica nada ni deja la píldora diciendo «en espera»', async () => {
-    fetchAllSheets.mockResolvedValue({});
+    descargarLibro.mockResolvedValue(descarga({}));
     await vi.advanceTimersByTimeAsync(5 * MIN);
     expect(datos).toBe(0);
     expect(valor()).toBe(1);
@@ -243,7 +276,7 @@ describe('auto-refresco · aplicar sólo en reposo', () => {
 
   it('una descarga degradada (menos hojas) no aplica ni toca la huella', async () => {
     const huella = getLastFingerprint();
-    fetchAllSheets.mockResolvedValue({ 'Larvicultura M01': [{ Fecha: '01/09/2026', Tanque: 'T1', Valor: 7 }] });
+    descargarLibro.mockResolvedValue(descarga({ 'Larvicultura M01': [{ Fecha: '01/09/2026', Tanque: 'T1', Valor: 7 }] }));
     await vi.advanceTimersByTimeAsync(5 * MIN);
     expect(datos).toBe(0);
     expect(valor()).toBe(1);
@@ -253,7 +286,7 @@ describe('auto-refresco · aplicar sólo en reposo', () => {
 
 describe('auto-refresco · ⟳ (refrescoManual)', () => {
   it('con una descarga en curso no lanza otra', async () => {
-    fetchAllSheets.mockImplementation(() => new Promise(() => {}));
+    descargarLibro.mockImplementation(() => new Promise(() => {}));
     await vi.advanceTimersByTimeAsync(5 * MIN);
     expect(store.refreshing).toBe(true);
     expect(await refrescoManual()).toBeNull();
@@ -262,7 +295,7 @@ describe('auto-refresco · ⟳ (refrescoManual)', () => {
 
   it('descarta el pendiente, descarga YA aunque haya foco y reprograma el ciclo', async () => {
     const el = campo();
-    fetchAllSheets.mockResolvedValue(set(2));
+    descargarLibro.mockResolvedValue(descarga(set(2)));
     await vi.advanceTimersByTimeAsync(5 * MIN);
     expect(datos).toBe(0);
     connectSheets.mockResolvedValue(true);
@@ -275,21 +308,21 @@ describe('auto-refresco · ⟳ (refrescoManual)', () => {
     visibilidad(false); // volver a la pestaña reintenta lo pendiente: no debe quedar nada
     await vi.advanceTimersByTimeAsync(0);
     expect(datos).toBe(0); // el pendiente (set 2) se descartó: lo manual manda
-    const antes = fetchAllSheets.mock.calls.length;
+    const antes = descargarLibro.mock.calls.length;
     await vi.advanceTimersByTimeAsync(4 * MIN - 1000);
-    expect(fetchAllSheets.mock.calls.length).toBe(antes);
+    expect(descargarLibro.mock.calls.length).toBe(antes);
     await vi.advanceTimersByTimeAsync(1000);
-    expect(fetchAllSheets.mock.calls.length).toBe(antes + 1);
+    expect(descargarLibro.mock.calls.length).toBe(antes + 1);
   });
 
   it('mientras corre lo manual, el ciclo automático no descarga', async () => {
     let terminar;
     connectSheets.mockImplementation(() => new Promise((r) => { terminar = r; }));
-    fetchAllSheets.mockResolvedValue(set(1));
+    descargarLibro.mockResolvedValue(descarga(set(1)));
     await vi.advanceTimersByTimeAsync(4 * MIN);
     const p = refrescoManual();
     await vi.advanceTimersByTimeAsync(10 * MIN);
-    expect(fetchAllSheets).not.toHaveBeenCalled();
+    expect(descargarLibro).not.toHaveBeenCalled();
     terminar(true);
     await p;
     expect(store.refreshing).toBe(false);

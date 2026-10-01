@@ -218,7 +218,12 @@ function getXLSX() {
   return X;
 }
 
-async function fetchWorkbook(ids) {
+/** Opciones de lectura del libro. `dense: true` (P1, 2026-10-01): misma salida que sin él —lo fija
+ *  src/core/sheets.delta.test.js con un Excel real—, pero cada hoja se guarda en arrays y no en un
+ *  objeto por celda: menos memoria y una lectura bastante más rápida. */
+export const XLSX_LECTURA = { type: 'array', cellDates: true, dense: true };
+
+async function fetchWorkbook(ids, obtenerXLSX = getXLSX) {
   const realId = ids.type === 'real' ? ids.realId : null;
   if (!realId) return null;
   const url = `https://docs.google.com/spreadsheets/d/${realId}/export?format=xlsx&_cb=${Math.floor(Date.now() / 30000)}`;
@@ -227,14 +232,14 @@ async function fetchWorkbook(ids) {
   const resp = await fetchWithTimeout(url, { cache: 'no-store' }, XLSX_TIMEOUT_MS);
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
   const buf = await resp.arrayBuffer();
-  const XLSX = getXLSX();
-  const wb = XLSX.read(new Uint8Array(buf), { type: 'array', cellDates: true });
+  const XLSX = obtenerXLSX();
+  const wb = XLSX.read(new Uint8Array(buf), XLSX_LECTURA);
   return wb?.SheetNames?.length ? wb : null;
 }
 
-/** Convierte un workbook XLSX en el store de hojas { name: rows[] }. */
-function workbookToSheets(wb) {
-  const XLSX = getXLSX();
+/** Convierte un workbook XLSX en el store de hojas { name: rows[] }. `XLSX` es SheetJS
+ *  (window.XLSX aquí; en el Worker de lectura, el suyo). */
+export function workbookToSheets(wb, XLSX = getXLSX()) {
   const sheets = {};
   wb.SheetNames.forEach((name) => {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '', raw: false, dateNF: 'dd/mm/yyyy' });
@@ -471,23 +476,21 @@ export function applySheets(sheets) {
   return rows.length;
 }
 
-function commit(sheets, firstLoad) {
+function commit(d, firstLoad) {
   // No pisar un set bueno con uno degradado (p.ej. reconexión manual que cae al
   // fallback CSV y sólo trae 1 hoja). En la primera carga no hay con qué comparar.
-  if (!firstLoad && isDegraded(sheets)) return false;
+  if (!firstLoad && isDegraded(d.sheets)) return false;
 
   // Cachea la huella del set recién comprometido para sembrar el auto-refresco SIN
   // re-descargar el workbook completo en el arranque (antes boot() hacía una 2ª
   // descarga íntegra sólo para calcular el fingerprint inicial).
-  // Se calcula ANTES de applySheets: autoCalcMortalidad añade «Mortalidad» a las filas, y
-  // el auto-refresco calcula la suya sobre filas recién descargadas, sin ella. Calculada
-  // después, el primer refresco tras abrir nunca decía «sin cambios» y repintaba en balde.
-  const fp = dataFingerprint(sheets);
-
+  // La huella (d.fp) viene calculada de la descarga, ANTES de applySheets: autoCalcMortalidad
+  // añade «Mortalidad» a las filas, y el auto-refresco calcula la suya sobre filas recién
+  // descargadas, sin ella. Calculada después, el primer refresco tras abrir nunca decía
+  // «sin cambios» y repintaba en balde.
   // applySheets no muta el store si viene vacío → un set vacío conserva los datos
   // previos y aquí se reporta como error (la reconexión manual no pierde lo cargado).
-  if (!applySheets(sheets)) throw new Error('Sin datos en las hojas.');
-  _lastFingerprint = fp;
+  if (!aplicarDescarga(d)) throw new Error('Sin datos en las hojas.');
 
   store.connected = true;
   emit(EV.DATA, { firstLoad });
@@ -542,18 +545,114 @@ export function dataFingerprint(sheets) {
   return fp;
 }
 
-/** Descarga las hojas (XLSX-first, CSV fallback) y devuelve { name: rows }. */
-export async function fetchAllSheets() {
+/* ---------- lectura POR HOJAS (P1 del plan de carga y refresco, 2026-10-01) ----------
+   El libro se lee en un Web Worker (sheets.worker.js) para no congelar la pantalla. El Worker
+   calcula la huella de CADA hoja y sólo devuelve las que cambiaron respecto a lo APLICADO; aquí
+   se funden con las ya aplicadas en un set completo. La huella global sale de las de cada hoja,
+   en el mismo formato que dataFingerprint, y siempre sobre filas tal como llegan (antes de
+   autoCalcMortalidad). */
+
+/** Huella de cada hoja con filas: { nombre: 'nombre:filas:hash;' }. Unidas en orden, dan
+ *  exactamente dataFingerprint del set. */
+export function huellasPorHoja(sheets) {
+  const out = {};
+  for (const name in sheets) {
+    const rows = sheets[name];
+    if (rows?.length) out[name] = `${name}:${rows.length}:${hashRows(rows)};`;
+  }
+  return out;
+}
+
+/** Huella global a partir de las de cada hoja, en el orden del libro. */
+export function huellaDe(huellas, orden = Object.keys(huellas)) {
+  return orden.map((n) => huellas[n]).join('');
+}
+
+/** Qué mandar desde el Worker: el orden de las hojas, la huella de cada una y SÓLO las filas de
+ *  las que cambiaron respecto a `previas` (las huellas de lo aplicado). */
+export function planDelta(previas, sheets) {
+  const huellas = huellasPorHoja(sheets);
+  const orden = Object.keys(huellas);
+  const cambiadas = {};
+  for (const n of orden) if ((previas || {})[n] !== huellas[n]) cambiadas[n] = sheets[n];
+  return { orden, huellas, cambiadas };
+}
+
+/** Set completo a partir de lo aplicado y de un delta: cada hoja, nueva si cambió y la ya
+ *  aplicada si no. Una hoja que ni cambió ni está aplicada es un delta incoherente: error. */
+export function fundirDelta(aplicadas, { orden, cambiadas }) {
+  const out = {};
+  for (const n of orden) {
+    const rows = cambiadas[n] || (aplicadas || {})[n];
+    if (!rows) throw new Error('Delta del libro incoherente: falta la hoja «' + n + '».');
+    out[n] = rows;
+  }
+  return out;
+}
+
+/** { sheets, huellas, fp } de un set leído entero (camino sin Worker o CSV). */
+function descargaCompleta(sheets) {
+  const huellas = huellasPorHoja(sheets);
+  return { sheets, huellas, fp: huellaDe(huellas) };
+}
+
+// Lo último APLICADO, por hoja: contra eso compara el Worker y de ahí salen las hojas sin cambios.
+let _hojasAplicadas = {};
+let _huellasAplicadas = {};
+
+// Lector en segundo plano (el del Worker, sheets.lector.js). Lo registra main.js; sin él (pruebas,
+// navegador sin Worker) todo se lee aquí, como siempre.
+let _lector = null;
+export function setLectorLibro(lector) { _lector = lector; }
+/** ¿La próxima lectura irá en segundo plano (sin congelar la pantalla)? */
+export function lecturaEnSegundoPlano() {
+  if (!_lector || !_lector.disponible()) return false;
+  const ids = parseSheetsIds(activeUrl());
+  return !!ids && ids.type === 'real';
+}
+
+/** Descarga el libro y devuelve { sheets, huellas, fp } con el set COMPLETO. Con el Worker, sólo
+ *  viajan las hojas que cambiaron. Si el Worker no puede leer el XLSX, el CSV de siempre; si el
+ *  Worker no arranca, el camino de siempre (aquí). Si se CAE con datos ya cargados (p. ej. sin
+ *  memoria en un móvil), error: se conservan los datos y se reintenta en el siguiente ciclo, en
+ *  vez de leer aquí y congelar (o tumbar) la página. */
+export async function descargarLibro() {
   const ids = parseSheetsIds(activeUrl());
   if (!ids) throw new Error('URL de Google Sheets inválida.');
+  if (ids.type === 'real' && _lector && _lector.disponible()) {
+    const r = await _lector.leer({ realId: ids.realId, previas: _huellasAplicadas });
+    if (r.ok) return { sheets: fundirDelta(_hojasAplicadas, r), huellas: r.huellas, fp: huellaDe(r.huellas, r.orden) };
+    if (r.motivo === 'xlsx') return descargaCompleta(await fetchViaCsv(ids));
+    if ((r.motivo === 'caido' || r.motivo === 'tiempo') && store.connected) {
+      throw new Error('No se pudo leer el libro en segundo plano.');
+    }
+  }
+  return descargaCompleta(await fetchAllSheets());
+}
+
+/** Aplica una descarga al store y la registra como lo APLICADO (hojas, huellas y huella global).
+ *  Devuelve el nº de filas (0 = nada que aplicar: no toca nada). */
+export function aplicarDescarga(d) {
+  const n = applySheets(d.sheets);
+  if (!n) return 0;
+  _hojasAplicadas = d.sheets;
+  _huellasAplicadas = d.huellas;
+  _lastFingerprint = d.fp;
+  return n;
+}
+
+/** El libro por el export XLSX: { name: rows } o null si hay que ir al CSV. Lo usan
+ *  fetchAllSheets (aquí) y el Worker de lectura (sheets.worker.js): UNA sola implementación
+ *  de la descarga, los reintentos y la lectura. `obtenerXLSX` da SheetJS. */
+export async function fetchXlsxSheets(ids, obtenerXLSX = getXLSX) {
   // XLSX-first CON REINTENTOS. El XLSX trae TODAS las hojas en una sola petición; una caída
   // TRANSITORIA (timeout/red/5xx) NO debe degradar a la primera, así que reintentamos con
   // backoff. El fallback CSV es ROBUSTO: enumera TODAS las hojas por /htmlview (no requiere
   // publicar el documento) y las baja por gviz hoja a hoja.
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const wb = await fetchWorkbook(ids);
-      if (wb) return workbookToSheets(wb);
+      const wb = await fetchWorkbook(ids, obtenerXLSX);
+      if (wb) return workbookToSheets(wb, obtenerXLSX());
       break; // wb nulo (sin hojas) no es transitorio: pasa directo al CSV
     } catch (e) {
       // 401/403: el endpoint de exportación exige autenticación (documento compartido sólo
@@ -562,7 +661,14 @@ export async function fetchAllSheets() {
       if (attempt < 2) await new Promise((r) => setTimeout(r, 600 * 2 ** attempt));
     }
   }
-  return fetchViaCsv(ids);
+  return null;
+}
+
+/** Descarga las hojas (XLSX-first, CSV fallback) y devuelve { name: rows }. */
+export async function fetchAllSheets() {
+  const ids = parseSheetsIds(activeUrl());
+  if (!ids) throw new Error('URL de Google Sheets inválida.');
+  return (await fetchXlsxSheets(ids)) || fetchViaCsv(ids);
 }
 
 /** ¿La descarga recién obtenida trae MENOS hojas que el set bueno ya cargado?
@@ -581,8 +687,7 @@ export async function connectSheets() {
   emit(EV.CONN, { state: 'connecting', label: 'Descargando datos…' });
   try {
     const firstLoad = !store.connected;
-    const sheets = await fetchAllSheets();
-    commit(sheets, firstLoad);
+    commit(await descargarLibro(), firstLoad);
     const n = store.sheetNames.length;
     const ts = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
     // Señal de carga DEGRADADA: si tras conectar solo hay 1 hoja, casi siempre es

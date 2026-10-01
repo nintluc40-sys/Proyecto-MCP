@@ -4,8 +4,9 @@
      no descarga (nadie mira y gasta datos); al volver, comprueba en ese momento si ya
      tocaba.
    - Usa fingerprint para evitar re-render si no hubo cambios.
-   - No DESCARGA mientras el usuario interactúa o hay un overlay abierto: la lectura del
-     Excel todavía congela la pantalla.
+   - Con el libro leído en un Worker (P1) descarga aunque el usuario esté trabajando: no
+     congela. Sin Worker (navegador sin él, o roto), no DESCARGA mientras el usuario
+     interactúa o hay un overlay abierto: leer el Excel aquí congela la pantalla.
    - Los datos nuevos se APLICAN sólo en reposo (sin interacción reciente, sin overlay y sin
      un campo de texto con el foco). Hasta entonces quedan PENDIENTES —uno solo: el más
      nuevo sustituye al anterior— y se reintenta cada APPLY_RETRY_MS.
@@ -16,8 +17,7 @@
 import { REFRESH_INTERVAL_S } from '../config.js';
 import { store, emit, EV } from './store.js';
 import {
-  fetchAllSheets, connectSheets, dataFingerprint, isDegraded, applySheets,
-  getLastFingerprint, setLastFingerprint,
+  descargarLibro, aplicarDescarga, lecturaEnSegundoPlano, connectSheets, isDegraded, getLastFingerprint,
 } from './sheets.js';
 
 const INTERVAL_MS = REFRESH_INTERVAL_S * 1000;
@@ -26,7 +26,7 @@ const APPLY_RETRY_MS = 2000;
 let timer = null;
 let applyTimer = null;
 let interactingUntil = 0;
-let pending = null;  // { sheets, fp, ts }: datos nuevos ya descargados que esperan al reposo
+let pending = null;  // { d, ts }: descarga nueva (d = { sheets, huellas, fp }) que espera al reposo
 let started = false;
 
 /** Marca interacción del usuario por `ms` (pausa el refresco). */
@@ -71,12 +71,12 @@ function tryApply() {
     applyTimer = setTimeout(tryApply, APPLY_RETRY_MS);
     return false;
   }
-  const { sheets, fp, ts } = pending;
+  const { d, ts } = pending;
   pending = null;
-  if (!applySheets(sheets)) return false;
-  // La huella se fija al APLICAR: el siguiente ciclo se compara con lo que de verdad está en
-  // pantalla, no con un pendiente que quizá nunca llegó a aplicarse.
-  setLastFingerprint(fp);
+  // aplicarDescarga fija la huella (y las de cada hoja) al APLICAR: el siguiente ciclo se
+  // compara con lo que de verdad está en pantalla, no con un pendiente que quizá nunca llegó
+  // a aplicarse.
+  if (!aplicarDescarga(d)) return false;
   emit(EV.DATA, { firstLoad: false });
   emit(EV.CONN, { state: 'connected', label: etiqueta(ts) });
   return true;
@@ -86,29 +86,29 @@ async function check() {
   store.refreshing = true;
   emit(EV.CONN, { state: 'refreshing', label: 'Actualizando…' });
   try {
-    const sheets = await fetchAllSheets();
+    const d = await descargarLibro();
     const ts = hora();
     // Descarga degradada (menos hojas que el set bueno ya cargado): conserva los
     // datos previos y NO actualiza la huella, para reintentar el set completo en el
     // próximo ciclo. Sin esto, un refresco transitorio dejaba la UI en 1 sola hoja
     // hasta que el usuario refrescaba a mano.
-    if (isDegraded(sheets)) {
+    if (isDegraded(d.sheets)) {
       emit(EV.CONN, { state: 'connected', label: etiqueta(ts) });
       return;
     }
-    const fp = dataFingerprint(sheets);
-    if (fp === getLastFingerprint()) {
+    if (d.fp === getLastFingerprint()) {
       pending = null; // lo que está en pantalla ya es lo último: un pendiente anterior sobra
       clearTimeout(applyTimer);
       applyTimer = null;
       emit(EV.CONN, { state: 'connected', label: etiqueta(ts, ' · sin cambios') });
     } else {
-      pending = { sheets, fp, ts };
+      pending = { d, ts };
       // (Un set vacío no se aplica ni queda pendiente: tryApply lo suelta y no hay nada «en espera».)
       if (!tryApply() && pending) emit(EV.CONN, { state: 'connected', label: etiqueta(ts, ' · datos nuevos en espera') });
     }
   } catch (_) {
-    // silencioso: conserva los datos previos
+    // Conserva los datos previos y lo dice (antes la píldora se quedaba en «Actualizando…»).
+    emit(EV.CONN, { state: 'connected', label: `${store.sheetNames.length} hojas · sin actualizar (se reintenta)` });
   } finally {
     store.refreshing = false;
     schedule();
@@ -118,7 +118,7 @@ async function check() {
 function tick() {
   timer = null;
   if (document.hidden) return; // el bucle se para; onVisible() lo reanuda
-  if (!store.connected || store.refreshing || isBusy()) { schedule(); return; }
+  if (!store.connected || store.refreshing || (isBusy() && !lecturaEnSegundoPlano())) { schedule(); return; }
   check();
 }
 

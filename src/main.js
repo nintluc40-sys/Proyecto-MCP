@@ -16,7 +16,8 @@ import './views/maduracion/maduracion.css';
 
 import { mountShell, showLoader } from './ui/shell.js';
 import { registerView } from './ui/router.js';
-import { connectSheets } from './core/sheets.js';
+import { connectSheets, setLectorLibro } from './core/sheets.js';
+import { lectorWorker } from './core/sheets.lector.js';
 import { startAutoRefresh } from './core/refresh.js';
 import { esc } from './core/format.js';
 
@@ -71,6 +72,10 @@ async function boot() {
   });
 
   mountShell(app);
+
+  // El libro se lee en un Web Worker (P1, 2026-10-01): la pantalla no se congela al leerlo.
+  // Sin Worker, o si no arranca, se lee aquí como siempre (core/sheets.lector.js).
+  setLectorLibro(lectorWorker);
 
   // Conexión inicial
   showLoader(true);

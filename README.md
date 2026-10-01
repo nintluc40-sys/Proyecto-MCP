@@ -460,6 +460,13 @@ Dos consecuencias que conviene tener presentes al desplegar:
 1. `connectSheets()` descarga el libro **completo** vía `export?format=xlsx`
    (1 petición, todas las hojas). Si falla, cae a **CSV por `gid`** con
    descubrimiento por scraping del HTML publicado, con reintento y backoff.
+   **El XLSX se descarga y se lee en un Web Worker** (`core/sheets.worker.js`, clásico, con
+   `importScripts` del SheetJS de `public/vendor`; lectura `dense`): la pantalla no se
+   congela (medido el 2026-10-01 con el libro real: 21 s → 0,9 s al abrir y 12 s → 0 en cada
+   refresco). El Worker calcula la huella de cada hoja y sólo devuelve las que cambiaron
+   respecto a lo aplicado (`planDelta` / `fundirDelta` en `core/sheets.js`). Si no arranca o
+   no carga SheetJS, se lee en el hilo principal como antes (`core/sheets.lector.js`); si se
+   cae con datos ya cargados, se conservan y se reintenta en el siguiente ciclo.
 2. Cada fila se etiqueta con `_SheetOrigin` (Larvicultura, Control_Tanque,
    Maduracion, `Lab_Algas`, `Registro_Supervision`, `Biomol`, `Microbiología`…) y
    se sella el `Módulo` desde el nombre de pestaña.
@@ -472,8 +479,8 @@ Dos consecuencias que conviene tener presentes al desplegar:
    re-renderizan reactivamente.
 4. `startAutoRefresh()` comprueba cada **5 min** (`REFRESH_INTERVAL_S`) comparando un
    *fingerprint* (no re-renderiza si no hubo cambios). Con la pestaña oculta no descarga; al
-   volver comprueba si ya tocaba. No descarga mientras el usuario interactúa (modales
-   abiertos, dropdowns) y los datos nuevos se **aplican sólo en reposo**: sin interacción
+   volver comprueba si ya tocaba. Con el Worker descarga aunque el usuario esté
+   trabajando (sin Worker, no descarga mientras interactúa: leer aquí congela) y los datos nuevos se **aplican sólo en reposo**: sin interacción
    reciente, sin modal y sin un campo de texto con el foco; hasta entonces quedan pendientes
    («datos nuevos en espera» en la píldora). Registros no se repinta nunca por un refresco
    (`repintaConDatos: false`). ⟳ y la píldora refrescan a mano y nunca lanzan dos descargas
