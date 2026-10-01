@@ -5953,7 +5953,12 @@ function _madGridDelDia(ficha, fecha, sala){
   };
 }
 // Merge de una fila recolectada en la lista persistida (clave por ficha).
-function _madMergeRow(list, ficha, data){
+/* 2026-09-30 (noche, usuario, punto 5 · A) · `opts.vaciar` (sólo Tanques, y sólo al guardar la MISMA grilla que se pintó):
+   una celda que el usuario VACIÓ —vacía en la grilla y con valor en lo guardado— se guarda vaciada. Antes una celda vacía
+   nunca pisaba lo guardado: tras un autoguardado, borrar una cifra mal tecleada no la quitaba, y se enviaba igual (y el
+   GAS tampoco vacía una celda de la hoja con un envío vacío). Las de CONTEO pasan a 0 («ninguna»: así corrigen también un
+   parte ya enviado); pesos y observaciones, a vacío. Ver _madTqVaciadas y saveMadTanquesGrid. */
+function _madMergeRow(list, ficha, data, opts){
   let ex;
   if(ficha==="salas")        ex = list.find(r=> r&&r.data&&r.data.fecha===data.fecha&&r.data.sala===data.sala);
   /* ⚠⚠ 2026-09-17 · TANQUES CASA TAMBIÉN POR «parte». La mortalidad se recoge cinco veces al día y cada
@@ -5965,6 +5970,8 @@ function _madMergeRow(list, ficha, data){
   if(ex){
     const merged = Object.assign({}, ex.data);
     Object.keys(data).forEach(k=>{ if(data[k]!==""&&data[k]!=null) merged[k]=data[k]; });
+    const vaciadas = (opts && opts.vaciar && ficha === "tanques") ? _madTqVaciadas(ex.data, data) : [];
+    vaciadas.forEach(function(c){ merged[c.k] = c.type === "int" ? 0 : ""; });
     /* 2026-09-30 (usuarios: «más pendientes de los de la sala que acabo de dar») · vuelve a PENDIENTE sólo si CAMBIA algo.
        El autoguardado de la navegación guarda otra vez el parte ABIERTO tal cual está, y si el «🔄 Sincronizar» ya lo había
        enviado, marcarlo pendiente sin cambios lo volvía a contar y a mandar en el ☁️ de la sala siguiente. Se compara por
@@ -5973,9 +5980,18 @@ function _madMergeRow(list, ficha, data){
     const cambia = Object.keys(data).some(k=> k!=="cerrado" && data[k]!=="" && data[k]!=null && String(data[k])!==String(ex.data[k]==null ? "" : ex.data[k]));
     ex.data = merged;
     if(cambia){ ex.synced=false; ex.ts=Date.now(); }
+    if(vaciadas.length){ ex.synced = false; ex.ts = Date.now(); }   // vaciar una celda también es un cambio: la corrección sale
   } else {
     list.unshift({ id: Date.now().toString(36)+Math.random().toString(36).slice(2,6), ts:Date.now(), synced:false, syncedAt:null, data });
   }
+}
+/** Las columnas de la grilla de Tanques que el usuario VACIÓ: vacías en la grilla y con un valor guardado distinto del que
+ *  deja vaciarlas (0 en las de conteo, vacío en el resto): un 0 guardado vuelto a vaciar no es otro cambio. */
+function _madTqVaciadas(guardado, data){
+  return _TANQ_GRID_COLS.filter(function(c){
+    const g = guardado[c.k];
+    return data[c.k] === "" && g !== "" && g != null && String(g) !== (c.type === "int" ? "0" : "");
+  });
 }
 // Persiste (silencioso, sin re-render) la grilla activa usando el contexto con que
 // se renderizó. Se llama ANTES de cambiar de sala/fecha o de pestaña.
@@ -14238,7 +14254,7 @@ function renderMadTanques(){
         <div class="sa-btns">
           <button class="btn" type="button" id="tq-vivos-btn" onclick="madTanquesVerVivos()" title="Lee el libro y muestra cuántos animales tiene vivos cada tanque">🔄 Ver vivos</button>
           <span id="tq-vivos-nota" style="font-size:11px;align-self:center"></span>
-          <button class="btn bd" type="button" onclick="clearMadTanquesGrid()" title="Borrar registros de Tanques de esta sala y fecha">🗑 Borrar sala</button>
+          <button class="btn bd" type="button" onclick="clearMadTanquesGrid()" title="Borrar lo NO enviado de Tanques de esta sala y fecha (lo ya enviado se conserva)">🗑 Borrar sala</button>
           <button class="btn bpdf" type="button" onclick="madGridPDF('tanques')" title="PDF de esta sala y fecha">📄 PDF</button>
           ${madRecBtn}
           <button class="btn bs" type="button" onclick="saveMadTanquesGrid()">💾 Guardar local</button>
@@ -14753,12 +14769,37 @@ function _madTanquesPartesHTML(list, fecha, sala){
     + '<span>📋 Partes del ' + escapeHtml(fecha) + ' en ' + escapeHtml(sala) + ': ' + txt + '</span>' + btn + '</div>';
 }
 
+/* 2026-09-30 (noche, usuario, punto 5 · A) · ¿SE GUARDA LA GRILLA QUE SE PINTÓ? Sólo ésa puede VACIAR lo guardado: lo que
+   se pintó del parte abierto y ya no está en la grilla es lo que el usuario borró. Llevar lo tecleado a otro día
+   (_madGridLlevar, con otra fecha) no vacía lo que ese día tenía. Y un tanque del parte abierto que se dejó vacío DEL
+   TODO —la cifra estaba en el tanque equivocado— no lo recoge `_collectTanquesGrid` (no tiene dato): se añade vacío a
+   `rows` para que la fusión lo vacíe también. Devuelve si es la grilla pintada. */
+function _madTqVaciadosEnteros(rows, sala, fechaOverride){
+  const r = _madRendered.tanques;
+  const fechaEl = document.getElementById("mad-tanques-fecha");
+  const fecha = isValidDate(fechaOverride) ? fechaOverride : ((fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today());
+  if(!r || r.fecha !== fecha || r.sala !== sala) return false;
+  const list = loadMad("tanques");
+  const abierto = _madParteAbierto(list, fecha, sala);
+  const fp = document.getElementById("fp-tanques");
+  if(abierto && fp) list.forEach(function(x){
+    const d = x && x.data;
+    if(!d || d.fecha !== fecha || d.sala !== sala || d.cerrado || String(d.parte || "") !== String(abierto)) return;
+    if(rows.some(function(y){ return String(y.tanque) === String(d.tanque); })) return;
+    if(!fp.querySelector('[name="tg_' + d.tanque + '_machos_muertos"]')) return;   // un tanque que la grilla no pinta
+    const vacio = { fecha: fecha, sala: sala, tanque: d.tanque };
+    _TANQ_GRID_COLS.forEach(function(c){ vacio[c.k] = ""; });
+    rows.push(vacio);
+  });
+  return true;
+}
 function saveMadTanquesGrid(opts){
   opts = opts || {};
   const silent = !!opts.silent;
   const sala = opts.salaOverride || _madTanquesSala;
   if(!sala){ if(!silent) toast("Selecciona una sala","warn"); return 0; }
   const rows = _collectTanquesGrid(opts.salaOverride, opts.fechaOverride);
+  const vaciar = _madTqVaciadosEnteros(rows, sala, opts.fechaOverride);   // 2026-09-30 (noche, punto 5 · A) · ver abajo
   if(rows.length === 0){ if(!silent) toast("No hay datos para guardar","warn"); return 0; }
   const list = loadMad("tanques");
   /* `silent` es el auto-guardado: actualiza el parte abierto. Un guardado explícito abre el siguiente.
@@ -14784,7 +14825,7 @@ function saveMadTanquesGrid(opts){
     data.hora = hora;
     // Cerrar el parte al guardar explícitamente es lo que hace que la ronda siguiente empiece limpia.
     if(explicito) data.cerrado = 1;
-    _madMergeRow(list, "tanques", data);
+    _madMergeRow(list, "tanques", data, { vaciar: vaciar });   // en la grilla PINTADA, una celda vaciada se guarda vaciada
     saved++;
   });
   const _ok = saveMadList("tanques", list);
@@ -14933,20 +14974,37 @@ async function syncMadTanquesGrid(){
   updateDots(); updateSyncUI();
 }
 
+/* 2026-09-30 (noche, usuario, punto 5 · B) · BORRA SÓLO LO QUE NO SE ENVIÓ NUNCA. Antes borraba del dispositivo también lo
+   ya enviado y el contador de partes volvía a P1: volver a teclear la ronda la mandaba como un parte NUEVO (otro número y
+   otra hora = otra llave) y la hoja la tenía dos veces, que el libro resta dos veces. Lo enviado alguna vez (`synced` o
+   `syncedAt`) se conserva y, si su parte seguía abierto, se CIERRA: la grilla queda limpia y la numeración sigue. Para
+   corregir un parte enviado está «✏️ Reabrir el parte». */
 function clearMadTanquesGrid(){
   const sala = _madTanquesSala;
   if(!sala){ toast("Selecciona una sala","warn"); return; }
   const fechaEl = document.getElementById("mad-tanques-fecha");
   const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
   const list = loadMad("tanques");
-  const matching = list.filter(r => r && r.data && r.data.fecha===fecha && r.data.sala===sala);
-  if(matching.length === 0){ toast("No hay registros de Tanques para "+sala+" ("+fecha+")","info",2500); return; }
-  if(!confirm("¿Borrar los "+matching.length+" registro(s) de Tanques de "+sala+" del "+fecha+"?\nNo se eliminan las filas ya enviadas a Google Sheets.")) return;
+  const delDia = list.filter(r => r && r.data && r.data.fecha===fecha && r.data.sala===sala);
+  const enviado = (r) => !!(r.synced || r.syncedAt);
+  const matching = delDia.filter(r => !enviado(r));
+  const abiertosEnviados = delDia.filter(r => enviado(r) && !r.data.cerrado);
+  const conservados = delDia.length - matching.length;
+  if(matching.length === 0 && abiertosEnviados.length === 0){
+    if(!delDia.length){ toast("No hay registros de Tanques para "+sala+" ("+fecha+")","info",2500); return; }
+    toast("Lo de Tanques de "+sala+" ("+fecha+") ya se envió y se conserva. Para corregir un parte: «✏️ Reabrir el parte».","info",5000);
+    return;
+  }
+  if(matching.length && !confirm("¿Borrar los "+matching.length+" registro(s) SIN ENVIAR de Tanques de "+sala+" del "+fecha+"?"
+    + (conservados ? "\nLo ya enviado ("+conservados+") se conserva: la numeración de los partes sigue y para corregirlo está «✏️ Reabrir el parte»."
+                   : "\nNo se eliminan las filas ya enviadas a Google Sheets."))) return;
+  abiertosEnviados.forEach(r => { r.data.cerrado = 1; });
   const ids = new Set(matching.map(r => r.id));
   saveMadList("tanques", list.filter(r => !ids.has(r.id)));
   renderMadTanques();
   updateDots(); updateSyncUI();
-  toast("🗑 "+matching.length+" registro(s) de Tanques borrados","ok",3000);
+  toast(matching.length ? "🗑 "+matching.length+" registro(s) de Tanques borrados" + (conservados ? " (lo enviado se conserva)" : "")
+                        : "Parte enviado cerrado: la grilla queda limpia y lo enviado se conserva.", "ok", 3500);
 }
 
 // ── PDF horizontal con tabla de registros (todos los visibles) ──
