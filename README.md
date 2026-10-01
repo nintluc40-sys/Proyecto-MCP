@@ -246,6 +246,18 @@ app lo perdía. Desde ese día, en las siete fichas y en las grillas de Salas y 
   llevada es un **parte de ese día** —los partes cerrados son otras rondas y no cuentan como
   conflicto— y conserva la hora con que se abrió.
 
+🔴 **Y la fecha que puso la APP en las grillas se renueva sola (2026-09-30, decisión del usuario).**
+Salas y Tanques se pintan con la fecha que ya tiene su campo (un repintado no pierde el día elegido),
+y con la app abierta de un día para otro la ronda de la mañana acababa guardada con la fecha de ayer.
+Desde ese día, la fecha que puso la app —no la que alguien eligió— pasa a **hoy** al repintar la
+grilla o al volver a la app, **desde las 02:00**: la lectura de las 0:00 de Salas, que se teclea
+pasada la medianoche, sigue yendo al día que termina; por lo mismo, si la app se **abre o se
+recarga** entre las 00:00 y las 02:00, la grilla arranca en el día que termina. No se mueve nada a
+medio teclear; y en Tanques, un parte que quedó **abierto** del día anterior (el 🔄 lo envía sin
+cerrarlo) se **cierra** al renovar —lo no enviado sigue pendiente, con su fecha y su hora—, para que
+la ronda de la mañana no se escriba encima de la de la noche. Una fecha elegida a mano se respeta, y
+la grilla dice **«⚠ no es hoy»** mientras su fecha no sea la de hoy.
+
 En **🛢️ Tanques**, los pesos ♂ y ♀ **bajan por su columna**: al teclear uno se copia a las filas
 de abajo que tengan animales vivos. Las observaciones sanitarias y operativas bajan igual (a todas
 las filas), y la salinidad y la temperatura de la Revisión de nauplios de Inf. Supervisor también.
