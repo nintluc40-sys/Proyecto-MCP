@@ -34,6 +34,9 @@ export const COLORES_CAMION = ['#0f766e', '#b45309', '#6d28d9', '#be123c', '#036
  *  de `COLORES_CAMION` siguen usándose, pero para distinguir a los camiones DENTRO
  *  del popup de cada parada, que es donde sus datos sí se diferencian. */
 export const RUTA_COLOR = '#0f766e';
+// Opacidad de la línea de la ruta: la de siempre, y la atenuada mientras el filtro «Paradas» oculta alguna.
+const RUTA_OPACIDAD = 0.75;
+const RUTA_OPACIDAD_FILTRADA = 0.3;
 
 const n1 = (v) => (v === null || v === undefined || Number.isNaN(v) ? '—' : Number(v).toFixed(1));
 
@@ -208,9 +211,9 @@ export async function montarMapa(el, camiones) {
      una polilínea por camión las superponía exactamente. Ver la nota de arriba. */
   const paradas = paradasDelMapa(conPuntos);
   const linea = paradas.map((p) => [p.lat, p.lon]);
-  if (linea.length > 1) {
-    L.polyline(linea, { color: RUTA_COLOR, weight: 3, opacity: 0.75, dashArray: '6 5' }).addTo(map);
-  }
+  const ruta = linea.length > 1
+    ? L.polyline(linea, { color: RUTA_COLOR, weight: 3, opacity: RUTA_OPACIDAD, dashArray: '6 5' }).addTo(map)
+    : null;
   /* Se guardan marcador y parada juntos para poder RE-ACOTAR los popups sin volver a
      dibujar nada: el filtro por camión no mueve la ruta, así que redibujar sería
      tirar el mapa y montarlo otra vez para el mismo trazo — y en pantalla completa
@@ -243,6 +246,26 @@ export async function montarMapa(el, camiones) {
       marcas.forEach(({ mk, p }) => {
         try { mk.setPopupContent(paradaHtml(p, placa || null)); } catch (_) { /* desmontado */ }
       });
+    },
+    /** Filtro «Paradas» (2026-09-30, usuario): enseña sólo las paradas de `revs` (números de
+     *  parada; `null` = todas) y encuadra con zoom las que quedan. NO redibuja: los marcadores
+     *  se quitan y se vuelven a poner, y la RUTA se queda entera —es el camino real; unir sólo
+     *  las elegidas trazaría tramos que el camión no hizo— pero atenuada mientras se filtra. */
+    paradas(revs) {
+      const quedan = revs ? new Set(revs.map(Number)) : null;
+      const vistas = [];
+      marcas.forEach(({ mk, p }) => {
+        const ver = !quedan || quedan.has(p.revision);
+        try {
+          if (ver) { if (!map.hasLayer(mk)) mk.addTo(map); vistas.push([p.lat, p.lon]); }
+          else if (map.hasLayer(mk)) map.removeLayer(mk);
+        } catch (_) { /* desmontado */ }
+      });
+      try {
+        if (ruta) ruta.setStyle({ opacity: quedan ? RUTA_OPACIDAD_FILTRADA : RUTA_OPACIDAD });
+        if (vistas.length) map.fitBounds(vistas, { padding: [40, 40], maxZoom: quedan ? 16 : 15 });
+      } catch (_) { /* desmontado */ }
+      return vistas.length;
     },
     destroy() { try { map.remove(); } catch (_) { /* ya desmontado */ } },
   };

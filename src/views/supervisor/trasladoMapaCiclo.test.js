@@ -21,8 +21,13 @@ const destruidos = [];
 /* Lo que el mapa recibió por `filtrar()`: es la señal de que el filtro se aplicó EN
    SITIO y no repintando, que es la regla que sostiene el modo pantalla completa. */
 const filtrados = [];
+/* Lo que recibió `paradas()` (filtro «Paradas», 2026-09-30): también en sitio, sin repintar. */
+const acotadas = [];
 
-vi.mock('./trasladoMapa.js', () => ({
+// Se conserva el módulo REAL (la vista pinta la lista de paradas con `paradasDelMapa`) y sólo
+// se sustituye el montaje, que es lo que dibuja con Leaflet.
+vi.mock('./trasladoMapa.js', async (original) => ({
+  ...(await original()),
   COLORES_CAMION: ['#0f766e', '#b45309'],
   paradasSinGps: () => 0,
   montarMapa: async () => {
@@ -31,6 +36,7 @@ vi.mock('./trasladoMapa.js', () => ({
     return {
       invalidar() {},
       filtrar(placa) { filtrados.push(placa); },
+      paradas(revs) { acotadas.push(revs); },
       destroy() { destruidos.push(id); },
     };
   },
@@ -88,6 +94,7 @@ beforeEach(() => {
   montados.length = 0;
   destruidos.length = 0;
   filtrados.length = 0;
+  acotadas.length = 0;
   document.body.className = '';
 });
 
@@ -285,50 +292,86 @@ describe('Traslado · el filtro de camión DENTRO del mapa', () => {
     expect(dentro, 'los dos filtros ofrecen camiones distintos').toEqual(fuera);
   });
 
-  it('🔴 FUERA de pantalla completa repinta, como el de arriba', async () => {
+  /* 2026-09-30 (usuario): «el filtro de camión del recorrido debe afectar SÓLO al mapa». Hasta ese día era
+     el mismo filtro de la vista y, fuera de pantalla completa, la repintaba entera: con un solo camión la
+     página se acortaba y la pantalla saltaba por encima del mapa. Las pruebas de aquí decían lo contrario
+     («repinta, como el de arriba», «al salir se pone al día», «los dos filtros dicen lo mismo»). */
+  it('🔴 acota el mapa EN SITIO y no repinta: KPI, tarjetas y el filtro de arriba no se mueven', async () => {
     const root = await conVista();
     expect(montados).toHaveLength(1);
     elegirEnMapa(root, 'PBX-0392');
     await esperar();
-    expect(montados, 'no repintó').toHaveLength(2);
-    expect(root.querySelectorAll('.sv-tras-card'), 'el filtro no llegó a las tarjetas').toHaveLength(1);
+    expect(montados, 'repintó la vista (y con ella saltaba la pantalla)').toHaveLength(1);
+    expect(destruidos, 'destruyó el mapa que se estaba mirando').toHaveLength(0);
+    expect(filtrados, 'no se acotó el mapa en sitio').toEqual(['PBX-0392']);
+    expect(root.querySelectorAll('.sv-tras-card'), 'el filtro del mapa llegó a las tarjetas').toHaveLength(2);
+    expect(selFuera(root).value, 'el filtro del mapa movió el de arriba').toBe('');
+    elegirEnMapa(root, '');
+    expect(filtrados, '«Todos» devuelve los popups a todos los camiones').toEqual(['PBX-0392', null]);
   });
 
-  it('🔴 EN pantalla completa acota el mapa SIN repintar: no expulsa', async () => {
-    /* Es la regla que sostiene todo el selector interno. Si repintara, el `innerHTML`
-       se llevaría el nodo del mapa y el navegador sacaría al usuario del modo — justo
-       lo que este control existe para evitar. */
+  it('🔴 tampoco cambia A ESCONDIDAS el filtro de la vista: el siguiente repintado sigue con todos', async () => {
+    // Si moviera el estado (`_placaSola`) sin repintar, la vista saltaría a ese camión al repintar por otra causa.
+    const root = await conVista();
+    elegirEnMapa(root, 'PBX-0392');
+    root.querySelector('[data-tras-repaint]').click();   // un repintado cualquiera
+    await esperar();
+    expect(root.querySelectorAll('.sv-tras-card'), 'la vista quedó filtrada por el selector del mapa').toHaveLength(2);
+    expect(selFuera(root).value).toBe('');
+  });
+
+  it('🔴 EN pantalla completa tampoco repinta: no expulsa', async () => {
     const root = await conVista();
     root.querySelector('[data-tras-full]').click();
-    expect(montados).toHaveLength(1);
-
     elegirEnMapa(root, 'PBX-0392');
     await esperar();
     expect(montados, 'repintó y habría expulsado de pantalla completa').toHaveLength(1);
-    expect(destruidos, 'destruyó el mapa que se estaba mirando').toHaveLength(0);
-    expect(filtrados, 'no se acotó el mapa en sitio').toEqual(['PBX-0392']);
-    expect(root.querySelector('.sv-tmap-blk').classList.contains('is-full'),
-      'se salió de pantalla completa').toBe(true);
+    expect(root.querySelector('.sv-tmap-blk').classList.contains('is-full'), 'se salió de pantalla completa').toBe(true);
+    root.querySelector('[data-tras-full]').click();   // salir: no hay nada que poner al día
+    await esperar();
+    expect(montados, 'al salir repintó').toHaveLength(1);
+    expect(root.querySelectorAll('.sv-tras-card')).toHaveLength(2);
+  });
+});
+
+describe('Traslado · el filtro «Paradas» del mapa (2026-09-30, usuario)', () => {
+  const conVista = async () => {
+    const c2 = ctx();
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    root.addEventListener('click', (e) => { if (e.target.closest('[data-nav]')) montarVista(root, c2); });
+    montarVista(root, c2);
+    await esperar();
+    return root;
+  };
+  const casillas = (root) => [...root.querySelectorAll('[data-tras-paradas] [data-tras-par]')];
+  const marcar = (c, on) => { c.checked = on; c.dispatchEvent(new Event('change', { bubbles: true })); };
+  const rotulo = (root) => root.querySelector('[data-tras-par-n]').textContent;
+
+  it('una casilla por parada con coordenadas, todas marcadas al abrir', async () => {
+    const root = await conVista();
+    expect(casillas(root).map((c) => [c.value, c.checked])).toEqual([['1', true], ['2', true]]);
+    expect(rotulo(root)).toBe('Todas (2)');
+    expect(root.querySelector('[data-tras-paradas]').textContent).toContain('Peaje 1');
   });
 
-  it('🔴 al SALIR de pantalla completa, el resto de la vista se pone al día', async () => {
+  it('🔴 desmarcar acota el mapa a las que quedan, EN SITIO y sin tocar la vista', async () => {
     const root = await conVista();
-    const b = root.querySelector('[data-tras-full]');
-    b.click();
-    elegirEnMapa(root, 'PBX-0392');
+    marcar(casillas(root)[0], false);
+    expect(acotadas, 'no se acotó el mapa').toEqual([[2]]);
+    expect(rotulo(root)).toBe('1 de 2');
     await esperar();
-    expect(root.querySelectorAll('.sv-tras-card'), 'no debía repintar todavía').toHaveLength(2);
-
-    b.click();                       // salir
-    await esperar();
-    expect(root.querySelectorAll('.sv-tras-card'), 'la vista no se puso al día al salir').toHaveLength(1);
+    expect(montados, 'repintó la vista').toHaveLength(1);
+    expect(root.querySelectorAll('.sv-tras-card')).toHaveLength(2);
   });
 
-  it('🔴 los dos filtros nunca dicen cosas distintas', async () => {
+  it('«Ninguna» y «Todas»: todas otra vez es `null` (sin filtro, encuadre del viaje)', async () => {
     const root = await conVista();
-    root.querySelector('[data-tras-full]').click();
-    elegirEnMapa(root, 'PBX-0392');
-    await esperar();
-    expect(selFuera(root).value, 'el filtro de arriba se quedó atrás').toBe('PBX-0392');
+    root.querySelector('[data-tras-par-ninguna]').click();
+    expect(rotulo(root)).toBe('0 de 2');
+    root.querySelector('[data-tras-par-todas]').click();
+    expect(acotadas).toEqual([[], null]);
+    expect(rotulo(root)).toBe('Todas (2)');
+    expect(casillas(root).every((c) => c.checked)).toBe(true);
   });
 });

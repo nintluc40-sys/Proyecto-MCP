@@ -25,7 +25,7 @@ import {
   deltasDe, resumenPorTina, valoresDe, escalaDe, nivelDe, tinaMasInestable,
   tiempoDe, fmtMinutos, CADENCIA_MAX_MIN, observacionesDelViaje, viajesDe,
 } from './traslado.data.js';
-import { montarMapa, paradasSinGps, COLORES_CAMION } from './trasladoMapa.js';
+import { montarMapa, paradasSinGps, paradasDelMapa, COLORES_CAMION } from './trasladoMapa.js';
 import { buildTrasladoPdfDoc } from './trasladoPdf.js';
 import { printFichaDocs } from './fichaPdf.js';
 
@@ -286,6 +286,22 @@ function tablaObs(camiones) {
   }).join('');
 }
 
+/* ── Filtro «Paradas» del mapa (2026-09-30, usuario) ────────────
+   Un desplegable con una casilla por parada CON coordenadas: las mismas que pinta el
+   mapa (`paradasDelMapa`). Una parada sin GPS no tiene nada que enseñar ni encuadrar
+   —ya lo avisa el pie del mapa—, y con menos de dos no hay nada que escoger. */
+function paradasFiltroHTML(paradas) {
+  if (paradas.length < 2) return '';
+  return `<details class="sv-tmap-par" data-tras-paradas>
+            <summary class="sv-modal-select sv-tmap-sel sv-tmap-par-s" title="Escoge qué paradas ver en el mapa (sólo el mapa)">Paradas: <b data-tras-par-n>Todas (${paradas.length})</b></summary>
+            <div class="sv-tmap-par-pop">
+              <div class="sv-tmap-par-acc"><button type="button" data-tras-par-todas>Todas</button><button type="button" data-tras-par-ninguna>Ninguna</button></div>
+              ${paradas.map((p) => `<label class="sv-tmap-par-op"><input type="checkbox" value="${esc(String(p.revision))}" checked data-tras-par>
+                <b>${esc(String(p.revision))}</b> · ${esc(p.lugar || '—')}${p.hora ? ' · ' + esc(p.hora) : ''}</label>`).join('')}
+            </div>
+          </details>`;
+}
+
 /* ── Vista ──────────────────────────────────────────────────── */
 export function renderTraslado(ctx, mod) {
   const corrida = ctx.vState ? ctx.vState.corrida : null;
@@ -448,15 +464,19 @@ export function renderTraslado(ctx, mod) {
             ${v.camiones.map((c, i) => `<span class="sv-tmap-leg">
               <i style="background:${COLORES_CAMION[i % COLORES_CAMION.length]}"></i>${esc(c.placa)}</span>`).join('')}
           </div>
-          ${/* El MISMO filtro que el de arriba, repetido aquí porque en pantalla
-               completa el de fuera queda fuera de alcance. Los dos se mantienen
-               sincronizados; nunca pueden decir cosas distintas. */''}
+          ${/* Filtros del MAPA (2026-09-30, usuario: «deben afectar sólo al mapa»). Hasta ese día
+               el de camión era el MISMO filtro que el de arriba y repintaba la vista entera; al
+               acortarse la página con un solo camión, la pantalla saltaba por encima del mapa.
+               Ahora acota sólo los popups (`filtrar`) y «Paradas» oculta las no elegidas y encuadra
+               las que quedan (`paradas`): ninguno repinta, así que tampoco expulsan de la pantalla
+               completa. El de arriba sigue filtrando la vista. */''}
           <label class="sv-tmap-sel-l" for="sv-tmap-placa">Camión</label>
           <select id="sv-tmap-placa" class="sv-modal-select sv-tmap-sel" data-tras-placa-mapa
-            title="Acota las mediciones de los popups a un camión">
+            title="Acota las mediciones de los popups a un camión (sólo el mapa)">
             <option value="">Todos (${v.placas.length})</option>
             ${v.placas.map((pl) => `<option value="${esc(pl)}">${esc(pl)}</option>`).join('')}
           </select>
+          ${paradasFiltroHTML(paradasDelMapa(v.camiones.filter((c) => c.puntos.length)))}
           <button type="button" class="sv-tmap-full" data-tras-full
             aria-pressed="false" title="Ver el mapa a pantalla completa (Esc para salir)">⛶ Pantalla completa</button>
         </div>
@@ -571,50 +591,40 @@ export function renderTraslado(ctx, mod) {
 
             const enPantallaCompleta = () => blk.classList.contains('is-full') || _fsElem() === blk;
 
-            /* ── El filtro de camión DENTRO del mapa ──────────────────────
-               Es el MISMO filtro de la vista, no uno paralelo: mueve `_placaSola` y
-               deja el selector de arriba en el mismo valor, así que los dos no pueden
-               discrepar.
-
-               ⚠⚠ En pantalla completa NO se repinta. Repintar rehace el `innerHTML`,
-               se lleva por delante el nodo del mapa y el navegador expulsa del modo
-               — justo lo que este selector existe para evitar. Se acota el mapa en
-               sitio (`filtrar`) y se anota que el resto de la vista está pendiente;
-               al salir se repinta y los KPI y las tarjetas se ponen al día, que es
-               cuando vuelven a verse. Fuera de pantalla completa se comporta igual
-               que el selector de arriba: repinta al momento. */
+            /* ── Los filtros DEL MAPA: Camión y Paradas (2026-09-30, usuario) ──────
+               Actúan sólo sobre el mapa ya montado y NUNCA repintan: no tocan el filtro
+               de arriba (`_placaSola`) ni la vista. Hasta ese día el de camión era el
+               mismo filtro de la vista y repintaba —con un solo camión la página se
+               acortaba y la pantalla saltaba por encima del mapa—, salvo en pantalla
+               completa, donde ya se acotaba en sitio para no expulsar del modo. Ahora
+               es así siempre, y por eso tampoco hay nada que poner al día al salir. */
             const selMapa = blk.querySelector('[data-tras-placa-mapa]');
-            let pendienteRepintar = false;
-            if (selMapa) {
-              // happy-dom ignora `<option selected>`; y en el navegador esto además
-              // sobrevive a que el filtro venga puesto de un repintado anterior.
-              selMapa.value = _placaSola || '';
-              selMapa.addEventListener('change', () => {
-                _placaSola = selMapa.value || null;
-                const fuera = root.querySelector('[data-tras-placa-sel]');
-                if (fuera) fuera.value = _placaSola || '';
-                if (enPantallaCompleta()) {
-                  if (m.filtrar) m.filtrar(_placaSola);
-                  pendienteRepintar = true;
-                  return;
-                }
-                const testigo = root.querySelector('[data-tras-repaint]');
-                if (testigo) testigo.click();
+            if (selMapa) selMapa.addEventListener('change', () => { if (m.filtrar) m.filtrar(selMapa.value || null); });
+            const par = blk.querySelector('[data-tras-paradas]');
+            if (par) {
+              const casillas = [...par.querySelectorAll('[data-tras-par]')];
+              const rotulo = par.querySelector('[data-tras-par-n]');
+              const aplicar = () => {
+                const marcadas = casillas.filter((c) => c.checked).map((c) => Number(c.value));
+                const todas = marcadas.length === casillas.length;
+                if (rotulo) rotulo.textContent = todas ? `Todas (${casillas.length})` : `${marcadas.length} de ${casillas.length}`;
+                if (m.paradas) m.paradas(todas ? null : marcadas);
+              };
+              par.addEventListener('change', (ev) => { if (ev.target.closest('[data-tras-par]')) aplicar(); });
+              par.addEventListener('click', (ev) => {
+                const b = ev.target.closest('[data-tras-par-todas], [data-tras-par-ninguna]');
+                if (!b) return;
+                casillas.forEach((c) => { c.checked = b.hasAttribute('data-tras-par-todas'); });
+                aplicar();
               });
+              // El desplegable tapa parte del mapa: se cierra al pulsar fuera de él.
+              document.addEventListener('click', (ev) => { if (par.open && !par.contains(ev.target)) par.open = false; }, _sig);
             }
 
             const pintarEstado = () => {
               const on = enPantallaCompleta();
               bFull.setAttribute('aria-pressed', String(on));
               bFull.textContent = on ? '⛶ Salir de pantalla completa' : '⛶ Pantalla completa';
-              /* Al SALIR, si el filtro cambió mientras estábamos dentro, el resto de
-                 la vista sigue hablando del camión viejo: se repinta ahora, que es
-                 cuando los KPI y las tarjetas vuelven a estar a la vista. */
-              if (!on && pendienteRepintar) {
-                pendienteRepintar = false;
-                const testigo = root.querySelector('[data-tras-repaint]');
-                if (testigo) { testigo.click(); return; }
-              }
               // El tamaño cambia DESPUÉS de que el navegador aplique el modo.
               // ⚠ Se comprueba que exista: la vista no puede dar por hecho la forma del
               //   objeto que devuelve `montarMapa` — el doble de las pruebas no lo traía

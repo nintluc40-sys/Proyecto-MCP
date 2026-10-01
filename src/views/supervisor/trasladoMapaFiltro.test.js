@@ -18,16 +18,18 @@
    ============================================================ */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-/** Doble mínimo de Leaflet: sólo los cinco constructores que usa el módulo. */
+/** Doble mínimo de Leaflet: sólo los constructores que usa el módulo. El mapa lleva la cuenta de
+ *  sus capas y del último encuadre (filtro «Paradas», 2026-09-30). */
 const marcadores = [];
 const polilineas = [];
+let mapa = null;
 
 function marcadorFalso(latlng, opts) {
   const m = {
     latlng,
     opts,
     popup: null,
-    addTo() { return m; },
+    addTo(mp) { mp.capas.add(m); return m; },
     bindPopup(html) { m.popup = html; return m; },
     setPopupContent(html) { m.popup = html; return m; },
   };
@@ -38,12 +40,17 @@ function marcadorFalso(latlng, opts) {
 vi.mock('leaflet/dist/leaflet.css', () => ({}));
 vi.mock('leaflet', () => ({
   default: {
-    map: () => ({
-      fitBounds() {}, invalidateSize() {}, remove() {},
-    }),
+    map: () => {
+      mapa = {
+        capas: new Set(), encuadres: [],
+        fitBounds(b, o) { mapa.encuadres.push({ b, o }); }, invalidateSize() {}, remove() {},
+        hasLayer(c) { return mapa.capas.has(c); }, removeLayer(c) { mapa.capas.delete(c); },
+      };
+      return mapa;
+    },
     tileLayer: () => ({ addTo() { return this; } }),
     polyline: (linea, opts) => {
-      const pl = { linea, opts, addTo() { return pl; } };
+      const pl = { linea, opts, addTo() { return pl; }, setStyle(s) { Object.assign(pl.opts, s); return pl; } };
       polilineas.push(pl);
       return pl;
     },
@@ -133,5 +140,49 @@ describe('Traslado · el mapa montado de verdad', () => {
     const m = await montarMapa(el, [camion('A', [])]);
     expect(m).toBeNull();
     expect(el.textContent).toContain('Ninguna parada llegó con coordenadas');
+  });
+});
+
+describe('Traslado · el filtro «Paradas» sobre el mapa montado (2026-09-30, usuario)', () => {
+  const tresParadas = () => ([
+    camion('GSA-1147', [parada(1, -2.21, -80.98, 7.4), parada(2, -2.25, -80.94, 7.0), parada(3, -2.30, -80.90, 6.8)]),
+  ]);
+
+  it('🔴 enseña sólo las elegidas y encuadra con zoom SÓLO esas', async () => {
+    const m = await montarMapa(contenedor(), tresParadas());
+    const n = m.paradas([2, 3]);
+    expect(n).toBe(2);
+    expect(marcadores.map((mk) => mapa.hasLayer(mk)), 'la parada 1 seguía en el mapa').toEqual([false, true, true]);
+    const ultimo = mapa.encuadres[mapa.encuadres.length - 1];
+    expect(ultimo.b, 'el encuadre no es el de las elegidas').toEqual([[-2.25, -80.94], [-2.30, -80.90]]);
+    expect(ultimo.o.maxZoom, 'sin un zoom mayor que el del viaje no se «contemplan»').toBeGreaterThan(15);
+  });
+
+  it('🔴 la ruta se queda ENTERA pero atenuada, y nada se redibuja', async () => {
+    const m = await montarMapa(contenedor(), tresParadas());
+    const opacidad = polilineas[0].opts.opacity;
+    m.paradas([1]);
+    expect(polilineas, 'se dibujó otra ruta (sólo entre las elegidas)').toHaveLength(1);
+    expect(polilineas[0].linea, 'la ruta dejó de ser el recorrido completo').toHaveLength(3);
+    expect(polilineas[0].opts.opacity).toBeLessThan(opacidad);
+    expect(marcadores, 'volvió a crear los marcadores').toHaveLength(3);
+  });
+
+  it('🔴 `paradas(null)` lo devuelve todo: marcadores, ruta con su opacidad y el encuadre del viaje', async () => {
+    const m = await montarMapa(contenedor(), tresParadas());
+    const opacidad = polilineas[0].opts.opacity;
+    m.paradas([2]);
+    m.paradas(null);
+    expect(marcadores.every((mk) => mapa.hasLayer(mk)), 'alguna parada no volvió').toBe(true);
+    expect(polilineas[0].opts.opacity).toBe(opacidad);
+    expect(mapa.encuadres[mapa.encuadres.length - 1].b).toHaveLength(3);
+  });
+
+  it('sin ninguna elegida quedan 0 paradas y no se encuadra el vacío', async () => {
+    const m = await montarMapa(contenedor(), tresParadas());
+    const antes = mapa.encuadres.length;
+    expect(m.paradas([])).toBe(0);
+    expect(marcadores.some((mk) => mapa.hasLayer(mk))).toBe(false);
+    expect(mapa.encuadres, 'encuadró sin puntos').toHaveLength(antes);
   });
 });
