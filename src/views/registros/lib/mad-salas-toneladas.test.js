@@ -40,9 +40,13 @@ import { join } from 'node:path';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
-const EXPORTAR = ['renderMadSalas', '_collectSalasGrid', 'buildMadPayload', 'loadMad', 'today',
+const EXPORTAR = ['renderMadSalas', '_collectSalasGrid', 'buildMadPayload', 'loadMad', 'today', '_madGridDiaDeLaApp',
   'madSalaToneladasDef', 'MAD_SALA_OPTS'];
 const H = {};
+/* 2026-09-30 (noche) · el día en que la app ABRE la grilla: hoy, y antes de las 02:00 el que termina (`_madGridDiaDeLaApp`).
+   Lo sembrado para «el día de la grilla» va a ESE día: con H.today() la prueba fallaría si corre entre las 00:00 y las 02:00
+   (en la CI, que va en UTC, un push de las 19:00 a las 21:00 de Ecuador). */
+const HOY = () => H._madGridDiaDeLaApp();
 
 beforeAll(async () => {
   if (typeof globalThis.localStorage === 'undefined') {
@@ -156,7 +160,7 @@ describe('Maduración · Salas · Toneladas · se guarda lo que hay en la CELDA'
      se nota semanas después, cuando toda la serie de la Sala 2 lleva el volumen viejo. */
   it('🔴 al repintar, lo GUARDADO manda sobre el catálogo', () => {
     localStorage.setItem('larv4_mad_salas', JSON.stringify([
-      { data: { fecha: H.today(), sala: 'Sala 2', estado: 'Producción', toneladas: 18.5 }, synced: false },
+      { data: { fecha: HOY(), sala: 'Sala 2', estado: 'Producción', toneladas: 18.5 }, synced: false },
     ]));
     H.renderMadSalas();
     expect(ton('Sala 2').value).toBe('18.5');        // lo suyo, no el 21 del catálogo
@@ -166,7 +170,7 @@ describe('Maduración · Salas · Toneladas · se guarda lo que hay en la CELDA'
   it('🔴 …incluso si lo guardado es CERO, que es un dato y no un hueco', () => {
     // Una sala vaciada para desinfección lleva 0 t. Si el defecto se colara, diría 21.
     localStorage.setItem('larv4_mad_salas', JSON.stringify([
-      { data: { fecha: H.today(), sala: 'Sala 2', estado: 'Desinfección', toneladas: 0 }, synced: false },
+      { data: { fecha: HOY(), sala: 'Sala 2', estado: 'Desinfección', toneladas: 0 }, synced: false },
     ]));
     H.renderMadSalas();
     expect(ton('Sala 2').value).toBe('0');
@@ -175,7 +179,7 @@ describe('Maduración · Salas · Toneladas · se guarda lo que hay en la CELDA'
   it('un día viejo sin la columna vuelve a pintar el defecto, no un vacío', () => {
     // Las filas anteriores al 2026-09-15 no tienen `toneladas`: la celda parte del catálogo.
     localStorage.setItem('larv4_mad_salas', JSON.stringify([
-      { data: { fecha: H.today(), sala: 'Sala 4', estado: 'Producción' }, synced: true },
+      { data: { fecha: HOY(), sala: 'Sala 4', estado: 'Producción' }, synced: true },
     ]));
     H.renderMadSalas();
     expect(ton('Sala 4').value).toBe('14');

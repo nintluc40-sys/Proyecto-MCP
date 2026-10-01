@@ -24,11 +24,15 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderMadTanques', 'madTanquesSalaChange', '_collectTanquesGrid', 'buildMadPayload',
   'madTqObsBaja', 'madTqObsLista', 'madTqObsTexto', 'MAD_TQ_OBS_SANITARIAS', 'MAD_TQ_OBS_OPERATIVAS',
-  'MAD_TANQUES_POR_SALA', 'today',
+  'MAD_TANQUES_POR_SALA', 'today', '_madGridDiaDeLaApp',
   'saveMadTanquesGrid', 'loadMad', 'saveMadList', '_madParteSiguiente', '_madParteAbierto',   // parte de mortalidad
   // R2 (2026-09-17) · el portón del sello y reabrir el último parte
   'syncMadTanquesGrid', 'syncAll', 'flushSyncQueue', '_madHojaPideGasNuevo', 'madTanquesReabrirParte', '_gasVersionLocal', 'MAD_MOD'];
 const H = {};
+/* 2026-09-30 (noche) · el día en que la app ABRE la grilla: hoy, y antes de las 02:00 el que termina (`_madGridDiaDeLaApp`).
+   Lo sembrado para «el día de la grilla» va a ESE día: con H.today() la prueba fallaría si corre entre las 00:00 y las 02:00
+   (en la CI, que va en UTC, un push de las 19:00 a las 21:00 de Ecuador). */
+const HOY = () => H._madGridDiaDeLaApp();
 const envios = [];
 const avisos = [];
 let respuestaVer = null;
@@ -331,15 +335,15 @@ describe('Tanques · cada ronda es un PARTE', () => {
   });
 
   it('🔴 y el parte SIGUIENTE se cuenta por (fecha, sala): el día es la suma de sus rondas', () => {
-    expect(H._madParteSiguiente(guardado(), H.today(), SALA), 'sin nada guardado, el primero').toBe(1);
+    expect(H._madParteSiguiente(guardado(), HOY(), SALA), 'sin nada guardado, el primero').toBe(1);
     poner(7, 'machos_muertos', 1); H.saveMadTanquesGrid();
     poner(8, 'machos_muertos', 1); H.saveMadTanquesGrid();
-    expect(H._madParteSiguiente(guardado(), H.today(), SALA)).toBe(3);
+    expect(H._madParteSiguiente(guardado(), HOY(), SALA)).toBe(3);
     // Tras un guardado EXPLÍCITO no queda ninguno abierto: eso es lo que deja la grilla limpia.
-    expect(H._madParteAbierto(guardado(), H.today(), SALA)).toBe('');
+    expect(H._madParteAbierto(guardado(), HOY(), SALA)).toBe('');
     poner(9, 'machos_muertos', 1);
     H.saveMadTanquesGrid({ silent: true, noRender: true });
-    expect(H._madParteAbierto(guardado(), H.today(), SALA), 'el auto-guardado abre el 3').toBe(3);
+    expect(H._madParteAbierto(guardado(), HOY(), SALA), 'el auto-guardado abre el 3').toBe(3);
   });
 
   it('el fixture ejerce algo: las cuatro columnas de mortalidad van en el parte, y las cópulas pueden ir vacías', () => {
@@ -374,7 +378,7 @@ describe('Tanques · el parte se cuenta por SALA, no sólo por fecha', () => {
     irASala('Sala 5');
     poner(7, 'machos_muertos', 1); H.saveMadTanquesGrid();
     poner(7, 'machos_muertos', 2); H.saveMadTanquesGrid();
-    expect(H._madParteSiguiente(guardado(), H.today(), 'Sala 5'), 'la Sala 5 va por dos').toBe(3);
+    expect(H._madParteSiguiente(guardado(), HOY(), 'Sala 5'), 'la Sala 5 va por dos').toBe(3);
 
     irASala('Sala 1');
     poner(1, 'machos_muertos', 5); H.saveMadTanquesGrid();

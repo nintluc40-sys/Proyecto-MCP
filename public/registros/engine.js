@@ -5849,6 +5849,75 @@ function saveMadList(ficha, list){
 // ── Maduración · estado "grilla sin guardar" + commit/recuperación ───────
 let _madGridDirty = false;                          // grilla activa con datos AÚN sin guardar
 const _madRendered = { salas:null, tanques:null };  // {sala,fecha} con que se renderizó cada grilla
+/* 2026-09-30 (usuario) · LA FECHA QUE PUSO LA APP SE RENUEVA SOLA. La grilla se pinta con la fecha que YA tiene su campo
+   (un repintado no pierde el día elegido), y con la app abierta de un día para otro la ronda de la mañana del 30-09 de
+   Sala 2 y Sala 3 se guardó como del 29-09. Ahora la fecha que puso la APP —no la que eligió alguien— pasa a hoy al
+   repintar o al volver a la app, DESDE LAS 02:00: la lectura de las 0:00 de Salas, tecleada pasada la medianoche, es del
+   día que termina (así están las filas reales) y la de las 2:00 ya es del nuevo. Nunca con algo a medio teclear. Una
+   fecha elegida a mano se respeta, y la grilla dice «⚠ no es hoy» siempre que su fecha no sea la de hoy.
+   2026-09-30 (noche, usuario) · en Tanques, el parte que quedó ABIERTO en ese día YA NO retiene la grilla: el 🔄 global
+   lo envía sin cerrarlo, y a la mañana siguiente la grilla seguía en ayer pintando sus cifras; la ronda de la mañana
+   tecleada encima iba al parte de ayer con su misma llave y en la hoja SOBRESCRIBÍA la de la noche. Al renovar, ese parte
+   se CIERRA en el dispositivo (lo no enviado sigue pendiente, con su fecha y su hora) y la grilla pasa a hoy.
+   2026-09-30 (noche, usuario) · y AL ABRIR O RECARGAR la app entre las 00:00 y las 02:00 la grilla arranca en el día que
+   TERMINA, como si ya estuviera abierta (con la marca, y a las 02:00 pasa sola a hoy): arrancaba en el día nuevo y la
+   lectura de las 0:00 de Salas, tecleada tras recargar, iba a la fila del día siguiente. */
+const _MAD_GRID_HORA_CAMBIO = 2;
+const _madGridFechaAuto = { salas:null, tanques:null };   // la fecha que puso la app en cada grilla; null = la eligió alguien
+/** El día que pone la app en una grilla: hoy, y antes de las 02:00 el que termina. */
+function _madGridDiaDeLaApp(){
+  const n = new Date();
+  if(n.getHours() >= _MAD_GRID_HORA_CAMBIO) return today();
+  const d = new Date(n.getFullYear(), n.getMonth(), n.getDate() - 1);
+  return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
+}
+/** ¿La fecha `campo` de la grilla `ficha` es la que puso la app y ya toca pasarla a hoy? */
+function _madGridFechaCaduca(ficha, campo){
+  return !!campo && campo < today() && campo === _madGridFechaAuto[ficha] && new Date().getHours() >= _MAD_GRID_HORA_CAMBIO
+    && !_madGridDirty;
+}
+/** La fecha con que se pinta la grilla: la de su campo; y la de la app (`_madGridDiaDeLaApp`) si no hay campo o si la que
+ *  puso la app caducó (en Tanques, cerrando antes los partes que quedaron abiertos en ese día en la sala `sala`). */
+function _madGridFechaVigente(ficha, fechaEl, sala){
+  const campo = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : "";
+  if(!campo || _madGridFechaCaduca(ficha, campo)){
+    if(campo && ficha === "tanques" && sala) _madCerrarPartesDe(campo, sala);
+    const dia = _madGridDiaDeLaApp();
+    _madGridFechaAuto[ficha] = dia; return dia;
+  }
+  return campo;
+}
+/** Cierra EN EL DISPOSITIVO los partes abiertos de (fecha, sala): una ronda de un día ya pasado no sigue «en curso». Lo no
+ *  enviado sigue pendiente, con su fecha y su hora (`cerrado` no viaja a la hoja ni cambia la llave). */
+function _madCerrarPartesDe(fecha, sala){
+  const list = loadMad("tanques");
+  let n = 0;
+  list.forEach(function(r){ const d = r && r.data; if(d && d.fecha === fecha && d.sala === sala && !d.cerrado){ d.cerrado = 1; n++; } });
+  if(n) saveMadList("tanques", list);
+}
+/** «⚠ no es hoy» junto al campo de fecha de la grilla, cuando su fecha no es la de hoy. */
+function _madGridNoEsHoyHTML(ficha, fecha){
+  return fecha === today() ? "" : '<span id="mad-' + ficha + '-noeshoy" title="La fecha de esta grilla no es la de hoy: lo que se guarde irá a ese día"'
+    + ' style="font-size:11px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:1px 6px;margin-left:6px;white-space:nowrap">⚠ no es hoy</span>';
+}
+/** Pone o quita la marca junto al campo SIN repintar la grilla (lo tecleado en ella no se toca). */
+function _madGridMarcar(ficha){
+  const el = document.getElementById("mad-" + ficha + "-fecha");
+  if(!el) return;
+  const vieja = document.getElementById("mad-" + ficha + "-noeshoy");
+  if(vieja) vieja.remove();
+  if(isValidDate(el.value)) el.insertAdjacentHTML("afterend", _madGridNoEsHoyHTML(ficha, el.value));
+}
+/** Al VOLVER a la app: la grilla a la vista con la fecha de la app caducada (y nada a medio teclear) se repinta en hoy; si
+ *  no toca renovarla, al menos dice si su fecha ya no es la de hoy. */
+function _madGridRenovarAlVolver(){
+  if(document.visibilityState !== "visible" || !isMadMod(curMod) || (curTab !== "salas" && curTab !== "tanques")) return;
+  const el = document.getElementById("mad-" + curTab + "-fecha");
+  if(!el) return;
+  if(_madGridFechaCaduca(curTab, el.value)){ if(curTab === "salas") renderMadSalas(); else renderMadTanques(); }
+  else _madGridMarcar(curTab);
+}
+try{ document.addEventListener("visibilitychange", _madGridRenovarAlVolver); }catch(_){}
 function _madDirty(ev){
   // Solo celdas de la grilla; ignora los selectores Sala/Fecha (viven en .meta).
   if(ev && ev.target && ev.target.closest && ev.target.closest(".meta")) return;
@@ -13617,7 +13686,7 @@ function renderMadSalas(){
   // #3: la fecha la gobierna el input (antes la vista usaba siempre today() pero
   // el guardado tomaba el input → disonancia). Ahora coinciden.
   const _fechaEl = document.getElementById("mad-salas-fecha");
-  const todayStr = (_fechaEl && isValidDate(_fechaEl.value)) ? _fechaEl.value : today();
+  const todayStr = _madGridFechaVigente("salas", _fechaEl, "");   // 2026-09-30 · la de la app, renovada desde las 02:00
   const madRec = loadMadRecovery();
   const madRecBtn = (madRec && madRec.ficha === "salas")
     ? `<button class="btn brec" type="button" onclick="recoverMadGrid()" title="Recuperar autoguardado de ${escapeHtml(new Date(madRec.ts).toLocaleString("es-EC",{hour:"2-digit",minute:"2-digit"}))}">↩ Recuperar (${escapeHtml(new Date(madRec.ts).toLocaleString("es-EC",{hour:"2-digit",minute:"2-digit"}))})</button>`
@@ -13685,7 +13754,7 @@ function renderMadSalas(){
     </div>
     <div class="fc-b">
       <div class="meta" style="margin-bottom:8px">
-        <div class="mf"><label>Fecha</label><input type="date" id="mad-salas-fecha" value="${todayStr}" onchange="madSalasFechaChange()"></div>
+        <div class="mf"><label>Fecha</label><input type="date" id="mad-salas-fecha" value="${todayStr}" onchange="madSalasFechaChange()">${_madGridNoEsHoyHTML("salas", todayStr)}</div>
       </div>
       <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#065f46;display:flex;align-items:center;gap:8px">
         <span style="font-size:16px">ℹ️</span>
@@ -14073,7 +14142,7 @@ function renderMadTanques(){
   const list = loadMad("tanques");
   const sala = _madTanquesSala;
   const fechaEl = document.getElementById("mad-tanques-fecha");
-  const fecha = (fechaEl && isValidDate(fechaEl.value)) ? fechaEl.value : today();
+  const fecha = _madGridFechaVigente("tanques", fechaEl, sala);   // 2026-09-30 · la de la app, renovada desde las 02:00
   const madRec = loadMadRecovery();
   const madRecBtn = (madRec && madRec.ficha === "tanques")
     ? `<button class="btn brec" type="button" onclick="recoverMadGrid()" title="Recuperar autoguardado de ${escapeHtml(new Date(madRec.ts).toLocaleString("es-EC",{hour:"2-digit",minute:"2-digit"}))}">↩ Recuperar (${escapeHtml(new Date(madRec.ts).toLocaleString("es-EC",{hour:"2-digit",minute:"2-digit"}))})</button>`
@@ -14084,7 +14153,7 @@ function renderMadTanques(){
       <option value="">— Selecciona —</option>${_madSalaOpts(sala)}
     </select></div>`;
   const fechaInp = `<div class="mf"><label>Fecha</label>
-    <input type="date" id="mad-tanques-fecha" value="${escapeHtml(fecha)}" onchange="madTanquesFechaChange()"></div>`;
+    <input type="date" id="mad-tanques-fecha" value="${escapeHtml(fecha)}" onchange="madTanquesFechaChange()">${_madGridNoEsHoyHTML("tanques", fecha)}</div>`;
 
   if(!sala){
     fp.innerHTML = `<div class="fc">
@@ -14390,6 +14459,9 @@ function madTanquesSalaChange(){
 function madSalasFechaChange(){   _madGridFechaChange("salas", renderMadSalas); }
 function madTanquesFechaChange(){ _madGridFechaChange("tanques", renderMadTanques); }
 function _madGridFechaChange(ficha, pintar){
+  // 2026-09-30 · una fecha ELEGIDA deja de ser la de la app (se respeta al día siguiente); elegir hoy la deja automática.
+  const _el = document.getElementById("mad-" + ficha + "-fecha");
+  _madGridFechaAuto[ficha] = (_el && _el.value === today()) ? today() : null;
   const llevado = _madGridLlevar(ficha);
   if(!llevado) _madCommitActive();
   pintar();

@@ -23,8 +23,12 @@ import { join } from 'node:path';
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderMadSalas', '_madSalasPintaEstado', '_collectSalasGrid', 'MAD_SALA_OPTS',
-  'MAD_EST_DESINF', 'MAD_EST_DESINF_AGRUP', 'MAD_EST_PROD', 'MAD_TANQUES_POR_SALA', 'MAD_RAS_OPTS', 'today'];
+  'MAD_EST_DESINF', 'MAD_EST_DESINF_AGRUP', 'MAD_EST_PROD', 'MAD_TANQUES_POR_SALA', 'MAD_RAS_OPTS', 'today', '_madGridDiaDeLaApp'];
 const H = {};
+/* 2026-09-30 (noche) · el día en que la app ABRE la grilla: hoy, y antes de las 02:00 el que termina (`_madGridDiaDeLaApp`).
+   Lo sembrado para «el día de la grilla» va a ESE día: con H.today() la prueba fallaría si corre entre las 00:00 y las 02:00
+   (en la CI, que va en UTC, un push de las 19:00 a las 21:00 de Ecuador). */
+const HOY = () => H._madGridDiaDeLaApp();
 
 beforeAll(async () => {
   if (typeof globalThis.localStorage === 'undefined') {
@@ -84,8 +88,8 @@ describe('Salas · el desplegable de Estado', () => {
 
   it('🔴 un día ya guardado con el estado nuevo se vuelve a pintar SELECCIONADO', () => {
     localStorage.setItem('larv4_mad_salas', JSON.stringify([
-      { data: { fecha: H.today(), sala: 'Sala 2', estado: H.MAD_EST_DESINF_AGRUP }, synced: false },
-      { data: { fecha: H.today(), sala: 'Sala 3', estado: H.MAD_EST_DESINF }, synced: false },
+      { data: { fecha: HOY(), sala: 'Sala 2', estado: H.MAD_EST_DESINF_AGRUP }, synced: false },
+      { data: { fecha: HOY(), sala: 'Sala 3', estado: H.MAD_EST_DESINF }, synced: false },
     ]));
     H.renderMadSalas();
     // happy-dom no refleja `selected` en `.value` si la opción no es la primera: se lee el atributo.
@@ -201,7 +205,7 @@ describe('Salas · el RAS se marca en porcentaje', () => {
   const marcada = (sala) => Array.from(selRas(sala).options).filter((o) => o.hasAttribute('selected')).map((o) => o.value);
   const guardado = (sala, ras) => {
     localStorage.setItem('larv4_mad_salas', JSON.stringify([
-      { id: 'x', synced: false, data: { fecha: H.today(), sala, estado: '', estado_lote: '', ras } },
+      { id: 'x', synced: false, data: { fecha: HOY(), sala, estado: '', estado_lote: '', ras } },
     ]));
     H.renderMadSalas();
   };
