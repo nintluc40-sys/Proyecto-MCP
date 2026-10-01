@@ -75,9 +75,9 @@ const TIMEOUT_RED = 4000;
    el registro: el equipo se queda sin service worker —sin modo sin conexión— y al volver lo intenta otra vez desde
    cero. Medido en la app publicada con la red a ~50 KB/s: «installing» 3,5 min con 7 archivos y el registro
    desapareció; reproducido en local con UNA descarga colgada: sin registro a los 306 s. Ninguna descarga tenía tope.
-   Al cumplirse éste se cortan las que sigan en vuelo (`AbortController`: lo tiene todo navegador que corre el
-   bundle, `es2019`) y la instalación
-   termina con lo que haya guardado: lo que falte lo recoge el `fetch` la primera vez que se pida con red
+   Al cumplirse éste se cortan las que sigan en vuelo —y TODAS las peticiones de la instalación llevan esa señal, así
+   que después no sale ninguna más— (`AbortController`: lo tiene todo navegador que corre el bundle, `es2019`) y la
+   instalación termina con lo que haya guardado: lo que falte lo recoge el `fetch` la primera vez que se pida con red
    (`networkFirst` y `cacheFirst` guardan lo que sirven). 3 min: 2 de margen bajo el corte del navegador. */
 const TOPE_INSTALACION = 180000;
 
@@ -113,8 +113,8 @@ async function assetsDelShell(cache) {
    lectura del libro— no salen en index.html, así que `assetsDelShell` no los ve; sin esto, tras
    un despliegue, un equipo que no los abriera con red no podía abrirlos sin señal (P3,
    2026-10-01). Sólo se devuelve lo que aún NO está guardado: lo del shell no se pide dos veces. */
-async function assetsDelBuild(cache) {
-  const res = await fetch(new Request('./precache-assets.json', { cache: 'no-cache' }));
+async function assetsDelBuild(cache, senal) {
+  const res = await fetch(new Request('./precache-assets.json', { cache: 'no-cache' }), { signal: senal });
   if (!res || !res.ok) return [];
   const lista = await res.json();
   if (!Array.isArray(lista)) return [];
@@ -157,7 +157,7 @@ self.addEventListener('install', (e) => {
     /* Y el resto del build (bloques diferidos), en una tercera tanda: también puede faltar
        —una versión vieja sin lista, la red cortada— sin abortar la instalación. */
     try {
-      await Promise.allSettled((await assetsDelBuild(cache)).map(guardar));
+      await Promise.allSettled((await assetsDelBuild(cache, corte.signal)).map(guardar));
     } catch (_) { /* la instalación no se aborta por esto */ }
     clearTimeout(reloj);
   })()]));

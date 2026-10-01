@@ -63,6 +63,8 @@ function montarSW({ red }) {
   // `init` llega hasta la red falsa: lleva la `signal` con la que la instalación corta lo que se colgó.
   const fetchFalso = (req, init) => {
     const url = typeof req === 'string' ? req : req.url;
+    // Como el navegador: con la señal YA cortada, fetch rechaza sin salir a la red (y no cuenta como petición).
+    if (init && init.signal && init.signal.aborted) return Promise.reject(new Error('AbortError'));
     llamadasRed.push(url);
     modosRed.push(typeof req === 'string' ? init && init.cache : req.cache);
     return red(url, init);
@@ -376,9 +378,11 @@ describe('Service worker · instalar con señal PÉSIMA (2026-10-01)', () => {
 
     await vi.advanceTimersByTimeAsync(10000);
     expect(terminada, 'se rindió enseguida: no esperó a las descargas').toBe(false);
+    const pedidasAntesDelTope = sw.llamadasRed.length;
     await vi.advanceTimersByTimeAsync(260000);   // 4 min 30 s en total
     expect(terminada, 'sigue colgada: el navegador la mata a los 5 min y BORRA el registro').toBe(true);
     expect(cortada, 'la descarga colgada sigue viva tras el tope').toBe(true);
+    expect(sw.llamadasRed.slice(pedidasAntesDelTope), 'tras el corte se siguió pidiendo a la red').toEqual([]);
     const guardadas = await (await sw.cachesFalso.api.open('mcp-v1')).keys();
     expect(guardadas.some((k) => k.endsWith('/index.html')), 'lo que sí llegó no se guardó').toBe(true);
     expect(guardadas.some((k) => k.endsWith('/registros/engine.js'))).toBe(false);
