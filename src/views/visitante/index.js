@@ -9,7 +9,7 @@ import { esc, fmtPop, wqiBand, wqiSpans } from '../../core/format.js';
 import { store } from '../../core/store.js';
 import { getField, parseNum, F, isLarviculturaRow, obsFindings } from '../../core/fields.js';
 import { fmtPct } from '../../core/util.js';
-import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt, monthIndexOfCorrida } from '../../core/prodCalendar.js';
+import { presentMonths, corridasOfMonth, modulesOfCorrida, modCorStats, monthLabelAt, monthIndexOfCorrida, calendarRangeOfMonth } from '../../core/prodCalendar.js';
 import { parseAnyDate } from '../../core/dates.js';
 // Capas de datos PURAS de laboratorio (ya en el bundle base vía la vista Microbiología →
 // no inflan el bundle de Visitante; solo se reutiliza su lógica de umbrales/rangos).
@@ -258,6 +258,63 @@ function algasSummaryBlock(mIdx) {
       ${sumCard('🦠', 'Sanidad de las algas', semChip(sanTier, `${s.descPct.toFixed(0)}% descarte`), `${s.desc} descartado(s) · protoz. altos en ${s.protoAlert} reg.`, 'algasSanidad', '#015B76')}
     </div>
   </div>`;
+}
+
+/* ============================================================
+   PRODUCCIÓN DE MADURACIÓN (2026-10-01) — nauplios por lote y por sala.
+   Las cifras son las del tablero de Maduración (ver maduracion.produccion.js), que se
+   carga DIFERIDO: sus reglas viven fuera del bundle base. El bloque aparece en cuanto
+   llegan; mientras tanto, nada. Maduración no tiene corrida: el mes es el de CALENDARIO
+   del desove (`calendarRangeOfMonth`), el criterio aprobado para Microbiología.
+   ============================================================ */
+const MAD_AC = '#7e57c2';
+let madMod = null; // el módulo, una vez cargado
+let madCarga = null; // la carga en curso
+// 'Maduracion' es la salida CANÓNICA de `classifyOrigin` para el operativo (core/sheets.js:68); se compara aquí por
+// cadena para no traer `MAD_OP_ORIGEN` —y con él su módulo— al bundle base. Sin filas de Maduración no se carga nada.
+// Por el memo: sin él, cada repintado (el toggle de métrica) barría el store entero mientras el módulo no llegaba.
+const hayMaduracion = () => memo('hayMaduracion', () => store.globalData.some((r) => r._SheetOrigin === 'Maduracion'));
+function cargarMaduracion() {
+  if (!madCarga) {
+    madCarga = import('./maduracion.produccion.js')
+      .then((m) => { madMod = m; return m; })
+      .catch((e) => { madCarga = null; console.error('[visitante] maduración', e); return null; });
+  }
+  return madCarga;
+}
+const hoyIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+function madSummary(mIdx) {
+  return memo(JSON.stringify(['madSummary', mIdx]), () => madMod.produccionDelMes(store.globalData, calendarRangeOfMonth(mIdx), hoyIso()));
+}
+const nfMad = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v).toLocaleString('es-EC') : '—');
+const dmMad = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+
+/** Bloque “🥚 Maduración” (2 tarjetas clicables). '' mientras el módulo no ha llegado o sin desoves en el mes. */
+function madBlock(mIdx) {
+  if (!madMod) return '';
+  const s = madSummary(mIdx);
+  if (!s) return '';
+  const top = s.salas.reduce((a, x) => (!a || x.n5 > a.n5 ? x : a), null);
+  return `<div class="card vt-card">
+    <div class="vt-card-title" style="color:${MAD_AC}">🥚 Maduración · ${esc(monthLabelAt(mIdx))} <span class="muted" style="font-weight:600;font-size:12px">· producción de nauplios por lote y sala</span></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      ${sumCard('🦐', 'Nauplios producidos (N5)', fmtK(s.total.n5), `${nfMad(s.total.desoves)} desoves · ${s.lotes.length} lote(s)`, 'madLotes', MAD_AC)}
+      ${sumCard('🏠', 'Producción por sala', `${s.salas.length} sala(s)`, top ? `más nauplios: ${top.sala}` : 'sin sala conocida', 'madSalas', MAD_AC)}
+    </div>
+  </div>`;
+}
+
+/** Barras horizontales de nauplios N5 (por lote o por sala) en el detalle. */
+function drawMadBars(labels, values) {
+  makeChart('vtMadChart', {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'Nauplios N5', data: values, backgroundColor: MAD_AC + 'cc', borderColor: MAD_AC, borderWidth: 1, borderRadius: 4, maxBarThickness: 22 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      scales: { x: { beginAtZero: true, ticks: { callback: (v) => fmtK(v) }, title: { display: true, text: 'nauplios N5' }, grid: { display: false } }, y: { grid: { display: false } } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${nfMad(c.parsed.x)} nauplios N5` } } },
+    },
+  });
 }
 
 /* ============================================================
@@ -632,6 +689,31 @@ function sumDetail(key, mIdx, monthSup) {
     };
   }
 
+  if (key === 'madLotes' || key === 'madSalas') {
+    const s = madMod ? madSummary(mIdx) : null;
+    if (!s) return { title: '🥚 Maduración', html: '<p style="color:var(--c-text-muted)">Sin desoves este mes.</p>' };
+    const madP = (txt) => `<p style="font-size:12px;color:${MAD_AC};font-weight:700;margin:14px 0 6px">${esc(txt)}</p>`;
+    const periodo = `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">Desoves del ${dmMad(s.periodo.desde)} al ${dmMad(s.periodo.hasta)}: Maduración no tiene corrida, así que el mes es el de la fecha del desove.</p>`;
+    const chart = '<div class="vt-lab-chart"><canvas id="vtMadChart"></canvas></div>';
+    if (key === 'madLotes') {
+      const pend = s.total.pendientes;
+      const body = s.lotes.map((x) => `<tr><td><b>${esc(x.lote)}</b></td><td>${nfMad(x.desoves)}</td><td>${nfMad(x.n5)}</td><td>${nfMad(x.naupliosPorHembra)}</td></tr>`).join('');
+      return { title: '🦐 Maduración · por lote', html: periodo
+        + `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${nfMad(s.total.desoves)} desoves de ${s.lotes.length} lote(s) · <b>${nfMad(s.total.n5)}</b> nauplios N5 contados.`
+        + (pend ? ` ⏳ ${pend} desove(s) aún sin su conteo de N5: no entran en «nauplios por hembra».` : '') + '</p>'
+        + chart + madP('🥚 Por lote') + detailTable(['Lote', 'Desoves', 'Nauplios N5', 'Nauplios por hembra'], body),
+        draw: () => drawMadBars(s.lotes.map((x) => x.lote), s.lotes.map((x) => x.n5)) };
+    }
+    const body = s.salas.map((x) => `<tr><td><b>${esc(x.sala)}</b></td><td>${nfMad(x.desoves)}</td><td>${nfMad(x.n5)}</td><td>${esc(x.lotes.join(', '))}</td></tr>`).join('');
+    const nota = 'ⓘ Un desove cuenta en la sala donde estaba su lote la víspera o ese mismo día.'
+      + (s.enVarias ? ` Un lote que se mudó cuenta en sus dos salas, así que las salas no suman el total del mes (${nfMad(s.total.desoves)} desoves).` : '')
+      + (s.sinSala ? ` ${s.sinSala} desove(s) de lotes sin sala conocida ese día no aparecen aquí.` : '');
+    return { title: '🏠 Maduración · por sala', html: periodo
+      + (s.salas.length ? chart + madP('🏠 Por sala') + detailTable(['Sala', 'Desoves', 'Nauplios N5', 'Lotes'], body) : '<p style="color:var(--c-text-muted)">Ningún desove del mes tiene sala conocida.</p>')
+      + `<p style="font-size:11px;color:var(--c-text-muted);margin:10px 0 0">${esc(nota)}</p>`,
+      draw: s.salas.length ? () => drawMadBars(s.salas.map((x) => x.sala), s.salas.map((x) => x.n5)) : null };
+  }
+
   return { title: 'Detalle', html: '<p style="color:var(--c-text-muted)">Sin detalle.</p>' };
 }
 
@@ -680,8 +762,8 @@ function closeSumModal() {
   const estabaAbierto = !!m && m.isConnected && m.style.display !== 'none';
   if (m) m.style.display = 'none';
   if (estabaAbierto) document.body.classList.remove('modal-open');
-  // Libera los gráficos del detalle (micro/agua) al cerrar: no dejar charts huérfanos.
-  destroyChart('vtLabMicroChart'); destroyChart('vtLabAguaGauge');
+  // Libera los gráficos del detalle (micro/agua/maduración) al cerrar: no dejar charts huérfanos.
+  destroyChart('vtLabMicroChart'); destroyChart('vtLabAguaGauge'); destroyChart('vtMadChart');
   if (vtEscHandler) { document.removeEventListener('keydown', vtEscHandler); vtEscHandler = null; }
   if (m) m.removeEventListener('keydown', vtTrapTab);
   // Devuelve el foco a la tarjeta que abrió el detalle (si sigue en el documento): sin
@@ -693,7 +775,7 @@ function openSumModal(key, mIdx, monthSup, trigger) {
   const m = document.getElementById('vtSumModal'); if (!m) return;
   vtLastFocus = trigger || document.activeElement;
   // Libera un gráfico previo del detalle antes de reemplazar su canvas (evita huérfanos).
-  destroyChart('vtLabMicroChart'); destroyChart('vtLabAguaGauge');
+  destroyChart('vtLabMicroChart'); destroyChart('vtLabAguaGauge'); destroyChart('vtMadChart');
   const { title, html, draw } = sumDetail(key, mIdx, monthSup);
   document.getElementById('vtSumTitle').textContent = title;
   document.getElementById('vtSumBody').innerHTML = html;
@@ -792,7 +874,8 @@ export function visitanteView(root) {
 
       ${summaryBlock(mIdx, d.monthSup, label)}
       ${labSummaryBlock(mIdx)}
-      ${algasSummaryBlock(mIdx)}`;
+      ${algasSummaryBlock(mIdx)}
+      <div data-vt-mad>${madBlock(mIdx)}</div>`;
 
     // Gráfico de barras por corrida.
     const labels = d.rows.map((r) => 'C' + r.cor);
@@ -821,6 +904,17 @@ export function visitanteView(root) {
     });
 
     wire();
+
+    // Maduración llega DIFERIDA: la primera vez se pinta sin ella y se rellena su hueco al llegar (con el mes que esté
+    // a la vista entonces; si la vista ya no está montada, el hueco no está en el documento y no se toca).
+    if (!madMod && hayMaduracion()) {
+      cargarMaduracion().then((m) => {
+        const slot = m && wrap.querySelector('[data-vt-mad]');
+        if (!slot || !slot.isConnected) return;
+        slot.innerHTML = madBlock(months[pos]);
+        wireSum(slot);
+      });
+    }
   }
 
   function wire() {
@@ -846,8 +940,13 @@ export function visitanteView(root) {
       slider.addEventListener('change', (e) => { pos = +e.target.value; paint(); });
     }
     wrap.querySelectorAll('[data-vtmetric]').forEach((b) => b.addEventListener('click', () => { vtState.metric = b.dataset.vtmetric; paint(); }));
-    // Tarjetas del resumen → ventana de detalle (clic o Enter/Espacio).
-    wrap.querySelectorAll('[data-sum]').forEach((c) => {
+    wireSum(wrap);
+  }
+
+  // Tarjetas del resumen → ventana de detalle (clic o Enter/Espacio). Recibe el contenedor porque las de Maduración
+  // llegan después de pintar (carga diferida) y se cablean entonces.
+  function wireSum(scope) {
+    scope.querySelectorAll('[data-sum]').forEach((c) => {
       const open = () => openSumModal(c.dataset.sum, months[pos], monthData(months[pos]).monthSup, c);
       c.addEventListener('click', open);
       c.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });

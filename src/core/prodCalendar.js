@@ -210,6 +210,19 @@ export function monthIndexOfDate(d) {
   return i >= 0 ? i : -1;
 }
 
+/** El mes de CALENDARIO de un mes interno, del día 1 al último, en `aaaa-mm-dd`: el inverso de `monthIndexOfDate`
+ *  (2026-10-01, la producción de Maduración en Visitante, que va por la fecha del desove). null si el índice no vale
+ *  o no hay año base. */
+export function calendarRangeOfMonth(mIdx) {
+  if (!Number.isInteger(mIdx) || mIdx < 0) return null;
+  const y0 = anioBase();
+  if (y0 === null) return null;
+  const y = y0 + Math.floor(mIdx / 12);
+  const m = mIdx % 12;
+  const p2 = (n) => String(n).padStart(2, '0');
+  return { desde: `${y}-${p2(m + 1)}-01`, hasta: `${y}-${p2(m + 1)}-${p2(new Date(y, m + 1, 0).getDate())}` };
+}
+
 /** Nombre del mes sin desambiguar (secuencia Enero…Diciembre, cíclica). */
 function monthNameAt(mIdx) {
   if (MESES_PROD[mIdx]) return MESES_PROD[mIdx].label;
