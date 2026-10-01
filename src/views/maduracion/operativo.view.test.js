@@ -237,6 +237,15 @@ describe('Maduración · operativo · 0f · 4 · ⏳ la cuarentena por lote y sa
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('🔴 3 (2026-10-01, usuario) · cada barra dice su FECHA DE INGRESO a la sala, y la del lote cuando es otra', async () => {
+    await montar(PLANTA_Q);
+    // QA entró en la Sala 1 el 01/08 y en la Sala 2 el 11/09: su cuarentena de la Sala 2 corre desde el 11/09.
+    expect(par('QA|Sala 2').textContent).toContain('ingreso 11/09 (lote: 01/08) · día 9 de 15');
+    expect(par('QB|Sala 4').textContent).toContain('ingreso 12/09 · día 8 de 15');
+    expect(par('QB|Sala 4').textContent, 'si coinciden, una sola fecha').not.toContain('lote:');
+    expect(par('QE|Sala 3').textContent).toContain('ingreso 25/08 · ✓ terminada el 09/09');
+  });
+
   it('🔴 pulsar una barra abre sus curvas: vivos ♀/♂ en esa sala desde el ingreso y las bajas del día; volver a pulsar la cierra', async () => {
     await montar(PLANTA_Q);
     expect(root.querySelector('#mopCuarCurva')).toBeNull();
@@ -1068,6 +1077,29 @@ describe('Maduración · operativo · 🛢 Tanques', () => {
     expect(filas).toContain('Sala 1|1');
     expect(filas.length).toBeGreaterThan(0);
     expect(filaTq('Sala 1|1').textContent).toContain('compartido');
+  });
+
+  /* 3 (2026-10-01, usuario) · «al lado de Últ. Parte, una columna de hora para saber cuál es el último parte»: el 19/09 el
+     tanque 1 tiene partes a las 08:00 y a las 14:40, y uno sin hora (que no la borra). */
+  it('🔴 3 · junto a «Últ. parte», la HORA del último parte de ese día', async () => {
+    await montar(PLANTA_F4);
+    abrirTanques();
+    const th = [...root.querySelectorAll('.mop-tanques thead th')].map((x) => x.textContent.trim());
+    expect(th.slice(-2)).toEqual(['Últ. parte', 'Hora']);
+    expect([...filaTq('Sala 1|1').cells].map((c) => c.textContent.trim()).slice(-2)).toEqual(['19/09', '14:40']);
+  });
+
+  const ultimoParteEnSala1 = async (filas) => {
+    await montar(filas);
+    click(root.querySelector('[data-mop-sub="salas"]'));
+    click(root.querySelector('[data-mop-sala="Sala 1"]'));
+    return [...root.querySelectorAll('.mop-detalle tbody tr')].find((tr) => tr.cells[0].textContent.trim() === '1').lastElementChild.textContent;
+  };
+  it('🔴 3 · en 🏠 Salas, el «Último parte» de cada tanque lleva su hora', async () => {
+    expect(await ultimoParteEnSala1(PLANTA_F4)).toContain('19/09 · 14:40');
+  });
+  it('3 · …y si ese parte no la trae, lo dice', async () => {
+    expect(await ultimoParteEnSala1(PLANTA), 'su último parte, el 16/09, es de antes de la columna «Hora»').toContain('16/09 · sin hora');
   });
 
   it('pulsar una fila abre su ficha; volver a pulsarla la cierra', async () => {

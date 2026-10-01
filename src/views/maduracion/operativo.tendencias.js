@@ -140,9 +140,12 @@ export function salasDelDesove(presencia, clave, fecha) {
 
 /** Lo que se compara de un montón de desoves, con las reglas del ⚖️ Saldo —las de `reproduccionDeLote` y
  *  `kpiReproduccion`: la fertilidad sólo sobre los huevos que ya tienen su N2 y el N5 sólo sobre los desoves que ya
- *  tienen el suyo— y cuántas FILAS trae cada cifra, que es lo que cuenta para el mínimo de registros. */
+ *  tienen el suyo— y cuántas FILAS trae cada cifra, que es lo que cuenta para el mínimo de registros.
+ *  3 (2026-10-01, usuario: «sale 2134,82 %») · la fertilidad y los huevos por desove, sólo de los desoves que traen sus
+ *  huevos contados (casi ninguno los traía): sus filas son `conN2YHuevos` y `conHuevos`. */
 export function acumularDesoves(filas) {
-  const A = { filas: 0, desoves: 0, huevos: 0, n2: 0, n5: 0, huevosConN2: 0, desovesConN5: 0, conDesoves: 0, conN2: 0, conN5: 0 };
+  const A = { filas: 0, desoves: 0, huevos: 0, n2: 0, n5: 0, huevosConN2: 0, n2ConHuevos: 0, desovesConHuevos: 0, desovesConN5: 0,
+    conDesoves: 0, conN2: 0, conHuevos: 0, conN2YHuevos: 0, conN5: 0 };
   for (const r of filas || []) {
     const d = ent(r.Desoves);
     const h = ent(r['Total de huevos']);
@@ -155,12 +158,14 @@ export function acumularDesoves(filas) {
     A.n5 += n5;
     if (d > 0) A.conDesoves++;
     if (n2 > 0) { A.huevosConN2 += h; A.conN2++; }
+    if (h > 0) { A.desovesConHuevos += d; A.conHuevos++; }
+    if (n2 > 0 && h > 0) { A.n2ConHuevos += n2; A.conN2YHuevos++; }
     if (n5 > 0) { A.desovesConN5 += d; A.conN5++; }
   }
   return {
     ...A,
-    huevosPorDesove: cociente(A.huevos, A.desoves),
-    fertilidad: cociente(A.n2, A.huevosConN2, 100),
+    huevosPorDesove: cociente(A.huevos, A.desovesConHuevos),
+    fertilidad: cociente(A.n2ConHuevos, A.huevosConN2, 100),
     n5PorDesove: cociente(A.n5, A.desovesConN5),
   };
 }
@@ -301,9 +306,9 @@ export function tendencias(M, periodo, F, partes, presencia) {
     }
     const x = acum.get(k);
     if (x) {
-      const cH = baja(x.antes.huevosPorDesove, x.ahora.huevosPorDesove, x.antes.conDesoves);
+      const cH = baja(x.antes.huevosPorDesove, x.ahora.huevosPorDesove, x.antes.conHuevos);
       if (cH !== null) parametros.push({ id: 'huevosPorDesove', antes: x.antes.huevosPorDesove, ahora: x.ahora.huevosPorDesove, cambio: cH });
-      const cF = baja(x.antes.fertilidad, x.ahora.fertilidad, x.antes.conN2);
+      const cF = baja(x.antes.fertilidad, x.ahora.fertilidad, x.antes.conN2YHuevos);
       if (cF !== null) parametros.push({ id: 'fertilidad', antes: x.antes.fertilidad, ahora: x.ahora.fertilidad, cambio: cF });
     }
     if (parametros.length) out.reproduccion.push({ lote: nombre(k), parametros });

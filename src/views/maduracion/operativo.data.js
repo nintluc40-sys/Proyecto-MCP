@@ -125,8 +125,11 @@ const lista = (v) => txt(v).split(',').map((x) => x.trim()).filter(Boolean);
  *  · muertes, descartes y mudas se SUMAN: cada parte trae lo de su ronda, no el acumulado;
  *  · las cópulas también: se anotan en un solo parte y los demás van vacíos;
  *  · los pesos se PROMEDIAN sobre los partes que los traen: un vacío no es un cero;
- *  · las observaciones se juntan sin repetir.
+ *  · las observaciones se juntan sin repetir;
+ *  · `ultimaHora` (3, 2026-10-01, usuario) es la del ÚLTIMO parte del día: la mayor por minutos —«9:30» antes que
+ *    «14:05»—, y un parte sin hora no la borra. '' si ninguno la trae (la columna existe desde el 2026-09-17).
  */
+const minutosDeHora = (h) => { const m = /^(\d{1,2}):(\d{2})/.exec(txt(h)); return m ? +m[1] * 60 + +m[2] : -1; };
 export function diasDeTanque(filasTanques) {
   const m = new Map();
   for (const r of filasTanques || []) {
@@ -136,10 +139,11 @@ export function diasDeTanque(filasTanques) {
     const k = fecha + '|' + sala + '|' + tanque;
     if (!m.has(k)) {
       m.set(k, { fecha, sala, tanque, partes: 0, machosMuertos: 0, hembrasMuertas: 0, machosDescarte: 0, hembrasDescarte: 0,
-        copulas: 0, muda: 0, pesosMachos: [], pesosHembras: [], obsSanitarias: [], obsOperativas: [] });
+        copulas: 0, muda: 0, pesosMachos: [], pesosHembras: [], ultimaHora: '', obsSanitarias: [], obsOperativas: [] });
     }
     const d = m.get(k);
     d.partes++;
+    if (minutosDeHora(r.Hora) > minutosDeHora(d.ultimaHora)) d.ultimaHora = txt(r.Hora);
     d.machosMuertos = suma(d.machosMuertos, r['Machos muertos']);
     d.hembrasMuertas = suma(d.hembrasMuertas, r['Hembras muertas']);
     d.machosDescarte = suma(d.machosDescarte, r['Machos muertos por descarte de selección']);

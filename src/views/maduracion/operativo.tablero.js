@@ -370,10 +370,11 @@ export function kpiMortalidad(serie, periodo, F, partes) {
 }
 
 /** Los desoves del período (por su fecha de desove), con la fertilidad y los nauplios por hembra con la regla del
- *  Saldo: sólo sobre los desoves que ya tienen su N2 / su N5. Admite lote y código; un desove no es de una sala, así
- *  que el filtro de sala no se aplica y se DICE (`ignora`). */
+ *  Saldo: sólo sobre los desoves que ya tienen su N2 / su N5 —la fertilidad, desde el 2026-10-01, sólo de los que traen
+ *  su N2 Y sus huevos contados—. Admite lote y código; un desove no es de una sala, así que el filtro de sala no se aplica
+ *  y se DICE (`ignora`). */
 export function kpiReproduccion(filasDesoves, periodo, F) {
-  const a = { desoves: 0, huevos: 0, noViables: 0, n2: 0, n5: 0, huevosConN2: 0, desovesConN5: 0 };
+  const a = { desoves: 0, huevos: 0, noViables: 0, n2: 0, n5: 0, huevosConN2: 0, n2ConHuevos: 0, desovesConN5: 0 };
   for (const r of filasDesoves || []) {
     if (!enPeriodo(fecha10(r.Fecha), periodo)) continue;
     if (F.lote && normLote(r.Lote) !== F.lote) continue;
@@ -386,11 +387,12 @@ export function kpiReproduccion(filasDesoves, periodo, F) {
     a.n2 += n2;
     a.n5 += n5;
     if (n2 > 0) a.huevosConN2 += ent(r['Total de huevos']);
+    if (n2 > 0 && ent(r['Total de huevos']) > 0) a.n2ConHuevos += n2;
     if (n5 > 0) a.desovesConN5 += ent(r.Desoves);
   }
   return {
     desoves: a.desoves, huevos: a.huevos, noViables: a.noViables, n2: a.n2, n5: a.n5,
-    fertilidad: cociente(a.n2, a.huevosConN2, 100),
+    fertilidad: cociente(a.n2ConHuevos, a.huevosConN2, 100),
     naupliosPorHembra: a.desovesConN5 > 0 ? Math.round(a.n5 / a.desovesConN5) : '',
     ignora: F.sala ? ['sala'] : [],
   };
@@ -608,6 +610,24 @@ export function cuarentenasDeLotes(libro, fecha, periodo, F, dias = AVISO_CUAREN
   return [...enCuar.sort((a, b) => cmp(a.fin, b.fin) || orden(a, b)), ...terminadas.sort((a, b) => cmp(b.fin, a.fin) || orden(a, b))];
 }
 
+/** 3 (2026-10-01, usuario) · el PRIMER ingreso de cada lote (clave `normLote`), de la hoja Ingreso, para la línea de su
+ *  cuarentena. No es `L.ingreso` del libro: ése es el MÁS RECIENTE (un segundo ingreso reinicia la cuarentena). */
+export function primerIngresoDeLotes(fuentes) {
+  const m = new Map();
+  for (const r of (fuentes || {}).ingresos || []) {
+    const k = normLote(r.Lote);
+    const f = txt(r.Fecha);
+    if (!k || !esIso(f)) continue;
+    if (!m.has(k) || f < m.get(k)) m.set(k, f);
+  }
+  return m;
+}
+/** La lista de `cuarentenasDeLotes` con el primer ingreso de cada lote (`ingresoLote`; '' si la hoja no lo tiene). */
+export function conIngresoDelLote(lista, fuentes) {
+  const m = primerIngresoDeLotes(fuentes);
+  return (lista || []).map((x) => ({ ...x, ingresoLote: m.get(normLote(x.lote)) || '' }));
+}
+
 /** 0f · 4 · La curva de UNA cuarentena: por día, de `desde` (su ingreso) a `hasta`, los vivos del lote EN ESA SALA
  *  (`porLoteSala` de la serie) y sus bajas del día (muertos + descartes, ♂ + ♀). El libro lleva las bajas por LOTE, no por
  *  sala: si ese lote tuvo animales en OTRA sala esos días, `variasSalas` lo dice y las bajas son del lote entero. La serie
@@ -800,7 +820,9 @@ export function detalleDeSala(M, sala, periodo, F, partes) {
         ...c,
         cargas: cargas.get(sala + '|' + c.tanque) || [],
         peso: { machos: ultimoCon(c.tanque, 'pesoMachos'), hembras: ultimoCon(c.tanque, 'pesoHembras') },
-        obs: ultimo ? { fecha: ultimo.fecha, sanitarias: ultimo.obsSanitarias, operativas: ultimo.obsOperativas } : { fecha: '', sanitarias: [], operativas: [] },
+        // 3 (2026-10-01, usuario) · `hora`: la del último parte de ese día ('' si ninguno la trae).
+        obs: ultimo ? { fecha: ultimo.fecha, hora: txt(ultimo.ultimaHora), sanitarias: ultimo.obsSanitarias, operativas: ultimo.obsOperativas }
+          : { fecha: '', hora: '', sanitarias: [], operativas: [] },
       };
     }),
     tratamientos: R ? R.tratamientos : [],

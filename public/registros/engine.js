@@ -6708,11 +6708,13 @@ function _madResDesoves(filas){
   const m={};
   (filas||[]).forEach(function(r){
     const k=_madResLote(r.Lote); if(!k) return;
-    if(!m[k]) m[k]={ desoves:0, huevos:0, noViables:0, n2:0, n5:0, huevosConN2:0, desovesConN5:0 };
+    if(!m[k]) m[k]={ desoves:0, huevos:0, noViables:0, n2:0, n5:0, huevosConN2:0, n2ConHuevos:0, desovesConN5:0 };
     const a=m[k], n2=madLibroEnt(r.N2), n5=madLibroEnt(r.N5);
     a.desoves+=madLibroEnt(r.Desoves); a.huevos+=madLibroEnt(r["Total de huevos"]); a.noViables+=madLibroEnt(r["Hembras no viables"]);
     a.n2+=n2; a.n5+=n5;
     if(n2>0) a.huevosConN2+=madLibroEnt(r["Total de huevos"]);
+    /* 2026-10-01 (usuario: «sale 2134,82 %») · la tasa de fertilidad, sólo de los desoves con N2 Y huevos contados. */
+    if(n2>0 && madLibroEnt(r["Total de huevos"])>0) a.n2ConHuevos+=n2;
     if(n5>0) a.desovesConN5+=madLibroEnt(r.Desoves);
   });
   return m;
@@ -6837,7 +6839,7 @@ function _madResLotes(fuentes, libro, hoy){
         diasCuarentena:s.estado===MAD_EST_CUAR ? madResDiasEntre(s.ingreso, hoy) : madResDiasEntre(s.ingreso, fin),
         diasProduccion:s.estado===MAD_EST_PROD ? madResDiasEntre(fin, hoy) : 0 };
     });
-    const d=desoves[_madResLote(L.lote)] || { desoves:0, huevos:0, noViables:0, n2:0, n5:0, huevosConN2:0, desovesConN5:0 };
+    const d=desoves[_madResLote(L.lote)] || { desoves:0, huevos:0, noViables:0, n2:0, n5:0, huevosConN2:0, n2ConHuevos:0, desovesConN5:0 };
     const ing=L.ingresados, mu=L.muertos;
     const mort=function(o){ return { entran:o.entran, muertas:o.muertas, pct:tasa(o.muertas, o.entran) }; };
     out.push({ lote:L.lote, estado:L.estado, machos:L.machos, hembras:L.hembras,
@@ -6854,7 +6856,7 @@ function _madResLotes(fuentes, libro, hoy){
       nauplios:_madResDe(nauplios, _madResLote(L.lote)) || { fecha:"", revisiones:[] },
       desoves:{ desoves:d.desoves, noViables:d.noViables, huevos:d.huevos, n2:d.n2, n5:d.n5,
         naupliosPorHembra:d.desovesConN5>0 ? Math.round(d.n5/d.desovesConN5) : "",
-        fertilidad:d.huevosConN2>0 ? _madResR2((d.n2/d.huevosConN2)*100) : "" },
+        fertilidad:d.huevosConN2>0 ? _madResR2((d.n2ConHuevos/d.huevosConN2)*100) : "" },
       mortDesove:mort(L.mortDesove), mortRecuperacion:mort(L.mortRecuperacion),
       tratamientos:_madResRecientes(trat.filter(function(r){ return madLibroTxt(r.Tipo)==="Preventivo" && _madResLotesCelda(r.Lotes).indexOf(_madResLote(L.lote))!==-1; }))
         .map(function(r){ return { fecha:_madResF10(r.Fecha), sala:madLibroTxt(r.Sala), productos:madLibroTxt(r.Productos), ras:madLibroTxt(r["Productos RAS"]) }; }) });

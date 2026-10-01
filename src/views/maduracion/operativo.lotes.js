@@ -259,12 +259,14 @@ export function eventosDeLote(fuentes, lote, periodo) {
 }
 
 /** La REPRODUCCIÓN del lote en el período: desoves, huevos, N2, N5 y fertilidad (eclosión sobre los huevos que
- *  llegaron a tener N2, como en el Saldo). ⚠ N5 NO se compara con N2: son recuentos de momentos distintos. */
+ *  llegaron a tener N2, como en el Saldo). ⚠ N5 NO se compara con N2: son recuentos de momentos distintos.
+ *  3 (2026-10-01, usuario: «sale 2134,82 %») · la fertilidad y los huevos por desove, sólo de los desoves que traen sus
+ *  huevos contados: casi ninguno los traía, y su N2 y sus desoves entraban sin sus huevos. */
 export function reproduccionDeLote(fuentes, lote, periodo) {
   const clave = normLote(lote);
   // `noViables` entró con F4.2 (2026-09-21) para que 🥚 Reproducción no acumule lo mismo por su cuenta: dos
   // acumuladores sobre las mismas filas es como dos pantallas acaban diciendo cifras distintas de lo mismo.
-  const A = { desoves: 0, huevos: 0, noViables: 0, n2: 0, n5: 0, huevosConN2: 0, desovesConN5: 0 };
+  const A = { desoves: 0, huevos: 0, noViables: 0, n2: 0, n5: 0, huevosConN2: 0, n2ConHuevos: 0, desovesConHuevos: 0, desovesConN5: 0 };
   for (const r of (fuentes || {}).desoves || []) {
     if (normLote(r.Lote) !== clave) continue;
     if (!enPeriodo(fechaDeFila('desoves', r), periodo)) continue;
@@ -276,12 +278,16 @@ export function reproduccionDeLote(fuentes, lote, periodo) {
     A.n2 += n2;
     A.n5 += n5;
     if (n2 > 0) A.huevosConN2 += ent(r['Total de huevos']);
+    if (ent(r['Total de huevos']) > 0) {
+      A.desovesConHuevos += ent(r.Desoves);
+      if (n2 > 0) A.n2ConHuevos += n2;
+    }
     if (n5 > 0) A.desovesConN5 += ent(r.Desoves);
   }
   return {
     ...A,
-    huevosPorDesove: cociente(A.huevos, A.desoves),
-    fertilidad: cociente(A.n2, A.huevosConN2, 100),
+    huevosPorDesove: cociente(A.huevos, A.desovesConHuevos),
+    fertilidad: cociente(A.n2ConHuevos, A.huevosConN2, 100),
     n5PorDesove: cociente(A.n5, A.desovesConN5),
   };
 }
@@ -460,8 +466,8 @@ function comparativaPorOrigen(M, F, periodo, dim, modo) {
   const enFiltro = (o) => (dim === 'codigo' ? codigoEnFiltro(o, F) : !(F && F.piscina) || o === normPiscina(F.piscina));
   const acc = new Map();
   const de = (o) => acc.get(o) || (acc.set(o, { origen: o, lotes: new Set(), ingresados: 0, vivos: 0, desoves: 0, huevos: 0,
-    n2: 0, n5: 0, huevosConN2: 0, desovesConN5: 0, compartido: false }), acc.get(o));
-  const sumarReproduccion = (A, R) => { for (const k of ['desoves', 'huevos', 'n2', 'n5', 'huevosConN2', 'desovesConN5']) A[k] += R[k]; };
+    n2: 0, n5: 0, huevosConN2: 0, n2ConHuevos: 0, desovesConN5: 0, compartido: false }), acc.get(o));
+  const sumarReproduccion = (A, R) => { for (const k of ['desoves', 'huevos', 'n2', 'n5', 'huevosConN2', 'n2ConHuevos', 'desovesConN5']) A[k] += R[k]; };
   for (const f of tablaDeLotes(M, F)) {
     const clave = normLote(f.lote);
     const L = O.lotes.get(clave);
@@ -497,7 +503,7 @@ function comparativaPorOrigen(M, F, periodo, dim, modo) {
   return [...acc.values()].sort((a, b) => porNombre(a.origen, b.origen)).map((G) => ({
     origen: G.origen, lotes: [...G.lotes].sort(porNombre), ingresados: G.ingresados, vivos: G.vivos,
     supervivencia: cociente(G.vivos, G.ingresados, 100), desoves: G.desoves, huevos: G.huevos, n2: G.n2, n5: G.n5,
-    fertilidad: cociente(G.n2, G.huevosConN2, 100), naupliosPorHembra: G.desovesConN5 > 0 ? Math.round(G.n5 / G.desovesConN5) : '',
+    fertilidad: cociente(G.n2ConHuevos, G.huevosConN2, 100), naupliosPorHembra: G.desovesConN5 > 0 ? Math.round(G.n5 / G.desovesConN5) : '',
     compartido: G.compartido, dias: '',
   }));
 }

@@ -18,7 +18,7 @@ import {
   PERIODOS, PERIODO_INICIAL, primeraFecha, periodoDe, normalizarFiltro, hayFiltro, posicionEnFiltro,
   kpiVivos, kpiLotes, kpiSalas, kpiOcupacion, kpiMortalidad, kpiReproduccion,
   mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, TIPOS_AVISO, ultimosRegistros, ETIQUETA_HOJA, ESPERA_DIAS,
-  AVISO_CUARENTENA_DIAS, cuarentenasDeLotes, curvaDeCuarentena,
+  AVISO_CUARENTENA_DIAS, cuarentenasDeLotes, curvaDeCuarentena, primerIngresoDeLotes, conIngresoDelLote,
   lecturasDelUltimoRegistro, evaluarLecturas, tarjetasDeSalas, detalleDeSala, ambienteDelDia,
   indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, DIMENSIONES_FILTRO, kpiBiomasa,
 } from './operativo.tablero.js';
@@ -196,6 +196,14 @@ describe('Maduración · tablero · la reproducción del período', () => {
       fertilidad: 80, naupliosPorHembra: 170000, ignora: [] });
   });
 
+  /* 3 (2026-10-01, usuario: «la tasa de fertilidad sale 2134,82 %») · 60 de las 72 filas reales traen N2 sin «Total de
+     huevos»: su N2 entraba arriba y sus huevos (ninguno) abajo. La fertilidad, sólo de los desoves con N2 Y huevos. */
+  it('🔴 3 · un desove con N2 pero SIN huevos contados no entra en la fertilidad (su N2 sí en el total)', () => {
+    const conN2SinHuevos = [...DESOVES, D('2026-09-16', 'QB', 'CA', 5, '', 700000, '')];
+    // Antes: (1 120 000 + 700 000) ÷ 1 400 000 = 130 %. Ahora, como sin esa fila: 1 120 000 ÷ 1 400 000 = 80 %.
+    expect(kpiReproduccion(conN2SinHuevos, p, SIN)).toMatchObject({ n2: 1820000, fertilidad: 80 });
+  });
+
   it('con lote y código canónicos; la sala no se aplica a un desove y se dice', () => {
     expect(kpiReproduccion(DESOVES, p, F({ lote: 'QA' }))).toMatchObject({ desoves: 4, fertilidad: 80, naupliosPorHembra: 150000 });
     expect(kpiReproduccion(DESOVES, p, F({ lote: 'QA', codigo: 'CA' }))).toMatchObject({ desoves: 3 });
@@ -358,6 +366,18 @@ describe('Maduración · tablero · la cuarentena por lote y sala (0f · 4)', ()
     ]);
   });
 
+  it('🔴 3 (2026-10-01, usuario) · el PRIMER ingreso de cada lote, de la hoja Ingreso (el libro guarda el más reciente)', () => {
+    // QA entró en la Sala 1 el 01/08 y en la Sala 2 el 11/09: el libro dice 11/09 (un segundo ingreso reinicia la cuarentena).
+    expect([...M.libro.lotes.values()].find((L) => L.lote === 'QA').ingreso, 'control: el libro guarda el último').toBe('2026-09-11');
+    const p = primerIngresoDeLotes(M.fuentes);
+    expect(p.get('QA')).toBe('2026-08-01');
+    expect(p.get('QB')).toBe('2026-09-12');
+    expect(primerIngresoDeLotes({}).size).toBe(0);
+    // Y pegado a la lista de cuarentenas por la clave normalizada (el libro guarda el lote tal como se tecleó).
+    const l = conIngresoDelLote([{ lote: ' qa ', sala: 'Sala 2' }, { lote: 'ZZ', sala: 'Sala 1' }], M.fuentes);
+    expect(l.map((x) => x.ingresoLote)).toEqual(['2026-08-01', '']);
+  });
+
   it('🔴 y los que la TERMINARON dentro del período (por sus 15 días o por una cópula); los de antes y los cerrados, no', () => {
     const c = cuarentenasDeLotes(MC.libro, FOTO, PC30, SIN);
     expect(c.map((x) => [x.lote, x.sala, x.terminada, x.fin])).toEqual([
@@ -516,7 +536,7 @@ describe('Maduración · tablero · el detalle de una sala', () => {
     ...PLANTA,
     SALA('2026-09-18', 'Sala 1', { 'Temperatura 2:00': 28.4, 'Temperatura 12:00': 27.5 }),   // segundo registro del 18
     TQ('2026-09-17', 'Sala 1', 1, { 'Peso promedio machos (g)': 30, 'Peso promedio hembras (g)': 40, 'Observaciones sanitarias': 'Animales estresados' }),
-    TQ('2026-09-18', 'Sala 1', 1, { 'Peso promedio machos (g)': 32, 'Observaciones operativas': 'En recambio' }),
+    TQ('2026-09-18', 'Sala 1', 1, { 'Peso promedio machos (g)': 32, 'Observaciones operativas': 'En recambio', Hora: '10:15' }),
     TQ('2026-09-20', 'Sala 1', 1, { 'Peso promedio machos (g)': 99, 'Peso promedio hembras (g)': 99 }),       // después de la foto
   ];
   const m = modeloOperativo(FILAS, { hoy: '2026-09-21', fecha: FOTO });
@@ -550,7 +570,8 @@ describe('Maduración · tablero · el detalle de una sala', () => {
     expect(t1.cargas).toEqual(saldo);
     expect(t1.cargas.map((c) => [c.lote, c.cargaMetrica])).toEqual([['QA', 96.19], ['QC', 96.19]]);
     expect(t1.peso).toEqual({ machos: { valor: 32, fecha: '2026-09-18' }, hembras: { valor: 40, fecha: '2026-09-17' } });
-    expect(t1.obs).toEqual({ fecha: '2026-09-18', sanitarias: [], operativas: ['En recambio'] });
+    // 3 (2026-10-01, usuario) · con la hora de ese último parte.
+    expect(t1.obs).toEqual({ fecha: '2026-09-18', hora: '10:15', sanitarias: [], operativas: ['En recambio'] });
     expect(d.tanques[1]).toMatchObject({ estado: 'Vacío', cargas: [], obs: { fecha: '' } });
     expect(d.tratamientos.map((x) => x.tipo)).toEqual(['Preventivo', 'Desinfección']);
   });

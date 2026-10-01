@@ -76,7 +76,7 @@ export function actividadPorTanque(dias, periodo) {
     if (!enPeriodo(txt(d.fecha), periodo)) continue;
     const k = ubicKey(d.sala, d.tanque);
     const o = m.get(k) || { rondas: 0, dias: 0, muertes: 0, descartes: 0, copulas: 0, muda: 0,
-      pesoMachos: '', pesoHembras: '', ultimoParte: '' };
+      pesoMachos: '', pesoHembras: '', ultimoParte: '', ultimaHora: '' };
     o.rondas += ent(d.partes);
     o.dias += 1;
     o.muertes += ent(d.machosMuertos) + ent(d.hembrasMuertas);
@@ -86,6 +86,7 @@ export function actividadPorTanque(dias, periodo) {
     // Los pesos son el ÚLTIMO registrado, no un promedio del período: un peso viejo no dice cuánto pesa hoy.
     if (txt(d.fecha) >= txt(o.ultimoParte)) {
       o.ultimoParte = txt(d.fecha);
+      o.ultimaHora = txt(d.ultimaHora);   // 3 (2026-10-01, usuario) · la hora del último parte de ese día
       if (d.pesoMachos !== '') o.pesoMachos = d.pesoMachos;
       if (d.pesoHembras !== '') o.pesoHembras = d.pesoHembras;
     }
@@ -132,6 +133,7 @@ export function tablaDeTanques(M, periodo, F, dias) {
       rondas: ent(a.rondas), diasConParte: ent(a.dias),
       muertes: ent(a.muertes), descartes: ent(a.descartes),
       ultimoParte: txt(a.ultimoParte),
+      ultimaHora: txt(a.ultimaHora),
     });
   }
   return filas.sort((x, y) => porNombre(x.sala, y.sala) || x.tanque - y.tanque);

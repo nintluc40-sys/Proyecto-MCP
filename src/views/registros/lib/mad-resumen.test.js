@@ -36,6 +36,8 @@ const FUENTES = () => ({
     trat('2026-01-31', '', 'Desinfección', 'RAS y tuberías', '', 'Cloro', ''),
   ],
 });
+/* 3 (2026-10-01) · un desove de AB con N2 y SIN «Total de huevos» (lo de 60 de las 72 filas reales). */
+const N2_SIN_HUEVOS = () => Object.assign(FUENTES(), { desoves: FUENTES().desoves.concat([des('2026-01-26', 'AB', 5, '', '', 700000, '')]) });
 const SALA_PARCIAL = () => [
   sala('2026-01-07', 'Sala 9', 'Producción', '', { 'Temperatura 2:00': 27, 'Temperatura 4:00': 27, 'Oxígeno 06:00': 4 }),
   sala('2026-01-08', 'Sala 9', 'Producción', 'NO', {}),
@@ -283,6 +285,14 @@ describe('Resumen · lotes', () => {
     expect(lote('AB').desoves).toEqual({ desoves: 20, noViables: 4, huevos: 2200000, n2: 900000, n5: 500000, naupliosPorHembra: 50000, fertilidad: 64.29 });
     expect(lote('CD').desoves).toMatchObject({ desoves: 0, naupliosPorHembra: '', fertilidad: '' });
   });
+  /* 3 (2026-10-01, usuario: «la tasa de fertilidad sale 2134,82 %») · 60 de las 72 filas reales traen N2 SIN «Total de
+     huevos»: su N2 entraba arriba y sus huevos (ninguno) abajo. La tasa, sólo de los desoves con N2 Y huevos. */
+  it('🔴 3 · un desove con N2 pero sin huevos contados no entra en la tasa de fertilidad (su N2 sí en el total)', () => {
+    const f = N2_SIN_HUEVOS();
+    const d = resumenMaduracion(f, { hoy: '2026-02-01' }).lotes.find((x) => x.lote === 'AB').desoves;
+    // Antes: (900 000 + 700 000) ÷ 1 400 000 = 114,29 %. Ahora, como sin esa fila: 900 000 ÷ 1 400 000 = 64,29 %.
+    expect([d.n2, d.fertilidad]).toEqual([1600000, 64.29]);
+  });
   it('mortalidad en desove y recuperación, y los preventivos del lote más recientes primero', () => {
     expect([lote('AB').mortDesove, lote('AB').mortRecuperacion]).toEqual([{ entran: 20, muertas: 2, pct: 10 }, { entran: 0, muertas: 0, pct: '' }]);
     expect(lote('AB').tratamientos).toEqual([{ fecha: '2026-01-30', sala: 'Sala 2', productos: 'Lactosac', ras: '' }, { fecha: '2026-01-28', sala: 'Sala 1', productos: 'Bacmil', ras: 'EM-1' }]);
@@ -428,7 +438,7 @@ describe('Resumen · el monolito y el módulo dan lo mismo', () => {
   it('🔴 el mismo resumen, cifra a cifra, en el caso completo y en variantes', () => {
     const variantes = [FUENTES(), Object.assign(FUENTES(), { cierres: [{ Fecha: '2026-01-31', Lote: 'CD', Tipo: 'Total', Machos: 10, Hembras: 18, Sala: '' }] }),
       Object.assign(FUENTES(), { sala: [], desoves: [], tratamientos: [] }), {}, Object.assign(FUENTES(), { sala: FUENTES().sala.concat(SALA_PARCIAL()) }), TANQUE_REUTILIZADO(), CARGA_LIMITES(),
-      ALCALINIDAD_TURNOS(),
+      ALCALINIDAD_TURNOS(), N2_SIN_HUEVOS(),
       // 2026-09-19 · el RAS como lo devuelve ?p=rows: fracciones (el 100% es 1) y un número que no es fracción.
       Object.assign(FUENTES(), { sala: FUENTES().sala.map((r, i) => ({ ...r, RAS: [0.7, 1, 1.5, 'No'][i] })) })];
     for (const f of variantes) {

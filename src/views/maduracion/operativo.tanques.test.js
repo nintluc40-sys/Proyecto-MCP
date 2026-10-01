@@ -101,6 +101,8 @@ describe('Maduración · operativo · 🛢 Tanques (F4.1)', () => {
       expect(t1.pesoMachos).toBe(60);    // promediando 50 y 60 daría 55
       expect(t1.pesoHembras).toBe(80);   // promediando 70 y 80 daría 75
       expect(t1.ultimoParte).toBe('2026-09-12');
+      // 3 (2026-10-01, usuario) · y la HORA de su último parte: el 12/09, a las 06:00 y a las 14:40 (el 10/09, a las 08:00).
+      expect(t1.ultimaHora).toBe('14:40');
     });
 
     it('cuenta las RONDAS del período, no los días', () => {

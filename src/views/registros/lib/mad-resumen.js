@@ -11,6 +11,8 @@
        (mudas sobre vivos totales; cópulas sobre hembras vivas), con el libro al cierre de ese día.
      · Nauplios/Hembra = N5 ÷ desoves · Tasa de fertilidad = N2 ÷ Total de huevos × 100. Las dos sólo
        sobre los desoves que YA tienen su N5 / su N2: un desove pendiente no diluye la cifra.
+       2026-10-01 (usuario: «sale 2134,82 %») · la tasa, sólo de los desoves con N2 Y huevos contados: casi ninguno
+       traía «Total de huevos», y su N2 entraba arriba sin sus huevos abajo.
    Confirmadas por el usuario el 2026-09-15: Δ = promedio del último registro de la sala menos el del registro
    anterior; CV = desviación estándar MUESTRAL de las lecturas del último registro ÷ su promedio × 100;
    el peso es el promedio de los tanques del lote en la última fecha con peso. «Último registro» es el último
@@ -178,7 +180,7 @@ function acumularDesoves(filas) {
   (filas || []).forEach((r) => {
     const k = loteKey(r.Lote);
     if (!k) return;
-    if (!m.has(k)) m.set(k, { desoves: 0, huevos: 0, noViables: 0, n2: 0, n5: 0, huevosConN2: 0, desovesConN5: 0 });
+    if (!m.has(k)) m.set(k, { desoves: 0, huevos: 0, noViables: 0, n2: 0, n5: 0, huevosConN2: 0, n2ConHuevos: 0, desovesConN5: 0 });
     const a = m.get(k);
     const n2 = ent(r.N2);
     const n5 = ent(r.N5);
@@ -188,6 +190,7 @@ function acumularDesoves(filas) {
     a.n2 += n2;
     a.n5 += n5;
     if (n2 > 0) a.huevosConN2 += ent(r['Total de huevos']);
+    if (n2 > 0 && ent(r['Total de huevos']) > 0) a.n2ConHuevos += n2;
     if (n5 > 0) a.desovesConN5 += ent(r.Desoves);
   });
   return m;
@@ -346,7 +349,7 @@ function resumenLotes(fuentes, libro, hoy) {
         diasProduccion: s.estado === ESTADO_PRODUCCION ? diasEntre(fin, hoy) : 0,
       };
     });
-    const d = desoves.get(loteKey(L.lote)) || { desoves: 0, huevos: 0, noViables: 0, n2: 0, n5: 0, huevosConN2: 0, desovesConN5: 0 };
+    const d = desoves.get(loteKey(L.lote)) || { desoves: 0, huevos: 0, noViables: 0, n2: 0, n5: 0, huevosConN2: 0, n2ConHuevos: 0, desovesConN5: 0 };
     const ing = L.ingresados;
     const mu = L.muertos;
     const mort = (o) => ({ entran: o.entran, muertas: o.muertas, pct: tasa(o.muertas, o.entran) });
@@ -367,7 +370,7 @@ function resumenLotes(fuentes, libro, hoy) {
       desoves: {
         desoves: d.desoves, noViables: d.noViables, huevos: d.huevos, n2: d.n2, n5: d.n5,
         naupliosPorHembra: d.desovesConN5 > 0 ? Math.round(d.n5 / d.desovesConN5) : '',
-        fertilidad: d.huevosConN2 > 0 ? r2((d.n2 / d.huevosConN2) * 100) : '',
+        fertilidad: d.huevosConN2 > 0 ? r2((d.n2ConHuevos / d.huevosConN2) * 100) : '',
       },
       mortDesove: mort(L.mortDesove), mortRecuperacion: mort(L.mortRecuperacion),
       tratamientos: recientes(trat.filter((r) => txt(r.Tipo) === 'Preventivo' && lotesDeCelda(r.Lotes).indexOf(loteKey(L.lote)) !== -1))

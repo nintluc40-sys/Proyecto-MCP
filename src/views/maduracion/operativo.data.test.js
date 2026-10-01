@@ -142,9 +142,20 @@ describe('Maduración · operativo · los partes de Tanques en un registro por d
     expect(dias).toHaveLength(2);
     const d = dias.find((x) => x.sala === 'Sala 1');
     expect(d).toEqual({ fecha: '2026-09-17', sala: 'Sala 1', tanque: 1, partes: 3, machosMuertos: 3, hembrasMuertas: 3, machosDescarte: 2,
-      hembrasDescarte: 1, copulas: 3, muda: 5, pesoMachos: 32, pesoHembras: 42,
+      hembrasDescarte: 1, copulas: 3, muda: 5, pesoMachos: 32, pesoHembras: 42, ultimaHora: '',
       obsSanitarias: ['Animales estresados', 'Animales en muda'], obsOperativas: ['En recambio'] });
     expect(dias.find((x) => x.sala === 'Sala 4')).toMatchObject({ machosMuertos: 5, pesoMachos: '', pesoHembras: '' });
+  });
+
+  it('🔴 3 (2026-10-01, usuario) · la hora del ÚLTIMO parte del día: la mayor, por minutos; un parte sin hora no la borra', () => {
+    const dias = diasDeTanque([
+      TQ('2026-09-17', 'Sala 1', 1, { Parte: 1, Hora: '9:30' }),
+      TQ('2026-09-17', 'Sala 1', 1, { Parte: 2, Hora: '14:05' }),
+      TQ('2026-09-17', 'Sala 1', 1, { Parte: 3, Hora: '' }),
+      TQ('2026-09-17', 'Sala 2', 1, { Parte: 1 }),
+    ]);
+    expect(dias.find((x) => x.sala === 'Sala 1').ultimaHora, 'comparando el texto, «9:30» ganaría a «14:05»').toBe('14:05');
+    expect(dias.find((x) => x.sala === 'Sala 2').ultimaHora, 'ningún parte con hora').toBe('');
   });
 });
 

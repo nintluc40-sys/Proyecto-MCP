@@ -472,6 +472,15 @@ describe('Maduración · lotes · la comparativa', () => {
     expect(comparativa(M, SIN, P30, 'codigo', 'separadas').filas.find((f) => f.origen === 'CA')).toMatchObject({ fertilidad: 85, naupliosPorHembra: 90000 });
   });
 
+  /* 3 (2026-10-01, usuario: «la tasa de fertilidad sale 2134,82 %») · un desove de QE el 13/09 con N2 y SIN huevos
+     contados: su N2 entraba en la fertilidad y sus desoves en los huevos por desove. Ahora, sólo los que traen huevos. */
+  it('🔴 3 · fertilidad y huevos por desove sólo de los desoves con sus huevos contados (lote y comparativa)', () => {
+    const M6 = modeloOperativo([...PLANTA, DES('2026-09-13', 'QE', 3, '', 500000, 0)], { hoy: FOTO, fecha: FOTO });
+    // Antes: (340 000 + 500 000) ÷ 400 000 = 210 %, y 600 000 huevos ÷ 9 desoves = 66 666,67.
+    expect(reproduccionDeLote(M6.fuentes, 'QE', P30)).toMatchObject({ n2: 840000, fertilidad: 85, huevosPorDesove: 100000 });
+    expect(comparativa(M6, SIN, P30, 'codigo', 'separadas').filas.find((f) => f.origen === 'CA')).toMatchObject({ fertilidad: 85 });
+  });
+
   it('🔴 5 · `desempenoPorPiscina` (📈 Piscinas de origen) ES la comparativa por piscina «separadas» de todo el registro', () => {
     const d = desempenoPorPiscina(M);
     const todo = comparativa(M, SIN, periodoDe('todo', FOTO, M.fuentes), 'piscina', 'separadas').filas;

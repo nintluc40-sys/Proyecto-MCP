@@ -45,7 +45,7 @@ import { modeloOperativo, serieDiaria, diasDeTanque, libroAlCierre } from './ope
 import {
   PERIODOS, PERIODO_INICIAL, periodoDe, normalizarFiltro, hayFiltro, kpiVivos, kpiLotes, kpiSalas, kpiOcupacion,
   kpiMortalidad, kpiReproduccion, mapaDePlanta, MODOS_MAPA, ESTADO_VACIO, ESTADO_SIN, alertas, ultimosRegistros,
-  cuarentenasDeLotes, curvaDeCuarentena, AVISO_CUARENTENA_DIAS, tarjetasDeSalas, detalleDeSala, ambienteDelDia,
+  cuarentenasDeLotes, conIngresoDelLote, curvaDeCuarentena, AVISO_CUARENTENA_DIAS, tarjetasDeSalas, detalleDeSala, ambienteDelDia,
   indiceDeFiltro, cicloDelLote, etiquetasDeFiltro, kpiBiomasa,
 } from './operativo.tablero.js';
 import { KPIS_CON_GRAFICO, graficoDeKpi } from './operativo.kpis.js';
@@ -1279,7 +1279,7 @@ let _cuarCurva = null;
 /** 0f · 4 · los pares lote·sala de ⏳ y, si hay uno abierto, su curva. Un par que ya no está (otro filtro, otra foto)
  *  suelta su selección, como la ficha de un lote. */
 function cuarentenaDe(M, memo, p, F) {
-  const lista = cuarentenasDeLotes(M.libro, M.fecha, p, F);
+  const lista = conIngresoDelLote(cuarentenasDeLotes(M.libro, M.fecha, p, F), M.fuentes);
   if (vOp.cuarSel && !lista.some((x) => x.lote + '|' + x.sala === vOp.cuarSel)) vOp.cuarSel = '';
   const sel = lista.find((x) => x.lote + '|' + x.sala === vOp.cuarSel) || null;
   _cuarCurva = sel ? { par: sel, ...curvaDeCuarentena(serieDelCiclo(memo, { desde: sel.ingreso, hasta: sel.hasta }), sel.lote, sel.sala, sel.ingreso, sel.hasta) } : null;
@@ -1497,7 +1497,10 @@ function ultimosHTML(u) {
    que salen en los próximos días van resaltados —el aviso de antes—. Al pulsar una barra, debajo, sus curvas. */
 function cuarentenaHTML({ lista, sel }, p) {
   const k = (x) => x.lote + '|' + x.sala;
-  const texto = (x) => (x.terminada
+  // 3 (2026-10-01, usuario) · la fecha de ingreso de cada barra: la de la sala, que es desde donde corre su cuarentena, y
+  // la del lote cuando es otra (entró antes en otra sala).
+  const ingreso = (x) => `ingreso ${esc(dm(x.ingreso))}${x.ingresoLote && x.ingresoLote !== x.ingreso ? ` (lote: ${esc(dm(x.ingresoLote))})` : ''} · `;
+  const texto = (x) => ingreso(x) + (x.terminada
     ? `✓ terminada el ${esc(dm(x.fin))}${x.porCopula ? ' (por una cópula)' : ''} · duró ${nf(x.dia)} d`
     : `día ${nf(x.dia)} de ${nf(x.total)} · pasa a Producción el ${esc(dm(x.fin))} (en ${nf(x.enDias)} d) · ♀ ${nf(x.hembras)} ♂ ${nf(x.machos)}`);
   const filas = lista.map((x) => `<li class="mop-cuar-fila${x.aviso ? ' is-aviso' : ''}${x.terminada ? ' is-term' : ''}${sel && k(sel) === k(x) ? ' is-on' : ''}"
@@ -1620,7 +1623,8 @@ const pesoTxt = (x) => (vacio(x.valor) ? '—' : `${nf(x.valor, 1)} <span class=
 function obsTxt(o) {
   if (!o.fecha) return '<span class="muted">—</span>';
   const todas = [...o.sanitarias.map((s) => `<span class="mop-obs-s">${esc(s)}</span>`), ...o.operativas.map((s) => esc(s))];
-  return `<span class="mop-nota">${esc(dm(o.fecha))}</span> ${todas.length ? todas.join(', ') : '<span class="muted">sin observaciones</span>'}`;
+  // 3 (2026-10-01, usuario) · la fecha del último parte con su HORA; sin ella (partes de antes del 17/09), se dice.
+  return `<span class="mop-nota">${esc(dm(o.fecha))} · ${o.hora ? esc(o.hora) : 'sin hora'}</span> ${todas.length ? todas.join(', ') : '<span class="muted">sin observaciones</span>'}`;
 }
 
 /* 3 (2026-09-29, usuario) · «en los gráficos de Temperatura por hora y oxígeno por hora, marcar un filtro para ambos para
@@ -1988,7 +1992,7 @@ function fichaLoteHTML(f, p) {
       <div class="mop-sc-fila"><span class="mop-sc-l">Huevos</span><span>${nf(r.huevos)} · ${nf(r.huevosPorDesove)} por desove</span></div>
       <div class="mop-sc-fila"><span class="mop-sc-l">N2</span><span>${nf(r.n2)} · fertilidad ${pc(r.fertilidad)} ${dot(evaluar('fertilidad', r.fertilidad), refUmbral('fertilidad'))}</span></div>
       <div class="mop-sc-fila"><span class="mop-sc-l">N5</span><span>${nf(r.n5)} · ${nf(r.n5PorDesove)} por desove</span></div>
-      <p class="mc-note">La fertilidad sale sólo de los desoves que TRAEN su N2; el N5 se cuenta aparte y NO se compara con el N2.</p>
+      <p class="mc-note">La fertilidad sale sólo de los desoves que TRAEN su N2 y sus huevos contados; el N5 se cuenta aparte y NO se compara con el N2.</p>
       <h5 class="mop-det-h">Promedios de sus tanques</h5>
       <div class="mop-sc-fila"><span class="mop-sc-l">Peso</span><span>♂ ${nf(pr.pesoMachos, 2)} g · ♀ ${nf(pr.pesoHembras, 2)} g</span></div>
       <div class="mop-sc-fila"><span class="mop-sc-l">Cópulas</span><span>${nf(pr.copulas)} en el período · ${pc(pr.pctCopulas)} de sus hembras por día</span></div>
@@ -2509,6 +2513,8 @@ function tablaTanquesHTML(filas, F) {
       <td class="r">${nf(f.pesoHembras, 1)} / ${nf(f.pesoMachos, 1)}</td>
       <td class="r">${nf(f.rondas)}</td>
       <td class="r">${f.ultimoParte ? esc(dm(f.ultimoParte)) : '<span class="muted">—</span>'}</td>
+      <td class="r">${!f.ultimoParte ? '<span class="muted">—</span>' : f.ultimaHora ? esc(f.ultimaHora)
+        : '<span class="mop-nota" title="Ningún parte de ese día trae hora (la columna existe desde el 17/09/2026)">sin hora</span>'}</td>
     </tr>`;
   };
   return `<div class="mc-card mc-card-wide">
@@ -2518,7 +2524,8 @@ function tablaTanquesHTML(filas, F) {
         <th class="r" title="${esc(definicion('proporcionHM'))}">♀:♂</th>
         <th class="r" title="${esc(definicion('densidadTanque'))}">Dens.</th>
         <th class="r" title="Biomasa del tanque ÷ su área, en g/m²">Carga</th>
-        <th class="r">Peso ♀/♂ (g)</th><th class="r">Rondas</th><th class="r">Últ. parte</th></tr></thead>
+        <th class="r">Peso ♀/♂ (g)</th><th class="r">Rondas</th><th class="r">Últ. parte</th>
+        <th class="r" title="La hora del último parte de ese día (3, 2026-10-01)">Hora</th></tr></thead>
       <tbody>${filas.map(fila).join('')}</tbody></table></div>
     <p class="mc-note">Los VIVOS y la CARGA son del tanque ENTERO —el área y el volumen son suyos, no del lote—, y los
       PESOS son los del último parte, no el promedio del período.${avisos.length ? ' ⚠ ' + esc(avisos[0]) : ''}</p>
@@ -2654,8 +2661,9 @@ function totalesReproHTML(T, p) {
       ${tile('No viables', nf(T.noViables), 'hembras', '')}
       ${tile('Pendientes de N5', nf(T.pendientes), pc(T.pctPendiente) + ' de los desoves', T.pendientes ? 'is-mort' : 'is-ok')}
     </div>
-    <p class="mc-note">La FERTILIDAD es N2 ÷ huevos de los desoves que YA tienen su N2, y los NAUPLIOS POR HEMBRA son
-      N5 ÷ los desoves que ya tienen su N5: uno pendiente no diluye la cifra. ⚠ N5 no se compara con N2 — se cuentan
+    <p class="mc-note">La FERTILIDAD es N2 ÷ huevos de los desoves que YA tienen su N2 y sus huevos contados, los HUEVOS POR
+      DESOVE son de los desoves con sus huevos contados, y los NAUPLIOS POR HEMBRA son N5 ÷ los desoves que ya tienen su
+      N5: uno pendiente no diluye la cifra. ⚠ N5 no se compara con N2 — se cuentan
       días distintos y de poblaciones que no son la misma.</p>
     ${ignoraHTML(T.ignora, 'La reproducción')}
   </div>`;

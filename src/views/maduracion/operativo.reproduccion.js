@@ -15,6 +15,8 @@
    2 · LA FERTILIDAD SÓLO SOBRE LOS HUEVOS QUE YA TIENEN SU N2, y los nauplios por hembra sólo sobre los desoves
        que ya tienen su N5. Un desove pendiente NO diluye la cifra: si entrara en el denominador, cada desove
        recién anotado haría caer el rendimiento sin que nada hubiera ido peor.
+       Y a la inversa (2026-10-01, usuario: «sale 2134,82 %»): el N2 de un desove SIN sus huevos contados tampoco entra
+       arriba, ni sus desoves en los huevos por desove. Casi ningún desove traía «Total de huevos».
 
    3 · ⚠⚠ N5 NO SE COMPARA CON N2. Es decisión del usuario y no es una omisión: se cuentan días distintos y de
        poblaciones que no son la misma, así que su cociente parecería una supervivencia y no lo es. Aquí no se

@@ -252,6 +252,16 @@ describe('Maduración · tendencias · la presencia día a día', () => {
     }
     expect(acumularDesoves(M.fuentes.desoves.filter((r) => r.Lote === 'TD'))).toMatchObject({ filas: 6, conDesoves: 6, conN2: 5, conN5: 4 });
   });
+
+  /* 3 (2026-10-01, usuario) · la fertilidad salía 2134 % y los huevos por desove muy por debajo: casi ningún desove trae
+     sus huevos contados. Las dos cifras, sólo de los desoves que los traen; y su mínimo de registros, el de esas filas. */
+  it('🔴 3 · fertilidad y huevos por desove sólo de los desoves que traen sus huevos contados', () => {
+    const D = (desoves, huevos, n2, n5) => ({ Desoves: desoves, 'Total de huevos': huevos, N2: n2, N5: n5 });
+    const A = acumularDesoves([D(10, 1000000, 800000, 700000), D(20, '', 1500000, 1400000), D(5, 500000, '', '')]);
+    // Fertilidad: 800 000 ÷ 1 000 000 = 80 % (antes: 2 300 000 ÷ 1 000 000 = 230 %).
+    // Huevos por desove: 1 500 000 ÷ 15 = 100 000 (antes: ÷ 35 = 42 857,14).
+    expect(A).toMatchObject({ n2: 2300000, fertilidad: 80, huevosPorDesove: 100000, conHuevos: 2, conN2YHuevos: 1 });
+  });
 });
 
 describe('Maduración · tendencias · lo filtrado', () => {
@@ -298,6 +308,23 @@ describe('Maduración · tendencias · lo filtrado', () => {
 });
 
 describe('Maduración · tendencias · sin nada con qué comparar', () => {
+  /* 3 (2026-10-01, usuario) · la fertilidad y los huevos por desove salen sólo de los desoves con sus huevos contados, así
+     que su MÍNIMO de registros es el de esas filas. TX tiene antes tres desoves con N2, pero uno solo con sus huevos: las
+     dos cifras bajan a la mitad ahora y NO avisan (contando las filas con N2 o con desoves, avisarían las dos). */
+  it('🔴 3 · el mínimo de la fertilidad y de los huevos por desove cuenta los desoves CON sus huevos', () => {
+    const antes = (huevos2) => [DES('2026-09-07', 'TX', 'CA', 10, 1000000, 900000, ''), DES('2026-09-08', 'TX', 'CA', 10, huevos2, 900000, ''),
+      DES('2026-09-09', 'TX', 'CA', 10, huevos2, 900000, '')];
+    const ahora = ['2026-09-14', '2026-09-15', '2026-09-16'].map((f) => DES(f, 'TX', 'CA', 10, 500000, 225000, ''));
+    const tx = (huevos2) => {
+      const m = modeloOperativo([...PLANTA, ...antes(huevos2), ...ahora], { hoy: FOTO, fecha: FOTO });
+      return tendencias(m, periodoDe('7d', FOTO, m.fuentes), normalizarFiltro({ lote: 'TX' }), diasDeTanque(m.fuentes.tanques)).reproduccion;
+    };
+    expect(tx(''), 'antes, un solo desove con sus huevos: sin base, no avisa').toEqual([]);
+    // Control: con los tres desoves de antes con sus huevos, las dos bajadas sí avisan (90 % → 45 %, 100 000 → 50 000).
+    expect(tx(1000000)).toEqual([{ lote: 'TX', parametros: [
+      { id: 'huevosPorDesove', antes: 100000, ahora: 50000, cambio: -50 }, { id: 'fertilidad', antes: 90, ahora: 45, cambio: -50 }] }]);
+  });
+
   it('con «Todo» o «Hoy» el anterior no tiene datos: nada avisa', () => {
     for (const clave of ['todo', 'hoy']) {
       const t = tendencias(M, periodoDe(clave, FOTO, M.fuentes), SIN, PARTES);
