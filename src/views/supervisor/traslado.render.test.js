@@ -592,6 +592,36 @@ describe('Traslado · el KPI de tiempo en la cabecera', () => {
     // 23:30 → 01:00 son 90 min: dentro. 20:30→22:00 son 90. Ninguno se pasa de 120.
     expect(cuerpo.querySelectorAll('.sv-t-excede').length).toBe(0);
   });
+
+  it('🔴 las horas AL REVÉS se dicen en su fila, sin «~22 h» (2026-09-30, usuario)', () => {
+    // Salida declarada 20:45 con la parada 1 a las 20:30, y llegada 00:30 con la última a la 01:00: antes salían
+    // «23 h 45 min» y «23 h 30 min» como si fueran tiempos muertos.
+    const filas = aFilas(buildTrasladoPayload(viaje(1)))
+      .map((f) => ({ ...f, 'Hora salida': '20:45', 'Hora llegada': '00:30' }));
+    const root = montar(ctxCon(filas));
+    root.querySelector('[data-tras-modal="tiempo"]').click();
+    const cuerpo = root.querySelector('#sv-tras-modal-b');
+    const t = cuerpo.textContent.replace(/\s+/g, ' ');
+    expect(t, 'volvió un tiempo muerto de casi un día').not.toMatch(/2[0-3] h/);
+    expect(t).toContain('la parada 1 es 15 min ANTES de la salida');
+    expect(t).toContain('la parada 4 se registró 30 min DESPUÉS de la llegada');
+    expect(cuerpo.querySelectorAll('tr.sv-t-aviso')).toHaveLength(2);
+    expect(cuerpo.querySelector('.sv-t-nota').textContent, 'el resumen no explica por qué «En ruta» pasa de «Puerta a puerta»')
+      .toContain('después de la llegada');
+  });
+
+  it('🔴 una hora que RETROCEDE se dice en su fila y no cuenta como fuera de cadencia', () => {
+    // La parada 2 tecleada a las 19:30, antes que la 1 (20:30): antes salía un tramo de «23 h» marcado ⚠.
+    const filas = aFilas(buildTrasladoPayload(viaje(1)))
+      .map((f) => (String(f['Revisión']) === '2' ? { ...f, Hora: '19:30' } : f));
+    const root = montar(ctxCon(filas));
+    root.querySelector('[data-tras-modal="tiempo"]').click();
+    const cuerpo = root.querySelector('#sv-tras-modal-b');
+    const fila = [...cuerpo.querySelectorAll('tbody tr')].find((tr) => tr.textContent.includes('Parada 2'));
+    expect(fila.classList.contains('sv-t-aviso')).toBe(true);
+    expect(fila.textContent.replace(/\s+/g, ' ')).toContain('la hora retrocede 1 h: revisa la hora de esta parada');
+    expect(cuerpo.textContent, 'volvió el tramo de casi un día').not.toMatch(/2[0-3] h/);
+  });
 });
 
 describe('Traslado · una sección por VIAJE', () => {

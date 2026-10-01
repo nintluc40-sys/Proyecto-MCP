@@ -491,6 +491,47 @@ describe('Traslado · el tiempo del viaje', () => {
     expect(tiempoDe([a, b]).enRuta).toBe(75);
   });
 
+  /* 2026-09-30 (usuario: «salen tipo 22 horas»). Las horas que van AL REVÉS ya no se envuelven a casi un día.
+     Los tres casos medidos en los 98 viajes reales (horas copiadas de ellos; nada más). */
+  it('🔴 la última parada DESPUÉS de la llegada declarada: no «20 h» de llegada, sino cuánto después', () => {
+    const t = tiempoDe([camion(['20:00', '23:16', '01:35', '09:28'], { horaSalida: '20:00', horaLlegada: '05:30' })]);
+    expect(t.posterior, 'volvió el tiempo muerto de ~20 h').toBeNull();
+    expect(t.trasLlegada).toBe(238);                     // 05:30 → 09:28
+    expect(t.enRuta).toBe(808);                          // 20:00 → 09:28: «En ruta» no cambia (el PDF de captura dice lo mismo)
+    expect(t.puertaAPuerta).toBe(570);
+  });
+
+  it('🔴 la primera parada ANTES de la salida declarada: no «23 h 40 min», sino cuánto antes', () => {
+    const t = tiempoDe([camion(['14:40', '17:41'], { horaSalida: '15:00' })]);
+    expect(t.previo).toBeNull();
+    expect(t.antesDeSalida).toBe(20);
+  });
+
+  it('🔴 una hora que RETROCEDE no es un tramo de 20 h ni cuenta como fuera de cadencia', () => {
+    const t = tiempoDe([camion(['22:44', '19:32', '22:44', '09:53'])]);
+    expect(t.tramos[1].minutos, 'el tramo al revés volvió a dar minutos').toBeNull();
+    expect(t.tramos[1].retrocede).toBe(192);             // 22:44 → 19:32
+    expect(t.tramos[2].minutos).toBe(192);               // 19:32 → 22:44
+    expect(t.tramos.map((x) => x.excede)).toEqual([false, false, true, true]);
+    expect(t.fueraDeCadencia).toBe(2);
+  });
+
+  it('🔑 un tramo LARGO hacia delante (más de 12 h) no se toma por una hora que retrocede', () => {
+    // 16-09 real: la parada 4 en la camaronera a las 12:50, tras la 3 a las 0:05; llegada declarada 10:30.
+    const t = tiempoDe([camion(['19:51', '22:29', '00:05', '12:50'], { horaSalida: '20:00', horaLlegada: '10:30' })]);
+    expect(t.tramos[3].retrocede, 'un tramo de 12 h 45 min se leyó como «retrocede 11 h 15 min»').toBeNull();
+    expect(t.tramos[3].minutos).toBe(765);
+    expect(t.trasLlegada).toBe(140);                     // 10:30 → 12:50
+  });
+
+  it('🔑 el cruce de la medianoche sigue siendo un tramo, también en los tiempos muertos', () => {
+    const t = tiempoDe([camion(['00:14', '03:20'], { horaSalida: '23:45', horaLlegada: '09:40' })]);
+    expect(t.previo).toBe(29);                           // 23:45 → 00:14
+    expect(t.antesDeSalida).toBeNull();
+    expect(t.posterior).toBe(380);                       // 03:20 → 09:40
+    expect(t.tramos[1].retrocede).toBeNull();
+  });
+
   it('fmtMinutos dice horas y minutos como se leen', () => {
     expect(fmtMinutos(45)).toBe('45 min');
     expect(fmtMinutos(60)).toBe('1 h');

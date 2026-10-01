@@ -272,9 +272,34 @@ export function paradasDelViaje(camiones) {
   return [...porRev.keys()].sort((a, b) => a - b).map((r) => porRev.get(r));
 }
 
+/** Diferencia CON SIGNO de `a` a `b` en un reloj de 24 h: hacia delante salvo que `b` sea como mucho `atras`
+ *  minutos ANTERIOR, en (−atras, 24 h − atras]. Con 12 h: 23:40 → 02:50 son +190 (cruza la medianoche) y
+ *  15:00 → 14:40 son −20 (`b` es ANTERIOR).
+ *  ⚠ 2026-09-30 (usuario: «salen tipo 22 horas»). Los tramos y los tiempos muertos usaban `minutosEntre`, que da
+ *  por hecho que `b` es POSTERIOR y suma 24 h a todo lo negativo. Medido en los 98 viajes reales: en 87 la última
+ *  parada se registró DESPUÉS de la llegada declarada (mediana 2 h 43 min, hasta 6 h 10 min; coincide con su
+ *  sellado), y la fila «Llegada» decía ~21 h; una primera parada unos minutos ANTES de la salida daba 23 h 40 min; y
+ *  una hora fuera de orden, 20 h 48 min. Un «antes» existe y hay que decirlo, no convertirlo en un día casi entero.
+ *  🔑 Entre dos PARADAS seguidas la ventana es otra (`TRAMO_ATRAS`): una hora mal registrada retrocede poco (la
+ *  del 23-09, 3 h 12 min), pero un tramo real hacia delante llega a ~13 h (16-09: 0:05 → 12:50, con la llegada a
+ *  las 10:30). Con ±12 h ese tramo salía como «retrocede 11 h 15 min» (visto al validar con los datos reales).
+ *  `minutosEntre` no se toca: es la del esquema de la ficha, compartida con la app de captura. */
+function difReloj(a, b, atras = 12 * 60) {
+  const ma = minutosDeHora(a);
+  const mb = minutosDeHora(b);
+  if (ma === null || mb === null) return null;
+  const d = (((mb - ma) % (24 * 60)) + 24 * 60) % (24 * 60);
+  return d > 24 * 60 - atras ? d - 24 * 60 : d;
+}
+/** Entre dos paradas consecutivas, cuánto puede RETROCEDER una hora para leerse como mal registrada (y no como un
+ *  tramo de más de 18 h hacia delante, que en un traslado no existe). */
+const TRAMO_ATRAS = 6 * 60;
+
 /** El tiempo del traslado del conjunto visible.
  *  Devuelve siempre la misma forma; los huecos son `null`, nunca 0 —un 0 diría
- *  «no tardó nada», que es una afirmación, y aquí lo que pasa es que no se sabe. */
+ *  «no tardó nada», que es una afirmación, y aquí lo que pasa es que no se sabe.
+ *  Lo que va AL REVÉS (una hora que retrocede, una parada antes de la salida o después de la llegada) tampoco da
+ *  minutos: lo dicen `retrocede`, `antesDeSalida` y `trasLlegada`, en minutos (ver `difReloj`). */
 export function tiempoDe(camiones) {
   const paradas = paradasDelViaje(camiones).filter((p) => minutosDeHora(p.hora) !== null);
   const base = (camiones || [])[0] || {};
@@ -284,13 +309,16 @@ export function tiempoDe(camiones) {
   // Tramo a tramo entre paradas consecutivas. El primero no tiene anterior.
   const tramos = paradas.map((p, i) => {
     const prev = i === 0 ? null : paradas[i - 1];
-    const min = prev ? minutosEntre(prev.hora, p.hora) : null;
+    const d = prev ? difReloj(prev.hora, p.hora, TRAMO_ATRAS) : null;
+    const min = d !== null && d >= 0 ? d : null;
     return {
       revision: p.revision,
       hora: p.hora,
       lugar: p.lugar,
       desde: prev ? prev.lugar : '',
       minutos: min,
+      // La hora es ANTERIOR a la de la parada previa: casi seguro, mal registrada. Se dice; no es un tramo.
+      retrocede: d !== null && d < 0 ? -d : null,
       // El protocolo pide no pasar de CADENCIA_MAX_MIN entre revisiones. Se señala,
       // no se corrige: el dato es el que es.
       excede: min !== null && min > CADENCIA_MAX_MIN,
@@ -299,6 +327,8 @@ export function tiempoDe(camiones) {
 
   const primera = paradas.length ? paradas[0] : null;
   const ultima = paradas.length ? paradas[paradas.length - 1] : null;
+  const dPrevio = salida && primera ? difReloj(salida, primera.hora) : null;
+  const dPosterior = llegada && ultima ? difReloj(ultima.hora, llegada) : null;
   return {
     paradas,
     tramos,
@@ -316,8 +346,11 @@ export function tiempoDe(camiones) {
     puertaAPuerta: minutosEntre(salida, llegada),
     // Tiempos muertos: lo que va de la salida a la primera parada y de la última a
     // la llegada. Es donde se esconde el tiempo que no aparece en ninguna revisión.
-    previo: salida && primera ? minutosEntre(salida, primera.hora) : null,
-    posterior: llegada && ultima ? minutosEntre(ultima.hora, llegada) : null,
+    // Si van al revés no hay tiempo muerto que contar: se dice cuánto (ver `difReloj`).
+    previo: dPrevio !== null && dPrevio >= 0 ? dPrevio : null,
+    posterior: dPosterior !== null && dPosterior >= 0 ? dPosterior : null,
+    antesDeSalida: dPrevio !== null && dPrevio < 0 ? -dPrevio : null,
+    trasLlegada: dPosterior !== null && dPosterior < 0 ? -dPosterior : null,
     fueraDeCadencia: tramos.filter((t) => t.excede).length,
   };
 }

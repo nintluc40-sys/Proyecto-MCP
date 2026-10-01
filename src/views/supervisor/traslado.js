@@ -214,14 +214,29 @@ function tablaTiempo(camiones) {
     <td class="sv-hm-lugar">${esc(detalle)}</td>
     <td class="sv-tras-media">${esc(fmtMinutos(min))}</td>
   </tr>`;
+  /* 2026-09-30 (usuario: «salen tipo 22 horas»). Una hora que va AL REVÉS no es un tramo de casi un día: se
+     dice qué pasa, en la fila, y no cuenta como fuera de cadencia (ver `difReloj` en traslado.data.js). */
+  const aviso = (etiqueta, detalle, texto) => `<tr class="sv-t-aviso">
+    <td><b>${esc(etiqueta)}</b></td>
+    <td class="sv-hm-lugar">${detalle}</td>
+    <td class="sv-tras-media">⚠ ${esc(texto)}</td>
+  </tr>`;
 
   const filas = [];
   // El tiempo muerto de antes sólo se puede contar si hay hora de salida legible.
   if (t.previo !== null) filas.push(hito('Salida', t.salida + ' → parada ' + t.primera.revision, t.previo));
+  else if (t.antesDeSalida !== null) {
+    filas.push(aviso('Salida', esc(t.salida + ' → parada ' + t.primera.revision + ' · ' + t.primera.hora),
+      `la parada ${t.primera.revision} es ${fmtMinutos(t.antesDeSalida)} ANTES de la salida`));
+  }
   t.tramos.forEach((x) => {
-    const detalle = x.minutos === null
+    const detalle = x.minutos === null && x.retrocede === null
       ? esc(x.hora) + ' · ' + esc(x.lugar || '—')
       : esc(x.desde || '—') + ' → ' + esc(x.lugar || '—') + ' · ' + esc(x.hora);
+    if (x.retrocede !== null) {
+      filas.push(aviso('Parada ' + x.revision, detalle, `la hora retrocede ${fmtMinutos(x.retrocede)}: revisa la hora de esta parada`));
+      return;
+    }
     filas.push(`<tr${x.excede ? ' class="sv-t-excede"' : ''}>
       <td><b>Parada ${x.revision}</b></td>
       <td class="sv-hm-lugar">${detalle}</td>
@@ -229,6 +244,10 @@ function tablaTiempo(camiones) {
     </tr>`);
   });
   if (t.posterior !== null) filas.push(hito('Llegada', 'parada ' + t.ultima.revision + ' → ' + t.llegada, t.posterior));
+  else if (t.trasLlegada !== null) {
+    filas.push(aviso('Llegada', esc('parada ' + t.ultima.revision + ' · ' + t.ultima.hora + ' → ' + t.llegada),
+      `la parada ${t.ultima.revision} se registró ${fmtMinutos(t.trasLlegada)} DESPUÉS de la llegada`));
+  }
 
   return `<div class="sv-tras-blk">
     <div class="sv-t-resumen">
@@ -239,6 +258,8 @@ function tablaTiempo(camiones) {
       <div><span>Fuera de cadencia</span><b>${t.fueraDeCadencia}</b>
         <i>tramos de más de ${CADENCIA_MAX_MIN} min</i></div>
     </div>
+    ${t.trasLlegada !== null ? `<div class="sv-t-nota">⚠ La última parada se registró ${esc(fmtMinutos(t.trasLlegada))} después de la llegada
+      declarada (${esc(t.llegada)}): «En ruta» incluye ese tiempo y por eso puede pasar de «Puerta a puerta».</div>` : ''}
     <div class="sv-sie-wrap"><table class="sv-table sv-tras-tbl">
       <thead><tr><th>Hito</th><th>Tramo</th><th>Tiempo</th></tr></thead>
       <tbody>${filas.join('')}</tbody>
