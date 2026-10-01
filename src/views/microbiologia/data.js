@@ -214,8 +214,9 @@ export const MIC_FORMATS = {
   'placa-amb':          { label: 'Larvicultura · Placa ambiental', area: () => 'ambiental' },
   artemia:              { label: 'Larvicultura · Artemia',        area: () => 'artemia' },
   // Larvicultura · EM: pH + conteo de BA y Levaduras. Sus parámetros (`cba`/`clev`) no están
-  // en el catálogo PATHOGENS, así que no aporta ningún conteo a la vista; se da de alta para
-  // que la fila lleve su etiqueta y su departamento en vez de quedar sin clasificar.
+  // en el catálogo PATHOGENS, así que no aporta ningún conteo a esta vista; se da de alta para
+  // que la fila lleve su etiqueta y su departamento en vez de quedar sin clasificar. Sus valores
+  // los lee `emDeFila` (abajo) para la pestaña «🧪 EM» del modal de Microbiología del Supervisor.
   'larv-em':            { label: 'Larvicultura · EM',             area: () => 'larv-em' },
   'mad-principal':      { label: 'Maduración · Principal',        area: () => 'mad-reprod' },
   // Maduración · Agua tiene ÁREA PROPIA en la ficha, hoy con los mismos umbrales que
@@ -659,6 +660,22 @@ export function rowContext(row) {
     etapa: getField(row, CF.etapa),
     obs: getField(row, CF.obs),
     lumin: luminPresence(row),
+  };
+}
+
+/** Valores de una muestra «Larvicultura · EM» (2026-09-30, usuario: pestaña propia en el modal de
+ *  Microbiología del Supervisor). Son las columnas que la ficha escribe al FINAL de la hoja
+ *  (`buildMicPayload` de engine.js): pH tal cual y los conteos de BA y Levaduras como crudo + UFC
+ *  (UFC = conteo × factor del área «larv-em»). Sin rango en la ficha (`noRange`): no hay nivel.
+ *  `parseNum` acepta coma o punto («4,6» y «3.96» conviven en la hoja). */
+export function emDeFila(row) {
+  return {
+    ph: parseNum(row, ['pH', 'PH', 'ph']),
+    baCrudo: parseNum(row, ['Conteo BA (crudo)', 'Conteo BA(crudo)']),
+    baUfc: parseNum(row, ['Conteo BA UFC', 'Conteo BAUFC']),
+    levCrudo: parseNum(row, ['Conteo Lev. (crudo)', 'Conteo Lev.(crudo)']),
+    levUfc: parseNum(row, ['Conteo Lev. UFC', 'Conteo Lev.UFC']),
+    resultados: parseAnyDate(getField(row, ['Fecha resultados', 'Fecha de resultados', 'fecha resultados'])),
   };
 }
 

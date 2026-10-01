@@ -49,6 +49,7 @@ import {
   isMicroRow, rowContext as microCtx, meltRow as microMelt, pathogenRecords as microRecords,
   PATHOGENS as MIC_PATHOGENS, PATHOGEN_COLOR as MIC_COLOR, NIVEL_COLOR as MIC_NIVEL_COLOR,
   NIVEL_RANK as MIC_NIVEL_RANK, AGGREGATE_KEYS as MIC_AGG, FORMATO_LABEL as MIC_FMT_LABEL, PATHOGEN_AGAR,
+  emDeFila,
 } from '../microbiologia/data.js';
 import { petriSVG } from '../microbiologia/petri.js';
 import { mareasModalHTML, cablearMareas } from './mareas.js';
@@ -450,6 +451,11 @@ const micFmtNum = (v) => (v === null || v === undefined || isNaN(v)) ? '—' : M
 const micTQ = (r) => microCtx(r).tq; // tanque estricto (columna TQ/N°)
 const micDayKey = (d) => d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
 const micTankLabel = (t) => t === '__none' ? 'Sin TQ' : ('TQ ' + t);
+// 2026-09-30 (usuario) · «Larvicultura · EM» (pH + conteos de BA y Levaduras) no son patógenos: sus filas
+// no tienen ninguna columna del catálogo y en Placa/Tabla/Heatmap/Tendencias sólo ponían muestras y días
+// VACÍOS. Esas cuatro pestañas reciben las filas SIN EM; las de EM van a su propia pestaña «🧪 EM».
+const micIsEM = (r) => microCtx(r).formatoKey === 'larv-em';
+const micFmtDec = (v) => (v === null || v === undefined || isNaN(v)) ? '—' : v.toLocaleString('es-EC', { maximumFractionDigits: 2 });
 // V. Luminiscentes = presencia/ausencia (no UFC). Color violeta propio para distinguirlo
 // del semáforo de niveles. Chip para la placa (resumen del día) y celda para la tabla/heatmap.
 const MIC_LUMIN_COLOR = '#8E24AA';
@@ -469,8 +475,10 @@ const micLuminCell = (v) => v === true
 // invierte ese orden, el gráfico se dibujaría con los datos de la pestaña anterior.
 //   _svMicroColonies · la escribe microPlacaHTML       · la lee el tooltip de colonias (ttShow)
 //   _svMicTrend      · la escribe microTendenciasHTML  · la lee drawMicTrend
+//   _svMicEm         · la escribe microEmHTML          · la lee drawMicEm
 let _svMicroColonies = []; // colonias del día visible en la placa (para el tooltip)
 let _svMicTrend = null;    // { days, series } de la pestaña Tendencias (para dibujar el gráfico abierto)
+let _svMicEm = [];         // análisis EM con fecha, del más antiguo al más reciente (gráfico de la pestaña EM)
 
 /** Filas de Microbiología que comparten corrida + módulo (número) con este módulo. */
 const microForModule = (mod, corrida) => memoByData(memoKey('mic', mod, corrida), () => microForModuleCompute(mod, corrida));
@@ -711,6 +719,44 @@ function microTendenciasHTML(rows, state) {
       </div>
       <div class="sv-mtrend-chart"><canvas id="svMicTrendChart"></canvas></div>
     </div>`;
+}
+
+/** Pestaña EM (2026-09-30, usuario): los análisis «Larvicultura · EM» del módulo/corrida. Arriba el ÚLTIMO
+ *  (pH, BA y Lev. en UFC) y la evolución (BA y Lev. UFC en escala log, pH en su propio eje); debajo la tabla
+ *  de todos, del más reciente al más antiguo. Sin semáforo: la ficha no les da rango (`noRange`). */
+function microEmHTML(rows) {
+  const list = rows.map((r) => ({ ctx: microCtx(r), ...emDeFila(r) }))
+    .sort((a, b) => (b.ctx.fecha || 0) - (a.ctx.fecha || 0));
+  _svMicEm = list.filter((x) => x.ctx.fecha && !isNaN(x.ctx.fecha)).reverse(); // cronológico, para el gráfico
+  const fecha = (d, raw) => (d && !isNaN(d)) ? esc(fmtShort(d)) : (raw ? esc(raw) : '<span class="muted">—</span>');
+  const muted = '<span class="muted">—</span>';
+  const num = ' style="text-align:right;font-variant-numeric:tabular-nums"';
+  const u = list[0];
+  const head = `<tr><th>Fecha</th><th>Resultados</th><th>Corrida</th><th${num}>pH</th><th${num}>BA (conteo)</th><th${num}>BA (UFC)</th>`
+    + `<th${num}>Lev. (conteo)</th><th${num}>Lev. (UFC)</th><th>Observaciones</th></tr>`;
+  const body = list.map((x) => `<tr>
+      <td>${fecha(x.ctx.fecha, x.ctx.fechaRaw)}</td>
+      <td>${fecha(x.resultados, '')}</td>
+      <td>${x.ctx.corrida ? esc(x.ctx.corrida) : muted}</td>
+      <td${num}>${micFmtDec(x.ph)}</td>
+      <td${num}>${micFmtDec(x.baCrudo)}</td>
+      <td${num}>${micFmtNum(x.baUfc)}</td>
+      <td${num}>${micFmtDec(x.levCrudo)}</td>
+      <td${num}>${micFmtNum(x.levUfc)}</td>
+      <td>${x.ctx.obs ? esc(x.ctx.obs) : muted}</td>
+    </tr>`).join('');
+  return `<div class="mic-chart-title" style="margin:4px 0 8px">🧪 Larvicultura · EM <span class="muted">· ${list.length} análisis · sin semáforo (la ficha no les da rango)</span></div>
+    <div class="sv-mtrend-detail">
+      <div class="sv-mtrend-dhead"><span class="sv-mtrend-dname">Último análisis · ${fecha(u.ctx.fecha, u.ctx.fechaRaw)}</span></div>
+      <div class="sv-mtrend-stats">
+        <span class="sv-mtrend-kpi"><b>${micFmtDec(u.ph)}</b><span style="text-transform:none">pH</span></span>
+        <span class="sv-mtrend-kpi"><b>${micFmtNum(u.baUfc)}</b>BA (UFC)</span>
+        <span class="sv-mtrend-kpi"><b>${micFmtNum(u.levUfc)}</b>Lev. (UFC)</span>
+      </div>
+      ${_svMicEm.length ? `<div class="mic-chart-title" style="margin:6px 0">📈 Evolución <span class="muted">· BA y Lev. en UFC (escala log) · pH en el eje derecho</span></div>
+      <div class="sv-mtrend-chart"><canvas id="svMicEmChart"></canvas></div>` : ''}
+    </div>
+    <div class="sv-micro-tablewrap" style="margin-top:12px"><table class="sv-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
 }
 
 /* ============================================================
@@ -1204,6 +1250,9 @@ export function renderModule(ctx, mod) {
   const biomolRows = biomolForModule(mod, corrida);
   // Microbiología (hoja "Microbiología") de la misma corrida + módulo → modal Placa/Tabla/Heatmap.
   const microRows = microForModule(mod, corrida);
+  // …separadas: las de «Larvicultura · EM» van SÓLO a su pestaña «🧪 EM» (2026-09-30, usuario).
+  const micEmRows = microRows.filter(micIsEM);
+  const micPatRows = micEmRows.length ? microRows.filter((r) => !micIsEM(r)) : microRows;
   // Calidad de Agua (hoja "Calidad de Agua") de la misma corrida + módulo → modal Tabla/Matriz/Tendencias.
   const calAguaRows = calAguaForModule(mod, corrida);
   // Mapa tanque → lote (desde Larvicultura) para el tooltip del E.D.T.
@@ -1396,7 +1445,8 @@ export function renderModule(ctx, mod) {
     </div>`;
   }
 
-  // Modal Microbiología — Placa de agar + Resumen del día (tanque + fecha) / Tabla / Heatmap.
+  // Modal Microbiología — Placa de agar + Resumen del día (tanque + fecha) / Tabla / Heatmap / Tendencias,
+  // y «🧪 EM» (Larvicultura · EM) sólo si el módulo/corrida tiene análisis EM.
   if (microRows.length) {
     h += `<div class="sv-modal" id="svMicroModal" data-micromodal>
       <div class="sv-modal-card lv-fs-card">
@@ -1411,6 +1461,7 @@ export function renderModule(ctx, mod) {
             <button class="sv-bm-mode-btn" data-micmode="tabla">📋 Tabla</button>
             <button class="sv-bm-mode-btn" data-micmode="heatmap">🗺️ Heatmap</button>
             <button class="sv-bm-mode-btn" data-micmode="tendencias">📈 Tendencias</button>
+            ${micEmRows.length ? '<button class="sv-bm-mode-btn" data-micmode="em">🧪 EM</button>' : ''}
           </div>
           <div id="svMicroBody"></div>
           <div class="mic-tt" id="svMicroTT"></div>
@@ -2026,12 +2077,39 @@ export function renderModule(ctx, mod) {
           },
         });
       };
+      /** Dibuja la evolución de la pestaña EM: BA y Lev. en UFC (escala log, que no admite 0) y el pH en su eje. */
+      const drawMicEm = () => {
+        if (!_svMicEm.length) return;
+        const ufc = (v) => (v > 0 ? v : null);
+        const serie = (label, color, data, eje, extra = {}) => ({ label, data, borderColor: color, backgroundColor: color, yAxisID: eje, tension: 0, pointRadius: 3, pointHoverRadius: 5, spanGaps: true, borderWidth: 2, ...extra });
+        makeChart('svMicEmChart', {
+          type: 'line',
+          data: { labels: _svMicEm.map((x) => fmtShort(x.ctx.fecha)), datasets: [
+            serie('BA (UFC)', '#1565C0', _svMicEm.map((x) => ufc(x.baUfc)), 'y'),
+            serie('Lev. (UFC)', '#EF6C00', _svMicEm.map((x) => ufc(x.levUfc)), 'y'),
+            serie('pH', '#2E7D32', _svMicEm.map((x) => x.ph), 'y2', { borderDash: [5, 4] }),
+          ] },
+          options: {
+            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+            scales: {
+              y: { type: 'logarithmic', ticks: { callback: (v) => (/^10*$/.test(String(v)) ? micFmtNum(v) : '') }, title: { display: true, text: 'UFC', font: { size: 11, weight: '700' } } },
+              y2: { position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: (v) => micFmtDec(v) }, title: { display: true, text: 'pH', font: { size: 11, weight: '700' } } },
+              x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true } },
+            },
+            plugins: { legend: { display: true, position: 'bottom' }, tooltip: { callbacks: {
+              label: (c) => ` ${c.dataset.label}: ${c.parsed.y === null ? '—' : c.dataset.yAxisID === 'y2' ? micFmtDec(c.parsed.y) : micFmtNum(c.parsed.y)}`,
+            } } },
+          },
+        });
+      };
       const renderMic = () => {
         destroyChart('svMicTrendChart'); // evita instancias huérfanas al cambiar de vista/tanque/patógeno
-        if (micMode === 'tabla') micBody.innerHTML = microTablaHTML(microRows);
-        else if (micMode === 'heatmap') micBody.innerHTML = microHeatmapHTML(microRows);
-        else if (micMode === 'tendencias') { micBody.innerHTML = microTendenciasHTML(microRows, micState); drawMicTrend(); }
-        else micBody.innerHTML = microPlacaHTML(microRows, micState);
+        destroyChart('svMicEmChart');
+        if (micMode === 'em') { micBody.innerHTML = microEmHTML(micEmRows); drawMicEm(); }
+        else if (micMode === 'tabla') micBody.innerHTML = microTablaHTML(micPatRows);
+        else if (micMode === 'heatmap') micBody.innerHTML = microHeatmapHTML(micPatRows);
+        else if (micMode === 'tendencias') { micBody.innerHTML = microTendenciasHTML(micPatRows, micState); drawMicTrend(); }
+        else micBody.innerHTML = microPlacaHTML(micPatRows, micState);
       };
       micOverlay.querySelectorAll('[data-micmode]').forEach((b) => b.addEventListener('click', () => {
         micMode = b.dataset.micmode;
@@ -2083,7 +2161,8 @@ export function renderModule(ctx, mod) {
       const micHideTT = () => { if (micTT) micTT.style.display = 'none'; };
       bindModal(root, micOverlay, {
         openSel: '[data-micro-open]', closeSel: '[data-micro-close]',
-        onOpen: () => { micMode = 'placa'; micState.tank = null; micState.dayIdx = null; micState.trendTank = null; micState.trendOpen = null; micHideTT(); micOverlay.querySelectorAll('[data-micmode]').forEach((x) => x.classList.toggle('is-active', x.dataset.micmode === 'placa')); requestAnimationFrame(renderMic); },
+        // Un módulo con SÓLO análisis EM abre en su pestaña: en Placa no tendría nada que enseñar.
+        onOpen: () => { micMode = micPatRows.length ? 'placa' : 'em'; micState.tank = null; micState.dayIdx = null; micState.trendTank = null; micState.trendOpen = null; micHideTT(); micOverlay.querySelectorAll('[data-micmode]').forEach((x) => x.classList.toggle('is-active', x.dataset.micmode === micMode)); requestAnimationFrame(renderMic); },
         onClose: micHideTT,
       });
     }
