@@ -39,16 +39,25 @@ export function kpiGlass(icon, label, value, attrs = '', alert = false, sub = ''
 
 /** KPI de Técnico: muestra el primer responsable (+N si hay más) y despliega la lista
  *  completa al pulsarlo. Con un solo técnico no hay nada que desplegar y queda inerte.
- *  Los nombres salen de la columna «Técnico» de la hoja (`dedupeTecnicos` los unifica). */
+ *  Los nombres salen de la columna «Técnico» de la hoja (`dedupeTecnicos` los unifica).
+ *  2026-09-30 (usuario) · el valor va en UNA línea, como el de los demás KPI: el nombre completo
+ *  saltaba a 2–3 líneas y estiraba su fila de la rejilla. El nombre se abrevia (`abbrevTecnico`),
+ *  lo que no quepa se corta con «…» (CSS `.sv-tec-nombre`) y el completo queda en el globo;
+ *  «+N ▾» va aparte para no cortarse nunca. */
 export function kpiTecnicos(tecnicos) {
   const list = (tecnicos || []).filter(Boolean);
   if (!list.length) return kpiGlass('👤', 'Técnico', '—');
-  const value = list[0] + (list.length > 1 ? ` +${list.length - 1}` : '');
-  if (list.length === 1) return kpiGlass('👤', 'Técnico', value);
-  return `<div class="sv-kpi-glass sv-kpi-click sv-tec-kpi" data-tec-toggle role="button" tabindex="0"
-    aria-expanded="false" title="Ver los ${list.length} técnicos del módulo">
+  const nombre = `<span class="sv-tec-nombre">${esc(abbrevTecnico(list[0]))}</span>`;
+  if (list.length === 1) {
+    return `<div class="sv-kpi-glass sv-tec-kpi" title="${esc(list[0])}">
     <div class="sv-kpi-label">👤 Técnico</div>
-    <div class="sv-kpi-value">${esc(value)} <span class="sv-tec-caret" aria-hidden="true">▾</span></div>
+    <div class="sv-kpi-value sv-tec-valor">${nombre}</div>
+  </div>`;
+  }
+  return `<div class="sv-kpi-glass sv-kpi-click sv-tec-kpi" data-tec-toggle role="button" tabindex="0"
+    aria-expanded="false" title="${esc(list.join(' · '))} — ver los ${list.length} técnicos del módulo">
+    <div class="sv-kpi-label">👤 Técnico</div>
+    <div class="sv-kpi-value sv-tec-valor">${nombre}<span class="sv-tec-mas">+${list.length - 1} <span class="sv-tec-caret" aria-hidden="true">▾</span></span></div>
     <div class="sv-tec-list" hidden>${list.map((t) => `<span class="sv-tec-item">${esc(t)}</span>`).join('')}</div>
   </div>`;
 }

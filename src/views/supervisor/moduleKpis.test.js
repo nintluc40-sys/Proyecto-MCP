@@ -6,7 +6,9 @@
 //   · P-03 el cuadro Siembras y Cosecha se abre desde el KPI Estadío; el KPI Técnico
 //          recupera su despliegue de nombres.
 //   · P-04 la tabla del cuadro trae Superv. (real) y Superv. proy. (con merma).
+//   · P-05 el KPI Técnico ocupa UNA línea (abreviado, «…» y el nombre completo en el globo).
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 vi.mock('../../core/charts.js', () => ({
   makeChart: () => null, destroyChart: () => {}, destroyAllCharts: () => {}, Chart: class {},
@@ -15,6 +17,7 @@ vi.mock('../../core/charts.js', () => ({
 import { store } from '../../core/store.js';
 import { buildContext, modStats } from './stats.js';
 import { supervisorView } from './index.js';
+import { kpiTecnicos } from './ui.js';
 
 globalThis.requestAnimationFrame = (cb) => { cb(); return 0; };
 
@@ -138,6 +141,34 @@ describe('P-03 · Siembras en el KPI Estadío, nombres en el KPI Técnico', () =
     const tec = root.querySelector('[data-tec-toggle]');
     tec.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
     expect(tec.querySelector('.sv-tec-list').hidden).toBe(false);
+  });
+});
+
+describe('P-05 · el KPI Técnico ocupa UNA línea, como los demás (2026-09-30)', () => {
+  // El nombre completo saltaba a 2–3 líneas en la celda de ~130 px y estiraba toda su fila de la rejilla.
+  it('con varios técnicos: el primero abreviado, «+N ▾» aparte y los nombres completos en el globo', () => {
+    gotoModule();
+    const tec = root.querySelector('[data-tec-toggle]');
+    expect(tec.querySelector('.sv-tec-valor .sv-tec-nombre').textContent).toBe('A. Torres');
+    expect(tec.querySelector('.sv-tec-valor .sv-tec-mas').textContent.replace(/\s+/g, ' ').trim()).toBe('+1 ▾');
+    expect(tec.getAttribute('title')).toContain('Ana Torres · Beto Ruiz');
+  });
+
+  it('con un solo técnico: abreviado, inerte y con el nombre completo (escapado) en el globo', () => {
+    const box = document.createElement('div');
+    box.innerHTML = kpiTecnicos(['Juan Carlos "JC" O\'Neil']);
+    const kpi = box.firstElementChild;
+    expect(kpi.hasAttribute('data-tec-toggle')).toBe(false);
+    expect(kpi.querySelector('.sv-tec-valor .sv-tec-nombre').textContent).toBe('J. Carlos "JC" O\'Neil');
+    expect(kpi.querySelector('.sv-tec-mas')).toBeNull();
+    expect(kpi.getAttribute('title')).toBe('Juan Carlos "JC" O\'Neil');
+  });
+
+  it('el CSS corta sólo el nombre con «…» y no deja que el valor salte de línea', () => {
+    const css = readFileSync('src/views/supervisor/supervisor.css', 'utf8');
+    expect(css).toMatch(/\.sv-tec-valor \{[^}]*white-space: nowrap;[^}]*font-size: 15px/);
+    expect(css).toMatch(/\.sv-tec-nombre \{[^}]*min-width: 0;[^}]*overflow: hidden;[^}]*text-overflow: ellipsis/);
+    expect(css).toMatch(/\.sv-tec-mas \{[^}]*flex: none/);
   });
 });
 
