@@ -133,6 +133,10 @@ export const MAD_INGRESO_COLUMNS = [
   { h: 'Densidad de siembra', k: 'densidad', grain: 'composicion', num: true },
   { h: 'Agua', k: 'agua', grain: 'reparto' },
   { h: 'ID', k: 'id', grain: 'llave' },
+  /* 2026-10-02 (usuario) · la guía del ingreso, TEXTO libre (ceros a la izquierda, guiones) y una por ingreso. Va
+     DETRÁS del ID a propósito: añadida al final, la hoja de producción no se migra (el GAS alarga la cabecera solo).
+     ⚠ Así el ID deja de ser la última columna: el GAS lo localiza por su cabecera (ver upsertAstRows en Code.gs). */
+  { h: 'Guía de ingreso', k: 'guiaIngreso', grain: 'lote' },
 ];
 
 /** Cabeceras de la hoja. DERIVADAS de las columnas — nunca tecleadas aparte. */
@@ -233,6 +237,7 @@ export function buildIngresoRows(model) {
   const m = model || {};
   const fecha = sanitizeStr(m.fecha, 10);
   const lote = normLote(m.lote);
+  const guiaIngreso = sanitizeStr(m.guiaIngreso, 80);
   const filas = [];
 
   (m.composiciones || []).forEach((comp) => {
@@ -262,6 +267,7 @@ export function buildIngresoRows(model) {
         densidad: num(c.densidad),
         agua: sanitizeStr(r.agua, 20),
         id: ingresoRowId(fecha, lote, codigoGenetico, sala, tanque),
+        guiaIngreso,
       };
       filas.push(MAD_INGRESO_COLUMNS.map((col) => valores[col.k]));
     });

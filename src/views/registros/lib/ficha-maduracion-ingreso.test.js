@@ -52,12 +52,27 @@ describe('Ingreso a Maduración · la hoja y sus columnas', () => {
     expect(MAD_INGRESO_HEADERS).toEqual(MAD_INGRESO_COLUMNS.map((c) => c.h));
   });
 
-  it('son 18 columnas y el ID va la ÚLTIMA', () => {
+  it('son 19 columnas: el ID en la 18 y, DETRÁS, «Guía de ingreso» (2026-10-02)', () => {
     /* Eran 16 hasta el 2026-09-08; entró «Grupo». El 2026-09-13 «Camarones por m2» se cambió
-       por «Crecimiento semanal promedio» y entró «Libras por hectárea promedio». Lo que NO se
-       mueve —y por eso se comprueba aparte— es que `ID` siga siendo la última: en AsT ya costó caro. */
-    expect(MAD_INGRESO_HEADERS).toHaveLength(18);
-    expect(MAD_INGRESO_HEADERS[MAD_INGRESO_HEADERS.length - 1]).toBe('ID');
+       por «Crecimiento semanal promedio» y entró «Libras por hectárea promedio». El 2026-10-02
+       entró «Guía de ingreso» AL FINAL, detrás del ID (decisión del usuario): así la hoja de
+       producción no se migra —el GAS alarga la cabecera solo— y el ID NO se mueve de la 18. El
+       ID ya no es la última: el GAS lo localiza por su CABECERA y, si ésta faltara, por la del
+       ENVÍO (no por «la última columna», que ahora sería la guía: en AsT eso ya costó caro). */
+    expect(MAD_INGRESO_HEADERS).toHaveLength(19);
+    expect(col('ID')).toBe(17);
+    expect(MAD_INGRESO_HEADERS[MAD_INGRESO_HEADERS.length - 1]).toBe('Guía de ingreso');
+    const g = MAD_INGRESO_COLUMNS.find((x) => x.h === 'Guía de ingreso');
+    expect(g.grain, 'una guía por ingreso, como la Fecha y el Lote').toBe('lote');
+    expect(g.num, 'texto libre: ceros a la izquierda y guiones').toBeFalsy();
+  });
+
+  it('🔴 la guía va IGUAL en todas las filas del ingreso, como texto (ceros y guiones intactos)', () => {
+    const filas = buildIngresoRows({ ...base(), guiaIngreso: ' 001-002-000123 ' });
+    expect(filas).toHaveLength(2);
+    expect(filas.map((f) => f[col('Guía de ingreso')])).toEqual(['001-002-000123', '001-002-000123']);
+    expect(buildIngresoRows({ ...base(), guiaIngreso: '000123' })[0][col('Guía de ingreso')]).toBe('000123');
+    expect(buildIngresoRows(base())[0][col('Guía de ingreso')], 'opcional: sin guía, la celda va vacía').toBe('');
   });
 
   it('🔴 2026-09-13 · «Camarones por m2» ya no existe; en su sitio va el crecimiento y detrás las libras', () => {
@@ -65,7 +80,7 @@ describe('Ingreso a Maduración · la hoja y sus columnas', () => {
        ocupa la posición que tenía Camarones por m2 y Libras va justo detrás, antes de Densidad,
        Agua e ID. La hoja de producción hay que migrarla a mano (ver README). */
     expect(col('Camarones por m2')).toBe(-1);
-    expect(MAD_INGRESO_HEADERS.slice(12)).toEqual(['Supervivencia piscina (%)', 'Crecimiento semanal promedio',
+    expect(MAD_INGRESO_HEADERS.slice(12, 18)).toEqual(['Supervivencia piscina (%)', 'Crecimiento semanal promedio',
       'Libras por hectárea promedio', 'Densidad de siembra', 'Agua', 'ID']);
     for (const k of ['crecimientoSemanal', 'librasHectarea']) {
       const c = MAD_INGRESO_COLUMNS.find((x) => x.k === k);

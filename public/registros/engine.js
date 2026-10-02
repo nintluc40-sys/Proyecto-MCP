@@ -7510,7 +7510,9 @@ const MAD_ING_COLUMNS = [
   { h:"Libras por hectárea promedio", k:"librasHectarea" },
   { h:"Densidad de siembra", k:"densidad" },
   { h:"Agua", k:"agua" },
-  { h:"ID", k:"id" }
+  { h:"ID", k:"id" },
+  // 2026-10-02: la guía del ingreso, texto y una por ingreso, DETRÁS del ID (ver el módulo).
+  { h:"Guía de ingreso", k:"guiaIngreso" }
 ];
 const MAD_ING_HEADERS = MAD_ING_COLUMNS.map(function(c){ return c.h; });
 
@@ -7566,7 +7568,7 @@ function madIngRepartirRespetando(total, valores, fijos){
 }
 function madIngBuildRows(model){
   const m = model||{};
-  const fecha = sanitizeStr(m.fecha,10), lote = madIngNormLote(m.lote);
+  const fecha = sanitizeStr(m.fecha,10), lote = madIngNormLote(m.lote), guiaIngreso = sanitizeStr(m.guiaIngreso,80);
   const filas = [];
   (m.composiciones||[]).forEach(function(comp){
     const c = comp||{};
@@ -7584,7 +7586,8 @@ function madIngBuildRows(model){
         pesoMachos: madIngNum(c.pesoMachos), pesoHembras: madIngNum(c.pesoHembras),
         supervivencia: madIngNum(c.supervivencia), crecimientoSemanal: madIngNum(c.crecimientoSemanal), librasHectarea: madIngNum(c.librasHectarea),
         densidad: madIngNum(c.densidad), agua: sanitizeStr(r.agua,20),
-        id: madIngRowId(fecha, lote, cg, sala, tanque)
+        id: madIngRowId(fecha, lote, cg, sala, tanque),
+        guiaIngreso: guiaIngreso
       };
       filas.push(MAD_ING_COLUMNS.map(function(col){ return v[col.k]; }));
     });
@@ -7991,7 +7994,8 @@ function madIngCollect(){
       reparto:reparto
     });
   });
-  return { fecha:fEl?fEl.value:"", lote:lEl?lEl.value:"", composiciones:comps };
+  const gEl=document.getElementById("mi-guia");
+  return { fecha:fEl?fEl.value:"", lote:lEl?lEl.value:"", guiaIngreso:gEl?gEl.value:"", composiciones:comps };
 }
 /* ── Registro local de lo enviado desde este dispositivo ──────────────────────────────
    ⚠ POR QUÉ UN REGISTRO PROPIO Y NO `pushHist`: el Historial identifica cada entrada por
@@ -8856,6 +8860,7 @@ function renderMadIngreso(){
     +   '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
     +     '<label style="'+_MAD_ING_LBL+'">📅 Fecha de ingreso<input type="date" id="mi-fecha" value="'+escapeHtml(todayStr)+'" onchange="madBorrFechaChange(&quot;ingreso&quot;);madIngRefrescar()" style="'+_MAD_ING_INP+'"></label>'
     +     '<label style="'+_MAD_ING_LBL+'">Lote<input id="mi-lote" placeholder="AB" oninput="madIngRefrescar()" style="'+_MAD_ING_INP+';width:100px;text-transform:uppercase"></label>'
+    +     '<label style="'+_MAD_ING_LBL+'">Guía de ingreso<input type="text" id="mi-guia" maxlength="80" autocomplete="off" style="'+_MAD_ING_INP+';width:150px"></label>'
     +     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding-bottom:2px">'
     +       '<button class="btn" type="button" id="mi-ocup-btn" onclick="madIngVerOcupacion()" title="Lee el libro al cierre de la fecha de ingreso y marca en ámbar los tanques que ya tienen OTRO lote vivo" style="font-size:11px">🔄 Ver ocupación</button>'
     +       '<span id="mi-ocup-nota" style="font-size:11px"></span>'
@@ -23649,7 +23654,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "6624d3de478c";
+const GAS_VERSION = "733da3d4d3f9";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -23757,8 +23762,9 @@ const LIMITS = {
   // + margen para fases futuras. OJO: este tope DEBE cubrir todas las columnas, o doPost
   // rechaza el envío entero. Antes del 2026-08-30 era peor: truncaba la última en silencio.
   micro:   { maxRows: 300, maxCols: 90 },
-  // Calidad de Agua: hoja ancha (14 contexto + 31 parámetros + Sesión + Lote + Sulfato = 48
-  // cols, Sulfato desde el 2026-09-13 y AL FINAL: ensureHeaders la añade sola) + margen.
+  // Calidad de Agua: hoja ancha (14 contexto + 31 parámetros + Sesión + Lote + Sulfato + Sulfuros = 49
+  // cols; Sulfato desde el 2026-09-13 y Sulfuros desde el 2026-10-01, las dos AL FINAL: ensureHeaders
+  // las añade solas) + margen.
   cal:     { maxRows: 300, maxCols: 80 },
   // Patología en Fresco: 6 contexto + 15 columnas internas + Peso + Obs = 23 cols.
   pat:     { maxRows: 300, maxCols: 40 },
@@ -23923,12 +23929,12 @@ function doPost(e) {
     else if (payload.sheetName === "Maduración Transferencias") madKeyCols = [0,3];   // TR-ID + Trovan
     var isMad   = madKeyCols !== null;
     // Maduración operativa (2026-09-08): estas NO usan clave compuesta por posición.
-    // Llevan una columna "ID" determinista en la ÚLTIMA posición y van por
-    // upsertAstRows CON MERGE (2026-09-09), que la localiza POR CABECERA y cae a la
-    // última columna si la cabecera estuviera en blanco. Con el ID al final las dos rutas coinciden, que
-    // es la leccion del defecto del AsT del 2026-08-15: con el ID en medio, el
-    // respaldo apuntaba a otra columna y cada sync ANADIA una fila en vez de
-    // reemplazarla.
+    // Llevan una columna "ID" determinista y van por upsertAstRows CON MERGE (2026-09-09),
+    // que la localiza POR CABECERA. Si la cabecera de la hoja estuviera en blanco, el
+    // respaldo es la posición del ID en la cabecera del ENVÍO (2026-10-02): en Ingreso el ID
+    // ya NO es la última —detrás va «Guía de ingreso»—, y el respaldo de antes («la última
+    // columna») habría apuntado a la guía. Es la lección del defecto del AsT del 2026-08-15:
+    // con el respaldo en otra columna, cada sync ANADIA una fila en vez de reemplazarla.
     var isMadId = payload.sheetName === "Maduración Ingreso"
                || payload.sheetName === "Maduración Movimientos"
                || payload.sheetName === "Maduración Fin de Ciclo"
@@ -24111,6 +24117,16 @@ function doPost(e) {
       if (_filasTr > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasTr - ws.getMaxRows());
       if (ws.getMaxRows() > 1 && ws.getMaxColumns() > _ubicCol) ws.getRange(2, _ubicCol + 1, ws.getMaxRows() - 1, 1).setNumberFormat("@");
     }
+    // 2026-10-02 · la «Guía de ingreso» de Maduración Ingreso es TEXTO libre (ceros a la izquierda, guiones): sin el
+    // formato, Sheets guardaría «000123» como 123 y «3-5» como una fecha. Se localiza por la cabecera del ENVÍO, no por
+    // un número de columna (la lección de P12), y un cliente anterior, que no la trae, no toca nada. Como la Ubicación:
+    // si la hoja se queda corta se amplía primero, y las celdas ya escritas conservan su valor.
+    var _guiaCol = payload.sheetName === "Maduración Ingreso" ? (payload.headers || []).indexOf("Guía de ingreso") : -1;
+    if (_guiaCol >= 0) {
+      var _filasIg = lastRow(ws) + rows.length;
+      if (_filasIg > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasIg - ws.getMaxRows());
+      if (ws.getMaxRows() > 1 && ws.getMaxColumns() > _guiaCol) ws.getRange(2, _guiaCol + 1, ws.getMaxRows() - 1, 1).setNumberFormat("@");
+    }
     var result;
     if (isMad) {
       // Las hojas POSICIONALES del registro operativo usan upsert con su clave compuesta (las del reproductivo, en madKeyCols):
@@ -24175,7 +24191,7 @@ function doPost(e) {
     else if (isTras)   result = upsertAstRows(ws, rows);
     // Las tres de Maduración van con MERGE (3.er argumento), al revés que AsT y
     // Traslado: ver la cabecera de upsertAstRows para el porqué.
-    else if (isMadId)  result = upsertAstRows(ws, rows, true);
+    else if (isMadId)  result = upsertAstRows(ws, rows, true, payload.headers);
     // Control Broodstock (R1, 2026-09-17): REEMPLAZO por (Fecha de corte · Piscina), no merge. La carga es la foto
     // de la semana, así que volver a subirla CORRIGE cada piscina entera —también una celda que ahora va vacía, que
     // un merge conservaría— y deja en paz las demás piscinas y las demás semanas.
@@ -24863,6 +24879,9 @@ function replaceByKeyRows(ws, newRows, keyCols) {
 //     puede vaciar reenviándolo en blanco. Se corrige en la hoja. Es el mismo
 //     trato que ya tienen Sala, Tanques y Lotes por upsertMadRows.
 function upsertAstRows(ws, newRows, merge) {
+  // 4.º argumento, opcional: la cabecera del ENVÍO (la pasan las de Maduración; ver el respaldo del ID, abajo). Se lee
+  // de «arguments» para no cambiar la firma, que la buscan por su texto las auditorías y las pruebas de Traslado y AsT.
+  var cabEnvio = arguments.length > 3 ? arguments[3] : null;
   var widest = 0;
   for (var wi = 0; wi < newRows.length; wi++) {
     if (newRows[wi].length > widest) widest = newRows[wi].length;
@@ -24883,11 +24902,18 @@ function upsertAstRows(ws, newRows, merge) {
   // Con el ID al final las DOS rutas —cabecera y respaldo— dan la misma columna, de
   // modo que empareja aunque la cabecera siga en blanco. ensureHeaders NO salva ese
   // caso: sale antes de escribir nada si la hoja ya tiene el ancho completo.
+  // 2026-10-02 · Maduración Ingreso lleva DETRÁS del ID su «Guía de ingreso»: ahí la última
+  // columna es la guía. Por eso, quien pasa la cabecera de su envío (cabEnvio, las de
+  // Maduración) tiene de respaldo la posición del ID EN ESA cabecera; sin ella, la última,
+  // como siempre (AsT y Traslado, cuyo ID sí es el último).
   var idCol = -1;
   for (var h = 0; h < hdr.length; h++) {
     if (String(hdr[h] == null ? "" : hdr[h]).trim() === "ID") { idCol = h; break; }
   }
-  if (idCol < 0 || idCol >= widest) idCol = widest - 1;
+  if (idCol < 0 || idCol >= widest) {
+    var idEnvio = cabEnvio && cabEnvio.indexOf ? cabEnvio.indexOf("ID") : -1;
+    idCol = (idEnvio >= 0 && idEnvio < widest) ? idEnvio : widest - 1;
+  }
   var data  = ws.getDataRange().getValues();
 
   // Mapa ID → { fila del sheet (1-indexed), índice en data } de las ya existentes.

@@ -87,6 +87,7 @@ const MODELOS = {
   'simple, un tanque': {
     fecha: '2026-09-08',
     lote: 'AB',
+    guiaIngreso: '001-002-000123',          // 2026-10-02 · la guía, texto con ceros y guiones
     composiciones: [{
       codigoGenetico: 'CG01', piscina: 'P-12', camaronera: 'Camaronera Norte',
       machos: 150, hembras: 300, pesoMachos: 34.5, pesoHembras: 41.2,
@@ -97,6 +98,7 @@ const MODELOS = {
   'reparto en varias salas': {
     fecha: '2026-09-08',
     lote: 'bd',
+    guiaIngreso: '  G 77  ',                // la misma en cada fila, y recortada igual por los dos lados
     composiciones: [{
       codigoGenetico: 'cg 07', piscina: 'P-3', camaronera: 'Sur',
       machos: 90, hembras: 120,
@@ -189,7 +191,7 @@ describe('Ingreso · el monolito y el módulo declaran lo mismo', () => {
     expect(api.MAD_ING_COLUMNS.map((c) => c.k)).toEqual(
       ['fecha', 'lote', 'codigoGenetico', 'piscina', 'camaronera', 'grupo', 'sala', 'tanque',
         'machos', 'hembras', 'pesoMachos', 'pesoHembras', 'supervivencia', 'crecimientoSemanal',
-        'librasHectarea', 'densidad', 'agua', 'id'],
+        'librasHectarea', 'densidad', 'agua', 'id', 'guiaIngreso'],
     );
   });
 

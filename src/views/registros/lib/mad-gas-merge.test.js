@@ -237,7 +237,7 @@ describe('GAS · el enrutado de doPost pasa merge sólo donde toca', () => {
   });
 
   it('isMadId llama a upsertAstRows CON merge; AsT y Traslado SIN él', () => {
-    expect(gasSrc).toContain('else if (isMadId)  result = upsertAstRows(ws, rows, true);');
+    expect(gasSrc).toContain('else if (isMadId)  result = upsertAstRows(ws, rows, true, payload.headers);');
     expect(gasSrc).toContain('else if (isAst)    result = upsertAstRows(ws, rows);');
     expect(gasSrc).toContain('else if (isTras)   result = upsertAstRows(ws, rows);');
   });

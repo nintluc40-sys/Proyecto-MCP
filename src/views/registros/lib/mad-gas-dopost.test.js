@@ -1268,8 +1268,8 @@ describe('GAS · Maduración Ingreso con Crecimiento y Libras: la hoja en uso no
   const filaVieja = INGRESO_PRODUCCION_0913.map((h) => ({ Fecha: '2026-08-29', Lote: 'BP', 'Camarones por m2': 21.4,
     'Densidad de siembra': 214000, Agua: 'Agua de playa', ID: 'BP-OLF5.F2-S4-t1' })[h] ?? '');
 
-  it('el fixture ejerce algo: el cliente manda 18 columnas y la hoja de producción tiene 17', () => {
-    expect(MAD_INGRESO_HEADERS).toHaveLength(18);
+  it('el fixture ejerce algo: el cliente manda más columnas (18; 19 desde la guía del 2026-10-02) y la hoja de producción tiene 17', () => {
+    expect(MAD_INGRESO_HEADERS).toHaveLength(19);
     expect(INGRESO_PRODUCCION_0913).toHaveLength(17);
   });
 
@@ -1750,5 +1750,59 @@ describe('GAS · Registro_Traslado · la Ubicación conserva su signo (LARC 40)'
     const escritas = hoja.filas.slice(1).map((f) => f[UBIC - 1]);
     expect(escritas.length).toBeGreaterThan(0);
     escritas.forEach((x) => expect(x).toBe('-2.213500, -80.979100'));
+  });
+});
+
+/* 2026-10-02 (usuario) · «GUÍA DE INGRESO», la columna 19 de `Maduración Ingreso`, DETRÁS DEL ID.
+   La hoja de producción tiene 18 (la última, ID) y no se migra: el GAS alarga la cabecera solo. Lo que cambia en el
+   GAS, y por qué:
+   · el ID deja de ser la última columna. `upsertAstRows` lo localiza por la cabecera de la HOJA y, si ésta falta, ya
+     no cae a «la última columna» —que ahora sería la guía: cada envío AÑADIRÍA una fila, el defecto del AsT del
+     08-15— sino a la posición del ID en la cabecera del ENVÍO;
+   · la guía es TEXTO libre: se le da formato «@» antes de escribir (localizada por la cabecera del envío, no por un
+     número de columna), o Sheets guardaría «000123» como 123 y «3-5» como una fecha.
+   Y un equipo con la versión anterior (18 columnas) sigue escribiendo: le falta el final, no está corrido. */
+describe('GAS · Maduración Ingreso con «Guía de ingreso» detrás del ID (2026-10-02)', () => {
+  const ING19 = MAD_INGRESO_HEADERS;
+  const ING18 = ING19.slice(0, ING19.indexOf('Guía de ingreso'));   // la cabecera de la hoja de producción hoy
+  const GUIA = ING19.indexOf('Guía de ingreso');
+  const fila = (cab, v) => conValores(cab, Object.assign({ Fecha: '2026-10-02', Lote: 'BQ', 'Código genético': 'OLF5.F2',
+    'Crecimiento semanal promedio': 1.5, Sala: 'Sala 4', Tanque: 1, Machos: 10, Hembras: 12, ID: 'ING-BQ-1' }, v));
+  const post = (g, cab, filas) => g.post({ sheetName: 'Maduración Ingreso', headers: cab, rows: filas });
+
+  it('🔴 la hoja de producción (18) recibe 19: alarga la cabecera, ACTUALIZA por ID y no duplica', () => {
+    const hoja = hojaFalsa([ING18, fila(ING18, { Machos: 5 })]);
+    const g = gas({ 'Maduración Ingreso': hoja });
+    expect(post(g, ING19, [fila(ING19, { Machos: 10, 'Guía de ingreso': '001-002-000123' })]).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(2);
+    expect(hoja.filas[0]).toEqual(ING19);
+    expect(hoja.filas[1][ING19.indexOf('Machos')]).toBe(10);
+    expect(hoja.filas[1][GUIA]).toBe('001-002-000123');
+  });
+
+  it('🔴 con la cabecera del ID EN BLANCO, empareja por el ID del ENVÍO, no por la última columna (la guía)', () => {
+    const hoja = hojaFalsa([ING19.map((h) => (h === 'ID' ? '' : h)), fila(ING19, { Machos: 5, 'Guía de ingreso': 'G-VIEJA' })]);
+    const g = gas({ 'Maduración Ingreso': hoja });
+    expect(post(g, ING19, [fila(ING19, { Machos: 10, 'Guía de ingreso': 'G-NUEVA' })]).status).toBe('ok');
+    expect(hoja.filas, 'con «la última columna» de respaldo la guía nueva no casaba y AÑADÍA otra fila').toHaveLength(2);
+    expect(hoja.filas[1][ING19.indexOf('Machos')]).toBe(10);
+    expect(hoja.filas[1][GUIA]).toBe('G-NUEVA');
+  });
+
+  it('un equipo SIN actualizar (18 columnas) sobre la hoja de 19 actualiza su fila y CONSERVA la guía', () => {
+    const hoja = hojaFalsa([ING19, fila(ING19, { Machos: 5, 'Guía de ingreso': 'G-1' })]);
+    const g = gas({ 'Maduración Ingreso': hoja });
+    expect(post(g, ING18, [fila(ING18, { Machos: 7 })]).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(2);
+    expect(hoja.filas[1][ING19.indexOf('Machos')]).toBe(7);
+    expect(hoja.filas[1][GUIA]).toBe('G-1');
+  });
+
+  it('🔴 la guía se guarda como TEXTO: «000123» y «3-5» no se convierten (como haría Sheets sin formato)', () => {
+    const hoja = hojaFalsa([ING18], { comoSheets: true });
+    const g = gas({ 'Maduración Ingreso': hoja });
+    expect(post(g, ING19, [fila(ING19, { 'Guía de ingreso': '000123' }),
+      fila(ING19, { Tanque: 2, ID: 'ING-BQ-2', 'Guía de ingreso': '3-5' })]).status).toBe('ok');
+    expect(hoja.filas.slice(1).map((f) => f[GUIA])).toEqual(['000123', '3-5']);
   });
 });
