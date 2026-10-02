@@ -12,7 +12,10 @@
      cierre de la víspera o del propio día. La hoja de desoves no lleva sala y el tablero no reparte lo que la hoja no
      dice, así que un lote que se mudó cuenta en sus dos salas y las salas NO suman el total: `enVarias` lo dice.
    · Las fuentes, como `modeloOperativo` (fuentesDesdeFilas + soloSalasVisibles), sin construir lo que aquí no se usa.
-   La FERTILIDAD queda fuera a propósito (usuario, 2026-10-01): hoy sale por encima del 100 % y se revisa aparte.
+   · La FERTILIDAD (2026-10-02, usuario; hasta ese día quedaba fuera porque salía por encima del 100 %, corregido el
+     01-10): la de `totalesDeReproduccion` y `tablaDeReproduccion` por lote y la de `acumularDesoves` por sala —N2 ÷
+     huevos, sólo de los desoves que traen LOS DOS—, y de cuántos desoves sale (`desovesConFertilidad`), con la misma
+     condición: `acumularDesoves` fila a fila, para no escribir otra. Casi ningún desove trae sus huevos contados.
    ============================================================ */
 import { fuentesDesdeFilas } from '../maduracion/operativo.fuentes.js';
 import { soloSalasVisibles, fechaDeFila } from '../maduracion/operativo.data.js';
@@ -44,9 +47,12 @@ export function produccionDelMes(filas, periodo, hoy) {
   const porSala = new Map();
   let enVarias = 0;
   let sinSala = 0;
+  let desovesConFertilidad = 0;
   for (const r of fuentes.desoves) {
     const f = fechaDeFila('desoves', r);
     if (!esIso(f) || f < p.desde || f > p.hasta) continue;
+    const una = acumularDesoves([r]);
+    if (una.conN2YHuevos) desovesConFertilidad += una.desoves;
     const salas = salasDelDesove(pres, normLote(r.Lote), f);
     if (!salas.length) { sinSala++; continue; }
     if (salas.length > 1) enVarias++;
@@ -57,13 +63,15 @@ export function produccionDelMes(filas, periodo, hoy) {
   }
   const salas = [...porSala].map(([sala, rs]) => {
     const A = acumularDesoves(rs);
-    return { sala, desoves: A.desoves, n5: A.n5, lotes: [...new Set(rs.map((r) => normLote(r.Lote)))].sort(porNombre) };
+    return { sala, desoves: A.desoves, n5: A.n5, fertilidad: A.fertilidad, lotes: [...new Set(rs.map((r) => normLote(r.Lote)))].sort(porNombre) };
   }).sort((a, b) => porNombre(a.sala, b.sala));
 
   return {
     periodo: p,
-    total: { desoves: T.desoves, n5: T.n5, naupliosPorHembra: T.naupliosPorHembra, pendientes: T.pendientes },
-    lotes: lotes.map((x) => ({ lote: x.lote, desoves: x.desoves, n5: x.n5, naupliosPorHembra: x.naupliosPorHembra, pendientes: x.pendientes })),
+    total: { desoves: T.desoves, n5: T.n5, naupliosPorHembra: T.naupliosPorHembra, pendientes: T.pendientes,
+      fertilidad: T.fertilidad, desovesConFertilidad },
+    lotes: lotes.map((x) => ({ lote: x.lote, desoves: x.desoves, n5: x.n5, naupliosPorHembra: x.naupliosPorHembra, pendientes: x.pendientes,
+      fertilidad: x.fertilidad })),
     salas, enVarias, sinSala,
   };
 }

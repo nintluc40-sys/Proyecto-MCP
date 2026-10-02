@@ -287,6 +287,9 @@ function madSummary(mIdx) {
   return memo(JSON.stringify(['madSummary', mIdx]), () => madMod.produccionDelMes(store.globalData, calendarRangeOfMonth(mIdx), hoyIso()));
 }
 const nfMad = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v).toLocaleString('es-EC') : '—');
+// La fertilidad del tablero con un decimal; «—» cuando no hay ningún desove con N2 y huevos (no es un 0 %).
+const pctMad = (v) => (typeof v === 'number' && Number.isFinite(v)
+  ? v.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %' : '—');
 const dmMad = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
 /** Bloque “🥚 Maduración” (2 tarjetas clicables). '' mientras el módulo no ha llegado o sin desoves en el mes. */
@@ -697,19 +700,24 @@ function sumDetail(key, mIdx, monthSup) {
     const chart = '<div class="vt-lab-chart"><canvas id="vtMadChart"></canvas></div>';
     if (key === 'madLotes') {
       const pend = s.total.pendientes;
-      const body = s.lotes.map((x) => `<tr><td><b>${esc(x.lote)}</b></td><td>${nfMad(x.desoves)}</td><td>${nfMad(x.n5)}</td><td>${nfMad(x.naupliosPorHembra)}</td></tr>`).join('');
+      const body = s.lotes.map((x) => `<tr><td><b>${esc(x.lote)}</b></td><td>${nfMad(x.desoves)}</td><td>${nfMad(x.n5)}</td><td>${nfMad(x.naupliosPorHembra)}</td><td>${pctMad(x.fertilidad)}</td></tr>`).join('');
+      const fert = s.total.desovesConFertilidad
+        ? `Fertilidad del mes: <b>${pctMad(s.total.fertilidad)}</b> (N2 ÷ huevos, de ${nfMad(s.total.desovesConFertilidad)} de los ${nfMad(s.total.desoves)} desoves: sólo los que traen su N2 y sus huevos contados).`
+        : 'Fertilidad del mes: sin dato (ningún desove trae su N2 y sus huevos contados).';
       return { title: '🦐 Maduración · por lote', html: periodo
         + `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${nfMad(s.total.desoves)} desoves de ${s.lotes.length} lote(s) · <b>${nfMad(s.total.n5)}</b> nauplios N5 contados.`
         + (pend ? ` ⏳ ${pend} desove(s) aún sin su conteo de N5: no entran en «nauplios por hembra».` : '') + '</p>'
-        + chart + madP('🥚 Por lote') + detailTable(['Lote', 'Desoves', 'Nauplios N5', 'Nauplios por hembra'], body),
+        + `<p style="font-size:12px;color:var(--c-text-soft);margin:0 0 10px">${fert}</p>`
+        + chart + madP('🥚 Por lote') + detailTable(['Lote', 'Desoves', 'Nauplios N5', 'Nauplios por hembra', 'Fertilidad'], body),
         draw: () => drawMadBars(s.lotes.map((x) => x.lote), s.lotes.map((x) => x.n5)) };
     }
-    const body = s.salas.map((x) => `<tr><td><b>${esc(x.sala)}</b></td><td>${nfMad(x.desoves)}</td><td>${nfMad(x.n5)}</td><td>${esc(x.lotes.join(', '))}</td></tr>`).join('');
+    const body = s.salas.map((x) => `<tr><td><b>${esc(x.sala)}</b></td><td>${nfMad(x.desoves)}</td><td>${nfMad(x.n5)}</td><td>${pctMad(x.fertilidad)}</td><td>${esc(x.lotes.join(', '))}</td></tr>`).join('');
     const nota = 'ⓘ Un desove cuenta en la sala donde estaba su lote la víspera o ese mismo día.'
+      + ' La fertilidad es N2 ÷ huevos, sólo de los desoves que traen los dos («—» si ninguno).'
       + (s.enVarias ? ` Un lote que se mudó cuenta en sus dos salas, así que las salas no suman el total del mes (${nfMad(s.total.desoves)} desoves).` : '')
       + (s.sinSala ? ` ${s.sinSala} desove(s) de lotes sin sala conocida ese día no aparecen aquí.` : '');
     return { title: '🏠 Maduración · por sala', html: periodo
-      + (s.salas.length ? chart + madP('🏠 Por sala') + detailTable(['Sala', 'Desoves', 'Nauplios N5', 'Lotes'], body) : '<p style="color:var(--c-text-muted)">Ningún desove del mes tiene sala conocida.</p>')
+      + (s.salas.length ? chart + madP('🏠 Por sala') + detailTable(['Sala', 'Desoves', 'Nauplios N5', 'Fertilidad', 'Lotes'], body) : '<p style="color:var(--c-text-muted)">Ningún desove del mes tiene sala conocida.</p>')
       + `<p style="font-size:11px;color:var(--c-text-muted);margin:10px 0 0">${esc(nota)}</p>`,
       draw: s.salas.length ? () => drawMadBars(s.salas.map((x) => x.sala), s.salas.map((x) => x.n5)) : null };
   }

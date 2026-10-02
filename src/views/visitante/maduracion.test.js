@@ -2,7 +2,8 @@
 // 2026-10-01 (usuario: «en la vista visitante, de manera similar a los demás departamentos, añadir algo que represente
 // a la producción sala y lote de Maduración»). Diseño aprobado: por lote y por sala con la regla del tablero (un desove
 // cuenta en las salas donde estaba su lote la víspera o ese día; un lote que se mudó cuenta en las dos y se DICE),
-// cifras «desoves y N5» SIN fertilidad (hoy sale >100 %: punto 3) y barras de N5 en el detalle.
+// cifras «desoves y N5» y barras de N5 en el detalle. 2026-10-02 (usuario): y la FERTILIDAD, que hasta ese día quedaba
+// fuera porque salía >100 % (corregido el 01-10, 12d9d6b): columna en los dos detalles y el total del mes con su cobertura.
 // El mes: la fecha del desove (Maduración no tiene corrida), el criterio aprobado para Microbiología.
 // Datos FICTICIOS: cada regla EQUIVOCADA da otra cifra.
 //   · LA — Sala 1, ingreso 01/08. Desova el 20/08 (10, N5 400 000), el 05/09 (20, N5 800 000) y el 20/09 (5, SIN N5).
@@ -97,16 +98,15 @@ describe('Visitante · 🥚 Maduración por mes (la fecha del desove)', () => {
 });
 
 describe('Visitante · 🥚 detalle por lote y por sala', () => {
-  it('🔴 por lote: nauplios por hembra SIN el desove pendiente, y sin fertilidad', async () => {
+  it('🔴 por lote: nauplios por hembra SIN el desove pendiente', async () => {
     await abrir([...LARV(), ...PLANTA()]);
     const body = detalle('madLotes');
-    expect(filas(body)).toEqual([
+    expect(filas(body).map((f) => f.slice(0, 4))).toEqual([
       ['LA', '25', '800.000', '40.000'],
       ['LB', '70', '2.100.000', '30.000'],
     ]);
     expect(body.textContent).toContain('1 desove(s) aún sin su conteo de N5');
     expect(body.textContent).toContain('del 01/09 al 30/09');
-    expect(body.textContent.toLowerCase()).not.toContain('fertilidad');
     expect(body.querySelector('canvas#vtMadChart')).not.toBeNull();
   });
 
@@ -116,9 +116,9 @@ describe('Visitante · 🥚 detalle por lote y por sala', () => {
     expect(tarjeta('madSalas').textContent).toContain('más nauplios: Sala 3');
     const body = detalle('madSalas');
     expect(filas(body)).toEqual([
-      ['Sala 1', '25', '800.000', 'LA'],
-      ['Sala 2', '30', '900.000', 'LB'],
-      ['Sala 3', '70', '2.100.000', 'LB'],
+      ['Sala 1', '25', '800.000', '42,5 %', 'LA'],
+      ['Sala 2', '30', '900.000', '31,7 %', 'LB'],
+      ['Sala 3', '70', '2.100.000', '31,4 %', 'LB'],
     ]);
     expect(body.textContent).toContain('las salas no suman el total del mes (95 desoves)');
     expect(body.querySelector('canvas#vtMadChart')).not.toBeNull();
@@ -128,10 +128,71 @@ describe('Visitante · 🥚 detalle por lote y por sala', () => {
     await abrir([...LARV(), ...PLANTA().filter((r) => !('Agua destino' in r) && !(r.Lote === 'LB' && r.Fecha === '10/09/2026' && 'Desoves' in r))]);
     const body = detalle('madSalas');
     expect(filas(body)).toEqual([
-      ['Sala 1', '25', '800.000', 'LA'],
-      ['Sala 2', '40', '1.200.000', 'LB'],
+      ['Sala 1', '25', '800.000', '42,5 %', 'LA'],
+      ['Sala 2', '40', '1.200.000', '31,3 %', 'LB'],
     ]);
     expect(body.textContent).not.toContain('no suman');
+  });
+});
+
+/* 2026-10-02 (usuario) · LA FERTILIDAD, con la regla del tablero: N2 ÷ huevos, sólo de los desoves que traen LOS DOS.
+   Dos filas más, como las reales (casi ningún desove trae sus huevos): LB el 25/09 (10 desoves, N2 600 000, SIN huevos
+   ni N5) y LZ el 22/09 (7, N2 300 000, sin huevos ni N5, de un lote sin sala).
+   · LA: 850 000 ÷ 2 000 000 = 42,5 % (con los huevos del pendiente del 20/09 —sin N2— saldría 34 %).
+   · LB: (950 000 + 1 250 000) ÷ (3 000 000 + 4 000 000) = 31,4 % (con el N2 sin huevos del 25/09 saldría 40 %).
+   · LZ: ningún desove con los dos → «—» (no 0 %, ni el N2 entero sobre nada).
+   · El mes: 3 050 000 ÷ 9 000 000 = 33,9 %, de 90 de los 112 desoves (20 + 30 + 40).
+   · Por sala: la 1 = LA (42,5 %); la 2 = LB del 10/09 (950 000 ÷ 3 000 000 = 31,7 %); la 3 = LB entero (31,4 %). */
+const SIN_HUEVOS = () => [
+  { ...DES('25/09/2026', 'LB', 10, ''), 'Total de huevos': '', N2: 600000 },
+  { ...DES('22/09/2026', 'LZ', 7, ''), 'Total de huevos': '', N2: 300000 },
+];
+
+describe('Visitante · 🥚 la fertilidad (sólo de los desoves con N2 y huevos contados)', () => {
+  it('🔴 por lote: columna «Fertilidad», «—» si el lote no trae ninguno con los dos', async () => {
+    await abrir([...LARV(), ...PLANTA(), ...SIN_HUEVOS()]);
+    const body = detalle('madLotes');
+    expect(filas(body).map((f) => [f[0], f[4]])).toEqual([['LA', '42,5 %'], ['LB', '31,4 %'], ['LZ', '—']]);
+    expect([...body.querySelectorAll('thead th')].map((th) => th.textContent.trim())).toContain('Fertilidad');
+  });
+
+  it('🔴 el total del mes, con su cobertura: de cuántos desoves sale', async () => {
+    await abrir([...LARV(), ...PLANTA(), ...SIN_HUEVOS()]);
+    const t = detalle('madLotes').textContent;
+    expect(t).toContain('Fertilidad del mes: 33,9 %');
+    expect(t).toContain('de 90 de los 112 desoves');
+  });
+
+  it('🔴 por sala: columna «Fertilidad» con los desoves que cuentan en esa sala', async () => {
+    await abrir([...LARV(), ...PLANTA(), ...SIN_HUEVOS()]);
+    const body = detalle('madSalas');
+    expect(filas(body).map((f) => [f[0], f[3]])).toEqual([['Sala 1', '42,5 %'], ['Sala 2', '31,7 %'], ['Sala 3', '31,4 %']]);
+  });
+
+  it('un mes sin ningún desove con los dos lo DICE (no 0 %)', async () => {
+    const { produccionDelMes } = await import('./maduracion.produccion.js');
+    const s = produccionDelMes([ING('01/08/2026', 'LB', 'Sala 2', 5), ...SIN_HUEVOS()], { desde: '2026-09-01', hasta: '2026-09-30' }, '2026-10-01');
+    expect(s.total.fertilidad).toBe('');
+    expect(s.total.desovesConFertilidad).toBe(0);
+    await abrir([...LARV(), ING('01/08/2026', 'LB', 'Sala 2', 5), ...SIN_HUEVOS()]);
+    expect(detalle('madLotes').textContent).toContain('Fertilidad del mes: sin dato');
+  });
+
+  it('🔑 el total es el del tablero: el KPI de 🥚 Reproducción y la regla de 📉 Tendencias dan lo mismo', async () => {
+    const { produccionDelMes } = await import('./maduracion.produccion.js');
+    const { totalesDeReproduccion } = await import('../maduracion/operativo.reproduccion.js');
+    const { acumularDesoves } = await import('../maduracion/operativo.tendencias.js');
+    const { fuentesDesdeFilas } = await import('../maduracion/operativo.fuentes.js');
+    const { normalizarFiltro } = await import('../maduracion/operativo.tablero.js');
+    const { fechaDeFila } = await import('../maduracion/operativo.data.js');
+    const SEP = { desde: '2026-09-01', hasta: '2026-09-30' };
+    const filasMad = [...PLANTA(), ...SIN_HUEVOS()];
+    const s = produccionDelMes(filasMad, SEP, '2026-10-01');
+    const { fuentes } = fuentesDesdeFilas(filasMad);
+    const T = totalesDeReproduccion({ fuentes, fecha: SEP.hasta }, SEP, normalizarFiltro({}));
+    expect(s.total.fertilidad).toBe(T.fertilidad);
+    expect(acumularDesoves(fuentes.desoves.filter((r) => fechaDeFila('desoves', r).startsWith('2026-09'))).fertilidad).toBe(T.fertilidad);
+    expect(Math.round(s.total.fertilidad * 10) / 10).toBe(33.9);
   });
 });
 
