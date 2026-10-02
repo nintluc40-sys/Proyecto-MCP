@@ -2014,13 +2014,18 @@ function comparativaHTML(c, p) {
   /* 5 (2026-09-29, usuario) · por código o por piscina, las PAREJAS juntas (cada lote en la fila de su combinación) o
      separadas (los desoves y el N5 de un lote de dos orígenes, ENTEROS en cada uno y marcados «*»: no suman). */
   const marca = (f) => (f.compartido ? '<span class="mop-nota" title="Compartidos con el otro origen de su lote: no suman">*</span>' : '');
+  /* 2026-10-02 (usuario) · la Edad de una fila de varios lotes es el RANGO de la de sus lotes; por código y por piscina
+     salía vacía. Y el ingreso ♀ y ♂ junto a «Ingresados». */
+  const edad = (f) => (f.diasMin === '' || f.diasMin == null ? '—'
+    : f.diasMin === f.diasMax ? nf(f.diasMin) + ' d' : nf(f.diasMin) + '–' + nf(f.diasMax) + ' d');
   const cuerpo = c.filas.length
     ? c.filas.map((f) => `<tr>
         <td><b>${esc(f.origen)}</b>${porLote ? '' : ` <span class="mop-nota">${f.lotes.length} lote(s)</span>`}</td>
-        <td class="r">${nf(f.ingresados)}</td><td class="r">${nf(f.vivos)}</td><td class="r">${pc(f.supervivencia)}</td>
+        <td class="r">${nf(f.ingresados)}</td><td class="r">${nf(f.ingresoHembras)}</td><td class="r">${nf(f.ingresoMachos)}</td>
+        <td class="r">${nf(f.vivos)}</td><td class="r">${pc(f.supervivencia)}</td>
         <td class="r">${nf(f.desoves)}${marca(f)}</td><td class="r">${pc(f.fertilidad)}</td><td class="r">${nf(f.n5)}${marca(f)}</td>
-        <td class="r">${f.dias === '' ? '—' : nf(f.dias) + ' d'}</td></tr>`).join('')
-    : '<tr><td colspan="8" class="muted">Nada que comparar con este filtro.</td></tr>';
+        <td class="r">${edad(f)}</td></tr>`).join('')
+    : '<tr><td colspan="10" class="muted">Nada que comparar con este filtro.</td></tr>';
   const veredicto = c.mejor
     ? `<p class="mc-note">Mejor supervivencia: <b>${esc(c.mejor)}</b> · peor: <b>${esc(c.peor)}</b>.</p>`
     : '<p class="mc-note">Con una sola fila no hay comparación: compararse consigo mismo no dice nada.</p>';
@@ -2035,8 +2040,9 @@ function comparativaHTML(c, p) {
       ${parejas}<span class="mc-seg mop-agr">${pills}</span></h4>
     <div class="mc-tablewrap"><table class="mc-table mc-table-sm">
       <thead><tr><th>${esc((DIMENSIONES_COMPARATIVA.find((d) => d.clave === c.dimension) || {}).etiqueta || 'Lote')}</th>
-        <th class="r">Ingresados</th><th class="r">Vivos</th><th class="r">Superv.</th>
-        <th class="r">Desoves</th><th class="r">Fertilidad</th><th class="r">N5</th><th class="r">Edad</th></tr></thead>
+        <th class="r">Ingresados</th><th class="r">Ingreso ♀</th><th class="r">Ingreso ♂</th><th class="r">Vivos</th><th class="r">Superv.</th>
+        <th class="r">Desoves</th><th class="r">Fertilidad</th><th class="r">N5</th>
+        <th class="r" title="Días de su ingreso a la foto (o a su cierre); con varios lotes, el rango de los suyos">Edad</th></tr></thead>
       <tbody>${cuerpo}</tbody></table></div>${notaParejas}${veredicto}
   </div>`;
 }

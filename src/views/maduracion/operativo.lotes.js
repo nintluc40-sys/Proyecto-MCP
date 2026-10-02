@@ -416,6 +416,8 @@ export function comparativa(M, F, periodo, dimension, parejas = 'juntas') {
   if (dim === 'lote') {
     filas = tablaDeLotes(M, F).map((f) => ({
       origen: f.lote, lotes: [f.lote], ingresados: f.ingresados.total, vivos: f.vivos.total,
+      // 2026-10-02 (usuario) · el ingreso por sexo, y la edad como rango (por lote, el de un solo valor).
+      ingresoHembras: f.ingresados.hembras, ingresoMachos: f.ingresados.machos, diasMin: f.dias, diasMax: f.dias,
       supervivencia: f.supervivencia.total, dias: f.dias,
       ...reproduccionDeLote(M.fuentes, f.lote, periodo),
     }));
@@ -439,7 +441,8 @@ function origenesDeLotes(M, dim) {
   const esCodigo = dim === 'codigo';
   const partes = (v) => (esCodigo ? normCodigoGenetico(v) : normPiscina(v)).split('/').map((s) => s.trim()).filter(Boolean);
   const out = new Map();
-  const de = (l) => out.get(l) || (out.set(l, { origenes: new Set(), animales: new Map(), repartido: false, porCodigo: new Map() }), out.get(l));
+  const de = (l) => out.get(l) || (out.set(l, { origenes: new Set(), animales: new Map(), repartido: false, porCodigo: new Map(),
+    machos: new Map(), hembras: new Map() }), out.get(l));
   for (const r of ((M.fuentes || {}).ingresos || [])) {
     if (fechaDeFila('ingresos', r) > foto) continue;
     const l = normLote(r.Lote);
@@ -449,6 +452,11 @@ function origenesDeLotes(M, dim) {
     const os = partes(esCodigo ? r['Código genético'] : r['Piscina Broodstock']);
     if (os.length > 1) L.repartido = true;   // una fila del Ingreso con dos orígenes: sus animales, en cada uno
     for (const o of os) { L.origenes.add(o); L.animales.set(o, (L.animales.get(o) || 0) + n); }
+    // 2026-10-02 (usuario) · y por sexo, con la misma regla (lo que entró por la fila de cada origen).
+    for (const o of os) {
+      L.machos.set(o, (L.machos.get(o) || 0) + ent(r.Machos));
+      L.hembras.set(o, (L.hembras.get(o) || 0) + ent(r.Hembras));
+    }
     if (!esCodigo) {
       const cg = normCodigoGenetico(r['Código genético']);
       const m = L.porCodigo.get(cg) || new Map();
@@ -466,7 +474,8 @@ function comparativaPorOrigen(M, F, periodo, dim, modo) {
   const enFiltro = (o) => (dim === 'codigo' ? codigoEnFiltro(o, F) : !(F && F.piscina) || o === normPiscina(F.piscina));
   const acc = new Map();
   const de = (o) => acc.get(o) || (acc.set(o, { origen: o, lotes: new Set(), ingresados: 0, vivos: 0, desoves: 0, huevos: 0,
-    n2: 0, n5: 0, huevosConN2: 0, n2ConHuevos: 0, desovesConN5: 0, compartido: false }), acc.get(o));
+    n2: 0, n5: 0, huevosConN2: 0, n2ConHuevos: 0, desovesConN5: 0, compartido: false,
+    ingresoMachos: 0, ingresoHembras: 0, edades: [] }), acc.get(o));
   const sumarReproduccion = (A, R) => { for (const k of ['desoves', 'huevos', 'n2', 'n5', 'huevosConN2', 'n2ConHuevos', 'desovesConN5']) A[k] += R[k]; };
   for (const f of tablaDeLotes(M, F)) {
     const clave = normLote(f.lote);
@@ -477,6 +486,9 @@ function comparativaPorOrigen(M, F, periodo, dim, modo) {
       const A = de(origenes.length ? origenes.join('/') : sinDato);
       A.lotes.add(f.lote);
       A.ingresados += f.ingresados.total;
+      A.ingresoMachos += f.ingresados.machos;
+      A.ingresoHembras += f.ingresados.hembras;
+      A.edades.push(f.dias);
       A.vivos += f.vivos.total;
       sumarReproduccion(A, R);
       continue;
@@ -494,14 +506,21 @@ function comparativaPorOrigen(M, F, periodo, dim, modo) {
       const A = de(o);
       A.lotes.add(f.lote);
       A.ingresados += L.animales.get(o) || 0;
+      A.ingresoMachos += L.machos.get(o) || 0;
+      A.ingresoHembras += L.hembras.get(o) || 0;
+      A.edades.push(f.dias);
       A.vivos += vivos.get(o) || 0;
       sumarReproduccion(A, R);
       if (origenes.length > 1 || L.repartido) A.compartido = true;
     }
   }
   // (G, de «grupo»: con `A` la línea de la fertilidad copiaba la de `reproduccionDeLote`, ancla de un banco.)
+  /* 2026-10-02 (usuario) · la EDAD de una fila con varios lotes es el RANGO de la de sus lotes (de su ingreso a la foto o
+     a su cierre): ninguna cifra única sería la de todos. Hasta ese día salía vacía (`dias: ''`, que se queda). */
+  const edad = (G, fn) => { const xs = G.edades.filter((d) => Number.isFinite(d)); return xs.length ? fn(...xs) : ''; };
   return [...acc.values()].sort((a, b) => porNombre(a.origen, b.origen)).map((G) => ({
     origen: G.origen, lotes: [...G.lotes].sort(porNombre), ingresados: G.ingresados, vivos: G.vivos,
+    ingresoHembras: G.ingresoHembras, ingresoMachos: G.ingresoMachos, diasMin: edad(G, Math.min), diasMax: edad(G, Math.max),
     supervivencia: cociente(G.vivos, G.ingresados, 100), desoves: G.desoves, huevos: G.huevos, n2: G.n2, n5: G.n5,
     fertilidad: cociente(G.n2ConHuevos, G.huevosConN2, 100), naupliosPorHembra: G.desovesConN5 > 0 ? Math.round(G.n5 / G.desovesConN5) : '',
     compartido: G.compartido, dias: '',

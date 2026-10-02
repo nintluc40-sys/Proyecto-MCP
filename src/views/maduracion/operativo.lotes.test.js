@@ -434,6 +434,35 @@ describe('Maduración · lotes · la comparativa', () => {
     expect(comparativa(M2, SIN, P, 'codigo', 'otra').parejas).toBe('juntas');
   });
 
+  /* 2026-10-02 (usuario) · «la cantidad de hembras y machos del ingreso de cada lote, piscina y código», y la EDAD, que
+     por código y por piscina salía SIEMPRE vacía (el cálculo la dejaba fija en ''). La planta es simétrica (100♂ 100♀…),
+     así que QL entra DESIGUAL —30♂ 50♀ como CA y 5♂ 15♀ como CB, en la P4, el 06/09—: cambiar ♀ por ♂ se nota. */
+  it('🔴 el ingreso ♀ y ♂ por lote, por código y por piscina, juntas y separadas, y suman los ingresados', () => {
+    const M3 = modeloOperativo([...PLANTA, ING('2026-09-06', 'QL', 'Sala 3', 6, 30, 50, 'CA', 'P4'),
+      ING('2026-09-06', 'QL', 'Sala 3', 6, 5, 15, 'CB', 'P4')], { hoy: FOTO, fecha: FOTO });
+    const P = periodoDe('30d', FOTO, M3.fuentes);
+    const sexo = (c) => c.filas.map((f) => [f.origen, f.ingresoHembras, f.ingresoMachos]);
+    expect(sexo(comparativa(M3, SIN, P, 'lote')).find((x) => x[0] === 'QL')).toEqual(['QL', 65, 35]);
+    // juntas: CA = QE + QH + QI (140/140) · CA/CB = QJ (20/20) + QL (65 ♀ / 35 ♂) · CB = QF + QG (40/40).
+    expect(sexo(comparativa(M3, SIN, P, 'codigo'))).toEqual([['CA', 140, 140], ['CA/CB', 85, 55], ['CB', 40, 40]]);
+    // separadas: cada código con lo que entró por SU fila del Ingreso (QL: 50 ♀ 30 ♂ como CA y 15 ♀ 5 ♂ como CB).
+    expect(sexo(comparativa(M3, SIN, P, 'codigo', 'separadas'))).toEqual([['CA', 200, 180], ['CB', 65, 55]]);
+    expect(sexo(comparativa(M3, SIN, P, 'piscina', 'separadas')).find((x) => x[0] === 'P4')).toEqual(['P4', 65, 35]);
+    for (const [dim, modo] of [['lote'], ['codigo'], ['codigo', 'separadas'], ['piscina'], ['piscina', 'separadas']]) {
+      for (const f of comparativa(M3, SIN, P, dim, modo).filas) {
+        expect(f.ingresoHembras + f.ingresoMachos, dim + ' ' + (modo || '') + ' ' + f.origen).toBe(f.ingresados);
+      }
+    }
+  });
+
+  it('🔴 la EDAD por código y por piscina es el rango de la de sus lotes (antes, siempre vacía)', () => {
+    // Edad = días de su ingreso a la foto (o a su cierre): QE 18 · QF 17 · QG 14 (cerró el 17/09) · QH, QI y QJ 15.
+    const edad = (c) => c.filas.map((f) => [f.origen, f.diasMin, f.diasMax]);
+    expect(edad(comparativa(M, SIN, P30, 'lote')).slice(0, 3)).toEqual([['QE', 18, 18], ['QF', 17, 17], ['QG', 14, 14]]);
+    expect(edad(comparativa(M, SIN, P30, 'codigo'))).toEqual([['CA', 15, 18], ['CA/CB', 15, 15], ['CB', 14, 17]]);
+    expect(edad(comparativa(M, SIN, P30, 'piscina', 'separadas'))).toEqual([['P1', 15, 18], ['P2', 14, 17], ['P3', 15, 15]]);
+  });
+
   it('🔴 5 · por código y por piscina sigue los FILTROS y el PERÍODO del tablero, como por lote', () => {
     // Código CB: sus lotes (QF, QG y QJ). Juntas: CA/CB y CB. Separadas: sólo CB (lo de CA de QJ no es del filtro).
     expect(comparativa(M, F({ codigo: 'CB' }), P30, 'codigo').filas.map((f) => f.origen)).toEqual(['CA/CB', 'CB']);

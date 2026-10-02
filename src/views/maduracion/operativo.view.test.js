@@ -646,6 +646,15 @@ describe('Maduración · operativo · 🧬 Lotes', () => {
     /* 5 (2026-09-29) · QA entró como CA y como CB: con las parejas «juntas» (por defecto) es la fila «CA/CB», entera.
        (Hasta ese día esperaba ['CA', 'CB']: lo que hoy da «separadas».) */
     expect([...comp.querySelectorAll('tbody tr')].map((t) => t.querySelector('td').textContent.trim().split(' ')[0])).toEqual(['CA', 'CA/CB', 'CB']);
+    /* 2026-10-02 (usuario) · el ingreso ♀ y ♂ junto a «Ingresados» (y suman), y la Edad, que por código salía vacía. */
+    const cab = [...comp.querySelectorAll('thead th')].map((th) => th.textContent.trim());
+    expect(cab.slice(1, 4)).toEqual(['Ingresados', 'Ingreso ♀', 'Ingreso ♂']);
+    const num = (s) => Number(s.replace(/\./g, ''));
+    for (const tr of comp.querySelectorAll('tbody tr')) {
+      const td = [...tr.querySelectorAll('td')].map((d) => d.textContent.trim());
+      expect(num(td[2]) + num(td[3]), td[0]).toBe(num(td[1]));
+      expect(td[td.length - 1], 'la Edad de ' + td[0]).toMatch(/^\d+(–\d+)? d$/);
+    }
   });
 
   it('🔴 5 · por código y por piscina, «Parejas: juntas | separadas»; separadas marca los desoves compartidos y lo dice', async () => {
@@ -658,11 +667,12 @@ describe('Maduración · operativo · 🧬 Lotes', () => {
     click(root.querySelector('[data-mop-agr="codigo"]'));
     expect([...root.querySelectorAll('[data-mop-parejas]')].map((b) => [b.dataset.mopParejas, b.classList.contains('is-on')]))
       .toEqual([['juntas', true], ['separadas', false]]);
-    expect(filas().map((f) => [f[0].split(' ')[0], f[4]])).toEqual([['CA', '0'], ['CA/CB', '4'], ['CB', '0']]);
+    // (Desoves es la 7.ª columna desde el 2026-10-02: delante entraron «Ingreso ♀» e «Ingreso ♂».)
+    expect(filas().map((f) => [f[0].split(' ')[0], f[6]])).toEqual([['CA', '0'], ['CA/CB', '4'], ['CB', '0']]);
     click(root.querySelector('[data-mop-parejas="separadas"]'));
     expect(root.querySelector('[data-mop-parejas="separadas"]').classList.contains('is-on')).toBe(true);
     expect(document.activeElement, 'el foco se queda en el selector').toBe(root.querySelector('[data-mop-parejas="separadas"]'));
-    expect(filas().map((f) => [f[0].split(' ')[0], f[4]])).toEqual([['CA', '4*'], ['CB', '4*']]);
+    expect(filas().map((f) => [f[0].split(' ')[0], f[6]])).toEqual([['CA', '4*'], ['CB', '4*']]);
     expect(comp().closest('.mc-card').textContent).toContain('* Desoves y N5 de lotes con más de un código');
     // Se queda al cambiar de agrupación y volver.
     click(root.querySelector('[data-mop-agr="lote"]'));
