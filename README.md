@@ -839,6 +839,13 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   Cada registro lleva **Código genético y Piscina Broodstock** detrás del lote (usuario, 2026-09-24),
   con el mismo «📥 Cargar» de Desoves. El código es parte de la **llave**, como en Desoves —un pool es
   lote + código—: el mismo lote con otro código es otro registro, y sin código no se guarda.
+- **Ingreso · «Guía de ingreso»** (usuario, 2026-10-02): texto libre y opcional, UNA por ingreso (junto a la
+  Fecha y el Lote), repetida en todas sus filas. En la hoja es la columna 19, **DETRÁS del ID**, a propósito:
+  añadida al final, la hoja de producción no se migra —el GAS alarga la cabecera solo— y un equipo sin
+  actualizar sigue escribiendo (le falta el final; el merge conserva la guía). Dos consecuencias en el GAS:
+  la columna se escribe como texto «@» (localizada por la cabecera del envío; si no, Sheets guardaría
+  «000123» como 123) y, como el ID ya no es la última, `upsertAstRows` lo busca por la cabecera de la hoja
+  y, si ésta faltara, por la del ENVÍO —no por «la última columna», que sería la guía y duplicaría filas—.
 - **Tanques · las observaciones son de multiselección** y llegan a la hoja **en el orden del
   catálogo**, no en el de marcado: si no, contarlas después sería imposible.
 - **Salas · «Toneladas»** son las de CADA tanque, y el valor por defecto **se pre-rellena, no se
