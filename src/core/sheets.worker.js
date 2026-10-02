@@ -22,7 +22,7 @@
      ← { id, ok: true, orden, huellas, cambiadas }
      ← { id, ok: false, motivo: 'sin-xlsx' | 'xlsx', error }
    ============================================================ */
-import { fetchXlsxSheets, planDelta, huellaDe } from './sheets.js';
+import { fetchXlsxSheets, respaldoPorHojas, planDelta, huellaDe } from './sheets.js';
 import { guardarLibro, almacenIDB } from './libroGuardado.js';
 
 /** Atiende una petición. `entorno` da cómo cargar SheetJS y cómo obtenerlo (en el Worker:
@@ -38,10 +38,23 @@ export async function atenderLectura(m, entorno) {
     return { id, ok: false, motivo: 'sin-xlsx', error: String((err && err.message) || err) };
   }
   try {
-    const sheets = await fetchXlsxSheets({ type: 'real', realId: m.realId }, obtenerXLSX);
+    const ids = { type: 'real', realId: m.realId };
+    let sheets = await fetchXlsxSheets(ids, obtenerXLSX);
+    let guardable = !!sheets;
+    /* 2026-10-01 (usuario) · si el libro entero no llega, el RESPALDO (cada hoja por su XLSX, inmune a los filtros de
+       la hoja; si el de una falla, su CSV) se hace AQUÍ: en la página, cada hoja grande por XLSX la congelaba ~1,3 s en
+       PC. El libro sólo se GUARDA en el equipo (P4) si llegó completo y todo por XLSX: una hoja por CSV puede venir
+       recortada por un filtro, y una que faltara se quedaría así hasta 7 días al abrir. */
+    if (!sheets) {
+      const r = await respaldoPorHojas(ids, obtenerXLSX);
+      if (Object.keys(r.sheets).length) {
+        sheets = r.sheets;
+        guardable = !r.porCsv && !r.perdidas && !r.sinPestanas;
+      }
+    }
     if (!sheets) return { id, ok: false, motivo: 'xlsx', error: 'El export XLSX no se pudo leer.' };
     const d = planDelta(m.previas || {}, sheets);
-    if (entorno.guardar) {
+    if (entorno.guardar && guardable) {
       const libro = { sheets, huellas: d.huellas, orden: d.orden, fp: huellaDe(d.huellas, d.orden), t: Date.now() };
       Promise.resolve().then(() => entorno.guardar(libro)).catch(() => { /* se reintenta en la próxima lectura */ });
     }

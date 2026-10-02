@@ -158,11 +158,13 @@ describe('descargarLibro', () => {
     expect(l.leer.mock.calls[0][0].previas).toBe(d.huellas);
   });
 
-  it('si el Worker no puede leer el XLSX, va al CSV (no reintenta el XLSX aquí)', async () => {
+  /* 2026-10-01 · el respaldo pide ahora cada hoja por SU XLSX (`&gid=`, inmune a los filtros: sheets.respaldo.test.js);
+     lo que aquí se fija es que el libro ENTERO (sin gid) no se reintenta en la página. */
+  it('si el Worker no puede leer el XLSX, va al respaldo por hojas (no reintenta el libro entero aquí)', async () => {
     setLectorLibro(lector({ ok: false, motivo: 'xlsx' }));
     await descargarLibro();
-    expect(pedidas.some((u) => /export\?format=xlsx/.test(u))).toBe(false);
-    expect(pedidas.some((u) => /gviz|htmlview/.test(u))).toBe(true);
+    expect(pedidas.some((u) => /export\?format=xlsx/.test(u) && !/[?&]gid=/.test(u))).toBe(false);
+    expect(pedidas.some((u) => /htmlview/.test(u))).toBe(true);
   });
 
   it('si el Worker no arranca, el camino de siempre', async () => {

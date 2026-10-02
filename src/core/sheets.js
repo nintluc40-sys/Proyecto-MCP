@@ -6,7 +6,8 @@
 
    Estrategia:
      1) XLSX completo  → export?format=xlsx  (1 sola petición, todas las hojas)
-     2) Fallback CSV   → gviz/tq?out:csv por gid (descubre gids por scraping)
+     2) Respaldo por hojas → el XLSX de cada hoja por gid (descubre gids por scraping);
+        sólo si el de una hoja falla, gviz/tq?out:csv para ESA hoja (ver fetchViaCsv)
 
    Cada fila se etiqueta con _SheetOrigin (Larvicultura, Control_Tanque,
    Maduracion, Lab_Algas, Morfologia) y se sella el Módulo desde el
@@ -222,6 +223,8 @@ function getXLSX() {
  *  src/core/sheets.delta.test.js con un Excel real—, pero cada hoja se guarda en arrays y no en un
  *  objeto por celda: menos memoria y una lectura bastante más rápida. */
 export const XLSX_LECTURA = { type: 'array', cellDates: true, dense: true };
+/** Cómo se convierte cada hoja en filas: la MISMA para el libro entero y para el respaldo por hojas. */
+const FILAS_LECTURA = { defval: '', raw: false, dateNF: 'dd/mm/yyyy' };
 
 async function fetchWorkbook(ids, obtenerXLSX = getXLSX) {
   const realId = ids.type === 'real' ? ids.realId : null;
@@ -242,7 +245,7 @@ async function fetchWorkbook(ids, obtenerXLSX = getXLSX) {
 export function workbookToSheets(wb, XLSX = getXLSX()) {
   const sheets = {};
   wb.SheetNames.forEach((name) => {
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '', raw: false, dateNF: 'dd/mm/yyyy' });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], FILAS_LECTURA);
     if (rows?.length) sheets[name] = stampRows(rows, name);
   });
   return sheets;
@@ -430,21 +433,71 @@ export async function discoverGids(ids) {
   return docId ? cachedTabs(docId) : [];
 }
 
-async function fetchViaCsv(ids) {
+/** 2026-10-01 (usuario) · EL RESPALDO LEE CADA HOJA POR SU XLSX, NO POR gviz. Con un FILTRO puesto en la hoja
+ *  —el laboratorio los deja a menudo— gviz y el CSV de exportación sólo dan las filas VISIBLES (medido en producción:
+ *  Datos M03, 20 de 1 579; Control_Tanque M10, 806 de 14 777), y ese set recortado pisaba en silencio el bueno
+ *  (`isDegraded` sólo cuenta hojas). El XLSX de la hoja las da TODAS (lo mismo que hace Registros desde el 0v·2) y se
+ *  lee con las mismas opciones que el libro entero: las filas salen iguales que por el camino principal.
+ *  Devuelve { nombre, filas } (`nombre`: el de la pestaña dentro del XLSX), o null si no se puede (documento
+ *  publicado, sin SheetJS, red, 401/403 o lo que llega no es un XLSX —una página de acceso, p. ej.—): entonces ESA hoja
+ *  va al CSV de siempre. `obtenerXLSX` da SheetJS (window.XLSX aquí; en el Worker, el suyo). */
+async function filasPorXlsxDeHoja(ids, gid, obtenerXLSX = getXLSX) {
+  if (ids.type !== 'real') return null;
+  let XLSX;
+  try { XLSX = obtenerXLSX(); } catch (_) { return null; }
+  if (!XLSX) return null;
+  const url = `https://docs.google.com/spreadsheets/d/${ids.realId}/export?format=xlsx&gid=${gid}&_cb=${Math.floor(Date.now() / 60000)}`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await fetchWithTimeout(url, { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const buf = new Uint8Array(await r.arrayBuffer());
+      if (buf[0] !== 0x50 || buf[1] !== 0x4B) return null;   // un XLSX es un ZIP («PK»); lo demás, al CSV
+      const wb = XLSX.read(buf, XLSX_LECTURA);
+      const nombre = wb.SheetNames[0] || '';
+      return { nombre, filas: nombre ? XLSX.utils.sheet_to_json(wb.Sheets[nombre], FILAS_LECTURA) : [] };
+    } catch (e) {
+      if (/\b(401|403)\b/.test(String((e && e.message) || ''))) return null;
+      if (attempt < 1) await new Promise((res) => setTimeout(res, 600));
+    }
+  }
+  return null;
+}
+
+/** El respaldo cuando el XLSX del libro entero no llega: cada hoja por su XLSX y, sólo si el de ESA hoja no llega, su
+ *  CSV. Devuelve { sheets, porCsv, perdidas, sinPestanas }: las hojas leídas; cuántas llegaron por el CSV (pueden venir
+ *  recortadas por un filtro); cuántas no llegaron por ningún camino; y si no se pudo saber qué pestañas hay (entonces
+ *  sólo se intenta la primera). Lo usan la página (fetchViaCsv) y el Worker (sheets.worker.js), que así lo hace sin
+ *  congelar la pantalla: leer una hoja grande por XLSX cuesta ~1,3 s en PC (Control_Tanque M08, 24 743 filas). */
+export async function respaldoPorHojas(ids, obtenerXLSX = getXLSX) {
   const sheets = {};
+  let porCsv = 0;
+  let perdidas = 0;
   const discovered = await discoverGids(ids);
   // Con pestañas descubiertas (o cacheadas) se bajan TODAS por gid; sin ninguna, último
   // recurso: la 1ª hoja (gid 0) para no dejar el sistema completamente vacío.
   const targets = discovered.length ? discovered : [{ gid: 0, title: '' }];
   const results = await mapLimit(targets, 6, async ({ gid, title }) => {
     try {
+      // Su XLSX primero (inmune a los filtros de la hoja); el CSV, sólo si el de ESTA hoja no llega. Una pestaña sin
+      // nombre (el Worker no tiene la caché de pestañas) toma el que trae su propio XLSX antes que adivinarlo.
+      const x = await filasPorXlsxDeHoja(ids, gid, obtenerXLSX);
+      if (x) return x.filas.length ? { name: title || x.nombre || detectSheetName(x.filas, gid), rows: x.filas } : null;
       const rows = parseCSV(await fetchCSV(buildCsvUrl(ids, gid), 1));
       if (!rows.length) return null;
-      return { name: title || detectSheetName(rows, gid), rows };
-    } catch (_) { return null; }
+      return { name: title || detectSheetName(rows, gid), rows, csv: true };
+    } catch (_) { perdidas++; return null; }
   });
-  results.forEach((res) => { if (res && !sheets[res.name]) sheets[res.name] = stampRows(res.rows, res.name); });
-  return sheets;
+  results.forEach((res) => {
+    if (!res || sheets[res.name]) return;
+    sheets[res.name] = stampRows(res.rows, res.name);
+    if (res.csv) porCsv++;
+  });
+  return { sheets, porCsv, perdidas, sinPestanas: !discovered.length };
+}
+
+async function fetchViaCsv(ids) {
+  return (await respaldoPorHojas(ids)).sheets;
 }
 
 // ---------- pipeline público ----------
