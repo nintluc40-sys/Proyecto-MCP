@@ -127,7 +127,8 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     ficha de un lote —origen, CASCADA DEL CUADRE, curva de vivos y reproducción—,
     comparativa por lote, código genético o piscina —por código y por piscina, cada lote con el origen de su Ingreso:
     sus parejas «juntas» (la fila «A/B», por defecto) o «separadas» (los desoves de la pareja, enteros en cada uno y con
-    «*»)— y, debajo, **📈 Piscinas de origen** (su desempeño es esa misma comparativa, «separadas», de todo el registro):
+    «*»), con el ingreso ♀ y ♂ junto a los ingresados y la edad —por código y por piscina, el rango de la de sus
+    lotes (2026-10-02; hasta ese día salía vacía)— y, debajo, **📈 Piscinas de origen** (su desempeño es esa misma comparativa, «separadas», de todo el registro):
     el Broodstock del
     último corte con los lotes que entraron de cada piscina y, al pulsarla, su ficha con el peso por semana), **💀 Bajas** (muerte natural frente a descarte,
     desglose cruzado por sala · tanque · lote, Pareto de motivos de cierre, distribución por hora, calor
