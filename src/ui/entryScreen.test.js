@@ -22,7 +22,8 @@ import { transformSync } from 'esbuild';
 import { mountShell, MAIN_VIEWS } from './shell.js';
 import { registerView } from './router.js';
 
-// Lo que llega a la build: app.css minificado por esbuild con el `target` del build (vite.config.js).
+// app.css minificado por esbuild con `target: 'es2019'` A SECAS: desde el 2026-10-02 el build traduce `inset` solo
+// (`cssTarget`, ver sinInset.test.js), pero estas tres capas no dependen de eso y aquí se comprueba sin él.
 const css = transformSync(readFileSync(join(process.cwd(), 'src/styles/app.css'), 'utf8'),
   { loader: 'css', minify: true, target: 'es2019' }).code;
 /** Cuerpo de la PRIMERA regla cuyo selector es exactamente `sel`. */

@@ -16,6 +16,13 @@ function listaDePrecache() {
   };
 }
 
+/* 2026-10-02 (usuario) · LOS NAVEGADORES PARA LOS QUE SE ESCRIBE EL CSS: los de la época de es2019. Con `target:
+   'es2019'` solo, esbuild da por soportado todo el CSS y deja `inset` tal cual —y hasta junta top/right/bottom/left a 0
+   en `inset:0`—, que no existe antes de Chrome 87 / Safari 14.1: ahí los modales a pantalla completa se rompían. Con
+   navegadores, lo traduce a los cuatro lados en TODO el CSS, también en el que se escriba mañana (medido: además sólo
+   añade prefijos —-webkit-sticky, backdrop-filter, user-select, clip-path, appearance—). Lo vigila sinInset.test.js. */
+export const CSS_NAVEGADORES = ['chrome73', 'edge79', 'firefox66', 'safari12.1'];
+
 // Configuración mínima y limpia. El build genera assets optimizados en /dist.
 export default defineConfig(({ command }) => ({
   // `base` DEBE depender del comando:
@@ -62,6 +69,7 @@ export default defineConfig(({ command }) => ({
   },
   build: {
     target: 'es2019',
+    cssTarget: CSS_NAVEGADORES,
     outDir: 'dist',
     assetsInlineLimit: 4096,
     rollupOptions: {

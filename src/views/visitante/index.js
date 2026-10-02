@@ -719,7 +719,7 @@ function sumDetail(key, mIdx, monthSup) {
 
 /** HTML del overlay de detalle (una sola vez por montaje de la vista). */
 function sumModalHTML() {
-  return `<div id="vtSumModal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(15,23,42,.45);align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto">
+  return `<div id="vtSumModal" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;z-index:1000;background:rgba(15,23,42,.45);align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto">
     <div id="vtSumCard" role="dialog" aria-modal="true" aria-labelledby="vtSumTitle" tabindex="-1" style="background:var(--c-surface);border-radius:16px;max-width:680px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:15px 20px;border-bottom:1px solid var(--c-border-soft)">
         <span id="vtSumTitle" style="font-size:16px;font-weight:800;color:var(--c-text)"></span>

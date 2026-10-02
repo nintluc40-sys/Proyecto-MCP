@@ -16,7 +16,7 @@
 .registros-app, .registros-app{height:100%;width:100%;max-width:100%;font-family:var(--sans);font-size:13px;color:var(--tx)}
 .registros-app{overflow:hidden;display:flex;flex-direction:column;background:var(--surf);
   -webkit-overflow-scrolling:touch;overscroll-behavior:none}
-.registros-app #rgLogin{position:fixed;inset:0;background:var(--bg);
+.registros-app #rgLogin{position:fixed;top:0;right:0;bottom:0;left:0;background:var(--bg);
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   z-index:1000;transition:opacity .35s ease;gap:0;
   overflow-y:auto;overflow-x:hidden;
@@ -213,7 +213,7 @@
 .registros-app .toast.err{border-left-color:var(--red)}
 .registros-app .toast.warn{border-left-color:var(--amber)}
 @keyframes ti{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
-.registros-app .ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:8000;align-items:center;justify-content:center;padding:20px}
+.registros-app .ov{display:none;position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.6);z-index:8000;align-items:center;justify-content:center;padding:20px}
 .registros-app .ov.open{display:flex}
 .registros-app .modal{background:var(--card);border-radius:16px;max-width:600px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.4);overflow:hidden;animation:mi .2s ease}
 @keyframes mi{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:none}}
@@ -235,7 +235,7 @@
 .registros-app .evg-cell{position:relative;border-radius:8px;overflow:hidden;background:#0f172a;aspect-ratio:1;cursor:pointer;border:1px solid var(--bdr)}
 .registros-app .evg-cell img{width:100%;height:100%;object-fit:cover;display:block}
 .registros-app .evg-cell.evg-broken img{display:none}
-.registros-app .evg-cell.evg-broken::before{content:"🖼️";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:24px;opacity:.5}
+.registros-app .evg-cell.evg-broken::before{content:"🖼️";position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;justify-content:center;font-size:24px;opacity:.5}
 .registros-app .evg-cap{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.62);color:#fff;font-size:9px;padding:2px 5px;line-height:1.25}
 .registros-app .evg-empty{text-align:center;color:var(--tx3);font-size:13px;padding:28px 10px}
 .registros-app ::-webkit-scrollbar{width:5px;height:5px}
@@ -290,7 +290,7 @@
 .registros-app .foto-vid-badge{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.7);
   color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;
   display:flex;align-items:center;gap:3px;pointer-events:none;}
-.registros-app .foto-vid-play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+.registros-app .foto-vid-play{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;justify-content:center;
   pointer-events:none;}
 .registros-app .foto-vid-play::after{content:'▶';font-size:28px;color:#fff;background:rgba(0,0,0,.5);
   width:48px;height:48px;border-radius:50%;display:flex;align-items:center;
@@ -316,7 +316,7 @@
 .registros-app .foto-empty{text-align:center;padding:52px 20px;color:var(--tx3);
   border:2px dashed var(--bdr2);border-radius:14px;font-size:12px;}
 .registros-app .foto-empty-ico{font-size:44px;display:block;opacity:.4;margin-bottom:12px}
-.registros-app #foto-lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);
+.registros-app #foto-lb{display:none;position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.92);
   z-index:9500;align-items:center;justify-content:center;cursor:zoom-out;}
 .registros-app #foto-lb.on{display:flex}
 .registros-app #foto-lb img{max-width:94vw;max-height:90vh;border-radius:8px;
@@ -386,7 +386,7 @@
   transition:var(--tr);}
 .registros-app .bit-item:hover{border-color:rgba(0,191,165,.4);box-shadow:0 2px 10px rgba(0,0,0,.06)}
 /* Historial de traslados (usuario, 2026-09-03) */
-.registros-app .th-ov{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:60;display:flex;align-items:flex-end;justify-content:center;padding:12px}
+.registros-app .th-ov{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(15,23,42,.55);z-index:60;display:flex;align-items:flex-end;justify-content:center;padding:12px}
 .registros-app .th-box{background:var(--card,#fff);border-radius:14px 14px 0 0;width:100%;max-width:760px;max-height:86vh;display:flex;flex-direction:column;box-shadow:0 -8px 30px rgba(0,0,0,.25)}
 .registros-app .th-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:14px 16px 8px;border-bottom:1px solid var(--bdr,#e2e8f0)}
 .registros-app .th-sub{font-size:12px;color:#64748b;font-weight:400;margin-top:2px}
@@ -407,7 +407,7 @@
 .registros-app .th-vacio{text-align:center;color:#64748b;font-size:13px;padding:26px 10px;line-height:1.7}
 @media(min-width:700px){.registros-app .th-ov{align-items:center}.registros-app .th-box{border-radius:14px}}
 /* Fotos del viaje (usuario, 2026-09-04) */
-.registros-app .tf-ov{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:60;display:flex;align-items:flex-end;justify-content:center;padding:12px}
+.registros-app .tf-ov{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(15,23,42,.55);z-index:60;display:flex;align-items:flex-end;justify-content:center;padding:12px}
 .registros-app .tf-box{background:var(--card,#fff);border-radius:14px 14px 0 0;width:100%;max-width:760px;max-height:86vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 -8px 30px rgba(0,0,0,.25)}
 .registros-app .tf-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:14px 16px 8px;border-bottom:1px solid var(--bdr,#e2e8f0)}
 .registros-app .tf-sub{font-size:12px;color:#64748b;font-weight:400;margin-top:2px}
@@ -604,7 +604,7 @@
 .registros-app{ height: calc(100vh - 86px) !important; min-height: 480px; overflow: hidden; display: flex; flex-direction: column; position: relative; }
 .registros-app *{ box-sizing: border-box; }
 /* El login era position:fixed;inset:0 (tapaba el header del dashboard) → acotado al host. */
-.registros-app #rgLogin{ position: absolute !important; inset: 0 !important; z-index: 5; }
+.registros-app #rgLogin{ position: absolute !important; top: 0 !important; right: 0 !important; bottom: 0 !important; left: 0 !important; z-index: 5; }
 /* El app ocupa el host en columna; .main scrollea dentro. */
 .registros-app #rgApp{ flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .registros-app .main{ overflow: auto; }

@@ -7122,7 +7122,7 @@ function madResVarsAbrir(){
   const sel=madResVarsLeer();
   let m=document.getElementById("ms-vars");
   if(!m){ m=document.createElement("div"); m.id="ms-vars"; fp.appendChild(m); }
-  m.innerHTML='<div style="position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px">'
+  m.innerHTML='<div style="position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px">'
     + '<div style="background:#fff;border-radius:10px;max-width:560px;width:100%;max-height:85vh;overflow:auto;padding:14px 16px;box-shadow:0 10px 30px rgba(0,0,0,.25)">'
     +   '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>⚙️ Variables del resumen</b><button class="btn" type="button" onclick="madResVarsCerrar()">✕</button></div>'
     +   '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Marca una <b>ficha entera</b> con su casilla, o sus variables una a una.</div>'
@@ -18862,7 +18862,7 @@ function trasChips(arr, group, set){
       + (on ? 'background:var(--teal);color:#fff;border:1.5px solid var(--teal);font-weight:600' : 'background:#fff;color:var(--tx2);border:1.5px solid var(--bdr)')
       + '">'
       + '<input type="checkbox" data-group="'+group+'" value="'+escapeHtml(s)+'"'+(on?" checked":"")
-      + ' onchange="trasRefrescar()" style="position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer">'
+      + ' onchange="trasRefrescar()" style="position:absolute;top:0;left:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer">'
       + (on ? '✓ ' : '') + escapeHtml(s) + '</label>';
   }).join("");
 }

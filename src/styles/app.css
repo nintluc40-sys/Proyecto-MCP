@@ -87,7 +87,9 @@
    antes de Chrome 87 / Safari 14.1; sin él la entrada quedaba como una caja arriba a la
    izquierda y dejaba ver la pestaña ☰ y el tablero. Tampoco sirve top/right/bottom/left a 0:
    el minificador del build (esbuild) los vuelve a juntar en `inset:0`
-   (src/ui/entryScreen.test.js lo comprueba sobre su salida). */
+   (src/ui/entryScreen.test.js lo comprueba sobre su salida). Eso era con `target: 'es2019'`
+   a secas; desde el 2026-10-02 el build declara navegadores (`cssTarget`, vite.config.js) y
+   traduce `inset` en todo el CSS. Estas tres capas se quedan como están. */
 .entry-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 200; display: flex; align-items: center; justify-content: center; padding: 24px;
   background: radial-gradient(120% 120% at 50% 0%, #00838f 0%, #00697a 45%, #00343d 100%); }
 .entry-screen.is-hidden { display: none; }
