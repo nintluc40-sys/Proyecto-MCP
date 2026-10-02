@@ -86,8 +86,10 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   **🥚 Maduración**: los nauplios (N5) producidos por lote y por sala, con las MISMAS funciones del
   tablero —un desove cuenta en las salas donde estaba su lote la víspera o ese día, así que un lote que
   se mudó cuenta en las dos y el detalle avisa de que las salas no suman el total—; el mes es el de
-  calendario del desove, y el módulo (`visitante/maduracion.produccion.js`) se carga diferido. Sin
-  fertilidad, por decisión del usuario.
+  calendario del desove, y el módulo (`visitante/maduracion.produccion.js`) se carga diferido. Los dos
+  detalles llevan la **fertilidad** (2026-10-02) con la regla del tablero —N2 ÷ huevos, sólo de los desoves
+  que traen los dos; «—» si ninguno— y el de lotes dice la del mes y de cuántos desoves sale (casi
+  ninguno trae sus huevos contados).
 - **Biología Molecular** (🧬): heatmap/calendario/treemap/swarm/sankey/E.D.T.,
   reporte comparativo y export Excel por rango de fechas.
   En su REGISTRO, el informe ofrece dos imágenes: el gel de agarosa y las **curvas de los
@@ -861,12 +863,14 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   mismo patrón en el cliente (`trasUbicacion` / `celdaUbicacion`) y en el GAS (`ubicacionConSigno_`)—. Arreglar
   sólo el GAS no bastó: el cliente la saneaba en DOS sitios (al enviar y al pasar la pantalla al registro), y el
   segundo sólo lo vio un navegador real.
-- **`inset` no existe en los navegadores viejos, y el build no lo traduce.** El build apunta a es2019, pero
-  `inset` no llega hasta Chrome 87 / Safari 14.1: allí la pantalla de entrada salía como una caja arriba a la
-  izquierda (2026-10-01). Las capas a pantalla completa de la shell —la entrada, el fondo del menú y el
-  cargador— van con top/left + width/height 100 %; escribir los cuatro lados a 0 no sirve, porque esbuild los
-  vuelve a juntar en `inset:0` al minificar. Lo vigila `entryScreen.test.js` sobre la salida de esbuild.
-  ⚠ Los modales de otras vistas (Algas, Biomol, Larvicultura, Microbiología, Registros) siguen con `inset: 0`.
+- **`inset` no existe en los navegadores viejos** (llega con Chrome 87 / Safari 14.1): allí una capa a pantalla
+  completa con `inset:0` sale como una caja arriba a la izquierda (le pasó a la entrada el 2026-10-01). Con
+  `target: 'es2019'` a secas, esbuild lo deja pasar —y hasta junta los cuatro lados en `inset:0`—, así que
+  desde el 2026-10-02 el build declara navegadores (`build.cssTarget`, `CSS_NAVEGADORES` en `vite.config.js`)
+  y esbuild TRADUCE todo `inset` del CSS de `src/` a los cuatro lados (medido: además sólo añade prefijos).
+  Lo que el build no toca se escribe ya con los cuatro lados: los estilos en el código (`style="…"`),
+  `engine.js` —que se publica tal cual— y el CSS de Registros, que tiene que seguir igual que el de
+  `index (8)`. Lo vigila `src/sinInset.test.js` (y `entryScreen.test.js`, las tres capas de la shell).
 
 ## Pendiente
 
