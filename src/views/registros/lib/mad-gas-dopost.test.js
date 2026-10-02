@@ -1806,3 +1806,55 @@ describe('GAS · Maduración Ingreso con «Guía de ingreso» detrás del ID (20
     expect(hoja.filas.slice(1).map((f) => f[GUIA])).toEqual(['000123', '3-5']);
   });
 });
+
+/* 2026-10-02 (usuario) · 🎯 SCORE del AsT: la hoja nueva «Registro_Score», una fila por tanque, por su ID (el último),
+   SIN merge —como el AsT y Traslado: reenviar una evaluación corregida la sustituye entera— y la «Corrida» como TEXTO
+   (localizada por la cabecera del envío). La cabecera sale del MOTOR, no se teclea aquí. */
+function cabecerasDelScore() {
+  const i = engineSrc.indexOf('const SCORE_CRITERIOS = [');
+  const fin = '["Observaciones","Realizado por","Revisado por","ID"]);';
+  const j = engineSrc.indexOf(fin, i);
+  const ctx = {};
+  createContext(ctx);
+  new Script(engineSrc.slice(i, j + fin.length) + '\n;globalThis.__h = SCORE_HEADERS;').runInContext(ctx);
+  return ctx.__h;
+}
+describe('GAS · Registro_Score (🎯 Score del AsT, 2026-10-02)', () => {
+  const SC = cabecerasDelScore();
+  const fila = (v) => conValores(SC, Object.assign({ Fecha: '2026-10-02', 'Módulo': 'M03', Corrida: '598', Tanque: 1,
+    Actividad: 8, Score: 88, 'Interpretación': 'Buena calidad', ID: 'SC-2026-10-02-M03-598-t1' }, v));
+  const post = (g, filas) => g.post({ sheetName: 'Registro_Score', headers: SC, rows: filas });
+
+  it('el fixture viene del motor: 29 columnas, con la Corrida y el ID al final', () => {
+    expect(SC).toHaveLength(29);
+    expect(SC[28]).toBe('ID');
+    expect(SC).toContain('Corrida');
+  });
+
+  it('🔴 la hoja está permitida y NACE con su cabecera; reenviar CORRIGE la fila del tanque (no duplica, no funde)', () => {
+    const hojas = {};
+    const g = gas(hojas);
+    expect(post(g, [fila({}), fila({ Tanque: 2, ID: 'SC-2026-10-02-M03-598-t2', Score: 100, 'Observaciones': 'ok' })]).status).toBe('ok');
+    const h = hojas['Registro_Score'];
+    expect(h.filas[0]).toEqual(SC);
+    expect(h.filas).toHaveLength(3);
+    expect(post(g, [fila({ Tanque: 2, ID: 'SC-2026-10-02-M03-598-t2', Score: 90 })]).status).toBe('ok');
+    expect(h.filas).toHaveLength(3);
+    expect(h.filas[2][SC.indexOf('Score')]).toBe(90);
+    expect(h.filas[2][SC.indexOf('Observaciones')], 'sin merge: la corrección la sustituye entera').toBe('');
+  });
+
+  it('🔴 la Corrida se guarda como TEXTO (Sheets convertiría «0598» en 598)', () => {
+    const hoja = hojaFalsa([SC], { comoSheets: true });
+    const g = gas({ 'Registro_Score': hoja });
+    expect(post(g, [fila({ Corrida: '0598' })]).status).toBe('ok');
+    expect(hoja.filas[1][SC.indexOf('Corrida')]).toBe('0598');
+  });
+
+  it('se puede leer con ?p=rows', () => {
+    const g = gas({ 'Registro_Score': hojaFalsa([SC, fila({})]) });
+    const r = g.leer({ p: 'rows', sheet: 'Registro_Score' });
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0].Score).toBe(88);
+  });
+});

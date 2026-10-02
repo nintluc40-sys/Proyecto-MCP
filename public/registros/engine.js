@@ -1897,6 +1897,8 @@ function _reconcileMark(mark){
     else if(mark.kind === "bio" && typeof _bioRaw === "function"){ raw=_bioRaw; save=_bioSave; keyOf=(r)=> r.data ? r.data.fecha : ""; }
     else if(mark.kind === "ast" && typeof _astRaw === "function"){ raw=_astRaw; save=_astSave; keyOf=(r)=> r.id; }
     else if(mark.kind === "tras" && typeof _trasRaw === "function"){ raw=_trasRaw; save=_trasSave; keyOf=(r)=> r.id; }
+    // 🎯 Score (2026-10-02): la marca lleva la VERSIÓN (id@ts), así que una evaluación corregida tras encolarse no se da por enviada.
+    else if(mark.kind === "score" && typeof _scoreRaw === "function"){ raw=_scoreRaw; save=_scoreSave; keyOf=(r)=> r.id + "@" + r.ts; }
     else if(mark.kind.indexOf("mad:") === 0 && typeof loadMad === "function" && typeof saveMadList === "function"){
       const _mk = mark.kind.slice(4);   // salas | tanques | lotes
       raw=()=>loadMad(_mk); save=(l)=>saveMadList(_mk, l); keyOf=(r)=> r.id;
@@ -2223,13 +2225,16 @@ async function syncAll(){
   if(isAstMod(curMod)){
     const astP  = (typeof loadAst  === "function") && loadAst().some(r => !r.synced);
     const trasP = (typeof loadTras === "function") && loadTras().some(r => !r.synced);
-    if(!astP && !trasP){
+    // 2026-10-02 · y la tercera ficha con hoja propia, 🎯 Score (Registro_Score).
+    const scoreP = (typeof loadScore === "function") && loadScore().some(r => !r.synced);
+    if(!astP && !trasP && !scoreP){
       setSyncUI("idle","Todo sincronizado");
       toast("No hay registros pendientes","info",2500);
       return;
     }
     if(astP)  await syncAllPendingAst();
     if(trasP) await syncAllPendingTras();
+    if(scoreP) await syncAllPendingScore();
     return;
   }
   if(!syncRateOk()) return;
@@ -2682,7 +2687,7 @@ const MAD_TABS      = ["ingreso","saldo","movimientos","salas","tanques","desove
 // Tabs del módulo Biomol — form + historial inline + fotos
 const BIO_TABS      = ["biomol","fotos"];
 // Tabs del módulo As Técnico — form de supervisión + registro de mareas + fotos
-const AST_TABS      = ["ast","traslado","marea","fotos"];
+const AST_TABS      = ["ast","traslado","score","marea","fotos"];
 // Rendered as [id, icon, label]
 const TAB_META = {
   calidad:  ["🔬","Calidad Larvaria"],
@@ -2711,6 +2716,7 @@ const TAB_META = {
   biomol:   ["🧬","Biomol"],
   ast:      ["📋","As Técnico"],
   traslado: ["🚚","Traslado"],
+  score:    ["🎯","Score"],
   marea:    ["🌊","Mareas"],
   blanco:   ["📝","Blanco"],
   micnuevo: ["🧫","Nuevo análisis"],
@@ -2789,6 +2795,7 @@ function selTab(t){
   if(t==="biomol") renderBiomol();
   if(t==="ast")    renderAst();
   if(t==="traslado") renderTraslado();
+  if(t==="score")  renderScore();
   if(t==="marea")  renderMarea();
   if(t==="micnuevo") micDispatchNuevo();
   if(t==="michist")  micDispatchHist();
@@ -2819,6 +2826,12 @@ function updateDots(){
   }
   // As Técnico: igual que Biomol
   if(isAstMod(curMod)){
+    const elS = document.getElementById("dot-score");   // 🎯 Score (2026-10-02)
+    if(elS){
+      const ls = (typeof loadScore === "function") ? loadScore() : [];
+      const ss = ls.some(r => !r.synced) ? "pending" : (ls.length > 0 ? "synced" : "empty");
+      elS.className = "fdot " + (ss==="synced"?"ok":ss==="pending"?"pend":"mt");
+    }
     const elT = document.getElementById("dot-traslado");
     if(elT){
       const lt = (typeof loadTras === "function") ? loadTras() : [];
@@ -2870,7 +2883,8 @@ function updateSyncUI(){
     return;
   }
   if(isAstMod(curMod)){
-    const p = loadAst().filter(r => !r.synced).length;
+    const p = loadAst().filter(r => !r.synced).length
+      + ((typeof loadScore === "function") ? loadScore().filter(r => !r.synced).length : 0);   // 🎯 Score (2026-10-02)
     _syncUIResumen(p, "registro(s)");
     return;
   }
@@ -17977,6 +17991,457 @@ function renderAst(){
 
 
 /* ══════════════════════════════════════════
+   🎯 SCORE · análisis de calidad de postlarvas por TANQUE (AsT, 2026-10-02, usuario)
+   ──────────────────────────────────────────
+   La planilla «CONTROL DE CALIDAD POST - LARVAS - 12C» como ficha rápida: por cada tanque (1–12, los del módulo)
+   se marca cada uno de los 13 criterios con UNO de sus 5 puntos; el Score es su SUMA (máx. 100) y la
+   interpretación sale de la tabla de la planilla. Decisiones del usuario (2026-10-02): tanque a tanque; hoja
+   «Registro_Score», UNA FILA POR TANQUE con los PUNTOS de cada criterio; Camaronera de los destinos de Despacho,
+   Módulo M01–M10/CIO y tanques 1–12; Laboratorio, Realizado y Revisado por recuerdan el último; la Prueba de
+   estrés es un %; y un tanque sólo sale con sus 13 criterios («los 13 o nada»: sin ellos no hay Score de 100).
+   • UNA EVALUACIÓN = fecha · módulo · corrida, con sus tanques. Guardarla otra vez la SUSTITUYE en el dispositivo;
+     en la hoja cada tanque lleva un ID fijo (`scoreRowId`), así que reenviar CORRIGE su fila (el GAS la upserta,
+     sin merge, como al AsT).
+   • Lo marcado se guarda al instante (SCORE_DRAFT_KEY): cerrar la app no lo pierde.
+   • Lo pendiente no caduca; lo ya enviado se purga a los 7 días.
+══════════════════════════════════════════ */
+const SCORE_SHEET     = "Registro_Score";
+const SCORE_REC_KEY   = "larv4_score_records";
+const SCORE_DRAFT_KEY = "larv4_score_draft";
+const SCORE_ULT_KEY   = "larv4_score_ultimos";
+const SCORE_TTL       = 7 * 24 * 60 * 60 * 1000;   // sólo para lo YA enviado
+const SCORE_TANQUES   = 12;
+// Los 13 criterios de la planilla, con sus puntos (de peor a mejor) y el texto de cada nivel, tal cual.
+const SCORE_CRITERIOS = [
+  { k:"actividad", h:"Actividad", g:"Actividad", s:"", pts:[2,4,6,8,10], d:[
+    "De aspecto débil, presencia de animales muertos.",
+    "De aspecto débil, no se observan animales muertos.",
+    "Actividad moderada, falta vigor en el nado contracorriente.",
+    "Robustos con moderada actividad y nado en contracorriente.",
+    "Robustos con alta actividad y fortaleza en nado en contracorriente."] },
+  { k:"hpLipidos", h:"Hepatopáncreas · Lípidos", g:"Hepatopáncreas", s:"Lípidos", pts:[3,6,9,12,15], d:[
+    "Pálidos, túbulos con niveles de lípidos Escasos (> 50%).",
+    "Pálido, túbulos con niveles de lípidos Escaso (30 - 40%).",
+    "Pálido, túbulos con niveles de lípidos Abundantes - Moderado (80 - 90%) - Escaso (10 - 20%).",
+    "Color intenso, túbulos con niveles de lípidos Abundantes (60 - 80%) - Moderado (< 40%).",
+    "Color intenso brillante, túbulos con lípidos Abundantes (90-100%) - Moderado (< 10%)."] },
+  { k:"hpDanos", h:"Hepatopáncreas · Daños", g:"Hepatopáncreas", s:"Daños", pts:[3,6,9,12,15], d:[
+    "Túbulos con daños Grado III y/o necrosis > 30%.",
+    "Túbulos con daños Grado III y/o necrosis 10 - 20%.",
+    "Túbulos con daños Grado II 20 - 50%, sin necrosis.",
+    "Túbulos con daños Grado II > 10%, sin necrosis.",
+    "Túbulos sin deformidad ni necrosis."] },
+  { k:"intAsimilacion", h:"Intestino · Asimilación", g:"Intestino", s:"Asimilación", pts:[2,4,6,8,10], d:[
+    "Presencia de animales vacíos, sin peristaltismo intestinal.",
+    "Parcialmente llenos (> 50%), con peristaltismo intestinal.",
+    "Parcialmente llenos (50 - 70%) con peristaltismo intestinal.",
+    "Parcialmente llenos (70 - 90%) con peristaltismo intestinal.",
+    "Llenos con peristaltismo intestinal."] },
+  { k:"intDanos", h:"Intestino · Daños", g:"Intestino", s:"Daños", pts:[2,4,6,8,10], d:[
+    "Presencia de intestinos deformes > 50%.",
+    "Presencia de intestinos deformes 40 - 50%.",
+    "Presencia de intestinos deformes 20 - 30%.",
+    "Presencia de intestinos deformes < 10%.",
+    "Intestino sin deformidad."] },
+  { k:"brDesarrollo", h:"Branquias · Desarrollo", g:"Branquias", s:"Desarrollo", pts:[1,2,3,4,5], d:[
+    "Desarrollo incipiente de lamelas en más del 20% de la muestra.",
+    "Desarrollo incipiente de lamelas entre el 20 y 10% de la muestra.",
+    "Desarrollo incipiente de lamelas entre el 5 y 10% de la muestra.",
+    "Desarrollo incipiente de lamelas en menos del 5% de la muestra.",
+    "Branquias bien desarrolladas en más del 95% de la muestra."] },
+  { k:"brDetritus", h:"Branquias · Detritus", g:"Branquias", s:"Detritus", pts:[1,2,3,4,5], d:[
+    "Presencia de detritus > 50%.", "Presencia de detritus 40 - 50%.", "Presencia de detritus 20 - 30%.",
+    "Presencia de detritus < 10%.", "Sin presencia de detritus."] },
+  { k:"brEpibiontes", h:"Branquias · Epibiontes", g:"Branquias", s:"Epibiontes", pts:[1,2,3,4,5], d:[
+    "Presencia de epibiontes > 50%.", "Presencia de epibiontes 40 - 50%.", "Presencia de epibiontes 20 - 30%.",
+    "Presencia de epibiontes < 10%.", "Sin presencia de epibiontes."] },
+  { k:"brNecrosis", h:"Branquias · Necrosis", g:"Branquias", s:"Necrosis", pts:[1,2,3,4,5], d:[
+    "Presencia de necrosis > 50%.", "Presencia de necrosis 40 - 50%.", "Presencia de necrosis 20 - 30%.",
+    "Presencia de necrosis < 10%.", "Sin presencia de necrosis."] },
+  { k:"necrosis", h:"Necrosis", g:"Necrosis", s:"", pts:[1,2,3,4,5], d:[
+    "Necrosis abundante en apéndices y/o músculo > 20%.",
+    "Necrosis moderada en apéndices (40 - 50%) y/o músculo (< 10%).",
+    "Necrosis moderada en apéndices (20 - 30%).",
+    "Necrosis leve en apéndices < 10%.",
+    "Sin presencia de necrosis."] },
+  { k:"epiCuerpo", h:"Epibiontes cuerpo", g:"Epibiontes cuerpo", s:"", pts:[1,2,3,4,5], d:[
+    "Presencia de epibiontes > 50%.", "Presencia de epibiontes 40 - 50%.", "Presencia de epibiontes 20 - 30%.",
+    "Presencia de epibiontes < 10%.", "Sin presencia de epibiontes."] },
+  { k:"masaMuscular", h:"Índice de masa muscular", g:"Índice de masa muscular", s:"", pts:[1,2,3,4,5], d:[
+    "Relación músculo - intestino: 1:1 > 10%.",
+    "Relación músculo - intestino: 2:1 > 10%.",
+    "Relación músculo - intestino: 2.5:1 > 10%.",
+    "Relación músculo - intestino: 3:1.",
+    "Relación músculo - intestino: 3.5 - 4:1."] },
+  { k:"disparidad", h:"Disparidad de tallas", g:"Disparidad de tallas", s:"", pts:[1,2,3,4,5], d:[
+    "Cinco o más grupos de talla en la muestra.",
+    "Cuatro grupos de talla en la muestra.",
+    "Tres grupos de talla en la muestra.",
+    "Dos grupos de talla en la muestra en relación semejante.",
+    "Hasta dos grupos, el más representativo del 95% de la muestra."] }
+];
+// Los datos de cada tanque que acompañan al Score en la planilla (opcionales).
+const SCORE_EXTRAS = [
+  { k:"dias",   h:"Días de cultivo",      ent:true, min:0 },
+  { k:"plg",    h:"PL/gramo",             min:0 },
+  { k:"sobr",   h:"% Sobrevivencia",      min:0, max:100 },
+  { k:"estres", h:"Prueba de estrés (%)", min:0, max:100 }
+];
+// La tabla de interpretación de la planilla: 100–95, 85–94, 70–84 y < 70 (los Score son enteros).
+const SCORE_INTERP = [[95,"Muy buena calidad"],[85,"Buena calidad"],[70,"Calidad mejorable"],[0,"Calidad pobre"]];
+const SCORE_COLOR  = { "Muy buena calidad":"#15803d", "Buena calidad":"#0f766e", "Calidad mejorable":"#b45309", "Calidad pobre":"#b91c1c" };
+// ⚠ Este array ES el orden físico de la hoja, y el ID va el ÚLTIMO (la lección del AsT: ver upsertAstRows en el GAS).
+const SCORE_HEADERS = ["Fecha","Laboratorio","Camaronera","Módulo","Corrida","Tanque"]
+  .concat(SCORE_CRITERIOS.map(function(c){ return c.h; }))
+  .concat(["Score","Interpretación"], SCORE_EXTRAS.map(function(e){ return e.h; }), ["Observaciones","Realizado por","Revisado por","ID"]);
+
+/* ── Las reglas (puras) ─────────────────────────────────── */
+function scoreInterp(total){
+  if(typeof total !== "number" || !isFinite(total)) return "";
+  for(let i = 0; i < SCORE_INTERP.length; i++) if(total >= SCORE_INTERP[i][0]) return SCORE_INTERP[i][1];
+  return SCORE_INTERP[SCORE_INTERP.length-1][1];
+}
+// Cuántos criterios del tanque llevan un punto DE LA PLANILLA (otro valor no cuenta como marcado).
+function scoreMarcados(t){
+  return SCORE_CRITERIOS.filter(function(c){ return !!t && c.pts.indexOf(Number(t[c.k])) !== -1; }).length;
+}
+function scoreTotal(t){
+  if(scoreMarcados(t) !== SCORE_CRITERIOS.length) return "";
+  return SCORE_CRITERIOS.reduce(function(a, c){ return a + Number(t[c.k]); }, 0);
+}
+function scoreEstado(t){
+  const n = scoreMarcados(t);
+  if(n === SCORE_CRITERIOS.length) return "completo";
+  const extras = SCORE_EXTRAS.some(function(e){ return !!t && String(t[e.k] == null ? "" : t[e.k]).trim() !== ""; });
+  return (n > 0 || extras) ? "incompleto" : "vacio";
+}
+function _scoreNum(v){
+  const s = String(v == null ? "" : v).trim().replace(",", ".");
+  if(s === "") return "";
+  const x = Number(s);
+  return isFinite(x) ? x : NaN;
+}
+function _scoreCorrida(d){ return sanitizeStr(String(d && d.corrida != null ? d.corrida : ""), 20).replace(/\s+/g, ""); }
+// El ID de la fila de un tanque: fecha · módulo · corrida · tanque. Fijo, para que reenviar corrija.
+function scoreRowId(d, tq){
+  return "SC-" + sanitizeStr(d.fecha, 10) + "-" + sanitizeStr(d.modulo, 10) + "-" + _scoreCorrida(d) + "-t" + tq;
+}
+function _scoreEvalId(d){ return "SCE-" + sanitizeStr(d.fecha, 10) + "-" + sanitizeStr(d.modulo, 10) + "-" + _scoreCorrida(d); }
+/** Lo que falta o está mal, en palabras; [] si se puede guardar. */
+function scoreValidar(d){
+  const m = d || {}, err = [], tqs = m.tanques || {};
+  const falta = [];
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(m.fecha || ""))) falta.push("la fecha");
+  if(!String(m.modulo || "").trim()) falta.push("el módulo");
+  if(!_scoreCorrida(m)) falta.push("la corrida");
+  if(falta.length) err.push("falta " + falta.join(", "));
+  let algun = false;
+  for(let n = 1; n <= SCORE_TANQUES; n++){
+    const t = tqs[n], e = scoreEstado(t);
+    if(e === "vacio") continue;
+    algun = true;
+    if(e === "incompleto") err.push("TQ " + n + " incompleto (faltan " + (SCORE_CRITERIOS.length - scoreMarcados(t)) + " criterio(s))");
+    SCORE_EXTRAS.forEach(function(x){
+      const v = _scoreNum(t[x.k]);
+      if(v === "") return;
+      if(!isFinite(v) || v < x.min || (x.max != null && v > x.max) || (x.ent && Math.round(v) !== v))
+        err.push("TQ " + n + ": " + x.h + " fuera de rango");
+    });
+  }
+  if(!algun) err.push("evalúa al menos un tanque");
+  return err;
+}
+/** Las filas de UNA evaluación: una por tanque COMPLETO, en orden de tanque. */
+function scoreFilas(d){
+  const m = d || {}, tqs = m.tanques || {}, filas = [];
+  for(let n = 1; n <= SCORE_TANQUES; n++){
+    const t = tqs[n];
+    if(scoreEstado(t) !== "completo") continue;
+    const total = scoreTotal(t);
+    const extra = function(x){ const v = _scoreNum(t[x.k]); return (v === "" || !isFinite(v)) ? "" : v; };
+    filas.push([sanitizeStr(m.fecha, 10), sanitizeStr(m.laboratorio, 80), sanitizeStr(m.camaronera, 80),
+      sanitizeStr(m.modulo, 10), _scoreCorrida(m), n]
+      .concat(SCORE_CRITERIOS.map(function(c){ return Number(t[c.k]); }))
+      .concat([total, scoreInterp(total)])
+      .concat(SCORE_EXTRAS.map(extra))
+      .concat([sanitizeStr(m.observaciones, 500), sanitizeStr(m.realizado, 80), sanitizeStr(m.revisado, 80), scoreRowId(m, n)]));
+  }
+  return filas;
+}
+function buildScorePayload(records){
+  const rows = [];
+  (records || []).forEach(function(r){ if(r && r.data) scoreFilas(r.data).forEach(function(f){ rows.push(f); }); });
+  return { sheetName: SCORE_SHEET, headers: SCORE_HEADERS.slice(), rows: rows };
+}
+
+/* ── Persistencia local ─────────────────────────────────── */
+function _scoreRaw(){
+  try{
+    const raw = localStorage.getItem(SCORE_REC_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  }catch(x){ _silent("_scoreRaw", x); return []; }
+}
+function _scoreSave(list){
+  const ok = _lsSet(SCORE_REC_KEY, JSON.stringify(list || []));
+  if(!ok && !_reclaiming) toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado).","err",7000);
+  return ok;
+}
+// Lo pendiente NO caduca (se perdería trabajo); lo enviado se purga a los 7 días.
+function loadScore(){
+  const now = Date.now(), raw = _scoreRaw();
+  const list = raw.filter(function(r){ return r && !(r.synced && r.syncedAt && (now - r.syncedAt) > SCORE_TTL); });
+  if(list.length !== raw.length) _scoreSave(list);
+  return list;
+}
+
+/* ── La evaluación en pantalla ──────────────────────────── */
+let _scoreModel = null;   // se guarda al instante en SCORE_DRAFT_KEY
+let _scoreTq = 1;         // el tanque en pantalla
+function _scoreUltimos(){ try{ return JSON.parse(localStorage.getItem(SCORE_ULT_KEY) || "{}") || {}; }catch(_){ return {}; } }
+function _scoreNuevo(){
+  const u = _scoreUltimos();
+  return { fecha: today(), modulo:"", corrida:"", camaronera:"", laboratorio: u.laboratorio || "", realizado: u.realizado || "",
+    revisado: u.revisado || "", observaciones:"", tanques:{} };
+}
+function _scoreActual(){
+  if(_scoreModel) return _scoreModel;
+  try{
+    const raw = localStorage.getItem(SCORE_DRAFT_KEY);
+    const d = raw ? JSON.parse(raw) : null;
+    _scoreModel = (d && typeof d === "object" && d.tanques && typeof d.tanques === "object") ? d : _scoreNuevo();
+  }catch(_){ _scoreModel = _scoreNuevo(); }
+  return _scoreModel;
+}
+function _scoreGuardarBorrador(){ _lsSet(SCORE_DRAFT_KEY, JSON.stringify(_scoreActual())); }
+function scorePick(k, pts){
+  const m = _scoreActual();
+  const t = m.tanques[_scoreTq] || (m.tanques[_scoreTq] = {});
+  t[k] = (Number(t[k]) === pts) ? "" : pts;   // el mismo toque, otra vez, desmarca
+  _scoreGuardarBorrador();
+  renderScore();
+}
+// El botón lleva su criterio y sus puntos en data-: el atributo onclick no interpola nada (verificar-atributos-evento).
+function scorePickEl(el){ if(el) scorePick(el.getAttribute("data-sc-k"), Number(el.getAttribute("data-sc-p"))); }
+function scoreTanque(n){ _scoreTq = n; renderScore(); }
+function scoreSiguiente(){
+  _scoreTq = _scoreTq >= SCORE_TANQUES ? 1 : _scoreTq + 1;
+  renderScore();
+  try{ const el = document.getElementById("sc-criterios"); if(el && el.scrollIntoView) el.scrollIntoView({ block:"start", behavior:"smooth" }); }catch(_){}
+}
+// Los campos de texto no repintan (perderían el foco): sólo guardan.
+function scoreCampo(el){
+  const k = el && el.getAttribute("data-sk");
+  if(!k) return;
+  _scoreActual()[k] = el.value;
+  _scoreGuardarBorrador();
+}
+function scoreExtra(el){
+  const k = el && el.getAttribute("data-se");
+  if(!k) return;
+  const m = _scoreActual();
+  const t = m.tanques[_scoreTq] || (m.tanques[_scoreTq] = {});
+  t[k] = el.value;
+  _scoreGuardarBorrador();
+}
+// Valida y guarda la evaluación en el dispositivo como PENDIENTE (la misma fecha·módulo·corrida la sustituye).
+function _scoreRegistrar(){
+  const m = _scoreActual();
+  const err = scoreValidar(m);
+  if(err.length){ toast("⚠ " + err.join(" · "), "warn", 8000); return null; }
+  const id = _scoreEvalId(m);
+  const list = _scoreRaw().filter(function(r){ return r && r.id !== id; });
+  const rec = { id: id, ts: Date.now(), synced: false, data: JSON.parse(JSON.stringify(m)) };
+  list.push(rec);
+  if(!_scoreSave(list)) return null;
+  _lsSet(SCORE_ULT_KEY, JSON.stringify({ laboratorio: m.laboratorio || "", realizado: m.realizado || "", revisado: m.revisado || "" }));
+  return rec;
+}
+function scoreGuardar(){
+  const rec = _scoreRegistrar();
+  if(!rec) return;
+  toast("💾 Score guardado en este dispositivo (" + scoreFilas(rec.data).length + " tanque(s)): pendiente de enviar", "ok");
+  renderScore(); updateDots(); updateSyncUI();
+}
+async function scoreEnviar(){
+  const rec = _scoreRegistrar();
+  if(!rec) return;
+  renderScore(); updateDots();
+  await syncAllPendingScore();
+}
+function scoreNueva(){
+  const m = _scoreActual();
+  const hay = Object.keys(m.tanques || {}).some(function(n){ return scoreEstado(m.tanques[n]) !== "vacio"; });
+  const guardada = _scoreRaw().some(function(r){ return r && r.id === _scoreEvalId(m) && JSON.stringify(r.data) === JSON.stringify(m); });
+  if(hay && !guardada && !confirm("Lo marcado en esta evaluación NO se ha guardado.\n\n¿Empezar otra igualmente?")) return;
+  _scoreModel = _scoreNuevo();
+  _scoreTq = 1;
+  _scoreGuardarBorrador();
+  renderScore();
+}
+function scoreAbrir(id){
+  const r = _scoreRaw().find(function(x){ return x && x.id === id; });
+  if(!r) return;
+  _scoreModel = JSON.parse(JSON.stringify(r.data));
+  _scoreTq = 1;
+  _scoreGuardarBorrador();
+  renderScore();
+}
+function scoreBorrar(id){
+  const r = _scoreRaw().find(function(x){ return x && x.id === id; });
+  if(!r) return;
+  if(!confirm(r.synced ? "¿Quitar esta evaluación del dispositivo? (Lo enviado sigue en la hoja.)"
+    : "Esta evaluación NO se ha enviado: si la quitas, se pierde.\n\n¿Quitarla igualmente?")) return;
+  _scoreSave(_scoreRaw().filter(function(x){ return x && x.id !== id; }));
+  renderScore(); updateDots(); updateSyncUI();
+}
+
+/* ── Envío ──────────────────────────────────────────────── */
+/* Una evaluación por envío (12 filas como mucho) y marcada en el acto: si la tercera se cae, las dos primeras ya
+   están en la hoja. La marca de la cola lleva la VERSIÓN (id@ts): una evaluación corregida después de encolarse no
+   se da por enviada cuando llegue la versión vieja. */
+async function syncAllPendingScore(){
+  const url = gasUrl();
+  if(!url){ toast("Configura la URL de Google Apps Script primero","warn"); openCfg(); return; }
+  if(!isValidGasUrl(url)){ toast("URL de script inválida","err"); return; }
+  if(!syncRateOk()) return;
+  const pending = loadScore().filter(function(r){ return !r.synced; });
+  if(pending.length === 0){
+    setSyncUI("idle","Todo sincronizado");
+    toast("No hay Score pendientes","info",2500);
+    return;
+  }
+  setSyncUI("pend","Enviando " + pending.length + " evaluación(es) de Score…");
+  let enviados = 0, fallo = null;
+  for(let i = 0; i < pending.length; i++){
+    const rec = pending[i];
+    const opts = { dedupeSalt: rec.id + "@" + rec.ts, mark:{ kind:"score", keys:[rec.id + "@" + rec.ts] } };
+    const entregado = await postPayload(buildScorePayload([rec]), url, opts);
+    if(!entregado){ fallo = opts; break; }
+    const l2 = _scoreRaw();
+    const j = l2.findIndex(function(x){ return x && x.id === rec.id && x.ts === rec.ts; });
+    if(j >= 0){ l2[j].synced = true; l2[j].syncedAt = Date.now(); _scoreSave(l2); }
+    enviados++;
+  }
+  if(!fallo){
+    setSyncUI("ok", enviados + " evaluación(es) de Score enviada(s) ✔");
+    toast(enviados + " evaluación(es) de Score sincronizada(s)","ok",3000);
+    setTimeout(function(){ setSyncUI("idle","Todo sincronizado"); }, 3000);
+  } else if(enviados > 0){
+    setSyncUI("err", enviados + " de " + pending.length + " enviadas");
+    toast("⚠️ " + enviados + " de " + pending.length + " evaluación(es) de Score sincronizadas; el resto sigue pendiente"
+      + _gasMotivo(fallo.gasMessage),"warn",7000);
+  } else {
+    _syncNotOkUI(fallo.outcome, "No fue posible sincronizar el Score", null, fallo.gasMessage);
+  }
+  if(curTab === "score") renderScore();
+  updateDots(); updateSyncUI();
+}
+
+/* ── La ficha ───────────────────────────────────────────── */
+function renderScore(){
+  const fp = document.getElementById("fp-score");
+  if(!fp) return;
+  const m = _scoreActual();
+  if(!(_scoreTq >= 1 && _scoreTq <= SCORE_TANQUES)) _scoreTq = 1;
+  const t = m.tanques[_scoreTq] || {};
+  const v = function(x){ return escapeHtml(x == null ? "" : String(x)); };
+  const marcados = scoreMarcados(t), total = scoreTotal(t), interp = scoreInterp(total);
+
+  const cab = '<div class="meta">'
+    + '<div class="mf"><label>Fecha *</label><input type="date" data-sk="fecha" value="'+v(m.fecha)+'" oninput="scoreCampo(this)"></div>'
+    + '<div class="mf"><label>Módulo *</label><select data-sk="modulo" onchange="scoreCampo(this)"><option value="">— Selecciona —</option>'+trasOpts(TRAS_MODULO_OPTS, m.modulo || "")+'</select></div>'
+    + '<div class="mf"><label>Corrida *</label><input data-sk="corrida" inputmode="numeric" maxlength="20" placeholder="Ej. 598" value="'+v(m.corrida)+'" oninput="scoreCampo(this)"></div>'
+    + '<div class="mf"><label>Camaronera</label><select data-sk="camaronera" onchange="scoreCampo(this)"><option value="">— Selecciona —</option>'+trasOpts(DESTINO_OPTS, m.camaronera || "")+'</select></div>'
+    + '<div class="mf"><label>Laboratorio</label><input data-sk="laboratorio" maxlength="80" value="'+v(m.laboratorio)+'" oninput="scoreCampo(this)"></div>'
+    + '</div>';
+
+  const chips = Array.from({ length: SCORE_TANQUES }, function(_, i){ return i + 1; }).map(function(n){
+    const e = scoreEstado(m.tanques[n]), tot = scoreTotal(m.tanques[n]), on = n === _scoreTq;
+    const bg = on ? "#0f766e" : e === "completo" ? "#ccfbf1" : e === "incompleto" ? "#fef3c7" : "#fff";
+    const tit = e === "completo" ? "Score " + tot + " · " + scoreInterp(tot) : e === "incompleto" ? "Incompleto" : "Sin evaluar";
+    return '<button type="button" data-sc-tq="'+n+'" onclick="scoreTanque('+n+')" aria-pressed="'+on+'" title="'+escapeHtml(tit)+'"'
+      + ' style="min-width:46px;padding:6px 6px;border-radius:8px;border:1.5px solid '+(on ? "#0f766e" : "#cbd5e1")+';background:'+bg+';color:'+(on ? "#fff" : "#0f172a")+';font-weight:700;font-size:12px;line-height:1.2;cursor:pointer">TQ '+n
+      + (e === "completo" ? '<br><span style="font-size:10px;font-weight:600">'+tot+'</span>' : e === "incompleto" ? '<br><span style="font-size:10px">…</span>' : '')
+      + '</button>';
+  }).join("");
+
+  const criterios = SCORE_CRITERIOS.map(function(c){
+    const sel = Number(t[c.k]), i = c.pts.indexOf(sel);
+    const btns = c.pts.map(function(p, j){
+      const on = p === sel;
+      return '<button type="button" data-sc-k="'+c.k+'" data-sc-p="'+p+'" onclick="scorePickEl(this)" aria-pressed="'+on+'" title="'+escapeHtml(c.d[j])+'"'
+        + ' style="min-width:40px;padding:8px 0;border-radius:7px;border:1.5px solid '+(on ? "#0f766e" : "#cbd5e1")+';background:'+(on ? "#0f766e" : "#fff")+';color:'+(on ? "#fff" : "#0f172a")+';font-weight:700;font-size:13px;cursor:pointer">'+p+'</button>';
+    }).join("");
+    return '<div style="padding:7px 0;border-bottom:1px solid #e2e8f0">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'
+      +   '<span style="font-size:12px;font-weight:700;color:#0f172a">'+escapeHtml(c.g)+(c.s ? ' <span style="color:#0f766e">· '+escapeHtml(c.s)+'</span>' : '')+'</span>'
+      +   '<span style="display:flex;gap:5px">'+btns+'</span></div>'
+      + '<div style="font-size:11px;margin-top:3px;color:'+(i >= 0 ? "#334155" : "#94a3b8")+'">'+(i >= 0 ? escapeHtml(c.d[i]) : "Sin marcar")+'</div>'
+      + '</div>';
+  }).join("");
+
+  const totalHtml = total !== ""
+    ? '<span style="font-size:22px;font-weight:800;color:'+(SCORE_COLOR[interp] || "#0f172a")+'">'+total+'</span> <span style="font-weight:700;color:'+(SCORE_COLOR[interp] || "#0f172a")+'">'+escapeHtml(interp)+'</span>'
+    : '<span style="font-weight:700;color:#b45309">'+marcados+' de '+SCORE_CRITERIOS.length+' criterios</span>';
+
+  const extras = '<div class="meta" style="margin-top:10px">' + SCORE_EXTRAS.map(function(x){
+    return '<div class="mf"><label>'+escapeHtml(x.h)+'</label><input data-se="'+x.k+'" inputmode="decimal" value="'+v(t[x.k])+'" oninput="scoreExtra(this)"></div>';
+  }).join("") + '</div>';
+
+  const evaluados = [];
+  for(let n = 1; n <= SCORE_TANQUES; n++){ if(scoreEstado(m.tanques[n]) !== "vacio") evaluados.push(n); }
+  const resumen = evaluados.length
+    ? '<table class="ft" style="font-size:11px;margin-top:6px"><thead><tr><th>Tanque</th><th>Score</th><th>Interpretación</th></tr></thead><tbody>'
+      + evaluados.map(function(n){
+        const tot = scoreTotal(m.tanques[n]);
+        return '<tr><td>TQ '+n+'</td><td>'+(tot === "" ? "—" : tot)+'</td><td>'+(tot === "" ? '<span style="color:#b45309">Incompleto ('+scoreMarcados(m.tanques[n])+' de '+SCORE_CRITERIOS.length+')</span>' : escapeHtml(scoreInterp(tot)))+'</td></tr>';
+      }).join("") + '</tbody></table>'
+    : '<div style="font-size:11px;color:#94a3b8">Aún no hay tanques evaluados.</div>';
+
+  const pie = '<div class="meta" style="margin-top:12px">'
+    + '<div class="mf" style="flex:1 1 100%"><label>Observaciones</label><textarea data-sk="observaciones" rows="2" maxlength="500" oninput="scoreCampo(this)" style="border:1.5px solid var(--bdr);border-radius:6px;padding:7px 10px;font:inherit">'+v(m.observaciones)+'</textarea></div>'
+    + '<div class="mf"><label>Realizado por</label><input data-sk="realizado" maxlength="80" value="'+v(m.realizado)+'" oninput="scoreCampo(this)"></div>'
+    + '<div class="mf"><label>Revisado por</label><input data-sk="revisado" maxlength="80" value="'+v(m.revisado)+'" oninput="scoreCampo(this)"></div>'
+    + '</div>';
+
+  const guardadas = loadScore().slice().sort(function(a, b){ return b.ts - a.ts; });
+  const lista = guardadas.length
+    ? guardadas.map(function(r){
+        const d = r.data || {};
+        return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:11px">'
+          + '<span>'+(r.synced ? "✅" : "📶")+' '+escapeHtml(d.fecha || "")+' · '+escapeHtml(d.modulo || "")+' · corrida '+escapeHtml(_scoreCorrida(d))+' · '+scoreFilas(d).length+' tanque(s)'+(r.synced ? "" : ' <b style="color:#b45309">pendiente</b>')+'</span>'
+          + '<span style="display:flex;gap:6px"><button class="btn" type="button" onclick="scoreAbrir(\''+escapeHtml(r.id)+'\')" style="font-size:11px">✏️ Abrir</button>'
+          + '<button class="btn" type="button" onclick="scoreBorrar(\''+escapeHtml(r.id)+'\')" style="font-size:11px">🗑</button></span></div>';
+      }).join("")
+    : '<div style="font-size:11px;color:#94a3b8">Ninguna en este dispositivo.</div>';
+
+  fp.innerHTML = '<div class="fc">'
+    + '<div class="fc-h"><div class="fc-t">🎯 Score · calidad de postlarvas por tanque</div><span class="ssp ssp-mt">'+escapeHtml(SCORE_SHEET)+'</span></div>'
+    + '<div class="fc-b"><div class="mad-form">'
+    + cab
+    + '<div style="font-size:11px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:.6px;margin:12px 0 6px">Tanque</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'+chips+'</div>'
+    + '<div id="sc-criterios" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:14px 0 4px">'
+    +   '<span style="font-size:14px;font-weight:800;color:#0f172a">TQ '+_scoreTq+'</span><span>'+totalHtml+'</span></div>'
+    + criterios
+    + extras
+    + '<div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn" type="button" onclick="scoreSiguiente()">Siguiente tanque ▶</button></div>'
+    + '<div style="font-size:11px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:.6px;margin:14px 0 2px">Tanques de esta evaluación</div>'
+    + resumen
+    + pie
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'
+    +   '<button class="btn" type="button" onclick="scoreGuardar()">💾 Guardar en el equipo</button>'
+    +   '<button class="btn bp" type="button" onclick="scoreEnviar()">☁️ Enviar</button>'
+    +   '<button class="btn" type="button" onclick="scoreNueva()">🗑 Nueva evaluación</button>'
+    + '</div>'
+    + '<div style="font-size:11px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:.6px;margin:16px 0 4px">Evaluaciones en este dispositivo</div>'
+    + lista
+    + '</div></div></div>';
+}
+
+
+/* ══════════════════════════════════════════
    TRASLADO (Tras) — Hoja de Control de Alimentación y Parámetros
    ──────────────────────────────────────────
    Registra el VIAJE de entrega de larvas: del laboratorio a la camaronera, con
@@ -23654,7 +24119,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "733da3d4d3f9";
+const GAS_VERSION = "9daa0194f781";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -23710,6 +24175,8 @@ const ALLOWED = [
   "Registro_Supervisión",
   "Registro_Desinfección",
   "Registro_Traslado",
+  // 🎯 Score del AsT (2026-10-02): análisis de calidad de postlarvas, una fila por tanque, por su columna "ID".
+  "Registro_Score",
   "Microbiología",
   "Calidad de Agua",
   "Patología en Fresco",
@@ -23778,7 +24245,10 @@ const LIMITS = {
   // ⚠ Con menos de 29, doPost rechaza el envío entero. Antes del 2026-08-30 era peor: se
   // recortaba en silencio, que es el fallo que costó las 2 últimas columnas del AsT
   // cuando maxCols estaba en 25.
-  tras:    { maxRows: 600, maxCols: 40 }
+  tras:    { maxRows: 600, maxCols: 40 },
+  // 🎯 Score (2026-10-02): 29 columnas (cabecera, 13 criterios, Score e interpretación, los 4 datos del tanque, pie e
+  // ID) + margen. Una evaluación son hasta 12 filas (los tanques del módulo); 300 cubre varias pendientes de golpe.
+  score:   { maxRows: 300, maxCols: 40 }
 };
 
 // Rate limit state: persistido en CacheService (60s TTL) para que sobreviva
@@ -23894,6 +24364,7 @@ function doPost(e) {
     var isAst    = payload.sheetName === "Registro_Supervisión";
     var isDesinf = payload.sheetName === "Registro_Desinfección";
     var isTras   = payload.sheetName === "Registro_Traslado";
+    var isScore  = payload.sheetName === "Registro_Score";
     var isMicro  = payload.sheetName === "Microbiología";
     var isCal    = payload.sheetName === "Calidad de Agua";
     var isPat    = payload.sheetName === "Patología en Fresco";
@@ -23966,6 +24437,7 @@ function doPost(e) {
                 : isBiomol ? LIMITS.biomol
                 : isAst    ? LIMITS.ast
                 : isTras   ? LIMITS.tras
+                : isScore  ? LIMITS.score
                 : isDesinf ? LIMITS.desinf
                 : isMicro  ? LIMITS.micro
                 : isCal    ? LIMITS.cal
@@ -24127,6 +24599,14 @@ function doPost(e) {
       if (_filasIg > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasIg - ws.getMaxRows());
       if (ws.getMaxRows() > 1 && ws.getMaxColumns() > _guiaCol) ws.getRange(2, _guiaCol + 1, ws.getMaxRows() - 1, 1).setNumberFormat("@");
     }
+    // 2026-10-02 · Registro_Score: la «Corrida» como TEXTO, por lo mismo (una «0598» perdería el cero), localizada
+    // por la cabecera del envío.
+    var _corrSc = isScore ? (payload.headers || []).indexOf("Corrida") : -1;
+    if (_corrSc >= 0) {
+      var _filasSc = lastRow(ws) + rows.length;
+      if (_filasSc > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasSc - ws.getMaxRows());
+      if (ws.getMaxRows() > 1 && ws.getMaxColumns() > _corrSc) ws.getRange(2, _corrSc + 1, ws.getMaxRows() - 1, 1).setNumberFormat("@");
+    }
     var result;
     if (isMad) {
       // Las hojas POSICIONALES del registro operativo usan upsert con su clave compuesta (las del reproductivo, en madKeyCols):
@@ -24189,6 +24669,8 @@ function doPost(e) {
     // sincronizar en cada parada sin duplicar una sola fila.
     // (Su columna «Ubicación» ya va como texto: ver el formato justo antes de este enrutado.)
     else if (isTras)   result = upsertAstRows(ws, rows);
+    // 🎯 Score (2026-10-02): el MISMO upsert por "ID" (el último), sin merge: reenviar una evaluación la corrige entera.
+    else if (isScore)  result = upsertAstRows(ws, rows);
     // Las tres de Maduración van con MERGE (3.er argumento), al revés que AsT y
     // Traslado: ver la cabecera de upsertAstRows para el porqué.
     else if (isMadId)  result = upsertAstRows(ws, rows, true, payload.headers);
@@ -27308,7 +27790,8 @@ window.addEventListener("beforeunload", function(e){
     } else if(isBioMod(curMod)){
       hasPending = _bioGridDirty || loadBio().some(r => !r.synced);
     } else if(isAstMod(curMod)){
-      hasPending = _astFormDirty || loadAst().some(r => !r.synced);
+      hasPending = _astFormDirty || loadAst().some(r => !r.synced)
+        || ((typeof loadScore === "function") && loadScore().some(r => !r.synced));   // 🎯 Score (2026-10-02)
     } else if(isMicMod(curMod)){
       hasPending = loadMic().some(r => !r.synced) || (typeof _calRaw==="function" && _calRaw().some(r => !r.synced)) || (typeof _patRaw==="function" && _patRaw().some(r => !r.synced));
     } else {
