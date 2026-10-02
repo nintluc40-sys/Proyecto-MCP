@@ -52,11 +52,22 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   (con columna **Dens. siembra** = promedio por tanque de siembra ÷ 28 ÷ 1000),
   estado de despacho ("Despachado"/"Despachando" excluyendo tanques agrupados/
   descartados) y modales: Comparativa de tanques, OM vs Tex, Desinfección,
-  Biomol, **Microbiología** (Placa de agar + Tabla + Heatmap por corrida+módulo)
+  Biomol, **Microbiología** (Placa de agar + Tabla + Heatmap + Tendencias por corrida+módulo; el
+  análisis **EM** de Larvicultura —pH, BA y levaduras, columnas que no son de ningún patógeno— no entra
+  en ésas: va en su pestaña **🧪 EM**, con el último análisis, su evolución y la tabla, sin semáforo
+  porque la ficha no les da rango)
   y **Trazabilidad** (desde la tarjeta "Días proceso": descarga en PDF las
   fichas del módulo —Calidad Larvaria, PLG, Población, Parámetros, Calidad de
   Agua, Despacho y Desinfección— con la información del Google Sheet, un PDF por
   tipo; el rango Desde/Hasta se prellena con el primer y último registro).
+  En el Resumen Operativo, el KPI **👤 Técnico** va en una línea: el nombre abreviado, «…» si no cabe
+  y el completo en el globo.
+  Desde el registro de **Despacho** (su KPI «Rendimiento cosecha») se abre **Traslado en ruta**
+  (`supervisor/traslado.js`): los camiones de esa corrida, sus insumos y check, oxígeno, temperatura y
+  actividad parada a parada, y el recorrido en un mapa cuyos filtros —**Camión** y **Paradas**, que
+  encuadra las elegidas— actúan sólo sobre el mapa. El tiempo tramo a tramo va CON SIGNO: una parada
+  sellada antes de la salida o después de la llegada, o una hora que retrocede, se DICE en ámbar en su
+  fila (antes salía como ~22 h); «En ruta» y «Puerta a puerta» no cambian.
 - **Larvicultura** (🦐): calidad larvaria — radar, evolución diaria, heatmap,
   ICL, ranking, población por tanque y modales Comparar/Historia/Decisión.
 - **Revisiones** (🔍): hoja `Registro_Supervisión` — calidad, morfología
@@ -71,7 +82,12 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   (Líneas/Normalizado/Mini-curvas/Heatmap), parámetros fisicoquímicos, sanidad,
   Índices del mes y export Excel por rango de fechas.
 - **Visitante** (🚪): resumen mensual en lenguaje llano (supervivencia, sanidad,
-  microalgas) mediante tarjetas que abren ventanas de detalle.
+  microalgas) mediante tarjetas que abren ventanas de detalle. Con datos de Maduración, el bloque
+  **🥚 Maduración**: los nauplios (N5) producidos por lote y por sala, con las MISMAS funciones del
+  tablero —un desove cuenta en las salas donde estaba su lote la víspera o ese día, así que un lote que
+  se mudó cuenta en las dos y el detalle avisa de que las salas no suman el total—; el mes es el de
+  calendario del desove, y el módulo (`visitante/maduracion.produccion.js`) se carga diferido. Sin
+  fertilidad, por decisión del usuario.
 - **Biología Molecular** (🧬): heatmap/calendario/treemap/swarm/sankey/E.D.T.,
   reporte comparativo y export Excel por rango de fechas.
   En su REGISTRO, el informe ofrece dos imágenes: el gel de agarosa y las **curvas de los
@@ -88,13 +104,21 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   Agua** (analizador multiparamétrico con WQI, doble lente Por parámetro/Por
   ubicación). Sub-vista **Patología en fresco** pendiente (a la espera de su
   hoja en el Google Sheet).
+  La barra de mes de General, Bacteriología y Calidad de Agua acaba, tras el último mes, en
+  **📅 Todo el registro**, y una muestra SIN corrida (Maduración, Algas, Otras) va al mes de su fecha
+  de muestreo (`monthIndexOfDate`: aproximado, y la barra lo dice) en vez de repetirse en todos los
+  meses (2026-10-01). Calidad de Agua trae **Sulfuros** (mg/L, sin rango por defecto) en la ficha de
+  Larvicultura, en la de Maduración y en los tres de agua de Maduración, y en su tablero: en la hoja es
+  la columna 49, AL FINAL —el GAS añade la cabecera solo—, y Sulfato es la 48 que ya usaba Algas.
 - **Maduración** (🥚): una entrada con DOS familias (selector interno; abre en Operativo).
   - **📋 Operativo** — el TABLERO del registro operativo, cargado DIFERIDO. Barra de filtros común
     (período · foto al día · sala → tanque · lote → código · estado · sexo · piscina · camaronera, con los
     activos como etiquetas quitables) y sus sub-vistas (la lista viva es `SUBS`, en `operativo.view.js`):
     **📊 Estado actual** (siete indicadores; el mapa de planta, que se colorea por el lote, por el tanque o por
     sus partes —los modos viven en `MODOS_MAPA`— y abre bajo él el LIENZO del tanque pulsado; las alertas, con
-    📉 Tendencias y ⏳ Permanencia; últimos registros y fines de cuarentena), **🏠 Salas** (tarjeta por sala y su detalle,
+    📉 Tendencias y ⏳ Permanencia; últimos registros y ⏳ **Cuarentena por lote y sala**, una barra por par con su
+    fecha de ingreso —la de la sala, y la del lote si entró antes en otra—), **🏠 Salas** (tarjeta por sala y su detalle
+    —con la hora de su último parte—,
     con la temperatura y el oxígeno por hora de UN día —«Día», por defecto el de la foto, con ◀ ▶— o del período
     entero —«Período»: el mapa de calor y las líneas por día—),
     **🧬 Lotes** (tabla maestra —con el peso ♀ y ♂ de cada lote, el del ⚖️ Saldo al cierre de la foto—,
@@ -107,7 +131,8 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     desglose cruzado por sala · tanque · lote, Pareto de motivos de cierre, distribución por hora, calor
     sala × día y lotes cerrados), **🔍 Revisiones del supervisor** (nauplios en sus 4 etapas, alcalinidad por área día y
     noche, mortalidad en desove y recuperación, y frecuencia de observaciones de tanque), **🛢 Tanques** (tabla
-    maestra de los ocupados y, al pulsar una fila, su ficha: composición, curva de vivos, partes con su hora,
+    maestra de los ocupados —con el día y la HORA de su último parte— y, al pulsar una fila, su ficha:
+    composición, curva de vivos, partes con su hora,
     observaciones y movimientos), **🥚 Reproducción** (totales, los desoves pendientes de N5 arriba, la tabla
     por lote —al pulsar un lote, sus N2 y N5 por destino, de más a menos N5— y «A dónde fueron», plegada con
     los tres primeros destinos), **🔄 Manejo** (movimientos en matriz sala → sala con su registro debajo, y los
@@ -161,6 +186,9 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     🔑 **Una PAREJA de códigos** («C1/C2», como la escriben los Desoves) **cuenta como sus dos** en el filtro de
     código de todo el tablero: casan si comparten alguno (`codigoEnFiltro`, en `operativo.tablero.js`). «C1» trae
     también el desove de la pareja, que cuenta ENTERO en cada uno de sus códigos, como el despacho en cada destino.
+    🔑 **La fertilidad (N2 ÷ huevos) y los huevos por desove sólo cuentan los desoves con sus huevos contados**
+    (2026-10-01), en el ⚖️ Saldo y en todo el tablero, comparativa incluida: muchos desoves traen N2 sin «Total de
+    huevos», y su N2 entraba arriba sin sus huevos abajo —salían tasas de más del 100 %—.
   - **🧬 Microchips** — seguimiento reproductivo por Trovan ID sobre
     las hojas `Maduración MATRIZ`/`Bitácora`/`Transferencias`.
     ⚠ **Es el REPRODUCTIVO. Hay otra «Maduración» distinta** —el registro OPERATIVO, por
@@ -404,7 +432,8 @@ src/
     dates.js               parseAnyDate (serial Excel, dd/mm/yyyy, ISO) + formato es-EC
     fields.js              Acceso tolerante a cabeceras, estadio, mortalidad derivada
     format.js              Formato numérico + semáforos
-    sheets.js              Motor Google Sheets: XLSX-first + fallback CSV + clasificación
+    sheets.js              Motor Google Sheets: XLSX-first + respaldo hoja a hoja + clasificación
+    sheets.worker.js       La descarga y la lectura del libro (y su respaldo) en un Web Worker
     refresh.js             Auto-refresco silencioso con fingerprint e inactividad
     charts.js              Registro central de Chart.js + destrucción gestionada
     prodCalendar.js        Calendario de producción: el «mes interno» como rango de corridas
@@ -418,15 +447,15 @@ src/
     modalEscape.js         Cierre con Escape, uniforme para todas las vistas
     toast.js               Aviso efímero no bloqueante (sustituye a window.alert)
   views/
-    supervisor/            Ejecutiva · módulo · tanque · larvia · despacho · omtex · compareTanks
+    supervisor/            Ejecutiva · módulo · tanque · larvia · despacho · traslado · omtex · compareTanks
     larvicultura/          Radar, evolución, heatmap, registros, ICL, ranking, modales
     revisiones/            Calidad, morfología, treemap, Sankey, cobertura
     algas/                 Subvistas por sistema, curva, fisicoquímicos, índices, export
-    visitante/             Resumen mensual en lenguaje llano + microalgas
+    visitante/             Resumen mensual en lenguaje llano + microalgas + producción de Maduración
     biomolecular/          D3 (heatmap/treemap/swarm/sankey/E.D.T.) + reporte + export
     microbiologia/         data.js (capa pura) · index.js · petri.js (placa de agar SVG)
-    maduracion/            Registro REPRODUCTIVO por Trovan: panorama · salas y tanques · hembras
-                           ⚠ el registro OPERATIVO de Maduración NO está aquí: ver engine.js
+    maduracion/            🧬 Microchips (el REPRODUCTIVO, por Trovan) y el TABLERO del registro
+                           OPERATIVO (operativo.*) · ⚠ sus FICHAS de captura NO están aquí: ver engine.js
     registros/             Fichas nativas (lib/ + fichas/) sobre el motor engine.js
                            lib/ tiene los esquemas y el LIBRO MAYOR de Maduración, con su
                            prueba de paridad contra el gemelo inline del monolito
@@ -476,15 +505,25 @@ Dos consecuencias que conviene tener presentes al desplegar:
    `necesitaLibro: false` y lee lo suyo por el GAS) y, mientras llega, esa vista enseña un aviso
    de carga —o el fallo, con ⟳— (`router.js · viewNeedsBook`, `refresh.js · asegurarLibro`).
    SheetJS va con `defer` y D3 se carga al abrir Biología Molecular (`main.js · cargarD3`).
+   Mientras se ve la entrada no hay pestaña ☰ ni menú lateral (`.app.is-entry`, en `shell.js`).
    **Libro guardado en el equipo** (P4, 2026-10-01): el Worker deja el último libro leído en
    IndexedDB (`core/libroGuardado.js`: sólo las hojas que cambiaron, meta en la misma
-   transacción) y la primera vista que lo necesita lo enseña AL INSTANTE —medido: 0,6 s en vez de
+   transacción; sólo un libro que llegó COMPLETO y todo por XLSX, ver el paso 1) y la primera
+   vista que lo necesita lo enseña AL INSTANTE —medido: 0,6 s en vez de
    23 s, también sin señal— con «datos de las hh:mm · actualizando…», y se revalida en el acto
    (aplica en reposo). **Caduca a los 7 días** (decisión del usuario): más viejo, no se usa y se
    borra. Una descarga que llega vacía (sin señal) cuenta como fallo: se conservan los datos.
 1. `connectSheets()` descarga el libro **completo** vía `export?format=xlsx`
-   (1 petición, todas las hojas). Si falla, cae a **CSV por `gid`** con
-   descubrimiento por scraping del HTML publicado, con reintento y backoff.
+   (1 petición, todas las hojas), con reintento y backoff. Si falla, el **respaldo** pide CADA hoja
+   por su XLSX (`export?format=xlsx&gid=`; los `gid` salen de `/htmlview`) y sólo la que no llegue,
+   por su CSV (`respaldoPorHojas`). 🔴 **No va por gviz desde el 2026-10-01**: con un FILTRO puesto en
+   la hoja —el laboratorio los deja a menudo—, gviz y el CSV dan sólo las filas visibles (medido:
+   Datos M03, 20 de 1 579), y ese recorte pisaba el libro bueno sin avisar; el XLSX de una hoja las
+   da todas, igual que el libro entero. El respaldo lo hace el Worker (en la página, cada hoja grande
+   por XLSX congelaba ~1,3 s), y el libro sólo se guarda en el equipo si ninguna hoja vino por CSV
+   ni faltó ninguna. Límite conocido: si el libro entero falla por TIEMPO, puede no quedar tiempo
+   para el respaldo antes del tope del Worker (`LIMITE_MS`, en `sheets.lector.js`); entonces se
+   conservan los datos que había.
    **El XLSX se descarga y se lee en un Web Worker** (`core/sheets.worker.js`, clásico, con
    `importScripts` del SheetJS de `public/vendor`; lectura `dense`): la pantalla no se
    congela (medido el 2026-10-01 con el libro real: 21 s → 0,9 s al abrir y 12 s → 0 en cada
@@ -538,8 +577,10 @@ Dos consecuencias que conviene tener presentes al desplegar:
 ### Los DOS destinos
 
 Todo cambio de Registros va a **dos** sitios: este repo y `C:\Users\Usuario\Music\index (8).html`,
-el monolito gemelo *standalone* (misma app, mismo GAS, mismas claves `larv4_`), que **no está
-versionado**. Lo que los mantiene juntos no es la disciplina sino los verificadores, y para portar
+el monolito gemelo *standalone* (misma app, mismo GAS, mismas claves `larv4_`), que **no está en
+este repo**: se versiona aparte, en el suyo de `Music` (desde el 2026-09-20; sin remoto y sin conversión
+de fin de línea, porque su sha1 es su identidad). Lo que los mantiene juntos no es la disciplina
+sino los verificadores, y para portar
 hay herramienta: `portar-engine-a-index8.mjs` deriva los bloques del `git diff` de `engine.js` y los
 aplica al gemelo; `portar-code-gs-a-plantillas.mjs` hace lo propio con `GAS/Code.gs` y las dos
 plantillas `GAS()`. Copiar a mano es lo que los separa. ⚠ Con `--contexto` bajo, un bloque que INSERTA
@@ -683,6 +724,17 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   con ese nombre desde A1, una hora sola o una fecha anterior al 1-3-1900, un error (#N/A), una cabecera que es
   fecha, una página sin SheetJS, un fallo o 20 s sin respuesta. Una hoja que no existe se da por vacía, como la
   da el GAS.
+- **Lo que se lee por el GAS se reintenta según POR QUÉ falló** (`_reproFetchSheet`). Sin red, no se reintenta
+  (y no se culpa a Google). Un corte («Failed to fetch»): hasta 4 intentos, con esperas de 1,5 · 3 · 6 s, y
+  ninguno nuevo pasados 30 s (1c, 2026-09-22). Un fallo de **ENTREGA** de Google: también hasta 4, con su propio
+  tope de **90 s** (punto 5, 2026-10-01; `_reproEsEntrega`, `_REPRO_ENTREGA_TOPE_MS`). Medido ese día: el GAS se
+  ejecuta siempre (`/exec` → 302); lo que falla a ratos es el segundo salto, en el que Google ENTREGA la respuesta
+  (`script.googleusercontent.com`): un 404, 429 o 5xx, o una página en vez de datos, que suele llegar tras
+  20–40 s. Es puntual en cada petición, así que insistir sí lo arregla, y por eso «no respondió en 30 s» cuenta
+  también como fallo de entrega (decisión del usuario, que cambia la del 1c). Un 403 o un error del propio GAS
+  siguen con 2 intentos. 🔑 Importa sobre todo en los equipos: `index (8)` abierto como archivo lee SIEMPRE por
+  aquí (ver el punto siguiente). `?p=ver` y el aviso de ronda repetida de Tanques (`_madTqHojaFresca`) hacen UN
+  intento a propósito.
 - **Sólo con el GAS de producción y desde una página https**: el libro que se exporta es el que escribe ese
   GAS, y Google no deja leer la exportación a una página abierta como archivo. En `index (8)`, además, su
   CSP tiene que permitir `https://docs.google.com` y `https://*.googleusercontent.com`.
@@ -809,6 +861,12 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   mismo patrón en el cliente (`trasUbicacion` / `celdaUbicacion`) y en el GAS (`ubicacionConSigno_`)—. Arreglar
   sólo el GAS no bastó: el cliente la saneaba en DOS sitios (al enviar y al pasar la pantalla al registro), y el
   segundo sólo lo vio un navegador real.
+- **`inset` no existe en los navegadores viejos, y el build no lo traduce.** El build apunta a es2019, pero
+  `inset` no llega hasta Chrome 87 / Safari 14.1: allí la pantalla de entrada salía como una caja arriba a la
+  izquierda (2026-10-01). Las capas a pantalla completa de la shell —la entrada, el fondo del menú y el
+  cargador— van con top/left + width/height 100 %; escribir los cuatro lados a 0 no sirve, porque esbuild los
+  vuelve a juntar en `inset:0` al minificar. Lo vigila `entryScreen.test.js` sobre la salida de esbuild.
+  ⚠ Los modales de otras vistas (Algas, Biomol, Larvicultura, Microbiología, Registros) siguen con `inset: 0`.
 
 ## Pendiente
 
