@@ -219,6 +219,12 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   `public/registros/engine.js`) que escriben al Sheet vía Google Apps Script.
   Incluye el **registro operativo de Maduración**, que tiene su propia sección aquí abajo
   por ser lo único del sistema que además CALCULA.
+  En el módulo **AsT** (As Técnico), junto a la supervisión, Traslado y Mareas, está **🎯 Score** (2026-10-02): la
+  planilla «CONTROL DE CALIDAD POST - LARVAS - 12C» por tanque (1–12) —cada uno de sus 13 criterios, un toque entre
+  sus 5 puntos; el Score es su suma (máx. 100) y la interpretación sale de los tramos de la planilla (95 · 85 · 70)—.
+  Escribe en la hoja **`Registro_Score`**, una fila por tanque con los PUNTOS de cada criterio y un ID fijo (fecha ·
+  módulo · corrida · tanque) el último: reenviar una evaluación la CORRIGE (el GAS la upserta sin merge). Un tanque
+  sólo sale con sus 13 criterios, y lo marcado se guarda al instante en el equipo.
 
 ### Maduración · el registro OPERATIVO
 
