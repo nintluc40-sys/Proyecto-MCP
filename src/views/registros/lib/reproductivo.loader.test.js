@@ -106,7 +106,8 @@ function sandbox(code, net, opts = {}) {
   return { api: ctx.__api, ctx, store, calls, sleeps };
 }
 
-const caido = () => [{ ok: false, status: 404, body: HTML_404 }, { ok: false, status: 404, body: HTML_404 }];
+/* Punto 5 (2026-10-01) · un 404 es un fallo de ENTREGA de Google y se reintenta hasta 4 veces: «el GAS no entrega» son 4. */
+const caido = () => [{ ok: false, status: 404, body: HTML_404 }, { ok: false, status: 404, body: HTML_404 }, { ok: false, status: 404, body: HTML_404 }, { ok: false, status: 404, body: HTML_404 }];
 /* RD1 (2026-09-16) · la copia anota qué columnas guardó (`cols`), y sin las que hoy se leen no se usa. Se
    sacan del propio motor: si un día se lee una columna más, estas copias siguen siendo «de ahora». */
 const colsDelMotor = () => JSON.parse(/const _REPRO_MATRIZ_COLS = (\[[^\]]*\]);/.exec(code)[1]);
@@ -130,7 +131,7 @@ describe('registros · lector del reproductivo · respuestas anómalas del GAS',
 
   it('un HTTP 200 cuyo cuerpo es HTML se detecta ANTES de JSON.parse', async () => {
     // Caso medido en producción: el usuario recibía "Unexpected token '<'".
-    const net = [{ ok: true, status: 200, body: HTML_404 }, { ok: true, status: 200, body: HTML_404 }];
+    const net = Array.from({ length: 4 }, () => ({ ok: true, status: 200, body: HTML_404 }));   // punto 5: 4 intentos
     const { api } = sandbox(code, net);
     await expect(api._reproFetchSheet('X', null)).rejects.toThrow(/página de error/);
   });
@@ -141,7 +142,7 @@ describe('registros · lector del reproductivo · respuestas anómalas del GAS',
   });
 
   it('un timeout se traduce a "Google no respondió", no a AbortError', async () => {
-    const { api } = sandbox(code, [{ abort: true }, { abort: true }]);
+    const { api } = sandbox(code, [{ abort: true }, { abort: true }, { abort: true }, { abort: true }]); // punto 5: hasta 4
     await expect(api._reproFetchSheet('M', null)).rejects.toThrow(/no respondió/);
   });
 });
@@ -237,7 +238,7 @@ describe('registros · lector del reproductivo · alcance y tolerancia', () => {
   it('si cae la Bitácora pero la MATRIZ llega, la sección sigue utilizable', async () => {
     const net = [
       { body: okBody(4) },                                                     // MATRIZ ok
-      { ok: false, status: 404, body: HTML_404 }, { ok: false, status: 404, body: HTML_404 }, // Bitácora cae
+      ...caido(),                                                              // Bitácora cae
       { body: JSON.stringify({ ok: true, rows: [] }) },                        // Transferencias ok
     ];
     const { api } = sandbox(code, net);
@@ -286,7 +287,7 @@ describe('registros · lector del reproductivo · auditoría', () => {
   it('tras un fallo parcial, volver a entrar REINTENTA (no sirve lo incompleto para siempre)', async () => {
     const vacio = JSON.stringify({ ok: true, rows: [] });
     const net = [
-      { body: okBody(2) }, { ok: false, status: 404, body: HTML_404 }, { ok: false, status: 404, body: HTML_404 },
+      { body: okBody(2) }, ...caido(),
       { body: vacio },
       { body: okBody(2) }, { body: JSON.stringify({ ok: true, rows: [{ 'Trovan ID': 'X' }] }) }, { body: vacio },
     ];
@@ -321,10 +322,12 @@ describe('registros · lector del reproductivo · 1c · cortes de conexión y si
     expect(calls).toHaveLength(4);
   });
 
-  it('lo que no es un corte sigue con 2 intentos: un timeout ya esperó 30 s en cada uno', async () => {
+  /* 2026-10-01 (punto 5) · el HTTP 404 y el timeout salieron de aquí: son fallos de ENTREGA de Google y van abajo. Lo que
+     sigue en 2: un rechazo que no es de entrega (403: permiso o token). */
+  it('lo que no es un corte ni un fallo de entrega sigue con 2 intentos', async () => {
+    const no = (status) => ({ ok: false, status, body: HTML_404 });
     const casos = [
-      ['timeout', [{ abort: true }, { abort: true }, { body: okBody(1) }], /no respondió/],
-      ['HTTP 404', [...caido(), { body: okBody(1) }], /HTTP 404/],
+      ['HTTP 403', [no(403), no(403), no(403), no(403), { body: okBody(1) }], /HTTP 403/],
     ];
     for (const [caso, net, motivo] of casos) {
       const { api, calls, sleeps } = sandbox(code, net);
@@ -342,6 +345,68 @@ describe('registros · lector del reproductivo · 1c · cortes de conexión y si
     const rapido = sandbox(code, [{ red: true, tarda: 5000 }, { red: true, tarda: 5000 }, { body: okBody(1) }], { reloj: { t: 1e12 } });
     await expect(rapido.api._reproFetchSheet('M', null)).resolves.toHaveLength(1);
     expect(rapido.calls).toHaveLength(3);
+  });
+
+  /* 🔴 PUNTO 5 (2026-10-01) · LOS FALLOS DE ENTREGA DE GOOGLE SE REINTENTAN COMO LOS CORTES. Medido contra el GAS
+     desplegado: el GAS se EJECUTA siempre bien (`/exec` → 302); lo que falla, de vez en cuando, es el segundo salto en el
+     que Google entrega la respuesta (`script.googleusercontent.com`): un 404 —o una página en vez de datos— tras 20–40 s.
+     Es puntual en cada petición (tras un fallo, el siguiente falla un 22 %), así que insistir SÍ sirve. Decisión del
+     usuario: hasta 4 intentos, con las esperas de los cortes, y sin empezar otro pasados 90 s leyendo esa hoja. */
+  describe('fallos de entrega de Google (404, 429, 5xx o una página en vez de datos)', () => {
+    const p404 = { ok: false, status: 404, body: HTML_404 };
+    it('🔴 se reintentan hasta 4 veces, con esperas de 1,5 · 3 · 6 s', async () => {
+      const pagina = { ok: true, status: 200, body: HTML_404 };
+      const { api, calls, sleeps } = sandbox(code, [p404, pagina, { ok: false, status: 503, body: '' }, { body: okBody(3) }]);
+      await expect(api._reproFetchSheet('M', null)).resolves.toHaveLength(3);
+      expect(calls).toHaveLength(4);
+      expect(sleeps).toEqual([1500, 3000, 6000]);
+    });
+
+    it('un 429 también es de entrega', async () => {
+      const { api, calls } = sandbox(code, [{ ok: false, status: 429, body: '' }, { ok: false, status: 429, body: '' }, { body: okBody(1) }]);
+      await expect(api._reproFetchSheet('M', null)).resolves.toHaveLength(1);
+      expect(calls).toHaveLength(3);
+    });
+
+    it('tras 4 se rinde con el motivo legible, y no pide un quinto', async () => {
+      const { api, calls } = sandbox(code, [p404, p404, p404, p404, { body: okBody(1) }]);
+      await expect(api._reproFetchSheet('M', null)).rejects.toThrow(/HTTP 404/);
+      expect(calls).toHaveLength(4);
+    });
+
+    it('🔴 con tope de 90 s: pasados 90 s leyendo no se empieza otro intento (y por debajo, sí)', async () => {
+      const lento = (ms) => ({ ...p404, tarda: ms });
+      const largo = sandbox(code, [lento(40000), lento(40000), lento(15000), { body: okBody(1) }], { reloj: { t: 1e12 } });
+      await expect(largo.api._reproFetchSheet('M', null)).rejects.toThrow(/HTTP 404/);
+      expect(largo.calls).toHaveLength(3);                     // 95 s leyendo: el cuarto ya no sale
+      // el fixture ejerce algo: con 35 s ya no habría pasado del primero si el tope fuera el de los cortes (30 s)
+      const medio = sandbox(code, [lento(35000), lento(35000), { body: okBody(1) }], { reloj: { t: 1e12 } });
+      await expect(medio.api._reproFetchSheet('M', null)).resolves.toHaveLength(1);
+      expect(medio.calls).toHaveLength(3);
+    });
+
+    /* Y el «no respondió en 30 s» (decisión del usuario, cambia la del 1c): el 45 % de los 404 de entrega llega pasados
+       30 s, y aquí se ven como un tiempo agotado. Con el tope de 90 s, como mucho 3 intentos de 30 s. */
+    it('🔴 un «no respondió en 30 s» también es de entrega: se reintenta', async () => {
+      const { api, calls, sleeps } = sandbox(code, [{ abort: true }, { abort: true }, { body: okBody(2) }]);
+      await expect(api._reproFetchSheet('M', null)).resolves.toHaveLength(2);
+      expect(calls).toHaveLength(3);
+      expect(sleeps).toEqual([1500, 3000]);
+    });
+
+    it('🔴 tres «no respondió» de 30 s llegan al tope de 90 s: no sale un cuarto', async () => {
+      const t30 = { abort: true, tarda: 30000 };
+      const { api, calls } = sandbox(code, [t30, t30, t30, { body: okBody(1) }], { reloj: { t: 1e12 } });
+      await expect(api._reproFetchSheet('M', null)).rejects.toThrow(/no respondió/);
+      expect(calls).toHaveLength(3);
+    });
+
+    it('un error que da el propio GAS (no de entrega) sigue con 2', async () => {
+      const gasNo = { body: JSON.stringify({ ok: false, error: 'Hoja no encontrada' }) };
+      const { api, calls } = sandbox(code, [gasNo, gasNo, gasNo, { body: okBody(1) }]);
+      await expect(api._reproFetchSheet('M', null)).rejects.toThrow(/Hoja no encontrada/);
+      expect(calls).toHaveLength(2);
+    });
   });
 
   it('🔴 sin red no se reintenta, y el motivo es «sin conexión a internet», no Google', async () => {

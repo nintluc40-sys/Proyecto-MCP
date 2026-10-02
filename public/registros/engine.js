@@ -12656,6 +12656,19 @@ const _REPRO_ATTEMPTS  = 2;
    fallar —la conexión que el sistema da por perdida a los ~20 s— haría de cuatro intentos minuto y medio por hoja. */
 const _REPRO_ATTEMPTS_RED = 4;
 const _REPRO_RED_TOPE_MS  = 30000;
+/* PUNTO 5 (2026-10-01, usuario) · LOS FALLOS DE ENTREGA DE GOOGLE TAMBIÉN SE REINTENTAN HASTA 4 VECES. Medido contra el GAS
+   desplegado: el GAS se EJECUTA siempre bien (`/exec` → 302); lo que falla de vez en cuando (~8 % de las lecturas, el 01-10)
+   es el segundo salto, en el que Google ENTREGA la respuesta (script.googleusercontent.com): un 404 —o una página en vez de
+   datos, o un 429/5xx— que suele llegar tras 20-40 s. Es puntual en cada petición (tras un fallo, el siguiente falla un 22 %):
+   la premisa del 1c de que «una página de error no mejora por insistir» no vale para éstos. Con 2 intentos ~1,8 % de las
+   lecturas acababan en error en pantalla; los equipos con index (8) como archivo leen SIEMPRE por aquí (Google no deja
+   leer el XLSX desde un archivo local). Mismas esperas que los cortes, pero su propio tope: casi todos tardan más de 20 s,
+   y con los 30 s de los cortes no habría segundo intento.
+   Y el «no respondió en 30 s» cuenta como fallo de entrega (decisión del usuario, cambia la del 1c): el 45 % de esos 404
+   llega pasados 30 s, y aquí se ven como un tiempo agotado. Con el tope de 90 s son, como mucho, 3 intentos de 30 s. */
+const _REPRO_ENTREGA_TOPE_MS = 90000;
+/** ¿Es un fallo de ENTREGA de Google (no del GAS ni de la red)? 404, 429 y 5xx. */
+function _reproEsEntrega(status){ return status === 404 || status === 429 || status >= 500; }
 /* 1c · y SIN RED no se culpa a Google: la lectura lo dice así, sin reintentar (ver `_reproSinRed`). */
 const _REPRO_SIN_RED = "sin conexión a internet";
 const _REPRO_CACHE_KEY = "larv4_mad_matriz";
@@ -12959,8 +12972,8 @@ async function _reproFetchSheet(name, cols, opts){
     try{
       const r = await fetch(u, {signal:ctrl.signal, cache:"no-store"});
       const txt = await r.text();
-      if(!r.ok) throw new Error("Google respondió HTTP "+r.status);
-      if(!/^\s*\{/.test(txt)) throw new Error("Google devolvió una página de error, no datos");
+      if(!r.ok) throw Object.assign(new Error("Google respondió HTTP "+r.status), { entrega: _reproEsEntrega(r.status) });
+      if(!/^\s*\{/.test(txt)) throw Object.assign(new Error("Google devolvió una página de error, no datos"), { entrega: true });
       let j=null;
       try{ j=JSON.parse(txt); }catch(_){ throw new Error("Respuesta ilegible del servidor"); }
       if(!j || !j.ok) throw new Error((j&&j.error) || "Respuesta inválida");
@@ -12971,15 +12984,18 @@ async function _reproFetchSheet(name, cols, opts){
       return j.rows || [];
     }catch(x){
       failed = (x && x.name==="AbortError")
-        ? new Error("Google no respondió en "+Math.round(_REPRO_FETCH_MS/1000)+" s")
+        ? Object.assign(new Error("Google no respondió en "+Math.round(_REPRO_FETCH_MS/1000)+" s"), { entrega: true })
         : x;
     }finally{ clearTimeout(timer); }
     lastErr = failed;
-    // 1c · sin red no se reintenta (ni se culpa a Google); un corte, hasta 4 intentos y 30 s; lo demás, 2.
+    // 1c · sin red no se reintenta (ni se culpa a Google); un corte, hasta 4 intentos y 30 s; un fallo de ENTREGA de
+    // Google o un «no respondió» (punto 5), hasta 4 y 90 s; lo demás, 2.
     if(_reproSinRed()){ lastErr = new Error(_REPRO_SIN_RED); break; }
     const corte = !!failed && failed.name==="TypeError";
-    if(attempt >= (corte ? _REPRO_ATTEMPTS_RED : _REPRO_ATTEMPTS)) break;
+    const entrega = !!failed && failed.entrega === true;
+    if(attempt >= ((corte || entrega) ? _REPRO_ATTEMPTS_RED : _REPRO_ATTEMPTS)) break;
     if(corte && Date.now()-t0 >= _REPRO_RED_TOPE_MS) break;
+    if(entrega && Date.now()-t0 >= _REPRO_ENTREGA_TOPE_MS) break;
     await _sleep(1500*Math.pow(2, attempt-1));
   }
   throw lastErr || new Error("Error de lectura");
