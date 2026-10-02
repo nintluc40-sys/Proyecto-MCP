@@ -704,22 +704,23 @@ export function aplicarLibroGuardado(g) {
   return true;
 }
 
-/** El libro por el export XLSX: { name: rows } o null si hay que ir al CSV. Lo usan
+/** El libro por el export XLSX: { name: rows } o null si hay que ir al respaldo. Lo usan
  *  fetchAllSheets (aquí) y el Worker de lectura (sheets.worker.js): UNA sola implementación
  *  de la descarga, los reintentos y la lectura. `obtenerXLSX` da SheetJS. */
 export async function fetchXlsxSheets(ids, obtenerXLSX = getXLSX) {
   // XLSX-first CON REINTENTOS. El XLSX trae TODAS las hojas en una sola petición; una caída
   // TRANSITORIA (timeout/red/5xx) NO debe degradar a la primera, así que reintentamos con
-  // backoff. El fallback CSV es ROBUSTO: enumera TODAS las hojas por /htmlview (no requiere
-  // publicar el documento) y las baja por gviz hoja a hoja.
+  // backoff. El respaldo es ROBUSTO: enumera TODAS las hojas por /htmlview (no requiere
+  // publicar el documento) y las baja hoja a hoja por su XLSX, y por CSV sólo la que falle
+  // (respaldoPorHojas; por gviz no desde el 2026-10-01: con un filtro en la hoja, recortaba).
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const wb = await fetchWorkbook(ids, obtenerXLSX);
       if (wb) return workbookToSheets(wb, obtenerXLSX());
-      break; // wb nulo (sin hojas) no es transitorio: pasa directo al CSV
+      break; // wb nulo (sin hojas) no es transitorio: pasa directo al respaldo
     } catch (e) {
       // 401/403: el endpoint de exportación exige autenticación (documento compartido sólo
-      // por enlace, no público para /export). Reintentar es inútil → pasa YA al fallback CSV.
+      // por enlace, no público para /export). Reintentar es inútil → pasa YA al respaldo.
       if (/\b(401|403)\b/.test(String((e && e.message) || ''))) break;
       if (attempt < 2) await new Promise((r) => setTimeout(r, 600 * 2 ** attempt));
     }
@@ -727,7 +728,7 @@ export async function fetchXlsxSheets(ids, obtenerXLSX = getXLSX) {
   return null;
 }
 
-/** Descarga las hojas (XLSX-first, CSV fallback) y devuelve { name: rows }. */
+/** Descarga las hojas (XLSX-first; si no, el respaldo hoja a hoja) y devuelve { name: rows }. */
 export async function fetchAllSheets() {
   const ids = parseSheetsIds(activeUrl());
   if (!ids) throw new Error('URL de Google Sheets inválida.');
