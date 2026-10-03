@@ -18,6 +18,7 @@ const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['SCORE_SHEET', 'SCORE_HEADERS', 'SCORE_CRITERIOS', 'SCORE_EXTRAS', 'SCORE_TANQUES', 'SCORE_DRAFT_KEY',
   'scoreTotal', 'scoreInterp', 'scoreEstado', 'scoreValidar', 'scoreRowId', 'buildScorePayload',
   'renderScore', 'scorePick', 'scoreTanque', 'scoreSiguiente', 'scoreGuardar', 'scoreNueva', 'scoreAbrir', 'scoreCampo', 'scorePickEl',
+  'scoreAbrirEl', 'scoreBorrarEl',
   '_scoreRaw', 'loadScore', '_reconcileMark', 'AST_TABS', 'TAB_META'];
 const H = {};
 
@@ -212,6 +213,23 @@ describe('Score · la ficha en el módulo AsT', () => {
     expect(fp().querySelector('[data-sk="corrida"]').value).toBe('');
     H.scoreAbrir(H._scoreRaw()[0].id);
     expect(fp().querySelector('[data-sk="corrida"]').value).toBe('598');
+  });
+
+  it('🔴 «✏️ Abrir» y «🗑» llevan el id en data-sc-id, no en el onclick: una Corrida con «\'» o «\\» no los rompe', () => {
+    const corrida = "59'8\\x";
+    const id = 'SCE-2026-10-02-M03-' + corrida;
+    globalThis.localStorage.setItem('larv4_score_records', JSON.stringify([{ id, ts: 5, synced: false, data: evaluacion({ 1: tanque(1) }, { corrida }) }]));
+    H.renderScore();
+    const botones = [...fp().querySelectorAll('button[data-sc-id]')];
+    expect(botones).toHaveLength(2);
+    for (const b of botones) {
+      expect(b.getAttribute('data-sc-id')).toBe(id);
+      expect(b.getAttribute('onclick'), 'el onclick no interpola el id').toMatch(/^score(Abrir|Borrar)El\(this\)$/);
+    }
+    H.scoreAbrirEl(botones.find((b) => b.getAttribute('onclick') === 'scoreAbrirEl(this)'));
+    expect(fp().querySelector('[data-sk="corrida"]').value).toBe(corrida);
+    H.scoreBorrarEl(fp().querySelector('button[onclick="scoreBorrarEl(this)"]'));
+    expect(H._scoreRaw()).toHaveLength(0);
   });
 
   it('🔴 la cola reconcilia por evaluación Y versión: lo corregido después de encolar NO se da por enviado', () => {

@@ -18295,6 +18295,9 @@ function scoreBorrar(id){
   _scoreSave(_scoreRaw().filter(function(x){ return x && x.id !== id; }));
   renderScore(); updateDots(); updateSyncUI();
 }
+// Los botones de la lista llevan el id en data-sc-id: interpolado en el onclick, una Corrida con «'» o «\» lo rompía.
+function scoreAbrirEl(el){ if(el) scoreAbrir(el.getAttribute("data-sc-id")); }
+function scoreBorrarEl(el){ if(el) scoreBorrar(el.getAttribute("data-sc-id")); }
 
 /* ── Envío ──────────────────────────────────────────────── */
 /* Una evaluación por envío (12 filas como mucho) y marcada en el acto: si la tercera se cae, las dos primeras ya
@@ -18411,8 +18414,8 @@ function renderScore(){
         const d = r.data || {};
         return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:11px">'
           + '<span>'+(r.synced ? "✅" : "📶")+' '+escapeHtml(d.fecha || "")+' · '+escapeHtml(d.modulo || "")+' · corrida '+escapeHtml(_scoreCorrida(d))+' · '+scoreFilas(d).length+' tanque(s)'+(r.synced ? "" : ' <b style="color:#b45309">pendiente</b>')+'</span>'
-          + '<span style="display:flex;gap:6px"><button class="btn" type="button" onclick="scoreAbrir(\''+escapeHtml(r.id)+'\')" style="font-size:11px">✏️ Abrir</button>'
-          + '<button class="btn" type="button" onclick="scoreBorrar(\''+escapeHtml(r.id)+'\')" style="font-size:11px">🗑</button></span></div>';
+          + '<span style="display:flex;gap:6px"><button class="btn" type="button" data-sc-id="'+escapeHtml(r.id)+'" onclick="scoreAbrirEl(this)" style="font-size:11px">✏️ Abrir</button>'
+          + '<button class="btn" type="button" data-sc-id="'+escapeHtml(r.id)+'" onclick="scoreBorrarEl(this)" style="font-size:11px">🗑</button></span></div>';
       }).join("")
     : '<div style="font-size:11px;color:#94a3b8">Ninguna en este dispositivo.</div>';
 
