@@ -105,8 +105,9 @@ export function mountShell(appEl) {
   // vista todavía puede ocultarla en sus sub-vistas (el Supervisor lo hace).
   on(EV.VIEW, (id) => setDateBarHidden(!viewUsesDateBar(id)));
   // Con datos nuevos se repinta la vista, salvo la que declare `repintaConDatos: false`
-  // (Registros: repintarla se llevaba el foco y lo tecleado). Ver viewRepaintsOnData.
-  on(EV.DATA, () => { renderDateBar(); if (viewRepaintsOnData(store.currentView)) renderCurrentView(); });
+  // (Registros: repintarla se llevaba el foco y lo tecleado). Ver viewRepaintsOnData. Es la MISMA vista: el
+  // desplazamiento se queda donde estaba (punto 7, 2026-10-03; antes saltaba ARRIBA).
+  on(EV.DATA, () => { renderDateBar(); if (viewRepaintsOnData(store.currentView)) renderCurrentView({ conservarPosicion: true }); });
 }
 
 // Vistas principales del sistema. Las NUEVE están desarrolladas: aquí ya no queda ninguna

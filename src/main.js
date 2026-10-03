@@ -77,7 +77,8 @@ function boot() {
       // Placeholder mientras resuelve el import diferido (evita el pantallazo en
       // blanco entre que el router vacía el contenedor y el chunk carga/parsea).
       root.innerHTML = '<div class="empty-state" style="padding:64px 20px"><div style="font-size:40px">🧬</div><p class="muted">Cargando Biología Molecular…</p></div>';
-      cargarD3()
+      // Devuelve la promesa: al repintar con datos nuevos, el router sostiene el alto hasta que llega (punto 7).
+      return cargarD3()
         .then(() => import('./views/biomolecular/index.js'))
         .then((m) => m.biomolecularView(root))
         .catch((e) => { root.innerHTML = `<div class="empty-state" style="padding:48px">Error al cargar Biología Molecular.<br><small class="mono">${esc(e.message)}</small></div>`; });

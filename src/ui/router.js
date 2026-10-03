@@ -64,9 +64,20 @@ on(EV.CONN, (e) => {
   if (!store.connected && container && container.querySelector('[data-cargando-libro]')) container.innerHTML = avisoCarga();
 });
 
-/** Renderiza la vista actual en el contenedor. */
-export function renderCurrentView() {
+// Cada repintado tiene su TURNO: el final diferido de uno viejo (una vista que llega con su import) no toca el
+// contenedor si después se pintó otra cosa.
+let turno = 0;
+
+/** Renderiza la vista actual en el contenedor.
+ *  `conservarPosicion` (punto 7 del usuario, 2026-10-03): al repintar la MISMA vista con datos nuevos, el desplazamiento
+ *  se queda donde estaba. Vaciar el contenedor encogía la página por debajo de la ventana (medido en Maduración: 1 536 →
+ *  805 px) y el navegador la llevaba ARRIBA; ahora el contenedor guarda su alto hasta que la vista termina de pintarse
+ *  —si su `render` devuelve una promesa (el tablero del operativo llega con su import), hasta que se cumple— y se vuelve
+ *  a la posición de antes. Cambiar de vista no lo usa. */
+export function renderCurrentView({ conservarPosicion = false } = {}) {
   if (!container) return;
+  const mio = ++turno;
+  container.style.minHeight = '';
   const def = views.get(store.currentView);
   if (!def) { container.innerHTML = '<div class="empty-state">Vista no encontrada.</div>'; return; }
   // Limpia estados de overlay que pudieran quedar pegados al <body> si el usuario
@@ -81,15 +92,27 @@ export function renderCurrentView() {
     if (pedirLibro) pedirLibro();
     return;
   }
+  const y = conservarPosicion ? window.scrollY : 0;
+  if (y > 0) container.style.minHeight = container.offsetHeight + 'px';   // la página no encoge mientras se repinta
   container.innerHTML = '';
   const root = document.createElement('div');
   root.className = 'fade-in';
   container.appendChild(root);
+  let pintada;
   try {
-    def.render(root);
+    pintada = def.render(root);
   } catch (e) {
     console.error(`[router] error renderizando "${store.currentView}"`, e);
     root.innerHTML = `<div class="empty-state">Error al renderizar la vista.<br><small class="mono">${esc(e.message)}</small></div>`;
+  }
+  if (y > 0) {
+    const volver = () => {
+      if (mio !== turno) return;
+      container.style.minHeight = '';
+      if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
+    };
+    if (pintada && typeof pintada.then === 'function') pintada.then(volver, volver);
+    else volver();
   }
 }
 
