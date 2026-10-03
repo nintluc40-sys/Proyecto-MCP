@@ -11,7 +11,7 @@ import { getField, parseNum } from '../../core/fields.js';
 import { parseAnyDate } from '../../core/dates.js';
 import { isUnsafeKey } from '../../core/util.js';
 import { THRESHOLDS } from '../../config.js';
-import { intStr, normTipoMuestra, modLabel, canonAnalista } from './data.js';
+import { intStr, normTipoMuestra, modLabel, canonAnalista, mismoUmbral } from './data.js';
 
 export const isCalAguaRow = (r) => !!r && /calidad\s*de\s*agua/i.test(String(r._SheetOrigin || ''));
 
@@ -108,6 +108,20 @@ export function loadCalRanges() {
     }
   } catch (_) { /* override corrupto → base */ }
   _rangeCache = { raw, val: out };
+  return out;
+}
+/** H-003 (auditoría 2026-09-25, aprobado 2026-10-03) · los mín/máx de ESTE equipo que no son los de base (también un
+ *  rango añadido a un parámetro que en la base no lo tiene): [{ param, campo, base, actual }]. */
+export function rangosModificados() {
+  const efect = loadCalRanges();
+  const out = [];
+  for (const param of new Set([...Object.keys(CAL_RANGE_BASE), ...Object.keys(efect)])) {
+    for (const campo of ['min', 'max']) {
+      const base = (CAL_RANGE_BASE[param] || {})[campo];
+      const actual = (efect[param] || {})[campo];
+      if (!mismoUmbral(base, actual)) out.push({ param, campo, base: base ?? null, actual: actual ?? null });
+    }
+  }
   return out;
 }
 

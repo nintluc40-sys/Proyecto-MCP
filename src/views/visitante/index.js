@@ -26,8 +26,8 @@ import { parseAnyDate } from '../../core/dates.js';
 // Lo que sí se gana: si algún día cambia la cadena canónica de `classifyOrigin`, este panel
 // no puede desincronizarse en silencio de la vista Microbiología (que seguiría mostrando sus
 // datos mientras aquí `labSummaryBlock` devuelve ''). Es blindaje a futuro, no un fallo vivo.
-import { meltRow as micMelt, isAlerta as micIsAlerta, isMicroRow, MIC_FACTORS_KEY } from '../microbiologia/data.js';
-import { calMeasured, calWQI, loadCalRanges, isCalAguaRow, CAL_RANGES_KEY } from '../microbiologia/calagua.data.js';
+import { meltRow as micMelt, isAlerta as micIsAlerta, isMicroRow, MIC_FACTORS_KEY, umbralesModificados } from '../microbiologia/data.js';
+import { calMeasured, calWQI, loadCalRanges, isCalAguaRow, CAL_RANGES_KEY, rangosModificados } from '../microbiologia/calagua.data.js';
 
 // Estado persistente entre re-render (ÍNDICE de mes + métrica del gráfico).
 const vtState = { monthIdx: null, metric: 'superv' };
@@ -400,7 +400,16 @@ function labSummaryBlock(mIdx) {
       ${sumCard('🧫', 'Microbiología', s.micRows.length ? semChip(s.micTier, `${s.micPctTxt} en alerta`) : semChip('x', 'Sin muestras'), s.micRows.length ? `${s.micRows.length} muestra(s) · ${s.micAlert} en nivel alto` : 'Sin análisis microbiológicos', 'labMicro', AC)}
       ${sumCard('💧', 'Calidad del agua', s.calRows.length ? semChip(s.calTier, `${s.calPctTxt} en rango`) : semChip('x', 'Sin muestras'), s.calRows.length ? `${s.calRows.length} muestra(s) · WQI ${s.wqi == null ? '—' : s.wqi}` : 'Sin análisis de agua', 'labAgua', AC)}
     </div>
+    ${umbralesPropiosNota()}
   </div>`;
+}
+/* H-003 (auditoría de Microbiología, aprobado 2026-10-03) · los umbrales y rangos de laboratorio viven en el navegador:
+   si este equipo tiene otros, sus alertas y su WQI pueden diferir de los de otro equipo, y aquí se dice. Sólo el aviso:
+   desde Visitante no se cambian (eso es ⚙️ Rangos, en Microbiología). */
+function umbralesPropiosNota() {
+  if (!umbralesModificados().length && !rangosModificados().length) return '';
+  return '<div class="muted" style="font-size:11.5px;margin-top:8px">⚠️ Este equipo usa umbrales de laboratorio propios: '
+    + 'las alertas y el WQI pueden diferir de los de otros equipos.</div>';
 }
 
 // Tarjeta de resumen (valueHtml = HTML controlado; label/context se escapan).

@@ -535,6 +535,30 @@ export function loadMicThresholds() {
   return out;
 }
 
+/** Dos umbrales son el mismo número (vacío = sin umbral). Exportada para la de Calidad de Agua. */
+export function mismoUmbral(a, b) {
+  const n = (x) => (x === null || x === undefined || String(x).trim() === '' ? null : Number(x));
+  const x = n(a), y = n(b);
+  return x === y || (Number.isNaN(x) && Number.isNaN(y));
+}
+/** H-003 (auditoría 2026-09-25, aprobado 2026-10-03) · los límites de nivel (l/m/e) de ESTE equipo que no son los de
+ *  base: [{ area, param, campo, base, actual }]. El Factor (×) que la app de captura guarda en la misma clave no cuenta:
+ *  el MCP lee las UFC de la hoja y no lo usa. */
+export function umbralesModificados() {
+  const efect = loadMicThresholds();
+  const out = [];
+  for (const area of Object.keys(efect)) {
+    for (const param of Object.keys(efect[area] || {})) {
+      for (const campo of ['l', 'm', 'e']) {
+        const base = ((MIC_DR_BASE[area] || {})[param] || {})[campo];
+        const actual = (efect[area][param] || {})[campo];
+        if (!mismoUmbral(base, actual)) out.push({ area, param, campo, base: base ?? null, actual: actual ?? null });
+      }
+    }
+  }
+  return out;
+}
+
 const CODE_NIVEL = { v: 'Mínimo', y: 'Leve', o: 'Moderado', r: 'Elevado' };
 /** Clasifica UFC con umbrales {l,m,e} (réplica de micLvl de la ficha). null si sin umbral. */
 function micLvlCode(ufc, r) {

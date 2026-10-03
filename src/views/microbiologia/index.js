@@ -30,14 +30,26 @@ import {
   isMicroRow, isPatRow, patFecha, pathogenRecords, rowContext, meltRow, PATHOGENS, PATHOGEN_COLOR,
   NIVELES, NIVEL_COLOR, NIVEL_RANK, isAlerta, FORMATO_LABEL, AGGREGATE_KEYS,
   DEPARTAMENTOS, deptoOfFormato, classifyFormato, PATHOGEN_AGAR,
-  loadMicThresholds, MIC_FACTORS_KEY, MIC_AREAS, filterKey, groupValues, modLabel, cmpMod,
+  loadMicThresholds, MIC_FACTORS_KEY, MIC_AREAS, filterKey, groupValues, modLabel, cmpMod, umbralesModificados,
 } from './data.js';
 import { petriSVG } from './petri.js';
 import { buildPetriPdfDoc, dayKeyOf } from './petriPdf.js';
 // Motor de impresión compartido (iframe oculto, sin pop-ups). Vive en supervisor/ por
 // ser donde nació, pero es genérico: recibe HTML y lo imprime.
 import { printFichaDocs } from '../supervisor/fichaPdf.js';
-import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges, calRangeText, calEnsayoData, CAL_PARAMS, calDiagnosis, calGroupTree, calWQI, controlStats, boxStats, calSeverity, calStageCmp, CAL_RISK, CAL_SEV } from './calagua.data.js';
+import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges, calRangeText, calEnsayoData, CAL_PARAMS, calDiagnosis, calGroupTree, calWQI, controlStats, boxStats, calSeverity, calStageCmp, CAL_RISK, CAL_SEV, rangosModificados } from './calagua.data.js';
+
+/* H-003 (auditoría 2026-09-25, aprobado 2026-10-03) · los umbrales viven en el NAVEGADOR: si este equipo tiene otros,
+   lo dice junto a «⚙️ Rangos», y pulsarlo abre ese mismo editor (con su «↺ Restablecer» por área). `attr` es el del
+   botón del editor (data-mic-factors / data-cal-factors); `difs` sale de umbralesModificados / rangosModificados. */
+function avisoUmbralesHTML(attr, difs, nombre) {
+  if (!difs.length) return '';
+  const donde = [...new Set(difs.map((d) => (d.area ? (MIC_AREAS.find((a) => a.key === d.area) || {}).label || d.area
+    : (CAL_PARAMS.find((p) => p.key === d.param) || {}).label || d.param)))];
+  const titulo = 'Este equipo usa ' + nombre + ' distintos de los de base en: ' + donde.join(', ')
+    + '. Las alertas y niveles pueden diferir de otros equipos. Pulsa para revisarlos o restablecerlos.';
+  return `<button class="mic-exp mic-umbral-mod" ${attr} title="${esc(titulo)}">⚠️ Umbrales modificados en este equipo (${difs.length})</button>`;
+}
 
 // ── sub-vistas del módulo ──
 const SUBS = [
@@ -884,7 +896,7 @@ function renderCalidadAgua() {
       ${deptos.length ? calSelect('calDepto', vState.calDepto, deptos, 'Todos los deptos.') : ''}
       ${vState.calDepto && formatos.length ? calSelect('calFormato', vState.calFormato, formatos, 'Todos los formatos') : ''}
       ${dimFilters.map(({ dim, options }) => dim.multi ? calDimChips(dim, vState.calDims[dim.key] || [], options) : calDimSelect(dim, vState.calDims[dim.key], options)).join('')}
-      <div class="mic-export"><button class="mic-exp" data-cal-factors title="Editar rangos objetivo (mín/máx) por parámetro">⚙️ Rangos</button><button class="mic-exp" data-cal-export title="Descargar reporte de texto de las muestras filtradas">⬇ Reporte</button><button class="mic-exp" data-cal-xlsx title="Descargar Excel de las muestras filtradas">⬇ Excel</button></div>
+      <div class="mic-export"><button class="mic-exp" data-cal-factors title="Editar rangos objetivo (mín/máx) por parámetro">⚙️ Rangos</button>${avisoUmbralesHTML('data-cal-factors', rangosModificados(), 'rangos de agua')}<button class="mic-exp" data-cal-export title="Descargar reporte de texto de las muestras filtradas">⬇ Reporte</button><button class="mic-exp" data-cal-xlsx title="Descargar Excel de las muestras filtradas">⬇ Excel</button></div>
     </div>`;
   const alertAttrs = outC > 0 ? 'data-cal-alerts role="button" tabindex="0" title="Ver listado de mediciones fuera de rango"' : '';
   h += calKpiStripHTML(samples, { outC, fullOk, pctOk, evaluated, evalCount, outByParam, alertAttrs });
@@ -1970,6 +1982,7 @@ function renderBacteriologia() {
       <button class="mic-ap ${vState.apartado === 'conglomerado' ? 'is-active' : ''}" data-mic-ap="conglomerado">📊 Conglomerado</button>
       <button class="mic-ap ${vState.apartado === 'petri' ? 'is-active' : ''}" data-mic-ap="petri">🧫 Placa Petri</button>
       <button class="mic-exp" data-mic-factors title="Editar los umbrales de UFC (Leve/Moderado/Elevado) por área" style="margin-left:auto">⚙️ Rangos</button>
+      ${avisoUmbralesHTML('data-mic-factors', umbralesModificados(), 'umbrales de UFC')}
     </div>`;
 
   h += vState.apartado === 'petri' ? renderPetri(rows) : renderConglomerado(rows, summaries);
@@ -2691,7 +2704,14 @@ function runXlsxExport(root) {
   const cols = []; const seen = new Set();
   rows.forEach((r) => Object.keys(r).forEach((k) => { if (!k.startsWith('_') && !seen.has(k)) { seen.add(k); cols.push(k); } }));
   const dataCols = cols.filter((k) => rows.some((r) => { const v = r[k]; return v !== undefined && v !== null && String(v).trim() !== ''; }));
-  const aoa = [dataCols, ...rows.map((r) => dataCols.map((k) => { const v = r[k]; return (v === undefined || v === null) ? '' : v; }))];
+  /* H-010 (auditoría 2026-09-25, aprobado 2026-10-03) · las columnas de la hoja van TAL CUAL —su «Nivel» es el que
+     escribió la ficha—, y al final el nivel que calcula la vista (el de la pantalla y el PDF, con los umbrales de ESTE
+     equipo): uno por patógeno presente y el peor de la muestra, que es `rowSummary(r).worst`. */
+  const sums = rows.map(rowSummary);
+  const pats = PATHOGENS.filter((p) => sums.some((s) => s.byKey[p.key] && s.byKey[p.key].nivel));
+  const colsVista = pats.map((p) => p.label + ' · Nivel (vista)').concat(['Peor nivel (vista)']);
+  const aoa = [dataCols.concat(colsVista), ...rows.map((r, i) => dataCols.map((k) => { const v = r[k]; return (v === undefined || v === null) ? '' : v; })
+    .concat(pats.map((p) => (sums[i].byKey[p.key] && sums[i].byKey[p.key].nivel) || ''), [sums[i].worst || '']))];
   const ws = XLSX.utils.aoa_to_sheet(aoa); const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Microbiologia');
   const from = root.querySelector('#micExpFrom')?.value || 'inicio', to = root.querySelector('#micExpTo')?.value || 'fin';
