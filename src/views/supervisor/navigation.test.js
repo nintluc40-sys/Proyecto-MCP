@@ -516,6 +516,24 @@ describe('Supervisor · harness de navegación integral', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('🧾 Auditoría (punto 6 · F2) · acción propia del módulo, con cuántas hay, y su sub-vista', () => {
+    let root = mount();
+    click(root.querySelector('.sv-card[data-nav="module"]'));
+    expect(root.querySelector('[data-nav="auditoria"]').textContent.trim()).toBe('🧾 Auditoría');
+    click(root.querySelector('[data-nav="auditoria"]'));
+    expect(root.textContent).toContain('AUDITORÍA DE CORRIDA');
+    expect(root.textContent).toContain('Aún no hay auditorías de M01');
+    store.globalData = [...synthData(), { _SheetOrigin: 'Registro_Auditoria', Tipo: 'Siembra', Corrida: '573', 'Módulo': 'M01', Tanque: '1',
+      Fecha: '2026-06-01', Siembra: '1ª', Cantidad: 1000, ID: 'AU-S-573-M01-t1-s1' }];
+    document.body.innerHTML = '';
+    root = mount();
+    click(root.querySelector('.sv-card[data-nav="module"]'));
+    expect(root.querySelector('[data-nav="auditoria"]').textContent.trim()).toBe('🧾 Auditoría (1)');
+    click(root.querySelector('[data-nav="auditoria"]'));
+    expect(root.textContent).toContain('Corrida 573');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('OM vs Tex · la tarjeta NOMBRA los tanques de cada marca', () => {
     const root = mount();
     click(root.querySelector('.sv-card[data-nav="module"]'));

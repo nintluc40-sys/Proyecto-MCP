@@ -14,6 +14,7 @@ import { renderLarvia } from './larvia.js';
 import { renderDespacho } from './despacho.js';
 import { renderTraslado } from './traslado.js';
 import { renderOmTex } from './omtex.js';
+import { renderAuditoria } from './auditoria.view.js';
 
 // Estado de navegación persistente entre renders de la vista.
 const vState = { view: 'modules', mod: null, tank: null, corrida: null };
@@ -32,6 +33,9 @@ function dispatch(ctx) {
       break;
     // Sub-vista de Despacho: el traslado en ruta de esa (corrida, módulo).
     case 'traslado': if (vState.mod) return renderTraslado(ctx, vState.mod);
+      break;
+    // 🧾 Auditoría de corrida (punto 6 · F2, 2026-10-03): la hoja Registro_Auditoria del módulo.
+    case 'auditoria': if (vState.mod) return renderAuditoria(ctx, vState.mod);
       break;
   }
   vState.view = 'modules';
@@ -59,7 +63,7 @@ export function supervisorView(root) {
   // Ahí la barra se veía pero no filtraba nada: prometía un recorte inexistente.
   // La barra de fecha tampoco aplica en Traslado: un viaje es un hecho de la
   // corrida, igual que un despacho, y recortarlo por fecha lo escondería.
-  setDateBarHidden(vState.view === 'modules' || vState.view === 'despacho' || vState.view === 'traslado');
+  setDateBarHidden(vState.view === 'modules' || vState.view === 'despacho' || vState.view === 'traslado' || vState.view === 'auditoria');
   const { html, after } = typeof result === 'string' ? { html: result } : result;
 
   root.innerHTML = html;
@@ -73,7 +77,7 @@ function navTo(root, nav) {
   const { nav: to, mod, tank, corrida } = nav.dataset;
   vState.view = to;
   if (to === 'modules') { vState.mod = null; vState.tank = null; vState.corrida = null; }
-  else if (to === 'module' || to === 'despacho' || to === 'omtex' || to === 'traslado') { vState.mod = mod || vState.mod; vState.tank = null; if (corrida !== undefined && corrida !== '') vState.corrida = corrida; }
+  else if (to === 'module' || to === 'despacho' || to === 'omtex' || to === 'traslado' || to === 'auditoria') { vState.mod = mod || vState.mod; vState.tank = null; if (corrida !== undefined && corrida !== '') vState.corrida = corrida; }
   else { vState.mod = mod || vState.mod; vState.tank = tank || vState.tank; }
   supervisorView(root);
 }

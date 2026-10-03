@@ -27,6 +27,7 @@ import { moduleSvPopSeries, modulePlgSeries, moduleHourlyDates, moduleHourly, mo
 import { HR_LABELS } from './horas.js';
 import { colorFor, fmt1, fmt2, fmtPop, kpiGlass, kpiTecnicos, breadcrumb, bindModal } from './ui.js';
 import { computeSiembras, computeCorridaSiembras } from './siembras.js';
+import { auditoriasDelModulo } from './auditoria.js';   // 🧾 Auditoría (punto 6 · F2): el contador de su botón
 import { toast } from '../../ui/toast.js';
 import { downloadTrazabilidad, moduleDateRange } from './trazabilidad.js';
 import { FICHA_IDS, fichaLabel } from './fichaPdf.js';
@@ -1248,6 +1249,8 @@ export function renderModule(ctx, mod) {
   // Biomol · análisis moleculares de la corrida+módulo (incluye muestras compartidas de módulos
   // pareados; excluye estadío Reproductores). Sin corrida elegida → todas las corridas del módulo.
   const biomolRows = biomolForModule(mod, corrida);
+  // 🧾 Auditoría (punto 6 · F2): cuántas corridas del módulo tienen auditoría (memo por datos: no recorre el libro en cada pintado).
+  const audN = memoByData(memoKey('aud', mod, corrida), () => auditoriasDelModulo(store.globalData, mod, corrida).length);
   // Microbiología (hoja "Microbiología") de la misma corrida + módulo → modal Placa/Tabla/Heatmap.
   const microRows = microForModule(mod, corrida);
   // …separadas: las de «Larvicultura · EM» van SÓLO a su pestaña «🧪 EM» (2026-09-30, usuario).
@@ -1331,6 +1334,7 @@ export function renderModule(ctx, mod) {
   const hasCmp = tankCmp.some((t) => t.sv !== null || t.icl !== null);
   h += `<div class="sv-actions" style="margin-bottom:18px">
     <button class="sv-action-btn sv-action-despacho" data-nav="despacho" data-mod="${esc(mod)}">🚛 Despacho</button>
+    <button class="sv-action-btn" data-nav="auditoria" data-mod="${esc(mod)}" title="Siembra, transferencia y cosecha de la corrida (hoja Registro_Auditoria)">🧾 Auditoría${audN ? ` (${audN})` : ""}</button>
     ${hasTex ? `<button class="sv-action-btn" data-nav="omtex" data-mod="${esc(mod)}">⚖️ OM vs Tex</button>` : ''}
     ${hasCmp ? '<button class="sv-action-btn" data-modcmp-open>📊 Comparativa tanques</button>' : ''}
     <button class="sv-action-btn" data-athist-open>👨‍🔬 Historial As. Téc.${atRows.length ? ` (${atRows.length})` : ''}</button>
