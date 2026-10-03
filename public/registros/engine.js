@@ -18467,7 +18467,9 @@ function renderScore(){
      una con su ID fijo (el último), así que reenviar CORRIGE su fila (el GAS la upserta, sin merge, como al Score).
    • Facturada = 90 % de la real PROPUESTA y editable; lo que no es el 90 % se marca.
    • Con transferencia, la cosecha se atribuye a los tanques de ORIGEN en PROPORCIÓN a lo que cada uno dio a cada
-     destino (`audAtribucion`), rotulado como estimación: en las planillas iba a partes iguales (Σ ÷ nº de orígenes).
+     destino (en `audResumen`), rotulado como estimación: en las planillas iba a partes iguales (Σ ÷ nº de orígenes).
+     ⚠ Caso límite (revisión del 2026-10-03, ANOTADO por decisión del usuario; no está en las planillas): un tanque
+     sembrado que ADEMÁS recibe una transferencia atribuye toda su cosecha a sus orígenes y nada a sí mismo.
    • Placa y tinas se teclean en cada partida; el ingreso de reproductores (fecha y guías) se teclea en la siembra.
    • Lo que se CALCULA no se guarda: densidades (con las toneladas de cada tanque), sobrevivencias, días de cultivo,
      subtotales y el resumen por camaronera. En las planillas había 31 densidades con el divisor mal tecleado.
@@ -18740,9 +18742,9 @@ function audCampo(el){
   _audActual()[k] = el.value;
   _audGuardarBorrador();
 }
-// Los de una fila: `data-as` (sección), `data-ai` (fila) y `data-af` (campo). Escribir no repinta; cambiar SÍ (para
-// recalcular la facturada propuesta, la partida y el resumen).
-function audFila(el, repintar){
+// Los de una fila: `data-as` (sección), `data-ai` (fila) y `data-af` (campo). Escribir sólo guarda; cambiar recalcula
+// la facturada propuesta, la partida y el resumen EN SU SITIO (`_audRefrescarCalculos`), sin rehacer la tabla.
+function audFila(el, recalcular){
   if(!el) return;
   const sec = el.getAttribute("data-as"), i = Number(el.getAttribute("data-ai")), k = el.getAttribute("data-af");
   const m = _audActual(), f = (m[sec] || [])[i];
@@ -18751,7 +18753,30 @@ function audFila(el, repintar){
   // Un tanque o módulo nuevo en una cosecha: su partida es la siguiente libre de ESE tanque.
   if(sec === "cosechas" && (k === "tanque" || k === "modulo")) f.partida = audSiguientePartida(m.cosechas, f.modulo, f.tanque, i);
   _audGuardarBorrador();
-  if(repintar) renderAud();
+  if(recalcular) _audRefrescarCalculos(sec, i);
+}
+/* Lo CALCULADO de la ficha, en su sitio: el resumen y, en una cosecha, su partida, la facturada propuesta y la marca de
+   excepción. Revisión del 2026-10-03 (usuario): rehacer la tabla en cada «change» se llevaba el foco —Tab dejaba de
+   pasar a la celda siguiente y lo tecleado después se perdía— y el clic en un botón pulsado justo después de teclear (el
+   botón se reemplazaba entre el mousedown y el mouseup). La tabla sólo se rehace al añadir o quitar filas. */
+function _audRefrescarCalculos(sec, i){
+  const fp = document.getElementById("fp-auditoria");
+  if(!fp) return;
+  const m = _audActual();
+  const res = fp.querySelector("[data-aud-resumen]");
+  if(res) res.innerHTML = _audResumenHTML(m);
+  const c = sec === "cosechas" ? m.cosechas[i] : null;
+  if(!c) return;
+  const tdP = fp.querySelector('[data-aud-partida="'+i+'"]');
+  if(tdP) tdP.innerHTML = '<b>'+escapeHtml(String(c.partida || 1))+'</b>';
+  const tdF = fp.querySelector('[data-aud-fact="'+i+'"]');
+  if(tdF){
+    const exc = audFacturadaEsExcepcion(c);
+    tdF.style.background = exc ? "#fef3c7" : "";
+    if(exc) tdF.setAttribute("title", "No es el 90 % de la real"); else tdF.removeAttribute("title");
+    const inF = tdF.querySelector("input");
+    if(inF) inF.setAttribute("placeholder", _audN(audFacturadaPropuesta(c.cantidad)));
+  }
 }
 /* Añadir una fila copia lo que suele repetirse de la anterior (fecha, origen, guía, toneladas, lote…), con el tanque
    siguiente: así se llena como la planilla, de arriba abajo. */
@@ -18897,6 +18922,26 @@ async function syncAllPendingAud(){
 /* ── La ficha ───────────────────────────────────────────── */
 const _audN = (v) => (v === null || v === undefined || v === "" || !isFinite(v)) ? "—" : Number(v).toLocaleString("es-EC");
 const _audPct = (v) => (v === null || v === undefined || !isFinite(v)) ? "—" : (v * 100).toFixed(1) + " %";
+/* El resumen calculado (no se envía): por siembra, por tanque sembrado y cosechado, y el despacho por camaronera. Se
+   pinta con la ficha y se refresca EN SU SITIO al cambiar una celda (`_audRefrescarCalculos`). */
+function _audResumenHTML(m){
+  const v = function(x){ return escapeHtml(x == null ? "" : String(x)); };
+  const r = audResumen(m);
+  return '<table class="ft" style="font-size:11px;margin-top:6px"><thead><tr><th>Siembra</th><th>Tanques</th><th>Sembrado</th><th>Cosechado</th><th>% Sob.</th></tr></thead><tbody>'
+      + (r.bloques.map(function(b){ return '<tr><td>'+v(b.siembra)+'</td><td>'+b.tanques+'</td><td>'+_audN(b.sembrado)+'</td><td>'+_audN(Math.round(b.cosechado))+'</td><td>'+_audPct(b.sob)+'</td></tr>'; }).join("")
+        || '<tr><td colspan="5" style="color:#94a3b8">Sin siembras.</td></tr>')
+      + '<tr><td><b>Total</b></td><td></td><td><b>'+_audN(r.sembrado)+'</b></td><td><b>'+_audN(r.cosechado)+'</b></td><td><b>'+_audPct(r.sob)+'</b></td></tr></tbody></table>'
+    + (r.tanques.length ? '<table class="ft" style="font-size:11px;margin-top:6px"><thead><tr><th>Tanque</th><th>Dens. siembra</th><th>Transferido</th><th>% Sob. fase 1</th><th>Cosecha atribuida</th><th>% Sob. final</th><th>Días</th></tr></thead><tbody>'
+      + r.tanques.map(function(t){ return '<tr><td>'+v(t.modulo)+' · TQ '+v(t.tanque)+'</td><td>'+_audN(t.densidad)+'</td><td>'+_audN(t.transferido)+'</td><td>'+_audPct(t.sobFase1)+'</td><td>'+_audN(t.cosechado)+(t.estimada ? ' <span title="Estimada: con transferencia, la cosecha de cada destino se reparte en proporción a lo que dio cada origen" style="color:#b45309">≈</span>' : '')+'</td><td>'+_audPct(t.sob)+'</td><td>'+_audN(t.dias)+'</td></tr>'; }).join("")
+      + '</tbody></table>' : '')
+    + (r.cosechados.length ? '<table class="ft" style="font-size:11px;margin-top:6px"><thead><tr><th>Tanque cosechado</th><th>Cosechado</th><th>Dens. cosecha</th><th>Recibido</th><th>% Sob. fase 2</th></tr></thead><tbody>'
+      + r.cosechados.map(function(c){ return '<tr><td>'+v(c.llave.replace('·', ' · TQ '))+'</td><td>'+_audN(c.cosechado)+'</td><td>'+_audN(c.densidad)+'</td><td>'+_audN(c.recibido)+'</td><td>'+_audPct(c.sobFase2)+'</td></tr>'; }).join('')
+      + '</tbody></table>' : '')
+    + (r.estimada ? '<div style="font-size:11px;color:#b45309;margin-top:4px">≈ Estimada: con transferencia, la cosecha de cada tanque de destino se reparte entre sus orígenes en proporción a lo que cada uno le transfirió.</div>' : '')
+    + (r.camaroneras.length ? '<table class="ft" style="font-size:11px;margin-top:8px"><thead><tr><th>Camaronera</th><th>Cant. real</th><th>Cant. facturada</th><th>PL/g promedio</th><th>Tinas</th><th>Camiones</th></tr></thead><tbody>'
+      + r.camaroneras.map(function(c){ return '<tr><td>'+v(c.camaronera)+'</td><td>'+_audN(c.real)+'</td><td>'+_audN(c.facturada)+(c.excepciones ? ' <span title="Partidas con una facturada que no es el 90 %" style="color:#b45309">('+c.excepciones+' ≠ 90 %)</span>' : '')+'</td><td>'+_audN(c.plg)+'</td><td>'+_audN(c.tinas)+'</td><td>'+_audN(c.camiones)+'</td></tr>'; }).join("")
+      + '</tbody></table>' : '');
+}
 function renderAud(){
   const fp = document.getElementById("fp-auditoria");
   if(!fp) return;
@@ -18950,31 +18995,15 @@ function renderAud(){
   const filasC = m.cosechas.map(function(c, i){
     const exc = audFacturadaEsExcepcion(c);
     return '<tr>' + ['<td>'+inp("cosechas", i, "fecha", { tipo: "date", w: 120 })+'</td>', '<td>'+sel("cosechas", i, "modulo", TRAS_MODULO_OPTS)+'</td>',
-      '<td>'+inp("cosechas", i, "tanque", { w: 44 })+'</td>', '<td style="text-align:center"><b>'+v(c.partida || 1)+'</b></td>',
+      '<td>'+inp("cosechas", i, "tanque", { w: 44 })+'</td>', '<td style="text-align:center" data-aud-partida="'+i+'"><b>'+v(c.partida || 1)+'</b></td>',
       '<td>'+inp("cosechas", i, "cantidad", { w: 90, mode: "numeric" })+'</td>', '<td>'+inp("cosechas", i, "ton", { w: 50, mode: "decimal" })+'</td>',
       '<td>'+inp("cosechas", i, "estadio", { w: 50, ph: "PL13" })+'</td>', '<td>'+inp("cosechas", i, "plg", { w: 50, mode: "decimal" })+'</td>',
       '<td>'+sel("cosechas", i, "camaronera", DESTINO_OPTS)+'</td>', '<td>'+inp("cosechas", i, "piscinas", { w: 60, ph: "40-41" })+'</td>',
       '<td>'+inp("cosechas", i, "guia", { w: 70 })+'</td>', '<td>'+inp("cosechas", i, "guiaDespacho", { w: 70 })+'</td>',
-      '<td'+(exc ? ' title="No es el 90 % de la real" style="background:#fef3c7"' : '')+'>'+inp("cosechas", i, "facturada", { w: 90, mode: "numeric", ph: _audN(audFacturadaPropuesta(c.cantidad)) })+'</td>',
+      '<td data-aud-fact="'+i+'"'+(exc ? ' title="No es el 90 % de la real" style="background:#fef3c7"' : '')+'>'+inp("cosechas", i, "facturada", { w: 90, mode: "numeric", ph: _audN(audFacturadaPropuesta(c.cantidad)) })+'</td>',
       '<td>'+inp("cosechas", i, "tinas", { w: 44, mode: "numeric" })+'</td>', '<td>'+inp("cosechas", i, "placa", { w: 70 })+'</td>',
       '<td style="white-space:nowrap">'+btnPartida(i)+' '+btnQuitar("cosechas", i)+'</td>'].join("") + '</tr>';
   }).join("");
-
-  const r = audResumen(m);
-  const resumen = '<table class="ft" style="font-size:11px;margin-top:6px"><thead><tr><th>Siembra</th><th>Tanques</th><th>Sembrado</th><th>Cosechado</th><th>% Sob.</th></tr></thead><tbody>'
-      + (r.bloques.map(function(b){ return '<tr><td>'+v(b.siembra)+'</td><td>'+b.tanques+'</td><td>'+_audN(b.sembrado)+'</td><td>'+_audN(Math.round(b.cosechado))+'</td><td>'+_audPct(b.sob)+'</td></tr>'; }).join("")
-        || '<tr><td colspan="5" style="color:#94a3b8">Sin siembras.</td></tr>')
-      + '<tr><td><b>Total</b></td><td></td><td><b>'+_audN(r.sembrado)+'</b></td><td><b>'+_audN(r.cosechado)+'</b></td><td><b>'+_audPct(r.sob)+'</b></td></tr></tbody></table>'
-    + (r.tanques.length ? '<table class="ft" style="font-size:11px;margin-top:6px"><thead><tr><th>Tanque</th><th>Dens. siembra</th><th>Transferido</th><th>% Sob. fase 1</th><th>Cosecha atribuida</th><th>% Sob. final</th><th>Días</th></tr></thead><tbody>'
-      + r.tanques.map(function(t){ return '<tr><td>'+v(t.modulo)+' · TQ '+v(t.tanque)+'</td><td>'+_audN(t.densidad)+'</td><td>'+_audN(t.transferido)+'</td><td>'+_audPct(t.sobFase1)+'</td><td>'+_audN(t.cosechado)+(t.estimada ? ' <span title="Estimada: con transferencia, la cosecha de cada destino se reparte en proporción a lo que dio cada origen" style="color:#b45309">≈</span>' : '')+'</td><td>'+_audPct(t.sob)+'</td><td>'+_audN(t.dias)+'</td></tr>'; }).join("")
-      + '</tbody></table>' : '')
-    + (r.cosechados.length ? '<table class="ft" style="font-size:11px;margin-top:6px"><thead><tr><th>Tanque cosechado</th><th>Cosechado</th><th>Dens. cosecha</th><th>Recibido</th><th>% Sob. fase 2</th></tr></thead><tbody>'
-      + r.cosechados.map(function(c){ return '<tr><td>'+v(c.llave.replace('·', ' · TQ '))+'</td><td>'+_audN(c.cosechado)+'</td><td>'+_audN(c.densidad)+'</td><td>'+_audN(c.recibido)+'</td><td>'+_audPct(c.sobFase2)+'</td></tr>'; }).join('')
-      + '</tbody></table>' : '')
-    + (r.estimada ? '<div style="font-size:11px;color:#b45309;margin-top:4px">≈ Estimada: con transferencia, la cosecha de cada tanque de destino se reparte entre sus orígenes en proporción a lo que cada uno le transfirió.</div>' : '')
-    + (r.camaroneras.length ? '<table class="ft" style="font-size:11px;margin-top:8px"><thead><tr><th>Camaronera</th><th>Cant. real</th><th>Cant. facturada</th><th>PL/g promedio</th><th>Tinas</th><th>Camiones</th></tr></thead><tbody>'
-      + r.camaroneras.map(function(c){ return '<tr><td>'+v(c.camaronera)+'</td><td>'+_audN(c.real)+'</td><td>'+_audN(c.facturada)+(c.excepciones ? ' <span title="Partidas con una facturada que no es el 90 %" style="color:#b45309">('+c.excepciones+' ≠ 90 %)</span>' : '')+'</td><td>'+_audN(c.plg)+'</td><td>'+_audN(c.tinas)+'</td><td>'+_audN(c.camiones)+'</td></tr>'; }).join("")
-      + '</tbody></table>' : '');
 
   const guardadas = loadAud().slice().sort(function(a, b){ return b.ts - a.ts; });
   const lista = guardadas.length
@@ -18998,7 +19027,7 @@ function renderAud(){
     + titulo("🎣 Cosecha y despacho", "una fila por partida; la facturada propone el 90 % de la real")
     + tabla("cosechas", ["Fecha","Módulo","TQ","Partida","Cant. real","Ton.","Estadío","PL/g","Camaronera","Piscina(s)","Guía remisión","Guía despacho","Facturada","Tinas","Placa"], filasC)
     + titulo("📊 Resumen", "calculado; no se envía")
-    + resumen
+    + '<div data-aud-resumen>' + _audResumenHTML(m) + '</div>'
     + '<div class="meta" style="margin-top:12px"><div class="mf" style="flex:1 1 100%"><label>Observaciones</label>'
     + '<textarea data-ak="obs" rows="2" maxlength="500" oninput="audCampo(this)" style="border:1.5px solid var(--bdr);border-radius:6px;padding:7px 10px;font:inherit">'+v(m.obs)+'</textarea></div></div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'

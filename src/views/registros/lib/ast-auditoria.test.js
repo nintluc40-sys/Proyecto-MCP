@@ -200,6 +200,35 @@ describe('Auditoría · la ficha en el módulo AsT', () => {
     tq.value = '1';
     H.audFila(tq, true);
     expect(m.cosechas[1].partida).toBe(2);
+    expect(fp().querySelector('[data-aud-partida="1"]').textContent).toBe('2');   // y la celda lo dice sin rehacer la tabla
+  });
+
+  it('🔴 cambiar una celda NO rehace la tabla (el Tab y el clic siguiente no se pierden): lo calculado se pone al día EN SU SITIO', () => {
+    // Revisión del 2026-10-03, medido en Chrome: rehacer la ficha en cada «change» mandaba el foco al <body> (lo tecleado
+    // después se perdía) y se llevaba el botón pulsado justo después de teclear.
+    const m = H.modelo();
+    Object.assign(m, audit({ siembras: [SI({ cantidad: '7,000,000' })], cosechas: [CO({ cantidad: '1,000,000' })] }));
+    H.renderAud();
+    const q = (s) => fp().querySelector(s);
+    const otra = q('input[data-as="siembras"][data-ai="0"][data-af="ton"]');   // la celda a la que iría el Tab
+    const anadir = q('button[data-as="transferencias"][onclick="audAgregarEl(this)"]');
+    const cant = q('input[data-as="siembras"][data-ai="0"][data-af="cantidad"]');
+    cant.value = '5,000,000';
+    H.audFila(cant, true);
+    expect(otra.isConnected && anadir.isConnected && cant.isConnected).toBe(true);
+    expect(q('[data-aud-resumen]').textContent).toContain((5000000).toLocaleString('es-EC'));   // el resumen, al día
+    // en una cosecha: la facturada propuesta y la marca de excepción
+    const real = q('input[data-as="cosechas"][data-ai="0"][data-af="cantidad"]');
+    real.value = '2,000,000';
+    H.audFila(real, true);
+    const td = q('[data-aud-fact="0"]');
+    expect(td.querySelector('input').getAttribute('placeholder')).toBe((1800000).toLocaleString('es-EC'));
+    expect(td.getAttribute('title')).toBeNull();
+    const fact = td.querySelector('input');
+    fact.value = '1,500,000';
+    H.audFila(fact, true);
+    expect(td.getAttribute('title')).toBe('No es el 90 % de la real');
+    expect(fact.isConnected && real.isConnected).toBe(true);
   });
 
   it('🔴 Guardar valida, queda PENDIENTE; la misma corrida · módulo la sustituye; la cola reconcilia por versión', () => {
