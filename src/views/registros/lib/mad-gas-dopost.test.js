@@ -1858,3 +1858,57 @@ describe('GAS · Registro_Score (🎯 Score del AsT, 2026-10-02)', () => {
     expect(r.rows[0].Score).toBe(88);
   });
 });
+
+/* 2026-10-03 (usuario) · 🧾 AUDITORÍA del AsT: la hoja nueva «Registro_Auditoria», una fila por EVENTO (Siembra,
+   Transferencia o Cosecha), por su ID (el último), SIN merge, y la corrida, los tanques, las piscinas, las guías y la
+   placa como TEXTO (localizados por la cabecera del envío). La cabecera sale del MOTOR. */
+function cabecerasDeAuditoria() {
+  const i = engineSrc.indexOf('const AUD_HEADERS = [');
+  const fin = '"Tinas","Placa","Observaciones","Registrado por","ID"];';
+  const j = engineSrc.indexOf(fin, i);
+  const ctx = {};
+  createContext(ctx);
+  new Script(engineSrc.slice(i, j + fin.length) + '\n;globalThis.__h = AUD_HEADERS;').runInContext(ctx);
+  return ctx.__h;
+}
+describe('GAS · Registro_Auditoria (🧾 Auditoría del AsT, 2026-10-03)', () => {
+  const AU = cabecerasDeAuditoria();
+  const fila = (v) => conValores(AU, Object.assign({ Tipo: 'Cosecha', Corrida: '901', 'Módulo': 'M04', Tanque: '1', Fecha: '2026-03-22',
+    Cantidad: 3290000, Partida: 1, Camaronera: 'Cachugrán', 'Piscina(s)': '96', 'Guía de remisión': '2001', ID: 'AU-C-901-M04-t1-p1' }, v));
+  const post = (g, filas) => g.post({ sheetName: 'Registro_Auditoria', headers: AU, rows: filas });
+
+  it('el fixture viene del motor: 29 columnas, «Tipo» la primera y el ID la última', () => {
+    expect(AU).toHaveLength(29);
+    expect(AU[0]).toBe('Tipo');
+    expect(AU[28]).toBe('ID');
+  });
+
+  it('🔴 la hoja está permitida y NACE con su cabecera; reenviar CORRIGE la fila del evento (no duplica, no funde)', () => {
+    const hojas = {};
+    const g = gas(hojas);
+    expect(post(g, [fila({}), fila({ Tipo: 'Siembra', Partida: '', ID: 'AU-S-901-M04-t1-s1', Cantidad: 7000000, Observaciones: 'ok' })]).status).toBe('ok');
+    const h = hojas['Registro_Auditoria'];
+    expect(h.filas[0]).toEqual(AU);
+    expect(h.filas).toHaveLength(3);
+    expect(post(g, [fila({ Tipo: 'Siembra', Partida: '', ID: 'AU-S-901-M04-t1-s1', Cantidad: 6300000 })]).status).toBe('ok');
+    expect(h.filas).toHaveLength(3);
+    expect(h.filas[2][AU.indexOf('Cantidad')]).toBe(6300000);
+    expect(h.filas[2][AU.indexOf('Observaciones')], 'sin merge: la corrección la sustituye entera').toBe('');
+  });
+
+  it('🔴 la corrida, las piscinas y las guías se guardan como TEXTO (Sheets haría de «3-5» una fecha y de «0598» un número)', () => {
+    const hoja = hojaFalsa([AU], { comoSheets: true });
+    const g = gas({ 'Registro_Auditoria': hoja });
+    expect(post(g, [fila({ Corrida: '0598', 'Piscina(s)': '3-5', 'Guía de remisión': '002001', 'Guía de despacho': '003001' })]).status).toBe('ok');
+    const f = hoja.filas[1];
+    expect([f[AU.indexOf('Corrida')], f[AU.indexOf('Piscina(s)')], f[AU.indexOf('Guía de remisión')], f[AU.indexOf('Guía de despacho')]])
+      .toEqual(['0598', '3-5', '002001', '003001']);
+  });
+
+  it('se puede leer con ?p=rows', () => {
+    const g = gas({ 'Registro_Auditoria': hojaFalsa([AU, fila({})]) });
+    const r = g.leer({ p: 'rows', sheet: 'Registro_Auditoria' });
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0].Tipo).toBe('Cosecha');
+  });
+});

@@ -22,7 +22,7 @@
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "9daa0194f781";
+const GAS_VERSION = "7c0373808616";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -80,6 +80,8 @@ const ALLOWED = [
   "Registro_Traslado",
   // 🎯 Score del AsT (2026-10-02): análisis de calidad de postlarvas, una fila por tanque, por su columna "ID".
   "Registro_Score",
+  // 🧾 Auditoría del AsT (2026-10-03): siembra, transferencia y cosecha de la corrida, una fila por evento, por su ID.
+  "Registro_Auditoria",
   "Microbiología",
   "Calidad de Agua",
   "Patología en Fresco",
@@ -151,7 +153,10 @@ const LIMITS = {
   tras:    { maxRows: 600, maxCols: 40 },
   // 🎯 Score (2026-10-02): 29 columnas (cabecera, 13 criterios, Score e interpretación, los 4 datos del tanque, pie e
   // ID) + margen. Una evaluación son hasta 12 filas (los tanques del módulo); 300 cubre varias pendientes de golpe.
-  score:   { maxRows: 300, maxCols: 40 }
+  score:   { maxRows: 300, maxCols: 40 },
+  // 🧾 Auditoría (2026-10-03): 29 columnas (Tipo, los datos de la siembra, la transferencia y la cosecha, pie e ID) +
+  // margen. Una auditoría son sus siembras, transferencias y partidas: 500 cubre una corrida de dos módulos con holgura.
+  aud:     { maxRows: 500, maxCols: 40 }
 };
 
 // Rate limit state: persistido en CacheService (60s TTL) para que sobreviva
@@ -268,6 +273,7 @@ function doPost(e) {
     var isDesinf = payload.sheetName === "Registro_Desinfección";
     var isTras   = payload.sheetName === "Registro_Traslado";
     var isScore  = payload.sheetName === "Registro_Score";
+    var isAud    = payload.sheetName === "Registro_Auditoria";
     var isMicro  = payload.sheetName === "Microbiología";
     var isCal    = payload.sheetName === "Calidad de Agua";
     var isPat    = payload.sheetName === "Patología en Fresco";
@@ -341,6 +347,7 @@ function doPost(e) {
                 : isAst    ? LIMITS.ast
                 : isTras   ? LIMITS.tras
                 : isScore  ? LIMITS.score
+                : isAud    ? LIMITS.aud
                 : isDesinf ? LIMITS.desinf
                 : isMicro  ? LIMITS.micro
                 : isCal    ? LIMITS.cal
@@ -510,6 +517,16 @@ function doPost(e) {
       if (_filasSc > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasSc - ws.getMaxRows());
       if (ws.getMaxRows() > 1 && ws.getMaxColumns() > _corrSc) ws.getRange(2, _corrSc + 1, ws.getMaxRows() - 1, 1).setNumberFormat("@");
     }
+    // 2026-10-03 · Registro_Auditoria: la corrida, los tanques, las piscinas, las guías y la placa como TEXTO («0598», «3-5»
+    // o «40-41» los convertiría Sheets en número o en fecha), localizados por la cabecera del envío.
+    if (isAud) {
+      var _filasAu = lastRow(ws) + rows.length;
+      if (_filasAu > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasAu - ws.getMaxRows());
+      ["Corrida", "Tanque", "Tanque destino", "Piscina(s)", "Guía de remisión", "Guía de despacho", "Guías ingreso reproductores", "Placa"].forEach(function (h) {
+        var _cAu = (payload.headers || []).indexOf(h);
+        if (_cAu >= 0 && ws.getMaxRows() > 1 && ws.getMaxColumns() > _cAu) ws.getRange(2, _cAu + 1, ws.getMaxRows() - 1, 1).setNumberFormat("@");
+      });
+    }
     var result;
     if (isMad) {
       // Las hojas POSICIONALES del registro operativo usan upsert con su clave compuesta (las del reproductivo, en madKeyCols):
@@ -574,6 +591,8 @@ function doPost(e) {
     else if (isTras)   result = upsertAstRows(ws, rows);
     // 🎯 Score (2026-10-02): el MISMO upsert por "ID" (el último), sin merge: reenviar una evaluación la corrige entera.
     else if (isScore)  result = upsertAstRows(ws, rows);
+    // 🧾 Auditoría (2026-10-03): el MISMO upsert por "ID" (el último), sin merge: reenviar una auditoría la corrige.
+    else if (isAud)    result = upsertAstRows(ws, rows);
     // Las tres de Maduración van con MERGE (3.er argumento), al revés que AsT y
     // Traslado: ver la cabecera de upsertAstRows para el porqué.
     else if (isMadId)  result = upsertAstRows(ws, rows, true, payload.headers);

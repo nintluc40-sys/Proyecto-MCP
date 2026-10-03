@@ -227,8 +227,8 @@ describe('Traslado · la pestaña está realmente cableada en el monolito', () =
   const src = leer(ENGINE);
 
   it('entra en las pestañas del módulo As Técnico', () => {
-    // (2026-10-02 · entra 🎯 Score, detrás de Traslado.)
-    expect(src).toContain('const AST_TABS      = ["ast","traslado","score","marea","fotos"];');
+    // (2026-10-02 · entra 🎯 Score, detrás de Traslado; 2026-10-03 · y 🧾 Auditoría, detrás del Score.)
+    expect(src).toContain('const AST_TABS      = ["ast","traslado","score","auditoria","marea","fotos"];');
   });
 
   it('tiene rótulo propio y NO reutiliza la clave "despacho"', () => {

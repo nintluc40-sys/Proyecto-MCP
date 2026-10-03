@@ -1899,6 +1899,8 @@ function _reconcileMark(mark){
     else if(mark.kind === "tras" && typeof _trasRaw === "function"){ raw=_trasRaw; save=_trasSave; keyOf=(r)=> r.id; }
     // 🎯 Score (2026-10-02): la marca lleva la VERSIÓN (id@ts), así que una evaluación corregida tras encolarse no se da por enviada.
     else if(mark.kind === "score" && typeof _scoreRaw === "function"){ raw=_scoreRaw; save=_scoreSave; keyOf=(r)=> r.id + "@" + r.ts; }
+    // 🧾 Auditoría (2026-10-03): igual que el Score, la marca lleva la VERSIÓN (id@ts).
+    else if(mark.kind === "auditoria" && typeof _audRaw === "function"){ raw=_audRaw; save=_audSave; keyOf=(r)=> r.id + "@" + String(r.ts); }
     else if(mark.kind.indexOf("mad:") === 0 && typeof loadMad === "function" && typeof saveMadList === "function"){
       const _mk = mark.kind.slice(4);   // salas | tanques | lotes
       raw=()=>loadMad(_mk); save=(l)=>saveMadList(_mk, l); keyOf=(r)=> r.id;
@@ -2227,7 +2229,8 @@ async function syncAll(){
     const trasP = (typeof loadTras === "function") && loadTras().some(r => !r.synced);
     // 2026-10-02 · y la tercera ficha con hoja propia, 🎯 Score (Registro_Score).
     const scoreP = (typeof loadScore === "function") && loadScore().some(r => !r.synced);
-    if(!astP && !trasP && !scoreP){
+    const audP = (typeof loadAud === "function") && loadAud().some(r => !r.synced);   // 🧾 Auditoría (2026-10-03)
+    if(!astP && !trasP && !scoreP && !audP){
       setSyncUI("idle","Todo sincronizado");
       toast("No hay registros pendientes","info",2500);
       return;
@@ -2235,6 +2238,7 @@ async function syncAll(){
     if(astP)  await syncAllPendingAst();
     if(trasP) await syncAllPendingTras();
     if(scoreP) await syncAllPendingScore();
+    if(audP)   await syncAllPendingAud();
     return;
   }
   if(!syncRateOk()) return;
@@ -2687,7 +2691,7 @@ const MAD_TABS      = ["ingreso","saldo","movimientos","salas","tanques","desove
 // Tabs del módulo Biomol — form + historial inline + fotos
 const BIO_TABS      = ["biomol","fotos"];
 // Tabs del módulo As Técnico — form de supervisión + registro de mareas + fotos
-const AST_TABS      = ["ast","traslado","score","marea","fotos"];
+const AST_TABS      = ["ast","traslado","score","auditoria","marea","fotos"];
 // Rendered as [id, icon, label]
 const TAB_META = {
   calidad:  ["🔬","Calidad Larvaria"],
@@ -2717,6 +2721,7 @@ const TAB_META = {
   ast:      ["📋","As Técnico"],
   traslado: ["🚚","Traslado"],
   score:    ["🎯","Score"],
+  auditoria:["🧾","Auditoría"],
   marea:    ["🌊","Mareas"],
   blanco:   ["📝","Blanco"],
   micnuevo: ["🧫","Nuevo análisis"],
@@ -2796,6 +2801,7 @@ function selTab(t){
   if(t==="ast")    renderAst();
   if(t==="traslado") renderTraslado();
   if(t==="score")  renderScore();
+  if(t==="auditoria") renderAud();
   if(t==="marea")  renderMarea();
   if(t==="micnuevo") micDispatchNuevo();
   if(t==="michist")  micDispatchHist();
@@ -2826,6 +2832,12 @@ function updateDots(){
   }
   // As Técnico: igual que Biomol
   if(isAstMod(curMod)){
+    const elA = document.getElementById("dot-auditoria");   // 🧾 Auditoría (2026-10-03)
+    if(elA){
+      const la = (typeof loadAud === "function") ? loadAud() : [];
+      const sa = la.some(r => !r.synced) ? "pending" : (la.length > 0 ? "synced" : "empty");
+      elA.className = "fdot " + (sa==="synced"?"ok":sa==="pending"?"pend":"mt");
+    }
     const elS = document.getElementById("dot-score");   // 🎯 Score (2026-10-02)
     if(elS){
       const ls = (typeof loadScore === "function") ? loadScore() : [];
@@ -2884,7 +2896,8 @@ function updateSyncUI(){
   }
   if(isAstMod(curMod)){
     const p = loadAst().filter(r => !r.synced).length
-      + ((typeof loadScore === "function") ? loadScore().filter(r => !r.synced).length : 0);   // 🎯 Score (2026-10-02)
+      + ((typeof loadScore === "function") ? loadScore().filter(r => !r.synced).length : 0)   // 🎯 Score (2026-10-02)
+      + ((typeof loadAud === "function") ? loadAud().filter(r => !r.synced).length : 0);     // 🧾 Auditoría (2026-10-03)
     _syncUIResumen(p, "registro(s)");
     return;
   }
@@ -18445,6 +18458,561 @@ function renderScore(){
 
 
 /* ══════════════════════════════════════════
+   🧾 AUDITORÍA · siembra, transferencia y cosecha de una corrida (AsT, 2026-10-03, usuario)
+   ──────────────────────────────────────────
+   Las planillas «AUDITORIAS (MES) Cxxx» como ficha. Es OTRO tipo de registro que el Despacho de Datos
+   Larvicultura: la trazabilidad de la corrida —siembras con sus guías, transferencias entre tanques, cosechas
+   PARTIDAS y su despacho con guías y cantidad facturada—. Decisiones del usuario (2026-10-03):
+   • UNA hoja «Registro_Auditoria» con columna «Tipo» (Siembra · Transferencia · Cosecha): UNA FILA POR EVENTO, cada
+     una con su ID fijo (el último), así que reenviar CORRIGE su fila (el GAS la upserta, sin merge, como al Score).
+   • Facturada = 90 % de la real PROPUESTA y editable; lo que no es el 90 % se marca.
+   • Con transferencia, la cosecha se atribuye a los tanques de ORIGEN en PROPORCIÓN a lo que cada uno dio a cada
+     destino (`audAtribucion`), rotulado como estimación: en las planillas iba a partes iguales (Σ ÷ nº de orígenes).
+   • Placa y tinas se teclean en cada partida; el ingreso de reproductores (fecha y guías) se teclea en la siembra.
+   • Lo que se CALCULA no se guarda: densidades (con las toneladas de cada tanque), sobrevivencias, días de cultivo,
+     subtotales y el resumen por camaronera. En las planillas había 31 densidades con el divisor mal tecleado.
+   Una AUDITORÍA = corrida · módulo (el de la planilla); cada fila lleva su módulo, porque una corrida puede sembrar o
+   transferir a otro (las planillas «modulo 4-5»).
+══════════════════════════════════════════ */
+const AUD_SHEET      = "Registro_Auditoria";
+const AUD_REC_KEY    = "larv4_aud_records";
+const AUD_DRAFT_KEY  = "larv4_aud_draft";
+const AUD_ULT_KEY    = "larv4_aud_ultimos";
+const AUD_TTL        = 7 * 24 * 60 * 60 * 1000;   // sólo para lo YA enviado
+const AUD_SIEMBRAS   = ["1ª","2ª","3ª"];
+const AUD_ORIGENES   = ["Omarsa","Texcumar"];
+const AUD_FACTURA    = 0.9;                       // la facturada propuesta: el 90 % de la real (lo que hacen las planillas)
+// ⚠ Este array ES el orden físico de la hoja, y el ID va el ÚLTIMO (la lección del AsT: ver upsertAstRows en el GAS).
+const AUD_HEADERS = ["Tipo","Corrida","Módulo","Tanque","Fecha","Siembra","Cantidad","Origen","Toneladas","Lote",
+  "Código genético","Fecha ingreso reproductores","Guías ingreso reproductores","Módulo destino","Tanque destino","Estadío",
+  "PL/g","% larvas pequeñas","Partida","Camaronera","Piscina(s)","Guía de remisión","Guía de despacho","Cantidad facturada",
+  "Tinas","Placa","Observaciones","Registrado por","ID"];
+// Los campos de cada tipo de fila: [clave en el modelo, cabecera de la hoja].
+const AUD_CAMPOS = {
+  siembras: [["siembra","Siembra"],["modulo","Módulo"],["tanque","Tanque"],["fecha","Fecha"],["origen","Origen"],
+    ["guia","Guía de remisión"],["cantidad","Cantidad"],["ton","Toneladas"],["lote","Lote"],["codigo","Código genético"],
+    ["fechaIng","Fecha ingreso reproductores"],["guiasIng","Guías ingreso reproductores"]],
+  transferencias: [["fecha","Fecha"],["modulo","Módulo"],["tanque","Tanque"],["moduloDest","Módulo destino"],
+    ["tanqueDest","Tanque destino"],["cantidad","Cantidad"],["estadio","Estadío"],["plg","PL/g"],["larvasPeq","% larvas pequeñas"]],
+  cosechas: [["fecha","Fecha"],["modulo","Módulo"],["tanque","Tanque"],["partida","Partida"],["cantidad","Cantidad"],
+    ["ton","Toneladas"],["estadio","Estadío"],["plg","PL/g"],["camaronera","Camaronera"],["piscinas","Piscina(s)"],
+    ["guia","Guía de remisión"],["guiaDespacho","Guía de despacho"],["facturada","Cantidad facturada"],["tinas","Tinas"],
+    ["placa","Placa"]]
+};
+// Las «Observaciones» son de la AUDITORÍA (un campo, como el Score) y van en cada una de sus filas.
+const AUD_TIPO = { siembras:"Siembra", transferencias:"Transferencia", cosechas:"Cosecha" };
+
+/* ── Las reglas (puras) ─────────────────────────────────── */
+// Una cantidad de larvas es un ENTERO: se quitan separadores («6,300,000», «6.300.000» o «6 300 000» son lo mismo).
+function audEntero(v){
+  const s = String(v == null ? "" : v).replace(/[^\d]/g, "");
+  return s === "" ? "" : Number(s);
+}
+// PL/g, toneladas y porcentajes admiten decimales, con coma o punto.
+function audDecimal(v){
+  const s = String(v == null ? "" : v).trim().replace(",", ".");
+  if(s === "") return "";
+  const x = Number(s);
+  return isFinite(x) ? x : NaN;
+}
+const _audTxt = (v, max) => sanitizeStr(String(v == null ? "" : v), max || 80);
+const _audTq  = (v) => _audTxt(v, 10).replace(/^tq\s*/i, "").toUpperCase();   // «TQ 1» = «1»; los del CIO son «1A»
+const _audCorr = (d) => _audTxt(d && d.corrida, 20).replace(/\s+/g, "");
+const _audLlaveTq = (mod, tq) => _audTxt(mod, 10) + "·" + _audTq(tq);
+function audFacturadaPropuesta(real){
+  const r = audEntero(real);
+  return r === "" ? "" : Math.round(r * AUD_FACTURA);
+}
+/** La facturada de una partida: la tecleada, o la propuesta (90 %) si se dejó vacía. */
+function audFacturada(c){
+  const f = audEntero(c && c.facturada);
+  return f === "" ? audFacturadaPropuesta(c && c.cantidad) : f;
+}
+/** Una facturada TECLEADA que no es el 90 % de la real: se marca en la ficha. */
+function audFacturadaEsExcepcion(c){
+  const f = audEntero(c && c.facturada), p = audFacturadaPropuesta(c && c.cantidad);
+  return f !== "" && p !== "" && f !== p;
+}
+// Los IDs de cada fila: fijos, para que reenviar corrija.
+function audRowId(tipo, d, f){
+  const base = _audCorr(d) + "-" + _audTxt(f.modulo, 10) + "-t" + _audTq(f.tanque);
+  if(tipo === "siembras") return "AU-S-" + base + "-s" + (AUD_SIEMBRAS.indexOf(f.siembra) + 1);
+  if(tipo === "transferencias") return "AU-T-" + base + "-" + _audTxt(f.moduloDest, 10) + "-t" + _audTq(f.tanqueDest);
+  return "AU-C-" + base + "-p" + (audEntero(f.partida) || 1);
+}
+function _audEvalId(d){ return "AUE-" + _audCorr(d) + "-" + _audTxt(d && d.modulo, 10); }
+// La siguiente partida libre de un tanque (las cosechas de un tanque en varios días o destinos).
+function audSiguientePartida(cosechas, mod, tq, sin){
+  let max = 0;
+  (cosechas || []).forEach(function(c, i){
+    if(i === sin || !c || _audLlaveTq(c.modulo, c.tanque) !== _audLlaveTq(mod, tq)) return;
+    max = Math.max(max, audEntero(c.partida) || 0);
+  });
+  return max + 1;
+}
+/** Lo que falta o está mal, en palabras; [] si se puede guardar. */
+function audValidar(d){
+  const m = d || {}, err = [];
+  const falta = [];
+  if(!_audCorr(m)) falta.push("la corrida");
+  if(!String(m.modulo || "").trim()) falta.push("el módulo");
+  if(falta.length) err.push("falta " + falta.join(", "));
+  const S = m.siembras || [], T = m.transferencias || [], C = m.cosechas || [];
+  if(!S.length && !T.length && !C.length) err.push("registra al menos una siembra, una transferencia o una cosecha");
+  const vistos = new Set();
+  const fecha = (x) => /^\d{4}-\d{2}-\d{2}$/.test(String(x || ""));
+  S.forEach(function(s, i){
+    const n = "Siembra " + (i + 1);
+    if(!s.modulo || !_audTq(s.tanque) || !fecha(s.fecha) || !(audEntero(s.cantidad) > 0) || AUD_SIEMBRAS.indexOf(s.siembra) < 0)
+      err.push(n + ": faltan siembra (1ª/2ª/3ª), módulo, tanque, fecha o cantidad");
+    const t = audDecimal(s.ton); if(s.ton !== "" && s.ton != null && !(t > 0)) err.push(n + ": toneladas fuera de rango");
+    const k = audRowId("siembras", m, s); if(vistos.has(k)) err.push(n + ": el tanque ya tiene esa siembra"); vistos.add(k);
+  });
+  T.forEach(function(t, i){
+    const n = "Transferencia " + (i + 1);
+    if(!fecha(t.fecha) || !t.modulo || !_audTq(t.tanque) || !t.moduloDest || !_audTq(t.tanqueDest) || !(audEntero(t.cantidad) > 0))
+      err.push(n + ": faltan fecha, tanque de origen, módulo y tanque de destino o cantidad");
+    ["plg","larvasPeq"].forEach(function(k){ const x = audDecimal(t[k]); if(t[k] !== "" && t[k] != null && (!isFinite(x) || x < 0 || (k === "larvasPeq" && x > 100))) err.push(n + ": " + (k === "plg" ? "PL/g" : "% larvas pequeñas") + " fuera de rango"); });
+    const k = audRowId("transferencias", m, t); if(vistos.has(k)) err.push(n + ": ese origen ya transfiere a ese destino"); vistos.add(k);
+  });
+  C.forEach(function(c, i){
+    const n = "Cosecha " + (i + 1);
+    if(!fecha(c.fecha) || !c.modulo || !_audTq(c.tanque) || !(audEntero(c.cantidad) > 0))
+      err.push(n + ": faltan fecha, módulo, tanque o cantidad");
+    const x = audDecimal(c.plg); if(c.plg !== "" && c.plg != null && !(x > 0)) err.push(n + ": PL/g fuera de rango");
+    const k = audRowId("cosechas", m, c); if(vistos.has(k)) err.push(n + ": esa partida del tanque ya está"); vistos.add(k);
+  });
+  return err;
+}
+/** Las filas de UNA auditoría: siembras, transferencias y cosechas, en ese orden. */
+function audFilas(d){
+  const m = d || {}, filas = [];
+  const vacia = function(){ return AUD_HEADERS.map(function(){ return ""; }); };
+  ["siembras","transferencias","cosechas"].forEach(function(tipo){
+    (m[tipo] || []).forEach(function(f){
+      const fila = vacia();
+      const pon = function(h, v){ const i = AUD_HEADERS.indexOf(h); if(i >= 0) fila[i] = v; };
+      pon("Tipo", AUD_TIPO[tipo]); pon("Corrida", _audCorr(m));
+      AUD_CAMPOS[tipo].forEach(function(par){
+        const k = par[0], h = par[1], v = f[k];
+        if(k === "cantidad" || k === "tinas") pon(h, audEntero(v));
+        else if(k === "facturada") pon(h, audFacturada(f));
+        else if(k === "partida") pon(h, audEntero(v) || 1);
+        else if(k === "ton" || k === "plg" || k === "larvasPeq"){ const x = audDecimal(v); pon(h, (x === "" || !isFinite(x)) ? "" : x); }
+        else if(k === "tanque" || k === "tanqueDest") pon(h, _audTq(v));
+        else pon(h, _audTxt(v, 80));
+      });
+      pon("Observaciones", _audTxt(m.obs, 500));
+      pon("Registrado por", _audTxt(m.registrado, 80));
+      pon("ID", audRowId(tipo, m, f));
+      filas.push(fila);
+    });
+  });
+  return filas;
+}
+function buildAudPayload(records){
+  const rows = [];
+  (records || []).forEach(function(r){ if(r && r.data) audFilas(r.data).forEach(function(f){ rows.push(f); }); });
+  return { sheetName: AUD_SHEET, headers: AUD_HEADERS.slice(), rows: rows };
+}
+const _audDias = (a, b) => Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000);
+/**
+ * Los cálculos de la planilla, sin teclearlos: por tanque sembrado, su cosecha ATRIBUIDA y sus sobrevivencias; por
+ * siembra, sus subtotales; y por camaronera, el resumen del despacho.
+ * ⚠ Con transferencia, la cosecha de cada DESTINO se reparte entre sus orígenes en PROPORCIÓN a lo que cada uno le dio
+ * (decisión del usuario): es una ESTIMACIÓN y se rotula. Un tanque cosechado sin transferencias que lo alimenten es
+ * suyo entero.
+ */
+function audResumen(d){
+  const m = d || {};
+  const S = (m.siembras || []).filter(function(s){ return audEntero(s.cantidad) > 0 && _audTq(s.tanque); });
+  const T = (m.transferencias || []).filter(function(t){ return audEntero(t.cantidad) > 0; });
+  const C = (m.cosechas || []).filter(function(c){ return audEntero(c.cantidad) > 0 && _audTq(c.tanque); });
+  const cos = new Map(), recibe = new Map(), aportes = new Map(), salida = new Map(), tonDe = new Map();
+  S.forEach(function(s){ const t = audDecimal(s.ton); if(t > 0) tonDe.set(_audLlaveTq(s.modulo, s.tanque), t); });
+  C.forEach(function(c){ const k = _audLlaveTq(c.modulo, c.tanque); cos.set(k, (cos.get(k) || 0) + audEntero(c.cantidad)); });
+  T.forEach(function(t){
+    const o = _audLlaveTq(t.modulo, t.tanque), dst = _audLlaveTq(t.moduloDest, t.tanqueDest), q = audEntero(t.cantidad);
+    recibe.set(dst, (recibe.get(dst) || 0) + q);
+    salida.set(o, (salida.get(o) || 0) + q);
+    if(!aportes.has(dst)) aportes.set(dst, []);
+    aportes.get(dst).push({ origen: o, q: q });
+  });
+  // La cosecha atribuida a cada tanque: la suya si nadie le transfirió; si recibió, repartida por lo que dio cada origen.
+  const atribuida = new Map(); let estimada = false;
+  cos.forEach(function(h, k){
+    const ap = aportes.get(k);
+    if(!ap || !ap.length){ atribuida.set(k, (atribuida.get(k) || 0) + h); return; }
+    estimada = true;
+    const tot = recibe.get(k);
+    ap.forEach(function(a){ atribuida.set(a.origen, (atribuida.get(a.origen) || 0) + h * a.q / tot); });
+  });
+  const tanques = S.map(function(s){
+    const k = _audLlaveTq(s.modulo, s.tanque), sem = audEntero(s.cantidad), ton = audDecimal(s.ton);
+    const at = atribuida.has(k) ? Math.round(atribuida.get(k)) : null;
+    const out = salida.get(k) || 0;
+    const ultima = C.filter(function(c){ return _audLlaveTq(c.modulo, c.tanque) === k; }).map(function(c){ return c.fecha; }).sort().pop() || "";
+    return { llave: k, siembra: s.siembra, modulo: s.modulo, tanque: _audTq(s.tanque), sembrado: sem,
+      densidad: ton > 0 ? Math.round(sem / ton / 1000) : null,
+      transferido: out || null, sobFase1: out ? out / sem : null,
+      cosechado: at, sob: at === null ? null : at / sem, estimada: !!(out || (aportes.get(k) && aportes.get(k).length)),
+      dias: ultima && s.fecha ? _audDias(s.fecha, ultima) : null };
+  });
+  const bloques = AUD_SIEMBRAS.map(function(n){
+    const ts = tanques.filter(function(t){ return t.siembra === n; });
+    if(!ts.length) return null;
+    const sem = ts.reduce(function(a, t){ return a + t.sembrado; }, 0);
+    const cosech = ts.reduce(function(a, t){ return a + (t.cosechado || 0); }, 0);
+    return { siembra: n, tanques: ts.length, sembrado: sem, cosechado: cosech, sob: sem ? cosech / sem : null };
+  }).filter(Boolean);
+  // Por tanque COSECHADO (también los destinos que no se sembraron aquí): su densidad con SUS toneladas, y la sobrevivencia
+  // de la fase 2 (lo cosechado sobre lo recibido) cuando recibió.
+  const cosechados = [...cos.entries()].map(function(e){
+    const k = e[0], h = e[1];
+    const c0 = C.find(function(c){ return _audLlaveTq(c.modulo, c.tanque) === k && audDecimal(c.ton) > 0; });
+    const ton = tonDe.get(k) || (c0 ? audDecimal(c0.ton) : null);
+    return { llave: k, cosechado: h, densidad: ton ? Math.round(h / ton / 1000) : null, recibido: recibe.get(k) || null,
+      sobFase2: recibe.get(k) ? h / recibe.get(k) : null };
+  });
+  const porCam = new Map();
+  C.forEach(function(c){
+    const k = _audTxt(c.camaronera, 40) || "Sin camaronera";
+    const o = porCam.get(k) || { camaronera: k, real: 0, facturada: 0, plgPeso: 0, plgReal: 0, tinas: 0, placas: new Set(), partidas: 0, excepciones: 0 };
+    const real = audEntero(c.cantidad), plg = audDecimal(c.plg);
+    o.real += real; o.facturada += audFacturada(c) || 0; o.partidas++;
+    if(plg > 0){ o.plgPeso += plg * real; o.plgReal += real; }
+    o.tinas += audEntero(c.tinas) || 0;
+    if(_audTxt(c.placa, 20)) o.placas.add(_audTxt(c.placa, 20).toUpperCase());
+    if(audFacturadaEsExcepcion(c)) o.excepciones++;
+    porCam.set(k, o);
+  });
+  const camaroneras = [...porCam.values()].map(function(o){
+    return { camaronera: o.camaronera, real: o.real, facturada: o.facturada, partidas: o.partidas, excepciones: o.excepciones,
+      plg: o.plgReal ? Math.round(o.plgPeso / o.plgReal) : null, tinas: o.tinas, camiones: o.placas.size };
+  }).sort(function(a, b){ return b.real - a.real; });
+  const sembradoTotal = tanques.reduce(function(a, t){ return a + t.sembrado; }, 0);
+  const cosechadoTotal = C.reduce(function(a, c){ return a + audEntero(c.cantidad); }, 0);
+  return { tanques: tanques, bloques: bloques, cosechados: cosechados, camaroneras: camaroneras, estimada: estimada,
+    sembrado: sembradoTotal, cosechado: cosechadoTotal, sob: sembradoTotal ? cosechadoTotal / sembradoTotal : null };
+}
+
+/* ── Persistencia local ─────────────────────────────────── */
+function _audRaw(){
+  try{
+    const raw = localStorage.getItem(AUD_REC_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  }catch(x){ _silent("_audRaw", x); return []; }
+}
+function _audSave(list){
+  const ok = _lsSet(AUD_REC_KEY, JSON.stringify(list || []));
+  if(!ok && !_reclaiming) toast("❌ Este navegador NO está guardando los datos (almacenamiento lleno, en modo privado o bloqueado).","err",7000);
+  return ok;
+}
+// Lo pendiente NO caduca (se perdería trabajo); lo enviado se purga a los 7 días.
+function loadAud(){
+  const now = Date.now(), raw = _audRaw();
+  const list = raw.filter(function(r){ return r && !(r.synced && r.syncedAt && (now - r.syncedAt) > AUD_TTL); });
+  if(list.length !== raw.length) _audSave(list);
+  return list;
+}
+
+/* ── La auditoría en pantalla ───────────────────────────── */
+let _audModel = null;   // se guarda al instante en AUD_DRAFT_KEY
+function _audUltimos(){ try{ return JSON.parse(localStorage.getItem(AUD_ULT_KEY) || "{}") || {}; }catch(_){ return {}; } }
+function _audNueva(){
+  return { corrida:"", modulo:"", registrado: _audUltimos().registrado || "", obs:"", siembras:[], transferencias:[], cosechas:[] };
+}
+function _audActual(){
+  if(_audModel) return _audModel;
+  try{
+    const raw = localStorage.getItem(AUD_DRAFT_KEY);
+    const d = raw ? JSON.parse(raw) : null;
+    _audModel = (d && typeof d === "object" && Array.isArray(d.siembras) && Array.isArray(d.transferencias) && Array.isArray(d.cosechas)) ? d : _audNueva();
+  }catch(_){ _audModel = _audNueva(); }
+  return _audModel;
+}
+function _audGuardarBorrador(){ _lsSet(AUD_DRAFT_KEY, JSON.stringify(_audActual())); }
+// Los campos de la cabecera (corrida, módulo, registrado por): guardan sin repintar (perderían el foco).
+function audCampo(el){
+  const k = el && el.getAttribute("data-ak");
+  if(!k) return;
+  _audActual()[k] = el.value;
+  _audGuardarBorrador();
+}
+// Los de una fila: `data-as` (sección), `data-ai` (fila) y `data-af` (campo). Escribir no repinta; cambiar SÍ (para
+// recalcular la facturada propuesta, la partida y el resumen).
+function audFila(el, repintar){
+  if(!el) return;
+  const sec = el.getAttribute("data-as"), i = Number(el.getAttribute("data-ai")), k = el.getAttribute("data-af");
+  const m = _audActual(), f = (m[sec] || [])[i];
+  if(!f || !k) return;
+  f[k] = el.value;
+  // Un tanque o módulo nuevo en una cosecha: su partida es la siguiente libre de ESE tanque.
+  if(sec === "cosechas" && (k === "tanque" || k === "modulo")) f.partida = audSiguientePartida(m.cosechas, f.modulo, f.tanque, i);
+  _audGuardarBorrador();
+  if(repintar) renderAud();
+}
+/* Añadir una fila copia lo que suele repetirse de la anterior (fecha, origen, guía, toneladas, lote…), con el tanque
+   siguiente: así se llena como la planilla, de arriba abajo. */
+function audAgregarEl(el){
+  const sec = el && el.getAttribute("data-as");
+  const m = _audActual(), L = m[sec];
+  if(!Array.isArray(L)) return;
+  const prev = L[L.length - 1] || null;
+  const sigTq = function(tq){ const n = Number(_audTq(tq)); return Number.isInteger(n) && n > 0 ? String(n + 1) : ""; };
+  let f;
+  if(sec === "siembras"){
+    f = prev ? { siembra: prev.siembra, modulo: prev.modulo, tanque: sigTq(prev.tanque), fecha: prev.fecha, origen: prev.origen, guia: prev.guia,
+          cantidad: prev.cantidad, ton: prev.ton, lote: prev.lote, codigo: prev.codigo, fechaIng: prev.fechaIng, guiasIng: prev.guiasIng, obs: "" }
+      : { siembra: "1ª", modulo: m.modulo || "", tanque: "1", fecha: today(), origen: "", guia: "", cantidad: "", ton: "", lote: "", codigo: "", fechaIng: "", guiasIng: "", obs: "" };
+  } else if(sec === "transferencias"){
+    f = prev ? { fecha: prev.fecha, modulo: prev.modulo, tanque: prev.tanque, moduloDest: prev.moduloDest, tanqueDest: sigTq(prev.tanqueDest),
+          cantidad: "", estadio: prev.estadio, plg: "", larvasPeq: "", obs: "" }
+      : { fecha: today(), modulo: m.modulo || "", tanque: "1", moduloDest: m.modulo || "", tanqueDest: "1", cantidad: "", estadio: "", plg: "", larvasPeq: "", obs: "" };
+  } else {
+    f = prev ? { fecha: prev.fecha, modulo: prev.modulo, tanque: sigTq(prev.tanque), partida: "", cantidad: "", ton: prev.ton, estadio: prev.estadio, plg: "",
+          camaronera: prev.camaronera, piscinas: "", guia: "", guiaDespacho: "", facturada: "", tinas: "", placa: "", obs: "" }
+      : { fecha: today(), modulo: m.modulo || "", tanque: "1", partida: "", cantidad: "", ton: "", estadio: "", plg: "", camaronera: "", piscinas: "",
+          guia: "", guiaDespacho: "", facturada: "", tinas: "", placa: "", obs: "" };
+    f.partida = audSiguientePartida(m.cosechas, f.modulo, f.tanque, -1);
+  }
+  L.push(f);
+  _audGuardarBorrador();
+  renderAud();
+}
+// Otra partida del MISMO tanque (otro día, otro destino o piscina): la cosecha partida de las planillas.
+function audOtraPartidaEl(el){
+  const i = Number(el && el.getAttribute("data-ai"));
+  const m = _audActual(), c = m.cosechas[i];
+  if(!c) return;
+  const f = Object.assign({}, c, { partida: audSiguientePartida(m.cosechas, c.modulo, c.tanque, -1), cantidad: "", facturada: "", guia: "", guiaDespacho: "", tinas: "", placa: "", piscinas: "" });
+  m.cosechas.splice(i + 1, 0, f);
+  _audGuardarBorrador();
+  renderAud();
+}
+function audQuitarEl(el){
+  const sec = el && el.getAttribute("data-as"), i = Number(el && el.getAttribute("data-ai"));
+  const L = _audActual()[sec];
+  if(!Array.isArray(L) || !L[i]) return;
+  if(!confirm("¿Quitar esta fila de la auditoría? (Si ya se envió, su fila sigue en la hoja: se corrige allí.)")) return;
+  L.splice(i, 1);
+  _audGuardarBorrador();
+  renderAud();
+}
+// Valida y guarda la auditoría en el dispositivo como PENDIENTE (la misma corrida · módulo la sustituye).
+function _audRegistrar(){
+  const m = _audActual();
+  const err = audValidar(m);
+  if(err.length){ toast("⚠ " + err.join(" · "), "warn", 9000); return null; }
+  const id = _audEvalId(m);
+  const list = _audRaw().filter(function(r){ return r && r.id !== id; });
+  const rec = { id: id, ts: Date.now(), synced: false, data: JSON.parse(JSON.stringify(m)) };
+  list.push(rec);
+  if(!_audSave(list)) return null;
+  _lsSet(AUD_ULT_KEY, JSON.stringify({ registrado: m.registrado || "" }));
+  return rec;
+}
+function audGuardar(){
+  const rec = _audRegistrar();
+  if(!rec) return;
+  toast("💾 Auditoría guardada en este dispositivo (" + audFilas(rec.data).length + " fila(s)): pendiente de enviar", "ok");
+  renderAud(); updateDots(); updateSyncUI();
+}
+async function audEnviar(){
+  const rec = _audRegistrar();
+  if(!rec) return;
+  renderAud(); updateDots();
+  await syncAllPendingAud();
+}
+function audNueva(){
+  const m = _audActual();
+  const hay = m.siembras.length || m.transferencias.length || m.cosechas.length;
+  const guardada = _audRaw().some(function(r){ return r && r.id === _audEvalId(m) && JSON.stringify(r.data) === JSON.stringify(m); });
+  if(hay && !guardada && !confirm("Lo registrado en esta auditoría NO se ha guardado.\n\n¿Empezar otra igualmente?")) return;
+  _audModel = _audNueva();
+  _audGuardarBorrador();
+  renderAud();
+}
+function audAbrir(id){
+  const r = _audRaw().find(function(x){ return x && x.id === id; });
+  if(!r) return;
+  _audModel = JSON.parse(JSON.stringify(r.data));
+  _audGuardarBorrador();
+  renderAud();
+}
+function audBorrar(id){
+  const r = _audRaw().find(function(x){ return x && x.id === id; });
+  if(!r) return;
+  if(!confirm(r.synced ? "¿Quitar esta auditoría del dispositivo? (Lo enviado sigue en la hoja.)"
+    : "Esta auditoría NO se ha enviado: si la quitas, se pierde.\n\n¿Quitarla igualmente?")) return;
+  _audSave(_audRaw().filter(function(x){ return x && x.id !== id; }));
+  renderAud(); updateDots(); updateSyncUI();
+}
+// Los botones de la lista llevan el id en data-aud-id: el onclick no interpola nada (verificar-atributos-evento).
+function audAbrirEl(el){ if(el) audAbrir(el.getAttribute("data-aud-id")); }
+function audBorrarEl(el){ if(el) audBorrar(el.getAttribute("data-aud-id")); }
+
+/* ── Envío ──────────────────────────────────────────────── */
+/* Una auditoría por envío y marcada en el acto; la marca de la cola lleva la VERSIÓN (id@ts), como el Score: una
+   auditoría corregida después de encolarse no se da por enviada cuando llegue la versión vieja. */
+async function syncAllPendingAud(){
+  const url = gasUrl();
+  if(!url){ toast("Configura la URL de Google Apps Script primero","warn"); openCfg(); return; }
+  if(!isValidGasUrl(url)){ toast("URL de script inválida","err"); return; }
+  if(!syncRateOk()) return;
+  const pending = loadAud().filter(function(r){ return !r.synced; });
+  if(pending.length === 0){
+    setSyncUI("idle","Todo sincronizado");
+    toast("No hay auditorías pendientes","info",2500);
+    return;
+  }
+  setSyncUI("pend","Enviando " + pending.length + " auditoría(s)…");
+  let enviados = 0, fallo = null;
+  for(let i = 0; i < pending.length; i++){
+    const rec = pending[i];
+    const opts = { dedupeSalt: rec.id + "@" + rec.ts, mark:{ kind:"auditoria", keys:[rec.id + "@" + rec.ts] } };
+    const entregado = await postPayload(buildAudPayload([rec]), url, opts);
+    if(!entregado){ fallo = opts; break; }
+    const l2 = _audRaw();
+    const j = l2.findIndex(function(x){ return x && x.id === rec.id && x.ts === rec.ts; });
+    if(j >= 0){ l2[j].synced = true; l2[j].syncedAt = Date.now(); _audSave(l2); }
+    enviados++;
+  }
+  if(!fallo){
+    setSyncUI("ok", enviados + " auditoría(s) enviada(s) ✔");
+    toast(enviados + " auditoría(s) sincronizada(s)","ok",3000);
+    setTimeout(function(){ setSyncUI("idle","Todo sincronizado"); }, 3000);
+  } else if(enviados > 0){
+    setSyncUI("err", enviados + " de " + pending.length + " enviadas");
+    toast("⚠️ " + enviados + " de " + pending.length + " auditoría(s) sincronizadas; el resto sigue pendiente"
+      + _gasMotivo(fallo.gasMessage),"warn",7000);
+  } else {
+    _syncNotOkUI(fallo.outcome, "No fue posible sincronizar la auditoría", null, fallo.gasMessage);
+  }
+  if(curTab === "auditoria") renderAud();
+  updateDots(); updateSyncUI();
+}
+
+/* ── La ficha ───────────────────────────────────────────── */
+const _audN = (v) => (v === null || v === undefined || v === "" || !isFinite(v)) ? "—" : Number(v).toLocaleString("es-EC");
+const _audPct = (v) => (v === null || v === undefined || !isFinite(v)) ? "—" : (v * 100).toFixed(1) + " %";
+function renderAud(){
+  const fp = document.getElementById("fp-auditoria");
+  if(!fp) return;
+  const m = _audActual();
+  const v = function(x){ return escapeHtml(x == null ? "" : String(x)); };
+  const inp = function(sec, i, k, extra){
+    const f = m[sec][i];
+    return '<input data-as="'+sec+'" data-ai="'+i+'" data-af="'+k+'" value="'+v(f[k])+'" oninput="audFila(this,false)" onchange="audFila(this,true)"'
+      + ' style="width:100%;min-width:'+((extra && extra.w) || 70)+'px;padding:4px 6px;border:1px solid var(--bdr);border-radius:5px;font:inherit;font-size:12px"'
+      + (extra && extra.tipo ? ' type="'+extra.tipo+'"' : '') + (extra && extra.ph ? ' placeholder="'+v(extra.ph)+'"' : '') + (extra && extra.mode ? ' inputmode="'+extra.mode+'"' : '') + '>';
+  };
+  const sel = function(sec, i, k, opts){
+    const f = m[sec][i];
+    return '<select data-as="'+sec+'" data-ai="'+i+'" data-af="'+k+'" onchange="audFila(this,true)" style="padding:4px;border:1px solid var(--bdr);border-radius:5px;font-size:12px">'
+      + '<option value="">—</option>' + trasOpts(opts, f[k] || "") + '</select>';
+  };
+  // Los botones de fila con su onclick ESCRITO: un onclick no interpola nada (verificar-atributos-evento).
+  const btnQuitar = function(sec, i){ return '<button class="btn" type="button" data-as="'+sec+'" data-ai="'+i+'" onclick="audQuitarEl(this)" title="Quitar la fila" style="font-size:11px;padding:3px 7px">✕</button>'; };
+  const btnPartida = function(i){ return '<button class="btn" type="button" data-as="cosechas" data-ai="'+i+'" onclick="audOtraPartidaEl(this)" title="Otra partida de este tanque (otro día, destino o piscina)" style="font-size:11px;padding:3px 7px">➕ partida</button>'; };
+  const tabla = function(sec, cab, filas){
+    return '<div style="overflow:auto;border:1px solid #e2e8f0;border-radius:8px;margin-top:6px"><table class="ft" style="font-size:11px;min-width:100%">'
+      + '<thead><tr>' + cab.map(function(h){ return '<th style="white-space:nowrap">'+escapeHtml(h)+'</th>'; }).join("") + '<th></th></tr></thead>'
+      + '<tbody>' + (filas || '<tr><td colspan="'+(cab.length + 1)+'" style="color:#94a3b8;text-align:center;padding:10px">Sin filas todavía.</td></tr>') + '</tbody></table></div>'
+      + '<div style="margin-top:6px"><button class="btn" type="button" data-as="'+sec+'" onclick="audAgregarEl(this)" style="font-size:12px">➕ Añadir</button></div>';
+  };
+  const titulo = function(t, nota){ return '<div style="font-size:12px;font-weight:800;color:#0f766e;text-transform:uppercase;letter-spacing:.5px;margin:16px 0 2px">'+t+(nota ? ' <span style="font-weight:600;text-transform:none;letter-spacing:0;color:#64748b">· '+nota+'</span>' : '')+'</div>'; };
+
+  const cab = '<div class="meta">'
+    + '<div class="mf"><label>Corrida *</label><input data-ak="corrida" inputmode="numeric" maxlength="20" placeholder="Ej. 598" value="'+v(m.corrida)+'" oninput="audCampo(this)"></div>'
+    + '<div class="mf"><label>Módulo *</label><select data-ak="modulo" onchange="audCampo(this)"><option value="">— Selecciona —</option>'+trasOpts(TRAS_MODULO_OPTS, m.modulo || "")+'</select></div>'
+    + '<div class="mf"><label>Registrado por</label><input data-ak="registrado" maxlength="80" value="'+v(m.registrado)+'" oninput="audCampo(this)"></div>'
+    + '</div>';
+
+  const filasS = m.siembras.map(function(s, i){
+    return '<tr>' + ['<td>'+sel("siembras", i, "siembra", AUD_SIEMBRAS)+'</td>', '<td>'+sel("siembras", i, "modulo", TRAS_MODULO_OPTS)+'</td>',
+      '<td>'+inp("siembras", i, "tanque", { w: 44 })+'</td>', '<td>'+inp("siembras", i, "fecha", { tipo: "date", w: 120 })+'</td>',
+      '<td>'+sel("siembras", i, "origen", AUD_ORIGENES)+'</td>', '<td>'+inp("siembras", i, "guia", { w: 80 })+'</td>',
+      '<td>'+inp("siembras", i, "cantidad", { w: 90, mode: "numeric" })+'</td>', '<td>'+inp("siembras", i, "ton", { w: 50, mode: "decimal" })+'</td>',
+      '<td>'+inp("siembras", i, "lote", { w: 50 })+'</td>', '<td>'+inp("siembras", i, "codigo", { w: 110 })+'</td>',
+      '<td>'+inp("siembras", i, "fechaIng", { tipo: "date", w: 120 })+'</td>', '<td>'+inp("siembras", i, "guiasIng", { w: 130, ph: "271036 - 271037" })+'</td>',
+      '<td>'+btnQuitar("siembras", i)+'</td>'].join("") + '</tr>';
+  }).join("");
+  const filasT = m.transferencias.map(function(t, i){
+    return '<tr>' + ['<td>'+inp("transferencias", i, "fecha", { tipo: "date", w: 120 })+'</td>', '<td>'+sel("transferencias", i, "modulo", TRAS_MODULO_OPTS)+'</td>',
+      '<td>'+inp("transferencias", i, "tanque", { w: 44 })+'</td>', '<td>'+sel("transferencias", i, "moduloDest", TRAS_MODULO_OPTS)+'</td>',
+      '<td>'+inp("transferencias", i, "tanqueDest", { w: 44 })+'</td>', '<td>'+inp("transferencias", i, "cantidad", { w: 90, mode: "numeric" })+'</td>',
+      '<td>'+inp("transferencias", i, "estadio", { w: 50, ph: "PL5" })+'</td>', '<td>'+inp("transferencias", i, "plg", { w: 50, mode: "decimal" })+'</td>',
+      '<td>'+inp("transferencias", i, "larvasPeq", { w: 50, mode: "decimal" })+'</td>',
+      '<td>'+btnQuitar("transferencias", i)+'</td>'].join("") + '</tr>';
+  }).join("");
+  const filasC = m.cosechas.map(function(c, i){
+    const exc = audFacturadaEsExcepcion(c);
+    return '<tr>' + ['<td>'+inp("cosechas", i, "fecha", { tipo: "date", w: 120 })+'</td>', '<td>'+sel("cosechas", i, "modulo", TRAS_MODULO_OPTS)+'</td>',
+      '<td>'+inp("cosechas", i, "tanque", { w: 44 })+'</td>', '<td style="text-align:center"><b>'+v(c.partida || 1)+'</b></td>',
+      '<td>'+inp("cosechas", i, "cantidad", { w: 90, mode: "numeric" })+'</td>', '<td>'+inp("cosechas", i, "ton", { w: 50, mode: "decimal" })+'</td>',
+      '<td>'+inp("cosechas", i, "estadio", { w: 50, ph: "PL13" })+'</td>', '<td>'+inp("cosechas", i, "plg", { w: 50, mode: "decimal" })+'</td>',
+      '<td>'+sel("cosechas", i, "camaronera", DESTINO_OPTS)+'</td>', '<td>'+inp("cosechas", i, "piscinas", { w: 60, ph: "40-41" })+'</td>',
+      '<td>'+inp("cosechas", i, "guia", { w: 70 })+'</td>', '<td>'+inp("cosechas", i, "guiaDespacho", { w: 70 })+'</td>',
+      '<td'+(exc ? ' title="No es el 90 % de la real" style="background:#fef3c7"' : '')+'>'+inp("cosechas", i, "facturada", { w: 90, mode: "numeric", ph: _audN(audFacturadaPropuesta(c.cantidad)) })+'</td>',
+      '<td>'+inp("cosechas", i, "tinas", { w: 44, mode: "numeric" })+'</td>', '<td>'+inp("cosechas", i, "placa", { w: 70 })+'</td>',
+      '<td style="white-space:nowrap">'+btnPartida(i)+' '+btnQuitar("cosechas", i)+'</td>'].join("") + '</tr>';
+  }).join("");
+
+  const r = audResumen(m);
+  const resumen = '<table class="ft" style="font-size:11px;margin-top:6px"><thead><tr><th>Siembra</th><th>Tanques</th><th>Sembrado</th><th>Cosechado</th><th>% Sob.</th></tr></thead><tbody>'
+      + (r.bloques.map(function(b){ return '<tr><td>'+v(b.siembra)+'</td><td>'+b.tanques+'</td><td>'+_audN(b.sembrado)+'</td><td>'+_audN(Math.round(b.cosechado))+'</td><td>'+_audPct(b.sob)+'</td></tr>'; }).join("")
+        || '<tr><td colspan="5" style="color:#94a3b8">Sin siembras.</td></tr>')
+      + '<tr><td><b>Total</b></td><td></td><td><b>'+_audN(r.sembrado)+'</b></td><td><b>'+_audN(r.cosechado)+'</b></td><td><b>'+_audPct(r.sob)+'</b></td></tr></tbody></table>'
+    + (r.tanques.length ? '<table class="ft" style="font-size:11px;margin-top:6px"><thead><tr><th>Tanque</th><th>Dens. siembra</th><th>Transferido</th><th>% Sob. fase 1</th><th>Cosecha atribuida</th><th>% Sob. final</th><th>Días</th></tr></thead><tbody>'
+      + r.tanques.map(function(t){ return '<tr><td>'+v(t.modulo)+' · TQ '+v(t.tanque)+'</td><td>'+_audN(t.densidad)+'</td><td>'+_audN(t.transferido)+'</td><td>'+_audPct(t.sobFase1)+'</td><td>'+_audN(t.cosechado)+(t.estimada ? ' <span title="Estimada: con transferencia, la cosecha de cada destino se reparte en proporción a lo que dio cada origen" style="color:#b45309">≈</span>' : '')+'</td><td>'+_audPct(t.sob)+'</td><td>'+_audN(t.dias)+'</td></tr>'; }).join("")
+      + '</tbody></table>' : '')
+    + (r.cosechados.length ? '<table class="ft" style="font-size:11px;margin-top:6px"><thead><tr><th>Tanque cosechado</th><th>Cosechado</th><th>Dens. cosecha</th><th>Recibido</th><th>% Sob. fase 2</th></tr></thead><tbody>'
+      + r.cosechados.map(function(c){ return '<tr><td>'+v(c.llave.replace('·', ' · TQ '))+'</td><td>'+_audN(c.cosechado)+'</td><td>'+_audN(c.densidad)+'</td><td>'+_audN(c.recibido)+'</td><td>'+_audPct(c.sobFase2)+'</td></tr>'; }).join('')
+      + '</tbody></table>' : '')
+    + (r.estimada ? '<div style="font-size:11px;color:#b45309;margin-top:4px">≈ Estimada: con transferencia, la cosecha de cada tanque de destino se reparte entre sus orígenes en proporción a lo que cada uno le transfirió.</div>' : '')
+    + (r.camaroneras.length ? '<table class="ft" style="font-size:11px;margin-top:8px"><thead><tr><th>Camaronera</th><th>Cant. real</th><th>Cant. facturada</th><th>PL/g promedio</th><th>Tinas</th><th>Camiones</th></tr></thead><tbody>'
+      + r.camaroneras.map(function(c){ return '<tr><td>'+v(c.camaronera)+'</td><td>'+_audN(c.real)+'</td><td>'+_audN(c.facturada)+(c.excepciones ? ' <span title="Partidas con una facturada que no es el 90 %" style="color:#b45309">('+c.excepciones+' ≠ 90 %)</span>' : '')+'</td><td>'+_audN(c.plg)+'</td><td>'+_audN(c.tinas)+'</td><td>'+_audN(c.camiones)+'</td></tr>'; }).join("")
+      + '</tbody></table>' : '');
+
+  const guardadas = loadAud().slice().sort(function(a, b){ return b.ts - a.ts; });
+  const lista = guardadas.length
+    ? guardadas.map(function(x){
+        const d = x.data || {};
+        return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:11px">'
+          + '<span>'+(x.synced ? "✅" : "📶")+' corrida '+escapeHtml(_audCorr(d))+' · '+escapeHtml(d.modulo || "")+' · '+audFilas(d).length+' fila(s)'+(x.synced ? "" : ' <b style="color:#b45309">pendiente</b>')+'</span>'
+          + '<span style="display:flex;gap:6px"><button class="btn" type="button" data-aud-id="'+escapeHtml(x.id)+'" onclick="audAbrirEl(this)" style="font-size:11px">✏️ Abrir</button>'
+          + '<button class="btn" type="button" data-aud-id="'+escapeHtml(x.id)+'" onclick="audBorrarEl(this)" style="font-size:11px">🗑</button></span></div>';
+      }).join("")
+    : '<div style="font-size:11px;color:#94a3b8">Ninguna en este dispositivo.</div>';
+
+  fp.innerHTML = '<div class="fc">'
+    + '<div class="fc-h"><div class="fc-t">🧾 Auditoría · siembra, transferencia y cosecha de la corrida</div><span class="ssp ssp-mt">'+escapeHtml(AUD_SHEET)+'</span></div>'
+    + '<div class="fc-b"><div class="mad-form">'
+    + cab
+    + titulo("🌱 Siembra", "una fila por tanque y siembra; «➕ Añadir» copia la anterior con el tanque siguiente")
+    + tabla("siembras", ["Siembra","Módulo","TQ","Fecha","Origen","Guía remisión","Cantidad","Ton.","Lote","Cód. gen.","Fecha ingreso reprod.","Guías ingreso reprod."], filasS)
+    + titulo("🔀 Transferencia", "opcional; una fila por origen → destino")
+    + tabla("transferencias", ["Fecha","Módulo","TQ origen","Módulo destino","TQ destino","Cantidad","Estadío","PL/g","% larvas peq."], filasT)
+    + titulo("🎣 Cosecha y despacho", "una fila por partida; la facturada propone el 90 % de la real")
+    + tabla("cosechas", ["Fecha","Módulo","TQ","Partida","Cant. real","Ton.","Estadío","PL/g","Camaronera","Piscina(s)","Guía remisión","Guía despacho","Facturada","Tinas","Placa"], filasC)
+    + titulo("📊 Resumen", "calculado; no se envía")
+    + resumen
+    + '<div class="meta" style="margin-top:12px"><div class="mf" style="flex:1 1 100%"><label>Observaciones</label>'
+    + '<textarea data-ak="obs" rows="2" maxlength="500" oninput="audCampo(this)" style="border:1.5px solid var(--bdr);border-radius:6px;padding:7px 10px;font:inherit">'+v(m.obs)+'</textarea></div></div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'
+    +   '<button class="btn" type="button" onclick="audGuardar()">💾 Guardar en el equipo</button>'
+    +   '<button class="btn bp" type="button" onclick="audEnviar()">☁️ Enviar</button>'
+    +   '<button class="btn" type="button" onclick="audNueva()">🗑 Nueva auditoría</button>'
+    + '</div>'
+    + '<div style="font-size:11px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:.6px;margin:16px 0 4px">Auditorías en este dispositivo</div>'
+    + lista
+    + '</div></div></div>';
+}
+
+
+/* ══════════════════════════════════════════
    TRASLADO (Tras) — Hoja de Control de Alimentación y Parámetros
    ──────────────────────────────────────────
    Registra el VIAJE de entrega de larvas: del laboratorio a la camaronera, con
@@ -24122,7 +24690,7 @@ function GAS(){
 // suite en rojo, y la propia prueba dice el sello nuevo. Por eso ?p=ver no puede mentir.
 // Para saber si el GAS desplegado es el del repo: ⚙ Config → Probar conexión, o abrir
 // la URL del Web App con ?p=ver y comparar con esta línea.
-const GAS_VERSION = "9daa0194f781";
+const GAS_VERSION = "7c0373808616";
 
 // ── LO QUE ESTE GAS SABE HACER (2026-09-14) ─────────────────────────
 // Va en ?p=ver junto al sello: es lo que un cliente tiene que saber ANTES de enviar. Un GAS que
@@ -24180,6 +24748,8 @@ const ALLOWED = [
   "Registro_Traslado",
   // 🎯 Score del AsT (2026-10-02): análisis de calidad de postlarvas, una fila por tanque, por su columna "ID".
   "Registro_Score",
+  // 🧾 Auditoría del AsT (2026-10-03): siembra, transferencia y cosecha de la corrida, una fila por evento, por su ID.
+  "Registro_Auditoria",
   "Microbiología",
   "Calidad de Agua",
   "Patología en Fresco",
@@ -24251,7 +24821,10 @@ const LIMITS = {
   tras:    { maxRows: 600, maxCols: 40 },
   // 🎯 Score (2026-10-02): 29 columnas (cabecera, 13 criterios, Score e interpretación, los 4 datos del tanque, pie e
   // ID) + margen. Una evaluación son hasta 12 filas (los tanques del módulo); 300 cubre varias pendientes de golpe.
-  score:   { maxRows: 300, maxCols: 40 }
+  score:   { maxRows: 300, maxCols: 40 },
+  // 🧾 Auditoría (2026-10-03): 29 columnas (Tipo, los datos de la siembra, la transferencia y la cosecha, pie e ID) +
+  // margen. Una auditoría son sus siembras, transferencias y partidas: 500 cubre una corrida de dos módulos con holgura.
+  aud:     { maxRows: 500, maxCols: 40 }
 };
 
 // Rate limit state: persistido en CacheService (60s TTL) para que sobreviva
@@ -24368,6 +24941,7 @@ function doPost(e) {
     var isDesinf = payload.sheetName === "Registro_Desinfección";
     var isTras   = payload.sheetName === "Registro_Traslado";
     var isScore  = payload.sheetName === "Registro_Score";
+    var isAud    = payload.sheetName === "Registro_Auditoria";
     var isMicro  = payload.sheetName === "Microbiología";
     var isCal    = payload.sheetName === "Calidad de Agua";
     var isPat    = payload.sheetName === "Patología en Fresco";
@@ -24441,6 +25015,7 @@ function doPost(e) {
                 : isAst    ? LIMITS.ast
                 : isTras   ? LIMITS.tras
                 : isScore  ? LIMITS.score
+                : isAud    ? LIMITS.aud
                 : isDesinf ? LIMITS.desinf
                 : isMicro  ? LIMITS.micro
                 : isCal    ? LIMITS.cal
@@ -24610,6 +25185,16 @@ function doPost(e) {
       if (_filasSc > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasSc - ws.getMaxRows());
       if (ws.getMaxRows() > 1 && ws.getMaxColumns() > _corrSc) ws.getRange(2, _corrSc + 1, ws.getMaxRows() - 1, 1).setNumberFormat("@");
     }
+    // 2026-10-03 · Registro_Auditoria: la corrida, los tanques, las piscinas, las guías y la placa como TEXTO («0598», «3-5»
+    // o «40-41» los convertiría Sheets en número o en fecha), localizados por la cabecera del envío.
+    if (isAud) {
+      var _filasAu = lastRow(ws) + rows.length;
+      if (_filasAu > ws.getMaxRows()) ws.insertRowsAfter(ws.getMaxRows(), _filasAu - ws.getMaxRows());
+      ["Corrida", "Tanque", "Tanque destino", "Piscina(s)", "Guía de remisión", "Guía de despacho", "Guías ingreso reproductores", "Placa"].forEach(function (h) {
+        var _cAu = (payload.headers || []).indexOf(h);
+        if (_cAu >= 0 && ws.getMaxRows() > 1 && ws.getMaxColumns() > _cAu) ws.getRange(2, _cAu + 1, ws.getMaxRows() - 1, 1).setNumberFormat("@");
+      });
+    }
     var result;
     if (isMad) {
       // Las hojas POSICIONALES del registro operativo usan upsert con su clave compuesta (las del reproductivo, en madKeyCols):
@@ -24674,6 +25259,8 @@ function doPost(e) {
     else if (isTras)   result = upsertAstRows(ws, rows);
     // 🎯 Score (2026-10-02): el MISMO upsert por "ID" (el último), sin merge: reenviar una evaluación la corrige entera.
     else if (isScore)  result = upsertAstRows(ws, rows);
+    // 🧾 Auditoría (2026-10-03): el MISMO upsert por "ID" (el último), sin merge: reenviar una auditoría la corrige.
+    else if (isAud)    result = upsertAstRows(ws, rows);
     // Las tres de Maduración van con MERGE (3.er argumento), al revés que AsT y
     // Traslado: ver la cabecera de upsertAstRows para el porqué.
     else if (isMadId)  result = upsertAstRows(ws, rows, true, payload.headers);
@@ -27794,7 +28381,8 @@ window.addEventListener("beforeunload", function(e){
       hasPending = _bioGridDirty || loadBio().some(r => !r.synced);
     } else if(isAstMod(curMod)){
       hasPending = _astFormDirty || loadAst().some(r => !r.synced)
-        || ((typeof loadScore === "function") && loadScore().some(r => !r.synced));   // 🎯 Score (2026-10-02)
+        || ((typeof loadScore === "function") && loadScore().some(r => !r.synced))   // 🎯 Score (2026-10-02)
+        || ((typeof loadAud === "function") && loadAud().some(r => !r.synced));     // 🧾 Auditoría (2026-10-03)
     } else if(isMicMod(curMod)){
       hasPending = loadMic().some(r => !r.synced) || (typeof _calRaw==="function" && _calRaw().some(r => !r.synced)) || (typeof _patRaw==="function" && _patRaw().some(r => !r.synced));
     } else {
