@@ -181,9 +181,13 @@ export const PATHOGEN_AGAR = {
 // Se prueban todas las bases del patógeno (base principal + `altBases`).
 const colVariants = (base, suffix) => [`${base} ${suffix}`, `${base}${suffix}`, `${base} ${suffix}`.toLowerCase(), `${base}${suffix}`.toLowerCase()];
 const basesOf = (p) => [p.base, ...(p.altBases || [])];
-const crudoCols = (p) => basesOf(p).flatMap((b) => colVariants(b, '(crudo)').concat(colVariants(b, ' (crudo)')));
-const ufcCols = (p) => basesOf(p).flatMap((b) => colVariants(b, 'UFC'));
-const nivelCols = (p) => basesOf(p).flatMap((b) => colVariants(b, 'Nivel'));
+/* H-004 (auditoría 2026-09-25, aprobado 2026-10-03) · las listas de cabeceras de un patógeno son SIEMPRE las mismas, y
+   meltRow las fabricaba de nuevo por cada fila y patógeno (16 × 3 por fila): medido sobre la hoja real (6 850 filas),
+   meltRow pasó de 829 a 113 ms. Se calculan una vez por patógeno; WeakMap, para que no crezca con otros objetos. */
+const porPatogeno = (f) => { const m = new WeakMap(); return (p) => { if (!m.has(p)) m.set(p, f(p)); return m.get(p); }; };
+const crudoCols = porPatogeno((p) => basesOf(p).flatMap((b) => colVariants(b, '(crudo)').concat(colVariants(b, ' (crudo)'))));
+const ufcCols = porPatogeno((p) => basesOf(p).flatMap((b) => colVariants(b, 'UFC')));
+const nivelCols = porPatogeno((p) => basesOf(p).flatMap((b) => colVariants(b, 'Nivel')));
 
 // ── V.Luminiscentes (presencia / ausencia, no UFC) ──
 const LUMIN_COLS = ['V.Luminiscentes', 'V.luminiscentes', 'v.luminiscentes', 'V Luminiscentes'];
