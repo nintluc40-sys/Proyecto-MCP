@@ -17,8 +17,9 @@
    lectura).
 
    Protocolo (cliente: sheets.lector.js):
-     → { id, realId, xlsxUrl, previas }
+     → { id, realId, xlsxUrl, previas, conProgreso }
      ← { vivo: true }                                   al arrancar
+     ← { id, progreso: { fase, bytes } }                con conProgreso (la primera carga, punto 7): cómo va
      ← { id, ok: true, orden, huellas, cambiadas }
      ← { id, ok: false, motivo: 'sin-xlsx' | 'xlsx', error }
    ============================================================ */
@@ -39,7 +40,8 @@ export async function atenderLectura(m, entorno) {
   }
   try {
     const ids = { type: 'real', realId: m.realId };
-    let sheets = await fetchXlsxSheets(ids, obtenerXLSX);
+    const avisar = m.conProgreso && entorno.avisar ? (p) => entorno.avisar(id, p) : null;
+    let sheets = await fetchXlsxSheets(ids, obtenerXLSX, avisar);
     let guardable = !!sheets;
     /* 2026-10-01 (usuario) · si el libro entero no llega, el RESPALDO (cada hoja por su XLSX, inmune a los filtros de
        la hoja; si el de una falla, su CSV) se hace AQUÍ: en la página, cada hoja grande por XLSX la congelaba ~1,3 s en
@@ -71,6 +73,7 @@ if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScop
     cargarXLSX: (url) => importScripts(url),
     obtenerXLSX: () => self.XLSX,
     guardar: (libro) => guardarLibro(libro, almacen),
+    avisar: (id, progreso) => self.postMessage({ id, progreso }),
   };
   self.onmessage = async (e) => { self.postMessage(await atenderLectura(e.data || {}, entorno)); };
   self.postMessage({ vivo: true });

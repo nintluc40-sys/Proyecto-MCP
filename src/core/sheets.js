@@ -237,7 +237,35 @@ export const XLSX_LECTURA = { type: 'array', cellDates: true, dense: true };
 /** Cómo se convierte cada hoja en filas: la MISMA para el libro entero y para el respaldo por hojas. */
 const FILAS_LECTURA = { defval: '', raw: false, dateNF: 'dd/mm/yyyy' };
 
-async function fetchWorkbook(ids, obtenerXLSX = getXLSX) {
+/* Punto 7 del usuario (2026-10-03) · la PRIMERA carga dice cómo va: `avisar` recibe { fase: 'descarga', bytes } cada
+   AVISO_CADA bytes y { fase: 'lectura', bytes } antes de leer (medido: ~8 s de descarga de 13 MB y 16 s de lectura).
+   Google no manda Content-Length (va troceado): se cuenta lo que llega, sin porcentaje. Sin `avisar` —los refrescos—,
+   o sin flujo en la respuesta, el cuerpo se lee de una vez, como siempre. */
+const AVISO_CADA = 512 * 1024;
+async function cuerpoDe(resp, avisar) {
+  if (!avisar || !resp.body || typeof resp.body.getReader !== 'function') return resp.arrayBuffer();
+  const lector = resp.body.getReader();
+  const trozos = [];
+  let bytes = 0, avisado = 0;
+  for (;;) {
+    const { done, value } = await lector.read();
+    if (done) break;
+    trozos.push(value);
+    bytes += value.length;
+    if (bytes - avisado >= AVISO_CADA) { avisado = bytes; avisar({ fase: 'descarga', bytes }); }
+  }
+  const todo = new Uint8Array(bytes);
+  let o = 0;
+  for (const t of trozos) { todo.set(t, o); o += t.length; }
+  return todo.buffer;
+}
+const mb = (b) => (b / 1048576).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' MB';
+/** El rótulo de un aviso de `avisar` (el aviso de carga y la píldora). */
+export function textoProgreso(p) {
+  return p && p.fase === 'lectura' ? `Leyendo el libro (${mb(p.bytes)})…` : `Descargando el libro… ${mb((p && p.bytes) || 0)}`;
+}
+
+async function fetchWorkbook(ids, obtenerXLSX = getXLSX, avisar = null) {
   const realId = ids.type === 'real' ? ids.realId : null;
   if (!realId) return null;
   const url = `https://docs.google.com/spreadsheets/d/${realId}/export?format=xlsx&_cb=${Math.floor(Date.now() / 30000)}`;
@@ -245,7 +273,11 @@ async function fetchWorkbook(ids, obtenerXLSX = getXLSX) {
   // de transferirlo. Un timeout corto aquí es la causa raíz del "solo carga 1 hoja".
   const resp = await fetchWithTimeout(url, { cache: 'no-store' }, XLSX_TIMEOUT_MS);
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  const buf = await resp.arrayBuffer();
+  const buf = await cuerpoDe(resp, avisar);
+  if (avisar) {
+    avisar({ fase: 'lectura', bytes: buf.byteLength });
+    await new Promise((r) => setTimeout(r, 0));   // sin Worker, que el aviso se pinte antes de que la lectura ocupe la página
+  }
   const XLSX = obtenerXLSX();
   const wb = XLSX.read(new Uint8Array(buf), XLSX_LECTURA);
   return wb?.SheetNames?.length ? wb : null;
@@ -679,19 +711,20 @@ export function lecturaEnSegundoPlano() {
  *  viajan las hojas que cambiaron. Si el Worker no puede leer el XLSX, el CSV de siempre; si el
  *  Worker no arranca, el camino de siempre (aquí). Si se CAE con datos ya cargados (p. ej. sin
  *  memoria en un móvil), error: se conservan los datos y se reintenta en el siguiente ciclo, en
- *  vez de leer aquí y congelar (o tumbar) la página. */
-export async function descargarLibro() {
+ *  vez de leer aquí y congelar (o tumbar) la página. `alAvanzar` (sólo la primera carga, punto 7):
+ *  recibe cómo va la descarga y cuándo empieza la lectura. */
+export async function descargarLibro({ alAvanzar } = {}) {
   const ids = parseSheetsIds(activeUrl());
   if (!ids) throw new Error('URL de Google Sheets inválida.');
   if (ids.type === 'real' && _lector && _lector.disponible()) {
-    const r = await _lector.leer({ realId: ids.realId, previas: _huellasAplicadas });
+    const r = await _lector.leer({ realId: ids.realId, previas: _huellasAplicadas, alAvanzar });
     if (r.ok) return { sheets: fundirDelta(_hojasAplicadas, r), huellas: r.huellas, fp: huellaDe(r.huellas, r.orden) };
     if (r.motivo === 'xlsx') return descargaCompleta(await fetchViaCsv(ids));
     if ((r.motivo === 'caido' || r.motivo === 'tiempo') && store.connected) {
       throw new Error('No se pudo leer el libro en segundo plano.');
     }
   }
-  return descargaCompleta(await fetchAllSheets());
+  return descargaCompleta(await fetchAllSheets(alAvanzar));
 }
 
 /** Aplica una descarga al store y la registra como lo APLICADO (hojas, huellas y huella global).
@@ -718,7 +751,7 @@ export function aplicarLibroGuardado(g) {
 /** El libro por el export XLSX: { name: rows } o null si hay que ir al respaldo. Lo usan
  *  fetchAllSheets (aquí) y el Worker de lectura (sheets.worker.js): UNA sola implementación
  *  de la descarga, los reintentos y la lectura. `obtenerXLSX` da SheetJS. */
-export async function fetchXlsxSheets(ids, obtenerXLSX = getXLSX) {
+export async function fetchXlsxSheets(ids, obtenerXLSX = getXLSX, avisar = null) {
   // XLSX-first CON REINTENTOS. El XLSX trae TODAS las hojas en una sola petición; una caída
   // TRANSITORIA (timeout/red/5xx) NO debe degradar a la primera, así que reintentamos con
   // backoff. El respaldo es ROBUSTO: enumera TODAS las hojas por /htmlview (no requiere
@@ -726,7 +759,7 @@ export async function fetchXlsxSheets(ids, obtenerXLSX = getXLSX) {
   // (respaldoPorHojas; por gviz no desde el 2026-10-01: con un filtro en la hoja, recortaba).
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const wb = await fetchWorkbook(ids, obtenerXLSX);
+      const wb = await fetchWorkbook(ids, obtenerXLSX, avisar);
       if (wb) return workbookToSheets(wb, obtenerXLSX());
       break; // wb nulo (sin hojas) no es transitorio: pasa directo al respaldo
     } catch (e) {
@@ -740,10 +773,10 @@ export async function fetchXlsxSheets(ids, obtenerXLSX = getXLSX) {
 }
 
 /** Descarga las hojas (XLSX-first; si no, el respaldo hoja a hoja) y devuelve { name: rows }. */
-export async function fetchAllSheets() {
+export async function fetchAllSheets(avisar = null) {
   const ids = parseSheetsIds(activeUrl());
   if (!ids) throw new Error('URL de Google Sheets inválida.');
-  return (await fetchXlsxSheets(ids)) || fetchViaCsv(ids);
+  return (await fetchXlsxSheets(ids, getXLSX, avisar)) || fetchViaCsv(ids);
 }
 
 /** ¿La descarga recién obtenida trae MENOS hojas que el set bueno ya cargado?
@@ -762,7 +795,9 @@ export async function connectSheets() {
   emit(EV.CONN, { state: 'connecting', label: 'Descargando datos…' });
   try {
     const firstLoad = !store.connected;
-    commit(await descargarLibro(), firstLoad);
+    // Punto 7 (2026-10-03): la PRIMERA carga dice cómo va (el aviso de carga y la píldora); los refrescos, no.
+    const alAvanzar = firstLoad ? (p) => emit(EV.CONN, { state: 'connecting', label: textoProgreso(p) }) : undefined;
+    commit(await descargarLibro({ alAvanzar }), firstLoad);
     const n = store.sheetNames.length;
     const ts = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
     // Señal de carga DEGRADADA: si tras conectar solo hay 1 hoja, casi siempre es

@@ -55,7 +55,10 @@ function avisoCarga() {
     + `<div style="font-size:40px">${fallo ? '⚠️' : '📡'}</div>`
     + (fallo
       ? `<p>No se pudieron cargar los datos de producción.</p><p class="muted"><small class="mono">${esc(conexion.label || '')}</small><br>Pulsa ⟳ arriba para reintentar.</p>`
-      : '<p class="muted">Cargando los datos de producción…</p>')
+      : '<p class="muted">Cargando los datos de producción…</p>'
+        // Punto 7 (2026-10-03): cómo va (lo que se ha descargado; luego, que se está leyendo) y por qué tarda
+        + (conexion.state === 'connecting' && conexion.label ? `<p class="muted" data-carga-progreso><small>${esc(conexion.label)}</small></p>` : '')
+        + '<p class="muted"><small>La primera vez en este equipo hay que descargar y leer el libro entero, y tarda. Después abre al instante con los datos guardados y los pone al día por detrás.</small></p>')
     + '</div>';
 }
 on(EV.CONN, (e) => {

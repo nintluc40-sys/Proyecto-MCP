@@ -46,6 +46,8 @@ function crear() {
   w.onmessage = (e) => {
     const m = e.data || {};
     if (m.vivo) { vivo = true; return; }
+    // un aviso de cómo va (punto 7): no termina la petición
+    if (m.progreso) { const q = enCurso.get(m.id); if (q && q.alAvanzar) q.alAvanzar(m.progreso); return; }
     const p = enCurso.get(m.id);
     if (!p) return;
     enCurso.delete(m.id);
@@ -62,8 +64,9 @@ function crear() {
 }
 
 /** Lee el libro en el Worker. Nunca rechaza: resuelve { ok: true, orden, huellas, cambiadas } o
- *  { ok: false, motivo: 'no-arranca' | 'sin-xlsx' | 'xlsx' | 'caido' | 'tiempo' }. */
-export function leerEnWorker({ realId, previas }) {
+ *  { ok: false, motivo: 'no-arranca' | 'sin-xlsx' | 'xlsx' | 'caido' | 'tiempo' }. Con `alAvanzar` (la primera
+ *  carga, punto 7), el Worker avisa de cómo va la descarga y de cuándo empieza a leer. */
+export function leerEnWorker({ realId, previas, alAvanzar }) {
   return new Promise((resolve) => {
     if (!lectorDisponible()) { resolve({ ok: false, motivo: 'no-arranca' }); return; }
     try {
@@ -80,8 +83,8 @@ export function leerEnWorker({ realId, previas }) {
       resolve({ ok: false, motivo: 'tiempo' });
       soltar('tiempo');
     }, LIMITE_MS);
-    enCurso.set(id, { resolve, timer });
-    worker.postMessage({ id, realId, xlsxUrl: xlsxSrc(), previas: previas || {} });
+    enCurso.set(id, { resolve, timer, alAvanzar });
+    worker.postMessage({ id, realId, xlsxUrl: xlsxSrc(), previas: previas || {}, conProgreso: !!alAvanzar });
   });
 }
 
