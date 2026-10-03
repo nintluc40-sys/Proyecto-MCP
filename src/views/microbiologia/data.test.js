@@ -154,6 +154,18 @@ describe('luminPresence', () => {
     expect(luminPresence({ 'V.Luminiscentes': 'Ausencia' })).toBe(false);
     expect(luminPresence({ 'V.Luminiscentes': '' })).toBe(null);
   });
+  // H-016 (2026-10-03): antes bastaba con EMPEZAR por p / si / a / no.
+  it('sólo cuenta presencia o ausencia EXPLÍCITAS: «Pendiente», «sin dato» o «no aplica» son sin dato', () => {
+    for (const v of ['Pendiente', 'sin dato', 'no aplica', 'agua', 'pos']) {
+      expect(luminPresence({ 'V.Luminiscentes': v }), v).toBe(null);
+    }
+    for (const v of ['presencia', 'PRESENTE', 'Positivo', 'P', 'Sí', '1', 'x', '+']) {
+      expect(luminPresence({ 'V.Luminiscentes': v }), v).toBe(true);
+    }
+    for (const v of ['ausencia', 'Negativo', 'A', 'No', '0', '-']) {
+      expect(luminPresence({ 'V.Luminiscentes': v }), v).toBe(false);
+    }
+  });
 });
 
 describe('intStr', () => {

@@ -187,12 +187,15 @@ const nivelCols = (p) => basesOf(p).flatMap((b) => colVariants(b, 'Nivel'));
 
 // ── V.Luminiscentes (presencia / ausencia, no UFC) ──
 const LUMIN_COLS = ['V.Luminiscentes', 'V.luminiscentes', 'v.luminiscentes', 'V Luminiscentes'];
-/** true = presencia, false = ausencia, null = sin dato. */
+/** true = presencia, false = ausencia, null = sin dato.
+ *  H-016 (auditoría 2026-09-25, aprobado 2026-10-03): las palabras por su raíz («Presencia», «positivo» / «Ausencia»,
+ *  «negativo») y las abreviaturas sólo EXACTAS. Antes bastaba con EMPEZAR por p, si, a o no: «Pendiente» y «sin dato»
+ *  contaban como presencia —y alerta— y «no aplica» como ausencia. La captura escribe «Presencia»/«Ausencia». */
 export function luminPresence(row) {
   const v = fold(getField(row, LUMIN_COLS));
   if (!v) return null;
-  if (/^(p|pres|si|positiv|1|x|\+)/.test(v)) return true;
-  if (/^(a|aus|no|negativ|0|-)/.test(v)) return false;
+  if (/^(pres|positiv)/.test(v) || /^(p|si|1|x|\+)$/.test(v)) return true;
+  if (/^(aus|negativ)/.test(v) || /^(a|no|0|-)$/.test(v)) return false;
   return null;
 }
 

@@ -21,6 +21,7 @@ const micDlgOpen = (m) => { m.classList.add('is-open'); document.body.classList.
 const micDlgClose = (m) => { m.classList.remove('is-open'); makeAccessibleDialog(m)?.restoreFocus(); };
 
 import { esc, wqiBand } from '../../core/format.js';
+import { THRESHOLDS } from '../../config.js';
 import { fmtShort, dayNum, rangeLabel, parseAnyDate } from '../../core/dates.js';
 import { natCmp } from '../../core/util.js';
 import { monthIndexOfCorrida, monthIndexOfDate, monthLabelAt } from '../../core/prodCalendar.js';
@@ -469,7 +470,8 @@ function genKpiStripHTML(k) {
   const wsSeg = wsTot
     ? `<div class="cal-inst-seg" role="img" aria-label="Severidad de las mediciones de agua">${wsOrder.map((x) => k.waterSev[x] ? `<span class="cal-sev--${x}" style="flex:${k.waterSev[x]}" title="${esc(CAL_SEV[x].label)}: ${k.waterSev[x]}"></span>` : '').join('')}</div>`
     : '<span class="cal-inst-hint">sin datos</span>';
-  const alertSev = k.alertRatio >= 15 ? 'critico' : k.alertRatio >= 5 ? 'fuera' : k.alertCount > 0 ? 'vigilancia' : 'optimo';
+  const UA = THRESHOLDS.alertaMicro;   // H-015: el % de muestras en alerta, con sus cotas en config.js
+  const alertSev = k.alertRatio >= UA.critico ? 'critico' : k.alertRatio >= UA.fuera ? 'fuera' : k.alertCount > 0 ? 'vigilancia' : 'optimo';
 
   return `<div class="cal-inst-strip">
     ${inst('01', '', '🧪 Muestras micro', String(k.micCount), timeline, `${k.micDays.length} día(s) de muestreo`, kpiClick('muestras'))}
@@ -1941,10 +1943,11 @@ function renderBacteriologia() {
   const summaries = rows.map(rowSummary);
   const kAlerta = summaries.filter((s) => isAlerta(s.worst)).length;
   const kLumin = summaries.filter((s) => s.lumin === true).length;
-  // Carga total = Σ UFC de TODOS los patógenos EXCEPTO C. Totales (agregado = C. Amarillas
-  // + C. Verdes; sumarlo duplicaría) y V. Luminiscentes (presencia/ausencia, no está en
-  // PATHOGENS). Bact. Totales SÍ suma (medición independiente en TSA).
-  const kTotUfc = _scope.records.reduce((a, r) => a + ((r.key !== 'totales' && r.ufc > 0) ? r.ufc : 0), 0);
+  // Carga total = Σ UFC de los patógenos ESPECÍFICOS: fuera los conteos agregados (AGGREGATE_KEYS: C. Totales =
+  // amarillas + verdes, y Bact. Totales) y V. Luminiscentes (presencia/ausencia, no está en PATHOGENS).
+  // H-002 (auditoría 2026-09-25, aprobado 2026-10-03): aquí Bact. Totales SÍ sumaba e inflaba el KPI ×2,5–3,9; la
+  // Placa y «Carga total por patógeno» ya los excluían con la MISMA constante.
+  const kTotUfc = _scope.records.reduce((a, r) => a + ((!AGGREGATE_KEYS.has(r.key) && r.ufc > 0) ? r.ufc : 0), 0);
   const dom = dominantPathogen(rows, _scope.records);
 
   // ── HTML: filtros + KPIs + apartados ──
@@ -2328,12 +2331,12 @@ function alertModalBodyHTML(rows) {
     if (a.kind === 'lumin') {
       return `<div class="mic-alert" style="--ac:#7E57C2">
         <div class="mic-alert-h">✨ V. Luminiscentes · PRESENCIA</div>
-        <div class="mic-alert-s">${a.ctx.fecha ? esc(fmtShort(a.ctx.fecha)) : '—'} · ${esc(a.ctx.tipoMuestra || '—')} · C${esc(a.ctx.corrida || '—')} · M${esc(a.ctx.modulo || '—')} ${a.ctx.ubicacion ? '· ' + esc(a.ctx.ubicacion) : ''}</div>
+        <div class="mic-alert-s">${a.ctx.fecha ? esc(fmtShort(a.ctx.fecha)) : '—'} · ${esc(a.ctx.tipoMuestra || '—')} · C${esc(a.ctx.corrida || '—')} · ${esc(a.ctx.modSalaLabel || '—')} ${a.ctx.ubicacion ? '· ' + esc(a.ctx.ubicacion) : ''}</div>
       </div>`;
     }
     return `<div class="mic-alert" style="--ac:${NIVEL_COLOR[a.nivel]}">
       <div class="mic-alert-h">${esc(a.nivel).toUpperCase()} · ${esc(a.label)}</div>
-      <div class="mic-alert-s">${a.ctx.fecha ? esc(fmtShort(a.ctx.fecha)) : '—'} · ${fmtNum(a.ufc)} UFC · ${esc(a.ctx.tipoMuestra || '—')} · C${esc(a.ctx.corrida || '—')} · M${esc(a.ctx.modulo || '—')} ${a.ctx.ubicacion ? '· ' + esc(a.ctx.ubicacion) : ''}</div>
+      <div class="mic-alert-s">${a.ctx.fecha ? esc(fmtShort(a.ctx.fecha)) : '—'} · ${fmtNum(a.ufc)} UFC · ${esc(a.ctx.tipoMuestra || '—')} · C${esc(a.ctx.corrida || '—')} · ${esc(a.ctx.modSalaLabel || '—')} ${a.ctx.ubicacion ? '· ' + esc(a.ctx.ubicacion) : ''}</div>
     </div>`;
   };
   return `<div class="mic-alert-count">${list.length} alerta(s) · ordenadas por fecha</div><div class="mic-alert-list">${list.map(strip).join('')}</div>`;
@@ -2589,7 +2592,7 @@ function doExport() {
   ];
   if (alerts.length) {
     lines.push('ALERTAS', '─'.repeat(40));
-    alerts.sort((a, b) => NIVEL_RANK[b.nivel] - NIVEL_RANK[a.nivel]).forEach((r) => lines.push(`  [${r.nivel}] ${r.label} — ${fmtNum(r.ufc)} UFC · C${r.corrida} · M${r.modulo} ${r.ubicacion || ''} · ${r.fecha ? fmtShort(r.fecha) : ''}`));
+    alerts.sort((a, b) => NIVEL_RANK[b.nivel] - NIVEL_RANK[a.nivel]).forEach((r) => lines.push(`  [${r.nivel}] ${r.label} — ${fmtNum(r.ufc)} UFC · C${r.corrida} · ${r.modSalaLabel || '—'} ${r.ubicacion || ''} · ${r.fecha ? fmtShort(r.fecha) : ''}`));
   }
   lines.push('', '='.repeat(52));
   const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8;' });
@@ -2615,11 +2618,18 @@ function micExportBaseRows() {
     return FILTER_DIMS.every((dim) => !vState.dims[dim.key] || sameVal(dim.pick(c), vState.dims[dim.key]));
   });
 }
+/* Inicio (00:00:00) o fin (23:59:59) del día de un campo de fecha del rango. H-015 (auditoría 2026-09-25): la fecha se
+   lee con parseAnyDate (regla 7), no con `new Date(str)`; parseAnyDate devuelve el mediodía y CACHEA el objeto, así que
+   el límite es un Date nuevo con sus componentes, no ese mismo modificado. */
+function limiteDelDia(valor, fin) {
+  const d = parseAnyDate(valor);
+  return d ? new Date(d.getFullYear(), d.getMonth(), d.getDate(), fin ? 23 : 0, fin ? 59 : 0, fin ? 59 : 0) : null;
+}
 function micExportRows(root) {
   const from = root.querySelector('#micExpFrom')?.value || '';
   const to = root.querySelector('#micExpTo')?.value || '';
-  const fromD = from ? new Date(from + 'T00:00:00') : null;
-  const toD = to ? new Date(to + 'T23:59:59') : null;
+  const fromD = limiteDelDia(from, false);
+  const toD = limiteDelDia(to, true);
   return micExportBaseRows().filter((r) => { const d = rowContext(r).fecha; if (!d || isNaN(d)) return false; if (fromD && d < fromD) return false; if (toD && d > toD) return false; return true; })
     .sort((a, b) => (rowContext(a).fecha || 0) - (rowContext(b).fecha || 0));
 }
@@ -2696,8 +2706,8 @@ function runXlsxExport(root) {
 function micPdfRows(root) {
   const from = root.querySelector('#micPdfFrom')?.value || '';
   const to = root.querySelector('#micPdfTo')?.value || '';
-  const fromD = from ? new Date(from + 'T00:00:00') : null;
-  const toD = to ? new Date(to + 'T23:59:59') : null;
+  const fromD = limiteDelDia(from, false);
+  const toD = limiteDelDia(to, true);
   return micExportBaseRows().filter((r) => { const d = rowContext(r).fecha; if (!d || isNaN(d)) return false; if (fromD && d < fromD) return false; if (toD && d > toD) return false; return true; })
     .sort((a, b) => (rowContext(a).fecha || 0) - (rowContext(b).fecha || 0));
 }

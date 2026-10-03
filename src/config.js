@@ -36,6 +36,10 @@ export const THRESHOLDS = {
   // (microbiologia/calagua.data.js) y el medidor de Visitante, que deriva de
   // aquí los anchos de sus zonas en vez de llevarlos escritos a mano.
   wqi: { optimo: 85, vigilancia: 70, deficiente: 50 },
+  // Microbiología · KPI «⚠️ En alerta» (General): % de muestras con algún patógeno en Moderado o
+  // Elevado. Cotas INFERIORES: >=15 % Crítico, >=5 % Fuera; por debajo, Vigilancia si hay alguna.
+  // (H-015, 2026-10-03: vivían escritas en microbiologia/index.js.)
+  alertaMicro: { critico: 15, fuera: 5 },
 };
 
 // Orden biológico de estadios (N → Z → M → PL) para resolver el estadio más avanzado.
