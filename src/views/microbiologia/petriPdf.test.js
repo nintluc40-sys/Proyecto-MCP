@@ -157,7 +157,8 @@ describe('petriPdf · documento', () => {
     expect(doc.page).toContain('Moderado');            // leyenda de semaforización
     expect(doc.page).toContain('critline');            // línea de umbrales
     // La leyenda explica qué es la línea de umbrales de debajo de cada patógeno.
-    expect(doc.page).toContain('umbrales Mín / Leve / Mod / Elevado (UFC/mL)');
+    // (H-011, 2026-10-03: «(UFC)», ya no «(UFC/mL)»: la unidad depende del tipo de muestra.)
+    expect(doc.page).toContain('umbrales Mín / Leve / Mod / Elevado (UFC)');
     // Y bajo la columna salen las cuatro bandas con sus cortes (larv-agua · verdes),
     // EN HORIZONTAL, separadas por '/' y sin etiqueta (el color y la leyenda las
     // identifican; con etiqueta solo cabrían tres patógenos por hoja).
@@ -303,6 +304,28 @@ describe('petriPdf · documento', () => {
     const doc = docOf([row({ 'Fecha muestreo': '01/06/2026', Responsable: '<img src=x onerror=alert(1)>', ...ufc })]);
     expect(doc.page).not.toContain('<img src=x');
     expect(doc.page).toContain('&lt;img');
+  });
+
+  // H-006 (2026-10-03): antes firmaba sólo el PRIMER analista del día.
+  it('una línea de firma por analista del día (sin repetir); con uno solo, una', () => {
+    const dos = docOf([
+      row({ 'Fecha muestreo': '01/06/2026', Responsable: 'Ana', ...ufc }),
+      row({ 'Fecha muestreo': '01/06/2026', Responsable: 'Luis', 'Tipo de muestra': 'Animal', ...ufc }),
+      row({ 'Fecha muestreo': '01/06/2026', Responsable: 'Ana', 'Módulo/Sala': '3', ...ufc }),
+    ]);
+    const pie = dos.page.slice(dos.page.indexOf('class="pfoot"'));
+    expect(pie.match(/>Analista</g)).toHaveLength(2);
+    expect(pie).toContain('>Ana<');
+    expect(pie).toContain('>Luis<');
+    const uno = docOf([row({ 'Fecha muestreo': '01/06/2026', ...ufc })]);
+    expect(uno.page.slice(uno.page.indexOf('class="pfoot"')).match(/>Analista</g)).toHaveLength(1);
+  });
+
+  // H-011 (2026-10-03): no afirma «UFC/mL» para todo (hisopados, placas y animales no van por mL).
+  it('la cabecera no afirma una unidad única: UFC, y que la unidad depende del tipo de muestra', () => {
+    const doc = docOf([row({ 'Fecha muestreo': '01/06/2026', ...ufc })]);
+    expect(doc.page).not.toContain('UFC/mL');
+    expect(doc.page).toContain('la unidad depende del tipo de muestra');
   });
 });
 

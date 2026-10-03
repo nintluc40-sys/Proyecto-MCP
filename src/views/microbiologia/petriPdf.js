@@ -199,7 +199,7 @@ function formatTable(fmtKey, area, items, titleSuffix) {
 
 // Leyenda + la nota que explica qué es la línea de umbrales de debajo de cada patógeno
 // (sin ella, las cuatro cifras apiladas no se entienden a la primera).
-const LEGEND = `<div class="mic-legend">${NIVELES.map((n) => `<span class="mic-lg"><i style="background:${NIVEL_COLOR[n]}"></i>${esc(n)}</span>`).join('')}<span class="mic-lg-note">· bajo cada patógeno: umbrales Mín / Leve / Mod / Elevado (UFC/mL)</span></div>`;
+const LEGEND = `<div class="mic-legend">${NIVELES.map((n) => `<span class="mic-lg"><i style="background:${NIVEL_COLOR[n]}"></i>${esc(n)}</span>`).join('')}<span class="mic-lg-note">· bajo cada patógeno: umbrales Mín / Leve / Mod / Elevado (UFC)</span></div>`;
 
 const EXTRA_CSS = `
 .mic-legend{display:flex;gap:10px;align-items:center;margin:4px 0 6px;font-size:6.5pt;flex-wrap:wrap}
@@ -221,7 +221,7 @@ function pageHead(dayKey, metas) {
   const deptos = uniq(metas.map((c) => c.departamento));
   const cell = (l, v) => `<div class="mf"><label>${esc(l)}</label><span>${esc(v || '—')}</span></div>`;
   return `<div class="ph">
-      <div class="ph-brand"><div class="co">OMARSA · Microbiología</div><div class="su">Análisis microbiológico — UFC/mL (notación científica)</div></div>
+      <div class="ph-brand"><div class="co">OMARSA · Microbiología</div><div class="su">Análisis microbiológico — UFC (notación científica) · la unidad depende del tipo de muestra</div></div>
       <div class="ph-center"><span class="doc-code">OMR-MIC</span></div>
       <div class="ph-right"><div class="mod">Mic</div><div class="mods">Microbiología</div></div>
     </div>
@@ -233,13 +233,16 @@ function pageHead(dayKey, metas) {
     </div>`;
 }
 
-function pageFoot(codigo, tsStr, resp) {
+/* H-006 (auditoría 2026-09-25, aprobado 2026-10-03) · UNA línea de firma por analista del día (`resps`, sin repetir), una
+   al lado de otra. Antes firmaba sólo el primero aunque la cabecera los listara a todos (58 de 102 días tenían varios). */
+function pageFoot(codigo, tsStr, resps) {
+  const firmas = (resps && resps.length ? resps : ['Responsable']).map((r) => `<div style="text-align:center;min-width:120px">
+        <div style="border-top:1.5px solid #0f172a;padding-top:3px;margin-top:12px;font-size:6.5pt;font-weight:700;color:#0f172a">${esc(r)}</div>
+        <div style="font-size:5pt;color:#64748b;margin-top:1px">Analista</div></div>`).join('');
   return `<div class="pfoot">
       <div><div style="font-size:6pt;color:#64748b;text-transform:uppercase;letter-spacing:.4px">Código verificador</div>
         <div class="code-box">${esc(codigo)}</div><div class="ts-txt" style="margin-top:2px">Generado el ${esc(tsStr)}</div></div>
-      <div style="text-align:center;min-width:140px">
-        <div style="border-top:1.5px solid #0f172a;padding-top:3px;margin-top:12px;font-size:6.5pt;font-weight:700;color:#0f172a">${esc(resp || 'Responsable')}</div>
-        <div style="font-size:5pt;color:#64748b;margin-top:1px">Analista</div></div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end">${firmas}</div>
     </div>`;
 }
 
@@ -281,9 +284,9 @@ export function buildPetriPdfDoc(rows, opts = {}) {
     // los mismos datos da siempre el mismo código (el sello de generación queda fuera).
     const codigo = 'MIC-' + day.key.replace(/-/g, '') + '-'
       + fnv1a(`${day.key}|${inner}|${obs.join('|')}`).toString(16).toUpperCase().padStart(8, '0').slice(-6);
-    const resp = [...new Set(metas.map((c) => c.responsable).filter(has))][0] || '';
+    const resps = [...new Set(metas.map((c) => c.responsable).filter(has).map((x) => String(x).trim()))];
     days.push(day.key);
-    return `<div class="ppage">${pageHead(day.key, metas)}${LEGEND}${inner}${obsHtml}<div class="spacer"></div>${pageFoot(codigo, tsStr, resp)}</div>`;
+    return `<div class="ppage">${pageHead(day.key, metas)}${LEGEND}${inner}${obsHtml}<div class="spacer"></div>${pageFoot(codigo, tsStr, resps)}</div>`;
   }).join('');
 
   const tag = (opts.from || opts.to) ? `_${(opts.from || 'inicio')}_a_${(opts.to || 'fin')}` : '';
