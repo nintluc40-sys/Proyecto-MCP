@@ -15,6 +15,8 @@ import { natCmp } from '../../core/util.js';
 import { isDespachoRow } from '../../core/prodCalendar.js';
 import { toast } from '../../ui/toast.js';
 import { despachoExportModalHTML, bindDespachoExport, monthOfCorrida } from './despachoExport.js';
+import { store } from '../../core/store.js';
+import { scoreDelModulo, scorePromedio, SCORE_COLOR } from './score.js';
 
 const { gMod, gTnq, gCor, gFec, gPop } = getters;
 
@@ -92,6 +94,10 @@ export function renderDespacho(ctx, mod) {
   const subCosechada = mezclaCorridas ? 'la ÚLTIMA corrida de cada tanque' : '';
   const subRendimiento = mezclaCorridas ? 'mezcla corridas: ÷ la siembra de la primera' : '';
 
+  // 🎯 Score de calidad de postlarvas (punto 4, 2026-10-03): la última evaluación de cada tanque (hoja Registro_Score).
+  const evals = scoreDelModulo(store.globalData, mod, corrida);
+  const prom = scorePromedio(evals);
+
   let html = breadcrumb(col.accent, [
     { label: '← Módulos', nav: 'modules' },
     { label: mod, nav: 'module', mod },
@@ -109,6 +115,7 @@ export function renderDespacho(ctx, mod) {
       ${kpiGlass('🎣', 'PL/g promedio', fmtNum(plgProm, 1))}
       ${kpiGlass('🚛', 'Nº despachos', String(nDespachos), 'data-despx-open role="button" tabindex="0" title="Descargar en Excel el registro de despacho del mes"')}
       ${kpiGlass('🎯', 'Rendimiento cosecha', rendimiento === null ? '—' : fmtNum(rendimiento, 1) + '%', `data-nav="traslado" data-mod="${esc(mod)}" role="button" tabindex="0" title="Ver el traslado en ruta de esta corrida"`, false, subRendimiento)}
+      ${kpiGlass('🎯', 'Score promedio', prom ? fmtNum(prom.media, 1) : '—', '', false, prom ? `${prom.interp} · ${prom.n} tanque(s)` : 'sin evaluaciones')}
     </div>
   </div>`;
 
@@ -146,6 +153,26 @@ export function renderDespacho(ctx, mod) {
       <table class="sv-table sv-desp-table">
         <thead><tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr></thead>
         <tbody>${bodyRows || `<tr><td colspan="${headers.length}" class="muted" style="text-align:center;padding:20px">Sin registros.</td></tr>`}</tbody>
+      </table>
+    </div>`;
+
+  // ── 🎯 Score de calidad de postlarvas: la ÚLTIMA evaluación de cada tanque (con «Todas las corridas», la de cada corrida) ──
+  const scHead = (corrida ? [] : ['Corrida']).concat(['Tanque', 'Fecha', 'Score', 'Interpretación', 'Días de cultivo', 'PL/g', '% Sobrev.', 'Estrés (%)', 'Camaronera', 'Realizado por']);
+  const n1 = (v) => (v === null || v === undefined ? '—' : fmtNum(v, Number.isInteger(v) ? 0 : 1));
+  const scBody = evals.map((e) => `<tr class="sv-score-row">
+      ${corrida ? '' : `<td>${esc(e.corrida || '—')}</td>`}
+      <td><b>${e.tanque === null ? '—' : 'TQ ' + e.tanque}</b></td>
+      <td>${esc(e.fechaRaw || '—')}</td>
+      <td><b>${n1(e.score)}</b></td>
+      <td>${e.interp ? `<span style="font-weight:700;color:${SCORE_COLOR[e.interp] || 'inherit'}">${esc(e.interp)}</span>` : '—'}</td>
+      <td>${n1(e.dias)}</td><td>${n1(e.plg)}</td><td>${n1(e.sobr)}</td><td>${n1(e.estres)}</td>
+      <td>${esc(e.camaronera || '—')}</td><td>${esc(e.realizado || '—')}</td>
+    </tr>`).join('');
+  html += `<div class="sv-section-title" style="margin-top:16px">🎯 Score de calidad de postlarvas <span class="muted" style="font-weight:600">· planilla 12C · la última evaluación de cada tanque</span></div>
+    <div class="card" style="padding:0;overflow:auto">
+      <table class="sv-table sv-score-table">
+        <thead><tr>${scHead.map((h) => `<th>${h}</th>`).join('')}</tr></thead>
+        <tbody>${scBody || `<tr><td colspan="${scHead.length}" class="muted" style="text-align:center;padding:20px">Aún no hay evaluaciones de Score para ${esc(mod)}${corrida ? ' en la corrida ' + esc(corrida) : ''}.</td></tr>`}</tbody>
       </table>
     </div>`;
 

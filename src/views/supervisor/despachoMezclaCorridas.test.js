@@ -62,6 +62,9 @@ describe('Despacho · «Todas las corridas» avisa de que mezcla', () => {
   it('el aviso NO se contagia a los KPI que no mezclan (Biomasa y PL/g suman todo el período)', () => {
     const { html } = renderDespacho(ctx(null), 'M01');
     const subs = [...html.matchAll(/<div class="sv-kpi-sub">([^<]*)<\/div>/g)].map((m) => m[1]);
-    expect(subs, 'debería haber exactamente dos sub-líneas, no una por KPI').toHaveLength(2);
+    // (2026-10-03: el KPI «🎯 Score promedio» lleva su propia sub-línea —interpretación o «sin evaluaciones»—; aquí
+    // cuentan las que AVISAN de la mezcla, que hablan de corridas.)
+    const deMezcla = subs.filter((s) => /corrida/i.test(s));
+    expect(deMezcla, 'debería haber exactamente dos sub-líneas de mezcla, no una por KPI').toHaveLength(2);
   });
 });

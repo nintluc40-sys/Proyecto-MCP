@@ -48,6 +48,9 @@ export function classifyOrigin(name) {
   // esa palabra hoy, pero dejarla detrás sería confiar en que nunca la lleve. Su
   // origen alimenta la sub-vista de Traslado del Supervisor.
   if (/registro[_\s]*traslado/i.test(n)) return 'Registro_Traslado';
+  // 🎯 Score del AsT (2026-10-03): su hoja lleva Módulo, Corrida y Tanque, así que sin esta regla —y por las cabeceras,
+  // en `detectSheetName`— caería en Larvicultura. Alimenta la sub-vista Despacho del Supervisor.
+  if (/registro[_\s]*score/i.test(n)) return 'Registro_Score';
   // ⚠ Va ANTES que la regla de «microbiolog»: "Patología en Fresco" es una hoja del
   // módulo Microbiología, así que una pestaña renombrada a "Microbiología — Patología
   // en Fresco" la reclamaría /microbiolog/i y sus filas entrarían en Bacteriología,
@@ -92,6 +95,9 @@ export function detectSheetName(rows, gid, rawTitle) {
   if (!rows?.length) return 'Hoja' + (gid + 1);
   const keys = Object.keys(rows[0]).map((k) => k.toLowerCase().trim());
   const has = (pred) => keys.some(pred);
+  // 🎯 Score del AsT (2026-10-03): «Score» + «Interpretación» es su firma. Va la PRIMERA porque sus criterios
+  // («Hepatopáncreas · …», «Branquias · …») la harían pasar por Patología en Fresco, y Módulo/Corrida por Larvicultura.
+  if (has((k) => k === 'score') && has((k) => k.startsWith('interpretaci'))) return 'Registro_Score';
   if (has((k) => k === 'hora') && has((k) => k === 'tanque') &&
       has((k) => k === 'od' || k.startsWith('ox') || k === 'temperatura' || k === 'temp')) return 'Control_Tanque';
   if (has((k) => k.includes('cel_ml') || k.includes('tipo_cultivo') || k.includes('corrida_algas'))) return 'Lab_Algas';
