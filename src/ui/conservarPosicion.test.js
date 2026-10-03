@@ -6,9 +6,10 @@
    el router vaciaba el contenedor y repintaba la vista: la página encogía por debajo de la ventana (Maduración: 1 536 →
    805 px, su tablero llega en un segundo paso con su import) y el navegador llevaba el desplazamiento a 0 (731 → 0).
 
-   🔑 AHORA. `renderCurrentView({ conservarPosicion: true })` —sólo el repintado por datos, desde el shell— sostiene el
-   alto del contenedor hasta que la vista termina de pintarse (si `render` devuelve una promesa, hasta que se cumple) y
-   devuelve el desplazamiento a donde estaba. Cambiar de vista no lo usa.
+   🔑 AHORA. `renderCurrentView({ conservarPosicion: true })` —los repintados de la MISMA vista desde el shell: datos
+   nuevos y, también a petición del usuario, el tema 🌙 y los atajos de fecha— sostiene el alto del contenedor hasta que
+   la vista termina de pintarse (si `render` devuelve una promesa, hasta que se cumple) y devuelve el desplazamiento a
+   donde estaba. Cambiar de vista no lo usa.
 
    happy-dom no maqueta: aquí una «página» de juguete hace de navegador —su alto es el del contenedor (o su
    `min-height`) más el resto, y al encoger por debajo de la ventana lleva el desplazamiento a su máximo—.
@@ -101,6 +102,26 @@ describe('Repintar con datos nuevos conserva el desplazamiento', () => {
     vieja.cumplir(); await vieja; await null;
     expect(window.scrollY).toBe(0);
     expect(contenedor.style.minHeight).toBe('');
+  });
+
+  it('🔴 el tema 🌙 tampoco lo lleva arriba (ni con la vista que llega en un segundo paso)', async () => {
+    await abrirYBajar(1, 600);
+    document.getElementById('darkBtn').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(window.scrollY).toBe(600);
+    llega.cumplir(); await llega; await null;
+    expect(window.scrollY).toBe(600);
+    expect(contenedor.style.minHeight).toBe('');
+  });
+
+  it('🔴 un atajo de fecha («30 días», «Todo»…) tampoco', async () => {
+    store.globalData = [{ _SheetOrigin: 'Larvicultura', Fecha: '01/09/2026' }];   // con alguna fecha, la barra enseña los atajos
+    emit(EV.DATA, { firstLoad: false });
+    await abrirYBajar(0, 600);
+    document.querySelector('[data-preset="30"]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(window.scrollY).toBe(600);
+    document.querySelector('[data-preset="all"]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(window.scrollY).toBe(600);
+    store.globalData = [];
   });
 
   it('cambiar de vista NO lo usa (ni sostiene el alto ni vuelve)', async () => {

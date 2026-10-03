@@ -72,8 +72,8 @@ on(EV.CONN, (e) => {
 let turno = 0;
 
 /** Renderiza la vista actual en el contenedor.
- *  `conservarPosicion` (punto 7 del usuario, 2026-10-03): al repintar la MISMA vista con datos nuevos, el desplazamiento
- *  se queda donde estaba. Vaciar el contenedor encogía la página por debajo de la ventana (medido en Maduración: 1 536 →
+ *  `conservarPosicion` (punto 7 del usuario, 2026-10-03): al repintar la MISMA vista —con datos nuevos, con el tema 🌙 o
+ *  con un atajo de fecha—, el desplazamiento se queda donde estaba. Vaciar el contenedor encogía la página por debajo de la ventana (medido en Maduración: 1 536 →
  *  805 px) y el navegador la llevaba ARRIBA; ahora el contenedor guarda su alto hasta que la vista termina de pintarse
  *  —si su `render` devuelve una promesa (el tablero del operativo llega con su import), hasta que se cumple— y se vuelve
  *  a la posición de antes. Cambiar de vista no lo usa. */

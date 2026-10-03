@@ -248,7 +248,7 @@ function bindEvents(appEl) {
     const dark = document.documentElement.getAttribute('data-theme') === 'dark';
     applyTheme(!dark);
     try { localStorage.setItem(THEME_KEY, dark ? 'light' : 'dark'); } catch (_) { /* storage no disponible */ }
-    renderCurrentView();
+    renderCurrentView({ conservarPosicion: true });   // la misma vista con otros colores: no salta arriba (usuario, 2026-10-03)
   });
   // Escape cierra el drawer cuando está abierto (no la pantalla de ingreso por rol,
   // que es una compuerta obligatoria sin la que el sistema no puede usarse).
@@ -302,5 +302,5 @@ function applyPreset(id) {
     store.dateFrom = from; store.dateTo = to;
   }
   renderDateBar();
-  renderCurrentView();
+  renderCurrentView({ conservarPosicion: true });   // la misma vista con otro rango: no salta arriba (usuario, 2026-10-03)
 }
