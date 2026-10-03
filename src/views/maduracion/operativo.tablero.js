@@ -53,6 +53,8 @@ export const PERIODOS = [
   { clave: 'mes', etiqueta: 'Mes' },
   { clave: 'ciclo', etiqueta: 'Ciclo' },
   { clave: 'todo', etiqueta: 'Todo' },
+  // 2026-10-03 (punto 5, usuario) · un RANGO libre: desde la fecha elegida hasta la foto (ver `periodoDe`).
+  { clave: 'rango', etiqueta: 'Rango' },
 ];
 export const PERIODO_INICIAL = '30d';
 
@@ -69,12 +71,22 @@ export function primeraFecha(fuentes, hasta) {
   return p;
 }
 
-/** El período que TERMINA en la foto (`fecha`): hoy, 7 días, 30 días, el mes de la foto o todo lo registrado.
- *  Una clave desconocida es la de por defecto. `dias` cuenta los dos extremos. */
-export function periodoDe(clave, fecha, fuentes, ciclo) {
+/** El período que TERMINA en la foto (`fecha`): hoy, 7 días, 30 días, el mes de la foto, todo lo registrado o un RANGO
+ *  desde `desdeRango`. Una clave desconocida es la de por defecto. `dias` cuenta los dos extremos. */
+export function periodoDe(clave, fecha, fuentes, ciclo, desdeRango) {
   const hasta = txt(fecha);
   let c = clave;
   let desde;
+  if (c === 'rango') {
+    /* 2026-10-03 (punto 5, usuario) · el RANGO termina en la foto, como todos —así el resto del tablero no cambia: su
+       «Hasta» ES la «Foto al día»—. Sin «Desde» todavía, el de por defecto (30 d) y se dice (`rangoSinDesde`); con un
+       «Desde» posterior a la foto (la foto se movió atrás), un solo día y se dice (`rangoInvertido`). */
+    const d = txt(desdeRango);
+    if (esIso(d) && d <= hasta) return { clave: 'rango', desde: d, hasta, dias: diasEntre(d, hasta) + 1 };
+    if (esIso(d)) return { clave: 'rango', desde: hasta, hasta, dias: 1, rangoInvertido: true };
+    desde = sumarDias(hasta, -(PERIODO_DIAS - 1));
+    return { clave: 'rango', desde, hasta, dias: diasEntre(desde, hasta) + 1, rangoSinDesde: true };
+  }
   if (c === 'hoy') desde = hasta;
   else if (c === '7d') desde = sumarDias(hasta, -6);
   else if (c === 'mes') desde = hasta.slice(0, 8) + '01';

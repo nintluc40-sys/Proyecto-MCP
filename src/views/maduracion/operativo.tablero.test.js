@@ -71,13 +71,22 @@ const F = (o) => normalizarFiltro(o);
 
 describe('Maduración · tablero · período y filtros', () => {
   it('el período termina en la foto: hoy, 7 d, 30 d (el de por defecto), el mes y una clave desconocida', () => {
-    expect(PERIODOS.map((p) => p.clave)).toEqual(['hoy', '7d', '30d', 'mes', 'ciclo', 'todo']);
+    expect(PERIODOS.map((p) => p.clave)).toEqual(['hoy', '7d', '30d', 'mes', 'ciclo', 'todo', 'rango']);   // «Rango»: punto 5, 2026-10-03
     expect(PERIODO_INICIAL).toBe('30d');
     expect(periodoDe('hoy', FOTO, {})).toEqual({ clave: 'hoy', desde: FOTO, hasta: FOTO, dias: 1 });
     expect(periodoDe('7d', FOTO, {})).toEqual({ clave: '7d', desde: '2026-09-13', hasta: FOTO, dias: 7 });
     expect(periodoDe('30d', FOTO, {})).toEqual({ clave: '30d', desde: '2026-08-21', hasta: FOTO, dias: 30 });
     expect(periodoDe('mes', FOTO, {})).toEqual({ clave: 'mes', desde: '2026-09-01', hasta: FOTO, dias: 19 });
     expect(periodoDe('otra', FOTO, {})).toMatchObject({ clave: '30d', desde: '2026-08-21' });
+  });
+
+  // Punto 5 (2026-10-03, usuario) · el RANGO: desde la fecha elegida hasta la foto, que sigue siendo su «Hasta».
+  it('«Rango»: del «Desde» a la foto; sin «Desde», el de por defecto y lo dice; con uno posterior a la foto, un día y lo dice', () => {
+    expect(periodoDe('rango', FOTO, {}, null, '2026-09-05')).toEqual({ clave: 'rango', desde: '2026-09-05', hasta: FOTO, dias: 15 });
+    expect(periodoDe('rango', FOTO, {}, null, FOTO)).toEqual({ clave: 'rango', desde: FOTO, hasta: FOTO, dias: 1 });
+    expect(periodoDe('rango', FOTO, {}, null, '')).toEqual({ clave: 'rango', desde: '2026-08-21', hasta: FOTO, dias: 30, rangoSinDesde: true });
+    expect(periodoDe('rango', FOTO, {}, null, '2026-09-25')).toEqual({ clave: 'rango', desde: FOTO, hasta: FOTO, dias: 1, rangoInvertido: true });
+    expect(periodoDe('rango', FOTO, {}, null, 'no es fecha')).toMatchObject({ rangoSinDesde: true });
   });
 
   it('«Todo» empieza en la primera fecha registrada hasta la foto (Broodstock por su corte, lo posterior no cuenta)', () => {

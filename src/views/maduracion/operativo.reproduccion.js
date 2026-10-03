@@ -38,6 +38,7 @@ import {
   MAD_DESOVE_DESPACHO_OPTS,
 } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
+import { normPiscina } from '../registros/lib/ficha-maduracion-broodstock.schema.js';   // punto 5 · la piscina canónica
 import { fechaDeFila } from './operativo.data.js';
 import { cociente } from './operativo.indicadores.js';
 import { kpiReproduccion, codigoEnFiltro } from './operativo.tablero.js';
@@ -168,11 +169,12 @@ function destinosDeLote(fuentes, lote, periodo) {
  * cuántos fue a cada uno. Se cuenta el DESOVE en cada destino al que fue, y `compartidos` dice cuántos van a
  * más de uno — que es lo que impide sumar las columnas y creer que dan el total.
  */
-export function destinosDeDespacho(fuentes, periodo, F) {
+export function destinosDeDespacho(fuentes, periodo, F, dividir) {
   const m = new Map();
   let compartidos = 0;
   let sinDestino = 0;
   let conDestino = 0;
+  const division = DIVISIONES_DESTINO.some((x) => x.clave === dividir) ? dividir : '';   // punto 5 · ver abajo
   for (const r of (fuentes || {}).desoves || []) {
     if (!enPeriodo(fechaDeFila('desoves', r), periodo) || !enFiltro(r, F)) continue;
     const destinos = despachoLista(r.Despacho);
@@ -180,18 +182,50 @@ export function destinosDeDespacho(fuentes, periodo, F) {
     conDestino++;
     if (destinos.length > 1) compartidos++;
     for (const d of destinos) {
-      const o = m.get(d) || { destino: d, desoves: 0, n5: 0, lotes: new Set(), variosDestinos: 0 };
+      const o = m.get(d) || { destino: d, desoves: 0, n5: 0, lotes: new Set(), variosDestinos: 0, partes: new Map() };
       o.desoves += ent(r.Desoves);
       o.n5 += ent(r.N5);
       o.lotes.add(normLote(r.Lote));
       if (destinos.length > 1) o.variosDestinos++;
+      if (division) sumarParte(o.partes, parteDeDesove(r, division), r, destinos.length > 1);
       m.set(d, o);
     }
   }
   const filas = [...m.values()]
-    .map((o) => ({ ...o, lotes: [...o.lotes].sort(porNombre) }))
+    .map((o) => ({ ...o, lotes: [...o.lotes].sort(porNombre), partes: ordenarPartes([...o.partes.values()], division) }))
     .sort((a, b) => b.n5 - a.n5 || porCatalogo(a.destino, b.destino));
-  return { filas, compartidos, sinDestino, conDestino, ignora: ignoraDeReproduccion(F) };
+  return { filas, compartidos, sinDestino, conDestino, dividir: division, ignora: ignoraDeReproduccion(F) };
+}
+
+/* 2026-10-03 (punto 5, usuario) · DIVIDIR el N5 de cada destino por lote, código genético, piscina broodstock o fecha
+   de N5. Cada desove va ENTERO a cada uno de sus destinos (la regla de arriba) y, dentro de cada destino, a UNA parte:
+   su lote, su código o su piscina TAL COMO LOS DICE LA HOJA —un «555/557» es su propia parte: tampoco se inventa cuánto
+   vino de cada piscina— o su día de N5 («sin N5» si aún no se contó). `n5Compartido` es lo que viene de desoves con
+   varios destinos (la vista lo marca «*»). */
+export const DIVISIONES_DESTINO = [
+  { clave: 'lote', etiqueta: 'Lote' },
+  { clave: 'codigo', etiqueta: 'Código genético' },
+  { clave: 'piscina', etiqueta: 'Piscina' },
+  { clave: 'fechaN5', etiqueta: 'Fecha de N5' },
+];
+export const SIN_N5 = 'sin N5';
+function parteDeDesove(r, division) {
+  if (division === 'lote') return normLote(r.Lote) || 'sin lote';
+  if (division === 'codigo') return normCodigoGenetico(r['Código genético']) || 'sin código';
+  if (division === 'piscina') return normPiscina(r['Piscina Broodstock']) || 'sin piscina';
+  return esIso(r['Fecha N5']) && ent(r.N5) > 0 ? txt(r['Fecha N5']) : SIN_N5;
+}
+function sumarParte(partes, clave, r, compartido) {
+  const pt = partes.get(clave) || { clave, desoves: 0, n5: 0, n5Compartido: 0 };
+  pt.desoves += ent(r.Desoves);
+  pt.n5 += ent(r.N5);
+  if (compartido) pt.n5Compartido += ent(r.N5);
+  partes.set(clave, pt);
+}
+/** Las partes de un destino: por fecha, en el orden del calendario («sin N5» al final); las demás, de más a menos N5. */
+function ordenarPartes(partes, division) {
+  if (division === 'fechaN5') return partes.sort((a, b) => (a.clave === SIN_N5) - (b.clave === SIN_N5) || porNombre(a.clave, b.clave));
+  return partes.sort((a, b) => b.n5 - a.n5 || porNombre(a.clave, b.clave));
 }
 
 /**

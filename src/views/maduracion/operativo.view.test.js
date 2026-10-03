@@ -3721,3 +3721,73 @@ describe('Maduración · operativo · 🦠 se prepara en reposo (0r·3d)', () =>
     expect(meltRow).toHaveBeenCalled();
   });
 });
+
+/* ============================================================
+   Punto 5 (2026-10-03, usuario) · 📅 el período «Rango» y «Dividir el N5 de cada destino por»
+
+   (a) «Rango»: un período más, desde una fecha elegida hasta la foto (su «Hasta» ES la «Foto al día»), así que todo el
+       tablero sigue leyendo el período como siempre.
+   (b) En «A dónde fueron», el N5 de cada destino se divide por lote, código genético, piscina o fecha de N5; lo de
+       desoves con varios destinos sigue entero en cada uno y se marca «*».
+   ============================================================ */
+describe('Maduración · operativo · punto 5 · 📅 el período «Rango»', () => {
+  it('🔴 «Rango» trae su «Desde» (sin elegir, los 30 d de siempre y lo dice) y el «Hasta» es la foto', async () => {
+    await montar(PLANTA_F4);
+    expect(root.querySelector('[data-mop-desde]')).toBeNull();
+    click(root.querySelector('[data-mop-periodo="rango"]'));
+    const desde = root.querySelector('[data-mop-desde]');
+    expect(desde).not.toBeNull();
+    expect(desde.value).toBe('2026-08-21');
+    expect(root.querySelector('.mop-f-rango').textContent).toContain('elige el «Desde»');
+    expect(root.querySelector('.mop-filtros').textContent).toContain('Hasta (foto al día)');
+  });
+
+  it('🔴 elegir el «Desde» mueve el período, y el tablero lo usa (aquí, el despacho del 12/09 queda fuera)', async () => {
+    await montar(PLANTA_F4);
+    click(root.querySelector('[data-mop-periodo="rango"]'));
+    cambiar(root.querySelector('[data-mop-desde]'), '2026-09-14');
+    expect(root.querySelector('.mop-f-rango').textContent).toContain('14/09 – 19/09 · 6 días');
+    expect(root.querySelector('.mop-f-rango').textContent).not.toContain('elige el «Desde»');
+    abrirRepro();
+    expect(root.textContent).toContain('Ningún desove del período tiene destino anotado');
+  });
+
+  it('✕ Limpiar vuelve a «30 d» y suelta el «Desde»', async () => {
+    await montar(PLANTA_F4);
+    click(root.querySelector('[data-mop-periodo="rango"]'));
+    cambiar(root.querySelector('[data-mop-desde]'), '2026-09-14');
+    click(root.querySelector('[data-mop-limpiar]'));
+    expect(root.querySelector('[data-mop-desde]')).toBeNull();
+    expect(root.querySelector('[data-mop-periodo="30d"]').classList.contains('is-on')).toBe(true);
+    click(root.querySelector('[data-mop-periodo="rango"]'));
+    expect(root.querySelector('[data-mop-desde]').value, 'el «Desde» de antes no vuelve').toBe('2026-08-21');
+  });
+});
+
+describe('Maduración · operativo · punto 5 · dividir el N5 de cada destino', () => {
+  it('🔴 por defecto no divide; «Lote» pone bajo cada destino sus lotes con su N5 (y «*» lo compartido) sin plegar la tarjeta', async () => {
+    await montar(PLANTA_Q3);
+    abrirRepro();
+    click(destinos().querySelector('summary'));
+    expect(destinos().querySelectorAll('.mop-dest-parte').length).toBe(0);
+    click(destinos().querySelector('[data-mop-dest-div="lote"]'));
+    expect(destinos().open).toBe(true);
+    expect(destinos().querySelector('[data-mop-dest-div="lote"]').getAttribute('aria-pressed')).toBe('true');
+    const partes = [...destinos().querySelectorAll('.mop-dest-parte')].map((e) => e.textContent.replace(/\s+/g, ' ').trim());
+    expect(partes.length).toBe(4);                                   // un lote (QA) bajo cada uno de los 4 destinos
+    expect(partes.filter((t) => t.startsWith('QA *'))).toHaveLength(2);   // Tabasca e Hisenor: el desove compartido
+    expect(partes).toContain('QA 1.500.000');                        // Mar Bravo M07
+  });
+
+  it('🔴 «Fecha de N5» divide por el día de N5; «—» vuelve a no dividir', async () => {
+    await montar(PLANTA_Q3);
+    abrirRepro();
+    click(destinos().querySelector('summary'));
+    click(destinos().querySelector('[data-mop-dest-div="fechaN5"]'));
+    const partes = [...destinos().querySelectorAll('.mop-dest-parte')].map((e) => e.textContent.replace(/\s+/g, ' ').trim());
+    expect(partes).toContain('15/09 1.500.000');
+    expect(partes).toContain('16/09 50.000');
+    click(destinos().querySelector('[data-mop-dest-div=""]'));
+    expect(destinos().querySelectorAll('.mop-dest-parte').length).toBe(0);
+  });
+});

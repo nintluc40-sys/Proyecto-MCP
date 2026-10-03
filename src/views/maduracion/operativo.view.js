@@ -76,7 +76,7 @@ import { GRUPOS_MAPA, capasDelMapa, contextoDelMapa, colorDeTanque, leyendaDelMa
 import { tablaDeLotes, fichaDeLote, DIMENSIONES_COMPARATIVA, comparativa, PAREJAS } from './operativo.lotes.js';
 import { DIMENSIONES_BAJAS, desgloseDeBajas, motivosDeCierre, bajasPorHora, calorSalaDia, lotesCerrados } from './operativo.bajas.js';
 import { tablaDeTanques, fichaDeTanque, avisosDeTanques } from './operativo.tanques.js';
-import { pendientesDeN5, tablaDeReproduccion, destinosDeDespacho, totalesDeReproduccion } from './operativo.reproduccion.js';
+import { pendientesDeN5, tablaDeReproduccion, destinosDeDespacho, totalesDeReproduccion, DIVISIONES_DESTINO } from './operativo.reproduccion.js';
 import { repartoDeLotePorDestino } from './operativo.reproduccion.js';   // 0q·3
 import {
   VARIABLES_REVISION, revisionesDeNauplios, alcalinidadPorArea, mortalidadEnDesove, frecuenciaDeObservaciones,
@@ -143,6 +143,8 @@ const SUBS = [
 const PROPIOS = new Set(['micro', 'biomol', 'mareas']);
 const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', tanque: '', lote: '', codigo: '', color: 'estado', salaDetalle: '', tanqueSel: '', loteSel: '', agrupacion: 'lote',
   estado: '', sexo: '', piscina: '', camaronera: '', agrupacionBajas: 'sala',
+  /* 2026-10-03 (punto 5, usuario) · el «Desde» del período «Rango» (su «Hasta» es la foto); '' = aún sin elegir. */
+  desde: '',
   /* 5 (2026-09-29, usuario) · la comparativa por código o por piscina: las parejas 'juntas' (por defecto) o 'separadas'. */
   parejas: 'juntas',
   /* F4.1 · el tanque cuya FICHA está abierta en 🛢 Tanques. Es otro que `tanqueSel`, que es el del mapa de
@@ -162,6 +164,9 @@ const INICIAL = { sub: 'estado', periodo: PERIODO_INICIAL, fecha: '', sala: '', 
   kpiSel: '',
   /* 0q·3 · si «A dónde fueron» (🥚 Reproducción) está desplegada. Empieza plegada: eran 13 destinos y 573 px. */
   destAbierto: false,
+  /* 2026-10-03 (punto 5, usuario) · por qué se divide el N5 de cada destino en «A dónde fueron»: '' (no se divide),
+     'lote', 'codigo', 'piscina' o 'fechaN5' (DIVISIONES_DESTINO). */
+  destDividir: '',
   /* 0q·3 · el lote de «Por lote» (🥚 Reproducción) cuyo reparto por destino está desplegado. */
   reproLote: '',
   /* 0q·4 · el día del calendario de partes (🩺 Calidad del dato) cuya ventana está abierta, y la sala en la que se centra
@@ -302,7 +307,7 @@ export function operativoView(root) {
   }
   depurarFiltros(M.filtros);
   const F = normalizarFiltro(vOp, indiceDeFiltro(M));
-  const periodo = periodoDe(vOp.periodo, fecha, M.fuentes, cicloDelLote(M.libro, vOp.lote, fecha));
+  const periodo = periodoDe(vOp.periodo, fecha, M.fuentes, cicloDelLote(M.libro, vOp.lote, fecha), vOp.desde);
   const barra = PROPIOS.has(vOp.sub) ? '' : filtrosHTML(M, hoy, fecha, periodo) + etiquetasHTML(F);   // 2 · las tres con SUS filtros
   let h = cabeceraHTML(fecha) + barra + subnavHTML() + avisosDelDatoHTML(M);
   let detalle = null;
@@ -400,9 +405,11 @@ function filtrosHTML(M, hoy, fecha, p) {
         const on = x.clave === p.clave;
         return `<button class="mc-seg-b ${on ? 'is-on' : ''}" data-mop-periodo="${x.clave}" aria-pressed="${on}">${esc(x.etiqueta)}</button>`;
       }).join('')}</div>
-      <span class="mop-f-rango">${esc(dm(p.desde))} – ${esc(dm(p.hasta))} · ${nf(p.dias)} ${p.dias === 1 ? 'día' : 'días'}${p.cicloSinLote ? ' · <span class="mop-nota">elige un lote para ver su ciclo</span>' : ''}</span>
+      <span class="mop-f-rango">${esc(dm(p.desde))} – ${esc(dm(p.hasta))} · ${nf(p.dias)} ${p.dias === 1 ? 'día' : 'días'}${p.cicloSinLote ? ' · <span class="mop-nota">elige un lote para ver su ciclo</span>' : ''}${p.rangoSinDesde ? ' · <span class="mop-nota">elige el «Desde»</span>' : ''}${p.rangoInvertido ? ' · <span class="mop-nota">el «Desde» era posterior a la foto: un solo día</span>' : ''}</span>
     </div>
-    <label class="mop-f-grupo"><span class="mop-f-lbl">Foto al día</span>
+    ${p.clave === 'rango' ? `<label class="mop-f-grupo"><span class="mop-f-lbl">Desde</span>
+      <input type="date" class="mop-fecha" data-mop-desde value="${esc(p.desde)}" max="${esc(fecha)}"></label>` : ''}
+    <label class="mop-f-grupo"><span class="mop-f-lbl">${p.clave === 'rango' ? 'Hasta (foto al día)' : 'Foto al día'}</span>
       <input type="date" class="mop-fecha" data-mop-fecha value="${esc(fecha)}" max="${esc(hoy)}"></label>
     <div class="mop-f-grupo"><span class="mop-f-lbl">Sala → Tanque</span>
       ${sel('sala', vOp.sala, o.salas, 'Todas las salas')}
@@ -2649,7 +2656,7 @@ function reproduccionHTML(M, p, F) {
   const T = totalesDeReproduccion(M, p, F);
   const pend = pendientesDeN5(M.fuentes, p, F, M.fecha);
   const filas = tablaDeReproduccion(M, p, F);
-  const dest = destinosDeDespacho(M.fuentes, p, F);
+  const dest = destinosDeDespacho(M.fuentes, p, F, vOp.destDividir);
   // 0q·3 · el lote desplegado; si el filtro o el período lo quitan de la tabla, se suelta (como la ficha de un lote).
   if (vOp.reproLote && !filas.some((x) => x.lote === vOp.reproLote)) vOp.reproLote = '';
   _reparto = vOp.reproLote ? repartoDeLotePorDestino(M.fuentes, vOp.reproLote, p) : null;
@@ -2761,6 +2768,22 @@ function dibujarReparto(rep) {
   });
 }
 
+/* 2026-10-03 (punto 5, usuario) · «Dividir el N5 de cada destino por»: — · Lote · Código genético · Piscina · Fecha de
+   N5. Debajo de cada destino, sus partes con su N5; «*» = incluye N5 de desoves con varios destinos (cuenta entero en
+   cada uno, la regla de la tarjeta). */
+function dividirDestinoHTML(actual) {
+  const b = (clave, etq) => `<button class="mc-seg-b ${actual === clave ? 'is-on' : ''}" data-mop-dest-div="${clave}" aria-pressed="${actual === clave}">${esc(etq)}</button>`;
+  return `<div class="mop-dest-div"><span class="mop-f-lbl">Dividir el N5 de cada destino por</span>
+      <div class="mc-seg mc-seg-sm" role="group" aria-label="Dividir el N5 de cada destino por">${b('', '—')}${DIVISIONES_DESTINO.map((x) => b(x.clave, x.etiqueta)).join('')}</div></div>`;
+}
+function partesDeDestinoHTML(x, dividir) {
+  if (!dividir || !x.partes.length) return '';
+  const etq = (k) => (dividir === 'fechaN5' && /^\d{4}-\d{2}-\d{2}$/.test(k) ? dm(k) : k);
+  return `<div class="mop-dest-partes">${x.partes.map((pt) => `<div class="mop-obs-f mop-dest-parte"><span>${esc(etq(pt.clave))}${pt.n5Compartido
+    ? ' <span class="mop-nota" title="Incluye N5 de desoves con varios destinos: cuenta entero en cada uno">*</span>' : ''}</span>${barra(pt.n5, x.n5)}
+      <span class="r">${nf(pt.n5)}</span></div>`).join('')}</div>`;
+}
+
 function destinosHTML(d) {
   if (!d.filas.length) {
     return `<div class="mc-card"><h4 class="mc-card-h">A dónde fueron</h4>
@@ -2773,12 +2796,14 @@ function destinosHTML(d) {
   const top = d.filas.slice(0, 3).map((x) => esc(x.destino) + ' ' + corta(x.n5)).join(' · ') + (nD > 3 ? ' …' : '');
   const f = (x) => `<div class="mop-obs-f"><span>${esc(x.destino)}</span>${barra(x.n5, max)}
     <span class="r">${nf(x.n5)}</span></div>
-    <div class="mc-note" style="margin:0 0 6px 0">${nf(x.desoves)} desove(s) · ${x.lotes.map((l) => esc(l)).join(' · ')}${x.variosDestinos ? ' · ' + nf(x.variosDestinos) + ' con varios destinos' : ''}</div>`;
+    <div class="mc-note" style="margin:0 0 6px 0">${nf(x.desoves)} desove(s) · ${x.lotes.map((l) => esc(l)).join(' · ')}${x.variosDestinos ? ' · ' + nf(x.variosDestinos) + ' con varios destinos' : ''}</div>
+    ${partesDeDestinoHTML(x, d.dividir)}`;
   return `<details class="mc-card mc-card-wide mop-dest" data-mop-dest${vOp.destAbierto ? ' open' : ''}>
     <summary class="mop-dest-sum" data-mop-dest-sum>
       <h4 class="mc-card-h">A dónde fueron <span class="mc-h-note">${nf(d.conDestino)} desove(s) con destino${d.sinDestino ? ' · ' + nf(d.sinDestino) + ' sin anotar' : ''} · ${nf(nD)} destino${nD === 1 ? '' : 's'}</span></h4>
       <span class="mop-dest-top">${top}</span>
     </summary>
+    ${dividirDestinoHTML(d.dividir)}
     ${d.filas.map(f).join('')}
     <p class="mc-note">⚠ Los nauplios NO se reparten entre los destinos de un desove: la hoja no dice cuántos fue a cada
       uno, así que el desove cuenta ENTERO en cada destino al que fue.${d.compartidos ? ' Aquí hay ' + nf(d.compartidos) + ' así, de modo que estas columnas NO suman el total.' : ''}</p>
@@ -3380,6 +3405,7 @@ function bind(root) {
     if (t.closest('[data-mop-rep-xlsx]')) { descargarParte(); return; }
     if (t.closest('[data-mop-limpiar]')) {
       Object.assign(vOp, { periodo: INICIAL.periodo, fecha: '', sala: '', tanque: '', lote: '', codigo: '', tanqueSel: '', salaDetalle: '', piscinaSel: '', loteSel: '', tqFicha: '', estado: '', sexo: '', piscina: '', camaronera: '' });
+      vOp.desde = '';   // punto 5 · el «Desde» del Rango (aparte: las dos puntas de la línea de arriba son anclas)
       repintar();
       return;
     }
@@ -3429,6 +3455,9 @@ function bind(root) {
     /* 0q·3 · el título de «A dónde fueron» la pliega y despliega sin repintar; el estado se recuerda en la sesión. */
     const dsum = t.closest('[data-mop-dest-sum]');
     if (dsum) { e.preventDefault(); vOp.destAbierto = !vOp.destAbierto; dsum.parentElement.open = vOp.destAbierto; return; }
+    // Punto 5 · «Dividir el N5 de cada destino por»: la tarjeta sigue abierta (está abierta para poder pulsarlo).
+    const ddiv = t.closest('[data-mop-dest-div]');
+    if (ddiv) { vOp.destDividir = ddiv.dataset.mopDestDiv || ''; vOp.destAbierto = true; repintar(); return; }
     if (t.closest('[data-mop-kpi-cerrar]')) { vOp.kpiSel = ''; repintar(); return; }
     const kpi = t.closest('[data-mop-kpi]');
     if (kpi) { abrirKpi(kpi.dataset.mopKpi); return; }
@@ -3544,6 +3573,7 @@ function bind(root) {
       return;
     }
     if (e.target.matches('[data-mop-rep-lote]')) { vOp.repLote = e.target.value || ''; repintar(); return; }
-    if (e.target.matches('[data-mop-fecha]')) { vOp.fecha = e.target.value || ''; repintar(); }
+    if (e.target.matches('[data-mop-fecha]')) { vOp.fecha = e.target.value || ''; repintar(); return; }
+    if (e.target.matches('[data-mop-desde]')) { vOp.desde = e.target.value || ''; repintar(); }   // punto 5 · el «Desde» del Rango
   });
 }

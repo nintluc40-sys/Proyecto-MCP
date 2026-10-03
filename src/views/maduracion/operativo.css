@@ -224,6 +224,10 @@
 .mop-dest-top { display: block; font-size: 12px; color: var(--c-text-soft); margin-top: 2px; }
 .mop-dest[open] .mop-dest-top { display: none; }
 .mop-dest[open] > summary { margin-bottom: 6px; }
+/* Punto 5 (2026-10-03) · «Dividir el N5 de cada destino por»: el selector y, bajo cada destino, sus partes con sangría. */
+.mop-dest-div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 8px; }
+.mop-dest-partes { margin: -2px 0 8px 14px; padding-left: 8px; border-left: 2px solid var(--c-border); }
+.mop-dest-parte { font-size: 11px; color: var(--c-text-soft); }
 /* 0q·3 · las filas de «Por lote» se despliegan: como las de 🧬 Lotes, y su reparto va en una fila debajo. */
 .mop-rlote { cursor: pointer; }
 .mop-rlote:hover td, .mop-rlote:focus-visible td { background: color-mix(in srgb, var(--c-brand) 10%, transparent); }

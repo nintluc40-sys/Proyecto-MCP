@@ -183,6 +183,33 @@ describe('Maduración · operativo · 🥚 Reproducción (F4.2)', () => {
       expect(d.filas.map((f) => [f.destino, f.n5])).toEqual([['Tabasca', 50000], ['Macrolab', 50000]]);
       expect(d.sinDestino).toBe(0);
     });
+
+    /* Punto 5 (2026-10-03, usuario) · DIVIDIR el N5 de cada destino por lote, código genético, piscina o fecha de N5.
+       Lo compartido (desoves con varios destinos) sigue ENTERO en cada destino y se marca (`n5Compartido`); los
+       valores de la hoja van tal cual (un «P-82/P-83» es su propia parte). */
+    it('🔑 punto 5 · el N5 de cada destino, dividido por lote, código, piscina o fecha de N5', () => {
+      const Mp = modeloOperativo([
+        ING('2026-09-01', 'RA', 'Sala 3', 1, 10, 10),
+        ING('2026-09-01', 'RB', 'Sala 3', 2, 10, 10),
+        DES('2026-09-10', 'RA', 1, 100000, { 'Código genético': 'CG-A.1', 'Piscina Broodstock': 'P-81', 'Fecha N5': '2026-09-11', N5: 30000, Despacho: 'Tabasca' }),
+        DES('2026-09-12', 'RB', 1, 100000, { 'Código genético': 'CG-B.2', 'Piscina Broodstock': 'P-82/P-83', 'Fecha N5': '2026-09-13', N5: 50000, Despacho: 'Tabasca, Hisenor' }),
+        DES('2026-09-14', 'RA', 1, 100000, { 'Código genético': 'CG-A.1', 'Piscina Broodstock': 'P-81', Despacho: 'Tabasca' }),   // aún sin N5
+      ], { fecha: FOTO, hoy: FOTO });
+      const tabasca = (div) => destinosDeDespacho(Mp.fuentes, P30, SIN, div).filas.find((f) => f.destino === 'Tabasca');
+      const partes = (div) => tabasca(div).partes.map((x) => [x.clave, x.n5, x.n5Compartido]);
+      expect(partes('lote')).toEqual([['RB', 50000, 50000], ['RA', 30000, 0]]);
+      expect(partes('codigo')).toEqual([['CG-B.2', 50000, 50000], ['CG-A.1', 30000, 0]]);
+      expect(partes('piscina')).toEqual([['P-82/P-83', 50000, 50000], ['P-81', 30000, 0]]);
+      expect(partes('fechaN5')).toEqual([['2026-09-11', 30000, 0], ['2026-09-13', 50000, 50000], ['sin N5', 0, 0]]);
+      // las partes de un destino suman SU N5 (el compartido, entero en él)
+      for (const div of ['lote', 'codigo', 'piscina', 'fechaN5']) {
+        expect(tabasca(div).partes.reduce((a, x) => a + x.n5, 0), div).toBe(tabasca(div).n5);
+      }
+      // sin división —o con una que no existe—, ninguna parte, y lo de siempre igual
+      expect(tabasca('').partes).toEqual([]);
+      expect(destinosDeDespacho(Mp.fuentes, P30, SIN, 'otra').dividir).toBe('');
+      expect(tabasca('').n5).toBe(80000);
+    });
   });
 
   describe('los totales', () => {
