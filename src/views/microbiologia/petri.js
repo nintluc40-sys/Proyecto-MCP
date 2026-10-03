@@ -12,20 +12,24 @@ const THEME = {
   light: { agar0: '#eef6f0', agar1: '#dfeee3', agar2: '#cfe6d6', ring: '#a8cdb2', edge: '#7fae8b', text: '#5a7a60', rings: '#2f8a4f', shadow: '.18' },
 };
 
-/** Radio de la colonia en escala log de UFC (entre mnR y mxR). */
+/** Radio de la colonia en escala log de UFC (entre mnR y mxR); fuera de [mn, mx], el radio del extremo. */
 export function ufcRadius(ufc, mn, mx, mnR = 6, mxR = 34) {
   if (!(ufc > 0)) return mnR;
-  const lMn = Math.log10(Math.max(mn, 1)), lMx = Math.log10(Math.max(mx, 1)), lV = Math.log10(Math.max(ufc, 1));
+  const lMn = Math.log10(Math.max(mn, 1)), lMx = Math.log10(Math.max(mx, 1));
+  const lV = Math.min(lMx, Math.max(lMn, Math.log10(Math.max(ufc, 1))));
   if (lMx === lMn) return (mnR + mxR) / 2;
   return mnR + ((lV - lMn) / (lMx - lMn)) * (mxR - mnR);
 }
+
+/* H-012 (auditoría 2026-09-25, aprobado 2026-10-03) · la escala del tamaño es FIJA, de 10⁰ a 10⁷ UFC: el mismo UFC se
+   ve igual de grande cualquier día. Antes iba del mínimo al máximo DEL DÍA, y 10² un día podía verse como 10⁶ otro. */
+export const UFC_ESCALA = { min: 1, max: 1e7 };
 
 /** Coloca las colonias (espiral de Fibonacci + relajación). Determinista.
  *  Devuelve [{ x, y, r, c }] con (x,y) relativos al centro del plato. */
 export function colonyLayout(colonies, dishR) {
   if (!colonies.length) return [];
-  const ufcs = colonies.map((c) => c.ufc || 0);
-  const mn = Math.min(...ufcs), mx = Math.max(...ufcs);
+  const mn = UFC_ESCALA.min, mx = UFC_ESCALA.max;
   const sorted = [...colonies].sort((a, b) => (b.ufc || 0) - (a.ufc || 0));
   const G = 2.399963; // ángulo áureo
   const placed = [];

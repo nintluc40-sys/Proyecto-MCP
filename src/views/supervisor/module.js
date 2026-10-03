@@ -562,7 +562,7 @@ function microPlacaHTML(rows, state) {
     </div>
     <div class="sv-micro-main">
       <div class="sv-micro-dish">
-        <div class="mic-chart-title">🧫 Placa de agar <span class="muted">· colonia = patógeno · tamaño ∝ log₁₀(UFC)</span></div>
+        <div class="mic-chart-title">🧫 Placa de agar <span class="muted">· colonia = patógeno · tamaño ∝ log₁₀(UFC), escala fija de 10⁰ a 10⁷</span></div>
         <div style="display:flex;justify-content:center">${petriSVG(colonies, 320, 'light')}</div>
         <div class="mic-petri-foot">${day.rows.length} muestra(s) · ${colonies.length} patógeno(s) con UFC</div>
       </div>

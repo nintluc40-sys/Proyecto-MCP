@@ -39,6 +39,12 @@ import { buildPetriPdfDoc, dayKeyOf } from './petriPdf.js';
 import { printFichaDocs } from '../supervisor/fichaPdf.js';
 import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges, calRangeText, calEnsayoData, CAL_PARAMS, calDiagnosis, calGroupTree, calWQI, controlStats, boxStats, calSeverity, calStageCmp, CAL_RISK, CAL_SEV, rangosModificados, procesoDe, parametrosConRango } from './calagua.data.js';
 
+/* H-013 (auditoría 2026-09-25, aprobado 2026-10-03) · el fondo del tema (--c-surface) para separar los sectores de la
+   dona: blanco en claro, oscuro en oscuro (era blanco fijo). */
+function colorSuperficie() {
+  try { return getComputedStyle(document.documentElement).getPropertyValue('--c-surface').trim() || '#fff'; } catch (_) { return '#fff'; }
+}
+
 /* H-008 (auditoría 2026-09-25, aprobado 2026-10-03) · el WQI sólo evalúa los parámetros CON rango objetivo: se dice
    cuántos (y de cuántos), en vez de «100 = todo en rango», que se leía como «todos los parámetros». `plano` = sin <b>. */
 function wqiAlcanceTxt(ranges = loadCalRanges(), plano = false) {
@@ -253,8 +259,10 @@ function headHTML() {
     </div>`;
 }
 function subnavHTML() {
-  return `<div class="mic-subnav" role="tablist">
-    ${SUBS.map((s) => `<button class="mic-pill ${s.key === vState.sub ? 'is-active' : ''}" data-mic-sub="${s.key}" role="tab">${s.icon} ${esc(s.label)}</button>`).join('')}
+  // H-014 (auditoría 2026-09-25, aprobado 2026-10-03): aria-selected y foco itinerante (sólo la activa en el Tab);
+  // ← → Inicio Fin las recorre (ver el keydown de `bind`).
+  return `<div class="mic-subnav" role="tablist" aria-label="Sub-vistas de Microbiología">
+    ${SUBS.map((s) => { const on = s.key === vState.sub; return `<button class="mic-pill ${on ? 'is-active' : ''}" data-mic-sub="${s.key}" role="tab" aria-selected="${on}" tabindex="${on ? 0 : -1}">${s.icon} ${esc(s.label)}</button>`; }).join('')}
   </div>`;
 }
 // Filas de Patología en Fresco, memoizadas igual que microRows().
@@ -2087,9 +2095,9 @@ function renderPetri(rows) {
   const day = dayIdx >= 0 ? days[dayIdx] : null;
 
   if (!['placa', 'matriz', 'tendencias'].includes(vState.petriTab)) vState.petriTab = 'placa';
-  const tabBtn = (key, label) => `<button class="mic-petab ${vState.petriTab === key ? 'is-active' : ''}" data-mic-petab="${key}">${label}</button>`;
+  const tabBtn = (key, label) => { const on = vState.petriTab === key; return `<button class="mic-petab ${on ? 'is-active' : ''}" data-mic-petab="${key}" role="tab" aria-selected="${on}" tabindex="${on ? 0 : -1}">${label}</button>`; };
   let h = `<div class="mic-petri-bar">
-      <div class="mic-petabs">${tabBtn('placa', 'Placa')}${tabBtn('matriz', 'Matriz')}${tabBtn('tendencias', 'Tendencias')}</div>
+      <div class="mic-petabs" role="tablist" aria-label="Vista de la placa">${tabBtn('placa', 'Placa')}${tabBtn('matriz', 'Matriz')}${tabBtn('tendencias', 'Tendencias')}</div>
       <div class="mic-export"><button class="mic-exp" data-mic-export="txt">⬇ Reporte</button><button class="mic-exp" data-mic-xlsx title="Exportar Excel por rango de fechas (columnas con datos)">⬇ Excel</button><button class="mic-exp" data-mic-pdf title="Exportar PDF por rango de fechas (una hoja por fecha de muestreo)">⬇ PDF</button></div>
     </div>`;
 
@@ -2186,7 +2194,7 @@ function petriPlacaHTML(days, dayIdx, day) {
 
   return `<div class="mic-petri-main">
       <div class="card mic-petri-card">
-        <div class="mic-chart-title">🧫 Placa de agar <span class="muted">· colonia = patógeno · tamaño ∝ log₁₀(UFC)</span></div>
+        <div class="mic-chart-title">🧫 Placa de agar <span class="muted">· colonia = patógeno · tamaño ∝ log₁₀(UFC), escala fija de 10⁰ a 10⁷</span></div>
         ${nav}
         <div class="mic-petri-dish" style="position:relative">${petriSVG(colonies, size, _scope.theme)}<button class="mic-petheme-fab" data-mic-petheme title="Tema de la placa (claro/oscuro)" aria-label="Cambiar tema de la placa">${vState.petriTheme === 'dark' ? '☀️' : '🌙'}</button></div>
         <div class="mic-petri-foot">${day ? day.rows.length : 0} muestra(s) · ${colonies.length} patógeno(s) con UFC</div>
@@ -2550,7 +2558,7 @@ function drawConglomeradoCharts() {
   // Distribución global por nivel (semáforo) — dona.
   if (_charts.dist) draw(() => makeChart('micDist', {
     type: 'doughnut',
-    data: { labels: NIVELES, datasets: [{ data: NIVELES.map((n) => _charts.dist.counts[n]), backgroundColor: NIVELES.map((n) => NIVEL_COLOR[n]), borderColor: '#fff', borderWidth: 2 }] },
+    data: { labels: NIVELES, datasets: [{ data: NIVELES.map((n) => _charts.dist.counts[n]), backgroundColor: NIVELES.map((n) => NIVEL_COLOR[n]), borderColor: colorSuperficie(), borderWidth: 2 }] },   // H-013: el fondo del tema, no blanco fijo
     options: {
       responsive: true, maintainAspectRatio: false, cutout: '58%',
       plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }, tooltip: { callbacks: { label: (c) => ` ${c.label}: ${fmtNum(c.parsed)} (${_charts.dist.total ? Math.round(c.parsed / _charts.dist.total * 100) : 0}%)` } } },
@@ -3073,6 +3081,22 @@ function bind(root) {
     // Escape a propósito, lo hace cada vista), mientras esos mismos cierres quitaban
     // `body.modal-open` y devolvían el scroll al fondo. Ver el test-guardián de los 11.
     if (e.key === 'Escape') { closeAlertModal(root); closeXlsxModal(root); closePdfModal(root); closeCalAlert(root); closeCalKpi(root); closeCalFact(root); closeMicFact(root); closeCalTankModal(root); closeCalFicha(root); closeGenDepto(root); closeGenKpi(root); return; }
+    // H-014 · las dos barras de pestañas (sub-vistas y Placa/Matriz/Tendencias): ← → Inicio Fin mueven Y activan (la
+    // activación sigue al foco); al repintar, el foco vuelve a la pestaña nueva.
+    const tab = e.target.closest('.mic-subnav [role="tab"], .mic-petabs [role="tab"]');
+    if (tab && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+      e.preventDefault();
+      const tabs = [...tab.parentElement.querySelectorAll('[role="tab"]')];
+      const i = tabs.indexOf(tab);
+      const j = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1
+        : (i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+      const attr = tabs[j].hasAttribute('data-mic-sub') ? 'data-mic-sub' : 'data-mic-petab';
+      const key = tabs[j].getAttribute(attr);
+      tabs[j].click();
+      const nueva = root.querySelector(`[${attr}="${key}"]`);
+      if (nueva) nueva.focus();
+      return;
+    }
     if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
     if (e.target.closest('[data-mic-alerts]')) { e.preventDefault(); openAlertModal(root); return; }
     if (e.target.closest('[data-cal-alerts]')) { e.preventDefault(); openCalAlert(root); return; }

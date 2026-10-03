@@ -41,12 +41,24 @@ Chart.register(LogarithmicScale);
 
 const registry = new Set();
 
+/** El color de texto suave del TEMA activo (variable CSS --c-text-soft); el de siempre si no se puede leer. */
+export function colorDelTema() {
+  try {
+    const v = getComputedStyle(document.documentElement).getPropertyValue('--c-text-soft').trim();
+    return v || '#546e7a';
+  } catch (_) { return '#546e7a'; }
+}
+
 /** Crea un chart y lo registra para destrucción centralizada. */
 export function makeChart(canvasOrId, cfg) {
   const ctx = typeof canvasOrId === 'string' ? document.getElementById(canvasOrId) : canvasOrId;
   if (!ctx) return null;
   const existing = Chart.getChart(ctx);
   if (existing) { try { existing.destroy(); } catch (_) {} registry.delete(existing); }
+  // H-013 (auditoría de Microbiología 2026-09-25, aprobado 2026-10-03) · el color por defecto de ejes y leyendas sale del
+  // TEMA: #546e7a en claro —el de siempre— y #9fb2bc en oscuro, donde el fijo no se leía. Se lee al CREAR cada gráfico;
+  // cambiar el tema repinta la vista (ui/shell.js), así que se rehacen con el suyo. Quien fija su color, lo conserva.
+  Chart.defaults.color = colorDelTema();
   // Render a ≥2x SIEMPRE (texto de ejes/leyendas nítido, aunque la pantalla sea 1x).
   cfg.options = cfg.options || {};
   if (cfg.options.devicePixelRatio == null) cfg.options.devicePixelRatio = Math.max(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
