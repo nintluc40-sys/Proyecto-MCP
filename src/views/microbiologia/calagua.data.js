@@ -183,6 +183,17 @@ export function calMeasured(row, ranges, params = CAL_PARAMS) {
 }
 
 /** Etiqueta de ubicación legible según lo que traiga el departamento/formato. */
+/** El PROCESO de una medición para la carta de control (H-005): su ubicación física —módulo o sala, tanque, componente,
+ *  muestra— SIN el estadío, que en un mismo tanque cambia con los días (N → Z → M → PL). */
+export function procesoDe(ctx) {
+  const parts = [];
+  if (ctx.modulo) parts.push(modLabel(ctx.modulo));
+  if (ctx.sala) parts.push(ctx.sala);
+  if (ctx.tq) parts.push('TQ ' + ctx.tq);
+  if (ctx.componente) parts.push(ctx.componente);
+  if (ctx.muestras) parts.push(ctx.muestras);
+  return parts.join(' · ') || (ctx.tipoMuestra || '—');
+}
 export function calLocation(ctx) {
   const parts = [];
   if (ctx.modulo) parts.push(modLabel(ctx.modulo));   // «M3», pero «CIO» sin la M
@@ -287,6 +298,13 @@ export function calSubIndex(key, value, ranges) {
   return 0;
 }
 
+/** H-008 (auditoría 2026-09-25, aprobado 2026-10-03) · los parámetros que ENTRAN en el WQI: los de CAL_PARAMS con
+ *  algún límite (la misma condición que `calExcursion`). Los demás —salinidad, temperatura…— sólo se registran, y la
+ *  vista lo dice («sobre N parámetros con rango») en vez de «100 = todo en rango». */
+export function parametrosConRango(ranges) {
+  return CAL_PARAMS.filter((p) => { const r = (ranges || CAL_RANGE_BASE)[p.key]; return !!r && (r.min != null || r.max != null); });
+}
+
 /** Water Quality Index de un conjunto de mediciones (objetos con {key,value,label}).
  *  wqi = media de los sub-índices de los parámetros con rango. */
 export function calWQI(measures, ranges) {
@@ -362,15 +380,22 @@ export function calGroupTree(samples, ranges) {
   return modules;
 }
 
-/** Estadística de control (Shewhart) de una serie de valores individuales:
- *  media (línea central), desviación estándar poblacional y límites ±3σ. */
+/** Carta de INDIVIDUOS (I-MR) de una serie de valores EN ORDEN DE FECHA: línea central = media y límites
+ *  media ± 3σ, con σ estimada por el RANGO MÓVIL (σ = MR̄ / 1,128, d2 para n = 2).
+ *  H-005 (auditoría 2026-09-25, aprobado 2026-10-03): era la σ poblacional de todos los valores, que mezcla la
+ *  variación ENTRE procesos (tanques, módulos) con la de cada uno e inflaba los límites; además, la carta sólo vale para
+ *  UN proceso (`procesoDe`), y eso lo exige la vista. Con un solo valor no hay rango móvil: sin límites (sd null). */
 export function controlStats(values) {
   const v = (values || []).filter((x) => x != null && !isNaN(x));
   const n = v.length;
   if (!n) return null;
   const mean = v.reduce((a, b) => a + b, 0) / n;
-  const sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
-  return { mean, sd, ucl: mean + 3 * sd, lcl: mean - 3 * sd, n };
+  if (n < 2) return { mean, sd: null, mrBar: null, ucl: null, lcl: null, n };
+  let sumMr = 0;
+  for (let i = 1; i < n; i++) sumMr += Math.abs(v[i] - v[i - 1]);
+  const mrBar = sumMr / (n - 1);
+  const sd = mrBar / 1.128;
+  return { mean, sd, mrBar, ucl: mean + 3 * sd, lcl: mean - 3 * sd, n };
 }
 
 /** Estadística de caja (boxplot) de una serie: cuartiles por interpolación lineal,

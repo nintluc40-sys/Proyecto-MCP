@@ -264,10 +264,12 @@ describe('Microbiología · harness de navegación integral', () => {
     expect(carts.length).toBeGreaterThanOrEqual(1);
     const otherC = [...carts].find((p) => !p.classList.contains('is-on'));
     if (otherC) { const pk = otherC.dataset.calParam; click(otherC); expect(root.querySelector('.cal-cart.is-on').dataset.calParam).toBe(pk); }
-    // Modos de gráfico: Control (Shewhart, mismo canvas) y Distribución (boxplot SVG).
+    // Modos de gráfico: Control (I-MR, mismo canvas) y Distribución (boxplot SVG).
     click(root.querySelector('[data-cal-chartmode="control"]'));
     expect(root.querySelector('.cal-anz-mode.is-on').dataset.calChartmode).toBe('control');
-    expect(root.querySelector('#calTrendChart')).toBeTruthy();
+    // H-005 (2026-10-03): la carta es de UN proceso y este fixture mezcla varias ubicaciones → el aviso, no el canvas.
+    expect(root.querySelector('#calTrendChart')).toBeFalsy();
+    expect(root.querySelector('.cal-anz-screen').textContent).toContain('La carta de control es de UN proceso');
     click(root.querySelector('[data-cal-chartmode="distribucion"]'));
     expect(root.querySelector('.cal-bx-svg')).toBeTruthy();
     expect(root.querySelector('#calTrendChart')).toBeFalsy(); // distribución no usa canvas

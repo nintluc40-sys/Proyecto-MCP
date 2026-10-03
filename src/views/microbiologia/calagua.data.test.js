@@ -3,7 +3,7 @@ import {
   isCalAguaRow, calEstado, calRangeText, calCtx, calValue, calMeasured, loadCalRanges,
   calEnsayoData, CAL_PARAMS, CAL_PARAM_BY_KEY,
   calExcursion, calSeverity, calSubIndex, calWQI, calRiskLevel, calGroupTree, calDiagnosis, calLocation,
-  controlStats, boxStats, calStageCmp,
+  controlStats, boxStats, calStageCmp, procesoDe, parametrosConRango, CAL_RANGE_BASE,
 } from './calagua.data.js';
 
 const ph = CAL_PARAM_BY_KEY.ph;
@@ -265,16 +265,44 @@ describe('calRiskLevel', () => {
   });
 });
 
-describe('controlStats', () => {
-  it('media y límites ±3σ (σ poblacional)', () => {
-    const c = controlStats([2, 4, 4, 4, 5, 5, 7, 9]); // media 5, σ=2
+describe('controlStats · carta de individuos (I-MR), H-005', () => {
+  // Antes era la σ POBLACIONAL (aquí 2 → límites 11 y −1). Con el rango móvil: |4−2|, 0, 0, 1, 0, 2, 2 → MR̄ = 7/7 = 1 →
+  // σ = 1/1,128 ≈ 0,8865 → límites 5 ± 2,6596.
+  it('media y límites ±3σ con σ = MR̄/1,128 (rango móvil, en el ORDEN dado)', () => {
+    const c = controlStats([2, 4, 4, 4, 5, 5, 7, 9]);
     expect(c.mean).toBe(5);
-    expect(c.sd).toBeCloseTo(2, 6);
-    expect(c.ucl).toBeCloseTo(11, 6);
-    expect(c.lcl).toBeCloseTo(-1, 6);
+    expect(c.mrBar).toBeCloseTo(1, 9);
+    expect(c.sd).toBeCloseTo(1 / 1.128, 9);
+    expect(c.ucl).toBeCloseTo(5 + 3 / 1.128, 9);
+    expect(c.lcl).toBeCloseTo(5 - 3 / 1.128, 9);
     expect(c.n).toBe(8);
   });
+  it('el orden importa (es una serie en el tiempo): los mismos valores alternados dan límites más anchos', () => {
+    expect(controlStats([2, 9, 4, 7, 4, 5, 5, 4]).sd).toBeGreaterThan(controlStats([2, 4, 4, 4, 5, 5, 7, 9]).sd);
+  });
+  it('con un solo valor no hay rango móvil: sin límites', () => {
+    expect(controlStats([7])).toEqual({ mean: 7, sd: null, mrBar: null, ucl: null, lcl: null, n: 1 });
+  });
   it('null si no hay valores', () => { expect(controlStats([])).toBe(null); });
+});
+
+describe('procesoDe · el proceso de la carta de control es la ubicación SIN el estadío (H-005)', () => {
+  it('el mismo tanque en dos estadíos es el mismo proceso; otro tanque, otro', () => {
+    const a = procesoDe({ modulo: '3', tq: '5', estadio: 'Z2' });
+    expect(a).toBe('M3 · TQ 5');
+    expect(procesoDe({ modulo: '3', tq: '5', estadio: 'PL3' })).toBe(a);
+    expect(procesoDe({ modulo: '3', tq: '6', estadio: 'Z2' })).not.toBe(a);
+    expect(procesoDe({ modulo: 'CIO', tq: '1' })).toBe('CIO · TQ 1');
+  });
+});
+
+describe('parametrosConRango · los que entran en el WQI (H-008)', () => {
+  it('con la base, los de CAL_RANGE_BASE; un rango añadido suma uno', () => {
+    const base = parametrosConRango(CAL_RANGE_BASE).map((p) => p.key).sort();
+    expect(base).toEqual(Object.keys(CAL_RANGE_BASE).sort());
+    expect(parametrosConRango({ ...CAL_RANGE_BASE, sal: { min: 30, max: 35 } })).toHaveLength(base.length + 1);
+    expect(base.length).toBeLessThan(CAL_PARAMS.length);
+  });
 });
 
 describe('boxStats', () => {

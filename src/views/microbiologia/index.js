@@ -37,7 +37,17 @@ import { buildPetriPdfDoc, dayKeyOf } from './petriPdf.js';
 // Motor de impresión compartido (iframe oculto, sin pop-ups). Vive en supervisor/ por
 // ser donde nació, pero es genérico: recibe HTML y lo imprime.
 import { printFichaDocs } from '../supervisor/fichaPdf.js';
-import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges, calRangeText, calEnsayoData, CAL_PARAMS, calDiagnosis, calGroupTree, calWQI, controlStats, boxStats, calSeverity, calStageCmp, CAL_RISK, CAL_SEV, rangosModificados } from './calagua.data.js';
+import { calAguaRows, calCtx, calMeasured, calLocation, loadCalRanges, calRangeText, calEnsayoData, CAL_PARAMS, calDiagnosis, calGroupTree, calWQI, controlStats, boxStats, calSeverity, calStageCmp, CAL_RISK, CAL_SEV, rangosModificados, procesoDe, parametrosConRango } from './calagua.data.js';
+
+/* H-008 (auditoría 2026-09-25, aprobado 2026-10-03) · el WQI sólo evalúa los parámetros CON rango objetivo: se dice
+   cuántos (y de cuántos), en vez de «100 = todo en rango», que se leía como «todos los parámetros». `plano` = sin <b>. */
+function wqiAlcanceTxt(ranges = loadCalRanges(), plano = false) {
+  const con = parametrosConRango(ranges);
+  const sin = CAL_PARAMS.filter((p) => !con.includes(p)).slice(0, 2).map((p) => p.label.toLowerCase());
+  const b = (x) => (plano ? String(x) : `<b>${x}</b>`);
+  return `El WQI resume qué tan dentro de rango están los ${b(con.length)} parámetros con rango objetivo, de los ${b(CAL_PARAMS.length)} `
+    + `que se registran${sin.length ? ` (los demás, como ${plano ? sin.join(' o ') : esc(sin.join(' o '))}, no entran)` : ''}: 100 = esos parámetros en rango.`;
+}
 
 /* H-003 (auditoría 2026-09-25, aprobado 2026-10-03) · los umbrales viven en el NAVEGADOR: si este equipo tiene otros,
    lo dice junto a «⚙️ Rangos», y pulsarlo abre ese mismo editor (con su «↺ Restablecer» por área). `attr` es el del
@@ -429,7 +439,7 @@ function genKpiBodyHTML(which) {
     const tot = wsOrder.reduce((a, x) => a + (k.waterSev[x] || 0), 0);
     const rows = tot ? wsOrder.map((x) => { const c = k.waterSev[x] || 0; const pct = Math.round(c / tot * 100); return `<div class="cal-kpi-sevrow cal-sev--${x}"><span class="cal-kpi-sevname">${esc(CAL_SEV[x].label)}</span><span class="cal-kpi-sevbar"><i style="width:${pct}%"></i></span><b>${c}</b><span class="cal-kpi-sevpct">${pct}%</span></div>`; }).join('') : '<span class="muted">Sin mediciones de agua.</span>';
     return `<p class="cal-kpi-lead">${k.wqi == null ? 'No hay datos de calidad de agua este mes.' : `Índice de calidad de agua (WQI) del mes: <b>${k.wqi}</b> · <b>${esc(k.wband.label)}</b>.`}</p>
-      <p class="cal-kpi-note">El WQI resume qué tan dentro de rango están todos los parámetros fisicoquímicos (100 = todo en rango).</p>
+      <p class="cal-kpi-note">${wqiAlcanceTxt()}</p>
       <div class="cal-kpi-sec"><h4>Severidad de las mediciones</h4><div class="cal-kpi-sevlist">${rows}</div></div>`;
   }
   // fuera
@@ -489,7 +499,7 @@ function genKpiStripHTML(k) {
     ${inst('01', '', '🧪 Muestras micro', String(k.micCount), timeline, `${k.micDays.length} día(s) de muestreo`, kpiClick('muestras'))}
     ${inst('02', k.alertCount > 0 ? alertSev : 'optimo', '⚠️ En alerta', String(k.alertCount), calSpark(k.alertSeries), k.micCount ? `${k.alertRatio}% de muestras` : 'sin muestras', kpiClick('alerta'))}
     ${inst('03', '', '🦠 Dominante', k.dom ? String(k.dom.alertas) : '0', bars(k.patTop.filter((t) => t.n)), k.dom ? esc(k.dom.label) : 'sin alertas', kpiClick('dominante'))}
-    ${inst('04', k.wqi == null ? '' : k.wband.sev, '💧 WQI agua', k.wqi == null ? '—' : String(k.wqi), wsSeg, k.wqi == null ? 'sin datos' : esc(k.wband.label), kpiClick('wqi'))}
+    ${inst('04', k.wqi == null ? '' : k.wband.sev, '💧 WQI agua', k.wqi == null ? '—' : String(k.wqi), wsSeg, k.wqi == null ? 'sin datos' : esc(k.wband.label) + ' · sobre ' + parametrosConRango(loadCalRanges()).length + ' parámetros', kpiClick('wqi'))}
     ${inst('05', k.outCount > 0 ? 'fuera' : 'optimo', '⚗️ Agua fuera', String(k.outCount), k.outCount ? bars(k.outTop) : '<span class="cal-inst-ok">✓ todo en rango</span>', k.outEvaluated ? `de ${k.outEvaluated} evaluados` : 'sin evaluar', kpiClick('fuera'))}
   </div>`;
 }
@@ -707,7 +717,7 @@ function calAnalystHTML(samples, ranges) {
   const tankChips = d.riskTanks.slice(0, 6).map((t) => `<span class="cal-an-chip cal-an-chip--risk cal-risk--${t.risk}" title="${esc(CAL_RISK[t.risk].label)}${t.wqi != null ? ` · WQI ${t.wqi}` : ''}">${esc(t.modulo)} · ${esc(t.label)}</span>`).join('');
   const chips = paramChips + tankChips;
   return `<div class="cal-analyst">
-      <div class="cal-an-gauge cal-sev--${band.sev}" style="--deg:${deg}deg" role="img" aria-label="Índice de calidad de agua ${wqiTxt} de 100, ${esc(band.label)}">
+      <div class="cal-an-gauge cal-sev--${band.sev}" style="--deg:${deg}deg" role="img" aria-label="Índice de calidad de agua ${wqiTxt} de 100, ${esc(band.label)}" title="${esc(wqiAlcanceTxt(ranges, true))}">
         <div class="cal-an-gauge-in"><span class="cal-an-wqi">${wqiTxt}</span><span class="cal-an-wqi-u">WQI</span></div>
       </div>
       <div class="cal-an-body">
@@ -1651,7 +1661,7 @@ function calAnalizadorHTML(samples, ranges) {
     const m = s.meas.find((x) => x.key === param.key); if (!m) return;
     allVals.push(m.value);
     if (m.severity !== 'sin-rango') { withR++; if (m.severity === 'optimo' || m.severity === 'vigilancia') inR++; }
-    if (s.ctx.fecha && !isNaN(s.ctx.fecha)) indiv.push({ d: s.ctx.fecha, value: m.value, sev: m.severity });
+    if (s.ctx.fecha && !isNaN(s.ctx.fecha)) indiv.push({ d: s.ctx.fecha, value: m.value, sev: m.severity, proc: procesoDe(s.ctx) });
     const gl = calTankGroupLabel(s.ctx); if (!boxMap.has(gl)) boxMap.set(gl, []); boxMap.get(gl).push(m.value);
   });
   indiv.sort((a, b) => a.d - b.d);
@@ -1663,8 +1673,16 @@ function calAnalizadorHTML(samples, ranges) {
   const boxGroups = [...boxMap.entries()].map(([label, vals]) => ({ label, stats: boxStats(vals), n: vals.length }));
 
   // Datos para el gráfico (dibujo post-render; el modo elige tendencia/control).
+  // H-005: la carta de control es de UN proceso (ubicación sin estadío) y sus límites salen del rango móvil de los
+  // valores EN ORDEN DE FECHA (`indiv`); con varias ubicaciones en el filtro no hay carta, sino el aviso de elegir una.
   const mode = vState.calChartMode;
-  _calTrend = { days: calParamSeries(samples, param.key), indiv, ctrl: controlStats(allVals), param, range, color: '#00838f', mode };
+  const procesos = [...new Set(indiv.map((i) => i.proc))];
+  _calTrend = { days: calParamSeries(samples, param.key), indiv, procesos,
+    ctrl: procesos.length === 1 ? controlStats(indiv.map((i) => i.value)) : null, param, range, color: '#00838f', mode };
+  const ctrlVarios = mode === 'control' && procesos.length > 1
+    ? `<div class="cal-anz-norange">📊 La carta de control es de <b>UN</b> proceso, y este filtro mezcla ${procesos.length} ubicaciones `
+      + `(${esc(procesos.slice(0, 4).join(', '))}${procesos.length > 4 ? '…' : ''}). Elige el módulo o la sala y el TQ o punto en los filtros para verla.</div>`
+    : '';
 
   // Puntos afectados (fuera/crítico en el parámetro activo), únicos, peor primero.
   const affMap = new Map();
@@ -1712,11 +1730,11 @@ function calAnalizadorHTML(samples, ranges) {
         <button class="cal-anz-mode${mode === 'distribucion' ? ' is-on' : ''}" data-cal-chartmode="distribucion" aria-selected="${mode === 'distribucion'}">📦 Distribución</button>
       </div>
       <div class="cal-anz-chart-t">${mode === 'control'
-        ? '📊 Carta de control (Shewhart) · valores individuales · LC = media, LSC/LIC = ±3σ · puntos rojos = fuera de control'
+        ? '📊 Carta de control de individuos (I-MR) · un proceso · LC = media, LSC/LIC = media ± 3σ con σ = MR̄/1,128 (rango móvil) · puntos rojos = fuera de control'
         : mode === 'distribucion'
           ? '📦 Distribución por tanque · caja = Q1–mediana–Q3 · bigotes 1.5·IQR' + (range ? ' · banda verde = rango objetivo' : '')
           : '📈 Tendencia · promedio por día' + (range ? ' · banda verde = rango objetivo' : '')}</div>
-      ${mode === 'distribucion' ? calBoxplotSVG(boxGroups, param, range) : '<div class="cal-anz-chart"><canvas id="calTrendChart"></canvas></div>'}
+      ${mode === 'distribucion' ? calBoxplotSVG(boxGroups, param, range) : ctrlVarios || '<div class="cal-anz-chart"><canvas id="calTrendChart"></canvas></div>'}
       ${affected.length ? `<div class="cal-anz-aff">
         <div class="cal-anz-aff-t">⚠️ Puntos afectados en ${esc(param.label)}</div>
         <div class="cal-anz-aff-list">${affected.map((a) => `<span class="cal-anz-aff-chip cal-sev--${a.severity}" title="${esc(CAL_SEV[a.severity].label)}">${esc(a.label)} · <b>${esc(calFmt(a.value))}${esc(u)}</b></span>`).join('')}</div>
@@ -1791,11 +1809,11 @@ function drawCalTrendChart() {
  *  línea central (media) y límites de control ±3σ; puntos fuera de control en rojo. */
 function drawCalControlChart(t) {
   const pts = t.indiv || []; const c = t.ctrl;
-  if (!pts.length) return;
+  if (!pts.length || (t.procesos && t.procesos.length > 1)) return;   // H-005: con varios procesos no hay carta
   const dates = pts.map((p) => p.d);
   const labels = dates.map((d) => fmtShort(d));
   const data = pts.map((p) => +p.value.toFixed(4));
-  const isOut = pts.map((p) => !!c && (p.value > c.ucl || p.value < c.lcl));
+  const isOut = pts.map((p) => !!c && c.ucl != null && (p.value > c.ucl || p.value < c.lcl));
   const ptColor = isOut.map((o) => (o ? '#e8303e' : t.color));
   // Líneas de control (LC/LSC/LIC) dibujadas sobre el área del gráfico.
   const limitsPlugin = {
@@ -1812,9 +1830,9 @@ function drawCalControlChart(t) {
         ctx.setLineDash([]); ctx.fillStyle = color; ctx.font = '10px system-ui,sans-serif'; ctx.textAlign = 'right';
         ctx.fillText(label, ca.right - 2, py - 3);
       };
-      line(c.ucl, '#e8730c', [5, 4], 'LSC ' + calFmt(c.ucl));
+      if (c.ucl != null) line(c.ucl, '#e8730c', [5, 4], 'LSC ' + calFmt(c.ucl));   // con un solo valor no hay límites
       line(c.mean, '#00838f', [], 'LC ' + calFmt(c.mean));
-      line(c.lcl, '#e8730c', [5, 4], 'LIC ' + calFmt(c.lcl));
+      if (c.lcl != null) line(c.lcl, '#e8730c', [5, 4], 'LIC ' + calFmt(c.lcl));
       ctx.restore();
     },
   };
@@ -2188,20 +2206,21 @@ function petriPlacaHTML(days, dayIdx, day) {
     </div>`;
 }
 
-/** Cinética de crecimiento por regresión log-lineal de ΣUFC vs día:
- *  ln(UFC) = a + μ·día → μ = tasa específica (día⁻¹), t½ = ln2/μ (si μ>0), R² = ajuste.
- *  `pts` = [{x: día relativo, y: ΣUFC>0}]. Devuelve nulls si <2 puntos. */
+/** Tendencia de la SUMA diaria de UFC por regresión log-lineal de ΣUFC vs día:
+ *  ln(ΣUFC) = a + μ·día → μ = pendiente (e^μ − 1 = cambio por día), R² = ajuste.
+ *  H-007: ΣUFC suma todas las muestras del día, así que μ NO es una tasa de crecimiento biológica (ya no se deriva un
+ *  «tiempo de duplicación»). `pts` = [{x: día relativo, y: ΣUFC>0}]. Devuelve nulls si <2 puntos. */
 function kinetics(pts) {
   const n = pts.length;
-  if (n < 2) return { mu: null, doubling: null, r2: null, a: null, n };
+  if (n < 2) return { mu: null, r2: null, a: null, n };
   const xs = pts.map((p) => p.x), ys = pts.map((p) => Math.log(p.y));
   const mx = xs.reduce((s, v) => s + v, 0) / n, my = ys.reduce((s, v) => s + v, 0) / n;
   let sxx = 0, sxy = 0, syy = 0;
   for (let i = 0; i < n; i++) { const dx = xs[i] - mx, dy = ys[i] - my; sxx += dx * dx; sxy += dx * dy; syy += dy * dy; }
-  if (sxx === 0) return { mu: null, doubling: null, r2: null, a: null, n };
+  if (sxx === 0) return { mu: null, r2: null, a: null, n };
   const mu = sxy / sxx;
   const r2 = syy > 0 ? (sxy * sxy) / (sxx * syy) : 1;
-  return { mu, doubling: mu > 0 ? Math.log(2) / mu : null, r2, a: my - mu * mx, n };
+  return { mu, r2, a: my - mu * mx, n };
 }
 
 /** Matriz de tendencias: por patógeno, ΣUFC y peor nivel POR DÍA (para el heatmap) +
@@ -2241,8 +2260,8 @@ function petriTrendMatrix(rows) {
 }
 
 /** Pestaña Tendencias (Placa Petri): RANKING de patógenos en barras ordenables
- *  (μ crecimiento / Σ UFC / alertas) como estructura principal + DETALLE del patógeno
- *  elegido con su cinética (μ / t. duplicación / R²) y el gráfico de tendencia. */
+ *  (tendencia de la suma diaria / Σ UFC / alertas) como estructura principal + DETALLE del patógeno
+ *  elegido con su tendencia (% por día y R², H-007) y el gráfico. */
 function petriTendenciasHTML(rows) {
   const t = petriTrendMatrix(rows);
   if (t.days.length < 2) return `<div class="empty-state" style="padding:36px">Se necesitan al menos 2 días con registro para ver tendencias.<br><span class="muted">Filtro actual: ${t.days.length} día(s).</span></div>`;
@@ -2258,9 +2277,13 @@ function petriTendenciasHTML(rows) {
   const metric = (p) => sort === 'ufc' ? p.latest : sort === 'alertas' ? p.alertDays : (p.kin.mu == null ? -Infinity : p.kin.mu);
   const ranked = [...t.pathogens].sort((a, b) => metric(b) - metric(a));
   const maxM = Math.max(1, ...ranked.map((p) => { const m = metric(p); return m === -Infinity ? 0 : Math.max(0, m); }));
+  /* H-007 (auditoría 2026-09-25, aprobado 2026-10-03) · la serie es la SUMA diaria de UFC de todas las muestras del
+     filtro: depende de cuántas se tomaron cada día, no es el crecimiento de una población. Se rotula como lo que es —la
+     tendencia de esa suma, en % de cambio por día (e^μ − 1)— y ya no se da un «tiempo de duplicación». */
+  const tendTxt = (mu) => (mu == null ? '—' : (mu >= 0 ? '+' : '') + Math.round((Math.exp(mu) - 1) * 100) + ' %/día');
   const valOf = (p) => sort === 'ufc' ? fmtNum(p.latest)
     : sort === 'alertas' ? `${p.alertDays} alerta${p.alertDays !== 1 ? 's' : ''}`
-    : (p.kin.mu == null ? '—' : (p.kin.mu >= 0 ? '+' : '') + p.kin.mu.toFixed(2) + '/d');
+    : tendTxt(p.kin.mu);
   const sortBtn = (key, label) => `<button class="mic-tr-sortb${sort === key ? ' is-on' : ''}" data-mic-trendsort="${key}">${label}</button>`;
   const bars = ranked.map((p) => {
     const on = p.key === vState.petriTrendKey;
@@ -2273,27 +2296,24 @@ function petriTendenciasHTML(rows) {
       </div>`;
   }).join('');
   const rankHtml = `<div class="card mic-tr-rank">
-      <div class="mic-chart-title">📊 Ranking de crecimiento por patógeno <span class="muted">· Σ UFC por día (${esc(fmtShort(t.days[0].d))} → ${esc(fmtShort(t.days[t.days.length - 1].d))}) · elige uno para su cinética</span></div>
-      <div class="mic-tr-sort"><span class="mic-tr-sort-l">Ordenar por:</span>${sortBtn('mu', 'μ crecim.')}${sortBtn('ufc', 'Σ UFC')}${sortBtn('alertas', 'alertas')}</div>
+      <div class="mic-chart-title">📊 Tendencia de la suma diaria de UFC por patógeno <span class="muted">· Σ UFC por día (${esc(fmtShort(t.days[0].d))} → ${esc(fmtShort(t.days[t.days.length - 1].d))}) · elige uno para ver su tendencia</span></div>
+      <div class="mic-tr-sort"><span class="mic-tr-sort-l">Ordenar por:</span>${sortBtn('mu', 'tendencia')}${sortBtn('ufc', 'Σ UFC')}${sortBtn('alertas', 'alertas')}</div>
       <div class="mic-tr-list">${bars}</div>
     </div>`;
 
-  // Detalle: cinética de crecimiento + gráfico de tendencia del patógeno activo.
+  // Detalle: tendencia de la suma diaria (H-007) + gráfico del patógeno activo.
   const k = active.kin;
-  const muTxt = k.mu == null ? '—' : (k.mu >= 0 ? '+' : '') + k.mu.toFixed(2) + '/d';
-  const dobTxt = k.doubling == null ? '—' : k.doubling.toFixed(1) + ' d';
   const r2Txt = k.r2 == null ? '—' : k.r2.toFixed(2);
   const detail = `<div class="card mic-th-detail">
       <div class="mic-th-dhead"><span class="mic-pe-dot" style="background:${active.color}"></span><span class="mic-th-dname">${esc(active.label)}</span></div>
       <div class="mic-th-kpis">
-        <span class="mic-th-kpi" title="Tasa específica de crecimiento μ (pendiente de la regresión log-lineal de ΣUFC)"><b>${muTxt}</b>μ crecimiento</span>
-        <span class="mic-th-kpi" title="Tiempo de duplicación = ln2/μ (solo si μ>0)"><b>${dobTxt}</b>t. duplicación</span>
+        <span class="mic-th-kpi" title="Cambio medio por día de la SUMA diaria de UFC de todas las muestras del filtro (ajuste exponencial). Depende de cuántas muestras se tomaron cada día: no es una tasa de crecimiento biológica"><b>${tendTxt(k.mu)}</b>tendencia de la suma diaria</span>
         <span class="mic-th-kpi" title="Bondad de ajuste del modelo exponencial (0–1)"><b>${r2Txt}</b>R²</span>
         <span class="mic-th-kpi" title="Σ UFC del último día en que se midió ESTE patógeno, que no tiene por qué ser el último del rango${active.latIdx >= 0 ? ' · ' + esc(fmtShort(t.days[active.latIdx].d)) : ''}"><b>${fmtNum(active.latest)}</b>Σ UFC última medición${active.latIdx >= 0 && active.latIdx !== t.days.length - 1 ? ` <i class="mic-th-stale">(${esc(fmtShort(t.days[active.latIdx].d))})</i>` : ''}</span>
         <span class="mic-th-kpi"><b>${fmtNum(active.max)}</b>máx</span>
       </div>
       <div class="mic-th-chart"><canvas id="micTrendChart"></canvas></div>
-      <div class="mic-th-note muted">μ = pendiente de ln(ΣUFC) vs día · curva punteada = ajuste exponencial (${active.nUfc} día(s) con UFC).</div>
+      <div class="mic-th-note muted">Tendencia = ajuste exponencial de la Σ UFC por día del filtro, que suma todas las muestras de cada día (depende de cuántas se tomaron: no es el crecimiento de una población) · curva punteada = ese ajuste (${active.nUfc} día(s) con UFC).</div>
     </div>`;
   return rankHtml + detail;
 }
