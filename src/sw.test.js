@@ -501,8 +501,11 @@ describe('Build · precache-assets.json, la lista que lee el service worker', ()
     const cfg = typeof config === 'function' ? config({ command: 'build', mode: 'production' }) : config;
     const plugin = (cfg.plugins || []).find((p) => p && p.name === 'mcp-precache-assets');
     expect(plugin, 'el plugin no está en vite.config.js · plugins').toBeTruthy();
+    // 2026-10-03 · en `post`: si corre antes que `vite:css-post`, la lista anuncia los trozos de sólo-CSS que éste
+    // borra después (el `leaflet-*.js` que daba 404 en Pages).
+    expect(plugin.generateBundle.order, 'la lista tiene que salir del bundle DEFINITIVO').toBe('post');
     const emitidos = [];
-    plugin.generateBundle.call({ emitFile: (f) => emitidos.push(f) }, {}, {
+    plugin.generateBundle.handler.call({ emitFile: (f) => emitidos.push(f) }, {}, {
       'assets/index-AAA.js': {}, 'assets/sheets.worker-BBB.js': {}, 'assets/registros-CCC.css': {},
       'index.html': {}, 'sw.js': {},
     });

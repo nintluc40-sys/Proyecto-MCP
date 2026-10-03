@@ -4,14 +4,20 @@ import { defineConfig } from 'vite';
    en `precache-assets.json`, para que el service worker lo guarde al INSTALARSE. Los bloques
    diferidos —Registros, Biología Molecular, el tablero de Maduración, el Worker de lectura del
    libro— no salen en index.html: sin esta lista, tras un despliegue, un equipo que no los abriera
-   con red no podía abrirlos sin señal. La lee public/sw.js (assetsDelBuild). */
+   con red no podía abrirlos sin señal. La lee public/sw.js (assetsDelBuild).
+   2026-10-03 · `order: 'post'`: el `generateBundle` de un plugin normal corre ANTES que el de `vite:css-post`, que
+   después BORRA los trozos JS que sólo importaban CSS (el de Leaflet). La lista anunciaba así un `leaflet-*.js` que no
+   existía (404 en Pages; `tras-despliegue` en 13/14). En `post`, la lista sale del bundle ya definitivo. */
 function listaDePrecache() {
   return {
     name: 'mcp-precache-assets',
     apply: 'build',
-    generateBundle(_, bundle) {
-      const lista = Object.keys(bundle).filter((f) => f.startsWith('assets/')).sort().map((f) => './' + f);
-      this.emitFile({ type: 'asset', fileName: 'precache-assets.json', source: JSON.stringify(lista) });
+    generateBundle: {
+      order: 'post',
+      handler(_, bundle) {
+        const lista = Object.keys(bundle).filter((f) => f.startsWith('assets/')).sort().map((f) => './' + f);
+        this.emitFile({ type: 'asset', fileName: 'precache-assets.json', source: JSON.stringify(lista) });
+      },
     },
   };
 }
