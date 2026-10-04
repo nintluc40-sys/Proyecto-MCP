@@ -39,6 +39,15 @@
 .planta .meta-row button { font: 600 12.5px/1 var(--font-sans); padding: 7px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
 .planta .meta-row button[type="submit"] { background: var(--larv); border-color: var(--larv); color: #fff; }
 .planta .meta-form small { color: var(--muted); }
+.planta .prod-nav { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.planta .mes-btn { width: 32px; height: 32px; border-radius: 8px; border: 1.5px solid var(--line); background: var(--panel); color: var(--larv); font-size: 13px; font-weight: 900; cursor: pointer; }
+.planta .mes-btn:hover:not(:disabled) { background: var(--larv); color: #fff; }
+.planta .mes-btn:disabled { opacity: .35; cursor: default; }
+.planta .prod-mes { text-align: center; display: grid; gap: 2px; min-width: 0; }
+.planta .prod-mes b { font: 800 15px/1.15 var(--font-sans); }
+.planta .prod-mes span { font: 400 11.5px/1.2 var(--font-mono); color: var(--muted); }
+.planta .mes-slider { width: 100%; margin: 0; accent-color: var(--larv); }
+.planta .mes-slider[hidden] { display: none; }
 .planta .prod-big { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
 .planta .prod-big b { font: 800 30px/1 var(--font-sans); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
 .planta .prod-big span { font-size: 13px; color: var(--muted); }

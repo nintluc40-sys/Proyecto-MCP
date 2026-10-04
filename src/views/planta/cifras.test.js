@@ -61,6 +61,26 @@ describe('cifras de gerencia · producción del mes', () => {
   });
 });
 
+describe('cifras de gerencia · selector de mes (como la tabla Producción Omarsa)', () => {
+  it('trae los meses con datos en orden y la posición del elegido (por defecto, el último)', () => {
+    expect(C.meses.map((m) => m.mes)).toEqual([expect.stringMatching(/^Agosto/), expect.stringMatching(/^Septiembre/)]);
+    expect(C.pos).toBe(1);
+    expect(C.mIdx).toBe(C.meses[1].mIdx);
+  });
+
+  it('un mes anterior da SUS cifras y sus nauplios del mes de calendario', () => {
+    const A = cifrasGerencia(store.globalData, '2030-09-20', C.meses[0].mIdx);
+    expect(A).toMatchObject({ pos: 0, corridas: ['874'], total: 70000, despachado: 70000, enCultivo: 0, siembra: 100000, modulos: 1 });
+    expect(A.supervivencia).toBeCloseTo(70, 6);
+    expect(A.nauplios).toMatchObject({ n5: 9000000, desoves: 9, desde: '2030-08-01', hasta: '2030-08-31' });
+  });
+
+  it('un mes que no tiene datos (o ninguno) vuelve al último', () => {
+    expect(cifrasGerencia(store.globalData, '2030-09-20', 9999).pos).toBe(1);
+    expect(cifrasGerencia(store.globalData, '2030-09-20', undefined).pos).toBe(1);
+  });
+});
+
 describe('cifras de gerencia · nauplios y meta', () => {
   it('nauplios y desoves del mes de calendario, recortado a hoy', () => {
     expect(C.nauplios).toMatchObject({ n5: 6500000, desoves: 16, desde: '2030-09-01', hasta: '2030-09-20' });

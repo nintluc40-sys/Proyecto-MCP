@@ -7,7 +7,8 @@
      las corridas del mes de producción (`corridasOfMonth`), módulo a módulo con `modCorStats`, CIO INCLUIDO (como la
      tabla). Se separa en despachado (módulos con todos sus tanques despachados, `despachadoFull`, el criterio de la
      tabla) y en cultivo (el resto: lo que sigue en el agua, despachándose o no).
-   · El mes es el de PRODUCCIÓN (por corridas), el último con datos: el mismo que abre la tabla.
+   · El mes es el de PRODUCCIÓN (por corridas): por defecto el último con datos, el mismo que abre la tabla; con el
+     selector de la tarjeta (2026-10-04, usuario), cualquiera de los meses con datos (`presentMonths`, los de la tabla).
    · La supervivencia es la de la fila Total de la tabla: Σ población actual ÷ Σ siembra × 100, con tope de 100.
    · Los nauplios (N5) y los desoves son los de Visitante (`produccionDelMes` de visitante/maduracion.produccion.js):
      el mes de CALENDARIO que corresponde al de producción (`calendarRangeOfMonth`), recortado a hoy.
@@ -28,14 +29,16 @@ export function normalizarMeta(v) {
 }
 
 /**
- * Las cifras del mes de producción en curso (el último con datos de Larvicultura en el store).
+ * Las cifras de un mes de producción: `mIdx` si es uno de los meses con datos; si no (o sin él), el último.
  * `filas`: todas las del store (los desoves salen de ahí). `hoy`: `aaaa-mm-dd`, recorta los nauplios.
+ * Trae también los meses con datos, en orden, y la posición del elegido (`pos`), para el selector.
  * null si no hay ninguna corrida con mes.
  */
-export function cifrasGerencia(filas, hoy) {
+export function cifrasGerencia(filas, hoy, mIdxElegido) {
   const meses = presentMonths();
   if (!meses.length) return null;
-  const mIdx = meses[meses.length - 1];
+  const pos = meses.includes(mIdxElegido) ? meses.indexOf(mIdxElegido) : meses.length - 1;
+  const mIdx = meses[pos];
   const corridas = corridasOfMonth(mIdx);
   let siembra = 0, total = 0, despachado = 0, modulos = 0, modulosDespachados = 0;
   for (const cor of corridas) {
@@ -50,7 +53,7 @@ export function cifrasGerencia(filas, hoy) {
   const rango = calendarRangeOfMonth(mIdx);
   const mad = rango ? produccionDelMes(filas, rango, hoy) : null;
   return {
-    mes: monthLabelAt(mIdx), corridas,
+    mes: monthLabelAt(mIdx), mIdx, pos, meses: meses.map((m) => ({ mIdx: m, mes: monthLabelAt(m) })), corridas,
     total, despachado, enCultivo: total - despachado, siembra,
     supervivencia: siembra > 0 ? Math.min(total / siembra * 100, 100) : null,
     modulos, modulosDespachados,

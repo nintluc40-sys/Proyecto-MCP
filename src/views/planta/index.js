@@ -43,12 +43,18 @@ const MARCO = `
       <p class="datos" id="estado-datos" role="status">Cargando datos de producción…</p>
     </header>
     <section class="prod" aria-label="Producción del mes">
-      <div class="prod-head"><h2 id="prod-mes">Producción del mes</h2><button type="button" class="meta-btn" id="meta-btn" aria-expanded="false" aria-controls="meta-form">⚙ Meta</button></div>
+      <div class="prod-head"><h2>Producción del mes</h2><button type="button" class="meta-btn" id="meta-btn" aria-expanded="false" aria-controls="meta-form">⚙ Meta</button></div>
       <form class="meta-form" id="meta-form" hidden>
         <label for="meta-in">Meta del mes, en millones de larvas</label>
         <div class="meta-row"><input id="meta-in" type="number" min="1" step="1" inputmode="numeric" required><button type="submit">Guardar</button><button type="button" id="meta-reset">Volver a 400</button></div>
         <small>Se guarda sólo en este equipo.</small>
       </form>
+      <div class="prod-nav">
+        <button type="button" class="mes-btn" id="mes-prev" aria-label="Mes anterior" disabled>◀</button>
+        <div class="prod-mes"><b id="prod-mes">—</b><span id="prod-cor"></span></div>
+        <button type="button" class="mes-btn" id="mes-next" aria-label="Mes siguiente" disabled>▶</button>
+      </div>
+      <input type="range" class="mes-slider" id="mes-slider" min="0" max="0" value="0" step="1" aria-label="Mes de producción" hidden>
       <div class="prod-big"><b id="prod-total">—</b><span id="prod-meta"></span><em id="prod-pct"></em></div>
       <div class="prod-bar" id="prod-bar" role="img" aria-label="Producción del mes frente a la meta"><i class="d" id="prod-bar-d"></i><i class="c" id="prod-bar-c"></i><span class="goal" id="prod-goal"></span></div>
       <div class="prod-split"><span><i class="d"></i><span id="prod-desp">—</span></span><span><i class="c"></i><span id="prod-cult">—</span></span></div>
@@ -90,13 +96,21 @@ export function plantaView(root) {
       + `<small class="mono">${esc(e.message)}</small></div>`;
     return;
   }
+  // El mes de la tarjeta de producción: null = el último con datos (sigue al mes en curso); al elegir uno anterior se
+  // conserva en cada actualización de datos, como en la tabla Producción Omarsa.
+  let mesElegido = null;
+  const cifrasDelMes = () => cifrasGerencia(store.globalData, hoyLocal(), mesElegido);
+  escena.alElegirMes((mIdx, esUltimo) => {
+    mesElegido = esUltimo ? null : mIdx;
+    try { escena.pintarMes(cifrasDelMes()); } catch (e) { console.error('[planta] cifras', e); escena.aviso('No se pudo calcular la producción del mes: ' + e.message); }
+  });
   const pintar = () => {
     if (!store.connected || !store.globalData.length) { escena.pintarEstado(null); return; }
     const fallos = [];
     let larv = null, mad = null, cifras = null;
     try { larv = estadoPlanta(); } catch (e) { console.error('[planta] larvicultura', e); fallos.push('larvicultura (' + e.message + ')'); }
     try { mad = estadoMaduracion(store.globalData); } catch (e) { console.error('[planta] maduración', e); fallos.push('maduración (' + e.message + ')'); }
-    try { cifras = cifrasGerencia(store.globalData, hoyLocal()); } catch (e) { console.error('[planta] cifras', e); fallos.push('producción del mes (' + e.message + ')'); }
+    try { cifras = cifrasDelMes(); } catch (e) { console.error('[planta] cifras', e); fallos.push('producción del mes (' + e.message + ')'); }
     escena.pintarEstado({ modulos: larv ? larv.modulos : {}, resumen: larv ? larv.resumen : null, mad, cifras });
     const hora = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
     escena.aviso(fallos.length ? 'No se pudo calcular: ' + fallos.join(' · ') : 'Datos del MCP · puestos al día a las ' + hora);

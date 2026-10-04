@@ -19,6 +19,8 @@
    lleva la cámara a él y abre su ficha.
    Ahorro de batería (2026-10-04, usuario): tras 5 s sin tocarla la maqueta sigue animada a ~15 cuadros por segundo
    y vuelve a ~60 al tocarla o al moverse la cámara; fuera de pantalla no se dibuja.
+   Selector de mes (2026-10-04, usuario): la tarjeta de producción se mueve por los meses con datos, con ◀ ▶ y un
+   deslizador como la tabla Producción Omarsa; el resto de la vista sigue mostrando hoy.
    Rótulos sin encimarse (2026-10-04, usuario): de lejos y en pantallas angostas se acortan («7 ⚠6»); si aún chocan,
    se oculta el de menor prioridad (el elegido, luego el de más alertas, luego larvicultura) hasta que se acerque o gire.
    Reemplazo por tiempo (2026-10-04): los días en producción de cada lote frente a los 60; el que pasa va a «Qué atender
@@ -33,7 +35,7 @@ import { fmtShort } from '../../core/dates.js';
 import { META_POR_DEFECTO, normalizarMeta } from './cifras.js';
 
 /** Monta la maqueta en `root` (que ya trae el marcado de planta/index.js).
- *  Devuelve { dispose, pintarEstado(estado|null), aviso(texto) }. */
+ *  Devuelve { dispose, pintarEstado(estado|null), aviso(texto), pintarMes(cifras), alElegirMes(fn(mIdx, esUltimo)) }. */
 export function montarPlanta(root) {
 const $ = s => root.querySelector(s);
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -883,19 +885,19 @@ const META_KEY = 'planta_meta_mes';
 const leerMeta = () => { try { return normalizarMeta(localStorage.getItem(META_KEY)); } catch (_) { return META_POR_DEFECTO; } };
 const guardarMeta = (v) => { try { if (v === META_POR_DEFECTO) localStorage.removeItem(META_KEY); else localStorage.setItem(META_KEY, String(v)); } catch (_) { /* sin almacenamiento: sólo en esta sesión */ } };
 let meta = leerMeta(), ultimasCifras = null;
-const millones = (v, d = 1) => fmt(v / 1e6, d) + ' M';
+// es-EC como fmtPop: agrupa los miles también en cuatro cifras («1.006,0 M»; 'es' daba «1006,0 M»)
+const millones = (v, d = 1) => (v / 1e6).toLocaleString('es-EC', { minimumFractionDigits: d, maximumFractionDigits: d }) + ' M';
 function pintarProduccion(C) {
   ultimasCifras = C;
   $('#prod-meta').textContent = 'de ' + millones(meta, meta % 1e6 ? 1 : 0);
+  pintarSelectorMes(C);
   if (!C) {
-    $('#prod-mes').textContent = 'Producción del mes';
     ['#prod-total', '#prod-sv', '#prod-n5', '#prod-des', '#prod-desp', '#prod-cult'].forEach((q) => { $(q).textContent = '—'; });
     $('#prod-pct').textContent = ''; $('#prod-nota').textContent = estadoCargado ? 'Sin corridas con mes de producción' : 'Cargando datos…';
     $('#prod-bar-d').style.width = $('#prod-bar-c').style.width = '0%'; $('#prod-goal').style.left = '100%';
     return;
   }
   const pct = C.total / meta * 100, escala = Math.max(C.total, meta);
-  $('#prod-mes').textContent = 'Producción · ' + C.mes;
   $('#prod-total').textContent = millones(C.total);
   $('#prod-pct').textContent = fmt(pct, 0) + ' % de la meta';
   $('#prod-pct').classList.toggle('ok', pct >= 100);
@@ -909,9 +911,29 @@ function pintarProduccion(C) {
   $('#prod-n5').textContent = millones(C.nauplios.n5);
   $('#prod-n5-sub').textContent = 'nauplios N5' + (C.nauplios.desde ? ' · ' + dm(C.nauplios.desde) + ' al ' + dm(C.nauplios.hasta) : '');
   $('#prod-des').textContent = ent(C.nauplios.desoves);
-  const cs = C.corridas;
-  $('#prod-nota').textContent = 'Corridas ' + (cs.length > 1 ? cs[0] + ' a ' + cs[cs.length - 1] : cs[0] || '—') + (C.enCultivo > 0 ? ' · lo que sigue en cultivo aún puede bajar con la supervivencia' : '');
+  $('#prod-nota').textContent = C.enCultivo > 0 ? 'Lo que sigue en cultivo aún puede bajar con la supervivencia.' : '';
 }
+/* El selector de mes: ◀ ▶ y el deslizador por los meses con datos (como la tabla Producción Omarsa). El deslizador
+   sólo cambia el rótulo mientras se arrastra y elige al soltar (`change`), igual que el de la tabla. */
+let alMes = null;
+function pintarSelectorMes(C) {
+  const prev = $('#mes-prev'), next = $('#mes-next'), sl = $('#mes-slider');
+  if (!C) { $('#prod-mes').textContent = '—'; $('#prod-cor').textContent = ''; prev.disabled = next.disabled = true; sl.hidden = true; return; }
+  const cs = C.corridas, n = C.meses.length;
+  $('#prod-mes').textContent = C.mes;
+  $('#prod-cor').textContent = cs.length ? 'corridas ' + cs[0] + (cs.length > 1 ? '–' + cs[cs.length - 1] : '') : '';
+  prev.disabled = C.pos <= 0; next.disabled = C.pos >= n - 1;
+  sl.hidden = n < 2; sl.max = String(n - 1); sl.value = String(C.pos);
+}
+function elegirMes(pos) {
+  const C = ultimasCifras;
+  if (!C || !alMes || pos < 0 || pos >= C.meses.length || pos === C.pos) return;
+  alMes(C.meses[pos].mIdx, pos === C.meses.length - 1);
+}
+$('#mes-prev').addEventListener('click', () => { if (ultimasCifras) elegirMes(ultimasCifras.pos - 1); });
+$('#mes-next').addEventListener('click', () => { if (ultimasCifras) elegirMes(ultimasCifras.pos + 1); });
+$('#mes-slider').addEventListener('input', (e) => { const m = ultimasCifras && ultimasCifras.meses[+e.target.value]; if (m) $('#prod-mes').textContent = m.mes; });
+$('#mes-slider').addEventListener('change', (e) => elegirMes(+e.target.value));
 {
   const btn = $('#meta-btn'), form = $('#meta-form'), inp = $('#meta-in');
   const abrir = (si) => { form.hidden = !si; btn.setAttribute('aria-expanded', String(si)); if (si) { inp.value = String(Math.round(meta / 1e6)); inp.focus(); } };
@@ -1232,5 +1254,5 @@ if (reduced) animateLife(0, 0);
 camera.position.set(-30, 150, 175); controls.target.set(0, 0, 0);
 const ro = new ResizeObserver(resize); ro.observe(vp); resize(); frameView('iso'); fly.dur = 1;
 rafId = requestAnimationFrame(loop);
-return { dispose, pintarEstado, aviso };
+return { dispose, pintarEstado, aviso, pintarMes: pintarProduccion, alElegirMes: (fn) => { alMes = fn; } };
 }
