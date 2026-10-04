@@ -17,6 +17,8 @@
    y guardada en el equipo, y la ocupación en las fichas de cifras.
    «Qué atender hoy» (2026-10-04): las alertas que ya marcan las balizas, agrupadas por módulo o sala; tocar un tanque
    lleva la cámara a él y abre su ficha.
+   Ahorro de batería (2026-10-04, usuario): tras 5 s sin tocarla la maqueta sigue animada a ~15 cuadros por segundo
+   y vuelve a ~60 al tocarla o al moverse la cámara; fuera de pantalla no se dibuja.
    Reemplazo por tiempo (2026-10-04): los días en producción de cada lote frente a los 60; el que pasa va a «Qué atender
    hoy» y sus salas llevan ⏳ en el rótulo.
    ============================================================ */
@@ -1125,11 +1127,25 @@ function animateLife(t, dt) {
   birds.forEach(b => { const d = b.userData, a = t * d.sp + d.ph; b.position.set(d.cx + Math.cos(a) * d.r, d.h + Math.sin(t * .7 + d.ph) * 1.5, d.cz + Math.sin(a) * d.r); b.rotation.y = -a + (d.sp > 0 ? Math.PI : 0); const f = Math.sin(t * 6 + d.ph) * .5; d.wl.rotation.x = f; d.wr.rotation.x = -f; });
 }
 let rafId = 0, disposed = false;
+/* Ahorro de batería: en REPOSO (5 s sin tocarla y sin vuelo de cámara) se dibuja a ~15 cuadros por segundo; fuera de
+   pantalla (en el celular, al bajar al panel) no se dibuja: sólo se mira una vez por segundo si volvió o si la vista se
+   cerró, para liberarla igual (el router no avisa al salir). */
+const REPOSO_MS = 5000, REPOSO_FPS = 15;
+let ultimoToque = performance.now(), ultimoCuadro = 0, enPantalla = true, timerFuera = 0;
+const despertar = () => { ultimoToque = performance.now(); };
+['pointerdown', 'pointermove', 'wheel', 'touchstart', 'keydown'].forEach((ev) => canvas.addEventListener(ev, despertar, { passive: true }));
+controls.addEventListener('change', despertar);   // también mientras la inercia sigue moviendo la cámara
+const io = new IntersectionObserver((es) => {
+  enPantalla = es[es.length - 1].isIntersecting;
+  if (enPantalla && timerFuera) { clearTimeout(timerFuera); timerFuera = 0; despertar(); rafId = requestAnimationFrame(loop); }
+});
+io.observe(vp);
 /* Libera todo lo de la tarjeta gráfica: el router vacía el contenedor al cambiar de vista y no avisa. */
 function dispose() {
   if (disposed) return;
   disposed = true;
-  cancelAnimationFrame(rafId);
+  cancelAnimationFrame(rafId); clearTimeout(timerFuera);
+  io.disconnect();
   if (typeof ro !== 'undefined') ro.disconnect();
   controls.dispose();
   scene.traverse((o) => {
@@ -1143,17 +1159,24 @@ function dispose() {
 let slowFrames = 0, fastFrames = 0, shadowTick = 0;
 function loop(now) {
   if (!root.isConnected) { dispose(); return; }
+  if (!enPantalla) { timerFuera = setTimeout(() => { timerFuera = 0; rafId = requestAnimationFrame(loop); }, 1000); return; }
   rafId = requestAnimationFrame(loop);
+  const activo = !!fly || now - ultimoToque < REPOSO_MS;
+  if (!activo && now - ultimoCuadro < 1000 / REPOSO_FPS - 2) return;
+  ultimoCuadro = now;
   const rawDt = (now - last) / 1000;
-  slowFrames = rawDt > .055 ? slowFrames + 1 : Math.max(0, slowFrames - .5);
-  fastFrames = rawDt < .022 ? fastFrames + 1 : 0;
-  if (slowFrames > 90 && renderer.getPixelRatio() > DPR_MIN) { renderer.setPixelRatio(Math.max(DPR_MIN, renderer.getPixelRatio() - .25)); renderer.setSize(W, H, false); slowFrames = 0; }
-  if (fastFrames > 240 && renderer.getPixelRatio() < DPR_MAX) { renderer.setPixelRatio(Math.min(DPR_MAX, renderer.getPixelRatio() + .25)); renderer.setSize(W, H, false); fastFrames = 0; }
+  // la nitidez se ajusta sólo con el ritmo pleno: los cuadros espaciados del reposo no son «equipo lento»
+  if (activo) {
+    slowFrames = rawDt > .055 ? slowFrames + 1 : Math.max(0, slowFrames - .5);
+    fastFrames = rawDt < .022 ? fastFrames + 1 : 0;
+    if (slowFrames > 90 && renderer.getPixelRatio() > DPR_MIN) { renderer.setPixelRatio(Math.max(DPR_MIN, renderer.getPixelRatio() - .25)); renderer.setSize(W, H, false); slowFrames = 0; }
+    if (fastFrames > 240 && renderer.getPixelRatio() < DPR_MAX) { renderer.setPixelRatio(Math.min(DPR_MAX, renderer.getPixelRatio() + .25)); renderer.setSize(W, H, false); fastFrames = 0; }
+  }
   if (++shadowTick % 6 === 0) renderer.shadowMap.needsUpdate = true; // sombras recalculadas 10 veces por segundo
   try { frameBody(now); } catch (err) { console.error(err); }
 }
 function frameBody(now) {
-  const dt = Math.min(.05, (now - last) / 1000); last = now; const t = now / 1000;
+  const dt = Math.min(.08, (now - last) / 1000); last = now; const t = now / 1000;   // .08: el paso del reposo (~15 cps) sin frenar a la gente
   if (fly) { const k = Math.min(1, (now - fly.t0) / fly.dur), e = ease(k); camera.position.lerpVectors(fly.p0, fly.p1, e); controls.target.lerpVectors(fly.c0, fly.c1, e); if (k >= 1) fly = null; }
   controls.update();
   sky.position.copy(camera.position); stars.position.copy(camera.position);
