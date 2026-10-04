@@ -8159,6 +8159,51 @@ function madIngRevisar(){
   _madIngPinta(res, madIngBuildRows(model).length);
   return _madRevisarRemata("mi-report", res, MAD_ING_SHEET);
 }
+/* 2026-10-04 (usuario) · 🖨 PDF DEL INGRESO, junto a los demás botones. Imprime LO QUE HAY EN PANTALLA con las MISMAS
+   filas que se enviarían (madIngBuildRows: una por sala·tanque), así que el papel no puede contradecir a la hoja; y, como
+   ☁️, SÓLO si valida (decisión del usuario): con errores los pinta en el informe y no abre nada. Ventana propia +
+   window.print(), como los demás PDF de Maduración (madAlimPdf, madResumenPdf). Fecha, lote y guía van en la cabecera. */
+const MAD_ING_PDF_CABECERA = ["fecha","lote","id","guiaIngreso"];
+function _madIngPdfHTML(model, filas, avisos){
+  const m=model||{};
+  const fecha=sanitizeStr(m.fecha,10), lote=madIngNormLote(m.lote), guia=sanitizeStr(m.guiaIngreso,80);
+  const idx=[]; MAD_ING_COLUMNS.forEach(function(c, i){ if(MAD_ING_PDF_CABECERA.indexOf(c.k)===-1) idx.push(i); });
+  const iM=MAD_ING_COLUMNS.findIndex(function(c){ return c.k==="machos"; }), iH=MAD_ING_COLUMNS.findIndex(function(c){ return c.k==="hembras"; });
+  const suma=function(i){ return filas.reduce(function(a, f){ return a+(Number(f[i])||0); }, 0); };
+  const celda=function(v){ return '<td>'+escapeHtml(v===""||v==null ? "—" : String(v))+'</td>'; };
+  const titulo="Maduración · Ingreso · Lote "+(lote||"—")+" · "+(fecha||"—");
+  return '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+escapeHtml(titulo)+'</title>'
+    + '<style>body{font-family:Arial,Helvetica,sans-serif;margin:18px;color:#0f172a}h1{font-size:16px;margin:0 0 6px}'
+    + '.cab{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;margin-bottom:10px}.cab b{color:#475569}'
+    + 'table{border-collapse:collapse;font-size:11px}th,td{border:1px solid #cbd5e1;padding:3px 6px;text-align:left}'
+    + 'th{background:#f1f5f9}tr.tot td{font-weight:700;background:#f8fafc}.av{margin-top:10px;font-size:11px;color:#92400e}'
+    + '@media print{body{margin:8mm}}</style></head><body>'
+    + '<h1>'+escapeHtml(titulo)+'</h1>'
+    + '<div class="cab"><span><b>Fecha:</b> '+escapeHtml(fecha||"—")+'</span><span><b>Lote:</b> '+escapeHtml(lote||"—")+'</span>'
+    +   '<span><b>Guía de ingreso:</b> '+escapeHtml(guia||"—")+'</span><span><b>Impreso:</b> '+escapeHtml(new Date().toLocaleString("es-EC"))+'</span></div>'
+    + '<table><thead><tr>'+idx.map(function(i){ return '<th>'+escapeHtml(MAD_ING_COLUMNS[i].h)+'</th>'; }).join("")+'</tr></thead><tbody>'
+    + filas.map(function(f){ return '<tr>'+idx.map(function(i){ return celda(f[i]); }).join("")+'</tr>'; }).join("")
+    + '<tr class="tot">'+idx.map(function(i, j){
+        if(i===iM || i===iH) return celda(suma(i));
+        return j===0 ? '<td>Total · '+filas.length+(filas.length===1 ? ' tanque' : ' tanques')+'</td>' : '<td></td>';
+      }).join("")+'</tr>'
+    + '</tbody></table>'
+    + ((avisos||[]).length ? '<div class="av"><b>Avisos:</b><ul>'+avisos.map(function(a){ return '<li>'+escapeHtml(a)+'</li>'; }).join("")+'</ul></div>' : '')
+    + '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},300);});<\/script></body></html>';
+}
+function madIngPdf(){
+  const model=madIngCollect();
+  const res=madIngValidar(model);
+  res.avisos=res.avisos.concat(madIngAvisosOcupacion(model));
+  const filas=madIngBuildRows(model);
+  _madIngPinta(res, filas.length);
+  if(res.errores.length){ toast("Corrige los errores antes de imprimir.","err",4000); return; }
+  if(!filas.length){ toast("No hay ningún tanque con ubicación que imprimir.","warn",4000); return; }
+  const w=window.open("","_blank","width=1000,height=720");
+  if(!w){ toast("El navegador bloqueó la ventana emergente. Permite pop-ups para este sitio.","warn",6000); return; }
+  w.document.write(_madIngPdfHTML(model, filas, res.avisos));
+  w.document.close();
+}
 /* ⚠⚠ INGRESO · COLUMNAS NUEVAS (2026-09-13) Y EL GAS VIEJO. «Maduración Ingreso» se escribe POR
    POSICIÓN y ya tiene filas. Con Crecimiento y Libras el envío pasa de 17 a 18 columnas y corre
    Densidad, Agua e ID un sitio. El GAS NUEVO lo aguanta: su guarda de esquema rechaza cualquier
@@ -8901,6 +8946,7 @@ function renderMadIngreso(){
     +     '<button class="btn" type="button" onclick="madIngGuardarLocal()" title="Guarda en este dispositivo, sin enviarlo a Google Sheets">💾 Guardar local</button>'
     +     '<button class="btn" type="button" style="font-weight:700" onclick="madIngGuardar()">☁️ Guardar y sincronizar</button>'
     +     '<button class="btn" type="button" onclick="madIngVaciar()">🧹 Vaciar</button>'
+    +     '<button class="btn" type="button" onclick="madIngPdf()" title="PDF de lo que hay en pantalla (sólo si valida, como ☁️)">🖨 PDF</button>'
     +   '</div>'
     +   '<div id="mi-report" style="margin-top:12px"></div>'
     +   '<div id="mi-loc">'+_madLocHTML("ingreso")+'</div>'
