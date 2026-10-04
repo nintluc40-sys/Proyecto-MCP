@@ -90,6 +90,23 @@ describe('Tanques · los tanques sin animales se bloquean', () => {
     expect(nota().textContent).toMatch(/🔒 \d+ sin animales, bloqueados/);
   });
 
+  // La grilla navega con Enter y las flechas (madGridKey): una casilla deshabilitada no toma el foco, y sin saltarla el
+  // técnico se quedaba PARADO delante de cada tanque vacío.
+  it('🔴 Enter y las flechas SALTAN la fila de un tanque bloqueado, en las dos direcciones', () => {
+    H._madTanquesPintaVivos(libro({ tanques: {
+      'Sala 1|1': { sala: 'Sala 1', tanque: 1, machos: 12, hembras: 34, composicion: [] },
+      'Sala 1|2': { sala: 'Sala 1', tanque: 2, machos: 0, hembras: 0, composicion: [] },
+      'Sala 1|3': { sala: 'Sala 1', tanque: 3, machos: 5, hembras: 9, composicion: [] },
+    } }));
+    expect(libre(1) && bloqueado(2) && libre(3), 'el fixture ejerce algo: un bloqueado entre dos libres').toBe(true);
+    const tecla = (el, key) => el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    casillas(1)[0].focus();
+    tecla(casillas(1)[0], 'Enter');
+    expect(document.activeElement).toBe(casillas(3)[0]);
+    tecla(casillas(3)[0], 'ArrowUp');
+    expect(document.activeElement).toBe(casillas(1)[0]);
+  });
+
   it('🔴 la referencia GUARDADA también bloquea al volver a abrir la grilla (aunque nadie pulse 🔄)', () => {
     H._madTanquesPintaVivos(libro());
     abrirSala('Sala 2');

@@ -15177,7 +15177,11 @@ function madGridKey(ev){
   // Flechas verticales / Enter: navegan (evitan el spinner del number y el cambio
   // de opción del select) aunque no haya celda destino.
   if(dr!==0) ev.preventDefault();
-  const next = panel.querySelector('[data-r="'+(r+dr)+'"][data-c="'+(c+dc)+'"]');
+  let next = panel.querySelector('[data-r="'+(r+dr)+'"][data-c="'+(c+dc)+'"]');
+  // 2026-10-04 · la casilla de un tanque SIN ANIMALES está deshabilitada (_madTqAplicarBloqueo) y no toma el foco: se
+  // SALTA en la misma dirección hasta la siguiente libre, o el técnico se quedaba parado delante de cada tanque vacío.
+  for(let paso=2; next && next.disabled && next.closest("tr.tq-sin-animales"); paso++)
+    next = panel.querySelector('[data-r="'+(r+dr*paso)+'"][data-c="'+(c+dc*paso)+'"]');
   if(!next) return;
   if(dc!==0) ev.preventDefault();
   if(typeof next.focus==="function") next.focus();
