@@ -1730,11 +1730,14 @@ function _loadSyncQueue(){
     return Array.isArray(a) ? a : [];
   }catch(_){ return []; }
 }
+/* 🔴 2026-10-04 (auditoría final) · DICE SI GUARDÓ. Con el almacenamiento lleno —y nada que purgar— safeSetItem devuelve
+   false en silencio; antes se ignoraba, y quien encolaba decía «📶 en cola» y vaciaba el formulario con el envío PERDIDO. */
+const SYNCQ_SIN_ESPACIO = "no hay espacio en este dispositivo para dejarlo en la cola: no se envió ni se guardó, y lo tecleado sigue en pantalla. Libera espacio y vuelve a guardar";
 function _saveSyncQueue(q){
   try{
-    if(!q || q.length === 0){ localStorage.removeItem(SYNCQ_KEY); return; }
-    safeSetItem(SYNCQ_KEY, JSON.stringify(q), { silent:true });
-  }catch(_){}
+    if(!q || q.length === 0){ localStorage.removeItem(SYNCQ_KEY); return true; }
+    return safeSetItem(SYNCQ_KEY, JSON.stringify(q), { silent:true });
+  }catch(_){ return false; }
 }
 function syncQueueLen(){ return _loadSyncQueue().length; }
 // Identidad de un envío de la cola: su huella y el momento en que entró (dos envíos idénticos no conviven: ver _enqueueSync).
@@ -1744,8 +1747,9 @@ function _claveCola(it){ return (it && it.reqId || "") + "|" + (it && it.ts || 0
 // que representa (por clave de sesión), para que al entregarse desde la cola se
 // marquen "sincronizados" y dejen de reenviarse. Sin mark, la cola se comporta
 // como antes (solo garantiza la entrega).
+// 🔴 2026-10-04 · DEVUELVE si el envío QUEDÓ en la cola (true también si ya estaba): false = no cupo en el almacenamiento.
 function _enqueueSync(payload, reqId, url, mark){
-  if(!payload || !Array.isArray(payload.rows) || payload.rows.length === 0) return;
+  if(!payload || !Array.isArray(payload.rows) || payload.rows.length === 0) return true;   // nada que proteger
   let q = _loadSyncQueue();
   // Evita acumular el mismo envío (misma huella) más de una vez.
   /* PE1.2 (2026-09-16) · pero si es de una ficha de Maduración, la entrada del registro del SEGUNDO guardado tiene
@@ -1757,7 +1761,7 @@ function _enqueueSync(payload, reqId, url, mark){
       mark.keys.forEach(k => { if(_yaEnCola.mark.keys.indexOf(k) === -1) _yaEnCola.mark.keys.push(k); });
       _saveSyncQueue(q);
     }
-    return;
+    return true;   // el envío ya espera en la cola
   }
   // F3: si el envío trae marca, descarta de la cola cualquier ítem PREVIO de las
   // mismas sesiones — su contenido quedó obsoleto (el usuario reeditó y reenvió).
@@ -1775,16 +1779,20 @@ function _enqueueSync(payload, reqId, url, mark){
       Array.isArray(it.mark.keys) && it.mark.keys.length && it.mark.keys.every(k => supKeys.has(k))));
   }
   q.push({ payload, reqId: reqId || "", url: url || "", ts: Date.now(), mark: (mark && mark.kind) ? mark : null });
+  let _fuera = [];
   if(q.length > SYNCQ_MAX){
-    const _fuera = q.slice(0, q.length - SYNCQ_MAX);
+    _fuera = q.slice(0, q.length - SYNCQ_MAX);
     q = q.slice(q.length - SYNCQ_MAX); // conserva los más recientes
-    // B (2026-09-24) · y ya no en silencio: se dice qué se tiró.
-    try{ if(typeof _colaAvisaDescartes === "function") _colaAvisaDescartes(_fuera, "la cola llegó a su tope de " + SYNCQ_MAX); }catch(_){}
   }
-  _saveSyncQueue(q);
+  // 🔴 2026-10-04 · sin espacio el envío NO está en la cola: se dice a quien encola, que no debe dar el dato por a salvo
+  // (ni se avisa de descartes por tope que, al no guardarse, no ocurrieron).
+  if(!_saveSyncQueue(q)) return false;
+  // B (2026-09-24) · y ya no en silencio: se dice qué se tiró.
+  try{ if(_fuera.length && typeof _colaAvisaDescartes === "function") _colaAvisaDescartes(_fuera, "la cola llegó a su tope de " + SYNCQ_MAX); }catch(_){}
   // B (2026-09-24) · con algo en la cola, el reintento automático tiene que estar en marcha, y el indicador contarlo.
   try{ if(typeof _colaAsegura === "function") _colaAsegura(); }catch(_){}
   try{ if(typeof updateSyncUI === "function") updateSyncUI(); }catch(_){}
+  return true;
 }
 /* Lo que sale de la cola SIN llegar a la hoja se AVISA: qué hoja y cuándo se guardó (B, 2026-09-24). */
 function _colaAvisaDescartes(items, motivo){
@@ -2147,7 +2155,12 @@ async function postPayload(payload, url, opts){
     // res === "retry" tras agotar intentos → fallo transitorio (sin conexión,
     // timeout o respuesta ambigua). Se encola para reintento automático; el dato
     // se entregará y verificará solo (F3), así que NO es un error para el usuario.
-    _enqueueSync(payload, _fp, url, opts && opts.mark);
+    // 🔴 2026-10-04 · sólo es «en cola» si de verdad quedó en la cola (sin espacio no queda: ver _saveSyncQueue).
+    if(!_enqueueSync(payload, _fp, url, opts && opts.mark)){
+      if(opts) opts.gasMessage = SYNCQ_SIN_ESPACIO;
+      _setOut("error");
+      return false;
+    }
     _setOut("queued");
     if(!(opts && opts.sinAvisos)) toast("📶 Conexión inestable — guardado en cola; se sincronizará y verificará automáticamente","warn",5500);
     // F2: intento de auto-resolución. A los 8s (margen para que un envío lento
@@ -8591,7 +8604,11 @@ const MAD_ING_GAS_VIEJO = "el GAS desplegado no es el de esta app y podría escr
 const MAD_GAS_SIN_CONFIRMAR = "no se pudo confirmar que el GAS desplegado sea el de esta app (no respondió)";
 async function _madPostConSello(payload, gas, opts){
   if(gas === true) return postPayload(payload, gasUrl(), opts);
-  _enqueueSync(payload, _payloadFingerprint(payload), gasUrl(), opts && opts.mark);
+  // 🔴 2026-10-04 · sin espacio el envío no queda en la cola: no se da por a salvo y lo tecleado se queda (ver _saveSyncQueue).
+  if(!_enqueueSync(payload, _payloadFingerprint(payload), gasUrl(), opts && opts.mark)){
+    if(opts){ opts.outcome = "error"; opts.gasMessage = SYNCQ_SIN_ESPACIO; }
+    return false;
+  }
   if(opts) opts.outcome = "queued";
   // PE1.4 · al enviar varios guardados seguidos, el aviso sale una vez (el primero), no uno por envío.
   if(!(opts && opts.silencioso)) toast("📶 En cola, sin enviar: " + MAD_GAS_SIN_CONFIRMAR + ". Se enviará solo en cuanto responda.", "warn", 6500);
