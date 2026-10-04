@@ -9198,6 +9198,51 @@ function madMovRevisar(){
   _madMovPinta(res, madMovBuildRows(model).length);
   return _madRevisarRemata("mv-report", res, MAD_MOV_SHEET);
 }
+/* 2026-10-04 (usuario) · 🖨 PDF DE LOS MOVIMIENTOS, como el de Ingreso (madIngPdf): lo que hay en pantalla con las MISMAS
+   filas que se enviarían (madMovBuildRows: una por tramo origen → destino) y, como ☁️, SÓLO si valida. Fecha, tipo, motivo
+   y observaciones van en la cabecera; los avisos de ocupación, al pie. */
+const MAD_MOV_PDF_CABECERA = ["fecha","tipo","motivo","observaciones","id"];
+function _madMovPdfHTML(model, filas, avisos){
+  const m=model||{};
+  const fecha=sanitizeStr(m.fecha,10), tipo=sanitizeStr(m.tipo,30), motivo=sanitizeStr(m.motivo,60), obs=sanitizeStr(m.observaciones,300);
+  const idx=[]; MAD_MOV_COLUMNS.forEach(function(c, i){ if(MAD_MOV_PDF_CABECERA.indexOf(c.k)===-1) idx.push(i); });
+  const iM=MAD_MOV_COLUMNS.findIndex(function(c){ return c.k==="machos"; }), iH=MAD_MOV_COLUMNS.findIndex(function(c){ return c.k==="hembras"; });
+  const suma=function(i){ return filas.reduce(function(a, f){ return a+(Number(f[i])||0); }, 0); };
+  const celda=function(v){ return '<td>'+escapeHtml(v===""||v==null ? "—" : String(v))+'</td>'; };
+  const titulo="Maduración · Movimientos · "+(tipo||"—")+" · "+(fecha||"—");
+  return '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+escapeHtml(titulo)+'</title>'
+    + '<style>body{font-family:Arial,Helvetica,sans-serif;margin:18px;color:#0f172a}h1{font-size:16px;margin:0 0 6px}'
+    + '.cab{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;margin-bottom:10px}.cab b{color:#475569}'
+    + 'table{border-collapse:collapse;font-size:11px}th,td{border:1px solid #cbd5e1;padding:3px 6px;text-align:left}'
+    + 'th{background:#f1f5f9}tr.tot td{font-weight:700;background:#f8fafc}.av{margin-top:10px;font-size:11px;color:#92400e}'
+    + '@media print{body{margin:8mm}}</style></head><body>'
+    + '<h1>'+escapeHtml(titulo)+'</h1>'
+    + '<div class="cab"><span><b>Fecha:</b> '+escapeHtml(fecha||"—")+'</span><span><b>Tipo:</b> '+escapeHtml(tipo||"—")+'</span>'
+    +   '<span><b>Motivo:</b> '+escapeHtml(motivo||"—")+'</span><span><b>Impreso:</b> '+escapeHtml(new Date().toLocaleString("es-EC"))+'</span>'
+    +   (obs ? '<span><b>Observaciones:</b> '+escapeHtml(obs)+'</span>' : '')+'</div>'
+    + '<table><thead><tr>'+idx.map(function(i){ return '<th>'+escapeHtml(MAD_MOV_COLUMNS[i].h)+'</th>'; }).join("")+'</tr></thead><tbody>'
+    + filas.map(function(f){ return '<tr>'+idx.map(function(i){ return celda(f[i]); }).join("")+'</tr>'; }).join("")
+    + '<tr class="tot">'+idx.map(function(i, j){
+        if(i===iM || i===iH) return celda(suma(i));
+        return j===0 ? '<td>Total · '+filas.length+(filas.length===1 ? ' tramo' : ' tramos')+'</td>' : '<td></td>';
+      }).join("")+'</tr>'
+    + '</tbody></table>'
+    + ((avisos||[]).length ? '<div class="av"><b>Avisos:</b><ul>'+avisos.map(function(a){ return '<li>'+escapeHtml(a)+'</li>'; }).join("")+'</ul></div>' : '')
+    + '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},300);});<\/script></body></html>';
+}
+function madMovPdf(){
+  const model=madMovCollect();
+  const res=madMovValidar(model);
+  res.avisos=res.avisos.concat(madMovAvisosOcupacion(model));
+  const filas=madMovBuildRows(model);
+  _madMovPinta(res, filas.length);
+  if(res.errores.length){ toast("Corrige los errores antes de imprimir.","err",4000); return; }
+  if(!filas.length){ toast("No hay ningún tramo completo que imprimir.","warn",4000); return; }
+  const w=window.open("","_blank","width=1000,height=720");
+  if(!w){ toast("El navegador bloqueó la ventana emergente. Permite pop-ups para este sitio.","warn",6000); return; }
+  w.document.write(_madMovPdfHTML(model, filas, res.avisos));
+  w.document.close();
+}
 // Registro local propio, por lo mismo que en Ingreso: esta ficha no guarda filas locales,
 // así que sin esto un envío ENCOLADO sin señal no dejaría rastro en ningún sitio.
 const MAD_MOV_LOG_KEY = "larv4_mad_mov_log";
@@ -9327,6 +9372,7 @@ function renderMadMovimientos(){
     +     '<button class="btn" type="button" onclick="madMovGuardarLocal()" title="Guarda en este dispositivo, sin enviarlo a Google Sheets">💾 Guardar local</button>'
     +     '<button class="btn" type="button" style="font-weight:700" onclick="madMovGuardar()">☁️ Guardar y sincronizar</button>'
     +     '<button class="btn" type="button" onclick="madMovVaciar()">🧹 Vaciar</button>'
+    +     '<button class="btn" type="button" onclick="madMovPdf()" title="PDF de lo que hay en pantalla (sólo si valida, como ☁️)">🖨 PDF</button>'
     +   '</div>'
     +   '<div id="mv-report" style="margin-top:12px"></div>'
     +   '<div id="mv-loc">'+_madLocHTML("movimientos")+'</div>'
