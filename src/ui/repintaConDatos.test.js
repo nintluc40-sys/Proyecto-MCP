@@ -8,9 +8,9 @@
 
    🔑 AHORA. La vista DECLARA al registrarse `repintaConDatos: false` (como `usaBarraFecha`); el
    shell sólo repinta las que no lo declaran. Registros lo declara en main.js, y fuera de ella SÓLO
-   🏭 Planta (2026-10-04): repintarla reconstruiría la escena 3D y perdería la cámara; hoy no lleva
-   datos, y cuando los lleve los pondrá al día ella misma con EV.DATA. Cualquier otro tablero que lo
-   declarara se quedaría con datos viejos sin avisar.
+   🏭 Planta (2026-10-04): repintarla reconstruiría la escena 3D y perdería la cámara, así que se pone
+   al día ELLA MISMA con EV.DATA (sólo los colores; src/views/planta/index.js). Cualquier otro tablero
+   que lo declarara se quedaría con datos viejos sin avisar.
    ============================================================ */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { readFileSync } from 'node:fs';

@@ -7,13 +7,20 @@
    (0.128.0) para que se vea igual que la que se validó; sólo cambia lo que exige vivir dentro de
    la app: las búsquedas se limitan a su contenedor y la escena se libera sola (dispose) cuando la
    vista sale del documento, porque el router no avisa al cambiar de vista.
-   Tanda 1: sin datos de producción todavía (los colores son los del plano).
+   Tanda 2 (2026-10-04): pinta el ESTADO de producción de cada tanque de larvicultura que le pasa
+   planta/estado.js (color de su etapa, vacío, despachado, agrupado o desinfección; baliza roja si
+   está en alerta), con rótulos, tooltip y ficha de producción. Sin medidas (decisión del usuario).
+   Maduración sigue sin datos hasta la tanda 3.
    ============================================================ */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { LARV, LARV_H, MAT, OTHERS, SITE, C0, STREET } from './plano.js';
+import { STAGE_CATS } from '../supervisor/etapas.js';
+import { fmtPop } from '../../core/format.js';
+import { fmtShort } from '../../core/dates.js';
 
-/** Monta la maqueta en `root` (que ya trae el marcado de planta/index.js). Devuelve { dispose }. */
+/** Monta la maqueta en `root` (que ya trae el marcado de planta/index.js).
+ *  Devuelve { dispose, pintarEstado(estado|null), aviso(texto) }. */
 export function montarPlanta(root) {
 const $ = s => root.querySelector(s);
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -26,17 +33,16 @@ const groups = [], tanks = [];
 LARV.forEach(m => {
   const g = { id: m.id, kind: 'larv', name: 'Módulo ' + m.n, short: 'M' + m.n, box: m.box, H: LARV_H, ridge: m.ridge, canals: m.canals || [], tanks: [], desove: [] };
   m.rows.forEach((z, r) => m.cols.forEach((x, c) => { const t = { g, num: m.num(r, c), type: 'rect', cx: x + m.L / 2, cz: z + m.W / 2, L: m.L + .3, W: m.W + .3, H: LARV_H, real: m.real, c }; t.vol = m.real[0] * m.real[1] * LARV_H; g.tanks.push(t); tanks.push(t); }));
-  g.dims = fmt(m.real[0]) + ' × ' + fmt(m.real[1]) + ' m'; groups.push(g);
+  groups.push(g);
 });
 MAT.forEach(m => {
   const g = { id: m.id, kind: 'mat', name: 'Maduración ' + m.n, short: 'S' + m.n, box: m.box, H: 3.2, tanks: [], desove: [], partition: m.partition };
   if (m.circ) {
     const k = m.circ; k.zs.forEach((z, r) => k.xs.forEach((x, c) => { const t = { g, num: k.num(r, c), type: 'circ', cx: x, cz: z, r: k.d / 2, H: k.h, real: [k.d] }; t.vol = Math.PI * (k.d / 2) ** 2 * k.h; g.tanks.push(t); tanks.push(t); }));
     const d = m.desove; d.zs.forEach((z, r) => d.xs.forEach((x, c) => { const t = { g, num: d.num(r, c), type: 'circ', desove: true, cx: x, cz: z, r: d.d / 2, H: d.h, real: [d.d] }; t.vol = Math.PI * (d.d / 2) ** 2 * d.h; g.desove.push(t); tanks.push(t); }));
-    g.dims = 'Ø ' + fmt(k.d) + ' m · ' + fmt(k.h) + ' m';
   } else {
     m.rows.forEach((z, r) => m.cols.forEach((x, c) => { const t = { g, num: m.num(r, c), type: 'rect', cx: x + m.L / 2, cz: z + m.W / 2, L: m.L + .3, W: m.W + .3, H: m.h, real: m.real }; t.vol = m.real[0] * m.real[1] * m.h; g.tanks.push(t); tanks.push(t); }));
-    g.dims = fmt(m.real[0]) + ' × ' + fmt(m.real[1]) + ' m'; g.assumed = m.assumed; g.tankH = m.h;
+    g.assumed = m.assumed; g.tankH = m.h;
   }
   groups.push(g);
 });
@@ -127,7 +133,7 @@ const M = {
   film: std({ map: TX.film, color: col('#f7f8f2'), roughness: .5, transparent: true, opacity: .42, side: THREE.DoubleSide, depthWrite: false }),
   zinc: std({ map: rep(TX.zinc, 6, 1), roughness: .5, metalness: .4 }),
   tankWall: std({ map: rep(TX.concrete, 1, 1), color: col('#f4f2ee'), roughness: .75 }),
-  waterL: std({ color: 0xffffff, roughness: .08, metalness: .1, normalMap: waterNormal, normalScale: new THREE.Vector2(.35, .35), emissive: 0x000000, transparent: true, opacity: .48 }),
+  waterL: std({ color: 0xffffff, roughness: .08, metalness: .1, normalMap: waterNormal, normalScale: new THREE.Vector2(.35, .35), emissive: 0x000000, transparent: true, opacity: .62 }),
   waterM: std({ color: 0xffffff, roughness: .08, metalness: .1, normalMap: waterNormal, normalScale: new THREE.Vector2(.35, .35), emissive: 0x000000, transparent: true, opacity: .4 }),
   algae: std({ color: col('#4f9a35'), roughness: .1, metalness: .05, normalMap: waterNormal, normalScale: new THREE.Vector2(.3, .3) }),
   lid: std({ color: col('#7d8a8f'), roughness: .6, metalness: .3 }),
@@ -318,11 +324,23 @@ circ.forEach((t, i) => {
   t.inst = i; t.mesh = waterC; t.tint = R(-.04, .04);
 });
 scene.add(wallsI, ringI, waterRL, waterRM, waterC);
-let selected = null, hovered = null;
+let selected = null, hovered = null, estadoCargado = false;
+// Estado de producción (planta/estado.js) → color del agua. En cultivo, el color de su ETAPA (el de las
+// tarjetas de la Vista Ejecutiva); la alerta no repinta el tanque: va como baliza.
+const ESTADO_COLOR = { vacio: col('#d9e8ea'), despachado: col('#a9bcc8'), agrupado: col('#5b6266'), descartado: col('#5b6266'), desinfeccion: col('#9e9e9e') };
+const _etapaCol = {};
+const colEtapa = (e) => _etapaCol[e.key] || (_etapaCol[e.key] = col(e.color));
+function colorTanque(t) {
+  const st = t.st;
+  if (st && st.estado === 'cultivo') return st.etapa ? colEtapa(st.etapa).clone() : WATER.larv.clone();
+  if (st) return (ESTADO_COLOR[st.estado] || ESTADO_COLOR.vacio).clone();
+  const c = (t.desove ? WATER.desove : t.g.kind === 'larv' ? WATER.larv : WATER.mat).clone();
+  return c.offsetHSL(t.tint * .3, 0, t.tint);
+}
+const conLarvas = (t) => !t.st || t.st.estado === 'cultivo';
 function paintWater() {
   tanks.forEach(t => {
-    let c = (t.desove ? WATER.desove : t.g.kind === 'larv' ? WATER.larv : WATER.mat).clone();
-    c.offsetHSL(t.tint * .3, 0, t.tint);
+    let c = colorTanque(t);
     if (selected === t.g) c.lerp(WATER.sel, .3);
     if (hovered === t) c = WATER.hover;
     t.mesh.setColorAt(t.inst, c);
@@ -371,7 +389,7 @@ function animateShrimp(time) {
   const mid = camera.position.distanceTo(controls.target) < 240;
   plI.visible = near; brI.visible = mid; if (!mid) return;
   if (near) pls.forEach((p, i) => {
-    if (Math.abs(p.t.wx - controls.target.x) > 45 || Math.abs(p.t.wz - controls.target.z) > 45) { if (!p.off) { m4.makeScale(0, 0, 0); plI.setMatrixAt(i, m4); p.off = true; } return; }
+    if (!conLarvas(p.t) || Math.abs(p.t.wx - controls.target.x) > 45 || Math.abs(p.t.wz - controls.target.z) > 45) { if (!p.off) { m4.makeScale(0, 0, 0); plI.setMatrixAt(i, m4); p.off = true; } return; }
     p.off = false;
     const t = p.t, a = p.ph + time * p.sp + .35 * Math.sin(time * 1.7 + p.ph), ex = (t.L / 2 - TH - .3) * p.rx, ez = (t.W / 2 - TH - .3) * p.rz;
     const [cx, cz] = P(t.cx, t.cz), sg = Math.sign(p.sp), dx = -Math.sin(a) * ex * sg, dz = Math.cos(a) * ez * sg;
@@ -602,11 +620,31 @@ groups.forEach(g => {
   el.addEventListener('pointerdown', e => { el._d = [e.clientX, e.clientY]; canvas.dispatchEvent(new PointerEvent('pointerdown', e)); });
   el.addEventListener('wheel', e => { e.preventDefault(); canvas.dispatchEvent(new WheelEvent('wheel', e)); }, { passive: false });
   el.addEventListener('click', e => { const d = el._d; if (!d || Math.hypot(e.clientX - d[0], e.clientY - d[1]) < 6) select(g, true); });
-  labelsEl.append(el); g.label = el; g.labelText = tx;
+  labelsEl.append(el); g.label = el; g.labelText = tx; g.labelDot = i;
   const [ax, az] = P(g.cx, g.cz); g.anchor = new THREE.Vector3(ax, g.kind === 'larv' ? 6.6 : 5, az);
 });
 const GEO = [['Mar', 90, 165, 1], ['Playa', 90, 117, 1], ['Canal de salida', 90, -18, 1.5], ['Piscina de sal', 90, -115, 2]].map(([txt, x, z, y]) => { const el = document.createElement('span'); el.className = 'geo'; el.textContent = txt; labelsEl.append(el); const [px, pz] = P(x, z); return { el, p: new THREE.Vector3(px, y, pz) }; });
 const NORTH = new THREE.Vector2(-1, -1).normalize(), needle = $('#needle');
+const pct = (v) => (v === null || v === undefined || isNaN(v)) ? '—' : fmt(v, 1) + ' %';
+const num = (v, d, u) => (v === null || v === undefined || isNaN(v)) ? '—' : fmt(v, d) + u;
+/** Texto del rótulo de un módulo: su nombre (corto si la cámara está lejos) y su estado de producción. */
+function textoRotulo(g, far) {
+  const base = far ? g.short : g.name, st = g.st;
+  if (!st) return base;
+  // de lejos, sólo el nombre corto y las alertas: el color del punto ya dice la etapa (si no, se enciman)
+  if (far) return base + (st.cuenta && st.cuenta.alerta ? ' · ⚠ ' + st.cuenta.alerta : '');
+  if (st.estado === 'cultivo') return base + ' · ' + st.estadio + ' · día ' + st.dias + (st.despachando ? ' · despachando' : '') + (st.cuenta.alerta ? ' · ⚠ ' + st.cuenta.alerta : '');
+  if (st.estado === 'desinfeccion') return base + ' · desinfección';
+  if (st.estado === 'despachado') return base + ' · C' + st.corrida + ' despachada';
+  return base + ' · sin datos';
+}
+function colorRotulo(g) {
+  const st = g.st;
+  if (g.kind !== 'larv') return 'var(--mat)';
+  if (!st) return 'var(--larv)';
+  if (st.estado === 'cultivo') return st.etapa ? st.etapa.color : 'var(--larv)';
+  return st.estado === 'desinfeccion' ? '#9e9e9e' : '#b9c7cf';
+}
 const nums = [];
 function select(g, focus) {
   selected = g;
@@ -615,14 +653,65 @@ function select(g, focus) {
   nums.forEach(n => n.el.remove()); nums.length = 0;
   if (!g) { $('#card').hidden = true; paintWater(); return; }
   [...g.tanks, ...g.desove].forEach(t => { const el = document.createElement('span'); el.className = 'num'; el.textContent = (t.desove ? 'D' : '') + t.num; labelsEl.append(el); const [x, z] = P(t.cx, t.cz); nums.push({ el, p: new THREE.Vector3(x, Y0 + t.H + .3, z) }); });
-  const rows = [['Tanques', g.tanks.length + ' · numerados ' + g.range + (g.desove.length ? ' + ' + g.desove.length + ' de desove' : '')], ['Medida', g.dims + (g.kind === 'larv' ? ' · altura ' + fmt(LARV_H) + ' m' : g.tankH ? ' · altura ' + fmt(g.tankH) + ' m' + (g.assumed ? ' (supuesta)' : '') : '')],
-    ['Volumen', '≈ ' + fmt(g.tanks[0].vol, 1) + ' m³ por tanque · ≈ ' + fmt(g.vol, 0) + ' m³ en total'], ['Superficie', '≈ ' + fmt((g.box[2] - g.box[0]) * (g.box[3] - g.box[1]), 0) + ' m² de nave']];
-  $('#card-kind').textContent = g.kind === 'larv' ? 'Módulo de larvicultura' : 'Sala de maduración';
-  $('#card-name').textContent = g.name;
+  fichaModulo(g); paintWater();
+  if (focus) { const [x, z] = P(g.cx, g.cz); frameView('iso', [x, 0, z], Math.max(g.box[2] - g.box[0], g.box[3] - g.box[1]) * 1.25 + 8); }
+}
+function llenarFicha(kind, name, rows) {
+  $('#card-kind').textContent = kind; $('#card-name').textContent = name;
   const dl = $('#card-dl'); dl.textContent = '';
   rows.forEach(([k, val]) => { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = k; dd.textContent = val; dl.append(dt, dd); });
-  $('#card').hidden = false; paintWater();
-  if (focus) { const [x, z] = P(g.cx, g.cz); frameView('iso', [x, 0, z], Math.max(g.box[2] - g.box[0], g.box[3] - g.box[1]) * 1.25 + 8); }
+  $('#card').hidden = false;
+}
+let tanqueFicha = null;
+/** Resumen de la ficha de estado del módulo (las cifras de su tarjeta en la Vista Ejecutiva). */
+function fichaModulo(g) {
+  tanqueFicha = null;
+  if (g.kind !== 'larv') {
+    llenarFicha('Sala de maduración', g.name, [['Tanques', g.tanks.length + ' · numerados ' + g.range + (g.desove.length ? ' + ' + g.desove.length + ' de desove' : '')], ['Producción', 'Se suma en la próxima tanda']]);
+    return;
+  }
+  const st = g.st, kind = 'Módulo de larvicultura';
+  if (!estadoCargado) { llenarFicha(kind, g.name, [['Estado', 'Cargando datos de producción…']]); return; }
+  if (!st || st.estado === 'sin-datos') { llenarFicha(kind, g.name, [['Estado', 'Sin datos de producción']]); return; }
+  if (st.estado === 'desinfeccion') {
+    llenarFicha(kind, g.name, [['Estado', 'Desinfección · pre-siembra'], ['Corrida', 'C' + st.corrida + ' en preparación'], ['Registros', String(st.registros)], ['Último registro', st.ultimo ? fmtShort(st.ultimo) : '—']]);
+    return;
+  }
+  if (st.estado === 'despachado') {
+    llenarFicha(kind, g.name, [['Estado', 'Vacío · corrida despachada'], ['Corrida', 'C' + st.corrida + ' despachada por completo'], ['Último dato', st.ultimo ? fmtShort(st.ultimo) : '—']]);
+    return;
+  }
+  const c = st.cuenta, partes = [c.cultivo + ' en cultivo', c.vacio && c.vacio + ' vacíos', c.despachado && c.despachado + ' despachados', c.fuera && c.fuera + ' agrupados o descartados'].filter(Boolean);
+  llenarFicha(kind, g.name, [
+    ['Corrida', 'C' + st.corrida + (st.despachando ? ' · despachando' : '')],
+    ['Estadío', st.estadio + ' · día ' + st.dias + (st.etapa ? ' · ' + st.etapa.label : '')],
+    ['Supervivencia', pct(st.sv)], ['Mortalidad', pct(st.mort)], ['Población', fmtPop(st.pop)],
+    ['PL/g (manual)', num(st.plg, 1, '')], ['OD', num(st.od, 2, ' mg/L')], ['Temperatura', num(st.tmp, 1, ' °C')],
+    ['Tanques', partes.join(' · ')],
+    ['Alertas', c.alerta ? c.alerta + ' tanque' + (c.alerta !== 1 ? 's' : '') + (st.motivos.length ? ' · módulo: ' + st.motivos.join(', ') : '') : (st.motivos.length ? 'Módulo: ' + st.motivos.join(', ') : 'Ninguna')],
+    ['Técnicos', st.tecnicos && st.tecnicos.length ? st.tecnicos.join(', ') : '—'],
+    ['Lote', st.lotes && st.lotes.length ? st.lotes.join(' · ') : '—'],
+    ['Actualizado', st.fresco ? st.fresco.label : '—'],
+  ]);
+}
+const ESTADO_TXT = { vacio: 'Vacío', despachado: 'Despachado', agrupado: 'Agrupado', descartado: 'Descartado', desinfeccion: 'Desinfección (pre-siembra)' };
+/** Ficha de un tanque de larvicultura (al tocarlo con su módulo ya elegido). */
+function fichaTanque(t) {
+  tanqueFicha = t;
+  const st = t.st, name = t.g.name + ' · tanque ' + t.num;
+  if (!st) { llenarFicha('Tanque de larvicultura', name, [['Estado', estadoCargado ? 'Sin datos' : 'Cargando datos de producción…']]); return; }
+  if (st.estado !== 'cultivo') {
+    const rows = [['Estado', ESTADO_TXT[st.estado] || st.estado]];
+    if (st.nombre) rows.push(['En el registro', st.nombre], ['Estadío', st.estadio || '—'], ['Población', fmtPop(st.pop)]);
+    llenarFicha('Tanque de larvicultura', name, rows); return;
+  }
+  llenarFicha('Tanque de larvicultura', name, [
+    ['Estado', 'En cultivo' + (st.etapa ? ' · ' + st.etapa.label : '')], ['En el registro', st.nombre],
+    ['Estadío', st.estadio], ['Supervivencia', pct(st.sv)], ['Población', fmtPop(st.pop)],
+    ['OD', num(st.od, 2, ' mg/L')], ['Temperatura', num(st.tmp, 1, ' °C')],
+    ['Alerta', st.alerta ? '⚠ ' + st.motivos.join(', ') + ' fuera de rango' : 'Ninguna'],
+    ['Lote', st.lotes && st.lotes.length ? st.lotes.join(' · ') : '—'],
+  ]);
 }
 $('#card-close').addEventListener('click', () => select(null));
 $('#v-iso').addEventListener('click', () => frameView('iso'));
@@ -646,6 +735,8 @@ canvas.addEventListener('pointerdown', e => { downAt = [e.clientX, e.clientY]; }
 canvas.addEventListener('pointerup', e => {
   if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;
   const p = pickAt(e); if (!p) { select(null); return; }
+  // con el módulo ya elegido, tocar uno de sus tanques abre la ficha del tanque
+  if (p.tank && p.tank.g === selected && p.tank.g.kind === 'larv') { fichaTanque(p.tank); return; }
   select(p.tank ? p.tank.g : p.group, true);
 });
 canvas.addEventListener('pointermove', e => {
@@ -655,35 +746,107 @@ canvas.addEventListener('pointermove', e => {
   if (!t) { tip.hidden = true; canvas.style.cursor = p && p.group ? 'pointer' : 'grab'; return; }
   canvas.style.cursor = 'pointer'; tip.textContent = '';
   const b = document.createElement('b'); b.textContent = t.g.name + ' · ' + (t.desove ? 'desove ' : 'tanque ') + t.num;
-  const sp = document.createElement('span'); sp.textContent = (t.type === 'circ' ? 'Ø ' + fmt(t.real[0]) + ' m' : fmt(t.real[0]) + ' × ' + fmt(t.real[1]) + ' m') + ' · alto ' + fmt(t.H) + ' m · ≈ ' + fmt(t.vol, 1) + ' m³';
-  tip.append(b, sp);
+  tip.append(b);
+  lineasTip(t).forEach((txt) => { const sp = document.createElement('span'); sp.textContent = txt; sp.style.display = 'block'; tip.append(sp); });
   const r = vp.getBoundingClientRect(); tip.hidden = false;
   tip.style.left = Math.min(W - 250, e.clientX - r.left + 14) + 'px'; tip.style.top = Math.max(8, e.clientY - r.top - 54) + 'px';
 });
+/** Resumen del tanque para el tooltip (lo que se lee de un vistazo; el detalle va en la ficha). */
+function lineasTip(t) {
+  if (t.g.kind !== 'larv') return ['Datos de maduración en la próxima tanda'];
+  const st = t.st;
+  if (!st) return [estadoCargado ? 'Sin datos de producción' : 'Cargando datos…'];
+  if (st.estado !== 'cultivo') return [ESTADO_TXT[st.estado] || st.estado];
+  return [
+    st.estadio + (st.etapa ? ' · ' + st.etapa.label : ''),
+    'Pob. ' + fmtPop(st.pop) + ' · SV ' + pct(st.sv),
+    'OD ' + num(st.od, 1, '') + ' · ' + num(st.tmp, 1, ' °C'),
+    ...(st.alerta ? ['⚠ ' + st.motivos.join(', ') + ' fuera de rango'] : []),
+  ];
+}
 canvas.addEventListener('pointerleave', () => { tip.hidden = true; if (hovered) { hovered = null; paintWater(); } });
 canvas.addEventListener('keydown', e => { if (e.key === 'Escape') select(null); });
 
 /* ---------- Panel ---------- */
 const larvG = groups.filter(g => g.kind === 'larv'), matG = groups.filter(g => g.kind === 'mat');
-const sum = (a, f) => a.reduce((acc, x) => acc + f(x), 0);
-[{ c: 'var(--larv)', big: sum(larvG, g => g.tanks.length), lab: 'tanques de larvicultura', sub: '10 módulos · ≈ ' + fmt(sum(larvG, g => g.vol), 0) + ' m³' },
- { c: 'var(--mat)', big: sum(matG, g => g.tanks.length), lab: 'tanques de maduración', sub: '5 salas · + 6 de desove' }].forEach(st => {
-  const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = '<b></b><span><i></i></span><small></small>'; d.querySelector('b').textContent = st.big; d.querySelector('i').style.background = st.c; d.querySelector('span').append(st.lab); d.querySelector('small').textContent = st.sub; $('#stats').append(d);
-});
+const tile = (color) => { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = '<b>—</b><span><i></i><em></em></span><small></small>'; d.querySelector('i').style.background = color; $('#stats').append(d); return d; };
+const tileCultivo = tile('var(--larv)'), tileAlerta = tile('#e53935');
+function pintarCifras(E) {
+  const r = E && E.resumen;
+  tileCultivo.querySelector('b').textContent = r ? r.cultivo : '—';
+  tileCultivo.querySelector('em').textContent = 'tanques en cultivo';
+  tileCultivo.querySelector('small').textContent = r ? 'de ' + r.total + ' · ' + r.vacio + ' vacíos · ' + r.despachado + ' despachados' + (r.desinfeccion ? ' · ' + r.desinfeccion + ' en desinfección' : '') : 'Cargando datos…';
+  tileAlerta.querySelector('b').textContent = r ? r.alerta : '—';
+  tileAlerta.querySelector('em').textContent = 'tanques en alerta';
+  tileAlerta.querySelector('small').textContent = 'OD, temperatura o supervivencia fuera de rango';
+}
+pintarCifras(null);
+// leyenda: las etapas de la Vista Ejecutiva y los estados sin larvas
+{ const lg = $('#legend'); if (lg) {
+  const item = (color, txt) => { const sp = document.createElement('span'); sp.className = 'lg'; const i = document.createElement('i'); i.style.background = color; sp.append(i, document.createTextNode(txt)); lg.append(sp); };
+  STAGE_CATS.forEach((c) => item(c.color, c.label + ' · ' + c.range));
+  item('#d9e8ea', 'Vacío'); item('#a9bcc8', 'Despachado'); item('#5b6266', 'Agrupado o descartado');
+  const al = document.createElement('span'); al.className = 'lg lg-alerta'; al.textContent = '⚠ Baliza roja: tanque en alerta'; lg.append(al);
+} }
 function fillList(el, list) {
   list.forEach(g => {
     const li = document.createElement('li'), b = document.createElement('button'); b.type = 'button'; b.dataset.id = g.id;
     const tg = document.createElement('span'); tg.className = 'tag'; tg.textContent = g.short; tg.style.background = g.kind === 'larv' ? 'var(--larv)' : 'var(--mat)';
-    const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = g.name; const sm = document.createElement('small'); sm.textContent = g.dims; nm.append(sm);
-    const ct = document.createElement('span'); ct.className = 'ct'; ct.textContent = g.tanks.length + ' tq';
+    const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = g.name; const sm = document.createElement('small'); nm.append(sm);
+    const ct = document.createElement('span'); ct.className = 'ct';
+    g.listTag = tg; g.listSub = sm; g.listCt = ct; pintarFila(g);
     b.append(tg, nm, ct); b.addEventListener('click', () => select(g, true)); li.append(b); el.append(li);
   });
+}
+function pintarFila(g) {
+  const st = g.st;
+  g.listTag.style.background = colorRotulo(g) === '#b9c7cf' ? '#8fa3ad' : colorRotulo(g);
+  if (g.kind !== 'larv') { g.listSub.textContent = g.tanks.length + ' tanques' + (g.desove.length ? ' + ' + g.desove.length + ' de desove' : ''); g.listCt.textContent = ''; return; }
+  if (!estadoCargado) { g.listSub.textContent = 'Cargando…'; g.listCt.textContent = ''; return; }
+  if (!st || st.estado === 'sin-datos') { g.listSub.textContent = 'Sin datos'; g.listCt.textContent = ''; return; }
+  if (st.estado === 'desinfeccion') { g.listSub.textContent = 'Desinfección · C' + st.corrida; g.listCt.textContent = ''; return; }
+  if (st.estado === 'despachado') { g.listSub.textContent = 'Vacío · C' + st.corrida + ' despachada'; g.listCt.textContent = ''; return; }
+  g.listSub.textContent = 'C' + st.corrida + ' · ' + st.estadio + ' · día ' + st.dias + (st.despachando ? ' · despachando' : '');
+  g.listCt.textContent = st.cuenta.alerta ? '⚠ ' + st.cuenta.alerta : st.cuenta.cultivo + '/' + g.tanks.length;
 }
 fillList($('#list-larv'), larvG); fillList($('#list-mat'), matG);
 $('#t-roof').addEventListener('change', e => { roofs.visible = e.target.checked; });
 $('#t-other').addEventListener('change', e => { others.visible = e.target.checked; });
 $('#t-life').addEventListener('change', e => { life.visible = e.target.checked; });
 $('#t-labels').addEventListener('change', e => { labelsEl.style.display = e.target.checked ? '' : 'none'; });
+
+/* ---------- Balizas de alerta (decisión del usuario: no repintan el tanque) ---------- */
+const balizas = new THREE.Group(); scene.add(balizas);
+const texAlerta = canvasTex(128, (g2, n) => { g2.clearRect(0, 0, n, n); g2.fillStyle = '#e53935'; g2.beginPath(); g2.arc(n / 2, n / 2, n * .44, 0, 6.29); g2.fill(); g2.strokeStyle = '#ffffff'; g2.lineWidth = 8; g2.stroke(); g2.fillStyle = '#ffffff'; g2.font = '900 84px Arial, sans-serif'; g2.textAlign = 'center'; g2.textBaseline = 'middle'; g2.fillText('!', n / 2, n / 2 + 4); });
+const anilloGeo = new THREE.RingGeometry(.86, 1, 48);
+function pintarBalizas() {
+  balizas.children.slice().forEach((o) => { balizas.remove(o); if (o.material) o.material.dispose(); });
+  tanks.forEach((t) => {
+    if (!t.st || !t.st.alerta) return;
+    const [x, z] = P(t.cx, t.cz), r = (t.type === 'circ' ? t.r : Math.max(t.L, t.W) / 2) + .25;
+    const ring = new THREE.Mesh(anilloGeo, new THREE.MeshBasicMaterial({ color: 0xe53935, transparent: true, opacity: .9, side: THREE.DoubleSide, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2; ring.position.set(x, Y0 + t.H + .06, z); ring.scale.setScalar(r); ring.userData.r = r; ring.userData.ph = t.num * .7;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: texAlerta, depthTest: false, transparent: true }));
+    sp.position.set(x, Y0 + t.H + 2.4, z); sp.scale.set(1.5, 1.5, 1); sp.renderOrder = 5;
+    balizas.add(ring, sp);
+  });
+}
+function latirBalizas(time) {
+  balizas.children.forEach((o) => { if (!o.isSprite) { const k = (time * .9 + o.userData.ph) % 1; o.scale.setScalar(o.userData.r * (1 + .35 * k)); o.material.opacity = .9 * (1 - k); } });
+}
+
+/* ---------- Estado de producción (lo pasa planta/index.js; null mientras no hay libro) ---------- */
+function pintarEstado(E) {
+  estadoCargado = !!E;
+  groups.forEach((g) => {
+    g.st = E && g.kind === 'larv' ? E.modulos[g.id] || null : null;
+    g.tanks.forEach((t) => { t.st = g.st && g.st.tanques ? g.st.tanques[t.num] || null : null; });
+  });
+  paintWater(); pintarBalizas(); pintarCifras(E); groups.forEach(pintarFila);
+  wasFar = null;   // rehace los rótulos en el próximo cuadro
+  if (selected) { if (tanqueFicha && tanqueFicha.g === selected) fichaTanque(tanqueFicha); else fichaModulo(selected); }
+}
+function aviso(texto) { const a = $('#estado-datos'); if (a) a.textContent = texto || ''; }
 
 /* ---------- Bucle ---------- */
 const tmp = new THREE.Vector3(); let wasFar = null, last = performance.now();
@@ -703,7 +866,7 @@ function animateLife(t, dt) {
   // burbujas de aireación
   bubbles.forEach((b, i) => {
     const k = (t * b.sp * .6 + b.ph) % 1; if (k < .02 && !b.seated) { seatBubble(b); b.seated = true; } if (k > .5) b.seated = false;
-    const sc = .04 + .13 * Math.sin(Math.PI * k), [x, z] = P(b.t.cx, b.t.cz);
+    const sc = conLarvas(b.t) ? .04 + .13 * Math.sin(Math.PI * k) : 1e-4, [x, z] = P(b.t.cx, b.t.cz);
     m4.compose(v.set(x + b.x, Y0 + b.t.H - .17, z + b.z), qFlat, s.set(sc, sc, sc)); bubI.setMatrixAt(i, m4);
   });
   bubI.instanceMatrix.needsUpdate = true;
@@ -760,9 +923,10 @@ function frameBody(now) {
   sky.position.copy(camera.position); stars.position.copy(camera.position);
   if (!reduced) animateLife(t, dt);
   const far = camera.position.distanceTo(controls.target) > 135;
-  if (far !== wasFar) { wasFar = far; groups.forEach(g => { g.labelText.textContent = far ? g.short : g.name; }); }
+  if (far !== wasFar) { wasFar = far; groups.forEach(g => { g.labelText.textContent = textoRotulo(g, far); g.labelDot.style.background = colorRotulo(g); }); }
   groups.forEach(g => place(g.label, g.anchor));
   GEO.forEach(g => place(g.el, g.p));
+  if (!reduced) latirBalizas(now / 1000);
   animateShrimp(reduced ? 0 : now / 1000);
   { const fx = controls.target.x - camera.position.x, fz = controls.target.z - camera.position.z, l = Math.hypot(fx, fz) || 1, f = [fx / l, fz / l], r = [-f[1], f[0]];
     needle.style.transform = 'rotate(' + Math.atan2(NORTH.x * r[0] + NORTH.y * r[1], NORTH.x * f[0] + NORTH.y * f[1]) + 'rad)'; }
@@ -774,5 +938,5 @@ if (reduced) animateLife(0, 0);
 camera.position.set(-30, 150, 175); controls.target.set(0, 0, 0);
 const ro = new ResizeObserver(resize); ro.observe(vp); resize(); frameView('iso'); fly.dur = 1;
 rafId = requestAnimationFrame(loop);
-return { dispose };
+return { dispose, pintarEstado, aviso };
 }

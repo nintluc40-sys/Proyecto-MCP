@@ -101,10 +101,11 @@ function boot() {
   });
 
   // Planta (🏭, rol Gerencia) — carga DIFERIDA: trae three.js (la maqueta 3D del laboratorio) y sólo la
-  // abre gerencia, así que el resto de la app no lo descarga. Tanda 1 (2026-10-04): todavía sin datos de
-  // producción → `necesitaLibro: false` (abrirla no descarga el libro) y `repintaConDatos: false`: un
-  // refresco reconstruiría la escena 3D entera y perdería la cámara; cuando lleve datos, se pondrá al día
-  // ella misma con EV.DATA sin rehacer la escena (src/ui/repintaConDatos.test.js, src/ui/arranque.test.js).
+  // abre gerencia, así que el resto de la app no lo descarga. `necesitaLibro: false`: la maqueta sale al
+  // instante, sin el aviso de carga del router, y la propia vista pide el libro (asegurarLibro) y pinta los
+  // estados al llegar. `repintaConDatos: false`: un refresco reconstruiría la escena 3D entera y perdería la
+  // cámara; la vista se pone al día ella misma con EV.DATA, repintando sólo los colores (tanda 2, 2026-10-04;
+  // src/ui/repintaConDatos.test.js, src/ui/arranque.test.js).
   registerView('planta', {
     label: 'Planta', icon: '🏭', repintaConDatos: false, necesitaLibro: false,
     render: (root) => {
