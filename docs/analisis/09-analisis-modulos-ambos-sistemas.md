@@ -21,7 +21,8 @@
 
 > **Fecha:** 2026-08-03 · Alcance: los dos ejecutables gemelos de la vista Registro.
 > **Estado:** primer pase (arquitectura + todos los módulos a nivel funcional/estructural/sync
-> + paridad entre sistemas). Marcados con 🔎 los puntos que merecen un pase más profundo.
+> + paridad entre sistemas). Marcados con 🔎 los puntos que merecen un pase más profundo
+> (notas de aquel primer pase: desde el 2026-10-04 ya NO son pendientes, ver la constancia del final).
 > Su punto de guardado se retiró el 2026-09-03; al final queda la constancia de adónde fue
 > cada pendiente.
 
@@ -202,7 +203,9 @@ uno para que no haga falta recuperarlo:
 
 - **Pase profundo por módulo** (Lab. Algas, As. Técnico, Biomol, matriz Reproductores) →
   duplicaba, con menos alcance, la **auditoría por vista** del punto de guardado vigente,
-  que cubre las **9** vistas con su cobertura medida. Sigue abierta allí.
+  que cubre las **9** vistas con su cobertura medida. ~~Sigue abierta allí.~~ → **RETIRADA el 2026-10-04**
+  por decisión del usuario, como pendiente huérfano (ningún punto de guardado la llevaba ya): no queda pase
+  profundo pendiente.
 - **Comparación línea a línea de la maquetación de las 7 fichas** → sigue ABIERTA, y hoy es
   un pendiente numerado del punto de guardado vigente. El cálculo ya se verificó idéntico
   en agosto; falta sólo el marcado.
