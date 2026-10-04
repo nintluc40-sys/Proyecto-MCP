@@ -288,6 +288,25 @@ describe('Alimentación · la ficha', () => {
 /* 📜 2026-10-04 (usuario) · corregir un envío desde el Historial del módulo. Alimentación es la única ficha que NO se vacía al
    enviar (el cálculo se queda): al guardar la corrección tiene que SALIR de ella, o la fecha seguiría fija y el siguiente
    ☁️ volvería a reescribir el envío viejo. */
+/* Punto 2 (2026-10-04, usuario) · los pesos del tanque se llenan desde Tanques O desde Alimentación. Al leer, la referencia
+   es la más reciente de las dos: lo tecleado aquí el 11/01 (♀77) gana a la biometría del 10/01 (♀70); el ♂ de esa fila era
+   una COPIA de la biometría, así que el ♂ sigue saliendo de Tanques. */
+describe('Alimentación · punto 2: lo tecleado antes aquí cuenta como peso del tanque', () => {
+  it('🔴 la referencia del tanque es el peso tecleado más reciente, con «Alimentación» y su fecha como fuente', async () => {
+    const antes = HOJAS['Maduración Alimentación'];
+    HOJAS['Maduración Alimentación'] = antes.concat([{ Fecha: '2026-01-11', Sala: 'Sala 1', Tanque: 1, 'Peso hembras (g)': 77, 'Peso machos (g)': 55,
+      'Fuente del peso': '♀ Manual · ♂ Biometría 2026-01-10', Tomas: '07:00 Krill 1' }]);
+    try {
+      await H.madAlimLeer();
+      const t1 = sala('Sala 1').querySelector('.ma-tq[data-tq="1"]');
+      expect([t1.querySelector('.ma-ph').value, t1.querySelector('.ma-pm').value]).toEqual(['77', '55']);
+      expect(t1.querySelector('.ma-fuente').textContent).toBe('♀ Alimentación 2026-01-11 · ♂ Biometría 2026-01-10');
+    } finally {
+      HOJAS['Maduración Alimentación'] = antes;
+    }
+  });
+});
+
 describe('Alimentación · 📜 corregir un envío desde el Historial', () => {
   it('🔴 abre lo enviado con la fecha FIJA; guardar reescribe los MISMOS IDs y la ficha sale de la corrección', async () => {
     H.setMod(H.MAD_MOD);

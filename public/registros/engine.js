@@ -6794,6 +6794,40 @@ function madAvisosTransferenciaCompartida(libro, tipo, tramos){
 }
 // El nombre del tanque mezclado lo PROPONE el sistema, ordenado, para que nadie vuelva a
 // teclearlo de dos maneras: en producción ya convive «BC/BA» escrito a mano.
+/* PUNTO 2 (usuario, 2026-10-04) · «Los pesos por macho y hembra de cada tanque se pueden llenar de dos formas, o por la
+   ficha de Maduración Tanques o por la ficha de Maduración Alimento, mientras se guarde y sincronice.»
+   Decidido con el usuario (no re-preguntar): un peso tecleado A MANO en 🍤 Alimentación —ya en su hoja— cuenta como peso del
+   tanque donde se usa el peso (la ración al leer, el ⚖️ Saldo y el tablero), y el MISMO día, sexo a sexo, manda 🛢 Tanques:
+   así nada se cuenta dos veces. Los partes del día (Último parte, partes de Tanques) siguen diciendo sólo lo de Tanques.
+   Sólo cuentan los «Manual» de «Fuente del peso»: los demás son la referencia que la ficha COPIÓ (de Tanques, del Ingreso o
+   de un peso anterior de Alimentación), y contarlos repetiría ese peso con otra fecha.
+   Devuelve filas con la FORMA de las de Tanques (Fecha, Sala, Tanque y los dos pesos promedio) y _deAlimentacion, para
+   sumarse a ellas SÓLO donde se lee el peso: no son partes (no traen bajas, cópulas ni muda). Gemela: pesosDeAlimentacion. */
+function madPesosDeAlimentacion(filasAlim, filasTq){
+  const f10=function(v){ return madLibroTxt(v).slice(0,10); };
+  const n=function(v){ const t=madLibroTxt(v).replace(",","."); if(t==="") return 0; const x=Number(t); return (isFinite(x) && x>0) ? x : 0; };
+  const COLS=[["♀","Peso hembras (g)","Peso promedio hembras (g)"], ["♂","Peso machos (g)","Peso promedio machos (g)"]];
+  const enTq={};
+  (filasTq||[]).forEach(function(r){
+    const k=f10(r.Fecha)+"|"+madUbicKey(r.Sala, r.Tanque);
+    COLS.forEach(function(c){ if(n(r[c[2]])>0) enTq[k+"|"+c[2]]=true; });
+  });
+  const out=[];
+  (filasAlim||[]).forEach(function(r){
+    const d=f10(r.Fecha);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d) || !madLibroTxt(r.Sala) || !madLibroEnt(r.Tanque)) return;
+    const k=d+"|"+madUbicKey(r.Sala, r.Tanque), fuente=madLibroTxt(r["Fuente del peso"]).split("·").map(function(x){ return x.trim(); });
+    const fila={ Fecha:d, Sala:madLibroTxt(r.Sala), Tanque:madLibroEnt(r.Tanque), _deAlimentacion:true };
+    let alguno=false;
+    COLS.forEach(function(c){
+      if(fuente.indexOf(c[0]+" Manual")===-1 || enTq[k+"|"+c[2]]) return;
+      const v=n(r[c[1]]);
+      if(v){ fila[c[2]]=v; alguno=true; }
+    });
+    if(alguno) out.push(fila);
+  });
+  return out;
+}
 function madNombreComposicion(tanque){
   const vivos=((tanque&&tanque.composicion)||[]).filter(function(c){ return c.machos>0||c.hembras>0; });
   const lotes=[];
@@ -6960,6 +6994,7 @@ function _madResLotes(fuentes, libro, hoy){
   const alDia={};
   const libroAl=function(fecha){ if(!alDia[fecha]) alDia[fecha]=madConstruirLibro(fuentes, { hoy:fecha, hasta:fecha }); return alDia[fecha]; };
   const filasTanque=(fuentes.tanques||[]).filter(function(r){ return madLibroTxt(r.Sala) && madLibroEnt(r.Tanque) && _madResEsFecha(_madResF10(r.Fecha)); });
+  const filasPeso=filasTanque.concat(madPesosDeAlimentacion(fuentes.alimentacion, fuentes.tanques));   // punto 2 (2026-10-04): SÓLO para el peso
   const desoves=_madResDesoves(fuentes.desoves), trat=fuentes.tratamientos||[];
   const tons=_madResUltimoPor(fuentes.sala, "Sala", "Toneladas"), nauplios=_madResNauplios(fuentes.mortDesove);
   const tasa=function(m,i){ return i>0 ? _madResR2((m/i)*100) : ""; };
@@ -6976,6 +7011,7 @@ function _madResLotes(fuentes, libro, hoy){
     tanques.sort(function(a,b){ return _madResOrden(a.sala,b.sala) || a.tanque-b.tanque; });
     // H1 (2026-09-15): una fila de Tanques es del lote si ESE DÍA el tanque lo tenía (libro al cierre del día). Ver el módulo.
     const candidatas=filasTanque.filter(function(r){ return !L.ingreso || _madResF10(r.Fecha)>=L.ingreso; });
+    const candPeso=filasPeso.filter(function(r){ return !L.ingreso || _madResF10(r.Fecha)>=L.ingreso; });
     const ultimoDia=function(filas){
       const fechas=filas.map(function(r){ return _madResF10(r.Fecha); }).filter(function(f,i,a){ return a.indexOf(f)===i; }).sort().reverse();
       for(let i=0;i<fechas.length;i++){
@@ -6990,7 +7026,7 @@ function _madResLotes(fuentes, libro, hoy){
       return { fecha:"", filas:[] };
     };
     const peso=function(col){
-      const d=ultimoDia(candidatas.filter(function(r){ return _madResNum(r[col])!==null && _madResNum(r[col])>0; }));
+      const d=ultimoDia(candPeso.filter(function(r){ return _madResNum(r[col])!==null && _madResNum(r[col])>0; }));
       if(!d.fecha) return { valor:"", fecha:"" };
       const del=d.filas.map(function(r){ return _madResNum(r[col]); });
       return { valor:_madResR2(del.reduce(function(a,b){ return a+b; },0)/del.length), fecha:d.fecha };
@@ -7487,7 +7523,7 @@ function madResPintar(){
 // Las hojas que el libro no lee y el resumen sí. Tratamientos es nueva: con el GAS publicado viejo no se pide.
 // gasAlDia: la respuesta de ?p=ver que madSaldoRefrescar ya pidió para el libro (A2: una sola pregunta).
 async function _madResLeerExtra(gasAlDia){
-  const faltan=[], out={ sala:[], desoves:[], tratamientos:[] };
+  const faltan=[], out={ sala:[], desoves:[], tratamientos:[], alimentacion:[] };
   /* A1 (2026-09-15) · `siNoPermitida` es el motivo que se anota cuando la hoja es NUEVA y el GAS
      desplegado no la conoce: el mismo texto que pone la rama de abajo cuando ?p=ver sí contestó.
      Así el aviso es idéntico se sepa por ?p=ver o por el propio error, y deja de decir «no se pudo
@@ -7505,7 +7541,10 @@ async function _madResLeerExtra(gasAlDia){
   const motivos=await Promise.all([
     leer("Maduración Sala", "sala", ""),
     leer(MAD_DESOVE_SHEET, "desoves", ""),
-    gasAlDia === false ? Promise.resolve(_sinTrat) : leer(MAD_TRAT_SHEET, "tratamientos", _sinTrat)
+    gasAlDia === false ? Promise.resolve(_sinTrat) : leer(MAD_TRAT_SHEET, "tratamientos", _sinTrat),
+    /* Punto 2 (2026-10-04) · sus pesos tecleados. Sólo los aporta: si aún no existe, no puede tenerlos (vacía, sin aviso);
+       si no se pudo leer, se dice que esos pesos no cuentan, no que falte el Saldo. */
+    leer(MAD_ALIM_SHEET, "alimentacion", "-").then(function(m){ return m==="-" ? "" : m ? m+" (los pesos tecleados en ella no se cuentan)" : ""; })
   ]);
   motivos.forEach(function(m){ if(m) faltan.push(m); });
   out.faltan=faltan;
@@ -7521,7 +7560,7 @@ async function madSaldoRefrescar(){
     const _dos=await Promise.all([madSaldoCargar(true, gas), _madResLeerExtra(gas)]);
     const libro=_dos[0], extra=_dos[1];
     const f=madLibroFuentes();
-    f.sala=extra.sala; f.desoves=extra.desoves; f.tratamientos=extra.tratamientos;
+    f.sala=extra.sala; f.desoves=extra.desoves; f.tratamientos=extra.tratamientos; f.alimentacion=extra.alimentacion;
     _madResumen=madResumenMaduracion(f, { hoy: today() });
     _madResumen.libro=libro;
     _madResumen.faltan=extra.faltan;
@@ -12472,7 +12511,8 @@ function madAlimTanquesDelLibro(libro){
 function madAlimPesosDeReferencia(fuentes, libro){
   const f=fuentes||{}, alDia={};
   const libroAl=function(fecha){ if(!alDia[fecha]) alDia[fecha]=madConstruirLibro(f, { hoy:fecha, hasta:fecha }); return alDia[fecha]; };
-  const filasTq=(f.tanques||[]).filter(function(r){ return _madAlimTxt(r.Sala) && _madAlimEntero(r.Tanque)!=="" && _madAlimEsFecha(_madAlimF10(r.Fecha)); });
+  // Punto 2 (2026-10-04) · más lo tecleado en Alimentación (madPesosDeAlimentacion): la más reciente de las dos manda.
+  const filasTq=(f.tanques||[]).concat(madPesosDeAlimentacion(f.alimentacion, f.tanques)).filter(function(r){ return _madAlimTxt(r.Sala) && _madAlimEntero(r.Tanque)!=="" && _madAlimEsFecha(_madAlimF10(r.Fecha)); });
   const ingresos=f.ingresos||[], vacio={ valor:"", fuente:"", fecha:"" }, out={};
   Object.keys(libro.tanques).forEach(function(kt){
     const T=libro.tanques[kt];
@@ -12487,8 +12527,8 @@ function madAlimPesosDeReferencia(fuentes, libro){
       for(let i=0;i<fechas.length;i++){
         const d=fechas[i], Tf=libroAl(d).tanques[k];
         if(!Tf || !Tf.composicion.some(function(c){ return lotes.indexOf(c.lote)!==-1 && (c.machos>0 || c.hembras>0); })) continue;
-        const v=con.filter(function(r){ return _madAlimF10(r.Fecha)===d; }).map(function(r){ return madAlimNum(r[col]); });
-        return { valor:_madAlimR2(v.reduce(function(a,b){ return a+b; },0)/v.length), fuente:"Biometría", fecha:d };
+        const delDia=con.filter(function(r){ return _madAlimF10(r.Fecha)===d; }), v=delDia.map(function(r){ return madAlimNum(r[col]); });
+        return { valor:_madAlimR2(v.reduce(function(a,b){ return a+b; },0)/v.length), fuente:delDia.some(function(r){ return !r._deAlimentacion; }) ? "Biometría" : "Alimentación", fecha:d };
       }
       return null;
     };
@@ -12819,13 +12859,14 @@ async function madAlimLeer(){
   if(btn) btn.disabled=true;
   try{
     /* La agenda de la hoja no depende del libro: se piden a la vez (ver madSaldoCargar). */
-    let agendas=null, fallo="";
+    let agendas=null, filasAlim=[], fallo="";
     const pAgenda=_reproFetchSheet(MAD_ALIM_SHEET, null)
-      .then(function(filas){ agendas=madAlimAgendasDeHoja(filas); })
+      .then(function(filas){ agendas=madAlimAgendasDeHoja(filas); filasAlim=filas||[]; })
       .catch(function(x){ fallo=(x && x.message) || "error"; });
     const libro=await madSaldoCargar(true);
     await pAgenda;
     const f=madLibroFuentes();
+    f.alimentacion=filasAlim;   // punto 2 (2026-10-04) · los pesos tecleados antes aquí cuentan como del tanque
     const cfg=madAlimCfgLeer();
     let cargadas=0;
     if(agendas) Object.keys(agendas).forEach(function(sala){
@@ -12839,7 +12880,7 @@ async function madAlimLeer(){
     const mal=madLibroIncompleto(libro);
     if(nota) nota.innerHTML = (mal ? '<span style="color:#991b1b">⚠ '+escapeHtml(mal)+': los animales pueden quedarse cortos.</span> ' : '<span style="color:#166534">Saldo y pesos leídos. Se relee al pulsar de nuevo.</span> ')
       + (agendas ? '<span style="color:#475569">'+(cargadas ? cargadas+' agenda(s) guardada(s) traída(s) de la hoja.' : 'La hoja no tiene agendas guardadas.')+'</span>'
-                 : '<span style="color:#92400e">No se pudo leer la agenda guardada en la hoja ('+escapeHtml(fallo)+'): se usa la de este dispositivo.</span>');
+                 : '<span style="color:#92400e">No se pudo leer la agenda guardada en la hoja ('+escapeHtml(fallo)+'): se usa la de este dispositivo, y los pesos sin los tecleados antes en Alimentación.</span>');
   }catch(_){
     if(nota) nota.innerHTML='<span style="color:#991b1b">No se pudieron leer las hojas. Reintenta con 🔄.</span>';
   }finally{

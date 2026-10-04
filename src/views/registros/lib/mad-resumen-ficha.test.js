@@ -104,6 +104,23 @@ describe('Saldo · resumen con filtro de variables y PDF', () => {
     expect(fila('Mortalidad acumulada').textContent, 'el acumulado no dice desde cuándo').toContain('→');
   });
 
+  /* Punto 2 (2026-10-04, usuario) · un peso tecleado a mano en 🍤 Alimentación cuenta como peso del lote (aquí Tanques no
+     pesó nada); y si la hoja de Alimentación aún no existe (las demás pruebas), se da por vacía SIN aviso. */
+  it('🔴 punto 2 · el peso del lote sale también de lo tecleado en Alimentación', async () => {
+    HOJAS['Maduración Alimentación'] = [{ Fecha: '2026-01-12', Sala: 'Sala 1', Tanque: 1, 'Peso hembras (g)': 58, 'Peso machos (g)': 41,
+      'Fuente del peso': '♀ Manual · ♂ Manual', Tomas: '07:00 Krill 1' }];
+    try {
+      await H.madSaldoRefrescar();
+      const fila = [...cuerpo().querySelectorAll('tr')].find((tr) => tr.querySelector('th') && tr.querySelector('th').textContent === 'Peso promedio');
+      expect(fila.textContent).toContain('♂ 41 g');
+      expect(fila.textContent).toContain('♀ 58 g');
+      expect(fila.textContent).toContain('2026-01-12');
+      expect(cuerpo().textContent).not.toContain('No se pudieron leer');
+    } finally {
+      delete HOJAS['Maduración Alimentación'];
+    }
+  });
+
   it('🔴 «Uso del RAS» dice lo que eligió la ficha: la hoja guarda «100%» como la fracción 1 (2026-09-19)', async () => {
     const antes = HOJAS['Maduración Sala'];
     HOJAS['Maduración Sala'] = [{ ...antes[0], RAS: 1 }];   // así lo devuelve ?p=rows

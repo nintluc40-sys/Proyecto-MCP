@@ -680,6 +680,46 @@ export function estadoPorLoteDeSala(libro, sala, fecha, tanquesDeSala) {
   return estadoPorLoteTexto(libro, sala, fecha);
 }
 
+/**
+ * PUNTO 2 (usuario, 2026-10-04) · los pesos ♂/♀ de un tanque se llenan desde 🛢 Tanques O desde 🍤 Alimentación,
+ * «mientras se guarde y sincronice». Un peso tecleado A MANO en Alimentación (ya en su hoja) cuenta como peso del
+ * tanque donde se usa el peso; el MISMO día, sexo a sexo, manda Tanques (nada se cuenta dos veces). Sólo los «Manual» de
+ * «Fuente del peso»: los demás son la referencia que la ficha copió. Devuelve filas con la FORMA de las de Tanques
+ * (Fecha, Sala, Tanque y los dos pesos promedio) y «_deAlimentacion», para sumarse a ellas SÓLO donde se lee el peso:
+ * no son partes. Gemela del monolito: madPesosDeAlimentacion.
+ */
+export function pesosDeAlimentacion(filasAlim, filasTq) {
+  const f10 = (v) => txt(v).slice(0, 10);
+  const n = (v) => {
+    const t = txt(v).replace(',', '.');
+    if (t === '') return 0;
+    const x = Number(t);
+    return Number.isFinite(x) && x > 0 ? x : 0;
+  };
+  const COLS = [['♀', 'Peso hembras (g)', 'Peso promedio hembras (g)'], ['♂', 'Peso machos (g)', 'Peso promedio machos (g)']];
+  const enTq = new Set();
+  for (const r of filasTq || []) {
+    const k = f10(r.Fecha) + '|' + ubicKey(r.Sala, r.Tanque);
+    for (const c of COLS) if (n(r[c[2]]) > 0) enTq.add(k + '|' + c[2]);
+  }
+  const out = [];
+  for (const r of filasAlim || []) {
+    const d = f10(r.Fecha);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !txt(r.Sala) || !ent(r.Tanque)) continue;
+    const k = d + '|' + ubicKey(r.Sala, r.Tanque);
+    const fuente = txt(r['Fuente del peso']).split('·').map((x) => x.trim());
+    const fila = { Fecha: d, Sala: txt(r.Sala), Tanque: ent(r.Tanque), _deAlimentacion: true };
+    let alguno = false;
+    for (const c of COLS) {
+      if (!fuente.includes(c[0] + ' Manual') || enTq.has(k + '|' + c[2])) continue;
+      const v = n(r[c[1]]);
+      if (v) { fila[c[2]] = v; alguno = true; }
+    }
+    if (alguno) out.push(fila);
+  }
+  return out;
+}
+
 /** Nombre visible de un tanque mezclado: `AB+BC`. Lo PROPONE el sistema para que nadie
  *  vuelva a teclearlo de dos maneras — en producción ya convive `BC/BA` escrito a mano. */
 export function nombreComposicion(tanque) {

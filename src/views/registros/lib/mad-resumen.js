@@ -19,7 +19,7 @@
    que TRAE esa variable (H2): un registro de sólo estado no borra la T° del día anterior.
    ============================================================ */
 
-import { construirLibro, sumarDias, ubicKey, CUARENTENA_DIAS, ESTADO_PRODUCCION, ESTADO_CUARENTENA, ESTADO_CERRADO } from './mad-libro.js';
+import { construirLibro, sumarDias, ubicKey, pesosDeAlimentacion, CUARENTENA_DIAS, ESTADO_PRODUCCION, ESTADO_CUARENTENA, ESTADO_CERRADO } from './mad-libro.js';
 import { MAD_TANQUES_POR_SALA, MAD_SALA_TONELADAS, areaTanqueM2 } from './ficha-maduracion-ingreso.schema.js';
 
 export const RESUMEN_TEMPS = ['Temperatura 2:00', 'Temperatura 4:00', 'Temperatura 6:00', 'Temperatura 8:00', 'Temperatura 10:00', 'Temperatura 12:00',
@@ -226,6 +226,7 @@ function resumenLotes(fuentes, libro, hoy) {
     return alDia.get(fecha);
   };
   const filasTanque = (fuentes.tanques || []).filter((r) => txt(r.Sala) && ent(r.Tanque) && esFecha(fecha10(r.Fecha)));
+  const filasPeso = filasTanque.concat(pesosDeAlimentacion(fuentes.alimentacion, fuentes.tanques));   // punto 2 (2026-10-04): SÓLO para el peso
   const desoves = acumularDesoves(fuentes.desoves);
   const trat = fuentes.tratamientos || [];
   const tons = ultimoPor(fuentes.sala, 'Sala', 'Toneladas');
@@ -245,6 +246,7 @@ function resumenLotes(fuentes, libro, hoy) {
        hoy» un lote recién entrado heredaba el peso y las mudas del lote anterior de su tanque, y el que se movió perdía
        lo pesado en su tanque de antes. Se busca de la fecha más reciente hacia atrás, sin bajar de su ingreso. */
     const candidatas = filasTanque.filter((r) => !L.ingreso || fecha10(r.Fecha) >= L.ingreso);
+    const candPeso = filasPeso.filter((r) => !L.ingreso || fecha10(r.Fecha) >= L.ingreso);
     const ultimoDia = (filas) => {
       const fechas = [...new Set(filas.map((r) => fecha10(r.Fecha)))].sort().reverse();
       for (const f of fechas) {
@@ -259,7 +261,7 @@ function resumenLotes(fuentes, libro, hoy) {
       return { fecha: '', filas: [] };
     };
     const peso = (col) => {
-      const d = ultimoDia(candidatas.filter((r) => num(r[col]) !== null && num(r[col]) > 0));
+      const d = ultimoDia(candPeso.filter((r) => num(r[col]) !== null && num(r[col]) > 0));
       if (!d.fecha) return { valor: '', fecha: '' };
       const del = d.filas.map((r) => num(r[col]));
       return { valor: r2(del.reduce((a, b) => a + b, 0) / del.length), fecha: d.fecha };

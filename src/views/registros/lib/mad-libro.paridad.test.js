@@ -36,6 +36,7 @@ import {
   lotesVivosEnTanque,
   avisosIngresoCompartido,
   avisosTransferenciaCompartida,
+  pesosDeAlimentacion,
 } from './mad-libro.js';
 import { MAD_TANQUES_POR_SALA } from './ficha-maduracion-ingreso.schema.js';
 /* ⚠ El módulo ENTERO, además de los nombres sueltos de arriba. Los de arriba se usan en los
@@ -73,7 +74,7 @@ function motorLibro() {
     + ' madSumarDias, madRepartirProporcional, madEstadoDeLote, madEstadoDeLoteEnSala, madEstadoPorLoteTexto, madEstadoPorLoteDeSala,'
     + ' MAD_CUARENTENA_DIAS, MAD_EST_MIXTO, MAD_LIBRO_SHEETS,'
     + ' madOcupacionDeSala, MAD_EST_DESINF, MAD_EST_DESINF_AGRUP, MAD_AGRUPADA_MAX_FRACCION,'
-    + ' madLotesVivosEnTanque, madAvisosIngresoCompartido, madAvisosTransferenciaCompartida };',
+    + ' madLotesVivosEnTanque, madAvisosIngresoCompartido, madAvisosTransferenciaCompartida, madPesosDeAlimentacion };',
   ).runInContext(ctx);
   return ctx.__api;
 }
@@ -111,6 +112,7 @@ const GEMELO = {
   estadoPorLoteTexto: 'madEstadoPorLoteTexto',
   estadoPorLoteDeSala: 'madEstadoPorLoteDeSala',
   nombreComposicion: 'madNombreComposicion',
+  pesosDeAlimentacion: 'madPesosDeAlimentacion',   // punto 2 (2026-10-04)
   repartirProporcional: 'madRepartirProporcional',
   sumarDias: 'madSumarDias',
   ubicKey: 'madUbicKey',
@@ -573,6 +575,30 @@ describe('Libro · el mismo saldo, posición a posición', () => {
 });
 
 describe('Libro · las mismas funciones puras', () => {
+  /* Punto 2 (2026-10-04, usuario) · lo que cuenta de 🍤 Alimentación como peso del tanque. La sonda lleva lo que sí cuenta
+     (♀ y ♂ a mano, coma decimal, fecha con hora, sala con espacios, tanque en texto) y lo que no: el mismo día que Tanques
+     pesó ESE sexo, la referencia copiada, sin fuente, peso 0 o vacío, fecha mala, sin tanque o sin sala. */
+  it('🔴 punto 2 · lo mismo de Alimentación: sólo lo tecleado, y el mismo día manda Tanques (sexo a sexo)', () => {
+    const tq = [{ Fecha: '2026-01-10', Sala: 'Sala 1', Tanque: 1, 'Peso promedio machos (g)': 40, 'Peso promedio hembras (g)': '' },
+      { Fecha: '2026-01-11T05:00:00.000Z', Sala: 'Sala 2', Tanque: '3', 'Peso promedio hembras (g)': '55' }];
+    const al = [
+      { Fecha: '2026-01-10', Sala: 'Sala 1', Tanque: 1, 'Peso hembras (g)': 61, 'Peso machos (g)': 45, 'Fuente del peso': '♀ Manual · ♂ Manual' },
+      { Fecha: '2026-01-11', Sala: ' Sala 2 ', Tanque: 3, 'Peso hembras (g)': 70, 'Peso machos (g)': '33,5', 'Fuente del peso': '♀ Manual · ♂ Manual' },
+      { Fecha: '2026-01-12T05:00:00.000Z', Sala: 'Sala 1', Tanque: '2', 'Peso hembras (g)': '62.25', 'Peso machos (g)': 0, 'Fuente del peso': '♀ Manual · ♂ Manual' },
+      { Fecha: '2026-01-13', Sala: 'Sala 1', Tanque: 1, 'Peso hembras (g)': 64, 'Peso machos (g)': 46, 'Fuente del peso': '♀ Alimentación 2026-01-10 · ♂ Biometría 2026-01-10' },
+      { Fecha: '2026-01-13', Sala: 'Sala 1', Tanque: 4, 'Peso hembras (g)': 64, 'Fuente del peso': '' },
+      { Fecha: '13/01/2026', Sala: 'Sala 1', Tanque: 5, 'Peso hembras (g)': 64, 'Fuente del peso': '♀ Manual' },
+      { Fecha: '2026-01-13', Sala: 'Sala 1', Tanque: '', 'Peso hembras (g)': 64, 'Fuente del peso': '♀ Manual' },
+      { Fecha: '2026-01-13', Sala: '', Tanque: 6, 'Peso hembras (g)': 64, 'Fuente del peso': '♀ Manual' },
+      { Fecha: '2026-01-14', Sala: 'Sala 1', Tanque: 7, 'Peso hembras (g)': '', 'Peso machos (g)': 'x', 'Fuente del peso': '♀ Manual · ♂ Manual' },
+    ];
+    const mod = pesosDeAlimentacion(al, tq);
+    expect(mod.map((r) => [r.Fecha, r.Sala, r.Tanque, r['Peso promedio hembras (g)'], r['Peso promedio machos (g)']]), 'la sonda distingue').toEqual([
+      ['2026-01-10', 'Sala 1', 1, 61, undefined], ['2026-01-11', 'Sala 2', 3, undefined, 33.5], ['2026-01-12', 'Sala 1', 2, 62.25, undefined]]);
+    expect(JSON.parse(JSON.stringify(api.madPesosDeAlimentacion(al, tq)))).toEqual(mod);
+    expect(JSON.parse(JSON.stringify(api.madPesosDeAlimentacion(undefined, undefined)))).toEqual(pesosDeAlimentacion(undefined, undefined));
+  });
+
   it('el mismo reparto proporcional', () => {
     const casos = [[15, [100, 50]], [10, [1, 1, 1]], [7, [2, 3, 5]], [9, [0, 0]], [0, [10, 5]], [99, [7, 11, 13, 17]]];
     for (const [t, w] of casos) expect(api.madRepartirProporcional(t, w)).toEqual(repartirProporcional(t, w));

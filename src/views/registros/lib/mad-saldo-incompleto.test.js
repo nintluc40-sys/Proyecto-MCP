@@ -374,10 +374,11 @@ describe('Maduración · las hojas se piden en paralelo', () => {
     expect(est.pico, 'se pidieron de una en una').toBe(5);
   });
 
-  it('🔴 ⚖️ Recalcular pide las OCHO a la vez: el libro y las del resumen', async () => {
+  // Punto 2 (2026-10-04) · eran OCHO: el resumen lee también «Maduración Alimentación» (sus pesos tecleados).
+  it('🔴 ⚖️ Recalcular pide las NUEVE a la vez: el libro y las del resumen', async () => {
     const est = contador(true);
     await H.madSaldoRefrescar();
-    expect(est.pico, 'el resumen esperó a que terminara el libro').toBe(8);
+    expect(est.pico, 'el resumen esperó a que terminara el libro').toBe(9);
   });
 
   it('con el GAS viejo son cuatro: la hoja nueva no se pide, se da por vacía', async () => {
@@ -422,7 +423,8 @@ describe('Maduración · las hojas se piden en paralelo', () => {
       throw new Error('Google devolvió una página de error, no datos');
     });
     await H.madSaldoRefrescar();
-    expect(H.getResumen().faltan).toEqual(['Maduración Sala', H.MAD_DESOVE_SHEET, H.MAD_TRAT_SHEET]);
+    expect(H.getResumen().faltan).toEqual(['Maduración Sala', H.MAD_DESOVE_SHEET, H.MAD_TRAT_SHEET,
+      'Maduración Alimentación (los pesos tecleados en ella no se cuentan)']);   // punto 2: sólo aporta pesos, y se dice así
   });
 });
 

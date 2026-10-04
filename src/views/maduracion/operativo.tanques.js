@@ -30,7 +30,7 @@
    correcto, y `medir-tablero-mad-real` lo dirá en su censo en vez de dar un verde sobre cero.
    ============================================================ */
 import { normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
-import { ubicKey } from '../registros/lib/mad-libro.js';
+import { ubicKey, pesosDeAlimentacion } from '../registros/lib/mad-libro.js';
 import { fechaDeFila } from './operativo.data.js';
 import { proporcionHM, densidadTanque } from './operativo.indicadores.js';
 import { posicionEnFiltro } from './operativo.tablero.js';
@@ -70,8 +70,9 @@ export function cargasPorTanque(M) {
 }
 
 /** Lo que los PARTES dicen de cada tanque en el período: rondas, bajas, cópulas, muda y los últimos pesos. */
-export function actividadPorTanque(dias, periodo) {
+export function actividadPorTanque(dias, periodo, pesosAlim = []) {
   const m = new Map();
+  const fechaPeso = new Map();   // punto 2 · de qué día es cada último peso, para compararlo con los de Alimentación
   for (const d of dias || []) {
     if (!enPeriodo(txt(d.fecha), periodo)) continue;
     const k = ubicKey(d.sala, d.tanque);
@@ -89,7 +90,29 @@ export function actividadPorTanque(dias, periodo) {
       o.ultimaHora = txt(d.ultimaHora);   // 3 (2026-10-01, usuario) · la hora del último parte de ese día
       if (d.pesoMachos !== '') o.pesoMachos = d.pesoMachos;
       if (d.pesoHembras !== '') o.pesoHembras = d.pesoHembras;
+      const fp = fechaPeso.get(k) || {};
+      if (d.pesoMachos !== '') fp.pesoMachos = txt(d.fecha);
+      if (d.pesoHembras !== '') fp.pesoHembras = txt(d.fecha);
+      fechaPeso.set(k, fp);
     }
+    m.set(k, o);
+  }
+  /* Punto 2 (2026-10-04, usuario) · un peso tecleado a mano en 🍤 Alimentación cuenta como del tanque; el MISMO día manda
+     Tanques (`pesosDeAlimentacion` ya lo quita). SÓLO el peso: esas filas no son partes.
+     Un tanque sin partes en el período también enseña ese peso. */
+  for (const r of (pesosAlim || []).filter((x) => enPeriodo(fechaDeFila('tanques', x), periodo))) {
+    const f = fechaDeFila('tanques', r);
+    const k = ubicKey(r.Sala, r.Tanque);
+    const o = m.get(k) || { rondas: 0, dias: 0, muertes: 0, descartes: 0, copulas: 0, muda: 0,
+      pesoMachos: '', pesoHembras: '', ultimoParte: '', ultimaHora: '' };
+    const fp = fechaPeso.get(k) || {};
+    for (const [campo, col] of [['pesoMachos', 'Peso promedio machos (g)'], ['pesoHembras', 'Peso promedio hembras (g)']]) {
+      const v = numONulo(r[col]);
+      if (v === null || f < txt(fp[campo])) continue;
+      o[campo] = v;
+      fp[campo] = f;
+    }
+    fechaPeso.set(k, fp);
     m.set(k, o);
   }
   return m;
@@ -102,7 +125,7 @@ export function actividadPorTanque(dias, periodo) {
 export function tablaDeTanques(M, periodo, F, dias) {
   const libro = (M && M.libro) || { tanques: new Map() };
   const cargas = cargasPorTanque(M);
-  const actividad = actividadPorTanque(dias, periodo);
+  const actividad = actividadPorTanque(dias, periodo, pesosDeAlimentacion(((M || {}).fuentes || {}).alimentacion, ((M || {}).fuentes || {}).tanques));
   const filas = [];
   for (const [k, T] of libro.tanques) {
     // Sólo las posiciones VIVAS: un tanque que cerró sigue en el libro con su composición a cero, y eso no es

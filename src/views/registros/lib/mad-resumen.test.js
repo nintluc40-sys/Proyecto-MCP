@@ -36,6 +36,15 @@ const FUENTES = () => ({
     trat('2026-01-31', '', 'Desinfección', 'RAS y tuberías', '', 'Cloro', ''),
   ],
 });
+/* Punto 2 (2026-10-04) · pesos tecleados en 🍤 Alimentación: S1 t1 el 31/01 (♀61 ♂45, cuentan: el más reciente), el 30/01
+   (el mismo día que Tanques pesó los dos sexos: no), S2 t3 el 30/01 sólo ♂33 (Tanques pesó ese día sólo ♀: sí) y una
+   referencia copiada (no). */
+const CON_ALIMENTACION = () => Object.assign(FUENTES(), { alimentacion: [
+  { Fecha: '2026-01-31', Sala: 'Sala 1', Tanque: 1, 'Peso hembras (g)': 61, 'Peso machos (g)': 45, 'Fuente del peso': '♀ Manual · ♂ Manual' },
+  { Fecha: '2026-01-30', Sala: 'Sala 1', Tanque: 1, 'Peso hembras (g)': 90, 'Peso machos (g)': 90, 'Fuente del peso': '♀ Manual · ♂ Manual' },
+  { Fecha: '2026-01-30', Sala: 'Sala 2', Tanque: 3, 'Peso machos (g)': 33, 'Fuente del peso': '♂ Manual' },
+  { Fecha: '2026-01-31', Sala: 'Sala 2', Tanque: 3, 'Peso hembras (g)': 99, 'Fuente del peso': '♀ Biometría 2026-01-30' },
+] });
 /* 3 (2026-10-01) · un desove de AB con N2 y SIN «Total de huevos» (lo de 60 de las 72 filas reales). */
 const N2_SIN_HUEVOS = () => Object.assign(FUENTES(), { desoves: FUENTES().desoves.concat([des('2026-01-26', 'AB', 5, '', '', 700000, '')]) });
 const SALA_PARCIAL = () => [
@@ -438,7 +447,7 @@ describe('Resumen · el monolito y el módulo dan lo mismo', () => {
   it('🔴 el mismo resumen, cifra a cifra, en el caso completo y en variantes', () => {
     const variantes = [FUENTES(), Object.assign(FUENTES(), { cierres: [{ Fecha: '2026-01-31', Lote: 'CD', Tipo: 'Total', Machos: 10, Hembras: 18, Sala: '' }] }),
       Object.assign(FUENTES(), { sala: [], desoves: [], tratamientos: [] }), {}, Object.assign(FUENTES(), { sala: FUENTES().sala.concat(SALA_PARCIAL()) }), TANQUE_REUTILIZADO(), CARGA_LIMITES(),
-      ALCALINIDAD_TURNOS(), N2_SIN_HUEVOS(),
+      ALCALINIDAD_TURNOS(), N2_SIN_HUEVOS(), CON_ALIMENTACION(),
       // 2026-09-19 · el RAS como lo devuelve ?p=rows: fracciones (el 100% es 1) y un número que no es fracción.
       Object.assign(FUENTES(), { sala: FUENTES().sala.map((r, i) => ({ ...r, RAS: [0.7, 1, 1.5, 'No'][i] })) })];
     for (const f of variantes) {

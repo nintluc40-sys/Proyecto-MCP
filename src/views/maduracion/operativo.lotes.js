@@ -24,7 +24,7 @@
    tratamientos. Nacen con su primer envío; hasta entonces dibujar su panel vacío es lo correcto.
    ============================================================ */
 import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
-import { estadoDeLote, ESTADO_MIXTO, ubicKey } from '../registros/lib/mad-libro.js';
+import { estadoDeLote, ESTADO_MIXTO, ubicKey, pesosDeAlimentacion } from '../registros/lib/mad-libro.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
 import { fechaDeFila, diasDeTanque } from './operativo.data.js';
 import { cociente, proporcionHM, supervivencia, tasaDescarte, tasaEnPartesDelLote } from './operativo.indicadores.js';
@@ -346,6 +346,16 @@ export function promediosDeLote(M, lote, periodo, presencia = null) {
     if (ph !== null && c.hembras > 0) { phNum += ph * c.hembras; phDen += c.hembras; }
     copulas += ent(r.Cópulas) * c.parte;
     muda += ent(r.Muda) * c.parte;
+  }
+  /* Punto 2 (2026-10-04, usuario) · un peso tecleado a mano en 🍤 Alimentación cuenta como del tanque; el MISMO día manda
+     Tanques (`pesosDeAlimentacion` ya lo quita). SÓLO el peso: esas filas no son partes. */
+  for (const r of pesosDeAlimentacion((M.fuentes || {}).alimentacion, (M.fuentes || {}).tanques)) {
+    const c = cuota.get(ubicKey(r.Sala, ent(r.Tanque)));
+    if (!c || !enPeriodo(fechaDeFila('tanques', r), periodo)) continue;
+    const pm = num(r['Peso promedio machos (g)']);
+    const ph = num(r['Peso promedio hembras (g)']);
+    if (pm !== null && c.machos > 0) { pmDen += c.machos; pmNum += c.machos * pm; }
+    if (ph !== null && c.hembras > 0) { phDen += c.hembras; phNum += c.hembras * ph; }
   }
   const r2 = (n) => Math.round(n * 100) / 100;
   /* 🆕 2026-09-26 (usuario) · el % es POR DÍA, con la regla del ⚖️ Saldo (`tasaEnPartesDelLote`): antes se dividían las

@@ -101,6 +101,14 @@ const FUENTES = () => ({
   cierres: [{ Fecha: '2026-01-12', Lote: 'Z', Tipo: 'Total', Machos: 10, Hembras: 10, Sala: '' }],
 });
 
+/* Punto 2 (2026-10-04) · pesos tecleados en 🍤 Alimentación: S1 t1 el 16/01 (♀72 ♂57, más recientes que la biometría),
+   el 15/01 sólo ♀ (ese día Tanques pesó ♀: no cuenta) y S1 t2 el 11/01 ♂ «47,5». */
+const CON_ALIM = () => Object.assign(FUENTES(), { alimentacion: [
+  { Fecha: '2026-01-16', Sala: 'Sala 1', Tanque: 1, 'Peso hembras (g)': 72, 'Peso machos (g)': 57, 'Fuente del peso': '♀ Manual · ♂ Manual' },
+  { Fecha: '2026-01-15', Sala: 'Sala 1', Tanque: 1, 'Peso hembras (g)': 99, 'Fuente del peso': '♀ Manual' },
+  { Fecha: '2026-01-11', Sala: 'Sala 1', Tanque: 2, 'Peso machos (g)': '47,5', 'Fuente del peso': '♂ Manual' },
+] });
+
 const MOVIDO = () => ({
   ingresos: [ing('2026-01-01', 'Y', 'Sala 1', 3, 10, 10, 30, 35), ing('2026-01-01', 'X', 'Sala 1', 4, 10, 10, 70, 75)],
   tanques: [tq('2026-01-05', 'Sala 1', 4, 80, 90)],
@@ -259,7 +267,7 @@ describe('Alimentación · el monolito y el módulo dan lo mismo', () => {
   });
 
   it('🔴 los mismos animales, pesos, población y agendas desde el libro', () => {
-    for (const f of [FUENTES(), Object.assign(FUENTES(), { tanques: [] }), { ingresos: [], tanques: [] }, MOVIDO()]) {
+    for (const f of [FUENTES(), Object.assign(FUENTES(), { tanques: [] }), { ingresos: [], tanques: [] }, MOVIDO(), CON_ALIM()]) {
       const libroMod = construirLibro(f, { hoy: '2026-01-25' });
       const libroEng = api.madConstruirLibro(f, { hoy: '2026-01-25' });
       expect(jj(api.madAlimTanquesDelLibro(libroEng))).toEqual(jj(alimTanquesDelLibro(libroMod)));

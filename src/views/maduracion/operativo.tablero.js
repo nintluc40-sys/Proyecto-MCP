@@ -20,7 +20,7 @@
    ============================================================ */
 import { normLote, normCodigoGenetico } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
-import { sumarDias, ubicKey, CUARENTENA_DIAS, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO } from '../registros/lib/mad-libro.js';
+import { sumarDias, ubicKey, pesosDeAlimentacion, CUARENTENA_DIAS, ESTADO_CUARENTENA, ESTADO_PRODUCCION, ESTADO_MIXTO } from '../registros/lib/mad-libro.js';
 import { diasEntre, RESUMEN_TEMPS, RESUMEN_OXIGENOS } from '../registros/lib/mad-resumen.js';
 import { PERIODO_DIAS, SALAS_VISIBLES, fechaDeFila } from './operativo.data.js';
 import { cociente, proporcionHM, densidadTanque, ocupacion, fueraDeRango, diasDesdeDesinfeccion } from './operativo.indicadores.js';
@@ -292,6 +292,16 @@ export function kpiBiomasa(M, F, periodo) {
     const ph = num(r['Peso promedio hembras (g)']);
     if (pm !== null && c.machos > 0) { pmNum += pm * c.machos; pmDen += c.machos; }
     if (ph !== null && c.hembras > 0) { phNum += ph * c.hembras; phDen += c.hembras; }
+  }
+  /* Punto 2 (2026-10-04, usuario) · un peso tecleado a mano en 🍤 Alimentación cuenta como del tanque; el MISMO día manda
+     Tanques (`pesosDeAlimentacion` ya lo quita). SÓLO el peso: esas filas no son partes. */
+  for (const r of pesosDeAlimentacion(((M || {}).fuentes || {}).alimentacion, ((M || {}).fuentes || {}).tanques)) {
+    const c = porTanque.get(ubicKey(r.Sala, ent(r.Tanque)));
+    if (!c || !enPeriodo(fechaDeFila('tanques', r), periodo)) continue;
+    const pm = num(r['Peso promedio machos (g)']);
+    const ph = num(r['Peso promedio hembras (g)']);
+    if (pm !== null && c.machos > 0) { pmDen += c.machos; pmNum += c.machos * pm; }
+    if (ph !== null && c.hembras > 0) { phDen += c.hembras; phNum += c.hembras * ph; }
   }
   const r2 = (n) => Math.round(n * 100) / 100;
   const v = sumarVivos([...porTanque.values()]);
@@ -810,9 +820,18 @@ export function detalleDeSala(M, sala, periodo, F, partes) {
   }
   const partesSala = (partes || []).filter((d) => d.sala === sala && esIso(d.fecha) && d.fecha <= M.fecha)
     .sort((a, b) => cmp(a.fecha, b.fecha));
+  /* Punto 2 (2026-10-04, usuario) · un peso tecleado a mano en 🍤 Alimentación cuenta como del tanque; el MISMO día manda
+     Tanques (`pesosDeAlimentacion` ya lo quita). SÓLO el peso: esas filas no son partes. */
+  const pesosAlim = pesosDeAlimentacion((M.fuentes || {}).alimentacion, (M.fuentes || {}).tanques)
+    .filter((r) => r.Sala === sala && esIso(r.Fecha) && r.Fecha <= M.fecha);
+  const COL_PESO = { pesoMachos: 'Peso promedio machos (g)', pesoHembras: 'Peso promedio hembras (g)' };
   const ultimoCon = (tanque, campo) => {
     const d = partesSala.filter((x) => x.tanque === tanque && x[campo] !== '').pop();
-    return d ? { valor: d[campo], fecha: d.fecha } : { valor: '', fecha: '' };
+    let u = d ? { valor: d[campo], fecha: d.fecha } : { valor: '', fecha: '' };
+    for (const r of pesosAlim) {
+      if (r.Tanque === tanque && COL_PESO[campo] && r[COL_PESO[campo]] !== undefined && r.Fecha > u.fecha) u = { valor: r[COL_PESO[campo]], fecha: r.Fecha };
+    }
+    return u;
   };
   const mapa = mapaDePlanta(M.libro, F).salas.find((s) => s.sala === sala) || { tanques: [] };
   const R = (M.resumen.salas || []).find((x) => x.sala === sala) || null;

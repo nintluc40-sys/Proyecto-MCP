@@ -15,7 +15,7 @@
    ============================================================ */
 
 import { sanitizeStr } from '../../../core/trovan.js';
-import { construirLibro, ubicKey, ESTADO_PRODUCCION, ESTADO_CUARENTENA } from './mad-libro.js';
+import { construirLibro, ubicKey, pesosDeAlimentacion, ESTADO_PRODUCCION, ESTADO_CUARENTENA } from './mad-libro.js';
 import { salaTag } from './ficha-maduracion-ingreso.schema.js';
 
 export const MAD_ALIM_SHEET = 'Maduración Alimentación';
@@ -226,7 +226,9 @@ export function alimPesosDeReferencia(fuentes, libro) {
     if (!alDia.has(fecha)) alDia.set(fecha, construirLibro(f, { hoy: fecha, hasta: fecha }));
     return alDia.get(fecha);
   };
-  const filasTq = (f.tanques || []).filter((r) => txt(r.Sala) && entero(r.Tanque) !== '' && esFecha(fecha10(r.Fecha)));
+  // Punto 2 (2026-10-04) · más lo tecleado en Alimentación (pesosDeAlimentacion): la más reciente de las dos manda.
+  const filasTq = (f.tanques || []).concat(pesosDeAlimentacion(f.alimentacion, f.tanques))
+    .filter((r) => txt(r.Sala) && entero(r.Tanque) !== '' && esFecha(fecha10(r.Fecha)));
   const ingresos = f.ingresos || [];
   const vacio = { valor: '', fuente: '', fecha: '' };
   const out = {};
@@ -242,8 +244,9 @@ export function alimPesosDeReferencia(fuentes, libro) {
       for (const d of fechas) {
         const Tf = libroAl(d).tanques.get(k);
         if (!Tf || !Tf.composicion.some((c) => lotes.indexOf(c.lote) !== -1 && (c.machos > 0 || c.hembras > 0))) continue;
-        const v = con.filter((r) => fecha10(r.Fecha) === d).map((r) => alimNum(r[col]));
-        return { valor: r2(v.reduce((a, b) => a + b, 0) / v.length), fuente: 'Biometría', fecha: d };
+        const delDia = con.filter((r) => fecha10(r.Fecha) === d);
+        const v = delDia.map((r) => alimNum(r[col]));
+        return { valor: r2(v.reduce((a, b) => a + b, 0) / v.length), fuente: delDia.some((r) => !r._deAlimentacion) ? 'Biometría' : 'Alimentación', fecha: d };
       }
       return null;
     };
