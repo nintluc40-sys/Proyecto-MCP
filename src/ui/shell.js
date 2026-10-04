@@ -110,7 +110,7 @@ export function mountShell(appEl) {
   on(EV.DATA, () => { renderDateBar(); if (viewRepaintsOnData(store.currentView)) renderCurrentView({ conservarPosicion: true }); });
 }
 
-// Vistas principales del sistema. Las NUEVE están desarrolladas: aquí ya no queda ninguna
+// Vistas principales del sistema. Las DIEZ están desarrolladas (la décima, 🏭 Planta, en construcción por tandas): aquí ya no queda ninguna
 // «pendiente», y ninguna entrada declara esa marca.
 // ⚠ Esta línea decía «(las pendientes aún no están desarrolladas)» y llevaba tiempo siendo falsa,
 // exactamente igual que el respaldo que la acompañaba —el que esquivaba las vistas marcadas como
@@ -128,6 +128,8 @@ export const MAIN_VIEWS = [
   { id: 'microbiologia', label: 'Microbiología',     icon: '🧫' },
   { id: 'biomolecular', label: 'Biología Molecular', icon: '🧬' },
   { id: 'visitante',    label: 'Visitante',          icon: '🚪' },
+  // Al FINAL: el orden decide dónde aterriza cada rol, y el Administrativo debe seguir entrando al Supervisor.
+  { id: 'planta',       label: 'Planta',             icon: '🏭' },
 ];
 
 // Roles de ingreso y vistas a las que acceden ('*' = todas).
@@ -138,6 +140,9 @@ export const ROLES = {
   supervisor:     { label: 'Supervisor',     icon: '📋', allow: ['supervisor', 'revisiones', 'registros', 'algas', 'microbiologia', 'biomolecular', 'maduracion'] },
   chequeador:     { label: 'Chequeador',     icon: '✅', allow: ['larvicultura'] },
   visitante:      { label: 'Visitante',      icon: '🚪', allow: ['visitante'] },
+  // Gerencia (2026-10-04, decisión del usuario): SÓLO la vista 🏭 Planta, el tablero de producción sobre la
+  // maqueta 3D; sin clave, como los demás roles.
+  gerencia:       { label: 'Gerencia',       icon: '📈', allow: ['planta'] },
 };
 
 const roleAllows = (viewId) => {

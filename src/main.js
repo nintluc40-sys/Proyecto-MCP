@@ -100,6 +100,21 @@ function boot() {
     },
   });
 
+  // Planta (🏭, rol Gerencia) — carga DIFERIDA: trae three.js (la maqueta 3D del laboratorio) y sólo la
+  // abre gerencia, así que el resto de la app no lo descarga. Tanda 1 (2026-10-04): todavía sin datos de
+  // producción → `necesitaLibro: false` (abrirla no descarga el libro) y `repintaConDatos: false`: un
+  // refresco reconstruiría la escena 3D entera y perdería la cámara; cuando lleve datos, se pondrá al día
+  // ella misma con EV.DATA sin rehacer la escena (src/ui/repintaConDatos.test.js, src/ui/arranque.test.js).
+  registerView('planta', {
+    label: 'Planta', icon: '🏭', repintaConDatos: false, necesitaLibro: false,
+    render: (root) => {
+      root.innerHTML = '<div class="empty-state" style="padding:64px 20px"><div style="font-size:40px">🏭</div><p class="muted">Cargando la maqueta del laboratorio…</p></div>';
+      return import('./views/planta/index.js')
+        .then((m) => m.plantaView(root))
+        .catch((e) => { root.innerHTML = `<div class="empty-state" style="padding:48px">Error al cargar la vista Planta.<br><small class="mono">${esc(e.message)}</small></div>`; });
+    },
+  });
+
   mountShell(app);
 
   // El libro se lee en un Web Worker (P1, 2026-10-01): la pantalla no se congela al leerlo.

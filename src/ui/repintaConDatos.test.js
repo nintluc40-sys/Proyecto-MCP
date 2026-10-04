@@ -7,8 +7,10 @@
    foco (y lo tecleado si no se había guardado).
 
    🔑 AHORA. La vista DECLARA al registrarse `repintaConDatos: false` (como `usaBarraFecha`); el
-   shell sólo repinta las que no lo declaran. Registros lo declara en main.js, y SÓLO Registros:
-   un tablero que lo declarara se quedaría con datos viejos sin avisar.
+   shell sólo repinta las que no lo declaran. Registros lo declara en main.js, y fuera de ella SÓLO
+   🏭 Planta (2026-10-04): repintarla reconstruiría la escena 3D y perdería la cámara; hoy no lleva
+   datos, y cuando los lleve los pondrá al día ella misma con EV.DATA. Cualquier otro tablero que lo
+   declarara se quedaría con datos viejos sin avisar.
    ============================================================ */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -46,9 +48,9 @@ beforeAll(() => {
 });
 
 describe('repintaConDatos', () => {
-  it('main.js lo declara en Registros y en ninguna otra vista', () => {
+  it('main.js lo declara en Registros y en Planta, y en ninguna otra vista', () => {
     const declaran = bloques.filter(([, b]) => /repintaConDatos:\s*false/.test(b)).map(([id]) => id);
-    expect(declaran).toEqual(['registros']);
+    expect(declaran).toEqual(['registros', 'planta']);
   });
 
   it('EV.DATA no repinta Registros', () => {
