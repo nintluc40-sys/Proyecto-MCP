@@ -100,7 +100,6 @@
 .planta .toggles { display: grid; gap: 8px; }
 .planta .toggles label { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13.5px; }
 .planta .toggles input { width: 16px; height: 16px; accent-color: var(--sel); }
-.planta .note { margin: 0; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 14px; }
 .planta button:focus-visible, .planta input:focus-visible { outline: 2px solid var(--sel); outline-offset: 2px; }
 
 /* ---- Maqueta ---- */

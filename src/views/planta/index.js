@@ -75,7 +75,6 @@ const MARCO = `
       <label><input type="checkbox" id="t-life" checked> Personas, vehículos y aves</label>
       <label><input type="checkbox" id="t-labels" checked> Nombres de módulos y salas</label>
     </section>
-    <p class="note">Módulos y salas del plano ARQ-A3 V4; las salas 4 y 5 se dibujan con los tanques del MCP (6 y 5), en una disposición aproximada. En larvicultura cada tanque toma el estado de la última corrida de su módulo; un tanque que no figura en esa corrida está vacío. En maduración, el estado de cada tanque es el de sus lotes en esa sala, como en el mapa de salas, y las cifras de bajas, descartes y cópulas son de los últimos 7 días. La producción del mes es el Total de la tabla Producción Omarsa del Supervisor (la población actual de todas las corridas del mes de producción, CIO incluido); los nauplios y desoves, los del mes de calendario, como en Visitante. Los datos se actualizan solos cada 5 minutos. Postlarvas y reproductores se ven a escala aumentada; personas y vehículos son ambientación.</p>
   </aside>
 </div>`;
 
