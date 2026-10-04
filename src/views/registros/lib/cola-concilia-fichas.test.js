@@ -39,7 +39,8 @@ describe('Cola · lo entregado de Larvicultura deja de estar «pendiente»', () 
   it('🔴 la entrega concilia la ficha encolada (M01 · Calidad)', () => {
     H.saveE(1, 'calidad', { fecha: '2026-10-04', corrida: '600' }, false);
     const marca = H._marcaFichas(1, ['calidad']);
-    expect(marca.keys).toEqual(['1|calidad']);
+    expect(marca.keys, 'la marca lleva el módulo y la ficha, y desde 2b su DÍA').toEqual(['1|calidad|' + marca.keys[0].split('|')[2]]);
+    expect(marca.keys[0]).toMatch(/^1\|calidad\|\d{4}-\d{2}-\d{2}$/);
     expect(H._reconcileMark(marca)).toBe(true);
     expect(H.loadE(1, 'calidad').synced).toBe(true);
   });
@@ -56,7 +57,7 @@ describe('Cola · lo entregado de Larvicultura deja de estar «pendiente»', () 
   it('el sello sigue mandando: si la ficha se editó después de encolarse, NO se da por enviada', () => {
     H.saveE(1, 'plg', { fecha: '2026-10-04', plg: 10 }, false);
     const marca = H._marcaFichas(1, ['plg']);
-    marca.stamps['1|plg'] -= 1;                  // la entrada que hay ya no es la que se envió
+    marca.stamps[marca.keys[0]] -= 1;                  // la entrada que hay ya no es la que se envió
     expect(H._reconcileMark(marca)).toBe(false);
     expect(H.loadE(1, 'plg').synced).toBe(false);
   });

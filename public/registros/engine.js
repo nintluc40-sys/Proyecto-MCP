@@ -624,21 +624,23 @@ function _purgeOldestRecovery(){
   return "un snapshot de auto-guardado";
 }
 function _purgeExpiredAlgHistDays(){
-  // Claves ALGHIST_PRE+YYYY-MM-DD: las anteriores al día actual ya están
-  // fuera del TTL (24h) y no se sincronizarán; son seguras de eliminar.
+  // Claves ALGHIST_PRE+YYYY-MM-DD de días anteriores.
+  // 🔴 2026-10-04 (usuario, auditoría final) · SÓLO LAS VACÍAS. Un día anterior con registros son registros SIN ENVIAR (al
+  // enviarse salen del historial): antes se borraban aquí y en cleanup «porque ya no se sincronizarán», y se perdían sin
+  // aviso. Ahora se recuperan con «☁️ Enviarlas» (ver PENDIENTES DE DÍAS ANTERIORES), y liberar espacio no cuesta datos.
   const todayStr = today();
   const toRemove = [];
   for(let i=0;i<localStorage.length;i++){
     const k = localStorage.key(i);
     if(!k || !k.startsWith(ALGHIST_PRE)) continue;
     const dStr = k.slice(ALGHIST_PRE.length);
-    if(/^\d{4}-\d{2}-\d{2}$/.test(dStr) && dStr < todayStr){
+    if(/^\d{4}-\d{2}-\d{2}$/.test(dStr) && dStr < todayStr && _algHistVacia(k)){
       toRemove.push(k);
     }
   }
   toRemove.forEach(k => localStorage.removeItem(k));
   return toRemove.length > 0
-    ? (toRemove.length + " historial(es) Lab. Algas vencido(s)")
+    ? (toRemove.length + " historial(es) Lab. Algas vacío(s)")
     : null;
 }
 function _purgeExpiredHistEntries(){
@@ -959,7 +961,8 @@ function cleanup(){
         const dStr = k.slice(ALGHIST_PRE.length);
         if(/^\d{4}-\d{2}-\d{2}$/.test(dStr)){
           const d = new Date(dStr + "T00:00:00");
-          if(!isNaN(d) && (now - d.getTime()) > TTL){ localStorage.removeItem(k); _removed++; }
+          // 2026-10-04 · sólo si está VACÍO: con registros, son registros sin enviar (ver _purgeExpiredAlgHistDays).
+          if(!isNaN(d) && (now - d.getTime()) > TTL && _algHistVacia(k)){ localStorage.removeItem(k); _removed++; }
         }
         return;
       }
@@ -979,11 +982,9 @@ function cleanup(){
       }
       // Ficha (skey): la clave incluye la fecha de guardado (today()). Purga:
       //  • sincronizadas → 24h tras guardar (consulta rápida post-envío).
-      //  • NO sincronizadas de días previos → quedan HUÉRFANAS: loadE() siempre
-      //    usa la clave de HOY, así que ya nunca se leen ni pueden sincronizarse
-      //    desde la UI. Antes NUNCA se purgaban → fuga lenta de almacenamiento.
-      //    Ahora se eliminan tras el mismo margen de 24h (cubre el trabajo
-      //    pasada la medianoche; el recovery de 1h es independiente).
+      //  • NO sincronizadas de días previos → 🔴 2026-10-04 (usuario, auditoría final) SE CONSERVAN. Se borraban a las 24 h
+      //    «porque loadE() sólo lee la clave de HOY y ya no se podían enviar»: eran datos SIN ENVIAR que se perdían sin aviso.
+      //    Ahora el módulo las enseña y las envía con su fecha, o las descarta a petición (PENDIENTES DE DÍAS ANTERIORES).
       // El guard `typeof e.savedAt === "number"` garantiza que SOLO se evalúen
       // entradas de ficha reales (saveE): otras claves larv4_ que caen aquí
       // (cola de sync, registros/borradores Mic·Cal, etc.) no tienen savedAt y
@@ -991,7 +992,7 @@ function cleanup(){
       const raw = localStorage.getItem(k);
       if(!raw) return;
       const e = JSON.parse(raw);
-      if(e && typeof e.savedAt === "number" && (now - e.savedAt) > TTL){
+      if(e && typeof e.savedAt === "number" && e.synced && (now - e.savedAt) > TTL){
         localStorage.removeItem(k); _removed++;
       }
     }catch(x){ _silent("cleanup:"+k, x); }
@@ -1493,8 +1494,9 @@ function buildDatosPayload(m, includeFichas, opts){
     rows: allRows.filter(r => r !== null)
   };
 }
-function buildControlPayload(m){
-  const par = (loadE(m,"params") || {data:{}}).data;
+// `dato` (opcional, 2026-10-04): los datos de una ficha concreta —la de un día anterior— en vez de la de hoy.
+function buildControlPayload(m, dato){
+  const par = dato || (loadE(m,"params") || {data:{}}).data;
   const _tqn = loadTqNames(m);
 
   // SECURITY: validate and sanitize fields before payload
@@ -1841,7 +1843,10 @@ function _marcaFichas(mod, fichas){
   (fichas || []).forEach(f => {
     const e = loadE(mod, f);
     if(!e) return;
-    const k = mod + "|" + f;
+    // 2026-10-04 · con SU DÍA (módulo|ficha|día): si la entrega llega otro día, la clave de hoy ya no es la suya, y la ficha
+    // se quedaría «pendiente de días anteriores» estando en la hoja. Sin fecha (marcas viejas), como antes.
+    const _dia = (e.date && /^\d{4}-\d{2}-\d{2}$/.test(e.date)) ? e.date : "";
+    const k = mod + "|" + f + (_dia ? "|" + _dia : "");
     keys.push(k); stamps[k] = e.updatedAt;
   });
   return keys.length ? { kind:"fichas", keys:keys, stamps:stamps } : null;
@@ -1856,10 +1861,22 @@ function _reconcileFichas(mark){
   let ch = false;
   mark.keys.forEach(k => {
     const p = String(k).split("|");
-    if(p.length !== 2) return;
+    if(p.length !== 2 && p.length !== 3) return;
     /* 🔴 2026-10-04 (auditoría final) · el módulo vuelve de la marca como TEXTO («1|calidad» → "1"), y saveE/loadE lo
        quieren NÚMERO (isValidMod, e.mod === m): no se concilió NUNCA, y lo entregado por la cola seguía «pendiente». */
     const mod = /^\d+$/.test(p[0]) ? Number(p[0]) : p[0], ficha = p[1];
+    /* 2026-10-04 · CON DÍA (módulo|ficha|aaaa-mm-dd): la ficha de SU día, por su clave, sea hoy, sea un día anterior
+       (previasEnviar), sea una entrega que cruzó la medianoche. Se marca en su sitio, con el mismo sello. */
+    if(p.length === 3){
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(p[2]) || !isValidMod(mod)) return;
+      const sk = PRE + mLabel(mod) + "_" + ficha + "_" + p[2];
+      let ed = null; try{ ed = JSON.parse(localStorage.getItem(sk)); }catch(_){}
+      if(!ed || ed.synced || ed.mod !== mod || ed.ficha !== ficha || ed.updatedAt !== sellos[k]) return;
+      try{ pushHist(mod, ficha, ed.data); }catch(_){}
+      ed.synced = true;
+      if(_lsSet(sk, JSON.stringify(ed))){ _invalidateLoadE(sk); ch = true; }
+      return;
+    }
     const e = loadE(mod, ficha);
     if(!e || e.synced) return;
     // El sello: si no casa, la ficha se editó después de encolarse. Sigue pendiente, y
@@ -1877,11 +1894,22 @@ function _reconcileFichas(mark){
 function _reconcileAlgas(mark){
   if(typeof loadAlgHist !== "function") return false;
   const enviados = new Set(mark.keys.map(String));
-  const hist = loadAlgHist();
-  const idos = hist.filter(h => h && enviados.has(String(h.id)));
-  if(!idos.length) return false;             // otro día, u otra sesión: no hay nada que casar
-  idos.forEach(h => { if(h.data) pushAlgLog(h.data); });
-  saveAlgHist(hist.filter(h => !(h && enviados.has(String(h.id)))));
+  /* 2026-10-04 · en TODOS los días del historial, no sólo en el de hoy: una entrega que cruzó la medianoche —o el envío de
+     un día anterior desde «☁️ Enviarlas»— tiene sus registros en la clave de SU día, y se quedarían «sin enviar». */
+  let algo = false;
+  for(let i = localStorage.length - 1; i >= 0; i--){
+    const k = localStorage.key(i);
+    if(!k || k.indexOf(ALGHIST_PRE) !== 0) continue;
+    let l = null; try{ l = JSON.parse(localStorage.getItem(k)); }catch(_){}
+    if(!Array.isArray(l)) continue;
+    const idos = l.filter(h => h && enviados.has(String(h.id)));
+    if(!idos.length) continue;
+    idos.forEach(h => { if(h.data) pushAlgLog(h.data); });
+    const resto = l.filter(h => !(h && enviados.has(String(h.id))));
+    try{ if(resto.length) localStorage.setItem(k, JSON.stringify(resto)); else localStorage.removeItem(k); }catch(_){}
+    algo = true;
+  }
+  if(!algo) return false;                    // otra sesión, u otro dispositivo: no hay nada que casar
   if(mark.mod){
     const e = loadE(mark.mod, "algas");
     if(e) saveE(mark.mod, "algas", e.data, true);
@@ -2029,7 +2057,7 @@ async function flushSyncQueue(opts){
       if(enEspera > 0 && !_auto) toast("⏳ "+enEspera+" envío(s) esperando en la cola"+_gasMotivo(msgEntorno)
         +" — se entregarán solos en cuanto se arregle", "warn", 8000);
       if(rejected > 0) toast("⚠️ "+rejected+" envío(s) en cola rechazados"+_gasMotivo(msgDatos)+" — revisa los datos", "err", 6000);
-      try{ updateDots(); updateSyncUI(); if(reconciled && typeof buildGrid === "function") buildGrid(); }catch(_){}
+      try{ updateDots(); updateSyncUI(); if(reconciled && typeof buildGrid === "function") buildGrid(); if(reconciled) _previasPintar(); }catch(_){}
     }
     try{ updateSyncUI(); }catch(_){}   // B · el indicador cuenta la cola: al día tras CADA vaciado
     return { sent: sent, rejected: rejected, enEspera: enEspera };
@@ -2494,6 +2522,146 @@ async function syncAll(){
 /* ══════════════════════════════════════════
    LOGIN
 ══════════════════════════════════════════ */
+/* ══════════════════════════════════════════
+   PENDIENTES DE DÍAS ANTERIORES (auditoría final, 2026-10-04 · decisión del usuario: «no borrar y recuperar»)
+   Las fichas de Larvicultura (M01–M10, CIO) y el historial de Lab. Algas se guardan POR DÍA —la clave lleva la fecha— y la
+   app sólo lee los de HOY: lo guardado y NO enviado dejaba de verse a medianoche y la limpieza lo borraba después, sin
+   aviso. Ahora la limpieza no lo borra (cleanup, _purgeExpiredAlgHistDays) y, al abrir el módulo, este aviso dice qué quedó
+   de días anteriores, con «☁️ Enviarlas» —cada una con SU fecha— y «🗑 Descartarlas».
+   Lo que se intentó enviar ya está a salvo en la cola, y su entrega lo concilia en SU día (marca módulo|ficha|día,
+   _reconcileAlgas en todos los días): esto es lo que nunca salió del dispositivo.
+══════════════════════════════════════════ */
+const PREV_DATOS = ["calidad","plg","poblacion","despacho","calagua"];
+function _esDiaIso(d){ return /^\d{4}-\d{2}-\d{2}$/.test(String(d || "")); }
+function _diaCorto(d){ const p = String(d).split("-"); return p.length === 3 ? p[2] + "/" + p[1] : String(d); }
+function _algHistVacia(k){ let l = null; try{ l = JSON.parse(localStorage.getItem(k)); }catch(_){} return !Array.isArray(l) || !l.length; }
+/** Fichas de Larvicultura del módulo `m` guardadas en días ANTERIORES y sin enviar: [{ key, ficha, dia, e }], de la más vieja. */
+function _previasFichas(m){
+  const out = [];
+  if(!isValidMod(m) || !isStdMod(m)) return out;   // ⚠ isStdMod son negaciones: también es «true» con un módulo nulo
+  const hoy = today(), pre = PRE + mLabel(m) + "_";
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(!k || !k.startsWith(pre)) continue;
+    const resto = k.slice(pre.length), j = resto.lastIndexOf("_");
+    if(j < 0) continue;
+    const f = resto.slice(0, j), d = resto.slice(j + 1);
+    if(!_esDiaIso(d) || d >= hoy || (FICHAS.indexOf(f) === -1 && f !== "desinfeccion")) continue;
+    let e = null; try{ e = JSON.parse(localStorage.getItem(k)); }catch(_){}
+    if(!e || e.mod !== m || e.ficha !== f || e.synced || !e.data || typeof e.data !== "object" || Array.isArray(e.data)) continue;
+    out.push({ key:k, ficha:f, dia:d, e:e });
+  }
+  return out.sort(function(a, b){ return a.dia < b.dia ? -1 : a.dia > b.dia ? 1 : (a.ficha < b.ficha ? -1 : 1); });
+}
+/** Registros de Lab. Algas de días ANTERIORES que siguen en su historial (= sin enviar): [{ key, dia, lista }]. */
+function _previasAlgas(){
+  const out = [], hoy = today();
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(!k || k.indexOf(ALGHIST_PRE) !== 0) continue;
+    const d = k.slice(ALGHIST_PRE.length);
+    if(!_esDiaIso(d) || d >= hoy) continue;
+    let l = null; try{ l = JSON.parse(localStorage.getItem(k)); }catch(_){}
+    if(Array.isArray(l) && l.length) out.push({ key:k, dia:d, lista:l });
+  }
+  return out.sort(function(a, b){ return a.dia < b.dia ? -1 : 1; });
+}
+function _previasPintar(){
+  let b = document.getElementById("pend-previas");
+  if(!b){
+    const ft = document.getElementById("ftabs");
+    if(!ft || !ft.parentNode) return;
+    b = document.createElement("div"); b.id = "pend-previas";
+    ft.parentNode.insertBefore(b, ft.nextSibling);
+  }
+  let txt = "";
+  if(isLabMod(curMod)){
+    const p = _previasAlgas(), n = p.reduce(function(a, x){ return a + x.lista.length; }, 0);
+    if(n) txt = n + " registro(s) de Lab. Algas del " + p.map(function(x){ return _diaCorto(x.dia); }).join(", ");
+  } else if(isValidMod(curMod) && isStdMod(curMod)){
+    const dias = {};
+    _previasFichas(curMod).forEach(function(x){ (dias[x.dia] = dias[x.dia] || []).push((TAB_META[x.ficha] || ["", x.ficha])[1]); });
+    txt = Object.keys(dias).map(function(d){ return _diaCorto(d) + ": " + dias[d].join(", "); }).join(" · ");
+  }
+  b.innerHTML = txt
+    ? '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:8px 12px;margin:8px 0;font-size:12px;color:#92400e;display:flex;flex-wrap:wrap;gap:8px;align-items:center">'
+      + '<span>⚠️ <b>Guardado y sin enviar de días anteriores</b> — ' + escapeHtml(txt) + '</span>'
+      + '<button class="btn" type="button" style="font-size:12px" onclick="previasEnviar()">☁️ Enviarlas</button>'
+      + '<button class="btn" type="button" style="font-size:12px" onclick="previasDescartar()">🗑 Descartarlas</button></div>'
+    : "";
+}
+async function _previasEnviarFichas(m, url){
+  const r = { ok:0, cola:0, vacias:0, malo:null };
+  const p = _previasFichas(m);
+  const dias = p.map(function(x){ return x.dia; }).filter(function(d, i, a){ return a.indexOf(d) === i; });
+  for(const d of dias){
+    const del = p.filter(function(x){ return x.dia === d; });
+    // Sin fecha propia, la del día en que se guardó: la misma que habría llevado enviada ese día (su today() de entonces).
+    const conFecha = function(x){ const dt = x.e.data; return Object.assign({}, dt, { fecha: isValidDate(dt.fecha || "") ? dt.fecha : (isValidDate(x.e.date || "") ? x.e.date : d) }); };
+    const grupos = [];
+    const datos = del.filter(function(x){ return PREV_DATOS.indexOf(x.ficha) !== -1; });
+    if(datos.length){
+      const src = {}; datos.forEach(function(x){ src[x.ficha] = conFecha(x); });
+      grupos.push({ items:datos, nombre:"Datos Larvicultura del " + _diaCorto(d), payload: buildDatosPayload(m, datos.map(function(x){ return x.ficha; }), { dataByFicha: src }) });
+    }
+    del.filter(function(x){ return x.ficha === "params"; }).forEach(function(x){ grupos.push({ items:[x], nombre:"Parámetros del " + _diaCorto(d), payload: buildControlPayload(m, conFecha(x)) }); });
+    del.filter(function(x){ return x.ficha === "desinfeccion"; }).forEach(function(x){ grupos.push({ items:[x], nombre:"Desinfección del " + _diaCorto(d), payload: buildDesinfeccionPayload(m, conFecha(x)) }); });
+    for(const g of grupos){
+      if(!g.payload || !Array.isArray(g.payload.rows) || !g.payload.rows.length){ r.vacias += g.items.length; continue; }
+      const keys = [], stamps = {};
+      g.items.forEach(function(x){ const k = m + "|" + x.ficha + "|" + x.dia; keys.push(k); stamps[k] = x.e.updatedAt; });
+      const opts = { mark:{ kind:"fichas", keys:keys, stamps:stamps } };
+      const sent = await postPayload(g.payload, url, opts);
+      if(sent){ _reconcileFichas(opts.mark); r.ok++; }   // la misma conciliación que una entrega de la cola
+      else if(opts.outcome === "queued") r.cola++;
+      else { r.malo = { outcome:opts.outcome, gasMessage:opts.gasMessage, nombre:g.nombre }; return r; }
+    }
+  }
+  return r;
+}
+async function _previasEnviarAlgas(url){
+  const r = { ok:0, cola:0, vacias:0, malo:null };
+  for(const x of _previasAlgas()){
+    const ap = buildAlgasPayload(curMod, x.lista);
+    if(!ap || !Array.isArray(ap.rows) || !ap.rows.length){ r.vacias += x.lista.length; continue; }
+    // Sin «mod» en la marca: el formulario de HOY no se da por enviado por mandar lo de otro día.
+    const opts = { mark:{ kind:"alg", keys: x.lista.map(function(h){ return h && h.id; }).filter(Boolean) } };
+    const sent = await postPayload(ap, url, opts);
+    if(sent){ _reconcileAlgas(opts.mark); r.ok++; }
+    else if(opts.outcome === "queued") r.cola++;
+    else { r.malo = { outcome:opts.outcome, gasMessage:opts.gasMessage, nombre:"Lab. Algas del " + _diaCorto(x.dia) }; return r; }
+  }
+  return r;
+}
+let _previasEnVuelo = false;
+async function previasEnviar(){
+  if(_previasEnVuelo) return;
+  const url = gasUrl();
+  if(!url){ toast("Configura la URL de Google Apps Script primero","warn"); openCfg(); return; }
+  if(!isValidGasUrl(url)){ toast("URL de script inválida","err"); openCfg(); return; }
+  _previasEnVuelo = true;
+  try{
+    const r = isLabMod(curMod) ? await _previasEnviarAlgas(url) : await _previasEnviarFichas(curMod, url);
+    if(r.malo) _syncNotOkUI(r.malo.outcome, "No se pudo enviar lo de días anteriores (" + r.malo.nombre + ")", null, r.malo.gasMessage);
+    else if(r.cola) toast("📶 Lo de días anteriores quedó en la cola: se enviará solo", "warn", 5500);
+    else if(r.ok) toast("✅ Enviado lo de días anteriores (" + r.ok + " envío(s))", "ok", 5000);
+    if(r.vacias) toast("ℹ️ " + r.vacias + " de días anteriores sin valores que enviar: si sobran, descártalas.", "info", 6000);
+  } finally {
+    _previasEnVuelo = false;
+    try{ _previasPintar(); updateDots(); updateSyncUI(); }catch(_){}
+  }
+}
+function previasDescartar(){
+  const lab = isLabMod(curMod);
+  const lista = lab ? _previasAlgas() : _previasFichas(curMod);
+  const n = lab ? lista.reduce(function(a, x){ return a + x.lista.length; }, 0) : lista.length;
+  if(!n){ _previasPintar(); return; }
+  if(!confirm("¿Descartar " + n + (lab ? " registro(s) de Lab. Algas" : " ficha(s)") + " de días anteriores SIN ENVIAR?\nSe borran de este dispositivo y no llegarán a la hoja.")) return;
+  lista.forEach(function(x){ try{ localStorage.removeItem(x.key); }catch(_){} if(!lab) _invalidateLoadE(x.key); });
+  toast("🗑 Descartado lo de días anteriores (" + n + ")", "info", 4000);
+  try{ _previasPintar(); updateDots(); updateSyncUI(); }catch(_){}
+}
+
 function buildGrid(){
   // El grid de módulos SOLO es visible en la pantalla de login. Si hay un
   // módulo abierto (#app.on), el grid está oculto: omitir su reconstrucción
@@ -2506,7 +2674,7 @@ function buildGrid(){
   let h = "";
   // M01–M10
   for(let m=1; m<=MODS; m++){
-    const anyPend = STD_FICHAS_ALL.some(f=>getStatus(m,f)==="pending");
+    const anyPend = STD_FICHAS_ALL.some(f=>getStatus(m,f)==="pending") || _previasFichas(m).length > 0;   // 2026-10-04 · y de días anteriores
     const anySync = STD_FICHAS_ALL.some(f=>getStatus(m,f)==="synced");
     const cls = anyPend?"pend":anySync?"sync":"";
     h += `<div class="mc ${cls}" id="mc${m}" onclick="pickMod(${m})">
@@ -2517,7 +2685,7 @@ function buildGrid(){
   }
   // ─── FILA 2 (continuación) ───────────────────────────────
   // CIO tile
-  const cioPend = STD_FICHAS_ALL.some(f=>getStatus(CIO_MOD,f)==="pending");
+  const cioPend = STD_FICHAS_ALL.some(f=>getStatus(CIO_MOD,f)==="pending") || _previasFichas(CIO_MOD).length > 0;
   const cioSync = STD_FICHAS_ALL.some(f=>getStatus(CIO_MOD,f)==="synced");
   const cioCls = cioPend?"pend":cioSync?"sync":"";
   h += `<div class="mc mc-cio ${cioCls}" id="mc0" onclick="pickMod(0)">
@@ -2541,7 +2709,7 @@ function buildGrid(){
   </div>`;
   // ─── FILA 3 ──────────────────────────────────────────────
   // Lab. Algas tile
-  const labPend = ["algas"].some(f=>getStatus(LAB_MOD,f)==="pending");
+  const labPend = ["algas"].some(f=>getStatus(LAB_MOD,f)==="pending") || _previasAlgas().length > 0;   // 2026-10-04
   const labSync = ["algas"].some(f=>getStatus(LAB_MOD,f)==="synced");
   const labCls = labPend?"pend":labSync?"sync":"";
   h += `<div class="mc mc-lab ${labCls}" id="mc11" onclick="pickMod(11)">
@@ -2653,6 +2821,7 @@ function enter(){
   buildTabs();
   renderAll();
   updateSyncUI();
+  try{ _previasPintar(); }catch(_){}   // 2026-10-04 · lo guardado y sin enviar de días anteriores
   startAutoRecovery();
 }
 
@@ -4445,10 +4614,12 @@ function dxFechaChange(v){
 }
 
 // Construye el payload tidy (1 fila por elemento con estado u observación editada).
-function buildDesinfeccionPayload(m){
-  const e = loadE(m,"desinfeccion"); const d = e?e.data:{};
+// `dato` (opcional, 2026-10-04): los datos de una ficha concreta —la de un día anterior— en vez de la de hoy.
+function buildDesinfeccionPayload(m, dato){
+  const e = dato ? null : loadE(m,"desinfeccion"); const d = dato || (e?e.data:{});
   const fecha   = isValidDate(d.fecha||"") ? d.fecha : today();
-  const corrida = sanitizeStr(d.corrida || _inheritShared(m,"corrida","desinfeccion") || "");
+  // La de un día anterior no hereda la corrida de las fichas de HOY.
+  const corrida = sanitizeStr(d.corrida || (dato ? "" : _inheritShared(m,"corrida","desinfeccion")) || "");
   const headers = ["Fecha","Módulo","Corrida","Tipo de Registro","Categoría","Elemento","Estado","Observaciones","Fecha Elemento"];
   const rows = [];
   DESINF_TYPES.forEach(t => {

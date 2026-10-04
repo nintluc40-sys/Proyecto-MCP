@@ -148,19 +148,35 @@ describe('B · _reconcileFichas', () => {
 
 /* ── C · _reconcileAlgas: retira, no marca ───────────────────────────── */
 describe('C · _reconcileAlgas', () => {
-  function caja(historial, entradaAlgas) {
-    let hist = historial.slice();
+  /* 2026-10-04 (auditoría final) · la conciliación recorre el historial de TODOS los días (una entrega que cruza la
+     medianoche tiene sus registros en la clave de SU día), así que la caja le da un almacén con el de hoy y, si hace
+     falta, el de otro día. Las tres comprobaciones de siempre siguen igual; la cuarta es la razón del cambio. */
+  const PRE_HIST = 'larv4_alghist_';
+  function caja(historial, entradaAlgas, deAyer) {
+    const m = new Map([[PRE_HIST + '2026-10-04', JSON.stringify(historial)]]);
+    if (deAyer) m.set(PRE_HIST + '2026-10-03', JSON.stringify(deAyer));
+    const ls = { get length() { return m.size; }, key: (i) => Array.from(m.keys())[i] ?? null,
+      getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) };
     const log = [];
     const store = entradaAlgas ? { 'LAB|algas': { ...entradaAlgas } } : {};
     const api = fnDelMotor(['_reconcileAlgas'], {
-      loadAlgHist: () => hist,
-      saveAlgHist: (l) => { hist = l; },
+      ALGHIST_PRE: PRE_HIST, localStorage: ls,
+      loadAlgHist: () => JSON.parse(m.get(PRE_HIST + '2026-10-04') || '[]'),
       pushAlgLog: (d) => { log.push(d); },
-      loadE: (m, f) => store[m + '|' + f] || null,
-      saveE: (m, f, data, synced) => { const k = m + '|' + f; if (!store[k]) return false; store[k] = { ...store[k], synced }; return true; },
+      loadE: (mo, f) => store[mo + '|' + f] || null,
+      saveE: (mo, f, data, synced) => { const k = mo + '|' + f; if (!store[k]) return false; store[k] = { ...store[k], synced }; return true; },
     });
-    return { ...api, get hist() { return hist; }, log, store };
+    const leer = (d) => JSON.parse(m.get(PRE_HIST + d) || '[]');
+    return { ...api, get hist() { return leer('2026-10-04'); }, leer, log, store };
   }
+
+  it('🔴 la entrega encuentra los registros en el historial de SU día, no sólo en el de hoy (cruza la medianoche)', () => {
+    const c = caja([{ id: 'h1', data: { x: 0 } }], null, [{ id: 'a1', data: { x: 1 } }, { id: 'a2', data: { x: 2 } }]);
+    expect(c._reconcileAlgas({ kind: 'alg', keys: ['a1'] })).toBe(true);
+    expect(c.log).toEqual([{ x: 1 }]);
+    expect(c.leer('2026-10-03').map((h) => h.id), 'sale el entregado de su día; el otro sigue pendiente').toEqual(['a2']);
+    expect(c.hist.map((h) => h.id), 'el de hoy no se toca').toEqual(['h1']);
+  });
 
   it('pasa a la Bitácora y RETIRA del historial lo entregado', () => {
     const c = caja([{ id: 'a1', data: { x: 1 } }, { id: 'a2', data: { x: 2 } }], { synced: false, data: {} });
