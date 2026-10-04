@@ -14339,8 +14339,12 @@ async function madReproRegistrarElegidas(seq){
   }
   if(res.matriz) _reproUltimaEscritura=Date.now();   // 1a · la MATRIZ cambió: una lectura de antes ya no vale para confirmar
   // Lo registrado sale de la lista; lo que quedó sin elegir sigue pendiente, con su contexto.
-  p.chips = p.chips.filter(function(c){ return elegidos.indexOf(c) === -1; });
-  if(p.destinos) p.destinos = p.destinos.map(function(d){ return { sala:d.sala, tanque:d.tanque, ids:d.ids.filter(function(id){ return elegidos.indexOf(id)===-1; }) }; }).filter(function(d){ return d.ids.length; });
+  /* 🔴 2026-10-04 (auditoría final) · …pero sólo si SALIÓ: entregado o a salvo en la cola. Con un fallo de verdad
+     (rechazo, error) los elegidos salían igual y, sin copia en el dispositivo, había que volver a teclearlos: ahora siguen
+     en la lista, con su contexto, para reintentar. */
+  const _salio = [_o1, _o2].every(function(o){ return !o.outcome || o.outcome === "ok" || o.outcome === "queued"; });
+  if(_salio) p.chips = p.chips.filter(function(c){ return elegidos.indexOf(c) === -1; });
+  if(_salio && p.destinos) p.destinos = p.destinos.map(function(d){ return { sala:d.sala, tanque:d.tanque, ids:d.ids.filter(function(id){ return elegidos.indexOf(id)===-1; }) }; }).filter(function(d){ return d.ids.length; });
   if(!p.chips.length) _reproElegirPend = null;
   if(p.clase === "evento") _madReproShowReport(res.report, [], p.tipo, ok && hubo);
   else _madReproShowTransferReport(res.report, p.trId, ok && hubo);

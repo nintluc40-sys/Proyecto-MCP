@@ -449,6 +449,32 @@ describe('🔴 R5 · con dos hembras vivas en un chip, elige el USUARIO', () => 
     expect(avisos[avisos.length - 1].msg).toContain('Marca de qué hembra');
   });
 
+  /* 🔴 2026-10-04 (auditoría final) · los elegidos salían de la lista AUNQUE el envío fallara, y este registro no guarda
+     copia en el dispositivo: había que volver a teclearlos. Ahora sólo salen si el envío llegó o quedó en la cola. */
+  const okPost = async (payload) => { envios.push(payload); return true; };
+  it('🔴 si el envío FALLA de verdad, la elección sigue a la vista para reintentar, y el reintento registra', async () => {
+    H.setLecturas({ [S.matriz]: [VIVA_A, VIVA_B], [S.bitacora]: [], [S.transfer]: [] });
+    await procesarEvento('Mortalidad');
+    radio('repro-report', 'L20').checked = true;
+    H.setPost(async (payload, url, opts) => { if (opts) { opts.outcome = 'rejected'; opts.gasMessage = 'Hoja no permitida'; } return false; });
+    try { await pulsar('repro-report'); } finally { H.setPost(okPost); }
+    expect(envios, 'no llegó nada').toHaveLength(0);
+    expect(document.querySelector('#repro-report .repro-elegir'), 'falló: el elegido tiene que seguir para reintentar').not.toBeNull();
+    radio('repro-report', 'L20').checked = true;
+    await pulsar('repro-report');
+    expect(envios.find((x) => x.sheetName === S.matriz), 'el reintento registra').toBeTruthy();
+    expect(document.querySelector('#repro-report .repro-elegir'), 'registrada, ya no hay nada que elegir').toBeNull();
+  });
+
+  it('en la COLA el envío está a salvo: la elección sale de la lista, como si hubiera llegado', async () => {
+    H.setLecturas({ [S.matriz]: [VIVA_A, VIVA_B], [S.bitacora]: [], [S.transfer]: [] });
+    await procesarEvento('Mortalidad');
+    radio('repro-report', 'L20').checked = true;
+    H.setPost(async (payload, url, opts) => { if (opts) opts.outcome = 'queued'; return false; });
+    try { await pulsar('repro-report'); } finally { H.setPost(okPost); }
+    expect(document.querySelector('#repro-report .repro-elegir')).toBeNull();
+  });
+
   it('🔴 el botón sólo vale para el pendiente del que se PINTÓ', async () => {
     /* La carrera real: un traslado que termina de leer sus hojas con el técnico ya en Eventos reemplaza el pendiente
        sin repintar ese informe. Aquí el reemplazo lo hace un segundo proceso: el botón del primero (una MORTALIDAD)
