@@ -290,12 +290,16 @@ af('la figura sin pie no inventa separador', /Figura 1<\/figcaption>/.test(htmlF
 af('el anexo va DESPUÉS de las firmas',
   htmlF.indexOf('class="fanexo"') > htmlF.indexOf('Responsable de recepción'));
 
-const caduca = 'larv4_tras_foto_' + VIAJE + '_vieja';
-ctx.localStorage.setItem(caduca, JSON.stringify(
-  { ts: Date.now() - 49 * 60 * 60 * 1000, nota: 'caducada', durl: 'data:image/jpeg;base64,/9j/z' }));
+/* 🔴 2026-10-04 (usuario, auditoría final) · LAS FOTOS CADUCAN CON SU VIAJE, no por su propia edad. Aquí se exigía lo
+   contrario («una foto pasada de las 48 h no sale») y no estaba mal: el viaje caducaba a las 48 h siempre. Desde que uno
+   SIN ENVIAR se conserva hasta enviarlo, su anexo no puede perder figuras antes que él. La purga de las fotos de un viaje
+   que ya no está la prueba traslado-fotos.test.js (trasFotoPurgar no entra en este arnés). */
+const vieja = 'larv4_tras_foto_' + VIAJE + '_vieja';
+ctx.localStorage.setItem(vieja, JSON.stringify(
+  { ts: Date.now() - 49 * 60 * 60 * 1000, nota: 'de hace 49 h', durl: 'data:image/jpeg;base64,/9j/z' }));
 const htmlC = cli.buildTrasPdfHtml(data);
-af('una foto pasada de las 48 h no sale', !/caducada/.test(htmlC));
-af('y además se purga del dispositivo', ctx.localStorage.getItem(caduca) === null);
+af('una foto de más de 48 h de un viaje que sigue en el dispositivo SÍ sale', /de hace 49 h/.test(htmlC));
+af('y no se purga del dispositivo', ctx.localStorage.getItem(vieja) !== null);
 
 console.log('\n======================================================================');
 console.log(fallos ? ' *** ' + fallos + ' DISCREPANCIA(S) ***' : ' EL PAPEL Y EL TABLERO CUENTAN LO MISMO');

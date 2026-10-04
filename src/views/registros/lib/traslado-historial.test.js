@@ -171,14 +171,16 @@ describe('lo que caduca y lo que no', () => {
      o «47 h 59 min» según pase 1 ms. Esta prueba llegó a ser INTERMITENTE por eso: pasaba
      sola y fallaba con la batería entera cargando la máquina. Se mide el CONTRATO —forma,
      orden y el caso caducado—, que sí es determinista. */
+  /* 2026-10-04 (usuario) · la cuenta atrás es de lo ENVIADO, desde su envío: recibe el registro. Lo no enviado no caduca. */
+  const enviado = (edadMs) => ({ ts: Date.now() - edadMs, synced: true, syncedAt: Date.now() - edadMs });
   it('la cuenta atrás tiene forma de cuenta atrás', () => {
-    expect(H.trasHistTtl(Date.now())).toMatch(/^caduca en 4[78] h \d+ min$/);
-    expect(H.trasHistTtl(Date.now() - 47 * 3600000)).toMatch(/^caduca en \d+ min$|^caduca en 1 h \d+ min$/);
+    expect(H.trasHistTtl(enviado(0))).toMatch(/^caduca en 4[78] h \d+ min$/);
+    expect(H.trasHistTtl(enviado(47 * 3600000))).toMatch(/^caduca en \d+ min$|^caduca en 1 h \d+ min$/);
   });
 
   it('y va MENGUANDO: cuanto más viejo, menos queda', () => {
     const queda = (edadH) => {
-      const t = H.trasHistTtl(Date.now() - edadH * 3600000);
+      const t = H.trasHistTtl(enviado(edadH * 3600000));
       const m = t.match(/(?:(\d+) h )?(\d+) min/);
       return m ? Number(m[1] || 0) * 60 + Number(m[2]) : -1;
     };
@@ -187,8 +189,15 @@ describe('lo que caduca y lo que no', () => {
   });
 
   it('pasado el TTL lo dice, sin números negativos', () => {
-    expect(H.trasHistTtl(Date.now() - H.TRAS_TTL)).toBe('caduca ya');
-    expect(H.trasHistTtl(Date.now() - H.TRAS_TTL * 3)).toBe('caduca ya');
+    expect(H.trasHistTtl(enviado(H.TRAS_TTL))).toBe('caduca ya');
+    expect(H.trasHistTtl(enviado(H.TRAS_TTL * 3))).toBe('caduca ya');
+  });
+
+  it('🔴 lo NO enviado no caduca: más viejo que el TTL sigue en la lista y lo dice (2026-10-04, usuario)', () => {
+    localStorage.setItem(KEY, JSON.stringify([rec('p1', ['PPP-9'], false, H.TRAS_TTL * 2)]));
+    const html = H.trasHistHtml();
+    expect(html).toContain('PPP-9');
+    expect(html).toContain('sin enviar: se conserva hasta enviarlo');
   });
 });
 

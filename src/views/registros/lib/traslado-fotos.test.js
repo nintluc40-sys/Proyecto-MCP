@@ -111,11 +111,14 @@ describe('orden y caducidad', () => {
     expect(H.trasFotoList('tv1').map((f) => f.nota)).toEqual(['primera', 'segunda']);
   });
 
-  it('una foto más vieja que el TTL del VIAJE no sale, y se poda del almacén', () => {
+  /* 🔴 2026-10-04 (usuario) · LAS FOTOS CADUCAN CON SU VIAJE, no por su propia edad. Esta prueba decía lo contrario (una
+     foto de más de 48 h no salía) y no estaba mal: el viaje caducaba a las 48 h siempre. Desde que uno SIN ENVIAR se
+     conserva hasta enviarlo, su álbum no puede irse antes que él; cuando el viaje se va, la purga se lleva sus fotos (abajo). */
+  it('una foto de más de 48 h de un viaje que SIGUE en el dispositivo se conserva', () => {
     ponFoto('tv1', 'fviva', 'viva', 1000);
-    ponFoto('tv1', 'fmuerta', 'muerta', H.TRAS_TTL + 60000);
-    expect(H.trasFotoList('tv1').map((f) => f.nota)).toEqual(['viva']);
-    expect(globalThis.localStorage.getItem(H.trasFotoKey('tv1', 'fmuerta'))).toBeNull();
+    ponFoto('tv1', 'fvieja', 'vieja', H.TRAS_TTL + 60000);
+    expect(H.trasFotoList('tv1').map((f) => f.nota)).toEqual(['vieja', 'viva']);
+    expect(globalThis.localStorage.getItem(H.trasFotoKey('tv1', 'fvieja'))).not.toBeNull();
   });
 });
 

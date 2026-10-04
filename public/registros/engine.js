@@ -15898,7 +15898,9 @@ function _bioSave(list){
 function pruneBio(){
   const now = Date.now();
   const raw = _bioRaw();
-  const list = raw.filter(r => r && r.ts && (now - r.ts) < BIO_TTL);
+  // 2026-10-04 (usuario, auditoría final) · lo NO enviado se conserva hasta enviarlo o borrarlo a mano (como Score, Auditoría y
+  // Microbiología); a las 48 h sólo se retira lo ya enviado, contadas desde su envío. Antes se borraba TODO a las 48 h, sin aviso.
+  const list = raw.filter(r => r && r.ts && !(r.synced && (now - (r.syncedAt || r.ts)) >= BIO_TTL));
   if(list.length !== raw.length) _bioSave(list);
   try{ _bioPruneRpt(); }catch(_){}   // datos del reporte PDF + foto del gel
   return list;
@@ -17804,7 +17806,9 @@ function _astSave(list){
 function pruneAst(){
   const now = Date.now();
   const raw = _astRaw();
-  const list = raw.filter(r => r && r.ts && (now - r.ts) < AST_TTL);
+  // 2026-10-04 (usuario, auditoría final) · lo NO enviado se conserva hasta enviarlo o borrarlo a mano (como Score, Auditoría y
+  // Microbiología); a las 48 h sólo se retira lo ya enviado, contadas desde su envío. Antes se borraba TODO a las 48 h, sin aviso.
+  const list = raw.filter(r => r && r.ts && !(r.synced && (now - (r.syncedAt || r.ts)) >= AST_TTL));
   if(list.length !== raw.length) _astSave(list);
   return list;
 }
@@ -18397,10 +18401,11 @@ function renderAst(){
   const itemHtml = (r) => {
     const a = r.data || {};
     const safeId = escapeHtml(r.id);
-    const left = AST_TTL - (Date.now() - r.ts);
+    const left = AST_TTL - (Date.now() - (r.syncedAt || r.ts));   // 2026-10-04 · desde el ENVÍO; lo pendiente no caduca
     const h = Math.floor(left / 3600000);
     const m = Math.floor((left % 3600000) / 60000);
-    const ttlTxt = left <= 0 ? "expira pronto"
+    const ttlTxt = !r.synced ? "sin enviar: se conserva hasta enviarlo"
+                : left <= 0 ? "expira pronto"
                 : (h >= 1 ? ("expira en "+h+" h "+m+" min")
                           : ("expira en "+m+" min"));
     const tipoTxt = a.tipo_revision || astRevisionType(a.estadio||"");
@@ -18488,7 +18493,7 @@ function renderAst(){
       ${listHeader}
       <div class="mad-list">${items}</div>
       <div style="margin-top:10px;font-size:10.5px;color:var(--tx3);line-height:1.6">
-        ℹ️ Los registros se conservan localmente hasta <b>${Math.round(AST_TTL/3600000)} horas</b> (máx <b>${AST_MAX}</b>). Tras este período se borran automáticamente. Los enviados quedan en la hoja <code>${AST_SHEET}</code> de Google Sheets.
+        ℹ️ Lo enviado se conserva en este dispositivo <b>${Math.round(AST_TTL/3600000)} horas</b> tras enviarse; lo no enviado, hasta enviarlo o borrarlo (máx <b>${AST_MAX}</b>). Los enviados quedan en la hoja <code>${AST_SHEET}</code> de Google Sheets.
       </div>
     </div>
   </div>`;
@@ -19872,7 +19877,9 @@ function _trasSave(list){
 function pruneTras(){
   const now = Date.now();
   const raw = _trasRaw();
-  const list = raw.filter(r => r && r.ts && (now - r.ts) < TRAS_TTL);
+  // 2026-10-04 (usuario, auditoría final) · lo NO enviado se conserva hasta enviarlo o borrarlo a mano (como Score, Auditoría y
+  // Microbiología); a las 48 h sólo se retira lo ya enviado, contadas desde su envío. Antes se borraba TODO a las 48 h, sin aviso.
+  const list = raw.filter(r => r && r.ts && !(r.synced && (now - (r.syncedAt || r.ts)) >= TRAS_TTL));
   if(list.length !== raw.length) _trasSave(list);
   return list;
 }
@@ -20982,9 +20989,11 @@ function trasHistResumen(rec){
 }
 
 /* Cuánto le queda al registro antes de que `pruneTras` lo retire (TTL 48 h).
-   Se dice en la lista para que nadie descubra por sorpresa que ya no está. */
-function trasHistTtl(ts){
-  const left = TRAS_TTL - (Date.now() - (ts || 0));
+   Se dice en la lista para que nadie descubra por sorpresa que ya no está.
+   2026-10-04 · desde su ENVÍO; lo no enviado no caduca (se dice). Recibe el registro. */
+function trasHistTtl(rec){
+  if(rec && !rec.synced) return "sin enviar: se conserva hasta enviarlo";
+  const left = TRAS_TTL - (Date.now() - ((rec && (rec.syncedAt || rec.ts)) || 0));
   if(left <= 0) return "caduca ya";
   const h = Math.floor(left / 3600000);
   const m = Math.floor((left % 3600000) / 60000);
@@ -21013,7 +21022,7 @@ function trasHistItemHtml(rec, activo){
       + '<span><b>Camiones:</b> ' + s.nCam + '</span>'
       + '<span><b>Paradas:</b> ' + s.nRev + '</span>'
       + '<span><b>Guardado:</b> ' + escapeHtml(guardado) + '</span>'
-      + '<span class="th-ttl">⏱ ' + escapeHtml(trasHistTtl(rec.ts)) + '</span>'
+      + '<span class="th-ttl">⏱ ' + escapeHtml(trasHistTtl(rec)) + '</span>'
     + '</div>'
     + '<div class="th-acts">'
       + '<button class="btn bs" type="button" onclick="trasHistRevisar(' + trasAttrArg(rec.id) + ')"'
@@ -21103,7 +21112,7 @@ function trasFotoList(viaje){
     try{
       const e = JSON.parse(localStorage.getItem(k));
       if(!e || !e.ts || !e.durl){ muertas.push(k); continue; }
-      if(ahora - e.ts > TRAS_TTL){ muertas.push(k); continue; }
+      // 2026-10-04 · sin plazo propio: caducan CON SU VIAJE (trasFotoPurgar), que si no se envió ya no caduca a las 48 h.
       out.push({ key:k, id:k.slice(pre.length), ts:e.ts, nota:e.nota || "", durl:e.durl });
     }catch(_){ muertas.push(k); }
   }
@@ -21123,7 +21132,7 @@ function trasFotoPurgar(){
     if(!k || k.indexOf(TRAS_FOTO_PRE) !== 0) continue;
     let e = null;
     try{ e = JSON.parse(localStorage.getItem(k)); }catch(_){}
-    if(!e || !e.ts || (ahora - e.ts) > TRAS_TTL){ muertas.push(k); continue; }
+    if(!e || !e.ts){ muertas.push(k); continue; }   // 2026-10-04 · sin plazo propio: se van cuando se va su viaje (abajo)
     const resto = k.slice(TRAS_FOTO_PRE.length);
     const corte = resto.lastIndexOf("_");
     const viaje = corte > 0 ? resto.slice(0, corte) : "";
@@ -28748,13 +28757,13 @@ const STORAGE_NAMESPACES = {
   cs:       { prefix: CS_PRE,                           desc: "Cantidad Sembrada por módulo (sin TTL — sólo local)" },
   ton:      { prefix: TON_PRE,                          desc: "Toneladas por tanque (Despacho — sin TTL — sólo local)" },
   mad:      { prefix: MAD_PRE,                          desc: "Maduración (Salas/Tanques/Lotes — sin TTL)" },
-  biomol:   { key:    BIO_REC_KEY, ttl: BIO_TTL,        desc: "Biomol · muestras (48 h)" },
+  biomol:   { key:    BIO_REC_KEY, ttl: BIO_TTL,        desc: "Biomol · muestras (enviadas 48 h; pendientes hasta enviarlas)" },
   // Los análisis del día van APARTE de sus filas. Sin esta entrada el backup se
   // llevaba las muestras pero no a qué análisis pertenece cada una: al restaurar,
   // sus sid apuntarían a análisis inexistentes, el historial saldría vacío y el
   // purgado daría sus reportes por huérfanos.
   bioses:   { key:    BIO_SES_KEY, ttl: BIO_TTL,        desc: "Biomol · análisis del día (48 h)" },
-  ast:      { key:    AST_REC_KEY, ttl: AST_TTL,        desc: "AsT (48h, máx 40)" },
+  ast:      { key:    AST_REC_KEY, ttl: AST_TTL,        desc: "AsT (enviados 48 h; pendientes hasta enviarlos; máx 40)" },
   hist:     { prefix: HIST_PRE,    ttl: HIST_TTL,       desc: "Historial general (60d, máx 200)" },
   note:     { prefix: NPRE,                             desc: "Notas por módulo (sin TTL)" },
   tqname:   { prefix: TQNAME_PRE,                       desc: "Nombres editables de tanques (sin TTL — sólo local)" },
