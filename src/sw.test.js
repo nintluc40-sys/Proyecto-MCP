@@ -513,4 +513,20 @@ describe('Build · precache-assets.json, la lista que lee el service worker', ()
     expect(emitidos[0].fileName).toBe('precache-assets.json');
     expect(JSON.parse(emitidos[0].source)).toEqual(['./assets/index-AAA.js', './assets/registros-CCC.css', './assets/sheets.worker-BBB.js']);
   });
+
+  it('🔴 Planta NO va en la lista (2026-10-04, usuario): ni su bloque ni su CSS; lo que comparte con otras vistas, sí', async () => {
+    const { default: config } = await import('../vite.config.js');
+    const cfg = typeof config === 'function' ? config({ command: 'build', mode: 'production' }) : config;
+    const plugin = (cfg.plugins || []).find((p) => p && p.name === 'mcp-precache-assets');
+    const emitidos = [];
+    plugin.generateBundle.handler.call({ emitFile: (f) => emitidos.push(f) }, {}, {
+      'assets/index-AAA.js': { type: 'chunk', facadeModuleId: 'C:/repo/src/main.js', viteMetadata: { importedCss: new Set(['assets/index-AAA.css']) } },
+      'assets/index-AAA.css': { type: 'asset' },
+      // en Windows el id puede venir con barras invertidas
+      'assets/index-PPP.js': { type: 'chunk', facadeModuleId: 'C:\\repo\\src\\views\\planta\\index.js', viteMetadata: { importedCss: new Set(['assets/index-PPP.css']) } },
+      'assets/index-PPP.css': { type: 'asset' },
+      'assets/maduracion.produccion-MMM.js': { type: 'chunk', facadeModuleId: null, viteMetadata: { importedCss: new Set() } },
+    });
+    expect(JSON.parse(emitidos[0].source)).toEqual(['./assets/index-AAA.css', './assets/index-AAA.js', './assets/maduracion.produccion-MMM.js']);
+  });
 });

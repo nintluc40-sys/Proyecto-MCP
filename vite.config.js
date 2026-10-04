@@ -7,7 +7,13 @@ import { defineConfig } from 'vite';
    con red no podía abrirlos sin señal. La lee public/sw.js (assetsDelBuild).
    2026-10-03 · `order: 'post'`: el `generateBundle` de un plugin normal corre ANTES que el de `vite:css-post`, que
    después BORRA los trozos JS que sólo importaban CSS (el de Leaflet). La lista anunciaba así un `leaflet-*.js` que no
-   existía (404 en Pages; `tras-despliegue` en 13/14). En `post`, la lista sale del bundle ya definitivo. */
+   existía (404 en Pages; `tras-despliegue` en 13/14). En `post`, la lista sale del bundle ya definitivo.
+   2026-10-04 (usuario) · 🏭 Planta NO va en la lista: su bloque (three.js y la maqueta, ~600 kB) sólo lo necesita quien
+   abre la vista (rol Gerencia), y lo descargaban todos los equipos al instalarse. Fuera, el trozo cuya entrada es
+   src/views/planta/index.js y el CSS que importa; lo que comparte con otras vistas sigue en la lista. El service worker
+   lo guarda la primera vez que se pide (cacheFirst de assets/): sin señal, abre si ya se abrió una vez con señal desde
+   su última actualización. */
+export const ENTRADAS_FUERA_DE_PRECACHE = [/\/src\/views\/planta\/index\.js$/];
 function listaDePrecache() {
   return {
     name: 'mcp-precache-assets',
@@ -15,7 +21,14 @@ function listaDePrecache() {
     generateBundle: {
       order: 'post',
       handler(_, bundle) {
-        const lista = Object.keys(bundle).filter((f) => f.startsWith('assets/')).sort().map((f) => './' + f);
+        const fuera = new Set();
+        for (const [f, c] of Object.entries(bundle)) {
+          const id = c && c.type === 'chunk' && c.facadeModuleId ? c.facadeModuleId.replace(/\\/g, '/') : '';
+          if (!id || !ENTRADAS_FUERA_DE_PRECACHE.some((re) => re.test(id))) continue;
+          fuera.add(f);
+          for (const css of (c.viteMetadata && c.viteMetadata.importedCss) || []) fuera.add(css);
+        }
+        const lista = Object.keys(bundle).filter((f) => f.startsWith('assets/') && !fuera.has(f)).sort().map((f) => './' + f);
         this.emitFile({ type: 'asset', fileName: 'precache-assets.json', source: JSON.stringify(lista) });
       },
     },

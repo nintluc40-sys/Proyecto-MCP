@@ -112,7 +112,11 @@ function boot() {
       root.innerHTML = '<div class="empty-state" style="padding:64px 20px"><div style="font-size:40px">🏭</div><p class="muted">Cargando la maqueta del laboratorio…</p></div>';
       return import('./views/planta/index.js')
         .then((m) => m.plantaView(root))
-        .catch((e) => { root.innerHTML = `<div class="empty-state" style="padding:48px">Error al cargar la vista Planta.<br><small class="mono">${esc(e.message)}</small></div>`; });
+        // Planta no va en la precarga (vite.config.js): sin señal y sin haberla abierto antes, no hay bloque que cargar.
+        .catch((e) => {
+          const sinRed = navigator.onLine === false || /dynamically imported module|Importing a module script failed|Unable to preload CSS/i.test(e.message || '');
+          root.innerHTML = `<div class="empty-state" style="padding:48px">${sinRed ? 'La vista Planta necesita señal la primera vez que se abre (y tras cada actualización). Conéctate y vuelve a intentarlo.' : 'Error al cargar la vista Planta.'}<br><small class="mono">${esc(e.message)}</small></div>`;
+        });
     },
   });
 
