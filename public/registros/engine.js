@@ -14517,10 +14517,14 @@ function _madTqVivosCelda(c, T, desconocido){
     // Ningún ingreso explica ese tanque: no es «cero vivos», es «el libro no lo conoce».
     c.textContent = desconocido;
     c.setAttribute("data-vivos", "");
+    /* 2026-10-04 · el estado que lee el bloqueo de tanques sin animales (_madTqAplicarBloqueo): «sin ingreso» —el libro
+       conoce la planta y no este tanque— es VACÍO; «?» —libro incompleto— no se sabe. */
+    c.setAttribute("data-estado", desconocido === "sin ingreso" ? "vacio" : "desconocido");
     c.style.color = "#92400e";
     return;
   }
   c.setAttribute("data-vivos", String(T.machos + T.hembras));
+  c.setAttribute("data-estado", (T.machos + T.hembras) > 0 ? "vivos" : "vacio");
   /* El TOTAL lo pidió el usuario el 2026-09-08. Es la cifra que se compara con la capacidad
      del tanque, y sumar dos números de cabeza delante de una grilla de veinte filas se hace
      mal más veces de las que parece.
@@ -14574,6 +14578,7 @@ function _madTanquesPintaVivos(libro){
     if(!sala || !tq){ c.textContent = "—"; return; }
     _madTqVivosCelda(c, libro.tanques[madUbicKey(sala, tq)], roto ? "?" : "sin ingreso");
   });
+  _madTqAplicarBloqueo(!roto);   // con el libro incompleto no se bloquea nada
 }
 /* Al pintar la grilla: la última referencia completa guardada, con su fecha. Sin referencia, «—». */
 function _madTanquesPintaVivosGuardados(){
@@ -14587,6 +14592,49 @@ function _madTanquesPintaVivosGuardados(){
   });
   const nota = document.getElementById("tq-vivos-nota");
   if(nota) nota.innerHTML = _madTqVivosNotaRef(g);
+  _madTqAplicarBloqueo(true);    // la referencia guardada es siempre de un libro COMPLETO (ver _madTanquesPintaVivos)
+}
+/* 2026-10-04 (usuario) · LOS TANQUES SIN ANIMALES SE BLOQUEAN, para que no se anoten partes en tanques vacíos. Con la
+   referencia de vivos —la de 🔄 Ver vivos o la última guardada en el equipo, aunque sea de otro día (decisión del
+   usuario)—, un tanque con 0 vivos o «sin ingreso» va en ROJO y con sus casillas deshabilitadas; tras un ingreso o una
+   transferencia, 🔄 Ver vivos con cantidad lo habilita. Decisiones del usuario: SIN desbloqueo a mano; SÓLO en la fecha de
+   HOY (un parte atrasado pudo tener animales que hoy ya no están); y un tanque que YA trae cifras no se bloquea —no se
+   congela lo tecleado—: va en ÁMBAR y avisado. Sin referencia («—») o con el libro incompleto («?») no se sabe y no se
+   bloquea nada. Se evalúa al pintar los vivos (al abrir la grilla, al cambiar de sala o de fecha y con cada 🔄). */
+function _madTqAplicarBloqueo(fiable){
+  const f = document.getElementById("mad-tanques-fecha");
+  // «Hoy» es también el día de trabajo de la grilla: entre las 00:00 y las 02:00, el que termina (_madGridDiaDeLaApp).
+  const hoy = !!f && (f.value === today() || f.value === _madGridDiaDeLaApp());
+  let bloqueados = 0, avisados = 0, vacios = 0;
+  document.querySelectorAll(".tq-vivos").forEach(function(c){
+    const fila = c.closest("tr"); if(!fila) return;
+    const ins = fila.querySelectorAll("input.pinp");
+    fila.classList.remove("tq-sin-animales", "tq-sin-animales-aviso");   // primero limpio: un 🔄 posterior pudo dar animales
+    fila.style.background = ""; fila.removeAttribute("title");
+    ins.forEach(function(i){ i.disabled = false; });
+    if(!fiable || c.getAttribute("data-estado") !== "vacio") return;
+    vacios++;
+    if(!hoy) return;
+    if(Array.prototype.some.call(ins, function(i){ return String(i.value).trim() !== ""; })){
+      fila.classList.add("tq-sin-animales-aviso");
+      fila.style.background = "#fef3c7";
+      fila.title = "⚠ Sin animales según la referencia de vivos, pero ya trae cifras: revísalas.";
+      avisados++;
+      return;
+    }
+    fila.classList.add("tq-sin-animales");
+    fila.style.background = "#fee2e2";
+    fila.title = "🔒 Sin animales según la referencia de vivos: no admite partes. Tras un ingreso o una transferencia, 🔄 Ver vivos lo habilita.";
+    ins.forEach(function(i){ i.disabled = true; });
+    bloqueados++;
+  });
+  const nota = document.getElementById("tq-vivos-nota");
+  if(nota && vacios){
+    nota.insertAdjacentHTML("beforeend", !hoy
+      ? ' <span style="color:#64748b">· Los tanques sin animales sólo se bloquean en la fecha de hoy.</span>'
+      : ' <span style="color:#991b1b">· 🔒 ' + bloqueados + ' sin animales, bloqueado' + (bloqueados === 1 ? '' : 's')
+        + (avisados ? '; ⚠ ' + avisados + ' sin animales pero con cifras' : '') + '.</span>');
+  }
 }
 
 

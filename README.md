@@ -418,6 +418,11 @@ el libro **no conoce** no se toca: sus dos columnas se quedan como estaban.
 tanque —una sola función escribe las dos celdas—: **el lote o lotes que lo ocupan, delante de las
 cifras** —`AB · 12♂ 34♀ · 46`; mezclado, `BA+BC · …`, el nombre de la columna «Lote(s)» del
 Saldo— (usuario, 2026-09-24). Un tanque vaciado no lo ocupa nadie: `0♂ 0♀ · 0`.
+🔒 **En Tanques, un tanque SIN ANIMALES se bloquea** (usuario, 2026-10-04): con la referencia de vivos que haya —la de 🔄 o
+la última guardada en el equipo, aunque sea de otro día—, un tanque con 0 vivos o «sin ingreso» va en rojo y con sus casillas
+deshabilitadas; tras un ingreso o una transferencia, 🔄 Ver vivos con cantidad lo habilita. Sin desbloqueo a mano; sólo en la
+fecha de hoy (también entre las 00:00 y las 02:00, el día de trabajo de la grilla); un tanque que ya trae cifras no se
+bloquea (va en ámbar, avisado); y sin referencia o con el libro incompleto no se bloquea nada (`_madTqAplicarBloqueo`).
 
 🔑 Dos reglas que explican casi todo el diseño y no se deducen del código:
 
