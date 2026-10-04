@@ -685,6 +685,11 @@ function llenarFicha(kind, name, rows) {
   $('#card').hidden = false;
 }
 let tanqueFicha = null;
+/** La siembra de la corrida: fecha promedio (la de la tabla Producción Omarsa), tanques sembrados y nauplios. */
+function txtSiembra(sb) {
+  if (!sb || !sb.fecha) return '—';
+  return fmtShort(sb.fecha) + ' · ' + sb.tanques + (sb.tanques === 1 ? ' tanque' : ' tanques') + (sb.nauplios ? ' · ' + fmt(sb.nauplios / 1e6, 1) + ' M nauplios' : '');
+}
 /** Resumen de la ficha de estado del módulo (las cifras de su tarjeta en la Vista Ejecutiva). */
 function fichaModulo(g) {
   tanqueFicha = null;
@@ -697,12 +702,13 @@ function fichaModulo(g) {
     return;
   }
   if (st.estado === 'despachado') {
-    llenarFicha(kind, g.name, [['Estado', 'Vacío · corrida despachada'], ['Corrida', 'C' + st.corrida + ' despachada por completo'], ['Último dato', st.ultimo ? fmtShort(st.ultimo) : '—']]);
+    llenarFicha(kind, g.name, [['Estado', 'Vacío · corrida despachada'], ['Corrida', 'C' + st.corrida + ' despachada por completo'], ['Siembra', txtSiembra(st.siembra)], ['Último dato', st.ultimo ? fmtShort(st.ultimo) : '—']]);
     return;
   }
   const c = st.cuenta, partes = [c.cultivo + ' en cultivo', c.vacio && c.vacio + ' vacíos', c.despachado && c.despachado + ' despachados', c.fuera && c.fuera + ' agrupados o descartados'].filter(Boolean);
   llenarFicha(kind, g.name, [
     ['Corrida', 'C' + st.corrida + (st.despachando ? ' · despachando' : '')],
+    ['Siembra', txtSiembra(st.siembra)],
     ['Estadío', st.estadio + ' · día ' + st.dias + (st.etapa ? ' · ' + st.etapa.label : '')],
     ['Supervivencia', pct(st.sv)], ['Mortalidad', pct(st.mort)], ['Población', fmtPop(st.pop)],
     ['PL/g (manual)', num(st.plg, 1, '')], ['OD', num(st.od, 2, ' mg/L')], ['Temperatura', num(st.tmp, 1, ' °C')],

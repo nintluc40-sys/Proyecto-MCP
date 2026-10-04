@@ -16,7 +16,7 @@
    ============================================================ */
 import { getField, F } from '../../core/fields.js';
 import { odLevel, tmpLevel } from '../../core/format.js';
-import { isDespachoRow, modCorDispatched } from '../../core/prodCalendar.js';
+import { isDespachoRow, modCorDispatched, modCorStats } from '../../core/prodCalendar.js';
 import { buildContext, modStats, tankStats } from '../supervisor/stats.js';
 import { desinfeccionEnCurso } from '../supervisor/desinfeccion.js';
 import { stageCategory, isAlert, svAlert, freshness } from '../supervisor/etapas.js';
@@ -84,8 +84,11 @@ function estadoModulo(ctx, m, desinf) {
   if (!mod || corrida === null) return { id: m.id, mod, estado: 'sin-datos', corrida: null, tanques: vacios('vacio') };
 
   const s = modStats(ctx, mod, corrida);
+  // la siembra de la corrida: fecha promedio, tanques y nauplios, los de la tabla Producción Omarsa (2026-10-04, usuario)
+  const pc = modCorStats(mod, corrida);
+  const siembra = { fecha: pc.siembraFecha, tanques: pc.nSie, nauplios: pc.siembra };
   if (modCorDispatched(mod, corrida)) {
-    return { id: m.id, mod, estado: 'despachado', corrida, ultimo: s.lastDate, tanques: vacios('vacio') };
+    return { id: m.id, mod, estado: 'despachado', corrida, ultimo: s.lastDate, siembra, tanques: vacios('vacio') };
   }
 
   const delaCorrida = rows.filter((r) => getField(r, F.corrida) === corrida);
@@ -104,7 +107,7 @@ function estadoModulo(ctx, m, desinf) {
   }
   const lista = Object.values(tanques);
   return {
-    id: m.id, mod, estado: 'cultivo', corrida,
+    id: m.id, mod, estado: 'cultivo', corrida, siembra,
     estadio: s.estadio, dias: s.dias, etapa: stageCategory(s.estadio),
     sv: s.sv, mort: s.mort, pop: s.pop, od: s.od, tmp: s.tmp, plg: s.plgManual,
     tecnicos: s.tecnicos, lotes: s.lotes, fresco: freshness(s.lastDate), ultimo: s.lastDate,

@@ -61,6 +61,19 @@ describe('estado · módulo en cultivo (M7)', () => {
   });
 });
 
+describe('estado · siembra de la corrida (la de la tabla Producción Omarsa)', () => {
+  it('fecha promedio, tanques sembrados y nauplios; la corrida vieja no cuenta', () => {
+    const sb = E.modulos.M7.siembra;
+    expect(sb).toMatchObject({ tanques: 4, nauplios: 400000 });
+    expect(sb.fecha.getFullYear()).toBe(2026);
+    expect([sb.fecha.getMonth(), sb.fecha.getDate()]).toEqual([8, 1]);
+  });
+
+  it('también en la corrida despachada', () => {
+    expect(E.modulos.M9.siembra).toMatchObject({ tanques: 2, nauplios: 2000 });
+  });
+});
+
 describe('estado · otros casos', () => {
   it('corrida despachada entera: el módulo queda vacío, con su corrida', () => {
     const m = E.modulos.M9;
