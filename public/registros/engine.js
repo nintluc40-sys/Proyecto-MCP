@@ -1736,7 +1736,10 @@ const SYNCQ_SIN_ESPACIO = "no hay espacio en este dispositivo para dejarlo en la
 function _saveSyncQueue(q){
   try{
     if(!q || q.length === 0){ localStorage.removeItem(SYNCQ_KEY); return true; }
-    return safeSetItem(SYNCQ_KEY, JSON.stringify(q), { silent:true });
+    const v = JSON.stringify(q);
+    if(!safeSetItem(SYNCQ_KEY, v, { silent:true })) return false;
+    // Y LEÍDA TRAS ESCRIBIR, como _lsSet: el modo privado de algunos navegadores acepta setItem sin guardar nada.
+    return localStorage.getItem(SYNCQ_KEY) === v;
   }catch(_){ return false; }
 }
 function syncQueueLen(){ return _loadSyncQueue().length; }

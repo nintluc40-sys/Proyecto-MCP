@@ -19,6 +19,7 @@ const H = {};
 const avisos = [];
 let respuestaVer = null;
 let lleno = false;
+let mudo = false;   // modo privado: setItem «funciona» pero no guarda nada
 
 /* Un almacenamiento propio: con `lleno`, guardar la COLA falla como falla el navegador sin espacio (QuotaExceededError). */
 const mapa = new Map();
@@ -26,6 +27,7 @@ const almacen = {
   getItem: (k) => (mapa.has(k) ? mapa.get(k) : null),
   setItem: (k, v) => {
     if (lleno && k === 'larv4_syncqueue') { const e = new Error('cuota'); e.name = 'QuotaExceededError'; throw e; }
+    if (mudo && k === 'larv4_syncqueue') return;
     mapa.set(k, String(v));
   },
   removeItem: (k) => mapa.delete(k), clear: () => mapa.clear(),
@@ -63,6 +65,7 @@ beforeAll(async () => {
 beforeEach(() => {
   mapa.clear();
   lleno = false;
+  mudo = false;
   avisos.length = 0;
   respuestaVer = { ok: true, version: H._gasVersionLocal() };
 });
@@ -123,5 +126,15 @@ describe('Cola · con el almacenamiento LLENO un envío no se da por «en cola»
     expect(document.getElementById('mv-log').textContent).not.toContain('en cola');
     expect(avisos.some((a) => /guardado en cola/i.test(a.msg))).toBe(false);
     expect(avisos.some((a) => a.tipo === 'err' && /no hay espacio en este dispositivo/.test(a.msg))).toBe(true);
+  });
+
+  it('🔴 en MODO PRIVADO (setItem no guarda nada) tampoco se da por «en cola»: se comprueba leyendo tras escribir', async () => {
+    respuestaVer = 'red';
+    mudo = true;
+    llenarDesove();
+    await H.madDesGuardar();
+    expect(cola()).toEqual([]);
+    expect(qd('.md-lote').value, 'lo tecleado no puede perderse').toBe('ZZ');
+    expect(avisos.some((a) => /en cola/i.test(a.msg))).toBe(false);
   });
 });
