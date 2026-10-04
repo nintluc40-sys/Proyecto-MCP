@@ -354,6 +354,15 @@ describe('petriPdf · documento', () => {
       expect(new Set([...g[0].fmts.values()].map((x) => x.area)).size).toBe(1);   // la MISMA área
     });
 
+    // Partir por UNIDAD no es «varias áreas»: el título no añade el área (diría «Animal» en la tabla del agua).
+    it('el formato partido sólo por unidad no lleva el área en el título: la unidad ya distingue las tablas', () => {
+      const t = titulos(docOf([
+        row({ ...v, Formato: 'Muestras externas', 'Tipo de muestra': 'Agua' }),
+        row({ ...v, Formato: 'Muestras externas', 'Tipo de muestra': 'Animal' }),
+      ]));
+      expect(t.sort()).toEqual(['Muestras externas · UFC/g', 'Muestras externas · UFC/mL']);
+    });
+
     it('sin tipo de muestra, las externas no inventan unidad: «UFC»', () => {
       expect(titulos(docOf([row({ ...v, Formato: 'Muestras externas', 'Tipo de muestra': '' })]))[0]).toMatch(/· UFC$/);
     });

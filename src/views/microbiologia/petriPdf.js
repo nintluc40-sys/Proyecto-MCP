@@ -270,9 +270,11 @@ export function buildPetriPdfDoc(rows, opts = {}) {
     // entonces se añade el área al título, para no ensuciar el caso normal. El cajón de
     // formatos no identificados la declara SIEMPRE: su área es un valor por defecto, no una
     // clasificación, y sin verla no se sabría con qué criterios se pintó la tabla.
-    const vecesPorFmt = grupos.reduce((m, g) => m.set(g.fmtKey, (m.get(g.fmtKey) || 0) + 1), new Map());
+    // Se cuentan ÁREAS distintas, no grupos: desde H-011 un formato también se parte por unidad (externas de agua y de
+    // animal comparten área), y eso no es «varias áreas» —el título ya lleva la unidad—.
+    const areasPorFmt = grupos.reduce((m, g) => m.set(g.fmtKey, (m.get(g.fmtKey) || new Set()).add(g.area)), new Map());
     grupos.forEach((g) => {
-      const conArea = g.fmtKey === OTROS_KEY || vecesPorFmt.get(g.fmtKey) > 1;
+      const conArea = g.fmtKey === OTROS_KEY || areasPorFmt.get(g.fmtKey).size > 1;
       const suffix = conArea ? ' · ' + (AREA_LABEL[g.area] || g.area) : '';
       const t = formatTable(g.fmtKey, g.area, g.items, suffix, g.unidad);
       if (!t) return;
