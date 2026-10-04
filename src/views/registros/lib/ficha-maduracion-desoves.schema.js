@@ -112,19 +112,31 @@ const int = (v) => {
    si no trae nada (o trae basura), manda la derivada. En la interfaz, editar una la FIJA (`data-fijo`) y deja
    de seguir a la del desove, igual que la fecha de aplicación de Fin de Ciclo (PE1.6).
    ⚠ El día siguiente se cuenta en UTC y con un día REAL: `2026-02-31` pasa el patrón, pero no es un día, y
-   sumarle uno daría una fecha inventada. */
-export function fechasNauplios(fecha) {
-  if (!esFecha(fecha)) return { n2: '', n5: '' };
-  const [a, m, d] = String(fecha).split('-').map(Number);
+   sumarle uno daría una fecha inventada.
+   🔴 2026-10-04 (usuario) · CAMBIA LA REGLA: «la fecha de N2 es un día después del registro de desove y la N5 es un día
+   después del N2». N2 = desove + 1 y N5 = N2 + 1 —también si N2 se tecleó a mano (decisión del usuario): la N5 de oficio
+   sale de la N2 que haya (`n5DeN2`), y una N5 tecleada se respeta—. Lo ya escrito en la hoja no se toca. */
+const diaRealDe = (v) => {
+  if (!esFecha(v)) return '';
+  const [a, m, d] = String(v).split('-').map(Number);
   const dia = new Date(Date.UTC(a, m - 1, d));
-  if (dia.getUTCFullYear() !== a || dia.getUTCMonth() !== m - 1 || dia.getUTCDate() !== d) return { n2: '', n5: '' };
-  dia.setUTCDate(d + 1);
-  return { n2: fecha, n5: dia.toISOString().slice(0, 10) };
+  return dia.getUTCFullYear() === a && dia.getUTCMonth() === m - 1 && dia.getUTCDate() === d ? String(v) : '';
+};
+const masDias = (v, n) => {
+  const r = diaRealDe(sanitizeStr(v, 10));
+  if (!r) return '';
+  const [a, m, d] = r.split('-').map(Number);
+  return new Date(Date.UTC(a, m - 1, d + n)).toISOString().slice(0, 10);
+};
+export function fechasNauplios(fecha) {
+  return { n2: masDias(fecha, 1), n5: masDias(fecha, 2) };
 }
+/** La N5 de oficio de una N2 dada: el día siguiente (N5 = N2 + 1, 2026-10-04). '' si la N2 no es un día real. */
+export const n5DeN2 = (fN2) => masDias(fN2, 1);
 
-/** La fecha `v` si es un día REAL del calendario, '' si no. Se apoya en `fechasNauplios` para tener UNA
- *  sola definición de «día real»: `esFecha` es sólo el patrón y `2026-02-31` lo pasa. */
-const diaReal = (v) => fechasNauplios(sanitizeStr(v, 10)).n2;
+/** La fecha `v` si es un día REAL del calendario, '' si no. UNA sola definición de «día real» (`diaRealDe`): `esFecha`
+ *  es sólo el patrón y `2026-02-31` lo pasa. (Hasta el 2026-10-04 se apoyaba en que la N2 ERA la fecha del desove.) */
+const diaReal = (v) => diaRealDe(sanitizeStr(v, 10));
 
 /** Conteo grande: se teclea en miles y se guarda en unidades. Devuelve '' si no hay
  *  cifra, para que el MERGE del GAS conserve lo que ya hubiera en la celda. */
@@ -172,6 +184,7 @@ export function buildDesoveRows(model) {
     const lote = normLote(x.lote);
     const cg = normCodigoGenetico(x.codigoGenetico);
     if (lote === '' || cg === '') return;   // sin llave completa no hay fila que escribir
+    const fN2 = diaReal(x.fechaN2) || fn.n2;   // la N2 que vale; la N5 de oficio sale de ella (2026-10-04)
     const valores = {
       fecha,
       lote,
@@ -180,11 +193,11 @@ export function buildDesoveRows(model) {
       desoves: int(x.desoves),
       huevos: aMiles(x.huevos),
       hembrasNoViables: int(x.hembrasNoViables),
-      /* ⚠ La fecha tecleada se valida con `fechasNauplios`, NO con `esFecha`: ésta es sólo un patrón y
+      /* ⚠ La fecha tecleada se valida con `diaReal`, NO con `esFecha`: ésta es sólo un patrón y
          `2026-02-31` lo pasa. Un día irreal cae a la derivada en vez de escribirse en la hoja. */
-      fechaN2: int(x.n2) !== '' ? (diaReal(x.fechaN2) || fn.n2) : '',
+      fechaN2: int(x.n2) !== '' ? fN2 : '',
       n2: aMiles(x.n2),
-      fechaN5: int(x.n5) !== '' ? (diaReal(x.fechaN5) || fn.n5) : '',
+      fechaN5: int(x.n5) !== '' ? (diaReal(x.fechaN5) || n5DeN2(fN2)) : '',
       n5: aMiles(x.n5),
       despacho: despachoTexto(x.despacho),
       observaciones: sanitizeStr(x.observaciones, 300),
@@ -255,7 +268,9 @@ export function validarDesove(model) {
        ⚠ Son avisos, no errores: la fecha rara puede ser la buena (un conteo hecho tarde), y bloquear el
        guardado por ella perdería lo demás. */
     const der = fechasNauplios(sanitizeStr(m.fecha, 10));
-    [['N2', x.fechaN2, der.n2, hayN2, 'la del desove'], ['N5', x.fechaN5, der.n5, hayN5, 'la del día siguiente']]
+    // 2026-10-04 · la N5 de oficio sale de la N2 que vale (N5 = N2 + 1), y la N2 de oficio es el día siguiente al desove.
+    const fN2 = diaReal(x.fechaN2) || der.n2, defN5 = n5DeN2(fN2);
+    [['N2', x.fechaN2, der.n2, hayN2, 'la del día siguiente al desove'], ['N5', x.fechaN5, defN5, hayN5, 'la del día siguiente al N2']]
       .forEach(([cual, cruda, defecto, hayCifra, deDonde]) => {
         const f = sanitizeStr(cruda, 10);
         if (!f || f === defecto) return;                 // vacía o la de oficio: no la tecleó nadie
@@ -265,8 +280,10 @@ export function validarDesove(model) {
            Fin de Ciclo, que sólo avisa cuando la editada se va a tirar. */
         if (!hayCifra) avisos.push(et + ' tiene fecha de ' + cual + ' pero no su recuento: esa fecha no se guardará.');
       });
-    const fN2 = diaReal(x.fechaN2) || der.n2, fN5 = diaReal(x.fechaN5) || der.n5;
-    if (hayN2 && der.n2 && fN2 < der.n2) avisos.push('El N2 de ' + et + ' es ANTERIOR al desove.');
+    const fN5 = diaReal(x.fechaN5) || defN5, fDesove = diaReal(m.fecha);
+    // Contra la FECHA DEL DESOVE, no contra la N2 de oficio: desde el 2026-10-04 ésta es el día siguiente, y un N2
+    // contado el mismo día del desove no es anterior a él.
+    if (hayN2 && fDesove && fN2 < fDesove) avisos.push('El N2 de ' + et + ' es ANTERIOR al desove.');
     if (hayN5 && fN2 && fN5 < fN2) avisos.push('El N5 de ' + et + ' es ANTERIOR al N2.');
 
     const algo = ['desoves', 'huevos', 'hembrasNoViables', 'n2', 'n5']

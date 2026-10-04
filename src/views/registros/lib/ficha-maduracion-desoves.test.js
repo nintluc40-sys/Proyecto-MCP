@@ -19,6 +19,7 @@ import {
   anotarDesovesLocales,
   podarDesovesLocales,
   fechasNauplios,
+  n5DeN2,
 } from './ficha-maduracion-desoves.schema.js';
 import { detectSheetName, classifyOrigin } from '../../../core/sheets.js';
 
@@ -298,8 +299,11 @@ describe('Desoves · validación', () => {
 
     it('🔴 las fechas de oficio NO avisan de nada (ni tocándolas para dejarlas igual)', () => {
       expect(validarDesove(conN({}))).toEqual({ errores: [], avisos: [] });
-      // 2026-09-08 es la del desove y 2026-09-09 la derivada: escribirlas a mano es dejarlas como estaban
-      expect(validarDesove(conN({ fechaN2: '2026-09-08', fechaN5: '2026-09-09' }))).toEqual({ errores: [], avisos: [] });
+      // 2026-09-08 es la del desove: N2 de oficio el 09-09 y N5 el 09-10 (2026-10-04); escribirlas es dejarlas igual
+      expect(validarDesove(conN({ fechaN2: '2026-09-09', fechaN5: '2026-09-10' }))).toEqual({ errores: [], avisos: [] });
+      // 🔴 y un N2 contado el MISMO día del desove no es «anterior al desove» (se compara con el desove, no con la N2
+      // de oficio, que ahora es el día siguiente)
+      expect(validarDesove(conN({ fechaN2: '2026-09-08' })).avisos).toEqual([]);
     });
 
     it('avisa del N2 ANTERIOR al desove, y sólo de eso', () => {
@@ -317,16 +321,23 @@ describe('Desoves · validación', () => {
 
     it('un día que no existe avisa y cae a la de oficio, en vez de escribirse en la hoja', () => {
       expect(validarDesove(conN({ fechaN2: '2026-02-31' })).avisos)
-        .toEqual(['La fecha de N2 de «766» no es un día real; se usará la del desove.']);
+        .toEqual(['La fecha de N2 de «766» no es un día real; se usará la del día siguiente al desove.']);
       expect(validarDesove(conN({ fechaN5: 'ayer' })).avisos)
-        .toEqual(['La fecha de N5 de «766» no es un día real; se usará la del día siguiente.']);
+        .toEqual(['La fecha de N5 de «766» no es un día real; se usará la del día siguiente al N2.']);
+    });
+
+    it('🔴 la N5 que sigue a una N2 EDITADA es la de oficio: no avisa aunque falte el N5 (2026-10-04)', () => {
+      expect(validarDesove(conN({ fechaN2: '2026-09-20', fechaN5: '2026-09-21', n5: '' })).avisos).toEqual([]);
+      // y la que seguiría al DESOVE (09-10) ya no es la de oficio: tecleada sin su recuento, avisa
+      expect(validarDesove(conN({ fechaN2: '2026-09-20', fechaN5: '2026-09-10', n5: '' })).avisos)
+        .toContain('«766» tiene fecha de N5 pero no su recuento: esa fecha no se guardará.');
     });
 
     it('una fecha editada SIN su recuento avisa: no se guardaría y el trabajo se perdería', () => {
       const m = base(); m.desoves[0].fechaN2 = '2026-09-20';
       expect(validarDesove(m).avisos).toContain('«766» tiene fecha de N2 pero no su recuento: esa fecha no se guardará.');
-      // la de oficio sin recuento NO avisa: nadie la tecleó
-      const q = base(); q.desoves[0].fechaN2 = '2026-09-08';
+      // la de oficio sin recuento NO avisa: nadie la tecleó (la N2 de oficio del desove del 09-08 es el 09-09)
+      const q = base(); q.desoves[0].fechaN2 = '2026-09-09';
       expect(validarDesove(q).avisos).not.toContain('«766» tiene fecha de N2 pero no su recuento: esa fecha no se guardará.');
     });
   });
@@ -385,15 +396,22 @@ describe('Desoves · Despacho es una lista cerrada de destinos (2026-09-14, usua
   });
 });
 
-describe('Desoves · las fechas de N2 y N5 se DERIVAN del desove (2026-09-16, usuario)', () => {
-  /* «La de N2 es la misma que la del desove y la de N5 sale automática: N2 + 1.» Los fixtures cruzan fin de mes,
-     fin de año y febrero, que es donde un «+1» mal hecho (sumar al número del día, o en hora local) se equivoca. */
-  it('🔴 N2 es el día del desove y N5 el siguiente, también al cambiar de mes, de año y en febrero', () => {
-    expect(fechasNauplios('2026-09-14')).toEqual({ n2: '2026-09-14', n5: '2026-09-15' });
-    expect(fechasNauplios('2026-09-30')).toEqual({ n2: '2026-09-30', n5: '2026-10-01' });
-    expect(fechasNauplios('2026-12-31')).toEqual({ n2: '2026-12-31', n5: '2027-01-01' });
-    expect(fechasNauplios('2028-02-28')).toEqual({ n2: '2028-02-28', n5: '2028-02-29' });
-    expect(fechasNauplios('2027-02-28')).toEqual({ n2: '2027-02-28', n5: '2027-03-01' });
+describe('Desoves · las fechas de N2 y N5 se DERIVAN del desove (2026-09-16, usuario; regla del 2026-10-04)', () => {
+  /* 🔴 2026-10-04 · LA REGLA CAMBIÓ (usuario): «la fecha de N2 es un día después del registro de desove y la N5 es un día
+     después del N2» (antes: N2 el día del desove y N5 el siguiente). Los fixtures cruzan fin de mes, fin de año y
+     febrero, que es donde un «+1» mal hecho (sumar al número del día, o en hora local) se equivoca. */
+  it('🔴 N2 es el día SIGUIENTE al desove y N5 el siguiente al N2, también al cambiar de mes, de año y en febrero', () => {
+    expect(fechasNauplios('2026-09-14')).toEqual({ n2: '2026-09-15', n5: '2026-09-16' });
+    expect(fechasNauplios('2026-09-30')).toEqual({ n2: '2026-10-01', n5: '2026-10-02' });
+    expect(fechasNauplios('2026-12-31')).toEqual({ n2: '2027-01-01', n5: '2027-01-02' });
+    expect(fechasNauplios('2028-02-28')).toEqual({ n2: '2028-02-29', n5: '2028-03-01' });
+    expect(fechasNauplios('2027-02-28')).toEqual({ n2: '2027-03-01', n5: '2027-03-02' });
+  });
+
+  it('🔴 N5 = N2 + 1 también desde una N2 dada (la tecleada), cruzando de mes; sin un día real, vacío', () => {
+    expect(n5DeN2('2026-09-30')).toBe('2026-10-01');
+    expect(n5DeN2('2027-02-28')).toBe('2027-03-01');
+    for (const f of ['2026-02-31', 'ayer', '', null]) expect(n5DeN2(f), String(f)).toBe('');
   });
 
   it('🔴 sin un día real no hay fechas: ni un patrón válido que no existe, ni otro formato', () => {
@@ -406,13 +424,13 @@ describe('Desoves · las fechas de N2 y N5 se DERIVAN del desove (2026-09-16, us
 
   it('🔴 cada fecha va SÓLO con su cifra: sin recuento, la celda va vacía', () => {
     const conAmbos = fila({ n2: 9000, n5: 8000 });
-    expect([conAmbos[col('Fecha N2')], conAmbos[col('Fecha N5')]]).toEqual(['2026-09-30', '2026-10-01']);
+    expect([conAmbos[col('Fecha N2')], conAmbos[col('Fecha N5')]]).toEqual(['2026-10-01', '2026-10-02']);
     const soloN2 = fila({ n2: 9000 });
-    expect([soloN2[col('Fecha N2')], soloN2[col('Fecha N5')]]).toEqual(['2026-09-30', '']);
+    expect([soloN2[col('Fecha N2')], soloN2[col('Fecha N5')]]).toEqual(['2026-10-01', '']);
     const sinNauplios = fila({ huevos: 100 });
     expect([sinNauplios[col('Fecha N2')], sinNauplios[col('Fecha N5')]]).toEqual(['', '']);
     const ceros = fila({ n2: 0, n5: '0' });                  // un recuento de 0 es un recuento
-    expect([ceros[col('Fecha N2')], ceros[col('Fecha N5')]]).toEqual(['2026-09-30', '2026-10-01']);
+    expect([ceros[col('Fecha N2')], ceros[col('Fecha N5')]]).toEqual(['2026-10-01', '2026-10-02']);
   });
 
   /* 🔴 2026-09-17 · ESTA PRUEBA DECÍA LO CONTRARIO («lo tecleado se IGNORA») y no estaba mal: el usuario
@@ -421,12 +439,15 @@ describe('Desoves · las fechas de N2 y N5 se DERIVAN del desove (2026-09-16, us
   it('🔴 la fecha tecleada MANDA sobre la derivada, y sólo la derivada rellena lo que falta', () => {
     const r = fila({ n2: 9000, fechaN2: '2026-10-05', n5: 8000, fechaN5: '2026-10-09' });
     expect([r[col('Fecha N2')], r[col('Fecha N5')]]).toEqual(['2026-10-05', '2026-10-09']);
-    // una sola editada: la otra sigue saliendo de la del desove
+    // 🔴 2026-10-04 · sólo la N2 editada: la N5 SIGUE a esa N2 (N5 = N2 + 1, decisión del usuario), no al desove
     const soloN2 = fila({ n2: 9000, fechaN2: '2026-10-05', n5: 8000 });
-    expect([soloN2[col('Fecha N2')], soloN2[col('Fecha N5')]]).toEqual(['2026-10-05', '2026-10-01']);
+    expect([soloN2[col('Fecha N2')], soloN2[col('Fecha N5')]]).toEqual(['2026-10-05', '2026-10-06']);
+    // y sólo la N5 editada: la N2 sale del desove
+    const soloN5 = fila({ n2: 9000, n5: 8000, fechaN5: '2026-10-09' });
+    expect([soloN5[col('Fecha N2')], soloN5[col('Fecha N5')]]).toEqual(['2026-10-01', '2026-10-09']);
     // basura no manda: cae a la derivada en vez de escribir un disparate en la hoja
     for (const basura of ['2026-02-31', '05/10/2026', 'ayer', '2026-10-5']) {
-      expect(fila({ n2: 9000, fechaN2: basura })[col('Fecha N2')], String(basura)).toBe('2026-09-30');
+      expect(fila({ n2: 9000, fechaN2: basura })[col('Fecha N2')], String(basura)).toBe('2026-10-01');
     }
     // y la regla de siempre no se toca: sin cifra no hay fecha, por muy tecleada que esté
     const sinCifra = fila({ fechaN2: '2026-10-05', fechaN5: '2026-10-06' });

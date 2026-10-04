@@ -8778,12 +8778,18 @@ function _madBorrAdaptar(ficha, fp, dia){
        todavía lleva el de cuando se guardó, porque quien lo pone al día es la línea de después del render.
        Salvo si es de SÓLO LECTURA (✏️ Completar, ✏️ del historial): ésa es la del desove y no se mueve. */
     const f=fp.querySelector("#md-fecha"), llave=(f && f.hasAttribute("readonly") && isValidDate(f.value)) ? f.value : "";
-    const fn=madDesFechasNauplios(llave || (isValidDate(dia) ? dia : (f ? f.value : "")));
+    const base=llave || (isValidDate(dia) ? dia : (f ? f.value : ""));
+    const fn=madDesFechasNauplios(base);
+    /* · 2026-10-04: las fechas de OFICIO del criterio anterior (N2 = el desove, N5 = el día siguiente). Un borrador de
+         antes las trae sin fijar: en un desove NUEVO se ponen al día en vez de tomarse por tecleadas; en uno que se
+         completa (llave de sólo lectura) no, que ahí pueden ser las de la hoja. */
+    const viejas={ "md-fn2": madDesDiaReal(base), "md-fn5": madDesN5DeN2(base) };
     fp.querySelectorAll(".md-des").forEach(function(card){
-      [["md-fn2","Fecha N2",fn.n2,".md-n2","Sale la del desove; si la cambias, se queda la tuya"],
-       ["md-fn5","Fecha N5",fn.n5,".md-n5","Sale la del día siguiente al desove; si la cambias, se queda la tuya"]]
+      [["md-fn2","Fecha N2",".md-n2","Sale la del día siguiente al desove; si la cambias, se queda la tuya"],
+       ["md-fn5","Fecha N5",".md-n5","Sale la del día siguiente al N2; si la cambias, se queda la tuya"]]
       .forEach(function(t){
-        const cls=t[0], rot=t[1], def=t[2], tras=t[3], ayuda=t[4];
+        const cls=t[0], rot=t[1], tras=t[2], ayuda=t[3];
+        const def=cls==="md-fn5" ? madDesN5DeN2(_madDesN2DeTarjeta(card, fn)) : fn.n2;   // N5 = N2 + 1 (la de la tarjeta)
         let el=card.querySelector("."+cls);
         if(!el){
           const ancla=card.querySelector(tras), hueco=ancla ? ancla.closest("label") : null;
@@ -8795,6 +8801,7 @@ function _madBorrAdaptar(ficha, fp, dia){
         }
         if(!el.getAttribute("oninput")) el.setAttribute("oninput","madDesFechaNFija(this)");
         if(!el.value) el.value = def || "";
+        else if(!llave && el.getAttribute("data-fijo")!=="1" && el.value===viejas[cls]) el.value = def || "";
         else if(el.value!==def){ el.setAttribute("data-fijo","1"); el.style.background="#fef9c3"; }
       });
     });
@@ -9427,17 +9434,27 @@ function madDesFecha(v){ return /^\d{4}-\d{2}-\d{2}$/.test(String(v||"")); }
 // 2026-09-16 / 2026-09-17 (usuario): las fechas de N2 y N5 salen AUTOMÁTICAS —N2 el día del desove y N5 el
 // siguiente— pero SE PUEDEN EDITAR: son el valor por defecto, no una imposición. Cada una se escribe sólo JUNTO
 // A SU CIFRA. Día REAL y en UTC: «2026-02-31» pasa el patrón y no existe. Gemelo de fechasNauplios en el módulo.
-function madDesFechasNauplios(fecha){
-  if(!madDesFecha(fecha)) return { n2:"", n5:"" };
-  const p=String(fecha).split("-").map(Number);
+// 🔴 2026-10-04 (usuario) · CAMBIA LA REGLA: N2 = el día SIGUIENTE al desove y N5 = el día siguiente al N2 —también si N2
+// se tecleó a mano (decisión del usuario): la N5 de oficio sale de la N2 que haya (madDesN5DeN2)—. Lo ya escrito en la
+// hoja no se toca. Gemelos de fechasNauplios / n5DeN2 en el módulo.
+function _madDesDiaRealDe(v){
+  if(!madDesFecha(v)) return "";
+  const p=String(v).split("-").map(Number);
   const dia=new Date(Date.UTC(p[0], p[1]-1, p[2]));
-  if(dia.getUTCFullYear()!==p[0] || dia.getUTCMonth()!==p[1]-1 || dia.getUTCDate()!==p[2]) return { n2:"", n5:"" };
-  dia.setUTCDate(p[2]+1);
-  return { n2:fecha, n5:dia.toISOString().slice(0,10) };
+  return (dia.getUTCFullYear()===p[0] && dia.getUTCMonth()===p[1]-1 && dia.getUTCDate()===p[2]) ? String(v) : "";
 }
+function _madDesMasDias(v, n){
+  const r=_madDesDiaRealDe(sanitizeStr(v,10));
+  if(!r) return "";
+  const p=r.split("-").map(Number);
+  return new Date(Date.UTC(p[0], p[1]-1, p[2]+n)).toISOString().slice(0,10);
+}
+function madDesFechasNauplios(fecha){ return { n2:_madDesMasDias(fecha, 1), n5:_madDesMasDias(fecha, 2) }; }
+/** La N5 de oficio de una N2 dada: el día siguiente (N5 = N2 + 1). "" si la N2 no es un día real. */
+function madDesN5DeN2(fN2){ return _madDesMasDias(fN2, 1); }
 // La fecha `v` si es un día REAL del calendario, "" si no. Una sola definición de «día real»: madDesFecha
-// es sólo el patrón. Gemelo de diaReal en el módulo.
-function madDesDiaReal(v){ return madDesFechasNauplios(sanitizeStr(v,10)).n2; }
+// es sólo el patrón. Gemelo de diaReal en el módulo. (Hasta el 2026-10-04 se apoyaba en que la N2 ERA la del desove.)
+function madDesDiaReal(v){ return _madDesDiaRealDe(sanitizeStr(v,10)); }
 // ⚠ Devuelve VACÍO cuando no hay cifra, no cero. `upsertMadRows` conserva la celda cuando
 // el valor entrante viene vacío, y de eso depende poder completar N2 y N5 días después sin
 // borrar los huevos. Con cero, el segundo envío los machacaría.
@@ -9456,15 +9473,16 @@ function madDesBuildRows(model){
     const x = d||{};
     const lote = madDesNormLote(x.lote), cg = madDesNormCG(x.codigoGenetico);
     if(lote===""||cg==="") return;   // sin llave completa no hay fila que escribir
+    const fN2 = madDesDiaReal(x.fechaN2) || fn.n2;   // la N2 que vale; la N5 de oficio sale de ella (2026-10-04)
     const v = {
       fecha: fecha, lote: lote, codigoGenetico: cg,
       piscina: sanitizeStr(x.piscina,60),
       desoves: madIngInt(x.desoves),
       huevos: madDesMiles(x.huevos), hembrasNoViables: madIngInt(x.hembrasNoViables),
-      // ⚠ La fecha tecleada se valida con madDesFechasNauplios, NO con madDesFecha: ésta es sólo el patrón
+      // ⚠ La fecha tecleada se valida con madDesDiaReal, NO con madDesFecha: ésta es sólo el patrón
       //   y «2026-02-31» lo pasa. Un día irreal cae a la de oficio en vez de escribirse en la hoja.
-      fechaN2: madIngInt(x.n2)!=="" ? (madDesDiaReal(x.fechaN2) || fn.n2) : "", n2: madDesMiles(x.n2),
-      fechaN5: madIngInt(x.n5)!=="" ? (madDesDiaReal(x.fechaN5) || fn.n5) : "", n5: madDesMiles(x.n5),
+      fechaN2: madIngInt(x.n2)!=="" ? fN2 : "", n2: madDesMiles(x.n2),
+      fechaN5: madIngInt(x.n5)!=="" ? (madDesDiaReal(x.fechaN5) || madDesN5DeN2(fN2)) : "", n5: madDesMiles(x.n5),
       despacho: madDesDespachoTexto(x.despacho),
       observaciones: sanitizeStr(x.observaciones,300)
     };
@@ -9593,15 +9611,18 @@ function madDesValidar(model){
     // Desde que se editan vuelven a ser posibles. Sólo miran lo TECLEADO: la fecha de oficio nunca los dispara,
     // o saldrían en cada registro normal. Gemelo del módulo.
     const der = madDesFechasNauplios(sanitizeStr(m.fecha,10));
-    [["N2",x.fechaN2,der.n2,hayN2,"la del desove"],["N5",x.fechaN5,der.n5,hayN5,"la del día siguiente"]].forEach(function(t){
+    // 2026-10-04 · la N5 de oficio sale de la N2 que vale (N5 = N2 + 1), y la N2 de oficio es el día siguiente al desove.
+    const fN2 = madDesDiaReal(x.fechaN2) || der.n2, defN5 = madDesN5DeN2(fN2);
+    [["N2",x.fechaN2,der.n2,hayN2,"la del día siguiente al desove"],["N5",x.fechaN5,defN5,hayN5,"la del día siguiente al N2"]].forEach(function(t){
       const cual=t[0], def=t[2], hayCifra=t[3], deDonde=t[4], f=sanitizeStr(t[1],10);
       if(!f || f===def) return;                       // vacía o la de oficio: no la tecleó nadie
       if(!madDesDiaReal(f)){ avisos.push("La fecha de "+cual+" de "+et+" no es un día real; se usará "+deDonde+"."); return; }
       // Fecha propia sin su recuento: no se escribe (va sólo con su cifra) y el trabajo se perdería en silencio.
       if(!hayCifra) avisos.push(et+" tiene fecha de "+cual+" pero no su recuento: esa fecha no se guardará.");
     });
-    const fN2 = madDesDiaReal(x.fechaN2) || der.n2, fN5 = madDesDiaReal(x.fechaN5) || der.n5;
-    if(hayN2 && der.n2 && fN2 < der.n2) avisos.push("El N2 de "+et+" es ANTERIOR al desove.");
+    const fN5 = madDesDiaReal(x.fechaN5) || defN5, fDesove = madDesDiaReal(m.fecha);
+    // Contra la FECHA DEL DESOVE, no contra la N2 de oficio (desde el 2026-10-04, el día siguiente). Ver el módulo.
+    if(hayN2 && fDesove && fN2 < fDesove) avisos.push("El N2 de "+et+" es ANTERIOR al desove.");
     if(hayN5 && fN2 && fN5 < fN2) avisos.push("El N5 de "+et+" es ANTERIOR al N2.");
     const algo = ["desoves","huevos","hembrasNoViables","n2","n5"].some(function(k){ const n=madIngInt(x[k]); return n!=="" && n>0; });
     if(!algo) avisos.push(et+" no trae ninguna cifra: la fila se escribirá vacía.");
@@ -9621,11 +9642,15 @@ function _madDesCardHTML(d, bloq, fecha){
   const val=function(k){ const v=x[k]; return (v===undefined||v===null||v==="") ? "" : ' value="'+escapeHtml(String(v))+'"'; };
   const llave=function(k){ return val(k) + (bloq ? ' readonly title="Es la llave del desove: no cambia al completarlo"' : ''); };
   /* PE1.3 (2026-09-17, usuario) · «las fechas salen automáticamente, pero se pueden editar de ser el caso».
-     Vienen puestas —N2 la del desove, N5 la del día siguiente— y SIGUEN a la del desove mientras nadie las
-     toque; editarlas las FIJA (data-fijo y fondo amarillo, como la fecha de aplicación de Fin de Ciclo).
+     Vienen puestas y SIGUEN a la del desove mientras nadie las toque; editarlas las FIJA (data-fijo y fondo
+     amarillo, como la fecha de aplicación de Fin de Ciclo). Desde el 2026-10-04: N2 el día siguiente al desove y N5
+     el siguiente al N2 —la que muestre la tarjeta, también tecleada—.
      ⚠ Una fecha del modelo distinta de la de oficio la tecleó alguien —o llega así de la hoja al ✏️ Completar—:
-     entra ya FIJADA, o el primer cambio de la fecha del desove la pisaría con la derivada. */
-  const fn=madDesFechasNauplios(sanitizeStr(fecha,10));
+     entra ya FIJADA, o el primer cambio de la fecha del desove la pisaría con la derivada.
+     ⚠ 2026-10-04 · Lo guardado ANTES del cambio de regla trae la de oficio vieja (N2 = el día del desove) y entra fijada:
+     así una corrección sin cambios sigue sin enviar nada (madDesCorreccionCambios compara también las fechas). Sólo
+     alcanza al ✏️ del historial (36 h); en los pendientes la N5 vieja coincide con la nueva (N2 vieja + 1). */
+  const fn=madDesFechasNauplios(sanitizeStr(fecha,10)), defN5=madDesN5DeN2(madDesDiaReal(x.fechaN2) || fn.n2);
   const fechaN=function(cls, rot, k, def, ayuda){
     const v=sanitizeStr(x[k],10), propia=isValidDate(v) && v!==def;
     return '<label style="'+_MAD_ING_LBL+'" title="'+ayuda+'">'+rot
@@ -9649,9 +9674,9 @@ function _madDesCardHTML(d, bloq, fecha){
     + '</div>'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">'
     +   '<label style="'+_MAD_ING_LBL+'">N2 (miles)<input class="md-n2" type="number" min="0" step="1"'+val("n2")+' style="'+_MAD_ING_INP+';width:110px"></label>'
-    +   fechaN("md-fn2","Fecha N2","fechaN2",fn.n2,"Sale la del desove; si la cambias, se queda la tuya")
+    +   fechaN("md-fn2","Fecha N2","fechaN2",fn.n2,"Sale la del día siguiente al desove; si la cambias, se queda la tuya")
     +   '<label style="'+_MAD_ING_LBL+'">N5 (miles)<input class="md-n5" type="number" min="0" step="1"'+val("n5")+' style="'+_MAD_ING_INP+';width:110px"></label>'
-    +   fechaN("md-fn5","Fecha N5","fechaN5",fn.n5,"Sale la del día siguiente al desove; si la cambias, se queda la tuya")
+    +   fechaN("md-fn5","Fecha N5","fechaN5",defN5,"Sale la del día siguiente al N2; si la cambias, se queda la tuya")
     + '</div>'
     + _madDesDespachoHTML(x.despacho)
     + '<label style="'+_MAD_ING_LBL+'">Observaciones<input class="md-obs"'+val("observaciones")+' style="'+_MAD_ING_INP+';width:100%;box-sizing:border-box"></label>'
@@ -9684,20 +9709,34 @@ function madDesAddCard(){
 /* PE1.3 (2026-09-17, usuario) · «salen automáticamente, pero se pueden editar de ser el caso». Cada fecha
    editada se FIJA (data-fijo, fondo amarillo, como los pesos de Tanques y la fecha de Fin de Ciclo) y deja de
    seguir a la del desove. Volver a poner la de oficio, o vaciarla, la suelta. */
+/* 2026-10-04 (usuario) · N5 = N2 + 1: la N5 de oficio de una tarjeta es el día siguiente a SU N2 —la que muestre, también
+   tecleada—, así que tocar la N2 mueve la N5 que nadie fijó. */
+function _madDesN2DeTarjeta(card, fn){
+  const e2=card ? card.querySelector(".md-fn2") : null;
+  return madDesDiaReal(e2 ? e2.value : "") || fn.n2;
+}
 function madDesFechaNFija(el){
   if(!el) return;
   const f=document.getElementById("md-fecha");
   const fn=madDesFechasNauplios(f ? f.value : "");
-  const def=el.classList.contains("md-fn5") ? fn.n5 : fn.n2;
+  const card=el.closest(".md-des"), es5=el.classList.contains("md-fn5");
+  const def=es5 ? madDesN5DeN2(_madDesN2DeTarjeta(card, fn)) : fn.n2;
   if(el.value && el.value!==def){ el.setAttribute("data-fijo","1"); el.style.background="#fef9c3"; }
   else { el.removeAttribute("data-fijo"); el.style.background=""; }
+  if(!es5 && card){
+    const e5=card.querySelector(".md-fn5");
+    if(e5 && e5.getAttribute("data-fijo")!=="1") e5.value=madDesN5DeN2(_madDesN2DeTarjeta(card, fn));
+  }
 }
 function madDesFechasNSiguen(){
   const f=document.getElementById("md-fecha");
   const fn=madDesFechasNauplios(f ? f.value : "");
   if(!fn.n2) return;   // fecha a medio teclear: no se pisa nada con vacío
-  document.querySelectorAll("#md-cards .md-fn2").forEach(function(el){ if(el.getAttribute("data-fijo")!=="1") el.value=fn.n2; });
-  document.querySelectorAll("#md-cards .md-fn5").forEach(function(el){ if(el.getAttribute("data-fijo")!=="1") el.value=fn.n5; });
+  document.querySelectorAll("#md-cards .md-des").forEach(function(card){
+    const e2=card.querySelector(".md-fn2"), e5=card.querySelector(".md-fn5");
+    if(e2 && e2.getAttribute("data-fijo")!=="1") e2.value=fn.n2;
+    if(e5 && e5.getAttribute("data-fijo")!=="1") e5.value=madDesN5DeN2(_madDesN2DeTarjeta(card, fn));
+  });
 }
 function madDesDelCard(btn){
   const b=btn.closest(".md-des"), c=document.getElementById("md-cards");
@@ -9823,7 +9862,8 @@ function madDesCollect(){
       lote:g(c,".md-lote"), codigoGenetico:g(c,".md-cg"), piscina:g(c,".md-piscina"),
       desoves:g(c,".md-desoves"), huevos:g(c,".md-huevos"),
       hembrasNoViables:g(c,".md-hnoviables"),
-      fechaN2:fdate(c,".md-fn2",fn.n2), n2:g(c,".md-n2"), fechaN5:fdate(c,".md-fn5",fn.n5), n5:g(c,".md-n5"),
+      // 2026-10-04 · sin fijar, la N5 es la del día siguiente a la N2 que vale (fijada o de oficio).
+      fechaN2:fdate(c,".md-fn2",fn.n2), n2:g(c,".md-n2"), fechaN5:fdate(c,".md-fn5",madDesN5DeN2(madDesDiaReal(fdate(c,".md-fn2",fn.n2)) || fn.n2)), n5:g(c,".md-n5"),
       despacho:Array.prototype.map.call(c.querySelectorAll(".md-desp-op:checked"), function(e){ return e.value; }),
       observaciones:g(c,".md-obs")
     });

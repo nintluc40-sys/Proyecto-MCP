@@ -871,9 +871,15 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   ⚠ Un guardado que se hizo con un esquema anterior (la hoja ganó una columna en medio después)
   **ya no se puede enviar**: se detecta en el cliente, se dice, y la lista lo marca en rojo para que
   🗑 sea lo evidente. No se descarta solo — es trabajo que hay que volver a registrar.
-- **Desoves · las fechas de N2 y N5 salen automáticas, pero se pueden editar.** N2 lleva la del
-  desove y N5 la del día siguiente; vienen puestas y **siguen** a la del desove hasta que alguien las
-  toque, y entonces quedan **fijadas** (fondo amarillo, como la fecha de aplicación de Fin de Ciclo).
+- **Desoves · las fechas de N2 y N5 salen automáticas, pero se pueden editar.** Desde el 2026-10-04
+  (usuario): **N2 es el día siguiente al desove y N5 el día siguiente al N2** —también si la N2 se
+  tecleó: la N5 sin fijar la sigue en el acto—. Vienen puestas y **siguen** a la del desove hasta que
+  alguien las toque, y entonces quedan **fijadas** (fondo amarillo, como la fecha de aplicación de Fin
+  de Ciclo); una N5 fijada no la mueve la N2. Lo ya escrito en la hoja no se toca. Un borrador de antes
+  del cambio pone al día sus fechas de oficio sin fijar (salvo en un ✏️ Completar, donde la N2 viene de
+  la hoja). El aviso «N2 ANTERIOR al desove» compara con la **fecha del desove** (un N2 contado ese mismo
+  día no avisa). En el tablero (🥚 Reproducción), el N5 pendiente se espera el día siguiente a la
+  «Fecha N2» de la hoja, o dos días después del desove si no la trae.
   Cada una se escribe **sólo junto a su cifra**, y el candado «N5 exige N2» mira la CIFRA, no la fecha
   —que viene puesta de oficio en todas—. Una fecha tecleada se valida como **día real**: `2026-02-31`
   pasa el patrón y no existe.

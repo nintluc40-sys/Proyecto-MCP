@@ -130,7 +130,13 @@ const MODELOS = {
   'un día que no existe': { fecha: '2026-02-31', desoves: [{ lote: 'BM', codigoGenetico: '766', n2: 5200, n5: 4100 }] },
   // 2026-09-16: una fecha tecleada SIN su cifra (la traería un borrador de antes) no abre ni cierra el candado.
   'N5 con fecha de N2 tecleada pero sin su cifra': { fecha: '2026-09-08', desoves: [{ lote: 'BM', codigoGenetico: '766', fechaN2: '2026-09-08', n5: 4100 }] },
-  'sólo una fecha de N5 tecleada': { fecha: '2026-09-08', desoves: [{ lote: 'BM', codigoGenetico: '766', huevos: 10, fechaN5: '2026-09-09' }] },
+  // 2026-10-04 · la N5 de oficio del desove del 09-08 es ahora el 09-10 (N2 = desove + 1, N5 = N2 + 1): igual a ella, no avisa.
+  'sólo una fecha de N5 tecleada': { fecha: '2026-09-08', desoves: [{ lote: 'BM', codigoGenetico: '766', huevos: 10, fechaN5: '2026-09-10' }] },
+  // 2026-10-04 · N2 tecleada el MISMO día del desove y N5 de oficio: la N5 sale de ESA N2 (N5 = N2 + 1), y no es «anterior
+  // al desove» (se compara con el desove, no con la N2 de oficio, que ahora es el día siguiente).
+  'N2 tecleada el día del desove y N5 de oficio': { fecha: '2026-09-10', desoves: [{ lote: 'BM', codigoGenetico: '766', n2: 5000, fechaN2: '2026-09-10', n5: 3000 }] },
+  // 2026-10-04 · la N5 de oficio sigue a la N2 EDITADA: así la manda la ficha aunque aún no haya N5, y no avisa.
+  'N2 editada y la N5 de oficio que la sigue, sin N5': { fecha: '2026-09-08', desoves: [{ lote: 'BM', codigoGenetico: '766', n2: 10, fechaN2: '2026-09-20', fechaN5: '2026-09-21' }] },
   // 2026-09-14: un desove que sólo trae hembras no viables (conteo, sin ×1000) ejerce su rama.
   'sólo hembras no viables': { fecha: '2026-09-14', desoves: [{ lote: 'BM', codigoGenetico: '766', hembrasNoViables: 3 }] },
   // 2026-09-14: «Total de nauplios» se borró. Un borrador viejo que aún los traiga: ni fila ni cifra.
@@ -185,8 +191,10 @@ describe('Desoves · el mismo payload, celda a celda', () => {
   it('y las fechas llegan DE VERDAD a la fila: la de oficio cuando nadie la toca, la tecleada cuando la hay', () => {
     const f = (nombre) => buildDesoveRows(MODELOS[nombre])[0];
     const fechas = (fila) => [fila[MAD_DESOVE_HEADERS.indexOf('Fecha N2')], fila[MAD_DESOVE_HEADERS.indexOf('Fecha N5')]];
-    expect(fechas(f('fin de mes: el N5 cae en octubre'))).toEqual(['2026-09-30', '2026-10-01']);
-    expect(fechas(f('fin de año, sólo con N5 y N2 a 0'))).toEqual(['2026-12-31', '2027-01-01']);
+    // 2026-10-04 · N2 = desove + 1 y N5 = N2 + 1 (antes: N2 el del desove y N5 el siguiente)
+    expect(fechas(f('fin de mes: el N5 cae en octubre'))).toEqual(['2026-10-01', '2026-10-02']);
+    expect(fechas(f('fin de año, sólo con N5 y N2 a 0'))).toEqual(['2027-01-01', '2027-01-02']);
+    expect(fechas(f('N2 tecleada el día del desove y N5 de oficio'))).toEqual(['2026-09-10', '2026-09-11']);
     expect(fechas(f('sin llave completa y fechas tecleadas al revés'))).toEqual(['2026-09-01', '2026-08-30']);
   });
 });
@@ -224,6 +232,9 @@ describe('Desoves · el mismo veredicto', () => {
     expect(validarDesove(MODELOS['un día que no existe']).errores).toContain('La fecha del desove no es válida.');
     expect(validarDesove(MODELOS['N5 con fecha de N2 tecleada pero sin su cifra']).errores.length).toBeGreaterThan(0);
     expect(validarDesove(MODELOS['sólo una fecha de N5 tecleada'])).toEqual({ errores: [], avisos: [] });
+    expect(validarDesove(MODELOS['N2 tecleada el día del desove y N5 de oficio'])).toEqual({ errores: [], avisos: [] });
+    expect(validarDesove(MODELOS['N2 editada y la N5 de oficio que la sigue, sin N5'])).toEqual({ errores: [], avisos: [] });
+    expect(validarDesove(MODELOS['el N5 se compara con el N2 EDITADO, no con el derivado']).avisos).toContain('El N5 de «766» es ANTERIOR al N2.');
   });
 });
 

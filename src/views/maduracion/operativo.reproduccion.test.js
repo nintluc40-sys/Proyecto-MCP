@@ -82,9 +82,21 @@ describe('Maduración · operativo · 🥚 Reproducción (F4.2)', () => {
       const p = pendientesDeN5(M.fuentes, P30, SIN, FOTO);
       const viejo = p.filas.find((f) => f.fecha === '2026-09-12');
       const ayer = p.filas.find((f) => f.fecha === '2026-09-19');
-      expect(viejo.fechaN5Esperada).toBe('2026-09-13');
-      expect(viejo.diasEsperando).toBe(7);          // del 13 al 20; desde el desove daría 8
-      expect(ayer.diasEsperando).toBe(0);           // su N5 tocaba HOY: no llega tarde
+      // 2026-10-04 (usuario) · N2 = desove + 1 y N5 = N2 + 1: sin «Fecha N2», el N5 se espera DOS días después del desove
+      expect(viejo.fechaN5Esperada).toBe('2026-09-14');
+      expect(viejo.diasEsperando).toBe(6);          // del 14 al 20; desde el desove daría 8
+      expect(ayer.fechaN5Esperada).toBe('2026-09-21');
+      expect(ayer.diasEsperando).toBe(0);           // su N5 todavía no toca: no llega tarde
+    });
+
+    it('🔴 con «Fecha N2» en la hoja, el N5 se espera el día SIGUIENTE a ESA fecha (N5 = N2 + 1, 2026-10-04)', () => {
+      const fuentes = { desoves: [DES('2026-09-12', 'RX', 1, 100000, { 'Fecha N2': '2026-09-15', N2: 90000 })] };
+      const [f] = pendientesDeN5(fuentes, P30, SIN, FOTO).filas;
+      expect(f.fechaN5Esperada).toBe('2026-09-16');
+      expect(f.diasEsperando).toBe(4);              // del 16 al 20; con la del desove (09-14) daría 6
+      // una «Fecha N2» que no es un día real no manda: cae a la del desove
+      const mala = { desoves: [DES('2026-09-12', 'RX', 1, 100000, { 'Fecha N2': '2026-09-31', N2: 90000 })] };
+      expect(pendientesDeN5(mala, P30, SIN, FOTO).filas[0].fechaN5Esperada).toBe('2026-09-14');
     });
 
     it('el filtro de lote se aplica; el de sala se IGNORA y se dice', () => {

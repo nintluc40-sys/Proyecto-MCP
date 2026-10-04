@@ -34,7 +34,7 @@
    El módulo se desarrolla con fixtures FICTICIOS y en pantalla saldrá vacío hasta que se estrene.
    ============================================================ */
 import {
-  normLote, normCodigoGenetico, desoveDesdeHoja, desoveCompleto, despachoLista, fechasNauplios,
+  normLote, normCodigoGenetico, desoveDesdeHoja, desoveCompleto, despachoLista, fechasNauplios, n5DeN2,
   MAD_DESOVE_DESPACHO_OPTS,
 } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 import { diasEntre } from '../registros/lib/mad-resumen.js';
@@ -88,8 +88,9 @@ function enFiltro(r, F) {
 
 /**
  * Los desoves del período que aún no tienen su cifra de N5, el más atrasado primero.
- * `esperados` sale de `fechasNauplios`: el N5 se cuenta al día siguiente del desove. Los días de espera se
- * miden desde ESA fecha, no desde la del desove, para no llamar «atrasado» a lo que todavía no toca.
+ * La fecha ESPERADA del N5 (2026-10-04, usuario: N2 = desove + 1 y N5 = N2 + 1): el día siguiente a la «Fecha N2» de la
+ * hoja si la trae, y si no, la de `fechasNauplios` (desove + 2). Los días de espera se miden desde ESA fecha, no desde la
+ * del desove, para no llamar «atrasado» a lo que todavía no toca.
  */
 export function pendientesDeN5(fuentes, periodo, F, hoy) {
   const filas = [];
@@ -97,7 +98,8 @@ export function pendientesDeN5(fuentes, periodo, F, hoy) {
     const fecha = fechaDeFila('desoves', r);
     if (!enPeriodo(fecha, periodo) || !enFiltro(r, F)) continue;
     if (!esPendiente(r)) continue;
-    const esperada = fechasNauplios(fecha).n5;
+    const fN2 = txt(r['Fecha N2']);
+    const esperada = (esIso(fN2) && n5DeN2(fN2)) || fechasNauplios(fecha).n5;
     const dias = esIso(esperada) && esIso(txt(hoy)) && txt(hoy) > esperada ? diasEntre(esperada, txt(hoy)) : 0;
     filas.push({
       fecha, lote: normLote(r.Lote), codigoGenetico: normCodigoGenetico(r['Código genético']),

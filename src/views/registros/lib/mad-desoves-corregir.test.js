@@ -97,10 +97,11 @@ const q = (s) => document.querySelector('#fp-desoves ' + s);
 const col = (h) => MAD_DESOVE_HEADERS.indexOf(h);
 const hace = (h) => Date.now() - h * 3600e3;
 const FECHA = '2026-09-20';
+// 2026-10-04 · las fechas de oficio que guarda hoy la ficha: N2 = desove + 1 y N5 = N2 + 1 (antes: el desove y el día siguiente).
 const DES_A = { lote: 'ZA', codigoGenetico: 'TST.A1', piscina: 'P9X', desoves: '12', huevos: '6500', hembrasNoViables: '3',
-  fechaN2: '2026-09-20', n2: '', fechaN5: '2026-09-21', n5: '', despacho: 'Tabasca', observaciones: 'nota de prueba' };
+  fechaN2: '2026-09-21', n2: '', fechaN5: '2026-09-22', n5: '', despacho: 'Tabasca', observaciones: 'nota de prueba' };
 const DES_B = { lote: 'ZB', codigoGenetico: 'TST.B2', piscina: 'P9Y', desoves: '7', huevos: '4100', hembrasNoViables: '',
-  fechaN2: '2026-09-20', n2: '', fechaN5: '2026-09-21', n5: '', despacho: '', observaciones: '' };
+  fechaN2: '2026-09-21', n2: '', fechaN5: '2026-09-22', n5: '', despacho: '', observaciones: '' };
 const entrada = (id, estado, desoves, extra) => ({ id, marca: true, ts: hace(2), fecha: FECHA, filas: desoves.length, estado,
   desoves: desoves.map((d) => ({ ...d })), ...(extra || {}) });
 const sembrar = (lista, cola) => {
@@ -282,6 +283,18 @@ describe('Desoves · corregir lo que YA llegó a la hoja: sólo viaja lo que cam
     expect(log()[0].desoves[0].corregido).toBeUndefined();
   });
 
+  /* 🔴 2026-10-04 · una entrada del historial guardada ANTES del cambio de regla trae las de oficio viejas (N2 = el desove,
+     N5 = el día siguiente). Entran tal cual (la N2, fijada): corregirla sin tocar nada sigue sin enviar nada. */
+  it('🔴 una entrada de ANTES del cambio de regla, sin cambios, no envía nada', async () => {
+    sembrar([entrada('e1', 'ok', [{ ...DES_A, fechaN2: FECHA, fechaN5: '2026-09-21' }])]);
+    abrir(0);
+    expect([q('.md-fn2').value, q('.md-fn5').value]).toEqual([FECHA, '2026-09-21']);
+    expect(q('.md-fn5').hasAttribute('data-fijo'), 'la N5 vieja es la siguiente a su N2: es la de oficio, no una tecleada').toBe(false);
+    await H.madDesCorregirGuardar();
+    expect(envios).toHaveLength(0);
+    expect(avisos.some((a) => a.msg.includes('No cambiaste nada'))).toBe(true);
+  });
+
   it('🔴 si la corrección se queda EN COLA, su fila lo dice (📶) hasta que llegue', async () => {
     sembrar([entrada('e1', 'ok', [DES_A])]);
     abrir(0);
@@ -362,7 +375,7 @@ describe('Desoves · corregir lo que sigue EN COLA: se corrige el envío pendien
     q('.md-n2').value = '3000';
     await H.madDesCorregirGuardar();
     const fila = cola()[0].payload.rows[0];
-    expect([fila[col('N2')], fila[col('Fecha N2')]]).toEqual([3000000, FECHA]);
+    expect([fila[col('N2')], fila[col('Fecha N2')]]).toEqual([3000000, '2026-09-21']);   // el día siguiente al desove
   });
 
   it('🔴 un envío pendiente de OTRA versión de la app (otras columnas) no se toca: se dice', async () => {
@@ -471,7 +484,30 @@ describe('Desoves · la corrección sobrevive al borrador y se puede cancelar', 
     expect(q('.md-fn5').hasAttribute('data-fijo')).toBe(false);
     await H.madDesGuardar();
     const fila = envios[0].payload.rows[0];
-    expect([fila[col('Fecha')], fila[col('N5')], fila[col('Fecha N5')]], 'completa SU desove, no uno nuevo de hoy').toEqual([FECHA, 2800000, '2026-09-21']);
+    // 2026-10-04 · N2 = desove + 1 (09-21) y N5 = N2 + 1
+    expect([fila[col('Fecha')], fila[col('N5')], fila[col('Fecha N5')]], 'completa SU desove, no uno nuevo de hoy').toEqual([FECHA, 2800000, '2026-09-22']);
+  });
+
+  /* 🔴 2026-10-04 · un ✏️ Completar a medias guardado por la app ANTERIOR trae su Fecha N2 —la de la hoja: el día del
+     desove, con su recuento— SIN fijar (era su fecha de oficio). Al recargarlo no se «pone al día»: es dato de la hoja, y
+     completar el N5 la pisaría con otra. */
+  it('🔴 un ✏️ Completar de antes del cambio de regla conserva al recargarlo la Fecha N2 de la hoja', async () => {
+    localStorage.setItem(H.MAD_DES_PEND_KEY, JSON.stringify([{ fecha: FECHA, lote: 'ZA', codigoGenetico: 'TST.A1', huevos: '6500', n2: '3000', fechaN2: FECHA, ts: Date.now() }]));
+    H.madDesReiniciar();
+    H.madDesEditar(document.querySelector('#md-pend .md-pend-ed').dataset.k);
+    expect(q('.md-fn2').value).toBe(FECHA);
+    q('.md-fn2').removeAttribute('data-fijo');                 // como la pintaba la app anterior
+    q('.md-fn5').value = '2026-09-21';
+    q('.md-n5').value = '2800';
+    q('.md-n5').dispatchEvent(new Event('input', { bubbles: true }));
+    H.madBorrGuardarYa('desoves');
+    document.getElementById('fp-desoves').innerHTML = '';
+    H.renderMadDesoves();
+    H.madBorrTraerDelDia('desoves');
+    expect(q('.md-fn2').value, 'se puso al día la fecha que venía de la hoja').toBe(FECHA);
+    await H.madDesGuardar();
+    const fila = envios[0].payload.rows[0];
+    expect([fila[col('Fecha N2')], fila[col('N5')], fila[col('Fecha N5')]]).toEqual([FECHA, 2800000, '2026-09-21']);
   });
 
   it('🔴 🧹 Cancelar sale sin guardar ni enviar', () => {

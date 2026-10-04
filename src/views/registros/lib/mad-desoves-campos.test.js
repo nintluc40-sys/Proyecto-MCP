@@ -133,7 +133,7 @@ describe('Desoves · sin «Total de nauplios» en el formulario', () => {
     expect(p.rows[0][col('Total de huevos')]).toBe(14440000);
     expect(p.rows[0][col('N2')]).toBe(9000000);
     expect(p.rows[0][col('Hembras no viables')]).toBe(9);
-    expect([p.rows[0][col('Fecha N2')], p.rows[0][col('Fecha N5')]], 'PE1.3: la del desove con el N2; sin N5, vacía').toEqual(['2026-09-14', '']);
+    expect([p.rows[0][col('Fecha N2')], p.rows[0][col('Fecha N5')]], 'PE1.3 (regla del 2026-10-04): el día siguiente al desove con el N2; sin N5, vacía').toEqual(['2026-09-15', '']);
   });
 });
 
@@ -147,8 +147,9 @@ describe('Desoves · las fechas de N2 y N5 salen solas pero se EDITAN (PE1.3, 20
     expect(q('.md-fn2'), 'falta el campo «Fecha N2»').not.toBeNull();
     expect(q('.md-fn5'), 'falta el campo «Fecha N5»').not.toBeNull();
     fechaDesove('2026-09-14');
-    expect(q('.md-fn2').value).toBe('2026-09-14');
-    expect(q('.md-fn5').value).toBe('2026-09-15');
+    // 2026-10-04 (usuario) · N2 = el día siguiente al desove y N5 = el siguiente al N2
+    expect(q('.md-fn2').value).toBe('2026-09-15');
+    expect(q('.md-fn5').value).toBe('2026-09-16');
     expect(q('.md-fn2').getAttribute('data-fijo'), 'la de oficio no puede nacer fijada').toBeNull();
     expect(document.getElementById('fp-desoves').textContent).toContain('puedes cambiarlas');
   });
@@ -158,19 +159,19 @@ describe('Desoves · las fechas de N2 y N5 salen solas pero se EDITAN (PE1.3, 20
   it('🔴 la tarjeta NACE con las fechas bien, sin que nadie las refresque', () => {
     H.madDesReiniciar();
     const hoy = document.getElementById('md-fecha').value;
-    const manana = new Date(Date.UTC(+hoy.slice(0, 4), +hoy.slice(5, 7) - 1, +hoy.slice(8, 10) + 1)).toISOString().slice(0, 10);
-    expect(q('.md-fn2').value, 'la de N2 es la del desove').toBe(hoy);
-    expect(q('.md-fn5').value, 'la de N5 es la del día SIGUIENTE, no la del desove').toBe(manana);
+    const mas = (n) => new Date(Date.UTC(+hoy.slice(0, 4), +hoy.slice(5, 7) - 1, +hoy.slice(8, 10) + n)).toISOString().slice(0, 10);
+    expect(q('.md-fn2').value, 'la de N2 es la del día SIGUIENTE al desove (2026-10-04)').toBe(mas(1));
+    expect(q('.md-fn5').value, 'la de N5 es la del día siguiente al N2').toBe(mas(2));
   });
 
   it('🔴 cambiar la fecha del desove mueve las dos: el N5 cruza de mes', () => {
     llenar();
     fechaDesove('2026-09-30');
-    expect([q('.md-fn2').value, q('.md-fn5').value]).toEqual(['2026-09-30', '2026-10-01']);
+    expect([q('.md-fn2').value, q('.md-fn5').value]).toEqual(['2026-10-01', '2026-10-02']);
     q('.md-n2').value = '9000';
     q('.md-n5').value = '8000';
     const fila = H.buildMadDesovePayload(H.madDesCollect()).rows[0];
-    expect([fila[col('Fecha')], fila[col('Fecha N2')], fila[col('Fecha N5')]]).toEqual(['2026-09-30', '2026-09-30', '2026-10-01']);
+    expect([fila[col('Fecha')], fila[col('Fecha N2')], fila[col('Fecha N5')]]).toEqual(['2026-09-30', '2026-10-01', '2026-10-02']);
   });
 
   it('🔴 editar una la FIJA: deja de seguir al desove y es la que llega a la hoja', () => {
@@ -182,21 +183,42 @@ describe('Desoves · las fechas de N2 y N5 salen solas pero se EDITAN (PE1.3, 20
     expect(q('.md-fn2').getAttribute('data-fijo')).toBe('1');
     expect(q('.md-fn2').style.background, 'la fijada se marca, como los pesos de Tanques').toContain('fef9c3');
 
+    // 🔴 2026-10-04 (usuario: «N5 = N2 + 1 siempre») · la N5 sin fijar SIGUE a la N2 tecleada en el acto
+    expect(q('.md-fn5').value, 'la N5 sin fijar tiene que seguir a la N2 tecleada').toBe('2026-09-19');
+    expect(q('.md-fn5').getAttribute('data-fijo'), 'moverla de oficio no la fija').toBeNull();
+
     fechaDesove('2026-09-20');                          // mover el desove NO puede pisar la fijada
     expect(q('.md-fn2').value, 'la fijada se pisó').toBe('2026-09-18');
-    expect(q('.md-fn5').value, 'la NO fijada tiene que seguir') .toBe('2026-09-21');
+    expect(q('.md-fn5').value, 'la NO fijada sigue a SU N2, no al desove') .toBe('2026-09-19');
     const fila = H.buildMadDesovePayload(H.madDesCollect()).rows[0];
-    expect([fila[col('Fecha N2')], fila[col('Fecha N5')]]).toEqual(['2026-09-18', '2026-09-21']);
+    expect([fila[col('Fecha N2')], fila[col('Fecha N5')]]).toEqual(['2026-09-18', '2026-09-19']);
+  });
+
+  it('🔴 una N5 FIJADA no la mueve la N2; y la N2 sin fijar sigue al desove (2026-10-04)', () => {
+    llenar();
+    fechaDesove('2026-09-14');
+    q('.md-n2').value = '9000'; q('.md-n5').value = '8000';
+    q('.md-fn5').value = '2026-09-25'; H.madDesFechaNFija(q('.md-fn5'));
+    expect(q('.md-fn5').getAttribute('data-fijo')).toBe('1');
+    q('.md-fn2').value = '2026-09-18'; H.madDesFechaNFija(q('.md-fn2'));
+    expect(q('.md-fn5').value, 'tocar la N2 pisó una N5 fijada').toBe('2026-09-25');
+    fechaDesove('2026-09-20');
+    expect([q('.md-fn2').value, q('.md-fn5').value]).toEqual(['2026-09-18', '2026-09-25']);
+    // y volver a poner en la N5 la del día siguiente a la N2 la SUELTA
+    q('.md-fn5').value = '2026-09-19'; H.madDesFechaNFija(q('.md-fn5'));
+    expect(q('.md-fn5').getAttribute('data-fijo')).toBeNull();
   });
 
   it('🔴 devolverla a la de oficio, o vaciarla, la SUELTA y vuelve a seguir', () => {
     llenar();
     fechaDesove('2026-09-14');
     q('.md-fn2').value = '2026-09-18'; H.madDesFechaNFija(q('.md-fn2'));
-    q('.md-fn2').value = '2026-09-14'; H.madDesFechaNFija(q('.md-fn2'));   // la de oficio otra vez
+    q('.md-fn2').value = '2026-09-15'; H.madDesFechaNFija(q('.md-fn2'));   // la de oficio otra vez (2026-10-04: desove + 1)
     expect(q('.md-fn2').getAttribute('data-fijo')).toBeNull();
+    expect(q('.md-fn5').value, 'y la N5 vuelve con ella').toBe('2026-09-16');
     fechaDesove('2026-09-25');
-    expect(q('.md-fn2').value, 'soltada, tiene que volver a seguir').toBe('2026-09-25');
+    expect(q('.md-fn2').value, 'soltada, tiene que volver a seguir').toBe('2026-09-26');
+    expect(q('.md-fn5').value).toBe('2026-09-27');
   });
 
   /* Las de oficio están puestas en TODA tarjeta, también en una recién abierta: si contaran como trabajo
@@ -224,11 +246,11 @@ describe('Desoves · las fechas de N2 y N5 salen solas pero se EDITAN (PE1.3, 20
     H.madBorrFechaChange('desoves');
     expect(q('.md-lote').value, 'no se trajo el borrador').toBe('BP');
     expect(q('.md-fn2'), 'el borrador sin campos no los recuperó').not.toBeNull();
-    expect(q('.md-fn2').value, 'y tienen que venir con la fecha de oficio').toBe('2026-09-10');
-    expect(q('.md-fn5').value).toBe('2026-09-11');
+    expect(q('.md-fn2').value, 'y tienen que venir con la fecha de oficio').toBe('2026-09-11');
+    expect(q('.md-fn5').value).toBe('2026-09-12');
     expect(q('.md-n2').value, 'al devolver las fechas se perdió lo tecleado').toBe('9000');
     const fila = H.buildMadDesovePayload(H.madDesCollect()).rows[0];
-    expect([fila[col('Fecha')], fila[col('Fecha N2')], fila[col('Fecha N5')]]).toEqual(['2026-09-10', '2026-09-10', '']);
+    expect([fila[col('Fecha')], fila[col('Fecha N2')], fila[col('Fecha N5')]]).toEqual(['2026-09-10', '2026-09-11', '']);
     localStorage.removeItem(H.MAD_BORR_PRE + 'desoves');
   });
 
@@ -250,6 +272,35 @@ describe('Desoves · las fechas de N2 y N5 salen solas pero se EDITAN (PE1.3, 20
     expect(q('.md-fn2').value, 'entró sin fijar y el repintado la pisó').toBe('2026-09-20');
     const fila = H.buildMadDesovePayload(H.madDesCollect()).rows[0];
     expect(fila[col('Fecha N2')]).toBe('2026-09-20');
+    localStorage.removeItem(H.MAD_BORR_PRE + 'desoves');
+  });
+
+  /* 🔴 2026-10-04 · un borrador de ANTES del cambio de regla trae, SIN fijar, las de oficio viejas (N2 = el desove, N5 = el
+     día siguiente): en un desove nuevo se ponen al día en vez de tomarse por tecleadas. Una fijada de entonces se queda. */
+  it('🔴 un BORRADOR de antes del 2026-10-04 pone al día sus fechas de oficio; una fijada se queda', () => {
+    const panel = document.getElementById('fp-desoves');
+    const guardarYTraer = () => {
+      H._madBorrFijarValores(panel);
+      localStorage.setItem(H.MAD_BORR_PRE + 'desoves', JSON.stringify({ '2026-09-10': panel.innerHTML }));
+      H.madDesReiniciar();
+      document.getElementById('md-fecha').value = '2026-09-10';
+      H.madBorrFechaChange('desoves');
+    };
+    llenar();
+    q('.md-n2').value = '9000';
+    q('.md-fn2').value = '2026-09-10'; q('.md-fn2').removeAttribute('data-fijo');   // la de oficio de entonces: el desove
+    q('.md-fn5').value = '2026-09-11'; q('.md-fn5').removeAttribute('data-fijo');   // y el día siguiente
+    guardarYTraer();
+    expect(q('.md-lote').value, 'no se trajo el borrador').toBe('BP');
+    expect([q('.md-fn2').value, q('.md-fn5').value], 'las de oficio viejas se tomaron por tecleadas').toEqual(['2026-09-11', '2026-09-12']);
+    expect([q('.md-fn2').getAttribute('data-fijo'), q('.md-fn5').getAttribute('data-fijo')]).toEqual([null, null]);
+
+    llenar();
+    q('.md-fn2').value = '2026-09-10'; H.madDesFechaNFija(q('.md-fn2'));             // la misma fecha, pero FIJADA a mano
+    guardarYTraer();
+    expect(q('.md-fn2').value, 'una fijada de entonces se puso al día').toBe('2026-09-10');
+    expect(q('.md-fn2').getAttribute('data-fijo')).toBe('1');
+    expect(q('.md-fn5').value, 'y la N5 sin fijar sale de ESA N2').toBe('2026-09-11');
     localStorage.removeItem(H.MAD_BORR_PRE + 'desoves');
   });
 });
@@ -335,7 +386,7 @@ describe('Desoves · pendientes: guardar el N2 hoy y completar el N5 otro día (
     q('.md-desp-op[value="SanLab"]').checked = true;
     await H.madDesGuardar();
     expect(envios).toHaveLength(1);
-    expect([envios[0].rows[0][col('Fecha N2')], envios[0].rows[0][col('Fecha N5')]], 'PE1.3: sin N5 aún, su fecha va vacía').toEqual(['2026-09-14', '']);
+    expect([envios[0].rows[0][col('Fecha N2')], envios[0].rows[0][col('Fecha N5')]], 'PE1.3: sin N5 aún, su fecha va vacía (N2: el día siguiente al desove, 2026-10-04)').toEqual(['2026-09-15', '']);
     expect(pendientes()).toHaveLength(1);
     expect(pendientes()[0].textContent).toContain('este dispositivo');
 
@@ -360,7 +411,7 @@ describe('Desoves · pendientes: guardar el N2 hoy y completar el N5 otro día (
     expect([fila[col('Fecha')], fila[col('Lote')], fila[col('Código genético')]]).toEqual(['2026-09-14', 'BP', 'OLF5.F2']);
     expect([fila[col('N2')], fila[col('N5')], fila[col('Despacho')]]).toEqual([9000000, 8000000, 'Tabasca, SanLab']);
     // PE1.3: al completar días después, las fechas siguen saliendo del DESOVE, no del día en que se completa.
-    expect([fila[col('Fecha N2')], fila[col('Fecha N5')]]).toEqual(['2026-09-14', '2026-09-15']);
+    expect([fila[col('Fecha N2')], fila[col('Fecha N5')]]).toEqual(['2026-09-15', '2026-09-16']);
     expect(document.getElementById('md-edit')).toBeNull();            // la ficha vuelve a estar limpia
     expect(pendientes()).toHaveLength(0);
   });
@@ -381,7 +432,7 @@ describe('Desoves · pendientes: guardar el N2 hoy y completar el N5 otro día (
     expect(q('.md-fn2').getAttribute('data-fijo'), 'entró suelta: el primer repintado se la lleva').toBe('1');
     H.madDesFechasNSiguen();
     expect(q('.md-fn2').value, 'el repintado pisó la corregida').toBe('2026-09-18');
-    expect(q('.md-fn5').value, 'la NO corregida sí tiene que salir del desove').toBe('2026-09-15');
+    expect(q('.md-fn5').value, 'la NO corregida sale de la N2 corregida (N5 = N2 + 1, 2026-10-04)').toBe('2026-09-19');
   });
 
   it('🔴 la hoja trae lo de otros dispositivos; lo completo no aparece y lo local completo se poda', async () => {
