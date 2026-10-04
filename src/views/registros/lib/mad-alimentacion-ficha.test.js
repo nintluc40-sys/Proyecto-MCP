@@ -11,6 +11,7 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['renderMadAlimentacion', 'madAlimLeer', 'madAlimTomaCambio', 'madAlimTomaOrdenar', 'madAlimTanqueCambio', 'madAlimTomaAgregar', 'madAlimTomaQuitar',
   'madAlimEstandar', 'madAlimCopiarATodas', 'madAlimGuardar', 'madAlimRevisar', 'madAlimPdf', 'madAlimVaciar', 'MAD_ALIM_CFG_KEY',
+  'madHistLeer', 'madHistEditar', 'MAD_HIST_KEY', 'MAD_MOD',   // 2026-10-04 · 📜 Historial: corregir un envío
   '_gasVersionLocal'];   // 2026-09-16 · el portón compara el SELLO: el fixture usa el de esta app
 const H = {};
 const avisos = [];
@@ -49,7 +50,8 @@ beforeAll(async () => {
     + EXPORTAR.map((n) => `try{ H[${JSON.stringify(n)}] = ${n}; }catch(_){}`).join('\n')
     + '\ntry{ H.setToast=function(f){toast=f;}; }catch(_){}'
     + '\ntry{ H.setPost=function(f){postPayload=f;}; }catch(_){}'
-    + '\ntry{ H.setGasUrl=function(f){gasUrl=f;}; }catch(_){}\n})();';
+    + '\ntry{ H.setGasUrl=function(f){gasUrl=f;}; }catch(_){}'
+    + '\ntry{ H.setMod=function(m){curMod=m;}; }catch(_){}\n})();';
   globalThis.__ENG = H;
   new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(window, document, globalThis.localStorage, globalThis);
   H.setToast((msg, tipo) => { avisos.push({ msg: String(msg), tipo: tipo || 'info' }); });
@@ -280,5 +282,38 @@ describe('Alimentación · la ficha', () => {
     H.madAlimPdf('todo');
     expect(impreso).not.toContain('PDF del resumen general');
     H.madAlimVaciar();
+  });
+});
+
+/* 📜 2026-10-04 (usuario) · corregir un envío desde el Historial del módulo. Alimentación es la única ficha que NO se vacía al
+   enviar (el cálculo se queda): al guardar la corrección tiene que SALIR de ella, o la fecha seguiría fija y el siguiente
+   ☁️ volvería a reescribir el envío viejo. */
+describe('Alimentación · 📜 corregir un envío desde el Historial', () => {
+  it('🔴 abre lo enviado con la fecha FIJA; guardar reescribe los MISMOS IDs y la ficha sale de la corrección', async () => {
+    H.setMod(H.MAD_MOD);
+    localStorage.removeItem(H.MAD_HIST_KEY);
+    await H.madAlimLeer();
+    q('#ma-fecha').value = '2026-01-12';
+    await H.madAlimGuardar();
+    expect(envios).toHaveLength(1);
+    const e = H.madHistLeer().filter((x) => x.ficha === 'alimentacion')[0];
+    expect(e.panel).toBe(true);
+    H.madHistEditar(e.id);
+    expect(q('.mh-corr')).not.toBeNull();
+    expect(q('#ma-fecha').value).toBe('2026-01-12');
+    expect(q('#ma-fecha').hasAttribute('readonly')).toBe(true);
+    const t1 = sala('Sala 1').querySelector('.ma-tq[data-tq="1"]');
+    t1.querySelector('.ma-ph').value = '80';
+    H.madAlimTanqueCambio(t1.querySelector('.ma-ph'));
+    await H.madAlimGuardar();
+    expect(envios).toHaveLength(2);
+    const c = (h) => MAD_ALIM_HEADERS.indexOf(h);
+    expect(envios[1].rows.map((r) => r[c('ID')])).toEqual(envios[0].rows.map((r) => r[c('ID')]));
+    expect(envios[1].rows[0][c('Peso hembras (g)')]).toBe(80);
+    const l = H.madHistLeer().filter((x) => x.ficha === 'alimentacion');
+    expect(l).toHaveLength(1);
+    expect(l[0].corregido).toBeGreaterThan(0);
+    expect(q('.mh-corr'), 'sale de la corrección').toBeNull();
+    expect(q('#ma-fecha').hasAttribute('readonly'), 'la fecha vuelve a ser libre').toBe(false);
   });
 });
