@@ -46,7 +46,10 @@ beforeAll(async () => {
   window.confirm = () => true;
   globalThis.fetch = async (url) => {
     const u = decodeURIComponent(String(url));
-    if (u.indexOf('p=ver') !== -1) return { ok: true, status: 200, text: async () => JSON.stringify(respuestaVer) };
+    if (u.indexOf('p=ver') !== -1) {
+      if (respuestaVer === 'red') throw new Error('sin red');   // ?p=ver mudo (sin señal, o la página 404 de Google)
+      return { ok: true, status: 200, text: async () => JSON.stringify(respuestaVer) };
+    }
     return { ok: true, status: 200, text: async () => JSON.stringify({ ok: false, error: 'no se esperaba' }) };
   };
 });
@@ -152,6 +155,25 @@ describe('Control Broodstock · la ficha', () => {
     expect(envios).toHaveLength(0);
     expect(texto('#mb-report')).toContain('No se subió: el GAS desplegado no es el de esta app y podría escribir «Maduración Broodstock»');
     expect(texto('#mb-nombre')).toBe('HOJA BROODSTOCK.xlsx · 2 semana(s)');
+  });
+
+  /* PV3 · era la única de las 8 fichas selladas sin esta prueba (auditoría del registro, 2026-10-04): sin sello confirmado
+     no se escribe en la hoja; la semana va a la COLA con su marca y su fila del registro lo dice. */
+  it('🔴 PV3 · sin respuesta del GAS no se sube: va a la cola con su marca, el registro dice «en cola» y la ficha se limpia', async () => {
+    respuestaVer = 'red';
+    await H.madBsArchivo(archivo(libro()));
+    await H.madBsGuardar();
+    const cola = JSON.parse(localStorage.getItem('larv4_syncqueue') || '[]');
+    try {
+      expect(envios, 'sin sello confirmado no puede salir nada').toHaveLength(0);
+      expect(cola.map((it) => it.payload.sheetName)).toEqual(['Maduración Broodstock']);
+      expect(cola[0].mark && cola[0].mark.kind, 'sin su marca el registro no sabe si llegó').toBe('madlog:broodstock');
+      expect(texto('#mb-log')).toContain('en cola');
+      expect(avisos.some((a) => /no se pudo confirmar/i.test(a.msg))).toBe(true);
+      expect(texto('#mb-nombre'), 'a salvo en la cola, la ficha queda limpia').toBe('Ningún archivo cargado.');
+    } finally {
+      localStorage.removeItem('larv4_syncqueue');   // el vaciado de los 8 s no debe entregarlo en otra prueba
+    }
   });
 
   it('🔴 marcando también la semana anterior salen DOS envíos, uno por corte', async () => {
