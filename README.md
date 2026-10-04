@@ -68,6 +68,15 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   encuadra las elegidas— actúan sólo sobre el mapa. El tiempo tramo a tramo va CON SIGNO: una parada
   sellada antes de la salida o después de la llegada, o una hora que retrocede, se DICE en ámbar en su
   fila (antes salía como ~22 h); «En ruta» y «Puerta a puerta» no cambian.
+  El registro de **🚛 Despacho** lleva también el **🎯 Score** de calidad de postlarvas (2026-10-03,
+  `supervisor/score.js`): el KPI «🎯 Score promedio» con su interpretación y una tabla con la ÚLTIMA evaluación de cada
+  tanque —de cada corrida y tanque con «Todas las corridas»—, de la hoja `Registro_Score` (la ficha del AsT, en
+  Registros). Y cada módulo tiene su acción **🧾 Auditoría (N)** (`supervisor/auditoria.view.js`): lee la hoja
+  `Registro_Auditoria` —también la del módulo con el que una transferencia lo une, en las dos direcciones— y pinta, por
+  corrida y la más reciente primero, el MISMO resumen que la ficha (`resumenAuditoria`, en `supervisor/auditoria.js`:
+  copia de `audResumen` del monolito, con una prueba de paridad que ejecuta los dos) y el cruce con Datos Larvicultura
+  —el sembrado del N5 y la última población de 🚛 Despacho—, sólo informativo. Las dos hojas se reconocen por su nombre
+  y, sin título, por sus columnas, antes de que las reclamen Patología en Fresco o Larvicultura.
 - **Larvicultura** (🦐): calidad larvaria — radar, evolución diaria, heatmap,
   ICL, ranking, población por tanque y modales Comparar/Historia/Decisión.
 - **Revisiones** (🔍): hoja `Registro_Supervisión` — calidad, morfología
@@ -112,9 +121,23 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   meses (2026-10-01). Calidad de Agua trae **Sulfuros** (mg/L, sin rango por defecto) en la ficha de
   Larvicultura, en la de Maduración y en los tres de agua de Maduración, y en su tablero: en la hoja es
   la columna 49, AL FINAL —el GAS añade la cabecera solo—, y Sulfato es la 48 que ya usaba Algas.
+  **La auditoría de la vista** (H-002…H-016, 2026-10-03): el KPI «Σ UFC total» ya no suma los conteos AGREGADOS
+  —Bact. Totales lo inflaba ×3,7— (H-002); la luminiscencia cuenta sólo con presencia o ausencia explícitas (H-016);
+  alertas y reporte TXT dicen el Módulo o la Sala, no «MCIO» ni «M—» (H-009); los rangos viven en cada navegador, y
+  «⚠️ Umbrales modificados en este equipo (N)», junto a «⚙️ Rangos» de Bacteriología y de Calidad de Agua (abre ese
+  editor) y en un aviso de Visitante, lo dice (H-003); el Excel de Bacteriología añade al final el nivel de la VISTA,
+  por patógeno y el peor de la muestra (H-010); las cabeceras de cada patógeno se calculan una vez —`meltRow`, de 624 a
+  75 ms sobre la hoja real— (H-004); la carta de control es de individuos (I-MR, σ por rango móvil, en orden de fecha) y
+  de UN proceso —la ubicación sin el estadío; con varios, avisa de elegir uno— (H-005); la «cinética» se rotula como
+  tendencia de la suma diaria en % por día, sin tiempo de duplicación (H-007); el WQI dice sobre cuántos parámetros con
+  rango se calcula (H-008); el PDF de la Placa firma con una línea por cada analista del día (H-006); las colonias van
+  en escala fija de 10⁰ a 10⁷ UFC, también en la Placa del Supervisor (H-012); ejes y leyendas de todos los gráficos
+  toman el color del tema (H-013); las pestañas llevan `aria-selected`, foco itinerante y ← → Inicio Fin (H-014); y las
+  fechas del rango van por `parseAnyDate`, con las cotas del % de alerta en `config.js` (H-015).
 - **Maduración** (🥚): una entrada con DOS familias (selector interno; abre en Operativo).
   - **📋 Operativo** — el TABLERO del registro operativo, cargado DIFERIDO. Barra de filtros común
-    (período · foto al día · sala → tanque · lote → código · estado · sexo · piscina · camaronera, con los
+    (período —con **Rango** (2026-10-03): desde la fecha elegida hasta la foto, que es su «Hasta»— · foto al día ·
+    sala → tanque · lote → código · estado · sexo · piscina · camaronera, con los
     activos como etiquetas quitables) y sus sub-vistas (la lista viva es `SUBS`, en `operativo.view.js`):
     **📊 Estado actual** (siete indicadores; el mapa de planta, que se colorea por el lote, por el tanque o por
     sus partes —los modos viven en `MODOS_MAPA`— y abre bajo él el LIENZO del tanque pulsado; las alertas, con
@@ -138,7 +161,9 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     composición, curva de vivos, partes con su hora,
     observaciones y movimientos), **🥚 Reproducción** (totales, los desoves pendientes de N5 arriba, la tabla
     por lote —al pulsar un lote, sus N2 y N5 por destino, de más a menos N5— y «A dónde fueron», plegada con
-    los tres primeros destinos), **🔄 Manejo** (movimientos en matriz sala → sala con su registro debajo, y los
+    los tres primeros destinos y con «**Dividir el N5 de cada destino por**» lote, código genético, piscina o fecha de
+    N5 (2026-10-03; lote, código y piscina tal como los dice la hoja, y lo de un desove con varios destinos, entero en
+    cada uno y marcado «*»)), **🔄 Manejo** (movimientos en matriz sala → sala con su registro debajo, y los
     tratamientos: calendario sala × día, productos por área y cobertura preventiva por lote), **🦐 Alimentación**
     (la ración PLANIFICADA por producto frente a la agenda estándar, con cada toma juzgada con el rango de la
     ficha, y de dónde sale el peso de la ración) y **🩺 Calidad del dato** (las hojas y su calendario, los partes esperados —uno por tanque ocupado— frente
@@ -225,6 +250,19 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   Escribe en la hoja **`Registro_Score`**, una fila por tanque con los PUNTOS de cada criterio y un ID fijo (fecha ·
   módulo · corrida · tanque) el último: reenviar una evaluación la CORRIGE (el GAS la upserta sin merge). Un tanque
   sólo sale con sus 13 criterios, y lo marcado se guarda al instante en el equipo.
+  Y **🧾 Auditoría** (2026-10-03): las planillas «AUDITORIAS (MES) Cxxx» de una corrida y su módulo como ficha —la
+  **siembra** (origen, guía, cantidad, toneladas del tanque, lote, código genético y el ingreso de reproductores: su
+  fecha y sus guías, tecleados), la **transferencia** origen → destino (cantidad, estadío, PL/g y % de larvas pequeñas)
+  y la **cosecha** por partida con su despacho (camaronera, piscinas, guías de remisión y de despacho, cantidad real y
+  **facturada**: el 90 % se PROPONE y se puede teclear otra, que queda marcada ★; tinas y placa)—. Escribe en la hoja
+  **`Registro_Auditoria`**, UNA FILA POR EVENTO con su «Tipo» (Siembra · Transferencia · Cosecha), 29 columnas y un ID
+  fijo el último (upsert sin merge); la corrida, los tanques, las piscinas, las guías y la placa van como TEXTO. El
+  resumen se CALCULA y no se guarda: densidades con las toneladas de cada tanque, sobrevivencias, días, subtotales por
+  siembra y despacho por camaronera (PL/g ponderado; camiones = placas distintas). Con transferencia, la cosecha de los
+  destinos se atribuye a sus orígenes **en proporción a lo transferido**, rotulada «≈» (las planillas repartían a partes
+  iguales); un tanque sembrado que además recibe atribuye toda su cosecha a sus orígenes (caso anotado: en las planillas
+  los destinos eran tanques vacíos). Cambiar una celda pone al día lo calculado EN SU SITIO, sin rehacer la tabla
+  —rehacerla perdía el Tab y el clic siguiente—. Como `Registro_Score`, la hoja la crea el GAS con su primer envío.
 
 ### Maduración · el registro OPERATIVO
 
@@ -496,7 +534,9 @@ Dos consecuencias que conviene tener presentes al desplegar:
   de lectura del libro) no salen en `index.html`: el build escribe la lista de TODO `assets/`
   en `precache-assets.json` (`vite.config.js · listaDePrecache`) y el worker los guarda también
   al instalarse (`assetsDelBuild`, 2026-10-01). Sin eso, tras un despliegue, un equipo que no
-  abriera Registros con red no podía abrirlo sin señal.
+  abriera Registros con red no podía abrirlo sin señal. La lista sale del bundle DEFINITIVO (`generateBundle` con
+  `order: 'post'`, 2026-10-03): antes se escribía antes de que `vite:css-post` borrara los trozos de sólo-CSS, y
+  anunciaba un `leaflet-*.js` que no existía (404 en Pages).
 - **La instalación tiene tope: 3 min** (`TOPE_INSTALACION`, 2026-10-01). El navegador da por
   fallida una instalación que pasa de 5 min y BORRA el registro: con señal pésima el equipo se
   quedaba sin modo sin conexión (medido en la app publicada; reproducido en local con una descarga
@@ -522,6 +562,10 @@ Dos consecuencias que conviene tener presentes al desplegar:
    23 s, también sin señal— con «datos de las hh:mm · actualizando…», y se revalida en el acto
    (aplica en reposo). **Caduca a los 7 días** (decisión del usuario): más viejo, no se usa y se
    borra. Una descarga que llega vacía (sin señal) cuenta como fallo: se conservan los datos.
+   **La primera carga dice cómo va** (2026-10-03): el Worker cuenta lo que baja y avisa cuando empieza a leer, y el
+   aviso de carga y la píldora lo enseñan (`textoProgreso`, en `core/sheets.js`: «Descargando el libro… 7,7 MB» →
+   «Leyendo el libro (13,1 MB)…»), con la explicación de que la primera vez en un equipo tarda y después abre al
+   instante con lo guardado. Los refrescos no avisan.
 1. `connectSheets()` descarga el libro **completo** vía `export?format=xlsx`
    (1 petición, todas las hojas), con reintento y backoff. Si falla, el **respaldo** pide CADA hoja
    por su XLSX (`export?format=xlsx&gid=`; los `gid` salen de `/htmlview`) y sólo la que no llegue,
@@ -558,6 +602,11 @@ Dos consecuencias que conviene tener presentes al desplegar:
    («datos nuevos en espera» en la píldora). Registros no se repinta nunca por un refresco
    (`repintaConDatos: false`). ⟳ y la píldora refrescan a mano y nunca lanzan dos descargas
    a la vez (`refrescoManual`).
+   Al aplicar datos nuevos, la vista **se queda donde estaba** (2026-10-03, `router.js · renderCurrentView({
+   conservarPosicion })`): el contenedor sostiene su alto mientras se repinta —si el `render` devuelve una promesa, como
+   Maduración o Biología Molecular con su segundo paso, hasta que se cumple— y el desplazamiento vuelve a su sitio; antes
+   la página encogía y saltaba ARRIBA (medido en Maduración: 731 → 0). Igual con el tema 🌙 y con los atajos de fecha
+   («Todo», «30 días», «7 días»). Cambiar de vista sí empieza arriba.
 
 ## Testing y calidad
 
