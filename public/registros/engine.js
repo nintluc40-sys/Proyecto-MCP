@@ -1857,7 +1857,9 @@ function _reconcileFichas(mark){
   mark.keys.forEach(k => {
     const p = String(k).split("|");
     if(p.length !== 2) return;
-    const mod = p[0], ficha = p[1];
+    /* 🔴 2026-10-04 (auditoría final) · el módulo vuelve de la marca como TEXTO («1|calidad» → "1"), y saveE/loadE lo
+       quieren NÚMERO (isValidMod, e.mod === m): no se concilió NUNCA, y lo entregado por la cola seguía «pendiente». */
+    const mod = /^\d+$/.test(p[0]) ? Number(p[0]) : p[0], ficha = p[1];
     const e = loadE(mod, ficha);
     if(!e || e.synced) return;
     // El sello: si no casa, la ficha se editó después de encolarse. Sigue pendiente, y
