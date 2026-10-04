@@ -8864,7 +8864,7 @@ function _madLocCfg(ficha){
   if(ficha==="desoves") return { sello:true, cab:function(){ return MAD_DESOVE_HEADERS; }, hoja:MAD_DESOVE_SHEET, loc:"md-loc", log:"md-log", html:madDesLogHTML, error:"No se pudo registrar el desove",
     anota:function(e, st){ madDesLogAnota({ fecha:e.fecha, desoves:e.info.desoves||[] }, e.filas, st, e.id); },
     // Como al enviar desde pantalla: entregado o en cola, el desove pasa a «pendientes» (sin N5) de este dispositivo.
-    alEnviar:function(e){ madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), { fecha:e.fecha, desoves:e.info.desoves||[] }, Date.now())); const b=document.getElementById("md-pend"); if(b) b.innerHTML=madDesPendTablaHTML(); },
+    alEnviar:function(e){ madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), { fecha:e.fecha, desoves:e.info.desoves||[] }, Date.now())); _madDesDesocultar({ fecha:e.fecha, desoves:e.info.desoves||[] }); const b=document.getElementById("md-pend"); if(b) b.innerHTML=madDesPendTablaHTML(); },
     resumen:function(e){ return (e.info.desoves||[]).map(function(x){ return madDesNormLote(x.lote)+" · "+madDesNormCG(x.codigoGenetico); }).join(", "); } };
   if(ficha==="mortdes") return { sello:true, cab:function(){ return MAD_MORT_HEADERS; }, hoja:MAD_MORT_SHEET, loc:"mm-loc", log:"mm-log", html:madMortLogHTML, error:"No se pudo registrar el Inf. Supervisor",
     anota:function(e, st){ madMortLogAnota(e.fecha, e.filas, st, e.id); } };
@@ -10456,6 +10456,7 @@ async function madDesGuardar(){
   const ok=await _madPostConSello(payload, _gas, _t);
   if(ok){
     madDesLogAnota(model, payload.rows.length, "ok", _envio);
+    _madDesDesocultar(model);   // 2026-10-04 · vuelto a guardar aquí: se ve aunque se hubiera ocultado
     madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), model, Date.now()));
     toast("✅ Desove registrado · "+payload.rows.length+" fila(s)","ok",5000);
     _madBorrOlvidarPantalla("desoves", model.fecha);
@@ -10467,6 +10468,7 @@ async function madDesGuardar(){
   // registrarlo dos veces, y aquí el segundo envío se fusionaría sobre el primero.
   if(_t.outcome==="queued"){
     madDesLogAnota(model, payload.rows.length, "cola", _envio);
+    _madDesDesocultar(model);   // 2026-10-04 · vuelto a guardar aquí: se ve aunque se hubiera ocultado
     madDesLocalesGuardar(madDesLocalesAnota(madDesLocalesLeer(), model, Date.now()));
     _madBorrOlvidarPantalla("desoves", model.fecha);
     madDesReiniciar();
@@ -10524,6 +10526,13 @@ function madDesPendEliminar(k){
   if(ocultos.indexOf(k)===-1){ ocultos.push(k); madDesOcultosGuardar(ocultos); }
   _madDesPendRepinta();
   toast("🗑 Quitado de este dispositivo: "+d.lote+" · "+d.codigoGenetico+" del "+d.fecha+". La hoja no cambia.","info",4500);
+}
+// Guardar de nuevo un desove en ESTE equipo lo des-oculta: si sigue pendiente, el usuario está trabajando en él.
+function _madDesDesocultar(model){
+  const m=model||{}, f=sanitizeStr(m.fecha,10);
+  const ks=(m.desoves||[]).map(function(x){ const d=x||{}; return madDesLlave({ fecha:f, lote:d.lote, codigoGenetico:d.codigoGenetico }); });
+  const oc=madDesOcultosLeer(), resto=oc.filter(function(k){ return ks.indexOf(k)===-1; });
+  if(resto.length!==oc.length) madDesOcultosGuardar(resto);
 }
 function madDesPendRecuperar(k){
   madDesOcultosGuardar(madDesOcultosLeer().filter(function(x){ return x!==k; }));

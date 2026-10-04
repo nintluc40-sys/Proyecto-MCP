@@ -544,6 +544,18 @@ describe('Desoves · pendientes: «🗑 Eliminar» del dispositivo (2026-10-04)'
     expect(localStorage.getItem(H.MAD_DES_OCULTOS_KEY)).toBeNull();
   });
 
+  it('🔴 si se vuelve a GUARDAR ese desove en este equipo (sin N5), deja de estar oculto: el usuario está con él', async () => {
+    respuestaRows = HOJA_PEND;
+    await H.madDesPendVer();
+    H.madDesPendEliminar(boton(pendientes()[0], 'md-pend-del').dataset.k);
+    expect(pendientes()).toHaveLength(0);
+    document.getElementById('md-fecha').value = '2026-09-07';
+    q('.md-lote').value = 'BP'; q('.md-cg').value = 'OLF5.F2'; q('.md-n2').value = '9000';
+    await H.madDesGuardar();
+    expect(JSON.parse(localStorage.getItem(H.MAD_DES_OCULTOS_KEY)), 'vuelto a guardar: ya no está oculto').toEqual([]);
+    expect(pendientes().map((tr) => tr.textContent).join(' ')).toContain('OLF5.F2');
+  });
+
   it('la lista de ocultos se poda sola cuando la hoja trae ese desove COMPLETO', async () => {
     respuestaRows = HOJA_PEND;
     await H.madDesPendVer();

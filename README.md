@@ -887,8 +887,8 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   el desove **de este dispositivo, no de la hoja**. Lo guardado aquí se borra y la llave se **oculta** en
   este equipo (una fila de la hoja volvería a salir en cada lectura); en los demás equipos sigue saliendo.
   Pide confirmación; «👁 Mostrar ocultos (N)» y «↩ Volver a mostrar» lo recuperan (lo que aún no estaba en
-  la hoja leída no se puede recuperar desde aquí, y se avisa). Los ocultos se podan solos cuando la hoja
-  trae ese desove completo. Sólo interfaz: el cálculo de pendientes (motor y gemelo) no cambia.
+  la hoja leída no se puede recuperar desde aquí, y se avisa). Volver a guardar ese desove en este equipo lo
+  des-oculta. Los ocultos se podan solos cuando la hoja trae ese desove completo. Sólo interfaz: el cálculo de pendientes (motor y gemelo) no cambia.
 - **Desoves · «📥 Cargar»** (usuario, 2026-09-24), al lado de «✕ Quitar»: lista lo que está en
   **producción** a la fecha del desove —cada composición del Ingreso con vivos en una sala donde su
   lote produce— y un toque rellena lote, código genético y piscina **a la vez**, para que no se
