@@ -4,7 +4,8 @@
    la maqueta pintaría un tanque con el número de otro: aquí se nota.
    ============================================================ */
 import { describe, it, expect } from 'vitest';
-import { LARV, MAT, NUM_A, NUM_B } from './plano.js';
+import { LARV, MAT, NUM_A, NUM_B, tanquesDeSala } from './plano.js';
+import { MAD_SALA_OPTS, MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 
 const numeros = (m) => m.rows.flatMap((_, r) => m.cols.map((_c, c) => m.num(r, c)));
 
@@ -32,20 +33,19 @@ describe('plano · larvicultura', () => {
 });
 
 describe('plano · maduración', () => {
-  it('5 salas, S1 a S5: 15 circulares + 6 de desove en la 1, 6 + 6 en la 2 y la 3, 4 + 4 en la 4 y la 5', () => {
+  it('5 salas, S1 a S5, con el nombre de sala del MCP', () => {
     expect(MAT.map((s) => s.id)).toEqual(['S1', 'S2', 'S3', 'S4', 'S5']);
-    const s1 = MAT[0];
-    expect(s1.circ.xs.length * s1.circ.zs.length).toBe(15);
-    expect(s1.desove.xs.length * s1.desove.zs.length).toBe(6);
-    expect(MAT.slice(1).map((s) => s.rows.length * s.cols.length)).toEqual([6, 6, 4, 4]);
+    expect(MAT.map((s) => s.sala)).toEqual(MAD_SALA_OPTS);
   });
 
-  it('los números de los tanques de maduración no se repiten entre salas (1 a 35)', () => {
-    const s1 = MAT[0];
-    const todos = [
-      ...s1.circ.zs.flatMap((_, r) => s1.circ.xs.map((_x, c) => s1.circ.num(r, c))),
-      ...MAT.slice(1).flatMap(numeros),
-    ];
-    expect([...todos].sort((a, b) => a - b)).toEqual(Array.from({ length: 35 }, (_, i) => i + 1));
+  it('cada sala tiene EXACTAMENTE los tanques del catálogo del MCP (las salas 4 y 5 siguen al MCP, no al plano)', () => {
+    for (const s of MAT) {
+      const nums = s.circ ? s.circ.zs.flatMap((_, r) => s.circ.xs.map((_x, c) => s.circ.num(r, c))) : tanquesDeSala(s).map((t) => t.num);
+      expect([...nums].sort((a, b) => a - b), s.sala).toEqual(MAD_TANQUES_POR_SALA[s.sala]);
+    }
+  });
+
+  it('la Sala 1 conserva sus 6 tanques de desove (sin registro por tanque en el MCP)', () => {
+    expect(MAT[0].desove.xs.length * MAT[0].desove.zs.length).toBe(6);
   });
 });

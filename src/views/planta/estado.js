@@ -20,7 +20,10 @@ import { isDespachoRow, modCorDispatched } from '../../core/prodCalendar.js';
 import { buildContext, modStats, tankStats } from '../supervisor/stats.js';
 import { desinfeccionEnCurso } from '../supervisor/desinfeccion.js';
 import { stageCategory, isAlert, svAlert, freshness } from '../supervisor/etapas.js';
-import { LARV } from './plano.js';
+import { LARV, MAT } from './plano.js';
+import { modeloOperativo, serieDiaria, diasDeTanque } from '../maduracion/operativo.data.js';
+import { mapaDePlanta, normalizarFiltro, periodoDe, alertas, ESTADO_VACIO } from '../maduracion/operativo.tablero.js';
+import { capasDelMapa, contextoDelMapa, resumenDeTanque } from '../maduracion/operativo.mapa.js';
 
 const numDe = (s) => { const m = String(s || '').match(/\d+/); return m ? +m[0] : null; };
 const esModulo = (s, n) => /^M/i.test(String(s || '').trim()) && numDe(s) === n;
@@ -113,4 +116,81 @@ function estadoModulo(ctx, m, desinf) {
     },
     tanques,
   };
+}
+
+/* ============================================================
+   MADURACIÓN (tanda 3, 2026-10-04) — el estado de HOY de cada sala y tanque, con las MISMAS funciones del tablero
+   de 📋 Operativo de Maduración: el modelo (modeloOperativo: libro al cierre de hoy y estado de cada sala,
+   registrado y propuesto), el mapa de planta (mapaDePlanta: estado del tanque por sus lotes en esa sala, ♀/♂, H:M y
+   densidad con su semáforo) y el lienzo del tanque (resumenDeTanque: días de cada lote en la sala y lo que dicen sus
+   partes del período). Decisiones del usuario: color = el modo «Estado» del mapa de salas; período = últimos 7 días;
+   alerta del tanque = H:M o densidad fuera de rango; alerta de la sala = temperatura u oxígeno fuera de rango en el
+   período (las alertas del tablero, `alertas`).
+   ============================================================ */
+
+const pad2 = (n) => String(n).padStart(2, '0');
+/** Hoy en la zona del equipo, en ISO (la misma cuenta que el tablero de Maduración). */
+export function hoyLocal(d = new Date()) {
+  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+}
+const fueraDeSuRango = (e) => e === 'bajo' || e === 'alto';
+
+/**
+ * Estado de las 5 salas de maduración al cierre de `hoy`.
+ * @returns {{ salas: Object<string, object>, resumen: { hembras, machos, ocupados, tanques, alertaTanques, alertaSalas, porEstado } }}
+ */
+export function estadoMaduracion(filas, hoy = hoyLocal()) {
+  const M = modeloOperativo(filas, { hoy });
+  const F = normalizarFiltro({}, null);
+  const periodo = periodoDe('7d', M.fecha, M.fuentes);
+  const mapa = mapaDePlanta(M.libro, F);
+  const serie = serieDiaria(M.fuentes, periodo.desde, periodo.hasta);
+  const partes = diasDeTanque(M.fuentes.tanques);
+  const ctx = contextoDelMapa(mapa, capasDelMapa(M, serie, partes, periodo), M.fecha);
+  const al = alertas(M, periodo, F);
+  const lecturas = (lista, sala) => lista.porSala.find((x) => x.sala === sala) || null;
+
+  const salas = {};
+  const resumen = { hembras: 0, machos: 0, ocupados: 0, tanques: 0, alertaTanques: 0, alertaSalas: 0, porEstado: {} };
+  for (const m of MAT) {
+    const sM = mapa.salas.find((x) => x.sala === m.sala) || { tanques: [] };
+    const sE = (M.salas || []).find((x) => x.sala === m.sala) || null;
+    const tanques = {};
+    for (const t of sM.tanques) {
+      if (t.fueraDeCatalogo) continue;
+      const r = resumenDeTanque(t, ctx, serie, partes, periodo);
+      const motivos = t.vivos > 0 ? [fueraDeSuRango(t.hmEstado) && 'H:M', fueraDeSuRango(t.densidadEstado) && 'Densidad'].filter(Boolean) : [];
+      tanques[t.tanque] = {
+        estado: t.estado, vivos: t.vivos, hembras: t.hembras, machos: t.machos,
+        hm: t.hm, hmEstado: t.hmEstado, densidad: t.densidad, densidadEstado: t.densidadEstado,
+        lotes: r.lotes, periodo: r.periodo, ultimoParte: r.ultimoParte,
+        alerta: motivos.length > 0, motivos,
+      };
+      resumen.tanques++;
+      resumen.porEstado[t.estado] = (resumen.porEstado[t.estado] || 0) + 1;
+      if (t.vivos > 0) { resumen.ocupados++; resumen.hembras += t.hembras; resumen.machos += t.machos; }
+      if (motivos.length) resumen.alertaTanques++;
+    }
+    const temp = lecturas(al.temperatura, m.sala), ox = lecturas(al.oxigeno, m.sala);
+    const motivosSala = [temp && 'Temperatura', ox && 'Oxígeno'].filter(Boolean);
+    if (motivosSala.length) resumen.alertaSalas++;
+    const lista = Object.values(tanques);
+    const sumaP = (k) => lista.reduce((a, x) => a + (Number(x.periodo[k]) || 0), 0);
+    salas[m.id] = {
+      id: m.id, sala: m.sala,
+      registrado: sE ? sE.registrado : { estado: '', fecha: '', porLote: '' },
+      propuesto: sE ? sE.propuesto : { estado: '', ocupados: 0, total: lista.length },
+      coinciden: sE ? sE.coinciden : null,
+      fueraDeCatalogo: sM.tanques.filter((t) => t.fueraDeCatalogo && t.vivos > 0).length,
+      hembras: lista.reduce((a, x) => a + x.hembras, 0), machos: lista.reduce((a, x) => a + x.machos, 0),
+      ocupados: lista.filter((x) => x.vivos > 0).length, total: lista.length,
+      lotes: [...new Set(lista.flatMap((x) => x.lotes.map((l) => l.lote)))],
+      periodo: { bajas: sumaP('bajas'), descartes: sumaP('descartes'), copulas: sumaP('copulas') },
+      alerta: motivosSala.length > 0, motivos: motivosSala,
+      lecturas: { temperatura: temp, oxigeno: ox, umbralT: al.temperatura.umbral, umbralO: al.oxigeno.umbral },
+      alertaTanques: lista.filter((x) => x.alerta).length,
+      tanques,
+    };
+  }
+  return { fecha: M.fecha, periodo, salas, resumen, vacio: ESTADO_VACIO };
 }

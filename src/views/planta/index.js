@@ -2,6 +2,8 @@
    PLANTA · vista 🏭 (rol Gerencia) — tablero de producción sobre la maqueta 3D del laboratorio
    Tanda 1 (2026-10-04): el marco de la vista y la maqueta del Laboratorio Mar Bravo.
    Tanda 2 (2026-10-04): el estado de producción de cada tanque de larvicultura (planta/estado.js).
+   Tanda 3 (2026-10-04): y el de cada sala y tanque de maduración (estadoMaduracion, del mismo archivo). Se calculan
+   por separado: si uno falla, el otro se sigue viendo.
    La vista se monta SIN esperar al libro (`necesitaLibro: false`): la maqueta sale al instante, pide
    el libro si no está y pinta los estados al llegar; en cada refresco (EV.DATA) sólo vuelve a pintar
    los colores (`repintaConDatos: false`: rehacer la escena perdería la cámara).
@@ -15,7 +17,7 @@ import { montarPlanta } from './escena.js';
 import { esc } from '../../core/format.js';
 import { store, on, EV } from '../../core/store.js';
 import { asegurarLibro } from '../../core/refresh.js';
-import { estadoPlanta } from './estado.js';
+import { estadoPlanta, estadoMaduracion } from './estado.js';
 
 const MARCO = `
 <div class="planta">
@@ -35,7 +37,7 @@ const MARCO = `
     <header>
       <div class="eyebrow">Plano ARQ-A3 · V4 septiembre</div>
       <h1>Laboratorio Mar Bravo</h1>
-      <p class="lede">El estado de hoy de cada módulo de larvicultura: su última corrida, con los datos y las reglas de la Vista Ejecutiva del Supervisor.</p>
+      <p class="lede">El estado de hoy de cada módulo de larvicultura y de cada sala de maduración, con los datos y las reglas del MCP: la Vista Ejecutiva del Supervisor y el tablero de Maduración.</p>
       <p class="datos" id="estado-datos" role="status">Cargando datos de producción…</p>
     </header>
     <div class="stats" id="stats"></div>
@@ -52,7 +54,7 @@ const MARCO = `
       <label><input type="checkbox" id="t-life" checked> Personas, vehículos y aves</label>
       <label><input type="checkbox" id="t-labels" checked> Nombres de módulos y salas</label>
     </section>
-    <p class="note">Tanques y módulos del plano ARQ-A3 V4. Cada tanque toma el estado de la última corrida de su módulo; un tanque que no figura en esa corrida está vacío. Los datos se actualizan solos cada 5 minutos. Maduración se suma en la próxima tanda. Postlarvas y reproductores se ven a escala aumentada; personas y vehículos son ambientación.</p>
+    <p class="note">Módulos y salas del plano ARQ-A3 V4; las salas 4 y 5 se dibujan con los tanques del MCP (6 y 5), en una disposición aproximada. En larvicultura cada tanque toma el estado de la última corrida de su módulo; un tanque que no figura en esa corrida está vacío. En maduración, el estado de cada tanque es el de sus lotes en esa sala, como en el mapa de salas, y las cifras de bajas, descartes y cópulas son de los últimos 7 días. Los datos se actualizan solos cada 5 minutos. Postlarvas y reproductores se ven a escala aumentada; personas y vehículos son ambientación.</p>
   </aside>
 </div>`;
 
@@ -70,14 +72,13 @@ export function plantaView(root) {
   }
   const pintar = () => {
     if (!store.connected || !store.globalData.length) { escena.pintarEstado(null); return; }
-    try {
-      escena.pintarEstado(estadoPlanta());
-      const hora = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
-      escena.aviso('Datos del MCP · puestos al día a las ' + hora);
-    } catch (e) {
-      console.error('[planta] estado', e);
-      escena.aviso('No se pudo calcular el estado de producción: ' + e.message);
-    }
+    const fallos = [];
+    let larv = null, mad = null;
+    try { larv = estadoPlanta(); } catch (e) { console.error('[planta] larvicultura', e); fallos.push('larvicultura (' + e.message + ')'); }
+    try { mad = estadoMaduracion(store.globalData); } catch (e) { console.error('[planta] maduración', e); fallos.push('maduración (' + e.message + ')'); }
+    escena.pintarEstado({ modulos: larv ? larv.modulos : {}, resumen: larv ? larv.resumen : null, mad });
+    const hora = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
+    escena.aviso(fallos.length ? 'No se pudo calcular: ' + fallos.join(' · ') : 'Datos del MCP · puestos al día a las ' + hora);
   };
   pintar();
   if (!store.connected) asegurarLibro();

@@ -10,11 +10,13 @@
    Tanda 2 (2026-10-04): pinta el ESTADO de producción de cada tanque de larvicultura que le pasa
    planta/estado.js (color de su etapa, vacío, despachado, agrupado o desinfección; baliza roja si
    está en alerta), con rótulos, tooltip y ficha de producción. Sin medidas (decisión del usuario).
-   Maduración sigue sin datos hasta la tanda 3.
+   Tanda 3 (2026-10-04): maduración con el modo «Estado» del mapa de salas (Producción, Cuarentena, Mixto,
+   Vacío), reproductores sólo en los tanques ocupados, baliza en el tanque con H:M o densidad fuera de rango y en
+   la sala con temperatura u oxígeno fuera de rango (últimos 7 días), y fichas de sala y de tanque.
    ============================================================ */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { LARV, LARV_H, MAT, OTHERS, SITE, C0, STREET } from './plano.js';
+import { LARV, LARV_H, MAT, OTHERS, SITE, C0, STREET, tanquesDeSala } from './plano.js';
 import { STAGE_CATS } from '../supervisor/etapas.js';
 import { fmtPop } from '../../core/format.js';
 import { fmtShort } from '../../core/dates.js';
@@ -36,12 +38,12 @@ LARV.forEach(m => {
   groups.push(g);
 });
 MAT.forEach(m => {
-  const g = { id: m.id, kind: 'mat', name: 'Maduración ' + m.n, short: 'S' + m.n, box: m.box, H: 3.2, tanks: [], desove: [], partition: m.partition };
+  const g = { id: m.id, kind: 'mat', sala: m.sala, name: 'Maduración ' + m.n, short: 'S' + m.n, box: m.box, H: 3.2, tanks: [], desove: [], partition: m.partition };
   if (m.circ) {
     const k = m.circ; k.zs.forEach((z, r) => k.xs.forEach((x, c) => { const t = { g, num: k.num(r, c), type: 'circ', cx: x, cz: z, r: k.d / 2, H: k.h, real: [k.d] }; t.vol = Math.PI * (k.d / 2) ** 2 * k.h; g.tanks.push(t); tanks.push(t); }));
     const d = m.desove; d.zs.forEach((z, r) => d.xs.forEach((x, c) => { const t = { g, num: d.num(r, c), type: 'circ', desove: true, cx: x, cz: z, r: d.d / 2, H: d.h, real: [d.d] }; t.vol = Math.PI * (d.d / 2) ** 2 * d.h; g.desove.push(t); tanks.push(t); }));
   } else {
-    m.rows.forEach((z, r) => m.cols.forEach((x, c) => { const t = { g, num: m.num(r, c), type: 'rect', cx: x + m.L / 2, cz: z + m.W / 2, L: m.L + .3, W: m.W + .3, H: m.h, real: m.real }; t.vol = m.real[0] * m.real[1] * m.h; g.tanks.push(t); tanks.push(t); }));
+    tanquesDeSala(m).forEach(({ x, z, num }) => { const t = { g, num, type: 'rect', cx: x + m.L / 2, cz: z + m.W / 2, L: m.L + .3, W: m.W + .3, H: m.h, real: m.real }; t.vol = m.real[0] * m.real[1] * m.h; g.tanks.push(t); tanks.push(t); });
     g.assumed = m.assumed; g.tankH = m.h;
   }
   groups.push(g);
@@ -134,7 +136,7 @@ const M = {
   zinc: std({ map: rep(TX.zinc, 6, 1), roughness: .5, metalness: .4 }),
   tankWall: std({ map: rep(TX.concrete, 1, 1), color: col('#f4f2ee'), roughness: .75 }),
   waterL: std({ color: 0xffffff, roughness: .08, metalness: .1, normalMap: waterNormal, normalScale: new THREE.Vector2(.35, .35), emissive: 0x000000, transparent: true, opacity: .62 }),
-  waterM: std({ color: 0xffffff, roughness: .08, metalness: .1, normalMap: waterNormal, normalScale: new THREE.Vector2(.35, .35), emissive: 0x000000, transparent: true, opacity: .4 }),
+  waterM: std({ color: 0xffffff, roughness: .08, metalness: .1, normalMap: waterNormal, normalScale: new THREE.Vector2(.35, .35), emissive: 0x000000, transparent: true, opacity: .72 }),
   algae: std({ color: col('#4f9a35'), roughness: .1, metalness: .05, normalMap: waterNormal, normalScale: new THREE.Vector2(.3, .3) }),
   lid: std({ color: col('#7d8a8f'), roughness: .6, metalness: .3 }),
   pipe: std({ color: col('#e9e6dc'), roughness: .5 }),
@@ -332,12 +334,17 @@ const _etapaCol = {};
 const colEtapa = (e) => _etapaCol[e.key] || (_etapaCol[e.key] = col(e.color));
 function colorTanque(t) {
   const st = t.st;
+  if (t.g.kind === 'mat' && st) return (MAD_COLOR[st.estado] || MAD_COLOR['Sin estado']).clone();
   if (st && st.estado === 'cultivo') return st.etapa ? colEtapa(st.etapa).clone() : WATER.larv.clone();
   if (st) return (ESTADO_COLOR[st.estado] || ESTADO_COLOR.vacio).clone();
   const c = (t.desove ? WATER.desove : t.g.kind === 'larv' ? WATER.larv : WATER.mat).clone();
   return c.offsetHSL(t.tint * .3, 0, t.tint);
 }
-const conLarvas = (t) => !t.st || t.st.estado === 'cultivo';
+// Maduración: los colores del modo «Estado» del mapa de salas (operativo.css: Producción --c-bueno, Cuarentena
+// --c-malo, Mixto #7e57c2, Sin estado --c-sin-dato; Vacío sin color).
+const MAD_COLOR = { 'Producción': col('#5cb860'), 'Cuarentena': col('#f2b705'), 'Mixto': col('#8a63c9'), 'Vacío': col('#d9e8ea'), 'Sin estado': col('#b0bec5') };
+const MAD_HEX = { 'Producción': '#5cb860', 'Cuarentena': '#f2b705', 'Mixto': '#8a63c9', 'Vacío': '#d9e8ea', 'Sin estado': '#b0bec5' };
+const conLarvas = (t) => (t.g.kind === 'mat' ? !estadoCargado || (t.st ? t.st.vivos > 0 : !!t.desove) : !t.st || t.st.estado === 'cultivo');
 function paintWater() {
   tanks.forEach(t => {
     let c = colorTanque(t);
@@ -397,11 +404,13 @@ function animateShrimp(time) {
     m4.compose(v.set(cx + Math.cos(a) * ex, Y0 + t.H - .18 - p.d + .015 * Math.sin(time * 3 + p.ph), cz + Math.sin(a) * ez), qt, s.setScalar(p.s)); plI.setMatrixAt(i, m4);
   });
   brood.forEach((b, i) => {
+    if (!conLarvas(b.t)) { if (!b.off) { m4.makeScale(0, 0, 0); brI.setMatrixAt(i, m4); b.off = true; } return; }
+    b.off = false;
     const t = b.t, [cx, cz] = P(t.cx, t.cz), k = time * b.sp + b.ph; let x, z, dx, dz;
     if (t.type === 'rect') { const ex = t.L / 2 - TH - .5, ez = t.W / 2 - TH - .4; x = cx + Math.sin(k) * ex; z = cz + b.lane * ez + .25 * Math.sin(k * 3); dx = Math.cos(k) * ex; dz = .75 * Math.cos(k * 3); }
     else { const rr = (t.r - .45) * b.rf, a = k * b.dir; x = cx + Math.cos(a) * rr; z = cz + Math.sin(a) * rr; dx = -Math.sin(a) * b.dir; dz = Math.cos(a) * b.dir; }
     qt.setFromEuler(eu.set(0, -Math.atan2(dz, dx), 0));
-    m4.compose(v.set(x, Y0 + t.H - .2 - b.d, z), qt, s.setScalar(b.s)); brI.setMatrixAt(i, m4);
+    m4.compose(v.set(x, Y0 + t.H - .15, z), qt, s.setScalar(b.s)); brI.setMatrixAt(i, m4);   // a flor de agua: el color del estado se lee y ellos también
   });
   plI.instanceMatrix.needsUpdate = brI.instanceMatrix.needsUpdate = true;
 }
@@ -631,6 +640,11 @@ const num = (v, d, u) => (v === null || v === undefined || isNaN(v)) ? '—' : f
 function textoRotulo(g, far) {
   const base = far ? g.short : g.name, st = g.st;
   if (!st) return base;
+  if (g.kind === 'mat') {
+    const n = st.alertaTanques + (st.alerta ? 1 : 0);
+    if (far) return base + (n ? ' · ⚠ ' + n : '');
+    return base + ' · ' + (st.registrado.estado || 'sin estado') + ' · ' + st.ocupados + '/' + st.total + (n ? ' · ⚠ ' + n : '');
+  }
   // de lejos, sólo el nombre corto y las alertas: el color del punto ya dice la etapa (si no, se enciman)
   if (far) return base + (st.cuenta && st.cuenta.alerta ? ' · ⚠ ' + st.cuenta.alerta : '');
   if (st.estado === 'cultivo') return base + ' · ' + st.estadio + ' · día ' + st.dias + (st.despachando ? ' · despachando' : '') + (st.cuenta.alerta ? ' · ⚠ ' + st.cuenta.alerta : '');
@@ -638,9 +652,10 @@ function textoRotulo(g, far) {
   if (st.estado === 'despachado') return base + ' · C' + st.corrida + ' despachada';
   return base + ' · sin datos';
 }
+const ESTADO_SALA_HEX = (e) => /desinfec/i.test(e || '') ? '#9e9e9e' : /cuarentena/i.test(e || '') ? MAD_HEX['Cuarentena'] : /producci/i.test(e || '') ? MAD_HEX['Producción'] : 'var(--mat)';
 function colorRotulo(g) {
   const st = g.st;
-  if (g.kind !== 'larv') return 'var(--mat)';
+  if (g.kind !== 'larv') return st ? ESTADO_SALA_HEX(st.registrado.estado) : 'var(--mat)';
   if (!st) return 'var(--larv)';
   if (st.estado === 'cultivo') return st.etapa ? st.etapa.color : 'var(--larv)';
   return st.estado === 'desinfeccion' ? '#9e9e9e' : '#b9c7cf';
@@ -666,10 +681,7 @@ let tanqueFicha = null;
 /** Resumen de la ficha de estado del módulo (las cifras de su tarjeta en la Vista Ejecutiva). */
 function fichaModulo(g) {
   tanqueFicha = null;
-  if (g.kind !== 'larv') {
-    llenarFicha('Sala de maduración', g.name, [['Tanques', g.tanks.length + ' · numerados ' + g.range + (g.desove.length ? ' + ' + g.desove.length + ' de desove' : '')], ['Producción', 'Se suma en la próxima tanda']]);
-    return;
-  }
+  if (g.kind !== 'larv') { fichaSala(g); return; }
   const st = g.st, kind = 'Módulo de larvicultura';
   if (!estadoCargado) { llenarFicha(kind, g.name, [['Estado', 'Cargando datos de producción…']]); return; }
   if (!st || st.estado === 'sin-datos') { llenarFicha(kind, g.name, [['Estado', 'Sin datos de producción']]); return; }
@@ -692,6 +704,50 @@ function fichaModulo(g) {
     ['Técnicos', st.tecnicos && st.tecnicos.length ? st.tecnicos.join(', ') : '—'],
     ['Lote', st.lotes && st.lotes.length ? st.lotes.join(' · ') : '—'],
     ['Actualizado', st.fresco ? st.fresco.label : '—'],
+  ]);
+}
+const ent = (v) => (v === '' || v === null || v === undefined || isNaN(v)) ? '—' : Math.round(Number(v)).toLocaleString('es-EC');
+const dec = (v, d) => (v === '' || v === null || v === undefined || isNaN(v)) ? '—' : fmt(Number(v), d);
+const SEM = { ok: 'en rango', bajo: 'bajo el rango', alto: 'sobre el rango' };
+const dm = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(iso || '') ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '—');
+/** Ficha de la sala: su estado registrado y el que calcula el libro, ocupación, reproductores y su semana. */
+function fichaSala(g) {
+  const st = g.st, kind = 'Sala de maduración';
+  if (!estadoCargado) { llenarFicha(kind, g.name, [['Estado', 'Cargando datos de producción…']]); return; }
+  if (!st) { llenarFicha(kind, g.name, [['Estado', 'Sin datos de maduración']]); return; }
+  const lec = (l, u) => l ? l.fuera + ' de ' + l.lecturas + ' lecturas fuera' + (u && u.referencia ? ' (' + u.referencia + ')' : '') : 'En rango';
+  const rows = [
+    ['Estado', (st.registrado.estado || '—') + (st.registrado.fecha ? ' · anotado el ' + dm(st.registrado.fecha) : '')],
+    ['Calculado', (st.propuesto.estado || '—') + (st.coinciden === false ? ' · difiere de lo anotado' : '')],
+    ['Ocupación', st.ocupados + ' de ' + st.total + ' tanques' + (st.fueraDeCatalogo ? ' · ' + st.fueraDeCatalogo + ' fuera del catálogo' : '')],
+    ['Reproductores', ent(st.hembras) + ' ♀ · ' + ent(st.machos) + ' ♂'],
+    ['Lotes', st.lotes.length ? st.lotes.join(' · ') : '—'],
+    ['Últimos 7 días', ent(st.periodo.bajas) + ' bajas · ' + ent(st.periodo.descartes) + ' descartes · ' + ent(st.periodo.copulas) + ' cópulas'],
+    ['Temperatura', lec(st.lecturas.temperatura, st.lecturas.umbralT)],
+    ['Oxígeno', lec(st.lecturas.oxigeno, st.lecturas.umbralO)],
+    ['Tanques en alerta', st.alertaTanques ? st.alertaTanques + ' (H:M o densidad fuera de rango)' : 'Ninguno'],
+  ];
+  if (g.desove.length) rows.push(['Desove', g.desove.length + ' tanques · sin registro por tanque en el MCP']);
+  llenarFicha(kind, g.name, rows);
+}
+/** Ficha de un tanque de maduración (al tocarlo con su sala ya elegida): el lienzo del mapa de salas. */
+function fichaTanqueMad(t) {
+  tanqueFicha = t;
+  const name = t.g.name + ' · ' + (t.desove ? 'desove ' : 'tanque ') + t.num, kind = 'Tanque de maduración';
+  if (t.desove) { llenarFicha(kind, name, [['Estado', 'Tanque de desove'], ['Datos', 'El MCP no lleva registro por tanque de desove']]); return; }
+  const st = t.st;
+  if (!st) { llenarFicha(kind, name, [['Estado', estadoCargado ? 'Sin datos' : 'Cargando datos de producción…']]); return; }
+  if (!st.vivos) { llenarFicha(kind, name, [['Estado', 'Vacío'], ['Último parte', dm(st.ultimoParte)]]); return; }
+  const p = st.periodo;
+  llenarFicha(kind, name, [
+    ['Estado', st.estado],
+    ['Lotes', st.lotes.map((l) => l.lote + (l.estado ? ' · ' + l.estado : '') + (l.dias !== '' ? ' ' + l.dias + ' d' : '') + (l.codigos.length ? ' · ' + l.codigos.join('/') : '')).join(' | ')],
+    ['Reproductores', ent(st.hembras) + ' ♀ · ' + ent(st.machos) + ' ♂ · ' + ent(st.vivos) + ' en total'],
+    ['H:M', dec(st.hm, 2) + (SEM[st.hmEstado] ? ' · ' + SEM[st.hmEstado] : '')],
+    ['Densidad', dec(st.densidad, 1) + ' animales/m²' + (SEM[st.densidadEstado] ? ' · ' + SEM[st.densidadEstado] : '')],
+    ['Últimos 7 días', ent(p.bajas) + ' bajas · ' + ent(p.descartes) + ' descartes · ' + ent(p.copulas) + ' cópulas' + (p.pctCopulas !== '' && p.pctCopulas !== undefined ? ' (' + dec(p.pctCopulas, 1) + ' %)' : '')],
+    ['Partes', ent(p.diasConParte) + ' de 7 días · último ' + dm(st.ultimoParte)],
+    ['Alerta', st.alerta ? '⚠ ' + st.motivos.join(' y ') + ' fuera de rango' : 'Ninguna'],
   ]);
 }
 const ESTADO_TXT = { vacio: 'Vacío', despachado: 'Despachado', agrupado: 'Agrupado', descartado: 'Descartado', desinfeccion: 'Desinfección (pre-siembra)' };
@@ -736,7 +792,7 @@ canvas.addEventListener('pointerup', e => {
   if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;
   const p = pickAt(e); if (!p) { select(null); return; }
   // con el módulo ya elegido, tocar uno de sus tanques abre la ficha del tanque
-  if (p.tank && p.tank.g === selected && p.tank.g.kind === 'larv') { fichaTanque(p.tank); return; }
+  if (p.tank && p.tank.g === selected) { if (p.tank.g.kind === 'larv') fichaTanque(p.tank); else fichaTanqueMad(p.tank); return; }
   select(p.tank ? p.tank.g : p.group, true);
 });
 canvas.addEventListener('pointermove', e => {
@@ -753,7 +809,14 @@ canvas.addEventListener('pointermove', e => {
 });
 /** Resumen del tanque para el tooltip (lo que se lee de un vistazo; el detalle va en la ficha). */
 function lineasTip(t) {
-  if (t.g.kind !== 'larv') return ['Datos de maduración en la próxima tanda'];
+  if (t.g.kind !== 'larv') {
+    if (t.desove) return ['Tanque de desove · sin registro por tanque'];
+    const sm = t.st;
+    if (!sm) return [estadoCargado ? 'Sin datos de maduración' : 'Cargando datos…'];
+    if (!sm.vivos) return ['Vacío'];
+    return [sm.estado + ' · ' + sm.lotes.map((l) => l.lote).join(' + '), ent(sm.hembras) + ' ♀ · ' + ent(sm.machos) + ' ♂ · H:M ' + dec(sm.hm, 2),
+      'Densidad ' + dec(sm.densidad, 1) + ' /m²', ...(sm.alerta ? ['⚠ ' + sm.motivos.join(' y ') + ' fuera de rango'] : [])];
+  }
   const st = t.st;
   if (!st) return [estadoCargado ? 'Sin datos de producción' : 'Cargando datos…'];
   if (st.estado !== 'cultivo') return [ESTADO_TXT[st.estado] || st.estado];
@@ -770,7 +833,7 @@ canvas.addEventListener('keydown', e => { if (e.key === 'Escape') select(null); 
 /* ---------- Panel ---------- */
 const larvG = groups.filter(g => g.kind === 'larv'), matG = groups.filter(g => g.kind === 'mat');
 const tile = (color) => { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = '<b>—</b><span><i></i><em></em></span><small></small>'; d.querySelector('i').style.background = color; $('#stats').append(d); return d; };
-const tileCultivo = tile('var(--larv)'), tileAlerta = tile('#e53935');
+const tileCultivo = tile('var(--larv)'), tileAlerta = tile('#e53935'), tileRepro = tile('var(--mat)'), tileAlertaMad = tile('#e53935');
 function pintarCifras(E) {
   const r = E && E.resumen;
   tileCultivo.querySelector('b').textContent = r ? r.cultivo : '—';
@@ -778,7 +841,14 @@ function pintarCifras(E) {
   tileCultivo.querySelector('small').textContent = r ? 'de ' + r.total + ' · ' + r.vacio + ' vacíos · ' + r.despachado + ' despachados' + (r.desinfeccion ? ' · ' + r.desinfeccion + ' en desinfección' : '') : 'Cargando datos…';
   tileAlerta.querySelector('b').textContent = r ? r.alerta : '—';
   tileAlerta.querySelector('em').textContent = 'tanques en alerta';
-  tileAlerta.querySelector('small').textContent = 'OD, temperatura o supervivencia fuera de rango';
+  tileAlerta.querySelector('small').textContent = 'larvicultura · OD, temperatura o supervivencia fuera de rango';
+  const rm = E && E.mad && E.mad.resumen;
+  tileRepro.querySelector('b').textContent = rm ? ent(rm.hembras + rm.machos) : '—';
+  tileRepro.querySelector('em').textContent = 'reproductores';
+  tileRepro.querySelector('small').textContent = rm ? ent(rm.hembras) + ' ♀ · ' + ent(rm.machos) + ' ♂ · ' + rm.ocupados + ' de ' + rm.tanques + ' tanques' : (E ? 'Sin datos de maduración' : 'Cargando datos…');
+  tileAlertaMad.querySelector('b').textContent = rm ? rm.alertaTanques + rm.alertaSalas : '—';
+  tileAlertaMad.querySelector('em').textContent = 'alertas de maduración';
+  tileAlertaMad.querySelector('small').textContent = rm ? rm.alertaTanques + ' tanques (H:M o densidad) · ' + rm.alertaSalas + ' salas (temperatura u oxígeno, 7 días)' : 'H:M, densidad, temperatura u oxígeno';
 }
 pintarCifras(null);
 // leyenda: las etapas de la Vista Ejecutiva y los estados sin larvas
@@ -786,6 +856,8 @@ pintarCifras(null);
   const item = (color, txt) => { const sp = document.createElement('span'); sp.className = 'lg'; const i = document.createElement('i'); i.style.background = color; sp.append(i, document.createTextNode(txt)); lg.append(sp); };
   STAGE_CATS.forEach((c) => item(c.color, c.label + ' · ' + c.range));
   item('#d9e8ea', 'Vacío'); item('#a9bcc8', 'Despachado'); item('#5b6266', 'Agrupado o descartado');
+  const sub = document.createElement('span'); sub.className = 'lg-sub'; sub.textContent = 'Maduración'; lg.append(sub);
+  ['Producción', 'Cuarentena', 'Mixto'].forEach((e) => item(MAD_HEX[e], e));
   const al = document.createElement('span'); al.className = 'lg lg-alerta'; al.textContent = '⚠ Baliza roja: tanque en alerta'; lg.append(al);
 } }
 function fillList(el, list) {
@@ -801,7 +873,14 @@ function fillList(el, list) {
 function pintarFila(g) {
   const st = g.st;
   g.listTag.style.background = colorRotulo(g) === '#b9c7cf' ? '#8fa3ad' : colorRotulo(g);
-  if (g.kind !== 'larv') { g.listSub.textContent = g.tanks.length + ' tanques' + (g.desove.length ? ' + ' + g.desove.length + ' de desove' : ''); g.listCt.textContent = ''; return; }
+  if (g.kind !== 'larv') {
+    if (!estadoCargado) { g.listSub.textContent = 'Cargando…'; g.listCt.textContent = ''; return; }
+    if (!st) { g.listSub.textContent = 'Sin datos'; g.listCt.textContent = ''; return; }
+    const n = st.alertaTanques + (st.alerta ? 1 : 0);
+    g.listSub.textContent = (st.registrado.estado || 'Sin estado') + ' · ' + ent(st.hembras) + ' ♀ · ' + ent(st.machos) + ' ♂';
+    g.listCt.textContent = n ? '⚠ ' + n : st.ocupados + '/' + st.total;
+    return;
+  }
   if (!estadoCargado) { g.listSub.textContent = 'Cargando…'; g.listCt.textContent = ''; return; }
   if (!st || st.estado === 'sin-datos') { g.listSub.textContent = 'Sin datos'; g.listCt.textContent = ''; return; }
   if (st.estado === 'desinfeccion') { g.listSub.textContent = 'Desinfección · C' + st.corrida; g.listCt.textContent = ''; return; }
@@ -830,6 +909,14 @@ function pintarBalizas() {
     sp.position.set(x, Y0 + t.H + 2.4, z); sp.scale.set(1.5, 1.5, 1); sp.renderOrder = 5;
     balizas.add(ring, sp);
   });
+  groups.forEach((g) => {
+    if (g.kind !== 'mat' || !g.st || !g.st.alerta) return;
+    // en la esquina de la sala que da al canal, para no tapar su rótulo (que va en el centro)
+    const [x, z] = P(g.box[2] - 2.2, g.box[1] + 2.2);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: texAlerta, depthTest: false, transparent: true }));
+    sp.position.set(x, .26 + g.H + 1.6, z); sp.scale.set(2.2, 2.2, 1); sp.renderOrder = 5;
+    balizas.add(sp);
+  });
 }
 function latirBalizas(time) {
   balizas.children.forEach((o) => { if (!o.isSprite) { const k = (time * .9 + o.userData.ph) % 1; o.scale.setScalar(o.userData.r * (1 + .35 * k)); o.material.opacity = .9 * (1 - k); } });
@@ -839,12 +926,12 @@ function latirBalizas(time) {
 function pintarEstado(E) {
   estadoCargado = !!E;
   groups.forEach((g) => {
-    g.st = E && g.kind === 'larv' ? E.modulos[g.id] || null : null;
+    g.st = !E ? null : g.kind === 'larv' ? E.modulos[g.id] || null : (E.mad && E.mad.salas[g.id]) || null;
     g.tanks.forEach((t) => { t.st = g.st && g.st.tanques ? g.st.tanques[t.num] || null : null; });
   });
   paintWater(); pintarBalizas(); pintarCifras(E); groups.forEach(pintarFila);
   wasFar = null;   // rehace los rótulos en el próximo cuadro
-  if (selected) { if (tanqueFicha && tanqueFicha.g === selected) fichaTanque(tanqueFicha); else fichaModulo(selected); }
+  if (selected) { if (tanqueFicha && tanqueFicha.g === selected) (selected.kind === 'larv' ? fichaTanque : fichaTanqueMad)(tanqueFicha); else fichaModulo(selected); }
 }
 function aviso(texto) { const a = $('#estado-datos'); if (a) a.textContent = texto || ''; }
 

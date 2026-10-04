@@ -5,6 +5,11 @@
    medidas nominales (las cotas del plano) y la numeración de cada tanque tal como figura en él.
    x crece hacia el este del dibujo y z hacia la calle. Las «otras áreas» son sólo volumen de
    referencia. Lo consume planta/escena.js; lo fija plano.test.js.
+   Tanda 3 (2026-10-04, decisión del usuario): las salas 4 y 5 siguen al MCP y no al plano. El plano dibuja
+   4 + 4 tanques (28–35); el MCP registra 6 en la Sala 4 (1–6) y 5 en la Sala 5 (7–11), con la numeración que
+   repite la 4 y la 1 (MAD_TANQUES_POR_SALA). Se redibujan en el mismo espacio; su disposición y su tamaño son
+   aproximados (`assumed`). Las salas 1, 2 y 3 coinciden con el MCP. Los 6 tanques de desove de la Sala 1 no
+   tienen registro por tanque en el MCP.
    ============================================================ */
 export const NUM_A = (r, c) => c < 2 ? 12 - 2 * r - c : (c === 2 ? 5 - 2 * r : 6 - 2 * r); // módulos 1–3
 export const NUM_B = (r, c) => c === 0 ? 2 * (r + 1) : 2 * r + 1;                          // módulos 4–10
@@ -22,13 +27,21 @@ export const LARV = [
 ];
 export const LARV_H = 1.25;
 export const MAT = [
-  { id: 'S1', n: 1, box: [143.9, 1.4, 176.4, 17.6], circ: { xs: [156.9, 161.22, 165.54, 169.86, 174.18], zs: [4.7, 9.65, 14.6], d: 4.15, h: .9, num: (r, c) => (2 - r) * 5 + c + 1 },
+  { id: 'S1', n: 1, sala: 'Sala 1', box: [143.9, 1.4, 176.4, 17.6], circ: { xs: [156.9, 161.22, 165.54, 169.86, 174.18], zs: [4.7, 9.65, 14.6], d: 4.15, h: .9, num: (r, c) => (2 - r) * 5 + c + 1 },
     desove: { xs: [146.1, 151.6], zs: [4.7, 9.65, 14.6], d: 4.25, h: 1.0, num: (r, c) => c === 0 ? 3 - r : 4 + r }, partition: 154.3 },
-  { id: 'S2', n: 2, box: [116.6, 1.4, 143.9, 17.6], cols: [118.24, 131.2], rows: [2.9, 7.95, 13.05], L: 12.1, W: 3.7, real: [12.55, 3.95], h: .92, num: (r, c) => c === 0 ? 17 + 2 * r : 16 + 2 * r },
-  { id: 'S3', n: 3, box: [83.6, 1.4, 111.2, 17.6], cols: [84.9, 98.5], rows: [2.85, 8.0, 13.15], L: 12.3, W: 3.8, real: [12.55, 3.95], h: .92, num: (r, c) => c === 0 ? 23 + 2 * r : 22 + 2 * r },
-  { id: 'S4', n: 4, box: [24.2, 1.4, 46.7, 12.0], cols: [24.73, 35.9], rows: [3.0, 7.5], L: 10.1, W: 3.5, real: [10.6, 3.9], h: .9, assumed: true, num: (r, c) => r === 0 ? 29 - c : 33 - c },
-  { id: 'S5', n: 5, box: [0.6, 1.4, 24.2, 12.0], cols: [1.15, 13.26], rows: [3.1, 7.6], L: 10.2, W: 3.5, real: [10.6, 3.9], h: .9, assumed: true, num: (r, c) => r === 0 ? 31 - c : 35 - c },
+  { id: 'S2', n: 2, sala: 'Sala 2', box: [116.6, 1.4, 143.9, 17.6], cols: [118.24, 131.2], rows: [2.9, 7.95, 13.05], L: 12.1, W: 3.7, real: [12.55, 3.95], h: .92, num: (r, c) => c === 0 ? 17 + 2 * r : 16 + 2 * r },
+  { id: 'S3', n: 3, sala: 'Sala 3', box: [83.6, 1.4, 111.2, 17.6], cols: [84.9, 98.5], rows: [2.85, 8.0, 13.15], L: 12.3, W: 3.8, real: [12.55, 3.95], h: .92, num: (r, c) => c === 0 ? 23 + 2 * r : 22 + 2 * r },
+  // Sala 4 · 6 tanques en 3 × 2 y Sala 5 · 5 tanques en 3 + 2 (MCP); `pos`: [x, z, número] de cada uno
+  { id: 'S4', n: 4, sala: 'Sala 4', box: [24.2, 1.4, 46.7, 12.0], L: 6.49, W: 3.5, real: [6.49, 3.5], h: .9, assumed: true,
+    pos: [[25.02, 3.0, 1], [32.21, 3.0, 2], [39.4, 3.0, 3], [25.02, 7.5, 4], [32.21, 7.5, 5], [39.4, 7.5, 6]] },
+  { id: 'S5', n: 5, sala: 'Sala 5', box: [0.6, 1.4, 24.2, 12.0], L: 6.85, W: 3.5, real: [6.85, 3.5], h: .9, assumed: true,
+    pos: [[1.42, 3.0, 7], [8.97, 3.0, 8], [16.52, 3.0, 9], [1.42, 7.5, 10], [8.97, 7.5, 11]] },
 ];
+/** Los tanques rectangulares de una sala (2 a 5): { x, z, num }, con x y z en la esquina del tanque. */
+export function tanquesDeSala(m) {
+  if (m.pos) return m.pos.map(([x, z, num]) => ({ x, z, num }));
+  return m.rows.flatMap((z, r) => m.cols.map((x, c) => ({ x, z, num: m.num(r, c) })));
+}
 // otras áreas: [x0, z0, x1, z1, altura, tipo]  (bld = edificio, res = reservorio, alg = piletas de algas)
 export const OTHERS = [
   [79.3, 38.2, 84.2, 66.4, 2.2, 'res'], [85.6, 38.2, 94.1, 66.4, 3.4, 'bld'], [98.6, 38.2, 110.2, 66.4, 1.2, 'alg'], [112, 38.2, 117, 66.4, 2.2, 'res'], [118.3, 38.2, 126.4, 66.4, 3.4, 'bld'],
