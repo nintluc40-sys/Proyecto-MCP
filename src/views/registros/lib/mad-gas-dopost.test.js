@@ -602,7 +602,8 @@ describe('GAS · A4 · las tres hojas NUEVAS tampoco las fija una app vieja', ()
   /* PE1.5 (2026-09-16) · la alcalinidad pasó a ser de día y de noche: «Alcalinidad» → «Alcalinidad día» en la 16 y
      «Alcalinidad noche» en la 17. El cliente de 18 columnas de ANTES no puede crear la hoja con la cabecera vieja. */
   /* ⚠ 2026-09-24 · se paraba en la 16 («Alcalinidad día»). Con el código genético delante, la 13 lo para antes. */
-  const SIN_PUNTO_6 = MAD_MORT_HEADERS.filter((h) => h !== 'Código genético' && h !== 'Piscina Broodstock');
+  // (2026-10-04: aquellos clientes tampoco traían la «Temperatura tanque desove», que va detrás del ID.)
+  const SIN_PUNTO_6 = MAD_MORT_HEADERS.filter((h) => h !== 'Código genético' && h !== 'Piscina Broodstock' && h !== 'Temperatura tanque desove');
   it('🔴 Mortalidad Desove con las 18 columnas de ANTES de día/noche: rechazo en la 13 y la hoja NO nace', () => {
     const MORT_18_ANTES = SIN_PUNTO_6.filter((h) => h !== 'Alcalinidad noche').map((h) => (h === 'Alcalinidad día' ? 'Alcalinidad' : h));
     expect(MORT_18_ANTES).toHaveLength(18);
@@ -1804,6 +1805,50 @@ describe('GAS · Maduración Ingreso con «Guía de ingreso» detrás del ID (20
     expect(post(g, ING19, [fila(ING19, { 'Guía de ingreso': '000123' }),
       fila(ING19, { Tanque: 2, ID: 'ING-BQ-2', 'Guía de ingreso': '3-5' })]).status).toBe('ok');
     expect(hoja.filas.slice(1).map((f) => f[GUIA])).toEqual(['000123', '3-5']);
+  });
+});
+
+/* 2026-10-04 (usuario) · Inf. Supervisor: la «Temperatura tanque desove» en columna PROPIA, la 22, DETRÁS del ID (como la
+   guía de Ingreso): la hoja de producción tiene 21 y filas; con el GAS de hoy, sin tocarlo, se alarga y no se migra. */
+describe('GAS · Maduración Mortalidad Desove con «Temperatura tanque desove» detrás del ID (2026-10-04)', () => {
+  const MORT22 = MAD_MORT_HEADERS;
+  const MORT21 = MORT22.slice(0, MORT22.indexOf('Temperatura tanque desove'));   // la cabecera de la hoja de producción hoy
+  const TEMP = MORT22.indexOf('Temperatura tanque desove');
+  const fila = (cab, v) => conValores(cab, Object.assign({ Fecha: '2026-10-04', Lote: 'BQ', 'Código genético': 'OLF5.F2',
+    'Tipo de tanque': 'Desove', 'Hembras que entran': 20, 'Hembras muertas': 1, ID: '2026-10-04-BQ-OLF5.F2-DESOVE' }, v));
+  const post = (g, cab, filas) => g.post({ sheetName: 'Maduración Mortalidad Desove', headers: cab, rows: filas });
+
+  it('el fixture ejerce algo: la columna es la 22, la última, y el ID queda en la 21', () => {
+    expect(MORT21).toHaveLength(21);
+    expect(MORT21[20]).toBe('ID');
+    expect(TEMP).toBe(21);
+  });
+
+  it('🔴 la hoja de producción (21) recibe 22: alarga la cabecera, ACTUALIZA por ID y no duplica', () => {
+    const hoja = hojaFalsa([MORT21, fila(MORT21, { 'Hembras muertas': 0 })]);
+    const g = gas({ 'Maduración Mortalidad Desove': hoja });
+    expect(post(g, MORT22, [fila(MORT22, { 'Temperatura tanque desove': 28.5 })]).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(2);
+    expect(hoja.filas[0]).toEqual(MORT22);
+    expect(hoja.filas[1][MORT22.indexOf('Hembras muertas')]).toBe(1);
+    expect(hoja.filas[1][TEMP]).toBe(28.5);
+  });
+
+  it('🔴 con la cabecera del ID EN BLANCO, empareja por el ID del ENVÍO, no por la última columna (la temperatura)', () => {
+    const hoja = hojaFalsa([MORT22.map((h) => (h === 'ID' ? '' : h)), fila(MORT22, { 'Temperatura tanque desove': 27 })]);
+    const g = gas({ 'Maduración Mortalidad Desove': hoja });
+    expect(post(g, MORT22, [fila(MORT22, { 'Temperatura tanque desove': 29 })]).status).toBe('ok');
+    expect(hoja.filas, 'con «la última columna» de respaldo la temperatura nueva no casaba y AÑADÍA otra fila').toHaveLength(2);
+    expect(hoja.filas[1][TEMP]).toBe(29);
+  });
+
+  it('un equipo SIN actualizar (21 columnas) sobre la hoja de 22 actualiza su fila y CONSERVA la temperatura', () => {
+    const hoja = hojaFalsa([MORT22, fila(MORT22, { 'Hembras muertas': 0, 'Temperatura tanque desove': 28 })]);
+    const g = gas({ 'Maduración Mortalidad Desove': hoja });
+    expect(post(g, MORT21, [fila(MORT21, { 'Hembras muertas': 2 })]).status).toBe('ok');
+    expect(hoja.filas).toHaveLength(2);
+    expect(hoja.filas[1][MORT22.indexOf('Hembras muertas')]).toBe(2);
+    expect(hoja.filas[1][TEMP]).toBe(28);
   });
 });
 

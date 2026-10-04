@@ -91,6 +91,8 @@ describe('detectSheetName · las hojas de Maduración cuya cabecera declara el c
       if (SIN_ID.indexOf(n) !== -1) expect(cab.slice(0, 2), n + ' no empieza por su llave').toEqual(['Fecha de corte', 'Piscina']);
       // 2026-10-02 · Ingreso lleva DETRÁS del ID su «Guía de ingreso» (añadida al final para no migrar la hoja).
       else if (n === MAD_INGRESO_SHEET) expect(cab.slice(-2), n + ': el ID y, detrás, la guía').toEqual(['ID', 'Guía de ingreso']);
+      // 2026-10-04 · y Mortalidad Desove, su «Temperatura tanque desove» (lo mismo: al final para no migrar la hoja).
+      else if (n === MAD_MORT_SHEET) expect(cab.slice(-2), n + ': el ID y, detrás, la temperatura').toEqual(['ID', 'Temperatura tanque desove']);
       else expect(cab[cab.length - 1], n + ' no acaba en ID').toBe('ID');
     }
   });

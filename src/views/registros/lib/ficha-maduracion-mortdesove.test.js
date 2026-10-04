@@ -32,11 +32,11 @@ const conNauplios = () => ({ fecha: '2026-09-15', lotes: [
 ] });
 
 describe('Inf. Supervisor · la hoja', () => {
-  it('la misma hoja: mortalidad, después la revisión de nauplios, y el ID al final', () => {
+  it('la misma hoja: mortalidad, después la revisión de nauplios, el ID y, detrás, la temperatura del tanque de desove', () => {
     expect(MAD_MORT_SHEET).toBe('Maduración Mortalidad Desove');
     expect(MAD_MORT_HEADERS).toEqual(['Fecha', 'Lote', 'Código genético', 'Piscina Broodstock', 'Tipo de tanque', 'Hembras que entran', 'Hembras muertas', '% Mortalidad',
       'Revisión', 'Deformidad', 'Actividad', 'Hongos', 'Fototropismo', 'Aireación', 'Salinidad', 'Temperatura',
-      'Área', 'Alcalinidad día', 'Alcalinidad noche', 'Observaciones', 'ID']);
+      'Área', 'Alcalinidad día', 'Alcalinidad noche', 'Observaciones', 'ID', 'Temperatura tanque desove']);
     expect(MAD_MORT_TIPOS).toEqual(['Desove', 'Recuperación']);
     expect([MAD_NAUP_REVISIONES, MAD_NAUP_DEFORMIDAD, MAD_NAUP_ACTIVIDAD, MAD_NAUP_HONGOS]).toEqual([
       ['Entrada', 'Lavado', 'Lavado 2', 'Postlavado'], ['Alta', 'Media', 'Baja', 'Ausente'], ['Alta', 'Media', 'Baja'], ['Ausente', 'Presente']]);
@@ -45,8 +45,9 @@ describe('Inf. Supervisor · la hoja', () => {
     expect([MAD_NAUP_FOTOTROPISMO, MAD_NAUP_AIREACION]).toEqual([['Alta', 'Media', 'Baja'], ['Alta', 'Media', 'Baja']]);
     expect(MAD_NAUP_FOTOTROPISMO, 'comparten el mismo array: retocar una cambiaría las otras').not.toBe(MAD_NAUP_ACTIVIDAD);
     expect(MAD_NAUP_AIREACION).not.toBe(MAD_NAUP_FOTOTROPISMO);
-    // El ID sigue siendo la ÚLTIMA columna: es la llave con la que el GAS hace el MERGE.
-    expect(MAD_MORT_HEADERS[MAD_MORT_HEADERS.length - 1]).toBe('ID');
+    /* El ID es la llave con la que el GAS hace el MERGE; desde el 2026-10-04 lleva DETRÁS la temperatura del tanque de
+       desove (como la guía de Ingreso: sin migrar la hoja) y el GAS lo localiza por su cabecera. */
+    expect(MAD_MORT_HEADERS.slice(-2)).toEqual(['ID', 'Temperatura tanque desove']);
   });
 
   it('🔴 una fila por revisión con algún dato, con la grafía de la lista, sus cifras y su ID; la mortalidad sin revisión', () => {
@@ -145,9 +146,9 @@ describe('Inf. Supervisor · el código genético en la llave (punto 6)', () => 
     { lote: 'bp', codigoGenetico: cg2, piscina: '102', desove: { entran: 8, muertas: 0 } },
   ] });
 
-  it('🔴 las dos columnas van DETRÁS del lote, y el ID sigue el último', () => {
+  it('🔴 las dos columnas van DETRÁS del lote, y el ID sigue el último salvo la temperatura del desove (2026-10-04)', () => {
     expect(MAD_MORT_HEADERS.slice(0, 5)).toEqual(['Fecha', 'Lote', 'Código genético', 'Piscina Broodstock', 'Tipo de tanque']);
-    expect(MAD_MORT_HEADERS[MAD_MORT_HEADERS.length - 1]).toBe('ID');
+    expect(MAD_MORT_HEADERS.slice(-2)).toEqual(['ID', 'Temperatura tanque desove']);
   });
 
   it('🔴 el mismo lote con OTRO código es otro registro: dos filas, dos IDs, cada una con su código y su piscina', () => {
@@ -214,7 +215,11 @@ describe('Inf. Supervisor · el monolito y el módulo dicen lo mismo', () => {
     { fecha: '2026-09-15', lotes: [], alcalinidad: { RAS: { dia: '120', noche: 'x' }, 'Sala 2': { noche: 88 }, 'Sala 3': { dia: 95.5, noche: '101' }, 'Sala 9': { dia: 1 } } },
     // 2026-09-24 (punto 6) · el código en la llave: el mismo lote con dos códigos, y uno sin código.
     { fecha: '2026-09-15', lotes: [{ lote: 'BP', codigoGenetico: 'CG1', piscina: '101', desove: { entran: 10, muertas: 1 } }, { lote: 'bp', codigoGenetico: 'CG2', desove: { entran: 8, muertas: 0 } }] },
-    { fecha: '2026-09-15', lotes: [{ lote: 'BP', desove: { entran: 10, muertas: 1 } }] }];
+    { fecha: '2026-09-15', lotes: [{ lote: 'BP', desove: { entran: 10, muertas: 1 } }] },
+    // 2026-10-04 · la temperatura del tanque de desove: con cifras, sola, no cifra, alta, y en recuperación (que no la lleva).
+    { fecha: '2026-10-04', lotes: [{ lote: 'BP', codigoGenetico: 'CG1', desove: { entran: 10, muertas: 1, temperatura: '28.5' } },
+      { lote: 'BC', codigoGenetico: 'CG2', desove: { temperatura: 27 }, recuperacion: { entran: 5, muertas: 0, temperatura: 30 } },
+      { lote: 'BD', codigoGenetico: 'CG3', desove: { temperatura: 'x' } }, { lote: 'BE', codigoGenetico: 'CG4', desove: { entran: 4, temperatura: 41 } }] }];
   it('la misma hoja, columnas, tipos y listas de la revisión', () => {
     expect([api.MAD_MORT_SHEET, api.MAD_MORT_HEADERS, api.MAD_MORT_TIPOS]).toEqual([MAD_MORT_SHEET, MAD_MORT_HEADERS, MAD_MORT_TIPOS]);
     expect(api.MAD_MORT_COLUMNS.map((c) => c.k)).toEqual(MAD_MORT_COLUMNS.map((c) => c.k));
@@ -245,6 +250,43 @@ describe('Inf. Supervisor · el monolito y el módulo dicen lo mismo', () => {
     expect(src).toContain('if(t==="mortdes") renderMadMortDesove();');
     expect(src).toMatch(/function _madHojaPideGasNuevo\(hoja\)\{[^}]*hoja === MAD_MORT_SHEET/);
     expect(src).toContain('if(fp.querySelector("#mm-cards")) return;');
+  });
+});
+
+/* ── 2026-10-04 (usuario) · LA TEMPERATURA DEL TANQUE DE DESOVE ─────────────────────────────
+   «Similar al campo de hembras que entran y hembras muertas, otro campo para la temperatura del tanque desove.»
+   Decisiones del usuario: columna PROPIA (la 22, detrás del ID), sola también crea la fila, y se ve en el MCP. */
+describe('Inf. Supervisor · la temperatura del tanque de desove (2026-10-04)', () => {
+  const T = col('Temperatura tanque desove');
+  const modelo = () => ({ fecha: '2026-10-04', lotes: [
+    { lote: 'BP', codigoGenetico: 'CG1', desove: { entran: 10, muertas: 1, temperatura: '28.5' }, recuperacion: { entran: 9, muertas: 0, temperatura: 30 } },
+    { lote: 'BC', codigoGenetico: 'CG2', desove: { temperatura: 27 } }] });
+
+  it('va en SU columna y sólo en la fila de Desove: ni en Recuperación ni en la «Temperatura» de nauplios', () => {
+    const filas = buildMortRows(modelo());
+    const desoveBP = filas.find((f) => f[col('ID')] === '2026-10-04-BP-CG1-DESOVE');
+    const recup = filas.find((f) => f[col('ID')] === '2026-10-04-BP-CG1-RECUPERACION');
+    expect(desoveBP[T]).toBe(28.5);
+    expect(desoveBP[col('Temperatura')]).toBe('');
+    expect(recup[T]).toBe('');
+    expect(filas.every((f) => f.length === MAD_MORT_HEADERS.length)).toBe(true);
+  });
+
+  it('🔴 sola crea la fila de Desove, sin cifras de hembras y sin el aviso de «no se anotaron muertas»', () => {
+    const filas = buildMortRows(modelo());
+    const bc = filas.filter((f) => f[col('Lote')] === 'BC');
+    expect(bc).toHaveLength(1);
+    expect([bc[0][col('Tipo de tanque')], bc[0][col('Hembras que entran')], bc[0][col('Hembras muertas')], bc[0][T]]).toEqual(['Desove', '', '', 27]);
+    const v = validarMort(modelo());
+    expect(v.errores).toEqual([]);
+    expect(v.avisos.filter((a) => a.includes('BC'))).toEqual([]);
+  });
+
+  it('una que no es cifra es ERROR; por encima de 40 °C, AVISO (el tope de la temperatura de nauplios)', () => {
+    const v = validarMort({ fecha: '2026-10-04', lotes: [{ lote: 'BD', codigoGenetico: 'CG3', desove: { temperatura: 'x' } },
+      { lote: 'BE', codigoGenetico: 'CG4', desove: { entran: 4, muertas: 0, temperatura: 41 } }] });
+    expect(v.errores).toEqual(['En BD · CG3 (tanques de desove) la temperatura no es una cifra válida.']);
+    expect(v.avisos).toEqual(['En BE · CG4 (tanques de desove) la temperatura (41) pasa de 40: revisa que esté bien escrita.']);
   });
 });
 

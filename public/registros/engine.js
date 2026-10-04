@@ -8847,6 +8847,9 @@ function _madBorrAdaptar(ficha, fp, dia){
       }
       const lista=card.querySelector(".md-cargar");
       if(lista){ lista.hidden=true; lista.innerHTML=""; }
+      // · 2026-10-04: la temperatura del tanque de desove; un borrador de antes no la trae.
+      const pct=card.querySelector(".mm-desove-p");
+      if(pct && !card.querySelector(".mm-desove-t")) pct.parentElement.insertAdjacentHTML("afterend", _MAD_MORT_TEMP_HTML);
     });
   }
   /* · fin (2026-09-16, PE1.6): la fecha de aplicación sigue a la del registro salvo que esté FIJADA a mano. Un borrador
@@ -11012,7 +11015,10 @@ const MAD_MORT_COLUMNS = [
   /* Sólo las llevan las filas de alcalinidad, como «Revisión» sólo las de nauplios. PE1.5 (2026-09-16): de DÍA y de
      NOCHE, una columna por turno antes de Observaciones e ID; la firma A4 del GAS exige «Alcalinidad día» (en la 18). Ver el módulo. */
   { h:"Área", k:"area" }, { h:"Alcalinidad día", k:"alcalinidadDia" }, { h:"Alcalinidad noche", k:"alcalinidadNoche" },
-  { h:"Observaciones", k:"observaciones" }, { h:"ID", k:"id" }   // ⚠ el ID, el ÚLTIMO
+  { h:"Observaciones", k:"observaciones" }, { h:"ID", k:"id" },   // ⚠ el ID, el último… salvo lo de abajo
+  /* 2026-10-04 (usuario) · la TEMPERATURA DEL TANQUE DE DESOVE, columna PROPIA y DETRÁS del ID (como la «Guía de ingreso»):
+     sin migrar la hoja ni tocar el GAS. Sólo la lleva la fila de mortalidad «Desove», y sola también la crea. Ver el módulo. */
+  { h:"Temperatura tanque desove", k:"tempDesove" }
 ];
 const MAD_MORT_HEADERS = MAD_MORT_COLUMNS.map(function(c){ return c.h; });
 function _madNaupDec(v){ if(v===""||v===null||v===undefined) return ""; const n=parseFloat(v); return (Number.isFinite(n) && n>=0) ? n : ""; }
@@ -11038,8 +11044,9 @@ function madMortBuildRows(model){
     const piscina=sanitizeStr(x.piscina,60);
     MAD_MORT_TIPOS.forEach(function(tipo){
       const t=x[_MAD_MORT_CLAVE[tipo]]||{}, entran=madIngInt(t.entran), muertas=madIngInt(t.muertas);
-      if(entran==="" && muertas==="") return;
-      fila({ fecha:fecha, lote:lote, codigoGenetico:cg, piscina:piscina, tipo:tipo, entran:entran, muertas:muertas, pct:madMortPct(entran, muertas), observaciones:sanitizeStr(x.observaciones,300), id:madMortRowId(fecha, lote, cg, tipo) });
+      const tempDesove=tipo==="Desove" ? _madNaupDec(t.temperatura) : "";   // 2026-10-04: sola también crea la fila
+      if(entran==="" && muertas==="" && tempDesove==="") return;
+      fila({ tempDesove:tempDesove, fecha:fecha, lote:lote, codigoGenetico:cg, piscina:piscina, tipo:tipo, entran:entran, muertas:muertas, pct:madMortPct(entran, muertas), observaciones:sanitizeStr(x.observaciones,300), id:madMortRowId(fecha,lote, cg, tipo) });
     });
     MAD_NAUP_REVISIONES.forEach(function(revision){
       const r=_madNaupRevision(x, revision);
@@ -11069,7 +11076,7 @@ function madMortValidar(model){
   let filas=0;
   (m.lotes||[]).forEach(function(c, i){
     const x=c||{}, lote=madDesNormLote(x.lote), cg=madDesNormCG(x.codigoGenetico);
-    const conCifras=MAD_MORT_TIPOS.filter(function(tipo){ const t=x[_MAD_MORT_CLAVE[tipo]]||{}; return madIngInt(t.entran)!=="" || madIngInt(t.muertas)!==""; });
+    const conCifras=MAD_MORT_TIPOS.filter(function(tipo){ const t=x[_MAD_MORT_CLAVE[tipo]]||{}; return madIngInt(t.entran)!=="" || madIngInt(t.muertas)!=="" || (tipo==="Desove" && _madNaupCrudo(t.temperatura)!==""); });
     const conRevision=MAD_NAUP_REVISIONES.filter(function(rev){ return _madNaupConDato(_madNaupRevision(x, rev)); });
     if(!lote && !conCifras.length && !conRevision.length) return;
     if(!lote){ errores.push("Falta el lote del registro "+(i+1)+"."); return; }
@@ -11083,7 +11090,13 @@ function madMortValidar(model){
       const t=x[_MAD_MORT_CLAVE[tipo]]||{}, e=madIngInt(t.entran), mu=madIngInt(t.muertas), donde=tipo==="Desove" ? "desove" : "recuperación";
       if((e===""||e===0) && mu!=="" && mu>0) errores.push("En "+quien+" (tanques de "+donde+") hay muertas pero no las hembras que entran: sin ellas no hay porcentaje.");
       else if(e!=="" && mu!=="" && mu>e) errores.push("En "+quien+" (tanques de "+donde+") mueren más hembras ("+mu+") de las que entran ("+e+").");
-      if(mu==="") avisos.push("En "+quien+" (tanques de "+donde+") no se anotaron muertas: se guarda como 0 % sólo si escribes 0.");
+      // `e!==""`: con sólo la temperatura (2026-10-04) no hay hembras de las que avisar; antes, sin muertas, siempre había entran.
+      if(mu==="" && e!=="") avisos.push("En "+quien+" (tanques de "+donde+") no se anotaron muertas: se guarda como 0 % sólo si escribes 0.");
+      if(tipo==="Desove" && _madNaupCrudo(t.temperatura)!==""){
+        const v=_madNaupDec(t.temperatura);
+        if(v==="") errores.push("En "+quien+" (tanques de desove) la temperatura no es una cifra válida.");
+        else if(v>MAD_NAUP_TEMP_MAX) avisos.push("En "+quien+" (tanques de desove) la temperatura ("+v+") pasa de "+MAD_NAUP_TEMP_MAX+": revisa que esté bien escrita.");
+      }
       filas++;
     });
     conRevision.forEach(function(rev){
@@ -11129,8 +11142,13 @@ function _madMortTipoHTML(tipo){
     + '<label style="'+_MAD_ING_LBL+'">Hembras que entran<input class="mm-'+k+'-e" type="number" min="0" step="1" inputmode="numeric" oninput="madMortPctVivo(this)" style="'+_MAD_ING_INP+';width:130px"></label>'
     + '<label style="'+_MAD_ING_LBL+'">Hembras muertas<input class="mm-'+k+'-m" type="number" min="0" step="1" inputmode="numeric" oninput="madMortPctVivo(this)" style="'+_MAD_ING_INP+';width:120px"></label>'
     + '<div style="'+_MAD_ING_LBL+'">% Mortalidad<span class="mm-'+k+'-p" style="padding:6px 8px;font-size:13px;font-weight:700;color:#0f172a">—</span></div>'
+    + (tipo==="Desove" ? _MAD_MORT_TEMP_HTML : '')
     + '</div>';
 }
+/* 2026-10-04 (usuario) · la temperatura del tanque de DESOVE, junto a sus hembras. Va en su columna propia de la hoja
+   («Temperatura tanque desove», detrás del ID) y sola también se guarda. La usa también el borrador viejo (_madBorrAdaptar). */
+const _MAD_MORT_TEMP_HTML = '<label style="'+_MAD_ING_LBL+'" title="Temperatura del tanque de desove. Sola también se guarda.">Temperatura (°C)'
+  + '<input class="mm-desove-t" type="number" min="0" step="0.1" inputmode="decimal" style="'+_MAD_ING_INP+';width:110px"></label>';
 // Revisión de nauplios (2026-09-15, usuario): una fila por revisión; selects con sus listas y dos cifras.
 function _madNaupSelHTML(cls, lista){
   return '<select class="'+cls+'" style="'+_MAD_ING_INP+';width:100%;min-width:90px"><option value=""></option>'
@@ -11214,7 +11232,7 @@ function madMortCollect(){
       nauplios[_MAD_NAUP_CLAVE[rev]]={ deformidad:g(c,k+"-def"), actividad:g(c,k+"-act"), hongos:g(c,k+"-hon"),
         fototropismo:g(c,k+"-fot"), aireacion:g(c,k+"-air"), salinidad:g(c,k+"-sal"), temperatura:g(c,k+"-tem") };
     });
-    lotes.push({ lote:g(c,".mm-lote"), codigoGenetico:g(c,".mm-cg"), piscina:g(c,".mm-piscina"), desove:{ entran:g(c,".mm-desove-e"), muertas:g(c,".mm-desove-m") },
+    lotes.push({ lote:g(c,".mm-lote"), codigoGenetico:g(c,".mm-cg"), piscina:g(c,".mm-piscina"), desove:{ entran:g(c,".mm-desove-e"), muertas:g(c,".mm-desove-m"), temperatura:g(c,".mm-desove-t") },
       recuperacion:{ entran:g(c,".mm-recuperacion-e"), muertas:g(c,".mm-recuperacion-m") }, nauplios:nauplios, observaciones:g(c,".mm-obs") });
   });
   const alcalinidad={};

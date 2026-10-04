@@ -84,6 +84,11 @@ export const MAD_MORT_COLUMNS = [
   { h: 'Alcalinidad noche', k: 'alcalinidadNoche' },
   { h: 'Observaciones', k: 'observaciones' },
   { h: 'ID', k: 'id' },
+  /* 2026-10-04 (usuario) · la TEMPERATURA DEL TANQUE DE DESOVE, en una columna PROPIA (decisión del usuario) y DETRÁS
+     del ID, como la «Guía de ingreso» de Ingreso: la hoja ya tiene filas y así no se migra ni se toca el GAS —su
+     `ensureHeaders` la añade al final y `upsertAstRows` localiza el ID por su cabecera; la guarda de esquema sólo compara
+     las columnas comunes—. Sólo la lleva la fila de mortalidad «Desove», y sola también la crea. */
+  { h: 'Temperatura tanque desove', k: 'tempDesove' },
 ];
 export const MAD_MORT_HEADERS = MAD_MORT_COLUMNS.map((c) => c.h);
 
@@ -139,9 +144,10 @@ export function buildMortRows(model) {
       const t = x[CLAVE[tipo]] || {};
       const entran = int(t.entran);
       const muertas = int(t.muertas);
-      if (entran === '' && muertas === '') return;
+      const tempDesove = tipo === 'Desove' ? dec(t.temperatura) : '';   // 2026-10-04: sola también crea la fila
+      if (entran === '' && muertas === '' && tempDesove === '') return;
       fila({ fecha, lote, codigoGenetico, piscina, tipo, entran, muertas, pct: pctMortalidad(entran, muertas),
-        observaciones: sanitizeStr(x.observaciones, 300), id: mortRowId(fecha, lote, codigoGenetico, tipo) });
+        observaciones: sanitizeStr(x.observaciones, 300), id: mortRowId(fecha, lote, codigoGenetico, tipo), tempDesove });
     });
     MAD_NAUP_REVISIONES.forEach((revision) => {
       const r = revisionDe(x, revision);
@@ -185,7 +191,7 @@ export function validarMort(model) {
     const cg = normCodigoGenetico(x.codigoGenetico);
     const conCifras = MAD_MORT_TIPOS.filter((tipo) => {
       const t = x[CLAVE[tipo]] || {};
-      return int(t.entran) !== '' || int(t.muertas) !== '';
+      return int(t.entran) !== '' || int(t.muertas) !== '' || (tipo === 'Desove' && crudo(t.temperatura) !== '');
     });
     const conRevision = MAD_NAUP_REVISIONES.filter((rev) => revisionConDato(revisionDe(x, rev)));
     if (!lote && !conCifras.length && !conRevision.length) return;
@@ -203,7 +209,13 @@ export function validarMort(model) {
       const donde = tipo === 'Desove' ? 'desove' : 'recuperación';
       if ((e === '' || e === 0) && mu !== '' && mu > 0) errores.push('En ' + quien + ' (tanques de ' + donde + ') hay muertas pero no las hembras que entran: sin ellas no hay porcentaje.');
       else if (e !== '' && mu !== '' && mu > e) errores.push('En ' + quien + ' (tanques de ' + donde + ') mueren más hembras (' + mu + ') de las que entran (' + e + ').');
-      if (mu === '') avisos.push('En ' + quien + ' (tanques de ' + donde + ') no se anotaron muertas: se guarda como 0 % sólo si escribes 0.');
+      // `e !== ''`: con sólo la temperatura (2026-10-04) no hay hembras de las que avisar; antes, sin muertas, siempre había entran.
+      if (mu === '' && e !== '') avisos.push('En ' + quien + ' (tanques de ' + donde + ') no se anotaron muertas: se guarda como 0 % sólo si escribes 0.');
+      if (tipo === 'Desove' && crudo(t.temperatura) !== '') {
+        const v = dec(t.temperatura);
+        if (v === '') errores.push('En ' + quien + ' (tanques de desove) la temperatura no es una cifra válida.');
+        else if (v > MAD_NAUP_TEMP_MAX) avisos.push('En ' + quien + ' (tanques de desove) la temperatura (' + v + ') pasa de ' + MAD_NAUP_TEMP_MAX + ': revisa que esté bien escrita.');
+      }
       filas++;
     });
     conRevision.forEach((rev) => {

@@ -2447,8 +2447,20 @@ function mortDesoveHTML(m, p) {
         <tr class="mop-cuadre-tot"><td>TOTAL</td><td class="r">${nf(m.entran)}</td><td class="r">${nf(m.muertas)}</td><td class="r">${pc(m.pct)}</td><td class="r"></td></tr>
       </tbody></table></div>`
     : '<p class="muted" style="margin:4px 0">Ninguna hembra entró a desovar ni a recuperarse en el período.</p>'}
+    ${tempDesoveHTML(m.tempDesove)}
     <p class="mc-note">⚠ Estas muertes YA están dentro de las bajas del lote: aquí se abren por tipo de tanque, que es lo que el libro no dice. No se suman a 💀 Bajas.</p>
   </div>`;
+}
+
+/** 2026-10-04 (usuario) · la temperatura del tanque de desove del período (Inf. Supervisor): la última y la media; avisa
+ *  por encima del tope de la de nauplios (40 °C), sin bloquear nada. Sin lecturas, nada. */
+function tempDesoveHTML(t) {
+  if (!t) return '';
+  const u = t.ultima;
+  const txt = `🌡 Temperatura del tanque de desove: última <b>${nf(u.valor, 1)} °C</b> (${esc(dm(u.fecha))}${u.lote ? ' · ' + esc(u.lote) : ''})`
+    + ` · media <b>${nf(t.media, 1)} °C</b> en ${nf(t.lecturas)} lectura${t.lecturas === 1 ? '' : 's'}`
+    + (t.avisos ? ` · ⚠ ${nf(t.avisos)} por encima de ${nf(t.max)} °C` : '');
+  return t.avisos ? `<div class="mc-warn">${txt}</div>` : `<p style="margin:6px 0">${txt}</p>`;
 }
 
 function observacionesHTML(o, p) {

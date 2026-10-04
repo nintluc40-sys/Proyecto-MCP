@@ -195,3 +195,29 @@ describe('Maduración · revisiones · la frecuencia de las observaciones', () =
     expect(alcalinidadPorArea({ mortDesove: [] }, SIN, P30).conDato).toBe(0);
   });
 });
+
+/* 2026-10-04 (usuario) · la «Temperatura tanque desove» (Inf. Supervisor, columna propia) se ve en la tarjeta de mortalidad. */
+describe('Maduración · revisiones · la temperatura del tanque de desove (2026-10-04)', () => {
+  const T = (fecha, lote, tipo, entran, muertas, temp) => ({ ...MORT(fecha, lote, tipo, entran, muertas), 'Temperatura tanque desove': temp });
+  const PL = [ING('2026-09-01', 'LA', 'Sala 3', 1, 100, 100),
+    T('2026-09-17', 'LA', 'Desove', 30, 3, 28.5),
+    T('2026-09-18', 'LA', 'Desove', '', '', 41),          // SÓLO la temperatura
+    T('2026-09-18', 'LA', 'Recuperación', 10, 1, 30),     // la de recuperación no es del tanque de desove
+    T('2026-08-01', 'LA', 'Desove', 5, 0, 20)];           // fuera del período
+  const MM = modeloOperativo(PL, { hoy: FOTO, fecha: FOTO });
+  const p = periodoDe('30d', FOTO, MM.fuentes);
+
+  it('la última y la media, sólo de los tanques de desove del período; avisa por encima de 40 °C', () => {
+    const t = mortalidadEnDesove(MM.fuentes, SIN, p).tempDesove;
+    expect([t.ultima.fecha, t.ultima.valor, t.ultima.aviso, t.media, t.lecturas, t.avisos, t.max]).toEqual(['2026-09-18', 41, true, 34.8, 2, 1, 40]);
+  });
+
+  it('🔴 una fila con SÓLO la temperatura no es un registro de mortalidad (ni cifras ni «Registros»)', () => {
+    const m = mortalidadEnDesove(MM.fuentes, SIN, p);
+    expect(m.filas.find((x) => x.tipo === 'Desove')).toMatchObject({ entran: 30, muertas: 3, registros: 1 });
+  });
+
+  it('sin lecturas de temperatura, null (la tarjeta no pinta nada)', () => {
+    expect(mortalidadEnDesove(M.fuentes, SIN, P30).tempDesove).toBeNull();
+  });
+});

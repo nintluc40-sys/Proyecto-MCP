@@ -159,7 +159,8 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
     último corte con los lotes que entraron de cada piscina y, al pulsarla, su ficha con el peso por semana), **💀 Bajas** (muerte natural frente a descarte,
     desglose cruzado por sala · tanque · lote, Pareto de motivos de cierre, distribución por hora, calor
     sala × día y lotes cerrados), **🔍 Revisiones del supervisor** (nauplios en sus 4 etapas, alcalinidad por área día y
-    noche, mortalidad en desove y recuperación, y frecuencia de observaciones de tanque), **🛢 Tanques** (tabla
+    noche, mortalidad en desove y recuperación —con la temperatura del tanque de desove: la última y la media del período,
+    avisando por encima de 40 °C—, y frecuencia de observaciones de tanque), **🛢 Tanques** (tabla
     maestra de los ocupados —con el día y la HORA de su último parte— y, al pulsar una fila, su ficha:
     composición, curva de vivos, partes con su hora,
     observaciones y movimientos), **🥚 Reproducción** (totales, los desoves pendientes de N5 arriba, la tabla
@@ -898,6 +899,11 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   Cada registro lleva **Código genético y Piscina Broodstock** detrás del lote (usuario, 2026-09-24),
   con el mismo «📥 Cargar» de Desoves. El código es parte de la **llave**, como en Desoves —un pool es
   lote + código—: el mismo lote con otro código es otro registro, y sin código no se guarda.
+  En «Tanques de desove», junto a las hembras, la **temperatura del tanque de desove** (usuario, 2026-10-04): va en su
+  columna PROPIA, **«Temperatura tanque desove», la 22, DETRÁS del ID** —como la «Guía de ingreso»—, así que la hoja no
+  se migra y el GAS no cambia (la añade `ensureHeaders`, el ID se localiza por su cabecera y la guarda de esquema sólo
+  compara las columnas comunes). Sola también crea la fila de Desove; una que no es cifra es error y por encima de 40 °C
+  avisa. Un borrador guardado antes del cambio recupera el campo al abrirse.
 - **Ingreso · «Guía de ingreso»** (usuario, 2026-10-02): texto libre y opcional, UNA por ingreso (junto a la
   Fecha y el Lote), repetida en todas sus filas. En la hoja es la columna 19, **DETRÁS del ID**, a propósito:
   añadida al final, la hoja de producción no se migra —el GAS alarga la cabecera solo— y un equipo sin

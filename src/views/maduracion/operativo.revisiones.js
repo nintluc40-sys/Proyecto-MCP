@@ -164,26 +164,44 @@ export function alcalinidadPorArea(fuentes, F, periodo) {
  * Las hembras que entraron y murieron en tanques de desove y de recuperación en el período, por tipo de tanque.
  * ⚠ Estas muertes YA están dentro de `muertos` del lote en el libro: aquí se enseñan por su tipo de tanque, que
  * es lo que el libro no dice. No se suman a las bajas de «💀 Bajas»; son un desglose de ellas.
+ * 2026-10-04 (usuario) · y la TEMPERATURA DEL TANQUE DE DESOVE (su columna propia, «Temperatura tanque desove»): la última
+ * lectura del período y la media, con el tope de aviso de la de nauplios. Una fila con SÓLO la temperatura no es un registro
+ * de mortalidad: no cuenta en «Registros» ni en los lotes.
  */
 export function mortalidadEnDesove(fuentes, F, periodo) {
   const tipos = MAD_MORT_TIPOS.map((tipo) => ({ tipo, entran: 0, muertas: 0, registros: 0, lotes: new Set() }));
   const porTipo = new Map(tipos.map((t) => [t.tipo, t]));
+  const temps = [];
   for (const r of ((fuentes || {}).mortDesove || [])) {
     if (!esMortalidad(r)) continue;
     const lote = txt(r.Lote);
     if (F.lote && normLote(lote) !== F.lote) continue;
-    if (!enPeriodo(fechaDeFila('mortDesove', r), periodo)) continue;
+    const fecha = fechaDeFila('mortDesove', r);
+    if (!enPeriodo(fecha, periodo)) continue;
     const t = porTipo.get(txt(r['Tipo de tanque']));
     if (!t) continue;
-    t.entran += ent(r['Hembras que entran']);
-    t.muertas += ent(r['Hembras muertas']);
-    t.registros++;
-    if (lote) t.lotes.add(lote);
+    if (txt(r['Hembras que entran']) !== '' || txt(r['Hembras muertas']) !== '') {
+      t.entran += ent(r['Hembras que entran']);
+      t.muertas += ent(r['Hembras muertas']);
+      t.registros++;
+      if (lote) t.lotes.add(lote);
+    }
+    const temp = t.tipo === 'Desove' ? num(r['Temperatura tanque desove']) : null;
+    if (temp !== null) temps.push({ fecha, lote, valor: temp });
   }
   const filas = tipos.map((t) => ({ ...t, lotes: [...t.lotes].sort(porNombre), pct: cociente(t.muertas, t.entran, 100) }));
   const entran = filas.reduce((a, t) => a + t.entran, 0);
   const muertas = filas.reduce((a, t) => a + t.muertas, 0);
-  return { filas, entran, muertas, pct: cociente(muertas, entran, 100) };
+  temps.sort((a, b) => porNombre(a.fecha + '|' + a.lote, b.fecha + '|' + b.lote));
+  const tope = TOPES_REVISION.temperatura;
+  const tempDesove = temps.length ? {
+    ultima: { ...temps[temps.length - 1], ...lecturaConTope(temps[temps.length - 1].valor, tope) },
+    media: Math.round((temps.reduce((a, x) => a + x.valor, 0) / temps.length) * 10) / 10,
+    lecturas: temps.length,
+    avisos: temps.filter((x) => x.valor > tope.max).length,
+    max: tope.max,
+  } : null;
+  return { filas, entran, muertas, pct: cociente(muertas, entran, 100), tempDesove };
 }
 
 /* ── LA FRECUENCIA DE LAS OBSERVACIONES DE TANQUE ───────────── */
