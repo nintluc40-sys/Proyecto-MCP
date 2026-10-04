@@ -109,6 +109,7 @@
 .planta .labels { position: absolute; top: 0; right: 0; bottom: 0; left: 0; pointer-events: none; }
 .planta .lbl { position: absolute; left: 0; top: 0; will-change: transform; pointer-events: auto; cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 4px 9px 4px 6px; border-radius: 999px; background: rgba(24, 32, 38, .86); border: 1px solid rgba(255, 255, 255, .14); font: 600 12.5px/1 var(--font-sans); color: #fff; white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, .18); }
 .planta .lbl i { width: 8px; height: 8px; border-radius: 2px; }
+.planta .lbl.tapado { visibility: hidden; pointer-events: none; }
 .planta .lbl.on { border-color: var(--sel); box-shadow: 0 0 0 2px rgba(217, 98, 43, .45); }
 .planta .num { position: absolute; left: 0; top: 0; will-change: transform; font: 500 11px/1 var(--font-mono); color: #0d2a2e; background: rgba(255, 255, 255, .9); border-radius: 4px; padding: 2px 4px; pointer-events: none; }
 .planta .geo { position: absolute; left: 0; top: 0; will-change: transform; font: 600 12px/1 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, .55), 0 0 10px rgba(0, 0, 0, .25); white-space: nowrap; pointer-events: none; }

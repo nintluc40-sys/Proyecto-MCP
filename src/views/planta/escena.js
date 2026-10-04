@@ -19,6 +19,8 @@
    lleva la cámara a él y abre su ficha.
    Ahorro de batería (2026-10-04, usuario): tras 5 s sin tocarla la maqueta sigue animada a ~15 cuadros por segundo
    y vuelve a ~60 al tocarla o al moverse la cámara; fuera de pantalla no se dibuja.
+   Rótulos sin encimarse (2026-10-04, usuario): de lejos y en pantallas angostas se acortan («7 ⚠6»); si aún chocan,
+   se oculta el de menor prioridad (el elegido, luego el de más alertas, luego larvicultura) hasta que se acerque o gire.
    Reemplazo por tiempo (2026-10-04): los días en producción de cada lote frente a los 60; el que pasa va a «Qué atender
    hoy» y sus salas llevan ⏳ en el rótulo.
    ============================================================ */
@@ -609,6 +611,7 @@ let W = 1, H = 1, fly = null, userMoved = false;
 function resize() {
   const r = vp.getBoundingClientRect(); W = Math.max(1, r.width); H = Math.max(1, r.height);
   renderer.setSize(W, H, false); camera.aspect = W / H; camera.updateProjectionMatrix();
+  wasFar = null;   // el ancho decide si el rótulo va corto: rehacerlos
   if (!userMoved && !selected && camera.position.lengthSq() > 0) { frameView('iso'); fly.dur = 1; }
 }
 controls.addEventListener('start', () => { userMoved = true; fly = null; hideTip(); });
@@ -646,8 +649,13 @@ const NORTH = new THREE.Vector2(-1, -1).normalize(), needle = $('#needle');
 const pct = (v) => (v === null || v === undefined || isNaN(v)) ? '—' : fmt(v, 1) + ' %';
 const num = (v, d, u) => (v === null || v === undefined || isNaN(v)) ? '—' : fmt(v, d) + u;
 /** Texto del rótulo de un módulo: su nombre (corto si la cámara está lejos) y su estado de producción. */
+const compacto = () => W < 600;   // pantalla angosta (celular): de lejos, el rótulo corto
 function textoRotulo(g, far) {
   const base = far ? g.short : g.name, st = g.st;
+  if (far && compacto()) {
+    const n = !st ? 0 : g.kind === 'larv' ? (st.cuenta ? st.cuenta.alerta : 0) : st.alertaTanques + (st.alerta ? 1 : 0);
+    return (g.kind === 'larv' ? g.short.replace(/^M/, '') : g.short) + (g.kind === 'mat' && st && st.reemplazo ? '⏳' : '') + (n ? ' ⚠' + n : '');
+  }
   if (!st) return base;
   if (g.kind === 'mat') {
     const n = st.alertaTanques + (st.alerta ? 1 : 0), reloj = st.reemplazo ? ' · ⏳' : '';
@@ -670,8 +678,9 @@ function colorRotulo(g) {
   return st.estado === 'desinfeccion' ? '#9e9e9e' : '#b9c7cf';
 }
 const nums = [];
+let prioridadSucia = false;   // el elegido cambia la prioridad de los rótulos
 function select(g, focus) {
-  selected = g;
+  selected = g; prioridadSucia = true;
   root.querySelectorAll('.list button').forEach(b => b.setAttribute('aria-current', b.dataset.id === (g && g.id)));
   groups.forEach(x => { x.label.classList.toggle('on', x === g); x.slab.material.color.copy(col(x === g ? '#f0c6a6' : x.kind === 'larv' ? '#f2efe8' : '#c8ccc6')); x.roof.visible = x !== g; });
   nums.forEach(n => n.el.remove()); nums.length = 0;
@@ -952,7 +961,7 @@ fillList($('#list-larv'), larvG); fillList($('#list-mat'), matG);
 $('#t-roof').addEventListener('change', e => { roofs.visible = e.target.checked; });
 $('#t-other').addEventListener('change', e => { others.visible = e.target.checked; });
 $('#t-life').addEventListener('change', e => { life.visible = e.target.checked; });
-$('#t-labels').addEventListener('change', e => { labelsEl.style.display = e.target.checked ? '' : 'none'; });
+$('#t-labels').addEventListener('change', e => { labelsEl.style.display = e.target.checked ? '' : 'none'; if (e.target.checked) { groups.forEach((g) => { g.label._w = 0; }); prioridadSucia = true; } });
 
 /* ---------- Balizas de alerta (decisión del usuario: no repintan el tanque) ---------- */
 const balizas = new THREE.Group(); scene.add(balizas);
@@ -1088,14 +1097,38 @@ function aviso(texto) { const a = $('#estado-datos'); if (a) a.textContent = tex
 
 /* ---------- Bucle ---------- */
 const tmp = new THREE.Vector3(); let wasFar = null, last = performance.now();
+/** Coloca un rótulo sobre su punto. Devuelve true si cambió su posición o si entró o salió de la pantalla. */
 function place(el, p) {
   tmp.copy(p).project(camera);
   const off = tmp.z > 1 || tmp.x < -1.2 || tmp.x > 1.2 || tmp.y < -1.2 || tmp.y > 1.2;
-  if (off) { if (el._v !== 0) { el.style.visibility = 'hidden'; el._v = 0; } return; }
-  if (el._v !== 1) { el.style.visibility = ''; el._v = 1; }
+  if (off) { if (el._v !== 0) { el.style.visibility = 'hidden'; el._v = 0; return true; } return false; }
+  let cambio = false;
+  if (el._v !== 1) { el.style.visibility = ''; el._v = 1; cambio = true; }
   const x = Math.round((tmp.x + 1) / 2 * W * 2) / 2, y = Math.round((1 - tmp.y) / 2 * H * 2) / 2;
-  if (x === el._x && y === el._y) return;
+  if (x === el._x && y === el._y) return cambio;
   el._x = x; el._y = y; el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0) translate(-50%,' + (el.dataset.ty || '-50%') + ')';
+  return true;
+}
+/* Rótulos que aún chocan: se ocultan (clase .tapado) los de menor prioridad. Gana el módulo o sala elegido, luego el que
+   tiene más alertas (⚠ y ⏳), luego larvicultura sobre maduración, y a igualdad el orden del plano. El rótulo va
+   centrado en x y apoyado en su punto (translate -50%, -100%); su tamaño se mide al cambiar su texto. */
+const prioridadRotulo = (g) => {
+  const st = g.st, n = !st ? 0 : g.kind === 'larv' ? (st.cuenta ? st.cuenta.alerta : 0) : st.alertaTanques + (st.alerta ? 1 : 0) + (st.reemplazo ? 1 : 0);
+  return [g === selected ? 1 : 0, n, g.kind === 'larv' ? 1 : 0];
+};
+const porPrioridad = (a, b) => b.p[0] - a.p[0] || b.p[1] - a.p[1] || b.p[2] - a.p[2] || a.i - b.i;
+function despejarRotulos() {
+  if (labelsEl.style.display === 'none') return;
+  const puestos = [], M = 2;
+  groups.map((g, i) => ({ g, i, p: prioridadRotulo(g) })).sort(porPrioridad).forEach(({ g }) => {
+    const el = g.label;
+    if (el._v !== 1) { el.classList.remove('tapado'); return; }
+    if (!el._w) { el._w = el.offsetWidth; el._h = el.offsetHeight; }
+    const r = [el._x - el._w / 2 - M, el._y - el._h - M, el._x + el._w / 2 + M, el._y + M];
+    const choca = puestos.some((q) => r[0] < q[2] && r[2] > q[0] && r[1] < q[3] && r[3] > q[1]);
+    el.classList.toggle('tapado', choca);
+    if (!choca) puestos.push(r);
+  });
 }
 function animateLife(t, dt) {
   // agua: el relieve se desplaza despacio
@@ -1182,8 +1215,10 @@ function frameBody(now) {
   sky.position.copy(camera.position); stars.position.copy(camera.position);
   if (!reduced) animateLife(t, dt);
   const far = camera.position.distanceTo(controls.target) > 135;
-  if (far !== wasFar) { wasFar = far; groups.forEach(g => { g.labelText.textContent = textoRotulo(g, far); g.labelDot.style.background = colorRotulo(g); }); }
-  groups.forEach(g => place(g.label, g.anchor));
+  let movidos = false;
+  if (far !== wasFar) { wasFar = far; movidos = true; groups.forEach(g => { g.labelText.textContent = textoRotulo(g, far); g.labelDot.style.background = colorRotulo(g); g.label._w = 0; }); }
+  groups.forEach(g => { if (place(g.label, g.anchor)) movidos = true; });
+  if (movidos || prioridadSucia) { prioridadSucia = false; despejarRotulos(); }
   GEO.forEach(g => place(g.el, g.p));
   if (!reduced) latirBalizas(now / 1000);
   animateShrimp(reduced ? 0 : now / 1000);
