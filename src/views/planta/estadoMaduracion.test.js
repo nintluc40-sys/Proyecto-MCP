@@ -5,7 +5,8 @@
    · la alerta del tanque es H:M o densidad fuera de rango, y dice cuál;
    · la alerta de la sala es temperatura u oxígeno fuera de rango en los últimos 7 días;
    · bajas, descartes y cópulas son del período de 7 días (lo de antes no cuenta);
-   · la numeración que se REPITE entre salas (el tanque 1 de la Sala 4 no es el de la Sala 1).
+   · la numeración que se REPITE entre salas (el tanque 1 de la Sala 4 no es el de la Sala 1);
+   · reemplazo por tiempo: los días en producción de cada lote, y el que pasa de 60 (⏳ Permanencia) marca sus salas.
    ============================================================ */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { estadoMaduracion, hoyLocal } from './estado.js';
@@ -23,6 +24,7 @@ beforeAll(() => {
     ING('2026-08-01', 'BB', 'Sala 3', 22, 180, 180),     // antiguo: Producción
     ING('2026-08-01', 'CC', 'Sala 4', 1, 150, 150),      // el tanque 1 de la Sala 4
     ING('2026-08-01', 'CC', 'Sala 4', 9, 5, 5),          // tanque 9 en la Sala 4: fuera del catálogo (errata)
+    ING('2026-05-01', 'DD', 'Sala 5', 7, 150, 150),      // lleva mucho más de 60 días en producción
     fila({ Fecha: '2026-10-03', Sala: 'Sala 3', Tanque: '22', 'Machos muertos': '2', 'Hembras muertas': '1' }),
     fila({ Fecha: '2026-09-20', Sala: 'Sala 3', Tanque: '22', 'Machos muertos': '9' }),   // fuera de los 7 días
     fila({ Fecha: '2026-10-02', Sala: 'Sala 3', Estado: 'Producción', 'Temperatura 2:00': '40' }),
@@ -76,7 +78,20 @@ describe('estado de maduración · salas y resumen', () => {
 
   it('el resumen cuenta reproductores, tanques ocupados de los 38 del catálogo y alertas', () => {
     // las bajas TODAS descuentan vivos (también la de antes de los 7 días): 620 − 11 machos y 800 − 1 hembra
-    expect(E.resumen).toMatchObject({ hembras: 799, machos: 609, ocupados: 4, tanques: 38, alertaTanques: 1, alertaSalas: 1 });
+    expect(E.resumen).toMatchObject({ hembras: 949, machos: 759, ocupados: 5, tanques: 38, alertaTanques: 1, alertaSalas: 1 });
+  });
+
+  it('reemplazo por tiempo: días en producción de cada lote (el que más lleva primero) y el que pasa de 60 marca su sala', () => {
+    const R = E.reemplazo;
+    expect(R.limite).toBe(60);
+    expect(R.lotes[0]).toMatchObject({ lote: 'DD', salas: [{ sala: 'Sala 5', id: 'S5' }] });
+    expect(R.lotes[0].dias).toBeGreaterThan(60);
+    const cc = R.lotes.find((l) => l.lote === 'CC');
+    expect(cc.dias).toBeLessThanOrEqual(60);
+    expect(R.vencidos.map((v) => v.lote)).toEqual(['DD']);
+    expect(E.salas.S5.reemplazo).toEqual([{ lote: 'DD', dias: R.lotes[0].dias }]);
+    expect(E.salas.S4.reemplazo).toBeUndefined();
+    expect(R.lotes.some((l) => l.lote === 'AA')).toBe(false);   // en cuarentena: no cuenta días de producción
   });
 
   it('hoyLocal da la fecha del equipo en ISO', () => {

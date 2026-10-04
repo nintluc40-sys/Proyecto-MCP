@@ -17,6 +17,8 @@
    y guardada en el equipo, y la ocupación en las fichas de cifras.
    «Qué atender hoy» (2026-10-04): las alertas que ya marcan las balizas, agrupadas por módulo o sala; tocar un tanque
    lleva la cámara a él y abre su ficha.
+   Reemplazo por tiempo (2026-10-04): los días en producción de cada lote frente a los 60; el que pasa va a «Qué atender
+   hoy» y sus salas llevan ⏳ en el rótulo.
    ============================================================ */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -646,9 +648,9 @@ function textoRotulo(g, far) {
   const base = far ? g.short : g.name, st = g.st;
   if (!st) return base;
   if (g.kind === 'mat') {
-    const n = st.alertaTanques + (st.alerta ? 1 : 0);
-    if (far) return base + (n ? ' · ⚠ ' + n : '');
-    return base + ' · ' + (st.registrado.estado || 'sin estado') + ' · ' + st.ocupados + '/' + st.total + (n ? ' · ⚠ ' + n : '');
+    const n = st.alertaTanques + (st.alerta ? 1 : 0), reloj = st.reemplazo ? ' · ⏳' : '';
+    if (far) return base + reloj + (n ? ' · ⚠ ' + n : '');
+    return base + ' · ' + (st.registrado.estado || 'sin estado') + ' · ' + st.ocupados + '/' + st.total + reloj + (n ? ' · ⚠ ' + n : '');
   }
   // de lejos, sólo el nombre corto y las alertas: el color del punto ya dice la etapa (si no, se enciman)
   if (far) return base + (st.cuenta && st.cuenta.alerta ? ' · ⚠ ' + st.cuenta.alerta : '');
@@ -732,6 +734,7 @@ function fichaSala(g) {
     ['Oxígeno', lec(st.lecturas.oxigeno, st.lecturas.umbralO)],
     ['Tanques en alerta', st.alertaTanques ? st.alertaTanques + ' (H:M o densidad fuera de rango)' : 'Ninguno'],
   ];
+  if (st.reemplazo) rows.push(['Reemplazo', st.reemplazo.map((r) => '⏳ ' + r.lote + ' · ' + r.dias + ' d en producción').join(' | ') + ' (más de 60)']);
   if (g.desove.length) rows.push(['Desove', g.desove.length + ' tanques · sin registro por tanque en el MCP']);
   llenarFicha(kind, g.name, rows);
 }
@@ -978,7 +981,7 @@ function pintarEstado(E) {
     g.st = !E ? null : g.kind === 'larv' ? E.modulos[g.id] || null : (E.mad && E.mad.salas[g.id]) || null;
     g.tanks.forEach((t) => { t.st = g.st && g.st.tanques ? g.st.tanques[t.num] || null : null; });
   });
-  paintWater(); pintarBalizas(); pintarCifras(E); pintarProduccion(E && E.cifras); pintarAtender(); groups.forEach(pintarFila);
+  paintWater(); pintarBalizas(); pintarCifras(E); pintarProduccion(E && E.cifras); pintarReemplazo(E && E.mad ? E.mad.reemplazo : null); pintarAtender(); groups.forEach(pintarFila);
   wasFar = null;   // rehace los rótulos en el próximo cuadro
   if (selected) { if (tanqueFicha && tanqueFicha.g === selected) (selected.kind === 'larv' ? fichaTanque : fichaTanqueMad)(tanqueFicha); else fichaModulo(selected); }
 }
@@ -1033,9 +1036,45 @@ function pintarAtender() {
     }
     ul.append(li);
   });
+  // lotes que pasan de 60 días en producción (⏳ Permanencia): tocar el renglón abre su primera sala
+  const salasTxt = (ss) => (ss.length > 1 ? 'Salas ' : 'Sala ') + ss.map((x) => x.sala.replace('Sala ', '')).join(', ').replace(/, ([^,]+)$/, ' y $1');
+  ((reemplazoActual && reemplazoActual.vencidos) || []).forEach((v) => {
+    total++;
+    const li = document.createElement('li'); li.className = 'at';
+    const gb = document.createElement('button'); gb.type = 'button'; gb.className = 'at-g';
+    const dot = document.createElement('i'); dot.className = 'reloj'; dot.textContent = '⏳';
+    const nm = document.createElement('b'); nm.textContent = 'Lote ' + v.lote;
+    const sm = document.createElement('span'); sm.textContent = v.dias + ' d en producción · ' + salasTxt(v.salas);
+    gb.append(dot, nm, sm);
+    const g = groups.find((x) => x.id === (v.salas[0] || {}).id);
+    if (g) gb.addEventListener('click', () => irAGrupo(g));
+    li.append(gb); ul.append(li);
+  });
   h.textContent = total ? '⚠ Qué atender hoy · ' + total : 'Qué atender hoy';
   if (!total) nota('Sin alertas hoy');
 }
+/* ---------- Reproductores: días en producción frente al límite (60, el del tablero de Maduración) ---------- */
+let reemplazoActual = null;
+function pintarReemplazo(R) {
+  reemplazoActual = R;
+  const ul = $('#repro'); ul.textContent = '';
+  const nota = (txt) => { const li = document.createElement('li'); li.className = 'at-vacio'; li.textContent = txt; ul.append(li); };
+  if (!estadoCargado) { nota('Cargando datos…'); return; }
+  if (!R || !R.lotes.length) { nota(R ? 'Ningún lote en producción' : 'Sin datos de maduración'); return; }
+  R.lotes.forEach((L) => {
+    const pasa = L.dias > R.limite;
+    const li = document.createElement('li'); li.className = 'rp' + (pasa ? ' pasa' : '');
+    const nm = document.createElement('b'); nm.textContent = (pasa ? '⏳ ' : '') + L.lote;
+    const ss = document.createElement('span'); ss.textContent = (L.salas.length > 1 ? 'Salas ' : 'Sala ') + L.salas.map((x) => x.sala.replace('Sala ', '')).join(', ').replace(/, ([^,]+)$/, ' y $1');
+    const d = document.createElement('em'); d.textContent = L.dias + ' d';
+    const bar = document.createElement('div'); bar.className = 'rp-bar'; bar.setAttribute('aria-hidden', 'true');
+    const fill = document.createElement('i'); fill.style.width = Math.min(100, L.dias / R.limite * 100) + '%'; bar.append(fill);
+    li.title = L.lote + ': ' + L.dias + ' días en producción (reemplazo al pasar de ' + R.limite + ')';
+    li.append(nm, ss, d, bar); ul.append(li);
+  });
+  const lim = document.createElement('li'); lim.className = 'rp-nota'; lim.textContent = 'Reemplazo al pasar de ' + R.limite + ' días en producción, la regla del tablero de Maduración.'; ul.append(lim);
+}
+pintarReemplazo(null);
 pintarAtender();
 function aviso(texto) { const a = $('#estado-datos'); if (a) a.textContent = texto || ''; }
 

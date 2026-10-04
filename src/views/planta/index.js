@@ -67,6 +67,7 @@ const MARCO = `
     <section><h2>Larvicultura</h2><ul class="list" id="list-larv"></ul></section>
     <section aria-label="Leyenda"><h2>Colores</h2><div class="legend" id="legend"></div></section>
     <section><h2>Maduración</h2><ul class="list" id="list-mat"></ul></section>
+    <section class="repro" aria-label="Reproductores: días en producción"><h2 id="repro-h">Reproductores · días en producción</h2><ul class="repro-list" id="repro"></ul></section>
     <section class="toggles" aria-label="Capas">
       <h2>Capas</h2>
       <label><input type="checkbox" id="t-roof" checked> Techos (se abren al elegir un módulo)</label>

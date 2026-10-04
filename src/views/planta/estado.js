@@ -24,6 +24,9 @@ import { LARV, MAT } from './plano.js';
 import { modeloOperativo, serieDiaria, diasDeTanque } from '../maduracion/operativo.data.js';
 import { mapaDePlanta, normalizarFiltro, periodoDe, alertas, ESTADO_VACIO } from '../maduracion/operativo.tablero.js';
 import { capasDelMapa, contextoDelMapa, resumenDeTanque } from '../maduracion/operativo.mapa.js';
+import { permanencia } from '../maduracion/operativo.tendencias.js';
+import { UMBRALES_DE_AVISO } from '../maduracion/operativo.umbrales.js';
+import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
 
 const numDe = (s) => { const m = String(s || '').match(/\d+/); return m ? +m[0] : null; };
 const esModulo = (s, n) => /^M/i.test(String(s || '').trim()) && numDe(s) === n;
@@ -126,6 +129,8 @@ function estadoModulo(ctx, m, desinf) {
    partes del período). Decisiones del usuario: color = el modo «Estado» del mapa de salas; período = últimos 7 días;
    alerta del tanque = H:M o densidad fuera de rango; alerta de la sala = temperatura u oxígeno fuera de rango en el
    período (las alertas del tablero, `alertas`).
+   Reemplazo por tiempo (2026-10-04, usuario): los días en producción de cada lote en las salas donde le quedan
+   animales (los del ⚖️ Saldo, `resumen.lotes[].dias`) y los que pasan de 60 con `permanencia` del tablero (⏳).
    ============================================================ */
 
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -192,5 +197,26 @@ export function estadoMaduracion(filas, hoy = hoyLocal()) {
       tanques,
     };
   }
-  return { fecha: M.fecha, periodo, salas, resumen, vacio: ESTADO_VACIO };
+  return { fecha: M.fecha, periodo, salas, resumen, vacio: ESTADO_VACIO, reemplazo: reemplazoPorTiempo(M, F, salas) };
+}
+
+/** Días en producción de cada lote en las salas donde le quedan animales (el criterio de `permanencia`, sin su
+ *  límite), y los que lo pasan, con `permanencia` misma. Marca en cada sala los lotes que pasan (`sala.reemplazo`). */
+function reemplazoPorTiempo(M, F, salas) {
+  const limite = UMBRALES_DE_AVISO.produccion.valor;
+  const idDe = (sala) => (MAT.find((m) => m.sala === sala) || {}).id || '';
+  const vivoEn = (clave, sala) => ((M.libro || {}).posiciones || []).some((p) => normLote(p.lote) === clave && p.sala === sala
+    && ((Number(p.machos) || 0) > 0 || (Number(p.hembras) || 0) > 0));
+  const lotes = [];
+  for (const L of (M.resumen || {}).lotes || []) {
+    const clave = normLote(L.lote);
+    const s = (L.dias || []).filter((d) => d.estado === 'Producción' && vivoEn(clave, d.sala))
+      .map((d) => ({ sala: d.sala, id: idDe(d.sala), dias: Number(d.diasProduccion) || 0 }))
+      .sort((a, b) => b.dias - a.dias);
+    if (s.length) lotes.push({ lote: String(L.lote), dias: s[0].dias, salas: s });
+  }
+  lotes.sort((a, b) => b.dias - a.dias || a.lote.localeCompare(b.lote, 'es', { numeric: true }));
+  const vencidos = permanencia(M, F).map((v) => ({ lote: v.lote, dias: v.dias, salas: v.salas.map((x) => ({ ...x, id: idDe(x.sala) })) }));
+  for (const v of vencidos) for (const x of v.salas) if (salas[x.id]) (salas[x.id].reemplazo ||= []).push({ lote: v.lote, dias: x.dias });
+  return { limite, lotes, vencidos };
 }
