@@ -321,6 +321,24 @@ export function areaForFormat(fmtKey, tipoMuestra) {
   return f ? f.area(tipoMuestra) : 'larv-animal'; // por defecto, igual que la ficha
 }
 
+/* H-011 (2026-10-04, usuario) · LA UNIDAD de los UFC según el tipo de muestra: el AGUA por mL, el ANIMAL por gramo y la
+   SUPERFICIE (hisopados y placa ambiental) por placa. Decisión del usuario; la ficha de captura sigue rotulando «UFC/mL»
+   (fuera de alcance). Larvicultura · Muestra y · Despacho siguen a su área (Agua → mL; lo demás se semaforiza como
+   animal → g); Muestras externas y el Despacho de Maduración, según su Tipo, y sin él «UFC» a secas. Un formato nuevo
+   sin entrada aquí sale «UFC»: lo vigila una prueba, para que se decida su unidad al darlo de alta. */
+const UNIDAD_FORMATO = {
+  reservorios: 'mL', 'mad-agua': 'mL', ras: 'mL', 'agua-mar': 'mL', 'agua-limpia-mar': 'mL', 'algas-mensual': 'mL', 'algas-r': 'mL',
+  artemia: 'g', 'mad-principal': 'g', 'mad-ensayo': 'g', 'alim-vivo': 'g',
+  'placa-amb': 'placa', hisopados: 'placa', 'hisopados-despacho': 'placa', 'mad-hisopado': 'placa', algas: 'placa',
+};
+export function unidadUFC(fmtKey, tipoMuestra) {
+  const t = normTipoMuestra(tipoMuestra);
+  let u = UNIDAD_FORMATO[fmtKey];
+  if (!u && (fmtKey === 'larv-muestra' || fmtKey === 'larv-despacho')) u = t === 'Agua' ? 'mL' : 'g';
+  if (!u && (fmtKey === 'externas' || fmtKey === 'mad-desinf')) u = t === 'Agua' ? 'mL' : t === 'Animal' ? 'g' : '';
+  return u ? 'UFC/' + u : 'UFC';
+}
+
 /* ── Umbrales por ÁREA × parámetro (UFC/mL) — portados de MIC_DR_BASE de las fichas.
    l/m/e = límites inferiores de Leve/Moderado/Elevado; el factor `f` ya viene
    aplicado en la columna UFC de la hoja, así que aquí solo se usan l/m/e. ── */

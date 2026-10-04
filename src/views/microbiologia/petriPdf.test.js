@@ -157,8 +157,8 @@ describe('petriPdf · documento', () => {
     expect(doc.page).toContain('Moderado');            // leyenda de semaforización
     expect(doc.page).toContain('critline');            // línea de umbrales
     // La leyenda explica qué es la línea de umbrales de debajo de cada patógeno.
-    // (H-011, 2026-10-03: «(UFC)», ya no «(UFC/mL)»: la unidad depende del tipo de muestra.)
-    expect(doc.page).toContain('umbrales Mín / Leve / Mod / Elevado (UFC)');
+    // (H-011, 2026-10-04: la unidad es la del título de cada tabla, no una para toda la hoja.)
+    expect(doc.page).toContain('umbrales Mín / Leve / Mod / Elevado (en la unidad de su tabla)');
     // Y bajo la columna salen las cuatro bandas con sus cortes (larv-agua · verdes),
     // EN HORIZONTAL, separadas por '/' y sin etiqueta (el color y la leyenda las
     // identifican; con etiqueta solo cabrían tres patógenos por hoja).
@@ -321,11 +321,42 @@ describe('petriPdf · documento', () => {
     expect(uno.page.slice(uno.page.indexOf('class="pfoot"')).match(/>Analista</g)).toHaveLength(1);
   });
 
-  // H-011 (2026-10-03): no afirma «UFC/mL» para todo (hisopados, placas y animales no van por mL).
-  it('la cabecera no afirma una unidad única: UFC, y que la unidad depende del tipo de muestra', () => {
-    const doc = docOf([row({ 'Fecha muestreo': '01/06/2026', ...ufc })]);
-    expect(doc.page).not.toContain('UFC/mL');
-    expect(doc.page).toContain('la unidad depende del tipo de muestra');
+  // H-011 (2026-10-04, usuario): agua por mL, animal por gramo y superficie por placa, en el título de CADA tabla.
+  describe('H-011 · la unidad de cada tabla', () => {
+    const titulos = (doc) => [...doc.page.matchAll(/<div class="ftitle">([\s\S]*?)<\/div>/g)].map((m) => m[1].replace(/<[^>]+>/g, ''));
+    const v = { 'Fecha muestreo': '01/06/2026', 'C. Verdes UFC': '150' };
+
+    it('la cabecera no afirma una unidad para toda la hoja: remite al título de cada tabla', () => {
+      const doc = docOf([row({ 'Fecha muestreo': '01/06/2026', ...ufc })]);
+      expect(doc.page).toContain('la unidad, en el título de cada tabla');
+      expect(doc.page.slice(0, doc.page.indexOf('class="ftitle"'))).not.toMatch(/UFC\/(mL|g|placa)/);
+    });
+
+    it('agua → UFC/mL, animal → UFC/g y placa ambiental → UFC/placa, cada una en su tabla', () => {
+      const t = titulos(docOf([
+        row({ ...v, 'Tipo de muestra': 'Agua' }),
+        row({ ...v, 'Tipo de muestra': 'Animal' }),
+        row({ ...v, Formato: 'Larvicultura · Artemia' }),
+        row({ ...v, Formato: 'Larvicultura · Placa ambiental' }),
+      ]));
+      expect(t).toContain('Larvicultura · Muestra · Larvicultura · Agua · UFC/mL');
+      expect(t).toContain('Larvicultura · Muestra · Larvicultura · Animal · UFC/g');
+      expect(t).toContain('Larvicultura · Artemia · UFC/g');
+      expect(t).toContain('Larvicultura · Placa ambiental · UFC/placa');
+    });
+
+    it('un formato que comparte área entre agua y animal se parte por unidad (no mezcla mL y g en una tabla)', () => {
+      const g = groupForPdf([
+        row({ ...v, Formato: 'Muestras externas', 'Tipo de muestra': 'Agua' }),
+        row({ ...v, Formato: 'Muestras externas', 'Tipo de muestra': 'Animal' }),
+      ]);
+      expect([...g[0].fmts.values()].map((x) => x.unidad).sort()).toEqual(['UFC/g', 'UFC/mL']);
+      expect(new Set([...g[0].fmts.values()].map((x) => x.area)).size).toBe(1);   // la MISMA área
+    });
+
+    it('sin tipo de muestra, las externas no inventan unidad: «UFC»', () => {
+      expect(titulos(docOf([row({ ...v, Formato: 'Muestras externas', 'Tipo de muestra': '' })]))[0]).toMatch(/· UFC$/);
+    });
   });
 });
 

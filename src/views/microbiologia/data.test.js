@@ -3,7 +3,7 @@ import {
   isMicroRow, normNivel, classifyFormato, normTipoMuestra, luminPresence,
   intStr, meltRow, rowContext, pathogenRecords, PATHOGENS, NIVEL_RANK, isAlerta,
   AGGREGATE_KEYS, areaForFormat, deptoOfFormato, FORMATO_LABEL,
-  loadMicThresholds, MIC_FACTORS_KEY,
+  loadMicThresholds, MIC_FACTORS_KEY, unidadUFC, MIC_FORMATS,
 } from './data.js';
 
 // Fila representativa (cabeceras reales de la hoja "Microbiología").
@@ -120,6 +120,36 @@ describe('classifyFormato', () => {
   it('"" si vacío o no reconocido', () => {
     expect(classifyFormato('')).toBe('');
     expect(classifyFormato('Algo raro')).toBe('');
+  });
+});
+
+/* H-011 (2026-10-04, usuario) · la unidad de los UFC por tipo de muestra: agua mL · animal g · superficie placa. */
+describe('unidadUFC (H-011)', () => {
+  it('agua por mL, animal por gramo y superficie por placa', () => {
+    expect(unidadUFC('reservorios', '')).toBe('UFC/mL');
+    expect(unidadUFC('ras', '')).toBe('UFC/mL');
+    expect(unidadUFC('algas-mensual', '')).toBe('UFC/mL');
+    expect(unidadUFC('artemia', '')).toBe('UFC/g');
+    expect(unidadUFC('mad-principal', '')).toBe('UFC/g');
+    expect(unidadUFC('placa-amb', '')).toBe('UFC/placa');
+    expect(unidadUFC('hisopados', '')).toBe('UFC/placa');
+    expect(unidadUFC('algas', '')).toBe('UFC/placa');            // «Algas Hisopado»
+  });
+  it('Larvicultura · Muestra y · Despacho siguen a su ÁREA: Agua → mL; lo demás se semaforiza como animal → g', () => {
+    expect(unidadUFC('larv-muestra', 'Agua')).toBe('UFC/mL');
+    expect(unidadUFC('larv-muestra', 'animal')).toBe('UFC/g');   // se normaliza el tipo
+    expect(unidadUFC('larv-despacho', '')).toBe('UFC/g');        // sin tipo, su área es la de animal
+  });
+  it('Muestras externas y el Despacho de Maduración, según su Tipo; sin él, «UFC» a secas', () => {
+    expect(unidadUFC('externas', 'Agua')).toBe('UFC/mL');
+    expect(unidadUFC('mad-desinf', 'Animal')).toBe('UFC/g');
+    expect(unidadUFC('externas', '')).toBe('UFC');
+    expect(unidadUFC('mad-desinf', '')).toBe('UFC');
+  });
+  it('TODO formato conocido tiene unidad con su tipo (uno nuevo obliga a decidirla); sólo EM y lo desconocido no', () => {
+    const sin = Object.keys(MIC_FORMATS).filter((k) => ['Agua', 'Animal'].some((t) => unidadUFC(k, t) === 'UFC'));
+    expect(sin).toEqual(['larv-em']);
+    expect(unidadUFC('otros', 'Agua')).toBe('UFC');
   });
 });
 

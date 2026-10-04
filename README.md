@@ -133,7 +133,10 @@ en producción: cero.** Antes de volver a abrir esto, esto es lo que ya se midi�
   rango se calcula (H-008); el PDF de la Placa firma con una línea por cada analista del día (H-006); las colonias van
   en escala fija de 10⁰ a 10⁷ UFC, también en la Placa del Supervisor (H-012); ejes y leyendas de todos los gráficos
   toman el color del tema (H-013); las pestañas llevan `aria-selected`, foco itinerante y ← → Inicio Fin (H-014); y las
-  fechas del rango van por `parseAnyDate`, con las cotas del % de alerta en `config.js` (H-015).
+  fechas del rango van por `parseAnyDate`, con las cotas del % de alerta en `config.js` (H-015). El PDF de la Placa
+  lleva la UNIDAD en el título de cada tabla —agua UFC/mL, animal UFC/g, hisopados y placa ambiental UFC/placa;
+  Muestras externas y el Despacho de Maduración según su tipo, y sin él «UFC»— (`unidadUFC`, en `data.js`; H-011,
+  2026-10-04): una tabla nunca mezcla dos unidades. La ficha de captura sigue rotulando «UFC/mL».
 - **Maduración** (🥚): una entrada con DOS familias (selector interno; abre en Operativo).
   - **📋 Operativo** — el TABLERO del registro operativo, cargado DIFERIDO. Barra de filtros común
     (período —con **Rango** (2026-10-03): desde la fecha elegida hasta la foto, que es su «Hasta»— · foto al día ·

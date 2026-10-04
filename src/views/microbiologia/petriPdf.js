@@ -18,7 +18,7 @@ import { esc } from '../../core/format.js';
 import { pdfCss, fnv1a } from '../supervisor/fichaPdf.js';
 import {
   rowContext, meltRow, PATHOGENS, MIC_FORMATS, FORMATO_LABEL,
-  NIVELES, NIVEL_COLOR, areaForFormat, loadMicThresholds, MIC_AREAS,
+  NIVELES, NIVEL_COLOR, areaForFormat, loadMicThresholds, MIC_AREAS, unidadUFC,
 } from './data.js';
 
 /** Etiqueta legible de un área ('larv-agua' → 'Larvicultura · Agua'). */
@@ -132,6 +132,8 @@ const OTROS_LABEL = 'Formato no identificado';
  * solo por formato, la línea de umbrales de la tabla sería la de la primera fila y
  * contradiría el color de las demás —que sí se calcula fila a fila—: se vería una celda
  * verde bajo un umbral que la declara Leve. Por eso el área forma parte de la clave.
+ * H-011 (2026-10-04) · y la UNIDAD también (`unidadUFC`): Muestras externas y el Despacho de Maduración comparten área
+ * entre agua y animal, y una tabla con mL y g mezclados no podría llevar UNA unidad en su título.
  */
 export function groupForPdf(rows) {
   const byDay = new Map();
@@ -143,16 +145,18 @@ export function groupForPdf(rows) {
     const day = byDay.get(k);
     const fk = c.formatoKey || OTROS_KEY;
     const area = areaForFormat(fk, c.tipoMuestra);
-    const gk = fk + '|' + area;
-    if (!day.fmts.has(gk)) day.fmts.set(gk, { fmtKey: fk, area, items: [] });
+    const unidad = unidadUFC(fk, c.tipoMuestra);
+    const gk = fk + '|' + area + '|' + unidad;
+    if (!day.fmts.has(gk)) day.fmts.set(gk, { fmtKey: fk, area, unidad, items: [] });
     day.fmts.get(gk).items.push({ row: r, ctx: c });
   });
   return [...byDay.values()].sort((a, b) => (a.key < b.key ? -1 : 1));
 }
 
 /** Tabla de un formato+área dentro de un día. '' si no queda ninguna columna con dato.
- *  `titleSuffix` distingue las tablas cuando un mismo formato aparece con varias áreas. */
-function formatTable(fmtKey, area, items, titleSuffix) {
+ *  `titleSuffix` distingue las tablas cuando un mismo formato aparece con varias áreas; `unidad` (H-011) va en el título
+ *  aparte, en su propio span: es la de los valores y los umbrales de ESA tabla. */
+function formatTable(fmtKey, area, items, titleSuffix, unidad) {
   const melted = items.map((it) => {
     const m = new Map();
     meltRow(it.row).forEach((p) => m.set(p.key, p));
@@ -193,13 +197,13 @@ function formatTable(fmtKey, area, items, titleSuffix) {
   }).join('');
 
   const label = (fmtKey === OTROS_KEY ? OTROS_LABEL : (FORMATO_LABEL[fmtKey] || (MIC_FORMATS[fmtKey] || {}).label || fmtKey)) + (titleSuffix || '');
-  return `<div class="ftitle">${esc(label)}</div>`
+  return `<div class="ftitle">${esc(label)}<span class="funit"> · ${esc(unidad || 'UFC')}</span></div>`
     + `<table><thead><tr><th>#</th>${headH}</tr><tr class="critline"><th></th>${critH}</tr></thead><tbody>${trs}</tbody></table>`;
 }
 
 // Leyenda + la nota que explica qué es la línea de umbrales de debajo de cada patógeno
 // (sin ella, las cuatro cifras apiladas no se entienden a la primera).
-const LEGEND = `<div class="mic-legend">${NIVELES.map((n) => `<span class="mic-lg"><i style="background:${NIVEL_COLOR[n]}"></i>${esc(n)}</span>`).join('')}<span class="mic-lg-note">· bajo cada patógeno: umbrales Mín / Leve / Mod / Elevado (UFC)</span></div>`;
+const LEGEND = `<div class="mic-legend">${NIVELES.map((n) => `<span class="mic-lg"><i style="background:${NIVEL_COLOR[n]}"></i>${esc(n)}</span>`).join('')}<span class="mic-lg-note">· bajo cada patógeno: umbrales Mín / Leve / Mod / Elevado (en la unidad de su tabla)</span></div>`;
 
 const EXTRA_CSS = `
 .mic-legend{display:flex;gap:10px;align-items:center;margin:4px 0 6px;font-size:6.5pt;flex-wrap:wrap}
@@ -211,6 +215,7 @@ const EXTRA_CSS = `
 .critline th.pcrit .thb{white-space:nowrap}
 .critline th.pcrit .thsep{color:#94a3b8;padding:0 1px}
 .ftitle{font-size:8pt;font-weight:800;color:#0f172a;margin:6px 0 3px;text-transform:uppercase;letter-spacing:.3px}
+.ftitle .funit{text-transform:none;font-weight:700;color:#475569;letter-spacing:0}
 `;
 
 /** Cabecera de una hoja: franja OMARSA + rejilla de metadatos del día. */
@@ -221,7 +226,7 @@ function pageHead(dayKey, metas) {
   const deptos = uniq(metas.map((c) => c.departamento));
   const cell = (l, v) => `<div class="mf"><label>${esc(l)}</label><span>${esc(v || '—')}</span></div>`;
   return `<div class="ph">
-      <div class="ph-brand"><div class="co">OMARSA · Microbiología</div><div class="su">Análisis microbiológico — UFC (notación científica) · la unidad depende del tipo de muestra</div></div>
+      <div class="ph-brand"><div class="co">OMARSA · Microbiología</div><div class="su">Análisis microbiológico — UFC (notación científica) · la unidad, en el título de cada tabla</div></div>
       <div class="ph-center"><span class="doc-code">OMR-MIC</span></div>
       <div class="ph-right"><div class="mod">Mic</div><div class="mods">Microbiología</div></div>
     </div>
@@ -269,7 +274,7 @@ export function buildPetriPdfDoc(rows, opts = {}) {
     grupos.forEach((g) => {
       const conArea = g.fmtKey === OTROS_KEY || vecesPorFmt.get(g.fmtKey) > 1;
       const suffix = conArea ? ' · ' + (AREA_LABEL[g.area] || g.area) : '';
-      const t = formatTable(g.fmtKey, g.area, g.items, suffix);
+      const t = formatTable(g.fmtKey, g.area, g.items, suffix, g.unidad);
       if (!t) return;
       inner += t;
       g.items.forEach((it) => metas.push(it.ctx));
