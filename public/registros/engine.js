@@ -7153,6 +7153,8 @@ function madResVarsAbrir(){
     + '<div style="background:#fff;border-radius:10px;max-width:560px;width:100%;max-height:85vh;overflow:auto;padding:14px 16px;box-shadow:0 10px 30px rgba(0,0,0,.25)">'
     +   '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>⚙️ Variables del resumen</b><button class="btn" type="button" onclick="madResVarsCerrar()">✕</button></div>'
     +   '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Marca una <b>ficha entera</b> con su casilla, o sus variables una a una.</div>'
+    // Punto 7 (2026-10-04): la presentación del PDF. Un bloque propio y NO un fieldset: los fieldset son las fichas de variables.
+    +   _madResPdfModoHTML()
     +   MAD_RES_VARS.map(function(g){
           return '<fieldset style="border:1px solid #e2e8f0;border-radius:8px;margin:0 0 8px;padding:6px 10px"><legend style="font-size:12px;font-weight:700">'
             + '<label style="display:inline-flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" class="ms-grupo" onchange="madResVarsGrupo(this)">'+escapeHtml(g.grupo)+' <span style="font-weight:400;color:#64748b">(toda la ficha)</span></label></legend>'
@@ -7184,6 +7186,8 @@ function madResVarsAplicar(){
   const sel={};
   document.querySelectorAll("#ms-vars .ms-var").forEach(function(c){ sel[c.value]=c.checked; });
   try{ localStorage.setItem(MAD_RES_VARS_KEY, JSON.stringify(sel)); }catch(_){}
+  const modo=Array.prototype.filter.call(document.querySelectorAll("#ms-vars .ms-pdf-modo-op"), function(r){ return r.checked; })[0];
+  if(modo){ try{ localStorage.setItem(MAD_RES_PDF_KEY, modo.value==="tabulada" ? "tabulada" : "estandar"); }catch(_){} }
   madResVarsCerrar();
   madResPintar();
 }
@@ -7343,6 +7347,14 @@ function madResumenPdf(alcance){
   const a=String(alcance||"todo"), i=a.indexOf(":");
   const filtro=i>0 ? { tipo:a.slice(0,i), nombre:a.slice(i+1) } : null;
   const titulo="Maduración · Resumen"+(filtro ? " · "+(filtro.tipo==="sala" ? filtro.nombre : "Lote "+filtro.nombre) : "")+" · "+_madResumen.hoy;
+  // Punto 7 (2026-10-04): la presentación TABULADA, si es la elegida en ⚙️ Variables. Mismas cifras, variables y alcance.
+  if(madResPdfModo()==="tabulada"){
+    const wt=window.open("","_blank","width=1100,height=760");
+    if(!wt){ toast("El navegador bloqueó la ventana emergente. Permite pop-ups para este sitio.","warn",6000); return; }
+    wt.document.write(_madResTabDoc(_madResumen, madResVarsLeer(), filtro, titulo));
+    wt.document.close();
+    return;
+  }
   const page='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+escapeHtml(titulo)+'</title>'
     + '<style>body{font-family:Arial,Helvetica,sans-serif;margin:18px;color:#0f172a}h1{font-size:16px;margin:0 0 4px}.ms-card{page-break-inside:avoid}</style></head><body>'
     + '<h1>'+escapeHtml(titulo)+'</h1><div style="font-size:11px;color:#64748b;margin-bottom:8px">Deducido de las hojas el '+escapeHtml(_madResumen.hoy)+'. Si se corrigen registros pasados, este informe puede no cuadrar con uno posterior.</div>'
@@ -7352,6 +7364,269 @@ function madResumenPdf(alcance){
   if(!w){ toast("El navegador bloqueó la ventana emergente. Permite pop-ups para este sitio.","warn",6000); return; }
   w.document.write(page);
   w.document.close();
+}
+// ── Saldo · el PDF en DOS presentaciones (punto 7, 2026-10-04, usuario) ──────────────────────
+/* «Que tenga dos presentaciones, esta y otra con forma de informe tabulado similar al de partes, donde se vea todo
+   estructurado y de fácil lectura; debe poder ser escogido en variables». Decisiones del usuario (no re-preguntar):
+   la tabulada es «como el 🖨 Último parte» —por sala, una franja con sus datos y la tabla de sus TANQUES con su total;
+   los lotes en tablas por tema, una fila por lote; al final los preventivos y el RAS— y los totales, SÓLO de lo que se
+   suma (animales, desoves, N5, muertas…): un % no se promedia, sale «—».
+   La elección vive en ⚙️ Variables (por dispositivo, como las variables) y sólo cambia el PDF: la pantalla sigue en
+   tarjetas. Respeta las mismas variables y el mismo alcance (todo · una sala · un lote) que la estándar y usa las MISMAS
+   cifras (R, de madResumenMaduracion): sólo cambia cómo se colocan. */
+const MAD_RES_PDF_KEY = "larv4_mad_resumen_pdf";
+const MAD_RES_PDF_MODOS = [["estandar","Estándar (tarjetas, como en pantalla)"],["tabulada","Tabulada de fácil lectura (como el «🖨 Último parte»)"]];
+function madResPdfModo(){
+  try{ return localStorage.getItem(MAD_RES_PDF_KEY)==="tabulada" ? "tabulada" : "estandar"; }catch(_){ return "estandar"; }
+}
+function _madResPdfModoHTML(){
+  const modo=madResPdfModo();
+  return '<div class="ms-pdf-modos" style="border:1px solid #e2e8f0;border-radius:8px;margin:0 0 8px;padding:6px 10px;background:#f8fafc">'
+    + '<div style="font-size:12px;font-weight:700;margin-bottom:2px">🖨 Presentación del PDF</div>'
+    + MAD_RES_PDF_MODOS.map(function(m){
+        return '<label style="display:flex;gap:6px;align-items:center;font-size:12px;padding:2px 0"><input type="radio" name="ms-pdf-modo" class="ms-pdf-modo-op" value="'+m[0]+'"'+(modo===m[0] ? ' checked' : '')+'>'+escapeHtml(m[1])+'</label>';
+      }).join("")
+    + '<div style="font-size:11px;color:#64748b">Vale para «🖨 PDF de todo» y el de cada sala o lote; la pantalla sigue en tarjetas.</div></div>';
+}
+function _madResTabF(f){ return f ? '<div class="f">'+escapeHtml(_madUpDMY(f))+'</div>' : ""; }
+function _madResTabN(v){ const x=Number(v); return (v===""||v===null||v===undefined||!isFinite(x)) ? 0 : x; }
+function _madResTabBlk(html){ return html ? '<div class="blk">'+html+'</div>' : ""; }
+function _madResTabTd(v, num){ return '<td'+(num ? ' class="r"' : '')+'>'+v+'</td>'; }
+// Encabezado de una o dos filas: { t } es una columna; { t, sub:[…] }, un grupo con sus columnas debajo.
+function _madResTabCab(grupos){
+  const dos=grupos.some(function(g){ return g.sub; });
+  let a="", b="";
+  grupos.forEach(function(g){
+    if(g.sub){ a+='<th colspan="'+g.sub.length+'">'+g.t+'</th>'; b+=g.sub.map(function(x){ return '<th>'+x+'</th>'; }).join(""); }
+    else a+='<th'+(dos ? ' rowspan="2"' : '')+'>'+g.t+'</th>';
+  });
+  return '<thead><tr>'+a+'</tr>'+(dos ? '<tr>'+b+'</tr>' : '')+'</thead>';
+}
+function _madResTabAmb(o){ return _madResCel(o.prom)+" · "+_madResCel(o.ultima)+" · "+_madResDelta(o.delta)+" · "+_madResCel(o.cv,"%")+_madResTabF(o.fecha); }
+// La franja de una sala: sus variables en UNA fila, cada una con la fecha de su registro debajo.
+function _madResTabFranja(s, sel){
+  const c=[];
+  if(sel["sala-estado"]) c.push(["Estado", _madResCel(s.estado)+_madResTabF(s.fecha)],
+    ["Estado de sus lotes", s.lotes.length ? s.lotes.map(function(l){ return escapeHtml(l.lote)+": "+_madResCel(l.estado); }).join("<br>") : "—"]);
+  if(sel["sala-lotes"]) c.push(["Lotes participantes", s.lotes.length ? s.lotes.map(function(l){ return '<b>'+escapeHtml(l.lote)+'</b> '+l.machos+'♂ '+l.hembras+'♀'; }).join("<br>") : "—"]);
+  if(sel["sala-ras"]) c.push(["Uso del RAS", _madResCel(s.ras)+_madResTabF(s.fechaRas)]);
+  if(sel["sala-toneladas"]) c.push(["Agua por tanque", _madResCel(s.toneladas," t")+" = "+_madResCel(s.volumenTanque," m³")
+    + '<div class="f">'+escapeHtml(s.fechaToneladas ? _madUpDMY(s.fechaToneladas) : "por defecto")+(s.tanquesSala ? " · "+s.tanquesSala+" tanques en la sala" : "")+'</div>']);
+  if(sel["sala-temp"]) c.push(["Temperatura<br>prom · última · Δ · CV", _madResTabAmb(s.temp)]);
+  if(sel["sala-ox"]) c.push(["Oxígeno<br>prom · último · Δ · CV", _madResTabAmb(s.ox)]);
+  if(sel["sala-alcalinidad"]){
+    const fd=s.alcalinidad.dia.fecha, fn=s.alcalinidad.noche.fecha;
+    c.push(["Alcalinidad (mg/L)<br>☀️ día · 🌙 noche", _madResCel(s.alcalinidad.dia.valor)+" · "+_madResCel(s.alcalinidad.noche.valor)
+      + (fd || fn ? '<div class="f">'+(fd===fn ? escapeHtml(_madUpDMY(fd)) : (fd ? "☀️ "+escapeHtml(_madUpDMY(fd)) : "")+(fd && fn ? " · " : "")+(fn ? "🌙 "+escapeHtml(_madUpDMY(fn)) : ""))+'</div>' : "")]);
+  }
+  if(sel["sala-ocupacion"]) c.push(["En producción", s.tanquesProduccion+" tanque(s) · "+s.animalesProduccion+" animales"], ["En cuarentena", s.animalesCuarentena+" animales"]);
+  if(!c.length) return "";
+  return '<table class="fr"><thead><tr>'+c.map(function(x){ return '<th>'+x[0]+'</th>'; }).join("")+'</tr></thead>'
+    + '<tbody><tr>'+c.map(function(x){ return '<td>'+x[1]+'</td>'; }).join("")+'</tr></tbody></table>';
+}
+/* Las filas por TANQUE. Cada lote trae sus tanques con los animales del TANQUE ENTERO (madResumenMaduracion), así que un
+   tanque compartido por dos lotes es UNA fila con los dos: sumarlo dos veces inflaría el total. La carga sale de los
+   pesos de cada lote: si difiere entre ellos, se dice la de cada uno. `sala` null = las de todas las salas. */
+function _madResTabTanques(lotes, sala){
+  const por={}, orden=[];
+  const fila=function(sl, tq){
+    const k=sl+"|"+tq;
+    if(!por[k]){ por[k]={ sala:sl, tanque:tq, machos:"", hembras:"", relacion:"", lotes:[], cm:[], cv:[], obs:[] }; orden.push(k); }
+    return por[k];
+  };
+  (lotes||[]).forEach(function(L){
+    (L.tanques||[]).forEach(function(t){
+      if(sala!==null && t.sala!==sala) return;
+      const x=fila(t.sala, t.tanque);
+      x.machos=t.machos; x.hembras=t.hembras; x.relacion=t.relacion;
+      if(x.lotes.indexOf(L.lote)===-1) x.lotes.push(L.lote);
+      x.cm.push([L.lote, t.cargaMetrica]); x.cv.push([L.lote, t.cargaVolumetrica]);
+    });
+  });
+  // Las observaciones son del ÚLTIMO día de cada lote: también las de un tanque que hoy ya no tiene animales.
+  (lotes||[]).forEach(function(L){
+    (L.observaciones||[]).forEach(function(o){
+      if(sala!==null && o.sala!==sala) return;
+      const x=fila(o.sala, o.tanque), t=[o.sanitarias, o.operativas].filter(Boolean).join(" · ");
+      if(x.lotes.indexOf(L.lote)===-1) x.lotes.push(L.lote);
+      if(t && x.obs.indexOf(t)===-1) x.obs.push(t);
+    });
+  });
+  return orden.map(function(k){ return por[k]; })
+    .sort(function(a,b){ return _madResOrden(a.sala,b.sala) || a.tanque-b.tanque; });
+}
+function _madResTabCarga(lista, suf){
+  const vals=lista.map(function(p){ return p[1]; });
+  if(vals.every(function(v){ return v===vals[0]; })) return _madResCel(vals[0], suf);
+  return lista.map(function(p){ return escapeHtml(p[0])+": "+_madResCel(p[1], suf); }).join("<br>");
+}
+function _madResTabTanquesHTML(filas, sel, rotTotal, conSala){
+  const rel=sel["lote-relacion"], carga=sel["lote-carga"], obs=sel["lote-obs"];
+  if(!filas.length || !(sel["lote-poblacion"] || rel || carga || obs)) return "";
+  const cab=[].concat(conSala ? [{ t:"Sala" }] : [], [{ t:"Tanque" }, { t:"Lote(s)" }, { t:"Animales", sub:["♂","♀"] }],
+    rel ? [{ t:"H:M" }] : [], carga ? [{ t:"Carga", sub:["g/m²","kg/m³"] }] : [], obs ? [{ t:"Observaciones (último día)" }] : []);
+  let m=0, h=0;
+  const cuerpo=filas.map(function(x){
+    m+=_madResTabN(x.machos); h+=_madResTabN(x.hembras);
+    return '<tr>'+(conSala ? _madResTabTd(escapeHtml(x.sala)) : "")+_madResTabTd(escapeHtml(String(x.tanque)), true)+_madResTabTd(escapeHtml(x.lotes.join(", ")))
+      + _madResTabTd(_madResCel(x.machos), true)+_madResTabTd(_madResCel(x.hembras), true)
+      + (rel ? _madResTabTd(_madResCel(x.relacion), true) : "")
+      + (carga ? _madResTabTd(_madResTabCarga(x.cm, ""), true)+_madResTabTd(_madResTabCarga(x.cv, ""), true) : "")
+      + (obs ? _madResTabTd(x.obs.length ? x.obs.map(escapeHtml).join("<br>") : "—") : "")+'</tr>';
+  }).join("");
+  const resto=(rel ? 1 : 0)+(carga ? 2 : 0)+(obs ? 1 : 0);
+  return '<table>'+_madResTabCab(cab)+'<tbody>'+cuerpo
+    + '<tr class="tot"><td colspan="'+(conSala ? 3 : 2)+'">'+rotTotal+'</td>'+_madResTabTd(m, true)+_madResTabTd(h, true)+(resto ? '<td colspan="'+resto+'"></td>' : "")+'</tr>'
+    + '</tbody></table>';
+}
+function _madResTabLista(cab, filas, vacio){
+  if(!filas.length) return '<p class="sd">'+vacio+'</p>';
+  return '<table>'+_madResTabCab(cab.map(function(t){ return { t:t }; }))+'<tbody>'+filas.map(function(f){ return '<tr>'+f.join("")+'</tr>'; }).join("")+'</tbody></table>';
+}
+function _madResTabSalaHTML(s, R, sel){
+  const fr=_madResTabFranja(s, sel);
+  const tq=_madResTabTanquesHTML(_madResTabTanques(R.lotes, s.sala), sel, "Total "+escapeHtml(s.sala), false);
+  const trat=sel["sala-trat"] ? '<div class="sub">Desinfección y controles</div>'
+    + _madResTabLista(["Fecha","Tipo","Área","Lotes","Productos"], s.tratamientos.map(function(t){
+        return [_madResTabTd(escapeHtml(_madUpDMY(t.fecha))), _madResTabTd(escapeHtml(t.tipo)), _madResTabTd(escapeHtml(t.area)), _madResTabTd(escapeHtml(t.lotes||"")), _madResTabTd(escapeHtml(t.productos||t.ras||""))];
+      }), "Sin registros.") : "";
+  if(!fr && !tq && !trat) return "";
+  return _madResTabBlk('<h2>🏠 '+escapeHtml(s.sala)+'</h2>'+fr+tq+trat);
+}
+// Las tablas de LOTES, por tema: una fila por lote y, donde hay algo que sumar, su total.
+function _madResTabLotesHTML(lotes, sel){
+  const n=lotes.length, tot='<tr class="tot"><td>Total · '+n+' lote'+(n===1 ? "" : "s")+'</td>';
+  const mo=function(c, t){ return c+" ("+_madResCel(t,"%")+")"; };
+  let h="";
+  const pob=sel["lote-poblacion"], mort=sel["lote-mortalidad"], dias=sel["lote-dias"];
+  if(pob || mort || dias){
+    const cab=[].concat([{ t:"Lote" }], pob ? [{ t:"Estado" }, { t:"Población", sub:["♂","♀","Total"] }] : [],
+      mort ? [{ t:"Último día" }, { t:"Muertos del día", sub:["♂","♀","Total"] }, { t:"Muertos acumulados", sub:["♂","♀","Total"] }, { t:"Desde → hasta" },
+        { t:"Descartes", sub:["♂","♀"] }, { t:"Ingresados", sub:["♂","♀"] }] : [],
+      dias ? [{ t:"Días de cuarentena · producción" }] : []);
+    const S={ m:0, h:0, dm:0, dh:0, am:0, ah:0, xm:0, xh:0, im:0, ih:0 };
+    const filas=lotes.map(function(L){
+      S.m+=_madResTabN(L.machos); S.h+=_madResTabN(L.hembras);
+      let f='<tr>'+_madResTabTd('<b>'+escapeHtml(L.lote)+'</b>');
+      if(pob) f+=_madResTabTd(_madResCel(L.estado))+_madResTabTd(L.machos, true)+_madResTabTd(L.hembras, true)+_madResTabTd(L.machos+L.hembras, true);
+      if(mort){
+        const d=L.muertosDia, a=L.muertos;
+        S.dm+=_madResTabN(d.machos); S.dh+=_madResTabN(d.hembras); S.am+=_madResTabN(a.machos); S.ah+=_madResTabN(a.hembras);
+        S.xm+=_madResTabN(L.descartes.machos); S.xh+=_madResTabN(L.descartes.hembras); S.im+=_madResTabN(L.ingresados.machos); S.ih+=_madResTabN(L.ingresados.hembras);
+        f+=_madResTabTd(L.fechaDia ? escapeHtml(_madUpDMY(L.fechaDia)) : "—")
+          + _madResTabTd(mo(d.machos, L.tasaMortalidadDia.machos), true)+_madResTabTd(mo(d.hembras, L.tasaMortalidadDia.hembras), true)+_madResTabTd(mo(d.machos+d.hembras, L.tasaMortalidadDia.total), true)
+          + _madResTabTd(mo(a.machos, L.tasaMortalidad.machos), true)+_madResTabTd(mo(a.hembras, L.tasaMortalidad.hembras), true)+_madResTabTd(mo(a.machos+a.hembras, L.tasaMortalidad.total), true)
+          + _madResTabTd(L.rangoAcumulado && L.rangoAcumulado.desde ? escapeHtml(_madUpDMY(L.rangoAcumulado.desde)+" → "+_madUpDMY(L.rangoAcumulado.hasta)) : "—")
+          + _madResTabTd(L.descartes.machos, true)+_madResTabTd(L.descartes.hembras, true)+_madResTabTd(L.ingresados.machos, true)+_madResTabTd(L.ingresados.hembras, true);
+      }
+      if(dias) f+=_madResTabTd(L.dias.length ? L.dias.map(function(d){ return escapeHtml(d.sala)+": "+_madResCel(d.diasCuarentena)+" · "+_madResCel(d.diasProduccion); }).join("<br>") : "—");
+      return f+'</tr>';
+    }).join("");
+    let t=tot;
+    if(pob) t+='<td></td>'+_madResTabTd(S.m, true)+_madResTabTd(S.h, true)+_madResTabTd(S.m+S.h, true);
+    if(mort) t+='<td></td>'+_madResTabTd(S.dm, true)+_madResTabTd(S.dh, true)+_madResTabTd(S.dm+S.dh, true)+_madResTabTd(S.am, true)+_madResTabTd(S.ah, true)+_madResTabTd(S.am+S.ah, true)
+      + '<td></td>'+_madResTabTd(S.xm, true)+_madResTabTd(S.xh, true)+_madResTabTd(S.im, true)+_madResTabTd(S.ih, true);
+    if(dias) t+='<td></td>';
+    h+=_madResTabBlk('<h2>🦐 Lotes · Población y mortalidad</h2><table>'+_madResTabCab(cab)+'<tbody>'+filas+(n>1 ? t+'</tr>' : "")+'</tbody></table>');
+  }
+  const pesos=sel["lote-pesos"], mudas=sel["lote-mudas"];
+  if(pesos || mudas){
+    const cab=[].concat([{ t:"Lote" }], pesos ? [{ t:"Peso promedio (g)", sub:["♂","♀"] }] : [], mudas ? [{ t:"% Mudas" }, { t:"% Cópulas" }, { t:"Último día" }] : []);
+    h+=_madResTabBlk('<h2>🦐 Lotes · Producción</h2><table>'+_madResTabCab(cab)+'<tbody>'+lotes.map(function(L){
+      return '<tr>'+_madResTabTd('<b>'+escapeHtml(L.lote)+'</b>')
+        + (pesos ? _madResTabTd(_madResCel(L.pesoMachos.valor)+_madResTabF(L.pesoMachos.fecha), true)+_madResTabTd(_madResCel(L.pesoHembras.valor)+_madResTabF(L.pesoHembras.fecha), true) : "")
+        + (mudas ? _madResTabTd(_madResCel(L.pctMudas,"%"), true)+_madResTabTd(_madResCel(L.pctCopulas,"%"), true)+_madResTabTd(L.fechaDia ? escapeHtml(_madUpDMY(L.fechaDia)) : "—") : "")+'</tr>';
+    }).join("")+'</tbody></table>');
+  }
+  const dt=sel["des-totales"], dn=sel["des-nauplios"], df=sel["des-fertilidad"], md=sel["mortdes"];
+  if(dt || dn || df || md){
+    const cab=[].concat([{ t:"Lote" }], dt ? [{ t:"Desoves" }, { t:"No viables" }, { t:"N5" }] : [], dn ? [{ t:"Nauplios/Hembra" }] : [], df ? [{ t:"Fertilidad" }] : [],
+      md ? [{ t:"Mortalidad de hembras", sub:["En desove","En recuperación"] }] : []);
+    const S={ d:0, nv:0, n5:0, dm:0, de:0, rm:0, re:0 };
+    const mh=function(o){ return _madResCel(o.pct,"%")+" ("+o.muertas+" de "+o.entran+")"; };
+    const filas=lotes.map(function(L){
+      const D=L.desoves;
+      S.d+=_madResTabN(D.desoves); S.nv+=_madResTabN(D.noViables); S.n5+=_madResTabN(D.n5);
+      S.dm+=_madResTabN(L.mortDesove.muertas); S.de+=_madResTabN(L.mortDesove.entran); S.rm+=_madResTabN(L.mortRecuperacion.muertas); S.re+=_madResTabN(L.mortRecuperacion.entran);
+      return '<tr>'+_madResTabTd('<b>'+escapeHtml(L.lote)+'</b>')
+        + (dt ? _madResTabTd(D.desoves, true)+_madResTabTd(D.noViables, true)+_madResTabTd(_madResMiles(D.n5), true) : "")
+        + (dn ? _madResTabTd(_madResMiles(D.naupliosPorHembra), true) : "")
+        + (df ? _madResTabTd(_madResCel(D.fertilidad,"%"), true) : "")
+        + (md ? _madResTabTd(mh(L.mortDesove), true)+_madResTabTd(mh(L.mortRecuperacion), true) : "")+'</tr>';
+    }).join("");
+    const t=tot+(dt ? _madResTabTd(S.d, true)+_madResTabTd(S.nv, true)+_madResTabTd(_madResMiles(S.n5), true) : "")
+      + (dn ? _madResTabTd("—", true) : "")+(df ? _madResTabTd("—", true) : "")
+      + (md ? _madResTabTd("— ("+S.dm+" de "+S.de+")", true)+_madResTabTd("— ("+S.rm+" de "+S.re+")", true) : "")+'</tr>';
+    h+=_madResTabBlk('<h2>🥚 Lotes · Reproducción</h2><table>'+_madResTabCab(cab)+'<tbody>'+filas+(n>1 ? t : "")+'</tbody></table>');
+  }
+  const nc=sel["naup-calidad"], na=sel["naup-agua"];
+  if(nc || na){
+    const filas=[];
+    lotes.forEach(function(L){ L.nauplios.revisiones.forEach(function(x){
+      filas.push([_madResTabTd('<b>'+escapeHtml(L.lote)+'</b>'), _madResTabTd(escapeHtml(x.revision))]
+        .concat(nc ? ["deformidad","actividad","hongos","fototropismo","aireacion"].map(function(k){ return _madResTabTd(_madResCel(x[k])); }) : [])
+        .concat(na ? [_madResTabTd(_madResCel(x.salinidad), true), _madResTabTd(_madResCel(x.temperatura), true)] : [])
+        .concat([_madResTabTd(L.nauplios.fecha ? escapeHtml(_madUpDMY(L.nauplios.fecha)) : "—")]));
+    }); });
+    h+=_madResTabBlk('<h2>🔬 Lotes · Revisión de nauplios (la última)</h2>'+_madResTabLista(["Lote","Revisión"]
+      .concat(nc ? ["Deformidad","Actividad","Hongos","Fototropismo","Aireación"] : []).concat(na ? ["Salinidad (‰)","T° (°C)"] : []).concat(["Fecha"]), filas, "Sin revisiones de nauplios."));
+  }
+  if(sel["lote-trat"]){
+    const filas=[];
+    lotes.forEach(function(L){ L.tratamientos.forEach(function(t){
+      filas.push([_madResTabTd('<b>'+escapeHtml(L.lote)+'</b>'), _madResTabTd(escapeHtml(_madUpDMY(t.fecha))), _madResTabTd(escapeHtml(t.productos)), _madResTabTd(escapeHtml(t.ras||"")), _madResTabTd(escapeHtml(t.sala||""))]);
+    }); });
+    h+=_madResTabBlk('<h2>🧪 Lotes · Preventivos</h2>'+_madResTabLista(["Lote","Fecha","Productos","Productos RAS","Sala"], filas, "Sin preventivos registrados."));
+  }
+  return h;
+}
+// El cuerpo tabulado. Mismo alcance que _madResCuerpoHTML: todo, una sala (sólo la sala) o un lote (sólo el lote).
+function _madResTabHTML(R, sel, filtro){
+  const salas=R.salas.filter(function(s){ return !filtro || (filtro.tipo==="sala" && s.sala===filtro.nombre); });
+  const lotes=R.lotes.filter(function(l){ return !filtro || (filtro.tipo==="lote" && l.lote===filtro.nombre); });
+  let h=salas.map(function(s){ return _madResTabSalaHTML(s, R, sel); }).join("");
+  // El total de la granja: lo que se suma de las salas (y de sus tablas de tanques, si las hay).
+  if(!filtro && h){
+    const oc=sel["sala-ocupacion"], tq=_madResTabTanquesHTML(_madResTabTanques(R.lotes, null), sel, "", false)!=="";
+    if(oc || tq){
+      let m=0, hh=0;
+      _madResTabTanques(R.lotes, null).forEach(function(x){ m+=_madResTabN(x.machos); hh+=_madResTabN(x.hembras); });
+      const cab=[].concat(oc ? ["Tanques en producción","Animales en producción","Animales en cuarentena"] : [], tq ? ["♂ en tanques","♀ en tanques"] : []);
+      const fila=[].concat(oc ? [salas.reduce(function(a,s){ return a+_madResTabN(s.tanquesProduccion); },0), salas.reduce(function(a,s){ return a+_madResTabN(s.animalesProduccion); },0),
+        salas.reduce(function(a,s){ return a+_madResTabN(s.animalesCuarentena); },0)] : [], tq ? [m, hh] : []);
+      h+=_madResTabBlk('<h2>TOTAL GRANJA</h2><table class="gr">'+_madResTabCab(cab.map(function(t){ return { t:t }; }))+'<tbody><tr class="tot">'+fila.map(function(v){ return _madResTabTd(v, true); }).join("")+'</tr></tbody></table>');
+    }
+  }
+  if(lotes.length) h+=_madResTabLotesHTML(lotes, sel);
+  /* El PDF de UN lote no lleva las salas: sus tanques van aquí, con su sala. Con TODOS los lotes de cada tanque: los
+     animales son los del tanque entero, y un tanque compartido que sólo dijera este lote escondería al otro. */
+  if(filtro && filtro.tipo==="lote" && lotes.length){
+    const mios={};
+    lotes[0].tanques.forEach(function(t){ mios[t.sala+"|"+t.tanque]=true; });
+    lotes[0].observaciones.forEach(function(o){ mios[o.sala+"|"+o.tanque]=true; });
+    const tq=_madResTabTanquesHTML(_madResTabTanques(R.lotes, null).filter(function(x){ return mios[x.sala+"|"+x.tanque]; }), sel, "Total en sus tanques", true);
+    if(tq) h+=_madResTabBlk('<h2>🛢 Tanques del lote '+escapeHtml(lotes[0].lote)+'</h2>'+tq);
+  }
+  if(!filtro && (sel["ras-alc"] || sel["ras-trat"])){
+    let r='<h2>💧 RAS</h2>';
+    if(sel["ras-alc"]) r+='<table class="fr">'+_madResTabCab([{ t:"Alcalinidad ☀️ día (mg/L)" }, { t:"Alcalinidad 🌙 noche (mg/L)" }])+'<tbody><tr>'
+      + _madResTabTd(_madResCel(R.rasAlcalinidad.dia.valor)+_madResTabF(R.rasAlcalinidad.dia.fecha))+_madResTabTd(_madResCel(R.rasAlcalinidad.noche.valor)+_madResTabF(R.rasAlcalinidad.noche.fecha))+'</tr></tbody></table>';
+    if(sel["ras-trat"]) r+='<div class="sub">Últimos tratamientos</div>'+_madResTabLista(["Fecha","Tipo","Sala","Productos"], R.ras.map(function(t){
+      return [_madResTabTd(escapeHtml(_madUpDMY(t.fecha))), _madResTabTd(escapeHtml(t.tipo)), _madResTabTd(escapeHtml(t.sala||"")), _madResTabTd(escapeHtml(t.productos))];
+    }), "Sin tratamientos del RAS.");
+    h+=_madResTabBlk(r);
+  }
+  return h || '<p class="sd">Nada que mostrar con las variables elegidas.</p>';
+}
+function _madResTabDoc(R, sel, filtro, titulo){
+  return '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+escapeHtml(titulo)+'</title>'
+    + '<style>@page{size:A4 landscape;margin:10mm}body{font-family:Arial,Helvetica,sans-serif;margin:16px;color:#0f172a}h1{font-size:16px;margin:0 0 4px}h2{font-size:13px;margin:14px 0 4px}'
+    + 'table{border-collapse:collapse;width:100%;font-size:10.5px;margin-bottom:6px;page-break-inside:avoid}th,td{border:1px solid #cbd5e1;padding:2px 5px;vertical-align:top}th{background:#f1f5f9;text-align:center}'
+    + 'td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.f{font-size:9px;color:#64748b}tr.tot td{font-weight:700;background:#f8fafc}table.fr td{text-align:center}table.gr{width:auto}'
+    + '.blk{break-inside:avoid;page-break-inside:avoid}.sub{font-size:11px;font-weight:700;margin:4px 0 2px}.sd{color:#94a3b8;font-style:italic;font-size:11px;margin:2px 0 6px}</style></head><body>'
+    + '<h1>'+escapeHtml(titulo)+'</h1><div style="font-size:11px;color:#64748b;margin-bottom:6px">Deducido de las hojas el '+escapeHtml(R.hoy)+'. Presentación tabulada: los totales suman sólo cifras (animales, desoves, N5, muertas); los % no se promedian («—»). Si se corrigen registros pasados, este informe puede no cuadrar con uno posterior.</div>'
+    + _madResTabHTML(R, sel, filtro)
+    + '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},300);});<\/script></body></html>';
 }
 // ── Saldo · «🖨 Último parte» (plan 0t · 12, 2026-09-29, usuario) ─────────────────────────
 /* Un PDF del REGISTRO MÁS RECIENTE llenado —una ronda de mortalidad de 🛢 Tanques; al día hay 5 o 6— con TODAS las
@@ -7484,7 +7759,7 @@ function renderMadSaldo(){
     + '<div class="fc-h"><div class="fc-t">⚖️ Maduración · Saldo y resumen</div><span class="ssp ssp-mt">'+escapeHtml(today())+'</span></div>'
     + '<div class="fc-b">'
     +   '<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;display:flex;align-items:center;gap:8px">'
-    +     '<span style="font-size:16px">ℹ️</span><span>Resumen de lo que hay hoy en Maduración, deducido de todas las fichas. Elige qué ver en <b>⚙️ Variables</b>; imprime una sala o un lote con su <b>🖨 PDF</b>, o todo con <b>🖨 PDF de todo</b>; y el último parte registrado de todas las salas con <b>🖨 Último parte</b>. Nadie teclea el saldo: si no cuadra, falta o sobra un registro, y se ve en el detalle.</span>'
+    +     '<span style="font-size:16px">ℹ️</span><span>Resumen de lo que hay hoy en Maduración, deducido de todas las fichas. Elige qué ver —y si el PDF sale <b>estándar</b> o <b>tabulado</b>— en <b>⚙️ Variables</b>; imprime una sala o un lote con su <b>🖨 PDF</b>, o todo con <b>🖨 PDF de todo</b>; y el último parte registrado de todas las salas con <b>🖨 Último parte</b>. Nadie teclea el saldo: si no cuadra, falta o sobra un registro, y se ve en el detalle.</span>'
     +   '</div>'
     +   '<div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap">'
     +     '<button class="btn" type="button" onclick="madSaldoRefrescar()">🔄 Recalcular</button>'
