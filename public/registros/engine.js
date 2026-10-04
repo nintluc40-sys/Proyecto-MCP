@@ -8616,7 +8616,7 @@ function _madLogEstado(ficha, e, colaVacia){
 }
 function _madLogEtiqueta(estado){
   if(estado==="cola") return '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;white-space:nowrap">📶 en cola</span>';
-  if(estado==="perdido") return '<span style="background:#fee2e2;color:#991b1b;padding:1px 6px;border-radius:4px;white-space:nowrap" title="Salió de la cola sin llegar a la hoja: caducó a las 24 h o la hoja lo rechazó. Vuelve a guardarlo.">⚠ no llegó</span>';
+  if(estado==="perdido") return '<span style="background:#fee2e2;color:#991b1b;padding:1px 6px;border-radius:4px;white-space:nowrap" title="Salió de la cola sin llegar a la hoja: caducó a los 7 días o la hoja lo rechazó. Vuelve a guardarlo.">⚠ no llegó</span>';
   return '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px;white-space:nowrap">✅ enviado</span>';
 }
 /* Entrega confirmada desde la cola: la entrada de ese envío pasa a «ok» y, si su registro está a la vista, se
