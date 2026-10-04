@@ -10494,18 +10494,64 @@ function madDesLocalesLeer(){
 function madDesLocalesGuardar(list){
   try{ localStorage.setItem(MAD_DES_PEND_KEY, JSON.stringify(list)); }catch(_){}
 }
+/* ── 🗑 ELIMINAR UN PENDIENTE DEL DISPOSITIVO (usuario, 2026-10-04) ────────────────────────────────────────────────
+   «Adicional del botón de completar, otro denominado eliminar, que borra dicho registro del dispositivo (no del google
+   sheet).» Decisiones del usuario: lo guardado AQUÍ se borra (MAD_DES_PEND_KEY) y su llave se OCULTA en este equipo —una
+   fila de la hoja no vive en el dispositivo y volvería a salir en cada lectura—; la hoja no se toca y los demás equipos lo
+   siguen viendo; se confirma antes; «👁 Mostrar ocultos (N)» lo recupera. La lista de ocultos se poda sola cuando la hoja
+   trae ese desove COMPLETO (ya no es pendiente en ningún sitio).
+   Va sólo en la INTERFAZ: madDesPendientes (y su gemelo desovesPendientes) no cambian. */
+const MAD_DES_OCULTOS_KEY = "larv4_mad_des_ocultos";
+const MAD_DES_OCULTOS_MAX = 300;
+let _madDesVerOcultos = false;
+function madDesOcultosLeer(){
+  try{ const v=JSON.parse(localStorage.getItem(MAD_DES_OCULTOS_KEY)||"[]"); return Array.isArray(v) ? v.map(String) : []; }catch(_){ return []; }
+}
+function madDesOcultosGuardar(list){
+  try{ localStorage.setItem(MAD_DES_OCULTOS_KEY, JSON.stringify((list||[]).slice(-MAD_DES_OCULTOS_MAX))); }catch(_){}
+}
+function _madDesPendRepinta(){ const box=document.getElementById("md-pend"); if(box) box.innerHTML=madDesPendTablaHTML(); }
+function madDesPendEliminar(k){
+  const d=(_madDesPendUltimos||[]).filter(function(x){ return madDesLlave(x)===k; })[0];
+  if(!d){ toast("Ese desove ya no está en la lista: pulsa 🔄 Leer la hoja.","warn",4000); return; }
+  // Lo que sólo está AQUÍ (aún no en la hoja leída) no se podrá recuperar desde esta lista: se dice.
+  const soloAqui = d.origen==="dispositivo";
+  if(!confirm("¿Quitar de este dispositivo el desove "+d.lote+" · "+d.codigoGenetico+" del "+d.fecha+"?\n"
+    + (soloAqui ? "Aún no está en la hoja leída: se borra de este equipo y no se podrá recuperar desde aquí."
+                : "En la hoja no se borra: en los demás equipos sigue saliendo, y aquí se recupera con «Mostrar ocultos»."))) return;
+  madDesLocalesGuardar(madDesLocalesLeer().filter(function(l){ return madDesLlave(l)!==k; }));
+  const ocultos=madDesOcultosLeer();
+  if(ocultos.indexOf(k)===-1){ ocultos.push(k); madDesOcultosGuardar(ocultos); }
+  _madDesPendRepinta();
+  toast("🗑 Quitado de este dispositivo: "+d.lote+" · "+d.codigoGenetico+" del "+d.fecha+". La hoja no cambia.","info",4500);
+}
+function madDesPendRecuperar(k){
+  madDesOcultosGuardar(madDesOcultosLeer().filter(function(x){ return x!==k; }));
+  _madDesPendRepinta();
+}
+function madDesPendVerOcultos(){ _madDesVerOcultos=!_madDesVerOcultos; _madDesPendRepinta(); }
 function madDesPendTablaHTML(){
-  const lista=madDesPendientes(_madDesHoja||[], madDesLocalesLeer());
-  _madDesPendUltimos=lista;
-  if(!lista.length) return '<div style="font-size:11px;color:#94a3b8">No hay desoves pendientes'+(_madDesHoja ? '' : ' guardados desde este dispositivo')+'.</div>';
+  const todos=madDesPendientes(_madDesHoja||[], madDesLocalesLeer());
+  _madDesPendUltimos=todos;
+  const ocultos=madDesOcultosLeer();
+  const oculto=function(d){ return ocultos.indexOf(madDesLlave(d))!==-1; };
+  const nOcultos=todos.filter(oculto).length;
+  const lista=_madDesVerOcultos ? todos : todos.filter(function(d){ return !oculto(d); });
+  const pie = nOcultos ? '<div style="margin-top:4px"><button class="btn md-pend-verocultos" type="button" style="font-size:11px" onclick="madDesPendVerOcultos()">'
+    + (_madDesVerOcultos ? "🙈 Esconder los ocultos" : "👁 Mostrar ocultos ("+nOcultos+")") + '</button></div>' : "";
+  if(!lista.length) return '<div style="font-size:11px;color:#94a3b8">No hay desoves pendientes'+(_madDesHoja ? '' : ' guardados desde este dispositivo')+'.</div>'+pie;
   const mil=function(v){ return v==="" ? "—" : escapeHtml(v)+" mil"; };
   const filas=lista.map(function(d){
-    return '<tr><td>'+escapeHtml(d.fecha)+'</td><td>'+escapeHtml(d.lote)+'</td><td>'+escapeHtml(d.codigoGenetico)+'</td>'
+    const k=escapeHtml(madDesLlave(d)), oc=oculto(d);
+    return '<tr'+(oc ? ' class="md-pend-oculto" style="opacity:.55"' : '')+'><td>'+escapeHtml(d.fecha)+'</td><td>'+escapeHtml(d.lote)+'</td><td>'+escapeHtml(d.codigoGenetico)+'</td>'
       + '<td style="text-align:right">'+mil(d.huevos)+'</td><td style="text-align:right">'+mil(d.n2)+'</td>'
       + '<td>'+(d.origen==="dispositivo" ? '<span title="Aún no está en la hoja leída: en cola, o la hoja no se ha leído" style="background:#e0f2fe;color:#075985;padding:1px 6px;border-radius:4px;white-space:nowrap">📱 este dispositivo</span>' : '')+'</td>'
-      + '<td><button class="btn md-pend-ed" type="button" style="font-size:11px;white-space:nowrap" data-k="'+escapeHtml(madDesLlave(d))+'" onclick="madDesEditar(this.dataset.k)">✏️ Completar</button></td></tr>';
+      + '<td style="white-space:nowrap"><button class="btn md-pend-ed" type="button" style="font-size:11px;white-space:nowrap" data-k="'+k+'" onclick="madDesEditar(this.dataset.k)">✏️ Completar</button> '
+      + (oc ? '<button class="btn md-pend-rec" type="button" style="font-size:11px;white-space:nowrap" data-k="'+k+'" onclick="madDesPendRecuperar(this.dataset.k)">↩ Volver a mostrar</button>'
+            : '<button class="btn md-pend-del" type="button" style="font-size:11px;white-space:nowrap" data-k="'+k+'" onclick="madDesPendEliminar(this.dataset.k)">🗑 Eliminar</button>')
+      + '</td></tr>';
   }).join("");
-  return '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Desove</th><th>Lote</th><th>Código</th><th>Huevos</th><th>N2</th><th></th><th></th></tr></thead><tbody>'+filas+'</tbody></table></div>';
+  return '<div class="tw"><table class="ft" style="font-size:11px"><thead><tr><th>Desove</th><th>Lote</th><th>Código</th><th>Huevos</th><th>N2</th><th></th><th></th></tr></thead><tbody>'+filas+'</tbody></table></div>'+pie;
 }
 async function madDesPendVer(){
   const btn=document.getElementById("md-pend-btn"), nota=document.getElementById("md-pend-nota");
@@ -10516,6 +10562,10 @@ async function madDesPendVer(){
     const filas=await _reproFetchSheet(MAD_DESOVE_SHEET, null);
     _madDesHoja=filas;
     madDesLocalesGuardar(madDesLocalesPoda(madDesLocalesLeer(), filas));
+    const _completos={};
+    (filas||[]).forEach(function(f){ const d=madDesDesdeHoja(f); if(madDesCompleto(d)) _completos[madDesLlave(d)]=true; });
+    const _oc=madDesOcultosLeer(), _ocPodados=_oc.filter(function(k){ return !_completos[k]; });
+    if(_ocPodados.length!==_oc.length) madDesOcultosGuardar(_ocPodados);
     msg = _reproTrunc[MAD_DESOVE_SHEET]
       ? '<span style="color:#991b1b">⚠ La hoja llegó RECORTADA: pueden faltar los desoves más recientes.</span>'
       : '<span style="color:#166534">Hoja leída. Se relee al pulsar de nuevo.</span>';

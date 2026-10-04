@@ -23,6 +23,7 @@ const ENGINE = join(process.cwd(), 'public/registros/engine.js');
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['madDesReiniciar', 'madDesCollect', 'buildMadDesovePayload', 'madDesGuardar', 'flushSyncQueue', 'MAD_DESOVE_SHEET',
   'madDesPendVer', 'madDesEditar', 'MAD_DES_PEND_KEY', 'madDesDespachoResumen',
+  'madDesPendEliminar', 'madDesPendRecuperar', 'madDesPendVerOcultos', 'MAD_DES_OCULTOS_KEY',   // 2026-10-04 · 🗑 Eliminar
   '_gasVersionLocal',    // 2026-09-16 · el portón compara el SELLO: el fixture usa el de esta app
   'MAD_BORR_PRE', 'madBorrFechaChange', '_madBorrFijarValores',   // PE1.3 · el borrador de antes, adaptado
   'madDesFechaNFija', 'madDesFechasNSiguen', '_madDesHayTecleado'];   // PE1.3 (09-17) · automáticas pero editables
@@ -483,5 +484,73 @@ describe('Desoves · pendientes: guardar el N2 hoy y completar el N5 otro día (
     await H.madDesPendVer();
     expect(document.getElementById('md-pend-nota').textContent).toContain('No se pudo leer la hoja');
     expect(pendientes()).toHaveLength(0);
+  });
+});
+
+/* 2026-10-04 (usuario) · «adicional del botón de completar, otro denominado eliminar, que borra dicho registro del
+   dispositivo (no del google sheet)». Decisiones del usuario: lo guardado AQUÍ se borra y la llave se OCULTA en este
+   equipo (una fila de la hoja volvería a salir en cada lectura); la hoja no se toca; se confirma; «👁 Mostrar ocultos»
+   lo recupera. */
+describe('Desoves · pendientes: «🗑 Eliminar» del dispositivo (2026-10-04)', () => {
+  const pendientes = () => [...document.querySelectorAll('#md-pend tbody tr')];
+  const boton = (tr, cls) => tr.querySelector('.' + cls);
+  const HOJA_PEND = { ok: true, headers: MAD_DESOVE_HEADERS, rows: [{ Fecha: '2026-09-07', Lote: 'BP', 'Código genético': 'OLF5.F2', N2: 9000000, N5: '' }] };
+  let pregunta = null, responde = true;
+  beforeEach(() => {
+    localStorage.removeItem(H.MAD_DES_PEND_KEY); localStorage.removeItem(H.MAD_DES_OCULTOS_KEY);
+    H.setDesHoja(null); respuestaRows = null; H.madDesReiniciar();
+    pregunta = null; responde = true;
+    window.confirm = (m) => { pregunta = m; return responde; };
+  });
+
+  it('🔴 junto a ✏️ Completar está 🗑 Eliminar; un pendiente de ESTE dispositivo se borra de él (y lo avisa)', () => {
+    localStorage.setItem(H.MAD_DES_PEND_KEY, JSON.stringify([{ fecha: '2026-09-07', lote: 'BP', codigoGenetico: 'OLF5.F2', n2: '9000' }]));
+    H.madDesReiniciar();
+    const tr = pendientes()[0];
+    expect(boton(tr, 'md-pend-ed')).not.toBeNull();
+    expect(boton(tr, 'md-pend-del').getAttribute('onclick')).toBe('madDesPendEliminar(this.dataset.k)');
+    H.madDesPendEliminar(boton(tr, 'md-pend-del').dataset.k);
+    expect(pregunta, 'se confirma, y se dice que no se podrá recuperar').toContain('no se podrá recuperar');
+    expect(JSON.parse(localStorage.getItem(H.MAD_DES_PEND_KEY))).toEqual([]);
+    expect(pendientes()).toHaveLength(0);
+  });
+
+  it('🔴 uno de la HOJA se oculta en este equipo: no vuelve al releer, y «Mostrar ocultos» lo recupera', async () => {
+    respuestaRows = HOJA_PEND;
+    await H.madDesPendVer();
+    H.madDesPendEliminar(boton(pendientes()[0], 'md-pend-del').dataset.k);
+    expect(pregunta).toContain('En la hoja no se borra');
+    expect(pendientes()).toHaveLength(0);
+    await H.madDesPendVer();                                            // relectura: la hoja lo sigue trayendo
+    expect(pendientes(), 'oculto en este equipo aunque se relea la hoja').toHaveLength(0);
+    const ver = document.querySelector('#md-pend .md-pend-verocultos');
+    expect(ver.textContent).toBe('👁 Mostrar ocultos (1)');
+    H.madDesPendVerOcultos();
+    const tr = pendientes()[0];
+    expect(tr.classList.contains('md-pend-oculto')).toBe(true);
+    H.madDesPendRecuperar(boton(tr, 'md-pend-rec').dataset.k);
+    H.madDesPendVerOcultos();                                           // vuelve a esconder los ocultos (ya no hay)
+    expect(pendientes(), 'recuperado, vuelve a la lista').toHaveLength(1);
+    expect(boton(pendientes()[0], 'md-pend-del')).not.toBeNull();
+    expect(JSON.parse(localStorage.getItem(H.MAD_DES_OCULTOS_KEY))).toEqual([]);
+  });
+
+  it('cancelar la confirmación no toca nada', async () => {
+    respuestaRows = HOJA_PEND;
+    await H.madDesPendVer();
+    responde = false;
+    H.madDesPendEliminar(boton(pendientes()[0], 'md-pend-del').dataset.k);
+    expect(pendientes()).toHaveLength(1);
+    expect(localStorage.getItem(H.MAD_DES_OCULTOS_KEY)).toBeNull();
+  });
+
+  it('la lista de ocultos se poda sola cuando la hoja trae ese desove COMPLETO', async () => {
+    respuestaRows = HOJA_PEND;
+    await H.madDesPendVer();
+    H.madDesPendEliminar(boton(pendientes()[0], 'md-pend-del').dataset.k);
+    expect(JSON.parse(localStorage.getItem(H.MAD_DES_OCULTOS_KEY))).toHaveLength(1);
+    respuestaRows = { ok: true, headers: MAD_DESOVE_HEADERS, rows: [{ ...HOJA_PEND.rows[0], 'Fecha N5': '2026-09-09', N5: 8000000 }] };
+    await H.madDesPendVer();
+    expect(JSON.parse(localStorage.getItem(H.MAD_DES_OCULTOS_KEY))).toEqual([]);
   });
 });

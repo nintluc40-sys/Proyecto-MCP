@@ -883,6 +883,12 @@ día contra producción: el GAS tardaba de 17 a 140 s por hoja y fallaba a menud
   Cada una se escribe **sólo junto a su cifra**, y el candado «N5 exige N2» mira la CIFRA, no la fecha
   —que viene puesta de oficio en todas—. Una fecha tecleada se valida como **día real**: `2026-02-31`
   pasa el patrón y no existe.
+- **Desoves · pendientes (sin N5) · «🗑 Eliminar»** (usuario, 2026-10-04), junto a «✏️ Completar»: quita
+  el desove **de este dispositivo, no de la hoja**. Lo guardado aquí se borra y la llave se **oculta** en
+  este equipo (una fila de la hoja volvería a salir en cada lectura); en los demás equipos sigue saliendo.
+  Pide confirmación; «👁 Mostrar ocultos (N)» y «↩ Volver a mostrar» lo recuperan (lo que aún no estaba en
+  la hoja leída no se puede recuperar desde aquí, y se avisa). Los ocultos se podan solos cuando la hoja
+  trae ese desove completo. Sólo interfaz: el cálculo de pendientes (motor y gemelo) no cambia.
 - **Desoves · «📥 Cargar»** (usuario, 2026-09-24), al lado de «✕ Quitar»: lista lo que está en
   **producción** a la fecha del desove —cada composición del Ingreso con vivos en una sala donde su
   lote produce— y un toque rellena lote, código genético y piscina **a la vez**, para que no se
