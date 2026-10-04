@@ -13,6 +13,8 @@
    Tanda 3 (2026-10-04): maduración con el modo «Estado» del mapa de salas (Producción, Cuarentena, Mixto,
    Vacío), reproductores sólo en los tanques ocupados, baliza en el tanque con H:M o densidad fuera de rango y en
    la sala con temperatura u oxígeno fuera de rango (últimos 7 días), y fichas de sala y de tanque.
+   Tanda 4 (2026-10-04): la tarjeta «Producción del mes» frente a la meta (planta/cifras.js), con la meta editable (⚙)
+   y guardada en el equipo, y la ocupación en las fichas de cifras.
    ============================================================ */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -20,6 +22,7 @@ import { LARV, LARV_H, MAT, OTHERS, SITE, C0, STREET, tanquesDeSala } from './pl
 import { STAGE_CATS } from '../supervisor/etapas.js';
 import { fmtPop } from '../../core/format.js';
 import { fmtShort } from '../../core/dates.js';
+import { META_POR_DEFECTO, normalizarMeta } from './cifras.js';
 
 /** Monta la maqueta en `root` (que ya trae el marcado de planta/index.js).
  *  Devuelve { dispose, pintarEstado(estado|null), aviso(texto) }. */
@@ -838,19 +841,63 @@ function pintarCifras(E) {
   const r = E && E.resumen;
   tileCultivo.querySelector('b').textContent = r ? r.cultivo : '—';
   tileCultivo.querySelector('em').textContent = 'tanques en cultivo';
-  tileCultivo.querySelector('small').textContent = r ? 'de ' + r.total + ' · ' + r.vacio + ' vacíos · ' + r.despachado + ' despachados' + (r.desinfeccion ? ' · ' + r.desinfeccion + ' en desinfección' : '') : 'Cargando datos…';
+  tileCultivo.querySelector('small').textContent = r ? 'de ' + r.total + ' · ' + Math.round(r.cultivo / r.total * 100) + ' % de ocupación · ' + r.vacio + ' vacíos · ' + r.despachado + ' despachados' + (r.desinfeccion ? ' · ' + r.desinfeccion + ' en desinfección' : '') : 'Cargando datos…';
   tileAlerta.querySelector('b').textContent = r ? r.alerta : '—';
   tileAlerta.querySelector('em').textContent = 'tanques en alerta';
   tileAlerta.querySelector('small').textContent = 'larvicultura · OD, temperatura o supervivencia fuera de rango';
   const rm = E && E.mad && E.mad.resumen;
   tileRepro.querySelector('b').textContent = rm ? ent(rm.hembras + rm.machos) : '—';
   tileRepro.querySelector('em').textContent = 'reproductores';
-  tileRepro.querySelector('small').textContent = rm ? ent(rm.hembras) + ' ♀ · ' + ent(rm.machos) + ' ♂ · ' + rm.ocupados + ' de ' + rm.tanques + ' tanques' : (E ? 'Sin datos de maduración' : 'Cargando datos…');
+  tileRepro.querySelector('small').textContent = rm ? ent(rm.hembras) + ' ♀ · ' + ent(rm.machos) + ' ♂ · ' + rm.ocupados + ' de ' + rm.tanques + ' tanques (' + Math.round(rm.ocupados / rm.tanques * 100) + ' % de ocupación)' : (E ? 'Sin datos de maduración' : 'Cargando datos…');
   tileAlertaMad.querySelector('b').textContent = rm ? rm.alertaTanques + rm.alertaSalas : '—';
   tileAlertaMad.querySelector('em').textContent = 'alertas de maduración';
   tileAlertaMad.querySelector('small').textContent = rm ? rm.alertaTanques + ' tanques (H:M o densidad) · ' + rm.alertaSalas + ' salas (temperatura u oxígeno, 7 días)' : 'H:M, densidad, temperatura u oxígeno';
 }
 pintarCifras(null);
+
+/* ---------- Producción del mes frente a la meta (tanda 4) ---------- */
+// La meta vive en ESTE equipo (decisión del usuario, como ⚙️ Rangos de Microbiología): sin ella, la de por defecto.
+const META_KEY = 'planta_meta_mes';
+const leerMeta = () => { try { return normalizarMeta(localStorage.getItem(META_KEY)); } catch (_) { return META_POR_DEFECTO; } };
+const guardarMeta = (v) => { try { if (v === META_POR_DEFECTO) localStorage.removeItem(META_KEY); else localStorage.setItem(META_KEY, String(v)); } catch (_) { /* sin almacenamiento: sólo en esta sesión */ } };
+let meta = leerMeta(), ultimasCifras = null;
+const millones = (v, d = 1) => fmt(v / 1e6, d) + ' M';
+function pintarProduccion(C) {
+  ultimasCifras = C;
+  $('#prod-meta').textContent = 'de ' + millones(meta, meta % 1e6 ? 1 : 0);
+  if (!C) {
+    $('#prod-mes').textContent = 'Producción del mes';
+    ['#prod-total', '#prod-sv', '#prod-n5', '#prod-des', '#prod-desp', '#prod-cult'].forEach((q) => { $(q).textContent = '—'; });
+    $('#prod-pct').textContent = ''; $('#prod-nota').textContent = estadoCargado ? 'Sin corridas con mes de producción' : 'Cargando datos…';
+    $('#prod-bar-d').style.width = $('#prod-bar-c').style.width = '0%'; $('#prod-goal').style.left = '100%';
+    return;
+  }
+  const pct = C.total / meta * 100, escala = Math.max(C.total, meta);
+  $('#prod-mes').textContent = 'Producción · ' + C.mes;
+  $('#prod-total').textContent = millones(C.total);
+  $('#prod-pct').textContent = fmt(pct, 0) + ' % de la meta';
+  $('#prod-pct').classList.toggle('ok', pct >= 100);
+  $('#prod-bar-d').style.width = (C.despachado / escala * 100) + '%';
+  $('#prod-bar-c').style.width = (C.enCultivo / escala * 100) + '%';
+  $('#prod-goal').style.left = (meta / escala * 100) + '%';
+  $('#prod-bar').setAttribute('aria-label', millones(C.total) + ' de ' + millones(meta) + ': ' + millones(C.despachado) + ' despachados y ' + millones(C.enCultivo) + ' en cultivo');
+  $('#prod-desp').textContent = 'despachado ' + millones(C.despachado) + ' · ' + C.modulosDespachados + ' de ' + C.modulos + ' módulos';
+  $('#prod-cult').textContent = 'en cultivo ' + millones(C.enCultivo);
+  $('#prod-sv').textContent = C.supervivencia === null ? '—' : fmt(C.supervivencia, 1) + ' %';
+  $('#prod-n5').textContent = millones(C.nauplios.n5);
+  $('#prod-n5-sub').textContent = 'nauplios N5' + (C.nauplios.desde ? ' · ' + dm(C.nauplios.desde) + ' al ' + dm(C.nauplios.hasta) : '');
+  $('#prod-des').textContent = ent(C.nauplios.desoves);
+  const cs = C.corridas;
+  $('#prod-nota').textContent = 'Corridas ' + (cs.length > 1 ? cs[0] + ' a ' + cs[cs.length - 1] : cs[0] || '—') + (C.enCultivo > 0 ? ' · lo que sigue en cultivo aún puede bajar con la supervivencia' : '');
+}
+{
+  const btn = $('#meta-btn'), form = $('#meta-form'), inp = $('#meta-in');
+  const abrir = (si) => { form.hidden = !si; btn.setAttribute('aria-expanded', String(si)); if (si) { inp.value = String(Math.round(meta / 1e6)); inp.focus(); } };
+  btn.addEventListener('click', () => abrir(form.hidden));
+  form.addEventListener('submit', (e) => { e.preventDefault(); const v = Number(inp.value); if (!(v > 0)) { inp.focus(); return; } meta = normalizarMeta(v * 1e6); guardarMeta(meta); abrir(false); pintarProduccion(ultimasCifras); });
+  $('#meta-reset').addEventListener('click', () => { meta = META_POR_DEFECTO; guardarMeta(meta); abrir(false); pintarProduccion(ultimasCifras); });
+}
+pintarProduccion(null);
 // leyenda: las etapas de la Vista Ejecutiva y los estados sin larvas
 { const lg = $('#legend'); if (lg) {
   const item = (color, txt) => { const sp = document.createElement('span'); sp.className = 'lg'; const i = document.createElement('i'); i.style.background = color; sp.append(i, document.createTextNode(txt)); lg.append(sp); };
@@ -929,7 +976,7 @@ function pintarEstado(E) {
     g.st = !E ? null : g.kind === 'larv' ? E.modulos[g.id] || null : (E.mad && E.mad.salas[g.id]) || null;
     g.tanks.forEach((t) => { t.st = g.st && g.st.tanques ? g.st.tanques[t.num] || null : null; });
   });
-  paintWater(); pintarBalizas(); pintarCifras(E); groups.forEach(pintarFila);
+  paintWater(); pintarBalizas(); pintarCifras(E); pintarProduccion(E && E.cifras); groups.forEach(pintarFila);
   wasFar = null;   // rehace los rótulos en el próximo cuadro
   if (selected) { if (tanqueFicha && tanqueFicha.g === selected) (selected.kind === 'larv' ? fichaTanque : fichaTanqueMad)(tanqueFicha); else fichaModulo(selected); }
 }
