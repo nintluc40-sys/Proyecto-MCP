@@ -15,6 +15,8 @@
    la sala con temperatura u oxígeno fuera de rango (últimos 7 días), y fichas de sala y de tanque.
    Tanda 4 (2026-10-04): la tarjeta «Producción del mes» frente a la meta (planta/cifras.js), con la meta editable (⚙)
    y guardada en el equipo, y la ocupación en las fichas de cifras.
+   «Qué atender hoy» (2026-10-04): las alertas que ya marcan las balizas, agrupadas por módulo o sala; tocar un tanque
+   lleva la cámara a él y abre su ficha.
    ============================================================ */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -976,10 +978,65 @@ function pintarEstado(E) {
     g.st = !E ? null : g.kind === 'larv' ? E.modulos[g.id] || null : (E.mad && E.mad.salas[g.id]) || null;
     g.tanks.forEach((t) => { t.st = g.st && g.st.tanques ? g.st.tanques[t.num] || null : null; });
   });
-  paintWater(); pintarBalizas(); pintarCifras(E); pintarProduccion(E && E.cifras); groups.forEach(pintarFila);
+  paintWater(); pintarBalizas(); pintarCifras(E); pintarProduccion(E && E.cifras); pintarAtender(); groups.forEach(pintarFila);
   wasFar = null;   // rehace los rótulos en el próximo cuadro
   if (selected) { if (tanqueFicha && tanqueFicha.g === selected) (selected.kind === 'larv' ? fichaTanque : fichaTanqueMad)(tanqueFicha); else fichaModulo(selected); }
 }
+/* ---------- Qué atender hoy: las mismas alertas que las balizas y las cifras, en una lista ---------- */
+const MOTIVO_TXT = { 'Superv.': 'supervivencia', OD: 'OD', Temp: 'temperatura', 'H:M': 'H:M', Densidad: 'densidad', Temperatura: 'temperatura', 'Oxígeno': 'oxígeno' };
+const motivosTxt = (ms) => ms.map((m) => MOTIVO_TXT[m] || m).join(' y ');
+/** Lleva la cámara a un tanque y abre su ficha. Si el panel está debajo de la maqueta (celular), salta a ella: al
+ *  instante y no en suave, que no se puede comprobar en todos los navegadores; la cámara ya se anima hasta el tanque. */
+function irATanque(t) {
+  select(t.g, false);
+  const [x, z] = P(t.cx, t.cz);
+  frameView('iso', [x, 0, z], 16);
+  (t.g.kind === 'larv' ? fichaTanque : fichaTanqueMad)(t);
+  if (vp.getBoundingClientRect().top < 0) vp.scrollIntoView({ block: 'start' });
+}
+function irAGrupo(g) {
+  select(g, true);
+  if (vp.getBoundingClientRect().top < 0) vp.scrollIntoView({ block: 'start' });
+}
+function pintarAtender() {
+  const ul = $('#atender'), h = $('#atender-h');
+  ul.textContent = '';
+  const nota = (txt) => { const li = document.createElement('li'); li.className = 'at-vacio'; li.textContent = txt; ul.append(li); };
+  if (!estadoCargado) { h.textContent = 'Qué atender hoy'; nota('Cargando datos…'); return; }
+  let total = 0;
+  groups.forEach((g) => {
+    const enAlerta = g.tanks.filter((t) => t.st && t.st.alerta);
+    const sala = g.kind === 'mat' && g.st && g.st.alerta ? g.st.motivos : [];
+    if (!enAlerta.length && !sala.length) return;
+    total += enAlerta.length + (sala.length ? 1 : 0);
+    // si todos sus tanques tienen el mismo motivo, va en el renglón; si no, junto a cada número
+    const firmas = new Set(enAlerta.map((t) => t.st.motivos.join('|')));
+    const comun = firmas.size === 1 ? enAlerta[0].st.motivos : null;
+    const partes = [];
+    if (sala.length) partes.push(motivosTxt(sala) + ' de la sala');
+    if (enAlerta.length) partes.push(enAlerta.length + (enAlerta.length === 1 ? ' tanque' : ' tanques') + (comun ? ' · ' + motivosTxt(comun) : ''));
+    const li = document.createElement('li'); li.className = 'at';
+    const gb = document.createElement('button'); gb.type = 'button'; gb.className = 'at-g';
+    const dot = document.createElement('i'); dot.style.background = colorRotulo(g);
+    const nm = document.createElement('b'); nm.textContent = g.name;
+    const sm = document.createElement('span'); sm.textContent = partes.join(' · ');
+    gb.append(dot, nm, sm); gb.addEventListener('click', () => irAGrupo(g)); li.append(gb);
+    if (enAlerta.length) {
+      const fila = document.createElement('div'); fila.className = 'at-t';
+      enAlerta.sort((a, b) => a.num - b.num).forEach((t) => {
+        const b = document.createElement('button'); b.type = 'button';
+        b.textContent = String(t.num) + (comun ? '' : ' · ' + motivosTxt(t.st.motivos));
+        b.setAttribute('aria-label', g.name + ', tanque ' + t.num + ': ' + motivosTxt(t.st.motivos) + ' fuera de rango');
+        b.addEventListener('click', () => irATanque(t)); fila.append(b);
+      });
+      li.append(fila);
+    }
+    ul.append(li);
+  });
+  h.textContent = total ? '⚠ Qué atender hoy · ' + total : 'Qué atender hoy';
+  if (!total) nota('Sin alertas hoy');
+}
+pintarAtender();
 function aviso(texto) { const a = $('#estado-datos'); if (a) a.textContent = texto || ''; }
 
 /* ---------- Bucle ---------- */

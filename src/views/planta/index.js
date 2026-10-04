@@ -59,6 +59,7 @@ const MARCO = `
       </div>
       <small class="prod-nota" id="prod-nota"></small>
     </section>
+    <section class="atender" aria-label="Qué atender hoy"><h2 id="atender-h">Qué atender hoy</h2><ul class="at-list" id="atender"></ul></section>
     <div class="stats" id="stats"></div>
     <section aria-label="Hora del día"><h2>Hora del día</h2>
       <div class="seg" id="tod"><button type="button" data-t="day" aria-pressed="true">Día</button><button type="button" data-t="dusk" aria-pressed="false">Tarde</button><button type="button" data-t="night" aria-pressed="false">Noche</button></div>
