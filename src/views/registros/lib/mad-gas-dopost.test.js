@@ -1325,7 +1325,7 @@ const DESOVES_PRODUCCION_0914 = ['Fecha', 'Lote', 'Código genético', 'Piscina 
 describe('GAS · Maduración Lotes (Desoves) con sus cambios: la hoja en uso no se desalinea', () => {
   const primerDesfase = MAD_DESOVE_HEADERS.findIndex((h, i) => h !== DESOVES_PRODUCCION_0914[i]);
   // PE1.3 (2026-09-16): las fechas de N2 y N5 ya no se teclean. Se manda un N5 para que su fecha (el día siguiente)
-  // sea un valor DISTINTO de «Fecha» y delate un corrimiento de columnas.
+  // sea un valor DISTINTO de «Fecha» y delate un corrimiento de columnas. (2026-10-04: N2 = desove + 1 y N5 = N2 + 1.)
   const nuevoDesove = () => buildDesoveRows({ fecha: '2026-09-14', desoves: [{
     lote: 'BP', codigoGenetico: 'OLF5.F2', desoves: '64', hembrasNoViables: '9', n2: '9000', n5: '8000' }] });
   const filaVieja = DESOVES_PRODUCCION_0914.map((h) => ({ Fecha: '2026-09-07', Lote: 'BP', 'Código genético': 'OLF5.F2',
@@ -1360,8 +1360,8 @@ describe('GAS · Maduración Lotes (Desoves) con sus cambios: la hoja en uso no 
     expect(nueva[cab.indexOf('Hembras no viables')]).toBe(9);
     expect(nueva[cab.indexOf('Desoves')]).toBe(64);
     expect(nueva[cab.indexOf('N2')]).toBe(9000000);
-    expect(nueva[cab.indexOf('Fecha N2')]).toBe('2026-09-14');
-    expect(nueva[cab.indexOf('Fecha N5')]).toBe('2026-09-15');
+    expect(nueva[cab.indexOf('Fecha N2')]).toBe('2026-09-15');
+    expect(nueva[cab.indexOf('Fecha N5')]).toBe('2026-09-16');
     expect(nueva[cab.indexOf('N5')]).toBe(8000000);
   });
 
