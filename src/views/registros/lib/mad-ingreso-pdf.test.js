@@ -58,7 +58,7 @@ const conDosTanques = ({ lote = 'BQ' } = {}) => {
   document.getElementById('mi-fecha').value = '2026-10-02';
   document.getElementById('mi-lote').value = lote;
   document.getElementById('mi-guia').value = '001-0042';
-  q('.mi-cg').value = 'OLF5.F2';
+  q('.mi-cg').value = 'CG1';
   for (const [t, ma, he] of [[1, 10, 12], [2, 7, 9]]) {
     const tr = filaTanque('Sala 4', t);
     q('.mi-reps').appendChild(tr);

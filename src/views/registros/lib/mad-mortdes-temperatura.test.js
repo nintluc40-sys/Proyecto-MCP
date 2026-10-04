@@ -61,7 +61,7 @@ describe('Inf. Supervisor · la temperatura del tanque de desove', () => {
   it('🔴 lo tecleado llega a la fila de Desove, en «Temperatura tanque desove», también SIN cifras de hembras', () => {
     document.getElementById('mm-fecha').value = '2026-10-04';
     card().querySelector('.mm-lote').value = 'BQ';
-    card().querySelector('.mm-cg').value = 'OLF5.F2';
+    card().querySelector('.mm-cg').value = 'CG1';
     card().querySelector('.mm-desove-t').value = '28.5';
     expect(H.madMortCollect().lotes[0].desove.temperatura).toBe('28.5');
     const p = H.buildMadMortPayload(H.madMortCollect());

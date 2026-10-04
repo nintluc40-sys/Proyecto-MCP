@@ -1814,8 +1814,8 @@ describe('GAS · Maduración Mortalidad Desove con «Temperatura tanque desove»
   const MORT22 = MAD_MORT_HEADERS;
   const MORT21 = MORT22.slice(0, MORT22.indexOf('Temperatura tanque desove'));   // la cabecera de la hoja de producción hoy
   const TEMP = MORT22.indexOf('Temperatura tanque desove');
-  const fila = (cab, v) => conValores(cab, Object.assign({ Fecha: '2026-10-04', Lote: 'BQ', 'Código genético': 'OLF5.F2',
-    'Tipo de tanque': 'Desove', 'Hembras que entran': 20, 'Hembras muertas': 1, ID: '2026-10-04-BQ-OLF5.F2-DESOVE' }, v));
+  const fila = (cab, v) => conValores(cab, Object.assign({ Fecha: '2026-10-04', Lote: 'BQ', 'Código genético': 'CG1',
+    'Tipo de tanque': 'Desove', 'Hembras que entran': 20, 'Hembras muertas': 1, ID: '2026-10-04-BQ-CG1-DESOVE' }, v));
   const post = (g, cab, filas) => g.post({ sheetName: 'Maduración Mortalidad Desove', headers: cab, rows: filas });
 
   it('el fixture ejerce algo: la columna es la 22, la última, y el ID queda en la 21', () => {
