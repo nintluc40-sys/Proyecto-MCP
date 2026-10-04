@@ -262,4 +262,23 @@ describe('Alimentación · la ficha', () => {
     H.madAlimVaciar();
     expect(sala('Sala 1').querySelector('.ma-tq')).toBeNull();
   });
+
+  // 2026-10-04 (usuario) · el Resumen general lleva su propio botón de PDF, como cada sala: imprime SÓLO el resumen.
+  it('🔴 el Resumen general tiene su «🖨 PDF»: sólo el resumen, sin las salas; y ningún PDF lleva el botón impreso', async () => {
+    await H.madAlimLeer();
+    const b = q('#ma-general button[data-a="resumen"]');
+    expect(b).not.toBeNull();
+    expect(b.getAttribute('onclick')).toBe('madAlimPdf(this.dataset.a)');
+    expect(b.closest('.ms-card'), 'el botón va DENTRO del bloque del resumen').not.toBeNull();
+    impreso = null;
+    H.madAlimPdf(b.dataset.a);
+    expect(impreso).toContain('Alimentación · Resumen general');
+    expect(impreso).toContain('Resumen general · todas las salas');
+    expect(impreso).not.toContain('🏠 Sala 1');
+    expect(impreso).not.toContain('08:30');                       // la ración por toma es de las salas
+    expect(impreso).not.toContain('PDF del resumen general');
+    H.madAlimPdf('todo');
+    expect(impreso).not.toContain('PDF del resumen general');
+    H.madAlimVaciar();
+  });
 });

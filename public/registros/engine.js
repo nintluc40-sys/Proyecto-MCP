@@ -11702,7 +11702,8 @@ function _madAlimResSalaHTML(C){
     + C.productos.filter(function(p){ return p.pct>0; }).map(function(p){ return '<tr><td>'+escapeHtml(p.producto)+'</td>'+td+p.pct+'</td>'+td+p.kgDia+'</td>'+td+p.kgMes+'</td></tr>'; }).join("")
     + '<tr><td><b>Total</b></td>'+td+'<b>'+C.totales.pctDia+'</b></td>'+td+'<b>'+C.totales.kgDia+'</b></td>'+td+'<b>'+C.totales.kgMes+'</b></td></tr></tbody></table></div>';
 }
-function _madAlimGeneralHTML(salas, pob){
+// `conBoton` (2026-10-04): sólo en pantalla, el «🖨 PDF del resumen general»; el PDF usa este mismo bloque y no lo lleva.
+function _madAlimGeneralHTML(salas, pob, conBoton){
   const G=madAlimResumenGeneral(salas), td='<td style="text-align:right">';
   return '<div class="ms-card" style="border:1.5px solid #bfdbfe;border-radius:8px;padding:10px 12px;margin:10px 0;background:#f8fafc">'
     + '<div style="font-weight:700;font-size:13px;margin-bottom:6px">📊 Resumen general · todas las salas</div>'
@@ -11715,6 +11716,7 @@ function _madAlimGeneralHTML(salas, pob){
     + '</tbody></table></div>'
     + '<div style="font-size:12px;margin-top:6px">Biomasa <b>'+G.totales.biomasa+' kg</b> · ♀ '+G.totales.hembras+' · ♂ '+G.totales.machos
     + (pob ? '<br>Población en producción: ♀ '+pob.produccion.hembras+' · ♂ '+pob.produccion.machos+' · en cuarentena: ♀ '+pob.cuarentena.hembras+' · ♂ '+pob.cuarentena.machos : '')+'</div>'
+    + (conBoton ? '<button class="btn" type="button" data-a="resumen" onclick="madAlimPdf(this.dataset.a)" style="font-size:11px;margin-top:6px">🖨 PDF del resumen general</button>' : '')
     + '</div>';
 }
 function _madAlimSalaHTML(sala, tomas, tanques, pendiente){
@@ -11763,7 +11765,7 @@ function madAlimCalcularTodo(){
 function madAlimPintarGeneral(){
   const box=document.getElementById("ma-general"); if(!box) return;
   const salas=madAlimCalcularTodo();
-  box.innerHTML = salas.length ? _madAlimGeneralHTML(salas, _madAlim ? _madAlim.poblacion : null) : "";
+  box.innerHTML = salas.length ? _madAlimGeneralHTML(salas, _madAlim ? _madAlim.poblacion : null, true) : "";
 }
 function madAlimPintarSalas(){
   const box=document.getElementById("ma-salas"); if(!box) return;
@@ -11992,9 +11994,11 @@ function madAlimPdf(alcance){
   const salas=madAlimCalcularTodo();
   if(!salas.length){ toast("Pulsa 🔄 Leer saldo y pesos antes de imprimir.","warn",3500); return; }
   const a=String(alcance||"todo"), i=a.indexOf(":"), sala=i>0 ? a.slice(i+1) : "";
-  const elegidas=sala ? salas.filter(function(C){ return C.sala===sala; }) : salas;
+  // 2026-10-04 (usuario) · «resumen»: SÓLO el Resumen general, desde su propio botón (como el de cada sala imprime sólo su sala).
+  const soloResumen=a==="resumen";
+  const elegidas=soloResumen ? [] : sala ? salas.filter(function(C){ return C.sala===sala; }) : salas;
   const f=document.getElementById("ma-fecha"), fecha=(f && f.value) || today();
-  const titulo="Maduración · Alimentación"+(sala ? " · "+sala : "")+" · "+fecha;
+  const titulo="Maduración · Alimentación"+(soloResumen ? " · Resumen general" : sala ? " · "+sala : "")+" · "+fecha;
   const page='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+escapeHtml(titulo)+'</title>'
     + '<style>body{font-family:Arial,Helvetica,sans-serif;margin:18px;color:#0f172a}h1{font-size:16px;margin:0 0 4px}h2{font-size:14px;margin:12px 0 4px}table{border-collapse:collapse}th,td{border:1px solid #cbd5e1;padding:2px 5px}.ms-card{page-break-inside:avoid}</style></head><body>'
     + '<h1>'+escapeHtml(titulo)+'</h1>'
