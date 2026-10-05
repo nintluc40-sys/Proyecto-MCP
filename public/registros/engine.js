@@ -20089,11 +20089,21 @@ function _audOpcionesDe(k){
   return TRAS_MODULO_OPTS;   // modulo · moduloDest
 }
 // «24/09/2026», «24-9-26», «2026-09-24» o «2026-09-24T00:00» → «2026-09-24»; null si no es una fecha real.
+/* Auditoría del punto (2026-10-04) · y con el MES ABREVIADO, que es como se ven las fechas de las planillas AUDITORIAS
+   (medido: «d-mmm-yy» → «21-dic-25» y «d-mmm» → «2-ene»; al copiar, Excel lleva ese texto). En español o inglés, con o sin
+   punto. Sin año, la fecha más reciente que no sea futura (se audita lo ya ocurrido). */
+const _AUD_MESES = { ene:1, jan:1, feb:2, mar:3, abr:4, apr:4, may:5, jun:6, jul:7, ago:8, aug:8, sep:9, set:9, oct:10, nov:11, dic:12, dec:12 };
 function _audPegadoFecha(v){
-  const t = String(v).trim().split(/[ T]/)[0];
+  const t = String(v).trim().replace(/(?:\s+|T)\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?(?:\s*[ap]\.?\s*m\.?)?$/i, "");
   let y, mo, d, x;
   if((x = /^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/.exec(t))){ y = +x[1]; mo = +x[2]; d = +x[3]; }
   else if((x = /^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2}|\d{4})$/.exec(t))){ d = +x[1]; mo = +x[2]; y = x[3].length === 2 ? 2000 + +x[3] : +x[3]; }
+  else if((x = /^(\d{1,2})[-\/. ]+([a-záéíóúñ]{3,})\.?(?:[-\/. ]+(\d{2}|\d{4}))?$/i.exec(t))){
+    d = +x[1]; mo = _AUD_MESES[_audSinTilde(x[2]).slice(0, 3)];
+    if(!mo) return null;
+    if(x[3]) y = x[3].length === 2 ? 2000 + +x[3] : +x[3];
+    else { const hoy = today(); y = +hoy.slice(0, 4); if(y + "-" + (mo < 10 ? "0" : "") + mo + "-" + (d < 10 ? "0" : "") + d > hoy) y--; }
+  }
   else return null;
   const f = new Date(Date.UTC(y, mo - 1, d));
   if(f.getUTCFullYear() !== y || f.getUTCMonth() !== mo - 1 || f.getUTCDate() !== d) return null;

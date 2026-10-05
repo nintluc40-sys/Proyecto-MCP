@@ -20,6 +20,7 @@ const EXPORTAR = ['AUD_SHEET', 'AUD_HEADERS', 'AUD_SIEMBRAS', 'AUD_DRAFT_KEY', '
   'audResumen', 'renderAud', 'audCampo', 'audFila', 'audAgregarEl', 'audOtraPartidaEl', 'audQuitarEl', 'audGuardar', 'audNueva',
   'audAbrirEl', 'audBorrarEl', 'audPegar', 'madGridKey',   // punto 2 (2026-10-04) · pegar y teclado
   'audVaciarTablaEl', 'downloadAudPDF',   // punto 3 (2026-10-04) · 🧹 y 📄
+  '_audPegadoFecha', 'today',   // auditoría de los puntos · fechas de las planillas
   '_audRaw', 'loadAud', '_reconcileMark', 'AST_TABS', 'TAB_META'];
 const H = {};
 
@@ -420,5 +421,35 @@ describe('Auditoría · 🧹 Vaciar una tabla y 📄 PDF', () => {
     H.downloadAudPDF();
     expect(ventana).toBeNull();
     expect(H.ultimoAviso).toContain('no tiene filas');
+  });
+});
+
+/* Auditoría de los puntos (2026-10-04) · las fechas de las planillas AUDITORIAS se VEN como «21-dic-25» (d-mmm-yy, 778
+   celdas) o «2-ene» (d-mmm, 446), y eso es lo que Excel copia. Antes salían todas «no reconocidas». */
+describe('Auditoría · 📋 las fechas como se copian de las planillas', () => {
+  it('🔴 mes abreviado en español o inglés, con o sin punto, con año de 2 o 4 cifras, y con hora detrás', () => {
+    const casos = { '21-dic-25': '2025-12-21', '21-Dec-25': '2025-12-21', '3-mar.-2026': '2026-03-03', '5 sept 2026': '2026-09-05',
+      '7/ago/26': '2026-08-07', '24/09/2026 0:00': '2026-09-24', '24/09/2026 12:00 a. m.': '2026-09-24', '2026-09-24T05:00:00.000Z': '2026-09-24' };
+    for (const [txt, iso] of Object.entries(casos)) expect(H._audPegadoFecha(txt), txt).toBe(iso);
+    for (const malo of ['31-feb-26', '5-xyz-26', 'dic-25', '21-dic-2']) expect(H._audPegadoFecha(malo), malo).toBeNull();
+  });
+
+  it('🔴 sin año («2-ene»): la fecha más reciente que no sea futura', () => {
+    // el «hoy» del motor (antes de las 02:00 es el día que termina), no el del reloj
+    const local = H.today(), a = +local.slice(0, 4);
+    const iso = (y, m, d) => y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    const espera = (m, d) => (iso(a, m, d) > local ? iso(a - 1, m, d) : iso(a, m, d));
+    expect(H._audPegadoFecha('2-ene')).toBe(espera(1, 2));
+    expect(H._audPegadoFecha('31-dic')).toBe(espera(12, 31));
+  });
+
+  it('un bloque copiado de una planilla (fechas d-mmm-yy, cantidades con coma y espacio) entra sin avisos', () => {
+    const avisos = [];
+    H.setToast((m, tipo) => { avisos.push({ m: String(m), tipo }); });
+    H.audAgregarEl({ getAttribute: () => 'cosechas' });
+    const el = fp().querySelector('[data-as="cosechas"][data-ai="0"][data-af="fecha"]');
+    H.audPegar({ target: el, clipboardData: { getData: () => '21-dic-25\tM03\t5\t\t4,800,000 \t9.5\r\n22-dic-25\tM03\t5\t\t3,850,000 \t9.5\r\n' }, preventDefault() {} });
+    expect(H.modelo().cosechas.map((c) => [c.fecha, c.cantidad, c.partida])).toEqual([['2025-12-21', '4,800,000', 1], ['2025-12-22', '3,850,000', 2]]);
+    expect(avisos.filter((a) => a.tipo === 'warn')).toEqual([]);
   });
 });
