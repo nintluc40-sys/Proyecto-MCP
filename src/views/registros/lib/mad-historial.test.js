@@ -360,12 +360,12 @@ describe('📜 Historial · los reenvíos con las mismas filas', () => {
       pon($('#fp-desoves .md-lote'), 'BP'); pon($('#fp-desoves .md-cg'), cg); pon($('#fp-desoves .md-desoves'), '64'); pon($('#fp-desoves .md-n2'), n2);
       await H.madDesGuardar();
     };
-    await enviar('OLF5.F2', '9000');
-    await enviar('OLF5.F2', '9100');
+    await enviar('CG1', '9000');
+    await enviar('CG1', '9100');
     expect(hist()).toHaveLength(1);
     expect(hist()[0].payload.rows[0][col(hist()[0].payload, 'N2')]).toBe(9100000);
     expect(hist()[0].envio, 'Editar en 36 h va al envío ÚLTIMO').toBe(JSON.parse(localStorage.getItem(H.MAD_DES_LOG_KEY)).slice(-1)[0].id);
-    await enviar('OLF5.F3', '8000');
+    await enviar('CG2', '8000');
     expect(hist()).toHaveLength(2);
   });
 });
@@ -438,7 +438,7 @@ describe('📜 Historial · 📄 PDF', () => {
 describe('📜 Historial · Desoves, con SU corrección (sólo viaja lo cambiado)', () => {
   const enviarDesove = async () => {
     pon($('#md-fecha'), '2026-09-14');
-    pon($('#fp-desoves .md-lote'), 'BP'); pon($('#fp-desoves .md-cg'), 'OLF5.F2');
+    pon($('#fp-desoves .md-lote'), 'BP'); pon($('#fp-desoves .md-cg'), 'CG1');
     pon($('#fp-desoves .md-desoves'), '64'); pon($('#fp-desoves .md-n2'), '9000');
     await H.madDesGuardar();
   };
@@ -483,7 +483,7 @@ describe('📜 Historial · Desoves, con SU corrección (sólo viaja lo cambiado
 describe('📜 Historial · auditoría: un desove COMPLETO, corregido pasadas las 36 h', () => {
   it('🔴 sólo viajan el N2 y su fecha: lo que la hoja trae de vuelta (unidades, fechas, piscina, notas) no cuenta como cambio', async () => {
     pon($('#md-fecha'), '2026-09-14');
-    pon($('#fp-desoves .md-lote'), 'BP'); pon($('#fp-desoves .md-cg'), 'OLF5.F2');
+    pon($('#fp-desoves .md-lote'), 'BP'); pon($('#fp-desoves .md-cg'), 'CG1');
     pon($('#fp-desoves .md-desoves'), '64'); pon($('#fp-desoves .md-huevos'), '14440'); pon($('#fp-desoves .md-hnoviables'), '9');
     pon($('#fp-desoves .md-n2'), '9000'); pon($('#fp-desoves .md-n5'), '7000');
     if ($('#fp-desoves .md-piscina')) pon($('#fp-desoves .md-piscina'), 'P3');
