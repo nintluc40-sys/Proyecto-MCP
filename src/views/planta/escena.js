@@ -23,6 +23,8 @@
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
    Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM), uno por hora
    del día y guardado; en toda la maqueta, tenue en el agua de los tanques para que se siga leyendo la etapa.
+   Camión de despacho (2026-10-05, usuario, opción I): un camión con tinas junto a cada módulo que se está despachando
+   (tanques despachados y otros en cultivo), sólo con el mes en curso; en la capa de vehículos.
    Detalle del tanque (2026-10-05, usuario, opción H): remate de hormigón en el borde de todos los tanques y mangueras de
    aireación en el fondo (dos líneas en los rectangulares, un anillo en los circulares).
    Cerco y portón (2026-10-05, usuario, opción G): pilares cada 3 m y concertina sobre el cerramiento, portón corredizo de
@@ -341,7 +343,7 @@ OTHERS.forEach(([a, b, c, d, h, type, , forma], k) => {
     cil(c + 2.2, d - 8, 1.1, 5, .35, M_DIESEL, true); box(c + 1.4, d - 10, c + 3, d - 9.6, 0, .4, M.steel, true, others); box(c + 1.4, d - 6.4, c + 3, d - 6, 0, .4, M.steel, true, others);
     cil(a + w / 2, b + 3, .25, 2.6, h, M_ACERO);
   } else if (forma === 'filtros') {   // filtros Turbidex al costado este y dos tanques elevados en el techo
-    for (let i = 0; i < 4; i++) cil(c + 2.2, b + 3 + i * 2.6, .75, 2.4, 0, M_ACERO);
+    for (let i = 0; i < 4; i++) cil(c + 2.2, d - 3 - i * 2.6, .75, 2.4, 0, M_ACERO);   // al fondo del pasillo: el frente es el ingreso del M3 (opción I)
     [d - 7, d - 3.5].forEach((zz) => { box(a + w / 2 - 1, zz - 1, a + w / 2 + 1, zz + 1, h, .8, M.steel, true, others); cil(a + w / 2, zz, 1.2, 1.8, h + .8, M.paint); });
   } else if (forma === 'lab' || forma === 'admin') {   // alero de ingreso con puerta de vidrio hacia el interior del predio y aires en el techo
     ingreso(a + w / 2, d, 1); aires(a, b, c, d, h, forma === 'lab' ? 4 : 3);
@@ -1263,6 +1265,30 @@ function latirBalizas(time) {
   balizas.children.forEach((o) => { if (!o.isSprite) { const k = (time * .9 + o.userData.ph) % 1; o.scale.setScalar(o.userData.r * (1 + .35 * k)); o.material.opacity = .9 * (1 - k); } });
 }
 
+/* ---------- Camión de despacho (opción I): junto a cada módulo que se está despachando, con el mes en curso ---------- */
+// Dónde estaciona, en el plano: [x, z, a lo largo de 'x' o de 'z']. M8–M10, en la franja hasta el cerco del frente; M5–M7,
+// entre los módulos y las salas 4 y 5; M1–M3, en el pasillo de su ingreso (rótulos «INGRESO» del plano); M4 está encerrado
+// (reservorios y cuarto de máquinas) y va a la calle interior, a su altura.
+const ESTACION = { M8: [15.6, 87.3, 'x'], M9: [31.7, 87.3, 'x'], M10: [47.7, 87.3, 'x'], M7: [8.3, 13.6, 'x'], M6: [22.9, 13.6, 'x'], M5: [32.4, 14.6, 'x'],
+  M4: [74.8, 33.4, 'z'], M3: [96.35, 43, 'z'], M2: [128.6, 43, 'z'], M1: [161.3, 43, 'z'] };
+const camiones = new THREE.Group(); life.add(camiones);
+const CG = { cabina: new THREE.BoxGeometry(1.9, 2.3, 2.4), vidrio: new THREE.BoxGeometry(.05, .8, 2.1), chasis: new THREE.BoxGeometry(5.2, .35, 2.4), baranda: new THREE.BoxGeometry(5.2, .5, .08), tina: new THREE.CylinderGeometry(.48, .42, .7, 14), rueda: new THREE.CylinderGeometry(.46, .46, .32, 14) };
+const CM = { cabina: std({ color: col('#eef1f2'), roughness: .4, metalness: .3 }), vidrio: M_VIDRIO, chasis: std({ color: col('#3a3f43'), roughness: .6 }), tina: std({ color: col('#2f6fb3'), roughness: .45 }), rueda: std({ color: col('#1c1f21'), roughness: .9 }) };
+function camion(x, z, eje) {
+  const g = new THREE.Group(), pieza = (geo, mat, px, py, pz, rx) => { const m = new THREE.Mesh(geo, mat); m.position.set(px, py, pz); if (rx) m.rotation.x = rx; m.castShadow = true; g.add(m); };
+  pieza(CG.cabina, CM.cabina, 2.6, 1.55, 0); pieza(CG.vidrio, CM.vidrio, 3.56, 1.95, 0);
+  pieza(CG.chasis, CM.chasis, -1.05, .82, 0); pieza(CG.baranda, CM.cabina, -1.05, 1.25, 1.16); pieza(CG.baranda, CM.cabina, -1.05, 1.25, -1.16);
+  for (const tx of [-2.9, -1.7, -.5]) for (const tz of [-.55, .55]) pieza(CG.tina, CM.tina, tx, 1.35, tz);   // tinas de despacho
+  for (const wx of [2.6, -.4, -2.7]) for (const wz of [-1.05, 1.05]) pieza(CG.rueda, CM.rueda, wx, .46, wz, Math.PI / 2);
+  const [px, pz] = P(x, z); g.position.set(px, 0, pz); if (eje === 'z') g.rotation.y = Math.PI / 2;
+  camiones.add(g);
+}
+function pintarCamiones() {
+  camiones.clear();   // geometrías y materiales compartidos: no se liberan aquí (lo hace dispose)
+  if (mesPasado) return;   // el camión es el despacho de HOY (decisión del usuario)
+  groups.forEach((g) => { if (g.kind === 'larv' && g.st && g.st.estado === 'cultivo' && g.st.despachando && ESTACION[g.id]) camion(...ESTACION[g.id]); });
+}
+
 /* ---------- Estado de producción (lo pasa planta/index.js; null mientras no hay libro) ---------- */
 const LEDE_HOY = $('.planta .lede').textContent;
 function pintarEstado(E) {
@@ -1275,7 +1301,7 @@ function pintarEstado(E) {
     g.st = !E ? null : g.kind === 'larv' ? E.modulos[g.id] || null : (E.mad && E.mad.salas[g.id]) || null;
     g.tanks.forEach((t) => { t.st = g.st && g.st.tanques ? g.st.tanques[t.num] || null : null; });
   });
-  paintWater(); pintarBalizas(); pintarCifras(E); pintarProduccion(E && E.cifras); pintarReemplazo(E && E.mad ? E.mad.reemplazo : null); pintarAtender(); groups.forEach(pintarFila);
+  paintWater(); pintarBalizas(); pintarCamiones(); pintarCifras(E); pintarProduccion(E && E.cifras); pintarReemplazo(E && E.mad ? E.mad.reemplazo : null); pintarAtender(); groups.forEach(pintarFila);
   wasFar = null;   // rehace los rótulos en el próximo cuadro
   if (selected) { if (tanqueFicha && tanqueFicha.g === selected) (selected.kind === 'larv' ? fichaTanque : fichaTanqueMad)(tanqueFicha); else fichaModulo(selected); }
 }
