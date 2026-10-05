@@ -67,7 +67,11 @@ function boot() {
     app.innerHTML = '<div class="empty-state" style="padding:64px 20px">Armando el código de acceso…</div>';
     import('./views/planta/qr/index.js')
       .then((m) => m.paginaQR(app))
-      .catch((e) => { app.innerHTML = `<div class="empty-state" style="padding:48px">No se pudo abrir el código de acceso.<br><small class="mono">${esc(e.message)}</small></div>`; });
+      .catch((e) => {
+        // como Planta, fuera de la precarga: sin señal y sin haberla abierto antes, no hay bloque que cargar
+        const sinRed = navigator.onLine === false || /dynamically imported module|Importing a module script failed|Unable to preload CSS/i.test(e.message || '');
+        app.innerHTML = `<div class="empty-state" style="padding:48px">${sinRed ? 'El código de acceso necesita señal la primera vez que se abre (y tras cada actualización). Conéctate y vuelve a intentarlo.' : 'No se pudo abrir el código de acceso.'}<br><small class="mono">${esc(e.message)}</small></div>`;
+      });
     return;
   }
 
