@@ -21,6 +21,8 @@
    y vuelve a ~60 al tocarla o al moverse la cámara; fuera de pantalla no se dibuja.
    Selector de mes (2026-10-04, usuario): ◀ ▶ y un deslizador como la tabla Producción Omarsa, que mueven TODA la vista:
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
+   Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM) que se rehace
+   sólo al cambiar la hora del día; en toda la maqueta, tenue en el agua de los tanques para que se siga leyendo la etapa.
    Rótulos sin encimarse (2026-10-04, usuario): de lejos y en pantallas angostas se acortan («7 ⚠6»); si aún chocan,
    se oculta el de menor prioridad (el elegido, luego el de más alertas, luego larvicultura) hasta que se acerque o gire.
    Reemplazo por tiempo (2026-10-04): los días en producción de cada lote frente a los 60; el que pasa va a «Qué atender
@@ -129,9 +131,29 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(1800, 32, 16), new THREE.Sha
 scene.add(sky);
 const stars = (() => { const n = 700, pos = new Float32Array(n * 3); for (let i = 0; i < n; i++) { const th = R(0, 6.28), ph = R(.08, 1.45), r = 1700; pos.set([r * Math.cos(ph) * Math.cos(th), r * Math.sin(ph), r * Math.cos(ph) * Math.sin(th)], i * 3); } const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); return new THREE.Points(g, new THREE.PointsMaterial({ color: 0xffffff, size: 2.2, sizeAttenuation: false, fog: false, transparent: true, opacity: .85 })); })();
 stars.visible = false; scene.add(stars);
+/* Reflejos del cielo: el entorno de los materiales se genera del MISMO cielo (otra malla con su material), así reflejan
+   el degradado y el sol de la hora elegida. Cada uno se genera la primera vez que se elige su hora (unos ms) y queda
+   guardado: volver a esa hora sólo lo cambia, nunca se rehace por cuadro. La luz ambiente baja en
+   (al 40 %) y los reflejos van al 60 %, porque el entorno también ilumina: así la escena queda igual de clara que sin él
+   (medido el 2026-10-04: día 179 frente a 176, tarde 111 frente a 112, noche 63 frente a 63, de 255). El cielo pinta sus colores tal cual (toneMapped: false), así que su
+   copia los recibe pasados a lineal: si no, el reflejo saldría más claro que el cielo que se ve. */
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envSkyMat = sky.material.clone();
+// el cielo de la pantalla escribe su color en crudo; dentro del mapa de entorno (codificado en RGBE) eso se lee como una
+// intensidad enorme y el reflejo sale negro (medido): su copia lo codifica como cualquier material, con linearToOutputTexel
+envSkyMat.fragmentShader = envSkyMat.fragmentShader.replace('gl_FragColor = vec4(c, 1.0);', 'gl_FragColor = linearToOutputTexel(vec4(c, 1.0));');
+const envSky = new THREE.Mesh(sky.geometry, envSkyMat); const envScene = new THREE.Scene(); envScene.add(envSky);
+const envRTs = {};
+const ENV_AMBIENTE = .4, ENV_REFLEJO = .6;   // luz ambiente que queda e intensidad de los reflejos (ver arriba)
+function generarEntorno(T) {
+  const e = envSky.material.uniforms;
+  e.top.value.set(T.sky[0]).convertSRGBToLinear(); e.mid.value.set(T.sky[1]).convertSRGBToLinear(); e.bot.value.set(T.sky[2]).convertSRGBToLinear();
+  e.sunCol.value.set(T.skySun).convertSRGBToLinear(); e.sunDir.value.set(...T.sun).normalize();
+  return pmrem.fromScene(envScene, 0.04, 1, 4000);
+}
 
 /* ---------- Materiales ---------- */
-const std = (o) => new THREE.MeshStandardMaterial(Object.assign({ roughness: .9 }, o));
+const std = (o) => new THREE.MeshStandardMaterial(Object.assign({ roughness: .9, envMapIntensity: ENV_REFLEJO }, o));
 const M = {
   sand: std({ map: rep(TX.sand, 90, 90), roughness: 1 }),
   site: std({ map: rep(TX.concrete, 30, 15) }),
@@ -586,6 +608,9 @@ for (let i = 0; i < 9; i++) {
   b.scale.setScalar(1.3); birds.push(b); life.add(b);
 }
 
+// el agua de los tanques refleja el cielo TENUE (decisión del usuario): su color es el dato de la etapa
+M.waterL.envMapIntensity = M.waterM.envMapIntensity = .25 * ENV_REFLEJO;
+
 /* ---------- Hora del día ---------- */
 const TOD = {
   day: { sun: [-55, 140, 75], sunI: 1.5, sunC: '#fff1dc', hemiI: .6, sky: ['#5f9fd8', '#cfe3ee', '#e5dccb'], skySun: '#fff4dc', exp: 1.0, lights: 0 },
@@ -594,10 +619,12 @@ const TOD = {
 };
 function setTod(k) {
   const T = TOD[k];
-  sun.position.set(...T.sun); sun.intensity = T.sunI; sun.color = col(T.sunC); hemi.intensity = T.hemiI;
+  sun.position.set(...T.sun); sun.intensity = T.sunI; sun.color = col(T.sunC); hemi.intensity = T.hemiI * ENV_AMBIENTE;
   hemi.color = col(k === 'night' ? '#36486e' : k === 'dusk' ? '#f6cfaa' : '#eaf2f4'); hemi.groundColor = col(k === 'night' ? '#141820' : '#9a917e');
   const u = sky.material.uniforms; u.top.value.set(T.sky[0]); u.mid.value.set(T.sky[1]); u.bot.value.set(T.sky[2]); u.sunCol.value.set(T.skySun); u.sunDir.value.set(...T.sun).normalize();
   scene.fog = new THREE.Fog(col(T.sky[1]), 380, 1300);
+  if (!envRTs[k]) envRTs[k] = generarEntorno(T);
+  scene.environment = envRTs[k].texture;
   renderer.toneMappingExposure = T.exp; stars.visible = k === 'night';
   nightMats.forEach(m => { m.emissiveIntensity = T.lights * .9; });
   M.lamp.emissiveIntensity = T.lights * 3; glows.visible = T.lights > 0; nightLights.forEach(l => { l.intensity = T.lights * 1.6; });
@@ -1210,6 +1237,7 @@ function dispose() {
   if (disposed) return;
   disposed = true;
   cancelAnimationFrame(rafId); clearTimeout(timerFuera);
+  Object.values(envRTs).forEach((rt) => rt.dispose()); pmrem.dispose(); envSky.material.dispose();
   io.disconnect();
   if (typeof ro !== 'undefined') ro.disconnect();
   controls.dispose();
