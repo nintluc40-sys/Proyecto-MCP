@@ -23,6 +23,9 @@
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
    Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM), uno por hora
    del día y guardado; en toda la maqueta, tenue en el agua de los tanques para que se siga leyendo la etapa.
+   Otras áreas (2026-10-04, usuario, opción F): cada área con su nombre del plano (globo al pasar o tocar) y su forma:
+   cuarto de máquinas con sopladores y chimeneas, generador diésel con tanque y escape, filtros Turbidex y tanques elevados,
+   laboratorio y administración con alero de ingreso y aire acondicionado, comedor con portones y chimenea, canal abierto.
    Fachadas (2026-10-04, usuario, opción E): los invernaderos cierran sus dos culatas con lámina, con marco y puerta
    corrediza; las salas suman puerta metálica al frente, columnas y zócalo. Todo en mallas de instancias.
    Sol y luna reales (2026-10-04, usuario, opción C): Día, Tarde y Noche ponen el sol (o la luna) donde están hoy en Mar
@@ -309,8 +312,39 @@ function animateCoast(t) {
 const others = new THREE.Group(); scene.add(others);
 const nightMats = [];
 const WALLS = ['#f1ece2', '#e7eef0', '#efe6d6', '#e8e2f0'];
-OTHERS.forEach(([a, b, c, d, h, type], k) => {
+const cil = (x, z, r, h, y0, mat, tumbado) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 16), mat); const [px, pz] = P(x, z); m.position.set(px, y0 + (tumbado ? r : h / 2), pz); if (tumbado) m.rotation.x = Math.PI / 2; m.castShadow = m.receiveShadow = true; others.add(m); return m; };
+const M_SOPLADOR = std({ color: col('#3d6fa0'), roughness: .5, metalness: .3 }), M_ACERO = std({ color: col('#9aa3a8'), roughness: .35, metalness: .7 });
+const M_VIDRIO = std({ color: col('#2c3e48'), roughness: .15, metalness: .4 }), M_PORTON = std({ map: rep(TX.zinc, 1, 1), color: col('#b8c0c4'), roughness: .5, metalness: .4 });
+const M_DIESEL = std({ color: col('#c9a23a'), roughness: .5, metalness: .3 });
+/** Alero de ingreso con su puerta de vidrio, en el lado de `z` del edificio (centro `xm`). */
+function ingreso(xm, z, sale) { box(xm - 1.7, Math.min(z, z + sale * 1.5), xm + 1.7, Math.max(z, z + sale * 1.5), 2.6, .12, M.paint, true, others); [-1.55, 1.55].forEach((dx) => box(xm + dx - .06, z + sale * 1.38, xm + dx + .06, z + sale * 1.5, 0, 2.6, M.steel, true, others)); box(xm - .7, Math.min(z, z + sale * .05), xm + .7, Math.max(z, z + sale * .05), 0, 2.2, M_VIDRIO, false, others); }
+/** Equipos de aire acondicionado sobre el techo. */
+function aires(a, b, c, d, h, n) { for (let i = 0; i < n; i++) { const x = a + (c - a) * (i + 1) / (n + 1), z = b + (d - b) * .3; box(x - .5, z - .35, x + .5, z + .35, h, .6, M_ACERO, true, others); } }
+OTHERS.forEach(([a, b, c, d, h, type, , forma], k) => {
   const w = c - a, dd = d - b;
+  if (type === 'canal') {
+    // canal sedimentador abierto: dos bordes bajos y el agua adentro
+    box(a, b, c, b + .18, 0, h, M.tankWall, true, others); box(a, d - .18, c, d, 0, h, M.tankWall, true, others);
+    plane(a, b + .18, c, d - .18, h - .15, std({ color: col('#3d6670'), roughness: .12, metalness: .15, normalMap: repN(waterNormal, 40, 1), normalScale: new THREE.Vector2(.4, .4) }), others);
+    return;
+  }
+  if (forma === 'maquinas') {   // sopladores y su tubería sobre el techo (no hay patio: lo rodean M10, M4, la calle interior y el cerco) y dos chimeneas de calderos
+    for (let zz = b + 4; zz < d - 3; zz += 6) box(a + 1, zz, a + 2.4, zz + 1.6, h, 1.2, M_SOPLADOR, true, others);
+    box(a + 2.7, b + 3, a + 3, d - 3, h, .3, M.pipe, true, others);
+    cil(c - 3, b + 4, .35, 4.2, h, M_ACERO); cil(c - 5, b + 4, .35, 4.2, h, M_ACERO);
+  } else if (forma === 'diesel') {   // tanque de combustible tumbado sobre sus soportes y escape en el techo
+    cil(c + 2.2, d - 8, 1.1, 5, .35, M_DIESEL, true); box(c + 1.4, d - 10, c + 3, d - 9.6, 0, .4, M.steel, true, others); box(c + 1.4, d - 6.4, c + 3, d - 6, 0, .4, M.steel, true, others);
+    cil(a + w / 2, b + 3, .25, 2.6, h, M_ACERO);
+  } else if (forma === 'filtros') {   // filtros Turbidex al costado este y dos tanques elevados en el techo
+    for (let i = 0; i < 4; i++) cil(c + 2.2, b + 3 + i * 2.6, .75, 2.4, 0, M_ACERO);
+    [d - 7, d - 3.5].forEach((zz) => { box(a + w / 2 - 1, zz - 1, a + w / 2 + 1, zz + 1, h, .8, M.steel, true, others); cil(a + w / 2, zz, 1.2, 1.8, h + .8, M.paint); });
+  } else if (forma === 'lab' || forma === 'admin') {   // alero de ingreso con puerta de vidrio hacia el interior del predio y aires en el techo
+    ingreso(a + w / 2, d, 1); aires(a, b, c, d, h, forma === 'lab' ? 4 : 3);
+  } else if (forma === 'comedor') {   // portones de bodega y puerta de servicio hacia la calle, chimenea de cocina
+    [140, 146, 152, 158].forEach((x) => box(x - 1.6, d, x + 1.6, d + .08, 0, 3, M_PORTON, true, others));
+    box(99.4, d, 100.6, d + .06, 0, 2.2, M.lid, true, others);
+    cil(105, b + 3, .32, 2.2, h, M_ACERO);
+  }
   if (type === 'bld') {
     const hex = WALLS[k % WALLS.length], side = windowsTex(hex, false), lit = windowsTex(hex, true);
     const mk = (len) => { const m = std({ map: rep(side, Math.max(1, Math.round(len / 4)), 1), emissiveMap: rep(lit, Math.max(1, Math.round(len / 4)), 1), emissive: col('#ffffff'), emissiveIntensity: 0 }); nightMats.push(m); return m; };
@@ -335,6 +369,9 @@ OTHERS.forEach(([a, b, c, d, h, type], k) => {
 [[2, 14.2, 64, 14.5], [79, 19.9, 176, 20.2], [7.5, 86.2, 55.6, 86.5]].forEach(([a, b, c, d]) => box(a, b, c, d, .9, .3, M.pipe, true, others));
 
 others.traverse(o => { if (o.isMesh && !o.isInstancedMesh && !(Array.isArray(o.material) ? o.material[0] : o.material).transparent) addEdges(o); });
+// cajas invisibles para saber sobre qué área está el puntero (no se dibujan: material.visible = false)
+const M_TOQUE = new THREE.MeshBasicMaterial({ visible: false }), cajaToque = new THREE.BoxGeometry(1, 1, 1);   // unitBox se declara más abajo
+const areaHits = OTHERS.map(([a, b, c, d, h, , nombre]) => { const m = new THREE.Mesh(cajaToque, M_TOQUE); const [x, z] = P((a + c) / 2, (b + d) / 2); m.position.set(x, (h + .3) / 2, z); m.scale.set(c - a, h + .3, d - b); m.userData.area = nombre; others.add(m); return m; });
 /* ---------- Módulos y salas ---------- */
 const unitBox = new THREE.BoxGeometry(1, 1, 1), m4 = new THREE.Matrix4(), q0 = new THREE.Quaternion(), v = new THREE.Vector3(), s = new THREE.Vector3(), qt = new THREE.Quaternion(), eu = new THREE.Euler();
 const roofs = new THREE.Group(); scene.add(roofs);
@@ -951,9 +988,10 @@ const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
 function pickAt(e) {
   const r = canvas.getBoundingClientRect(); mouse.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
   ray.setFromCamera(mouse, camera);
-  const hits = ray.intersectObjects([...waterMeshes, wallsI, ringI, ...groups.map(g => g.slab)], false);
+  const hits = ray.intersectObjects([...waterMeshes, wallsI, ringI, ...groups.map(g => g.slab), ...(others.visible ? areaHits : [])], false);
   if (!hits.length) return null;
   const h = hits[0];
+  if (h.object.userData.area) return { area: h.object.userData.area };
   if (waterMeshes.includes(h.object)) return { tank: tanks.find(t => t.mesh === h.object && t.inst === h.instanceId) };
   if (h.object === wallsI) return { tank: rect[Math.floor(h.instanceId / 4)] };
   if (h.object === ringI) return { tank: circ[h.instanceId] };
@@ -964,6 +1002,8 @@ canvas.addEventListener('pointerdown', e => { downAt = [e.clientX, e.clientY]; }
 canvas.addEventListener('pointerup', e => {
   if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;
   const p = pickAt(e); if (!p) { select(null); return; }
+  // un área (opción F): se suelta lo elegido y, con el dedo, se muestra su nombre unos segundos
+  if (p.area) { select(null); if (e.pointerType !== 'mouse') { tipArea(p.area, e); clearTimeout(tipTimer); tipTimer = setTimeout(() => { tip.hidden = true; }, 3500); } return; }
   // con el módulo ya elegido, tocar uno de sus tanques abre la ficha del tanque
   if (p.tank && p.tank.g === selected) { if (p.tank.g.kind === 'larv') fichaTanque(p.tank); else fichaTanqueMad(p.tank); return; }
   select(p.tank ? p.tank.g : p.group, true);
@@ -972,6 +1012,7 @@ canvas.addEventListener('pointermove', e => {
   if (e.buttons) { tip.hidden = true; return; }
   const p = pickAt(e), t = p && p.tank;
   if (t !== hovered) { hovered = t || null; paintWater(); }
+  if (p && p.area) { canvas.style.cursor = 'help'; tipArea(p.area, e); return; }
   if (!t) { tip.hidden = true; canvas.style.cursor = p && p.group ? 'pointer' : 'grab'; return; }
   canvas.style.cursor = 'pointer'; tip.textContent = '';
   const b = document.createElement('b'); b.textContent = t.g.name + ' · ' + (t.desove ? 'desove ' : 'tanque ') + t.num;
@@ -980,6 +1021,15 @@ canvas.addEventListener('pointermove', e => {
   const r = vp.getBoundingClientRect(); tip.hidden = false;
   tip.style.left = Math.min(W - 250, e.clientX - r.left + 14) + 'px'; tip.style.top = Math.max(8, e.clientY - r.top - 54) + 'px';
 });
+/** Globo con el nombre de un área: «título · detalle» del plano. */
+let tipTimer = 0;
+function tipArea(nombre, e) {
+  const [titulo, detalle] = nombre.split(' · ');
+  tip.textContent = ''; const b = document.createElement('b'); b.textContent = titulo; tip.append(b);
+  if (detalle) { const sp = document.createElement('span'); sp.textContent = detalle; sp.style.display = 'block'; tip.append(sp); }
+  const r = vp.getBoundingClientRect(); tip.hidden = false;
+  tip.style.left = Math.min(W - 250, e.clientX - r.left + 14) + 'px'; tip.style.top = Math.max(8, e.clientY - r.top - 54) + 'px';
+}
 /** Resumen del tanque para el tooltip (lo que se lee de un vistazo; el detalle va en la ficha). */
 function lineasTip(t) {
   if (t.g.kind !== 'larv') {
@@ -1000,7 +1050,8 @@ function lineasTip(t) {
     ...(st.alerta ? ['⚠ ' + st.motivos.join(', ') + ' fuera de rango'] : []),
   ];
 }
-canvas.addEventListener('pointerleave', () => { tip.hidden = true; if (hovered) { hovered = null; paintWater(); } });
+// con el dedo, el navegador «sale» del lienzo justo al soltar: eso no oculta el nombre de un área (se oculta solo, a los 3,5 s)
+canvas.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') tip.hidden = true; if (hovered) { hovered = null; paintWater(); } });
 canvas.addEventListener('keydown', e => { if (e.key === 'Escape') select(null); });
 
 /* ---------- Panel ---------- */

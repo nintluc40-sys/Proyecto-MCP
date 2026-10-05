@@ -4,7 +4,7 @@
    la maqueta pintaría un tanque con el número de otro: aquí se nota.
    ============================================================ */
 import { describe, it, expect } from 'vitest';
-import { LARV, MAT, NUM_A, NUM_B, tanquesDeSala } from './plano.js';
+import { LARV, MAT, NUM_A, NUM_B, OTHERS, tanquesDeSala } from './plano.js';
 import { MAD_SALA_OPTS, MAD_TANQUES_POR_SALA } from '../registros/lib/ficha-maduracion-ingreso.schema.js';
 
 const numeros = (m) => m.rows.flatMap((_, r) => m.cols.map((_c, c) => m.num(r, c)));
@@ -29,6 +29,14 @@ describe('plano · larvicultura', () => {
     // M4–M10: columna izquierda los pares, derecha los impares
     expect([0, 1].map((c) => NUM_B(0, c))).toEqual([2, 1]);
     expect([0, 1].map((c) => NUM_B(4, c))).toEqual([10, 9]);
+  });
+});
+
+describe('plano · otras áreas (opción F)', () => {
+  it('cada área lleva nombre; el canal sedimentador es un canal, no un edificio', () => {
+    expect(OTHERS.every((o) => typeof o[6] === 'string' && o[6].length > 3)).toBe(true);
+    expect(OTHERS.find((o) => /Canal sedimentador/.test(o[6]))[5]).toBe('canal');
+    expect(OTHERS.filter((o) => o[7]).map((o) => o[7]).sort()).toEqual(['admin', 'comedor', 'diesel', 'filtros', 'lab', 'maquinas']);
   });
 });
 
