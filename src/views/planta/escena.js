@@ -23,6 +23,9 @@
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
    Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM), uno por hora
    del día y guardado; en toda la maqueta, tenue en el agua de los tanques para que se siga leyendo la etapa.
+   Texturas de superficie (2026-10-04, usuario, opción B): hormigón con juntas, humedad, desgaste y fisuras; zinc ondulado
+   con canaleta y óxido; asfalto con grietas, parches y huellas de rodadura; arena con ondas de viento; bloques con mortero
+   y salpicaduras al pie. Relieve (mapa de normales) sólo en el zinc y en las juntas del hormigón.
    Rótulos sin encimarse (2026-10-04, usuario): de lejos y en pantallas angostas se acortan («7 ⚠6»); si aún chocan,
    se oculta el de menor prioridad (el elegido, luego el de más alertas, luego larvicultura) hasta que se acerque o gire.
    Reemplazo por tiempo (2026-10-04): los días en producción de cada lote frente a los 60; el que pasa va a «Qué atender
@@ -96,16 +99,61 @@ function grain(g, n, base, spread, amount, size) { // ruido y motas sobre un col
 }
 function blotches(g, n, colors, count, rmin, rmax) { for (let i = 0; i < count; i++) { const x0 = R(0, n), y0 = R(0, n), r = R(rmin, rmax), c = colors[Math.floor(R(0, colors.length))];
   for (const ox of [-n, 0, n]) for (const oy of [-n, 0, n]) { const x = x0 + ox, y = y0 + oy; if (x + r < 0 || y + r < 0 || x - r > n || y - r > n) continue; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, c); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } } }
+function fisuras(g, n, cuantas, color, ancho) { // líneas quebradas finas (grietas), repetibles en los bordes
+  g.strokeStyle = color; g.lineWidth = ancho; g.lineCap = 'round';
+  for (let i = 0; i < cuantas; i++) {
+    let x = R(0, n), y = R(0, n), a = R(0, 6.28); const pasos = Math.floor(R(4, 10));
+    g.beginPath(); g.moveTo(x, y);
+    for (let k = 0; k < pasos; k++) { a += R(-.7, .7); x += Math.cos(a) * R(6, 22); y += Math.sin(a) * R(6, 22); g.lineTo(x, y); }
+    g.stroke();
+  }
+}
+/** Mapa de normales (lineal, repetible) de una altura h(x, y) en [0, n): el relieve que hace reaccionar a la luz el
+ *  ondulado del zinc y las juntas del hormigón. Se dibuja una vez al montar (n² píxeles, n = 256). */
+function normalDeAltura(n, h, fuerza) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = n; const g = cv.getContext('2d'), img = g.createImageData(n, n);
+  const H = (x, y) => h(((x % n) + n) % n, ((y % n) + n) % n);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const nx = -(H(x + 1, y) - H(x - 1, y)) * fuerza, ny = (H(x, y + 1) - H(x, y - 1)) * fuerza, l = Math.hypot(nx, ny, 1), i = (y * n + x) * 4;
+    img.data[i] = (nx / l * .5 + .5) * 255; img.data[i + 1] = (ny / l * .5 + .5) * 255; img.data[i + 2] = (1 / l * .5 + .5) * 255; img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0); const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
 const TX = {
-  sand: canvasTex(1024, (g, n) => { grain(g, n, '#d9c9a3', 40, 9000, 2); blotches(g, n, ['rgba(160,140,95,.16)', 'rgba(240,226,190,.2)', 'rgba(120,120,70,.1)'], 30, 20, 70); }),
-  concrete: canvasTex(1024, (g, n) => { grain(g, n, '#d9d6cf', 22, 7000, 1.6); blotches(g, n, ['rgba(150,145,135,.12)', 'rgba(255,255,255,.12)'], 25, 30, 110); g.strokeStyle = 'rgba(90,90,85,.35)'; g.lineWidth = 2; for (let k = 0; k <= n; k += n / 2) { g.beginPath(); g.moveTo(k, 0); g.lineTo(k, n); g.stroke(); g.beginPath(); g.moveTo(0, k); g.lineTo(n, k); g.stroke(); } }),
-  asphalt: canvasTex(512, (g, n) => { grain(g, n, '#4b4f53', 30, 14000, 1.8); blotches(g, n, ['rgba(20,20,20,.25)', 'rgba(120,120,120,.12)'], 20, 30, 120); }),
+  sand: canvasTex(1024, (g, n) => { grain(g, n, '#d9c9a3', 40, 9000, 2); blotches(g, n, ['rgba(160,140,95,.16)', 'rgba(240,226,190,.2)', 'rgba(120,120,70,.1)'], 30, 20, 70);
+    // ondas de viento: crestas sinuosas, con su sombra debajo; la onda completa cabe en la baldosa para que repita sin corte
+    for (let y = 6; y < n; y += 13) { const fase = R(0, 6.28), amp = R(2, 5);
+      for (const [dy, c] of [[0, 'rgba(255,248,225,.18)'], [2, 'rgba(120,100,60,.12)']]) { g.strokeStyle = c; g.lineWidth = 1.4; g.beginPath();
+        for (let x = 0; x <= n; x += 8) { const yy = y + dy + amp * Math.sin(x / n * 6.2832 * 4 + fase); if (x) g.lineTo(x, yy); else g.moveTo(x, yy); } g.stroke(); } } }),
+  concrete: canvasTex(1024, (g, n) => { grain(g, n, '#d9d6cf', 22, 7000, 1.6); blotches(g, n, ['rgba(150,145,135,.12)', 'rgba(255,255,255,.12)'], 25, 30, 110);
+    blotches(g, n, ['rgba(105,110,108,.13)', 'rgba(120,118,100,.1)'], 9, 60, 170);    // humedad y desgaste
+    fisuras(g, n, 7, 'rgba(80,78,72,.35)', 1.2);
+    // juntas de dilatación: 2 paneles por baldosa, con la sombra de un lado y el canto claro del otro
+    for (let k = 0; k <= n; k += n / 2) for (const [d, c, w] of [[0, 'rgba(70,70,66,.55)', 3], [3, 'rgba(255,255,255,.35)', 1.5]]) {
+      g.strokeStyle = c; g.lineWidth = w; g.beginPath(); g.moveTo(k + d, 0); g.lineTo(k + d, n); g.stroke(); g.beginPath(); g.moveTo(0, k + d); g.lineTo(n, k + d); g.stroke(); } }),
+  asphalt: canvasTex(512, (g, n) => { grain(g, n, '#4b4f53', 30, 14000, 1.8); blotches(g, n, ['rgba(20,20,20,.25)', 'rgba(120,120,120,.12)'], 20, 30, 120);
+    for (const v of [.3, .7]) { const gr = g.createLinearGradient(0, v * n - 22, 0, v * n + 22); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(.5, 'rgba(15,15,15,.22)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, v * n - 22, n, 44); }   // huellas de rodadura
+    for (let i = 0; i < 3; i++) { g.fillStyle = 'rgba(30,32,34,.35)'; g.fillRect(R(0, n - 90), R(0, n - 60), R(40, 90), R(25, 60)); }   // parches
+    blotches(g, n, ['rgba(10,10,12,.3)'], 6, 6, 16);   // manchas de aceite
+    fisuras(g, n, 9, 'rgba(15,15,15,.55)', 1.3); }),
   gravel: canvasTex(1024, (g, n) => { grain(g, n, '#b3aa99', 60, 22000, 3); }),
   grass: canvasTex(512, (g, n) => { grain(g, n, '#7f9a4d', 50, 16000, 2); blotches(g, n, ['rgba(70,100,40,.35)', 'rgba(170,170,90,.3)'], 40, 15, 70); }),
-  wallBlock: canvasTex(256, (g, n) => { grain(g, n, '#dcd6ca', 16, 3000, 1.5); g.strokeStyle = 'rgba(120,112,100,.35)'; g.lineWidth = 1.5; for (let y = 0; y < n; y += 32) { g.beginPath(); g.moveTo(0, y); g.lineTo(n, y); g.stroke(); for (let x = (y / 32) % 2 ? 0 : 32; x < n; x += 64) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 32); g.stroke(); } } }),
-  zinc: canvasTex(256, (g, n) => { const gr = g.createLinearGradient(0, 0, n, 0); for (let i = 0; i <= 16; i++) { gr.addColorStop(i / 16, i % 2 ? '#aeb8be' : '#c8d0d5'); } g.fillStyle = gr; g.fillRect(0, 0, n, n); grain(g, 0, 'rgba(0,0,0,0)', 0, 0, 1); }),
+  wallBlock: canvasTex(256, (g, n) => { grain(g, n, '#dcd6ca', 16, 3000, 1.5);
+    for (const [d, c] of [[0, 'rgba(110,102,90,.45)'], [1.5, 'rgba(255,255,255,.3)']]) { g.strokeStyle = c; g.lineWidth = 1.5;
+      for (let y = 0; y < n; y += 32) { g.beginPath(); g.moveTo(0, y + d); g.lineTo(n, y + d); g.stroke(); for (let x = (y / 32) % 2 ? 0 : 32; x < n; x += 64) { g.beginPath(); g.moveTo(x + d, y); g.lineTo(x + d, y + 32); g.stroke(); } } }
+    const pie = g.createLinearGradient(0, n * .72, 0, n); pie.addColorStop(0, 'rgba(110,95,70,0)'); pie.addColorStop(1, 'rgba(110,95,70,.4)'); g.fillStyle = pie; g.fillRect(0, n * .72, n, n * .28);   // salpicadura y polvo al pie
+    blotches(g, n, ['rgba(90,85,75,.12)'], 6, 10, 30); }),
+  zinc: canvasTex(256, (g, n) => { const gr = g.createLinearGradient(0, 0, n, 0); for (let i = 0; i <= 64; i++) { const k = Math.sin(i / 64 * 6.2832 * 16); gr.addColorStop(i / 64, 'rgb(' + Math.round(186 + 18 * k) + ',' + Math.round(196 + 16 * k) + ',' + Math.round(202 + 14 * k) + ')'); } g.fillStyle = gr; g.fillRect(0, 0, n, n);
+    for (let i = 0; i < 10; i++) { const x = R(0, n), y = R(0, n * .6); const o = g.createLinearGradient(0, y, 0, y + R(40, 120)); o.addColorStop(0, 'rgba(150,90,50,.0)'); o.addColorStop(.3, 'rgba(150,90,50,.18)'); o.addColorStop(1, 'rgba(150,90,50,0)'); g.fillStyle = o; g.fillRect(x, y, R(2, 5), 120); }   // chorreaduras de óxido
+    g.fillStyle = 'rgba(70,78,84,.55)'; g.fillRect(0, n - 9, n, 9); g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(0, n - 10, n, 1.5); }),   // canaleta
   film: canvasTex(256, (g, n) => { g.fillStyle = '#ffffff'; g.fillRect(0, 0, n, n); g.fillStyle = 'rgba(60,70,60,.22)'; for (let x = 0; x < n; x += 64) g.fillRect(x, 0, 30, n); g.fillStyle = 'rgba(0,0,0,.25)'; for (let y = 0; y < n; y += 64) g.fillRect(0, y, n, 3); }),
 };
+const TXN = {
+  zinc: normalDeAltura(256, (x) => Math.sin(x / 256 * 6.2832 * 16) * 2.2, .9),
+  // la junta es un surco de 2 px de cada lado de las líneas de la baldosa (0 y 128 de 256 = 0 y 512 de 1024)
+  concrete: normalDeAltura(256, (x, y) => { const d = (v) => Math.min(v % 128, 128 - (v % 128)); return -Math.max(0, 2.5 - Math.min(d(x), d(y))); }, 1.1),
+};
+const repN = (t, x, y) => { const c = t.clone(); c.needsUpdate = true; c.repeat.set(x, y); return c; };
 function windowsTex(wallHex, lit) { // fachada con ventanas; de noche se usa como mapa de luz
   return canvasTex(256, (g, n) => {
     if (lit) { g.fillStyle = '#000'; g.fillRect(0, 0, n, n); } else { grain(g, n, wallHex, 14, 2500, 1.4); g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(0, n - 10, n, 10); }
@@ -156,19 +204,19 @@ function generarEntorno(T) {
 const std = (o) => new THREE.MeshStandardMaterial(Object.assign({ roughness: .9, envMapIntensity: ENV_REFLEJO }, o));
 const M = {
   sand: std({ map: rep(TX.sand, 90, 90), roughness: 1 }),
-  site: std({ map: rep(TX.concrete, 30, 15) }),
+  site: std({ map: rep(TX.concrete, 30, 15), normalMap: repN(TXN.concrete, 30, 15), normalScale: new THREE.Vector2(.6, .6) }),
   asphalt: std({ map: rep(TX.asphalt, 40, 2) }),
   gravel: std({ map: rep(TX.gravel, 40, 2), roughness: 1 }),
   grass: std({ map: rep(TX.grass, 4, 4), roughness: 1 }),
   paint: std({ color: col('#f2f0e8') }), yellow: std({ color: col('#e8c34a') }),
   fence: std({ map: rep(TX.wallBlock, 40, 1) }),
-  slabL: std({ map: rep(TX.concrete, 4, 4), color: col('#f2efe8') }),
-  slabM: std({ map: rep(TX.concrete, 4, 4), color: col('#c8ccc6') }),
+  slabL: std({ map: rep(TX.concrete, 4, 4), color: col('#f2efe8'), normalMap: repN(TXN.concrete, 4, 4), normalScale: new THREE.Vector2(.6, .6) }),
+  slabM: std({ map: rep(TX.concrete, 4, 4), color: col('#c8ccc6'), normalMap: repN(TXN.concrete, 4, 4), normalScale: new THREE.Vector2(.6, .6) }),
   wall: std({ map: rep(TX.wallBlock, 6, 1), roughness: .85 }),
   canal: std({ color: col('#4e5a5e'), roughness: .5 }),
   steel: std({ color: col('#a7b0b5'), roughness: .45, metalness: .5 }),
   film: std({ map: TX.film, color: col('#f7f8f2'), roughness: .5, transparent: true, opacity: .42, side: THREE.DoubleSide, depthWrite: false }),
-  zinc: std({ map: rep(TX.zinc, 6, 1), roughness: .5, metalness: .4 }),
+  zinc: std({ map: rep(TX.zinc, 6, 1), roughness: .5, metalness: .4, normalMap: repN(TXN.zinc, 6, 1), normalScale: new THREE.Vector2(.7, .7) }),
   tankWall: std({ map: rep(TX.concrete, 1, 1), color: col('#f4f2ee'), roughness: .75 }),
   waterL: std({ color: 0xffffff, roughness: .08, metalness: .1, normalMap: waterNormal, normalScale: new THREE.Vector2(.35, .35), emissive: 0x000000, transparent: true, opacity: .62 }),
   waterM: std({ color: 0xffffff, roughness: .08, metalness: .1, normalMap: waterNormal, normalScale: new THREE.Vector2(.35, .35), emissive: 0x000000, transparent: true, opacity: .72 }),
@@ -200,7 +248,8 @@ for (let x = -58; x < 238; x += 7) plane(x, (STREET[0] + STREET[1]) / 2 - .08, x
 plane(-60, STREET[1], 240, STREET[1] + 1.4, .03, M.paint);
 for (let x = 30; x < 64; x += 3.2) plane(x, 89.6, x + .12, 95.2, .03, M.paint);  // líneas de parqueo
 // vías internas de evacuación
-const roadM = std({ map: rep(TX.asphalt, 1, 12), roughness: .95 });
+// la calle interior va a lo largo de z: la textura gira para que las huellas de rodadura sigan la calle
+const roadM = std({ map: (() => { const t = rep(TX.asphalt, 12, 1); t.center.set(.5, .5); t.rotation = Math.PI / 2; return t; })(), roughness: .95 });
 plane(72, 18.5, 77.6, 89.2, .02, roadM); plane(76, 75.2, 176, 78.6, .02, std({ map: rep(TX.asphalt, 16, 1), roughness: .95 }));
 // cerramiento perimetral con ingreso
 const fenceSegs = [[SITE[0], SITE[1], SITE[2], SITE[1] + .25], [SITE[0], SITE[1], SITE[0] + .25, SITE[3]], [SITE[2] - .25, SITE[1], SITE[2], SITE[3]], [SITE[0], SITE[3] - .25, 71.5, SITE[3]], [78.2, SITE[3] - .25, SITE[2], SITE[3]]];
@@ -260,7 +309,7 @@ OTHERS.forEach(([a, b, c, d, h, type], k) => {
   if (type === 'bld') {
     const hex = WALLS[k % WALLS.length], side = windowsTex(hex, false), lit = windowsTex(hex, true);
     const mk = (len) => { const m = std({ map: rep(side, Math.max(1, Math.round(len / 4)), 1), emissiveMap: rep(lit, Math.max(1, Math.round(len / 4)), 1), emissive: col('#ffffff'), emissiveIntensity: 0 }); nightMats.push(m); return m; };
-    const roof = std({ map: rep(TX.zinc, Math.max(1, w / 3), 1), roughness: .5, metalness: .35 });
+    const roof = std({ map: rep(TX.zinc, Math.max(1, w / 3), 1), roughness: .5, metalness: .35, normalMap: repN(TXN.zinc, Math.max(1, w / 3), 1), normalScale: new THREE.Vector2(.7, .7) });
     const mats = [mk(dd), mk(dd), roof, roof, mk(w), mk(w)];
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, dd), mats); const [x, z] = P(a + w / 2, b + dd / 2); m.position.set(x, h / 2, z); m.castShadow = m.receiveShadow = true; others.add(m);
   } else if (type === 'res') {
