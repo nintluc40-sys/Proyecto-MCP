@@ -5,6 +5,7 @@
    Tanda 3 (2026-10-04): y el de cada sala y tanque de maduración (estadoMaduracion, del mismo archivo).
    Tanda 4 (2026-10-04): las cifras de gerencia (planta/cifras.js): producción del mes frente a la meta, supervivencia,
    nauplios y desoves. Las tres partes se calculan por separado: si una falla, las otras se siguen viendo.
+   Acceso de Gerencia (2026-10-05): «Compartir acceso» abre, en otra pestaña, la página del QR 3D (qr/index.js, ?qr=gerencia).
    Selector de mes (2026-10-04, usuario): el mes elegido mueve TODA la vista. El en curso es hoy; uno pasado pinta cada
    módulo con su corrida de ese mes (como las tarjetas del Supervisor) y maduración al cierre de su mes de calendario.
    La vista se monta SIN esperar al libro (`necesitaLibro: false`): la maqueta sale al instante, pide
@@ -43,6 +44,7 @@ const MARCO = `
       <h1>Laboratorio Mar Bravo</h1>
       <p class="lede">El estado de hoy de cada módulo de larvicultura y de cada sala de maduración, con los datos y las reglas del MCP: la Vista Ejecutiva del Supervisor y el tablero de Maduración.</p>
       <p class="datos" id="estado-datos" role="status">Cargando datos de producción…</p>
+      <a class="compartir" href="./?qr=gerencia" target="_blank" rel="noopener">🔗 Compartir acceso de Gerencia (QR)</a>
     </header>
     <section class="prod" aria-label="Producción del mes">
       <div class="prod-head"><h2>Producción del mes</h2><button type="button" class="meta-btn" id="meta-btn" aria-expanded="false" aria-controls="meta-form">⚙ Meta</button></div>

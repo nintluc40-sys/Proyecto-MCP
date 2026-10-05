@@ -14,7 +14,7 @@ import './views/microbiologia/microbiologia.css';
 import './views/maduracion/maduracion.css';
 
 
-import { mountShell } from './ui/shell.js';
+import { mountShell, aplicarRolDeArranque } from './ui/shell.js';
 import { registerView, setPedirLibro } from './ui/router.js';
 import { setLectorLibro } from './core/sheets.js';
 import { lectorWorker } from './core/sheets.lector.js';
@@ -60,6 +60,16 @@ function cargarD3() {
 
 function boot() {
   const app = document.getElementById('app');
+
+  // Página del QR de acceso de Gerencia (2026-10-05, usuario): `…/?qr=gerencia`, sin la cabecera ni la elección de rol,
+  // con su propio bloque diferido (three.js, fuera de la precarga: vite.config.js). Se abre desde el panel de Planta.
+  if (new URLSearchParams(location.search).get('qr') === 'gerencia') {
+    app.innerHTML = '<div class="empty-state" style="padding:64px 20px">Armando el código de acceso…</div>';
+    import('./views/planta/qr/index.js')
+      .then((m) => m.paginaQR(app))
+      .catch((e) => { app.innerHTML = `<div class="empty-state" style="padding:48px">No se pudo abrir el código de acceso.<br><small class="mono">${esc(e.message)}</small></div>`; });
+    return;
+  }
 
   // Vistas desarrolladas
   // `usaBarraFecha: true` = la vista LEE el rango de la barra de fecha global (store.dateFrom/
@@ -145,6 +155,10 @@ function boot() {
   // La huella inicial (y la de cada reconexión manual) la cachea commit() en
   // sheets.js; el loop la lee de ahí — única fuente de verdad.
   startAutoRefresh();
+
+  // Entrada directa por el enlace de Gerencia (`?rol=gerencia`, el del QR) o por el rol que el equipo recuerda
+  // (2026-10-05, usuario). Al final: las vistas, el lector y el pedido del libro ya están listos.
+  aplicarRolDeArranque();
 }
 
 /* ── Service worker (T4b, 2026-08-25) ────────────────────────

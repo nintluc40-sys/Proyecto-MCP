@@ -21,6 +21,8 @@
 .planta .eyebrow { font: 500 11.5px/1.3 var(--font-mono); color: var(--muted); }
 .planta h1 { margin: 4px 0 6px; font: 800 22px/1.1 var(--font-sans); letter-spacing: -.01em; }
 .planta .lede { margin: 0; color: var(--muted); font-size: 13px; }
+.planta .compartir { display: inline-block; margin-top: 10px; font: 600 12.5px/1 var(--font-sans); color: var(--ink); background: var(--chip); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; text-decoration: none; }
+.planta .compartir:hover { border-color: var(--larv); color: var(--larv); }
 .planta .datos { margin: 8px 0 0; font: 500 12px/1.4 var(--font-mono); color: var(--muted); }
 .planta .legend { display: grid; gap: 5px; font-size: 12.5px; color: var(--ink); }
 .planta .legend .lg { display: flex; align-items: center; gap: 8px; }

@@ -1,0 +1,85 @@
+/* ============================================================
+   PLANTA · QR 3D de acceso de Gerencia — estilos (2026-10-05)
+   Los del artefacto «Camarón QR» (banco de especímenes: escenario 3D y etiqueta de colección), acotados a .qr-acceso y
+   con las fuentes de la app. La página se abre sin la cabecera de la app (main.js · ?qr=gerencia): ocupa la pantalla.
+   ============================================================ */
+.qr-acceso {
+  --bg: #e8eeed; --glow: #f7faf9; --surface: #f2f6f5; --paper: #fbfcfb;
+  --ink: #13262a; --muted: #55686b; --line: #c8d4d3; --line-strong: #93a6a6;
+  --acc-l: #8f4a2f; --acc-d: #e0a07f;
+  --accent: var(--acc-l); --on-accent: #ffffff;
+  --display: Georgia, 'Iowan Old Style', serif;
+  --ui: var(--font-sans, 'Segoe UI', system-ui, sans-serif);
+  --mono: var(--font-mono, ui-monospace, Consolas, monospace);
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  display: grid; grid-template-columns: minmax(0, 1fr) 380px;
+  background: var(--bg); color: var(--ink); font: 400 15px/1.5 var(--ui); -webkit-font-smoothing: antialiased;
+}
+[data-theme="dark"] .qr-acceso {
+  --bg: #0d1a1d; --glow: #182b2f; --surface: #112226; --paper: #152a2e;
+  --ink: #e1eae9; --muted: #8fa3a5; --line: #24383c; --line-strong: #3e575b;
+  --accent: var(--acc-d); --on-accent: #10191b; color-scheme: dark;
+}
+.qr-acceso * { box-sizing: border-box; }
+.qr-acceso [hidden] { display: none !important; }
+
+.qr-acceso .stage { position: relative; min-height: 0; overflow: hidden; background: radial-gradient(ellipse 60% 55% at 50% 48%, var(--glow), var(--bg)); }
+.qr-acceso #scene { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; cursor: pointer; touch-action: pan-y; outline: none; }
+.qr-acceso #scene:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.qr-acceso .brand { position: absolute; left: 24px; top: 20px; display: grid; gap: 2px; pointer-events: none; }
+.qr-acceso .wordmark { font: 500 30px/1 var(--display); letter-spacing: -.01em; }
+.qr-acceso .wordmark i { font-style: italic; font-weight: 400; color: var(--accent); }
+.qr-acceso .dest { font: 400 12px/1.4 var(--mono); color: var(--muted); max-width: min(60vw, 420px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qr-acceso .hint { position: absolute; left: 16px; right: 16px; bottom: 18px; margin: 0; text-align: center; font: italic 400 19px/1.3 var(--display); color: var(--muted); pointer-events: none; }
+.qr-acceso .loading { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: grid; place-items: center; margin: 0; padding: 0 16px; text-align: center; font: italic 400 22px/1.3 var(--display); color: var(--muted); }
+
+.qr-acceso .panel { background: var(--surface); border-left: 1px solid var(--line); padding: 28px 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.qr-acceso .label { display: block; font: 600 11px/1 var(--ui); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+.qr-acceso .titulo { margin: 0 0 6px; font: 600 22px/1.15 var(--display); }
+.qr-acceso .lede { margin: 0; font-size: 14px; color: var(--muted); }
+.qr-acceso .field { display: flex; gap: 8px; }
+.qr-acceso .field input { flex: 1; min-width: 0; font: 400 13px/1.2 var(--mono); color: var(--ink); background: var(--paper); border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px 12px; }
+.qr-acceso .abrir { display: inline-block; margin-top: 10px; font: 600 13.5px/1.2 var(--ui); color: var(--accent); }
+.qr-acceso .err { margin: 8px 0 0; font-size: 13px; color: var(--accent); }
+.qr-acceso .sub { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); }
+
+.qr-acceso button { font: 600 14px/1.2 var(--ui); color: var(--ink); background: transparent; border: 1px solid var(--line-strong); border-radius: 8px; padding: 11px 14px; cursor: pointer; transition: background-color .15s, border-color .15s, color .15s; }
+.qr-acceso button:hover { border-color: var(--ink); }
+.qr-acceso button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.qr-acceso button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.qr-acceso button.primary:hover { filter: brightness(1.06); }
+.qr-acceso button:disabled { opacity: .42; cursor: default; }
+.qr-acceso button:disabled:hover { border-color: var(--line); }
+
+.qr-acceso .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.qr-acceso .chip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 13px; border-radius: 999px; font-weight: 500; border-color: var(--line); }
+.qr-acceso .chip.sw-chip { padding-left: 8px; }
+.qr-acceso .chip .sw { width: 18px; height: 18px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12); }
+.qr-acceso .chip .code { font: 500 11px/1 var(--mono); color: var(--muted); }
+.qr-acceso .chip[aria-checked="true"] { border-color: var(--accent); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.qr-acceso .chip[aria-checked="true"] .code { color: inherit; }
+
+/* la etiqueta de colección: el único elemento con marco */
+.qr-acceso .tag { background: var(--paper); border: 1px solid var(--line-strong); border-radius: 3px; padding: 4px; }
+.qr-acceso .tag-in { border: 1px solid var(--line); border-radius: 2px; padding: 14px 16px 12px; display: grid; gap: 10px; }
+.qr-acceso .sci { margin: 0; font: 400 22px/1.15 var(--display); }
+.qr-acceso .sci em { font-style: italic; }
+.qr-acceso .sci .auth { font-size: 15px; color: var(--muted); white-space: nowrap; }
+.qr-acceso .common { margin: -6px 0 0; font: italic 400 15px/1.3 var(--display); color: var(--muted); }
+.qr-acceso .rows { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; font: 400 12.5px/1.45 var(--mono); border-top: 1px dashed var(--line-strong); padding-top: 10px; }
+.qr-acceso .rows dt { color: var(--muted); }
+.qr-acceso .rows dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+
+.qr-acceso .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.qr-acceso .note { margin: 0; font-size: 13.5px; color: var(--muted); max-width: 60ch; }
+.qr-acceso .toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 30; background: var(--ink); color: var(--bg); font: 500 13.5px/1.2 var(--ui); padding: 10px 16px; border-radius: 999px; opacity: 0; pointer-events: none; transition: opacity .2s; }
+.qr-acceso .toast.on { opacity: 1; }
+
+@media (max-width: 860px) {
+  .qr-acceso { position: static; height: auto; min-height: 100%; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(380px, 62svh) auto; }
+  .qr-acceso .panel { border-left: 0; border-top: 1px solid var(--line); padding: 22px 16px 28px; overflow: visible; }
+  .qr-acceso .brand { left: 16px; top: 14px; }
+  .qr-acceso .wordmark { font-size: 26px; }
+  .qr-acceso .hint { font-size: 17px; bottom: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .qr-acceso button, .qr-acceso .toast { transition: none; } }

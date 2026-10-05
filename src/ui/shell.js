@@ -8,6 +8,7 @@ import { destroyAllCharts } from '../core/charts.js';
 import { fmtShort, parseAnyDate } from '../core/dates.js';
 import { getField, F } from '../core/fields.js';
 import { toast } from './toast.js';
+import { rolDeEnlace, rolRecordado, recordarRol, olvidarRol, direccionSinRol } from './accesoRol.js';
 // Logo corporativo (pantalla de entrada). Vite lo resuelve a un asset con hash.
 import logoUrl from '../assets/logo.png';
 
@@ -204,6 +205,22 @@ const LOADER_MSGS = [
 ];
 let _loaderTimer = null;
 
+/**
+ * Entrada directa por enlace (2026-10-05, usuario): `…/?rol=gerencia` (el enlace del QR de acceso) elige el rol sin la
+ * pantalla de roles, lo recuerda en el equipo y limpia la dirección; sin enlace, el rol recordado (también al abrir desde
+ * el ícono de inicio). La llama main.js al final del arranque, con las vistas y el lector del libro ya listos. Sin enlace
+ * ni rol recordado no hace nada: la pantalla de roles queda como siempre.
+ */
+export function aplicarRolDeArranque() {
+  const enlace = rolDeEnlace(location.search);
+  if (enlace) {
+    recordarRol(enlace);
+    try { history.replaceState(history.state, '', direccionSinRol(location.href)); } catch (_) { /* la dirección queda como vino */ }
+  }
+  const rol = enlace || rolRecordado();
+  if (rol && ROLES[rol]) selectRole(rol);
+}
+
 export function showLoader(on) {
   els.loader.classList.toggle('is-active', !!on);
   clearInterval(_loaderTimer);
@@ -240,7 +257,8 @@ function bindEvents(appEl) {
     const btn = e.target.closest('[data-role]');
     if (btn) selectRole(btn.dataset.role);
   });
-  appEl.querySelector('#changeRole').addEventListener('click', () => { closeDrawer(); showEntry(); });
+  // «Cambiar rol» también olvida el rol que el equipo recordaba por el enlace de Gerencia (accesoRol.js)
+  appEl.querySelector('#changeRole').addEventListener('click', () => { olvidarRol(); closeDrawer(); showEntry(); });
   // ⟳ y la píldora: refresco a mano. Si ya hay una descarga en curso no lanza otra.
   const manual = async () => {
     if (store.refreshing) return;
