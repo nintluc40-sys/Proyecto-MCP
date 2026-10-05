@@ -76,7 +76,7 @@
 .planta .at-t { display: flex; flex-wrap: wrap; gap: 6px; }
 .planta .at-t button { font: 600 12.5px/1 var(--font-mono); color: #c62828; background: color-mix(in srgb, #e53935 10%, transparent); border: 1px solid color-mix(in srgb, #e53935 40%, transparent); border-radius: 999px; padding: 7px 10px; min-height: 32px; cursor: pointer; }
 .planta .at-vacio { font-size: 13px; color: var(--muted); }
-[data-theme="dark"] .planta .atender h2, [data-theme="dark"] .planta .at-t button { color: #ff8a80; }
+[data-theme="dark"] .planta .atender h2, [data-theme="dark"] .planta .at-t button, [data-theme="dark"] .planta .legend .lg-alerta { color: #ff8a80; }
 .planta .at-g i.reloj { width: auto; height: auto; font-style: normal; font-size: 12px; }
 .planta .repro-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .planta .rp { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 2px 10px; font-size: 13px; }
