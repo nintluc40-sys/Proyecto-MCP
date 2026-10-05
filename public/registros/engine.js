@@ -15840,7 +15840,8 @@ function madGridKey(ev){
   if(!t || (t.tagName!=="INPUT" && t.tagName!=="SELECT") || typeof t.getAttribute!=="function") return;
   const rA = t.getAttribute("data-r"), cA = t.getAttribute("data-c");
   if(rA===null || cA===null) return;
-  const panel = t.closest("#fp-salas,#fp-tanques,#fp-biomol,#fp-reproductivo,#fp-marea");
+  // Punto 2 (2026-10-04) · también las tres tablas de la Auditoría, cada una por separado (sus filas se numeran cada una desde 0).
+  const panel = t.closest("#fp-salas,#fp-tanques,#fp-biomol,#fp-reproductivo,#fp-marea,#aud-t-siembras,#aud-t-transferencias,#aud-t-cosechas");
   if(!panel) return;
   const r = parseInt(rA,10), c = parseInt(cA,10);
   if(!Number.isFinite(r) || !Number.isFinite(c)) return;
@@ -19739,6 +19740,19 @@ const AUD_CAMPOS = {
 };
 // Las «Observaciones» son de la AUDITORÍA (un campo, como el Score) y van en cada una de sus filas.
 const AUD_TIPO = { siembras:"Siembra", transferencias:"Transferencia", cosechas:"Cosecha" };
+/* Las columnas de cada TABLA de la ficha en su orden visible: [clave, título, tipo]. De aquí salen los títulos, las
+   coordenadas del teclado (data-r/data-c: sólo las celdas con campo) y el reparto de lo PEGADO desde Excel (punto 2,
+   2026-10-04). «Partida» se calcula: ocupa su columna —un bloque copiado en el orden de la tabla casa— pero no se pega. */
+const AUD_COLS_FICHA = {
+  siembras: [["siembra","Siembra","sel"],["modulo","Módulo","sel"],["tanque","TQ"],["fecha","Fecha","fecha"],["origen","Origen","sel"],
+    ["guia","Guía remisión"],["cantidad","Cantidad"],["ton","Ton."],["lote","Lote"],["codigo","Cód. gen."],
+    ["fechaIng","Fecha ingreso reprod.","fecha"],["guiasIng","Guías ingreso reprod."]],
+  transferencias: [["fecha","Fecha","fecha"],["modulo","Módulo","sel"],["tanque","TQ origen"],["moduloDest","Módulo destino","sel"],
+    ["tanqueDest","TQ destino"],["cantidad","Cantidad"],["estadio","Estadío"],["plg","PL/g"],["larvasPeq","% larvas peq."]],
+  cosechas: [["fecha","Fecha","fecha"],["modulo","Módulo","sel"],["tanque","TQ"],["partida","Partida","calc"],["cantidad","Cant. real"],
+    ["ton","Ton."],["estadio","Estadío"],["plg","PL/g"],["camaronera","Camaronera","sel"],["piscinas","Piscina(s)"],["guia","Guía remisión"],
+    ["guiaDespacho","Guía despacho"],["facturada","Facturada"],["tinas","Tinas"],["placa","Placa"]]
+};
 
 /* ── Las reglas (puras) ─────────────────────────────────── */
 // Una cantidad de larvas es un ENTERO: se quitan separadores («6,300,000», «6.300.000» o «6 300 000» son lo mismo).
@@ -20061,6 +20075,112 @@ function audQuitarEl(el){
   _audGuardarBorrador();
   renderAud();
 }
+/* ── 📋 Copiar y pegar como en Excel (punto 2, usuario, 2026-10-04) ──────────────────────────────────────────────
+   Decidido con el usuario: como en Biomol, desde la celda elegida hacia la derecha y abajo, en el ORDEN DE COLUMNAS de esa
+   tabla, y si el bloque trae más filas se AÑADEN. Las fechas (dd/mm/aaaa y parecidas) se convierten —un «24/09/2026» puesto
+   tal cual en un campo de fecha se borraba sin decir nada—; las listas se reconocen sin mayúsculas ni tildes y con sus formas
+   habituales (1, 1ra → 1ª · 3, M3, Módulo 3 → M03). Lo no reconocido queda VACÍO y se dice cuántas celdas y cuáles. Una
+   primera fila de títulos se salta. La Partida no se pega: se recalcula. */
+function _audSinTilde(v){ return String(v == null ? "" : v).normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, ""); }
+function _audOpcionesDe(k){
+  if(k === "siembra") return AUD_SIEMBRAS;
+  if(k === "origen") return AUD_ORIGENES;
+  if(k === "camaronera") return DESTINO_OPTS;
+  return TRAS_MODULO_OPTS;   // modulo · moduloDest
+}
+// «24/09/2026», «24-9-26», «2026-09-24» o «2026-09-24T00:00» → «2026-09-24»; null si no es una fecha real.
+function _audPegadoFecha(v){
+  const t = String(v).trim().split(/[ T]/)[0];
+  let y, mo, d, x;
+  if((x = /^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/.exec(t))){ y = +x[1]; mo = +x[2]; d = +x[3]; }
+  else if((x = /^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2}|\d{4})$/.exec(t))){ d = +x[1]; mo = +x[2]; y = x[3].length === 2 ? 2000 + +x[3] : +x[3]; }
+  else return null;
+  const f = new Date(Date.UTC(y, mo - 1, d));
+  if(f.getUTCFullYear() !== y || f.getUTCMonth() !== mo - 1 || f.getUTCDate() !== d) return null;
+  return f.toISOString().slice(0, 10);
+}
+// El valor de UNA celda pegada para su columna: el texto, la fecha ISO o la opción de la lista; null si no se reconoce.
+function _audPegadoValor(col, v){
+  const t = String(v == null ? "" : v).trim();
+  if(t === "") return "";
+  if(col[2] === "fecha") return _audPegadoFecha(t);
+  if(col[2] !== "sel") return t;
+  const opts = _audOpcionesDe(col[0]), n = _audSinTilde(t);
+  const igual = opts.filter(function(o){ return _audSinTilde(o) === n; })[0];
+  if(igual) return igual;
+  let x;
+  if(col[0] === "siembra"){
+    if((x = /^([123])(a|ra|era|da|nda|ta|ma)?(siembra)?$/.exec(n))) return AUD_SIEMBRAS[+x[1] - 1];
+    if((x = /^(primera|segunda|tercera)(siembra)?$/.exec(n))) return AUD_SIEMBRAS[["primera","segunda","tercera"].indexOf(x[1])];
+    return null;
+  }
+  if((col[0] === "modulo" || col[0] === "moduloDest") && (x = /^(m|mod|modulo)?0*(\d{1,2})$/.exec(n))){
+    const m = "M" + (x[2].length < 2 ? "0" : "") + x[2];
+    return opts.indexOf(m) !== -1 ? m : null;
+  }
+  return null;
+}
+function _audFilaVacia(sec){
+  const f = { obs: "" };
+  AUD_COLS_FICHA[sec].forEach(function(c){ f[c[0]] = ""; });
+  return f;
+}
+// ¿Una primera fila de TÍTULOS? Sin ninguna cifra y con algún título de la tabla (o cabecera de la hoja) reconocible.
+function _audEsCabecera(sec, celdas){
+  if(celdas.some(function(c){ return /\d/.test(c); })) return false;
+  const titulos = AUD_COLS_FICHA[sec].map(function(c){ return _audSinTilde(c[1]); })
+    .concat((AUD_CAMPOS[sec] || []).map(function(c){ return _audSinTilde(c[1]); }));
+  return celdas.some(function(c){
+    const n = _audSinTilde(c);
+    return n.length >= 2 && titulos.some(function(t){ return t === n || (n.length >= 3 && t.length >= 3 && (t.indexOf(n) === 0 || n.indexOf(t) === 0)); });
+  });
+}
+function audPegar(ev){
+  const t = ev && ev.target, cd = ev && (ev.clipboardData || window.clipboardData);
+  if(!t || !cd) return;
+  const txt = cd.getData("text");
+  const sec = t.getAttribute("data-as"), i0 = Number(t.getAttribute("data-ai")), cols = AUD_COLS_FICHA[sec];
+  if(!txt || !cols || !Number.isInteger(i0)) return;
+  const c0 = cols.map(function(c){ return c[0]; }).indexOf(t.getAttribute("data-af"));
+  if(c0 < 0) return;
+  if(txt.indexOf("\t") === -1 && txt.indexOf("\n") === -1){
+    // Una sola celda: el pegado normal, salvo una fecha en un campo de fecha (en otro formato se borraría sin avisar).
+    if(cols[c0][2] !== "fecha") return;
+    const iso = _audPegadoFecha(txt);
+    if(!iso) return;
+    ev.preventDefault();
+    t.value = iso;
+    audFila(t, true);
+    return;
+  }
+  ev.preventDefault();
+  const lineas = txt.replace(/\r/g, "").split("\n");
+  if(lineas.length && lineas[lineas.length - 1] === "") lineas.pop();
+  const mat = lineas.map(function(l){ return l.split("\t"); });
+  if(mat.length && _audEsCabecera(sec, mat[0])) mat.shift();
+  if(!mat.length) return;
+  const m = _audActual(), L = m[sec], malas = [];
+  mat.forEach(function(celdas, dr){
+    const i = i0 + dr;
+    while(L.length <= i) L.push(_audFilaVacia(sec));
+    celdas.forEach(function(raw, dc){
+      const col = cols[c0 + dc];
+      if(!col || col[2] === "calc") return;
+      const val = _audPegadoValor(col, raw);
+      if(val === null){ malas.push(col[1] + " «" + String(raw).trim() + "»"); L[i][col[0]] = ""; }
+      else L[i][col[0]] = val;
+    });
+  });
+  // Las partidas de las cosechas tocadas, en orden: la siguiente libre de su tanque.
+  if(sec === "cosechas"){
+    for(let i = i0; i < i0 + mat.length; i++) L[i].partida = "";
+    for(let i = i0; i < i0 + mat.length; i++) L[i].partida = audSiguientePartida(L, L[i].modulo, L[i].tanque, i);
+  }
+  _audGuardarBorrador();
+  renderAud();
+  toast("📋 Pegado en " + AUD_TIPO[sec] + ": " + mat.length + " fila(s).", "ok", 3500);
+  if(malas.length) toast(malas.length + " celda(s) no reconocida(s), quedaron vacías: " + malas.slice(0, 3).join(" · ") + (malas.length > 3 ? " …" : ""), "warn", 9000);
+}
 // Valida y guarda la auditoría en el dispositivo como PENDIENTE (la misma corrida · módulo la sustituye).
 function _audRegistrar(){
   const m = _audActual();
@@ -20183,22 +20303,27 @@ function renderAud(){
   if(!fp) return;
   const m = _audActual();
   const v = function(x){ return escapeHtml(x == null ? "" : String(x)); };
+  // Punto 2 · cada celda con campo lleva su fila y su columna de TECLADO (data-r/data-c) y recibe lo pegado (audPegar).
+  const nav = function(sec, i, k){
+    const c = AUD_COLS_FICHA[sec].filter(function(x){ return x[2] !== "calc"; }).map(function(x){ return x[0]; }).indexOf(k);
+    return ' data-r="'+i+'" data-c="'+c+'" onpaste="audPegar(event)"';
+  };
   const inp = function(sec, i, k, extra){
     const f = m[sec][i];
-    return '<input data-as="'+sec+'" data-ai="'+i+'" data-af="'+k+'" value="'+v(f[k])+'" oninput="audFila(this,false)" onchange="audFila(this,true)"'
+    return '<input data-as="'+sec+'" data-ai="'+i+'" data-af="'+k+'"'+nav(sec, i, k)+' value="'+v(f[k])+'" oninput="audFila(this,false)" onchange="audFila(this,true)"'
       + ' style="width:100%;min-width:'+((extra && extra.w) || 70)+'px;padding:4px 6px;border:1px solid var(--bdr);border-radius:5px;font:inherit;font-size:12px"'
       + (extra && extra.tipo ? ' type="'+extra.tipo+'"' : '') + (extra && extra.ph ? ' placeholder="'+v(extra.ph)+'"' : '') + (extra && extra.mode ? ' inputmode="'+extra.mode+'"' : '') + '>';
   };
   const sel = function(sec, i, k, opts){
     const f = m[sec][i];
-    return '<select data-as="'+sec+'" data-ai="'+i+'" data-af="'+k+'" onchange="audFila(this,true)" style="padding:4px;border:1px solid var(--bdr);border-radius:5px;font-size:12px">'
+    return '<select data-as="'+sec+'" data-ai="'+i+'" data-af="'+k+'"'+nav(sec, i, k)+' onchange="audFila(this,true)" style="padding:4px;border:1px solid var(--bdr);border-radius:5px;font-size:12px">'
       + '<option value="">—</option>' + trasOpts(opts, f[k] || "") + '</select>';
   };
   // Los botones de fila con su onclick ESCRITO: un onclick no interpola nada (verificar-atributos-evento).
   const btnQuitar = function(sec, i){ return '<button class="btn" type="button" data-as="'+sec+'" data-ai="'+i+'" onclick="audQuitarEl(this)" title="Quitar la fila" style="font-size:11px;padding:3px 7px">✕</button>'; };
   const btnPartida = function(i){ return '<button class="btn" type="button" data-as="cosechas" data-ai="'+i+'" onclick="audOtraPartidaEl(this)" title="Otra partida de este tanque (otro día, destino o piscina)" style="font-size:11px;padding:3px 7px">➕ partida</button>'; };
   const tabla = function(sec, cab, filas){
-    return '<div style="overflow:auto;border:1px solid #e2e8f0;border-radius:8px;margin-top:6px"><table class="ft" style="font-size:11px;min-width:100%">'
+    return '<div id="aud-t-'+sec+'" style="overflow:auto;border:1px solid #e2e8f0;border-radius:8px;margin-top:6px"><table class="ft" style="font-size:11px;min-width:100%">'
       + '<thead><tr>' + cab.map(function(h){ return '<th style="white-space:nowrap">'+escapeHtml(h)+'</th>'; }).join("") + '<th></th></tr></thead>'
       + '<tbody>' + (filas || '<tr><td colspan="'+(cab.length + 1)+'" style="color:#94a3b8;text-align:center;padding:10px">Sin filas todavía.</td></tr>') + '</tbody></table></div>'
       + '<div style="margin-top:6px"><button class="btn" type="button" data-as="'+sec+'" onclick="audAgregarEl(this)" style="font-size:12px">➕ Añadir</button></div>';
@@ -20256,12 +20381,13 @@ function renderAud(){
     + '<div class="fc-h"><div class="fc-t">🧾 Auditoría · siembra, transferencia y cosecha de la corrida</div><span class="ssp ssp-mt">'+escapeHtml(AUD_SHEET)+'</span></div>'
     + '<div class="fc-b"><div class="mad-form">'
     + cab
+    + '<div style="font-size:11px;color:#475569;margin-top:8px">📋 Se puede <b>pegar desde Excel</b> en cualquier tabla, en el orden de sus columnas: desde la celda elegida hacia la derecha y abajo (las filas que falten se añaden). Enter y las flechas mueven entre celdas.</div>'
     + titulo("🌱 Siembra", "una fila por tanque y siembra; «➕ Añadir» copia la anterior con el tanque siguiente")
-    + tabla("siembras", ["Siembra","Módulo","TQ","Fecha","Origen","Guía remisión","Cantidad","Ton.","Lote","Cód. gen.","Fecha ingreso reprod.","Guías ingreso reprod."], filasS)
+    + tabla("siembras", AUD_COLS_FICHA.siembras.map(function(c){ return c[1]; }), filasS)
     + titulo("🔀 Transferencia", "opcional; una fila por origen → destino")
-    + tabla("transferencias", ["Fecha","Módulo","TQ origen","Módulo destino","TQ destino","Cantidad","Estadío","PL/g","% larvas peq."], filasT)
+    + tabla("transferencias", AUD_COLS_FICHA.transferencias.map(function(c){ return c[1]; }), filasT)
     + titulo("🎣 Cosecha y despacho", "una fila por partida; la facturada propone el 90 % de la real")
-    + tabla("cosechas", ["Fecha","Módulo","TQ","Partida","Cant. real","Ton.","Estadío","PL/g","Camaronera","Piscina(s)","Guía remisión","Guía despacho","Facturada","Tinas","Placa"], filasC)
+    + tabla("cosechas", AUD_COLS_FICHA.cosechas.map(function(c){ return c[1]; }), filasC)
     + titulo("📊 Resumen", "calculado; no se envía")
     + '<div data-aud-resumen>' + _audResumenHTML(m) + '</div>'
     + '<div class="meta" style="margin-top:12px"><div class="mf" style="flex:1 1 100%"><label>Observaciones</label>'

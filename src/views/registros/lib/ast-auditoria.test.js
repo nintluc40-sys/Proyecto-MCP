@@ -18,7 +18,8 @@ const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['AUD_SHEET', 'AUD_HEADERS', 'AUD_SIEMBRAS', 'AUD_DRAFT_KEY', 'audEntero', 'audDecimal', 'audFacturadaPropuesta',
   'audFacturada', 'audFacturadaEsExcepcion', 'audRowId', 'audSiguientePartida', 'audValidar', 'audFilas', 'buildAudPayload',
   'audResumen', 'renderAud', 'audCampo', 'audFila', 'audAgregarEl', 'audOtraPartidaEl', 'audQuitarEl', 'audGuardar', 'audNueva',
-  'audAbrirEl', 'audBorrarEl', '_audRaw', 'loadAud', '_reconcileMark', 'AST_TABS', 'TAB_META'];
+  'audAbrirEl', 'audBorrarEl', 'audPegar', 'madGridKey',   // punto 2 (2026-10-04) · pegar y teclado
+  '_audRaw', 'loadAud', '_reconcileMark', 'AST_TABS', 'TAB_META'];
 const H = {};
 
 beforeAll(async () => {
@@ -267,5 +268,92 @@ describe('Auditoría · la ficha en el módulo AsT', () => {
       { id: 'AUE-e', ts: viejo, synced: true, syncedAt: viejo, data: audit({}) },
     ]));
     expect(H.loadAud().map((r) => r.id)).toEqual(['AUE-p']);
+  });
+});
+
+/* Punto 2 (usuario, 2026-10-04) · copiar y pegar como Excel, como en Biomol, y moverse con Enter y flechas. Decidido:
+   por ORDEN DE COLUMNAS de cada tabla, desde la celda elegida; las filas que falten se añaden; fechas y listas se
+   reconocen; lo no reconocido queda vacío y se avisa; una primera fila de títulos se salta; la Partida se recalcula. */
+describe('Auditoría · 📋 pegar desde Excel y moverse con el teclado', () => {
+  const avisos = [];
+  beforeEach(() => { avisos.length = 0; H.setToast((m, tipo) => { avisos.push({ m: String(m), tipo }); H.ultimoAviso = m; }); });
+  const celda = (sec, i, k) => fp().querySelector(`[data-as="${sec}"][data-ai="${i}"][data-af="${k}"]`);
+  const pegar = (el, filas) => {
+    let evitado = false;
+    H.audPegar({ target: el, clipboardData: { getData: () => filas.map((f) => f.join('\t')).join('\r\n') + '\r\n' }, preventDefault: () => { evitado = true; } });
+    return evitado;
+  };
+  const tabla = (sec) => H.modelo()[sec];
+  const anadir = (sec) => H.audAgregarEl({ getAttribute: () => sec });
+
+  it('🔴 Siembra desde la primera celda: salta la fila de títulos, añade las filas y reconoce fechas y listas', () => {
+    anadir('siembras');
+    expect(pegar(celda('siembras', 0, 'siembra'), [
+      ['SIEMBRA', 'MÓDULO', 'TQ', 'FECHA', 'ORIGEN', 'GUÍA', 'CANTIDAD', 'TON', 'LOTE', 'CÓDIGO', 'FECHA INGRESO', 'GUÍAS INGRESO'],
+      ['1ra', '3', '1', '24/09/2026', 'OMARSA', '271036', '7.000.000', '9.5', 'AB', 'CG1', '1/9/26', '271036 - 271037'],
+      ['2', 'M3', '2', '2026-09-25', 'texcumar', '271040', '6,500,000', '9,5', 'AB', 'CG1', '', ''],
+      ['3a Siembra', 'Módulo 3', '3', '25-9-2026', 'Omarsa', '', '6000000', '', '', '', '', ''],
+    ])).toBe(true);
+    const S = tabla('siembras');
+    expect(S).toHaveLength(3);
+    expect(S.map((r) => [r.siembra, r.modulo, r.tanque, r.fecha, r.origen])).toEqual([
+      ['1ª', 'M03', '1', '2026-09-24', 'Omarsa'], ['2ª', 'M03', '2', '2026-09-25', 'Texcumar'], ['3ª', 'M03', '3', '2026-09-25', 'Omarsa']]);
+    expect([S[0].cantidad, S[0].fechaIng, S[0].guiasIng, S[1].ton]).toEqual(['7.000.000', '2026-09-01', '271036 - 271037', '9,5']);
+    expect(celda('siembras', 2, 'fecha').value, 'la tabla se repinta con lo pegado').toBe('2026-09-25');
+    expect(avisos.filter((a) => a.tipo === 'warn')).toEqual([]);
+  });
+
+  it('🔴 Cosecha: la Partida no se pega y se recalcula (dos partidas del mismo tanque); lo no reconocido queda vacío y se dice', () => {
+    anadir('cosechas');
+    pegar(celda('cosechas', 0, 'fecha'), [
+      ['01/10/2026', 'M03', '5', '9', '3200000', '9.5', 'PL13', '160', 'pto inca 1', '40-41', 'G1', 'D1', '', '4', 'ABC123'],
+      ['02/10/2026', 'M03', '5', '9', '1100000', '9.5', 'PL14', '170', 'Taura 1', '42', 'G2', 'D2', '', '2', 'XYZ9'],
+      ['31/02/2026', 'M03', '6', '', '900000', '', '', '', 'Taura', '', '', '', '', '', ''],
+    ]);
+    const C = tabla('cosechas');
+    expect(C.map((r) => [r.fecha, r.tanque, r.partida, r.camaronera])).toEqual([
+      ['2026-10-01', '5', 1, 'Pto.Inca 1'], ['2026-10-02', '5', 2, ''], ['', '6', 1, 'Taura']]);
+    expect(C[0].placa).toBe('ABC123');
+    const aviso = avisos.find((a) => a.tipo === 'warn');
+    expect(aviso.m).toContain('2 celda(s) no reconocida(s)');
+    expect(aviso.m).toContain('Camaronera «Taura 1»');
+    expect(aviso.m).toContain('Fecha «31/02/2026»');
+  });
+
+  it('desde una celda del medio: rellena desde su columna y añade la fila que falta; lo que sobra a la derecha se ignora', () => {
+    anadir('transferencias');
+    tabla('transferencias')[0].tanque = '7';
+    pegar(celda('transferencias', 0, 'cantidad'), [['500000', 'PL5', '120', '3', 'sobra'], ['400000', 'PL5', '110', '2', 'sobra']]);
+    const T = tabla('transferencias');
+    expect(T).toHaveLength(2);
+    expect([T[0].tanque, T[0].cantidad, T[0].estadio, T[0].plg, T[0].larvasPeq]).toEqual(['7', '500000', 'PL5', '120', '3']);
+    expect([T[1].cantidad, T[1].larvasPeq, T[1].tanque]).toEqual(['400000', '2', '']);
+  });
+
+  it('una primera fila SÓLO de texto que no son títulos no se salta (una columna de orígenes)', () => {
+    anadir('siembras');
+    pegar(celda('siembras', 0, 'origen'), [['Omarsa'], ['Texcumar']]);
+    expect(tabla('siembras').map((r) => r.origen)).toEqual(['Omarsa', 'Texcumar']);
+  });
+
+  it('🔴 una sola fecha pegada en un campo de fecha se convierte; una sola celda de texto se pega como siempre', () => {
+    anadir('siembras');
+    const f = celda('siembras', 0, 'fecha');
+    let evitado = false;
+    H.audPegar({ target: f, clipboardData: { getData: () => '24/09/2026' }, preventDefault: () => { evitado = true; } });
+    expect([evitado, f.value, tabla('siembras')[0].fecha]).toEqual([true, '2026-09-24', '2026-09-24']);
+    evitado = false;
+    H.audPegar({ target: celda('siembras', 0, 'guia'), clipboardData: { getData: () => '271036' }, preventDefault: () => { evitado = true; } });
+    expect(evitado, 'el navegador lo pega').toBe(false);
+  });
+
+  it('🔴 Enter y flechas mueven dentro de CADA tabla; ←/→ dentro de una fecha no cambian de columna; la Partida se salta', () => {
+    anadir('siembras'); anadir('siembras'); anadir('transferencias'); anadir('cosechas');
+    const tecla = (el, key) => { el.focus(); H.madGridKey({ key, target: el, preventDefault() {} }); return document.activeElement; };
+    expect(tecla(celda('siembras', 0, 'tanque'), 'Enter')).toBe(celda('siembras', 1, 'tanque'));
+    expect(tecla(celda('siembras', 1, 'tanque'), 'Enter'), 'última fila: no salta a la tabla de abajo').toBe(celda('siembras', 1, 'tanque'));
+    expect(tecla(celda('siembras', 0, 'siembra'), 'ArrowRight')).toBe(celda('siembras', 0, 'modulo'));
+    expect(tecla(celda('siembras', 0, 'fecha'), 'ArrowRight'), 'en la fecha, ← → mueven día/mes/año').toBe(celda('siembras', 0, 'fecha'));
+    expect(tecla(celda('cosechas', 0, 'tanque'), 'ArrowRight'), 'la Partida (calculada) se salta').toBe(celda('cosechas', 0, 'cantidad'));
   });
 });
