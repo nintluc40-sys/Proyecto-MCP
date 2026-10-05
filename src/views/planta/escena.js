@@ -102,10 +102,10 @@ function blotches(g, n, colors, count, rmin, rmax) { for (let i = 0; i < count; 
 function fisuras(g, n, cuantas, color, ancho) { // líneas quebradas finas (grietas), repetibles en los bordes
   g.strokeStyle = color; g.lineWidth = ancho; g.lineCap = 'round';
   for (let i = 0; i < cuantas; i++) {
-    let x = R(0, n), y = R(0, n), a = R(0, 6.28); const pasos = Math.floor(R(4, 10));
-    g.beginPath(); g.moveTo(x, y);
-    for (let k = 0; k < pasos; k++) { a += R(-.7, .7); x += Math.cos(a) * R(6, 22); y += Math.sin(a) * R(6, 22); g.lineTo(x, y); }
-    g.stroke();
+    let x = R(0, n), y = R(0, n), a = R(0, 6.28); const pasos = Math.floor(R(4, 10)), pts = [[x, y]];
+    for (let k = 0; k < pasos; k++) { a += R(-.7, .7); x += Math.cos(a) * R(6, 22); y += Math.sin(a) * R(6, 22); pts.push([x, y]); }
+    // se dibuja también desplazada una baldosa a cada lado: la grieta que cruza el borde sigue en la baldosa vecina
+    for (const ox of [-n, 0, n]) for (const oy of [-n, 0, n]) { g.beginPath(); pts.forEach(([px, py], j) => (j ? g.lineTo(px + ox, py + oy) : g.moveTo(px + ox, py + oy))); g.stroke(); }
   }
 }
 /** Mapa de normales (lineal, repetible) de una altura h(x, y) en [0, n): el relieve que hace reaccionar a la luz el
@@ -121,8 +121,9 @@ function normalDeAltura(n, h, fuerza) {
 }
 const TX = {
   sand: canvasTex(1024, (g, n) => { grain(g, n, '#d9c9a3', 40, 9000, 2); blotches(g, n, ['rgba(160,140,95,.16)', 'rgba(240,226,190,.2)', 'rgba(120,120,70,.1)'], 30, 20, 70);
-    // ondas de viento: crestas sinuosas, con su sombra debajo; la onda completa cabe en la baldosa para que repita sin corte
-    for (let y = 6; y < n; y += 13) { const fase = R(0, 6.28), amp = R(2, 5);
+    // ondas de viento: crestas sinuosas, con su sombra debajo; ondas enteras a lo ancho y crestas a paso exacto a lo alto,
+    // para que la baldosa repita sin corte
+    for (let i = 0; i < 79; i++) { const y = 6 + i * n / 79, fase = R(0, 6.28), amp = R(2, 5);   // 79 crestas exactas: sin franja en el borde
       for (const [dy, c] of [[0, 'rgba(255,248,225,.18)'], [2, 'rgba(120,100,60,.12)']]) { g.strokeStyle = c; g.lineWidth = 1.4; g.beginPath();
         for (let x = 0; x <= n; x += 8) { const yy = y + dy + amp * Math.sin(x / n * 6.2832 * 4 + fase); if (x) g.lineTo(x, yy); else g.moveTo(x, yy); } g.stroke(); } } }),
   concrete: canvasTex(1024, (g, n) => { grain(g, n, '#d9d6cf', 22, 7000, 1.6); blotches(g, n, ['rgba(150,145,135,.12)', 'rgba(255,255,255,.12)'], 25, 30, 110);
