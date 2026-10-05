@@ -21,8 +21,8 @@
    y vuelve a ~60 al tocarla o al moverse la cámara; fuera de pantalla no se dibuja.
    Selector de mes (2026-10-04, usuario): ◀ ▶ y un deslizador como la tabla Producción Omarsa, que mueven TODA la vista:
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
-   Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM) que se rehace
-   sólo al cambiar la hora del día; en toda la maqueta, tenue en el agua de los tanques para que se siga leyendo la etapa.
+   Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM), uno por hora
+   del día y guardado; en toda la maqueta, tenue en el agua de los tanques para que se siga leyendo la etapa.
    Rótulos sin encimarse (2026-10-04, usuario): de lejos y en pantallas angostas se acortan («7 ⚠6»); si aún chocan,
    se oculta el de menor prioridad (el elegido, luego el de más alertas, luego larvicultura) hasta que se acerque o gire.
    Reemplazo por tiempo (2026-10-04): los días en producción de cada lote frente a los 60; el que pasa va a «Qué atender
@@ -133,7 +133,7 @@ const stars = (() => { const n = 700, pos = new Float32Array(n * 3); for (let i 
 stars.visible = false; scene.add(stars);
 /* Reflejos del cielo: el entorno de los materiales se genera del MISMO cielo (otra malla con su material), así reflejan
    el degradado y el sol de la hora elegida. Cada uno se genera la primera vez que se elige su hora (unos ms) y queda
-   guardado: volver a esa hora sólo lo cambia, nunca se rehace por cuadro. La luz ambiente baja en
+   guardado: volver a esa hora sólo lo cambia, nunca se rehace por cuadro. La luz ambiente baja
    (al 40 %) y los reflejos van al 60 %, porque el entorno también ilumina: así la escena queda igual de clara que sin él
    (medido el 2026-10-04: día 179 frente a 176, tarde 111 frente a 112, noche 63 frente a 63, de 255). El cielo pinta sus colores tal cual (toneMapped: false), así que su
    copia los recibe pasados a lineal: si no, el reflejo saldría más claro que el cielo que se ve. */
@@ -1252,7 +1252,9 @@ function dispose() {
 let slowFrames = 0, fastFrames = 0, shadowTick = 0;
 function loop(now) {
   if (!root.isConnected) { dispose(); return; }
-  if (!enPantalla) { timerFuera = setTimeout(() => { timerFuera = 0; rafId = requestAnimationFrame(loop); }, 1000); return; }
+  // con la pantalla de elegir rol encima (shell.js · showEntry pone .is-entry en .app) la maqueta no se ve, aunque para el
+  // navegador siga en pantalla: también se pausa (medido en la auditoría: seguía a 15 cps detrás)
+  if (!enPantalla || root.closest('.is-entry')) { timerFuera = setTimeout(() => { timerFuera = 0; rafId = requestAnimationFrame(loop); }, 1000); return; }
   rafId = requestAnimationFrame(loop);
   const activo = !!fly || now - ultimoToque < REPOSO_MS;
   if (!activo && now - ultimoCuadro < 1000 / REPOSO_FPS - 2) return;

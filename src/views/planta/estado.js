@@ -27,6 +27,7 @@ import { capasDelMapa, contextoDelMapa, resumenDeTanque } from '../maduracion/op
 import { permanencia } from '../maduracion/operativo.tendencias.js';
 import { UMBRALES_DE_AVISO } from '../maduracion/operativo.umbrales.js';
 import { normLote } from '../registros/lib/ficha-maduracion-desoves.schema.js';
+import { ESTADO_PRODUCCION } from '../registros/lib/mad-libro.js';
 
 const numDe = (s) => { const m = String(s || '').match(/\d+/); return m ? +m[0] : null; };
 const esModulo = (s, n) => /^M/i.test(String(s || '').trim()) && numDe(s) === n;
@@ -229,7 +230,7 @@ function reemplazoPorTiempo(M, F, salas) {
   const lotes = [];
   for (const L of (M.resumen || {}).lotes || []) {
     const clave = normLote(L.lote);
-    const s = (L.dias || []).filter((d) => d.estado === 'Producción' && vivoEn(clave, d.sala))
+    const s = (L.dias || []).filter((d) => d.estado === ESTADO_PRODUCCION && vivoEn(clave, d.sala))
       .map((d) => ({ sala: d.sala, id: idDe(d.sala), dias: Number(d.diasProduccion) || 0 }))
       .sort((a, b) => b.dias - a.dias);
     if (s.length) lotes.push({ lote: String(L.lote), dias: s[0].dias, salas: s });
