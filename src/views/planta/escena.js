@@ -23,6 +23,8 @@
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
    Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM), uno por hora
    del día y guardado; en toda la maqueta, tenue en el agua de los tanques para que se siga leyendo la etapa.
+   Orilla viva (2026-10-05, usuario, opción L): la espuma rompe en la orilla, sube por la arena húmeda y se retira (dos
+   lenguas desfasadas), y el sol destella en el mar de día y de tarde (apagado de noche).
    Personal donde hay trabajo (2026-10-05, usuario, opción K): con el mes en curso, un técnico de chaleco naranja junto a
    cada tanque en alerta, tres en cada despacho (junto al camión) y uno recorriendo cada módulo con cultivo; quien camina
    por dentro de un módulo vacío desaparece.
@@ -293,6 +295,18 @@ plane(-1500, SHORE, 1500, SHORE + 50, .024, std({ map: shallowTex, transparent: 
 const foamTex = canvasTex(512, (g, n) => { g.clearRect(0, 0, n, n); for (let i = 0; i < 1400; i++) { const x = R(0, n), spread = n * (.12 + .18 * Math.abs(Math.sin(x / n * Math.PI * 4 + 1))); const y = n / 2 + R(-1, 1) * spread * R(0, 1); g.fillStyle = 'rgba(255,255,255,' + R(.2, .75).toFixed(2) + ')'; g.beginPath(); g.ellipse(x, y, R(3, 14), R(2, 6), 0, 0, 6.29); g.fill(); } });
 const foams = [];
 for (let k = 0; k < 5; k++) { const m = std({ map: rep(foamTex, 70, 1), transparent: true, depthWrite: false, roughness: .9, opacity: 0 }); const f = plane(-1500, 0, 1500, 7, .03, m, coast); f.userData.ph = k / 5; foams.push(f); }
+// orilla viva (opción L): la espuma que rompe sube por la arena húmeda y se retira; dos lenguas desfasadas con borde de encaje
+const encajeTex = canvasTex(512, (g, n) => {
+  g.clearRect(0, 0, n, n);
+  const borde = (x) => n * .38 + 14 * Math.sin(x / n * 6.2832 * 3) + 7 * Math.sin(x / n * 6.2832 * 7 + 1);   // ondas enteras: repite sin corte
+  for (let i = 0; i < 2600; i++) { const x = R(0, n), y = borde(x) + Math.pow(rnd(), 1.7) * n * .5; g.fillStyle = 'rgba(255,255,255,' + R(.2, .8).toFixed(2) + ')'; g.beginPath(); g.arc(x, y, R(1.2, 4.5), 0, 6.2832); g.fill(); }
+  for (let x = 0; x < n; x += 2) { const y = borde(x); g.fillStyle = 'rgba(255,255,255,.75)'; g.fillRect(x, y - 2, 2, 5); }   // la línea del frente de la espuma
+});
+const lenguas = [0, .5].map((ph) => { const m = std({ map: rep(encajeTex, 60, 1), transparent: true, depthWrite: false, roughness: .85, opacity: 0 }); const f = plane(-1500, 0, 1500, 5, .03, m, coast); f.userData.ph = ph; return f; });
+// destellos del sol en el mar: dos capas de chispas que se cruzan y titilan; su intensidad la pone la hora del día
+const chispaTex = canvasTex(256, (g, n) => { g.clearRect(0, 0, n, n); for (let i = 0; i < 26; i++) { const x = R(8, n - 8), y = R(8, n - 8), r = R(.5, 1.3); const gr = g.createRadialGradient(x, y, 0, x, y, r * 3); gr.addColorStop(0, 'rgba(255,255,245,1)'); gr.addColorStop(1, 'rgba(255,255,245,0)'); g.fillStyle = gr; g.fillRect(x - r * 3, y - r * 3, r * 6, r * 6); } });
+const brillos = [0, 1].map((i) => plane(-1500, SHORE + 4, 1500, SHORE + 700, .026 + i * .001, new THREE.MeshBasicMaterial({ map: rep(chispaTex, 170 + i * 37, 46 + i * 11), color: col('#fff4d6'), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }), coast));
+let brilloBase = .32;
 // atrás: tierra con matorral, canal de salida de agua, dique con camino y piscina de sal
 plane(-1500, CH[1], 1500, .8, .012, std({ map: rep(TX.sand, 90, 1), color: col('#b9aa86'), roughness: 1 }), coast);
 plane(-1500, CH[1] - 1.2, 1500, CH[1], .014, std({ color: col('#6b6450'), roughness: .9 }), coast);
@@ -316,6 +330,10 @@ function animateCoast(t) {
   seaNormal.offset.set(t * .004, -t * .02); chNormal.offset.set(t * .03, 0); pondNormal.offset.set(t * .002, t * .001);
   foams.forEach(f => { const k = (t * .07 + f.userData.ph) % 1; const [, z] = P(0, SHORE + 24 - 26 * k); f.position.z = z + 3.5; f.material.opacity = Math.sin(Math.PI * Math.min(1, k * 1.15)) * .85; f.scale.y = 1 + k * .6; });
   outlets.forEach((o, i) => { const k = .75 + .25 * Math.sin(t * 2.2 + i); o.scale.set(k, k, 1); o.material.opacity = .35 + .25 * Math.sin(t * 2.2 + i + 1); });
+  // la lengua de espuma sube hasta ~5,5 m por la arena húmeda (rápido) y se retira (lento), desvaneciéndose al bajar
+  lenguas.forEach((l) => { const k = (t * .1 + l.userData.ph) % 1, sube = k < .35, u = sube ? Math.sin(k / .35 * Math.PI / 2) : Math.cos((k - .35) / .65 * Math.PI / 2);
+    const [, z] = P(0, SHORE + 1.5 - 5.5 * u); l.position.z = z + 2.5; l.material.opacity = sube ? .9 : .9 * Math.pow(u, .6); });
+  brillos.forEach((b, i) => { b.material.map.offset.set(t * (i ? -.006 : .009), t * (i ? .004 : -.003)); b.material.opacity = brilloBase * (.55 + .45 * Math.sin(t * 1.7 + i * 2.1)); });
 }
 
 { const patchTex = canvasTex(128, (g, n) => { const gr = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2); gr.addColorStop(0, 'rgba(150,135,95,.55)'); gr.addColorStop(1, 'rgba(150,135,95,0)'); g.fillStyle = gr; g.fillRect(0, 0, n, n); });
@@ -850,6 +868,7 @@ function setTod(k) {
   M.lamp.emissiveIntensity = T.lights * 3; M_LAMP_MEDIA.emissiveIntensity = T.lights * 1.1; glows.visible = T.lights > 0; nightLights.forEach(l => { l.intensity = T.lights * 1.6; });
   [M.waterL, M.waterM].forEach(m => { m.emissive = col(k === 'night' ? '#0e3a3a' : k === 'dusk' ? '#06201f' : '#000000'); });
   M.film.opacity = k === 'night' ? .3 : .42;
+  brilloBase = k === 'night' ? 0 : k === 'dusk' ? .3 : .32; brillos.forEach((b) => { b.visible = k !== 'night'; b.material.color = col(k === 'dusk' ? '#ffc58a' : '#fff4d6'); });
   root.querySelectorAll('#tod button').forEach(b => b.setAttribute('aria-pressed', b.dataset.t === k));
   root.style.setProperty('--scene', T.sky[1]);
 }
