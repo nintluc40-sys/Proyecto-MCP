@@ -23,6 +23,9 @@
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
    Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM), uno por hora
    del día y guardado; en toda la maqueta, tenue en el agua de los tanques para que se siga leyendo la etapa.
+   Luces de noche según el estado (2026-10-05, usuario, opción J): las lámparas de cada módulo y sala se encienden según su
+   estado (cultivo o reproductores: encendidas; desinfección: a media luz; vacío o despachado: apagadas), con un resplandor
+   cálido suave encima de los encendidos.
    Camión de despacho (2026-10-05, usuario, opción I): un camión con tinas junto a cada módulo que se está despachando
    (tanques despachados y otros en cultivo), sólo con el mes en curso; en la capa de vehículos.
    Detalle del tanque (2026-10-05, usuario, opción H): remate de hormigón en el borde de todos los tanques y mangueras de
@@ -622,6 +625,8 @@ function animateShrimp(time) {
 const interior = new THREE.Group(); scene.add(interior);
 const D = { corona: [], mang: [], pipeB: [], pipeW: [], cos: [], cosW: [], floorL: [], floorM: [], lamp: [], grate: [], bar: [], tray: [], bench: [], fan: [], drain: [], discM: [], bucket: [], jar: [] };
 const bx = (arr, x, y, z, sx, sy, sz) => arr.push([x, y, z, sx, sy, sz]);
+const lampG = new Map();   // las lámparas de cada módulo y sala, aparte: se encienden según su estado (opción J)
+const bxL = (g, ...caja) => { if (!lampG.has(g)) lampG.set(g, []); bx(lampG.get(g), ...caja); };
 const IM = {
   pipeB: std({ color: col('#2f6fb3'), roughness: .4 }), floorL: std({ color: col('#d8e8ea'), roughness: .55 }), floorM: std({ color: col('#1f272b'), roughness: .6 }),
   drain: std({ color: col('#3a4246'), roughness: .6 }), cosW: std({ color: col('#3f8f74'), roughness: .1, transparent: true, opacity: .7 }),
@@ -654,8 +659,8 @@ tanks.filter(t => t.type === 'circ').forEach(t => { const [x, z] = P(t.cx, t.cz)
 // invernaderos: lámparas colgantes, baldes de alimento y canales de drenaje con rejilla
 groups.filter(g => g.kind === 'larv').forEach(g => {
   const [x0, z0, x1, z1] = g.box, [cx, cz] = P(g.cx, g.cz), w = x1 - x0, d = z1 - z0;
-  if (g.ridge === 'x') for (let u = 4; u < w - 2; u += 6) for (const sz of [-1, 1]) bx(D.lamp, cx - w / 2 + u, .26 + 3.15, cz + sz * d / 4, 1.2, .07, .16);
-  else for (let u = 4; u < d - 2; u += 6) for (const sx of [-1, 1]) bx(D.lamp, cx + sx * w / 4, .26 + 3.15, cz - d / 2 + u, .16, .07, 1.2);
+  if (g.ridge === 'x') for (let u = 4; u < w - 2; u += 6) for (const sz of [-1, 1]) bxL(g, cx - w / 2 + u, .26 + 3.15, cz + sz * d / 4, 1.2, .07, .16);
+  else for (let u = 4; u < d - 2; u += 6) for (const sx of [-1, 1]) bxL(g, cx + sx * w / 4, .26 + 3.15, cz - d / 2 + u, .16, .07, 1.2);
   const rowsZ = [...new Set(g.tanks.map(t => +t.cz.toFixed(1)))].sort((a, b) => a - b);
   for (let r = 0; r + 1 < rowsZ.length; r++) for (let k = 0; k < 2; k++) { const [bxw, bzw] = P(R(x0 + 1.5, x1 - 1.5), (rowsZ[r] + rowsZ[r + 1]) / 2 + R(-.15, .15)); D.bucket.push([bxw, bzw, ['#2f6fb3', '#f4f2ea', '#f08a2c'][(r + k) % 3]]); }
   g.canals.forEach(([a, b]) => D.grate.push([a, z0 + .6, b, z1 - .6]));
@@ -670,7 +675,7 @@ D.grate.forEach(([a, b, c, d]) => {
 // salas de maduración: lámparas sobre los tanques, ventiladores en la pared y mesa de trabajo en la zona de desove
 groups.filter(g => g.kind === 'mat').forEach(g => {
   const [x0, z0, x1] = g.box;
-  g.tanks.concat(g.desove).forEach(t => { const [x, z] = P(t.cx, t.cz); if (t.type === 'rect') for (const k of [-.25, .25]) bx(D.lamp, x + k * t.L, .26 + 2.95, z, 1.4, .07, .18); else bx(D.lamp, x, .26 + 2.95, z, 1.1, .07, .18); });
+  g.tanks.concat(g.desove).forEach(t => { const [x, z] = P(t.cx, t.cz); if (t.type === 'rect') for (const k of [-.25, .25]) bxL(g, x + k * t.L, .26 + 2.95, z, 1.4, .07, .18); else bxL(g, x, .26 + 2.95, z, 1.1, .07, .18); });
   for (let u = x0 + 4; u < x1 - 2; u += 8) { const [fx, fz] = P(u, z0 + .24); D.fan.push([fx, 2.5, fz]); }
   if (g.desove.length) {
     const [mx, mz] = P(148.6, 16.4); bx(D.bench, mx, .26 + .82, mz, 3.2, .06, .8); for (const dx of [-1.5, 1.5]) for (const dz of [-.35, .35]) bx(D.bench, mx + dx, .26 + .41, mz + dz, .06, .8, .06);
@@ -694,7 +699,10 @@ instBoxes(D.corona, std({ color: col('#ece8df'), roughness: .85 }), true); instB
     interior.add(corona, mang);
   }); }
 instBoxes(D.floorL, IM.floorL); instBoxes(D.floorM, IM.floorM); instBoxes(D.pipeB, IM.pipeB, true); instBoxes(D.pipeW, M.pipe, true);
-instBoxes(D.cos, M.tankWall, true); instBoxes(D.cosW, IM.cosW); instBoxes(D.lamp, M.lamp); instBoxes(D.bar, M.steel); instBoxes(D.tray, IM.tray); instBoxes(D.bench, IM.bench, true);
+instBoxes(D.cos, M.tankWall, true); instBoxes(D.cosW, IM.cosW);
+// lámparas de cada grupo en su propia malla; su material (encendida, a media luz, apagada) lo elige pintarLuces
+const M_LAMP_MEDIA = M.lamp.clone(), M_LAMP_OFF = new THREE.MeshStandardMaterial({ color: col('#d8d8d4'), roughness: .5 });
+lampG.forEach((lista, g) => { g.lamps = instBoxes(lista, M.lamp); }); instBoxes(D.bar, M.steel); instBoxes(D.tray, IM.tray); instBoxes(D.bench, IM.bench, true);
 { const cylG = new THREE.CylinderGeometry(1, 1, 1, 28);
   const disc = new THREE.InstancedMesh(cylG, IM.floorM, D.discM.length); D.discM.forEach(([x, y, z, r], i) => { m4.compose(v.set(x, y, z), q0, s.set(r, .02, r)); disc.setMatrixAt(i, m4); }); interior.add(disc);
   const dr = new THREE.InstancedMesh(cylG, IM.drain, D.drain.length); D.drain.forEach(([x, y, z, r], i) => { m4.compose(v.set(x, y, z), q0, s.set(r, .02, r)); dr.setMatrixAt(i, m4); }); interior.add(dr);
@@ -836,7 +844,7 @@ function setTod(k) {
   scene.environment = envRTs[k].texture;
   renderer.toneMappingExposure = T.exp; stars.visible = k === 'night';
   nightMats.forEach(m => { m.emissiveIntensity = T.lights * .9; });
-  M.lamp.emissiveIntensity = T.lights * 3; glows.visible = T.lights > 0; nightLights.forEach(l => { l.intensity = T.lights * 1.6; });
+  M.lamp.emissiveIntensity = T.lights * 3; M_LAMP_MEDIA.emissiveIntensity = T.lights * 1.1; glows.visible = T.lights > 0; nightLights.forEach(l => { l.intensity = T.lights * 1.6; });
   [M.waterL, M.waterM].forEach(m => { m.emissive = col(k === 'night' ? '#0e3a3a' : k === 'dusk' ? '#06201f' : '#000000'); });
   M.film.opacity = k === 'night' ? .3 : .42;
   root.querySelectorAll('#tod button').forEach(b => b.setAttribute('aria-pressed', b.dataset.t === k));
@@ -1265,6 +1273,29 @@ function latirBalizas(time) {
   balizas.children.forEach((o) => { if (!o.isSprite) { const k = (time * .9 + o.userData.ph) % 1; o.scale.setScalar(o.userData.r * (1 + .35 * k)); o.material.opacity = .9 * (1 - k); } });
 }
 
+/* ---------- Luces según el estado (opción J): lámparas y resplandor de cada módulo y sala ---------- */
+groups.forEach((g) => {
+  const [x0, z0, x1, z1] = g.box, [hx, hz] = P(g.cx, g.cz);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: glowTex, color: col('#ffcf8a'), transparent: true, opacity: .3, blending: THREE.AdditiveBlending, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2; m.position.set(hx, (g.kind === 'larv' ? 5.4 : 3.6) + .3, hz); m.scale.set((x1 - x0) * 1.25, (z1 - z0) * 1.25, 1); m.renderOrder = 3;
+  glows.add(m); g.halo = m;   // glows: visible cuando la hora del día enciende las luces
+});
+/** Encendida, a media luz o apagada, según el estado del grupo. Sin datos todavía, todo encendido (como antes). */
+function luzDe(g) {
+  if (!estadoCargado) return 'on';
+  const st = g.st;
+  if (g.kind === 'mat') return st && st.ocupados === 0 ? 'off' : 'on';
+  if (!st) return 'off';
+  return st.estado === 'cultivo' ? 'on' : st.estado === 'desinfeccion' ? 'media' : 'off';
+}
+function pintarLuces() {
+  groups.forEach((g) => {
+    const l = luzDe(g);
+    if (g.lamps) g.lamps.material = l === 'on' ? M.lamp : l === 'media' ? M_LAMP_MEDIA : M_LAMP_OFF;
+    if (g.halo) { g.halo.visible = l !== 'off'; g.halo.material.opacity = l === 'on' ? .3 : .14; }
+  });
+}
+
 /* ---------- Camión de despacho (opción I): junto a cada módulo que se está despachando, con el mes en curso ---------- */
 // Dónde estaciona, en el plano: [x, z, a lo largo de 'x' o de 'z']. M8–M10, en la franja hasta el cerco del frente; M5–M7,
 // entre los módulos y las salas 4 y 5; M1–M3, en el pasillo de su ingreso (rótulos «INGRESO» del plano); M4 está encerrado
@@ -1301,7 +1332,7 @@ function pintarEstado(E) {
     g.st = !E ? null : g.kind === 'larv' ? E.modulos[g.id] || null : (E.mad && E.mad.salas[g.id]) || null;
     g.tanks.forEach((t) => { t.st = g.st && g.st.tanques ? g.st.tanques[t.num] || null : null; });
   });
-  paintWater(); pintarBalizas(); pintarCamiones(); pintarCifras(E); pintarProduccion(E && E.cifras); pintarReemplazo(E && E.mad ? E.mad.reemplazo : null); pintarAtender(); groups.forEach(pintarFila);
+  paintWater(); pintarBalizas(); pintarCamiones(); pintarLuces(); pintarCifras(E); pintarProduccion(E && E.cifras); pintarReemplazo(E && E.mad ? E.mad.reemplazo : null); pintarAtender(); groups.forEach(pintarFila);
   wasFar = null;   // rehace los rótulos en el próximo cuadro
   if (selected) { if (tanqueFicha && tanqueFicha.g === selected) (selected.kind === 'larv' ? fichaTanque : fichaTanqueMad)(tanqueFicha); else fichaModulo(selected); }
 }
