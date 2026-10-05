@@ -23,6 +23,9 @@
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
    Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM), uno por hora
    del día y guardado; en toda la maqueta, tenue en el agua de los tanques para que se siga leyendo la etapa.
+   Pantalla completa (2026-10-05, usuario, punto 3): ⛶ junto a las vistas pone la maqueta en pantalla completa con un
+   resumen flotante (mes, producción frente a la meta y alertas); sale con el mismo botón o Esc. Donde el navegador no
+   la permite (iPhone), la maqueta se expande dentro de la página y el gesto de volver también la cierra.
    Orilla viva (2026-10-05, usuario, opción L): la espuma rompe en la orilla, sube por la arena húmeda y se retira (dos
    lenguas desfasadas), y el sol destella en el mar de día y de tarde (apagado de noche).
    Personal donde hay trabajo (2026-10-05, usuario, opción K): con el mes en curso, un técnico de chaleco naranja junto a
@@ -1167,10 +1170,11 @@ const META_KEY = 'planta_meta_mes';
 const leerMeta = () => { try { return normalizarMeta(localStorage.getItem(META_KEY)); } catch (_) { return META_POR_DEFECTO; } };
 const guardarMeta = (v) => { try { if (v === META_POR_DEFECTO) localStorage.removeItem(META_KEY); else localStorage.setItem(META_KEY, String(v)); } catch (_) { /* sin almacenamiento: sólo en esta sesión */ } };
 let meta = leerMeta(), ultimasCifras = null;
+let alertasTotal = null;   // lo que cuenta «Qué atender hoy» (o «Alertas al cierre»): lo repite el resumen de pantalla completa (punto 3)
 // es-EC como fmtPop: agrupa los miles también en cuatro cifras («1.006,0 M»; 'es' daba «1006,0 M»)
 const millones = (v, d = 1) => (v / 1e6).toLocaleString('es-EC', { minimumFractionDigits: d, maximumFractionDigits: d }) + ' M';
 function pintarProduccion(C) {
-  ultimasCifras = C;
+  ultimasCifras = C; pintarResumenFS();
   $('#prod-meta').textContent = 'de ' + millones(meta, meta % 1e6 ? 1 : 0);
   pintarSelectorMes(C);
   if (!C) {
@@ -1500,6 +1504,7 @@ function pintarAtender() {
     li.append(gb); ul.append(li);
   });
   h.textContent = total ? '⚠ ' + titulo + ' · ' + total : titulo;
+  alertasTotal = total; pintarResumenFS();
   if (!total) nota(mesPasado ? 'Sin alertas al cierre de ' + mesPasado.mes : 'Sin alertas hoy');
 }
 /* ---------- Reproductores: días en producción frente al límite (60, el del tablero de Maduración) ---------- */
@@ -1527,6 +1532,49 @@ function pintarReemplazo(R) {
 pintarReemplazo(null);
 pintarAtender();
 function aviso(texto) { const a = $('#estado-datos'); if (a) a.textContent = texto || ''; }
+
+/* ---------- Pantalla completa (punto 3) ---------- */
+const btnFS = $('#v-full');
+const fsElemento = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+const enPantallaCompleta = () => fsElemento() === vp || root.classList.contains('expandida');
+/** El resumen flotante: mes, producción frente a la meta y alertas (lo mismo que el panel, en una línea). */
+// se llama desde el arranque (tarjeta de producción y «Qué atender»), antes de esta sección: busca su elemento al usarse
+function pintarResumenFS() {
+  const resumenFS = $('#resumen-fs'); if (!resumenFS) return;
+  const C = ultimasCifras, partes = [];
+  if (C) partes.push(C.mes, millones(C.total) + ' de ' + millones(meta, meta % 1e6 ? 1 : 0), fmt(C.total / meta * 100, 0) + ' % de la meta');
+  else partes.push(estadoCargado ? 'Sin producción del mes' : 'Cargando datos…');
+  if (alertasTotal !== null && estadoCargado) partes.push(alertasTotal ? '⚠ ' + alertasTotal + (mesPasado ? ' al cierre' : ' alertas') : 'sin alertas');
+  resumenFS.textContent = partes.join(' · ');
+}
+function alCambiarPantallaCompleta() {
+  const on = enPantallaCompleta();
+  btnFS.textContent = on ? '⛶ Salir' : '⛶ Pantalla completa'; btnFS.setAttribute('aria-pressed', String(on));
+  $('#resumen-fs').hidden = !on; if (on) pintarResumenFS();
+  wasFar = null; despertar();   // el ancho cambia: rehacer los rótulos y dibujar a ritmo pleno
+}
+// expandida dentro de la página (sin la API, como en el iPhone): una entrada en el historial para que «volver» la cierre
+let entradaHistorial = false;
+function expandir(on) {
+  root.classList.toggle('expandida', on);
+  if (on) { try { history.pushState({ plantaExpandida: true }, ''); entradaHistorial = true; } catch (_) { entradaHistorial = false; } }
+  alCambiarPantallaCompleta();
+}
+function salirDePantallaCompleta() {
+  if (fsElemento() === vp) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
+  if (root.classList.contains('expandida')) { if (entradaHistorial) { entradaHistorial = false; history.back(); } else expandir(false); }
+}
+btnFS.addEventListener('click', () => {
+  if (enPantallaCompleta()) { salirDePantallaCompleta(); return; }
+  const pedir = vp.requestFullscreen || vp.webkitRequestFullscreen;
+  if (pedir && (document.fullscreenEnabled || document.webkitFullscreenEnabled)) {
+    try { const p = pedir.call(vp); if (p && p.catch) p.catch(() => expandir(true)); } catch (_) { expandir(true); }
+  } else expandir(true);
+});
+const alPopstate = () => { if (root.classList.contains('expandida')) { entradaHistorial = false; expandir(false); } };
+const alTeclaFS = (e) => { if (e.key === 'Escape' && root.classList.contains('expandida')) salirDePantallaCompleta(); };
+document.addEventListener('fullscreenchange', alCambiarPantallaCompleta); document.addEventListener('webkitfullscreenchange', alCambiarPantallaCompleta);
+window.addEventListener('popstate', alPopstate); document.addEventListener('keydown', alTeclaFS);
 
 /* ---------- Bucle ---------- */
 const tmp = new THREE.Vector3(); let wasFar = null, last = performance.now();
@@ -1613,6 +1661,10 @@ function dispose() {
   if (disposed) return;
   disposed = true;
   cancelAnimationFrame(rafId); clearTimeout(timerFuera);
+  // la vista se cierra: fuera de la pantalla completa y sin oyentes en el documento
+  document.removeEventListener('fullscreenchange', alCambiarPantallaCompleta); document.removeEventListener('webkitfullscreenchange', alCambiarPantallaCompleta);
+  window.removeEventListener('popstate', alPopstate); document.removeEventListener('keydown', alTeclaFS);
+  if (fsElemento() && !fsElemento().isConnected) { try { (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch (_) { /* ya salió */ } }
   Object.values(envRTs).forEach((rt) => rt.dispose()); pmrem.dispose(); envSky.material.dispose();
   io.disconnect();
   if (typeof ro !== 'undefined') ro.disconnect();

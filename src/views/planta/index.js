@@ -30,7 +30,8 @@ const MARCO = `
     <canvas id="c" tabindex="0" aria-label="Maqueta 3D del laboratorio"></canvas>
     <div class="labels" id="labels"></div>
     <div class="tip" id="tip" hidden></div>
-    <div class="views"><button type="button" id="v-iso">Vista general</button><button type="button" id="v-back">Desde atrás</button><button type="button" id="v-top">Planta</button></div>
+    <div class="views"><button type="button" id="v-iso">Vista general</button><button type="button" id="v-back">Desde atrás</button><button type="button" id="v-top">Planta</button><button type="button" id="v-full" aria-pressed="false">⛶ Pantalla completa</button></div>
+    <p class="resumen-fs" id="resumen-fs" role="status" hidden></p>
     <div class="compass" aria-hidden="true"><div class="needle" id="needle"><b>N</b><i></i></div></div>
     <section class="card" id="card" hidden aria-live="polite">
       <header><div><div class="kind" id="card-kind"></div><h3 id="card-name"></h3></div><button type="button" id="card-close">Cerrar</button></header>
