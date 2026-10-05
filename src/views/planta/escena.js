@@ -23,6 +23,8 @@
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
    Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM), uno por hora
    del día y guardado; en toda la maqueta, tenue en el agua de los tanques para que se siga leyendo la etapa.
+   Fachadas (2026-10-04, usuario, opción E): los invernaderos cierran sus dos culatas con lámina, con marco y puerta
+   corrediza; las salas suman puerta metálica al frente, columnas y zócalo. Todo en mallas de instancias.
    Sol y luna reales (2026-10-04, usuario, opción C): Día, Tarde y Noche ponen el sol (o la luna) donde están hoy en Mar
    Bravo a las 10:00, 17:30 y 21:00, orientados con el norte de la brújula.
    Texturas de superficie (2026-10-04, usuario, opción B): hormigón con juntas, humedad, desgaste y fisuras; zinc ondulado
@@ -336,6 +338,15 @@ others.traverse(o => { if (o.isMesh && !o.isInstancedMesh && !(Array.isArray(o.m
 /* ---------- Módulos y salas ---------- */
 const unitBox = new THREE.BoxGeometry(1, 1, 1), m4 = new THREE.Matrix4(), q0 = new THREE.Quaternion(), v = new THREE.Vector3(), s = new THREE.Vector3(), qt = new THREE.Quaternion(), eu = new THREE.Euler();
 const roofs = new THREE.Group(); scene.add(roofs);
+/** Una malla de instancias con cajas dadas en coordenadas del PLANO: [x0, z0, x1, z1, y0, alto]. */
+function cajasInst(lista, mat, parent, sombra) {
+  const im = new THREE.InstancedMesh(unitBox, mat, lista.length); im.castShadow = !!sombra; im.receiveShadow = true;
+  lista.forEach(([a, b, c, d, y0, h], k) => { const [x, z] = P((a + c) / 2, (b + d) / 2); m4.compose(v.set(x, y0 + h / 2, z), q0, s.set(Math.abs(c - a), h, Math.abs(d - b))); im.setMatrixAt(k, m4); });
+  (parent || scene).add(im); return im;
+}
+const M_PUERTA_INV = std({ color: col('#e9ece8'), roughness: .55, metalness: .25 });   // puerta corrediza del invernadero
+const M_COLUMNA = std({ color: col('#d9d5cc'), roughness: .9 }), M_ZOCALO = std({ color: col('#6b6f6c'), roughness: .85 });
+const salaCols = [], salaZoc = [], salaPuertas = [], salaMarcos = [];   // las cinco salas, en cuatro mallas al final
 groups.forEach(g => {
   const [x0, z0, x1, z1] = g.box, top = .26;
   g.slab = box(x0, z0, x1, z1, 0, top, g.kind === 'larv' ? M.slabL.clone() : M.slabM.clone(), false);
@@ -355,6 +366,16 @@ groups.forEach(g => {
       }
       for (const side of [-1, 1]) { if (along) steel.push([cx + s, top + eave / 2, cz + side * span / 2, 0, 0, .16, eave]); else steel.push([cx + side * span / 2, top + eave / 2, cz + s, 0, 0, .16, eave]); }
     }
+    // culatas (opción E): marco de la puerta corrediza, riel y dos montantes, en cada extremo
+    const PU = 1.6, PH = 2.8;   // media anchura y alto del vano de la puerta
+    const enCulata = (e, u) => (along ? [cx + e, cz + u] : [cx + u, cz + e]);
+    const horiz = along ? [Math.PI / 2, 0] : [0, Math.PI / 2];   // pieza tendida a lo ancho de la culata
+    for (const e of [-len / 2, len / 2]) {
+      for (const u of [-PU, PU]) { const [x, z] = enCulata(e, u); steel.push([x, top + PH / 2, z, 0, 0, .14, PH]); }
+      { const [x, z] = enCulata(e, 0); steel.push([x, top + PH, z, horiz[0], horiz[1], .14, PU * 2 + .14]); }
+      { const [x, z] = enCulata(e, -PU); steel.push([x, top + PH + .16, z, horiz[0], horiz[1], .08, PU * 4]); }   // riel de la corrediza
+      for (const u of [-span / 4, span / 4]) { const hy = eave + rise * Math.sin(Math.PI * .25); const [x, z] = enCulata(e, u); steel.push([x, top + hy / 2, z, 0, 0, .09, hy]); }
+    }
     // todas las piezas metálicas del módulo en una sola malla de instancias
     const si = new THREE.InstancedMesh(unitBox, M.steel, steel.length); si.castShadow = true;
     steel.forEach(([x, y, z, rx, rz, th, ln], k) => { m4.compose(v.set(x, y, z), qt.setFromEuler(eu.set(rx, 0, rz)), s.set(th, ln, th)); si.setMatrixAt(k, m4); });
@@ -365,6 +386,14 @@ groups.forEach(g => {
     for (let i = 0; i < segs; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx); geo.computeVertexNormals();
     const film = new THREE.Mesh(geo, M.film); film.position.set(cx, top, cz); film.renderOrder = 2; g.roof.add(film);
+    // culatas cerradas con la misma lámina: el perfil del arco hasta el suelo, en los dos extremos
+    { const contorno = [new THREE.Vector2(-span / 2, 0)]; for (let i = 0; i <= segs; i++) { const [u, y] = archCurve(i / segs); contorno.push(new THREE.Vector2(u, y)); } contorno.push(new THREE.Vector2(span / 2, 0));
+      const tris = THREE.ShapeUtils.triangulateShape(contorno, []), gp = [], gu = [], gi = [];
+      for (const e of [-len / 2, len / 2]) { const b = gp.length / 3; contorno.forEach((p) => { if (along) gp.push(e, p.y, p.x); else gp.push(p.x, p.y, e); gu.push(p.x / 4, p.y / 4); }); tris.forEach((t) => gi.push(b + t[0], b + t[1], b + t[2])); }
+      const gg = new THREE.BufferGeometry(); gg.setAttribute('position', new THREE.Float32BufferAttribute(gp, 3)); gg.setAttribute('uv', new THREE.Float32BufferAttribute(gu, 2)); gg.setIndex(gi); gg.computeVertexNormals();
+      const culatas = new THREE.Mesh(gg, M.film); culatas.position.set(cx, top, cz); culatas.renderOrder = 2; g.roof.add(culatas); }
+    // puertas corredizas cerradas, un poco por fuera de la culata (en el plano: el centro del módulo es g.cx, g.cz)
+    cajasInst([-1, 1].map((sg) => { const e = sg * (len / 2 + .06); return along ? [g.cx + e - .03, g.cz - 1.5, g.cx + e + .03, g.cz + 1.5, top, 2.7] : [g.cx - 1.5, g.cz + e - .03, g.cx + 1.5, g.cz + e + .03, top, 2.7]; }), M_PUERTA_INV, g.roof, true);
     // cortina lateral baja
     if (along) { box(x0, z0, x1, z0 + .06, top, 1.0, M.film, false, g.roof); box(x0, z1 - .06, x1, z1, top, 1.0, M.film, false, g.roof); }
     else { box(x0, z0, x0 + .06, z1, top, 1.0, M.film, false, g.roof); box(x1 - .06, z0, x1, z1, top, 1.0, M.film, false, g.roof); }
@@ -377,6 +406,15 @@ groups.forEach(g => {
     box(x0, z0, x1, z0 + t, top, H, M.wall, true); box(x0, z0, x0 + t, z1, top, H, M.wall, true); box(x1 - t, z0, x1, z1, top, H, M.wall, true);
     box(x0, z1 - t, x1, z1, top, 1.0, M.wall, true);
     if (g.partition) box(g.partition - .1, z0, g.partition + .1, z1 - 2.2, top, H, M.wall, true);
+    // columnas de hormigón cada ~4 m, asomando por fuera del muro (el frente, a la altura de su muro bajo)
+    const paso = (a, b) => { const n = Math.max(1, Math.round((b - a) / 4)); return Array.from({ length: n + 1 }, (_, i) => a + (b - a) * i / n); };
+    paso(x0, x1).forEach((x) => { salaCols.push([x - .16, z0 - .12, x + .16, z0 + .2, top, H]); salaCols.push([x - .16, z1 - .2, x + .16, z1 + .12, top, 1.12]); });
+    paso(z0, z1).forEach((z) => { salaCols.push([x0 - .12, z - .16, x0 + .2, z + .16, top, H]); salaCols.push([x1 - .2, z - .16, x1 + .12, z + .16, top, H]); });
+    // zócalo oscuro al pie de los cuatro muros
+    salaZoc.push([x0, z0 - .04, x1, z0 + t + .04, top, .45], [x0, z1 - t - .04, x1, z1 + .04, top, .45], [x0 - .04, z0, x0 + t + .04, z1, top, .45], [x1 - t - .04, z0, x1 + .04, z1, top, .45]);
+    // puerta metálica al frente (el muro que da al pasillo), con su marco
+    { const xm = (x0 + x1) / 2; salaPuertas.push([xm - .9, z1 + .02, xm + .9, z1 + .08, top, 2.2]);
+      salaMarcos.push([xm - 1.02, z1 - .02, xm - .9, z1 + .1, top, 2.32], [xm + .9, z1 - .02, xm + 1.02, z1 + .1, top, 2.32], [xm - 1.02, z1 - .02, xm + 1.02, z1 + .1, top + 2.2, .12]); }
     // techo de policarbonato transparente sobre vigas metálicas: deja ver los reproductores
     const roof = std({ map: rep(TX.zinc, (x1 - x0) / 3, 1), color: col('#eaf4f6'), roughness: .25, metalness: .1, transparent: true, opacity: .22, depthWrite: false, side: THREE.DoubleSide });
     const panel = box(x0 - .3, z0 - .3, x1 + .3, z1 + .3, top + H, .08, roof, false, g.roof); panel.renderOrder = 2;
@@ -385,6 +423,8 @@ groups.forEach(g => {
     box(x0, z0 + .1, x1, z0 + .26, top + H - .16, .16, M.steel, true, g.roof); box(x0, z1 - .26, x1, z1 - .1, top + H - .16, .16, M.steel, true, g.roof);
   }
 });
+
+cajasInst(salaCols, M_COLUMNA, null, true); cajasInst(salaZoc, M_ZOCALO); cajasInst(salaPuertas, M.lid, null, true); cajasInst(salaMarcos, M.steel, null, true);
 
 /* ---------- Tanques: muros, agua animada y burbujas de aireación ---------- */
 const rect = tanks.filter(t => t.type === 'rect'), circ = tanks.filter(t => t.type === 'circ');
