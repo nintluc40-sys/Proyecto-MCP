@@ -19,6 +19,7 @@ const EXPORTAR = ['AUD_SHEET', 'AUD_HEADERS', 'AUD_SIEMBRAS', 'AUD_DRAFT_KEY', '
   'audFacturada', 'audFacturadaEsExcepcion', 'audRowId', 'audSiguientePartida', 'audValidar', 'audFilas', 'buildAudPayload',
   'audResumen', 'renderAud', 'audCampo', 'audFila', 'audAgregarEl', 'audOtraPartidaEl', 'audQuitarEl', 'audGuardar', 'audNueva',
   'audAbrirEl', 'audBorrarEl', 'audPegar', 'madGridKey',   // punto 2 (2026-10-04) · pegar y teclado
+  'audVaciarTablaEl', 'downloadAudPDF',   // punto 3 (2026-10-04) · 🧹 y 📄
   '_audRaw', 'loadAud', '_reconcileMark', 'AST_TABS', 'TAB_META'];
 const H = {};
 
@@ -355,5 +356,69 @@ describe('Auditoría · 📋 pegar desde Excel y moverse con el teclado', () => 
     expect(tecla(celda('siembras', 0, 'siembra'), 'ArrowRight')).toBe(celda('siembras', 0, 'modulo'));
     expect(tecla(celda('siembras', 0, 'fecha'), 'ArrowRight'), 'en la fecha, ← → mueven día/mes/año').toBe(celda('siembras', 0, 'fecha'));
     expect(tecla(celda('cosechas', 0, 'tanque'), 'ArrowRight'), 'la Partida (calculada) se salta').toBe(celda('cosechas', 0, 'cantidad'));
+  });
+});
+
+/* Punto 3 (usuario, 2026-10-04) · «🧹 Vaciar» POR TABLA (decisión: «🗑 Nueva auditoría» sigue para vaciarla entera) y
+   «📄 PDF» con las tablas y el resumen calculado. */
+describe('Auditoría · 🧹 Vaciar una tabla y 📄 PDF', () => {
+  let ventana = null;
+  beforeEach(() => {
+    ventana = null;
+    window.open = () => { ventana = { html: '', document: { write(h) { ventana.html += h; }, close() {}, title: '' } }; return ventana; };
+  });
+  const cargar = (d) => { localStorage.setItem(H.AUD_DRAFT_KEY, JSON.stringify(d)); H.olvidarModelo(); H.renderAud(); };
+  const vaciar = (sec) => H.audVaciarTablaEl(fp().querySelector(`button[data-as="${sec}"][onclick="audVaciarTablaEl(this)"]`));
+
+  it('un «🧹 Vaciar» por tabla y el «📄 PDF», con su onclick literal', () => {
+    expect(fp().querySelectorAll('button[onclick="audVaciarTablaEl(this)"]')).toHaveLength(3);
+    expect(fp().querySelector('button[onclick="downloadAudPDF()"]').textContent).toContain('PDF');
+  });
+
+  it('🔴 Vaciar borra SÓLO las filas de esa tabla, tras preguntar; «no» la deja como estaba', () => {
+    cargar(audit({ siembras: [SI(), SI({ tanque: '2' })], cosechas: [CO({ cantidad: '1000000' })], obs: 'nota' }));
+    let pregunta = '';
+    window.confirm = (m) => { pregunta = m; return false; };
+    vaciar('siembras');
+    expect(H.modelo().siembras).toHaveLength(2);
+    window.confirm = (m) => { pregunta = m; return true; };
+    vaciar('siembras');
+    expect(pregunta).toContain('Siembra (2 fila(s))');
+    const m = H.modelo();
+    expect([m.siembras.length, m.cosechas.length, m.corrida, m.obs]).toEqual([0, 1, '901', 'nota']);
+    expect(JSON.parse(localStorage.getItem(H.AUD_DRAFT_KEY)).siembras, 'el borrador lo recuerda').toEqual([]);
+  });
+
+  it('una tabla ya vacía no pregunta: lo dice', () => {
+    let preguntas = 0;
+    window.confirm = () => { preguntas++; return true; };
+    vaciar('transferencias');
+    expect(preguntas).toBe(0);
+    expect(H.ultimoAviso).toContain('ya está vacía');
+  });
+
+  it('🔴 PDF: las tablas con filas (no las vacías), cantidades legibles, partida, facturada propuesta o ★, el resumen, observaciones escapadas y firma', () => {
+    cargar(audit({ siembras: [SI()], cosechas: [CO({ cantidad: '3,000,000' }), CO({ partida: 2, cantidad: '1000000', facturada: '950000' })], obs: '<b>ojo</b>' }));
+    H.downloadAudPDF();
+    expect(ventana).not.toBeNull();
+    const h = ventana.html;
+    expect(h).toContain('🌱 Siembra · 1 fila(s)');
+    expect(h).toContain('🎣 Cosecha y despacho · 2 fila(s)');
+    expect(h, 'sin transferencias, no sale su tabla').not.toContain('🔀 Transferencia ·');
+    expect(h).toContain('7.000.000');
+    expect(h, 'facturada propuesta: el 90 % de 3.000.000').toContain('2.700.000');
+    expect(h, 'la tecleada que no es el 90 %, marcada').toMatch(/950\.000 <span title="No es el 90 % de la real"[^>]*>★<\/span>/);
+    expect(h).toContain('<td><b>2</b></td>');
+    expect(h).toContain('Resumen (calculado)');
+    expect(h).toContain('Sembrado');
+    expect(h).toContain('Ana');
+    expect(h).not.toContain('<b>ojo</b>');
+    expect(h).toContain('&lt;b&gt;ojo&lt;/b&gt;');
+  });
+
+  it('sin ninguna fila no abre nada y lo dice', () => {
+    H.downloadAudPDF();
+    expect(ventana).toBeNull();
+    expect(H.ultimoAviso).toContain('no tiene filas');
   });
 });

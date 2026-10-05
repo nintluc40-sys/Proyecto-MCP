@@ -20181,6 +20181,78 @@ function audPegar(ev){
   toast("📋 Pegado en " + AUD_TIPO[sec] + ": " + mat.length + " fila(s).", "ok", 3500);
   if(malas.length) toast(malas.length + " celda(s) no reconocida(s), quedaron vacías: " + malas.slice(0, 3).join(" · ") + (malas.length > 3 ? " …" : ""), "warn", 9000);
 }
+/* 🧹 (usuario, 2026-10-04) · vacía UNA tabla (Siembra, Transferencia o Cosecha): todas sus filas, tras preguntar. La
+   cabecera, las otras tablas y las observaciones no cambian; «🗑 Nueva auditoría» sigue para vaciarla entera. */
+function audVaciarTablaEl(el){
+  const sec = el && el.getAttribute("data-as"), L = _audActual()[sec];
+  if(!Array.isArray(L)) return;
+  if(!L.length){ toast("La tabla de " + AUD_TIPO[sec] + " ya está vacía.", "info", 2500); return; }
+  if(!confirm("¿Vaciar la tabla de " + AUD_TIPO[sec] + " (" + L.length + " fila(s))?\nEl resto de la auditoría no cambia. (Si ya se envió, sus filas siguen en la hoja: se corrigen allí.)")) return;
+  _audActual()[sec] = [];
+  _audGuardarBorrador();
+  renderAud();
+}
+/* 📄 (usuario, 2026-10-04) · la auditoría EN PANTALLA: las tres tablas como en la ficha (sólo las que tienen filas) y el
+   resumen calculado —el mismo de la ficha, _audResumenHTML—, con las observaciones y las firmas. A4 horizontal y el estilo
+   del PDF del As Técnico; si no cabe, sigue en otra página (las tablas repiten su cabecera). */
+function downloadAudPDF(){
+  const m = _audActual();
+  const secs = ["siembras","transferencias","cosechas"].filter(function(sec){ return (m[sec] || []).length; });
+  if(!secs.length){ toast("La auditoría no tiene filas que imprimir.", "warn", 3500); return; }
+  const tsStr = new Date().toLocaleString('es-EC',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  const codigo = genCodigo('ast', AST_MOD, today());
+  const cell = function(v){ return (v !== undefined && v !== null && String(v).trim() !== "") ? escapeHtml(String(v)) : '<span class="empty">—</span>'; };
+  const NOMBRE = { siembras:"🌱 Siembra", transferencias:"🔀 Transferencia", cosechas:"🎣 Cosecha y despacho" };
+  const valor = function(sec, f, c){
+    const k = c[0];
+    if(k === "partida") return '<b>' + escapeHtml(String(f.partida || 1)) + '</b>';
+    if(k === "cantidad") return audEntero(f.cantidad) !== "" ? escapeHtml(_audN(audEntero(f.cantidad))) : cell(f.cantidad);
+    if(k === "facturada"){
+      const q = audFacturada(f);
+      return q === "" ? cell("") : escapeHtml(_audN(q)) + (audFacturadaEsExcepcion(f) ? ' <span title="No es el 90 % de la real" style="color:#b45309">★</span>' : '');
+    }
+    return cell(f[k]);
+  };
+  const tablas = secs.map(function(sec){
+    const cols = AUD_COLS_FICHA[sec];
+    return '<div style="font-size:8pt;font-weight:800;color:#0f766e;text-transform:uppercase;letter-spacing:.4px;margin:6px 0 2px">' + NOMBRE[sec] + ' · ' + m[sec].length + ' fila(s)</div>'
+      + '<table class="au-t"><thead><tr>' + cols.map(function(c){ return '<th>' + escapeHtml(c[1]) + '</th>'; }).join("") + '</tr></thead><tbody>'
+      + m[sec].map(function(f){ return '<tr>' + cols.map(function(c){ return '<td>' + valor(sec, f, c) + '</td>'; }).join("") + '</tr>'; }).join("")
+      + '</tbody></table>';
+  }).join("");
+  const fileName = ('Auditoria_C' + _audCorr(m) + '_' + String(m.modulo || "")).replace(/[^\w.-]+/g, '');
+  const mf = function(l, v){ return '<div class="mf"><label>' + l + '</label><span>' + cell(v) + '</span></div>'; };
+  const firma = function(cargo, nombre){
+    return '<div style="text-align:center;min-width:140px"><div style="font-size:7pt;color:#0f172a;min-height:10px">' + escapeHtml(String(nombre || "")) + '</div>'
+      + '<div style="border-top:1.5px solid #0f172a;padding-top:3px;margin-top:2px;font-size:6.5pt;font-weight:700;color:#0f172a">' + cargo + '</div>'
+      + '<div style="font-size:5pt;color:#64748b;margin-top:1px">Firma</div></div>';
+  };
+  const page = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>' + escapeHtml(fileName) + '</title>'
+    // Las cabeceras se parten (sólo aquí): la de Cosecha tiene 15 columnas.
+    + '<meta name="viewport" content="width=device-width,initial-scale=1"><style>' + pdfCss('params') + '.au-t th{white-space:normal;line-height:1.15}.au-t,.au-r table{margin-bottom:3px}</style></head><body><div class="ppage">'
+    + '<div class="ph"><div class="ph-brand"><div class="co">OMARSA · As Técnico</div><div class="su">Sistema de Fichas — Supervisión Técnica</div></div>'
+    + '<div class="ph-center"><span class="doc-code">OMR-AST-AUDITORIA</span></div><div class="ph-right"><div class="mod">AsT</div><div class="mods">As Técnico</div></div></div>'
+    + '<div class="ftitle">🧾 Auditoría · siembra, transferencia y cosecha de la corrida</div>'
+    + '<div class="mgrid">' + mf("Corrida", _audCorr(m)) + mf("Módulo", m.modulo) + mf("Siembras", m.siembras.length) + mf("Transferencias", m.transferencias.length)
+    + mf("Cosechas", m.cosechas.length) + mf("Registrado por", m.registrado) + '</div>'
+    + tablas
+    + '<div style="font-size:8pt;font-weight:800;color:#0f766e;text-transform:uppercase;letter-spacing:.4px;margin:8px 0 2px">📊 Resumen (calculado)</div>'
+    + '<div class="au-r">' + _audResumenHTML(m) + '</div>'
+    + (String(m.obs || "").trim() ? '<div style="margin-top:6px;font-size:7pt"><b>Observaciones:</b> ' + escapeHtml(String(m.obs)) + '</div>' : '')
+    + '<div class="spacer"></div><div class="pfoot"><div>'
+    + '<div style="font-size:6pt;color:#64748b;margin-bottom:2px;text-transform:uppercase;letter-spacing:.4px">Código verificador</div>'
+    + '<div class="code-box">' + codigo + '</div><div class="ts-txt" style="margin-top:2px">Generado el ' + escapeHtml(tsStr) + '</div></div>'
+    + firma("Registrado por", m.registrado) + firma("Revisado por", "") + '</div></div>'
+    + '<script>try{ document.title = ' + JSON.stringify(fileName) + '; }catch(_){}'
+    + 'var _printed=false;function doPrint(){if(_printed)return;_printed=true;setTimeout(function(){window.print();},350);}'
+    + 'if(document.readyState==="complete")doPrint();else window.addEventListener("load",doPrint,{once:true});<\/script></body></html>';
+  const w = window.open('', '_blank', 'width=1100,height=720');
+  if(!w){ toast('El navegador bloqueó la ventana emergente.', 'warn', 6000); return; }
+  w.document.write(page);
+  w.document.close();
+  try{ w.document.title = fileName; }catch(_){}
+  toast('📄 PDF: ' + fileName, 'ok', 5000);
+}
 // Valida y guarda la auditoría en el dispositivo como PENDIENTE (la misma corrida · módulo la sustituye).
 function _audRegistrar(){
   const m = _audActual();
@@ -20326,7 +20398,8 @@ function renderAud(){
     return '<div id="aud-t-'+sec+'" style="overflow:auto;border:1px solid #e2e8f0;border-radius:8px;margin-top:6px"><table class="ft" style="font-size:11px;min-width:100%">'
       + '<thead><tr>' + cab.map(function(h){ return '<th style="white-space:nowrap">'+escapeHtml(h)+'</th>'; }).join("") + '<th></th></tr></thead>'
       + '<tbody>' + (filas || '<tr><td colspan="'+(cab.length + 1)+'" style="color:#94a3b8;text-align:center;padding:10px">Sin filas todavía.</td></tr>') + '</tbody></table></div>'
-      + '<div style="margin-top:6px"><button class="btn" type="button" data-as="'+sec+'" onclick="audAgregarEl(this)" style="font-size:12px">➕ Añadir</button></div>';
+      + '<div style="margin-top:6px;display:flex;gap:6px"><button class="btn" type="button" data-as="'+sec+'" onclick="audAgregarEl(this)" style="font-size:12px">➕ Añadir</button>'
+      + '<button class="btn bo" type="button" data-as="'+sec+'" onclick="audVaciarTablaEl(this)" title="Borra todas las filas de esta tabla; el resto de la auditoría no cambia" style="font-size:12px">🧹 Vaciar</button></div>';
   };
   const titulo = function(t, nota){ return '<div style="font-size:12px;font-weight:800;color:#0f766e;text-transform:uppercase;letter-spacing:.5px;margin:16px 0 2px">'+t+(nota ? ' <span style="font-weight:600;text-transform:none;letter-spacing:0;color:#64748b">· '+nota+'</span>' : '')+'</div>'; };
 
@@ -20396,6 +20469,7 @@ function renderAud(){
     +   '<button class="btn" type="button" onclick="audGuardar()">💾 Guardar en el equipo</button>'
     +   '<button class="btn bp" type="button" onclick="audEnviar()">☁️ Enviar</button>'
     +   '<button class="btn" type="button" onclick="audNueva()">🗑 Nueva auditoría</button>'
+    +   '<button class="btn bpdf" type="button" onclick="downloadAudPDF()" title="PDF de la auditoría en pantalla: sus tablas y el resumen">📄 PDF</button>'
     + '</div>'
     + '<div style="font-size:11px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:.6px;margin:16px 0 4px">Auditorías en este dispositivo</div>'
     + lista
