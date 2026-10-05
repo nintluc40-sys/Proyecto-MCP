@@ -23,6 +23,8 @@
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
    Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM), uno por hora
    del día y guardado; en toda la maqueta, tenue en el agua de los tanques para que se siga leyendo la etapa.
+   Sol y luna reales (2026-10-04, usuario, opción C): Día, Tarde y Noche ponen el sol (o la luna) donde están hoy en Mar
+   Bravo a las 10:00, 17:30 y 21:00, orientados con el norte de la brújula.
    Texturas de superficie (2026-10-04, usuario, opción B): hormigón con juntas, humedad, desgaste y fisuras; zinc ondulado
    con canaleta y óxido; asfalto con grietas, parches y huellas de rodadura; arena con ondas de viento; bloques con mortero
    y salpicaduras al pie. Relieve (mapa de normales) sólo en el zinc y en las juntas del hormigón.
@@ -667,8 +669,33 @@ const TOD = {
   dusk: { sun: [-150, 30, 175], sunI: 1.15, sunC: '#ffad73', hemiI: .5, sky: ['#3f5f9a', '#f2b487', '#c99a76'], skySun: '#ffb070', exp: 1.0, lights: .55 },
   night: { sun: [70, 110, -40], sunI: .22, sunC: '#a9bdff', hemiI: .16, sky: ['#030914', '#14223f', '#0b0f17'], skySun: '#20304f', exp: 1.25, lights: 1 },
 };
+/* Sol y luna en su posición real (opción C, 2026-10-04, usuario): Laboratorio Mar Bravo (Salinas, Santa Elena, ≈ 2,23° S,
+   80,97° O), la fecha de hoy y una hora fija por botón —Día 10:00, Tarde 17:30, Noche 21:00, hora de Ecuador (UTC−5)—.
+   Las fórmulas son las de SunCalc (V. Agafonkin, BSD): de baja precisión, sobradas para la luz de una maqueta. De noche
+   alumbra la luna; si a esa hora está bajo el horizonte (o el astro va muy bajo), queda la posición fija de siempre. */
+const SITIO = { lat: -2.23, lng: -80.97 }, HORA_TOD = { day: 10, dusk: 17.5, night: 21 };
+const RAD = Math.PI / 180, OBL = RAD * 23.4397;
+const diasJ2000 = (fecha) => fecha.valueOf() / 864e5 - 0.5 + 2440588 - 2451545;
+const ascRecta = (l, b) => Math.atan2(Math.sin(l) * Math.cos(OBL) - Math.tan(b) * Math.sin(OBL), Math.cos(l));
+const declin = (l, b) => Math.asin(Math.sin(b) * Math.cos(OBL) + Math.cos(b) * Math.sin(OBL) * Math.sin(l));
+const coordsSol = (d) => { const M = RAD * (357.5291 + 0.98560028 * d), L = M + RAD * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M)) + RAD * 102.9372 + Math.PI; return { ra: ascRecta(L, 0), dec: declin(L, 0) }; };
+const coordsLuna = (d) => { const L = RAD * (218.316 + 13.176396 * d), M = RAD * (134.963 + 13.064993 * d), F = RAD * (93.272 + 13.229350 * d), l = L + RAD * 6.289 * Math.sin(M), b = RAD * 5.128 * Math.sin(F); return { ra: ascRecta(l, b), dec: declin(l, b) }; };
+/** Altura y acimut (radianes; el acimut desde el norte, hacia el este) de un astro sobre el laboratorio. */
+function horizonte(fecha, coords) {
+  const d = diasJ2000(fecha), { ra, dec } = coords(d), phi = RAD * SITIO.lat, H = RAD * (280.16 + 360.9856235 * d) + RAD * SITIO.lng - ra;
+  return { alt: Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(H)),
+    az: Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(phi) - Math.tan(dec) * Math.cos(phi)) + Math.PI };   // SunCalc lo da desde el sur, hacia el oeste
+}
+/** Posición (a 180 m) del astro que alumbra el botón `k` hoy, en la orientación de la maqueta; null si va muy bajo. */
+function astroDe(k) {
+  const h = new Date(), fecha = new Date(Date.UTC(h.getFullYear(), h.getMonth(), h.getDate()) + (HORA_TOD[k] + 5) * 36e5);
+  const { alt, az } = horizonte(fecha, k === 'night' ? coordsLuna : coordsSol);
+  if (alt < RAD * 4) return null;
+  const este = [-NORTH.y, NORTH.x], c = Math.cos(alt) * 180;   // el este, a 90° del norte de la brújula
+  return [(Math.sin(az) * este[0] + Math.cos(az) * NORTH.x) * c, Math.sin(alt) * 180, (Math.sin(az) * este[1] + Math.cos(az) * NORTH.y) * c];
+}
 function setTod(k) {
-  const T = TOD[k];
+  const T = { ...TOD[k], sun: astroDe(k) || TOD[k].sun };
   sun.position.set(...T.sun); sun.intensity = T.sunI; sun.color = col(T.sunC); hemi.intensity = T.hemiI * ENV_AMBIENTE;
   hemi.color = col(k === 'night' ? '#36486e' : k === 'dusk' ? '#f6cfaa' : '#eaf2f4'); hemi.groundColor = col(k === 'night' ? '#141820' : '#9a917e');
   const u = sky.material.uniforms; u.top.value.set(T.sky[0]); u.mid.value.set(T.sky[1]); u.bot.value.set(T.sky[2]); u.sunCol.value.set(T.skySun); u.sunDir.value.set(...T.sun).normalize();
