@@ -23,6 +23,8 @@
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
    Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM), uno por hora
    del día y guardado; en toda la maqueta, tenue en el agua de los tanques para que se siga leyendo la etapa.
+   Detalle del tanque (2026-10-05, usuario, opción H): remate de hormigón en el borde de todos los tanques y mangueras de
+   aireación en el fondo (dos líneas en los rectangulares, un anillo en los circulares).
    Cerco y portón (2026-10-05, usuario, opción G): pilares cada 3 m y concertina sobre el cerramiento, portón corredizo de
    reja abierto junto a la pluma (corrido por el lado de la calle), y la garita de guardianía adentro, en el borde este de la calle interior (donde la rotula
    el plano; la calle queda de un carril en ese tramo).
@@ -616,7 +618,7 @@ function animateShrimp(time) {
 
 /* ---------- Detalles internos de módulos y salas ---------- */
 const interior = new THREE.Group(); scene.add(interior);
-const D = { pipeB: [], pipeW: [], cos: [], cosW: [], floorL: [], floorM: [], lamp: [], grate: [], bar: [], tray: [], bench: [], fan: [], drain: [], discM: [], bucket: [], jar: [] };
+const D = { corona: [], mang: [], pipeB: [], pipeW: [], cos: [], cosW: [], floorL: [], floorM: [], lamp: [], grate: [], bar: [], tray: [], bench: [], fan: [], drain: [], discM: [], bucket: [], jar: [] };
 const bx = (arr, x, y, z, sx, sy, sz) => arr.push([x, y, z, sx, sy, sz]);
 const IM = {
   pipeB: std({ color: col('#2f6fb3'), roughness: .4 }), floorL: std({ color: col('#d8e8ea'), roughness: .55 }), floorM: std({ color: col('#1f272b'), roughness: .6 }),
@@ -629,8 +631,13 @@ tanks.filter(t => t.type === 'rect').forEach(t => {
   const [x, z] = P(t.cx, t.cz), top = Y0 + t.H, larv = t.g.kind === 'larv';
   bx(larv ? D.floorL : D.floorM, x, Y0 + .012, z, t.L - TH * 2, .02, t.W - TH * 2);
   D.drain.push([x, Y0 + .03, z, .2]);
-  bx(D.pipeB, x, top + .09, z + t.W / 2 - TH / 2, t.L - .2, .1, .1);
-  bx(D.pipeW, x, top + .07, z - t.W / 2 + TH / 2, t.L - .2, .07, .07);
+  // remate de hormigón: una corona algo más ancha que el muro sobre sus cuatro lados (opción H)
+  for (const [dx, dz, sx, sz] of [[0, -t.W / 2 + TH / 2, t.L + .1, TH + .1], [0, t.W / 2 - TH / 2, t.L + .1, TH + .1], [-t.L / 2 + TH / 2, 0, TH + .1, t.W], [t.L / 2 - TH / 2, 0, TH + .1, t.W]]) bx(D.corona, x + dx, top + .03, z + dz, sx, .06, sz);
+  // mangueras de aireación: dos líneas de difusores sobre el piso, a lo largo del tanque
+  for (const k of [-.25, .25]) bx(D.mang, x, Y0 + .045, z + k * (t.W - TH * 2), t.L - TH * 2 - .5, .045, .045);
+  // las líneas de agua y de aire apoyan sobre la corona (6 cm más arriba que sobre el muro)
+  bx(D.pipeB, x, top + .15, z + t.W / 2 - TH / 2, t.L - .2, .1, .1);
+  bx(D.pipeW, x, top + .13, z - t.W / 2 + TH / 2, t.L - .2, .07, .07);
   for (const k of [-.33, 0, .33]) bx(D.pipeW, x + k * t.L, top - .35, z - t.W / 2 + TH + .06, .03, .8, .03);   // bajantes de aire
   bx(D.pipeB, x - t.L / 2 + .55, top - .12, z + t.W / 2 - TH - .08, .1, .45, .1);                             // entrada de agua
   if (larv) {
@@ -673,6 +680,17 @@ function instBoxes(list, mat, cast) {
   list.forEach(([x, y, z, sx, sy, sz], i) => { m4.compose(v.set(x, y, z), q0, s.set(sx, sy, sz)); im.setMatrixAt(i, m4); });
   im.castShadow = !!cast; im.receiveShadow = true; interior.add(im); return im;
 }
+instBoxes(D.corona, std({ color: col('#ece8df'), roughness: .85 }), true); instBoxes(D.mang, std({ color: col('#4f5b62'), roughness: .6 }));
+// tanques circulares: corona y anillo de manguera en el fondo, toros agrupados por radio (una malla por tamaño)
+{ const porRadio = new Map(); circ.forEach((t) => { const k = t.r.toFixed(2); if (!porRadio.has(k)) porRadio.set(k, []); porRadio.get(k).push(t); });
+  const qPlano = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0));
+  const mCorona = std({ color: col('#ece8df'), roughness: .85 }), mMang = std({ color: col('#4f5b62'), roughness: .6 });
+  porRadio.forEach((lista) => {
+    const r = lista[0].r, corona = new THREE.InstancedMesh(new THREE.TorusGeometry(r, .07, 6, 48), mCorona, lista.length), mang = new THREE.InstancedMesh(new THREE.TorusGeometry(r * .6, .022, 4, 40), mMang, lista.length);
+    corona.castShadow = true;
+    lista.forEach((t, i) => { const [x, z] = P(t.cx, t.cz); m4.compose(v.set(x, Y0 + t.H + .03, z), qPlano, s.set(1, 1, 1)); corona.setMatrixAt(i, m4); m4.compose(v.set(x, Y0 + .045, z), qPlano, s.set(1, 1, 1)); mang.setMatrixAt(i, m4); });
+    interior.add(corona, mang);
+  }); }
 instBoxes(D.floorL, IM.floorL); instBoxes(D.floorM, IM.floorM); instBoxes(D.pipeB, IM.pipeB, true); instBoxes(D.pipeW, M.pipe, true);
 instBoxes(D.cos, M.tankWall, true); instBoxes(D.cosW, IM.cosW); instBoxes(D.lamp, M.lamp); instBoxes(D.bar, M.steel); instBoxes(D.tray, IM.tray); instBoxes(D.bench, IM.bench, true);
 { const cylG = new THREE.CylinderGeometry(1, 1, 1, 28);
