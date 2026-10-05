@@ -16,9 +16,9 @@ const fila = (o) => ({ _SheetOrigin: MAD_OP_ORIGEN, ...o });
 const ING = (fecha, lote, sala, tanque, machos, hembras) =>
   fila({ Fecha: fecha, Lote: lote, 'Código genético': 'C1', 'Camaronera origen': 'X', Sala: sala, Tanque: String(tanque), Machos: String(machos), Hembras: String(hembras) });
 
-let E;
+let E, FILAS;
 beforeAll(() => {
-  E = estadoMaduracion([
+  E = estadoMaduracion(FILAS = [
     ING('2026-09-30', 'AA', 'Sala 2', 16, 190, 190),     // recién ingresado: Cuarentena, en rango
     ING('2026-09-30', 'AA', 'Sala 2', 21, 100, 280),     // H:M 2,8: fuera de rango
     ING('2026-08-01', 'BB', 'Sala 3', 22, 180, 180),     // antiguo: Producción
@@ -92,6 +92,15 @@ describe('estado de maduración · salas y resumen', () => {
     expect(E.salas.S5.reemplazo).toEqual([{ lote: 'DD', dias: R.lotes[0].dias }]);
     expect(E.salas.S4.reemplazo).toBeUndefined();
     expect(R.lotes.some((l) => l.lote === 'AA')).toBe(false);   // en cuarentena: no cuenta días de producción
+  });
+
+  it('foto al cierre de OTRA fecha (un mes pasado): lo ingresado después no está y el período termina en ella', () => {
+    const P = estadoMaduracion(FILAS, '2026-10-04', '2026-09-15');
+    expect(P.fecha).toBe('2026-09-15');
+    expect(P.periodo).toMatchObject({ desde: '2026-09-09', hasta: '2026-09-15' });
+    expect(P.salas.S2.tanques[16]).toMatchObject({ estado: 'Vacío', vivos: 0 });   // AA entra el 30-09
+    expect(P.salas.S3.tanques[22].estado).toBe('Producción');
+    expect(P.salas.S3.alerta).toBe(false);   // la lectura alta es del 02-10
   });
 
   it('hoyLocal da la fecha del equipo en ISO', () => {

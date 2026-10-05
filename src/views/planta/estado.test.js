@@ -74,6 +74,29 @@ describe('estado · siembra de la corrida (la de la tabla Producción Omarsa)', 
   });
 });
 
+describe('estado · un mes pasado del selector (las corridas de ese mes, como el Supervisor)', () => {
+  let P;
+  beforeAll(() => { P = estadoPlanta(['890']); });
+
+  it('la corrida despachada entera NO se vacía: sus tanques salen despachados, con su resultado', () => {
+    const m = P.modulos.M9;
+    expect(m).toMatchObject({ estado: 'despachado', corrida: '890' });
+    expect([m.tanques[1].estado, m.tanques[2].estado]).toEqual(['despachado', 'despachado']);
+    expect(m.resultado).toMatchObject({ poblacion: 2000 });
+  });
+
+  it('un módulo sin corrida en ese mes queda sin datos; la desinfección en curso no aplica', () => {
+    expect(P.modulos.M7.estado).toBe('sin-datos');
+    expect(P.modulos.M3.estado).toBe('sin-datos');
+  });
+
+  it('el corte del mes elige la corrida de ESE mes aunque el módulo tenga otras más nuevas', () => {
+    const V = estadoPlanta(['880']);
+    expect(V.modulos.M7).toMatchObject({ corrida: '880', estado: 'cultivo' });
+    expect(V.modulos.M7.tanques[9]).toMatchObject({ estado: 'cultivo', estadio: 'PL12' });
+  });
+});
+
 describe('estado · otros casos', () => {
   it('corrida despachada entera: el módulo queda vacío, con su corrida', () => {
     const m = E.modulos.M9;

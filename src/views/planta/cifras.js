@@ -54,6 +54,9 @@ export function cifrasGerencia(filas, hoy, mIdxElegido) {
   const mad = rango ? produccionDelMes(filas, rango, hoy) : null;
   return {
     mes: monthLabelAt(mIdx), mIdx, pos, meses: meses.map((m) => ({ mIdx: m, mes: monthLabelAt(m) })), corridas,
+    // el mes en curso (el último) es HOY; uno pasado se pinta al cierre de su mes de calendario, sin pasar de hoy
+    actual: pos === meses.length - 1,
+    cierre: pos === meses.length - 1 || !rango ? hoy : (rango.hasta < hoy ? rango.hasta : hoy),
     total, despachado, enCultivo: total - despachado, siembra,
     supervivencia: siembra > 0 ? Math.min(total / siembra * 100, 100) : null,
     modulos, modulosDespachados,

@@ -47,14 +47,18 @@ function motivos({ od, tmp, sv }) {
 }
 
 /**
- * Estado de los 10 módulos del plano.
+ * Estado de los 10 módulos del plano. Sin `corridasDelMes`, el de HOY: la última corrida de cada módulo.
+ * Con ellas (un mes PASADO del selector, 2026-10-04, usuario), como las tarjetas de la Vista Ejecutiva: cada módulo con
+ * SU corrida de ese mes y su último dato; la despachada entera no se vacía (sus tanques salen despachados) y trae su
+ * resultado; la desinfección en curso no aplica.
  * @returns {{ modulos: Object<string, object>, resumen: { cultivo, vacio, despachado, fuera, alerta, desinfeccion, total } }}
  */
-export function estadoPlanta() {
+export function estadoPlanta(corridasDelMes) {
   const ctx = contextoCompleto();
-  const desinf = desinfeccionEnCurso();
+  const enMes = Array.isArray(corridasDelMes) ? new Set(corridasDelMes.map(String)) : null;
+  const desinf = enMes ? [] : desinfeccionEnCurso();
   const modulos = {};
-  LARV.forEach((m) => { modulos[m.id] = estadoModulo(ctx, m, desinf); });
+  LARV.forEach((m) => { modulos[m.id] = estadoModulo(ctx, m, desinf, enMes); });
   const resumen = { cultivo: 0, vacio: 0, despachado: 0, fuera: 0, alerta: 0, desinfeccion: 0, total: 0 };
   Object.values(modulos).forEach((mo) => Object.values(mo.tanques).forEach((t) => {
     resumen.total++;
@@ -68,14 +72,15 @@ export function estadoPlanta() {
   return { modulos, resumen };
 }
 
-function estadoModulo(ctx, m, desinf) {
+function estadoModulo(ctx, m, desinf, enMes) {
   const nT = m.rows.length * m.cols.length;
   const vacios = (estado) => Object.fromEntries(Array.from({ length: nT }, (_, i) => [i + 1, { estado }]));
   const mod = ctx.allMods.find((x) => esModulo(x, m.n)) || null;
   const rows = mod ? ctx.larvCM.filter((r) => getField(r, F.modulo) === mod) : [];
-  // Corrida actual = la de número más alto con datos de Larvicultura (su texto tal cual, que es como filtran las estadísticas).
+  // Corrida = la de número más alto con datos de Larvicultura (su texto tal cual, que es como filtran las estadísticas);
+  // en un mes pasado, la más alta de las de ESE mes.
   let corrida = null;
-  rows.forEach((r) => { const c = getField(r, F.corrida); if (!isNaN(+c) && (corrida === null || +c > +corrida)) corrida = c; });
+  rows.forEach((r) => { const c = getField(r, F.corrida); if (!isNaN(+c) && (!enMes || enMes.has(String(c))) && (corrida === null || +c > +corrida)) corrida = c; });
 
   // Pre-siembra: registros de desinfección de una corrida aún sin datos de Larvicultura.
   const des = desinf.filter((d) => esModulo(d.mod, m.n) && (corrida === null || +d.corrida > +corrida))
@@ -87,18 +92,27 @@ function estadoModulo(ctx, m, desinf) {
   // la siembra de la corrida: fecha promedio, tanques y nauplios, los de la tabla Producción Omarsa (2026-10-04, usuario)
   const pc = modCorStats(mod, corrida);
   const siembra = { fecha: pc.siembraFecha, tanques: pc.nSie, nauplios: pc.siembra };
-  if (modCorDispatched(mod, corrida)) {
-    return { id: m.id, mod, estado: 'despachado', corrida, ultimo: s.lastDate, siembra, tanques: vacios('vacio') };
+  // el resultado de la corrida, el de su fila de la tabla Producción Omarsa
+  const resultado = { poblacion: pc.cosecha, superv: pc.superv, plg: pc.plg };
+  const despachada = modCorDispatched(mod, corrida);
+  if (despachada && !enMes) {
+    return { id: m.id, mod, estado: 'despachado', corrida, ultimo: s.lastDate, siembra, resultado, tanques: vacios('vacio') };
   }
 
   const delaCorrida = rows.filter((r) => getField(r, F.corrida) === corrida);
   const nombres = new Map();   // número del plano → nombre del tanque en el Sheet («TQ 4»)
   delaCorrida.forEach((r) => { const t = getField(r, F.tanque); const k = numDe(t); if (t && k && !nombres.has(k)) nombres.set(k, t); });
+  // tankStats recorre el contexto ENTERO por cada tanque (tres pasadas × 112 tanques: ~3 s con el libro real, y cada
+  // cambio de mes del selector lo repite). Con sólo las filas de este módulo y corrida —exactamente las que su filtro
+  // deja pasar: gMod/gCor de stats.js son getField de F.modulo y F.corrida— da lo mismo en una fracción del tiempo.
+  const deEsta = (r) => getField(r, F.modulo) === mod && getField(r, F.corrida) === corrida;
+  const larvWin = ctx.larvWin.filter(deEsta);
+  const ctxMC = { larvWin, larvCM: ctx.larvCM === ctx.larvWin ? larvWin : ctx.larvCM.filter(deEsta), tanqWin: ctx.tanqWin.filter(deEsta) };
   const tanques = {};
   for (let k = 1; k <= nT; k++) {
     const nombre = nombres.get(k);
     if (!nombre) { tanques[k] = { estado: 'vacio' }; continue; }
-    const ts = tankStats(ctx, mod, nombre, corrida);
+    const ts = tankStats(ctxMC, mod, nombre, corrida);
     const comun = { nombre, estadio: ts.estadio, sv: ts.sv, pop: ts.pop, od: ts.od, tmp: ts.tmp, lotes: ts.lotes };
     if (ts.grouped || ts.discarded) { tanques[k] = { ...comun, estado: ts.grouped ? 'agrupado' : 'descartado' }; continue; }
     if (delaCorrida.some((r) => getField(r, F.tanque) === nombre && isDespachoRow(r))) { tanques[k] = { ...comun, estado: 'despachado' }; continue; }
@@ -106,8 +120,9 @@ function estadoModulo(ctx, m, desinf) {
     tanques[k] = { ...comun, estado: 'cultivo', etapa: stageCategory(ts.estadio), alerta: mot.length > 0, motivos: mot };
   }
   const lista = Object.values(tanques);
+  if (despachada) return { id: m.id, mod, estado: 'despachado', corrida, ultimo: s.lastDate, siembra, resultado, tanques };
   return {
-    id: m.id, mod, estado: 'cultivo', corrida, siembra,
+    id: m.id, mod, estado: 'cultivo', corrida, siembra, resultado,
     estadio: s.estadio, dias: s.dias, etapa: stageCategory(s.estadio),
     sv: s.sv, mort: s.mort, pop: s.pop, od: s.od, tmp: s.tmp, plg: s.plgManual,
     tecnicos: s.tecnicos, lotes: s.lotes, fresco: freshness(s.lastDate), ultimo: s.lastDate,
@@ -144,11 +159,12 @@ export function hoyLocal(d = new Date()) {
 const fueraDeSuRango = (e) => e === 'bajo' || e === 'alto';
 
 /**
- * Estado de las 5 salas de maduración al cierre de `hoy`.
+ * Estado de las 5 salas de maduración al cierre de `hoy` (o de `fecha`, con su período de 7 días terminando en ella).
  * @returns {{ salas: Object<string, object>, resumen: { hembras, machos, ocupados, tanques, alertaTanques, alertaSalas, porEstado } }}
  */
-export function estadoMaduracion(filas, hoy = hoyLocal()) {
-  const M = modeloOperativo(filas, { hoy });
+export function estadoMaduracion(filas, hoy = hoyLocal(), fecha) {
+  // `fecha`: la foto al cierre de otro día (un mes pasado del selector), como «Foto al día» del tablero; sin ella, hoy.
+  const M = modeloOperativo(filas, { hoy, fecha });
   const F = normalizarFiltro({}, null);
   const periodo = periodoDe('7d', M.fecha, M.fuentes);
   const mapa = mapaDePlanta(M.libro, F);

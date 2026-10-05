@@ -5,6 +5,8 @@
    Tanda 3 (2026-10-04): y el de cada sala y tanque de maduración (estadoMaduracion, del mismo archivo).
    Tanda 4 (2026-10-04): las cifras de gerencia (planta/cifras.js): producción del mes frente a la meta, supervivencia,
    nauplios y desoves. Las tres partes se calculan por separado: si una falla, las otras se siguen viendo.
+   Selector de mes (2026-10-04, usuario): el mes elegido mueve TODA la vista. El en curso es hoy; uno pasado pinta cada
+   módulo con su corrida de ese mes (como las tarjetas del Supervisor) y maduración al cierre de su mes de calendario.
    La vista se monta SIN esperar al libro (`necesitaLibro: false`): la maqueta sale al instante, pide
    el libro si no está y pinta los estados al llegar; en cada refresco (EV.DATA) sólo vuelve a pintar
    los colores (`repintaConDatos: false`: rehacer la escena perdería la cámara).
@@ -96,25 +98,25 @@ export function plantaView(root) {
       + `<small class="mono">${esc(e.message)}</small></div>`;
     return;
   }
-  // El mes de la tarjeta de producción: null = el último con datos (sigue al mes en curso); al elegir uno anterior se
-  // conserva en cada actualización de datos, como en la tabla Producción Omarsa.
+  // El mes elegido: null = el último con datos (sigue al mes en curso); al elegir uno anterior se conserva en cada
+  // actualización de datos, como en la tabla Producción Omarsa. Mueve toda la vista, no sólo la tarjeta.
   let mesElegido = null;
   const cifrasDelMes = () => cifrasGerencia(store.globalData, hoyLocal(), mesElegido);
-  escena.alElegirMes((mIdx, esUltimo) => {
-    mesElegido = esUltimo ? null : mIdx;
-    try { escena.pintarMes(cifrasDelMes()); } catch (e) { console.error('[planta] cifras', e); escena.aviso('No se pudo calcular la producción del mes: ' + e.message); }
-  });
   const pintar = () => {
     if (!store.connected || !store.globalData.length) { escena.pintarEstado(null); return; }
     const fallos = [];
     let larv = null, mad = null, cifras = null;
-    try { larv = estadoPlanta(); } catch (e) { console.error('[planta] larvicultura', e); fallos.push('larvicultura (' + e.message + ')'); }
-    try { mad = estadoMaduracion(store.globalData); } catch (e) { console.error('[planta] maduración', e); fallos.push('maduración (' + e.message + ')'); }
     try { cifras = cifrasDelMes(); } catch (e) { console.error('[planta] cifras', e); fallos.push('producción del mes (' + e.message + ')'); }
-    escena.pintarEstado({ modulos: larv ? larv.modulos : {}, resumen: larv ? larv.resumen : null, mad, cifras });
+    const pasado = cifras && !cifras.actual ? cifras : null;   // sin cifras, hoy
+    try { larv = estadoPlanta(pasado ? pasado.corridas : undefined); } catch (e) { console.error('[planta] larvicultura', e); fallos.push('larvicultura (' + e.message + ')'); }
+    try { mad = estadoMaduracion(store.globalData, hoyLocal(), pasado ? pasado.cierre : undefined); } catch (e) { console.error('[planta] maduración', e); fallos.push('maduración (' + e.message + ')'); }
+    escena.pintarEstado({ modulos: larv ? larv.modulos : {}, resumen: larv ? larv.resumen : null, mad, cifras,
+      mes: pasado ? { mes: pasado.mes, cierre: pasado.cierre } : null });
     const hora = new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
-    escena.aviso(fallos.length ? 'No se pudo calcular: ' + fallos.join(' · ') : 'Datos del MCP · puestos al día a las ' + hora);
+    escena.aviso(fallos.length ? 'No se pudo calcular: ' + fallos.join(' · ')
+      : 'Datos del MCP · puestos al día a las ' + hora + (pasado ? ' · mostrando ' + pasado.mes + ' (maduración al ' + pasado.cierre.slice(8, 10) + '/' + pasado.cierre.slice(5, 7) + ')' : ''));
   };
+  escena.alElegirMes((mIdx, esUltimo) => { mesElegido = esUltimo ? null : mIdx; pintar(); });
   pintar();
   if (!store.connected) asegurarLibro();
   // Se desuscribe solo cuando la vista ya no está en el documento (el router no avisa al salir).

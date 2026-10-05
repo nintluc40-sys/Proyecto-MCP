@@ -19,8 +19,8 @@
    lleva la cámara a él y abre su ficha.
    Ahorro de batería (2026-10-04, usuario): tras 5 s sin tocarla la maqueta sigue animada a ~15 cuadros por segundo
    y vuelve a ~60 al tocarla o al moverse la cámara; fuera de pantalla no se dibuja.
-   Selector de mes (2026-10-04, usuario): la tarjeta de producción se mueve por los meses con datos, con ◀ ▶ y un
-   deslizador como la tabla Producción Omarsa; el resto de la vista sigue mostrando hoy.
+   Selector de mes (2026-10-04, usuario): ◀ ▶ y un deslizador como la tabla Producción Omarsa, que mueven TODA la vista:
+   en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
    Rótulos sin encimarse (2026-10-04, usuario): de lejos y en pantallas angostas se acortan («7 ⚠6»); si aún chocan,
    se oculta el de menor prioridad (el elegido, luego el de más alertas, luego larvicultura) hasta que se acerque o gire.
    Reemplazo por tiempo (2026-10-04): los días en producción de cada lote frente a los 60; el que pasa va a «Qué atender
@@ -35,7 +35,7 @@ import { fmtShort } from '../../core/dates.js';
 import { META_POR_DEFECTO, normalizarMeta } from './cifras.js';
 
 /** Monta la maqueta en `root` (que ya trae el marcado de planta/index.js).
- *  Devuelve { dispose, pintarEstado(estado|null), aviso(texto), pintarMes(cifras), alElegirMes(fn(mIdx, esUltimo)) }. */
+ *  Devuelve { dispose, pintarEstado(estado|null), aviso(texto), alElegirMes(fn(mIdx, esUltimo)) }. */
 export function montarPlanta(root) {
 const $ = s => root.querySelector(s);
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -339,7 +339,7 @@ circ.forEach((t, i) => {
   t.inst = i; t.mesh = waterC; t.tint = R(-.04, .04);
 });
 scene.add(wallsI, ringI, waterRL, waterRM, waterC);
-let selected = null, hovered = null, estadoCargado = false;
+let selected = null, hovered = null, estadoCargado = false, mesPasado = null;   // mesPasado: { mes, cierre } o null (hoy)
 // Estado de producción (planta/estado.js) → color del agua. En cultivo, el color de su ETAPA (el de las
 // tarjetas de la Vista Ejecutiva); la alerta no repinta el tanque: va como baliza.
 const ESTADO_COLOR = { vacio: col('#d9e8ea'), despachado: col('#a9bcc8'), agrupado: col('#5b6266'), descartado: col('#5b6266'), desinfeccion: col('#9e9e9e') };
@@ -715,7 +715,9 @@ function fichaModulo(g) {
     return;
   }
   if (st.estado === 'despachado') {
-    llenarFicha(kind, g.name, [['Estado', 'Vacío · corrida despachada'], ['Corrida', 'C' + st.corrida + ' despachada por completo'], ['Siembra', txtSiembra(st.siembra)], ['Último dato', st.ultimo ? fmtShort(st.ultimo) : '—']]);
+    const r = st.resultado || {};
+    llenarFicha(kind, g.name, [['Estado', mesPasado ? 'Corrida despachada' : 'Vacío · corrida despachada'], ['Corrida', 'C' + st.corrida + ' despachada por completo'], ['Siembra', txtSiembra(st.siembra)],
+      ['Población final', fmtPop(r.poblacion)], ['Supervivencia', pct(r.superv)], ['PL/g (manual)', num(r.plg, 1, '')], ['Último dato', st.ultimo ? fmtShort(st.ultimo) : '—']]);
     return;
   }
   const c = st.cuenta, partes = [c.cultivo + ' en cultivo', c.vacio && c.vacio + ' vacíos', c.despachado && c.despachado + ' despachados', c.fuera && c.fuera + ' agrupados o descartados'].filter(Boolean);
@@ -975,7 +977,7 @@ function pintarFila(g) {
   if (!estadoCargado) { g.listSub.textContent = 'Cargando…'; g.listCt.textContent = ''; return; }
   if (!st || st.estado === 'sin-datos') { g.listSub.textContent = 'Sin datos'; g.listCt.textContent = ''; return; }
   if (st.estado === 'desinfeccion') { g.listSub.textContent = 'Desinfección · C' + st.corrida; g.listCt.textContent = ''; return; }
-  if (st.estado === 'despachado') { g.listSub.textContent = 'Vacío · C' + st.corrida + ' despachada'; g.listCt.textContent = ''; return; }
+  if (st.estado === 'despachado') { g.listSub.textContent = (mesPasado ? '' : 'Vacío · ') + 'C' + st.corrida + ' despachada' + (mesPasado && st.resultado && st.resultado.superv !== null ? ' · ' + pct(st.resultado.superv) : ''); g.listCt.textContent = ''; return; }
   g.listSub.textContent = 'C' + st.corrida + ' · ' + st.estadio + ' · día ' + st.dias + (st.despachando ? ' · despachando' : '');
   g.listCt.textContent = st.cuenta.alerta ? '⚠ ' + st.cuenta.alerta : st.cuenta.cultivo + '/' + g.tanks.length;
 }
@@ -1014,8 +1016,13 @@ function latirBalizas(time) {
 }
 
 /* ---------- Estado de producción (lo pasa planta/index.js; null mientras no hay libro) ---------- */
+const LEDE_HOY = $('.planta .lede').textContent;
 function pintarEstado(E) {
   estadoCargado = !!E;
+  mesPasado = (E && E.mes) || null;
+  $('.planta .lede').textContent = mesPasado
+    ? mesPasado.mes + ': cada módulo de larvicultura con su corrida de ese mes y cada sala de maduración al ' + dm(mesPasado.cierre) + ', con los datos y las reglas del MCP.'
+    : LEDE_HOY;
   groups.forEach((g) => {
     g.st = !E ? null : g.kind === 'larv' ? E.modulos[g.id] || null : (E.mad && E.mad.salas[g.id]) || null;
     g.tanks.forEach((t) => { t.st = g.st && g.st.tanques ? g.st.tanques[t.num] || null : null; });
@@ -1044,7 +1051,9 @@ function pintarAtender() {
   const ul = $('#atender'), h = $('#atender-h');
   ul.textContent = '';
   const nota = (txt) => { const li = document.createElement('li'); li.className = 'at-vacio'; li.textContent = txt; ul.append(li); };
-  if (!estadoCargado) { h.textContent = 'Qué atender hoy'; nota('Cargando datos…'); return; }
+  const titulo = mesPasado ? 'Alertas al cierre de ' + mesPasado.mes : 'Qué atender hoy';
+  $('.planta .atender').setAttribute('aria-label', titulo);
+  if (!estadoCargado) { h.textContent = titulo; nota('Cargando datos…'); return; }
   let total = 0;
   groups.forEach((g) => {
     const enAlerta = g.tanks.filter((t) => t.st && t.st.alerta);
@@ -1089,13 +1098,14 @@ function pintarAtender() {
     if (g) gb.addEventListener('click', () => irAGrupo(g));
     li.append(gb); ul.append(li);
   });
-  h.textContent = total ? '⚠ Qué atender hoy · ' + total : 'Qué atender hoy';
-  if (!total) nota('Sin alertas hoy');
+  h.textContent = total ? '⚠ ' + titulo + ' · ' + total : titulo;
+  if (!total) nota(mesPasado ? 'Sin alertas al cierre de ' + mesPasado.mes : 'Sin alertas hoy');
 }
 /* ---------- Reproductores: días en producción frente al límite (60, el del tablero de Maduración) ---------- */
 let reemplazoActual = null;
 function pintarReemplazo(R) {
   reemplazoActual = R;
+  $('#repro-h').textContent = 'Reproductores · días en producción' + (mesPasado ? ' al ' + dm(mesPasado.cierre) : '');
   const ul = $('#repro'); ul.textContent = '';
   const nota = (txt) => { const li = document.createElement('li'); li.className = 'at-vacio'; li.textContent = txt; ul.append(li); };
   if (!estadoCargado) { nota('Cargando datos…'); return; }
@@ -1254,5 +1264,5 @@ if (reduced) animateLife(0, 0);
 camera.position.set(-30, 150, 175); controls.target.set(0, 0, 0);
 const ro = new ResizeObserver(resize); ro.observe(vp); resize(); frameView('iso'); fly.dur = 1;
 rafId = requestAnimationFrame(loop);
-return { dispose, pintarEstado, aviso, pintarMes: pintarProduccion, alElegirMes: (fn) => { alMes = fn; } };
+return { dispose, pintarEstado, aviso, alElegirMes: (fn) => { alMes = fn; } };
 }

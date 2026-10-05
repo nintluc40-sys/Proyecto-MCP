@@ -75,6 +75,11 @@ describe('cifras de gerencia · selector de mes (como la tabla Producción Omars
     expect(A.nauplios).toMatchObject({ n5: 9000000, desoves: 9, desde: '2030-08-01', hasta: '2030-08-31' });
   });
 
+  it('el mes en curso es HOY; uno pasado se pinta al cierre de su mes de calendario', () => {
+    expect(C).toMatchObject({ actual: true, cierre: '2030-09-20' });
+    expect(cifrasGerencia(store.globalData, '2030-09-20', C.meses[0].mIdx)).toMatchObject({ actual: false, cierre: '2030-08-31' });
+  });
+
   it('un mes que no tiene datos (o ninguno) vuelve al último', () => {
     expect(cifrasGerencia(store.globalData, '2030-09-20', 9999).pos).toBe(1);
     expect(cifrasGerencia(store.globalData, '2030-09-20', undefined).pos).toBe(1);
