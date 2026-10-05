@@ -25,6 +25,8 @@
   },
   "dependencies": {
     "chart.js": "^4.4.3",
-    "leaflet": "^1.9.4"
+    "leaflet": "^1.9.4",
+    "qrcode-generator": "1.4.4",
+    "three": "0.128.0"
   }
 }

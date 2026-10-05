@@ -40,9 +40,9 @@ describe('arranque · main.js', () => {
     expect(mainCodigo).toMatch(/setLibroGuardado\(\(\)\s*=>\s*\(typeof indexedDB === 'undefined' \? Promise\.resolve\(null\) : cargarLibroGuardado\(almacenIDB\(\)\)\)\);/);
   });
 
-  it('SÓLO Registros declara necesitaLibro: false', () => {
+  it('SÓLO Registros y Planta (que pide el libro ella misma, sin el aviso de carga) declaran necesitaLibro: false', () => {
     const bloques = mainCodigo.split(/(?=registerView\(')/).slice(1).map((b) => [b.match(/^registerView\('([a-z]+)'/)[1], b]);
-    expect(bloques.filter(([, b]) => /necesitaLibro:\s*false/.test(b)).map(([id]) => id)).toEqual(['registros']);
+    expect(bloques.filter(([, b]) => /necesitaLibro:\s*false/.test(b)).map(([id]) => id)).toEqual(['registros', 'planta']);
   });
 });
 

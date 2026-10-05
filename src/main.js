@@ -14,7 +14,7 @@ import './views/microbiologia/microbiologia.css';
 import './views/maduracion/maduracion.css';
 
 
-import { mountShell } from './ui/shell.js';
+import { mountShell, aplicarRolDeArranque } from './ui/shell.js';
 import { registerView, setPedirLibro } from './ui/router.js';
 import { setLectorLibro } from './core/sheets.js';
 import { lectorWorker } from './core/sheets.lector.js';
@@ -61,6 +61,20 @@ function cargarD3() {
 function boot() {
   const app = document.getElementById('app');
 
+  // Página del QR de acceso de Gerencia (2026-10-05, usuario): `…/?qr=gerencia`, sin la cabecera ni la elección de rol,
+  // con su propio bloque diferido (three.js, fuera de la precarga: vite.config.js). Se abre desde el panel de Planta.
+  if (new URLSearchParams(location.search).get('qr') === 'gerencia') {
+    app.innerHTML = '<div class="empty-state" style="padding:64px 20px">Armando el código de acceso…</div>';
+    import('./views/planta/qr/index.js')
+      .then((m) => m.paginaQR(app))
+      .catch((e) => {
+        // como Planta, fuera de la precarga: sin señal y sin haberla abierto antes, no hay bloque que cargar
+        const sinRed = navigator.onLine === false || /dynamically imported module|Importing a module script failed|Unable to preload CSS/i.test(e.message || '');
+        app.innerHTML = `<div class="empty-state" style="padding:48px">${sinRed ? 'El código de acceso necesita señal la primera vez que se abre (y tras cada actualización). Conéctate y vuelve a intentarlo.' : 'No se pudo abrir el código de acceso.'}<br><small class="mono">${esc(e.message)}</small></div>`;
+      });
+    return;
+  }
+
   // Vistas desarrolladas
   // `usaBarraFecha: true` = la vista LEE el rango de la barra de fecha global (store.dateFrom/
   // dateTo). Sólo esas la enseñan (D12, 2026-09-13); lo vigila src/ui/dateBarVisibility.test.js.
@@ -100,6 +114,26 @@ function boot() {
     },
   });
 
+  // Planta (🏭, rol Gerencia) — carga DIFERIDA: trae three.js (la maqueta 3D del laboratorio) y sólo la
+  // abre gerencia, así que el resto de la app no lo descarga. `necesitaLibro: false`: la maqueta sale al
+  // instante, sin el aviso de carga del router, y la propia vista pide el libro (asegurarLibro) y pinta los
+  // estados al llegar. `repintaConDatos: false`: un refresco reconstruiría la escena 3D entera y perdería la
+  // cámara; la vista se pone al día ella misma con EV.DATA, repintando sólo los colores (tanda 2, 2026-10-04;
+  // src/ui/repintaConDatos.test.js, src/ui/arranque.test.js).
+  registerView('planta', {
+    label: 'Planta', icon: '🏭', repintaConDatos: false, necesitaLibro: false,
+    render: (root) => {
+      root.innerHTML = '<div class="empty-state" style="padding:64px 20px"><div style="font-size:40px">🏭</div><p class="muted">Cargando la maqueta del laboratorio…</p></div>';
+      return import('./views/planta/index.js')
+        .then((m) => m.plantaView(root))
+        // Planta no va en la precarga (vite.config.js): sin señal y sin haberla abierto antes, no hay bloque que cargar.
+        .catch((e) => {
+          const sinRed = navigator.onLine === false || /dynamically imported module|Importing a module script failed|Unable to preload CSS/i.test(e.message || '');
+          root.innerHTML = `<div class="empty-state" style="padding:48px">${sinRed ? 'La vista Planta necesita señal la primera vez que se abre (y tras cada actualización). Conéctate y vuelve a intentarlo.' : 'Error al cargar la vista Planta.'}<br><small class="mono">${esc(e.message)}</small></div>`;
+        });
+    },
+  });
+
   mountShell(app);
 
   // El libro se lee en un Web Worker (P1, 2026-10-01): la pantalla no se congela al leerlo.
@@ -125,6 +159,10 @@ function boot() {
   // La huella inicial (y la de cada reconexión manual) la cachea commit() en
   // sheets.js; el loop la lee de ahí — única fuente de verdad.
   startAutoRefresh();
+
+  // Entrada directa por el enlace de Gerencia (`?rol=gerencia`, el del QR) o por el rol que el equipo recuerda
+  // (2026-10-05, usuario). Al final: las vistas, el lector y el pedido del libro ya están listos.
+  aplicarRolDeArranque();
 }
 
 /* ── Service worker (T4b, 2026-08-25) ────────────────────────

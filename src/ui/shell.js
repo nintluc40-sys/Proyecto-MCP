@@ -8,6 +8,7 @@ import { destroyAllCharts } from '../core/charts.js';
 import { fmtShort, parseAnyDate } from '../core/dates.js';
 import { getField, F } from '../core/fields.js';
 import { toast } from './toast.js';
+import { rolDeEnlace, rolRecordado, recordarRol, olvidarRol, direccionSinRol } from './accesoRol.js';
 // Logo corporativo (pantalla de entrada). Vite lo resuelve a un asset con hash.
 import logoUrl from '../assets/logo.png';
 
@@ -110,7 +111,7 @@ export function mountShell(appEl) {
   on(EV.DATA, () => { renderDateBar(); if (viewRepaintsOnData(store.currentView)) renderCurrentView({ conservarPosicion: true }); });
 }
 
-// Vistas principales del sistema. Las NUEVE están desarrolladas: aquí ya no queda ninguna
+// Vistas principales del sistema. Las DIEZ están desarrolladas (la décima, 🏭 Planta, en construcción por tandas): aquí ya no queda ninguna
 // «pendiente», y ninguna entrada declara esa marca.
 // ⚠ Esta línea decía «(las pendientes aún no están desarrolladas)» y llevaba tiempo siendo falsa,
 // exactamente igual que el respaldo que la acompañaba —el que esquivaba las vistas marcadas como
@@ -128,6 +129,8 @@ export const MAIN_VIEWS = [
   { id: 'microbiologia', label: 'Microbiología',     icon: '🧫' },
   { id: 'biomolecular', label: 'Biología Molecular', icon: '🧬' },
   { id: 'visitante',    label: 'Visitante',          icon: '🚪' },
+  // Al FINAL: el orden decide dónde aterriza cada rol, y el Administrativo debe seguir entrando al Supervisor.
+  { id: 'planta',       label: 'Planta',             icon: '🏭' },
 ];
 
 // Roles de ingreso y vistas a las que acceden ('*' = todas).
@@ -138,6 +141,9 @@ export const ROLES = {
   supervisor:     { label: 'Supervisor',     icon: '📋', allow: ['supervisor', 'revisiones', 'registros', 'algas', 'microbiologia', 'biomolecular', 'maduracion'] },
   chequeador:     { label: 'Chequeador',     icon: '✅', allow: ['larvicultura'] },
   visitante:      { label: 'Visitante',      icon: '🚪', allow: ['visitante'] },
+  // Gerencia (2026-10-04, decisión del usuario): SÓLO la vista 🏭 Planta, el tablero de producción sobre la
+  // maqueta 3D; sin clave, como los demás roles.
+  gerencia:       { label: 'Gerencia',       icon: '📈', allow: ['planta'] },
 };
 
 const roleAllows = (viewId) => {
@@ -199,6 +205,22 @@ const LOADER_MSGS = [
 ];
 let _loaderTimer = null;
 
+/**
+ * Entrada directa por enlace (2026-10-05, usuario): `…/?rol=gerencia` (el enlace del QR de acceso) elige el rol sin la
+ * pantalla de roles, lo recuerda en el equipo y limpia la dirección; sin enlace, el rol recordado (también al abrir desde
+ * el ícono de inicio). La llama main.js al final del arranque, con las vistas y el lector del libro ya listos. Sin enlace
+ * ni rol recordado no hace nada: la pantalla de roles queda como siempre.
+ */
+export function aplicarRolDeArranque() {
+  const enlace = rolDeEnlace(location.search);
+  if (enlace) {
+    recordarRol(enlace);
+    try { history.replaceState(history.state, '', direccionSinRol(location.href)); } catch (_) { /* la dirección queda como vino */ }
+  }
+  const rol = enlace || rolRecordado();
+  if (rol && ROLES[rol]) selectRole(rol);
+}
+
 export function showLoader(on) {
   els.loader.classList.toggle('is-active', !!on);
   clearInterval(_loaderTimer);
@@ -235,7 +257,8 @@ function bindEvents(appEl) {
     const btn = e.target.closest('[data-role]');
     if (btn) selectRole(btn.dataset.role);
   });
-  appEl.querySelector('#changeRole').addEventListener('click', () => { closeDrawer(); showEntry(); });
+  // «Cambiar rol» también olvida el rol que el equipo recordaba por el enlace de Gerencia (accesoRol.js)
+  appEl.querySelector('#changeRole').addEventListener('click', () => { olvidarRol(); closeDrawer(); showEntry(); });
   // ⟳ y la píldora: refresco a mano. Si ya hay una descarga en curso no lanza otra.
   const manual = async () => {
     if (store.refreshing) return;

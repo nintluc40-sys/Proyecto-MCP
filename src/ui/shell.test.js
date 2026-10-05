@@ -27,7 +27,7 @@ const landing = (role) => {
 describe('shell · permisos por rol', () => {
   it('existen exactamente los 5 roles del sistema', () => {
     expect(Object.keys(ROLES).sort()).toEqual(
-      ['administrativo', 'chequeador', 'supervisor', 'tecnico', 'visitante'],
+      ['administrativo', 'chequeador', 'gerencia', 'supervisor', 'tecnico', 'visitante'],
     );
   });
 
@@ -54,6 +54,12 @@ describe('shell · permisos por rol', () => {
 
   it('Visitante accede solo a la vista Visitante', () => {
     expect(ROLES.visitante.allow).toEqual(['visitante']);
+  });
+
+  it('gerencia: sólo la vista Planta (el tablero 3D) y aterriza en ella', () => {
+    expect(ROLES.gerencia.allow).toEqual(['planta']);
+    expect(allows('gerencia', 'supervisor')).toBe(false);
+    expect(landing('gerencia')).toBe('planta');
   });
 
   it('todos los ids permitidos existen en MAIN_VIEWS (sin typos silenciosos)', () => {

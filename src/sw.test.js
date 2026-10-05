@@ -513,4 +513,27 @@ describe('Build · precache-assets.json, la lista que lee el service worker', ()
     expect(emitidos[0].fileName).toBe('precache-assets.json');
     expect(JSON.parse(emitidos[0].source)).toEqual(['./assets/index-AAA.js', './assets/registros-CCC.css', './assets/sheets.worker-BBB.js']);
   });
+
+  it('🔴 Planta y el QR de Gerencia NO van en la lista (2026-10-04/05): ni sus bloques, ni su CSS, ni lo que sólo ellos usan', async () => {
+    const { default: config } = await import('../vite.config.js');
+    const cfg = typeof config === 'function' ? config({ command: 'build', mode: 'production' }) : config;
+    const plugin = (cfg.plugins || []).find((p) => p && p.name === 'mcp-precache-assets');
+    const emitidos = [];
+    const ch = (o) => ({ type: 'chunk', imports: [], dynamicImports: [], viteMetadata: { importedCss: new Set() }, ...o });
+    plugin.generateBundle.handler.call({ emitFile: (f) => emitidos.push(f) }, {}, {
+      'assets/index-AAA.js': ch({ isEntry: true, facadeModuleId: 'C:/repo/src/main.js', imports: ['assets/comun-CCC.js'],
+        dynamicImports: ['assets/index-PPP.js', 'assets/index-QQQ.js', 'assets/maduracion.produccion-MMM.js'], viteMetadata: { importedCss: new Set(['assets/index-AAA.css']) } }),
+      'assets/index-AAA.css': { type: 'asset' },
+      'assets/comun-CCC.js': ch({ facadeModuleId: null }),
+      // en Windows el id puede venir con barras invertidas
+      'assets/index-PPP.js': ch({ facadeModuleId: 'C:\\repo\\src\\views\\planta\\index.js', imports: ['assets/three-TTT.js', 'assets/comun-CCC.js', 'assets/maduracion.produccion-MMM.js'], viteMetadata: { importedCss: new Set(['assets/index-PPP.css']) } }),
+      'assets/index-PPP.css': { type: 'asset' },
+      'assets/index-QQQ.js': ch({ facadeModuleId: '/repo/src/views/planta/qr/index.js', imports: ['assets/three-TTT.js'], viteMetadata: { importedCss: new Set(['assets/index-QQQ.css']) } }),
+      'assets/index-QQQ.css': { type: 'asset' },
+      'assets/three-TTT.js': ch({ facadeModuleId: null }),          // compartido SÓLO por los dos excluidos: fuera
+      'assets/maduracion.produccion-MMM.js': ch({ facadeModuleId: null }),   // lo usa también la app: dentro
+      'assets/sheets.worker-WWW.js': { type: 'asset' },             // los Worker son archivos: no cambian
+    });
+    expect(JSON.parse(emitidos[0].source)).toEqual(['./assets/comun-CCC.js', './assets/index-AAA.css', './assets/index-AAA.js', './assets/maduracion.produccion-MMM.js', './assets/sheets.worker-WWW.js']);
+  });
 });

@@ -1,0 +1,165 @@
+/* ============================================================
+   PLANTA · estilos de la vista 🏭 (maqueta 3D del laboratorio)
+   Todo cuelga de .planta. Los colores salen de los tokens de la app (tokens.css), así el panel
+   sigue al tema claro u oscuro; los tres de la maqueta (larvicultura, maduración y selección)
+   tienen su variante oscura abajo. La escena pinta su propio cielo: --scene es sólo el fondo
+   mientras carga, y lo pone escena.js según la hora del día.
+   ============================================================ */
+.planta {
+  --bg: var(--c-bg); --panel: var(--c-surface); --ink: var(--c-text); --muted: var(--c-text-soft);
+  --line: var(--c-border); --chip: var(--c-surface-2);
+  --larv: #0d7d88; --mat: #2c8a57; --sel: #d9622b; --scene: #cfe3ee;
+  display: grid; grid-template-columns: minmax(0, 1fr) 340px;
+  height: calc(100vh - 150px); min-height: 520px;
+  border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--panel); color: var(--ink);
+}
+[data-theme="dark"] .planta { --larv: #40c0cb; --mat: #5fcf8f; --sel: #f08a55; }
+.planta [hidden] { display: none !important; }
+
+/* ---- Panel ---- */
+.planta .panel { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 20px 18px 22px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.planta h1 { margin: 4px 0 6px; font: 800 22px/1.1 var(--font-sans); letter-spacing: -.01em; }
+.planta .lede { margin: 0; color: var(--muted); font-size: 13px; }
+.planta .compartir { display: inline-block; margin-top: 10px; font: 600 12.5px/1 var(--font-sans); color: var(--ink); background: var(--chip); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; text-decoration: none; }
+.planta .compartir:hover { border-color: var(--larv); color: var(--larv); }
+.planta .datos { margin: 8px 0 0; font: 500 12px/1.4 var(--font-mono); color: var(--muted); }
+.planta .legend { display: grid; gap: 5px; font-size: 12.5px; color: var(--ink); }
+.planta .legend .lg { display: flex; align-items: center; gap: 8px; }
+.planta .legend .lg i { width: 12px; height: 12px; border-radius: 3px; flex: none; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12); }
+.planta .legend .lg-sub { margin-top: 6px; font: 600 11px/1 var(--font-sans); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.planta .legend .lg-alerta { color: #c62828; font-weight: 600; margin-top: 2px; }
+.planta .stat em { font-style: normal; }
+.planta .prod { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px 12px; display: grid; gap: 8px; }
+.planta .prod-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.planta .prod-head h2 { margin: 0; }
+.planta .meta-btn { font: 600 12px/1 var(--font-sans); color: var(--ink); background: var(--chip); border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; cursor: pointer; }
+.planta .meta-form { display: grid; gap: 6px; padding: 10px; border-radius: 8px; background: var(--chip); font-size: 12.5px; }
+.planta .meta-form[hidden] { display: none; }
+.planta .meta-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.planta .meta-row input { width: 7em; font: 600 14px/1 var(--font-mono); padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
+.planta .meta-row button { font: 600 12.5px/1 var(--font-sans); padding: 7px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+.planta .meta-row button[type="submit"] { background: var(--larv); border-color: var(--larv); color: #fff; }
+.planta .meta-form small { color: var(--muted); }
+.planta .prod-nav { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.planta .mes-btn { width: 32px; height: 32px; border-radius: 8px; border: 1.5px solid var(--line); background: var(--panel); color: var(--larv); font-size: 13px; font-weight: 900; cursor: pointer; }
+.planta .mes-btn:hover:not(:disabled) { background: var(--larv); color: #fff; }
+.planta .mes-btn:disabled { opacity: .35; cursor: default; }
+.planta .prod-mes { text-align: center; display: grid; gap: 2px; min-width: 0; }
+.planta .prod-mes b { font: 800 15px/1.15 var(--font-sans); }
+.planta .prod-mes span { font: 400 11.5px/1.2 var(--font-mono); color: var(--muted); }
+.planta .mes-slider { width: 100%; margin: 0; accent-color: var(--larv); }
+.planta .mes-slider[hidden] { display: none; }
+.planta .prod-big { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+.planta .prod-big b { font: 800 30px/1 var(--font-sans); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.planta .prod-big span { font-size: 13px; color: var(--muted); }
+.planta .prod-big em { font: 600 12.5px/1 var(--font-sans); font-style: normal; color: var(--sel); margin-left: auto; }
+.planta .prod-big em.ok { color: var(--mat); }
+.planta .prod-bar { position: relative; height: 12px; border-radius: 6px; background: var(--chip); display: flex; overflow: visible; }
+.planta .prod-bar i { display: block; height: 100%; }
+.planta .prod-bar i.d, .planta .prod-split i.d { background: var(--larv); }
+.planta .prod-bar i.d { border-radius: 6px 0 0 6px; }
+.planta .prod-bar i.c, .planta .prod-split i.c { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--larv) 55%, transparent) 0 4px, color-mix(in srgb, var(--larv) 30%, transparent) 4px 8px); }
+.planta .prod-bar .goal { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--ink); border-radius: 1px; }
+.planta .prod-split { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 400 11.5px/1.3 var(--font-mono); color: var(--muted); }
+.planta .prod-split > span { display: inline-flex; align-items: center; gap: 6px; }
+.planta .prod-split i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.planta .prod-mini { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+.planta .prod-mini div { display: grid; gap: 2px; min-width: 0; }
+.planta .prod-mini b { font: 700 17px/1.1 var(--font-sans); font-variant-numeric: tabular-nums; }
+.planta .prod-mini span { font-size: 11.5px; color: var(--muted); line-height: 1.25; }
+.planta .prod-nota { font: 400 11px/1.35 var(--font-mono); color: var(--muted); }
+.planta .atender h2 { color: #c62828; }
+.planta .at-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.planta .at { border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px 8px; display: grid; gap: 6px; }
+.planta .at-g { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: baseline; gap: 4px 8px; text-align: left; font: inherit; color: inherit; background: transparent; border: 0; padding: 2px 0; cursor: pointer; }
+.planta .at-g i { width: 9px; height: 9px; border-radius: 2px; align-self: center; }
+.planta .at-g span { font-size: 12.5px; color: var(--muted); text-align: right; }
+.planta .at-t { display: flex; flex-wrap: wrap; gap: 6px; }
+.planta .at-t button { font: 600 12.5px/1 var(--font-mono); color: #c62828; background: color-mix(in srgb, #e53935 10%, transparent); border: 1px solid color-mix(in srgb, #e53935 40%, transparent); border-radius: 999px; padding: 7px 10px; min-height: 32px; cursor: pointer; }
+.planta .at-vacio { font-size: 13px; color: var(--muted); }
+[data-theme="dark"] .planta .atender h2, [data-theme="dark"] .planta .at-t button, [data-theme="dark"] .planta .legend .lg-alerta { color: #ff8a80; }
+.planta .at-g i.reloj { width: auto; height: auto; font-style: normal; font-size: 12px; }
+.planta .repro-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.planta .rp { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 2px 10px; font-size: 13px; }
+.planta .rp b { font: 600 13px/1.2 var(--font-mono); }
+.planta .rp span { color: var(--muted); font-size: 12.5px; }
+.planta .rp em { font: 600 13px/1 var(--font-mono); font-style: normal; font-variant-numeric: tabular-nums; }
+.planta .rp-bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--chip); overflow: hidden; }
+.planta .rp-bar i { display: block; height: 100%; background: var(--mat); border-radius: 3px; }
+.planta .rp.pasa b, .planta .rp.pasa em { color: #c62828; }
+.planta .rp.pasa .rp-bar i { background: #e53935; }
+.planta .rp-nota { font: 400 11px/1.35 var(--font-mono); color: var(--muted); }
+.planta .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.planta .stat { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 2px; }
+.planta .stat b { font: 700 22px/1 var(--font-sans); font-variant-numeric: tabular-nums; }
+.planta .stat span { font-size: 12.5px; color: var(--muted); }
+.planta .stat i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: 1px; }
+.planta .stat small { font: 400 11.5px/1.3 var(--font-mono); color: var(--muted); }
+.planta h2 { margin: 0 0 8px; font: 600 11.5px/1 var(--font-sans); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.planta .list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.planta .list button { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 6px 8px; cursor: pointer; }
+.planta .list button:hover { background: var(--chip); }
+.planta .list button[aria-current="true"] { border-color: var(--sel); background: var(--chip); }
+.planta .list .tag { font: 600 12px/1 var(--font-mono); width: 34px; height: 26px; display: grid; place-items: center; border-radius: 6px; color: #fff; }
+.planta .list .nm { font-weight: 600; min-width: 0; }
+.planta .list .nm small { display: block; font: 400 12px/1.3 var(--font-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.planta .list .ct { font: 500 12.5px/1 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.planta .seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 9px; padding: 3px; gap: 3px; }
+.planta .seg button { font: 500 13px/1 var(--font-sans); color: var(--ink); background: transparent; border: 0; border-radius: 6px; padding: 8px 6px; cursor: pointer; }
+.planta .seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.planta .toggles { display: grid; gap: 8px; }
+.planta .toggles label { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13.5px; }
+.planta .toggles input { width: 16px; height: 16px; accent-color: var(--sel); }
+.planta button:focus-visible, .planta input:focus-visible { outline: 2px solid var(--sel); outline-offset: 2px; }
+
+/* ---- Maqueta ---- */
+.planta .viewport { position: relative; min-width: 0; min-height: 0; background: var(--scene); overflow: hidden; }
+.planta #c { position: absolute; top: 0; right: 0; bottom: 0; left: 0; width: 100%; height: 100%; display: block; outline: none; touch-action: none; }
+.planta .labels { position: absolute; top: 0; right: 0; bottom: 0; left: 0; pointer-events: none; }
+.planta .lbl { position: absolute; left: 0; top: 0; will-change: transform; pointer-events: auto; cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 4px 9px 4px 6px; border-radius: 999px; background: rgba(24, 32, 38, .86); border: 1px solid rgba(255, 255, 255, .14); font: 600 12.5px/1 var(--font-sans); color: #fff; white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, .18); }
+.planta .lbl i { width: 8px; height: 8px; border-radius: 2px; }
+.planta .lbl.tapado { visibility: hidden; pointer-events: none; }
+.planta .lbl.on { border-color: var(--sel); box-shadow: 0 0 0 2px rgba(217, 98, 43, .45); }
+.planta .num { position: absolute; left: 0; top: 0; will-change: transform; font: 500 11px/1 var(--font-mono); color: #0d2a2e; background: rgba(255, 255, 255, .9); border-radius: 4px; padding: 2px 4px; pointer-events: none; }
+.planta .geo { position: absolute; left: 0; top: 0; will-change: transform; font: 600 12px/1 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, .55), 0 0 10px rgba(0, 0, 0, .25); white-space: nowrap; pointer-events: none; }
+.planta .tip { position: absolute; pointer-events: none; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font-size: 12.5px; line-height: 1.35; box-shadow: 0 6px 18px rgba(0, 0, 0, .16); max-width: 240px; }
+.planta .tip b { display: block; font-weight: 600; }
+.planta .tip span { font: 400 12px/1.4 var(--font-mono); color: var(--muted); }
+.planta .views { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.planta .views button, .planta .card button { font: 600 13px/1 var(--font-sans); color: #fff; background: rgba(24, 32, 38, .86); border: 1px solid rgba(255, 255, 255, .14); border-radius: 8px; padding: 9px 12px; cursor: pointer; }
+/* pantalla completa (punto 3): real (:fullscreen) o expandida dentro de la página (iPhone) */
+.planta .viewport:fullscreen { width: 100%; height: 100%; }
+.planta .viewport:-webkit-full-screen { width: 100%; height: 100%; }
+.planta.expandida .viewport { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 150; }
+.planta .resumen-fs { position: absolute; top: 12px; left: 72px; max-width: calc(100% - 84px); margin: 0; font: 600 13px/1.3 var(--font-sans); color: #fff; background: rgba(24, 32, 38, .86); border: 1px solid rgba(255, 255, 255, .14); border-radius: 8px; padding: 8px 12px; pointer-events: none; }
+.planta .views button[aria-pressed="true"] { background: var(--sel); border-color: var(--sel); }
+.planta .views button:hover { background: rgba(24, 32, 38, .95); }
+.planta .compass { position: absolute; top: 12px; left: 12px; width: 50px; height: 50px; border-radius: 50%; background: rgba(24, 32, 38, .86); border: 1px solid rgba(255, 255, 255, .14); }
+.planta .needle { position: absolute; top: 0; right: 0; bottom: 0; left: 0; }
+.planta .needle b { position: absolute; left: 50%; top: 3px; transform: translateX(-50%); font: 700 11px/1 var(--font-sans); color: #fff; }
+.planta .needle i { position: absolute; left: 50%; top: 15px; transform: translateX(-50%); width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 12px solid var(--sel); }
+.planta .card { position: absolute; left: 12px; bottom: 12px; width: min(330px, calc(100% - 24px)); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; box-shadow: 0 10px 28px rgba(0, 0, 0, .18); display: grid; gap: 8px; }
+.planta .card header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.planta .card h3 { margin: 0; font: 800 18px/1.1 var(--font-sans); }
+.planta .card .kind { font: 500 11.5px/1.3 var(--font-mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.planta .card dl { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; font-size: 13px; }
+.planta .card dt { color: var(--muted); }
+.planta .card dd { margin: 0; font-family: var(--font-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.planta .card button { color: var(--ink); background: var(--chip); border-color: var(--line); padding: 6px 9px; font-size: 12px; }
+.planta .hintline { position: absolute; right: 12px; bottom: 10px; margin: 0; font: 400 11.5px/1.3 var(--font-mono); color: #24363b; background: rgba(255, 255, 255, .72); padding: 3px 6px; border-radius: 4px; }
+
+/* ---- Celular: maqueta arriba, panel debajo ---- */
+@media (max-width: 900px) {
+  .planta { grid-template-columns: minmax(0, 1fr); grid-template-rows: 62vh auto; height: auto; min-height: 0; }
+  .planta .viewport { min-height: 380px; }
+  .planta .panel { border-left: 0; border-top: 1px solid var(--line); overflow: visible; padding: 16px 14px 22px; }
+  .planta .hintline { display: none; }
+  .planta .card { bottom: 10px; left: 10px; }
+  /* rótulos más chicos: en 400 px los quince se enciman con el tamaño de escritorio */
+  .planta .lbl { font-size: 11px; padding: 3px 7px 3px 5px; gap: 4px; }
+  .planta .lbl i { width: 6px; height: 6px; }
+  .planta .views button { padding: 7px 9px; font-size: 12px; }
+  /* en pantalla completa, el resumen ocupa la primera fila y las vistas bajan a la segunda */
+  .planta .viewport:fullscreen .views, .planta.expandida .views { top: 70px; }
+  .planta .resumen-fs { right: 12px; font-size: 12px; }
+}

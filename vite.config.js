@@ -7,7 +7,16 @@ import { defineConfig } from 'vite';
    con red no podía abrirlos sin señal. La lee public/sw.js (assetsDelBuild).
    2026-10-03 · `order: 'post'`: el `generateBundle` de un plugin normal corre ANTES que el de `vite:css-post`, que
    después BORRA los trozos JS que sólo importaban CSS (el de Leaflet). La lista anunciaba así un `leaflet-*.js` que no
-   existía (404 en Pages; `tras-despliegue` en 13/14). En `post`, la lista sale del bundle ya definitivo. */
+   existía (404 en Pages; `tras-despliegue` en 13/14). En `post`, la lista sale del bundle ya definitivo.
+   2026-10-04 (usuario) · 🏭 Planta NO va en la lista: su bloque (three.js y la maqueta, ~600 kB) sólo lo necesita quien
+   abre la vista (rol Gerencia), y lo descargaban todos los equipos al instalarse. Fuera, el trozo cuya entrada es
+   src/views/planta/index.js y el CSS que importa; lo que comparte con otras vistas sigue en la lista. El service worker
+   lo guarda la primera vez que se pide (cacheFirst de assets/): sin señal, abre si ya se abrió una vez con señal desde
+   su última actualización.
+   2026-10-05 · y la página del QR de acceso de Gerencia (src/views/planta/qr/index.js), que también usa three.js. Con
+   dos bloques que lo usan, three.js pasa a un trozo COMPARTIDO: por eso la regla es de alcance — queda fuera todo trozo
+   al que sólo se llega pasando por un bloque excluido (y su CSS), y entra lo que la app alcanza sin pasar por ellos. */
+export const ENTRADAS_FUERA_DE_PRECACHE = [/\/src\/views\/planta\/index\.js$/, /\/src\/views\/planta\/qr\/index\.js$/];
 function listaDePrecache() {
   return {
     name: 'mcp-precache-assets',
@@ -15,7 +24,19 @@ function listaDePrecache() {
     generateBundle: {
       order: 'post',
       handler(_, bundle) {
-        const lista = Object.keys(bundle).filter((f) => f.startsWith('assets/')).sort().map((f) => './' + f);
+        const excluido = (c) => { const id = c && c.facadeModuleId ? c.facadeModuleId.replace(/\\/g, '/') : ''; return !!id && ENTRADAS_FUERA_DE_PRECACHE.some((re) => re.test(id)); };
+        const cssDe = (c) => [...((c.viteMetadata && c.viteMetadata.importedCss) || [])];
+        // lo que la app alcanza desde sus entradas sin pasar por un bloque excluido (importaciones estáticas y dinámicas)
+        const alcanzado = new Set(), pila = Object.keys(bundle).filter((f) => bundle[f].type === 'chunk' && bundle[f].isEntry && !excluido(bundle[f]));
+        while (pila.length) {
+          const f = pila.pop(), c = bundle[f];
+          if (alcanzado.has(f) || !c || c.type !== 'chunk' || excluido(c)) continue;
+          alcanzado.add(f); cssDe(c).forEach((css) => alcanzado.add(css));
+          pila.push(...(c.imports || []), ...(c.dynamicImports || []));
+        }
+        const fuera = new Set();
+        for (const [f, c] of Object.entries(bundle)) if (c.type === 'chunk' && !alcanzado.has(f)) { fuera.add(f); cssDe(c).forEach((css) => { if (!alcanzado.has(css)) fuera.add(css); }); }
+        const lista = Object.keys(bundle).filter((f) => f.startsWith('assets/') && !fuera.has(f)).sort().map((f) => './' + f);
         this.emitFile({ type: 'asset', fileName: 'precache-assets.json', source: JSON.stringify(lista) });
       },
     },
