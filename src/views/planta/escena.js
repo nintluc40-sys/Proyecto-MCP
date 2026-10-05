@@ -23,6 +23,9 @@
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
    Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM), uno por hora
    del día y guardado; en toda la maqueta, tenue en el agua de los tanques para que se siga leyendo la etapa.
+   Personal donde hay trabajo (2026-10-05, usuario, opción K): con el mes en curso, un técnico de chaleco naranja junto a
+   cada tanque en alerta, tres en cada despacho (junto al camión) y uno recorriendo cada módulo con cultivo; quien camina
+   por dentro de un módulo vacío desaparece.
    Luces de noche según el estado (2026-10-05, usuario, opción J): las lámparas de cada módulo y sala se encienden según su
    estado (cultivo o reproductores: encendidas; desinfección: a media luz; vacío o despachado: apagadas), con un resplandor
    cálido suave encima de los encendidos.
@@ -761,7 +764,7 @@ const PATHS = [
   [[74.5, 21], [74.5, 87]], [[78, 77], [172, 77]], [[23.8, 50.5], [23.8, 85]], [[39.7, 50.5], [39.7, 85]], [[8, 86.6], [55, 86.6]],
   [[80, 19.3], [175, 19.3]], [[2, 14.6], [63, 14.6]], [[46.8, 18], [46.8, 49]], [[15.6, 16], [15.6, 49]], [[112, 37.6], [112, 20.8]], [[128, 37.4], [175, 37.4]], [[60, 52], [60, 86]], [[113, 26.7], [143, 26.7]], [[80.5, 32.1], [110, 32.1]], [[30.5, 30.4], [46, 30.4]], [[8.5, 61.7], [23, 61.7]], [[40.6, 73.4], [55, 73.4]], [[146, 9.9], [153, 9.9]],
 ];
-const people = []; const SHIRTS = ['#f4f4f0', '#2f5d8f', '#1f3f6b', '#f08a2c', '#f4f4f0', '#3c8a5c'];
+const people = []; const SHIRTS = ['#f4f4f0', '#2f5d8f', '#1f3f6b', '#8a6d4f', '#f4f4f0', '#3c8a5c'];   // sin naranja: es el chaleco del personal de tarea (opción K)
 for (let i = 0; i < 30; i++) { const p = PATHS[i % PATHS.length]; people.push({ path: p, u: R(0, 1), dir: rnd() < .5 ? 1 : -1, sp: R(.9, 1.4), pause: 0, shirt: SHIRTS[i % SHIRTS.length] }); }
 const bodyI = new THREE.InstancedMesh(new THREE.CylinderGeometry(.2, .24, 1.05, 8), std({ roughness: .8 }), people.length);
 const headPI = new THREE.InstancedMesh(new THREE.SphereGeometry(.15, 10, 8), std({ roughness: .8 }), people.length);
@@ -1296,6 +1299,80 @@ function pintarLuces() {
   });
 }
 
+/* ---------- Personal donde hay trabajo (opción K) ---------- */
+const PERSONAL_MAX = 96;
+const pBody = new THREE.InstancedMesh(new THREE.CylinderGeometry(.2, .24, 1.05, 8), std({ roughness: .8 }), PERSONAL_MAX);
+const pHead = new THREE.InstancedMesh(new THREE.SphereGeometry(.15, 10, 8), std({ roughness: .8 }), PERSONAL_MAX);
+const pLeg = new THREE.InstancedMesh(new THREE.CylinderGeometry(.16, .14, .7, 6), std({ color: col('#2b3440'), roughness: .9 }), PERSONAL_MAX);
+pBody.castShadow = pHead.castShadow = pLeg.castShadow = true;
+// los colores por instancia se reservan con la cuenta de instancias del momento (three 0.128: setColorAt usa this.count):
+// se ponen con la malla llena, antes del primer cuadro, y recién después la cuenta baja a 0 (medido: con la cuenta en 0
+// antes, el buffer de colores salía vacío y los chalecos, oscuros). pintarPersonal sólo los cambia.
+for (let i = 0; i < PERSONAL_MAX; i++) { pHead.setColorAt(i, col(['#c99a73', '#a8764f', '#e0b896', '#8a5d3e'][i % 4])); pBody.setColorAt(i, col('#f08a2c')); }
+pBody.count = pHead.count = pLeg.count = 0;
+life.add(pBody, pHead, pLeg);
+let personal = [];
+// el módulo por el que pasa cada recorrido de los caminantes: si está vacío, quien lo recorre no aparece
+const moduloDe = (x, z) => groups.find((g) => g.kind === 'larv' && x > g.box[0] && x < g.box[2] && z > g.box[1] && z < g.box[3]) || null;
+people.forEach((p) => { const [a, b] = p.path; p.modulo = moduloDe((a[0] + b[0]) / 2, (a[1] + b[1]) / 2); });
+/** Un lado libre junto al tanque (a 0,45 m de su muro), sin pisar otro tanque y dentro de su grupo; [x, z, yaw] o null. */
+function junto(t) {
+  const otros = t.g.tanks.concat(t.g.desove).filter((o) => o !== t), [x0, z0, x1, z1] = t.g.box;
+  const cand = t.type === 'circ' ? [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => [t.cx + dx * (t.r + .45), t.cz + dz * (t.r + .45)])
+    : [[t.cx, t.cz + t.W / 2 + .45], [t.cx, t.cz - t.W / 2 - .45], [t.cx + t.L / 2 + .45, t.cz], [t.cx - t.L / 2 - .45, t.cz]];
+  const libre = ([x, z]) => x > x0 + .3 && x < x1 - .3 && z > z0 + .3 && z < z1 - .3
+    && !otros.some((o) => (o.type === 'circ' ? Math.hypot(x - o.cx, z - o.cz) < o.r + .15 : Math.abs(x - o.cx) < o.L / 2 + .15 && Math.abs(z - o.cz) < o.W / 2 + .15));
+  const c = cand.find(libre); if (!c) return null;
+  return [c[0], c[1], Math.atan2(t.cx - c[0], t.cz - c[1])];   // mirando al tanque
+}
+/** El recorrido de un módulo con cultivo: M1–M3 por su canal central; M4–M10 a lo ancho, entre las filas del medio. */
+function recorridoDe(g) {
+  const m = LARV.find((x) => x.id === g.id); if (!m) return null;
+  const [x0, z0, x1, z1] = g.box;
+  if (m.canals && m.canals.length) { const xc = (m.canals[0][0] + m.canals[0][1]) / 2; return [[xc, z0 + 1], [xc, z1 - 1]]; }
+  const k = Math.floor(m.rows.length / 2) - 1, zc = (m.rows[k] + m.W + m.rows[k + 1]) / 2;
+  return [[x0 + 1, zc], [x1 - 1, zc]];
+}
+function pintarPersonal() {
+  personal = [];
+  // caminantes: fuera de los módulos que no tienen cultivo
+  people.forEach((p) => { p.oculto = !!(p.modulo && estadoCargado && !(p.modulo.st && p.modulo.st.estado === 'cultivo')); });
+  if (mesPasado || !estadoCargado) { pBody.count = pHead.count = pLeg.count = 0; return; }   // el personal es el trabajo de HOY
+  const NAR = '#f08a2c';
+  groups.forEach((g) => {
+    if (!g.st) return;
+    g.tanks.forEach((t) => { if (t.st && t.st.alerta) { const j = junto(t); if (j) personal.push({ x: j[0], z: j[1], yaw: j[2], color: NAR, ph: R(0, 6.28) }); } });
+    if (g.kind !== 'larv' || g.st.estado !== 'cultivo') return;
+    if (g.st.despachando && ESTACION[g.id]) {
+      const [x, z, eje] = ESTACION[g.id], lado = eje === 'x' ? Math.sign(g.cz - z) : Math.sign(g.cx - x);
+      [-2, 0, 1.6].forEach((d) => { const px = eje === 'x' ? x + d : x + lado * 1.9, pz = eje === 'x' ? z + lado * 1.9 : z + d; personal.push({ x: px, z: pz, yaw: Math.atan2(x - px, z - pz), color: NAR, ph: R(0, 6.28) }); });
+    }
+    const r = recorridoDe(g); if (r) personal.push({ path: r, u: R(0, 1), dir: 1, sp: R(.8, 1.1), pause: 0, color: SHIRTS[personal.length % SHIRTS.length], ph: R(0, 6.28) });
+  });
+  personal = personal.slice(0, PERSONAL_MAX);
+  personal.forEach((p, i) => pBody.setColorAt(i, col(p.color)));
+  if (pBody.instanceColor) pBody.instanceColor.needsUpdate = true;
+  pBody.count = pHead.count = pLeg.count = personal.length;
+  animarPersonal(0, 0);
+}
+/** Quietos (con un leve vaivén) los de tarea; el de recorrido va y viene por su pasillo. */
+function animarPersonal(t, dt) {
+  personal.forEach((p, i) => {
+    let x = p.x, z = p.z, yaw = p.yaw, walk = 0;
+    if (p.path) {
+      const [a, b] = p.path, len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      if (p.pause > 0) p.pause -= dt; else { p.u += p.dir * p.sp * dt / len; if (p.u > 1 || p.u < 0) { p.dir *= -1; p.u = Math.min(1, Math.max(0, p.u)); p.pause = R(1, 3); } }
+      x = a[0] + (b[0] - a[0]) * p.u; z = a[1] + (b[1] - a[1]) * p.u; yaw = Math.atan2((b[0] - a[0]) * p.dir, (b[1] - a[1]) * p.dir);
+      walk = p.pause > 0 ? 0 : Math.abs(Math.sin(t * 7 * p.sp + p.ph));
+    } else yaw += .25 * Math.sin(t * .8 + p.ph);
+    const [px, pz] = P(x, z); qt.setFromEuler(eu.set(0, yaw, 0));
+    m4.compose(v.set(px, .7 + .55 + walk * .04, pz), qt, s.set(1, 1, 1)); pBody.setMatrixAt(i, m4);
+    m4.compose(v.set(px, .7 + 1.22 + walk * .04, pz), qt, s.set(1, 1, 1)); pHead.setMatrixAt(i, m4);
+    m4.compose(v.set(px, .35, pz), qt, s.set(1, 1, 1)); pLeg.setMatrixAt(i, m4);
+  });
+  pBody.instanceMatrix.needsUpdate = pHead.instanceMatrix.needsUpdate = pLeg.instanceMatrix.needsUpdate = true;
+}
+
 /* ---------- Camión de despacho (opción I): junto a cada módulo que se está despachando, con el mes en curso ---------- */
 // Dónde estaciona, en el plano: [x, z, a lo largo de 'x' o de 'z']. M8–M10, en la franja hasta el cerco del frente; M5–M7,
 // entre los módulos y las salas 4 y 5; M1–M3, en el pasillo de su ingreso (rótulos «INGRESO» del plano); M4 está encerrado
@@ -1332,7 +1409,7 @@ function pintarEstado(E) {
     g.st = !E ? null : g.kind === 'larv' ? E.modulos[g.id] || null : (E.mad && E.mad.salas[g.id]) || null;
     g.tanks.forEach((t) => { t.st = g.st && g.st.tanques ? g.st.tanques[t.num] || null : null; });
   });
-  paintWater(); pintarBalizas(); pintarCamiones(); pintarLuces(); pintarCifras(E); pintarProduccion(E && E.cifras); pintarReemplazo(E && E.mad ? E.mad.reemplazo : null); pintarAtender(); groups.forEach(pintarFila);
+  paintWater(); pintarBalizas(); pintarCamiones(); pintarLuces(); pintarPersonal(); pintarCifras(E); pintarProduccion(E && E.cifras); pintarReemplazo(E && E.mad ? E.mad.reemplazo : null); pintarAtender(); groups.forEach(pintarFila);
   wasFar = null;   // rehace los rótulos en el próximo cuadro
   if (selected) { if (tanqueFicha && tanqueFicha.g === selected) (selected.kind === 'larv' ? fichaTanque : fichaTanqueMad)(tanqueFicha); else fichaModulo(selected); }
 }
@@ -1481,6 +1558,8 @@ function animateLife(t, dt) {
   if (!life.visible) return;
   // personas caminando de ida y vuelta por pasillos y vías
   people.forEach((p, i) => {
+    if (p.oculto) { if (!p.yaOculto) { m4.makeScale(0, 0, 0); bodyI.setMatrixAt(i, m4); headPI.setMatrixAt(i, m4); legI.setMatrixAt(i, m4); p.yaOculto = true; } return; }
+    p.yaOculto = false;
     const [a, b] = p.path, len = Math.hypot(b[0] - a[0], b[1] - a[1]);
     if (p.pause > 0) p.pause -= dt; else { p.u += p.dir * p.sp * dt / len; if (p.u > 1 || p.u < 0) { p.dir *= -1; p.u = Math.min(1, Math.max(0, p.u)); p.pause = R(1, 4); } }
     const x = a[0] + (b[0] - a[0]) * p.u, z = a[1] + (b[1] - a[1]) * p.u, [px, pz] = P(x, z), walk = p.pause > 0 ? 0 : Math.abs(Math.sin(t * 7 * p.sp + i));
@@ -1553,7 +1632,7 @@ function frameBody(now) {
   if (fly) { const k = Math.min(1, (now - fly.t0) / fly.dur), e = ease(k); camera.position.lerpVectors(fly.p0, fly.p1, e); controls.target.lerpVectors(fly.c0, fly.c1, e); if (k >= 1) fly = null; }
   controls.update();
   sky.position.copy(camera.position); stars.position.copy(camera.position);
-  if (!reduced) animateLife(t, dt);
+  if (!reduced) { animateLife(t, dt); animarPersonal(t, dt); }
   const far = camera.position.distanceTo(controls.target) > 135;
   let movidos = false;
   if (far !== wasFar) { wasFar = far; movidos = true; groups.forEach(g => { g.labelText.textContent = textoRotulo(g, far); g.labelDot.style.background = colorRotulo(g); g.label._w = 0; }); }
