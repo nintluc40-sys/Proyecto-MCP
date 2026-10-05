@@ -591,12 +591,18 @@ describe('Libro · las mismas funciones puras', () => {
       { Fecha: '2026-01-13', Sala: 'Sala 1', Tanque: '', 'Peso hembras (g)': 64, 'Fuente del peso': '♀ Manual' },
       { Fecha: '2026-01-13', Sala: '', Tanque: 6, 'Peso hembras (g)': 64, 'Fuente del peso': '♀ Manual' },
       { Fecha: '2026-01-14', Sala: 'Sala 1', Tanque: 7, 'Peso hembras (g)': '', 'Peso machos (g)': 'x', 'Fuente del peso': '♀ Manual · ♂ Manual' },
+      // auditoría · reenviado el MISMO día tras releer: «Alimentación <su fecha>» es ese mismo peso tecleado → cuenta
+      { Fecha: '2026-01-15', Sala: 'Sala 1', Tanque: 8, 'Peso hembras (g)': 66, 'Peso machos (g)': 44, 'Fuente del peso': '♀ Alimentación 2026-01-15 · ♂ Alimentación 2026-01-14' },
     ];
     const mod = pesosDeAlimentacion(al, tq);
     expect(mod.map((r) => [r.Fecha, r.Sala, r.Tanque, r['Peso promedio hembras (g)'], r['Peso promedio machos (g)']]), 'la sonda distingue').toEqual([
-      ['2026-01-10', 'Sala 1', 1, 61, undefined], ['2026-01-11', 'Sala 2', 3, undefined, 33.5], ['2026-01-12', 'Sala 1', 2, 62.25, undefined]]);
+      ['2026-01-10', 'Sala 1', 1, 61, undefined], ['2026-01-11', 'Sala 2', 3, undefined, 33.5], ['2026-01-12', 'Sala 1', 2, 62.25, undefined], ['2026-01-15', 'Sala 1', 8, 66, undefined]]);
     expect(JSON.parse(JSON.stringify(api.madPesosDeAlimentacion(al, tq)))).toEqual(mod);
     expect(JSON.parse(JSON.stringify(api.madPesosDeAlimentacion(undefined, undefined)))).toEqual(pesosDeAlimentacion(undefined, undefined));
+    // ⚡ la del módulo se memoriza por lectura: las MISMAS filas dan el mismo resultado; otras filas de Tanques, se recalcula
+    expect(pesosDeAlimentacion(al, tq)).toBe(mod);
+    expect(pesosDeAlimentacion(al, [])).not.toBe(mod);
+    expect(pesosDeAlimentacion(al, []).map((r) => r.Tanque)).toEqual([1, 3, 2, 8]);
   });
 
   it('el mismo reparto proporcional', () => {

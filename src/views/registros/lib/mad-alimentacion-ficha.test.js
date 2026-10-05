@@ -305,6 +305,37 @@ describe('Alimentación · punto 2: lo tecleado antes aquí cuenta como peso del
       HOJAS['Maduración Alimentación'] = antes;
     }
   });
+
+  /* Auditoría (2026-10-04) · se teclea ♀77 el 12/01 y se envía; ese mismo día se relee (la referencia pasa a ser ESE peso:
+     «♀ Alimentación 2026-01-12») y se reenvía sin tocarlo. La fila de la hoja es la misma (mismo ID): ya no dice «Manual».
+     El peso no puede perderse en la lectura siguiente: es lo tecleado aquí ese día. */
+  it('🔴 reenviar el MISMO día tras releer no pierde el peso tecleado', async () => {
+    const antes = HOJAS['Maduración Alimentación'];
+    try {
+      await H.madAlimLeer();
+      q('#ma-fecha').value = '2026-01-12';
+      const t1 = () => sala('Sala 1').querySelector('.ma-tq[data-tq="1"]');
+      t1().querySelector('.ma-ph').value = '77';
+      H.madAlimTanqueCambio(t1().querySelector('.ma-ph'));
+      await H.madAlimGuardar();
+      const c = (h) => MAD_ALIM_HEADERS.indexOf(h);
+      const fila1 = envios[envios.length - 1].rows.find((r) => r[c('Sala')] === 'Sala 1' && r[c('Tanque')] === 1);
+      expect(fila1[c('Fuente del peso')]).toBe('♀ Manual · ♂ Biometría 2026-01-10');
+      // la hoja ya tiene esa fila; se relee el mismo día y se reenvía sin tocar nada
+      const enHoja = (f) => Object.fromEntries(MAD_ALIM_HEADERS.map((h) => [h, f[c(h)]]));
+      HOJAS['Maduración Alimentación'] = antes.concat([enHoja(fila1)]);
+      await H.madAlimLeer();
+      q('#ma-fecha').value = '2026-01-12';
+      expect(t1().querySelector('.ma-fuente').textContent).toBe('♀ Alimentación 2026-01-12 · ♂ Biometría 2026-01-10');
+      await H.madAlimGuardar();
+      const fila2 = envios[envios.length - 1].rows.find((r) => r[c('Sala')] === 'Sala 1' && r[c('Tanque')] === 1);
+      HOJAS['Maduración Alimentación'] = antes.concat([enHoja(fila2)]);
+      await H.madAlimLeer();
+      expect(t1().querySelector('.ma-ph').value, 'el ♀77 tecleado el 12/01 sigue siendo la referencia').toBe('77');
+    } finally {
+      HOJAS['Maduración Alimentación'] = antes;
+    }
+  });
 });
 
 describe('Alimentación · 📜 corregir un envío desde el Historial', () => {

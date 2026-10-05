@@ -560,7 +560,8 @@ function safeSetItem(key, value, opts){
         _purgeOldestFoto,         // 1) foto/video antigua
         _purgeOldestRecovery,     // 2) snapshot de auto-guardado vencido
         _purgeExpiredAlgHistDays, // 3) historial Lab. Algas de días previos
-        _purgeExpiredHistEntries  // 4) Historial general fuera de TTL/MAX
+        _purgeExpiredHistEntries, // 4) Historial general fuera de TTL/MAX
+        _purgeMadHistViejo        // 5) 📜 la mitad más vieja del Historial de Maduración (auditoría 2026-10-04)
       ];
       let freedNote = null;
       for(let s = 0; s < strategies.length; s++){
@@ -908,8 +909,14 @@ function _lsSet(key, valueStr){
   }catch(e){
     if(_reclaiming) return false;            // dentro del reclamo: no re-entrar
     try{ _reclaimSpace(); }catch(_){}
-    try{ localStorage.setItem(key, valueStr); return localStorage.getItem(key) === valueStr; }
-    catch(e2){ return false; }
+    try{ localStorage.setItem(key, valueStr); if(localStorage.getItem(key) === valueStr) return true; }catch(_){}
+    /* 📜 Auditoría (2026-10-04, usuario) · si no bastó, la mitad más vieja del Historial de Maduración, hasta tres veces.
+       En try: MAD_HIST_KEY se declara más abajo y aquí se puede llegar mientras el monolito aún se carga. */
+    for(let i=0;i<3;i++){
+      try{ if(key===MAD_HIST_KEY || !_purgeMadHistViejo()) break; }catch(_){ break; }
+      try{ localStorage.setItem(key, valueStr); if(localStorage.getItem(key) === valueStr) return true; }catch(_){}
+    }
+    return false;
   }
 }
 
@@ -6801,6 +6808,8 @@ function madAvisosTransferenciaCompartida(libro, tipo, tramos){
    así nada se cuenta dos veces. Los partes del día (Último parte, partes de Tanques) siguen diciendo sólo lo de Tanques.
    Sólo cuentan los «Manual» de «Fuente del peso»: los demás son la referencia que la ficha COPIÓ (de Tanques, del Ingreso o
    de un peso anterior de Alimentación), y contarlos repetiría ese peso con otra fecha.
+   🔴 Auditoría (2026-10-04) · salvo «Alimentación» con la MISMA fecha que su fila: es ese mismo peso tecleado, que al releer
+   y reenviar el mismo día deja de decir «Manual» (la fila es la misma, mismo ID). Sin esto, ese peso se perdía.
    Devuelve filas con la FORMA de las de Tanques (Fecha, Sala, Tanque y los dos pesos promedio) y _deAlimentacion, para
    sumarse a ellas SÓLO donde se lee el peso: no son partes (no traen bajas, cópulas ni muda). Gemela: pesosDeAlimentacion. */
 function madPesosDeAlimentacion(filasAlim, filasTq){
@@ -6820,7 +6829,8 @@ function madPesosDeAlimentacion(filasAlim, filasTq){
     const fila={ Fecha:d, Sala:madLibroTxt(r.Sala), Tanque:madLibroEnt(r.Tanque), _deAlimentacion:true };
     let alguno=false;
     COLS.forEach(function(c){
-      if(fuente.indexOf(c[0]+" Manual")===-1 || enTq[k+"|"+c[2]]) return;
+      const propio=fuente.indexOf(c[0]+" Manual")!==-1 || fuente.indexOf(c[0]+" Alimentación "+d)!==-1;
+      if(!propio || enTq[k+"|"+c[2]]) return;
       const v=n(r[c[1]]);
       if(v){ fila[c[2]]=v; alguno=true; }
     });
@@ -9150,7 +9160,7 @@ function madIngVaciar(){
    📜 HISTORIAL DE MADURACIÓN (usuario, 2026-10-04) — lo ENVIADO desde este equipo, para revisar, hacer PDF y corregir.
    Decisiones del usuario (no re-preguntar): las fichas de formulario (Ingreso, Movimientos, Desoves, Inf. Supervisor, Fin de
    Ciclo, Tratamientos, Alimentación) y también Salas y Tanques; Broodstock FUERA (se corrige resubiendo el Excel); origen,
-   lo enviado desde ESTE equipo; 60 días (máx. 200); «✏️ Editar» abre la ficha tal como se envió, en modo corrección, en
+   lo enviado desde ESTE equipo; 60 días (máx. 200 POR FICHA); «✏️ Editar» abre la ficha tal como se envió, en modo corrección, en
    los envíos recientes —los últimos 10 por ficha, Alimentación 3: guardar la ficha entera pesa (6–19 KB; Alimentación
    ~95 KB, medido en Chrome)—; los 🕘 de 36 h de cada ficha siguen igual.
    · Cada envío (directo, en cola o desde 💾) guarda sus FILAS tal cual (ligero): de ahí salen la lista y el 📄 PDF.
@@ -9165,6 +9175,8 @@ function madIngVaciar(){
 const MAD_HIST_KEY = "larv4_mad_hist";
 const MAD_HIST_PANEL_PRE = "larv4_mad_histpanel_";
 const MAD_HIST_TTL = 60*24*60*60*1000;
+/* POR FICHA (auditoría 2026-10-04): compartido, los desoves —uno por entrada, ~3 al día medidos en la hoja— y el resto
+   (~500 envíos en 60 días) dejaban el historial en unas tres semanas, no en los 60 días acordados. */
 const MAD_HIST_MAX = 200;
 const MAD_HIST_FICHAS = ["ingreso","movimientos","desoves","mortdes","fin","tratamientos","alimentacion"];
 const MAD_HIST_EDITABLES = { alimentacion:3 };   // las demás, 10
@@ -9183,10 +9195,28 @@ function _purgeMadHistPaneles(){
   rm.forEach(function(k){ try{ localStorage.removeItem(k); }catch(_){} });
   return rm.length ? (rm.length + " copia(s) para editar del Historial de Maduración") : null;
 }
+/* Auditoría (2026-10-04, usuario) · si liberar lo seguro no basta, la mitad MÁS VIEJA del Historial de Maduración (con sus
+   copias para Editar): es una comodidad de este equipo, y lo que espera envío —la cola, lo pendiente— no puede fallar por él.
+   Lo usan _lsSet (después de _reclaimSpace) y safeSetItem (la última estrategia). null si no hay nada que liberar. */
+function _purgeMadHistViejo(){
+  let l=[];
+  try{ const v=JSON.parse(localStorage.getItem(MAD_HIST_KEY)||"[]"); if(Array.isArray(v)) l=v.filter(Boolean); }catch(_){ return null; }
+  if(!l.length) return null;
+  l.sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
+  const quedan=l.slice(0, Math.floor(l.length/2)), vivas={};
+  quedan.forEach(function(e){ vivas[e.id]=true; });
+  try{ if(quedan.length) localStorage.setItem(MAD_HIST_KEY, JSON.stringify(quedan)); else localStorage.removeItem(MAD_HIST_KEY); }
+  catch(_){ try{ localStorage.removeItem(MAD_HIST_KEY); }catch(__){} }
+  const rm=[];
+  for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.indexOf(MAD_HIST_PANEL_PRE)===0 && !vivas[k.slice(MAD_HIST_PANEL_PRE.length)]) rm.push(k); }
+  rm.forEach(function(k){ try{ localStorage.removeItem(k); }catch(_){} });
+  return (l.length-quedan.length)+" envío(s) viejos del Historial de Maduración";
+}
 function _madHistGuardar(l){
-  const ahora=Date.now();
+  const ahora=Date.now(), porFicha={};
   const lista=(l||[]).filter(function(e){ return e && (ahora-(e.ts||0)) < MAD_HIST_TTL; })
-    .sort(function(a,b){ return (b.ts||0)-(a.ts||0); }).slice(0, MAD_HIST_MAX);
+    .sort(function(a,b){ return (b.ts||0)-(a.ts||0); })
+    .filter(function(e){ porFicha[e.ficha]=(porFicha[e.ficha]||0)+1; return porFicha[e.ficha] <= MAD_HIST_MAX; });
   // Las copias para Editar: sólo las de los últimos N envíos (con copia) de cada ficha; las demás se liberan.
   const cuenta={}, vivas={};
   lista.forEach(function(e){
@@ -9214,6 +9244,13 @@ function _madHistResumen(p){
   const lote=distintos("Lote"), sala=distintos("Sala") || distintos("Sala origen");
   return [lote ? "Lote "+lote : "", sala].filter(Boolean).join(" · ");
 }
+/* Las filas de un envío por su ID, ordenadas: «» si no hay columna ID o alguna fila va sin él (no se puede decir que sean
+   las mismas). */
+function _madHistIds(p){
+  const j=((p&&p.headers)||[]).indexOf("ID"); if(j<0) return "";
+  const v=((p&&p.rows)||[]).map(function(r){ const x=(r||[])[j]; return x==null ? "" : String(x); });
+  return (v.length && v.every(Boolean)) ? v.sort().join("|") : "";
+}
 function _madHistCorrActiva(ficha){
   const cfg=MAD_BORR_FICHAS[ficha], fp=cfg ? document.getElementById(cfg.panel) : null;
   return fp ? fp.querySelector(".mh-corr") : null;
@@ -9229,7 +9266,14 @@ function _madHistAnota(ficha, payload, fecha, envio, sinFicha){
     const b=sinFicha ? null : _madHistCorrActiva(ficha), sust=b ? String(b.getAttribute("data-hist")||"") : "";
     let e=sust ? l.filter(function(x){ return x.id===sust; })[0] : null;
     if(e){ e.corregido=ahora; corr=true; }
-    else { e={ id:_madLogEnvioId(), ficha:ficha, ts:ahora }; l.push(e); }
+    else {
+      /* Auditoría (2026-10-04, usuario) · un reenvío con las MISMAS filas (mismo ID) SUSTITUYE a su entrada: el Historial dice
+         lo que hay en la hoja, y Editar la vieja no puede devolverle datos viejos. Pasa a decir «reenviado». */
+      const mismas=_madHistIds(payload);
+      e=mismas ? l.filter(function(x){ return x.ficha===ficha && _madHistIds(x.payload)===mismas; })[0] : null;
+      if(e){ if(!e.primero) e.primero=e.ts; e.ts=ahora; e.reenviado=ahora; }
+      else { e={ id:_madLogEnvioId(), ficha:ficha, ts:ahora }; l.push(e); }
+    }
     e.fecha=sanitizeStr(fecha,10); e.envio=String(envio||""); e.filas=payload.rows.length;
     e.payload={ sheetName:payload.sheetName, headers:(payload.headers||[]).slice(), rows:payload.rows.map(function(r){ return (r||[]).slice(); }) };
     e.resumen=_madHistResumen(payload);
@@ -9255,9 +9299,13 @@ function _madHistAnotaDesoves(payload, fecha, envio){
     const jF=h.indexOf("Fecha"), jL=h.indexOf("Lote"), jC=h.indexOf("Código genético");
     payload.rows.forEach(function(r){
       const fila=(r||[]).slice(), f=sanitizeStr(jF>=0 ? fila[jF] : fecha,10);
-      l.push({ id:_madLogEnvioId(), ficha:"desoves", ts:ahora, fecha:f, envio:String(envio||""),
-        k:madDesLlave({ fecha:f, lote:fila[jL], codigoGenetico:fila[jC] }), filas:1, panel:false,
-        payload:{ sheetName:payload.sheetName, headers:h.slice(), rows:[fila] }, resumen:"Lote "+fila[jL]+" · "+fila[jC] });
+      const k=madDesLlave({ fecha:f, lote:fila[jL], codigoGenetico:fila[jC] });
+      const datos={ fecha:f, envio:String(envio||""), filas:1, panel:false,
+        payload:{ sheetName:payload.sheetName, headers:h.slice(), rows:[fila] }, resumen:"Lote "+fila[jL]+" · "+fila[jC] };
+      // Auditoría (2026-10-04, usuario) · el MISMO desove reenviado (✏️ Completar, otra vez desde la ficha) sustituye a su entrada.
+      const e=l.filter(function(x){ return x.ficha==="desoves" && x.k===k; })[0];
+      if(e) Object.assign(e, datos, { primero:e.primero || e.ts, ts:ahora, reenviado:ahora });
+      else l.push(Object.assign({ id:_madLogEnvioId(), ficha:"desoves", ts:ahora, k:k }, datos));
     });
     _madHistGuardar(l);
   }catch(_){}
@@ -9370,7 +9418,7 @@ function _madHistPdfHTML(e){
     + '<style>@page{size:A4 landscape;margin:10mm}body{font-family:Arial,Helvetica,sans-serif;margin:16px;color:#0f172a}h1{font-size:16px;margin:0 0 4px}'
     + 'table{border-collapse:collapse;width:100%;font-size:10px}th,td{border:1px solid #cbd5e1;padding:2px 4px;vertical-align:top}th{background:#f1f5f9}</style></head><body>'
     + '<h1>'+escapeHtml(titulo)+'</h1><div style="font-size:11px;color:#64748b;margin-bottom:6px">Enviado desde este dispositivo el '+escapeHtml(_madHistCuando(e.ts))
-    + (e.corregido ? ' · corregido el '+escapeHtml(_madHistCuando(e.corregido)) : '')+' · '+filas.length+' fila(s), tal como se enviaron a la hoja «'+escapeHtml(p.sheetName||"")+'».</div>'
+    + (e.corregido ? ' · corregido el '+escapeHtml(_madHistCuando(e.corregido)) : '')+(e.reenviado ? ' · reenvío (el 1.º, el '+escapeHtml(_madHistCuando(e.primero))+')' : '')+' · '+filas.length+' fila(s), tal como se enviaron a la hoja «'+escapeHtml(p.sheetName||"")+'».</div>'
     + '<table><thead><tr>'+h.map(function(c){ return '<th>'+cel(c)+'</th>'; }).join("")+'</tr></thead><tbody>'
     + filas.map(function(r){ return '<tr>'+h.map(function(_, j){ return '<td>'+cel((r||[])[j])+'</td>'; }).join("")+'</tr>'; }).join("")
     + '</tbody></table><script>window.addEventListener("load",function(){setTimeout(function(){window.print();},300);});<\/script></body></html>';
@@ -9439,7 +9487,7 @@ function renderMadHistorial(){
     if(x.e){
       const e=x.e, did='data-id="'+escapeHtml(e.id)+'"';
       return '<tr class="mh-item" data-ficha="'+escapeHtml(e.ficha)+'"><td>'+escapeHtml(e.fecha)+'</td><td>'+escapeHtml(_madHistNombre(e.ficha))+'</td><td>'+escapeHtml(e.resumen||"")+'</td>'
-        + '<td style="text-align:right">'+e.filas+'</td><td style="font-size:11px;color:#64748b">'+escapeHtml(_madHistCuando(e.ts))+(e.corregido ? '<br>✏️ corregido '+escapeHtml(_madHistCuando(e.corregido)) : '')+'</td>'
+        + '<td style="text-align:right">'+e.filas+'</td><td style="font-size:11px;color:#64748b">'+escapeHtml(_madHistCuando(e.ts))+(e.corregido ? '<br>✏️ corregido '+escapeHtml(_madHistCuando(e.corregido)) : '')+(e.reenviado ? '<br>🔁 reenviado · 1.º envío '+escapeHtml(_madHistCuando(e.primero)) : '')+'</td>'
         + '<td style="white-space:nowrap">'
         + (editable[e.id] ? B+'mh-ed" '+did+' onclick="madHistEditar(this.dataset.id)">✏️ Editar</button>' : '<span title="Sólo se editan los envíos recientes" style="font-size:11px;color:#94a3b8">sin editar</span>')
         + ' '+B+'mh-pdf" '+did+' onclick="madHistPdf(this.dataset.id)">📄 PDF</button> '+B+'mh-del" '+did+' title="Borrar del historial de este dispositivo" onclick="madHistBorrar(this.dataset.id)">🗑</button>'

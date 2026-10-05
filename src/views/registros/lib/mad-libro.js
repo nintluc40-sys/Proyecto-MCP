@@ -684,11 +684,17 @@ export function estadoPorLoteDeSala(libro, sala, fecha, tanquesDeSala) {
  * PUNTO 2 (usuario, 2026-10-04) · los pesos ♂/♀ de un tanque se llenan desde 🛢 Tanques O desde 🍤 Alimentación,
  * «mientras se guarde y sincronice». Un peso tecleado A MANO en Alimentación (ya en su hoja) cuenta como peso del
  * tanque donde se usa el peso; el MISMO día, sexo a sexo, manda Tanques (nada se cuenta dos veces). Sólo los «Manual» de
- * «Fuente del peso»: los demás son la referencia que la ficha copió. Devuelve filas con la FORMA de las de Tanques
+ * «Fuente del peso»: los demás son la referencia que la ficha copió, salvo «Alimentación» con la MISMA fecha que su fila
+ * (auditoría 2026-10-04: es ese mismo peso, reenviado el mismo día tras releer). Devuelve filas con la FORMA de las de Tanques
  * (Fecha, Sala, Tanque y los dos pesos promedio) y «_deAlimentacion», para sumarse a ellas SÓLO donde se lee el peso:
  * no son partes. Gemela del monolito: madPesosDeAlimentacion.
+ * ⚡ Se MEMORIZA por lectura (auditoría 2026-10-04): el MCP la pide una vez por lote y por sala en cada repintado, y con un
+ * año de filas eran ~15 ms cada vez. Las filas de una lectura no se modifican, y el resultado tampoco lo modifica nadie.
  */
+const _pesosAlimMemo = new WeakMap();   // filasAlim → { filasTq, out }
 export function pesosDeAlimentacion(filasAlim, filasTq) {
+  const memo = filasAlim && typeof filasAlim === 'object' ? _pesosAlimMemo.get(filasAlim) : null;
+  if (memo && memo.filasTq === filasTq) return memo.out;
   const f10 = (v) => txt(v).slice(0, 10);
   const n = (v) => {
     const t = txt(v).replace(',', '.');
@@ -711,12 +717,14 @@ export function pesosDeAlimentacion(filasAlim, filasTq) {
     const fila = { Fecha: d, Sala: txt(r.Sala), Tanque: ent(r.Tanque), _deAlimentacion: true };
     let alguno = false;
     for (const c of COLS) {
-      if (!fuente.includes(c[0] + ' Manual') || enTq.has(k + '|' + c[2])) continue;
+      const propio = fuente.includes(c[0] + ' Manual') || fuente.includes(c[0] + ' Alimentación ' + d);
+      if (!propio || enTq.has(k + '|' + c[2])) continue;
       const v = n(r[c[1]]);
       if (v) { fila[c[2]] = v; alguno = true; }
     }
     if (alguno) out.push(fila);
   }
+  if (filasAlim && typeof filasAlim === 'object') _pesosAlimMemo.set(filasAlim, { filasTq, out });
   return out;
 }
 

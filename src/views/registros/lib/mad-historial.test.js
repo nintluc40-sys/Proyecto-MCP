@@ -16,9 +16,18 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ENGINE = join(process.cwd(), 'public/registros/engine.js');
+/* Un almacenamiento PROPIO, como en cola-sin-espacio.test.js, y es el que recibe el monolito: las pruebas de «sin espacio»
+   parchean su setItem. Con el de happy-dom (Node 24, el de la CI) el monolito escribe sin pasar por el método que se parchea
+   desde aquí, y la falta de espacio simulada no llegaba a ocurrir (medido el 2026-10-04). */
+const localStorage = (() => {
+  const m = new Map();
+  return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)); },
+    removeItem: (k) => { m.delete(k); }, clear: () => m.clear(), key: (i) => Array.from(m.keys())[i] ?? null, get length() { return m.size; } };
+})();
 const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['MAD_MOD', 'MAD_HIST_KEY', 'MAD_HIST_PANEL_PRE', 'MAD_DES_LOG_KEY', 'MAD_BORR_PRE', '_gasVersionLocal',
   'madHistLeer', '_madHistGuardar', 'renderMadHistorial', 'renderHistorial', 'madHistEditar', 'madHistBorrar', 'madHistPdf',
+  '_lsSet', '_purgeMadHistViejo', 'safeSetItem',   // auditoría 2026-10-04 · sin espacio
   '_madHistPdfHTML', 'madHistCorrCancelar', 'madHistGrilla', 'madHistGrillaPdf', '_purgeMadHistPaneles', '_reclaimSpace',
   'madFinReiniciar', 'madFinGuardar', 'madFinGuardarLocal', 'madFinTipoChange',
   'madDesReiniciar', 'madDesGuardar', 'madDesCorregirGuardar', 'selTab', 'madKey', 'madBorrGuardar', 'madBorrLeer'];
@@ -30,14 +39,6 @@ const preguntas = [];
 let ventana = null;
 
 beforeAll(async () => {
-  if (typeof globalThis.localStorage === 'undefined') {
-    const m = new Map();
-    globalThis.localStorage = {
-      getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)),
-      removeItem: (k) => m.delete(k), clear: () => m.clear(),
-      key: (i) => Array.from(m.keys())[i] ?? null, get length() { return m.size; },
-    };
-  }
   const seguridad = await import('./security.js');
   const modulos = await import('./modules.js');
   const repro = await import('./reproductivo.data.js');
@@ -56,7 +57,7 @@ beforeAll(async () => {
     + '\ntry{ H.setMod=function(m){curMod=m;}; }catch(_){}\n})();';
   globalThis.__ENG = H;
   new Function('window', 'document', 'localStorage', 'globalThis', readFileSync(ENGINE, 'utf8') + epilogo)(
-    window, document, globalThis.localStorage, globalThis,
+    window, document, localStorage, globalThis,
   );
   H.setToast(() => {});
   H.setGasUrl(() => 'https://script.google.com/macros/s/AKfycbPRUEBA/exec');
@@ -278,6 +279,16 @@ describe('📜 Historial · cuántos se pueden editar, cuánto dura, y el espaci
     expect(ed).toBe(13);
   });
 
+  it('🔴 el tope de 200 es POR FICHA: los desoves (uno por entrada, ~3 al día) no echan a las demás antes de los 60 días', () => {
+    const l = [entrada('fin', 0, { ts: Date.now() - 30 * 86400000, panel: false })];
+    for (let i = 0; i < 205; i++) l.push(entrada('desoves', i, { ts: Date.now() - (205 - i) * 1000, panel: false }));
+    H._madHistGuardar(l);
+    const h = hist();
+    expect(h.filter((e) => e.ficha === 'desoves')).toHaveLength(200);
+    expect(h.filter((e) => e.ficha === 'desoves').map((e) => e.id)).not.toContain('desoves0');   // fuera los más viejos
+    expect(h.some((e) => e.id === 'fin0'), 'el cierre de hace 30 días sigue').toBe(true);
+  });
+
   it('🔴 60 días: lo más viejo sale (con su copia)', () => {
     const viejo = entrada('fin', 1, { ts: Date.now() - 61 * 86400000 });
     localStorage.setItem(H.MAD_HIST_PANEL_PRE + 'fin1', '<div>x</div>');
@@ -315,6 +326,96 @@ describe('📜 Historial · cuántos se pueden editar, cuánto dura, y el espaci
     expect(hist()).toHaveLength(0);
     expect(copias()).toEqual([]);
     expect(envios, 'no envía nada a la hoja').toHaveLength(1);
+  });
+});
+
+/* Auditoría (2026-10-04, usuario) · un reenvío con las MISMAS filas (mismo ID) sustituye a su entrada: el Historial dice lo
+   que hay en la hoja, y Editar la vieja no podría devolverle datos viejos. Con otras filas, entrada nueva. */
+describe('📜 Historial · los reenvíos con las mismas filas', () => {
+  it('🔴 el mismo cierre reenviado desde la ficha: UNA entrada, con lo último y «reenviado»; otro cierre, otra entrada', async () => {
+    llenarFin('BP', '5');
+    await H.madFinGuardar();
+    const primero = hist()[0];
+    llenarFin('BP', '7');                       // mismo lote, motivo y sala → mismo ID; otro dato
+    await H.madFinGuardar();
+    let l = hist();
+    expect(l).toHaveLength(1);
+    expect(l[0].id).toBe(primero.id);
+    expect(l[0].reenviado).toBeGreaterThan(0);
+    expect(l[0].primero).toBe(primero.ts);
+    expect(l[0].payload.rows[0][col(l[0].payload, 'Machos')]).toBe(7);
+    expect(filasLista()[0].textContent).toContain('🔁 reenviado');
+    H.madHistEditar(l[0].id);
+    expect($('#fp-fin .mf-machos').value, 'Editar abre lo ÚLTIMO enviado').toBe('7');
+    H.madFinReiniciar();
+    llenarFin('BQ', '2');
+    await H.madFinGuardar();
+    l = hist();
+    expect(l).toHaveLength(2);
+  });
+
+  it('🔴 el mismo desove reenviado: una entrada; otro código, otra', async () => {
+    const enviar = async (cg, n2) => {
+      pon($('#md-fecha'), '2026-09-14');
+      pon($('#fp-desoves .md-lote'), 'BP'); pon($('#fp-desoves .md-cg'), cg); pon($('#fp-desoves .md-desoves'), '64'); pon($('#fp-desoves .md-n2'), n2);
+      await H.madDesGuardar();
+    };
+    await enviar('OLF5.F2', '9000');
+    await enviar('OLF5.F2', '9100');
+    expect(hist()).toHaveLength(1);
+    expect(hist()[0].payload.rows[0][col(hist()[0].payload, 'N2')]).toBe(9100000);
+    expect(hist()[0].envio, 'Editar en 36 h va al envío ÚLTIMO').toBe(JSON.parse(localStorage.getItem(H.MAD_DES_LOG_KEY)).slice(-1)[0].id);
+    await enviar('OLF5.F3', '8000');
+    expect(hist()).toHaveLength(2);
+  });
+});
+
+/* Auditoría (2026-10-04, usuario) · sin espacio: primero las copias para Editar (arriba); si aún falta, la mitad MÁS VIEJA del
+   Historial. Lo que espera envío nunca se toca: aquí la escritura que lo pide es la de la COLA. */
+describe('📜 Historial · sin espacio, también la mitad más vieja del historial', () => {
+  const entrada = (i) => ({ id: 'h' + i, ficha: 'fin', ts: Date.now() - (100 - i) * 1000, fecha: '2026-10-01', filas: 1, panel: true,
+    payload: { sheetName: 'X', headers: ['ID'], rows: [['r' + i]] } });
+  /* «Lleno» para la clave `k` mientras el historial tenga más de 2 entradas. ⚠ Se parchea el método DONDE VIVE: en el
+     almacenamiento de las pruebas es propio, pero en el de happy-dom (Node 24, el de la CI) está en el prototipo, y asignar
+     `localStorage.setItem = …` a un Storage de verdad GUARDA un elemento llamado «setItem» en vez de cambiar el método. */
+  const lleno = (k, fn) => {
+    const dueno = Object.prototype.hasOwnProperty.call(localStorage, 'setItem') ? localStorage : Object.getPrototypeOf(localStorage);
+    const original = dueno.setItem;
+    dueno.setItem = function (clave, v) {
+      if (clave === k && hist().length > 2) throw new Error('QuotaExceededError');
+      return original.call(this, clave, v);
+    };
+    try { return fn(); } finally { dueno.setItem = original; }
+  };
+
+  it('🔴 _purgeMadHistViejo deja la mitad más reciente, con sus copias, y dice cuánto liberó', () => {
+    const l = [];
+    for (let i = 0; i < 6; i++) { l.push(entrada(i)); localStorage.setItem(H.MAD_HIST_PANEL_PRE + 'h' + i, '<div>x</div>'); }
+    localStorage.setItem(H.MAD_HIST_KEY, JSON.stringify(l));
+    expect(H._purgeMadHistViejo()).toContain('3 envío(s)');
+    expect(hist().map((e) => e.id).sort()).toEqual(['h3', 'h4', 'h5']);
+    expect(copias().sort()).toEqual(['h3', 'h4', 'h5'].map((x) => H.MAD_HIST_PANEL_PRE + x));
+    localStorage.removeItem(H.MAD_HIST_KEY);
+    expect(H._purgeMadHistViejo(), 'nada que liberar').toBeNull();
+  });
+
+  it('🔴 la cola no se pierde por el historial: _lsSet libera el historial viejo y la escritura llega', () => {
+    const l = [];
+    for (let i = 0; i < 8; i++) l.push(entrada(i));
+    localStorage.setItem(H.MAD_HIST_KEY, JSON.stringify(l));
+    expect(lleno('larv4_syncqueue', () => H._lsSet('larv4_syncqueue', '[{"x":1}]'))).toBe(true);
+    expect(localStorage.getItem('larv4_syncqueue')).toBe('[{"x":1}]');
+    expect(hist().length, 'liberó la mitad más vieja (dos veces)').toBe(2);
+    expect(hist().map((e) => e.id).sort()).toEqual(['h6', 'h7']);
+  });
+
+  it('y safeSetItem lo tiene como ÚLTIMA estrategia: tras las seguras, libera el historial viejo y la escritura llega', () => {
+    const l = [];
+    for (let i = 0; i < 4; i++) l.push(entrada(i));
+    localStorage.setItem(H.MAD_HIST_KEY, JSON.stringify(l));
+    expect(lleno('larv4_prueba_safe', () => H.safeSetItem('larv4_prueba_safe', 'v', { silent: true }))).toBe(true);
+    expect(hist()).toHaveLength(2);
+    localStorage.removeItem('larv4_prueba_safe');
   });
 });
 
@@ -376,6 +477,29 @@ describe('📜 Historial · Desoves, con SU corrección (sólo viaja lo cambiado
     expect(l[0].corregido).toBeGreaterThan(0);
     expect(l[0].payload.rows[0][col(p, 'N2')]).toBe(9500000);
     expect(l[0].payload.rows[0][col(p, 'Desoves')], 'la entrada dice el desove COMPLETO corregido').toBe(64);
+  });
+});
+
+describe('📜 Historial · auditoría: un desove COMPLETO, corregido pasadas las 36 h', () => {
+  it('🔴 sólo viajan el N2 y su fecha: lo que la hoja trae de vuelta (unidades, fechas, piscina, notas) no cuenta como cambio', async () => {
+    pon($('#md-fecha'), '2026-09-14');
+    pon($('#fp-desoves .md-lote'), 'BP'); pon($('#fp-desoves .md-cg'), 'OLF5.F2');
+    pon($('#fp-desoves .md-desoves'), '64'); pon($('#fp-desoves .md-huevos'), '14440'); pon($('#fp-desoves .md-hnoviables'), '9');
+    pon($('#fp-desoves .md-n2'), '9000'); pon($('#fp-desoves .md-n5'), '7000');
+    if ($('#fp-desoves .md-piscina')) pon($('#fp-desoves .md-piscina'), 'P3');
+    pon($('#fp-desoves .md-obs'), 'Revisado');
+    await H.madDesGuardar();
+    expect(envios).toHaveLength(1);
+    localStorage.removeItem(H.MAD_DES_LOG_KEY);
+    H.madHistEditar(hist()[0].id);
+    selectsComoNavegador($('#fp-desoves'));
+    pon($('#fp-desoves .md-n2'), '9500');
+    await H.madDesCorregirGuardar();
+    expect(envios).toHaveLength(2);
+    const p = envios[1];
+    const llenas = p.headers.filter((h, j) => String(p.rows[0][j] ?? '') !== '');
+    expect(llenas.sort()).toEqual(['Código genético', 'Fecha', 'Fecha N2', 'Lote', 'N2'].concat(p.headers.includes('ID') ? ['ID'] : []).sort());
+    expect(p.rows[0][col(p, 'N2')]).toBe(9500000);
   });
 });
 
