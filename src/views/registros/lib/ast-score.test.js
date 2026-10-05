@@ -18,7 +18,7 @@ const SHELL = join(process.cwd(), 'src/views/registros/shell.html');
 const EXPORTAR = ['SCORE_SHEET', 'SCORE_HEADERS', 'SCORE_CRITERIOS', 'SCORE_EXTRAS', 'SCORE_TANQUES', 'SCORE_DRAFT_KEY',
   'scoreTotal', 'scoreInterp', 'scoreEstado', 'scoreValidar', 'scoreRowId', 'buildScorePayload',
   'renderScore', 'scorePick', 'scoreTanque', 'scoreSiguiente', 'scoreGuardar', 'scoreNueva', 'scoreAbrir', 'scoreCampo', 'scorePickEl',
-  'scoreAbrirEl', 'scoreBorrarEl',
+  'scoreAbrirEl', 'scoreBorrarEl', 'scoreVaciarTanque', 'downloadScorePDF', 'scoreExtra',   // 2026-10-04 · 🧹 y 📄
   '_scoreRaw', 'loadScore', '_reconcileMark', 'AST_TABS', 'TAB_META'];
 const H = {};
 
@@ -247,5 +247,72 @@ describe('Score · la ficha en el módulo AsT', () => {
       { id: 'SCE-e', ts: viejo, synced: true, syncedAt: viejo, data: evaluacion({}) },
     ]));
     expect(H.loadScore().map((r) => r.id)).toEqual(['SCE-p']);
+  });
+});
+
+/* 2026-10-04 (usuario) · «🧹 Vaciar» y «📄 PDF» en el Score. Vaciar es SÓLO el tanque en pantalla (decisión del usuario):
+   el resto de la evaluación no cambia; «🗑 Nueva evaluación» sigue para vaciarla entera. El PDF es la evaluación en tabla. */
+describe('Score · 🧹 Vaciar TQ y 📄 PDF', () => {
+  let ventana = null;
+  beforeEach(() => {
+    ventana = null;
+    window.open = () => { ventana = { html: '', document: { write(h) { ventana.html += h; }, close() {}, title: '' } }; return ventana; };
+  });
+
+  it('los dos botones están, con el onclick literal', () => {
+    expect(fp().querySelector('button[onclick="scoreVaciarTanque()"]').textContent).toContain('Vaciar TQ 1');
+    expect(fp().querySelector('button[onclick="downloadScorePDF()"]').textContent).toContain('PDF');
+  });
+
+  it('🔴 Vaciar borra criterios y extras del tanque EN PANTALLA; los demás tanques y la cabecera no cambian', () => {
+    const campo = (attr, k, v) => { const el = document.createElement('input'); el.setAttribute(attr, k); el.value = v; return el; };
+    H.scoreCampo(campo('data-sk', 'corrida', '598'));
+    marcarTodo(2);
+    H.scoreExtra(campo('data-se', 'dias', '18'));
+    H.scoreTanque(2);
+    marcarTodo(4);
+    H.scoreTanque(1);
+    let pregunta = '';
+    window.confirm = (m) => { pregunta = m; return false; };
+    H.scoreVaciarTanque();
+    expect(H.scoreEstado(JSON.parse(localStorage.getItem(H.SCORE_DRAFT_KEY)).tanques[1]), '«no» lo deja como estaba').toBe('completo');
+    window.confirm = (m) => { pregunta = m; return true; };
+    H.scoreVaciarTanque();
+    expect(pregunta).toContain('TQ 1');
+    const d = JSON.parse(localStorage.getItem(H.SCORE_DRAFT_KEY));
+    expect(H.scoreEstado(d.tanques[1])).toBe('vacio');
+    expect(H.scoreEstado(d.tanques[2]), 'el TQ 2 sigue').toBe('completo');
+    expect(d.corrida, 'la cabecera sigue').toBe('598');
+    expect(fp().querySelector('#sc-criterios').textContent).toContain('TQ 1');
+  });
+
+  it('un tanque ya vacío no pregunta: lo dice', () => {
+    let preguntas = 0;
+    window.confirm = () => { preguntas++; return true; };
+    H.scoreVaciarTanque();
+    expect(preguntas).toBe(0);
+    expect(H.ultimoAviso).toContain('ya está vacío');
+  });
+
+  it('🔴 PDF: una fila por tanque evaluado con sus puntos, Score, Interpretación y extras; el incompleto, dicho; firmas y texto escapado', () => {
+    localStorage.setItem(H.SCORE_DRAFT_KEY, JSON.stringify(evaluacion({ 1: tanque(4, { dias: 18, plg: 160 }), 3: { actividad: 6 } },
+      { observaciones: '<b>ojo</b>', realizado: 'Ana', revisado: 'Luis' })));
+    H.olvidarModelo();
+    H.downloadScorePDF();
+    expect(ventana).not.toBeNull();
+    const h = ventana.html;
+    for (const txt of ['Score · calidad de postlarvas', 'M03', '598', 'Taura', 'Lab A', 'Ana', 'Luis', 'Muy buena calidad', '160',
+      'Incompleto (1 de ' + H.SCORE_CRITERIOS.length + ')']) expect(h, txt).toContain(txt);
+    expect(h).toContain('<td style="font-weight:800">100</td>');
+    const tbody = h.slice(h.indexOf('<tbody>'), h.indexOf('</tbody>'));
+    expect((tbody.match(/<tr>/g) || []).length, 'TQ 1 y TQ 3').toBe(2);
+    expect(h).not.toContain('<b>ojo</b>');
+    expect(h).toContain('&lt;b&gt;ojo&lt;/b&gt;');
+  });
+
+  it('sin ningún tanque evaluado no abre nada y lo dice', () => {
+    H.downloadScorePDF();
+    expect(ventana).toBeNull();
+    expect(H.ultimoAviso).toContain('al menos un tanque');
   });
 });

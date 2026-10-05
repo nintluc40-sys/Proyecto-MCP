@@ -19429,6 +19429,67 @@ function scoreExtra(el){
   t[k] = el.value;
   _scoreGuardarBorrador();
 }
+/* 🧹 (usuario, 2026-10-04) · vacía SÓLO el tanque en pantalla: sus criterios y sus extras. El resto de la evaluación no cambia
+   (para vaciarla entera está «🗑 Nueva evaluación»). Pregunta antes; si ya está vacío, lo dice y no pregunta. */
+function scoreVaciarTanque(){
+  const m = _scoreActual(), n = _scoreTq;
+  if(scoreEstado(m.tanques[n]) === "vacio"){ toast("El TQ " + n + " ya está vacío.", "info", 2500); return; }
+  if(!confirm("¿Vaciar el TQ " + n + "?\nSe borran sus criterios y sus extras; el resto de la evaluación no cambia.")) return;
+  delete m.tanques[n];
+  _scoreGuardarBorrador();
+  renderScore();
+}
+/* 📄 (usuario, 2026-10-04) · la evaluación EN PANTALLA en tabla, A4 horizontal: una fila por tanque evaluado (un incompleto se
+   dice así) con los puntos de cada criterio, Score, Interpretación y los extras; observaciones y las firmas de Realizado y
+   Revisado. Para una ya guardada: ✏️ Abrir y 📄 PDF. El mismo estilo que el PDF del As Técnico (pdfCss, cabecera y pie). */
+function downloadScorePDF(){
+  const m = _scoreActual(), tqs = [];
+  for(let n = 1; n <= SCORE_TANQUES; n++){ if(scoreEstado(m.tanques[n]) !== "vacio") tqs.push(n); }
+  if(!tqs.length){ toast("Evalúa al menos un tanque para sacar el PDF.", "warn", 3500); return; }
+  const tsStr = new Date().toLocaleString('es-EC',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  const fecha = /^\d{4}-\d{2}-\d{2}$/.test(String(m.fecha || "")) ? m.fecha : today();
+  const codigo = genCodigo('ast', AST_MOD, fecha);
+  const cell = function(v){ return (v !== undefined && v !== null && String(v).trim() !== "") ? escapeHtml(String(v)) : '<span class="empty">—</span>'; };
+  const headers = ["TQ"].concat(SCORE_CRITERIOS.map(function(c){ return c.h; }), ["Score","Interpretación"], SCORE_EXTRAS.map(function(x){ return x.h; }));
+  const filas = tqs.map(function(n){
+    const t = m.tanques[n] || {}, total = scoreTotal(t), interp = scoreInterp(total);
+    const pts = SCORE_CRITERIOS.map(function(c){ const v = Number(t[c.k]); return '<td>' + cell(c.pts.indexOf(v) !== -1 ? v : "") + '</td>'; }).join("");
+    const res = total === ""
+      ? '<td>' + cell("") + '</td><td style="color:#b45309;font-weight:700">Incompleto (' + scoreMarcados(t) + ' de ' + SCORE_CRITERIOS.length + ')</td>'
+      : '<td style="font-weight:800">' + total + '</td><td style="font-weight:700;color:' + (SCORE_COLOR[interp] || "#0f172a") + '">' + escapeHtml(interp) + '</td>';
+    return '<tr><td class="tqc">' + n + '</td>' + pts + res + SCORE_EXTRAS.map(function(x){ return '<td>' + cell(t[x.k]) + '</td>'; }).join("") + '</tr>';
+  }).join("");
+  const fileName = ('Score_' + fecha.replace(/-/g, '') + '_' + String(m.modulo || "") + '_C' + _scoreCorrida(m)).replace(/[^\w.-]+/g, '');
+  const mf = function(l, v){ return '<div class="mf"><label>' + l + '</label><span>' + cell(v) + '</span></div>'; };
+  const firma = function(cargo, nombre){
+    return '<div style="text-align:center;min-width:140px"><div style="font-size:7pt;color:#0f172a;min-height:10px">' + escapeHtml(String(nombre || "")) + '</div>'
+      + '<div style="border-top:1.5px solid #0f172a;padding-top:3px;margin-top:2px;font-size:6.5pt;font-weight:700;color:#0f172a">' + cargo + '</div>'
+      + '<div style="font-size:5pt;color:#64748b;margin-top:1px">Firma</div></div>';
+  };
+  const page = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>' + escapeHtml(fileName) + '</title>'
+    // 20 columnas: con las cabeceras en una sola línea (pdfCss) la tabla medía 1,45 veces el ancho de la hoja y se cortaba.
+    + '<meta name="viewport" content="width=device-width,initial-scale=1"><style>' + pdfCss('params') + '.sc-t th{white-space:normal;line-height:1.15}</style></head><body><div class="ppage">'
+    + '<div class="ph"><div class="ph-brand"><div class="co">OMARSA · As Técnico</div><div class="su">Sistema de Fichas — Supervisión Técnica</div></div>'
+    + '<div class="ph-center"><span class="doc-code">OMR-AST-SCORE</span></div><div class="ph-right"><div class="mod">AsT</div><div class="mods">As Técnico</div></div></div>'
+    + '<div class="ftitle">🎯 Score · calidad de postlarvas por tanque</div>'
+    + '<div class="mgrid">' + mf("Fecha", m.fecha) + mf("Módulo", m.modulo) + mf("Corrida", _scoreCorrida(m)) + mf("Camaronera", m.camaronera)
+    + mf("Laboratorio", m.laboratorio) + mf("Tanques evaluados", tqs.length) + '</div>'
+    + '<table class="sc-t"><thead><tr>' + headers.map(function(h){ return '<th>' + escapeHtml(h) + '</th>'; }).join("") + '</tr></thead><tbody>' + filas + '</tbody></table>'
+    + (String(m.observaciones || "").trim() ? '<div style="margin-top:6px;font-size:7pt"><b>Observaciones:</b> ' + escapeHtml(String(m.observaciones)) + '</div>' : '')
+    + '<div class="spacer"></div><div class="pfoot"><div>'
+    + '<div style="font-size:6pt;color:#64748b;margin-bottom:2px;text-transform:uppercase;letter-spacing:.4px">Código verificador</div>'
+    + '<div class="code-box">' + codigo + '</div><div class="ts-txt" style="margin-top:2px">Generado el ' + escapeHtml(tsStr) + '</div></div>'
+    + firma("Realizado por", m.realizado) + firma("Revisado por", m.revisado) + '</div></div>'
+    + '<script>try{ document.title = ' + JSON.stringify(fileName) + '; }catch(_){}'
+    + 'var _printed=false;function doPrint(){if(_printed)return;_printed=true;setTimeout(function(){window.print();},350);}'
+    + 'if(document.readyState==="complete")doPrint();else window.addEventListener("load",doPrint,{once:true});<\/script></body></html>';
+  const w = window.open('', '_blank', 'width=1100,height=720');
+  if(!w){ toast('El navegador bloqueó la ventana emergente.', 'warn', 6000); return; }
+  w.document.write(page);
+  w.document.close();
+  try{ w.document.title = fileName; }catch(_){}
+  toast('📄 PDF: ' + fileName + ' · ' + tqs.length + ' tanque(s)', 'ok', 5000);
+}
 // Valida y guarda la evaluación en el dispositivo como PENDIENTE (la misma fecha·módulo·corrida la sustituye).
 function _scoreRegistrar(){
   const m = _scoreActual();
@@ -19614,7 +19675,9 @@ function renderScore(){
     +   '<span style="font-size:14px;font-weight:800;color:#0f172a">TQ '+_scoreTq+'</span><span>'+totalHtml+'</span></div>'
     + criterios
     + extras
-    + '<div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn" type="button" onclick="scoreSiguiente()">Siguiente tanque ▶</button></div>'
+    + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">'
+    +   '<button class="btn bo" type="button" onclick="scoreVaciarTanque()" title="Borra los criterios y los extras de este tanque; el resto de la evaluación no cambia">🧹 Vaciar TQ '+_scoreTq+'</button>'
+    +   '<button class="btn" type="button" onclick="scoreSiguiente()">Siguiente tanque ▶</button></div>'
     + '<div style="font-size:11px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:.6px;margin:14px 0 2px">Tanques de esta evaluación</div>'
     + resumen
     + pie
@@ -19622,6 +19685,7 @@ function renderScore(){
     +   '<button class="btn" type="button" onclick="scoreGuardar()">💾 Guardar en el equipo</button>'
     +   '<button class="btn bp" type="button" onclick="scoreEnviar()">☁️ Enviar</button>'
     +   '<button class="btn" type="button" onclick="scoreNueva()">🗑 Nueva evaluación</button>'
+    +   '<button class="btn bpdf" type="button" onclick="downloadScorePDF()" title="PDF de la evaluación en pantalla: una fila por tanque evaluado">📄 PDF</button>'
     + '</div>'
     + '<div style="font-size:11px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:.6px;margin:16px 0 4px">Evaluaciones en este dispositivo</div>'
     + lista
