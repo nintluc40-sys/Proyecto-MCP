@@ -453,3 +453,107 @@ describe('Auditoría · 📋 las fechas como se copian de las planillas', () => 
     expect(avisos.filter((a) => a.tipo === 'warn')).toEqual([]);
   });
 });
+
+/* 2026-10-05 (usuario) · POR NOMBRE DE COLUMNA. La planilla AUDITORIAS tal cual: dos filas de títulos (secciones y
+   nombres), todas las secciones seguidas en una fila, nombres repetidos, filas en blanco entre tanques y las partidas de la
+   cosecha en filas propias. El mismo bloque se pega en las tres tablas y cada una toma lo suyo (reparto decidido con el
+   usuario: antes de «Fecha de siembra», el ingreso; el Mod/# Tq de la transferencia es el destino; el tanque de la cosecha,
+   fila a fila —el destino, si no el sembrado, si no el de arriba—, y las «TQ»/«Md» del final IGNORADAS: en las hojas reales
+   son otra lista, en filas intermedias y desfasada; «Subtotal» fuera, en el «TOTAL» se para, títulos a mitad re-reparten). */
+describe('Auditoría · 📋 pegar por nombre de columna (la planilla tal cual)', () => {
+  const avisos = [];
+  beforeEach(() => { avisos.length = 0; H.setToast((m, tipo) => { avisos.push({ m: String(m), tipo }); }); });
+  const celda = (sec, i, k) => fp().querySelector(`[data-as="${sec}"][data-ai="${i}"][data-af="${k}"]`);
+  const pegar = (el, filas) => H.audPegar({ target: el, clipboardData: { getData: () => filas.map((f) => f.join('\t')).join('\r\n') + '\r\n' }, preventDefault() {} });
+  const anadir = (sec) => H.audAgregarEl({ getAttribute: () => sec });
+  const tabla = (sec) => H.modelo()[sec];
+  const V = (n) => Array(n).fill('');
+  // 37 columnas, como la variante con transferencia
+  const SECC = ['', '', 'INGRESO REPRODUCTORES', '', 'SIEMBRA', ...V(9), 'TRANSFERENCIA', ...V(8), 'COSECHA', ...V(13)];
+  const TIT = ['', 'Primera   siembra', 'Fecha', '# Guía remisión', 'Fecha de siembra', 'Origen', '# Guía remisión', 'Mod', '# Tq',
+    'Cantidad sembrada', 'Ton.', 'Dens. Siembra', 'Lote', 'Cod. Gen.', 'Fecha de transf.', 'Cantidad transferida', 'Mod', '# Tq',
+    'Distribucion de cant. transferida', '% Sob. Fase 1', 'Estadío', 'Pl/g', '% larvas peq.', 'Fecha Cosecha', 'Cantidad cosechada por tq',
+    '% Sob. Final x Tq', '#Días de cultivo', 'Estadío', 'Pl/g', 'Dens. Cosecha', 'Destino', '# Piscina', 'Cant. Cosecha total',
+    '%Sob Fase 2', '% Sob. final', 'TQ', 'Md'];
+  // Como en la hoja 545: las «TQ»/«Md» del final van VACÍAS en la fila del tanque y llenas en la fila intermedia de debajo,
+  // con OTRO tanque (la lista va desfasada); la 2.ª partida de una cosecha, en su propia fila y sin tanque.
+  const F1 = ['', '', '20-Feb-26', '9001', '21-Feb-26', 'Omarsa', '271036', '1', '1', '5,850,000 ', '27', '217', 'BB', 'CG1',
+    '5-Mar-26', '2,000,000 ', '1', '21', '', '', 'PL5', '870', '6%', '15-Mar-26', '1,800,000 ', '', '', 'PL13', '195', '', 'Pto.Inca 1', '40', '', '', '', '', ''];
+  const LISTA = [...V(35), '9', '3'];
+  const PISCINA = [...V(31), '913', ...V(5)];   // otra piscina de la cosecha de arriba, en su propia fila
+  const F2 = ['', '', '', '', '21-Feb-26', 'Texcumar', '271037', '1', '2', '5,850,000 ', '27', '217', 'BA', 'CG2',
+    '', '', '', '', '', '', '', '', '', '16-Mar-26', '3,000,000 ', '', '', 'PL13', '200', '', 'Puná 1', '41', '', '', '', '', ''];
+  const F3 = [...V(23), '17-Mar-26', '1,000,000 ', '', '', 'PL14', '210', '', 'Puná 2', '42', '', '', '', '', ''];
+  const BLOQUE = [SECC, TIT, F1, PISCINA, LISTA, F2, F3];
+  expect(TIT).toHaveLength(37);
+
+  it('🔴 Siembra: ingreso de reproductores aparte, la siembra del rótulo, sin separadores ni filas de otra sección', () => {
+    anadir('siembras');
+    pegar(celda('siembras', 0, 'siembra'), BLOQUE);
+    const S = tabla('siembras');
+    expect(S.map((r) => [r.siembra, r.modulo, r.tanque, r.fecha, r.origen, r.guia, r.cantidad, r.ton, r.lote, r.codigo, r.fechaIng, r.guiasIng])).toEqual([
+      ['1ª', 'M01', '1', '2026-02-21', 'Omarsa', '271036', '5,850,000', '27', 'BB', 'CG1', '2026-02-20', '9001'],
+      ['1ª', 'M01', '2', '2026-02-21', 'Texcumar', '271037', '5,850,000', '27', 'BA', 'CG2', '', '']]);
+    expect(avisos.find((a) => a.tipo === 'ok').m).toContain('por nombre de columna: 2 fila(s)');
+    const ign = avisos.find((a) => a.tipo === 'info').m;
+    expect(ign).toContain('Dens. Siembra');
+    expect(avisos.filter((a) => a.tipo === 'warn'), 'nada sin reconocer').toEqual([]);
+  });
+
+  it('🔴 Transferencia: el origen de la siembra y el DESTINO de la sección de transferencia; sólo el tanque que transfirió', () => {
+    anadir('transferencias');
+    pegar(celda('transferencias', 0, 'fecha'), BLOQUE);
+    expect(tabla('transferencias').map((r) => [r.fecha, r.modulo, r.tanque, r.moduloDest, r.tanqueDest, r.cantidad, r.estadio, r.plg, r.larvasPeq])).toEqual([
+      ['2026-03-05', 'M01', '1', 'M01', '21', '2,000,000', 'PL5', '870', '6']]);
+  });
+
+  it('🔴 Cosecha: el tanque fila a fila (destino · sembrado · el de arriba), su Estadío y Pl/g, Destino → Camaronera, # Piscina, partidas en orden', () => {
+    anadir('cosechas');
+    pegar(celda('cosechas', 0, 'fecha'), BLOQUE);
+    expect(tabla('cosechas').map((r) => [r.fecha, r.modulo, r.tanque, r.partida, r.cantidad, r.estadio, r.plg, r.camaronera, r.piscinas])).toEqual([
+      ['2026-03-15', 'M01', '21', 1, '1,800,000', 'PL13', '195', 'Pto.Inca 1', '40, 913'],
+      ['2026-03-16', 'M01', '2', 1, '3,000,000', 'PL13', '200', 'Puná 1', '41'],
+      ['2026-03-17', 'M01', '2', 2, '1,000,000', 'PL14', '210', 'Puná 2', '42']]);
+  });
+
+  it('🔴 las «TQ»/«Md» del final no deciden nada: una fila sólo con ellas no es una cosecha, y en la fila del tanque no cuentan', () => {
+    anadir('cosechas');
+    const conTq = F1.slice(0, 35).concat(['9', '3']);
+    pegar(celda('cosechas', 0, 'fecha'), [TIT, conTq, LISTA]);
+    expect(tabla('cosechas').map((r) => [r.modulo, r.tanque])).toEqual([['M01', '21']]);
+  });
+
+  it('🔴 «Subtotal» no entra, una fila de títulos a mitad («Segunda siembra») re-reparte y en el «TOTAL» se para (el despacho de debajo no)', () => {
+    const SUB = ['', '', 'Subtotal', ...V(6), '11,700,000', '54', '217', ...V(13), '4,800,000', ...V(12)];
+    const TIT2 = TIT.map((t, j) => (j === 1 ? 'Segunda  siembra' : t));
+    const F4 = ['', '', '', '', '22-Feb-26', 'Omarsa', '271040', '1', '3', '5,400,000 ', '27', '200', 'AY', 'CG3',
+      ...V(9), '18-Mar-26', '2,500,000 ', '', '', 'PL13', '190', '', 'Chongón', '43', '', '', '', '', ''];
+    const TOT = ['', 'TOTAL', ...V(7), '17,100,000', ...V(27)];
+    const DESP = [['', 'DESPACHO DE POSTLARVAS A CAMARONERAS - CORRIDA 999', ...V(35)],
+      ['', '# Guía remisión', '', '# Guía despacho', 'Cantidad real', '', 'Cant. Facturada', '', '', 'Fecha cosecha', '# Guía remisión', ...V(26)],
+      ['CACHUGRAN', '90001', '', '80001', '1,000,000', '', '900,000', '', '', '25-Feb-26', '90002', ...V(26)]];   // valores inventados
+    const B = [SECC, TIT, F1, V(37), SUB, TIT2, F4, TOT, ...DESP];
+    anadir('siembras');
+    pegar(celda('siembras', 0, 'siembra'), B);
+    expect(tabla('siembras').map((r) => [r.siembra, r.tanque, r.cantidad])).toEqual([['1ª', '1', '5,850,000'], ['2ª', '3', '5,400,000']]);
+    expect(avisos.some((a) => a.tipo === 'info' && /Se paró en el «TOTAL»/.test(a.m))).toBe(true);
+    anadir('cosechas');
+    pegar(celda('cosechas', 0, 'fecha'), B);
+    expect(tabla('cosechas').map((r) => [r.tanque, r.cantidad, r.camaronera])).toEqual([['21', '1,800,000', 'Pto.Inca 1'], ['3', '2,500,000', 'Chongón']]);
+  });
+
+  it('🔴 los títulos de la FICHA en otro orden también van cada uno a su columna', () => {
+    anadir('siembras');
+    pegar(celda('siembras', 0, 'lote'), [['Cantidad', 'TQ', 'Lote', 'Módulo', 'Fecha', 'Columna rara'], ['6.000.000', '7', 'ZZ', '4', '01/09/2026', 'x']]);
+    const s = tabla('siembras')[0];
+    expect([s.cantidad, s.tanque, s.lote, s.modulo, s.fecha]).toEqual(['6.000.000', '7', 'ZZ', 'M04', '2026-09-01']);
+    expect(avisos.find((a) => a.tipo === 'info').m).toContain('Columna rara');
+  });
+
+  it('un bloque con títulos sin nada de esta tabla lo dice y no añade filas', () => {
+    anadir('transferencias');
+    pegar(celda('transferencias', 0, 'fecha'), [TIT, F2]);
+    expect(tabla('transferencias')).toHaveLength(1);
+    expect(avisos.find((a) => a.tipo === 'warn').m).toContain('Nada de lo pegado es de la tabla de Transferencia');
+  });
+});

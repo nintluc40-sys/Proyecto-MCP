@@ -20114,6 +20114,8 @@ function _audPegadoValor(col, v){
   const t = String(v == null ? "" : v).trim();
   if(t === "") return "";
   if(col[2] === "fecha") return _audPegadoFecha(t);
+  // «% larvas peq.»: la planilla lo enseña con su «%» («4%»), y con él la ficha lo daba por fuera de rango.
+  if(col[0] === "larvasPeq") return t.replace(/\s*%$/, "");
   if(col[2] !== "sel") return t;
   const opts = _audOpcionesDe(col[0]), n = _audSinTilde(t);
   const igual = opts.filter(function(o){ return _audSinTilde(o) === n; })[0];
@@ -20135,15 +20137,106 @@ function _audFilaVacia(sec){
   AUD_COLS_FICHA[sec].forEach(function(c){ f[c[0]] = ""; });
   return f;
 }
-// ¿Una primera fila de TÍTULOS? Sin ninguna cifra y con algún título de la tabla (o cabecera de la hoja) reconocible.
+/* ── POR NOMBRE DE COLUMNA (usuario, 2026-10-05) ── con su fila de títulos, cada columna va a la suya por el nombre: los
+   títulos de la ficha, las cabeceras de la hoja y los nombres de las planillas AUDITORIAS (medidos: «Fecha de siembra»,
+   «# Guía remisión», «Mod», «# Tq», «Cantidad sembrada», «Cod. Gen.», «Fecha de transf.», «Cantidad transferida»,
+   «Fecha Cosecha», «Cantidad cosechada por tq», «Destino», «# Piscina»…, sin mayúsculas ni tildes). Sin títulos, por orden.
+   Una fila de la planilla trae TODAS sus secciones seguidas, con nombres repetidos; su reparto (decidido con el usuario):
+   · las columnas antes de «Fecha de siembra» son el INGRESO de reproductores: su «Fecha» y su «# Guía remisión» van a
+     «Fecha ingreso» y «Guías ingreso»; «Primera/Segunda/Tercera siembra» pone 1ª/2ª/3ª donde su celda esté vacía;
+   · en la Transferencia, el «Mod»/«# Tq» de la sección de transferencia es el DESTINO y el de la siembra, el ORIGEN;
+   · en la Cosecha manda lo de su sección («Estadío», «Pl/g»…), y su tanque se decide FILA A FILA (ajuste del 2026-10-05,
+     usuario, medido en las hojas 553 y 545): el destino de la transferencia de esa fila; si no, el tanque sembrado; si la
+     fila no trae ninguno (la 2.ª partida va en su propia fila), el de la cosecha de arriba. Las «TQ»/«Md» del final NO: son
+     otra lista, en filas intermedias y desfasada (la fila del tanque 1 las trae vacías y la siguiente, «TQ 2»).
+   · «Subtotal» no se pega; en el «TOTAL» se para (debajo van el despacho por guías y el resumen, con otra forma); una fila
+     de títulos a mitad («Segunda siembra») cambia el reparto desde ahí.
+   Lo que la tabla no tiene se ignora (y se dice). */
+const _AUD_ALIAS = {
+  siembras: { siembra:["siembra"], modulo:["modulo","mod","md"], tanque:["tq","tanque"], fecha:["fecha","fechadesiembra","fechasiembra"],
+    origen:["origen"], guia:["guiaremision","guiaderemision","guia"], cantidad:["cantidad","cantidadsembrada"], ton:["ton","toneladas"],
+    lote:["lote"], codigo:["codgen","codigogenetico","codigo"], fechaIng:["fechaingresoreprod","fechaingresoreproductores","fechaingreso"],
+    guiasIng:["guiasingresoreprod","guiasingresoreproductores","guiasingreso"] },
+  transferencias: { fecha:["fecha","fechadetransf","fechatransf","fechadetransferencia"], modulo:["modulo","mod","md"],
+    tanque:["tqorigen","tanqueorigen","tq","tanque"], moduloDest:["modulodestino","moddestino"], tanqueDest:["tqdestino","tanquedestino"],
+    cantidad:["cantidad","cantidadtransferida"], estadio:["estadio"], plg:["plg"], larvasPeq:["larvaspeq","larvaspequenas"] },
+  cosechas: { fecha:["fecha","fechacosecha","fechadecosecha"], modulo:["modulo","mod","md"], tanque:["tq","tanque"], partida:["partida"],
+    cantidad:["cantreal","cantidad","cantidadcosechadaportq","cantidadcosechada"], ton:["ton","toneladas"], estadio:["estadio"], plg:["plg"],
+    camaronera:["camaronera","destino"], piscinas:["piscinas","piscina"], guia:["guiaremision","guiaderemision"],
+    guiaDespacho:["guiadespacho","guiadedespacho"], facturada:["facturada","cantidadfacturada"], tinas:["tinas"], placa:["placa"] }
+};
+// Dónde empieza cada sección en una fila de títulos de la planilla (S siembra · T transferencia · C cosecha; antes, I ingreso).
+const _AUD_MARCAS = { fechadesiembra:"S", fechadetransf:"T", fechadetransferencia:"T", cantidadtransferida:"T",
+  fechacosecha:"C", fechadecosecha:"C", cantidadcosechadaportq:"C" };
+const _AUD_SECCIONES = ["siembra","transferencia","cosecha","cosechaydespacho","ingresoreproductores","ingresodereproductores"];
+const _AUD_ORDINAL = /^(primera|segunda|tercera)siembra$/;
+// La clave de la tabla con ese nombre (normalizado): título de la ficha, alias o cabecera de la hoja; "" si no la tiene.
+function _audClaveDe(sec, n){
+  const cols = AUD_COLS_FICHA[sec] || [];
+  for(let i = 0; i < cols.length; i++) if(_audSinTilde(cols[i][1]) === n) return cols[i][0];
+  const ali = _AUD_ALIAS[sec] || {};
+  for(const k in ali) if(ali[k].indexOf(n) !== -1) return k;
+  const camp = AUD_CAMPOS[sec] || [];
+  for(let i = 0; i < camp.length; i++) if(_audSinTilde(camp[i][1]) === n) return camp[i][0];
+  return "";
+}
+// ¿Una fila de TÍTULOS? Ninguna celda es un número ni una fecha (los títulos de la planilla SÍ llevan cifras: «% Sob. Fase 1»,
+// «#Días de cultivo») y alguna es un nombre reconocible de CUALQUIERA de las tres tablas, una marca o un rótulo de sección
+// (la fila de encima de los títulos en la planilla: «INGRESO REPRODUCTORES · SIEMBRA · COSECHA»).
 function _audEsCabecera(sec, celdas){
-  if(celdas.some(function(c){ return /\d/.test(c); })) return false;
-  const titulos = AUD_COLS_FICHA[sec].map(function(c){ return _audSinTilde(c[1]); })
-    .concat((AUD_CAMPOS[sec] || []).map(function(c){ return _audSinTilde(c[1]); }));
+  if(celdas.some(function(c){ const t = String(c).trim(); return /^[\d.,\s%+-]+$/.test(t) && /\d/.test(t) || (t !== "" && _audPegadoFecha(t) !== null); })) return false;
   return celdas.some(function(c){
     const n = _audSinTilde(c);
-    return n.length >= 2 && titulos.some(function(t){ return t === n || (n.length >= 3 && t.length >= 3 && (t.indexOf(n) === 0 || n.indexOf(t) === 0)); });
+    return n.length >= 2 && (_AUD_MARCAS[n] || _AUD_ORDINAL.test(n) || _AUD_SECCIONES.indexOf(n) !== -1
+      || !!_audClaveDe("siembras", n) || !!_audClaveDe("transferencias", n) || !!_audClaveDe("cosechas", n));
   });
+}
+// El reparto POR NOMBRE de una fila de títulos para la tabla «sec»: por columna pegada, { col, def } o null; y lo ignorado.
+function _audMapaPorNombre(sec, cab){
+  const n = cab.map(_audSinTilde);
+  const planilla = n.some(function(x){ return !!_AUD_MARCAS[x]; });
+  const seg = [];
+  let cur = planilla ? "I" : "";
+  n.forEach(function(x, j){ if(_AUD_MARCAS[x]) cur = _AUD_MARCAS[x]; seg[j] = cur; });
+  const vale = { siembras:{ I:1, S:1 }, transferencias:{ S:1, T:1 }, cosechas:{ C:1 } }[sec] || {};
+  const GMOD = ["modulo","mod","md"], GTQ = ["tq","tanque"];
+  const colDe = function(k){ return (AUD_COLS_FICHA[sec] || []).filter(function(c){ return c[0] === k; })[0]; };
+  const out = n.map(function(){ return null; }), usada = {};
+  // «propia»: de la sección de ESTA tabla (sin planilla, todas). Sólo ellas deciden si una fila pegada entra: el origen que
+  // la Transferencia toma de la siembra, o el tanque de reserva de la Cosecha, no convierten una fila ajena en una de la tabla.
+  const suya = { siembras:"S", transferencias:"T", cosechas:"C" }[sec];
+  const pon = function(j, k, def){ const c = colDe(k); if(!c) return; if(usada[k] !== undefined) out[usada[k]] = null; out[j] = { col:c, def:def || "", propia: !planilla || seg[j] === suya }; usada[k] = j; };
+  n.forEach(function(x, j){
+    if(!x || (planilla && !vale[seg[j]])) return;
+    const sg = seg[j], ord = _AUD_ORDINAL.exec(x);
+    let k = "", def = "";
+    if(sec === "siembras" && ord){ k = "siembra"; def = AUD_SIEMBRAS[["primera","segunda","tercera"].indexOf(ord[1])]; }
+    else if(sec === "siembras" && sg === "I" && x === "fecha") k = "fechaIng";
+    else if(sec === "siembras" && sg === "I" && x.indexOf("guia") === 0) k = "guiasIng";
+    else if(sec === "transferencias" && sg === "S") k = GMOD.indexOf(x) !== -1 ? "modulo" : GTQ.indexOf(x) !== -1 ? "tanque" : "";
+    else if(sec === "transferencias" && sg === "T" && GMOD.indexOf(x) !== -1) k = "moduloDest";
+    else if(sec === "transferencias" && sg === "T" && GTQ.indexOf(x) !== -1) k = "tanqueDest";
+    else if(sec === "cosechas" && planilla && (GMOD.indexOf(x) !== -1 || GTQ.indexOf(x) !== -1)) k = "";   // el tanque, fila a fila (abajo)
+    else k = _audClaveDe(sec, x);
+    if(!k) return;
+    // Repetida: en la Cosecha de la planilla manda la ÚLTIMA (lo de su sección); en lo demás, la primera.
+    if(usada[k] !== undefined && !(planilla && sec === "cosechas")) return;
+    pon(j, k, def);
+  });
+  // La Cosecha de la planilla: de dónde sale su tanque, por orden (destino de la transferencia, luego el sembrado).
+  const tanqueDe = [];
+  if(planilla && sec === "cosechas"){
+    ["T", "S"].forEach(function(sg){
+      const par = { mod: -1, tq: -1 };
+      n.forEach(function(x, j){ if(seg[j] !== sg) return; if(GMOD.indexOf(x) !== -1) par.mod = j; else if(GTQ.indexOf(x) !== -1) par.tq = j; });
+      if(par.tq !== -1) tanqueDe.push(par);
+    });
+  }
+  const usadasTq = {};
+  tanqueDe.forEach(function(par){ usadasTq[par.tq] = 1; if(par.mod !== -1) usadasTq[par.mod] = 1; });
+  const ignoradas = [];
+  n.forEach(function(x, j){ const t = String(cab[j]).trim(); if(x && !out[j] && !usadasTq[j] && ignoradas.indexOf(t) === -1) ignoradas.push(t); });
+  return { cols: out, ignoradas: ignoradas, tanqueDe: tanqueDe };
 }
 function audPegar(ev){
   const t = ev && ev.target, cd = ev && (ev.clipboardData || window.clipboardData);
@@ -20167,28 +20260,73 @@ function audPegar(ev){
   const lineas = txt.replace(/\r/g, "").split("\n");
   if(lineas.length && lineas[lineas.length - 1] === "") lineas.pop();
   const mat = lineas.map(function(l){ return l.split("\t"); });
-  if(mat.length && _audEsCabecera(sec, mat[0])) mat.shift();
+  // Las filas de títulos de arriba (en la planilla son DOS: secciones y títulos): manda la última.
+  let cab = null;
+  while(mat.length && _audEsCabecera(sec, mat[0])) cab = mat.shift();
   if(!mat.length) return;
+  let plan = cab ? _audMapaPorNombre(sec, cab) : null;
+  const filas = [], ignoradas = plan ? plan.ignoradas.slice() : [];
+  let paroEnTotal = false, tqAnterior = null;
+  const colDe = function(k){ return cols.filter(function(c){ return c[0] === k; })[0]; };
+  for(let r = 0; r < mat.length; r++){
+    const celdas = mat[r];
+    if(plan){
+      // Por nombre: una fila de títulos a mitad cambia el reparto; «Subtotal» no entra; en el «TOTAL» se para.
+      if(_audEsCabecera(sec, celdas)){ plan = _audMapaPorNombre(sec, celdas); plan.ignoradas.forEach(function(t){ if(ignoradas.indexOf(t) === -1) ignoradas.push(t); }); continue; }
+      const nn = celdas.map(_audSinTilde);
+      if(nn.indexOf("total") !== -1 || nn.indexOf("totales") !== -1){ paroEnTotal = r < mat.length - 1; break; }
+      if(nn.indexOf("subtotal") !== -1) continue;
+    }
+    const f = [];
+    celdas.forEach(function(raw, j){
+      if(plan){ const x = plan.cols[j]; if(x) f.push({ col:x.col, raw:raw, def:x.def, propia:x.propia }); }
+      else { const col = cols[c0 + j]; if(col) f.push({ col:col, raw:raw, def:"" }); }
+    });
+    // Por nombre, una fila sin nada de la sección de ESTA tabla (los separadores de la planilla, las filas de otra sección)
+    // no entra.
+    if(plan && !f.some(function(x){ return x.propia && x.col[2] !== "calc" && String(x.raw).trim() !== ""; })) continue;
+    // La Cosecha de la planilla: una fila que sólo trae «# Piscina» es otra piscina de la cosecha de ARRIBA (como las une el
+    // importador F3: «, »), no una cosecha nueva (medido en las hojas 553 y 545).
+    if(plan && plan.tanqueDe && plan.tanqueDe.length && f.every(function(x){ return !x.propia || String(x.raw).trim() === "" || x.col[0] === "piscinas"; })){
+      const arriba = filas[filas.length - 1], pis = f.filter(function(x){ return x.col[0] === "piscinas"; })[0];
+      if(arriba && pis){
+        const ya = arriba.filter(function(x){ return x.col[0] === "piscinas"; })[0];
+        if(ya) ya.raw = String(ya.raw).trim() ? String(ya.raw).trim() + ", " + String(pis.raw).trim() : pis.raw;
+        else arriba.push(pis);
+      }
+      continue;
+    }
+    // La Cosecha de la planilla: el tanque de ESTA fila (destino de la transferencia, el sembrado o el de arriba).
+    if(plan && plan.tanqueDe && plan.tanqueDe.length){
+      const src = plan.tanqueDe.filter(function(par){ return String(celdas[par.tq] == null ? "" : celdas[par.tq]).trim() !== ""; })[0];
+      const tq = src ? { mod: src.mod !== -1 ? celdas[src.mod] : "", tq: celdas[src.tq] } : tqAnterior;
+      if(tq){ f.push({ col:colDe("modulo"), raw:tq.mod, def:"", propia:false }); f.push({ col:colDe("tanque"), raw:tq.tq, def:"", propia:false }); tqAnterior = tq; }
+    }
+    filas.push(f);
+  }
+  if(!filas.length){ toast("Nada de lo pegado es de la tabla de " + AUD_TIPO[sec] + ".", "warn", 5000); return; }
   const m = _audActual(), L = m[sec], malas = [];
-  mat.forEach(function(celdas, dr){
+  filas.forEach(function(f, dr){
     const i = i0 + dr;
     while(L.length <= i) L.push(_audFilaVacia(sec));
-    celdas.forEach(function(raw, dc){
-      const col = cols[c0 + dc];
-      if(!col || col[2] === "calc") return;
-      const val = _audPegadoValor(col, raw);
-      if(val === null){ malas.push(col[1] + " «" + String(raw).trim() + "»"); L[i][col[0]] = ""; }
-      else L[i][col[0]] = val;
+    f.forEach(function(x){
+      if(x.col[2] === "calc") return;
+      const raw = (x.def && String(x.raw).trim() === "") ? x.def : x.raw;
+      const val = _audPegadoValor(x.col, raw);
+      if(val === null){ malas.push(x.col[1] + " «" + String(raw).trim() + "»"); L[i][x.col[0]] = ""; }
+      else L[i][x.col[0]] = val;
     });
   });
   // Las partidas de las cosechas tocadas, en orden: la siguiente libre de su tanque.
   if(sec === "cosechas"){
-    for(let i = i0; i < i0 + mat.length; i++) L[i].partida = "";
-    for(let i = i0; i < i0 + mat.length; i++) L[i].partida = audSiguientePartida(L, L[i].modulo, L[i].tanque, i);
+    for(let i = i0; i < i0 + filas.length; i++) L[i].partida = "";
+    for(let i = i0; i < i0 + filas.length; i++) L[i].partida = audSiguientePartida(L, L[i].modulo, L[i].tanque, i);
   }
   _audGuardarBorrador();
   renderAud();
-  toast("📋 Pegado en " + AUD_TIPO[sec] + ": " + mat.length + " fila(s).", "ok", 3500);
+  toast("📋 Pegado en " + AUD_TIPO[sec] + (plan ? " por nombre de columna" : "") + ": " + filas.length + " fila(s).", "ok", 3500);
+  if(ignoradas.length) toast("Columnas que la tabla de " + AUD_TIPO[sec] + " no tiene (ignoradas): " + ignoradas.slice(0, 6).join(" · ") + (ignoradas.length > 6 ? " …" : ""), "info", 7000);
+  if(paroEnTotal) toast("Se paró en el «TOTAL»: lo de debajo (despacho por guías, resumen) no se pega.", "info", 7000);
   if(malas.length) toast(malas.length + " celda(s) no reconocida(s), quedaron vacías: " + malas.slice(0, 3).join(" · ") + (malas.length > 3 ? " …" : ""), "warn", 9000);
 }
 /* 🧹 (usuario, 2026-10-04) · vacía UNA tabla (Siembra, Transferencia o Cosecha): todas sus filas, tras preguntar. La
@@ -20464,7 +20602,7 @@ function renderAud(){
     + '<div class="fc-h"><div class="fc-t">🧾 Auditoría · siembra, transferencia y cosecha de la corrida</div><span class="ssp ssp-mt">'+escapeHtml(AUD_SHEET)+'</span></div>'
     + '<div class="fc-b"><div class="mad-form">'
     + cab
-    + '<div style="font-size:11px;color:#475569;margin-top:8px">📋 Se puede <b>pegar desde Excel</b> en cualquier tabla, en el orden de sus columnas: desde la celda elegida hacia la derecha y abajo (las filas que falten se añaden). Enter y las flechas mueven entre celdas.</div>'
+    + '<div style="font-size:11px;color:#475569;margin-top:8px">📋 Se puede <b>pegar desde Excel</b> en cualquier tabla. Con su <b>fila de títulos</b>, cada columna va a la suya por el nombre (también los de las planillas AUDITORIAS: se puede pegar el bloque entero en cada tabla y cada una toma lo suyo); sin títulos, en el orden de las columnas desde la celda elegida. Las filas que falten se añaden. Enter y las flechas mueven entre celdas.</div>'
     + titulo("🌱 Siembra", "una fila por tanque y siembra; «➕ Añadir» copia la anterior con el tanque siguiente")
     + tabla("siembras", AUD_COLS_FICHA.siembras.map(function(c){ return c[1]; }), filasS)
     + titulo("🔀 Transferencia", "opcional; una fila por origen → destino")
