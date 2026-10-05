@@ -23,6 +23,9 @@
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
    Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM), uno por hora
    del día y guardado; en toda la maqueta, tenue en el agua de los tanques para que se siga leyendo la etapa.
+   Cerco y portón (2026-10-05, usuario, opción G): pilares cada 3 m y concertina sobre el cerramiento, portón corredizo de
+   reja abierto junto a la pluma (corrido por el lado de la calle), y la garita de guardianía adentro, en el borde este de la calle interior (donde la rotula
+   el plano; la calle queda de un carril en ese tramo).
    Otras áreas (2026-10-04, usuario, opción F): cada área con su nombre del plano (globo al pasar o tocar) y su forma:
    cuarto de máquinas con sopladores y chimeneas, generador diésel con tanque y escape, filtros Turbidex y tanques elevados,
    laboratorio y administración con alero de ingreso y aire acondicionado, comedor con portones y chimenea, canal abierto.
@@ -462,6 +465,38 @@ groups.forEach(g => {
 });
 
 cajasInst(salaCols, M_COLUMNA, null, true); cajasInst(salaZoc, M_ZOCALO); cajasInst(salaPuertas, M.lid, null, true); cajasInst(salaMarcos, M.steel, null, true);
+
+/* ---------- Cerco y portón (opción G): pilares, concertina, portón corredizo y garita ---------- */
+{
+  // pilares cada ~3 m, asomando del muro y un poco más altos; en los extremos de cada tramo también
+  const pilares = [];
+  fenceSegs.forEach(([a, b, c, d]) => {
+    const largoX = c - a > d - b, L = largoX ? c - a : d - b, n = Math.max(1, Math.round(L / 3));
+    for (let i = 0; i <= n; i++) { const t = i / n; if (largoX) { const x = a + L * t, zm = (b + d) / 2; pilares.push([x - .2, zm - .2, x + .2, zm + .2, 0, 2.62]); } else { const z = b + L * t, xm = (a + c) / 2; pilares.push([xm - .2, z - .2, xm + .2, z + .2, 0, 2.62]); } }
+  });
+  cajasInst(pilares, M.wall, null, true);
+  // concertina: anillos de alambre inclinados, uno cada 0,32 m sobre el borde del muro, en una malla de instancias
+  const anillo = new THREE.TorusGeometry(.24, .012, 3, 12), aros = [];
+  fenceSegs.forEach(([a, b, c, d]) => {
+    const largoX = c - a > d - b, L = largoX ? c - a : d - b;
+    for (let u = .2; u < L - .2; u += .32) aros.push(largoX ? [a + u, (b + d) / 2, Math.PI / 2] : [(a + c) / 2, b + u, 0]);
+  });
+  const conc = new THREE.InstancedMesh(anillo, std({ color: col('#7c8489'), roughness: .4, metalness: .7 }), aros.length);
+  aros.forEach(([x, z, giro], k) => { const [px, pz] = P(x, z); m4.compose(v.set(px, 2.4 + .26, pz), qt.setFromEuler(eu.set(.35 * Math.sin(k * 1.7), giro, 0)), s.set(1, 1, 1)); conc.setMatrixAt(k, m4); });
+  scene.add(conc);
+  // portón corredizo de reja, ABIERTO: corrido hacia el este, por el lado de la calle (por dentro quedaba oculto tras el
+  // muro del cerco), sobre su riel en la franja de grava
+  const portonX0 = 78.4, ancho = 6.3, zp = 89.42, barras = [];
+  barras.push([portonX0, zp - .04, portonX0 + ancho, zp + .04, .12, .08], [portonX0, zp - .04, portonX0 + ancho, zp + .04, 2.05, .08]);   // largueros
+  for (let x = portonX0; x <= portonX0 + ancho + .01; x += .16) barras.push([x - .015, zp - .015, x + .015, zp + .015, .12, 1.98]);      // barrotes
+  barras.push([portonX0 - .4, zp - .03, portonX0 + ancho + .3, zp + .03, 0, .06]);                                                      // riel
+  cajasInst(barras, M.steel, null, true);
+  // garita de guardianía: adentro, en el borde este de la calle interior, con banda de vidrio, alero y puerta hacia la calle
+  box(75.2, 83.4, 77.6, 86, 0, 2.6, M.paint, true);
+  box(75.17, 83.6, 77.63, 85.8, 1.05, .95, M_VIDRIO, false);
+  box(74.9, 83.1, 77.9, 86.3, 2.6, .14, M.lid, true);
+  box(75.14, 84.2, 75.2, 85.1, 0, 2.1, M.lid, false);
+}
 
 /* ---------- Tanques: muros, agua animada y burbujas de aireación ---------- */
 const rect = tanks.filter(t => t.type === 'rect'), circ = tanks.filter(t => t.type === 'circ');
