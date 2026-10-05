@@ -1426,7 +1426,7 @@ function pintarEstado(E) {
   estadoCargado = !!E;
   mesPasado = (E && E.mes) || null;
   $('.planta .lede').textContent = mesPasado
-    ? mesPasado.mes + ': cada módulo de larvicultura con su corrida de ese mes y cada sala de maduración al ' + dm(mesPasado.cierre) + ', con los datos y las reglas del MCP.'
+    ? mesPasado.mes + ': cada módulo de larvicultura con su corrida de ese mes y cada sala de maduración al ' + dm(mesPasado.cierre) + '.'
     : LEDE_HOY;
   groups.forEach((g) => {
     g.st = !E ? null : g.kind === 'larv' ? E.modulos[g.id] || null : (E.mad && E.mad.salas[g.id]) || null;

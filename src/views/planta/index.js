@@ -41,9 +41,8 @@ const MARCO = `
   </main>
   <aside class="panel" aria-label="Resumen del laboratorio">
     <header>
-      <div class="eyebrow">Plano ARQ-A3 · V4 septiembre</div>
       <h1>Laboratorio Mar Bravo</h1>
-      <p class="lede">El estado de hoy de cada módulo de larvicultura y de cada sala de maduración, con los datos y las reglas del MCP: la Vista Ejecutiva del Supervisor y el tablero de Maduración.</p>
+      <p class="lede">El estado de hoy de cada módulo de larvicultura y de cada sala de maduración.</p>
       <p class="datos" id="estado-datos" role="status">Cargando datos de producción…</p>
       <a class="compartir" href="./?qr=gerencia" target="_blank" rel="noopener">🔗 Compartir acceso de Gerencia (QR)</a>
     </header>
