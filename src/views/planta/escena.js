@@ -67,15 +67,16 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { LARV, LARV_H, MAT, OTHERS, SITE, C0, STREET, tanquesDeSala } from './plano.js';
 import { STAGE_CATS } from '../supervisor/etapas.js';
 import { fmtPop } from '../../core/format.js';
-import { fmtShort } from '../../core/dates.js';
 import { META_POR_DEFECTO, normalizarMeta } from './cifras.js';
+import { leerMeta, guardarMeta } from './meta.js';
+import { fmt, pct, num, ent, dec, dm, millones, ESTADO_TXT, MAD_HEX, colorGrupo, fichaGrupo, fichaTanque as textoFichaTanque, textoFila, cifrasDelPanel,
+  textosProduccion, textoMes, alertasParaAtender, reproductoresPorDias } from './textos.js';
 
 /** Monta la maqueta en `root` (que ya trae el marcado de planta/index.js).
  *  Devuelve { dispose, pintarEstado(estado|null), aviso(texto), alElegirMes(fn(mIdx, esUltimo)) }. */
 export function montarPlanta(root) {
 const $ = s => root.querySelector(s);
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const fmt = (v, d = 2) => v.toLocaleString('es', { minimumFractionDigits: d, maximumFractionDigits: d });
 let seed = 7; const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
 const R = (a, b) => a + rnd() * (b - a);
 
@@ -589,7 +590,6 @@ function colorTanque(t) {
 // Maduración: los colores del modo «Estado» del mapa de salas (operativo.css: Producción --c-bueno, Cuarentena
 // --c-malo, Mixto #7e57c2, Sin estado --c-sin-dato; Vacío sin color).
 const MAD_COLOR = { 'Producción': col('#5cb860'), 'Cuarentena': col('#f2b705'), 'Mixto': col('#8a63c9'), 'Vacío': col('#d9e8ea'), 'Sin estado': col('#b0bec5') };
-const MAD_HEX = { 'Producción': '#5cb860', 'Cuarentena': '#f2b705', 'Mixto': '#8a63c9', 'Vacío': '#d9e8ea', 'Sin estado': '#b0bec5' };
 const conLarvas = (t) => (t.g.kind === 'mat' ? !estadoCargado || (t.st ? t.st.vivos > 0 : !!t.desove) : !t.st || t.st.estado === 'cultivo');
 function paintWater() {
   tanks.forEach(t => {
@@ -934,8 +934,6 @@ groups.forEach(g => {
 });
 const GEO = [['Mar', 90, 165, 1], ['Playa', 90, 117, 1], ['Canal de salida', 90, -18, 1.5], ['Piscina de sal', 90, -115, 2]].map(([txt, x, z, y]) => { const el = document.createElement('span'); el.className = 'geo'; el.textContent = txt; labelsEl.append(el); const [px, pz] = P(x, z); return { el, p: new THREE.Vector3(px, y, pz) }; });
 const NORTH = new THREE.Vector2(-1, -1).normalize(), needle = $('#needle');
-const pct = (v) => (v === null || v === undefined || isNaN(v)) ? '—' : fmt(v, 1) + ' %';
-const num = (v, d, u) => (v === null || v === undefined || isNaN(v)) ? '—' : fmt(v, d) + u;
 /** Texto del rótulo de un módulo: su nombre (corto si la cámara está lejos) y su estado de producción. */
 const compacto = () => W < 600;   // pantalla angosta (celular): de lejos, el rótulo corto
 function textoRotulo(g, far) {
@@ -957,14 +955,7 @@ function textoRotulo(g, far) {
   if (st.estado === 'despachado') return base + ' · C' + st.corrida + ' despachada';
   return base + ' · sin datos';
 }
-const ESTADO_SALA_HEX = (e) => /desinfec/i.test(e || '') ? '#9e9e9e' : /cuarentena/i.test(e || '') ? MAD_HEX['Cuarentena'] : /producci/i.test(e || '') ? MAD_HEX['Producción'] : 'var(--mat)';
-function colorRotulo(g) {
-  const st = g.st;
-  if (g.kind !== 'larv') return st ? ESTADO_SALA_HEX(st.registrado.estado) : 'var(--mat)';
-  if (!st) return 'var(--larv)';
-  if (st.estado === 'cultivo') return st.etapa ? st.etapa.color : 'var(--larv)';
-  return st.estado === 'desinfeccion' ? '#9e9e9e' : '#b9c7cf';
-}
+const colorRotulo = colorGrupo;   // el color de la etapa o del estado de la sala (textos.js)
 const nums = [];
 let prioridadSucia = false;   // el elegido cambia la prioridad de los rótulos
 function select(g, focus) {
@@ -978,113 +969,20 @@ function select(g, focus) {
   fichaModulo(g); paintWater();
   if (focus) { const [x, z] = P(g.cx, g.cz); frameView('iso', [x, 0, z], Math.max(g.box[2] - g.box[0], g.box[3] - g.box[1]) * 1.25 + 8); }
 }
-function llenarFicha(kind, name, rows) {
+function llenarFicha({ kind, name, rows }) {
   $('#card-kind').textContent = kind; $('#card-name').textContent = name;
   const dl = $('#card-dl'); dl.textContent = '';
   rows.forEach(([k, val]) => { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = k; dd.textContent = val; dl.append(dt, dd); });
   $('#card').hidden = false;
 }
 let tanqueFicha = null;
-/** La siembra de la corrida: fecha promedio (la de la tabla Producción Omarsa), tanques sembrados y nauplios. */
-function txtSiembra(sb) {
-  if (!sb || !sb.fecha) return '—';
-  return fmtShort(sb.fecha) + ' · ' + sb.tanques + (sb.tanques === 1 ? ' tanque' : ' tanques') + (sb.nauplios ? ' · ' + fmt(sb.nauplios / 1e6, 1) + ' M nauplios' : '');
-}
-/** Resumen de la ficha de estado del módulo (las cifras de su tarjeta en la Vista Ejecutiva). */
-function fichaModulo(g) {
-  tanqueFicha = null;
-  if (g.kind !== 'larv') { fichaSala(g); return; }
-  const st = g.st, kind = 'Módulo de larvicultura';
-  if (!estadoCargado) { llenarFicha(kind, g.name, [['Estado', 'Cargando datos de producción…']]); return; }
-  if (!st || st.estado === 'sin-datos') { llenarFicha(kind, g.name, [['Estado', 'Sin datos de producción']]); return; }
-  if (st.estado === 'desinfeccion') {
-    llenarFicha(kind, g.name, [['Estado', 'Desinfección · pre-siembra'], ['Corrida', 'C' + st.corrida + ' en preparación'], ['Registros', String(st.registros)], ['Último registro', st.ultimo ? fmtShort(st.ultimo) : '—']]);
-    return;
-  }
-  if (st.estado === 'despachado') {
-    const r = st.resultado || {};
-    llenarFicha(kind, g.name, [['Estado', mesPasado ? 'Corrida despachada' : 'Vacío · corrida despachada'], ['Corrida', 'C' + st.corrida + ' despachada por completo'], ['Siembra', txtSiembra(st.siembra)],
-      ['Población final', fmtPop(r.poblacion)], ['Supervivencia', pct(r.superv)], ['PL/g (manual)', num(r.plg, 1, '')], ['Último dato', st.ultimo ? fmtShort(st.ultimo) : '—']]);
-    return;
-  }
-  const c = st.cuenta, partes = [c.cultivo + ' en cultivo', c.vacio && c.vacio + ' vacíos', c.despachado && c.despachado + ' despachados', c.fuera && c.fuera + ' agrupados o descartados'].filter(Boolean);
-  llenarFicha(kind, g.name, [
-    ['Corrida', 'C' + st.corrida + (st.despachando ? ' · despachando' : '')],
-    ['Siembra', txtSiembra(st.siembra)],
-    ['Estadío', st.estadio + ' · día ' + st.dias + (st.etapa ? ' · ' + st.etapa.label : '')],
-    ['Supervivencia', pct(st.sv)], ['Mortalidad', pct(st.mort)], ['Población', fmtPop(st.pop)],
-    ['PL/g (manual)', num(st.plg, 1, '')], ['OD', num(st.od, 2, ' mg/L')], ['Temperatura', num(st.tmp, 1, ' °C')],
-    ['Tanques', partes.join(' · ')],
-    ['Alertas', c.alerta ? c.alerta + ' tanque' + (c.alerta !== 1 ? 's' : '') + (st.motivos.length ? ' · módulo: ' + st.motivos.join(', ') : '') : (st.motivos.length ? 'Módulo: ' + st.motivos.join(', ') : 'Ninguna')],
-    ['Técnicos', st.tecnicos && st.tecnicos.length ? st.tecnicos.join(', ') : '—'],
-    ['Lote', st.lotes && st.lotes.length ? st.lotes.join(' · ') : '—'],
-    ['Actualizado', st.fresco ? st.fresco.label : '—'],
-  ]);
-}
-const ent = (v) => (v === '' || v === null || v === undefined || isNaN(v)) ? '—' : Math.round(Number(v)).toLocaleString('es-EC');
-const dec = (v, d) => (v === '' || v === null || v === undefined || isNaN(v)) ? '—' : fmt(Number(v), d);
-const SEM = { ok: 'en rango', bajo: 'bajo el rango', alto: 'sobre el rango' };
-const dm = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(iso || '') ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '—');
-/** Ficha de la sala: su estado registrado y el que calcula el libro, ocupación, reproductores y su semana. */
-function fichaSala(g) {
-  const st = g.st, kind = 'Sala de maduración';
-  if (!estadoCargado) { llenarFicha(kind, g.name, [['Estado', 'Cargando datos de producción…']]); return; }
-  if (!st) { llenarFicha(kind, g.name, [['Estado', 'Sin datos de maduración']]); return; }
-  const lec = (l, u) => l ? l.fuera + ' de ' + l.lecturas + ' lecturas fuera' + (u && u.referencia ? ' (' + u.referencia + ')' : '') : 'En rango';
-  const rows = [
-    ['Estado', (st.registrado.estado || '—') + (st.registrado.fecha ? ' · anotado el ' + dm(st.registrado.fecha) : '')],
-    ['Calculado', (st.propuesto.estado || '—') + (st.coinciden === false ? ' · difiere de lo anotado' : '')],
-    ['Ocupación', st.ocupados + ' de ' + st.total + ' tanques' + (st.fueraDeCatalogo ? ' · ' + st.fueraDeCatalogo + ' fuera del catálogo' : '')],
-    ['Reproductores', ent(st.hembras) + ' ♀ · ' + ent(st.machos) + ' ♂'],
-    ['Lotes', st.lotes.length ? st.lotes.join(' · ') : '—'],
-    ['Últimos 7 días', ent(st.periodo.bajas) + ' bajas · ' + ent(st.periodo.descartes) + ' descartes · ' + ent(st.periodo.copulas) + ' cópulas'],
-    ['Temperatura', lec(st.lecturas.temperatura, st.lecturas.umbralT)],
-    ['Oxígeno', lec(st.lecturas.oxigeno, st.lecturas.umbralO)],
-    ['Tanques en alerta', st.alertaTanques ? st.alertaTanques + ' (H:M o densidad fuera de rango)' : 'Ninguno'],
-  ];
-  if (st.reemplazo) rows.push(['Reemplazo', st.reemplazo.map((r) => '⏳ ' + r.lote + ' · ' + r.dias + ' d en producción').join(' | ') + ' (más de 60)']);
-  if (g.desove.length) rows.push(['Desove', g.desove.length + ' tanques · sin registro por tanque en el MCP']);
-  llenarFicha(kind, g.name, rows);
-}
-/** Ficha de un tanque de maduración (al tocarlo con su sala ya elegida): el lienzo del mapa de salas. */
-function fichaTanqueMad(t) {
-  tanqueFicha = t;
-  const name = t.g.name + ' · ' + (t.desove ? 'desove ' : 'tanque ') + t.num, kind = 'Tanque de maduración';
-  if (t.desove) { llenarFicha(kind, name, [['Estado', 'Tanque de desove'], ['Datos', 'El MCP no lleva registro por tanque de desove']]); return; }
-  const st = t.st;
-  if (!st) { llenarFicha(kind, name, [['Estado', estadoCargado ? 'Sin datos' : 'Cargando datos de producción…']]); return; }
-  if (!st.vivos) { llenarFicha(kind, name, [['Estado', 'Vacío'], ['Último parte', dm(st.ultimoParte)]]); return; }
-  const p = st.periodo;
-  llenarFicha(kind, name, [
-    ['Estado', st.estado],
-    ['Lotes', st.lotes.map((l) => l.lote + (l.estado ? ' · ' + l.estado : '') + (l.dias !== '' ? ' ' + l.dias + ' d' : '') + (l.codigos.length ? ' · ' + l.codigos.join('/') : '')).join(' | ')],
-    ['Reproductores', ent(st.hembras) + ' ♀ · ' + ent(st.machos) + ' ♂ · ' + ent(st.vivos) + ' en total'],
-    ['H:M', dec(st.hm, 2) + (SEM[st.hmEstado] ? ' · ' + SEM[st.hmEstado] : '')],
-    ['Densidad', dec(st.densidad, 1) + ' animales/m²' + (SEM[st.densidadEstado] ? ' · ' + SEM[st.densidadEstado] : '')],
-    ['Últimos 7 días', ent(p.bajas) + ' bajas · ' + ent(p.descartes) + ' descartes · ' + ent(p.copulas) + ' cópulas' + (p.pctCopulas !== '' && p.pctCopulas !== undefined ? ' (' + dec(p.pctCopulas, 1) + ' %)' : '')],
-    ['Partes', ent(p.diasConParte) + ' de 7 días · último ' + dm(st.ultimoParte)],
-    ['Alerta', st.alerta ? '⚠ ' + st.motivos.join(' y ') + ' fuera de rango' : 'Ninguna'],
-  ]);
-}
-const ESTADO_TXT = { vacio: 'Vacío', despachado: 'Despachado', agrupado: 'Agrupado', descartado: 'Descartado', desinfeccion: 'Desinfección (pre-siembra)' };
-/** Ficha de un tanque de larvicultura (al tocarlo con su módulo ya elegido). */
-function fichaTanque(t) {
-  tanqueFicha = t;
-  const st = t.st, name = t.g.name + ' · tanque ' + t.num;
-  if (!st) { llenarFicha('Tanque de larvicultura', name, [['Estado', estadoCargado ? 'Sin datos' : 'Cargando datos de producción…']]); return; }
-  if (st.estado !== 'cultivo') {
-    const rows = [['Estado', ESTADO_TXT[st.estado] || st.estado]];
-    if (st.nombre) rows.push(['En el registro', st.nombre], ['Estadío', st.estadio || '—'], ['Población', fmtPop(st.pop)]);
-    llenarFicha('Tanque de larvicultura', name, rows); return;
-  }
-  llenarFicha('Tanque de larvicultura', name, [
-    ['Estado', 'En cultivo' + (st.etapa ? ' · ' + st.etapa.label : '')], ['En el registro', st.nombre],
-    ['Estadío', st.estadio], ['Supervivencia', pct(st.sv)], ['Población', fmtPop(st.pop)],
-    ['OD', num(st.od, 2, ' mg/L')], ['Temperatura', num(st.tmp, 1, ' °C')],
-    ['Alerta', st.alerta ? '⚠ ' + st.motivos.join(', ') + ' fuera de rango' : 'Ninguna'],
-    ['Lote', st.lotes && st.lotes.length ? st.lotes.join(' · ') : '—'],
-  ]);
-}
+// lo que los textos necesitan saber de la escena (textos.js, compartido con 📊 Análisis)
+const ctxTextos = () => ({ cargado: estadoCargado, mesPasado });
+/** Ficha del módulo (las cifras de su tarjeta en la Vista Ejecutiva) o de la sala. */
+function fichaModulo(g) { tanqueFicha = null; llenarFicha(fichaGrupo(g, ctxTextos())); }
+/** Ficha de un tanque (al tocarlo con su módulo o sala ya elegido). */
+function fichaTanque(t) { tanqueFicha = t; llenarFicha(textoFichaTanque(t, ctxTextos())); }
+function fichaTanqueMad(t) { fichaTanque(t); }
 $('#card-close').addEventListener('click', () => select(null));
 $('#v-iso').addEventListener('click', () => frameView('iso'));
 $('#v-top').addEventListener('click', () => frameView('top'));
@@ -1165,67 +1063,51 @@ const larvG = groups.filter(g => g.kind === 'larv'), matG = groups.filter(g => g
 const tile = (color) => { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = '<b>—</b><span><i></i><em></em></span><small></small>'; d.querySelector('i').style.background = color; $('#stats').append(d); return d; };
 const tileCultivo = tile('var(--larv)'), tileAlerta = tile('#e53935'), tileRepro = tile('var(--mat)'), tileAlertaMad = tile('#e53935');
 function pintarCifras(E) {
-  const r = E && E.resumen;
-  tileCultivo.querySelector('b').textContent = r ? r.cultivo : '—';
-  tileCultivo.querySelector('em').textContent = 'tanques en cultivo';
-  tileCultivo.querySelector('small').textContent = r ? 'de ' + r.total + ' · ' + Math.round(r.cultivo / r.total * 100) + ' % de ocupación · ' + r.vacio + ' vacíos · ' + r.despachado + ' despachados' + (r.desinfeccion ? ' · ' + r.desinfeccion + ' en desinfección' : '') : 'Cargando datos…';
-  tileAlerta.querySelector('b').textContent = r ? r.alerta : '—';
-  tileAlerta.querySelector('em').textContent = 'tanques en alerta';
-  tileAlerta.querySelector('small').textContent = 'larvicultura · OD, temperatura o supervivencia fuera de rango';
-  const rm = E && E.mad && E.mad.resumen;
-  tileRepro.querySelector('b').textContent = rm ? ent(rm.hembras + rm.machos) : '—';
-  tileRepro.querySelector('em').textContent = 'reproductores';
-  tileRepro.querySelector('small').textContent = rm ? ent(rm.hembras) + ' ♀ · ' + ent(rm.machos) + ' ♂ · ' + rm.ocupados + ' de ' + rm.tanques + ' tanques (' + Math.round(rm.ocupados / rm.tanques * 100) + ' % de ocupación)' : (E ? 'Sin datos de maduración' : 'Cargando datos…');
-  tileAlertaMad.querySelector('b').textContent = rm ? rm.alertaTanques + rm.alertaSalas : '—';
-  tileAlertaMad.querySelector('em').textContent = 'alertas de maduración';
-  tileAlertaMad.querySelector('small').textContent = rm ? rm.alertaTanques + ' tanques (H:M o densidad) · ' + rm.alertaSalas + ' salas (temperatura u oxígeno, 7 días)' : 'H:M, densidad, temperatura u oxígeno';
+  cifrasDelPanel(E).forEach((c, i) => {
+    const d = [tileCultivo, tileAlerta, tileRepro, tileAlertaMad][i];
+    d.querySelector('b').textContent = c.valor; d.querySelector('em').textContent = c.titulo; d.querySelector('small').textContent = c.detalle;
+  });
 }
 pintarCifras(null);
 
 /* ---------- Producción del mes frente a la meta (tanda 4) ---------- */
 // La meta vive en ESTE equipo (decisión del usuario, como ⚙️ Rangos de Microbiología): sin ella, la de por defecto.
-const META_KEY = 'planta_meta_mes';
-const leerMeta = () => { try { return normalizarMeta(localStorage.getItem(META_KEY)); } catch (_) { return META_POR_DEFECTO; } };
-const guardarMeta = (v) => { try { if (v === META_POR_DEFECTO) localStorage.removeItem(META_KEY); else localStorage.setItem(META_KEY, String(v)); } catch (_) { /* sin almacenamiento: sólo en esta sesión */ } };
 let meta = leerMeta(), ultimasCifras = null;
 let alertasTotal = null;   // lo que cuenta «Qué atender hoy» (o «Alertas al cierre»): lo repite el resumen de pantalla completa (punto 3)
-// es-EC como fmtPop: agrupa los miles también en cuatro cifras («1.006,0 M»; 'es' daba «1006,0 M»)
-const millones = (v, d = 1) => (v / 1e6).toLocaleString('es-EC', { minimumFractionDigits: d, maximumFractionDigits: d }) + ' M';
 function pintarProduccion(C) {
   ultimasCifras = C; pintarResumenFS();
-  $('#prod-meta').textContent = 'de ' + millones(meta, meta % 1e6 ? 1 : 0);
+  const T = textosProduccion(C, meta, ctxTextos());
+  $('#prod-meta').textContent = T.metaTxt;
   pintarSelectorMes(C);
-  if (!C) {
+  if (T.vacia) {
     ['#prod-total', '#prod-sv', '#prod-n5', '#prod-des', '#prod-desp', '#prod-cult'].forEach((q) => { $(q).textContent = '—'; });
-    $('#prod-pct').textContent = ''; $('#prod-nota').textContent = estadoCargado ? 'Sin corridas con mes de producción' : 'Cargando datos…';
+    $('#prod-pct').textContent = ''; $('#prod-nota').textContent = T.nota;
     $('#prod-bar-d').style.width = $('#prod-bar-c').style.width = '0%'; $('#prod-goal').style.left = '100%';
     return;
   }
-  const pct = C.total / meta * 100, escala = Math.max(C.total, meta);
-  $('#prod-total').textContent = millones(C.total);
-  $('#prod-pct').textContent = fmt(pct, 0) + ' % de la meta';
-  $('#prod-pct').classList.toggle('ok', pct >= 100);
-  $('#prod-bar-d').style.width = (C.despachado / escala * 100) + '%';
-  $('#prod-bar-c').style.width = (C.enCultivo / escala * 100) + '%';
-  $('#prod-goal').style.left = (meta / escala * 100) + '%';
-  $('#prod-bar').setAttribute('aria-label', millones(C.total) + ' de ' + millones(meta) + ': ' + millones(C.despachado) + ' despachados y ' + millones(C.enCultivo) + ' en cultivo');
-  $('#prod-desp').textContent = 'despachado ' + millones(C.despachado) + ' · ' + C.modulosDespachados + ' de ' + C.modulos + ' módulos';
-  $('#prod-cult').textContent = 'en cultivo ' + millones(C.enCultivo);
-  $('#prod-sv').textContent = C.supervivencia === null ? '—' : fmt(C.supervivencia, 1) + ' %';
-  $('#prod-n5').textContent = millones(C.nauplios.n5);
-  $('#prod-n5-sub').textContent = 'nauplios N5' + (C.nauplios.desde ? ' · ' + dm(C.nauplios.desde) + ' al ' + dm(C.nauplios.hasta) : '');
-  $('#prod-des').textContent = ent(C.nauplios.desoves);
-  $('#prod-nota').textContent = C.enCultivo > 0 ? 'Lo que sigue en cultivo aún puede bajar con la supervivencia.' : '';
+  $('#prod-total').textContent = T.total;
+  $('#prod-pct').textContent = T.pct;
+  $('#prod-pct').classList.toggle('ok', T.ok);
+  $('#prod-bar-d').style.width = T.anchoDesp;
+  $('#prod-bar-c').style.width = T.anchoCult;
+  $('#prod-goal').style.left = T.meta;
+  $('#prod-bar').setAttribute('aria-label', T.aria);
+  $('#prod-desp').textContent = T.desp;
+  $('#prod-cult').textContent = T.cult;
+  $('#prod-sv').textContent = T.sv;
+  $('#prod-n5').textContent = T.n5;
+  $('#prod-n5-sub').textContent = T.n5sub;
+  $('#prod-des').textContent = T.des;
+  $('#prod-nota').textContent = T.nota;
 }
 /* El selector de mes: ◀ ▶ y el deslizador por los meses con datos (como la tabla Producción Omarsa). El deslizador
    sólo cambia el rótulo mientras se arrastra y elige al soltar (`change`), igual que el de la tabla. */
 let alMes = null;
 function pintarSelectorMes(C) {
-  const prev = $('#mes-prev'), next = $('#mes-next'), sl = $('#mes-slider');
-  if (!C) { $('#prod-mes').textContent = '—'; $('#prod-cor').textContent = ''; prev.disabled = next.disabled = true; sl.hidden = true; return; }
-  const cs = C.corridas, n = C.meses.length;
-  $('#prod-mes').textContent = C.mes;
-  $('#prod-cor').textContent = cs.length ? 'corridas ' + cs[0] + (cs.length > 1 ? '–' + cs[cs.length - 1] : '') : '';
+  const prev = $('#mes-prev'), next = $('#mes-next'), sl = $('#mes-slider'), M = textoMes(C);
+  $('#prod-mes').textContent = M.mes; $('#prod-cor').textContent = M.corridas;
+  if (!C) { prev.disabled = next.disabled = true; sl.hidden = true; return; }
+  const n = C.meses.length;
   prev.disabled = C.pos <= 0; next.disabled = C.pos >= n - 1;
   sl.hidden = n < 2; sl.max = String(n - 1); sl.value = String(C.pos);
 }
@@ -1266,22 +1148,8 @@ function fillList(el, list) {
   });
 }
 function pintarFila(g) {
-  const st = g.st;
   g.listTag.style.background = colorRotulo(g) === '#b9c7cf' ? '#8fa3ad' : colorRotulo(g);
-  if (g.kind !== 'larv') {
-    if (!estadoCargado) { g.listSub.textContent = 'Cargando…'; g.listCt.textContent = ''; return; }
-    if (!st) { g.listSub.textContent = 'Sin datos'; g.listCt.textContent = ''; return; }
-    const n = st.alertaTanques + (st.alerta ? 1 : 0);
-    g.listSub.textContent = (st.registrado.estado || 'Sin estado') + ' · ' + ent(st.hembras) + ' ♀ · ' + ent(st.machos) + ' ♂';
-    g.listCt.textContent = n ? '⚠ ' + n : st.ocupados + '/' + st.total;
-    return;
-  }
-  if (!estadoCargado) { g.listSub.textContent = 'Cargando…'; g.listCt.textContent = ''; return; }
-  if (!st || st.estado === 'sin-datos') { g.listSub.textContent = 'Sin datos'; g.listCt.textContent = ''; return; }
-  if (st.estado === 'desinfeccion') { g.listSub.textContent = 'Desinfección · C' + st.corrida; g.listCt.textContent = ''; return; }
-  if (st.estado === 'despachado') { g.listSub.textContent = (mesPasado ? '' : 'Vacío · ') + 'C' + st.corrida + ' despachada' + (mesPasado && st.resultado && st.resultado.superv !== null ? ' · ' + pct(st.resultado.superv) : ''); g.listCt.textContent = ''; return; }
-  g.listSub.textContent = 'C' + st.corrida + ' · ' + st.estadio + ' · día ' + st.dias + (st.despachando ? ' · despachando' : '');
-  g.listCt.textContent = st.cuenta.alerta ? '⚠ ' + st.cuenta.alerta : st.cuenta.cultivo + '/' + g.tanks.length;
+  const f = textoFila(g, ctxTextos()); g.listSub.textContent = f.sub; g.listCt.textContent = f.ct;
 }
 fillList($('#list-larv'), larvG); fillList($('#list-mat'), matG);
 $('#t-roof').addEventListener('change', e => { roofs.visible = e.target.checked; renderer.shadowMap.needsUpdate = true; });
@@ -1456,8 +1324,6 @@ function pintarEstado(E) {
   if (selected) { if (tanqueFicha && tanqueFicha.g === selected) (selected.kind === 'larv' ? fichaTanque : fichaTanqueMad)(tanqueFicha); else fichaModulo(selected); }
 }
 /* ---------- Qué atender hoy: las mismas alertas que las balizas y las cifras, en una lista ---------- */
-const MOTIVO_TXT = { 'Superv.': 'supervivencia', OD: 'OD', Temp: 'temperatura', 'H:M': 'H:M', Densidad: 'densidad', Temperatura: 'temperatura', 'Oxígeno': 'oxígeno' };
-const motivosTxt = (ms) => ms.map((m) => MOTIVO_TXT[m] || m).join(' y ');
 /** Lleva la cámara a un tanque y abre su ficha. Si el panel está debajo de la maqueta (celular), salta a ella: al
  *  instante y no en suave, que no se puede comprobar en todos los navegadores; la cámara ya se anima hasta el tanque. */
 function irATanque(t) {
@@ -1475,78 +1341,52 @@ function pintarAtender() {
   const ul = $('#atender'), h = $('#atender-h');
   ul.textContent = '';
   const nota = (txt) => { const li = document.createElement('li'); li.className = 'at-vacio'; li.textContent = txt; ul.append(li); };
-  const titulo = mesPasado ? 'Alertas al cierre de ' + mesPasado.mes : 'Qué atender hoy';
-  $('.planta .atender').setAttribute('aria-label', titulo);
-  if (!estadoCargado) { h.textContent = titulo; nota('Cargando datos…'); return; }
-  let total = 0;
-  groups.forEach((g) => {
-    const enAlerta = g.tanks.filter((t) => t.st && t.st.alerta);
-    const sala = g.kind === 'mat' && g.st && g.st.alerta ? g.st.motivos : [];
-    if (!enAlerta.length && !sala.length) return;
-    total += enAlerta.length + (sala.length ? 1 : 0);
-    // si todos sus tanques tienen el mismo motivo, va en el renglón; si no, junto a cada número
-    const firmas = new Set(enAlerta.map((t) => t.st.motivos.join('|')));
-    const comun = firmas.size === 1 ? enAlerta[0].st.motivos : null;
-    const partes = [];
-    if (sala.length) partes.push(motivosTxt(sala) + ' de la sala');
-    if (enAlerta.length) partes.push(enAlerta.length + (enAlerta.length === 1 ? ' tanque' : ' tanques') + (comun ? ' · ' + motivosTxt(comun) : ''));
+  const A = alertasParaAtender(groups, reemplazoActual, ctxTextos());
+  $('.planta .atender').setAttribute('aria-label', A.titulo);
+  if (A.total === null) { h.textContent = A.titulo; nota(A.vacio); return; }
+  A.items.forEach((it) => {
     const li = document.createElement('li'); li.className = 'at';
     const gb = document.createElement('button'); gb.type = 'button'; gb.className = 'at-g';
-    const dot = document.createElement('i'); dot.style.background = colorRotulo(g);
-    const nm = document.createElement('b'); nm.textContent = g.name;
-    const sm = document.createElement('span'); sm.textContent = partes.join(' · ');
-    gb.append(dot, nm, sm); gb.addEventListener('click', () => irAGrupo(g)); li.append(gb);
-    if (enAlerta.length) {
+    const dot = document.createElement('i');
+    if (it.tipo === 'lote') { dot.className = 'reloj'; dot.textContent = '⏳'; } else dot.style.background = it.color;
+    const nm = document.createElement('b'); nm.textContent = it.nombre;
+    const sm = document.createElement('span'); sm.textContent = it.detalle;
+    gb.append(dot, nm, sm); if (it.g) gb.addEventListener('click', () => irAGrupo(it.g)); li.append(gb);
+    if (it.tanques && it.tanques.length) {
       const fila = document.createElement('div'); fila.className = 'at-t';
-      enAlerta.sort((a, b) => a.num - b.num).forEach((t) => {
+      it.tanques.forEach(({ t, texto, aria }) => {
         const b = document.createElement('button'); b.type = 'button';
-        b.textContent = String(t.num) + (comun ? '' : ' · ' + motivosTxt(t.st.motivos));
-        b.setAttribute('aria-label', g.name + ', tanque ' + t.num + ': ' + motivosTxt(t.st.motivos) + ' fuera de rango');
+        b.textContent = texto; b.setAttribute('aria-label', aria);
         b.addEventListener('click', () => irATanque(t)); fila.append(b);
       });
       li.append(fila);
     }
     ul.append(li);
   });
-  // lotes que pasan de 60 días en producción (⏳ Permanencia): tocar el renglón abre su primera sala
-  const salasTxt = (ss) => (ss.length > 1 ? 'Salas ' : 'Sala ') + ss.map((x) => x.sala.replace('Sala ', '')).join(', ').replace(/, ([^,]+)$/, ' y $1');
-  ((reemplazoActual && reemplazoActual.vencidos) || []).forEach((v) => {
-    total++;
-    const li = document.createElement('li'); li.className = 'at';
-    const gb = document.createElement('button'); gb.type = 'button'; gb.className = 'at-g';
-    const dot = document.createElement('i'); dot.className = 'reloj'; dot.textContent = '⏳';
-    const nm = document.createElement('b'); nm.textContent = 'Lote ' + v.lote;
-    const sm = document.createElement('span'); sm.textContent = v.dias + ' d en producción · ' + salasTxt(v.salas);
-    gb.append(dot, nm, sm);
-    const g = groups.find((x) => x.id === (v.salas[0] || {}).id);
-    if (g) gb.addEventListener('click', () => irAGrupo(g));
-    li.append(gb); ul.append(li);
-  });
-  h.textContent = total ? '⚠ ' + titulo + ' · ' + total : titulo;
-  alertasTotal = total; pintarResumenFS();
-  if (!total) nota(mesPasado ? 'Sin alertas al cierre de ' + mesPasado.mes : 'Sin alertas hoy');
+  h.textContent = A.total ? '⚠ ' + A.titulo + ' · ' + A.total : A.titulo;
+  alertasTotal = A.total; pintarResumenFS();
+  if (!A.total) nota(A.vacio);
 }
 /* ---------- Reproductores: días en producción frente al límite (60, el del tablero de Maduración) ---------- */
 let reemplazoActual = null;
 function pintarReemplazo(R) {
   reemplazoActual = R;
-  $('#repro-h').textContent = 'Reproductores · días en producción' + (mesPasado ? ' al ' + dm(mesPasado.cierre) : '');
+  const P = reproductoresPorDias(R, ctxTextos());
+  $('#repro-h').textContent = P.titulo;
   const ul = $('#repro'); ul.textContent = '';
   const nota = (txt) => { const li = document.createElement('li'); li.className = 'at-vacio'; li.textContent = txt; ul.append(li); };
-  if (!estadoCargado) { nota('Cargando datos…'); return; }
-  if (!R || !R.lotes.length) { nota(R ? 'Ningún lote en producción' : 'Sin datos de maduración'); return; }
-  R.lotes.forEach((L) => {
-    const pasa = L.dias > R.limite;
-    const li = document.createElement('li'); li.className = 'rp' + (pasa ? ' pasa' : '');
-    const nm = document.createElement('b'); nm.textContent = (pasa ? '⏳ ' : '') + L.lote;
-    const ss = document.createElement('span'); ss.textContent = (L.salas.length > 1 ? 'Salas ' : 'Sala ') + L.salas.map((x) => x.sala.replace('Sala ', '')).join(', ').replace(/, ([^,]+)$/, ' y $1');
-    const d = document.createElement('em'); d.textContent = L.dias + ' d';
+  if (P.vacio) { nota(P.vacio); return; }
+  P.lotes.forEach((L) => {
+    const li = document.createElement('li'); li.className = 'rp' + (L.pasa ? ' pasa' : '');
+    const nm = document.createElement('b'); nm.textContent = L.nombre;
+    const ss = document.createElement('span'); ss.textContent = L.salas;
+    const d = document.createElement('em'); d.textContent = L.dias;
     const bar = document.createElement('div'); bar.className = 'rp-bar'; bar.setAttribute('aria-hidden', 'true');
-    const fill = document.createElement('i'); fill.style.width = Math.min(100, L.dias / R.limite * 100) + '%'; bar.append(fill);
-    li.title = L.lote + ': ' + L.dias + ' días en producción (reemplazo al pasar de ' + R.limite + ')';
+    const fill = document.createElement('i'); fill.style.width = L.ancho; bar.append(fill);
+    li.title = L.title;
     li.append(nm, ss, d, bar); ul.append(li);
   });
-  const lim = document.createElement('li'); lim.className = 'rp-nota'; lim.textContent = 'Reemplazo al pasar de ' + R.limite + ' días en producción, la regla del tablero de Maduración.'; ul.append(lim);
+  const lim = document.createElement('li'); lim.className = 'rp-nota'; lim.textContent = P.nota; ul.append(lim);
 }
 pintarReemplazo(null);
 pintarAtender();
