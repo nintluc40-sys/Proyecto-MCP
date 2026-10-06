@@ -81,8 +81,10 @@ const filaDe = (cabeceras) => Object.fromEntries(cabeceras.map((c) => [c, '']));
 
 /* 2026-09-30 (plan 0v · 5) · este bloque se titulaba «las hojas de Maduración que aún no existen», y ya no era cierto:
    medido sobre la foto del 09-29, existen 5 de las 7 —Ingreso, Movimientos, Tratamientos, Mortalidad Desove y
-   Alimentación—, todas con su cabecera viva IGUAL a la declarada; Fin de Ciclo y Broodstock, aún no. Lo que las reúne
-   aquí no es que falten, sino que su cabecera la DECLARA un módulo (ver la cabecera del archivo). */
+   Alimentación—, todas con su cabecera viva IGUAL a la declarada; Fin de Ciclo y Broodstock, aún no.
+   Re-medido el 2026-10-05: existen 6 de las 7 —Broodstock ya tiene filas—, y todas con la declarada salvo Ingreso,
+   que aún no tiene su «Guía de ingreso» (nace detrás del ID con el primer envío); Fin de Ciclo, aún no. Lo que las
+   reúne aquí no es que falten, sino que su cabecera la DECLARA un módulo (ver la cabecera del archivo). */
 describe('detectSheetName · las hojas de Maduración cuya cabecera declara el código', () => {
   it('el fixture viene de los módulos y no está vacío', () => {
     expect(DECLARADAS).toHaveLength(7);
