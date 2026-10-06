@@ -19,6 +19,9 @@
    lleva la cámara a él y abre su ficha.
    Ahorro de batería (2026-10-04, usuario): tras 5 s sin tocarla la maqueta sigue animada a ~15 cuadros por segundo
    y vuelve a ~60 al tocarla o al moverse la cámara; fuera de pantalla no se dibuja.
+   Sombras más baratas (2026-10-05, usuario, velocidad · 1): mapa de 2048 con borde normal (no suave), recalculado sólo
+   cuando cambia algo que las proyecta; personas, técnicos y autos sin sombra. Medido: las sombras eran el mayor coste
+   de la tarjeta gráfica (sin ellas, el giro pasaba de ~21 a ~38 cuadros por segundo).
    Selector de mes (2026-10-04, usuario): ◀ ▶ y un deslizador como la tabla Producción Omarsa, que mueven TODA la vista:
    en un mes pasado, la maqueta con las corridas de ese mes y maduración a su cierre, y las alertas «al cierre de <mes>».
    Reflejos del cielo (2026-10-04, usuario, opción A): un mapa de entorno generado del propio cielo (PMREM), uno por hora
@@ -100,7 +103,9 @@ const DPR_MAX = Math.min(devicePixelRatio || 1, 2), DPR_MIN = Math.min(DPR_MAX, 
 renderer.setPixelRatio(DPR_MAX);
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
-renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true;
+// sombras: se recalculan sólo cuando cambia algo que las proyecta (hora del día, techo del módulo elegido, capas, datos);
+// lo que se mueve (personas, técnicos, autos) no proyecta sombra
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(35, 1, .5, 4000);
 const controls = new OrbitControls(camera, canvas);
@@ -108,7 +113,7 @@ controls.enableDamping = true; controls.dampingFactor = .08; controls.maxPolarAn
 const col = hx => new THREE.Color(hx).convertSRGBToLinear();
 const hemi = new THREE.HemisphereLight(0xeaf2f4, 0x9a917e, .75); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff3e2, 1.25); sun.castShadow = true;
-Object.assign(sun.shadow.camera, { left: -112, right: 112, top: 78, bottom: -78, near: 10, far: 500 }); sun.shadow.mapSize.set(4096, 4096); sun.shadow.bias = -.0004; sun.shadow.normalBias = .03;
+Object.assign(sun.shadow.camera, { left: -112, right: 112, top: 78, bottom: -78, near: 10, far: 500 }); sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -.0004; sun.shadow.normalBias = .03;
 scene.add(sun, sun.target);
 const P = (x, z) => [x - C0[0], z - C0[1]];
 
@@ -790,7 +795,7 @@ for (let i = 0; i < 30; i++) { const p = PATHS[i % PATHS.length]; people.push({ 
 const bodyI = new THREE.InstancedMesh(new THREE.CylinderGeometry(.2, .24, 1.05, 8), std({ roughness: .8 }), people.length);
 const headPI = new THREE.InstancedMesh(new THREE.SphereGeometry(.15, 10, 8), std({ roughness: .8 }), people.length);
 const legI = new THREE.InstancedMesh(new THREE.CylinderGeometry(.16, .14, .7, 6), std({ color: col('#2b3440'), roughness: .9 }), people.length);
-bodyI.castShadow = headPI.castShadow = legI.castShadow = true;
+// sin sombra, como los autos y los técnicos: se mueven, y las sombras ya no se recalculan en cada cuadro
 people.forEach((p, i) => { bodyI.setColorAt(i, col(p.shirt)); headPI.setColorAt(i, col(['#c99a73', '#a8764f', '#e0b896', '#8a5d3e'][i % 4])); });
 life.add(bodyI, headPI, legI);
 // carros: carrocería, cabina y ruedas
@@ -802,7 +807,6 @@ for (let i = 0; i < 4; i++) cars.push({ parked: false, lane: i % 2, x: R(-50, 23
 const carBody = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), std({ roughness: .35, metalness: .5 }), cars.length);
 const carCab = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), std({ color: col('#24303a'), roughness: .1, metalness: .6 }), cars.length);
 const wheelI = new THREE.InstancedMesh(new THREE.CylinderGeometry(.33, .33, .24, 12), std({ color: col('#161616') }), cars.length * 4);
-carBody.castShadow = carCab.castShadow = true;
 cars.forEach((c, i) => carBody.setColorAt(i, col(c.hex)));
 life.add(carBody, carCab, wheelI);
 function placeCar(c, i) {
@@ -860,7 +864,7 @@ function astroDe(k) {
 }
 function setTod(k) {
   const T = { ...TOD[k], sun: astroDe(k) || TOD[k].sun };
-  sun.position.set(...T.sun); sun.intensity = T.sunI; sun.color = col(T.sunC); hemi.intensity = T.hemiI * ENV_AMBIENTE;
+  sun.position.set(...T.sun); sun.intensity = T.sunI; sun.color = col(T.sunC); hemi.intensity = T.hemiI * ENV_AMBIENTE; renderer.shadowMap.needsUpdate = true;
   hemi.color = col(k === 'night' ? '#36486e' : k === 'dusk' ? '#f6cfaa' : '#eaf2f4'); hemi.groundColor = col(k === 'night' ? '#141820' : '#9a917e');
   const u = sky.material.uniforms; u.top.value.set(T.sky[0]); u.mid.value.set(T.sky[1]); u.bot.value.set(T.sky[2]); u.sunCol.value.set(T.skySun); u.sunDir.value.set(...T.sun).normalize();
   scene.fog = new THREE.Fog(col(T.sky[1]), 380, 1300);
@@ -954,6 +958,7 @@ function select(g, focus) {
   selected = g; prioridadSucia = true;
   root.querySelectorAll('.list button').forEach(b => b.setAttribute('aria-current', b.dataset.id === (g && g.id)));
   groups.forEach(x => { x.label.classList.toggle('on', x === g); x.slab.material.color.copy(col(x === g ? '#f0c6a6' : x.kind === 'larv' ? '#f2efe8' : '#c8ccc6')); x.roof.visible = x !== g; });
+  renderer.shadowMap.needsUpdate = true;   // el techo del elegido se abre: su sombra también
   nums.forEach(n => n.el.remove()); nums.length = 0;
   if (!g) { $('#card').hidden = true; paintWater(); return; }
   [...g.tanks, ...g.desove].forEach(t => { const el = document.createElement('span'); el.className = 'num'; el.textContent = (t.desove ? 'D' : '') + t.num; labelsEl.append(el); const [x, z] = P(t.cx, t.cz); nums.push({ el, p: new THREE.Vector3(x, Y0 + t.H + .3, z) }); });
@@ -1266,9 +1271,9 @@ function pintarFila(g) {
   g.listCt.textContent = st.cuenta.alerta ? '⚠ ' + st.cuenta.alerta : st.cuenta.cultivo + '/' + g.tanks.length;
 }
 fillList($('#list-larv'), larvG); fillList($('#list-mat'), matG);
-$('#t-roof').addEventListener('change', e => { roofs.visible = e.target.checked; });
-$('#t-other').addEventListener('change', e => { others.visible = e.target.checked; });
-$('#t-life').addEventListener('change', e => { life.visible = e.target.checked; });
+$('#t-roof').addEventListener('change', e => { roofs.visible = e.target.checked; renderer.shadowMap.needsUpdate = true; });
+$('#t-other').addEventListener('change', e => { others.visible = e.target.checked; renderer.shadowMap.needsUpdate = true; });
+$('#t-life').addEventListener('change', e => { life.visible = e.target.checked; renderer.shadowMap.needsUpdate = true; });
 $('#t-labels').addEventListener('change', e => { labelsEl.style.display = e.target.checked ? '' : 'none'; if (e.target.checked) { groups.forEach((g) => { g.label._w = 0; }); prioridadSucia = true; } });
 
 /* ---------- Balizas de alerta (decisión del usuario: no repintan el tanque) ---------- */
@@ -1327,7 +1332,6 @@ const PERSONAL_MAX = 96;
 const pBody = new THREE.InstancedMesh(new THREE.CylinderGeometry(.2, .24, 1.05, 8), std({ roughness: .8 }), PERSONAL_MAX);
 const pHead = new THREE.InstancedMesh(new THREE.SphereGeometry(.15, 10, 8), std({ roughness: .8 }), PERSONAL_MAX);
 const pLeg = new THREE.InstancedMesh(new THREE.CylinderGeometry(.16, .14, .7, 6), std({ color: col('#2b3440'), roughness: .9 }), PERSONAL_MAX);
-pBody.castShadow = pHead.castShadow = pLeg.castShadow = true;
 // los colores por instancia se reservan con la cuenta de instancias del momento (three 0.128: setColorAt usa this.count):
 // se ponen con la malla llena, antes del primer cuadro, y recién después la cuenta baja a 0 (medido: con la cuenta en 0
 // antes, el buffer de colores salía vacío y los chalecos, oscuros). pintarPersonal sólo los cambia.
@@ -1433,6 +1437,7 @@ function pintarEstado(E) {
     g.tanks.forEach((t) => { t.st = g.st && g.st.tanques ? g.st.tanques[t.num] || null : null; });
   });
   paintWater(); pintarBalizas(); pintarCamiones(); pintarLuces(); pintarPersonal(); pintarCifras(E); pintarProduccion(E && E.cifras); pintarReemplazo(E && E.mad ? E.mad.reemplazo : null); pintarAtender(); groups.forEach(pintarFila);
+  renderer.shadowMap.needsUpdate = true;   // los camiones de despacho cambian con los datos y el mes
   wasFar = null;   // rehace los rótulos en el próximo cuadro
   if (selected) { if (tanqueFicha && tanqueFicha.g === selected) (selected.kind === 'larv' ? fichaTanque : fichaTanqueMad)(tanqueFicha); else fichaModulo(selected); }
 }
@@ -1677,7 +1682,7 @@ function dispose() {
   renderer.dispose();
   if (renderer.forceContextLoss) renderer.forceContextLoss();
 }
-let slowFrames = 0, fastFrames = 0, shadowTick = 0;
+let slowFrames = 0, fastFrames = 0;
 function loop(now) {
   if (!root.isConnected) { dispose(); return; }
   // con la pantalla de elegir rol encima (shell.js · showEntry pone .is-entry en .app) la maqueta no se ve, aunque para el
@@ -1695,7 +1700,6 @@ function loop(now) {
     if (slowFrames > 90 && renderer.getPixelRatio() > DPR_MIN) { renderer.setPixelRatio(Math.max(DPR_MIN, renderer.getPixelRatio() - .25)); renderer.setSize(W, H, false); slowFrames = 0; }
     if (fastFrames > 240 && renderer.getPixelRatio() < DPR_MAX) { renderer.setPixelRatio(Math.min(DPR_MAX, renderer.getPixelRatio() + .25)); renderer.setSize(W, H, false); fastFrames = 0; }
   }
-  if (++shadowTick % 6 === 0) renderer.shadowMap.needsUpdate = true; // sombras recalculadas 10 veces por segundo
   try { frameBody(now); } catch (err) { console.error(err); }
 }
 function frameBody(now) {
